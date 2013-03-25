@@ -23,18 +23,18 @@ newtype UInt64 = UInt64 Word64
     deriving (Eq, Ord, Num, Real, Enum, Integral, Bounded, Show, Read)
 
 instance Binary UInt8 where
-    get = getWord8 >>= (\x -> return $ UInt8 x)
+    get = getWord8 >>= return . UInt8
     put (UInt8 x) = putWord8 x
 
 instance Binary UInt16 where
-    get = getWord16le >>= (\x -> return $ UInt16 x)
+    get = getWord16le >>= return . UInt16
     put (UInt16 x) = putWord16le x
 
 instance Binary UInt32 where
-    get = getWord32le >>= (\x -> return $ UInt32 x)
+    get = getWord32le >>= return . UInt32
     put (UInt32 x) = putWord32le x
 
 instance Binary UInt64 where
-    get = getWord64le >>= (\x -> return $ UInt64 x)
+    get = getWord64le >>= return . UInt64
     put (UInt64 x) = putWord64le x
 

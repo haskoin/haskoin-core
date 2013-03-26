@@ -1,4 +1,4 @@
-module Bitcoin.Type.VarInt (VarInt) where
+module Bitcoin.Type.VarInt ( VarInt(..) ) where
 
 import Data.Word
 import Data.Binary
@@ -24,7 +24,7 @@ instance Binary VarInt where
             result = return . VarInt . fromIntegral
 
     put (VarInt w)
-        | w < 0xfd = (put . B.UInt8 . fromIntegral) w
+        | w < 0xfd = put . B.UInt8 . fromIntegral $ w
         | w <= 0xffff = do
             (put . B.UInt8) 0xfd
             (put . B.UInt16 . fromIntegral) w

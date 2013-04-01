@@ -23,10 +23,11 @@ main = withSocketsDo $ do
     nonce <- randomIO
     let version = B.Version
                     70001 1 (floor time) addr addr nonce userAgent 0 False
-        message = B.encodeMessage version
+        message = B.encodeMessage $ B.MVersion version
     print version
     BS.hPutStr h message
     contents <- BL.hGetContents h
-    print $ B.readMessage contents
+    let response = B.decodeMessage contents
+    print response
     hClose h
 

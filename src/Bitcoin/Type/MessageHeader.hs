@@ -4,13 +4,13 @@ module Bitcoin.Type.MessageHeader
 , unpackCommand
 ) where
 
+import Data.Char
 import Data.Word
-import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
-import Data.Char
 import Control.Applicative
 
+import qualified Bitcoin.Type as Bitcoin
 import qualified Data.ByteString as BS
 
 data MessageHeader = MessageHeader {
@@ -20,17 +20,17 @@ data MessageHeader = MessageHeader {
     chksum      :: BS.ByteString
 } deriving (Show, Read)
 
-instance Binary MessageHeader where
-    get = MessageHeader <$> getByteString 4
-                        <*> getByteString 12
-                        <*> getWord32le
-                        <*> getByteString 4
+instance Bitcoin.Type MessageHeader where
+    get = MessageHeader <$> Bitcoin.getByteString 4
+                        <*> Bitcoin.getByteString 12
+                        <*> Bitcoin.getWord32
+                        <*> Bitcoin.getByteString 4
 
     put (MessageHeader m c l cs) = do
-        putByteString m
-        putByteString c
-        putWord32le l
-        putByteString cs
+        Bitcoin.putByteString m
+        Bitcoin.putByteString c
+        Bitcoin.putWord32 l
+        Bitcoin.putByteString cs
 
 -- Helper function to create a ByteString command from a String
 packCommand :: String -> BS.ByteString

@@ -1,11 +1,11 @@
 module Bitcoin.Type.NetworkAddress ( NetworkAddress(..) ) where
 
 import Data.Word
-import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
-
 import Control.Applicative
+
+import qualified Bitcoin.Type as Bitcoin
 import qualified Data.ByteString as BS
 
 data NetworkAddress = NetworkAddress {
@@ -14,13 +14,13 @@ data NetworkAddress = NetworkAddress {
     port     :: Word16
 } deriving (Eq, Show, Read)
 
-instance Binary NetworkAddress where
-    get = NetworkAddress <$> getWord64le
-                         <*> getByteString 16
-                         <*> getWord16be 
+instance Bitcoin.Type NetworkAddress where
+    get = NetworkAddress <$> Bitcoin.getWord64
+                         <*> Bitcoin.getByteString 16
+                         <*> Bitcoin.getPortNumber
 
     put (NetworkAddress s a p) = do
-        putWord64le       s
-        putByteString     a
-        putWord16be       p
+        Bitcoin.putWord64      s
+        Bitcoin.putByteString  a
+        Bitcoin.putPortNumber  p
 

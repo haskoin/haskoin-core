@@ -1,23 +1,24 @@
 module Bitcoin.Type.VarString ( VarString(..) ) where
 
 import Data.Word
-import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
 import Control.Applicative
 
 import qualified Data.ByteString as BS
 
+import qualified Bitcoin.Type as Bitcoin
 import Bitcoin.Type.VarInt
 
 newtype VarString = VarString { getVarString :: BS.ByteString }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Ord, Show, Read)
 
-instance Binary VarString where
+instance Bitcoin.Type VarString where
     get = do
-        (VarInt size) <- get :: Get VarInt
-        VarString <$> getByteString (fromIntegral size)
+        (VarInt len) <- Bitcoin.get
+        VarString <$> Bitcoin.getByteString (fromIntegral len)
 
     put (VarString x) = do
-        put . VarInt . fromIntegral . BS.length $ x
-        putByteString x
+        Bitcoin.put . VarInt . fromIntegral . BS.length $ x
+        Bitcoin.putByteString x
+

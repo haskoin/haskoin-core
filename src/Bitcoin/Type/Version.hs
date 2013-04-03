@@ -1,10 +1,11 @@
 module Bitcoin.Type.Version ( Version(..) ) where
 
 import Data.Word
-import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
 import Control.Applicative
+
+import qualified Bitcoin.Type as Bitcoin
 
 import Bitcoin.Type.NetworkAddress
 import Bitcoin.Type.VarString
@@ -21,25 +22,25 @@ data Version = Version {
     relay       :: Bool
 } deriving (Show, Read)
 
-instance Binary Version where
-    get = Version <$> getWord32le
-                  <*> getWord64le
-                  <*> getWord64le
-                  <*> get
-                  <*> get
-                  <*> getWord64le
-                  <*> get
-                  <*> getWord32le
-                  <*> get
+instance Bitcoin.Type Version where
+    get = Version <$> Bitcoin.getWord32
+                  <*> Bitcoin.getWord64
+                  <*> Bitcoin.getWord64
+                  <*> Bitcoin.get
+                  <*> Bitcoin.get
+                  <*> Bitcoin.getWord64
+                  <*> Bitcoin.get
+                  <*> Bitcoin.getWord32
+                  <*> Bitcoin.getBool
 
     put (Version v s t ar as n ua sh r) = do
-        putWord32le v
-        putWord64le s
-        putWord64le t
-        put         ar
-        put         as
-        putWord64le n
-        put         ua
-        putWord32le sh
-        put         r
+        Bitcoin.putWord32 v
+        Bitcoin.putWord64 s
+        Bitcoin.putWord64 t
+        Bitcoin.put ar
+        Bitcoin.put as
+        Bitcoin.putWord64 n
+        Bitcoin.put ua
+        Bitcoin.putWord32 sh
+        Bitcoin.putBool r
 

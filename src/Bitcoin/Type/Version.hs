@@ -9,6 +9,7 @@ import qualified Bitcoin.Type as Bitcoin
 
 import Bitcoin.Type.NetworkAddress
 import Bitcoin.Type.VarString
+import Bitcoin.Util
 
 data Version = Version {
     version     :: Word32,
@@ -31,7 +32,7 @@ instance Bitcoin.Type Version where
                   <*> Bitcoin.getWord64
                   <*> Bitcoin.get
                   <*> Bitcoin.getWord32
-                  <*> Bitcoin.getBool
+                  <*> hasMoreM Bitcoin.getBool (return True)
 
     put (Version v s t ar as n ua sh r) = do
         Bitcoin.putWord32 v
@@ -43,4 +44,5 @@ instance Bitcoin.Type Version where
         Bitcoin.put ua
         Bitcoin.putWord32 sh
         Bitcoin.putBool r
+
 

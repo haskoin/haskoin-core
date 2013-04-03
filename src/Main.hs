@@ -4,11 +4,13 @@ import Data.Binary
 import Data.Char --for ord
 import Numeric -- for showHex
 import System.Random -- for randon nonce
+import Control.Applicative
 
 import Data.Time.Clock.POSIX -- unix time
 
 import Data.Binary.Get
 import Data.Binary.Put
+
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 
@@ -31,7 +33,17 @@ main = withSocketsDo $ do
     let version = Version 70001 1 (floor time) addr addr nonce ua 0 False
     print version
     BS.hPutStr h (toStrict . runPut . Bitcoin.put $ MVersion version)
-    bl <- BL.hGetContents h
-    print $ runGet (Bitcoin.get :: Get Message) bl
+    msg <- feed (runGetIncremental (Bitcoin.get :: Get Message)) h
+    print msg
     hClose h
+
+feed :: Decoder Message -> Handle -> IO Message
+feed (Done bs _ msg ) h = return msg
+feed (Fail _ _ str) _ = error $ "readMessageLoop: " ++ str
+feed (Partial cont) h = do
+    chunk <- BS.hGet h 1
+    case BS.length chunk of
+        0 -> feed (cont Nothing) h
+        _ -> feed (cont (Just chunk)) h
+
 

@@ -1,12 +1,20 @@
 module Bitcoin.Message 
 ( Message(..)
 , Version(..)
+, iterMessage
+, enumMessage
 ) where
 
 import Data.Word
 import Data.Binary.Get
 import Data.Binary.Put
 import Control.Applicative
+
+import qualified Data.Enumerator as E
+import qualified Data.Enumerator.Binary as EB
+import qualified Data.Enumerator.List as EL
+
+import Data.Enumerator ( (>>==), ($$) )
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
@@ -23,31 +31,35 @@ testnetMagic = BS.pack [11,17,9,7]
 data Message = MVersion Version | MVerAck
     deriving (Show, Read)
 
-instance Bitcoin.Type Message where
-    get = Bitcoin.get >>= parseHeader
-    put m = let (cmd, mPut) = messageToCommand m 
-                payload = toStrict . runPut $ mPut
-                head = MessageHeader
-                           testnetMagic
-                           (packCommand cmd)
-                           (fromIntegral $ BS.length payload)
-                           (checksum payload)
-                in Bitcoin.put head >> putByteString payload
+iterMessage :: Monad m => E.Iteratee BS.ByteString m Message
+iterMessage = do
+    headBytes <- EB.take 24
+    let head   = runGet Bitcoin.get headBytes :: MessageHeader
+        length = payloadSize head
+        cmd    = command head
+    payloadBytes <- EB.take $ fromIntegral length
+    return $ getMessage (unpackCommand cmd) payloadBytes
 
--- We have to run the Message decoder on a bytestring of the right length
-parseHeader :: MessageHeader -> Get Message
-parseHeader (MessageHeader mag cmd len chk) = do
-    payload <- Bitcoin.getByteString $ fromIntegral len
-    return $ commandToMessage (unpackCommand cmd) payload
-
-commandToMessage :: String -> BS.ByteString -> Message
-commandToMessage cmd payload = case cmd of
-    "version" -> MVersion $ runGet Bitcoin.get (BL.fromChunks [payload])
+getMessage :: String -> BL.ByteString -> Message
+getMessage cmd payload = case cmd of
+    "version" -> MVersion $ runGet Bitcoin.get payload
     "verack"  -> MVerAck
     _         -> error $ "commandMessage: Invalid command string " ++ cmd
 
-messageToCommand :: Message -> (String, Put)
-messageToCommand m = case m of 
+enumMessage :: Monad m => Message -> E.Enumerator BS.ByteString m b
+enumMessage msg (E.Continue k) =
+    let (cmd, mPut) = putMessage msg
+        payload = toStrict $ runPut $ mPut
+        head = toStrict . runPut . Bitcoin.put $ MessageHeader
+            testnetMagic
+            (packCommand cmd)
+            (fromIntegral $ BS.length payload)
+            (checksum payload)
+        in k (E.Chunks [head `BS.append` payload])
+enumMessage msg step = E.returnI step
+
+putMessage :: Message -> (String, Put)
+putMessage m = case m of 
     (MVersion v) -> ("version", Bitcoin.put v)
     MVerAck      -> ("verack", Bitcoin.putByteString BS.empty)
 

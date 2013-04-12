@@ -1,4 +1,7 @@
-module Bitcoin.Type.InvVector ( InvVector(..) ) where
+module Bitcoin.Type.InvVector 
+( InvVector(..) 
+, InvType(..)
+) where
 
 import Data.Word
 import Data.Binary.Get
@@ -9,17 +12,30 @@ import Bitcoin.Type.Hash
 
 import qualified Bitcoin.Type as Bitcoin
 
+data InvType = Error | Tx | Block
+    deriving (Show, Read)
+
+instance Bitcoin.Type InvType where
+    get = go =<< Bitcoin.getWord32
+        where go x = case x of
+                          0 -> return Error
+                          1 -> return Tx
+                          2 -> return Block
+    put Error = Bitcoin.putWord32 0
+    put Tx    = Bitcoin.putWord32 1
+    put Block = Bitcoin.putWord32 2
+
 data InvVector = InvVector {
-    invType :: Word32,
+    invType :: InvType,
     invHash :: Hash
 } deriving (Show, Read)
 
 instance Bitcoin.Type InvVector where
-    get = InvVector <$> Bitcoin.getWord32
-                    <*> Bitcoin.get
+    get = InvVector <$> Bitcoin.get
+                    <*> Bitcoin.getHash
 
     put (InvVector t h) = do
-        Bitcoin.putWord32 t
-        Bitcoin.put       h
+        Bitcoin.put     t
+        Bitcoin.putHash h
 
 

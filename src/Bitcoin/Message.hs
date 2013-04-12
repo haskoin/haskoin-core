@@ -26,7 +26,7 @@ import Bitcoin.Util
 
 import qualified Bitcoin.Type as Bitcoin
 
-testnetMagic = BS.pack [11,17,9,7]
+testnetMagic = 0x0b110907
 
 data Message = MVersion Version | MVerAck
     deriving (Show, Read)

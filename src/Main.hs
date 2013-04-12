@@ -1,8 +1,6 @@
 import Network
 import System.IO
-import Data.Binary
 import Data.Char --for ord
-import Numeric -- for showHex
 import System.Random -- for randon nonce
 
 import Control.Applicative
@@ -18,7 +16,6 @@ import qualified Data.Enumerator.Binary as EB
 import Data.Enumerator ( ($$) )
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
 
 import Bitcoin.Message
 import Bitcoin.Type.VarString
@@ -40,8 +37,8 @@ loopIter h = do
 
 sendVersion :: Handle -> IO ()
 sendVersion h = do
-    let zeroAddr = [0,0,0,0,0,0,0,0,0,0,255,255,0,0,0,0]
-        addr = NetworkAddress 1 (BS.pack zeroAddr) 0
+    let zeroAddr = (0, 0x0000ffff00000000) :: IPv6
+        addr = NetworkAddress 1 zeroAddr 0
         ua = VarString $ BS.pack $ map (fromIntegral . ord) "/haskoin:0.0.1/"
     time <- getPOSIXTime
     nonce <- randomIO

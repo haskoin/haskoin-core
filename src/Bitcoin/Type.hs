@@ -14,6 +14,12 @@ module Bitcoin.Type
 , putByteString
 , getPortNumber
 , putPortNumber
+, getNetworkMagic
+, putNetworkMagic
+, getMsgChkSum
+, putMsgChkSum
+, getIPv6
+, putIPv6
 ) where
 
 import Data.Word
@@ -46,4 +52,13 @@ putWord64 = putWord64le
 
 getPortNumber = getWord16be
 putPortNumber = putWord16be
+
+getNetworkMagic = getWord32be
+putNetworkMagic = putWord32be
+
+getMsgChkSum = getWord32be
+putMsgChkSum = putWord32be
+
+getIPv6 = (,) <$> getWord64be <*> getWord64be
+putIPv6 (w1, w2) = putWord64be w1 >> putWord64be w2
 

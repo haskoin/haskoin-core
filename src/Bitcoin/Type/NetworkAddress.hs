@@ -1,4 +1,7 @@
-module Bitcoin.Type.NetworkAddress ( NetworkAddress(..) ) where
+module Bitcoin.Type.NetworkAddress 
+( NetworkAddress(..)
+, IPv6(..)
+) where
 
 import Data.Word
 import Data.Binary.Get
@@ -8,19 +11,21 @@ import Control.Applicative
 import qualified Bitcoin.Type as Bitcoin
 import qualified Data.ByteString as BS
 
+type IPv6 = (Word64, Word64)
+
 data NetworkAddress = NetworkAddress {
     services :: Word64,
-    address  :: BS.ByteString,
+    address  :: IPv6,
     port     :: Word16
-} deriving (Eq, Show, Read)
+} deriving (Show, Read)
 
 instance Bitcoin.Type NetworkAddress where
     get = NetworkAddress <$> Bitcoin.getWord64
-                         <*> Bitcoin.getByteString 16
+                         <*> Bitcoin.getIPv6
                          <*> Bitcoin.getPortNumber
 
     put (NetworkAddress s a p) = do
         Bitcoin.putWord64      s
-        Bitcoin.putByteString  a
+        Bitcoin.putIPv6        a
         Bitcoin.putPortNumber  p
 

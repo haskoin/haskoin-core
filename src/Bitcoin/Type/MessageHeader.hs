@@ -14,23 +14,23 @@ import qualified Bitcoin.Type as Bitcoin
 import qualified Data.ByteString as BS
 
 data MessageHeader = MessageHeader {
-    magic       :: BS.ByteString,
+    magic       :: Word32,
     command     :: BS.ByteString,
     payloadSize :: Word32,
-    chksum      :: BS.ByteString
+    chksum      :: Word32
 } deriving (Show, Read)
 
 instance Bitcoin.Type MessageHeader where
-    get = MessageHeader <$> Bitcoin.getByteString 4
+    get = MessageHeader <$> Bitcoin.getNetworkMagic
                         <*> Bitcoin.getByteString 12
                         <*> Bitcoin.getWord32
-                        <*> Bitcoin.getByteString 4
+                        <*> Bitcoin.getMsgChkSum
 
     put (MessageHeader m c l cs) = do
-        Bitcoin.putByteString m
-        Bitcoin.putByteString c
-        Bitcoin.putWord32 l
-        Bitcoin.putByteString cs
+        Bitcoin.putNetworkMagic m
+        Bitcoin.putByteString   c
+        Bitcoin.putWord32       l
+        Bitcoin.putMsgChkSum    cs
 
 -- Helper function to create a ByteString command from a String
 packCommand :: String -> BS.ByteString

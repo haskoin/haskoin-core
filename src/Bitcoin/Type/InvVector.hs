@@ -17,13 +17,16 @@ data InvType = Error | Tx | Block
 
 instance Bitcoin.Type InvType where
     get = go =<< Bitcoin.getWord32
-        where go x = case x of
-                          0 -> return Error
-                          1 -> return Tx
-                          2 -> return Block
-    put Error = Bitcoin.putWord32 0
-    put Tx    = Bitcoin.putWord32 1
-    put Block = Bitcoin.putWord32 2
+        where 
+            go x = case x of
+                0 -> return Error
+                1 -> return Tx
+                2 -> return Block
+
+    put x = Bitcoin.putWord32 $ case x of
+        Error -> 0
+        Tx    -> 1
+        Block -> 2
 
 data InvVector = InvVector {
     invType :: InvType,

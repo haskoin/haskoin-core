@@ -22,3 +22,4 @@ instance Bitcoin.Type NotFound where
     put (NotFound xs) = do
         Bitcoin.put $ (VarInt . fromIntegral . length) xs
         forM_ xs Bitcoin.put
+

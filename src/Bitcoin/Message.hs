@@ -23,6 +23,7 @@ import Bitcoin.Type.Version
 import Bitcoin.Type.Addr
 import Bitcoin.Type.MessageHeader
 import Bitcoin.Type.Inv
+import Bitcoin.Type.GetData
 import Bitcoin.Crypto
 import Bitcoin.Util
 
@@ -34,7 +35,8 @@ data Message =
     MVersion Version | 
     MVerAck | 
     MAddr Addr | 
-    MInv Inv
+    MInv Inv |
+    MGetData GetData
     deriving (Show, Read)
 
 iterMessage :: Monad m => E.Iteratee BS.ByteString m Message
@@ -50,8 +52,9 @@ getMessage :: String -> BL.ByteString -> Message
 getMessage cmd payload = case cmd of
     "version" -> MVersion $ runGet Bitcoin.get payload
     "verack"  -> MVerAck
-    "addr"    -> MAddr $ runGet Bitcoin.get payload
-    "inv"     -> MInv $ runGet Bitcoin.get payload
+    "addr"    -> MAddr    $ runGet Bitcoin.get payload
+    "inv"     -> MInv     $ runGet Bitcoin.get payload
+    "getdata" -> MGetData $ runGet Bitcoin.get payload
     _         -> error $ "getMessage: Invalid command string " ++ cmd
 
 enumMessage :: Monad m => Message -> E.Enumerator BS.ByteString m b
@@ -68,8 +71,9 @@ enumMessage msg step = E.returnI step
 
 putMessage :: Message -> (String, Put)
 putMessage m = case m of 
-    (MVersion v) -> ("version", Bitcoin.put v)
-    MVerAck      -> ("verack", Bitcoin.putByteString BS.empty)
-    (MAddr a)    -> ("addr", Bitcoin.put a)
-    (MInv i)     -> ("inv", Bitcoin.put i)
+    (MVersion v)  -> ("version", Bitcoin.put v)
+    MVerAck       -> ("verack", return ())
+    (MAddr a)     -> ("addr", Bitcoin.put a)
+    (MInv i)      -> ("inv", Bitcoin.put i)
+    (MGetData gd) -> ("inv", Bitcoin.put gd)
 

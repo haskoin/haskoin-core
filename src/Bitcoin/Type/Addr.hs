@@ -1,7 +1,6 @@
 module Bitcoin.Type.Addr ( Addr(..) ) where
 
 import Control.Monad
-
 import Data.Word
 import Data.Binary.Get
 import Data.Binary.Put
@@ -18,7 +17,7 @@ data Addr = Addr {
 
 instance Bitcoin.Type Addr where
     get = do
-        (VarInt count) <- Bitcoin.get :: Get VarInt
+        (VarInt count) <- Bitcoin.get
         let action = liftM2 (,) Bitcoin.getWord32 Bitcoin.get
         Addr <$> replicateM (fromIntegral count) action
 

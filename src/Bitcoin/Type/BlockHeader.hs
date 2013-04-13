@@ -16,7 +16,7 @@ data BlockHeader = BlockHeader {
     blockTimestamp :: Word32,
     blockBits      :: Word32,
     nonce          :: Word32
-}
+} deriving (Read, Show)
 
 instance Bitcoin.Type BlockHeader where
     get = BlockHeader <$> Bitcoin.getWord32

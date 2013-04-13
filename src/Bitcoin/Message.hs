@@ -20,6 +20,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 
 import Bitcoin.Type.Version
+import Bitcoin.Type.Addr
 import Bitcoin.Type.MessageHeader
 import Bitcoin.Crypto
 import Bitcoin.Util
@@ -28,7 +29,7 @@ import qualified Bitcoin.Type as Bitcoin
 
 testnetMagic = 0x0b110907
 
-data Message = MVersion Version | MVerAck
+data Message = MVersion Version | MVerAck | MAddr Addr
     deriving (Show, Read)
 
 iterMessage :: Monad m => E.Iteratee BS.ByteString m Message
@@ -44,6 +45,7 @@ getMessage :: String -> BL.ByteString -> Message
 getMessage cmd payload = case cmd of
     "version" -> MVersion $ runGet Bitcoin.get payload
     "verack"  -> MVerAck
+    "addr"    -> MAddr $ runGet Bitcoin.get payload
     _         -> error $ "commandMessage: Invalid command string " ++ cmd
 
 enumMessage :: Monad m => Message -> E.Enumerator BS.ByteString m b
@@ -62,4 +64,5 @@ putMessage :: Message -> (String, Put)
 putMessage m = case m of 
     (MVersion v) -> ("version", Bitcoin.put v)
     MVerAck      -> ("verack", Bitcoin.putByteString BS.empty)
+    (MAddr a)    -> ("addr", Bitcoin.put a)
 

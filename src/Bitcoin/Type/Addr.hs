@@ -14,7 +14,7 @@ import Bitcoin.Type.VarInt
 
 data Addr = Addr {
     addrList :: [(Word32, NetworkAddress)]
-}
+} deriving (Show, Read)
 
 instance Bitcoin.Type Addr where
     get = do

@@ -1,15 +1,15 @@
 module Bitcoin.Type.Addr ( Addr(..) ) where
 
-import Control.Monad
 import Data.Word
 import Data.Binary.Get
 import Data.Binary.Put
-import Control.Applicative
 
-import qualified Bitcoin.Type as Bitcoin
+import Control.Monad
+import Control.Applicative
 
 import Bitcoin.Type.NetworkAddress
 import Bitcoin.Type.VarInt
+import qualified Bitcoin.Type as Bitcoin
 
 data Addr = Addr {
     addrList :: [(Word32, NetworkAddress)]

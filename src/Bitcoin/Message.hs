@@ -48,7 +48,8 @@ data Message =
     MGetHeaders GetHeaders |
     MTx Tx |
     MBlock Block |
-    MHeaders Headers
+    MHeaders Headers |
+    MGetAddr
     deriving (Show, Read)
 
 iterMessage :: Monad m => E.Iteratee BS.ByteString m Message
@@ -73,6 +74,7 @@ getMessage cmd payload = case cmd of
     "tx"         -> MTx         $ runGet Bitcoin.get payload
     "block"      -> MBlock      $ runGet Bitcoin.get payload
     "headers"    -> MHeaders    $ runGet Bitcoin.get payload
+    "getaddr"    -> MGetAddr
     _            -> error $ "getMessage: Invalid command string " ++ cmd
 
 enumMessage :: Monad m => Message -> E.Enumerator BS.ByteString m b
@@ -100,4 +102,5 @@ putMessage m = case m of
     (MTx t)          -> ("tx", Bitcoin.put t)
     (MBlock b)       -> ("block", Bitcoin.put b)
     (MHeaders h)     -> ("headers", Bitcoin.put h)
+    MGetAddr         -> ("getaddr", return ())
 

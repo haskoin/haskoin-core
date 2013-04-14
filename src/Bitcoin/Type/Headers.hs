@@ -24,6 +24,6 @@ instance Bitcoin.Type Headers where
               getBlocks (VarInt c) = replicateM (fromIntegral c) action
 
     put (Headers xs) = do
-        Bitcoin.put $ (VarInt . fromIntegral . length ) xs
+        Bitcoin.put $ (VarInt . fromIntegral . length) xs
         forM_ xs (\(a,b) -> Bitcoin.put a >> Bitcoin.put b)
 

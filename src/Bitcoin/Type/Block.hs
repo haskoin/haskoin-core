@@ -1,12 +1,10 @@
 module Bitcoin.Type.Block ( Block(..) ) where
 
-import Data.Word
 import Data.Binary.Get
 import Data.Binary.Put
 import Control.Applicative
 import Control.Monad
 
-import Bitcoin.Type.Hash
 import Bitcoin.Type.BlockHeader
 import Bitcoin.Type.Tx
 import Bitcoin.Type.VarInt

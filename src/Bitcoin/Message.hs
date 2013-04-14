@@ -28,6 +28,8 @@ import Bitcoin.Type.NotFound
 import Bitcoin.Type.GetBlocks
 import Bitcoin.Type.GetHeaders
 import Bitcoin.Type.Tx
+import Bitcoin.Type.Block
+import Bitcoin.Type.Headers
 import Bitcoin.Crypto
 import Bitcoin.Util
 
@@ -44,7 +46,9 @@ data Message =
     MNotFound NotFound |
     MGetBlocks GetBlocks |
     MGetHeaders GetHeaders |
-    MTx Tx
+    MTx Tx |
+    MBlock Block |
+    MHeaders Headers
     deriving (Show, Read)
 
 iterMessage :: Monad m => E.Iteratee BS.ByteString m Message
@@ -67,6 +71,8 @@ getMessage cmd payload = case cmd of
     "getblocks"  -> MGetBlocks  $ runGet Bitcoin.get payload
     "getheaders" -> MGetHeaders $ runGet Bitcoin.get payload
     "tx"         -> MTx         $ runGet Bitcoin.get payload
+    "block"      -> MBlock      $ runGet Bitcoin.get payload
+    "headers"    -> MHeaders    $ runGet Bitcoin.get payload
     _            -> error $ "getMessage: Invalid command string " ++ cmd
 
 enumMessage :: Monad m => Message -> E.Enumerator BS.ByteString m b
@@ -92,4 +98,6 @@ putMessage m = case m of
     (MGetBlocks gb)  -> ("getblocks", Bitcoin.put gb)
     (MGetHeaders gh) -> ("getheaders", Bitcoin.put gh)
     (MTx t)          -> ("tx", Bitcoin.put t)
+    (MBlock b)       -> ("block", Bitcoin.put b)
+    (MHeaders h)     -> ("headers", Bitcoin.put h)
 

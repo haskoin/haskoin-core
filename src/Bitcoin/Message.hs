@@ -25,6 +25,9 @@ import Bitcoin.Type.MessageHeader
 import Bitcoin.Type.Inv
 import Bitcoin.Type.GetData
 import Bitcoin.Type.NotFound
+import Bitcoin.Type.GetBlocks
+import Bitcoin.Type.GetHeaders
+import Bitcoin.Type.Tx
 import Bitcoin.Crypto
 import Bitcoin.Util
 
@@ -38,7 +41,10 @@ data Message =
     MAddr Addr | 
     MInv Inv |
     MGetData GetData |
-    MNotFound NotFound
+    MNotFound NotFound |
+    MGetBlocks GetBlocks |
+    MGetHeaders GetHeaders |
+    MTx Tx
     deriving (Show, Read)
 
 iterMessage :: Monad m => E.Iteratee BS.ByteString m Message
@@ -52,13 +58,16 @@ iterMessage = do
 
 getMessage :: String -> BL.ByteString -> Message
 getMessage cmd payload = case cmd of
-    "version"  -> MVersion  $ runGet Bitcoin.get payload
-    "verack"   -> MVerAck
-    "addr"     -> MAddr     $ runGet Bitcoin.get payload
-    "inv"      -> MInv      $ runGet Bitcoin.get payload
-    "getdata"  -> MGetData  $ runGet Bitcoin.get payload
-    "notfound" -> MNotFound $ runGet Bitcoin.get payload
-    _          -> error $ "getMessage: Invalid command string " ++ cmd
+    "version"    -> MVersion    $ runGet Bitcoin.get payload
+    "verack"     -> MVerAck
+    "addr"       -> MAddr       $ runGet Bitcoin.get payload
+    "inv"        -> MInv        $ runGet Bitcoin.get payload
+    "getdata"    -> MGetData    $ runGet Bitcoin.get payload
+    "notfound"   -> MNotFound   $ runGet Bitcoin.get payload
+    "getblocks"  -> MGetBlocks  $ runGet Bitcoin.get payload
+    "getheaders" -> MGetHeaders $ runGet Bitcoin.get payload
+    "tx"         -> MTx         $ runGet Bitcoin.get payload
+    _            -> error $ "getMessage: Invalid command string " ++ cmd
 
 enumMessage :: Monad m => Message -> E.Enumerator BS.ByteString m b
 enumMessage msg (E.Continue k) =
@@ -74,10 +83,13 @@ enumMessage msg step = E.returnI step
 
 putMessage :: Message -> (String, Put)
 putMessage m = case m of 
-    (MVersion v)  -> ("version", Bitcoin.put v)
-    MVerAck       -> ("verack", return ())
-    (MAddr a)     -> ("addr", Bitcoin.put a)
-    (MInv i)      -> ("inv", Bitcoin.put i)
-    (MGetData gd) -> ("getdata", Bitcoin.put gd)
-    (MNotFound nf) -> ("notfound", Bitcoin.put nf)
+    (MVersion v)     -> ("version", Bitcoin.put v)
+    MVerAck          -> ("verack", return ())
+    (MAddr a)        -> ("addr", Bitcoin.put a)
+    (MInv i)         -> ("inv", Bitcoin.put i)
+    (MGetData gd)    -> ("getdata", Bitcoin.put gd)
+    (MNotFound nf)   -> ("notfound", Bitcoin.put nf)
+    (MGetBlocks gb)  -> ("getblocks", Bitcoin.put gb)
+    (MGetHeaders gh) -> ("getheaders", Bitcoin.put gh)
+    (MTx t)          -> ("tx", Bitcoin.put t)
 

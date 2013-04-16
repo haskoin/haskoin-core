@@ -32,7 +32,7 @@ instance Bitcoin.Type Version where
                   <*> Bitcoin.getWord64
                   <*> Bitcoin.get
                   <*> Bitcoin.getWord32
-                  <*> hasMoreM Bitcoin.getBool (return True)
+                  <*> Bitcoin.hasMore Bitcoin.getBool (return True)
 
     put (Version v s t ar as n ua sh r) = do
         Bitcoin.putWord32 v

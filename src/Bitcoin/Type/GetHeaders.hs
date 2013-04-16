@@ -18,16 +18,14 @@ data GetHeaders = GetHeaders {
 } deriving (Read, Show)
 
 instance Bitcoin.Type GetHeaders where
-    get = do
-        version        <- Bitcoin.getWord32
-        (VarInt count) <- Bitcoin.get
-        hashes         <- replicateM (fromIntegral count) Bitcoin.getHash
-        stop           <- Bitcoin.getHash
-        return $ GetHeaders version hashes stop
+    get = GetHeaders <$> Bitcoin.getWord32
+                     <*> (readHashes =<< Bitcoin.get)
+                     <*> Bitcoin.get
+        where readHashes (VarInt c) = replicateM (fromIntegral c) Bitcoin.get
 
     put (GetHeaders v xs h) = do
         Bitcoin.putWord32 v
         Bitcoin.put $ (VarInt . fromIntegral . length) xs
-        forM_ xs Bitcoin.putHash
-        Bitcoin.putHash h
+        forM_ xs Bitcoin.put
+        Bitcoin.put h
 

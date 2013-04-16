@@ -1,7 +1,7 @@
 module Bitcoin.Util
-( toStrict
+( toStrictBS
+, toLazyBS
 , hasMoreM
-, fromByteString
 ) where
 
 import Data.Bits
@@ -11,12 +11,12 @@ import Data.Binary.Get
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 
-toStrict :: BL.ByteString -> BS.ByteString
-toStrict = BS.concat . BL.toChunks
+toStrictBS :: BL.ByteString -> BS.ByteString
+toStrictBS = BS.concat . BL.toChunks
+
+toLazyBS :: BS.ByteString -> BL.ByteString
+toLazyBS bs = BL.fromChunks [bs]
 
 hasMoreM :: Get a -> Get a -> Get a
 hasMoreM t f = isEmpty >>= (\e -> if e then f else t)
 
-fromByteString :: BS.ByteString -> Word64
-fromByteString = (foldl' accum 0) . BS.unpack 
-    where accum a o = (a `shiftL` 8) .|. fromIntegral o

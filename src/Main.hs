@@ -20,6 +20,7 @@ import qualified Data.ByteString as BS
 import Bitcoin.Message
 import Bitcoin.Type.VarString
 import Bitcoin.Type.NetworkAddress
+import Bitcoin.Type.Ping
 import Bitcoin.Util
 
 import qualified Bitcoin.Type as Bitcoin
@@ -44,12 +45,13 @@ sendVersion h = do
     nonce <- randomIO
     let version = Version 70001 1 (floor time) addr addr nonce ua 0 False
     E.run_ $ (enumMessage $ MVersion version) $$ (EB.iterHandle h)
-    print version
 
 processMessage :: MonadIO m => Message -> E.Enumerator BS.ByteString m b
-processMessage msg (E.Continue k) = do
-    liftIO $ print msg
-    E.continue k
-processMessage m step = E.returnI step
-
+processMessage msg step = do
+    liftIO $ print msg 
+    case msg of
+        MVersion _ -> (enumMessage MVerAck) step
+        MVerAck -> (enumMessage MGetAddr) step
+        MPing (Ping n) -> (enumMessage $ MPong (Pong n)) step
+        _ -> E.returnI step
 

@@ -79,11 +79,11 @@ data OutPoint = OutPoint {
 } deriving (Read, Show)
 
 instance Bitcoin.Type OutPoint where
-    get = OutPoint <$> Bitcoin.getHash
+    get = OutPoint <$> Bitcoin.get
                    <*> Bitcoin.getWord32
 
     put (OutPoint h i) = do
-        Bitcoin.putHash   h
+        Bitcoin.put       h
         Bitcoin.putWord32 i
 
 

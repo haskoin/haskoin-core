@@ -35,10 +35,10 @@ data InvVector = InvVector {
 
 instance Bitcoin.Type InvVector where
     get = InvVector <$> Bitcoin.get
-                    <*> Bitcoin.getHash
+                    <*> Bitcoin.get
 
     put (InvVector t h) = do
         Bitcoin.put     t
-        Bitcoin.putHash h
+        Bitcoin.put     h
 
 

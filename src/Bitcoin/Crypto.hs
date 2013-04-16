@@ -3,18 +3,21 @@ module Bitcoin.Crypto
 , checksum
 ) where
 
-import Data.Bits
 import Data.Word
-import qualified Crypto.Hash.SHA256 as C
+import Crypto.Hash.SHA256
+import Data.Binary.Get
+
 import qualified Data.ByteString as BS
 
-import qualified Bitcoin.Type.Hash as H
-import qualified Bitcoin.Util as U
+import Bitcoin.Type.Hash
+import Bitcoin.Util
+import qualified Bitcoin.Type as Bitcoin
 
-doubleSHA256 :: BS.ByteString -> H.Hash
-doubleSHA256 = H.fromByteString . C.hash . C.hash
+doubleSHA256 :: BS.ByteString -> Either String Hash
+doubleSHA256 = bsToHash . hash . hash
 
-checksum :: BS.ByteString -> Word32
-checksum bs = case (doubleSHA256 bs) of
-    (x,_,_,_) -> fromIntegral $ x `shiftR` 32
+checksum :: BS.ByteString -> Either String Word32
+checksum bs = doubleSHA256 bs >>= 
+    (Right . (runGet Bitcoin.getMsgChkSum) . toLazyBS . hashToBS)
+
 

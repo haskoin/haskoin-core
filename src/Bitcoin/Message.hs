@@ -85,12 +85,15 @@ getMessage cmd payload = case cmd of
 enumMessage :: Monad m => Message -> E.Enumerator BS.ByteString m b
 enumMessage msg (E.Continue k) =
     let (cmd, mPut) = putMessage msg
-        payload = toStrict $ runPut $ mPut
-        head = toStrict . runPut . Bitcoin.put $ MessageHeader
+        payload = toStrictBS $ runPut $ mPut
+        chksum = case (checksum payload) of
+            Right c  -> c
+            Left str -> error str
+        head = toStrictBS . runPut . Bitcoin.put $ MessageHeader
             testnetMagic
             (packCommand cmd)
             (fromIntegral $ BS.length payload)
-            (checksum payload)
+            chksum
         in k (E.Chunks [head `BS.append` payload])
 enumMessage msg step = E.returnI step
 

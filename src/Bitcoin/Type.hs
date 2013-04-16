@@ -1,5 +1,6 @@
 module Bitcoin.Type 
 ( Type(..) 
+, hasMore
 , getBool
 , putBool
 , getWord8
@@ -20,8 +21,6 @@ module Bitcoin.Type
 , putMsgChkSum
 , getIPv6
 , putIPv6
-, getHash
-, putHash
 ) where
 
 import Data.Word
@@ -64,8 +63,6 @@ putMsgChkSum = putWord32be
 getIPv6 = (,) <$> getWord64be <*> getWord64be
 putIPv6 (w1, w2) = putWord64be w1 >> putWord64be w2
 
-getHash = (,,,) <$> getWord64be <*> getWord64be <*> getWord64be <*> getWord64be
-
-putHash (w1, w2, w3, w4) = 
-    putWord64be w1 >> putWord64be w2 >> putWord64be w3 >> putWord64be w4
+hasMore :: Get a -> Get a -> Get a
+hasMore t f = isEmpty >>= (\e -> if e then f else t)
 

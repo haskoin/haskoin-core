@@ -20,16 +20,16 @@ data BlockHeader = BlockHeader {
 
 instance Bitcoin.Type BlockHeader where
     get = BlockHeader <$> Bitcoin.getWord32
-                      <*> Bitcoin.getHash
-                      <*> Bitcoin.getHash
+                      <*> Bitcoin.get
+                      <*> Bitcoin.get
                       <*> Bitcoin.getWord32
                       <*> Bitcoin.getWord32
                       <*> Bitcoin.getWord32
 
     put (BlockHeader v p m bt bb n) = do
         Bitcoin.putWord32 v
-        Bitcoin.putHash   p
-        Bitcoin.putHash   m
+        Bitcoin.put       p
+        Bitcoin.put       m
         Bitcoin.putWord32 bt
         Bitcoin.putWord32 bb
         Bitcoin.putWord32 n 

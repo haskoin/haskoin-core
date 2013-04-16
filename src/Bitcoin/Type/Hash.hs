@@ -1,24 +1,27 @@
 module Bitcoin.Type.Hash 
-( Hash 
-, fromByteString
+( Hash()
+, bsToHash
+, hashToBS
 ) where
 
-import Data.Bits
 import Data.Word
+import Control.Applicative
+
 import qualified Data.ByteString as BS
 
-import qualified Bitcoin.Util as U
+import qualified Bitcoin.Type as Bitcoin
 
-type Hash = (Word64, Word64, Word64, Word64)
+newtype Hash = Hash { getHash :: BS.ByteString }
+    deriving (Read, Show)
 
-fromByteString :: BS.ByteString -> Hash
-fromByteString bs = case (splitString [] bs) of
-    [w1, w2, w3, w4] -> (w1, w2, w3, w4)
-    _                -> error "Hash.fromByteString Hash parsing error"
+instance Bitcoin.Type Hash where
+    get = Hash <$> Bitcoin.getByteString 32
+    put (Hash bs) = Bitcoin.putByteString bs
 
-splitString :: [Word64] -> BS.ByteString -> [Word64]
-splitString acc bs 
-    | BS.null bs = acc
-    | otherwise  = splitString (acc ++ [takeWord64 bs]) (BS.drop 8 bs) 
-        where takeWord64 = U.fromByteString . (BS.take 8)
+bsToHash :: BS.ByteString -> Either String Hash
+bsToHash bs
+    | BS.length bs == 32 = Right (Hash bs)
+    | otherwise = Left "bsToHash: Bad ByteString length"
 
+hashToBS :: Hash -> BS.ByteString
+hashToBS (Hash bs) = bs

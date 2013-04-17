@@ -17,7 +17,7 @@ data NetworkAddress = NetworkAddress {
     services :: Word64,
     address  :: IPv6,
     port     :: Word16
-} deriving (Show, Read)
+} deriving (Show, Read, Eq)
 
 instance Bitcoin.Type NetworkAddress where
     get = NetworkAddress <$> Bitcoin.getWord64

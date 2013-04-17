@@ -21,7 +21,7 @@ data Version = Version {
     userAgent   :: VarString,
     startHeight :: Word32,
     relay       :: Bool
-} deriving (Show, Read)
+} deriving (Show, Read, Eq)
 
 instance Bitcoin.Type Version where
     get = Version <$> Bitcoin.getWord32

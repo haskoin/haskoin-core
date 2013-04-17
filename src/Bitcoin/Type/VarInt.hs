@@ -8,7 +8,7 @@ import Control.Applicative
 import qualified Bitcoin.Type as Bitcoin
 
 newtype VarInt = VarInt { getVarInt :: Word64 }
-    deriving (Eq, Ord, Bounded, Show, Read)
+    deriving (Eq, Show, Read)
     
 instance Bitcoin.Type VarInt where
     get = VarInt <$> ( getWord8 >>= go )

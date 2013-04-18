@@ -1,20 +1,15 @@
 module Bitcoin.Type.Hash
 ( Word128
-, BigWord
+, Word160
+, Word256
 ) where
 
 import Data.Word
 import Data.Bits
 
-import Data.Binary
-import Data.Binary.Get
-import Data.Binary.Put
-
-import Control.Applicative
-
-import qualified Bitcoin.Type as Bitcoin
-
 type Word128 = BigWord Word64 Word64
+type Word160 = BigWord Word32 Word128
+type Word256 = BigWord Word128 Word128
 
 data BigWord a b = BigWord !a !b
     deriving (Eq, Ord, Bounded)
@@ -78,9 +73,45 @@ instance (Ord a, Bits a, Integral a, Bounded a
     signum a = if a > 0 then 1 else 0
     fromInteger i = r
         where r@(BigWord _ b) = BigWord 
-                              (fromIntegral $ i `shiftR` (bitSize b)) 
-                              (fromIntegral i)
+                                (fromIntegral $ i `shiftR` (bitSize b)) 
+                                (fromIntegral i)
 
+instance (Bounded a, Eq a, Num a, Enum a, Bounded b, Eq b, Num b, Enum b)
+          => Enum (BigWord a b) where
+
+    toEnum i = BigWord 0 (toEnum i)
+    fromEnum (BigWord _ l) = fromEnum l
+    pred (BigWord h 0) = BigWord (pred h) maxBound
+    pred (BigWord h l) = BigWord h (pred l)
+    succ (BigWord h l) = if l == maxBound 
+                             then BigWord (succ h) 0 
+                             else BigWord h (succ l)
+
+instance (Bits a, Real a, Bounded a, Integral a
+         ,Bits b, Real b, Bounded b, Integral b) 
+         => Real (BigWord a b) where
+
+    toRational w = toRational (fromIntegral w :: Integer)
+
+instance (Bounded a, Integral a, Bits a
+         ,Bounded b, Integral b, Bits b) 
+         => Integral (BigWord a b) where
+
+    toInteger (BigWord h l) = 
+        (fromIntegral h `shiftL` bitSize l) + (fromIntegral l)
+
+    -- Binary long division
+    quotRem a b = (q, r)
+        where r = a - q * b
+              q = go 0 (bitSize a) 0
+              go t 0 v = if v >= b then t + 1 else t
+              go t i v
+                  | v >= b    = go (setBit t i) (i-1) v2
+                  | otherwise = go t (i-1) v1
+                  where newBit = if (testBit a (i-1)) then 1 else 0
+                        v1 = (v `shiftL` 1) .|. newBit
+                        v2 = ((v-b) `shiftL` 1) .|. newBit
+              
 instance (Bounded a, Bits a, Integral a, Bounded b, Bits b, Integral b)
          => Show (BigWord a b) where
         show = show . fromIntegral

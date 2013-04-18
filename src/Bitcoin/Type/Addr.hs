@@ -1,4 +1,7 @@
-module Bitcoin.Type.Addr ( Addr(..) ) where
+module Bitcoin.Type.Addr 
+( Addr(..)
+, NetworkAddressTime 
+) where
 
 import Data.Word
 import Data.Binary.Get
@@ -11,9 +14,11 @@ import Bitcoin.Type.NetworkAddress
 import Bitcoin.Type.VarInt
 import qualified Bitcoin.Type as Bitcoin
 
+type NetworkAddressTime = (Word32, NetworkAddress)
+
 data Addr = Addr {
-    addrList :: [(Word32, NetworkAddress)]
-} deriving (Show, Read)
+    addrList :: [NetworkAddressTime]
+} deriving (Show, Read, Eq)
 
 instance Bitcoin.Type Addr where
     get = do

@@ -1,4 +1,4 @@
-module Bitcoin.Type.Hash
+module Bitcoin.Protocol.BigWord
 ( Word128
 , Word160
 , Word256
@@ -11,12 +11,16 @@ type Word128 = BigWord Word64 Word64
 type Word160 = BigWord Word32 Word128
 type Word256 = BigWord Word128 Word128
 
-data BigWord a b = BigWord !a !b
+data BigWord a b = BigWord { bwFirst :: !a, bwSecond :: !b }
     deriving (Eq, Ord, Bounded)
 
 instance (Ord a, Bits a, Integral a, Bounded a
          ,Ord b, Bits b, Integral b, Bounded b) 
          => Bits (BigWord a b) where
+
+    {-# SPECIALIZE instance Bits Word128 #-}
+    {-# SPECIALIZE instance Bits Word160 #-}
+    {-# SPECIALIZE instance Bits Word256 #-}
 
     (BigWord ah al) .&. (BigWord bh bl) = BigWord (ah .&. bh) (al .&. bl)
 
@@ -48,16 +52,20 @@ instance (Ord a, Bits a, Integral a, Bounded a
 
     isSigned _ = False
 
-instance (Ord a, Bits a, Integral a, Bounded a
-         ,Ord b, Bits b, Integral b, Bounded b) 
+instance (Ord a, Bits a, Integral a, Bounded a, Num a
+         ,Ord b, Bits b, Integral b, Bounded b, Num b) 
          => Num (BigWord a b) where
 
-    BigWord ah al + BigWord bh bl = BigWord hsum lsum
+    {-# SPECIALIZE instance Num Word128 #-}
+    {-# SPECIALIZE instance Num Word160 #-}
+    {-# SPECIALIZE instance Num Word256 #-}
+
+    (BigWord ah al) + (BigWord bh bl) = BigWord hsum lsum
         where lsum = al + bl 
               carr = if lsum < al then 1 else 0
               hsum = ah + bh + carr
 
-    BigWord ah al - BigWord bh bl = BigWord hsub lsub
+    (BigWord ah al) - (BigWord bh bl) = BigWord hsub lsub
         where lsub = al - bl
               carr = if lsub > al then 1 else 0
               hsub = ah - bh - carr
@@ -71,13 +79,19 @@ instance (Ord a, Bits a, Integral a, Bounded a
     negate = (0-)
     abs a = a
     signum a = if a > 0 then 1 else 0
-    fromInteger i = r
-        where r@(BigWord _ b) = BigWord 
-                                (fromIntegral $ i `shiftR` (bitSize b)) 
-                                (fromIntegral i)
 
-instance (Bounded a, Eq a, Num a, Enum a, Bounded b, Eq b, Num b, Enum b)
+    fromInteger i = BigWord first second
+        where second = fromInteger i
+              size   = bitSize second
+              first  = fromInteger $ i `shiftR` size
+
+instance ( Bounded a, Eq a, Num a, Enum a
+         , Bounded b, Eq b, Num b, Enum b)
           => Enum (BigWord a b) where
+
+    {-# SPECIALIZE instance Enum Word128 #-}
+    {-# SPECIALIZE instance Enum Word160 #-}
+    {-# SPECIALIZE instance Enum Word256 #-}
 
     toEnum i = BigWord 0 (toEnum i)
     fromEnum (BigWord _ l) = fromEnum l
@@ -91,11 +105,19 @@ instance (Bits a, Real a, Bounded a, Integral a
          ,Bits b, Real b, Bounded b, Integral b) 
          => Real (BigWord a b) where
 
+    {-# SPECIALIZE instance Real Word128 #-}
+    {-# SPECIALIZE instance Real Word160 #-}
+    {-# SPECIALIZE instance Real Word256 #-}
+
     toRational w = toRational (fromIntegral w :: Integer)
 
 instance (Bounded a, Integral a, Bits a
          ,Bounded b, Integral b, Bits b) 
          => Integral (BigWord a b) where
+
+    {-# SPECIALIZE instance Integral Word128 #-}
+    {-# SPECIALIZE instance Integral Word160 #-}
+    {-# SPECIALIZE instance Integral Word256 #-}
 
     toInteger (BigWord h l) = 
         (fromIntegral h `shiftL` bitSize l) + (fromIntegral l)
@@ -114,6 +136,22 @@ instance (Bounded a, Integral a, Bits a
               
 instance (Bounded a, Bits a, Integral a, Bounded b, Bits b, Integral b)
          => Show (BigWord a b) where
-        show = show . fromIntegral
+
+    {-# SPECIALIZE instance Show Word128 #-}
+    {-# SPECIALIZE instance Show Word160 #-}
+    {-# SPECIALIZE instance Show Word256 #-}
+
+    show = show . fromIntegral
+
+instance (Integral a, Num a, Bits a, Ord a, Bounded a
+         ,Integral b, Num b, Bits b, Ord b, Bounded b)
+         => Read (BigWord a b) where
+
+    {-# SPECIALIZE instance Read Word128 #-}
+    {-# SPECIALIZE instance Read Word160 #-}
+    {-# SPECIALIZE instance Read Word256 #-}
+
+    readsPrec i s = [(fromIntegral i, str) | (i,str) <- readsPrecI i s]
+        where readsPrecI = readsPrec :: Int -> ReadS Integer
 
 

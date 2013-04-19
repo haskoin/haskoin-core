@@ -1,23 +1,19 @@
 module Bitcoin.Crypto 
 ( doubleSHA256
-, checksum
+, doubleSHA256CheckSum
 ) where
 
-import Data.Word
+import Bitcoin.Protocol
 import Crypto.Hash.SHA256
-import Data.Binary.Get
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
 
-import Bitcoin.Type.Hash
-import Bitcoin.Util
-import qualified Bitcoin.Type as Bitcoin
+doubleSHA256 :: BS.ByteString -> Word256
+doubleSHA256 bs = runGet getWord256be $ BL.fromChunks [hashResult]
+    where hashResult = hash $ hash bs
 
-doubleSHA256 :: BS.ByteString -> Either String Hash
-doubleSHA256 = bsToHash . hash . hash
-
-checksum :: BS.ByteString -> Either String Word32
-checksum bs = doubleSHA256 bs >>= 
-    (Right . (runGet Bitcoin.getMsgChkSum) . toLazyBS . hashToBS)
-
+doubleSHA256CheckSum :: BS.ByteString -> Word32
+doubleSHA256CheckSum bs = runGet getWord32be $ BL.fromChunks [hashResult]
+    where hashResult = BS.take 4 $ hash $ hash bs
 

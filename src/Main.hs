@@ -2,28 +2,21 @@ import Network
 import System.IO
 import Data.Char --for ord
 import System.Random -- for randon nonce
-
-import Control.Applicative
-import Control.Monad.IO.Class
-
 import Data.Time.Clock.POSIX -- unix time
-
-import Data.Binary.Get
-import Data.Binary.Put
 
 import qualified Data.Enumerator as E
 import qualified Data.Enumerator.Binary as EB
 import Data.Enumerator ( ($$) )
 
+import Control.Applicative
+import Control.Monad.IO.Class
 import qualified Data.ByteString as BS
 
 import Bitcoin.Message
-import Bitcoin.Type.VarString
-import Bitcoin.Type.NetworkAddress
-import Bitcoin.Type.Ping
+import Bitcoin.Protocol.VarString
+import Bitcoin.Protocol.NetworkAddress
+import Bitcoin.Protocol.Ping
 import Bitcoin.Util
-
-import qualified Bitcoin.Type as Bitcoin
 
 main = withSocketsDo $ do
     h <- connectTo "127.0.0.1" (PortNumber 18333)
@@ -38,7 +31,7 @@ loopIter h = do
 
 sendVersion :: Handle -> IO ()
 sendVersion h = do
-    let zeroAddr = (0, 0x0000ffff00000000) :: IPv6
+    let zeroAddr = 0xffff00000000
         addr = NetworkAddress 1 zeroAddr 0
         ua = VarString $ BS.pack $ map (fromIntegral . ord) "/haskoin:0.0.1/"
     time <- getPOSIXTime
@@ -51,7 +44,7 @@ processMessage msg step = do
     liftIO $ print msg 
     case msg of
         MVersion _ -> (enumMessage MVerAck) step
-        MVerAck -> (enumMessage MGetAddr) step
+        --MVerAck -> (enumMessage MGetAddr) step
         MPing (Ping n) -> (enumMessage $ MPong (Pong n)) step
         _ -> E.returnI step
 

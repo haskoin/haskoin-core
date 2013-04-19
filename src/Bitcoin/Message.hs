@@ -5,9 +5,6 @@ module Bitcoin.Message
 , enumMessage
 ) where
 
-import Data.Word
-import Data.Binary.Get
-import Data.Binary.Put
 import Control.Applicative
 
 import qualified Data.Enumerator as E
@@ -19,22 +16,21 @@ import Data.Enumerator ( (>>==), ($$) )
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 
-import Bitcoin.Type.Version
-import Bitcoin.Type.Addr
-import Bitcoin.Type.MessageHeader
-import Bitcoin.Type.Inv
-import Bitcoin.Type.GetData
-import Bitcoin.Type.NotFound
-import Bitcoin.Type.GetBlocks
-import Bitcoin.Type.GetHeaders
-import Bitcoin.Type.Tx
-import Bitcoin.Type.Block
-import Bitcoin.Type.Headers
-import Bitcoin.Type.Ping
+import Bitcoin.Protocol
+import Bitcoin.Protocol.Version
+import Bitcoin.Protocol.Addr
+import Bitcoin.Protocol.MessageHeader
+import Bitcoin.Protocol.Inv
+import Bitcoin.Protocol.GetData
+import Bitcoin.Protocol.NotFound
+import Bitcoin.Protocol.GetBlocks
+import Bitcoin.Protocol.GetHeaders
+import Bitcoin.Protocol.Tx
+import Bitcoin.Protocol.Block
+import Bitcoin.Protocol.Headers
+import Bitcoin.Protocol.Ping
 import Bitcoin.Crypto
 import Bitcoin.Util
-
-import qualified Bitcoin.Type as Bitcoin
 
 testnetMagic = 0x0b110907
 
@@ -58,59 +54,56 @@ data Message =
 iterMessage :: Monad m => E.Iteratee BS.ByteString m Message
 iterMessage = do
     headBytes <- EB.take 24
-    let head   = runGet Bitcoin.get headBytes :: MessageHeader
-        length = payloadSize head
-        cmd    = command head
+    let (MessageHeader _ cmd length _) = runGet bitcoinGet headBytes
     payloadBytes <- EB.take $ fromIntegral length
-    return $ getMessage (unpackCommand cmd) payloadBytes
+    return $ getMessage cmd payloadBytes
 
 getMessage :: String -> BL.ByteString -> Message
 getMessage cmd payload = case cmd of
-    "version"    -> MVersion    $ runGet Bitcoin.get payload
+    "version"    -> MVersion    $ runGet bitcoinGet payload
     "verack"     -> MVerAck
-    "addr"       -> MAddr       $ runGet Bitcoin.get payload
-    "inv"        -> MInv        $ runGet Bitcoin.get payload
-    "getdata"    -> MGetData    $ runGet Bitcoin.get payload
-    "notfound"   -> MNotFound   $ runGet Bitcoin.get payload
-    "getblocks"  -> MGetBlocks  $ runGet Bitcoin.get payload
-    "getheaders" -> MGetHeaders $ runGet Bitcoin.get payload
-    "tx"         -> MTx         $ runGet Bitcoin.get payload
-    "block"      -> MBlock      $ runGet Bitcoin.get payload
-    "headers"    -> MHeaders    $ runGet Bitcoin.get payload
+    "addr"       -> MAddr       $ runGet bitcoinGet payload
+    "inv"        -> MInv        $ runGet bitcoinGet payload
+    "getdata"    -> MGetData    $ runGet bitcoinGet payload
+    "notfound"   -> MNotFound   $ runGet bitcoinGet payload
+    "getblocks"  -> MGetBlocks  $ runGet bitcoinGet payload
+    "getheaders" -> MGetHeaders $ runGet bitcoinGet payload
+    "tx"         -> MTx         $ runGet bitcoinGet payload
+    "block"      -> MBlock      $ runGet bitcoinGet payload
+    "headers"    -> MHeaders    $ runGet bitcoinGet payload
     "getaddr"    -> MGetAddr
-    "ping"       -> MPing       $ runGet Bitcoin.get payload
-    "pong"       -> MPong       $ runGet Bitcoin.get payload
+    "ping"       -> MPing       $ runGet bitcoinGet payload
+    "pong"       -> MPong       $ runGet bitcoinGet payload
     _            -> error $ "getMessage: Invalid command string " ++ cmd
 
 enumMessage :: Monad m => Message -> E.Enumerator BS.ByteString m b
 enumMessage msg (E.Continue k) =
     let (cmd, mPut) = putMessage msg
-        payload = toStrictBS $ runPut $ mPut
-        chksum = case (checksum payload) of
-            Right c  -> c
-            Left str -> error str
-        head = toStrictBS . runPut . Bitcoin.put $ MessageHeader
-            testnetMagic
-            (packCommand cmd)
-            (fromIntegral $ BS.length payload)
-            chksum
-        in k (E.Chunks [head `BS.append` payload])
+        payload = toStrictBS $ runPut mPut
+        chksum = doubleSHA256CheckSum payload
+        head = toStrictBS . runPut . bitcoinPut $ 
+            MessageHeader
+                testnetMagic
+                cmd
+                (fromIntegral $ BS.length payload)
+                chksum
+        in k $ E.Chunks [head, payload]
 enumMessage msg step = E.returnI step
 
-putMessage :: Message -> (String, Put)
+putMessage :: Message -> (String, BitcoinPut)
 putMessage m = case m of 
-    (MVersion v)     -> ("version", Bitcoin.put v)
+    (MVersion v)     -> ("version", bitcoinPut v)
     MVerAck          -> ("verack", return ())
-    (MAddr a)        -> ("addr", Bitcoin.put a)
-    (MInv i)         -> ("inv", Bitcoin.put i)
-    (MGetData gd)    -> ("getdata", Bitcoin.put gd)
-    (MNotFound nf)   -> ("notfound", Bitcoin.put nf)
-    (MGetBlocks gb)  -> ("getblocks", Bitcoin.put gb)
-    (MGetHeaders gh) -> ("getheaders", Bitcoin.put gh)
-    (MTx t)          -> ("tx", Bitcoin.put t)
-    (MBlock b)       -> ("block", Bitcoin.put b)
-    (MHeaders h)     -> ("headers", Bitcoin.put h)
+    (MAddr a)        -> ("addr", bitcoinPut a)
+    (MInv i)         -> ("inv", bitcoinPut i)
+    (MGetData gd)    -> ("getdata", bitcoinPut gd)
+    (MNotFound nf)   -> ("notfound", bitcoinPut nf)
+    (MGetBlocks gb)  -> ("getblocks", bitcoinPut gb)
+    (MGetHeaders gh) -> ("getheaders", bitcoinPut gh)
+    (MTx t)          -> ("tx", bitcoinPut t)
+    (MBlock b)       -> ("block", bitcoinPut b)
+    (MHeaders h)     -> ("headers", bitcoinPut h)
     MGetAddr         -> ("getaddr", return ())
-    (MPing pi)       -> ("ping", Bitcoin.put pi)
-    (MPong po)       -> ("pong", Bitcoin.put po)
+    (MPing pi)       -> ("ping", bitcoinPut pi)
+    (MPong po)       -> ("pong", bitcoinPut po)
 

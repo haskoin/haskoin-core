@@ -6,8 +6,11 @@ module Bitcoin.Protocol.Ping
 import Bitcoin.Protocol
 import Control.Applicative
 
-newtype Ping = Ping { pingNonce :: Word64 } deriving (Show, Read)
-newtype Pong = Pong { pongNonce :: Word64 } deriving (Show, Read)
+newtype Ping = Ping { pingNonce :: Word64 } 
+    deriving (Eq, Show, Read)
+
+newtype Pong = Pong { pongNonce :: Word64 } 
+    deriving (Eq, Show, Read)
 
 instance BitcoinProtocol Ping where
     bitcoinGet = Ping <$> getWord64le

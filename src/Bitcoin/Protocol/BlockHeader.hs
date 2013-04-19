@@ -10,7 +10,7 @@ data BlockHeader = BlockHeader {
     blockTimestamp :: Word32,
     blockBits      :: Word32,
     nonce          :: Word32
-} deriving (Read, Show)
+} deriving (Eq, Read, Show)
 
 instance BitcoinProtocol BlockHeader where
 

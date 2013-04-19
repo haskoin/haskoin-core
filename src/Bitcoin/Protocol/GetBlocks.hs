@@ -10,7 +10,7 @@ data GetBlocks = GetBlocks {
     getBlocksVersion :: Word32,
     blockLocatorHash :: [Word256],
     hashStop         :: Word256
-} deriving (Read, Show)
+} deriving (Eq, Read, Show)
 
 instance BitcoinProtocol GetBlocks where
 

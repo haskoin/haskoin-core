@@ -2,6 +2,7 @@ module Bitcoin.Protocol.BigWord
 ( Word128
 , Word160
 , Word256
+, BigWord(..)
 ) where
 
 import Data.Word
@@ -28,7 +29,7 @@ instance (Ord a, Bits a, Integral a, Bounded a
 
     xor (BigWord ah al) (BigWord bh bl) = BigWord (xor ah bh) (xor al bl)
 
-    complement (BigWord h l) = BigWord (complement h) (complement l) 
+    complement (BigWord h l) = BigWord (complement h) (complement l)
 
     shiftL (BigWord h l) i = 
         let low  = l `shiftL` i

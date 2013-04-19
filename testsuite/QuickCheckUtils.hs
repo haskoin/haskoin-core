@@ -1,32 +1,30 @@
 module QuickCheckUtils where
 
 import Test.QuickCheck
-import Control.Applicative
+
 import Control.Monad
+import Control.Applicative
 
-import Bitcoin.Type.VarInt
-import Bitcoin.Type.VarString
-import Bitcoin.Type.NetworkAddress
-import Bitcoin.Type.Version
-import Bitcoin.Type.Addr
-import Bitcoin.Type.BlockHeader
-
-import Bitcoin.BigWord
+import Bitcoin.Protocol
+import Bitcoin.Protocol.BigWord
+import Bitcoin.Protocol.VarInt
+import Bitcoin.Protocol.VarString
+import Bitcoin.Protocol.NetworkAddress
+import Bitcoin.Protocol.Version
+import Bitcoin.Protocol.Addr
+import Bitcoin.Protocol.BlockHeader
 
 import qualified Data.ByteString as BS
 
+instance (Arbitrary a, Arbitrary b) => Arbitrary (BigWord a b) where
+    arbitrary = BigWord <$> arbitrary <*> arbitrary
+
 -- from Data.ByteString project
 instance Arbitrary BS.ByteString where
-  arbitrary = do
-    bs <- BS.pack `fmap` arbitrary
-    n  <- choose (0, 2)
-    return (BS.drop n bs) -- to give us some with non-0 offset
-
-instance Arbitrary (BigWord a b) where
     arbitrary = do
-        a <- arbitrary :: Gen a
-        b <- arbitrary :: Gen b
-        (fromIntegral a `shiftL` bitSize b) + fromIntegral b
+        bs <- BS.pack `fmap` arbitrary
+        n  <- choose (0, 2)
+        return (BS.drop n bs) -- to give us some with non-0 offset
 
 instance Arbitrary VarInt where
     arbitrary = VarInt <$> arbitrary

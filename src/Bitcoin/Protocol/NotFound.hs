@@ -8,7 +8,7 @@ import Bitcoin.Protocol.InvVector
 
 data NotFound = NotFound {
    notFoundList :: [InvVector] 
-} deriving (Read, Show)
+} deriving (Eq, Read, Show)
 
 instance BitcoinProtocol NotFound where
 

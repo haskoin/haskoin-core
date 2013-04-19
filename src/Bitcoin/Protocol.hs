@@ -33,7 +33,7 @@ import Bitcoin.Protocol.BigWord
 type BitcoinGet = Get
 type BitcoinPut = Put
 
-class BitcoinProtocol a where
+class Eq a => BitcoinProtocol a where
     bitcoinGet :: BitcoinGet a
     bitcoinPut :: a -> BitcoinPut
 

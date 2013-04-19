@@ -10,7 +10,7 @@ import Bitcoin.Protocol.BlockHeader
 data Block = Block {
     blockHeader :: BlockHeader,
     blockTxns   :: [Tx]
-} deriving (Read, Show)
+} deriving (Eq, Read, Show)
 
 instance BitcoinProtocol Block where
 

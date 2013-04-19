@@ -7,7 +7,7 @@ import Bitcoin.Protocol
 import Control.Applicative
 
 data InvType = Error | Tx | Block
-    deriving (Show, Read)
+    deriving (Eq, Show, Read)
 
 instance BitcoinProtocol InvType where
 
@@ -26,7 +26,7 @@ instance BitcoinProtocol InvType where
 data InvVector = InvVector {
     invType :: InvType,
     invHash :: Word256
-} deriving (Show, Read)
+} deriving (Eq, Show, Read)
 
 instance BitcoinProtocol InvVector where
 

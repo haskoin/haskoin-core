@@ -15,7 +15,7 @@ data MessageHeader = MessageHeader {
     headCmd         :: String,
     headPayloadSize :: Word32,
     headChecksum    :: Word32
-} deriving (Show, Read)
+} deriving (Eq, Show, Read)
 
 instance BitcoinProtocol MessageHeader where
 

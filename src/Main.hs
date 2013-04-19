@@ -44,7 +44,7 @@ processMessage msg step = do
     liftIO $ print msg 
     case msg of
         MVersion _ -> (enumMessage MVerAck) step
-        --MVerAck -> (enumMessage MGetAddr) step
+        MVerAck -> (enumMessage MGetAddr) step
         MPing (Ping n) -> (enumMessage $ MPong (Pong n)) step
         _ -> E.returnI step
 

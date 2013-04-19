@@ -8,7 +8,7 @@ import Bitcoin.Protocol.VarInt
 
 data GetData = GetData {
    getDataList :: [InvVector] 
-} deriving (Read, Show)
+} deriving (Eq, Read, Show)
 
 instance BitcoinProtocol GetData where
 

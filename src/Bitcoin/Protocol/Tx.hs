@@ -17,7 +17,7 @@ data Tx = Tx {
     txIn       :: [TxIn],
     txOut      :: [TxOut],
     txLockTime :: Word32
-} deriving (Read, Show)
+} deriving (Eq, Read, Show)
 
 instance BitcoinProtocol Tx where
 
@@ -39,7 +39,7 @@ data TxIn = TxIn {
     prevOutput   :: OutPoint,
     sigScript    :: BS.ByteString,
     txInSequence :: Word32
-} deriving (Read, Show)
+} deriving (Eq, Read, Show)
 
 instance BitcoinProtocol TxIn where
 
@@ -57,7 +57,7 @@ instance BitcoinProtocol TxIn where
 data TxOut = TxOut {
     outValue     :: Word64,
     scriptPubKey :: BS.ByteString
-} deriving (Read, Show)
+} deriving (Eq, Read, Show)
 
 instance BitcoinProtocol TxOut where
 
@@ -73,7 +73,7 @@ instance BitcoinProtocol TxOut where
 data OutPoint = OutPoint {
     outPointHash  :: Word256,
     outPointIndex :: Word32
-} deriving (Read, Show)
+} deriving (Eq, Read, Show)
 
 instance BitcoinProtocol OutPoint where
 

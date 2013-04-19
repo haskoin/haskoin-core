@@ -13,7 +13,7 @@ type BlockHeaderCount = (BlockHeader, VarInt)
 
 data Headers = Headers {
     headersList :: [BlockHeaderCount]
-} deriving (Read, Show)
+} deriving (Eq, Read, Show)
 
 instance BitcoinProtocol Headers where
 

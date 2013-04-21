@@ -31,23 +31,27 @@ instance (Ord a, Bits a, Integral a, Bounded a
 
     complement (BigWord h l) = BigWord (complement h) (complement l)
 
-    shiftL (BigWord h l) i = 
-        let low  = l `shiftL` i
-            high = h `shiftL` i
-            size = bitSize l
-            ovfl = if i <= size
+    shiftL bw@(BigWord h l) i
+        | i >= 0 = 
+            let low  = l `shiftL` i
+                high = h `shiftL` i
+                size = bitSize l
+                ovfl = if i <= size
                     then fromIntegral $ l `shiftR` (size - i)
                     else (fromIntegral l) `shiftL` (i - size)
-            in BigWord (high .|. ovfl) low
+                in BigWord (high .|. ovfl) low
+        | otherwise = shiftR bw (abs i)
 
-    shiftR (BigWord h l) i = 
-        let low  = l `shiftR` i
-            high = h `shiftR` i
-            size = bitSize l
-            ovfl = if i <= size
-                    then (fromIntegral h) `shiftL` (size - i)
-                    else fromIntegral $ h `shiftR` (i - size)
-            in BigWord high (low .|. ovfl)
+    shiftR bw@(BigWord h l) i 
+        | i >= 0 =
+            let low  = l `shiftR` i
+                high = h `shiftR` i
+                size = bitSize l
+                ovfl = if i <= size
+                        then (fromIntegral h) `shiftL` (size - i)
+                        else fromIntegral $ h `shiftR` (i - size)
+                in BigWord high (low .|. ovfl)
+        | otherwise = shiftL bw (abs i)
 
     bitSize (BigWord h l) = bitSize h + bitSize l
 

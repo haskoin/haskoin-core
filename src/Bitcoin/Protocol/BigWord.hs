@@ -128,6 +128,7 @@ instance (Bounded a, Integral a, Bits a
         (fromIntegral h `shiftL` bitSize l) + (fromIntegral l)
 
     -- Binary long division
+    quotRem _ 0 = error "divide by zero"
     quotRem a b = (q, r)
         where r = a - q * b
               q = go 0 (bitSize a) 0

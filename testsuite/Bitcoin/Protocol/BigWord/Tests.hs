@@ -165,6 +165,66 @@ tests =
         , testProperty "distributivity" 
             (meta_plus5 :: Word128 -> Word128 -> Word128 -> Bool)
         ]
+    , testGroup "numeric addition Word160"
+        [ testProperty "vs Integer" 
+            (meta_plus1 :: Word160 -> Word160 -> Bool)
+        , testProperty "associativity" 
+            (meta_plus2 :: Word160 -> Word160 -> Word160 -> Bool)
+        , testProperty "commutativity" 
+            (meta_plus3 :: Word160 -> Word160 -> Bool)
+        , testProperty "additive identity" 
+            (meta_plus4 :: Word160 -> Bool)
+        , testProperty "distributivity" 
+            (meta_plus5 :: Word160 -> Word160 -> Word160 -> Bool)
+        ]
+    , testGroup "numeric addition Word256"
+        [ testProperty "vs Integer" 
+            (meta_plus1 :: Word256 -> Word256 -> Bool)
+        , testProperty "associativity" 
+            (meta_plus2 :: Word256 -> Word256 -> Word256 -> Bool)
+        , testProperty "commutativity" 
+            (meta_plus3 :: Word256 -> Word256 -> Bool)
+        , testProperty "additive identity" 
+            (meta_plus4 :: Word256 -> Bool)
+        , testProperty "distributivity" 
+            (meta_plus5 :: Word256 -> Word256 -> Word256 -> Bool)
+        ]
+    , testGroup "numeric substraction Word128"
+        [ testProperty "vs Integer" 
+            (meta_plus1 :: Word128 -> Word128 -> Bool)
+        , testProperty "associativity" 
+            (meta_plus2 :: Word128 -> Word128 -> Word128 -> Bool)
+        , testProperty "inverse terms" 
+            (meta_plus3 :: Word128 -> Word128 -> Bool)
+        , testProperty "subtraction identity" 
+            (meta_plus4 :: Word128 -> Bool)
+        , testProperty "distributivity" 
+            (meta_plus5 :: Word128 -> Word128 -> Word128 -> Bool)
+        ]
+    , testGroup "numeric substraction Word160"
+        [ testProperty "vs Integer" 
+            (meta_plus1 :: Word160 -> Word160 -> Bool)
+        , testProperty "associativity" 
+            (meta_plus2 :: Word160 -> Word160 -> Word160 -> Bool)
+        , testProperty "inverse terms" 
+            (meta_plus3 :: Word160 -> Word160 -> Bool)
+        , testProperty "substraction identity" 
+            (meta_plus4 :: Word160 -> Bool)
+        , testProperty "distributivity" 
+            (meta_plus5 :: Word160 -> Word160 -> Word160 -> Bool)
+        ]
+    , testGroup "numeric substraction Word256"
+        [ testProperty "vs Integer" 
+            (meta_plus1 :: Word256 -> Word256 -> Bool)
+        , testProperty "associativity" 
+            (meta_plus2 :: Word256 -> Word256 -> Word256 -> Bool)
+        , testProperty "inverse terms" 
+            (meta_plus3 :: Word256 -> Word256 -> Bool)
+        , testProperty "substraction identity" 
+            (meta_plus4 :: Word256 -> Bool)
+        , testProperty "distributivity" 
+            (meta_plus5 :: Word256 -> Word256 -> Word256 -> Bool)
+        ]
     ]
 
 meta_and1 a b = fromIntegral (a .&. b) == (ma .&. mb)
@@ -274,4 +334,16 @@ meta_plus3 a b = a + b == b + a
 meta_plus4 a = a + 0 == a
 
 meta_plus5 a b c = a * (b + c) == (a * b) + (a * c)
+
+meta_min1 a b = fromIntegral (a - b) == (ma - mb) `mod` (2 ^ (bitSize a))
+    where ma = fromIntegral a :: Integer
+          mb = fromIntegral b :: Integer
+
+meta_min2 a b c = (a - b) - c == a - (b - c)
+
+meta_min3 a b = a - b == (-b) + a
+
+meta_min4 a = a - 0 == a
+
+meta_min5 a b c = a * (b - c) == (a * b) - (a * c)
 

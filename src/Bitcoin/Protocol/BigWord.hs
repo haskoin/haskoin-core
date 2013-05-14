@@ -32,6 +32,7 @@ instance (Ord a, Bits a, Integral a, Bounded a
     complement (BigWord h l) = BigWord (complement h) (complement l)
 
     shiftL bw@(BigWord h l) i
+        | abs i >= bitSize bw = 0
         | i >= 0 = 
             let low  = l `shiftL` i
                 high = h `shiftL` i
@@ -43,6 +44,7 @@ instance (Ord a, Bits a, Integral a, Bounded a
         | otherwise = shiftR bw (abs i)
 
     shiftR bw@(BigWord h l) i 
+        | abs i >= bitSize bw = 0
         | i >= 0 =
             let low  = l `shiftR` i
                 high = h `shiftR` i

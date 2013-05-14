@@ -31,29 +31,32 @@ instance (Ord a, Bits a, Integral a, Bounded a
 
     complement (BigWord h l) = BigWord (complement h) (complement l)
 
-    shiftL bw@(BigWord h l) i
-        | abs i >= bitSize bw = 0
-        | i >= 0 = 
-            let low  = l `shiftL` i
-                high = h `shiftL` i
-                size = bitSize l
-                ovfl = if i <= size
-                    then fromIntegral $ l `shiftR` (size - i)
-                    else (fromIntegral l) `shiftL` (i - size)
-                in BigWord (high .|. ovfl) low
-        | otherwise = shiftR bw (abs i)
+    shift bw i = fromIntegral (model `shift` i)
+        where model = fromIntegral bw :: Integer
 
-    shiftR bw@(BigWord h l) i 
-        | abs i >= bitSize bw = 0
-        | i >= 0 =
-            let low  = l `shiftR` i
-                high = h `shiftR` i
-                size = bitSize l
-                ovfl = if i <= size
-                        then (fromIntegral h) `shiftL` (size - i)
-                        else fromIntegral $ h `shiftR` (i - size)
-                in BigWord high (low .|. ovfl)
-        | otherwise = shiftL bw (abs i)
+--    shiftL bw@(BigWord h l) i
+--        | abs i >= bitSize bw = 0
+--        | i >= 0 = 
+--            let low  = l `shiftL` i
+--                high = h `shiftL` i
+--                size = bitSize l
+--                ovfl = if i <= size
+--                    then fromIntegral $ l `shiftR` (size - i)
+--                    else (fromIntegral l) `shiftL` (i - size)
+--                in BigWord (high .|. ovfl) low
+--        | otherwise = shiftR bw (abs i)
+--
+--    shiftR bw@(BigWord h l) i 
+--        | abs i >= bitSize bw = 0
+--        | i >= 0 =
+--            let low  = l `shiftR` i
+--                high = h `shiftR` i
+--                size = bitSize l
+--                ovfl = if i <= size
+--                        then (fromIntegral h) `shiftL` (size - i)
+--                        else fromIntegral $ h `shiftR` (i - size)
+--                in BigWord high (low .|. ovfl)
+--        | otherwise = shiftL bw (abs i)
 
     bitSize (BigWord h l) = bitSize h + bitSize l
 
@@ -77,11 +80,15 @@ instance (Ord a, Bits a, Integral a, Bounded a, Num a
               carr = if lsub > al then 1 else 0
               hsub = ah - bh - carr
 
-    x * y = go x y 0
-        where go x y r
-                | y == 0       = r
-                | y .&. 1 == 1 = go (x `shiftL` 1) (y `shiftR` 1) (r+x)
-                | otherwise    = go (x `shiftL` 1) (y `shiftR` 1) r
+    x * y = fromIntegral (mx * my)
+        where mx = fromIntegral x :: Integer
+              my = fromIntegral y :: Integer
+
+--    x * y = go x y 0
+--        where go x y r
+--                | y == 0       = r
+--                | y .&. 1 == 1 = go (x `shiftL` 1) (y `shiftR` 1) (r+x)
+--                | otherwise    = go (x `shiftL` 1) (y `shiftR` 1) r
 
     negate = (0-)
     abs a = a
@@ -129,18 +136,23 @@ instance (Bounded a, Integral a, Bits a
     toInteger (BigWord h l) = 
         (fromIntegral h `shiftL` bitSize l) + (fromIntegral l)
 
+    quotRem a b = (fromIntegral q, fromIntegral r)
+        where (q, r) = ma `quotRem` mb
+              ma = fromIntegral a :: Integer
+              mb = fromIntegral b :: Integer
+
     -- Binary long division
-    quotRem _ 0 = error "divide by zero"
-    quotRem a b = (q, r)
-        where r = a - q * b
-              q = go 0 (bitSize a) 0
-              go t 0 v = if v >= b then t + 1 else t
-              go t i v
-                  | v >= b    = go (setBit t i) (i-1) v2
-                  | otherwise = go t (i-1) v1
-                  where newBit = if (testBit a (i-1)) then 1 else 0
-                        v1 = (v `shiftL` 1) .|. newBit
-                        v2 = ((v-b) `shiftL` 1) .|. newBit
+--    quotRem _ 0 = error "divide by zero"
+--    quotRem a b = (q, r)
+--        where r = a - q * b
+--              q = go 0 (bitSize a) 0
+--              go t 0 v = if v >= b then t + 1 else t
+--              go t i v
+--                  | v >= b    = go (setBit t i) (i-1) v2
+--                  | otherwise = go t (i-1) v1
+--                  where newBit = if (testBit a (i-1)) then 1 else 0
+--                        v1 = (v `shiftL` 1) .|. newBit
+--                        v2 = ((v-b) `shiftL` 1) .|. newBit
               
 instance (Bounded a, Bits a, Integral a, Bounded b, Bits b, Integral b)
          => Show (BigWord a b) where

@@ -20,6 +20,8 @@ import Bitcoin.Util
 import Bitcoin.Protocol.Tx
 import qualified Bitcoin.Constants as Const
 
+import qualified Text.Show.Pretty as Pr
+
 main = withSocketsDo $ do
     h <- connectTo "127.0.0.1" (PortNumber 18333)
     hSetBuffering h LineBuffering
@@ -43,7 +45,7 @@ sendVersion h = do
 
 processMessage :: MonadIO m => Message -> E.Enumerator BS.ByteString m b
 processMessage msg step = do
-    liftIO $ print msg 
+    liftIO $ putStrLn $ Pr.ppShow msg 
     case msg of
         MVersion _ -> (enumMessage MVerAck) step
         --MVerAck -> (enumMessage MGetAddr) step

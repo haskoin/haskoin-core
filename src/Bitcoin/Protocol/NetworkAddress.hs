@@ -3,8 +3,6 @@ module Bitcoin.Protocol.NetworkAddress ( NetworkAddress(..) ) where
 import Bitcoin.Protocol
 import Control.Applicative
 
-import qualified Data.ByteString as BS
-
 data NetworkAddress = NetworkAddress {
     services :: Word64,
     address  :: Word128,

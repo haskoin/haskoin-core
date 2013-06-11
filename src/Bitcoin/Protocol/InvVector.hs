@@ -16,6 +16,7 @@ instance BitcoinProtocol InvType where
                           0 -> return Error
                           1 -> return Tx
                           2 -> return Block
+                          _ -> error "bitcoinGet InvType: Invalid Type"
 
     bitcoinPut x = 
         putWord32le $ case x of

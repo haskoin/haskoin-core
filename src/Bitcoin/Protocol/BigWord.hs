@@ -143,7 +143,8 @@ instance (Bounded a, Integral a, Bits a
               ma = fromIntegral a :: Integer
               mb = fromIntegral b :: Integer
 
-    -- Binary long division
+-- Binary long division : Keeping for reference only
+--
 --    quotRem _ 0 = error "divide by zero"
 --    quotRem a b = (q, r)
 --        where r = a - q * b
@@ -164,7 +165,7 @@ instance (Bounded a, Bits a, Integral a
     {-# SPECIALIZE instance Show Word160 #-}
     {-# SPECIALIZE instance Show Word256 #-}
 
-    show = show . fromIntegral
+    show = show . (fromIntegral :: Integral a => a -> Integer)
 
 instance (Integral a, Num a, Bits a, Ord a, Bounded a
          ,Integral b, Num b, Bits b, Ord b, Bounded b)
@@ -174,7 +175,7 @@ instance (Integral a, Num a, Bits a, Ord a, Bounded a
     {-# SPECIALIZE instance Read Word160 #-}
     {-# SPECIALIZE instance Read Word256 #-}
 
-    readsPrec i s = [(fromIntegral i, str) | (i,str) <- readsPrecI i s]
+    readsPrec i s = [(fromIntegral x, str) | (x,str) <- readsPrecI i s]
         where readsPrecI = readsPrec :: Int -> ReadS Integer
 
 

@@ -12,8 +12,8 @@ data NotFound = NotFound {
 
 instance BitcoinProtocol NotFound where
 
-    bitcoinGet = NotFound <$> (readList =<< bitcoinGet)
-        where readList (VarInt c) = replicateM (fromIntegral c) bitcoinGet
+    bitcoinGet = NotFound <$> (repList =<< bitcoinGet)
+        where repList (VarInt c) = replicateM (fromIntegral c) bitcoinGet
 
     bitcoinPut (NotFound xs) = do
         bitcoinPut $ lengthFromList xs

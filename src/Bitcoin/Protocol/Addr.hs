@@ -17,8 +17,8 @@ data Addr = Addr {
 
 instance BitcoinProtocol Addr where
 
-    bitcoinGet = Addr <$> (readList =<< bitcoinGet)
-        where readList (VarInt c) = replicateM (fromIntegral c) action
+    bitcoinGet = Addr <$> (repList =<< bitcoinGet)
+        where repList (VarInt c) = replicateM (fromIntegral c) action
               action = liftM2 (,) getWord32le bitcoinGet 
 
     bitcoinPut (Addr xs) = do

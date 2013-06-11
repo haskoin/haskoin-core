@@ -12,8 +12,8 @@ data GetData = GetData {
 
 instance BitcoinProtocol GetData where
 
-    bitcoinGet = GetData <$> (readList =<< bitcoinGet)
-        where readList (VarInt c) = replicateM (fromIntegral c) bitcoinGet
+    bitcoinGet = GetData <$> (repList =<< bitcoinGet)
+        where repList (VarInt c) = replicateM (fromIntegral c) bitcoinGet
 
     bitcoinPut (GetData xs) = do
         bitcoinPut $ lengthFromList xs

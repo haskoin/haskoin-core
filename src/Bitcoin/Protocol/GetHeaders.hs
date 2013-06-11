@@ -14,9 +14,9 @@ data GetHeaders = GetHeaders {
 instance BitcoinProtocol GetHeaders where
 
     bitcoinGet = GetHeaders <$> getWord32le
-                            <*> (readList =<< bitcoinGet)
+                            <*> (repList =<< bitcoinGet)
                             <*> getWord256be
-        where readList (VarInt c) = replicateM (fromIntegral c) getWord256be
+        where repList (VarInt c) = replicateM (fromIntegral c) getWord256be
 
     bitcoinPut (GetHeaders v xs h) = do
         putWord32le v

@@ -6,9 +6,7 @@ import Data.Time.Clock.POSIX -- unix time
 
 import qualified Data.Enumerator as E
 import qualified Data.Enumerator.Binary as EB
-import Data.Enumerator ( ($$) )
 
-import Control.Applicative
 import Control.Monad.IO.Class
 import qualified Data.ByteString as BS
 
@@ -16,21 +14,22 @@ import Bitcoin.Message
 import Bitcoin.Protocol.VarString
 import Bitcoin.Protocol.NetworkAddress
 import Bitcoin.Protocol.Ping
-import Bitcoin.Util
 import Bitcoin.Protocol.Tx
 import qualified Bitcoin.Constants as Const
 
 import qualified Text.Show.Pretty as Pr
 
+main :: IO ()
 main = withSocketsDo $ do
     h <- connectTo "127.0.0.1" (PortNumber 18333)
     hSetBuffering h LineBuffering
     sendVersion h
-    E.run_ $ (EB.enumHandle 1024 h) $$ (loopIter h)
+    E.run_ $ (EB.enumHandle 1024 h) E.$$ (loopIter h)
 
+loopIter :: MonadIO m => Handle -> E.Iteratee BS.ByteString m b
 loopIter h = do
     req <- iterMessage
-    E.run_ $ (processMessage req) $$ (EB.iterHandle h)
+    E.run_ $ (processMessage req) E.$$ (EB.iterHandle h)
     loopIter h
 
 sendVersion :: Handle -> IO ()
@@ -39,9 +38,9 @@ sendVersion h = do
         addr = NetworkAddress 1 zeroAddr 0
         ua = VarString $ BS.pack $ map (fromIntegral . ord) "/haskoin:0.0.1/"
     time <- getPOSIXTime
-    nonce <- randomIO
-    let version = Version 70001 1 (floor time) addr addr nonce ua 0 False
-    E.run_ $ (enumMessage $ MVersion version) $$ (EB.iterHandle h)
+    rdmn <- randomIO -- nonce
+    let vers = Version 70001 1 (floor time) addr addr rdmn ua 0 False
+    E.run_ $ (enumMessage $ MVersion vers) E.$$ (EB.iterHandle h)
 
 processMessage :: MonadIO m => Message -> E.Enumerator BS.ByteString m b
 processMessage msg step = do
@@ -64,6 +63,5 @@ checkTransaction :: Tx -> Bool
 checkTransaction tx = case tx of
     (Tx _ [] _ _) -> False --vin False
     (Tx _ _ [] _) -> False --vout False
-    (Tx ver vin vout nlock) 
-        -> not $ getSerializeSize (MTx tx) > Const.maxBlockSize
+    _ -> not $ getSerializeSize (MTx tx) > Const.maxBlockSize
     

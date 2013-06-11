@@ -15,8 +15,8 @@ data Block = Block {
 instance BitcoinProtocol Block where
 
     bitcoinGet = Block <$> bitcoinGet
-                       <*> (readList =<< bitcoinGet)
-        where readList (VarInt c) = replicateM (fromIntegral c) bitcoinGet
+                       <*> (repList =<< bitcoinGet)
+        where repList (VarInt c) = replicateM (fromIntegral c) bitcoinGet
 
     bitcoinPut (Block h xs) = do
         bitcoinPut h

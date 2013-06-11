@@ -4,7 +4,6 @@ import Control.Applicative
 import Bitcoin.Protocol
 import Bitcoin.Protocol.VarString
 import Bitcoin.Protocol.NetworkAddress
-import Bitcoin.Util
 
 data Version = Version {
     version     :: Word32,

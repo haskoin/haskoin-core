@@ -22,10 +22,10 @@ data Tx = Tx {
 instance BitcoinProtocol Tx where
 
     bitcoinGet = Tx <$> getWord32le
-                    <*> (readList =<< bitcoinGet)
-                    <*> (readList =<< bitcoinGet)
+                    <*> (replicateList =<< bitcoinGet)
+                    <*> (replicateList =<< bitcoinGet)
                     <*> getWord32le
-        where readList (VarInt c) = replicateM (fromIntegral c) bitcoinGet
+        where replicateList (VarInt c) = replicateM (fromIntegral c) bitcoinGet
 
     bitcoinPut (Tx v is os l) = do
         putWord32le v

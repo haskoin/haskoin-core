@@ -6,13 +6,8 @@ module Bitcoin.Message
 , getSerializeSize
 ) where
 
-import Control.Applicative
-
-import qualified Data.Enumerator as E
 import qualified Data.Enumerator.Binary as EB
-import qualified Data.Enumerator.List as EL
-
-import Data.Enumerator ( (>>==), ($$) )
+import qualified Data.Enumerator as E 
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
@@ -32,8 +27,7 @@ import Bitcoin.Protocol.Headers
 import Bitcoin.Protocol.Ping
 import Bitcoin.Crypto
 import Bitcoin.Util
-
-testnetMagic = 0x0b110907
+import Bitcoin.Constants
 
 data Message = 
     MVersion Version | 
@@ -55,8 +49,8 @@ data Message =
 iterMessage :: Monad m => E.Iteratee BS.ByteString m Message
 iterMessage = do
     headBytes <- EB.take 24
-    let (MessageHeader _ cmd length _) = runGet bitcoinGet headBytes
-    payloadBytes <- EB.take $ fromIntegral length
+    let (MessageHeader _ cmd len _) = runGet bitcoinGet headBytes
+    payloadBytes <- EB.take $ fromIntegral len
     return $ getMessage cmd payloadBytes
 
 getMessage :: String -> BL.ByteString -> Message
@@ -82,14 +76,14 @@ enumMessage msg (E.Continue k) =
     let (cmd, mPut) = putMessage msg
         payload = toStrictBS $ runPut mPut
         chksum = doubleSHA256CheckSum payload
-        head = toStrictBS . runPut . bitcoinPut $ 
+        header = toStrictBS . runPut . bitcoinPut $ 
             MessageHeader
                 testnetMagic
                 cmd
                 (fromIntegral $ BS.length payload)
                 chksum
-        in k $ E.Chunks [head, payload]
-enumMessage msg step = E.returnI step
+        in k $ E.Chunks [header, payload]
+enumMessage _ step = E.returnI step
 
 putMessage :: Message -> (String, BitcoinPut)
 putMessage m = case m of 
@@ -105,8 +99,8 @@ putMessage m = case m of
     (MBlock b)       -> ("block", bitcoinPut b)
     (MHeaders h)     -> ("headers", bitcoinPut h)
     MGetAddr         -> ("getaddr", return ())
-    (MPing pi)       -> ("ping", bitcoinPut pi)
-    (MPong po)       -> ("pong", bitcoinPut po)
+    (MPing p)        -> ("ping", bitcoinPut p)
+    (MPong p)        -> ("pong", bitcoinPut p)
 
 getSerializeSize :: Message -> Int
 getSerializeSize m = BS.length (payload m) + 24

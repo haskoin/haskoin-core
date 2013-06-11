@@ -17,8 +17,8 @@ data Headers = Headers {
 
 instance BitcoinProtocol Headers where
 
-    bitcoinGet = Headers <$> (readList =<< bitcoinGet)
-        where readList (VarInt c) = replicateM (fromIntegral c) action
+    bitcoinGet = Headers <$> (repList =<< bitcoinGet)
+        where repList (VarInt c) = replicateM (fromIntegral c) action
               action = liftM2 (,) bitcoinGet bitcoinGet
 
     bitcoinPut (Headers xs) = do

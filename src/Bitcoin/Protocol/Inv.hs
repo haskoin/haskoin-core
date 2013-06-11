@@ -12,8 +12,8 @@ data Inv = Inv {
 
 instance BitcoinProtocol Inv where
 
-    bitcoinGet = Inv <$> (readList =<< bitcoinGet)
-        where readList (VarInt c) = replicateM (fromIntegral c) bitcoinGet
+    bitcoinGet = Inv <$> (repList =<< bitcoinGet)
+        where repList (VarInt c) = replicateM (fromIntegral c) bitcoinGet
 
     bitcoinPut (Inv xs) = do
         bitcoinPut $ lengthFromList xs

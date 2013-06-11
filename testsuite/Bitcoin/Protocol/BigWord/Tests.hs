@@ -225,6 +225,36 @@ tests =
         , testProperty "distributivity" 
             (meta_sub4 :: Word256 -> Word256 -> Word256 -> Bool)
         ]
+    , testGroup "numeric multiplication Word128"
+        [ testProperty "vs Integer" 
+            (meta_mul1 :: Word128 -> Word128 -> Bool)
+        , testProperty "commutativity" 
+            (meta_mul2 :: Word128 -> Word128 -> Word128 -> Bool)
+        , testProperty "inverse terms" 
+            (meta_mul3 :: Word128 -> Word128 -> Bool)
+        , testProperty "identity" 
+            (meta_mul4 :: Word128 -> Bool)
+        ]
+    , testGroup "numeric multiplication Word160"
+        [ testProperty "vs Integer" 
+            (meta_mul1 :: Word160 -> Word160 -> Bool)
+        , testProperty "commutativity" 
+            (meta_mul2 :: Word160 -> Word160 -> Word160 -> Bool)
+        , testProperty "inverse terms" 
+            (meta_mul3 :: Word160 -> Word160 -> Bool)
+        , testProperty "identity" 
+            (meta_mul4 :: Word160 -> Bool)
+        ]
+    , testGroup "numeric multiplication Word256"
+        [ testProperty "vs Integer" 
+            (meta_mul1 :: Word256 -> Word256 -> Bool)
+        , testProperty "commutativity" 
+            (meta_mul2 :: Word256 -> Word256 -> Word256 -> Bool)
+        , testProperty "inverse terms" 
+            (meta_mul3 :: Word256 -> Word256 -> Bool)
+        , testProperty "identity" 
+            (meta_mul4 :: Word256 -> Bool)
+        ]
     ]
 
 meta_and1 a b = fromIntegral (a .&. b) == (ma .&. mb)
@@ -356,6 +386,4 @@ meta_mul2 a b c = (a * b) * c == a * (b * c)
 meta_mul3 a b = a * b == b * a
 
 meta_mul4 a = a * 1 == a
-
-meta_mul5 a b c = a ^ (b * c) == (a ^ b) ^ c
 

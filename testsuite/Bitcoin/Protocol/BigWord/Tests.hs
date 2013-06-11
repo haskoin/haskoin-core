@@ -164,6 +164,8 @@ tests =
             (meta_plus4 :: Word128 -> Bool)
         , testProperty "distributivity" 
             (meta_plus5 :: Word128 -> Word128 -> Word128 -> Bool)
+        , testProperty "power addition" 
+            (meta_plus6 :: Word128 -> Word128 -> Word128 -> Bool)
         ]
     , testGroup "numeric addition Word160"
         [ testProperty "vs Integer" 
@@ -176,6 +178,8 @@ tests =
             (meta_plus4 :: Word160 -> Bool)
         , testProperty "distributivity" 
             (meta_plus5 :: Word160 -> Word160 -> Word160 -> Bool)
+        , testProperty "power addition" 
+            (meta_plus6 :: Word160 -> Word160 -> Word160 -> Bool)
         ]
     , testGroup "numeric addition Word256"
         [ testProperty "vs Integer" 
@@ -188,6 +192,8 @@ tests =
             (meta_plus4 :: Word256 -> Bool)
         , testProperty "distributivity" 
             (meta_plus5 :: Word256 -> Word256 -> Word256 -> Bool)
+        , testProperty "power addition" 
+            (meta_plus6 :: Word256 -> Word256 -> Word256 -> Bool)
         ]
     , testGroup "numeric substraction Word128"
         [ testProperty "vs Integer" 
@@ -329,6 +335,8 @@ meta_plus4 a = a + 0 == a
 
 meta_plus5 a b c = a * (b + c) == (a * b) + (a * c)
 
+meta_plus6 a b c = a ^ (b + c) == (a ^ b) * (a ^ c)
+
 meta_sub1 a b = fromIntegral (a - b) == (ma - mb) `mod` (2 ^ (bitSize a))
     where ma = fromIntegral a :: Integer
           mb = fromIntegral b :: Integer
@@ -338,4 +346,16 @@ meta_sub2 a b = a - b == (-b) + a
 meta_sub3 a = a - 0 == a
 
 meta_sub4 a b c = a * (b - c) == (a * b) - (a * c)
+
+meta_mul1 a b = fromIntegral (a * b) == (ma * mb) `mod` (2 ^ (bitSize a))
+    where ma = fromIntegral a :: Integer
+          mb = fromIntegral b :: Integer
+
+meta_mul2 a b c = (a * b) * c == a * (b * c)
+
+meta_mul3 a b = a * b == b * a
+
+meta_mul4 a = a * 1 == a
+
+meta_mul5 a b c = a ^ (b * c) == (a ^ b) ^ c
 

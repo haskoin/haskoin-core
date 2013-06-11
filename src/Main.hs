@@ -17,6 +17,8 @@ import Bitcoin.Protocol.VarString
 import Bitcoin.Protocol.NetworkAddress
 import Bitcoin.Protocol.Ping
 import Bitcoin.Util
+import Bitcoin.Protocol.Tx
+import qualified Bitcoin.Constants as Const
 
 main = withSocketsDo $ do
     h <- connectTo "127.0.0.1" (PortNumber 18333)
@@ -44,7 +46,22 @@ processMessage msg step = do
     liftIO $ print msg 
     case msg of
         MVersion _ -> (enumMessage MVerAck) step
-        MVerAck -> (enumMessage MGetAddr) step
+        --MVerAck -> (enumMessage MGetAddr) step
         MPing (Ping n) -> (enumMessage $ MPong (Pong n)) step
+        MTx t -> (processTx t) step
         _ -> E.returnI step
 
+processTx :: MonadIO m => Tx -> E.Enumerator BS.ByteString m b
+processTx tx step = do
+    liftIO $ if (checkTransaction tx)
+                 then putStr "checkTransaction true"
+                 else putStr "checkTransaction false"
+    E.enumEOF step
+
+checkTransaction :: Tx -> Bool
+checkTransaction tx = case tx of
+    (Tx _ [] _ _) -> False --vin False
+    (Tx _ _ [] _) -> False --vout False
+    (Tx ver vin vout nlock) 
+        -> not $ getSerializeSize (MTx tx) > Const.maxBlockSize
+    

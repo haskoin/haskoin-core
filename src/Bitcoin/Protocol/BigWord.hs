@@ -34,6 +34,8 @@ instance (Ord a, Bits a, Integral a, Bounded a
     shift bw i = fromIntegral (model `shift` i)
         where model = fromIntegral bw :: Integer
 
+--    Keeping this for reference only
+--
 --    shiftL bw@(BigWord h l) i
 --        | abs i >= bitSize bw = 0
 --        | i >= 0 = 
@@ -154,7 +156,8 @@ instance (Bounded a, Integral a, Bits a
 --                        v1 = (v `shiftL` 1) .|. newBit
 --                        v2 = ((v-b) `shiftL` 1) .|. newBit
               
-instance (Bounded a, Bits a, Integral a, Bounded b, Bits b, Integral b)
+instance (Bounded a, Bits a, Integral a
+         ,Bounded b, Bits b, Integral b)
          => Show (BigWord a b) where
 
     {-# SPECIALIZE instance Show Word128 #-}

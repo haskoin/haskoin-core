@@ -3,6 +3,7 @@ module Bitcoin.Message
 , Version(..)
 , iterMessage
 , enumMessage
+, getSerializeSize
 ) where
 
 import Control.Applicative
@@ -106,4 +107,8 @@ putMessage m = case m of
     MGetAddr         -> ("getaddr", return ())
     (MPing pi)       -> ("ping", bitcoinPut pi)
     (MPong po)       -> ("pong", bitcoinPut po)
+
+getSerializeSize :: Message -> Int
+getSerializeSize m = BS.length (payload m) + 24
+    where payload = toStrictBS . runPut . snd . putMessage
 

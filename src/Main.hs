@@ -9,6 +9,7 @@ import qualified Data.Enumerator as E
 import qualified Data.Enumerator.Binary as EB
 
 import Control.Monad
+import Control.Monad.State
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
 
@@ -25,41 +26,42 @@ import Bitcoin.Protocol.Tx
 import Bitcoin.Protocol.Inv
 import Bitcoin.Protocol.GetData
 import Bitcoin.Protocol.Block
-import Bitcoin.LevelDB
+
+import qualified Bitcoin.LevelDB as DB
 import qualified Bitcoin.Constants as Const
 
 import qualified Text.Show.Pretty as Pr
 
-mainContext :: ResourceT IO a -> IO a 
-mainContext = withSocketsDo . DB.runResourceT
+type Application = Message -> DB.BlockChainIO (Maybe Message)
 
 main :: IO ()
-main = mainContext $ do
-    db <- DB.open "blockindex" 
-        DB.defaultOptions { DB.createIfMissing = True
-                          , DB.cacheSize = 2048
-                          }
+main = withSocketsDo . DB.runResourceT $ do
+    db <- DB.getHandle
     h <- liftIO $ do 
         h <- connectTo "127.0.0.1" (PortNumber 18333)
         hSetBuffering h LineBuffering
         sendVersion h
         return h
-    E.run_ $ (EB.enumHandle 1024 h) E.$$ (loopIter h db)
+    E.run_ $ (EB.enumHandle 1024 h) E.$$ mainLoop db h
 
-loopIter :: MonadIO m => Handle -> DB.DB -> E.Iteratee BS.ByteString m b
-loopIter h db = do
-    req <- iterMessage
-    E.run_ $ (processMessage req) E.$$ (EB.iterHandle h)
-    case req of
-        MBlock block -> writeBlock db block
-        _            -> ldbContext $ return ()
-    loopIter h db
+mainLoop :: DB.DB -> Handle -> E.Iteratee BS.ByteString (ResourceT IO) ()
+mainLoop db h = do
+    msg <- iterMessage 
+    res <- lift $ evalStateT (runApp msg) db
+    case res of
+        Just r -> E.run_ $ (enumMessage r) E.$$ (EB.iterHandle h)
+        _      -> return ()
+    mainLoop db h
 
-writeBlock :: MonadIO m => DB.DB -> Block -> m ()
-writeBlock db block = ldbContext $ do
-    DB.put db def (BSC.pack "block") (buildBlockIndex block)
-    val <- DB.get db def (BSC.pack "block") 
-    liftIO $ print val
+runApp :: Application
+runApp msg = do
+    liftIO $ putStrLn $ Pr.ppShow msg
+    return $ case msg of
+        MVersion _ -> Just MVerAck
+        --MVerAck -> MGetAddr
+        MPing (Ping n) -> Just $ MPong (Pong n)
+        MInv (Inv l) -> Just $ MGetData (GetData l)
+        _ -> Nothing
 
 sendVersion :: Handle -> IO ()
 sendVersion h = do
@@ -70,24 +72,6 @@ sendVersion h = do
     rdmn <- randomIO -- nonce
     let vers = Version 70001 1 (floor time) addr addr rdmn ua 0 False
     E.run_ $ (enumMessage $ MVersion vers) E.$$ (EB.iterHandle h)
-
-processMessage :: MonadIO m => Message -> E.Enumerator BS.ByteString m b
-processMessage msg step = do
-    liftIO $ putStrLn $ Pr.ppShow msg 
-    case msg of
-        MVersion _ -> (enumMessage MVerAck) step
-        --MVerAck -> (enumMessage MGetAddr) step
-        MPing (Ping n) -> (enumMessage $ MPong (Pong n)) step
-        MTx t -> (processTx t) step
-        MInv (Inv l) -> (enumMessage $ MGetData (GetData l)) step
-        _ -> E.returnI step
-
-processTx :: MonadIO m => Tx -> E.Enumerator BS.ByteString m b
-processTx tx step = do
-    liftIO $ if (checkTransaction tx)
-                 then putStr "checkTransaction true"
-                 else putStr "checkTransaction false"
-    E.enumEOF step
 
 checkTransaction :: Tx -> Bool
 checkTransaction tx = case tx of

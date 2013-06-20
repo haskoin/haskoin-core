@@ -1,13 +1,14 @@
 module Bitcoin.Message 
 ( Message(..)
 , Version(..)
-, iterMessage
-, enumMessage
+, toMessage
+, fromMessage
 , getSerializeSize
 ) where
 
-import qualified Data.Enumerator.Binary as EB
-import qualified Data.Enumerator as E 
+import qualified Data.Conduit as C
+import qualified Data.Conduit.Binary as CB
+import Control.Monad.Trans.Resource
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
@@ -25,6 +26,7 @@ import Bitcoin.Protocol.Tx
 import Bitcoin.Protocol.Block
 import Bitcoin.Protocol.Headers
 import Bitcoin.Protocol.Ping
+import Bitcoin.Protocol.Alert
 import Bitcoin.Crypto
 import Bitcoin.Util
 import Bitcoin.Constants
@@ -43,15 +45,18 @@ data Message =
     MHeaders Headers |
     MGetAddr |
     MPing Ping |
-    MPong Pong
+    MPong Pong |
+    MAlert Alert
     deriving (Show, Read)
 
-iterMessage :: Monad m => E.Iteratee BS.ByteString m Message
-iterMessage = do
-    headBytes <- EB.take 24
+-- Conduit transforming streams of bytestrings into messages
+toMessage :: Monad m => C.Conduit BS.ByteString m Message
+toMessage = do
+    headBytes <- CB.take 24
     let (MessageHeader _ cmd len _) = runGet bitcoinGet headBytes
-    payloadBytes <- EB.take $ fromIntegral len
-    return $ getMessage cmd payloadBytes
+    payloadBytes <- CB.take $ fromIntegral len
+    C.yield $ getMessage cmd payloadBytes
+    toMessage
 
 getMessage :: String -> BL.ByteString -> Message
 getMessage cmd payload = case cmd of
@@ -69,21 +74,25 @@ getMessage cmd payload = case cmd of
     "getaddr"    -> MGetAddr
     "ping"       -> MPing       $ runGet bitcoinGet payload
     "pong"       -> MPong       $ runGet bitcoinGet payload
+    "alert"      -> MAlert      $ runGet bitcoinGet payload
     _            -> error $ "getMessage: Invalid command string " ++ cmd
 
-enumMessage :: Monad m => Message -> E.Enumerator BS.ByteString m b
-enumMessage msg (E.Continue k) =
-    let (cmd, mPut) = putMessage msg
-        payload = toStrictBS $ runPut mPut
-        chksum = doubleSHA256CheckSum payload
-        header = toStrictBS . runPut . bitcoinPut $ 
-            MessageHeader
-                testnetMagic
-                cmd
-                (fromIntegral $ BS.length payload)
-                chksum
-        in k $ E.Chunks [header, payload]
-enumMessage _ step = E.returnI step
+-- Conduit transforming streams of messages into bytestrings
+fromMessage :: Monad m => C.Conduit (Maybe Message) m BS.ByteString
+fromMessage = C.awaitForever $ \i ->
+    case i of 
+        Just msg -> do
+            let (cmd, mPut) = putMessage msg
+                payload = toStrictBS $ runPut mPut
+                chksum = doubleSHA256CheckSum payload
+                header = toStrictBS . runPut . bitcoinPut $ 
+                    MessageHeader
+                        testnetMagic
+                        cmd
+                        (fromIntegral $ BS.length payload)
+                        chksum
+            C.yield $ header `BS.append` payload
+        _ -> return ()
 
 putMessage :: Message -> (String, BitcoinPut)
 putMessage m = case m of 
@@ -101,6 +110,7 @@ putMessage m = case m of
     MGetAddr         -> ("getaddr", return ())
     (MPing p)        -> ("ping", bitcoinPut p)
     (MPong p)        -> ("pong", bitcoinPut p)
+    (MAlert a)       -> ("alert", bitcoinPut a)
 
 getSerializeSize :: Message -> Int
 getSerializeSize m = BS.length (payload m) + 24

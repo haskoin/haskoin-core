@@ -1,10 +1,9 @@
 module Bitcoin.LevelDB
 ( BlockIndex(..)
-, getHandle
+, openHandle
 , buildBlockIndex
 , writeBlock
 , readBlock
-, BlockChainIO
 ) where
 
 import Data.Default
@@ -24,8 +23,6 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
 import qualified Database.LevelDB as DB
-
-type BlockChainIO a = StateT DB.DB (ResourceT IO) a
 
 data BlockIndex = BlockIndex 
     { biHash      :: Word256
@@ -65,26 +62,14 @@ instance BitcoinProtocol BlockIndex where
         putWord32le  u
         putWord32le  s
 
-getHandle :: ResourceT IO DB.DB
-getHandle = do
+openHandle :: ResourceT IO DB.DB
+openHandle = do
     db <- DB.open "blockindex"
         DB.defaultOptions
             { DB.createIfMissing = True
             , DB.cacheSize = 2048
             }
     return db
-
-readBlock :: String -> BlockChainIO (Maybe String)
-readBlock s = do
-    db <- get
-    val <- lift $ DB.get db def (BSC.pack s)
-    return $ val >>= return . BSC.unpack
-
-writeBlock :: String -> BlockChainIO ()
-writeBlock s = do
-    db <- get
-    lift $ DB.put db def (BSC.pack s) (BSC.pack s)
-    return ()
 
 buildBlockIndex :: Block -> BS.ByteString
 buildBlockIndex b = toStrictBS . runPut . bitcoinPut $ bi
@@ -99,4 +84,15 @@ buildBlockIndex b = toStrictBS . runPut . bitcoinPut $ bi
                           (fromIntegral 6)
                           (fromIntegral 7)
                           (fromIntegral 8)
+
+readBlock :: MonadResource m => DB.DB -> String -> m (Maybe String)
+readBlock db s = do
+    val <- DB.get db def (BSC.pack s)
+    return $ val >>= return . BSC.unpack
+
+writeBlock :: MonadResource m => DB.DB -> String -> m ()
+writeBlock db s = do
+    DB.put db def (BSC.pack s) (BSC.pack s)
+    return ()
+
 

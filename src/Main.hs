@@ -5,8 +5,9 @@ import System.Random -- for randon nonce
 import Data.Time.Clock.POSIX -- unix time
 import Data.Default
 
-import qualified Data.Enumerator as E
-import qualified Data.Enumerator.Binary as EB
+import qualified Data.Conduit as C
+import qualified Data.Conduit.Binary as CB
+import qualified Data.Conduit.List as CL
 
 import Control.Monad
 import Control.Monad.State
@@ -32,31 +33,24 @@ import qualified Bitcoin.Constants as Const
 
 import qualified Text.Show.Pretty as Pr
 
-type Application = Message -> DB.BlockChainIO (Maybe Message)
-
 main :: IO ()
 main = withSocketsDo . DB.runResourceT $ do
-    db <- DB.getHandle
+    db <- DB.openHandle
     h <- liftIO $ do 
         h <- connectTo "127.0.0.1" (PortNumber 18333)
         hSetBuffering h LineBuffering
         sendVersion h
         return h
-    E.run_ $ (EB.enumHandle 1024 h) E.$$ mainLoop db h
+    (CB.sourceHandle h) 
+        C.$= toMessage 
+        C.$= (runApp db)
+        C.$$ fromMessage 
+        C.=$ (CB.sinkHandle h)
 
-mainLoop :: DB.DB -> Handle -> E.Iteratee BS.ByteString (ResourceT IO) ()
-mainLoop db h = do
-    msg <- iterMessage 
-    res <- lift $ evalStateT (runApp msg) db
-    case res of
-        Just r -> E.run_ $ (enumMessage r) E.$$ (EB.iterHandle h)
-        _      -> return ()
-    mainLoop db h
-
-runApp :: Application
-runApp msg = do
+runApp :: MonadResource m => DB.DB -> C.Conduit Message m (Maybe Message)
+runApp db = C.awaitForever $ \msg -> do
     liftIO $ putStrLn $ Pr.ppShow msg
-    return $ case msg of
+    C.yield $ case msg of
         MVersion _ -> Just MVerAck
         --MVerAck -> MGetAddr
         MPing (Ping n) -> Just $ MPong (Pong n)
@@ -71,7 +65,9 @@ sendVersion h = do
     time <- getPOSIXTime
     rdmn <- randomIO -- nonce
     let vers = Version 70001 1 (floor time) addr addr rdmn ua 0 False
-    E.run_ $ (enumMessage $ MVersion vers) E.$$ (EB.iterHandle h)
+    (CL.sourceList [Just $ MVersion vers]) 
+        C.$$ fromMessage
+        C.=$ (CB.sinkHandle h)
 
 checkTransaction :: Tx -> Bool
 checkTransaction tx = case tx of

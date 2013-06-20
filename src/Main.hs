@@ -34,18 +34,17 @@ import qualified Bitcoin.Constants as Const
 import qualified Text.Show.Pretty as Pr
 
 main :: IO ()
-main = withSocketsDo . DB.runResourceT $ do
-    db <- DB.openHandle
-    h <- liftIO $ do 
-        h <- connectTo "127.0.0.1" (PortNumber 18333)
-        hSetBuffering h LineBuffering
-        sendVersion h
-        return h
-    (CB.sourceHandle h) 
-        C.$= toMessage 
-        C.$= (runApp db)
-        C.$$ fromMessage 
-        C.=$ (CB.sinkHandle h)
+main = withSocketsDo $ do
+    h <- connectTo "127.0.0.1" (PortNumber 18333)
+    hSetBuffering h LineBuffering
+    sendVersion h
+    DB.runResourceT $ do
+        db <- DB.openHandle
+        (CB.sourceHandle h) 
+            C.$= toMessage 
+            C.$= (runApp db)
+            C.$$ fromMessage 
+            C.=$ (CB.sinkHandle h)
 
 runApp :: MonadResource m => DB.DB -> C.Conduit Message m (Maybe Message)
 runApp db = C.awaitForever $ \msg -> do

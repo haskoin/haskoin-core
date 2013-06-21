@@ -15,3 +15,4 @@ bitcoinHost = "127.0.0.1"
 bitcoinPort :: PortID
 bitcoinPort = (PortNumber 18333)
 
+

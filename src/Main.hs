@@ -35,9 +35,18 @@ import qualified Text.Show.Pretty as Pr
 
 main :: IO ()
 main = withSocketsDo $ do
-    h <- connectTo "127.0.0.1" (PortNumber 18333)
+
+    -- Open network handle
+    h <- connectTo Const.bitcoinHost Const.bitcoinPort
     hSetBuffering h LineBuffering
-    sendVersion h
+
+    -- Greet our host with the Version message
+    version <- buildVersion
+    (CL.sourceList [version])
+        C.$$ fromMessage
+        C.=$ (CB.sinkHandle h)
+
+    -- Execute main program loop
     DB.runResourceT $ do
         db <- DB.openHandle
         (CB.sourceHandle h) 
@@ -45,6 +54,15 @@ main = withSocketsDo $ do
             C.$= (runApp db)
             C.$$ fromMessage 
             C.=$ (CB.sinkHandle h)
+
+buildVersion :: IO Message
+buildVersion = do
+    let zeroAddr = 0xffff00000000
+        addr = NetworkAddress 1 zeroAddr 0
+        ua = VarString $ BS.pack $ map (fromIntegral . ord) "/haskoin:0.0.1/"
+    time <- getPOSIXTime
+    rdmn <- randomIO -- nonce
+    return MVersion $ Version 70001 1 (floor time) addr addr rdmn ua 0 False
 
 runApp :: MonadResource m => DB.DB -> C.Conduit Message m (Maybe Message)
 runApp db = C.awaitForever $ \msg -> do
@@ -55,18 +73,6 @@ runApp db = C.awaitForever $ \msg -> do
         MPing (Ping n) -> Just $ MPong (Pong n)
         MInv (Inv l) -> Just $ MGetData (GetData l)
         _ -> Nothing
-
-sendVersion :: Handle -> IO ()
-sendVersion h = do
-    let zeroAddr = 0xffff00000000
-        addr = NetworkAddress 1 zeroAddr 0
-        ua = VarString $ BS.pack $ map (fromIntegral . ord) "/haskoin:0.0.1/"
-    time <- getPOSIXTime
-    rdmn <- randomIO -- nonce
-    let vers = Version 70001 1 (floor time) addr addr rdmn ua 0 False
-    (CL.sourceList [Just $ MVersion vers]) 
-        C.$$ fromMessage
-        C.=$ (CB.sinkHandle h)
 
 checkTransaction :: Tx -> Bool
 checkTransaction tx = case tx of

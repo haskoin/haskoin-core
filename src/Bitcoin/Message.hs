@@ -8,7 +8,9 @@ module Bitcoin.Message
 
 import qualified Data.Conduit as C
 import qualified Data.Conduit.Binary as CB
+
 import Control.Monad.Trans.Resource
+import Control.Monad.IO.Class
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
@@ -50,11 +52,13 @@ data Message =
     deriving (Show, Read)
 
 -- Conduit transforming streams of bytestrings into messages
-toMessage :: Monad m => C.Conduit BS.ByteString m Message
+toMessage :: MonadIO m => C.Conduit BS.ByteString m Message
 toMessage = do
-    headBytes <- CB.take 24
+    headBytes <- CB.take 24 -- Header of a message is always 24 bytes
     let (MessageHeader _ cmd len _) = runGet bitcoinGet headBytes
-    payloadBytes <- CB.take $ fromIntegral len
+    payloadBytes <- if len > 0
+                        then CB.take $ fromIntegral len
+                        else return BL.empty
     C.yield $ getMessage cmd payloadBytes
     toMessage
 

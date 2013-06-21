@@ -42,7 +42,7 @@ main = withSocketsDo $ do
 
     -- Greet our host with the Version message
     version <- buildVersion
-    (CL.sourceList [version])
+    (CL.sourceList [Just $ MVersion version])
         C.$$ fromMessage
         C.=$ (CB.sinkHandle h)
 
@@ -55,14 +55,14 @@ main = withSocketsDo $ do
             C.$$ fromMessage 
             C.=$ (CB.sinkHandle h)
 
-buildVersion :: IO Message
+buildVersion :: IO Version
 buildVersion = do
     let zeroAddr = 0xffff00000000
         addr = NetworkAddress 1 zeroAddr 0
         ua = VarString $ BS.pack $ map (fromIntegral . ord) "/haskoin:0.0.1/"
     time <- getPOSIXTime
     rdmn <- randomIO -- nonce
-    return MVersion $ Version 70001 1 (floor time) addr addr rdmn ua 0 False
+    return $ Version 70001 1 (floor time) addr addr rdmn ua 0 False
 
 runApp :: MonadResource m => DB.DB -> C.Conduit Message m (Maybe Message)
 runApp db = C.awaitForever $ \msg -> do

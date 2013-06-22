@@ -3,14 +3,19 @@ module Bitcoin.Protocol.Tx
 , TxIn(..)
 , TxOut(..)
 , OutPoint(..)
+, txCurrentVersion
 ) where
 
 import Control.Monad
 import Control.Applicative
 import Bitcoin.Protocol
 import Bitcoin.Protocol.VarInt
+import Bitcoin.Protocol.Script
 
 import qualified Data.ByteString as BS
+
+txCurrentVersion :: Word32
+txCurrentVersion = 1
 
 data Tx = Tx {
     txVersion  :: Word32,
@@ -37,38 +42,29 @@ instance BitcoinProtocol Tx where
 
 data TxIn = TxIn {
     prevOutput   :: OutPoint,
-    sigScript    :: BS.ByteString,
+    sigScript    :: Script,
     txInSequence :: Word32
 } deriving (Eq, Read, Show)
 
 instance BitcoinProtocol TxIn where
 
     bitcoinGet = TxIn <$> bitcoinGet
-                      <*> (readBS =<< bitcoinGet)
+                      <*> bitcoinGet
                       <*> getWord32le
-        where readBS (VarInt len) = getByteString (fromIntegral len)
 
-    bitcoinPut (TxIn o bs s) = do
-        bitcoinPut o
-        bitcoinPut $ lengthFromBS bs
-        putByteString bs 
-        putWord32le s
+    bitcoinPut (TxIn o s seq) = do
+        bitcoinPut  o
+        bitcoinPut  s
+        putWord32le seq
 
 data TxOut = TxOut {
     outValue     :: Word64,
-    scriptPubKey :: BS.ByteString
+    scriptPubKey :: Script
 } deriving (Eq, Read, Show)
 
 instance BitcoinProtocol TxOut where
-
-    bitcoinGet = TxOut <$> getWord64le
-                       <*> (readBS =<< bitcoinGet)
-        where readBS (VarInt len) = getByteString (fromIntegral len)
-
-    bitcoinPut (TxOut o bs) = do
-        putWord64le o
-        bitcoinPut $ lengthFromBS bs
-        putByteString bs
+    bitcoinGet = TxOut <$> getWord64le <*> bitcoinGet
+    bitcoinPut (TxOut o s) = putWord64le o >> bitcoinPut s
 
 data OutPoint = OutPoint {
     outPointHash  :: Word256,
@@ -76,11 +72,6 @@ data OutPoint = OutPoint {
 } deriving (Eq, Read, Show)
 
 instance BitcoinProtocol OutPoint where
-
-    bitcoinGet = OutPoint <$> getWord256be
-                          <*> getWord32le
-
-    bitcoinPut (OutPoint h i) = do
-        putWord256be h
-        putWord32le  i
+    bitcoinGet = OutPoint <$> getWord256be <*> getWord32le
+    bitcoinPut (OutPoint h i) = putWord256be h >> putWord32le i
 

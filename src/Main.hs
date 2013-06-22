@@ -19,6 +19,7 @@ import qualified Data.ByteString.Char8 as BSC
 
 import qualified Database.LevelDB as DB
 
+import Bitcoin.Protocol
 import Bitcoin.Message
 import Bitcoin.Protocol.VarString
 import Bitcoin.Protocol.NetworkAddress
@@ -27,6 +28,8 @@ import Bitcoin.Protocol.Tx
 import Bitcoin.Protocol.Inv
 import Bitcoin.Protocol.GetData
 import Bitcoin.Protocol.Block
+import Bitcoin.Protocol.GetBlocks
+
 
 import qualified Bitcoin.LevelDB as DB
 import qualified Bitcoin.Constants as Const
@@ -67,16 +70,25 @@ buildVersion = do
 runApp :: MonadResource m => DB.DB -> C.Conduit Message m (Maybe Message)
 runApp db = C.awaitForever $ \msg -> do
     liftIO $ putStrLn $ Pr.ppShow msg
-    C.yield $ case msg of
-        MVersion _ -> Just MVerAck
-        --MVerAck -> MGetAddr
-        MPing (Ping n) -> Just $ MPong (Pong n)
-        MInv (Inv l) -> Just $ MGetData (GetData l)
-        _ -> Nothing
+    res <- lift $ do
+        case msg of
+            MVersion _ -> return $ Just MVerAck
+            MVerAck -> do
+                loc <- buildBlockLocator
+                return . Just . MGetBlocks $ 
+                    GetBlocks (fromIntegral 1) loc (fromIntegral 0)
+            MPing (Ping n) -> return $ Just $ MPong (Pong n)
+            MInv (Inv l) -> return $ Just $ MGetData (GetData l)
+            _ -> return $ Nothing
+    C.yield res
 
 checkTransaction :: Tx -> Bool
 checkTransaction tx = case tx of
     (Tx _ [] _ _) -> False --vin False
     (Tx _ _ [] _) -> False --vout False
     _ -> not $ getSerializeSize (MTx tx) > Const.maxBlockSize
+
+buildBlockLocator :: MonadResource m => m [Word256]
+buildBlockLocator = do
+    return $ [genesisBlockHash]
     

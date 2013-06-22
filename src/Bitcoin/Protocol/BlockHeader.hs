@@ -1,5 +1,10 @@
-module Bitcoin.Protocol.BlockHeader ( BlockHeader(..) ) where
+module Bitcoin.Protocol.BlockHeader 
+( BlockHeader(..) 
+, blockHeaderHash
+) where
 
+import Bitcoin.Util
+import Bitcoin.Crypto
 import Bitcoin.Protocol
 import Control.Applicative
 
@@ -28,4 +33,7 @@ instance BitcoinProtocol BlockHeader where
         putWord32le  bt
         putWord32le  bb
         putWord32le  n 
+
+blockHeaderHash :: BlockHeader -> Word256
+blockHeaderHash = doubleSHA256 . toStrictBS . runPut . bitcoinPut
 

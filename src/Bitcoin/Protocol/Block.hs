@@ -1,6 +1,8 @@
 module Bitcoin.Protocol.Block 
 ( Block(..)
 , genesisBlock
+, genesisBlockHash
+, blockHash
 ) where
 
 import Control.Monad
@@ -31,6 +33,9 @@ instance BitcoinProtocol Block where
         bitcoinPut $ lengthFromList xs
         forM_ xs bitcoinPut
 
+blockHash :: Block -> Word256
+blockHash = blockHeaderHash . blockHeader
+
 genesisMessage :: String
 genesisMessage = 
     "The Times 03/Jan/2009 Chancellor on brink of second bailout for banks";
@@ -40,11 +45,17 @@ genesisMerkle =
     fromIntegral 
         0x3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a
 
+
+genesisBlockHash :: Word256
+genesisBlockHash = 
+    fromIntegral
+        0x000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f
+
 genesisBlock :: Block
 genesisBlock = 
     Block
         (BlockHeader
-            (fromIntegral 1)           -- version
+            (fromIntegral 0x01)        -- version
             (fromIntegral 0x00)        -- previous block
             genesisMerkle              -- merkle root
             (fromIntegral 1231006505)  -- timestamp

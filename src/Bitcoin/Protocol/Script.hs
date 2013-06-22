@@ -38,14 +38,33 @@ putScriptOps (x:xs) = bitcoinPut x >> putScriptOps xs
 putScriptOps _       = return ()
 
 data ScriptOp =
+
+    -- Pushing Data
     OP_PUSHDATA BS.ByteString |
     OP_FALSE | 
     OP_1NEGATE | 
     OP_TRUE |
     OP_2 | OP_3  | OP_4  | OP_5  | OP_6  | OP_7  | OP_8  |
     OP_9 | OP_10 | OP_11 | OP_12 | OP_13 | OP_14 | OP_15 | OP_16 |
+
+    -- Flow control
+    OP_VERIFY |
+
+    -- Stack operations
+    OP_DUP |
+
+    -- Bitwise logic
+    OP_EQUAL |
+    OP_EQUALVERIFY | 
+
+    -- Crypto
+    OP_HASH160 |
+    OP_CHECKSIG |
+    OP_CHECKMULTISIG |
+
+    -- Other
     OP_PUBKEY BS.ByteString |
-    OP_CHECKSIG
+    OP_INVALIDOPCODE Word8
         deriving (Eq, Read, Show)
 
 instance BitcoinProtocol ScriptOp where
@@ -84,10 +103,17 @@ instance BitcoinProtocol ScriptOp where
                     | op == 0x5e = return $ OP_14
                     | op == 0x5f = return $ OP_15
                     | op == 0x60 = return $ OP_16
+                    | op == 0x69 = return $ OP_VERIFY
+                    | op == 0x76 = return $ OP_DUP
+                    | op == 0x87 = return $ OP_EQUAL
+                    | op == 0x88 = return $ OP_EQUALVERIFY
+                    | op == 0xa9 = return $ OP_HASH160
                     | op == 0xac = return $ OP_CHECKSIG
+                    | op == 0xae = return $ OP_CHECKMULTISIG
                     | op == 0xfe = do
                         payload <- getByteString 59
                         return $ OP_PUBKEY payload
+                    | otherwise = return $ OP_INVALIDOPCODE op
 
     bitcoinPut OP_FALSE = putWord8 $ fromIntegral 0x00
 
@@ -128,8 +154,19 @@ instance BitcoinProtocol ScriptOp where
     bitcoinPut OP_15 = putWord8 $ fromIntegral 0x5f
     bitcoinPut OP_16 = putWord8 $ fromIntegral 0x60
 
+    bitcoinPut OP_VERIFY = putWord8 $ fromIntegral 0x69
+
+    bitcoinPut OP_DUP = putWord8 $ fromIntegral 0x76
+    bitcoinPut OP_EQUAL = putWord8 $ fromIntegral 0x87
+    bitcoinPut OP_EQUALVERIFY = putWord8 $ fromIntegral 0x88
+
+    bitcoinPut OP_HASH160 = putWord8 $ fromIntegral 0xa9
+    bitcoinPut OP_CHECKSIG = putWord8 $ fromIntegral 0xac
+    bitcoinPut OP_CHECKMULTISIG = putWord8 $ fromIntegral 0xae
+
     bitcoinPut (OP_PUBKEY bs) = do
         putWord8 $ fromIntegral 0xfe
         putByteString bs
 
-    bitcoinPut OP_CHECKSIG = putWord8 $ fromIntegral 0xac
+    bitcoinPut (OP_INVALIDOPCODE _) = putWord8 $ fromIntegral 0xff
+

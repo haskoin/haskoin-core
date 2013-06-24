@@ -33,6 +33,10 @@ import Bitcoin.Crypto
 import Bitcoin.Util
 import Bitcoin.Constants
 
+import qualified Text.Show.Pretty as Pr
+
+import Data.Char
+
 data Message = 
     MVersion Version | 
     MVerAck | 

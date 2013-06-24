@@ -19,6 +19,7 @@ module Bitcoin.Protocol
 , getByteString, putByteString
 
 , hasMore
+, skip
 ) where
 
 import Data.Word

@@ -18,20 +18,25 @@ import Bitcoin.Protocol.Script
 import qualified Data.ByteString as BS
 
 data Block = Block {
-    blockHeader :: BlockHeader,
-    blockTxns   :: [Tx]
+    blockHeader     :: BlockHeader,
+    blockCoinbaseTx :: CoinbaseTx,
+    blockTxns       :: [Tx]
 } deriving (Eq, Read, Show)
 
 instance BitcoinProtocol Block where
 
-    bitcoinGet = Block <$> bitcoinGet
-                       <*> (repList =<< bitcoinGet)
-        where repList (VarInt c) = replicateM (fromIntegral c) bitcoinGet
+    bitcoinGet = do
+        head       <- bitcoinGet
+        (VarInt c) <- bitcoinGet
+        cb         <- bitcoinGet
+        txs        <- replicateM (fromIntegral (c-1)) bitcoinGet
+        return $ Block head cb txs
 
-    bitcoinPut (Block h xs) = do
+    bitcoinPut (Block h cb txs) = do
         bitcoinPut h
-        bitcoinPut $ lengthFromList xs
-        forM_ xs bitcoinPut
+        bitcoinPut $ VarInt $ fromIntegral $ (length txs) + 1
+        bitcoinPut cb
+        forM_ txs bitcoinPut
 
 blockHash :: Block -> Word256
 blockHash = blockHeaderHash . blockHeader
@@ -61,17 +66,11 @@ genesisBlock =
             (fromIntegral 1231006505)  -- timestamp
             (fromIntegral 0x1d00ffff)  -- bits 
             (fromIntegral 2083236893)) -- nonce
-        [ Tx
+        (CoinbaseTx
             txCurrentVersion
-            [ TxIn
-                (OutPoint (fromIntegral 0) (fromIntegral 0))
-                (Script
-                    [ OP_PUSHDATA $ BS.pack [0xff,0xff,0x00,0x1d]
-                    , OP_PUSHDATA $ BS.pack [0x04]
-                    , OP_PUSHDATA $ stringToBS genesisMessage
-                    ]) 
-                maxBound -- txInSequence 
-            ]
+            (BS.append
+                (BS.pack [0x04,0xff,0xff,0x00,0x1d,0x01,0x04,0x45])
+                (stringToBS genesisMessage))
             [ TxOut
                 (fromIntegral 5000000000)
                 (Script
@@ -88,8 +87,8 @@ genesisBlock =
                     , OP_CHECKSIG
                     ])
             ]
-            0 --txLockTime
-        ]
+            0) --txLockTime
+        [] --txns
 
 --        if (fTestNet)
 --        {

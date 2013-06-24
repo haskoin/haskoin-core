@@ -3,6 +3,7 @@ module Bitcoin.Protocol.Tx
 , TxIn(..)
 , TxOut(..)
 , OutPoint(..)
+, CoinbaseTx(..)
 , txCurrentVersion
 ) where
 
@@ -36,6 +37,38 @@ instance BitcoinProtocol Tx where
         putWord32le v
         bitcoinPut $ lengthFromList is
         forM_ is bitcoinPut
+        bitcoinPut $ lengthFromList os
+        forM_ os bitcoinPut
+        putWord32le l
+
+data CoinbaseTx = CoinbaseTx {
+    cbVersion  :: Word32,
+    cbData     :: BS.ByteString,
+    cbOut      :: [TxOut],
+    cbLockTime :: Word32
+} deriving (Eq, Read, Show)
+
+instance BitcoinProtocol CoinbaseTx where
+
+    bitcoinGet = CoinbaseTx <$> getWord32le
+                            <*> (readCoinbase =<< bitcoinGet)
+                            <*> (replicateList =<< bitcoinGet)
+                            <*> getWord32le
+        where 
+            readCoinbase (VarInt in_size) = do
+                skip 36 -- skip OutPoint
+                (VarInt len)   <- bitcoinGet
+                coinbase       <- getByteString (fromIntegral len)
+                skip 4   -- skip sequence
+                return coinbase
+            replicateList (VarInt c) = replicateM (fromIntegral c) bitcoinGet
+
+    bitcoinPut (CoinbaseTx v cb os l) = do
+        putWord32le v
+        bitcoinPut $ VarInt (fromIntegral 1)
+        bitcoinPut $ OutPoint (fromIntegral 0) maxBound
+        bitcoinPut $ lengthFromBS cb
+        putByteString cb 
         bitcoinPut $ lengthFromList os
         forM_ os bitcoinPut
         putWord32le l

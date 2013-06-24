@@ -71,28 +71,30 @@ openHandle = do
             }
     return db
 
-buildBlockIndex :: Block -> BS.ByteString
-buildBlockIndex b = toStrictBS . runPut . bitcoinPut $ bi
+buildBlockIndex :: Block -> BlockIndex
+buildBlockIndex b = 
+    BlockIndex (fromIntegral 1234)
+        (prevBlock h)
+        (fromIntegral 1)
+        (fromIntegral 2)
+        (fromIntegral 3)
+        (fromIntegral 4)
+        (fromIntegral 5)
+        (fromIntegral 6)
+        (fromIntegral 7)
+        (fromIntegral 8)
     where h  = blockHeader b
-          bi = BlockIndex (fromIntegral 1234)
-                          (prevBlock h)
-                          (fromIntegral 1)
-                          (fromIntegral 2)
-                          (fromIntegral 3)
-                          (fromIntegral 4)
-                          (fromIntegral 5)
-                          (fromIntegral 6)
-                          (fromIntegral 7)
-                          (fromIntegral 8)
 
-readBlock :: MonadResource m => DB.DB -> String -> m (Maybe String)
-readBlock db s = do
-    val <- DB.get db def (BSC.pack s)
-    return $ val >>= return . BSC.unpack
+readBlock :: MonadResource m => DB.DB -> Word256 -> m (Maybe BlockIndex)
+readBlock db w = do
+    let key = toStrictBS . runPut . putWord256be $ w
+    val <- DB.get db def (bsToBSC key)
+    return $ val >>= return . (runGet bitcoinGet) . toLazyBS . bscToBS
 
-writeBlock :: MonadResource m => DB.DB -> String -> m ()
-writeBlock db s = do
-    DB.put db def (BSC.pack s) (BSC.pack s)
+writeBlock :: MonadResource m => DB.DB -> BlockIndex -> m ()
+writeBlock db bi = do
+    let key = toStrictBS . runPut . putWord256be $ biHash bi
+    let payload = toStrictBS . runPut . bitcoinPut $ bi
+    DB.put db def (bsToBSC key) (bsToBSC payload)
     return ()
-
 

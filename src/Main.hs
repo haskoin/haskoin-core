@@ -79,6 +79,10 @@ runApp db = C.awaitForever $ \msg -> do
                     GetBlocks (fromIntegral 1) loc (fromIntegral 0)
             MPing (Ping n) -> return $ Just $ MPong (Pong n)
             MInv (Inv l) -> return $ Just $ MGetData (GetData l)
+            MBlock b -> do
+                DB.writeBlock db (DB.buildBlockIndex b)
+                liftIO $ print "Block Saved"
+                return $ Nothing
             _ -> return $ Nothing
     C.yield res
 

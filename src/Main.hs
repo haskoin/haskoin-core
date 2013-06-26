@@ -94,5 +94,5 @@ checkTransaction tx = case tx of
 
 buildBlockLocator :: MonadResource m => m [Word256]
 buildBlockLocator = do
-    return $ [genesisBlockHash]
+    return $ [testGenesisBlockHash]
     

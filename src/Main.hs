@@ -52,6 +52,7 @@ main = withSocketsDo $ do
     -- Execute main program loop
     DB.runResourceT $ do
         db <- DB.openHandle
+        DB.initBlockIndex db
         (CB.sourceHandle h) 
             C.$= toMessage 
             C.$= (runApp db)
@@ -69,7 +70,7 @@ buildVersion = do
 
 runApp :: MonadResource m => DB.DB -> C.Conduit Message m (Maybe Message)
 runApp db = C.awaitForever $ \msg -> do
-    liftIO $ putStrLn $ Pr.ppShow msg
+    --liftIO $ putStrLn $ Pr.ppShow msg
     res <- lift $ do
         case msg of
             MVersion _ -> return $ Just MVerAck
@@ -80,8 +81,7 @@ runApp db = C.awaitForever $ \msg -> do
             MPing (Ping n) -> return $ Just $ MPong (Pong n)
             MInv (Inv l) -> return $ Just $ MGetData (GetData l)
             MBlock b -> do
-                DB.writeBlock db (DB.buildBlockIndex b)
-                liftIO $ print "Block Saved"
+                DB.writeBlock db b
                 return $ Nothing
             _ -> return $ Nothing
     C.yield res

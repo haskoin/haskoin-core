@@ -1,9 +1,10 @@
 module Bitcoin.LevelDB
 ( BlockIndex(..)
 , openHandle
-, buildBlockIndex
+, initBlockIndex
+, writeBlockIndex
 , writeBlock
-, readBlock
+, readBlockIndex
 ) where
 
 import Data.Default
@@ -71,30 +72,87 @@ openHandle = do
             }
     return db
 
-buildBlockIndex :: Block -> BlockIndex
-buildBlockIndex b = 
-    BlockIndex (fromIntegral 1234)
-        (prevBlock h)
-        (fromIntegral 1)
-        (fromIntegral 2)
-        (fromIntegral 3)
-        (fromIntegral 4)
-        (fromIntegral 5)
-        (fromIntegral 6)
-        (fromIntegral 7)
-        (fromIntegral 8)
-    where h  = blockHeader b
+initBlockIndex :: DB.DB -> ResourceT IO ()
+initBlockIndex db = do
+    val <- readBlockIndex db testGenesisBlockHash
+    case val of
+        (Just _) -> do
+            liftIO $ print "LevelDB already initialized" 
+            return ()
+        Nothing  -> do
+            liftIO $ print $ "Initializing LevelDB. Writing genesis block hash "
+                ++ (show testGenesisBlockHash)
+            writeBlockIndex db 
+                (BlockIndex
+                    testGenesisBlockHash
+                    (fromIntegral 0)    -- prev hash
+                    (fromIntegral 0)    -- height
+                    (fromIntegral 1)
+                    (fromIntegral 0)    -- chain work
+                    (fromIntegral 1) -- chain tx
+                    (fromIntegral 0)
+                    (fromIntegral 0)
+                    (fromIntegral 0)
+                    (fromIntegral 0))
 
-readBlock :: MonadResource m => DB.DB -> Word256 -> m (Maybe BlockIndex)
-readBlock db w = do
+readBlockIndex :: MonadResource m => DB.DB -> Word256 -> m (Maybe BlockIndex)
+readBlockIndex db w = do
     let key = toStrictBS . runPut . putWord256be $ w
     val <- DB.get db def (bsToBSC key)
     return $ val >>= return . (runGet bitcoinGet) . toLazyBS . bscToBS
 
-writeBlock :: MonadResource m => DB.DB -> BlockIndex -> m ()
-writeBlock db bi = do
+writeBlockIndex :: MonadResource m => DB.DB -> BlockIndex -> m ()
+writeBlockIndex db bi = do
     let key = toStrictBS . runPut . putWord256be $ biHash bi
     let payload = toStrictBS . runPut . bitcoinPut $ bi
     DB.put db def (bsToBSC key) (bsToBSC payload)
     return ()
+
+writeBlock :: MonadResource m => DB.DB -> Block -> m ()
+writeBlock db b = do
+    let hash = blockHash b
+    let prevHash = prevBlock $ blockHeader b
+    let nTxs = ((length (blockTxns b)) + 1)
+    current <- readBlockIndex db hash
+    case current of
+        -- we already have the block, ignore it
+        (Just _) -> do
+            liftIO $ print $ "Block " ++ (show hash) ++ " already indexed"
+            return ()
+        Nothing  -> do
+            prev <- readBlockIndex db prevHash
+            case prev of
+                (Just prevBlock) -> do
+                    let height = ((biHeight prevBlock) + 1)
+                    liftIO $ print $ "Indexing new block " ++ (show hash)
+                        ++ " at height " ++ (show height)
+                    writeBlockIndex db 
+                        (BlockIndex
+                            hash
+                            prevHash
+                            height
+                            (fromIntegral nTxs)
+                            ((biChainWork prevBlock) + 0)
+                            ((biChainTx prevBlock) + (fromIntegral nTxs))
+                            (fromIntegral 0)
+                            (fromIntegral 0)
+                            (fromIntegral 0)
+                            (fromIntegral 0))
+                -- Orphan block
+                Nothing -> do
+                    liftIO $ print $ "Indexing orphan block " ++ (show hash)
+                    writeBlockIndex db 
+                        (BlockIndex
+                            hash
+                            (fromIntegral 0)    -- prev hash
+                            (fromIntegral 0)    -- height
+                            (fromIntegral nTxs)
+                            (fromIntegral 0)    -- chain work
+                            (fromIntegral nTxs) -- chain tx
+                            (fromIntegral 0)
+                            (fromIntegral 0)
+                            (fromIntegral 0)
+                            (fromIntegral 0))
+            return ()
+            
 

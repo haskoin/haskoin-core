@@ -22,7 +22,7 @@ import qualified Data.ByteString.Char8 as BSC
 
 import qualified Database.LevelDB as DB
 
-import Bitcoin.MemState
+import Bitcoin.MemMap
 import Bitcoin.Protocol
 import Bitcoin.Message
 import Bitcoin.Protocol.VarString
@@ -37,6 +37,8 @@ import Bitcoin.Protocol.GetBlocks
 
 import qualified Bitcoin.LevelDB as DB
 import qualified Bitcoin.Constants as Const
+
+import qualified Data.Map.Strict as Map
 
 import qualified Text.Show.Pretty as Pr
 
@@ -54,8 +56,8 @@ main = withSocketsDo $ do
         C.=$ (CB.sinkHandle h)
 
     -- Initialise shared memory
-    mapBlockIndex   <- initMapBlockIndex
-    mapOrphanBlocks <- initMapOrphanBlocks
+    mapBlockIndex   <- newTVarIO (Map.empty :: MapBlockIndex)
+    mapOrphanBlocks <- newTVarIO (Map.empty :: MapOrphanBlocks)
 
     -- Execute main program loop
     DB.runResourceT $ do
@@ -66,7 +68,7 @@ main = withSocketsDo $ do
             C.$= (C.awaitForever $ \msg -> do
                 res <- lift $ evalStateT 
                                 (runApp db msg)
-                                (MemState mapBlockIndex mapOrphanBlocks)
+                                (MemMap mapBlockIndex mapOrphanBlocks)
                 C.yield res)
             C.$$ fromMessage 
             C.=$ (CB.sinkHandle h)
@@ -89,7 +91,7 @@ runApp db msg = case msg of
 
 processInvVector :: InvVector -> App Bool
 processInvVector v 
-    | (invType v) == InvBlock = not <$> alreadyHave (invHash v)
+    | (invType v) == InvBlock = runStateSTM $ not <$> alreadyHave (invHash v)
     | otherwise = return False
 
 buildVersion :: IO Version

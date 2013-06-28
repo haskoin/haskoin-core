@@ -8,6 +8,8 @@ module Bitcoin.MemMap
 , existsBlockIndex
 , existsOrphanBlock
 , alreadyHave
+, addBlockIndex
+, addOrphanBlock
 ) where
 
 import Control.Concurrent.STM
@@ -40,8 +42,18 @@ runStateSTM m = get >>= liftIO . atomically . (evalStateT m)
 getMapBlockIndex :: StateSTM MapBlockIndex
 getMapBlockIndex = get >>= lift . readTVar . mapBlockIndex
 
+putMapBlockIndex :: MapBlockIndex -> StateSTM ()
+putMapBlockIndex mbi = do
+    mm <- get
+    lift $ writeTVar (mapBlockIndex mm) mbi
+
 getMapOrphanBlocks :: StateSTM MapOrphanBlocks
 getMapOrphanBlocks = get >>= lift . readTVar . mapOrphanBlocks
+
+putMapOrphanBlocks :: MapOrphanBlocks -> StateSTM ()
+putMapOrphanBlocks mob = do
+    mm <- get
+    lift $ writeTVar (mapOrphanBlocks mm) mob
 
 existsBlockIndex :: Word256 -> StateSTM Bool
 existsBlockIndex w = liftM (Map.member w) getMapBlockIndex
@@ -51,5 +63,11 @@ existsOrphanBlock w = liftM (Map.member w) getMapOrphanBlocks
 
 alreadyHave :: Word256 -> StateSTM Bool
 alreadyHave w = liftM2 (||) (existsBlockIndex w) (existsOrphanBlock w)
-    
 
+addBlockIndex :: BlockIndex -> StateSTM ()
+addBlockIndex bi =
+    getMapBlockIndex >>= putMapBlockIndex . (Map.insert (biHash bi) bi)
+
+addOrphanBlock :: Block -> StateSTM ()
+addOrphanBlock ob =
+    getMapOrphanBlocks >>= putMapOrphanBlocks . (Map.insert (blockHash ob) ob)

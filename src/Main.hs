@@ -9,6 +9,9 @@ import qualified Data.Conduit as C
 import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.List as CL
 
+import Control.Concurrent.STM
+
+import Control.Applicative
 import Control.Monad
 import Control.Monad.State
 import Control.Monad.IO.Class
@@ -19,6 +22,7 @@ import qualified Data.ByteString.Char8 as BSC
 
 import qualified Database.LevelDB as DB
 
+import Bitcoin.MemState
 import Bitcoin.Protocol
 import Bitcoin.Message
 import Bitcoin.Protocol.VarString
@@ -26,10 +30,10 @@ import Bitcoin.Protocol.NetworkAddress
 import Bitcoin.Protocol.Ping
 import Bitcoin.Protocol.Tx
 import Bitcoin.Protocol.Inv
+import Bitcoin.Protocol.InvVector
 import Bitcoin.Protocol.GetData
 import Bitcoin.Protocol.Block
 import Bitcoin.Protocol.GetBlocks
-
 
 import qualified Bitcoin.LevelDB as DB
 import qualified Bitcoin.Constants as Const
@@ -49,15 +53,44 @@ main = withSocketsDo $ do
         C.$$ fromMessage
         C.=$ (CB.sinkHandle h)
 
+    -- Initialise shared memory
+    mapBlockIndex   <- initMapBlockIndex
+    mapOrphanBlocks <- initMapOrphanBlocks
+
     -- Execute main program loop
     DB.runResourceT $ do
         db <- DB.openHandle
         DB.initBlockIndex db
         (CB.sourceHandle h) 
             C.$= toMessage 
-            C.$= (runApp db)
+            C.$= (C.awaitForever $ \msg -> do
+                res <- lift $ evalStateT 
+                                (runApp db msg)
+                                (MemState mapBlockIndex mapOrphanBlocks)
+                C.yield res)
             C.$$ fromMessage 
             C.=$ (CB.sinkHandle h)
+
+runApp :: DB.DB -> Message -> App (Maybe Message)
+runApp db msg = case msg of
+    MVersion _ -> return $ Just MVerAck
+    MVerAck -> do
+        loc <- buildBlockLocator
+        return . Just . MGetBlocks $ 
+            GetBlocks (fromIntegral 1) loc (fromIntegral 0)
+    MPing (Ping n) -> return $ Just $ MPong (Pong n)
+    MInv (Inv l) -> do
+        ls <- filterM processInvVector l
+        return $ Just $ MGetData (GetData ls)
+    MBlock b -> do
+        DB.writeBlock db b
+        return $ Nothing
+    _ -> return $ Nothing
+
+processInvVector :: InvVector -> App Bool
+processInvVector v 
+    | (invType v) == InvBlock = not <$> alreadyHave (invHash v)
+    | otherwise = return False
 
 buildVersion :: IO Version
 buildVersion = do
@@ -67,24 +100,6 @@ buildVersion = do
     time <- getPOSIXTime
     rdmn <- randomIO -- nonce
     return $ Version 70001 1 (floor time) addr addr rdmn ua 0 False
-
-runApp :: MonadResource m => DB.DB -> C.Conduit Message m (Maybe Message)
-runApp db = C.awaitForever $ \msg -> do
-    --liftIO $ putStrLn $ Pr.ppShow msg
-    res <- lift $ do
-        case msg of
-            MVersion _ -> return $ Just MVerAck
-            MVerAck -> do
-                loc <- buildBlockLocator
-                return . Just . MGetBlocks $ 
-                    GetBlocks (fromIntegral 1) loc (fromIntegral 0)
-            MPing (Ping n) -> return $ Just $ MPong (Pong n)
-            MInv (Inv l) -> return $ Just $ MGetData (GetData l)
-            MBlock b -> do
-                DB.writeBlock db b
-                return $ Nothing
-            _ -> return $ Nothing
-    C.yield res
 
 checkTransaction :: Tx -> Bool
 checkTransaction tx = case tx of

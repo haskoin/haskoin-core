@@ -2,13 +2,14 @@ module Bitcoin.Message
 ( Message(..)
 , Version(..)
 , toMessage
-, fromMessage
+, fromMessages
 , getSerializeSize
 ) where
 
 import qualified Data.Conduit as C
 import qualified Data.Conduit.Binary as CB
 
+import Control.Monad
 import Control.Monad.Trans.Resource
 import Control.Monad.IO.Class
 
@@ -86,10 +87,10 @@ getMessage cmd payload = case cmd of
     _            -> error $ "getMessage: Invalid command string " ++ cmd
 
 -- Conduit transforming streams of messages into bytestrings
-fromMessage :: Monad m => C.Conduit (Maybe Message) m BS.ByteString
-fromMessage = C.awaitForever $ \i ->
-    case i of 
-        Just msg -> do
+fromMessages :: Monad m => C.Conduit [Message] m BS.ByteString
+fromMessages = C.awaitForever $ \msgs -> forM_ msgs go
+    where 
+        go msg = do
             let (cmd, mPut) = putMessage msg
                 payload = toStrictBS $ runPut mPut
                 chksum = doubleSHA256CheckSum payload
@@ -100,7 +101,6 @@ fromMessage = C.awaitForever $ \i ->
                         (fromIntegral $ BS.length payload)
                         chksum
             C.yield $ header `BS.append` payload
-        _ -> return ()
 
 putMessage :: Message -> (String, BitcoinPut)
 putMessage m = case m of 

@@ -5,9 +5,12 @@ module Bitcoin.Util
 , bsToString
 , bscToBS
 , bsToBSC
+, partitionM
 ) where
 
 import Data.Char
+
+import Control.Monad
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
@@ -30,4 +33,10 @@ bscToBS = stringToBS . BSC.unpack
 
 bsToBSC :: BS.ByteString -> BSC.ByteString
 bsToBSC = BSC.pack . bsToString
+
+partitionM :: Monad m => (a -> m Bool) -> [a] -> m ([a],[a])
+partitionM f xs = foldM go ([],[]) xs
+    where go (a, b) x = do
+              flag <- f x
+              return $ if flag then (x:a,b) else (a,x:b)
 

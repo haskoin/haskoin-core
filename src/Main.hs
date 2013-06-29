@@ -37,6 +37,7 @@ import Bitcoin.Protocol.GetBlocks
 
 import qualified Bitcoin.LevelDB as DB
 import qualified Bitcoin.Constants as Const
+import Bitcoin.Util
 
 import qualified Data.Map.Strict as Map
 
@@ -51,13 +52,14 @@ main = withSocketsDo $ do
 
     -- Greet our host with the Version message
     version <- buildVersion
-    (CL.sourceList [Just $ MVersion version])
-        C.$$ fromMessage
+    (CL.sourceList [[MVersion version]])
+        C.$$ fromMessages
         C.=$ (CB.sinkHandle h)
 
     -- Initialise shared memory
     mapBlockIndex   <- newTVarIO (Map.empty :: MapBlockIndex)
     mapOrphanBlocks <- newTVarIO (Map.empty :: MapOrphanBlocks)
+    bestBlock       <- newTVarIO DB.genesisBlockIndex
 
     -- Execute main program loop
     DB.runResourceT $ do
@@ -68,32 +70,54 @@ main = withSocketsDo $ do
             C.$= (C.awaitForever $ \msg -> do
                 res <- lift $ evalStateT 
                                 (runApp db msg)
-                                (MemMap mapBlockIndex mapOrphanBlocks)
+                                (MemMap 
+                                    mapBlockIndex 
+                                    mapOrphanBlocks
+                                    bestBlock)
                 C.yield res)
-            C.$$ fromMessage 
+            C.$$ fromMessages 
             C.=$ (CB.sinkHandle h)
 
-runApp :: DB.DB -> Message -> App (Maybe Message)
+runApp :: DB.DB -> Message -> App [Message]
 runApp db msg = case msg of
-    MVersion _ -> return $ Just MVerAck
+    MVersion _ -> return [MVerAck]
     MVerAck -> do
         loc <- buildBlockLocator
-        return . Just . MGetBlocks $ 
-            GetBlocks (fromIntegral 1) loc (fromIntegral 0)
-    MPing (Ping n) -> return $ Just $ MPong (Pong n)
+        return [ MGetBlocks $ 
+                   GetBlocks 
+                      (fromIntegral 1) 
+                      loc 
+                      (fromIntegral 0)
+               ]
+    MPing (Ping n) -> return [MPong (Pong n)]
     MInv (Inv l) -> do
-        ls <- filterM processInvVector l
-        return $ Just $ MGetData (GetData ls)
+        (ls,rs)   <- partitionM haveInvVector l
+        orphans   <- runStateSTM $ mapM lookupOrphanBlock (map invHash ls)
+        getBlocks <- buildOrphanGetBlocks orphans
+        return $ (MGetData (GetData rs)) : getBlocks
     MBlock b -> do
         DB.writeBlock db b
-        return $ Nothing
-    _ -> return $ Nothing
+        return []
+    _ -> return []
 
-processInvVector :: InvVector -> App Bool
-processInvVector v 
-    | (invType v) == InvBlock = runStateSTM $ not <$> alreadyHave (invHash v)
-    | otherwise = return False
+haveInvVector :: InvVector -> App Bool
+haveInvVector v 
+    | (invType v) == InvBlock = runStateSTM $ alreadyHave (invHash v)
+    | otherwise = return True -- ignore for now
 
+buildOrphanGetBlocks :: [Maybe Block] -> App [Message]
+buildOrphanGetBlocks ((Just b):xs) = do
+    orphanRoot      <- runStateSTM $ getOrphanRoot b
+    bestBlockIndex  <- runStateSTM $ getBestBlockIndex
+    rest            <- buildOrphanGetBlocks xs
+    return $ (MGetBlocks $ GetBlocks
+                            (fromIntegral 1)
+                            [DB.biHash bestBlockIndex]
+                            (blockHash orphanRoot)
+             ) : rest
+buildOrphanGetBlocks (Nothing:xs) = buildOrphanGetBlocks xs
+buildOrphanGetBlocks _ = return []
+     
 buildVersion :: IO Version
 buildVersion = do
     let zeroAddr = 0xffff00000000
@@ -109,7 +133,6 @@ checkTransaction tx = case tx of
     (Tx _ _ [] _) -> False --vout False
     _ -> not $ getSerializeSize (MTx tx) > Const.maxBlockSize
 
-buildBlockLocator :: MonadResource m => m [Word256]
-buildBlockLocator = do
-    return $ [testGenesisBlockHash]
+buildBlockLocator :: App [Word256]
+buildBlockLocator = return [testGenesisBlockHash]
     

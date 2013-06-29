@@ -5,6 +5,7 @@ module Bitcoin.LevelDB
 , writeBlockIndex
 , writeBlock
 , readBlockIndex
+, genesisBlockIndex
 ) where
 
 import Data.Default
@@ -82,18 +83,21 @@ initBlockIndex db = do
         Nothing  -> do
             liftIO $ print $ "Initializing LevelDB. Writing genesis block hash "
                 ++ (show testGenesisBlockHash)
-            writeBlockIndex db 
-                (BlockIndex
-                    testGenesisBlockHash
-                    (fromIntegral 0)    -- prev hash
-                    (fromIntegral 0)    -- height
-                    (fromIntegral 1)
-                    (fromIntegral 0)    -- chain work
-                    (fromIntegral 1) -- chain tx
-                    (fromIntegral 0)
-                    (fromIntegral 0)
-                    (fromIntegral 0)
-                    (fromIntegral 0))
+            writeBlockIndex db genesisBlockIndex
+
+genesisBlockIndex :: BlockIndex
+genesisBlockIndex = 
+    BlockIndex
+        testGenesisBlockHash
+        (fromIntegral 0)
+        (fromIntegral 0)
+        (fromIntegral 1)
+        (fromIntegral 0)
+        (fromIntegral 1)
+        (fromIntegral 0)
+        (fromIntegral 0)
+        (fromIntegral 0)
+        (fromIntegral 0)
 
 readBlockIndex :: MonadResource m => DB.DB -> Word256 -> m (Maybe BlockIndex)
 readBlockIndex db w = do

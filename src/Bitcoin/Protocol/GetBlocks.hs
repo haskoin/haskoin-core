@@ -1,6 +1,7 @@
 module Bitcoin.Protocol.GetBlocks 
 ( GetBlocks(..) 
 , requestMaxBlocks
+, BlockLocator
 ) where
 
 import Control.Monad
@@ -9,9 +10,11 @@ import Control.Applicative
 import Bitcoin.Protocol
 import Bitcoin.Protocol.VarInt
 
+type BlockLocator = [Word256]
+
 data GetBlocks = GetBlocks {
     getBlocksVersion :: Word32,
-    blockLocatorHash :: [Word256],
+    blockLocatorHash :: BlockLocator,
     hashStop         :: Word256
 } deriving (Eq, Read, Show)
 

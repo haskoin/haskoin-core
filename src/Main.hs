@@ -59,7 +59,7 @@ main = withSocketsDo $ do
     -- Initialise shared memory
     mapBlockIndex   <- newTVarIO (Map.empty :: MapBlockIndex)
     mapOrphanBlocks <- newTVarIO (Map.empty :: MapOrphanBlocks)
-    bestBlock       <- newTVarIO genesisBlockIndex
+    bestBlock       <- newTVarIO (buildBlockIndex testGenesisBlock Nothing)
 
     -- Execute main program loop
     DB.runResourceT $ do
@@ -81,45 +81,62 @@ main = withSocketsDo $ do
 runApp :: DB.DB -> Message -> App [Message]
 runApp db msg = case msg of
     MVersion _ -> return [MVerAck]
-    MVerAck -> do
-        loc <- buildBlockLocator
-        return [ MGetBlocks $ GetBlocks 
-                                  Const.blockVersion
-                                  loc 
-                                  requestMaxBlocks
-               ]
+    MVerAck -> runStateSTM $ do
+        bestBlockIndex <- getBestBlockIndex
+        locator        <- buildBlockLocator $ Just bestBlockIndex
+        let getBlocks = 
+                (MGetBlocks $
+                    GetBlocks
+                         Const.blockVersion
+                         locator
+                         requestMaxBlocks)
+        return [getBlocks]
     MPing (Ping n) -> return [MPong (Pong n)]
-    MInv (Inv l) -> do
+    MInv (Inv l) -> runStateSTM $ do
         (ls,rs)   <- partitionM haveInvVector l
-        orphans   <- runStateSTM $ mapM lookupOrphanBlock (map invHash ls)
-        getBlocks <- (buildOrphanGetBlocks orphans) 
+        orphans   <- mapM lookupOrphanBlock (map invHash ls)
+        getBlocks <- buildOrphanGetBlocks orphans
+        lastBI    <- lookupBlockIndex . invHash . last $ l
+        locator   <- buildBlockLocator lastBI
         let lastGetBlock = 
-                MGetBlocks $ GetBlocks 
-                                Const.blockVersion
-                                [invHash $ last l]
-                                requestMaxBlocks
+                MGetBlocks $ 
+                    GetBlocks 
+                        Const.blockVersion
+                        locator
+                        requestMaxBlocks
         return $ lastGetBlock : (MGetData (GetData rs)) : getBlocks
     MBlock b -> runStateSTM $ do
-        notHave <- not <$> (alreadyHave $ blockHash b)
-        when notHave (addBlock b)  
+        conditionM (alreadyHave $ blockHash b) (return []) $ 
+            conditionM (addBlock b) (return []) $ do
+                bestBlockIndex <- getBestBlockIndex
+                orphanRoot     <- getOrphanRoot b
+                locator        <- buildBlockLocator $ Just bestBlockIndex
+                let getBlocks = 
+                        MGetBlocks $
+                            GetBlocks
+                                Const.blockVersion
+                                locator
+                                (blockHash orphanRoot)
+                return [getBlocks]
         -- DB.writeBlock db b
-        return []
     _ -> return []
 
-haveInvVector :: InvVector -> App Bool
+haveInvVector :: InvVector -> StateSTM Bool
 haveInvVector v 
-    | (invType v) == InvBlock = runStateSTM $ alreadyHave (invHash v)
+    | (invType v) == InvBlock = alreadyHave (invHash v)
     | otherwise = return True -- ignore for now
 
-buildOrphanGetBlocks :: [Maybe Block] -> App [Message]
+buildOrphanGetBlocks :: [Maybe Block] -> StateSTM [Message]
 buildOrphanGetBlocks ((Just b):xs) = do
-    orphanRoot      <- runStateSTM $ getOrphanRoot b
-    bestBlockIndex  <- runStateSTM $ getBestBlockIndex
+    orphanRoot      <- getOrphanRoot b
+    bestBlockIndex  <- getBestBlockIndex
     rest            <- buildOrphanGetBlocks xs
-    return $ (MGetBlocks $ GetBlocks
-                            Const.blockVersion
-                            [biHash bestBlockIndex]
-                            (blockHash orphanRoot)
+    locator         <- buildBlockLocator $ Just bestBlockIndex
+    return $ (MGetBlocks $ 
+                 GetBlocks
+                     Const.blockVersion
+                     locator
+                     (blockHash orphanRoot)
              ) : rest
 buildOrphanGetBlocks (Nothing:xs) = buildOrphanGetBlocks xs
 buildOrphanGetBlocks _ = return []
@@ -138,7 +155,4 @@ checkTransaction tx = case tx of
     (Tx _ [] _ _) -> False --vin False
     (Tx _ _ [] _) -> False --vout False
     _ -> not $ getSerializeSize (MTx tx) > Const.maxBlockSize
-
-buildBlockLocator :: App [Word256]
-buildBlockLocator = return [testGenesisBlockHash]
     

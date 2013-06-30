@@ -1,6 +1,6 @@
 module Bitcoin.BlockChain.BlockIndex
 ( BlockIndex(..)
-, genesisBlockIndex
+, buildBlockIndex
 ) where
 
 import Bitcoin.Protocol
@@ -49,17 +49,33 @@ instance BitcoinProtocol BlockIndex where
         putWord32le  u
         putWord32le  s
 
-genesisBlockIndex :: BlockIndex
-genesisBlockIndex = 
-    BlockIndex
-        testGenesisBlockHash
-        (fromIntegral 0)
-        (fromIntegral 0)
-        (fromIntegral 1)
-        (fromIntegral 0)
-        (fromIntegral 1)
-        (fromIntegral 0)
-        (fromIntegral 0)
-        (fromIntegral 0)
-        (fromIntegral 0)
+buildBlockIndex :: Block -> (Maybe BlockIndex) -> BlockIndex
+buildBlockIndex block prev = 
+    let nTxns = (length (blockTxns block)) + 1
+        hash = blockHash block
+        in case prev of
+            (Just prevBlockIndex) -> 
+                BlockIndex
+                    hash
+                    (biHash prevBlockIndex)
+                    ((biHeight prevBlockIndex) + 1)
+                    (fromIntegral nTxns)
+                    ((biChainWork prevBlockIndex) + 0) -- todo
+                    ((biChainTx prevBlockIndex) + (fromIntegral nTxns))
+                    (fromIntegral 0)
+                    (fromIntegral 0)
+                    (fromIntegral 0)
+                    (fromIntegral 0)
+            Nothing ->
+                BlockIndex
+                    hash
+                    (fromIntegral 0)    -- prev hash
+                    (fromIntegral 0)    -- height
+                    (fromIntegral nTxns)
+                    (fromIntegral 0)    -- chain work
+                    (fromIntegral nTxns) -- chain tx
+                    (fromIntegral 0)
+                    (fromIntegral 0)
+                    (fromIntegral 0)
+                    (fromIntegral 0)
 

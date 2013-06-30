@@ -16,7 +16,10 @@ module Bitcoin.BlockChain.MemoryMaps
 , putBestBlockIndex
 , addBlock
 , getOrphanRoot
+, buildBlockLocator
 ) where
+
+import Data.Maybe
 
 import Control.Concurrent.STM
 
@@ -27,6 +30,7 @@ import Control.Monad.Trans.Resource
 
 import Bitcoin.Protocol
 import Bitcoin.Protocol.Block
+import Bitcoin.Protocol.GetBlocks
 import Bitcoin.Protocol.BlockHeader
 import Bitcoin.BlockChain.BlockIndex
 
@@ -98,8 +102,18 @@ lookupBlockIndex w = getMapBlockIndex >>= return . (Map.lookup w)
 lookupOrphanBlock :: Word256 -> StateSTM (Maybe Block)
 lookupOrphanBlock w = getMapOrphanBlocks >>= return . (Map.lookup w)
 
-addBlock :: Block -> StateSTM ()
-addBlock b = return ()
+addBlock :: Block -> StateSTM Bool
+addBlock block = do
+    let prevHash = prevBlock $ blockHeader block
+    prev <- lookupBlockIndex prevHash
+    case prev of
+        (Just prevBlockIndex) -> do
+            addBlockIndex $ buildBlockIndex block (Just prevBlockIndex)
+            -- todo accept orphans that depend on this one
+            return True
+        Nothing -> do
+            addOrphanBlock block
+            return False
 
 getOrphanRoot :: Block -> StateSTM Block
 getOrphanRoot b = do
@@ -109,3 +123,18 @@ getOrphanRoot b = do
         (Just orphan) -> getOrphanRoot orphan
         Nothing       -> return b
 
+buildBlockLocator :: Maybe BlockIndex -> StateSTM BlockLocator
+buildBlockLocator (Just h) = (go 1 [h]) >>= return . (++ [testGenesisBlockHash])
+    where go step acc = do
+              next <- move (Just $ head acc) step
+              let nextStep = if (length acc) > 10 then step * 2 else 1
+              case next of
+                  (Just n) -> go nextStep (n:acc)
+                  Nothing  -> return $ map biHash (reverse acc)
+          move bi step 
+              | step > 0 && isJust bi = do
+                  next <- lookupBlockIndex (biPrev $ fromJust bi)
+                  move next (step - 1)
+              | otherwise = return bi
+buildBlockLocator Nothing = return [testGenesisBlockHash]
+              

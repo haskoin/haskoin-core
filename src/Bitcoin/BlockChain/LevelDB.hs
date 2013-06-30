@@ -46,7 +46,7 @@ initBlockIndex db = do
         Nothing  -> do
             liftIO $ print $ "Initializing LevelDB. Writing genesis block hash "
                 ++ (show testGenesisBlockHash)
-            writeBlockIndex db genesisBlockIndex
+            writeBlockIndex db (buildBlockIndex testGenesisBlock Nothing)
 
 readBlockIndex :: MonadResource m => DB.DB -> Word256 -> m (Maybe BlockIndex)
 readBlockIndex db w = do

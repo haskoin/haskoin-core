@@ -1,4 +1,7 @@
-module Bitcoin.Protocol.GetBlocks ( GetBlocks(..) ) where
+module Bitcoin.Protocol.GetBlocks 
+( GetBlocks(..) 
+, requestMaxBlocks
+) where
 
 import Control.Monad
 import Control.Applicative
@@ -24,4 +27,7 @@ instance BitcoinProtocol GetBlocks where
         bitcoinPut $ lengthFromList xs
         forM_ xs putWord256be
         putWord256be h
+
+requestMaxBlocks :: Word256
+requestMaxBlocks = fromIntegral 0
                     

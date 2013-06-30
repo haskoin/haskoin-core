@@ -1,4 +1,4 @@
-module Bitcoin.MemMap
+module Bitcoin.BlockChain.MemoryMaps
 ( MemMap(..)
 , App
 , StateSTM
@@ -14,6 +14,7 @@ module Bitcoin.MemMap
 , lookupOrphanBlock
 , getBestBlockIndex
 , putBestBlockIndex
+, addBlock
 , getOrphanRoot
 ) where
 
@@ -27,13 +28,14 @@ import Control.Monad.Trans.Resource
 import Bitcoin.Protocol
 import Bitcoin.Protocol.Block
 import Bitcoin.Protocol.BlockHeader
-import Bitcoin.LevelDB
+import Bitcoin.BlockChain.BlockIndex
 
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict (Map) 
 
-type StateSTM a = StateT MemMap STM a
 type App a = StateT MemMap (ResourceT IO) a
+type StateSTM a = StateT MemMap STM a
+
 type MapBlockIndex = Map Word256 BlockIndex
 type MapOrphanBlocks = Map Word256 Block
 
@@ -95,6 +97,9 @@ lookupBlockIndex w = getMapBlockIndex >>= return . (Map.lookup w)
 
 lookupOrphanBlock :: Word256 -> StateSTM (Maybe Block)
 lookupOrphanBlock w = getMapOrphanBlocks >>= return . (Map.lookup w)
+
+addBlock :: Block -> StateSTM ()
+addBlock b = return ()
 
 getOrphanRoot :: Block -> StateSTM Block
 getOrphanRoot b = do

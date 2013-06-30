@@ -20,9 +20,10 @@ import Control.Monad.Trans.Resource
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
-import qualified Database.LevelDB as DB
+import qualified Bitcoin.BlockChain.LevelDB as DB
 
-import Bitcoin.MemMap
+import Bitcoin.BlockChain.MemoryMaps
+import Bitcoin.BlockChain.BlockIndex
 import Bitcoin.Protocol
 import Bitcoin.Message
 import Bitcoin.Protocol.VarString
@@ -35,7 +36,6 @@ import Bitcoin.Protocol.GetData
 import Bitcoin.Protocol.Block
 import Bitcoin.Protocol.GetBlocks
 
-import qualified Bitcoin.LevelDB as DB
 import qualified Bitcoin.Constants as Const
 import Bitcoin.Util
 
@@ -59,7 +59,7 @@ main = withSocketsDo $ do
     -- Initialise shared memory
     mapBlockIndex   <- newTVarIO (Map.empty :: MapBlockIndex)
     mapOrphanBlocks <- newTVarIO (Map.empty :: MapOrphanBlocks)
-    bestBlock       <- newTVarIO DB.genesisBlockIndex
+    bestBlock       <- newTVarIO genesisBlockIndex
 
     -- Execute main program loop
     DB.runResourceT $ do
@@ -83,20 +83,26 @@ runApp db msg = case msg of
     MVersion _ -> return [MVerAck]
     MVerAck -> do
         loc <- buildBlockLocator
-        return [ MGetBlocks $ 
-                   GetBlocks 
-                      (fromIntegral 1) 
-                      loc 
-                      (fromIntegral 0)
+        return [ MGetBlocks $ GetBlocks 
+                                  Const.blockVersion
+                                  loc 
+                                  requestMaxBlocks
                ]
     MPing (Ping n) -> return [MPong (Pong n)]
     MInv (Inv l) -> do
         (ls,rs)   <- partitionM haveInvVector l
         orphans   <- runStateSTM $ mapM lookupOrphanBlock (map invHash ls)
-        getBlocks <- buildOrphanGetBlocks orphans
-        return $ (MGetData (GetData rs)) : getBlocks
-    MBlock b -> do
-        DB.writeBlock db b
+        getBlocks <- (buildOrphanGetBlocks orphans) 
+        let lastGetBlock = 
+                MGetBlocks $ GetBlocks 
+                                Const.blockVersion
+                                [invHash $ last l]
+                                requestMaxBlocks
+        return $ lastGetBlock : (MGetData (GetData rs)) : getBlocks
+    MBlock b -> runStateSTM $ do
+        notHave <- not <$> (alreadyHave $ blockHash b)
+        when notHave (addBlock b)  
+        -- DB.writeBlock db b
         return []
     _ -> return []
 
@@ -111,13 +117,13 @@ buildOrphanGetBlocks ((Just b):xs) = do
     bestBlockIndex  <- runStateSTM $ getBestBlockIndex
     rest            <- buildOrphanGetBlocks xs
     return $ (MGetBlocks $ GetBlocks
-                            (fromIntegral 1)
-                            [DB.biHash bestBlockIndex]
+                            Const.blockVersion
+                            [biHash bestBlockIndex]
                             (blockHash orphanRoot)
              ) : rest
 buildOrphanGetBlocks (Nothing:xs) = buildOrphanGetBlocks xs
 buildOrphanGetBlocks _ = return []
-     
+
 buildVersion :: IO Version
 buildVersion = do
     let zeroAddr = 0xffff00000000

@@ -1,11 +1,11 @@
-module Bitcoin.LevelDB
-( BlockIndex(..)
+module Bitcoin.BlockChain.LevelDB
+( DB.DB
+, DB.runResourceT
 , openHandle
 , initBlockIndex
 , writeBlockIndex
 , writeBlock
 , readBlockIndex
-, genesisBlockIndex
 ) where
 
 import Data.Default
@@ -13,6 +13,7 @@ import Data.Default
 import Bitcoin.Protocol
 import Bitcoin.Protocol.Block
 import Bitcoin.Protocol.BlockHeader
+import Bitcoin.BlockChain.BlockIndex
 import Bitcoin.Util
 
 import Control.Monad
@@ -25,44 +26,6 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 
 import qualified Database.LevelDB as DB
-
-data BlockIndex = BlockIndex 
-    { biHash      :: Word256
-    , biPrev      :: Word256
-    , biHeight    :: Word32
-    , biTx        :: Word32
-    , biChainWork :: Word256
-    , biChainTx   :: Word32
-    , biFile      :: Word32
-    , biDataPos   :: Word32
-    , biUndoPos   :: Word32
-    , biStatus    :: Word32
-    } deriving (Eq, Read, Show)
-
-instance BitcoinProtocol BlockIndex where
-
-    bitcoinGet = BlockIndex <$> getWord256be
-                            <*> getWord256be
-                            <*> getWord32le
-                            <*> getWord32le
-                            <*> getWord256be
-                            <*> getWord32le
-                            <*> getWord32le
-                            <*> getWord32le
-                            <*> getWord32le
-                            <*> getWord32le
-
-    bitcoinPut (BlockIndex h p he tx cw ct f d u s) = do
-        putWord256be h
-        putWord256be p
-        putWord32le  he
-        putWord32le  tx
-        putWord256be cw
-        putWord32le  ct
-        putWord32le  f
-        putWord32le  d
-        putWord32le  u
-        putWord32le  s
 
 openHandle :: ResourceT IO DB.DB
 openHandle = do
@@ -84,20 +47,6 @@ initBlockIndex db = do
             liftIO $ print $ "Initializing LevelDB. Writing genesis block hash "
                 ++ (show testGenesisBlockHash)
             writeBlockIndex db genesisBlockIndex
-
-genesisBlockIndex :: BlockIndex
-genesisBlockIndex = 
-    BlockIndex
-        testGenesisBlockHash
-        (fromIntegral 0)
-        (fromIntegral 0)
-        (fromIntegral 1)
-        (fromIntegral 0)
-        (fromIntegral 1)
-        (fromIntegral 0)
-        (fromIntegral 0)
-        (fromIntegral 0)
-        (fromIntegral 0)
 
 readBlockIndex :: MonadResource m => DB.DB -> Word256 -> m (Maybe BlockIndex)
 readBlockIndex db w = do

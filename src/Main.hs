@@ -14,6 +14,7 @@ import Control.Concurrent.STM
 import Control.Applicative
 import Control.Monad
 import Control.Monad.State
+import Control.Monad.Writer
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
 
@@ -60,52 +61,50 @@ main = withSocketsDo $ do
     mapBlockIndex   <- newTVarIO (Map.empty :: MapBlockIndex)
     mapOrphanBlocks <- newTVarIO (Map.empty :: MapOrphanBlocks)
     bestBlock       <- newTVarIO (buildBlockIndex testGenesisBlock Nothing)
+    let mem = MemoryMap mapBlockIndex mapOrphanBlocks bestBlock
+
+    (_, log) <- atomically $ runWriterT (evalStateT initMemoryMaps mem)
+    when (not $ null log) (putStrLn log)
 
     -- Execute main program loop
     DB.runResourceT $ do
         db <- DB.openHandle
-        DB.initBlockIndex db
         (CB.sourceHandle h) 
             C.$= toMessage 
-            C.$= (C.awaitForever $ \msg -> do
-                res <- lift $ evalStateT 
-                                (runApp db msg)
-                                (MemMap 
-                                    mapBlockIndex 
-                                    mapOrphanBlocks
-                                    bestBlock)
-                C.yield res)
+            C.$= (runApp db mem)
             C.$$ fromMessages 
             C.=$ (CB.sinkHandle h)
 
-runApp :: DB.DB -> Message -> App [Message]
-runApp db msg = case msg of
+runApp :: DB.DB -> MemoryMap -> C.Conduit Message (ResourceT IO) [Message]
+runApp db mem = C.awaitForever $ \msg -> do
+    (res, log) <- lift $ evalStateT (runStateSTM $ dispatchMessage msg) mem
+    when (not $ null log) $ liftIO $ putStrLn log
+    C.yield res
+
+dispatchMessage :: Message -> StateSTM [Message]
+dispatchMessage msg = case msg of
     MVersion _ -> return [MVerAck]
-    MVerAck -> runStateSTM $ do
+    MVerAck -> do
         bestBlockIndex <- getBestBlockIndex
         locator        <- buildBlockLocator $ Just bestBlockIndex
         let getBlocks = 
-                (MGetBlocks $
+                MGetBlocks $
                     GetBlocks
                          Const.blockVersion
                          locator
-                         requestMaxBlocks)
+                         requestMaxBlocks
         return [getBlocks]
     MPing (Ping n) -> return [MPong (Pong n)]
-    MInv (Inv l) -> runStateSTM $ do
-        (ls,rs)   <- partitionM haveInvVector l
-        orphans   <- mapM lookupOrphanBlock (map invHash ls)
-        getBlocks <- buildOrphanGetBlocks orphans
-        lastBI    <- lookupBlockIndex . invHash . last $ l
-        locator   <- buildBlockLocator lastBI
-        let lastGetBlock = 
-                MGetBlocks $ 
-                    GetBlocks 
-                        Const.blockVersion
-                        locator
-                        requestMaxBlocks
-        return $ lastGetBlock : (MGetData (GetData rs)) : getBlocks
-    MBlock b -> runStateSTM $ do
+    MInv (Inv l) -> do
+        logString $ "Got Inv of size " ++ (show $ length l)
+        let blockList = filter ((== InvBlock) . invType) l
+        (have,notHave) <- partitionM haveInvVector blockList
+        logString $ "I have this many: " ++ (show $ length have)
+        orphans        <- mapM lookupOrphanBlock (map invHash have)
+        getBlocks      <- buildOrphanGetBlocks orphans
+        logString $ "Orphan block locator " ++ (show getBlocks)
+        return $ MGetData (GetData notHave) : getBlocks
+    MBlock b -> do
         conditionM (alreadyHave $ blockHash b) (return []) $ 
             conditionM (addBlock b) (return []) $ do
                 bestBlockIndex <- getBestBlockIndex
@@ -117,6 +116,7 @@ runApp db msg = case msg of
                                 Const.blockVersion
                                 locator
                                 (blockHash orphanRoot)
+                logString $ "MBlock locator: " ++ (show getBlocks)
                 return [getBlocks]
         -- DB.writeBlock db b
     _ -> return []

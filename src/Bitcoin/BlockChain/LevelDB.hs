@@ -65,7 +65,6 @@ writeBlock :: MonadResource m => DB.DB -> Block -> m ()
 writeBlock db b = do
     let hash = blockHash b
     let prevHash = prevBlock $ blockHeader b
-    let nTxs = ((length (blockTxns b)) + 1)
     current <- readBlockIndex db hash
     case current of
         -- we already have the block, ignore it
@@ -74,38 +73,6 @@ writeBlock db b = do
             return ()
         Nothing  -> do
             prev <- readBlockIndex db prevHash
-            case prev of
-                (Just prevBlock) -> do
-                    let height = ((biHeight prevBlock) + 1)
-                    liftIO $ print $ "Indexing new block " ++ (show hash)
-                        ++ " at height " ++ (show height)
-                    writeBlockIndex db 
-                        (BlockIndex
-                            hash
-                            prevHash
-                            height
-                            (fromIntegral nTxs)
-                            ((biChainWork prevBlock) + 0)
-                            ((biChainTx prevBlock) + (fromIntegral nTxs))
-                            (fromIntegral 0)
-                            (fromIntegral 0)
-                            (fromIntegral 0)
-                            (fromIntegral 0))
-                -- Orphan block
-                Nothing -> do
-                    liftIO $ print $ "Indexing orphan block " ++ (show hash)
-                    writeBlockIndex db 
-                        (BlockIndex
-                            hash
-                            (fromIntegral 0)    -- prev hash
-                            (fromIntegral 0)    -- height
-                            (fromIntegral nTxs)
-                            (fromIntegral 0)    -- chain work
-                            (fromIntegral nTxs) -- chain tx
-                            (fromIntegral 0)
-                            (fromIntegral 0)
-                            (fromIntegral 0)
-                            (fromIntegral 0))
-            return ()
-            
+            liftIO $ print $ "Indexing block " ++ (show hash)
+            writeBlockIndex db (buildBlockIndex b prev)
 

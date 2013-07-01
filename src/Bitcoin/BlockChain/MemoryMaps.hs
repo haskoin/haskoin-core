@@ -1,10 +1,11 @@
 module Bitcoin.BlockChain.MemoryMaps
-( MemMap(..)
+( MemoryMap(..)
 , App
 , StateSTM
 , MapBlockIndex
 , MapOrphanBlocks
 , runStateSTM
+, logString
 , existsBlockIndex
 , existsOrphanBlock
 , alreadyHave
@@ -14,6 +15,7 @@ module Bitcoin.BlockChain.MemoryMaps
 , lookupOrphanBlock
 , getBestBlockIndex
 , putBestBlockIndex
+, initMemoryMaps
 , addBlock
 , getOrphanRoot
 , buildBlockLocator
@@ -26,6 +28,7 @@ import Control.Concurrent.STM
 import Control.Applicative
 import Control.Monad
 import Control.Monad.State
+import Control.Monad.Writer
 import Control.Monad.Trans.Resource
 
 import Bitcoin.Protocol
@@ -37,44 +40,50 @@ import Bitcoin.BlockChain.BlockIndex
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict (Map) 
 
-type App a = StateT MemMap (ResourceT IO) a
-type StateSTM a = StateT MemMap STM a
+type App = StateT MemoryMap (ResourceT IO)
+type StateSTM = StateT MemoryMap (WriterT String STM)
 
 type MapBlockIndex = Map Word256 BlockIndex
 type MapOrphanBlocks = Map Word256 Block
 
-data MemMap = MemMap
+data MemoryMap = MemoryMap
     { mapBlockIndex   :: TVar MapBlockIndex
     , mapOrphanBlocks :: TVar MapOrphanBlocks
     , bestBlock       :: TVar BlockIndex
     } 
 
-runStateSTM :: StateSTM a -> App a
-runStateSTM m = get >>= liftIO . atomically . (evalStateT m)
+runStateSTM :: StateSTM a -> App (a, String)
+runStateSTM m = get >>= liftIO . atomically . runWriterT . (evalStateT m)
+
+liftSTM :: STM a -> StateSTM a
+liftSTM = lift . lift
+
+logString :: String -> StateSTM ()
+logString = lift . tell . (++ "\n")
 
 getMapBlockIndex :: StateSTM MapBlockIndex
-getMapBlockIndex = get >>= lift . readTVar . mapBlockIndex
+getMapBlockIndex = get >>= liftSTM . readTVar . mapBlockIndex
 
 putMapBlockIndex :: MapBlockIndex -> StateSTM ()
 putMapBlockIndex mbi = do
     mm <- get
-    lift $ writeTVar (mapBlockIndex mm) mbi
+    liftSTM $ writeTVar (mapBlockIndex mm) mbi
 
 getMapOrphanBlocks :: StateSTM MapOrphanBlocks
-getMapOrphanBlocks = get >>= lift . readTVar . mapOrphanBlocks
+getMapOrphanBlocks = get >>= liftSTM . readTVar . mapOrphanBlocks
 
 putMapOrphanBlocks :: MapOrphanBlocks -> StateSTM ()
 putMapOrphanBlocks mob = do
     mm <- get
-    lift $ writeTVar (mapOrphanBlocks mm) mob
+    liftSTM $ writeTVar (mapOrphanBlocks mm) mob
 
 getBestBlockIndex :: StateSTM BlockIndex
-getBestBlockIndex = get >>= lift . readTVar . bestBlock
+getBestBlockIndex = get >>= liftSTM . readTVar . bestBlock
 
 putBestBlockIndex :: BlockIndex -> StateSTM ()
 putBestBlockIndex bb = do
     mm <- get
-    lift $ writeTVar (bestBlock mm) bb
+    liftSTM $ writeTVar (bestBlock mm) bb
 
 existsBlockIndex :: Word256 -> StateSTM Bool
 existsBlockIndex w = liftM (Map.member w) getMapBlockIndex
@@ -102,18 +111,41 @@ lookupBlockIndex w = getMapBlockIndex >>= return . (Map.lookup w)
 lookupOrphanBlock :: Word256 -> StateSTM (Maybe Block)
 lookupOrphanBlock w = getMapOrphanBlocks >>= return . (Map.lookup w)
 
+initMemoryMaps :: StateSTM ()
+initMemoryMaps = do
+    let genesisBI = buildBlockIndex testGenesisBlock Nothing
+    logString $ "Indexing Genesis Block " ++ (show genesisBI)
+    addBlockIndex genesisBI
+
 addBlock :: Block -> StateSTM Bool
 addBlock block = do
     let prevHash = prevBlock $ blockHeader block
     prev <- lookupBlockIndex prevHash
     case prev of
         (Just prevBlockIndex) -> do
-            addBlockIndex $ buildBlockIndex block (Just prevBlockIndex)
+            let newBI = buildBlockIndex block (Just prevBlockIndex)
+            logString $ "Indexing new block: " ++ (show $ biHash newBI)
+                ++ " at height " ++ (show $ biHeight newBI)
+            addBlockIndex newBI
+            processOrphansOf block
             -- todo accept orphans that depend on this one
             return True
         Nothing -> do
+            logString $ "Got orphan block: " ++ (show $ blockHash block)
             addOrphanBlock block
             return False
+
+processOrphansOf :: Block -> StateSTM ()
+processOrphansOf block = do
+    let hash = blockHash block
+    map <- getMapOrphanBlocks
+    let (toProcess, newMap) = 
+            Map.partition ((== hash) . prevBlock . blockHeader) map
+    putMapOrphanBlocks newMap
+    when (not $ null (Map.elems toProcess)) (logString $ "Processing orphans: "
+        ++ (show toProcess))
+    forM_ (Map.elems toProcess) addBlock
+
 
 getOrphanRoot :: Block -> StateSTM Block
 getOrphanRoot b = do

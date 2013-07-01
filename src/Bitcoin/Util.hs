@@ -36,9 +36,13 @@ bscToBS = stringToBS . BSC.unpack
 bsToBSC :: BS.ByteString -> BSC.ByteString
 bsToBSC = BSC.pack . bsToString
 
+foldrM :: Monad m => (a -> b -> m b) -> b -> [a] -> m b
+foldrM f d [] = return d
+foldrM f d (x:xs) = (f x) =<< foldrM f d xs
+
 partitionM :: Monad m => (a -> m Bool) -> [a] -> m ([a],[a])
-partitionM f xs = foldM go ([],[]) xs
-    where go (a, b) x = do
+partitionM f xs = foldrM go ([],[]) xs
+    where go x (a, b) = do
               flag <- f x
               return $ if flag then (x:a,b) else (a,x:b)
 

@@ -4,6 +4,8 @@ module Bitcoin.Message
 , toMessage
 , fromMessages
 , getSerializeSize
+, buildGetBlocks
+, buildStopGetBlocks
 ) where
 
 import qualified Data.Conduit as C
@@ -32,7 +34,7 @@ import Bitcoin.Protocol.Ping
 import Bitcoin.Protocol.Alert
 import Bitcoin.Crypto
 import Bitcoin.Util
-import Bitcoin.Constants
+import qualified Bitcoin.Constants as Const
 
 import qualified Text.Show.Pretty as Pr
 
@@ -96,7 +98,7 @@ fromMessages = C.awaitForever $ \msgs -> forM_ msgs go
                 chksum = doubleSHA256CheckSum payload
                 header = toStrictBS . runPut . bitcoinPut $ 
                     MessageHeader
-                        testnetMagic
+                        Const.testnetMagic
                         cmd
                         (fromIntegral $ BS.length payload)
                         chksum
@@ -124,3 +126,9 @@ getSerializeSize :: Message -> Int
 getSerializeSize m = BS.length (payload m) + 24
     where payload = toStrictBS . runPut . snd . putMessage
 
+buildGetBlocks :: BlockLocator -> Message
+buildGetBlocks l = MGetBlocks $ GetBlocks Const.blockVersion l (fromIntegral 0)
+
+buildStopGetBlocks :: BlockLocator -> Word256 -> Message
+buildStopGetBlocks l s = MGetBlocks $ GetBlocks Const.blockVersion l s
+                    

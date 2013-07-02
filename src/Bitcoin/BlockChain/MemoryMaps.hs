@@ -155,8 +155,8 @@ getOrphanRoot b = do
         (Just orphan) -> getOrphanRoot orphan
         Nothing       -> return b
 
-buildBlockLocator :: Maybe BlockIndex -> StateSTM BlockLocator
-buildBlockLocator (Just h) = (go 1 [h]) >>= return . (++ [testGenesisBlockHash])
+buildBlockLocator :: BlockIndex -> StateSTM BlockLocator
+buildBlockLocator h = (go 1 [h]) >>= addGenesisBlock
     where go step acc = do
               next <- move (Just $ head acc) step
               let nextStep = if (length acc) > 10 then step * 2 else 1
@@ -168,5 +168,7 @@ buildBlockLocator (Just h) = (go 1 [h]) >>= return . (++ [testGenesisBlockHash])
                   next <- lookupBlockIndex (biPrev $ fromJust bi)
                   move next (step - 1)
               | otherwise = return bi
-buildBlockLocator Nothing = return [testGenesisBlockHash]
+          addGenesisBlock res
+              | (last res) == testGenesisBlockHash = return res
+              | otherwise = return $ res ++ [testGenesisBlockHash]
               

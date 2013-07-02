@@ -86,38 +86,32 @@ dispatchMessage msg = case msg of
     MVersion _ -> return [MVerAck]
     MVerAck -> do
         bestBlockIndex <- getBestBlockIndex
-        locator        <- buildBlockLocator $ Just bestBlockIndex
-        let getBlocks = 
-                MGetBlocks $
-                    GetBlocks
-                         Const.blockVersion
-                         locator
-                         requestMaxBlocks
-        return [getBlocks]
+        locator        <- buildBlockLocator bestBlockIndex
+        return [buildGetBlocks locator]
     MPing (Ping n) -> return [MPong (Pong n)]
     MInv (Inv l) -> do
-        logString $ "Got Inv of size " ++ (show $ length l)
         let blockList = filter ((== InvBlock) . invType) l
-        (have,notHave) <- partitionM haveInvVector blockList
+        (have,notHave)  <- partitionM haveInvVector blockList
+        orphans         <- mapM lookupOrphanBlock (map invHash have)
+        orphanGetBlocks <- buildOrphanGetBlocks orphans
+        lastMBI         <- lookupBlockIndex (invHash $ last blockList)
+        lastGetBlocks   <- case lastMBI of
+                            (Just lastBI) -> do
+                                lastLocator <- buildBlockLocator lastBI
+                                return $ [buildGetBlocks lastLocator]
+                            Nothing -> return []
+        logString $ "Got Inv of size " ++ (show $ length l)
         logString $ "I have this many: " ++ (show $ length have)
-        orphans        <- mapM lookupOrphanBlock (map invHash have)
-        getBlocks      <- buildOrphanGetBlocks orphans
-        logString $ "Orphan block locator " ++ (show getBlocks)
-        return $ MGetData (GetData notHave) : getBlocks
+        logString $ "Orphan block locator " ++ (show orphanGetBlocks)
+        logString $ "LastBlock block locator " ++ (show lastGetBlocks)
+        return $ MGetData (GetData notHave) : orphanGetBlocks ++ lastGetBlocks
     MBlock b -> do
         conditionM (alreadyHave $ blockHash b) (return []) $ 
             conditionM (addBlock b) (return []) $ do
                 bestBlockIndex <- getBestBlockIndex
                 orphanRoot     <- getOrphanRoot b
-                locator        <- buildBlockLocator $ Just bestBlockIndex
-                let getBlocks = 
-                        MGetBlocks $
-                            GetBlocks
-                                Const.blockVersion
-                                locator
-                                (blockHash orphanRoot)
-                logString $ "MBlock locator: " ++ (show getBlocks)
-                return [getBlocks]
+                locator        <- buildBlockLocator bestBlockIndex
+                return [buildStopGetBlocks locator (blockHash orphanRoot)]
         -- DB.writeBlock db b
     _ -> return []
 
@@ -131,13 +125,8 @@ buildOrphanGetBlocks ((Just b):xs) = do
     orphanRoot      <- getOrphanRoot b
     bestBlockIndex  <- getBestBlockIndex
     rest            <- buildOrphanGetBlocks xs
-    locator         <- buildBlockLocator $ Just bestBlockIndex
-    return $ (MGetBlocks $ 
-                 GetBlocks
-                     Const.blockVersion
-                     locator
-                     (blockHash orphanRoot)
-             ) : rest
+    locator         <- buildBlockLocator bestBlockIndex
+    return $ buildStopGetBlocks locator (blockHash orphanRoot) : rest
 buildOrphanGetBlocks (Nothing:xs) = buildOrphanGetBlocks xs
 buildOrphanGetBlocks _ = return []
 

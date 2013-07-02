@@ -1,6 +1,5 @@
 module Bitcoin.Protocol.GetBlocks 
 ( GetBlocks(..) 
-, requestMaxBlocks
 , BlockLocator
 ) where
 
@@ -31,6 +30,3 @@ instance BitcoinProtocol GetBlocks where
         forM_ xs putWord256be
         putWord256be h
 
-requestMaxBlocks :: Word256
-requestMaxBlocks = fromIntegral 0
-                    

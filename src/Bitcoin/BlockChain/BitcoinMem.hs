@@ -1,10 +1,8 @@
-module Bitcoin.BlockChain.MemoryMaps
-( MemoryMap(..)
-, App
-, StateSTM
+module Bitcoin.BlockChain.BitcoinMem
+( MemState(..)
+, BitcoinMem
 , MapBlockIndex
 , MapOrphanBlocks
-, runStateSTM
 , logString
 , existsBlockIndex
 , existsOrphanBlock
@@ -15,7 +13,7 @@ module Bitcoin.BlockChain.MemoryMaps
 , lookupOrphanBlock
 , getBestBlockIndex
 , putBestBlockIndex
-, initMemoryMaps
+, initBitcoinMem
 , addBlock
 , getOrphanRoot
 , buildBlockLocator
@@ -40,84 +38,79 @@ import Bitcoin.BlockChain.BlockIndex
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict (Map) 
 
-type App = StateT MemoryMap (ResourceT IO)
-type StateSTM = StateT MemoryMap (WriterT String STM)
-
+type BitcoinMem = StateT MemState (WriterT String STM)
 type MapBlockIndex = Map Word256 BlockIndex
 type MapOrphanBlocks = Map Word256 Block
 
-data MemoryMap = MemoryMap
+data MemState = MemState
     { mapBlockIndex   :: TVar MapBlockIndex
     , mapOrphanBlocks :: TVar MapOrphanBlocks
     , bestBlock       :: TVar BlockIndex
     } 
 
-runStateSTM :: StateSTM a -> App (a, String)
-runStateSTM m = get >>= liftIO . atomically . runWriterT . (evalStateT m)
-
-liftSTM :: STM a -> StateSTM a
+liftSTM :: STM a -> BitcoinMem a
 liftSTM = lift . lift
 
-logString :: String -> StateSTM ()
+logString :: String -> BitcoinMem ()
 logString = lift . tell . (++ "\n")
 
-getMapBlockIndex :: StateSTM MapBlockIndex
+initBitcoinMem :: BitcoinMem ()
+initBitcoinMem = do
+    let genesisBI = buildBlockIndex testGenesisBlock Nothing
+    logString $ "Indexing Genesis Block " ++ (show genesisBI)
+    addBlockIndex genesisBI
+
+getMapBlockIndex :: BitcoinMem MapBlockIndex
 getMapBlockIndex = get >>= liftSTM . readTVar . mapBlockIndex
 
-putMapBlockIndex :: MapBlockIndex -> StateSTM ()
+putMapBlockIndex :: MapBlockIndex -> BitcoinMem ()
 putMapBlockIndex mbi = do
     mm <- get
     liftSTM $ writeTVar (mapBlockIndex mm) mbi
 
-getMapOrphanBlocks :: StateSTM MapOrphanBlocks
+getMapOrphanBlocks :: BitcoinMem MapOrphanBlocks
 getMapOrphanBlocks = get >>= liftSTM . readTVar . mapOrphanBlocks
 
-putMapOrphanBlocks :: MapOrphanBlocks -> StateSTM ()
+putMapOrphanBlocks :: MapOrphanBlocks -> BitcoinMem ()
 putMapOrphanBlocks mob = do
     mm <- get
     liftSTM $ writeTVar (mapOrphanBlocks mm) mob
 
-getBestBlockIndex :: StateSTM BlockIndex
+getBestBlockIndex :: BitcoinMem BlockIndex
 getBestBlockIndex = get >>= liftSTM . readTVar . bestBlock
 
-putBestBlockIndex :: BlockIndex -> StateSTM ()
+putBestBlockIndex :: BlockIndex -> BitcoinMem ()
 putBestBlockIndex bb = do
     mm <- get
     liftSTM $ writeTVar (bestBlock mm) bb
 
-existsBlockIndex :: Word256 -> StateSTM Bool
+existsBlockIndex :: Word256 -> BitcoinMem Bool
 existsBlockIndex w = liftM (Map.member w) getMapBlockIndex
 
-existsOrphanBlock :: Word256 -> StateSTM Bool
+existsOrphanBlock :: Word256 -> BitcoinMem Bool
 existsOrphanBlock w = liftM (Map.member w) getMapOrphanBlocks
 
-alreadyHave :: Word256 -> StateSTM Bool
+alreadyHave :: Word256 -> BitcoinMem Bool
 alreadyHave w = liftM2 (||) (existsBlockIndex w) (existsOrphanBlock w)
 
-addBlockIndex :: BlockIndex -> StateSTM ()
+addBlockIndex :: BlockIndex -> BitcoinMem ()
 addBlockIndex bi = do
     map <- getMapBlockIndex
     putMapBlockIndex $ Map.insert (biHash bi) bi map
     best <- getBestBlockIndex
     when ((biHeight bi) > (biHeight best)) (putBestBlockIndex bi)
 
-addOrphanBlock :: Block -> StateSTM ()
+addOrphanBlock :: Block -> BitcoinMem ()
 addOrphanBlock ob =
     getMapOrphanBlocks >>= putMapOrphanBlocks . (Map.insert (blockHash ob) ob)
 
-lookupBlockIndex :: Word256 -> StateSTM (Maybe BlockIndex)
+lookupBlockIndex :: Word256 -> BitcoinMem (Maybe BlockIndex)
 lookupBlockIndex w = getMapBlockIndex >>= return . (Map.lookup w)
 
-lookupOrphanBlock :: Word256 -> StateSTM (Maybe Block)
+lookupOrphanBlock :: Word256 -> BitcoinMem (Maybe Block)
 lookupOrphanBlock w = getMapOrphanBlocks >>= return . (Map.lookup w)
 
-initMemoryMaps :: StateSTM ()
-initMemoryMaps = do
-    let genesisBI = buildBlockIndex testGenesisBlock Nothing
-    logString $ "Indexing Genesis Block " ++ (show genesisBI)
-    addBlockIndex genesisBI
-
-addBlock :: Block -> StateSTM Bool
+addBlock :: Block -> BitcoinMem Bool
 addBlock block = do
     let prevHash = prevBlock $ blockHeader block
     prev <- lookupBlockIndex prevHash
@@ -135,7 +128,7 @@ addBlock block = do
             addOrphanBlock block
             return False
 
-processOrphansOf :: Block -> StateSTM ()
+processOrphansOf :: Block -> BitcoinMem ()
 processOrphansOf block = do
     let hash = blockHash block
     map <- getMapOrphanBlocks
@@ -147,7 +140,7 @@ processOrphansOf block = do
     forM_ (Map.elems toProcess) addBlock
 
 
-getOrphanRoot :: Block -> StateSTM Block
+getOrphanRoot :: Block -> BitcoinMem Block
 getOrphanRoot b = do
     let prevHash = prevBlock $ blockHeader b
     prevBlock <- lookupOrphanBlock prevHash 
@@ -155,7 +148,7 @@ getOrphanRoot b = do
         (Just orphan) -> getOrphanRoot orphan
         Nothing       -> return b
 
-buildBlockLocator :: BlockIndex -> StateSTM BlockLocator
+buildBlockLocator :: BlockIndex -> BitcoinMem BlockLocator
 buildBlockLocator h = (go 1 [h]) >>= addGenesisBlock
     where go step acc = do
               next <- move (Just $ head acc) step

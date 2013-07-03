@@ -19,10 +19,10 @@ txCurrentVersion :: Word32
 txCurrentVersion = 1
 
 data Tx = Tx {
-    txVersion  :: Word32,
-    txIn       :: [TxIn],
-    txOut      :: [TxOut],
-    txLockTime :: Word32
+    txVersion  :: !Word32,
+    txIn       :: ![TxIn],
+    txOut      :: ![TxOut],
+    txLockTime :: !Word32
 } deriving (Eq, Read, Show)
 
 instance BitcoinProtocol Tx where
@@ -42,10 +42,10 @@ instance BitcoinProtocol Tx where
         putWord32le l
 
 data CoinbaseTx = CoinbaseTx {
-    cbVersion  :: Word32,
-    cbData     :: BS.ByteString,
-    cbOut      :: [TxOut],
-    cbLockTime :: Word32
+    cbVersion  :: !Word32,
+    cbData     :: !BS.ByteString,
+    cbOut      :: ![TxOut],
+    cbLockTime :: !Word32
 } deriving (Eq, Read, Show)
 
 instance BitcoinProtocol CoinbaseTx where
@@ -74,9 +74,9 @@ instance BitcoinProtocol CoinbaseTx where
         putWord32le l
 
 data TxIn = TxIn {
-    prevOutput   :: OutPoint,
-    sigScript    :: Script,
-    txInSequence :: Word32
+    prevOutput   :: !OutPoint,
+    sigScript    :: !Script,
+    txInSequence :: !Word32
 } deriving (Eq, Read, Show)
 
 instance BitcoinProtocol TxIn where
@@ -91,8 +91,8 @@ instance BitcoinProtocol TxIn where
         putWord32le seq
 
 data TxOut = TxOut {
-    outValue     :: Word64,
-    scriptPubKey :: Script
+    outValue     :: !Word64,
+    scriptPubKey :: !Script
 } deriving (Eq, Read, Show)
 
 instance BitcoinProtocol TxOut where
@@ -100,8 +100,8 @@ instance BitcoinProtocol TxOut where
     bitcoinPut (TxOut o s) = putWord64le o >> bitcoinPut s
 
 data OutPoint = OutPoint {
-    outPointHash  :: Word256,
-    outPointIndex :: Word32
+    outPointHash  :: !Word256,
+    outPointIndex :: !Word32
 } deriving (Eq, Read, Show)
 
 instance BitcoinProtocol OutPoint where

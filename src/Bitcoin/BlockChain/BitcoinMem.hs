@@ -117,8 +117,8 @@ addBlock block = do
     case prev of
         (Just prevBlockIndex) -> do
             let newBI = buildBlockIndex block (Just prevBlockIndex)
-            logString $ "Indexing new block: " ++ (show $ biHash newBI)
-                ++ " at height " ++ (show $ biHeight newBI)
+            --logString $ "Indexing new block: " ++ (show $ biHash newBI)
+            --   ++ " at height " ++ (show $ biHeight newBI)
             addBlockIndex newBI
             processOrphansOf block
             -- todo accept orphans that depend on this one

@@ -9,12 +9,12 @@ import Bitcoin.Protocol
 import Control.Applicative
 
 data BlockHeader = BlockHeader {
-    blockVersion   :: Word32,
-    prevBlock      :: Word256,
-    merkleRoot     :: Word256,
-    blockTimestamp :: Word32,
-    blockBits      :: Word32,
-    nonce          :: Word32
+    blockVersion   :: !Word32,
+    prevBlock      :: !Word256,
+    merkleRoot     :: !Word256,
+    blockTimestamp :: !Word32,
+    blockBits      :: !Word32,
+    nonce          :: !Word32
 } deriving (Eq, Read, Show)
 
 instance BitcoinProtocol BlockHeader where
@@ -35,5 +35,5 @@ instance BitcoinProtocol BlockHeader where
         putWord32le  n 
 
 blockHeaderHash :: BlockHeader -> Word256
-blockHeaderHash = doubleSHA256 . toStrictBS . runPut . bitcoinPut
+blockHeaderHash = doubleSHA256 . toStrictBS . runPut . bitcoinPut 
 

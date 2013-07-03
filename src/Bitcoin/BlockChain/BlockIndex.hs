@@ -12,16 +12,16 @@ import Control.Monad
 import Control.Applicative
 
 data BlockIndex = BlockIndex 
-    { biHash      :: Word256
-    , biPrev      :: Word256
-    , biHeight    :: Word32
-    , biTx        :: Word32
-    , biChainWork :: Word256
-    , biChainTx   :: Word32
-    , biFile      :: Word32
-    , biDataPos   :: Word32
-    , biUndoPos   :: Word32
-    , biStatus    :: Word32
+    { biHash      :: !Word256
+    , biPrev      :: !Word256
+    , biHeight    :: !Word32
+    , biTx        :: !Word32
+    , biChainWork :: !Word256
+    , biChainTx   :: !Word32
+    , biFile      :: !Word32
+    , biDataPos   :: !Word32
+    , biUndoPos   :: !Word32
+    , biStatus    :: !Word32
     } deriving (Eq, Read, Show)
 
 instance BitcoinProtocol BlockIndex where

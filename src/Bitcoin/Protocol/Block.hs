@@ -20,9 +20,9 @@ import Bitcoin.Protocol.Script
 import qualified Data.ByteString as BS
 
 data Block = Block {
-    blockHeader     :: BlockHeader,
-    blockCoinbaseTx :: CoinbaseTx,
-    blockTxns       :: [Tx]
+    blockHeader     :: !BlockHeader,
+    blockCoinbaseTx :: !CoinbaseTx,
+    blockTxns       :: ![Tx]
 } deriving (Eq, Read, Show)
 
 instance BitcoinProtocol Block where

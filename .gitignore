@@ -1,4 +1,8 @@
 *.swp
 *.hi
 *.o
+*.aux
+*.hp
+*.ps
+*.prof
 blockindex

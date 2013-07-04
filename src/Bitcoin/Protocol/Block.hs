@@ -53,14 +53,10 @@ genesisMerkle =
         0x3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a
 
 genesisBlockHash :: Word256
-genesisBlockHash = 
-    fromIntegral
-        0x000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f
+genesisBlockHash = blockHash genesisBlock
 
 testGenesisBlockHash :: Word256
-testGenesisBlockHash =
-    fromIntegral
-        0x000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943
+testGenesisBlockHash = blockHash testGenesisBlock
 
 genesisBlock :: Block
 genesisBlock = 

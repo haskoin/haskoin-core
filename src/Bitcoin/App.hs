@@ -74,37 +74,45 @@ processMessage msg = do
 
 dispatchMessage :: Message -> BitcoinMem [Message]
 dispatchMessage msg = case msg of
-    MVersion _ -> return [MVerAck]
-    MVerAck -> do
-        bestBlockIndex <- getBestBlockIndex
-        locator        <- buildBlockLocator bestBlockIndex
-        return [buildGetBlocks locator]
+    MVersion _     -> return [MVerAck]
+    MVerAck        -> processVerAck
     MPing (Ping n) -> return [MPong (Pong n)]
-    MInv (Inv l) -> do
-        let blockList = filter ((== InvBlock) . invType) l
-        (have,notHave)  <- partitionM haveInvVector blockList
-        orphans         <- mapM lookupOrphanBlock (map invHash have)
-        orphanGetBlocks <- buildOrphanGetBlocks orphans
-        lastMBI         <- lookupBlockIndex (invHash $ last blockList)
-        lastGetBlocks   <- case lastMBI of
-                            (Just lastBI) -> do
-                                lastLocator <- buildBlockLocator lastBI
-                                return $ [buildGetBlocks lastLocator]
-                            Nothing -> return []
-        logString $ "Got Inv of size " ++ (show $ length l)
-        logString $ "I have this many: " ++ (show $ length have)
-        logString $ "Orphan block locator " ++ (show orphanGetBlocks)
-        logString $ "LastBlock block locator " ++ (show lastGetBlocks)
-        return $ MGetData (GetData notHave) : orphanGetBlocks ++ lastGetBlocks
-    MBlock b -> do
-        conditionM (alreadyHave $ blockHash b) (return []) $ 
-            conditionM (addBlock b) (return []) $ do
-                bestBlockIndex <- getBestBlockIndex
-                orphanRoot     <- getOrphanRoot b
-                locator        <- buildBlockLocator bestBlockIndex
-                return [buildStopGetBlocks locator (blockHash orphanRoot)]
-        -- DB.writeBlock db b
-    _ -> return []
+    MInv (Inv vs)  -> processInvVector vs
+    MBlock b       -> processBlock b
+    _              -> return []
+
+processVerAck :: BitcoinMem [Message]
+processVerAck = do
+    bestBlockIndex <- getBestBlockIndex
+    locator        <- buildBlockLocator bestBlockIndex
+    return [buildGetBlocks locator]
+
+processBlock :: Block -> BitcoinMem [Message]
+processBlock block = do
+    conditionM (alreadyHave $ blockHash block) (return []) $ 
+        conditionM (addBlock block) (return []) $ do
+            bestBlockIndex <- getBestBlockIndex
+            orphanRoot     <- getOrphanRoot block
+            locator        <- buildBlockLocator bestBlockIndex
+            return [buildStopGetBlocks locator (blockHash orphanRoot)]
+
+processInvVector :: [InvVector] -> BitcoinMem [Message]
+processInvVector vs = do
+    let blockVectors = filter ((== InvBlock) . invType) vs
+    (have,notHave)  <- partitionM haveInvVector blockVectors
+    orphans         <- mapM lookupOrphanBlock (map invHash have)
+    orphanGetBlocks <- buildOrphanGetBlocks orphans
+    lastMBI         <- lookupBlockIndex (invHash $ last blockVectors)
+    lastGetBlocks   <- case lastMBI of
+                        (Just lastBI) -> do
+                            lastLocator <- buildBlockLocator lastBI
+                            return $ [buildGetBlocks lastLocator]
+                        Nothing -> return []
+    logString $ "Got Inv of size " ++ (show $ length vs)
+    logString $ "I have this many: " ++ (show $ length have)
+    logString $ "Orphan block locator " ++ (show orphanGetBlocks)
+    logString $ "LastBlock block locator " ++ (show lastGetBlocks)
+    return $ MGetData (GetData notHave) : orphanGetBlocks ++ lastGetBlocks
 
 haveInvVector :: InvVector -> BitcoinMem Bool
 haveInvVector v 

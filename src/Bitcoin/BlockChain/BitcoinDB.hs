@@ -6,7 +6,7 @@ module Bitcoin.BlockChain.BitcoinDB
 , initBitcoinDB
 , lookupBlockIndexDB
 , putBlockIndexDB
-, getAllBlockIndexes
+, getAllBlockIndices
 ) where
 
 import Data.Default
@@ -69,8 +69,8 @@ putBlockIndexDB bi = do
     let payload = toStrictBS . runPut . bitcoinPut $ bi
     liftDB $ DB.put db def (bsToBSC key) (bsToBSC payload)
 
-getAllBlockIndexes :: BitcoinDB [BlockIndex]
-getAllBlockIndexes = do
+getAllBlockIndices :: BitcoinDB [BlockIndex]
+getAllBlockIndices = do
     db <- getDBHandle
     (releaseSnap, snap) <- DB.createSnapshot' db
     pairs <- DB.withIterator db def{DB.useSnapshot = Just snap} $ \iter -> do

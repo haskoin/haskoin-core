@@ -83,9 +83,9 @@ initBitcoinApp = do
     bis <- runBitcoinDB $ do
         tell "Initializing LevelDB ... "
         initBitcoinDB 
-        getAllBlockIndexes
+        getAllBlockIndices
 
-    liftIO $ print "Loading Block Indexes ... "
+    liftIO $ print "Loading Block Indices ... "
 
     runBitcoinMem $ do
         initBitcoinMem >> (forM_ bis putBlockIndexMem)

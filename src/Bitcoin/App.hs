@@ -31,49 +31,70 @@ import Bitcoin.Protocol.GetData
 import Bitcoin.Protocol.Block
 import Bitcoin.Protocol.GetBlocks
 
-import Bitcoin.BlockChain.BitcoinMem 
-import qualified Bitcoin.BlockChain.BitcoinDB as DB
+import Bitcoin.BlockChain.BitcoinMem
+import Bitcoin.BlockChain.BitcoinDB
 import Bitcoin.BlockChain.BlockIndex
 
 import qualified Bitcoin.Constants as Const
 
-type BitcoinApp = StateT AppState IO
+type BitcoinApp = StateT AppState (ResourceT IO)
 
-data AppState = AppState { memState :: MemState } 
+data AppState = AppState 
+    { memState :: MemState
+    , dbState  :: DBState
+    } 
 
 getMemState :: BitcoinApp MemState
 getMemState = get >>= return . memState
 
-runBitcoinApp :: AppState -> BitcoinApp a -> IO a
-runBitcoinApp s m = evalStateT m s
+getDBState :: BitcoinApp DBState
+getDBState = get >>= return . dbState
 
-runBitcoinDB :: DB.BitcoinDB a -> BitcoinApp (a, String)
-runBitcoinDB m = 
-    liftIO . runResourceT $ DB.openDBHandle >>= runWriterT . (evalStateT m)
-
-runBitcoinMem :: BitcoinMem a -> BitcoinApp (a, String)
-runBitcoinMem m = 
-    getMemState >>= liftIO . atomically . runWriterT . (evalStateT m)
-
-initBitcoinApp :: IO AppState
-initBitcoinApp = do
+runBitcoinApp :: BitcoinApp () -> IO ()
+runBitcoinApp m = do
     mapBlockIndex   <- newTVarIO (Map.empty :: MapBlockIndex)
     mapOrphanBlocks <- newTVarIO (Map.empty :: MapOrphanBlocks)
     bestBlock       <- newTVarIO (buildBlockIndex testGenesisBlock Nothing)
-    let s = AppState $ MemState mapBlockIndex mapOrphanBlocks bestBlock
-    runBitcoinApp s $ do
-        runBitcoinMem initBitcoinMem 
-        runBitcoinDB DB.initBitcoinDB
-    return s
+    runResourceT $ do
+        handle <- openDBHandle 
+        let s = AppState
+                    (MemState mapBlockIndex mapOrphanBlocks bestBlock)
+                    (DBState handle)
+        evalStateT (initBitcoinApp >> m) s
 
-processMessage :: Message -> BitcoinApp [Message]
-processMessage msg = do
-    (res, log) <- runBitcoinMem $ dispatchMessage msg
-    when (not $ null log) $ liftIO $ putStrLn log
+runBitcoinDB :: BitcoinDB a -> BitcoinApp a
+runBitcoinDB m = do
+    s <- getDBState
+    -- run all monad levels except ResourceT
+    (res, log) <- lift . runWriterT $ evalStateT m s
+    when (not (null log)) (liftIO $ print log)
     return res
 
-dispatchMessage :: Message -> BitcoinMem [Message]
-dispatchMessage msg = case msg of
+runBitcoinMem :: BitcoinMem a -> BitcoinApp a
+runBitcoinMem m = do
+    s <- getMemState
+    (res, log) <- liftIO . atomically . runWriterT $ evalStateT m s
+    when (not (null log)) (liftIO $ print log)
+    return res
+     
+initBitcoinApp :: BitcoinApp ()
+initBitcoinApp = do
+
+    bis <- runBitcoinDB $ do
+        tell "Initializing LevelDB ... "
+        initBitcoinDB 
+        getAllBlockIndexes
+
+    liftIO $ print "Loading Block Indexes ... "
+
+    runBitcoinMem $ do
+        initBitcoinMem >> (forM_ bis putBlockIndexMem)
+        bb <- getBestBlockIndex
+        tell $ "Best Block Height: " ++ (show $ biHeight bb) ++ " "
+        tell "Initialization complete "
+
+processMessage :: Message -> BitcoinApp [Message]
+processMessage msg = case msg of
     MVersion _     -> return [MVerAck]
     MVerAck        -> processVerAck
     MPing (Ping n) -> return [MPong (Pong n)]
@@ -81,37 +102,44 @@ dispatchMessage msg = case msg of
     MBlock b       -> processBlock b
     _              -> return []
 
-processVerAck :: BitcoinMem [Message]
-processVerAck = do
+processVerAck :: BitcoinApp [Message]
+processVerAck = runBitcoinMem $ do
     bestBlockIndex <- getBestBlockIndex
     locator        <- buildBlockLocator bestBlockIndex
     return [buildGetBlocks locator]
 
-processBlock :: Block -> BitcoinMem [Message]
+processBlock :: Block -> BitcoinApp [Message]
 processBlock block = do
-    conditionM (alreadyHave $ blockHash block) (return []) $ 
-        conditionM (addBlock block) (return []) $ do
+    newBIs <- runBitcoinMem $ do
+        exists <- alreadyHave (blockHash block) 
+        if exists then return []
+        else putBlock block
+    case newBIs of
+        [] -> runBitcoinMem $ do
             bestBlockIndex <- getBestBlockIndex
             orphanRoot     <- getOrphanRoot block
             locator        <- buildBlockLocator bestBlockIndex
             return [buildStopGetBlocks locator (blockHash orphanRoot)]
+        _ -> runBitcoinDB $ do
+            forM_ newBIs putBlockIndexDB
+            return []
 
-processInvVector :: [InvVector] -> BitcoinMem [Message]
-processInvVector vs = do
+processInvVector :: [InvVector] -> BitcoinApp [Message]
+processInvVector vs = runBitcoinMem $ do
     let blockVectors = filter ((== InvBlock) . invType) vs
     (have,notHave)  <- partitionM haveInvVector blockVectors
     orphans         <- mapM lookupOrphanBlock (map invHash have)
     orphanGetBlocks <- buildOrphanGetBlocks orphans
-    lastMBI         <- lookupBlockIndex (invHash $ last blockVectors)
+    lastMBI         <- lookupBlockIndexMem (invHash $ last blockVectors)
     lastGetBlocks   <- case lastMBI of
                         (Just lastBI) -> do
                             lastLocator <- buildBlockLocator lastBI
                             return $ [buildGetBlocks lastLocator]
                         Nothing -> return []
-    logString $ "Got Inv of size " ++ (show $ length vs)
-    logString $ "I have this many: " ++ (show $ length have)
-    logString $ "Orphan block locator " ++ (show orphanGetBlocks)
-    logString $ "LastBlock block locator " ++ (show lastGetBlocks)
+    tell $ "Got Inv of size " ++ (show $ length vs) ++ " "
+    tell $ "I have this many: " ++ (show $ length have) ++ " "
+    tell $ "Orphan block locator " ++ (show orphanGetBlocks) ++ " "
+    tell $ "LastBlock block locator " ++ (show lastGetBlocks) ++ " "
     return $ MGetData (GetData notHave) : orphanGetBlocks ++ lastGetBlocks
 
 haveInvVector :: InvVector -> BitcoinMem Bool

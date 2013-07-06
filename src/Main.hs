@@ -48,18 +48,16 @@ main = do
         C.$$ fromMessages
         C.=$ (CB.sinkHandle h)
 
-    -- Initialise application stacks
-    s <- initBitcoinApp
-
     -- Execute main program loop
-    (CB.sourceHandle h) 
-        C.$= toMessage 
-        C.$= (C.awaitForever (mainLoop s))
-        C.$$ fromMessages 
-        C.=$ (CB.sinkHandle h)
+    runBitcoinApp $ 
+        (CB.sourceHandle h) 
+            C.$= toMessage 
+            C.$= (C.awaitForever mainLoop)
+            C.$$ fromMessages 
+            C.=$ (CB.sinkHandle h)
 
-mainLoop :: AppState -> Message -> C.Conduit Message IO [Message]
-mainLoop s msg = C.yield =<< (lift $ runBitcoinApp s (processMessage msg))
+mainLoop :: Message -> C.Conduit Message BitcoinApp [Message]
+mainLoop msg = C.yield =<< (lift $ processMessage msg)
 
 buildVersion :: IO Version
 buildVersion = do

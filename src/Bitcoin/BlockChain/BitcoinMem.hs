@@ -1,20 +1,19 @@
 module Bitcoin.BlockChain.BitcoinMem
-( MemState(..)
-, BitcoinMem
+( BitcoinMem
+, MemState(..)
 , MapBlockIndex
 , MapOrphanBlocks
-, logString
 , existsBlockIndex
 , existsOrphanBlock
 , alreadyHave
-, addBlockIndex
-, addOrphanBlock
-, lookupBlockIndex
+, putBlockIndexMem
+, putOrphanBlock
+, lookupBlockIndexMem
 , lookupOrphanBlock
 , getBestBlockIndex
 , putBestBlockIndex
 , initBitcoinMem
-, addBlock
+, putBlock
 , getOrphanRoot
 , buildBlockLocator
 ) where
@@ -51,14 +50,11 @@ data MemState = MemState
 liftSTM :: STM a -> BitcoinMem a
 liftSTM = lift . lift
 
-logString :: String -> BitcoinMem ()
-logString = lift . tell . (++ "\n")
-
 initBitcoinMem :: BitcoinMem ()
 initBitcoinMem = do
     let genesisBI = buildBlockIndex testGenesisBlock Nothing
-    logString $ "Indexing Genesis Block " ++ (show genesisBI)
-    addBlockIndex genesisBI
+    tell $ "Indexing Genesis Block ... "
+    putBlockIndexMem genesisBI
 
 getMapBlockIndex :: BitcoinMem MapBlockIndex
 getMapBlockIndex = get >>= liftSTM . readTVar . mapBlockIndex
@@ -93,52 +89,50 @@ existsOrphanBlock w = liftM (Map.member w) getMapOrphanBlocks
 alreadyHave :: Word256 -> BitcoinMem Bool
 alreadyHave w = liftM2 (||) (existsBlockIndex w) (existsOrphanBlock w)
 
-addBlockIndex :: BlockIndex -> BitcoinMem ()
-addBlockIndex bi = do
+putBlockIndexMem :: BlockIndex -> BitcoinMem ()
+putBlockIndexMem bi = do
     map <- getMapBlockIndex
     putMapBlockIndex $ Map.insert (biHash bi) bi map
     best <- getBestBlockIndex
     when ((biHeight bi) > (biHeight best)) (putBestBlockIndex bi)
 
-addOrphanBlock :: Block -> BitcoinMem ()
-addOrphanBlock ob =
+putOrphanBlock :: Block -> BitcoinMem ()
+putOrphanBlock ob =
     getMapOrphanBlocks >>= putMapOrphanBlocks . (Map.insert (blockHash ob) ob)
 
-lookupBlockIndex :: Word256 -> BitcoinMem (Maybe BlockIndex)
-lookupBlockIndex w = getMapBlockIndex >>= return . (Map.lookup w)
+lookupBlockIndexMem :: Word256 -> BitcoinMem (Maybe BlockIndex)
+lookupBlockIndexMem w = getMapBlockIndex >>= return . (Map.lookup w)
 
 lookupOrphanBlock :: Word256 -> BitcoinMem (Maybe Block)
 lookupOrphanBlock w = getMapOrphanBlocks >>= return . (Map.lookup w)
 
-addBlock :: Block -> BitcoinMem Bool
-addBlock block = do
+putBlock :: Block -> BitcoinMem [BlockIndex]
+putBlock block = do
     let prevHash = prevBlock $ blockHeader block
-    prev <- lookupBlockIndex prevHash
+    prev <- lookupBlockIndexMem prevHash
     case prev of
         (Just prevBlockIndex) -> do
             let newBI = buildBlockIndex block (Just prevBlockIndex)
-            logString $ "Indexing new block: " ++ (show $ biHash newBI)
+            tell $ "Indexing new block: " ++ (show $ biHash newBI)
                ++ " at height " ++ (show $ biHeight newBI)
-            addBlockIndex newBI
-            processOrphansOf block
-            -- todo accept orphans that depend on this one
-            return True
+            putBlockIndexMem newBI
+            orphanBIs <- processOrphansOf block
+            return $ newBI : orphanBIs
         Nothing -> do
-            logString $ "Got orphan block: " ++ (show $ blockHash block)
-            addOrphanBlock block
-            return False
+            tell $ "Got orphan block: " ++ (show $ blockHash block)
+            putOrphanBlock block
+            return []
 
-processOrphansOf :: Block -> BitcoinMem ()
+processOrphansOf :: Block -> BitcoinMem [BlockIndex]
 processOrphansOf block = do
     let hash = blockHash block
     map <- getMapOrphanBlocks
     let (toProcess, newMap) = 
             Map.partition ((== hash) . prevBlock . blockHeader) map
     putMapOrphanBlocks newMap
-    when (not $ null (Map.elems toProcess)) (logString $ "Processing orphans: "
-        ++ (show toProcess))
-    forM_ (Map.elems toProcess) addBlock
-
+    when (not $ null (Map.elems toProcess)) 
+        (tell $ "Processing orphans: " ++ (show toProcess))
+    liftM concat $ forM (Map.elems toProcess) putBlock
 
 getOrphanRoot :: Block -> BitcoinMem Block
 getOrphanRoot b = do
@@ -158,7 +152,7 @@ buildBlockLocator h = (go 1 [h]) >>= addGenesisBlock
                   Nothing  -> return $ map biHash (reverse acc)
           move bi step 
               | step > 0 && isJust bi = do
-                  next <- lookupBlockIndex (biPrev $ fromJust bi)
+                  next <- lookupBlockIndexMem (biPrev $ fromJust bi)
                   move next (step - 1)
               | otherwise = return bi
           addGenesisBlock res

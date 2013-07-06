@@ -6,8 +6,6 @@ module Bitcoin.Util
 , bscToBS
 , bsToBSC
 , partitionM
-, conditionM
-, conditionM_
 ) where
 
 import Data.Char
@@ -45,14 +43,4 @@ partitionM f xs = foldrM go ([],[]) xs
     where go x (a, b) = do
               flag <- f x
               return $ if flag then (x:a,b) else (a,x:b)
-
-conditionM :: Monad m => m Bool -> m a -> m a -> m a
-conditionM condition a b = go =<< condition
-    where go True  = a
-          go False = b
-
-conditionM_ :: Monad m => m Bool -> m () -> m () -> m ()
-conditionM_ condition a b = go =<< condition
-    where go True  = a
-          go False = b
 

@@ -1,14 +1,13 @@
 module Bitcoin.App
 ( BitcoinApp
-, AppState
 , runBitcoinApp
-, runBitcoinDB
 , runBitcoinMem
 , initBitcoinApp
 , processMessage
 ) where
 
 import Control.Monad
+import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Writer
 import Control.Monad.IO.Class
@@ -32,58 +31,67 @@ import Bitcoin.Protocol.Block
 import Bitcoin.Protocol.GetBlocks
 
 import Bitcoin.BlockChain.BitcoinMem
-import Bitcoin.BlockChain.BitcoinDB
 import Bitcoin.BlockChain.BlockIndex
+
+import Bitcoin.BlockStore
 
 import qualified Bitcoin.Constants as Const
 
-type BitcoinApp = StateT AppState (ResourceT IO)
+newtype BitcoinApp m a = BitcoinApp { runApp :: ReaderT AppConfig m a }
 
-data AppState = AppState 
+instance BlockStore m => Monad (BitcoinApp m) where
+    a >>= f = BitcoinApp $ do
+        val <- runApp a
+        runApp $ f val
+    return = BitcoinApp . return
+
+instance BlockStore m => MonadIO (BitcoinApp m) where
+    liftIO = BitcoinApp . liftIO
+
+dbGet :: BlockStore m => Word256 -> BitcoinApp m (Maybe BlockIndex)
+dbGet = BitcoinApp . lift . blockStoreGet
+
+dbPut :: BlockStore m => BlockIndex -> BitcoinApp m ()
+dbPut = BitcoinApp . lift . blockStorePut
+
+data AppConfig = AppConfig 
     { memState :: MemState
-    , dbState  :: DBState
     } 
 
-getMemState :: BitcoinApp MemState
-getMemState = get >>= return . memState
+getMemState :: BlockStore m => BitcoinApp m MemState
+getMemState = do
+    val <- BitcoinApp ask
+    return $ memState val
 
-getDBState :: BitcoinApp DBState
-getDBState = get >>= return . dbState
-
-runBitcoinApp :: BitcoinApp () -> IO ()
+runBitcoinApp :: BlockStore m => BitcoinApp m () -> IO ()
 runBitcoinApp m = do
     mapBlockIndex   <- newTVarIO (Map.empty :: MapBlockIndex)
     mapOrphanBlocks <- newTVarIO (Map.empty :: MapOrphanBlocks)
     bestBlock       <- newTVarIO (buildBlockIndex testGenesisBlock Nothing)
-    runResourceT $ do
-        handle <- openDBHandle 
-        let s = AppState
-                    (MemState mapBlockIndex mapOrphanBlocks bestBlock)
-                    (DBState handle)
-        evalStateT (initBitcoinApp >> m) s
+    let s = AppConfig
+                (MemState mapBlockIndex mapOrphanBlocks bestBlock)
+    runDB $ runReaderT (runApp $ initBitcoinApp >> m) s
 
-runBitcoinDB :: BitcoinDB a -> BitcoinApp a
-runBitcoinDB m = do
-    s <- getDBState
-    -- run all monad levels except ResourceT
-    (res, log) <- lift . runWriterT $ evalStateT m s
-    when (not (null log)) (liftIO $ print log)
-    return res
-
-runBitcoinMem :: BitcoinMem a -> BitcoinApp a
+runBitcoinMem :: BlockStore m => BitcoinMem a -> BitcoinApp m a
 runBitcoinMem m = do
     s <- getMemState
     (res, log) <- liftIO . atomically . runWriterT $ evalStateT m s
     when (not (null log)) (liftIO $ print log)
     return res
      
-initBitcoinApp :: BitcoinApp ()
+initBitcoinApp :: BlockStore m => BitcoinApp m ()
 initBitcoinApp = do
 
-    bis <- runBitcoinDB $ do
-        tell "Initializing LevelDB ... "
-        initBitcoinDB 
-        getAllBlockIndices
+    bis <- do
+        liftIO $ print "Initializing LevelDB ... "
+        val <- dbGet testGenesisBlockHash
+        case val of
+            (Just _) -> liftIO $ print "LevelDB already initialized"
+            Nothing  -> do
+                liftIO $ print "Initializing LevelDB with genesis block"
+                dbPut $ buildBlockIndex testGenesisBlock Nothing
+        --getAllBlockIndices
+        return []
 
     liftIO $ print "Loading Block Indices ... "
 
@@ -91,9 +99,9 @@ initBitcoinApp = do
         initBitcoinMem >> (forM_ bis putBlockIndexMem)
         bb <- getBestBlockIndex
         tell $ "Best Block Height: " ++ (show $ biHeight bb) ++ " "
-        tell "Initialization complete "
+        tell $ "Initialization complete "
 
-processMessage :: Message -> BitcoinApp [Message]
+processMessage :: BlockStore m => Message -> BitcoinApp m [Message]
 processMessage msg = case msg of
     MVersion _     -> return [MVerAck]
     MVerAck        -> processVerAck
@@ -102,13 +110,13 @@ processMessage msg = case msg of
     MBlock b       -> processBlock b
     _              -> return []
 
-processVerAck :: BitcoinApp [Message]
+processVerAck :: BlockStore m => BitcoinApp m [Message]
 processVerAck = runBitcoinMem $ do
     bestBlockIndex <- getBestBlockIndex
     locator        <- buildBlockLocator bestBlockIndex
     return [buildGetBlocks locator]
 
-processBlock :: Block -> BitcoinApp [Message]
+processBlock :: BlockStore m => Block -> BitcoinApp m [Message]
 processBlock block = do
     newBIs <- runBitcoinMem $ do
         exists <- alreadyHave (blockHash block) 
@@ -120,11 +128,11 @@ processBlock block = do
             orphanRoot     <- getOrphanRoot block
             locator        <- buildBlockLocator bestBlockIndex
             return [buildStopGetBlocks locator (blockHash orphanRoot)]
-        _ -> runBitcoinDB $ do
-            forM_ newBIs putBlockIndexDB
+        _ -> do
+            forM_ newBIs dbPut
             return []
 
-processInvVector :: [InvVector] -> BitcoinApp [Message]
+processInvVector :: BlockStore m => [InvVector] -> BitcoinApp m [Message]
 processInvVector vs = runBitcoinMem $ do
     let blockVectors = filter ((== InvBlock) . invType) vs
     (have,notHave)  <- partitionM haveInvVector blockVectors

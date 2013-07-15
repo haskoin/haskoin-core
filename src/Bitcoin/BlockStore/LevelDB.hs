@@ -1,12 +1,6 @@
-module Bitcoin.BlockChain.BitcoinDB
-( BitcoinDB
-, DBState(..)
-, openDBHandle
-, runResourceT
-, initBitcoinDB
-, lookupBlockIndexDB
-, putBlockIndexDB
-, getAllBlockIndices
+module Bitcoin.BlockStore.LevelDB
+( LevelDB
+, DefaultDB
 ) where
 
 import Data.Default
@@ -19,7 +13,7 @@ import Bitcoin.Util
 
 import Control.Monad
 import Control.Monad.State
-import Control.Monad.Writer
+import Control.Monad.Reader
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
 import Control.Applicative
@@ -28,24 +22,53 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Database.LevelDB as DB
 
-type BitcoinDB = StateT DBState (WriterT String (ResourceT IO))
+import Bitcoin.BlockStore
 
-data DBState = DBState { dbHandle :: DB.DB }
+type DefaultDB = LevelDB
 
-liftDB :: ResourceT IO a -> BitcoinDB a
-liftDB = lift . lift
+newtype LevelDB a = 
+    LevelDB { runLevelDB :: (ReaderT DB.DB (ResourceT IO)) a }
+
+instance Monad LevelDB where
+    a >>= f = LevelDB $ do
+        val <- runLevelDB a
+        runLevelDB $ f val
+    return = LevelDB . return
+
+instance MonadIO LevelDB where
+    liftIO = LevelDB . liftIO
+
+liftDB :: ResourceT IO a -> LevelDB a
+liftDB = LevelDB . lift
+
+liftAsk :: LevelDB DB.DB
+liftAsk = LevelDB ask
 
 dbOptions = DB.defaultOptions
     { DB.createIfMissing = True
     , DB.cacheSize = 2048
     }
 
-openDBHandle :: ResourceT IO DB.DB
-openDBHandle = DB.open "blockindex" dbOptions
+instance BlockStore LevelDB where
 
-getDBHandle :: BitcoinDB DB.DB
-getDBHandle = get >>= return . dbHandle
+    blockStoreGet w = do
+        db <- liftAsk
+        let key = toStrictBS . runPut . putWord256be $ w
+        val <- liftDB $ DB.get db def (bsToBSC key)
+        return $ 
+            val >>= return . (runGet bitcoinGet) . toLazyBS . bscToBS
 
+    blockStorePut bi = do
+        db <- liftAsk
+        let key = toStrictBS . runPut . putWord256be $ biHash bi
+        let payload = toStrictBS . runPut . bitcoinPut $ bi
+        liftDB $ DB.put db def (bsToBSC key) (bsToBSC payload)
+
+    runDB m = runResourceT $ do
+        handle <- DB.open "blockindex" dbOptions
+        runReaderT (runLevelDB m) handle
+
+{-
 initBitcoinDB :: BitcoinDB ()
 initBitcoinDB = do
     val <- lookupBlockIndexDB testGenesisBlockHash
@@ -78,4 +101,5 @@ getAllBlockIndices = do
         DB.iterItems iter
     release releaseSnap
     return $ map (runGet bitcoinGet . toLazyBS . bscToBS . snd) pairs
+-}
 

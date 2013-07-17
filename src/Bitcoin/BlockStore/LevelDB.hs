@@ -1,7 +1,4 @@
-module Bitcoin.BlockStore.LevelDB
-( LevelDB
-, DefaultDB
-) where
+module Bitcoin.BlockStore.LevelDB (DefaultDB) where
 
 import Data.Default
 
@@ -17,6 +14,8 @@ import Control.Monad.Reader
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Resource
 import Control.Applicative
+
+import qualified Data.Conduit as C
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
@@ -41,8 +40,11 @@ instance MonadIO LevelDB where
 liftDB :: ResourceT IO a -> LevelDB a
 liftDB = LevelDB . lift
 
-liftAsk :: LevelDB DB.DB
-liftAsk = LevelDB ask
+liftDB' :: ResourceT IO a -> C.ConduitM () BlockIndex LevelDB a
+liftDB' = lift . liftDB
+
+getHandle :: LevelDB DB.DB
+getHandle = LevelDB ask
 
 dbOptions = DB.defaultOptions
     { DB.createIfMissing = True
@@ -52,54 +54,42 @@ dbOptions = DB.defaultOptions
 instance BlockStore LevelDB where
 
     blockStoreGet w = do
-        db <- liftAsk
+        db <- getHandle
         let key = toStrictBS . runPut . putWord256be $ w
         val <- liftDB $ DB.get db def (bsToBSC key)
         return $ 
             val >>= return . (runGet bitcoinGet) . toLazyBS . bscToBS
 
     blockStorePut bi = do
-        db <- liftAsk
+        db <- getHandle
         let key = toStrictBS . runPut . putWord256be $ biHash bi
         let payload = toStrictBS . runPut . bitcoinPut $ bi
         liftDB $ DB.put db def (bsToBSC key) (bsToBSC payload)
 
-    runDB m = runResourceT $ do
+    blockStoreStream = do
+        db <- lift getHandle 
+        (releaseSnap, snap) <- liftDB' $ DB.createSnapshot' db
+        let readOptions = def{DB.useSnapshot = Just snap}
+        (releaseIter, iter) <- liftDB' $ DB.iterOpen' db  readOptions
+        liftDB' $ DB.iterFirst iter
+        streamItems iter
+        liftDB' $ do
+            release releaseIter
+            release releaseSnap
+        return ()
+
+    blockStoreRun m = runResourceT $ do
         handle <- DB.open "blockindex" dbOptions
         runReaderT (runLevelDB m) handle
 
-{-
-initBitcoinDB :: BitcoinDB ()
-initBitcoinDB = do
-    val <- lookupBlockIndexDB testGenesisBlockHash
+streamItems :: DB.Iterator -> C.Source LevelDB BlockIndex
+streamItems iter = do
+    val <- liftDB' $ DB.iterValue iter
     case val of
-        (Just _) -> tell "LevelDB already initialized"
-        Nothing  -> do
-            tell "Initializing LevelDB with genesis block"
-            putBlockIndexDB $ buildBlockIndex testGenesisBlock Nothing
-
-lookupBlockIndexDB :: Word256 -> BitcoinDB (Maybe BlockIndex)
-lookupBlockIndexDB w = do
-    db <- getDBHandle
-    let key = toStrictBS . runPut . putWord256be $ w
-    val <- liftDB $ DB.get db def (bsToBSC key)
-    return $ val >>= return . (runGet bitcoinGet) . toLazyBS . bscToBS
-
-putBlockIndexDB :: BlockIndex -> BitcoinDB ()
-putBlockIndexDB bi = do
-    db <- getDBHandle
-    let key = toStrictBS . runPut . putWord256be $ biHash bi
-    let payload = toStrictBS . runPut . bitcoinPut $ bi
-    liftDB $ DB.put db def (bsToBSC key) (bsToBSC payload)
-
-getAllBlockIndices :: BitcoinDB [BlockIndex]
-getAllBlockIndices = do
-    db <- getDBHandle
-    (releaseSnap, snap) <- DB.createSnapshot' db
-    pairs <- DB.withIterator db def{DB.useSnapshot = Just snap} $ \iter -> do
-        DB.iterFirst iter
-        DB.iterItems iter
-    release releaseSnap
-    return $ map (runGet bitcoinGet . toLazyBS . bscToBS . snd) pairs
--}
+        (Just bs) -> do
+            let bi = runGet bitcoinGet (toLazyBS $ bscToBS $ bs)
+            C.yield bi
+            liftDB' $ DB.iterNext iter
+            streamItems iter
+        Nothing -> return ()
 

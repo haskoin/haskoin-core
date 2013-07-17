@@ -30,7 +30,7 @@ import Bitcoin.Protocol.VarString
 import Bitcoin.Protocol.NetworkAddress
 
 import Bitcoin.BlockStore
-import Bitcoin.BlockStore.LevelDB
+import Bitcoin.BlockStore.LevelDB (DefaultDB)
 
 import qualified Bitcoin.Constants as Const
 

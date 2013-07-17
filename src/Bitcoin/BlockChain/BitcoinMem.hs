@@ -24,7 +24,7 @@ import Control.Concurrent.STM
 
 import Control.Applicative
 import Control.Monad
-import Control.Monad.State
+import Control.Monad.Reader
 import Control.Monad.Writer
 import Control.Monad.Trans.Resource
 
@@ -37,7 +37,7 @@ import Bitcoin.BlockChain.BlockIndex
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict (Map) 
 
-type BitcoinMem = StateT MemState (WriterT String STM)
+type BitcoinMem = ReaderT MemState (WriterT String STM)
 type MapBlockIndex = Map Word256 BlockIndex
 type MapOrphanBlocks = Map Word256 Block
 
@@ -57,27 +57,27 @@ initBitcoinMem = do
     putBlockIndexMem genesisBI
 
 getMapBlockIndex :: BitcoinMem MapBlockIndex
-getMapBlockIndex = get >>= liftSTM . readTVar . mapBlockIndex
+getMapBlockIndex = ask >>= liftSTM . readTVar . mapBlockIndex
 
 putMapBlockIndex :: MapBlockIndex -> BitcoinMem ()
 putMapBlockIndex mbi = do
-    mm <- get
+    mm <- ask
     liftSTM $ writeTVar (mapBlockIndex mm) mbi
 
 getMapOrphanBlocks :: BitcoinMem MapOrphanBlocks
-getMapOrphanBlocks = get >>= liftSTM . readTVar . mapOrphanBlocks
+getMapOrphanBlocks = ask >>= liftSTM . readTVar . mapOrphanBlocks
 
 putMapOrphanBlocks :: MapOrphanBlocks -> BitcoinMem ()
 putMapOrphanBlocks mob = do
-    mm <- get
+    mm <- ask
     liftSTM $ writeTVar (mapOrphanBlocks mm) mob
 
 getBestBlockIndex :: BitcoinMem BlockIndex
-getBestBlockIndex = get >>= liftSTM . readTVar . bestBlock
+getBestBlockIndex = ask >>= liftSTM . readTVar . bestBlock
 
 putBestBlockIndex :: BlockIndex -> BitcoinMem ()
 putBestBlockIndex bb = do
-    mm <- get
+    mm <- ask
     liftSTM $ writeTVar (bestBlock mm) bb
 
 existsBlockIndex :: Word256 -> BitcoinMem Bool

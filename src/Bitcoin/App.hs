@@ -15,6 +15,9 @@ import Control.Monad.Trans.Resource
 
 import Control.Concurrent.STM
 
+import qualified Data.Conduit as C
+import qualified Data.Conduit.List as CL
+
 import qualified Data.Map.Strict as Map
 
 import Bitcoin.Util
@@ -37,31 +40,17 @@ import Bitcoin.BlockStore
 
 import qualified Bitcoin.Constants as Const
 
-newtype BitcoinApp m a = BitcoinApp { runApp :: ReaderT AppConfig m a }
-
-instance BlockStore m => Monad (BitcoinApp m) where
-    a >>= f = BitcoinApp $ do
-        val <- runApp a
-        runApp $ f val
-    return = BitcoinApp . return
-
-instance BlockStore m => MonadIO (BitcoinApp m) where
-    liftIO = BitcoinApp . liftIO
-
-dbGet :: BlockStore m => Word256 -> BitcoinApp m (Maybe BlockIndex)
-dbGet = BitcoinApp . lift . blockStoreGet
-
-dbPut :: BlockStore m => BlockIndex -> BitcoinApp m ()
-dbPut = BitcoinApp . lift . blockStorePut
+type BitcoinApp m = ReaderT AppConfig m
 
 data AppConfig = AppConfig 
     { memState :: MemState
     } 
 
+dbAction :: BlockStore m => m a => BitcoinApp m a
+dbAction = lift
+
 getMemState :: BlockStore m => BitcoinApp m MemState
-getMemState = do
-    val <- BitcoinApp ask
-    return $ memState val
+getMemState = ask >>= return . memState
 
 runBitcoinApp :: BlockStore m => BitcoinApp m () -> IO ()
 runBitcoinApp m = do
@@ -70,36 +59,30 @@ runBitcoinApp m = do
     bestBlock       <- newTVarIO (buildBlockIndex testGenesisBlock Nothing)
     let s = AppConfig
                 (MemState mapBlockIndex mapOrphanBlocks bestBlock)
-    runDB $ runReaderT (runApp $ initBitcoinApp >> m) s
+    blockStoreRun $ runReaderT (initBitcoinApp >> m) s
 
 runBitcoinMem :: BlockStore m => BitcoinMem a -> BitcoinApp m a
 runBitcoinMem m = do
     s <- getMemState
-    (res, log) <- liftIO . atomically . runWriterT $ evalStateT m s
+    (res, log) <- liftIO . atomically . runWriterT $ runReaderT m s
     when (not (null log)) (liftIO $ print log)
     return res
      
 initBitcoinApp :: BlockStore m => BitcoinApp m ()
 initBitcoinApp = do
-
-    bis <- do
-        liftIO $ print "Initializing LevelDB ... "
-        val <- dbGet testGenesisBlockHash
-        case val of
-            (Just _) -> liftIO $ print "LevelDB already initialized"
-            Nothing  -> do
-                liftIO $ print "Initializing LevelDB with genesis block"
-                dbPut $ buildBlockIndex testGenesisBlock Nothing
-        --getAllBlockIndices
-        return []
-
-    liftIO $ print "Loading Block Indices ... "
-
-    runBitcoinMem $ do
-        initBitcoinMem >> (forM_ bis putBlockIndexMem)
-        bb <- getBestBlockIndex
-        tell $ "Best Block Height: " ++ (show $ biHeight bb) ++ " "
-        tell $ "Initialization complete "
+    liftIO $ print "Initializing Haskoin"
+    val <- dbAction $ blockStoreGet testGenesisBlockHash
+    case val of
+        (Just _) -> liftIO $ print "Found existing LevelDB database"
+        Nothing  -> do
+            liftIO $ print "Initializing LevelDB with genesis block"
+            dbAction $ blockStorePut $ buildBlockIndex 
+                                           testGenesisBlock 
+                                           Nothing
+    liftIO $ print "Loading block index"
+    bis <- dbAction $ blockStoreStream C.$$ CL.consume
+    runBitcoinMem $ forM_ bis putBlockIndexMem
+    liftIO $ print "Haskoin initialized"
 
 processMessage :: BlockStore m => Message -> BitcoinApp m [Message]
 processMessage msg = case msg of
@@ -129,7 +112,7 @@ processBlock block = do
             locator        <- buildBlockLocator bestBlockIndex
             return [buildStopGetBlocks locator (blockHash orphanRoot)]
         _ -> do
-            forM_ newBIs dbPut
+            dbAction $ forM_ newBIs blockStorePut
             return []
 
 processInvVector :: BlockStore m => [InvVector] -> BitcoinApp m [Message]

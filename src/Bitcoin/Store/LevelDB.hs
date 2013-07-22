@@ -1,4 +1,10 @@
-module Bitcoin.BlockStore.LevelDB (DefaultDB) where
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+module Bitcoin.Store.LevelDB 
+( LevelDB(..)
+, AppDB
+) where
 
 import Data.Default
 
@@ -6,6 +12,7 @@ import Bitcoin.Protocol
 import Bitcoin.Protocol.Block
 import Bitcoin.Protocol.BlockHeader
 import Bitcoin.BlockChain.BlockIndex
+import Bitcoin.Store
 import Bitcoin.Util
 
 import Control.Monad
@@ -21,17 +28,17 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Database.LevelDB as DB
 
-import Bitcoin.BlockStore
+type AppDB = LevelDB
 
-type DefaultDB = LevelDB
-
-newtype LevelDB a = 
-    LevelDB { runLevelDB :: (ReaderT DB.DB (ResourceT IO)) a }
+data LevelDB a = 
+    LevelDB { runLevelDB :: ReaderT DB.DB (ResourceT IO) a }
 
 instance Monad LevelDB where
+
     a >>= f = LevelDB $ do
         val <- runLevelDB a
         runLevelDB $ f val
+
     return = LevelDB . return
 
 instance MonadIO LevelDB where
@@ -51,22 +58,34 @@ dbOptions = DB.defaultOptions
     , DB.cacheSize = 2048
     }
 
-instance BlockStore LevelDB where
+instance Store BlockIndex LevelDB where
 
-    blockStoreGet w = do
-        db <- getHandle
-        let key = toStrictBS . runPut . putWord256be $ w
-        val <- liftDB $ DB.get db def (bsToBSC key)
-        return $ 
-            val >>= return . (runGet bitcoinGet) . toLazyBS . bscToBS
+    dbKey = return . biHash
 
-    blockStorePut bi = do
+    dbGet w = do
         db <- getHandle
-        let key = toStrictBS . runPut . putWord256be $ biHash bi
+        let key = bsToBSC . toStrictBS . runPut . putWord256be $ w
+        val <- liftDB $ DB.get db def key
+        return $ val >>= return . (runGet bitcoinGet) . toLazyBS . bscToBS
+
+    dbPut bi = do
+        db <- getHandle
+        let key = bsToBSC . toStrictBS . runPut . putWord256be $ biHash bi
         let payload = toStrictBS . runPut . bitcoinPut $ bi
-        liftDB $ DB.put db def (bsToBSC key) (bsToBSC payload)
+        liftDB $ DB.put db def key (bsToBSC payload)
 
-    blockStoreStream = do
+    -- Todo: Save the best block index in LevelDB
+    dbBest = return (Nothing :: Maybe BlockIndex)
+
+    dbPrev bi = do
+        db <- getHandle
+        let pKey = bsToBSC . toStrictBS . runPut . putWord256be $ (biPrev bi)
+        prev <- liftDB $ DB.get db def pKey
+        return $ prev >>= return . (runGet bitcoinGet) . toLazyBS . bscToBS
+
+    dbPrevKey = return . biPrev
+
+    dbStream = do
         db <- lift getHandle 
         (releaseSnap, snap) <- liftDB' $ DB.createSnapshot' db
         let readOptions = def{DB.useSnapshot = Just snap}
@@ -78,10 +97,6 @@ instance BlockStore LevelDB where
             release releaseSnap
         return ()
 
-    blockStoreRun m = runResourceT $ do
-        handle <- DB.open "blockindex" dbOptions
-        runReaderT (runLevelDB m) handle
-
 streamItems :: DB.Iterator -> C.Source LevelDB BlockIndex
 streamItems iter = do
     val <- liftDB' $ DB.iterValue iter
@@ -92,4 +107,16 @@ streamItems iter = do
             liftDB' $ DB.iterNext iter
             streamItems iter
         Nothing -> return ()
+
+instance IndexStore LevelDB where
+    delIndex w = do
+        db <- getHandle
+        let key = bsToBSC . toStrictBS . runPut . putWord256be $ w
+        liftDB $ DB.delete db def key
+
+
+instance AppStore LevelDB where
+    runAppDB m = runResourceT $ do
+        handle <- DB.open "blockindex" dbOptions
+        runReaderT (runLevelDB m) handle
 

@@ -29,8 +29,7 @@ import Bitcoin.Protocol.Version
 import Bitcoin.Protocol.VarString
 import Bitcoin.Protocol.NetworkAddress
 
-import Bitcoin.BlockStore
-import Bitcoin.BlockStore.LevelDB (DefaultDB)
+import Bitcoin.Store.LevelDB (AppDB)
 
 import qualified Bitcoin.Constants as Const
 
@@ -59,7 +58,7 @@ main = do
             C.$$ fromMessages 
             C.=$ (CB.sinkHandle h)
 
-mainLoop :: Message -> C.Conduit Message (BitcoinApp DefaultDB) [Message]
+mainLoop :: Message -> C.Conduit Message (BitcoinApp AppDB) [Message]
 mainLoop msg = C.yield =<< (lift $ processMessage msg)
 
 buildVersion :: IO Version

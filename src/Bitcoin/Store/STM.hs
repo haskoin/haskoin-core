@@ -70,6 +70,9 @@ instance Monad (Mem v) where
 
     return = Mem . return
 
+instance Functor (Mem v) where
+    fmap f m = liftM f m
+
 instance Store BlockIndex (Mem BlockIndex) where
     dbKey bi = return $ biHash bi
     dbGet w = getMap >>= return . (Map.lookup w)

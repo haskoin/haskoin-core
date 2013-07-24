@@ -18,7 +18,9 @@ Some pointers:
 
 - Conduit is used to process the network IO stream
 - Memory is managed in the BitcoinMem monad, which runs on top of the STM monad
-- LevelDB is managed in the BitcoinDB monad, which uses leveldb-haskell library
+- LevelDB is provided through leveldb-haskell library
+- Block and BlockIndices are stored in databases that implement the Store type class
+- Start haskoin with -testnet to connect to testnet
 
 A lot of experimentation with the codebase is still ongoing. Don't expect the
 monad stacks or program structure to be fixed just yet.

@@ -12,6 +12,7 @@ import qualified Data.Conduit as C
 import qualified Data.Conduit.Binary as CB
 
 import Control.Monad
+import Control.Monad.Trans
 import Control.Monad.Trans.Resource
 import Control.Monad.IO.Class
 
@@ -34,7 +35,8 @@ import Bitcoin.Protocol.Ping
 import Bitcoin.Protocol.Alert
 import Bitcoin.Crypto
 import Bitcoin.Util
-import qualified Bitcoin.Constants as Const
+import Bitcoin.RunConfig
+import Bitcoin.Store
 
 import qualified Text.Show.Pretty as Pr
 
@@ -59,13 +61,14 @@ data Message =
     deriving (Show, Read)
 
 -- Conduit transforming streams of bytestrings into messages
-toMessage :: MonadIO m => C.Conduit BS.ByteString m Message
+toMessage :: AppStore m => C.Conduit BS.ByteString (BitcoinApp m) Message
 toMessage = do
     headBytes <- CB.take 24 -- Header of a message is always 24 bytes
     let (MessageHeader _ cmd len _) = runGet bitcoinGet headBytes
     payloadBytes <- if len > 0
                         then CB.take $ fromIntegral len
                         else return BL.empty
+    -- Todo: Check the payload checksum
     C.yield $ getMessage cmd payloadBytes
     toMessage
 
@@ -89,16 +92,16 @@ getMessage cmd payload = case cmd of
     _            -> error $ "getMessage: Invalid command string " ++ cmd
 
 -- Conduit transforming streams of messages into bytestrings
-fromMessages :: Monad m => C.Conduit [Message] m BS.ByteString
+fromMessages :: AppStore m => C.Conduit [Message] (BitcoinApp m) BS.ByteString
 fromMessages = C.awaitForever $ \msgs -> forM_ msgs go
-    where 
-        go msg = do
+    where go msg = do
+            magic <- lift $ withConf getNetworkMagic
             let (cmd, mPut) = putMessage msg
-                payload = toStrictBS $ runPut mPut
-                chksum = doubleSHA256CheckSum payload
-                header = toStrictBS . runPut . bitcoinPut $ 
+                payload     = toStrictBS $ runPut mPut
+                chksum      = doubleSHA256CheckSum payload
+                header      = toStrictBS . runPut . bitcoinPut $ 
                     MessageHeader
-                        Const.testnetMagic
+                        magic
                         cmd
                         (fromIntegral $ BS.length payload)
                         chksum
@@ -122,13 +125,18 @@ putMessage m = case m of
     (MPong p)        -> ("pong", bitcoinPut p)
     (MAlert a)       -> ("alert", bitcoinPut a)
 
+getNetworkMagic :: BitcoinConfig Word32
+getNetworkMagic = go =<< getRunMode
+    where go Prodnet = return 0xf9beb4d9
+          go Testnet = return 0x0b110907
+
 getSerializeSize :: Message -> Int
 getSerializeSize m = BS.length (payload m) + 24
     where payload = toStrictBS . runPut . snd . putMessage
 
 buildGetBlocks :: BlockLocator -> Message
-buildGetBlocks l = MGetBlocks $ GetBlocks Const.blockVersion l (fromIntegral 0)
+buildGetBlocks l = MGetBlocks $ GetBlocks currentBlockVersion l (fromIntegral 0)
 
 buildStopGetBlocks :: BlockLocator -> Word256 -> Message
-buildStopGetBlocks l s = MGetBlocks $ GetBlocks Const.blockVersion l s
+buildStopGetBlocks l s = MGetBlocks $ GetBlocks currentBlockVersion l s
                     

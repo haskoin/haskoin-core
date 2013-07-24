@@ -42,14 +42,7 @@ import Bitcoin.BlockChain.BlockIndex
 import Bitcoin.Store
 import Bitcoin.Store.STM
 
-import qualified Bitcoin.Constants as Const
-
-type BitcoinApp m = ReaderT AppState m
-
-data AppState = AppState { memState :: MemState } 
-
-getMemState :: AppStore m => BitcoinApp m MemState
-getMemState = ask >>= return . memState
+import Bitcoin.RunConfig
 
 withDB :: AppStore m => m a -> BitcoinApp m a
 withDB = lift
@@ -59,20 +52,23 @@ withMem m = do
     state <- getMemState
     liftIO $ atomically $ runReaderT m state
 
-runBitcoinApp :: AppStore m => BitcoinApp m () -> IO ()
-runBitcoinApp m = do
+runBitcoinApp :: AppStore m => [Flag] -> BitcoinApp m () -> IO ()
+runBitcoinApp flags m = do
+    let runConfig = buildRunConfig flags
     memState <- newMemState
-    runAppDB $ runReaderT (initBitcoinApp >> m) (AppState memState)
+    runAppDB $ runReaderT (initBitcoinApp >> m) (AppState memState runConfig)
 
 initBitcoinApp :: AppStore m => BitcoinApp m ()
 initBitcoinApp = do
     liftIO $ print "Initializing Haskoin"
-    val <- withDB $ dbGetIndex testGenesisBlockHash 
+    genBlock     <- withConf genesisBlock
+    genBlockHash <- withConf genesisBlockHash
+    val <- withDB $ dbGetIndex $ genBlockHash
     case val of
         (Just _) -> liftIO $ print "Found existing LevelDB database"
         Nothing  -> do
             liftIO $ print "Initializing LevelDB with genesis block"
-            withDB $ dbPut $ buildBlockIndex testGenesisBlock Nothing
+            withDB $ dbPut $ buildBlockIndex genBlock Nothing
     liftIO $ print "Loading block index"
     blockIndices <- withDB $ dbStreamIndices C.$$ CL.consume
     withMem $ withIndexMap $ forM_ blockIndices dbPut
@@ -88,58 +84,64 @@ processMessage msg = case msg of
     _              -> return []
 
 processVerAck :: AppStore m => BitcoinApp m [Message]
-processVerAck = withMem $ do
-    bestIndex <- fromJust <$> getBestIndex
-    locator <- withIndexMap $ getBlockLocator bestIndex
-    return [buildGetBlocks locator]
+processVerAck = do
+    genesisHash <- withConf genesisBlockHash
+    withMem $ do
+        bestIndex <- fromJust <$> getBestIndex
+        locator <- withIndexMap $ getBlockLocator bestIndex genesisHash
+        return [buildGetBlocks locator]
 
 processBlock :: AppStore m => Block -> BitcoinApp m [Message]
 processBlock block = do
+    genesisHash <- withConf genesisBlockHash
     insertedBIs <- withMem $ saveBlock block
     case insertedBIs of
         [] -> withMem $ do
             bestIndex  <- fromJust <$> getBestIndex
             orphanRoot <- withOrphanMap $ getRootOf block
-            locator    <- withIndexMap $ getBlockLocator bestIndex
+            locator    <- withIndexMap $ getBlockLocator bestIndex genesisHash
             return [buildStopGetBlocks locator (blockHash orphanRoot)]
         _ -> withDB $ do
             forM_ insertedBIs dbPut
             return []
 
 processInvVector :: AppStore m => [InvVector] -> BitcoinApp m [Message]
-processInvVector vs = withMem $ do
+processInvVector vs = do
+    genesisHash <- withConf genesisBlockHash
     let blockVectors = filter ((== InvBlock) . invType) vs
-    (have,notHave)  <- partitionM haveInvVector blockVectors
-    orphans         <- withOrphanMap $ mapM dbGet (map invHash have)
-    orphanGetBlocks <- buildOrphanGetBlocks orphans
-    lastMBI         <- withIndexMap $ dbGetIndex (invHash $ last blockVectors)
-    lastGetBlocks   <- case lastMBI of
-                        (Just lastBI) -> do
-                            lastLocator <- withIndexMap $ getBlockLocator lastBI
-                            return $ [buildGetBlocks lastLocator]
-                        Nothing -> return []
-    return $ 
-        MGetData (GetData notHave) : 
-        orphanGetBlocks ++ lastGetBlocks
+    withMem $ do
+        (have,notHave)  <- partitionM haveInvVector blockVectors
+        orphans         <- withOrphanMap $ mapM dbGet (map invHash have)
+        orphanGetBlocks <- buildOrphanGetBlocks orphans genesisHash
+        lastMBI         <- withIndexMap $ dbGetIndex 
+                                            (invHash $ last blockVectors)
+        lastGetBlocks   <- case lastMBI of
+                               (Just lastBI) -> do
+                                   lastLocator <- withIndexMap $ 
+                                       getBlockLocator lastBI genesisHash
+                                   return $ [buildGetBlocks lastLocator]
+                               Nothing -> return []
+
+        return $ MGetData (GetData notHave) : orphanGetBlocks ++ lastGetBlocks
 
 haveInvVector :: InvVector -> BitcoinMem Bool
 haveInvVector v 
     | (invType v) == InvBlock = alreadyHave (invHash v)
     | otherwise = return True -- ignore for now
 
-buildOrphanGetBlocks :: [Maybe Block] -> BitcoinMem [Message]
-buildOrphanGetBlocks ((Just b):xs) = do
+buildOrphanGetBlocks :: [Maybe Block] -> Word256 -> BitcoinMem [Message]
+buildOrphanGetBlocks ((Just b):xs) gHash = do
     orphanRoot <- withOrphanMap $ getRootOf b
     bestIndex  <- fromJust <$> getBestIndex
-    rest       <- buildOrphanGetBlocks xs
-    locator    <- withIndexMap $ getBlockLocator bestIndex
+    rest       <- buildOrphanGetBlocks xs gHash
+    locator    <- withIndexMap $ getBlockLocator bestIndex gHash
     return $ buildStopGetBlocks locator (blockHash orphanRoot) : rest
-buildOrphanGetBlocks (Nothing:xs) = buildOrphanGetBlocks xs
-buildOrphanGetBlocks _ = return []
+buildOrphanGetBlocks (Nothing:xs) gHash = buildOrphanGetBlocks xs gHash
+buildOrphanGetBlocks _ _ = return []
 
 checkTransaction :: Tx -> Bool
 checkTransaction tx = case tx of
     (Tx _ [] _ _) -> False --vin False
     (Tx _ _ [] _) -> False --vout False
-    _ -> not $ getSerializeSize (MTx tx) > Const.maxBlockSize
+    _ -> not $ getSerializeSize (MTx tx) > maxBlockSize
 

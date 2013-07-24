@@ -23,7 +23,7 @@ import Bitcoin.Protocol
 import Bitcoin.Protocol.Block
 import Bitcoin.BlockChain.BlockIndex
 
-class Monad m => Store v m where 
+class (Monad m, Functor m) => Store v m where 
     dbKey     :: v -> m Word256
     dbGet     :: Word256 -> m (Maybe v)
     dbPut     :: v -> m ()
@@ -54,11 +54,11 @@ class Store BlockIndex m => IndexStore m where
     dbStreamIndices :: C.Source m BlockIndex
     dbStreamIndices = dbStream
 
-class (Store BlockIndex m, IndexStore m, MonadIO m) => AppStore m where
+class (IndexStore m, MonadIO m) => AppStore m where
     runAppDB :: m a -> IO a
 
-getBlockLocator :: Store v m => v -> m [Word256]
-getBlockLocator h = (go 1 [h]) >>= addGenesisBlock
+getBlockLocator :: Store v m => v -> Word256 -> m [Word256]
+getBlockLocator h genesisHash = (go 1 [h]) >>= addGenesis
     where go step acc = do
               next <- move (Just $ head acc) step
               let nextStep = if (length acc) > 10 then step * 2 else 1
@@ -70,9 +70,9 @@ getBlockLocator h = (go 1 [h]) >>= addGenesisBlock
                   next <- dbPrev $ fromJust v
                   move next (step - 1)
               | otherwise = return v
-          addGenesisBlock res
-              | (last res) == testGenesisBlockHash = return res
-              | otherwise = return $ res ++ [testGenesisBlockHash]
+          addGenesis res
+              | (last res) == genesisHash = return res
+              | otherwise = return $ res ++ [genesisHash]
 
 getRootOf :: Store v m => v -> m v
 getRootOf val = go =<< dbPrev val 

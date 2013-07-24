@@ -41,6 +41,9 @@ instance Monad LevelDB where
 
     return = LevelDB . return
 
+instance Functor LevelDB where
+    fmap f m = liftM f m
+
 instance MonadIO LevelDB where
     liftIO = LevelDB . liftIO
 

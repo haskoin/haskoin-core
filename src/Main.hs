@@ -1,8 +1,10 @@
 import Network
 import System.IO
-import Data.Char --for ord
-import System.Random -- for randon nonce
-import Data.Time.Clock.POSIX -- unix time
+import System.Environment
+import System.Console.GetOpt
+import System.Random 
+import Data.Char 
+import Data.Time.Clock.POSIX 
 import Data.Default
 
 import qualified Data.Conduit as C
@@ -28,10 +30,11 @@ import Bitcoin.Message
 import Bitcoin.Protocol.Version
 import Bitcoin.Protocol.VarString
 import Bitcoin.Protocol.NetworkAddress
+import Bitcoin.RunConfig
 
+import Bitcoin.Store
 import Bitcoin.Store.LevelDB (AppDB)
 
-import qualified Bitcoin.Constants as Const
 
 import qualified Data.Map.Strict as Map
 
@@ -39,10 +42,23 @@ import qualified Text.Show.Pretty as Pr
 
 main :: IO ()
 main = do
+    args <- getArgs
+    case getOpt RequireOrder flagOptions args of
+        (flags,[],[])  -> runBitcoinApp flags $ haskoin
+        (_,nonOpts,[]) -> 
+            error $ "Unrecognized arguments: " ++ unwords nonOpts
+        (_,_,msgs)     -> 
+            error $ concat msgs ++ usageInfo usageHeader flagOptions
+
+haskoin :: BitcoinApp AppDB ()
+haskoin = do 
+
+    host <- withConf getHost
+    port <- withConf getPort
 
     -- Open network handle
-    h <- connectTo Const.bitcoinHost Const.bitcoinPort
-    hSetBuffering h LineBuffering
+    h <- lift $ liftIO $ connectTo host port
+    lift $ liftIO $ hSetBuffering h LineBuffering
 
     -- Greet our host with the Version message
     version <- buildVersion
@@ -51,22 +67,21 @@ main = do
         C.=$ (CB.sinkHandle h)
 
     -- Execute main program loop
-    runBitcoinApp $ 
-        (CB.sourceHandle h) 
-            C.$= toMessage 
-            C.$= (C.awaitForever mainLoop)
-            C.$$ fromMessages 
-            C.=$ (CB.sinkHandle h)
+    (CB.sourceHandle h) 
+        C.$= toMessage 
+        C.$= (C.awaitForever mainLoop)
+        C.$$ fromMessages 
+        C.=$ (CB.sinkHandle h)
 
-mainLoop :: Message -> C.Conduit Message (BitcoinApp AppDB) [Message]
+mainLoop :: AppStore m => Message -> C.Conduit Message (BitcoinApp m) [Message]
 mainLoop msg = C.yield =<< (lift $ processMessage msg)
 
-buildVersion :: IO Version
+buildVersion :: AppStore m => BitcoinApp m Version
 buildVersion = do
     let zeroAddr = 0xffff00000000
         addr = NetworkAddress 1 zeroAddr 0
-        ua = VarString $ BS.pack $ map (fromIntegral . ord) "/haskoin:0.0.1/"
-    time <- getPOSIXTime
-    rdmn <- randomIO -- nonce
-    return $ Version 70001 1 (floor time) addr addr rdmn ua 0 False
+        ua = VarString $ BS.pack $ map (fromIntegral . ord) haskoinUserAgent
+    time <- liftIO $ getPOSIXTime
+    rdmn <- liftIO $ randomIO -- nonce
+    return $ Version protocolVersion 1 (floor time) addr addr rdmn ua 0 False
     

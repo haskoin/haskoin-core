@@ -9,11 +9,13 @@ module Bitcoin.Store
 , getRootOf
 , getChildrenOf
 , getAllChildrenOf
+, withConf
 ) where
 
 import Data.Maybe
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Reader
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 
@@ -22,6 +24,7 @@ import qualified Data.Conduit as C
 import Bitcoin.Protocol
 import Bitcoin.Protocol.Block
 import Bitcoin.BlockChain.BlockIndex
+import Bitcoin.RunConfig
 
 class (Monad m, Functor m) => Store v m where 
     dbKey     :: v -> m Word256
@@ -55,7 +58,7 @@ class Store BlockIndex m => IndexStore m where
     dbStreamIndices = dbStream
 
 class (IndexStore m, MonadIO m) => AppStore m where
-    runAppDB :: m a -> IO a
+    runAppDB :: RunConfig -> m a -> IO a
 
 getBlockLocator :: Store v m => v -> Word256 -> m [Word256]
 getBlockLocator h genesisHash = (go 1 [h]) >>= addGenesis
@@ -98,3 +101,8 @@ getChildrenOf val = do
                     go key (if key == prev then (n:acc) else acc)
                 Nothing -> return acc
                 
+withConf :: AppStore m => BitcoinConfig a -> BitcoinApp m a
+withConf m = do
+    conf <- runConfig <$> ask
+    return $ runReader m conf
+

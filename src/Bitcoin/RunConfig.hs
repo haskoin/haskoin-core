@@ -5,21 +5,22 @@ module Bitcoin.RunConfig
 , Flag
 , BitcoinApp
 , AppState(..)
+, MemState(..)
+, STMState(..)
+, MemMap
 , buildRunConfig
-, getMemState
-, getRunConfig
 , flagOptions
 , usageHeader
 , getRunMode
 , getHost
 , getPort
+, getDBName
 , maxBlockSize
 , currentBlockVersion
 , haskoinUserAgent
 , protocolVersion
 , genesisBlock
 , genesisBlockHash
-, withConf
 ) where
 
 import Control.Applicative
@@ -34,11 +35,12 @@ import Bitcoin.Protocol.Tx
 import Bitcoin.Protocol.BlockHeader
 import Bitcoin.Protocol.Script
 import Bitcoin.BlockChain.BlockIndex
-import Bitcoin.BlockChain.BitcoinMem
 import Bitcoin.Util
-import Bitcoin.Store
 
 import qualified Data.ByteString as BS
+
+import qualified Data.Map.Strict as Map
+import Data.Map.Strict (Map) 
 
 import System.Console.GetOpt
 import Data.Word
@@ -66,11 +68,19 @@ data AppState = AppState
     , runConfig :: RunConfig
     } 
 
-getMemState :: AppStore m => BitcoinApp m MemState
-getMemState = ask >>= return . memState
+{- Bitcoin Mem -}
 
-getRunConfig :: AppStore m => BitcoinApp m RunConfig
-getRunConfig = ask >>= return . runConfig
+data MemState = MemState
+    { stateBlockIndex   :: TVar (STMState BlockIndex)
+    , stateOrphanBlocks :: TVar (STMState Block)
+    } 
+
+type MemMap v = Map Word256 v
+
+data STMState v = STMState
+    { stmMap  :: MemMap v
+    , stmBest :: Maybe v  
+    }
 
 {- Runtime Configuration -}
 
@@ -98,11 +108,6 @@ buildRunConfig fs = loop fs $ RunConfig
                                              }
           loop []            conf = conf
 
-withConf :: AppStore m => BitcoinConfig a -> BitcoinApp m a
-withConf m = do
-    conf <- runConfig <$> ask
-    return $ runReader m conf
-
 getRunMode :: BitcoinConfig RunMode
 getRunMode = runMode <$> ask
 
@@ -111,6 +116,9 @@ getHost = peerHost <$> ask
 
 getPort :: BitcoinConfig PortID
 getPort = peerPort <$> ask
+
+getDBName :: BitcoinConfig String
+getDBName = dbName <$> ask
 
 -- Various constants
 

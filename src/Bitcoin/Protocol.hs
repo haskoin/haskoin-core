@@ -20,6 +20,8 @@ module Bitcoin.Protocol
 
 , hasMore
 , skip
+
+
 ) where
 
 import Data.Word

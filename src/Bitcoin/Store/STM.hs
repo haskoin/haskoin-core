@@ -2,9 +2,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Bitcoin.Store.STM
-( Mem(..)
-, STMState(..)
-, newSTMState
+( newSTMState
+, Mem(..)
 ) where
 
 import Data.Maybe
@@ -22,17 +21,12 @@ import Bitcoin.Protocol
 import Bitcoin.Protocol.Block
 import Bitcoin.Protocol.BlockHeader
 import Bitcoin.BlockChain.BlockIndex
-
+import Bitcoin.RunConfig
 import Bitcoin.Store
 
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict (Map) 
 
-type MemMap v = Map Word256 v
-data STMState v = STMState
-    { stmMap  :: MemMap v
-    , stmBest :: Maybe v  
-    }
 data Mem v a = Mem { runMem :: ReaderT (TVar (STMState v)) STM a }
 
 newSTMState :: IO (TVar (STMState v))

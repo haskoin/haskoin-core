@@ -4,6 +4,7 @@
 module Bitcoin.Store.LevelDB 
 ( LevelDB(..)
 , AppDB
+, runAppDB
 ) where
 
 import Data.Default
@@ -14,6 +15,7 @@ import Bitcoin.Protocol.BlockHeader
 import Bitcoin.BlockChain.BlockIndex
 import Bitcoin.Store
 import Bitcoin.Util
+import Bitcoin.RunConfig
 
 import Control.Monad
 import Control.Monad.State
@@ -30,8 +32,13 @@ import qualified Database.LevelDB as DB
 
 type AppDB = LevelDB
 
+data LevelDBState = LevelDBState
+    { handle    :: DB.DB
+    , runConfig :: RunConfig
+    }
+
 data LevelDB a = 
-    LevelDB { runLevelDB :: ReaderT DB.DB (ResourceT IO) a }
+    LevelDB { runLevelDB :: ReaderT LevelDBState (ResourceT IO) a }
 
 instance Monad LevelDB where
 
@@ -54,7 +61,7 @@ liftDB' :: ResourceT IO a -> C.ConduitM () BlockIndex LevelDB a
 liftDB' = lift . liftDB
 
 getHandle :: LevelDB DB.DB
-getHandle = LevelDB ask
+getHandle = LevelDB $ handle <$> ask
 
 dbOptions = DB.defaultOptions
     { DB.createIfMissing = True
@@ -117,9 +124,8 @@ instance IndexStore LevelDB where
         let key = bsToBSC . toStrictBS . runPut . putWord256be $ w
         liftDB $ DB.delete db def key
 
-
-instance AppStore LevelDB where
-    runAppDB m = runResourceT $ do
-        handle <- DB.open "blockindex" dbOptions
-        runReaderT (runLevelDB m) handle
+instance AppStore LevelDB where 
+    runAppDB runConfig m = runResourceT $ do
+        handle <- DB.open (dbName runConfig) dbOptions
+        runReaderT (runLevelDB m) (LevelDBState handle runConfig)
 

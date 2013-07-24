@@ -1,6 +1,5 @@
 module Bitcoin.BlockChain.BitcoinMem
 ( BitcoinMem
-, MemState(..)
 , withOrphanMap
 , withIndexMap
 , getBestIndex
@@ -24,6 +23,7 @@ import Bitcoin.Protocol.Block
 import Bitcoin.Protocol.GetBlocks
 import Bitcoin.Protocol.BlockHeader
 import Bitcoin.BlockChain.BlockIndex
+import Bitcoin.RunConfig
 
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict (Map) 
@@ -32,11 +32,6 @@ import Bitcoin.Store
 import Bitcoin.Store.STM
 
 type BitcoinMem = ReaderT MemState STM
-
-data MemState = MemState
-    { stateBlockIndex   :: TVar (STMState BlockIndex)
-    , stateOrphanBlocks :: TVar (STMState Block)
-    } 
 
 newMemState :: IO MemState
 newMemState = liftM2 MemState newSTMState newSTMState

@@ -44,6 +44,13 @@ import Bitcoin.Store.STM
 
 import Bitcoin.RunConfig
 
+getMemState :: AppStore m => BitcoinApp m MemState
+getMemState = ask >>= return . memState
+
+getRunConfig :: AppStore m => BitcoinApp m RunConfig
+getRunConfig = ask >>= return . runConfig
+
+
 withDB :: AppStore m => m a -> BitcoinApp m a
 withDB = lift
 
@@ -56,7 +63,8 @@ runBitcoinApp :: AppStore m => [Flag] -> BitcoinApp m () -> IO ()
 runBitcoinApp flags m = do
     let runConfig = buildRunConfig flags
     memState <- newMemState
-    runAppDB $ runReaderT (initBitcoinApp >> m) (AppState memState runConfig)
+    runAppDB runConfig $ 
+        runReaderT (initBitcoinApp >> m) (AppState memState runConfig)
 
 initBitcoinApp :: AppStore m => BitcoinApp m ()
 initBitcoinApp = do

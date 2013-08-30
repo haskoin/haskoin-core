@@ -6,6 +6,7 @@ Haskell implementation of the Bitcoin reference specification
 haskoin-crypto and haskoin-protocol for details**
 
 [github.com/plaprade/haskoin-crypto](http://github.com/plaprade/haskoin-crypto)
+
 [github.com/plaprade/haskoin-protocol](http://github.com/plaprade/haskoin-protocol)
 
 

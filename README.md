@@ -2,6 +2,13 @@ Haskoin
 =======
 Haskell implementation of the Bitcoin reference specification
 
+**This code is currently being refactored into smaller libraries. Check
+haskoin-crypto and haskoin-protocol for details**
+
+[github.com/plaprade/haskoin-crypto](http://github.com/plaprade/haskoin-crypto)
+[github.com/plaprade/haskoin-protocol](http://github.com/plaprade/haskoin-protocol)
+
+
 This code is being actively developed and is not stable yet
 
 Current project status:

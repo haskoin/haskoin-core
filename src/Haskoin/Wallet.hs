@@ -2,8 +2,6 @@ module Haskoin.Wallet
 ( XPrivateKey
 , XPublicKey
 , deriveXPublicKey
-, hmac512
-, split512
 ) where
 
 import Control.Monad (liftM2, guard)
@@ -26,6 +24,7 @@ import Haskoin.Util
     ( stringToBS
     , toLazyBS
     , toStrictBS
+    , encode'
     )
 import Haskoin.Crypto
 
@@ -53,32 +52,26 @@ split512 :: Hash512 -> (Hash256, Hash256)
 split512 i = (fromIntegral $ i `shiftR` 256, fromIntegral i)
 
 -- encode private key as 32 bytes (big endian)
-privToBS :: PrivateKey -> BL.ByteString
-privToBS = encode . (fromIntegral . fromPrivateKey :: PrivateKey -> Hash256)
+prvToBS :: PrivateKey -> BS.ByteString
+prvToBS = encode' . (fromIntegral . fromPrivateKey :: PrivateKey -> Hash256)
 
-privateDerivation :: XPrivateKey -> Word32 -> Maybe XPrivateKey
-privateDerivation (XPrivateKey kpar cpar) i = do
-    ki <- kM
-    guard (ki /= 0)
-    return $ XPrivateKey (fromJust $ makePrivateKey $ fromIntegral ki) ir
-    where 
-        kM = liftM2 (+) ilM (Just kn)
-        kn = fromInteger (fromPrivateKey kpar) :: FieldN
-        ilM | isIntegerValidKey (fromIntegral il) 
-                = Just (fromIntegral il :: FieldN)
-            | otherwise = Nothing
-        (il, ir) 
-              -- Private derivation is used
-            | testBit i 31 = split512 $ hmac512 encPar cPrv
-              -- Public derivation is used
-            | otherwise    = split512 $ hmac512 encPar cPub
-        cPrv   = 0x00 `BS.cons` encPrv `BS.append` encI
-        cPub   = encPub `BS.append` encI
-        encI   = toStrictBS $ encode i
-        encPrv = toStrictBS $ privToBS kpar
-        encPub = toStrictBS $ encode $ derivePublicKey kpar
-        encPar = toStrictBS $ encode cpar
+ckd :: XPrivateKey -> Word32 -> Maybe XPrivateKey
+ckd (XPrivateKey kpar cpar) i = do
+    k' <- makePrivateKey $ fromIntegral k
+    ki <- addPrivateKeys k' kpar
+    return $ XPrivateKey ki ci
+    where (k, ci) | testBit i 31 = split512 $ hmac512 (encode' cpar) cPrv
+                  | otherwise    = split512 $ hmac512 (encode' cpar) cPub
+          cPrv = 0x00 `BS.cons` (prvToBS kpar) `BS.append` (encode' i)
+          cPub = (encode' $ derivePublicKey kpar) `BS.append` (encode' i)
 
-
-
+ckd' :: XPublicKey -> Word32 -> Maybe XPublicKey
+ckd' (XPublicKey kpar cpar) i = do
+    k' <- derivePublicKey <$> makePrivateKey (fromIntegral k)
+    ki <- addPublicKeys k' kpar
+    return $ XPublicKey ki ci
+    where (k, ci) | testBit i 31 = error $ 
+                        "Private derivation is not defined for XPublicKey"
+                   | otherwise    = split512 $ hmac512 (encode' cpar) cPub
+          cPub  = (encode' kpar) `BS.append` (encode' i)
 

@@ -1,5 +1,6 @@
 module Haskoin.Wallet 
 ( Wallet(..)
+, createMasterNode
 , publicWallet
 , isPubWallet
 , isPrvWallet
@@ -72,10 +73,16 @@ isPrvWallet :: Wallet -> Bool
 isPrvWallet = not . isPubWallet
 
 hmac512 :: BS.ByteString -> BS.ByteString -> Hash512
-hmac512 key msg = decode' $ hmac hash512BS 512 key msg
+hmac512 key msg = decode' $ hmac hash512BS 128 key msg
 
 split512 :: Hash512 -> (Hash256, Hash256)
 split512 i = (fromIntegral $ i `shiftR` 256, fromIntegral i)
+
+createMasterNode :: BS.ByteString -> Maybe Wallet
+createMasterNode bs = do
+    pk' <- makePrivateKey $ fromIntegral pk
+    return $ XPrivateKey 0 0 0 c pk'
+    where (pk,c) = split512 $ hmac512 (stringToBS "Bitcoin seed") bs
 
 -- Public derivation
 subkey :: Wallet -> Word32 -> Maybe Wallet
@@ -156,11 +163,10 @@ instance Binary Wallet where
             _ -> fail $ "Invalid wallet version bytes"
 
     put w = do
-        putWord32be $ 
-            if isPubWallet w 
-                then 0X0488b21e
-                else 0x0488ade4 
-        putWord8 $ xDepth w
+        if isPubWallet w 
+            then putWord32be 0X0488b21e
+            else putWord32be 0x0488ade4 
+        putWord8    $ xDepth w
         putWord32be $ xParent w
         putWord32be $ xIndex w
         put $ xChainCode w

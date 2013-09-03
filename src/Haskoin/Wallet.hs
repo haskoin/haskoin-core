@@ -5,15 +5,19 @@ module Haskoin.Wallet
 , isPrvWallet
 , subkey
 , subkey'
+, walletToBase58
+, walletFromBase58
 ) where
 
-import Control.Monad (liftM2, guard)
+import Control.Monad (liftM2, guard, unless)
 import Control.Applicative ((<$>), (<*>))
 
-import Data.Binary (encode, decode)
-import Data.Word (Word32)
+import Data.Binary (Binary, get, put)
+import Data.Binary.Get
+import Data.Binary.Put
+import Data.Word (Word8, Word32)
 import Data.Bits (shiftR, setBit)
-import Data.Maybe (fromJust, isNothing)
+import Data.Maybe (fromJust, isJust, isNothing)
 import qualified Data.ByteString as BS 
     ( ByteString
     , singleton
@@ -28,6 +32,8 @@ import Haskoin.Util
     , toLazyBS
     , toStrictBS
     , encode'
+    , decodeOrFail'
+    , decode'
     )
 import Haskoin.Crypto
 
@@ -39,23 +45,23 @@ data DerType = PrvDer | PubDer
 
 data Wallet = 
     XPrivateKey
-        { xPrivateKey :: !PrivateKey
-        , xChainCode  :: !ChainCode
-        , xDepth      :: !Word32
-        , xIndex      :: !Word32
+        { xDepth      :: !Word8
         , xParent     :: !Word32
+        , xIndex      :: !Word32
+        , xChainCode  :: !ChainCode
+        , xPrivateKey :: !PrivateKey
         } 
     | XPublicKey 
-        { xPublicKey  :: !PublicKey
-        , xChainCode  :: !ChainCode
-        , xDepth      :: !Word32
-        , xIndex      :: !Word32
+        { xDepth      :: !Word8
         , xParent     :: !Word32
+        , xIndex      :: !Word32
+        , xChainCode  :: !ChainCode
+        , xPublicKey  :: !PublicKey
         } 
     deriving (Eq, Show)
 
 publicWallet :: Wallet -> Wallet
-publicWallet (XPrivateKey k c d i p) = XPublicKey (derivePublicKey k) c d i p
+publicWallet (XPrivateKey d p i c k) = XPublicKey d p i c (derivePublicKey k)
 publicWallet pub = pub
 
 isPubWallet :: Wallet -> Bool
@@ -66,16 +72,10 @@ isPrvWallet :: Wallet -> Bool
 isPrvWallet = not . isPubWallet
 
 hmac512 :: BS.ByteString -> BS.ByteString -> Hash512
-hmac512 key msg = decode $ toLazyBS $ hmac hash512BS 512 key msg
+hmac512 key msg = decode' $ hmac hash512BS 512 key msg
 
 split512 :: Hash512 -> (Hash256, Hash256)
 split512 i = (fromIntegral $ i `shiftR` 256, fromIntegral i)
-
--- encode private key as 32 bytes (big endian)
-prvToBS :: PrivateKey -> BS.ByteString
-prvToBS = (BS.cons 0x00) . encode' . getKey
-    where getKey :: PrivateKey -> Hash256 
-          getKey = fromIntegral . fromPrivateKey 
 
 -- Public derivation
 subkey :: Wallet -> Word32 -> Maybe Wallet
@@ -88,22 +88,88 @@ subkey w i
         if isPrvWallet w 
             then do
                 pk' <- addPrivateKeys pkl (xPrivateKey w)
-                return $ XPrivateKey pk' c' (xDepth w + 1) i (xParent w)
+                return $ XPrivateKey (xDepth w + 1) (xParent w) i c' pk'
             else do
                 pK' <- addPublicKeys (derivePublicKey pkl) (xPublicKey w) 
-                return $ XPublicKey pK' c' (xDepth w + 1) i (xParent w)
+                return $ XPublicKey (xDepth w + 1) (xParent w) i c' pK'
     | otherwise = error "Derivation index must be smaller than 0x80000000"
     
 -- Private derivation
 subkey' :: Wallet -> Word32 -> Maybe Wallet
-subkey' (XPrivateKey pk c d _ p) i
+subkey' (XPrivateKey d p _ c pk) i
     | i < 0x80000000 = do
         let i'     = setBit i 31
-            msg    = (prvToBS pk) `BS.append` (encode' i')
+            pkBS   = toStrictBS $ runPut $ putPrivateKey pk
+            msg    = pkBS `BS.append` (encode' i')
             (l, c') = split512 $ hmac512 (encode' c) msg
         pkl <- makePrivateKey $ fromIntegral l
         pk' <- addPrivateKeys pk pkl
-        return $ XPrivateKey pk' c' (d + 1) i' p
+        return $ XPrivateKey (d + 1) p i' c' pk'
     | otherwise = error "Derivation index must be smaller than 0x80000000"
 subkey' _ _ = error "Private derivation is not defined for XPublicKey"
+
+-- De-serialize HDW-specific private key
+getPrivateKey :: Get PrivateKey
+getPrivateKey = do
+    pad <- getWord8
+    unless (pad == 0x00) $ fail $
+        "Private key must be padded with 0x00"
+    h   <- get :: Get Hash256
+    let prv = makePrivateKey $ fromIntegral h
+    unless (isJust prv) $ fail $
+        "De-serialized invalid private key"
+    return $ fromJust prv
+
+-- Serialize HDW-specific private key
+putPrivateKey :: PrivateKey -> Put 
+putPrivateKey p = do
+    putWord8 0x00
+    put (fromIntegral $ fromPrivateKey p :: Hash256)
+
+walletToBase58 :: Wallet -> BS.ByteString
+walletToBase58 = encodeBase58Check . encode'
+
+walletFromBase58 :: BS.ByteString -> Maybe Wallet
+walletFromBase58 bs = do
+    bs' <- decodeBase58Check bs
+    case decodeOrFail' bs' of
+        (Left _)            -> Nothing
+        (Right (_, _, res)) -> Just res
+
+instance Binary Wallet where
+
+    get = do
+        ver <- getWord32be
+        dep <- getWord8
+        par <- getWord32be
+        idx <- getWord32be
+        chn <- get 
+        case ver of 
+            0X0488b21e -> do
+                pub <- get 
+                unless (isCompressed pub) $ fail $
+                    "Invalid public key. Only compressed format is supported"
+                return $ XPublicKey dep par idx chn pub
+            0x0488ade4 -> do
+                prv <- getPrivateKey
+                return $ XPrivateKey dep par idx chn prv
+            _ -> fail $ "Invalid wallet version bytes"
+
+    put w = do
+        putWord32be $ 
+            if isPubWallet w 
+                then 0X0488b21e
+                else 0x0488ade4 
+        putWord8 $ xDepth w
+        putWord32be $ xParent w
+        putWord32be $ xIndex w
+        put $ xChainCode w
+        if isPubWallet w
+            then do
+                unless (isCompressed (xPublicKey w)) $ fail $
+                    "Only compressed public keys are supported"
+                put $ xPublicKey w
+            else do
+                putPrivateKey $ xPrivateKey w
+        
 

@@ -21,6 +21,8 @@ tests :: [Test]
 tests = 
     [ testGroup "HDW Extended Keys"
         [ testProperty "subkey(k,c)*G = subkey(k*G,c)" subkeyTest
+        , testProperty "decode( encode(wallet) ) = wallet" encDecWallet
+        , testProperty "fromB58( toB58(wallet) ) = wallet" b58Wallet
         ]
     ]
 
@@ -28,4 +30,10 @@ subkeyTest :: PrivateWallet -> Word32 -> Bool
 subkeyTest (PrivateWallet w) i = fromJust $ liftM2 (==) 
     (publicWallet <$> subkey w i') (subkey (publicWallet w) i')
     where i' = i .&. 0x7fffffff -- make it a public derivation
+
+encDecWallet :: Wallet -> Bool
+encDecWallet w = (decode (encode w)) == w
+
+b58Wallet :: Wallet -> Bool
+b58Wallet w = (fromJust $ walletFromBase58 $ walletToBase58 w) == w
 

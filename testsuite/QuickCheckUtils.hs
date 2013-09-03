@@ -21,14 +21,14 @@ newtype PublicWallet  = PublicWallet  Wallet
 
 instance Arbitrary PrivateWallet where
     arbitrary = do
-        k <- choose (1, maxN) :: Gen Integer
-        c <- choose (0, 2^256 - 1) :: Gen Integer
         d <- choose (0,10) :: Gen Integer
-        i <- arbitrary
         p <- arbitrary
+        i <- arbitrary
+        c <- choose (0, 2^256 - 1) :: Gen Integer
+        k <- choose (1, maxN) :: Gen Integer
         let pk = fromJust $ makePrivateKey k
         return $ PrivateWallet $ 
-            XPrivateKey pk (fromIntegral c) (fromIntegral d) i p
+            XPrivateKey (fromIntegral d) p i (fromIntegral c) pk
 
 instance Arbitrary PublicWallet where
     arbitrary = do
@@ -37,15 +37,15 @@ instance Arbitrary PublicWallet where
 
 instance Arbitrary Wallet where
     arbitrary = do
-        k <- choose (1, maxN) :: Gen Integer
-        c <- choose (0, 2^256 - 1) :: Gen Integer
         d <- choose (0,10) :: Gen Integer
-        i <- arbitrary
         p <- arbitrary
+        i <- arbitrary
+        c <- choose (0, 2^256 - 1) :: Gen Integer
+        k <- choose (1, maxN) :: Gen Integer
         let pk    = fromJust $ makePrivateKey k
-            wPriv = XPrivateKey pk (fromIntegral c) (fromIntegral d) i p
+            wPriv = XPrivateKey (fromIntegral d) p i (fromIntegral c) pk
             wPub  = publicWallet wPriv
-        elements [ wPriv, wPub ]
+        elements [wPriv, wPub]
 
 -- from Data.ByteString project
 instance Arbitrary BS.ByteString where

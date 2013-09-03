@@ -6,6 +6,10 @@ module Haskoin.Wallet
 , isPrvWallet
 , subkey
 , subkey'
+, walletID
+, walletFP
+, walletAddress
+, walletPublicKey
 , walletToBase58
 , walletFromBase58
 ) where
@@ -25,16 +29,17 @@ import qualified Data.ByteString as BS
     , cons
     , append
     )
-import qualified Data.ByteString.Lazy as BL (ByteString)
+import qualified Data.ByteString as BS (ByteString, take)
 
 import Crypto.MAC.HMAC (hmac)
-import Haskoin.Util 
+import Haskoin.Util
     ( stringToBS
     , toLazyBS
     , toStrictBS
     , encode'
     , decodeOrFail'
     , decode'
+    , bsToInteger
     )
 import Haskoin.Crypto
 
@@ -95,15 +100,15 @@ subkey w i
         if isPrvWallet w 
             then do
                 pk' <- addPrivateKeys pkl (xPrivateKey w)
-                return $ XPrivateKey (xDepth w + 1) (xParent w) i c' pk'
+                return $ XPrivateKey (xDepth w + 1) (walletFP w) i c' pk'
             else do
                 pK' <- addPublicKeys (derivePublicKey pkl) (xPublicKey w) 
-                return $ XPublicKey (xDepth w + 1) (xParent w) i c' pK'
+                return $ XPublicKey (xDepth w + 1) (walletFP w) i c' pK'
     | otherwise = error "Derivation index must be smaller than 0x80000000"
     
 -- Private derivation
 subkey' :: Wallet -> Word32 -> Maybe Wallet
-subkey' (XPrivateKey d p _ c pk) i
+subkey' w@(XPrivateKey d _ _ c pk) i
     | i < 0x80000000 = do
         let i'     = setBit i 31
             pkBS   = toStrictBS $ runPut $ putPrivateKey pk
@@ -111,7 +116,7 @@ subkey' (XPrivateKey d p _ c pk) i
             (l, c') = split512 $ hmac512 (encode' c) msg
         pkl <- makePrivateKey $ fromIntegral l
         pk' <- addPrivateKeys pk pkl
-        return $ XPrivateKey (d + 1) p i' c' pk'
+        return $ XPrivateKey (d + 1) (walletFP w) i' c' pk'
     | otherwise = error "Derivation index must be smaller than 0x80000000"
 subkey' _ _ = error "Private derivation is not defined for XPublicKey"
 
@@ -132,6 +137,18 @@ putPrivateKey :: PrivateKey -> Put
 putPrivateKey p = do
     putWord8 0x00
     put (fromIntegral $ fromPrivateKey p :: Hash256)
+
+walletID :: Wallet -> Hash160
+walletID = hash160 . hash256BS . encode' . xPublicKey . publicWallet
+
+walletFP :: Wallet -> Word32
+walletFP = fromIntegral . (`shiftR` 128) . walletID
+
+walletAddress :: Wallet -> BS.ByteString
+walletAddress = publicKeyAddress . xPublicKey . publicWallet
+
+walletPublicKey :: Wallet -> PublicKey
+walletPublicKey = xPublicKey . publicWallet
 
 walletToBase58 :: Wallet -> BS.ByteString
 walletToBase58 = encodeBase58Check . encode'

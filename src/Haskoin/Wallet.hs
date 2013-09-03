@@ -1,6 +1,6 @@
 module Haskoin.Wallet 
 ( Wallet(..)
-, createMasterNode
+, createMasterWallet
 , publicWallet
 , isPubWallet
 , isPrvWallet
@@ -10,8 +10,10 @@ module Haskoin.Wallet
 , walletFP
 , walletAddress
 , walletPublicKey
+, walletPrivateKey
 , walletToBase58
 , walletFromBase58
+, walletWIF
 ) where
 
 import Control.Monad (liftM2, guard, unless)
@@ -83,8 +85,8 @@ hmac512 key msg = decode' $ hmac hash512BS 128 key msg
 split512 :: Hash512 -> (Hash256, Hash256)
 split512 i = (fromIntegral $ i `shiftR` 256, fromIntegral i)
 
-createMasterNode :: BS.ByteString -> Maybe Wallet
-createMasterNode bs = do
+createMasterWallet :: BS.ByteString -> Maybe Wallet
+createMasterWallet bs = do
     pk' <- makePrivateKey $ fromIntegral pk
     return $ XPrivateKey 0 0 0 c pk'
     where (pk,c) = split512 $ hmac512 (stringToBS "Bitcoin seed") bs
@@ -150,6 +152,11 @@ walletAddress = publicKeyAddress . xPublicKey . publicWallet
 walletPublicKey :: Wallet -> PublicKey
 walletPublicKey = xPublicKey . publicWallet
 
+walletPrivateKey :: Wallet -> PrivateKey
+walletPrivateKey w
+    | isPrvWallet w = xPrivateKey w
+    | otherwise    = error "No private key in a public wallet"
+
 walletToBase58 :: Wallet -> BS.ByteString
 walletToBase58 = encodeBase58Check . encode'
 
@@ -159,6 +166,11 @@ walletFromBase58 bs = do
     case decodeOrFail' bs' of
         (Left _)            -> Nothing
         (Right (_, _, res)) -> Just res
+
+walletWIF :: Wallet -> BS.ByteString
+walletWIF w
+    | isPrvWallet w = toWIF $ xPrivateKey w
+    | otherwise     = error "WIF is only defined for private keys"
 
 instance Binary Wallet where
 

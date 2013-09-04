@@ -24,6 +24,7 @@ tests =
     [ testGroup "Test vector 1" 
         [ testCase "Chain m" v1c1
         , testCase "Chain m/0'" v1c2
+        , testCase "Chain m/0'/1" v1c3
         ] 
     ]
 
@@ -56,6 +57,7 @@ v1c1 = do
           ++ "2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8")
 
 v1c2 = do
+    -- m/0'
     let m' = fromJust $ subkey' m1 0
     assertBool "walletID" $
         walletID m' == 0x5c1bd648ed23aa5fd50ba52b2457c11e9e80a6a7
@@ -83,4 +85,34 @@ v1c2 = do
         bsToString (walletToBase58 $ toPubWallet m') ==
         ("xpub68Gmy5EdvgibQVfPdqkBBCHxA5htiqg55crXYuXoQRKfDBFA1WEj" 
         ++ "WgP6LHhwBZeNK1VTsfTFUHCdrfp1bgwQ9xv5ski8PX9rL2dZXvgGDnw")
+
+v1c3 = do
+    -- m/0'/1
+    let m' = fromJust $ subkey (fromJust $ subkey' m1 0) 1
+    assertBool "walletID" $
+        walletID m' == 0xbef5a2f9a56a94aab12459f72ad9cf8cf19c7bbe
+    assertBool "walletFP" $
+        walletFP m' == 0xbef5a2f9
+    assertBool "walletAddr" $
+        bsToString (walletAddr m') == "1JQheacLPdM5ySCkrZkV66G2ApAXe1mqLj"
+    assertBool "prvKey" $
+        bsToInteger (toStrictBS $ runPut $ putPrvKey $ walletPrvKey m') ==
+        0x3c6cb8d0f6a264c91ea8b5030fadaa8e538b020f0a387421a12de9319dc93368
+    assertBool "walletToWIF" $
+        bsToString (walletToWIF m') == 
+        "KyFAjQ5rgrKvhXvNMtFB5PCSKUYD1yyPEe3xr3T34TZSUHycXtMM"
+    assertBool "pubKey" $
+        bsToInteger (encode' $ walletPubKey m') ==
+        0x03501e454bf00751f24b1b489aa925215d66af2234e3891c3b21a52bedb3cd711c
+    assertBool "chain code" $
+        bsToInteger (encode' $ xChainCode m') ==
+        0x2a7857631386ba23dacac34180dd1983734e444fdbf774041578e9b6adb37c19
+    assertBool "Base58 PrvKey" $
+        bsToString (walletToBase58 m') ==
+        ("xprv9wTYmMFdV23N2TdNG573QoEsfRrWKQgWeibmLntzniatZvR9Bm" 
+        ++ "LnvSxqu53Kw1UmYPxLgboyZQaXwTCg8MSY3H2EU4pWcQDnRnrVA1xe8fs")
+    assertBool "Base58 PubKey" $
+        bsToString (walletToBase58 $ toPubWallet m') ==
+        ("xpub6ASuArnXKPbfEwhqN6e3mwBcDTgzisQN1wXN9BJcM47sSikHjJ" 
+        ++ "f3UFHKkNAWbWMiGj7Wf5uMash7SyYq527Hqck2AxYysAA7xmALppuCkwQ")
 

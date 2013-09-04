@@ -9,6 +9,7 @@ import Data.Maybe
 import qualified Data.ByteString as BS
 
 import Haskoin.Wallet
+import Haskoin.Wallet.Keys
 import Haskoin.Crypto
 
 curveN :: Integer

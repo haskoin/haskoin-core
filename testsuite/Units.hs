@@ -11,6 +11,7 @@ import Data.Binary.Put
 import qualified Data.ByteString as BS
 
 import Haskoin.Wallet
+import Haskoin.Wallet.Keys
 import Haskoin.Crypto
 import Haskoin.Util
 

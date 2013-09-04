@@ -1,22 +1,22 @@
 module Haskoin.Wallet 
 ( Wallet(..)
 , createMasterWallet
-, publicWallet
-, isPubWallet
-, isPrvWallet
 , subkey
 , subkey'
+, toPubWallet
+, isPubWallet
+, isPrvWallet
 , walletID
 , walletFP
-, walletAddress
-, walletPublicKey
-, walletPrivateKey
+, walletAddr
+, walletPubKey
+, walletPrvKey
 , walletToBase58
 , walletFromBase58
-, walletWIF
+, walletToWIF
 ) where
 
-import Control.Monad (liftM2, guard, unless)
+import Control.Monad (liftM2, guard, unless, when)
 import Control.Applicative ((<$>), (<*>))
 
 import Data.Binary (Binary, get, put)
@@ -52,29 +52,29 @@ type ChainCode = Hash256
 data DerType = PrvDer | PubDer
 
 data Wallet = 
-    XPrivateKey
+    XPrvKey
         { xDepth      :: !Word8
         , xParent     :: !Word32
         , xIndex      :: !Word32
         , xChainCode  :: !ChainCode
-        , xPrivateKey :: !PrivateKey
+        , xPrvKey     :: !PrvKey
         } 
-    | XPublicKey 
+    | XPubKey 
         { xDepth      :: !Word8
         , xParent     :: !Word32
         , xIndex      :: !Word32
         , xChainCode  :: !ChainCode
-        , xPublicKey  :: !PublicKey
+        , xPubKey     :: !PubKey
         } 
     deriving (Eq, Show)
 
-publicWallet :: Wallet -> Wallet
-publicWallet (XPrivateKey d p i c k) = XPublicKey d p i c (derivePublicKey k)
-publicWallet pub = pub
+toPubWallet :: Wallet -> Wallet
+toPubWallet (XPrvKey d p i c k) = XPubKey d p i c (derivePubKey k)
+toPubWallet pub = pub
 
 isPubWallet :: Wallet -> Bool
-isPubWallet (XPublicKey  _ _ _ _ _) = True
-isPubWallet (XPrivateKey _ _ _ _ _) = False
+isPubWallet (XPubKey _ _ _ _ _) = True
+isPubWallet (XPrvKey _ _ _ _ _) = False
 
 isPrvWallet :: Wallet -> Bool
 isPrvWallet = not . isPubWallet
@@ -87,74 +87,68 @@ split512 i = (fromIntegral $ i `shiftR` 256, fromIntegral i)
 
 createMasterWallet :: BS.ByteString -> Maybe Wallet
 createMasterWallet bs = do
-    pk' <- makePrivateKey $ fromIntegral pk
-    return $ XPrivateKey 0 0 0 c pk'
+    pk' <- makePrvKey $ fromIntegral pk
+    return $ XPrvKey 0 0 0 c pk'
     where (pk,c) = split512 $ hmac512 (stringToBS "Bitcoin seed") bs
 
 -- Public derivation
 subkey :: Wallet -> Word32 -> Maybe Wallet
 subkey w i
     | i < 0x80000000 = do
-        let pub     = xPublicKey $ publicWallet w
+        let pub     = xPubKey $ toPubWallet w
             msg     = (encode' pub) `BS.append` (encode' i)
             (l, c') = split512 $ hmac512 (encode' $ xChainCode w) msg
-        pkl <- makePrivateKey $ fromIntegral l
+        pkl <- makePrvKey $ fromIntegral l
         if isPrvWallet w 
             then do
-                pk' <- addPrivateKeys pkl (xPrivateKey w)
-                return $ XPrivateKey (xDepth w + 1) (walletFP w) i c' pk'
+                pk' <- addPrvKeys pkl (xPrvKey w)
+                return $ XPrvKey (xDepth w + 1) (walletFP w) i c' pk'
             else do
-                pK' <- addPublicKeys (derivePublicKey pkl) (xPublicKey w) 
-                return $ XPublicKey (xDepth w + 1) (walletFP w) i c' pK'
+                pK' <- addPubKeys (derivePubKey pkl) (xPubKey w) 
+                return $ XPubKey (xDepth w + 1) (walletFP w) i c' pK'
     | otherwise = error "Derivation index must be smaller than 0x80000000"
     
 -- Private derivation
 subkey' :: Wallet -> Word32 -> Maybe Wallet
-subkey' w@(XPrivateKey d _ _ c pk) i
+subkey' w@(XPrvKey d _ _ c pk) i
     | i < 0x80000000 = do
         let i'     = setBit i 31
-            pkBS   = toStrictBS $ runPut $ putPrivateKey pk
+            pkBS   = toStrictBS $ runPut $ putPadPrvKey pk
             msg    = pkBS `BS.append` (encode' i')
             (l, c') = split512 $ hmac512 (encode' c) msg
-        pkl <- makePrivateKey $ fromIntegral l
-        pk' <- addPrivateKeys pk pkl
-        return $ XPrivateKey (d + 1) (walletFP w) i' c' pk'
+        pkl <- makePrvKey $ fromIntegral l
+        pk' <- addPrvKeys pk pkl
+        return $ XPrvKey (d + 1) (walletFP w) i' c' pk'
     | otherwise = error "Derivation index must be smaller than 0x80000000"
-subkey' _ _ = error "Private derivation is not defined for XPublicKey"
+subkey' _ _ = error "Private derivation is not defined for XPubKey"
 
 -- De-serialize HDW-specific private key
-getPrivateKey :: Get PrivateKey
-getPrivateKey = do
+getPadPrvKey :: Get PrvKey
+getPadPrvKey = do
     pad <- getWord8
     unless (pad == 0x00) $ fail $
         "Private key must be padded with 0x00"
-    h   <- get :: Get Hash256
-    let prv = makePrivateKey $ fromIntegral h
-    unless (isJust prv) $ fail $
-        "De-serialized invalid private key"
-    return $ fromJust prv
+    getPrvKey -- Compressed version
 
 -- Serialize HDW-specific private key
-putPrivateKey :: PrivateKey -> Put 
-putPrivateKey p = do
-    putWord8 0x00
-    put (fromIntegral $ fromPrivateKey p :: Hash256)
+putPadPrvKey :: PrvKey -> Put 
+putPadPrvKey p = putWord8 0x00 >> putPrvKey p
 
 walletID :: Wallet -> Hash160
-walletID = hash160 . hash256BS . encode' . xPublicKey . publicWallet
+walletID = hash160 . hash256BS . encode' . xPubKey . toPubWallet
 
 walletFP :: Wallet -> Word32
 walletFP = fromIntegral . (`shiftR` 128) . walletID
 
-walletAddress :: Wallet -> BS.ByteString
-walletAddress = publicKeyAddress . xPublicKey . publicWallet
+walletAddr :: Wallet -> BS.ByteString
+walletAddr = pubKeyAddr . xPubKey . toPubWallet
 
-walletPublicKey :: Wallet -> PublicKey
-walletPublicKey = xPublicKey . publicWallet
+walletPubKey :: Wallet -> PubKey
+walletPubKey = xPubKey . toPubWallet
 
-walletPrivateKey :: Wallet -> PrivateKey
-walletPrivateKey w
-    | isPrvWallet w = xPrivateKey w
+walletPrvKey :: Wallet -> PrvKey
+walletPrvKey w
+    | isPrvWallet w = xPrvKey w
     | otherwise    = error "No private key in a public wallet"
 
 walletToBase58 :: Wallet -> BS.ByteString
@@ -167,9 +161,9 @@ walletFromBase58 bs = do
         (Left _)            -> Nothing
         (Right (_, _, res)) -> Just res
 
-walletWIF :: Wallet -> BS.ByteString
-walletWIF w
-    | isPrvWallet w = toWIF $ xPrivateKey w
+walletToWIF :: Wallet -> BS.ByteString
+walletToWIF w
+    | isPrvWallet w = toWIF $ xPrvKey w
     | otherwise     = error "WIF is only defined for private keys"
 
 instance Binary Wallet where
@@ -183,12 +177,12 @@ instance Binary Wallet where
         case ver of 
             0X0488b21e -> do
                 pub <- get 
-                unless (isCompressed pub) $ fail $
+                when (isPubKeyU pub) $ fail $
                     "Invalid public key. Only compressed format is supported"
-                return $ XPublicKey dep par idx chn pub
+                return $ XPubKey dep par idx chn pub
             0x0488ade4 -> do
-                prv <- getPrivateKey
-                return $ XPrivateKey dep par idx chn prv
+                prv <- getPadPrvKey
+                return $ XPrvKey dep par idx chn prv
             _ -> fail $ "Invalid wallet version bytes"
 
     put w = do
@@ -201,10 +195,10 @@ instance Binary Wallet where
         put $ xChainCode w
         if isPubWallet w
             then do
-                unless (isCompressed (xPublicKey w)) $ fail $
+                when (isPubKeyU (xPubKey w)) $ fail $
                     "Only compressed public keys are supported"
-                put $ xPublicKey w
+                put $ xPubKey w
             else do
-                putPrivateKey $ xPrivateKey w
+                putPadPrvKey $ xPrvKey w
         
 

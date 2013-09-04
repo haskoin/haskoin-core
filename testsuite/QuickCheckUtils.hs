@@ -11,29 +11,29 @@ import qualified Data.ByteString as BS
 import Haskoin.Wallet
 import Haskoin.Crypto
 
-maxN :: Integer
-maxN = fromIntegral $ (maxBound :: FieldN) - 1
+curveN :: Integer
+curveN = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141 
 
-newtype PrivateWallet = PrivateWallet Wallet
-    deriving (Show, Eq)
-newtype PublicWallet  = PublicWallet  Wallet
+newtype PrvWallet = PrvWallet Wallet
     deriving (Show, Eq)
 
-instance Arbitrary PrivateWallet where
+newtype PubWallet  = PubWallet  Wallet
+    deriving (Show, Eq)
+
+instance Arbitrary PrvWallet where
     arbitrary = do
         d <- choose (0,10) :: Gen Integer
         p <- arbitrary
         i <- arbitrary
         c <- choose (0, 2^256 - 1) :: Gen Integer
-        k <- choose (1, maxN) :: Gen Integer
-        let pk = fromJust $ makePrivateKey k
-        return $ PrivateWallet $ 
-            XPrivateKey (fromIntegral d) p i (fromIntegral c) pk
+        k <- choose (1, curveN - 1) :: Gen Integer
+        let pk = fromJust $ makePrvKey k
+        return $ PrvWallet $ XPrvKey (fromIntegral d) p i (fromIntegral c) pk
 
-instance Arbitrary PublicWallet where
+instance Arbitrary PubWallet where
     arbitrary = do
-        (PrivateWallet w) <- arbitrary :: Gen PrivateWallet
-        return $ PublicWallet $ publicWallet w
+        (PrvWallet w) <- arbitrary :: Gen PrvWallet
+        return $ PubWallet $ toPubWallet w
 
 instance Arbitrary Wallet where
     arbitrary = do
@@ -41,11 +41,11 @@ instance Arbitrary Wallet where
         p <- arbitrary
         i <- arbitrary
         c <- choose (0, 2^256 - 1) :: Gen Integer
-        k <- choose (1, maxN) :: Gen Integer
-        let pk    = fromJust $ makePrivateKey k
-            wPriv = XPrivateKey (fromIntegral d) p i (fromIntegral c) pk
-            wPub  = publicWallet wPriv
-        elements [wPriv, wPub]
+        k <- choose (1, curveN - 1) :: Gen Integer
+        let pk   = fromJust $ makePrvKey k
+            wPrv = XPrvKey (fromIntegral d) p i (fromIntegral c) pk
+            wPub = toPubWallet wPrv
+        elements [wPrv, wPub]
 
 -- from Data.ByteString project
 instance Arbitrary BS.ByteString where

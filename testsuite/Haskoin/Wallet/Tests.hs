@@ -26,9 +26,9 @@ tests =
         ]
     ]
 
-subkeyTest :: PrivateWallet -> Word32 -> Bool
-subkeyTest (PrivateWallet w) i = fromJust $ liftM2 (==) 
-    (publicWallet <$> subkey w i') (subkey (publicWallet w) i')
+subkeyTest :: PrvWallet -> Word32 -> Bool
+subkeyTest (PrvWallet w) i = fromJust $ liftM2 (==) 
+    (toPubWallet <$> subkey w i') (subkey (toPubWallet w) i')
     where i' = i .&. 0x7fffffff -- make it a public derivation
 
 encDecWallet :: Wallet -> Bool

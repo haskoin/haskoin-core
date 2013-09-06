@@ -1,28 +1,24 @@
 module Haskoin.Wallet.Keys
-( Wallet(..)
-, createMasterWallet
-, subkey
-, subkey'
-, toPubWallet
-, isPubWallet
-, isPrvWallet
-, walletID
-, walletFP
-, walletAddr
-, walletPubKey
-, walletPrvKey
-, walletToBase58
-, walletFromBase58
-, walletToWIF
-
--- Helpers
-, WalletAcc
-, WalletAddr
-, walletAcc
-, walletExtChain
-, walletIntChain
-, walletExtAddr
-, walletIntAddr
+( XKey(..)
+, XPubKey(..)
+, XPrvKey(..)
+, makeXPrvKey
+, deriveXPubKey
+, isXPubKey
+, isXPrvKey
+, prvSubKey
+, pubSubKey
+, prvSubKey'
+, xPubID
+, xPrvID
+, xPubFP
+, xPrvFP
+, xPubAddr
+, xPrvAddr
+, xPubExport
+, xPrvExport
+, xKeyImport
+, xPrvWIF
 ) where
 
 import Control.Monad (liftM2, guard, unless, when)
@@ -58,78 +54,155 @@ import Haskoin.Crypto
 
 type ChainCode = Hash256
 
-data DerType = PrvDer | PubDer
+-- BIP32 extended keys
+data XPrvKey = XPrvKey
+    { xPrvDepth  :: !Word8
+    , xPrvParent :: !Word32
+    , xPrvIndex  :: !Word32
+    , xPrvChain  :: !ChainCode
+    , xPrvKey    :: !PrvKey
+    } deriving (Eq, Show)
 
-data Wallet = 
-    XPrvKey
-        { xDepth      :: !Word8
-        , xParent     :: !Word32
-        , xIndex      :: !Word32
-        , xChainCode  :: !ChainCode
-        , xPrvKey     :: !PrvKey
-        } 
-    | XPubKey 
-        { xDepth      :: !Word8
-        , xParent     :: !Word32
-        , xIndex      :: !Word32
-        , xChainCode  :: !ChainCode
-        , xPubKey     :: !PubKey
-        } 
-    deriving (Eq, Show)
+data XPubKey = XPubKey
+    { xPubDepth  :: !Word8
+    , xPubParent :: !Word32
+    , xPubIndex  :: !Word32
+    , xPubChain  :: !ChainCode
+    , xPubKey    :: !PubKey
+    } deriving (Eq, Show)
 
-toPubWallet :: Wallet -> Wallet
-toPubWallet (XPrvKey d p i c k) = XPubKey d p i c (derivePubKey k)
-toPubWallet pub = pub
+data XKey = XPrvImport { runPrvImport :: XPrvKey } | 
+            XPubImport { runPubImport :: XPubKey }
+            deriving (Eq, Show)
 
-isPubWallet :: Wallet -> Bool
-isPubWallet (XPubKey _ _ _ _ _) = True
-isPubWallet (XPrvKey _ _ _ _ _) = False
-
-isPrvWallet :: Wallet -> Bool
-isPrvWallet = not . isPubWallet
-
-hmac512 :: BS.ByteString -> BS.ByteString -> Hash512
-hmac512 key msg = decode' $ hmac hash512BS 128 key msg
-
-split512 :: Hash512 -> (Hash256, Hash256)
-split512 i = (fromIntegral $ i `shiftR` 256, fromIntegral i)
-
-createMasterWallet :: BS.ByteString -> Maybe Wallet
-createMasterWallet bs = do
+makeXPrvKey :: BS.ByteString -> Maybe XPrvKey
+makeXPrvKey bs = do
     pk' <- makePrvKey $ fromIntegral pk
     return $ XPrvKey 0 0 0 c pk'
     where (pk,c) = split512 $ hmac512 (stringToBS "Bitcoin seed") bs
 
+deriveXPubKey :: XPrvKey -> XPubKey
+deriveXPubKey (XPrvKey d p i c k) = XPubKey d p i c (derivePubKey k)
+
+isXPubKey :: XKey -> Bool
+isXPubKey (XPubImport _) = True
+isXPubKey (XPrvImport _) = False
+
+isXPrvKey :: XKey -> Bool
+isXPrvKey = not . isXPubKey
+
 -- Public derivation
-subkey :: Wallet -> Word32 -> Maybe Wallet
-subkey w i
-    | i < 0x80000000 = do
-        let pub     = xPubKey $ toPubWallet w
-            msg     = (encode' pub) `BS.append` (encode' i)
-            (l, c') = split512 $ hmac512 (encode' $ xChainCode w) msg
-        pkl <- makePrvKey $ fromIntegral l
-        if isPrvWallet w 
-            then do
-                pk' <- addPrvKeys pkl (xPrvKey w)
-                return $ XPrvKey (xDepth w + 1) (walletFP w) i c' pk'
-            else do
-                pK' <- addPubKeys (derivePubKey pkl) (xPubKey w) 
-                return $ XPubKey (xDepth w + 1) (walletFP w) i c' pK'
-    | otherwise = error "Derivation index must be smaller than 0x80000000"
-    
+prvSubKey :: XPrvKey -> Int -> Maybe XPrvKey
+prvSubKey xkey child = guardIndex child >> do
+    a <- makePrvKey $ fromIntegral b
+    k <- addPrvKeys a (xPrvKey xkey)
+    return $ XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) i c k
+    where i     = fromIntegral child
+          pK    = xPubKey $ deriveXPubKey xkey
+          msg   = BS.append (encode' pK) (encode' i)
+          (b,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
+
+-- Public derivation
+pubSubKey :: XPubKey -> Int -> Maybe XPubKey
+pubSubKey xKey child = guardIndex child >> do
+    a  <- makePrvKey $ fromIntegral b
+    pK <- addPubKeys (derivePubKey a) (xPubKey xKey)
+    return $ XPubKey (xPubDepth xKey + 1) (xPubFP xKey) i c pK
+    where i     = fromIntegral child
+          msg   = BS.append (encode' $ xPubKey xKey) (encode' i)
+          (b,c) = split512 $ hmac512 (encode' $ xPubChain xKey) msg
+
 -- Private derivation
-subkey' :: Wallet -> Word32 -> Maybe Wallet
-subkey' w@(XPrvKey d _ _ c pk) i
-    | i < 0x80000000 = do
-        let i'     = setBit i 31
-            pkBS   = toStrictBS $ runPut $ putPadPrvKey pk
-            msg    = pkBS `BS.append` (encode' i')
-            (l, c') = split512 $ hmac512 (encode' c) msg
-        pkl <- makePrvKey $ fromIntegral l
-        pk' <- addPrvKeys pk pkl
-        return $ XPrvKey (d + 1) (walletFP w) i' c' pk'
-    | otherwise = error "Derivation index must be smaller than 0x80000000"
-subkey' _ _ = error "Private derivation is not defined for XPubKey"
+prvSubKey' :: XPrvKey -> Int -> Maybe XPrvKey
+prvSubKey' xkey child = guardIndex child >> do
+    a  <- makePrvKey $ fromIntegral b
+    k  <- addPrvKeys a (xPrvKey xkey)
+    return $ XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) i c k
+    where i     = fromIntegral $ setBit child 31
+          msg   = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode' i)
+          (b,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
+
+guardIndex :: Int -> Maybe ()
+guardIndex child = guard $ child >= 0 && child <= 0x80000000
+
+-- Key idendifiers
+xPrvID :: XPrvKey -> Hash160
+xPrvID = xPubID . deriveXPubKey
+
+xPubID :: XPubKey -> Hash160
+xPubID = hash160 . hash256BS . encode' . xPubKey 
+
+-- Key fingerprint
+xPrvFP :: XPrvKey -> Word32
+xPrvFP = fromIntegral . (`shiftR` 128) . xPrvID
+
+xPubFP :: XPubKey -> Word32
+xPubFP = fromIntegral . (`shiftR` 128) . xPubID
+
+-- Key address
+xPrvAddr :: XPrvKey -> BS.ByteString
+xPrvAddr = xPubAddr . deriveXPubKey
+
+xPubAddr :: XPubKey -> BS.ByteString
+xPubAddr = pubKeyAddr . xPubKey
+
+-- Base 58 export
+xPrvExport :: XPrvKey -> BS.ByteString
+xPrvExport = encodeBase58Check . encode' . XPrvImport
+
+xPubExport :: XPubKey -> BS.ByteString
+xPubExport = encodeBase58Check . encode' . XPubImport
+
+-- Base 58 import
+xKeyImport :: BS.ByteString -> Maybe XKey
+xKeyImport bs = do
+    bs' <- decodeBase58Check bs
+    case decodeOrFail' bs' of
+        (Left _)            -> Nothing
+        (Right (_, _, res)) -> Just res
+
+-- Export to WIF format
+xPrvWIF :: XPrvKey -> BS.ByteString
+xPrvWIF = toWIF . xPrvKey
+
+instance Binary XKey where
+
+    get = do
+        ver <- getWord32be
+        dep <- getWord8
+        par <- getWord32be
+        idx <- getWord32be
+        chn <- get 
+        case ver of 
+            0X0488b21e -> do
+                pub <- get 
+                when (isPubKeyU pub) $ fail $
+                    "Invalid public key. Only compressed format is supported"
+                return $ XPubImport $ XPubKey dep par idx chn pub
+            0x0488ade4 -> do
+                prv <- getPadPrvKey
+                return $ XPrvImport $ XPrvKey dep par idx chn prv
+            _ -> fail $ "Invalid wallet version bytes"
+
+    put (XPubImport k) = do
+        putWord32be 0X0488b21e
+        putWord8    $ xPubDepth k
+        putWord32be $ xPubParent k
+        putWord32be $ xPubIndex k
+        put         $ xPubChain k
+        when (isPubKeyU (xPubKey k)) $ fail $
+            "Only compressed public keys are supported"
+        put $ xPubKey k
+
+    put (XPrvImport k) = do
+        putWord32be  0x0488ade4 
+        putWord8     $ xPrvDepth k
+        putWord32be  $ xPrvParent k
+        putWord32be  $ xPrvIndex k
+        put          $ xPrvChain k
+        putPadPrvKey $ xPrvKey k
+        
+{- Utilities for extended keys -}
 
 -- De-serialize HDW-specific private key
 getPadPrvKey :: Get PrvKey
@@ -143,104 +216,12 @@ getPadPrvKey = do
 putPadPrvKey :: PrvKey -> Put 
 putPadPrvKey p = putWord8 0x00 >> putPrvKey p
 
-walletID :: Wallet -> Hash160
-walletID = hash160 . hash256BS . encode' . xPubKey . toPubWallet
+bsPadPrvKey :: PrvKey -> BS.ByteString
+bsPadPrvKey = toStrictBS . runPut . putPadPrvKey 
 
-walletFP :: Wallet -> Word32
-walletFP = fromIntegral . (`shiftR` 128) . walletID
+hmac512 :: BS.ByteString -> BS.ByteString -> Hash512
+hmac512 key msg = decode' $ hmac hash512BS 128 key msg
 
-walletAddr :: Wallet -> BS.ByteString
-walletAddr = pubKeyAddr . xPubKey . toPubWallet
-
-walletPubKey :: Wallet -> PubKey
-walletPubKey = xPubKey . toPubWallet
-
-walletPrvKey :: Wallet -> PrvKey
-walletPrvKey w
-    | isPrvWallet w = xPrvKey w
-    | otherwise    = error "No private key in a public wallet"
-
-walletToBase58 :: Wallet -> BS.ByteString
-walletToBase58 = encodeBase58Check . encode'
-
-walletFromBase58 :: BS.ByteString -> Maybe Wallet
-walletFromBase58 bs = do
-    bs' <- decodeBase58Check bs
-    case decodeOrFail' bs' of
-        (Left _)            -> Nothing
-        (Right (_, _, res)) -> Just res
-
-walletToWIF :: Wallet -> BS.ByteString
-walletToWIF w
-    | isPrvWallet w = toWIF $ xPrvKey w
-    | otherwise     = error "WIF is only defined for private keys"
-
-instance Binary Wallet where
-
-    get = do
-        ver <- getWord32be
-        dep <- getWord8
-        par <- getWord32be
-        idx <- getWord32be
-        chn <- get 
-        case ver of 
-            0X0488b21e -> do
-                pub <- get 
-                when (isPubKeyU pub) $ fail $
-                    "Invalid public key. Only compressed format is supported"
-                return $ XPubKey dep par idx chn pub
-            0x0488ade4 -> do
-                prv <- getPadPrvKey
-                return $ XPrvKey dep par idx chn prv
-            _ -> fail $ "Invalid wallet version bytes"
-
-    put w = do
-        if isPubWallet w 
-            then putWord32be 0X0488b21e
-            else putWord32be 0x0488ade4 
-        putWord8    $ xDepth w
-        putWord32be $ xParent w
-        putWord32be $ xIndex w
-        put $ xChainCode w
-        if isPubWallet w
-            then do
-                when (isPubKeyU (xPubKey w)) $ fail $
-                    "Only compressed public keys are supported"
-                put $ xPubKey w
-            else do
-                putPadPrvKey $ xPrvKey w
-
-{- BIP32 wallet structure helpers -}
-
-type WalletAcc = Word32
-type WalletAddr = Word32
-
--- Wallet Account (Depth = 1)
-walletAcc :: Wallet -> WalletAcc -> Maybe Wallet
-walletAcc = subkey'
-
--- External Wallet Chain (Depth = 2)
-walletExtChain :: Wallet -> WalletAcc -> Maybe Wallet
-walletExtChain w a = do
-    acc <- walletAcc w a
-    subkey acc 0
-
--- Internal Wallet Chain (Depth = 2)
-walletIntChain :: Wallet -> WalletAcc -> Maybe Wallet
-walletIntChain w a = do
-    acc <- walletAcc w a
-    subkey acc 1
-
--- External Wallet addresses (Depth = 3)
-walletExtAddr :: Wallet -> WalletAcc -> WalletAddr -> Maybe Wallet
-walletExtAddr w a x = do
-    ext <- walletExtChain w a
-    subkey ext x
-
--- Internal Wallet addresses (Depth = 3)
-walletIntAddr :: Wallet -> WalletAcc -> WalletAddr -> Maybe Wallet
-walletIntAddr w a x = do
-    ext <- walletIntChain w a
-    subkey ext x
-
+split512 :: Hash512 -> (Hash256, Hash256)
+split512 i = (fromIntegral $ i `shiftR` 256, fromIntegral i)
 

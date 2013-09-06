@@ -20,20 +20,28 @@ import Haskoin.Wallet
 tests :: [Test]
 tests = 
     [ testGroup "HDW Extended Keys"
-        [ testProperty "subkey(k,c)*G = subkey(k*G,c)" subkeyTest
-        , testProperty "decode( encode(wallet) ) = wallet" encDecWallet
-        , testProperty "fromB58( toB58(wallet) ) = wallet" b58Wallet
+        [ testProperty "prvSubKey(k,c)*G = pubSubKey(k*G,c)" subkeyTest
+        , testProperty "decode( encode(prvKey) ) = prvKey" binXPrvKey
+        , testProperty "decode( encode(pubKey) ) = pubKey" binXPubKey
+        , testProperty "fromB58( toB58(prvKey) ) = prvKey" b58PrvKey
+        , testProperty "fromB58( toB58(pubKey) ) = pubKey" b58PubKey
         ]
     ]
 
-subkeyTest :: PrvWallet -> Word32 -> Bool
-subkeyTest (PrvWallet w) i = fromJust $ liftM2 (==) 
-    (toPubWallet <$> subkey w i') (subkey (toPubWallet w) i')
-    where i' = i .&. 0x7fffffff -- make it a public derivation
+subkeyTest :: XPrvKey -> Word32 -> Bool
+subkeyTest k i = fromJust $ liftM2 (==) 
+    (deriveXPubKey <$> prvSubKey k i') (pubSubKey (deriveXPubKey k) i')
+    where i' = fromIntegral $ i .&. 0x7fffffff -- make it a public derivation
 
-encDecWallet :: Wallet -> Bool
-encDecWallet w = (decode (encode w)) == w
+binXPrvKey :: XPrvKey -> Bool
+binXPrvKey k = (runPrvImport $ decode $ encode $ XPrvImport k) == k
 
-b58Wallet :: Wallet -> Bool
-b58Wallet w = (fromJust $ walletFromBase58 $ walletToBase58 w) == w
+binXPubKey :: XPubKey -> Bool
+binXPubKey k = (runPubImport $ decode $ encode $ XPubImport k) == k
+
+b58PrvKey :: XPrvKey -> Bool
+b58PrvKey k = (runPrvImport $ fromJust $ xKeyImport $ xPrvExport k) == k
+
+b58PubKey :: XPubKey -> Bool
+b58PubKey k = (runPubImport $ fromJust $ xKeyImport $ xPubExport k) == k
 

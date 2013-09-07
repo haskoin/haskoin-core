@@ -9,6 +9,8 @@ module Haskoin.Wallet.Keys
 , prvSubKey
 , pubSubKey
 , prvSubKey'
+, xPrvIsPrime
+, xPubIsPrime
 , xPubID
 , xPrvID
 , xPubFP
@@ -17,6 +19,8 @@ module Haskoin.Wallet.Keys
 , xPrvAddr
 , xPubExport
 , xPrvExport
+, xPubImport
+, xPrvImport
 , xKeyImport
 , xPrvWIF
 ) where
@@ -28,7 +32,7 @@ import Data.Binary (Binary, get, put)
 import Data.Binary.Get
 import Data.Binary.Put
 import Data.Word (Word8, Word32)
-import Data.Bits (shiftR, setBit)
+import Data.Bits (shiftR, setBit, testBit)
 import Data.Maybe (fromJust, isJust, isNothing)
 import qualified Data.ByteString as BS 
     ( ByteString
@@ -125,6 +129,13 @@ prvSubKey' xkey child = guardIndex child >> do
 guardIndex :: Int -> Maybe ()
 guardIndex child = guard $ child >= 0 && child <= 0x80000000
 
+-- Key was derived through private derivation
+xPrvIsPrime :: XPrvKey -> Bool
+xPrvIsPrime k = testBit (xPrvIndex k) 31
+
+xPubIsPrime :: XPubKey -> Bool
+xPubIsPrime k = testBit (xPubIndex k) 31
+
 -- Key idendifiers
 xPrvID :: XPrvKey -> Hash160
 xPrvID = xPubID . deriveXPubKey
@@ -153,6 +164,20 @@ xPrvExport = encodeBase58Check . encode' . XPrvImport
 xPubExport :: XPubKey -> BS.ByteString
 xPubExport = encodeBase58Check . encode' . XPubImport
 
+xPrvImport :: BS.ByteString -> Maybe XPrvKey
+xPrvImport bs = do
+    bs' <- decodeBase58Check bs
+    case decodeOrFail' bs' of
+        (Left _)            -> Nothing
+        (Right (_, _, res)) -> Just res
+
+xPubImport :: BS.ByteString -> Maybe XPubKey
+xPubImport bs = do
+    bs' <- decodeBase58Check bs
+    case decodeOrFail' bs' of
+        (Left _)            -> Nothing
+        (Right (_, _, res)) -> Just res
+
 -- Base 58 import
 xKeyImport :: BS.ByteString -> Maybe XKey
 xKeyImport bs = do
@@ -164,6 +189,53 @@ xKeyImport bs = do
 -- Export to WIF format
 xPrvWIF :: XPrvKey -> BS.ByteString
 xPrvWIF = toWIF . xPrvKey
+
+instance Binary XPrvKey where
+
+    get = do
+        ver <- getWord32be
+        unless (ver == 0x0488ade4) $ fail $
+            "Get: Invalid version for extended private key"
+        dep <- getWord8
+        par <- getWord32be
+        idx <- getWord32be
+        chn <- get 
+        prv <- getPadPrvKey
+        return $ XPrvKey dep par idx chn prv
+
+    put k = do
+        putWord32be  0x0488ade4 
+        putWord8     $ xPrvDepth k
+        putWord32be  $ xPrvParent k
+        putWord32be  $ xPrvIndex k
+        put          $ xPrvChain k
+        putPadPrvKey $ xPrvKey k
+
+instance Binary XPubKey where
+
+    get = do
+        ver <- getWord32be
+        unless (ver == 0X0488b21e) $ fail $
+            "Get: Invalid version for extended public key"
+        dep <- getWord8
+        par <- getWord32be
+        idx <- getWord32be
+        chn <- get 
+        pub <- get 
+        when (isPubKeyU pub) $ fail $
+            "Invalid public key. Only compressed format is supported"
+        return $ XPubKey dep par idx chn pub
+
+    put k = do
+        putWord32be 0X0488b21e
+        putWord8    $ xPubDepth k
+        putWord32be $ xPubParent k
+        putWord32be $ xPubIndex k
+        put         $ xPubChain k
+        when (isPubKeyU (xPubKey k)) $ fail $
+            "Only compressed public keys are supported"
+        put $ xPubKey k
+        
 
 instance Binary XKey where
 

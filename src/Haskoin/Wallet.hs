@@ -11,6 +11,8 @@ module Haskoin.Wallet
 , prvSubKey
 , pubSubKey
 , prvSubKey'
+, xPrvIsPrime
+, xPubIsPrime
 , xPubID
 , xPrvID
 , xPubFP
@@ -19,6 +21,8 @@ module Haskoin.Wallet
 , xPrvAddr
 , xPubExport
 , xPrvExport
+, xPubImport
+, xPrvImport
 , xKeyImport
 , xPrvWIF
 

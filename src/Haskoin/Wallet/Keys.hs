@@ -8,7 +8,7 @@ module Haskoin.Wallet.Keys
 , isXPrvKey
 , prvSubKey
 , pubSubKey
-, prvSubKey'
+, primeSubKey
 , xPrvIsPrime
 , xPubIsPrime
 , xPubID
@@ -96,37 +96,35 @@ isXPrvKey :: XKey -> Bool
 isXPrvKey = not . isXPubKey
 
 -- Public derivation
-prvSubKey :: XPrvKey -> Int -> Maybe XPrvKey
+prvSubKey :: XPrvKey -> Word32 -> Maybe XPrvKey
 prvSubKey xkey child = guardIndex child >> do
     a <- makePrvKey $ fromIntegral b
     k <- addPrvKeys a (xPrvKey xkey)
-    return $ XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) i c k
-    where i     = fromIntegral child
-          pK    = xPubKey $ deriveXPubKey xkey
-          msg   = BS.append (encode' pK) (encode' i)
+    return $ XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) child c k
+    where pK    = xPubKey $ deriveXPubKey xkey
+          msg   = BS.append (encode' pK) (encode' child)
           (b,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
 
 -- Public derivation
-pubSubKey :: XPubKey -> Int -> Maybe XPubKey
+pubSubKey :: XPubKey -> Word32 -> Maybe XPubKey
 pubSubKey xKey child = guardIndex child >> do
     a  <- makePrvKey $ fromIntegral b
     pK <- addPubKeys (derivePubKey a) (xPubKey xKey)
-    return $ XPubKey (xPubDepth xKey + 1) (xPubFP xKey) i c pK
-    where i     = fromIntegral child
-          msg   = BS.append (encode' $ xPubKey xKey) (encode' i)
+    return $ XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK
+    where msg   = BS.append (encode' $ xPubKey xKey) (encode' child)
           (b,c) = split512 $ hmac512 (encode' $ xPubChain xKey) msg
 
 -- Private derivation
-prvSubKey' :: XPrvKey -> Int -> Maybe XPrvKey
-prvSubKey' xkey child = guardIndex child >> do
+primeSubKey :: XPrvKey -> Word32 -> Maybe XPrvKey
+primeSubKey xkey child = guardIndex child >> do
     a  <- makePrvKey $ fromIntegral b
     k  <- addPrvKeys a (xPrvKey xkey)
     return $ XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) i c k
-    where i     = fromIntegral $ setBit child 31
+    where i     = setBit child 31
           msg   = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode' i)
           (b,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
 
-guardIndex :: Int -> Maybe ()
+guardIndex :: Word32 -> Maybe ()
 guardIndex child = guard $ child >= 0 && child <= 0x80000000
 
 -- Key was derived through private derivation
@@ -151,10 +149,10 @@ xPubFP :: XPubKey -> Word32
 xPubFP = fromIntegral . (`shiftR` 128) . xPubID
 
 -- Key address
-xPrvAddr :: XPrvKey -> BS.ByteString
+xPrvAddr :: XPrvKey -> Address
 xPrvAddr = xPubAddr . deriveXPubKey
 
-xPubAddr :: XPubKey -> BS.ByteString
+xPubAddr :: XPubKey -> Address
 xPubAddr = pubKeyAddr . xPubKey
 
 -- Base 58 export

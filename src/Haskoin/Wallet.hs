@@ -10,7 +10,7 @@ module Haskoin.Wallet
 , isXPrvKey
 , prvSubKey
 , pubSubKey
-, prvSubKey'
+, primeSubKey
 , xPrvIsPrime
 , xPubIsPrime
 , xPubID

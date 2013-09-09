@@ -42,7 +42,6 @@ import qualified Data.ByteString as BS
     )
 import qualified Data.ByteString as BS (ByteString, take)
 
-import Crypto.MAC.HMAC (hmac)
 import Haskoin.Util
     ( stringToBS
     , toLazyBS
@@ -95,34 +94,31 @@ isXPubKey (XPrvImport _) = False
 isXPrvKey :: XKey -> Bool
 isXPrvKey = not . isXPubKey
 
--- Public derivation
+-- Public derivation of XPrvKey
 prvSubKey :: XPrvKey -> Word32 -> Maybe XPrvKey
 prvSubKey xkey child = guardIndex child >> do
-    a <- makePrvKey $ fromIntegral b
-    k <- addPrvKeys a (xPrvKey xkey)
+    k <- addPrvKeys (xPrvKey xkey) a
     return $ XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) child c k
     where pK    = xPubKey $ deriveXPubKey xkey
           msg   = BS.append (encode' pK) (encode' child)
-          (b,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
+          (a,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
 
--- Public derivation
+-- Public derivation of XPubKey
 pubSubKey :: XPubKey -> Word32 -> Maybe XPubKey
 pubSubKey xKey child = guardIndex child >> do
-    a  <- makePrvKey $ fromIntegral b
-    pK <- addPubKeys (derivePubKey a) (xPubKey xKey)
+    pK <- addPubKeys (xPubKey xKey) a
     return $ XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK
     where msg   = BS.append (encode' $ xPubKey xKey) (encode' child)
-          (b,c) = split512 $ hmac512 (encode' $ xPubChain xKey) msg
+          (a,c) = split512 $ hmac512 (encode' $ xPubChain xKey) msg
 
--- Private derivation
+-- Prime derivation of XPrvKey
 primeSubKey :: XPrvKey -> Word32 -> Maybe XPrvKey
 primeSubKey xkey child = guardIndex child >> do
-    a  <- makePrvKey $ fromIntegral b
-    k  <- addPrvKeys a (xPrvKey xkey)
+    k  <- addPrvKeys (xPrvKey xkey) a
     return $ XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) i c k
     where i     = setBit child 31
           msg   = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode' i)
-          (b,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
+          (a,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
 
 guardIndex :: Word32 -> Maybe ()
 guardIndex child = guard $ child >= 0 && child <= 0x80000000
@@ -288,10 +284,4 @@ putPadPrvKey p = putWord8 0x00 >> putPrvKey p
 
 bsPadPrvKey :: PrvKey -> BS.ByteString
 bsPadPrvKey = toStrictBS . runPut . putPadPrvKey 
-
-hmac512 :: BS.ByteString -> BS.ByteString -> Hash512
-hmac512 key msg = decode' $ hmac hash512BS 128 key msg
-
-split512 :: Hash512 -> (Hash256, Hash256)
-split512 i = (fromIntegral $ i `shiftR` 256, fromIntegral i)
 

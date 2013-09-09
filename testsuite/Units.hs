@@ -35,7 +35,8 @@ v1c1 = do
     assertBool "xPrvFP" $
         xPrvFP m1 == 0x3442193e
     assertBool "xPrvAddr" $
-        bsToString (xPrvAddr m1) == "15mKKb2eos1hWa6tisdPwwDC1a5J1y9nma"
+        (bsToString $ addrToBase58 $ xPrvAddr m1) == 
+        "15mKKb2eos1hWa6tisdPwwDC1a5J1y9nma"
     assertBool "prvKey" $
         bsToInteger (toStrictBS $ runPut $ putPrvKey $ xPrvKey m1) ==
         0xe8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35
@@ -59,13 +60,14 @@ v1c1 = do
 
 v1c2 = do
     -- m/0'
-    let m' = fromJust $ prvSubKey' m1 0
+    let m' = fromJust $ primeSubKey m1 0
     assertBool "xPrvID" $
         xPrvID m' == 0x5c1bd648ed23aa5fd50ba52b2457c11e9e80a6a7
     assertBool "xPrvFP" $
         xPrvFP m' == 0x5c1bd648
     assertBool "xPrvAddr" $
-        bsToString (xPrvAddr m') == "19Q2WoS5hSS6T8GjhK8KZLMgmWaq4neXrh"
+        (bsToString $ addrToBase58 $ xPrvAddr m') == 
+        "19Q2WoS5hSS6T8GjhK8KZLMgmWaq4neXrh"
     assertBool "prvKey" $
         bsToInteger (toStrictBS $ runPut $ putPrvKey $ xPrvKey m') ==
         0xedb2e14f9ee77d26dd93b4ecede8d16ed408ce149b6cd80b0715a2d911a0afea
@@ -89,13 +91,14 @@ v1c2 = do
 
 v1c3 = do
     -- m/0'/1
-    let m' = fromJust $ prvSubKey (fromJust $ prvSubKey' m1 0) 1
+    let m' = fromJust $ prvSubKey (fromJust $ primeSubKey m1 0) 1
     assertBool "xPrvID" $
         xPrvID m' == 0xbef5a2f9a56a94aab12459f72ad9cf8cf19c7bbe
     assertBool "xPrvFP" $
         xPrvFP m' == 0xbef5a2f9
     assertBool "xPrvAddr" $
-        bsToString (xPrvAddr m') == "1JQheacLPdM5ySCkrZkV66G2ApAXe1mqLj"
+        (bsToString $ addrToBase58 $ xPrvAddr m') == 
+        "1JQheacLPdM5ySCkrZkV66G2ApAXe1mqLj"
     assertBool "prvKey" $
         bsToInteger (toStrictBS $ runPut $ putPrvKey $ xPrvKey m') ==
         0x3c6cb8d0f6a264c91ea8b5030fadaa8e538b020f0a387421a12de9319dc93368

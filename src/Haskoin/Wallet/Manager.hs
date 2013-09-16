@@ -54,7 +54,7 @@ data Wallet =
     MasterWallet
         { walletKey    :: XPrvKey
         , walletOffset :: KeyIndex
-        , walletAccs   :: Map.Map KeyIndex Account
+        , walletAccs   :: Map.Map String Account
         } |
     -- m/i'/ 
     AccWallet 
@@ -78,8 +78,13 @@ accDepth :: Account -> Word8
 accDepth = xPubDepth . accKey
 
 isMasterWallet :: Wallet -> Bool
-isMasterWallet (MasterWallet _ _ _) -> True
-isMasterWallet _                    -> False
+isMasterWallet (MasterWallet _ _ _) = True
+isMasterWallet _                    = False
+
+newMasterWallet :: BS.ByteString -> Maybe Wallet
+newMasterWallet bs = do
+    prv <- makeXPrvKey bs
+    return $ MasterWallet prv 0 Map.empty
 
 type WalletManager m a = S.StateT Wallet m a
 
@@ -92,47 +97,63 @@ getWallet = S.get
 putWallet :: Monad m => Wallet -> WalletManager m ()
 putWallet s = S.put s
 
-getAccount :: Monad m => KeyIndex -> WalletManager m (Maybe Account)
-getAccount idx = do
+getAccount :: Monad m => String -> WalletManager m (Maybe Account)
+getAccount name = do
     (MasterWallet _ _ accMap) <- getWallet
-    return $ Map.lookup idx accMap
+    return $ Map.lookup name accMap
 
-getCurrentAddr :: Monad m => KeyIndex -> WalletManager m (Maybe Address)
-getCurrentAddr i = (getAccount i) >>= return . (accCurrAddr <$>)
-
-accCurrAddr :: Account -> Address
-accCurrAddr acc = case acc of
-    (Account info key) -> xPubAddr $ findValidSubKey key (extOffset info)
-    (AccMulSig2 info k1 k2) -> 
-        let (r1, r2) = findValidSubKey2 k1 k2 (extOffset info)
-            in scriptAddr $ buildMulSig2 (xPubKey r1) (xPubKey r2)
-    (AccMulSig3 info k1 k2 k3) ->
-        let (r1, r2, r3) = findValidSubKey3 k1 k2 k3 (extOffset info)
-            in scriptAddr $ buildMulSig3 (xPubKey r1) (xPubKey r2) (xPubKey r3)
-
-currentAddr :: Account -> Address
-currentAddr acc = case acc of
-    (Account info key) -> nextIndex (pubSubKey key) (extOffset info)
-
-newAddr :: Monad m => KeyIndex -> WalletManager m (Maybe Address)
-newAddr idx = do
-    
+lastAddr :: Monad m => String -> WalletManager m (Maybe Address)
+lastAddr name = do
+    acc <- getAccount name
+    return $ acc >>= lastAccAddr
 
 newAccount :: Monad m => String -> WalletManager m (Maybe Account)
 newAccount name = do
     (MasterWallet k offset accMap) <- getWallet
     case nextAccount k (offset+1) name of
         (Just (acc,i)) -> do
-            putWallet $ MasterWallet k i (Map.insert i acc accMap)
-            return acc
+            putWallet $ MasterWallet k i (Map.insert name acc accMap)
+            return $ Just acc
+        Nothing -> return Nothing
+
+newAccMulSig2 :: Monad m => String -> XPubKey 
+              -> WalletManager m (Maybe Account)
+newAccMulSig2 name pub1 = do
+    (MasterWallet k offset accMap) <- getWallet
+    case nextAccMulSig2 k pub1 (offset+1) name of
+        (Just (acc,i)) -> do
+            putWallet $ MasterWallet k i (Map.insert name acc accMap)
+            return $ Just acc
+        Nothing -> return Nothing
+
+newAccMulSig3 :: Monad m => String -> XPubKey -> XPubKey 
+              -> WalletManager m (Maybe Account)
+newAccMulSig3 name pub1 pub2 = do
+    (MasterWallet k offset accMap) <- getWallet
+    case nextAccMulSig3 k pub1 pub2 (offset+1) name of
+        (Just (acc,i)) -> do
+            putWallet $ MasterWallet k i (Map.insert name acc accMap)
+            return $ Just acc
         Nothing -> return Nothing
 
 {- Helper functions -}
 
-nextAddr :: XPubKey -> KeyIndex -> Maybe (Address, KeyIndex)
-nextAddr key index = do
-    (addrKey,addrIdx) <- nextIndex (pubSubKey key) index 
-    return (xPubAddr addrKey, addrIdx)
+lastAccAddr :: Account -> Maybe Address
+lastAccAddr acc = case acc of
+    (Account info key) -> do
+        (p,_) <- nextIndex (pubSubKey key) (extOffset info)
+        return $ xPubAddr p
+    (AccMulSig2 info key k1) -> do
+        (p1,p2,_) <- nextIndex2 (pubSubKey key) 
+                                (pubSubKey k1) 
+                                (extOffset info)
+        return $ scriptAddr $ buildMulSig2 (xPubKey p1) (xPubKey p2)
+    (AccMulSig3 info key k1 k2) -> do
+        (p1,p2,p3,_) <- nextIndex3 (pubSubKey key) 
+                                   (pubSubKey k1) 
+                                   (pubSubKey k2) 
+                                   (extOffset info)
+        return $ scriptAddr $ buildMulSig3 (xPubKey p1) (xPubKey p2) (xPubKey p3)
 
 nextAccount :: XPrvKey -> KeyIndex -> String -> Maybe (Account, KeyIndex)
 nextAccount key idx name = do
@@ -157,8 +178,8 @@ nextAccMulSig2 key pub1 idx name = do
     fromMaybe (nextAccMulSig2 key pub1 (accIdx+1) name) $ do
         extKey     <- pubSubKey accPub 0
         intKey     <- pubSubKey accPub 1
-        (_,extOff) <- nextIndex2 (pubSubKey extKey) (pubSubKey extKey1) 0
-        (_,intOff) <- nextIndex2 (pubSubKey intKey) (pubSubKey intKey1) 0
+        (_,_,extOff) <- nextIndex2 (pubSubKey extKey) (pubSubKey extKey1) 0
+        (_,_,intOff) <- nextIndex2 (pubSubKey intKey) (pubSubKey intKey1) 0
         let info = AccInfo name extOff intOff Map.empty
         return $ Just (AccMulSig2 info accPub pub1, accIdx)
 
@@ -174,12 +195,12 @@ nextAccMulSig3 key pub1 pub2 idx name = do
     fromMaybe (nextAccMulSig3 key pub1 pub2 (accIdx+1) name) $ do
         extKey     <- pubSubKey accPub 0
         intKey     <- pubSubKey accPub 1
-        (_,extOff) <- nextIndex3 (pubSubKey extKey) 
-                                 (pubSubKey extKey1) 
-                                 (pubSubKey extKey2) 0
-        (_,intOff) <- nextIndex3 (pubSubKey intKey) 
-                                 (pubSubKey intKey1) 
-                                 (pubSubKey intKey2) 0
+        (_,_,_,extOff) <- nextIndex3 (pubSubKey extKey) 
+                                     (pubSubKey extKey1) 
+                                     (pubSubKey extKey2) 0
+        (_,_,_,intOff) <- nextIndex3 (pubSubKey intKey) 
+                                     (pubSubKey intKey1) 
+                                     (pubSubKey intKey2) 0
         let info = AccInfo name extOff intOff Map.empty
         return $ Just (AccMulSig3 info accPub pub1 pub2, accIdx)
 
@@ -188,7 +209,9 @@ nextAccMulSig3 key pub1 pub2 idx name = do
 nextIndex :: (KeyIndex -> Maybe a) -> KeyIndex -> Maybe (a, KeyIndex)
 nextIndex f i = do
     guard $ i < 0x80000000
-    fromMaybe (nextIndex f (i+1)) $ flip (,) i <$> f i
+    fromMaybe (nextIndex f (i+1)) $ do
+        k <- f i
+        return $ Just (k,i)
 
 nextIndex2 :: (KeyIndex -> Maybe a)
            -> (KeyIndex -> Maybe a)
@@ -199,7 +222,7 @@ nextIndex2 f1 f2 i = do
     fromMaybe (nextIndex2 f1 f2 (i+1)) $ do
         k1 <- f1 i
         k2 <- f2 i
-        return (k1,k2,i)
+        return $ Just (k1,k2,i)
 
 nextIndex3 :: (KeyIndex -> Maybe a)
            -> (KeyIndex -> Maybe a)
@@ -212,7 +235,7 @@ nextIndex3 f1 f2 f3 i = do
         k1 <- f1 i
         k2 <- f2 i
         k3 <- f3 i
-        return (k1,k2,k3,i)
+        return $ Just (k1,k2,k3,i)
 
 instance Binary Wallet where
 
@@ -231,13 +254,12 @@ instance Binary Wallet where
                 len     <- fromIntegral <$> getWord32le
                 let parentFP = xPrvFP key
                 accList <- replicateM len $ do
-                    index   <- getWord32le
+                    nameLen <- getWord8
+                    nameBS  <- getByteString $ fromIntegral nameLen
                     account <- get
                     unless (accParent account == parentFP) $ fail $
                         "Get: Account is not a child of master key"
-                    unless (accIndex account == setBit index 31) $ fail $
-                        "Get: Account index does not match key index"
-                    return (index, account)
+                    return (bsToString nameBS, account)
                 return $ MasterWallet key off (Map.fromList accList)
             0x01 -> AccWallet <$> get <*> get <*> get
             0x02 -> PubAccWallet <$> get <*> get
@@ -249,8 +271,10 @@ instance Binary Wallet where
             putWord32le off
             let accList = Map.toList xs
             putWord32le $ fromIntegral $ length accList
-            forM_ accList $ \(index, account) -> do 
-                putWord32le index
+            forM_ accList $ \(name, account) -> do 
+                let nameBS = stringToBS name
+                putWord8 $ fromIntegral $ BS.length nameBS
+                putByteString nameBS
                 put account
         (AccWallet k p a) -> putWord8 1 >> put k >> put p >> put a
         (PubAccWallet p a) -> putWord8 2 >> put p >> put a

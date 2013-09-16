@@ -26,8 +26,8 @@ type KeyIndex = Word32
 
 data AccInfo = AccInfo
     { accName   :: String
-    , intOffset :: KeyIndex
     , extOffset :: KeyIndex
+    , intOffset :: KeyIndex
     , accLabels :: Map.Map KeyIndex String
     } deriving (Eq, Show)
 
@@ -77,6 +77,10 @@ accParent = xPubParent . accKey
 accDepth :: Account -> Word8
 accDepth = xPubDepth . accKey
 
+isMasterWallet :: Wallet -> Bool
+isMasterWallet (MasterWallet _ _ _) -> True
+isMasterWallet _                    -> False
+
 type WalletManager m a = S.StateT Wallet m a
 
 withWallet :: Monad m => Wallet -> WalletManager m a -> m a
@@ -88,24 +92,10 @@ getWallet = S.get
 putWallet :: Monad m => Wallet -> WalletManager m ()
 putWallet s = S.put s
 
-newAccount :: Monad m => String -> WalletManager m Account
-newAccount name = do
-    wallet <- getWallet
-    case wallet of
-        (MasterWallet k off accs) -> do
-            let pub = deriveXPubKey $ findValidPrimeKey k off
-                acc = Account (AccInfo name 0 0 Map.empty) pub
-                idx = clearBit (accIndex acc) 31
-            putWallet $ MasterWallet k (idx+1) (Map.insert idx acc accs)
-            return acc
-        _ -> error "Can't add new account to account wallet"
-
 getAccount :: Monad m => KeyIndex -> WalletManager m (Maybe Account)
-getAccount i = do
-    wallet <- getWallet
-    case wallet of
-        (MasterWallet _ _ accs) -> return $ Map.lookup i accs
-        _                       -> return Nothing
+getAccount idx = do
+    (MasterWallet _ _ accMap) <- getWallet
+    return $ Map.lookup idx accMap
 
 getCurrentAddr :: Monad m => KeyIndex -> WalletManager m (Maybe Address)
 getCurrentAddr i = (getAccount i) >>= return . (accCurrAddr <$>)
@@ -120,27 +110,109 @@ accCurrAddr acc = case acc of
         let (r1, r2, r3) = findValidSubKey3 k1 k2 k3 (extOffset info)
             in scriptAddr $ buildMulSig3 (xPubKey r1) (xPubKey r2) (xPubKey r3)
 
--- Todo: Check end of index enumeration
-findValidPrimeKey :: XPrvKey -> KeyIndex -> XPrvKey
-findValidPrimeKey key i = fromMaybe (findValidPrimeKey key (i+1)) 
-                                  (primeSubKey key i)
+currentAddr :: Account -> Address
+currentAddr acc = case acc of
+    (Account info key) -> nextIndex (pubSubKey key) (extOffset info)
 
--- Todo: Check end of index enumeration
-findValidSubKey :: XPubKey -> KeyIndex -> XPubKey
-findValidSubKey key i = fromMaybe (findValidSubKey key (i+1)) (pubSubKey key i)
+newAddr :: Monad m => KeyIndex -> WalletManager m (Maybe Address)
+newAddr idx = do
+    
 
--- Todo: Check end of index enumeration
-findValidSubKey2 :: XPubKey -> XPubKey -> KeyIndex -> (XPubKey, XPubKey)
-findValidSubKey2 k1 k2 i = 
-    fromMaybe (findValidSubKey2 k1 k2 (i+1))
-              (liftM2 (,) (pubSubKey k1 i) (pubSubKey k2 i))
+newAccount :: Monad m => String -> WalletManager m (Maybe Account)
+newAccount name = do
+    (MasterWallet k offset accMap) <- getWallet
+    case nextAccount k (offset+1) name of
+        (Just (acc,i)) -> do
+            putWallet $ MasterWallet k i (Map.insert i acc accMap)
+            return acc
+        Nothing -> return Nothing
 
--- Todo: Check end of index enumeration
-findValidSubKey3 :: XPubKey -> XPubKey -> XPubKey -> KeyIndex 
-                 -> (XPubKey, XPubKey, XPubKey)
-findValidSubKey3 k1 k2 k3 i = 
-    fromMaybe (findValidSubKey3 k1 k2 k3 (i+1))
-              (liftM3 (,,) (pubSubKey k1 i) (pubSubKey k2 i) (pubSubKey k3 i))
+{- Helper functions -}
+
+nextAddr :: XPubKey -> KeyIndex -> Maybe (Address, KeyIndex)
+nextAddr key index = do
+    (addrKey,addrIdx) <- nextIndex (pubSubKey key) index 
+    return (xPubAddr addrKey, addrIdx)
+
+nextAccount :: XPrvKey -> KeyIndex -> String -> Maybe (Account, KeyIndex)
+nextAccount key idx name = do
+    (accKey,accIdx) <- nextIndex (primeSubKey key) idx
+    let accPub = deriveXPubKey accKey
+    -- If this fails, the account is invalid and we must try the next one
+    fromMaybe (nextAccount key (accIdx+1) name) $ do
+        extKey     <- pubSubKey accPub 0
+        intKey     <- pubSubKey accPub 1
+        (_,extOff) <- nextIndex (pubSubKey extKey) 0
+        (_,intOff) <- nextIndex (pubSubKey intKey) 0
+        let info   = AccInfo name extOff intOff Map.empty
+        return $ Just (Account info accPub, accIdx)
+
+nextAccMulSig2 :: XPrvKey -> XPubKey -> KeyIndex -> String 
+               -> Maybe (Account, KeyIndex)
+nextAccMulSig2 key pub1 idx name = do
+    (accKey,accIdx) <- nextIndex (primeSubKey key) idx
+    let accPub = deriveXPubKey accKey
+    extKey1 <- pubSubKey pub1 0
+    intKey1 <- pubSubKey pub1 1
+    fromMaybe (nextAccMulSig2 key pub1 (accIdx+1) name) $ do
+        extKey     <- pubSubKey accPub 0
+        intKey     <- pubSubKey accPub 1
+        (_,extOff) <- nextIndex2 (pubSubKey extKey) (pubSubKey extKey1) 0
+        (_,intOff) <- nextIndex2 (pubSubKey intKey) (pubSubKey intKey1) 0
+        let info = AccInfo name extOff intOff Map.empty
+        return $ Just (AccMulSig2 info accPub pub1, accIdx)
+
+nextAccMulSig3 :: XPrvKey -> XPubKey -> XPubKey -> KeyIndex -> String 
+               -> Maybe (Account, KeyIndex)
+nextAccMulSig3 key pub1 pub2 idx name = do
+    (accKey,accIdx) <- nextIndex (primeSubKey key) idx
+    let accPub = deriveXPubKey accKey
+    extKey1 <- pubSubKey pub1 0
+    intKey1 <- pubSubKey pub1 1
+    extKey2 <- pubSubKey pub2 0
+    intKey2 <- pubSubKey pub2 1
+    fromMaybe (nextAccMulSig3 key pub1 pub2 (accIdx+1) name) $ do
+        extKey     <- pubSubKey accPub 0
+        intKey     <- pubSubKey accPub 1
+        (_,extOff) <- nextIndex3 (pubSubKey extKey) 
+                                 (pubSubKey extKey1) 
+                                 (pubSubKey extKey2) 0
+        (_,intOff) <- nextIndex3 (pubSubKey intKey) 
+                                 (pubSubKey intKey1) 
+                                 (pubSubKey intKey2) 0
+        let info = AccInfo name extOff intOff Map.empty
+        return $ Just (AccMulSig3 info accPub pub1 pub2, accIdx)
+
+-- Find the next valid key derivation index starting at offset i
+-- First argument is a partially applied key derivation function
+nextIndex :: (KeyIndex -> Maybe a) -> KeyIndex -> Maybe (a, KeyIndex)
+nextIndex f i = do
+    guard $ i < 0x80000000
+    fromMaybe (nextIndex f (i+1)) $ flip (,) i <$> f i
+
+nextIndex2 :: (KeyIndex -> Maybe a)
+           -> (KeyIndex -> Maybe a)
+           -> KeyIndex
+           -> Maybe (a, a, KeyIndex)
+nextIndex2 f1 f2 i = do
+    guard $ i < 0x80000000
+    fromMaybe (nextIndex2 f1 f2 (i+1)) $ do
+        k1 <- f1 i
+        k2 <- f2 i
+        return (k1,k2,i)
+
+nextIndex3 :: (KeyIndex -> Maybe a)
+           -> (KeyIndex -> Maybe a)
+           -> (KeyIndex -> Maybe a)
+           -> KeyIndex
+           -> Maybe (a, a, a, KeyIndex)
+nextIndex3 f1 f2 f3 i = do
+    guard $ i < 0x80000000
+    fromMaybe (nextIndex3 f1 f2 f3 (i+1)) $ do
+        k1 <- f1 i
+        k2 <- f2 i
+        k3 <- f3 i
+        return (k1,k2,k3,i)
 
 instance Binary Wallet where
 

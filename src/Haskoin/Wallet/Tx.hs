@@ -1,4 +1,8 @@
-module Haskoin.Wallet.Tx where
+module Haskoin.Wallet.Tx 
+( buildMulSig2
+, buildMulSig3
+, scriptAddr
+) where
 
 import qualified Data.ByteString as BS
 

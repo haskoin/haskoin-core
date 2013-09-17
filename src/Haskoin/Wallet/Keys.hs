@@ -1,11 +1,8 @@
 module Haskoin.Wallet.Keys
-( XKey(..)
-, XPubKey(..)
+( XPubKey(..)
 , XPrvKey(..)
 , makeXPrvKey
 , deriveXPubKey
-, isXPubKey
-, isXPrvKey
 , prvSubKey
 , pubSubKey
 , primeSubKey
@@ -25,7 +22,6 @@ module Haskoin.Wallet.Keys
 , xPrvExport
 , xPubImport
 , xPrvImport
-, xKeyImport
 , xPrvWIF
 ) where
 
@@ -74,10 +70,6 @@ data XPubKey = XPubKey
     , xPubKey    :: !PubKey
     } deriving (Eq, Show)
 
-data XKey = XPrvImport { runPrvImport :: XPrvKey } | 
-            XPubImport { runPubImport :: XPubKey }
-            deriving (Eq, Show)
-
 makeXPrvKey :: BS.ByteString -> Maybe XPrvKey
 makeXPrvKey bs = do
     pk' <- makePrvKey $ fromIntegral pk
@@ -86,13 +78,6 @@ makeXPrvKey bs = do
 
 deriveXPubKey :: XPrvKey -> XPubKey
 deriveXPubKey (XPrvKey d p i c k) = XPubKey d p i c (derivePubKey k)
-
-isXPubKey :: XKey -> Bool
-isXPubKey (XPubImport _) = True
-isXPubKey (XPrvImport _) = False
-
-isXPrvKey :: XKey -> Bool
-isXPrvKey = not . isXPubKey
 
 -- Public derivation of XPrvKey
 prvSubKey :: XPrvKey -> Word32 -> Maybe XPrvKey
@@ -171,10 +156,10 @@ xPubAddr = pubKeyAddr . xPubKey
 
 -- Base 58 export
 xPrvExport :: XPrvKey -> BS.ByteString
-xPrvExport = encodeBase58Check . encode' . XPrvImport
+xPrvExport = encodeBase58Check . encode' 
 
 xPubExport :: XPubKey -> BS.ByteString
-xPubExport = encodeBase58Check . encode' . XPubImport
+xPubExport = encodeBase58Check . encode'
 
 xPrvImport :: BS.ByteString -> Maybe XPrvKey
 xPrvImport bs = do
@@ -185,14 +170,6 @@ xPrvImport bs = do
 
 xPubImport :: BS.ByteString -> Maybe XPubKey
 xPubImport bs = do
-    bs' <- decodeBase58Check bs
-    case decodeOrFail' bs' of
-        (Left _)            -> Nothing
-        (Right (_, _, res)) -> Just res
-
--- Base 58 import
-xKeyImport :: BS.ByteString -> Maybe XKey
-xKeyImport bs = do
     bs' <- decodeBase58Check bs
     case decodeOrFail' bs' of
         (Left _)            -> Nothing
@@ -247,44 +224,6 @@ instance Binary XPubKey where
         when (isPubKeyU (xPubKey k)) $ fail $
             "Only compressed public keys are supported"
         put $ xPubKey k
-        
-
-instance Binary XKey where
-
-    get = do
-        ver <- getWord32be
-        dep <- getWord8
-        par <- getWord32be
-        idx <- getWord32be
-        chn <- get 
-        case ver of 
-            0X0488b21e -> do
-                pub <- get 
-                when (isPubKeyU pub) $ fail $
-                    "Invalid public key. Only compressed format is supported"
-                return $ XPubImport $ XPubKey dep par idx chn pub
-            0x0488ade4 -> do
-                prv <- getPadPrvKey
-                return $ XPrvImport $ XPrvKey dep par idx chn prv
-            _ -> fail $ "Invalid wallet version bytes"
-
-    put (XPubImport k) = do
-        putWord32be 0X0488b21e
-        putWord8    $ xPubDepth k
-        putWord32be $ xPubParent k
-        putWord32be $ xPubIndex k
-        put         $ xPubChain k
-        when (isPubKeyU (xPubKey k)) $ fail $
-            "Only compressed public keys are supported"
-        put $ xPubKey k
-
-    put (XPrvImport k) = do
-        putWord32be  0x0488ade4 
-        putWord8     $ xPrvDepth k
-        putWord32be  $ xPrvParent k
-        putWord32be  $ xPrvIndex k
-        put          $ xPrvChain k
-        putPadPrvKey $ xPrvKey k
         
 {- Utilities for extended keys -}
 

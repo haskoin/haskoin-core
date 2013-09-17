@@ -1,16 +1,18 @@
 module Haskoin.Wallet
 
 -- Keys module
-( XKey(..)
-, XPubKey
-, XPrvKey
+( XPubKey(..)
+, XPrvKey(..)
 , makeXPrvKey
 , deriveXPubKey
-, isXPubKey
-, isXPrvKey
 , prvSubKey
 , pubSubKey
 , primeSubKey
+, prvSubKeys
+, pubSubKeys
+, pubSubKeys2
+, pubSubKeys3
+, primeSubKeys
 , xPrvIsPrime
 , xPubIsPrime
 , xPubID
@@ -18,15 +20,42 @@ module Haskoin.Wallet
 , xPubFP
 , xPrvFP
 , xPubAddr
-, xPrvAddr
 , xPubExport
 , xPrvExport
 , xPubImport
 , xPrvImport
-, xKeyImport
 , xPrvWIF
+
+-- Manager module
+, MasterKey
+, AccPrvKey
+, AccPubKey
+, AddrPrvKey
+, AddrPubKey
+, makeMasterKey
+, loadMasterKey
+, loadPrvAcc
+, loadPubAcc
+, addr
+, accPrvKeys
+, accPubKeys
+, extPrvKeys
+, extPubKeys
+, intPrvKeys
+, intPubKeys
+, extPubKeys2
+, extPubKeys3
+, intPubKeys2
+, intPubKeys3
+
+-- Tx module
+, scriptAddr
+, Script
 
 ) where
 
 import Haskoin.Wallet.Keys
+import Haskoin.Wallet.Manager
+import Haskoin.Wallet.Tx
+import Haskoin.Protocol (Script)
 

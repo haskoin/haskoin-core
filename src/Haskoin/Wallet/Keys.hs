@@ -9,6 +9,11 @@ module Haskoin.Wallet.Keys
 , prvSubKey
 , pubSubKey
 , primeSubKey
+, prvSubKeys
+, pubSubKeys
+, pubSubKeys2
+, pubSubKeys3
+, primeSubKeys
 , xPrvIsPrime
 , xPubIsPrime
 , xPubID
@@ -16,7 +21,6 @@ module Haskoin.Wallet.Keys
 , xPubFP
 , xPrvFP
 , xPubAddr
-, xPrvAddr
 , xPubExport
 , xPrvExport
 , xPubImport
@@ -25,7 +29,7 @@ module Haskoin.Wallet.Keys
 , xPrvWIF
 ) where
 
-import Control.Monad (liftM2, guard, unless, when)
+import Control.Monad (guard, unless, when)
 import Control.Applicative ((<$>), (<*>))
 
 import Data.Binary (Binary, get, put)
@@ -33,25 +37,21 @@ import Data.Binary.Get
 import Data.Binary.Put
 import Data.Word (Word8, Word32)
 import Data.Bits (shiftR, setBit, testBit)
-import Data.Maybe (fromJust, isJust, isNothing)
+import Data.Maybe (mapMaybe)
 import qualified Data.ByteString as BS 
     ( ByteString
-    , singleton
-    , cons
     , append
     )
-import qualified Data.ByteString as BS (ByteString, take)
 
 import Haskoin.Util
     ( stringToBS
-    , toLazyBS
     , toStrictBS
     , encode'
     , decodeOrFail'
-    , decode'
-    , bsToInteger
     )
 import Haskoin.Crypto
+import Haskoin.Protocol
+import Haskoin.Wallet.Tx
 
 {- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
 
@@ -120,8 +120,29 @@ primeSubKey xkey child = guardIndex child >> do
           msg   = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode' i)
           (a,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
 
+-- List all valid subkeys start from an offset
+prvSubKeys :: XPrvKey -> Word32 -> [XPrvKey]
+prvSubKeys k i = mapMaybe (prvSubKey k) [i..0x7fffffff]
+
+pubSubKeys :: XPubKey -> Word32 -> [XPubKey]
+pubSubKeys k i = mapMaybe (pubSubKey k) [i..0x7fffffff]
+
+primeSubKeys :: XPrvKey -> Word32 -> [XPrvKey]
+primeSubKeys k i = mapMaybe (primeSubKey k) [i..0x7fffffff]
+
+pubSubKeys2 :: XPubKey -> XPubKey -> Word32 -> [Script]
+pubSubKeys2 par1 par2 i = mapMaybe (f par1 par2) [i..0x7fffffff]
+    where f k1 k2 x = buildMulSig2 <$> (xPubKey <$> pubSubKey k1 x)
+                                   <*> (xPubKey <$> pubSubKey k2 x)
+
+pubSubKeys3 :: XPubKey -> XPubKey -> XPubKey -> Word32 -> [Script]
+pubSubKeys3 par1 par2 par3 i = mapMaybe (f par1 par2 par3) [i..0x7fffffff]
+    where f k1 k2 k3 x = buildMulSig3 <$> (xPubKey <$> pubSubKey k1 x)
+                                      <*> (xPubKey <$> pubSubKey k2 x)
+                                      <*> (xPubKey <$> pubSubKey k3 x)
+
 guardIndex :: Word32 -> Maybe ()
-guardIndex child = guard $ child >= 0 && child <= 0x80000000
+guardIndex child = guard $ child >= 0 && child < 0x80000000
 
 -- Key was derived through private derivation
 xPrvIsPrime :: XPrvKey -> Bool
@@ -145,9 +166,6 @@ xPubFP :: XPubKey -> Word32
 xPubFP = fromIntegral . (`shiftR` 128) . xPubID
 
 -- Key address
-xPrvAddr :: XPrvKey -> Address
-xPrvAddr = xPubAddr . deriveXPubKey
-
 xPubAddr :: XPubKey -> Address
 xPubAddr = pubKeyAddr . xPubKey
 

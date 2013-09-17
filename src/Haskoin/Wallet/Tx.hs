@@ -4,8 +4,6 @@ module Haskoin.Wallet.Tx
 , scriptAddr
 ) where
 
-import qualified Data.ByteString as BS
-
 import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util

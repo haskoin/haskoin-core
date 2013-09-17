@@ -1,14 +1,17 @@
-# haskoin-crypto
+# haskoin-wallet
 
-Implementation of a Bitcoin Hierarchical Deterministic Wallet (HDW) as defined
-in BIP32.
+Implementation of a Bitcoin Hierarchical Deterministic Wallet (BIP32) in
+Haskell. 
 
 Project Status: **Experimental**
 
 ## Description
 
-**haskoin-wallet** is a component of **haskoin**, an ecosystem of haskell
-libraries implementing the various parts of the bitcoin protocol.
+[haskoin-wallet](http://github.com/plaprade/haskoin-wallet) is a component of
+[haskoin](http://github.com/plaprade/haskoin), an ecosystem of haskell
+libraries implementing the various parts of the bitcoin protocol. This library
+provides extended key types and subkey derivation functions as defined in
+[BIP32](http://en.bitcoin.it/wiki/BIP_0032).
 
 Todo ...
 
@@ -43,12 +46,21 @@ All the types and functions in this section are exported by `Haskoin.Wallet`
     cabal install
 ```
 
-- haskoin-util
+- haskoin-crypto
 
 ```sh
     # haskoin-crypto is not on Hackage (yet) 
     git clone https://github.com/plaprade/haskoin-crypto.git
     cd haskoin-crypto
+    cabal install
+```
+
+- haskoin-protocol
+
+```sh
+    # haskoin-protocol is not on Hackage (yet) 
+    git clone https://github.com/plaprade/haskoin-protocol.git
+    cd haskoin-protocol
     cabal install
 ```
 

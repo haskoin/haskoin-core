@@ -35,7 +35,7 @@ v1c1 = do
     assertBool "xPrvFP" $
         xPrvFP m1 == 0x3442193e
     assertBool "xPrvAddr" $
-        (bsToString $ addrToBase58 $ xPrvAddr m1) == 
+        (bsToString $ addrToBase58 $ xPubAddr $ deriveXPubKey m1) == 
         "15mKKb2eos1hWa6tisdPwwDC1a5J1y9nma"
     assertBool "prvKey" $
         bsToInteger (toStrictBS $ runPut $ putPrvKey $ xPrvKey m1) ==
@@ -66,7 +66,7 @@ v1c2 = do
     assertBool "xPrvFP" $
         xPrvFP m' == 0x5c1bd648
     assertBool "xPrvAddr" $
-        (bsToString $ addrToBase58 $ xPrvAddr m') == 
+        (bsToString $ addrToBase58 $ xPubAddr $ deriveXPubKey m') == 
         "19Q2WoS5hSS6T8GjhK8KZLMgmWaq4neXrh"
     assertBool "prvKey" $
         bsToInteger (toStrictBS $ runPut $ putPrvKey $ xPrvKey m') ==
@@ -97,7 +97,7 @@ v1c3 = do
     assertBool "xPrvFP" $
         xPrvFP m' == 0xbef5a2f9
     assertBool "xPrvAddr" $
-        (bsToString $ addrToBase58 $ xPrvAddr m') == 
+        (bsToString $ addrToBase58 $ xPubAddr $ deriveXPubKey m') == 
         "1JQheacLPdM5ySCkrZkV66G2ApAXe1mqLj"
     assertBool "prvKey" $
         bsToInteger (toStrictBS $ runPut $ putPrvKey $ xPrvKey m') ==

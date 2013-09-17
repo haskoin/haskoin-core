@@ -16,6 +16,7 @@ import qualified Data.ByteString as BS
 
 import QuickCheckUtils
 import Haskoin.Wallet
+import Haskoin.Util
 
 tests :: [Test]
 tests = 
@@ -34,14 +35,14 @@ subkeyTest k i = fromJust $ liftM2 (==)
     where i' = fromIntegral $ i .&. 0x7fffffff -- make it a public derivation
 
 binXPrvKey :: XPrvKey -> Bool
-binXPrvKey k = (runPrvImport $ decode $ encode $ XPrvImport k) == k
+binXPrvKey k = (decode' $ encode' k) == k
 
 binXPubKey :: XPubKey -> Bool
-binXPubKey k = (runPubImport $ decode $ encode $ XPubImport k) == k
+binXPubKey k = (decode' $ encode' k) == k
 
 b58PrvKey :: XPrvKey -> Bool
-b58PrvKey k = (runPrvImport $ fromJust $ xKeyImport $ xPrvExport k) == k
+b58PrvKey k = (fromJust $ xPrvImport $ xPrvExport k) == k
 
 b58PubKey :: XPubKey -> Bool
-b58PubKey k = (runPubImport $ fromJust $ xKeyImport $ xPubExport k) == k
+b58PubKey k = (fromJust $ xPubImport $ xPubExport k) == k
 

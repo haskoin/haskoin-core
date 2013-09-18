@@ -1,14 +1,16 @@
 module Haskoin.Wallet.Manager
-( MasterKey
-, AccPrvKey
-, AccPubKey
-, AddrPrvKey
-, AddrPubKey
+( MasterKey(..)
+, AccPrvKey(..)
+, AccPubKey(..)
+, AddrPrvKey(..)
+, AddrPubKey(..)
 , makeMasterKey
 , loadMasterKey
 , loadPrvAcc
 , loadPubAcc
 , addr
+, accPrvKey
+, accPubKey
 , accPrvKeys
 , accPubKeys
 , extPrvKeys
@@ -49,20 +51,41 @@ newtype AddrPrvKey = AddrPrvKey { runAddrPrvKey :: XPrvKey }
 newtype AddrPubKey = AddrPubKey { runAddrPubKey :: XPubKey }
     deriving (Eq, Show)
 
+-- Create a new MasterKey from a random seed
 makeMasterKey :: BS.ByteString -> Maybe MasterKey
 makeMasterKey bs = MasterKey <$> makeXPrvKey bs
 
-loadMasterKey :: XPrvKey -> MasterKey
-loadMasterKey = MasterKey
+-- Load a MasterKey from an existing XPrvKey (usually saved on disk)
+loadMasterKey :: XPrvKey -> Maybe MasterKey
+loadMasterKey k
+    | xPrvDepth  k == 0 && 
+      xPrvParent k == 0 && 
+      xPrvIndex  k == 0 = Just $ MasterKey k
+    | otherwise         = Nothing
 
-loadPrvAcc :: XPrvKey -> AccPrvKey
-loadPrvAcc = AccPrvKey
+-- Load an account from an existing XPrvKey (usually saved on disk) 
+loadPrvAcc :: XPrvKey -> Maybe AccPrvKey
+loadPrvAcc k
+    | xPrvDepth k == 1 &&
+      xPrvIsPrime k    = Just $ AccPrvKey k
+    | otherwise        = Nothing
 
-loadPubAcc :: XPubKey -> AccPubKey
-loadPubAcc = AccPubKey
+-- Load a read-only account from an existing XPubKey (usually saved on disk)
+loadPubAcc :: XPubKey -> Maybe AccPubKey
+loadPubAcc k
+    | xPubDepth k == 1 &&
+      xPubIsPrime k    = Just $ AccPubKey k
+    | otherwise        = Nothing
 
 addr :: AddrPubKey -> Address
 addr = xPubAddr . runAddrPubKey
+
+accPrvKey :: MasterKey -> KeyIndex -> Maybe AccPrvKey
+accPrvKey (MasterKey par) i = AccPrvKey <$> primeSubKey par i
+
+accPubKey :: MasterKey -> KeyIndex -> Maybe AccPubKey
+accPubKey (MasterKey par) i = f <$> primeSubKey par i
+    where f = AccPubKey . deriveXPubKey
 
 -- List of all valid accounts derived from the master private key
 -- Filters accounts for which dubkeys 0 and 1 are invalid
@@ -92,26 +115,30 @@ intPubKeys (AccPubKey par) i = map AddrPubKey $ pubSubKeys intKey i
 
 {- MultiSig -}
 
-extPubKeys2 :: AccPubKey -> AccPubKey -> KeyIndex -> [Script]
-extPubKeys2 p1 p2 i = pubSubKeys2 extKey1 extKey2 i
-    where extKey1 = fromJust $ pubSubKey (runAccPubKey p1) 0
-          extKey2 = fromJust $ pubSubKey (runAccPubKey p2) 0
+-- 2 of 2 multisig (external chain)
+extPubKeys2 :: AccPubKey -> XPubKey -> KeyIndex -> [Script]
+extPubKeys2 a p1 i = pubSubKeys2 extKey1 extKey2 i
+    where extKey1 = fromJust $ pubSubKey (runAccPubKey a) 0
+          extKey2 = fromJust $ pubSubKey p1 0
 
-extPubKeys3 :: AccPubKey -> AccPubKey -> AccPubKey -> KeyIndex -> [Script]
-extPubKeys3 p1 p2 p3 i = pubSubKeys3 extKey1 extKey2 extKey3 i
-    where extKey1 = fromJust $ pubSubKey (runAccPubKey p1) 0
-          extKey2 = fromJust $ pubSubKey (runAccPubKey p2) 0
-          extKey3 = fromJust $ pubSubKey (runAccPubKey p3) 0
+-- 2 of 3 multisig (external chain)
+extPubKeys3 :: AccPubKey -> XPubKey -> XPubKey -> KeyIndex -> [Script]
+extPubKeys3 a p1 p2 i = pubSubKeys3 extKey1 extKey2 extKey3 i
+    where extKey1 = fromJust $ pubSubKey (runAccPubKey a) 0
+          extKey2 = fromJust $ pubSubKey p1 0
+          extKey3 = fromJust $ pubSubKey p2 0
 
-intPubKeys2 :: AccPubKey -> AccPubKey -> KeyIndex -> [Script]
-intPubKeys2 p1 p2 i = pubSubKeys2 intKey1 intKey2 i
-    where intKey1 = fromJust $ pubSubKey (runAccPubKey p1) 1
-          intKey2 = fromJust $ pubSubKey (runAccPubKey p2) 1
+-- 2 of 2 multisig (internal chain)
+intPubKeys2 :: AccPubKey -> XPubKey -> KeyIndex -> [Script]
+intPubKeys2 a p1 i = pubSubKeys2 intKey1 intKey2 i
+    where intKey1 = fromJust $ pubSubKey (runAccPubKey a) 1
+          intKey2 = fromJust $ pubSubKey p1 1
 
-intPubKeys3 :: AccPubKey -> AccPubKey -> AccPubKey -> KeyIndex -> [Script]
-intPubKeys3 p1 p2 p3 i = pubSubKeys3 intKey1 intKey2 intKey3 i
-    where intKey1 = fromJust $ pubSubKey (runAccPubKey p1) 1
-          intKey2 = fromJust $ pubSubKey (runAccPubKey p2) 1
-          intKey3 = fromJust $ pubSubKey (runAccPubKey p3) 1
+-- 2 of 3 multisig (internal chain)
+intPubKeys3 :: AccPubKey -> XPubKey -> XPubKey -> KeyIndex -> [Script]
+intPubKeys3 a p1 p2 i = pubSubKeys3 intKey1 intKey2 intKey3 i
+    where intKey1 = fromJust $ pubSubKey (runAccPubKey a) 1
+          intKey2 = fromJust $ pubSubKey p1 1
+          intKey3 = fromJust $ pubSubKey p2 1
 
 

@@ -13,6 +13,8 @@ module Haskoin.Wallet.Keys
 , primeSubKeys
 , xPrvIsPrime
 , xPubIsPrime
+, xPrvChild
+, xPubChild
 , xPubID
 , xPrvID
 , xPubFP
@@ -32,7 +34,7 @@ import Data.Binary (Binary, get, put)
 import Data.Binary.Get
 import Data.Binary.Put
 import Data.Word (Word8, Word32)
-import Data.Bits (shiftR, setBit, testBit)
+import Data.Bits (shiftR, setBit, testBit, clearBit)
 import Data.Maybe (mapMaybe)
 import qualified Data.ByteString as BS 
     ( ByteString
@@ -105,7 +107,7 @@ primeSubKey xkey child = guardIndex child >> do
           msg   = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode' i)
           (a,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
 
--- List all valid subkeys start from an offset
+-- Lazy list all valid subkeys starting from an offset
 prvSubKeys :: XPrvKey -> Word32 -> [XPrvKey]
 prvSubKeys k i = mapMaybe (prvSubKey k) [i..0x7fffffff]
 
@@ -135,6 +137,13 @@ xPrvIsPrime k = testBit (xPrvIndex k) 31
 
 xPubIsPrime :: XPubKey -> Bool
 xPubIsPrime k = testBit (xPubIndex k) 31
+
+-- Index without the prime bit
+xPrvChild :: XPrvKey -> Word32
+xPrvChild k = clearBit (xPrvIndex k) 31
+
+xPubChild :: XPubKey -> Word32
+xPubChild k = clearBit (xPubIndex k) 31
 
 -- Key idendifiers
 xPrvID :: XPrvKey -> Hash160

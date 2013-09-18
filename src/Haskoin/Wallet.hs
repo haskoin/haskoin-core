@@ -15,6 +15,8 @@ module Haskoin.Wallet
 , primeSubKeys
 , xPrvIsPrime
 , xPubIsPrime
+, xPrvChild
+, xPubChild
 , xPubID
 , xPrvID
 , xPubFP
@@ -27,16 +29,18 @@ module Haskoin.Wallet
 , xPrvWIF
 
 -- Manager module
-, MasterKey
-, AccPrvKey
-, AccPubKey
-, AddrPrvKey
-, AddrPubKey
+, MasterKey(..)
+, AccPrvKey(..)
+, AccPubKey(..)
+, AddrPrvKey(..)
+, AddrPubKey(..)
 , makeMasterKey
 , loadMasterKey
 , loadPrvAcc
 , loadPubAcc
 , addr
+, accPrvKey
+, accPubKey
 , accPrvKeys
 , accPubKeys
 , extPrvKeys

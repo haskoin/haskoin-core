@@ -41,6 +41,10 @@ module Haskoin.Wallet
 , addr
 , accPrvKey
 , accPubKey
+, extPrvKey
+, extPubKey
+, intPrvKey
+, intPubKey
 , accPrvKeys
 , accPubKeys
 , extPrvKeys

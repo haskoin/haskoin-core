@@ -11,6 +11,10 @@ module Haskoin.Wallet.Manager
 , addr
 , accPrvKey
 , accPubKey
+, extPrvKey
+, extPubKey
+, intPrvKey
+, intPubKey
 , accPrvKeys
 , accPubKeys
 , extPrvKeys
@@ -86,6 +90,22 @@ accPrvKey (MasterKey par) i = AccPrvKey <$> primeSubKey par i
 accPubKey :: MasterKey -> KeyIndex -> Maybe AccPubKey
 accPubKey (MasterKey par) i = f <$> primeSubKey par i
     where f = AccPubKey . deriveXPubKey
+
+extPrvKey :: AccPrvKey -> KeyIndex -> Maybe AddrPrvKey
+extPrvKey (AccPrvKey par) i = AddrPrvKey <$> prvSubKey extKey i
+    where extKey = fromJust $ prvSubKey par 0
+
+extPubKey :: AccPubKey -> KeyIndex -> Maybe AddrPubKey
+extPubKey (AccPubKey par) i = AddrPubKey <$> pubSubKey extKey i
+    where extKey = fromJust $ pubSubKey par 0
+
+intPrvKey :: AccPrvKey -> KeyIndex -> Maybe AddrPrvKey
+intPrvKey (AccPrvKey par) i = AddrPrvKey <$> prvSubKey intKey i
+    where intKey = fromJust $ prvSubKey par 1
+
+intPubKey :: AccPubKey -> KeyIndex -> Maybe AddrPubKey
+intPubKey (AccPubKey par) i = AddrPubKey <$> pubSubKey intKey i
+    where intKey = fromJust $ pubSubKey par 1
 
 -- List of all valid accounts derived from the master private key
 -- Filters accounts for which dubkeys 0 and 1 are invalid

@@ -57,17 +57,17 @@ strToCmd str = case str of
 options :: [OptDescr (Options -> Options)]
 options =
     [ Option ['c'] ["count"] (ReqArg parseCount "INT") $
-        "How many addresses to generate when using the address command"
+        "Address generation count. Implies address command"
     , Option ['i'] ["index"] (ReqArg parseIndex "INT") $
-        "Generate addresses from this index when using the address command"
+        "Address key index. Implies address ot dumpwif command"
     , Option ['N'] ["internal"]
         (NoArg $ \opts -> opts{ optInternal = True }) $
-        "Use the internal account chain when using the address command"
+        "Use internal address chain. Implies address or dumpwif command"
     , Option ['a'] ["account"] (ReqArg parseAccount "INT") $
-        "Specify the account number to use"
+        "Account index to use in your command"
     , Option ['m'] ["master"]
         (NoArg $ \opts -> opts{ optMaster = True }) $
-        "Dumps the master key when used together with the dumpkey command"
+        "Use the master key. Implies dumpkey or fingerprint command"
     , Option ['h'] ["help"]
         (NoArg $ \opts -> opts{ optHelp = True }) $
         "Display this help message"
@@ -103,8 +103,8 @@ cmdHelp =
  ++ "  init          Initialize a new wallet (seeding from /dev/urandom)\n" 
  ++ "  address       Prints a list of addresses for the chosen account\n" 
  ++ "  fingerprint   Prints key fingerprint and ID\n"
- ++ "  dumpkey       Dump master or account keys to stdout"
- ++ "  dumpwif       Dump private keys in WIF format to stdout. Implies -a -i"
+ ++ "  dumpkey       Dump master or account keys to stdout\n"
+ ++ "  dumpwif       Dump private keys in WIF format to stdout"
 
 warningMsg :: String
 warningMsg = "**This software is experimental. " 
@@ -224,21 +224,23 @@ cmdDumpWIF key opts = do
     putStrLn $ bsToString $ xPrvWIF $ runAddrPrvKey $ fromJust addrM 
 
 cmdFingerprint :: MasterKey -> Options -> IO ()
-cmdFingerprint key opts = do
-    let accM     = accPrvKey key (fromIntegral $ optAccount opts)
-    unless (isJust accM) $ error $
-        "Index produced an invalid account: " ++ (show $ optAccount opts)
-    let acc      = fromJust accM
-        masterFP = bsToHex $ encode' $ xPrvFP $ runMasterKey key
-        masterID = bsToHex $ encode' $ xPrvID $ runMasterKey key
-        accFP    = bsToHex $ encode' $ xPrvFP $ runAccPrvKey acc
-        accID    = bsToHex $ encode' $ xPrvID $ runAccPrvKey acc
-    putStrLn $ "Master key fingerprint: " ++ (bsToString masterFP)
-    putStrLn $ "Master key ID: " ++ (bsToString masterID)
-    putStrLn $  "Account " ++ (show $ optAccount opts) 
-             ++ " fingerprint: " ++ (bsToString accFP)
-    putStrLn $  "Account " ++ (show $ optAccount opts) 
-             ++ " ID: " ++ (bsToString accID)
+cmdFingerprint key opts
+    | optMaster opts = do
+         putStrLn "Master Key"
+         let masterFP = bsToHex $ encode' $ xPrvFP $ runMasterKey key
+             masterID = bsToHex $ encode' $ xPrvID $ runMasterKey key
+         putStrLn $ "fingerprint: " ++ (bsToString masterFP)
+         putStrLn $ "ID: " ++ (bsToString masterID)
+    | otherwise = do
+        let accM     = accPrvKey key (fromIntegral $ optAccount opts)
+        unless (isJust accM) $ error $
+            "Index produced an invalid account: " ++ (show $ optAccount opts)
+        let acc      = fromJust accM
+            accFP    = bsToHex $ encode' $ xPrvFP $ runAccPrvKey acc
+            accID    = bsToHex $ encode' $ xPrvID $ runAccPrvKey acc
+        putStrLn $ "Account private key: " ++ (show $ optAccount opts)
+        putStrLn $ "fingerprint: " ++ (bsToString accFP)
+        putStrLn $ "ID: " ++ (bsToString accID)
 
 cmdGetAddr :: MasterKey -> Options -> IO ()
 cmdGetAddr key opts = do

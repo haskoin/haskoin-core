@@ -13,6 +13,7 @@ import Control.Exception
 
 import Data.Maybe
 import Data.Char
+import Data.Word
 import qualified Data.ByteString as BS
 
 import Haskoin.Wallet
@@ -21,7 +22,7 @@ import Haskoin.Util
 
 data Options = Options
     { optCount    :: Int
-    , optIndex    :: Int
+    , optIndex    :: Word32
     , optInternal :: Bool
     , optAccount  :: Int
     , optMaster   :: Bool
@@ -281,12 +282,8 @@ cmdAddress key opts
         let key1 = fromJust $ optKey1 opts
             key2 = fromJust $ optKey2 opts
             acc  = fromJust accM
-            f    = if optInternal opts then intPubKeys3 else extPubKeys3
-            pub  = take (optCount opts) $ 
-                       f acc key1 key2 (fromIntegral $ optIndex opts)
-            fst3 (x,_,_) = x
-            beg  = xPubChild $ runAddrPubKey $ fst3 $ head pub
-            end  = xPubChild $ runAddrPubKey $ fst3 $ last pub
+            f    = if optInternal opts then intTakeIndex3 else extTakeIndex3
+            (pub,beg,end) = f acc key1 key2 (optIndex opts) (optCount opts)
             fmap (x,y,z) = addrToBase58 $ scriptAddr $ buildMulSig3 
                 (xPubKey $ runAddrPubKey x) 
                 (xPubKey $ runAddrPubKey y) 
@@ -304,11 +301,8 @@ cmdAddress key opts
             "Index produced an invalid account: " ++ (show $ optAccount opts)
         let key1 = fromJust $ optKey1 opts
             acc  = fromJust accM
-            f    = if optInternal opts then intPubKeys2 else extPubKeys2
-            pub  = take (optCount opts) $ 
-                       f acc key1 (fromIntegral $ optIndex opts)
-            beg  = xPubChild $ runAddrPubKey $ fst $ head pub
-            end  = xPubChild $ runAddrPubKey $ fst $ last pub
+            f    = if optInternal opts then intTakeIndex2 else extTakeIndex2
+            (pub,beg,end) = f acc key1 (optIndex opts) (optCount opts)
             fmap (x,y) = addrToBase58 $ scriptAddr $ buildMulSig2 
                 (xPubKey $ runAddrPubKey x) (xPubKey $ runAddrPubKey y)
             add  = map fmap pub

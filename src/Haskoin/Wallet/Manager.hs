@@ -25,6 +25,10 @@ module Haskoin.Wallet.Manager
 , extPubKeys3
 , intPubKeys2
 , intPubKeys3
+, extTakeIndex2
+, extTakeIndex3
+, intTakeIndex2
+, intTakeIndex3
 ) where
 
 import Control.Applicative
@@ -135,6 +139,9 @@ intPubKeys (AccPubKey par) i = map AddrPubKey $ pubSubKeys intKey i
 
 {- MultiSig -}
 
+fst3 :: (a,b,c) -> a
+fst3 (a,b,c) = a
+
 -- 2 of 2 multisig (external chain)
 extPubKeys2 :: AccPubKey -> XPubKey -> KeyIndex 
             -> [(AddrPubKey, AddrPubKey)]
@@ -142,6 +149,13 @@ extPubKeys2 a p1 i = map f $ pubSubKeys2 extKey1 extKey2 i
     where extKey1 = fromJust $ pubSubKey (runAccPubKey a) 0
           extKey2 = fromJust $ pubSubKey p1 0
           f (a,b) = (AddrPubKey a, AddrPubKey b)
+
+extTakeIndex2 :: AccPubKey -> XPubKey -> KeyIndex -> Int
+              -> ([(AddrPubKey, AddrPubKey)], KeyIndex, KeyIndex)
+extTakeIndex2 a p1 i c = (res,beg,end)
+    where res = take c $ extPubKeys2 a p1 i
+          beg = xPubChild $ runAddrPubKey $ fst $ head res
+          end = xPubChild $ runAddrPubKey $ fst $ last res
 
 -- 2 of 3 multisig (external chain)
 extPubKeys3 :: AccPubKey -> XPubKey -> XPubKey -> KeyIndex 
@@ -152,6 +166,13 @@ extPubKeys3 a p1 p2 i = map f $ pubSubKeys3 extKey1 extKey2 extKey3 i
           extKey3   = fromJust $ pubSubKey p2 0
           f (a,b,c) = (AddrPubKey a, AddrPubKey b, AddrPubKey c)
 
+extTakeIndex3 :: AccPubKey -> XPubKey -> XPubKey -> KeyIndex -> Int
+              -> ([(AddrPubKey, AddrPubKey, AddrPubKey)], KeyIndex, KeyIndex)
+extTakeIndex3 a p1 p2 i c = (res,beg,end)
+    where res = take c $ extPubKeys3 a p1 p2 i
+          beg = xPubChild $ runAddrPubKey $ fst3 $ head res
+          end = xPubChild $ runAddrPubKey $ fst3 $ last res
+
 -- 2 of 2 multisig (internal chain)
 intPubKeys2 :: AccPubKey -> XPubKey -> KeyIndex 
             -> [(AddrPubKey, AddrPubKey)]
@@ -159,6 +180,13 @@ intPubKeys2 a p1 i = map f $ pubSubKeys2 intKey1 intKey2 i
     where intKey1 = fromJust $ pubSubKey (runAccPubKey a) 1
           intKey2 = fromJust $ pubSubKey p1 1
           f (a,b) = (AddrPubKey a, AddrPubKey b)
+
+intTakeIndex2 :: AccPubKey -> XPubKey -> KeyIndex -> Int
+              -> ([(AddrPubKey, AddrPubKey)], KeyIndex, KeyIndex)
+intTakeIndex2 a p1 i c = (res,beg,end)
+    where res = take c $ intPubKeys2 a p1 i
+          beg = xPubChild $ runAddrPubKey $ fst $ head res
+          end = xPubChild $ runAddrPubKey $ fst $ last res
 
 -- 2 of 3 multisig (internal chain)
 intPubKeys3 :: AccPubKey -> XPubKey -> XPubKey -> KeyIndex 
@@ -168,5 +196,12 @@ intPubKeys3 a p1 p2 i = map f $ pubSubKeys3 intKey1 intKey2 intKey3 i
           intKey2   = fromJust $ pubSubKey p1 1
           intKey3   = fromJust $ pubSubKey p2 1
           f (a,b,c) = (AddrPubKey a, AddrPubKey b, AddrPubKey c)
+
+intTakeIndex3 :: AccPubKey -> XPubKey -> XPubKey -> KeyIndex -> Int
+              -> ([(AddrPubKey, AddrPubKey, AddrPubKey)], KeyIndex, KeyIndex)
+intTakeIndex3 a p1 p2 i c = (res,beg,end)
+    where res = take c $ intPubKeys3 a p1 p2 i
+          beg = xPubChild $ runAddrPubKey $ fst3 $ head res
+          end = xPubChild $ runAddrPubKey $ fst3 $ last res
 
 

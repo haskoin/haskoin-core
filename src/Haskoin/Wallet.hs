@@ -55,6 +55,10 @@ module Haskoin.Wallet
 , extPubKeys3
 , intPubKeys2
 , intPubKeys3
+, extTakeIndex2
+, extTakeIndex3
+, intTakeIndex2
+, intTakeIndex3
 
 -- Tx module
 , buildMulSig2

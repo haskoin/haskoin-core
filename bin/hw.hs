@@ -23,7 +23,10 @@ data Options = Options
     { optCount    :: Int
     , optIndex    :: Int
     , optInternal :: Bool
-    , optAccount  :: Int , optMaster   :: Bool
+    , optAccount  :: Int
+    , optMaster   :: Bool
+    , optKey1     :: Maybe XPubKey
+    , optKey2     :: Maybe XPubKey
     , optHelp     :: Bool
     , optVersion  :: Bool
     } deriving (Eq, Show)
@@ -34,6 +37,8 @@ defaultOptions = Options
     , optInternal = False
     , optAccount  = 0
     , optMaster   = False
+    , optKey1     = Nothing
+    , optKey2     = Nothing
     , optHelp     = False
     , optVersion  = False
     } 
@@ -54,45 +59,74 @@ strToCmd str = case str of
     "dumpwif"     -> CmdDumpWIF
     _ -> error $ "Invalid command: " ++ str
 
-options :: [OptDescr (Options -> Options)]
+options :: [OptDescr (Options -> IO Options)]
 options =
     [ Option ['c'] ["count"] (ReqArg parseCount "INT") $
         "Address generation count. Implies address command"
     , Option ['i'] ["index"] (ReqArg parseIndex "INT") $
         "Address key index. Implies address ot dumpwif command"
     , Option ['N'] ["internal"]
-        (NoArg $ \opts -> opts{ optInternal = True }) $
+        (NoArg $ \opts -> return opts{ optInternal = True }) $
         "Use internal address chain. Implies address or dumpwif command"
     , Option ['a'] ["account"] (ReqArg parseAccount "INT") $
         "Account index to use in your command"
     , Option ['m'] ["master"]
-        (NoArg $ \opts -> opts{ optMaster = True }) $
+        (NoArg $ \opts -> return opts{ optMaster = True }) $
         "Use the master key. Implies dumpkey or fingerprint command"
+    , Option [] ["key1"] (OptArg parseKey1 "FILE") $
+        "First additional multisignature key. Implies address command"
+    , Option [] ["key2"] (OptArg parseKey2 "FILE") $
+        "Second additional multisignature key. Implies address command"
     , Option ['h'] ["help"]
-        (NoArg $ \opts -> opts{ optHelp = True }) $
+        (NoArg $ \opts -> return opts{ optHelp = True }) $
         "Display this help message"
     , Option ['v'] ["version"]
-        (NoArg $ \opts -> opts{ optVersion = True }) $
+        (NoArg $ \opts -> return opts{ optVersion = True }) $
         "Display wallet version information"
     ]
 
-parseCount :: String -> Options -> Options
+parseCount :: String -> Options -> IO Options
 parseCount s opts 
-    | res > 0   = opts{ optCount = res }
+    | res > 0   = return opts{ optCount = res }
     | otherwise = error $ "Invalid count option: " ++ s
     where res = read s
 
-parseIndex :: String -> Options -> Options
+parseIndex :: String -> Options -> IO Options
 parseIndex s opts 
-    | res >= 0 && res < 0x80000000 = opts{ optIndex = res }
+    | res >= 0 && res < 0x80000000 = return opts{ optIndex = res }
     | otherwise = error $ "Invalid index option: " ++ s
     where res = read s
 
-parseAccount :: String -> Options -> Options
+parseAccount :: String -> Options -> IO Options
 parseAccount s opts 
-    | res >= 0 && res < 0x80000000 = opts{ optAccount = res }
+    | res >= 0 && res < 0x80000000 = return opts{ optAccount = res }
     | otherwise = error $ "Invalid account option: " ++ s
     where res = read s
+
+parseKey1 :: Maybe FilePath -> Options -> IO Options
+parseKey1 f opts 
+    | isJust f = do
+        key <- parseKey $ fromJust f
+        return $ opts{ optKey1 = Just key }
+    | otherwise = return $ opts{ optKey1 = Nothing }
+
+parseKey2 :: Maybe FilePath -> Options -> IO Options
+parseKey2 f opts 
+    | isJust f = do
+        key <- parseKey $ fromJust f
+        return $ opts{ optKey2 = Just key }
+    | otherwise = return $ opts{ optKey1 = Nothing }
+
+parseKey :: FilePath -> IO XPubKey
+parseKey f = do
+    exists <- fileExist f 
+    unless exists $ error $ "File does not exist: " ++ f
+    keyString <- rstrip <$> readFile f
+    let keyM = xPubImport $ stringToBS keyString
+    unless (isJust keyM) $ error $
+        "Failed to parse multisig key from file: " ++ f
+    return $ fromJust keyM
+    where rstrip = reverse . dropWhile isSpace . reverse
  
 usageHeader :: String
 usageHeader = "Usage: hw COMMAND [OPTIONS...]"
@@ -122,7 +156,7 @@ main = do
     case getOpt Permute options args of
         (o,n,[]) -> do
             when (null o && null n) $ error usage
-            let opts = foldl (flip id) defaultOptions o
+            opts <- foldl (>>=) (return defaultOptions) o
             process opts (map strToCmd n)
         (_,_,msgs) ->
             error $ concat msgs ++ usageInfo usageHeader options
@@ -130,8 +164,8 @@ main = do
 -- Get Haskoin home directory
 getHome :: IO FilePath
 getHome = do
-    haskoinHome <- getEnv "HASKOIN_HOME"
-    if isJust haskoinHome
+    haskoinHome <- getEnv "HASKOIN_HOME" 
+    if isJust haskoinHome 
         then return $ fromJust haskoinHome
         else do
             home <- getEnv "HOME"
@@ -191,7 +225,7 @@ process opts cs
                 cmdDumpWIF key opts
             CmdAddress -> do
                 key <- loadKey dir
-                cmdGetAddr key opts
+                cmdAddress key opts
             
 cmdDumpKey :: MasterKey -> Options -> IO ()
 cmdDumpKey key opts
@@ -242,22 +276,50 @@ cmdFingerprint key opts
         putStrLn $ "fingerprint: " ++ (bsToString accFP)
         putStrLn $ "ID: " ++ (bsToString accID)
 
-cmdGetAddr :: MasterKey -> Options -> IO ()
-cmdGetAddr key opts = do
-    let accM = accPubKey key (fromIntegral $ optAccount opts)
-    unless (isJust accM) $ error $
-        "Index produced an invalid account: " ++ (show $ optAccount opts)
-    let f   = if optInternal opts then intPubKeys else extPubKeys
-        acc = fromJust accM
-        ps  = take (optCount opts) $ f acc (fromIntegral $ optIndex opts)
-        as  = map (addrToBase58 . addr) ps
-        beg = xPubChild $ runAddrPubKey $ head $ ps
-        end = xPubChild $ runAddrPubKey $ last $ ps
-    when (optInternal opts) $ putStr "(Internal Chain) "
-    putStr $ "Account: " ++ (show $ optAccount opts) ++ ", "
-    putStr $ "First index: " ++ (show beg) ++ ", "
-    putStrLn $ "Last index: " ++ (show end)
-    forM_ as (putStrLn . bsToString)
+cmdAddress :: MasterKey -> Options -> IO ()
+cmdAddress key opts
+    | isJust (optKey1 opts) && isJust (optKey2 opts) = do
+        let accM = accPubKey key (fromIntegral $ optAccount opts)
+        unless (isJust accM) $ error $
+            "Index produced an invalid account: " ++ (show $ optAccount opts)
+        let key1 = fromJust $ optKey1 opts
+            key2 = fromJust $ optKey2 opts
+            acc  = fromJust accM
+            f    = if optInternal opts then intPubKeys3 else extPubKeys3
+            scr  = f acc key1 key2 (fromIntegral $ optIndex opts)
+            add  = map (addrToBase58 . scriptAddr) $ take (optCount opts) $ scr
+        when (optInternal opts) $ putStr "(Internal Chain) "
+        putStr $ "Account: " ++ (show $ optAccount opts) ++ ", "
+        putStrLn "2 of 3 multisig addresses"
+        forM_ add (putStrLn . bsToString)
+    | isJust (optKey1 opts) = do
+        let accM = accPubKey key (fromIntegral $ optAccount opts)
+        unless (isJust accM) $ error $
+            "Index produced an invalid account: " ++ (show $ optAccount opts)
+        let key1 = fromJust $ optKey1 opts
+            acc  = fromJust accM
+            f    = if optInternal opts then intPubKeys2 else extPubKeys2
+            scr  = f acc key1 (fromIntegral $ optIndex opts)
+            add  = map (addrToBase58 . scriptAddr) $ take (optCount opts) $ scr
+        when (optInternal opts) $ putStr "(Internal Chain) "
+        putStr $ "Account: " ++ (show $ optAccount opts) ++ ", "
+        putStrLn "2 of 2 multisig addresses"
+        forM_ add (putStrLn . bsToString)
+    | otherwise = do
+        let accM = accPubKey key (fromIntegral $ optAccount opts)
+        unless (isJust accM) $ error $
+            "Index produced an invalid account: " ++ (show $ optAccount opts)
+        let f   = if optInternal opts then intPubKeys else extPubKeys
+            acc = fromJust accM
+            pub = take (optCount opts) $ f acc (fromIntegral $ optIndex opts)
+            add  = map (addrToBase58 . addr) pub
+            beg = xPubChild $ runAddrPubKey $ head pub
+            end = xPubChild $ runAddrPubKey $ last pub
+        when (optInternal opts) $ putStr "(Internal Chain) "
+        putStr $ "Account: " ++ (show $ optAccount opts) ++ ", "
+        putStr $ "First index: " ++ (show beg) ++ ", "
+        putStrLn $ "Last index: " ++ (show end)
+        forM_ add (putStrLn . bsToString)
 
 cmdInit :: FilePath -> IO ()
 cmdInit dir = do

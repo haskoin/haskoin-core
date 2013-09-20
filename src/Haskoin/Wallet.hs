@@ -57,6 +57,8 @@ module Haskoin.Wallet
 , intPubKeys3
 
 -- Tx module
+, buildMulSig2
+, buildMulSig3
 , scriptAddr
 , Script
 

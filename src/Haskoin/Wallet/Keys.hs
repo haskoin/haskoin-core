@@ -117,16 +117,18 @@ pubSubKeys k i = mapMaybe (pubSubKey k) [i..0x7fffffff]
 primeSubKeys :: XPrvKey -> Word32 -> [XPrvKey]
 primeSubKeys k i = mapMaybe (primeSubKey k) [i..0x7fffffff]
 
-pubSubKeys2 :: XPubKey -> XPubKey -> Word32 -> [Script]
+pubSubKeys2 :: XPubKey -> XPubKey -> Word32 
+            -> [(XPubKey, XPubKey)]
 pubSubKeys2 par1 par2 i = mapMaybe (f par1 par2) [i..0x7fffffff]
-    where f k1 k2 x = buildMulSig2 <$> (xPubKey <$> pubSubKey k1 x)
-                                   <*> (xPubKey <$> pubSubKey k2 x)
+    where f k1 k2 x = (,) <$> (pubSubKey k1 x)
+                          <*> (pubSubKey k2 x)
 
-pubSubKeys3 :: XPubKey -> XPubKey -> XPubKey -> Word32 -> [Script]
+pubSubKeys3 :: XPubKey -> XPubKey -> XPubKey -> Word32 
+            -> [(XPubKey, XPubKey, XPubKey)]
 pubSubKeys3 par1 par2 par3 i = mapMaybe (f par1 par2 par3) [i..0x7fffffff]
-    where f k1 k2 k3 x = buildMulSig3 <$> (xPubKey <$> pubSubKey k1 x)
-                                      <*> (xPubKey <$> pubSubKey k2 x)
-                                      <*> (xPubKey <$> pubSubKey k3 x)
+    where f k1 k2 k3 x = (,,) <$> (pubSubKey k1 x)
+                              <*> (pubSubKey k2 x)
+                              <*> (pubSubKey k3 x)
 
 guardIndex :: Word32 -> Maybe ()
 guardIndex child = guard $ child >= 0 && child < 0x80000000

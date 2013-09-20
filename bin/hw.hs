@@ -123,7 +123,7 @@ parseKey f = do
         "Failed to parse multisig key from file: " ++ f
     return $ fromJust keyM
     where rstrip = reverse . dropWhile isSpace . reverse
- 
+
 usageHeader :: String
 usageHeader = "Usage: hw COMMAND [OPTIONS...]"
 
@@ -282,11 +282,21 @@ cmdAddress key opts
             key2 = fromJust $ optKey2 opts
             acc  = fromJust accM
             f    = if optInternal opts then intPubKeys3 else extPubKeys3
-            scr  = f acc key1 key2 (fromIntegral $ optIndex opts)
-            add  = map (addrToBase58 . scriptAddr) $ take (optCount opts) $ scr
+            pub  = take (optCount opts) $ 
+                       f acc key1 key2 (fromIntegral $ optIndex opts)
+            fst3 (x,_,_) = x
+            beg  = xPubChild $ runAddrPubKey $ fst3 $ head pub
+            end  = xPubChild $ runAddrPubKey $ fst3 $ last pub
+            fmap (x,y,z) = addrToBase58 $ scriptAddr $ buildMulSig3 
+                (xPubKey $ runAddrPubKey x) 
+                (xPubKey $ runAddrPubKey y) 
+                (xPubKey $ runAddrPubKey z)
+            add  = map fmap pub
         when (optInternal opts) $ putStr "(Internal Chain) "
+        putStr "(2 of 3 multisig) "
         putStr $ "Account: " ++ (show $ optAccount opts) ++ ", "
-        putStrLn "2 of 3 multisig addresses"
+        putStr $ "First index: " ++ (show beg) ++ ", "
+        putStrLn $ "Last index: " ++ (show end)
         forM_ add (putStrLn . bsToString)
     | isJust (optKey1 opts) = do
         let accM = accPubKey key (fromIntegral $ optAccount opts)
@@ -295,11 +305,18 @@ cmdAddress key opts
         let key1 = fromJust $ optKey1 opts
             acc  = fromJust accM
             f    = if optInternal opts then intPubKeys2 else extPubKeys2
-            scr  = f acc key1 (fromIntegral $ optIndex opts)
-            add  = map (addrToBase58 . scriptAddr) $ take (optCount opts) $ scr
+            pub  = take (optCount opts) $ 
+                       f acc key1 (fromIntegral $ optIndex opts)
+            beg  = xPubChild $ runAddrPubKey $ fst $ head pub
+            end  = xPubChild $ runAddrPubKey $ fst $ last pub
+            fmap (x,y) = addrToBase58 $ scriptAddr $ buildMulSig2 
+                (xPubKey $ runAddrPubKey x) (xPubKey $ runAddrPubKey y)
+            add  = map fmap pub
         when (optInternal opts) $ putStr "(Internal Chain) "
+        putStr "(2 of 2 multisig) "
         putStr $ "Account: " ++ (show $ optAccount opts) ++ ", "
-        putStrLn "2 of 2 multisig addresses"
+        putStr $ "First index: " ++ (show beg) ++ ", "
+        putStrLn $ "Last index: " ++ (show end)
         forM_ add (putStrLn . bsToString)
     | otherwise = do
         let accM = accPubKey key (fromIntegral $ optAccount opts)

@@ -136,29 +136,37 @@ intPubKeys (AccPubKey par) i = map AddrPubKey $ pubSubKeys intKey i
 {- MultiSig -}
 
 -- 2 of 2 multisig (external chain)
-extPubKeys2 :: AccPubKey -> XPubKey -> KeyIndex -> [Script]
-extPubKeys2 a p1 i = pubSubKeys2 extKey1 extKey2 i
+extPubKeys2 :: AccPubKey -> XPubKey -> KeyIndex 
+            -> [(AddrPubKey, AddrPubKey)]
+extPubKeys2 a p1 i = map f $ pubSubKeys2 extKey1 extKey2 i
     where extKey1 = fromJust $ pubSubKey (runAccPubKey a) 0
           extKey2 = fromJust $ pubSubKey p1 0
+          f (a,b) = (AddrPubKey a, AddrPubKey b)
 
 -- 2 of 3 multisig (external chain)
-extPubKeys3 :: AccPubKey -> XPubKey -> XPubKey -> KeyIndex -> [Script]
-extPubKeys3 a p1 p2 i = pubSubKeys3 extKey1 extKey2 extKey3 i
-    where extKey1 = fromJust $ pubSubKey (runAccPubKey a) 0
-          extKey2 = fromJust $ pubSubKey p1 0
-          extKey3 = fromJust $ pubSubKey p2 0
+extPubKeys3 :: AccPubKey -> XPubKey -> XPubKey -> KeyIndex 
+            -> [(AddrPubKey, AddrPubKey, AddrPubKey)]
+extPubKeys3 a p1 p2 i = map f $ pubSubKeys3 extKey1 extKey2 extKey3 i
+    where extKey1   = fromJust $ pubSubKey (runAccPubKey a) 0
+          extKey2   = fromJust $ pubSubKey p1 0
+          extKey3   = fromJust $ pubSubKey p2 0
+          f (a,b,c) = (AddrPubKey a, AddrPubKey b, AddrPubKey c)
 
 -- 2 of 2 multisig (internal chain)
-intPubKeys2 :: AccPubKey -> XPubKey -> KeyIndex -> [Script]
-intPubKeys2 a p1 i = pubSubKeys2 intKey1 intKey2 i
+intPubKeys2 :: AccPubKey -> XPubKey -> KeyIndex 
+            -> [(AddrPubKey, AddrPubKey)]
+intPubKeys2 a p1 i = map f $ pubSubKeys2 intKey1 intKey2 i
     where intKey1 = fromJust $ pubSubKey (runAccPubKey a) 1
           intKey2 = fromJust $ pubSubKey p1 1
+          f (a,b) = (AddrPubKey a, AddrPubKey b)
 
 -- 2 of 3 multisig (internal chain)
-intPubKeys3 :: AccPubKey -> XPubKey -> XPubKey -> KeyIndex -> [Script]
-intPubKeys3 a p1 p2 i = pubSubKeys3 intKey1 intKey2 intKey3 i
-    where intKey1 = fromJust $ pubSubKey (runAccPubKey a) 1
-          intKey2 = fromJust $ pubSubKey p1 1
-          intKey3 = fromJust $ pubSubKey p2 1
+intPubKeys3 :: AccPubKey -> XPubKey -> XPubKey -> KeyIndex 
+            -> [(AddrPubKey, AddrPubKey, AddrPubKey)]
+intPubKeys3 a p1 p2 i = map f $ pubSubKeys3 intKey1 intKey2 intKey3 i
+    where intKey1   = fromJust $ pubSubKey (runAccPubKey a) 1
+          intKey2   = fromJust $ pubSubKey p1 1
+          intKey3   = fromJust $ pubSubKey p2 1
+          f (a,b,c) = (AddrPubKey a, AddrPubKey b, AddrPubKey c)
 
 

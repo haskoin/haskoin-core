@@ -73,9 +73,9 @@ options =
     , Option ['m'] ["master"]
         (NoArg $ \opts -> return opts{ optMaster = True }) $
         "Use the master key. Implies dumpkey or fingerprint command"
-    , Option [] ["key1"] (OptArg parseKey1 "FILE") $
+    , Option [] ["key1"] (ReqArg parseKey1 "FILE") $
         "First additional multisignature key. Implies address command"
-    , Option [] ["key2"] (OptArg parseKey2 "FILE") $
+    , Option [] ["key2"] (ReqArg parseKey2 "FILE") $
         "Second additional multisignature key. Implies address command"
     , Option ['h'] ["help"]
         (NoArg $ \opts -> return opts{ optHelp = True }) $
@@ -103,19 +103,15 @@ parseAccount s opts
     | otherwise = error $ "Invalid account option: " ++ s
     where res = read s
 
-parseKey1 :: Maybe FilePath -> Options -> IO Options
-parseKey1 f opts 
-    | isJust f = do
-        key <- parseKey $ fromJust f
-        return $ opts{ optKey1 = Just key }
-    | otherwise = return $ opts{ optKey1 = Nothing }
+parseKey1 :: FilePath -> Options -> IO Options
+parseKey1 f opts = do
+    key <- parseKey f
+    return $ opts{ optKey1 = Just key }
 
-parseKey2 :: Maybe FilePath -> Options -> IO Options
-parseKey2 f opts 
-    | isJust f = do
-        key <- parseKey $ fromJust f
-        return $ opts{ optKey2 = Just key }
-    | otherwise = return $ opts{ optKey1 = Nothing }
+parseKey2 :: FilePath -> Options -> IO Options
+parseKey2 f opts = do
+    key <- parseKey f
+    return $ opts{ optKey2 = Just key }
 
 parseKey :: FilePath -> IO XPubKey
 parseKey f = do

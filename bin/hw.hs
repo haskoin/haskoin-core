@@ -17,6 +17,7 @@ import Data.Word
 import qualified Data.ByteString as BS
 
 import Haskoin.Wallet
+import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util
 
@@ -284,7 +285,8 @@ cmdAddress key opts
             acc  = fromJust accM
             f    = if optInternal opts then intTakeIndex3 else extTakeIndex3
             (pub,beg,end) = f acc key1 key2 (optIndex opts) (optCount opts)
-            fmap (x,y,z) = addrToBase58 $ scriptAddr $ buildMulSig3 
+            fmap (x,y,z) = addrToBase58 $ scriptAddr $ PayMulSig3 
+                TwoOfThree
                 (xPubKey $ runAddrPubKey x) 
                 (xPubKey $ runAddrPubKey y) 
                 (xPubKey $ runAddrPubKey z)
@@ -303,8 +305,10 @@ cmdAddress key opts
             acc  = fromJust accM
             f    = if optInternal opts then intTakeIndex2 else extTakeIndex2
             (pub,beg,end) = f acc key1 (optIndex opts) (optCount opts)
-            fmap (x,y) = addrToBase58 $ scriptAddr $ buildMulSig2 
-                (xPubKey $ runAddrPubKey x) (xPubKey $ runAddrPubKey y)
+            fmap (x,y) = addrToBase58 $ scriptAddr $ PayMulSig2 
+                TwoOfTwo
+                (xPubKey $ runAddrPubKey x) 
+                (xPubKey $ runAddrPubKey y)
             add  = map fmap pub
         when (optInternal opts) $ putStr "(Internal Chain) "
         putStr "(2 of 2 multisig) "

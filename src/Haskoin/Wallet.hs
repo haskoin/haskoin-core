@@ -60,16 +60,8 @@ module Haskoin.Wallet
 , intTakeIndex2
 , intTakeIndex3
 
--- Tx module
-, buildMulSig2
-, buildMulSig3
-, scriptAddr
-, Script
-
 ) where
 
 import Haskoin.Wallet.Keys
 import Haskoin.Wallet.Manager
-import Haskoin.Wallet.Tx
-import Haskoin.Protocol (Script)
 

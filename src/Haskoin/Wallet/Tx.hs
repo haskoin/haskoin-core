@@ -16,9 +16,9 @@ import Haskoin.Util
 buildTx :: [OutPoint] -> [(Address,Word64)] -> Tx
 buildTx xs ys = Tx 1 is os 0
      where is = map fi xs
-           fi outPoint = TxIn outPoint (ScriptInput []) maxBound
+           fi outPoint = TxIn outPoint (Script []) maxBound
            os = map fo ys
-           fo (a,v) = TxOut v (PayPubKeyHash a)
+           fo (a,v) = TxOut v (encodeOutput $ PayPKHash a)
 
 {- Sign a pubKeyHash tx -}
 
@@ -26,9 +26,9 @@ signPKHash :: MonadIO m => Tx -> ScriptOutput -> SigHash -> PrvKey -> Int
            -> SecretT m Tx
 signPKHash tx out sh prv i = do
     sig <- signMsg (txSigHash tx out sh i) prv
-    let tsig = TxSignature sig sh
-    return $ tx{ txIn = updateIndex i (txIn tx) (f tsig) }
-    where f s ti = ti{ scriptInput = spendPKHash s $ derivePubKey prv }
+    return tx{ txIn = updateIndex i (txIn tx) (f $ TxSignature sig sh) }
+    where f s ti = ti{ scriptInput = encodeInput $ SpendPKHash s pub }
+          pub = derivePubKey prv
     
 {- Build tx signature hashes -}
 
@@ -36,7 +36,7 @@ txSigHashes :: Tx -> [ScriptOutput] -> SigHash -> [Hash256]
 txSigHashes tx os sh 
     | length os /= length (txIn tx) = error $
         "txSigHashes: Invalid [ScriptOutput] length: " ++ (show $ length os)
-    | otherwise = map (\(o,i) -> txSigHash tx o sh i) $ zip os [0..]
+    | otherwise = [txSigHash tx o sh i | (o,i) <- zip os [0..]]
 
 txSigHash :: Tx -> ScriptOutput -> SigHash -> Int -> Hash256
 txSigHash tx@(Tx _ is os _) out sh i = doubleHash256 $ encode' newTx
@@ -50,12 +50,12 @@ buildInputs is out sh i
     | i < 0 || i >= length is = error $ 
         "buildInputs: index out of range: " ++ (show i)
     | sh `elem` [SigAllAcp, SigNoneAcp, SigSingleAcp] =
-            [current{ scriptInput = outputToInput out }]
+            current{ scriptInput = encodeOutput out } : []
     | sh == SigAll                   = map f $ zip is [0..]
     | sh `elem` [SigNone, SigSingle] = map (f . g) $ zip is [0..]
     where current = is !! i
-          f (ti,j) | i == j    = ti{ scriptInput = outputToInput out }
-                   | otherwise = ti{ scriptInput = ScriptInput [] }
+          f (ti,j) | i == j    = ti{ scriptInput = encodeOutput out }
+                   | otherwise = ti{ scriptInput = Script [] }
           g (ti,j) | i == j    = (ti,j)
                    | otherwise = (ti{ txInSequence = 0 },j)
 
@@ -67,5 +67,5 @@ buildOutputs os sh i
     | sh `elem` [SigAll, SigAllAcp]       = os
     | sh `elem` [SigNone, SigNoneAcp]     = []
     | sh `elem` [SigSingle, SigSingleAcp] = buffer ++ [os !! i]
-    where buffer = replicate i $ TxOut (-1) $ PayNonStd []
+    where buffer = replicate i $ TxOut (-1) $ Script []
 

@@ -14,8 +14,9 @@ import Data.Binary.Get
 import Data.Binary.Put
 import qualified Data.ByteString as BS
 
-import Haskoin.Wallet.Arbitrary
 import Haskoin.Wallet
+import Haskoin.Wallet.ScriptParser
+import Haskoin.Wallet.Arbitrary
 import Haskoin.Util
 
 tests :: [Test]
@@ -27,15 +28,16 @@ tests =
         , testProperty "fromB58( toB58(prvKey) ) = prvKey" b58PrvKey
         , testProperty "fromB58( toB58(pubKey) ) = pubKey" b58PubKey
         ]
-    , testGroup "Scripts"
-        [ testProperty "ScriptOutput from/to [ScriptOp]" scriptOutputOps
-        , testProperty "parse PubKey Script" testParsePK
-        , testProperty "parse PubKeyHash Script" testParsePKHash
-        , testProperty "parse Sig2 Script" testParseSig2
-        , testProperty "parse Sig3 Script" testParseSig3
-        , testProperty "parse ScriptHash Script" testParseSHash
+    , testGroup "Script Parser"
+        [ testProperty "decode( encode(sighash) ) = sighash" binSigHash
+        , testProperty "decode( encode(tsig) ) = tsig" binTxSig
+        , testProperty "encode decode ScriptOutput" testScriptOutput
+        , testProperty "encode decode ScriptInput" testScriptInput
+        , testProperty "encode decode ScriptHashInput" testScriptHashInput
         ]
     ]
+
+{- HDW Extended Keys -}
 
 subkeyTest :: XPrvKey -> Word32 -> Bool
 subkeyTest k i = fromJust $ liftM2 (==) 
@@ -54,24 +56,22 @@ b58PrvKey k = (fromJust $ xPrvImport $ xPrvExport k) == k
 b58PubKey :: XPubKey -> Bool
 b58PubKey k = (fromJust $ xPubImport $ xPubExport k) == k
 
-scriptOutputOps :: ScriptOutput -> Bool
-scriptOutputOps so = (scriptOpsToOutput $ outputToScriptOps so) == so
+{- Script Parser -}
 
-testParsePK :: TxSignature -> Bool
-testParsePK s = (fromJust $ parsePK $ spendPK s) == s
+binSigHash :: SigHash -> Bool
+binSigHash sh = (decode' $ encode' sh) == sh
 
-testParsePKHash :: TxSignature -> PubKey -> Bool
-testParsePKHash s p = 
-    (fromJust $ parsePKHash $ spendPKHash s p) == (s,p)
+binTxSig :: TxSignature -> Bool
+binTxSig ts = (decode' $ encode' ts) == ts
 
-testParseSig2 :: TxSignature -> TxSignature -> Bool
-testParseSig2 s1 s2 = 
-    (fromJust $ parseSig2 $ spendSig2 s1 s2) == (s1,s2)
+testScriptOutput :: ScriptOutput -> Bool
+testScriptOutput so = (decodeOutput $ encodeOutput so) == so
 
-testParseSig3 :: TxSignature -> TxSignature -> TxSignature -> Bool
-testParseSig3 s1 s2 s3 = 
-    (fromJust $ parseSig3 $ spendSig3 s1 s2 s3) == (s1,s2,s3)
+testScriptInput :: ScriptInput -> Bool
+testScriptInput si = (decodeInput $ encodeInput si) == si
 
-testParseSHash :: ScriptInput -> ScriptOutput -> Bool
-testParseSHash si so = 
-    (fromJust $ parseSHash $ spendSHash si so) == (si,so)
+testScriptHashInput :: ScriptHashInput -> Bool
+testScriptHashInput sh = 
+    (fromJust $ decodeScriptHash $ encodeScriptHash sh) == sh
+
+

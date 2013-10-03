@@ -1,7 +1,10 @@
 module Haskoin.Wallet.Arbitrary where
 
 import Test.QuickCheck
+import Haskoin.Crypto.Arbitrary
+import Haskoin.Protocol.Arbitrary
 
+import Control.Monad
 import Control.Applicative
 
 import Data.Word
@@ -10,6 +13,7 @@ import qualified Data.ByteString as BS
 
 import Haskoin.Wallet
 import Haskoin.Wallet.Keys
+import Haskoin.Wallet.ScriptParser
 import Haskoin.Crypto
 
 instance Arbitrary XPrvKey where
@@ -17,7 +21,7 @@ instance Arbitrary XPrvKey where
                         <*> arbitrary
                         <*> arbitrary
                         <*> arbitrary
-                        <*> arbitrary
+                        <*> genPrvKeyC
 
 instance Arbitrary XPubKey where
     arbitrary = deriveXPubKey <$> arbitrary
@@ -42,20 +46,25 @@ instance Arbitrary SigHash where
 
 instance Arbitrary ScriptOutput where
     arbitrary = oneof 
-        [ PayPubKey <$> arbitrary
-        , (PayPubKeyHash . pubKeyAddr) <$> arbitrary 
+        [ PayPK <$> arbitrary
+        , (PayPKHash . pubKeyAddr) <$> arbitrary 
         , PayMulSig1 <$> arbitrary
         , PayMulSig2 <$> arbitrary <*> arbitrary <*> arbitrary
         , PayMulSig3 <$> arbitrary <*> arbitrary 
                      <*> arbitrary <*> arbitrary
         , (PayScriptHash . scriptAddr) <$> arbitrary
-        , PayNonStd <$> do
-            i <- choose (1,20)
-            vectorOf i arbitrary
+        , PayNonStd <$> arbitrary
         ]
 
 instance Arbitrary ScriptInput where
-    arbitrary = do
-        i <- choose (1,5)
-        ScriptInput <$> (vectorOf i arbitrary)
+    arbitrary = oneof
+        [ SpendSig1 <$> arbitrary
+        , SpendPKHash <$> arbitrary <*> arbitrary
+        , SpendSig2 <$> arbitrary <*> arbitrary
+        , SpendSig3 <$> arbitrary <*> arbitrary <*> arbitrary
+        , SpendNonStd <$> arbitrary
+        ]
+
+instance Arbitrary ScriptHashInput where
+    arbitrary = ScriptHashInput <$> arbitrary <*> arbitrary
 

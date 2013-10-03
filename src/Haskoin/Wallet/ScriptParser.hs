@@ -13,6 +13,7 @@ module Haskoin.Wallet.ScriptParser
 , decodeOutput
 , encodeScriptHash
 , decodeScriptHash
+, encodeSigHash32
 ) where
 
 import Control.Monad
@@ -39,7 +40,7 @@ data SigHash = SigAll
 instance Binary SigHash where
 
     get = do
-        w <- getWord32be
+        w <- getWord8
         case w of 0x01 -> return SigAll
                   0x02 -> return SigNone
                   0x03 -> return SigSingle
@@ -48,13 +49,16 @@ instance Binary SigHash where
                   0x83 -> return SigSingleAcp
                   _    -> fail "Non-canonical signature: unknown hashtype byte"
 
-    put sh = putWord32be $ case sh of
+    put sh = putWord8 $ case sh of
         SigAll       -> 0x01
         SigNone      -> 0x02
         SigSingle    -> 0x03
         SigAllAcp    -> 0x81
         SigNoneAcp   -> 0x82
         SigSingleAcp -> 0x83
+
+encodeSigHash32 :: SigHash -> BS.ByteString
+encodeSigHash32 sh = encode' sh `BS.append` BS.pack [0,0,0]
 
 -- Signatures in scripts contain the signature hash type byte
 data TxSignature = TxSignature 
@@ -153,33 +157,40 @@ decodeOutput s = case runScript s of
     where def = PayNonStd s
 
 data ScriptInput = 
-      SpendSig1   { runSpendSig1      :: !TxSignature }
-    | SpendPKHash { runSpendPKHashSig :: !TxSignature 
-                  , runSpendPKHashKey :: !PubKey
-                  }
-    | SpendSig2   { runSpendSig1      :: !TxSignature 
-                  , runSpendSig2      :: !TxSignature
-                  }
-    | SpendSig3   { runSpendSig1      :: !TxSignature 
-                  , runSpendSig2      :: !TxSignature 
-                  , runSpendSig3      :: !TxSignature
-                  }
-    | SpendNonStd { runSpendNonStd    :: !Script }
+      SpendPK      { runSpendSig1      :: !TxSignature }
+    | SpendPKHash  { runSpendPKHashSig :: !TxSignature 
+                   , runSpendPKHashKey :: !PubKey
+                   }
+    | SpendMulSig1 { runSpendSig1      :: !TxSignature }
+    | SpendMulSig2 { runSpendSig1      :: !TxSignature 
+                   , runSpendSig2      :: !TxSignature
+                   }
+    | SpendMulSig3 { runSpendSig1      :: !TxSignature 
+                   , runSpendSig2      :: !TxSignature 
+                   , runSpendSig3      :: !TxSignature
+                   }
+    | SpendNonStd  { runSpendNonStd    :: !Script }
     deriving (Eq, Show)
 
 encodeInput :: ScriptInput -> Script
 encodeInput s = Script $ case s of
-    (SpendSig1 ts1) -> [OP_PUSHDATA $ encode' ts1]
+    (SpendPK s) -> [OP_PUSHDATA $ encode' s]
     (SpendPKHash ts p) -> 
         [ OP_PUSHDATA $ encode' ts
         , OP_PUSHDATA $ encode' p
         ]
-    (SpendSig2 ts1 ts2) -> 
-        [ OP_PUSHDATA $ encode' ts1
+    (SpendMulSig1 s) -> 
+        [ OP_FALSE -- OP_CHECKMULTISIG bug
+        , OP_PUSHDATA $ encode' s
+        ]
+    (SpendMulSig2 ts1 ts2) -> 
+        [ OP_FALSE -- OP_CHECKMULTISIG bug
+        , OP_PUSHDATA $ encode' ts1
         , OP_PUSHDATA $ encode' ts2
         ]
-    (SpendSig3 ts1 ts2 ts3) -> 
-        [ OP_PUSHDATA $ encode' ts1
+    (SpendMulSig3 ts1 ts2 ts3) -> 
+        [ OP_FALSE -- OP_CHECKMULTISIG bug
+        , OP_PUSHDATA $ encode' ts1
         , OP_PUSHDATA $ encode' ts2
         , OP_PUSHDATA $ encode' ts3
         ]
@@ -187,16 +198,18 @@ encodeInput s = Script $ case s of
 
 decodeInput :: Script -> ScriptInput
 decodeInput s = case runScript s of
-    [OP_PUSHDATA s] -> decodeEither s def SpendSig1
+    [OP_PUSHDATA s] -> decodeEither s def SpendPK
     [OP_PUSHDATA a, OP_PUSHDATA b] -> 
+        decodeEither a def $ \s -> 
+        decodeEither b def $ \p -> SpendPKHash s p
+    [OP_FALSE, OP_PUSHDATA s] -> decodeEither s def SpendMulSig1
+    [OP_FALSE, OP_PUSHDATA a, OP_PUSHDATA b] ->
         decodeEither a def $ \s1 -> 
-           if BS.head b == 0x30 
-               then decodeEither b def $ \s2 -> SpendSig2 s1 s2
-               else decodeEither b def $ \p  -> SpendPKHash s1 p
-    [OP_PUSHDATA a, OP_PUSHDATA b, OP_PUSHDATA c] ->
+        decodeEither b def $ \s2 -> SpendMulSig2 s1 s2
+    [OP_FALSE, OP_PUSHDATA a, OP_PUSHDATA b, OP_PUSHDATA c] ->
         decodeEither a def $ \s1 ->
         decodeEither b def $ \s2 ->
-        decodeEither c def $ \s3 -> SpendSig3 s1 s2 s3
+        decodeEither c def $ \s3 -> SpendMulSig3 s1 s2 s3
     _ -> def
     where def = SpendNonStd s
 

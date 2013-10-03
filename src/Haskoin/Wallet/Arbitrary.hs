@@ -58,10 +58,11 @@ instance Arbitrary ScriptOutput where
 
 instance Arbitrary ScriptInput where
     arbitrary = oneof
-        [ SpendSig1 <$> arbitrary
+        [ SpendPK <$> arbitrary
         , SpendPKHash <$> arbitrary <*> arbitrary
-        , SpendSig2 <$> arbitrary <*> arbitrary
-        , SpendSig3 <$> arbitrary <*> arbitrary <*> arbitrary
+        , SpendMulSig1 <$> arbitrary
+        , SpendMulSig2 <$> arbitrary <*> arbitrary
+        , SpendMulSig3 <$> arbitrary <*> arbitrary <*> arbitrary
         , SpendNonStd <$> arbitrary
         ]
 

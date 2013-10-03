@@ -30,6 +30,7 @@ tests =
         ]
     , testGroup "Script Parser"
         [ testProperty "decode( encode(sighash) ) = sighash" binSigHash
+        , testProperty "encodeSigHash32 is 4 bytes long" testEncodeSH32
         , testProperty "decode( encode(tsig) ) = tsig" binTxSig
         , testProperty "encode decode ScriptOutput" testScriptOutput
         , testProperty "encode decode ScriptInput" testScriptInput
@@ -60,6 +61,11 @@ b58PubKey k = (fromJust $ xPubImport $ xPubExport k) == k
 
 binSigHash :: SigHash -> Bool
 binSigHash sh = (decode' $ encode' sh) == sh
+
+testEncodeSH32 :: SigHash -> Bool
+testEncodeSH32 sh = BS.length bs == 4 && BS.head bs /= 0 && BS.tail bs == zs
+    where bs = encodeSigHash32 sh
+          zs = BS.pack [0,0,0]
 
 binTxSig :: TxSignature -> Bool
 binTxSig ts = (decode' $ encode' ts) == ts

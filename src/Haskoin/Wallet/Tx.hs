@@ -5,6 +5,7 @@ import Control.Monad.Trans (MonadIO)
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
+import qualified Data.ByteString as BS
 
 import Haskoin.Wallet.ScriptParser
 import Haskoin.Protocol
@@ -39,7 +40,8 @@ txSigHashes tx os sh
     | otherwise = [txSigHash tx o sh i | (o,i) <- zip os [0..]]
 
 txSigHash :: Tx -> ScriptOutput -> SigHash -> Int -> Hash256
-txSigHash tx@(Tx _ is os _) out sh i = doubleHash256 $ encode' newTx
+txSigHash tx@(Tx _ is os _) out sh i = 
+    doubleHash256 $ encode' newTx `BS.append` encodeSigHash32 sh
     where newTx = tx { txIn  = buildInputs is out sh i
                      , txOut = buildOutputs os sh i
                      }

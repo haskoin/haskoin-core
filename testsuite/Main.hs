@@ -7,7 +7,7 @@ import Test.Framework.Providers.HUnit
 import qualified Haskoin.Wallet.Tests (tests)
 import qualified Units (tests)
 
-main = defaultMain 
+main = defaultMain
     (  Haskoin.Wallet.Tests.tests 
     ++ Units.tests 
     )

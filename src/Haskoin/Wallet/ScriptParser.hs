@@ -7,6 +7,7 @@ module Haskoin.Wallet.ScriptParser
 , SigHash(..)
 , TxSignature(..)
 , scriptAddr
+, isCanonicalSig
 , encodeInput
 , decodeInput
 , encodeOutput
@@ -18,6 +19,7 @@ module Haskoin.Wallet.ScriptParser
 
 import Control.Monad
 
+import Data.Bits
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
@@ -69,6 +71,53 @@ data TxSignature = TxSignature
 instance Binary TxSignature where
     get = liftM2 TxSignature get get
     put (TxSignature s h) = put s >> put h
+
+-- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
+-- from function IsCanonicalSignature
+isCanonicalSig :: BS.ByteString -> Bool
+isCanonicalSig s = not $
+    -- Non-canonical signature: too short
+    (len < 9) ||
+    -- Non-canonical signature: too long
+    (len > 73) ||
+    -- Non-canonical signature: unknown hashtype byte
+    (hashtype < 1 || hashtype > 3) ||
+    -- Non-canonical signature: wrong type
+    (BS.index s 0 /= 0x30) ||
+    -- Non-canonical signature: wrong length marker
+    (BS.index s 1 /= len - 3) ||
+    -- Non-canonical signature: S length misplaced
+    (5 + rlen >= len) || 
+    -- Non-canonical signature: R+S length mismatch
+    (rlen + slen + 7 /= len) ||
+    -- Non-canonical signature: R value type mismatch
+    (BS.index s 2 /= 0x02) ||
+    -- Non-canonical signature: R length is zero
+    (rlen == 0) ||
+    -- Non-canonical signature: R value negative
+    (testBit (BS.index s 4) 7) ||
+    -- Non-canonical signature: R value excessively padded
+    (  rlen > 0 
+    && BS.index s 4 == 0 
+    && not (testBit (BS.index s 5) 7)
+    ) ||
+    -- Non-canonical signature: S value type mismatch
+    (BS.index s (fromIntegral rlen+4) /= 0x02) ||
+    -- Non-canonical signature: S length is zero
+    (slen == 0) ||
+    -- Non-canonical signature: S value negative
+    (testBit (BS.index s (fromIntegral rlen+6)) 7) ||
+    -- Non-canonical signature: S value excessively padded
+    (  slen > 0 
+    && BS.index s (fromIntegral rlen+6) == 0 
+    && not (testBit (BS.index s (fromIntegral rlen+7)) 7)
+    ) ||
+    -- Non-canonical signature: S value odd
+    (testBit (BS.index s (fromIntegral $ rlen+slen+5)) 0) 
+    where len = fromIntegral $ BS.length s
+          rlen = BS.index s 3
+          slen = BS.index s (fromIntegral rlen + 5)
+          hashtype = clearBit (BS.last s) 7
 
 data MulSig2Type = OneOfTwo | TwoOfTwo
     deriving (Eq, Show)
@@ -230,6 +279,7 @@ decodeScriptHash :: Script -> Maybe ScriptHashInput
 decodeScriptHash s@(Script ops)
     | length ops < 2 = Nothing
     | otherwise = case last ops of
+        -- Decode the script without the initial VarInt length
         (OP_PUSHDATA o) -> case runGetOrFail getScriptOps (toLazyBS o) of
             (Left _)          -> Nothing
             (Right (_,_,res)) -> 

@@ -43,9 +43,10 @@ import qualified Data.ByteString as BS
 
 import Haskoin.Util
     ( stringToBS
+    , bsToString
     , toStrictBS
     , encode'
-    , decodeOrFail'
+    , decodeEither
     )
 import Haskoin.Crypto
 import Haskoin.Protocol
@@ -166,28 +167,24 @@ xPubAddr :: XPubKey -> Address
 xPubAddr = pubKeyAddr . xPubKey
 
 -- Base 58 export
-xPrvExport :: XPrvKey -> BS.ByteString
-xPrvExport = encodeBase58Check . encode' 
+xPrvExport :: XPrvKey -> String
+xPrvExport = bsToString . encodeBase58Check . encode' 
 
-xPubExport :: XPubKey -> BS.ByteString
-xPubExport = encodeBase58Check . encode'
+xPubExport :: XPubKey -> String
+xPubExport = bsToString . encodeBase58Check . encode'
 
-xPrvImport :: BS.ByteString -> Maybe XPrvKey
-xPrvImport bs = do
-    bs' <- decodeBase58Check bs
-    case decodeOrFail' bs' of
-        (Left _)            -> Nothing
-        (Right (_, _, res)) -> Just res
+xPrvImport :: String -> Maybe XPrvKey
+xPrvImport str = do
+    bs <- decodeBase58Check $ stringToBS str
+    decodeEither bs Nothing Just
 
-xPubImport :: BS.ByteString -> Maybe XPubKey
-xPubImport bs = do
-    bs' <- decodeBase58Check bs
-    case decodeOrFail' bs' of
-        (Left _)            -> Nothing
-        (Right (_, _, res)) -> Just res
+xPubImport :: String -> Maybe XPubKey
+xPubImport str = do
+    bs <- decodeBase58Check $ stringToBS str
+    decodeEither bs Nothing Just
 
 -- Export to WIF format
-xPrvWIF :: XPrvKey -> BS.ByteString
+xPrvWIF :: XPrvKey -> String
 xPrvWIF = toWIF . xPrvKey
 
 instance Binary XPrvKey where

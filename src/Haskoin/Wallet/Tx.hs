@@ -1,5 +1,7 @@
 module Haskoin.Wallet.Tx where
 
+import Control.Monad
+import Control.Applicative
 import Control.Monad.Trans (MonadIO)
 
 import Data.Binary
@@ -14,12 +16,32 @@ import Haskoin.Util
 
 {- Build a new Tx -}
 
-buildTx :: [OutPoint] -> [(Address,Word64)] -> Tx
+-- Helper for pay to pubkey hash transactions
+-- Returns Nothing if the address String is badly formatted
+buildPKHashTx :: [OutPoint] -> [(String,Word64)] -> Maybe Tx
+buildPKHashTx xs ys = mapM f ys >>= return . (buildTx xs)
+    where f (s,v) = liftM2 (,) (base58ToAddr s >>= checkAddrType) (checkAmnt v)
+          checkAddrType a@(PubKeyAddress _) = Just $ PayPKHash a
+          checkAddrType   (ScriptAddress _) = Nothing
+          checkAmnt v | v <= 2100000000000000 = Just v
+                      | otherwise             = Nothing
+
+-- Helper for pay to script hash transactions
+-- Returns Nothing if the address String is badly formatted
+buildScriptHashTx :: [OutPoint] -> [(String,Word64)] -> Maybe Tx
+buildScriptHashTx xs ys = mapM f ys >>= return . (buildTx xs)
+    where f (s,v) = liftM2 (,) (base58ToAddr s >>= checkAddrType) (checkAmnt v)
+          checkAddrType a@(ScriptAddress _) = Just $ PayScriptHash a
+          checkAddrType   (PubKeyAddress _) = Nothing
+          checkAmnt v | v <= 2100000000000000 = Just v
+                      | otherwise             = Nothing
+
+buildTx :: [OutPoint] -> [(ScriptOutput,Word64)] -> Tx
 buildTx xs ys = Tx 1 is os 0
      where is = map fi xs
            fi outPoint = TxIn outPoint (Script []) maxBound
            os = map fo ys
-           fo (a,v) = TxOut v (encodeOutput $ PayPKHash a)
+           fo (o,v) = TxOut v (encodeOutput o)
 
 {- Sign a pubKeyHash tx -}
 

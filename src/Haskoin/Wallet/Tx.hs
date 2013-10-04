@@ -19,29 +19,27 @@ import Haskoin.Util
 -- Helper for pay to pubkey hash transactions
 -- Returns Nothing if the address String is badly formatted
 buildPKHashTx :: [OutPoint] -> [(String,Word64)] -> Maybe Tx
-buildPKHashTx xs ys = mapM f ys >>= return . (buildTx xs)
-    where f (s,v) = liftM2 (,) (base58ToAddr s >>= checkAddrType) (checkAmnt v)
+buildPKHashTx xs ys = mapM f ys >>= buildTx xs
+    where f (s,v) = liftM2 (,) (base58ToAddr s >>= checkAddrType) (Just v)
           checkAddrType a@(PubKeyAddress _) = Just $ PayPKHash a
           checkAddrType   (ScriptAddress _) = Nothing
-          checkAmnt v | v <= 2100000000000000 = Just v
-                      | otherwise             = Nothing
 
 -- Helper for pay to script hash transactions
 -- Returns Nothing if the address String is badly formatted
 buildScriptHashTx :: [OutPoint] -> [(String,Word64)] -> Maybe Tx
-buildScriptHashTx xs ys = mapM f ys >>= return . (buildTx xs)
-    where f (s,v) = liftM2 (,) (base58ToAddr s >>= checkAddrType) (checkAmnt v)
+buildScriptHashTx xs ys = mapM f ys >>= buildTx xs
+    where f (s,v) = liftM2 (,) (base58ToAddr s >>= checkAddrType) (Just v)
           checkAddrType a@(ScriptAddress _) = Just $ PayScriptHash a
           checkAddrType   (PubKeyAddress _) = Nothing
-          checkAmnt v | v <= 2100000000000000 = Just v
-                      | otherwise             = Nothing
 
-buildTx :: [OutPoint] -> [(ScriptOutput,Word64)] -> Tx
-buildTx xs ys = Tx 1 is os 0
-     where is = map fi xs
-           fi outPoint = TxIn outPoint (Script []) maxBound
-           os = map fo ys
-           fo (o,v) = TxOut v (encodeOutput o)
+buildTx :: [OutPoint] -> [(ScriptOutput,Word64)] -> Maybe Tx
+buildTx xs ys = Tx <$> (Just 1)
+                   <*> (Just $ map fi xs)
+                   <*> (mapM fo ys)
+                   <*> (Just 0)
+    where fi outPoint = TxIn outPoint (Script []) maxBound
+          fo (o,v) | v <= 2100000000000000 = Just $ TxOut v (encodeOutput o)
+                   | otherwise             = Nothing
 
 {- Sign a pubKeyHash tx -}
 

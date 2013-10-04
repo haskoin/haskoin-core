@@ -220,15 +220,20 @@ data ScriptHashInput = ScriptHashInput
 
 encodeScriptHash :: ScriptHashInput -> Script
 encodeScriptHash (ScriptHashInput i o) = 
-    Script $ iops ++ [OP_PUSHDATA $ encode' out]
+    Script $ iops ++ [OP_PUSHDATA outBS]
     where (Script iops) = encodeInput i
           out           = encodeOutput o
+          -- Encode the script without the initial VarInt length
+          outBS         = toStrictBS $ runPut $ putScriptOps $ runScript out
 
 decodeScriptHash :: Script -> Maybe ScriptHashInput
 decodeScriptHash s@(Script ops)
     | length ops < 2 = Nothing
     | otherwise = case last ops of
-        (OP_PUSHDATA o) -> Just $ ScriptHashInput i $ decodeOutput $ decode' o
-        _               -> Nothing
+        (OP_PUSHDATA o) -> case runGetOrFail getScriptOps (toLazyBS o) of
+            (Left _)          -> Nothing
+            (Right (_,_,res)) -> 
+                Just $ ScriptHashInput i $ decodeOutput $ Script res
+        _ -> Nothing
     where i = decodeInput $ Script $ init ops
 

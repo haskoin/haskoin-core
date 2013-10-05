@@ -33,15 +33,45 @@ buildScriptHashTx xs ys = mapM f ys >>= buildTx xs
           checkAddrType   (PubKeyAddress _) = Nothing
 
 buildTx :: [OutPoint] -> [(ScriptOutput,Word64)] -> Maybe Tx
-buildTx xs ys = Tx <$> (Just 1)
-                   <*> (Just $ map fi xs)
-                   <*> (mapM fo ys)
-                   <*> (Just 0)
+buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
     where fi outPoint = TxIn outPoint (Script []) maxBound
           fo (o,v) | v <= 2100000000000000 = Just $ TxOut v (encodeOutput o)
                    | otherwise             = Nothing
 
 {- Sign a pubKeyHash tx -}
+
+detSignTx :: Tx -> ScriptOutput -> Int -> PrvKey -> SigHash -> Maybe Tx
+detSignTx tx out i prv sh = 
+    tx{ txIn = updateIndex i (txIn tx)
+    where pub = derivePubKey prv
+          sig = detSignMsg (txSigHash tx out sh i) prv
+          txi = dispatchSig out (TxSignature sig sh) pub
+
+dispatchSig :: ScriptOutput -> TxSignature -> PubKey -> Maybe ScriptInput
+dispatchSig out sig pub = case out of
+    (PayPK p) -> guard (p == pub) >> return $ SpendPK sig
+    (PayPKHash a) -> guard (a == pubKeyAddr pub) >> return $ SpendPKHash sig pub
+    (PayMulSig1 p) -> guard (p == pub) >> return $ SpendMulSig1 sig
+    (PayMulSig2 t p1 p2) -> case t of
+        OneOfTwo -> guard (pub == p1 || pub == p2) >> return $ SpendMulSig1 sig
+        TwoOfTwo -> f2 p1 p2
+    (PayMulSig3 t p1 p2 p3) -> case t of
+        OneOfThree -> do
+            guard $ pub == p1 || pub == p2 || pub == p3
+            return $ SpendMulSig1 sig
+        TwoOfThree ->
+    where f2 p1 p2 | pub == p1 = Just $ SpendMulSig2 sig Nothing
+                   | pub == p2 = Just $ SpendMulSig2 Nothing sig
+                   | otherwise = Nothing
+        
+
+combineSigs :: Script -> ScriptOutput -> TxSignature -> Maybe ScriptInput
+combineSigs inp out sig = case out of
+    (PayMulSig2 p1 p2) -> case inp of
+        [OP_0, OP_PUSHDATA s1, OP_PUSHDATA s2] -> Just $ SpendMulSig s1 s2
+        [OP_0, OP_PUSHDATA s1, OP0] -> Just $ SpendMulSig2 s1 sig
+        [OP_0, OP_0, OP_0] -> SpendMulSig2 s1 s2
+
 
 signPKHash :: MonadIO m => Tx -> ScriptOutput -> SigHash -> PrvKey -> Int 
            -> SecretT m Tx

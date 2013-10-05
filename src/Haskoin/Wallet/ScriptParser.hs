@@ -1,8 +1,6 @@
 module Haskoin.Wallet.ScriptParser
 ( ScriptOutput(..)
 , ScriptInput(..)
-, MulSig2Type(..)
-, MulSig3Type(..)
 , ScriptHashInput(..)
 , SigHash(..)
 , TxSignature(..)
@@ -124,148 +122,121 @@ isCanonicalEvenSig s = isCanonicalSig s && (not $ testBit val 0)
     -- Second before last byte (drop the sighash byte)
     where val = BS.last $ BS.init s
 
-data MulSig2Type = OneOfTwo | TwoOfTwo
-    deriving (Eq, Show)
-
-data MulSig3Type = OneOfThree | TwoOfThree | ThreeOfThree
-    deriving (Eq, Show)
-
 data ScriptOutput = 
-      PayPK         { runPayPubKey     :: !PubKey }
-    | PayPKHash     { runPayPubKeyHash :: !Address }
-    | PayMulSig1    { runPayMulSig1    :: !PubKey }
-    | PayMulSig2    { mulSig2Type      :: !MulSig2Type
-                    , fstMulSigKey     :: !PubKey
-                    , sndMulSigKey     :: !PubKey
+      PayPK         { runPayPubKey      :: !PubKey }
+    | PayPKHash     { runPayPubKeyHash  :: !Address }
+    | PayMulSig     { payMulSigKeys     :: ![PubKey]
+                    , payMulSigRequired :: !Int
                     }
-    | PayMulSig3    { mulSig3Type      :: !MulSig3Type
-                    , fstMulSigKey     :: !PubKey
-                    , sndMulSigKey     :: !PubKey
-                    , trdMulSigKey     :: !PubKey
-                    }
-    | PayScriptHash { runPayScriptHash :: !Address }
-    | PayNonStd     { runPayNonStd     :: !Script }
+    | PayScriptHash { runPayScriptHash  :: !Address }
     deriving (Eq, Show)
 
 scriptAddr :: ScriptOutput -> Address
 scriptAddr = ScriptAddress . hash160 . hash256BS . encode' . encodeOutput
     
-encodeOutput :: ScriptOutput -> Script
-encodeOutput s = Script $ case s of
-    (PayPK k) -> 
-        [OP_PUSHDATA $ encode' k, OP_CHECKSIG]
-    (PayPKHash a) ->
-        [ OP_DUP, OP_HASH160
-        , OP_PUSHDATA $ encode' $ runAddress a
-        , OP_EQUALVERIFY, OP_CHECKSIG
-        ] 
-    (PayMulSig1 k) ->
-        [OP_1, OP_PUSHDATA $ encode' k, OP_1, OP_CHECKMULTISIG] 
-    (PayMulSig2 t k1 k2) ->
-        [ case t of
-            OneOfTwo -> OP_1
-            TwoOfTwo -> OP_2
-        , OP_PUSHDATA $ encode' k1
-        , OP_PUSHDATA $ encode' k2
-        , OP_2, OP_CHECKMULTISIG
-        ]
-    (PayMulSig3 t k1 k2 k3) ->
-        [ case t of
-            OneOfThree   -> OP_1
-            TwoOfThree   -> OP_2
-            ThreeOfThree -> OP_3
-        , OP_PUSHDATA $ encode' k1
-        , OP_PUSHDATA $ encode' k2
-        , OP_PUSHDATA $ encode' k3
-        , OP_3, OP_CHECKMULTISIG
-        ]
-    (PayScriptHash a) ->
-        [OP_HASH160, OP_PUSHDATA $ encode' $ runAddress a, OP_EQUAL]
-    (PayNonStd s) -> runScript s
+encodeOutput :: ScriptOutput -> Maybe Script
+encodeOutput s = liftM Script $ case s of
+    -- Pay to PubKey
+    (PayPK k) -> Just [OP_PUSHDATA $ encode' k, OP_CHECKSIG]
+    -- Pay to PubKey Hash Address
+    (PayPKHash a) -> case a of
+        (PubKeyAddress h) -> Just [ OP_DUP, OP_HASH160, OP_PUSHDATA $ encode' h
+                                  , OP_EQUALVERIFY, OP_CHECKSIG 
+                                  ] 
+        (ScriptAddress _) -> Nothing
+    -- Pay to MultiSig Keys
+    (PayMulSig ps r) -> do
+        guard $ r <= length ps 
+        (opN,opM) <- liftM2 (,) (intToScriptOp r) (intToScriptOp $ length ps)
+        let keys = map (OP_PUSHDATA . encode') ps
+        return $ opN : keys ++ [opM, OP_CHECKMULTISIG]
+    -- Pay to Script Hash Address
+    (PayScriptHash a) -> case a of
+        (ScriptAddress h) -> Just [ OP_HASH160
+                                  , OP_PUSHDATA $ encode' h, OP_EQUAL
+                                  ]
+        (PubKeyAddress _) -> Nothing
 
-decodeOutput :: Script -> ScriptOutput
+decodeOutput :: Script -> Maybe ScriptOutput
 decodeOutput s = case runScript s of
-    [OP_PUSHDATA k, OP_CHECKSIG] -> 
-        decodeEither k def PayPK
+    -- Pay to PubKey
+    [OP_PUSHDATA k, OP_CHECKSIG] -> decodeEither k Nothing (Just . PayPK)
+    -- Pay to PubKey Hash
     [OP_DUP, OP_HASH160, OP_PUSHDATA h, OP_EQUALVERIFY, OP_CHECKSIG] -> 
-        decodeEither h def (PayPKHash . PubKeyAddress)
-    [OP_1, OP_PUSHDATA k, OP_1, OP_CHECKMULTISIG] -> 
-        decodeEither k def PayMulSig1
-    [t, OP_PUSHDATA k1, OP_PUSHDATA k2, OP_2, OP_CHECKMULTISIG] -> 
-        decodeEither k1 def $ \r1 -> decodeEither k2 def $ \r2 ->
-            case t of OP_1 -> PayMulSig2 OneOfTwo r1 r2
-                      OP_2 -> PayMulSig2 TwoOfTwo r1 r2
-                      _    -> def
-    [t, OP_PUSHDATA k1, OP_PUSHDATA k2, OP_PUSHDATA k3
-      , OP_3, OP_CHECKMULTISIG] -> 
-        decodeEither k1 def $ \r1 -> 
-        decodeEither k2 def $ \r2 -> 
-        decodeEither k3 def $ \r3 -> 
-            case t of OP_1 -> PayMulSig3 OneOfThree   r1 r2 r3
-                      OP_2 -> PayMulSig3 TwoOfThree   r1 r2 r3
-                      OP_3 -> PayMulSig3 ThreeOfThree r1 r2 r3
-                      _    -> def
+        decodeEither h Nothing (Just . PayPKHash . PubKeyAddress)
+    -- Pay to Script Hash
     [OP_HASH160, OP_PUSHDATA h, OP_EQUAL] -> 
-        decodeEither h def (PayScriptHash . ScriptAddress)
-    _ -> def
-    where def = PayNonStd s
+        decodeEither h Nothing (Just . PayScriptHash . ScriptAddress)
+    -- Pay to MultiSig Keys
+    xs -> matchPayMulSig xs
+
+-- Match [ OP_N, PubKey1, ..., PubKeyM, OP_M, OP_CHECKMULTISIG ]
+matchPayMulSig :: Script -> Maybe ScriptOutput
+matchPayMulSig s@(Script ops) = case splitAt (length ops - 2) of
+    ((n:xs),[m,OP_CHECKMULTISIG]) -> do
+        (intN,intM) <- liftM2 (,) (scriptOpToInt n) (scriptOpToInt m)
+        guard $ length xs == intM && intN <= intM
+        liftM2 PayMulSig (go xs) (Just intN)
+    _ -> Nothing
+    where go (OP_PUSHDATA bs:xs) = 
+              decodeEither bs Nothing $ \pub -> liftM2 (:) (Just pub) (go xs)
+          go [] = Just []
+          go  _ = Nothing
+
+-- Decode OP_1 to OP_16
+intToScriptOp :: Int -> Maybe ScriptOp
+intToScriptOp i
+    | i `elem` [1..16] = Just op
+    |        otherwise = Nothing
+    where op = decode' $ BS.singleton $ fromIntegral $ i + 0x50
+
+-- Encode OP_1 to OP_16
+scriptOpToInt :: ScriptOp -> Maybe Int
+scriptOpToInt s 
+    | res `elem` [1..16] = Just res
+    | otherwise          = Nothing
+    where res = fromIntegral $ BS.head $ encode' s
 
 data ScriptInput = 
-      SpendPK      { runSpendSig1      :: !TxSignature }
-    | SpendPKHash  { runSpendPKHashSig :: !TxSignature 
-                   , runSpendPKHashKey :: !PubKey
-                   }
-    | SpendMulSig1 { runSpendSig1      :: !TxSignature }
-    | SpendMulSig2 { runSpendSig1      :: !TxSignature 
-                   , runSpendSig2      :: !TxSignature
-                   }
-    | SpendMulSig3 { runSpendSig1      :: !TxSignature 
-                   , runSpendSig2      :: !TxSignature 
-                   , runSpendSig3      :: !TxSignature
-                   }
-    | SpendNonStd  { runSpendNonStd    :: !Script }
+      SpendPK     { runSpendSig1      :: !TxSignature }
+    | SpendPKHash { runSpendPKHashSig :: !TxSignature 
+                  , runSpendPKHashKey :: !PubKey
+                  }
+    | SpendMulSig { runSpendMulSigs   :: ![TxSignature] 
+                  , runRequiredSigs   :: !Int
+                  }
     deriving (Eq, Show)
 
-encodeInput :: ScriptInput -> Script
-encodeInput s = Script $ case s of
-    (SpendPK s) -> [OP_PUSHDATA $ encode' s]
-    (SpendPKHash ts p) -> 
-        [ OP_PUSHDATA $ encode' ts
-        , OP_PUSHDATA $ encode' p
-        ]
-    (SpendMulSig1 s) -> 
-        [ OP_FALSE -- OP_CHECKMULTISIG bug
-        , OP_PUSHDATA $ encode' s
-        ]
-    (SpendMulSig2 ts1 ts2) -> 
-        [ OP_FALSE -- OP_CHECKMULTISIG bug
-        , OP_PUSHDATA $ encode' ts1
-        , OP_PUSHDATA $ encode' ts2
-        ]
-    (SpendMulSig3 ts1 ts2 ts3) -> 
-        [ OP_FALSE -- OP_CHECKMULTISIG bug
-        , OP_PUSHDATA $ encode' ts1
-        , OP_PUSHDATA $ encode' ts2
-        , OP_PUSHDATA $ encode' ts3
-        ]
-    (SpendNonStd (Script ops)) -> ops
+encodeInput :: ScriptInput -> Maybe Script
+encodeInput s = liftM Script $ case s of
+    -- Spend PubKey Input
+    (SpendPK s) -> Just [OP_PUSHDATA $ encode' s]
+    -- Spend PubKey Hash Input
+    (SpendPKHash ts p) -> Just [ OP_PUSHDATA $ encode' ts
+                               , OP_PUSHDATA $ encode' p
+                               ]
+    -- Spend MultiSig Input
+    (SpendMulSig ts r) -> do
+        guard $ length ts <= r && length ts <= 16
+        let sigs = map (OP_PUSHDATA . encode') ts
+        return $ OP_0 : sigs ++ replicate (r - length ts) OP_0
 
-decodeInput :: Script -> ScriptInput
+decodeInput :: Script -> Maybe ScriptInput
 decodeInput s = case runScript s of
-    [OP_PUSHDATA s] -> decodeEither s def SpendPK
+    [OP_PUSHDATA s] -> decodeEither s Nothing (Just . SpendPK)
     [OP_PUSHDATA a, OP_PUSHDATA b] -> 
-        decodeEither a def $ \s -> 
-        decodeEither b def $ \p -> SpendPKHash s p
-    [OP_FALSE, OP_PUSHDATA s] -> decodeEither s def SpendMulSig1
-    [OP_FALSE, OP_PUSHDATA a, OP_PUSHDATA b] ->
-        decodeEither a def $ \s1 -> 
-        decodeEither b def $ \s2 -> SpendMulSig2 s1 s2
-    [OP_FALSE, OP_PUSHDATA a, OP_PUSHDATA b, OP_PUSHDATA c] ->
-        decodeEither a def $ \s1 ->
-        decodeEither b def $ \s2 ->
-        decodeEither c def $ \s3 -> SpendMulSig3 s1 s2 s3
-    _ -> def
-    where def = SpendNonStd s
+        decodeEither a Nothing $ \s -> 
+        decodeEither b Nothing $ \p -> Just $ SpendPKHash s p
+    (OP_0 : xs) -> matchSpendMulSig xs
+    _ -> Nothing
+
+matchSpendMulSig :: Script -> Maybe ScriptInput
+matchSpendMulSig (Script ops) = g
+    where go (OP_PUSHDATA bs:xs) -> 
+              decodeEither bs Nothing $ \sig -> liftM2 (:) (Just sig) (go xs)
+          go (OP_0:xs) -> if all (== OP_0) xs then Just [] else Nothing
+          go [] = Just []
+          go _  = Nothing
 
 data ScriptHashInput = ScriptHashInput 
     { spendSHInput  :: ScriptInput 

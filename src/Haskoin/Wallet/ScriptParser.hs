@@ -8,6 +8,7 @@ module Haskoin.Wallet.ScriptParser
 , TxSignature(..)
 , scriptAddr
 , isCanonicalSig
+, isCanonicalEvenSig
 , encodeInput
 , decodeInput
 , encodeOutput
@@ -97,7 +98,7 @@ isCanonicalSig s = not $
     -- Non-canonical signature: R value negative
     (testBit (BS.index s 4) 7) ||
     -- Non-canonical signature: R value excessively padded
-    (  rlen > 0 
+    (  rlen > 1 
     && BS.index s 4 == 0 
     && not (testBit (BS.index s 5) 7)
     ) ||
@@ -108,16 +109,20 @@ isCanonicalSig s = not $
     -- Non-canonical signature: S value negative
     (testBit (BS.index s (fromIntegral rlen+6)) 7) ||
     -- Non-canonical signature: S value excessively padded
-    (  slen > 0 
+    (  slen > 1
     && BS.index s (fromIntegral rlen+6) == 0 
     && not (testBit (BS.index s (fromIntegral rlen+7)) 7)
-    ) ||
-    -- Non-canonical signature: S value odd
-    (testBit (BS.index s (fromIntegral $ rlen+slen+5)) 0) 
+    ) 
     where len = fromIntegral $ BS.length s
           rlen = BS.index s 3
           slen = BS.index s (fromIntegral rlen + 5)
           hashtype = clearBit (BS.last s) 7
+
+-- Stronger condition: Check that 's' component of sig is even
+isCanonicalEvenSig :: BS.ByteString -> Bool
+isCanonicalEvenSig s = isCanonicalSig s && (not $ testBit val 0)
+    -- Second before last byte (drop the sighash byte)
+    where val = BS.last $ BS.init s
 
 data MulSig2Type = OneOfTwo | TwoOfTwo
     deriving (Eq, Show)

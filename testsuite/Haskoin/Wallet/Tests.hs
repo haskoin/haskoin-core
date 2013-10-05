@@ -70,7 +70,8 @@ b58PubKey k = (fromJust $ xPubImport $ xPubExport k) == k
 {- Script Parser -}
 
 testCanonicalSig :: TxSignature -> Bool
-testCanonicalSig ts = isCanonicalSig $ encode' ts
+testCanonicalSig ts = isCanonicalSig bs && isCanonicalEvenSig bs
+    where bs = encode' ts
 
 binSigHash :: SigHash -> Bool
 binSigHash sh = (decode' $ encode' sh) == sh

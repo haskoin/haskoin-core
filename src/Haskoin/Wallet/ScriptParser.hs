@@ -231,9 +231,9 @@ decodeInput s = case runScript s of
     _ -> Nothing
 
 matchSpendMulSig :: Script -> Maybe ScriptInput
-matchSpendMulSig (Script ops) = g
-    where go (OP_PUSHDATA bs:xs) -> 
-              decodeEither bs Nothing $ \sig -> liftM2 (:) (Just sig) (go xs)
+matchSpendMulSig (Script ops) = liftM2 SpendMulSig (go ops) (Just $ length ops)
+    where go (OP_PUSHDATA bs:xs) -> decodeEither bs Nothing $ 
+            \sig -> liftM2 (:) (Just sig) (go xs)
           go (OP_0:xs) -> if all (== OP_0) xs then Just [] else Nothing
           go [] = Just []
           go _  = Nothing
@@ -243,23 +243,16 @@ data ScriptHashInput = ScriptHashInput
     , spendSHOutput :: ScriptOutput
     } deriving (Eq, Show)
 
-encodeScriptHash :: ScriptHashInput -> Script
-encodeScriptHash (ScriptHashInput i o) = 
-    Script $ iops ++ [OP_PUSHDATA outBS]
-    where (Script iops) = encodeInput i
-          out           = encodeOutput o
-          -- Encode the script without the initial VarInt length
-          outBS         = toStrictBS $ runPut $ putScriptOps $ runScript out
+encodeScriptHash :: ScriptHashInput -> Maybe Script
+encodeScriptHash (ScriptHashInput i o) = do
+    (Script i') <- encodeInput i
+    (Script o') <- encodeOutput o
+    Script $ i' ++ [OP_PUSHDATA $ runPut' $ putScriptOps o']
 
 decodeScriptHash :: Script -> Maybe ScriptHashInput
-decodeScriptHash s@(Script ops)
-    | length ops < 2 = Nothing
-    | otherwise = case last ops of
-        -- Decode the script without the initial VarInt length
-        (OP_PUSHDATA o) -> case runGetOrFail getScriptOps (toLazyBS o) of
-            (Left _)          -> Nothing
-            (Right (_,_,res)) -> 
-                Just $ ScriptHashInput i $ decodeOutput $ Script res
-        _ -> Nothing
-    where i = decodeInput $ Script $ init ops
+decodeScriptHash (Script ops) = case splitAt (length ops - 1) ops of
+    (is,[OP_PUSHDATA bs]) -> runGetEither getScriptOps bs Nothing $ \os ->
+        ScriptHashInput <$> (decodeInput  $ Script is) 
+                        <*> (decodeOutput $ Script os)
+    _ -> Nothing
 

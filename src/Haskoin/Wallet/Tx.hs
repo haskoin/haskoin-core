@@ -40,47 +40,56 @@ buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
 
 {- Sign a pubKeyHash tx -}
 
-detSignTx :: Tx -> ScriptOutput -> Int -> PrvKey -> SigHash -> Maybe Tx
-detSignTx tx out i prv sh = 
-    tx{ txIn = updateIndex i (txIn tx)
-    where pub = derivePubKey prv
-          sig = detSignMsg (txSigHash tx out sh i) prv
-          txi = dispatchSig out (TxSignature sig sh) pub
+type RedeemScript = ScriptOutput
 
-dispatchSig :: ScriptOutput -> TxSignature -> PubKey -> Maybe ScriptInput
-dispatchSig out sig pub = case out of
-    (PayPK p) -> guard (p == pub) >> return $ SpendPK sig
-    (PayPKHash a) -> guard (a == pubKeyAddr pub) >> return $ SpendPKHash sig pub
-    (PayMulSig1 p) -> guard (p == pub) >> return $ SpendMulSig1 sig
-    (PayMulSig2 t p1 p2) -> case t of
-        OneOfTwo -> guard (pub == p1 || pub == p2) >> return $ SpendMulSig1 sig
-        TwoOfTwo -> f2 p1 p2
-    (PayMulSig3 t p1 p2 p3) -> case t of
-        OneOfThree -> do
-            guard $ pub == p1 || pub == p2 || pub == p3
-            return $ SpendMulSig1 sig
-        TwoOfThree ->
-    where f2 p1 p2 | pub == p1 = Just $ SpendMulSig2 sig Nothing
-                   | pub == p2 = Just $ SpendMulSig2 Nothing sig
-                   | otherwise = Nothing
-        
+-- Data used for building the siganture hash
+newtype SigData = SigData Tx ScriptOutput i SigHash
+    deriving (Eq, Show)
 
-combineSigs :: Script -> ScriptOutput -> TxSignature -> Maybe ScriptInput
-combineSigs inp out sig = case out of
-    (PayMulSig2 p1 p2) -> case inp of
-        [OP_0, OP_PUSHDATA s1, OP_PUSHDATA s2] -> Just $ SpendMulSig s1 s2
-        [OP_0, OP_PUSHDATA s1, OP0] -> Just $ SpendMulSig2 s1 sig
-        [OP_0, OP_0, OP_0] -> SpendMulSig2 s1 s2
+detSignTx :: SigData -> PrvKey -> Maybe Tx
+detSignTx sd@(SigData tx _ i _) prv = do
+    s <- encodeInput =<< detSignInput sd prv
+    return tx{ txIn = updateIndex i (txIn tx) (const s) }
 
-
-signPKHash :: MonadIO m => Tx -> ScriptOutput -> SigHash -> PrvKey -> Int 
-           -> SecretT m Tx
-signPKHash tx out sh prv i = do
-    sig <- signMsg (txSigHash tx out sh i) prv
-    return tx{ txIn = updateIndex i (txIn tx) (f $ TxSignature sig sh) }
-    where f s ti = ti{ scriptInput = encodeInput $ SpendPKHash s pub }
-          pub = derivePubKey prv
+detSignSHTx :: SigData -> PrvKey -> RedeemScript -> Maybe Tx
+detSignSHTx (SigData tx out i sh) prv rdm = case out of
+    (PayScriptHash a) -> do
+        guard $ scriptAddr rdm == a 
+        -- build new SigData with the redeem script
+        inp <- detSignInput (SigData tx rdm i sh) prv
+        s   <- encodeScriptHash $ ScriptHashInput inp rdm
+        return tx{ txIn = updateIndex i (txIn tx) (const s) }
+    _ -> Nothing
     
+detSignInput :: SigData -> PrvKey -> Maybe ScriptInput
+detSignInput sd@(SigData tx out i sh) prv = case out of
+    (PayPK p) -> 
+        guard $ p == pub
+        return $ SpendPK sig
+    (PayPKHash a) -> do
+        guard $ a == pubKeyAddr pub
+        return $ SpendPKHash sig pub
+    (PayMulSig pubs r) -> do
+        let sigs = sig : case txIn tx !! i of (SpendMulSig xs _) -> xs
+                                              _                  -> []
+            res  = combineSigs sd sigs pubs
+        guard (length res > 0) >> return $ SpendMulSig (take r res) r
+    _ -> Nothing -- Don't sign PayScriptHash here
+    where pub  = derivePubKey prv
+          sig  = TxSignature (detSignMsg (txSigHash sd) prv) sh
+
+combineSigs :: SigData -> [TxSignature] -> [PubKey] -> [TxSignature]
+combineSigs _ _ _ [] _  = []
+combineSigs _ _ _ _  [] = []
+combineSigs (SigData tx out i _) sigs (p:ps) = case break f sigs of
+    (l,(r:rs)) -> r : combineSigs tx out i (l ++ rs) ps
+    _          -> combineSigs tx out i sigs ps
+    where f s = verifyTxSig tx out i s p
+
+verifyTxSig :: Tx -> ScriptOutput -> Int -> TxSignature -> PubKey -> Bool
+verifyTxSig tx out i (TxSignature sig sh) pub = verifySig h sig pub
+    where h = txSigHash tx out sh i
+
 {- Build tx signature hashes -}
 
 txSigHashes :: Tx -> [ScriptOutput] -> SigHash -> [Hash256]
@@ -89,31 +98,28 @@ txSigHashes tx os sh
         "txSigHashes: Invalid [ScriptOutput] length: " ++ (show $ length os)
     | otherwise = [txSigHash tx o sh i | (o,i) <- zip os [0..]]
 
-txSigHash :: Tx -> ScriptOutput -> SigHash -> Int -> Hash256
-txSigHash tx@(Tx _ is os _) out sh i = 
+txSigHash :: SigData -> Hash256
+txSigHash sd@(SigData tx out i sh) = 
     doubleHash256 $ encode' newTx `BS.append` encodeSigHash32 sh
-    where newTx = tx { txIn  = buildInputs is out sh i
-                     , txOut = buildOutputs os sh i
-                     }
+    where newTx = tx {txIn = buildInputs sd, txOut = buildOutputs sd}
 
 -- Builds transaction inputs for computing SigHashes
-buildInputs :: [TxIn] -> ScriptOutput -> SigHash -> Int -> [TxIn]
-buildInputs is out sh i 
-    | i < 0 || i >= length is = error $ 
+buildInputs :: SigData -> [TxIn]
+buildInputs (SigData (Tx _ txins _ _) out i sh)
+    | i < 0 || i >= length txins = error $ 
         "buildInputs: index out of range: " ++ (show i)
     | sh `elem` [SigAllAcp, SigNoneAcp, SigSingleAcp] =
-            current{ scriptInput = encodeOutput out } : []
-    | sh == SigAll                   = map f $ zip is [0..]
-    | sh `elem` [SigNone, SigSingle] = map (f . g) $ zip is [0..]
-    where current = is !! i
-          f (ti,j) | i == j    = ti{ scriptInput = encodeOutput out }
+            (txins !! i) { scriptInput = encodeOutput out } : []
+    | sh == SigAll                   = map f $ zip txins [0..]
+    | sh `elem` [SigNone, SigSingle] = map (f . g) $ zip txins [0..]
+    where f (ti,j) | i == j    = ti{ scriptInput = encodeOutput out }
                    | otherwise = ti{ scriptInput = Script [] }
           g (ti,j) | i == j    = (ti,j)
                    | otherwise = (ti{ txInSequence = 0 },j)
 
 -- Build transaction outputs for computing SigHashes
-buildOutputs :: [TxOut] -> SigHash -> Int -> [TxOut]
-buildOutputs os sh i 
+buildOutputs :: SigData -> [TxOut]
+buildOutputs (SigData (Tx _ _ os _) _ i sh)
     | i < 0 || i >= length os = error $ 
         "buildOutputs: index out of range: " ++ (show i)
     | sh `elem` [SigAll, SigAllAcp]       = os

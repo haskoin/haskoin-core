@@ -48,23 +48,28 @@ instance Arbitrary ScriptOutput where
     arbitrary = oneof 
         [ PayPK <$> arbitrary
         , (PayPKHash . pubKeyAddr) <$> arbitrary 
-        , PayMulSig1 <$> arbitrary
-        , PayMulSig2 <$> arbitrary <*> arbitrary <*> arbitrary
-        , PayMulSig3 <$> arbitrary <*> arbitrary 
-                     <*> arbitrary <*> arbitrary
+        , genPayMulSig
         , (PayScriptHash . scriptAddr) <$> arbitrary
-        , PayNonStd <$> arbitrary
         ]
+
+genPayMulSig :: Gen ScriptOutput
+genPayMulSig = do
+    n <- choose (1,16)
+    m <- choose (1,n)
+    PayMulSig <$> (vectorOf n arbitrary) <*> (Just m)
 
 instance Arbitrary ScriptInput where
     arbitrary = oneof
         [ SpendPK <$> arbitrary
         , SpendPKHash <$> arbitrary <*> arbitrary
         , SpendMulSig1 <$> arbitrary
-        , SpendMulSig2 <$> arbitrary <*> arbitrary
-        , SpendMulSig3 <$> arbitrary <*> arbitrary <*> arbitrary
-        , SpendNonStd <$> arbitrary
         ]
+
+genSpendMulSig :: Gen ScriptInput
+genSpendMulSig = do
+    m <- choose (1,16)
+    s <- choose (1,m)
+    SpendMulSig <$> (vectorOf s arbitrary) <*> (Just m)
 
 instance Arbitrary ScriptHashInput where
     arbitrary = ScriptHashInput <$> arbitrary <*> arbitrary

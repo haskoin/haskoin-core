@@ -46,23 +46,52 @@ type RedeemScript = ScriptOutput
 newtype SigData = SigData Tx ScriptOutput i SigHash
     deriving (Eq, Show)
 
-detSignTx :: SigData -> PrvKey -> Maybe Tx
-detSignTx sd@(SigData tx _ i _) prv = do
-    s <- encodeInput =<< detSignInput sd prv
-    return tx{ txIn = updateIndex i (txIn tx) (const s) }
+signTx :: MonadIO m => SigData -> PrvKey -> SecretT m (Maybe Tx)
+signTx sd@(SigData tx _ i sh) prv = do
+    sig <- liftM2 TxSignature (signMsg (txSigHash sd) prv) (return sh)
+    return $ do
+        s <- encodeInput =<< buildSigInput sd sig (derivePubKey prv)
+        return $ updateTxInput tx i s
 
-detSignSHTx :: SigData -> PrvKey -> RedeemScript -> Maybe Tx
-detSignSHTx (SigData tx out i sh) prv rdm = case out of
+detSignTx :: SigData -> PrvKey -> Maybe Tx
+detSignTx sd@(SigData tx _ i sh) prv = do
+    s <- encodeInput =<< buildSigInput sd sig (derivePubKey prv)
+    return $ updateTxInput tx i s
+    where sig = TxSignature (detSignMsg (txSigHash sd) prv) sh
+
+signScriptHash :: MonadIO m => SigData -> PrvKey -> RedeemScript 
+               -> SecretT m (Maybe Tx)
+signScriptHash sd@(SigData tx _ i sh) prv rdm = 
+    sig <- liftM2 TxSignature (signMsg (txSigHash sd') prv) (return sh)
+    return $ buildScriptHashTx sd sig pub rdm
+    where sd' = SigData tx rdm i sh -- build new SigData with redeem script
+          pub = derivePubKey prv
+
+detSignScriptHash :: SigData -> PrvKey -> RedeemScript -> Maybe Tx
+detSignScriptHash sd@(SigData tx _ i sh) prv rdm = 
+    buildScriptHashTx sd sig pub rdm
+    where sd' = SigData tx rdm i sh -- build new SigData with redeem script
+          sig = TxSignature (detSignMsg (txSigHash sd') prv) sh
+          pub = derivePubKey prv
+
+{- Helpers for signing transactions -}
+
+updateTxInput :: Tx -> Int -> Script -> Tx
+updateTxInput tx i s = tx{ txIn = updateIndex i (txIn tx) f }
+    where f txin = txin{ scriptInput = s }
+
+buildScriptHashTx :: SigData -> TxSignature -> PubKey -> RedeemScript
+                  -> Maybe Tx
+buildScriptHashTx (SigData tx out i sh) sig pub rdm = case out of
     (PayScriptHash a) -> do
         guard $ scriptAddr rdm == a 
-        -- build new SigData with the redeem script
-        inp <- detSignInput (SigData tx rdm i sh) prv
-        s   <- encodeScriptHash $ ScriptHashInput inp rdm
-        return tx{ txIn = updateIndex i (txIn tx) (const s) }
+        shi <- liftM2 ScriptHashInput (buildSigInput sd' sig pub) (Just rdm)
+        (updateTxInput tx i) <$> encodeScriptHash shi
     _ -> Nothing
-    
-detSignInput :: SigData -> PrvKey -> Maybe ScriptInput
-detSignInput sd@(SigData tx out i sh) prv = case out of
+    where sd' = SigData tx rdm i sh 
+        
+buildSigInput :: SigData -> TxSignature -> PubKey -> Maybe ScriptInput
+buildSigInput sd@(SigData tx out i _) sig pub = case out of
     (PayPK p) -> 
         guard $ p == pub
         return $ SpendPK sig
@@ -70,25 +99,22 @@ detSignInput sd@(SigData tx out i sh) prv = case out of
         guard $ a == pubKeyAddr pub
         return $ SpendPKHash sig pub
     (PayMulSig pubs r) -> do
+        guard $ pub `elem` pubs
         let sigs = sig : case txIn tx !! i of (SpendMulSig xs _) -> xs
                                               _                  -> []
             res  = combineSigs sd sigs pubs
-        guard (length res > 0) >> return $ SpendMulSig (take r res) r
+        guard $ length res > 0
+        return $ SpendMulSig (take r res) r
     _ -> Nothing -- Don't sign PayScriptHash here
-    where pub  = derivePubKey prv
-          sig  = TxSignature (detSignMsg (txSigHash sd) prv) sh
 
+-- Signatures need to be sorted with respect to the public keys in a script
 combineSigs :: SigData -> [TxSignature] -> [PubKey] -> [TxSignature]
-combineSigs _ _ _ [] _  = []
-combineSigs _ _ _ _  [] = []
-combineSigs (SigData tx out i _) sigs (p:ps) = case break f sigs of
-    (l,(r:rs)) -> r : combineSigs tx out i (l ++ rs) ps
-    _          -> combineSigs tx out i sigs ps
-    where f s = verifyTxSig tx out i s p
-
-verifyTxSig :: Tx -> ScriptOutput -> Int -> TxSignature -> PubKey -> Bool
-verifyTxSig tx out i (TxSignature sig sh) pub = verifySig h sig pub
-    where h = txSigHash tx out sh i
+combineSigs _ [] _  = []
+combineSigs _ _  [] = []
+combineSigs sd sigs (pub:ps) = case break f sigs of
+    (l,(r:rs)) -> r : combineSigs sd (l ++ rs) ps
+    _          -> combineSigs sd sigs ps
+    where f sig = verifySig (txSigHash sd) sig pub
 
 {- Build tx signature hashes -}
 

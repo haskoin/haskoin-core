@@ -16,7 +16,6 @@ import qualified Data.ByteString as BS
 
 import Haskoin.Wallet
 import Haskoin.Wallet.Tx
-import Haskoin.Wallet.ScriptParser
 import Haskoin.Wallet.Arbitrary
 import Haskoin.Crypto
 import Haskoin.Crypto.Arbitrary
@@ -32,16 +31,6 @@ tests =
         , testProperty "decode( encode(pubKey) ) = pubKey" binXPubKey
         , testProperty "fromB58( toB58(prvKey) ) = prvKey" b58PrvKey
         , testProperty "fromB58( toB58(pubKey) ) = pubKey" b58PubKey
-        ]
-    , testGroup "Script Parser"
-        [ testProperty "canonical signatures" testCanonicalSig
-        , testProperty "decode( encode(sighash) ) = sighash" binSigHash
-        , testProperty "encodeSigHash32 is 4 bytes long" testEncodeSH32
-        , testProperty "decode( encode(tsig) ) = tsig" binTxSig
-        , testProperty "encode decode OP_1 .. OP_16" testScriptOpInt
-        , testProperty "encode decode ScriptOutput" testScriptOutput
-        , testProperty "encode decode ScriptInput" testScriptInput
-        , testProperty "encode decode ScriptHashInput" testScriptHashInput
         ]
     , testGroup "Building Transactions"
         [ testProperty "building PKHash Tx" testBuildPKHashTx
@@ -67,35 +56,6 @@ b58PrvKey k = (fromJust $ xPrvImport $ xPrvExport k) == k
 
 b58PubKey :: XPubKey -> Bool
 b58PubKey k = (fromJust $ xPubImport $ xPubExport k) == k
-
-{- Script Parser -}
-
-testCanonicalSig :: TxSignature -> Bool
-testCanonicalSig ts = isCanonicalSig bs && isCanonicalEvenSig bs
-    where bs = encode' ts
-
-binSigHash :: SigHash -> Bool
-binSigHash sh = (decode' $ encode' sh) == sh
-
-testEncodeSH32 :: SigHash -> Bool
-testEncodeSH32 sh = BS.length bs == 4 && BS.head bs /= 0 && BS.tail bs == zs
-    where bs = encodeSigHash32 sh
-          zs = BS.pack [0,0,0]
-
-binTxSig :: TxSignature -> Bool
-binTxSig ts = (decode' $ encode' ts) == ts
-
-testScriptOpInt :: ScriptOpInt -> Bool
-testScriptOpInt (ScriptOpInt i) = (scriptOpToInt i >>= intToScriptOp) == Just i
-
-testScriptOutput :: ScriptOutput -> Bool
-testScriptOutput so = (encodeOutput so >>= decodeOutput) == Just so
-
-testScriptInput :: ScriptInput -> Bool
-testScriptInput si = (encodeInput si >>= decodeInput) == Just si
-
-testScriptHashInput :: ScriptHashInput -> Bool
-testScriptHashInput sh = (encodeScriptHash sh >>= decodeScriptHash) == Just sh
 
 {- Building Transactions -}
 

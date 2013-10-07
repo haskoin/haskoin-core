@@ -18,14 +18,15 @@ library
     exposed-modules:   Haskoin.Wallet,
                        Haskoin.Wallet.Arbitrary
     other-modules:     Haskoin.Wallet.Keys,
+                       Haskoin.Wallet.Manager,
                        Haskoin.Wallet.Tx, 
-                       Haskoin.Wallet.Manager
     build-depends:     base == 4.6.*, 
                        binary == 0.7.*, 
                        bytestring == 0.10.*, 
-                       haskoin-crypto == 0.1.*, 
                        haskoin-util == 0.1.*, 
+                       haskoin-crypto == 0.1.*, 
                        haskoin-protocol == 0.1.*,
+                       haskoin-script == 0.1.*,
                        QuickCheck == 2.5.*
     hs-source-dirs:    src
     ghc-options:       -O2
@@ -34,15 +35,16 @@ executable hw
     main-is:           hw.hs
     other-modules:     Haskoin.Wallet,
                        Haskoin.Wallet.Keys,
+                       Haskoin.Wallet.Manager,
                        Haskoin.Wallet.Tx, 
-                       Haskoin.Wallet.Manager
     build-depends:     base == 4.6.*, 
                        binary == 0.7.*, 
                        bytestring == 0.10.*, 
                        unix == 2.6.*,
-                       haskoin-crypto == 0.1.*, 
                        haskoin-util == 0.1.*, 
-                       haskoin-protocol == 0.1.*
+                       haskoin-crypto == 0.1.*, 
+                       haskoin-protocol == 0.1.*,
+                       haskoin-script == 0.1.*
     hs-source-dirs:    bin, src
     ghc-options:       -O2
 
@@ -52,9 +54,10 @@ Test-Suite test-haskoin-wallet
     build-depends:     base == 4.6.*, 
                        binary == 0.7.*, 
                        bytestring == 0.10.*, 
-                       haskoin-crypto == 0.1.*, 
                        haskoin-util == 0.1.*, 
+                       haskoin-crypto == 0.1.*, 
                        haskoin-protocol == 0.1.*,
+                       haskoin-script == 0.1.*
                        QuickCheck == 2.5.*, 
                        test-framework == 0.8.*, 
                        test-framework-quickcheck2 == 0.3.*, 

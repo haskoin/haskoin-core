@@ -1,4 +1,13 @@
-module Haskoin.Wallet.Tx where
+module Haskoin.Wallet.Tx 
+( buildPKHashTx
+, buildScriptHashTx
+, buildTx
+, SigData(..)
+, signTx
+, detSignTx
+, signScriptHash
+, detSignScriptHash
+) where
 
 import Control.Monad
 import Control.Applicative
@@ -10,7 +19,7 @@ import Data.Binary.Get
 import Data.Binary.Put
 import qualified Data.ByteString as BS
 
-import Haskoin.Wallet.ScriptParser
+import Haskoin.Script
 import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util

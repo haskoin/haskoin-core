@@ -4,6 +4,7 @@ import Control.Monad
 import Control.Applicative
 import Control.Monad.Trans (MonadIO)
 
+import Data.Maybe
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
@@ -35,7 +36,7 @@ buildScriptHashTx xs ys = mapM f ys >>= buildTx xs
 buildTx :: [OutPoint] -> [(ScriptOutput,Word64)] -> Maybe Tx
 buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
     where fi outPoint = TxIn outPoint (Script []) maxBound
-          fo (o,v) | v <= 2100000000000000 = Just $ TxOut v (encodeOutput o)
+          fo (o,v) | v <= 2100000000000000 = TxOut v <$> (encodeOutput o)
                    | otherwise             = Nothing
 
 {- Sign a pubKeyHash tx -}
@@ -43,8 +44,12 @@ buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
 type RedeemScript = ScriptOutput
 
 -- Data used for building the siganture hash
-newtype SigData = SigData Tx ScriptOutput i SigHash
-    deriving (Eq, Show)
+data SigData = SigData
+    { sigDataTx      :: Tx
+    , sigDataScript  :: ScriptOutput 
+    , sigDataIndex   :: Int 
+    , sigDataSigHash :: SigHash
+    } deriving (Eq, Show)
 
 signTx :: MonadIO m => SigData -> PrvKey -> SecretT m (Maybe Tx)
 signTx sd@(SigData tx _ i sh) prv = do
@@ -61,15 +66,15 @@ detSignTx sd@(SigData tx _ i sh) prv = do
 
 signScriptHash :: MonadIO m => SigData -> PrvKey -> RedeemScript 
                -> SecretT m (Maybe Tx)
-signScriptHash sd@(SigData tx _ i sh) prv rdm = 
+signScriptHash sd@(SigData tx _ i sh) prv rdm = do
     sig <- liftM2 TxSignature (signMsg (txSigHash sd') prv) (return sh)
-    return $ buildScriptHashTx sd sig pub rdm
+    return $ buildSHInputTx sd sig pub rdm
     where sd' = SigData tx rdm i sh -- build new SigData with redeem script
           pub = derivePubKey prv
 
 detSignScriptHash :: SigData -> PrvKey -> RedeemScript -> Maybe Tx
 detSignScriptHash sd@(SigData tx _ i sh) prv rdm = 
-    buildScriptHashTx sd sig pub rdm
+    buildSHInputTx sd sig pub rdm
     where sd' = SigData tx rdm i sh -- build new SigData with redeem script
           sig = TxSignature (detSignMsg (txSigHash sd') prv) sh
           pub = derivePubKey prv
@@ -80,9 +85,9 @@ updateTxInput :: Tx -> Int -> Script -> Tx
 updateTxInput tx i s = tx{ txIn = updateIndex i (txIn tx) f }
     where f txin = txin{ scriptInput = s }
 
-buildScriptHashTx :: SigData -> TxSignature -> PubKey -> RedeemScript
+buildSHInputTx :: SigData -> TxSignature -> PubKey -> RedeemScript
                   -> Maybe Tx
-buildScriptHashTx (SigData tx out i sh) sig pub rdm = case out of
+buildSHInputTx (SigData tx out i sh) sig pub rdm = case out of
     (PayScriptHash a) -> do
         guard $ scriptAddr rdm == a 
         shi <- liftM2 ScriptHashInput (buildSigInput sd' sig pub) (Just rdm)
@@ -92,7 +97,7 @@ buildScriptHashTx (SigData tx out i sh) sig pub rdm = case out of
         
 buildSigInput :: SigData -> TxSignature -> PubKey -> Maybe ScriptInput
 buildSigInput sd@(SigData tx out i _) sig pub = case out of
-    (PayPK p) -> 
+    (PayPK p) -> do
         guard $ p == pub
         return $ SpendPK sig
     (PayPKHash a) -> do
@@ -100,8 +105,9 @@ buildSigInput sd@(SigData tx out i _) sig pub = case out of
         return $ SpendPKHash sig pub
     (PayMulSig pubs r) -> do
         guard $ pub `elem` pubs
-        let sigs = sig : case txIn tx !! i of (SpendMulSig xs _) -> xs
-                                              _                  -> []
+        let prev = decodeInput $ scriptInput $ txIn tx !! i
+            sigs = sig : case prev of (Just (SpendMulSig xs _)) -> xs
+                                      _                         -> []
             res  = combineSigs sd sigs pubs
         guard $ length res > 0
         return $ SpendMulSig (take r res) r
@@ -111,10 +117,11 @@ buildSigInput sd@(SigData tx out i _) sig pub = case out of
 combineSigs :: SigData -> [TxSignature] -> [PubKey] -> [TxSignature]
 combineSigs _ [] _  = []
 combineSigs _ _  [] = []
-combineSigs sd sigs (pub:ps) = case break f sigs of
+combineSigs sd@(SigData tx out i _) sigs (pub:ps) = case break f sigs of
     (l,(r:rs)) -> r : combineSigs sd (l ++ rs) ps
     _          -> combineSigs sd sigs ps
-    where f sig = verifySig (txSigHash sd) sig pub
+    where f (TxSignature sig sh) = 
+            verifySig (txSigHash $ SigData tx out i sh) sig pub
 
 {- Build tx signature hashes -}
 
@@ -122,7 +129,7 @@ txSigHashes :: Tx -> [ScriptOutput] -> SigHash -> [Hash256]
 txSigHashes tx os sh 
     | length os /= length (txIn tx) = error $
         "txSigHashes: Invalid [ScriptOutput] length: " ++ (show $ length os)
-    | otherwise = [txSigHash tx o sh i | (o,i) <- zip os [0..]]
+    | otherwise = [txSigHash (SigData tx o i sh) | (o,i) <- zip os [0..]]
 
 txSigHash :: SigData -> Hash256
 txSigHash sd@(SigData tx out i sh) = 
@@ -135,10 +142,11 @@ buildInputs (SigData (Tx _ txins _ _) out i sh)
     | i < 0 || i >= length txins = error $ 
         "buildInputs: index out of range: " ++ (show i)
     | sh `elem` [SigAllAcp, SigNoneAcp, SigSingleAcp] =
-            (txins !! i) { scriptInput = encodeOutput out } : []
+            (txins !! i) { scriptInput = outScript } : []
     | sh == SigAll                   = map f $ zip txins [0..]
     | sh `elem` [SigNone, SigSingle] = map (f . g) $ zip txins [0..]
-    where f (ti,j) | i == j    = ti{ scriptInput = encodeOutput out }
+    where outScript = fromMaybe (Script []) $ encodeOutput out
+          f (ti,j) | i == j    = ti{ scriptInput = outScript }
                    | otherwise = ti{ scriptInput = Script [] }
           g (ti,j) | i == j    = (ti,j)
                    | otherwise = (ti{ txInSequence = 0 },j)

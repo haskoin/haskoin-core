@@ -14,9 +14,12 @@ module Haskoin.Wallet.ScriptParser
 , encodeScriptHash
 , decodeScriptHash
 , encodeSigHash32
+, intToScriptOp
+, scriptOpToInt
 ) where
 
 import Control.Monad
+import Control.Applicative
 
 import Data.Bits
 import Data.Binary
@@ -147,9 +150,9 @@ encodeOutput s = liftM Script $ case s of
     -- Pay to MultiSig Keys
     (PayMulSig ps r) -> do
         guard $ r <= length ps 
-        (opN,opM) <- liftM2 (,) (intToScriptOp r) (intToScriptOp $ length ps)
+        (opM,opN) <- liftM2 (,) (intToScriptOp r) (intToScriptOp $ length ps)
         let keys = map (OP_PUSHDATA . encode') ps
-        return $ opN : keys ++ [opM, OP_CHECKMULTISIG]
+        return $ opM : keys ++ [opN, OP_CHECKMULTISIG]
     -- Pay to Script Hash Address
     (PayScriptHash a) -> case a of
         (ScriptAddress h) -> Just [ OP_HASH160
@@ -168,15 +171,15 @@ decodeOutput s = case runScript s of
     [OP_HASH160, OP_PUSHDATA h, OP_EQUAL] -> 
         decodeEither h Nothing (Just . PayScriptHash . ScriptAddress)
     -- Pay to MultiSig Keys
-    xs -> matchPayMulSig xs
+    _ -> matchPayMulSig s
 
 -- Match [ OP_N, PubKey1, ..., PubKeyM, OP_M, OP_CHECKMULTISIG ]
 matchPayMulSig :: Script -> Maybe ScriptOutput
-matchPayMulSig s@(Script ops) = case splitAt (length ops - 2) of
-    ((n:xs),[m,OP_CHECKMULTISIG]) -> do
-        (intN,intM) <- liftM2 (,) (scriptOpToInt n) (scriptOpToInt m)
-        guard $ length xs == intM && intN <= intM
-        liftM2 PayMulSig (go xs) (Just intN)
+matchPayMulSig s@(Script ops) = case splitAt (length ops - 2) ops of
+    (m:xs,[n,OP_CHECKMULTISIG]) -> do
+        (intM,intN) <- liftM2 (,) (scriptOpToInt m) (scriptOpToInt n)
+        guard $ intM <= intN && length xs == intN 
+        liftM2 PayMulSig (go xs) (Just intM)
     _ -> Nothing
     where go (OP_PUSHDATA bs:xs) = 
               decodeEither bs Nothing $ \pub -> liftM2 (:) (Just pub) (go xs)
@@ -195,10 +198,10 @@ scriptOpToInt :: ScriptOp -> Maybe Int
 scriptOpToInt s 
     | res `elem` [1..16] = Just res
     | otherwise          = Nothing
-    where res = fromIntegral $ BS.head $ encode' s
+    where res = (fromIntegral $ BS.head $ encode' s) - 0x50
 
 data ScriptInput = 
-      SpendPK     { runSpendSig1      :: !TxSignature }
+      SpendPK     { runSpendPK        :: !TxSignature }
     | SpendPKHash { runSpendPKHashSig :: !TxSignature 
                   , runSpendPKHashKey :: !PubKey
                   }
@@ -227,14 +230,14 @@ decodeInput s = case runScript s of
     [OP_PUSHDATA a, OP_PUSHDATA b] -> 
         decodeEither a Nothing $ \s -> 
         decodeEither b Nothing $ \p -> Just $ SpendPKHash s p
-    (OP_0 : xs) -> matchSpendMulSig xs
+    (OP_0 : xs) -> matchSpendMulSig $ Script xs
     _ -> Nothing
 
 matchSpendMulSig :: Script -> Maybe ScriptInput
 matchSpendMulSig (Script ops) = liftM2 SpendMulSig (go ops) (Just $ length ops)
-    where go (OP_PUSHDATA bs:xs) -> decodeEither bs Nothing $ 
+    where go (OP_PUSHDATA bs:xs) = decodeEither bs Nothing $ 
             \sig -> liftM2 (:) (Just sig) (go xs)
-          go (OP_0:xs) -> if all (== OP_0) xs then Just [] else Nothing
+          go (OP_0:xs) = if all (== OP_0) xs then Just [] else Nothing
           go [] = Just []
           go _  = Nothing
 
@@ -247,7 +250,7 @@ encodeScriptHash :: ScriptHashInput -> Maybe Script
 encodeScriptHash (ScriptHashInput i o) = do
     (Script i') <- encodeInput i
     (Script o') <- encodeOutput o
-    Script $ i' ++ [OP_PUSHDATA $ runPut' $ putScriptOps o']
+    return $ Script $ i' ++ [OP_PUSHDATA $ runPut' $ putScriptOps o']
 
 decodeScriptHash :: Script -> Maybe ScriptHashInput
 decodeScriptHash (Script ops) = case splitAt (length ops - 1) ops of

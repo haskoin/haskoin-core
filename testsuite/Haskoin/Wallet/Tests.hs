@@ -38,6 +38,7 @@ tests =
         , testProperty "decode( encode(sighash) ) = sighash" binSigHash
         , testProperty "encodeSigHash32 is 4 bytes long" testEncodeSH32
         , testProperty "decode( encode(tsig) ) = tsig" binTxSig
+        , testProperty "encode decode OP_1 .. OP_16" testScriptOpInt
         , testProperty "encode decode ScriptOutput" testScriptOutput
         , testProperty "encode decode ScriptInput" testScriptInput
         , testProperty "encode decode ScriptHashInput" testScriptHashInput
@@ -84,15 +85,17 @@ testEncodeSH32 sh = BS.length bs == 4 && BS.head bs /= 0 && BS.tail bs == zs
 binTxSig :: TxSignature -> Bool
 binTxSig ts = (decode' $ encode' ts) == ts
 
+testScriptOpInt :: ScriptOpInt -> Bool
+testScriptOpInt (ScriptOpInt i) = (scriptOpToInt i >>= intToScriptOp) == Just i
+
 testScriptOutput :: ScriptOutput -> Bool
-testScriptOutput so = (decodeOutput $ encodeOutput so) == so
+testScriptOutput so = (encodeOutput so >>= decodeOutput) == Just so
 
 testScriptInput :: ScriptInput -> Bool
-testScriptInput si = (decodeInput $ encodeInput si) == si
+testScriptInput si = (encodeInput si >>= decodeInput) == Just si
 
 testScriptHashInput :: ScriptHashInput -> Bool
-testScriptHashInput sh = 
-    (fromJust $ decodeScriptHash $ encodeScriptHash sh) == sh
+testScriptHashInput sh = (encodeScriptHash sh >>= decodeScriptHash) == Just sh
 
 {- Building Transactions -}
 

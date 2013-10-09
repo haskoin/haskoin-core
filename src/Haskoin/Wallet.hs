@@ -60,8 +60,20 @@ module Haskoin.Wallet
 , intTakeIndex2
 , intTakeIndex3
 
+-- Tx module
+, buildPKHashTx
+, buildScriptHashTx
+, buildTx
+, SigData(..)
+, signTx
+, detSignTx
+, signScriptHash
+, detSignScriptHash
+
 ) where
 
 import Haskoin.Wallet.Keys
 import Haskoin.Wallet.Manager
+import Haskoin.Wallet.Tx
+
 

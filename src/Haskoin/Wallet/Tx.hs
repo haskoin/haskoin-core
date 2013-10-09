@@ -2,11 +2,8 @@ module Haskoin.Wallet.Tx
 ( buildPKHashTx
 , buildScriptHashTx
 , buildTx
-, SigData(..)
+, SigInput(..)
 , signTx
-, detSignTx
-, signScriptHash
-, detSignScriptHash
 ) where
 
 import Control.Monad
@@ -14,6 +11,7 @@ import Control.Applicative
 import Control.Monad.Trans (MonadIO)
 
 import Data.Maybe
+import Data.List
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
@@ -23,6 +21,38 @@ import Haskoin.Script
 import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util
+
+{- Signed Monad -}
+
+data Signed a = SigFull    { runSigned :: a } 
+              | SigPartial { runSigned :: a }
+              | SigError   { sigError :: String }
+              deriving (Eq, Show)
+
+instance Functor Signed where
+    fmap f (SigFull x)    = SigFull (f x)
+    fmap f (SigPartial x) = SigPartial (f x)
+    fmap _ (SigError s)   = SigError s
+
+instance Monad Signed where
+    return = SigFull
+    (SigFull x) >>= f = f x
+    (SigPartial x) >>= f = case f x of
+        e@(SigError _) -> e
+        a              -> SigPartial $ runSigned a
+    (SigError s) >>= _ = SigError s
+
+isSigFull :: Signed a -> Bool
+isSigFull (SigFull _) = True
+isSigFull _           = False
+
+isSigPartial :: Signed a -> Bool
+isSigPartial (SigPartial _) = True
+isSigPartial _              = False
+
+isSigError :: Signed a -> Bool
+isSigError (SigError s) = True
+isSigError _            = False
 
 {- Build a new Tx -}
 
@@ -53,101 +83,88 @@ buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
 type RedeemScript = ScriptOutput
 
 -- Data used for building the siganture hash
-data SigData = SigData
-    { sigDataTx      :: Tx
-    , sigDataScript  :: ScriptOutput 
-    , sigDataIndex   :: Int 
-    , sigDataSigHash :: SigHash
+data SigInput = SigInput
+    { sigDataOut :: TxOut 
+    , sigDataOP  :: OutPoint
+    , sigDataSH  :: SigHash
     } deriving (Eq, Show)
 
-signTx :: MonadIO m => SigData -> PrvKey -> SecretT m (Maybe Tx)
-signTx sd@(SigData tx _ i sh) prv = do
-    sig <- liftM2 TxSignature (signMsg (txSigHash sd) prv) (return sh)
-    return $ do
-        s <- encodeInput =<< buildSigInput sd sig (derivePubKey prv)
-        return $ updateTxInput tx i s
+type SigData = (Tx, ScriptOutput, Int, SigHash)
 
-detSignTx :: SigData -> PrvKey -> Maybe Tx
-detSignTx sd@(SigData tx _ i sh) prv = do
-    s <- encodeInput =<< buildSigInput sd sig (derivePubKey prv)
-    return $ updateTxInput tx i s
-    where sig = TxSignature (detSignMsg (txSigHash sd) prv) sh
+signTx :: MonadIO m => Tx -> [SigInput] -> [PrvKey] -> SecretT m (Signed Tx)
+signTx tx si keys = do
+    newIn <- mapM sign $ orderSigInput tx si
+    return $ sequence newIn >>= \x -> return tx{ txIn = x }
+    where sign (maybeSI,txin,i) = case maybeSI of
+              -- User input match. We need to sign this input
+              (Just (SigInput (TxOut _ s) _ sh)) -> case decodeOutput s of
+                  (Just out) -> signTxIn txin (tx,out,i,sh) keys
+                  Nothing    -> return $ SigError $
+                      "signTx: Could not decode output for index " ++ (show i)
+              -- No user input match. Check if input is already signed
+              Nothing -> return $ toSignedTxIn txin i
 
-signScriptHash :: MonadIO m => SigData -> PrvKey -> RedeemScript 
-               -> SecretT m (Maybe Tx)
-signScriptHash sd@(SigData tx _ i sh) prv rdm = do
-    sig <- liftM2 TxSignature (signMsg (txSigHash sd') prv) (return sh)
-    return $ buildSHInputTx sd sig pub rdm
-    where sd' = SigData tx rdm i sh -- build new SigData with redeem script
-          pub = derivePubKey prv
-
-detSignScriptHash :: SigData -> PrvKey -> RedeemScript -> Maybe Tx
-detSignScriptHash sd@(SigData tx _ i sh) prv rdm = 
-    buildSHInputTx sd sig pub rdm
-    where sd' = SigData tx rdm i sh -- build new SigData with redeem script
-          sig = TxSignature (detSignMsg (txSigHash sd') prv) sh
-          pub = derivePubKey prv
+signTxIn :: MonadIO m => TxIn -> SigData -> [PrvKey] -> SecretT m (Signed TxIn)
+signTxIn txin@(TxIn _ s _) sd@(tx,out,i,sh) keys = do
+    let (vKeys,pubs) = unzip $ sigKeys out keys
+    (mapM getSig vKeys) >>= return . (buildTxInSig txin sd pubs)
+    where getSig k = liftM (flip TxSignature sh) $ signMsg (txSigHash sd) k
 
 {- Helpers for signing transactions -}
 
-updateTxInput :: Tx -> Int -> Script -> Tx
-updateTxInput tx i s = tx{ txIn = updateIndex i (txIn tx) f }
-    where f txin = txin{ scriptInput = s }
+toSignedTxIn :: TxIn -> Int -> Signed TxIn
+toSignedTxIn txin@(TxIn _ s _) i = case decodeInput s of
+    Just (SpendPK _)        -> SigFull txin
+    Just (SpendPKHash _ _)  -> SigFull txin
+    Just (SpendMulSig xs r) -> 
+        if length xs == r then SigFull txin else SigPartial txin
+    Nothing -> SigError $ 
+        "signedTxIn: Could not decode input for index " ++ (show i)
 
-buildSHInputTx :: SigData -> TxSignature -> PubKey -> RedeemScript
-                  -> Maybe Tx
-buildSHInputTx (SigData tx out i sh) sig pub rdm = case out of
-    (PayScriptHash a) -> do
-        guard $ scriptAddr rdm == a 
-        shi <- liftM2 ScriptHashInput (buildSigInput sd' sig pub) (Just rdm)
-        (updateTxInput tx i) <$> encodeScriptHash shi
-    _ -> Nothing
-    where sd' = SigData tx rdm i sh 
-        
-buildSigInput :: SigData -> TxSignature -> PubKey -> Maybe ScriptInput
-buildSigInput sd@(SigData tx out i _) sig pub = case out of
-    (PayPK p) -> do
-        guard $ p == pub
-        return $ SpendPK sig
-    (PayPKHash a) -> do
-        guard $ a == pubKeyAddr pub
-        return $ SpendPKHash sig pub
-    (PayMulSig pubs r) -> do
-        guard $ pub `elem` pubs
-        let prev = decodeInput $ scriptInput $ txIn tx !! i
-            sigs = sig : case prev of (Just (SpendMulSig xs _)) -> xs
-                                      _                         -> []
-            res  = combineSigs sd sigs pubs
-        guard $ length res > 0
-        return $ SpendMulSig (take r res) r
-    _ -> Nothing -- Don't sign PayScriptHash here
+orderSigInput :: Tx -> [SigInput] -> [(Maybe SigInput, TxIn, Int)]
+orderSigInput tx si = zip3 (matchOrder si (txIn tx) f) (txIn tx) [0..]
+    where f (SigInput _ o1 _) (TxIn o2 _ _) = o1 == o2
 
--- Signatures need to be sorted with respect to the public keys in a script
-combineSigs :: SigData -> [TxSignature] -> [PubKey] -> [TxSignature]
-combineSigs _ [] _  = []
-combineSigs _ _  [] = []
-combineSigs sd@(SigData tx out i _) sigs (pub:ps) = case break f sigs of
-    (l,(r:rs)) -> r : combineSigs sd (l ++ rs) ps
-    _          -> combineSigs sd sigs ps
-    where f (TxSignature sig sh) = 
-            verifySig (txSigHash $ SigData tx out i sh) sig pub
+buildTxInSig :: TxIn -> SigData -> [PubKey] -> [TxSignature] -> Signed TxIn
+buildTxInSig txin@(TxIn _ s _) (tx,out,i,_) pubs sigs
+    | null sigs = SigPartial $ txin{ scriptInput = Script [] }
+    | otherwise = do
+        res <- case out of
+            (PayPK _) -> fromMaybe def $
+                SigFull <$> (encodeInput $ SpendPK $ head sigs)
+            (PayPKHash _) -> fromMaybe def $ 
+                SigFull <$> (encodeInput $ SpendPKHash (head sigs) (head pubs))
+            (PayMulSig pubs r) -> do
+                let sigs' = sigs ++ case decodeInput s of 
+                                        Just (SpendMulSig xs _) -> xs
+                                        _                       -> []
+                    cSigs = take r $ catMaybes $ matchOrder sigs' pubs g
+                    tag   = if length cSigs == r then SigFull else SigPartial
+                fromMaybe def $ tag <$> (encodeInput $ SpendMulSig cSigs r)
+            _ -> SigError $ "sigInput: Can't sign a P2SH output here"
+        return txin{ scriptInput = res }
+    where def = SigPartial $ Script []
+          g (TxSignature sig txsh) pub = 
+              verifySig (txSigHash (tx,out,i,txsh)) sig pub
+
+sigKeys :: ScriptOutput -> [PrvKey] -> [(PrvKey,PubKey)]
+sigKeys out keys = case out of
+    (PayPK p) -> maybeToList $ find ((== p) . snd) zipKeys
+    (PayPKHash a) -> maybeToList $ find ((== a) . pubKeyAddr . snd) zipKeys
+    (PayMulSig ps r) -> take r $ filter ((`elem` ps) . snd) zipKeys
+    _ -> []
+    where zipKeys = zip keys $ map derivePubKey keys
 
 {- Build tx signature hashes -}
 
-txSigHashes :: Tx -> [ScriptOutput] -> SigHash -> [Hash256]
-txSigHashes tx os sh 
-    | length os /= length (txIn tx) = error $
-        "txSigHashes: Invalid [ScriptOutput] length: " ++ (show $ length os)
-    | otherwise = [txSigHash (SigData tx o i sh) | (o,i) <- zip os [0..]]
-
 txSigHash :: SigData -> Hash256
-txSigHash sd@(SigData tx out i sh) = 
+txSigHash sd@(tx,out,i,sh) = 
     doubleHash256 $ encode' newTx `BS.append` encodeSigHash32 sh
     where newTx = tx {txIn = buildInputs sd, txOut = buildOutputs sd}
 
 -- Builds transaction inputs for computing SigHashes
 buildInputs :: SigData -> [TxIn]
-buildInputs (SigData (Tx _ txins _ _) out i sh)
+buildInputs ((Tx _ txins _ _),out,i,sh)
     | i < 0 || i >= length txins = error $ 
         "buildInputs: index out of range: " ++ (show i)
     | sh `elem` [SigAllAcp, SigNoneAcp, SigSingleAcp] =
@@ -162,7 +179,7 @@ buildInputs (SigData (Tx _ txins _ _) out i sh)
 
 -- Build transaction outputs for computing SigHashes
 buildOutputs :: SigData -> [TxOut]
-buildOutputs (SigData (Tx _ _ os _) _ i sh)
+buildOutputs ((Tx _ _ os _),_,i,sh)
     | i < 0 || i >= length os = error $ 
         "buildOutputs: index out of range: " ++ (show i)
     | sh `elem` [SigAll, SigAllAcp]       = os

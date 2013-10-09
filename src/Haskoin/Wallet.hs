@@ -64,11 +64,8 @@ module Haskoin.Wallet
 , buildPKHashTx
 , buildScriptHashTx
 , buildTx
-, SigData(..)
+, SigInput(..)
 , signTx
-, detSignTx
-, signScriptHash
-, detSignScriptHash
 
 ) where
 

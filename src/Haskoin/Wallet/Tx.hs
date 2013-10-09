@@ -58,25 +58,35 @@ isSigError _            = False
 
 -- Helper for pay to pubkey hash transactions
 -- Returns Nothing if the address String is badly formatted
-buildPKHashTx :: [OutPoint] -> [(String,Word64)] -> Maybe Tx
+buildPKHashTx :: [OutPoint] -> [(String,Word64)] -> Signed Tx
 buildPKHashTx xs ys = mapM f ys >>= buildTx xs
-    where f (s,v) = liftM2 (,) (base58ToAddr s >>= checkAddrType) (Just v)
-          checkAddrType a@(PubKeyAddress _) = Just $ PayPKHash a
-          checkAddrType   (ScriptAddress _) = Nothing
+    where f (s,v) = liftM2 (,) (checkAddrType $ base58ToAddr s) (SigPartial v)
+          checkAddrType (Just a@(PubKeyAddress _)) = SigPartial $ PayPKHash a
+          checkAddrType (Just   (ScriptAddress _)) = SigError
+              "buildPKHashTx: script hash address is invalid for pkhash"
+          checkAddrType Nothing = SigError
+              "buildPKHash: invalid address format"
 
 -- Helper for pay to script hash transactions
 -- Returns Nothing if the address String is badly formatted
-buildScriptHashTx :: [OutPoint] -> [(String,Word64)] -> Maybe Tx
+buildScriptHashTx :: [OutPoint] -> [(String,Word64)] -> Signed Tx
 buildScriptHashTx xs ys = mapM f ys >>= buildTx xs
-    where f (s,v) = liftM2 (,) (base58ToAddr s >>= checkAddrType) (Just v)
-          checkAddrType a@(ScriptAddress _) = Just $ PayScriptHash a
-          checkAddrType   (PubKeyAddress _) = Nothing
+    where f (s,v) = liftM2 (,) (checkAddrType $ base58ToAddr s) (SigPartial v)
+          checkAddrType (Just a@(ScriptAddress _)) = 
+               SigPartial $ PayScriptHash a
+          checkAddrType (Just   (PubKeyAddress _)) = SigError
+               "buildScriptHashTx: pkhash address is invalid for script hash"
+          checkAddrType Nothing = SigError
+              "buildPKHash: invalid address format"
 
-buildTx :: [OutPoint] -> [(ScriptOutput,Word64)] -> Maybe Tx
-buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
+buildTx :: [OutPoint] -> [(ScriptOutput,Word64)] -> Signed Tx
+buildTx xs ys = mapM fo ys >>= \os -> SigPartial $ Tx 1 (map fi xs) os 0
     where fi outPoint = TxIn outPoint (Script []) maxBound
-          fo (o,v) | v <= 2100000000000000 = TxOut v <$> (encodeOutput o)
-                   | otherwise             = Nothing
+          fo (o,v) | v <= 2100000000000000 = fromMaybe 
+                        (SigError "buildTx: Error encoding output")
+                        (encodeOutput o >>= return . SigPartial . (TxOut v))
+                   | otherwise = SigError $
+                       "buildTx: Invalid amount: " ++ (show v)
 
 {- Sign a pubKeyHash tx -}
 

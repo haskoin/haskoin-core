@@ -14,8 +14,11 @@ import Data.Binary.Get
 import Data.Binary.Put
 import qualified Data.ByteString as BS
 
+import QuickCheckUtils
+
 import Haskoin.Wallet
 import Haskoin.Wallet.Arbitrary
+import Haskoin.Script
 import Haskoin.Crypto
 import Haskoin.Crypto.Arbitrary
 import Haskoin.Protocol
@@ -34,6 +37,9 @@ tests =
     , testGroup "Building Transactions"
         [ testProperty "building PKHash Tx" testBuildPKHashTx
         , testProperty "building ScriptHash Tx" testBuildScriptHashTx
+        ]
+    , testGroup "Signing Transactions"
+        [ testProperty "Check signed transaction status" testSignTxBuild
         ]
     ]
 
@@ -58,17 +64,35 @@ b58PubKey k = (fromJust $ xPubImport $ xPubExport k) == k
 
 {- Building Transactions -}
 
-testBuildPKHashTx :: OutPoint -> Address -> Word64 -> Bool
-testBuildPKHashTx o a v = case a of
+testBuildPKHashTx :: [OutPoint] -> Address -> Word64 -> Bool
+testBuildPKHashTx os a v = case a of
     (PubKeyAddress _) -> 
         if v <= 2100000000000000 then isRight tx else isLeft tx
     (ScriptAddress _) -> isLeft tx
-    where tx = buildPKHashTx [o] [(addrToBase58 a,v)]
+    where tx = buildPKHashTx os [(addrToBase58 a,v)]
 
-testBuildScriptHashTx :: OutPoint -> Address -> Word64 -> Bool
-testBuildScriptHashTx o a v = case a of
+testBuildScriptHashTx :: [OutPoint] -> Address -> Word64 -> Bool
+testBuildScriptHashTx os a v = case a of
     (ScriptAddress _) -> 
         if v <= 2100000000000000 then isRight tx else isLeft tx
     (PubKeyAddress _) -> isLeft tx
-    where tx = buildScriptHashTx [o] [(addrToBase58 a,v)]
+    where tx = buildScriptHashTx os [(addrToBase58 a,v)]
+
+{- Signing Transactions -}
+
+testSignTxBuild :: PKHashSigTemplate -> Bool
+testSignTxBuild (PKHashSigTemplate tx sigi prv)
+    | null $ txIn tx = isBroken txSig
+    | null err  = isComplete txSig && isPartial txSigP1 && isPartial txSigP2
+    | otherwise = isBroken txSig
+    where ovf   = drop (length $ txOut tx) sigi
+          err   = filter ((`elem` [SigSingle,SigSingleAcp]) . sigDataSH) ovf
+          txSig = detSignTx tx sigi prv
+          txSigP1 = detSignTx tx sigi (tail prv)
+          txSigP2 = detSignTx tx (tail sigi) prv
+        
+
+
+
+
 

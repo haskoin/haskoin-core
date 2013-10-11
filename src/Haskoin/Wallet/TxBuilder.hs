@@ -71,9 +71,11 @@ liftSecret :: MonadIO m => Build a -> SecretT (BuildT m) a
 liftSecret = lift . liftBuild
 
 signTx :: MonadIO m => Tx -> [SigInput] -> [PrvKey] -> SecretT (BuildT m) Tx
-signTx tx sigis keys = do
-    newIn <- mapM sign $ orderSigInput tx sigis
-    return tx{ txIn = newIn }
+signTx tx sigis keys 
+    | null $ txIn tx = liftSecret $ Broken "signTx: Transaction has no inputs"
+    | otherwise = do
+        newIn <- mapM sign $ orderSigInput tx sigis
+        return tx{ txIn = newIn }
     where sign (maybeSI,txin,i) = case maybeSI of
               Just sigi -> signTxIn txin sigi tx i keys
               _         -> liftSecret $ toBuildTxIn txin i
@@ -88,9 +90,11 @@ signTxIn txin sigi tx i keys = do
     where sh = sigDataSH sigi
 
 detSignTx :: Tx -> [SigInput] -> [PrvKey] -> Build Tx
-detSignTx tx sigis keys = do
-    newIn <- mapM sign $ orderSigInput tx sigis
-    return tx{ txIn = newIn }
+detSignTx tx sigis keys 
+    | null $ txIn tx = Broken "detSignTx: Transaction has no inputs"
+    | otherwise = do
+        newIn <- mapM sign $ orderSigInput tx sigis
+        return tx{ txIn = newIn }
     where sign (maybeSI,txin,i) = case maybeSI of
             Just sigi -> detSignTxIn txin sigi tx i keys
             _         -> toBuildTxIn txin i

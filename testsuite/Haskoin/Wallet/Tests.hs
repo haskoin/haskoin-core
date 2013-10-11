@@ -15,7 +15,6 @@ import Data.Binary.Put
 import qualified Data.ByteString as BS
 
 import Haskoin.Wallet
-import Haskoin.Wallet.Tx
 import Haskoin.Wallet.Arbitrary
 import Haskoin.Crypto
 import Haskoin.Crypto.Arbitrary
@@ -62,14 +61,14 @@ b58PubKey k = (fromJust $ xPubImport $ xPubExport k) == k
 testBuildPKHashTx :: OutPoint -> Address -> Word64 -> Bool
 testBuildPKHashTx o a v = case a of
     (PubKeyAddress _) -> 
-        if v <= 2100000000000000 then isJust tx else isNothing tx
-    (ScriptAddress _) -> isNothing tx
+        if v <= 2100000000000000 then isRight tx else isLeft tx
+    (ScriptAddress _) -> isLeft tx
     where tx = buildPKHashTx [o] [(addrToBase58 a,v)]
 
 testBuildScriptHashTx :: OutPoint -> Address -> Word64 -> Bool
 testBuildScriptHashTx o a v = case a of
     (ScriptAddress _) -> 
-        if v <= 2100000000000000 then isJust tx else isNothing tx
-    (PubKeyAddress _) -> isNothing tx
+        if v <= 2100000000000000 then isRight tx else isLeft tx
+    (PubKeyAddress _) -> isLeft tx
     where tx = buildScriptHashTx [o] [(addrToBase58 a,v)]
 

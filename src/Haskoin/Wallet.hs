@@ -64,10 +64,6 @@ module Haskoin.Wallet
 , buildPKHashTx
 , buildScriptHashTx
 , buildTx
-, Build(..)
-, isComplete
-, isPartial
-, isBroken
 , SigInput(..)
 , signTx
 , detSignTx
@@ -76,6 +72,6 @@ module Haskoin.Wallet
 
 import Haskoin.Wallet.Keys
 import Haskoin.Wallet.Manager
-import Haskoin.Wallet.Tx
+import Haskoin.Wallet.TxBuilder
 
 

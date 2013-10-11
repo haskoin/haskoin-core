@@ -50,7 +50,6 @@ import Haskoin.Util
     )
 import Haskoin.Crypto
 import Haskoin.Protocol
-import Haskoin.Wallet.Tx
 
 {- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
 

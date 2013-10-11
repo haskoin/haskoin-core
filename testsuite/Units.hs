@@ -13,8 +13,6 @@ import Data.Binary.Put
 import qualified Data.ByteString as BS
 
 import Haskoin.Wallet
-import Haskoin.Wallet.Keys
-import Haskoin.Wallet.Tx
 import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util
@@ -131,7 +129,7 @@ flipEndian = decode' . BS.reverse . encode'
 
 buildPKHashTx1 =
     assertBool "Build TX 1" $ (bsToHex $ encode' tx) == bitcoindTx
-    where tx = fromJust $ buildPKHashTx 
+    where tx = fromRight $ buildPKHashTx 
                       [OutPoint prevId 14] 
                       [(toAddr,90000000)]
           prevId = flipEndian 
@@ -141,7 +139,7 @@ buildPKHashTx1 =
 
 buildPKHashTx2 =
     assertBool "Build TX 2" $ (bsToHex $ encode' tx) == bitcoindTx
-    where tx = fromJust $ buildPKHashTx 
+    where tx = fromRight $ buildPKHashTx 
                    [OutPoint prevId1 0, OutPoint prevId2 2147483647] 
                    [(toAddr1,1),(toAddr2,2100000000000000)]
           prevId1 = flipEndian 
@@ -154,7 +152,7 @@ buildPKHashTx2 =
 
 buildPKHashTx3 =
     assertBool "Build TX 3" $ (bsToHex $ encode' tx) == bitcoindTx
-    where tx = fromJust $ buildPKHashTx 
+    where tx = fromRight $ buildPKHashTx 
                    [OutPoint prevId1 0, OutPoint prevId2 2147483647] 
                    []
           prevId1 = flipEndian 
@@ -165,7 +163,7 @@ buildPKHashTx3 =
 
 buildPKHashTx4 =
     assertBool "Build TX 4" $ (bsToHex $ encode' tx) == bitcoindTx
-    where tx = fromJust $ buildPKHashTx 
+    where tx = fromRight $ buildPKHashTx 
                    [] 
                    [(toAddr1,1),(toAddr2,2100000000000000)]
           toAddr1 = "14LsRquZfURNFrzpcLVGdaHTfAPjjwiSPb"

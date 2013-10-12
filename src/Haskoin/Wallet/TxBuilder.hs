@@ -84,8 +84,9 @@ signTxIn :: MonadIO m => TxIn -> SigInput -> Tx -> Int -> [PrvKey]
          -> SecretT (BuildT m) TxIn
 signTxIn txin sigi tx i keys = do
     (out,vKeys,pubs,buildF) <- liftSecret $ decodeSigInput sigi keys
-    let sd = (tx,out,i,sh)
-    sigs <- mapM (((liftSecret $ txSigHash sd) >>=) . (flip signMsg)) vKeys
+    let sd  = (tx,out,i,sh)
+        f k = either (liftSecret . Broken) (flip signMsg k) (txSigHash sd)
+    sigs <- mapM f vKeys
     liftSecret $ buildF txin sd pubs $ map (flip TxSignature sh) sigs
     where sh = sigDataSH sigi
 
@@ -102,8 +103,9 @@ detSignTx tx sigis keys
 detSignTxIn :: TxIn -> SigInput -> Tx -> Int -> [PrvKey] -> Build TxIn
 detSignTxIn txin sigi tx i keys = do
     (out,vKeys,pubs,buildF) <- decodeSigInput sigi keys
-    let sd   = (tx,out,i,sh)
-    sigs <- mapM ((<$> txSigHash sd) . (flip detSignMsg)) vKeys
+    let sd  = (tx,out,i,sh)
+        f k = either Broken (return . (flip detSignMsg k)) (txSigHash sd)
+    sigs <- mapM f vKeys
     buildF txin sd pubs $ map (flip TxSignature sh) sigs
     where sh = sigDataSH sigi
 
@@ -169,9 +171,9 @@ buildTxIn txin (tx,out,i,_) pubs sigs
         _ -> Broken "buildTxIn: Can't sign a P2SH script here"
     where emptySig = Partial $ Script []
           buildRes res = txin{ scriptInput = res }
-          g (TxSignature sig txsh) pub = 
-              let msg = txSigHash (tx,out,i,txsh)
-                  in isComplete msg && verifySig (runBuild msg) sig pub
+          g (TxSignature sig txsh) pub = case txSigHash (tx,out,i,txsh) of
+              (Right msg) -> verifySig msg sig pub
+              _ -> False
           allSigs = sigs ++ case decodeInput $ scriptInput txin of
               Just (SpendMulSig xs _) -> xs
               _                       -> []
@@ -197,33 +199,32 @@ sigKeys out keys = unzip <$> case out of
 
 {- Build tx signature hashes -}
 
-txSigHash :: SigData -> Build Hash256
+txSigHash :: SigData -> Either String Hash256
 txSigHash sd@(tx,out,i,sh) = do
     (newIn,newOut) <- liftM2 (,) (buildInputs sd) (buildOutputs sd)
     let newTx = tx{ txIn = newIn, txOut = newOut }
     return $ doubleHash256 $ encode' newTx `BS.append` encodeSigHash32 sh
 
 -- Builds transaction inputs for computing SigHashes
-buildInputs :: SigData -> Build [TxIn]
+buildInputs :: SigData -> Either String [TxIn]
 buildInputs ((Tx _ txins _ _),out,i,sh)
     | sh `elem` [SigAllAcp, SigNoneAcp, SigSingleAcp] =
             return $ (txins !! i) { scriptInput = outScript } : []
-    | sh == SigAll                   = return $ map f $ zip txins [0..]
-    | sh `elem` [SigNone, SigSingle] = return $ map (f . g) $ zip txins [0..]
+    | sh == SigAll = return single
+    | sh `elem` [SigNone, SigSingle] = return $ map noSeq $ zip single [0..]
     where outScript = fromMaybe (Script []) $ encodeOutput out
-          f (ti,j) | i == j    = ti{ scriptInput = outScript }
-                   | otherwise = ti{ scriptInput = Script [] }
-          g (ti,j) | i == j    = (ti,j)
-                   | otherwise = (ti{ txInSequence = 0 },j)
+          empty  = map (\ti -> ti{ scriptInput = Script [] }) txins
+          single = updateIndex i empty $ \ti -> ti{ scriptInput = outScript }
+          noSeq (ti,j) = if i == j then ti else ti{ txInSequence = 0 }
 
 -- Build transaction outputs for computing SigHashes
-buildOutputs :: SigData -> Build [TxOut]
+buildOutputs :: SigData -> Either String [TxOut]
 buildOutputs ((Tx _ _ os _),_,i,sh)
     | sh `elem` [SigAll, SigAllAcp]       = return os
     | sh `elem` [SigNone, SigNoneAcp]     = return []
     | sh `elem` [SigSingle, SigSingleAcp] = 
         if i < 0 || i >= length os
-            then Broken $ "buildOutputs: index out of range: " ++ (show i)
+            then Left $ "buildOutputs: index out of range: " ++ (show i)
             else return $ buffer ++ [os !! i]
     where buffer = replicate i $ TxOut (-1) $ Script []
 

@@ -82,17 +82,12 @@ testBuildScriptHashTx os a v = case a of
 
 testSignTxBuild :: PKHashSigTemplate -> Bool
 testSignTxBuild (PKHashSigTemplate tx sigi prv)
-    | null $ txIn tx = isBroken txSig
-    | null err  = isComplete txSig && isPartial txSigP1 && isPartial txSigP2
-    | otherwise = isBroken txSig
-    where ovf   = drop (length $ txOut tx) sigi
-          err   = filter ((`elem` [SigSingle,SigSingleAcp]) . sigDataSH) ovf
-          txSig = detSignTx tx sigi prv
-          txSigP1 = detSignTx tx sigi (tail prv)
-          txSigP2 = detSignTx tx (tail sigi) prv
+    | null $ txIn tx = isBroken txSig && isBroken txSigP
+    | otherwise = isComplete txSig && isPartial txSigP
+    where txSig = detSignTx tx sigi prv
+          txSigP = detSignTx tx (tail sigi) (tail prv)
         
-
-
+-- todo: test p2sh transactions
 
 
 

@@ -5,6 +5,7 @@ import Test.QuickCheck
 import Control.Applicative
 
 import Data.Maybe
+import Data.List
 
 import Haskoin.Wallet
 import Haskoin.Wallet.Arbitrary
@@ -23,10 +24,13 @@ data PKHashSigTemplate = PKHashSigTemplate Tx [SigInput] [PrvKey]
 instance Arbitrary PKHashSigTemplate where
     arbitrary = do
         inCount   <- choose (0,10)
+        p         <- choose (0,inCount-1)
         outPoints <- vectorOf inCount arbitrary
         prvKeys   <- vectorOf inCount arbitrary
-        sigHashes <- vectorOf inCount arbitrary
-        payTo     <- choose (0,10) >>= \n -> do
+        sigHashes <- vectorOf inCount $ elements [ SigAll , SigNone
+                                                 , SigAllAcp , SigNoneAcp
+                                                 ]
+        payTo <- choose (0,10) >>= \n -> do
             h <- (map (addrToBase58 . PubKeyAddress)) <$> vectorOf n arbitrary    
             v <- vectorOf n $ choose (1,2100000000000000)
             return $ zip h v
@@ -35,6 +39,8 @@ instance Arbitrary PKHashSigTemplate where
             scripts   = map (fromJust . encodeOutput) scriptOut
             sigInputs = map (\(s,o,h) -> SigInput (TxOut 1 s) o h) 
                             (zip3 scripts outPoints sigHashes)
+            perInputs = (permutations sigInputs) !! p
+            perKeys   = (permutations prvKeys) !! p
             tx        = fromRight $ buildPKHashTx outPoints payTo
-        return $ PKHashSigTemplate tx sigInputs prvKeys
+        return $ PKHashSigTemplate tx perInputs perKeys
 

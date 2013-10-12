@@ -13,6 +13,7 @@ import Data.Binary.Put
 import qualified Data.ByteString as BS
 
 import Haskoin.Wallet
+import Haskoin.Wallet.TxBuilder
 import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util
@@ -24,7 +25,7 @@ m1 :: XPrvKey
 m1 = fromJust $ makeXPrvKey $ BS.pack [0..15]
 
 tests =
-    [ testGroup "Test vector 1" 
+    [ testGroup "BIP32 derivation vector 1" 
         [ testCase "Chain m" v1c1
         , testCase "Chain m/0'" v1c2
         , testCase "Chain m/0'/1" v1c3
@@ -34,6 +35,10 @@ tests =
         , testCase "Build PKHash Tx 2" buildPKHashTx2
         , testCase "Build PKHash Tx 3" buildPKHashTx3
         , testCase "Build PKHash Tx 4" buildPKHashTx4
+        ] 
+    , testGroup "Verify transaction (bitcoind /test/data/tx_valid.json)" 
+        [ testCase "Verify Tx 1" $ verifyTxVector $ verifyTxVectors !! 0
+        , testCase "Verify Tx 2" $ verifyTxVector $ verifyTxVectors !! 1
         ] 
     ]
 
@@ -169,5 +174,33 @@ buildPKHashTx4 =
           toAddr1 = "14LsRquZfURNFrzpcLVGdaHTfAPjjwiSPb"
           toAddr2 = "19VCgS642vzEA1sdByoSn6GsWBwraV8D4n"
           bitcoindTx = stringToBS "01000000000201000000000000001976a91424aa604689cc582292b97668bedd91dd5bf9374c88ac0040075af07507001976a9145d16672f53981ff21c5f42b40d1954993cbca54f88ac00000000"
+
+{- Test vectors from bitcoind -}
+-- github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_valid.json
+
+
+verifyTxVectors :: [(OutPoint,String,String)]
+verifyTxVectors = 
+    [
+      ( OutPoint 
+          (flipEndian 0x60a20bd93aa49ab4b28d514ec10b06e1829ce6818ec06cd3aabd013ebcdc4bb1) 
+          0
+      , "514104cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef58bbfbfaff7d8a473e7e2e6d317b87bafe8bde97e3cf8f065dec022b51d11fcdd0d348ac4410461cbdcc5409fb4b4d42b51d33381354d80e550078cb532a34bfa2fcfdeb7d76519aecc62770f5b0e4ef8551946d8a540911abe3e7854a26f39f58b25c15342af52ae"
+      , "0100000001b14bdcbc3e01bdaad36cc08e81e69c82e1060bc14e518db2b49aa43ad90ba26000000000490047304402203f16c6f40162ab686621ef3000b04e75418a0c0cb2d8aebeac894ae360ac1e780220ddc15ecdfc3507ac48e1681a33eb60996631bf6bf5bc0a0682c4db743ce7ca2b01ffffffff0140420f00000000001976a914660d4ef3a743e3e696ad990364e555c271ad504b88ac00000000"
+      )
+    , ( OutPoint
+          (flipEndian 0x60a20bd93aa49ab4b28d514ec10b06e1829ce6818ec06cd3aabd013ebcdc4bb1)
+          0
+      , "514104cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef58bbfbfaff7d8a473e7e2e6d317b87bafe8bde97e3cf8f065dec022b51d11fcdd0d348ac4410461cbdcc5409fb4b4d42b51d33381354d80e550078cb532a34bfa2fcfdeb7d76519aecc62770f5b0e4ef8551946d8a540911abe3e7854a26f39f58b25c15342af52ae"
+      , "0100000001b14bdcbc3e01bdaad36cc08e81e69c82e1060bc14e518db2b49aa43ad90ba260000000004A0048304402203f16c6f40162ab686621ef3000b04e75418a0c0cb2d8aebeac894ae360ac1e780220ddc15ecdfc3507ac48e1681a33eb60996631bf6bf5bc0a0682c4db743ce7ca2bab01ffffffff0140420f00000000001976a914660d4ef3a743e3e696ad990364e555c271ad504b88ac00000000"
+      )
+    ]
+
+verifyTxVector :: (OutPoint,String,String) -> Assertion
+verifyTxVector (op,bsScript,bsTx) =
+    assertBool "Verify transaction" $ verifyTx tx [(Script ops,op)]
+    where tx  = decode' (fromJust $ hexToBS $ stringToBS bsTx)
+          ops = runGet' getScriptOps (fromJust $ hexToBS $ stringToBS bsScript)
+
 
 

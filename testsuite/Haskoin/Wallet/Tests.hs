@@ -10,13 +10,12 @@ import Control.Applicative
 import Data.Bits
 import Data.Maybe
 import Data.Binary
-import Data.Binary.Get
-import Data.Binary.Put
 import qualified Data.ByteString as BS
 
 import QuickCheckUtils
 
 import Haskoin.Wallet
+import Haskoin.Wallet.TxBuilder
 import Haskoin.Wallet.Arbitrary
 import Haskoin.Script
 import Haskoin.Crypto
@@ -40,6 +39,7 @@ tests =
         ]
     , testGroup "Signing Transactions"
         [ testProperty "Check signed transaction status" testSignTxBuild
+        , testProperty "Sign and validate transactions" testSignTxValidate
         ]
     ]
 
@@ -86,7 +86,15 @@ testSignTxBuild (PKHashSigTemplate tx sigi prv)
     | otherwise = isComplete txSig && isPartial txSigP
     where txSig = detSignTx tx sigi prv
           txSigP = detSignTx tx (tail sigi) (tail prv)
-        
+         
+testSignTxValidate :: PKHashSigTemplate -> Bool
+testSignTxValidate (PKHashSigTemplate tx sigi prv) =
+    case detSignTx tx sigi prv of
+        (Broken s)    -> True
+        (Partial tx)  -> not $ verifyTx tx $ map f sigi
+        (Complete tx) -> verifyTx tx $ map f sigi
+    where f si = (scriptOutput $ sigDataOut si, sigDataOP si)
+
 -- todo: test p2sh transactions
 
 

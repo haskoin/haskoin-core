@@ -5,6 +5,7 @@ module Haskoin.Wallet.TxBuilder
 , SigInput(..)
 , signTx
 , detSignTx
+, verifyTx
 ) where
 
 import Control.Monad
@@ -196,6 +197,43 @@ sigKeys out keys = unzip <$> case out of
         take r $ filter ((`elem` ps) . snd) zipKeys
     _  -> Broken "sigKeys: Can't decode P2SH here" 
     where zipKeys = zip keys $ map derivePubKey keys
+
+{- Tx verification -}
+
+verifyTx :: Tx -> [(Script,OutPoint)] -> Bool
+verifyTx tx xs = all v $ zip3 m (txIn tx) [0..]
+    where m = map (fst <$>) $ matchTemplate xs (txIn tx) f
+          f (s,o) txin = o == prevOutput txin
+          v (maybeS,txin,i) = fromMaybe False $ do
+              s         <- maybeS
+              (out,inp) <- decodeVerifySigInput s txin
+              case (out,inp) of
+                  (PayPK pub,SpendPK (TxSignature sig sh)) -> do
+                      msg <- eitherToMaybe $ txSigHash (tx,out,i,sh)
+                      return $ verifySig msg sig pub
+                  (PayPKHash a,SpendPKHash (TxSignature sig sh) pub) -> do
+                      guard $ pubKeyAddr pub == a
+                      msg <- eitherToMaybe $ txSigHash (tx,out,i,sh)
+                      return $ verifySig msg sig pub
+                  (PayMulSig pubs r,SpendMulSig sigs _) ->
+                      (== r) <$> countMulSig pubs sigs (tx,out,i) 
+
+-- Count the number of valid signatures
+countMulSig :: [PubKey] -> [TxSignature] -> (Tx,ScriptOutput,Int) -> Maybe Int
+countMulSig [] _  _ = Just 0
+countMulSig _  [] _ = Just 0
+countMulSig (pub:pubs) sigs@(TxSignature sig sh:rest) (tx,out,i) = do
+    msg <- eitherToMaybe $ txSigHash (tx,out,i,sh)
+    if verifySig msg sig pub then (+1) <$> countMulSig pubs rest (tx,out,i)
+                             else          countMulSig pubs sigs (tx,out,i)
+                  
+decodeVerifySigInput :: Script -> TxIn -> Maybe (ScriptOutput, ScriptInput)
+decodeVerifySigInput so (TxIn _ si _ ) = case decodeOutput so of
+    Just (PayScriptHash a) -> do
+        (ScriptHashInput inp rdm) <- decodeScriptHash si
+        guard $ scriptAddr rdm == a
+        return (rdm,inp)
+    out -> liftM2 (,) out $ decodeInput si
 
 {- Build tx signature hashes -}
 

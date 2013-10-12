@@ -24,7 +24,7 @@ data PKHashSigTemplate = PKHashSigTemplate Tx [SigInput] [PrvKey]
 instance Arbitrary PKHashSigTemplate where
     arbitrary = do
         inCount   <- choose (0,10)
-        p         <- choose (0,inCount-1)
+        perm      <- choose (0,max 0 $ inCount-1)
         outPoints <- vectorOf inCount arbitrary
         prvKeys   <- vectorOf inCount arbitrary
         sigHashes <- vectorOf inCount $ elements [ SigAll , SigNone
@@ -39,8 +39,8 @@ instance Arbitrary PKHashSigTemplate where
             scripts   = map (fromJust . encodeOutput) scriptOut
             sigInputs = map (\(s,o,h) -> SigInput (TxOut 1 s) o h) 
                             (zip3 scripts outPoints sigHashes)
-            perInputs = (permutations sigInputs) !! p
-            perKeys   = (permutations prvKeys) !! p
+            perInputs = (permutations sigInputs) !! perm
+            perKeys   = (permutations prvKeys) !! perm
             tx        = fromRight $ buildPKHashTx outPoints payTo
         return $ PKHashSigTemplate tx perInputs perKeys
 

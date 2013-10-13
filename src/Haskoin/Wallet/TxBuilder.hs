@@ -66,7 +66,6 @@ data SigInput = SigInput   { sigDataOut :: TxOut
                            }
               deriving (Eq, Show)
 
-type SigData = (Tx, ScriptOutput, Int, SigHash)
 
 liftSecret :: MonadIO m => Build a -> SecretT (BuildT m) a
 liftSecret = lift . liftBuild
@@ -84,11 +83,11 @@ signTx tx sigis keys
 signTxIn :: MonadIO m => TxIn -> SigInput -> Tx -> Int -> [PrvKey] 
          -> SecretT (BuildT m) TxIn
 signTxIn txin sigi tx i keys = do
-    (out,vKeys,pubs,buildF) <- liftSecret $ decodeSigInput sigi keys
-    let sd  = (tx,out,i,sh)
-        f k = either (liftSecret . Broken) (flip signMsg k) (txSigHash sd)
+    (out,vKeys,pubs,buildf) <- liftSecret $ decodeSigInput sigi keys
+    let sigh = txSigHash tx (fromJust $ encodeOutput out) i sh
+        f k  = either (liftSecret . Broken) (flip signMsg k) sigh
     sigs <- mapM f vKeys
-    liftSecret $ buildF txin sd pubs $ map (flip TxSignature sh) sigs
+    liftSecret $ buildf txin tx out i pubs $ map (flip TxSignature sh) sigs
     where sh = sigDataSH sigi
 
 detSignTx :: Tx -> [SigInput] -> [PrvKey] -> Build Tx
@@ -103,11 +102,11 @@ detSignTx tx sigis keys
 
 detSignTxIn :: TxIn -> SigInput -> Tx -> Int -> [PrvKey] -> Build TxIn
 detSignTxIn txin sigi tx i keys = do
-    (out,vKeys,pubs,buildF) <- decodeSigInput sigi keys
-    let sd  = (tx,out,i,sh)
-        f k = either Broken (return . (flip detSignMsg k)) (txSigHash sd)
+    (out,vKeys,pubs,buildf) <- decodeSigInput sigi keys
+    let sigh = txSigHash tx (fromJust $ encodeOutput out) i sh
+        f k  = either Broken (return . (flip detSignMsg k)) sigh
     sigs <- mapM f vKeys
-    buildF txin sd pubs $ map (flip TxSignature sh) sigs
+    buildf txin tx out i pubs $ map (flip TxSignature sh) sigs
     where sh = sigDataSH sigi
 
 {- Helpers for signing transactions -}
@@ -127,8 +126,8 @@ orderSigInput :: Tx -> [SigInput] -> [(Maybe SigInput, TxIn, Int)]
 orderSigInput tx si = zip3 (matchTemplate si (txIn tx) f) (txIn tx) [0..]
     where f si txin = sigDataOP si == prevOutput txin
 
-type BuildFunction = 
-    (TxIn -> SigData -> [PubKey] -> [TxSignature] -> Build TxIn)
+type BuildFunction =  TxIn -> Tx -> ScriptOutput -> Int 
+                   -> [PubKey] -> [TxSignature] -> Build TxIn
 
 decodeSigInput :: SigInput -> [PrvKey] -> 
     Build (ScriptOutput, [PrvKey], [PubKey], BuildFunction)
@@ -147,8 +146,8 @@ decodeSigInput sigi keys = case sigi of
         _ -> Broken "decodeSigInput: Could not decode script output"
 
 buildTxInSH :: BuildFunction
-buildTxInSH txin sd@(tx,rdm,i,_) pubs sigs = do
-    s <- scriptInput <$> buildTxIn txin sd pubs sigs
+buildTxInSH txin tx rdm i pubs sigs = do
+    s <- scriptInput <$> buildTxIn txin tx rdm i pubs sigs
     buildRes <$> case decodeInput s of
         Just si -> do
             let shi = ScriptHashInput si rdm
@@ -158,7 +157,7 @@ buildTxInSH txin sd@(tx,rdm,i,_) pubs sigs = do
           buildRes res = txin{ scriptInput = res }
 
 buildTxIn :: BuildFunction
-buildTxIn txin (tx,out,i,_) pubs sigs
+buildTxIn txin tx out i pubs sigs
     | null sigs = buildRes <$> emptySig
     | otherwise = buildRes <$> case out of
         (PayPK _) -> fromMaybe emptySig $
@@ -172,7 +171,8 @@ buildTxIn txin (tx,out,i,_) pubs sigs
         _ -> Broken "buildTxIn: Can't sign a P2SH script here"
     where emptySig = Partial $ Script []
           buildRes res = txin{ scriptInput = res }
-          g (TxSignature sig txsh) pub = case txSigHash (tx,out,i,txsh) of
+          so = fromJust $ encodeOutput out
+          g (TxSignature sig txsh) pub = case txSigHash tx so i txsh of
               (Right msg) -> verifySig msg sig pub
               _ -> False
           allSigs = sigs ++ case decodeInput $ scriptInput txin of
@@ -207,25 +207,26 @@ verifyTx tx xs = all v $ zip3 m (txIn tx) [0..]
           v (maybeS,txin,i) = fromMaybe False $ do
               s         <- maybeS
               (out,inp) <- decodeVerifySigInput s txin
+              let so = fromJust $ encodeOutput out
               case (out,inp) of
                   (PayPK pub,SpendPK (TxSignature sig sh)) -> do
-                      msg <- eitherToMaybe $ txSigHash (tx,out,i,sh)
+                      msg <- eitherToMaybe $ txSigHash tx so i sh
                       return $ verifySig msg sig pub
                   (PayPKHash a,SpendPKHash (TxSignature sig sh) pub) -> do
                       guard $ pubKeyAddr pub == a
-                      msg <- eitherToMaybe $ txSigHash (tx,out,i,sh)
+                      msg <- eitherToMaybe $ txSigHash tx so i sh
                       return $ verifySig msg sig pub
                   (PayMulSig pubs r,SpendMulSig sigs _) ->
-                      (== r) <$> countMulSig pubs sigs (tx,out,i) 
+                      (== r) <$> countMulSig tx so i pubs sigs 
 
 -- Count the number of valid signatures
-countMulSig :: [PubKey] -> [TxSignature] -> (Tx,ScriptOutput,Int) -> Maybe Int
-countMulSig [] _  _ = Just 0
-countMulSig _  [] _ = Just 0
-countMulSig (pub:pubs) sigs@(TxSignature sig sh:rest) (tx,out,i) = do
-    msg <- eitherToMaybe $ txSigHash (tx,out,i,sh)
-    if verifySig msg sig pub then (+1) <$> countMulSig pubs rest (tx,out,i)
-                             else          countMulSig pubs sigs (tx,out,i)
+countMulSig :: Tx -> Script -> Int -> [PubKey] -> [TxSignature] -> Maybe Int
+countMulSig tx so i [] sigs = Just 0
+countMulSig tx so i pubs [] = Just 0
+countMulSig tx so i (pub:pubs) sigs@(TxSignature sig sh:rest) = do
+    msg <- eitherToMaybe $ txSigHash tx so i sh
+    if verifySig msg sig pub then (+1) <$> countMulSig tx so i pubs rest
+                             else          countMulSig tx so i pubs sigs
                   
 decodeVerifySigInput :: Script -> TxIn -> Maybe (ScriptOutput, ScriptInput)
 decodeVerifySigInput so (TxIn _ si _ ) = case decodeOutput so of
@@ -234,35 +235,4 @@ decodeVerifySigInput so (TxIn _ si _ ) = case decodeOutput so of
         guard $ scriptAddr rdm == a
         return (rdm,inp)
     out -> liftM2 (,) out $ decodeInput si
-
-{- Build tx signature hashes -}
-
-txSigHash :: SigData -> Either String Hash256
-txSigHash sd@(tx,out,i,sh) = do
-    (newIn,newOut) <- liftM2 (,) (buildInputs sd) (buildOutputs sd)
-    let newTx = tx{ txIn = newIn, txOut = newOut }
-    return $ doubleHash256 $ encode' newTx `BS.append` encodeSigHash32 sh
-
--- Builds transaction inputs for computing SigHashes
-buildInputs :: SigData -> Either String [TxIn]
-buildInputs ((Tx _ txins _ _),out,i,sh)
-    | sh `elem` [SigAllAcp, SigNoneAcp, SigSingleAcp] =
-            return $ (txins !! i) { scriptInput = outScript } : []
-    | sh == SigAll = return single
-    | sh `elem` [SigNone, SigSingle] = return $ map noSeq $ zip single [0..]
-    where outScript = fromMaybe (Script []) $ encodeOutput out
-          empty  = map (\ti -> ti{ scriptInput = Script [] }) txins
-          single = updateIndex i empty $ \ti -> ti{ scriptInput = outScript }
-          noSeq (ti,j) = if i == j then ti else ti{ txInSequence = 0 }
-
--- Build transaction outputs for computing SigHashes
-buildOutputs :: SigData -> Either String [TxOut]
-buildOutputs ((Tx _ _ os _),_,i,sh)
-    | sh `elem` [SigAll, SigAllAcp]       = return os
-    | sh `elem` [SigNone, SigNoneAcp]     = return []
-    | sh `elem` [SigSingle, SigSingleAcp] = 
-        if i < 0 || i >= length os
-            then Left $ "buildOutputs: index out of range: " ++ (show i)
-            else return $ buffer ++ [os !! i]
-    where buffer = replicate i $ TxOut (-1) $ Script []
 

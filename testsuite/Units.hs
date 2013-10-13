@@ -202,5 +202,3 @@ verifyTxVector (op,bsScript,bsTx) =
     where tx  = decode' (fromJust $ hexToBS $ stringToBS bsTx)
           ops = runGet' getScriptOps (fromJust $ hexToBS $ stringToBS bsScript)
 
-
-

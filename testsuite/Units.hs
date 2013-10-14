@@ -37,10 +37,24 @@ tests =
         , testCase "Build PKHash Tx 4" buildPKHashTx4
         ] 
     , testGroup "Verify transaction (bitcoind /test/data/tx_valid.json)" 
-        [ testCase "Verify Tx 1" $ verifyTxVector $ verifyTxVectors !! 0
-        , testCase "Verify Tx 2" $ verifyTxVector $ verifyTxVectors !! 1
-        ] 
+        ( map mapVerifyTxVector $ zip verifyTxVectors [0..] )
     ]
+
+mapVerifyTxVector :: (([(String,String,String)],String),Int) 
+                  -> Test.Framework.Test
+mapVerifyTxVector (v,i) = testCase name $ verifyTxVector v i
+    where name = "Verify Tx " ++ (show i)
+
+verifyTxVector :: ([(String,String,String)],String) -> Int -> Assertion
+verifyTxVector (is,bsTx) i = 
+    assertBool name $ verifyTx tx $ map f is
+    where name = "    > Verify transaction " ++ (show i)
+          tx  = decode' (fromJust $ hexToBS bsTx)
+          f (o1,o2,bsScript) = 
+              let ops = runGet' getScriptOps (fromJust $ hexToBS bsScript)
+                  op  = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS o1) 
+                                 (runGet' getWord32le $ fromJust $ hexToBS o2)
+                  in (Script ops,op)
 
 v1c1 = do
     assertBool "xPrvID" $
@@ -179,26 +193,44 @@ buildPKHashTx4 =
 -- github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_valid.json
 
 
-verifyTxVectors :: [(OutPoint,String,String)]
+verifyTxVectors :: [([(String,String,String)],String)]
 verifyTxVectors = 
     [
-      ( OutPoint 
-          (flipEndian 0x60a20bd93aa49ab4b28d514ec10b06e1829ce6818ec06cd3aabd013ebcdc4bb1) 
-          0
-      , "514104cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef58bbfbfaff7d8a473e7e2e6d317b87bafe8bde97e3cf8f065dec022b51d11fcdd0d348ac4410461cbdcc5409fb4b4d42b51d33381354d80e550078cb532a34bfa2fcfdeb7d76519aecc62770f5b0e4ef8551946d8a540911abe3e7854a26f39f58b25c15342af52ae"
+      ( [ 
+          ( "60a20bd93aa49ab4b28d514ec10b06e1829ce6818ec06cd3aabd013ebcdc4bb1"
+          , "00000000"
+          , "514104cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef58bbfbfaff7d8a473e7e2e6d317b87bafe8bde97e3cf8f065dec022b51d11fcdd0d348ac4410461cbdcc5409fb4b4d42b51d33381354d80e550078cb532a34bfa2fcfdeb7d76519aecc62770f5b0e4ef8551946d8a540911abe3e7854a26f39f58b25c15342af52ae"
+          )
+        ]
       , "0100000001b14bdcbc3e01bdaad36cc08e81e69c82e1060bc14e518db2b49aa43ad90ba26000000000490047304402203f16c6f40162ab686621ef3000b04e75418a0c0cb2d8aebeac894ae360ac1e780220ddc15ecdfc3507ac48e1681a33eb60996631bf6bf5bc0a0682c4db743ce7ca2b01ffffffff0140420f00000000001976a914660d4ef3a743e3e696ad990364e555c271ad504b88ac00000000"
       )
-    , ( OutPoint
-          (flipEndian 0x60a20bd93aa49ab4b28d514ec10b06e1829ce6818ec06cd3aabd013ebcdc4bb1)
-          0
-      , "514104cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef58bbfbfaff7d8a473e7e2e6d317b87bafe8bde97e3cf8f065dec022b51d11fcdd0d348ac4410461cbdcc5409fb4b4d42b51d33381354d80e550078cb532a34bfa2fcfdeb7d76519aecc62770f5b0e4ef8551946d8a540911abe3e7854a26f39f58b25c15342af52ae"
+    , ( [
+          ( "60a20bd93aa49ab4b28d514ec10b06e1829ce6818ec06cd3aabd013ebcdc4bb1"
+          , "00000000"
+          , "514104cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef58bbfbfaff7d8a473e7e2e6d317b87bafe8bde97e3cf8f065dec022b51d11fcdd0d348ac4410461cbdcc5409fb4b4d42b51d33381354d80e550078cb532a34bfa2fcfdeb7d76519aecc62770f5b0e4ef8551946d8a540911abe3e7854a26f39f58b25c15342af52ae"
+          )
+        ]
       , "0100000001b14bdcbc3e01bdaad36cc08e81e69c82e1060bc14e518db2b49aa43ad90ba260000000004A0048304402203f16c6f40162ab686621ef3000b04e75418a0c0cb2d8aebeac894ae360ac1e780220ddc15ecdfc3507ac48e1681a33eb60996631bf6bf5bc0a0682c4db743ce7ca2bab01ffffffff0140420f00000000001976a914660d4ef3a743e3e696ad990364e555c271ad504b88ac00000000"
       )
+    , ( [
+          ( "406b2b06bcd34d3c8733e6b79f7a394c8a431fbf4ff5ac705c93f4076bb77602"
+          , "00000000"
+          , "76a914dc44b1164188067c3a32d4780f5996fa14a4f2d988ac"
+          )
+        ]
+      , "01000000010276b76b07f4935c70acf54fbf1f438a4c397a9fb7e633873c4dd3bc062b6b40000000008c493046022100d23459d03ed7e9511a47d13292d3430a04627de6235b6e51a40f9cd386f2abe3022100e7d25b080f0bb8d8d5f878bba7d54ad2fda650ea8d158a33ee3cbd11768191fd004104b0e2c879e4daf7b9ab68350228c159766676a14f5815084ba166432aab46198d4cca98fa3e9981d0a90b2effc514b76279476550ba3663fdcaff94c38420e9d5000000000100093d00000000001976a9149a7b0f3b80c6baaeedce0a0842553800f832ba1f88ac00000000"
+      )
+    , ( [
+          ( "b464e85df2a238416f8bdae11d120add610380ea07f4ef19c5f9dfd472f96c3d"
+          , "00000000"
+          , "76a914bef80ecf3a44500fda1bc92176e442891662aed288ac"
+          )
+        , ( "b7978cc96e59a8b13e0865d3f95657561a7f725be952438637475920bac9eb21"
+          , "01000000"
+          , "76a914bef80ecf3a44500fda1bc92176e442891662aed288ac"
+          )
+        ]
+      , "01000000023d6cf972d4dff9c519eff407ea800361dd0a121de1da8b6f4138a2f25de864b4000000008a4730440220ffda47bfc776bcd269da4832626ac332adfca6dd835e8ecd83cd1ebe7d709b0e022049cffa1cdc102a0b56e0e04913606c70af702a1149dc3b305ab9439288fee090014104266abb36d66eb4218a6dd31f09bb92cf3cfa803c7ea72c1fc80a50f919273e613f895b855fb7465ccbc8919ad1bd4a306c783f22cd3227327694c4fa4c1c439affffffff21ebc9ba20594737864352e95b727f1a565756f9d365083eb1a8596ec98c97b7010000008a4730440220503ff10e9f1e0de731407a4a245531c9ff17676eda461f8ceeb8c06049fa2c810220c008ac34694510298fa60b3f000df01caa244f165b727d4896eb84f81e46bcc4014104266abb36d66eb4218a6dd31f09bb92cf3cfa803c7ea72c1fc80a50f919273e613f895b855fb7465ccbc8919ad1bd4a306c783f22cd3227327694c4fa4c1c439affffffff01f0da5200000000001976a914857ccd42dded6df32949d4646dfa10a92458cfaa88ac00000000"
+      )
     ]
-
-verifyTxVector :: (OutPoint,String,String) -> Assertion
-verifyTxVector (op,bsScript,bsTx) =
-    assertBool "Verify transaction" $ verifyTx tx [(Script ops,op)]
-    where tx  = decode' (fromJust $ hexToBS bsTx)
-          ops = runGet' getScriptOps (fromJust $ hexToBS bsScript)
 

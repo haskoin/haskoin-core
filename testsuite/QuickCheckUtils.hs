@@ -27,9 +27,9 @@ instance Arbitrary PKHashSigTemplate where
         perm      <- choose (0,max 0 $ inCount-1)
         outPoints <- vectorOf inCount arbitrary
         prvKeys   <- vectorOf inCount arbitrary
-        sigHashes <- vectorOf inCount $ elements [ SigAll , SigNone
-                                                 , SigAllAcp , SigNoneAcp
-                                                 ]
+        sigHashes <- vectorOf inCount $ oneof [ SigAll <$> arbitrary
+                                              , SigNone <$> arbitrary
+                                              ]
         payTo <- choose (0,10) >>= \n -> do
             h <- (map (addrToBase58 . PubKeyAddress)) <$> vectorOf n arbitrary    
             v <- vectorOf n $ choose (1,2100000000000000)

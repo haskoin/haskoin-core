@@ -140,7 +140,7 @@ buildPKHashTx1 =
           prevId = flipEndian 
             0xeb29eba154166f6541ebcc9cbdf5088756e026af051f123bcfb526df594549db
           toAddr = "14LsRquZfURNFrzpcLVGdaHTfAPjjwiSPb"
-          bitcoindTx = stringToBS "0100000001db494559df26b5cf3b121f05af26e0568708f5bd9ccceb41656f1654a1eb29eb0e00000000ffffffff01804a5d05000000001976a91424aa604689cc582292b97668bedd91dd5bf9374c88ac00000000"
+          bitcoindTx = "0100000001db494559df26b5cf3b121f05af26e0568708f5bd9ccceb41656f1654a1eb29eb0e00000000ffffffff01804a5d05000000001976a91424aa604689cc582292b97668bedd91dd5bf9374c88ac00000000"
 
 buildPKHashTx2 =
     assertBool "Build TX 2" $ (bsToHex $ encode' tx) == bitcoindTx
@@ -153,7 +153,7 @@ buildPKHashTx2 =
             0x01000000000000000000000000000000000000000000000000000000000000
           toAddr1 = "14LsRquZfURNFrzpcLVGdaHTfAPjjwiSPb"
           toAddr2 = "19VCgS642vzEA1sdByoSn6GsWBwraV8D4n"
-          bitcoindTx = stringToBS "0100000002db494559df26b5cf3b121f05af26e0568708f5bd9ccceb41656f1654a1eb29eb0000000000ffffffff0000000000000000000000000000000000000000000000000000000000000100ffffff7f00ffffffff0201000000000000001976a91424aa604689cc582292b97668bedd91dd5bf9374c88ac0040075af07507001976a9145d16672f53981ff21c5f42b40d1954993cbca54f88ac00000000"
+          bitcoindTx = "0100000002db494559df26b5cf3b121f05af26e0568708f5bd9ccceb41656f1654a1eb29eb0000000000ffffffff0000000000000000000000000000000000000000000000000000000000000100ffffff7f00ffffffff0201000000000000001976a91424aa604689cc582292b97668bedd91dd5bf9374c88ac0040075af07507001976a9145d16672f53981ff21c5f42b40d1954993cbca54f88ac00000000"
 
 buildPKHashTx3 =
     assertBool "Build TX 3" $ (bsToHex $ encode' tx) == bitcoindTx
@@ -164,7 +164,7 @@ buildPKHashTx3 =
             0xeb29eba154166f6541ebcc9cbdf5088756e026af051f123bcfb526df594549db
           prevId2 = flipEndian 
             0x01000000000000000000000000000000000000000000000000000000000000
-          bitcoindTx = stringToBS "0100000002db494559df26b5cf3b121f05af26e0568708f5bd9ccceb41656f1654a1eb29eb0000000000ffffffff0000000000000000000000000000000000000000000000000000000000000100ffffff7f00ffffffff0000000000"
+          bitcoindTx = "0100000002db494559df26b5cf3b121f05af26e0568708f5bd9ccceb41656f1654a1eb29eb0000000000ffffffff0000000000000000000000000000000000000000000000000000000000000100ffffff7f00ffffffff0000000000"
 
 buildPKHashTx4 =
     assertBool "Build TX 4" $ (bsToHex $ encode' tx) == bitcoindTx
@@ -173,7 +173,7 @@ buildPKHashTx4 =
                    [(toAddr1,1),(toAddr2,2100000000000000)]
           toAddr1 = "14LsRquZfURNFrzpcLVGdaHTfAPjjwiSPb"
           toAddr2 = "19VCgS642vzEA1sdByoSn6GsWBwraV8D4n"
-          bitcoindTx = stringToBS "01000000000201000000000000001976a91424aa604689cc582292b97668bedd91dd5bf9374c88ac0040075af07507001976a9145d16672f53981ff21c5f42b40d1954993cbca54f88ac00000000"
+          bitcoindTx = "01000000000201000000000000001976a91424aa604689cc582292b97668bedd91dd5bf9374c88ac0040075af07507001976a9145d16672f53981ff21c5f42b40d1954993cbca54f88ac00000000"
 
 {- Test vectors from bitcoind -}
 -- github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_valid.json
@@ -199,6 +199,6 @@ verifyTxVectors =
 verifyTxVector :: (OutPoint,String,String) -> Assertion
 verifyTxVector (op,bsScript,bsTx) =
     assertBool "Verify transaction" $ verifyTx tx [(Script ops,op)]
-    where tx  = decode' (fromJust $ hexToBS $ stringToBS bsTx)
-          ops = runGet' getScriptOps (fromJust $ hexToBS $ stringToBS bsScript)
+    where tx  = decode' (fromJust $ hexToBS bsTx)
+          ops = runGet' getScriptOps (fromJust $ hexToBS bsScript)
 

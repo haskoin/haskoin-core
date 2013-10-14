@@ -46,7 +46,7 @@ import Haskoin.Util
     , bsToString
     , toStrictBS
     , encode'
-    , decodeEither
+    , decodeToMaybe
     )
 import Haskoin.Crypto
 import Haskoin.Protocol
@@ -173,14 +173,10 @@ xPubExport :: XPubKey -> String
 xPubExport = bsToString . encodeBase58Check . encode'
 
 xPrvImport :: String -> Maybe XPrvKey
-xPrvImport str = do
-    bs <- decodeBase58Check $ stringToBS str
-    decodeEither bs Nothing Just
+xPrvImport str = decodeToMaybe =<< (decodeBase58Check $ stringToBS str)
 
 xPubImport :: String -> Maybe XPubKey
-xPubImport str = do
-    bs <- decodeBase58Check $ stringToBS str
-    decodeEither bs Nothing Just
+xPubImport str = decodeToMaybe =<< (decodeBase58Check $ stringToBS str)
 
 -- Export to WIF format
 xPrvWIF :: XPrvKey -> String

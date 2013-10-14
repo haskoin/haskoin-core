@@ -36,7 +36,7 @@ instance Arbitrary PKHashSigTemplate where
             return $ zip h v
         let pubKeys   = map derivePubKey prvKeys
             scriptOut = map (PayPKHash . pubKeyAddr) pubKeys
-            scripts   = map (fromJust . encodeOutput) scriptOut
+            scripts   = map encodeOutput scriptOut
             sigInputs = map (\(s,o,h) -> SigInput (TxOut 1 s) o h) 
                             (zip3 scripts outPoints sigHashes)
             perInputs = (permutations sigInputs) !! perm

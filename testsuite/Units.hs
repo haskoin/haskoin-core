@@ -20,39 +20,35 @@ import Haskoin.Util
 
 tests =
     [ testGroup "BIP32 derivation vector 1" 
-        [ testCase "Chain m" $ verifyXKeyVector (xKeyVectors !! 0)
-        , testCase "Chain m/0'" $ verifyXKeyVector (xKeyVectors !! 1)
-        , testCase "Chain m/0'/1" $ verifyXKeyVector (xKeyVectors !! 2)
-        , testCase "Chain m/0'/1/2'" $ verifyXKeyVector (xKeyVectors !! 3)
-        , testCase "Chain m/0'/1/2'/2" $ verifyXKeyVector (xKeyVectors !! 4)
+        [ testCase "Chain m" $ runXKeyVec (xKeyVec !! 0)
+        , testCase "Chain m/0'" $ runXKeyVec (xKeyVec !! 1)
+        , testCase "Chain m/0'/1" $ runXKeyVec (xKeyVec !! 2)
+        , testCase "Chain m/0'/1/2'" $ runXKeyVec (xKeyVec !! 3)
+        , testCase "Chain m/0'/1/2'/2" $ runXKeyVec (xKeyVec !! 4)
         , testCase "Chain m/0'/1/2'/2/1000000000" $ 
-            verifyXKeyVector (xKeyVectors !! 5)
+            runXKeyVec (xKeyVec !! 5)
         ] 
     , testGroup "BIP32 subkey derivation vector 2" 
-        [ testCase "Chain m" $ verifyXKeyVector (xKeyVectors2 !! 0)
-        , testCase "Chain m/0" $ verifyXKeyVector (xKeyVectors2 !! 1)
+        [ testCase "Chain m" $ runXKeyVec (xKeyVec2 !! 0)
+        , testCase "Chain m/0" $ runXKeyVec (xKeyVec2 !! 1)
         , testCase "Chain m/0/2147483647'" $ 
-            verifyXKeyVector (xKeyVectors2 !! 2)
+            runXKeyVec (xKeyVec2 !! 2)
         , testCase "Chain m/0/2147483647'/1" $ 
-            verifyXKeyVector (xKeyVectors2 !! 3)
+            runXKeyVec (xKeyVec2 !! 3)
         , testCase "Chain m/0/2147483647'/1/2147483646'" $ 
-            verifyXKeyVector (xKeyVectors2 !! 4)
+            runXKeyVec (xKeyVec2 !! 4)
         , testCase "Chain m/0/2147483647'/1/2147483646'/2" $ 
-            verifyXKeyVector (xKeyVectors2 !! 5)
+            runXKeyVec (xKeyVec2 !! 5)
         ] 
-    , testGroup "Build Transactions" 
-        [ testCase "Build PKHash Tx 1" buildPKHashTx1
-        , testCase "Build PKHash Tx 2" buildPKHashTx2
-        , testCase "Build PKHash Tx 3" buildPKHashTx3
-        , testCase "Build PKHash Tx 4" buildPKHashTx4
-        ] 
+    , testGroup "Build PKHash Transaction (generated from bitcoind)" 
+        ( map mapPKHashVec $ zip pkHashVec [0..] )
     , testGroup "Verify transaction (bitcoind /test/data/tx_valid.json)" 
-        ( map mapVerifyTxVector $ zip verifyTxVectors [0..] )
+        ( map mapVerifyVec $ zip verifyVec [0..] )
     ]
 
 
-verifyXKeyVector :: ([String],XPrvKey) -> Assertion
-verifyXKeyVector (v,m) = do
+runXKeyVec :: ([String],XPrvKey) -> Assertion
+runXKeyVec (v,m) = do
     assertBool "xPrvID" $ (bsToHex $ encode' $ xPrvID m) == v !! 0
     assertBool "xPrvFP" $ (bsToHex $ encode' $ xPrvFP m) == v !! 1
     assertBool "xPrvAddr" $ 
@@ -67,13 +63,24 @@ verifyXKeyVector (v,m) = do
     assertBool "Base58 PubKey" $ (xPubExport $ deriveXPubKey m) == v !! 9
     assertBool "Base58 PrvKey" $ xPrvExport m == v !! 10
 
-mapVerifyTxVector :: (([(String,String,String)],String),Int) 
-                  -> Test.Framework.Test
-mapVerifyTxVector (v,i) = testCase name $ verifyTxVector v i
+mapPKHashVec :: (([(String,Word32)],[(String,Word64)],String),Int)
+            -> Test.Framework.Test
+mapPKHashVec (v,i) = testCase name $ runPKHashVec v
+    where name = "Build PKHash Tx " ++ (show i)
+
+runPKHashVec :: ([(String,Word32)],[(String,Word64)],String) -> Assertion
+runPKHashVec (xs,ys,res) = 
+    assertBool "Build PKHash Tx" $ (bsToHex $ encode' tx) == res
+    where tx = fromRight $ buildPKHashTx (map f xs) ys
+          f (id,ix) = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS id) ix
+
+mapVerifyVec :: (([(String,String,String)],String),Int) 
+             -> Test.Framework.Test
+mapVerifyVec (v,i) = testCase name $ runVerifyVec v i
     where name = "Verify Tx " ++ (show i)
 
-verifyTxVector :: ([(String,String,String)],String) -> Int -> Assertion
-verifyTxVector (is,bsTx) i = 
+runVerifyVec :: ([(String,String,String)],String) -> Int -> Assertion
+runVerifyVec (is,bsTx) i = 
     assertBool name $ verifyTx tx $ map f is
     where name = "    > Verify transaction " ++ (show i)
           tx  = decode' (fromJust $ hexToBS bsTx)
@@ -86,8 +93,8 @@ verifyTxVector (is,bsTx) i =
 -- BIP 0032 Test Vectors
 -- https://en.bitcoin.it/wiki/BIP_0032_TestVectors
 
-xKeyVectors :: [([String],XPrvKey)]
-xKeyVectors = zip xKeyResVectors $ catMaybes $ foldl f [m] der
+xKeyVec :: [([String],XPrvKey)]
+xKeyVec = zip xKeyResVec $ catMaybes $ foldl f [m] der
     where f acc d = acc ++ [d =<< last acc]
           m   = makeXPrvKey $ fromJust $ hexToBS m0
           der = [ flip primeSubKey 0
@@ -97,8 +104,8 @@ xKeyVectors = zip xKeyResVectors $ catMaybes $ foldl f [m] der
                 , flip prvSubKey 1000000000
                 ]
 
-xKeyVectors2 :: [([String],XPrvKey)]
-xKeyVectors2 = zip xKeyResVectors2 $ catMaybes $ foldl f [m] der
+xKeyVec2 :: [([String],XPrvKey)]
+xKeyVec2 = zip xKeyResVec2 $ catMaybes $ foldl f [m] der
     where f acc d = acc ++ [d =<< last acc]
           m   = makeXPrvKey $ fromJust $ hexToBS m1
           der = [ flip prvSubKey 0
@@ -110,8 +117,8 @@ xKeyVectors2 = zip xKeyResVectors2 $ catMaybes $ foldl f [m] der
 
 m0 = "000102030405060708090a0b0c0d0e0f"
 
-xKeyResVectors :: [[String]]
-xKeyResVectors =
+xKeyResVec :: [[String]]
+xKeyResVec =
     [
       -- m
       [ "3442193e1bb70916e914552172cd4e2dbc9df811"
@@ -195,8 +202,8 @@ xKeyResVectors =
 
 m1 = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
 
-xKeyResVectors2 :: [[String]]
-xKeyResVectors2 =
+xKeyResVec2 :: [[String]]
+xKeyResVec2 =
     [
       -- m
       [ "bd16bee53961a47d6ad888e29545434a89bdfe95"
@@ -278,60 +285,43 @@ xKeyResVectors2 =
       ]
     ]
 
-flipEndian :: Hash256 -> Hash256
-flipEndian = decode' . BS.reverse . encode'
-
 -- These test vectors have been generated from bitcoind raw transaction api
 
-buildPKHashTx1 =
-    assertBool "Build TX 1" $ (bsToHex $ encode' tx) == bitcoindTx
-    where tx = fromRight $ buildPKHashTx 
-                      [OutPoint prevId 14] 
-                      [(toAddr,90000000)]
-          prevId = flipEndian 
-            0xeb29eba154166f6541ebcc9cbdf5088756e026af051f123bcfb526df594549db
-          toAddr = "14LsRquZfURNFrzpcLVGdaHTfAPjjwiSPb"
-          bitcoindTx = "0100000001db494559df26b5cf3b121f05af26e0568708f5bd9ccceb41656f1654a1eb29eb0e00000000ffffffff01804a5d05000000001976a91424aa604689cc582292b97668bedd91dd5bf9374c88ac00000000"
-
-buildPKHashTx2 =
-    assertBool "Build TX 2" $ (bsToHex $ encode' tx) == bitcoindTx
-    where tx = fromRight $ buildPKHashTx 
-                   [OutPoint prevId1 0, OutPoint prevId2 2147483647] 
-                   [(toAddr1,1),(toAddr2,2100000000000000)]
-          prevId1 = flipEndian 
-            0xeb29eba154166f6541ebcc9cbdf5088756e026af051f123bcfb526df594549db
-          prevId2 = flipEndian 
-            0x01000000000000000000000000000000000000000000000000000000000000
-          toAddr1 = "14LsRquZfURNFrzpcLVGdaHTfAPjjwiSPb"
-          toAddr2 = "19VCgS642vzEA1sdByoSn6GsWBwraV8D4n"
-          bitcoindTx = "0100000002db494559df26b5cf3b121f05af26e0568708f5bd9ccceb41656f1654a1eb29eb0000000000ffffffff0000000000000000000000000000000000000000000000000000000000000100ffffff7f00ffffffff0201000000000000001976a91424aa604689cc582292b97668bedd91dd5bf9374c88ac0040075af07507001976a9145d16672f53981ff21c5f42b40d1954993cbca54f88ac00000000"
-
-buildPKHashTx3 =
-    assertBool "Build TX 3" $ (bsToHex $ encode' tx) == bitcoindTx
-    where tx = fromRight $ buildPKHashTx 
-                   [OutPoint prevId1 0, OutPoint prevId2 2147483647] 
-                   []
-          prevId1 = flipEndian 
-            0xeb29eba154166f6541ebcc9cbdf5088756e026af051f123bcfb526df594549db
-          prevId2 = flipEndian 
-            0x01000000000000000000000000000000000000000000000000000000000000
-          bitcoindTx = "0100000002db494559df26b5cf3b121f05af26e0568708f5bd9ccceb41656f1654a1eb29eb0000000000ffffffff0000000000000000000000000000000000000000000000000000000000000100ffffff7f00ffffffff0000000000"
-
-buildPKHashTx4 =
-    assertBool "Build TX 4" $ (bsToHex $ encode' tx) == bitcoindTx
-    where tx = fromRight $ buildPKHashTx 
-                   [] 
-                   [(toAddr1,1),(toAddr2,2100000000000000)]
-          toAddr1 = "14LsRquZfURNFrzpcLVGdaHTfAPjjwiSPb"
-          toAddr2 = "19VCgS642vzEA1sdByoSn6GsWBwraV8D4n"
-          bitcoindTx = "01000000000201000000000000001976a91424aa604689cc582292b97668bedd91dd5bf9374c88ac0040075af07507001976a9145d16672f53981ff21c5f42b40d1954993cbca54f88ac00000000"
+pkHashVec :: [([(String,Word32)],[(String,Word64)],String)]
+pkHashVec =
+    [
+      ( [("eb29eba154166f6541ebcc9cbdf5088756e026af051f123bcfb526df594549db",14)]
+      , [("14LsRquZfURNFrzpcLVGdaHTfAPjjwiSPb",90000000)]
+      , "0100000001db494559df26b5cf3b121f05af26e0568708f5bd9ccceb41656f1654a1eb29eb0e00000000ffffffff01804a5d05000000001976a91424aa604689cc582292b97668bedd91dd5bf9374c88ac00000000"
+      )
+    , ( [ ("eb29eba154166f6541ebcc9cbdf5088756e026af051f123bcfb526df594549db",0)
+        , ("0001000000000000000000000000000000000000000000000000000000000000",2147483647)
+        ]
+      , [ ("14LsRquZfURNFrzpcLVGdaHTfAPjjwiSPb",1)
+        , ("19VCgS642vzEA1sdByoSn6GsWBwraV8D4n",2100000000000000)
+        ]
+      , "0100000002db494559df26b5cf3b121f05af26e0568708f5bd9ccceb41656f1654a1eb29eb0000000000ffffffff0000000000000000000000000000000000000000000000000000000000000100ffffff7f00ffffffff0201000000000000001976a91424aa604689cc582292b97668bedd91dd5bf9374c88ac0040075af07507001976a9145d16672f53981ff21c5f42b40d1954993cbca54f88ac00000000"
+      )
+    , ( [ ("eb29eba154166f6541ebcc9cbdf5088756e026af051f123bcfb526df594549db",0)
+        , ("0001000000000000000000000000000000000000000000000000000000000000",2147483647)
+        ]
+      , []
+      , "0100000002db494559df26b5cf3b121f05af26e0568708f5bd9ccceb41656f1654a1eb29eb0000000000ffffffff0000000000000000000000000000000000000000000000000000000000000100ffffff7f00ffffffff0000000000"
+      )
+    , ( []
+      , [ ("14LsRquZfURNFrzpcLVGdaHTfAPjjwiSPb",1)
+        , ("19VCgS642vzEA1sdByoSn6GsWBwraV8D4n",2100000000000000)
+        ]
+      , "01000000000201000000000000001976a91424aa604689cc582292b97668bedd91dd5bf9374c88ac0040075af07507001976a9145d16672f53981ff21c5f42b40d1954993cbca54f88ac00000000"
+      )
+    ]
 
 {- Test vectors from bitcoind -}
 -- github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_valid.json
 
 
-verifyTxVectors :: [([(String,String,String)],String)]
-verifyTxVectors = 
+verifyVec :: [([(String,String,String)],String)]
+verifyVec = 
     [
       ( [ 
           ( "60a20bd93aa49ab4b28d514ec10b06e1829ce6818ec06cd3aabd013ebcdc4bb1"

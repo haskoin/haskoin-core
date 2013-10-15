@@ -75,9 +75,8 @@ signTxIn :: MonadIO m => TxIn -> SigInput -> Tx -> Int -> [PrvKey]
          -> SecretT (BuildT m) TxIn
 signTxIn txin sigi tx i keys = do
     (out,vKeys,pubs,buildf) <- liftSecret $ decodeSigInput sigi keys
-    let sigh = txSigHash tx (encodeOutput out) i sh
-        f k  = either (liftSecret . Broken) (flip signMsg k) sigh
-    sigs <- mapM f vKeys
+    let msg = txSigHash tx (encodeOutput out) i sh
+    sigs <- mapM (signMsg msg) vKeys
     liftSecret $ buildf txin tx out i pubs $ map (flip TxSignature sh) sigs
     where sh = sigDataSH sigi
 
@@ -93,9 +92,8 @@ detSignTx tx@(Tx _ ti _ _) sigis keys = do
 detSignTxIn :: TxIn -> SigInput -> Tx -> Int -> [PrvKey] -> Build TxIn
 detSignTxIn txin sigi tx i keys = do
     (out,vKeys,pubs,buildf) <- decodeSigInput sigi keys
-    let sigh = txSigHash tx (encodeOutput out) i sh
-        f k  = either Broken (return . (flip detSignMsg k)) sigh
-    sigs <- mapM f vKeys
+    let msg  = txSigHash tx (encodeOutput out) i sh
+        sigs = map (detSignMsg msg) vKeys
     buildf txin tx out i pubs $ map (flip TxSignature sh) sigs
     where sh = sigDataSH sigi
 
@@ -151,9 +149,8 @@ buildTxIn txin tx out i pubs sigs
           aSigs = sigs ++ case decodeInput $ scriptInput txin of
               Right (SpendMulSig xs _) -> xs
               _ -> []
-          f (TxSignature sig sh) pub = either (const False) id $ do
-              msg <- txSigHash tx (encodeOutput out) i sh
-              return $ verifySig msg sig pub
+          f (TxSignature sig sh) pub = 
+              verifySig (txSigHash tx (encodeOutput out) i sh) sig pub
 
 sigKeysSH :: ScriptOutput -> RedeemScript -> [PrvKey]
           -> Build ([PrvKey],[PubKey])
@@ -181,13 +178,11 @@ verifyTx tx xs = flip all z3 $ \(maybeS,txin,i) -> fromMaybe False $ do
     (out,inp) <- maybeS >>= flip decodeVerifySigInput txin
     let so = encodeOutput out
     case (out,inp) of
-        (PayPK pub,SpendPK (TxSignature sig sh)) -> do
-            msg <- eitherToMaybe $ txSigHash tx so i sh
-            return $ verifySig msg sig pub
+        (PayPK pub,SpendPK (TxSignature sig sh)) -> 
+            return $ verifySig (txSigHash tx so i sh) sig pub
         (PayPKHash a,SpendPKHash (TxSignature sig sh) pub) -> do
             guard $ pubKeyAddr pub == a
-            msg <- eitherToMaybe $ txSigHash tx so i sh
-            return $ verifySig msg sig pub
+            return $ verifySig (txSigHash tx so i sh) sig pub
         (PayMulSig pubs r,SpendMulSig sigs _) ->
             (== r) <$> countMulSig tx so i pubs sigs 
         _ -> Nothing
@@ -199,10 +194,10 @@ verifyTx tx xs = flip all z3 $ \(maybeS,txin,i) -> fromMaybe False $ do
 countMulSig :: Tx -> Script -> Int -> [PubKey] -> [TxSignature] -> Maybe Int
 countMulSig tx so i [] sigs = return 0
 countMulSig tx so i pubs [] = return 0
-countMulSig tx so i (pub:pubs) sigs@(TxSignature sig sh:rest) = do
-    msg <- eitherToMaybe $ txSigHash tx so i sh
-    if verifySig msg sig pub then (+1) <$> countMulSig tx so i pubs rest
-                             else          countMulSig tx so i pubs sigs
+countMulSig tx so i (pub:pubs) sigs@(TxSignature sig sh:rest)
+    | verifySig (txSigHash tx so i sh) sig pub = 
+         (+1) <$> countMulSig tx so i pubs rest
+    | otherwise = countMulSig tx so i pubs sigs
                   
 decodeVerifySigInput :: Script -> TxIn -> Maybe (ScriptOutput, ScriptInput)
 decodeVerifySigInput so (TxIn _ si _ ) = case decodeOutput so of

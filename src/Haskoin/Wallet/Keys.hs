@@ -25,6 +25,7 @@ module Haskoin.Wallet.Keys
 , xPubImport
 , xPrvImport
 , xPrvWIF
+, cycleIndex
 ) where
 
 import Control.Monad 
@@ -114,15 +115,15 @@ primeSubKey xkey child = guardIndex child >> do
 
 -- Lazy list all valid subkeys starting from an offset
 prvSubKeys :: XPrvKey -> Word32 -> [(XPrvKey,Word32)]
-prvSubKeys k i = mapMaybe f [i..0x7fffffff]
+prvSubKeys k i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (prvSubKey k j) (return j)
 
 pubSubKeys :: XPubKey -> Word32 -> [(XPubKey,Word32)]
-pubSubKeys k i = mapMaybe f [i..0x7fffffff]
+pubSubKeys k i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (pubSubKey k j) (return j)
 
 primeSubKeys :: XPrvKey -> Word32 -> [(XPrvKey,Word32)]
-primeSubKeys k i = mapMaybe f [i..0x7fffffff]
+primeSubKeys k i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (primeSubKey k j) (return j)
 
 mulSigSubKey :: [XPubKey] -> Word32 -> Maybe [XPubKey]
@@ -130,8 +131,14 @@ mulSigSubKey pubs i = mapM (flip pubSubKey i) pubs
 
 -- Lazy list of valid public key combinations for creating multisig addresses
 mulSigSubKeys :: [XPubKey] -> Word32 -> [([XPubKey],Word32)]
-mulSigSubKeys pubs i = mapMaybe f [i..0x7fffffff]
+mulSigSubKeys pubs i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (mulSigSubKey pubs j) (return j)
+
+cycleIndex :: Word32 -> [Word32]
+cycleIndex i
+    | i == 0 = cycle [0..0x7fffffff]
+    | i < 0x80000000 = cycle $ [i..0x7fffffff] ++ [0..(i-1)]
+    | otherwise = error $ "cycleIndex: invalid index " ++ (show i)
 
 guardIndex :: Word32 -> Maybe ()
 guardIndex child = guard $ child >= 0 && child < 0x80000000

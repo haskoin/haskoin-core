@@ -120,27 +120,27 @@ intPubKey (AccPubKey par) i = AddrPubKey <$> pubSubKey intKey i
 
 -- List of all valid accounts derived from the master private key
 accPrvKeys :: MasterKey -> KeyIndex -> [(AccPrvKey,KeyIndex)]
-accPrvKeys m i = mapMaybe f [i..0x7fffffff]
+accPrvKeys m i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (accPrvKey m j) (return j)
 
 accPubKeys :: MasterKey -> KeyIndex -> [(AccPubKey,KeyIndex)]
-accPubKeys m i = mapMaybe f [i..0x7fffffff]
+accPubKeys m i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (accPubKey m j) (return j)
 
 extPrvKeys :: AccPrvKey -> KeyIndex -> [(AddrPrvKey,KeyIndex)]
-extPrvKeys a i = mapMaybe f [i..0x7fffffff]
+extPrvKeys a i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (extPrvKey a j) (return j)
 
 extPubKeys :: AccPubKey -> KeyIndex -> [(AddrPubKey,KeyIndex)]
-extPubKeys a i = mapMaybe f [i..0x7fffffff]
+extPubKeys a i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (extPubKey a j) (return j)
 
 intPrvKeys :: AccPrvKey -> KeyIndex -> [(AddrPrvKey,KeyIndex)]
-intPrvKeys a i = mapMaybe f [i..0x7fffffff]
+intPrvKeys a i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (intPrvKey a j) (return j)
 
 intPubKeys :: AccPubKey -> KeyIndex -> [(AddrPubKey,KeyIndex)]
-intPubKeys a i = mapMaybe f [i..0x7fffffff]
+intPubKeys a i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (intPubKey a j) (return j)
 
 {- Generate addresses -}
@@ -155,11 +155,11 @@ intAddr :: AccPubKey -> KeyIndex -> Maybe String
 intAddr a i = addrToBase58 . addr <$> intPubKey a i
 
 extAddrs :: AccPubKey -> KeyIndex -> [(String,Word32)]
-extAddrs a i = mapMaybe f [i..0x7fffffff]
+extAddrs a i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (extAddr a j) (return j)
 
 intAddrs :: AccPubKey -> KeyIndex -> [(String,Word32)]
-intAddrs a i = mapMaybe f [i..0x7fffffff]
+intAddrs a i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (intAddr a j) (return j)
 
 {- MultiSig -}
@@ -174,11 +174,11 @@ intMulSigKey a ps i = (map AddrPubKey) <$> mulSigSubKey keys i
 
 -- Multisig addresses on external chain
 extMulSigKeys :: AccPubKey -> [XPubKey] -> KeyIndex -> [([AddrPubKey],KeyIndex)]
-extMulSigKeys a ps i = mapMaybe f [i..0x7fffffff]
+extMulSigKeys a ps i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (extMulSigKey a ps j) (return j)
 
 intMulSigKeys :: AccPubKey -> [XPubKey] -> KeyIndex -> [([AddrPubKey],KeyIndex)]
-intMulSigKeys a ps i = mapMaybe f [i..0x7fffffff]
+intMulSigKeys a ps i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (intMulSigKey a ps j) (return j)
 
 extMulSigAddr :: AccPubKey -> [XPubKey] -> Int -> KeyIndex -> Maybe String
@@ -193,11 +193,11 @@ intMulSigAddr a ps r i = do
 
 extMulSigAddrs :: AccPubKey -> [XPubKey] -> Int -> KeyIndex 
               -> [(String,KeyIndex)]
-extMulSigAddrs a ps r i = mapMaybe f [i..0x7fffffff]
+extMulSigAddrs a ps r i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (extMulSigAddr a ps r j) (return j)
 
 intMulSigAddrs :: AccPubKey -> [XPubKey] -> Int -> KeyIndex 
               -> [(String,KeyIndex)]
-intMulSigAddrs a ps r i = mapMaybe f [i..0x7fffffff]
+intMulSigAddrs a ps r i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (intMulSigAddr a ps r j) (return j)
 

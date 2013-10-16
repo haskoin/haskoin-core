@@ -21,6 +21,10 @@ module Haskoin.Wallet.Manager
 , extPubKeys
 , intPrvKeys
 , intPubKeys
+, extAddr
+, intAddr
+, extAddrs
+, intAddrs
 , extMulSigKey
 , intMulSigKey
 , extMulSigKeys
@@ -87,9 +91,6 @@ loadPubAcc k
       xPubIsPrime k    = Just $ AccPubKey k
     | otherwise        = Nothing
 
-addr :: AddrPubKey -> Address
-addr = xPubAddr . runAddrPubKey
-
 -- Filters accounts for which dubkeys 0 and 1 are invalid
 accPrvKey :: MasterKey -> KeyIndex -> Maybe AccPrvKey
 accPrvKey (MasterKey par) i = AccPrvKey <$> (f =<< primeSubKey par i)
@@ -141,6 +142,25 @@ intPrvKeys a i = mapMaybe f [i..0x7fffffff]
 intPubKeys :: AccPubKey -> KeyIndex -> [(AddrPubKey,KeyIndex)]
 intPubKeys a i = mapMaybe f [i..0x7fffffff]
     where f j = liftM2 (,) (intPubKey a j) (return j)
+
+{- Generate addresses -}
+
+addr :: AddrPubKey -> Address
+addr = xPubAddr . runAddrPubKey
+
+extAddr :: AccPubKey -> KeyIndex -> Maybe String
+extAddr a i = addrToBase58 . addr <$> extPubKey a i
+
+intAddr :: AccPubKey -> KeyIndex -> Maybe String
+intAddr a i = addrToBase58 . addr <$> intPubKey a i
+
+extAddrs :: AccPubKey -> KeyIndex -> [(String,Word32)]
+extAddrs a i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (extAddr a j) (return j)
+
+intAddrs :: AccPubKey -> KeyIndex -> [(String,Word32)]
+intAddrs a i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (intAddr a j) (return j)
 
 {- MultiSig -}
 

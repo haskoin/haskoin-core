@@ -120,7 +120,7 @@ parseKey f = do
     exists <- fileExist f 
     unless exists $ error $ "File does not exist: " ++ f
     keyString <- rstrip <$> readFile f
-    let keyM = xPubImport $ stringToBS keyString
+    let keyM = xPubImport keyString
     unless (isJust keyM) $ error $
         "Failed to parse multisig key from file: " ++ f
     return $ fromJust keyM
@@ -194,7 +194,7 @@ loadKey dir = do
         "Wallet file does not exist: " ++ keyFile ++ "\n" ++
         "You should run the init command"
     keyString <- rstrip <$> readFile keyFile
-    let keyM = loadMasterKey =<< (xPrvImport $ stringToBS keyString) 
+    let keyM = loadMasterKey =<< (xPrvImport keyString) 
     unless (isJust keyM) $ error $
         "Failed to parse master key from file: " ++ keyFile
     return $ fromJust keyM
@@ -229,13 +229,13 @@ cmdDumpKey :: MasterKey -> Options -> IO ()
 cmdDumpKey key opts
     | optMaster opts = do
         putStrLn "Master key"
-        putStrLn $ bsToString $ xPrvExport $ runMasterKey key
+        putStrLn $ xPrvExport $ runMasterKey key
     | otherwise      = do
         unless (isJust accPrvM) $ error $
             "Index produced an invalid account: " ++ (show $ optAccount opts)
         putStrLn $ "Account: " ++ (show $ optAccount opts)
-        putStrLn $ bsToString $ xPrvExport accPrv
-        putStrLn $ bsToString $ xPubExport accPub
+        putStrLn $ xPrvExport accPrv
+        putStrLn $ xPubExport accPub
     where accPrvM = accPrvKey key (fromIntegral $ optAccount opts)
           accPrv  = runAccPrvKey $ fromJust $ accPrvM
           accPub  = deriveXPubKey accPrv
@@ -253,7 +253,7 @@ cmdDumpWIF key opts = do
     when (optInternal opts) $ putStr "(Internal Chain) "
     putStr $ "Account: " ++ (show $ optAccount opts) ++ ", "
     putStrLn $ "Key Index: " ++ (show $ optIndex opts)
-    putStrLn $ bsToString $ xPrvWIF $ runAddrPrvKey $ fromJust addrM 
+    putStrLn $ xPrvWIF $ runAddrPrvKey $ fromJust addrM 
 
 cmdFingerprint :: MasterKey -> Options -> IO ()
 cmdFingerprint key opts
@@ -261,8 +261,8 @@ cmdFingerprint key opts
          putStrLn "Master Key"
          let masterFP = bsToHex $ encode' $ xPrvFP $ runMasterKey key
              masterID = bsToHex $ encode' $ xPrvID $ runMasterKey key
-         putStrLn $ "fingerprint: " ++ (bsToString masterFP)
-         putStrLn $ "ID: " ++ (bsToString masterID)
+         putStrLn $ "fingerprint: " ++ masterFP
+         putStrLn $ "ID: " ++ masterID
     | otherwise = do
         let accM     = accPrvKey key (fromIntegral $ optAccount opts)
         unless (isJust accM) $ error $
@@ -271,8 +271,8 @@ cmdFingerprint key opts
             accFP    = bsToHex $ encode' $ xPrvFP $ runAccPrvKey acc
             accID    = bsToHex $ encode' $ xPrvID $ runAccPrvKey acc
         putStrLn $ "Account private key: " ++ (show $ optAccount opts)
-        putStrLn $ "fingerprint: " ++ (bsToString accFP)
-        putStrLn $ "ID: " ++ (bsToString accID)
+        putStrLn $ "fingerprint: " ++ accFP
+        putStrLn $ "ID: " ++ accID
 
 cmdAddress :: MasterKey -> Options -> IO ()
 cmdAddress key opts
@@ -283,54 +283,34 @@ cmdAddress key opts
         let key1 = fromJust $ optKey1 opts
             key2 = fromJust $ optKey2 opts
             acc  = fromJust accM
-            f    = if optInternal opts then intTakeIndex3 else extTakeIndex3
-            (pub,beg,end) = f acc key1 key2 (optIndex opts) (optCount opts)
-            fmap (x,y,z) = addrToBase58 $ scriptAddr $ PayMulSig3 
-                TwoOfThree
-                (xPubKey $ runAddrPubKey x) 
-                (xPubKey $ runAddrPubKey y) 
-                (xPubKey $ runAddrPubKey z)
-            add  = map fmap pub
+            f    = if optInternal opts then intMulSigAddrs else extMulSigAddrs
+            addr = take (optCount opts) $ f acc [key1,key2] 2 (optIndex opts)
         when (optInternal opts) $ putStr "(Internal Chain) "
         putStr "(2 of 3 multisig) "
-        putStr $ "Account: " ++ (show $ optAccount opts) ++ ", "
-        putStr $ "First index: " ++ (show beg) ++ ", "
-        putStrLn $ "Last index: " ++ (show end)
-        forM_ add (putStrLn . bsToString)
+        putStrLn $ "Account: " ++ (show $ optAccount opts)
+        forM_ addr (\(s,i) -> putStrLn $ (show i) ++ ") " ++ s )
     | isJust (optKey1 opts) = do
         let accM = accPubKey key (fromIntegral $ optAccount opts)
         unless (isJust accM) $ error $
             "Index produced an invalid account: " ++ (show $ optAccount opts)
         let key1 = fromJust $ optKey1 opts
             acc  = fromJust accM
-            f    = if optInternal opts then intTakeIndex2 else extTakeIndex2
-            (pub,beg,end) = f acc key1 (optIndex opts) (optCount opts)
-            fmap (x,y) = addrToBase58 $ scriptAddr $ PayMulSig2 
-                TwoOfTwo
-                (xPubKey $ runAddrPubKey x) 
-                (xPubKey $ runAddrPubKey y)
-            add  = map fmap pub
+            f    = if optInternal opts then intMulSigAddrs else extMulSigAddrs
+            addr = take (optCount opts) $ f acc [key1] 2 (optIndex opts) 
         when (optInternal opts) $ putStr "(Internal Chain) "
         putStr "(2 of 2 multisig) "
-        putStr $ "Account: " ++ (show $ optAccount opts) ++ ", "
-        putStr $ "First index: " ++ (show beg) ++ ", "
-        putStrLn $ "Last index: " ++ (show end)
-        forM_ add (putStrLn . bsToString)
+        putStrLn $ "Account: " ++ (show $ optAccount opts)
+        forM_ addr (\(s,i) -> putStrLn $ (show i) ++ ") " ++ s )
     | otherwise = do
         let accM = accPubKey key (fromIntegral $ optAccount opts)
         unless (isJust accM) $ error $
             "Index produced an invalid account: " ++ (show $ optAccount opts)
-        let f   = if optInternal opts then intPubKeys else extPubKeys
-            acc = fromJust accM
-            pub = take (optCount opts) $ f acc (fromIntegral $ optIndex opts)
-            add  = map (addrToBase58 . addr) pub
-            beg = xPubChild $ runAddrPubKey $ head pub
-            end = xPubChild $ runAddrPubKey $ last pub
+        let f    = if optInternal opts then intAddrs else extAddrs
+            acc  = fromJust accM
+            addr = take (optCount opts) $ f acc (fromIntegral $ optIndex opts)
         when (optInternal opts) $ putStr "(Internal Chain) "
-        putStr $ "Account: " ++ (show $ optAccount opts) ++ ", "
-        putStr $ "First index: " ++ (show beg) ++ ", "
-        putStrLn $ "Last index: " ++ (show end)
-        forM_ add (putStrLn . bsToString)
+        putStrLn $ "Account: " ++ (show $ optAccount opts) 
+        forM_ addr (\(s,i) -> putStrLn $ (show i) ++ ") " ++ s )
 
 cmdInit :: FilePath -> IO ()
 cmdInit dir = do
@@ -344,7 +324,7 @@ cmdInit dir = do
     unless (isJust keyM) $ error $
         "Can't generate a wallet from your seed. Please try another one"
     let key = xPrvExport $ runMasterKey $ fromJust keyM
-    writeFile keyFile (bsToString key ++ "\n")
+    writeFile keyFile $ key ++ "\n"
     setFileMode keyFile $ unionFileModes ownerReadMode ownerWriteMode
     putStrLn $ "Wallet initialized in: " ++ dir ++ "/key"
 

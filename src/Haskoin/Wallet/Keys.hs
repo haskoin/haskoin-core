@@ -8,9 +8,9 @@ module Haskoin.Wallet.Keys
 , primeSubKey
 , prvSubKeys
 , pubSubKeys
-, pubSubKeys2
-, pubSubKeys3
 , primeSubKeys
+, mulSigSubKey
+, mulSigSubKeys
 , xPrvIsPrime
 , xPubIsPrime
 , xPrvChild
@@ -27,7 +27,12 @@ module Haskoin.Wallet.Keys
 , xPrvWIF
 ) where
 
-import Control.Monad (guard, unless, when)
+import Control.Monad 
+    ( guard
+    , unless
+    , when
+    , liftM2
+    )
 import Control.Applicative ((<$>), (<*>))
 
 import Data.Binary (Binary, get, put)
@@ -108,27 +113,25 @@ primeSubKey xkey child = guardIndex child >> do
           (a,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
 
 -- Lazy list all valid subkeys starting from an offset
-prvSubKeys :: XPrvKey -> Word32 -> [XPrvKey]
-prvSubKeys k i = mapMaybe (prvSubKey k) [i..0x7fffffff]
+prvSubKeys :: XPrvKey -> Word32 -> [(XPrvKey,Word32)]
+prvSubKeys k i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (prvSubKey k j) (return j)
 
-pubSubKeys :: XPubKey -> Word32 -> [XPubKey]
-pubSubKeys k i = mapMaybe (pubSubKey k) [i..0x7fffffff]
+pubSubKeys :: XPubKey -> Word32 -> [(XPubKey,Word32)]
+pubSubKeys k i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (pubSubKey k j) (return j)
 
-primeSubKeys :: XPrvKey -> Word32 -> [XPrvKey]
-primeSubKeys k i = mapMaybe (primeSubKey k) [i..0x7fffffff]
+primeSubKeys :: XPrvKey -> Word32 -> [(XPrvKey,Word32)]
+primeSubKeys k i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (primeSubKey k j) (return j)
 
-pubSubKeys2 :: XPubKey -> XPubKey -> Word32 
-            -> [(XPubKey, XPubKey)]
-pubSubKeys2 par1 par2 i = mapMaybe (f par1 par2) [i..0x7fffffff]
-    where f k1 k2 x = (,) <$> (pubSubKey k1 x)
-                          <*> (pubSubKey k2 x)
+mulSigSubKey :: [XPubKey] -> Word32 -> Maybe [XPubKey]
+mulSigSubKey pubs i = mapM (flip pubSubKey i) pubs
 
-pubSubKeys3 :: XPubKey -> XPubKey -> XPubKey -> Word32 
-            -> [(XPubKey, XPubKey, XPubKey)]
-pubSubKeys3 par1 par2 par3 i = mapMaybe (f par1 par2 par3) [i..0x7fffffff]
-    where f k1 k2 k3 x = (,,) <$> (pubSubKey k1 x)
-                              <*> (pubSubKey k2 x)
-                              <*> (pubSubKey k3 x)
+-- Lazy list of valid public key combinations for creating multisig addresses
+mulSigSubKeys :: [XPubKey] -> Word32 -> [([XPubKey],Word32)]
+mulSigSubKeys pubs i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (mulSigSubKey pubs j) (return j)
 
 guardIndex :: Word32 -> Maybe ()
 guardIndex child = guard $ child >= 0 && child < 0x80000000

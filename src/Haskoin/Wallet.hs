@@ -10,9 +10,9 @@ module Haskoin.Wallet
 , primeSubKey
 , prvSubKeys
 , pubSubKeys
-, pubSubKeys2
-, pubSubKeys3
 , primeSubKeys
+, mulSigSubKey
+, mulSigSubKeys
 , xPrvIsPrime
 , xPubIsPrime
 , xPrvChild
@@ -51,14 +51,14 @@ module Haskoin.Wallet
 , extPubKeys
 , intPrvKeys
 , intPubKeys
-, extPubKeys2
-, extPubKeys3
-, intPubKeys2
-, intPubKeys3
-, extTakeIndex2
-, extTakeIndex3
-, intTakeIndex2
-, intTakeIndex3
+, extMulSigKey
+, intMulSigKey
+, extMulSigKeys
+, intMulSigKeys
+, extMulSigAddr
+, intMulSigAddr
+, extMulSigAddrs
+, intMulSigAddrs
 
 -- Tx module
 , buildTx

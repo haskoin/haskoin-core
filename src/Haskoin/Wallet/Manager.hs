@@ -21,16 +21,17 @@ module Haskoin.Wallet.Manager
 , extPubKeys
 , intPrvKeys
 , intPubKeys
-, extPubKeys2
-, extPubKeys3
-, intPubKeys2
-, intPubKeys3
-, extTakeIndex2
-, extTakeIndex3
-, intTakeIndex2
-, intTakeIndex3
+, extMulSigKey
+, intMulSigKey
+, extMulSigKeys
+, intMulSigKeys
+, extMulSigAddr
+, intMulSigAddr
+, extMulSigAddrs
+, intMulSigAddrs
 ) where
 
+import Control.Monad
 import Control.Applicative
 
 import Data.Word
@@ -38,6 +39,7 @@ import Data.Maybe
 import qualified Data.ByteString as BS
 
 import Haskoin.Wallet.Keys
+import Haskoin.Script
 import Haskoin.Crypto
 import Haskoin.Protocol
 
@@ -88,8 +90,12 @@ loadPubAcc k
 addr :: AddrPubKey -> Address
 addr = xPubAddr . runAddrPubKey
 
+-- Filters accounts for which dubkeys 0 and 1 are invalid
 accPrvKey :: MasterKey -> KeyIndex -> Maybe AccPrvKey
-accPrvKey (MasterKey par) i = AccPrvKey <$> primeSubKey par i
+accPrvKey (MasterKey par) i = AccPrvKey <$> (f =<< primeSubKey par i)
+    where f k = guard (isJust $ prvSubKey k 0) >>
+                guard (isJust $ prvSubKey k 1) >>
+                return k
 
 accPubKey :: MasterKey -> KeyIndex -> Maybe AccPubKey
 accPubKey (MasterKey par) i = f <$> primeSubKey par i
@@ -112,96 +118,66 @@ intPubKey (AccPubKey par) i = AddrPubKey <$> pubSubKey intKey i
     where intKey = fromJust $ pubSubKey par 1
 
 -- List of all valid accounts derived from the master private key
--- Filters accounts for which dubkeys 0 and 1 are invalid
-accPrvKeys :: MasterKey -> KeyIndex -> [AccPrvKey]
-accPrvKeys (MasterKey par) i = map AccPrvKey $ filter f $ primeSubKeys par i
-    where f k = isJust (prvSubKey k 0) && isJust (prvSubKey k 1)
+accPrvKeys :: MasterKey -> KeyIndex -> [(AccPrvKey,KeyIndex)]
+accPrvKeys m i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (accPrvKey m j) (return j)
 
-accPubKeys :: MasterKey -> KeyIndex -> [AccPubKey]
-accPubKeys k i = map f $ accPrvKeys k i
-    where f = AccPubKey . deriveXPubKey . runAccPrvKey
+accPubKeys :: MasterKey -> KeyIndex -> [(AccPubKey,KeyIndex)]
+accPubKeys m i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (accPubKey m j) (return j)
 
-extPrvKeys :: AccPrvKey -> KeyIndex -> [AddrPrvKey]
-extPrvKeys (AccPrvKey par) i = map AddrPrvKey $ prvSubKeys extKey i
-    where extKey = fromJust $ prvSubKey par 0
+extPrvKeys :: AccPrvKey -> KeyIndex -> [(AddrPrvKey,KeyIndex)]
+extPrvKeys a i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (extPrvKey a j) (return j)
 
-extPubKeys :: AccPubKey -> KeyIndex -> [AddrPubKey]
-extPubKeys (AccPubKey par) i = map AddrPubKey $ pubSubKeys extKey i
-    where extKey = fromJust $ pubSubKey par 0
+extPubKeys :: AccPubKey -> KeyIndex -> [(AddrPubKey,KeyIndex)]
+extPubKeys a i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (extPubKey a j) (return j)
 
-intPrvKeys :: AccPrvKey -> KeyIndex -> [AddrPrvKey]
-intPrvKeys (AccPrvKey par) i = map AddrPrvKey $ prvSubKeys intKey i
-    where intKey = fromJust $ prvSubKey par 1
+intPrvKeys :: AccPrvKey -> KeyIndex -> [(AddrPrvKey,KeyIndex)]
+intPrvKeys a i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (intPrvKey a j) (return j)
 
-intPubKeys :: AccPubKey -> KeyIndex -> [AddrPubKey]
-intPubKeys (AccPubKey par) i = map AddrPubKey $ pubSubKeys intKey i
-    where intKey = fromJust $ pubSubKey par 1
+intPubKeys :: AccPubKey -> KeyIndex -> [(AddrPubKey,KeyIndex)]
+intPubKeys a i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (intPubKey a j) (return j)
 
 {- MultiSig -}
 
-fst3 :: (a,b,c) -> a
-fst3 (a,b,c) = a
+extMulSigKey :: AccPubKey -> [XPubKey] -> KeyIndex -> Maybe [AddrPubKey]
+extMulSigKey a ps i = (map AddrPubKey) <$> mulSigSubKey keys i
+    where keys = map (fromJust . (flip pubSubKey 0)) $ (runAccPubKey a) : ps
 
--- 2 of 2 multisig (external chain)
-extPubKeys2 :: AccPubKey -> XPubKey -> KeyIndex 
-            -> [(AddrPubKey, AddrPubKey)]
-extPubKeys2 a p1 i = map f $ pubSubKeys2 extKey1 extKey2 i
-    where extKey1 = fromJust $ pubSubKey (runAccPubKey a) 0
-          extKey2 = fromJust $ pubSubKey p1 0
-          f (a,b) = (AddrPubKey a, AddrPubKey b)
+intMulSigKey :: AccPubKey -> [XPubKey] -> KeyIndex -> Maybe [AddrPubKey]
+intMulSigKey a ps i = (map AddrPubKey) <$> mulSigSubKey keys i
+    where keys = map (fromJust . (flip pubSubKey 1)) $ (runAccPubKey a) : ps
 
-extTakeIndex2 :: AccPubKey -> XPubKey -> KeyIndex -> Int
-              -> ([(AddrPubKey, AddrPubKey)], KeyIndex, KeyIndex)
-extTakeIndex2 a p1 i c = (res,beg,end)
-    where res = take c $ extPubKeys2 a p1 i
-          beg = xPubChild $ runAddrPubKey $ fst $ head res
-          end = xPubChild $ runAddrPubKey $ fst $ last res
+-- Multisig addresses on external chain
+extMulSigKeys :: AccPubKey -> [XPubKey] -> KeyIndex -> [([AddrPubKey],KeyIndex)]
+extMulSigKeys a ps i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (extMulSigKey a ps j) (return j)
 
--- 2 of 3 multisig (external chain)
-extPubKeys3 :: AccPubKey -> XPubKey -> XPubKey -> KeyIndex 
-            -> [(AddrPubKey, AddrPubKey, AddrPubKey)]
-extPubKeys3 a p1 p2 i = map f $ pubSubKeys3 extKey1 extKey2 extKey3 i
-    where extKey1   = fromJust $ pubSubKey (runAccPubKey a) 0
-          extKey2   = fromJust $ pubSubKey p1 0
-          extKey3   = fromJust $ pubSubKey p2 0
-          f (a,b,c) = (AddrPubKey a, AddrPubKey b, AddrPubKey c)
+intMulSigKeys :: AccPubKey -> [XPubKey] -> KeyIndex -> [([AddrPubKey],KeyIndex)]
+intMulSigKeys a ps i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (intMulSigKey a ps j) (return j)
 
-extTakeIndex3 :: AccPubKey -> XPubKey -> XPubKey -> KeyIndex -> Int
-              -> ([(AddrPubKey, AddrPubKey, AddrPubKey)], KeyIndex, KeyIndex)
-extTakeIndex3 a p1 p2 i c = (res,beg,end)
-    where res = take c $ extPubKeys3 a p1 p2 i
-          beg = xPubChild $ runAddrPubKey $ fst3 $ head res
-          end = xPubChild $ runAddrPubKey $ fst3 $ last res
+extMulSigAddr :: AccPubKey -> [XPubKey] -> Int -> KeyIndex -> Maybe String
+extMulSigAddr a ps r i = do
+    ps <- (map (xPubKey . runAddrPubKey)) <$> extMulSigKey a ps i
+    return $ addrToBase58 $ scriptAddr $ PayMulSig ps r
 
--- 2 of 2 multisig (internal chain)
-intPubKeys2 :: AccPubKey -> XPubKey -> KeyIndex 
-            -> [(AddrPubKey, AddrPubKey)]
-intPubKeys2 a p1 i = map f $ pubSubKeys2 intKey1 intKey2 i
-    where intKey1 = fromJust $ pubSubKey (runAccPubKey a) 1
-          intKey2 = fromJust $ pubSubKey p1 1
-          f (a,b) = (AddrPubKey a, AddrPubKey b)
+intMulSigAddr :: AccPubKey -> [XPubKey] -> Int -> KeyIndex -> Maybe String
+intMulSigAddr a ps r i = do
+    ps <- (map (xPubKey . runAddrPubKey)) <$> intMulSigKey a ps i
+    return $ addrToBase58 $ scriptAddr $ PayMulSig ps r
 
-intTakeIndex2 :: AccPubKey -> XPubKey -> KeyIndex -> Int
-              -> ([(AddrPubKey, AddrPubKey)], KeyIndex, KeyIndex)
-intTakeIndex2 a p1 i c = (res,beg,end)
-    where res = take c $ intPubKeys2 a p1 i
-          beg = xPubChild $ runAddrPubKey $ fst $ head res
-          end = xPubChild $ runAddrPubKey $ fst $ last res
+extMulSigAddrs :: AccPubKey -> [XPubKey] -> Int -> KeyIndex 
+              -> [(String,KeyIndex)]
+extMulSigAddrs a ps r i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (extMulSigAddr a ps r j) (return j)
 
--- 2 of 3 multisig (internal chain)
-intPubKeys3 :: AccPubKey -> XPubKey -> XPubKey -> KeyIndex 
-            -> [(AddrPubKey, AddrPubKey, AddrPubKey)]
-intPubKeys3 a p1 p2 i = map f $ pubSubKeys3 intKey1 intKey2 intKey3 i
-    where intKey1   = fromJust $ pubSubKey (runAccPubKey a) 1
-          intKey2   = fromJust $ pubSubKey p1 1
-          intKey3   = fromJust $ pubSubKey p2 1
-          f (a,b,c) = (AddrPubKey a, AddrPubKey b, AddrPubKey c)
-
-intTakeIndex3 :: AccPubKey -> XPubKey -> XPubKey -> KeyIndex -> Int
-              -> ([(AddrPubKey, AddrPubKey, AddrPubKey)], KeyIndex, KeyIndex)
-intTakeIndex3 a p1 p2 i c = (res,beg,end)
-    where res = take c $ intPubKeys3 a p1 p2 i
-          beg = xPubChild $ runAddrPubKey $ fst3 $ head res
-          end = xPubChild $ runAddrPubKey $ fst3 $ last res
-
+intMulSigAddrs :: AccPubKey -> [XPubKey] -> Int -> KeyIndex 
+              -> [(String,KeyIndex)]
+intMulSigAddrs a ps r i = mapMaybe f [i..0x7fffffff]
+    where f j = liftM2 (,) (intMulSigAddr a ps r j) (return j)
 

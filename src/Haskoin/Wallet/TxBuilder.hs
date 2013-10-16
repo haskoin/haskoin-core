@@ -1,7 +1,6 @@
 module Haskoin.Wallet.TxBuilder 
-( buildPKHashTx
-, buildScriptHashTx
-, buildTx
+( buildTx
+, buildAddrTx
 , SigInput(..)
 , signTx
 , detSignTx
@@ -24,21 +23,13 @@ import Haskoin.Util
 
 {- Build a new Tx -}
 
--- Helper for pay to pubkey hash transactions
--- Returns Nothing if the address String is badly formatted
-buildPKHashTx :: [OutPoint] -> [(String,Word64)] -> Either String Tx
-buildPKHashTx xs ys = buildTx xs =<< mapM f ys
+-- Helper for paying to a base58 encoded address
+buildAddrTx :: [OutPoint] -> [(String,Word64)] -> Either String Tx
+buildAddrTx xs ys = buildTx xs =<< mapM f ys
     where f (s,v) = case base58ToAddr s of
             Just a@(PubKeyAddress _) -> return (PayPKHash a,v)
-            _ -> Left $ "buildPKHashTx: Invalid address " ++ s
-            
--- Helper for pay to script hash transactions
--- Returns Nothing if the address String is badly formatted
-buildScriptHashTx :: [OutPoint] -> [(String,Word64)] -> Either String Tx
-buildScriptHashTx xs ys = buildTx xs =<< mapM f ys
-    where f (s,v) = case base58ToAddr s of
             Just a@(ScriptAddress _) -> return (PayScriptHash a,v)
-            _ -> Left $ "buildScriptHashTx: Invalid address " ++ s
+            _ -> Left $ "buildAddrTx: Invalid address " ++ s
 
 buildTx :: [OutPoint] -> [(ScriptOutput,Word64)] -> Either String Tx
 buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0

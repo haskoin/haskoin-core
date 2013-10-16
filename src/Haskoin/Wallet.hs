@@ -61,9 +61,8 @@ module Haskoin.Wallet
 , intTakeIndex3
 
 -- Tx module
-, buildPKHashTx
-, buildScriptHashTx
 , buildTx
+, buildAddrTx
 , SigInput(..)
 , signTx
 , detSignTx

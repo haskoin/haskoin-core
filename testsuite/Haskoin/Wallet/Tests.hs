@@ -34,8 +34,7 @@ tests =
         , testProperty "fromB58( toB58(pubKey) ) = pubKey" b58PubKey
         ]
     , testGroup "Building Transactions"
-        [ testProperty "building PKHash Tx" testBuildPKHashTx
-        , testProperty "building ScriptHash Tx" testBuildScriptHashTx
+        [ testProperty "building address tx" testBuildAddrTx
         ]
     , testGroup "Signing Transactions"
         [ testProperty "Check signed transaction status" testSignTxBuild
@@ -64,19 +63,14 @@ b58PubKey k = (fromJust $ xPubImport $ xPubExport k) == k
 
 {- Building Transactions -}
 
-testBuildPKHashTx :: [OutPoint] -> Address -> Word64 -> Bool
-testBuildPKHashTx os a v = case a of
-    (PubKeyAddress _) -> 
-        if v <= 2100000000000000 then isRight tx else isLeft tx
-    (ScriptAddress _) -> isLeft tx
-    where tx = buildPKHashTx os [(addrToBase58 a,v)]
-
-testBuildScriptHashTx :: [OutPoint] -> Address -> Word64 -> Bool
-testBuildScriptHashTx os a v = case a of
-    (ScriptAddress _) -> 
-        if v <= 2100000000000000 then isRight tx else isLeft tx
-    (PubKeyAddress _) -> isLeft tx
-    where tx = buildScriptHashTx os [(addrToBase58 a,v)]
+testBuildAddrTx :: [OutPoint] -> Address -> Word64 -> Bool
+testBuildAddrTx os a v 
+    | v <= 2100000000000000 = isRight tx && case a of
+        x@(PubKeyAddress _) -> Right (PayPKHash x) == out
+        x@(ScriptAddress _) -> Right (PayScriptHash x) == out
+    | otherwise = isLeft tx
+    where tx = buildAddrTx os [(addrToBase58 a,v)]
+          out = decodeOutput $ scriptOutput $ txOut (fromRight tx) !! 0
 
 {- Signing Transactions -}
 

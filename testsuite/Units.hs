@@ -71,7 +71,7 @@ mapPKHashVec (v,i) = testCase name $ runPKHashVec v
 runPKHashVec :: ([(String,Word32)],[(String,Word64)],String) -> Assertion
 runPKHashVec (xs,ys,res) = 
     assertBool "Build PKHash Tx" $ (bsToHex $ encode' tx) == res
-    where tx = fromRight $ buildPKHashTx (map f xs) ys
+    where tx = fromRight $ buildAddrTx (map f xs) ys
           f (id,ix) = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS id) ix
 
 mapVerifyVec :: (([(String,String,String)],String),Int) 

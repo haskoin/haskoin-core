@@ -27,9 +27,7 @@ instance Arbitrary PKHashSigTemplate where
         perm      <- choose (0,max 0 $ inCount-1)
         outPoints <- vectorOf inCount arbitrary
         prvKeys   <- vectorOf inCount arbitrary
-        sigHashes <- vectorOf inCount $ oneof [ SigAll <$> arbitrary
-                                              , SigNone <$> arbitrary
-                                              ]
+        sigHashes <- vectorOf inCount arbitrary
         payTo <- choose (0,10) >>= \n -> do
             h <- (map (addrToBase58 . PubKeyAddress)) <$> vectorOf n arbitrary    
             v <- vectorOf n $ choose (1,2100000000000000)
@@ -41,6 +39,6 @@ instance Arbitrary PKHashSigTemplate where
                             (zip3 scripts outPoints sigHashes)
             perInputs = (permutations sigInputs) !! perm
             perKeys   = (permutations prvKeys) !! perm
-            tx        = fromRight $ buildPKHashTx outPoints payTo
+            tx        = fromRight $ buildAddrTx outPoints payTo
         return $ PKHashSigTemplate tx perInputs perKeys
 

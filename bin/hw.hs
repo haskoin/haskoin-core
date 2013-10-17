@@ -29,6 +29,7 @@ data Options = Options
     , optAccount  :: Int
     , optRequire  :: Int
     , optMaster   :: Bool
+    , optSigHash  :: SigHash
     , optHelp     :: Bool
     , optVersion  :: Bool
     } deriving (Eq, Show)
@@ -40,6 +41,7 @@ defaultOptions = Options
     , optAccount  = 0
     , optRequire  = 2
     , optMaster   = False
+    , optSigHash  = SigAll False
     , optHelp     = False
     , optVersion  = False
     } 
@@ -82,6 +84,13 @@ options =
     , Option ['m'] ["master"]
         (NoArg $ \opts -> return opts{ optMaster = True }) $
         "Use the master key. Implies dumpkey or fingerprint command"
+    , Option ['H'] ["sighash"] (ReqArg parseSigHash "SIGHASH") $
+        "Type of signature. Can be ALL|NONE|SINGLE"
+    , Option ['A'] ["anyonecanpay"]
+        (NoArg $ \opts -> do
+            let sh = optSigHash opts
+            return opts{ optSigHash = sh{ anyoneCanPay = True } }
+        ) $ "Sign a transaction with the AnyoneCanPay flag set"
     , Option ['h'] ["help"]
         (NoArg $ \opts -> return opts{ optHelp = True }) $
         "Display this help message"
@@ -113,6 +122,14 @@ parseRequire s opts
     | res >= 1 && res <= 16 = return opts{ optRequire = res }
     | otherwise = error $ "Invalid require option (between 1 and 16): " ++ s
     where res = read s
+
+parseSigHash :: String -> Options -> IO Options
+parseSigHash s opts = return opts{ optSigHash = res }
+    where acp = anyoneCanPay $ optSigHash opts
+          res | s == "ALL" = SigAll acp
+              | s == "NONE" = SigNone acp
+              | s == "SINGLE" = SigSingle acp
+              | otherwise = error "Invalid SigHash. Has to be ALL|NONE|SINGLE"
 
 usageHeader :: String
 usageHeader = "Usage: hw [<options>] <command> [<args>]"
@@ -345,8 +362,8 @@ cmdSignTx m opts args
                             i
                         )
                       )
-          g (s,o) | null keys = SigInput s o $ SigAll False
-                  | otherwise = SigInputSH s o rdm $ SigAll False
+          g (s,o) | null keys = SigInput s o $ optSigHash opts
+                  | otherwise = SigInputSH s o rdm $ optSigHash opts
                   where rdm = encodeOutput $
                               PayMulSig (map xPubKey keys) (optRequire opts)
           h i = xPrvKey $ runAddrPrvKey $ fromJust $ 

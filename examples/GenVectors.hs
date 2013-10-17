@@ -30,11 +30,11 @@ vectors =
 
 genVector :: ([OutPoint],[(String,Word64)],[OutPoint],[Integer]) -> Build Tx
 genVector (xs,ys,zs,ps) = detSignTx tx sigi prv
-    where tx = fromRight $ buildPKHashTx xs ys
+    where tx = fromRight $ buildAddrTx xs ys
           prv = map (fromJust . makePrvKey) ps
           pub = map derivePubKey prv
-          sps = map (fromJust . encodeOutput . PayPKHash . pubKeyAddr) pub
-          sigi = map (\(s,op) -> SigInput (TxOut 1 s) op SigAll) (zip sps zs)
+          sps = map (encodeOutput . PayPKHash . pubKeyAddr) pub
+          sigi = map (\(s,op) -> SigInput s op $ SigAll False) (zip sps zs)
 
 main :: IO ()
 main = do

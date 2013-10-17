@@ -17,6 +17,7 @@ import Data.Word
 import qualified Data.ByteString as BS
 
 import Haskoin.Wallet
+import Haskoin.Script
 import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util
@@ -50,6 +51,7 @@ data Command = CmdInit
              | CmdDumpWIF
              | CmdDecodeTx
              | CmdBuildTx
+             | CmdSignTx
              deriving (Eq, Show)
 
 strToCmd :: String -> Command
@@ -61,6 +63,7 @@ strToCmd str = case str of
     "dumpwif"     -> CmdDumpWIF
     "decodetx"    -> CmdDecodeTx
     "buildtx"     -> CmdBuildTx
+    "signtx"      -> CmdSignTx
     _ -> error $ "Invalid command: " ++ str
 
 options :: [OptDescr (Options -> IO Options)]
@@ -117,13 +120,15 @@ usageHeader = "Usage: hw [<options>] <command> [<args>]"
 cmdHelp :: String
 cmdHelp = 
     "Valid <command>: \n" 
- ++ "  init             Initialize a new wallet (seeding from /dev/urandom)\n" 
- ++ "  address [<keys>] Prints a list of addresses. <keys> are in xpub format\n" 
- ++ "  fingerprint      Prints key fingerprint and ID\n"
- ++ "  dumpkey          Dump master or account keys to stdout\n"
- ++ "  dumpwif          Dump private keys in WIF format to stdout\n"
- ++ "  decodetx <tx>    Decode a transaction in HEX format\n"
- ++ "  buildtx <[(txid,index)]> <[(addr,amount)]> Build a new transaction"
+ ++ "  init              Initialize a new wallet (seeding from /dev/urandom)\n" 
+ ++ "  address [<xkeys>] Prints a list of addresses. <keys> are in xpub format\n" 
+ ++ "  fingerprint       Prints key fingerprint and ID\n"
+ ++ "  dumpkey           Dump master or account keys to stdout\n"
+ ++ "  dumpwif           Dump private keys in WIF format to stdout\n"
+ ++ "  decodetx <tx>     Decode a transaction in HEX format\n"
+ ++ "  buildtx <[(txid,index)]> <[(addr,amount)]> Build a new transaction\n"
+ ++ "  signtx <tx> <[(txid,index,script)]> <[key indices]> [<xkeys>] "
+        ++ "Sign a transaction with keys from the wallet"
 
 warningMsg :: String
 warningMsg = "**This software is experimental. " 
@@ -216,6 +221,9 @@ process opts cs
                 cmdDecodeTx opts args
             CmdBuildTx -> do
                 cmdBuildTx opts args
+            CmdSignTx -> do
+                key <- loadKey dir
+                cmdSignTx key opts args
             
 cmdDumpKey :: MasterKey -> Options -> IO ()
 cmdDumpKey key opts
@@ -299,9 +307,9 @@ cmdAddress key opts args = do
 cmdDecodeTx :: Options -> [String] -> IO ()
 cmdDecodeTx opts args
     | null args = error usage
-    | isNothing bs = error "Invalid HEX encoding"
+    | isNothing bs = error "<tx>: Invalid HEX encoding"
     | otherwise = case eitherTx of
-        Left err -> putStrLn err
+        Left err -> error err
         Right tx -> pp tx
     where bs       = hexToBS $ head args
           eitherTx = decodeToEither $ fromJust bs :: Either String Tx
@@ -315,6 +323,35 @@ cmdBuildTx opts args
     where os = read (args !! 0) :: [(String,Word32)]
           as = read (args !! 1) :: [(String,Word64)]
           f (s,i) = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS s) i
+
+cmdSignTx :: MasterKey -> Options -> [String] -> IO ()
+cmdSignTx m opts args
+    | length args < 3 || length args > 4 = error usage
+    | isNothing bs = error "<tx>: Invalid HEX encoding"
+    | otherwise = case eitherTx of
+        Left err -> error err
+        Right tx -> putStrLn $ show $
+            liftM (bsToHex . encode') (detSignTx tx (map (g . f) os) $ map h is)
+    where ai  = fromIntegral $ optAccount opts
+          acc = fromMaybe (error $ "Invalid account index") $ accPrvKey m ai
+          bs = hexToBS $ args !! 0
+          eitherTx = decodeToEither $ fromJust bs :: Either String Tx
+          os = read (args !! 1) :: [(String,Word32,String)]
+          is = read (args !! 2) :: [Word32]
+          keys = map (fromJust . xPubImport) $ drop 3 args
+          f (t,i,s) = ( (Script $ runGet' getScriptOps $ fromJust $ hexToBS s) 
+                      , ( OutPoint 
+                            (decode' $ BS.reverse $ fromJust $ hexToBS t) 
+                            i
+                        )
+                      )
+          g (s,o) | null keys = SigInput s o $ SigAll False
+                  | otherwise = SigInputSH s o rdm $ SigAll False
+                  where rdm = encodeOutput $
+                              PayMulSig (map xPubKey keys) (optRequire opts)
+          h i = xPrvKey $ runAddrPrvKey $ fromJust $ 
+                    if (optInternal opts) then intPrvKey acc i
+                                          else extPrvKey acc i
         
 cmdInit :: FilePath -> IO ()
 cmdInit dir = do

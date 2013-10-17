@@ -35,7 +35,7 @@ instance Arbitrary PKHashSigTemplate where
         let pubKeys   = map derivePubKey prvKeys
             scriptOut = map (PayPKHash . pubKeyAddr) pubKeys
             scripts   = map encodeOutput scriptOut
-            sigInputs = map (\(s,o,h) -> SigInput (TxOut 1 s) o h) 
+            sigInputs = map (\(s,o,h) -> SigInput s o h) 
                             (zip3 scripts outPoints sigHashes)
             perInputs = (permutations sigInputs) !! perm
             perKeys   = (permutations prvKeys) !! perm

@@ -40,11 +40,11 @@ buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
 {- Sign a pubKeyHash tx -}
 
 -- Data used for building the siganture hash
-data SigInput = SigInput   { sigDataOut :: TxOut 
+data SigInput = SigInput   { sigDataOut :: Script 
                            , sigDataOP  :: OutPoint
                            , sigDataSH  :: SigHash
                            } 
-              | SigInputSH { sigDataOut :: TxOut
+              | SigInputSH { sigDataOut :: Script
                            , sigDataOP  :: OutPoint
                            , sigRedeem  :: Script
                            , sigDataSH  :: SigHash
@@ -107,11 +107,11 @@ type BuildFunction =  TxIn -> Tx -> ScriptOutput -> Int
 decodeSigInput :: SigInput -> [PrvKey] -> 
     Build (ScriptOutput, [PrvKey], [PubKey], BuildFunction)
 decodeSigInput sigi keys = case sigi of
-    SigInput (TxOut _ s) _ _ -> do
+    SigInput s _ _ -> do
         out          <- eitherToBuild $ decodeOutput s
         (vKeys,pubs) <- sigKeys out keys
         return (out,vKeys,pubs,buildTxIn)
-    SigInputSH (TxOut _ s) _ sr _ -> do
+    SigInputSH s _ sr _ -> do
         out          <- eitherToBuild $ decodeOutput s
         rdm          <- eitherToBuild $ decodeOutput sr
         (vKeys,pubs) <- sigKeysSH out rdm keys
@@ -127,7 +127,7 @@ buildTxInSH txin tx rdm i pubs sigs = do
 
 buildTxIn :: BuildFunction
 buildTxIn txin tx out i pubs sigs 
-    | null sigs = return txin{ scriptInput = Script [] }
+    | null sigs = Partial txin{ scriptInput = Script [] }
     | otherwise = buildRes <$> case out of
         PayPK _     -> return $ SpendPK $ head sigs
         PayPKHash _ -> return $ SpendPKHash (head sigs) (head pubs)

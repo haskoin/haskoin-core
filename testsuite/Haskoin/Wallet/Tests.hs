@@ -87,7 +87,7 @@ testSignTxValidate (PKHashSigTemplate tx sigi prv) =
         (Broken s)    -> True
         (Partial tx)  -> not $ verifyTx tx $ map f sigi
         (Complete tx) -> verifyTx tx $ map f sigi
-    where f si = (scriptOutput $ sigDataOut si, sigDataOP si)
+    where f si = (sigDataOut si, sigDataOP si)
 
 -- todo: test p2sh transactions
 

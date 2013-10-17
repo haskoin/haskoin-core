@@ -49,6 +49,7 @@ data Command = CmdInit
              | CmdDumpKey
              | CmdDumpWIF
              | CmdDecodeTx
+             | CmdBuildTx
              deriving (Eq, Show)
 
 strToCmd :: String -> Command
@@ -59,6 +60,7 @@ strToCmd str = case str of
     "dumpkey"     -> CmdDumpKey
     "dumpwif"     -> CmdDumpWIF
     "decodetx"    -> CmdDecodeTx
+    "buildtx"     -> CmdBuildTx
     _ -> error $ "Invalid command: " ++ str
 
 options :: [OptDescr (Options -> IO Options)]
@@ -120,7 +122,8 @@ cmdHelp =
  ++ "  fingerprint      Prints key fingerprint and ID\n"
  ++ "  dumpkey          Dump master or account keys to stdout\n"
  ++ "  dumpwif          Dump private keys in WIF format to stdout\n"
- ++ "  decodetx <tx>    Decode a transaction in HEX format"
+ ++ "  decodetx <tx>    Decode a transaction in HEX format\n"
+ ++ "  buildtx <[(txid,index)]> <[(addr,amount)]> Build a new transaction"
 
 warningMsg :: String
 warningMsg = "**This software is experimental. " 
@@ -211,6 +214,8 @@ process opts cs
                 cmdAddress key opts args
             CmdDecodeTx -> do
                 cmdDecodeTx opts args
+            CmdBuildTx -> do
+                cmdBuildTx opts args
             
 cmdDumpKey :: MasterKey -> Options -> IO ()
 cmdDumpKey key opts
@@ -300,6 +305,16 @@ cmdDecodeTx opts args
         Right tx -> pp tx
     where bs       = hexToBS $ head args
           eitherTx = decodeToEither $ fromJust bs :: Either String Tx
+
+cmdBuildTx :: Options -> [String] -> IO ()
+cmdBuildTx opts args
+    | length args /= 2 = error usage
+    | otherwise = case buildAddrTx (map f os) as of
+        Right tx -> putStrLn $ bsToHex $ encode' tx
+        Left err -> error err
+    where os = read (args !! 0) :: [(String,Word32)]
+          as = read (args !! 1) :: [(String,Word64)]
+          f (s,i) = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS s) i
         
 cmdInit :: FilePath -> IO ()
 cmdInit dir = do

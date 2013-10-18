@@ -19,11 +19,13 @@ library
                        Haskoin.Wallet.Arbitrary
     other-modules:     Haskoin.Wallet.Keys,
                        Haskoin.Wallet.Manager,
-                       Haskoin.Wallet.TxBuilder
+                       Haskoin.Wallet.TxBuilder,
+                       Haskoin.Wallet.Store
     build-depends:     base == 4.6.*, 
                        binary == 0.7.*, 
                        bytestring == 0.10.*, 
                        mtl == 2.1.*,
+                       leveldb-haskoin == 0.2.*,
                        haskoin-util == 0.1.*, 
                        haskoin-crypto == 0.1.*, 
                        haskoin-protocol == 0.1.*,
@@ -37,12 +39,14 @@ executable hw
     other-modules:     Haskoin.Wallet,
                        Haskoin.Wallet.Keys,
                        Haskoin.Wallet.Manager,
-                       Haskoin.Wallet.TxBuilder
+                       Haskoin.Wallet.TxBuilder,
+                       Haskoin.Wallet.Store
     build-depends:     base == 4.6.*, 
                        binary == 0.7.*, 
                        bytestring == 0.10.*, 
                        mtl == 2.1.*,
                        unix == 2.6.*,
+                       leveldb-haskoin == 0.2.*,
                        haskoin-util == 0.1.*, 
                        haskoin-crypto == 0.1.*, 
                        haskoin-protocol == 0.1.*,
@@ -57,6 +61,7 @@ Test-Suite test-haskoin-wallet
                        binary == 0.7.*, 
                        bytestring == 0.10.*, 
                        mtl == 2.1.*,
+                       leveldb-haskoin == 0.2.*,
                        haskoin-util == 0.1.*, 
                        haskoin-crypto == 0.1.*, 
                        haskoin-protocol == 0.1.*,

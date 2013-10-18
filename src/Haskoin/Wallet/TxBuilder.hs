@@ -37,8 +37,6 @@ buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
           fo (o,v) | v <= 2100000000000000 = return $ TxOut v $ encodeOutput o
                    | otherwise = Left $ "buildTx: Invalid amount " ++ (show v)
 
-{- Sign a pubKeyHash tx -}
-
 -- Data used for building the siganture hash
 data SigInput = SigInput   { sigDataOut :: Script 
                            , sigDataOP  :: OutPoint

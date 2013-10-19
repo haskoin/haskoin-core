@@ -9,6 +9,8 @@ import System.Console.GetOpt
 
 import Control.Monad
 import Control.Applicative
+import Control.Monad.Trans
+import Control.Monad.Trans.Resource
 import Control.Exception
 
 import Data.Maybe
@@ -17,6 +19,7 @@ import Data.Word
 import qualified Data.ByteString as BS
 
 import Haskoin.Wallet
+import Haskoin.Wallet.Store
 import Haskoin.Script
 import Haskoin.Protocol
 import Haskoin.Crypto
@@ -26,9 +29,7 @@ data Options = Options
     { optCount    :: Int
     , optIndex    :: Word32
     , optInternal :: Bool
-    , optAccount  :: Int
     , optRequire  :: Int
-    , optMaster   :: Bool
     , optSigHash  :: SigHash
     , optHelp     :: Bool
     , optVersion  :: Bool
@@ -38,19 +39,16 @@ defaultOptions = Options
     { optCount    = 5
     , optIndex    = 0
     , optInternal = False
-    , optAccount  = 0
     , optRequire  = 2
-    , optMaster   = False
     , optSigHash  = SigAll False
     , optHelp     = False
     , optVersion  = False
     } 
 
 data Command = CmdInit
-             | CmdAddress
-             | CmdFingerprint
+             | CmdListAddr
+             | CmdGenAddr
              | CmdDumpKey
-             | CmdDumpWIF
              | CmdDecodeTx
              | CmdBuildTx
              | CmdSignTx
@@ -58,14 +56,13 @@ data Command = CmdInit
 
 strToCmd :: String -> Command
 strToCmd str = case str of
-    "init"        -> CmdInit
-    "address"     -> CmdAddress
-    "fingerprint" -> CmdFingerprint
-    "dumpkey"     -> CmdDumpKey
-    "dumpwif"     -> CmdDumpWIF
-    "decodetx"    -> CmdDecodeTx
-    "buildtx"     -> CmdBuildTx
-    "signtx"      -> CmdSignTx
+    "init"     -> CmdInit
+    "listaddr" -> CmdListAddr
+    "genaddr"  -> CmdGenAddr
+    "dumpkey"  -> CmdDumpKey
+    "decodetx" -> CmdDecodeTx
+    "buildtx"  -> CmdBuildTx
+    "signtx"   -> CmdSignTx
     _ -> error $ "Invalid command: " ++ str
 
 options :: [OptDescr (Options -> IO Options)]
@@ -77,13 +74,8 @@ options =
     , Option ['N'] ["internal"]
         (NoArg $ \opts -> return opts{ optInternal = True }) $
         "Use internal address chain. Implies address or dumpwif command"
-    , Option ['a'] ["account"] (ReqArg parseAccount "INT") $
-        "Account index to use in your command"
     , Option ['r'] ["require"] (ReqArg parseRequire "INT") $
         "Number of required keys (M) when generating M of N addresses"
-    , Option ['m'] ["master"]
-        (NoArg $ \opts -> return opts{ optMaster = True }) $
-        "Use the master key. Implies dumpkey or fingerprint command"
     , Option ['H'] ["sighash"] (ReqArg parseSigHash "SIGHASH") $
         "Type of signature. Can be ALL|NONE|SINGLE"
     , Option ['A'] ["anyonecanpay"]
@@ -111,12 +103,6 @@ parseIndex s opts
     | otherwise = error $ "Invalid index option: " ++ s
     where res = read s
 
-parseAccount :: String -> Options -> IO Options
-parseAccount s opts 
-    | res >= 0 && res < 0x80000000 = return opts{ optAccount = res }
-    | otherwise = error $ "Invalid account option: " ++ s
-    where res = read s
-
 parseRequire :: String -> Options -> IO Options
 parseRequire s opts 
     | res >= 1 && res <= 16 = return opts{ optRequire = res }
@@ -137,19 +123,16 @@ usageHeader = "Usage: hw [<options>] <command> [<args>]"
 cmdHelp :: String
 cmdHelp = 
     "Valid <command>: \n" 
- ++ "  init              Initialize a new wallet (seeding from /dev/urandom)\n" 
- ++ "  address [<xkeys>] Prints a list of addresses. <keys> are in xpub format\n" 
- ++ "  fingerprint       Prints key fingerprint and ID\n"
- ++ "  dumpkey           Dump master or account keys to stdout\n"
- ++ "  dumpwif           Dump private keys in WIF format to stdout\n"
+ ++ "  init <seed>       Initialize a new wallet from a seed\n" 
+ ++ "  listaddr [acc]    List addresses in your account\n" 
+ ++ "  genaddr [acc]     Generate new addresses for your account\n"
+ ++ "  dumpkey [acc]     Dump account key to stdout\n"
  ++ "  decodetx <tx>     Decode a transaction in HEX format\n"
- ++ "  buildtx <[(txid,index)]> <[(addr,amount)]> Build a new transaction\n"
- ++ "  signtx <tx> <[(txid,index,script)]> <[key indices]> [<xkeys>] "
-        ++ "Sign a transaction with keys from the wallet"
+ ++ "  buildtx [(txid,index)] [(addr,amount)] Build a new transaction\n"
 
 warningMsg :: String
-warningMsg = "**This software is experimental. " 
-    ++ "Only use small amounts of Bitcoins you can afford to loose**"
+warningMsg = "\n**This software is experimental. " 
+    ++ "Use only small amounts of Bitcoins**\n"
 
 versionMsg :: String
 versionMsg = "haskoin wallet version 0.1.1.0"
@@ -162,7 +145,6 @@ main = do
     args <- E.getArgs
     case getOpt Permute options args of
         (o,n,[]) -> do
-            when (null o && null n) $ error usage
             opts <- foldl (>>=) (return defaultOptions) o
             process opts n
         (_,_,msgs) ->
@@ -194,195 +176,121 @@ getWorkDir = do
         putStrLn $ "Haskoin working directory created: " ++ walletDir
     return walletDir
 
-loadKey :: FilePath -> IO MasterKey
-loadKey dir = do
-    -- Load master key file
-    let keyFile = dir ++ "/key"  
-    exists <- fileExist keyFile
-    unless exists $ error $
-        "Wallet file does not exist: " ++ keyFile ++ "\n" ++
-        "You should run the init command"
-    keyString <- rstrip <$> readFile keyFile
-    let keyM = loadMasterKey =<< (xPrvImport keyString) 
-    unless (isJust keyM) $ error $
-        "Failed to parse master key from file: " ++ keyFile
-    return $ fromJust keyM
-    where rstrip = reverse . dropWhile isSpace . reverse
-
 process :: Options -> [String] -> IO ()
 process opts cs 
     -- -h and -v can be called without a command
     | optHelp opts = putStrLn usage
     | optVersion opts = putStrLn versionMsg
     -- otherwise require a command
-    | null cs = error usage
-    | otherwise = do
-        dir <- getWorkDir
+    | null cs = putStrLn usage
+    | otherwise = getWorkDir >>= \dir -> do
         let (c,args) = (strToCmd $ head cs, tail cs)
-        case c of
-            CmdInit -> do
-                cmdInit dir
-            CmdFingerprint -> do
-                key <- loadKey dir
-                cmdFingerprint key opts
-            CmdDumpKey -> do
-                key <- loadKey dir
-                cmdDumpKey key opts
-            CmdDumpWIF -> do
-                key <- loadKey dir
-                cmdDumpWIF key opts
-            CmdAddress -> do
-                key <- loadKey dir
-                cmdAddress key opts args
-            CmdDecodeTx -> do
-                cmdDecodeTx opts args
-            CmdBuildTx -> do
-                cmdBuildTx opts args
-            CmdSignTx -> do
-                key <- loadKey dir
-                cmdSignTx key opts args
+        putStrLn warningMsg
+        runResourceT $ runWalletDB dir $ case c of
+            CmdInit     -> cmdInit opts args
+            CmdListAddr -> cmdListAddr opts args
+            CmdGenAddr  -> cmdGenAddr opts args
+            CmdDumpKey  -> cmdDumpKey args
+            CmdDecodeTx -> cmdDecodeTx opts args
+            CmdBuildTx  -> cmdBuildTx opts args
+            CmdSignTx   -> liftIO $ putStrLn "Command not implemented"
             
-cmdDumpKey :: MasterKey -> Options -> IO ()
-cmdDumpKey key opts
-    | optMaster opts = do
-        putStrLn "Master key"
-        putStrLn $ xPrvExport $ runMasterKey key
-    | otherwise      = do
-        unless (isJust accPrvM) $ error $
-            "Index produced an invalid account: " ++ (show $ optAccount opts)
-        putStrLn $ "Account: " ++ (show $ optAccount opts)
-        putStrLn $ xPrvExport accPrv
-        putStrLn $ xPubExport accPub
-    where accPrvM = accPrvKey key (fromIntegral $ optAccount opts)
-          accPrv  = runAccPrvKey $ fromJust $ accPrvM
-          accPub  = deriveXPubKey accPrv
+type Args = [String]
+type CmdAction = WalletDB (ResourceT IO) ()
 
-cmdDumpWIF :: MasterKey -> Options -> IO ()
-cmdDumpWIF key opts = do
-    let accM     = accPrvKey key (fromIntegral $ optAccount opts)
-    unless (isJust accM) $ error $
-        "Index produced an invalid account: " ++ (show $ optAccount opts)
-    let acc   = fromJust $ accM
-        f     = if optInternal opts then intPrvKey else extPrvKey
-        addrM = f acc (fromIntegral $ optIndex opts)
-    unless (isJust addrM) $ error $
-        "Index produced an invalid address: " ++ (show $ optIndex opts)
-    when (optInternal opts) $ putStr "(Internal Chain) "
-    putStr $ "Account: " ++ (show $ optAccount opts) ++ ", "
-    putStrLn $ "Key Index: " ++ (show $ optIndex opts)
-    putStrLn $ xPrvWIF $ runAddrPrvKey $ fromJust addrM 
-
-cmdFingerprint :: MasterKey -> Options -> IO ()
-cmdFingerprint key opts
-    | optMaster opts = do
-         putStrLn "Master Key"
-         let masterFP = bsToHex $ encode' $ xPrvFP $ runMasterKey key
-             masterID = bsToHex $ encode' $ xPrvID $ runMasterKey key
-         putStrLn $ "fingerprint: " ++ masterFP
-         putStrLn $ "ID: " ++ masterID
+cmdInit :: Options -> Args -> CmdAction
+cmdInit opts args
+    | length args /= 1 = liftIO $ putStrLn usage
     | otherwise = do
-        let accM     = accPrvKey key (fromIntegral $ optAccount opts)
-        unless (isJust accM) $ error $
-            "Index produced an invalid account: " ++ (show $ optAccount opts)
-        let acc      = fromJust accM
-            accFP    = bsToHex $ encode' $ xPrvFP $ runAccPrvKey acc
-            accID    = bsToHex $ encode' $ xPrvID $ runAccPrvKey acc
-        putStrLn $ "Account private key: " ++ (show $ optAccount opts)
-        putStrLn $ "fingerprint: " ++ accFP
-        putStrLn $ "ID: " ++ accID
+        dbInit $ head args
+        dbGenExtAddr "default" $ optCount opts
+        liftIO $ putStrLn "Wallet initialized" 
 
-parseKey :: FilePath -> IO XPubKey
-parseKey f = do
-    exists <- fileExist f 
-    unless exists $ error $ "File does not exist: " ++ f
-    keyString <- rstrip <$> readFile f
-    let keyM = xPubImport keyString
-    unless (isJust keyM) $ error $
-        "Failed to parse multisig key from file: " ++ f
-    return $ fromJust keyM
-    where rstrip = reverse . dropWhile isSpace . reverse
+cmdListAddr :: Options -> Args -> CmdAction
+cmdListAddr opts args 
+    | length args > 1 = liftIO $ putStrLn usage
+    | otherwise = do
+        let acc = if null args then "default" else head args
+        addr <- dbExtAddr acc $ optCount opts
+        liftIO $ do
+            putStrLn $ "Account: " ++ acc
+            forM_ addr formatAddr
 
-cmdAddress :: MasterKey -> Options -> [String] -> IO ()
-cmdAddress key opts args = do
-    when (optInternal opts) $ putStr "(Internal Chain) "
-    addr <- (take $ optCount opts) <$> if null args
-        then return $ f1 acc $ optIndex opts
-        else do
-            let k = map (fromMaybe (error $ "Invalid key")) keys
-            putStr $ "(" ++ (show r) ++ " of " ++ 
-                (show $ length k + 1) ++ " multisig) "
-            return $ f2 acc k r $ optIndex opts
-    putStrLn $ "Account " ++ (show ai)
-    forM_ addr (\(s,i) -> putStrLn $ (show i) ++ ") " ++ s )
-    where ai  = fromIntegral $ optAccount opts
-          acc = fromMaybe (error $ "Invalid account index") $ accPubKey key ai
-          r   = optRequire opts
-          f1  = if (optInternal opts) then intAddrs else extAddrs
-          f2  = if (optInternal opts) then intMulSigAddrs else extMulSigAddrs
-          keys = map xPubImport args
+cmdGenAddr :: Options -> Args -> CmdAction
+cmdGenAddr opts args 
+    | length args > 1 = liftIO $ putStrLn usage
+    | otherwise = do
+        let acc = if null args then "default" else head args
+        addr <- dbGenExtAddr acc $ optCount opts
+        liftIO $ do
+            putStrLn $ "Account: " ++ acc
+            forM_ addr formatAddr
 
-cmdDecodeTx :: Options -> [String] -> IO ()
+formatAddr :: WAddr -> IO ()
+formatAddr (WAddr a l i _)
+    | null l    = putStrLn def
+    | otherwise = putStrLn $ def ++ lab
+    where def = (show i) ++ ") " ++ a
+          lab = " (" ++ l ++ ")"
+
+cmdDumpKey :: Args -> CmdAction
+cmdDumpKey args 
+    | length args > 1 = liftIO $ putStrLn usage
+    | otherwise = do
+        let acc = if null args then "default" else head args
+        dbGetAcc acc >>= \accM -> case accM of
+            Nothing  -> error $ "Account " ++ (head args) ++ " does not exist"
+            Just acc -> liftIO $ do
+                putStrLn $ "Account: " ++ (accName acc)
+                putStrLn $ xPubExport $ runAccPubKey $ accKey acc
+
+cmdDecodeTx :: Options -> Args -> CmdAction
 cmdDecodeTx opts args
-    | null args = error usage
+    | null args = liftIO $ putStrLn usage
     | isNothing bs = error "<tx>: Invalid HEX encoding"
     | otherwise = case eitherTx of
         Left err -> error err
-        Right tx -> pp tx
+        Right tx -> liftIO $ pp tx
     where bs       = hexToBS $ head args
           eitherTx = decodeToEither $ fromJust bs :: Either String Tx
 
-cmdBuildTx :: Options -> [String] -> IO ()
+cmdBuildTx :: Options -> Args -> CmdAction
 cmdBuildTx opts args
-    | length args /= 2 = error usage
+    | length args /= 2 = liftIO $ putStrLn usage
     | otherwise = case buildAddrTx (map f os) as of
-        Right tx -> putStrLn $ bsToHex $ encode' tx
+        Right tx -> liftIO $ putStrLn $ bsToHex $ encode' tx
         Left err -> error err
     where os = read (args !! 0) :: [(String,Word32)]
           as = read (args !! 1) :: [(String,Word64)]
           f (s,i) = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS s) i
 
-cmdSignTx :: MasterKey -> Options -> [String] -> IO ()
-cmdSignTx m opts args
-    | length args < 3 || length args > 4 = error usage
-    | isNothing bs = error "<tx>: Invalid HEX encoding"
-    | otherwise = case eitherTx of
-        Left err -> error err
-        Right tx -> putStrLn $ show $
-            liftM (bsToHex . encode') (detSignTx tx (map (g . f) os) $ map h is)
-    where ai  = fromIntegral $ optAccount opts
-          acc = fromMaybe (error $ "Invalid account index") $ accPrvKey m ai
-          bs = hexToBS $ args !! 0
-          eitherTx = decodeToEither $ fromJust bs :: Either String Tx
-          os = read (args !! 1) :: [(String,Word32,String)]
-          is = read (args !! 2) :: [Word32]
-          keys = map (fromJust . xPubImport) $ drop 3 args
-          f (t,i,s) = ( (Script $ runGet' getScriptOps $ fromJust $ hexToBS s) 
-                      , ( OutPoint 
-                            (decode' $ BS.reverse $ fromJust $ hexToBS t) 
-                            i
-                        )
-                      )
-          g (s,o) | null keys = SigInput s o $ optSigHash opts
-                  | otherwise = SigInputSH s o rdm $ optSigHash opts
-                  where rdm = encodeOutput $
-                              PayMulSig (map xPubKey keys) (optRequire opts)
-          h i = xPrvKey $ runAddrPrvKey $ fromJust $ 
-                    if (optInternal opts) then intPrvKey acc i
-                                          else extPrvKey acc i
+--cmdSignTx :: Options -> Args -> CmdAction
+--cmdSignTx m opts args
+--    | length args < 3 || length args > 4 = error usage
+--    | isNothing bs = error "<tx>: Invalid HEX encoding"
+--    | otherwise = case eitherTx of
+--        Left err -> error err
+--        Right tx -> lift $ putStrLn $ show $
+--            liftM (bsToHex . encode') (detSignTx tx (map (g . f) os) $ map h is)
+--    where ai  = fromIntegral $ optAccount opts
+--          acc = fromMaybe (error $ "Invalid account index") $ accPrvKey m ai
+--          bs = hexToBS $ args !! 0
+--          eitherTx = decodeToEither $ fromJust bs :: Either String Tx
+--          os = read (args !! 1) :: [(String,Word32,String)]
+--          is = read (args !! 2) :: [Word32]
+--          keys = map (fromJust . xPubImport) $ drop 3 args
+--          f (t,i,s) = ( (Script $ runGet' getScriptOps $ fromJust $ hexToBS s) 
+--                      , ( OutPoint 
+--                            (decode' $ BS.reverse $ fromJust $ hexToBS t) 
+--                            i
+--                        )
+--                      )
+--          g (s,o) | null keys = SigInput s o $ optSigHash opts
+--                  | otherwise = SigInputSH s o rdm $ optSigHash opts
+--                  where rdm = encodeOutput $
+--                              PayMulSig (map xPubKey keys) (optRequire opts)
+--          h i = xPrvKey $ runAddrPrvKey $ fromJust $ 
+--                    if (optInternal opts) then intPrvKey acc i
+--                                          else extPrvKey acc i
         
-cmdInit :: FilePath -> IO ()
-cmdInit dir = do
-    let keyFile = dir ++ "/key"
-    exists <- fileExist keyFile
-    when exists $ error $
-        "Wallet file already exists: " ++ keyFile
-    seed <- devURandom 16 --128 bits of entropy
-    let keyM = makeMasterKey seed
-    -- This is very unlikely
-    unless (isJust keyM) $ error $
-        "Can't generate a wallet from your seed. Please try another one"
-    let key = xPrvExport $ runMasterKey $ fromJust keyM
-    writeFile keyFile $ key ++ "\n"
-    setFileMode keyFile $ unionFileModes ownerReadMode ownerWriteMode
-    putStrLn $ "Wallet initialized in: " ++ dir ++ "/key"
 

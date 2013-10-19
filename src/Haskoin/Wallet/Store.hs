@@ -126,7 +126,7 @@ dbGetAcc name = dbGet hAcc name >>= return . (decodeToMaybe =<<)
 
 dbGenExtAddr :: MonadResource m => String -> Int -> WalletDB m [WAddr]
 dbGenExtAddr name count = dbGetAcc name >>= \accM -> case accM of
-    Nothing -> return []
+    Nothing -> error $ "Invalid account " ++ name
     Just acc -> do
         let new   = take count $ extAddrs (accKey acc) (accExt acc + 1)
             wAddr = map (\(s,i) -> WAddr s "" i (accIndex acc)) new
@@ -134,14 +134,13 @@ dbGenExtAddr name count = dbGetAcc name >>= \accM -> case accM of
         dbPutAcc acc{ accExt = wIndex $ last wAddr }
         return wAddr
 
-dbExtAddrHistory :: MonadResource m => String -> Int 
-                 -> WalletDB m [WAddr]
-dbExtAddrHistory name count = dbGetAcc name >>= \accM -> case accM of
-    Nothing -> return []
+dbExtAddr :: MonadResource m => String -> Int -> WalletDB m [WAddr]
+dbExtAddr name count = dbGetAcc name >>= \accM -> case accM of
+    Nothing -> error $ "Invalid account " ++ name
     Just acc -> do
         let addr   = take count $ extAddrs' (accKey acc) (accExt acc)
         res <- forM addr (dbGetAddr . fst)
-        return $ catMaybes res
+        return $ reverse $ catMaybes res
 
 dbGetAddr :: MonadResource m => String -> WalletDB m (Maybe WAddr)
 dbGetAddr addr = dbGet hAddr addr >>= return . (decodeToMaybe =<<)

@@ -6,3 +6,4 @@
 *.ps
 *.prof
 dist
+dbtest

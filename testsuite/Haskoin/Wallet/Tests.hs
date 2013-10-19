@@ -16,6 +16,7 @@ import QuickCheckUtils
 
 import Haskoin.Wallet
 import Haskoin.Wallet.TxBuilder
+import Haskoin.Wallet.Store
 import Haskoin.Wallet.Arbitrary
 import Haskoin.Script
 import Haskoin.Crypto
@@ -28,10 +29,10 @@ tests :: [Test]
 tests = 
     [ testGroup "HDW Extended Keys"
         [ testProperty "prvSubKey(k,c)*G = pubSubKey(k*G,c)" subkeyTest
-        , testProperty "decode( encode(prvKey) ) = prvKey" binXPrvKey
-        , testProperty "decode( encode(pubKey) ) = pubKey" binXPubKey
-        , testProperty "fromB58( toB58(prvKey) ) = prvKey" b58PrvKey
-        , testProperty "fromB58( toB58(pubKey) ) = pubKey" b58PubKey
+        , testProperty "decode . encode prvKey" binXPrvKey
+        , testProperty "decode . encode pubKey" binXPubKey
+        , testProperty "fromB58 . toB58 prvKey" b58PrvKey
+        , testProperty "fromB58 . toB58 pubKey" b58PubKey
         ]
     , testGroup "Building Transactions"
         [ testProperty "building address tx" testBuildAddrTx
@@ -39,6 +40,10 @@ tests =
     , testGroup "Signing Transactions"
         [ testProperty "Check signed transaction status" testSignTxBuild
         , testProperty "Sign and validate transactions" testSignTxValidate
+        ]
+    , testGroup "Wallet Store"
+        [ testProperty "decode . encode account" decEncAccount
+        , testProperty "decode . encode addr" decEncAddr
         ]
     ]
 
@@ -91,5 +96,11 @@ testSignTxValidate (PKHashSigTemplate tx sigi prv) =
 
 -- todo: test p2sh transactions
 
+{- Wallet Store -}
 
+decEncAccount :: WAccount -> Bool
+decEncAccount acc = (decode' $ encode' acc) == acc
+
+decEncAddr :: WAddr -> Bool
+decEncAddr addr = (decode' $ encode' addr) == addr
 

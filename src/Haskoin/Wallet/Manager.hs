@@ -25,6 +25,8 @@ module Haskoin.Wallet.Manager
 , intAddr
 , extAddrs
 , intAddrs
+, extAddrs'
+, intAddrs'
 , extMulSigKey
 , intMulSigKey
 , extMulSigKeys
@@ -160,6 +162,15 @@ extAddrs a i = mapMaybe f $ cycleIndex i
 
 intAddrs :: AccPubKey -> KeyIndex -> [(String,Word32)]
 intAddrs a i = mapMaybe f $ cycleIndex i
+    where f j = liftM2 (,) (intAddr a j) (return j)
+
+-- Generate addresses in reverse (useful for displaying history)
+extAddrs' :: AccPubKey -> KeyIndex -> [(String,Word32)]
+extAddrs' a i = mapMaybe f $ cycleIndex' i
+    where f j = liftM2 (,) (extAddr a j) (return j)
+
+intAddrs' :: AccPubKey -> KeyIndex -> [(String,Word32)]
+intAddrs' a i = mapMaybe f $ cycleIndex' i
     where f j = liftM2 (,) (intAddr a j) (return j)
 
 {- MultiSig -}

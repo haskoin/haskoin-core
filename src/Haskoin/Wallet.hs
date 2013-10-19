@@ -55,6 +55,8 @@ module Haskoin.Wallet
 , intAddr
 , extAddrs
 , intAddrs
+, extAddrs'
+, intAddrs'
 , extMulSigKey
 , intMulSigKey
 , extMulSigKeys

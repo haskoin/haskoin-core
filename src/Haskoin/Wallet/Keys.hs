@@ -26,6 +26,7 @@ module Haskoin.Wallet.Keys
 , xPrvImport
 , xPrvWIF
 , cycleIndex
+, cycleIndex'
 ) where
 
 import Control.Monad 
@@ -136,9 +137,18 @@ mulSigSubKeys pubs i = mapMaybe f $ cycleIndex i
 
 cycleIndex :: Word32 -> [Word32]
 cycleIndex i
-    | i == 0 = cycle [0..0x7fffffff]
+    | i == 0         = cycle [0..0x7fffffff]
     | i < 0x80000000 = cycle $ [i..0x7fffffff] ++ [0..(i-1)]
-    | otherwise = error $ "cycleIndex: invalid index " ++ (show i)
+    | otherwise      = error $ "cycleIndex: invalid index " ++ (show i)
+
+-- Cycle in reverse
+cycleIndex' :: Word32 -> [Word32]
+cycleIndex' i
+    | i == 0          = cycle $ 0 : [0x7fffffff,0x7ffffffe..1]
+    | i == 0x7fffffff = cycle [0x7fffffff,0x7ffffffe..0]
+    | i == 0x7ffffffe = cycle $ [0x7ffffffe,0x7ffffffd..0] ++ [0x7fffffff]
+    | i < 0x80000000  = cycle $ [i,(i-1)..0] ++ [0x7fffffff,0x7ffffffe..(i+1)]
+    | otherwise       = error $ "cycleIndex: invalid index " ++ (show i)
 
 guardIndex :: Word32 -> Maybe ()
 guardIndex child = guard $ child >= 0 && child < 0x80000000

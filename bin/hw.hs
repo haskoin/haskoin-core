@@ -41,33 +41,6 @@ defaultOptions = Options
     , optVersion  = False
     } 
 
-data Command = CmdInit
-             | CmdListAddr
-             | CmdGenAddr
-             | CmdFocus
-             | CmdNewAcc
-             | CmdListAcc
-             | CmdLabel
-             | CmdDumpKey
-             | CmdDecodeTx
-             | CmdBuildTx
-             | CmdSignTx
-             deriving (Eq, Show)
-
-strToCmd :: String -> Command
-strToCmd str = case str of
-    "init"         -> CmdInit
-    "listaddr"     -> CmdListAddr
-    "genaddr"      -> CmdGenAddr
-    "focus"        -> CmdFocus
-    "newaccount"   -> CmdNewAcc
-    "listaccounts" -> CmdListAcc
-    "dumpkey"      -> CmdDumpKey
-    "decodetx"     -> CmdDecodeTx
-    "buildtx"      -> CmdBuildTx
-    "signtx"       -> CmdSignTx
-    _ -> error $ "Invalid command: " ++ str
-
 options :: [OptDescr (Options -> IO Options)]
 options =
     [ Option ['c'] ["count"] (ReqArg parseCount "INT") $
@@ -114,16 +87,29 @@ usageHeader = "Usage: hw [<options>] <command> [<args>]"
 
 cmdHelp :: String
 cmdHelp = 
-    "Valid <command>: \n" 
- ++ "  init <seed>       Initialize a new wallet from a seed\n" 
- ++ "  listaddr [acc]    List addresses in your account\n" 
- ++ "  genaddr [acc]     Generate new addresses for your account\n"
- ++ "  focus <acc>       Change the focus to this account\n"
- ++ "  newaccount [acc]  Create a new account\n"
- ++ "  listaccounts      List all accounts in this wallet\n"
- ++ "  dumpkey [acc]     Dump account key to stdout\n"
- ++ "  decodetx <tx>     Decode a transaction in HEX format\n"
- ++ "  buildtx [(txid,index)] [(addr,amount)] Build a new transaction\n"
+    "Valid hw commands: \n" 
+ ++ "  init         <seed>                               " 
+ ++ "Initialize a new wallet from a seed\n"
+ ++ "  list         [acc]                                "
+ ++ "Display a list of your most recently generated addresses\n" 
+ ++ "  listrange    <from> <to> [acc]                    "
+ ++ "Display addresses within a range\n" 
+ ++ "  genaddr      [acc]                                "
+ ++ "Generate new addresses\n"
+ ++ "  focus        <acc>                                "
+ ++ "All commands will default to the focused account\n"
+ ++ "  newaccount   <name>                               "
+ ++ "Create a new account\n"
+ ++ "  listacc                                           "
+ ++ "List all the accounts in this wallet\n"
+ ++ "  label        <index> <label>                      "
+ ++ "Add a label to an address\n"
+ ++ "  dumpkey      [acc]                                "
+ ++ "Dump the specified account public key to stdout\n"
+ ++ "  decodetx     <tx>                                 "
+ ++ "Decode a transaction provided in HEX format\n"
+ ++ "  buildtx      '[(\"txid\",idx)]' '[(\"addr\",amnt)]'   "
+ ++ "Build a new transaction from a list of outpoints and destinations\n"
 
 warningMsg :: String
 warningMsg = "\n**This software is experimental. " 
@@ -180,34 +166,49 @@ process opts cs
     -- otherwise require a command
     | null cs = putStrLn usage
     | otherwise = getWorkDir >>= \dir -> do
-        let (c,args) = (strToCmd $ head cs, tail cs)
+        let (c,args) = (head cs, tail cs)
         runResourceT $ runWalletDB dir $ checkInit c >> case c of
-            CmdInit     -> cmdInit opts args
-            CmdListAddr -> cmdListAddr opts args
-            CmdGenAddr  -> cmdGenAddr opts args
-            CmdFocus    -> cmdFocus args
-            CmdNewAcc   -> cmdNewAcc opts args
-            CmdListAcc  -> cmdListAcc 
-            CmdDumpKey  -> cmdDumpKey args
-            CmdDecodeTx -> cmdDecodeTx opts args
-            CmdBuildTx  -> cmdBuildTx opts args
-            CmdSignTx   -> liftIO $ putStrLn "Command not implemented"
+            "init"      -> cmdInit opts args
+            "list"      -> cmdListAddr opts args
+            "listrange" -> cmdListRange opts args
+            "genaddr"   -> cmdGenAddr opts args
+            "label"     -> cmdLabel args
+            "focus"     -> cmdFocus opts args
+            "newacc"    -> cmdNewAcc opts args
+            "listacc"   -> cmdListAcc 
+            "dumpkey"   -> cmdDumpKey args
+            "decodetx"  -> cmdDecodeTx opts args
+            "buildtx"   -> cmdBuildTx opts args
+            "signtx"    -> liftIO $ putStrLn "Command not implemented"
+            _           -> error $ "Invalid command: " ++ c
         putStrLn ""
 
 type Args = [String]
 type CmdAction = WalletDB (ResourceT IO) ()
 
-checkInit :: Command -> CmdAction
-checkInit CmdInit = return ()
-checkInit _ = isDBInit >>= \init -> do
-    unless init $ error $
-        "Database is not initialized. You must call 'init' first."
+checkInit :: String -> CmdAction
+checkInit "init" = return ()
+checkInit _ = isDBInit >>= \init -> unless init $ error $
+    "Database is not initialized. You must call 'init' first."
 
 -- Return the account from the arguments, or get the current focused account
 getArgsAcc :: Args -> WalletDB (ResourceT IO) String
 getArgsAcc args = case args of
     [] -> fromJust <$> dbGetFocus
     acc:[] -> return acc
+
+formatAddr :: WAddr -> IO ()
+formatAddr (WAddr a l i _)
+    | null l    = putStrLn def
+    | otherwise = putStrLn $ def ++ lab
+    where def = (show $ i + 1) ++ ") " ++ a
+          lab = " (" ++ l ++ ")"
+
+formatPages :: Int -> Int -> WAccount -> IO ()
+formatPages from to acc = do
+    putStr $ "Account: " ++ accName acc
+    putStr $ " (Addresses " ++(show $ from + 1) ++ " to " ++ (show $ to + 1) 
+    putStrLn $ " of " ++ (show $ accExt acc + 1) ++ ")"
 
 cmdInit :: Options -> Args -> CmdAction
 cmdInit opts args
@@ -220,52 +221,76 @@ cmdListAddr :: Options -> Args -> CmdAction
 cmdListAddr opts args 
     | length args > 1 = liftIO $ putStr usage
     | otherwise = do
-        acc  <- getArgsAcc args
-        addr <- dbExtAddr acc $ optCount opts
+        name <- getArgsAcc args
+        addr <- dbExtAddr name $ optCount opts
+        acc  <- fromJust <$> dbGetAcc name
         liftIO $ do
-            putStrLn $ "Account: " ++ acc
+            let start = fromIntegral $ wIndex $ head addr
+                end   = fromIntegral $ accExt acc
+            formatPages start end acc
             forM_ addr formatAddr
+
+cmdListRange :: Options -> Args -> CmdAction
+cmdListRange opts args 
+    | length args < 2 || length args > 3 = liftIO $ putStr usage
+    | otherwise = do
+        name <- getArgsAcc $ drop 2 args 
+        addr <- dbExtAddrRange name from to
+        acc  <- fromJust <$> dbGetAcc name
+        if null addr
+            then error "Invalid range. No addresses to display"
+            else liftIO $ do
+                let end = fromIntegral $ wIndex $ last addr
+                formatPages from end acc
+                forM_ addr formatAddr
+    where from = read (args !! 0) - 1
+          to   = read (args !! 1) - 1
 
 cmdGenAddr :: Options -> Args -> CmdAction
 cmdGenAddr opts args 
     | length args > 1 = liftIO $ putStr usage
     | otherwise = do
-        acc  <- getArgsAcc args
-        addr <- dbGenExtAddr acc $ optCount opts
-        liftIO $ do
-            putStrLn $ "Account: " ++ acc
-            forM_ addr formatAddr
+        name <- getArgsAcc args
+        addr <- dbGenExtAddr name $ optCount opts
+        cmdListAddr opts args
 
-formatAddr :: WAddr -> IO ()
-formatAddr (WAddr a l i _)
-    | null l    = putStrLn def
-    | otherwise = putStrLn $ def ++ lab
-    where def = (show i) ++ ") " ++ a
-          lab = " (" ++ l ++ ")"
-
-cmdFocus :: Args -> CmdAction
-cmdFocus args
+cmdFocus :: Options -> Args -> CmdAction
+cmdFocus opts args
     | length args /= 1 = liftIO $ putStr usage
     | otherwise = do
         dbPutFocus $ head args 
-        liftIO $ putStrLn $ "Focus changed to account: " ++ (head args)
+        cmdListAddr opts args
 
 cmdNewAcc :: Options -> Args -> CmdAction
 cmdNewAcc opts args
     | length args /= 1 = liftIO $ putStr usage
     | otherwise = do
         dbNewAcc $ head args 
-        cmdGenAddr opts [head args] 
+        cmdGenAddr opts args
 
 cmdListAcc :: CmdAction
 cmdListAcc = dbListAcc >>= \accs -> liftIO $ do
-    putStrLn "R = Regular account, M = Multisig account"
-    forM_ accs $ \acc -> do
-        if isMSAcc acc
-            then putStr "[M] "
-            else putStr "[R] "
-        putStr $ accName acc
-        putStrLn $ " (" ++ (show $ accExt acc) ++ " addresses)"
+    putStrLn "R = Regular account, M = Multisig account\n"
+    forM_ accs $ \acc -> liftIO $ do
+        putStr $ if isMSAcc acc then "[M] " else "[R] "
+        putStr $ accName acc 
+        putStrLn $ " (" ++ (show $ accExt acc + 1) ++ " addresses)"
+
+cmdLabel :: Args -> CmdAction
+cmdLabel args
+    | length args /= 2 = liftIO $ putStr usage
+    | otherwise = (fromJust <$> dbGetFocus) >>= \name -> do
+        acc <- fromJust <$> (dbGetAcc name)
+        let addr = fromJust $ extAddr (accKey acc) i
+        prev <- dbGetAddr addr
+        case prev of
+            Nothing    -> error $ 
+                "Address index not in wallet: " ++ (show $ i + 1)
+            Just waddr -> do
+                let newAddr = waddr{ wLabel = args !! 1 }
+                dbPutAddr newAddr
+                liftIO $ formatAddr newAddr
+    where i = read (args !! 0) - 1
 
 cmdDumpKey :: Args -> CmdAction
 cmdDumpKey args 

@@ -84,7 +84,6 @@ dbInit seed = isDBInit >>= \init -> if init
         dbPut hConfig "version" $ runPut' $ putWord32le 1
         dbPutSeed seed
         dbNewAcc "default"
-        dbPutFocus "default"
         return ()
 
 isDBInit :: MonadResource m => WalletDB m Bool
@@ -127,8 +126,9 @@ dbNewAcc name = dbGetAcc name >>= \prev -> case prev of
         master <- (fromMaybe (error "No master seed")) <$> dbGetMaster
         last   <- (fromMaybe 0) . ((+1) <$>) <$> dbGetLastAcc
         let (key,idx) = head $ accPubKeys master last
-            acc       = WAccount name idx key 0 0
+            acc       = WAccount name idx key maxBound maxBound
         dbPutLastAcc idx >> dbPutAcc acc
+        dbPutFocus $ accName acc
         return acc
 
 dbPutAcc :: MonadResource m => WAccount -> WalletDB m ()
@@ -160,9 +160,22 @@ dbExtAddr :: MonadResource m => String -> Int -> WalletDB m [WAddr]
 dbExtAddr name count = dbGetAcc name >>= \accM -> case accM of
     Nothing -> error $ "Invalid account " ++ name
     Just acc -> do
-        let addr   = take count $ extAddrs' (accKey acc) (accExt acc)
+        let addr = take count $ extAddrs' (accKey acc) (accExt acc)
         res <- forM addr (dbGetAddr . fst)
         return $ reverse $ catMaybes res
+
+dbExtAddrRange :: MonadResource m => String -> Int -> Int -> WalletDB m [WAddr]
+dbExtAddrRange name from to 
+    | from < 0 = error "Invalid 'From' field"
+    | to   < 0 = error "Invalid 'To' field"
+    | from > to = error "'From' field can not be greater than 'To'"
+    | otherwise = dbGetAcc name >>= \accM -> case accM of
+        Nothing -> error $ "Invalid account " ++ name
+        Just acc -> do
+            let list = extAddrs (accKey acc) $ fromIntegral from
+                addr = take (to - from + 1) list
+            res <- forM addr (dbGetAddr . fst)
+            return $ catMaybes res
 
 dbGetAddr :: MonadResource m => String -> WalletDB m (Maybe WAddr)
 dbGetAddr addr = dbGet hAddr addr >>= return . (decodeToMaybe =<<)

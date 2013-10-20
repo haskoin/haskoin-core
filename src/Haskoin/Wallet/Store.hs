@@ -41,6 +41,7 @@ runWalletDB fp wm = do
 --    masterxprv => enc(xprv...)
 --    addressbook => { name => address },
 --    lastaccindex => 3,
+--    focus => 'default'
 -- }
 
 --accouns = {
@@ -81,7 +82,11 @@ dbInit seed = dbGetLastAcc >>= \lastM -> case lastM of
         dbPut hConfig "version" $ runPut' $ putWord32le 1
         dbPutSeed seed
         dbNewAcc "default"
+        dbPutFocus "default"
         return ()
+
+isDBInit :: MonadResource m => WalletDB m Bool
+isDBInit = isJust <$> dbGetLastAcc 
 
 dbGetVersion :: MonadResource m => WalletDB m (Maybe Int)
 dbGetVersion = dbGet hConfig "version" >>= return . f
@@ -92,6 +97,14 @@ dbGetLastAcc = dbGet hConfig "lastacc" >>= return . (runGet' getWord32le <$>)
 
 dbPutLastAcc :: MonadResource m => Word32 -> WalletDB m ()
 dbPutLastAcc w = dbPut hConfig "lastacc" $ runPut' $ putWord32le w
+
+dbGetFocus :: MonadResource m => WalletDB m (Maybe String)
+dbGetFocus = dbGet hConfig "focus" >>= return . (bsToString <$>)
+
+dbPutFocus :: MonadResource m => String -> WalletDB m ()
+dbPutFocus name = dbGetAcc name >>= \accM -> case accM of
+    Nothing -> error $ "Invalid account " ++ name
+    _ -> dbPut hConfig "focus" $ stringToBS name
 
 dbGetMaster :: MonadResource m => WalletDB m (Maybe MasterKey)
 dbGetMaster = dbGet hConfig "seed" >>= return . (makeMasterKey =<<)
@@ -105,16 +118,16 @@ dbPutSeed seed = dbGetMaster >>= \masterM -> case masterM of
 
 {- Account database functions -}
 
-dbNewAcc :: MonadResource m => String -> WalletDB m (Maybe WAccount)
+dbNewAcc :: MonadResource m => String -> WalletDB m WAccount
 dbNewAcc name = dbGetAcc name >>= \prev -> case prev of
-    Just _ -> return Nothing -- Account name already exists
+    Just _ -> error $ "Account already exists: " ++ name
     Nothing -> do
         master <- (fromMaybe (error "No master seed")) <$> dbGetMaster
         last   <- (fromMaybe 0) . ((+1) <$>) <$> dbGetLastAcc
         let (key,idx) = head $ accPubKeys master last
             acc       = WAccount name idx key 0 0
         dbPutLastAcc idx >> dbPutAcc acc
-        return $ Just acc
+        return acc
 
 dbPutAcc :: MonadResource m => WAccount -> WalletDB m ()
 dbPutAcc acc = dbPut hAcc (accName acc) $ encode' acc

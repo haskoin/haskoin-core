@@ -60,6 +60,8 @@ runWalletDB fp wm = do
 --   addr1 => {
 --      label => 'name'
 --      index => 3
+--      acc => idx
+--
 --   }
 --}
 
@@ -76,9 +78,9 @@ dbPut f key value = ask >>= \wh -> do
     lift $ DB.put (f wh) DB.defaultWriteOptions (stringToBS key) value
 
 dbInit :: MonadResource m => String -> WalletDB m ()
-dbInit seed = dbGetLastAcc >>= \lastM -> case lastM of
-    Just _  -> error "Wallet already initialized"
-    Nothing -> do
+dbInit seed = isDBInit >>= \init -> if init
+    then error "Wallet already initialized"
+    else do
         dbPut hConfig "version" $ runPut' $ putWord32le 1
         dbPutSeed seed
         dbNewAcc "default"
@@ -134,6 +136,13 @@ dbPutAcc acc = dbPut hAcc (accName acc) $ encode' acc
 
 dbGetAcc :: MonadResource m => String -> WalletDB m (Maybe WAccount)
 dbGetAcc name = dbGet hAcc name >>= return . (decodeToMaybe =<<)
+
+dbListAcc :: MonadResource m => WalletDB m [WAccount]
+dbListAcc = ask >>= \wh -> lift $ do
+    DB.withIterator (hAcc wh) DB.defaultReadOptions $ \iter -> do
+        DB.iterFirst iter
+        vals <- DB.iterValues iter
+        return $ map decode' vals
 
 {- Address database functions -}
 
@@ -203,6 +212,10 @@ data WAccount = WAccount   { accName  :: String
                            , accMSReq :: Int
                            , accMSUrl :: String
                            } deriving (Show, Eq)
+
+isMSAcc :: WAccount -> Bool
+isMSAcc (WAccountMS _ _ _ _ _ _ _ _) = True
+isMSAcc _ = False
 
 instance Binary WAccount where
 

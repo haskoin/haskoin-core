@@ -46,6 +46,8 @@ data Command = CmdInit
              | CmdGenAddr
              | CmdFocus
              | CmdNewAcc
+             | CmdListAcc
+             | CmdLabel
              | CmdDumpKey
              | CmdDecodeTx
              | CmdBuildTx
@@ -54,15 +56,16 @@ data Command = CmdInit
 
 strToCmd :: String -> Command
 strToCmd str = case str of
-    "init"       -> CmdInit
-    "listaddr"   -> CmdListAddr
-    "genaddr"    -> CmdGenAddr
-    "focus"      -> CmdFocus
-    "newaccount" -> CmdNewAcc
-    "dumpkey"    -> CmdDumpKey
-    "decodetx"   -> CmdDecodeTx
-    "buildtx"    -> CmdBuildTx
-    "signtx"     -> CmdSignTx
+    "init"         -> CmdInit
+    "listaddr"     -> CmdListAddr
+    "genaddr"      -> CmdGenAddr
+    "focus"        -> CmdFocus
+    "newaccount"   -> CmdNewAcc
+    "listaccounts" -> CmdListAcc
+    "dumpkey"      -> CmdDumpKey
+    "decodetx"     -> CmdDecodeTx
+    "buildtx"      -> CmdBuildTx
+    "signtx"       -> CmdSignTx
     _ -> error $ "Invalid command: " ++ str
 
 options :: [OptDescr (Options -> IO Options)]
@@ -117,6 +120,7 @@ cmdHelp =
  ++ "  genaddr [acc]     Generate new addresses for your account\n"
  ++ "  focus <acc>       Change the focus to this account\n"
  ++ "  newaccount [acc]  Create a new account\n"
+ ++ "  listaccounts      List all accounts in this wallet\n"
  ++ "  dumpkey [acc]     Dump account key to stdout\n"
  ++ "  decodetx <tx>     Decode a transaction in HEX format\n"
  ++ "  buildtx [(txid,index)] [(addr,amount)] Build a new transaction\n"
@@ -183,6 +187,7 @@ process opts cs
             CmdGenAddr  -> cmdGenAddr opts args
             CmdFocus    -> cmdFocus args
             CmdNewAcc   -> cmdNewAcc opts args
+            CmdListAcc  -> cmdListAcc 
             CmdDumpKey  -> cmdDumpKey args
             CmdDecodeTx -> cmdDecodeTx opts args
             CmdBuildTx  -> cmdBuildTx opts args
@@ -251,6 +256,16 @@ cmdNewAcc opts args
     | otherwise = do
         dbNewAcc $ head args 
         cmdGenAddr opts [head args] 
+
+cmdListAcc :: CmdAction
+cmdListAcc = dbListAcc >>= \accs -> liftIO $ do
+    putStrLn "R = Regular account, M = Multisig account"
+    forM_ accs $ \acc -> do
+        if isMSAcc acc
+            then putStr "[M] "
+            else putStr "[R] "
+        putStr $ accName acc
+        putStrLn $ " (" ++ (show $ accExt acc) ++ " addresses)"
 
 cmdDumpKey :: Args -> CmdAction
 cmdDumpKey args 

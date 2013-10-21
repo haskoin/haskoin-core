@@ -26,17 +26,26 @@ instance Arbitrary WAccount where
     arbitrary = do
         name   <- arbitrary
         index  <- arbitrary
+        pos    <- choose (1,1000000)
         key    <- AccPubKey <$> arbitrary
         ext    <- arbitrary
+        extC   <- choose (0,1000000)
         int    <- arbitrary
+        intC   <- choose (0,1000000)
         msN    <- choose (1,16)
         msM    <- choose (1,msN)
         msKeys <- vectorOf (msN-1) arbitrary
         url    <- arbitrary
-        elements [ WAccount name index key ext int
-                 , WAccountMS name index key ext int msKeys msM url
+        elements [ WAccount name index pos key ext extC int intC
+                 , WAccountMS name index pos key 
+                        ext extC int intC msKeys msM url
                  ]
 
 instance Arbitrary WAddr where
-    arbitrary = WAddr <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
+    arbitrary = WAddr <$> arbitrary 
+                      <*> arbitrary 
+                      <*> arbitrary 
+                      <*> (choose (1,1000000))
+                      <*> arbitrary
+                      <*> (choose (1,1000000))
 

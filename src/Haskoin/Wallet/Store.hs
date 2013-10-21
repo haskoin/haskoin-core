@@ -5,6 +5,7 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Resource
 import Control.Applicative
 
+import Data.List
 import Data.Maybe
 import Data.Binary
 import Data.Binary.Get
@@ -17,105 +18,153 @@ import Haskoin.Wallet.Keys
 import Haskoin.Wallet.Manager
 import Haskoin.Util
 
-data WalletHandle = WalletHandle 
-    { hConfig :: DB.DB
-    , hAcc    :: DB.DB
-    , hAddr   :: DB.DB
-    }
-
 -- Track the database handle in a ReaderT monad
-type WalletDB m a = ReaderT WalletHandle m a
+type WalletDB m a = ReaderT DB.DB m a
 
 runWalletDB :: MonadResource m => FilePath -> WalletDB m a -> m a
 runWalletDB fp wm = do
-    dbConfig <- DB.open (fp ++ "/dbconfig") dbOptions 
-    dbAcc    <- DB.open (fp ++ "/dbacc")    dbOptions 
-    dbAddr   <- DB.open (fp ++ "/dbaddr")   dbOptions 
-    runReaderT wm $ WalletHandle dbConfig dbAcc dbAddr
+    db <- DB.open (fp ++ "/dbwallet") dbOptions 
+    runReaderT wm db
     where dbOptions = DB.defaultOptions { DB.createIfMissing = True
                                         , DB.cacheSize = 2048
                                         }
-    
--- config = {
---    version => 1
---    masterxprv => enc(xprv...)
---    addressbook => { name => address },
---    lastaccindex => 3,
---    focus => 'default'
+
+-- config_{version} = 1
+-- config_{seed} = "Hello World"
+-- config_{lastaccindex} = 5
+-- config_{acccount} = 4
+-- config_{addressbook} = { address => value }
+-- config_{focus} = "default"
+-- 
+-- account_{count} => {
+--     name => "mambo"
+--     index => 0
+--     pubkey => xpub...
+--     extAcc => 3
+--     intAcc => 2 
+--     mulsig => [xpub1,xpub2..]
+--     required => 2
+--     service => "Haskoin.org"
 -- }
+-- 
+-- accountmap_{name} => "account_1"
+-- 
+-- addr_{account}_{count} => {
+--     address => "13ab43..."
+--     label => "banana"
+--     index => 4
+--     account => 2 
+--     time -> unix
+-- }
+-- 
+-- addrmap_{address} => "addr_2_1"
 
---accouns = {
---    accname => {
---        index => 0
---        pubkey => xpub...
---        type => '2of3 protected wallet'
---        service => 'Haskoin.org'
---        multisig => [xpub1,xpub2...]
---        required => 2
---        lastaddrindex => 15
---    }
---}
---
---addrdb => {
---   addr1 => {
---      label => 'name'
---      index => 3
---      acc => idx
---
---   }
---}
+    
+{- Default database get/put functions -}
 
-{- Config database functions -}
+dbGet :: MonadResource m => String -> WalletDB m (Maybe BS.ByteString)
+dbGet key = ask >>= \db -> lift $
+    DB.get db DB.defaultReadOptions $ stringToBS key
 
-dbGet :: MonadResource m => (WalletHandle -> DB.DB) -> String 
-      -> WalletDB m (Maybe BS.ByteString)
-dbGet f key = ask >>= \wh -> 
-    lift $ DB.get (f wh) DB.defaultReadOptions $ stringToBS key
+dbPut :: MonadResource m => String -> BS.ByteString -> WalletDB m ()
+dbPut key value = ask >>= \db -> lift $
+    DB.put db DB.defaultWriteOptions (stringToBS key) value
 
-dbPut :: MonadResource m => (WalletHandle -> DB.DB) -> String -> BS.ByteString 
-      -> WalletDB m ()
-dbPut f key value = ask >>= \wh -> do
-    lift $ DB.put (f wh) DB.defaultWriteOptions (stringToBS key) value
+dbIterate :: MonadResource m 
+          => DB.Iterator -> String -> Int -> m [BS.ByteString]
+dbIterate iter prefix count
+    | count > 0 = DB.iterKey iter >>= \keyM -> case keyM of
+        Just key 
+            | isPrefixOf prefix (bsToString key) -> do
+                val <- fromJust <$> DB.iterValue iter
+                DB.iterNext iter
+                liftM2 (:) (return val) (dbIterate iter prefix $ count - 1)
+            | otherwise -> return []
+        Nothing -> return []
+    | otherwise = return []
+
+dbGetConfig :: MonadResource m => String -> WalletDB m (Maybe BS.ByteString)
+dbGetConfig key = dbGet $ "config_" ++ key
+
+dbPutConfig :: MonadResource m => String -> BS.ByteString -> WalletDB m ()
+dbPutConfig key value = dbPut ("config_" ++ key) value
+
+dbGetAcc :: MonadResource m => String -> WalletDB m (Maybe WAccount)
+dbGetAcc name = dbGet ("accountmap_" ++ name) >>= \keyM -> case keyM of
+    Just key -> do
+        val <- dbGet $ bsToString key
+        return $ decodeToMaybe =<< val
+    _ -> return Nothing
+
+dbPutAcc :: MonadResource m => WAccount -> WalletDB m ()
+dbPutAcc acc = do
+    dbPut ("accountmap_" ++ accName acc) $ stringToBS key
+    dbPut key $ encode' acc
+    where key = "account_" ++ (show $ accPos acc)
+
+dbGetAddr :: MonadResource m => String -> WalletDB m (Maybe WAddr)
+dbGetAddr name = dbGet ("addrmap_" ++ name) >>= \keyM -> case keyM of
+    Just key -> do
+        val <- dbGet $ bsToString key
+        return $ decodeToMaybe =<< val
+    _ -> return Nothing
+        
+dbPutAddr :: MonadResource m => WAddr -> WalletDB m ()
+dbPutAddr addr = do
+    dbPut ("addrmap_" ++ wAddr addr) $ stringToBS key
+    dbPut key $ encode' addr
+    where key = "addr_" ++ (show $ wAccPos addr) ++ "_" ++ (show $ wPos addr)
+
+{- Database Config functions -}
+
+isDBInit :: MonadResource m => WalletDB m Bool
+isDBInit = dbGetConfig "initialized" >>= \init -> case init of
+    Just bs -> return $ runGet' getWord8 bs == 1
+    _       -> return False
 
 dbInit :: MonadResource m => String -> WalletDB m ()
 dbInit seed = isDBInit >>= \init -> if init
     then error "Wallet already initialized"
     else do
-        dbPut hConfig "version" $ runPut' $ putWord32le 1
+        dbPutConfig "version" $ runPut' $ putWord32le 1
         dbPutSeed seed
         dbNewAcc "default"
-        return ()
-
-isDBInit :: MonadResource m => WalletDB m Bool
-isDBInit = isJust <$> dbGetLastAcc 
-
-dbGetVersion :: MonadResource m => WalletDB m (Maybe Int)
-dbGetVersion = dbGet hConfig "version" >>= return . f
-    where f = (fromIntegral . (runGet' getWord32le) <$>)
-
-dbGetLastAcc :: MonadResource m => WalletDB m (Maybe Word32)
-dbGetLastAcc = dbGet hConfig "lastacc" >>= return . (runGet' getWord32le <$>)
-
-dbPutLastAcc :: MonadResource m => Word32 -> WalletDB m ()
-dbPutLastAcc w = dbPut hConfig "lastacc" $ runPut' $ putWord32le w
-
-dbGetFocus :: MonadResource m => WalletDB m (Maybe String)
-dbGetFocus = dbGet hConfig "focus" >>= return . (bsToString <$>)
-
-dbPutFocus :: MonadResource m => String -> WalletDB m ()
-dbPutFocus name = dbGetAcc name >>= \accM -> case accM of
-    Nothing -> error $ "Invalid account " ++ name
-    _ -> dbPut hConfig "focus" $ stringToBS name
+        dbPutConfig "initialized" $ runPut' $ putWord8 1
 
 dbGetMaster :: MonadResource m => WalletDB m (Maybe MasterKey)
-dbGetMaster = dbGet hConfig "seed" >>= return . (makeMasterKey =<<)
+dbGetMaster = dbGetConfig "seed" >>= return . (makeMasterKey =<<)
 
 -- Todo: encrypt this
 dbPutSeed :: MonadResource m => String -> WalletDB m ()
 dbPutSeed seed = dbGetMaster >>= \masterM -> case masterM of
     Just _  -> error "Seed already exists"
-    Nothing -> dbPut hConfig "seed" val 
-    where val = runPut' $ putByteString $ stringToBS seed
+    Nothing -> dbPutConfig "seed" $ stringToBS seed
+
+dbGetVersion :: MonadResource m => WalletDB m (Maybe Int)
+dbGetVersion = dbGetConfig "version" >>= return . f
+    where f = (fromIntegral . (runGet' getWord32le) <$>)
+
+dbGetAccIndex :: MonadResource m => WalletDB m (Maybe Word32)
+dbGetAccIndex = dbGetConfig "accindex" >>= return . (runGet' getWord32le <$>)
+
+dbPutAccIndex :: MonadResource m => Word32 -> WalletDB m ()
+dbPutAccIndex w = dbPutConfig "accindex" $ runPut' $ putWord32le w
+
+dbGetAccCount :: MonadResource m => WalletDB m (Maybe Int)
+dbGetAccCount = dbGetConfig "accnum" >>= \cntM -> return $
+    fromIntegral . (runGet' getWord32le) <$> cntM
+
+dbPutAccCount :: MonadResource m => Int -> WalletDB m ()
+dbPutAccCount i = dbPutConfig "accnum" bs
+    where bs = runPut' $ putWord32le $ fromIntegral i
+
+dbGetFocus :: MonadResource m => WalletDB m (Maybe String)
+dbGetFocus = dbGetConfig "focus" >>= return . (bsToString <$>)
+
+dbPutFocus :: MonadResource m => String -> WalletDB m ()
+dbPutFocus name = dbGetAcc name >>= \accM -> case accM of
+    Nothing -> error $ "Invalid account " ++ name
+    _ -> dbPutConfig "focus" $ stringToBS name
 
 {- Account database functions -}
 
@@ -123,26 +172,31 @@ dbNewAcc :: MonadResource m => String -> WalletDB m WAccount
 dbNewAcc name = dbGetAcc name >>= \prev -> case prev of
     Just _ -> error $ "Account already exists: " ++ name
     Nothing -> do
-        master <- (fromMaybe (error "No master seed")) <$> dbGetMaster
-        last   <- (fromMaybe 0) . ((+1) <$>) <$> dbGetLastAcc
-        let (key,idx) = head $ accPubKeys master last
-            acc       = WAccount name idx key maxBound maxBound
-        dbPutLastAcc idx >> dbPutAcc acc
+        master <- fromJust <$> dbGetMaster
+        index  <- (fromMaybe 0) . ((+1) <$>) <$> dbGetAccIndex
+        count  <- (fromMaybe 0) <$> dbGetAccCount
+        let (key,accIndex) = head $ accPubKeys master index
+            acc = WAccount { accName = name
+                           , accIndex = accIndex 
+                           , accPos = (count+1)
+                           , accKey = key
+                           , accExt = maxBound
+                           , accExtCount = 0
+                           , accInt = maxBound
+                           , accIntCount = 0
+                           }
+        dbPutAccIndex index >> dbPutAccCount (count+1) >> dbPutAcc acc
         dbPutFocus $ accName acc
         return acc
 
-dbPutAcc :: MonadResource m => WAccount -> WalletDB m ()
-dbPutAcc acc = dbPut hAcc (accName acc) $ encode' acc
-
-dbGetAcc :: MonadResource m => String -> WalletDB m (Maybe WAccount)
-dbGetAcc name = dbGet hAcc name >>= return . (decodeToMaybe =<<)
-
 dbListAcc :: MonadResource m => WalletDB m [WAccount]
-dbListAcc = ask >>= \wh -> lift $ do
-    DB.withIterator (hAcc wh) DB.defaultReadOptions $ \iter -> do
-        DB.iterFirst iter
-        vals <- DB.iterValues iter
+dbListAcc = ask >>= \db -> do
+    count <- (fromMaybe 0) <$> dbGetAccCount
+    lift $ DB.withIterator db DB.defaultReadOptions $ \iter -> do
+        DB.iterSeek iter $ stringToBS prefix
+        vals <- dbIterate iter prefix count
         return $ map decode' vals
+    where prefix = "account_"
 
 {- Address database functions -}
 
@@ -151,42 +205,41 @@ dbGenExtAddr name count = dbGetAcc name >>= \accM -> case accM of
     Nothing -> error $ "Invalid account " ++ name
     Just acc -> do
         let new   = take count $ extAddrs (accKey acc) (accExt acc + 1)
-            wAddr = map (\(s,i) -> WAddr s "" i (accIndex acc)) new
+            wAddr = map (buildAddr acc) $ zip new [1..]
         forM_ wAddr dbPutAddr
-        dbPutAcc acc{ accExt = wIndex $ last wAddr }
+        dbPutAcc acc{ accExt      = wIndex $ last wAddr
+                    , accExtCount = accExtCount acc + count
+                    }
         return wAddr
+    where buildAddr acc ((s,i),n) =  WAddr { wAddr     = s
+                                           , wLabel    = ""
+                                           , wIndex    = i
+                                           , wPos      = accExtCount acc + n
+                                           , wAccIndex = accIndex acc
+                                           , wAccPos   = accPos acc
+                                           }
 
-dbExtAddr :: MonadResource m => String -> Int -> WalletDB m [WAddr]
-dbExtAddr name count = dbGetAcc name >>= \accM -> case accM of
-    Nothing -> error $ "Invalid account " ++ name
-    Just acc -> do
-        let addr = take count $ extAddrs' (accKey acc) (accExt acc)
-        res <- forM addr (dbGetAddr . fst)
-        return $ reverse $ catMaybes res
-
-dbExtAddrRange :: MonadResource m => String -> Int -> Int -> WalletDB m [WAddr]
-dbExtAddrRange name from to 
-    | from < 0 = error "Invalid 'From' field"
-    | to   < 0 = error "Invalid 'To' field"
-    | from > to = error "'From' field can not be greater than 'To'"
+dbListExtAddr :: MonadResource m => String -> Int -> Int -> WalletDB m [WAddr]
+dbListExtAddr name from count 
+    | count <= 0 = error $ "Invalid count: " ++ (show count)
     | otherwise = dbGetAcc name >>= \accM -> case accM of
         Nothing -> error $ "Invalid account " ++ name
-        Just acc -> do
-            let list = extAddrs (accKey acc) $ fromIntegral from
-                addr = take (to - from + 1) list
-            res <- forM addr (dbGetAddr . fst)
-            return $ catMaybes res
+        Just acc -> ask >>= \db -> lift $
+            DB.withIterator db DB.defaultReadOptions $ \iter -> do
+                let prefix = "addr_" ++ (show $ accPos acc) ++ "_" 
+                    key    = prefix ++ (show from)
+                DB.iterSeek iter $ stringToBS key
+                vals <- dbIterate iter prefix count
+                return $ catMaybes $ map decodeToMaybe vals
 
-dbGetAddr :: MonadResource m => String -> WalletDB m (Maybe WAddr)
-dbGetAddr addr = dbGet hAddr addr >>= return . (decodeToMaybe =<<)
+{- Data types -}
 
-dbPutAddr :: MonadResource m => WAddr -> WalletDB m ()
-dbPutAddr addr = dbPut hAddr (wAddr addr) $ encode' addr
-
-data WAddr = WAddr { wAddr  :: String
-                   , wLabel :: String
-                   , wIndex :: Word32
-                   , wAcc   :: Word32
+data WAddr = WAddr { wAddr     :: String
+                   , wLabel    :: String
+                   , wIndex    :: Word32
+                   , wPos      :: Int
+                   , wAccIndex :: Word32
+                   , wAccPos   :: Int
                    } deriving (Eq, Show)
 
 instance Binary WAddr where
@@ -197,10 +250,12 @@ instance Binary WAddr where
         labelLen <- fromIntegral <$> getWord16le
         label <- bsToString <$> getByteString labelLen
         idx <- getWord32le
-        acc <- getWord32le
-        return $ WAddr addr label idx acc
+        pos <- fromIntegral <$> getWord32le
+        accIdx <- getWord32le
+        accPos <- fromIntegral <$> getWord32le
+        return $ WAddr addr label idx pos accIdx accPos
 
-    put (WAddr a l i ai) = do
+    put (WAddr a l i p ai ap) = do
         let bsAddr  = stringToBS a
             bsLabel = stringToBS l
         putWord8 $ fromIntegral $ BS.length bsAddr
@@ -208,27 +263,35 @@ instance Binary WAddr where
         putWord16le $ fromIntegral $ BS.length bsLabel
         putByteString bsLabel
         putWord32le i
+        putWord32le $ fromIntegral p
         putWord32le ai
+        putWord32le $ fromIntegral ap
 
-data WAccount = WAccount   { accName  :: String
-                           , accIndex :: Word32
-                           , accKey   :: AccPubKey
-                           , accExt   :: Word32
-                           , accInt   :: Word32
+data WAccount = WAccount   { accName     :: String
+                           , accIndex    :: Word32
+                           , accPos      :: Int
+                           , accKey      :: AccPubKey
+                           , accExt      :: Word32
+                           , accExtCount :: Int
+                           , accInt      :: Word32
+                           , accIntCount :: Int
                            }
-              | WAccountMS { accName  :: String
-                           , accIndex :: Word32
-                           , accKey   :: AccPubKey
-                           , accExt   :: Word32
-                           , accInt   :: Word32
-                           , accMSKey :: [XPubKey]
-                           , accMSReq :: Int
-                           , accMSUrl :: String
+              | WAccountMS { accName     :: String
+                           , accIndex    :: Word32
+                           , accPos      :: Int
+                           , accKey      :: AccPubKey
+                           , accExt      :: Word32
+                           , accExtCount :: Int
+                           , accInt      :: Word32
+                           , accIntCount :: Int
+                           , accMSKey    :: [XPubKey]
+                           , accMSReq    :: Int
+                           , accMSUrl    :: String
                            } deriving (Show, Eq)
 
 isMSAcc :: WAccount -> Bool
-isMSAcc (WAccountMS _ _ _ _ _ _ _ _) = True
-isMSAcc _ = False
+isMSAcc (WAccount _ _ _ _ _ _ _ _) = False
+isMSAcc _ = True
 
 instance Binary WAccount where
 
@@ -236,11 +299,22 @@ instance Binary WAccount where
         nameLen <- fromIntegral <$> getWord16le
         name    <- bsToString <$> getByteString nameLen
         idx     <- getWord32le
+        pos     <- fromIntegral <$> getWord32le
         key     <- AccPubKey <$> get
         ext     <- getWord32le
+        extCnt  <- fromIntegral <$> getWord32le
         int     <- getWord32le
+        intCnt  <- fromIntegral <$> getWord32le
         case t of
-            0x00 -> return $ WAccount name idx key ext int
+            0x00 -> return WAccount{ accName = name
+                                   , accIndex = idx
+                                   , accPos = pos 
+                                   , accKey = key 
+                                   , accExt = ext 
+                                   , accExtCount = extCnt 
+                                   , accInt = int 
+                                   , accIntCount = intCnt 
+                                   }
             0x01 -> do
                 keyLen <- fromIntegral <$> getWord8
                 -- 15 + this account key = 16
@@ -253,22 +327,45 @@ instance Binary WAccount where
                     "Invalid number of required keys: " ++ (show msReq)
                 urlLen <- fromIntegral <$> getWord16le
                 msURL  <- bsToString <$> getByteString urlLen
-                return $ WAccountMS name idx key ext int msKeys msReq msURL
+                return WAccountMS{ accName = name 
+                                 , accIndex = idx
+                                 , accPos = pos 
+                                 , accKey = key 
+                                 , accExt = ext 
+                                 , accExtCount = extCnt 
+                                 , accInt = int 
+                                 , accIntCount = intCnt 
+                                 , accMSKey = msKeys 
+                                 , accMSReq = msReq 
+                                 , accMSUrl = msURL
+                                 }
             _ -> fail $ "Invalid account type: " ++ (show t)
         
     put a = case a of
-        (WAccount n i (AccPubKey k) ext int) -> do
+        (WAccount n i p (AccPubKey k) ext extC int intC) -> do
             putWord8 0x00 -- type byte
             let bs = stringToBS n
             putWord16le $ fromIntegral $ BS.length bs 
-            putByteString bs >> putWord32le i >> put k 
-            putWord32le ext >> putWord32le int
-        (WAccountMS n i (AccPubKey k) ext int ks r u) -> do
+            putByteString bs 
+            putWord32le i 
+            putWord32le $ fromIntegral p
+            put k 
+            putWord32le ext 
+            putWord32le $ fromIntegral extC
+            putWord32le int
+            putWord32le $ fromIntegral intC
+        (WAccountMS n i p (AccPubKey k) ext extC int intC ks r u) -> do
             putWord8 0x01 -- type byte
             let bs = stringToBS n
             putWord16le $ fromIntegral $ BS.length bs 
-            putByteString bs >> putWord32le i >> put k 
-            putWord32le ext >> putWord32le int
+            putByteString bs 
+            putWord32le i 
+            putWord32le $ fromIntegral p
+            put k 
+            putWord32le ext 
+            putWord32le $ fromIntegral extC
+            putWord32le int
+            putWord32le $ fromIntegral intC
             putWord8 $ fromIntegral $ length ks
             forM_ ks put
             putWord8 $ fromIntegral r

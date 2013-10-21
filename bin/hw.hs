@@ -92,12 +92,14 @@ cmdHelp =
  ++ "Initialize a new wallet from a seed\n"
  ++ "  list         [acc]                                "
  ++ "Display a list of your most recently generated addresses\n" 
- ++ "  listrange    <from> <to> [acc]                    "
- ++ "Display addresses within a range\n" 
+ ++ "  listfrom     <from> [acc]                         "
+ ++ "Display addresses from an index\n" 
+ ++ "  listall      [acc]                                "
+ ++ "Display all addresses\n" 
+ ++ "  new          <label> [acc]                        "
+ ++ "Generate one new address with a label\n"
  ++ "  genaddr      [acc]                                "
  ++ "Generate new addresses\n"
- ++ "  newaddr      <label> [acc]                        "
- ++ "Generate one new address with a label\n"
  ++ "  label        <index> <label> [acc]                "
  ++ "Add a label to an address\n"
  ++ "  focus        <acc>                                "
@@ -171,10 +173,11 @@ process opts cs
         let (c,args) = (head cs, tail cs)
         runResourceT $ runWalletDB dir $ checkInit c >> case c of
             "init"      -> cmdInit opts args
-            "list"      -> cmdListAddr opts args
-            "listrange" -> cmdListRange opts args
+            "list"      -> cmdList opts args
+            "listfrom"  -> cmdListFrom opts args
+            "listall"   -> cmdListAll opts args
+            "new"       -> cmdNew opts args
             "genaddr"   -> cmdGenAddr opts args
-            "newaddr"   -> cmdNewAddr opts args
             "label"     -> cmdLabel args
             "focus"     -> cmdFocus opts args
             "newacc"    -> cmdNewAcc opts args
@@ -201,17 +204,17 @@ getArgsAcc args = case args of
     acc:[] -> return acc
 
 formatAddr :: WAddr -> IO ()
-formatAddr (WAddr a l i _)
+formatAddr (WAddr a l _ p _ _)
     | null l    = putStrLn def
     | otherwise = putStrLn $ def ++ lab
-    where def = (show $ i + 1) ++ ") " ++ a
+    where def = (show $ p) ++ ") " ++ a
           lab = " (" ++ l ++ ")"
 
 formatPages :: Int -> Int -> WAccount -> IO ()
-formatPages from to acc = do
+formatPages from count acc = do
     putStr $ "Account: " ++ accName acc
-    putStr $ " (Addresses " ++(show $ from + 1) ++ " to " ++ (show $ to + 1) 
-    putStrLn $ " of " ++ (show $ accExt acc + 1) ++ ")"
+    putStr $ " (Addresses " ++(show from) ++ " to " ++ (show $ from + count - 1) 
+    putStrLn $ " of " ++ (show $ accExtCount acc) ++ ")"
 
 cmdInit :: Options -> Args -> CmdAction
 cmdInit opts args
@@ -220,34 +223,52 @@ cmdInit opts args
         dbInit $ head args
         cmdGenAddr opts [] -- generate some addresses
 
-cmdListAddr :: Options -> Args -> CmdAction
-cmdListAddr opts args 
+cmdList :: Options -> Args -> CmdAction
+cmdList opts args 
     | length args > 1 = liftIO $ putStr usage
     | otherwise = do
         name <- getArgsAcc args
-        addr <- dbExtAddr name $ optCount opts
         acc  <- fromJust <$> dbGetAcc name
-        liftIO $ do
-            let start = fromIntegral $ wIndex $ head addr
-                end   = fromIntegral $ accExt acc
-            formatPages start end acc
-            forM_ addr formatAddr
+        let total = accExtCount acc
+            count = min (optCount opts) total
+        addr <- dbListExtAddr name (total - count + 1) count
+        liftIO $ formatPages (total - count + 1) (length addr) acc
+        liftIO $ forM_ addr formatAddr
 
-cmdListRange :: Options -> Args -> CmdAction
-cmdListRange opts args 
-    | length args < 2 || length args > 3 = liftIO $ putStr usage
+cmdListFrom :: Options -> Args -> CmdAction
+cmdListFrom opts args 
+    | length args > 2 = liftIO $ putStr usage
     | otherwise = do
-        name <- getArgsAcc $ drop 2 args 
-        addr <- dbExtAddrRange name from to
+        name <- getArgsAcc $ drop 1 args
         acc  <- fromJust <$> dbGetAcc name
-        if null addr
-            then error "Invalid range. No addresses to display"
-            else liftIO $ do
-                let end = fromIntegral $ wIndex $ last addr
-                formatPages from end acc
+        addr <- dbListExtAddr name from $ optCount opts
+        liftIO $ if null addr
+            then putStrLn "No addresses to display"
+            else do
+                formatPages from (length addr) acc
                 forM_ addr formatAddr
-    where from = read (args !! 0) - 1
-          to   = read (args !! 1) - 1
+    where from = read $ args !! 0
+
+cmdListAll :: Options -> Args -> CmdAction
+cmdListAll opts args 
+    | length args > 1 = liftIO $ putStr usage
+    | otherwise = do
+        name <- getArgsAcc args
+        acc <- fromJust <$> dbGetAcc name
+        addr <- dbListExtAddr name 1 (accExtCount acc)
+        liftIO $ formatPages 1 (length addr) acc
+        liftIO $ forM_ addr formatAddr
+
+cmdNew :: Options -> Args -> CmdAction
+cmdNew opts args 
+    | length args > 2 = liftIO $ putStr usage
+    | otherwise = do
+        name <- getArgsAcc $ drop 1 args
+        waddr <- head <$> (dbGenExtAddr name 1)
+        let newAddr = waddr{ wLabel = args !! 0 }
+        dbPutAddr newAddr
+        liftIO $ putStrLn $ "Account: " ++ name
+        liftIO $ formatAddr newAddr
 
 cmdGenAddr :: Options -> Args -> CmdAction
 cmdGenAddr opts args 
@@ -255,23 +276,14 @@ cmdGenAddr opts args
     | otherwise = do
         name <- getArgsAcc args
         addr <- dbGenExtAddr name $ optCount opts
-        cmdListAddr opts args
-
-cmdNewAddr :: Options -> Args -> CmdAction
-cmdNewAddr opts args 
-    | length args > 2 = liftIO $ putStr usage
-    | otherwise = do
-        name <- getArgsAcc $ drop 1 args
-        waddr <- head <$> (dbGenExtAddr name 1)
-        dbPutAddr waddr{ wLabel = args !! 0 }
-        cmdListAddr opts $ tail args
+        cmdList opts args
 
 cmdFocus :: Options -> Args -> CmdAction
 cmdFocus opts args
     | length args /= 1 = liftIO $ putStr usage
     | otherwise = do
         dbPutFocus $ head args 
-        cmdListAddr opts args
+        cmdList opts args
 
 cmdNewAcc :: Options -> Args -> CmdAction
 cmdNewAcc opts args
@@ -286,36 +298,32 @@ cmdListAcc = dbListAcc >>= \accs -> liftIO $ do
     forM_ accs $ \acc -> liftIO $ do
         putStr $ if isMSAcc acc then "[M] " else "[R] "
         putStr $ accName acc 
-        putStrLn $ " (" ++ (show $ accExt acc + 1) ++ " addresses)"
+        putStrLn $ " (" ++ (show $ accExtCount acc) ++ " addresses)"
 
 cmdLabel :: Args -> CmdAction
 cmdLabel args
     | length args > 3 = liftIO $ putStr usage
     | otherwise = do
         name <- getArgsAcc $ drop 2 args
-        acc <- fromJust <$> (dbGetAcc name)
-        let addr = fromJust $ extAddr (accKey acc) i
-        prev <- dbGetAddr addr
+        acc  <- fromJust <$> (dbGetAcc name)
+        prev <- dbGetAddrByPos name p
         case prev of
-            Nothing    -> error $ 
-                "Address index not in wallet: " ++ (show $ i + 1)
+            Nothing    -> error $ "Address index not in wallet: " ++ (show p)
             Just waddr -> do
                 let newAddr = waddr{ wLabel = args !! 1 }
                 dbPutAddr newAddr
-                liftIO $ formatPages (fromIntegral i) (fromIntegral i) acc
+                liftIO $ putStrLn $ "Account: " ++ accName acc
                 liftIO $ formatAddr newAddr
-    where i = read (args !! 0) - 1
+    where p = read (args !! 0) 
 
 cmdDumpKey :: Args -> CmdAction
 cmdDumpKey args 
     | length args > 1 = liftIO $ putStr usage
     | otherwise = do
-        acc  <- getArgsAcc args
-        dbGetAcc acc >>= \accM -> case accM of
-            Nothing  -> error $ "Account " ++ (head args) ++ " does not exist"
-            Just acc -> liftIO $ do
-                putStrLn $ "Account: " ++ (accName acc)
-                putStrLn $ xPubExport $ runAccPubKey $ accKey acc
+        name <- getArgsAcc args
+        acc  <- fromJust <$> dbGetAcc name
+        liftIO $ putStrLn $ "Account: " ++ accName acc
+        liftIO $ putStrLn $ xPubExport $ runAccPubKey $ accKey acc
 
 cmdDecodeTx :: Options -> Args -> CmdAction
 cmdDecodeTx opts args

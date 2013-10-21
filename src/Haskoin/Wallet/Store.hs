@@ -59,6 +59,19 @@ runWalletDB fp wm = do
 -- 
 -- addrmap_{address} => "addr_2_1"
 
+{- 0 padded base 16 -}
+
+toHexKey :: Int -> String
+toHexKey i | i < 0x80000000 = pad ++ str
+           | otherwise = error $ "Invalid index " ++ (show i)
+           where str = bsToHex $ integerToBS $ fromIntegral i
+                 pad = replicate (8 - length str) '0'
+
+fromHexKey :: String -> Int
+fromHexKey str  
+    | i >= 0x80000000 = error $ "Invalid index " ++ (show i)
+    | otherwise = i
+    where i = fromIntegral $ bsToInteger $ fromJust $ hexToBS str
     
 {- Default database get/put functions -}
 
@@ -100,7 +113,7 @@ dbPutAcc :: MonadResource m => WAccount -> WalletDB m ()
 dbPutAcc acc = do
     dbPut ("accountmap_" ++ accName acc) $ stringToBS key
     dbPut key $ encode' acc
-    where key = "account_" ++ (show $ accPos acc)
+    where key = "account_" ++ (toHexKey $ accPos acc)
 
 dbGetAddr :: MonadResource m => String -> WalletDB m (Maybe WAddr)
 dbGetAddr name = dbGet ("addrmap_" ++ name) >>= \keyM -> case keyM of
@@ -108,12 +121,21 @@ dbGetAddr name = dbGet ("addrmap_" ++ name) >>= \keyM -> case keyM of
         val <- dbGet $ bsToString key
         return $ decodeToMaybe =<< val
     _ -> return Nothing
+
+dbGetAddrByPos :: MonadResource m => String -> Int -> WalletDB m (Maybe WAddr)
+dbGetAddrByPos name pos = dbGetAcc name >>= \accM -> case accM of
+    Just acc -> do
+        let key = "addr_" ++ (toHexKey $ accPos acc) ++ "_" ++ (toHexKey pos)
+        val <- dbGet key
+        return $ decodeToMaybe =<< val
+    _ -> return Nothing
         
 dbPutAddr :: MonadResource m => WAddr -> WalletDB m ()
 dbPutAddr addr = do
     dbPut ("addrmap_" ++ wAddr addr) $ stringToBS key
     dbPut key $ encode' addr
-    where key = "addr_" ++ (show $ wAccPos addr) ++ "_" ++ (show $ wPos addr)
+    where key = "addr_" ++ (toHexKey $ wAccPos addr) ++ 
+                "_" ++ (toHexKey $ wPos addr)
 
 {- Database Config functions -}
 
@@ -221,13 +243,14 @@ dbGenExtAddr name count = dbGetAcc name >>= \accM -> case accM of
 
 dbListExtAddr :: MonadResource m => String -> Int -> Int -> WalletDB m [WAddr]
 dbListExtAddr name from count 
+    | from  <= 0 = error $ "Invalid from: " ++ (show from)
     | count <= 0 = error $ "Invalid count: " ++ (show count)
     | otherwise = dbGetAcc name >>= \accM -> case accM of
         Nothing -> error $ "Invalid account " ++ name
         Just acc -> ask >>= \db -> lift $
             DB.withIterator db DB.defaultReadOptions $ \iter -> do
-                let prefix = "addr_" ++ (show $ accPos acc) ++ "_" 
-                    key    = prefix ++ (show from)
+                let prefix = "addr_" ++ (toHexKey $ accPos acc) ++ "_" 
+                    key    = prefix ++ (toHexKey from)
                 DB.iterSeek iter $ stringToBS key
                 vals <- dbIterate iter prefix count
                 return $ catMaybes $ map decodeToMaybe vals

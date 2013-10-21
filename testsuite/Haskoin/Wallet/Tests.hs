@@ -44,6 +44,7 @@ tests =
     , testGroup "Wallet Store"
         [ testProperty "decode . encode account" decEncAccount
         , testProperty "decode . encode addr" decEncAddr
+        , testProperty "fromHexKey . doHexKey key" decEncHexKey
         ]
     ]
 
@@ -103,4 +104,8 @@ decEncAccount acc = (decode' $ encode' acc) == acc
 
 decEncAddr :: WAddr -> Bool
 decEncAddr addr = (decode' $ encode' addr) == addr
+
+decEncHexKey :: Word32 -> Bool
+decEncHexKey w = (fromHexKey $ toHexKey i) == i
+    where i = fromIntegral $ w .&. 0x7fffffff
 

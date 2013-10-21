@@ -96,9 +96,11 @@ cmdHelp =
  ++ "Display addresses within a range\n" 
  ++ "  genaddr      [acc]                                "
  ++ "Generate new addresses\n"
+ ++ "  newaddr      <label> [acc]                        "
+ ++ "Generate one new address with a label\n"
  ++ "  focus        <acc>                                "
  ++ "All commands will default to the focused account\n"
- ++ "  newaccount   <name>                               "
+ ++ "  newacc       <name>                               "
  ++ "Create a new account\n"
  ++ "  listacc                                           "
  ++ "List all the accounts in this wallet\n"
@@ -172,6 +174,7 @@ process opts cs
             "list"      -> cmdListAddr opts args
             "listrange" -> cmdListRange opts args
             "genaddr"   -> cmdGenAddr opts args
+            "newaddr"   -> cmdNewAddr opts args
             "label"     -> cmdLabel args
             "focus"     -> cmdFocus opts args
             "newacc"    -> cmdNewAcc opts args
@@ -253,6 +256,15 @@ cmdGenAddr opts args
         name <- getArgsAcc args
         addr <- dbGenExtAddr name $ optCount opts
         cmdListAddr opts args
+
+cmdNewAddr :: Options -> Args -> CmdAction
+cmdNewAddr opts args 
+    | length args > 2 = liftIO $ putStr usage
+    | otherwise = do
+        name <- getArgsAcc $ drop 1 args
+        waddr <- head <$> (dbGenExtAddr name 1)
+        dbPutAddr waddr{ wLabel = args !! 0 }
+        cmdListAddr opts $ tail args
 
 cmdFocus :: Options -> Args -> CmdAction
 cmdFocus opts args

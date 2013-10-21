@@ -44,7 +44,7 @@ defaultOptions = Options
 options :: [OptDescr (Options -> IO Options)]
 options =
     [ Option ['c'] ["count"] (ReqArg parseCount "INT") $
-        "Address generation count. Implies address command"
+        "Address count. Implies list or genaddr command."
     , Option ['r'] ["require"] (ReqArg parseRequire "INT") $
         "Number of required keys (M) when generating M of N addresses"
     , Option ['H'] ["sighash"] (ReqArg parseSigHash "SIGHASH") $
@@ -98,14 +98,14 @@ cmdHelp =
  ++ "Generate new addresses\n"
  ++ "  newaddr      <label> [acc]                        "
  ++ "Generate one new address with a label\n"
+ ++ "  label        <index> <label> [acc]                "
+ ++ "Add a label to an address\n"
  ++ "  focus        <acc>                                "
  ++ "All commands will default to the focused account\n"
  ++ "  newacc       <name>                               "
  ++ "Create a new account\n"
  ++ "  listacc                                           "
  ++ "List all the accounts in this wallet\n"
- ++ "  label        <index> <label>                      "
- ++ "Add a label to an address\n"
  ++ "  dumpkey      [acc]                                "
  ++ "Dump the specified account public key to stdout\n"
  ++ "  decodetx     <tx>                                 "
@@ -290,8 +290,9 @@ cmdListAcc = dbListAcc >>= \accs -> liftIO $ do
 
 cmdLabel :: Args -> CmdAction
 cmdLabel args
-    | length args /= 2 = liftIO $ putStr usage
-    | otherwise = (fromJust <$> dbGetFocus) >>= \name -> do
+    | length args > 3 = liftIO $ putStr usage
+    | otherwise = do
+        name <- getArgsAcc $ drop 2 args
         acc <- fromJust <$> (dbGetAcc name)
         let addr = fromJust $ extAddr (accKey acc) i
         prev <- dbGetAddr addr
@@ -301,6 +302,7 @@ cmdLabel args
             Just waddr -> do
                 let newAddr = waddr{ wLabel = args !! 1 }
                 dbPutAddr newAddr
+                liftIO $ formatPages (fromIntegral i) (fromIntegral i) acc
                 liftIO $ formatAddr newAddr
     where i = read (args !! 0) - 1
 

@@ -106,6 +106,8 @@ cmdHelp =
  ++ "All commands will default to the focused account\n"
  ++ "  newacc       <name>                               "
  ++ "Create a new account\n"
+ ++ "  newms        <name> <required> {pubkeys,...}      "
+ ++ "Create a new multisig account\n"
  ++ "  listacc                                           "
  ++ "List all the accounts in this wallet\n"
  ++ "  dumpkey      [acc]                                "
@@ -181,6 +183,7 @@ process opts cs
             "label"     -> cmdLabel args
             "focus"     -> cmdFocus opts args
             "newacc"    -> cmdNewAcc opts args
+            "newms"     -> cmdNewMS opts args
             "listacc"   -> cmdListAcc 
             "dumpkey"   -> cmdDumpKey args
             "decodetx"  -> cmdDecodeTx opts args
@@ -210,9 +213,17 @@ formatAddr (WAddr a l _ p _ _)
     where def = (show $ p) ++ ") " ++ a
           lab = " (" ++ l ++ ")"
 
+formatAcc :: WAccount -> String
+formatAcc acc
+    | isMSAcc acc = "[MultiSig Account " ++ 
+        (show $ accMSReq acc) ++ " of " ++ 
+        (show $ length (accMSKey acc) + 1) ++ "] " ++
+        (accName acc)
+    | otherwise = "[Regular Account] " ++ (accName acc)
+
 formatPages :: Int -> Int -> WAccount -> IO ()
 formatPages from count acc = do
-    putStr $ "Account: " ++ accName acc
+    putStr $ formatAcc acc
     putStr $ " (Addresses " ++(show from) ++ " to " ++ (show $ from + count - 1) 
     putStrLn $ " of " ++ (show $ accExtCount acc) ++ ")"
 
@@ -231,9 +242,14 @@ cmdList opts args
         acc  <- fromJust <$> dbGetAcc name
         let total = accExtCount acc
             count = min (optCount opts) total
-        addr <- dbListExtAddr name (total - count + 1) count
-        liftIO $ formatPages (total - count + 1) (length addr) acc
-        liftIO $ forM_ addr formatAddr
+        if count <= 0 
+            then do
+                liftIO $ putStrLn $ formatAcc acc
+                liftIO $ putStrLn "No addresses to display"
+            else do
+                addr <- dbListExtAddr name (total - count + 1) count
+                liftIO $ formatPages (total - count + 1) (length addr) acc
+                liftIO $ forM_ addr formatAddr
 
 cmdListFrom :: Options -> Args -> CmdAction
 cmdListFrom opts args 
@@ -264,10 +280,11 @@ cmdNew opts args
     | length args > 2 = liftIO $ putStr usage
     | otherwise = do
         name <- getArgsAcc $ drop 1 args
+        acc <- fromJust <$> dbGetAcc name
         waddr <- head <$> (dbGenExtAddr name 1)
         let newAddr = waddr{ wLabel = args !! 0 }
         dbPutAddr newAddr
-        liftIO $ putStrLn $ "Account: " ++ name
+        liftIO $ putStrLn $ formatAcc acc
         liftIO $ formatAddr newAddr
 
 cmdGenAddr :: Options -> Args -> CmdAction
@@ -292,13 +309,20 @@ cmdNewAcc opts args
         dbNewAcc $ head args 
         cmdGenAddr opts args
 
+cmdNewMS :: Options -> Args -> CmdAction
+cmdNewMS opts args
+    | length args < 3 = liftIO $ putStr usage
+    | otherwise = do
+        dbNewMSAcc name r keys
+        cmdGenAddr opts [head args]
+    where name = args !! 0
+          r    = read $ args !! 1
+          keys = map (fromJust . xPubImport) $ drop 2 args
+
 cmdListAcc :: CmdAction
-cmdListAcc = dbListAcc >>= \accs -> liftIO $ do
-    putStrLn "R = Regular account, M = Multisig account\n"
-    forM_ accs $ \acc -> liftIO $ do
-        putStr $ if isMSAcc acc then "[M] " else "[R] "
-        putStr $ accName acc 
-        putStrLn $ " (" ++ (show $ accExtCount acc) ++ " addresses)"
+cmdListAcc = dbListAcc >>= \accs -> forM_ accs $ \acc -> liftIO $ do
+    putStr $ formatAcc acc
+    putStrLn $ " (" ++ (show $ accExtCount acc) ++ " addresses)"
 
 cmdLabel :: Args -> CmdAction
 cmdLabel args
@@ -312,7 +336,7 @@ cmdLabel args
             Just waddr -> do
                 let newAddr = waddr{ wLabel = args !! 1 }
                 dbPutAddr newAddr
-                liftIO $ putStrLn $ "Account: " ++ accName acc
+                liftIO $ putStrLn $ formatAcc acc
                 liftIO $ formatAddr newAddr
     where p = read (args !! 0) 
 
@@ -322,7 +346,7 @@ cmdDumpKey args
     | otherwise = do
         name <- getArgsAcc args
         acc  <- fromJust <$> dbGetAcc name
-        liftIO $ putStrLn $ "Account: " ++ accName acc
+        liftIO $ putStrLn $ formatAcc acc
         liftIO $ putStrLn $ xPubExport $ runAccPubKey $ accKey acc
 
 cmdDecodeTx :: Options -> Args -> CmdAction

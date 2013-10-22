@@ -261,6 +261,31 @@ dbNewAcc name = dbGetAcc name >>= \prev -> case prev of
         dbPutFocus $ accName acc
         return acc
 
+dbNewMSAcc :: MonadResource m => String -> Int -> [XPubKey] 
+           -> WalletDB m WAccount
+dbNewMSAcc name r mskeys = dbGetAcc name >>= \prev -> case prev of
+    Just _  -> error $ "Account already exists: " ++ name
+    Nothing -> do
+        master <- fromJust <$> dbGetMaster
+        index  <- (fromMaybe 0) . ((+1) <$>) <$> dbGetAccIndex
+        count  <- (fromMaybe 0) <$> dbGetAccCount
+        let (key,accIndex) = head $ accPubKeys master index
+            acc = WAccountMS { accName = name
+                             , accIndex = accIndex 
+                             , accPos = (count+1)
+                             , accKey = key
+                             , accExt = maxBound
+                             , accExtCount = 0
+                             , accInt = maxBound
+                             , accIntCount = 0
+                             , accMSKey = mskeys
+                             , accMSReq = r
+                             , accMSUrl = ""
+                             }
+        dbPutAccIndex index >> dbPutAccCount (count+1) >> dbPutAcc acc
+        dbPutFocus $ accName acc
+        return acc
+
 dbListAcc :: MonadResource m => WalletDB m [WAccount]
 dbListAcc = ask >>= \db -> do
     count <- (fromMaybe 0) <$> dbGetAccCount
@@ -273,31 +298,38 @@ dbListAcc = ask >>= \db -> do
 {- Address database functions -}
 
 dbGenExtAddr :: MonadResource m => String -> Int -> WalletDB m [WAddr]
-dbGenExtAddr name count = dbGenAddr name count extAddrs
+dbGenExtAddr name count = dbGenAddr name count False
 
 dbGenIntAddr :: MonadResource m => String -> Int -> WalletDB m [WAddr]
-dbGenIntAddr name count = dbGenAddr name count intAddrs
+dbGenIntAddr name count = dbGenAddr name count True
 
-dbGenAddr :: MonadResource m => String -> Int 
-          -> (AccPubKey -> KeyIndex -> [(String,KeyIndex)]) 
-          -> WalletDB m [WAddr]
-dbGenAddr name count f = dbGetAcc name >>= \accM -> case accM of
+dbGenAddr :: MonadResource m => String -> Int -> Bool -> WalletDB m [WAddr]
+dbGenAddr name count int = dbGetAcc name >>= \accM -> case accM of
     Nothing  -> error $ "Invalid account " ++ name
     Just acc -> do
-        let new   = take count $ f (accKey acc) (accExt acc + 1)
-            wAddr = map (buildAddr acc) $ zip new [1..]
+        let wAddr  = map (buildAddr acc) $ zip (take count $ f acc) [1..]
+        dbPutAcc $ if int then acc{ accInt      = wIndex $ last wAddr
+                                  , accIntCount = accIntCount acc + count
+                                  }
+                          else acc{ accExt      = wIndex $ last wAddr
+                                  , accExtCount = accExtCount acc + count
+                                  }
         forM_ wAddr dbPutAddr
-        dbPutAcc acc{ accExt      = wIndex $ last wAddr
-                    , accExtCount = accExtCount acc + count
-                    }
         return wAddr
-    where buildAddr acc ((s,i),n) = WAddr { wAddr     = s
-                                          , wLabel    = ""
-                                          , wIndex    = i
-                                          , wPos      = accExtCount acc + n
-                                          , wAccIndex = accIndex acc
-                                          , wAccPos   = accPos acc
-                                          }
+    where f (WAccountMS _ _ _ k i _ i' _ mk r _) = if int
+              then intMulSigAddrs k mk r (i' + 1)
+              else extMulSigAddrs k mk r (i  + 1)
+          f (WAccount _ _ _ k i _ i' _) = if int
+              then intAddrs k (i' + 1)
+              else extAddrs k (i  + 1)
+          buildAddr acc ((s,i),n) = 
+              WAddr { wAddr     = s
+                    , wLabel    = ""
+                    , wIndex    = i
+                    , wPos      = accExtCount acc + n
+                    , wAccIndex = accIndex acc
+                    , wAccPos   = accPos acc
+                    }
 
 dbListExtAddr :: MonadResource m => String -> Int -> Int -> WalletDB m [WAddr]
 dbListExtAddr name from count 

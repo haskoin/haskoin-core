@@ -67,28 +67,85 @@ toHexKey i | i < 0x80000000 = pad ++ str
            where str = bsToHex $ integerToBS $ fromIntegral i
                  pad = replicate (8 - length str) '0'
 
-fromHexKey :: String -> Int
+fromHexKey :: String -> Maybe Int
 fromHexKey str  
-    | i >= 0x80000000 = error $ "Invalid index " ++ (show i)
-    | otherwise = i
+    | i >= 0x80000000 = Nothing
+    | otherwise = return i
     where i = fromIntegral $ bsToInteger $ fromJust $ hexToBS str
     
+data DBKey = KeyConfig     { dbKeyName    :: String }
+           | KeyAcc        { dbKeyPos     :: Int }
+           | KeyAccMap     { dbKeyName    :: String }
+           | KeyExtAddr    { dbKeyAccPos  :: Int
+                           , dbKeyAddrPos :: Int
+                           }
+           | KeyExtAddrMap { dbKeyAddr    :: String }
+           | KeyIntAddr    { dbKeyAccPos  :: Int
+                           , dbKeyAddrPos :: Int
+                           }
+           | KeyIntAddrMap { dbKeyAddr    :: String }
+           deriving (Eq, Show)
+
+
+keyPrefix :: DBKey -> BS.ByteString
+keyPrefix key = stringToBS $ case key of
+    KeyConfig _     -> "config_"
+    KeyAcc _        -> "account_"
+    KeyAccMap _     -> "accountmap_"
+    KeyExtAddr p1 _ -> "extaddr_" ++ (toHexKey p1) ++ "_"
+    KeyExtAddrMap _ -> "extaddrmap_"
+    KeyIntAddr p1 _ -> "intaddr_" ++ (toHexKey p1) ++ "_"
+    KeyIntAddrMap _ -> "intaddrmap_"
+
+keyToBS :: DBKey -> BS.ByteString
+keyToBS key = BS.append (keyPrefix key) $ stringToBS $ case key of
+    KeyConfig s      -> s
+    KeyAcc p         -> toHexKey p
+    KeyAccMap s      -> s
+    KeyExtAddr _ p2 -> toHexKey p2
+    KeyExtAddrMap s  -> s
+    KeyIntAddr _ p2 -> toHexKey p2
+    KeyIntAddrMap s  -> s
+
+bsToKey :: BS.ByteString -> Maybe DBKey
+bsToKey bs 
+    | isPrefixOf "config_" str = 
+        KeyConfig <$> stripPrefix "config_" str
+    | isPrefixOf "account_" str = 
+        KeyAcc <$> (fromHexKey =<< stripPrefix "account_" str)
+    | isPrefixOf "accountmap_" str = 
+        KeyAccMap <$> stripPrefix "accountmap_" str
+    | isPrefixOf "extaddrmap_" str = 
+        KeyExtAddrMap <$> stripPrefix "extaddrmap_" str
+    | isPrefixOf "intaddrmap_" str = 
+        KeyIntAddrMap <$> stripPrefix "intaddrmap_" str
+    | isPrefixOf "extaddr_" str = do
+        case break (== '_') <$> (stripPrefix "extaddr_" str) of
+            Just (p1,_:p2) -> liftM2 KeyExtAddr (fromHexKey p1) (fromHexKey p2)
+            _ -> Nothing
+    | isPrefixOf "intaddr_" str =
+        case break (== '_') <$> (stripPrefix "intaddr_" str) of
+            Just (p1,_:p2) -> liftM2 KeyIntAddr (fromHexKey p1) (fromHexKey p2)
+            _ -> Nothing
+    | otherwise = Nothing
+    where str = bsToString bs
+
 {- Default database get/put functions -}
 
-dbGet :: MonadResource m => String -> WalletDB m (Maybe BS.ByteString)
+dbGet :: MonadResource m => DBKey -> WalletDB m (Maybe BS.ByteString)
 dbGet key = ask >>= \db -> lift $
-    DB.get db DB.defaultReadOptions $ stringToBS key
+    DB.get db DB.defaultReadOptions $ keyToBS key
 
-dbPut :: MonadResource m => String -> BS.ByteString -> WalletDB m ()
+dbPut :: MonadResource m => DBKey -> BS.ByteString -> WalletDB m ()
 dbPut key value = ask >>= \db -> lift $
-    DB.put db DB.defaultWriteOptions (stringToBS key) value
+    DB.put db DB.defaultWriteOptions (keyToBS key) value
 
 dbIterate :: MonadResource m 
-          => DB.Iterator -> String -> Int -> m [BS.ByteString]
+          => DB.Iterator -> BS.ByteString -> Int -> m [BS.ByteString]
 dbIterate iter prefix count
     | count > 0 = DB.iterKey iter >>= \keyM -> case keyM of
         Just key 
-            | isPrefixOf prefix (bsToString key) -> do
+            | BS.isPrefixOf prefix key -> do
                 val <- fromJust <$> DB.iterValue iter
                 DB.iterNext iter
                 liftM2 (:) (return val) (dbIterate iter prefix $ count - 1)
@@ -97,45 +154,38 @@ dbIterate iter prefix count
     | otherwise = return []
 
 dbGetConfig :: MonadResource m => String -> WalletDB m (Maybe BS.ByteString)
-dbGetConfig key = dbGet $ "config_" ++ key
+dbGetConfig key = dbGet $ KeyConfig key
 
 dbPutConfig :: MonadResource m => String -> BS.ByteString -> WalletDB m ()
-dbPutConfig key value = dbPut ("config_" ++ key) value
+dbPutConfig key value = dbPut (KeyConfig key) value
 
 dbGetAcc :: MonadResource m => String -> WalletDB m (Maybe WAccount)
-dbGetAcc name = dbGet ("accountmap_" ++ name) >>= \keyM -> case keyM of
-    Just key -> do
-        val <- dbGet $ bsToString key
-        return $ decodeToMaybe =<< val
+dbGetAcc name = dbGet (KeyAccMap name) >>= \keyM -> case bsToKey =<< keyM of
+    Just key -> (decodeToMaybe =<<) <$> dbGet key 
     _ -> return Nothing
 
 dbPutAcc :: MonadResource m => WAccount -> WalletDB m ()
 dbPutAcc acc = do
-    dbPut ("accountmap_" ++ accName acc) $ stringToBS key
+    dbPut (KeyAccMap $ accName acc) $ keyToBS key
     dbPut key $ encode' acc
-    where key = "account_" ++ (toHexKey $ accPos acc)
+    where key = KeyAcc $ accPos acc
 
 dbGetAddr :: MonadResource m => String -> WalletDB m (Maybe WAddr)
-dbGetAddr name = dbGet ("addrmap_" ++ name) >>= \keyM -> case keyM of
-    Just key -> do
-        val <- dbGet $ bsToString key
-        return $ decodeToMaybe =<< val
+dbGetAddr name = dbGet keyMap >>= \keyM -> case bsToKey =<< keyM of
+    Just key -> (decodeToMaybe =<<) <$> dbGet key
     _ -> return Nothing
+    where keyMap = KeyExtAddrMap name
 
 dbGetAddrByPos :: MonadResource m => String -> Int -> WalletDB m (Maybe WAddr)
 dbGetAddrByPos name pos = dbGetAcc name >>= \accM -> case accM of
-    Just acc -> do
-        let key = "addr_" ++ (toHexKey $ accPos acc) ++ "_" ++ (toHexKey pos)
-        val <- dbGet key
-        return $ decodeToMaybe =<< val
+    Just acc -> (decodeToMaybe =<<) <$> (dbGet $ KeyExtAddr (accPos acc) pos)
     _ -> return Nothing
         
 dbPutAddr :: MonadResource m => WAddr -> WalletDB m ()
 dbPutAddr addr = do
-    dbPut ("addrmap_" ++ wAddr addr) $ stringToBS key
+    dbPut (KeyExtAddrMap $ wAddr addr) $ keyToBS key
     dbPut key $ encode' addr
-    where key = "addr_" ++ (toHexKey $ wAccPos addr) ++ 
-                "_" ++ (toHexKey $ wPos addr)
+    where key = KeyExtAddr (wAccPos addr) (wPos addr)
 
 {- Database Config functions -}
 
@@ -215,31 +265,39 @@ dbListAcc :: MonadResource m => WalletDB m [WAccount]
 dbListAcc = ask >>= \db -> do
     count <- (fromMaybe 0) <$> dbGetAccCount
     lift $ DB.withIterator db DB.defaultReadOptions $ \iter -> do
-        DB.iterSeek iter $ stringToBS prefix
-        vals <- dbIterate iter prefix count
+        DB.iterSeek iter $ keyToBS key
+        vals <- dbIterate iter (keyPrefix key) count
         return $ map decode' vals
-    where prefix = "account_"
+    where key = KeyAcc 1
 
 {- Address database functions -}
 
 dbGenExtAddr :: MonadResource m => String -> Int -> WalletDB m [WAddr]
-dbGenExtAddr name count = dbGetAcc name >>= \accM -> case accM of
-    Nothing -> error $ "Invalid account " ++ name
+dbGenExtAddr name count = dbGenAddr name count extAddrs
+
+dbGenIntAddr :: MonadResource m => String -> Int -> WalletDB m [WAddr]
+dbGenIntAddr name count = dbGenAddr name count intAddrs
+
+dbGenAddr :: MonadResource m => String -> Int 
+          -> (AccPubKey -> KeyIndex -> [(String,KeyIndex)]) 
+          -> WalletDB m [WAddr]
+dbGenAddr name count f = dbGetAcc name >>= \accM -> case accM of
+    Nothing  -> error $ "Invalid account " ++ name
     Just acc -> do
-        let new   = take count $ extAddrs (accKey acc) (accExt acc + 1)
+        let new   = take count $ f (accKey acc) (accExt acc + 1)
             wAddr = map (buildAddr acc) $ zip new [1..]
         forM_ wAddr dbPutAddr
         dbPutAcc acc{ accExt      = wIndex $ last wAddr
                     , accExtCount = accExtCount acc + count
                     }
         return wAddr
-    where buildAddr acc ((s,i),n) =  WAddr { wAddr     = s
-                                           , wLabel    = ""
-                                           , wIndex    = i
-                                           , wPos      = accExtCount acc + n
-                                           , wAccIndex = accIndex acc
-                                           , wAccPos   = accPos acc
-                                           }
+    where buildAddr acc ((s,i),n) = WAddr { wAddr     = s
+                                          , wLabel    = ""
+                                          , wIndex    = i
+                                          , wPos      = accExtCount acc + n
+                                          , wAccIndex = accIndex acc
+                                          , wAccPos   = accPos acc
+                                          }
 
 dbListExtAddr :: MonadResource m => String -> Int -> Int -> WalletDB m [WAddr]
 dbListExtAddr name from count 
@@ -249,10 +307,9 @@ dbListExtAddr name from count
         Nothing -> error $ "Invalid account " ++ name
         Just acc -> ask >>= \db -> lift $
             DB.withIterator db DB.defaultReadOptions $ \iter -> do
-                let prefix = "addr_" ++ (toHexKey $ accPos acc) ++ "_" 
-                    key    = prefix ++ (toHexKey from)
-                DB.iterSeek iter $ stringToBS key
-                vals <- dbIterate iter prefix count
+                let key = KeyExtAddr (accPos acc) from
+                DB.iterSeek iter $ keyToBS key
+                vals <- dbIterate iter (keyPrefix key) count
                 return $ catMaybes $ map decodeToMaybe vals
 
 {- Data types -}

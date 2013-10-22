@@ -45,6 +45,7 @@ tests =
         [ testProperty "decode . encode account" decEncAccount
         , testProperty "decode . encode addr" decEncAddr
         , testProperty "fromHexKey . doHexKey key" decEncHexKey
+        , testProperty "bsToKey . keyToBS key" decEncKeyBS
         ]
     ]
 
@@ -106,6 +107,10 @@ decEncAddr :: WAddr -> Bool
 decEncAddr addr = (decode' $ encode' addr) == addr
 
 decEncHexKey :: Word32 -> Bool
-decEncHexKey w = (fromHexKey $ toHexKey i) == i
+decEncHexKey w = (fromJust $ fromHexKey $ toHexKey i) == i
     where i = fromIntegral $ w .&. 0x7fffffff
+
+decEncKeyBS :: DBKey -> Bool
+decEncKeyBS k = (fromJust $ bsToKey $ keyToBS k) == k
+
 

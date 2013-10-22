@@ -4,6 +4,7 @@ module Haskoin.Wallet.Manager
 , AccPubKey(..)
 , AddrPrvKey(..)
 , AddrPubKey(..)
+, KeyIndex
 , makeMasterKey
 , loadMasterKey
 , loadPrvAcc
@@ -156,20 +157,20 @@ extAddr a i = addrToBase58 . addr <$> extPubKey a i
 intAddr :: AccPubKey -> KeyIndex -> Maybe String
 intAddr a i = addrToBase58 . addr <$> intPubKey a i
 
-extAddrs :: AccPubKey -> KeyIndex -> [(String,Word32)]
+extAddrs :: AccPubKey -> KeyIndex -> [(String,KeyIndex)]
 extAddrs a i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (extAddr a j) (return j)
 
-intAddrs :: AccPubKey -> KeyIndex -> [(String,Word32)]
+intAddrs :: AccPubKey -> KeyIndex -> [(String,KeyIndex)]
 intAddrs a i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (intAddr a j) (return j)
 
 -- Generate addresses in reverse (useful for displaying history)
-extAddrs' :: AccPubKey -> KeyIndex -> [(String,Word32)]
+extAddrs' :: AccPubKey -> KeyIndex -> [(String,KeyIndex)]
 extAddrs' a i = mapMaybe f $ cycleIndex' i
     where f j = liftM2 (,) (extAddr a j) (return j)
 
-intAddrs' :: AccPubKey -> KeyIndex -> [(String,Word32)]
+intAddrs' :: AccPubKey -> KeyIndex -> [(String,KeyIndex)]
 intAddrs' a i = mapMaybe f $ cycleIndex' i
     where f j = liftM2 (,) (intAddr a j) (return j)
 

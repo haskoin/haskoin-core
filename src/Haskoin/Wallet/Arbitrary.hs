@@ -26,12 +26,12 @@ instance Arbitrary WAccount where
     arbitrary = do
         name   <- arbitrary
         index  <- arbitrary
-        pos    <- choose (1,1000000)
+        pos    <- choose (1,0x7fffffff)
         key    <- AccPubKey <$> arbitrary
         ext    <- arbitrary
-        extC   <- choose (0,1000000)
+        extC   <- choose (0,0x7fffffff)
         int    <- arbitrary
-        intC   <- choose (0,1000000)
+        intC   <- choose (0,0x7fffffff)
         msN    <- choose (1,16)
         msM    <- choose (1,msN)
         msKeys <- vectorOf (msN-1) arbitrary
@@ -45,7 +45,20 @@ instance Arbitrary WAddr where
     arbitrary = WAddr <$> arbitrary 
                       <*> arbitrary 
                       <*> arbitrary 
-                      <*> (choose (1,1000000))
+                      <*> (choose (1,0x7fffffff))
                       <*> arbitrary
-                      <*> (choose (1,1000000))
+                      <*> (choose (1,0x7fffffff))
+
+instance Arbitrary DBKey where
+    arbitrary = oneof [ KeyConfig <$> arbitrary
+                      , KeyAcc <$> choose (1,0x7fffffff)
+                      , KeyAccMap <$> arbitrary
+                      , KeyExtAddr <$> (choose (1,0x7fffffff)) 
+                                   <*> (choose (1,0x7fffffff))
+                      , KeyExtAddrMap <$> arbitrary
+                      , KeyIntAddr <$> (choose (1,0x7fffffff)) 
+                                   <*> (choose (1,0x7fffffff))
+                      , KeyIntAddrMap <$> arbitrary
+                      ]
+
 

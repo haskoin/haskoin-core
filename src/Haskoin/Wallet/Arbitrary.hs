@@ -48,6 +48,7 @@ instance Arbitrary WAddr where
                       <*> (choose (1,0x7fffffff))
                       <*> arbitrary
                       <*> (choose (1,0x7fffffff))
+                      <*> arbitrary
 
 instance Arbitrary DBKey where
     arbitrary = oneof [ KeyConfig <$> arbitrary
@@ -60,5 +61,4 @@ instance Arbitrary DBKey where
                                    <*> (choose (1,0x7fffffff))
                       , KeyIntAddrMap <$> arbitrary
                       ]
-
 

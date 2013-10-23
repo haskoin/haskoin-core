@@ -47,6 +47,7 @@ executable hw
                        bytestring == 0.10.*, 
                        mtl == 2.1.*,
                        unix == 2.6.*,
+                       split == 0.2.*,
                        leveldb-haskell == 0.2.*,
                        resourcet == 0.4.*,
                        haskoin-util == 0.1.*, 

@@ -14,8 +14,10 @@ import qualified Data.ByteString as BS
 
 import qualified Database.LevelDB as DB
 
-import Haskoin.Wallet.Keys
-import Haskoin.Wallet.Manager
+import Haskoin.Wallet
+import Haskoin.Script
+import Haskoin.Protocol
+import Haskoin.Crypto
 import Haskoin.Util
 
 -- Track the database handle in a ReaderT monad
@@ -164,28 +166,66 @@ dbGetAcc name = dbGet (KeyAccMap name) >>= \keyM -> case bsToKey =<< keyM of
     Just key -> (decodeToMaybe =<<) <$> dbGet key 
     _ -> return Nothing
 
+dbGetAccPos :: MonadResource m => Int -> WalletDB m (Maybe WAccount)
+dbGetAccPos pos = (decodeToMaybe =<<) <$> (dbGet $ KeyAcc pos)
+
 dbPutAcc :: MonadResource m => WAccount -> WalletDB m ()
 dbPutAcc acc = do
     dbPut (KeyAccMap $ accName acc) $ keyToBS key
     dbPut key $ encode' acc
     where key = KeyAcc $ accPos acc
 
-dbGetAddr :: MonadResource m => String -> WalletDB m (Maybe WAddr)
-dbGetAddr name = dbGet keyMap >>= \keyM -> case bsToKey =<< keyM of
+dbGetExtAddr :: MonadResource m => String -> WalletDB m (Maybe WAddr)
+dbGetExtAddr name = dbGetAddr name False
+
+dbGetIntAddr :: MonadResource m => String -> WalletDB m (Maybe WAddr)
+dbGetIntAddr name = dbGetAddr name True
+
+dbGetAnyAddr :: MonadResource m => String -> WalletDB m (Maybe WAddr)
+dbGetAnyAddr name = dbGetAddr name False >>= \addr -> case addr of
+    Nothing -> dbGetAddr name False
+    _       -> return addr
+
+-- Generic address fetching function (for internal or external addr)
+dbGetAddr :: MonadResource m => String -> Bool -> WalletDB m (Maybe WAddr)
+dbGetAddr name int = dbGet keyMap >>= \keyM -> case bsToKey =<< keyM of
     Just key -> (decodeToMaybe =<<) <$> dbGet key
     _ -> return Nothing
-    where keyMap = KeyExtAddrMap name
+    where keyMap = if int then KeyIntAddrMap name else KeyExtAddrMap name
 
-dbGetAddrByPos :: MonadResource m => String -> Int -> WalletDB m (Maybe WAddr)
-dbGetAddrByPos name pos = dbGetAcc name >>= \accM -> case accM of
-    Just acc -> (decodeToMaybe =<<) <$> (dbGet $ KeyExtAddr (accPos acc) pos)
+dbGetExtAddrPos :: MonadResource m => String -> Int -> WalletDB m (Maybe WAddr)
+dbGetExtAddrPos name pos = dbGetAddrPos name pos False
+
+dbGetIntAddrPos :: MonadResource m => String -> Int -> WalletDB m (Maybe WAddr)
+dbGetIntAddrPos name pos = dbGetAddrPos name pos True
+
+dbGetAnyAddrPos :: MonadResource m => String -> Int -> WalletDB m (Maybe WAddr)
+dbGetAnyAddrPos name pos = dbGetAddrPos name pos False >>= \addr -> case addr of
+    Nothing -> dbGetAddrPos name pos True
+    _       -> return addr
+
+-- Generic function for fetching internal or external addresses by position
+dbGetAddrPos :: MonadResource m => String -> Int -> Bool
+               -> WalletDB m (Maybe WAddr)
+dbGetAddrPos name pos int = dbGetAcc name >>= \accM -> case accM of
+    Just acc -> (decodeToMaybe =<<) <$> (dbGet $ f (accPos acc) pos)
     _ -> return Nothing
+    where f = if int then KeyIntAddr else KeyExtAddr
         
-dbPutAddr :: MonadResource m => WAddr -> WalletDB m ()
-dbPutAddr addr = do
-    dbPut (KeyExtAddrMap $ wAddr addr) $ keyToBS key
+dbPutExtAddr :: MonadResource m => WAddr -> WalletDB m ()
+dbPutExtAddr name = dbPutAddr name False
+
+dbPutIntAddr :: MonadResource m => WAddr -> WalletDB m ()
+dbPutIntAddr name = dbPutAddr name True
+
+-- Generic function for saving internal or external addresses
+dbPutAddr :: MonadResource m => WAddr -> Bool -> WalletDB m ()
+dbPutAddr addr int = do
+    dbPut (f $ wAddr addr) $ keyToBS key
     dbPut key $ encode' addr
-    where key = KeyExtAddr (wAccPos addr) (wPos addr)
+    where key = if int then KeyIntAddr (wAccPos addr) (wPos addr)
+                       else KeyExtAddr (wAccPos addr) (wPos addr)
+          f   = if int then KeyIntAddrMap else KeyExtAddrMap
 
 {- Database Config functions -}
 
@@ -314,7 +354,7 @@ dbGenAddr name count int = dbGetAcc name >>= \accM -> case accM of
                           else acc{ accExt      = wIndex $ last wAddr
                                   , accExtCount = accExtCount acc + count
                                   }
-        forM_ wAddr dbPutAddr
+        forM_ wAddr $ if int then dbPutIntAddr else dbPutExtAddr
         return wAddr
     where f (WAccountMS _ _ _ k i _ i' _ mk r _) = if int
               then intMulSigAddrs k mk r (i' + 1)
@@ -329,6 +369,7 @@ dbGenAddr name count int = dbGetAcc name >>= \accM -> case accM of
                     , wPos      = accExtCount acc + n
                     , wAccIndex = accIndex acc
                     , wAccPos   = accPos acc
+                    , wInt      = int
                     }
 
 dbListExtAddr :: MonadResource m => String -> Int -> Int -> WalletDB m [WAddr]
@@ -344,6 +385,39 @@ dbListExtAddr name from count
                 vals <- dbIterate iter (keyPrefix key) count
                 return $ catMaybes $ map decodeToMaybe vals
 
+{- Signing functions -}
+
+dbSigData :: MonadResource m => Script -> OutPoint -> SigHash 
+         -> WalletDB m (Maybe (SigInput,PrvKey))
+dbSigData out op sh = do
+    masterM <- dbGetMaster
+    addrM   <- case decodeOutput out of
+        Right (PayPKHash a)     -> dbGetAnyAddr $ addrToBase58 a
+        Right (PayScriptHash a) -> dbGetAnyAddr $ addrToBase58 a
+        _                       -> return Nothing
+    case addrM of
+        Just addr -> dbGetAccPos (wAccPos addr) >>= \accM -> return $ do
+            acc <- accM
+            mst <- masterM
+            buildSigData out op sh mst addr acc
+        _ -> return Nothing
+
+buildSigData :: Script -> OutPoint -> SigHash -> MasterKey -> WAddr -> WAccount 
+             -> Maybe (SigInput,PrvKey)
+buildSigData out op sh master addr acc = do
+    sgi <- if isMSAcc acc 
+        then do
+            aks <- fms (accKey acc) (accMSKey acc) (wIndex addr)
+            let pks = map (xPubKey . runAddrPubKey) aks
+                rdm = PayMulSig pks (accMSReq acc)
+            return $ SigInputSH out op (encodeOutput rdm) sh
+        else return $ SigInput out op sh
+    accPrvKey <- accPrvKey master $ wAccIndex addr
+    sigKey <- g accPrvKey $ wIndex addr
+    return (sgi, xPrvKey $ runAddrPrvKey $ sigKey)
+    where fms = if wInt addr then intMulSigKey else extMulSigKey
+          g   = if wInt addr then intPrvKey else extPrvKey
+    
 {- Data types -}
 
 data WAddr = WAddr { wAddr     :: String
@@ -352,22 +426,24 @@ data WAddr = WAddr { wAddr     :: String
                    , wPos      :: Int
                    , wAccIndex :: Word32
                    , wAccPos   :: Int
+                   , wInt      :: Bool
                    } deriving (Eq, Show)
 
 instance Binary WAddr where
 
     get = do
-        addrLen <- fromIntegral <$> getWord8
-        addr <- bsToString <$> getByteString addrLen
+        addrLen  <- fromIntegral <$> getWord8
+        addr     <- bsToString <$> getByteString addrLen
         labelLen <- fromIntegral <$> getWord16le
-        label <- bsToString <$> getByteString labelLen
-        idx <- getWord32le
-        pos <- fromIntegral <$> getWord32le
-        accIdx <- getWord32le
-        accPos <- fromIntegral <$> getWord32le
-        return $ WAddr addr label idx pos accIdx accPos
+        label    <- bsToString <$> getByteString labelLen
+        idx      <- getWord32le
+        pos      <- fromIntegral <$> getWord32le
+        accIdx   <- getWord32le
+        accPos   <- fromIntegral <$> getWord32le
+        int      <- (/= 0) <$> getWord8
+        return $ WAddr addr label idx pos accIdx accPos int
 
-    put (WAddr a l i p ai ap) = do
+    put (WAddr a l i p ai ap int) = do
         let bsAddr  = stringToBS a
             bsLabel = stringToBS l
         putWord8 $ fromIntegral $ BS.length bsAddr
@@ -378,6 +454,7 @@ instance Binary WAddr where
         putWord32le $ fromIntegral p
         putWord32le ai
         putWord32le $ fromIntegral ap
+        putWord8 $ if int then 1 else 0
 
 data WAccount = WAccount   { accName     :: String
                            , accIndex    :: Word32

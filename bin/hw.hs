@@ -16,6 +16,7 @@ import Control.Exception
 import Data.Maybe
 import Data.Char
 import Data.Word
+import Data.List.Split
 import qualified Data.ByteString as BS
 
 import Haskoin.Wallet
@@ -27,7 +28,6 @@ import Haskoin.Util
 
 data Options = Options
     { optCount    :: Int
-    , optRequire  :: Int
     , optSigHash  :: SigHash
     , optHelp     :: Bool
     , optVersion  :: Bool
@@ -35,7 +35,6 @@ data Options = Options
 
 defaultOptions = Options
     { optCount    = 5
-    , optRequire  = 2
     , optSigHash  = SigAll False
     , optHelp     = False
     , optVersion  = False
@@ -45,11 +44,9 @@ options :: [OptDescr (Options -> IO Options)]
 options =
     [ Option ['c'] ["count"] (ReqArg parseCount "INT") $
         "Address count. Implies list or genaddr command."
-    , Option ['r'] ["require"] (ReqArg parseRequire "INT") $
-        "Number of required keys (M) when generating M of N addresses"
-    , Option ['H'] ["sighash"] (ReqArg parseSigHash "SIGHASH") $
+    , Option ['s'] ["sighash"] (ReqArg parseSigHash "SIGHASH") $
         "Type of signature. Can be ALL|NONE|SINGLE"
-    , Option ['A'] ["anyonecanpay"]
+    , Option ['a'] ["anyonecanpay"]
         (NoArg $ \opts -> do
             let sh = optSigHash opts
             return opts{ optSigHash = sh{ anyoneCanPay = True } }
@@ -68,12 +65,6 @@ parseCount s opts
     | otherwise = error $ "Invalid count option: " ++ s
     where res = read s
 
-parseRequire :: String -> Options -> IO Options
-parseRequire s opts 
-    | res >= 1 && res <= 16 = return opts{ optRequire = res }
-    | otherwise = error $ "Invalid require option (between 1 and 16): " ++ s
-    where res = read s
-
 parseSigHash :: String -> Options -> IO Options
 parseSigHash s opts = return opts{ optSigHash = res }
     where acp = anyoneCanPay $ optSigHash opts
@@ -88,34 +79,36 @@ usageHeader = "Usage: hw [<options>] <command> [<args>]"
 cmdHelp :: String
 cmdHelp = 
     "Valid hw commands: \n" 
- ++ "  init         <seed>                         " 
- ++ "Initialize a new wallet from a seed\n"
- ++ "  list         [acc]                          "
- ++ "Display a list of your most recently generated addresses\n" 
- ++ "  listfrom     <from> [acc]                   "
+ ++ "  init     <seed>                      " 
+ ++ "Initialize a wallet\n"
+ ++ "  list     [acc]                       "
+ ++ "Display most recent addresses\n" 
+ ++ "  listfrom <from> [acc]                "
  ++ "Display addresses from an index\n" 
- ++ "  listall      [acc]                          "
+ ++ "  listall  [acc]                       "
  ++ "Display all addresses\n" 
- ++ "  new          <label> [acc]                  "
- ++ "Generate one new address with a label\n"
- ++ "  genaddr      [acc]                          "
+ ++ "  new      <label> [acc]               "
+ ++ "Generate an address with a label\n"
+ ++ "  genaddr  [acc]                       "
  ++ "Generate new addresses\n"
- ++ "  label        <index> <label> [acc]          "
+ ++ "  label    <index> <label> [acc]       "
  ++ "Add a label to an address\n"
- ++ "  focus        <acc>                          "
- ++ "All commands will default to the focused account\n"
- ++ "  newacc       <name>                         "
+ ++ "  focus    <acc>                       "
+ ++ "Set the focused account\n"
+ ++ "  newacc   <name>                      "
  ++ "Create a new account\n"
- ++ "  newms        <name> <M> {pubkeys...}        "
+ ++ "  newms    <name> <M> {pubkeys...}     "
  ++ "Create a new multisig account\n"
- ++ "  listacc                                     "
- ++ "List all the accounts in this wallet\n"
- ++ "  dumpkey      [acc]                          "
- ++ "Dump the specified account public key to stdout\n"
- ++ "  decodetx     <tx>                           "
- ++ "Decode a transaction provided in HEX format\n"
- ++ "  buildtx      {txid:idx...} {addr:amnt...}   "
- ++ "Build a new transaction from a list of outpoints and destinations\n"
+ ++ "  listacc                              "
+ ++ "List all accounts\n"
+ ++ "  dumpkey  [acc]                       "
+ ++ "Dump pubkey to stdout\n"
+ ++ "  decodetx <tx>                        "
+ ++ "Decode HEX transaction\n"
+ ++ "  buildtx  {txid:id...} {addr:amnt...} "
+ ++ "Build a new transaction\n"
+ ++ "  signtx   <tx> {txid:id:script...}    "
+ ++ "Sign a transaction\n"
 
 warningMsg :: String
 warningMsg = "\n**This software is experimental. " 
@@ -188,7 +181,7 @@ process opts cs
             "dumpkey"   -> cmdDumpKey args
             "decodetx"  -> cmdDecodeTx opts args
             "buildtx"   -> cmdBuildTx opts args
-            "signtx"    -> liftIO $ putStrLn "Command not implemented"
+            "signtx"    -> cmdSignTx opts args
             _           -> error $ "Invalid command: " ++ c
         putStrLn ""
 
@@ -207,7 +200,7 @@ getArgsAcc args = case args of
     acc:[] -> return acc
 
 formatAddr :: WAddr -> IO ()
-formatAddr (WAddr a l _ p _ _)
+formatAddr (WAddr a l _ p _ _ _)
     | null l    = putStrLn def
     | otherwise = putStrLn $ def ++ lab
     where def = (show $ p) ++ ") " ++ a
@@ -283,7 +276,7 @@ cmdNew opts args
         acc <- fromJust <$> dbGetAcc name
         waddr <- head <$> (dbGenExtAddr name 1)
         let newAddr = waddr{ wLabel = args !! 0 }
-        dbPutAddr newAddr
+        dbPutExtAddr newAddr
         liftIO $ putStrLn $ formatAcc acc
         liftIO $ formatAddr newAddr
 
@@ -330,12 +323,12 @@ cmdLabel args
     | otherwise = do
         name <- getArgsAcc $ drop 2 args
         acc  <- fromJust <$> (dbGetAcc name)
-        prev <- dbGetAddrByPos name p
+        prev <- dbGetExtAddrPos name p
         case prev of
             Nothing    -> error $ "Address index not in wallet: " ++ (show p)
             Just waddr -> do
                 let newAddr = waddr{ wLabel = args !! 1 }
-                dbPutAddr newAddr
+                dbPutExtAddr newAddr
                 liftIO $ putStrLn $ formatAcc acc
                 liftIO $ formatAddr newAddr
     where p = read (args !! 0) 
@@ -362,41 +355,29 @@ cmdDecodeTx opts args
 cmdBuildTx :: Options -> Args -> CmdAction
 cmdBuildTx opts args
     | length args < 2 = liftIO $ putStr usage
-    | otherwise = case buildAddrTx (map f os) (map (read <$>) as) of
+    | otherwise = case buildAddrTx (map f os) (map g as) of
         Right tx -> liftIO $ putStrLn $ bsToHex $ encode' tx
         Left err -> error err
-    where s       = map ((drop 1 <$>) . break (== ':')) args
-          (os,as) = span ((== 64) . length . fst) s
-          f (s,i) = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS s) 
+    where xs      = map (splitOn ":") args
+          (os,as) = span ((== 64) . length . head) xs
+          f [t,i] = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS t) 
                              (read i)
+          g [a,v] = (a,read v)
 
---cmdSignTx :: Options -> Args -> CmdAction
---cmdSignTx m opts args
---    | length args < 3 || length args > 4 = error usage
---    | isNothing bs = error "<tx>: Invalid HEX encoding"
---    | otherwise = case eitherTx of
---        Left err -> error err
---        Right tx -> lift $ putStrLn $ show $
---            liftM (bsToHex . encode') (detSignTx tx (map (g . f) os) $ map h is)
---    where ai  = fromIntegral $ optAccount opts
---          acc = fromMaybe (error $ "Invalid account index") $ accPrvKey m ai
---          bs = hexToBS $ args !! 0
---          eitherTx = decodeToEither $ fromJust bs :: Either String Tx
---          os = read (args !! 1) :: [(String,Word32,String)]
---          is = read (args !! 2) :: [Word32]
---          keys = map (fromJust . xPubImport) $ drop 3 args
---          f (t,i,s) = ( (Script $ runGet' getScriptOps $ fromJust $ hexToBS s) 
---                      , ( OutPoint 
---                            (decode' $ BS.reverse $ fromJust $ hexToBS t) 
---                            i
---                        )
---                      )
---          g (s,o) | null keys = SigInput s o $ optSigHash opts
---                  | otherwise = SigInputSH s o rdm $ optSigHash opts
---                  where rdm = encodeOutput $
---                              PayMulSig (map xPubKey keys) (optRequire opts)
---          h i = xPrvKey $ runAddrPrvKey $ fromJust $ 
---                    if (optInternal opts) then intPrvKey acc i
---                                          else extPrvKey acc i
-        
+cmdSignTx :: Options -> Args -> CmdAction
+cmdSignTx opts args
+    | length args < 2 = liftIO $ putStr usage
+    | otherwise = case txM of
+        Nothing -> error "Could not decode transaction"
+        Just tx -> do
+            ys <- catMaybes <$> mapM (g . f) xs
+            let sigTx = detSignTx tx (map fst ys) (map snd ys)
+            liftIO $ print $ (bsToHex . encode') <$> sigTx
+    where txM = decodeToMaybe =<< (hexToBS $ head args)
+          xs  = map (splitOn ":") $ tail args
+          f [t,i,s] = ( Script $ runGet' getScriptOps $ fromJust $ hexToBS s
+                      , OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS t)
+                                 (read i)
+                      )
+          g (s,o) = dbSigData s o (optSigHash opts)
 

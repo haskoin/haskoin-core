@@ -145,7 +145,7 @@ sigKeysSH :: ScriptOutput -> RedeemScript -> [PrvKey]
           -> Build ([PrvKey],[PubKey])
 sigKeysSH out rdm keys = case out of
     PayScriptHash a -> if scriptAddr rdm == a
-        then sigKeys out keys
+        then sigKeys rdm keys
         else Broken "sigKeys: Redeem script does not match P2SH script"
     _ -> Broken "sigKeys: Can only decode P2SH script here"
 

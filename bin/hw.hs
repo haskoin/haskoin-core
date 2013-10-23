@@ -88,33 +88,33 @@ usageHeader = "Usage: hw [<options>] <command> [<args>]"
 cmdHelp :: String
 cmdHelp = 
     "Valid hw commands: \n" 
- ++ "  init         <seed>                               " 
+ ++ "  init         <seed>                         " 
  ++ "Initialize a new wallet from a seed\n"
- ++ "  list         [acc]                                "
+ ++ "  list         [acc]                          "
  ++ "Display a list of your most recently generated addresses\n" 
- ++ "  listfrom     <from> [acc]                         "
+ ++ "  listfrom     <from> [acc]                   "
  ++ "Display addresses from an index\n" 
- ++ "  listall      [acc]                                "
+ ++ "  listall      [acc]                          "
  ++ "Display all addresses\n" 
- ++ "  new          <label> [acc]                        "
+ ++ "  new          <label> [acc]                  "
  ++ "Generate one new address with a label\n"
- ++ "  genaddr      [acc]                                "
+ ++ "  genaddr      [acc]                          "
  ++ "Generate new addresses\n"
- ++ "  label        <index> <label> [acc]                "
+ ++ "  label        <index> <label> [acc]          "
  ++ "Add a label to an address\n"
- ++ "  focus        <acc>                                "
+ ++ "  focus        <acc>                          "
  ++ "All commands will default to the focused account\n"
- ++ "  newacc       <name>                               "
+ ++ "  newacc       <name>                         "
  ++ "Create a new account\n"
- ++ "  newms        <name> <required> {pubkeys,...}      "
+ ++ "  newms        <name> <M> {pubkeys...}        "
  ++ "Create a new multisig account\n"
- ++ "  listacc                                           "
+ ++ "  listacc                                     "
  ++ "List all the accounts in this wallet\n"
- ++ "  dumpkey      [acc]                                "
+ ++ "  dumpkey      [acc]                          "
  ++ "Dump the specified account public key to stdout\n"
- ++ "  decodetx     <tx>                                 "
+ ++ "  decodetx     <tx>                           "
  ++ "Decode a transaction provided in HEX format\n"
- ++ "  buildtx      '[(\"txid\",idx)]' '[(\"addr\",amnt)]'   "
+ ++ "  buildtx      {txid:idx...} {addr:amnt...}   "
  ++ "Build a new transaction from a list of outpoints and destinations\n"
 
 warningMsg :: String
@@ -361,13 +361,14 @@ cmdDecodeTx opts args
 
 cmdBuildTx :: Options -> Args -> CmdAction
 cmdBuildTx opts args
-    | length args /= 2 = liftIO $ putStr usage
-    | otherwise = case buildAddrTx (map f os) as of
+    | length args < 2 = liftIO $ putStr usage
+    | otherwise = case buildAddrTx (map f os) (map (read <$>) as) of
         Right tx -> liftIO $ putStrLn $ bsToHex $ encode' tx
         Left err -> error err
-    where os = read (args !! 0) :: [(String,Word32)]
-          as = read (args !! 1) :: [(String,Word64)]
-          f (s,i) = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS s) i
+    where s       = map ((drop 1 <$>) . break (== ':')) args
+          (os,as) = span ((== 64) . length . fst) s
+          f (s,i) = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS s) 
+                             (read i)
 
 --cmdSignTx :: Options -> Args -> CmdAction
 --cmdSignTx m opts args

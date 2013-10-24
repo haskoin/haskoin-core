@@ -31,35 +31,37 @@ runWalletDB fp wm = do
                                         , DB.cacheSize = 2048
                                         }
 
--- config_{version} = 1
--- config_{seed} = "Hello World"
--- config_{lastaccindex} = 5
--- config_{acccount} = 4
--- config_{addressbook} = { address => value }
--- config_{focus} = "default"
--- 
--- account_{count} => {
---     name => "mambo"
---     index => 0
---     pubkey => xpub...
---     extAcc => 3
---     intAcc => 2 
---     mulsig => [xpub1,xpub2..]
---     required => 2
---     service => "Haskoin.org"
--- }
--- 
--- accountmap_{name} => "account_1"
--- 
--- addr_{account}_{count} => {
---     address => "13ab43..."
---     label => "banana"
---     index => 4
---     account => 2 
---     time -> unix
--- }
--- 
--- addrmap_{address} => "addr_2_1"
+{-
+    config_{version} = 1
+    config_{seed} = "Hello World"
+    config_{lastaccindex} = 5
+    config_{acccount} = 4
+    config_{addressbook} = { address => value }
+    config_{focus} = "default"
+
+    account_{count} => {
+        name => "mambo"
+        index => 0
+        pubkey => xpub...
+        extAcc => 3
+        intAcc => 2 
+        mulsig => [xpub1,xpub2..]
+        required => 2
+        service => "Haskoin.org"
+    }
+
+    accountmap_{name} => "account_1"
+
+    addr_{account}_{count} => {
+        address => "13ab43..."
+        label => "banana"
+        index => 4
+        account => 2 
+        time -> unix
+    }
+
+    addrmap_{address} => "addr_2_1"
+-}
 
 {- 0 padded base 16 -}
 
@@ -409,7 +411,7 @@ buildSigData out op sh master addr acc = do
         then do
             aks <- fms (accKey acc) (accMSKey acc) (wIndex addr)
             let pks = map (xPubKey . runAddrPubKey) aks
-                rdm = PayMulSig pks (accMSReq acc)
+                rdm = sortMulSig $ PayMulSig pks (accMSReq acc)
             return $ SigInputSH out op (encodeOutput rdm) sh
         else return $ SigInput out op sh
     accPrvKey <- accPrvKey master $ wAccIndex addr

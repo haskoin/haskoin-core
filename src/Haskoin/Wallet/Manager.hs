@@ -196,12 +196,12 @@ intMulSigKeys a ps i = mapMaybe f $ cycleIndex i
 extMulSigAddr :: AccPubKey -> [XPubKey] -> Int -> KeyIndex -> Maybe String
 extMulSigAddr a ps r i = do
     ps <- (map (xPubKey . runAddrPubKey)) <$> extMulSigKey a ps i
-    return $ addrToBase58 $ scriptAddr $ PayMulSig ps r
+    return $ addrToBase58 $ scriptAddr $ sortMulSig $ PayMulSig ps r
 
 intMulSigAddr :: AccPubKey -> [XPubKey] -> Int -> KeyIndex -> Maybe String
 intMulSigAddr a ps r i = do
     ps <- (map (xPubKey . runAddrPubKey)) <$> intMulSigKey a ps i
-    return $ addrToBase58 $ scriptAddr $ PayMulSig ps r
+    return $ addrToBase58 $ scriptAddr $ sortMulSig $ PayMulSig ps r
 
 extMulSigAddrs :: AccPubKey -> [XPubKey] -> Int -> KeyIndex 
               -> [(String,KeyIndex)]

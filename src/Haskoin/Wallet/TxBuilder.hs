@@ -48,10 +48,10 @@ data SigInput = SigInput   { sigDataOut :: Script
                            , sigDataSH  :: SigHash
                            } deriving (Eq, Show)
 
-liftSecret :: MonadIO m => Build a -> SecretT (BuildT m) a
+liftSecret :: Monad m => Build a -> SecretT (BuildT m) a
 liftSecret = lift . liftBuild
 
-signTx :: MonadIO m => Tx -> [SigInput] -> [PrvKey] -> SecretT (BuildT m) Tx
+signTx :: Monad m => Tx -> [SigInput] -> [PrvKey] -> SecretT (BuildT m) Tx
 signTx tx@(Tx _ ti _ _) sigis keys = do
     liftSecret $ when (null ti) $ Broken "signTx: Transaction has no inputs"
     newIn <- mapM sign $ orderSigInput ti sigis
@@ -60,7 +60,7 @@ signTx tx@(Tx _ ti _ _) sigis keys = do
               Just sigi -> signTxIn txin sigi tx i keys
               _         -> liftSecret $ toBuildTxIn txin
 
-signTxIn :: MonadIO m => TxIn -> SigInput -> Tx -> Int -> [PrvKey] 
+signTxIn :: Monad m => TxIn -> SigInput -> Tx -> Int -> [PrvKey] 
          -> SecretT (BuildT m) TxIn
 signTxIn txin sigi tx i keys = do
     (out,vKeys,pubs,buildf) <- liftSecret $ decodeSigInput sigi keys

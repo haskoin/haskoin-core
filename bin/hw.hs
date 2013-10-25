@@ -101,6 +101,8 @@ cmdHelp =
  ++ "List all accounts\n"
  ++ "  dumpkey  [acc]                       "
  ++ "Dump pubkey to stdout\n"
+ ++ "  importtx <tx>                        "
+ ++ "Import transaction\n"
  ++ "  decodetx <tx>                        "
  ++ "Decode HEX transaction\n"
  ++ "  buildtx  {txid:id...} {addr:amnt...} "
@@ -158,6 +160,7 @@ process opts cs
             "newms"     -> cmdNewMS opts args
             "listacc"   -> cmdListAcc 
             "dumpkey"   -> cmdDumpKey args
+            "importtx"  -> cmdImportTx args
             "decodetx"  -> cmdDecodeTx opts args
             "buildtx"   -> cmdBuildTx opts args
             "signtx"    -> cmdSignTx opts args
@@ -198,6 +201,18 @@ formatPages from count acc = do
     putStr $ formatAcc acc
     putStr $ " (Addresses " ++(show from) ++ " to " ++ (show $ from + count - 1) 
     putStrLn $ " of " ++ (show $ accExtCount acc) ++ ")"
+
+formatCoin :: WCoin -> IO ()
+formatCoin (WCoin (OutPoint tid i) (TxOut v s)) = do
+    putStrLn $ "TxID:   " ++ (show tid)
+    putStrLn $ "Index:  " ++ (show i)
+    putStrLn $ "Value:  " ++ (show v)
+    putStrLn $ "Script: " ++ (bsToHex $ runPut' $ putScriptOps $ runScript s)
+    putStrLn $ "Addr:   " ++ case decodeOutput s of
+        Right (PayPKHash a)     -> addrToBase58 a
+        Right (PayScriptHash a) -> addrToBase58 a
+        _                       -> error "formatCoin: invalid script type"
+    
 
 cmdInit :: Options -> Args -> CmdAction
 cmdInit opts args
@@ -320,6 +335,15 @@ cmdDumpKey args
         acc  <- fromJust <$> dbGetAcc name
         liftIO $ putStrLn $ formatAcc acc
         liftIO $ putStrLn $ xPubExport $ runAccPubKey $ accKey acc
+
+cmdImportTx :: Args -> CmdAction
+cmdImportTx args
+    | args /= 1 = liftIO $ putStrLn usage
+    | otherwise = case txM of
+        Nothing -> error "Could not decode transactions"
+        Just tx -> do
+            coins <- dbImportTx tx
+        where txM = decodeToMaybe =<< (hexToBS $ head args)
 
 cmdDecodeTx :: Options -> Args -> CmdAction
 cmdDecodeTx opts args

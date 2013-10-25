@@ -77,20 +77,21 @@ fromHexKey str = do
     guard $ i < 0x80000000
     return i
     
-data DBKey = KeyConfig     { dbKeyName        :: String }
-           | KeyAcc        { dbKeyPos         :: Int }
-           | KeyAccMap     { dbKeyName        :: String }
-           | KeyExtAddr    { dbKeyAccPos      :: Int
-                           , dbKeyAddrPos     :: Int
+data DBKey = KeyConfig     { dbKeyName       :: String }
+           | KeyAcc        { dbKeyPos        :: Int }
+           | KeyAccMap     { dbKeyName       :: String }
+           | KeyExtAddr    { dbKeyAccPos     :: Int
+                           , dbKeyAddrPos    :: Int
                            }
-           | KeyExtAddrMap { dbKeyAddr        :: String }
-           | KeyIntAddr    { dbKeyAccPos      :: Int
-                           , dbKeyAddrPos     :: Int
+           | KeyExtAddrMap { dbKeyAddr       :: String }
+           | KeyIntAddr    { dbKeyAccPos     :: Int
+                           , dbKeyAddrPos    :: Int
                            }
-           | KeyIntAddrMap { dbKeyAddr        :: String }
-           | KeyTxOut      { dbKeyTxOutAccPos :: Int
-                           , dbKeyTxOutPos    :: Int 
+           | KeyIntAddrMap { dbKeyAddr       :: String }
+           | KeyCoin       { dbKeyCoinAccPos :: Int
+                           , dbKeyCoinPos    :: Int 
                            }
+           | KeyCoinMap    { dbKeyCoinOP     :: OutPoint }
            deriving (Eq, Show)
 
 
@@ -103,7 +104,8 @@ keyPrefix key = stringToBS $ case key of
     KeyExtAddrMap _ -> "extaddrmap_"
     KeyIntAddr p1 _ -> "intaddr_" ++ (toHexKey p1) ++ "_"
     KeyIntAddrMap _ -> "intaddrmap_"
-    KeyTxOut p1 _   -> "txout_" ++ (toHexKey p1) ++ "_"
+    KeyCoin p1 _    -> "coin_" ++ (toHexKey p1) ++ "_"
+    KeyCoinMap _    -> "coinmap_" 
 
 keyToBS :: DBKey -> BS.ByteString
 keyToBS key = BS.append (keyPrefix key) $ stringToBS $ case key of
@@ -114,7 +116,8 @@ keyToBS key = BS.append (keyPrefix key) $ stringToBS $ case key of
     KeyExtAddrMap s -> s
     KeyIntAddr _ p2 -> toHexKey p2
     KeyIntAddrMap s -> s
-    KeyTxOut _ p2   -> toHexKey p2
+    KeyCoin _ p2    -> toHexKey p2
+    KeyCoinMap op   -> bsToHex $ encode' op
 
 bsToKey :: BS.ByteString -> Maybe DBKey
 bsToKey bs 
@@ -136,9 +139,11 @@ bsToKey bs
         case break (== '_') <$> (stripPrefix "intaddr_" str) of
             Just (p1,_:p2) -> liftM2 KeyIntAddr (fromHexKey p1) (fromHexKey p2)
             _ -> Nothing
-    | isPrefixOf "txout_" str =
-        case break (== '_') <$> (stripPrefix "txout_" str) of
-            Just (p1,_:p2) -> liftM2 KeyTxOut (fromHexKey p1) (fromHexKey p2)
+    | isPrefixOf "coin_" str =
+        case break (== '_') <$> (stripPrefix "coin_" str) of
+            Just (p1,_:p2) -> liftM2 KeyCoin (fromHexKey p1) (fromHexKey p2)
+    | isPrefixOf "coinmap_" str = stripPrefix "coinmap_" str >>= \key ->
+        KeyCoinMap <$> (decodeToMaybe =<< hexToBS key)
     | otherwise = Nothing
     where str = bsToString bs
 
@@ -237,13 +242,21 @@ dbPutAddr addr int = do
                        else KeyExtAddr (wAccPos addr) (wPos addr)
           f   = if int then KeyIntAddrMap else KeyExtAddrMap
 
-dbGetTxOut :: MonadResource m => String -> Int -> WalletDB m (Maybe TxOut)
-dbGetTxOut name pos = dbGetAcc name >>= \accM -> case accM of
-    Just acc -> (decodeToMaybe =<<) <$> (dbGet $ KeyTxOut (accPos acc) pos)
+dbGetCoin :: MonadResource m => OutPoint -> WalletDB m (Maybe WCoin)
+dbGetCoin op = dbGet (KeyCoinMap op) >>= \keyM -> case bsToKey =<< keyM of
+    Just key -> (decodeToMaybe =<<) <$> dbGet key
+    _ -> return Nothing
+
+dbGetCoinPos :: MonadResource m => String -> Int -> WalletDB m (Maybe WCoin)
+dbGetCoinPos name pos = dbGetAcc name >>= \accM -> case accM of
+    Just acc -> (decodeToMaybe =<<) <$> (dbGet $ KeyCoin (accPos acc) pos)
     _        -> return Nothing
 
-dbPutTxOut :: MonadResource m => Int -> Int -> TxOut -> WalletDB m ()
-dbPutTxOut accPos pos out = dbPut (KeyTxOut accPos pos) $ encode' out
+dbPutCoin :: MonadResource m => Int -> Int -> WCoin -> WalletDB m ()
+dbPutCoin accPos pos coin = do
+    dbPut key $ encode' coin
+    dbPut (KeyCoinMap $ coinOutPoint coin) $ keyToBS key
+    where key = KeyCoin accPos pos
 
 {- Database Config functions -}
 
@@ -306,15 +319,15 @@ dbNewAcc name = dbGetAcc name >>= \prev -> case prev of
         index  <- (fromMaybe 0) . ((+1) <$>) <$> dbGetAccIndex
         count  <- (fromMaybe 0) <$> dbGetAccCount
         let (key,accIndex) = head $ accPubKeys master index
-            acc = WAccount { accName       = name
-                           , accIndex      = accIndex 
-                           , accPos        = (count+1)
-                           , accKey        = key
-                           , accExt        = maxBound
-                           , accExtCount   = 0
-                           , accInt        = maxBound
-                           , accIntCount   = 0
-                           , accTxOutCount = 0
+            acc = WAccount { accName      = name
+                           , accIndex     = accIndex 
+                           , accPos       = (count+1)
+                           , accKey       = key
+                           , accExt       = maxBound
+                           , accExtCount  = 0
+                           , accInt       = maxBound
+                           , accIntCount  = 0
+                           , accCoinCount = 0
                            }
         dbPutAccIndex index >> dbPutAccCount (count+1) >> dbPutAcc acc
         dbPutFocus $ accName acc
@@ -329,18 +342,18 @@ dbNewMSAcc name r mskeys = dbGetAcc name >>= \prev -> case prev of
         index  <- (fromMaybe 0) . ((+1) <$>) <$> dbGetAccIndex
         count  <- (fromMaybe 0) <$> dbGetAccCount
         let (key,accIndex) = head $ accPubKeys master index
-            acc = WAccountMS { accName       = name
-                             , accIndex      = accIndex 
-                             , accPos        = (count+1)
-                             , accKey        = key
-                             , accExt        = maxBound
-                             , accExtCount   = 0
-                             , accInt        = maxBound
-                             , accIntCount   = 0
-                             , accTxOutCount = 0
-                             , accMSKey      = mskeys
-                             , accMSReq      = r
-                             , accMSUrl      = ""
+            acc = WAccountMS { accName      = name
+                             , accIndex     = accIndex 
+                             , accPos       = (count+1)
+                             , accKey       = key
+                             , accExt       = maxBound
+                             , accExtCount  = 0
+                             , accInt       = maxBound
+                             , accIntCount  = 0
+                             , accCoinCount = 0
+                             , accMSKey     = mskeys
+                             , accMSReq     = r
+                             , accMSUrl     = ""
                              }
         dbPutAccIndex index >> dbPutAccCount (count+1) >> dbPutAcc acc
         dbPutFocus $ accName acc
@@ -407,24 +420,43 @@ dbListExtAddr name from count
 
 {- Transaction related functions -}
 
-dbImportTxOut :: MonadResource m => TxOut -> WalletDB m ()
-dbImportTxOut txout = do
-    waddrM <- case out of
-        Right (PayPKHash a)     -> dbGetAnyAddr $ addrToBase58 a
-        Right (PayScriptHash a) -> dbGetAnyAddr $ addrToBase58 a
-        _                       -> return Nothing
-    when (isJust waddrM) $ do
-        let waddr = fromJust waddrM
-        dbGetAccPos (wAccPos waddr) >>= \accM -> case accM of
-            Just acc -> do
-                let newPos = accTxOutCount acc + 1
-                dbPutTxOut (wAccPos waddr) newPos txout
-                dbPutAcc acc{ accTxOutCount = newPos }
-            _ -> return ()
+dbImportCoin :: MonadResource m => Hash256 -> (TxOut,Word32) 
+             -> WalletDB m (Maybe WCoin)
+dbImportCoin id (txout,i) = dbGetCoin op >>= \prevM -> case prevM of
+    Just _  -> return Nothing
+    Nothing -> do
+        waddrM <- case out of
+            Right (PayPKHash a)     -> dbGetAnyAddr $ addrToBase58 a
+            Right (PayScriptHash a) -> dbGetAnyAddr $ addrToBase58 a
+            _                       -> return Nothing
+        case waddrM of
+            Just waddr -> dbGetAccPos (wAccPos waddr) >>= \accM -> case accM of
+                Just acc -> do
+                    let newPos = accCoinCount acc + 1
+                        coin = WCoin op txout
+                    dbPutCoin (wAccPos waddr) newPos coin
+                    dbPutAcc acc{ accCoinCount = newPos }
+                    return $ Just coin
+                _ -> return Nothing
+            _ -> return Nothing
     where out = decodeOutput $ scriptOutput txout
+          op  = OutPoint id i
 
-dbImportTx :: MonadResource m => Tx -> WalletDB m ()
-dbImportTx tx = forM_ (txOut tx) dbImportTxOut
+dbImportTx :: MonadResource m => Tx -> WalletDB m [WCoin]
+dbImportTx tx = do
+    coins <- forM (zip (txOut tx) [0..]) $ dbImportCoin id
+    return $ catMaybes coins
+    where id = txid tx
+
+dbListCoins :: MonadResource m => String -> WalletDB m [WCoin]
+dbListCoins name = dbGetAcc name >>= \accM -> case accM of
+    Nothing -> error $ "Invalid account: " ++ name
+    Just acc -> ask >>= \db -> lift $
+        DB.withIterator db DB.defaultReadOptions $ \iter -> do
+            let key = KeyCoin (accCoinCount acc) 1
+            DB.iterSeek iter $ keyToBS key
+            vals <- dbIterate iter (keyPrefix key) $ accCoinCount acc
+            return $ catMaybes $ map decodeToMaybe vals
 
 {- Signing functions -}
 
@@ -460,6 +492,14 @@ buildSigData out op sh master addr acc = do
           g   = if wInt addr then intPrvKey else extPrvKey
     
 {- Data types -}
+
+data WCoin = WCoin { coinOutPoint :: OutPoint
+                   , coinTxOut    :: TxOut
+                   } deriving (Eq, Show)
+
+instance Binary WCoin where
+    get = WCoin <$> get <*> get
+    put (WCoin o t) = put o >> put t
 
 data WAddr = WAddr { wAddr     :: String
                    , wLabel    :: String
@@ -497,28 +537,28 @@ instance Binary WAddr where
         putWord32le $ fromIntegral ap
         putWord8 $ if int then 1 else 0
 
-data WAccount = WAccount   { accName       :: String
-                           , accIndex      :: Word32
-                           , accPos        :: Int
-                           , accKey        :: AccPubKey
-                           , accExt        :: Word32
-                           , accExtCount   :: Int
-                           , accInt        :: Word32
-                           , accIntCount   :: Int
-                           , accTxOutCount :: Int
+data WAccount = WAccount   { accName      :: String
+                           , accIndex     :: Word32
+                           , accPos       :: Int
+                           , accKey       :: AccPubKey
+                           , accExt       :: Word32
+                           , accExtCount  :: Int
+                           , accInt       :: Word32
+                           , accIntCount  :: Int
+                           , accCoinCount :: Int
                            }
-              | WAccountMS { accName       :: String
-                           , accIndex      :: Word32
-                           , accPos        :: Int
-                           , accKey        :: AccPubKey
-                           , accExt        :: Word32
-                           , accExtCount   :: Int
-                           , accInt        :: Word32
-                           , accIntCount   :: Int
-                           , accTxOutCount :: Int
-                           , accMSKey      :: [XPubKey]
-                           , accMSReq      :: Int
-                           , accMSUrl      :: String
+              | WAccountMS { accName      :: String
+                           , accIndex     :: Word32
+                           , accPos       :: Int
+                           , accKey       :: AccPubKey
+                           , accExt       :: Word32
+                           , accExtCount  :: Int
+                           , accInt       :: Word32
+                           , accIntCount  :: Int
+                           , accCoinCount :: Int
+                           , accMSKey     :: [XPubKey]
+                           , accMSReq     :: Int
+                           , accMSUrl     :: String
                            } deriving (Show, Eq)
 
 isMSAcc :: WAccount -> Bool
@@ -539,15 +579,15 @@ instance Binary WAccount where
         intCnt   <- fromIntegral <$> getWord32le
         txOutCnt <- fromIntegral <$> getWord32le
         case t of
-            0x00 -> return WAccount{ accName       = name
-                                   , accIndex      = idx
-                                   , accPos        = pos 
-                                   , accKey        = key 
-                                   , accExt        = ext 
-                                   , accExtCount   = extCnt 
-                                   , accInt        = int 
-                                   , accIntCount   = intCnt 
-                                   , accTxOutCount = txOutCnt
+            0x00 -> return WAccount{ accName      = name
+                                   , accIndex     = idx
+                                   , accPos       = pos 
+                                   , accKey       = key 
+                                   , accExt       = ext 
+                                   , accExtCount  = extCnt 
+                                   , accInt       = int 
+                                   , accIntCount  = intCnt 
+                                   , accCoinCount = txOutCnt
                                    }
             0x01 -> do
                 keyLen <- fromIntegral <$> getWord8
@@ -561,18 +601,18 @@ instance Binary WAccount where
                     "Invalid number of required keys: " ++ (show msReq)
                 urlLen <- fromIntegral <$> getWord16le
                 msURL  <- bsToString <$> getByteString urlLen
-                return WAccountMS{ accName       = name 
-                                 , accIndex      = idx
-                                 , accPos        = pos 
-                                 , accKey        = key 
-                                 , accExt        = ext 
-                                 , accExtCount   = extCnt 
-                                 , accInt        = int 
-                                 , accIntCount   = intCnt 
-                                 , accTxOutCount = txOutCnt
-                                 , accMSKey      = msKeys 
-                                 , accMSReq      = msReq 
-                                 , accMSUrl      = msURL
+                return WAccountMS{ accName      = name 
+                                 , accIndex     = idx
+                                 , accPos       = pos 
+                                 , accKey       = key 
+                                 , accExt       = ext 
+                                 , accExtCount  = extCnt 
+                                 , accInt       = int 
+                                 , accIntCount  = intCnt 
+                                 , accCoinCount = txOutCnt
+                                 , accMSKey     = msKeys 
+                                 , accMSReq     = msReq 
+                                 , accMSUrl     = msURL
                                  }
             _ -> fail $ "Invalid account type: " ++ (show t)
         

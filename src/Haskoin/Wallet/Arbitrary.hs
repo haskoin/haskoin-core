@@ -53,6 +53,10 @@ instance Arbitrary WAddr where
                       <*> (choose (1,0x7fffffff))
                       <*> arbitrary
 
+instance Arbitrary WCoin where
+    arbitrary = WCoin <$> arbitrary
+                      <*> arbitrary
+
 instance Arbitrary DBKey where
     arbitrary = oneof [ KeyConfig <$> arbitrary
                       , KeyAcc <$> choose (1,0x7fffffff)
@@ -63,7 +67,8 @@ instance Arbitrary DBKey where
                       , KeyIntAddr <$> (choose (1,0x7fffffff)) 
                                    <*> (choose (1,0x7fffffff))
                       , KeyIntAddrMap <$> arbitrary
-                      , KeyTxOut <$> (choose (1,0x7fffffff)) 
-                                 <*> (choose (1,0x7fffffff))
+                      , KeyCoin <$> (choose (1,0x7fffffff)) 
+                                <*> (choose (1,0x7fffffff))
+                      , KeyCoinMap <$> arbitrary 
                       ]
 

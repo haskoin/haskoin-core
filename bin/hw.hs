@@ -1,9 +1,7 @@
 module Main where
 
 import System.IO
-import System.Posix.Env
-import System.Posix.Files
-import System.Posix.Directory
+import System.Directory
 import qualified System.Environment as E
 import System.Console.GetOpt
 
@@ -131,31 +129,12 @@ main = do
         (_,_,msgs) ->
             putStrLn $ concat msgs ++ usageInfo usageHeader options
 
--- Get Haskoin home directory
-getHome :: IO FilePath
-getHome = do
-    haskoinHome <- getEnv "HASKOIN_HOME" 
-    if isJust haskoinHome 
-        then return $ fromJust haskoinHome
-        else do
-            home <- getEnv "HOME"
-            unless (isJust home) $ error $
-                "Please set $HASKOIN_HOME or $HOME environment variables" 
-            return $ fromJust home
-
 -- Create and return haskoin working directory
 getWorkDir :: IO FilePath
 getWorkDir = do
-    home <- getHome
-    let haskoinDir = home ++ "/.haskoin"
-        walletDir  = haskoinDir ++ "/wallet"
-    e1 <- fileExist haskoinDir
-    unless e1 $ createDirectory haskoinDir ownerModes
-    e2 <- fileExist walletDir
-    unless e2 $ do
-        createDirectory walletDir ownerModes
-        putStrLn $ "Haskoin working directory created: " ++ walletDir
-    return walletDir
+    dir <- getAppUserDataDirectory "haskoin"
+    createDirectoryIfMissing True dir
+    return dir
 
 process :: Options -> [String] -> IO ()
 process opts cs 

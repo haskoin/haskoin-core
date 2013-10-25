@@ -338,11 +338,12 @@ cmdDumpKey args
 
 cmdImportTx :: Args -> CmdAction
 cmdImportTx args
-    | args /= 1 = liftIO $ putStrLn usage
+    | length args /= 1 = liftIO $ putStrLn usage
     | otherwise = case txM of
         Nothing -> error "Could not decode transactions"
         Just tx -> do
             coins <- dbImportTx tx
+            return ()
         where txM = decodeToMaybe =<< (hexToBS $ head args)
 
 cmdDecodeTx :: Options -> Args -> CmdAction

@@ -7,6 +7,8 @@ import Haskoin.Protocol.Arbitrary
 import Control.Monad
 import Control.Applicative
 
+import Data.Word
+
 import Haskoin.Wallet
 import Haskoin.Wallet.Keys
 import Haskoin.Wallet.Store
@@ -32,13 +34,14 @@ instance Arbitrary WAccount where
         extC   <- choose (0,0x7fffffff)
         int    <- arbitrary
         intC   <- choose (0,0x7fffffff)
+        oc     <- choose (0,0x7fffffff)
         msN    <- choose (1,16)
         msM    <- choose (1,msN)
         msKeys <- vectorOf (msN-1) arbitrary
         url    <- arbitrary
-        elements [ WAccount name index pos key ext extC int intC
-                 , WAccountMS name index pos key 
-                        ext extC int intC msKeys msM url
+        elements [ WAccount name index pos key ext extC int intC oc
+                 , WAccountMS name index pos key ext extC int intC oc
+                    msKeys msM url
                  ]
 
 instance Arbitrary WAddr where
@@ -46,7 +49,7 @@ instance Arbitrary WAddr where
                       <*> arbitrary 
                       <*> arbitrary 
                       <*> (choose (1,0x7fffffff))
-                      <*> arbitrary
+                      <*> (fromIntegral <$> (arbitrary :: Gen Word32))
                       <*> (choose (1,0x7fffffff))
                       <*> arbitrary
 
@@ -60,5 +63,7 @@ instance Arbitrary DBKey where
                       , KeyIntAddr <$> (choose (1,0x7fffffff)) 
                                    <*> (choose (1,0x7fffffff))
                       , KeyIntAddrMap <$> arbitrary
+                      , KeyTxOut <$> (choose (1,0x7fffffff)) 
+                                 <*> (choose (1,0x7fffffff))
                       ]
 

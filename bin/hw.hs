@@ -103,6 +103,8 @@ cmdHelp =
  ++ "Dump pubkey to stdout\n"
  ++ "  importtx <tx>                        "
  ++ "Import transaction\n"
+ ++ "  listtx   [acc]                       "
+ ++ "List transactions\n"
  ++ "  decodetx <tx>                        "
  ++ "Decode HEX transaction\n"
  ++ "  buildtx  {txid:id...} {addr:amnt...} "
@@ -161,6 +163,7 @@ process opts cs
             "listacc"   -> cmdListAcc 
             "dumpkey"   -> cmdDumpKey args
             "importtx"  -> cmdImportTx args
+            "listtx"    -> cmdListTx opts args
             "decodetx"  -> cmdDecodeTx opts args
             "buildtx"   -> cmdBuildTx opts args
             "signtx"    -> cmdSignTx opts args
@@ -204,15 +207,23 @@ formatPages from count acc = do
 
 formatCoin :: WCoin -> IO ()
 formatCoin (WCoin (OutPoint tid i) (TxOut v s)) = do
-    putStrLn $ "TxID:   " ++ (show tid)
-    putStrLn $ "Index:  " ++ (show i)
-    putStrLn $ "Value:  " ++ (show v)
-    putStrLn $ "Script: " ++ (bsToHex $ runPut' $ putScriptOps $ runScript s)
-    putStrLn $ "Addr:   " ++ case decodeOutput s of
+    putStrLn $ "{ TxID  : " ++ (show tid)
+    putStrLn $ "  Index : " ++ (show i)
+    putStrLn $ "  Value : " ++ (show v)
+    putStrLn $ "  Script: " ++ (bsToHex $ runPut' $ putScriptOps $ runScript s)
+    putStrLn $ "  Addr  : " ++ case decodeOutput s of
         Right (PayPKHash a)     -> addrToBase58 a
         Right (PayScriptHash a) -> addrToBase58 a
         _                       -> error "formatCoin: invalid script type"
-    
+    putStrLn "}"
+
+formatTx :: WCoin -> IO ()
+formatTx (WCoin _ (TxOut v s)) = case decodeOutput s of
+    Right (PayPKHash a)     -> 
+        putStrLn $ "[->] " ++ (addrToBase58 a) ++ " " ++ (show v)
+    Right (PayScriptHash a) -> 
+        putStrLn $ "[->] " ++ (addrToBase58 a) ++ " " ++ (show v)
+    _                       -> error "formatTx: invalid script type"
 
 cmdInit :: Options -> Args -> CmdAction
 cmdInit opts args
@@ -343,8 +354,22 @@ cmdImportTx args
         Nothing -> error "Could not decode transactions"
         Just tx -> do
             coins <- dbImportTx tx
-            return ()
+            liftIO $ if null coins
+                then putStrLn "No coins imported"
+                else forM_ coins formatCoin
         where txM = decodeToMaybe =<< (hexToBS $ head args)
+
+cmdListTx :: Options -> Args -> CmdAction
+cmdListTx opts args
+    | length args > 1 = liftIO $ putStrLn usage
+    | otherwise = do
+        name <- getArgsAcc args
+        acc  <- fromJust <$> dbGetAcc name
+        coins <- dbListCoins name
+        liftIO $ putStrLn $ formatAcc acc
+        liftIO $ if null coins
+            then putStrLn "No transactions"
+            else forM_ coins formatTx
 
 cmdDecodeTx :: Options -> Args -> CmdAction
 cmdDecodeTx opts args

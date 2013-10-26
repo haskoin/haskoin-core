@@ -422,23 +422,23 @@ dbListExtAddr name from count
 
 dbImportCoin :: MonadResource m => Hash256 -> (TxOut,Word32) 
              -> WalletDB m (Maybe WCoin)
-dbImportCoin id (txout,i) = dbGetCoin op >>= \prevM -> case prevM of
-    Just _  -> return Nothing
-    Nothing -> do
-        waddrM <- case out of
-            Right (PayPKHash a)     -> dbGetAnyAddr $ addrToBase58 a
-            Right (PayScriptHash a) -> dbGetAnyAddr $ addrToBase58 a
-            _                       -> return Nothing
-        case waddrM of
-            Just waddr -> dbGetAccPos (wAccPos waddr) >>= \accM -> case accM of
-                Just acc -> do
+dbImportCoin id (txout,i) = do
+    waddrM <- case out of
+        Right (PayPKHash a)     -> dbGetAnyAddr $ addrToBase58 a
+        Right (PayScriptHash a) -> dbGetAnyAddr $ addrToBase58 a
+        _                       -> return Nothing
+    case waddrM of
+        Just waddr -> dbGetAccPos (wAccPos waddr) >>= \accM -> case accM of
+            Just acc -> dbGetCoin op >>= \prevM -> case prevM of
+                Just _  -> return Nothing -- Coins already stored in db
+                Nothing -> do
                     let newPos = accCoinCount acc + 1
-                        coin = WCoin op txout
+                        coin = WCoin op txout False
                     dbPutCoin (wAccPos waddr) newPos coin
                     dbPutAcc acc{ accCoinCount = newPos }
                     return $ Just coin
-                _ -> return Nothing
             _ -> return Nothing
+        _ -> return Nothing
     where out = decodeOutput $ scriptOutput txout
           op  = OutPoint id i
 
@@ -453,7 +453,7 @@ dbListCoins name = dbGetAcc name >>= \accM -> case accM of
     Nothing -> error $ "Invalid account: " ++ name
     Just acc -> ask >>= \db -> lift $
         DB.withIterator db DB.defaultReadOptions $ \iter -> do
-            let key = KeyCoin (accCoinCount acc) 1
+            let key = KeyCoin (accPos acc) 1
             DB.iterSeek iter $ keyToBS key
             vals <- dbIterate iter (keyPrefix key) $ accCoinCount acc
             return $ catMaybes $ map decodeToMaybe vals
@@ -495,11 +495,12 @@ buildSigData out op sh master addr acc = do
 
 data WCoin = WCoin { coinOutPoint :: OutPoint
                    , coinTxOut    :: TxOut
+                   , coinSpent    :: Bool
                    } deriving (Eq, Show)
 
 instance Binary WCoin where
-    get = WCoin <$> get <*> get
-    put (WCoin o t) = put o >> put t
+    get = WCoin <$> get <*> get <*> get
+    put (WCoin o t s) = put o >> put t >> put s
 
 data WAddr = WAddr { wAddr     :: String
                    , wLabel    :: String
@@ -521,7 +522,7 @@ instance Binary WAddr where
         pos      <- fromIntegral <$> getWord32le
         accIdx   <- getWord32le
         accPos   <- fromIntegral <$> getWord32le
-        int      <- (/= 0) <$> getWord8
+        int      <- get
         return $ WAddr addr label idx pos accIdx accPos int
 
     put (WAddr a l i p ai ap int) = do
@@ -535,7 +536,7 @@ instance Binary WAddr where
         putWord32le $ fromIntegral p
         putWord32le ai
         putWord32le $ fromIntegral ap
-        putWord8 $ if int then 1 else 0
+        put int
 
 data WAccount = WAccount   { accName      :: String
                            , accIndex     :: Word32

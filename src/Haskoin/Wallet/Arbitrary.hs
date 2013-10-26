@@ -56,6 +56,7 @@ instance Arbitrary WAddr where
 instance Arbitrary WCoin where
     arbitrary = WCoin <$> arbitrary
                       <*> arbitrary
+                      <*> arbitrary
 
 instance Arbitrary DBKey where
     arbitrary = oneof [ KeyConfig <$> arbitrary

@@ -77,39 +77,39 @@ usageHeader = "Usage: hw [<options>] <command> [<args>]"
 cmdHelp :: String
 cmdHelp = 
     "Valid hw commands: \n" 
- ++ "  init     <seed>                      " 
+ ++ "  init      <seed>                      " 
  ++ "Initialize a wallet\n"
- ++ "  list     [acc]                       "
+ ++ "  list      [acc]                       "
  ++ "Display most recent addresses\n" 
- ++ "  listfrom <from> [acc]                "
+ ++ "  listfrom  <from> [acc]                "
  ++ "Display addresses from an index\n" 
- ++ "  listall  [acc]                       "
+ ++ "  listall   [acc]                       "
  ++ "Display all addresses\n" 
- ++ "  new      <label> [acc]               "
+ ++ "  new       <label> [acc]               "
  ++ "Generate an address with a label\n"
- ++ "  genaddr  [acc]                       "
+ ++ "  genaddr   [acc]                       "
  ++ "Generate new addresses\n"
- ++ "  label    <index> <label> [acc]       "
+ ++ "  label     <index> <label> [acc]       "
  ++ "Add a label to an address\n"
- ++ "  focus    <acc>                       "
+ ++ "  focus     <acc>                       "
  ++ "Set the focused account\n"
- ++ "  newacc   <name>                      "
+ ++ "  newacc    <name>                      "
  ++ "Create a new account\n"
- ++ "  newms    <name> <M> {pubkeys...}     "
+ ++ "  newms     <name> <M> {pubkeys...}     "
  ++ "Create a new multisig account\n"
- ++ "  listacc                              "
+ ++ "  listacc                               "
  ++ "List all accounts\n"
- ++ "  dumpkey  [acc]                       "
+ ++ "  dumpkey   [acc]                       "
  ++ "Dump pubkey to stdout\n"
- ++ "  importtx <tx>                        "
+ ++ "  importtx  <tx>                        "
  ++ "Import transaction\n"
- ++ "  listtx   [acc]                       "
- ++ "List transactions\n"
- ++ "  decodetx <tx>                        "
+ ++ "  listcoins [acc]                       "
+ ++ "List transaction outputs\n"
+ ++ "  decodetx  <tx>                        "
  ++ "Decode HEX transaction\n"
- ++ "  buildtx  {txid:id...} {addr:amnt...} "
+ ++ "  buildtx   {txid:id...} {addr:amnt...} "
  ++ "Build a new transaction\n"
- ++ "  signtx   <tx> {txid:id:script...}    "
+ ++ "  signtx    <tx> {txid:id:script...}    "
  ++ "Sign a transaction\n"
 
 warningMsg :: String
@@ -163,7 +163,7 @@ process opts cs
             "listacc"   -> cmdListAcc 
             "dumpkey"   -> cmdDumpKey args
             "importtx"  -> cmdImportTx args
-            "listtx"    -> cmdListTx opts args
+            "listcoins" -> cmdListCoins opts args
             "decodetx"  -> cmdDecodeTx opts args
             "buildtx"   -> cmdBuildTx opts args
             "signtx"    -> cmdSignTx opts args
@@ -206,7 +206,7 @@ formatPages from count acc = do
     putStrLn $ " of " ++ (show $ accExtCount acc) ++ ")"
 
 formatCoin :: WCoin -> IO ()
-formatCoin (WCoin (OutPoint tid i) (TxOut v s)) = do
+formatCoin (WCoin (OutPoint tid i) (TxOut v s) _) = do
     putStrLn $ "{ TxID  : " ++ (show tid)
     putStrLn $ "  Index : " ++ (show i)
     putStrLn $ "  Value : " ++ (show v)
@@ -216,14 +216,6 @@ formatCoin (WCoin (OutPoint tid i) (TxOut v s)) = do
         Right (PayScriptHash a) -> addrToBase58 a
         _                       -> error "formatCoin: invalid script type"
     putStrLn "}"
-
-formatTx :: WCoin -> IO ()
-formatTx (WCoin _ (TxOut v s)) = case decodeOutput s of
-    Right (PayPKHash a)     -> 
-        putStrLn $ "[->] " ++ (addrToBase58 a) ++ " " ++ (show v)
-    Right (PayScriptHash a) -> 
-        putStrLn $ "[->] " ++ (addrToBase58 a) ++ " " ++ (show v)
-    _                       -> error "formatTx: invalid script type"
 
 cmdInit :: Options -> Args -> CmdAction
 cmdInit opts args
@@ -359,8 +351,8 @@ cmdImportTx args
                 else forM_ coins formatCoin
         where txM = decodeToMaybe =<< (hexToBS $ head args)
 
-cmdListTx :: Options -> Args -> CmdAction
-cmdListTx opts args
+cmdListCoins :: Options -> Args -> CmdAction
+cmdListCoins opts args
     | length args > 1 = liftIO $ putStrLn usage
     | otherwise = do
         name <- getArgsAcc args
@@ -368,8 +360,8 @@ cmdListTx opts args
         coins <- dbListCoins name
         liftIO $ putStrLn $ formatAcc acc
         liftIO $ if null coins
-            then putStrLn "No transactions"
-            else forM_ coins formatTx
+            then putStrLn "No coins"
+            else forM_ coins formatCoin
 
 cmdDecodeTx :: Options -> Args -> CmdAction
 cmdDecodeTx opts args

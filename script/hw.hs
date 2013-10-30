@@ -93,6 +93,10 @@ cmdHelp =
  ++ "Generate new addresses\n"
  ++ "  label     <index> <label> [acc]       "
  ++ "Add a label to an address\n"
+ ++ "  balance   [acc]                       "
+ ++ "Display account balance\n"
+ ++ "  totalbalance                          "
+ ++ "Display sum of all account balances\n"
  ++ "  focus     <acc>                       "
  ++ "Set the focused account\n"
  ++ "  newacc    <name>                      "
@@ -154,25 +158,27 @@ process opts cs
     | otherwise = getWorkDir >>= \dir -> do
         let (c,args) = (head cs, tail cs)
         runResourceT $ runWalletDB dir $ checkInit c >> case c of
-            "init"      -> cmdInit opts args
-            "list"      -> cmdList opts args
-            "listfrom"  -> cmdListFrom opts args
-            "listall"   -> cmdListAll opts args
-            "new"       -> cmdNew opts args
-            "genaddr"   -> cmdGenAddr opts args
-            "label"     -> cmdLabel args
-            "focus"     -> cmdFocus opts args
-            "newacc"    -> cmdNewAcc opts args
-            "newms"     -> cmdNewMS opts args
-            "listacc"   -> cmdListAcc 
-            "dumpkey"   -> cmdDumpKey args
-            "importtx"  -> cmdImportTx args
-            "coins"     -> cmdCoins opts args
-            "allcoins"  -> cmdAllCoins opts 
-            "decodetx"  -> cmdDecodeTx opts args
-            "buildtx"   -> cmdBuildTx opts args
-            "signtx"    -> cmdSignTx opts args
-            _           -> error $ "Invalid command: " ++ c
+            "init"         -> cmdInit opts args
+            "list"         -> cmdList opts args
+            "listfrom"     -> cmdListFrom opts args
+            "listall"      -> cmdListAll opts args
+            "new"          -> cmdNew opts args
+            "genaddr"      -> cmdGenAddr opts args
+            "label"        -> cmdLabel args
+            "balance"      -> cmdBalance opts args
+            "totalbalance" -> cmdTotalBalance opts args
+            "focus"        -> cmdFocus opts args
+            "newacc"       -> cmdNewAcc opts args
+            "newms"        -> cmdNewMS opts args
+            "listacc"      -> cmdListAcc 
+            "dumpkey"      -> cmdDumpKey args
+            "importtx"     -> cmdImportTx args
+            "coins"        -> cmdCoins opts args
+            "allcoins"     -> cmdAllCoins opts 
+            "decodetx"     -> cmdDecodeTx opts args
+            "buildtx"      -> cmdBuildTx opts args
+            "signtx"       -> cmdSignTx opts args
+            _              -> error $ "Invalid command: " ++ c
         putStrLn ""
 
 checkInit :: String -> CmdAction 
@@ -340,6 +346,21 @@ cmdLabel args
                 putAddr newAddr
                 liftIO $ putStrLn (formatAcc acc ++ "\n") >> 
                          formatAddr newAddr
+
+cmdBalance :: Options -> Args -> CmdAction
+cmdBalance opts args
+    | length args > 1 = liftIO $ putStr usage
+    | otherwise = accFromArgs args >>= \acc -> do
+        coins <- listCoins $ accPos $ runAccData acc
+        let balance = sum $ map (fromIntegral . outValue . coinTxOut) coins
+        liftIO $ putStrLn $ formatAcc acc
+        liftIO $ putStrLn $ "Balance: " ++ (show balance)
+
+cmdTotalBalance :: Options -> Args -> CmdAction
+cmdTotalBalance opts args = do
+    coins <- listAllCoins 
+    let balance = sum $ map (fromIntegral . outValue . coinTxOut) coins
+    liftIO $ putStrLn $ "Full Balance: " ++ (show balance)
 
 cmdDumpKey :: Args -> CmdAction
 cmdDumpKey args 

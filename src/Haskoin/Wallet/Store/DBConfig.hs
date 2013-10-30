@@ -18,11 +18,12 @@ import Haskoin.Wallet.Store.Util
 import Haskoin.Protocol
 import Haskoin.Util
 
-data DBConfig = DBConfig { cfgMaster   :: MasterKey
-                         , cfgVersion  :: Int
-                         , cfgAccIndex :: Word32
-                         , cfgAccCount :: Int
-                         , cfgFocus    :: Int
+data DBConfig = DBConfig { cfgMaster    :: MasterKey
+                         , cfgVersion   :: Int
+                         , cfgAccIndex  :: Word32
+                         , cfgAccCount  :: Int
+                         , cfgFocus     :: Int
+                         , cfgCoinCount :: Int
                          } deriving (Eq, Show)
 
 initConfig :: MonadResource m => DBConfig -> WalletDB m ()
@@ -46,12 +47,14 @@ instance Binary DBConfig where
                    <*> getWord32le
                    <*> (fromIntegral . getVarInt <$> get)
                    <*> (fromIntegral . getVarInt <$> get)
+                   <*> (fromIntegral . getVarInt <$> get)
           where f = maybe (fail "DBConfig get: Invalid master key") return
 
-    put (DBConfig m v i c f) = do
+    put (DBConfig m v i c f cc) = do
         put $ runMasterKey m
         put $ VarInt $ fromIntegral v
         putWord32le i
         put $ VarInt $ fromIntegral c
         put $ VarInt $ fromIntegral f
+        put $ VarInt $ fromIntegral cc
 

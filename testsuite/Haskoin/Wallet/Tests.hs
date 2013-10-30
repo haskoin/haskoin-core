@@ -34,6 +34,11 @@ tests =
         , testProperty "fromB58 . toB58 prvKey" b58PrvKey
         , testProperty "fromB58 . toB58 pubKey" b58PubKey
         ]
+    , testGroup "HDW Extended Key Manager"
+        [ testProperty "decode . encode masterKey" decEncMaster
+        , testProperty "decode . encode prvAccKey" decEncPrvAcc
+        , testProperty "decode . encode pubAccKey" decEncPubAcc
+        ]
     , testGroup "Building Transactions"
         [ testProperty "building address tx" testBuildAddrTx
         ]
@@ -45,8 +50,7 @@ tests =
         [ testProperty "decode . encode account" decEncAccount
         , testProperty "decode . encode addr" decEncAddr
         , testProperty "decode . encode coin" decEncCoin
-        , testProperty "fromHexKey . doHexKey key" decEncHexKey
-        , testProperty "bsToKey . keyToBS key" decEncKeyBS
+        , testProperty "decode . encode config" decEncConfig
         ]
     ]
 
@@ -68,6 +72,20 @@ b58PrvKey k = (fromJust $ xPrvImport $ xPrvExport k) == k
 
 b58PubKey :: XPubKey -> Bool
 b58PubKey k = (fromJust $ xPubImport $ xPubExport k) == k
+
+{- HDW Extended Key Manager -}
+
+decEncMaster :: MasterKey -> Bool
+decEncMaster k = (fromJust $ loadMasterKey $ decode' bs) == k
+    where bs = encode' $ runMasterKey k
+
+decEncPrvAcc :: AccPrvKey -> Bool
+decEncPrvAcc k = (fromJust $ loadPrvAcc $ decode' bs) == k
+    where bs = encode' $ runAccPrvKey k
+
+decEncPubAcc :: AccPubKey -> Bool
+decEncPubAcc k = (fromJust $ loadPubAcc $ decode' bs) == k
+    where bs = encode' $ runAccPubKey k
 
 {- Building Transactions -}
 
@@ -101,20 +119,16 @@ testSignTxValidate (PKHashSigTemplate tx sigi prv) =
 
 {- Wallet Store -}
 
-decEncAccount :: WAccount -> Bool
+decEncAccount :: DBAccount -> Bool
 decEncAccount acc = (decode' $ encode' acc) == acc
 
-decEncAddr :: WAddr -> Bool
+decEncAddr :: DBAddress -> Bool
 decEncAddr addr = (decode' $ encode' addr) == addr
 
-decEncCoin :: WCoin -> Bool
+decEncCoin :: DBCoin -> Bool
 decEncCoin coin = (decode' $ encode' coin) == coin
 
-decEncHexKey :: Word32 -> Bool
-decEncHexKey w = (fromJust $ fromHexKey $ toHexKey i) == i
-    where i = fromIntegral $ w .&. 0x7fffffff
-
-decEncKeyBS :: DBKey -> Bool
-decEncKeyBS k = (fromJust $ bsToKey $ keyToBS k) == k
+decEncConfig :: DBConfig -> Bool
+decEncConfig config = (decode' $ encode' config) == config
 
 

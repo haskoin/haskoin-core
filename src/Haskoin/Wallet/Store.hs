@@ -1,4 +1,51 @@
-module Haskoin.Wallet.Store where
+module Haskoin.Wallet.Store 
+-- Account
+( DBAccount(..)
+, AccountData(..)
+, AccKey(..)
+, getAcc
+, putAcc
+, newAcc
+, newMSAcc
+, listAccs
+, isMSAcc
+
+-- Address
+, DBAddress(..)
+, AddressKey(..)
+, getAddr
+, putAddr
+, genAddr
+, listAddr
+
+-- Coin
+, DBCoin(..)
+, CoinKey(..)
+, getCoin
+, putCoin
+, importTx
+, listCoins
+, listAllCoins
+
+-- Config
+, DBConfig(..)
+, initConfig
+, getConfig
+, putConfig
+
+-- Util
+, WalletDB
+, runWalletDB
+, dbGet
+, dbPut
+, dbIter
+, encodeInt
+, decodeInt
+
+-- Store
+, dbInit
+, signData
+) where
 
 import Control.Monad.Reader
 import Control.Monad.Trans
@@ -30,11 +77,12 @@ import Haskoin.Util
 dbInit :: MonadResource m => String -> WalletDB m ()
 dbInit seed = do
     let masterKey = fromJust $ makeMasterKey $ stringToBS seed
-    initConfig $ DBConfig { cfgMaster = masterKey
-                          , cfgVersion = 1
-                          , cfgAccIndex = maxBound
-                          , cfgAccCount = 0
-                          , cfgFocus = 0
+    initConfig $ DBConfig { cfgMaster    = masterKey
+                          , cfgVersion   = 1
+                          , cfgAccIndex  = maxBound
+                          , cfgAccCount  = 0
+                          , cfgFocus     = 0
+                          , cfgCoinCount = 0
                           }
     newAcc "default" >> return ()
 

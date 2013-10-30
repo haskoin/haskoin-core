@@ -8,6 +8,7 @@ import Control.Monad
 import Control.Applicative
 
 import Data.Word
+import Data.Maybe
 
 import Haskoin.Wallet
 import Haskoin.Wallet.Keys
@@ -24,52 +25,78 @@ instance Arbitrary XPrvKey where
 instance Arbitrary XPubKey where
     arbitrary = deriveXPubKey <$> arbitrary
 
-instance Arbitrary WAccount where
+instance Arbitrary MasterKey where
+    arbitrary = fromJust . makeMasterKey <$> arbitrary
+
+instance Arbitrary AccPrvKey where
     arbitrary = do
-        name   <- arbitrary
+        master <- arbitrary
+        index  <- choose (0,0x7fffffff)
+        return $ fromJust $ accPrvKey master index
+
+instance Arbitrary AccPubKey where
+    arbitrary = do
+        master <- arbitrary
+        index  <- choose (0,0x7fffffff)
+        return $ fromJust $ accPubKey master index
+
+instance Arbitrary AddrPrvKey where
+    arbitrary = do
+        accKey <- arbitrary
         index  <- arbitrary
-        pos    <- choose (1,0x7fffffff)
-        key    <- AccPubKey <$> arbitrary
-        ext    <- arbitrary
-        extC   <- choose (0,0x7fffffff)
-        int    <- arbitrary
-        intC   <- choose (0,0x7fffffff)
-        oc     <- choose (0,0x7fffffff)
-        msN    <- choose (1,16)
-        msM    <- choose (1,msN)
-        msKeys <- vectorOf (msN-1) arbitrary
-        url    <- arbitrary
-        elements [ WAccount name index pos key ext extC int intC oc
-                 , WAccountMS name index pos key ext extC int intC oc
-                    msKeys msM url
+        elements [ fromJust $ extPrvKey accKey index
+                 , fromJust $ intPrvKey accKey index
                  ]
 
-instance Arbitrary WAddr where
-    arbitrary = WAddr <$> arbitrary 
-                      <*> arbitrary 
-                      <*> arbitrary 
-                      <*> (choose (1,0x7fffffff))
-                      <*> (fromIntegral <$> (arbitrary :: Gen Word32))
-                      <*> (choose (1,0x7fffffff))
-                      <*> arbitrary
+instance Arbitrary AddrPubKey where
+    arbitrary = do
+        accKey <- arbitrary
+        index  <- arbitrary
+        elements [ fromJust $ extPubKey accKey index
+                 , fromJust $ intPubKey accKey index
+                 ]
 
-instance Arbitrary WCoin where
-    arbitrary = WCoin <$> arbitrary
-                      <*> arbitrary
-                      <*> arbitrary
+instance Arbitrary AccountData where
+    arbitrary = AccountData <$> arbitrary
+                            <*> arbitrary
+                            <*> (choose (1,0x7fffffff))
+                            <*> arbitrary
+                            <*> arbitrary
+                            <*> (choose (1,0x7fffffff))
+                            <*> arbitrary
+                            <*> (choose (1,0x7fffffff))
+                            <*> (choose (1,0x7fffffff))
 
-instance Arbitrary DBKey where
-    arbitrary = oneof [ KeyConfig <$> arbitrary
-                      , KeyAcc <$> choose (1,0x7fffffff)
-                      , KeyAccMap <$> arbitrary
-                      , KeyExtAddr <$> (choose (1,0x7fffffff)) 
-                                   <*> (choose (1,0x7fffffff))
-                      , KeyExtAddrMap <$> arbitrary
-                      , KeyIntAddr <$> (choose (1,0x7fffffff)) 
-                                   <*> (choose (1,0x7fffffff))
-                      , KeyIntAddrMap <$> arbitrary
-                      , KeyCoin <$> (choose (1,0x7fffffff)) 
-                                <*> (choose (1,0x7fffffff))
-                      , KeyCoinMap <$> arbitrary 
+instance Arbitrary DBAccount where
+    arbitrary = oneof [ DBAccount <$> arbitrary 
+                      , DBAccountMS <$> arbitrary
+                                    <*> arbitrary
+                                    <*> (choose (1,16))
+                                    <*> arbitrary
                       ]
+
+instance Arbitrary DBAddress where
+    arbitrary = DBAddress <$> arbitrary 
+                          <*> arbitrary 
+                          <*> arbitrary 
+                          <*> (choose (1,0x7fffffff))
+                          <*> arbitrary
+                          <*> (choose (1,0x7fffffff))
+                          <*> arbitrary
+
+instance Arbitrary DBCoin where
+    arbitrary = DBCoin <$> arbitrary
+                       <*> arbitrary
+                       <*> arbitrary
+                       <*> (choose (1,0x7fffffff))
+                       <*> (choose (1,0x7fffffff))
+
+instance Arbitrary DBConfig where
+    arbitrary = DBConfig <$> arbitrary
+                         <*> arbitrary
+                         <*> arbitrary
+                         <*> (choose (1,0x7fffffff))
+                         <*> (choose (1,0x7fffffff))
+                         <*> (choose (1,0x7fffffff))
+
 

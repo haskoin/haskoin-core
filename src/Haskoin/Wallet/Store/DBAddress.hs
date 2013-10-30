@@ -100,8 +100,8 @@ genAddr pos count int = getAcc (AccPos pos) >>= \accM -> case accM of
 listAddr :: MonadResource m => Int -> Int -> Int -> Bool 
          -> WalletDB m [DBAddress]
 listAddr pos from count int
-    | from  <= 0 = error $ "Invalid from: " ++ (show from)
-    | count <= 0 = error $ "Invalid count: " ++ (show count)
+    | from  < 0 = error $ "Invalid from: " ++ (show from)
+    | count < 0 = error $ "Invalid count: " ++ (show count)
     | otherwise = getAcc (AccPos pos) >>= \accM -> case accM of
         Nothing -> error $ "Invalid account index: " ++ (show pos)
         Just acc -> do

@@ -5,6 +5,7 @@ module Haskoin.Wallet.Store.DBCoin
 , putCoin
 , importTx
 , listCoins
+, listAllCoins
 ) where
 
 import Control.Monad
@@ -19,6 +20,7 @@ import Data.Binary.Put
 import Haskoin.Wallet.Store.Util
 import Haskoin.Wallet.Store.DBAddress
 import Haskoin.Wallet.Store.DBAccount
+import Haskoin.Wallet.Store.DBConfig
 import Haskoin.Script
 import Haskoin.Crypto
 import Haskoin.Protocol
@@ -74,8 +76,12 @@ importCoin id (txout,i) = do
                     let aData   = runAccData acc
                         coinPos = accCoinCount aData + 1
                         coin    = DBCoin op txout False coinPos $ accPos aData
+                    -- update account-level count
                     putCoin coin
                     putAcc acc{ runAccData = aData{accCoinCount = coinPos} }
+                    -- update total count in config
+                    total <- (fromMaybe 0) <$> getConfig cfgCoinCount
+                    putConfig $ \cfg -> cfg{ cfgCoinCount = total + 1 }
                     return $ Just coin
             _ -> return Nothing
         _ -> return Nothing
@@ -90,6 +96,15 @@ listCoins pos = (getAcc $ AccPos pos) >>= \accM -> case accM of
         return $ filter (not . coinSpent) res -- only display unspent coins
     where prefix = "coin_" ++ (encodeInt pos) ++ "_"
           key    = prefix ++ (encodeInt 1)
+
+listAllCoins :: MonadResource m => WalletDB m [DBCoin]
+listAllCoins = do
+    total <- (fromMaybe 0) <$> getConfig cfgCoinCount
+    vals <- dbIter key prefix total
+    let res = catMaybes $ map decodeToMaybe vals
+    return $ filter (not . coinSpent) res
+    where prefix = "coin_"
+          key    = prefix ++ (encodeInt 1) ++ "_" ++ (encodeInt 1)
 
 {- Binary Instance -}
 

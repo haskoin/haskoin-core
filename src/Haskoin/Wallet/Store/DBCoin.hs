@@ -1,16 +1,18 @@
+-- |This module provides a Coin type for the wallet database
 module Haskoin.Wallet.Store.DBCoin
 ( DBCoin(..)
 , CoinKey(..)
-, getCoin
-, putCoin
-, importTx
-, listCoins
-, listAllCoins
+, dbGetCoin
+, dbPutCoin
+, dbImportTx
+, dbCoinList
+, dbCoinListAll
 ) where
 
 import Control.Monad
 import Control.Applicative
 import Control.Monad.Trans.Resource
+import Control.Monad.Trans.Either
 
 import Data.Maybe
 import Data.Binary
@@ -26,6 +28,7 @@ import Haskoin.Crypto
 import Haskoin.Protocol
 import Haskoin.Util
 
+-- |Coin type used in the wallet database
 data DBCoin = DBCoin{ coinOutPoint :: OutPoint
                     , coinTxOut    :: TxOut
                     , coinSpent    :: Bool
@@ -33,81 +36,78 @@ data DBCoin = DBCoin{ coinOutPoint :: OutPoint
                     , coinAccPos   :: Int
                     } deriving (Eq, Show)
 
+-- |Key used for querying coins with dbGetCoin
+-- Coins can be queried by OutPoint or by position
 data CoinKey = CoinOutPoint OutPoint | CoinPos Int Int
     deriving (Eq, Show)
 
-getCoin :: MonadResource m => CoinKey -> WalletDB m (Maybe DBCoin)
-getCoin key = case key of
+-- |Query a coin from the database using a CoinKey query type
+dbGetCoin :: MonadResource m => CoinKey -> WalletDB m DBCoin
+dbGetCoin key = case key of
     CoinOutPoint op -> do
-        bsM <- dbGet $ "coinoutpoint_" ++ (bsToString $ encode' op)
-        maybe (return Nothing) ((f <$>) . dbGet . bsToString) bsM
+        bs <- dbGet $ "coinoutpoint_" ++ (bsToString $ encode' op)
+        f =<< (dbGet $ bsToString bs)
     CoinPos ap p -> do
-        bsM <- dbGet $ "coin_" ++ (encodeInt ap) ++ "_" ++ (encodeInt p)
-        return $ f bsM 
-    where f = (decodeToMaybe =<<)
+        acPos <- liftEither $ dbEncodeInt ap
+        coPos <- liftEither $ dbEncodeInt p
+        f =<< (dbGet $ "coin_" ++ acPos ++ "_" ++ coPos)
+    where f = liftEither . decodeToEither
 
-putCoin :: MonadResource m => DBCoin -> WalletDB m ()
-putCoin coin = do
-    dbPut key $ encode' coin 
+-- |Store a coin in the wallet database
+dbPutCoin :: MonadResource m => DBCoin -> WalletDB m ()
+dbPutCoin coin = do
+    acPos <- liftEither $ dbEncodeInt $ coinAccPos coin
+    coPos <- liftEither $ dbEncodeInt $ coinPos coin
+    let key = "coin_" ++ acPos ++ "_" ++ coPos
+    dbPut key $ encode' coin
     dbPut ("coinoutpoint_" ++ opKey) $ stringToBS key
-    where apos  = encodeInt $ coinAccPos coin
-          pos   = encodeInt $ coinPos coin
-          key   = "coin_" ++ apos ++ "_" ++ pos
-          opKey = bsToString $ encode' $ coinOutPoint coin
+    where opKey = bsToString $ encode' $ coinOutPoint coin
 
-importTx :: MonadResource m => Tx -> WalletDB m [DBCoin]
-importTx tx = do
-    coins <- forM (zip (txOut tx) [0..]) $ importCoin id
-    return $ catMaybes coins
-    where id = txid tx
+-- |Extract coins from a transaction and save them in the database
+dbImportTx :: MonadResource m => Tx -> WalletDB m [DBCoin]
+dbImportTx tx = mapRights (dbImportCoin $ txid tx) $ zip (txOut tx) [0..]
 
-importCoin :: MonadResource m => Hash256 -> (TxOut,Word32) 
-             -> WalletDB m (Maybe DBCoin)
-importCoin id (txout,i) = do
-    addrM <- case decodeOutput $ scriptOutput txout of
-        Right (PayPKHash a)     -> getAddr $ AddrBase58 $ addrToBase58 a
-        Right (PayScriptHash a) -> getAddr $ AddrBase58 $ addrToBase58 a
-        _                       -> return Nothing
-    case addrM of
-        Just addr -> getAcc (AccPos $ addrAccPos addr) >>= \accM -> case accM of
-            Just acc -> getCoin (CoinOutPoint op) >>= \prevM -> case prevM of
-                Just _  -> return Nothing -- Coins already stored in db
-                Nothing -> do
-                    let aData   = runAccData acc
-                        coinPos = accCoinCount aData + 1
-                        coin    = DBCoin op txout False coinPos $ accPos aData
-                    -- update account-level count
-                    putCoin coin
-                    putAcc acc{ runAccData = aData{accCoinCount = coinPos} }
-                    -- update total count in config
-                    total <- (fromMaybe 0) <$> getConfig cfgCoinCount
-                    putConfig $ \cfg -> cfg{ cfgCoinCount = total + 1 }
-                    return $ Just coin
-            _ -> return Nothing
-        _ -> return Nothing
+dbImportCoin :: MonadResource m => Hash256 -> (TxOut,Word32) 
+             -> WalletDB m DBCoin
+dbImportCoin id (txout,i) = do
+    a    <- liftEither $ scriptRecipient $ scriptOutput txout
+    addr <- dbGetAddr $ AddrBase58 $ addrToBase58 a
+    acc  <- dbGetAcc (AccPos $ addrAccPos addr)
+    let aData   = runAccData acc
+        coinPos = accCoinCount aData + 1
+        coin    = DBCoin op txout False coinPos $ accPos aData
+    exists <- dbExists $ "coinoutpoint" ++ (bsToString $ encode' op)
+    when exists (liftEither $ Left "Coin already exists")
+    -- update account-level count
+    dbPutCoin coin
+    dbPutAcc acc{ runAccData = aData{accCoinCount = coinPos} }
+    -- update total count in config
+    total <- dbGetConfig cfgCoinCount
+    dbPutConfig $ \cfg -> cfg{ cfgCoinCount = total + 1 }
+    return coin
     where op  = OutPoint id i
 
-listCoins :: MonadResource m => Int -> WalletDB m [DBCoin]
-listCoins pos = (getAcc $ AccPos pos) >>= \accM -> case accM of
-    Nothing -> error $ "Invalid account index: " ++ (show pos)
-    Just acc -> do
-        vals <- dbIter key prefix $ accCoinCount $ runAccData acc
-        let res = catMaybes $ map decodeToMaybe vals
-        return $ filter (not . coinSpent) res -- only display unspent coins
-    where prefix = "coin_" ++ (encodeInt pos) ++ "_"
-          key    = prefix ++ (encodeInt 1)
+-- |List unspent coins from one account in the wallet database
+dbCoinList :: MonadResource m => Int -> WalletDB m [DBCoin]
+dbCoinList pos = do
+    acc    <- dbGetAcc $ AccPos pos
+    prefix <- ("coin_" ++) . (++ "_") <$> (liftEither $ dbEncodeInt pos)
+    key    <- (prefix ++) <$> (liftEither $ dbEncodeInt 1)
+    vals   <- dbIter key prefix $ accCoinCount $ runAccData acc
+    res    <- liftEither $ forM vals decodeToEither
+    return $ filter (not . coinSpent) res
 
-listAllCoins :: MonadResource m => WalletDB m [DBCoin]
-listAllCoins = do
-    total <- (fromMaybe 0) <$> getConfig cfgCoinCount
-    vals <- dbIter key prefix total
-    let res = catMaybes $ map decodeToMaybe vals
+-- |List unspent coins from all accounts in the wallet database
+dbCoinListAll :: MonadResource m => WalletDB m [DBCoin]
+dbCoinListAll = do
+    total <- dbGetConfig cfgCoinCount
+    key   <- (\i -> prefix ++ i ++ "_" ++ i) <$> (liftEither $ dbEncodeInt 1)
+    vals  <- dbIter key prefix total
+    res   <- liftEither $ forM vals decodeToEither
     return $ filter (not . coinSpent) res
     where prefix = "coin_"
-          key    = prefix ++ (encodeInt 1) ++ "_" ++ (encodeInt 1)
 
-{- Binary Instance -}
-
+-- |Binary instance for the coin type
 instance Binary DBCoin where
     get = DBCoin <$> get 
                  <*> get 

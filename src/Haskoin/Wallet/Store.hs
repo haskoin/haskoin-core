@@ -3,48 +3,43 @@ module Haskoin.Wallet.Store
 ( DBAccount(..)
 , AccountData(..)
 , AccKey(..)
-, getAcc
-, putAcc
-, newAcc
-, newMSAcc
-, listAccs
+, dbGetAcc
+, dbPutAcc
+, dbNewAcc
+, dbNewMSAcc
+, dbAccList
 , isMSAcc
 
 -- Address
 , DBAddress(..)
 , AddressKey(..)
-, getAddr
-, putAddr
-, genAddr
-, listAddr
+, dbGetAddr
+, dbPutAddr
+, dbGenAddr
+, dbAddrList
 
 -- Coin
 , DBCoin(..)
 , CoinKey(..)
-, getCoin
-, putCoin
-, importTx
-, listCoins
-, listAllCoins
+, dbGetCoin
+, dbPutCoin
+, dbImportTx
+, dbCoinList
+, dbCoinListAll
 
 -- Config
 , DBConfig(..)
-, initConfig
-, getConfig
-, putConfig
+, dbInitConfig
+, dbGetConfig
+, dbPutConfig
 
 -- Util
 , WalletDB
 , runWalletDB
-, dbGet
-, dbPut
-, dbIter
-, encodeInt
-, decodeInt
 
 -- Store
 , dbInit
-, signData
+, dbGetSigData
 ) where
 
 import Control.Monad.Reader
@@ -76,48 +71,49 @@ import Haskoin.Util
 
 dbInit :: MonadResource m => String -> WalletDB m ()
 dbInit seed = do
-    let masterKey = fromJust $ makeMasterKey $ stringToBS seed
-    initConfig $ DBConfig { cfgMaster    = masterKey
-                          , cfgVersion   = 1
-                          , cfgAccIndex  = maxBound
-                          , cfgAccCount  = 0
-                          , cfgFocus     = 0
-                          , cfgCoinCount = 0
-                          }
-    newAcc "default" >> return ()
+    master <- liftEither $ maybeToEither msg $ makeMasterKey $ stringToBS seed
+    dbInitConfig $ DBConfig { cfgMaster    = master
+                            , cfgVersion   = 1
+                            , cfgAccIndex  = maxBound
+                            , cfgAccCount  = 0
+                            , cfgFocus     = 0
+                            , cfgCoinCount = 0
+                            }
+    dbNewAcc "default" >> return ()
+    where msg = "dbInit: Invalid master key generation from seed"
 
 {- Signing functions -}
 
-signData :: MonadResource m => Script -> OutPoint -> SigHash 
-         -> WalletDB m (Maybe (SigInput,PrvKey))
-signData out op sh = do
-    masterM <- getConfig cfgMaster
-    addrM   <- case decodeOutput out of
-        Right (PayPKHash a)     -> getAddr $ AddrBase58 $ addrToBase58 a
-        Right (PayScriptHash a) -> getAddr $ AddrBase58 $ addrToBase58 a
-        _                       -> return Nothing
-    case addrM of
-        Just addr -> getAcc (AccPos $ addrAccPos addr) >>= \accM -> return $ do
-            acc <- accM
-            mst <- masterM
-            buildSignData out op sh mst addr acc
-        _ -> return Nothing
+dbGetSigData :: MonadResource m => Script -> OutPoint -> SigHash 
+             -> WalletDB m (SigInput,PrvKey)
+dbGetSigData out op sh = do
+    master <- dbGetConfig cfgMaster
+    a      <- liftEither $ scriptRecipient out
+    addr   <- dbGetAddr $ AddrBase58 $ addrToBase58 a
+    acc    <- dbGetAcc $ AccPos $ addrAccPos addr
+    sigInp <- liftEither $ buildSigInput acc addr out op sh
+    sigKey <- liftEither $ buildSigKey master addr
+    return (sigInp,sigKey)
 
-buildSignData :: Script -> OutPoint -> SigHash -> MasterKey -> DBAddress 
-              -> DBAccount -> Maybe (SigInput,PrvKey)
-buildSignData out op sh master addr acc = do
-    sgi <- if isMSAcc acc 
-        then do
-            aks <- fms (accKey dat) (msKeys acc) (addrIndex addr)
-            let pks = map (xPubKey . runAddrPubKey) aks
-                rdm = sortMulSig $ PayMulSig pks (msReq acc)
-            return $ SigInputSH out op (encodeOutput rdm) sh
-        else return $ SigInput out op sh
-    accPrvKey <- accPrvKey master $ addrAccIndex addr
-    sigKey    <- g accPrvKey $ addrIndex addr
-    return (sgi, xPrvKey $ runAddrPrvKey $ sigKey)
-    where fms = if addrInt addr then intMulSigKey else extMulSigKey
-          g   = if addrInt addr then intPrvKey else extPrvKey
-          dat = runAccData acc
+buildSigInput :: DBAccount -> DBAddress -> Script -> OutPoint -> SigHash
+              -> Either String SigInput
+buildSigInput acc addr out op sh
+    | isMSAcc acc = do
+        aks <- maybeToEither msg $ f key (msKeys acc) (addrIndex addr)
+        let pks = map (xPubKey . runAddrPubKey) aks
+            rdm = sortMulSig $ PayMulSig pks (msReq acc)
+        return $ SigInputSH out op (encodeOutput rdm) sh
+    | otherwise   = return $ SigInput out op sh
+    where f   = if addrInt addr then intMulSigKey else extMulSigKey
+          msg = "buildSigInput: Invalid derivation index"
+          key = accKey $ runAccData acc
     
+buildSigKey :: MasterKey -> DBAddress -> Either String PrvKey
+buildSigKey master addr = do
+    aKey   <- maybeToEither prvMsg $ accPrvKey master $ addrAccIndex addr
+    sigKey <- maybeToEither keyMsg $ g aKey $ addrIndex addr
+    return $ xPrvKey $ runAddrPrvKey sigKey
+    where prvMsg = "buildPrvKey: Invalid account derivation index"
+          keyMsg = "buildPrvKey: Invalid address derivation index"
+          g      = if addrInt addr then intPrvKey else extPrvKey
 

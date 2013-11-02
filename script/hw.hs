@@ -146,7 +146,7 @@ getWorkDir :: IO FilePath
 getWorkDir = do
     dir <- getAppUserDataDirectory "haskoin"
     createDirectoryIfMissing True dir
-    return dir
+    return $ dir ++ "/walletdb"
 
 process :: Options -> [String] -> IO ()
 process opts cs 
@@ -235,7 +235,7 @@ formatCoin (DBCoin (OutPoint tid i) (TxOut v s) _ _ p) = do
     putStrLn $ "{ TxID  : " ++ (show tid)
     putStrLn $ "  Index : " ++ (show i)
     putStrLn $ "  Value : " ++ (show v)
-    putStrLn $ "  Script: " ++ (bsToHex $ runPut' $ putScriptOps $ runScript s)
+    putStrLn $ "  Script: " ++ (bsToHex $ encodeScriptOps s)
     putStrLn $ "  Addr  : " ++ case decodeOutput s of
         Right (PayPKHash a)     -> addrToBase58 a
         Right (PayScriptHash a) -> addrToBase58 a
@@ -421,17 +421,17 @@ cmdBuildTx opts args
 cmdSignTx :: Options -> Args -> CmdAction
 cmdSignTx opts args
     | length args < 2 = liftIO $ putStr usage
-    | otherwise = case txM of
-        Nothing -> error "Could not decode transaction"
-        Just tx -> do
-            ys <- catMaybes <$> mapM (g . f) xs
-            let sigTx = detSignTx tx (map fst ys) (map snd ys)
-            liftIO $ print $ (bsToHex . encode') <$> sigTx
-    where txM = decodeToMaybe =<< (hexToBS $ head args)
-          xs  = map (splitOn ":") $ tail args
-          f [t,i,s] = ( Script $ runGet' getScriptOps $ fromJust $ hexToBS s
-                      , OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS t)
-                                 (read i)
-                      )
-          g (s,o) = signData s o (optSigHash opts)
+    | otherwise = do
+        tx <- liftEither $ decodeToEither $ hexToBS $ head args
+        ys <- mapRights ((g =<<) . f) (map (splitOn ":") $ tail args)
+        let sigTx = detSignTx tx (map fst ys) (map snd ys)
+        liftIO $ print $ (bsToHex . encode') <$> sigTx
+    where f [t,i,s] = do
+            sBS <- liftMaybe "Invalid script HEX encoding" $ hexToBS s
+            tBS <- liftMaybe "Invalid txid HEX encoding" $ hexToBS t
+            scp <- liftEither $ decodeScriptOps sBS
+            tid <- liftEither $ decodeToEither $ BS.reverse tBS
+            return (scp, OutPoint tid $ read i)
+          f _ = liftEither $ Left "Invalid syntax for txid:index:script"
+          g (s,o) = dbGetSigData s o (optSigHash opts)
 

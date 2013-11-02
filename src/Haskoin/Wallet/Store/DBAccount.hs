@@ -1,12 +1,13 @@
+-- |This module provides an account type for the wallet database
 module Haskoin.Wallet.Store.DBAccount
 ( DBAccount(..)
 , AccountData(..)
 , AccKey(..)
-, getAcc
-, putAcc
-, newAcc
-, newMSAcc
-, listAccs
+, dbGetAcc
+, dbPutAcc
+, dbNewAcc
+, dbNewMSAcc
+, dbAccList
 , isMSAcc
 )
 where
@@ -27,6 +28,7 @@ import Haskoin.Wallet.Keys
 import Haskoin.Protocol
 import Haskoin.Util
 
+-- |Account information shared by regular and multisignature accounts
 data AccountData = 
     AccountData
         { accName      :: String
@@ -41,6 +43,7 @@ data AccountData =
         } 
     deriving (Eq, Show)
 
+-- |Account type used in the wallet database
 data DBAccount = 
     DBAccountMS
         { runAccData :: AccountData
@@ -52,27 +55,61 @@ data DBAccount =
         { runAccData :: AccountData }
     deriving (Eq, Show)
 
+-- |Test if the argument is a multisignature account
 isMSAcc :: DBAccount -> Bool
 isMSAcc (DBAccount _) = False
 isMSAcc _           = True
 
+-- |Key used for querying accounts with dbGetAcc. 
+-- Accounts can be queried by name or by position
 data AccKey = AccName String | AccPos Int 
     deriving (Eq, Show)
 
-getAcc :: MonadResource m => AccKey -> WalletDB m (Maybe DBAccount)
-getAcc key = case key of
-    AccPos i     -> f <$> (dbGet $ "acc_" ++ encodeInt i)
-    AccName name -> (dbGet $ "accname_" ++ name) >>= \bsM ->
-        maybe (return Nothing) ((f <$>) . dbGet . bsToString) bsM
-    where f = (decodeToMaybe =<<)
+-- |Query an account from the database using an AccKey query type
+dbGetAcc :: MonadResource m => AccKey -> WalletDB m DBAccount
+dbGetAcc key = case key of
+    AccPos i     -> f =<< dbGet . ("acc_" ++) =<< (liftEither $ dbEncodeInt i)
+    AccName name -> f =<< dbGet . bsToString =<< (dbGet $ "accname_" ++ name)
+    where f = liftEither . decodeToEither
 
-putAcc :: MonadResource m => DBAccount -> WalletDB m ()
-putAcc acc = do
+-- |Store an account in the wallet database
+dbPutAcc :: MonadResource m => DBAccount -> WalletDB m ()
+dbPutAcc acc = do
+    key <- ("acc_" ++) <$> (liftEither $ dbEncodeInt $ accPos aData)
     dbPut key $ encode' acc
-    dbPut ("accname_" ++ name) $ stringToBS key
-    where pos  = encodeInt $ accPos $ runAccData acc
-          key  = "acc_" ++ pos
-          name = accName $ runAccData acc
+    dbPut ("accname_" ++ accName aData) $ stringToBS key
+    where aData = runAccData acc
+
+-- |Create a new regular account from a name
+dbNewAcc :: MonadResource m => String -> WalletDB m DBAccount
+dbNewAcc name = dbExists name >>= \exists -> if exists
+    then liftEither $ Left $ "newAcc: Account " ++ name ++ " already exists"
+    else dbGetConfig cfgMaster >>= \master -> do
+        index  <- (+1) <$> dbGetConfig cfgAccIndex
+        count  <- (+1) <$> dbGetConfig cfgAccCount
+        let (k,i) = head $ accPubKeys master index
+            acc   = DBAccount $ buildAccData name i count k
+        dbPutConfig $ \cfg -> cfg{ cfgAccIndex = i 
+                                 , cfgAccCount = count
+                                 , cfgFocus    = count
+                                 }
+        dbPutAcc acc >> return acc
+
+-- |Create a new multisignature account from a name and public keys
+dbNewMSAcc :: MonadResource m => String -> Int -> [XPubKey] 
+           -> WalletDB m DBAccount
+dbNewMSAcc name r mskeys = dbExists name >>= \exists -> if exists
+    then liftEither $ Left $ "newMSAcc: Account " ++ name ++ " already exists"
+    else dbGetConfig cfgMaster >>= \master -> do
+        index  <- (+1) <$> dbGetConfig cfgAccIndex
+        count  <- (+1) <$> dbGetConfig cfgAccCount
+        let (k,i)   = head $ accPubKeys master index
+            acc     = DBAccountMS (buildAccData name i count k) mskeys r ""
+        dbPutConfig $ \cfg -> cfg{ cfgAccIndex = i 
+                                 , cfgAccCount = count
+                                 , cfgFocus    = count
+                                 }
+        dbPutAcc acc >> return acc
 
 buildAccData :: String -> Word32 -> Int -> AccPubKey -> AccountData
 buildAccData name index pos key = 
@@ -88,48 +125,15 @@ buildAccData name index pos key =
         , accCoinCount = 0
         }
 
-newAcc :: MonadResource m => String -> WalletDB m DBAccount
-newAcc name = getAcc (AccName name) >>= \prev -> case prev of
-    Just _ -> error $ "Account already exists: " ++ name
-    Nothing -> do
-        master <- (fromMaybe (error "No seed")) <$> getConfig cfgMaster
-        index  <- (fromMaybe 0) . ((+1) <$>)    <$> getConfig cfgAccIndex
-        count  <- (fromMaybe 0)                 <$> getConfig cfgAccCount
-        let (k,i) = head $ accPubKeys master index
-            acc   = DBAccount $ buildAccData name i (count+1) k
-        putAcc acc
-        putConfig $ \cfg -> cfg{ cfgAccIndex = i 
-                               , cfgAccCount = count+1
-                               , cfgFocus    = count+1
-                               }
-        return acc
+-- |List all the accounts in the wallet database
+dbAccList :: MonadResource m => WalletDB m [DBAccount]
+dbAccList = do
+    count <- dbGetConfig cfgAccCount
+    key   <- ("acc_" ++) <$> (liftEither $ dbEncodeInt 1)
+    vals  <- dbIter key "acc_" count
+    liftEither $ forM vals decodeToEither
 
-newMSAcc :: MonadResource m => String -> Int -> [XPubKey] 
-         -> WalletDB m DBAccount
-newMSAcc name r mskeys = getAcc (AccName name) >>= \prev -> case prev of
-    Just _  -> error $ "Account already exists: " ++ name
-    Nothing -> do
-        master <- (fromMaybe (error "No seed")) <$> getConfig cfgMaster
-        index  <- (fromMaybe 0) . ((+1) <$>)    <$> getConfig cfgAccIndex
-        count  <- (fromMaybe 0)                 <$> getConfig cfgAccCount
-        let (k,i)   = head $ accPubKeys master index
-            accData = buildAccData name i (count+1) k
-            acc     = DBAccountMS accData mskeys r ""
-        putAcc acc
-        putConfig $ \cfg -> cfg{ cfgAccIndex = i 
-                               , cfgAccCount = count+1
-                               , cfgFocus    = count+1
-                               }
-        return acc
-
-listAccs :: MonadResource m => WalletDB m [DBAccount]
-listAccs = do
-    count <- (fromMaybe 0) <$> getConfig cfgAccCount
-    vals  <- dbIter ("acc_" ++ encodeInt 1) "acc_" count
-    return $ catMaybes $ map decodeToMaybe vals
-
-{- Binary Instances -}
-
+-- |Binary instance for AccountData
 instance Binary AccountData where
 
     get = AccountData <$> (bsToString . getVarString <$> get)
@@ -153,6 +157,7 @@ instance Binary AccountData where
         put $ VarInt $ fromIntegral ic
         put $ VarInt $ fromIntegral cc
 
+-- |Binary instance for Account
 instance Binary DBAccount where
 
     get = getWord8 >>= \t -> case t of

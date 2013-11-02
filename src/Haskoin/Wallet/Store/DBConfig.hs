@@ -1,8 +1,9 @@
+-- |Configuration module for wallet database
 module Haskoin.Wallet.Store.DBConfig
 ( DBConfig(..)
-, initConfig
-, getConfig
-, putConfig
+, dbInitConfig
+, dbGetConfig
+, dbPutConfig
 ) where
 
 import Control.Applicative
@@ -18,6 +19,7 @@ import Haskoin.Wallet.Store.Util
 import Haskoin.Protocol
 import Haskoin.Util
 
+-- |Data type for holding wallet configuration options
 data DBConfig = DBConfig { cfgMaster    :: MasterKey
                          , cfgVersion   :: Int
                          , cfgAccIndex  :: Word32
@@ -26,20 +28,22 @@ data DBConfig = DBConfig { cfgMaster    :: MasterKey
                          , cfgCoinCount :: Int
                          } deriving (Eq, Show)
 
-initConfig :: MonadResource m => DBConfig -> WalletDB m ()
-initConfig cfg = dbGet "config" >>= \cfgM -> case cfgM of
-    Just _  -> error "Database already initialized"
-    Nothing -> dbPut "config" $ encode' cfg
+-- |Initialize the database with an initial configuration
+dbInitConfig :: MonadResource m => DBConfig -> WalletDB m ()
+dbInitConfig cfg = go =<< dbExists "config"
+    where go True  = liftEither $ Left "Configuration already initialized"
+          go False = dbPut "config" $ encode' cfg
 
-getConfig :: MonadResource m => (DBConfig -> a) -> WalletDB m (Maybe a)
-getConfig f = dbGet "config" >>= \cfg -> return $
-    f <$> (decodeToMaybe =<< cfg)
+-- |Retrieve one value of the configuration type
+dbGetConfig :: MonadResource m => (DBConfig -> a) -> WalletDB m a
+dbGetConfig f = f <$> (liftEither . decodeToEither =<< (dbGet "config"))
 
-putConfig :: MonadResource m => (DBConfig -> DBConfig) -> WalletDB m ()
-putConfig f = dbGet "config" >>= \cfgM -> case decodeToMaybe =<< cfgM of
-    Just cfg -> dbPut "config" $ encode' $ f cfg
-    _ -> return ()
+-- |Update one value of the configuration type
+dbPutConfig :: MonadResource m => (DBConfig -> DBConfig) -> WalletDB m ()
+dbPutConfig f = go =<< (liftEither . decodeToEither =<< (dbGet "config"))
+    where go cfg = dbPut "config" $ encode' $ f cfg
 
+-- |Binary instance for the configuration type
 instance Binary DBConfig where
 
     get = DBConfig <$> (get >>= \key -> f $ loadMasterKey key)

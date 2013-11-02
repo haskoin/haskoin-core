@@ -1,10 +1,11 @@
+-- |This module provides an address type for use in the wallet database
 module Haskoin.Wallet.Store.DBAddress
 ( DBAddress(..)
 , AddressKey(..)
-, getAddr
-, putAddr
-, genAddr
-, listAddr
+, dbGetAddr
+, dbPutAddr
+, dbGenAddr
+, dbAddrList
 ) where
 
 import Control.Monad
@@ -23,6 +24,7 @@ import Haskoin.Wallet.Keys
 import Haskoin.Protocol
 import Haskoin.Util
 
+-- |Address type used in the wallet database
 data DBAddress = DBAddress 
     { addrBase58   :: String
     , addrLabel    :: String
@@ -33,6 +35,8 @@ data DBAddress = DBAddress
     , addrInt      :: Bool
     } deriving (Eq, Show)
 
+-- |Keys used for querying addresses with dbGetAddr
+-- Addresses can be queried by base58 address or position
 data AddressKey = AddrBase58 { addrKeyBase58 :: String }
                 | AddrExt { addrKeyAccPos :: Int 
                           , addrKeyPos    :: Int
@@ -42,27 +46,51 @@ data AddressKey = AddrBase58 { addrKeyBase58 :: String }
                           }
                 deriving (Eq, Show)
 
-getAddr :: MonadResource m => AddressKey -> WalletDB m (Maybe DBAddress)
-getAddr key = case key of
+-- |Query an address from the database using an AddressKey query type
+dbGetAddr :: MonadResource m => AddressKey -> WalletDB m DBAddress
+dbGetAddr key = case key of
     AddrBase58 addr -> do
-        bsM <- dbGet $ "addrbase58_" ++ addr
-        maybe (return Nothing) ((f <$>) . dbGet . bsToString) bsM
-    _ -> f <$> (dbGet $ prefix ++ accPos ++ "_" ++ addrPos)
-    where prefix  = case key of AddrExt _ _ -> "addrext_"
+        f =<< dbGet . bsToString =<< (dbGet $ "addrbase58_" ++ addr)
+    _ -> do
+        acPos <- liftEither $ dbEncodeInt $ addrKeyAccPos key
+        adPos <- liftEither $ dbEncodeInt $ addrKeyPos key
+        f =<< (dbGet $ prefix ++ acPos ++ "_" ++ adPos)
+    where f       = liftEither . decodeToEither
+          prefix  = case key of AddrExt _ _ -> "addrext_"
                                 AddrInt _ _ -> "addrint_"
-          accPos  = encodeInt $ addrKeyAccPos key
-          addrPos = encodeInt $ addrKeyPos key
-          f       = (decodeToMaybe =<<)
 
-putAddr :: MonadResource m => DBAddress -> WalletDB m ()
-putAddr addr = do
+-- |Save an address in the wallet database
+dbPutAddr :: MonadResource m => DBAddress -> WalletDB m ()
+dbPutAddr addr = do
+    acPos <- liftEither $ dbEncodeInt $ addrAccPos addr
+    adPos <- liftEither $ dbEncodeInt $ addrPos addr
+    let key = prefix ++ acPos ++ "_" ++ adPos
     dbPut key $ encode' addr
     dbPut ("addrbase58_" ++ addrBase58 addr) $ stringToBS key
     where prefix  = if addrInt addr then "addrint_" else "addrext_"
-          accp  = encodeInt $ addrAccPos addr
-          addrp = encodeInt $ addrPos addr
-          key   = prefix ++ accp ++ "_" ++ addrp
 
+-- |Generate new addresses and save them in the wallet database
+dbGenAddr :: MonadResource m => Int -> Int -> Bool -> WalletDB m [DBAddress]
+dbGenAddr pos count int = do
+    acc <- dbGetAcc $ AccPos pos
+    let addrs  = map (buildAddr acc int) $ zip (take count $ f acc) [1..]
+    dbPutAcc acc{ runAccData = newData addrs $ runAccData acc }
+    forM_ addrs dbPutAddr
+    return addrs
+    where newData addrs aData
+              | int       = aData{ accIntIndex = addrIndex $ last addrs
+                                 , accIntCount = accIntCount aData + count
+                                 }
+              | otherwise = aData{ accExtIndex = addrIndex $ last addrs
+                                 , accExtCount = accExtCount aData + count
+                                 }
+          f (DBAccount d)
+              | int       = intAddrs (accKey d) (accIntIndex d + 1)
+              | otherwise = extAddrs (accKey d) (accExtIndex d + 1)
+          f (DBAccountMS d mk r _)
+              | int       = intMulSigAddrs (accKey d) mk r (accIntIndex d + 1)
+              | otherwise = extMulSigAddrs (accKey d) mk r (accExtIndex d + 1)
+    
 buildAddr :: DBAccount -> Bool -> ((String,Word32),Int) -> DBAddress
 buildAddr acc int ((s,i),n) = 
     DBAddress { addrBase58   = s
@@ -75,44 +103,17 @@ buildAddr acc int ((s,i),n) =
               }
     where f = if int then accIntCount else accExtCount
 
-genAddr :: MonadResource m => Int -> Int -> Bool -> WalletDB m [DBAddress]
-genAddr pos count int = getAcc (AccPos pos) >>= \accM -> case accM of
-    Nothing  -> error $ "Invalid account index: " ++ (show pos)
-    Just acc -> do
-        let addrs  = map (buildAddr acc int) $ zip (take count $ f acc) [1..]
-            accDat = runAccData acc
-            intDat = accDat{ accIntIndex = addrIndex $ last addrs
-                           , accIntCount = accIntCount accDat + count
-                           }
-            extDat = accDat{ accExtIndex = addrIndex $ last addrs
-                           , accExtCount = accExtCount accDat + count
-                           }
-        putAcc acc{ runAccData = if int then intDat else extDat }
-        forM_ addrs putAddr
-        return addrs
-    where f (DBAccount d)
-              | int       = intAddrs (accKey d) (accIntIndex d + 1)
-              | otherwise = extAddrs (accKey d) (accExtIndex d + 1)
-          f (DBAccountMS d mk r _)
-              | int       = intMulSigAddrs (accKey d) mk r (accIntIndex d + 1)
-              | otherwise = extMulSigAddrs (accKey d) mk r (accExtIndex d + 1)
-
-listAddr :: MonadResource m => Int -> Int -> Int -> Bool 
-         -> WalletDB m [DBAddress]
-listAddr pos from count int
-    | from  < 0 = error $ "Invalid from: " ++ (show from)
-    | count < 0 = error $ "Invalid count: " ++ (show count)
-    | otherwise = getAcc (AccPos pos) >>= \accM -> case accM of
-        Nothing -> error $ "Invalid account index: " ++ (show pos)
-        Just acc -> do
-            vals <- dbIter key prefix count
-            return $ catMaybes $ map decodeToMaybe vals
+-- |List addresses in the wallet database
+dbAddrList :: MonadResource m => Int -> Int -> Int -> Bool 
+           -> WalletDB m [DBAddress]
+dbAddrList pos from count int = do
+    prefix <- (start ++) . (++ "_")  <$> (liftEither $ dbEncodeInt pos)
+    key    <- (prefix ++) <$> (liftEither $ dbEncodeInt from)
+    vals   <- dbIter key prefix count
+    liftEither $ forM vals decodeToEither
     where start  = if int then "addrint_" else "addrext_" 
-          prefix = start ++ (encodeInt pos) ++ "_"
-          key    = prefix ++ (encodeInt from)
 
-{- Binary Instance -}
-
+-- |Binary instance for Address type
 instance Binary DBAddress where
 
     get = DBAddress <$> (bsToString . getVarString <$> get)

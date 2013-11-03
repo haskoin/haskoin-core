@@ -49,12 +49,17 @@ data Response = Response
                   }
               deriving (Eq, Show)
 
-data Message = MRequest Request | MResponse Response
+data Message = MRequest   Request
+             | MResponse  Response
+             | BRequest   [Request]
+             | BResponse  [Response]
     deriving (Eq, Show)
 
 instance FromJSON Message where
     parseJSON v = (return . MRequest  =<< parseJSON v)
               <|> (return . MResponse =<< parseJSON v)
+              <|> (return . BRequest  =<< parseJSON v)
+              <|> (return . BResponse =<< parseJSON v)
 
 instance FromJSON Request where
     parseJSON = withObject "JSONRPC Request" $ \v -> do
@@ -117,7 +122,9 @@ instance ToJSON Response where
 
 instance ToJSON Message where
     toJSON (MResponse r) = toJSON r
-    toJSON (MRequest r) = toJSON r
+    toJSON (MRequest r) =  toJSON r
+    toJSON (BRequest b) =  toJSON $ map toJSON b
+    toJSON (BResponse b) = toJSON $ map toJSON b
 
 forceStructured :: Value -> Value
 forceStructured v | isStructured v = v

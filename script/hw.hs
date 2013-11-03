@@ -9,6 +9,7 @@ import Control.Monad
 import Control.Applicative
 import Control.Monad.Trans
 import Control.Monad.Trans.Resource
+import Control.Monad.Trans.Either
 import Control.Exception
 
 import Data.Maybe
@@ -62,7 +63,7 @@ options =
 parseCount :: String -> Options -> IO Options
 parseCount s opts 
     | res > 0   = return opts{ optCount = res }
-    | otherwise = error $ "Invalid count option: " ++ s
+    | otherwise = error $ unwords ["Invalid count option:", s]
     where res = read s
 
 parseSigHash :: String -> Options -> IO Options
@@ -71,75 +72,58 @@ parseSigHash s opts = return opts{ optSigHash = res }
           res | s == "ALL" = SigAll acp
               | s == "NONE" = SigNone acp
               | s == "SINGLE" = SigSingle acp
-              | otherwise = error "Invalid SigHash. Has to be ALL|NONE|SINGLE"
+              | otherwise = error "SigHash must be one of ALL|NONE|SINGLE"
 
 usageHeader :: String
 usageHeader = "Usage: hw [<options>] <command> [<args>]"
 
-cmdHelp :: String
+cmdHelp :: [String]
 cmdHelp = 
-    "Valid hw commands: \n" 
- ++ "  init      <seed>                      " 
- ++ "Initialize a wallet\n"
- ++ "  list      [acc]                       "
- ++ "Display most recent addresses\n" 
- ++ "  listfrom  <from> [acc]                "
- ++ "Display addresses from an index\n" 
- ++ "  listall   [acc]                       "
- ++ "Display all addresses\n" 
- ++ "  new       <label> [acc]               "
- ++ "Generate an address with a label\n"
- ++ "  genaddr   [acc]                       "
- ++ "Generate new addresses\n"
- ++ "  label     <index> <label> [acc]       "
- ++ "Add a label to an address\n"
- ++ "  balance   [acc]                       "
- ++ "Display account balance\n"
- ++ "  totalbalance                          "
- ++ "Display sum of all account balances\n"
- ++ "  focus     <acc>                       "
- ++ "Set the focused account\n"
- ++ "  newacc    <name>                      "
- ++ "Create a new account\n"
- ++ "  newms     <name> <M> {pubkeys...}     "
- ++ "Create a new multisig account\n"
- ++ "  listacc                               "
- ++ "List all accounts\n"
- ++ "  dumpkey   [acc]                       "
- ++ "Dump pubkey to stdout\n"
- ++ "  importtx  <tx>                        "
- ++ "Import transaction\n"
- ++ "  coins     [acc]                       "
- ++ "List transaction outputs\n"
- ++ "  allcoins                              "
- ++ "List all transaction outputs\n"
- ++ "  decodetx  <tx>                        "
- ++ "Decode HEX transaction\n"
- ++ "  buildtx   {txid:id...} {addr:amnt...} "
- ++ "Build a new transaction\n"
- ++ "  signtx    <tx> {txid:id:script...}    "
- ++ "Sign a transaction\n"
+    [ "Valid hw commands: " 
+    , "  init      <seed>                      Initialize a wallet"
+    , "  list      [acc]                       Display most recent addresses" 
+    , "  listfrom  <from> [acc]                Display addresses from an index" 
+    , "  listall   [acc]                       Display all addresses" 
+    , "  new       <label> [acc]               Generate address with a label"
+    , "  genaddr   [acc]                       Generate new addresses"
+    , "  label     <index> <label> [acc]       Add a label to an address"
+    , "  balance   [acc]                       Display account balance"
+    , "  totalbalance                          Display total balance"
+    , "  focus     <acc>                       Set the focused account"
+    , "  newacc    <name>                      Create a new account"
+    , "  newms     <name> <M> {pubkeys...}     Create a new multisig account"
+    , "  listacc                               List all accounts"
+    , "  dumpkey   [acc]                       Dump pubkey to stdout"
+    , "  importtx  <tx>                        Import transaction"
+    , "  coins     [acc]                       List transaction outputs"
+    , "  allcoins                              List all transaction outputs"
+    , "  decodetx  <tx>                        Decode HEX transaction"
+    , "  buildtx   {txid:id...} {addr:amnt...} Build a new transaction"
+    , "  signtx    <tx> {txid:id:script...}    Sign a transaction"
+    ]
 
 warningMsg :: String
-warningMsg = "\n**This software is experimental. " 
-    ++ "Use only small amounts of Bitcoins**\n"
+warningMsg = unwords [ "***"
+                     , "This software is experimental."
+                     , "Use only small amounts of Bitcoins"
+                     , "***"
+                     ]
 
 versionMsg :: String
 versionMsg = "haskoin wallet version 0.1.1.0"
 
 usage :: String
-usage = usageInfo usageHeader options ++ cmdHelp
+usage = unlines $ [warningMsg, usageInfo usageHeader options] ++ cmdHelp
+
+formatStr :: String -> IO ()
+formatStr str = forM_ (lines str) putStrLn
 
 main :: IO ()
-main = do
-    putStrLn warningMsg
-    args <- E.getArgs
-    case getOpt Permute options args of
-        (o,n,[]) -> do
-            opts <- foldl (>>=) (return defaultOptions) o
-            process opts n
-        (_,_,msgs) ->
-            putStrLn $ concat msgs ++ usageInfo usageHeader options
+main = E.getArgs >>= \args -> case getOpt Permute options args of
+    (o,n,[]) -> do
+        opts <- foldl (>>=) (return defaultOptions) o
+        process opts n
+    (_,_,msgs) -> formatStr $ unlines $ msgs ++ [usage]
 
 -- Create and return haskoin working directory
 getWorkDir :: IO FilePath
@@ -151,13 +135,13 @@ getWorkDir = do
 process :: Options -> [String] -> IO ()
 process opts cs 
     -- -h and -v can be called without a command
-    | optHelp opts = putStrLn usage
-    | optVersion opts = putStrLn versionMsg
+    | optHelp opts = formatStr usage
+    | optVersion opts = formatStr versionMsg
     -- otherwise require a command
-    | null cs = putStrLn usage
+    | null cs = formatStr usage
     | otherwise = getWorkDir >>= \dir -> do
         let (c,args) = (head cs, tail cs)
-        runResourceT $ runWalletDB dir $ checkInit c >> case c of
+        res <- runResourceT $ runWalletDB dir $ checkInit c >> case c of
             "init"         -> cmdInit opts args
             "list"         -> cmdList opts args
             "listfrom"     -> cmdListFrom opts args
@@ -178,260 +162,224 @@ process opts cs
             "decodetx"     -> cmdDecodeTx opts args
             "buildtx"      -> cmdBuildTx opts args
             "signtx"       -> cmdSignTx opts args
-            _              -> error $ "Invalid command: " ++ c
-        putStrLn ""
-
-checkInit :: String -> CmdAction 
-checkInit str 
-    -- Command that can be called without an initialized database
-    | str `elem` [ "init" 
-                 , "decodetx"
-                 , "buildtx"
-                 ] = return ()
-    | otherwise = getConfig cfgVersion >>= \res -> unless (isJust res) $ 
-        error $ "Wallet not initialized. Call init first"
+            _              -> left $ unwords ["Invalid command:", c]
+        case res of
+            Left  err -> formatStr err
+            Right str -> formatStr str
 
 type Args = [String]
-type CmdAction = WalletDB (ResourceT IO) ()
+type CmdAction = WalletDB (ResourceT IO) String
+
+checkInit :: String -> WalletDB (ResourceT IO) ()
+checkInit str 
+    -- Commands that can be called without an initialized database
+    | str `elem` [ "init", "decodetx", "buildtx" ] = return ()
+    | otherwise = dbExists "config" >>= \exists -> if exists
+        then return ()
+        else left "Wallet not initialized. Call init first"
 
 -- Return the account from the arguments, or get the current focused account
-accFromArgs :: Args -> WalletDB (ResourceT IO) DBAccount
-accFromArgs args = case args of
-    [] -> getConfig cfgFocus >>= \focusM -> case focusM of
-        Nothing  -> error $ "No focus account in configuration"
-        Just pos -> (getAcc $ AccPos pos) >>= \accM -> case accM of
-            Nothing  -> error $ "Invalid account"
-            Just acc -> return acc
-    name:[] -> (getAcc $ AccName name) >>= \accM -> case accM of
-        Nothing  -> error $ "Invalid account: " ++ name
-        Just acc -> return acc
+focusedAcc :: Args -> WalletDB (ResourceT IO) DBAccount
+focusedAcc args = case args of
+    []      -> (dbGetAcc . AccPos) =<< dbGetConfig cfgFocus
+    name:[] -> dbGetAcc $ AccName name
 
-formatAddr :: DBAddress -> IO ()
-formatAddr (DBAddress a l _ p _ _ _)
-    | null l    = putStrLn def
-    | otherwise = putStrLn $ def ++ lab
-    where def = (show $ p) ++ ") " ++ a
-          lab = " (" ++ l ++ ")"
+formatAddr :: DBAddress -> String
+formatAddr addr = unwords $ [ (show $ addrPos addr) ++ ")"
+                            , addrBase58 addr
+                            ] ++ label
+    where label | null $ addrLabel addr = [] 
+                | otherwise             = ["(", addrLabel addr, ")"]
 
 formatAcc :: DBAccount -> String
 formatAcc acc
-    | isMSAcc acc = "[MultiSig Account " ++ 
-        (show $ msReq acc) ++ " of " ++ 
-        (show $ length (msKeys acc) + 1) ++ "] " ++
-        (accName aData)
-    | otherwise = "[Regular Account] " ++ (accName aData)
-    where aData = runAccData acc
+    | isMSAcc acc = unwords [ "[", "MultiSig Account"
+                            , show $ msReq acc, "of" 
+                            , (show $ length (msKeys acc) + 1) 
+                            , "]", name
+                            ]
+    | otherwise   = unwords [ "[ Regular Account ]", name ]
+    where name = accName $ runAccData acc
 
-formatPages :: Int -> Int -> DBAccount -> IO ()
-formatPages from count acc = do
-    putStr $ formatAcc acc
-    putStr $ " (Addresses " ++(show from) ++ " to " ++ (show $ from + count - 1) 
-    putStrLn $ " of " ++ (show $ accExtCount aData) ++ ")"
-    where aData = runAccData acc
+formatPage :: Int -> Int -> DBAccount -> String
+formatPage from count acc = 
+    unwords [ formatAcc acc
+            , "(" , "Addresses", a, "to", b, "of", c , ")"
+            ]
+    where a = (show from) 
+          b = (show $ from + count - 1)
+          c = (show $ accExtCount $ runAccData acc )
 
-formatCoin :: DBCoin -> CmdAction
-formatCoin (DBCoin (OutPoint tid i) (TxOut v s) _ _ p) = do
-    fromJust <$> (getAcc $ AccPos p) >>= \acc -> liftIO $ do
-    putStrLn $ "{ TxID  : " ++ (show tid)
-    putStrLn $ "  Index : " ++ (show i)
-    putStrLn $ "  Value : " ++ (show v)
-    putStrLn $ "  Script: " ++ (bsToHex $ encodeScriptOps s)
-    putStrLn $ "  Addr  : " ++ case decodeOutput s of
-        Right (PayPKHash a)     -> addrToBase58 a
-        Right (PayScriptHash a) -> addrToBase58 a
-        _                       -> error "formatCoin: invalid script type"
-    putStrLn $ "  Acc   : " ++ (accName $ runAccData acc)
-    putStrLn "}"
+formatCoin :: DBCoin -> DBAccount -> String
+formatCoin (DBCoin (OutPoint tid i) (TxOut v s) _ _ p) acc = 
+    unlines 
+        [ "{ TxID  : " ++ (show tid) 
+        , "  Index : " ++ (show i) 
+        , "  Value : " ++ (show v) 
+        , "  Script: " ++ (bsToHex $ encodeScriptOps s) 
+        , "  Addr  : " ++ fAddr
+        , "  Acc   : " ++ (accName $ runAccData acc)
+        , "}"
+        ]
+    where fAddr = either (const "-") addrToBase58 $ scriptRecipient s
 
 cmdInit :: Options -> Args -> CmdAction
-cmdInit opts args
-    | length args /= 1 = liftIO $ putStr usage
-    | otherwise = do
-        dbInit $ head args
-        cmdGenAddr opts [] -- generate some addresses
+cmdInit opts args = if length args /= 1 then left usage else do
+    dbInit $ head args
+    cmdGenAddr opts [] -- generate some addresses
 
 cmdList :: Options -> Args -> CmdAction
-cmdList opts args 
-    | length args > 1 = liftIO $ putStr usage
-    | otherwise = accFromArgs args >>= \acc -> do
-        let total = accExtCount $ runAccData acc
-            count = min (optCount opts) total
-            from  = total - count + 1
-        addr <- listAddr (accPos $ runAccData acc) from count False
-        liftIO $ if null addr
-            then putStrLn $ formatAcc acc ++ "\nNo addresses to display"
-            else formatPages from (length addr) acc >>
-                 forM_ addr formatAddr
+cmdList opts args = if length args > 1 then left usage else do
+    acc <- focusedAcc args
+    let total = accExtCount $ runAccData acc
+        count = min (optCount opts) total
+        from  = total - count + 1
+    addr <- dbAddrList (accPos $ runAccData acc) from count False
+    return $ if null addr
+        then unlines [formatAcc acc, "No addresses to display"]
+        else unlines $ (formatPage from (length addr) acc):(map formatAddr addr)
 
 cmdListFrom :: Options -> Args -> CmdAction
-cmdListFrom opts args 
-    | length args > 2 = liftIO $ putStr usage
-    | otherwise = (accFromArgs $ drop 1 args) >>= \acc -> do
-        let from = read $ args !! 0
-        addr <- listAddr (accPos $ runAccData acc) from (optCount opts) False
-        liftIO $ if null addr
-            then putStrLn $ formatAcc acc ++ "\nNo addresses to display"
-            else formatPages from (length addr) acc >>
-                 forM_ addr formatAddr
+cmdListFrom opts args = if length args > 2 then left usage else do
+    acc <- focusedAcc $ drop 1 args
+    let from = read $ args !! 0
+    addr <- dbAddrList (accPos $ runAccData acc) from (optCount opts) False
+    return $ if null addr
+        then unlines [formatAcc acc, "No addresses to display"]
+        else unlines $ (formatPage from (length addr) acc):(map formatAddr addr)
 
 cmdListAll :: Options -> Args -> CmdAction
-cmdListAll opts args 
-    | length args > 1 = liftIO $ putStr usage
-    | otherwise = accFromArgs args >>= \acc -> do
-        let aData = runAccData acc
-        addr <- listAddr (accPos aData) 1 (accExtCount aData) False
-        liftIO $ if null addr
-            then putStrLn $ formatAcc acc ++ "\nNo addresses to display" 
-            else formatPages 1 (length addr) acc >>
-                 forM_ addr formatAddr
+cmdListAll opts args = if length args > 1 then left usage else do
+    acc <- focusedAcc args
+    let aData = runAccData acc
+    addr <- dbAddrList (accPos aData) 1 (accExtCount aData) False
+    return $ if null addr
+        then unlines [formatAcc acc, "No addresses to display"]
+        else unlines $ (formatPage 1 (length addr) acc):(map formatAddr addr)
 
 cmdNew :: Options -> Args -> CmdAction
-cmdNew opts args 
-    | length args > 2 = liftIO $ putStr usage
-    | otherwise = (accFromArgs $ drop 1 args) >>= \acc -> do
-        addr <- head <$> (genAddr (accPos $ runAccData acc) 1 False)
-        let newAddr = addr{ addrLabel = args !! 0 }
-        putAddr newAddr
-        liftIO $ putStrLn (formatAcc acc ++ "\n") >>
-                 formatAddr newAddr
+cmdNew opts args = if length args > 2 then left usage else do
+    acc  <- focusedAcc $ drop 1 args
+    addr <- head <$> (dbGenAddr (accPos $ runAccData acc) 1 False)
+    let newAddr = addr{ addrLabel = args !! 0 }
+    dbPutAddr newAddr
+    return $ unlines [formatAcc acc, formatAddr newAddr]
 
 cmdGenAddr :: Options -> Args -> CmdAction
-cmdGenAddr opts args 
-    | length args > 1 = liftIO $ putStr usage
-    | otherwise = accFromArgs args >>= \acc -> do
-        addr <- genAddr (accPos $ runAccData acc) (optCount opts) False
-        cmdList opts args
+cmdGenAddr opts args = if length args > 1 then left usage else do
+    acc  <- focusedAcc args
+    addr <- dbGenAddr (accPos $ runAccData acc) (optCount opts) False
+    cmdList opts args
 
 cmdFocus :: Options -> Args -> CmdAction
-cmdFocus opts args
-    | length args /= 1 = liftIO $ putStr usage
-    | otherwise = getAcc (AccName $ head args) >>= \accM -> case accM of
-        Nothing  -> error $ "Invalid account: " ++ (head args)
-        Just acc -> do
-            putConfig $ \cfg -> cfg{ cfgFocus = accPos $ runAccData acc }
-            cmdList opts args
+cmdFocus opts args = if length args /= 1 then left usage else do
+    acc <- dbGetAcc $ AccName $ head args
+    dbPutConfig $ \cfg -> cfg{ cfgFocus = accPos $ runAccData acc }
+    cmdList opts args
 
 cmdNewAcc :: Options -> Args -> CmdAction
-cmdNewAcc opts args
-    | length args /= 1 = liftIO $ putStr usage
-    | otherwise = do
-        newAcc $ head args
-        cmdGenAddr opts args
+cmdNewAcc opts args = if length args /= 1 then left usage else do
+    dbNewAcc $ head args
+    cmdGenAddr opts args
 
 cmdNewMS :: Options -> Args -> CmdAction
-cmdNewMS opts args
-    | length args < 3 = liftIO $ putStr usage
-    | otherwise = do
-        newMSAcc name r keys
-        cmdGenAddr opts [head args]
-    where name = args !! 0
-          r    = read $ args !! 1
-          keys = map (fromJust . xPubImport) $ drop 2 args
+cmdNewMS opts args = if length args < 3 then left usage else do
+    keys <- mapM ((liftMaybe errKey) . xPubImport) $ drop 2 args
+    dbNewMSAcc (head args) (read $ args !! 1) keys
+    cmdGenAddr opts [head args]
+    where errKey = "cmdNewMS: Error importing extended public key"
 
 cmdListAcc :: CmdAction
-cmdListAcc = listAccs >>= \accs -> forM_ accs $ \acc -> liftIO $ do
-    putStr $ formatAcc acc
-    putStrLn $ " (" ++ (show $ accExtCount $ runAccData acc) ++ " addresses)"
+cmdListAcc = unlines . (map (unwords . f)) <$> dbAccList 
+    where f acc = [ formatAcc acc
+                  , "(", show $ accExtCount $ runAccData acc
+                  , "addresses"
+                  , ")"
+                  ]
 
 cmdLabel :: Args -> CmdAction
-cmdLabel args
-    | length args > 3 = liftIO $ putStr usage
-    | otherwise = (accFromArgs $ drop 2 args) >>= \acc -> do
-        let p = read (args !! 0)
-        prev <- getAddr $ AddrExt (accPos $ runAccData acc) p
-        case prev of
-            Nothing   -> error $ "Address index not in wallet: " ++ (show p)
-            Just addr -> do
-                let newAddr = addr{ addrLabel = args !! 1 }
-                putAddr newAddr
-                liftIO $ putStrLn (formatAcc acc ++ "\n") >> 
-                         formatAddr newAddr
+cmdLabel args = if length args > 3 then left usage else do
+    acc  <- focusedAcc $ drop 2 args
+    addr <- dbGetAddr $ AddrExt (accPos $ runAccData acc) (read $ head args)
+    let newAddr = addr{ addrLabel = args !! 1 }
+    dbPutAddr newAddr
+    return $ unlines [formatAcc acc, formatAddr newAddr]
 
 cmdBalance :: Options -> Args -> CmdAction
-cmdBalance opts args
-    | length args > 1 = liftIO $ putStr usage
-    | otherwise = accFromArgs args >>= \acc -> do
-        coins <- listCoins $ accPos $ runAccData acc
-        let balance = sum $ map (fromIntegral . outValue . coinTxOut) coins
-        liftIO $ putStrLn $ formatAcc acc
-        liftIO $ putStrLn $ "Balance: " ++ (show balance)
+cmdBalance opts args = if length args > 1 then left usage else do
+    acc   <- focusedAcc args
+    coins <- dbCoinList $ accPos $ runAccData acc
+    let balance = sum $ map (fromIntegral . outValue . coinTxOut) coins
+    return $ unlines [formatAcc acc, unwords ["Balance:", show balance]]
 
 cmdTotalBalance :: Options -> Args -> CmdAction
 cmdTotalBalance opts args = do
-    coins <- listAllCoins 
+    coins <- dbCoinListAll 
     let balance = sum $ map (fromIntegral . outValue . coinTxOut) coins
-    liftIO $ putStrLn $ "Full Balance: " ++ (show balance)
+    return $ unwords ["Total Balance:", show balance]
 
 cmdDumpKey :: Args -> CmdAction
-cmdDumpKey args 
-    | length args > 1 = liftIO $ putStr usage
-    | otherwise = accFromArgs args >>= \acc -> liftIO $ do
-        putStrLn $ formatAcc acc
-        putStrLn $ xPubExport $ runAccPubKey $ accKey $ runAccData acc
+cmdDumpKey args = if length args > 1 then left usage else do
+    acc <- focusedAcc args
+    return $ unlines [ formatAcc acc
+                     , xPubExport $ runAccPubKey $ accKey $ runAccData acc
+                     ]
 
 cmdImportTx :: Args -> CmdAction
-cmdImportTx args
-    | length args /= 1 = liftIO $ putStrLn usage
-    | otherwise = case txM of
-        Nothing -> error "Could not decode transactions"
-        Just tx -> do
-            coins <- importTx tx
-            if null coins
-                then liftIO $ putStrLn "No coins imported"
-                else forM_ coins formatCoin
-        where txM = decodeToMaybe =<< (hexToBS $ head args)
+cmdImportTx args = if length args /= 1 then left usage else do
+    tx    <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS $ head args)
+    coins <- dbImportTx tx
+    if null coins then return "No coins imported" else unlines <$> forM coins f
+    where txErr = "cmdImportTx: Could not decode transaction"
+          f c = (formatCoin c) <$> (dbGetAcc $ AccPos $ coinAccPos c)
 
 cmdCoins :: Options -> Args -> CmdAction
-cmdCoins opts args
-    | length args > 1 = liftIO $ putStrLn usage
-    | otherwise = accFromArgs args >>= \acc -> do
-        coins <- listCoins $ accPos $ runAccData acc
-        liftIO $ putStrLn $ formatAcc acc
-        if null coins then liftIO $ putStrLn "No coins"
-                      else forM_ coins formatCoin
+cmdCoins opts args = if length args > 1 then left usage else do
+    acc   <- focusedAcc args
+    coins <- dbCoinList $ accPos $ runAccData acc
+    return $ unlines $ (formatAcc acc): 
+        if null coins then ["No coins"] else map (flip formatCoin acc) coins
 
 cmdAllCoins :: Options -> CmdAction
 cmdAllCoins opts = do
-    coins <- listAllCoins
-    if null coins then liftIO $ putStrLn "No coins"
-                  else forM_ coins formatCoin
+    coins <- dbCoinListAll
+    if null coins then return "No coins" else unlines <$> forM coins f
+    where f c = (formatCoin c) <$> (dbGetAcc $ AccPos $ coinAccPos c)
 
 cmdDecodeTx :: Options -> Args -> CmdAction
-cmdDecodeTx opts args
-    | null args = liftIO $ putStrLn usage
-    | isNothing bs = error "<tx>: Invalid HEX encoding"
-    | otherwise = case eitherTx of
-        Left err -> error err
-        Right tx -> liftIO $ pp tx
-    where bs       = hexToBS $ head args
-          eitherTx = decodeToEither $ fromJust bs :: Either String Tx
+cmdDecodeTx opts args = if length args /= 1 then left usage else do
+    tx <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS $ head args) 
+    return $ ppShow (tx :: Tx)
+    where txErr = "cmdDecodeTx: Could not decode transaction"
 
 cmdBuildTx :: Options -> Args -> CmdAction
-cmdBuildTx opts args
-    | length args < 2 = liftIO $ putStr usage
-    | otherwise = case buildAddrTx (map f os) (map g as) of
-        Right tx -> liftIO $ putStrLn $ bsToHex $ encode' tx
-        Left err -> error err
+cmdBuildTx opts args = if length args < 2 then left usage else do
+    ops <- mapM f os
+    ads <- mapM g as
+    tx  <- liftEither $ buildAddrTx ops ads
+    return $ bsToHex $ encode' tx
     where xs      = map (splitOn ":") args
           (os,as) = span ((== 64) . length . head) xs
-          f [t,i] = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS t) 
-                             (read i)
-          g [a,v] = (a,read v)
+          f [t,i] = do
+            tid <- liftMaybe tidErr $ (decodeToMaybe . BS.reverse) =<< hexToBS t
+            return $ OutPoint tid $ read i
+          f _     = left "Invalid syntax for txid:index"
+          g [a,v] = return (a,read v)
+          g _     = left "Invalid syntax for address:amount"
+          tidErr  = "cmdBuildTx: Could not decode outpoint txid"
 
 cmdSignTx :: Options -> Args -> CmdAction
-cmdSignTx opts args
-    | length args < 2 = liftIO $ putStr usage
-    | otherwise = do
-        tx <- liftEither $ decodeToEither $ hexToBS $ head args
-        ys <- mapRights ((g =<<) . f) (map (splitOn ":") $ tail args)
-        let sigTx = detSignTx tx (map fst ys) (map snd ys)
-        liftIO $ print $ (bsToHex . encode') <$> sigTx
+cmdSignTx opts args = if length args < 2 then left usage else do
+    tx <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS $ head args)
+    ys <- mapRights f (map (splitOn ":") $ tail args)
+    let sigTx = detSignTx tx (map fst ys) (map snd ys)
+    return $ show $ (bsToHex . encode') <$> sigTx
     where f [t,i,s] = do
             sBS <- liftMaybe "Invalid script HEX encoding" $ hexToBS s
             tBS <- liftMaybe "Invalid txid HEX encoding" $ hexToBS t
             scp <- liftEither $ decodeScriptOps sBS
             tid <- liftEither $ decodeToEither $ BS.reverse tBS
-            return (scp, OutPoint tid $ read i)
-          f _ = liftEither $ Left "Invalid syntax for txid:index:script"
-          g (s,o) = dbGetSigData s o (optSigHash opts)
+            dbGetSigData scp (OutPoint tid $ read i) $ optSigHash opts
+          f _ = left "Invalid syntax for txid:index:script"
+          txErr = "cmdSignTx: Could not decode transaction"
 

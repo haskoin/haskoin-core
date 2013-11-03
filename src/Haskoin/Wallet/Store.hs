@@ -40,6 +40,9 @@ module Haskoin.Wallet.Store
 -- Store
 , dbInit
 , dbGetSigData
+, dbExists
+, liftEither
+, liftMaybe
 ) where
 
 import Control.Monad.Reader
@@ -71,7 +74,7 @@ import Haskoin.Util
 
 dbInit :: MonadResource m => String -> WalletDB m ()
 dbInit seed = do
-    master <- liftEither $ maybeToEither msg $ makeMasterKey $ stringToBS seed
+    master <- liftMaybe msg $ makeMasterKey $ stringToBS seed
     dbInitConfig $ DBConfig { cfgMaster    = master
                             , cfgVersion   = 1
                             , cfgAccIndex  = maxBound

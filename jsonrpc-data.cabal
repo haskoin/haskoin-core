@@ -54,5 +54,11 @@ library
   
   -- Other library packages from which modules are imported.
   build-depends:     base ==4.6.*,
+                     text,
                      vector,
-                     aeson
+                     aeson,
+                     attoparsec
+
+Test-Suite test-jsonrpc-data
+  type:              exitcode-stdio-1.0
+  main-is:           Main.hs

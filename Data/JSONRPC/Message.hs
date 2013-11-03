@@ -16,10 +16,11 @@ import Prelude hiding (putStrLn)
 import Control.Applicative
 import Control.Monad
 import Data.Maybe
+
 import Data.Text (Text)
 import Data.Vector (fromList)
 
-import Data.Aeson.Types hiding (Error)
+import Data.Aeson.Types
 import Data.Attoparsec.Combinator
  
 type ID = Maybe Int
@@ -41,7 +42,7 @@ data Response = Response
                   { responseID :: ID
                   , responseResult :: Value
                   }
-              | Error
+              | ErrorResponse
                   { errorID :: ID
                   , errorCode :: Int
                   , errorMessage :: String
@@ -90,7 +91,7 @@ instance FromJSON Response where
                     c <- e .: "code"
                     m <- e .: "message"
                     md <- e .:? "data"
-                    return $ Error i c m md
+                    return $ ErrorResponse i c m md
                 Nothing -> mzero
 
 instance ToJSON Request where
@@ -98,11 +99,11 @@ instance ToJSON Request where
         [ ("jsonrpc" .= ("2.0" :: String))
         , ("id"      .= i)
         , ("method"  .= m)
-        ] ++ (maybeToList $ ("params".=) . forceStructured <$> mp)
+        ] ++ (maybeToList $ ("params".=) . forceStruct <$> mp)
     toJSON (Notification m mp) = object $
         [ ("jsonrpc" .= ("2.0" :: String))
         , ("method"  .= m)
-        ] ++ (maybeToList $ ("params".=) . forceStructured <$> mp)
+        ] ++ (maybeToList $ ("params".=) . forceStruct <$> mp)
 
 instance ToJSON Response where
     toJSON (Response i v) = object $
@@ -110,7 +111,7 @@ instance ToJSON Response where
         , ("id"      .= i)
         , ("result"  .= v)
         ]
-    toJSON (Error i c m md) = object $
+    toJSON (ErrorResponse i c m md) = object $
         [ ("jsonrpc" .= ("2.0" :: String))
         , ("id"      .= i)
         , ("error"   .= e)
@@ -126,9 +127,9 @@ instance ToJSON Message where
     toJSON (BRequest b) =  toJSON $ map toJSON b
     toJSON (BResponse b) = toJSON $ map toJSON b
 
-forceStructured :: Value -> Value
-forceStructured v | isStructured v = v
-                  | otherwise      = Array $ fromList [v]
+forceStruct :: Value -> Value
+forceStruct v | isStructured v = v
+              | otherwise      = Array $ fromList [v]
 
 isObject :: Value -> Bool
 isObect (Object _) = True

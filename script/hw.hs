@@ -151,7 +151,8 @@ process opts cs
             _              -> left $ unwords ["Invalid command:", c]
         case res of
             Left  err -> print err
-            Right val -> forM_ (lines $ bsToString $ encode val) putStrLn
+            Right val -> when (val /= Null ) $ 
+                forM_ (lines $ bsToString $ encode val) putStrLn
 
 checkInit :: String -> WalletDB (ResourceT IO) ()
 checkInit str 

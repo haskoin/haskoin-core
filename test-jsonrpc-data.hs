@@ -8,8 +8,8 @@ import qualified Data.Vector                    as V
 import qualified Data.ByteString.Lazy.Char8     as C
 import qualified Data.HashMap.Strict            as H
 
-encoding :: Test
-encoding = TestList $
+encoding :: [Test]
+encoding =
     [ TestCase $
         assertEqual "Encoding and Decoding" o (decode . encode $ fromJust o)
     | o <- objects, isJust o
@@ -18,17 +18,17 @@ encoding = TestList $
 documents :: [Maybe Document]
 documents = map decode jsonStrings
 
-decoding :: Test
-decoding = TestList $
+decoding :: [Test]
+decoding =
     [ TestCase $ assertEqual "Decoding JSON strings" o d
     | (o, d) <- zip objects documents
     ]
 
-tests :: Test
-tests = TestList [encoding, decoding]
+tests :: [Test]
+tests = encoding ++ decoding
 
 main :: IO ()
-main = runTestTT tests >> return ()
+main = runTestTT (TestList tests) >> return ()
 
 jsonStrings :: [C.ByteString]
 jsonStrings =

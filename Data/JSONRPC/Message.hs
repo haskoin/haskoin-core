@@ -1,82 +1,120 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Data.JSONRPC.Message
-( Request(..)
+( ID(..)
+, Params(..)
+, Method
+, Request(..)
 , Response(..)
 , Message(..)
-, ID
-, Method
-, Params
-, Value(..)
-, Array
-, Object
+, Document(..)
+, paramsArray
+, paramsObject
 ) where
-
-import Prelude hiding (putStrLn)
 
 import Control.Applicative
 import Control.Monad
 import Data.Maybe
 
-import Data.Text (Text)
-import Data.Vector (fromList)
+import qualified Data.Text              as T
+import qualified Data.HashMap.Strict    as H
+import qualified Data.Vector            as V
 
+import Data.Aeson
 import Data.Aeson.Types
-import Data.Attoparsec.Combinator
+import Data.Attoparsec.Number
  
-type ID = Maybe Int
 type Method = String
-type Params = Maybe Value
+
+data Params = PObject Object
+            | PArray Array deriving (Eq, Show)
+
+data ID = IntID Integer
+        | TextID T.Text
+        | NullID
+    deriving (Eq, Show)
 
 data Request = Request
                  { requestID :: ID
                  , requestMethod :: Method
-                 , requestParams :: Params
+                 , requestParams :: Maybe Params
                  }
              | Notification
                  { requestMethod :: Method
-                 , requestParams :: Params
+                 , requestParams :: Maybe Params
                  }
-             deriving (Eq, Show)
+    deriving (Eq, Show)
 
 data Response = Response
                   { responseID :: ID
                   , responseResult :: Value
                   }
-              | ErrorResponse
+              | RError
                   { errorID :: ID
                   , errorCode :: Int
                   , errorMessage :: String
                   , errorData :: Maybe Value
                   }
-              deriving (Eq, Show)
-
-data Message = MRequest   Request
-             | MResponse  Response
-             | BRequest   [Request]
-             | BResponse  [Response]
     deriving (Eq, Show)
 
+data Message = MRequest Request
+             | MResponse Response
+    deriving (Eq, Show)
+
+data Document = Batch [Either Value Message]
+              | Single (Either Value Message)
+    deriving (Eq, Show)
+
+instance FromJSON ID where
+    parseJSON (Number (I i)) = return . IntID $ i
+    parseJSON (Null)         = return NullID
+    parseJSON (String t)     = return . TextID $ t
+    parseJSON _              = mzero
+
+instance ToJSON ID where
+    toJSON (IntID  i) = toJSON i
+    toJSON (NullID)   = toJSON Null
+    toJSON (TextID t) = toJSON t
+
+instance FromJSON Params where
+    parseJSON (Object o) = return $ PObject o
+    parseJSON (Array a)  = return $ PArray a
+    parseJSON _          = mzero
+
+instance ToJSON Params where
+    toJSON (PObject o) = toJSON o
+    toJSON (PArray a) = toJSON a
+
 instance FromJSON Message where
-    parseJSON v = (return . MRequest  =<< parseJSON v)
-              <|> (return . MResponse =<< parseJSON v)
-              <|> (return . BRequest  =<< parseJSON v)
-              <|> (return . BResponse =<< parseJSON v)
+    parseJSON o@(Object _) = (return . MRequest  =<< parseJSON o)
+                         <|> (return . MResponse =<< parseJSON o)
+    parseJSON _ = mzero
+
+instance FromJSON Document where
+    parseJSON o@(Object _) = case (fromJSON o) of
+        Error _ -> return . Single $ Left o
+        Success m -> return . Single $ Right m
+    parseJSON v@(Array a)
+        | V.null a = return . Single $ Left v
+        | otherwise = return . Batch . V.toList . flip V.map a $
+            \o -> case (fromJSON o) of
+                Error _ -> Left o
+                Success m -> Right m
+    parseJSON v = return . Single $ Left v
 
 instance FromJSON Request where
-    parseJSON = withObject "JSONRPC Request" $ \v -> do
+    parseJSON (Object v) = do
         j <- v .: "jsonrpc" :: Parser String
         guard (j == "2.0")
         m <- v .: "method"
-        guard (length m > 0)
         mp <- v .:? "params"
-        guard $ maybe True isStructured mp
         mi <- v .:? "id"
         case mi of
             Just i  -> return $ Request i m mp
             Nothing -> return $ Notification m mp
+    parseJSON _ = mzero
 
 instance FromJSON Response where
-    parseJSON = withObject "JSONRPC Response" $ \v -> do
+    parseJSON (Object v) = do
         j <- v .: "jsonrpc" :: Parser String
         guard (j == "2.0")
         i <- v .: "id"
@@ -91,19 +129,20 @@ instance FromJSON Response where
                     c <- e .: "code"
                     m <- e .: "message"
                     md <- e .:? "data"
-                    return $ ErrorResponse i c m md
+                    return $ RError i c m md
                 Nothing -> mzero
+    parseJSON _ = mzero
 
 instance ToJSON Request where
     toJSON (Request i m mp) = object $
         [ ("jsonrpc" .= ("2.0" :: String))
         , ("id"      .= i)
         , ("method"  .= m)
-        ] ++ (maybeToList $ ("params".=) . forceStruct <$> mp)
+        ] ++ (maybeToList $ ("params".=) <$> mp)
     toJSON (Notification m mp) = object $
         [ ("jsonrpc" .= ("2.0" :: String))
         , ("method"  .= m)
-        ] ++ (maybeToList $ ("params".=) . forceStruct <$> mp)
+        ] ++ (maybeToList $ ("params".=) <$> mp)
 
 instance ToJSON Response where
     toJSON (Response i v) = object $
@@ -111,7 +150,7 @@ instance ToJSON Response where
         , ("id"      .= i)
         , ("result"  .= v)
         ]
-    toJSON (ErrorResponse i c m md) = object $
+    toJSON (RError i c m md) = object $
         [ ("jsonrpc" .= ("2.0" :: String))
         , ("id"      .= i)
         , ("error"   .= e)
@@ -122,29 +161,19 @@ instance ToJSON Response where
                     ] ++ (maybeToList $ ("data".=) <$> md)
 
 instance ToJSON Message where
-    toJSON (MResponse r) = toJSON r
-    toJSON (MRequest r) =  toJSON r
-    toJSON (BRequest b) =  toJSON $ map toJSON b
-    toJSON (BResponse b) = toJSON $ map toJSON b
+    toJSON (MRequest m) = toJSON m
+    toJSON (MResponse m) = toJSON m
 
-forceStruct :: Value -> Value
-forceStruct v | isStructured v = v
-              | otherwise      = Array $ fromList [v]
+instance ToJSON Document where
+    toJSON (Batch ls) = toJSON . flip map ls
+        $ \x -> case x of
+            Left x -> toJSON x
+            Right x -> toJSON x
+    toJSON (Single (Right x)) = toJSON x
+    toJSON (Single (Left x)) = toJSON x
 
-isObject :: Value -> Bool
-isObect (Object _) = True
-isObject _ = False
+paramsArray :: [Value] -> Params
+paramsArray v = PArray $ V.fromList v
 
-isArray :: Value -> Bool
-isArray (Array _) = True
-isArray _ = False
-
-isNull :: Value -> Bool
-isNull Null = True
-isNull _ = False
-
-isPrimitive :: Value -> Bool
-isPrimitive p = isObject p || isArray p
-
-isStructured :: Value -> Bool
-isStructured = not . isPrimitive
+paramsObject :: [Pair] -> Params
+paramsObject p = PObject $ H.fromList p

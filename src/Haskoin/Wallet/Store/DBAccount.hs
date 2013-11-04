@@ -9,6 +9,7 @@ module Haskoin.Wallet.Store.DBAccount
 , dbNewMSAcc
 , dbAccList
 , isMSAcc
+, dbAccTree
 )
 where
 
@@ -65,6 +66,9 @@ isMSAcc _           = True
 data AccKey = AccName String | AccPos Int 
     deriving (Eq, Show)
 
+dbAccTree :: DBAccount -> String
+dbAccTree acc = concat [ "m/", show $ accIndex $ runAccData acc, "'" ]
+
 -- |Query an account from the database using an AccKey query type
 dbGetAcc :: MonadResource m => AccKey -> WalletDB m DBAccount
 dbGetAcc key = case key of
@@ -82,8 +86,9 @@ dbPutAcc acc = do
 
 -- |Create a new regular account from a name
 dbNewAcc :: MonadResource m => String -> WalletDB m DBAccount
-dbNewAcc name = dbExists name >>= \exists -> if exists
-    then liftEither $ Left $ "newAcc: Account " ++ name ++ " already exists"
+dbNewAcc name = dbExists nameKey >>= \exists -> if exists
+    then liftEither $ Left $ 
+        unwords ["newAcc: Account", name, "already exists"]
     else dbGetConfig cfgMaster >>= \master -> do
         index  <- (+1) <$> dbGetConfig cfgAccIndex
         count  <- (+1) <$> dbGetConfig cfgAccCount
@@ -94,12 +99,14 @@ dbNewAcc name = dbExists name >>= \exists -> if exists
                                  , cfgFocus    = count
                                  }
         dbPutAcc acc >> return acc
+    where nameKey = concat ["accname_", name]
 
 -- |Create a new multisignature account from a name and public keys
 dbNewMSAcc :: MonadResource m => String -> Int -> [XPubKey] 
            -> WalletDB m DBAccount
-dbNewMSAcc name r mskeys = dbExists name >>= \exists -> if exists
-    then liftEither $ Left $ "newMSAcc: Account " ++ name ++ " already exists"
+dbNewMSAcc name r mskeys = dbExists nameKey >>= \exists -> if exists
+    then liftEither $ Left $ 
+        unwords ["newMSAcc: Account", name, "already exists"]
     else dbGetConfig cfgMaster >>= \master -> do
         index  <- (+1) <$> dbGetConfig cfgAccIndex
         count  <- (+1) <$> dbGetConfig cfgAccCount
@@ -110,6 +117,7 @@ dbNewMSAcc name r mskeys = dbExists name >>= \exists -> if exists
                                  , cfgFocus    = count
                                  }
         dbPutAcc acc >> return acc
+    where nameKey = concat ["accname_", name]
 
 buildAccData :: String -> Word32 -> Int -> AccPubKey -> AccountData
 buildAccData name index pos key = 

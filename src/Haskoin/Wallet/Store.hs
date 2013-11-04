@@ -9,6 +9,7 @@ module Haskoin.Wallet.Store
 , dbNewMSAcc
 , dbAccList
 , isMSAcc
+, dbAccTree
 
 -- Address
 , DBAddress(..)
@@ -17,6 +18,7 @@ module Haskoin.Wallet.Store
 , dbPutAddr
 , dbGenAddr
 , dbAddrList
+, dbAddrTree
 
 -- Coin
 , DBCoin(..)
@@ -72,7 +74,7 @@ import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util
 
-dbInit :: MonadResource m => String -> WalletDB m ()
+dbInit :: MonadResource m => String -> WalletDB m DBAccount
 dbInit seed = do
     master <- liftMaybe msg $ makeMasterKey $ stringToBS seed
     dbInitConfig $ DBConfig { cfgMaster    = master
@@ -82,7 +84,7 @@ dbInit seed = do
                             , cfgFocus     = 0
                             , cfgCoinCount = 0
                             }
-    dbNewAcc "default" >> return ()
+    dbNewAcc "default"
     where msg = "dbInit: Invalid master key generation from seed"
 
 {- Signing functions -}

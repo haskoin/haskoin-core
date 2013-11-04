@@ -76,7 +76,7 @@ dbImportCoin id (txout,i) = do
     let aData   = runAccData acc
         coinPos = accCoinCount aData + 1
         coin    = DBCoin op txout False coinPos $ accPos aData
-    exists <- dbExists $ "coinoutpoint" ++ (bsToString $ encode' op)
+    exists <- dbExists $ concat ["coinoutpoint_", bsToString $ encode' op]
     when exists (liftEither $ Left "Coin already exists")
     -- update account-level count
     dbPutCoin coin

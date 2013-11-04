@@ -6,6 +6,7 @@ module Haskoin.Wallet.Store.DBAddress
 , dbPutAddr
 , dbGenAddr
 , dbAddrList
+, dbAddrTree
 ) where
 
 import Control.Monad
@@ -45,6 +46,15 @@ data AddressKey = AddrBase58 { addrKeyBase58 :: String }
                           , addrKeyPos    :: Int
                           }
                 deriving (Eq, Show)
+
+dbAddrTree :: DBAddress -> String
+dbAddrTree addr = concat 
+    [ "m/"
+    , show $ addrAccIndex addr
+    , "'/"
+    , if addrInt addr then "1/" else "0/"
+    , show $ addrIndex addr
+    ]
 
 -- |Query an address from the database using an AddressKey query type
 dbGetAddr :: MonadResource m => AddressKey -> WalletDB m DBAddress

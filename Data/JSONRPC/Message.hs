@@ -26,7 +26,8 @@ import Data.Attoparsec.Number
 type Method = String
 
 data Params = PObject Object
-            | PArray Array deriving (Eq, Show)
+            | PArray Array
+    deriving (Eq, Show)
 
 data ID = IntID Integer
         | TextID T.Text

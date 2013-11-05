@@ -3,36 +3,34 @@ import Data.JSONRPC.Message
 import Data.Maybe
 import Data.Aeson
 import Test.HUnit
-import Text.Show.Pretty (ppShow)
+import System.Exit (exitFailure)
 import qualified Data.Vector                    as V
 import qualified Data.ByteString.Lazy.Char8     as C
 import qualified Data.HashMap.Strict            as H
 
-encoding :: [Test]
-encoding =
-    [ TestCase $
-        assertEqual "Encoding and Decoding" o (decode . encode $ fromJust o)
-    | o <- objects, isJust o
-    ]
-
 documents :: [Maybe Document]
 documents = map decode jsonStrings
 
-decoding :: [Test]
-decoding =
-    [ TestCase $ assertEqual "Decoding JSON strings" o d
-    | (o, d) <- zip objects documents
-    ]
+encoding :: Test
+encoding = TestLabel "Encoding" $
+    TestList [ o ~=? (decode . encode $ fromJust o) | o <- objects, isJust o ]
 
-tests :: [Test]
-tests = encoding ++ decoding
+decoding :: Test
+decoding = TestLabel "Decoding" $
+    TestList [ o ~=? d | (o, d) <- zip objects documents ]
 
 main :: IO ()
-main = runTestTT (TestList tests) >> return ()
+main  = do
+    Counts _ _ e f <- runTestTT (TestList tests)
+    if (e > 0 || f > 0)
+        then
+            exitFailure
+        else
+            return ()
 
 jsonStrings :: [C.ByteString]
 jsonStrings =
-    [ "{\"jsonrpc\": \"2.0\", \"methd\": \"subtract\", \"params\": [42, 23], \"id\": 1}"
+    [ "{\"jsonrpc\": \"2.0\", \"method\": \"subtract\", \"params\": [42, 23], \"id\": 1}"
     , "{\"jsonrpc\": \"2.0\", \"result\": 19, \"id\": 1}"
     , "{\"jsonrpc\": \"2.0\", \"method\": \"subtract\", \"params\": [23, 42], \"id\": 2}"
     , "{\"jsonrpc\": \"2.0\", \"result\": -19, \"id\": 2}"

@@ -22,45 +22,6 @@ import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util
 
-formatAddr :: DBAddress -> String
-formatAddr addr = unwords $ [ (show $ addrPos addr) ++ ")"
-                            , addrBase58 addr
-                            ] ++ label
-    where label | null $ addrLabel addr = [] 
-                | otherwise             = ["(", addrLabel addr, ")"]
-
-formatAcc :: DBAccount -> String
-formatAcc acc
-    | isMSAcc acc = unwords [ "[", "MultiSig Account"
-                            , show $ msReq acc, "of" 
-                            , (show $ length (msKeys acc) + 1) 
-                            , "]", name
-                            ]
-    | otherwise   = unwords [ "[ Regular Account ]", name ]
-    where name = accName $ runAccData acc
-
-formatPage :: Int -> Int -> DBAccount -> String
-formatPage from count acc = 
-    unwords [ formatAcc acc
-            , "(" , "Addresses", a, "to", b, "of", c , ")"
-            ]
-    where a = (show from) 
-          b = (show $ from + count - 1)
-          c = (show $ accExtCount $ runAccData acc )
-
-formatCoin :: DBCoin -> DBAccount -> String
-formatCoin (DBCoin (OutPoint tid i) (TxOut v s) _ _ p) acc = 
-    unlines 
-        [ "{ TxID  : " ++ (show tid) 
-        , "  Index : " ++ (show i) 
-        , "  Value : " ++ (show v) 
-        , "  Script: " ++ (bsToHex $ encodeScriptOps s) 
-        , "  Addr  : " ++ fAddr
-        , "  Acc   : " ++ (accName $ runAccData acc)
-        , "}"
-        ]
-    where fAddr = either (const "-") addrToBase58 $ scriptRecipient s
-
 data Options = Options
     { optCount    :: Int
     , optSigHash  :: SigHash

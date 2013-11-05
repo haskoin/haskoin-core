@@ -104,6 +104,9 @@ versionMsg = "haskoin wallet version 0.1.1.0"
 usage :: String
 usage = unlines $ [warningMsg, usageInfo usageHeader options] ++ cmdHelp
 
+formatStr :: String -> IO ()
+formatStr str = forM_ (lines str) putStrLn
+
 main :: IO ()
 main = E.getArgs >>= \args -> case getOpt Permute options args of
     (o,n,[]) -> do
@@ -121,10 +124,10 @@ getWorkDir = do
 process :: Options -> [String] -> IO ()
 process opts cs 
     -- -h and -v can be called without a command
-    | optHelp opts = print usage
+    | optHelp opts = formatStr usage
     | optVersion opts = print versionMsg
     -- otherwise require a command
-    | null cs = print usage
+    | null cs = formatStr usage
     | otherwise = getWorkDir >>= \dir -> do
         let (c,args) = (head cs, tail cs)
         res <- runResourceT $ runWalletDB dir $ checkInit c >> case c of
@@ -152,7 +155,7 @@ process opts cs
         case res of
             Left  err -> print err
             Right val -> when (val /= Null ) $ 
-                forM_ (lines $ bsToString $ encode val) putStrLn
+                formatStr $ bsToString $ encode val
 
 checkInit :: String -> WalletDB (ResourceT IO) ()
 checkInit str 

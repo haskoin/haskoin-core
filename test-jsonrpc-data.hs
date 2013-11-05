@@ -21,7 +21,7 @@ decoding = TestLabel "Decoding" $
 
 main :: IO ()
 main  = do
-    Counts _ _ e f <- runTestTT (TestList tests)
+    Counts _ _ e f <- runTestTT . TestList $ [decoding, encoding]
     if (e > 0 || f > 0)
         then
             exitFailure
@@ -29,69 +29,97 @@ main  = do
             return ()
 
 jsonStrings :: [C.ByteString]
-jsonStrings =
-    [ "{\"jsonrpc\": \"2.0\", \"method\": \"subtract\", \"params\": [42, 23], \"id\": 1}"
+jsonStrings = map C.pack
+    [ "{\"jsonrpc\": \"2.0\", \"method\": \"subtract\", "
+      ++ "\"params\": [42, 23], \"id\": 1}"
     , "{\"jsonrpc\": \"2.0\", \"result\": 19, \"id\": 1}"
-    , "{\"jsonrpc\": \"2.0\", \"method\": \"subtract\", \"params\": [23, 42], \"id\": 2}"
+    , "{\"jsonrpc\": \"2.0\", \"method\": \"subtract\", "
+      ++ "\"params\": [23, 42], \"id\": 2}"
     , "{\"jsonrpc\": \"2.0\", \"result\": -19, \"id\": 2}"
-    , "{\"jsonrpc\": \"2.0\", \"method\": \"subtract\", \"params\": {\"subtrahend\": 23, \"minuend\": 42}, \"id\": 3}"
+    , "{\"jsonrpc\": \"2.0\", \"method\": \"subtract\", "
+      ++ "\"params\": {\"subtrahend\": 23, \"minuend\": 42}, \"id\": 3}"
     , "{\"jsonrpc\": \"2.0\", \"result\": 19, \"id\": 3}"
-    , "{\"jsonrpc\": \"2.0\", \"method\": \"subtract\", \"params\": {\"minuend\": 42, \"subtrahend\": 23}, \"id\": 4}"
+    , "{\"jsonrpc\": \"2.0\", \"method\": \"subtract\", "
+      ++ "\"params\": {\"minuend\": 42, \"subtrahend\": 23}, \"id\": 4}"
     , "{\"jsonrpc\": \"2.0\", \"result\": 19, \"id\": 4}"
     , "{\"jsonrpc\": \"2.0\", \"method\": \"update\", \"params\": [1,2,3,4,5]}"
     , "{\"jsonrpc\": \"2.0\", \"method\": \"foobar\"}"
     , "{\"jsonrpc\": \"2.0\", \"method\": \"foobar\", \"id\": \"1\"}"
-    , "{\"jsonrpc\": \"2.0\", \"error\": {\"code\": -32601, \"message\": \"Method not found\"}, \"id\": \"1\"}"
+    , "{\"jsonrpc\": \"2.0\", \"error\": "
+      ++ "{\"code\": -32601, \"message\": \"Method not found\"}, \"id\": \"1\"}"
     , "{\"jsonrpc\": \"2.0\", \"method\": \"foobar, \"params\": \"bar\", \"baz]"
-    , "{\"jsonrpc\": \"2.0\", \"error\": {\"code\": -32700, \"message\": \"Parse error\"}, \"id\": null}"
+    , "{\"jsonrpc\": \"2.0\", \"error\": "
+      ++ "{\"code\": -32700, \"message\": \"Parse error\"}, \"id\": null}"
     , "{\"jsonrpc\": \"2.0\", \"method\": 1, \"params\": \"bar\"}"
-    , "{\"jsonrpc\": \"2.0\", \"error\": {\"code\": -32600, \"message\": \"Invalid Request\"}, \"id\": null}"
-    , C.pack $ unlines
+    , "{\"jsonrpc\": \"2.0\", \"error\": "
+      ++ "{\"code\": -32600, \"message\": \"Invalid Request\"}, \"id\": null}"
+    , unlines
         [ "["
-        , "{\"jsonrpc\": \"2.0\", \"method\": \"sum\", \"params\": [1,2,4], \"id\": \"1\"},"
+        , "{\"jsonrpc\": \"2.0\", \"method\": \"sum\", "
+          ++ "\"params\": [1,2,4], \"id\": \"1\"},"
         , "{\"jsonrpc\": \"2.0\", \"method\""
         , "]"
         ]
-    , "{\"jsonrpc\": \"2.0\", \"error\": {\"code\": -32700, \"message\": \"Parse error\"}, \"id\": null}"
+    , "{\"jsonrpc\": \"2.0\", \"error\": "
+      ++ "{\"code\": -32700, \"message\": \"Parse error\"}, \"id\": null}"
     , "[]"
-    , "{\"jsonrpc\": \"2.0\", \"error\": {\"code\": -32600, \"message\": \"Invalid Request\"}, \"id\": null}"
+    , "{\"jsonrpc\": \"2.0\", \"error\": "
+      ++ "{\"code\": -32600, \"message\": \"Invalid Request\"}, \"id\": null}"
     , "[1]"
-    , C.pack $ unlines
+    , unlines
         [ "["
-        , "{\"jsonrpc\": \"2.0\", \"error\": {\"code\": -32600, \"message\": \"Invalid Request\"}, \"id\": null}"
+        , "{\"jsonrpc\": \"2.0\", \"error\": "
+          ++ "{\"code\": -32600, \"message\": \"Invalid Request\"}, "
+          ++ "\"id\": null}"
         , "]"
         ]
     , "[1,2,3]"
-    , C.pack $ unlines
+    , unlines
         [ "["
-        , "{\"jsonrpc\": \"2.0\", \"error\": {\"code\": -32600, \"message\": \"Invalid Request\"}, \"id\": null},"
-        , "{\"jsonrpc\": \"2.0\", \"error\": {\"code\": -32600, \"message\": \"Invalid Request\"}, \"id\": null},"
-        , "{\"jsonrpc\": \"2.0\", \"error\": {\"code\": -32600, \"message\": \"Invalid Request\"}, \"id\": null}"
+        , "{\"jsonrpc\": \"2.0\", \"error\": "
+          ++ "{\"code\": -32600, \"message\": \"Invalid Request\"}, "
+          ++ "\"id\": null},"
+        , "{\"jsonrpc\": \"2.0\", \"error\": "
+          ++ "{\"code\": -32600, \"message\": \"Invalid Request\"}, "
+          ++ "\"id\": null},"
+        , "{\"jsonrpc\": \"2.0\", \"error\": "
+          ++ "{\"code\": -32600, \"message\": \"Invalid Request\"}, "
+          ++ "\"id\": null}"
         , "]"
         ]
-    , C.pack $ unlines
+    , unlines
         [ "["
-        , "{\"jsonrpc\": \"2.0\", \"method\": \"sum\", \"params\": [1,2,4], \"id\": \"1\"},"
-        , "{\"jsonrpc\": \"2.0\", \"method\": \"notify_hello\", \"params\": [7]},"
-        , "{\"jsonrpc\": \"2.0\", \"method\": \"subtract\", \"params\": [42,23], \"id\": \"2\"},"
+        , "{\"jsonrpc\": \"2.0\", \"method\": \"sum\", "
+          ++ "\"params\": [1,2,4], \"id\": \"1\"},"
+        , "{\"jsonrpc\": \"2.0\", \"method\": \"notify_hello\", "
+          ++ "\"params\": [7]},"
+        , "{\"jsonrpc\": \"2.0\", \"method\": \"subtract\", "
+          ++ "\"params\": [42,23], \"id\": \"2\"},"
         , "{\"foo\": \"boo\"},"
-        , "{\"jsonrpc\": \"2.0\", \"method\": \"foo.get\", \"params\": {\"name\": \"myself\"}, \"id\": \"5\"},"
+        , "{\"jsonrpc\": \"2.0\", \"method\": \"foo.get\", "
+          ++ "\"params\": {\"name\": \"myself\"}, \"id\": \"5\"},"
         , "{\"jsonrpc\": \"2.0\", \"method\": \"get_data\", \"id\": \"9\"} "
         , "]"
         ]
-    , C.pack $ unlines
+    , unlines
         [ "["
         , "{\"jsonrpc\": \"2.0\", \"result\": 7, \"id\": \"1\"},"
         , "{\"jsonrpc\": \"2.0\", \"result\": 19, \"id\": \"2\"},"
-        , "{\"jsonrpc\": \"2.0\", \"error\": {\"code\": -32600, \"message\": \"Invalid Request\"}, \"id\": null},"
-        , "{\"jsonrpc\": \"2.0\", \"error\": {\"code\": -32601, \"message\": \"Method not found\"}, \"id\": \"5\"},"
+        , "{\"jsonrpc\": \"2.0\", \"error\": "
+          ++ "{\"code\": -32600, \"message\": \"Invalid Request\"}, "
+          ++ "\"id\": null},"
+        , "{\"jsonrpc\": \"2.0\", \"error\": "
+          ++ "{\"code\": -32601, \"message\": \"Method not found\"}, "
+          ++ "\"id\": \"5\"},"
         , "{\"jsonrpc\": \"2.0\", \"result\": [\"hello\", 5], \"id\": \"9\"}"
         , "]"
         ]
-    , C.pack $ unlines
+    , unlines
         [ "["
-        , "{\"jsonrpc\": \"2.0\", \"method\": \"notify_sum\", \"params\": [1,2,4]},"
-        , "{\"jsonrpc\": \"2.0\", \"method\": \"notify_hello\", \"params\": [7]}"
+        , "{\"jsonrpc\": \"2.0\", \"method\": \"notify_sum\", "
+          ++ "\"params\": [1,2,4]},"
+        , "{\"jsonrpc\": \"2.0\", \"method\": \"notify_hello\", "
+          ++ "\"params\": [7]}"
         , "]"
         ]
     ]
@@ -123,7 +151,14 @@ objects =
                  , requestParams =
                      Just (paramsArray [ Number 23 , Number 42 ])
                  })))
-    , Just (Single (Right (MResponse (Response {responseID = IntID 2, responseResult = Number (-19)}))))
+    , Just
+      (Single
+         (Right
+            (MResponse
+               Response
+                 { responseID = IntID 2
+                 , responseResult = Number (-19)
+                 })))
     , Just
       (Single
          (Right
@@ -134,7 +169,8 @@ objects =
                  , requestParams =
                      Just
                        (paramsObject
-                          [ ( "subtrahend" .= Number 23 ) , ( "minuend" .= Number 42 ) ])
+                          [ ( "subtrahend" .= Number 23 )
+                          , ( "minuend" .= Number 42 ) ])
                  })))
     , Just
       (Single
@@ -151,7 +187,9 @@ objects =
                  , requestParams =
                      Just
                        (paramsObject
-                          [ ( "subtrahend" .= Number 23 ) , ( "minuend" .= Number 42 ) ])
+                          [ ( "subtrahend" .= Number 23 )
+                          , ( "minuend" .= Number 42 )
+                          ])
                  })))
     , Just
       (Single
@@ -167,7 +205,12 @@ objects =
                  , requestParams =
                      Just
                        (paramsArray
-                             [ Number 1 , Number 2 , Number 3 , Number 4 , Number 5 ])
+                             [ Number 1
+                             , Number 2
+                             , Number 3
+                             , Number 4
+                             , Number 5
+                             ])
                  })))
     , Just
       (Single
@@ -332,10 +375,12 @@ objects =
       (Batch
          [ Right
              (MResponse
-                Response { responseID = TextID "1" , responseResult = Number 7 })
+                Response { responseID = TextID "1"
+                         , responseResult = Number 7 })
          , Right
              (MResponse
-                Response { responseID = TextID "2" , responseResult = Number 19 })
+                Response { responseID = TextID "2"
+                         , responseResult = Number 19 })
          , Right
              (MResponse
                 RError
@@ -356,7 +401,8 @@ objects =
              (MResponse
                 Response
                   { responseID = TextID "9"
-                  , responseResult = Array (V.fromList [ String "hello" , Number 5 ])
+                  , responseResult =
+                      Array(V.fromList [ String "hello" , Number 5 ])
                   })
          ])
     , Just

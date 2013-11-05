@@ -85,23 +85,6 @@ instance ToJSON Params where
     toJSON (PObject o) = toJSON o
     toJSON (PArray a) = toJSON a
 
-instance FromJSON Message where
-    parseJSON o@(Object _) = (return . MRequest  =<< parseJSON o)
-                         <|> (return . MResponse =<< parseJSON o)
-    parseJSON _ = mzero
-
-instance FromJSON Document where
-    parseJSON o@(Object _) = case (fromJSON o) of
-        Error _ -> return . Single $ Left o
-        Success m -> return . Single $ Right m
-    parseJSON v@(Array a)
-        | V.null a = return . Single $ Left v
-        | otherwise = return . Batch . V.toList . flip V.map a $
-            \o -> case (fromJSON o) of
-                Error _ -> Left o
-                Success m -> Right m
-    parseJSON v = return . Single $ Left v
-
 instance FromJSON Request where
     parseJSON (Object v) = do
         j <- v .: "jsonrpc" :: Parser String
@@ -113,6 +96,17 @@ instance FromJSON Request where
             Just i  -> return $ Request i m mp
             Nothing -> return $ Notification m mp
     parseJSON _ = mzero
+
+instance ToJSON Request where
+    toJSON (Request i m mp) = object $
+        [ ("jsonrpc" .= ("2.0" :: String))
+        , ("id"      .= i)
+        , ("method"  .= m)
+        ] ++ (maybeToList $ ("params".=) <$> mp)
+    toJSON (Notification m mp) = object $
+        [ ("jsonrpc" .= ("2.0" :: String))
+        , ("method"  .= m)
+        ] ++ (maybeToList $ ("params".=) <$> mp)
 
 instance FromJSON Response where
     parseJSON (Object v) = do
@@ -134,17 +128,6 @@ instance FromJSON Response where
                 Nothing -> mzero
     parseJSON _ = mzero
 
-instance ToJSON Request where
-    toJSON (Request i m mp) = object $
-        [ ("jsonrpc" .= ("2.0" :: String))
-        , ("id"      .= i)
-        , ("method"  .= m)
-        ] ++ (maybeToList $ ("params".=) <$> mp)
-    toJSON (Notification m mp) = object $
-        [ ("jsonrpc" .= ("2.0" :: String))
-        , ("method"  .= m)
-        ] ++ (maybeToList $ ("params".=) <$> mp)
-
 instance ToJSON Response where
     toJSON (Response i v) = object $
         [ ("jsonrpc" .= ("2.0" :: String))
@@ -161,9 +144,26 @@ instance ToJSON Response where
                     , ("message" .= m)
                     ] ++ (maybeToList $ ("data".=) <$> md)
 
+instance FromJSON Message where
+    parseJSON o@(Object _) = (return . MRequest  =<< parseJSON o)
+                         <|> (return . MResponse =<< parseJSON o)
+    parseJSON _ = mzero
+
 instance ToJSON Message where
     toJSON (MRequest m) = toJSON m
     toJSON (MResponse m) = toJSON m
+
+instance FromJSON Document where
+    parseJSON o@(Object _) = case (fromJSON o) of
+        Error _ -> return . Single $ Left o
+        Success m -> return . Single $ Right m
+    parseJSON v@(Array a)
+        | V.null a = return . Single $ Left v
+        | otherwise = return . Batch . V.toList . flip V.map a $
+            \o -> case (fromJSON o) of
+                Error _ -> Left o
+                Success m -> Right m
+    parseJSON v = return . Single $ Left v
 
 instance ToJSON Document where
     toJSON (Batch ls) = toJSON . flip map ls

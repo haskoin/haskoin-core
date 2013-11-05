@@ -25,8 +25,9 @@ Test-Suite test-jsonpc-data
     main-is:            test-jsonrpc-data.hs
     build-depends:      base == 4.6.*,
                         aeson,
-                        attoparsec
+                        attoparsec,
                         bytestring,
+                        HUnit,
                         text,
                         unordered-containers,
-                        vector,
+                        vector

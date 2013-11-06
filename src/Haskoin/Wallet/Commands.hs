@@ -56,14 +56,12 @@ instance ToJSON TxIn where
               f inp = [(T.pack "Decoded Script") .= toJSON inp]
               
 instance ToJSON Tx where
-    toJSON tx@(Tx v is os i) = object 
-        [ (T.pack "Transaction") .= object
-            [ (T.pack "TxID") .= (bsToHex $ BS.reverse $ encode' $ txid tx)
-            , (T.pack "Version") .= toJSON v
-            , (T.pack "Inputs") .= (toJSON $ map input $ zip is [0..])
-            , (T.pack "Outputs") .= (toJSON $ map output $ zip os [0..])
-            , (T.pack "LockTime") .= toJSON i
-            ]
+    toJSON tx@(Tx v is os i) = object
+        [ (T.pack "TxID") .= (bsToHex $ BS.reverse $ encode' $ txid tx)
+        , (T.pack "Version") .= toJSON v
+        , (T.pack "Inputs") .= (toJSON $ map input $ zip is [0..])
+        , (T.pack "Outputs") .= (toJSON $ map output $ zip os [0..])
+        , (T.pack "LockTime") .= toJSON i
         ]
         where input (x,j) = object 
                 [(T.pack $ unwords ["Input", show j]) .= toJSON x]
@@ -155,10 +153,16 @@ yamlAddr a
                   ]
           label = (T.pack "Label") .= addrLabel a
 
+-- yamlAddrList :: [DBAddress] -> DBAccount -> Value
+-- yamlAddrList addrs acc = toJSON 
+--     [ object [ (T.pack "Account") .= yamlAcc acc ]
+--     , object [ (T.pack "Addresses") .= (toJSON $ map yamlAddr addrs) ]
+--     ]
+
 yamlAddrList :: [DBAddress] -> DBAccount -> Value
-yamlAddrList addrs acc = toJSON 
-    [ object [ (T.pack "Account") .= yamlAcc acc ]
-    , object [ (T.pack "Addresses") .= (toJSON $ map yamlAddr addrs) ]
+yamlAddrList addrs acc = object
+    [ (T.pack "Account") .= yamlAcc acc
+    , (T.pack "Addresses") .= (toJSON $ map yamlAddr addrs)
     ]
 
 yamlCoin :: DBCoin -> DBAccount -> Value
@@ -178,13 +182,10 @@ yamlCoin (DBCoin (OutPoint tid i) (TxOut v s) _ _ p) acc = object $
 type AccountName = String
 
 cmdInit :: String -> Command
-cmdInit seed = do
-    acc <- dbInit seed
-    return $ yamlAcc acc
+cmdInit seed = yamlAcc <$> dbInit seed 
 
 cmdList :: Int -> AccountName -> Command
-cmdList count name = do
-    acc <- dbGetAcc $ AccName name
+cmdList count name = dbGetAcc (AccName name) >>= \acc -> do
     let total = accExtCount $ runAccData acc
         c     = min count total
         from  = total - c + 1
@@ -192,62 +193,49 @@ cmdList count name = do
     return $ yamlAddrList addrs acc
 
 cmdListFrom :: Int -> Int -> AccountName -> Command
-cmdListFrom from count name = do
-    acc   <- dbGetAcc $ AccName name
+cmdListFrom from count name = dbGetAcc (AccName name) >>= \acc -> do
     when (from > (accExtCount $ runAccData acc)) $ 
         left $ unwords ["cmdListFrom: From index not in wallet:", show from]
     addrs <- dbAddrList (accPos $ runAccData acc) from count False
     return $ yamlAddrList addrs acc
 
 cmdListAll :: AccountName -> Command
-cmdListAll name = do
-    acc <- dbGetAcc $ AccName name
+cmdListAll name = dbGetAcc (AccName name) >>= \acc -> do
     let aData = runAccData acc
     addrs <- dbAddrList (accPos aData) 1 (accExtCount aData) False
     return $ yamlAddrList addrs acc
 
 cmdNew :: String -> AccountName -> Command
-cmdNew label name = do
-    acc  <- dbGetAcc $ AccName name
+cmdNew label name = dbGetAcc (AccName name) >>= \acc -> do
     addr <- head <$> (dbGenAddr (accPos $ runAccData acc) 1 False)
     let newAddr = addr{ addrLabel = label }
     dbPutAddr newAddr
-    newAcc <- dbGetAcc $ AccPos $ addrAccPos newAddr
-    return $ yamlAddrList [newAddr] newAcc
+    (yamlAddrList [newAddr]) <$> (dbGetAcc $ AccPos $ addrAccPos newAddr)
 
 cmdGenAddr :: Int -> AccountName -> Command
-cmdGenAddr count name = do
-    acc    <- dbGetAcc $ AccName name
+cmdGenAddr count name = dbGetAcc (AccName name) >>= \acc -> do
     addrs  <- dbGenAddr (accPos $ runAccData acc) count False
-    newAcc <- dbGetAcc $ AccPos $ accPos $ runAccData acc
-    return $ yamlAddrList addrs newAcc
+    (yamlAddrList addrs) <$> (dbGetAcc $ AccPos $ accPos $ runAccData acc)
 
 cmdFocus :: AccountName -> Command
-cmdFocus name = do
-    acc <- dbGetAcc $ AccName name
+cmdFocus name = dbGetAcc (AccName name) >>= \acc -> do
     dbPutConfig $ \cfg -> cfg{ cfgFocus = accName $ runAccData acc }
     return $ yamlAcc acc
 
 cmdNewAcc :: AccountName -> Command
-cmdNewAcc name = do
-    acc <- dbNewAcc name
-    return $ yamlAcc acc
+cmdNewAcc name = yamlAcc <$> dbNewAcc name
 
 cmdNewMS :: AccountName -> Int -> [String] -> Command
 cmdNewMS name r xs = do
     keys <- mapM ((liftMaybe errKey) . xPubImport) xs
-    acc <- dbNewMSAcc name r keys
-    return $ yamlAcc acc
+    yamlAcc <$> dbNewMSAcc name r keys
     where errKey = "cmdNewMS: Error importing extended public key"
 
 cmdListAcc :: Command
-cmdListAcc = do
-    accs <- dbAccList
-    return $ toJSON $ map yamlAcc accs
+cmdListAcc = toJSON . (map yamlAcc) <$> dbAccList
 
 cmdLabel :: Int -> String -> AccountName -> Command
-cmdLabel pos label name = do
-    acc  <- dbGetAcc $ AccName name
+cmdLabel pos label name = dbGetAcc (AccName name) >>= \acc -> do
     when (pos > (accExtCount $ runAccData acc)) $ 
         left $ unwords ["cmdLabel: Address index not in wallet:", show pos]
     addr <- dbGetAddr $ AddrExt (accPos $ runAccData acc) pos
@@ -256,8 +244,7 @@ cmdLabel pos label name = do
     return $ yamlAddrList [newAddr] acc
 
 cmdBalance :: AccountName -> Command
-cmdBalance name = do
-    acc   <- dbGetAcc $ AccName name
+cmdBalance name = dbGetAcc (AccName name) >>= \acc -> do
     coins <- dbCoinList $ accPos $ runAccData acc
     let balance = sum $ map (fromIntegral . outValue . coinTxOut) coins 
     return $ toJSON 
@@ -266,25 +253,23 @@ cmdBalance name = do
         ]
 
 cmdTotalBalance :: Command
-cmdTotalBalance = do
-    coins <- dbCoinListAll 
+cmdTotalBalance = dbCoinListAll >>= \coins -> do
     let balance = sum $ map (fromIntegral . outValue . coinTxOut) coins
     return $ object [ (T.pack "Total balance") .= toJSON (balance :: Word64) ] 
 
 cmdDumpKey :: AccountName -> Command
-cmdDumpKey name = do
-    acc <- dbGetAcc $ AccName name
+cmdDumpKey name = dbGetAcc (AccName name) >>= \acc -> do
     mst <- dbGetConfig cfgMaster
     prv <- liftMaybe prvErr $ accPrvKey mst (accIndex $ runAccData acc)
     let prvKey = runAccPrvKey prv
         pubKey = deriveXPubKey prvKey
         msJson = map (toJSON . xPubExport) $ msKeys acc
-        ms | isMSAcc acc = [object [(T.pack "MSKeys") .= toJSON msJson]]
+        ms | isMSAcc acc = [(T.pack "MSKeys") .= toJSON msJson]
            | otherwise   = []
-    return $ toJSON $
-        [ object [ (T.pack "Account") .= yamlAcc acc ]
-        , object [ (T.pack "PubKey") .= xPubExport pubKey ]
-        , object [ (T.pack "PrvKey") .= xPrvExport prvKey ]
+    return $ object $
+        [ (T.pack "Account") .= yamlAcc acc 
+        , (T.pack "PubKey") .= xPubExport pubKey 
+        , (T.pack "PrvKey") .= xPrvExport prvKey 
         ] ++ ms
     where prvErr = "cmdDumpKey: Invalid private key derivation index"
 
@@ -301,17 +286,15 @@ cmdImportTx str = do
     where txErr = "cmdImportTx: Could not decode transaction"
 
 cmdCoins :: AccountName -> Command
-cmdCoins name = do
-    acc   <- dbGetAcc $ AccName name
+cmdCoins name = dbGetAcc (AccName name) >>= \acc -> do
     coins <- dbCoinList $ accPos $ runAccData acc
-    return $ toJSON
-        [ object [(T.pack "Account") .= yamlAcc acc]
-        , object [(T.pack "Coins") .= (toJSON $ map (flip yamlCoin acc) coins)]
+    return $ object
+        [ (T.pack "Account") .= yamlAcc acc
+        , (T.pack "Coins") .= (toJSON $ map (flip yamlCoin acc) coins)
         ]
 
 cmdAllCoins :: Command
-cmdAllCoins = do
-    coins <- dbCoinListAll
+cmdAllCoins = dbCoinListAll >>= \coins -> do
     accs  <- mapM (dbGetAcc . AccPos . coinAccPos) coins
     return $ toJSON $ map (\(c,a) -> yamlCoin c a) $ zip coins accs
 

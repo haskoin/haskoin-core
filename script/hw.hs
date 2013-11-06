@@ -15,7 +15,8 @@ import Control.Exception
 import Data.Maybe
 import Data.Char
 import Data.Word
-import Data.Yaml
+import qualified Data.Yaml as YAML
+import qualified Data.Aeson.Encode.Pretty as JSON
 import Data.List.Split
 import qualified Data.Text as T
 import qualified Data.ByteString as BS
@@ -33,6 +34,7 @@ import Haskoin.Util
 data Options = Options
     { optCount    :: Int
     , optSigHash  :: SigHash
+    , optJson     :: Bool
     , optHelp     :: Bool
     , optVersion  :: Bool
     } deriving (Eq, Show)
@@ -40,6 +42,7 @@ data Options = Options
 defaultOptions = Options
     { optCount    = 5
     , optSigHash  = SigAll False
+    , optJson     = False
     , optHelp     = False
     , optVersion  = False
     } 
@@ -55,6 +58,9 @@ options =
             let sh = optSigHash opts
             return opts{ optSigHash = sh{ anyoneCanPay = True } }
         ) $ "Set signature flag AnyoneCanPay"
+    , Option ['j'] ["json"]
+        (NoArg $ \opts -> return opts{ optJson = True }) $
+        "Format result as JSON (default: YAML)"
     , Option ['h'] ["help"]
         (NoArg $ \opts -> return opts{ optHelp = True }) $
         "Display this help message"
@@ -149,7 +155,9 @@ process opts xs
             dispatchCommand cmd opts args 
         case res of
             Left  err -> formatStr err
-            Right val -> formatStr $ bsToString $ encode val
+            Right val -> if optJson opts 
+                then formatStr $ bsToString $ toStrictBS $ JSON.encodePretty val
+                else formatStr $ bsToString $ YAML.encode val
 
 checkInit :: String -> WalletDB (ResourceT IO) ()
 checkInit cmd 

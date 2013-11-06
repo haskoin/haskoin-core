@@ -24,7 +24,7 @@ data DBConfig = DBConfig { cfgMaster    :: MasterKey
                          , cfgVersion   :: Int
                          , cfgAccIndex  :: Word32
                          , cfgAccCount  :: Int
-                         , cfgFocus     :: Int
+                         , cfgFocus     :: String
                          , cfgCoinCount :: Int
                          } deriving (Eq, Show)
 
@@ -50,7 +50,7 @@ instance Binary DBConfig where
                    <*> (fromIntegral . getVarInt <$> get)
                    <*> getWord32le
                    <*> (fromIntegral . getVarInt <$> get)
-                   <*> (fromIntegral . getVarInt <$> get)
+                   <*> (bsToString . getVarString <$> get)
                    <*> (fromIntegral . getVarInt <$> get)
           where f = maybe (fail "DBConfig get: Invalid master key") return
 
@@ -59,6 +59,6 @@ instance Binary DBConfig where
         put $ VarInt $ fromIntegral v
         putWord32le i
         put $ VarInt $ fromIntegral c
-        put $ VarInt $ fromIntegral f
+        put $ VarString $ stringToBS f
         put $ VarInt $ fromIntegral cc
 

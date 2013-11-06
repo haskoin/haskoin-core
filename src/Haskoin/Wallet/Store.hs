@@ -81,7 +81,7 @@ dbInit seed = do
                             , cfgVersion   = 1
                             , cfgAccIndex  = maxBound
                             , cfgAccCount  = 0
-                            , cfgFocus     = 0
+                            , cfgFocus     = ""
                             , cfgCoinCount = 0
                             }
     dbNewAcc "default"

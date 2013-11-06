@@ -96,7 +96,7 @@ instance Arbitrary DBConfig where
                          <*> arbitrary
                          <*> arbitrary
                          <*> (choose (1,0x7fffffff))
-                         <*> (choose (1,0x7fffffff))
+                         <*> arbitrary
                          <*> (choose (1,0x7fffffff))
 
 

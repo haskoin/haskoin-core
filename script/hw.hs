@@ -30,6 +30,20 @@ import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util
 
+data Options = Options
+    { optCount    :: Int
+    , optSigHash  :: SigHash
+    , optHelp     :: Bool
+    , optVersion  :: Bool
+    } deriving (Eq, Show)
+
+defaultOptions = Options
+    { optCount    = 5
+    , optSigHash  = SigAll False
+    , optHelp     = False
+    , optVersion  = False
+    } 
+
 options :: [OptDescr (Options -> IO Options)]
 options =
     [ Option ['c'] ["count"] (ReqArg parseCount "INT") $
@@ -109,9 +123,9 @@ formatStr str = forM_ (lines str) putStrLn
 
 main :: IO ()
 main = E.getArgs >>= \args -> case getOpt Permute options args of
-    (o,n,[]) -> do
+    (o,xs,[]) -> do
         opts <- foldl (>>=) (return defaultOptions) o
-        process opts n
+        process opts xs
     (_,_,msgs) -> print $ unlines $ msgs ++ [usage]
 
 -- Create and return haskoin working directory
@@ -122,46 +136,74 @@ getWorkDir = do
     return $ dir ++ "/walletdb"
 
 process :: Options -> [String] -> IO ()
-process opts cs 
+process opts xs 
     -- -h and -v can be called without a command
     | optHelp opts = formatStr usage
     | optVersion opts = print versionMsg
     -- otherwise require a command
-    | null cs = formatStr usage
+    | null xs = formatStr usage
     | otherwise = getWorkDir >>= \dir -> do
-        let (c,args) = (head cs, tail cs)
-        res <- runResourceT $ runWalletDB dir $ checkInit c >> case c of
-            "init"         -> cmdInit opts args
-            "list"         -> cmdList opts args
-            "listfrom"     -> cmdListFrom opts args
-            "listall"      -> cmdListAll opts args
-            "new"          -> cmdNew opts args
-            "genaddr"      -> cmdGenAddr opts args
-            "label"        -> cmdLabel opts args
-            "balance"      -> cmdBalance opts args
-            "totalbalance" -> cmdTotalBalance opts args
-            "focus"        -> cmdFocus opts args
-            "newacc"       -> cmdNewAcc opts args
-            "newms"        -> cmdNewMS opts args
-            "listacc"      -> cmdListAcc opts args
-            "dumpkey"      -> cmdDumpKey opts args
-            "importtx"     -> cmdImportTx opts args
-            "coins"        -> cmdCoins opts args
-            "allcoins"     -> cmdAllCoins opts args 
-            "decodetx"     -> cmdDecodeTx opts args
-            "buildtx"      -> cmdBuildTx opts args
-            "signtx"       -> cmdSignTx opts args
-            _              -> left $ unwords ["Invalid command:", c]
+        let (cmd,args) = (head xs, tail xs)
+        res <- runResourceT $ runWalletDB dir $ do
+            checkInit cmd
+            dispatchCommand cmd opts args 
         case res of
-            Left  err -> print err
-            Right val -> when (val /= Null ) $ 
-                formatStr $ bsToString $ encode val
+            Left  err -> formatStr err
+            Right val -> formatStr $ bsToString $ encode val
 
 checkInit :: String -> WalletDB (ResourceT IO) ()
-checkInit str 
+checkInit cmd 
     -- Commands that can be called without an initialized database
-    | str `elem` [ "init", "decodetx", "buildtx" ] = return ()
+    | cmd `elem` [ "init", "decodetx", "buildtx" ] = return ()
     | otherwise = dbExists "config" >>= \exists -> if exists
         then return ()
         else left "Wallet not initialized. Call init first"
+
+whenArgs :: Args -> (Int -> Bool) -> Command -> Command
+whenArgs args f cmd = if f $ length args then cmd else argErr
+    where argErr = left "Invalid number of arguments"
+
+withFocus :: Args -> Int -> (String -> Command) -> Command
+withFocus args i f 
+    | length args < i  = dbGetConfig cfgFocus >>= f
+    | length args == i = f $ last args
+    | otherwise        = left "Invalid number of arguments"
+
+dispatchCommand :: String -> Options -> Args -> Command
+dispatchCommand cmd opts args = case cmd of
+    "init"         -> whenArgs args (== 1) $ cmdInit $ head args 
+    "list"         -> withFocus args 1 $ \acc -> cmdList (optCount opts) acc
+    "listfrom"     -> withFocus args 2 $ \acc -> 
+        cmdListFrom (read $ args !! 0) (optCount opts) acc
+    "listall"      -> withFocus args 1 $ \acc -> cmdListAll acc
+    "new"          -> withFocus args 2 $ \acc -> cmdNew (args !! 0) acc
+    "genaddr"      -> withFocus args 1 $ \acc -> cmdGenAddr (optCount opts) acc
+    "focus"        -> whenArgs args (== 1) $ cmdFocus $ head args
+    "newacc"       -> whenArgs args (== 1) $ cmdNewAcc $ head args
+    "newms"        -> whenArgs args (>= 3) $ 
+        cmdNewMS (args !! 0) (read $ args !! 1) $ drop 2 args
+    "listacc"      -> whenArgs args (== 0) cmdListAcc 
+    "label"        -> withFocus args 3 $ \acc -> 
+        cmdLabel (read $ args !! 0) (args !! 1) acc
+    "balance"      -> withFocus args 1 $ \acc -> cmdBalance acc
+    "totalbalance" -> whenArgs args (== 0) cmdTotalBalance
+    "dumpkey"      -> withFocus args 1 $ \acc -> cmdDumpKey acc
+    "importtx"     -> whenArgs args (== 1) $ cmdImportTx $ head args
+    "coins"        -> withFocus args 1 $ \acc -> cmdCoins acc
+    "allcoins"     -> whenArgs args (== 0) cmdAllCoins
+    "decodetx"     -> whenArgs args (== 1) $ cmdDecodeTx $ head args
+    "buildtx"      -> whenArgs args (>= 2) $ do
+        let xs     = map (splitOn ":") args
+            (os,as) = span ((== 64) . length . head) xs
+            f [a,b] = return (a,read b) 
+            f _     = left "buildtx: Invalid syntax"
+        os' <- mapM f os
+        as' <- mapM f as
+        cmdBuildTx os' as'
+    "signtx"       -> whenArgs args (>= 2) $ do 
+        let f [t,i,s] = return (t,read i,s)
+            f _       = left "Invalid syntax for txid:index:script"
+        xs <- mapM (f . (splitOn ":")) $ tail args
+        cmdSignTx (head args) xs $ optSigHash opts
+    _ -> left $ unwords ["Invalid command:", cmd]
 

@@ -96,7 +96,7 @@ dbNewAcc name = dbExists nameKey >>= \exists -> if exists
             acc   = DBAccount $ buildAccData name i count k
         dbPutConfig $ \cfg -> cfg{ cfgAccIndex = i 
                                  , cfgAccCount = count
-                                 , cfgFocus    = count
+                                 , cfgFocus    = name
                                  }
         dbPutAcc acc >> return acc
     where nameKey = concat ["accname_", name]
@@ -114,7 +114,7 @@ dbNewMSAcc name r mskeys = dbExists nameKey >>= \exists -> if exists
             acc     = DBAccountMS (buildAccData name i count k) mskeys r ""
         dbPutConfig $ \cfg -> cfg{ cfgAccIndex = i 
                                  , cfgAccCount = count
-                                 , cfgFocus    = count
+                                 , cfgFocus    = name
                                  }
         dbPutAcc acc >> return acc
     where nameKey = concat ["accname_", name]

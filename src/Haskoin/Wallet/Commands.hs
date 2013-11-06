@@ -247,9 +247,9 @@ cmdBalance :: AccountName -> Command
 cmdBalance name = dbGetAcc (AccName name) >>= \acc -> do
     coins <- dbCoinList $ accPos $ runAccData acc
     let balance = sum $ map (fromIntegral . outValue . coinTxOut) coins 
-    return $ toJSON 
-        [ object [ (T.pack "Account") .= yamlAcc acc ]
-        , object [ (T.pack "Balance") .= toJSON (balance :: Word64) ]
+    return $ object 
+        [ (T.pack "Account") .= yamlAcc acc
+        , (T.pack "Balance") .= toJSON (balance :: Word64)
         ]
 
 cmdTotalBalance :: Command

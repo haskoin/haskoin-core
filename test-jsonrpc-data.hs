@@ -231,8 +231,8 @@ objects =
       (Single
          (Right
             (MResponse
-               RError
-                 { errorID = TextID "1"
+               ErrorResponse
+                 { responseID = TextID "1"
                  , errorCode = -32601
                  , errorMessage = "Method not found"
                  , errorData = Nothing
@@ -242,8 +242,8 @@ objects =
       (Single
          (Right
             (MResponse
-               RError
-                 { errorID = NullID
+               ErrorResponse
+                 { responseID = NullID
                  , errorCode = -32700
                  , errorMessage = "Parse error"
                  , errorData = Nothing
@@ -261,8 +261,8 @@ objects =
       (Single
          (Right
             (MResponse
-               RError
-                 { errorID = NullID
+               ErrorResponse
+                 { responseID = NullID
                  , errorCode = -32600
                  , errorMessage = "Invalid Request"
                  , errorData = Nothing
@@ -272,8 +272,8 @@ objects =
       (Single
          (Right
             (MResponse
-               RError
-                 { errorID = NullID
+               ErrorResponse
+                 { responseID = NullID
                  , errorCode = -32700
                  , errorMessage = "Parse error"
                  , errorData = Nothing
@@ -283,8 +283,8 @@ objects =
       (Single
          (Right
             (MResponse
-               RError
-                 { errorID = NullID
+               ErrorResponse
+                 { responseID = NullID
                  , errorCode = -32600
                  , errorMessage = "Invalid Request"
                  , errorData = Nothing
@@ -294,8 +294,8 @@ objects =
       (Batch
          [ Right
              (MResponse
-                RError
-                  { errorID = NullID
+                ErrorResponse
+                  { responseID = NullID
                   , errorCode = -32600
                   , errorMessage = "Invalid Request"
                   , errorData = Nothing
@@ -307,24 +307,24 @@ objects =
       (Batch
          [ Right
              (MResponse
-                RError
-                  { errorID = NullID
+                ErrorResponse
+                  { responseID = NullID
                   , errorCode = -32600
                   , errorMessage = "Invalid Request"
                   , errorData = Nothing
                   })
          , Right
              (MResponse
-                RError
-                  { errorID = NullID
+                ErrorResponse
+                  { responseID = NullID
                   , errorCode = -32600
                   , errorMessage = "Invalid Request"
                   , errorData = Nothing
                   })
          , Right
              (MResponse
-                RError
-                  { errorID = NullID
+                ErrorResponse
+                  { responseID = NullID
                   , errorCode = -32600
                   , errorMessage = "Invalid Request"
                   , errorData = Nothing
@@ -383,16 +383,16 @@ objects =
                          , responseResult = Number 19 })
          , Right
              (MResponse
-                RError
-                  { errorID = NullID
+                ErrorResponse
+                  { responseID = NullID
                   , errorCode = -32600
                   , errorMessage = "Invalid Request"
                   , errorData = Nothing
                   })
          , Right
              (MResponse
-                RError
-                  { errorID = TextID "5"
+                ErrorResponse
+                  { responseID = TextID "5"
                   , errorCode = -32601
                   , errorMessage = "Method not found"
                   , errorData = Nothing

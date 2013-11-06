@@ -34,36 +34,53 @@ data ID = IntID Integer
         | NullID
     deriving (Eq, Show)
 
-data Request = Request
-                 { requestID :: ID
-                 , requestMethod :: Method
-                 , requestParams :: Maybe Params
-                 }
-             | Notification
-                 { requestMethod :: Method
-                 , requestParams :: Maybe Params
-                 }
-    deriving (Eq, Show)
+data Request    = Request
+                    { requestID :: ID
+                    , requestMethod :: Method
+                    , requestParams :: Maybe Params
+                    }
+                | Notification
+                    { requestMethod :: Method
+                    , requestParams :: Maybe Params
+                    }
+                | Request1
+                    { requestID :: ID
+                    , requestMethod :: Method
+                    , requestParams :: Maybe Params
+                    }
+                | Notification1
+                    { requestMethod :: Method
+                    , requestParams :: Maybe Params
+                    }
+            deriving (Eq, Show)
 
-data Response = Response
-                  { responseID :: ID
-                  , responseResult :: Value
-                  }
-              | RError
-                  { errorID :: ID
-                  , errorCode :: Int
-                  , errorMessage :: String
-                  , errorData :: Maybe Value
-                  }
-    deriving (Eq, Show)
+data Response   = Response
+                    { responseID :: ID
+                    , responseResult :: Value
+                    }
+                | ErrorResponse
+                    { responseID :: ID
+                    , errorCode :: Int
+                    , errorMessage :: String
+                    , errorData :: Maybe Value
+                    }
+                | Response1
+                    { responseID :: ID
+                    , responseResult :: Value
+                    }
+                | ErrorResponse1
+                    { responseID :: ID
+                    , responseResult :: Value
+                    }
+            deriving (Eq, Show)
 
-data Message = MRequest Request
-             | MResponse Response
-    deriving (Eq, Show)
+data Message    = MRequest Request
+                | MResponse Response
+        deriving (Eq, Show)
 
-data Document = Batch [Either Value Message]
-              | Single (Either Value Message)
-    deriving (Eq, Show)
+data Document   = Batch [Either Value Message]
+                | Single (Either Value Message)
+        deriving (Eq, Show)
 
 instance FromJSON ID where
     parseJSON (Number (I i)) = return . IntID $ i
@@ -87,62 +104,99 @@ instance ToJSON Params where
 
 instance FromJSON Request where
     parseJSON (Object v) = do
-        j <- v .: "jsonrpc" :: Parser String
-        guard (j == "2.0")
-        m <- v .: "method"
+        m  <- v .:  "method"
         mp <- v .:? "params"
         mi <- v .:? "id"
-        case mi of
-            Just i  -> return $ Request i m mp
-            Nothing -> return $ Notification m mp
+        mj <- v .:? "jsonrpc" :: Parser (Maybe String)
+        case mj of
+            Just "2.0" -> case mi of
+                Nothing     -> return $ Notification m mp
+                Just i      -> return $ Request    i m mp
+            Nothing -> case mi of
+                Nothing     -> return $ Notification1 m mp
+                Just NullID -> return $ Notification1 m mp
+                Just i      -> return $ Request1    i m mp
+            _ -> mzero
     parseJSON _ = mzero
 
 instance ToJSON Request where
     toJSON (Request i m mp) = object $
-        [ ("jsonrpc" .= ("2.0" :: String))
-        , ("id"      .= i)
-        , ("method"  .= m)
+        [ "jsonrpc" .= ("2.0" :: String)
+        , "id"      .= i
+        , "method"  .= m
         ] ++ (maybeToList $ ("params".=) <$> mp)
     toJSON (Notification m mp) = object $
-        [ ("jsonrpc" .= ("2.0" :: String))
-        , ("method"  .= m)
+        [ "jsonrpc" .= ("2.0" :: String)
+        , "method"  .= m
+        ] ++ (maybeToList $ ("params".=) <$> mp)
+    toJSON (Request1 i m mp) = object $
+        [ "id"      .= i
+        , "method"  .= m
+        ] ++ (maybeToList $ ("params".=) <$> mp)
+    toJSON (Notification1 m mp) = object $
+        [ "method"  .= m
         ] ++ (maybeToList $ ("params".=) <$> mp)
 
 instance FromJSON Response where
     parseJSON (Object v) = do
-        j <- v .: "jsonrpc" :: Parser String
-        guard (j == "2.0")
         i <- v .: "id"
-        me <- v .:? "error"
-        mr <- v .:? "result"
-        case mr of
-            Just r -> do
-                guard $ isNothing me
-                return $ Response i r
-            Nothing -> case me of
-                Just e -> do
-                    c <- e .: "code"
-                    m <- e .: "message"
-                    md <- e .:? "data"
-                    return $ RError i c m md
-                Nothing -> mzero
+        mj <- v .:? "jsonrpc" :: Parser (Maybe String)
+        case mj of
+            Just "2.0" -> do
+                me <- v .:? "error"
+                mr <- v .:? "result"
+                case mr of
+                    Just r -> do
+                        guard $ isNothing me
+                        return $ Response i r
+                    Nothing -> case me of
+                        Just e -> do
+                            c <- e .: "code"
+                            m <- e .: "message"
+                            md <- e .:? "data"
+                            return $ ErrorResponse i c m md
+                        Nothing -> mzero
+            Nothing -> do
+                e <- v .:? "error"  .!= Null
+                r <- v .:? "result" .!= Null
+                if (r == Null)
+                    then do
+                        guard $ e /= Null
+                        return $ ErrorResponse1 i e
+                    else do
+                        guard $ e == Null
+                        return $ Response1 i r
+            _ -> mzero
     parseJSON _ = mzero
 
 instance ToJSON Response where
-    toJSON (Response i v) = object $
-        [ ("jsonrpc" .= ("2.0" :: String))
-        , ("id"      .= i)
-        , ("result"  .= v)
-        ]
-    toJSON (RError i c m md) = object $
-        [ ("jsonrpc" .= ("2.0" :: String))
-        , ("id"      .= i)
-        , ("error"   .= e)
-        ]
-        where e = object $
-                    [ ("code"    .= c)
-                    , ("message" .= m)
-                    ] ++ (maybeToList $ ("data".=) <$> md)
+    toJSON (Response i v) =
+        object $
+            [ "jsonrpc" .= ("2.0" :: String)
+            , "id"      .= i
+            , "result"  .= v
+            ]
+    toJSON (ErrorResponse i c m md) =
+        object $
+            [ "jsonrpc" .= ("2.0" :: String)
+            , "id"      .= i
+            , "error"   .= e
+            ]
+            where e = object $  [ "code"    .= c
+                                , "message" .= m
+                                ] ++ (maybeToList $ ("data".=) <$> md)
+    toJSON (Response1 i v) =
+        object $
+            [ "id"      .= i
+            , "result"  .= v
+            , "error"   .= Null
+            ]
+    toJSON (ErrorResponse1 i e) =
+        object $
+            [ "id"      .= i
+            , "error"   .= e
+            , "result"  .= Null
+            ]
 
 instance FromJSON Message where
     parseJSON o@(Object _) = (return . MRequest  =<< parseJSON o)
@@ -174,7 +228,7 @@ instance ToJSON Document where
     toJSON (Single (Left x)) = toJSON x
 
 paramsArray :: [Value] -> Params
-paramsArray v = PArray $ V.fromList v
+paramsArray = PArray . V.fromList
 
 paramsObject :: [Pair] -> Params
-paramsObject p = PObject $ H.fromList p
+paramsObject = PObject . H.fromList

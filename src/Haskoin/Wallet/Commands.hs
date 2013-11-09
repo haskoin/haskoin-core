@@ -153,12 +153,6 @@ yamlAddr a
                   ]
           label = (T.pack "Label") .= addrLabel a
 
--- yamlAddrList :: [DBAddress] -> DBAccount -> Value
--- yamlAddrList addrs acc = toJSON 
---     [ object [ (T.pack "Account") .= yamlAcc acc ]
---     , object [ (T.pack "Addresses") .= (toJSON $ map yamlAddr addrs) ]
---     ]
-
 yamlAddrList :: [DBAddress] -> DBAccount -> Value
 yamlAddrList addrs acc = object
     [ (T.pack "Account") .= yamlAcc acc
@@ -298,6 +292,11 @@ cmdAllCoins = dbCoinListAll >>= \coins -> do
     accs  <- mapM (dbGetAcc . AccPos . coinAccPos) coins
     return $ toJSON $ map (\(c,a) -> yamlCoin c a) $ zip coins accs
 
+-- cmdSendTo :: String -> Int -> AccountName -> Command
+-- cmdSendTo a v name = dbGetAcc (AccName name) >>= \acc -> do
+--     coins <- dbCoinList $ accPos $ runAccData acc
+--     tx <- liftEither $ buildTx 
+      
 cmdDecodeTx :: String -> Command
 cmdDecodeTx str = do
     tx <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS str)
@@ -330,4 +329,5 @@ cmdSignTx strTx xs sh = do
             tid <- liftEither $ decodeToEither $ BS.reverse tBS
             dbGetSigData scp (OutPoint tid $ fromIntegral i) sh
           txErr = "cmdSignTx: Could not decode transaction"
+
 

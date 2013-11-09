@@ -5,6 +5,8 @@ module Haskoin.Wallet.TxBuilder
 , signTx
 , detSignTx
 , verifyTx
+, guessTxSize
+, chooseCoins
 ) where
 
 import Control.Monad
@@ -20,6 +22,59 @@ import Haskoin.Script
 import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util
+
+-- |Select coins to spend based on a target amount and a fee per KB
+chooseCoins :: Word64 -> Word64 -> [TxOut] -> Either String ([TxOut],Word64)
+chooseCoins target kbfee xs 
+    | target > 0 = maybeToEither err $ greedySubset target kbfee xs
+    | otherwise = Left "chooseCoins: Target must be > 0"
+    where err  = "chooseCoins: No solution found"
+
+-- |Greedy algorithm to select coins towards twice the target value
+greedySubset :: Word64 -> Word64 -> [TxOut] -> Maybe ([TxOut],Word64)
+greedySubset target kbfee xs = go [] 0 xs
+    where go acc tot ys
+            | null ys = Nothing
+            | newtot >= topay = return $ postProcess topay $ g:acc
+            | otherwise = go (g:acc) newtot (delete g ys) 
+            where g      = minimumBy (\a b -> (f a) `compare` (f b)) ys
+                  newtot = tot + outValue g
+                  txlen  = fromIntegral $ guessTxSize (length acc + 1) [] 2 0
+                  topay  = kbfee*(1 + (txlen `div` 1000)) + target
+                  f out  = let res = (fromIntegral $ outValue out + tot) - 
+                                     (fromIntegral topay) :: Integer
+                           -- give priority to outputs overshooting the target
+                           in abs $ if res < 0 then res*2 else res
+
+postProcess :: Word64 -> [TxOut] -> ([TxOut],Word64)
+postProcess topay xs = go 0 [] $ reverse $ sortBy f xs
+    where f a b = compare (outValue a) (outValue b)
+          go tot acc (y:ys)
+            | tot + outValue y >= topay = (y:acc,tot + outValue y - topay)
+            | otherwise = go (tot + outValue y) (y:acc) ys
+
+guessTxSize :: Int -> [(Int,Int)] -> Int -> Int -> Int
+guessTxSize pki msi pkout msout = 8 + inpLen + inp + outLen + out
+    where inpLen = BS.length $ encode' $ 
+            VarInt $ fromIntegral $ (length msi) + pki
+          outLen = BS.length $ encode' $ 
+            VarInt $ fromIntegral $ pkout + msout
+          inp    = pki*148 + (sum $ map guessMSSize msi)
+                   -- (20: hash160) + (5: opcodes) + 
+                   -- (1: script len) + (8: Word64)
+          out    = pkout*34 + 
+                   -- (20: hash160) + (3: opcodes) + 
+                   -- (1: script len) + (8: Word64)
+                   msout*32
+
+-- Size of a multisig pay2sh input
+guessMSSize :: (Int,Int) -> Int
+          -- OutPoint (36) + Sequence (4) + Script
+guessMSSize (m,n) = 40 + (BS.length $ encode' $ VarInt $ fromIntegral scp) + scp
+          -- OP_M + n*PubKey + OP_N + OP_CHECKMULTISIG
+    where rdm = BS.length $ encode' $ OP_PUSHDATA $ BS.replicate (n*34 + 3) 0
+          -- Redeem + m*sig + OP_0
+          scp = rdm + m*73 + 1 
 
 {- Build a new Tx -}
 

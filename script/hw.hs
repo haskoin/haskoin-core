@@ -156,7 +156,8 @@ process opts xs
         case res of
             Left  err -> formatStr err
             Right val -> if optJson opts 
-                then formatStr $ bsToString $ toStrictBS $ JSON.encodePretty val
+                then formatStr $ bsToString $ toStrictBS $ 
+                    JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } val
                 else formatStr $ bsToString $ YAML.encode val
 
 checkInit :: String -> WalletDB (ResourceT IO) ()

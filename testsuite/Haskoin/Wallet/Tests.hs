@@ -41,6 +41,8 @@ tests =
         ]
     , testGroup "Building Transactions"
         [ testProperty "building address tx" testBuildAddrTx
+        , testProperty "testing guessTxSize function" testGuessSize
+        , testProperty "testing chooseCoins function" testChooseCoins
         ]
     , testGroup "Signing Transactions"
         [ testProperty "Check signed transaction status" testSignTxBuild
@@ -95,8 +97,40 @@ testBuildAddrTx os a v
         x@(PubKeyAddress _) -> Right (PayPKHash x) == out
         x@(ScriptAddress _) -> Right (PayScriptHash x) == out
     | otherwise = isLeft tx
-    where tx = buildAddrTx os [(addrToBase58 a,v)]
+    where tx  = buildAddrTx os [(addrToBase58 a,v)]
           out = decodeOutput $ scriptOutput $ txOut (fromRight tx) !! 0
+
+testGuessSize :: RegularTx -> Bool
+testGuessSize (RegularTx tx) =
+    -- We compute an upper bound but it should be close enough to the real size
+    -- We give 3 bytes of slack on every signature (1 on r and 2 on s)
+    guess >= len && guess - 3*delta <= len
+    where delta = pki + (sum $ map fst msi)
+          guess = guessTxSize pki msi pkout msout
+          len = BS.length $ encode' tx
+          rIns = map (decodeInput . scriptInput) $ txIn tx
+          mIns = map (decodeScriptHash . scriptInput) $ txIn tx
+          pki = length $ filter (isSpendPKHash . fromRight) $ 
+                    filter isRight rIns
+          msi = concat $ map (shData . fromRight) $ filter isRight mIns
+          shData (ScriptHashInput _ (PayMulSig keys r)) = [(r,length keys)]
+          shData _ = []
+          out  = map (fromRight . decodeOutput . scriptOutput) $ txOut tx
+          pkout = length $ filter isPayPKHash out
+          msout = length $ filter isPayScriptHash out
+
+testChooseCoins :: Word64 -> Word64 -> [TxOut] -> Bool
+testChooseCoins target kbfee xs = case chooseCoins target kbfee xs of
+    Right (chosen,change) ->
+        let outSum = sum $ map outValue chosen
+            size   = fromIntegral $ guessTxSize (length chosen) [] 2 0
+            fee    = kbfee*(1 + (size `div` 1000))
+        in outSum == target + change + fee
+    Left _ -> 
+        let outSum = sum $ map outValue xs
+            size   = fromIntegral $ guessTxSize (length xs) [] 2 0
+            fee    = kbfee*(1 + (size `div` 1000))
+        in target == 0 || outSum < target + fee
 
 {- Signing Transactions -}
 

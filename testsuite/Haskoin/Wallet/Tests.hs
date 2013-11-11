@@ -119,18 +119,16 @@ testGuessSize (RegularTx tx) =
           pkout = length $ filter isPayPKHash out
           msout = length $ filter isPayScriptHash out
 
-testChooseCoins :: Word64 -> Word64 -> [TxOut] -> Bool
+testChooseCoins :: Word64 -> Word64 -> [DBCoin] -> Bool
 testChooseCoins target kbfee xs = case chooseCoins target kbfee xs of
     Right (chosen,change) ->
-        let outSum = sum $ map outValue chosen
-            size   = fromIntegral $ guessTxSize (length chosen) [] 2 0
-            fee    = kbfee*(1 + (size `div` 1000))
+        let outSum = sum $ map (outValue . coinTxOut) chosen
+            fee    = getFee (length chosen) kbfee
         in outSum == target + change + fee
     Left _ -> 
-        let outSum = sum $ map outValue xs
-            size   = fromIntegral $ guessTxSize (length xs) [] 2 0
-            fee    = kbfee*(1 + (size `div` 1000))
-        in target == 0 || outSum < target + fee
+        let fee = getFee (length xs) kbfee
+        in target == 0 || s < target || s < target + fee
+    where s = sum $ map (outValue . coinTxOut) xs
 
 {- Signing Transactions -}
 

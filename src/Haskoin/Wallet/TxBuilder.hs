@@ -7,6 +7,7 @@ module Haskoin.Wallet.TxBuilder
 , verifyTx
 , guessTxSize
 , chooseCoins
+, getFee
 ) where
 
 import Control.Monad
@@ -18,40 +19,34 @@ import Data.List
 import Data.Word
 import qualified Data.ByteString as BS
 
+import Haskoin.Wallet.Store.DBCoin
 import Haskoin.Script
 import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util
 
 -- |Select coins to spend based on a target amount and a fee per KB
-chooseCoins :: Word64 -> Word64 -> [TxOut] -> Either String ([TxOut],Word64)
+chooseCoins :: Word64 -> Word64 -> [DBCoin] -> Either String ([DBCoin],Word64)
 chooseCoins target kbfee xs 
-    | target > 0 = maybeToEither err $ greedySubset target kbfee xs
-    | otherwise = Left "chooseCoins: Target must be > 0"
-    where err  = "chooseCoins: No solution found"
+    | s < target = Left "chooseCoins: No solution found"
+    | target > 0 = return $ greedyKnapsack (s-target) kbfee xs
+    | otherwise  = Left "chooseCoins: Target must be > 0"
+    where s = sum $ map (outValue . coinTxOut) xs
 
--- |Greedy algorithm to select coins towards twice the target value
-greedySubset :: Word64 -> Word64 -> [TxOut] -> Maybe ([TxOut],Word64)
-greedySubset target kbfee xs = go [] 0 xs
-    where go acc tot ys
-            | null ys = Nothing
-            | newtot >= topay = return $ postProcess topay $ g:acc
-            | otherwise = go (g:acc) newtot (delete g ys) 
-            where g      = minimumBy (\a b -> (f a) `compare` (f b)) ys
-                  newtot = tot + outValue g
-                  txlen  = fromIntegral $ guessTxSize (length acc + 1) [] 2 0
-                  topay  = kbfee*(1 + (txlen `div` 1000)) + target
-                  f out  = let res = (fromIntegral $ outValue out + tot) - 
-                                     (fromIntegral topay) :: Integer
-                           -- give priority to outputs overshooting the target
-                           in abs $ if res < 0 then res*2 else res
+greedyKnapsack :: Word64 -> Word64 -> [DBCoin] -> ([DBCoin],Word64)
+greedyKnapsack target kbfee xs = go [] 0 $ reverse $ sortBy f xs
+    where f a b = compare (outValue $ coinTxOut a) (outValue $ coinTxOut b)
+          go acc tot ys 
+            | null ys                = (acc,fromInteger $ goal 0)
+            | val > goal (length ys) = go (head ys:acc) tot $ tail ys
+            | otherwise              = go acc (tot + val) $ tail ys
+            where val    = toInteger $ outValue $ coinTxOut $ head ys 
+                  goal i = toInteger target - 
+                           toInteger (getFee (length acc + i) kbfee) - tot
 
-postProcess :: Word64 -> [TxOut] -> ([TxOut],Word64)
-postProcess topay xs = go 0 [] $ reverse $ sortBy f xs
-    where f a b = compare (outValue a) (outValue b)
-          go tot acc (y:ys)
-            | tot + outValue y >= topay = (y:acc,tot + outValue y - topay)
-            | otherwise = go (tot + outValue y) (y:acc) ys
+getFee :: Int -> Word64 -> Word64
+getFee count kbfee = kbfee*((len + 999) `div` 1000)
+    where len = fromIntegral $ guessTxSize count [] 2 0
 
 guessTxSize :: Int -> [(Int,Int)] -> Int -> Int -> Int
 guessTxSize pki msi pkout msout = 8 + inpLen + inp + outLen + out

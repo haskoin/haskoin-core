@@ -98,6 +98,7 @@ cmdHelp =
     , "  label     <index> <label> [acc]       Add a label to an address"
     , "  balance   [acc]                       Display account balance"
     , "  totalbalance                          Display total balance"
+    , "  send      addr amount [acc]           Send coins to an address"
     , "  focus     <acc>                       Set the focused account"
     , "  newacc    <name>                      Create a new account"
     , "  newms     <name> <M> {pubkeys...}     Create a new multisig account"
@@ -196,6 +197,8 @@ dispatchCommand cmd opts args = case cmd of
         cmdLabel (read $ args !! 0) (args !! 1) acc
     "balance"      -> withFocus args 1 $ \acc -> cmdBalance acc
     "totalbalance" -> whenArgs args (== 0) cmdTotalBalance
+    "send"         -> withFocus args 3 $ \acc -> 
+        cmdSend (head args) (read $ args !! 1) acc
     "dumpkey"      -> withFocus args 1 $ \acc -> cmdDumpKey acc
     "importtx"     -> whenArgs args (== 1) $ cmdImportTx $ head args
     "coins"        -> withFocus args 1 $ \acc -> cmdCoins acc

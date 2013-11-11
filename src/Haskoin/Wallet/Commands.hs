@@ -251,6 +251,21 @@ cmdTotalBalance = dbCoinListAll >>= \coins -> do
     let balance = sum $ map (fromIntegral . outValue . coinTxOut) coins
     return $ object [ (T.pack "Total balance") .= toJSON (balance :: Word64) ] 
 
+cmdSend :: String -> Int -> AccountName -> Command
+cmdSend a v name = dbGetAcc (AccName name) >>= \acc -> do
+    unspent <- dbCoinList $ accPos $ runAccData acc
+    (coins,change) <- liftEither $ chooseCoins (fromIntegral v) 10000 unspent
+    recipients <- if change < 5000 then return [(a,fromIntegral v)] else do
+        cAddr <- dbGenAddr (accPos $ runAccData acc) 1 True
+        return $ [(a,fromIntegral v),(addrBase58 $ head cAddr,change)]
+    tx <- liftEither $ buildAddrTx (map coinOutPoint coins) recipients
+    ys <- mapM f coins
+    let sigTx = detSignTx tx (map fst ys) (map snd ys)
+        bsTx  = (bsToHex . encode') <$> sigTx
+    return $ object [(T.pack "Payment Tx") .= (toJSON $ runBuild bsTx)]
+    where f c = let s = scriptOutput $ coinTxOut c
+                in dbGetSigData s (coinOutPoint c) $ SigAll False
+      
 cmdDumpKey :: AccountName -> Command
 cmdDumpKey name = dbGetAcc (AccName name) >>= \acc -> do
     mst <- dbGetConfig cfgMaster
@@ -292,11 +307,6 @@ cmdAllCoins = dbCoinListAll >>= \coins -> do
     accs  <- mapM (dbGetAcc . AccPos . coinAccPos) coins
     return $ toJSON $ map (\(c,a) -> yamlCoin c a) $ zip coins accs
 
--- cmdSendTo :: String -> Int -> AccountName -> Command
--- cmdSendTo a v name = dbGetAcc (AccName name) >>= \acc -> do
---     coins <- dbCoinList $ accPos $ runAccData acc
---     tx <- liftEither $ buildTx 
-      
 cmdDecodeTx :: String -> Command
 cmdDecodeTx str = do
     tx <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS str)

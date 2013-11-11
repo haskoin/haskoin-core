@@ -28,21 +28,37 @@ import Haskoin.Util
 -- |Select coins to spend based on a target amount and a fee per KB
 chooseCoins :: Word64 -> Word64 -> [DBCoin] -> Either String ([DBCoin],Word64)
 chooseCoins target kbfee xs 
-    | s < target = Left "chooseCoins: No solution found"
-    | target > 0 = return $ greedyKnapsack (s-target) kbfee xs
+    | target > 0 = maybeToEither err $ greedyRem target kbfee xs
     | otherwise  = Left "chooseCoins: Target must be > 0"
-    where s = sum $ map (outValue . coinTxOut) xs
+    where err = "chooseCoins: No solution found"
 
-greedyKnapsack :: Word64 -> Word64 -> [DBCoin] -> ([DBCoin],Word64)
-greedyKnapsack target kbfee xs = go [] 0 $ reverse $ sortBy f xs
-    where f a b = compare (outValue $ coinTxOut a) (outValue $ coinTxOut b)
-          go acc tot ys 
-            | null ys                = (acc,fromInteger $ goal 0)
-            | val > goal (length ys) = go (head ys:acc) tot $ tail ys
-            | otherwise              = go acc (tot + val) $ tail ys
-            where val    = toInteger $ outValue $ coinTxOut $ head ys 
-                  goal i = toInteger target - 
-                           toInteger (getFee (length acc + i) kbfee) - tot
+greedyAdd :: Word64 -> Word64 -> [DBCoin] -> Maybe ([DBCoin],Word64)
+greedyAdd target kbfee xs = go [] 0 [] 0 $ sortBy f xs
+    where f b a = compare (outValue $ coinTxOut a) (outValue $ coinTxOut b)
+          goal c = target + getFee c kbfee
+          go _ _ [] _ []    = Nothing
+          go _ _ ps pTot [] = return (ps,pTot - (goal $ length ps))
+          go acc aTot ps pTot (y:ys)
+            | val + aTot >= (goal $ length acc + 1) =
+                if aTot + val - target < pTot - target
+                    then go [] 0 (y:acc) (aTot + val) ys
+                    else return (ps,pTot - (goal $ length ps))
+            | otherwise = go (y:acc) (aTot + val) ps pTot ys
+            where val = outValue $ coinTxOut y
+
+greedyRem :: Word64 -> Word64 -> [DBCoin] -> Maybe ([DBCoin],Word64)
+greedyRem target kbfee xs 
+    | s < goal (length xs) = Nothing
+    | otherwise = return $ go [] s $ sortBy desc xs
+    where desc a b = compare (outValue $ coinTxOut b) (outValue $ coinTxOut a)
+          s        = sum $ map (outValue . coinTxOut) xs
+          goal   c = target + (getFee c kbfee)
+          go acc tot [] = (acc,tot - (goal $ length acc))
+          go acc tot (y:ys) 
+            | tot - val >= (goal $ length ys + length acc) = 
+                go acc (tot - val) ys
+            | otherwise = go (y:acc) tot ys
+            where val = outValue $ coinTxOut y
 
 getFee :: Int -> Word64 -> Word64
 getFee count kbfee = kbfee*((len + 999) `div` 1000)

@@ -254,7 +254,10 @@ cmdTotalBalance = dbCoinListAll >>= \coins -> do
 cmdSend :: String -> Int -> AccountName -> Command
 cmdSend a v name = dbGetAcc (AccName name) >>= \acc -> do
     unspent <- dbCoinList $ accPos $ runAccData acc
-    (coins,change) <- liftEither $ chooseCoins (fromIntegral v) 10000 unspent
+    (coins,change) <- liftEither $ if isMSAcc acc
+        then let msParam = (msReq acc,length $ msKeys acc)
+             in chooseMSCoins (fromIntegral v) 10000 msParam unspent
+        else chooseCoins (fromIntegral v) 10000 unspent
     recipients <- if change < 5000 then return [(a,fromIntegral v)] else do
         cAddr <- dbGenAddr (accPos $ runAccData acc) 1 True
         return $ [(a,fromIntegral v),(addrBase58 $ head cAddr,change)]
@@ -262,7 +265,9 @@ cmdSend a v name = dbGetAcc (AccName name) >>= \acc -> do
     ys <- mapM f coins
     let sigTx = detSignTx tx (map fst ys) (map snd ys)
         bsTx  = (bsToHex . encode') <$> sigTx
-    return $ object [(T.pack "Payment Tx") .= (toJSON $ runBuild bsTx)]
+    return $ object [ (T.pack "Payment Tx") .= (toJSON $ runBuild bsTx)
+                    , (T.pack "Complete") .= isComplete bsTx
+                    ]
     where f c = let s = scriptOutput $ coinTxOut c
                 in dbGetSigData s (coinOutPoint c) $ SigAll False
       
@@ -323,8 +328,11 @@ cmdBuildTx os as = do
             return $ OutPoint tid $ fromIntegral i
           tidErr  = "cmdBuildTx: Could not decode outpoint txid"
 
-cmdSignTx :: String -> [(String,Int,String)] -> SigHash -> Command
-cmdSignTx strTx xs sh = do
+cmdSignTx :: String -> Command
+cmdSignTx strTx = error "Not Implemented"
+
+cmdSignRawTx :: String -> [(String,Int,String)] -> SigHash -> Command
+cmdSignRawTx strTx xs sh = do
     tx <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS strTx)
     ys <- mapRights f xs
     let sigTx = detSignTx tx (map fst ys) (map snd ys)

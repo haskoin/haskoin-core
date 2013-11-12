@@ -109,7 +109,8 @@ cmdHelp =
     , "  allcoins                              List all transaction outputs"
     , "  decodetx  <tx>                        Decode HEX transaction"
     , "  buildtx   {txid:id...} {addr:amnt...} Build a new transaction"
-    , "  signtx    <tx> {txid:id:script...}    Sign a transaction"
+    , "  signtx    <tx>                        Sign a transaction"
+    , "  signrawtx <tx> {txid:id:script...}    Sign a raw transaction"
     ]
 
 warningMsg :: String
@@ -212,10 +213,11 @@ dispatchCommand cmd opts args = case cmd of
         os' <- mapM f os
         as' <- mapM f as
         cmdBuildTx os' as'
-    "signtx"       -> whenArgs args (>= 2) $ do 
+    "signtx"       -> whenArgs args (== 1) $ cmdSignTx $ head args
+    "signrawtx"    -> whenArgs args (>= 2) $ do 
         let f [t,i,s] = return (t,read i,s)
             f _       = left "Invalid syntax for txid:index:script"
         xs <- mapM (f . (splitOn ":")) $ tail args
-        cmdSignTx (head args) xs $ optSigHash opts
+        cmdSignRawTx (head args) xs $ optSigHash opts
     _ -> left $ unwords ["Invalid command:", cmd]
 

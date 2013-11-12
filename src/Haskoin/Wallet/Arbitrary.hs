@@ -18,6 +18,15 @@ import Haskoin.Script
 import Haskoin.Protocol
 import Haskoin.Crypto
 
+data MSParam = MSParam Int Int deriving (Eq, Show)
+
+instance Arbitrary MSParam where
+    arbitrary = do
+        n <- choose (1,16)
+        m <- choose (1,n)
+        return $ MSParam m n
+        
+
 data RegularTx = RegularTx { runRegularTx :: Tx }
     deriving (Eq, Show)
 
@@ -26,8 +35,7 @@ genPubKeyC = derivePubKey <$> genPrvKeyC
 
 genMulSigInput :: Gen ScriptHashInput
 genMulSigInput = do
-    n <- choose (1,16)
-    m <- choose (1,n)
+    (MSParam m n) <- arbitrary
     rdm <- PayMulSig <$> (vectorOf n genPubKeyC) <*> (return m)
     inp <- SpendMulSig <$> (vectorOf m arbitrary) <*> (return m)
     return $ ScriptHashInput inp rdm

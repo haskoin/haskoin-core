@@ -43,6 +43,7 @@ tests =
         [ testProperty "building address tx" testBuildAddrTx
         , testProperty "testing guessTxSize function" testGuessSize
         , testProperty "testing chooseCoins function" testChooseCoins
+        , testProperty "testing chooseMSCoins function" testChooseMSCoins
         ]
     , testGroup "Signing Transactions"
         [ testProperty "Check signed transaction status" testSignTxBuild
@@ -123,11 +124,23 @@ testChooseCoins :: Word64 -> Word64 -> [DBCoin] -> Bool
 testChooseCoins target kbfee xs = case chooseCoins target kbfee xs of
     Right (chosen,change) ->
         let outSum = sum $ map (outValue . coinTxOut) chosen
-            fee    = getFee (length chosen) kbfee
+            fee    = getFee kbfee (length chosen) 
         in outSum == target + change + fee
     Left _ -> 
-        let fee = getFee (length xs) kbfee
+        let fee = getFee kbfee (length xs) 
         in target == 0 || s < target || s < target + fee
+    where s = sum $ map (outValue . coinTxOut) xs
+
+testChooseMSCoins :: Word64 -> Word64 -> MSParam -> [DBCoin] -> Bool
+testChooseMSCoins target kbfee (MSParam m n) xs = 
+    case chooseMSCoins target kbfee (m,n) xs of
+        Right (chosen,change) ->
+            let outSum = sum $ map (outValue . coinTxOut) chosen
+                fee    = getMSFee kbfee (m,n) (length chosen) 
+            in outSum == target + change + fee
+        Left _ -> 
+            let fee = getMSFee kbfee (m,n) (length xs) 
+            in target == 0 || s < target + fee
     where s = sum $ map (outValue . coinTxOut) xs
 
 {- Signing Transactions -}

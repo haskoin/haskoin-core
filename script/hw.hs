@@ -89,28 +89,28 @@ usageHeader = "Usage: hw [<options>] <command> [<args>]"
 cmdHelp :: [String]
 cmdHelp = 
     [ "Valid hw commands: " 
-    , "  init      <seed>                      Initialize a wallet"
-    , "  list      [acc]                       Display most recent addresses" 
-    , "  listfrom  <from> [acc]                Display addresses from an index" 
-    , "  listall   [acc]                       Display all addresses" 
-    , "  new       <label> [acc]               Generate address with a label"
-    , "  genaddr   [acc]                       Generate new addresses"
-    , "  label     <index> <label> [acc]       Add a label to an address"
-    , "  balance   [acc]                       Display account balance"
-    , "  totalbalance                          Display total balance"
-    , "  send      addr amount [acc]           Send coins to an address"
-    , "  focus     <acc>                       Set the focused account"
-    , "  newacc    <name>                      Create a new account"
-    , "  newms     <name> <M> {pubkeys...}     Create a new multisig account"
-    , "  listacc                               List all accounts"
-    , "  dumpkey   [acc]                       Dump pubkey to stdout"
-    , "  importtx  <tx>                        Import transaction"
-    , "  coins     [acc]                       List transaction outputs"
-    , "  allcoins                              List all transaction outputs"
-    , "  decodetx  <tx>                        Decode HEX transaction"
-    , "  buildtx   {txid:id...} {addr:amnt...} Build a new transaction"
-    , "  signtx    <tx>                        Sign a transaction"
-    , "  signrawtx <tx> {txid:id:script...}    Sign a raw transaction"
+    , "  init       <seed>                      Initialize a wallet"
+    , "  list       [acc]                       Display most recent addresses" 
+    , "  listfrom   <from> [acc]                Display addresses from an index" 
+    , "  listall    [acc]                       Display all addresses" 
+    , "  new        <label> [acc]               Generate address with a label"
+    , "  genaddr    [acc]                       Generate new addresses"
+    , "  label      <index> <label> [acc]       Add a label to an address"
+    , "  balance    [acc]                       Display account balance"
+    , "  totalbalance                           Display total balance"
+    , "  send       addr amount [acc]           Send coins to an address"
+    , "  signtx     <tx>                        Sign a transaction"
+    , "  focus      <acc>                       Set the focused account"
+    , "  newacc     <name>                      Create a new account"
+    , "  newms      <name> <M> {pubkeys...}     Create a new multisig account"
+    , "  listacc                                List all accounts"
+    , "  dumpkey    [acc]                       Dump pubkey to stdout"
+    , "  importtx   <tx>                        Import transaction"
+    , "  coins      [acc]                       List transaction outputs"
+    , "  allcoins                               List all transaction outputs"
+    , "  decodetx   <tx>                        Decode HEX transaction"
+    , "  buildrawtx {txid:id...} {addr:amnt...} Build a new transaction"
+    , "  signrawtx  <tx> {txid:id:script...}    Sign a raw transaction"
     ]
 
 warningMsg :: String
@@ -189,31 +189,31 @@ dispatchCommand cmd opts args = case cmd of
     "listall"      -> withFocus args 1 $ \acc -> cmdListAll acc
     "new"          -> withFocus args 2 $ \acc -> cmdNew (args !! 0) acc
     "genaddr"      -> withFocus args 1 $ \acc -> cmdGenAddr (optCount opts) acc
-    "focus"        -> whenArgs args (== 1) $ cmdFocus $ head args
-    "newacc"       -> whenArgs args (== 1) $ cmdNewAcc $ head args
-    "newms"        -> whenArgs args (>= 3) $ 
-        cmdNewMS (args !! 0) (read $ args !! 1) $ drop 2 args
-    "listacc"      -> whenArgs args (== 0) cmdListAcc 
     "label"        -> withFocus args 3 $ \acc -> 
         cmdLabel (read $ args !! 0) (args !! 1) acc
     "balance"      -> withFocus args 1 $ \acc -> cmdBalance acc
     "totalbalance" -> whenArgs args (== 0) cmdTotalBalance
     "send"         -> withFocus args 3 $ \acc -> 
         cmdSend (head args) (read $ args !! 1) acc
+    "signtx"       -> withFocus args 2 $ \acc -> cmdSignTx (head args) acc
+    "focus"        -> whenArgs args (== 1) $ cmdFocus $ head args
+    "newacc"       -> whenArgs args (== 1) $ cmdNewAcc $ head args
+    "newms"        -> whenArgs args (>= 3) $ 
+        cmdNewMS (args !! 0) (read $ args !! 1) $ drop 2 args
+    "listacc"      -> whenArgs args (== 0) cmdListAcc 
     "dumpkey"      -> withFocus args 1 $ \acc -> cmdDumpKey acc
     "importtx"     -> whenArgs args (== 1) $ cmdImportTx $ head args
     "coins"        -> withFocus args 1 $ \acc -> cmdCoins acc
     "allcoins"     -> whenArgs args (== 0) cmdAllCoins
     "decodetx"     -> whenArgs args (== 1) $ cmdDecodeTx $ head args
-    "buildtx"      -> whenArgs args (>= 2) $ do
+    "buildrawtx"   -> whenArgs args (>= 2) $ do
         let xs     = map (splitOn ":") args
             (os,as) = span ((== 64) . length . head) xs
             f [a,b] = return (a,read b) 
             f _     = left "buildtx: Invalid syntax"
         os' <- mapM f os
         as' <- mapM f as
-        cmdBuildTx os' as'
-    "signtx"       -> whenArgs args (== 1) $ cmdSignTx $ head args
+        cmdBuildRawTx os' as'
     "signrawtx"    -> whenArgs args (>= 2) $ do 
         let f [t,i,s] = return (t,read i,s)
             f _       = left "Invalid syntax for txid:index:script"

@@ -211,23 +211,6 @@ cmdGenAddr count name = dbGetAcc (AccName name) >>= \acc -> do
     addrs  <- dbGenAddr (accPos $ runAccData acc) count False
     (yamlAddrList addrs) <$> (dbGetAcc $ AccPos $ accPos $ runAccData acc)
 
-cmdFocus :: AccountName -> Command
-cmdFocus name = dbGetAcc (AccName name) >>= \acc -> do
-    dbPutConfig $ \cfg -> cfg{ cfgFocus = accName $ runAccData acc }
-    return $ yamlAcc acc
-
-cmdNewAcc :: AccountName -> Command
-cmdNewAcc name = yamlAcc <$> dbNewAcc name
-
-cmdNewMS :: AccountName -> Int -> [String] -> Command
-cmdNewMS name r xs = do
-    keys <- mapM ((liftMaybe errKey) . xPubImport) xs
-    yamlAcc <$> dbNewMSAcc name r keys
-    where errKey = "cmdNewMS: Error importing extended public key"
-
-cmdListAcc :: Command
-cmdListAcc = toJSON . (map yamlAcc) <$> dbAccList
-
 cmdLabel :: Int -> String -> AccountName -> Command
 cmdLabel pos label name = dbGetAcc (AccName name) >>= \acc -> do
     when (pos > (accExtCount $ runAccData acc)) $ 
@@ -270,7 +253,38 @@ cmdSend a v name = dbGetAcc (AccName name) >>= \acc -> do
                     ]
     where f c = let s = scriptOutput $ coinTxOut c
                 in dbGetSigData s (coinOutPoint c) $ SigAll False
-      
+
+cmdSignTx :: String -> AccountName -> Command
+cmdSignTx str name = dbGetAcc (AccName name) >>= \acc -> do
+    tx    <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS str)
+    coins <- mapM (dbGetCoin . CoinOutPoint) $ map prevOutput $ txIn tx
+    ys    <- mapM f coins
+    let sigTx = detSignTx tx (map fst ys) (map snd ys)
+        bsTx  = (bsToHex . encode') <$> sigTx
+    return $ object [ (T.pack "Tx") .= (toJSON $ runBuild bsTx)
+                    , (T.pack "Complete") .= isComplete bsTx
+                    ]
+    where txErr = "cmdSignTx: Could not decode transaction"
+          f c   = let s = scriptOutput $ coinTxOut c
+                  in dbGetSigData s (coinOutPoint c) $ SigAll False
+
+cmdFocus :: AccountName -> Command
+cmdFocus name = dbGetAcc (AccName name) >>= \acc -> do
+    dbPutConfig $ \cfg -> cfg{ cfgFocus = accName $ runAccData acc }
+    return $ yamlAcc acc
+
+cmdNewAcc :: AccountName -> Command
+cmdNewAcc name = yamlAcc <$> dbNewAcc name
+
+cmdNewMS :: AccountName -> Int -> [String] -> Command
+cmdNewMS name r xs = do
+    keys <- mapM ((liftMaybe errKey) . xPubImport) xs
+    yamlAcc <$> dbNewMSAcc name r keys
+    where errKey = "cmdNewMS: Error importing extended public key"
+
+cmdListAcc :: Command
+cmdListAcc = toJSON . (map yamlAcc) <$> dbAccList
+
 cmdDumpKey :: AccountName -> Command
 cmdDumpKey name = dbGetAcc (AccName name) >>= \acc -> do
     mst <- dbGetConfig cfgMaster
@@ -298,7 +312,7 @@ cmdImportTx str = do
         , (T.pack "Imported coins") .= toJSON json
         ]
     where txErr = "cmdImportTx: Could not decode transaction"
-
+      
 cmdCoins :: AccountName -> Command
 cmdCoins name = dbGetAcc (AccName name) >>= \acc -> do
     coins <- dbCoinList $ accPos $ runAccData acc
@@ -318,18 +332,15 @@ cmdDecodeTx str = do
     return $ toJSON (tx :: Tx)
     where txErr = "cmdDecodeTx: Could not decode transaction"
 
-cmdBuildTx :: [(String,Int)] -> [(String,Int)] -> Command
-cmdBuildTx os as = do
+cmdBuildRawTx :: [(String,Int)] -> [(String,Int)] -> Command
+cmdBuildRawTx os as = do
     ops <- mapM f os
     tx  <- liftEither $ buildAddrTx ops $ map (\(a,v) -> (a,fromIntegral v)) as
-    return $ object [ (T.pack "Hex Tx") .= (bsToHex $ encode' tx) ]
+    return $ object [ (T.pack "Tx") .= (bsToHex $ encode' tx) ]
     where f (t,i) = do
             tid <- liftMaybe tidErr $ (decodeToMaybe . BS.reverse) =<< hexToBS t
             return $ OutPoint tid $ fromIntegral i
           tidErr  = "cmdBuildTx: Could not decode outpoint txid"
-
-cmdSignTx :: String -> Command
-cmdSignTx strTx = error "Not Implemented"
 
 cmdSignRawTx :: String -> [(String,Int,String)] -> SigHash -> Command
 cmdSignRawTx strTx xs sh = do
@@ -337,7 +348,7 @@ cmdSignRawTx strTx xs sh = do
     ys <- mapRights f xs
     let sigTx = detSignTx tx (map fst ys) (map snd ys)
         bsTx  = (bsToHex . encode') <$> sigTx
-    return $ object [ (T.pack "Hex Tx") .= (toJSON $ runBuild bsTx)
+    return $ object [ (T.pack "Tx") .= (toJSON $ runBuild bsTx)
                     , (T.pack "Complete") .= isComplete bsTx
                     ]
     where f (t,i,s) = do

@@ -125,24 +125,27 @@ instance ToJSON ScriptHashInput where
 
 yamlAcc :: DBAccount -> Value
 yamlAcc acc 
-    | isMSAcc acc = object 
+    | isMSAcc acc = object $
         [ (T.pack "Name") .= accName aData
         , (T.pack "Type") .= unwords [ "Multisig", ms ]
         , (T.pack "Tree") .= dbAccTree acc
         , (T.pack "Addr count") .= (toJSON $ accExtCount aData)
-        ]
+        ] ++ warn
     | otherwise   = object 
         [ (T.pack "Name") .= accName aData
         , (T.pack "Type") .= "Regular"
         , (T.pack "Tree") .= dbAccTree acc
         , (T.pack "Addr count") .= (toJSON $ accExtCount aData)
         ]
-    where aData = runAccData acc
-          ms    = unwords [ show $ msReq acc
-                          , "of"
-                          , show $length (msKeys acc) + 1
-                          ]
-    
+    where aData   = runAccData acc
+          ms      = unwords [show $ msReq acc, "of" ,show $ msTot acc]
+          missing = (msTot acc) - length (msKeys acc) - 1
+          warn | isMSAcc acc && missing > 0 =
+                  [ (T.pack "Warning") .= 
+                    unwords [show missing,"multisig keys missing"]
+                  ]
+               | otherwise   = []
+
 yamlAddr :: DBAddress -> Value
 yamlAddr a
     | null $ addrLabel a = object base
@@ -171,6 +174,15 @@ yamlCoin (DBCoin (OutPoint tid i) (TxOut v s) _ _ p) acc = object $
                             (\a -> [(T.pack "Addr") .= addrToBase58 a])
                             (scriptRecipient s)
 
+{- Helpers -}
+
+guardValidAcc :: DBAccount -> WalletDB (ResourceT IO) ()
+guardValidAcc acc
+    | isMSAcc acc && (length (msKeys acc) /= msTot acc - 1) =
+        left $ unwords ["Multisig account", name, "is not fully initialized"]
+    | otherwise = return ()
+    where name = accName $ runAccData acc
+
 {- Commands -}
 
 type AccountName = String
@@ -180,6 +192,7 @@ cmdInit seed = yamlAcc <$> dbInit seed
 
 cmdList :: Int -> AccountName -> Command
 cmdList count name = dbGetAcc (AccName name) >>= \acc -> do
+    guardValidAcc acc
     let total = accExtCount $ runAccData acc
         c     = min count total
         from  = total - c + 1
@@ -188,6 +201,7 @@ cmdList count name = dbGetAcc (AccName name) >>= \acc -> do
 
 cmdListFrom :: Int -> Int -> AccountName -> Command
 cmdListFrom from count name = dbGetAcc (AccName name) >>= \acc -> do
+    guardValidAcc acc
     when (from > (accExtCount $ runAccData acc)) $ 
         left $ unwords ["cmdListFrom: From index not in wallet:", show from]
     addrs <- dbAddrList (accPos $ runAccData acc) from count False
@@ -195,12 +209,14 @@ cmdListFrom from count name = dbGetAcc (AccName name) >>= \acc -> do
 
 cmdListAll :: AccountName -> Command
 cmdListAll name = dbGetAcc (AccName name) >>= \acc -> do
+    guardValidAcc acc
     let aData = runAccData acc
     addrs <- dbAddrList (accPos aData) 1 (accExtCount aData) False
     return $ yamlAddrList addrs acc
 
 cmdNew :: String -> AccountName -> Command
 cmdNew label name = dbGetAcc (AccName name) >>= \acc -> do
+    guardValidAcc acc
     addr <- head <$> (dbGenAddr (accPos $ runAccData acc) 1 False)
     let newAddr = addr{ addrLabel = label }
     dbPutAddr newAddr
@@ -208,11 +224,13 @@ cmdNew label name = dbGetAcc (AccName name) >>= \acc -> do
 
 cmdGenAddr :: Int -> AccountName -> Command
 cmdGenAddr count name = dbGetAcc (AccName name) >>= \acc -> do
+    guardValidAcc acc
     addrs  <- dbGenAddr (accPos $ runAccData acc) count False
     (yamlAddrList addrs) <$> (dbGetAcc $ AccPos $ accPos $ runAccData acc)
 
 cmdLabel :: Int -> String -> AccountName -> Command
 cmdLabel pos label name = dbGetAcc (AccName name) >>= \acc -> do
+    guardValidAcc acc
     when (pos > (accExtCount $ runAccData acc)) $ 
         left $ unwords ["cmdLabel: Address index not in wallet:", show pos]
     addr <- dbGetAddr $ AddrExt (accPos $ runAccData acc) pos
@@ -222,6 +240,7 @@ cmdLabel pos label name = dbGetAcc (AccName name) >>= \acc -> do
 
 cmdBalance :: AccountName -> Command
 cmdBalance name = dbGetAcc (AccName name) >>= \acc -> do
+    guardValidAcc acc
     coins <- dbCoinList $ accPos $ runAccData acc
     let balance = sum $ map (fromIntegral . outValue . coinTxOut) coins 
     return $ object 
@@ -236,6 +255,7 @@ cmdTotalBalance = dbCoinListAll >>= \coins -> do
 
 cmdSend :: String -> Int -> AccountName -> Command
 cmdSend a v name = dbGetAcc (AccName name) >>= \acc -> do
+    guardValidAcc acc
     unspent <- dbCoinList $ accPos $ runAccData acc
     (coins,change) <- liftEither $ if isMSAcc acc
         then let msParam = (msReq acc,length $ msKeys acc)
@@ -256,9 +276,13 @@ cmdSend a v name = dbGetAcc (AccName name) >>= \acc -> do
 
 cmdSignTx :: String -> AccountName -> Command
 cmdSignTx str name = dbGetAcc (AccName name) >>= \acc -> do
-    tx    <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS str)
-    coins <- mapM (dbGetCoin . CoinOutPoint) $ map prevOutput $ txIn tx
-    ys    <- mapM f coins
+    guardValidAcc acc
+    tx      <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS str)
+    txCoins <- mapM (dbGetCoin . CoinOutPoint) $ map prevOutput $ txIn tx
+    let pos     = accPos $ runAccData acc
+        -- For security, only sign this accounts coins
+        myCoins = filter ((== pos) . coinAccPos) txCoins
+    ys      <- mapM f myCoins
     let sigTx = detSignTx tx (map fst ys) (map snd ys)
         bsTx  = (bsToHex . encode') <$> sigTx
     return $ object [ (T.pack "Tx") .= (toJSON $ runBuild bsTx)
@@ -273,20 +297,29 @@ cmdFocus name = dbGetAcc (AccName name) >>= \acc -> do
     dbPutConfig $ \cfg -> cfg{ cfgFocus = accName $ runAccData acc }
     return $ yamlAcc acc
 
-cmdNewAcc :: AccountName -> Command
-cmdNewAcc name = yamlAcc <$> dbNewAcc name
-
-cmdNewMS :: AccountName -> Int -> [String] -> Command
-cmdNewMS name r xs = do
-    keys <- mapM ((liftMaybe errKey) . xPubImport) xs
-    yamlAcc <$> dbNewMSAcc name r keys
-    where errKey = "cmdNewMS: Error importing extended public key"
+cmdAccInfo :: AccountName -> Command
+cmdAccInfo name = yamlAcc <$> dbGetAcc (AccName name) 
 
 cmdListAcc :: Command
 cmdListAcc = toJSON . (map yamlAcc) <$> dbAccList
 
-cmdDumpKey :: AccountName -> Command
-cmdDumpKey name = dbGetAcc (AccName name) >>= \acc -> do
+cmdNewAcc :: AccountName -> Command
+cmdNewAcc name = yamlAcc <$> dbNewAcc name
+
+cmdNewMS :: AccountName -> Int -> Int -> [String] -> Command
+cmdNewMS name m n xs = do
+    keys <- mapM ((liftMaybe errKey) . xPubImport) xs
+    yamlAcc <$> dbNewMSAcc name m n keys
+    where errKey = "cmdNewMS: Error importing extended public key"
+
+cmdAddKeys :: [String] -> AccountName -> Command
+cmdAddKeys xs name = dbGetAcc (AccName name) >>= \acc -> do
+    keys <- mapM ((liftMaybe errKey) . xPubImport) xs
+    yamlAcc <$> dbAddMSKeys (accPos $ runAccData acc) keys
+    where errKey = "cmdAddKey: Error importing extended public key"
+
+cmdDumpKeys :: AccountName -> Command
+cmdDumpKeys name = dbGetAcc (AccName name) >>= \acc -> do
     mst <- dbGetConfig cfgMaster
     prv <- liftMaybe prvErr $ accPrvKey mst (accIndex $ runAccData acc)
     let prvKey = runAccPrvKey prv
@@ -315,6 +348,7 @@ cmdImportTx str = do
       
 cmdCoins :: AccountName -> Command
 cmdCoins name = dbGetAcc (AccName name) >>= \acc -> do
+    guardValidAcc acc
     coins <- dbCoinList $ accPos $ runAccData acc
     return $ object
         [ (T.pack "Account") .= yamlAcc acc

@@ -7,6 +7,7 @@ module Haskoin.Wallet.Store.DBAccount
 , dbPutAcc
 , dbNewAcc
 , dbNewMSAcc
+, dbAddMSKeys
 , dbAccList
 , isMSAcc
 , dbAccTree
@@ -16,8 +17,10 @@ where
 import Control.Monad
 import Control.Applicative
 import Control.Monad.Trans.Resource
+import Control.Monad.Trans.Either
 
 import Data.Maybe
+import Data.List
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
@@ -50,6 +53,7 @@ data DBAccount =
         { runAccData :: AccountData
         , msKeys     :: [XPubKey]
         , msReq      :: Int
+        , msTot      :: Int
         , msUrl      :: String
         } 
   | DBAccount
@@ -102,22 +106,38 @@ dbNewAcc name = dbExists nameKey >>= \exists -> if exists
     where nameKey = concat ["accname_", name]
 
 -- |Create a new multisignature account from a name and public keys
-dbNewMSAcc :: MonadResource m => String -> Int -> [XPubKey] 
+dbNewMSAcc :: MonadResource m => String -> Int -> Int -> [XPubKey] 
            -> WalletDB m DBAccount
-dbNewMSAcc name r mskeys = dbExists nameKey >>= \exists -> if exists
+dbNewMSAcc name m n mskeys = dbExists nameKey >>= \exists -> if exists
     then liftEither $ Left $ 
         unwords ["newMSAcc: Account", name, "already exists"]
     else dbGetConfig cfgMaster >>= \master -> do
+        let keys = nub mskeys
+        unless (length keys < n) $ left "dbNewMSAcc: Too many keys"
+        unless (n <= 16 && n >= 1 && m <= n && m >= 1) $ left
+            "dbNewMSAcc: Invalid multisig parameters"
         index  <- (+1) <$> dbGetConfig cfgAccIndex
         count  <- (+1) <$> dbGetConfig cfgAccCount
         let (k,i)   = head $ accPubKeys master index
-            acc     = DBAccountMS (buildAccData name i count k) mskeys r ""
+            acc     = DBAccountMS (buildAccData name i count k) keys m n ""
         dbPutConfig $ \cfg -> cfg{ cfgAccIndex = i 
                                  , cfgAccCount = count
                                  , cfgFocus    = name
                                  }
         dbPutAcc acc >> return acc
     where nameKey = concat ["accname_", name]
+
+dbAddMSKeys :: MonadResource m => Int -> [XPubKey] -> WalletDB m DBAccount
+dbAddMSKeys pos mskeys = dbGetAcc (AccPos pos) >>= \acc -> do
+    unless (isMSAcc acc) $ left "dbAddMSKeys: Not a multisig account"
+    accs <- dbAccList
+    let myKeys = map (runAccPubKey . accKey . runAccData) accs
+    unless (null $ mskeys `intersect` myKeys) $ left 
+        "dbAddMSKeys: Can not build a multisignature account with your own keys"
+    let newKeys = nub $ mskeys ++ (msKeys acc)
+        newAcc  = acc{ msKeys = newKeys }
+    unless (length newKeys < msTot acc) $ left "dbAddMSKeys: Too many keys"
+    dbPutAcc newAcc >> return newAcc
 
 buildAccData :: String -> Word32 -> Int -> AccPubKey -> AccountData
 buildAccData name index pos key = 
@@ -173,16 +193,18 @@ instance Binary DBAccount where
         1 -> DBAccountMS <$> get
                          <*> (go =<< get) 
                          <*> (fromIntegral . getVarInt <$> get)
+                         <*> (fromIntegral . getVarInt <$> get)
                          <*> (bsToString . getVarString <$> get)
         _ -> fail $ "Invalid account type: " ++ (show t)
         where go (VarInt len) = replicateM (fromIntegral len) get
 
     put acc = case acc of
         DBAccount d              -> putWord8 0 >> put d
-        DBAccountMS d keys r u -> putWord8 1 >> put d >> do
+        DBAccountMS d keys m n u -> putWord8 1 >> put d >> do
             put $ VarInt $ fromIntegral $ length keys
             forM_ keys put
-            put $ VarInt $ fromIntegral r
+            put $ VarInt $ fromIntegral m
+            put $ VarInt $ fromIntegral n
             put $ VarString $ stringToBS u
         
 

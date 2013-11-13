@@ -97,7 +97,7 @@ dbGenAddr pos count int = do
           f (DBAccount d)
               | int       = intAddrs (accKey d) (accIntIndex d + 1)
               | otherwise = extAddrs (accKey d) (accExtIndex d + 1)
-          f (DBAccountMS d mk r _)
+          f (DBAccountMS d mk r _ _)
               | int       = intMulSigAddrs (accKey d) mk r (accIntIndex d + 1)
               | otherwise = extMulSigAddrs (accKey d) mk r (accExtIndex d + 1)
     

@@ -119,12 +119,15 @@ instance Arbitrary AccountData where
                             <*> (choose (1,0x7fffffff))
 
 instance Arbitrary DBAccount where
-    arbitrary = oneof [ DBAccount <$> arbitrary 
-                      , DBAccountMS <$> arbitrary
-                                    <*> arbitrary
-                                    <*> (choose (1,16))
-                                    <*> arbitrary
-                      ]
+    arbitrary = do
+        (MSParam m n) <- arbitrary
+        oneof [ DBAccount <$> arbitrary 
+              , DBAccountMS <$> arbitrary
+                            <*> arbitrary
+                            <*> (return m)
+                            <*> (return n)
+                            <*> arbitrary
+              ]
 
 instance Arbitrary DBAddress where
     arbitrary = DBAddress <$> arbitrary 

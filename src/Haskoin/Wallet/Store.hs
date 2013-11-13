@@ -7,6 +7,7 @@ module Haskoin.Wallet.Store
 , dbPutAcc
 , dbNewAcc
 , dbNewMSAcc
+, dbAddMSKeys
 , dbAccList
 , isMSAcc
 , dbAccTree

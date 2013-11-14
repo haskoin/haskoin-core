@@ -217,9 +217,14 @@ buildTxIn txin tx out i pubs sigs
             return $ SpendMulSig mSigs r
         _ -> Broken "buildTxIn: Can't sign a P2SH script here"
     where buildRes res = txin{ scriptInput = encodeInput res }
-          aSigs = sigs ++ case decodeInput $ scriptInput txin of
-              Right (SpendMulSig xs _) -> xs
-              _ -> []
+          aSigs = concat
+            [ sigs 
+            , case decodeScriptHash $ scriptInput txin of
+                Right (ScriptHashInput (SpendMulSig xs _) _) -> xs
+                _ -> case decodeInput $ scriptInput txin of
+                        Right (SpendMulSig xs _) -> xs
+                        _ -> []
+            ]
           f (TxSignature sig sh) pub = 
               verifySig (txSigHash tx (encodeOutput out) i sh) sig pub
 

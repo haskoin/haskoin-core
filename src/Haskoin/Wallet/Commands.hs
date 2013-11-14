@@ -267,9 +267,9 @@ cmdSend a v name = dbGetAcc (AccName name) >>= \acc -> do
     tx <- liftEither $ buildAddrTx (map coinOutPoint coins) recipients
     ys <- mapM f coins
     let sigTx = detSignTx tx (map fst ys) (map snd ys)
-        bsTx  = (bsToHex . encode') <$> sigTx
-    return $ object [ (T.pack "Payment Tx") .= (toJSON $ runBuild bsTx)
-                    , (T.pack "Complete") .= isComplete bsTx
+    bsTx <- liftEither $ buildToEither sigTx
+    return $ object [ (T.pack "Payment Tx") .= (toJSON $ bsToHex $ encode' bsTx)
+                    , (T.pack "Complete") .= isComplete sigTx
                     ]
     where f c = let s = scriptOutput $ coinTxOut c
                 in dbGetSigData s (coinOutPoint c) $ SigAll False
@@ -284,9 +284,9 @@ cmdSignTx str name = dbGetAcc (AccName name) >>= \acc -> do
         myCoins = filter ((== pos) . coinAccPos) txCoins
     ys      <- mapM f myCoins
     let sigTx = detSignTx tx (map fst ys) (map snd ys)
-        bsTx  = (bsToHex . encode') <$> sigTx
-    return $ object [ (T.pack "Tx") .= (toJSON $ runBuild bsTx)
-                    , (T.pack "Complete") .= isComplete bsTx
+    bsTx <- liftEither $ buildToEither sigTx
+    return $ object [ (T.pack "Tx") .= (toJSON $ bsToHex $ encode' bsTx)
+                    , (T.pack "Complete") .= isComplete sigTx
                     ]
     where txErr = "cmdSignTx: Could not decode transaction"
           f c   = let s = scriptOutput $ coinTxOut c
@@ -381,9 +381,9 @@ cmdSignRawTx strTx xs sh = do
     tx <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS strTx)
     ys <- mapRights f xs
     let sigTx = detSignTx tx (map fst ys) (map snd ys)
-        bsTx  = (bsToHex . encode') <$> sigTx
-    return $ object [ (T.pack "Tx") .= (toJSON $ runBuild bsTx)
-                    , (T.pack "Complete") .= isComplete bsTx
+    bsTx <- liftEither $ buildToEither sigTx
+    return $ object [ (T.pack "Tx") .= (toJSON $ bsToHex $ encode' bsTx)
+                    , (T.pack "Complete") .= isComplete sigTx
                     ]
     where f (t,i,s) = do
             sBS <- liftMaybe "Invalid script HEX encoding" $ hexToBS s

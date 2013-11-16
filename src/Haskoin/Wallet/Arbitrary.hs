@@ -117,6 +117,7 @@ instance Arbitrary AccountData where
                             <*> arbitrary
                             <*> (choose (1,0x7fffffff))
                             <*> (choose (1,0x7fffffff))
+                            <*> (choose (1,0x7fffffff))
 
 instance Arbitrary DBAccount where
     arbitrary = do
@@ -144,6 +145,11 @@ instance Arbitrary DBCoin where
                        <*> arbitrary
                        <*> (choose (1,0x7fffffff))
                        <*> (choose (1,0x7fffffff))
+
+instance Arbitrary DBTx where
+    arbitrary = DBTx <$> arbitrary 
+                     <*> (choose (1,0x7fffffff))
+                     <*> (choose (1,0x7fffffff))
 
 instance Arbitrary DBConfig where
     arbitrary = DBConfig <$> arbitrary

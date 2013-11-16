@@ -53,6 +53,7 @@ tests =
         [ testProperty "decode . encode account" decEncAccount
         , testProperty "decode . encode addr" decEncAddr
         , testProperty "decode . encode coin" decEncCoin
+        , testProperty "decode . encode tx" decEncTx
         , testProperty "decode . encode config" decEncConfig
         ]
     ]
@@ -172,6 +173,9 @@ decEncAddr addr = (decode' $ encode' addr) == addr
 
 decEncCoin :: DBCoin -> Bool
 decEncCoin coin = (decode' $ encode' coin) == coin
+
+decEncTx :: DBTx -> Bool
+decEncTx tx = (decode' $ encode' tx) == tx
 
 decEncConfig :: DBConfig -> Bool
 decEncConfig config = (decode' $ encode' config) == config

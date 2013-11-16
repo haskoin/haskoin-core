@@ -44,6 +44,7 @@ data AccountData =
         , accIntIndex  :: Word32
         , accIntCount  :: Int
         , accCoinCount :: Int
+        , accTxCount   :: Int
         } 
     deriving (Eq, Show)
 
@@ -151,6 +152,7 @@ buildAccData name index pos key =
         , accIntIndex  = maxBound
         , accIntCount  = 0
         , accCoinCount = 0
+        , accTxCount   = 0
         }
 
 -- |List all the accounts in the wallet database
@@ -173,8 +175,9 @@ instance Binary AccountData where
                       <*> (fromIntegral . getVarInt <$> get)
                       <*> (fromIntegral . getVarInt <$> get)
                       <*> (fromIntegral . getVarInt <$> get)
+                      <*> (fromIntegral . getVarInt <$> get)
 
-    put (AccountData n i p k ei ec ii ic cc) = do
+    put (AccountData n i p k ei ec ii ic cc tc) = do
         put $ VarString $ stringToBS n
         put $ VarInt $ fromIntegral i
         put $ VarInt $ fromIntegral p
@@ -184,6 +187,7 @@ instance Binary AccountData where
         put $ VarInt $ fromIntegral ii
         put $ VarInt $ fromIntegral ic
         put $ VarInt $ fromIntegral cc
+        put $ VarInt $ fromIntegral tc
 
 -- |Binary instance for Account
 instance Binary DBAccount where

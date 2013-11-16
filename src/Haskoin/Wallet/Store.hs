@@ -26,9 +26,18 @@ module Haskoin.Wallet.Store
 , CoinKey(..)
 , dbGetCoin
 , dbPutCoin
-, dbImportTx
+, dbImportCoin
+, dbSpendCoin
 , dbCoinList
 , dbCoinListAll
+
+-- Tx
+, DBTx(..)
+, dbGetTxByID
+, dbGetTxByPos
+, dbPutTx
+, dbTxList
+, dbImportTx
 
 -- Config
 , DBConfig(..)
@@ -66,6 +75,7 @@ import Haskoin.Wallet.Store.DBConfig
 import Haskoin.Wallet.Store.DBAccount
 import Haskoin.Wallet.Store.DBAddress
 import Haskoin.Wallet.Store.DBCoin
+import Haskoin.Wallet.Store.DBTx
 import Haskoin.Wallet.Store.Util
 import Haskoin.Wallet.Keys
 import Haskoin.Wallet.Manager

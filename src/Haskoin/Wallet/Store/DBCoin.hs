@@ -4,7 +4,8 @@ module Haskoin.Wallet.Store.DBCoin
 , CoinKey(..)
 , dbGetCoin
 , dbPutCoin
-, dbImportTx
+, dbImportCoin
+, dbSpendCoin
 , dbCoinList
 , dbCoinListAll
 ) where
@@ -63,10 +64,6 @@ dbPutCoin coin = do
     dbPut ("coinoutpoint_" ++ opKey) $ stringToBS key
     where opKey = bsToString $ encode' $ coinOutPoint coin
 
--- |Extract coins from a transaction and save them in the database
-dbImportTx :: MonadResource m => Tx -> WalletDB m [DBCoin]
-dbImportTx tx = mapRights (dbImportCoin $ txid tx) $ zip (txOut tx) [0..]
-
 dbImportCoin :: MonadResource m => Hash256 -> (TxOut,Word32) 
              -> WalletDB m DBCoin
 dbImportCoin id (txout,i) = do
@@ -77,7 +74,7 @@ dbImportCoin id (txout,i) = do
         coinPos = accCoinCount aData + 1
         coin    = DBCoin op txout False coinPos $ accPos aData
     exists <- dbExists $ concat ["coinoutpoint_", bsToString $ encode' op]
-    when exists (liftEither $ Left "Coin already exists")
+    when exists $ left "dbImportCoin: Coin already exists"
     -- update account-level count
     dbPutCoin coin
     dbPutAcc acc{ runAccData = aData{accCoinCount = coinPos} }
@@ -87,12 +84,20 @@ dbImportCoin id (txout,i) = do
     return coin
     where op  = OutPoint id i
 
+dbSpendCoin :: MonadResource m => TxIn -> WalletDB m DBCoin
+dbSpendCoin (TxIn op s _) = do
+    coin <- dbGetCoin $ CoinOutPoint op 
+    when (coinSpent coin) $ left "dbSpendCoin: Coin already spent"
+    dbPutCoin coin{ coinSpent = True }
+    return coin
+
 -- |List unspent coins from one account in the wallet database
 dbCoinList :: MonadResource m => Int -> WalletDB m [DBCoin]
 dbCoinList pos = do
     acc    <- dbGetAcc $ AccPos pos
-    prefix <- ("coin_" ++) . (++ "_") <$> (liftEither $ dbEncodeInt pos)
-    key    <- (prefix ++) <$> (liftEither $ dbEncodeInt 1)
+    start <- liftEither $ dbEncodeInt 1
+    let prefix = concat ["coin_",start,"_"]
+        key    = concat [prefix,start]
     vals   <- dbIter key prefix $ accCoinCount $ runAccData acc
     res    <- liftEither $ forM vals decodeToEither
     return $ filter (not . coinSpent) res
@@ -101,7 +106,8 @@ dbCoinList pos = do
 dbCoinListAll :: MonadResource m => WalletDB m [DBCoin]
 dbCoinListAll = do
     total <- dbGetConfig cfgCoinCount
-    key   <- (\i -> prefix ++ i ++ "_" ++ i) <$> (liftEither $ dbEncodeInt 1)
+    start <- liftEither $ dbEncodeInt 1
+    let key = concat [prefix,start,"_",start]
     vals  <- dbIter key prefix total
     res   <- liftEither $ forM vals decodeToEither
     return $ filter (not . coinSpent) res

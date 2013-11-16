@@ -98,6 +98,7 @@ cmdHelp =
     , "  label      <index> <label> [acc]       Add a label to an address"
     , "  balance    [acc]                       Display account balance"
     , "  totalbalance                           Display total balance"
+    , "  listtx     [acc]                       Display transactions"
     , "  send       addr amount [acc]           Send coins to an address"
     , "  signtx     <tx>                        Sign a transaction"
     , "  focus      <acc>                       Set the focused account"
@@ -195,6 +196,7 @@ dispatchCommand cmd opts args = case cmd of
         cmdLabel (read $ args !! 0) (args !! 1) acc
     "balance"      -> withFocus args 1 $ \acc -> cmdBalance acc
     "totalbalance" -> whenArgs args (== 0) cmdTotalBalance
+    "listtx"       -> withFocus args 1 cmdListTx
     "send"         -> withFocus args 3 $ \acc -> 
         cmdSend (head args) (read $ args !! 1) acc
     "signtx"       -> withFocus args 2 $ \acc -> cmdSignTx (head args) acc

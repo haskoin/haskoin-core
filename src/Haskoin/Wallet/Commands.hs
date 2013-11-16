@@ -130,11 +130,13 @@ yamlAcc acc
         , (T.pack "Type") .= unwords [ "Multisig", ms ]
         , (T.pack "Tree") .= dbAccTree acc
         , (T.pack "Addr count") .= (toJSON $ accExtCount aData)
+        , (T.pack "Tx count") .= (toJSON $ accTxCount aData)
         ] ++ warn
     | otherwise   = object 
         [ (T.pack "Name") .= accName aData
         , (T.pack "Type") .= "Regular"
         , (T.pack "Tree") .= dbAccTree acc
+        , (T.pack "Tx count") .= (toJSON $ accTxCount aData)
         , (T.pack "Addr count") .= (toJSON $ accExtCount aData)
         ]
     where aData   = runAccData acc
@@ -252,6 +254,12 @@ cmdTotalBalance :: Command
 cmdTotalBalance = dbCoinListAll >>= \coins -> do
     let balance = sum $ map (fromIntegral . outValue . coinTxOut) coins
     return $ object [ (T.pack "Total balance") .= toJSON (balance :: Word64) ] 
+
+cmdListTx :: AccountName -> Command
+cmdListTx name = dbGetAcc (AccName name) >>= \acc -> do
+    guardValidAcc acc
+    txs <- dbTxList $ accPos $ runAccData acc 
+    return $ toJSON $ map (toJSON . dbTx) txs
 
 cmdSend :: String -> Int -> AccountName -> Command
 cmdSend a v name = dbGetAcc (AccName name) >>= \acc -> do

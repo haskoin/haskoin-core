@@ -3,12 +3,27 @@ module Data.JSONRPC.Message
 ( ID(..)
 , Params(..)
 , Method
+
+-- Message types
 , Request(..)
 , Response(..)
 , Message(..)
 , Document(..)
+
+-- Helper functions
 , paramsArray
 , paramsObject
+
+-- Convert to version 1
+, responseToVersion1
+, requestToVersion1
+
+-- Errors
+, parsingError
+, invalidRequest
+, methodNotFound
+, invalidParams
+, internalError
 ) where
 
 import Control.Applicative
@@ -153,8 +168,8 @@ instance FromJSON Response where
                         Just e -> do
                             c <- e .: "code"
                             m <- e .: "message"
-                            md <- e .:? "data"
-                            return $ ErrorResponse i c m md
+                            d <- e .:? "data"
+                            return $ ErrorResponse i c m d
                         Nothing -> mzero
             Nothing -> do
                 e <- v .:? "error"  .!= Null
@@ -232,3 +247,57 @@ paramsArray = PArray . V.fromList
 
 paramsObject :: [Pair] -> Params
 paramsObject = PObject . H.fromList
+
+requestToVersion1 :: Request -> Request
+requestToVersion1 (Request    i m mp) = Request1    i m mp
+requestToVersion1 (Notification m mp) = Notification1 m mp
+requestToVersion1 r = r
+
+responseToVersion1 :: Response -> Response
+responseToVersion1 (Response i v) = Response1 i v
+responseToVersion1 (ErrorResponse i c m md) =
+    ErrorResponse1 i . object $
+        [ "code"    .= c
+        , "message" .= m
+        ] ++ (maybeToList $ ("data".=) <$> md)
+responseToVersion1 r = r
+
+parsingError :: Response
+parsingError = ErrorResponse
+    { responseID = NullID
+    , errorCode = -32700 
+    , errorMessage = "Parse error"
+    , errorData = Nothing
+    }
+
+invalidRequest :: Response
+invalidRequest = ErrorResponse
+    { responseID = NullID
+    , errorCode = -32600
+    , errorMessage = "Invalid Request"
+    , errorData = Nothing
+    }
+
+methodNotFound :: ID -> Response
+methodNotFound i = ErrorResponse
+    { responseID = i
+    , errorCode = -32601
+    , errorMessage = "Method not found"
+    , errorData = Nothing
+    }
+
+invalidParams :: ID -> Response
+invalidParams i = ErrorResponse
+    { responseID = i
+    , errorCode = -32602
+    , errorMessage = "Invalid params"
+    , errorData = Nothing
+    }
+
+internalError :: ID -> Response
+internalError i = ErrorResponse
+    { responseID = i
+    , errorCode = -32603
+    , errorMessage = "Invalid params"
+    , errorData = Nothing
+    }

@@ -1,90 +1,86 @@
-module Haskoin.Wallet.Store 
--- Account
-( DBAccount(..)
-, AccountData(..)
-, AccKey(..)
-, dbGetAcc
-, dbPutAcc
-, dbNewAcc
-, dbNewMSAcc
-, dbAddMSKeys
-, dbAccList
-, isMSAcc
-, dbAccTree
-
--- Address
-, DBAddress(..)
-, AddressKey(..)
-, dbGetAddr
-, dbPutAddr
-, dbGenAddr
-, dbAddrList
-, dbAddrTree
-
--- Coin
-, DBCoin(..)
-, CoinKey(..)
-, dbGetCoin
-, dbPutCoin
-, dbImportCoin
-, dbSpendCoin
-, dbCoinList
-, dbCoinListAll
-
--- Tx
-, DBTx(..)
-, dbGetTxByID
-, dbGetTxByPos
-, dbPutTx
-, dbTxList
-, dbImportTx
-
--- Config
-, DBConfig(..)
-, dbInitConfig
-, dbGetConfig
-, dbPutConfig
-
--- Util
-, WalletDB
-, runWalletDB
-
--- Store
-, dbInit
-, dbGetSigData
-, dbExists
+module Haskoin.Wallet.Store
+-- Util functions
+( DbWalletGeneric(..)
+, DbAccountGeneric(..)
+, DbAddressGeneric(..)
+, DbCoinGeneric(..)
+, Unique(..)
+, EntityField(..)
+, AccountName
+, dbGetWallet
 , liftEither
 , liftMaybe
+, migrateAll
+
+-- Account functions
+, cmdNewAcc
+, cmdNewMS
+, cmdAddKeys
+, cmdAccInfo
+, cmdListAcc
+, cmdDumpKeys
+, yamlAcc
+, isMSAcc
+
+-- Address functions
+, cmdList
+, cmdGenAddr
+, cmdGenWithLabel
+, cmdLabel
+, yamlAddr
+, yamlAddrList
+
+-- Coin functions
+, cmdBalance
+, cmdBalances
+, cmdCoins
+, cmdAllCoins
+, yamlCoin
+
+-- Store functions
+, cmdInit
 ) where
 
-import Control.Monad.Reader
-import Control.Monad.Trans
-import Control.Monad.Trans.Resource
 import Control.Applicative
+import Control.Monad
+import Control.Monad.IO.Class
+import Control.Monad.Trans
+import Control.Monad.Trans.Either
 
-import Data.List
+import Data.Time
+import Data.Yaml
 import Data.Maybe
-import Data.Binary
-import Data.Binary.Get
-import Data.Binary.Put
+import Data.List (nub)
+import qualified Data.Text as T
 import qualified Data.ByteString as BS
+import qualified Data.Conduit as C
 
-import qualified Database.LevelDB as DB
+import Database.Persist
+import Database.Persist.Sqlite
+import Database.Persist.TH
 
-import Haskoin.Wallet.Store.DBConfig
-import Haskoin.Wallet.Store.DBAccount
-import Haskoin.Wallet.Store.DBAddress
-import Haskoin.Wallet.Store.DBCoin
-import Haskoin.Wallet.Store.DBTx
-import Haskoin.Wallet.Store.Util
 import Haskoin.Wallet.Keys
 import Haskoin.Wallet.Manager
 import Haskoin.Wallet.TxBuilder
+import Haskoin.Wallet.Store.Util
+import Haskoin.Wallet.Store.DbAccount
+import Haskoin.Wallet.Store.DbAddress
+import Haskoin.Wallet.Store.DbCoin
 import Haskoin.Script
 import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util
 
+cmdInit :: PersistUnique m => String -> EitherT String m Value
+cmdInit seed = do
+    time   <- liftIO getCurrentTime
+    master <- liftMaybe err $ makeMasterKey $ stringToBS seed
+    let str = xPrvExport $ runMasterKey master
+    insert_ $ DbWallet "main" "full" str (-1) time
+    return Null
+    where err = "dbInit: Invalid master key generated from seed"
+
+{-
 dbInit :: MonadResource m => String -> WalletDB m DBAccount
 dbInit seed = do
     master <- liftMaybe msg $ makeMasterKey $ stringToBS seed
@@ -97,8 +93,6 @@ dbInit seed = do
                             }
     dbNewAcc "default"
     where msg = "dbInit: Invalid master key generation from seed"
-
-{- Signing functions -}
 
 dbGetSigData :: MonadResource m => Script -> OutPoint -> SigHash 
              -> WalletDB m (SigInput,PrvKey)
@@ -132,4 +126,5 @@ buildSigKey master addr = do
     where prvMsg = "buildPrvKey: Invalid account derivation index"
           keyMsg = "buildPrvKey: Invalid address derivation index"
           g      = if addrInt addr then intPrvKey else extPrvKey
+-}
 

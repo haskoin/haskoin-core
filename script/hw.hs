@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Main where
 
 import System.IO
@@ -10,22 +11,26 @@ import Control.Applicative
 import Control.Monad.Trans
 import Control.Monad.Trans.Resource
 import Control.Monad.Trans.Either
-import Control.Exception
+import System.IO.Error
+import Control.Exception (tryJust)
+
+import Database.Persist
+import Database.Persist.Sql
+import Database.Persist.Sqlite
+import Database.Persist.TH
 
 import Data.Maybe
 import Data.Char
 import Data.Word
+import qualified Data.Text as T
 import qualified Data.Yaml as YAML
 import qualified Data.Aeson.Encode.Pretty as JSON
-import Data.List.Split
-import qualified Data.Text as T
 import qualified Data.ByteString as BS
 
 import Haskoin.Wallet.Keys
 import Haskoin.Wallet.TxBuilder
 import Haskoin.Wallet.Manager
 import Haskoin.Wallet.Store
-import Haskoin.Wallet.Commands
 import Haskoin.Script
 import Haskoin.Protocol
 import Haskoin.Crypto
@@ -146,6 +151,11 @@ getWorkDir = do
     createDirectoryIfMissing True dir
     return $ dir ++ "/walletdb"
 
+catchIt :: IOError -> Maybe String
+catchIt e = do
+    -- guard $ isUserError e 
+    return $ ioeGetErrorString e
+
 process :: Options -> [String] -> IO ()
 process opts xs 
     -- -h and -v can be called without a command
@@ -155,75 +165,66 @@ process opts xs
     | null xs = formatStr usage
     | otherwise = getWorkDir >>= \dir -> do
         let (cmd,args) = (head xs, tail xs)
-        res <- runResourceT $ runWalletDB dir $ do
-            checkInit cmd
+        res <- tryJust catchIt $ runSqlite (T.pack dir) $ runEitherT $ do
+            lift $ runMigration migrateAll
             dispatchCommand cmd opts args 
-        case res of
-            Left  err -> formatStr err
-            Right val -> if optJson opts 
+        case join res of
+            Left err -> formatStr err
+            Right val -> if val == YAML.Null then return () else if optJson opts 
                 then formatStr $ bsToString $ toStrictBS $ 
                     JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } val
                 else formatStr $ bsToString $ YAML.encode val
 
-checkInit :: String -> WalletDB (ResourceT IO) ()
-checkInit cmd 
-    -- Commands that can be called without an initialized database
-    | cmd `elem` [ "init", "decodetx", "buildrawtx", "signrawtx" ] = return ()
-    | otherwise = dbExists "config" >>= \exists -> if exists
-        then return ()
-        else left "Wallet not initialized. Call init first"
+type Command m = EitherT String m YAML.Value
+type Args = [String]
 
-whenArgs :: Args -> (Int -> Bool) -> Command -> Command
+whenArgs :: Monad m => Args -> (Int -> Bool) -> Command m -> Command m
 whenArgs args f cmd = if f $ length args then cmd else argErr
     where argErr = left "Invalid number of arguments"
 
-withFocus :: Args -> Int -> (String -> Command) -> Command
-withFocus args i f 
-    | length args < i  = dbGetConfig cfgFocus >>= f
-    | length args == i = f $ last args
-    | otherwise        = left "Invalid number of arguments"
-
-dispatchCommand :: String -> Options -> Args -> Command
+dispatchCommand :: (PersistStore m, PersistUnique m, PersistQuery m) 
+                => String -> Options -> Args -> Command m
 dispatchCommand cmd opts args = case cmd of
-    "init"         -> whenArgs args (== 1) $ cmdInit $ head args 
-    "list"         -> withFocus args 1 $ \acc -> cmdList (optCount opts) acc
-    "listfrom"     -> withFocus args 2 $ \acc -> 
-        cmdListFrom (read $ args !! 0) (optCount opts) acc
-    "listall"      -> withFocus args 1 $ \acc -> cmdListAll acc
-    "new"          -> withFocus args 2 $ \acc -> cmdNew (args !! 0) acc
-    "genaddr"      -> withFocus args 1 $ \acc -> cmdGenAddr (optCount opts) acc
-    "label"        -> withFocus args 3 $ \acc -> 
-        cmdLabel (read $ args !! 0) (args !! 1) acc
-    "balance"      -> withFocus args 1 $ \acc -> cmdBalance acc
-    "totalbalance" -> whenArgs args (== 0) cmdTotalBalance
-    "listtx"       -> withFocus args 1 cmdListTx
-    "send"         -> withFocus args 3 $ \acc -> 
-        cmdSend (head args) (read $ args !! 1) acc
-    "signtx"       -> withFocus args 2 $ \acc -> cmdSignTx (head args) acc
-    "focus"        -> whenArgs args (== 1) $ cmdFocus $ head args
-    "accinfo"      -> withFocus args 1 $ \acc -> cmdAccInfo acc
-    "listacc"      -> whenArgs args (== 0) cmdListAcc 
-    "newacc"       -> whenArgs args (== 1) $ cmdNewAcc $ head args
-    "newms"        -> whenArgs args (>= 3) $ 
-        cmdNewMS (args !! 0) (read $ args !! 1) (read $ args !! 2) $ drop 3 args
-    "addkey"       -> withFocus args 2 $ \acc -> cmdAddKeys [head args] acc
-    "dumpkeys"     -> withFocus args 1 $ \acc -> cmdDumpKeys acc
-    "importtx"     -> whenArgs args (== 1) $ cmdImportTx $ head args
-    "coins"        -> withFocus args 1 $ \acc -> cmdCoins acc
-    "allcoins"     -> whenArgs args (== 0) cmdAllCoins
-    "decodetx"     -> whenArgs args (== 1) $ cmdDecodeTx $ head args
-    "buildrawtx"   -> whenArgs args (>= 2) $ do
-        let xs     = map (splitOn ":") args
-            (os,as) = span ((== 64) . length . head) xs
-            f [a,b] = return (a,read b) 
-            f _     = left "buildtx: Invalid syntax"
-        os' <- mapM f os
-        as' <- mapM f as
-        cmdBuildRawTx os' as'
-    "signrawtx"    -> whenArgs args (>= 2) $ do 
-        let f [t,i,s] = return (t,read i,s)
-            f _       = left "Invalid syntax for txid:index:script"
-        xs <- mapM (f . (splitOn ":")) $ tail args
-        cmdSignRawTx (head args) xs $ optSigHash opts
+    "init" -> whenArgs args (== 1) $ cmdInit $ head args
+    "list" -> whenArgs args (== 1) $ cmdList (head args) 0 (optCount opts)
+    "listpage" -> whenArgs args (== 2) $ 
+        cmdList (head args) (read $ args !! 1) (optCount opts)
+    "new" -> whenArgs args (>= 2) $ cmdGenWithLabel (head args) $ drop 1 args
+    "genaddr" -> whenArgs args (== 1) $ cmdGenAddr (head args) (optCount opts)
+    "label" -> whenArgs args (== 3) $ 
+        cmdLabel (head args) (read $ args !! 1) (args !! 2)
+    "newacc" -> whenArgs args (== 1) $ cmdNewAcc $ head args
+    "newms" -> whenArgs args (>= 3) $ do
+        keys <- liftMaybe "newms: Invalid keys" $ mapM xPubImport $ drop 3 args
+        cmdNewMS (args !! 0) (read $ args !! 1) (read $ args !! 2) keys
+    "addkey" -> whenArgs args (>= 2) $ do
+        keys <- liftMaybe "newms: Invalid keys" $ mapM xPubImport $ drop 1 args
+        cmdAddKeys (head args) keys
+    "accinfo" -> whenArgs args (== 1) $ cmdAccInfo $ head args
+    "listacc" -> whenArgs args (== 0) cmdListAcc 
+    "dumpkeys" -> whenArgs args (== 1) $ cmdDumpKeys $ head args
+--    "balance"      -> withFocus args 1 $ \acc -> cmdBalance acc
+--    "totalbalance" -> whenArgs args (== 0) cmdTotalBalance
+--    "listtx"       -> withFocus args 1 cmdListTx
+--    "send"         -> withFocus args 3 $ \acc -> 
+--        cmdSend (head args) (read $ args !! 1) acc
+--    "signtx"       -> withFocus args 2 $ \acc -> cmdSignTx (head args) acc
+--    "importtx"     -> whenArgs args (== 1) $ cmdImportTx $ head args
+--    "coins"        -> withFocus args 1 $ \acc -> cmdCoins acc
+--    "allcoins"     -> whenArgs args (== 0) cmdAllCoins
+--    "decodetx"     -> whenArgs args (== 1) $ cmdDecodeTx $ head args
+--    "buildrawtx"   -> whenArgs args (>= 2) $ do
+--        let xs     = map (splitOn ":") args
+--            (os,as) = span ((== 64) . length . head) xs
+--            f [a,b] = return (a,read b) 
+--            f _     = left "buildtx: Invalid syntax"
+--        os' <- mapM f os
+--        as' <- mapM f as
+--        cmdBuildRawTx os' as'
+--    "signrawtx"    -> whenArgs args (>= 2) $ do 
+--        let f [t,i,s] = return (t,read i,s)
+--            f _       = left "Invalid syntax for txid:index:script"
+--        xs <- mapM (f . (splitOn ":")) $ tail args
+--        cmdSignRawTx (head args) xs $ optSigHash opts
     _ -> left $ unwords ["Invalid command:", cmd]
 

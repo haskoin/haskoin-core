@@ -1,117 +1,232 @@
--- |Provides utilities for wallet-related database computations
-module Haskoin.Wallet.Store.Util
-( WalletDB
-, runWalletDB
-, dbExists
-, dbGet
-, dbPut
-, dbIter
-, liftDB
+{-# LANGUAGE EmptyDataDecls    #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes       #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeFamilies      #-}
+module Haskoin.Wallet.Store.Util 
+( DbWalletGeneric(..)
+, DbAccountGeneric(..)
+, DbAddressGeneric(..)
+, DbCoinGeneric(..)
+, Unique(..)
+, EntityField(..)
+, AccountName
+, dbGetWallet
 , liftEither
 , liftMaybe
-, dbEncodeInt
-, dbDecodeInt
+, migrateAll
 ) where
 
 import Control.Applicative
-import Control.Monad.Reader
-import Control.Monad.Trans.Resource
+import Control.Monad
+import Control.Monad.IO.Class
+import Control.Monad.Trans
 import Control.Monad.Trans.Either
 
+import Data.Time
+import Data.Yaml
 import Data.Maybe
-import Data.List
-import Data.Binary
-import Data.Binary.Get
-import Data.Binary.Put
+import Data.List (nub)
+import qualified Data.Text as T
 import qualified Data.ByteString as BS
+import qualified Data.Conduit as C
 
-import qualified Database.LevelDB as DB
+import Database.Persist
+import Database.Persist.Sqlite
+import Database.Persist.TH
 
+import Haskoin.Wallet.Keys
+import Haskoin.Wallet.Manager
+import Haskoin.Wallet.TxBuilder
+import Haskoin.Script
+import Haskoin.Protocol
+import Haskoin.Crypto
 import Haskoin.Util
 
--- |Monad for performing wallet-related database computations
-type WalletDB m a = EitherT String (ReaderT DB.DB m) a
+type AccountName = String
 
--- |Lift a database computation to the WalletDB monad
-liftDB :: MonadResource m => m a -> WalletDB m a
-liftDB = lift . lift
-
--- |Lift an (Either String) monad to the WalletDB monad
-liftEither :: MonadResource m => Either String a -> WalletDB m a
+liftEither :: Monad m => Either String a -> EitherT String m a
 liftEither = hoistEither
 
--- |Lift a Maybe monad to the WalletDB monad
-liftMaybe :: MonadResource m => String -> Maybe a -> WalletDB m a
+liftMaybe :: Monad m => String -> Maybe a -> EitherT String m a
 liftMaybe err = liftEither . (maybeToEither err)
 
--- |Run a WalletDB monad by providing the database filepath
-runWalletDB :: MonadResource m => FilePath -> WalletDB m a 
-            -> m (Either String a)
-runWalletDB fp wm = do
-    db <- DB.open fp dbOptions 
-    runReaderT (runEitherT wm) db
-    where dbOptions = DB.defaultOptions { DB.createIfMissing = True
-                                        , DB.cacheSize = 2048
-                                        }
+share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
+DbWallet json
+    name String
+    type String
+    master String 
+    accDerivation Int
+    created UTCTime default=CURRENT_TIME
+    UniqueWalletName name
+    deriving Show
 
-dbExists :: MonadResource m => String -> WalletDB m Bool
-dbExists key = (lift ask) >>= \db -> 
-    isJust <$> (liftDB $ DB.get db DB.defaultReadOptions $ stringToBS key)
+DbAccount json
+    name String
+    derivation Int
+    tree String
+    key String
+    extDerivation Int
+    intDerivation Int
+    msRequired Int Maybe
+    msTotal Int Maybe
+    msKeys [String] 
+    created UTCTime default=CURRENT_TIME
+    UniqueAccName name
+    deriving Show
 
--- |Get a database value from a key
-dbGet :: MonadResource m => String -> WalletDB m BS.ByteString
-dbGet key = (lift ask) >>= \db -> do
-    resM <- liftDB $ DB.get db DB.defaultReadOptions $ stringToBS key
-    liftMaybe ("dbGet: no value for key " ++ key) resM
+DbAddress json
+    base58 String
+    label String
+    derivation Int
+    tree String
+    account DbAccountId
+    internal Bool
+    created UTCTime default=CURRENT_TIME
+    UniqueAddress base58
+    UniqueAddressKey account derivation
+    deriving Show
 
--- |Put a key/value pair into the database
-dbPut :: MonadResource m => String -> BS.ByteString -> WalletDB m ()
-dbPut key value = (lift ask) >>= \db -> 
-    liftDB $ DB.put db DB.defaultWriteOptions (stringToBS key) value
+DbCoin json
+    txid String
+    index Int
+    value Int
+    script String
+    spent Bool
+    account DbAccountId
+    created UTCTime default=CURRENT_TIME
+    CoinOutPoint txid index
+    deriving Show
+|]
 
--- |Iterate through a number of keys from the database
--- in lexicographical order
-dbIter :: MonadResource m => String -> String -> Int 
-       -> WalletDB m [BS.ByteString]
-dbIter start prefix count 
-    | count < 0 = liftEither $ Left $ "dbIter: 'count' can not be negative"
-    | otherwise = (lift ask) >>= \db -> do
-        res <- liftDB $ DB.withIterator db DB.defaultReadOptions $ \iter -> do
-            DB.iterSeek iter $ stringToBS start
-            dbIterLoop iter prefix count
-        -- Sequence the list of Either values and lift to WalletDB
-        liftEither $ sequence res
+dbGetWallet :: PersistUnique m => String 
+         -> EitherT String m (Entity (DbWalletGeneric (PersistMonadBackend m)))
+dbGetWallet name = liftMaybe walletErr =<< (getBy $ UniqueWalletName name)
+    where walletErr = unwords ["dbGetWallet: Invalid wallet", name]
 
-dbIterLoop :: MonadResource m => DB.Iterator -> String -> Int 
-           -> m [Either String BS.ByteString]
-dbIterLoop iter prefix c
-    | c > 0 = DB.iterKey iter >>= \keyM -> case keyM of
-        Just key -> if isPrefixOf prefix $ bsToString key
-            then DB.iterValue iter >>= \valM -> case valM of
-                Just val -> do
-                    DB.iterNext iter
-                    liftM2 (:) (return $ Right val) 
-                               (dbIterLoop iter prefix $ c - 1)
-                Nothing -> return [Left valErr]
-            else return []
-        Nothing  -> return [Left keyErr]
-    | otherwise = return []
-    where keyErr = "dbIterLoop: Invalid iterator key"
-          valErr = "dbIterLoop: Invalid iterator value"
+instance PersistStore m => PersistStore (EitherT e m) where
+    type PersistMonadBackend (EitherT e m) = PersistMonadBackend m
+    get = lift . get
+    insert = lift . insert
+    insert_ = lift . insert_
+    insertMany = lift . insertMany
+    insertKey k = lift . (insertKey k)
+    repsert k = lift . (repsert k)
+    replace k = lift . (replace k)
+    delete = lift . delete
 
--- |Encode an Int into a fixed-length 4 byte representation
--- for preserving lexicographical ordering in database keys
-dbEncodeInt :: Int -> Either String String
-dbEncodeInt i | i < 0 = Left "encodeInt: Invalid negative Int"
-              | fromIntegral i > (maxBound :: Word32) =
-                  Left "encodeInt: Int too big"
-              | otherwise = return $ bsToString bs
-              where bs = runPut' $ putWord32le $ fromIntegral i
+instance PersistUnique m => PersistUnique (EitherT e m) where
+    getBy = lift . getBy
+    deleteBy = lift . deleteBy
+    insertUnique = lift . insertUnique
 
--- |Decode a fixed-length 4 byte bytestring into an Int
-dbDecodeInt :: BS.ByteString -> Either String Int
-dbDecodeInt bs 
-    | BS.length bs /= 4 = Left "decodeInt: invalid bytestring size"
-    | otherwise = fromRunGet getWord32le bs err (Right . fromIntegral)
-    where err = Left "decodeInt: could not decode bytestring as Word32le"
+instance PersistQuery m => PersistQuery (EitherT e m) where
+    update k = lift . (update k)
+    updateGet k = lift . (updateGet k)
+    updateWhere f = lift . (updateWhere f)
+    deleteWhere = lift . deleteWhere
+    selectSource f = (C.transPipe lift) . (selectSource f)
+    selectFirst f = lift . (selectFirst f)
+    selectKeys f = (C.transPipe lift) . (selectKeys f)
+    count = lift . count
+
+{- YAML templates -}
+
+instance ToJSON OutPoint where
+    toJSON (OutPoint h i) = object
+        [ (T.pack "TxID") .= (bsToHex $ BS.reverse $ encode' h)
+        , (T.pack "index") .= toJSON i
+        ]
+
+instance ToJSON TxOut where
+    toJSON (TxOut v s) = object $
+        [ (T.pack "Value") .= toJSON v
+        , (T.pack "Raw Script") .= (bsToHex $ encodeScriptOps s)
+        , (T.pack "Script") .= toJSON s
+        ] ++ scptPair 
+        where scptPair = 
+                either (const [])
+                       (\out -> [(T.pack "Decoded Script") .= toJSON out]) 
+                       (decodeOutput s)
+
+instance ToJSON TxIn where
+    toJSON (TxIn o s i) = object $
+        [ (T.pack "OutPoint") .= toJSON o
+        , (T.pack "Sequence") .= toJSON i
+        , (T.pack "Raw Script") .= (bsToHex $ encodeScriptOps s)
+        , (T.pack "Script") .= toJSON s
+        ] ++ decoded 
+        where decoded = either (const $ either (const []) f $ decodeInput s) 
+                               f $ decodeScriptHash s
+              f inp = [(T.pack "Decoded Script") .= toJSON inp]
+              
+instance ToJSON Tx where
+    toJSON tx@(Tx v is os i) = object
+        [ (T.pack "TxID") .= (bsToHex $ BS.reverse $ encode' $ txid tx)
+        , (T.pack "Version") .= toJSON v
+        , (T.pack "Inputs") .= (toJSON $ map input $ zip is [0..])
+        , (T.pack "Outputs") .= (toJSON $ map output $ zip os [0..])
+        , (T.pack "LockTime") .= toJSON i
+        ]
+        where input (x,j) = object 
+                [(T.pack $ unwords ["Input", show j]) .= toJSON x]
+              output (x,j) = object 
+                [(T.pack $ unwords ["Output", show j]) .= toJSON x]
+
+instance ToJSON Script where
+    toJSON (Script ops) = toJSON $ map show ops
+
+instance ToJSON ScriptOutput where
+    toJSON (PayPK p) = object 
+        [ (T.pack "PayToPublicKey") .= object
+            [ (T.pack "Public Key") .= (bsToHex $ encode' p)
+            ]
+        ]
+    toJSON (PayPKHash a) = object 
+        [ (T.pack "PayToPublicKeyHash") .= object
+            [ (T.pack "Address Hash160") .= (bsToHex $ encode' $ runAddress a)
+            , (T.pack "Address Base58") .= addrToBase58 a
+            ]
+        ]
+    toJSON (PayMulSig ks r) = object 
+        [ (T.pack "PayToMultiSig") .= object
+            [ (T.pack "Required Keys (M)") .= toJSON r
+            , (T.pack "Public Keys") .= (toJSON $ map (bsToHex . encode') ks)
+            ]
+        ]
+    toJSON (PayScriptHash a) = object 
+        [ (T.pack "PayToScriptHash") .= object
+            [ (T.pack "Address Hash160") .= (bsToHex $ encode' $ runAddress a)
+            , (T.pack "Address Base58") .= addrToBase58 a
+            ]
+        ]
+
+instance ToJSON ScriptInput where
+    toJSON (SpendPK s) = object 
+        [ (T.pack "SpendPublicKey") .= object
+            [ (T.pack "Signature") .= (bsToHex $ encodeSig s)
+            ]
+        ]
+    toJSON (SpendPKHash s p) = object 
+        [ (T.pack "SpendPublicKeyHash") .= object
+            [ (T.pack "Signature") .= (bsToHex $ encodeSig s)
+            , (T.pack "Public Key") .= (bsToHex $ encode' p)
+            ]
+        ]
+    toJSON (SpendMulSig sigs r) = object 
+        [ (T.pack "SpendMultiSig") .= object
+            [ (T.pack "Required Keys (M)") .= toJSON r
+            , (T.pack "Signatures") .= (toJSON $ map (bsToHex . encodeSig) sigs)
+            ]
+        ]
+
+instance ToJSON ScriptHashInput where
+    toJSON (ScriptHashInput s r) = object
+        [ (T.pack "SpendScriptHash") .= object
+            [ (T.pack "ScriptInput") .= toJSON s
+            , (T.pack "RedeemScript") .= toJSON r
+            ]
+        ]
 

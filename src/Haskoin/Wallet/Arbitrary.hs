@@ -148,6 +148,9 @@ instance Arbitrary DBCoin where
 
 instance Arbitrary DBTx where
     arbitrary = DBTx <$> arbitrary 
+                     <*> arbitrary
+                     <*> arbitrary
+                     <*> arbitrary
                      <*> (choose (1,0x7fffffff))
                      <*> (choose (1,0x7fffffff))
 

@@ -1,5 +1,6 @@
 module Haskoin.Wallet.TxBuilder 
-( buildTx
+( Coin(..)
+, buildTx
 , buildAddrTx
 , SigInput(..)
 , signTx
@@ -21,29 +22,32 @@ import Data.List
 import Data.Word
 import qualified Data.ByteString as BS
 
-import Haskoin.Wallet.Store.DBCoin
 import Haskoin.Script
 import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util
 
+data Coin = Coin { coinTxOut    :: TxOut
+                 , coinOutPoint :: OutPoint
+                 } deriving (Eq, Show)
+
 -- |Select coins to spend based on a target amount and a fee per KB
-chooseCoins :: Word64 -> Word64 -> [DBCoin] -> Either String ([DBCoin],Word64)
+chooseCoins :: Word64 -> Word64 -> [Coin] -> Either String ([Coin],Word64)
 chooseCoins target kbfee xs 
     | target > 0 = maybeToEither err $ greedyAdd target (getFee kbfee) xs
     | otherwise  = Left "chooseCoins: Target must be > 0"
     where err = "chooseCoins: No solution found"
 
 -- |Select coins to spend from a multisignature account
-chooseMSCoins :: Word64 -> Word64 -> (Int,Int) -> [DBCoin] 
-              -> Either String ([DBCoin],Word64)
+chooseMSCoins :: Word64 -> Word64 -> (Int,Int) -> [Coin] 
+              -> Either String ([Coin],Word64)
 chooseMSCoins target kbfee ms xs 
     | target > 0 = maybeToEither err $ greedyAdd target (getMSFee kbfee ms) xs
     | otherwise  = Left "chooseMSCoins: Target must be > 0"
     where err = "chooseMSCoins: No solution found"
 
 -- |Select coins greedily by starting from an empty solution
-greedyAdd :: Word64 -> (Int -> Word64) -> [DBCoin] -> Maybe ([DBCoin],Word64)
+greedyAdd :: Word64 -> (Int -> Word64) -> [Coin] -> Maybe ([Coin],Word64)
 greedyAdd target fee xs = go [] 0 [] 0 $ sortBy desc xs
     where desc a b = compare (outValue $ coinTxOut b) (outValue $ coinTxOut a)
           goal c = target + fee c
@@ -58,7 +62,7 @@ greedyAdd target fee xs = go [] 0 [] 0 $ sortBy desc xs
             where val = outValue $ coinTxOut y
 
 -- |Start from a solution containing all coins and greedily remove them
-greedyRem :: Word64 -> (Int -> Word64) -> [DBCoin] -> Maybe ([DBCoin],Word64)
+greedyRem :: Word64 -> (Int -> Word64) -> [Coin] -> Maybe ([Coin],Word64)
 greedyRem target fee xs 
     | s < goal (length xs) = Nothing
     | otherwise = return $ go [] s $ sortBy desc xs

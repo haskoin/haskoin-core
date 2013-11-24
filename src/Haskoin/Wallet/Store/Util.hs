@@ -10,6 +10,8 @@ module Haskoin.Wallet.Store.Util
 , DbAccountGeneric(..)
 , DbAddressGeneric(..)
 , DbCoinGeneric(..)
+, DbTx(..)
+, DbOrphan(..)
 , Unique(..)
 , EntityField(..)
 , AccountName
@@ -94,11 +96,30 @@ DbCoin json
     index Int
     value Int
     script String
-    spent Bool
+    spent String Maybe
     account DbAccountId
+    orphan Bool
     created UTCTime default=CURRENT_TIME
     CoinOutPoint txid index
     deriving Show
+
+DbTx json
+    txid String
+    recipients [String]
+    value Int
+    account DbAccountId
+    orphan Bool
+    UniqueTx txid account
+    created UTCTime default=CURRENT_TIME
+    deriving Show
+
+DbTxBlob json
+    txid String
+    value ByteString 
+    created UTCTime default=CURRENT_TIME
+    UniqueTxBlob txid
+    derivint Show
+
 |]
 
 dbGetWallet :: PersistUnique m => String 

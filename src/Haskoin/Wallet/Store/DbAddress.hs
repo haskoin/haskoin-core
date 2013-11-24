@@ -4,6 +4,7 @@ module Haskoin.Wallet.Store.DbAddress
 , cmdGenAddr
 , cmdGenWithLabel
 , cmdLabel
+, dbGetAddr
 , yamlAddr
 , yamlAddrList
 ) where
@@ -56,6 +57,13 @@ yamlAddrList addrs pageNum resPerPage addrCount = object
         , "Total Addresses" .= addrCount
         ]
     ]
+
+dbGetAddr :: PersistUnique m 
+          => String 
+          -> EitherT String m 
+              (Entity (DbAddressGeneric (PersistMonadBackend m)))
+dbGetAddr addr = liftMaybe addrErr =<< (getBy $ UniqueAddress addr)
+    where addrErr = unwords ["dbGetAddr: Invalid address", addr]
 
 -- |Return a page of addresses. pageNum = 0 computes the last page
 cmdList :: (PersistStore m, PersistUnique m, PersistQuery m) 

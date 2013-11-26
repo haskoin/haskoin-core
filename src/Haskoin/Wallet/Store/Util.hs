@@ -10,8 +10,14 @@ module Haskoin.Wallet.Store.Util
 , DbAccountGeneric(..)
 , DbAddressGeneric(..)
 , DbCoinGeneric(..)
-, DbTx(..)
-, DbOrphan(..)
+, DbTxGeneric(..)
+, DbTxBlobGeneric(..)
+, DbWalletId
+, DbAccountId
+, DbAddressId
+, DbCoinId
+, DbTxId
+, DbTxBlobId
 , Unique(..)
 , EntityField(..)
 , AccountName
@@ -109,49 +115,52 @@ DbTx json
     value Int
     account DbAccountId
     orphan Bool
-    UniqueTx txid account
     created UTCTime default=CURRENT_TIME
+    UniqueTx txid account
     deriving Show
 
 DbTxBlob json
     txid String
-    value ByteString 
+    value BS.ByteString 
     created UTCTime default=CURRENT_TIME
     UniqueTxBlob txid
-    derivint Show
+    deriving Show
 
 |]
 
-dbGetWallet :: PersistUnique m => String 
-         -> EitherT String m (Entity (DbWalletGeneric (PersistMonadBackend m)))
+dbGetWallet :: ( PersistUnique m 
+               , PersistMonadBackend m ~ b
+               )
+            => String 
+            -> EitherT String m (Entity (DbWalletGeneric b))
 dbGetWallet name = liftMaybe walletErr =<< (getBy $ UniqueWalletName name)
     where walletErr = unwords ["dbGetWallet: Invalid wallet", name]
 
 instance PersistStore m => PersistStore (EitherT e m) where
     type PersistMonadBackend (EitherT e m) = PersistMonadBackend m
-    get = lift . get
-    insert = lift . insert
-    insert_ = lift . insert_
-    insertMany = lift . insertMany
+    get         = lift . get
+    insert      = lift . insert
+    insert_     = lift . insert_
+    insertMany  = lift . insertMany
     insertKey k = lift . (insertKey k)
-    repsert k = lift . (repsert k)
-    replace k = lift . (replace k)
-    delete = lift . delete
+    repsert k   = lift . (repsert k)
+    replace k   = lift . (replace k)
+    delete      = lift . delete
 
 instance PersistUnique m => PersistUnique (EitherT e m) where
-    getBy = lift . getBy
-    deleteBy = lift . deleteBy
+    getBy        = lift . getBy
+    deleteBy     = lift . deleteBy
     insertUnique = lift . insertUnique
 
 instance PersistQuery m => PersistQuery (EitherT e m) where
-    update k = lift . (update k)
-    updateGet k = lift . (updateGet k)
-    updateWhere f = lift . (updateWhere f)
-    deleteWhere = lift . deleteWhere
+    update k       = lift . (update k)
+    updateGet k    = lift . (updateGet k)
+    updateWhere f  = lift . (updateWhere f)
+    deleteWhere    = lift . deleteWhere
     selectSource f = (C.transPipe lift) . (selectSource f)
-    selectFirst f = lift . (selectFirst f)
-    selectKeys f = (C.transPipe lift) . (selectKeys f)
-    count = lift . count
+    selectFirst f  = lift . (selectFirst f)
+    selectKeys f   = (C.transPipe lift) . (selectKeys f)
+    count          = lift . count
 
 {- YAML templates -}
 

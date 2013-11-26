@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE TypeFamilies      #-}
 module Haskoin.Wallet.Store.DbAccount 
 ( dbGetAcc
 , cmdNewAcc
@@ -61,8 +63,11 @@ isMSAcc :: DbAccountGeneric b -> Bool
 isMSAcc acc = (isJust $ dbAccountMsRequired acc) && 
               (isJust $ dbAccountMsTotal acc) 
 
-dbGetAcc :: PersistUnique m => String 
-         -> EitherT String m (Entity (DbAccountGeneric (PersistMonadBackend m)))
+dbGetAcc :: ( PersistUnique m 
+            , PersistMonadBackend m ~ b
+            )
+         => String 
+         -> EitherT String m (Entity (DbAccountGeneric b))
 dbGetAcc name = liftMaybe accErr =<< (getBy $ UniqueAccName name)
     where accErr = unwords ["dbGetAcc: Invalid account", name]
 

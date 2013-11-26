@@ -4,6 +4,14 @@ module Haskoin.Wallet.Store
 , DbAccountGeneric(..)
 , DbAddressGeneric(..)
 , DbCoinGeneric(..)
+, DbTxGeneric(..)
+, DbTxBlobGeneric(..)
+, DbWalletId
+, DbAccountId
+, DbAddressId
+, DbCoinId
+, DbTxId
+, DbTxBlobId
 , Unique(..)
 , EntityField(..)
 , AccountName
@@ -27,6 +35,7 @@ module Haskoin.Wallet.Store
 , cmdGenAddr
 , cmdGenWithLabel
 , cmdLabel
+, dbGetAddr
 , yamlAddr
 , yamlAddrList
 

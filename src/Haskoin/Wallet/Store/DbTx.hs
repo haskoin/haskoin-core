@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE TypeFamilies      #-}
 module Haskoin.Wallet.Store.DbTx
 ( 
 ) where
@@ -11,8 +13,10 @@ import Control.Monad.Trans.Either
 
 import Data.Time
 import Data.Yaml
+import Data.Word
 import Data.Maybe
-import Data.List (nub)
+import Data.Either
+import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.ByteString as BS
 import qualified Data.Conduit as C
@@ -25,6 +29,7 @@ import Haskoin.Wallet.Keys
 import Haskoin.Wallet.Manager
 import Haskoin.Wallet.TxBuilder
 import Haskoin.Wallet.Store.DbAccount
+import Haskoin.Wallet.Store.DbAddress
 import Haskoin.Wallet.Store.DbCoin
 import Haskoin.Wallet.Store.Util
 import Haskoin.Script
@@ -32,24 +37,58 @@ import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util
 
-cmdImportTx :: PersistQuery m => Tx -> EitherT String m Value
-cmdImportTx tx = do
-    inActions  <- mapRights dbImportIn  $ txIn tx
-    outActions <- mapRights dbImportOut $ txOut tx
+yamlTx :: DbTxGeneric b -> Value
+yamlTx tx = object
+    [ "Recipients" .= dbTxRecipients tx
+    , "Value" .= dbTxValue tx
+    , "Orphan" .= dbTxOrphan tx
+    ]
 
-dbImportIn :: PersistQuery m 
+txidHex :: Hash256 -> String
+txidHex = bsToHex . BS.reverse . encode'
+
+cmdImportTx :: ( PersistStore m
+               , PersistQuery m 
+               , PersistUnique m
+               , PersistMonadBackend m ~ SqlBackend
+               )
+            => Tx -> EitherT String m Value
+cmdImportTx tx = do
+    inActions  <- mapRights (dbImportIn $ txid tx) $ txIn tx
+    outActions <- mapRights (dbImportOut $ txid tx) $ zip (txOut tx) [0..]
+    let inMap  = foldl fin M.empty inActions
+        accMap = foldl fout inMap outActions
+    accTx <- mapM build $ M.toList accMap
+    insertMany accTx
+    return $ toJSON $ map yamlTx accTx
+    where fin acc (ai,vi,o) = flip (M.insert ai) acc $ case M.lookup ai acc of
+              Just (vi',_,o',_) -> (vi+vi',0,o || o',[])
+              _                 -> (vi,0,o,[])
+          fout acc (ai,vo,addr) = flip (M.insert ai) acc $ case M.lookup ai acc of
+              Just (vi,vo',o,xs) -> (vi,vo+vo',o,addr:xs)
+              _                  -> (0,vo,False,[addr])
+          recip  = rights $ map toAddr $ txOut tx
+          toAddr = (addrToBase58 <$>) . scriptRecipient . scriptOutput
+          build (ai,(vi,vo,orphan,xs)) = do
+              time  <- liftIO $ getCurrentTime
+              return $ DbTx (txidHex $ txid tx)
+                            (if null xs then recip else xs)
+                            (vo-vi) ai orphan time
+
+dbImportIn :: ( PersistStore m
+              , PersistQuery m 
+              , PersistUnique m
+              , PersistMonadBackend m ~ SqlBackend
+              )
            => Hash256 -> TxIn -> EitherT String m (DbAccountId,Int,Bool)
 dbImportIn txid (TxIn op@(OutPoint h i) s _) = do
-    a     <- liftEither $ scriptSender s   
-    addr  <- dbGetAddr $ addrToBase58 a
-    coinM <- getBy $ CoinOutPoint (fromIntegral h) (fromIntegral i)
+    a <- liftEither $ scriptSender s   
+    (Entity _ addr) <- dbGetAddr $ addrToBase58 a
+    coinM <- getBy $ CoinOutPoint (txidHex h) (fromIntegral i)
     case coinM of
         Just (Entity ci coin) -> do
-            if isJust $ dbCoinSpent coin 
-                then left "dbImportIn: Coin already spent" 
-                else do
-                    replace ci coin{ dbCoinSpent = (Just $ txidHex txid) }
-                    return (dbCoinAccount coin,dbCoinValue coin,False)
+            update ci [ DbCoinSpent =. (Just $ txidHex txid) ]
+            return (dbCoinAccount coin,dbCoinValue coin,dbCoinOrphan coin)
         Nothing -> do
             time  <- liftIO $ getCurrentTime
             insert_ $ DbCoin (txidHex h) (fromIntegral i) 
@@ -58,35 +97,21 @@ dbImportIn txid (TxIn op@(OutPoint h i) s _) = do
                              (dbAddressAccount addr) 
                              True time
             return (dbAddressAccount addr,0,True)
-    where txidHex = bsToHex . BS.reverse . encode'
 
-dbImportOut :: PersistQuery m
-            => Hash256 -> (TxOut,Int) -> EitherT String m (DbAccountId,Int)
+dbImportOut :: ( PersistStore m
+               , PersistQuery m 
+               , PersistUnique m
+               , PersistMonadBackend m ~ SqlBackend
+               )
+            => Hash256 -> (TxOut,Int) 
+            -> EitherT String m (DbAccountId,Int,String)
 dbImportOut txid ((TxOut v s), index) = do
-    a    <- liftEither $ scriptRecipient s
-    addr <- dbGetAddr $ addrToBase58 a
+    a <- liftEither $ scriptRecipient s
+    (Entity _ addr) <- dbGetAddr $ addrToBase58 a
     coinM <- getBy $ CoinOutPoint (txidHex txid) index
     case coinM of
-        Just (Entity ci coin) -> if dbCoinOrphan coin 
-            then do
-                replace ci coin{ dbCoinOrphan = False
-                               , dbCoinValue  = (fromIntegral v)
-                               , dbCoinScript = (bsToHex $ encodeScriptOps s)
-                               }
-                c <- count [ DbCoinSpent   ==. dbCoinSpent coin
-                           , DbCoinAccount ==. dbCoinAccount coin
-                           , DbCoinOrphan  ==. True
-                           ]
-                let keyId = fromJust $ dbCoinSpent coin
-                    keyTx = UniqueTx keyId $ dbCoinAccount coin
-                (Entity ti tx) <- liftMaybe txErr =<< getBy keyTx
-                update ti $ if count == 0 
-                    then [ DbTxValue +=. (fromIntegral v)
-                         , DbTxOrphan =. False
-                         ]
-                    else [ DbTxValue +=. (fromIntegral v) ]
-                return (dbAddressAccount addr, fromIntegral v)
-            else left "dbImportOut: Coin already imported"
+        Just (Entity ci coin) -> 
+            when (dbCoinOrphan coin) $ dbProcessOrphan v s ci coin
         Nothing -> do
             time  <- liftIO $ getCurrentTime
             insert_ $ DbCoin (txidHex txid) index 
@@ -95,61 +120,35 @@ dbImportOut txid ((TxOut v s), index) = do
                              Nothing
                              (dbAddressAccount addr) 
                              False time
-            return (dbAddressAccount addr, fromIntegral v)
-    where txidHex = bsToHex . BS.reverse . encode'
-          txErr = "dbImportOut: Orphan coin transaction not found"
+    return (dbAddressAccount addr, fromIntegral v, addrToBase58 a)
 
--- |Extract coins from a transaction and save them in the database
-dbImportTx :: MonadResource m => Tx -> WalletDB m [DBCoin]
-dbImportTx tx = do
-    newCoins   <- mapRights (dbImportCoin $ txid tx) $ zip (txOut tx) [0..]
-    spentCoins <- mapRights dbSpendCoin $ txIn tx
-    let xs = nubBy f $ newCoins ++ spentCoins
-    forM xs $ \(DBCoin _ _ _ _ acPos) -> do
-        acc <- dbGetAcc $ AccPos $ coinAccPos coin
-        let aData = runAccData acc
-            total = accTxCount aData
-            id    = bsToString $ encode' $ txid tx
-        acPos <- liftEither $ dbEncodeInt $ accPos aData
-        exists <- dbExists $ concat ["txid_",acPos,"_",id]
-        unless exists $ do
-            dbPutTx $ DBTx tx (total + 1) $ accPos aData
-            dbPutAcc acc{ runAccData = aData{ accTxCount = total + 1 } }
-    return newCoins
-    where f a b = (coinAccPos a) == (coinAccPos b)
-
-getCoinNetAmnt :: [DBCoin] -> [DBCoin] -> (Word64,Bool)
-getCoinNetAmnt new spent = 
-    where credit = sum $ map (outValue . coinTxOut) new
-          debit  = sum $ map (outValue . coinTxOut) spent
-
-
-decodeIncTx :: Tx -> DBAccount -> WalletDB ResIO ([String],Word64)
-decodeIncTx tx acc = do
-    incSum <- sum <$> (mapRights f $ txOut tx)
-    senders <- mapRights g $ txIn tx
-    return (senders,incSum)
-    where f (TxOut v s) = do
-            str  <- liftEither $ scriptRecipient s
-            addr <- dbGetAddr $ AddrBase58 str
-            unless (addrAccPos addr == (accPos $ runAccData acc)) 
-                left "decodeIncTx: Addr not in current account"
-            return v
-          g (TxIn _ s _) = liftEither $ scriptSender s 
-
-decodeOutTx :: Tx -> DBAccount -> WalletDB ResIO ([String],Word64)
-decodeOutTx tx acc = do
-    myCoins <- mapRights f $ txIn tx
-    if null myCoins then return [] else mapRights g $ txOut tx 
-    where f (TxIn op s _) = do
-            coin <- dbGetCoin $ CoinOutPoint op
-            unless (coinAccPos op == (accPos $ runAccData acc))
-                left "decodeOutTx: Coin not in current account"
-            return coin
-          g (TxOut v s) = do
-            str <- liftEither $ scriptRecipient s
-            return (str,v)
-
+dbProcessOrphan :: ( PersistStore m
+                   , PersistQuery m 
+                   , PersistUnique m
+                   , PersistMonadBackend m ~ SqlBackend
+                   )
+                => Word64 -> Script
+                -> DbCoinId -> DbCoinGeneric SqlBackend
+                -> EitherT String m ()
+dbProcessOrphan v s ci coin = do
+    replace ci coin{ dbCoinOrphan = False
+                   , dbCoinValue  = (fromIntegral v)
+                   , dbCoinScript = (bsToHex $ encodeScriptOps s)
+                   }
+    c <- count [ DbCoinSpent   ==. dbCoinSpent coin
+               , DbCoinAccount ==. dbCoinAccount coin
+               , DbCoinOrphan  ==. True
+               ]
+    let keyTx = UniqueTx (fromJust $ dbCoinSpent coin) (dbCoinAccount coin)
+    (Entity ti tx) <- liftMaybe txErr =<< getBy keyTx
+    update ti $ concat
+        [ [DbTxValue +=. (fromIntegral v)]
+        , if c == 0 then [DbTxOrphan =. False] else []
+        ]
+  where 
+    txErr = "dbImportOut: Orphan coin transaction not found"
+    
+{-
 cmdListTx :: AccountName -> Command
 cmdListTx name = dbGetAcc (AccName name) >>= \acc -> do
     guardValidAcc acc
@@ -201,18 +200,6 @@ cmdSignTx str name = dbGetAcc (AccName name) >>= \acc -> do
           f c   = let s = scriptOutput $ coinTxOut c
                   in dbGetSigData s (coinOutPoint c) $ SigAll False
 
-cmdImportTx :: String -> Command
-cmdImportTx str = do
-    tx    <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS str)
-    coins <- dbImportTx tx
-    accs  <- mapM (dbGetAcc . AccPos . coinAccPos) coins
-    let json = map (\(c,a) -> yamlCoin c a) $ zip coins accs
-    return $ object
-        [ (T.pack "Import count") .= (toJSON $ length coins) 
-        , (T.pack "Imported coins") .= toJSON json
-        ]
-    where txErr = "cmdImportTx: Could not decode transaction"
-      
 cmdDecodeTx :: String -> Command
 cmdDecodeTx str = do
     tx <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS str)
@@ -245,4 +232,5 @@ cmdSignRawTx strTx xs sh = do
             tid <- liftEither $ decodeToEither $ BS.reverse tBS
             dbGetSigData scp (OutPoint tid $ fromIntegral i) sh
           txErr = "cmdSignTx: Could not decode transaction"
+-}
 

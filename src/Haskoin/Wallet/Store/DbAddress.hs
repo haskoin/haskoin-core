@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE TypeFamilies      #-}
 module Haskoin.Wallet.Store.DbAddress 
 ( cmdList
 , cmdGenAddr
@@ -58,10 +60,11 @@ yamlAddrList addrs pageNum resPerPage addrCount = object
         ]
     ]
 
-dbGetAddr :: PersistUnique m 
+dbGetAddr :: ( PersistUnique m 
+             , PersistMonadBackend m ~ b
+             )
           => String 
-          -> EitherT String m 
-              (Entity (DbAddressGeneric (PersistMonadBackend m)))
+          -> EitherT String m (Entity (DbAddressGeneric b))
 dbGetAddr addr = liftMaybe addrErr =<< (getBy $ UniqueAddress addr)
     where addrErr = unwords ["dbGetAddr: Invalid address", addr]
 

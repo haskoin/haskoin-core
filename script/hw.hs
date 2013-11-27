@@ -3,15 +3,15 @@ module Main where
 
 import System.IO
 import System.Directory
-import qualified System.Environment as E
+import System.IO.Error
 import System.Console.GetOpt
+import qualified System.Environment as E
 
 import Control.Monad
 import Control.Applicative
 import Control.Monad.Trans
 import Control.Monad.Trans.Resource
 import Control.Monad.Trans.Either
-import System.IO.Error
 import Control.Exception (tryJust)
 
 import Database.Persist
@@ -151,10 +151,8 @@ getWorkDir = do
     createDirectoryIfMissing True dir
     return $ dir ++ "/walletdb"
 
-catchIt :: IOError -> Maybe String
-catchIt e = do
-    -- guard $ isUserError e 
-    return $ ioeGetErrorString e
+catchEx :: IOError -> Maybe String
+catchEx = return . ioeGetErrorString
 
 process :: Options -> [String] -> IO ()
 process opts xs 
@@ -165,7 +163,7 @@ process opts xs
     | null xs = formatStr usage
     | otherwise = getWorkDir >>= \dir -> do
         let (cmd,args) = (head xs, tail xs)
-        res <- tryJust catchIt $ runSqlite (T.pack dir) $ runEitherT $ do
+        res <- tryJust catchEx $ runSqlite (T.pack dir) $ runEitherT $ do
             lift $ runMigration migrateAll
             dispatchCommand cmd opts args 
         case join res of

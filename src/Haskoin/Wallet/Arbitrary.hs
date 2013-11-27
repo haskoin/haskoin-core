@@ -107,59 +107,6 @@ instance Arbitrary AddrPubKey where
                  , fromJust $ intPubKey accKey index
                  ]
 
-instance Arbitrary AccountData where
-    arbitrary = AccountData <$> arbitrary
-                            <*> arbitrary
-                            <*> (choose (1,0x7fffffff))
-                            <*> arbitrary
-                            <*> arbitrary
-                            <*> (choose (1,0x7fffffff))
-                            <*> arbitrary
-                            <*> (choose (1,0x7fffffff))
-                            <*> (choose (1,0x7fffffff))
-                            <*> (choose (1,0x7fffffff))
-
-instance Arbitrary DBAccount where
-    arbitrary = do
-        (MSParam m n) <- arbitrary
-        oneof [ DBAccount <$> arbitrary 
-              , DBAccountMS <$> arbitrary
-                            <*> arbitrary
-                            <*> (return m)
-                            <*> (return n)
-                            <*> arbitrary
-              ]
-
-instance Arbitrary DBAddress where
-    arbitrary = DBAddress <$> arbitrary 
-                          <*> arbitrary 
-                          <*> arbitrary 
-                          <*> (choose (1,0x7fffffff))
-                          <*> arbitrary
-                          <*> (choose (1,0x7fffffff))
-                          <*> arbitrary
-
-instance Arbitrary DBCoin where
-    arbitrary = DBCoin <$> arbitrary
-                       <*> arbitrary
-                       <*> arbitrary
-                       <*> (choose (1,0x7fffffff))
-                       <*> (choose (1,0x7fffffff))
-
-instance Arbitrary DBTx where
-    arbitrary = DBTx <$> arbitrary 
-                     <*> arbitrary
-                     <*> arbitrary
-                     <*> arbitrary
-                     <*> (choose (1,0x7fffffff))
-                     <*> (choose (1,0x7fffffff))
-
-instance Arbitrary DBConfig where
-    arbitrary = DBConfig <$> arbitrary
-                         <*> arbitrary
-                         <*> arbitrary
-                         <*> (choose (1,0x7fffffff))
-                         <*> arbitrary
-                         <*> (choose (1,0x7fffffff))
-
-
+instance Arbitrary Coin where
+    arbitrary = Coin <$> arbitrary <*> arbitrary
+        

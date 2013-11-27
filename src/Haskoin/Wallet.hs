@@ -67,6 +67,7 @@ module Haskoin.Wallet
 , intMulSigAddrs
 
 -- Tx module
+, Coin(..)
 , buildTx
 , buildAddrTx
 , SigInput(..)

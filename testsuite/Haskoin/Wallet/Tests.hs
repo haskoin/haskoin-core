@@ -49,13 +49,6 @@ tests =
         [ testProperty "Check signed transaction status" testSignTxBuild
         , testProperty "Sign and validate transactions" testSignTxValidate
         ]
-    , testGroup "Wallet Store"
-        [ testProperty "decode . encode account" decEncAccount
-        , testProperty "decode . encode addr" decEncAddr
-        , testProperty "decode . encode coin" decEncCoin
-        , testProperty "decode . encode tx" decEncTx
-        , testProperty "decode . encode config" decEncConfig
-        ]
     ]
 
 {- HDW Extended Keys -}
@@ -121,7 +114,7 @@ testGuessSize (RegularTx tx) =
           pkout = length $ filter isPayPKHash out
           msout = length $ filter isPayScriptHash out
 
-testChooseCoins :: Word64 -> Word64 -> [DBCoin] -> Bool
+testChooseCoins :: Word64 -> Word64 -> [Coin] -> Bool
 testChooseCoins target kbfee xs = case chooseCoins target kbfee xs of
     Right (chosen,change) ->
         let outSum = sum $ map (outValue . coinTxOut) chosen
@@ -132,7 +125,7 @@ testChooseCoins target kbfee xs = case chooseCoins target kbfee xs of
         in target == 0 || s < target || s < target + fee
     where s = sum $ map (outValue . coinTxOut) xs
 
-testChooseMSCoins :: Word64 -> Word64 -> MSParam -> [DBCoin] -> Bool
+testChooseMSCoins :: Word64 -> Word64 -> MSParam -> [Coin] -> Bool
 testChooseMSCoins target kbfee (MSParam m n) xs = 
     case chooseMSCoins target kbfee (m,n) xs of
         Right (chosen,change) ->
@@ -162,22 +155,5 @@ testSignTxValidate (PKHashSigTemplate tx sigi prv) =
     where f si = (sigDataOut si, sigDataOP si)
 
 -- todo: test p2sh transactions
-
-{- Wallet Store -}
-
-decEncAccount :: DBAccount -> Bool
-decEncAccount acc = (decode' $ encode' acc) == acc
-
-decEncAddr :: DBAddress -> Bool
-decEncAddr addr = (decode' $ encode' addr) == addr
-
-decEncCoin :: DBCoin -> Bool
-decEncCoin coin = (decode' $ encode' coin) == coin
-
-decEncTx :: DBTx -> Bool
-decEncTx tx = (decode' $ encode' tx) == tx
-
-decEncConfig :: DBConfig -> Bool
-decEncConfig config = (decode' $ encode' config) == config
 
 

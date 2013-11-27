@@ -81,27 +81,18 @@ import Haskoin.Crypto
 import Haskoin.Util
 
 cmdInit :: PersistUnique m => String -> EitherT String m Value
-cmdInit seed = do
-    time   <- liftIO getCurrentTime
-    master <- liftMaybe err $ makeMasterKey $ stringToBS seed
-    let str = xPrvExport $ runMasterKey master
-    insert_ $ DbWallet "main" "full" str (-1) time
-    return Null
-    where err = "dbInit: Invalid master key generated from seed"
+cmdInit seed 
+    | null seed = left "cmdInit: seed can not be empty"
+    | otherwise = do
+        time   <- liftIO getCurrentTime
+        master <- liftMaybe err $ makeMasterKey $ stringToBS seed
+        let str = xPrvExport $ runMasterKey master
+        insert_ $ DbWallet "main" "full" str (-1) time
+        return Null
+  where 
+    err = "dbInit: Invalid master key generated from seed"
 
 {-
-dbInit :: MonadResource m => String -> WalletDB m DBAccount
-dbInit seed = do
-    master <- liftMaybe msg $ makeMasterKey $ stringToBS seed
-    dbInitConfig $ DBConfig { cfgMaster    = master
-                            , cfgVersion   = 1
-                            , cfgAccIndex  = maxBound
-                            , cfgAccCount  = 0
-                            , cfgFocus     = ""
-                            , cfgCoinCount = 0
-                            }
-    dbNewAcc "default"
-    where msg = "dbInit: Invalid master key generation from seed"
 
 dbGetSigData :: MonadResource m => Script -> OutPoint -> SigHash 
              -> WalletDB m (SigInput,PrvKey)

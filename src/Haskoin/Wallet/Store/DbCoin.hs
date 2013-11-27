@@ -39,17 +39,18 @@ import Haskoin.Util
 
 yamlCoin :: DbCoinGeneric b -> Value
 yamlCoin coin = object $
-    [ "TxID" .= dbCoinTxid coin 
-    , "Index" .= dbCoinIndex coin
-    , "Value" .= dbCoinValue coin
+    [ "TxID"   .= dbCoinTxid coin 
+    , "Index"  .= dbCoinIndex coin
+    , "Value"  .= dbCoinValue coin
     , "Script" .= dbCoinScript coin
     , "Orphan" .= dbCoinOrphan coin
     ] ++ addrPair
-    where s = maybeToEither err $ hexToBS $ dbCoinScript coin
-          err = "yamlCoin: Invalid script encoding"
-          addrPair = either (const []) 
-                            (\a -> ["Addr" .= addrToBase58 a])
-                            (scriptRecipient =<< decodeToEither =<< s)
+  where 
+    s        = maybeToEither err $ hexToBS $ dbCoinScript coin
+    err      = "yamlCoin: Invalid script encoding"
+    addrPair = either (const []) 
+                      (\a -> ["Addr" .= addrToBase58 a])
+                      (scriptRecipient =<< decodeToEither =<< s)
 
 dbBalance :: ( PersistQuery m
              , PersistMonadBackend m ~ b
@@ -57,36 +58,37 @@ dbBalance :: ( PersistQuery m
           => Entity (DbAccountGeneric b)
           -> EitherT String m Int
 dbBalance (Entity ai acc) = do
-    coins <- selectList [ DbCoinAccount ==. ai
-                        , DbCoinSpent   ==. Nothing
-                        , DbCoinOrphan  ==. False
-                        ] []
+    coins <- selectList 
+        [ DbCoinAccount ==. ai
+        , DbCoinSpent   ==. Nothing
+        , DbCoinOrphan  ==. False
+        ] []
     return $ sum $ map (dbCoinValue . entityVal) coins
 
 cmdBalance :: (PersistUnique m, PersistQuery m) 
            => AccountName -> EitherT String m Value
-cmdBalance name = do
-    acc <- dbGetAcc name
-    toJSON <$> dbBalance acc
+cmdBalance name = toJSON <$> (dbBalance =<< dbGetAcc name)
 
 cmdBalances :: PersistQuery m => EitherT String m Value
 cmdBalances = do
     accs <- selectList [] []
     bals <- mapM dbBalance accs
     return $ toJSON $ map f $ zip accs bals
-    where f (acc,b) = object $
-            [ "Account" .= (yamlAcc $ entityVal acc)
-            , "Balance" .= b
-            ]
+  where 
+    f (acc,b) = object
+        [ "Account" .= (yamlAcc $ entityVal acc)
+        , "Balance" .= b
+        ]
 
 cmdCoins :: (PersistQuery m, PersistUnique m) 
          => AccountName -> EitherT String m Value
 cmdCoins name = do
     (Entity ai _) <- dbGetAcc name
-    coins <- selectList [ DbCoinAccount ==. ai
-                        , DbCoinSpent   ==. Nothing
-                        , DbCoinOrphan  ==. False
-                        ] []
+    coins <- selectList 
+        [ DbCoinAccount ==. ai
+        , DbCoinSpent   ==. Nothing
+        , DbCoinOrphan  ==. False
+        ] []
     return $ toJSON $ map (yamlCoin . entityVal) coins
 
 cmdAllCoins :: PersistQuery m => EitherT String m Value
@@ -94,14 +96,16 @@ cmdAllCoins = do
     accs  <- selectList [] []
     coins <- mapM (f . entityKey) accs
     return $ toJSON $ map g $ zip accs coins
-    where f ai = selectList [ DbCoinAccount ==. ai
-                            , DbCoinSpent   ==. Nothing
-                            , DbCoinOrphan  ==. False
-                            ] []
-          g (acc,cs) = object $
-            [ "Account" .= (yamlAcc $ entityVal acc)
-            , "Coins" .= (toJSON $ map (yamlCoin . entityVal) cs)
-            ]
+  where 
+    f ai = selectList 
+        [ DbCoinAccount ==. ai
+        , DbCoinSpent   ==. Nothing
+        , DbCoinOrphan  ==. False
+        ] []
+    g (acc,cs) = object
+        [ "Account" .= (yamlAcc $ entityVal acc)
+        , "Coins" .= (toJSON $ map (yamlCoin . entityVal) cs)
+        ]
 
 {-
 

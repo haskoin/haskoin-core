@@ -81,6 +81,7 @@ DbAccount json
     msRequired Int Maybe
     msTotal Int Maybe
     msKeys [String] 
+    wallet DbWalletId
     created UTCTime default=CURRENT_TIME
     UniqueAccName name
     deriving Show
@@ -134,7 +135,8 @@ dbGetWallet :: ( PersistUnique m
             => String 
             -> EitherT String m (Entity (DbWalletGeneric b))
 dbGetWallet name = liftMaybe walletErr =<< (getBy $ UniqueWalletName name)
-    where walletErr = unwords ["dbGetWallet: Invalid wallet", name]
+  where 
+    walletErr = unwords ["dbGetWallet: Invalid wallet", name]
 
 instance PersistStore m => PersistStore (EitherT e m) where
     type PersistMonadBackend (EitherT e m) = PersistMonadBackend m

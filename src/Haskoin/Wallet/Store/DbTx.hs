@@ -61,19 +61,20 @@ cmdImportTx tx = do
     accTx <- mapM build $ M.toList accMap
     insertMany accTx
     return $ toJSON $ map yamlTx accTx
-    where fin acc (ai,vi,o) = flip (M.insert ai) acc $ case M.lookup ai acc of
-              Just (vi',_,o',_) -> (vi+vi',0,o || o',[])
-              _                 -> (vi,0,o,[])
-          fout acc (ai,vo,addr) = flip (M.insert ai) acc $ case M.lookup ai acc of
-              Just (vi,vo',o,xs) -> (vi,vo+vo',o,addr:xs)
-              _                  -> (0,vo,False,[addr])
-          recip  = rights $ map toAddr $ txOut tx
-          toAddr = (addrToBase58 <$>) . scriptRecipient . scriptOutput
-          build (ai,(vi,vo,orphan,xs)) = do
-              time  <- liftIO $ getCurrentTime
-              return $ DbTx (txidHex $ txid tx)
-                            (if null xs then recip else xs)
-                            (vo-vi) ai orphan time
+  where 
+    fin acc (ai,vi,o) = flip (M.insert ai) acc $ case M.lookup ai acc of
+        Just (vi',_,o',_) -> (vi+vi',0,o || o',[])
+        _                 -> (vi,0,o,[])
+    fout acc (ai,vo,addr) = flip (M.insert ai) acc $ case M.lookup ai acc of
+        Just (vi,vo',o,xs) -> (vi,vo+vo',o,addr:xs)
+        _                  -> (0,vo,False,[addr])
+    recip  = rights $ map toAddr $ txOut tx
+    toAddr = (addrToBase58 <$>) . scriptRecipient . scriptOutput
+    build (ai,(vi,vo,orphan,xs)) = do
+        time  <- liftIO $ getCurrentTime
+        return $ DbTx (txidHex $ txid tx)
+                      (if null xs then recip else xs)
+                      (vo-vi) ai orphan time
 
 dbImportIn :: ( PersistStore m
               , PersistQuery m 

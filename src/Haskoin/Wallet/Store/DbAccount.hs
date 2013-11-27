@@ -69,7 +69,8 @@ dbGetAcc :: ( PersistUnique m
          => String 
          -> EitherT String m (Entity (DbAccountGeneric b))
 dbGetAcc name = liftMaybe accErr =<< (getBy $ UniqueAccName name)
-    where accErr = unwords ["dbGetAcc: Invalid account", name]
+  where 
+    accErr = unwords ["dbGetAcc: Invalid account", name]
 
 cmdNewAcc :: (PersistUnique m, PersistQuery m) 
          => String -> EitherT String m Value
@@ -85,11 +86,12 @@ cmdNewAcc name = do
                           (concat ["m/",show i,"'/"])
                           (xPubExport $ runAccPubKey k)
                           (-1) (-1) 
-                          Nothing Nothing [] time
+                          Nothing Nothing [] wk time
     eAcc <- insert acc
     update wk [DbWalletAccDerivation =. fromIntegral i]
     return $ yamlAcc acc
-    where keyErr = "dbNewAcc: Could not load master key"
+  where 
+    keyErr = "dbNewAcc: Could not load master key"
 
 cmdNewMS :: (PersistUnique m, PersistQuery m)
          => String -> Int -> Int -> [XPubKey]
@@ -113,28 +115,32 @@ cmdNewMS name m n mskeys = do
                           (-1) (-1) 
                           (Just m) (Just n) 
                           (map xPubExport mskeys)
-                          time
+                          wk time
     eAcc <- insert acc
     update wk [DbWalletAccDerivation =. fromIntegral i]
     return $ yamlAcc acc
-    where keyErr = "dbNewAcc: Could not load master key"
+  where 
+    keyErr = "dbNewAcc: Could not load master key"
 
 cmdAddKeys :: (PersistStore m, PersistUnique m, PersistQuery m)
            => AccountName -> [XPubKey] -> EitherT String m Value
-cmdAddKeys name keys = do
-    (Entity ai acc) <- dbGetAcc name
-    unless (isMSAcc acc) $ left $ "cmdAddKeys: Not a multisig account"
-    exists <- mapM (\x -> count [DbAccountKey ==. (xPubExport x)]) keys
-    unless (sum exists == 0) $ left $
-        "cmdAddKeys: Can not build a multisignature account with your own keys"
-    prevKeys <- liftMaybe keyErr $ mapM xPubImport $ dbAccountMsKeys acc
-    let newKeys = nub $ keys ++ prevKeys
-        newAcc  = acc{ dbAccountMsKeys = map xPubExport newKeys }
-    unless (length newKeys < (fromJust $ dbAccountMsTotal acc)) $ left $
-        "cmdAddKeys: Too many keys"
-    replace ai newAcc
-    return $ yamlAcc newAcc
-    where keyErr = "cmdAddKeys: Invalid keys found in account"
+cmdAddKeys name keys 
+    | null keys = left "cmdAddKeys: Keys can not be empty"
+    | otherwise = do
+        (Entity ai acc) <- dbGetAcc name
+        unless (isMSAcc acc) $ left $ "cmdAddKeys: Not a multisig account"
+        exists <- mapM (\x -> count [DbAccountKey ==. (xPubExport x)]) keys
+        unless (sum exists == 0) $ left $
+            "cmdAddKeys: Can not add your own keys"
+        prevKeys <- liftMaybe keyErr $ mapM xPubImport $ dbAccountMsKeys acc
+        let newKeys = nub $ prevKeys ++ keys
+            newAcc  = acc{ dbAccountMsKeys = map xPubExport newKeys }
+        unless (length newKeys < (fromJust $ dbAccountMsTotal acc)) $ left $
+            "cmdAddKeys: Too many keys"
+        replace ai newAcc
+        return $ yamlAcc newAcc
+  where 
+    keyErr = "cmdAddKeys: Invalid keys found in account"
 
 cmdAccInfo :: PersistUnique m => AccountName -> EitherT String m Value
 cmdAccInfo name = yamlAcc . entityVal <$> dbGetAcc name
@@ -142,10 +148,11 @@ cmdAccInfo name = yamlAcc . entityVal <$> dbGetAcc name
 cmdListAcc :: PersistQuery m => EitherT String m Value
 cmdListAcc = toJSON . (map (yamlAcc . entityVal)) <$> selectList [] []
 
-cmdDumpKeys :: PersistUnique m => AccountName -> EitherT String m Value
+cmdDumpKeys :: (PersistStore m, PersistUnique m) 
+            => AccountName -> EitherT String m Value
 cmdDumpKeys name = do
-    (Entity _ w)   <- dbGetWallet "main"
     (Entity _ acc) <- dbGetAcc name
+    w <- liftMaybe walErr =<< (get $ dbAccountWallet acc)
     let keyM = loadMasterKey =<< (xPrvImport $ dbWalletMaster w)
     master <- liftMaybe keyErr keyM
     prv <- liftMaybe prvErr $ 
@@ -161,4 +168,5 @@ cmdDumpKeys name = do
         ] ++ ms
     where keyErr = "cmdDumpKeys: Could not decode master key"
           prvErr = "cmdDumpKeys: Could not derive account private key"
+          walErr = "cmdDumpKeys: Could not find account wallet"
 

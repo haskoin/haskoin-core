@@ -54,12 +54,13 @@ yamlAddrList :: [DbAddressGeneric b] -> Int -> Int -> Int -> Value
 yamlAddrList addrs pageNum resPerPage addrCount = object
     [ "Addresses" .= (toJSON $ map yamlAddr addrs)
     , "Page results" .= object
-        [ "Current Page" .= pageNum
-        , "Results per page"  .= resPerPage
-        , "Total Pages" .= ((addrCount + resPerPage - 1) `div` resPerPage)
-        , "Total Addresses" .= addrCount
+        [ "Current page"     .= pageNum
+        , "Results per page" .= resPerPage
+        , "Total pages"      .= totPages
+        , "Total addresses"  .= addrCount
         ]
     ]
+  where totPages = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
 
 dbGetAddr :: ( PersistUnique m 
              , PersistMonadBackend m ~ b
@@ -84,8 +85,10 @@ cmdList name pageNum resPerPage
         addrCount <- count [ DbAddressAccount ==. ai
                            , DbAddressInternal ==. False
                            ] 
-        let maxPage = (addrCount + resPerPage - 1) `div` resPerPage
-            page    = if pageNum == 0 then maxPage else pageNum
+        let maxPage = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
+            page | pageNum == 0 = maxPage
+                 | otherwise = pageNum
+        when (page > maxPage) $ left "cmdList: Page number too high"
         addrs <- selectList [ DbAddressAccount ==. ai
                             , DbAddressInternal ==. False
                             ] 

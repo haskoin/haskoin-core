@@ -2,7 +2,7 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE TypeFamilies      #-}
 module Haskoin.Wallet.Store.DbTx
-( 
+( cmdImportTx 
 ) where
 
 import Control.Applicative
@@ -66,7 +66,7 @@ cmdImportTx tx = do
         Just (vi',_,o',_) -> (vi+vi',0,o || o',[])
         _                 -> (vi,0,o,[])
     fout acc (ai,vo,addr) = flip (M.insert ai) acc $ case M.lookup ai acc of
-        Just (vi,vo',o,xs) -> (vi,vo+vo',o,addr:xs)
+        Just (vi,vo',o,xs) -> (vi,vo+vo',o,xs ++ [addr])
         _                  -> (0,vo,False,[addr])
     recip  = rights $ map toAddr $ txOut tx
     toAddr = (addrToBase58 <$>) . scriptRecipient . scriptOutput
@@ -91,9 +91,10 @@ dbImportIn txid (TxIn op@(OutPoint h i) s _) = do
             update ci [ DbCoinSpent =. (Just $ txidHex txid) ]
             return (dbCoinAccount coin,dbCoinValue coin,dbCoinOrphan coin)
         Nothing -> do
-            time  <- liftIO $ getCurrentTime
+            time <- liftIO $ getCurrentTime
+            rdm  <- dbGetRedeem addr
             insert_ $ DbCoin (txidHex h) (fromIntegral i) 
-                             0 "" 
+                             0 "" rdm
                              (Just $ txidHex txid) 
                              (dbAddressAccount addr) 
                              True time
@@ -114,14 +115,41 @@ dbImportOut txid ((TxOut v s), index) = do
         Just (Entity ci coin) -> 
             when (dbCoinOrphan coin) $ dbProcessOrphan v s ci coin
         Nothing -> do
-            time  <- liftIO $ getCurrentTime
+            time <- liftIO $ getCurrentTime
+            rdm  <- dbGetRedeem addr
             insert_ $ DbCoin (txidHex txid) index 
                              (fromIntegral v)
                              (bsToHex $ encodeScriptOps s)
-                             Nothing
+                             rdm Nothing
                              (dbAddressAccount addr) 
                              False time
     return (dbAddressAccount addr, fromIntegral v, addrToBase58 a)
+
+dbGetRedeem :: ( PersistStore m
+               , PersistQuery m 
+               , PersistUnique m
+               , PersistMonadBackend m ~ b
+               , b ~ SqlBackend
+               ) 
+            => DbAddressGeneric b
+            -> EitherT String m (Maybe String)
+dbGetRedeem addr = do
+    acc <- liftMaybe accErr =<< (get $ dbAddressAccount addr)
+    rdm <- if isMSAcc acc 
+        then Just <$> liftMaybe rdmErr (getRdm acc)
+        else return Nothing
+    return $ bsToHex . encodeScriptOps . encodeOutput <$> rdm
+  where
+    getRdm acc = do
+        key      <- loadPubAcc =<< (xPubImport $ dbAccountKey acc)
+        msKeys   <- mapM xPubImport $ dbAccountMsKeys acc
+        addrKeys <- f key msKeys $ fromIntegral $ dbAddressIndex addr
+        let pks = map (xPubKey . runAddrPubKey) addrKeys
+        sortMulSig . (PayMulSig pks) <$> dbAccountMsRequired acc
+      where
+        f = if dbAddressInternal addr then intMulSigKey else extMulSigKey
+    accErr = "dbImportOut: Invalid address account"
+    rdmErr = "dbGetRedeem: Could not generate redeem script"
 
 dbProcessOrphan :: ( PersistStore m
                    , PersistQuery m 
@@ -148,7 +176,62 @@ dbProcessOrphan v s ci coin = do
         ]
   where 
     txErr = "dbImportOut: Orphan coin transaction not found"
-    
+
+cmdSend :: ( PersistStore m
+           , PersistQuery m 
+           , PersistUnique m
+           , PersistMonadBackend m ~ SqlBackend
+           )
+        => AccountName -> String -> Int -> Int
+        -> EitherT String m Value
+cmdSend name a v fee = do
+    (Entity ai acc) <- dbGetAcc name
+    unspent <- liftEither . (mapM toCoin) =<< dbCoins ai
+    (coins,change) <- liftEither $ if isMSAcc acc
+        then let msParam = ( fromJust $ dbAccountMsRequired acc
+                           , fromJust $ dbAccountMsTotal acc
+                           )
+             in chooseMSCoins (fromIntegral v) (fromIntegral fee) 
+                    msParam unspent
+        else chooseCoins (fromIntegral v) (fromIntegral fee) unspent
+    recipients <- if change < 5000 then return [(a,fromIntegral v)] else do
+        cAddr <- dbGenIntAddrs name 1
+        return $ [ (a,fromIntegral v)
+                 , (dbAddressBase58 $ head cAddr,change)
+                 ]
+    tx <- liftEither $ buildAddrTx (map coinOutPoint coins) recipients
+    ys <- mapM (dbGetSigData $ SigAll False) coins
+    let sigTx = detSignTx tx (map fst ys) (map snd ys)
+    bsTx <- liftEither $ buildToEither sigTx
+    return $ object [ "Payment Tx" .= (toJSON $ bsToHex $ encode' bsTx)
+                    , "Complete"   .= isComplete sigTx
+                    ]
+
+dbGetSigData :: ( PersistStore m
+                , PersistUnique m
+                , PersistQuery m
+                )
+             => SigHash -> Coin -> EitherT String m (SigInput,PrvKey)
+dbGetSigData sh coin = do
+    (Entity _ w) <- dbGetWallet "main"
+    mst <- liftMaybe mstErr $ loadMasterKey =<< xPrvImport (dbWalletMaster w)
+    a   <- liftEither $ scriptRecipient out
+    (Entity _ addr) <- dbGetAddr $ addrToBase58 a
+    acc  <- liftMaybe accErr =<< get (dbAddressAccount addr)
+    aKey <- liftMaybe prvErr $ accPrvKey mst $ fromIntegral $ dbAccountIndex acc
+    let g = if dbAddressInternal addr then intPrvKey else extPrvKey
+    sigKey <- liftMaybe addErr $ g aKey $ fromIntegral $ dbAddressIndex addr
+    return (sigi, xPrvKey $ runAddrPrvKey sigKey)
+  where
+    out    = scriptOutput $ coinTxOut coin
+    rdm    = coinRedeem coin
+    sigi | isJust rdm = SigInputSH out (coinOutPoint coin) (fromJust rdm) sh
+         | otherwise  = SigInput out (coinOutPoint coin) sh
+    mstErr = "dbGetSigData: Could not load master key"
+    accErr = "dbGetSigData: Could not load address account"
+    prvErr = "dbGetSigData: Invalid account derivation index"
+    addErr = "dbGetSigData: Invalid address derivation index"
+
 {-
 cmdListTx :: AccountName -> Command
 cmdListTx name = dbGetAcc (AccName name) >>= \acc -> do

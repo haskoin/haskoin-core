@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE TypeFamilies      #-}
 module Haskoin.Wallet.Store.Units (tests) where
 
 import System.IO.Error
@@ -40,6 +42,7 @@ runTests = do
         liftIO . (assertBool "New Acc") . isRight =<< runEitherT testNewAcc
         liftIO . (assertBool "New MS") . isRight =<< runEitherT testNewMS
         liftIO . (assertBool "Gen Addr") . isRight =<< runEitherT testGenAddr
+        liftIO . (assertBool "Import Tx") . isRight =<< runEitherT testImport
     return ()
 
 testPreInit :: (PersistStore m, PersistUnique m, PersistQuery m) 
@@ -186,6 +189,38 @@ testNewAcc = do
 testNewMS :: (PersistStore m, PersistUnique m, PersistQuery m) 
           => EitherT String m ()
 testNewMS = do 
+
+    -- Creating invalid multisig accounts should fail
+    runEitherT (cmdNewMS "ms1" (-1) 0 []) >>= liftIO . assertEqual "Invalid ms 1"
+        (Left "cmdNewMS: Invalid multisig parameters")
+
+    -- Creating invalid multisig accounts should fail
+    runEitherT (cmdNewMS "ms1" 0 (-1) []) >>= liftIO . assertEqual "Invalid ms 2"
+        (Left "cmdNewMS: Invalid multisig parameters")
+
+    -- Creating invalid multisig accounts should fail
+    runEitherT (cmdNewMS "ms1" 0 0 []) >>= liftIO . assertEqual "Invalid ms 3"
+        (Left "cmdNewMS: Invalid multisig parameters")
+
+    -- Creating invalid multisig accounts should fail
+    runEitherT (cmdNewMS "ms1" 0 3 []) >>= liftIO . assertEqual "Invalid ms 4"
+        (Left "cmdNewMS: Invalid multisig parameters")
+
+    -- Creating invalid multisig accounts should fail
+    runEitherT (cmdNewMS "ms1" 3 0 []) >>= liftIO . assertEqual "Invalid ms 5"
+        (Left "cmdNewMS: Invalid multisig parameters")
+
+    -- Creating invalid multisig accounts should fail
+    runEitherT (cmdNewMS "ms1" 3 17 []) >>= liftIO . assertEqual "Invalid ms 6"
+        (Left "cmdNewMS: Invalid multisig parameters")
+
+    -- Creating invalid multisig accounts should fail
+    runEitherT (cmdNewMS "ms1" 17 3 []) >>= liftIO . assertEqual "Invalid ms 7"
+        (Left "cmdNewMS: Invalid multisig parameters")
+
+    -- Creating invalid multisig accounts should fail
+    runEitherT (cmdNewMS "ms1" 3 2 []) >>= liftIO . assertEqual "Invalid ms 8"
+        (Left "cmdNewMS: Invalid multisig parameters")
 
     -- Create a new 2 of 3 multisig account name "ms1"
     cmdNewMS "ms1" 2 3 [] >>= liftIO . assertEqual "New ms 1" 
@@ -562,6 +597,98 @@ testGenAddr = do
             ]
         )
 
+formatStr :: String -> IO ()
+formatStr str = forM_ (lines str) putStrLn
 
+{- Payments sent to:
+ - 1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi:100000 (in wallet)
+ - 1AZimU5FfTQyF4GMsEKLZ32773TtPKczdY:200000 (in wallet)
+ - 19W372PnyKZUgYMj1f5qEsJS2xkSjSzXRA:240000 (not in wallet)
+ - 1NCSUHC7Dt6exeNd65PEjELdN4hk7QtN1m:122000 (not in wallet)
+ - 38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki:150000 (in wallet)
+ - 3QqkesBZx7WBSLcdy5e1PmRU1QLdYTG49Q:400000 (in wallet)
+ -}
+
+tx1 :: String
+tx1 = "010000000100000000000000000000000000000000000000000000000000000000000000010100000000ffffffff06a0860100000000001976a914d6baf45f52b4cccc7ac1ba3a35dd739497f8e98988ac400d0300000000001976a91468e94ed1e88f7e942bf4aaa25fcf5930f517730888ac80a90300000000001976a9145d3ed34bf8654225eb8dc35c15a47d25572a62be88ac90dc0100000000001976a914e8847a85898158cd24c7914c4dd8bfd175ab9de888acf04902000000000017a9144d769c08d79eed22532e044213bef3174f05158487801a06000000000017a914fdf1e3c1a936ab1dde0d7a305d28df396949ffd08700000000"
+
+testImport :: ( PersistStore m
+              , PersistUnique m
+              , PersistQuery m
+              , PersistMonadBackend m ~ SqlBackend
+              ) 
+           => EitherT String m ()
+testImport = do 
+
+    -- Importin transaction sending funds to two different accounts
+    cmdImportTx (decode' $ fromJust $ hexToBS tx1) >>= 
+        liftIO . assertEqual "Import tx 1"
+            ( toJSON
+                [ object [ "Recipients" .= toJSON
+                             [ T.pack "1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi"
+                             , T.pack "1AZimU5FfTQyF4GMsEKLZ32773TtPKczdY"
+                             ]
+                         , "Value"      .= (300000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki"
+                             , T.pack "3QqkesBZx7WBSLcdy5e1PmRU1QLdYTG49Q"
+                             ]
+                         , "Value"      .= (550000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                ]
+            )
+
+    -- Verify the balance of account ""
+    cmdBalance "" 
+        >>= liftIO . assertEqual "Balance 1" (toJSON (300000 :: Int))
+
+    -- Verify the balance of account "ms1"
+    cmdBalance "ms1" 
+        >>= liftIO . assertEqual "Balance 2" (toJSON (550000 :: Int))
+
+    -- Get coins of account ""
+    cmdCoins "" >>= liftIO . assertEqual "Get coins 1"
+        ( toJSON
+            [ object
+                [ "TxID"   .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
+                , "Index"  .= (0 :: Int)
+                , "Value"  .= (100000 :: Int)
+                , "Script" .= T.pack "76a914d6baf45f52b4cccc7ac1ba3a35dd739497f8e98988ac"
+                , "Orphan" .= False
+                ]
+            , object
+                [ "TxID"   .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
+                , "Index"  .= (1 :: Int)
+                , "Value"  .= (200000 :: Int)
+                , "Script" .= T.pack "76a91468e94ed1e88f7e942bf4aaa25fcf5930f517730888ac"
+                , "Orphan" .= False
+                ]
+            ]
+        )
+
+    -- Get coins of account "ms1"
+    cmdCoins "ms1" >>= liftIO . assertEqual "Get coins 2"
+        ( toJSON
+            [ object
+                [ "TxID"   .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
+                , "Index"  .= (4 :: Int)
+                , "Value"  .= (150000 :: Int)
+                , "Script" .= T.pack "a9144d769c08d79eed22532e044213bef3174f05158487"
+                , "Orphan" .= False
+                ]
+            , object
+                [ "TxID"   .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
+                , "Index"  .= (5 :: Int)
+                , "Value"  .= (400000 :: Int)
+                , "Script" .= T.pack "a914fdf1e3c1a936ab1dde0d7a305d28df396949ffd087"
+                , "Orphan" .= False
+                ]
+            ]
+        )
+
+     
 
 

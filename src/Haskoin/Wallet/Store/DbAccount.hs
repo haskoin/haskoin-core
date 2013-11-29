@@ -79,7 +79,7 @@ cmdNewAcc name = do
     (Entity wk w) <- dbGetWallet "main"
     let keyM = loadMasterKey =<< (xPrvImport $ dbWalletMaster w)
     master <- liftMaybe keyErr keyM
-    let deriv = fromIntegral $ dbWalletAccDerivation w + 1
+    let deriv = fromIntegral $ dbWalletAccIndex w + 1
         (k,i) = head $ accPubKeys master deriv
         acc   = DbAccount name 
                           (fromIntegral i) 
@@ -88,10 +88,10 @@ cmdNewAcc name = do
                           (-1) (-1) 
                           Nothing Nothing [] wk time
     eAcc <- insert acc
-    update wk [DbWalletAccDerivation =. fromIntegral i]
+    update wk [DbWalletAccIndex =. fromIntegral i]
     return $ yamlAcc acc
   where 
-    keyErr = "dbNewAcc: Could not load master key"
+    keyErr = "cmdNewAcc: Could not load master key"
 
 cmdNewMS :: (PersistUnique m, PersistQuery m)
          => String -> Int -> Int -> [XPubKey]
@@ -99,14 +99,14 @@ cmdNewMS :: (PersistUnique m, PersistQuery m)
 cmdNewMS name m n mskeys = do
     time <- liftIO getCurrentTime
     let keys = nub mskeys
+    unless (n >= 1 && n <= 16 && m >= 1 && m <= n) $ left
+        "cmdNewMS: Invalid multisig parameters"
     unless (length keys < n) $ left 
-        "dbNewMSAcc: Too many keys"
-    unless (n <= 16 && n >= 1 && m <= n && m >= 1) $ left
-        "dbNewMSAcc: Invalid multisig parameters"
+        "cmdNewMS: Too many keys"
     (Entity wk w) <- dbGetWallet "main"
     let keyM = loadMasterKey =<< (xPrvImport $ dbWalletMaster w)
     master <- liftMaybe keyErr keyM
-    let deriv = fromIntegral $ dbWalletAccDerivation w + 1
+    let deriv = fromIntegral $ dbWalletAccIndex w + 1
         (k,i) = head $ accPubKeys master deriv
         acc   = DbAccount name 
                           (fromIntegral i) 
@@ -117,10 +117,10 @@ cmdNewMS name m n mskeys = do
                           (map xPubExport mskeys)
                           wk time
     eAcc <- insert acc
-    update wk [DbWalletAccDerivation =. fromIntegral i]
+    update wk [DbWalletAccIndex =. fromIntegral i]
     return $ yamlAcc acc
   where 
-    keyErr = "dbNewAcc: Could not load master key"
+    keyErr = "cmdNewMS: Could not load master key"
 
 cmdAddKeys :: (PersistStore m, PersistUnique m, PersistQuery m)
            => AccountName -> [XPubKey] -> EitherT String m Value
@@ -156,7 +156,7 @@ cmdDumpKeys name = do
     let keyM = loadMasterKey =<< (xPrvImport $ dbWalletMaster w)
     master <- liftMaybe keyErr keyM
     prv <- liftMaybe prvErr $ 
-        accPrvKey master (fromIntegral $ dbAccountDerivation acc)
+        accPrvKey master (fromIntegral $ dbAccountIndex acc)
     let prvKey = runAccPrvKey prv
         pubKey = deriveXPubKey prvKey
         ms | isMSAcc acc = ["MSKeys" .= (toJSON $ dbAccountMsKeys acc)]

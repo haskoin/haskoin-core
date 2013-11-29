@@ -4,9 +4,11 @@
 module Haskoin.Wallet.Store.DbCoin 
 ( cmdBalance
 , cmdBalances
+, dbCoins
 , cmdCoins
 , cmdAllCoins
 , yamlCoin
+, toCoin
 ) where
 
 import Control.Applicative
@@ -37,10 +39,28 @@ import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util
 
+toCoin :: DbCoinGeneric b -> Either String Coin
+toCoin c = do
+    scp <- decodeScriptOps =<< maybeToEither scpErr (hexToBS $ dbCoinScript c)
+    rdm <- if isJust $ dbCoinRdmScript c
+        then do
+            bs <- maybeToEither rdmErr $ hexToBS =<< dbCoinRdmScript c
+            Just <$> decodeScriptOps bs
+        else return Nothing
+    id  <- maybeToEither tidErr (hexToBS $ dbCoinTxid c)
+    h   <- decodeToEither $ BS.reverse id
+    return $ Coin (TxOut (fromIntegral $ dbCoinValue c) scp)
+                  (OutPoint h (fromIntegral $ dbCoinPos c))
+                  rdm
+  where
+    scpErr = "toCoin: Could not decode coin script"
+    tidErr = "toCoin: Could not decode coin txid"
+    rdmErr = "toCoin: Could not decode coin redeem script"
+
 yamlCoin :: DbCoinGeneric b -> Value
 yamlCoin coin = object $
     [ "TxID"   .= dbCoinTxid coin 
-    , "Index"  .= dbCoinIndex coin
+    , "Index"  .= dbCoinPos coin
     , "Value"  .= dbCoinValue coin
     , "Script" .= dbCoinScript coin
     , "Orphan" .= dbCoinOrphan coin
@@ -80,60 +100,43 @@ cmdBalances = do
         , "Balance" .= b
         ]
 
-cmdCoins :: (PersistQuery m, PersistUnique m) 
-         => AccountName -> EitherT String m Value
-cmdCoins name = do
-    (Entity ai _) <- dbGetAcc name
+dbCoins :: ( PersistQuery m
+           , PersistUnique m
+           , PersistMonadBackend m ~ b
+           , b ~ SqlBackend
+           ) 
+        => DbAccountId 
+        -> EitherT String m [DbCoinGeneric b]
+dbCoins ai = do
     coins <- selectList 
         [ DbCoinAccount ==. ai
         , DbCoinSpent   ==. Nothing
         , DbCoinOrphan  ==. False
         ] []
-    return $ toJSON $ map (yamlCoin . entityVal) coins
+    return $ map entityVal coins
 
-cmdAllCoins :: PersistQuery m => EitherT String m Value
+cmdCoins :: ( PersistQuery m
+            , PersistUnique m
+            , PersistMonadBackend m ~ SqlBackend
+            ) 
+         => AccountName -> EitherT String m Value
+cmdCoins name = do
+    (Entity ai _) <- dbGetAcc name
+    coins <- dbCoins ai
+    return $ toJSON $ map yamlCoin coins
+
+cmdAllCoins :: ( PersistQuery m 
+               , PersistUnique m
+               , PersistMonadBackend m ~ SqlBackend
+               )
+            => EitherT String m Value
 cmdAllCoins = do
     accs  <- selectList [] []
-    coins <- mapM (f . entityKey) accs
+    coins <- mapM (dbCoins . entityKey) accs
     return $ toJSON $ map g $ zip accs coins
   where 
-    f ai = selectList 
-        [ DbCoinAccount ==. ai
-        , DbCoinSpent   ==. Nothing
-        , DbCoinOrphan  ==. False
-        ] []
     g (acc,cs) = object
         [ "Account" .= (yamlAcc $ entityVal acc)
-        , "Coins" .= (toJSON $ map (yamlCoin . entityVal) cs)
+        , "Coins" .= (toJSON $ map yamlCoin cs)
         ]
 
-{-
-
-dbImportCoin :: MonadResource m => Hash256 -> (TxOut,Word32) 
-             -> WalletDB m DBCoin
-dbImportCoin id (txout,i) = do
-    a    <- liftEither $ scriptRecipient $ scriptOutput txout
-    addr <- dbGetAddr $ AddrBase58 $ addrToBase58 a
-    acc  <- dbGetAcc (AccPos $ addrAccPos addr)
-    let aData   = runAccData acc
-        coinPos = accCoinCount aData + 1
-        coin    = DBCoin op txout False coinPos $ accPos aData
-    exists <- dbExists $ concat ["coinoutpoint_", bsToString $ encode' op]
-    when exists $ left "dbImportCoin: Coin already exists"
-    -- update account-level count
-    dbPutCoin coin
-    dbPutAcc acc{ runAccData = aData{accCoinCount = coinPos} }
-    -- update total count in config
-    total <- dbGetConfig cfgCoinCount
-    dbPutConfig $ \cfg -> cfg{ cfgCoinCount = total + 1 }
-    return coin
-    where op  = OutPoint id i
-
-dbSpendCoin :: MonadResource m => TxIn -> WalletDB m DBCoin
-dbSpendCoin (TxIn op s _) = do
-    coin <- dbGetCoin $ CoinOutPoint op 
-    when (coinSpent coin) $ left "dbSpendCoin: Coin already spent"
-    dbPutCoin coin{ coinSpent = True }
-    return coin
-
--}

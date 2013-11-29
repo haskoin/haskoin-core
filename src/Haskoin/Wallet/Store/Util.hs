@@ -66,18 +66,18 @@ DbWallet json
     name String
     type String
     master String 
-    accDerivation Int
+    accIndex Int
     created UTCTime default=CURRENT_TIME
     UniqueWalletName name
     deriving Show
 
 DbAccount json
     name String
-    derivation Int
+    index Int
     tree String
     key String
-    extDerivation Int
-    intDerivation Int
+    extIndex Int
+    intIndex Int
     msRequired Int Maybe
     msTotal Int Maybe
     msKeys [String] 
@@ -89,25 +89,26 @@ DbAccount json
 DbAddress json
     base58 String
     label String
-    derivation Int
+    index Int
     tree String
     account DbAccountId
     internal Bool
     created UTCTime default=CURRENT_TIME
     UniqueAddress base58
-    UniqueAddressKey account derivation
+    UniqueAddressKey account index
     deriving Show
 
 DbCoin json
     txid String
-    index Int
+    pos Int
     value Int
     script String
+    rdmScript String Maybe
     spent String Maybe
     account DbAccountId
     orphan Bool
     created UTCTime default=CURRENT_TIME
-    CoinOutPoint txid index
+    CoinOutPoint txid pos
     deriving Show
 
 DbTx json
@@ -169,7 +170,7 @@ instance PersistQuery m => PersistQuery (EitherT e m) where
 instance ToJSON OutPoint where
     toJSON (OutPoint h i) = object
         [ (T.pack "TxID") .= (bsToHex $ BS.reverse $ encode' h)
-        , (T.pack "index") .= toJSON i
+        , (T.pack "Index") .= toJSON i
         ]
 
 instance ToJSON TxOut where

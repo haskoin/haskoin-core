@@ -3,8 +3,10 @@
 {-# LANGUAGE TypeFamilies      #-}
 module Haskoin.Wallet.Store.DbAddress 
 ( cmdList
-, cmdGenAddr
+, cmdGenAddrs
 , cmdGenWithLabel
+, dbGenIntAddrs
+, dbGenAddrs
 , cmdLabel
 , dbGetAddr
 , yamlAddr
@@ -45,7 +47,7 @@ yamlAddr a
     | otherwise = object $ label:base
   where 
     base  = [ "Addr" .= dbAddressBase58 a
-            , "Key"  .= dbAddressDerivation a
+            , "Key"  .= dbAddressIndex a
             , "Tree" .= dbAddressTree a
             ]
     label = "Label" .= dbAddressLabel a
@@ -98,38 +100,70 @@ cmdList name pageNum resPerPage
                             ]
         return $ yamlAddrList (map entityVal addrs) page resPerPage addrCount
 
-cmdGenAddr :: (PersistStore m, PersistUnique m, PersistQuery m)
-           => AccountName -> Int -> EitherT String m Value
-cmdGenAddr name c = cmdGenWithLabel name (replicate c "")
+cmdGenAddrs :: ( PersistStore m
+               , PersistUnique m
+               , PersistQuery m
+               )
+            => AccountName -> Int -> EitherT String m Value
+cmdGenAddrs name c = cmdGenWithLabel name (replicate c "")
 
-cmdGenWithLabel :: (PersistStore m, PersistUnique m, PersistQuery m)
+cmdGenWithLabel :: ( PersistStore m
+                   , PersistUnique m
+                   , PersistQuery m
+                   )
                 => AccountName -> [String] -> EitherT String m Value
-cmdGenWithLabel name labels
-    | null labels = left "cmdGenWithLabel: Labels can not be empty"
+cmdGenWithLabel name labels = do
+    addrs <- dbGenAddrs name labels False
+    return $ toJSON $ map yamlAddr addrs
+
+dbGenIntAddrs :: ( PersistStore m
+                 , PersistUnique m
+                 , PersistQuery m
+                 , PersistMonadBackend m ~ b
+                 )
+              => AccountName -> Int 
+              -> EitherT String m [DbAddressGeneric b]
+dbGenIntAddrs name c = dbGenAddrs name (replicate c "") True
+
+
+dbGenAddrs :: ( PersistStore m
+              , PersistUnique m
+              , PersistQuery m
+              , PersistMonadBackend m ~ b
+              )
+           => AccountName -> [String] -> Bool 
+           -> EitherT String m [DbAddressGeneric b]
+dbGenAddrs name labels internal
+    | null labels = left "dbGenAddr: Labels can not be empty"
     | otherwise = do
         time <- liftIO getCurrentTime
         (Entity ai acc) <- dbGetAcc name
-        let build ((s,i),l) = DbAddress 
+        let tree | internal  = "1/"
+                 | otherwise = "0/"
+            build ((s,i),l) = DbAddress 
                                 s l (fromIntegral i) 
-                                (concat [dbAccountTree acc,"0/",show i,"/"])
-                                ai False time
+                                (concat [dbAccountTree acc,tree,show i,"/"])
+                                ai internal time
         ls <- liftMaybe keyErr $ f acc
         let addrs     = map build $ zip ls labels
-            lastDeriv = dbAddressDerivation $ last addrs
-            newAcc    = acc{ dbAccountExtDerivation = lastDeriv }
+            lastDeriv = dbAddressIndex $ last addrs
+            newAcc | internal  = acc{ dbAccountIntIndex = lastDeriv }
+                   | otherwise = acc{ dbAccountExtIndex = lastDeriv }
         replace ai newAcc
         insertMany addrs
-        return $ toJSON $ map yamlAddr addrs
+        return addrs
   where 
     keyErr = "cmdGenAddr: Error decoding account keys"
-    f acc | isMSAcc acc = extMulSigAddrs 
+    f acc | isMSAcc acc = (if internal then intMulSigAddrs else extMulSigAddrs)
               <$> (loadPubAcc =<< (xPubImport $ dbAccountKey acc))
               <*> (mapM xPubImport $ dbAccountMsKeys acc) 
               <*> (dbAccountMsRequired acc)
-              <*> (return $ fromIntegral $ dbAccountExtDerivation acc + 1)
-          | otherwise = extAddrs 
+              <*> (return $ fromIntegral $ lastIndex acc + 1)
+          | otherwise = (if internal then intAddrs else extAddrs)
               <$> (loadPubAcc =<< (xPubImport $ dbAccountKey acc))
-              <*> (return $ fromIntegral $ dbAccountExtDerivation acc + 1)
+              <*> (return $ fromIntegral $ lastIndex acc + 1)
+    lastIndex | internal  = dbAccountIntIndex
+              | otherwise = dbAccountExtIndex
 
 cmdLabel :: (PersistStore m, PersistUnique m) 
          => AccountName -> Int -> String -> EitherT String m Value

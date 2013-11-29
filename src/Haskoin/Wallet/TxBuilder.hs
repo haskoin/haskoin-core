@@ -29,6 +29,7 @@ import Haskoin.Util
 
 data Coin = Coin { coinTxOut    :: TxOut
                  , coinOutPoint :: OutPoint
+                 , coinRedeem   :: Maybe Script
                  } deriving (Eq, Show)
 
 -- |Select coins to spend based on a target amount and a fee per KB

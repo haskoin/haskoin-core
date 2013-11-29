@@ -46,6 +46,7 @@ runTests = do
         liftIO . (assertBool "New MS") . isRight =<< runEitherT testNewMS
         liftIO . (assertBool "Gen Addr") . isRight =<< runEitherT testGenAddr
         liftIO . (assertBool "Import Tx") . isRight =<< runEitherT testImport
+        liftIO . (assertBool "Orphan Tx") . isRight =<< runEitherT testOrphan
     return ()
 
 testPreInit :: (PersistStore m, PersistUnique m, PersistQuery m) 
@@ -640,20 +641,20 @@ testGenAddr = do
             ]
         )
 
-formatStr :: String -> IO ()
-formatStr str = forM_ (lines str) putStrLn
-
 {- Payments sent to:
- - 1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi:100000 (in wallet)
- - 1AZimU5FfTQyF4GMsEKLZ32773TtPKczdY:200000 (in wallet)
- - 19W372PnyKZUgYMj1f5qEsJS2xkSjSzXRA:240000 (not in wallet)
- - 1NCSUHC7Dt6exeNd65PEjELdN4hk7QtN1m:122000 (not in wallet)
- - 38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki:150000 (in wallet)
- - 3QqkesBZx7WBSLcdy5e1PmRU1QLdYTG49Q:400000 (in wallet)
+ - 1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi : 100000 (in wallet)
+ - 1AZimU5FfTQyF4GMsEKLZ32773TtPKczdY : 200000 (in wallet)
+ - 19W372PnyKZUgYMj1f5qEsJS2xkSjSzXRA : 240000 (not in wallet)
+ - 1NCSUHC7Dt6exeNd65PEjELdN4hk7QtN1m : 122000 (not in wallet)
+ - 38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki : 150000 (in wallet)
+ - 3QqkesBZx7WBSLcdy5e1PmRU1QLdYTG49Q : 400000 (in wallet)
  -}
 
 tx1 :: String
 tx1 = "010000000100000000000000000000000000000000000000000000000000000000000000010100000000ffffffff06a0860100000000001976a914d6baf45f52b4cccc7ac1ba3a35dd739497f8e98988ac400d0300000000001976a91468e94ed1e88f7e942bf4aaa25fcf5930f517730888ac80a90300000000001976a9145d3ed34bf8654225eb8dc35c15a47d25572a62be88ac90dc0100000000001976a914e8847a85898158cd24c7914c4dd8bfd175ab9de888acf04902000000000017a9144d769c08d79eed22532e044213bef3174f05158487801a06000000000017a914fdf1e3c1a936ab1dde0d7a305d28df396949ffd08700000000"
+
+tx2 :: String
+tx2 = "010000000100000000000000000000000000000000000000000000000000000000000000020100000000ffffffff06a0860100000000001976a914d6baf45f52b4cccc7ac1ba3a35dd739497f8e98988ac400d0300000000001976a91468e94ed1e88f7e942bf4aaa25fcf5930f517730888ac80a90300000000001976a9145d3ed34bf8654225eb8dc35c15a47d25572a62be88ac90dc0100000000001976a914e8847a85898158cd24c7914c4dd8bfd175ab9de888acf04902000000000017a9144d769c08d79eed22532e044213bef3174f05158487801a06000000000017a914fdf1e3c1a936ab1dde0d7a305d28df396949ffd08700000000"
 
 testImport :: ( PersistStore m
               , PersistUnique m
@@ -684,10 +685,38 @@ testImport = do
                 ]
             )
 
+    -- Importin similar transaction sending funds to two different accounts
+    cmdImportTx (decode' $ fromJust $ hexToBS tx2) >>= 
+        liftIO . assertEqual "Import tx 2"
+            ( toJSON
+                [ object [ "Recipients" .= toJSON
+                             [ T.pack "1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi"
+                             , T.pack "1AZimU5FfTQyF4GMsEKLZ32773TtPKczdY"
+                             ]
+                         , "Value"      .= (300000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki"
+                             , T.pack "3QqkesBZx7WBSLcdy5e1PmRU1QLdYTG49Q"
+                             ]
+                         , "Value"      .= (550000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                ]
+            )
+
     -- List transactions of account ""
     cmdListTx "" >>= liftIO . assertEqual "List tx 1"
         ( toJSON
             [ object [ "Recipients" .= toJSON
+                            [ T.pack "1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi"
+                            , T.pack "1AZimU5FfTQyF4GMsEKLZ32773TtPKczdY"
+                            ]
+                        , "Value"      .= (300000 :: Int)
+                        , "Orphan"     .= False
+                        ]
+            , object [ "Recipients" .= toJSON
                             [ T.pack "1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi"
                             , T.pack "1AZimU5FfTQyF4GMsEKLZ32773TtPKczdY"
                             ]
@@ -707,16 +736,23 @@ testImport = do
                      , "Value"      .= (550000 :: Int)
                      , "Orphan"     .= False
                      ]
+            , object [ "Recipients" .= toJSON
+                         [ T.pack "38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki"
+                         , T.pack "3QqkesBZx7WBSLcdy5e1PmRU1QLdYTG49Q"
+                         ]
+                     , "Value"      .= (550000 :: Int)
+                     , "Orphan"     .= False
+                     ]
             ]
         )
 
     -- Verify the balance of account ""
     cmdBalance "" 
-        >>= liftIO . assertEqual "Balance 1" (toJSON (300000 :: Int))
+        >>= liftIO . assertEqual "Balance 1" (toJSON (600000 :: Int))
 
     -- Verify the balance of account "ms1"
     cmdBalance "ms1" 
-        >>= liftIO . assertEqual "Balance 2" (toJSON (550000 :: Int))
+        >>= liftIO . assertEqual "Balance 2" (toJSON (1100000 :: Int))
 
     -- Get coins of account ""
     cmdCoins "" >>= liftIO . assertEqual "Get coins 1"
@@ -731,6 +767,22 @@ testImport = do
                 ]
             , object
                 [ "TxID"    .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
+                , "Index"   .= (1 :: Int)
+                , "Value"   .= (200000 :: Int)
+                , "Script"  .= T.pack "76a91468e94ed1e88f7e942bf4aaa25fcf5930f517730888ac"
+                , "Orphan"  .= False
+                , "Address" .= T.pack "1AZimU5FfTQyF4GMsEKLZ32773TtPKczdY"
+                ]
+            , object
+                [ "TxID"    .= T.pack "984092e0ba079812fe1d05ec653f775beb5ea7a1ae9ad1d35d6c9f39ec507a40"
+                , "Index"   .= (0 :: Int)
+                , "Value"   .= (100000 :: Int)
+                , "Script"  .= T.pack "76a914d6baf45f52b4cccc7ac1ba3a35dd739497f8e98988ac"
+                , "Orphan"  .= False
+                , "Address" .= T.pack "1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi"
+                ]
+            , object
+                [ "TxID"    .= T.pack "984092e0ba079812fe1d05ec653f775beb5ea7a1ae9ad1d35d6c9f39ec507a40"
                 , "Index"   .= (1 :: Int)
                 , "Value"   .= (200000 :: Int)
                 , "Script"  .= T.pack "76a91468e94ed1e88f7e942bf4aaa25fcf5930f517730888ac"
@@ -761,7 +813,55 @@ testImport = do
                 , "Orphan"  .= False
                 , "Address" .= T.pack "3QqkesBZx7WBSLcdy5e1PmRU1QLdYTG49Q"
                 ]
+            , object
+                [ "TxID"   .= T.pack "984092e0ba079812fe1d05ec653f775beb5ea7a1ae9ad1d35d6c9f39ec507a40"
+                , "Index"   .= (4 :: Int)
+                , "Value"   .= (150000 :: Int)
+                , "Script"  .= T.pack "a9144d769c08d79eed22532e044213bef3174f05158487"
+                , "Redeem"  .= T.pack "5221026e294fcecdcbae12a0aba1685db35c54ddfc1375d48f96ff1b8805a4bb57bfc921028bc8d8377f44de8ac8beff0dc9ccefde4cd5dded7b8cd8babe02c7147a90ba6c21039cf5d06e79871043c420fabc652f8082e702e0094f91ec14c020e9fcf48fa4d853ae"
+                , "Orphan"  .= False
+                , "Address" .= T.pack "38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki"
+                ]
+            , object
+                [ "TxID"   .= T.pack "984092e0ba079812fe1d05ec653f775beb5ea7a1ae9ad1d35d6c9f39ec507a40"
+                , "Index"   .= (5 :: Int)
+                , "Value"   .= (400000 :: Int)
+                , "Script"  .= T.pack "a914fdf1e3c1a936ab1dde0d7a305d28df396949ffd087"
+                , "Redeem"  .= T.pack "5221020f7ead178316e8414d128712a23cde2e843d1a0f66afc0bfa600ab90deefd5f321023182b240cb2607ed03f76c9dca37c4b9fcb3b763b776223cc94808f7e67fb03a2102648dbcbc9f44fb55a992efe7b3ab214306cc72cdcae2a7cf6f9d44262a53c3b353ae"
+                , "Orphan"  .= False
+                , "Address" .= T.pack "3QqkesBZx7WBSLcdy5e1PmRU1QLdYTG49Q"
+                ]
             ]
         )
+    
+    val <- cmdSend "" "38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki" 120000 10000
+    liftIO $ print val
 
-     
+-- Building tx link:
+-- txA : outside => (acc1,ms1)
+-- txB : (acc1,ms1) => (acc2,ms1)
+-- txC :: (acc2,ms2) => (acc1,outside)
+-- import order: txC, tcB, txA
+
+{- TxID: e90e7363fb757c6c78e456d8452c82584236f3cf2fec2583712380b75fc4de0a
+ - Payments sent to:
+ - 1NkXvbrHPGC2vjtmL2mup1sWi2TU8LW6XB : 100000 (in wallet)
+ - 1Erwcuqn1dHm8r6fNxogGmCHYuNfwKNwer : 200000 (in wallet)
+ - 32VCGK4pbvVsFvSGfmLpmNTu4JjhuR3WmM : 300000 (in wallet)
+ - 3E3qvGPki6sypXdyL6CMxBQwzFkY7iKrGW : 400000 (in wallet)
+ -}
+
+txA :: String
+txA = "010000000100000000000000000000000000000000000000000000000000000000000000030400000000ffffffff04a0860100000000001976a914ee96578d3e4f22ca73187458099f1d1cb00e4f7f88ac400d0300000000001976a914980b9c708958bbe4cc05d0b302d4f12625a5d88c88ace09304000000000017a91408bbc42ebefd548694e3be196ac95c311ee0edd887801a06000000000017a9148791e49d8679b06cb2c1dad7cd4dce3bff4c3cfb8700000000"
+
+testOrphan :: ( PersistStore m
+              , PersistUnique m
+              , PersistQuery m
+              , PersistMonadBackend m ~ SqlBackend
+              ) 
+           => EitherT String m ()
+testOrphan = do 
+    cmdImportTx (decode' $ fromJust $ hexToBS txA)
+    return ()
+
+

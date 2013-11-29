@@ -196,27 +196,47 @@ cmdSend :: ( PersistStore m
         => AccountName -> String -> Int -> Int
         -> EitherT String m Value
 cmdSend name a v fee = do
+    (coins,recip) <- dbSendSolution name [(a,fromIntegral v)] (fromIntegral fee)
+    (tx,complete) <- dbSendTx coins recip fee (SigAll False)
+    return $ object [ "Payment Tx" .= (toJSON $ bsToHex $ encode' tx)
+                    , "Complete"   .= complete
+                    ]
+
+dbSendSolution :: ( PersistStore m
+                  , PersistQuery m 
+                  , PersistUnique m
+                  , PersistMonadBackend m ~ SqlBackend
+                  )
+               => AccountName -> [(String,Word64)] -> Word64
+               -> EitherT String m ([Coin],[(String,Word64)])
+dbSendSolution name dests fee = do
     (Entity ai acc) <- dbGetAcc name
     unspent <- liftEither . (mapM toCoin) =<< dbCoins ai
     (coins,change) <- liftEither $ if isMSAcc acc
         then let msParam = ( fromJust $ dbAccountMsRequired acc
                            , fromJust $ dbAccountMsTotal acc
                            )
-             in chooseMSCoins (fromIntegral v) (fromIntegral fee) 
-                    msParam unspent
-        else chooseCoins (fromIntegral v) (fromIntegral fee) unspent
-    recipients <- if change < 5000 then return [(a,fromIntegral v)] else do
+             in chooseMSCoins tot fee msParam unspent
+        else chooseCoins tot fee unspent
+    recip <- if change < 5000 then return dests else do
         cAddr <- dbGenIntAddrs name 1
-        return $ [ (a,fromIntegral v)
-                 , (dbAddressBase58 $ head cAddr,change)
-                 ]
+        return $ dests ++ [(dbAddressBase58 $ head cAddr,change)]
+    return (coins,recip)
+  where
+    tot = sum $ map snd dests
+    
+dbSendTx :: ( PersistStore m
+            , PersistQuery m 
+            , PersistUnique m
+            )
+         => [Coin] -> [(String,Word64)] -> Int -> SigHash
+         -> EitherT String m (Tx, Bool)
+dbSendTx coins recipients fee sh = do
     tx <- liftEither $ buildAddrTx (map coinOutPoint coins) recipients
-    ys <- mapM (dbGetSigData $ SigAll False) coins
+    ys <- mapM (dbGetSigData sh) coins
     let sigTx = detSignTx tx (map fst ys) (map snd ys)
     bsTx <- liftEither $ buildToEither sigTx
-    return $ object [ "Payment Tx" .= (toJSON $ bsToHex $ encode' bsTx)
-                    , "Complete"   .= isComplete sigTx
-                    ]
+    return (bsTx, isComplete sigTx)
 
 dbGetSigData :: ( PersistStore m
                 , PersistUnique m
@@ -244,39 +264,6 @@ dbGetSigData sh coin = do
     addErr = "dbGetSigData: Invalid address derivation index"
 
 {-
-cmdListTx :: AccountName -> Command
-cmdListTx name = dbGetAcc (AccName name) >>= \acc -> do
-    guardValidAcc acc
-    txs <- dbTxList $ accPos $ runAccData acc 
-    forM txs $ \tx -> do
-        coins <- mapRights (dbGetCoin . CoinOutPoint . prevOutPoint) $ txIn tx
-        addr  <- mapRights (dbGetAddr . AddrBase58 =<<) . f $ txOut tx
-        let outTotal = sum $ map (outValue . coinTxOut) coins
-            outSum   = 
-    return $ toJSON $ map (toJSON . dbTx) txs
-    where f = liftEither . scriptRecipient . scriptOutput
-
-cmdSend :: String -> Int -> AccountName -> Command
-cmdSend a v name = dbGetAcc (AccName name) >>= \acc -> do
-    guardValidAcc acc
-    unspent <- dbCoinList $ accPos $ runAccData acc
-    (coins,change) <- liftEither $ if isMSAcc acc
-        then let msParam = (msReq acc,length $ msKeys acc)
-             in chooseMSCoins (fromIntegral v) 10000 msParam unspent
-        else chooseCoins (fromIntegral v) 10000 unspent
-    recipients <- if change < 5000 then return [(a,fromIntegral v)] else do
-        cAddr <- dbGenAddr (accPos $ runAccData acc) 1 True
-        return $ [(a,fromIntegral v),(addrBase58 $ head cAddr,change)]
-    tx <- liftEither $ buildAddrTx (map coinOutPoint coins) recipients
-    ys <- mapM f coins
-    let sigTx = detSignTx tx (map fst ys) (map snd ys)
-    bsTx <- liftEither $ buildToEither sigTx
-    return $ object [ (T.pack "Payment Tx") .= (toJSON $ bsToHex $ encode' bsTx)
-                    , (T.pack "Complete") .= isComplete sigTx
-                    ]
-    where f c = let s = scriptOutput $ coinTxOut c
-                in dbGetSigData s (coinOutPoint c) $ SigAll False
-
 cmdSignTx :: String -> AccountName -> Command
 cmdSignTx str name = dbGetAcc (AccName name) >>= \acc -> do
     guardValidAcc acc

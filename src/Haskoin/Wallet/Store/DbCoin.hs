@@ -58,19 +58,24 @@ toCoin c = do
     rdmErr = "toCoin: Could not decode coin redeem script"
 
 yamlCoin :: DbCoinGeneric b -> Value
-yamlCoin coin = object $
-    [ "TxID"   .= dbCoinTxid coin 
-    , "Index"  .= dbCoinPos coin
-    , "Value"  .= dbCoinValue coin
-    , "Script" .= dbCoinScript coin
-    , "Orphan" .= dbCoinOrphan coin
-    ] ++ addrPair
+yamlCoin coin = object $ concat
+    [ [ "TxID"   .= dbCoinTxid coin 
+      , "Index"  .= dbCoinPos coin
+      , "Value"  .= dbCoinValue coin
+      , "Script" .= dbCoinScript coin
+      , "Orphan" .= dbCoinOrphan coin
+      ] 
+    , addrPair
+    , if isJust $ dbCoinRdmScript coin 
+        then ["Redeem" .= fromJust (dbCoinRdmScript coin)] 
+        else []
+    ]
   where 
     s        = maybeToEither err $ hexToBS $ dbCoinScript coin
     err      = "yamlCoin: Invalid script encoding"
     addrPair = either (const []) 
-                      (\a -> ["Addr" .= addrToBase58 a])
-                      (scriptRecipient =<< decodeToEither =<< s)
+                      (\a -> ["Address" .= addrToBase58 a])
+                      (scriptRecipient =<< decodeScriptOps =<< s)
 
 dbBalance :: ( PersistQuery m
              , PersistMonadBackend m ~ b

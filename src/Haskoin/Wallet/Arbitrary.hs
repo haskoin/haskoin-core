@@ -108,5 +108,5 @@ instance Arbitrary AddrPubKey where
                  ]
 
 instance Arbitrary Coin where
-    arbitrary = Coin <$> arbitrary <*> arbitrary
+    arbitrary = Coin <$> arbitrary <*> arbitrary <*> arbitrary
         

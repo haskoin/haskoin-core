@@ -25,6 +25,9 @@ import Database.Persist.Sqlite
 
 import Haskoin.Wallet
 import Haskoin.Wallet.Store
+import Haskoin.Script
+import Haskoin.Protocol
+import Haskoin.Crypto
 import Haskoin.Util
 
 tests =
@@ -95,7 +98,7 @@ testInit = do
     liftIO $ assertEqual "Wallet name" "main" $ dbWalletName w
 
     -- Generate addresses on an invalid account should fail
-    runEitherT (cmdGenAddr "default" 5) >>= liftIO . 
+    runEitherT (cmdGenAddrs "default" 5) >>= liftIO . 
         assertEqual "Invalid account" 
         (Left "dbGetAcc: Invalid account default") 
 
@@ -116,6 +119,10 @@ testNewAcc = do
            ] 
        )
 
+    -- Check the wallet account index
+    (dbWalletAccIndex . entityVal <$> dbGetWallet "main") >>= 
+        liftIO . assertEqual "acc index 0" 0
+
     -- Create a new account named "acc1"
     cmdNewAcc "acc1" >>= liftIO . assertEqual "New acc 2"
         ( object 
@@ -125,6 +132,10 @@ testNewAcc = do
             ] 
         )
 
+    -- Check the wallet account index
+    (dbWalletAccIndex . entityVal <$> dbGetWallet "main") >>= 
+        liftIO . assertEqual "acc index 1" 1
+
     -- Create a new account named "acc2"
     cmdNewAcc "acc2" >>= liftIO . assertEqual "New acc 3"
         ( object 
@@ -133,6 +144,10 @@ testNewAcc = do
             , "Type" .= T.pack "Regular"
             ] 
         )
+
+    -- Check the wallet account index
+    (dbWalletAccIndex . entityVal <$> dbGetWallet "main") >>= 
+        liftIO . assertEqual "acc index 2" 2
 
     -- List all accounts created up to now
     cmdListAcc >>= liftIO . assertEqual "List accs"
@@ -231,6 +246,10 @@ testNewMS = do
             , "Warning" .= T.pack "2 multisig keys missing"
             ] 
         )
+
+    -- Check the wallet account index
+    (dbWalletAccIndex . entityVal <$> dbGetWallet "main") >>= 
+        liftIO . assertEqual "acc index 3" 3
 
     -- Display account information for account "ms1"
     cmdAccInfo "ms1" >>= liftIO . assertEqual "MS info"
@@ -388,7 +407,7 @@ testGenAddr = do
         )
 
     -- Generate 5 addresses on the account "" (empty string)
-    cmdGenAddr "" 5 >>= liftIO . assertEqual "gen addr"
+    cmdGenAddrs "" 5 >>= liftIO . assertEqual "gen addr"
         ( toJSON 
             [ object [ "Addr" .= T.pack "1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi"
                      , "Key"  .= (0 :: Int)
@@ -412,6 +431,12 @@ testGenAddr = do
                      ]
             ]
         )
+
+    (dbAccountExtIndex . entityVal <$> dbGetAcc "") >>= 
+        liftIO . assertEqual "acc ext index" 4
+
+    (dbAccountIntIndex . entityVal <$> dbGetAcc "") >>= 
+        liftIO . assertEqual "acc ext index" (-1)
 
     -- Count all addresses in the Address table
     count ([] :: [Filter (DbAddressGeneric b)]) >>= 
@@ -653,18 +678,20 @@ testImport = do
     cmdCoins "" >>= liftIO . assertEqual "Get coins 1"
         ( toJSON
             [ object
-                [ "TxID"   .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
-                , "Index"  .= (0 :: Int)
-                , "Value"  .= (100000 :: Int)
-                , "Script" .= T.pack "76a914d6baf45f52b4cccc7ac1ba3a35dd739497f8e98988ac"
-                , "Orphan" .= False
+                [ "TxID"    .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
+                , "Index"   .= (0 :: Int)
+                , "Value"   .= (100000 :: Int)
+                , "Script"  .= T.pack "76a914d6baf45f52b4cccc7ac1ba3a35dd739497f8e98988ac"
+                , "Orphan"  .= False
+                , "Address" .= T.pack "1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi"
                 ]
             , object
-                [ "TxID"   .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
-                , "Index"  .= (1 :: Int)
-                , "Value"  .= (200000 :: Int)
-                , "Script" .= T.pack "76a91468e94ed1e88f7e942bf4aaa25fcf5930f517730888ac"
-                , "Orphan" .= False
+                [ "TxID"    .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
+                , "Index"   .= (1 :: Int)
+                , "Value"   .= (200000 :: Int)
+                , "Script"  .= T.pack "76a91468e94ed1e88f7e942bf4aaa25fcf5930f517730888ac"
+                , "Orphan"  .= False
+                , "Address" .= T.pack "1AZimU5FfTQyF4GMsEKLZ32773TtPKczdY"
                 ]
             ]
         )
@@ -674,17 +701,21 @@ testImport = do
         ( toJSON
             [ object
                 [ "TxID"   .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
-                , "Index"  .= (4 :: Int)
-                , "Value"  .= (150000 :: Int)
-                , "Script" .= T.pack "a9144d769c08d79eed22532e044213bef3174f05158487"
-                , "Orphan" .= False
+                , "Index"   .= (4 :: Int)
+                , "Value"   .= (150000 :: Int)
+                , "Script"  .= T.pack "a9144d769c08d79eed22532e044213bef3174f05158487"
+                , "Redeem"  .= T.pack "5221026e294fcecdcbae12a0aba1685db35c54ddfc1375d48f96ff1b8805a4bb57bfc921028bc8d8377f44de8ac8beff0dc9ccefde4cd5dded7b8cd8babe02c7147a90ba6c21039cf5d06e79871043c420fabc652f8082e702e0094f91ec14c020e9fcf48fa4d853ae"
+                , "Orphan"  .= False
+                , "Address" .= T.pack "38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki"
                 ]
             , object
                 [ "TxID"   .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
-                , "Index"  .= (5 :: Int)
-                , "Value"  .= (400000 :: Int)
-                , "Script" .= T.pack "a914fdf1e3c1a936ab1dde0d7a305d28df396949ffd087"
-                , "Orphan" .= False
+                , "Index"   .= (5 :: Int)
+                , "Value"   .= (400000 :: Int)
+                , "Script"  .= T.pack "a914fdf1e3c1a936ab1dde0d7a305d28df396949ffd087"
+                , "Redeem"  .= T.pack "5221020f7ead178316e8414d128712a23cde2e843d1a0f66afc0bfa600ab90deefd5f321023182b240cb2607ed03f76c9dca37c4b9fcb3b763b776223cc94808f7e67fb03a2102648dbcbc9f44fb55a992efe7b3ab214306cc72cdcae2a7cf6f9d44262a53c3b353ae"
+                , "Orphan"  .= False
+                , "Address" .= T.pack "3QqkesBZx7WBSLcdy5e1PmRU1QLdYTG49Q"
                 ]
             ]
         )

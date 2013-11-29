@@ -57,6 +57,10 @@ module Haskoin.Wallet.Store
 , cmdImportTx 
 , cmdListTx
 , cmdSend
+, cmdSendMany
+, dbSendTx
+, dbSendSolution
+, dbSendCoins
 
 -- Store functions
 , cmdInit

@@ -5,6 +5,10 @@ module Haskoin.Wallet.Store.DbTx
 ( cmdImportTx 
 , cmdListTx
 , cmdSend
+, cmdSendMany
+, dbSendTx
+, dbSendSolution
+, dbSendCoins
 ) where
 
 import Control.Applicative
@@ -16,6 +20,7 @@ import Control.Monad.Trans.Either
 import Data.Time
 import Data.Yaml
 import Data.Word
+import Data.List
 import Data.Maybe
 import Data.Either
 import qualified Data.Map.Strict as M
@@ -70,13 +75,15 @@ cmdImportTx tx = do
     fout acc (ai,vo,addr) = flip (M.insert ai) acc $ case M.lookup ai acc of
         Just (vi,vo',o,xs) -> (vi,vo+vo',o,xs ++ [addr])
         _                  -> (0,vo,False,[addr])
-    recip  = rights $ map toAddr $ txOut tx
+    allRecip  = rights $ map toAddr $ txOut tx
     toAddr = (addrToBase58 <$>) . scriptRecipient . scriptOutput
     build (ai,(vi,vo,orphan,xs)) = do
         time  <- liftIO $ getCurrentTime
-        return $ DbTx (txidHex $ txid tx)
-                      (if null xs then recip else xs)
-                      (vo-vi) ai orphan time
+        let tot   = vo - vi
+            recip | null xs = allRecip
+                  | tot < 0 = allRecip \\ xs -- Remove the change
+                  | otherwise = xs
+        return $ DbTx (txidHex $ txid tx) recip tot ai orphan time
 
 dbImportIn :: ( PersistStore m
               , PersistQuery m 
@@ -196,11 +203,35 @@ cmdSend :: ( PersistStore m
         => AccountName -> String -> Int -> Int
         -> EitherT String m Value
 cmdSend name a v fee = do
-    (coins,recip) <- dbSendSolution name [(a,fromIntegral v)] (fromIntegral fee)
-    (tx,complete) <- dbSendTx coins recip fee (SigAll False)
+    (tx,complete) <- dbSendTx name [(a,fromIntegral v)] (fromIntegral fee)
     return $ object [ "Payment Tx" .= (toJSON $ bsToHex $ encode' tx)
                     , "Complete"   .= complete
                     ]
+
+cmdSendMany :: ( PersistStore m
+               , PersistQuery m 
+               , PersistUnique m
+               , PersistMonadBackend m ~ SqlBackend
+               )
+            => AccountName -> [(String,Int)] -> Int
+            -> EitherT String m Value
+cmdSendMany name dests fee = do
+    (tx,complete) <- dbSendTx name dests' (fromIntegral fee)
+    return $ object [ "Payment Tx" .= (toJSON $ bsToHex $ encode' tx)
+                    , "Complete"   .= complete
+                    ]
+    where dests' = map (\(a,b) -> (a,fromIntegral b)) dests
+
+dbSendTx :: ( PersistStore m
+            , PersistQuery m 
+            , PersistUnique m
+            , PersistMonadBackend m ~ SqlBackend
+            )
+         => AccountName -> [(String,Word64)] -> Word64
+         -> EitherT String m (Tx, Bool)
+dbSendTx name dests fee = do
+    (coins,recip) <- dbSendSolution name dests fee
+    dbSendCoins coins recip (SigAll False)
 
 dbSendSolution :: ( PersistStore m
                   , PersistQuery m 
@@ -225,13 +256,13 @@ dbSendSolution name dests fee = do
   where
     tot = sum $ map snd dests
     
-dbSendTx :: ( PersistStore m
+dbSendCoins :: ( PersistStore m
             , PersistQuery m 
             , PersistUnique m
             )
-         => [Coin] -> [(String,Word64)] -> Int -> SigHash
+         => [Coin] -> [(String,Word64)] -> SigHash
          -> EitherT String m (Tx, Bool)
-dbSendTx coins recipients fee sh = do
+dbSendCoins coins recipients sh = do
     tx <- liftEither $ buildAddrTx (map coinOutPoint coins) recipients
     ys <- mapM (dbGetSigData sh) coins
     let sigTx = detSignTx tx (map fst ys) (map snd ys)

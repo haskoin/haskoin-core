@@ -169,7 +169,8 @@ cmdLabel :: (PersistStore m, PersistUnique m)
          => AccountName -> Int -> String -> EitherT String m Value
 cmdLabel name key label = do
     (Entity ai acc) <- dbGetAcc name
-    (Entity i addr) <- liftMaybe keyErr =<< (getBy $ UniqueAddressKey ai key)
+    (Entity i addr) <- liftMaybe keyErr =<< 
+        (getBy $ UniqueAddressKey ai key False)
     let newAddr = addr{dbAddressLabel = label}
     replace i newAddr
     return $ yamlAddr newAddr

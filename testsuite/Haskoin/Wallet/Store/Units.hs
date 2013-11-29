@@ -432,15 +432,33 @@ testGenAddr = do
             ]
         )
 
+    -- Check account external index
     (dbAccountExtIndex . entityVal <$> dbGetAcc "") >>= 
         liftIO . assertEqual "acc ext index" 4
 
+    -- Check account internal index
     (dbAccountIntIndex . entityVal <$> dbGetAcc "") >>= 
-        liftIO . assertEqual "acc ext index" (-1)
+        liftIO . assertEqual "acc int index" (-1)
 
     -- Count all addresses in the Address table
     count ([] :: [Filter (DbAddressGeneric b)]) >>= 
         liftIO . assertEqual "Count addr" 5
+
+    let f x = (dbAddressBase58 x,dbAddressTree x,dbAddressIndex x)
+    (map f <$> dbGenIntAddrs "" 4) >>= liftIO . assertEqual "Internal addr"
+        [ ("19RtLtmuuxscgg5TXkCsSJ7bCdEzci5XTm","m/0'/1/0/",0)
+        , ("1E75f3kuDanTHeTa8nvJCxYF8MXaud4QPE","m/0'/1/1/",1)
+        , ("1NXkqUpqM23p6u44nAhoP1wVd2BdCEr4Zm","m/0'/1/2/",2)
+        , ("1AjBQfprusZGGnD4jCmexizJxKBcAw4cdc","m/0'/1/3/",3)
+        ]
+
+    -- Check account external index
+    (dbAccountExtIndex . entityVal <$> dbGetAcc "") >>= 
+        liftIO . assertEqual "acc ext index 2" 4
+
+    -- Check account internal index
+    (dbAccountIntIndex . entityVal <$> dbGetAcc "") >>= 
+        liftIO . assertEqual "acc int index 2" 3
 
     -- List addresses from the ms1 account. Should be empty
     cmdList "ms1" 0 5 >>= liftIO . assertEqual "list empty addr 2"
@@ -563,7 +581,7 @@ testGenAddr = do
 
     -- Count addresses
     count ([] :: [Filter (DbAddressGeneric b)]) >>= 
-        liftIO . assertEqual "Count addr 2" 9
+        liftIO . assertEqual "Count addr 2" 13
 
     -- Rename the first multisig address label
     cmdLabel "ms1" 0 "alpha" >>= liftIO . assertEqual "label ms"
@@ -666,6 +684,32 @@ testImport = do
                 ]
             )
 
+    -- List transactions of account ""
+    cmdListTx "" >>= liftIO . assertEqual "List tx 1"
+        ( toJSON
+            [ object [ "Recipients" .= toJSON
+                            [ T.pack "1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi"
+                            , T.pack "1AZimU5FfTQyF4GMsEKLZ32773TtPKczdY"
+                            ]
+                        , "Value"      .= (300000 :: Int)
+                        , "Orphan"     .= False
+                        ]
+            ]
+        )
+
+    -- List transactions of account "ms1"
+    cmdListTx "ms1" >>= liftIO . assertEqual "List tx 2"
+        ( toJSON
+            [ object [ "Recipients" .= toJSON
+                         [ T.pack "38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki"
+                         , T.pack "3QqkesBZx7WBSLcdy5e1PmRU1QLdYTG49Q"
+                         ]
+                     , "Value"      .= (550000 :: Int)
+                     , "Orphan"     .= False
+                     ]
+            ]
+        )
+
     -- Verify the balance of account ""
     cmdBalance "" 
         >>= liftIO . assertEqual "Balance 1" (toJSON (300000 :: Int))
@@ -721,5 +765,3 @@ testImport = do
         )
 
      
-
-

@@ -55,6 +55,8 @@ module Haskoin.Wallet.Store
 
 -- Tx functions
 , cmdImportTx 
+, cmdListTx
+, cmdSend
 
 -- Store functions
 , cmdInit

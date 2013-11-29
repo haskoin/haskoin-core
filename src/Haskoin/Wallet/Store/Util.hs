@@ -95,7 +95,7 @@ DbAddress json
     internal Bool
     created UTCTime default=CURRENT_TIME
     UniqueAddress base58
-    UniqueAddressKey account index
+    UniqueAddressKey account index internal
     deriving Show
 
 DbCoin json

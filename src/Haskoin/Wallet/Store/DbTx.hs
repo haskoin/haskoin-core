@@ -3,6 +3,8 @@
 {-# LANGUAGE TypeFamilies      #-}
 module Haskoin.Wallet.Store.DbTx
 ( cmdImportTx 
+, cmdListTx
+, cmdSend
 ) where
 
 import Control.Applicative
@@ -176,6 +178,15 @@ dbProcessOrphan v s ci coin = do
         ]
   where 
     txErr = "dbImportOut: Orphan coin transaction not found"
+
+cmdListTx :: ( PersistQuery m 
+             , PersistUnique m
+             )
+          => AccountName -> EitherT String m Value
+cmdListTx name = do
+    (Entity ai acc) <- dbGetAcc name
+    txs <- selectList [DbTxAccount ==. ai, DbTxOrphan ==. False] []
+    return $ toJSON $ map (yamlTx . entityVal) txs
 
 cmdSend :: ( PersistStore m
            , PersistQuery m 

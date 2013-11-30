@@ -132,6 +132,7 @@ dbImportOut txid ((TxOut v s), index) = do
                              rdm Nothing
                              (dbAddressAccount addr) 
                              False time
+            dbAdjustGap addr -- Generate addresses if addr is within the gap
     return (dbAddressAccount addr, fromIntegral v, addrToBase58 a)
 
 dbGetRedeem :: ( PersistStore m

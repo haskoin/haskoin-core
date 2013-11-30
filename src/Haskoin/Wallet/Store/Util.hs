@@ -77,7 +77,9 @@ DbAccount json
     tree String
     key String
     extIndex Int
+    extGap Int
     intIndex Int
+    intGap Int
     msRequired Int Maybe
     msTotal Int Maybe
     msKeys [String] 

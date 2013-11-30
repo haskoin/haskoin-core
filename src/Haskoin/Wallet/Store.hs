@@ -24,9 +24,9 @@ module Haskoin.Wallet.Store
 
 -- Account functions
 , dbGetAcc
-, cmdNewAcc
-, cmdNewMS
-, cmdAddKeys
+, dbNewAcc
+, dbNewMS
+, dbAddKeys
 , cmdAccInfo
 , cmdListAcc
 , cmdDumpKeys
@@ -39,6 +39,8 @@ module Haskoin.Wallet.Store
 , cmdGenWithLabel
 , dbGenIntAddrs
 , dbGenAddrs
+, dbAdjustGap
+, dbSetGap
 , cmdLabel
 , dbGetAddr
 , yamlAddr
@@ -64,6 +66,9 @@ module Haskoin.Wallet.Store
 
 -- Store functions
 , cmdInit
+, cmdNewAcc
+, cmdNewMS
+, cmdAddKeys
 ) where
 
 import Control.Applicative
@@ -113,4 +118,34 @@ cmdInit seed
   where 
     err = "cmdInit: Invalid master key generated from seed"
 
+cmdNewAcc :: (PersistUnique m, PersistQuery m) 
+         => String -> EitherT String m Value
+cmdNewAcc name = do
+    acc <- dbNewAcc name
+    -- Generate gap addresses
+    dbSetGap name 30 False
+    dbSetGap name 30 True
+    return $ yamlAcc acc
+
+cmdNewMS :: (PersistUnique m, PersistQuery m)
+         => String -> Int -> Int -> [XPubKey]
+         -> EitherT String m Value
+cmdNewMS name m n mskeys = do
+    acc <- dbNewMS name m n mskeys
+    when (length (dbAccountMsKeys acc) == n - 1) $ do
+        -- Generate gap addresses
+        dbSetGap name 30 False
+        dbSetGap name 30 True
+    return $ yamlAcc acc
+
+cmdAddKeys :: (PersistStore m, PersistUnique m, PersistQuery m)
+           => AccountName -> [XPubKey] -> EitherT String m Value
+cmdAddKeys name keys = do
+    acc <- dbAddKeys name keys
+    let n = fromJust $ dbAccountMsTotal acc
+    when (length (dbAccountMsKeys acc) == n - 1) $ do
+        -- Generate gap addresses
+        dbSetGap name 30 False
+        dbSetGap name 30 True
+    return $ yamlAcc acc
 

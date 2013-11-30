@@ -7,6 +7,8 @@ module Haskoin.Wallet.Store.DbAddress
 , cmdGenWithLabel
 , dbGenIntAddrs
 , dbGenAddrs
+, dbAdjustGap
+, dbSetGap
 , cmdLabel
 , dbGetAddr
 , yamlAddr
@@ -78,21 +80,24 @@ dbGetAddr addr =
 cmdList :: (PersistStore m, PersistUnique m, PersistQuery m) 
         => AccountName -> Int -> Int -> EitherT String m Value
 cmdList name pageNum resPerPage 
-    | pageNum < 0    = left $ 
+    | pageNum < 0 = left $ 
         unwords ["cmdList: Invalid page number", show pageNum]
     | resPerPage < 1 = left $ 
         unwords ["cmdList: Invalid results per page",show resPerPage]
     | otherwise = do
         (Entity ai acc) <- dbGetAcc name
-        addrCount <- count [ DbAddressAccount ==. ai
-                           , DbAddressInternal ==. False
-                           ] 
+        addrCount <- count 
+            [ DbAddressAccount ==. ai
+            , DbAddressInternal ==. False
+            , DbAddressIndex <=. dbAccountExtIndex acc
+            ] 
         let maxPage = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
             page | pageNum == 0 = maxPage
                  | otherwise = pageNum
         when (page > maxPage) $ left "cmdList: Page number too high"
         addrs <- selectList [ DbAddressAccount ==. ai
                             , DbAddressInternal ==. False
+                            , DbAddressIndex <=. dbAccountExtIndex acc
                             ] 
                             [ Asc DbAddressId
                             , LimitTo resPerPage
@@ -123,8 +128,70 @@ dbGenIntAddrs :: ( PersistStore m
                  )
               => AccountName -> Int 
               -> EitherT String m [DbAddressGeneric b]
-dbGenIntAddrs name c = dbGenAddrs name (replicate c "") True
+dbGenIntAddrs name c 
+    | c <= 0    = left "dbGenIntAddrs: Count argument must be greater than 0"
+    | otherwise = dbGenAddrs name (replicate c "") True
 
+dbAdjustGap :: ( PersistStore m
+               , PersistUnique m
+               , PersistQuery m
+               , PersistMonadBackend m ~ b
+               )
+            => DbAddressGeneric b -> EitherT String m ()
+dbAdjustGap addr = do
+    acc <- liftMaybe accErr =<< (get $ dbAddressAccount addr)
+    let fIndex | dbAddressInternal addr = dbAccountIntIndex 
+               | otherwise              = dbAccountExtIndex
+    diff <- count [ DbAddressIndex >. fIndex acc
+                  , DbAddressIndex <=. dbAddressIndex addr
+                  , DbAddressAccount ==. dbAddressAccount addr
+                  , DbAddressInternal ==. dbAddressInternal addr
+                  ]
+    when (diff > 0) $ do
+        dbGenAddrs (dbAccountName acc) 
+                   (replicate diff "") 
+                   (dbAddressInternal addr)
+        return ()
+  where
+    accErr = "dbAdjustGap: Could not load address account"
+
+dbSetGap :: ( PersistStore m
+            , PersistUnique m
+            , PersistQuery m
+            )
+         => AccountName -> Int -> Bool -> EitherT String m ()
+dbSetGap name gap internal = do
+    (Entity ai acc) <- dbGetAcc name 
+    diff <- count [ DbAddressIndex >. fIndex acc
+                  , DbAddressIndex <=. fGap acc
+                  , DbAddressAccount ==. ai
+                  , DbAddressInternal ==. internal
+                  ]
+    when (diff < gap) $ do
+        dbGenAddrs name (replicate (gap - diff) "") internal
+        return ()
+    res <- (map entityVal) <$> selectList  
+                [ DbAddressAccount ==. ai
+                , DbAddressInternal ==. internal
+                ]
+                [ Desc DbAddressIndex
+                , LimitTo (gap + 1)
+                ]
+    let lastIndex | length res <= gap = (-1)
+                  | otherwise         = dbAddressIndex $ last res
+        lastGap = dbAddressIndex $ head res
+        newAcc | internal  = acc{ dbAccountIntIndex = lastIndex 
+                                , dbAccountIntGap   = lastGap
+                                }
+               | otherwise = acc{ dbAccountExtIndex = lastIndex 
+                                , dbAccountExtGap   = lastGap
+                                }
+    replace ai newAcc
+  where 
+    fIndex | internal  = dbAccountIntIndex 
+           | otherwise = dbAccountExtIndex
+    fGap   | internal  = dbAccountIntGap 
+           | otherwise = dbAccountExtGap
 
 dbGenAddrs :: ( PersistStore m
               , PersistUnique m
@@ -145,25 +212,40 @@ dbGenAddrs name labels internal
                                 (concat [dbAccountTree acc,tree,show i,"/"])
                                 ai internal time
         ls <- liftMaybe keyErr $ f acc
-        let addrs     = map build $ zip ls labels
-            lastDeriv = dbAddressIndex $ last addrs
-            newAcc | internal  = acc{ dbAccountIntIndex = lastDeriv }
-                   | otherwise = acc{ dbAccountExtIndex = lastDeriv }
+        let gapAddr = map build $ zip ls labels
+        insertMany gapAddr
+        resAddr <- (map entityVal) <$> selectList 
+            [ DbAddressIndex >. fIndex acc
+            , DbAddressAccount ==. ai
+            , DbAddressInternal ==. internal
+            ]
+            [ Asc DbAddressIndex
+            , LimitTo $ length labels
+            ]
+        let lastGap   = dbAddressIndex $ last gapAddr
+            lastIndex = dbAddressIndex $ last resAddr
+            newAcc | internal  = acc{ dbAccountIntGap   = lastGap
+                                    , dbAccountIntIndex = lastIndex
+                                    }
+                   | otherwise = acc{ dbAccountExtGap   = lastGap
+                                    , dbAccountExtIndex = lastIndex
+                                    }
         replace ai newAcc
-        insertMany addrs
-        return addrs
+        return resAddr
   where 
     keyErr = "cmdGenAddr: Error decoding account keys"
     f acc | isMSAcc acc = (if internal then intMulSigAddrs else extMulSigAddrs)
               <$> (loadPubAcc =<< (xPubImport $ dbAccountKey acc))
               <*> (mapM xPubImport $ dbAccountMsKeys acc) 
               <*> (dbAccountMsRequired acc)
-              <*> (return $ fromIntegral $ lastIndex acc + 1)
+              <*> (return $ fromIntegral $ fGap acc + 1)
           | otherwise = (if internal then intAddrs else extAddrs)
               <$> (loadPubAcc =<< (xPubImport $ dbAccountKey acc))
-              <*> (return $ fromIntegral $ lastIndex acc + 1)
-    lastIndex | internal  = dbAccountIntIndex
-              | otherwise = dbAccountExtIndex
+              <*> (return $ fromIntegral $ fGap acc + 1)
+    fGap   | internal  = dbAccountIntGap
+           | otherwise = dbAccountExtGap
+    fIndex | internal  = dbAccountIntIndex
+           | otherwise = dbAccountExtIndex
 
 cmdLabel :: (PersistStore m, PersistUnique m) 
          => AccountName -> Int -> String -> EitherT String m Value

@@ -3,9 +3,9 @@
 {-# LANGUAGE TypeFamilies      #-}
 module Haskoin.Wallet.Store.DbAccount 
 ( dbGetAcc
-, cmdNewAcc
-, cmdNewMS
-, cmdAddKeys
+, dbNewAcc
+, dbNewMS
+, dbAddKeys
 , cmdAccInfo
 , cmdListAcc
 , cmdDumpKeys
@@ -42,8 +42,8 @@ import Haskoin.Util
 
 yamlAcc :: DbAccountGeneric b -> Value
 yamlAcc acc = object $ concat
-    [ [ "Name"       .= dbAccountName acc
-      , "Tree"       .= dbAccountTree acc
+    [ [ "Name" .= dbAccountName acc
+      , "Tree" .= dbAccountTree acc
       ]
     , datType, datWarn
     ]
@@ -72,9 +72,12 @@ dbGetAcc name = liftMaybe accErr =<< (getBy $ UniqueAccName name)
   where 
     accErr = unwords ["dbGetAcc: Invalid account", name]
 
-cmdNewAcc :: (PersistUnique m, PersistQuery m) 
-         => String -> EitherT String m Value
-cmdNewAcc name = do
+dbNewAcc :: ( PersistUnique m
+            , PersistQuery m
+            , PersistMonadBackend m ~ b
+            ) 
+         => String -> EitherT String m (DbAccountGeneric b)
+dbNewAcc name = do
     time <- liftIO getCurrentTime
     (Entity wk w) <- dbGetWallet "main"
     let keyM = loadMasterKey =<< (xPrvImport $ dbWalletMaster w)
@@ -85,18 +88,21 @@ cmdNewAcc name = do
                           (fromIntegral i) 
                           (concat ["m/",show i,"'/"])
                           (xPubExport $ runAccPubKey k)
-                          (-1) (-1) 
+                          (-1) (-1) (-1) (-1)
                           Nothing Nothing [] wk time
-    eAcc <- insert acc
+    insert_ acc
     update wk [DbWalletAccIndex =. fromIntegral i]
-    return $ yamlAcc acc
+    return acc
   where 
-    keyErr = "cmdNewAcc: Could not load master key"
+    keyErr = "dbNewAcc: Could not load master key"
 
-cmdNewMS :: (PersistUnique m, PersistQuery m)
-         => String -> Int -> Int -> [XPubKey]
-         -> EitherT String m Value
-cmdNewMS name m n mskeys = do
+dbNewMS :: ( PersistUnique m
+           , PersistQuery m
+           , PersistMonadBackend m ~ b
+           )
+        => String -> Int -> Int -> [XPubKey]
+        -> EitherT String m (DbAccountGeneric b)
+dbNewMS name m n mskeys = do
     time <- liftIO getCurrentTime
     let keys = nub mskeys
     unless (n >= 1 && n <= 16 && m >= 1 && m <= n) $ left
@@ -112,35 +118,43 @@ cmdNewMS name m n mskeys = do
                           (fromIntegral i) 
                           (concat ["m/",show i,"'/"])
                           (xPubExport $ runAccPubKey k)
-                          (-1) (-1) 
+                          (-1) (-1) (-1) (-1) 
                           (Just m) (Just n) 
-                          (map xPubExport mskeys)
+                          (map xPubExport keys)
                           wk time
-    eAcc <- insert acc
+    insert_ acc
     update wk [DbWalletAccIndex =. fromIntegral i]
-    return $ yamlAcc acc
+    return acc
   where 
-    keyErr = "cmdNewMS: Could not load master key"
+    keyErr = "dbNewMS: Could not load master key"
 
-cmdAddKeys :: (PersistStore m, PersistUnique m, PersistQuery m)
-           => AccountName -> [XPubKey] -> EitherT String m Value
-cmdAddKeys name keys 
-    | null keys = left "cmdAddKeys: Keys can not be empty"
+dbAddKeys :: ( PersistStore m
+             , PersistUnique m
+             , PersistQuery m
+             , PersistMonadBackend m ~ b
+             )
+          => AccountName -> [XPubKey] 
+          -> EitherT String m (DbAccountGeneric b)
+dbAddKeys name keys 
+    | null keys = left "dbAddKeys: Keys can not be empty"
     | otherwise = do
         (Entity ai acc) <- dbGetAcc name
-        unless (isMSAcc acc) $ left $ "cmdAddKeys: Not a multisig account"
+        unless (isMSAcc acc) $ left $ 
+            "dbAddKeys: Can only add keys to a multisig account"
         exists <- mapM (\x -> count [DbAccountKey ==. (xPubExport x)]) keys
         unless (sum exists == 0) $ left $
-            "cmdAddKeys: Can not add your own keys"
+            "dbAddKeys: Can not add your own keys to a multisig account"
         prevKeys <- liftMaybe keyErr $ mapM xPubImport $ dbAccountMsKeys acc
+        when (length prevKeys == (fromJust $ dbAccountMsTotal acc) - 1) $ left $
+            "dbAddKeys: Account is complete. No more keys can be added"
         let newKeys = nub $ prevKeys ++ keys
             newAcc  = acc{ dbAccountMsKeys = map xPubExport newKeys }
         unless (length newKeys < (fromJust $ dbAccountMsTotal acc)) $ left $
-            "cmdAddKeys: Too many keys"
+            "dbAddKeys: Too many keys"
         replace ai newAcc
-        return $ yamlAcc newAcc
+        return newAcc
   where 
-    keyErr = "cmdAddKeys: Invalid keys found in account"
+    keyErr = "dbAddKeys: Invalid keys found in account"
 
 cmdAccInfo :: PersistUnique m => AccountName -> EitherT String m Value
 cmdAccInfo name = yamlAcc . entityVal <$> dbGetAcc name

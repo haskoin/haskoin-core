@@ -202,6 +202,81 @@ testNewAcc = do
     count ([] :: [Filter (DbAccountGeneric b)]) >>= 
         liftIO . assertEqual "Acc count" 3
 
+    -- Check that address-related data and gaps are correct
+    (Entity a1 acc1) <- dbGetAcc ""
+    (Entity a2 acc2) <- dbGetAcc "acc1"
+    (Entity a3 acc3) <- dbGetAcc "acc2"
+
+    count [DbAddressAccount ==. a1, DbAddressInternal ==. True] >>=
+        liftIO . assertEqual "Int gap address count" 30
+
+    count [DbAddressAccount ==. a1, DbAddressInternal ==. False] >>=
+        liftIO . assertEqual "Ext gap address count" 30
+
+    count [DbAddressAccount ==. a2, DbAddressInternal ==. True] >>=
+        liftIO . assertEqual "Int gap address count 2" 30
+
+    count [DbAddressAccount ==. a2, DbAddressInternal ==. False] >>=
+        liftIO . assertEqual "Ext gap address count 2" 30
+
+    count [DbAddressAccount ==. a3, DbAddressInternal ==. True] >>=
+        liftIO . assertEqual "Int gap address count 3" 30
+
+    count [DbAddressAccount ==. a3, DbAddressInternal ==. False] >>=
+        liftIO . assertEqual "Ext gap address count 3" 30
+
+    liftIO $ assertEqual "ExtIndex acc 1" (-1) (dbAccountExtIndex acc1)
+    liftIO $ assertEqual "IntIndex acc 1" (-1) (dbAccountIntIndex acc1)
+    liftIO $ assertEqual "ExtGap acc 1"    29  (dbAccountExtGap acc1)
+    liftIO $ assertEqual "IntGap acc 1"    29  (dbAccountIntGap acc1)
+
+    liftIO $ assertEqual "ExtIndex acc 2" (-1) (dbAccountExtIndex acc2)
+    liftIO $ assertEqual "IntIndex acc 2" (-1) (dbAccountIntIndex acc2)
+    liftIO $ assertEqual "ExtGap acc 2"    29  (dbAccountExtGap acc2)
+    liftIO $ assertEqual "IntGap acc 2"    29  (dbAccountIntGap acc2)
+
+    liftIO $ assertEqual "ExtIndex acc 3" (-1) (dbAccountExtIndex acc3)
+    liftIO $ assertEqual "IntIndex acc 3" (-1) (dbAccountIntIndex acc3)
+    liftIO $ assertEqual "ExtGap acc 3"    29  (dbAccountExtGap acc3)
+    liftIO $ assertEqual "IntGap acc 3"    29  (dbAccountIntGap acc3)
+
+    cmdList "" 0 5 >>= liftIO . assertEqual "check empty addrs 1"
+        ( object
+            [ "Addresses" .= toJSON ([] :: [Value])
+            , "Page results" .= object
+                [ "Current page" .= (1 :: Int)
+                , "Results per page" .= (5 :: Int)
+                , "Total pages" .= (1 :: Int)
+                , "Total addresses" .= (0 :: Int)
+                ]
+            ]
+        )
+
+    cmdList "acc1" 0 5 >>= liftIO . assertEqual "check empty addrs 2"
+        ( object
+            [ "Addresses" .= toJSON ([] :: [Value])
+            , "Page results" .= object
+                [ "Current page" .= (1 :: Int)
+                , "Results per page" .= (5 :: Int)
+                , "Total pages" .= (1 :: Int)
+                , "Total addresses" .= (0 :: Int)
+                ]
+            ]
+        )
+
+    cmdList "acc2" 0 5 >>= liftIO . assertEqual "check empty addrs 3"
+        ( object
+            [ "Addresses" .= toJSON ([] :: [Value])
+            , "Page results" .= object
+                [ "Current page" .= (1 :: Int)
+                , "Results per page" .= (5 :: Int)
+                , "Total pages" .= (1 :: Int)
+                , "Total addresses" .= (0 :: Int)
+                ]
+            ]
+        )
+        
+
 testNewMS :: (PersistStore m, PersistUnique m, PersistQuery m) 
           => EitherT String m ()
 testNewMS = do 
@@ -303,27 +378,27 @@ testNewMS = do
 
     -- Adding empty key list should fail
     runEitherT (cmdAddKeys "ms1" []) >>= liftIO . assertEqual "Empty addKey"
-        (Left "cmdAddKeys: Keys can not be empty")
+        (Left "dbAddKeys: Keys can not be empty")
 
     -- Adding keys to a non-multisig account should fail
     runEitherT (cmdAddKeys "acc1" [pubs !! 0]) >>= 
         liftIO . assertEqual "Invalid addKey 1" 
-            (Left "cmdAddKeys: Not a multisig account")
+            (Left "dbAddKeys: Can only add keys to a multisig account")
 
     -- Adding your own keys to a multisig account should fail
     runEitherT (cmdAddKeys "ms1" [pubs !! 0]) >>=
         liftIO . assertEqual "Invalid addKey 2" 
-            (Left "cmdAddKeys: Can not add your own keys")
+            (Left "dbAddKeys: Can not add your own keys to a multisig account")
 
     -- Adding your own keys to a multisig account should fail
     runEitherT (cmdAddKeys "ms1" [pubs2 !! 0,pubs !! 1]) >>=
         liftIO . assertEqual "Invalid addKey 3" 
-            (Left "cmdAddKeys: Can not add your own keys")
+            (Left "dbAddKeys: Can not add your own keys to a multisig account")
         
     -- Adding too many keys to a multisig account should fail
     runEitherT (cmdAddKeys "ms1" $ take 4 pubs2) >>=
         liftIO . assertEqual "Invalid addKey 4" 
-            (Left "cmdAddKeys: Too many keys")
+            (Left "dbAddKeys: Too many keys")
 
     -- Display account information for account "ms1". Shold not have changed
     cmdAccInfo "ms1" >>= liftIO . assertEqual "MS info 2"
@@ -333,6 +408,32 @@ testNewMS = do
             , "Type" .= T.pack "Multisig 2 of 3"
             , "Warning" .= T.pack "2 multisig keys missing"
             ] 
+        )
+    
+    -- Check that address-related data and gaps are correct
+    (Entity a1 acc1) <- dbGetAcc "ms1"
+
+    count [DbAddressAccount ==. a1, DbAddressInternal ==. True] >>=
+        liftIO . assertEqual "Int gap address count MS 1" 0
+
+    count [DbAddressAccount ==. a1, DbAddressInternal ==. False] >>=
+        liftIO . assertEqual "Ext gap address count MS 1" 0
+
+    liftIO $ assertEqual "ExtIndex acc MS" (-1) (dbAccountExtIndex acc1)
+    liftIO $ assertEqual "IntIndex acc MS" (-1) (dbAccountIntIndex acc1)
+    liftIO $ assertEqual "ExtGap acc MS"   (-1)  (dbAccountExtGap acc1)
+    liftIO $ assertEqual "IntGap acc MS"   (-1)  (dbAccountIntGap acc1)
+
+    cmdList "ms1" 0 5 >>= liftIO . assertEqual "check empty addrs MS 1"
+        ( object
+            [ "Addresses" .= toJSON ([] :: [Value])
+            , "Page results" .= object
+                [ "Current page" .= (1 :: Int)
+                , "Results per page" .= (5 :: Int)
+                , "Total pages" .= (1 :: Int)
+                , "Total addresses" .= (0 :: Int)
+                ]
+            ]
         )
 
     -- Adding a key to the multisig account "ms1". One should still be missing
@@ -357,6 +458,32 @@ testNewMS = do
             , "PubKey"  .= (xPubExport $ pubs !! 3)
             , "PrvKey"  .= (xPrvExport $ prvs !! 3)
             , "MSKeys"  .= toJSON [xPubExport $ pubs2 !! 0]
+            ]
+        )
+
+    -- Check that address-related data and gaps are correct
+    (Entity a2 acc2) <- dbGetAcc "ms1"
+
+    count [DbAddressAccount ==. a2, DbAddressInternal ==. True] >>=
+        liftIO . assertEqual "Int gap address count MS 2" 0
+
+    count [DbAddressAccount ==. a2, DbAddressInternal ==. False] >>=
+        liftIO . assertEqual "Ext gap address count MS 2" 0
+
+    liftIO $ assertEqual "ExtIndex acc MS 2" (-1) (dbAccountExtIndex acc2)
+    liftIO $ assertEqual "IntIndex acc MS 2" (-1) (dbAccountIntIndex acc2)
+    liftIO $ assertEqual "ExtGap acc MS 2"   (-1)  (dbAccountExtGap acc2)
+    liftIO $ assertEqual "IntGap acc MS 2"   (-1)  (dbAccountIntGap acc2)
+
+    cmdList "ms1" 0 5 >>= liftIO . assertEqual "check empty addrs MS 2"
+        ( object
+            [ "Addresses" .= toJSON ([] :: [Value])
+            , "Page results" .= object
+                [ "Current page" .= (1 :: Int)
+                , "Results per page" .= (5 :: Int)
+                , "Total pages" .= (1 :: Int)
+                , "Total addresses" .= (0 :: Int)
+                ]
             ]
         )
 
@@ -385,10 +512,36 @@ testNewMS = do
             ]
         )
 
+    -- Check that address-related data and gaps are correct
+    (Entity a3 acc3) <- dbGetAcc "ms1"
+
+    count [DbAddressAccount ==. a3, DbAddressInternal ==. True] >>=
+        liftIO . assertEqual "Int gap address count MS 3" 30
+
+    count [DbAddressAccount ==. a3, DbAddressInternal ==. False] >>=
+        liftIO . assertEqual "Ext gap address count MS 3" 30
+
+    liftIO $ assertEqual "ExtIndex acc MS 3" (-1) (dbAccountExtIndex acc3)
+    liftIO $ assertEqual "IntIndex acc MS 3" (-1) (dbAccountIntIndex acc3)
+    liftIO $ assertEqual "ExtGap acc MS 3"    29  (dbAccountExtGap acc3)
+    liftIO $ assertEqual "IntGap acc MS 3"    29  (dbAccountIntGap acc3)
+
+    cmdList "ms1" 0 5 >>= liftIO . assertEqual "check empty addrs MS 3"
+        ( object
+            [ "Addresses" .= toJSON ([] :: [Value])
+            , "Page results" .= object
+                [ "Current page" .= (1 :: Int)
+                , "Results per page" .= (5 :: Int)
+                , "Total pages" .= (1 :: Int)
+                , "Total addresses" .= (0 :: Int)
+                ]
+            ]
+        )
+
     -- Adding another key now should fail as the account "ms1" is complete
     runEitherT (cmdAddKeys "ms1" [pubs2 !! 2]) >>=
         liftIO . assertEqual "Invalid addKey 5" 
-            (Left "cmdAddKeys: Too many keys")
+            (Left "dbAddKeys: Account is complete. No more keys can be added")
 
 testGenAddr :: (PersistStore m, PersistUnique m, PersistQuery m) 
           => EitherT String m ()

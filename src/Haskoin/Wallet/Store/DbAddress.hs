@@ -212,7 +212,7 @@ dbGenAddrs name labels internal
                              (concat [dbAccountTree acc,tree,show i,"/"])
                              ai internal time
         ls <- liftMaybe keyErr $ f acc
-        let gapAddr = map build ls
+        let gapAddr = map build $ take (length labels) ls
         insertMany gapAddr
         resAddr <- selectList 
             [ DbAddressIndex >. fIndex acc

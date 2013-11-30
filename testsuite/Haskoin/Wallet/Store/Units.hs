@@ -777,11 +777,33 @@ testGenAddr = do
 
     let f x = (dbAddressBase58 x,dbAddressTree x,dbAddressIndex x)
     (map f <$> dbGenIntAddrs "ms1" 6) >>= liftIO . assertEqual "Internal addr 2"
-        [ ("19RtLtmuuxscgg5TXkCsSJ7bCdEzci5XTm","m/3'/1/0/",0)
-        , ("1E75f3kuDanTHeTa8nvJCxYF8MXaud4QPE","m/3'/1/1/",1)
-        , ("1NXkqUpqM23p6u44nAhoP1wVd2BdCEr4Zm","m/3'/1/2/",2)
-        , ("1AjBQfprusZGGnD4jCmexizJxKBcAw4cdc","m/3'/1/3/",3)
+        [ ("34rWmp9DmxFbqXLHvzhMGATWDfsnLF8wiR","m/3'/1/0/",0)
+        , ("3As9nWqHcWavv3MxSeZKYjMQ9SgE8zVaJ1","m/3'/1/1/",1)
+        , ("3QYVvQrjtK5w8s6uE8T8ZLeXBEe7aTtVdj","m/3'/1/2/",2)
+        , ("3GS2h9uZ3akS9GQbXDGZtWgAvzLFnjWrsS","m/3'/1/3/",3)
+        , ("3CAF8PpJirGsqTxzK2aPao2MQSGkiC3gPN","m/3'/1/4/",4)
+        , ("3Kcd2Nz1XYv25U6xUzjAycVBz9rp6r2Tf2","m/3'/1/5/",5)
         ]
+
+    -- Check account external index
+    (dbAccountExtIndex . entityVal <$> dbGetAcc "ms1") >>= 
+        liftIO . assertEqual "acc ext index 4" 3
+
+    -- Check account internal index
+    (dbAccountIntIndex . entityVal <$> dbGetAcc "ms1") >>= 
+        liftIO . assertEqual "acc int index 4" 5
+
+    -- Check account external gap
+    (dbAccountExtGap . entityVal <$> dbGetAcc "ms1") >>= 
+        liftIO . assertEqual "acc ext index 4" 33
+
+    -- Check account internal gap
+    (dbAccountIntGap . entityVal <$> dbGetAcc "ms1") >>= 
+        liftIO . assertEqual "acc int index 4" 35
+
+    -- Count addresses
+    count ([] :: [Filter (DbAddressGeneric b)]) >>= 
+        liftIO . assertEqual "Count addr 4" 259
 
     -- Rename the first multisig address label
     cmdLabel "ms1" 0 "alpha" >>= liftIO . assertEqual "label ms"
@@ -793,7 +815,7 @@ testGenAddr = do
             ]
         )
 
-    -- Rename another multisig address label
+    -- Rename the last multisig address label
     cmdLabel "ms1" 3 "beta"
 
     -- Setting a label on an invalid address should fail
@@ -811,7 +833,7 @@ testGenAddr = do
         liftIO . assertEqual "set label fail 3"
             (Left "cmdLabel: Key 100 does not exist")
 
-    -- List page 2 with 1 result per page
+    -- List page 1 with 5 result per page
     cmdList "ms1" 1 5 >>= liftIO . assertEqual "list ms"
         ( object 
             [ "Addresses" .= toJSON 
@@ -846,19 +868,21 @@ testGenAddr = do
         )
 
 {- Payments sent to:
- - 1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi : 100000 (in wallet)
- - 1AZimU5FfTQyF4GMsEKLZ32773TtPKczdY : 200000 (in wallet)
- - 19W372PnyKZUgYMj1f5qEsJS2xkSjSzXRA : 240000 (not in wallet)
- - 1NCSUHC7Dt6exeNd65PEjELdN4hk7QtN1m : 122000 (not in wallet)
- - 38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki : 150000 (in wallet)
- - 3QqkesBZx7WBSLcdy5e1PmRU1QLdYTG49Q : 400000 (in wallet)
+ - 1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi:100000 (in wallet)
+ - 1AZimU5FfTQyF4GMsEKLZ32773TtPKczdY:200000 (in wallet)
+ - 1Azso1Fz77buNc8p7sm3myVXZxqwQopMtp:240000 (not in wallet)
+ - 1L1ryKs82ucjNmGwKT9kAsxeSVX1mhJyo5:122000 (not in wallet)
+ - 38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki:150000 (in wallet)
+ - 3QqkesBZx7WBSLcdy5e1PmRU1QLdYTG49Q:400000 (in wallet)
  -}
 
+-- ID: 753c9dee0fc4742fccf62783740643edeed6280bf333499bd4a8f086887611d0
 tx1 :: String
-tx1 = "010000000100000000000000000000000000000000000000000000000000000000000000010100000000ffffffff06a0860100000000001976a914d6baf45f52b4cccc7ac1ba3a35dd739497f8e98988ac400d0300000000001976a91468e94ed1e88f7e942bf4aaa25fcf5930f517730888ac80a90300000000001976a9145d3ed34bf8654225eb8dc35c15a47d25572a62be88ac90dc0100000000001976a914e8847a85898158cd24c7914c4dd8bfd175ab9de888acf04902000000000017a9144d769c08d79eed22532e044213bef3174f05158487801a06000000000017a914fdf1e3c1a936ab1dde0d7a305d28df396949ffd08700000000"
+tx1 = "010000000100000000000000000000000000000000000000000000000000000000000000010100000000ffffffff06a0860100000000001976a914d6baf45f52b4cccc7ac1ba3a35dd739497f8e98988ac400d0300000000001976a91468e94ed1e88f7e942bf4aaa25fcf5930f517730888ac80a90300000000001976a9146dab3dec58a7ab13267c4ec8c60b516cbe7a3c9f88ac90dc0100000000001976a914d0941a8b2ce829d8692bf6af24f67c485ff9a20b88acf04902000000000017a9144d769c08d79eed22532e044213bef3174f05158487801a06000000000017a914fdf1e3c1a936ab1dde0d7a305d28df396949ffd08700000000"
 
+-- ID: 46b0e8d7759c06670e70b7dd000cc7b3d92e205ecc7f759b03be6d68049ade70
 tx2 :: String
-tx2 = "010000000100000000000000000000000000000000000000000000000000000000000000020100000000ffffffff06a0860100000000001976a914d6baf45f52b4cccc7ac1ba3a35dd739497f8e98988ac400d0300000000001976a91468e94ed1e88f7e942bf4aaa25fcf5930f517730888ac80a90300000000001976a9145d3ed34bf8654225eb8dc35c15a47d25572a62be88ac90dc0100000000001976a914e8847a85898158cd24c7914c4dd8bfd175ab9de888acf04902000000000017a9144d769c08d79eed22532e044213bef3174f05158487801a06000000000017a914fdf1e3c1a936ab1dde0d7a305d28df396949ffd08700000000"
+tx2 = "010000000100000000000000000000000000000000000000000000000000000000000000020100000000ffffffff06a0860100000000001976a914d6baf45f52b4cccc7ac1ba3a35dd739497f8e98988ac400d0300000000001976a91468e94ed1e88f7e942bf4aaa25fcf5930f517730888ac80a90300000000001976a9146dab3dec58a7ab13267c4ec8c60b516cbe7a3c9f88ac90dc0100000000001976a914d0941a8b2ce829d8692bf6af24f67c485ff9a20b88acf04902000000000017a9144d769c08d79eed22532e044213bef3174f05158487801a06000000000017a914fdf1e3c1a936ab1dde0d7a305d28df396949ffd08700000000"
 
 testImport :: ( PersistStore m
               , PersistUnique m
@@ -962,7 +986,7 @@ testImport = do
     cmdCoins "" >>= liftIO . assertEqual "Get coins 1"
         ( toJSON
             [ object
-                [ "TxID"    .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
+                [ "TxID"    .= T.pack "753c9dee0fc4742fccf62783740643edeed6280bf333499bd4a8f086887611d0"
                 , "Index"   .= (0 :: Int)
                 , "Value"   .= (100000 :: Int)
                 , "Script"  .= T.pack "76a914d6baf45f52b4cccc7ac1ba3a35dd739497f8e98988ac"
@@ -970,7 +994,7 @@ testImport = do
                 , "Address" .= T.pack "1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi"
                 ]
             , object
-                [ "TxID"    .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
+                [ "TxID"    .= T.pack "753c9dee0fc4742fccf62783740643edeed6280bf333499bd4a8f086887611d0"
                 , "Index"   .= (1 :: Int)
                 , "Value"   .= (200000 :: Int)
                 , "Script"  .= T.pack "76a91468e94ed1e88f7e942bf4aaa25fcf5930f517730888ac"
@@ -978,7 +1002,7 @@ testImport = do
                 , "Address" .= T.pack "1AZimU5FfTQyF4GMsEKLZ32773TtPKczdY"
                 ]
             , object
-                [ "TxID"    .= T.pack "984092e0ba079812fe1d05ec653f775beb5ea7a1ae9ad1d35d6c9f39ec507a40"
+                [ "TxID"    .= T.pack "46b0e8d7759c06670e70b7dd000cc7b3d92e205ecc7f759b03be6d68049ade70"
                 , "Index"   .= (0 :: Int)
                 , "Value"   .= (100000 :: Int)
                 , "Script"  .= T.pack "76a914d6baf45f52b4cccc7ac1ba3a35dd739497f8e98988ac"
@@ -986,7 +1010,7 @@ testImport = do
                 , "Address" .= T.pack "1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi"
                 ]
             , object
-                [ "TxID"    .= T.pack "984092e0ba079812fe1d05ec653f775beb5ea7a1ae9ad1d35d6c9f39ec507a40"
+                [ "TxID"    .= T.pack "46b0e8d7759c06670e70b7dd000cc7b3d92e205ecc7f759b03be6d68049ade70"
                 , "Index"   .= (1 :: Int)
                 , "Value"   .= (200000 :: Int)
                 , "Script"  .= T.pack "76a91468e94ed1e88f7e942bf4aaa25fcf5930f517730888ac"
@@ -1000,7 +1024,7 @@ testImport = do
     cmdCoins "ms1" >>= liftIO . assertEqual "Get coins 2"
         ( toJSON
             [ object
-                [ "TxID"   .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
+                [ "TxID"   .= T.pack "753c9dee0fc4742fccf62783740643edeed6280bf333499bd4a8f086887611d0"
                 , "Index"   .= (4 :: Int)
                 , "Value"   .= (150000 :: Int)
                 , "Script"  .= T.pack "a9144d769c08d79eed22532e044213bef3174f05158487"
@@ -1009,7 +1033,7 @@ testImport = do
                 , "Address" .= T.pack "38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki"
                 ]
             , object
-                [ "TxID"   .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
+                [ "TxID"   .= T.pack "753c9dee0fc4742fccf62783740643edeed6280bf333499bd4a8f086887611d0"
                 , "Index"   .= (5 :: Int)
                 , "Value"   .= (400000 :: Int)
                 , "Script"  .= T.pack "a914fdf1e3c1a936ab1dde0d7a305d28df396949ffd087"
@@ -1018,7 +1042,7 @@ testImport = do
                 , "Address" .= T.pack "3QqkesBZx7WBSLcdy5e1PmRU1QLdYTG49Q"
                 ]
             , object
-                [ "TxID"   .= T.pack "984092e0ba079812fe1d05ec653f775beb5ea7a1ae9ad1d35d6c9f39ec507a40"
+                [ "TxID"   .= T.pack "46b0e8d7759c06670e70b7dd000cc7b3d92e205ecc7f759b03be6d68049ade70"
                 , "Index"   .= (4 :: Int)
                 , "Value"   .= (150000 :: Int)
                 , "Script"  .= T.pack "a9144d769c08d79eed22532e044213bef3174f05158487"
@@ -1027,7 +1051,7 @@ testImport = do
                 , "Address" .= T.pack "38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki"
                 ]
             , object
-                [ "TxID"   .= T.pack "984092e0ba079812fe1d05ec653f775beb5ea7a1ae9ad1d35d6c9f39ec507a40"
+                [ "TxID"   .= T.pack "46b0e8d7759c06670e70b7dd000cc7b3d92e205ecc7f759b03be6d68049ade70"
                 , "Index"   .= (5 :: Int)
                 , "Value"   .= (400000 :: Int)
                 , "Script"  .= T.pack "a914fdf1e3c1a936ab1dde0d7a305d28df396949ffd087"

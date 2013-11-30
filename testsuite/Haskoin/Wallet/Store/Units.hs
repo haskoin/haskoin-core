@@ -594,9 +594,18 @@ testGenAddr = do
     (dbAccountIntIndex . entityVal <$> dbGetAcc "") >>= 
         liftIO . assertEqual "acc int index" (-1)
 
+    -- Check account external gap
+    (dbAccountExtGap . entityVal <$> dbGetAcc "") >>= 
+        liftIO . assertEqual "acc ext index" 34
+
+    -- Check account internal gap
+    (dbAccountIntGap . entityVal <$> dbGetAcc "") >>= 
+        liftIO . assertEqual "acc int index" 29
+
     -- Count all addresses in the Address table
+    -- 60*4 + 5
     count ([] :: [Filter (DbAddressGeneric b)]) >>= 
-        liftIO . assertEqual "Count addr" 5
+        liftIO . assertEqual "Count addr" 245
 
     let f x = (dbAddressBase58 x,dbAddressTree x,dbAddressIndex x)
     (map f <$> dbGenIntAddrs "" 4) >>= liftIO . assertEqual "Internal addr"
@@ -612,7 +621,20 @@ testGenAddr = do
 
     -- Check account internal index
     (dbAccountIntIndex . entityVal <$> dbGetAcc "") >>= 
-        liftIO . assertEqual "acc int index 2" 3
+        liftIO . assertEqual "acc int index" 3
+
+    -- Check account external gap
+    (dbAccountExtGap . entityVal <$> dbGetAcc "") >>= 
+        liftIO . assertEqual "acc ext index" 34
+
+    -- Check account internal gap
+    (dbAccountIntGap . entityVal <$> dbGetAcc "") >>= 
+        liftIO . assertEqual "acc int index" 33
+
+    -- Count all addresses in the Address table
+    -- 60*4 + 5
+    count ([] :: [Filter (DbAddressGeneric b)]) >>= 
+        liftIO . assertEqual "Count addr" 249
 
     -- List addresses from the ms1 account. Should be empty
     cmdList "ms1" 0 5 >>= liftIO . assertEqual "list empty addr 2"
@@ -681,7 +703,7 @@ testGenAddr = do
             ]
         )
 
-    -- Listing page > maxpage should print the last page
+    -- Listing page > maxpage should fail
     runEitherT (cmdList "" 6 1) >>= liftIO . assertEqual "list addr 2"
         (Left "cmdList: Page number too high")
 
@@ -733,9 +755,33 @@ testGenAddr = do
             ]
         )
 
+    -- Check account external index
+    (dbAccountExtIndex . entityVal <$> dbGetAcc "ms1") >>= 
+        liftIO . assertEqual "acc ext index 3" 3
+
+    -- Check account internal index
+    (dbAccountIntIndex . entityVal <$> dbGetAcc "ms1") >>= 
+        liftIO . assertEqual "acc int index 3" (-1)
+
+    -- Check account external gap
+    (dbAccountExtGap . entityVal <$> dbGetAcc "ms1") >>= 
+        liftIO . assertEqual "acc ext index 3" 33
+
+    -- Check account internal gap
+    (dbAccountIntGap . entityVal <$> dbGetAcc "ms1") >>= 
+        liftIO . assertEqual "acc int index 3" 29
+
     -- Count addresses
     count ([] :: [Filter (DbAddressGeneric b)]) >>= 
-        liftIO . assertEqual "Count addr 2" 13
+        liftIO . assertEqual "Count addr 3" 253
+
+    let f x = (dbAddressBase58 x,dbAddressTree x,dbAddressIndex x)
+    (map f <$> dbGenIntAddrs "ms1" 6) >>= liftIO . assertEqual "Internal addr 2"
+        [ ("19RtLtmuuxscgg5TXkCsSJ7bCdEzci5XTm","m/3'/1/0/",0)
+        , ("1E75f3kuDanTHeTa8nvJCxYF8MXaud4QPE","m/3'/1/1/",1)
+        , ("1NXkqUpqM23p6u44nAhoP1wVd2BdCEr4Zm","m/3'/1/2/",2)
+        , ("1AjBQfprusZGGnD4jCmexizJxKBcAw4cdc","m/3'/1/3/",3)
+        ]
 
     -- Rename the first multisig address label
     cmdLabel "ms1" 0 "alpha" >>= liftIO . assertEqual "label ms"
@@ -748,7 +794,7 @@ testGenAddr = do
         )
 
     -- Rename another multisig address label
-    cmdLabel "ms1" 2 "beta"
+    cmdLabel "ms1" 3 "beta"
 
     -- Setting a label on an invalid address should fail
     runEitherT (cmdLabel "ms1" (-1) "theta") >>= 
@@ -759,6 +805,11 @@ testGenAddr = do
     runEitherT (cmdLabel "ms1" 4 "theta") >>= 
         liftIO . assertEqual "set label fail 2"
             (Left "cmdLabel: Key 4 does not exist")
+
+    -- Setting a label on an invalid address should fail
+    runEitherT (cmdLabel "ms1" 100 "theta") >>= 
+        liftIO . assertEqual "set label fail 3"
+            (Left "cmdLabel: Key 100 does not exist")
 
     -- List page 2 with 1 result per page
     cmdList "ms1" 1 5 >>= liftIO . assertEqual "list ms"
@@ -777,12 +828,12 @@ testGenAddr = do
                , object [ "Addr"  .= T.pack "3E3qvGPki6sypXdyL6CMxBQwzFkY7iKrGW"
                         , "Key"   .= (2 :: Int)
                         , "Tree"  .= T.pack "m/3'/0/2/"
-                        , "Label" .= T.pack "beta"
+                        , "Label" .= T.pack "addr2"
                         ]
                , object [ "Addr"  .= T.pack "3QqkesBZx7WBSLcdy5e1PmRU1QLdYTG49Q"
                         , "Key"   .= (3 :: Int)
                         , "Tree"  .= T.pack "m/3'/0/3/"
-                        , "Label" .= T.pack "Two Words"
+                        , "Label" .= T.pack "beta"
                         ]
                ]
             , "Page results" .= object

@@ -207,14 +207,14 @@ dbGenAddrs name labels internal
         (Entity ai acc) <- dbGetAcc name
         let tree | internal  = "1/"
                  | otherwise = "0/"
-            build ((s,i),l) = DbAddress 
-                                s l (fromIntegral i) 
-                                (concat [dbAccountTree acc,tree,show i,"/"])
-                                ai internal time
+            build (s,i) = DbAddress 
+                             s "" (fromIntegral i)
+                             (concat [dbAccountTree acc,tree,show i,"/"])
+                             ai internal time
         ls <- liftMaybe keyErr $ f acc
-        let gapAddr = map build $ zip ls labels
+        let gapAddr = map build ls
         insertMany gapAddr
-        resAddr <- (map entityVal) <$> selectList 
+        resAddr <- selectList 
             [ DbAddressIndex >. fIndex acc
             , DbAddressAccount ==. ai
             , DbAddressInternal ==. internal
@@ -223,7 +223,7 @@ dbGenAddrs name labels internal
             , LimitTo $ length labels
             ]
         let lastGap   = dbAddressIndex $ last gapAddr
-            lastIndex = dbAddressIndex $ last resAddr
+            lastIndex = dbAddressIndex $ entityVal $ last resAddr
             newAcc | internal  = acc{ dbAccountIntGap   = lastGap
                                     , dbAccountIntIndex = lastIndex
                                     }
@@ -231,7 +231,10 @@ dbGenAddrs name labels internal
                                     , dbAccountExtIndex = lastIndex
                                     }
         replace ai newAcc
-        return resAddr
+        forM (zip resAddr labels) $ \(Entity idx addr,l) -> do
+            let newAddr = addr{ dbAddressLabel = l }
+            replace idx newAddr 
+            return newAddr
   where 
     keyErr = "cmdGenAddr: Error decoding account keys"
     f acc | isMSAcc acc = (if internal then intMulSigAddrs else extMulSigAddrs)
@@ -253,6 +256,7 @@ cmdLabel name key label = do
     (Entity ai acc) <- dbGetAcc name
     (Entity i addr) <- liftMaybe keyErr =<< 
         (getBy $ UniqueAddressKey ai key False)
+    when (dbAddressIndex addr > dbAccountExtIndex acc) $ left keyErr
     let newAddr = addr{dbAddressLabel = label}
     replace i newAddr
     return $ yamlAddr newAddr

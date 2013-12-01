@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeFamilies      #-}
 module Haskoin.Wallet.Store.DbTx
 ( cmdImportTx 
+, dbImportTx
 , cmdListTx
 , cmdSend
 , cmdSendMany
@@ -57,35 +58,60 @@ txidHex = bsToHex . BS.reverse . encode'
 cmdImportTx :: ( PersistStore m
                , PersistQuery m 
                , PersistUnique m
-               , PersistMonadBackend m ~ SqlBackend
+               , PersistMonadBackend m ~ b
+               , b ~ SqlBackend
                )
             => Tx -> EitherT String m Value
 cmdImportTx tx = do
-    time  <- liftIO $ getCurrentTime
+    accTx <- dbImportTx tx
+    return $ toJSON $ map yamlTx $ sortBy f accTx
+  where
+    f a b = (dbTxCreated a) `compare` (dbTxCreated b)
+
+dbImportTx :: ( PersistStore m
+              , PersistQuery m 
+              , PersistUnique m
+              , PersistMonadBackend m ~ b
+              , b ~ SqlBackend
+              )
+           => Tx -> EitherT String m [DbTxGeneric b]
+dbImportTx tx = do
     inActions  <- mapRights (dbImportIn $ txid tx) $ txIn tx
     outActions <- mapRights (dbImportOut $ txid tx) $ zip (txOut tx) [0..]
     let inMap  = foldl fin M.empty inActions
         accMap = foldl fout inMap outActions
-    accTx <- mapM (build time) $ M.toList accMap
+    accTx <- mapM build $ M.toList accMap
+    -- insert account transactions into database, rewriting if they exist
     forM accTx $ \tx -> do
         prev <- getBy $ UniqueTx (dbTxTxid tx) (dbTxAccount tx)
         if isNothing prev 
             then insert_ tx 
             else replace (entityKey $ fromJust prev) tx
-    return $ toJSON $ map yamlTx accTx
+    -- insertUnique to ignore errors when duplicates detected (normal)
+    time <- liftIO $ getCurrentTime
+    insertUnique $ DbTxBlob (txidHex $ txid tx) (encode' tx) time
+    -- Re-import transactions spending which are spending this one
+    let txids = nub $ catMaybes $ map (\(_,_,_,x) -> x) outActions
+    txBlobs <- mapM dbGetTxBlob txids
+    let f = liftEither . decodeToEither . dbTxBlobValue . entityVal
+    reImported <- forM txBlobs $ (dbImportTx =<<) . f
+    return $ accTx ++ (concat reImported)
   where 
     fin acc (ai,vi,o) = flip (M.insert ai) acc $ case M.lookup ai acc of
         Just (vi',_,o',_) -> (vi+vi',0,o || o',[])
         _                 -> (vi,0,o,[])
-    fout acc (ai,vo,addr) = flip (M.insert ai) acc $ case M.lookup ai acc of
+    fout acc (ai,vo,addr,_) = flip (M.insert ai) acc $ case M.lookup ai acc of
         Just (vi,vo',o,xs) -> (vi,vo+vo',o,xs ++ [addr])
         _                  -> (0,vo,False,[addr])
     allRecip  = rights $ map toAddr $ txOut tx
     toAddr = (addrToBase58 <$>) . scriptRecipient . scriptOutput
-    build time (ai,(vi,vo,orphan,xs)) = do
-        let tot   = vo - vi
-            recip | null xs = allRecip
-                  | tot < 0 = allRecip \\ xs -- Remove the change
+    build (ai,(vi,vo,orphan,xs)) = do
+        time  <- liftIO $ getCurrentTime
+        let tot   | orphan    = 0
+                  | otherwise = vo - vi
+            recip | null xs   = allRecip
+                  | orphan    = allRecip \\ xs -- Most likely an outgoing tx
+                  | tot < 0   = allRecip \\ xs -- Remove the change
                   | otherwise = xs
         return $ DbTx (txidHex $ txid tx) recip tot ai orphan time
 
@@ -120,14 +146,18 @@ dbImportOut :: ( PersistStore m
                , PersistMonadBackend m ~ SqlBackend
                )
             => Hash256 -> (TxOut,Int) 
-            -> EitherT String m (DbAccountId,Int,String)
+            -> EitherT String m (DbAccountId,Int,String,Maybe String)
 dbImportOut txid ((TxOut v s), index) = do
     a <- liftEither $ scriptRecipient s
     (Entity _ addr) <- dbGetAddr $ addrToBase58 a
     coinM <- getBy $ CoinOutPoint (txidHex txid) index
-    case coinM of
-        Just (Entity ci coin) -> 
-            when (dbCoinOrphan coin) $ dbProcessOrphan v s ci coin
+    toImport <- case coinM of
+        Just (Entity ci coin) -> do
+            replace ci coin{ dbCoinOrphan = False
+                           , dbCoinValue  = (fromIntegral v)
+                           , dbCoinScript = (bsToHex $ encodeScriptOps s)
+                           }
+            return $ dbCoinSpent coin
         Nothing -> do
             time <- liftIO $ getCurrentTime
             rdm  <- dbGetRedeem addr
@@ -138,41 +168,8 @@ dbImportOut txid ((TxOut v s), index) = do
                              (dbAddressAccount addr) 
                              False time
             dbAdjustGap addr -- Generate addresses if addr is within the gap
-    return (dbAddressAccount addr, fromIntegral v, addrToBase58 a)
-
-dbProcessOrphan :: ( PersistStore m
-                   , PersistQuery m 
-                   , PersistUnique m
-                   , PersistMonadBackend m ~ SqlBackend
-                   )
-                => Word64 -> Script
-                -> DbCoinId -> DbCoinGeneric SqlBackend
-                -> EitherT String m ()
-dbProcessOrphan v s ci coin = do
-    replace ci coin{ dbCoinOrphan = False
-                   , dbCoinValue  = (fromIntegral v)
-                   , dbCoinScript = (bsToHex $ encodeScriptOps s)
-                   }
-    c <- count [ DbCoinSpent   ==. dbCoinSpent coin
-               , DbCoinAccount ==. dbCoinAccount coin
-               , DbCoinOrphan  ==. True
-               ]
-    when (c == 0) $ do
-        fundCoins <- selectList
-            [ DbCoinSpent   ==. dbCoinSpent coin
-            , DbCoinAccount ==. dbCoinAccount coin
-            , DbCoinOrphan  ==. False -- Will always be false
-            ] []
-        let keyTx = UniqueTx (fromJust $ dbCoinSpent coin) (dbCoinAccount coin)
-        (Entity ti tx) <- liftMaybe txErr =<< getBy keyTx
-        time <- liftIO getCurrentTime
-        update ti 
-            [ DbTxValue   =. (sum $ map (dbCoinValue . entityVal) fundCoins)
-            , DbTxOrphan  =. False
-            , DbTxCreated =. time
-            ]
-  where 
-    txErr = "dbImportOut: Orphan coin transaction not found"
+            return Nothing
+    return (dbAddressAccount addr, fromIntegral v, addrToBase58 a, toImport)
 
 dbGetRedeem :: ( PersistStore m
                , PersistQuery m 
@@ -207,7 +204,6 @@ cmdListTx :: ( PersistQuery m
 cmdListTx name = do
     (Entity ai acc) <- dbGetAcc name
     txs <- selectList [ DbTxAccount ==. ai
-                      , DbTxOrphan ==. False
                       ] 
                       [ Asc DbTxCreated ]
     return $ toJSON $ map (yamlTx . entityVal) txs

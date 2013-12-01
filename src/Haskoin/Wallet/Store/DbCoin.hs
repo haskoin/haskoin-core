@@ -111,7 +111,7 @@ dbCoins ai = do
         [ DbCoinAccount ==. ai
         , DbCoinSpent   ==. Nothing
         , DbCoinOrphan  ==. False
-        ] []
+        ] [Asc DbCoinCreated]
     return $ map entityVal coins
 
 cmdCoins :: ( PersistQuery m

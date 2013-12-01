@@ -22,6 +22,7 @@ module Haskoin.Wallet.Store.Util
 , EntityField(..)
 , AccountName
 , dbGetWallet
+, dbGetTxBlob
 , liftEither
 , liftMaybe
 , migrateAll
@@ -141,6 +142,15 @@ dbGetWallet :: ( PersistUnique m
 dbGetWallet name = liftMaybe walletErr =<< (getBy $ UniqueWalletName name)
   where 
     walletErr = unwords ["dbGetWallet: Invalid wallet", name]
+
+dbGetTxBlob :: ( PersistUnique m 
+               , PersistMonadBackend m ~ b
+               )
+            => String 
+            -> EitherT String m (Entity (DbTxBlobGeneric b))
+dbGetTxBlob txid = liftMaybe txErr =<< (getBy $ UniqueTxBlob txid)
+  where
+    txErr = unwords ["dbGetTxBlob: Invalid txid",txid]
 
 instance PersistStore m => PersistStore (EitherT e m) where
     type PersistMonadBackend (EitherT e m) = PersistMonadBackend m

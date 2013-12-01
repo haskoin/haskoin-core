@@ -18,6 +18,7 @@ module Haskoin.Wallet.Store
 , EntityField(..)
 , AccountName
 , dbGetWallet
+, dbGetTxBlob
 , liftEither
 , liftMaybe
 , migrateAll
@@ -57,6 +58,7 @@ module Haskoin.Wallet.Store
 
 -- Tx functions
 , cmdImportTx 
+, dbImportTx
 , cmdListTx
 , cmdSend
 , cmdSendMany

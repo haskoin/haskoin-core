@@ -2059,5 +2059,77 @@ testOrphan = do
     cmdBalance "acc2" >>= liftIO . assertEqual "Check balance txA 2" 
         (toJSON (30000 :: Int))
 
-    return ()
+    -- Re-Importing a transaction in the middle of the chain
+    cmdImportTx (decode' $ fromJust $ hexToBS txC) >>= 
+        liftIO . assertEqual "import txC BIS"
+            ( toJSON
+                [ object [ "Recipients" .= toJSON
+                             [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                             ]
+                         , "Value"      .= (120000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                             , T.pack "13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n"
+                             ]
+                         , "Value"      .= (-170000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
+                             ]
+                         , "Value"      .= (-120000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                ]
+            )
+
+    -- Verify that the transaction orders haven't changed
+    ((map g) <$> selectList [DbTxAccount ==. ai1] [Asc DbTxCreated]) >>=
+        liftIO . assertEqual "Last order verification"
+            [ ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+              , [ "1ChqhDvLVx5bjRHbdUweCsd4mgwD4fvdGL"
+                , "1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw"
+                , "17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG"
+                ]
+              , 600000
+              , False
+              )
+            , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
+                , "1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86"
+                ]
+              , -360000
+              , False
+              )
+            , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
+              , ["14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"]
+              , 120000
+              , False
+              )
+            , ( "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
+              , ["13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"]
+              , -120000
+              , False
+              )
+            ]
+
+    -- Verify that the transaction order haven't changed
+    ((map g) <$> selectList [DbTxAccount ==. ai2] [Asc DbTxCreated]) >>=
+        liftIO . assertEqual "Last order verification 2"
+            [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
+              , 200000, False
+              )
+            , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
+              , [ "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                , "13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n"
+                ]
+              , -170000, False
+              )
+            ]
+
+
+
 

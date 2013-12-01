@@ -1216,9 +1216,9 @@ testImport = do
 
 {- TxID: bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30
  - Payments sent to:
- - 1ChqhDvLVx5bjRHbdUweCsd4mgwD4fvdGL : 100000
- - 1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw : 200000
- - 17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG : 300000
+ - 1ChqhDvLVx5bjRHbdUweCsd4mgwD4fvdGL : 100000 (acc1)
+ - 1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw : 200000 (acc1)
+ - 17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG : 300000 (acc1)
  -}
 
 txA :: String
@@ -1502,18 +1502,562 @@ testOrphan = do
     cmdBalance "acc2" >>= liftIO . assertEqual "Check balance txC 2" 
         (toJSON (30000 :: Int))
 
-   -- cmdImportTx (decode' $ fromJust $ hexToBS txB)
-   -- cmdImportTx (decode' $ fromJust $ hexToBS txA)
-    return ()
+    -- Importing txB
+    cmdImportTx (decode' $ fromJust $ hexToBS txB) >>= 
+        liftIO . assertEqual "import txB 1"
+            ( toJSON
+                [ object [ "Recipients" .= toJSON
+                             [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
+                             , T.pack "1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86"
+                             ]
+                         , "Value"      .= (0 :: Int)
+                         , "Orphan"     .= True
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
+                         , "Value"      .= (200000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                             ]
+                         , "Value"      .= (120000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                             , T.pack "13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n"
+                             ]
+                         , "Value"      .= (-170000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
+                             ]
+                         , "Value"      .= (-120000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                ]
+            )
 
-  --  cmdSendMany "acc1" 
-  --      [ ("14JcRDidCbYFBwWjP9PGJL1MRKCzUWCmaS",100000) -- acc1
-  --      , ("16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M",200000) -- acc2
-  --      , ("1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86",150000) -- outside
-  --      ] 10000
-  --  cmdSendMany "acc2" 
-  --      [ ("14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb",120000) --acc1
-  --      , ("13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n", 40000) --outside
-  --      ] 10000
-  --  cmdSend "acc1" "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf" 110000 10000 --outside
+    -- Importing txB again. Import is idempotent so this should work fine
+    cmdImportTx (decode' $ fromJust $ hexToBS txB) >>= 
+        liftIO . assertEqual "import txB 1"
+            ( toJSON
+                [ object [ "Recipients" .= toJSON
+                             [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
+                             , T.pack "1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86"
+                             ]
+                         , "Value"      .= (0 :: Int)
+                         , "Orphan"     .= True
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
+                         , "Value"      .= (200000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                             ]
+                         , "Value"      .= (120000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                             , T.pack "13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n"
+                             ]
+                         , "Value"      .= (-170000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
+                             ]
+                         , "Value"      .= (-120000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                ]
+            )
+
+    -- List coins of account 1 after importing txB
+    ((map f) <$> selectList [DbCoinAccount ==. ai1] [Asc DbCoinCreated]) >>= 
+        liftIO . assertEqual "Check import txB coins"
+            [ ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+              , 1, 0
+              , "", Nothing 
+              , "1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw"
+              , Just "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , True
+              )
+            , ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+              , 2, 0
+              , "", Nothing 
+              , "17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG"
+              , Just "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , True
+              )
+            , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , 0, 100000
+              , "76a914243d03889d49470ee721d44596fd146440e1167c88ac", Nothing 
+              , "14JcRDidCbYFBwWjP9PGJL1MRKCzUWCmaS"
+              , Nothing
+              , False
+              )
+            , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , 3, 40000
+              , "76a914740eb168ae243882a73f5467b9024431443ef12988ac", Nothing 
+              , "1Baez98Lapiu7mQLfXuUCjBreEAwFrWNd2"
+              , Nothing
+              , False
+              )
+            , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
+              , 0, 120000
+              , "76a91424cba659aad4563de9199f3fe273bac07f170eb088ac", Nothing 
+              , "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+              , Just "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
+              , False
+              )
+            ]
+
+    -- List of transactions for account 1
+    ((map g) <$> selectList [DbTxAccount ==. ai1] [Asc DbTxCreated]) >>=
+        liftIO . assertEqual "Check transactions import txB"
+            [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
+                , "1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86"
+                ]
+              , 0
+              , True
+              )
+            , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
+              , ["14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"]
+              , 120000
+              , False
+              )
+            , ( "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
+              , ["13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"]
+              , -120000
+              , False
+              )
+            ]
+
+    -- List coins of account 2. The first coin is not orphaned anymore
+    ((map f) <$> selectList [DbCoinAccount ==. ai2] [Asc DbCoinCreated]) >>= 
+        liftIO . assertEqual "Check coins txB 2"
+            [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , 1, 200000
+              , "76a9143f53fba59a1c17f17cf3c4b5cfcf15fa0087f1c188ac", Nothing 
+              , "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
+              , Just "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953" 
+              , False
+              )
+            , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
+              , 2, 30000
+              , "76a9142030bc3fec2b3783acd9e83f6e24d57568be69a988ac", Nothing 
+              , "13wD1L9PvEgBytP5X6ykiuhB8gRP58CB5J"
+              , Nothing , False
+              )
+            ]
+
+    -- Check transactions of account 2
+    ((map g) <$> selectList [DbTxAccount ==. ai2] [Asc DbTxCreated]) >>=
+        liftIO . assertEqual "Check transactions import txB 2"
+            [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
+              , 200000, False
+              )
+            , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
+              , [ "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                , "13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n"
+                ]
+              , -170000, False
+              )
+            ]
+
+    -- list cmdCoins of acc 1
+    cmdCoins "acc1" >>= liftIO . assertEqual "Check cmdCoins txB 1" 
+        (toJSON 
+            [ object [ "TxID"    .= T.pack "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+                     , "Index"   .= (0 :: Int)
+                     , "Value"   .= (100000 :: Int)
+                     , "Script"  .= T.pack "76a914243d03889d49470ee721d44596fd146440e1167c88ac"
+                     , "Orphan"  .= False 
+                     , "Address" .= T.pack "14JcRDidCbYFBwWjP9PGJL1MRKCzUWCmaS"
+                     ] 
+            , object [ "TxID"    .= T.pack "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+                     , "Index"   .= (3 :: Int)
+                     , "Value"   .= (40000 :: Int)
+                     , "Script"  .= T.pack "76a914740eb168ae243882a73f5467b9024431443ef12988ac"
+                     , "Orphan"  .= False 
+                     , "Address" .= T.pack "1Baez98Lapiu7mQLfXuUCjBreEAwFrWNd2"
+                     ] 
+            ]
+        )
+
+    -- list cmdCoins of acc 2
+    cmdCoins "acc2" >>= liftIO . assertEqual "Check cmdCoins txB 2" 
+        (toJSON 
+            [ object [ "TxID"    .= T.pack "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
+                     , "Index"   .= (2 :: Int)
+                     , "Value"   .= (30000 :: Int)
+                     , "Script"  .= T.pack "76a9142030bc3fec2b3783acd9e83f6e24d57568be69a988ac"
+                     , "Orphan"  .= False 
+                     , "Address" .= T.pack "13wD1L9PvEgBytP5X6ykiuhB8gRP58CB5J"
+                     ] 
+            ]
+        )
+
+    -- list cmdListTx of acc1
+    cmdListTx "acc1" >>= liftIO . assertEqual "Check listTx txB 1"
+        ( toJSON
+            [ object [ "Recipients" .= toJSON
+                         [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
+                         , T.pack "1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86"
+                         ]
+                     , "Value"      .= (0 :: Int)
+                     , "Orphan"     .= True
+                     ]
+            , object [ "Recipients" .= toJSON
+                         [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                         ]
+                     , "Value"      .= (120000 :: Int)
+                     , "Orphan"     .= False
+                     ]
+            , object [ "Recipients" .= toJSON
+                         [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
+                         ]
+                     , "Value"      .= (-120000 :: Int)
+                     , "Orphan"     .= False
+                     ]
+            ]
+        )
+
+    -- list cmdListTx of acc2
+    cmdListTx "acc2" >>= liftIO . assertEqual "Check listTx txB 2"
+        ( toJSON
+            [ object [ "Recipients" .= toJSON
+                         [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
+                     , "Value"      .= (200000 :: Int)
+                     , "Orphan"     .= False
+                     ]
+            , object [ "Recipients" .= toJSON
+                         [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                         , T.pack "13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n"
+                         ]
+                     , "Value"      .= (-170000 :: Int)
+                     , "Orphan"     .= False
+                     ]
+            ]
+        )
+
+    -- Check balance of acc1
+    cmdBalance "acc1" >>= liftIO . assertEqual "Check balance txB 1" 
+        (toJSON (140000 :: Int))
+
+    -- Balance of acc2 
+    cmdBalance "acc2" >>= liftIO . assertEqual "Check balance txB 2" 
+        (toJSON (30000 :: Int))
+
+
+    -- Importing txA
+    cmdImportTx (decode' $ fromJust $ hexToBS txA) >>= 
+        liftIO . assertEqual "import txA 1"
+            ( toJSON
+                [ object [ "Recipients" .= toJSON
+                             [ T.pack "1ChqhDvLVx5bjRHbdUweCsd4mgwD4fvdGL"
+                             , T.pack "1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw"
+                             , T.pack "17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG"
+                             ]
+                         , "Value"      .= (600000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
+                             , T.pack "1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86"
+                             ]
+                         , "Value"      .= (-360000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
+                         , "Value"      .= (200000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                             ]
+                         , "Value"      .= (120000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                             , T.pack "13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n"
+                             ]
+                         , "Value"      .= (-170000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
+                             ]
+                         , "Value"      .= (-120000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                ]
+            )
+
+    -- Importing txA a second time
+    cmdImportTx (decode' $ fromJust $ hexToBS txA) >>= 
+        liftIO . assertEqual "import txA 2"
+            ( toJSON
+                [ object [ "Recipients" .= toJSON
+                             [ T.pack "1ChqhDvLVx5bjRHbdUweCsd4mgwD4fvdGL"
+                             , T.pack "1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw"
+                             , T.pack "17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG"
+                             ]
+                         , "Value"      .= (600000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
+                             , T.pack "1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86"
+                             ]
+                         , "Value"      .= (-360000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
+                         , "Value"      .= (200000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                             ]
+                         , "Value"      .= (120000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                             , T.pack "13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n"
+                             ]
+                         , "Value"      .= (-170000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                , object [ "Recipients" .= toJSON
+                             [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
+                             ]
+                         , "Value"      .= (-120000 :: Int)
+                         , "Orphan"     .= False
+                         ]
+                ]
+            )
+
+    -- List coins of account 1 after importing txA
+    ((map f) <$> selectList [DbCoinAccount ==. ai1] [Asc DbCoinCreated]) >>= 
+        liftIO . assertEqual "Check import txB coins"
+            [ ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+              , 0, 100000
+              , "76a9148062ab5c3fdf5f8f0d41fccacbb3ea8058b911ae88ac", Nothing 
+              , "1ChqhDvLVx5bjRHbdUweCsd4mgwD4fvdGL"
+              , Nothing
+              , False
+              )
+            , ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+              , 1, 200000
+              , "76a9148727e4552058a555d0ce269d8cf8c850785666f688ac", Nothing 
+              , "1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw"
+              , Just "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , False
+              )
+            , ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+              , 2, 300000
+              , "76a9144c769509bb3e22c2275cd025fcb55ebc5dc1e39f88ac", Nothing 
+              , "17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG"
+              , Just "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , False
+              )
+            , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , 0, 100000
+              , "76a914243d03889d49470ee721d44596fd146440e1167c88ac", Nothing 
+              , "14JcRDidCbYFBwWjP9PGJL1MRKCzUWCmaS"
+              , Nothing
+              , False
+              )
+            , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , 3, 40000
+              , "76a914740eb168ae243882a73f5467b9024431443ef12988ac", Nothing 
+              , "1Baez98Lapiu7mQLfXuUCjBreEAwFrWNd2"
+              , Nothing
+              , False
+              )
+            , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
+              , 0, 120000
+              , "76a91424cba659aad4563de9199f3fe273bac07f170eb088ac", Nothing 
+              , "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+              , Just "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
+              , False
+              )
+            ]
+
+    -- List of transactions for account 1
+    ((map g) <$> selectList [DbTxAccount ==. ai1] [Asc DbTxCreated]) >>=
+        liftIO . assertEqual "Check transactions import txA"
+            [ ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+              , [ "1ChqhDvLVx5bjRHbdUweCsd4mgwD4fvdGL"
+                , "1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw"
+                , "17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG"
+                ]
+              , 600000
+              , False
+              )
+            , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
+                , "1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86"
+                ]
+              , -360000
+              , False
+              )
+            , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
+              , ["14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"]
+              , 120000
+              , False
+              )
+            , ( "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
+              , ["13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"]
+              , -120000
+              , False
+              )
+            ]
+
+    -- List coins of account 2
+    ((map f) <$> selectList [DbCoinAccount ==. ai2] [Asc DbCoinCreated]) >>= 
+        liftIO . assertEqual "Check coins txA 2"
+            [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , 1, 200000
+              , "76a9143f53fba59a1c17f17cf3c4b5cfcf15fa0087f1c188ac", Nothing 
+              , "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
+              , Just "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953" 
+              , False
+              )
+            , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
+              , 2, 30000
+              , "76a9142030bc3fec2b3783acd9e83f6e24d57568be69a988ac", Nothing 
+              , "13wD1L9PvEgBytP5X6ykiuhB8gRP58CB5J"
+              , Nothing , False
+              )
+            ]
+
+    -- Check transactions of account 2
+    ((map g) <$> selectList [DbTxAccount ==. ai2] [Asc DbTxCreated]) >>=
+        liftIO . assertEqual "Check transactions import txA 2"
+            [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
+              , 200000, False
+              )
+            , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
+              , [ "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                , "13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n"
+                ]
+              , -170000, False
+              )
+            ]
+
+    -- list cmdCoins of acc 1
+    cmdCoins "acc1" >>= liftIO . assertEqual "Check cmdCoins txA 1" 
+        (toJSON 
+            [ object [ "TxID"    .= T.pack "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+                     , "Index"   .= (0 :: Int)
+                     , "Value"   .= (100000 :: Int)
+                     , "Script"  .= T.pack "76a9148062ab5c3fdf5f8f0d41fccacbb3ea8058b911ae88ac"
+                     , "Orphan"  .= False 
+                     , "Address" .= T.pack "1ChqhDvLVx5bjRHbdUweCsd4mgwD4fvdGL"
+                     ] 
+            , object [ "TxID"    .= T.pack "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+                     , "Index"   .= (0 :: Int)
+                     , "Value"   .= (100000 :: Int)
+                     , "Script"  .= T.pack "76a914243d03889d49470ee721d44596fd146440e1167c88ac"
+                     , "Orphan"  .= False 
+                     , "Address" .= T.pack "14JcRDidCbYFBwWjP9PGJL1MRKCzUWCmaS"
+                     ] 
+            , object [ "TxID"    .= T.pack "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+                     , "Index"   .= (3 :: Int)
+                     , "Value"   .= (40000 :: Int)
+                     , "Script"  .= T.pack "76a914740eb168ae243882a73f5467b9024431443ef12988ac"
+                     , "Orphan"  .= False 
+                     , "Address" .= T.pack "1Baez98Lapiu7mQLfXuUCjBreEAwFrWNd2"
+                     ] 
+            ]
+        )
+
+    -- list cmdCoins of acc 2
+    cmdCoins "acc2" >>= liftIO . assertEqual "Check cmdCoins txA 2" 
+        (toJSON 
+            [ object [ "TxID"    .= T.pack "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
+                     , "Index"   .= (2 :: Int)
+                     , "Value"   .= (30000 :: Int)
+                     , "Script"  .= T.pack "76a9142030bc3fec2b3783acd9e83f6e24d57568be69a988ac"
+                     , "Orphan"  .= False 
+                     , "Address" .= T.pack "13wD1L9PvEgBytP5X6ykiuhB8gRP58CB5J"
+                     ] 
+            ]
+        )
+
+    -- list cmdListTx of acc1
+    cmdListTx "acc1" >>= liftIO . assertEqual "Check listTx txA 1"
+        ( toJSON
+            [ object [ "Recipients" .= toJSON
+                         [ T.pack "1ChqhDvLVx5bjRHbdUweCsd4mgwD4fvdGL"
+                         , T.pack "1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw"
+                         , T.pack "17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG"
+                         ]
+                     , "Value"      .= (600000 :: Int)
+                     , "Orphan"     .= False
+                     ]
+            , object [ "Recipients" .= toJSON
+                         [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
+                         , T.pack "1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86"
+                         ]
+                     , "Value"      .= (-360000 :: Int)
+                     , "Orphan"     .= False
+                     ]
+            , object [ "Recipients" .= toJSON
+                         [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                         ]
+                     , "Value"      .= (120000 :: Int)
+                     , "Orphan"     .= False
+                     ]
+            , object [ "Recipients" .= toJSON
+                         [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
+                         ]
+                     , "Value"      .= (-120000 :: Int)
+                     , "Orphan"     .= False
+                     ]
+            ]
+        )
+
+    -- list cmdListTx of acc2
+    cmdListTx "acc2" >>= liftIO . assertEqual "Check listTx txA 2"
+        ( toJSON
+            [ object [ "Recipients" .= toJSON
+                         [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
+                     , "Value"      .= (200000 :: Int)
+                     , "Orphan"     .= False
+                     ]
+            , object [ "Recipients" .= toJSON
+                         [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+                         , T.pack "13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n"
+                         ]
+                     , "Value"      .= (-170000 :: Int)
+                     , "Orphan"     .= False
+                     ]
+            ]
+        )
+
+    -- Check balance of acc1
+    cmdBalance "acc1" >>= liftIO . assertEqual "Check balance txA 1" 
+        (toJSON (240000 :: Int))
+
+    -- Balance of acc2 
+    cmdBalance "acc2" >>= liftIO . assertEqual "Check balance txA 2" 
+        (toJSON (30000 :: Int))
+
+    return ()
 

@@ -150,16 +150,17 @@ dbImportOut :: ( PersistStore m
 dbImportOut txid ((TxOut v s), index) = do
     a <- liftEither $ scriptRecipient s
     (Entity _ addr) <- dbGetAddr $ addrToBase58 a
+    time <- liftIO $ getCurrentTime
     coinM <- getBy $ CoinOutPoint (txidHex txid) index
     toImport <- case coinM of
         Just (Entity ci coin) -> do
-            replace ci coin{ dbCoinOrphan = False
-                           , dbCoinValue  = (fromIntegral v)
-                           , dbCoinScript = (bsToHex $ encodeScriptOps s)
+            replace ci coin{ dbCoinOrphan  = False
+                           , dbCoinValue   = (fromIntegral v)
+                           , dbCoinScript  = (bsToHex $ encodeScriptOps s)
+                           , dbCoinCreated = time
                            }
             return $ dbCoinSpent coin
         Nothing -> do
-            time <- liftIO $ getCurrentTime
             rdm  <- dbGetRedeem addr
             insert_ $ DbCoin (txidHex txid) index 
                              (fromIntegral v)

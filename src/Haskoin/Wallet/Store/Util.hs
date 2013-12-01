@@ -106,6 +106,7 @@ DbCoin json
     value Int
     script String
     rdmScript String Maybe
+    address String 
     spent String Maybe
     account DbAccountId
     orphan Bool

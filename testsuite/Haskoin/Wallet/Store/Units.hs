@@ -15,6 +15,7 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Either
 import Control.Exception (tryJust)
 
+import Data.Time
 import Data.Maybe
 import Data.Yaml as YAML
 import qualified Data.Text as T
@@ -596,11 +597,11 @@ testGenAddr = do
 
     -- Check account external gap
     (dbAccountExtGap . entityVal <$> dbGetAcc "") >>= 
-        liftIO . assertEqual "acc ext index" 34
+        liftIO . assertEqual "acc ext gap" 34
 
     -- Check account internal gap
     (dbAccountIntGap . entityVal <$> dbGetAcc "") >>= 
-        liftIO . assertEqual "acc int index" 29
+        liftIO . assertEqual "acc int gap" 29
 
     -- Count all addresses in the Address table
     -- 60*4 + 5
@@ -625,11 +626,11 @@ testGenAddr = do
 
     -- Check account external gap
     (dbAccountExtGap . entityVal <$> dbGetAcc "") >>= 
-        liftIO . assertEqual "acc ext index" 34
+        liftIO . assertEqual "acc ext gap" 34
 
     -- Check account internal gap
     (dbAccountIntGap . entityVal <$> dbGetAcc "") >>= 
-        liftIO . assertEqual "acc int index" 33
+        liftIO . assertEqual "acc int gap" 33
 
     -- Count all addresses in the Address table
     -- 60*4 + 5
@@ -765,11 +766,11 @@ testGenAddr = do
 
     -- Check account external gap
     (dbAccountExtGap . entityVal <$> dbGetAcc "ms1") >>= 
-        liftIO . assertEqual "acc ext index 3" 33
+        liftIO . assertEqual "acc ext gap 3" 33
 
     -- Check account internal gap
     (dbAccountIntGap . entityVal <$> dbGetAcc "ms1") >>= 
-        liftIO . assertEqual "acc int index 3" 29
+        liftIO . assertEqual "acc int gap 3" 29
 
     -- Count addresses
     count ([] :: [Filter (DbAddressGeneric b)]) >>= 
@@ -795,11 +796,11 @@ testGenAddr = do
 
     -- Check account external gap
     (dbAccountExtGap . entityVal <$> dbGetAcc "ms1") >>= 
-        liftIO . assertEqual "acc ext index 4" 33
+        liftIO . assertEqual "acc ext gap 4" 33
 
     -- Check account internal gap
     (dbAccountIntGap . entityVal <$> dbGetAcc "ms1") >>= 
-        liftIO . assertEqual "acc int index 4" 35
+        liftIO . assertEqual "acc int gap 4" 35
 
     -- Count addresses
     count ([] :: [Filter (DbAddressGeneric b)]) >>= 
@@ -1066,25 +1067,59 @@ testImport = do
     -- Output = 340000 + 50000 change = 390000
     -- Fee = 10000
 
-    let txRes = "0100000002407a50ec399f6c5dd3d19aaea1a75eeb5b773f65ec051dfe129807bae0924098010000006a47304402207034db48e459406e68078d48905b8ec7517b51225b511907ff1d7432cf9b4ab9022059db7a313f266673f4e5cfbaed8c374c2ea55bee7df315369fd5e8cd340c4f7f01210250f4e42bb94ed8b27c6c8b728c0bd02828af1d4ebf8e3f0a6e7da3f53369c104ffffffff866db4a33c42e6c4a7c3bd162cc5b47844a7fc374ad567a0aaa3e336abf88840010000006a47304402203683c2a55dc11adbbc2f2a53a460f69719aa54ff557ccc5dbb1425a65e33af4302207446e598a8475380805afa1f6f5bf2ef01977e0dd48f83f1c5866dddb21ea84c01210250f4e42bb94ed8b27c6c8b728c0bd02828af1d4ebf8e3f0a6e7da3f53369c104ffffffff04c0d401000000000017a9144d769c08d79eed22532e044213bef3174f0515848780380100000000001976a914980b9c708958bbe4cc05d0b302d4f12625a5d88c88ace0220200000000001976a9140f05c6d0dadc442028258856a1f3d1e6d3e166ff88ac50c30000000000001976a914bb498fb0f0d0639193660b40a9a91e1b3eb60bab88ac00000000"
+    let txRes = "010000000270de9a04686dbe039b757fcc5e202ed9b3c70c00ddb7700e67069c75d7e8b046010000006b483045022100f21c2704ac49f4f687e82d5c4e353173445a90b357072048db2e263f0be674cd022057b07fb08f36b2ded3541cade6febc1c9a6151a49f4dbe21ff85703a6488e58701210250f4e42bb94ed8b27c6c8b728c0bd02828af1d4ebf8e3f0a6e7da3f53369c104ffffffffd011768886f0a8d49b4933f30b28d6eeed4306748327f6cc2f74c40fee9d3c75010000006b4830450221008140562ade35d7f3f7ea413620f1c1af118e45c27bd4d22309f67a06d9de1edc022073bc7f70feb2ab3f90c0493e45d27498998f44f85ba7344ee5c832c5161581ad01210250f4e42bb94ed8b27c6c8b728c0bd02828af1d4ebf8e3f0a6e7da3f53369c104ffffffff04c0d401000000000017a9144d769c08d79eed22532e044213bef3174f0515848780380100000000001976a914980b9c708958bbe4cc05d0b302d4f12625a5d88c88ace0220200000000001976a9147f77d7a91f8e53a387530c58139290211579dd2b88ac50c30000000000001976a914bb498fb0f0d0639193660b40a9a91e1b3eb60bab88ac00000000"
 
     cmdSendMany "" 
         [ ("38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki",120000) -- In wallet
         , ("1Erwcuqn1dHm8r6fNxogGmCHYuNfwKNwer", 80000) -- In wallet
-        , ("12NS4FB1S76bkRrLUxHWSjzZaqEdUxYreJ",140000) -- Not in wallet
+        , ("1CczPAHXrwyiCeJfx5Bifaoo4NBQr3TPpJ",140000) -- Not in wallet
         ] 10000 >>= liftIO . assertEqual "sendMany tx"
             (object 
-                [ "Payment Tx" .= T.pack txRes
+               [ "Payment Tx" .= T.pack txRes
                , "Complete" .= True
                ]
             )
+
+    -- Check that the internal change address was correctly generated
+    (dbAddressIndex . entityVal) <$> 
+        (dbGetAddr "1J5HV12wGbPj5SUryku2zFoaxnC1AngqcH") >>= 
+            liftIO . assertEqual "check internal address" 4
+
+    (dbAddressTree . entityVal) <$> 
+        (dbGetAddr "1J5HV12wGbPj5SUryku2zFoaxnC1AngqcH") >>= 
+            liftIO . assertEqual "check internal address tree" "m/0'/1/4/"
+
+    (dbAddressInternal . entityVal) <$> 
+        (dbGetAddr "1J5HV12wGbPj5SUryku2zFoaxnC1AngqcH") >>= 
+            liftIO . assertEqual "check internal address tree" True
+
+    -- Check account external index
+    (dbAccountExtIndex . entityVal <$> dbGetAcc "") >>= 
+        liftIO . assertEqual "acc ext index 5" 4
+
+    -- Check account internal index
+    (dbAccountIntIndex . entityVal <$> dbGetAcc "") >>= 
+        liftIO . assertEqual "acc int index 5" 4
+
+    -- Check account external gap
+    (dbAccountExtGap . entityVal <$> dbGetAcc "") >>= 
+        liftIO . assertEqual "acc ext gap 5" 34
+
+    -- Check account internal gap
+    (dbAccountIntGap . entityVal <$> dbGetAcc "") >>= 
+        liftIO . assertEqual "acc int gap 5" 34
+
+    -- Count addresses
+    count ([] :: [Filter (DbAddressGeneric b)]) >>= 
+        liftIO . assertEqual "Count addr 5" 260
+
 
     (cmdImportTx $ decode' $ fromJust $ hexToBS txRes) >>=
         liftIO . assertEqual "import send tx"
             ( toJSON
                 [ object [ "Recipients" .= toJSON
                              [ T.pack "38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki"
-                             , T.pack "12NS4FB1S76bkRrLUxHWSjzZaqEdUxYreJ"
+                             , T.pack "1CczPAHXrwyiCeJfx5Bifaoo4NBQr3TPpJ"
                              ]
                          , "Value"      .= (-270000 :: Int)
                          , "Orphan"     .= False
@@ -1101,7 +1136,7 @@ testImport = do
     cmdCoins "" >>= liftIO . assertEqual "Get coins 2"
         ( toJSON
             [ object
-                [ "TxID"    .= T.pack "4088f8ab36e3a3aaa067d54a37fca74478b4c52c16bdc3a7c4e6423ca3b46d86"
+                [ "TxID"    .= T.pack "753c9dee0fc4742fccf62783740643edeed6280bf333499bd4a8f086887611d0"
                 , "Index"   .= (0 :: Int)
                 , "Value"   .= (100000 :: Int)
                 , "Script"  .= T.pack "76a914d6baf45f52b4cccc7ac1ba3a35dd739497f8e98988ac"
@@ -1109,7 +1144,7 @@ testImport = do
                 , "Address" .= T.pack "1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi"
                 ]
             , object
-                [ "TxID"    .= T.pack "984092e0ba079812fe1d05ec653f775beb5ea7a1ae9ad1d35d6c9f39ec507a40"
+                [ "TxID"    .= T.pack "46b0e8d7759c06670e70b7dd000cc7b3d92e205ecc7f759b03be6d68049ade70"
                 , "Index"   .= (0 :: Int)
                 , "Value"   .= (100000 :: Int)
                 , "Script"  .= T.pack "76a914d6baf45f52b4cccc7ac1ba3a35dd739497f8e98988ac"
@@ -1117,7 +1152,7 @@ testImport = do
                 , "Address" .= T.pack "1LaPZtFWAWRP8eLNZRLLPGaB3dn19Nb6wi"
                 ]
             , object
-                [ "TxID"    .= T.pack "b4b7c7b5a39cce981629f46eb0245b6ac53ef024b8a83b5a26166c7bcaf7c1f1"
+                [ "TxID"    .= T.pack "7c22633b8999e548df416410ac163e3a429852e8924f1e4eeac07f9de293f69c"
                 , "Index"   .= (1 :: Int)
                 , "Value"   .= (80000 :: Int)
                 , "Script"  .= T.pack "76a914980b9c708958bbe4cc05d0b302d4f12625a5d88c88ac"
@@ -1125,7 +1160,7 @@ testImport = do
                 , "Address" .= T.pack "1Erwcuqn1dHm8r6fNxogGmCHYuNfwKNwer"
                 ]
             , object
-                [ "TxID"    .= T.pack "b4b7c7b5a39cce981629f46eb0245b6ac53ef024b8a83b5a26166c7bcaf7c1f1"
+                [ "TxID"    .= T.pack "7c22633b8999e548df416410ac163e3a429852e8924f1e4eeac07f9de293f69c"
                 , "Index"   .= (3 :: Int)
                 , "Value"   .= (50000 :: Int)
                 , "Script"  .= T.pack "76a914bb498fb0f0d0639193660b40a9a91e1b3eb60bab88ac"
@@ -1134,6 +1169,8 @@ testImport = do
                 ]
             ]
         )
+
+
 
     -- List transactions of account ""
     cmdListTx "" >>= liftIO . assertEqual "List tx 2"
@@ -1154,7 +1191,7 @@ testImport = do
                      ]
             , object [ "Recipients" .= toJSON
                          [ T.pack "38kc3Sw4fwkvXMyGPmjQqp7WXMdGQG3Lki"
-                         , T.pack "12NS4FB1S76bkRrLUxHWSjzZaqEdUxYreJ"
+                         , T.pack "1CczPAHXrwyiCeJfx5Bifaoo4NBQr3TPpJ"
                          ]
                      , "Value"      .= (-270000 :: Int)
                      , "Orphan"     .= False
@@ -1187,37 +1224,37 @@ testImport = do
 txA :: String
 txA = "010000000100000000000000000000000000000000000000000000000000000000000000090300000000ffffffff03a0860100000000001976a9148062ab5c3fdf5f8f0d41fccacbb3ea8058b911ae88ac400d0300000000001976a9148727e4552058a555d0ce269d8cf8c850785666f688ace0930400000000001976a9144c769509bb3e22c2275cd025fcb55ebc5dc1e39f88ac00000000"
 
-{- TxID: 4c9bda948a7a99b648b238cb9c9fc2b036e9431a6053948747add7765659ea2b
+{- TxID: bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30 
  - inputs: acc1 (index 1 and index 2 = 500000)
  - Payments sent to:
  - 14JcRDidCbYFBwWjP9PGJL1MRKCzUWCmaS : 100000 (acc1)
  - 16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M : 200000 (acc2)
- - 14bbbNEnXgqEWF3GaVLewvPYHAenStYawj : 150000 (outside)
+ - 1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86 : 150000 (outside)
  - 1Baez98Lapiu7mQLfXuUCjBreEAwFrWNd2 :  40000 (change to acc1)
  -}
 
 txB :: String
-txB = "0100000002300ae5a1d2f502f490fbefd159406d07e249d18bb4422eb0d64663f34cd1e4bb010000006b4830450221009dd1b747ff237dec0fd29eb853e8db06fc1ec7b777938d64723476763a3c2677022077ed2b238849aad5444044aaac0f52f3526b7974a543e51bd36fe99d14a47931012103a40f6bd1d59440a007aa8ec93875d07f234ffebe76df311c1b610fc1c0d22dd9ffffffff300ae5a1d2f502f490fbefd159406d07e249d18bb4422eb0d64663f34cd1e4bb020000006a47304402205928db75d0aeed4eb6bcb7cc436754e4ffb926fa13f86f050ae683eda5e879bb0220717bc45db34f4ff150d00e4f2f618bf66c7543ec08d56c05a83b7f7d061dd714012103a0d2cdf936eca39cfd6407393f8f0f2af932bdea6271d559308075b77d2ec080ffffffff04a0860100000000001976a914243d03889d49470ee721d44596fd146440e1167c88ac400d0300000000001976a9143f53fba59a1c17f17cf3c4b5cfcf15fa0087f1c188acf0490200000000001976a9142773657caec521b20d23536e7d7901de8c45652988ac409c0000000000001976a914740eb168ae243882a73f5467b9024431443ef12988ac00000000"
+txB = "0100000002300ae5a1d2f502f490fbefd159406d07e249d18bb4422eb0d64663f34cd1e4bb010000006b4830450221009d5a3f9df597da4412466be55ccbc0b058b63507e6716e718b8af7a3e3656353022022f1e747a765b9a39888da2516f3efa7e1f9c728a510b63e88e6e6066cbdd465012103a40f6bd1d59440a007aa8ec93875d07f234ffebe76df311c1b610fc1c0d22dd9ffffffff300ae5a1d2f502f490fbefd159406d07e249d18bb4422eb0d64663f34cd1e4bb020000006b483045022100d5e70bd37192edbe7be4214500aab6fccd232c383f9bb658bd593375b33ffe4402205513fc737fe74d980245188b5dca7a9b2b0f062b6148a7af2e80018cff089a79012103a0d2cdf936eca39cfd6407393f8f0f2af932bdea6271d559308075b77d2ec080ffffffff04a0860100000000001976a914243d03889d49470ee721d44596fd146440e1167c88ac400d0300000000001976a9143f53fba59a1c17f17cf3c4b5cfcf15fa0087f1c188acf0490200000000001976a9149d3e18f3cd8edf442c31cb5cc5b0acf8e4e96a1e88ac409c0000000000001976a914740eb168ae243882a73f5467b9024431443ef12988ac00000000"
 
-{- TxID: 92e83da9496d4b8fd26826b6bf8895e68487fea3d627227827b832ad2b7fdf56
+{- TxID: f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953
  - inputs: acc2 (index 1 = 200000)
  - Payments sent to:
  - 14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb : 120000 (acc1)
- - 1P5vxvRYdtkucT2JeXk4XEvp5xvs4XLV13 :  40000 (outside)
+ - 13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n :  40000 (outside)
  - 13wD1L9PvEgBytP5X6ykiuhB8gRP58CB5J :  30000 (change to acc2)
  -}
 
 txC :: String
-txC = "01000000012bea595676d7ad47879453601a43e936b0c29f9ccb38b248b6997a8a94da9b4c010000006a473044022070deb5ccd4dd99a599150f821d6500517468a65d33f959bfffdbc3f90b2ce303022006fcbca5e09ab35bd1aba042ce83fede27a589fa990445a62ae8e7e694469e2f012103b4b925d5967a00d2540115f035aa10290853d39e3c20591d711680cac5e2b4efffffffff03c0d40100000000001976a91424cba659aad4563de9199f3fe273bac07f170eb088ac409c0000000000001976a914f2417a64be9f74aea983488dbb031e39cb15bca888ac30750000000000001976a9142030bc3fec2b3783acd9e83f6e24d57568be69a988ac00000000"
+txC = "01000000015c48a55db18d73a93f106ecbb1441a410727a5d514efa54b0a251f7c337afdd1010000006b483045022100c1782e52714104c75db350e052aa414ae2651d2acbacd8f8d5ca5374a85cf28f022049a6cfd44189452a35871f9b5b16ceb0dcf423cfc9726b01d54ed29c1316681c012103b4b925d5967a00d2540115f035aa10290853d39e3c20591d711680cac5e2b4efffffffff03c0d40100000000001976a91424cba659aad4563de9199f3fe273bac07f170eb088ac409c0000000000001976a91418dc74eb38930493ce81b8f1d3fd0f15e43e96b288ac30750000000000001976a9142030bc3fec2b3783acd9e83f6e24d57568be69a988ac00000000"
 
-{- TxID: 92e83da9496d4b8fd26826b6bf8895e68487fea3d627227827b832ad2b7fdf56
+{- TxID: e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967
  - inputs: acc1 (index 0 = 120000)
  - Payments sent to:
- - 1GPF1XuzKtCiy6QGCYtdRvTnNKCB82zkFK : 110000 (outside)
+ - 13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf : 110000 (outside)
  -}
 
 txD :: String
-txD = "010000000156df7f2bad32b827782227d6a3fe8784e69588bfb62668d28f4b6d49a93de892000000006b483045022100965df46f1b89fed2e70cbf441ff75510bf508524b469db29b6235e2cd508f26002200e1ddd4abf0de739c140ebf8200a22c3f59a710164c9bedec3278ff660417b02012103a104bc20b43f7f10f89f0519b12bd828dfb7c7969e4c833eadfc6badda334bc0ffffffff01b0ad0100000000001976a914a8bebb715cea2ec4435464e2c42b838b28a24db788ac00000000"
+txD = "01000000015339e5714d323a7923484eba38c57b971072e2ffe907767288fc1b4b5d568ef0000000006b483045022100d615482a9b22bf10505418772f39714931cb0bdd11419be69de97573a3ec4be10220207d9157c5c5853614280ddeaccb42f16c0ecc6f3fd6dbea20890c05a43305fd012103a104bc20b43f7f10f89f0519b12bd828dfb7c7969e4c833eadfc6badda334bc0ffffffff01b0ad0100000000001976a9141f69921a4f95254ee2aaa181381439bbc8b2645788ac00000000"
 
 testOrphan :: ( PersistStore m
               , PersistUnique m
@@ -1226,24 +1263,84 @@ testOrphan :: ( PersistStore m
               ) 
            => EitherT String m ()
 testOrphan = do 
-    cmdGenAddrs "acc1" 5
-    cmdGenAddrs "acc2" 5
-    cmdImportTx (decode' $ fromJust $ hexToBS txA)
-    cmdSendMany "acc1" 
-        [ ("14JcRDidCbYFBwWjP9PGJL1MRKCzUWCmaS",100000) -- acc1
-        , ("16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M",200000) -- acc2
-        , ("14bbbNEnXgqEWF3GaVLewvPYHAenStYawj",150000) -- outside
-        ] 10000
-    cmdImportTx (decode' $ fromJust $ hexToBS txB)
-    cmdSendMany "acc2" 
-        [ ("14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb",120000) --acc1
-        , ("1P5vxvRYdtkucT2JeXk4XEvp5xvs4XLV13", 40000) --outside
-        ] 10000
+
+    -- import transaction D
+    cmdImportTx (decode' $ fromJust $ hexToBS txD) >>= 
+        liftIO . assertEqual "import txD"
+            ( toJSON
+                [ object [ "Recipients" .= toJSON
+                             [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
+                             ]
+                         , "Value"      .= (0 :: Int)
+                         , "Orphan"     .= True
+                         ]
+                ]
+            )
+
+    -- import transaction D a second time. Operation should be idempotent
+    cmdImportTx (decode' $ fromJust $ hexToBS txD) >>= 
+        liftIO . assertEqual "import txD"
+            ( toJSON
+                [ object [ "Recipients" .= toJSON
+                             [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
+                             ]
+                         , "Value"      .= (0 :: Int)
+                         , "Orphan"     .= True
+                         ]
+                ]
+            )
+
+    (Entity ai1 acc1) <- dbGetAcc "acc1"
+
+    let f (Entity _ c) = ( dbCoinTxid c, dbCoinPos c
+                         , dbCoinValue c, dbCoinScript c
+                         , dbCoinRdmScript c, dbCoinAddress c
+                         , dbCoinSpent c, dbCoinOrphan c
+                         )
+    ((map f) <$> selectList [DbCoinAccount ==. ai1] []) >>= 
+        liftIO . assertEqual "Check import txD coins"
+            [ ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
+              , 0, 0, "", Nothing 
+              , "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
+              , Just "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
+              , True
+              )
+            ]
+
+    let g (Entity _ t) = ( dbTxTxid t, dbTxRecipients t
+                         , dbTxValue t, dbTxOrphan t
+                         )
+    ((map g) <$> selectList [DbTxAccount ==. ai1] []) >>=
+        liftIO . assertEqual "Check import txD tx"
+            [ ( "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
+              , ["13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"]
+              , 0
+              , True
+              )
+            ]
+
+    cmdCoins "acc1" >>= liftIO . assertEqual "Check empty coins txD" 
+        (toJSON ([] :: [DbCoinGeneric b]))
+
+    cmdListTx "acc1" >>= liftIO . assertEqual "Check empty txs txD"
+        (toJSON ([] :: [DbTxGeneric b]))
+
+    cmdBalance "acc1" >>= liftIO . assertEqual "Check 0 balance txD" 
+        (toJSON (0 :: Int))
+
     cmdImportTx (decode' $ fromJust $ hexToBS txC)
-    cmdSend "acc1" "1GPF1XuzKtCiy6QGCYtdRvTnNKCB82zkFK" 110000 10000 --outside
-    cmdImportTx (decode' $ fromJust $ hexToBS txD)
+    cmdImportTx (decode' $ fromJust $ hexToBS txB)
+    cmdImportTx (decode' $ fromJust $ hexToBS txA)
     return ()
 
-
-
+  --  cmdSendMany "acc1" 
+  --      [ ("14JcRDidCbYFBwWjP9PGJL1MRKCzUWCmaS",100000) -- acc1
+  --      , ("16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M",200000) -- acc2
+  --      , ("1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86",150000) -- outside
+  --      ] 10000
+  --  cmdSendMany "acc2" 
+  --      [ ("14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb",120000) --acc1
+  --      , ("13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n", 40000) --outside
+  --      ] 10000
+  --  cmdSend "acc1" "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf" 110000 10000 --outside
 

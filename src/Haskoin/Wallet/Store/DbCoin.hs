@@ -59,23 +59,17 @@ toCoin c = do
 
 yamlCoin :: DbCoinGeneric b -> Value
 yamlCoin coin = object $ concat
-    [ [ "TxID"   .= dbCoinTxid coin 
-      , "Index"  .= dbCoinPos coin
-      , "Value"  .= dbCoinValue coin
-      , "Script" .= dbCoinScript coin
-      , "Orphan" .= dbCoinOrphan coin
+    [ [ "TxID"    .= dbCoinTxid coin 
+      , "Index"   .= dbCoinPos coin
+      , "Value"   .= dbCoinValue coin
+      , "Script"  .= dbCoinScript coin
+      , "Orphan"  .= dbCoinOrphan coin
+      , "Address" .= dbCoinAddress coin
       ] 
-    , addrPair
     , if isJust $ dbCoinRdmScript coin 
         then ["Redeem" .= fromJust (dbCoinRdmScript coin)] 
         else []
     ]
-  where 
-    s        = maybeToEither err $ hexToBS $ dbCoinScript coin
-    err      = "yamlCoin: Invalid script encoding"
-    addrPair = either (const []) 
-                      (\a -> ["Address" .= addrToBase58 a])
-                      (scriptRecipient =<< decodeScriptOps =<< s)
 
 dbBalance :: ( PersistQuery m
              , PersistMonadBackend m ~ b

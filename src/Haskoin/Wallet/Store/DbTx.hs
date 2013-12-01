@@ -61,12 +61,17 @@ cmdImportTx :: ( PersistStore m
                )
             => Tx -> EitherT String m Value
 cmdImportTx tx = do
+    time  <- liftIO $ getCurrentTime
     inActions  <- mapRights (dbImportIn $ txid tx) $ txIn tx
     outActions <- mapRights (dbImportOut $ txid tx) $ zip (txOut tx) [0..]
     let inMap  = foldl fin M.empty inActions
         accMap = foldl fout inMap outActions
-    accTx <- mapM build $ M.toList accMap
-    insertMany accTx
+    accTx <- mapM (build time) $ M.toList accMap
+    forM accTx $ \tx -> do
+        prev <- getBy $ UniqueTx (dbTxTxid tx) (dbTxAccount tx)
+        if isNothing prev 
+            then insert_ tx 
+            else replace (entityKey $ fromJust prev) tx
     return $ toJSON $ map yamlTx accTx
   where 
     fin acc (ai,vi,o) = flip (M.insert ai) acc $ case M.lookup ai acc of
@@ -77,8 +82,7 @@ cmdImportTx tx = do
         _                  -> (0,vo,False,[addr])
     allRecip  = rights $ map toAddr $ txOut tx
     toAddr = (addrToBase58 <$>) . scriptRecipient . scriptOutput
-    build (ai,(vi,vo,orphan,xs)) = do
-        time  <- liftIO $ getCurrentTime
+    build time (ai,(vi,vo,orphan,xs)) = do
         let tot   = vo - vi
             recip | null xs = allRecip
                   | tot < 0 = allRecip \\ xs -- Remove the change
@@ -104,6 +108,7 @@ dbImportIn txid (TxIn op@(OutPoint h i) s _) = do
             rdm  <- dbGetRedeem addr
             insert_ $ DbCoin (txidHex h) (fromIntegral i) 
                              0 "" rdm
+                             (addrToBase58 a)
                              (Just $ txidHex txid) 
                              (dbAddressAccount addr) 
                              True time
@@ -129,11 +134,45 @@ dbImportOut txid ((TxOut v s), index) = do
             insert_ $ DbCoin (txidHex txid) index 
                              (fromIntegral v)
                              (bsToHex $ encodeScriptOps s)
-                             rdm Nothing
+                             rdm (addrToBase58 a) Nothing
                              (dbAddressAccount addr) 
                              False time
             dbAdjustGap addr -- Generate addresses if addr is within the gap
     return (dbAddressAccount addr, fromIntegral v, addrToBase58 a)
+
+dbProcessOrphan :: ( PersistStore m
+                   , PersistQuery m 
+                   , PersistUnique m
+                   , PersistMonadBackend m ~ SqlBackend
+                   )
+                => Word64 -> Script
+                -> DbCoinId -> DbCoinGeneric SqlBackend
+                -> EitherT String m ()
+dbProcessOrphan v s ci coin = do
+    replace ci coin{ dbCoinOrphan = False
+                   , dbCoinValue  = (fromIntegral v)
+                   , dbCoinScript = (bsToHex $ encodeScriptOps s)
+                   }
+    c <- count [ DbCoinSpent   ==. dbCoinSpent coin
+               , DbCoinAccount ==. dbCoinAccount coin
+               , DbCoinOrphan  ==. True
+               ]
+    when (c == 0) $ do
+        fundCoins <- selectList
+            [ DbCoinSpent   ==. dbCoinSpent coin
+            , DbCoinAccount ==. dbCoinAccount coin
+            , DbCoinOrphan  ==. False -- Will always be false
+            ] []
+        let keyTx = UniqueTx (fromJust $ dbCoinSpent coin) (dbCoinAccount coin)
+        (Entity ti tx) <- liftMaybe txErr =<< getBy keyTx
+        time <- liftIO getCurrentTime
+        update ti 
+            [ DbTxValue   =. (sum $ map (dbCoinValue . entityVal) fundCoins)
+            , DbTxOrphan  =. False
+            , DbTxCreated =. time
+            ]
+  where 
+    txErr = "dbImportOut: Orphan coin transaction not found"
 
 dbGetRedeem :: ( PersistStore m
                , PersistQuery m 
@@ -161,39 +200,16 @@ dbGetRedeem addr = do
     accErr = "dbImportOut: Invalid address account"
     rdmErr = "dbGetRedeem: Could not generate redeem script"
 
-dbProcessOrphan :: ( PersistStore m
-                   , PersistQuery m 
-                   , PersistUnique m
-                   , PersistMonadBackend m ~ SqlBackend
-                   )
-                => Word64 -> Script
-                -> DbCoinId -> DbCoinGeneric SqlBackend
-                -> EitherT String m ()
-dbProcessOrphan v s ci coin = do
-    replace ci coin{ dbCoinOrphan = False
-                   , dbCoinValue  = (fromIntegral v)
-                   , dbCoinScript = (bsToHex $ encodeScriptOps s)
-                   }
-    c <- count [ DbCoinSpent   ==. dbCoinSpent coin
-               , DbCoinAccount ==. dbCoinAccount coin
-               , DbCoinOrphan  ==. True
-               ]
-    let keyTx = UniqueTx (fromJust $ dbCoinSpent coin) (dbCoinAccount coin)
-    (Entity ti tx) <- liftMaybe txErr =<< getBy keyTx
-    update ti $ concat
-        [ [DbTxValue +=. (fromIntegral v)]
-        , if c == 0 then [DbTxOrphan =. False] else []
-        ]
-  where 
-    txErr = "dbImportOut: Orphan coin transaction not found"
-
 cmdListTx :: ( PersistQuery m 
              , PersistUnique m
              )
           => AccountName -> EitherT String m Value
 cmdListTx name = do
     (Entity ai acc) <- dbGetAcc name
-    txs <- selectList [DbTxAccount ==. ai, DbTxOrphan ==. False] []
+    txs <- selectList [ DbTxAccount ==. ai
+                      , DbTxOrphan ==. False
+                      ] 
+                      [ Asc DbTxCreated ]
     return $ toJSON $ map (yamlTx . entityVal) txs
 
 cmdSend :: ( PersistStore m
@@ -258,11 +274,11 @@ dbSendSolution name dests fee = do
     tot = sum $ map snd dests
     
 dbSendCoins :: ( PersistStore m
-            , PersistQuery m 
-            , PersistUnique m
-            )
-         => [Coin] -> [(String,Word64)] -> SigHash
-         -> EitherT String m (Tx, Bool)
+               , PersistQuery m 
+               , PersistUnique m
+               )
+            => [Coin] -> [(String,Word64)] -> SigHash
+            -> EitherT String m (Tx, Bool)
 dbSendCoins coins recipients sh = do
     tx <- liftEither $ buildAddrTx (map coinOutPoint coins) recipients
     ys <- mapM (dbGetSigData sh) coins

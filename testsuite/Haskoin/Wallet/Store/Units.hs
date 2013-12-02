@@ -48,6 +48,7 @@ runTests = do
         liftIO . (assertBool "Gen Addr") . isRight =<< runEitherT testGenAddr
         liftIO . (assertBool "Import Tx") . isRight =<< runEitherT testImport
         liftIO . (assertBool "Orphan Tx") . isRight =<< runEitherT testOrphan
+        liftIO . (assertBool "Send Tx") . isRight =<< runEitherT testSend
     return ()
 
 testPreInit :: (PersistStore m, PersistUnique m, PersistQuery m) 
@@ -2130,6 +2131,45 @@ testOrphan = do
               )
             ]
 
+
+testSend :: ( PersistStore m
+            , PersistUnique m
+            , PersistQuery m
+            , PersistMonadBackend m ~ SqlBackend
+            ) 
+         => EitherT String m ()
+testSend = do 
+
+    -- Send some money to an outside address
+    cmdSendMany "acc1" 
+        [ ("19w9Btacp9tYgbhWE9d8yEdhR15XcjE9XZ", 20000) -- outside
+        , ("1D8KWhk1x2EGqEUXi1GMJmqmRRWebH8XmT", 30000) -- outside
+        ] 10000 >>= liftIO . assertEqual "send normal tx"
+            ( object [ "Payment Tx" .= T.pack "0100000001300ae5a1d2f502f490fbefd159406d07e249d18bb4422eb0d64663f34cd1e4bb000000006a4730440220797af18bf7fab837fb1da3e6336888a31d95923b11991a89af60ed40b17267220220793302283c195c9653c6f5b9a391eaa3f07eb5e2b5b0cf6e05809ed175f2f9270121020ab91e1cdcaf0d13ca13f1b0b975184882a90ee369f4ac6eab00caacca36b423ffffffff03204e0000000000001976a91461fe4d90fbb250c29e24aaff95f14218c0d39f3388ac30750000000000001976a9148503dfd0281b679af0770d5894cdf0402047befa88ac409c0000000000001976a9146d1523de2ac60a29e60f6584956032054302e73a88ac00000000"
+                     , "Complete" .= True
+                     ]
+            )
+
+    -- Same as before but set the amount such that the change would
+    -- result in dust. The dust should be donated as tx fee
+    cmdSendMany "acc1" 
+        [ ("19w9Btacp9tYgbhWE9d8yEdhR15XcjE9XZ", 44000) -- outside
+        , ("1D8KWhk1x2EGqEUXi1GMJmqmRRWebH8XmT", 44000) -- outside
+        ] 10000 >>= liftIO . assertEqual "send normal tx no change"
+            ( object [ "Payment Tx" .= T.pack "0100000001300ae5a1d2f502f490fbefd159406d07e249d18bb4422eb0d64663f34cd1e4bb000000006b483045022100bfaa5b7722eccc63572612d33ad89d862d1ce4e84e99f52225ff36afea59dece022055772a11923391deda445cdc79163c48034e51fa04aabb986b657baf9e54fab60121020ab91e1cdcaf0d13ca13f1b0b975184882a90ee369f4ac6eab00caacca36b423ffffffff02e0ab0000000000001976a91461fe4d90fbb250c29e24aaff95f14218c0d39f3388ace0ab0000000000001976a9148503dfd0281b679af0770d5894cdf0402047befa88ac00000000"
+                     , "Complete" .= True
+                     ]
+            )
+
+    let emptyTx = "0100000001300ae5a1d2f502f490fbefd159406d07e249d18bb4422eb0d64663f34cd1e4bb0000000000ffffffff02e0ab0000000000001976a91461fe4d90fbb250c29e24aaff95f14218c0d39f3388ace0ab0000000000001976a9148503dfd0281b679af0770d5894cdf0402047befa88ac00000000"
+
+    -- Sign an empty shell transaction with cmdSignTx
+    cmdSignTx "acc1" (decode' $ fromJust $ hexToBS emptyTx) (SigAll False) >>= 
+        liftIO . assertEqual "sign empty transaction"
+            ( object [ "Tx"       .= T.pack "0100000001300ae5a1d2f502f490fbefd159406d07e249d18bb4422eb0d64663f34cd1e4bb000000006b483045022100bfaa5b7722eccc63572612d33ad89d862d1ce4e84e99f52225ff36afea59dece022055772a11923391deda445cdc79163c48034e51fa04aabb986b657baf9e54fab60121020ab91e1cdcaf0d13ca13f1b0b975184882a90ee369f4ac6eab00caacca36b423ffffffff02e0ab0000000000001976a91461fe4d90fbb250c29e24aaff95f14218c0d39f3388ace0ab0000000000001976a9148503dfd0281b679af0770d5894cdf0402047befa88ac00000000"
+                     , "Complete" .= True
+                     ]
+            )
 
 
 

@@ -10,6 +10,8 @@ module Haskoin.Wallet.Store.DbTx
 , dbSendTx
 , dbSendSolution
 , dbSendCoins
+, cmdSignTx
+, dbSignTx
 ) where
 
 import Control.Applicative
@@ -55,6 +57,8 @@ yamlTx tx = object
 txidHex :: Hash256 -> String
 txidHex = bsToHex . BS.reverse . encode'
 
+-- |Command to import a transaction. It can be called multiple times
+-- with the same transaction 
 cmdImportTx :: ( PersistStore m
                , PersistQuery m 
                , PersistUnique m
@@ -198,6 +202,7 @@ dbGetRedeem addr = do
     accErr = "dbImportOut: Invalid address account"
     rdmErr = "dbGetRedeem: Could not generate redeem script"
 
+-- |List transactions for a specific account
 cmdListTx :: ( PersistQuery m 
              , PersistUnique m
              )
@@ -209,6 +214,7 @@ cmdListTx name = do
                       [ Asc DbTxCreated ]
     return $ toJSON $ map (yamlTx . entityVal) txs
 
+-- |Command to send coins to a single recipient
 cmdSend :: ( PersistStore m
            , PersistQuery m 
            , PersistUnique m
@@ -222,6 +228,7 @@ cmdSend name a v fee = do
                     , "Complete"   .= complete
                     ]
 
+-- |Command to send coins to a list of recipients
 cmdSendMany :: ( PersistStore m
                , PersistQuery m 
                , PersistUnique m
@@ -236,6 +243,7 @@ cmdSendMany name dests fee = do
                     ]
     where dests' = map (\(a,b) -> (a,fromIntegral b)) dests
 
+-- |Build and sign a transactoin given a list of recipients
 dbSendTx :: ( PersistStore m
             , PersistQuery m 
             , PersistUnique m
@@ -247,6 +255,7 @@ dbSendTx name dests fee = do
     (coins,recip) <- dbSendSolution name dests fee
     dbSendCoins coins recip (SigAll False)
 
+-- |Given a list of recipients and a fee, finds a valid combination of coins
 dbSendSolution :: ( PersistStore m
                   , PersistQuery m 
                   , PersistUnique m
@@ -270,6 +279,7 @@ dbSendSolution name dests fee = do
   where
     tot = sum $ map snd dests
     
+-- |Build and sign a transaction by providing coins and recipients
 dbSendCoins :: ( PersistStore m
                , PersistQuery m 
                , PersistUnique m
@@ -283,6 +293,39 @@ dbSendCoins coins recipients sh = do
     bsTx <- liftEither $ buildToEither sigTx
     return (bsTx, isComplete sigTx)
 
+cmdSignTx :: ( PersistStore m
+             , PersistQuery m 
+             , PersistUnique m
+             )
+          => AccountName -> Tx -> SigHash
+          -> EitherT String m Value
+cmdSignTx name tx sh = do
+    (tx,complete) <- dbSignTx name tx sh
+    return $ object 
+        [ (T.pack "Tx")       .= (toJSON $ bsToHex $ encode' tx)
+        , (T.pack "Complete") .= complete
+        ]
+
+dbSignTx :: ( PersistStore m
+            , PersistQuery m 
+            , PersistUnique m
+            )
+         => AccountName -> Tx -> SigHash
+         -> EitherT String m (Tx, Bool)
+dbSignTx name tx sh = do
+    (Entity ai acc) <- dbGetAcc name
+    coins <- catMaybes <$> (mapM (getBy . f) $ map prevOutput $ txIn tx)
+    -- Filter coins for this account only
+    let accCoins = filter ((== ai) . dbCoinAccount . entityVal) coins
+    ys <- forM accCoins g
+    let sigTx = detSignTx tx (map fst ys) (map snd ys)
+    bsTx <- liftEither $ buildToEither sigTx
+    return (bsTx, isComplete sigTx)
+  where
+    f (OutPoint h i) = CoinOutPoint (txidHex h) (fromIntegral i)
+    g = ((dbGetSigData sh) =<<) . liftEither . toCoin . entityVal
+
+-- |Given a coin, retrieves the necessary data to sign a transaction
 dbGetSigData :: ( PersistStore m
                 , PersistUnique m
                 , PersistQuery m
@@ -308,24 +351,8 @@ dbGetSigData sh coin = do
     prvErr = "dbGetSigData: Invalid account derivation index"
     addErr = "dbGetSigData: Invalid address derivation index"
 
+
 {-
-cmdSignTx :: String -> AccountName -> Command
-cmdSignTx str name = dbGetAcc (AccName name) >>= \acc -> do
-    guardValidAcc acc
-    tx      <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS str)
-    txCoins <- mapM (dbGetCoin . CoinOutPoint) $ map prevOutput $ txIn tx
-    let pos     = accPos $ runAccData acc
-        -- For security, only sign this accounts coins
-        myCoins = filter ((== pos) . coinAccPos) txCoins
-    ys      <- mapM f myCoins
-    let sigTx = detSignTx tx (map fst ys) (map snd ys)
-    bsTx <- liftEither $ buildToEither sigTx
-    return $ object [ (T.pack "Tx") .= (toJSON $ bsToHex $ encode' bsTx)
-                    , (T.pack "Complete") .= isComplete sigTx
-                    ]
-    where txErr = "cmdSignTx: Could not decode transaction"
-          f c   = let s = scriptOutput $ coinTxOut c
-                  in dbGetSigData s (coinOutPoint c) $ SigAll False
 
 cmdDecodeTx :: String -> Command
 cmdDecodeTx str = do

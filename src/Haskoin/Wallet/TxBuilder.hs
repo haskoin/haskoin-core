@@ -178,9 +178,14 @@ detSignTxIn txin sigi tx i keys = do
 toBuildTxIn :: TxIn -> Build TxIn
 toBuildTxIn txin@(TxIn _ s _)
     | null $ runScript s = Partial txin
-    | otherwise = eitherToBuild (decodeInput s) >>= \si -> case si of
-        SpendMulSig xs r -> guardPartial (length xs == r) >> return txin
-        _                -> return txin
+    | otherwise = case decodeScriptHash s of
+        Right (ScriptHashInput (SpendMulSig xs r) _) -> 
+            guardPartial (length xs == r) >> return txin
+        Right _ -> return txin
+        Left _  -> eitherToBuild (decodeInput s) >>= \si -> case si of
+            SpendMulSig xs r -> guardPartial (length xs == r) >> return txin
+            _                -> return txin
+
 
 orderSigInput :: [TxIn] -> [SigInput] -> [(Maybe SigInput, TxIn, Int)]
 orderSigInput ti si = zip3 (matchTemplate si ti f) ti [0..]

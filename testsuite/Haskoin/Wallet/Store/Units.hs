@@ -2171,5 +2171,129 @@ testSend = do
                      ]
             )
 
+    -- Sign an empty shell transaction with cmdSignTx. Should fail as
+    -- acc2 does not have any of the inputs
+    cmdSignTx "acc2" (decode' $ fromJust $ hexToBS emptyTx) (SigAll False) >>= 
+        liftIO . assertEqual "sign empty transaction 2"
+            ( object [ "Tx"       .= T.pack emptyTx
+                     , "Complete" .= False
+                     ]
+            )
+
+    -- Sending more coins than you have should fail
+    (runEitherT $ cmdSendMany "acc1" 
+        [ ("15WAh7HRms3HDFLEAtMuBM4aUcwvN7B2QY", 300000) -- outside
+        , ("1CzjVJfn1RmNes4ZEKGRA8VJcpCB1xfNvp", 110000) -- outside
+        ] 10000) >>= liftIO . assertEqual "Send too many coins"
+            (Left "chooseCoins: No solution found")
+
+    -- Spending coins from a multisignature account
+    cmdSendMany "ms1" 
+        [ ("15WAh7HRms3HDFLEAtMuBM4aUcwvN7B2QY", 300000) -- outside
+        , ("1CzjVJfn1RmNes4ZEKGRA8VJcpCB1xfNvp", 110000) -- outside
+        ] 10000 >>= liftIO . assertEqual "Send coins from multisig coins"
+            ( object [ "Payment Tx" .= T.pack "01000000039cf693e29d7fc0ea4e1e4f92e85298423a3e16ac106441df48e599893b63227c00000000b50047304402204542658c0d932fa85e0889c65d9b9554c7f096d707130d8cd314812ce05257970220632333e32e77a4cca66f090f6b87fb4affd0e0f869a35b0f36c64879d36a2e3401004c695221026e294fcecdcbae12a0aba1685db35c54ddfc1375d48f96ff1b8805a4bb57bfc921028bc8d8377f44de8ac8beff0dc9ccefde4cd5dded7b8cd8babe02c7147a90ba6c21039cf5d06e79871043c420fabc652f8082e702e0094f91ec14c020e9fcf48fa4d853aeffffffff70de9a04686dbe039b757fcc5e202ed9b3c70c00ddb7700e67069c75d7e8b04604000000b6004830450221008dcf70ee9114ffcd4cd0480d502d01007adade6cfaa7ad612ae318282e61cebb02205cd01f13b3326db21076197c25068291709839078550c3bae73eef604f671a4501004c695221026e294fcecdcbae12a0aba1685db35c54ddfc1375d48f96ff1b8805a4bb57bfc921028bc8d8377f44de8ac8beff0dc9ccefde4cd5dded7b8cd8babe02c7147a90ba6c21039cf5d06e79871043c420fabc652f8082e702e0094f91ec14c020e9fcf48fa4d853aeffffffffd011768886f0a8d49b4933f30b28d6eeed4306748327f6cc2f74c40fee9d3c7504000000b5004730440220616bdda5532e3f89b834c45e0303edd1e07721a1072a7a7a4469c0a2bf473eee02202f049ba695b99ce32c2b3d7064fa4a24b8b1766777adb4452eaa79464fba63ad01004c695221026e294fcecdcbae12a0aba1685db35c54ddfc1375d48f96ff1b8805a4bb57bfc921028bc8d8377f44de8ac8beff0dc9ccefde4cd5dded7b8cd8babe02c7147a90ba6c21039cf5d06e79871043c420fabc652f8082e702e0094f91ec14c020e9fcf48fa4d853aeffffffff02e0930400000000001976a9143164a7f65ce9d354a8ded150547a9523df056b3588acb0ad0100000000001976a91483948f86afa40df4836e88f402aff1e540469ba588ac00000000"
+                     , "Complete" .= False
+                     ]
+            )
+
+    cmdNewMS "signms" 2 3 []
+    
+    cmdAddKeys "signms" [fromJust $ xPubImport "xpub69QmF5x2m5duxo856Dg622vDjsxtDCwMAaLyhVjBZDDTaKbenBfMByNJVMYKAVTEpGPDePdgjDpDyPvBPx4WpFV8zmNEa6Cx7Lk4Bn9PDcE"]
+
+    cmdAddKeys "signms" [fromJust $ xPubImport "xpub69QmF5x2m5dv1r2xNBLTq6HGKjFDyE4iAhxhdL4FgVR8vQprruLcauxJNdASANJaZc65bmoD1snK4db9DDYAuEBo3ANZik9SHnTAKQZLDt1"]
+
+    --cmdNewMS "test2" 2 3 []
+    --cmdNewMS "test3" 2 3 []
+
+    --deleteBy $ UniqueAccName "test1"
+    --deleteBy $ UniqueAccName "test2"
+
+    -- cmdAddKeys "test3" [fromJust $ xPubImport "xpub69QmF5x2m5duvyfWu3DjU9r9CkTKp5poGCnVLBmRBgJaye7LQ9yPs55z7zPZDpp6X4BHru9EpF8hqQGNa2ipEmBx9rYq6LdvNht6M2qqxUm"]
+
+    -- cmdAddKeys "test3" [fromJust $ xPubImport "xpub69QmF5x2m5duxo856Dg622vDjsxtDCwMAaLyhVjBZDDTaKbenBfMByNJVMYKAVTEpGPDePdgjDpDyPvBPx4WpFV8zmNEa6Cx7Lk4Bn9PDcE"]
+
+
+    let fundingTx = decode' $ fromJust $ hexToBS "010000000100000000000000000000000000000000000000000000000000000000000000010300000000ffffffff04a08601000000000017a91491b00b8d4d4b8909d5d17fe8da3b09fbd64e003c87400d03000000000017a91488fb2eb63c1f992d801f538340180527510464c787f04902000000000017a9148c0ad01947abab4985837a24be0d2141dcba06398720bf02000000000017a91460c1eb9034130684ece4594384e984325d1280ad8700000000"
+
+    let partialTx = "0100000003082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80102000000b50047304402200e72eb2b17c6c737313a8081a15cba1589e26cdc748056df71c70949f8a17b7002205ec876a152b11f6dcec7a5fd9ee448e9c2d069686b8ff25fcd98d29e5d52d10401004c69522102779d361a5d534dfca9d480eb60a1b14741a98d29f5c984fc1afd68a8c50981232102f579364c0d0971ec9ae52f2fc870204bce00438be1b6fa695d27c9d01cfb0956210383787221b68f601aa4695c27e7eebb0d15de2ed7ef7b9981fba8cad71ae2d84253aeffffffff082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80103000000b600483045022100b91fb1377dd774179b4c93c25854225957aa410a38bb520864f964edbe55fcd9022079fa489f8308e4b3be613fcd3b30d5b9b38f70716009e96e5ba9d3bd1431cfa601004c6952210285bd8161363c6e2d2c075e08ed8a956c4706ccd77497a31327bf92b2208c3587210286e3177a8ca61d2d9426b4230735631e8552cc4d6e87e1277960461b0d26aac42103e2e138589e064f347238c2ca46c1d7deb8dd9472d065d7c5cb0f91aa5cc210a953aeffffffff082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80101000000b50047304402204d21b742809528ef73e63e021983f51da2850c8a7a8ecca378efc57e71b8c22902201467246a84afc15f7fba7038c7c5c552fce0789280f20cb75c99dd8ba36edf3b01004c695221023206a385544defd500a54d3d3fd8982d35fa7f877fa721beb59e440186183e8a210352b7c1f82593abebcb4ad0bbf28a4317b49efc1cc3e647453c09c6375122e8f621035c9ca1f7825d2cf025f42e636f57f193dbaae5c18b08dca10bf996ddb58eb8e853aeffffffff03e0930400000000001976a91419abd2efb4cd44b132ffd6206aa35e60f9d3e4b988ace0220200000000001976a914decc77b87d2199a51532034ad63f59cae6e6c4f588ac803801000000000017a914737e1e10bbf4290c82681745b5a54449ca83d1848700000000"
+
+    let finalTx = "0100000003082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80102000000fdfd000047304402200e72eb2b17c6c737313a8081a15cba1589e26cdc748056df71c70949f8a17b7002205ec876a152b11f6dcec7a5fd9ee448e9c2d069686b8ff25fcd98d29e5d52d10401483045022100e9235ee3866429a4188dbd795d6c64d66952c86566b4940e90262a511966213402201782bd02ff891864513dbb3943e453020c06f238187574ab74e82b252b0e388b014c69522102779d361a5d534dfca9d480eb60a1b14741a98d29f5c984fc1afd68a8c50981232102f579364c0d0971ec9ae52f2fc870204bce00438be1b6fa695d27c9d01cfb0956210383787221b68f601aa4695c27e7eebb0d15de2ed7ef7b9981fba8cad71ae2d84253aeffffffff082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80103000000fdfe0000483045022100fc33d03cd7779fe9db850c148058c61d0f0f863803ee0623b903d66cee7ab1a402200dc945f61c1ce44911caeab31481b73eb7fe78f2b13f7489f88f35693ae2f02301483045022100b91fb1377dd774179b4c93c25854225957aa410a38bb520864f964edbe55fcd9022079fa489f8308e4b3be613fcd3b30d5b9b38f70716009e96e5ba9d3bd1431cfa6014c6952210285bd8161363c6e2d2c075e08ed8a956c4706ccd77497a31327bf92b2208c3587210286e3177a8ca61d2d9426b4230735631e8552cc4d6e87e1277960461b0d26aac42103e2e138589e064f347238c2ca46c1d7deb8dd9472d065d7c5cb0f91aa5cc210a953aeffffffff082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80101000000fc0047304402204d21b742809528ef73e63e021983f51da2850c8a7a8ecca378efc57e71b8c22902201467246a84afc15f7fba7038c7c5c552fce0789280f20cb75c99dd8ba36edf3b01473044022077dae4f7d45d3baff798d7649cd0e887433411e199ed3148654cdebb006580400220206be4f3f95c8a75a3e570bf0b2ba5f7b18fd671379b3bd101f2f28a017c496c014c695221023206a385544defd500a54d3d3fd8982d35fa7f877fa721beb59e440186183e8a210352b7c1f82593abebcb4ad0bbf28a4317b49efc1cc3e647453c09c6375122e8f621035c9ca1f7825d2cf025f42e636f57f193dbaae5c18b08dca10bf996ddb58eb8e853aeffffffff03e0930400000000001976a91419abd2efb4cd44b132ffd6206aa35e60f9d3e4b988ace0220200000000001976a914decc77b87d2199a51532034ad63f59cae6e6c4f588ac803801000000000017a914737e1e10bbf4290c82681745b5a54449ca83d1848700000000"
+
+    -- trying to sign the multisig transaction before importing the transaction
+    -- funding the account. This should return the original transaction
+    cmdSignTx "signms" (decode' $ fromJust $ hexToBS partialTx) (SigAll False)
+        >>= liftIO . assertEqual "Sign partial multisig without coins" 
+            ( object [ "Tx"       .= T.pack partialTx
+                     , "Complete" .= False
+                     ]
+            )
+
+    cmdImportTx fundingTx >>= liftIO . assertEqual "Importing funding tx"
+        ( toJSON
+            [ object [ "Recipients" .= toJSON
+                         [ T.pack "3EyLoBudu2fNY7hnQDX7iZ3kn1d9wyPc2E"
+                         , T.pack "3EBJj6Z2FrrGUytJabTrJRD6mxCgF3d7JW"
+                         , T.pack "3ETVUh7mn1sSiLrhUQYMByfuo32DauHKdR"
+                         , T.pack "3AWd6mZHrvMbocVRp752ExTGnUhh1huWQp"
+                         ]
+                     , "Value"      .= (630000:: Int)
+                     , "Orphan"     .= False
+                     ]
+            ]
+        )
+
+    -- Completing a multisig transaction
+    cmdSignTx "signms" (decode' $ fromJust $ hexToBS partialTx) (SigAll False) 
+        >>= liftIO . assertEqual "Sign partial multisig" 
+            ( object [ "Tx"      .= T.pack finalTx
+                    , "Complete" .= True
+                    ]
+            )
+
+    -- this should return the partial signature as the account is wrong
+    cmdSignTx "ms1" (decode' $ fromJust $ hexToBS partialTx) (SigAll False) 
+        >>= liftIO . assertEqual "Sign partial multisig bad acc" 
+            ( object [ "Tx"      .= T.pack partialTx
+                    , "Complete" .= False
+                    ]
+            )
+
+    -- Importing the full transaction into the wallet
+    cmdImportTx (decode' $ fromJust $ hexToBS finalTx) >>= 
+        liftIO . assertEqual "Final tx import"
+            ( toJSON
+                [ object [ "Recipients" .= toJSON
+                            [ T.pack "13LjjLQGGiTL8AYMbYqBmQVyAMyQnjPZK3"
+                            , T.pack "1MK3xFQSekQPuety1oaVTmvLRusFYsTq3d"
+                            ]
+                        , "Value"      .= (-450000 :: Int)
+                        , "Orphan"     .= False
+                        ]
+                ]
+            )
+
+    -- The transaction list should be the funding transaction followed by
+    -- the multisig spending transaction
+    cmdListTx "signms" >>= liftIO . assertEqual "Final tx check MS"
+        ( toJSON
+            [ object [ "Recipients" .= toJSON
+                         [ T.pack "3EyLoBudu2fNY7hnQDX7iZ3kn1d9wyPc2E"
+                         , T.pack "3EBJj6Z2FrrGUytJabTrJRD6mxCgF3d7JW"
+                         , T.pack "3ETVUh7mn1sSiLrhUQYMByfuo32DauHKdR"
+                         , T.pack "3AWd6mZHrvMbocVRp752ExTGnUhh1huWQp"
+                         ]
+                     , "Value"      .= (630000 :: Int)
+                     , "Orphan"     .= False
+                     ]
+            , object [ "Recipients" .= toJSON
+                         [ T.pack "13LjjLQGGiTL8AYMbYqBmQVyAMyQnjPZK3"
+                         , T.pack "1MK3xFQSekQPuety1oaVTmvLRusFYsTq3d"
+                         ]
+                     , "Value"      .= (-450000 :: Int)
+                     , "Orphan"     .= False
+                     ]
+            ]
+        )
 
 

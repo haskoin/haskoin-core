@@ -21,6 +21,8 @@ module Haskoin.Wallet.Store.Util
 , Unique(..)
 , EntityField(..)
 , AccountName
+, CoinStatus(..)
+, catStatus
 , dbGetWallet
 , dbGetTxBlob
 , liftEither
@@ -49,6 +51,7 @@ import Database.Persist.TH
 import Haskoin.Wallet.Keys
 import Haskoin.Wallet.Manager
 import Haskoin.Wallet.TxBuilder
+import Haskoin.Wallet.Store.CoinStatus
 import Haskoin.Script
 import Haskoin.Protocol
 import Haskoin.Crypto
@@ -108,7 +111,7 @@ DbCoin json
     script String
     rdmScript String Maybe
     address String 
-    spent String Maybe
+    status CoinStatus
     account DbAccountId
     orphan Bool
     created UTCTime default=CURRENT_TIME
@@ -121,6 +124,7 @@ DbTx json
     value Int
     account DbAccountId
     orphan Bool
+    partial Bool
     created UTCTime default=CURRENT_TIME
     UniqueTx txid account
     deriving Show
@@ -134,20 +138,14 @@ DbTxBlob json
 
 |]
 
-dbGetWallet :: ( PersistUnique m 
-               , PersistMonadBackend m ~ b
-               )
-            => String 
-            -> EitherT String m (Entity (DbWalletGeneric b))
+dbGetWallet :: (PersistUnique m, PersistMonadBackend m ~ b)
+            => String -> EitherT String m (Entity (DbWalletGeneric b))
 dbGetWallet name = liftMaybe walletErr =<< (getBy $ UniqueWalletName name)
   where 
     walletErr = unwords ["dbGetWallet: Invalid wallet", name]
 
-dbGetTxBlob :: ( PersistUnique m 
-               , PersistMonadBackend m ~ b
-               )
-            => String 
-            -> EitherT String m (Entity (DbTxBlobGeneric b))
+dbGetTxBlob :: (PersistUnique m, PersistMonadBackend m ~ b)
+            => String -> EitherT String m (Entity (DbTxBlobGeneric b))
 dbGetTxBlob txid = liftMaybe txErr =<< (getBy $ UniqueTxBlob txid)
   where
     txErr = unwords ["dbGetTxBlob: Invalid txid",txid]

@@ -79,7 +79,7 @@ dbBalance :: ( PersistQuery m
 dbBalance (Entity ai acc) = do
     coins <- selectList 
         [ DbCoinAccount ==. ai
-        , DbCoinSpent   ==. Nothing
+        , DbCoinStatus  ==. Unspent
         , DbCoinOrphan  ==. False
         ] []
     return $ sum $ map (dbCoinValue . entityVal) coins
@@ -109,7 +109,7 @@ dbCoins :: ( PersistQuery m
 dbCoins ai = do
     coins <- selectList 
         [ DbCoinAccount ==. ai
-        , DbCoinSpent   ==. Nothing
+        , DbCoinStatus  ==. Unspent
         , DbCoinOrphan  ==. False
         ] [Asc DbCoinCreated]
     return $ map entityVal coins

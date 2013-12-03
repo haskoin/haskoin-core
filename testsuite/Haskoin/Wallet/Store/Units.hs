@@ -1274,6 +1274,7 @@ testOrphan = do
                              ]
                          , "Value"      .= (0 :: Int)
                          , "Orphan"     .= True
+                         , "Partial"    .= False
                          ]
                 ]
             )
@@ -1287,6 +1288,7 @@ testOrphan = do
                              ]
                          , "Value"      .= (0 :: Int)
                          , "Orphan"     .= True
+                         , "Partial"    .= False
                          ]
                 ]
             )
@@ -1297,10 +1299,10 @@ testOrphan = do
     let f (Entity _ c) = ( dbCoinTxid c, dbCoinPos c
                          , dbCoinValue c, dbCoinScript c
                          , dbCoinRdmScript c, dbCoinAddress c
-                         , dbCoinSpent c, dbCoinOrphan c
+                         , dbCoinStatus c, dbCoinOrphan c
                          )
         g (Entity _ t) = ( dbTxTxid t, dbTxRecipients t
-                         , dbTxValue t, dbTxOrphan t
+                         , dbTxValue t, dbTxOrphan t, dbTxPartial t
                          )
 
     ((map f) <$> selectList [DbCoinAccount ==. ai1] [Asc DbCoinCreated]) >>= 
@@ -1308,7 +1310,7 @@ testOrphan = do
             [ ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
               , 0, 0, "", Nothing 
               , "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
-              , Just "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
+              , Spent "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
               , True
               )
             ]
@@ -1317,8 +1319,7 @@ testOrphan = do
         liftIO . assertEqual "Check import txD tx"
             [ ( "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
               , ["13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"]
-              , 0
-              , True
+              , 0, True, False
               )
             ]
 
@@ -1332,6 +1333,7 @@ testOrphan = do
                          ]
                      , "Value"      .= (0 :: Int)
                      , "Orphan"     .= True
+                     , "Partial"    .= False
                      ]
             ]
         )
@@ -1348,6 +1350,7 @@ testOrphan = do
                              ]
                          , "Value"      .= (120000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
@@ -1355,12 +1358,14 @@ testOrphan = do
                              ]
                          , "Value"      .= (0 :: Int)
                          , "Orphan"     .= True
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
                              ]
                          , "Value"      .= (-120000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 ]
             )
@@ -1374,6 +1379,7 @@ testOrphan = do
                              ]
                          , "Value"      .= (120000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
@@ -1381,12 +1387,14 @@ testOrphan = do
                              ]
                          , "Value"      .= (0 :: Int)
                          , "Orphan"     .= True
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
                              ]
                          , "Value"      .= (-120000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 ]
             )
@@ -1398,7 +1406,7 @@ testOrphan = do
               , 0, 120000
               , "76a91424cba659aad4563de9199f3fe273bac07f170eb088ac", Nothing 
               , "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
-              , Just "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
+              , Spent "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
               , False
               )
             ]
@@ -1408,13 +1416,11 @@ testOrphan = do
         liftIO . assertEqual "Check import txC tx"
             [ ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
               , ["14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"]
-              , 120000
-              , False
+              , 120000, False, False
               )
             , ( "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
               , ["13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"]
-              , -120000
-              , False
+              , -120000, False, False
               )
             ]
 
@@ -1425,14 +1431,14 @@ testOrphan = do
               , 1, 0
               , "", Nothing 
               , "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
-              , Just "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953" 
+              , Spent "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953" 
               , True
               )
             , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
               , 2, 30000
               , "76a9142030bc3fec2b3783acd9e83f6e24d57568be69a988ac", Nothing 
               , "13wD1L9PvEgBytP5X6ykiuhB8gRP58CB5J"
-              , Nothing , False
+              , Unspent , False
               )
             ]
 
@@ -1443,7 +1449,7 @@ testOrphan = do
               , [ "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
                 , "13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n"
                 ]
-              , 0, True
+              , 0, True, False
               )
             ]
 
@@ -1472,12 +1478,14 @@ testOrphan = do
                          ]
                      , "Value"      .= (120000 :: Int)
                      , "Orphan"     .= False
+                     , "Partial"    .= False
                      ]
             , object [ "Recipients" .= toJSON
                          [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
                          ]
                      , "Value"      .= (-120000 :: Int)
                      , "Orphan"     .= False
+                     , "Partial"    .= False
                      ]
             ]
         )
@@ -1513,17 +1521,20 @@ testOrphan = do
                              ]
                          , "Value"      .= (0 :: Int)
                          , "Orphan"     .= True
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
                          , "Value"      .= (200000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
                              ]
                          , "Value"      .= (120000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
@@ -1531,12 +1542,14 @@ testOrphan = do
                              ]
                          , "Value"      .= (-170000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
                              ]
                          , "Value"      .= (-120000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 ]
             )
@@ -1551,17 +1564,20 @@ testOrphan = do
                              ]
                          , "Value"      .= (0 :: Int)
                          , "Orphan"     .= True
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
                          , "Value"      .= (200000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
                              ]
                          , "Value"      .= (120000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
@@ -1569,12 +1585,14 @@ testOrphan = do
                              ]
                          , "Value"      .= (-170000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
                              ]
                          , "Value"      .= (-120000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 ]
             )
@@ -1586,35 +1604,35 @@ testOrphan = do
               , 1, 0
               , "", Nothing 
               , "1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw"
-              , Just "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , Spent "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
               , True
               )
             , ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
               , 2, 0
               , "", Nothing 
               , "17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG"
-              , Just "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , Spent "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
               , True
               )
             , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
               , 0, 100000
               , "76a914243d03889d49470ee721d44596fd146440e1167c88ac", Nothing 
               , "14JcRDidCbYFBwWjP9PGJL1MRKCzUWCmaS"
-              , Nothing
+              , Unspent
               , False
               )
             , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
               , 3, 40000
               , "76a914740eb168ae243882a73f5467b9024431443ef12988ac", Nothing 
               , "1Baez98Lapiu7mQLfXuUCjBreEAwFrWNd2"
-              , Nothing
+              , Unspent
               , False
               )
             , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
               , 0, 120000
               , "76a91424cba659aad4563de9199f3fe273bac07f170eb088ac", Nothing 
               , "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
-              , Just "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
+              , Spent "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
               , False
               )
             ]
@@ -1626,18 +1644,15 @@ testOrphan = do
               , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
                 , "1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86"
                 ]
-              , 0
-              , True
+              , 0, True, False
               )
             , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
               , ["14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"]
-              , 120000
-              , False
+              , 120000, False, False
               )
             , ( "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
               , ["13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"]
-              , -120000
-              , False
+              , -120000, False, False
               )
             ]
 
@@ -1648,14 +1663,14 @@ testOrphan = do
               , 1, 200000
               , "76a9143f53fba59a1c17f17cf3c4b5cfcf15fa0087f1c188ac", Nothing 
               , "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
-              , Just "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953" 
+              , Spent "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953" 
               , False
               )
             , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
               , 2, 30000
               , "76a9142030bc3fec2b3783acd9e83f6e24d57568be69a988ac", Nothing 
               , "13wD1L9PvEgBytP5X6ykiuhB8gRP58CB5J"
-              , Nothing , False
+              , Unspent , False
               )
             ]
 
@@ -1664,13 +1679,13 @@ testOrphan = do
         liftIO . assertEqual "Check transactions import txB 2"
             [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
               , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
-              , 200000, False
+              , 200000, False, False
               )
             , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
               , [ "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
                 , "13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n"
                 ]
-              , -170000, False
+              , -170000, False, False
               )
             ]
 
@@ -1716,18 +1731,21 @@ testOrphan = do
                          ]
                      , "Value"      .= (0 :: Int)
                      , "Orphan"     .= True
+                     , "Partial"    .= False
                      ]
             , object [ "Recipients" .= toJSON
                          [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
                          ]
                      , "Value"      .= (120000 :: Int)
                      , "Orphan"     .= False
+                     , "Partial"    .= False
                      ]
             , object [ "Recipients" .= toJSON
                          [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
                          ]
                      , "Value"      .= (-120000 :: Int)
                      , "Orphan"     .= False
+                     , "Partial"    .= False
                      ]
             ]
         )
@@ -1739,6 +1757,7 @@ testOrphan = do
                          [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
                      , "Value"      .= (200000 :: Int)
                      , "Orphan"     .= False
+                     , "Partial"    .= False
                      ]
             , object [ "Recipients" .= toJSON
                          [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
@@ -1746,6 +1765,7 @@ testOrphan = do
                          ]
                      , "Value"      .= (-170000 :: Int)
                      , "Orphan"     .= False
+                     , "Partial"    .= False
                      ]
             ]
         )
@@ -1758,8 +1778,7 @@ testOrphan = do
     cmdBalance "acc2" >>= liftIO . assertEqual "Check balance txB 2" 
         (toJSON (30000 :: Int))
 
-
-    -- Importing txA
+    -- Importing txA (Partial)
     cmdImportTx (decode' $ fromJust $ hexToBS txA) >>= 
         liftIO . assertEqual "import txA 1"
             ( toJSON
@@ -1770,6 +1789,7 @@ testOrphan = do
                              ]
                          , "Value"      .= (600000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
@@ -1777,17 +1797,20 @@ testOrphan = do
                              ]
                          , "Value"      .= (-360000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
                          , "Value"      .= (200000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
                              ]
                          , "Value"      .= (120000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
@@ -1795,19 +1818,20 @@ testOrphan = do
                              ]
                          , "Value"      .= (-170000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
-                             [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
-                             ]
+                             [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf" ]
                          , "Value"      .= (-120000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 ]
             )
 
     -- Importing txA a second time
     cmdImportTx (decode' $ fromJust $ hexToBS txA) >>= 
-        liftIO . assertEqual "import txA 2"
+        liftIO . assertEqual "import txA 1"
             ( toJSON
                 [ object [ "Recipients" .= toJSON
                              [ T.pack "1ChqhDvLVx5bjRHbdUweCsd4mgwD4fvdGL"
@@ -1816,6 +1840,7 @@ testOrphan = do
                              ]
                          , "Value"      .= (600000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
@@ -1823,17 +1848,20 @@ testOrphan = do
                              ]
                          , "Value"      .= (-360000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
                          , "Value"      .= (200000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
                              ]
                          , "Value"      .= (120000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
@@ -1841,12 +1869,13 @@ testOrphan = do
                              ]
                          , "Value"      .= (-170000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
-                             [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
-                             ]
+                             [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf" ]
                          , "Value"      .= (-120000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 ]
             )
@@ -1858,42 +1887,39 @@ testOrphan = do
               , 0, 100000
               , "76a9148062ab5c3fdf5f8f0d41fccacbb3ea8058b911ae88ac", Nothing 
               , "1ChqhDvLVx5bjRHbdUweCsd4mgwD4fvdGL"
-              , Nothing
-              , False
+              , Unspent, False
               )
             , ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
               , 1, 200000
               , "76a9148727e4552058a555d0ce269d8cf8c850785666f688ac", Nothing 
               , "1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw"
-              , Just "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , Spent "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
               , False
               )
             , ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
               , 2, 300000
               , "76a9144c769509bb3e22c2275cd025fcb55ebc5dc1e39f88ac", Nothing 
               , "17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG"
-              , Just "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , Spent "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
               , False
               )
             , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
               , 0, 100000
               , "76a914243d03889d49470ee721d44596fd146440e1167c88ac", Nothing 
               , "14JcRDidCbYFBwWjP9PGJL1MRKCzUWCmaS"
-              , Nothing
-              , False
+              , Unspent, False
               )
             , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
               , 3, 40000
               , "76a914740eb168ae243882a73f5467b9024431443ef12988ac", Nothing 
               , "1Baez98Lapiu7mQLfXuUCjBreEAwFrWNd2"
-              , Nothing
-              , False
+              , Unspent, False
               )
             , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
               , 0, 120000
               , "76a91424cba659aad4563de9199f3fe273bac07f170eb088ac", Nothing 
               , "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
-              , Just "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
+              , Spent "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
               , False
               )
             ]
@@ -1906,25 +1932,21 @@ testOrphan = do
                 , "1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw"
                 , "17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG"
                 ]
-              , 600000
-              , False
+              , 600000, False, False
               )
             , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
               , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
                 , "1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86"
                 ]
-              , -360000
-              , False
+              , -360000, False, False
               )
             , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
               , ["14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"]
-              , 120000
-              , False
+              , 120000, False, False
               )
             , ( "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
               , ["13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"]
-              , -120000
-              , False
+              , -120000, False, False
               )
             ]
 
@@ -1935,14 +1957,14 @@ testOrphan = do
               , 1, 200000
               , "76a9143f53fba59a1c17f17cf3c4b5cfcf15fa0087f1c188ac", Nothing 
               , "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
-              , Just "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953" 
+              , Spent "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953" 
               , False
               )
             , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
               , 2, 30000
               , "76a9142030bc3fec2b3783acd9e83f6e24d57568be69a988ac", Nothing 
               , "13wD1L9PvEgBytP5X6ykiuhB8gRP58CB5J"
-              , Nothing , False
+              , Unspent , False
               )
             ]
 
@@ -1951,13 +1973,13 @@ testOrphan = do
         liftIO . assertEqual "Check transactions import txA 2"
             [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
               , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
-              , 200000, False
+              , 200000, False, False
               )
             , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
               , [ "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
                 , "13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n"
                 ]
-              , -170000, False
+              , -170000, False, False
               )
             ]
 
@@ -2011,6 +2033,7 @@ testOrphan = do
                          ]
                      , "Value"      .= (600000 :: Int)
                      , "Orphan"     .= False
+                     , "Partial"    .= False
                      ]
             , object [ "Recipients" .= toJSON
                          [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
@@ -2018,18 +2041,21 @@ testOrphan = do
                          ]
                      , "Value"      .= (-360000 :: Int)
                      , "Orphan"     .= False
+                     , "Partial"    .= False
                      ]
             , object [ "Recipients" .= toJSON
                          [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
                          ]
                      , "Value"      .= (120000 :: Int)
                      , "Orphan"     .= False
+                     , "Partial"    .= False
                      ]
             , object [ "Recipients" .= toJSON
                          [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
                          ]
                      , "Value"      .= (-120000 :: Int)
                      , "Orphan"     .= False
+                     , "Partial"    .= False
                      ]
             ]
         )
@@ -2041,6 +2067,7 @@ testOrphan = do
                          [ T.pack "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
                      , "Value"      .= (200000 :: Int)
                      , "Orphan"     .= False
+                     , "Partial"    .= False
                      ]
             , object [ "Recipients" .= toJSON
                          [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
@@ -2048,6 +2075,7 @@ testOrphan = do
                          ]
                      , "Value"      .= (-170000 :: Int)
                      , "Orphan"     .= False
+                     , "Partial"    .= False
                      ]
             ]
         )
@@ -2069,6 +2097,7 @@ testOrphan = do
                              ]
                          , "Value"      .= (120000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
@@ -2076,12 +2105,14 @@ testOrphan = do
                              ]
                          , "Value"      .= (-170000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 , object [ "Recipients" .= toJSON
                              [ T.pack "13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"
                              ]
                          , "Value"      .= (-120000 :: Int)
                          , "Orphan"     .= False
+                         , "Partial"    .= False
                          ]
                 ]
             )
@@ -2094,25 +2125,21 @@ testOrphan = do
                 , "1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw"
                 , "17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG"
                 ]
-              , 600000
-              , False
+              , 600000, False, False
               )
             , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
               , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
                 , "1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86"
                 ]
-              , -360000
-              , False
+              , -360000, False, False
               )
             , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
               , ["14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"]
-              , 120000
-              , False
+              , 120000, False, False
               )
             , ( "e2974336b16235d3ddddd15be19dcd3a9522d521601051063afdd542a1f34967"
               , ["13s6R8TRWTk5DZaSQ2pKn3hfdugvEZEdZf"]
-              , -120000
-              , False
+              , -120000, False, False
               )
             ]
 
@@ -2121,13 +2148,13 @@ testOrphan = do
         liftIO . assertEqual "Last order verification 2"
             [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
               , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
-              , 200000, False
+              , 200000, False, False
               )
             , ( "f08e565d4b1bfc88727607e9ffe27210977bc538ba4e4823793a324d71e53953"
               , [ "14MZHk4dkM3ZM7bBcET4ELuyozXqCCsQpb"
                 , "13GTKCtWbpRpPGca3uhTjwZWiQcqAMPh6n"
                 ]
-              , -170000, False
+              , -170000, False, False
               )
             ]
 
@@ -2219,6 +2246,12 @@ testSend = do
     let partialTx = "0100000003082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80102000000b50047304402200e72eb2b17c6c737313a8081a15cba1589e26cdc748056df71c70949f8a17b7002205ec876a152b11f6dcec7a5fd9ee448e9c2d069686b8ff25fcd98d29e5d52d10401004c69522102779d361a5d534dfca9d480eb60a1b14741a98d29f5c984fc1afd68a8c50981232102f579364c0d0971ec9ae52f2fc870204bce00438be1b6fa695d27c9d01cfb0956210383787221b68f601aa4695c27e7eebb0d15de2ed7ef7b9981fba8cad71ae2d84253aeffffffff082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80103000000b600483045022100b91fb1377dd774179b4c93c25854225957aa410a38bb520864f964edbe55fcd9022079fa489f8308e4b3be613fcd3b30d5b9b38f70716009e96e5ba9d3bd1431cfa601004c6952210285bd8161363c6e2d2c075e08ed8a956c4706ccd77497a31327bf92b2208c3587210286e3177a8ca61d2d9426b4230735631e8552cc4d6e87e1277960461b0d26aac42103e2e138589e064f347238c2ca46c1d7deb8dd9472d065d7c5cb0f91aa5cc210a953aeffffffff082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80101000000b50047304402204d21b742809528ef73e63e021983f51da2850c8a7a8ecca378efc57e71b8c22902201467246a84afc15f7fba7038c7c5c552fce0789280f20cb75c99dd8ba36edf3b01004c695221023206a385544defd500a54d3d3fd8982d35fa7f877fa721beb59e440186183e8a210352b7c1f82593abebcb4ad0bbf28a4317b49efc1cc3e647453c09c6375122e8f621035c9ca1f7825d2cf025f42e636f57f193dbaae5c18b08dca10bf996ddb58eb8e853aeffffffff03e0930400000000001976a91419abd2efb4cd44b132ffd6206aa35e60f9d3e4b988ace0220200000000001976a914decc77b87d2199a51532034ad63f59cae6e6c4f588ac803801000000000017a914737e1e10bbf4290c82681745b5a54449ca83d1848700000000"
 
     let finalTx = "0100000003082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80102000000fdfd000047304402200e72eb2b17c6c737313a8081a15cba1589e26cdc748056df71c70949f8a17b7002205ec876a152b11f6dcec7a5fd9ee448e9c2d069686b8ff25fcd98d29e5d52d10401483045022100e9235ee3866429a4188dbd795d6c64d66952c86566b4940e90262a511966213402201782bd02ff891864513dbb3943e453020c06f238187574ab74e82b252b0e388b014c69522102779d361a5d534dfca9d480eb60a1b14741a98d29f5c984fc1afd68a8c50981232102f579364c0d0971ec9ae52f2fc870204bce00438be1b6fa695d27c9d01cfb0956210383787221b68f601aa4695c27e7eebb0d15de2ed7ef7b9981fba8cad71ae2d84253aeffffffff082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80103000000fdfe0000483045022100fc33d03cd7779fe9db850c148058c61d0f0f863803ee0623b903d66cee7ab1a402200dc945f61c1ce44911caeab31481b73eb7fe78f2b13f7489f88f35693ae2f02301483045022100b91fb1377dd774179b4c93c25854225957aa410a38bb520864f964edbe55fcd9022079fa489f8308e4b3be613fcd3b30d5b9b38f70716009e96e5ba9d3bd1431cfa6014c6952210285bd8161363c6e2d2c075e08ed8a956c4706ccd77497a31327bf92b2208c3587210286e3177a8ca61d2d9426b4230735631e8552cc4d6e87e1277960461b0d26aac42103e2e138589e064f347238c2ca46c1d7deb8dd9472d065d7c5cb0f91aa5cc210a953aeffffffff082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80101000000fc0047304402204d21b742809528ef73e63e021983f51da2850c8a7a8ecca378efc57e71b8c22902201467246a84afc15f7fba7038c7c5c552fce0789280f20cb75c99dd8ba36edf3b01473044022077dae4f7d45d3baff798d7649cd0e887433411e199ed3148654cdebb006580400220206be4f3f95c8a75a3e570bf0b2ba5f7b18fd671379b3bd101f2f28a017c496c014c695221023206a385544defd500a54d3d3fd8982d35fa7f877fa721beb59e440186183e8a210352b7c1f82593abebcb4ad0bbf28a4317b49efc1cc3e647453c09c6375122e8f621035c9ca1f7825d2cf025f42e636f57f193dbaae5c18b08dca10bf996ddb58eb8e853aeffffffff03e0930400000000001976a91419abd2efb4cd44b132ffd6206aa35e60f9d3e4b988ace0220200000000001976a914decc77b87d2199a51532034ad63f59cae6e6c4f588ac803801000000000017a914737e1e10bbf4290c82681745b5a54449ca83d1848700000000"
+
+    liftIO $ assertBool "Partial transaction not complete" $ 
+        not $ isTxComplete (decode' $ fromJust $ hexToBS partialTx)
+
+    liftIO $ assertBool "Final transaction complete" $ 
+        isTxComplete (decode' $ fromJust $ hexToBS finalTx)
 
     -- trying to sign the multisig transaction before importing the transaction
     -- funding the account. This should return the original transaction

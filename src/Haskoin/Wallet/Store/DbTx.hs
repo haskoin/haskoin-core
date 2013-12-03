@@ -52,6 +52,7 @@ yamlTx tx = object
     [ "Recipients" .= dbTxRecipients tx
     , "Value" .= dbTxValue tx
     , "Orphan" .= dbTxOrphan tx
+    , "Partial" .= dbTxPartial tx
     ]
 
 txidHex :: Hash256 -> String
@@ -59,12 +60,9 @@ txidHex = bsToHex . BS.reverse . encode'
 
 -- |Command to import a transaction. It can be called multiple times
 -- with the same transaction 
-cmdImportTx :: ( PersistStore m
-               , PersistQuery m 
-               , PersistUnique m
-               , PersistMonadBackend m ~ b
-               , b ~ SqlBackend
-               )
+cmdImportTx :: ( PersistStore m, PersistQuery m, PersistUnique m
+               , PersistMonadBackend m ~ b, b ~ SqlBackend
+               ) 
             => Tx -> EitherT String m Value
 cmdImportTx tx = do
     accTx <- dbImportTx tx
@@ -72,118 +70,202 @@ cmdImportTx tx = do
   where
     f a b = (dbTxCreated a) `compare` (dbTxCreated b)
 
-dbImportTx :: ( PersistStore m
-              , PersistQuery m 
-              , PersistUnique m
-              , PersistMonadBackend m ~ b
-              , b ~ SqlBackend
+-- |Remove a transaction from the database and any parent transaction
+dbRemoveTx :: ( PersistStore m, PersistQuery m, PersistUnique m
+              , PersistMonadBackend m ~ b, b ~ SqlBackend
               )
+           => String -> EitherT String m [String]
+dbRemoveTx txid = do
+    -- Delete orphaned coins spent by this transaction
+    deleteWhere [ DbCoinOrphan ==. True
+                , DbCoinStatus <-. [Spent txid, Reserved txid]
+                ]
+    -- Unspend coins that were previously spent by this transaction
+    updateWhere [ DbCoinStatus <-. [Spent txid, Reserved txid] ]
+                [ DbCoinStatus =. Unspent ]
+    -- Delete account transactions
+    deleteWhere [ DbTxTxid ==. txid ]
+    -- Delete transaction blob
+    deleteWhere [ DbTxBlobTxid ==. txid ]
+    -- Find all parents of this transaction
+    -- Partial transactions should not yield any coins. Won't check for it
+    coins <- selectList [ DbCoinTxid ==. txid ] []
+    let parents = nub $ catStatus $ map (dbCoinStatus . entityVal) coins
+    -- Delete coins generated from this transaction
+    deleteWhere [ DbCoinTxid ==. txid ]
+    -- Recursively remove parents
+    pids <- forM parents dbRemoveTx
+    return $ txid:(concat pids)
+          
+-- |Import a transaction into the database
+dbImportTx :: ( PersistStore m, PersistQuery m, PersistUnique m
+              , PersistMonadBackend m ~ b, b ~ SqlBackend
+              ) 
            => Tx -> EitherT String m [DbTxGeneric b]
 dbImportTx tx = do
-    inActions  <- mapRights (dbImportIn $ txid tx) $ txIn tx
-    outActions <- mapRights (dbImportOut $ txid tx) $ zip (txOut tx) [0..]
-    let inMap  = foldl fin M.empty inActions
-        accMap = foldl fout inMap outActions
-    accTx <- mapM build $ M.toList accMap
-    -- insert account transactions into database, rewriting if they exist
-    forM accTx $ \tx -> do
-        prev <- getBy $ UniqueTx (dbTxTxid tx) (dbTxAccount tx)
-        if isNothing prev 
-            then insert_ tx 
-            else replace (entityKey $ fromJust prev) tx
-    -- insertUnique to ignore errors when duplicates detected (normal)
-    time <- liftIO $ getCurrentTime
-    insertUnique $ DbTxBlob (txidHex $ txid tx) (encode' tx) time
-    -- Re-import transactions spending which are spending this one
-    let txids = nub $ catMaybes $ map (\(_,_,_,x) -> x) outActions
-    txBlobs <- mapM dbGetTxBlob txids
-    let f = liftEither . decodeToEither . dbTxBlobValue . entityVal
-    reImported <- forM txBlobs $ (dbImportTx =<<) . f
-    return $ accTx ++ (concat reImported)
-  where 
-    fin acc (ai,vi,o) = flip (M.insert ai) acc $ case M.lookup ai acc of
-        Just (vi',_,o',_) -> (vi+vi',0,o || o',[])
-        _                 -> (vi,0,o,[])
-    fout acc (ai,vo,addr,_) = flip (M.insert ai) acc $ case M.lookup ai acc of
-        Just (vi,vo',o,xs) -> (vi,vo+vo',o,xs ++ [addr])
-        _                  -> (0,vo,False,[addr])
-    allRecip  = rights $ map toAddr $ txOut tx
-    toAddr = (addrToBase58 <$>) . scriptRecipient . scriptOutput
-    build (ai,(vi,vo,orphan,xs)) = do
-        time  <- liftIO $ getCurrentTime
-        let tot   | orphan    = 0
-                  | otherwise = vo - vi
-            recip | null xs   = allRecip
-                  | orphan    = allRecip \\ xs -- Most likely an outgoing tx
-                  | tot < 0   = allRecip \\ xs -- Remove the change
-                  | otherwise = xs
-        return $ DbTx (txidHex $ txid tx) recip tot ai orphan time
+    coinsM <- mapM (getBy . f) $ map prevOutput $ txIn tx
+    let inCoins = catMaybes coinsM
+        -- Unspent coins in the wallet related to this transaction
+        unspent = filter ((== Unspent) . dbCoinStatus . entityVal) inCoins
+        -- OutPoints from this transaction with no associated coins
+        unknown = map snd $ filter (isNothing . fst) $ zip coinsM $ txIn tx
+    -- Fail if an input is spent by a transaction which is not this one
+    unless (isImportValid id $ map entityVal inCoins) $ left
+        "dbImportTx: Double spend detected. Import failed"
+    let toRemove = txToRemove $ map entityVal inCoins
+    if length toRemove > 0
+    then do
+        -- Partial transactions need to be removed before trying to re-import
+        mapM dbRemoveTx toRemove
+        dbImportTx tx
+    else do
+        time <- liftIO getCurrentTime
+        -- Change status of all the unspent coins
+        forM unspent $ \(Entity ci _) -> update ci [DbCoinStatus =. status]
+        -- Insert orphaned coins
+        orphans <- catMaybes <$> mapM (dbImportOrphan status) unknown
+        -- Import new coins and update existing coins
+        outCoins <- catMaybes <$> 
+            (mapM (dbImportCoin id complete) $ zip (txOut tx) [0..])
+        let accTxs = buildAccTx tx (map entityVal inCoins) 
+                         orphans outCoins (not complete) time
+        -- Insert transaction blob. Ignore if already exists
+        insertUnique $ DbTxBlob id (encode' tx) time
+        -- insert account transactions into database, rewriting if they exist
+        forM accTxs $ \accTx -> do
+            prev <- getBy $ UniqueTx (dbTxTxid accTx) (dbTxAccount accTx)
+            if isNothing prev 
+                then insert_ accTx  
+                else replace (entityKey $ fromJust prev) accTx
+        -- Re-import parent transactions (transactions spending this one)
+        if complete
+        then do
+            let ids = nub $ catStatus $ map dbCoinStatus outCoins
+            blobs <- mapM dbGetTxBlob ids
+            let dec = liftEither . decodeToEither . dbTxBlobValue . entityVal
+            reImported <- forM blobs $ (dbImportTx =<<) . dec
+            return $ accTxs ++ (concat reImported)
+        else return accTxs
+  where
+    id               = txidHex $ txid tx
+    f (OutPoint h i) = CoinOutPoint (txidHex h) (fromIntegral i)
+    complete         = isTxComplete tx
+    status           = if complete then Spent id else Reserved id
 
-dbImportIn :: ( PersistStore m
-              , PersistQuery m 
-              , PersistUnique m
-              , PersistMonadBackend m ~ SqlBackend
-              )
-           => Hash256 -> TxIn -> EitherT String m (DbAccountId,Int,Bool)
-dbImportIn txid (TxIn op@(OutPoint h i) s _) = do
-    a <- liftEither $ scriptSender s   
-    (Entity _ addr) <- dbGetAddr $ addrToBase58 a
-    coinM <- getBy $ CoinOutPoint (txidHex h) (fromIntegral i)
-    case coinM of
-        Just (Entity ci coin) -> do
-            update ci [ DbCoinSpent =. (Just $ txidHex txid) ]
-            return (dbCoinAccount coin,dbCoinValue coin,dbCoinOrphan coin)
-        Nothing -> do
+-- |A transaction can not be imported if it double spends coins in the wallet.
+-- Upstream code needs to remove the conflicting transaction first using
+-- dbTxRemove function
+isImportValid :: String -> [DbCoinGeneric b] -> Bool
+isImportValid id coins = all (f . dbCoinStatus) coins
+  where
+    f (Spent parent) = parent == id
+    f _              = True
+
+-- When a transaction spends coins previously spent by a partial transaction,
+-- we need to remove the partial transactions from the database and try to
+-- re-import the transaction. Coins with Reserved status are spent by a partial
+-- transaction.
+txToRemove :: [DbCoinGeneric b] -> [String]
+txToRemove coins = catMaybes $ map (f . dbCoinStatus) coins
+  where
+    f (Reserved parent) = Just parent
+    f _                 = Nothing
+
+-- |Group input, orphan and output coins by accounts and create 
+-- account-level transaction
+buildAccTx :: Tx -> [DbCoinGeneric b] -> [DbCoinGeneric b] -> [DbCoinGeneric b]
+           -> Bool -> UTCTime -> [DbTxGeneric b]
+buildAccTx tx inCoins orphans outCoins partial time = map build $ M.toList cMap
+  where
+    aMap = foldr (f (\(a,b,c) x -> (x:a,b,c))) M.empty inCoins
+    bMap = foldr (f (\(a,b,c) x -> (a,x:b,c))) aMap orphans
+    cMap = foldr (f (\(a,b,c) x -> (a,b,x:c))) bMap outCoins
+    f g coin accMap = case M.lookup (dbCoinAccount coin) accMap of
+        Just triple -> M.insert (dbCoinAccount coin) (g triple coin) accMap
+        Nothing     -> M.insert (dbCoinAccount coin) (g ([],[],[]) coin) accMap
+    allRecip = rights $ map toAddr $ txOut tx
+    toAddr   = (addrToBase58 <$>) . scriptRecipient . scriptOutput
+    sumVal = sum . (map dbCoinValue)
+    build (ai,(i,o,c)) = 
+        DbTx (txidHex $ txid tx) recip total ai (not (null o)) partial time
+      where
+        total | null o    = sumVal c - sumVal i
+              | otherwise = 0
+        addrs = map dbCoinAddress c
+        recip | null addrs   = allRecip
+              | length o > 0 = allRecip \\ addrs
+              | total < 0    = allRecip \\ addrs
+              | otherwise    = addrs
+
+-- |Create an orphaned coin if the input spends from an address in the wallet
+-- but the coin doesn't exist in the wallet. This allows out-of-order tx import
+dbImportOrphan :: ( PersistStore m, PersistQuery m, PersistUnique m
+                  , PersistMonadBackend m ~ b, b ~ SqlBackend
+                  ) 
+               => CoinStatus -> TxIn 
+               -> EitherT String m (Maybe (DbCoinGeneric b))
+dbImportOrphan status (TxIn op@(OutPoint h i) s _)
+    | isLeft a  = return Nothing
+    | otherwise = getBy (UniqueAddress b58) >>= \addrM -> case addrM of
+        Nothing              -> return Nothing
+        Just (Entity _ addr) -> do
             time <- liftIO $ getCurrentTime
             rdm  <- dbGetRedeem addr
-            insert_ $ DbCoin (txidHex h) (fromIntegral i) 
-                             0 "" rdm
-                             (addrToBase58 a)
-                             (Just $ txidHex txid) 
-                             (dbAddressAccount addr) 
-                             True time
-            return (dbAddressAccount addr,0,True)
+            let coin = build rdm addr time
+            insert_ coin >> return (Just coin)
+  where
+    a   = scriptSender s
+    b58 = addrToBase58 $ fromRight a
+    build rdm addr time = 
+        DbCoin (txidHex h) (fromIntegral i) 0 "" rdm b58 status
+               (dbAddressAccount addr) True time
 
-dbImportOut :: ( PersistStore m
-               , PersistQuery m 
-               , PersistUnique m
-               , PersistMonadBackend m ~ SqlBackend
-               )
-            => Hash256 -> (TxOut,Int) 
-            -> EitherT String m (DbAccountId,Int,String,Maybe String)
-dbImportOut txid ((TxOut v s), index) = do
-    a <- liftEither $ scriptRecipient s
-    (Entity _ addr) <- dbGetAddr $ addrToBase58 a
-    time <- liftIO $ getCurrentTime
-    coinM <- getBy $ CoinOutPoint (txidHex txid) index
-    toImport <- case coinM of
-        Just (Entity ci coin) -> do
-            replace ci coin{ dbCoinOrphan  = False
-                           , dbCoinValue   = (fromIntegral v)
-                           , dbCoinScript  = (bsToHex $ encodeScriptOps s)
-                           , dbCoinCreated = time
-                           }
-            return $ dbCoinSpent coin
-        Nothing -> do
-            rdm  <- dbGetRedeem addr
-            insert_ $ DbCoin (txidHex txid) index 
-                             (fromIntegral v)
-                             (bsToHex $ encodeScriptOps s)
-                             rdm (addrToBase58 a) Nothing
-                             (dbAddressAccount addr) 
-                             False time
-            dbAdjustGap addr -- Generate addresses if addr is within the gap
-            return Nothing
-    return (dbAddressAccount addr, fromIntegral v, addrToBase58 a, toImport)
-
-dbGetRedeem :: ( PersistStore m
-               , PersistQuery m 
-               , PersistUnique m
-               , PersistMonadBackend m ~ b
-               , b ~ SqlBackend
+-- |Create a new coin for an output if it sends coins to an 
+-- address in the wallet. Does not actually write anything to the database
+-- if commit is False. This is for correctly reporting on partial transactions
+-- without creating coins in the database from a partial transaction
+dbImportCoin :: ( PersistStore m, PersistQuery m, PersistUnique m
+                , PersistMonadBackend m ~ b, b ~ SqlBackend
+                )
+             => String -> Bool -> (TxOut,Int) 
+             -> EitherT String m (Maybe (DbCoinGeneric b))
+dbImportCoin txid commit ((TxOut v s), index) 
+    | isLeft a  = return Nothing
+    | otherwise = getBy (UniqueAddress b58) >>= \addrM -> case addrM of
+        Nothing              -> return Nothing
+        Just (Entity _ addr) -> do
+            time  <- liftIO getCurrentTime
+            coinM <- getBy $ CoinOutPoint txid index
+            case coinM of
+                Just (Entity ci coin) -> do
+                    -- Update existing coin with up to date information
+                    let newCoin = coin{ dbCoinOrphan  = False
+                                      , dbCoinValue   = (fromIntegral v)
+                                      , dbCoinScript  = scp
+                                      , dbCoinCreated = time
+                                      }
+                    when commit $ replace ci newCoin
+                    return $ Just newCoin
+                Nothing -> do
+                    rdm <- dbGetRedeem addr
+                    let coin = build rdm addr time
+                    when commit $ insert_ coin
+                    dbAdjustGap addr -- Adjust address gap
+                    return $ Just coin
+  where
+    a   = scriptRecipient s
+    b58 = addrToBase58 $ fromRight a
+    scp = bsToHex $ encodeScriptOps s
+    build rdm addr time = 
+        DbCoin  txid index (fromIntegral v) scp rdm b58 Unspent
+               (dbAddressAccount addr) False time
+    
+-- |Builds a redeem script given an address. Only relevant for addresses
+-- linked to multisig accounts. Otherwise it returns Nothing
+dbGetRedeem :: ( PersistStore m, PersistQuery m, PersistUnique m
+               , PersistMonadBackend m ~ b, b ~ SqlBackend
                ) 
-            => DbAddressGeneric b
-            -> EitherT String m (Maybe String)
+            => DbAddressGeneric b -> EitherT String m (Maybe String)
 dbGetRedeem addr = do
     acc <- liftMaybe accErr =<< (get $ dbAddressAccount addr)
     rdm <- if isMSAcc acc 
@@ -203,9 +285,7 @@ dbGetRedeem addr = do
     rdmErr = "dbGetRedeem: Could not generate redeem script"
 
 -- |List transactions for a specific account
-cmdListTx :: ( PersistQuery m 
-             , PersistUnique m
-             )
+cmdListTx :: (PersistQuery m, PersistUnique m)
           => AccountName -> EitherT String m Value
 cmdListTx name = do
     (Entity ai acc) <- dbGetAcc name
@@ -215,13 +295,10 @@ cmdListTx name = do
     return $ toJSON $ map (yamlTx . entityVal) txs
 
 -- |Command to send coins to a single recipient
-cmdSend :: ( PersistStore m
-           , PersistQuery m 
-           , PersistUnique m
+cmdSend :: ( PersistStore m, PersistQuery m, PersistUnique m
            , PersistMonadBackend m ~ SqlBackend
            )
-        => AccountName -> String -> Int -> Int
-        -> EitherT String m Value
+        => AccountName -> String -> Int -> Int -> EitherT String m Value
 cmdSend name a v fee = do
     (tx,complete) <- dbSendTx name [(a,fromIntegral v)] (fromIntegral fee)
     return $ object [ "Payment Tx" .= (toJSON $ bsToHex $ encode' tx)
@@ -229,13 +306,10 @@ cmdSend name a v fee = do
                     ]
 
 -- |Command to send coins to a list of recipients
-cmdSendMany :: ( PersistStore m
-               , PersistQuery m 
-               , PersistUnique m
+cmdSendMany :: ( PersistStore m, PersistQuery m, PersistUnique m
                , PersistMonadBackend m ~ SqlBackend
                )
-            => AccountName -> [(String,Int)] -> Int
-            -> EitherT String m Value
+            => AccountName -> [(String,Int)] -> Int -> EitherT String m Value
 cmdSendMany name dests fee = do
     (tx,complete) <- dbSendTx name dests' (fromIntegral fee)
     return $ object [ "Payment Tx" .= (toJSON $ bsToHex $ encode' tx)
@@ -244,9 +318,7 @@ cmdSendMany name dests fee = do
     where dests' = map (\(a,b) -> (a,fromIntegral b)) dests
 
 -- |Build and sign a transactoin given a list of recipients
-dbSendTx :: ( PersistStore m
-            , PersistQuery m 
-            , PersistUnique m
+dbSendTx :: ( PersistStore m, PersistQuery m, PersistUnique m
             , PersistMonadBackend m ~ SqlBackend
             )
          => AccountName -> [(String,Word64)] -> Word64
@@ -256,9 +328,7 @@ dbSendTx name dests fee = do
     dbSendCoins coins recip (SigAll False)
 
 -- |Given a list of recipients and a fee, finds a valid combination of coins
-dbSendSolution :: ( PersistStore m
-                  , PersistQuery m 
-                  , PersistUnique m
+dbSendSolution :: ( PersistStore m, PersistQuery m, PersistUnique m
                   , PersistMonadBackend m ~ SqlBackend
                   )
                => AccountName -> [(String,Word64)] -> Word64
@@ -280,10 +350,7 @@ dbSendSolution name dests fee = do
     tot = sum $ map snd dests
     
 -- |Build and sign a transaction by providing coins and recipients
-dbSendCoins :: ( PersistStore m
-               , PersistQuery m 
-               , PersistUnique m
-               )
+dbSendCoins :: (PersistStore m, PersistQuery m, PersistUnique m)
             => [Coin] -> [(String,Word64)] -> SigHash
             -> EitherT String m (Tx, Bool)
 dbSendCoins coins recipients sh = do
@@ -293,12 +360,8 @@ dbSendCoins coins recipients sh = do
     bsTx <- liftEither $ buildToEither sigTx
     return (bsTx, isComplete sigTx)
 
-cmdSignTx :: ( PersistStore m
-             , PersistQuery m 
-             , PersistUnique m
-             )
-          => AccountName -> Tx -> SigHash
-          -> EitherT String m Value
+cmdSignTx :: (PersistStore m, PersistQuery m, PersistUnique m)
+          => AccountName -> Tx -> SigHash -> EitherT String m Value
 cmdSignTx name tx sh = do
     (tx,complete) <- dbSignTx name tx sh
     return $ object 
@@ -306,12 +369,8 @@ cmdSignTx name tx sh = do
         , (T.pack "Complete") .= complete
         ]
 
-dbSignTx :: ( PersistStore m
-            , PersistQuery m 
-            , PersistUnique m
-            )
-         => AccountName -> Tx -> SigHash
-         -> EitherT String m (Tx, Bool)
+dbSignTx :: (PersistStore m, PersistQuery m, PersistUnique m)
+         => AccountName -> Tx -> SigHash -> EitherT String m (Tx, Bool)
 dbSignTx name tx sh = do
     (Entity ai acc) <- dbGetAcc name
     coins <- catMaybes <$> (mapM (getBy . f) $ map prevOutput $ txIn tx)
@@ -326,10 +385,7 @@ dbSignTx name tx sh = do
     g = ((dbGetSigData sh) =<<) . liftEither . toCoin . entityVal
 
 -- |Given a coin, retrieves the necessary data to sign a transaction
-dbGetSigData :: ( PersistStore m
-                , PersistUnique m
-                , PersistQuery m
-                )
+dbGetSigData :: (PersistStore m, PersistUnique m, PersistQuery m)
              => SigHash -> Coin -> EitherT String m (SigInput,PrvKey)
 dbGetSigData sh coin = do
     (Entity _ w) <- dbGetWallet "main"

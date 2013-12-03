@@ -73,6 +73,7 @@ module Haskoin.Wallet
 , SigInput(..)
 , signTx
 , detSignTx
+, isTxComplete
 
 ) where
 

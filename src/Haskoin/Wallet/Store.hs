@@ -17,6 +17,8 @@ module Haskoin.Wallet.Store
 , Unique(..)
 , EntityField(..)
 , AccountName
+, CoinStatus(..)
+, catStatus
 , dbGetWallet
 , dbGetTxBlob
 , liftEither

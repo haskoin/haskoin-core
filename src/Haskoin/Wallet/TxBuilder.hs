@@ -11,6 +11,7 @@ module Haskoin.Wallet.TxBuilder
 , chooseMSCoins
 , getFee
 , getMSFee
+, isTxComplete
 ) where
 
 import Control.Monad
@@ -138,6 +139,9 @@ data SigInput = SigInput   { sigDataOut :: Script
 liftSecret :: Monad m => Build a -> SecretT (BuildT m) a
 liftSecret = lift . liftBuild
 
+isTxComplete :: Tx -> Bool
+isTxComplete = isComplete . (mapM toBuildTxIn) . txIn
+
 signTx :: Monad m => Tx -> [SigInput] -> [PrvKey] -> SecretT (BuildT m) Tx
 signTx tx@(Tx _ ti _ _) sigis keys = do
     liftSecret $ when (null ti) $ Broken "signTx: Transaction has no inputs"
@@ -175,6 +179,8 @@ detSignTxIn txin sigi tx i keys = do
 
 {- Helpers for signing transactions -}
 
+-- |Decides if a TxIn is complete. If the TxIn could not be decoded and it
+-- is not empty, we consider it complete.
 toBuildTxIn :: TxIn -> Build TxIn
 toBuildTxIn txin@(TxIn _ s _)
     | null $ runScript s = Partial txin
@@ -182,9 +188,10 @@ toBuildTxIn txin@(TxIn _ s _)
         Right (ScriptHashInput (SpendMulSig xs r) _) -> 
             guardPartial (length xs == r) >> return txin
         Right _ -> return txin
-        Left _  -> eitherToBuild (decodeInput s) >>= \si -> case si of
-            SpendMulSig xs r -> guardPartial (length xs == r) >> return txin
-            _                -> return txin
+        Left _ -> case decodeInput s of
+            Right (SpendMulSig xs r) ->
+                guardPartial (length xs == r) >> return txin
+            _ -> return txin
 
 
 orderSigInput :: [TxIn] -> [SigInput] -> [(Maybe SigInput, TxIn, Int)]

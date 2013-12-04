@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE TypeFamilies      #-}
 module Main where
 
 import System.IO
@@ -10,7 +12,6 @@ import qualified System.Environment as E
 import Control.Monad
 import Control.Applicative
 import Control.Monad.Trans
-import Control.Monad.Trans.Resource
 import Control.Monad.Trans.Either
 import Control.Exception (tryJust)
 
@@ -39,6 +40,7 @@ import Haskoin.Util
 data Options = Options
     { optCount    :: Int
     , optSigHash  :: SigHash
+    , optFee      :: Int
     , optJson     :: Bool
     , optHelp     :: Bool
     , optVersion  :: Bool
@@ -47,6 +49,7 @@ data Options = Options
 defaultOptions = Options
     { optCount    = 5
     , optSigHash  = SigAll False
+    , optFee      = 10000
     , optJson     = False
     , optHelp     = False
     , optVersion  = False
@@ -63,6 +66,8 @@ options =
             let sh = optSigHash opts
             return opts{ optSigHash = sh{ anyoneCanPay = True } }
         ) $ "Set signature flag AnyoneCanPay"
+    , Option ['f'] ["fee"] (ReqArg parseCount "INT") $
+        "Transaction fee"
     , Option ['j'] ["json"]
         (NoArg $ \opts -> return opts{ optJson = True }) $
         "Format result as JSON (default: YAML)"
@@ -95,27 +100,27 @@ cmdHelp :: [String]
 cmdHelp = 
     [ "hw commands: " 
     , "  init       <seed>                      Initialize a wallet"
-    , "  list       [acc]                       Display most recent addresses" 
-    , "  listfrom   <from> [acc]                Display addresses from an index" 
-    , "  listall    [acc]                       Display all addresses" 
-    , "  new        <label> [acc]               Generate address with a label"
-    , "  genaddr    [acc]                       Generate new addresses"
-    , "  label      <index> <label> [acc]       Add a label to an address"
-    , "  balance    [acc]                       Display account balance"
-    , "  totalbalance                           Display total balance"
-    , "  listtx     [acc]                       Display transactions"
-    , "  send       addr amount [acc]           Send coins to an address"
-    , "  signtx     <tx>                        Sign a transaction"
-    , "  focus      <acc>                       Set the focused account"
-    , "  accinfo    [acc]                       Display account information"
-    , "  listacc                                List all accounts"
+    , "  list       <acc>                       Display last page of addresses"
+    , "  listpage   <acc> <page> <res/page>     Display addresses by page"
+    , "  new        <acc> {labels...}           Generate address with labels"
+    , "  genaddr    <acc> [-c count]            Generate new addresses"
+    , "  label      <acc> <index> <label>       Add a label to an address"
+    , "  balance    <acc>                       Display account balance"
+    , "  balances                               Display all balances"
+    , "  tx         <acc>                       Display transactions"
+    , "  send       <acc> <addr> <amount>       Send coins to an address"
+    , "  sendmany   <acc> {addr:amount...}      Send coins to many addresses"
     , "  newacc     <name>                      Create a new account"
     , "  newms      <name> <M> <N> {pubkey...}  Create a new multisig account"
-    , "  addkey     <pubkey> [acc]              Add pubkey to a multisig account"
-    , "  dumpkeys   [acc]                       Dump pubkey to stdout"
+    , "  addkeys    <acc> {pubkeys...}          Add pubkeys to a multisig account"
+    , "  accinfo    <acc>                       Display account information"
+    , "  listacc                                List all accounts"
+    , "  dumpkeys   <acc>                       Dump account keys to stdout"
+    , "  coins      <acc>                       List coins"
+    , "  allcoins                               List all coins per account"
+    , "  signtx     <tx>                        Sign a transaction"
     , "  importtx   <tx>                        Import transaction"
-    , "  coins      [acc]                       List transaction outputs"
-    , "  allcoins                               List all transaction outputs"
+    , "  importtx   <txid>                      Import transaction"
     , "  decodetx   <tx>                        Decode HEX transaction"
     , "  buildrawtx {txid:id...} {addr:amnt...} Build a new transaction"
     , "  signrawtx  <tx> {txid:id:script...}    Sign a raw transaction"
@@ -180,7 +185,9 @@ whenArgs :: Monad m => Args -> (Int -> Bool) -> Command m -> Command m
 whenArgs args f cmd = if f $ length args then cmd else argErr
     where argErr = left "Invalid number of arguments"
 
-dispatchCommand :: (PersistStore m, PersistUnique m, PersistQuery m) 
+dispatchCommand :: ( PersistStore m, PersistUnique m, PersistQuery m
+                   , PersistMonadBackend m ~ SqlBackend
+                   ) 
                 => String -> Options -> Args -> Command m
 dispatchCommand cmd opts args = case cmd of
     "init" -> whenArgs args (== 1) $ cmdInit $ head args
@@ -188,28 +195,40 @@ dispatchCommand cmd opts args = case cmd of
     "listpage" -> whenArgs args (== 2) $ 
         cmdList (head args) (read $ args !! 1) (optCount opts)
     "new" -> whenArgs args (>= 2) $ cmdGenWithLabel (head args) $ drop 1 args
-    "genaddr" -> whenArgs args (== 1) $ cmdGenAddr (head args) (optCount opts)
+    "genaddr" -> whenArgs args (== 1) $ cmdGenAddrs (head args) (optCount opts)
     "label" -> whenArgs args (== 3) $ 
         cmdLabel (head args) (read $ args !! 1) (args !! 2)
+    "balance" -> whenArgs args (== 1) $ cmdBalance $ head args
+    "balances" -> whenArgs args (== 0) cmdBalances
+    "tx" -> whenArgs args (== 1) $ cmdListTx $ head args
+    "send" -> whenArgs args (== 3) $ 
+        cmdSend (head args) (args !! 1) (read $ args !! 2) (optFee opts)
+    "sendmany" -> whenArgs args (>= 2) $ do
+        let f [a,b] = (T.unpack a,read $ T.unpack b)
+            f _     = error "sendmany: Invalid format addr:amount"
+            dests   = map (f . (T.splitOn (T.pack ":")) . T.pack) $ drop 1 args
+        cmdSendMany (head args) dests (optFee opts)
     "newacc" -> whenArgs args (== 1) $ cmdNewAcc $ head args
     "newms" -> whenArgs args (>= 3) $ do
         keys <- liftMaybe "newms: Invalid keys" $ mapM xPubImport $ drop 3 args
         cmdNewMS (args !! 0) (read $ args !! 1) (read $ args !! 2) keys
-    "addkey" -> whenArgs args (>= 2) $ do
+    "addkeys" -> whenArgs args (>= 2) $ do
         keys <- liftMaybe "newms: Invalid keys" $ mapM xPubImport $ drop 1 args
         cmdAddKeys (head args) keys
     "accinfo" -> whenArgs args (== 1) $ cmdAccInfo $ head args
     "listacc" -> whenArgs args (== 0) cmdListAcc 
     "dumpkeys" -> whenArgs args (== 1) $ cmdDumpKeys $ head args
---    "balance"      -> withFocus args 1 $ \acc -> cmdBalance acc
---    "totalbalance" -> whenArgs args (== 0) cmdTotalBalance
---    "listtx"       -> withFocus args 1 cmdListTx
---    "send"         -> withFocus args 3 $ \acc -> 
---        cmdSend (head args) (read $ args !! 1) acc
---    "signtx"       -> withFocus args 2 $ \acc -> cmdSignTx (head args) acc
---    "importtx"     -> whenArgs args (== 1) $ cmdImportTx $ head args
---    "coins"        -> withFocus args 1 $ \acc -> cmdCoins acc
---    "allcoins"     -> whenArgs args (== 0) cmdAllCoins
+    "coins" -> whenArgs args (== 1) $ cmdCoins $ head args
+    "allcoins" -> whenArgs args (== 0) cmdAllCoins
+    "signtx" -> whenArgs args (== 2) $ do
+        bs <- liftMaybe "signtx: Invalid HEX encoding" $ hexToBS $ args !! 1
+        tx <- liftEither $ decodeToEither bs
+        cmdSignTx (head args) tx (optSigHash opts)
+    "importtx" -> whenArgs args (== 1) $ do
+        bs <- liftMaybe "signtx: Invalid HEX encoding" $ hexToBS $ head args
+        tx <- liftEither $ decodeToEither bs
+        cmdImportTx tx
+    "removetx" -> whenArgs args (== 1) $ cmdRemoveTx $ head args
 --    "decodetx"     -> whenArgs args (== 1) $ cmdDecodeTx $ head args
 --    "buildrawtx"   -> whenArgs args (>= 2) $ do
 --        let xs     = map (splitOn ":") args

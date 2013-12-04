@@ -8,11 +8,9 @@ import qualified Haskoin.Wallet.Tests (tests)
 import qualified Haskoin.Wallet.Store.Units (tests)
 import qualified Units (tests)
 
-main = defaultMain Haskoin.Wallet.Store.Units.tests
-
--- main = defaultMain
---     (  Haskoin.Wallet.Tests.tests 
---     ++ Haskoin.Wallet.Store.Units.tests
---     ++ Units.tests 
---     )
+main = defaultMain
+    (  Haskoin.Wallet.Tests.tests 
+    ++ Haskoin.Wallet.Store.Units.tests
+    ++ Units.tests 
+    )
 

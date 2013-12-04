@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeFamilies      #-}
 module Haskoin.Wallet.Store.DbTx
 ( cmdImportTx 
+, cmdRemoveTx
 , dbImportTx
 , cmdListTx
 , cmdSend
@@ -16,7 +17,6 @@ module Haskoin.Wallet.Store.DbTx
 
 import Control.Applicative
 import Control.Monad
-import Control.Monad.IO.Class
 import Control.Monad.Trans
 import Control.Monad.Trans.Either
 
@@ -57,6 +57,15 @@ yamlTx tx = object
 
 txidHex :: Hash256 -> String
 txidHex = bsToHex . BS.reverse . encode'
+
+-- |Remove a transaction from the database and any parent transaction
+cmdRemoveTx :: ( PersistStore m, PersistQuery m, PersistUnique m
+              , PersistMonadBackend m ~ b, b ~ SqlBackend
+              )
+           => String -> EitherT String m Value
+cmdRemoveTx txid = do
+    removed <- dbRemoveTx txid
+    return $ toJSON removed
 
 -- |Command to import a transaction. It can be called multiple times
 -- with the same transaction 
@@ -114,43 +123,43 @@ dbImportTx tx = do
         "dbImportTx: Double spend detected. Import failed"
     let toRemove = txToRemove $ map entityVal inCoins
     if length toRemove > 0
-    then do
-        -- Partial transactions need to be removed before trying to re-import
-        mapM dbRemoveTx toRemove
-        dbImportTx tx
-    else do
-        time <- liftIO getCurrentTime
-        -- Change status of all the unspent coins
-        forM unspent $ \(Entity ci _) -> update ci [DbCoinStatus =. status]
-        -- Insert orphaned coins
-        orphans <- catMaybes <$> mapM (dbImportOrphan status) unknown
-        -- Import new coins and update existing coins
-        outCoins <- catMaybes <$> 
-            (mapM (dbImportCoin id complete) $ zip (txOut tx) [0..])
-        let accTxs = buildAccTx tx ((map entityVal inCoins) ++ orphans)
-                         outCoins (not complete) time
-        -- Insert transaction blob. Ignore if already exists
-        insertUnique $ DbTxBlob id (encode' tx) time
-        -- insert account transactions into database, rewriting if they exist
-        forM accTxs $ \accTx -> do
-            prev <- getBy $ UniqueTx (dbTxTxid accTx) (dbTxAccount accTx)
-            if isNothing prev 
-                then insert_ accTx  
-                else replace (entityKey $ fromJust prev) accTx
-        -- Re-import parent transactions (transactions spending this one)
-        if complete
         then do
-            let ids = nub $ catStatus $ map dbCoinStatus outCoins
-            blobs <- mapM dbGetTxBlob ids
-            let dec = liftEither . decodeToEither . dbTxBlobValue . entityVal
-            reImported <- forM blobs $ (dbImportTx =<<) . dec
-            return $ accTxs ++ (concat reImported)
-        else return accTxs
+            -- Partial transactions need to be removed before trying to re-import
+            mapM dbRemoveTx toRemove
+            dbImportTx tx
+        else do
+            time <- liftIO getCurrentTime
+            -- Change status of all the unspent coins
+            forM unspent $ \(Entity ci _) -> update ci [DbCoinStatus =. status]
+            -- Insert orphaned coins
+            orphans <- catMaybes <$> mapM (dbImportOrphan status) unknown
+            -- Import new coins and update existing coins
+            outCoins <- catMaybes <$> 
+                (mapM (dbImportCoin id complete) $ zip (txOut tx) [0..])
+            let accTxs = buildAccTx tx ((map entityVal inCoins) ++ orphans)
+                            outCoins (not complete) time
+            -- Insert transaction blob. Ignore if already exists
+            insertUnique $ DbTxBlob id (encode' tx) time
+            -- insert account transactions into database, rewriting if they exist
+            forM accTxs $ \accTx -> do
+                prev <- getBy $ UniqueTx (dbTxTxid accTx) (dbTxAccount accTx)
+                if isNothing prev 
+                    then insert_ accTx  
+                    else replace (entityKey $ fromJust prev) accTx
+            -- Re-import parent transactions (transactions spending this one)
+            if complete
+                then do
+                    let ids = nub $ catStatus $ map dbCoinStatus outCoins
+                    blobs <- mapM dbGetTxBlob ids
+                    reImported <- forM blobs $ (dbImportTx =<<) . dec
+                    return $ accTxs ++ (concat reImported)
+                else return accTxs
   where
     id               = txidHex $ txid tx
     f (OutPoint h i) = CoinOutPoint (txidHex h) (fromIntegral i)
     complete         = isTxComplete tx
     status           = if complete then Spent id else Reserved id
+    dec              = liftEither . decodeToEither . dbTxBlobValue . entityVal
 
 -- |A transaction can not be imported if it double spends coins in the wallet.
 -- Upstream code needs to remove the conflicting transaction first using

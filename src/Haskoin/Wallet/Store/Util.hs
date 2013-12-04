@@ -32,7 +32,6 @@ module Haskoin.Wallet.Store.Util
 
 import Control.Applicative
 import Control.Monad
-import Control.Monad.IO.Class
 import Control.Monad.Trans
 import Control.Monad.Trans.Either
 

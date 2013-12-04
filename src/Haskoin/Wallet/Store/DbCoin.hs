@@ -13,7 +13,6 @@ module Haskoin.Wallet.Store.DbCoin
 
 import Control.Applicative
 import Control.Monad
-import Control.Monad.IO.Class
 import Control.Monad.Trans
 import Control.Monad.Trans.Either
 
@@ -114,8 +113,7 @@ dbCoins ai = do
         ] [Asc DbCoinCreated]
     return $ map entityVal coins
 
-cmdCoins :: ( PersistQuery m
-            , PersistUnique m
+cmdCoins :: ( PersistQuery m, PersistUnique m
             , PersistMonadBackend m ~ SqlBackend
             ) 
          => AccountName -> EitherT String m Value
@@ -124,8 +122,7 @@ cmdCoins name = do
     coins <- dbCoins ai
     return $ toJSON $ map yamlCoin coins
 
-cmdAllCoins :: ( PersistQuery m 
-               , PersistUnique m
+cmdAllCoins :: ( PersistQuery m, PersistUnique m
                , PersistMonadBackend m ~ SqlBackend
                )
             => EitherT String m Value

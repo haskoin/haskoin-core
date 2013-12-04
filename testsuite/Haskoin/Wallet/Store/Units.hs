@@ -1435,7 +1435,7 @@ testOrphan = do
     -- Check coins of account 2
     ((map f) <$> selectList [DbCoinAccount ==. ai2] [Asc DbCoinCreated]) >>= 
         liftIO . assertEqual "Check import txC coins 3"
-            [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            [ ( "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , 1, 0
               , "", Nothing 
               , "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
@@ -1507,6 +1507,7 @@ testOrphan = do
                          ]
                      , "Value"      .= (0 :: Int)
                      , "Orphan"     .= True
+                     , "Partial"    .= False
                      ]
             ]
         )
@@ -1608,28 +1609,28 @@ testOrphan = do
     -- List coins of account 1 after importing txB
     ((map f) <$> selectList [DbCoinAccount ==. ai1] [Asc DbCoinCreated]) >>= 
         liftIO . assertEqual "Check import txB coins"
-            [ ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+            [ ( "23c5dcac6ef51d36ca63cf7f3dc30163939bb208eb8e12b92183ccc1333c20bd"
               , 1, 0
               , "", Nothing 
               , "1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw"
-              , Spent "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , Spent "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , True
               )
-            , ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+            , ( "23c5dcac6ef51d36ca63cf7f3dc30163939bb208eb8e12b92183ccc1333c20bd"
               , 2, 0
               , "", Nothing 
               , "17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG"
-              , Spent "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , Spent "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , True
               )
-            , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            , ( "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , 0, 100000
               , "76a914243d03889d49470ee721d44596fd146440e1167c88ac", Nothing 
               , "14JcRDidCbYFBwWjP9PGJL1MRKCzUWCmaS"
               , Unspent
               , False
               )
-            , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            , ( "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , 3, 40000
               , "76a914740eb168ae243882a73f5467b9024431443ef12988ac", Nothing 
               , "1Baez98Lapiu7mQLfXuUCjBreEAwFrWNd2"
@@ -1648,7 +1649,7 @@ testOrphan = do
     -- List of transactions for account 1
     ((map g) <$> selectList [DbTxAccount ==. ai1] [Asc DbTxCreated]) >>=
         liftIO . assertEqual "Check transactions import txB"
-            [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            [ ( "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
                 , "1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86"
                 ]
@@ -1667,7 +1668,7 @@ testOrphan = do
     -- List coins of account 2. The first coin is not orphaned anymore
     ((map f) <$> selectList [DbCoinAccount ==. ai2] [Asc DbCoinCreated]) >>= 
         liftIO . assertEqual "Check coins txB 2"
-            [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            [ ( "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , 1, 200000
               , "76a9143f53fba59a1c17f17cf3c4b5cfcf15fa0087f1c188ac", Nothing 
               , "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
@@ -1685,7 +1686,7 @@ testOrphan = do
     -- Check transactions of account 2
     ((map g) <$> selectList [DbTxAccount ==. ai2] [Asc DbTxCreated]) >>=
         liftIO . assertEqual "Check transactions import txB 2"
-            [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            [ ( "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
               , 200000, False, False
               )
@@ -1700,14 +1701,14 @@ testOrphan = do
     -- list cmdCoins of acc 1
     cmdCoins "acc1" >>= liftIO . assertEqual "Check cmdCoins txB 1" 
         (toJSON 
-            [ object [ "TxID"    .= T.pack "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            [ object [ "TxID"    .= T.pack "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
                      , "Index"   .= (0 :: Int)
                      , "Value"   .= (100000 :: Int)
                      , "Script"  .= T.pack "76a914243d03889d49470ee721d44596fd146440e1167c88ac"
                      , "Orphan"  .= False 
                      , "Address" .= T.pack "14JcRDidCbYFBwWjP9PGJL1MRKCzUWCmaS"
                      ] 
-            , object [ "TxID"    .= T.pack "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            , object [ "TxID"    .= T.pack "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
                      , "Index"   .= (3 :: Int)
                      , "Value"   .= (40000 :: Int)
                      , "Script"  .= T.pack "76a914740eb168ae243882a73f5467b9024431443ef12988ac"
@@ -1891,33 +1892,33 @@ testOrphan = do
     -- List coins of account 1 after importing txA
     ((map f) <$> selectList [DbCoinAccount ==. ai1] [Asc DbCoinCreated]) >>= 
         liftIO . assertEqual "Check import txB coins"
-            [ ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+            [ ( "23c5dcac6ef51d36ca63cf7f3dc30163939bb208eb8e12b92183ccc1333c20bd"
               , 0, 100000
               , "76a9148062ab5c3fdf5f8f0d41fccacbb3ea8058b911ae88ac", Nothing 
               , "1ChqhDvLVx5bjRHbdUweCsd4mgwD4fvdGL"
               , Unspent, False
               )
-            , ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+            , ( "23c5dcac6ef51d36ca63cf7f3dc30163939bb208eb8e12b92183ccc1333c20bd"
               , 1, 200000
               , "76a9148727e4552058a555d0ce269d8cf8c850785666f688ac", Nothing 
               , "1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw"
-              , Spent "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , Spent "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , False
               )
-            , ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+            , ( "23c5dcac6ef51d36ca63cf7f3dc30163939bb208eb8e12b92183ccc1333c20bd"
               , 2, 300000
               , "76a9144c769509bb3e22c2275cd025fcb55ebc5dc1e39f88ac", Nothing 
               , "17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG"
-              , Spent "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+              , Spent "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , False
               )
-            , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            , ( "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , 0, 100000
               , "76a914243d03889d49470ee721d44596fd146440e1167c88ac", Nothing 
               , "14JcRDidCbYFBwWjP9PGJL1MRKCzUWCmaS"
               , Unspent, False
               )
-            , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            , ( "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , 3, 40000
               , "76a914740eb168ae243882a73f5467b9024431443ef12988ac", Nothing 
               , "1Baez98Lapiu7mQLfXuUCjBreEAwFrWNd2"
@@ -1935,14 +1936,14 @@ testOrphan = do
     -- List of transactions for account 1
     ((map g) <$> selectList [DbTxAccount ==. ai1] [Asc DbTxCreated]) >>=
         liftIO . assertEqual "Check transactions import txA"
-            [ ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+            [ ( "23c5dcac6ef51d36ca63cf7f3dc30163939bb208eb8e12b92183ccc1333c20bd"
               , [ "1ChqhDvLVx5bjRHbdUweCsd4mgwD4fvdGL"
                 , "1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw"
                 , "17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG"
                 ]
               , 600000, False, False
               )
-            , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            , ( "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
                 , "1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86"
                 ]
@@ -1961,7 +1962,7 @@ testOrphan = do
     -- List coins of account 2
     ((map f) <$> selectList [DbCoinAccount ==. ai2] [Asc DbCoinCreated]) >>= 
         liftIO . assertEqual "Check coins txA 2"
-            [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            [ ( "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , 1, 200000
               , "76a9143f53fba59a1c17f17cf3c4b5cfcf15fa0087f1c188ac", Nothing 
               , "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
@@ -1979,7 +1980,7 @@ testOrphan = do
     -- Check transactions of account 2
     ((map g) <$> selectList [DbTxAccount ==. ai2] [Asc DbTxCreated]) >>=
         liftIO . assertEqual "Check transactions import txA 2"
-            [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            [ ( "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
               , 200000, False, False
               )
@@ -1994,21 +1995,21 @@ testOrphan = do
     -- list cmdCoins of acc 1
     cmdCoins "acc1" >>= liftIO . assertEqual "Check cmdCoins txA 1" 
         (toJSON 
-            [ object [ "TxID"    .= T.pack "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+            [ object [ "TxID"    .= T.pack "23c5dcac6ef51d36ca63cf7f3dc30163939bb208eb8e12b92183ccc1333c20bd"
                      , "Index"   .= (0 :: Int)
                      , "Value"   .= (100000 :: Int)
                      , "Script"  .= T.pack "76a9148062ab5c3fdf5f8f0d41fccacbb3ea8058b911ae88ac"
                      , "Orphan"  .= False 
                      , "Address" .= T.pack "1ChqhDvLVx5bjRHbdUweCsd4mgwD4fvdGL"
                      ] 
-            , object [ "TxID"    .= T.pack "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            , object [ "TxID"    .= T.pack "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
                      , "Index"   .= (0 :: Int)
                      , "Value"   .= (100000 :: Int)
                      , "Script"  .= T.pack "76a914243d03889d49470ee721d44596fd146440e1167c88ac"
                      , "Orphan"  .= False 
                      , "Address" .= T.pack "14JcRDidCbYFBwWjP9PGJL1MRKCzUWCmaS"
                      ] 
-            , object [ "TxID"    .= T.pack "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            , object [ "TxID"    .= T.pack "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
                      , "Index"   .= (3 :: Int)
                      , "Value"   .= (40000 :: Int)
                      , "Script"  .= T.pack "76a914740eb168ae243882a73f5467b9024431443ef12988ac"
@@ -2128,14 +2129,14 @@ testOrphan = do
     -- Verify that the transaction orders haven't changed
     ((map g) <$> selectList [DbTxAccount ==. ai1] [Asc DbTxCreated]) >>=
         liftIO . assertEqual "Last order verification"
-            [ ( "bbe4d14cf36346d6b02e42b48bd149e2076d4059d1effb90f402f5d2a1e50a30"
+            [ ( "23c5dcac6ef51d36ca63cf7f3dc30163939bb208eb8e12b92183ccc1333c20bd"
               , [ "1ChqhDvLVx5bjRHbdUweCsd4mgwD4fvdGL"
                 , "1DKe1dvRznGqmBFsHY7MmvJy3DtcfBDZbw"
                 , "17yJQpBHpWyVHNshgGpCK876Nb8qqvp3rG"
                 ]
               , 600000, False, False
               )
-            , ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            , ( "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M"
                 , "1FLRUj4iGRZHpr9WJq3RG64cL2vEbccQ86"
                 ]
@@ -2154,7 +2155,7 @@ testOrphan = do
     -- Verify that the transaction order haven't changed
     ((map g) <$> selectList [DbTxAccount ==. ai2] [Asc DbTxCreated]) >>=
         liftIO . assertEqual "Last order verification 2"
-            [ ( "d1fd7a337c1f250a4ba5ef14d5a52707411a44b1cb6e103fa9738db15da5485c"
+            [ ( "53fe1114579ef53affe2339d3cd5010b054515556bc9749351e96b24f9cba3d0"
               , [ "16mrBKvB9DV5YAYw7a8kYDvqwh1tJGMR5M" ]
               , 200000, False, False
               )
@@ -2180,7 +2181,7 @@ testSend = do
         [ ("19w9Btacp9tYgbhWE9d8yEdhR15XcjE9XZ", 20000) -- outside
         , ("1D8KWhk1x2EGqEUXi1GMJmqmRRWebH8XmT", 30000) -- outside
         ] 10000 >>= liftIO . assertEqual "send normal tx"
-            ( object [ "Payment Tx" .= T.pack "0100000001300ae5a1d2f502f490fbefd159406d07e249d18bb4422eb0d64663f34cd1e4bb000000006a4730440220797af18bf7fab837fb1da3e6336888a31d95923b11991a89af60ed40b17267220220793302283c195c9653c6f5b9a391eaa3f07eb5e2b5b0cf6e05809ed175f2f9270121020ab91e1cdcaf0d13ca13f1b0b975184882a90ee369f4ac6eab00caacca36b423ffffffff03204e0000000000001976a91461fe4d90fbb250c29e24aaff95f14218c0d39f3388ac30750000000000001976a9148503dfd0281b679af0770d5894cdf0402047befa88ac409c0000000000001976a9146d1523de2ac60a29e60f6584956032054302e73a88ac00000000"
+            ( object [ "Payment Tx" .= T.pack "0100000001bd203c33c1cc8321b9128eeb08b29b936301c33d7fcf63ca361df56eacdcc523000000006b483045022100b45842dae5f62c6564c9133891bab410ec8b9129580bf98762fc66ae6be45b6c02207cf90bdc82e2d538a46e3580a7b639737c2d334cdd74df65ee24770d2ac8fb940121020ab91e1cdcaf0d13ca13f1b0b975184882a90ee369f4ac6eab00caacca36b423ffffffff03204e0000000000001976a91461fe4d90fbb250c29e24aaff95f14218c0d39f3388ac30750000000000001976a9148503dfd0281b679af0770d5894cdf0402047befa88ac409c0000000000001976a9146d1523de2ac60a29e60f6584956032054302e73a88ac00000000"
                      , "Complete" .= True
                      ]
             )
@@ -2191,17 +2192,17 @@ testSend = do
         [ ("19w9Btacp9tYgbhWE9d8yEdhR15XcjE9XZ", 44000) -- outside
         , ("1D8KWhk1x2EGqEUXi1GMJmqmRRWebH8XmT", 44000) -- outside
         ] 10000 >>= liftIO . assertEqual "send normal tx no change"
-            ( object [ "Payment Tx" .= T.pack "0100000001300ae5a1d2f502f490fbefd159406d07e249d18bb4422eb0d64663f34cd1e4bb000000006b483045022100bfaa5b7722eccc63572612d33ad89d862d1ce4e84e99f52225ff36afea59dece022055772a11923391deda445cdc79163c48034e51fa04aabb986b657baf9e54fab60121020ab91e1cdcaf0d13ca13f1b0b975184882a90ee369f4ac6eab00caacca36b423ffffffff02e0ab0000000000001976a91461fe4d90fbb250c29e24aaff95f14218c0d39f3388ace0ab0000000000001976a9148503dfd0281b679af0770d5894cdf0402047befa88ac00000000"
+            ( object [ "Payment Tx" .= T.pack "0100000001bd203c33c1cc8321b9128eeb08b29b936301c33d7fcf63ca361df56eacdcc523000000006a47304402207a68a43941c387787a611b7775e487dced559f7331f00aa143d87bf4c6dc447802203d56aa3c9e3b209da4396e771c734d68b6b99c52528c8255dc552fe42a7d67be0121020ab91e1cdcaf0d13ca13f1b0b975184882a90ee369f4ac6eab00caacca36b423ffffffff02e0ab0000000000001976a91461fe4d90fbb250c29e24aaff95f14218c0d39f3388ace0ab0000000000001976a9148503dfd0281b679af0770d5894cdf0402047befa88ac00000000"
                      , "Complete" .= True
                      ]
             )
 
-    let emptyTx = "0100000001300ae5a1d2f502f490fbefd159406d07e249d18bb4422eb0d64663f34cd1e4bb0000000000ffffffff02e0ab0000000000001976a91461fe4d90fbb250c29e24aaff95f14218c0d39f3388ace0ab0000000000001976a9148503dfd0281b679af0770d5894cdf0402047befa88ac00000000"
+    let emptyTx = "0100000001bd203c33c1cc8321b9128eeb08b29b936301c33d7fcf63ca361df56eacdcc5230000000000ffffffff02e0ab0000000000001976a91461fe4d90fbb250c29e24aaff95f14218c0d39f3388ace0ab0000000000001976a9148503dfd0281b679af0770d5894cdf0402047befa88ac00000000"
 
     -- Sign an empty shell transaction with cmdSignTx
     cmdSignTx "acc1" (decode' $ fromJust $ hexToBS emptyTx) (SigAll False) >>= 
         liftIO . assertEqual "sign empty transaction"
-            ( object [ "Tx"       .= T.pack "0100000001300ae5a1d2f502f490fbefd159406d07e249d18bb4422eb0d64663f34cd1e4bb000000006b483045022100bfaa5b7722eccc63572612d33ad89d862d1ce4e84e99f52225ff36afea59dece022055772a11923391deda445cdc79163c48034e51fa04aabb986b657baf9e54fab60121020ab91e1cdcaf0d13ca13f1b0b975184882a90ee369f4ac6eab00caacca36b423ffffffff02e0ab0000000000001976a91461fe4d90fbb250c29e24aaff95f14218c0d39f3388ace0ab0000000000001976a9148503dfd0281b679af0770d5894cdf0402047befa88ac00000000"
+            ( object [ "Tx"       .= T.pack "0100000001bd203c33c1cc8321b9128eeb08b29b936301c33d7fcf63ca361df56eacdcc523000000006a47304402207a68a43941c387787a611b7775e487dced559f7331f00aa143d87bf4c6dc447802203d56aa3c9e3b209da4396e771c734d68b6b99c52528c8255dc552fe42a7d67be0121020ab91e1cdcaf0d13ca13f1b0b975184882a90ee369f4ac6eab00caacca36b423ffffffff02e0ab0000000000001976a91461fe4d90fbb250c29e24aaff95f14218c0d39f3388ace0ab0000000000001976a9148503dfd0281b679af0770d5894cdf0402047befa88ac00000000"
                      , "Complete" .= True
                      ]
             )
@@ -2227,7 +2228,7 @@ testSend = do
         [ ("15WAh7HRms3HDFLEAtMuBM4aUcwvN7B2QY", 300000) -- outside
         , ("1CzjVJfn1RmNes4ZEKGRA8VJcpCB1xfNvp", 110000) -- outside
         ] 10000 >>= liftIO . assertEqual "Send coins from multisig coins"
-            ( object [ "Payment Tx" .= T.pack "01000000039cf693e29d7fc0ea4e1e4f92e85298423a3e16ac106441df48e599893b63227c00000000b50047304402204542658c0d932fa85e0889c65d9b9554c7f096d707130d8cd314812ce05257970220632333e32e77a4cca66f090f6b87fb4affd0e0f869a35b0f36c64879d36a2e3401004c695221026e294fcecdcbae12a0aba1685db35c54ddfc1375d48f96ff1b8805a4bb57bfc921028bc8d8377f44de8ac8beff0dc9ccefde4cd5dded7b8cd8babe02c7147a90ba6c21039cf5d06e79871043c420fabc652f8082e702e0094f91ec14c020e9fcf48fa4d853aeffffffff70de9a04686dbe039b757fcc5e202ed9b3c70c00ddb7700e67069c75d7e8b04604000000b6004830450221008dcf70ee9114ffcd4cd0480d502d01007adade6cfaa7ad612ae318282e61cebb02205cd01f13b3326db21076197c25068291709839078550c3bae73eef604f671a4501004c695221026e294fcecdcbae12a0aba1685db35c54ddfc1375d48f96ff1b8805a4bb57bfc921028bc8d8377f44de8ac8beff0dc9ccefde4cd5dded7b8cd8babe02c7147a90ba6c21039cf5d06e79871043c420fabc652f8082e702e0094f91ec14c020e9fcf48fa4d853aeffffffffd011768886f0a8d49b4933f30b28d6eeed4306748327f6cc2f74c40fee9d3c7504000000b5004730440220616bdda5532e3f89b834c45e0303edd1e07721a1072a7a7a4469c0a2bf473eee02202f049ba695b99ce32c2b3d7064fa4a24b8b1766777adb4452eaa79464fba63ad01004c695221026e294fcecdcbae12a0aba1685db35c54ddfc1375d48f96ff1b8805a4bb57bfc921028bc8d8377f44de8ac8beff0dc9ccefde4cd5dded7b8cd8babe02c7147a90ba6c21039cf5d06e79871043c420fabc652f8082e702e0094f91ec14c020e9fcf48fa4d853aeffffffff02e0930400000000001976a9143164a7f65ce9d354a8ded150547a9523df056b3588acb0ad0100000000001976a91483948f86afa40df4836e88f402aff1e540469ba588ac00000000"
+            ( object [ "Payment Tx" .= T.pack "0100000003711707c27ce6fad18ddf3542de57bea6dbf211a18723717ee3844e9aaec5629000000000b50047304402206fa37ea2fcc6467c788b321be6c8db6b52c1c328dfe3397c1d0c3f06b13ef1bc02203afdcca94843391019cf0a38331a85f7ae5b24df28c397adb4ebecbd5390db2901004c695221026e294fcecdcbae12a0aba1685db35c54ddfc1375d48f96ff1b8805a4bb57bfc921028bc8d8377f44de8ac8beff0dc9ccefde4cd5dded7b8cd8babe02c7147a90ba6c21039cf5d06e79871043c420fabc652f8082e702e0094f91ec14c020e9fcf48fa4d853aeffffffff85e7fcc7399ef68c3277ab4be6aecfa7f77781a99d3a8e0038f03846fb269f3104000000b600483045022100caeda000f0a7144721439020edee8c9f20f41afc63288ea732b2483f1f3b77a202207d727f06e2a5661eff977a7f29bf563a9e3fc11bc3e191a246a722cfc9ab9a6601004c695221026e294fcecdcbae12a0aba1685db35c54ddfc1375d48f96ff1b8805a4bb57bfc921028bc8d8377f44de8ac8beff0dc9ccefde4cd5dded7b8cd8babe02c7147a90ba6c21039cf5d06e79871043c420fabc652f8082e702e0094f91ec14c020e9fcf48fa4d853aeffffffff96a9342b5d88583a607e8cc43a4fd844a9dfc3ef9f72982db4dac3b708f356a104000000b500473044022070bdccc43981a4a341f27b4e8ed146301ce82c1c571f483b7d457f20bc754b4402201deefab82e52a0235c336fd24e7ccf1ec47b5751f4b8a472b0a23543d9b7e42401004c695221026e294fcecdcbae12a0aba1685db35c54ddfc1375d48f96ff1b8805a4bb57bfc921028bc8d8377f44de8ac8beff0dc9ccefde4cd5dded7b8cd8babe02c7147a90ba6c21039cf5d06e79871043c420fabc652f8082e702e0094f91ec14c020e9fcf48fa4d853aeffffffff02e0930400000000001976a9143164a7f65ce9d354a8ded150547a9523df056b3588acb0ad0100000000001976a91483948f86afa40df4836e88f402aff1e540469ba588ac00000000"
                      , "Complete" .= False
                      ]
             )
@@ -2238,22 +2239,39 @@ testSend = do
 
     cmdAddKeys "signms" [fromJust $ xPubImport "xpub69QmF5x2m5dv1r2xNBLTq6HGKjFDyE4iAhxhdL4FgVR8vQprruLcauxJNdASANJaZc65bmoD1snK4db9DDYAuEBo3ANZik9SHnTAKQZLDt1"]
 
-    --cmdNewMS "test2" 2 3 []
-    --cmdNewMS "test3" 2 3 []
+--    cmdNewMS "test2" 2 3 []
+--    cmdNewMS "test3" 2 3 []
+--
+--    deleteBy $ UniqueAccName "signms"
+--    deleteBy $ UniqueAccName "test2"
+--
+--    cmdAddKeys "test3" [fromJust $ xPubImport "xpub69QmF5x2m5duvyfWu3DjU9r9CkTKp5poGCnVLBmRBgJaye7LQ9yPs55z7zPZDpp6X4BHru9EpF8hqQGNa2ipEmBx9rYq6LdvNht6M2qqxUm"]
+--
+--    cmdAddKeys "test3" [fromJust $ xPubImport "xpub69QmF5x2m5duxo856Dg622vDjsxtDCwMAaLyhVjBZDDTaKbenBfMByNJVMYKAVTEpGPDePdgjDpDyPvBPx4WpFV8zmNEa6Cx7Lk4Bn9PDcE"]
 
-    --deleteBy $ UniqueAccName "test1"
-    --deleteBy $ UniqueAccName "test2"
+{- TxID: 62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589
+ - Input: 03-01
+ - Outputs:
+ - 3EyLoBudu2fNY7hnQDX7iZ3kn1d9wyPc2E : 100000
+ - 3EBJj6Z2FrrGUytJabTrJRD6mxCgF3d7JW : 200000
+ - 3ETVUh7mn1sSiLrhUQYMByfuo32DauHKdR : 150000
+ - 3AWd6mZHrvMbocVRp752ExTGnUhh1huWQp : 180000 
+ -}
 
-    -- cmdAddKeys "test3" [fromJust $ xPubImport "xpub69QmF5x2m5duvyfWu3DjU9r9CkTKp5poGCnVLBmRBgJaye7LQ9yPs55z7zPZDpp6X4BHru9EpF8hqQGNa2ipEmBx9rYq6LdvNht6M2qqxUm"]
+    let fundingTx = decode' $ fromJust $ hexToBS "01000000010000000000000000000000000000000000000000000000000000000000000001030000006a47304402206992bec0f95102a9994dd77e0b910af0b19b0b94d94423c68bb49ed57890238402203b15cbb6e1edcb686891138b057acac4cb67247f6bf693f38bd35d8c6605bca201210290a14bce9d363667574a29da1b2e38d106968969f449588713bb271e28a9a4a0ffffffff04a08601000000000017a91491b00b8d4d4b8909d5d17fe8da3b09fbd64e003c87400d03000000000017a91488fb2eb63c1f992d801f538340180527510464c787f04902000000000017a9148c0ad01947abab4985837a24be0d2141dcba06398720bf02000000000017a91460c1eb9034130684ece4594384e984325d1280ad8700000000"
 
-    -- cmdAddKeys "test3" [fromJust $ xPubImport "xpub69QmF5x2m5duxo856Dg622vDjsxtDCwMAaLyhVjBZDDTaKbenBfMByNJVMYKAVTEpGPDePdgjDpDyPvBPx4WpFV8zmNEa6Cx7Lk4Bn9PDcE"]
+{- TxID: 74ea8680000dd5e4f0122e47c73de7b0b02aae478a03930c5f547f67ed3dabcb
+ - Inputs: 1,2,3
+ - Outputs: 
+ - 13LjjLQGGiTL8AYMbYqBmQVyAMyQnjPZK3 : 300000
+ - 1MK3xFQSekQPuety1oaVTmvLRusFYsTq3d : 140000
+ - 3CDgiQ2TnKvy1AovxwFy2jsDqURN8bq856 :  80000 (Change)
+ -}
+    let partialTx = "01000000038935da5b1084b96a26d931aa9a6e9c844191c014c190d7981979eb977c89e76202000000b6004830450221009d876833374da1714aa42945b73fe2af9ee37fdf32b4db9dd10297c0a9a18257022065618d04ead4ba5e4201bf15f149f1429e83173d42e31246d3164f2072e6605901004c69522102779d361a5d534dfca9d480eb60a1b14741a98d29f5c984fc1afd68a8c50981232102f579364c0d0971ec9ae52f2fc870204bce00438be1b6fa695d27c9d01cfb0956210383787221b68f601aa4695c27e7eebb0d15de2ed7ef7b9981fba8cad71ae2d84253aeffffffff8935da5b1084b96a26d931aa9a6e9c844191c014c190d7981979eb977c89e76203000000b600483045022100f8f9274fcf04200031578f5bfa0ecd108f5c945d7efef5f4fe519943d945594502200941f22088458750894005366a74857b72fb59197405bd2298947d96456d165b01004c6952210285bd8161363c6e2d2c075e08ed8a956c4706ccd77497a31327bf92b2208c3587210286e3177a8ca61d2d9426b4230735631e8552cc4d6e87e1277960461b0d26aac42103e2e138589e064f347238c2ca46c1d7deb8dd9472d065d7c5cb0f91aa5cc210a953aeffffffff8935da5b1084b96a26d931aa9a6e9c844191c014c190d7981979eb977c89e76201000000b50047304402200469180f9e94bf6d1d03ce07411bfd107b78f2fb1b1a862fc39dfeece417d14b02206696f963f97d3a6aaddc295c8eaf1846fef07f44c46d3aa97f09a4c0b72476c101004c695221023206a385544defd500a54d3d3fd8982d35fa7f877fa721beb59e440186183e8a210352b7c1f82593abebcb4ad0bbf28a4317b49efc1cc3e647453c09c6375122e8f621035c9ca1f7825d2cf025f42e636f57f193dbaae5c18b08dca10bf996ddb58eb8e853aeffffffff03e0930400000000001976a91419abd2efb4cd44b132ffd6206aa35e60f9d3e4b988ace0220200000000001976a914decc77b87d2199a51532034ad63f59cae6e6c4f588ac803801000000000017a914737e1e10bbf4290c82681745b5a54449ca83d1848700000000"
 
+-- ID: a7274a15719099c5de37741bfd70efa15bb22a9de5507d966ccdf528a4f8f4c3
 
-    let fundingTx = decode' $ fromJust $ hexToBS "010000000100000000000000000000000000000000000000000000000000000000000000010300000000ffffffff04a08601000000000017a91491b00b8d4d4b8909d5d17fe8da3b09fbd64e003c87400d03000000000017a91488fb2eb63c1f992d801f538340180527510464c787f04902000000000017a9148c0ad01947abab4985837a24be0d2141dcba06398720bf02000000000017a91460c1eb9034130684ece4594384e984325d1280ad8700000000"
-
-    let partialTx = "0100000003082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80102000000b50047304402200e72eb2b17c6c737313a8081a15cba1589e26cdc748056df71c70949f8a17b7002205ec876a152b11f6dcec7a5fd9ee448e9c2d069686b8ff25fcd98d29e5d52d10401004c69522102779d361a5d534dfca9d480eb60a1b14741a98d29f5c984fc1afd68a8c50981232102f579364c0d0971ec9ae52f2fc870204bce00438be1b6fa695d27c9d01cfb0956210383787221b68f601aa4695c27e7eebb0d15de2ed7ef7b9981fba8cad71ae2d84253aeffffffff082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80103000000b600483045022100b91fb1377dd774179b4c93c25854225957aa410a38bb520864f964edbe55fcd9022079fa489f8308e4b3be613fcd3b30d5b9b38f70716009e96e5ba9d3bd1431cfa601004c6952210285bd8161363c6e2d2c075e08ed8a956c4706ccd77497a31327bf92b2208c3587210286e3177a8ca61d2d9426b4230735631e8552cc4d6e87e1277960461b0d26aac42103e2e138589e064f347238c2ca46c1d7deb8dd9472d065d7c5cb0f91aa5cc210a953aeffffffff082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80101000000b50047304402204d21b742809528ef73e63e021983f51da2850c8a7a8ecca378efc57e71b8c22902201467246a84afc15f7fba7038c7c5c552fce0789280f20cb75c99dd8ba36edf3b01004c695221023206a385544defd500a54d3d3fd8982d35fa7f877fa721beb59e440186183e8a210352b7c1f82593abebcb4ad0bbf28a4317b49efc1cc3e647453c09c6375122e8f621035c9ca1f7825d2cf025f42e636f57f193dbaae5c18b08dca10bf996ddb58eb8e853aeffffffff03e0930400000000001976a91419abd2efb4cd44b132ffd6206aa35e60f9d3e4b988ace0220200000000001976a914decc77b87d2199a51532034ad63f59cae6e6c4f588ac803801000000000017a914737e1e10bbf4290c82681745b5a54449ca83d1848700000000"
-
-    let finalTx = "0100000003082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80102000000fdfd000047304402200e72eb2b17c6c737313a8081a15cba1589e26cdc748056df71c70949f8a17b7002205ec876a152b11f6dcec7a5fd9ee448e9c2d069686b8ff25fcd98d29e5d52d10401483045022100e9235ee3866429a4188dbd795d6c64d66952c86566b4940e90262a511966213402201782bd02ff891864513dbb3943e453020c06f238187574ab74e82b252b0e388b014c69522102779d361a5d534dfca9d480eb60a1b14741a98d29f5c984fc1afd68a8c50981232102f579364c0d0971ec9ae52f2fc870204bce00438be1b6fa695d27c9d01cfb0956210383787221b68f601aa4695c27e7eebb0d15de2ed7ef7b9981fba8cad71ae2d84253aeffffffff082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80103000000fdfe0000483045022100fc33d03cd7779fe9db850c148058c61d0f0f863803ee0623b903d66cee7ab1a402200dc945f61c1ce44911caeab31481b73eb7fe78f2b13f7489f88f35693ae2f02301483045022100b91fb1377dd774179b4c93c25854225957aa410a38bb520864f964edbe55fcd9022079fa489f8308e4b3be613fcd3b30d5b9b38f70716009e96e5ba9d3bd1431cfa6014c6952210285bd8161363c6e2d2c075e08ed8a956c4706ccd77497a31327bf92b2208c3587210286e3177a8ca61d2d9426b4230735631e8552cc4d6e87e1277960461b0d26aac42103e2e138589e064f347238c2ca46c1d7deb8dd9472d065d7c5cb0f91aa5cc210a953aeffffffff082a175d337a71b4ddc785ddbc7e7618e97f38aa56375b12d6e29c1167c7c80101000000fc0047304402204d21b742809528ef73e63e021983f51da2850c8a7a8ecca378efc57e71b8c22902201467246a84afc15f7fba7038c7c5c552fce0789280f20cb75c99dd8ba36edf3b01473044022077dae4f7d45d3baff798d7649cd0e887433411e199ed3148654cdebb006580400220206be4f3f95c8a75a3e570bf0b2ba5f7b18fd671379b3bd101f2f28a017c496c014c695221023206a385544defd500a54d3d3fd8982d35fa7f877fa721beb59e440186183e8a210352b7c1f82593abebcb4ad0bbf28a4317b49efc1cc3e647453c09c6375122e8f621035c9ca1f7825d2cf025f42e636f57f193dbaae5c18b08dca10bf996ddb58eb8e853aeffffffff03e0930400000000001976a91419abd2efb4cd44b132ffd6206aa35e60f9d3e4b988ace0220200000000001976a914decc77b87d2199a51532034ad63f59cae6e6c4f588ac803801000000000017a914737e1e10bbf4290c82681745b5a54449ca83d1848700000000"
+    let finalTx = "01000000038935da5b1084b96a26d931aa9a6e9c844191c014c190d7981979eb977c89e76202000000fdfd00004830450221009d876833374da1714aa42945b73fe2af9ee37fdf32b4db9dd10297c0a9a18257022065618d04ead4ba5e4201bf15f149f1429e83173d42e31246d3164f2072e6605901473044022065316243de4edd6e1741580a11489a5445b4fc35efcb13aa6189f1a524f6745a022003fdf5273c90ac7d906cba33f42661dcac45e80aab9aecd4fcd5ed5e9595c239014c69522102779d361a5d534dfca9d480eb60a1b14741a98d29f5c984fc1afd68a8c50981232102f579364c0d0971ec9ae52f2fc870204bce00438be1b6fa695d27c9d01cfb0956210383787221b68f601aa4695c27e7eebb0d15de2ed7ef7b9981fba8cad71ae2d84253aeffffffff8935da5b1084b96a26d931aa9a6e9c844191c014c190d7981979eb977c89e76203000000fdfd000047304402205c1bd8303745cbcc3f3412ee6f19090519ef2b72a03c799325ebd2188783bc670220298b8b13cf726beccf0909c83016a22c8429df4a2982f7ea54b24f40dd6a27ac01483045022100f8f9274fcf04200031578f5bfa0ecd108f5c945d7efef5f4fe519943d945594502200941f22088458750894005366a74857b72fb59197405bd2298947d96456d165b014c6952210285bd8161363c6e2d2c075e08ed8a956c4706ccd77497a31327bf92b2208c3587210286e3177a8ca61d2d9426b4230735631e8552cc4d6e87e1277960461b0d26aac42103e2e138589e064f347238c2ca46c1d7deb8dd9472d065d7c5cb0f91aa5cc210a953aeffffffff8935da5b1084b96a26d931aa9a6e9c844191c014c190d7981979eb977c89e76201000000fdfd000047304402200469180f9e94bf6d1d03ce07411bfd107b78f2fb1b1a862fc39dfeece417d14b02206696f963f97d3a6aaddc295c8eaf1846fef07f44c46d3aa97f09a4c0b72476c101483045022100e865ba910c96823cc9ddf6b65d62f6d107ca5589a866f3814d048ada70a01b3102201025101604ccf2f639a7f7176517665656b04c9a531d3e542eb495095148b802014c695221023206a385544defd500a54d3d3fd8982d35fa7f877fa721beb59e440186183e8a210352b7c1f82593abebcb4ad0bbf28a4317b49efc1cc3e647453c09c6375122e8f621035c9ca1f7825d2cf025f42e636f57f193dbaae5c18b08dca10bf996ddb58eb8e853aeffffffff03e0930400000000001976a91419abd2efb4cd44b132ffd6206aa35e60f9d3e4b988ace0220200000000001976a914decc77b87d2199a51532034ad63f59cae6e6c4f588ac803801000000000017a914737e1e10bbf4290c82681745b5a54449ca83d1848700000000"
 
     liftIO $ assertBool "Partial transaction not complete" $ 
         not $ isTxComplete (decode' $ fromJust $ hexToBS partialTx)
@@ -2270,6 +2288,7 @@ testSend = do
                      ]
             )
 
+    -- Import the funding transaction into the wallet
     cmdImportTx fundingTx >>= liftIO . assertEqual "Importing funding tx"
         ( toJSON
             [ object [ "Recipients" .= toJSON
@@ -2280,24 +2299,216 @@ testSend = do
                          ]
                      , "Value"      .= (630000:: Int)
                      , "Orphan"     .= False
+                     , "Partial"    .= False
                      ]
             ]
         )
 
+    -- Import the funding transaction again. The process should be idempotent
+    cmdImportTx fundingTx >>= liftIO . assertEqual "Importing funding tx"
+        ( toJSON
+            [ object [ "Recipients" .= toJSON
+                         [ T.pack "3EyLoBudu2fNY7hnQDX7iZ3kn1d9wyPc2E"
+                         , T.pack "3EBJj6Z2FrrGUytJabTrJRD6mxCgF3d7JW"
+                         , T.pack "3ETVUh7mn1sSiLrhUQYMByfuo32DauHKdR"
+                         , T.pack "3AWd6mZHrvMbocVRp752ExTGnUhh1huWQp"
+                         ]
+                     , "Value"      .= (630000:: Int)
+                     , "Orphan"     .= False
+                     , "Partial"    .= False
+                     ]
+            ]
+        )
+
+    -- We should have 4 coins in the database
+    cmdCoins "signms" >>= liftIO . assertEqual "Check coins after funding tx import" 
+        (toJSON 
+            [ object [ "TxID"    .= T.pack "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+                     , "Index"   .= (0 :: Int)
+                     , "Value"   .= (100000 :: Int)
+                     , "Script"  .= T.pack "a91491b00b8d4d4b8909d5d17fe8da3b09fbd64e003c87"
+                     , "Redeem"  .= T.pack "522102690c830a595721558e2bf6c58f6ed269c3b9fa194523326bb26d9a20b0cf49532102c98a1bde30c9fd0b71e88792b512963ce8b956f8735dbb0b1a2d6da7f1385e8d2102e7166192bf2bb2433daad4ab396fc2dc09785df716ca992f8bf76ff0aed6695053ae"
+                     , "Orphan"  .= False 
+                     , "Address" .= T.pack "3EyLoBudu2fNY7hnQDX7iZ3kn1d9wyPc2E"
+                     ] 
+            , object [ "TxID"    .= T.pack "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+                     , "Index"   .= (1 :: Int)
+                     , "Value"   .= (200000 :: Int)
+                     , "Script"  .= T.pack "a91488fb2eb63c1f992d801f538340180527510464c787"
+                     , "Redeem"  .= T.pack "5221023206a385544defd500a54d3d3fd8982d35fa7f877fa721beb59e440186183e8a210352b7c1f82593abebcb4ad0bbf28a4317b49efc1cc3e647453c09c6375122e8f621035c9ca1f7825d2cf025f42e636f57f193dbaae5c18b08dca10bf996ddb58eb8e853ae"
+                     , "Orphan"  .= False 
+                     , "Address" .= T.pack "3EBJj6Z2FrrGUytJabTrJRD6mxCgF3d7JW"
+                     ] 
+            , object [ "TxID"    .= T.pack "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+                     , "Index"   .= (2 :: Int)
+                     , "Value"   .= (150000 :: Int)
+                     , "Script"  .= T.pack "a9148c0ad01947abab4985837a24be0d2141dcba063987"
+                     , "Redeem"  .= T.pack "522102779d361a5d534dfca9d480eb60a1b14741a98d29f5c984fc1afd68a8c50981232102f579364c0d0971ec9ae52f2fc870204bce00438be1b6fa695d27c9d01cfb0956210383787221b68f601aa4695c27e7eebb0d15de2ed7ef7b9981fba8cad71ae2d84253ae"
+                     , "Orphan"  .= False 
+                     , "Address" .= T.pack "3ETVUh7mn1sSiLrhUQYMByfuo32DauHKdR"
+                     ] 
+            , object [ "TxID"    .= T.pack "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+                     , "Index"   .= (3 :: Int)
+                     , "Value"   .= (180000 :: Int)
+                     , "Script"  .= T.pack "a91460c1eb9034130684ece4594384e984325d1280ad87"
+                     , "Redeem"  .= T.pack "52210285bd8161363c6e2d2c075e08ed8a956c4706ccd77497a31327bf92b2208c3587210286e3177a8ca61d2d9426b4230735631e8552cc4d6e87e1277960461b0d26aac42103e2e138589e064f347238c2ca46c1d7deb8dd9472d065d7c5cb0f91aa5cc210a953ae"
+                     , "Orphan"  .= False 
+                     , "Address" .= T.pack "3AWd6mZHrvMbocVRp752ExTGnUhh1huWQp"
+                     ] 
+            ]
+        )
+
+    -- Import the partially signed transaction into the wallet
+    -- This should yield a partial transaction and no output coins
+    cmdImportTx (decode' $ fromJust $ hexToBS $ partialTx) >>= 
+        liftIO . assertEqual "Importing partial tx 1"
+        ( toJSON
+            [ object [ "Recipients" .= toJSON
+                        [ T.pack "13LjjLQGGiTL8AYMbYqBmQVyAMyQnjPZK3"
+                        , T.pack "1MK3xFQSekQPuety1oaVTmvLRusFYsTq3d"
+                        ]
+                    , "Value"      .= (-450000 :: Int)
+                    , "Orphan"     .= False
+                    , "Partial"    .= True
+                    ]
+            ]
+        )
+
+    -- Re-importing the partial transaction should be an idempotent process
+    cmdImportTx (decode' $ fromJust $ hexToBS $ partialTx) >>= 
+        liftIO . assertEqual "Importing partial tx 2"
+        ( toJSON
+            [ object [ "Recipients" .= toJSON
+                        [ T.pack "13LjjLQGGiTL8AYMbYqBmQVyAMyQnjPZK3"
+                        , T.pack "1MK3xFQSekQPuety1oaVTmvLRusFYsTq3d"
+                        ]
+                    , "Value"      .= (-450000 :: Int)
+                    , "Orphan"     .= False
+                    , "Partial"    .= True
+                    ]
+            ]
+        )
+
+    -- After importing the partially signed transaction in the wallet, we should
+    -- have some of the coins in "reserved" status. Additionally, the change
+    -- coin should not be displayed here as importing partial transactions does
+    -- not produce coins (would not make sense as TxID is wrong)
+    cmdCoins "signms" >>= liftIO . assertEqual "Check coins after importing partial tx" 
+        (toJSON 
+            [ object [ "TxID"    .= T.pack "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+                     , "Index"   .= (0 :: Int)
+                     , "Value"   .= (100000 :: Int)
+                     , "Script"  .= T.pack "a91491b00b8d4d4b8909d5d17fe8da3b09fbd64e003c87"
+                     , "Redeem"  .= T.pack "522102690c830a595721558e2bf6c58f6ed269c3b9fa194523326bb26d9a20b0cf49532102c98a1bde30c9fd0b71e88792b512963ce8b956f8735dbb0b1a2d6da7f1385e8d2102e7166192bf2bb2433daad4ab396fc2dc09785df716ca992f8bf76ff0aed6695053ae"
+                     , "Orphan"  .= False 
+                     , "Address" .= T.pack "3EyLoBudu2fNY7hnQDX7iZ3kn1d9wyPc2E"
+                     ] 
+            ]
+        )
+
+    -- Now we should have the funding transaction followed by a
+    -- a partially signed multisig transaction
+    cmdListTx "signms" >>= liftIO . assertEqual "Final tx check MS"
+        ( toJSON
+            [ object [ "Recipients" .= toJSON
+                         [ T.pack "3EyLoBudu2fNY7hnQDX7iZ3kn1d9wyPc2E"
+                         , T.pack "3EBJj6Z2FrrGUytJabTrJRD6mxCgF3d7JW"
+                         , T.pack "3ETVUh7mn1sSiLrhUQYMByfuo32DauHKdR"
+                         , T.pack "3AWd6mZHrvMbocVRp752ExTGnUhh1huWQp"
+                         ]
+                     , "Value"      .= (630000 :: Int)
+                     , "Orphan"     .= False
+                     , "Partial"    .= False
+                     ]
+            , object [ "Recipients" .= toJSON
+                         [ T.pack "13LjjLQGGiTL8AYMbYqBmQVyAMyQnjPZK3"
+                         , T.pack "1MK3xFQSekQPuety1oaVTmvLRusFYsTq3d"
+                         ]
+                     , "Value"      .= (-450000 :: Int)
+                     , "Orphan"     .= False
+                     , "Partial"    .= True
+                     ]
+            ]
+        )
+
+
+    let f (Entity _ c) = ( dbCoinTxid c, dbCoinPos c
+                         , dbCoinValue c, dbCoinScript c
+                         , dbCoinRdmScript c, dbCoinAddress c
+                         , dbCoinStatus c, dbCoinOrphan c
+                         )
+        g (Entity _ t) = ( dbTxTxid t, dbTxRecipients t
+                         , dbTxValue t, dbTxOrphan t, dbTxPartial t
+                         )
+
+    (Entity msi _) <- dbGetAcc "signms"
+
+    -- Checking the coins directly in the database
+    ((map f) <$> selectList [DbCoinAccount ==. msi] [Asc DbCoinCreated]) >>= 
+        liftIO . assertEqual "Check DB coins after importing Partial tx"
+            [ ( "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+              , 0, 100000, "a91491b00b8d4d4b8909d5d17fe8da3b09fbd64e003c87"
+              , Just "522102690c830a595721558e2bf6c58f6ed269c3b9fa194523326bb26d9a20b0cf49532102c98a1bde30c9fd0b71e88792b512963ce8b956f8735dbb0b1a2d6da7f1385e8d2102e7166192bf2bb2433daad4ab396fc2dc09785df716ca992f8bf76ff0aed6695053ae"
+              , "3EyLoBudu2fNY7hnQDX7iZ3kn1d9wyPc2E"
+              , Unspent
+              , False
+              )
+            , ( "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+              , 1, 200000, "a91488fb2eb63c1f992d801f538340180527510464c787"
+              , Just "5221023206a385544defd500a54d3d3fd8982d35fa7f877fa721beb59e440186183e8a210352b7c1f82593abebcb4ad0bbf28a4317b49efc1cc3e647453c09c6375122e8f621035c9ca1f7825d2cf025f42e636f57f193dbaae5c18b08dca10bf996ddb58eb8e853ae"
+              , "3EBJj6Z2FrrGUytJabTrJRD6mxCgF3d7JW"
+              , Reserved "74ea8680000dd5e4f0122e47c73de7b0b02aae478a03930c5f547f67ed3dabcb"
+              , False
+              )
+            , ( "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+              , 2, 150000, "a9148c0ad01947abab4985837a24be0d2141dcba063987"
+              , Just "522102779d361a5d534dfca9d480eb60a1b14741a98d29f5c984fc1afd68a8c50981232102f579364c0d0971ec9ae52f2fc870204bce00438be1b6fa695d27c9d01cfb0956210383787221b68f601aa4695c27e7eebb0d15de2ed7ef7b9981fba8cad71ae2d84253ae"
+              , "3ETVUh7mn1sSiLrhUQYMByfuo32DauHKdR"
+              , Reserved "74ea8680000dd5e4f0122e47c73de7b0b02aae478a03930c5f547f67ed3dabcb"
+              , False
+              )
+            , ( "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+              , 3, 180000, "a91460c1eb9034130684ece4594384e984325d1280ad87"
+              , Just "52210285bd8161363c6e2d2c075e08ed8a956c4706ccd77497a31327bf92b2208c3587210286e3177a8ca61d2d9426b4230735631e8552cc4d6e87e1277960461b0d26aac42103e2e138589e064f347238c2ca46c1d7deb8dd9472d065d7c5cb0f91aa5cc210a953ae"
+              , "3AWd6mZHrvMbocVRp752ExTGnUhh1huWQp"
+              , Reserved "74ea8680000dd5e4f0122e47c73de7b0b02aae478a03930c5f547f67ed3dabcb"
+              , False
+              )
+            ]
+
+    -- Checking the transactions directly in the database
+    ((map g) <$> selectList [DbTxAccount ==. msi] [Asc DbTxCreated]) >>=
+        liftIO . assertEqual "Check DB transactions after importing Partial tx"
+            [ ( "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+              , [ "3EyLoBudu2fNY7hnQDX7iZ3kn1d9wyPc2E"
+                , "3EBJj6Z2FrrGUytJabTrJRD6mxCgF3d7JW"
+                , "3ETVUh7mn1sSiLrhUQYMByfuo32DauHKdR"
+                , "3AWd6mZHrvMbocVRp752ExTGnUhh1huWQp"
+                ]
+              , 630000 , False, False
+              )
+            , ( "74ea8680000dd5e4f0122e47c73de7b0b02aae478a03930c5f547f67ed3dabcb"
+              , [ "13LjjLQGGiTL8AYMbYqBmQVyAMyQnjPZK3"
+                , "1MK3xFQSekQPuety1oaVTmvLRusFYsTq3d"
+                ]
+              , -450000, False, True
+              )
+            ]
+
     -- Completing a multisig transaction
     cmdSignTx "signms" (decode' $ fromJust $ hexToBS partialTx) (SigAll False) 
         >>= liftIO . assertEqual "Sign partial multisig" 
-            ( object [ "Tx"      .= T.pack finalTx
-                    , "Complete" .= True
-                    ]
+            ( object [ "Tx"       .= T.pack finalTx
+                     , "Complete" .= True
+                     ]
             )
 
     -- this should return the partial signature as the account is wrong
     cmdSignTx "ms1" (decode' $ fromJust $ hexToBS partialTx) (SigAll False) 
         >>= liftIO . assertEqual "Sign partial multisig bad acc" 
-            ( object [ "Tx"      .= T.pack partialTx
-                    , "Complete" .= False
-                    ]
+            ( object [ "Tx"       .= T.pack partialTx
+                     , "Complete" .= False
+                     ]
             )
 
     -- Importing the full transaction into the wallet
@@ -2310,13 +2521,51 @@ testSend = do
                             ]
                         , "Value"      .= (-450000 :: Int)
                         , "Orphan"     .= False
+                        , "Partial"    .= False
                         ]
                 ]
             )
 
+    -- Importing the full transaction into the wallet (again)
+    cmdImportTx (decode' $ fromJust $ hexToBS finalTx) >>= 
+        liftIO . assertEqual "Final tx import again"
+            ( toJSON
+                [ object [ "Recipients" .= toJSON
+                            [ T.pack "13LjjLQGGiTL8AYMbYqBmQVyAMyQnjPZK3"
+                            , T.pack "1MK3xFQSekQPuety1oaVTmvLRusFYsTq3d"
+                            ]
+                        , "Value"      .= (-450000 :: Int)
+                        , "Orphan"     .= False
+                        , "Partial"    .= False
+                        ]
+                ]
+            )
+
+    -- The change coin should now be there
+    cmdCoins "signms" >>= liftIO . assertEqual "Check coins after importing final tx" 
+        (toJSON 
+            [ object [ "TxID"    .= T.pack "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+                     , "Index"   .= (0 :: Int)
+                     , "Value"   .= (100000 :: Int)
+                     , "Script"  .= T.pack "a91491b00b8d4d4b8909d5d17fe8da3b09fbd64e003c87"
+                     , "Redeem"  .= T.pack "522102690c830a595721558e2bf6c58f6ed269c3b9fa194523326bb26d9a20b0cf49532102c98a1bde30c9fd0b71e88792b512963ce8b956f8735dbb0b1a2d6da7f1385e8d2102e7166192bf2bb2433daad4ab396fc2dc09785df716ca992f8bf76ff0aed6695053ae"
+                     , "Orphan"  .= False 
+                     , "Address" .= T.pack "3EyLoBudu2fNY7hnQDX7iZ3kn1d9wyPc2E"
+                     ] 
+            , object [ "TxID"    .= T.pack "a7274a15719099c5de37741bfd70efa15bb22a9de5507d966ccdf528a4f8f4c3"
+                     , "Index"   .= (2 :: Int)
+                     , "Value"   .= (80000 :: Int)
+                     , "Script"  .= T.pack "a914737e1e10bbf4290c82681745b5a54449ca83d18487"
+                     , "Redeem"  .= T.pack "5221021190e8331245f9455d0b027cd9f53e2e5f530ffa48aaa4f6b9fc7657c8cd5ebe21030e08ad2233845f90e958988768b42f8e53d358efc371149049a5399ae0d3b334210380f8240eb12a1bbe20c2f441d6c2216d5eb84bbb4b926aa801180de13dbdf7c553ae"
+                     , "Orphan"  .= False 
+                     , "Address" .= T.pack "3CDgiQ2TnKvy1AovxwFy2jsDqURN8bq856"
+                     ] 
+            ]
+        )
+
     -- The transaction list should be the funding transaction followed by
     -- the multisig spending transaction
-    cmdListTx "signms" >>= liftIO . assertEqual "Final tx check MS"
+    cmdListTx "signms" >>= liftIO . assertEqual "Check tx after importing final tx"
         ( toJSON
             [ object [ "Recipients" .= toJSON
                          [ T.pack "3EyLoBudu2fNY7hnQDX7iZ3kn1d9wyPc2E"
@@ -2326,6 +2575,7 @@ testSend = do
                          ]
                      , "Value"      .= (630000 :: Int)
                      , "Orphan"     .= False
+                     , "Partial"    .= False
                      ]
             , object [ "Recipients" .= toJSON
                          [ T.pack "13LjjLQGGiTL8AYMbYqBmQVyAMyQnjPZK3"
@@ -2333,8 +2583,69 @@ testSend = do
                          ]
                      , "Value"      .= (-450000 :: Int)
                      , "Orphan"     .= False
+                     , "Partial"    .= False
                      ]
             ]
         )
+
+    -- Checking the coins directly in the database
+    ((map f) <$> selectList [DbCoinAccount ==. msi] [Asc DbCoinCreated]) >>= 
+        liftIO . assertEqual "Check DB coins after importing Final tx"
+            [ ( "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+              , 0, 100000, "a91491b00b8d4d4b8909d5d17fe8da3b09fbd64e003c87"
+              , Just "522102690c830a595721558e2bf6c58f6ed269c3b9fa194523326bb26d9a20b0cf49532102c98a1bde30c9fd0b71e88792b512963ce8b956f8735dbb0b1a2d6da7f1385e8d2102e7166192bf2bb2433daad4ab396fc2dc09785df716ca992f8bf76ff0aed6695053ae"
+              , "3EyLoBudu2fNY7hnQDX7iZ3kn1d9wyPc2E"
+              , Unspent
+              , False
+              )
+            , ( "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+              , 1, 200000, "a91488fb2eb63c1f992d801f538340180527510464c787"
+              , Just "5221023206a385544defd500a54d3d3fd8982d35fa7f877fa721beb59e440186183e8a210352b7c1f82593abebcb4ad0bbf28a4317b49efc1cc3e647453c09c6375122e8f621035c9ca1f7825d2cf025f42e636f57f193dbaae5c18b08dca10bf996ddb58eb8e853ae"
+              , "3EBJj6Z2FrrGUytJabTrJRD6mxCgF3d7JW"
+              , Spent "a7274a15719099c5de37741bfd70efa15bb22a9de5507d966ccdf528a4f8f4c3"
+              , False
+              )
+            , ( "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+              , 2, 150000, "a9148c0ad01947abab4985837a24be0d2141dcba063987"
+              , Just "522102779d361a5d534dfca9d480eb60a1b14741a98d29f5c984fc1afd68a8c50981232102f579364c0d0971ec9ae52f2fc870204bce00438be1b6fa695d27c9d01cfb0956210383787221b68f601aa4695c27e7eebb0d15de2ed7ef7b9981fba8cad71ae2d84253ae"
+              , "3ETVUh7mn1sSiLrhUQYMByfuo32DauHKdR"
+              , Spent "a7274a15719099c5de37741bfd70efa15bb22a9de5507d966ccdf528a4f8f4c3"
+              , False
+              )
+            , ( "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+              , 3, 180000, "a91460c1eb9034130684ece4594384e984325d1280ad87"
+              , Just "52210285bd8161363c6e2d2c075e08ed8a956c4706ccd77497a31327bf92b2208c3587210286e3177a8ca61d2d9426b4230735631e8552cc4d6e87e1277960461b0d26aac42103e2e138589e064f347238c2ca46c1d7deb8dd9472d065d7c5cb0f91aa5cc210a953ae"
+              , "3AWd6mZHrvMbocVRp752ExTGnUhh1huWQp"
+              , Spent "a7274a15719099c5de37741bfd70efa15bb22a9de5507d966ccdf528a4f8f4c3"
+              , False
+              )
+            , ( "a7274a15719099c5de37741bfd70efa15bb22a9de5507d966ccdf528a4f8f4c3"
+              , 2, 80000, "a914737e1e10bbf4290c82681745b5a54449ca83d18487"
+              , Just "5221021190e8331245f9455d0b027cd9f53e2e5f530ffa48aaa4f6b9fc7657c8cd5ebe21030e08ad2233845f90e958988768b42f8e53d358efc371149049a5399ae0d3b334210380f8240eb12a1bbe20c2f441d6c2216d5eb84bbb4b926aa801180de13dbdf7c553ae"
+              , "3CDgiQ2TnKvy1AovxwFy2jsDqURN8bq856"
+              , Unspent
+              , False
+              )
+            ]
+
+    -- Checking the transactions directly in the database
+    ((map g) <$> selectList [DbTxAccount ==. msi] [Asc DbTxCreated]) >>=
+        liftIO . assertEqual "Check DB transactions after importing Final tx"
+            [ ( "62e7897c97eb791998d790c114c09141849c6e9aaa31d9266ab984105bda3589"
+              , [ "3EyLoBudu2fNY7hnQDX7iZ3kn1d9wyPc2E"
+                , "3EBJj6Z2FrrGUytJabTrJRD6mxCgF3d7JW"
+                , "3ETVUh7mn1sSiLrhUQYMByfuo32DauHKdR"
+                , "3AWd6mZHrvMbocVRp752ExTGnUhh1huWQp"
+                ]
+              , 630000 , False, False
+              )
+            , ( "a7274a15719099c5de37741bfd70efa15bb22a9de5507d966ccdf528a4f8f4c3"
+              , [ "13LjjLQGGiTL8AYMbYqBmQVyAMyQnjPZK3"
+                , "1MK3xFQSekQPuety1oaVTmvLRusFYsTq3d"
+                ]
+              , -450000, False, False
+              )
+            ]
+
 
 

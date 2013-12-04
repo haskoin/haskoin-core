@@ -76,25 +76,25 @@ dbRemoveTx :: ( PersistStore m, PersistQuery m, PersistUnique m
               )
            => String -> EitherT String m [String]
 dbRemoveTx txid = do
-    -- Delete orphaned coins spent by this transaction
-    deleteWhere [ DbCoinOrphan ==. True
-                , DbCoinStatus <-. [Spent txid, Reserved txid]
-                ]
-    -- Unspend coins that were previously spent by this transaction
-    updateWhere [ DbCoinStatus <-. [Spent txid, Reserved txid] ]
-                [ DbCoinStatus =. Unspent ]
+    -- Find all parents of this transaction
+    -- Partial transactions should not have any coins. Won't check for it
+    coins <- selectList [ DbCoinTxid ==. txid ] []
+    let parents = nub $ catStatus $ map (dbCoinStatus . entityVal) coins
+    -- Recursively remove parents
+    pids <- forM parents dbRemoveTx
+    -- Delete output coins generated from this transaction
+    deleteWhere [ DbCoinTxid ==. txid ]
     -- Delete account transactions
     deleteWhere [ DbTxTxid ==. txid ]
     -- Delete transaction blob
     deleteWhere [ DbTxBlobTxid ==. txid ]
-    -- Find all parents of this transaction
-    -- Partial transactions should not yield any coins. Won't check for it
-    coins <- selectList [ DbCoinTxid ==. txid ] []
-    let parents = nub $ catStatus $ map (dbCoinStatus . entityVal) coins
-    -- Delete coins generated from this transaction
-    deleteWhere [ DbCoinTxid ==. txid ]
-    -- Recursively remove parents
-    pids <- forM parents dbRemoveTx
+    -- Delete orphaned input coins spent by this transaction
+    deleteWhere [ DbCoinOrphan ==. True
+                , DbCoinStatus <-. [Spent txid, Reserved txid]
+                ]
+    -- Unspend input coins that were previously spent by this transaction
+    updateWhere [ DbCoinStatus <-. [Spent txid, Reserved txid] ]
+                [ DbCoinStatus =. Unspent ]
     return $ txid:(concat pids)
           
 -- |Import a transaction into the database

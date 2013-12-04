@@ -127,8 +127,8 @@ dbImportTx tx = do
         -- Import new coins and update existing coins
         outCoins <- catMaybes <$> 
             (mapM (dbImportCoin id complete) $ zip (txOut tx) [0..])
-        let accTxs = buildAccTx tx (map entityVal inCoins) 
-                         orphans outCoins (not complete) time
+        let accTxs = buildAccTx tx ((map entityVal inCoins) ++ orphans)
+                         outCoins (not complete) time
         -- Insert transaction blob. Ignore if already exists
         insertUnique $ DbTxBlob id (encode' tx) time
         -- insert account transactions into database, rewriting if they exist
@@ -171,31 +171,31 @@ txToRemove coins = catMaybes $ map (f . dbCoinStatus) coins
     f (Reserved parent) = Just parent
     f _                 = Nothing
 
--- |Group input, orphan and output coins by accounts and create 
+-- |Group input and output coins by accounts and create 
 -- account-level transaction
-buildAccTx :: Tx -> [DbCoinGeneric b] -> [DbCoinGeneric b] -> [DbCoinGeneric b]
+buildAccTx :: Tx -> [DbCoinGeneric b] -> [DbCoinGeneric b]
            -> Bool -> UTCTime -> [DbTxGeneric b]
-buildAccTx tx inCoins orphans outCoins partial time = map build $ M.toList cMap
+buildAccTx tx inCoins outCoins partial time = map build $ M.toList oMap
   where
-    aMap = foldr (f (\(a,b,c) x -> (x:a,b,c))) M.empty inCoins
-    bMap = foldr (f (\(a,b,c) x -> (a,x:b,c))) aMap orphans
-    cMap = foldr (f (\(a,b,c) x -> (a,b,x:c))) bMap outCoins
+    iMap = foldr (f (\(i,o) x -> (x:i,o))) M.empty inCoins
+    oMap = foldr (f (\(i,o) x -> (i,x:o))) iMap outCoins
     f g coin accMap = case M.lookup (dbCoinAccount coin) accMap of
-        Just triple -> M.insert (dbCoinAccount coin) (g triple coin) accMap
-        Nothing     -> M.insert (dbCoinAccount coin) (g ([],[],[]) coin) accMap
+        Just tuple -> M.insert (dbCoinAccount coin) (g tuple coin) accMap
+        Nothing    -> M.insert (dbCoinAccount coin) (g ([],[]) coin) accMap
     allRecip = rights $ map toAddr $ txOut tx
     toAddr   = (addrToBase58 <$>) . scriptRecipient . scriptOutput
-    sumVal = sum . (map dbCoinValue)
-    build (ai,(i,o,c)) = 
-        DbTx (txidHex $ txid tx) recip total ai (not (null o)) partial time
+    sumVal   = sum . (map dbCoinValue)
+    build (ai,(i,o)) = 
+        DbTx (txidHex $ txid tx) recip total ai orphan partial time
       where
-        total | null o    = sumVal c - sumVal i
-              | otherwise = 0
-        addrs = map dbCoinAddress c
-        recip | null addrs   = allRecip
-              | length o > 0 = allRecip \\ addrs
-              | total < 0    = allRecip \\ addrs
-              | otherwise    = addrs
+        orphan = or $ map dbCoinOrphan i
+        total | orphan    = 0
+              | otherwise = sumVal o - sumVal i
+        addrs = map dbCoinAddress o
+        recip | null addrs = allRecip
+              | orphan     = allRecip \\ addrs -- assume this is an outgoing tx
+              | total < 0  = allRecip \\ addrs -- remove the change
+              | otherwise  = addrs
 
 -- |Create an orphaned coin if the input spends from an address in the wallet
 -- but the coin doesn't exist in the wallet. This allows out-of-order tx import

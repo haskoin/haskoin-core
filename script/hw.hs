@@ -101,7 +101,7 @@ cmdHelp =
     [ "hw wallet commands: " 
     , "  init       <seed>                      Initialize a wallet"
     , "  list       <acc>                       Display last page of addresses"
-    , "  listpage   <acc> <page> <res/page>     Display addresses by page"
+    , "  listpage   <acc> <page> [-c res/page]  Display addresses by page"
     , "  new        <acc> {labels...}           Generate address with labels"
     , "  genaddr    <acc> [-c count]            Generate new addresses"
     , "  label      <acc> <index> <label>       Add a label to an address"

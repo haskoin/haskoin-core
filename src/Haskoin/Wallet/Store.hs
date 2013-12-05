@@ -70,6 +70,7 @@ module Haskoin.Wallet.Store
 , dbSendCoins
 , cmdSignTx
 , dbSignTx
+, cmdDecodeTx
 
 -- Store functions
 , cmdInit

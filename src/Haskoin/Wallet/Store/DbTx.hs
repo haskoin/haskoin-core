@@ -13,6 +13,7 @@ module Haskoin.Wallet.Store.DbTx
 , dbSendCoins
 , cmdSignTx
 , dbSignTx
+, cmdDecodeTx
 ) where
 
 import Control.Applicative
@@ -416,14 +417,13 @@ dbGetSigData sh coin = do
     prvErr = "dbGetSigData: Invalid account derivation index"
     addErr = "dbGetSigData: Invalid address derivation index"
 
-
-{-
-
-cmdDecodeTx :: String -> Command
+cmdDecodeTx :: Monad m => String -> EitherT String m Value
 cmdDecodeTx str = do
     tx <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS str)
     return $ toJSON (tx :: Tx)
     where txErr = "cmdDecodeTx: Could not decode transaction"
+
+{-
 
 cmdBuildRawTx :: [(String,Int)] -> [(String,Int)] -> Command
 cmdBuildRawTx os as = do

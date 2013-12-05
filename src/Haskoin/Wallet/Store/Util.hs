@@ -195,12 +195,14 @@ instance ToJSON TxOut where
                        (decodeOutput s)
 
 instance ToJSON TxIn where
-    toJSON (TxIn o s i) = object $
-        [ (T.pack "OutPoint") .= toJSON o
-        , (T.pack "Sequence") .= toJSON i
-        , (T.pack "Raw Script") .= (bsToHex $ encodeScriptOps s)
-        , (T.pack "Script") .= toJSON s
-        ] ++ decoded 
+    toJSON (TxIn o s i) = object $ concat
+        [ [ (T.pack "OutPoint") .= toJSON o
+          , (T.pack "Sequence") .= toJSON i
+          , (T.pack "Raw Script") .= (bsToHex $ encodeScriptOps s)
+          , (T.pack "Script") .= toJSON s
+          ] 
+        , decoded 
+        ]
         where decoded = either (const $ either (const []) f $ decodeInput s) 
                                f $ decodeScriptHash s
               f inp = [(T.pack "Decoded Script") .= toJSON inp]
@@ -249,19 +251,20 @@ instance ToJSON ScriptOutput where
 instance ToJSON ScriptInput where
     toJSON (SpendPK s) = object 
         [ (T.pack "SpendPublicKey") .= object
-            [ (T.pack "Signature") .= (bsToHex $ encodeSig s)
+            [ (T.pack "Signature") .= toJSON s
             ]
         ]
     toJSON (SpendPKHash s p) = object 
         [ (T.pack "SpendPublicKeyHash") .= object
-            [ (T.pack "Signature") .= (bsToHex $ encodeSig s)
+            [ (T.pack "Signature") .= toJSON s
             , (T.pack "Public Key") .= (bsToHex $ encode' p)
+            , (T.pack "Sender Addr") .= addrToBase58 (pubKeyAddr p)
             ]
         ]
     toJSON (SpendMulSig sigs r) = object 
         [ (T.pack "SpendMultiSig") .= object
             [ (T.pack "Required Keys (M)") .= toJSON r
-            , (T.pack "Signatures") .= (toJSON $ map (bsToHex . encodeSig) sigs)
+            , (T.pack "Signatures") .= (toJSON $ map toJSON sigs)
             ]
         ]
 
@@ -270,6 +273,37 @@ instance ToJSON ScriptHashInput where
         [ (T.pack "SpendScriptHash") .= object
             [ (T.pack "ScriptInput") .= toJSON s
             , (T.pack "RedeemScript") .= toJSON r
+            , (T.pack "Raw Redeem Script") .= 
+                (bsToHex $ encodeScriptOps $ encodeOutput r)
+            , (T.pack "Sender Addr") .= (addrToBase58 $ scriptAddr  r)
             ]
         ]
+
+instance ToJSON TxSignature where
+    toJSON ts@(TxSignature s h) = object
+        [ (T.pack "Raw Sig") .= (bsToHex $ encodeSig ts)
+        , (T.pack "SigHash") .= toJSON h
+        ]
+
+instance ToJSON SigHash where
+    toJSON sh = case sh of
+        (SigAll acp) -> object
+            [ (T.pack "Type") .= T.pack "SigAll"
+            , (T.pack "AnyoneCanPay") .= acp
+            ]
+        (SigNone acp) -> object
+            [ (T.pack "Type") .= T.pack "SigNone"
+            , (T.pack "AnyoneCanPay") .= acp
+            ]
+        (SigSingle acp) -> object
+            [ (T.pack "Type") .= T.pack "SigSingle"
+            , (T.pack "AnyoneCanPay") .= acp
+            ]
+        (SigUnknown acp v) -> object
+            [ (T.pack "Type") .= T.pack "SigUnknown"
+            , (T.pack "AnyoneCanPay") .= acp
+            , (T.pack "Value") .= v
+            ]
+
+
 

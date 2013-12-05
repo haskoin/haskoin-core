@@ -98,7 +98,7 @@ usageHeader = "Usage: hw [<options>] <command> [<args>]"
 
 cmdHelp :: [String]
 cmdHelp = 
-    [ "hw commands: " 
+    [ "hw wallet commands: " 
     , "  init       <seed>                      Initialize a wallet"
     , "  list       <acc>                       Display last page of addresses"
     , "  listpage   <acc> <page> <res/page>     Display addresses by page"
@@ -120,7 +120,9 @@ cmdHelp =
     , "  allcoins                               List all coins per account"
     , "  signtx     <tx>                        Sign a transaction"
     , "  importtx   <tx>                        Import transaction"
-    , "  importtx   <txid>                      Import transaction"
+    , "  removetx   <txid>                      Remove transaction"
+    , ""
+    , "hw utility commands: "
     , "  decodetx   <tx>                        Decode HEX transaction"
     , "  buildrawtx {txid:id...} {addr:amnt...} Build a new transaction"
     , "  signrawtx  <tx> {txid:id:script...}    Sign a raw transaction"
@@ -229,7 +231,7 @@ dispatchCommand cmd opts args = case cmd of
         tx <- liftEither $ decodeToEither bs
         cmdImportTx tx
     "removetx" -> whenArgs args (== 1) $ cmdRemoveTx $ head args
---    "decodetx"     -> whenArgs args (== 1) $ cmdDecodeTx $ head args
+    "decodetx" -> whenArgs args (== 1) $ cmdDecodeTx $ head args
 --    "buildrawtx"   -> whenArgs args (>= 2) $ do
 --        let xs     = map (splitOn ":") args
 --            (os,as) = span ((== 64) . length . head) xs

@@ -62,12 +62,12 @@ yamlCoin coin = object $ concat
       , "Index"   .= dbCoinPos coin
       , "Value"   .= dbCoinValue coin
       , "Script"  .= dbCoinScript coin
-      , "Orphan"  .= dbCoinOrphan coin
       , "Address" .= dbCoinAddress coin
       ] 
     , if isJust $ dbCoinRdmScript coin 
         then ["Redeem" .= fromJust (dbCoinRdmScript coin)] 
         else []
+    , if dbCoinOrphan coin then ["Orphan" .= True] else []
     ]
 
 dbBalance :: ( PersistQuery m
@@ -85,7 +85,10 @@ dbBalance (Entity ai acc) = do
 
 cmdBalance :: (PersistUnique m, PersistQuery m) 
            => AccountName -> EitherT String m Value
-cmdBalance name = toJSON <$> (dbBalance =<< dbGetAcc name)
+cmdBalance name = do
+    acc <- dbGetAcc name
+    balance <- dbBalance acc
+    return $ object [ "Balance" .= toJSON balance ]
 
 cmdBalances :: PersistQuery m => EitherT String m Value
 cmdBalances = do
@@ -94,7 +97,7 @@ cmdBalances = do
     return $ toJSON $ map f $ zip accs bals
   where 
     f (acc,b) = object
-        [ "Account" .= (yamlAcc $ entityVal acc)
+        [ "Account" .= (dbAccountName $ entityVal acc)
         , "Balance" .= b
         ]
 
@@ -132,7 +135,7 @@ cmdAllCoins = do
     return $ toJSON $ map g $ zip accs coins
   where 
     g (acc,cs) = object
-        [ "Account" .= (yamlAcc $ entityVal acc)
+        [ "Account" .= (dbAccountName $ entityVal acc)
         , "Coins" .= (toJSON $ map yamlCoin cs)
         ]
 

@@ -58,7 +58,7 @@ defaultOptions = Options
 options :: [OptDescr (Options -> IO Options)]
 options =
     [ Option ['c'] ["count"] (ReqArg parseCount "INT") $
-        "Address count"
+        "Count: see commands for details"
     , Option ['s'] ["sighash"] (ReqArg parseSigHash "SIGHASH") $
         "Signature type = ALL|NONE|SINGLE"
     , Option ['a'] ["anyonecanpay"]
@@ -67,7 +67,7 @@ options =
             return opts{ optSigHash = sh{ anyoneCanPay = True } }
         ) $ "Set signature flag AnyoneCanPay"
     , Option ['f'] ["fee"] (ReqArg parseCount "INT") $
-        "Transaction fee"
+        "Transaction fee (default: 10000)"
     , Option ['j'] ["json"]
         (NoArg $ \opts -> return opts{ optJson = True }) $
         "Format result as JSON (default: YAML)"
@@ -99,34 +99,47 @@ usageHeader = "Usage: hw [<options>] <command> [<args>]"
 cmdHelp :: [String]
 cmdHelp = 
     [ "hw wallet commands: " 
-    , "  init       <seed>                      Initialize a wallet"
-    , "  list       <acc>                       Display last page of addresses"
-    , "  listpage   <acc> <page> [-c res/page]  Display addresses by page"
-    , "  new        <acc> {labels...}           Generate address with labels"
-    , "  genaddr    <acc> [-c count]            Generate new addresses"
-    , "  label      <acc> <index> <label>       Add a label to an address"
-    , "  balance    <acc>                       Display account balance"
-    , "  balances                               Display all balances"
-    , "  tx         <acc>                       Display transactions"
-    , "  send       <acc> <addr> <amount>       Send coins to an address"
-    , "  sendmany   <acc> {addr:amount...}      Send coins to many addresses"
-    , "  newacc     <name>                      Create a new account"
-    , "  newms      <name> <M> <N> {pubkey...}  Create a new multisig account"
-    , "  addkeys    <acc> {pubkeys...}          Add pubkeys to a multisig account"
-    , "  accinfo    <acc>                       Display account information"
-    , "  listacc                                List all accounts"
-    , "  dumpkeys   <acc>                       Dump account keys to stdout"
-    , "  coins      <acc>                       List coins"
-    , "  allcoins                               List all coins per account"
-    , "  signtx     <tx>                        Sign a transaction"
-    , "  importtx   <tx>                        Import transaction"
-    , "  removetx   <txid>                      Remove transaction"
+    , "  init       seed                    Initialize a wallet"
+    , "  list       acc                     Display last page of addresses"
+    , "  listpage   acc page [-c res/page]  Display addresses by page"
+    , "  new        acc {labels...}         Generate address with labels"
+    , "  genaddr    acc [-c count]          Generate new addresses"
+    , "  label      acc index label         Add a label to an address"
+    , "  balance    acc                     Display account balance"
+    , "  balances                           Display all balances"
+    , "  tx         acc                     Display transactions"
+    , "  send       acc addr amount         Send coins to an address"
+    , "  sendmany   acc {addr:amount...}    Send coins to many addresses"
+    , "  newacc     name                    Create a new account"
+    , "  newms      name M N {pubkey...}    Create a new multisig account"
+    , "  addkeys    acc {pubkey...}         Add pubkeys to a multisig account"
+    , "  accinfo    acc                     Display account information"
+    , "  listacc                            List all accounts"
+    , "  dumpkeys   acc                     Dump account keys to stdout"
+    , "  coins      acc                     List coins"
+    , "  allcoins                           List all coins per account"
+    , "  signtx     tx                      Sign a transaction"
+    , "  importtx   tx                      Import transaction"
+    , "  removetx   txid                    Remove transaction"
     , ""
     , "hw utility commands: "
-    , "  decodetx   <tx>                        Decode HEX transaction"
-    , "  buildrawtx {txid:id...} {addr:amnt...} Build a new transaction"
-    , "  signrawtx  <tx> {txid:id:script...}    Sign a raw transaction"
+    , "  decodetx   tx                      Decode HEX transaction"
+    , "  buildrawtx"
+    , "      '[{\"txid\":txid,\"vout\":n},...]' '{addr:amnt,...}'"
+    , "  signrawtx "  
+    , "      tx" 
+    , "      " ++ sigdata
+    , "      '[prvkey,...]' [-s SigHash]" 
     ]
+  where 
+    sigdata = concat
+        [ "'[{"
+        , "\"txid\":txid,"
+        , "\"vout\":n,"
+        , "\"scriptPubKey\":hex,"
+        , "\"scriptRedeem\":hex"
+        , "},...]'"
+        ]
 
 warningMsg :: String
 warningMsg = unwords [ "***"
@@ -232,18 +245,10 @@ dispatchCommand cmd opts args = case cmd of
         cmdImportTx tx
     "removetx" -> whenArgs args (== 1) $ cmdRemoveTx $ head args
     "decodetx" -> whenArgs args (== 1) $ cmdDecodeTx $ head args
---    "buildrawtx"   -> whenArgs args (>= 2) $ do
---        let xs     = map (splitOn ":") args
---            (os,as) = span ((== 64) . length . head) xs
---            f [a,b] = return (a,read b) 
---            f _     = left "buildtx: Invalid syntax"
---        os' <- mapM f os
---        as' <- mapM f as
---        cmdBuildRawTx os' as'
---    "signrawtx"    -> whenArgs args (>= 2) $ do 
---        let f [t,i,s] = return (t,read i,s)
---            f _       = left "Invalid syntax for txid:index:script"
---        xs <- mapM (f . (splitOn ":")) $ tail args
---        cmdSignRawTx (head args) xs $ optSigHash opts
+    "buildrawtx" -> whenArgs args (== 2) $ cmdBuildRawTx (head args) (args !! 1)
+    "signrawtx"    -> whenArgs args (== 3) $ do 
+        bs <- liftMaybe "signtx: Invalid HEX encoding" $ hexToBS $ head args
+        tx <- liftEither $ decodeToEither bs
+        cmdSignRawTx tx (args !! 1) (args !! 2) (optSigHash opts)
     _ -> left $ unwords ["Invalid command:", cmd]
 

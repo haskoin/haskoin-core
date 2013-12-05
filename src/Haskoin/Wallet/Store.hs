@@ -71,6 +71,8 @@ module Haskoin.Wallet.Store
 , cmdSignTx
 , dbSignTx
 , cmdDecodeTx
+, cmdBuildRawTx
+, cmdSignRawTx
 
 -- Store functions
 , cmdInit
@@ -120,6 +122,9 @@ cmdInit seed
         time   <- liftIO getCurrentTime
         master <- liftMaybe err $ makeMasterKey $ stringToBS seed
         let str = xPrvExport $ runMasterKey master
+        prev <- getBy $ UniqueWalletName "main"
+        when (isJust prev) $ left
+            "cmdInit: Wallet is already initialized"
         insert_ $ DbWallet "main" "full" str (-1) time
         return Null
   where 

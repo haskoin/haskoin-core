@@ -14,6 +14,8 @@ module Haskoin.Wallet.Store.DbTx
 , cmdSignTx
 , dbSignTx
 , cmdDecodeTx
+, cmdBuildRawTx
+, cmdSignRawTx
 ) where
 
 import Control.Applicative
@@ -22,11 +24,14 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Either
 
 import Data.Time
-import Data.Yaml
 import Data.Word
 import Data.List
 import Data.Maybe
 import Data.Either
+import Data.Yaml
+import qualified Data.Vector as V (toList)
+import qualified Data.HashMap.Strict as H (toList)
+import qualified Data.Aeson as Json
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.ByteString as BS
@@ -49,11 +54,12 @@ import Haskoin.Crypto
 import Haskoin.Util
 
 yamlTx :: DbTxGeneric b -> Value
-yamlTx tx = object
-    [ "Recipients" .= dbTxRecipients tx
-    , "Value" .= dbTxValue tx
-    , "Orphan" .= dbTxOrphan tx
-    , "Partial" .= dbTxPartial tx
+yamlTx tx = object $ concat
+    [ [ "Recipients" .= dbTxRecipients tx
+      , "Value" .= dbTxValue tx
+      ]
+    , if dbTxOrphan tx then ["Orphan" .= True] else []
+    , if dbTxPartial tx then ["Partial" .= True] else []
     ]
 
 txidHex :: Hash256 -> String
@@ -311,7 +317,7 @@ cmdSend :: ( PersistStore m, PersistQuery m, PersistUnique m
         => AccountName -> String -> Int -> Int -> EitherT String m Value
 cmdSend name a v fee = do
     (tx,complete) <- dbSendTx name [(a,fromIntegral v)] (fromIntegral fee)
-    return $ object [ "Payment Tx" .= (toJSON $ bsToHex $ encode' tx)
+    return $ object [ "Tx" .= (toJSON $ bsToHex $ encode' tx)
                     , "Complete"   .= complete
                     ]
 
@@ -322,7 +328,7 @@ cmdSendMany :: ( PersistStore m, PersistQuery m, PersistUnique m
             => AccountName -> [(String,Int)] -> Int -> EitherT String m Value
 cmdSendMany name dests fee = do
     (tx,complete) <- dbSendTx name dests' (fromIntegral fee)
-    return $ object [ "Payment Tx" .= (toJSON $ bsToHex $ encode' tx)
+    return $ object [ "Tx" .= (toJSON $ bsToHex $ encode' tx)
                     , "Complete"   .= complete
                     ]
     where dests' = map (\(a,b) -> (a,fromIntegral b)) dests
@@ -423,33 +429,85 @@ cmdDecodeTx str = do
     return $ toJSON (tx :: Tx)
     where txErr = "cmdDecodeTx: Could not decode transaction"
 
-{-
+data RawTxOutPoints = RawTxOutPoints [OutPoint] 
+    deriving (Eq, Show)
 
-cmdBuildRawTx :: [(String,Int)] -> [(String,Int)] -> Command
-cmdBuildRawTx os as = do
-    ops <- mapM f os
-    tx  <- liftEither $ buildAddrTx ops $ map (\(a,v) -> (a,fromIntegral v)) as
+data RawTxDests = RawTxDests [(String,Word64)]
+    deriving (Eq, Show)
+
+instance Json.FromJSON RawTxOutPoints where
+    parseJSON = Json.withArray "Expected: Array" $ \arr -> do
+        RawTxOutPoints <$> (mapM f $ V.toList arr)
+      where
+        f = Json.withObject "Expected: Object" $ \obj -> do
+            txid <- obj .: T.pack "txid" :: Parser String
+            vout <- obj .: T.pack "vout" :: Parser Word32
+            return $ OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS txid)
+                              vout
+
+instance Json.FromJSON RawTxDests where
+    parseJSON = Json.withObject "Expected: Object" $ \obj ->
+        RawTxDests <$> (mapM f $ H.toList obj)
+      where
+        f (addr,v) = do
+            amnt <- parseJSON v :: Parser Word64
+            return (T.unpack addr, amnt)
+
+cmdBuildRawTx :: Monad m => String -> String -> EitherT String m Value
+cmdBuildRawTx i o = do
+    (RawTxOutPoints ops) <- liftMaybe opErr $ 
+        Json.decode $ toLazyBS $ stringToBS i
+    (RawTxDests dests)   <- liftMaybe dsErr $ 
+        Json.decode $ toLazyBS $ stringToBS o
+    tx  <- liftEither $ buildAddrTx ops dests
     return $ object [ (T.pack "Tx") .= (bsToHex $ encode' tx) ]
-    where f (t,i) = do
-            tid <- liftMaybe tidErr $ (decodeToMaybe . BS.reverse) =<< hexToBS t
-            return $ OutPoint tid $ fromIntegral i
-          tidErr  = "cmdBuildTx: Could not decode outpoint txid"
+  where
+    opErr = "cmdBuildRawTx: Could not parse OutPoints"
+    dsErr = "cmdBuildRawTx: Could not parse recipients"
 
-cmdSignRawTx :: String -> [(String,Int,String)] -> SigHash -> Command
-cmdSignRawTx strTx xs sh = do
-    tx <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS strTx)
-    ys <- mapRights f xs
-    let sigTx = detSignTx tx (map fst ys) (map snd ys)
+data RawSigInput = RawSigInput [(SigHash -> SigInput)]
+
+data RawPrvKey = RawPrvKey [PrvKey]
+    deriving (Eq, Show)
+
+instance Json.FromJSON RawSigInput where
+    parseJSON = Json.withArray "Expected: Array" $ \arr -> do
+        RawSigInput <$> (mapM f $ V.toList arr)
+      where
+        f = Json.withObject "Expected: Object" $ \obj -> do
+            txid <- obj .: T.pack "txid" :: Parser String
+            vout <- obj .: T.pack "vout" :: Parser Word32
+            scp  <- obj .: T.pack "scriptPubKey" :: Parser String
+            rdm  <- obj .:? T.pack "scriptRedeem" :: Parser (Maybe String)
+            let s = fromRight $ decodeScriptOps $ stringToBS scp
+                o = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS txid)
+                              vout
+                r = fromRight $ decodeScriptOps $ stringToBS $ fromJust rdm
+            return $ if isJust rdm
+                then SigInputSH s o r
+                else SigInput s o
+
+instance Json.FromJSON RawPrvKey where
+    parseJSON = Json.withArray "Expected: Array" $ \arr ->
+        RawPrvKey <$> (mapM f $ V.toList arr)
+      where
+        f v = do
+            str <- parseJSON v :: Parser String  
+            return $ fromJust $ fromWIF str
+
+cmdSignRawTx :: Monad m => Tx -> String -> String -> SigHash 
+             -> EitherT String m Value
+cmdSignRawTx tx strSigi strKeys sh  = do
+    (RawSigInput fs) <- liftMaybe sigiErr $ 
+        Json.decode $ toLazyBS $ stringToBS strSigi
+    (RawPrvKey keys) <- liftMaybe keysErr $
+        Json.decode $ toLazyBS $ stringToBS strKeys
+    let sigTx = detSignTx tx (map (\f -> f sh) fs) keys
     bsTx <- liftEither $ buildToEither sigTx
     return $ object [ (T.pack "Tx") .= (toJSON $ bsToHex $ encode' bsTx)
                     , (T.pack "Complete") .= isComplete sigTx
                     ]
-    where f (t,i,s) = do
-            sBS <- liftMaybe "Invalid script HEX encoding" $ hexToBS s
-            tBS <- liftMaybe "Invalid txid HEX encoding" $ hexToBS t
-            scp <- liftEither $ decodeScriptOps sBS
-            tid <- liftEither $ decodeToEither $ BS.reverse tBS
-            dbGetSigData scp (OutPoint tid $ fromIntegral i) sh
-          txErr = "cmdSignTx: Could not decode transaction"
--}
+  where
+    sigiErr = "cmdSignRawTx: Could not parse parent transaction data"
+    keysErr = "cmdSignRawTx: Could not parse private keys (WIF)"
 

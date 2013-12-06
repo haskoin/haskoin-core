@@ -46,8 +46,7 @@ toCoin c = do
             bs <- maybeToEither rdmErr $ hexToBS =<< dbCoinRdmScript c
             Just <$> decodeScriptOps bs
         else return Nothing
-    id  <- maybeToEither tidErr (hexToBS $ dbCoinTxid c)
-    h   <- decodeToEither $ BS.reverse id
+    h <- maybeToEither tidErr $ decodeTxid $ dbCoinTxid c
     return $ Coin (TxOut (fromIntegral $ dbCoinValue c) scp)
                   (OutPoint h (fromIntegral $ dbCoinPos c))
                   rdm

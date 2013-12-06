@@ -62,9 +62,6 @@ yamlTx tx = object $ concat
     , if dbTxPartial tx then ["Partial" .= True] else []
     ]
 
-txidHex :: Hash256 -> String
-txidHex = bsToHex . BS.reverse . encode'
-
 -- |Remove a transaction from the database and any parent transaction
 cmdRemoveTx :: ( PersistStore m, PersistQuery m, PersistUnique m
               , PersistMonadBackend m ~ b, b ~ SqlBackend
@@ -162,8 +159,8 @@ dbImportTx tx = do
                     return $ accTxs ++ (concat reImported)
                 else return accTxs
   where
-    id               = txidHex $ txid tx
-    f (OutPoint h i) = CoinOutPoint (txidHex h) (fromIntegral i)
+    id               = encodeTxid $ txid tx
+    f (OutPoint h i) = CoinOutPoint (encodeTxid h) (fromIntegral i)
     complete         = isTxComplete tx
     status           = if complete then Spent id else Reserved id
     dec              = liftEither . decodeToEither . dbTxBlobValue . entityVal
@@ -202,7 +199,7 @@ buildAccTx tx inCoins outCoins partial time = map build $ M.toList oMap
     toAddr   = (addrToBase58 <$>) . scriptRecipient . scriptOutput
     sumVal   = sum . (map dbCoinValue)
     build (ai,(i,o)) = 
-        DbTx (txidHex $ txid tx) recip total ai orphan partial time
+        DbTx (encodeTxid $ txid tx) recip total ai orphan partial time
       where
         orphan = or $ map dbCoinOrphan i
         total | orphan    = 0
@@ -233,7 +230,7 @@ dbImportOrphan status (TxIn op@(OutPoint h i) s _)
     a   = scriptSender s
     b58 = addrToBase58 $ fromRight a
     build rdm addr time = 
-        DbCoin (txidHex h) (fromIntegral i) 0 "" rdm b58 status
+        DbCoin (encodeTxid h) (fromIntegral i) 0 "" rdm b58 status
                (dbAddressAccount addr) True time
 
 -- |Create a new coin for an output if it sends coins to an 
@@ -397,7 +394,7 @@ dbSignTx name tx sh = do
     bsTx <- liftEither $ buildToEither sigTx
     return (bsTx, isComplete sigTx)
   where
-    f (OutPoint h i) = CoinOutPoint (txidHex h) (fromIntegral i)
+    f (OutPoint h i) = CoinOutPoint (encodeTxid h) (fromIntegral i)
     g = ((dbGetSigData sh) =<<) . liftEither . toCoin . entityVal
 
 -- |Given a coin, retrieves the necessary data to sign a transaction
@@ -442,8 +439,7 @@ instance Json.FromJSON RawTxOutPoints where
         f = Json.withObject "Expected: Object" $ \obj -> do
             txid <- obj .: T.pack "txid" :: Parser String
             vout <- obj .: T.pack "vout" :: Parser Word32
-            let i = decodeToEither . BS.reverse =<< 
-                        maybeToEither "Hex parsing failed" (hexToBS txid)
+            let i = maybeToEither "Failed to decode txid" (decodeTxid txid)
                 o = OutPoint <$> i <*> (return vout)
             either (const mzero) return o
 
@@ -483,8 +479,7 @@ instance Json.FromJSON RawSigInput where
             rdm  <- obj .:? T.pack "scriptRedeem" :: Parser (Maybe String)
             let s = decodeScriptOps =<< maybeToEither "Hex parsing failed" 
                         (hexToBS scp)
-                i = decodeToEither . BS.reverse =<< 
-                        maybeToEither "Hex parsing failed" (hexToBS txid)
+                i = maybeToEither "Failed to decode txid" (decodeTxid txid)
                 o = OutPoint <$> i <*> (return vout)
                 r = decodeScriptOps =<< maybeToEither "Hex parsing failed" 
                         (hexToBS $ fromJust rdm)

@@ -179,7 +179,7 @@ instance PersistQuery m => PersistQuery (EitherT e m) where
 
 instance ToJSON OutPoint where
     toJSON (OutPoint h i) = object
-        [ (T.pack "TxID") .= (bsToHex $ BS.reverse $ encode' h)
+        [ (T.pack "TxID") .= encodeTxid h
         , (T.pack "Index") .= toJSON i
         ]
 
@@ -209,7 +209,7 @@ instance ToJSON TxIn where
               
 instance ToJSON Tx where
     toJSON tx@(Tx v is os i) = object
-        [ (T.pack "TxID") .= (bsToHex $ BS.reverse $ encode' $ txid tx)
+        [ (T.pack "TxID") .= encodeTxid (txid tx)
         , (T.pack "Version") .= toJSON v
         , (T.pack "Inputs") .= (toJSON $ map input $ zip is [0..])
         , (T.pack "Outputs") .= (toJSON $ map output $ zip os [0..])

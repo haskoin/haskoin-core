@@ -116,6 +116,7 @@ cmdHelp =
     , "  accinfo    acc                     Display account information"
     , "  listacc                            List all accounts"
     , "  dumpkeys   acc                     Dump account keys to stdout"
+    , "  wif        acc index               Dump prvkey as WIF to stdout"
     , "  coins      acc                     List coins"
     , "  allcoins                           List all coins per account"
     , "  signtx     tx                      Sign a transaction"
@@ -233,6 +234,7 @@ dispatchCommand cmd opts args = case cmd of
     "accinfo" -> whenArgs args (== 1) $ cmdAccInfo $ head args
     "listacc" -> whenArgs args (== 0) cmdListAcc 
     "dumpkeys" -> whenArgs args (== 1) $ cmdDumpKeys $ head args
+    "wif" -> whenArgs args (== 2) $ cmdWIF (head args) (read $ args !! 1)
     "coins" -> whenArgs args (== 1) $ cmdCoins $ head args
     "allcoins" -> whenArgs args (== 0) cmdAllCoins
     "signtx" -> whenArgs args (== 2) $ do

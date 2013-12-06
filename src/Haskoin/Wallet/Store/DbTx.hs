@@ -405,10 +405,10 @@ dbGetSigData :: (PersistStore m, PersistUnique m, PersistQuery m)
              => SigHash -> Coin -> EitherT String m (SigInput,PrvKey)
 dbGetSigData sh coin = do
     (Entity _ w) <- dbGetWallet "main"
-    mst <- liftMaybe mstErr $ loadMasterKey =<< xPrvImport (dbWalletMaster w)
     a   <- liftEither $ scriptRecipient out
     (Entity _ addr) <- dbGetAddr $ addrToBase58 a
     acc  <- liftMaybe accErr =<< get (dbAddressAccount addr)
+    mst <- liftMaybe mstErr $ loadMasterKey =<< xPrvImport (dbWalletMaster w)
     aKey <- liftMaybe prvErr $ accPrvKey mst $ fromIntegral $ dbAccountIndex acc
     let g = if dbAddressInternal addr then intPrvKey else extPrvKey
     sigKey <- liftMaybe addErr $ g aKey $ fromIntegral $ dbAddressIndex addr
@@ -442,8 +442,10 @@ instance Json.FromJSON RawTxOutPoints where
         f = Json.withObject "Expected: Object" $ \obj -> do
             txid <- obj .: T.pack "txid" :: Parser String
             vout <- obj .: T.pack "vout" :: Parser Word32
-            return $ OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS txid)
-                              vout
+            let i = decodeToEither . BS.reverse =<< 
+                        maybeToEither "Hex parsing failed" (hexToBS txid)
+                o = OutPoint <$> i <*> (return vout)
+            either (const mzero) return o
 
 instance Json.FromJSON RawTxDests where
     parseJSON = Json.withObject "Expected: Object" $ \obj ->
@@ -479,13 +481,16 @@ instance Json.FromJSON RawSigInput where
             vout <- obj .: T.pack "vout" :: Parser Word32
             scp  <- obj .: T.pack "scriptPubKey" :: Parser String
             rdm  <- obj .:? T.pack "scriptRedeem" :: Parser (Maybe String)
-            let s = fromRight $ decodeScriptOps $ stringToBS scp
-                o = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS txid)
-                              vout
-                r = fromRight $ decodeScriptOps $ stringToBS $ fromJust rdm
-            return $ if isJust rdm
-                then SigInputSH s o r
-                else SigInput s o
+            let s = decodeScriptOps =<< maybeToEither "Hex parsing failed" 
+                        (hexToBS scp)
+                i = decodeToEither . BS.reverse =<< 
+                        maybeToEither "Hex parsing failed" (hexToBS txid)
+                o = OutPoint <$> i <*> (return vout)
+                r = decodeScriptOps =<< maybeToEither "Hex parsing failed" 
+                        (hexToBS $ fromJust rdm)
+                res | isJust rdm = SigInputSH <$> s <*> o <*> r
+                    | otherwise  = SigInput <$> s <*> o
+            either (const mzero) return res
 
 instance Json.FromJSON RawPrvKey where
     parseJSON = Json.withArray "Expected: Array" $ \arr ->
@@ -493,7 +498,7 @@ instance Json.FromJSON RawPrvKey where
       where
         f v = do
             str <- parseJSON v :: Parser String  
-            return $ fromJust $ fromWIF str
+            maybe mzero return $ fromWIF str
 
 cmdSignRawTx :: Monad m => Tx -> String -> String -> SigHash 
              -> EitherT String m Value

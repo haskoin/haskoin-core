@@ -45,6 +45,7 @@ module Haskoin.Wallet.Store
 , dbAdjustGap
 , dbSetGap
 , cmdLabel
+, cmdWIF
 , dbGetAddr
 , yamlAddr
 , yamlAddrList

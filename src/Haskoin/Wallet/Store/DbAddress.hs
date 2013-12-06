@@ -10,6 +10,7 @@ module Haskoin.Wallet.Store.DbAddress
 , dbAdjustGap
 , dbSetGap
 , cmdLabel
+, cmdWIF
 , dbGetAddr
 , yamlAddr
 , yamlAddrList
@@ -261,4 +262,24 @@ cmdLabel name key label = do
     return $ yamlAddr newAddr
   where 
     keyErr = unwords ["cmdLabel: Key",show key,"does not exist"]
+
+cmdWIF :: (PersistStore m, PersistUnique m) 
+         => AccountName -> Int -> EitherT String m Value
+cmdWIF name key = do
+    (Entity _ w) <- dbGetWallet "main"
+    (Entity ai acc) <- dbGetAcc name
+    (Entity _ addr) <- liftMaybe keyErr =<< 
+        (getBy $ UniqueAddressKey ai key False)
+    when (dbAddressIndex addr > dbAccountExtIndex acc) $ left keyErr
+    mst <- liftMaybe mstErr $ loadMasterKey =<< xPrvImport (dbWalletMaster w)
+    aKey <- liftMaybe prvErr $ accPrvKey mst $ fromIntegral $ dbAccountIndex acc
+    let index = fromIntegral $ dbAddressIndex addr
+    addrPrvKey <- liftMaybe addErr $ extPrvKey aKey index
+    let prvKey = xPrvKey $ runAddrPrvKey addrPrvKey
+    return $ object [ "WIF" .= T.pack (toWIF prvKey) ]
+  where 
+    keyErr = unwords ["cmdWIF: Key",show key,"does not exist"]
+    mstErr = "cmdWIF: Could not load master key"
+    prvErr = "cmdWIF: Invalid account derivation index"
+    addErr = "cmdWIF: Invalid address derivation index"
 

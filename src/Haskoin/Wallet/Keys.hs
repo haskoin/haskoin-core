@@ -55,6 +55,7 @@ import Haskoin.Util
     , encode'
     , decodeToMaybe
     )
+import Haskoin.Util.Network
 import Haskoin.Crypto
 import Haskoin.Protocol
 
@@ -206,7 +207,7 @@ instance Binary XPrvKey where
 
     get = do
         ver <- getWord32be
-        unless (ver == 0x0488ade4) $ fail $
+        unless (ver == extSecretPrefix) $ fail $
             "Get: Invalid version for extended private key"
         dep <- getWord8
         par <- getWord32be
@@ -216,7 +217,7 @@ instance Binary XPrvKey where
         return $ XPrvKey dep par idx chn prv
 
     put k = do
-        putWord32be  0x0488ade4 
+        putWord32be  extSecretPrefix
         putWord8     $ xPrvDepth k
         putWord32be  $ xPrvParent k
         putWord32be  $ xPrvIndex k
@@ -227,7 +228,7 @@ instance Binary XPubKey where
 
     get = do
         ver <- getWord32be
-        unless (ver == 0X0488b21e) $ fail $
+        unless (ver == extPubKeyPrefix) $ fail $
             "Get: Invalid version for extended public key"
         dep <- getWord8
         par <- getWord32be
@@ -239,7 +240,7 @@ instance Binary XPubKey where
         return $ XPubKey dep par idx chn pub
 
     put k = do
-        putWord32be 0X0488b21e
+        putWord32be extPubKeyPrefix
         putWord8    $ xPubDepth k
         putWord32be $ xPubParent k
         putWord32be $ xPubIndex k

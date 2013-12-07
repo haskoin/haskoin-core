@@ -36,6 +36,7 @@ import Haskoin.Script
 import Haskoin.Protocol
 import Haskoin.Crypto
 import Haskoin.Util
+import Haskoin.Util.Network
 
 data Options = Options
     { optCount    :: Int
@@ -170,7 +171,7 @@ getWorkDir :: IO FilePath
 getWorkDir = do
     dir <- getAppUserDataDirectory "haskoin"
     createDirectoryIfMissing True dir
-    return $ dir ++ "/walletdb"
+    return $ concat [dir, "/", walletFile]
 
 catchEx :: IOError -> Maybe String
 catchEx = return . ioeGetErrorString

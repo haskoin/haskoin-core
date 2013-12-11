@@ -112,14 +112,11 @@ module Network.Haskoin.Wallet
 , chooseCoins
 , chooseMSCoins
 , guessTxSize
-, getFee
-, getMSFee
 
   -- *Transaction signing
 , SigInput(..)
 , signTx
 , detSignTx
-, isTxComplete
 , isTxComplete
 
 ) where

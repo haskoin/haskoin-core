@@ -44,8 +44,8 @@ data Coin =
 chooseCoins :: Word64 -- ^ Target price to pay.
             -> Word64 -- ^ Fee price per 1000 bytes.
             -> [Coin] -- ^ List of coins to choose from.
-              -- | Coin selection result and change amount.
             -> Either String ([Coin],Word64) 
+               -- ^ Coin selection result and change amount.
 chooseCoins target kbfee xs 
     | target > 0 = maybeToEither err $ greedyAdd target (getFee kbfee) xs
     | otherwise  = Left "chooseCoins: Target must be > 0"
@@ -58,8 +58,8 @@ chooseMSCoins :: Word64    -- ^ Target price to pay.
               -> Word64    -- ^ Fee price per 1000 bytes.
               -> (Int,Int) -- ^ Multisig parameters m of n (m,n).
               -> [Coin]    -- ^ List of coins to choose from.
-              -- | Coin selection result and change amount.
               -> Either String ([Coin],Word64) 
+                 -- ^ Coin selection result and change amount.
 chooseMSCoins target kbfee ms xs 
     | target > 0 = maybeToEither err $ greedyAdd target (getMSFee kbfee ms) xs
     | otherwise  = Left "chooseMSCoins: Target must be > 0"
@@ -106,8 +106,8 @@ getMSFee kbfee ms count = kbfee*((len + 999) `div` 1000)
 -- | Computes an upper bound on the size of a transaction based on some known
 -- properties of the transaction.
 guessTxSize :: Int         -- ^ Number of regular transaction inputs.
-            -- | List of multisig input parameters m of n (m,n). 
             -> [(Int,Int)] 
+               -- ^ List of multisig input parameters m of n (m,n). 
             -> Int         -- ^ Number of pay to public key hash outputs.
             -> Int         -- ^ Number of pay to script hash outputs.
             -> Int         -- ^ Upper bound on the transaction size.
@@ -174,11 +174,10 @@ liftSecret = lift . liftBuild
 isTxComplete :: Tx -> Bool
 isTxComplete = isComplete . (mapM toBuildTxIn) . txIn
 
--- | Sign a transaction by providing the 'SigInput' signing parameters and
--- a list of private keys to use for signing. The signature is computed within
--- the 'SecretT' monad to generate the random signing nonce and within the
--- 'BuildT' monad to add information on wether the result was fully or
--- partially signed.
+-- | Sign a transaction by providing the 'SigInput' signing parameters and a
+-- list of private keys. The signature is computed within the 'SecretT' monad
+-- to generate the random signing nonce and within the 'BuildT' monad to add
+-- information on wether the result was fully or partially signed.
 signTx :: Monad m 
        => Tx                    -- ^ Transaction to sign
        -> [SigInput]            -- ^ SigInput signing parameters
@@ -201,7 +200,14 @@ signTxIn txin sigi tx i keys = do
     liftSecret $ buildf txin tx out i pubs $ map (flip TxSignature sh) sigs
     where sh = sigDataSH sigi
 
-detSignTx :: Tx -> [SigInput] -> [PrvKey] -> Build Tx
+-- | Sign a transaction by providing the 'SigInput' signing paramters and 
+-- a list of private keys. The signature is computed deterministically as
+-- defined in RFC-6979. The signature is computed within the 'Build' monad
+-- to add information on wether the result was fully or partially signed.
+detSignTx :: Tx         -- ^ Transaction to sign
+          -> [SigInput] -- ^ SigInput signing parameters
+          -> [PrvKey]   -- ^ List of private keys to use for signing
+          -> Build Tx   -- ^ Signed transaction
 detSignTx tx@(Tx _ ti _ _) sigis keys = do
     when (null ti) $ Broken "detSignTx: Transaction has no inputs"
     newIn <- mapM sign $ orderSigInput ti sigis

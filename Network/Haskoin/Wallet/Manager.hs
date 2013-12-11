@@ -52,19 +52,43 @@ import Network.Haskoin.Protocol
 
 type KeyIndex = Word32
 
--- m/
+-- | Data type representing an extended private key at the root of the
+-- derivation tree. Master keys have depth 0 and no parents. They are
+-- represented as m\/ in BIP32 notation.
 newtype MasterKey = MasterKey { runMasterKey :: XPrvKey }
     deriving (Eq, Show)
--- m/i'/ 
+
+-- | Data type representing a private account key. Account keys are generated
+-- from a 'MasterKey' through prime derivation. This guarantees that the
+-- 'MasterKey' will not be compromised if the account key is compromised. 
+-- 'AccPrvKey' is represented as m\/i'\/ in BIP32 notation.
 newtype AccPrvKey = AccPrvKey { runAccPrvKey :: XPrvKey }
     deriving (Eq, Show)
--- M/i'/
+
+-- | Data type representing a public account key. It is computed through
+-- derivation from an 'AccPrvKey'. It can not be derived from the 'MasterKey'
+-- directly (property of prime derivation). It is represented as M\/i'\/ in
+-- BIP32 notation. 'AccPubKey' is used for generating receiving payment
+-- addresses without the knowledge of the 'AccPrvKey'.
 newtype AccPubKey = AccPubKey { runAccPubKey :: XPubKey }
     deriving (Eq, Show)
--- m/i'/0|1/j
+
+-- | Data type representing a private address key. Private address keys are
+-- generated through a non-prime derivation from an 'AccPrvKey'. Non-prime
+-- derivation is used so that the public account key can generate the receiving
+-- payment addresses without knowledge of the private account key. 'AccPrvKey'
+-- is represented as m\/i'\/0\/j\/ in BIP32 notation if it is a regular
+-- receiving address. Internal (change) addresses are represented as
+-- m\/i'\/1\/j\/. Non-prime subtree 0 is used for regular receiving addresses
+-- and non-prime subtree 1 for internal (change) addresses.
 newtype AddrPrvKey = AddrPrvKey { runAddrPrvKey :: XPrvKey }
     deriving (Eq, Show)
--- M/i'/0|1/j
+
+-- | Data type representing a public address key. They are generated through
+-- non-prime derivation from an 'AccPubKey'. This is a useful feature for
+-- read-only wallets. They are represented as M\/i'\/0\/j in BIP32 notation
+-- for regular receiving addresses and by M\/i'\/1\/j for internal (change)
+-- addresses.
 newtype AddrPubKey = AddrPubKey { runAddrPubKey :: XPubKey }
     deriving (Eq, Show)
 

@@ -46,25 +46,42 @@ module Network.Haskoin.Wallet
 , mulSigSubKey
 , mulSigSubKeys
 
--- Manager module
+  -- *Derivation tree interoperability
+
+  -- | To improve BIP32 wallet interoperability, a standard derivation tree
+  -- is used. All accounts are generated through prime derivations from the
+  -- master key. This ensures that the master key is not compromised if
+  -- an account is compromised. Every account will generate receiving
+  -- addresses from the non-prime subtree index 0 and internal change
+  -- addresses from the non-prime subtree index 1. MasterKey, AccountKey
+  -- and AddressKey types are defined to conform to the wallet interoperability
+  -- format.
+
+, KeyIndex
+
+  -- **Master keys
 , MasterKey(..)
-, AccPrvKey(..)
-, AccPubKey(..)
-, AddrPrvKey(..)
-, AddrPubKey(..)
 , makeMasterKey
 , loadMasterKey
+
+  -- **Account keys
+, AccPrvKey(..)
+, AccPubKey(..)
 , loadPrvAcc
 , loadPubAcc
-, addr
 , accPrvKey
 , accPubKey
+, accPrvKeys
+, accPubKeys
+
+  -- **Address keys
+, AddrPrvKey(..)
+, AddrPubKey(..)
+, addr
 , extPrvKey
 , extPubKey
 , intPrvKey
 , intPubKey
-, accPrvKeys
-, accPubKeys
 , extPrvKeys
 , extPubKeys
 , intPrvKeys
@@ -75,6 +92,9 @@ module Network.Haskoin.Wallet
 , intAddrs
 , extAddrs'
 , intAddrs'
+
+  -- ***Multisig address keys
+
 , extMulSigKey
 , intMulSigKey
 , extMulSigKeys

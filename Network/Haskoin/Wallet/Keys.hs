@@ -1,6 +1,7 @@
 module Network.Haskoin.Wallet.Keys
 ( XPubKey(..)
 , XPrvKey(..)
+, ChainCode
 , makeXPrvKey
 , deriveXPubKey
 , prvSubKey
@@ -41,7 +42,12 @@ import Data.Binary (Binary, get, put)
 import Data.Binary.Get
 import Data.Binary.Put
 import Data.Word (Word8, Word32)
-import Data.Bits (shiftR, setBit, testBit, clearBit)
+import Data.Bits 
+    ( shiftR
+    , setBit
+    , testBit
+    , clearBit
+    )
 import Data.Maybe (mapMaybe)
 import qualified Data.ByteString as BS 
     ( ByteString
@@ -49,12 +55,6 @@ import qualified Data.ByteString as BS
     )
 
 import Network.Haskoin.Util
-    ( stringToBS
-    , bsToString
-    , toStrictBS
-    , encode'
-    , decodeToMaybe
-    )
 import Network.Haskoin.Util.Network
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
@@ -63,34 +63,52 @@ import Network.Haskoin.Protocol
 
 type ChainCode = Hash256
 
--- BIP32 extended keys
+-- | Data type representing an extended BIP32 private key. An extended key
+-- is a node in a tree of key derivations. It has a depth in the tree, a 
+-- parent node and an index to differentiate it from other siblings.
 data XPrvKey = XPrvKey
-    { xPrvDepth  :: !Word8
-    , xPrvParent :: !Word32
-    , xPrvIndex  :: !Word32
-    , xPrvChain  :: !ChainCode
-    , xPrvKey    :: !PrvKey
+    { xPrvDepth  :: !Word8     -- ^ Depth in the tree of key derivations.
+    , xPrvParent :: !Word32    -- ^ Fingerprint of the parent key.
+    , xPrvIndex  :: !Word32    -- ^ Key derivation index.
+    , xPrvChain  :: !ChainCode -- ^ Chain code.
+    , xPrvKey    :: !PrvKey    -- ^ The private key of this extended key node.
     } deriving (Eq, Show)
 
+-- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
-    { xPubDepth  :: !Word8
-    , xPubParent :: !Word32
-    , xPubIndex  :: !Word32
-    , xPubChain  :: !ChainCode
-    , xPubKey    :: !PubKey
+    { xPubDepth  :: !Word8     -- ^ Depth in the tree of key derivations.
+    , xPubParent :: !Word32    -- ^ Fingerprint of the parent key.
+    , xPubIndex  :: !Word32    -- ^ Key derivation index.
+    , xPubChain  :: !ChainCode -- ^ Chain code.
+    , xPubKey    :: !PubKey    -- ^ The public key of this extended key node.
     } deriving (Eq, Show)
 
+-- | Build a BIP32 compatible extended private key from a bytestring. This will
+-- produce a root node (depth=0 and parent=0).
 makeXPrvKey :: BS.ByteString -> Maybe XPrvKey
 makeXPrvKey bs = do
     pk' <- makePrvKey $ fromIntegral pk
     return $ XPrvKey 0 0 0 c pk'
     where (pk,c) = split512 $ hmac512 (stringToBS "Bitcoin seed") bs
 
+-- | Derive an extended public key from an extended private key. This function
+-- will preserve the depth, parent, index and chaincode fields of the extended
+-- private keys.
 deriveXPubKey :: XPrvKey -> XPubKey
 deriveXPubKey (XPrvKey d p i c k) = XPubKey d p i c (derivePubKey k)
 
--- Public derivation of XPrvKey
-prvSubKey :: XPrvKey -> Word32 -> Maybe XPrvKey
+-- | Compute a private, non-prime child key derivation. A private non-prime
+-- derivation will allow the equivalent extended public key to derive the
+-- public key for this child. Given a parent key /m/ and a derivation index /i/,
+-- this function will compute m\/i\/. 
+--
+-- Non-prime derivations allow for more flexibility such as read-only wallets.
+-- However, care must be taken not the leak both the parent extended public
+-- key and one of the extended child private keys as this would compromise the
+-- extended parent private key.
+prvSubKey :: XPrvKey       -- ^ Extended parent private key
+          -> Word32        -- ^ Child derivation index
+          -> Maybe XPrvKey -- ^ Extended child private key 
 prvSubKey xkey child = guardIndex child >> do
     k <- addPrvKeys (xPrvKey xkey) a
     return $ XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) child c k
@@ -98,16 +116,26 @@ prvSubKey xkey child = guardIndex child >> do
           msg   = BS.append (encode' pK) (encode' child)
           (a,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
 
--- Public derivation of XPubKey
-pubSubKey :: XPubKey -> Word32 -> Maybe XPubKey
+-- | Compute a public, non-prime child key derivation. Given a parent key /M/
+-- and a derivation index /i/, this function will compute M\/i\/. 
+pubSubKey :: XPubKey       -- ^ Extended Parent public key
+          -> Word32        -- ^ Child derivation index
+          -> Maybe XPubKey -- ^ Extended child public key
 pubSubKey xKey child = guardIndex child >> do
     pK <- addPubKeys (xPubKey xKey) a
     return $ XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK
     where msg   = BS.append (encode' $ xPubKey xKey) (encode' child)
           (a,c) = split512 $ hmac512 (encode' $ xPubChain xKey) msg
 
--- Prime derivation of XPrvKey
-primeSubKey :: XPrvKey -> Word32 -> Maybe XPrvKey
+-- | Compute a prime child key derivation. Prime derivations can only be
+-- computed for private keys. Prime derivations do not allow the parent 
+-- public key to derive the child public keys. However, they are safer as
+-- a breach of the parent public key and child private keys does not lead
+-- to a breach of the parent private key. Given a parent key /m/ and a
+-- derivation index /i/, this function will compute m\/i'\/.
+primeSubKey :: XPrvKey       -- ^ Extended Parent private key
+            -> Word32        -- ^ Child derivation index
+            -> Maybe XPrvKey -- ^ Extended child private key
 primeSubKey xkey child = guardIndex child >> do
     k  <- addPrvKeys (xPrvKey xkey) a
     return $ XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) i c k
@@ -115,23 +143,39 @@ primeSubKey xkey child = guardIndex child >> do
           msg   = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode' i)
           (a,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
 
--- Lazy list all valid subkeys starting from an offset
+-- | Cyclic list of all private non-prime child key derivations of a parent key
+-- starting from an offset index.
 prvSubKeys :: XPrvKey -> Word32 -> [(XPrvKey,Word32)]
 prvSubKeys k i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (prvSubKey k j) (return j)
 
+-- | Cyclic list of all public non-prime child key derivations of a parent key
+-- starting from an offset index.
 pubSubKeys :: XPubKey -> Word32 -> [(XPubKey,Word32)]
 pubSubKeys k i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (pubSubKey k j) (return j)
 
+-- | Cyclic list of all prime child key derivations of a parent key starting
+-- from an offset index.
 primeSubKeys :: XPrvKey -> Word32 -> [(XPrvKey,Word32)]
 primeSubKeys k i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (primeSubKey k j) (return j)
 
-mulSigSubKey :: [XPubKey] -> Word32 -> Maybe [XPubKey]
+-- | Compute a public, non-prime subkey derivation for all of the parent public
+-- keys in the input. This function will succeed only if the child key
+-- derivations for all the parent keys are valid. 
+--
+-- This function is intended to be used in the context of multisignature
+-- accounts. Parties exchanging their master public keys to create a
+-- multisignature account can then individually generate all the receiving
+-- multisignature addresses without further communication.
+mulSigSubKey :: [XPubKey]       -- ^ List of extended parent public keys
+             -> Word32          -- ^ Child key derivation index
+             -> Maybe [XPubKey] -- ^ List of extended child public keys
 mulSigSubKey pubs i = mapM (flip pubSubKey i) pubs
 
--- Lazy list of valid public key combinations for creating multisig addresses
+-- | Cyclic list of all public, non-prime multisig key derivations of a list
+-- of parent keys starting from an offset index.
 mulSigSubKeys :: [XPubKey] -> Word32 -> [([XPubKey],Word32)]
 mulSigSubKeys pubs i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (mulSigSubKey pubs j) (return j)
@@ -154,52 +198,65 @@ cycleIndex' i
 guardIndex :: Word32 -> Maybe ()
 guardIndex child = guard $ child >= 0 && child < 0x80000000
 
--- Key was derived through private derivation
+-- | Returns True if the extended private key was derived through a prime
+-- derivation.
 xPrvIsPrime :: XPrvKey -> Bool
 xPrvIsPrime k = testBit (xPrvIndex k) 31
 
+-- | Returns True if the extended public key was derived through a prime
+-- derivation.
 xPubIsPrime :: XPubKey -> Bool
 xPubIsPrime k = testBit (xPubIndex k) 31
 
--- Index without the prime bit
+-- | Returns the derivation index of this extended private key without the
+-- prime bit set.
 xPrvChild :: XPrvKey -> Word32
 xPrvChild k = clearBit (xPrvIndex k) 31
 
+-- | Returns the derivation index of this extended public key without the prime
+-- bit set.
 xPubChild :: XPubKey -> Word32
 xPubChild k = clearBit (xPubIndex k) 31
 
--- Key idendifiers
+-- | Computes the key identifier of an extended private key.
 xPrvID :: XPrvKey -> Hash160
 xPrvID = xPubID . deriveXPubKey
 
+-- | Computes the key identifier of an extended public key.
 xPubID :: XPubKey -> Hash160
 xPubID = hash160 . hash256BS . encode' . xPubKey 
 
--- Key fingerprint
+-- | Computes the key fingerprint of an extended private key.
 xPrvFP :: XPrvKey -> Word32
 xPrvFP = fromIntegral . (`shiftR` 128) . xPrvID
 
+-- | Computes the key fingerprint of an extended public key.
 xPubFP :: XPubKey -> Word32
 xPubFP = fromIntegral . (`shiftR` 128) . xPubID
 
--- Key address
+-- | Computer the 'Address' of an extended public key.
 xPubAddr :: XPubKey -> Address
 xPubAddr = pubKeyAddr . xPubKey
 
--- Base 58 export
+-- | Exports an extended private key to the BIP32 key export format (base 58).
 xPrvExport :: XPrvKey -> String
 xPrvExport = bsToString . encodeBase58Check . encode' 
 
+-- | Exports an extended public key to the BIP32 key export format (base 58).
 xPubExport :: XPubKey -> String
 xPubExport = bsToString . encodeBase58Check . encode'
 
+-- | Decodes a BIP32 encoded extended private key. This function will fail if
+-- invalid base 58 characters are detected or if the checksum fails.
 xPrvImport :: String -> Maybe XPrvKey
 xPrvImport str = decodeToMaybe =<< (decodeBase58Check $ stringToBS str)
 
+-- | Decodes a BIP32 encoded extended public key. This function will fail if
+-- invalid base 58 characters are detected or if the checksum fails.
 xPubImport :: String -> Maybe XPubKey
 xPubImport str = decodeToMaybe =<< (decodeBase58Check $ stringToBS str)
 
--- Export to WIF format
+-- | Export an extended private key to WIF (Wallet Import Format).
 xPrvWIF :: XPrvKey -> String
 xPrvWIF = toWIF . xPrvKey
 

@@ -6,10 +6,10 @@ description:
     This package provides functions for generating hierarchical deterministic
     keys (BIP32). It also provides functions for building and signing both
     simple transactions and multisignature transactions. This package also
-    provides a command lines application called "hw" (haskoin wallet). It is a
+    provides a command lines application called hw (haskoin wallet). It is a
     lightweight bitcoin wallet featuring BIP32 key management, deterministic
     signatures (RFC-6979) and first order support for multisignature
-    transactions. A library API for "hw" is also exposed.
+    transactions. A library API for hw is also exposed.
 homepage:              http://github.com/plaprade/haskoin-wallet
 bug-reports:           http://github.com/plaprade/haskoin-wallet/issues
 license:               PublicDomain
@@ -26,11 +26,11 @@ source-repository head
 
 library
     exposed-modules:   Network.Haskoin.Wallet,
+                       Network.Haskoin.Wallet.Store,
                        Network.Haskoin.Wallet.Arbitrary
     other-modules:     Network.Haskoin.Wallet.Keys,
                        Network.Haskoin.Wallet.Manager,
                        Network.Haskoin.Wallet.TxBuilder,
-                       Network.Haskoin.Wallet.Store,
                        Network.Haskoin.Wallet.Store.DbAccount,
                        Network.Haskoin.Wallet.Store.DbAddress,
                        Network.Haskoin.Wallet.Store.DbCoin,

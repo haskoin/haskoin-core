@@ -1,32 +1,50 @@
+{-|
+  This package provides functions for generating hierarchical deterministic
+  keys (BIP32). It also provides functions for building and signing both
+  simple transactions and multisignature transactions. This package also
+  provides a command lines application called /hw/ (haskoin wallet). It is a
+  lightweight bitcoin wallet featuring BIP32 key management, deterministic
+  signatures (RFC-6979) and first order support for multisignature
+  transactions. A library API for /hw/ is also exposed.
+-}
 module Network.Haskoin.Wallet
+( 
+  -- *Extended Keys
+  ChainCode
 
--- Keys module
-( XPubKey(..)
+  -- **Extended Private Keys
 , XPrvKey(..)
 , makeXPrvKey
+, xPrvIsPrime
+, xPrvChild
+, xPrvID
+, xPrvFP
+, xPrvExport
+, xPrvImport
+, xPrvWIF
+
+  -- **Extended Public Keys
+, XPubKey(..)
 , deriveXPubKey
+, xPubIsPrime
+, xPubChild
+, xPubID
+, xPubFP
+, xPubAddr
+, xPubExport
+, xPubImport
+
+  -- **Child key derivations
 , prvSubKey
 , pubSubKey
 , primeSubKey
 , prvSubKeys
 , pubSubKeys
 , primeSubKeys
+
+  -- ***Multisig derivations
 , mulSigSubKey
 , mulSigSubKeys
-, xPrvIsPrime
-, xPubIsPrime
-, xPrvChild
-, xPubChild
-, xPubID
-, xPrvID
-, xPubFP
-, xPrvFP
-, xPubAddr
-, xPubExport
-, xPrvExport
-, xPubImport
-, xPrvImport
-, xPrvWIF
 
 -- Manager module
 , MasterKey(..)

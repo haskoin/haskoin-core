@@ -1,4 +1,4 @@
-module Haskoin.Wallet
+module Network.Haskoin.Wallet
 
 -- Keys module
 ( XPubKey(..)
@@ -77,8 +77,8 @@ module Haskoin.Wallet
 
 ) where
 
-import Haskoin.Wallet.Keys
-import Haskoin.Wallet.Manager
-import Haskoin.Wallet.TxBuilder
+import Network.Haskoin.Wallet.Keys
+import Network.Haskoin.Wallet.Manager
+import Network.Haskoin.Wallet.TxBuilder
 
 

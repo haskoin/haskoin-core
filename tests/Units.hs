@@ -12,11 +12,11 @@ import Data.Binary.Get
 import Data.Binary.Put
 import qualified Data.ByteString as BS
 
-import Haskoin.Wallet
-import Haskoin.Wallet.TxBuilder
-import Haskoin.Protocol
-import Haskoin.Crypto
-import Haskoin.Util
+import Network.Haskoin.Wallet
+import Network.Haskoin.Wallet.TxBuilder
+import Network.Haskoin.Protocol
+import Network.Haskoin.Crypto
+import Network.Haskoin.Util
 
 tests =
     [ testGroup "BIP32 derivation vector 1" 

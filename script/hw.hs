@@ -28,15 +28,15 @@ import qualified Data.Yaml as YAML
 import qualified Data.Aeson.Encode.Pretty as JSON
 import qualified Data.ByteString as BS
 
-import Haskoin.Wallet.Keys
-import Haskoin.Wallet.TxBuilder
-import Haskoin.Wallet.Manager
-import Haskoin.Wallet.Store
-import Haskoin.Script
-import Haskoin.Protocol
-import Haskoin.Crypto
-import Haskoin.Util
-import Haskoin.Util.Network
+import Network.Haskoin.Wallet.Keys
+import Network.Haskoin.Wallet.TxBuilder
+import Network.Haskoin.Wallet.Manager
+import Network.Haskoin.Wallet.Store
+import Network.Haskoin.Script
+import Network.Haskoin.Protocol
+import Network.Haskoin.Crypto
+import Network.Haskoin.Util
+import Network.Haskoin.Util.Network
 
 data Options = Options
     { optCount    :: Int
@@ -112,7 +112,7 @@ cmdHelp =
     , "  send       acc addr amount         Send coins to an address"
     , "  sendmany   acc {addr:amount...}    Send coins to many addresses"
     , "  newacc     name                    Create a new account"
-    , "  newms      name M N {pubkey...}    Create a new multisig account"
+    , "  newms      name M N [pubkey...]    Create a new multisig account"
     , "  addkeys    acc {pubkey...}         Add pubkeys to a multisig account"
     , "  accinfo    acc                     Display account information"
     , "  listacc                            List all accounts"
@@ -120,7 +120,7 @@ cmdHelp =
     , "  wif        acc index               Dump prvkey as WIF to stdout"
     , "  coins      acc                     List coins"
     , "  allcoins                           List all coins per account"
-    , "  signtx     tx                      Sign a transaction"
+    , "  signtx     acc tx                  Sign a transaction"
     , "  importtx   tx                      Import transaction"
     , "  removetx   txid                    Remove transaction"
     , ""

@@ -1,4 +1,4 @@
-module Haskoin.Wallet.Manager
+module Network.Haskoin.Wallet.Manager
 ( MasterKey(..)
 , AccPrvKey(..)
 , AccPubKey(..)
@@ -45,10 +45,10 @@ import Data.Word
 import Data.Maybe
 import qualified Data.ByteString as BS
 
-import Haskoin.Wallet.Keys
-import Haskoin.Script
-import Haskoin.Crypto
-import Haskoin.Protocol
+import Network.Haskoin.Wallet.Keys
+import Network.Haskoin.Script
+import Network.Haskoin.Crypto
+import Network.Haskoin.Protocol
 
 type KeyIndex = Word32
 

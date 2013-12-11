@@ -5,7 +5,7 @@
 {-# LANGUAGE QuasiQuotes       #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeFamilies      #-}
-module Haskoin.Wallet.Store.Util 
+module Network.Haskoin.Wallet.Store.Util 
 ( DbWalletGeneric(..)
 , DbAccountGeneric(..)
 , DbAddressGeneric(..)
@@ -47,14 +47,14 @@ import Database.Persist
 import Database.Persist.Sqlite
 import Database.Persist.TH
 
-import Haskoin.Wallet.Keys
-import Haskoin.Wallet.Manager
-import Haskoin.Wallet.TxBuilder
-import Haskoin.Wallet.Store.CoinStatus
-import Haskoin.Script
-import Haskoin.Protocol
-import Haskoin.Crypto
-import Haskoin.Util
+import Network.Haskoin.Wallet.Keys
+import Network.Haskoin.Wallet.Manager
+import Network.Haskoin.Wallet.TxBuilder
+import Network.Haskoin.Wallet.Store.CoinStatus
+import Network.Haskoin.Script
+import Network.Haskoin.Protocol
+import Network.Haskoin.Crypto
+import Network.Haskoin.Util
 
 type AccountName = String
 

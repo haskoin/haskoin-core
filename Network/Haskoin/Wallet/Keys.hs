@@ -1,4 +1,4 @@
-module Haskoin.Wallet.Keys
+module Network.Haskoin.Wallet.Keys
 ( XPubKey(..)
 , XPrvKey(..)
 , makeXPrvKey
@@ -48,16 +48,16 @@ import qualified Data.ByteString as BS
     , append
     )
 
-import Haskoin.Util
+import Network.Haskoin.Util
     ( stringToBS
     , bsToString
     , toStrictBS
     , encode'
     , decodeToMaybe
     )
-import Haskoin.Util.Network
-import Haskoin.Crypto
-import Haskoin.Protocol
+import Network.Haskoin.Util.Network
+import Network.Haskoin.Crypto
+import Network.Haskoin.Protocol
 
 {- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
 

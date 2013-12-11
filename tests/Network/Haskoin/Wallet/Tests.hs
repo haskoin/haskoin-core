@@ -1,4 +1,4 @@
-module Haskoin.Wallet.Tests (tests) where
+module Network.Haskoin.Wallet.Tests (tests) where
 
 import Test.QuickCheck.Property hiding ((.&.))
 import Test.Framework
@@ -14,16 +14,17 @@ import qualified Data.ByteString as BS
 
 import QuickCheckUtils
 
-import Haskoin.Wallet
-import Haskoin.Wallet.TxBuilder
-import Haskoin.Wallet.Store
-import Haskoin.Wallet.Arbitrary
-import Haskoin.Script
-import Haskoin.Crypto
-import Haskoin.Crypto.Arbitrary
-import Haskoin.Protocol
-import Haskoin.Protocol.Arbitrary
-import Haskoin.Util
+import Network.Haskoin.Wallet
+import Network.Haskoin.Wallet.TxBuilder
+import Network.Haskoin.Wallet.Store
+import Network.Haskoin.Wallet.Arbitrary
+import Network.Haskoin.Script
+import Network.Haskoin.Crypto
+import Network.Haskoin.Crypto.Arbitrary
+import Network.Haskoin.Protocol
+import Network.Haskoin.Protocol.Arbitrary
+import Network.Haskoin.Util
+import Network.Haskoin.Util.BuildMonad
 
 tests :: [Test]
 tests = 

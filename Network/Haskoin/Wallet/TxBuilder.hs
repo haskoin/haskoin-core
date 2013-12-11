@@ -1,4 +1,4 @@
-module Haskoin.Wallet.TxBuilder 
+module Network.Haskoin.Wallet.TxBuilder 
 ( Coin(..)
 , buildTx
 , buildAddrTx
@@ -23,10 +23,11 @@ import Data.List
 import Data.Word
 import qualified Data.ByteString as BS
 
-import Haskoin.Script
-import Haskoin.Protocol
-import Haskoin.Crypto
-import Haskoin.Util
+import Network.Haskoin.Script
+import Network.Haskoin.Protocol
+import Network.Haskoin.Crypto
+import Network.Haskoin.Util
+import Network.Haskoin.Util.BuildMonad
 
 data Coin = Coin { coinTxOut    :: TxOut
                  , coinOutPoint :: OutPoint

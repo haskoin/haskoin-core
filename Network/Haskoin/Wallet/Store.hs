@@ -1,6 +1,6 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE TypeFamilies      #-}
-module Haskoin.Wallet.Store
+module Network.Haskoin.Wallet.Store
 -- Util functions
 ( DbWalletGeneric(..)
 , DbAccountGeneric(..)
@@ -99,18 +99,18 @@ import Database.Persist
 import Database.Persist.Sqlite
 import Database.Persist.TH
 
-import Haskoin.Wallet.Keys
-import Haskoin.Wallet.Manager
-import Haskoin.Wallet.TxBuilder
-import Haskoin.Wallet.Store.DbAccount
-import Haskoin.Wallet.Store.DbAddress
-import Haskoin.Wallet.Store.DbCoin
-import Haskoin.Wallet.Store.DbTx
-import Haskoin.Wallet.Store.Util
-import Haskoin.Script
-import Haskoin.Protocol
-import Haskoin.Crypto
-import Haskoin.Util
+import Network.Haskoin.Wallet.Keys
+import Network.Haskoin.Wallet.Manager
+import Network.Haskoin.Wallet.TxBuilder
+import Network.Haskoin.Wallet.Store.DbAccount
+import Network.Haskoin.Wallet.Store.DbAddress
+import Network.Haskoin.Wallet.Store.DbCoin
+import Network.Haskoin.Wallet.Store.DbTx
+import Network.Haskoin.Wallet.Store.Util
+import Network.Haskoin.Script
+import Network.Haskoin.Protocol
+import Network.Haskoin.Crypto
+import Network.Haskoin.Util
 
 cmdInit :: ( PersistUnique m 
            , PersistQuery m 

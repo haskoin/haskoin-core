@@ -1,9 +1,9 @@
-module Haskoin.Wallet.Arbitrary where
+module Network.Haskoin.Wallet.Arbitrary where
 
 import Test.QuickCheck
-import Haskoin.Crypto.Arbitrary
-import Haskoin.Protocol.Arbitrary
-import Haskoin.Script.Arbitrary
+import Network.Haskoin.Crypto.Arbitrary
+import Network.Haskoin.Protocol.Arbitrary
+import Network.Haskoin.Script.Arbitrary
 
 import Control.Monad
 import Control.Applicative
@@ -11,12 +11,12 @@ import Control.Applicative
 import Data.Word
 import Data.Maybe
 
-import Haskoin.Wallet
-import Haskoin.Wallet.Keys
-import Haskoin.Wallet.Store
-import Haskoin.Script
-import Haskoin.Protocol
-import Haskoin.Crypto
+import Network.Haskoin.Wallet
+import Network.Haskoin.Wallet.Keys
+import Network.Haskoin.Wallet.Store
+import Network.Haskoin.Script
+import Network.Haskoin.Protocol
+import Network.Haskoin.Crypto
 
 data MSParam = MSParam Int Int deriving (Eq, Show)
 

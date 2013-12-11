@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE TypeFamilies      #-}
-module Haskoin.Wallet.Store.Units (tests) where
+module Network.Haskoin.Wallet.Store.Units (tests) where
 
 import System.IO.Error
 
@@ -24,12 +24,12 @@ import qualified Data.ByteString as BS
 import Database.Persist
 import Database.Persist.Sqlite
 
-import Haskoin.Wallet
-import Haskoin.Wallet.Store
-import Haskoin.Script
-import Haskoin.Protocol
-import Haskoin.Crypto
-import Haskoin.Util
+import Network.Haskoin.Wallet
+import Network.Haskoin.Wallet.Store
+import Network.Haskoin.Script
+import Network.Haskoin.Protocol
+import Network.Haskoin.Crypto
+import Network.Haskoin.Util
 
 tests =
     [ testGroup "Wallet persistence tests" 

@@ -1,6 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Haskoin.Wallet.Store.CoinStatus
+module Network.Haskoin.Wallet.Store.CoinStatus
 ( CoinStatus(..)
 , catStatus
 ) where

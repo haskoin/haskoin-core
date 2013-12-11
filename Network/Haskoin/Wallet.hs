@@ -94,7 +94,6 @@ module Network.Haskoin.Wallet
 , intAddrs'
 
   -- ***Multisig address keys
-
 , extMulSigKey
 , intMulSigKey
 , extMulSigKeys
@@ -104,13 +103,23 @@ module Network.Haskoin.Wallet
 , extMulSigAddrs
 , intMulSigAddrs
 
--- Tx module
-, Coin(..)
+  -- *Build Transactions
 , buildTx
 , buildAddrTx
+
+  -- *Coin selection
+, Coin(..)
+, chooseCoins
+, chooseMSCoins
+, guessTxSize
+, getFee
+, getMSFee
+
+  -- *Transaction signing
 , SigInput(..)
 , signTx
 , detSignTx
+, isTxComplete
 , isTxComplete
 
 ) where

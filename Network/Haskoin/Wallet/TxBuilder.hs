@@ -29,21 +29,37 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Util.BuildMonad
 
-data Coin = Coin { coinTxOut    :: TxOut
-                 , coinOutPoint :: OutPoint
-                 , coinRedeem   :: Maybe Script
-                 } deriving (Eq, Show)
+-- | A Coin is something that can be spent by a transaction and is
+-- represented by a transaction output, an outpoint and optionally a
+-- redeem script.
+data Coin = 
+    Coin { coinTxOut    :: TxOut        -- ^ Transaction output
+         , coinOutPoint :: OutPoint     -- ^ Previous outpoint
+         , coinRedeem   :: Maybe Script -- ^ Redeem script
+         } deriving (Eq, Show)
 
--- |Select coins to spend based on a target amount and a fee per KB
-chooseCoins :: Word64 -> Word64 -> [Coin] -> Either String ([Coin],Word64)
+-- | Coin selection algorithm for normal (non-multisig) transactions. This
+-- function returns the selected coins together with the amount of change to
+-- send back to yourself, taking the fee into account.
+chooseCoins :: Word64 -- ^ Target price to pay.
+            -> Word64 -- ^ Fee price per 1000 bytes.
+            -> [Coin] -- ^ List of coins to choose from.
+              -- | Coin selection result and change amount.
+            -> Either String ([Coin],Word64) 
 chooseCoins target kbfee xs 
     | target > 0 = maybeToEither err $ greedyAdd target (getFee kbfee) xs
     | otherwise  = Left "chooseCoins: Target must be > 0"
     where err = "chooseCoins: No solution found"
 
--- |Select coins to spend from a multisignature account
-chooseMSCoins :: Word64 -> Word64 -> (Int,Int) -> [Coin] 
-              -> Either String ([Coin],Word64)
+-- | Coin selection algorithm for multisignature transactions. This function
+-- returns the selected coins together with the amount of change to send back
+-- to yourself, taking the fee into account.
+chooseMSCoins :: Word64    -- ^ Target price to pay.
+              -> Word64    -- ^ Fee price per 1000 bytes.
+              -> (Int,Int) -- ^ Multisig parameters m of n (m,n).
+              -> [Coin]    -- ^ List of coins to choose from.
+              -- | Coin selection result and change amount.
+              -> Either String ([Coin],Word64) 
 chooseMSCoins target kbfee ms xs 
     | target > 0 = maybeToEither err $ greedyAdd target (getMSFee kbfee ms) xs
     | otherwise  = Left "chooseMSCoins: Target must be > 0"
@@ -87,7 +103,14 @@ getMSFee :: Word64 -> (Int,Int) -> Int -> Word64
 getMSFee kbfee ms count = kbfee*((len + 999) `div` 1000)
     where len = fromIntegral $ guessTxSize 0 (replicate count ms) 2 0
 
-guessTxSize :: Int -> [(Int,Int)] -> Int -> Int -> Int
+-- | Computes an upper bound on the size of a transaction based on some known
+-- properties of the transaction.
+guessTxSize :: Int         -- ^ Number of regular transaction inputs.
+            -- | List of multisig input parameters m of n (m,n). 
+            -> [(Int,Int)] 
+            -> Int         -- ^ Number of pay to public key hash outputs.
+            -> Int         -- ^ Number of pay to script hash outputs.
+            -> Int         -- ^ Upper bound on the transaction size.
 guessTxSize pki msi pkout msout = 8 + inpLen + inp + outLen + out
     where inpLen = BS.length $ encode' $ 
             VarInt $ fromIntegral $ (length msi) + pki
@@ -112,7 +135,8 @@ guessMSSize (m,n) = 40 + (BS.length $ encode' $ VarInt $ fromIntegral scp) + scp
 
 {- Build a new Tx -}
 
--- Helper for paying to a base58 encoded address
+-- | Build a transaction by providing a list of outpoints as inputs
+-- and a list of recipients addresses and amounts as outputs. 
 buildAddrTx :: [OutPoint] -> [(String,Word64)] -> Either String Tx
 buildAddrTx xs ys = buildTx xs =<< mapM f ys
     where f (s,v) = case base58ToAddr s of
@@ -120,13 +144,18 @@ buildAddrTx xs ys = buildTx xs =<< mapM f ys
             Just a@(ScriptAddress _) -> return (PayScriptHash a,v)
             _ -> Left $ "buildAddrTx: Invalid address " ++ s
 
+-- | Build a transaction by providing a list of outpoints as inputs
+-- and a list of 'ScriptOutput' and amounts as outputs.
 buildTx :: [OutPoint] -> [(ScriptOutput,Word64)] -> Either String Tx
 buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
     where fi outPoint = TxIn outPoint (Script []) maxBound
           fo (o,v) | v <= 2100000000000000 = return $ TxOut v $ encodeOutput o
                    | otherwise = Left $ "buildTx: Invalid amount " ++ (show v)
 
--- Data used for building the siganture hash
+-- | Data type used to specify the signing parameters of a transaction input.
+-- To sign an input, the previous output script, outpoint and sighash are
+-- required. When signing a pay to script hash output, an additional redeem
+-- script is required.
 data SigInput = SigInput   { sigDataOut :: Script 
                            , sigDataOP  :: OutPoint
                            , sigDataSH  :: SigHash
@@ -140,10 +169,21 @@ data SigInput = SigInput   { sigDataOut :: Script
 liftSecret :: Monad m => Build a -> SecretT (BuildT m) a
 liftSecret = lift . liftBuild
 
+-- | Returns True if all the inputs of a transactions are non-empty and if
+-- all multisignature inputs are fully signed.
 isTxComplete :: Tx -> Bool
 isTxComplete = isComplete . (mapM toBuildTxIn) . txIn
 
-signTx :: Monad m => Tx -> [SigInput] -> [PrvKey] -> SecretT (BuildT m) Tx
+-- | Sign a transaction by providing the 'SigInput' signing parameters and
+-- a list of private keys to use for signing. The signature is computed within
+-- the 'SecretT' monad to generate the random signing nonce and within the
+-- 'BuildT' monad to add information on wether the result was fully or
+-- partially signed.
+signTx :: Monad m 
+       => Tx                    -- ^ Transaction to sign
+       -> [SigInput]            -- ^ SigInput signing parameters
+       -> [PrvKey]              -- ^ List of private keys to use for signing
+       -> SecretT (BuildT m) Tx -- ^ Signed transaction
 signTx tx@(Tx _ ti _ _) sigis keys = do
     liftSecret $ when (null ti) $ Broken "signTx: Transaction has no inputs"
     newIn <- mapM sign $ orderSigInput ti sigis

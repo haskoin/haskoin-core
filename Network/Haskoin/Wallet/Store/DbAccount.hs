@@ -10,31 +10,33 @@ module Network.Haskoin.Wallet.Store.DbAccount
 , isMSAcc
 ) where
 
-import Control.Applicative
-import Control.Monad
-import Control.Monad.Trans
-import Control.Monad.Trans.Either
+import Control.Monad (when, unless)
+import Control.Monad.Trans (liftIO)
+import Control.Monad.Trans.Either (EitherT, left)
 
-import Data.Time
-import Data.Yaml
-import Data.Maybe
+import Data.Time (getCurrentTime)
+import Data.Yaml (Value, object, (.=))
+import Data.Maybe (fromJust, isJust)
 import Data.List (nub)
-import qualified Data.Text as T
-import qualified Data.ByteString as BS
-import qualified Data.Conduit as C
+import qualified Data.Text as T (pack)
 
-import Database.Persist
-import Database.Persist.Sqlite
-import Database.Persist.TH
+import Database.Persist 
+    ( PersistQuery
+    , PersistUnique
+    , PersistStore
+    , PersistMonadBackend
+    , Entity(..)
+    , getBy
+    , insert_
+    , update
+    , count
+    , replace
+    , (==.), (=.)
+    )
 
 import Network.Haskoin.Wallet.Keys
 import Network.Haskoin.Wallet.Manager
-import Network.Haskoin.Wallet.TxBuilder
 import Network.Haskoin.Wallet.Store.Util
-import Network.Haskoin.Script
-import Network.Haskoin.Protocol
-import Network.Haskoin.Crypto
-import Network.Haskoin.Util
 
 yamlAcc :: DbAccountGeneric b -> Value
 yamlAcc acc = object $ concat

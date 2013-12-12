@@ -70,7 +70,13 @@ import Database.Persist
     , deleteWhere
     , update
     )
-import Database.Persist.TH
+import Database.Persist.TH 
+    ( mkPersist
+    , sqlSettings
+    , mkMigrate
+    , persistLowerCase
+    , share
+    )
 
 import Network.Haskoin.Wallet.Store.CoinStatus
 import Network.Haskoin.Script

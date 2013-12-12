@@ -11,32 +11,34 @@ module Network.Haskoin.Wallet.Store.DbAddress
 , yamlAddrList
 ) where
 
-import Control.Applicative
-import Control.Monad
-import Control.Monad.Trans
-import Control.Monad.Trans.Either
+import Control.Applicative ((<$>),(<*>))
+import Control.Monad (when, forM)
+import Control.Monad.Trans (liftIO)
+import Control.Monad.Trans.Either (EitherT, left)
 
-import Data.Time
-import Data.Yaml
-import Data.Maybe
-import Data.List (nub)
-import qualified Data.Text as T
-import qualified Data.ByteString as BS
-import qualified Data.Conduit as C
+import Data.Time (getCurrentTime)
+import Data.Yaml (Value, object, (.=), toJSON)
 
 import Database.Persist
-import Database.Persist.Sqlite
-import Database.Persist.TH
+    ( PersistQuery
+    , PersistUnique
+    , PersistStore
+    , PersistMonadBackend
+    , Entity(..)
+    , get
+    , getBy
+    , selectList
+    , insertMany
+    , count
+    , replace
+    , (==.), (>.), (<=.)
+    , SelectOpt( Asc, Desc, LimitTo )
+    )
 
 import Network.Haskoin.Wallet.Keys
 import Network.Haskoin.Wallet.Manager
-import Network.Haskoin.Wallet.TxBuilder
 import Network.Haskoin.Wallet.Store.DbAccount
 import Network.Haskoin.Wallet.Store.Util
-import Network.Haskoin.Script
-import Network.Haskoin.Protocol
-import Network.Haskoin.Crypto
-import Network.Haskoin.Util
 
 yamlAddr :: DbAddressGeneric b -> Value
 yamlAddr a
@@ -66,10 +68,10 @@ dbGetAddr :: ( PersistUnique m
              )
           => String 
           -> EitherT String m (Entity (DbAddressGeneric b))
-dbGetAddr addr = 
-    liftMaybe addrErr =<< (getBy $ UniqueAddress addr)
+dbGetAddr addrStr = 
+    liftMaybe addrErr =<< (getBy $ UniqueAddress addrStr)
   where 
-    addrErr = unwords ["dbGetAddr: Invalid address", addr]
+    addrErr = unwords ["dbGetAddr: Invalid address", addrStr]
 
 dbGenIntAddrs :: ( PersistStore m
                  , PersistUnique m
@@ -88,19 +90,19 @@ dbAdjustGap :: ( PersistStore m
                , PersistMonadBackend m ~ b
                )
             => DbAddressGeneric b -> EitherT String m ()
-dbAdjustGap addr = do
-    acc <- liftMaybe accErr =<< (get $ dbAddressAccount addr)
-    let fIndex | dbAddressInternal addr = dbAccountIntIndex 
-               | otherwise              = dbAccountExtIndex
+dbAdjustGap a = do
+    acc <- liftMaybe accErr =<< (get $ dbAddressAccount a)
+    let fIndex | dbAddressInternal a = dbAccountIntIndex 
+               | otherwise           = dbAccountExtIndex
     diff <- count [ DbAddressIndex >. fIndex acc
-                  , DbAddressIndex <=. dbAddressIndex addr
-                  , DbAddressAccount ==. dbAddressAccount addr
-                  , DbAddressInternal ==. dbAddressInternal addr
+                  , DbAddressIndex <=. dbAddressIndex a
+                  , DbAddressAccount ==. dbAddressAccount a
+                  , DbAddressInternal ==. dbAddressInternal a
                   ]
     when (diff > 0) $ do
-        dbGenAddrs (dbAccountName acc) 
-                   (replicate diff "") 
-                   (dbAddressInternal addr)
+        _ <- dbGenAddrs (dbAccountName acc) 
+                        (replicate diff "") 
+                        (dbAddressInternal a)
         return ()
   where
     accErr = "dbAdjustGap: Could not load address account"
@@ -118,7 +120,7 @@ dbSetGap name gap internal = do
                   , DbAddressInternal ==. internal
                   ]
     when (diff < gap) $ do
-        dbGenAddrs name (replicate (gap - diff) "") internal
+        _ <- dbGenAddrs name (replicate (gap - diff) "") internal
         return ()
     res <- (map entityVal) <$> selectList  
                 [ DbAddressAccount ==. ai
@@ -163,7 +165,7 @@ dbGenAddrs name labels internal
                              ai internal time
         ls <- liftMaybe keyErr $ f acc
         let gapAddr = map build $ take (length labels) ls
-        insertMany gapAddr
+        _ <- insertMany gapAddr
         resAddr <- selectList 
             [ DbAddressIndex >. fIndex acc
             , DbAddressAccount ==. ai
@@ -181,8 +183,8 @@ dbGenAddrs name labels internal
                                     , dbAccountExtIndex = lastIndex
                                     }
         replace ai newAcc
-        forM (zip resAddr labels) $ \(Entity idx addr,l) -> do
-            let newAddr = addr{ dbAddressLabel = l }
+        forM (zip resAddr labels) $ \(Entity idx a,l) -> do
+            let newAddr = a{ dbAddressLabel = l }
             replace idx newAddr 
             return newAddr
   where 

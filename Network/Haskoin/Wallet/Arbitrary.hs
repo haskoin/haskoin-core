@@ -1,19 +1,33 @@
-module Network.Haskoin.Wallet.Arbitrary where
+{-|
+  Arbitrary instances for wallet data types.
+-}
+module Network.Haskoin.Wallet.Arbitrary 
+( genPubKeyC
+, genMulSigInput
+, genRegularInput 
+, genAddrOutput
+) where
 
-import Test.QuickCheck
-import Network.Haskoin.Crypto.Arbitrary
-import Network.Haskoin.Protocol.Arbitrary
-import Network.Haskoin.Script.Arbitrary
+import Test.QuickCheck 
+    ( Gen
+    , Arbitrary
+    , arbitrary
+    , vectorOf
+    , oneof
+    , choose
+    , elements
+    )
 
-import Control.Monad
-import Control.Applicative
+import Control.Monad (liftM)
+import Control.Applicative ((<$>),(<*>))
 
-import Data.Word
-import Data.Maybe
+import Data.Maybe (fromJust)
+
+import Network.Haskoin.Crypto.Arbitrary 
+import Network.Haskoin.Protocol.Arbitrary ()
+import Network.Haskoin.Script.Arbitrary ()
 
 import Network.Haskoin.Wallet
-import Network.Haskoin.Wallet.Keys
-import Network.Haskoin.Wallet.Store
 import Network.Haskoin.Script
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
@@ -25,14 +39,16 @@ instance Arbitrary MSParam where
         n <- choose (1,16)
         m <- choose (1,n)
         return $ MSParam m n
-        
 
 data RegularTx = RegularTx { runRegularTx :: Tx }
     deriving (Eq, Show)
 
+-- | Generate an arbitrary compressed public key.
 genPubKeyC :: Gen PubKey
 genPubKeyC = derivePubKey <$> genPrvKeyC
 
+-- | Generate an arbitrary script hash input spending a multisignature
+-- pay to script hash.
 genMulSigInput :: Gen ScriptHashInput
 genMulSigInput = do
     (MSParam m n) <- arbitrary
@@ -40,6 +56,8 @@ genMulSigInput = do
     inp <- SpendMulSig <$> (vectorOf m arbitrary) <*> (return m)
     return $ ScriptHashInput inp rdm
 
+-- | Generate an arbitrary transaction input spending a public key hash or
+-- script hash output.
 genRegularInput :: Gen TxIn
 genRegularInput = do
     op <- arbitrary
@@ -49,6 +67,8 @@ genRegularInput = do
                 ]
     return $ TxIn op sc sq
 
+-- | Generate an arbitrary output paying to a public key hash or script hash
+-- address.
 genAddrOutput :: Gen TxOut
 genAddrOutput = do
     v  <- arbitrary

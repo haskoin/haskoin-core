@@ -36,11 +36,9 @@ import Control.Monad
     , when
     , liftM2
     )
-import Control.Applicative ((<$>), (<*>))
-
 import Data.Binary (Binary, get, put)
-import Data.Binary.Get
-import Data.Binary.Put
+import Data.Binary.Get (Get, getWord8, getWord32be)
+import Data.Binary.Put (Put, runPut, putWord8, putWord32be)
 import Data.Word (Word8, Word32)
 import Data.Bits 
     ( shiftR
@@ -57,7 +55,6 @@ import qualified Data.ByteString as BS
 import Network.Haskoin.Util
 import Network.Haskoin.Util.Network
 import Network.Haskoin.Crypto
-import Network.Haskoin.Protocol
 
 {- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
 

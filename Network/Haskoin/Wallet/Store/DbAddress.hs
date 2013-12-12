@@ -2,15 +2,10 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE TypeFamilies      #-}
 module Network.Haskoin.Wallet.Store.DbAddress 
-( cmdList
-, cmdGenAddrs
-, cmdGenWithLabel
-, dbGenIntAddrs
+( dbGenIntAddrs
 , dbGenAddrs
 , dbAdjustGap
 , dbSetGap
-, cmdLabel
-, cmdWIF
 , dbGetAddr
 , yamlAddr
 , yamlAddrList
@@ -75,51 +70,6 @@ dbGetAddr addr =
     liftMaybe addrErr =<< (getBy $ UniqueAddress addr)
   where 
     addrErr = unwords ["dbGetAddr: Invalid address", addr]
-
--- |Return a page of addresses. pageNum = 0 computes the last page
-cmdList :: (PersistStore m, PersistUnique m, PersistQuery m) 
-        => AccountName -> Int -> Int -> EitherT String m Value
-cmdList name pageNum resPerPage 
-    | pageNum < 0 = left $ 
-        unwords ["cmdList: Invalid page number", show pageNum]
-    | resPerPage < 1 = left $ 
-        unwords ["cmdList: Invalid results per page",show resPerPage]
-    | otherwise = do
-        (Entity ai acc) <- dbGetAcc name
-        addrCount <- count 
-            [ DbAddressAccount ==. ai
-            , DbAddressInternal ==. False
-            , DbAddressIndex <=. dbAccountExtIndex acc
-            ] 
-        let maxPage = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
-            page | pageNum == 0 = maxPage
-                 | otherwise = pageNum
-        when (page > maxPage) $ left "cmdList: Page number too high"
-        addrs <- selectList [ DbAddressAccount ==. ai
-                            , DbAddressInternal ==. False
-                            , DbAddressIndex <=. dbAccountExtIndex acc
-                            ] 
-                            [ Asc DbAddressId
-                            , LimitTo resPerPage
-                            , OffsetBy $ (page - 1) * resPerPage
-                            ]
-        return $ yamlAddrList (map entityVal addrs) page resPerPage addrCount
-
-cmdGenAddrs :: ( PersistStore m
-               , PersistUnique m
-               , PersistQuery m
-               )
-            => AccountName -> Int -> EitherT String m Value
-cmdGenAddrs name c = cmdGenWithLabel name (replicate c "")
-
-cmdGenWithLabel :: ( PersistStore m
-                   , PersistUnique m
-                   , PersistQuery m
-                   )
-                => AccountName -> [String] -> EitherT String m Value
-cmdGenWithLabel name labels = do
-    addrs <- dbGenAddrs name labels False
-    return $ toJSON $ map yamlAddr addrs
 
 dbGenIntAddrs :: ( PersistStore m
                  , PersistUnique m
@@ -236,7 +186,7 @@ dbGenAddrs name labels internal
             replace idx newAddr 
             return newAddr
   where 
-    keyErr = "cmdGenAddr: Error decoding account keys"
+    keyErr = "dbGenAddr: Error decoding account keys"
     f acc | isMSAcc acc = (if internal then intMulSigAddrs else extMulSigAddrs)
               <$> (loadPubAcc =<< (xPubImport $ dbAccountKey acc))
               <*> (mapM xPubImport $ dbAccountMsKeys acc) 
@@ -250,36 +200,4 @@ dbGenAddrs name labels internal
     fIndex | internal  = dbAccountIntIndex
            | otherwise = dbAccountExtIndex
 
-cmdLabel :: (PersistStore m, PersistUnique m) 
-         => AccountName -> Int -> String -> EitherT String m Value
-cmdLabel name key label = do
-    (Entity ai acc) <- dbGetAcc name
-    (Entity i addr) <- liftMaybe keyErr =<< 
-        (getBy $ UniqueAddressKey ai key False)
-    when (dbAddressIndex addr > dbAccountExtIndex acc) $ left keyErr
-    let newAddr = addr{dbAddressLabel = label}
-    replace i newAddr
-    return $ yamlAddr newAddr
-  where 
-    keyErr = unwords ["cmdLabel: Key",show key,"does not exist"]
-
-cmdWIF :: (PersistStore m, PersistUnique m) 
-         => AccountName -> Int -> EitherT String m Value
-cmdWIF name key = do
-    (Entity _ w) <- dbGetWallet "main"
-    (Entity ai acc) <- dbGetAcc name
-    (Entity _ addr) <- liftMaybe keyErr =<< 
-        (getBy $ UniqueAddressKey ai key False)
-    when (dbAddressIndex addr > dbAccountExtIndex acc) $ left keyErr
-    mst <- liftMaybe mstErr $ loadMasterKey =<< xPrvImport (dbWalletMaster w)
-    aKey <- liftMaybe prvErr $ accPrvKey mst $ fromIntegral $ dbAccountIndex acc
-    let index = fromIntegral $ dbAddressIndex addr
-    addrPrvKey <- liftMaybe addErr $ extPrvKey aKey index
-    let prvKey = xPrvKey $ runAddrPrvKey addrPrvKey
-    return $ object [ "WIF" .= T.pack (toWIF prvKey) ]
-  where 
-    keyErr = unwords ["cmdWIF: Key",show key,"does not exist"]
-    mstErr = "cmdWIF: Could not load master key"
-    prvErr = "cmdWIF: Invalid account derivation index"
-    addErr = "cmdWIF: Invalid address derivation index"
 

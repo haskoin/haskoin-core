@@ -2,40 +2,24 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE TypeFamilies      #-}
 module Network.Haskoin.Wallet.Store.DbCoin 
-( cmdBalance
-, cmdBalances
-, dbCoins
-, cmdCoins
-, cmdAllCoins
+( dbCoins
+, dbBalance
 , yamlCoin
 , toCoin
 ) where
 
 import Control.Applicative
-import Control.Monad
-import Control.Monad.Trans
 import Control.Monad.Trans.Either
 
-import Data.Time
 import Data.Yaml
 import Data.Maybe
-import Data.List (nub)
-import qualified Data.Text as T
-import qualified Data.ByteString as BS
-import qualified Data.Conduit as C
 
 import Database.Persist
 import Database.Persist.Sqlite
-import Database.Persist.TH
 
-import Network.Haskoin.Wallet.Keys
-import Network.Haskoin.Wallet.Manager
 import Network.Haskoin.Wallet.TxBuilder
-import Network.Haskoin.Wallet.Store.DbAccount
 import Network.Haskoin.Wallet.Store.Util
-import Network.Haskoin.Script
 import Network.Haskoin.Protocol
-import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 toCoin :: DbCoinGeneric b -> Either String Coin
@@ -74,31 +58,13 @@ dbBalance :: ( PersistQuery m
              )
           => Entity (DbAccountGeneric b)
           -> EitherT String m Int
-dbBalance (Entity ai acc) = do
+dbBalance (Entity ai _) = do
     coins <- selectList 
         [ DbCoinAccount ==. ai
         , DbCoinStatus  ==. Unspent
         , DbCoinOrphan  ==. False
         ] []
     return $ sum $ map (dbCoinValue . entityVal) coins
-
-cmdBalance :: (PersistUnique m, PersistQuery m) 
-           => AccountName -> EitherT String m Value
-cmdBalance name = do
-    acc <- dbGetAcc name
-    balance <- dbBalance acc
-    return $ object [ "Balance" .= toJSON balance ]
-
-cmdBalances :: PersistQuery m => EitherT String m Value
-cmdBalances = do
-    accs <- selectList [] []
-    bals <- mapM dbBalance accs
-    return $ toJSON $ map f $ zip accs bals
-  where 
-    f (acc,b) = object
-        [ "Account" .= (dbAccountName $ entityVal acc)
-        , "Balance" .= b
-        ]
 
 dbCoins :: ( PersistQuery m
            , PersistUnique m
@@ -115,26 +81,4 @@ dbCoins ai = do
         ] [Asc DbCoinCreated]
     return $ map entityVal coins
 
-cmdCoins :: ( PersistQuery m, PersistUnique m
-            , PersistMonadBackend m ~ SqlBackend
-            ) 
-         => AccountName -> EitherT String m Value
-cmdCoins name = do
-    (Entity ai _) <- dbGetAcc name
-    coins <- dbCoins ai
-    return $ toJSON $ map yamlCoin coins
-
-cmdAllCoins :: ( PersistQuery m, PersistUnique m
-               , PersistMonadBackend m ~ SqlBackend
-               )
-            => EitherT String m Value
-cmdAllCoins = do
-    accs  <- selectList [] []
-    coins <- mapM (dbCoins . entityKey) accs
-    return $ toJSON $ map g $ zip accs coins
-  where 
-    g (acc,cs) = object
-        [ "Account" .= (dbAccountName $ entityVal acc)
-        , "Coins" .= (toJSON $ map yamlCoin cs)
-        ]
 

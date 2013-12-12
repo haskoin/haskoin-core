@@ -2,20 +2,17 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE TypeFamilies      #-}
 module Network.Haskoin.Wallet.Store.DbTx
-( cmdImportTx 
-, cmdRemoveTx
-, dbImportTx
-, cmdListTx
-, cmdSend
-, cmdSendMany
+( dbImportTx
+, dbRemoveTx
 , dbSendTx
 , dbSendSolution
 , dbSendCoins
-, cmdSignTx
 , dbSignTx
-, cmdDecodeTx
-, cmdBuildRawTx
-, cmdSignRawTx
+, yamlTx
+, RawTxOutPoints(..)
+, RawTxDests(..)
+, RawSigInput(..)
+, RawPrvKey(..)
 ) where
 
 import Control.Applicative
@@ -62,27 +59,6 @@ yamlTx tx = object $ concat
     , if dbTxOrphan tx then ["Orphan" .= True] else []
     , if dbTxPartial tx then ["Partial" .= True] else []
     ]
-
--- |Remove a transaction from the database and any parent transaction
-cmdRemoveTx :: ( PersistStore m, PersistQuery m, PersistUnique m
-              , PersistMonadBackend m ~ b, b ~ SqlBackend
-              )
-           => String -> EitherT String m Value
-cmdRemoveTx txid = do
-    removed <- dbRemoveTx txid
-    return $ toJSON removed
-
--- |Command to import a transaction. It can be called multiple times
--- with the same transaction 
-cmdImportTx :: ( PersistStore m, PersistQuery m, PersistUnique m
-               , PersistMonadBackend m ~ b, b ~ SqlBackend
-               ) 
-            => Tx -> EitherT String m Value
-cmdImportTx tx = do
-    accTx <- dbImportTx tx
-    return $ toJSON $ map yamlTx $ sortBy f accTx
-  where
-    f a b = (dbTxCreated a) `compare` (dbTxCreated b)
 
 -- |Remove a transaction from the database and any parent transaction
 dbRemoveTx :: ( PersistStore m, PersistQuery m, PersistUnique m
@@ -298,39 +274,6 @@ dbGetRedeem addr = do
     accErr = "dbImportOut: Invalid address account"
     rdmErr = "dbGetRedeem: Could not generate redeem script"
 
--- |List transactions for a specific account
-cmdListTx :: (PersistQuery m, PersistUnique m)
-          => AccountName -> EitherT String m Value
-cmdListTx name = do
-    (Entity ai acc) <- dbGetAcc name
-    txs <- selectList [ DbTxAccount ==. ai
-                      ] 
-                      [ Asc DbTxCreated ]
-    return $ toJSON $ map (yamlTx . entityVal) txs
-
--- |Command to send coins to a single recipient
-cmdSend :: ( PersistStore m, PersistQuery m, PersistUnique m
-           , PersistMonadBackend m ~ SqlBackend
-           )
-        => AccountName -> String -> Int -> Int -> EitherT String m Value
-cmdSend name a v fee = do
-    (tx,complete) <- dbSendTx name [(a,fromIntegral v)] (fromIntegral fee)
-    return $ object [ "Tx" .= (toJSON $ bsToHex $ encode' tx)
-                    , "Complete"   .= complete
-                    ]
-
--- |Command to send coins to a list of recipients
-cmdSendMany :: ( PersistStore m, PersistQuery m, PersistUnique m
-               , PersistMonadBackend m ~ SqlBackend
-               )
-            => AccountName -> [(String,Int)] -> Int -> EitherT String m Value
-cmdSendMany name dests fee = do
-    (tx,complete) <- dbSendTx name dests' (fromIntegral fee)
-    return $ object [ "Tx" .= (toJSON $ bsToHex $ encode' tx)
-                    , "Complete"   .= complete
-                    ]
-    where dests' = map (\(a,b) -> (a,fromIntegral b)) dests
-
 -- |Build and sign a transactoin given a list of recipients
 dbSendTx :: ( PersistStore m, PersistQuery m, PersistUnique m
             , PersistMonadBackend m ~ SqlBackend
@@ -374,15 +317,6 @@ dbSendCoins coins recipients sh = do
     bsTx <- liftEither $ buildToEither sigTx
     return (bsTx, isComplete sigTx)
 
-cmdSignTx :: (PersistStore m, PersistQuery m, PersistUnique m)
-          => AccountName -> Tx -> SigHash -> EitherT String m Value
-cmdSignTx name tx sh = do
-    (tx,complete) <- dbSignTx name tx sh
-    return $ object 
-        [ (T.pack "Tx")       .= (toJSON $ bsToHex $ encode' tx)
-        , (T.pack "Complete") .= complete
-        ]
-
 dbSignTx :: (PersistStore m, PersistQuery m, PersistUnique m)
          => AccountName -> Tx -> SigHash -> EitherT String m (Tx, Bool)
 dbSignTx name tx sh = do
@@ -421,12 +355,6 @@ dbGetSigData sh coin = do
     prvErr = "dbGetSigData: Invalid account derivation index"
     addErr = "dbGetSigData: Invalid address derivation index"
 
-cmdDecodeTx :: Monad m => String -> EitherT String m Value
-cmdDecodeTx str = do
-    tx <- liftMaybe txErr $ decodeToMaybe =<< (hexToBS str)
-    return $ toJSON (tx :: Tx)
-    where txErr = "cmdDecodeTx: Could not decode transaction"
-
 data RawTxOutPoints = RawTxOutPoints [OutPoint] 
     deriving (Eq, Show)
 
@@ -451,18 +379,6 @@ instance Json.FromJSON RawTxDests where
         f (addr,v) = do
             amnt <- parseJSON v :: Parser Word64
             return (T.unpack addr, amnt)
-
-cmdBuildRawTx :: Monad m => String -> String -> EitherT String m Value
-cmdBuildRawTx i o = do
-    (RawTxOutPoints ops) <- liftMaybe opErr $ 
-        Json.decode $ toLazyBS $ stringToBS i
-    (RawTxDests dests)   <- liftMaybe dsErr $ 
-        Json.decode $ toLazyBS $ stringToBS o
-    tx  <- liftEither $ buildAddrTx ops dests
-    return $ object [ (T.pack "Tx") .= (bsToHex $ encode' tx) ]
-  where
-    opErr = "cmdBuildRawTx: Could not parse OutPoints"
-    dsErr = "cmdBuildRawTx: Could not parse recipients"
 
 data RawSigInput = RawSigInput [(SigHash -> SigInput)]
 
@@ -495,20 +411,4 @@ instance Json.FromJSON RawPrvKey where
         f v = do
             str <- parseJSON v :: Parser String  
             maybe mzero return $ fromWIF str
-
-cmdSignRawTx :: Monad m => Tx -> String -> String -> SigHash 
-             -> EitherT String m Value
-cmdSignRawTx tx strSigi strKeys sh  = do
-    (RawSigInput fs) <- liftMaybe sigiErr $ 
-        Json.decode $ toLazyBS $ stringToBS strSigi
-    (RawPrvKey keys) <- liftMaybe keysErr $
-        Json.decode $ toLazyBS $ stringToBS strKeys
-    let sigTx = detSignTx tx (map (\f -> f sh) fs) keys
-    bsTx <- liftEither $ buildToEither sigTx
-    return $ object [ (T.pack "Tx") .= (toJSON $ bsToHex $ encode' bsTx)
-                    , (T.pack "Complete") .= isComplete sigTx
-                    ]
-  where
-    sigiErr = "cmdSignRawTx: Could not parse parent transaction data"
-    keysErr = "cmdSignRawTx: Could not parse private keys (WIF)"
 

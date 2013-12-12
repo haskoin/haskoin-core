@@ -30,26 +30,48 @@ module Network.Haskoin.Wallet.Store.Util
 , migrateAll
 ) where
 
-import Control.Applicative
-import Control.Monad
-import Control.Monad.Trans
-import Control.Monad.Trans.Either
+import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Either (EitherT, hoistEither)
 
-import Data.Time
+import Data.Time (UTCTime)
 import Data.Yaml
-import Data.Maybe
-import Data.List (nub)
-import qualified Data.Text as T
-import qualified Data.ByteString as BS
-import qualified Data.Conduit as C
+    ( ToJSON, toJSON
+    , object, (.=)
+    )
+import qualified Data.Text as T (pack)
+import qualified Data.ByteString as BS (ByteString)
+import qualified Data.Conduit as C (transPipe)
 
-import Database.Persist
-import Database.Persist.Sqlite
+import Database.Persist 
+    ( PersistStore
+    , PersistUnique
+    , PersistQuery
+    , PersistMonadBackend
+    , Entity
+    , EntityField
+    , Unique
+    , get
+    , getBy
+    , insert_
+    , insert
+    , count
+    , selectKeys
+    , selectFirst
+    , selectSource
+    , updateWhere
+    , deleteBy
+    , insertUnique
+    , updateGet
+    , replace
+    , repsert
+    , insertKey
+    , insertMany
+    , delete
+    , deleteWhere
+    , update
+    )
 import Database.Persist.TH
 
-import Network.Haskoin.Wallet.Keys
-import Network.Haskoin.Wallet.Manager
-import Network.Haskoin.Wallet.TxBuilder
 import Network.Haskoin.Wallet.Store.CoinStatus
 import Network.Haskoin.Script
 import Network.Haskoin.Protocol
@@ -145,9 +167,9 @@ dbGetWallet name = liftMaybe walletErr =<< (getBy $ UniqueWalletName name)
 
 dbGetTxBlob :: (PersistUnique m, PersistMonadBackend m ~ b)
             => String -> EitherT String m (Entity (DbTxBlobGeneric b))
-dbGetTxBlob txid = liftMaybe txErr =<< (getBy $ UniqueTxBlob txid)
+dbGetTxBlob tid = liftMaybe txErr =<< (getBy $ UniqueTxBlob tid)
   where
-    txErr = unwords ["dbGetTxBlob: Invalid txid",txid]
+    txErr = unwords ["dbGetTxBlob: Invalid txid", tid]
 
 instance PersistStore m => PersistStore (EitherT e m) where
     type PersistMonadBackend (EitherT e m) = PersistMonadBackend m
@@ -216,9 +238,9 @@ instance ToJSON Tx where
         , (T.pack "LockTime") .= toJSON i
         ]
         where input (x,j) = object 
-                [(T.pack $ unwords ["Input", show j]) .= toJSON x]
+                [(T.pack $ unwords ["Input", show (j :: Int)]) .= toJSON x]
               output (x,j) = object 
-                [(T.pack $ unwords ["Output", show j]) .= toJSON x]
+                [(T.pack $ unwords ["Output", show (j :: Int)]) .= toJSON x]
 
 instance ToJSON Script where
     toJSON (Script ops) = toJSON $ map show ops
@@ -280,7 +302,7 @@ instance ToJSON ScriptHashInput where
         ]
 
 instance ToJSON TxSignature where
-    toJSON ts@(TxSignature s h) = object
+    toJSON ts@(TxSignature _ h) = object
         [ (T.pack "Raw Sig") .= (bsToHex $ encodeSig ts)
         , (T.pack "SigHash") .= toJSON h
         ]

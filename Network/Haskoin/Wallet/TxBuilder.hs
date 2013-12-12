@@ -14,20 +14,20 @@ module Network.Haskoin.Wallet.TxBuilder
 , isTxComplete
 ) where
 
-import Control.Monad
-import Control.Applicative
-import Control.Monad.Trans 
+import Control.Monad (when, guard, liftM2)
+import Control.Applicative ((<$>))
+import Control.Monad.Trans  (lift)
 
-import Data.Maybe
-import Data.List
-import Data.Word
-import qualified Data.ByteString as BS
+import Data.Maybe (catMaybes, maybeToList, fromMaybe)
+import Data.List (sortBy, find)
+import Data.Word (Word64)
+import qualified Data.ByteString as BS (length, replicate)
 
-import Network.Haskoin.Script
-import Network.Haskoin.Protocol
-import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Util.BuildMonad
+import Network.Haskoin.Crypto
+import Network.Haskoin.Protocol
+import Network.Haskoin.Script
 
 -- | A Coin is something that can be spent by a transaction and is
 -- represented by a transaction output, an outpoint and optionally a
@@ -53,7 +53,8 @@ chooseCoins target kbfee xs
 
 -- | Coin selection algorithm for multisignature transactions. This function
 -- returns the selected coins together with the amount of change to send back
--- to yourself, taking the fee into account.
+-- to yourself, taking the fee into account. This function assumes all the 
+-- coins are script hash outputs that send funds to a multisignature address.
 chooseMSCoins :: Word64    -- ^ Target price to pay.
               -> Word64    -- ^ Fee price per 1000 bytes.
               -> (Int,Int) -- ^ Multisig parameters m of n (m,n).
@@ -65,7 +66,7 @@ chooseMSCoins target kbfee ms xs
     | otherwise  = Left "chooseMSCoins: Target must be > 0"
     where err = "chooseMSCoins: No solution found"
 
--- |Select coins greedily by starting from an empty solution
+-- Select coins greedily by starting from an empty solution
 greedyAdd :: Word64 -> (Int -> Word64) -> [Coin] -> Maybe ([Coin],Word64)
 greedyAdd target fee xs = go [] 0 [] 0 $ sortBy desc xs
     where desc a b = compare (outValue $ coinTxOut b) (outValue $ coinTxOut a)
@@ -80,7 +81,8 @@ greedyAdd target fee xs = go [] 0 [] 0 $ sortBy desc xs
             | otherwise = go (y:acc) (aTot + val) ps pTot ys
             where val = outValue $ coinTxOut y
 
--- |Start from a solution containing all coins and greedily remove them
+{-
+-- Start from a solution containing all coins and greedily remove them
 greedyRem :: Word64 -> (Int -> Word64) -> [Coin] -> Maybe ([Coin],Word64)
 greedyRem target fee xs 
     | s < goal (length xs) = Nothing
@@ -94,6 +96,7 @@ greedyRem target fee xs
                 go acc (tot - val) ys
             | otherwise = go (y:acc) tot ys
             where val = outValue $ coinTxOut y
+-}
 
 getFee :: Word64 -> Int -> Word64
 getFee kbfee count = kbfee*((len + 999) `div` 1000)
@@ -107,7 +110,8 @@ getMSFee kbfee ms count = kbfee*((len + 999) `div` 1000)
 -- properties of the transaction.
 guessTxSize :: Int         -- ^ Number of regular transaction inputs.
             -> [(Int,Int)] 
-               -- ^ List of multisig input parameters m of n (m,n). 
+               -- ^ For every multisig input in the transaction, provide
+               -- the multisig parameters m of n (m,n) for that input.
             -> Int         -- ^ Number of pay to public key hash outputs.
             -> Int         -- ^ Number of pay to script hash outputs.
             -> Int         -- ^ Upper bound on the transaction size.
@@ -156,15 +160,19 @@ buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
 -- To sign an input, the previous output script, outpoint and sighash are
 -- required. When signing a pay to script hash output, an additional redeem
 -- script is required.
-data SigInput = SigInput   { sigDataOut :: Script 
-                           , sigDataOP  :: OutPoint
-                           , sigDataSH  :: SigHash
-                           } 
-              | SigInputSH { sigDataOut :: Script
-                           , sigDataOP  :: OutPoint
-                           , sigRedeem  :: Script
-                           , sigDataSH  :: SigHash
-                           } deriving (Eq, Show)
+data SigInput 
+    -- | Parameters for signing a pay to public key hash output.
+    = SigInput   { sigDataOut :: Script   -- ^ Output script to spend.
+                 , sigDataOP  :: OutPoint 
+                   -- ^ Reference to the transaction output to spend.
+                 , sigDataSH  :: SigHash  -- ^ Signature type.
+                 } 
+    -- | Parameters for signing a pay to script hash output.
+    | SigInputSH { sigDataOut :: Script   
+                 , sigDataOP  :: OutPoint 
+                 , sigRedeem  :: Script   -- ^ Redeem script$.
+                 , sigDataSH  :: SigHash  
+                 } deriving (Eq, Show)
 
 liftSecret :: Monad m => Build a -> SecretT (BuildT m) a
 liftSecret = lift . liftBuild
@@ -243,7 +251,7 @@ toBuildTxIn txin@(TxIn _ s _)
 
 orderSigInput :: [TxIn] -> [SigInput] -> [(Maybe SigInput, TxIn, Int)]
 orderSigInput ti si = zip3 (matchTemplate si ti f) ti [0..]
-    where f si txin = sigDataOP si == prevOutput txin
+    where f s txin = sigDataOP s == prevOutput txin
 
 type BuildFunction =  TxIn -> Tx -> ScriptOutput -> Int 
                    -> [PubKey] -> [TxSignature] -> Build TxIn
@@ -264,10 +272,10 @@ decodeSigInput sigi keys = case sigi of
 buildTxInSH :: BuildFunction
 buildTxInSH txin tx rdm i pubs sigs = do
     s   <- scriptInput <$> buildTxIn txin tx rdm i pubs sigs
-    res <- either empty return $ 
+    res <- either emptyIn return $ 
         encodeScriptHash . (flip ScriptHashInput rdm) <$> decodeInput s
     return txin{ scriptInput = res }
-    where empty = const $ Partial $ Script []
+    where emptyIn = const $ Partial $ Script []
 
 buildTxIn :: BuildFunction
 buildTxIn txin tx out i pubs sigs 
@@ -327,13 +335,13 @@ verifyTx tx xs = flip all z3 $ \(maybeS,txin,i) -> fromMaybe False $ do
             (== r) <$> countMulSig tx so i pubs sigs 
         _ -> Nothing
     where m = map (fst <$>) $ matchTemplate xs (txIn tx) f
-          f (s,o) txin = o == prevOutput txin
+          f (_,o) txin = o == prevOutput txin
           z3 = zip3 m (txIn tx) [0..]
                       
 -- Count the number of valid signatures
 countMulSig :: Tx -> Script -> Int -> [PubKey] -> [TxSignature] -> Maybe Int
-countMulSig tx so i [] sigs = return 0
-countMulSig tx so i pubs [] = return 0
+countMulSig _ _ _ [] _  = return 0
+countMulSig _ _ _ _  [] = return 0
 countMulSig tx so i (pub:pubs) sigs@(TxSignature sig sh:rest)
     | verifySig (txSigHash tx so i sh) sig pub = 
          (+1) <$> countMulSig tx so i pubs rest

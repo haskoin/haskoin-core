@@ -107,17 +107,17 @@ module Network.Haskoin.Wallet
 , buildTx
 , buildAddrTx
 
-  -- *Coin selection
-, Coin(..)
-, chooseCoins
-, chooseMSCoins
-, guessTxSize
-
   -- *Transaction signing
 , SigInput(..)
 , signTx
 , detSignTx
 , isTxComplete
+
+  -- *Coin selection
+, Coin(..)
+, chooseCoins
+, chooseMSCoins
+, guessTxSize
 
 ) where
 

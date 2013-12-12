@@ -6,9 +6,6 @@ module Network.Haskoin.Wallet.Store.DbAccount
 , dbNewAcc
 , dbNewMS
 , dbAddKeys
-, cmdAccInfo
-, cmdListAcc
-, cmdDumpKeys
 , yamlAcc
 , isMSAcc
 ) where
@@ -62,9 +59,7 @@ isMSAcc :: DbAccountGeneric b -> Bool
 isMSAcc acc = (isJust $ dbAccountMsRequired acc) && 
               (isJust $ dbAccountMsTotal acc) 
 
-dbGetAcc :: ( PersistUnique m 
-            , PersistMonadBackend m ~ b
-            )
+dbGetAcc :: (PersistUnique m, PersistMonadBackend m ~ b)
          => String 
          -> EitherT String m (Entity (DbAccountGeneric b))
 dbGetAcc name = liftMaybe accErr =<< (getBy $ UniqueAccName name)
@@ -154,32 +149,4 @@ dbAddKeys name keys
         return newAcc
   where 
     keyErr = "dbAddKeys: Invalid keys found in account"
-
-cmdAccInfo :: PersistUnique m => AccountName -> EitherT String m Value
-cmdAccInfo name = yamlAcc . entityVal <$> dbGetAcc name
-
-cmdListAcc :: PersistQuery m => EitherT String m Value
-cmdListAcc = toJSON . (map (yamlAcc . entityVal)) <$> selectList [] []
-
-cmdDumpKeys :: (PersistStore m, PersistUnique m) 
-            => AccountName -> EitherT String m Value
-cmdDumpKeys name = do
-    (Entity _ acc) <- dbGetAcc name
-    w <- liftMaybe walErr =<< (get $ dbAccountWallet acc)
-    let keyM = loadMasterKey =<< (xPrvImport $ dbWalletMaster w)
-    master <- liftMaybe keyErr keyM
-    prv <- liftMaybe prvErr $ 
-        accPrvKey master (fromIntegral $ dbAccountIndex acc)
-    let prvKey = runAccPrvKey prv
-        pubKey = deriveXPubKey prvKey
-        ms | isMSAcc acc = ["MSKeys" .= (toJSON $ dbAccountMsKeys acc)]
-           | otherwise   = []
-    return $ object $
-        [ "Account" .= yamlAcc acc
-        , "PubKey"  .= xPubExport pubKey 
-        , "PrvKey"  .= xPrvExport prvKey 
-        ] ++ ms
-    where keyErr = "cmdDumpKeys: Could not decode master key"
-          prvErr = "cmdDumpKeys: Could not derive account private key"
-          walErr = "cmdDumpKeys: Could not find account wallet"
 

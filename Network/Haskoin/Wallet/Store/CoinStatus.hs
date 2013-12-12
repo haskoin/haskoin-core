@@ -5,15 +5,13 @@ module Network.Haskoin.Wallet.Store.CoinStatus
 , catStatus
 ) where
 
-import Control.Monad
-import Control.Applicative
+import Control.Monad (mzero)
+import Control.Applicative ((<$>))
+
+import Database.Persist.TH (derivePersistField)
 
 import Data.Yaml
-import qualified Data.Text as T
-
-import Database.Persist
-import Database.Persist.Sqlite
-import Database.Persist.TH
+import qualified Data.Text as T (pack)
 
 -- |Spent if a complete transaction spends this coin
 -- Reserved if a partial transaction is spending these coins
@@ -26,13 +24,13 @@ data CoinStatus = Spent String | Reserved String | Unspent
 derivePersistField "CoinStatus"
 
 instance ToJSON CoinStatus where
-    toJSON (Spent id) = 
+    toJSON (Spent tid) = 
         object [ "Status".= T.pack "Spent"
-               , "Txid"  .= T.pack id 
+               , "Txid"  .= T.pack tid 
                ]
-    toJSON (Reserved id) = 
+    toJSON (Reserved tid) = 
         object [ "Status".= T.pack "Reserved"
-               , "Txid"  .= T.pack id 
+               , "Txid"  .= T.pack tid 
                ]
     toJSON Unspent = object [ "Status".= T.pack "Unspent" ]
 

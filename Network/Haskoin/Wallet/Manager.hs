@@ -38,17 +38,16 @@ module Network.Haskoin.Wallet.Manager
 , intMulSigAddrs
 ) where
 
-import Control.Monad
-import Control.Applicative
+import Control.Monad (liftM2, guard)
+import Control.Applicative ((<$>))
 
-import Data.Word
-import Data.Maybe
-import qualified Data.ByteString as BS
+import Data.Word (Word32)
+import Data.Maybe (mapMaybe, fromJust, isJust)
+import qualified Data.ByteString as BS (ByteString)
 
-import Network.Haskoin.Wallet.Keys
-import Network.Haskoin.Script
 import Network.Haskoin.Crypto
-import Network.Haskoin.Protocol
+import Network.Haskoin.Script
+import Network.Haskoin.Wallet.Keys
 
 type KeyIndex = Word32
 
@@ -265,15 +264,15 @@ intMulSigKeys a ps i = mapMaybe f $ cycleIndex i
 -- list of thirdparty multisig keys and a derivation index.
 extMulSigAddr :: AccPubKey -> [XPubKey] -> Int -> KeyIndex -> Maybe String
 extMulSigAddr a ps r i = do
-    ps <- (map (xPubKey . runAddrPubKey)) <$> extMulSigKey a ps i
-    return $ addrToBase58 $ scriptAddr $ sortMulSig $ PayMulSig ps r
+    xs <- (map (xPubKey . runAddrPubKey)) <$> extMulSigKey a ps i
+    return $ addrToBase58 $ scriptAddr $ sortMulSig $ PayMulSig xs r
 
 -- | Computes an internal base58 multisig address from an 'AccPubKey', a
 -- list of thirdparty multisig keys and a derivation index.
 intMulSigAddr :: AccPubKey -> [XPubKey] -> Int -> KeyIndex -> Maybe String
 intMulSigAddr a ps r i = do
-    ps <- (map (xPubKey . runAddrPubKey)) <$> intMulSigKey a ps i
-    return $ addrToBase58 $ scriptAddr $ sortMulSig $ PayMulSig ps r
+    xs <- (map (xPubKey . runAddrPubKey)) <$> intMulSigKey a ps i
+    return $ addrToBase58 $ scriptAddr $ sortMulSig $ PayMulSig xs r
 
 -- | Cyclic list of all external base58 multisig addresses derived from
 -- an 'AccPubKey' and a list of thirdparty multisig keys. The list starts

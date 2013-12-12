@@ -8,14 +8,28 @@ module Network.Haskoin.Wallet.Store.DbCoin
 , toCoin
 ) where
 
-import Control.Applicative
-import Control.Monad.Trans.Either
+import Control.Applicative ((<$>))
+import Control.Monad.Trans.Either (EitherT)
 
 import Data.Yaml
-import Data.Maybe
+    ( Value 
+    , object 
+    , (.=)
+    )
+import Data.Maybe (isJust, fromJust)
 
 import Database.Persist
-import Database.Persist.Sqlite
+    ( PersistStore
+    , PersistUnique
+    , PersistQuery
+    , PersistMonadBackend
+    , Entity(..)
+    , entityVal
+    , selectList
+    , (==.)
+    , SelectOpt(Asc)
+    )
+import Database.Persist.Sqlite (SqlBackend)
 
 import Network.Haskoin.Wallet.TxBuilder
 import Network.Haskoin.Wallet.Store.Util

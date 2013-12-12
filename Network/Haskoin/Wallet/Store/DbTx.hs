@@ -15,25 +15,58 @@ module Network.Haskoin.Wallet.Store.DbTx
 , RawPrvKey(..)
 ) where
 
-import Control.Applicative
-import Control.Monad
-import Control.Monad.Trans
-import Control.Monad.Trans.Either
+import Control.Applicative ((<$>), (<*>))
+import Control.Monad (forM, unless, when, mzero)
+import Control.Monad.Trans (liftIO)
+import Control.Monad.Trans.Either (EitherT, left)
 
-import Data.Time
-import Data.Word
-import Data.List
-import Data.Maybe
-import Data.Either
-import Data.Yaml
+import Data.Time (UTCTime, getCurrentTime)
+import Data.Word (Word32, Word64)
+import Data.List ((\\), nub)
+import Data.Maybe (catMaybes, isNothing, isJust, fromJust)
+import Data.Either (rights)
+import Data.Yaml 
+    ( Value
+    , object 
+    , (.=), (.:), (.:?)
+    , parseJSON
+    , Parser
+    )
+import qualified Data.Aeson as Json 
+    ( FromJSON
+    , withObject
+    , withArray
+    )
 import qualified Data.Vector as V (toList)
 import qualified Data.HashMap.Strict as H (toList)
-import qualified Data.Aeson as Json
-import qualified Data.Map.Strict as M
-import qualified Data.Text as T
+import qualified Data.Map.Strict as M 
+    ( toList
+    , empty
+    , lookup
+    , insert
+    )
+import qualified Data.Text as T (pack, unpack)
 
-import Database.Persist
-import Database.Persist.Sqlite
+import Database.Persist 
+    ( PersistStore
+    , PersistUnique
+    , PersistQuery
+    , PersistMonadBackend
+    , Entity(..)
+    , entityVal
+    , entityKey
+    , get
+    , getBy
+    , selectList
+    , deleteWhere
+    , updateWhere
+    , update
+    , insert_
+    , insertUnique
+    , replace
+    , (=.), (==.), (<-.)
+    )
+import Database.Persist.Sqlite (SqlBackend)
 
 import Network.Haskoin.Wallet.Keys
 import Network.Haskoin.Wallet.Manager

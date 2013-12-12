@@ -48,23 +48,41 @@ module Network.Haskoin.Wallet.Store
 
 ) where
 
-import Control.Applicative
-import Control.Monad
-import Control.Monad.Trans
-import Control.Monad.Trans.Either
+import Control.Applicative ((<$>))
+import Control.Monad (when)
+import Control.Monad.Trans (liftIO)
+import Control.Monad.Trans.Either (EitherT, left)
 
-import Data.Time
-import Data.Yaml
-import Data.Maybe
-import Data.List (nub, sortBy)
-import qualified Data.Aeson as Json
-import qualified Data.Text as T
-import qualified Data.ByteString as BS
-import qualified Data.Conduit as C
+import Data.Time (getCurrentTime)
+import Data.Yaml 
+    ( Value (Null)
+    , object 
+    , (.=)
+    , toJSON
+    )
+import Data.Maybe (isJust, fromJust)
+import Data.List (sortBy)
+import qualified Data.Aeson as Json (decode)
+import qualified Data.Text as T (pack)
 
 import Database.Persist
-import Database.Persist.Sqlite
-import Database.Persist.TH
+    ( PersistStore
+    , PersistUnique
+    , PersistQuery
+    , PersistMonadBackend
+    , Entity(..)
+    , entityVal
+    , entityKey
+    , get
+    , getBy
+    , selectList
+    , insert_
+    , replace
+    , count
+    , (<=.), (==.)
+    , SelectOpt( Asc, OffsetBy, LimitTo )
+    )
+import Database.Persist.Sqlite (SqlBackend)
 
 import Network.Haskoin.Wallet.Keys
 import Network.Haskoin.Wallet.Manager
@@ -246,10 +264,10 @@ cmdLabel :: (PersistStore m, PersistUnique m)
          -> EitherT String m Value -- ^ New address information.
 cmdLabel name key label = do
     (Entity ai acc) <- dbGetAcc name
-    (Entity i addr) <- liftMaybe keyErr =<< 
+    (Entity i add) <- liftMaybe keyErr =<< 
         (getBy $ UniqueAddressKey ai key False)
-    when (dbAddressIndex addr > dbAccountExtIndex acc) $ left keyErr
-    let newAddr = addr{dbAddressLabel = label}
+    when (dbAddressIndex add > dbAccountExtIndex acc) $ left keyErr
+    let newAddr = add{dbAddressLabel = label}
     replace i newAddr
     return $ yamlAddr newAddr
   where 
@@ -263,12 +281,12 @@ cmdWIF :: (PersistStore m, PersistUnique m)
 cmdWIF name key = do
     (Entity _ w) <- dbGetWallet "main"
     (Entity ai acc) <- dbGetAcc name
-    (Entity _ addr) <- liftMaybe keyErr =<< 
+    (Entity _ add) <- liftMaybe keyErr =<< 
         (getBy $ UniqueAddressKey ai key False)
-    when (dbAddressIndex addr > dbAccountExtIndex acc) $ left keyErr
+    when (dbAddressIndex add > dbAccountExtIndex acc) $ left keyErr
     mst <- liftMaybe mstErr $ loadMasterKey =<< xPrvImport (dbWalletMaster w)
     aKey <- liftMaybe prvErr $ accPrvKey mst $ fromIntegral $ dbAccountIndex acc
-    let index = fromIntegral $ dbAddressIndex addr
+    let index = fromIntegral $ dbAddressIndex add
     addrPrvKey <- liftMaybe addErr $ extPrvKey aKey index
     let prvKey = xPrvKey $ runAddrPrvKey addrPrvKey
     return $ object [ "WIF" .= T.pack (toWIF prvKey) ]
@@ -355,8 +373,8 @@ cmdRemoveTx :: ( PersistStore m, PersistQuery m, PersistUnique m
               )
            => String                 -- ^ Transaction id (txid)
            -> EitherT String m Value -- ^ List of removed transaction entries
-cmdRemoveTx txid = do
-    removed <- dbRemoveTx txid
+cmdRemoveTx tid = do
+    removed <- dbRemoveTx tid
     return $ toJSON removed
 
 -- | List all the transaction entries for an account. Transaction entries 
@@ -379,7 +397,7 @@ cmdListTx :: (PersistQuery m, PersistUnique m)
           => AccountName            -- ^ Account name.
           -> EitherT String m Value -- ^ List of transaction entries.
 cmdListTx name = do
-    (Entity ai acc) <- dbGetAcc name
+    (Entity ai _) <- dbGetAcc name
     txs <- selectList [ DbTxAccount ==. ai
                       ] 
                       [ Asc DbTxCreated ]
@@ -428,9 +446,9 @@ cmdSignTx :: (PersistStore m, PersistQuery m, PersistUnique m)
           -> SigHash                -- ^ Signature type to create. 
           -> EitherT String m Value -- ^ Signed transaction.
 cmdSignTx name tx sh = do
-    (tx,complete) <- dbSignTx name tx sh
+    (newTx,complete) <- dbSignTx name tx sh
     return $ object 
-        [ (T.pack "Tx")       .= (toJSON $ bsToHex $ encode' tx)
+        [ (T.pack "Tx")       .= (toJSON $ bsToHex $ encode' newTx)
         , (T.pack "Complete") .= complete
         ]
 

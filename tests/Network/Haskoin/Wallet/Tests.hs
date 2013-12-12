@@ -1,28 +1,24 @@
 module Network.Haskoin.Wallet.Tests (tests) where
 
-import Test.QuickCheck.Property hiding ((.&.))
-import Test.Framework
-import Test.Framework.Providers.QuickCheck2
+import Test.Framework (Test, testGroup)
+import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Control.Monad
-import Control.Applicative
+import Control.Monad (liftM2)
+import Control.Applicative ((<$>))
 
-import Data.Bits
-import Data.Maybe
-import Data.Binary
-import qualified Data.ByteString as BS
+import Data.Word (Word32, Word64)
+import Data.Bits ((.&.))
+import Data.Maybe (fromJust)
+import qualified Data.ByteString as BS (length)
 
 import QuickCheckUtils
+import Network.Haskoin.Wallet.Arbitrary
 
 import Network.Haskoin.Wallet
 import Network.Haskoin.Wallet.TxBuilder
-import Network.Haskoin.Wallet.Store
-import Network.Haskoin.Wallet.Arbitrary
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
-import Network.Haskoin.Crypto.Arbitrary
 import Network.Haskoin.Protocol
-import Network.Haskoin.Protocol.Arbitrary
 import Network.Haskoin.Util
 import Network.Haskoin.Util.BuildMonad
 
@@ -150,9 +146,9 @@ testSignTxBuild (PKHashSigTemplate tx sigi prv)
 testSignTxValidate :: PKHashSigTemplate -> Bool
 testSignTxValidate (PKHashSigTemplate tx sigi prv) =
     case detSignTx tx sigi prv of
-        (Broken s)    -> True
-        (Partial tx)  -> not $ verifyTx tx $ map f sigi
-        (Complete tx) -> verifyTx tx $ map f sigi
+        (Broken _)    -> True
+        (Partial btx)  -> not $ verifyTx btx $ map f sigi
+        (Complete btx) -> verifyTx btx $ map f sigi
     where f si = (sigDataOut si, sigDataOP si)
 
 -- todo: test p2sh transactions

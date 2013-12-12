@@ -1,20 +1,20 @@
 module QuickCheckUtils where
 
-import Test.QuickCheck
+import Test.QuickCheck 
+    ( Arbitrary
+    , arbitrary
+    , vectorOf
+    , choose
+    )
 
-import Control.Applicative
-
-import Data.Maybe
-import Data.List
+import Control.Applicative ((<$>))
+import Data.List (permutations)
 
 import Network.Haskoin.Wallet
-import Network.Haskoin.Wallet.Arbitrary
+import Network.Haskoin.Wallet.Arbitrary ()
 import Network.Haskoin.Script
-import Network.Haskoin.Script.Arbitrary
 import Network.Haskoin.Crypto
-import Network.Haskoin.Crypto.Arbitrary
 import Network.Haskoin.Protocol
-import Network.Haskoin.Protocol.Arbitrary
 import Network.Haskoin.Util
 
 data PKHashSigTemplate = PKHashSigTemplate Tx [SigInput] [PrvKey]

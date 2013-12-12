@@ -1,16 +1,13 @@
 module Units (tests) where
 
-import Test.HUnit
-import Test.Framework
-import Test.Framework.Providers.HUnit
+import Test.HUnit (Assertion, assertBool)
+import Test.Framework (Test, testGroup)
+import Test.Framework.Providers.HUnit (testCase)
 
-import Control.Monad.Trans
-
-import Data.Maybe
-import Data.Binary
-import Data.Binary.Get
-import Data.Binary.Put
-import qualified Data.ByteString as BS
+import Data.Word (Word32, Word64)
+import Data.Maybe (fromJust, catMaybes)
+import Data.Binary.Get (getWord32le)
+import qualified Data.ByteString as BS (reverse)
 
 import Network.Haskoin.Wallet
 import Network.Haskoin.Wallet.TxBuilder
@@ -18,6 +15,7 @@ import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
+tests :: [Test]
 tests =
     [ testGroup "BIP32 derivation vector 1" 
         [ testCase "Chain m" $ runXKeyVec (xKeyVec !! 0)
@@ -72,7 +70,8 @@ runPKHashVec :: ([(String,Word32)],[(String,Word64)],String) -> Assertion
 runPKHashVec (xs,ys,res) = 
     assertBool "Build PKHash Tx" $ (bsToHex $ encode' tx) == res
     where tx = fromRight $ buildAddrTx (map f xs) ys
-          f (id,ix) = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS id) ix
+          f (tid,ix) = OutPoint (fromJust $ decodeTxid tid) ix
+
 
 mapVerifyVec :: (([(String,String,String)],String),Int) 
              -> Test.Framework.Test
@@ -115,6 +114,7 @@ xKeyVec2 = zip xKeyResVec2 $ catMaybes $ foldl f [m] der
                 , flip prvSubKey 2
                 ]
 
+m0 :: String
 m0 = "000102030405060708090a0b0c0d0e0f"
 
 xKeyResVec :: [[String]]
@@ -200,6 +200,7 @@ xKeyResVec =
       ]
     ]
 
+m1 :: String
 m1 = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
 
 xKeyResVec2 :: [[String]]

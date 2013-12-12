@@ -3,38 +3,49 @@
 {-# LANGUAGE TypeFamilies      #-}
 module Main where
 
-import System.IO
-import System.Directory
-import System.IO.Error
-import System.Console.GetOpt
-import qualified System.Environment as E
+import System.Directory 
+    ( getAppUserDataDirectory
+    , createDirectoryIfMissing
+    )
+import System.IO.Error (ioeGetErrorString)
+import System.Console.GetOpt 
+    ( getOpt
+    , usageInfo
+    , OptDescr( Option )
+    , ArgDescr( NoArg, ReqArg )
+    , ArgOrder( Permute )
+    )
+import qualified System.Environment as E (getArgs)
 
-import Control.Monad
-import Control.Applicative
-import Control.Monad.Trans
-import Control.Monad.Trans.Either
+import Control.Monad (forM_, join)
+import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Either (EitherT, runEitherT, left)
 import Control.Exception (tryJust)
 
 import Database.Persist
-import Database.Persist.Sql
-import Database.Persist.Sqlite
-import Database.Persist.TH
+    ( PersistStore
+    , PersistUnique
+    , PersistQuery
+    , PersistMonadBackend
+    )
+import Database.Persist.Sql ()
+import Database.Persist.Sqlite (SqlBackend, runSqlite, runMigration)
 
-import Data.Maybe
-import Data.Char
-import Data.Word
-import qualified Data.Text as T
-import qualified Data.Yaml as YAML
+import qualified Data.Text as T (pack, unpack, splitOn)
+import qualified Data.Yaml as YAML 
+    ( Value(Null)
+    , encode
+    )
 import qualified Data.Aeson.Encode.Pretty as JSON
-import qualified Data.ByteString as BS
+    ( encodePretty'
+    , defConfig
+    , confIndent
+    )
 
 import Network.Haskoin.Wallet.Keys
-import Network.Haskoin.Wallet.TxBuilder
-import Network.Haskoin.Wallet.Manager
 import Network.Haskoin.Wallet.Store
+import Network.Haskoin.Wallet.Store.Util
 import Network.Haskoin.Script
-import Network.Haskoin.Protocol
-import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Util.Network
 
@@ -47,6 +58,7 @@ data Options = Options
     , optVersion  :: Bool
     } deriving (Eq, Show)
 
+defaultOptions :: Options
 defaultOptions = Options
     { optCount    = 5
     , optSigHash  = SigAll False

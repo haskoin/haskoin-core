@@ -6,6 +6,8 @@ module Network.Haskoin.Wallet.Arbitrary
 , genMulSigInput
 , genRegularInput 
 , genAddrOutput
+, RegularTx(..)
+, MSParam(..)
 ) where
 
 import Test.QuickCheck 
@@ -32,6 +34,7 @@ import Network.Haskoin.Script
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 
+-- | Data type for generating arbitrary valid multisignature parameters (m of n)
 data MSParam = MSParam Int Int deriving (Eq, Show)
 
 instance Arbitrary MSParam where
@@ -40,8 +43,9 @@ instance Arbitrary MSParam where
         m <- choose (1,n)
         return $ MSParam m n
 
-data RegularTx = RegularTx { runRegularTx :: Tx }
-    deriving (Eq, Show)
+-- | Data type for generating arbitrary transaction with inputs and outputs
+-- consisting only of script hash or pub key hash scripts.
+data RegularTx = RegularTx Tx deriving (Eq, Show)
 
 -- | Generate an arbitrary compressed public key.
 genPubKeyC :: Gen PubKey

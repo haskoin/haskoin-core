@@ -3,34 +3,48 @@
 {-# LANGUAGE TypeFamilies      #-}
 module Network.Haskoin.Wallet.Store.Units (tests) where
 
-import System.IO.Error
+import Test.HUnit (Assertion, assertBool, assertEqual)
+import Test.Framework (Test, testGroup)
+import Test.Framework.Providers.HUnit (testCase)
 
-import Test.HUnit
-import Test.Framework
-import Test.Framework.Providers.HUnit
+import Control.Applicative ((<$>))
+import Control.Monad.Trans (liftIO, lift)
+import Control.Monad.Trans.Either (EitherT, runEitherT)
 
-import Control.Monad
-import Control.Applicative
-import Control.Monad.Trans
-import Control.Monad.Trans.Either
-import Control.Exception (tryJust)
-
-import Data.Time
-import Data.Maybe
+import Data.Maybe (fromJust, isJust)
 import Data.Yaml as YAML
-import qualified Data.Text as T
-import qualified Data.ByteString as BS
+    ( Value
+    , object 
+    , toJSON
+    , (.=)
+    )
+import qualified Data.Text as T (pack)
 
-import Database.Persist
-import Database.Persist.Sqlite
+import Database.Persist 
+    ( PersistStore
+    , PersistUnique
+    , PersistQuery
+    , PersistMonadBackend
+    , Entity(..)
+    , entityVal
+    , getBy
+    , selectList
+    , count
+    , (==.)
+    , Filter
+    , SelectOpt(Asc)
+    )
+import Database.Persist.Sqlite (SqlBackend, runSqlite, runMigration)
 
 import Network.Haskoin.Wallet
 import Network.Haskoin.Wallet.Store
+import Network.Haskoin.Wallet.Store.DbAddress
+import Network.Haskoin.Wallet.Store.DbAccount
+import Network.Haskoin.Wallet.Store.Util
 import Network.Haskoin.Script
-import Network.Haskoin.Protocol
-import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
+tests :: [Test]
 tests =
     [ testGroup "Wallet persistence tests" 
         [ testCase "Wallet tests" runTests
@@ -39,7 +53,7 @@ tests =
 
 runTests :: Assertion
 runTests = do
-    runSqlite ":memory:" $ runEitherT $ do
+    _ <- runSqlite ":memory:" $ runEitherT $ do
         lift $ runMigration migrateAll
         liftIO . (assertBool "Pre init") . isRight =<< runEitherT testPreInit
         liftIO . (assertBool "Init") . isRight =<< runEitherT testInit
@@ -84,7 +98,7 @@ testInit = do
         (Left "cmdInit: seed can not be empty") 
 
     -- Initialize wallet with seed "Hello World"
-    cmdInit "Hello World" 
+    _ <- cmdInit "Hello World" 
 
     walletE <- getBy $ UniqueWalletName "main"
     
@@ -778,8 +792,8 @@ testGenAddr = do
     count ([] :: [Filter (DbAddressGeneric b)]) >>= 
         liftIO . assertEqual "Count addr 3" 253
 
-    let f x = (dbAddressBase58 x,dbAddressTree x,dbAddressIndex x)
-    (map f <$> dbGenIntAddrs "ms1" 6) >>= liftIO . assertEqual "Internal addr 2"
+    let h x = (dbAddressBase58 x,dbAddressTree x,dbAddressIndex x)
+    (map h <$> dbGenIntAddrs "ms1" 6) >>= liftIO . assertEqual "Internal addr 2"
         [ ("34rWmp9DmxFbqXLHvzhMGATWDfsnLF8wiR","m/3'/1/0/",0)
         , ("3As9nWqHcWavv3MxSeZKYjMQ9SgE8zVaJ1","m/3'/1/1/",1)
         , ("3QYVvQrjtK5w8s6uE8T8ZLeXBEe7aTtVdj","m/3'/1/2/",2)
@@ -819,7 +833,7 @@ testGenAddr = do
         )
 
     -- Rename the last multisig address label
-    cmdLabel "ms1" 3 "beta"
+    _ <- cmdLabel "ms1" 3 "beta"
 
     -- Setting a label on an invalid address should fail
     runEitherT (cmdLabel "ms1" (-1) "theta") >>= 
@@ -1262,8 +1276,8 @@ testOrphan = do
                 ]
             )
 
-    (Entity ai1 acc1) <- dbGetAcc "acc1"
-    (Entity ai2 acc2) <- dbGetAcc "acc2"
+    (Entity ai1 _) <- dbGetAcc "acc1"
+    (Entity ai2 _) <- dbGetAcc "acc2"
 
     let f (Entity _ c) = ( dbCoinTxid c, dbCoinPos c
                          , dbCoinValue c, dbCoinScript c
@@ -2099,11 +2113,11 @@ testSend = do
                      ]
             )
 
-    cmdNewMS "signms" 2 3 []
+    _ <- cmdNewMS "signms" 2 3 []
     
-    cmdAddKeys "signms" [fromJust $ xPubImport "xpub69QmF5x2m5duxo856Dg622vDjsxtDCwMAaLyhVjBZDDTaKbenBfMByNJVMYKAVTEpGPDePdgjDpDyPvBPx4WpFV8zmNEa6Cx7Lk4Bn9PDcE"]
+    _ <- cmdAddKeys "signms" [fromJust $ xPubImport "xpub69QmF5x2m5duxo856Dg622vDjsxtDCwMAaLyhVjBZDDTaKbenBfMByNJVMYKAVTEpGPDePdgjDpDyPvBPx4WpFV8zmNEa6Cx7Lk4Bn9PDcE"]
 
-    cmdAddKeys "signms" [fromJust $ xPubImport "xpub69QmF5x2m5dv1r2xNBLTq6HGKjFDyE4iAhxhdL4FgVR8vQprruLcauxJNdASANJaZc65bmoD1snK4db9DDYAuEBo3ANZik9SHnTAKQZLDt1"]
+    _ <- cmdAddKeys "signms" [fromJust $ xPubImport "xpub69QmF5x2m5dv1r2xNBLTq6HGKjFDyE4iAhxhdL4FgVR8vQprruLcauxJNdASANJaZc65bmoD1snK4db9DDYAuEBo3ANZik9SHnTAKQZLDt1"]
 
 --    cmdNewMS "test2" 2 3 []
 --    cmdNewMS "test3" 2 3 []

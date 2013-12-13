@@ -102,6 +102,10 @@ executable hw
 Test-Suite test-haskoin-wallet
     type:              exitcode-stdio-1.0
     main-is:           Main.hs
+    other-modules:     Network.Haskoin.Wallet.Tests,
+                       Network.Haskoin.Wallet.Store.Units,
+                       QuickCheckUtils,
+                       Units
     build-depends:     base                       == 4.6.*, 
                        binary                     == 0.7.*, 
                        bytestring                 == 0.10.*, 

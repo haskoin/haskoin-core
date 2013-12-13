@@ -163,7 +163,7 @@ warningMsg = unwords [ "***"
                      ]
 
 versionMsg :: String
-versionMsg = "haskoin wallet version 0.1.1.0"
+versionMsg = "haskoin wallet version 0.0.1"
 
 usage :: String
 usage = unlines $ [warningMsg, usageInfo usageHeader options] ++ cmdHelp

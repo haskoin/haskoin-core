@@ -1,102 +1,32 @@
 # haskoin-wallet
 
-Implementation of a Bitcoin Hierarchical Deterministic Wallet (BIP32) in
-Haskell. 
+This package provides functions for generating hierarchical deterministic keys
+(BIP32). It also provides functions for building and signing both simple
+transactions and multisignature transactions. This package also provides a
+command lines application called hw (haskoin wallet). It is a lightweight
+bitcoin wallet featuring BIP32 key management, deterministic signatures
+(RFC-6979) and first order support for multisignature transactions. A library
+API for hw is also exposed.
 
-Project Status: **Experimental**
+## Documentation
 
-## Description
+http://hackage.haskell.org/package/haskoin-wallet
 
-[haskoin-wallet](http://github.com/plaprade/haskoin-wallet) is a component of
-[haskoin](http://github.com/plaprade/haskoin), an ecosystem of haskell
-libraries implementing the various parts of the bitcoin protocol. This library
-provides extended key types and subkey derivation functions as defined in
-[BIP32](http://en.bitcoin.it/wiki/BIP_0032).
+## Installing from Cabal
 
-Todo ...
-
-## Synopsis
-
-```haskell
-    -- Todo ...
-```
-
-## Usage
-
-All the types and functions in this section are exported by `Haskoin.Wallet`
-
-```haskell
-    import Haskoin.Wallet
-```
-## Dependencies
-
-- Cabal package manager
+You can install the latest stable version of the haskoin-wallet package
+automatically through the cabal package manager:
 
 ```sh
-    # in Ubuntu
-    apt-get install cabal-install
+    # You may have to update your cabal package list:
+    cabal update
+
+    # Install
+    cabal install haskoin-wallet
+
+    # Run test suites and install:
+    cabal install haskoin-wallet --enable-tests
 ```
-
-- haskoin-util
-
-```sh
-    # haskoin-util is not on Hackage (yet) 
-    git clone https://github.com/plaprade/haskoin-util.git
-    cd haskoin-util
-    cabal install
-```
-
-- haskoin-crypto
-
-```sh
-    # haskoin-crypto is not on Hackage (yet) 
-    git clone https://github.com/plaprade/haskoin-crypto.git
-    cd haskoin-crypto
-    cabal install
-```
-
-- haskoin-protocol
-
-```sh
-    # haskoin-protocol is not on Hackage (yet) 
-    git clone https://github.com/plaprade/haskoin-protocol.git
-    cd haskoin-protocol
-    cabal install
-```
-
-## Installing
-
-```sh
-    # haskoin-wallet is not on Hackage (yet) 
-    git clone https://github.com/plaprade/haskoin-wallet.git
-    cd haskoin-wallet
-    cabal install
-```
-
-### Tests
-
-If you are missing the test dependencies:
-
-```sh
-    cabal install --enable-tests
-    cabal test
-```
-
-If you have the test dependencies, you can build without installing:
-
-```sh
-    cabal configure --enable-tests
-    cabal build
-    cabal test
-```
-
-The tests can take a few minutes to run.
-
-## Bugs
-
-Please report any bugs in the projects bug tracker:
-
-[github.com/plaprade/haskoin-wallet/issues](http://github.com/plaprade/haskoin-wallet/issues)
 
 ## Contributing
 
@@ -117,7 +47,5 @@ Code guidelines:
 ## Supporting
 
 You can support the project by donating in [Bitcoins](http://www.bitcoin.org)
-to:
-
-**176CwMCWMq1y9CxFZWk7Vfoka5PoaNzxRq**
+to: 176CwMCWMq1y9CxFZWk7Vfoka5PoaNzxRq
 

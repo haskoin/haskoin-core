@@ -124,8 +124,7 @@ dbNewMS name m n mskeys = do
   where 
     keyErr = "dbNewMS: Could not load master key"
 
-dbAddKeys :: ( PersistStore m
-             , PersistUnique m
+dbAddKeys :: ( PersistUnique m
              , PersistQuery m
              , PersistMonadBackend m ~ b
              )

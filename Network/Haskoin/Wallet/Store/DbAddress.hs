@@ -63,9 +63,7 @@ yamlAddrList addrs pageNum resPerPage addrCount = object
     ]
   where totPages = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
 
-dbGetAddr :: ( PersistUnique m 
-             , PersistMonadBackend m ~ b
-             )
+dbGetAddr :: (PersistUnique m, PersistMonadBackend m ~ b)
           => String 
           -> EitherT String m (Entity (DbAddressGeneric b))
 dbGetAddr addrStr = 
@@ -73,8 +71,7 @@ dbGetAddr addrStr =
   where 
     addrErr = unwords ["dbGetAddr: Invalid address", addrStr]
 
-dbGenIntAddrs :: ( PersistStore m
-                 , PersistUnique m
+dbGenIntAddrs :: ( PersistUnique m
                  , PersistQuery m
                  , PersistMonadBackend m ~ b
                  )
@@ -84,8 +81,7 @@ dbGenIntAddrs name c
     | c <= 0    = left "dbGenIntAddrs: Count argument must be greater than 0"
     | otherwise = dbGenAddrs name (replicate c "") True
 
-dbAdjustGap :: ( PersistStore m
-               , PersistUnique m
+dbAdjustGap :: ( PersistUnique m
                , PersistQuery m
                , PersistMonadBackend m ~ b
                )
@@ -107,8 +103,7 @@ dbAdjustGap a = do
   where
     accErr = "dbAdjustGap: Could not load address account"
 
-dbSetGap :: ( PersistStore m
-            , PersistUnique m
+dbSetGap :: ( PersistUnique m
             , PersistQuery m
             )
          => AccountName -> Int -> Bool -> EitherT String m ()
@@ -145,8 +140,7 @@ dbSetGap name gap internal = do
     fGap   | internal  = dbAccountIntGap 
            | otherwise = dbAccountExtGap
 
-dbGenAddrs :: ( PersistStore m
-              , PersistUnique m
+dbGenAddrs :: ( PersistUnique m
               , PersistQuery m
               , PersistMonadBackend m ~ b
               )

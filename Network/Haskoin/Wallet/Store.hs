@@ -100,7 +100,7 @@ import Network.Haskoin.Util.BuildMonad
 
 -- | Initialize a wallet from a secret seed. This function will fail if the
 -- wallet is already initialized.
-cmdInit :: (PersistUnique m, PersistQuery m, PersistStore m)
+cmdInit :: PersistUnique m
         => String                 -- ^ Secret seed.
         -> EitherT String m Value -- ^ Returns Null.
 cmdInit seed 
@@ -156,7 +156,7 @@ cmdNewMS name m n mskeys = do
 -- | Add new thirdparty keys to a multisignature account. This function can
 -- fail if the multisignature account already has all required keys. In order
 -- to prevent usage mistakes, adding a key from your own wallet will fail.
-cmdAddKeys :: (PersistStore m, PersistUnique m, PersistQuery m)
+cmdAddKeys :: (PersistUnique m, PersistQuery m)
            => AccountName            -- ^ Account name.
            -> [XPubKey]              -- ^ Thirdparty public keys to add.
            -> EitherT String m Value -- ^ Returns the account information.
@@ -182,7 +182,7 @@ cmdListAcc = toJSON . (map (yamlAcc . entityVal)) <$> selectList [] []
 
 -- | Returns information on extended public and private keys of an account.
 -- For multisignature account, thirdparty keys are also returned.
-cmdDumpKeys :: (PersistStore m, PersistUnique m) 
+cmdDumpKeys :: PersistUnique m
             => AccountName            -- ^ Account name.
             -> EitherT String m Value -- ^ Extended key information.
 cmdDumpKeys name = do
@@ -209,7 +209,7 @@ cmdDumpKeys name = do
 
 -- | Returns a page of addresses for an account. Pages are numbered starting
 -- from page 1. Requesting page 0 will return the last page. 
-cmdList :: (PersistStore m, PersistUnique m, PersistQuery m) 
+cmdList :: (PersistUnique m, PersistQuery m) 
         => AccountName             -- ^ Account name.
         -> Int                     -- ^ Requested page number.
         -> Int                     -- ^ Number of addresses per page.
@@ -241,14 +241,14 @@ cmdList name pageNum resPerPage
         return $ yamlAddrList (map entityVal addrs) page resPerPage addrCount
 
 -- | Generate new payment addresses for an account. 
-cmdGenAddrs :: (PersistStore m, PersistUnique m, PersistQuery m)
+cmdGenAddrs :: (PersistUnique m, PersistQuery m)
             => AccountName            -- ^ Account name.
             -> Int                    -- ^ Number of addresses to generate.
             -> EitherT String m Value -- ^ List of new addresses.
 cmdGenAddrs name c = cmdGenWithLabel name (replicate c "")
 
 -- | Generate new payment addresses with labels for an account.
-cmdGenWithLabel :: (PersistStore m, PersistUnique m, PersistQuery m)
+cmdGenWithLabel :: (PersistUnique m, PersistQuery m)
                 => AccountName            -- ^ Account name.
                 -> [String]               -- ^ List of address labels. 
                 -> EitherT String m Value -- ^ List of new addresses.
@@ -257,7 +257,7 @@ cmdGenWithLabel name labels = do
     return $ toJSON $ map yamlAddr addrs
 
 -- | Add a label to an address.
-cmdLabel :: (PersistStore m, PersistUnique m) 
+cmdLabel :: PersistUnique m
          => AccountName            -- ^ Account name.
          -> Int                    -- ^ Derivation index of the address. 
          -> String                 -- ^ New label.
@@ -274,7 +274,7 @@ cmdLabel name key label = do
     keyErr = unwords ["cmdLabel: Key",show key,"does not exist"]
 
 -- | Returns the private key tied to a payment address in WIF format.
-cmdWIF :: (PersistStore m, PersistUnique m) 
+cmdWIF :: PersistUnique m
        => AccountName            -- ^ Account name.
        -> Int                    -- ^ Derivation index of the address. 
        -> EitherT String m Value -- ^ WIF value.
@@ -299,7 +299,7 @@ cmdWIF name key = do
 {- Coin Commands -}
 
 -- | Returns the balance of an account.
-cmdBalance :: (PersistUnique m, PersistQuery m) 
+cmdBalance :: (PersistUnique m, PersistQuery m)
            => AccountName            -- ^ Account name.
            -> EitherT String m Value -- ^ Account balance.
 cmdBalance name = do
@@ -308,7 +308,7 @@ cmdBalance name = do
     return $ object [ "Balance" .= toJSON balance ]
 
 -- | Returns a list of balances for every account in the wallet.
-cmdBalances :: PersistQuery m 
+cmdBalances :: PersistQuery m
             => EitherT String m Value -- ^ All account balances
 cmdBalances = do
     accs <- selectList [] []
@@ -321,9 +321,9 @@ cmdBalances = do
         ]
 
 -- | Returns the list of unspent coins for an account.
-cmdCoins :: ( PersistQuery m, PersistUnique m
+cmdCoins :: ( PersistQuery m, PersistUnique m 
             , PersistMonadBackend m ~ SqlBackend
-            ) 
+            )
          => AccountName            -- ^ Account name.
          -> EitherT String m Value -- ^ List of unspent coins.
 cmdCoins name = do
@@ -353,8 +353,8 @@ cmdAllCoins = do
 -- transaction entry will be created for every account affected by this
 -- transaction. Every transaction entry will summarize the information related
 -- to it's account only (such as total movement for this account).
-cmdImportTx :: ( PersistStore m, PersistQuery m, PersistUnique m
-               , PersistMonadBackend m ~ b, b ~ SqlBackend
+cmdImportTx :: ( PersistQuery m, PersistUnique m
+               , PersistMonadBackend m ~ SqlBackend
                ) 
             => Tx                     -- ^ Transaction to import.
             -> EitherT String m Value -- ^ New transaction entries created.
@@ -368,11 +368,9 @@ cmdImportTx tx = do
 -- | Remove a transaction from the database. This will remove all transaction
 -- entries for this transaction as well as any child transactions and coins
 -- deriving from it.
-cmdRemoveTx :: ( PersistStore m, PersistQuery m, PersistUnique m
-              , PersistMonadBackend m ~ b, b ~ SqlBackend
-              )
-           => String                 -- ^ Transaction id (txid)
-           -> EitherT String m Value -- ^ List of removed transaction entries
+cmdRemoveTx :: PersistQuery m
+            => String                 -- ^ Transaction id (txid)
+            -> EitherT String m Value -- ^ List of removed transaction entries
 cmdRemoveTx tid = do
     removed <- dbRemoveTx tid
     return $ toJSON removed
@@ -404,7 +402,7 @@ cmdListTx name = do
     return $ toJSON $ map (yamlTx . entityVal) txs
 
 -- | Create a transaction sending some coins to a single recipient address.
-cmdSend :: ( PersistStore m, PersistQuery m, PersistUnique m
+cmdSend :: ( PersistQuery m, PersistUnique m
            , PersistMonadBackend m ~ SqlBackend
            )
         => AccountName            -- ^ Account name.
@@ -419,7 +417,7 @@ cmdSend name a v fee = do
                     ]
 
 -- | Create a transaction sending some coins to a list of recipient addresses.
-cmdSendMany :: ( PersistStore m, PersistQuery m, PersistUnique m
+cmdSendMany :: ( PersistQuery m, PersistUnique m
                , PersistMonadBackend m ~ SqlBackend
                )
             => AccountName             -- ^ Account name.
@@ -440,7 +438,7 @@ cmdSendMany name dests fee = do
 -- work for both normal inputs and multisignature inputs. Signing is limited to
 -- the keys of one account only to allow for more control when the wallet is
 -- used as the backend of a web service.
-cmdSignTx :: (PersistStore m, PersistQuery m, PersistUnique m)
+cmdSignTx :: PersistUnique m
           => AccountName            -- ^ Account name.
           -> Tx                     -- ^ Transaction to sign. 
           -> SigHash                -- ^ Signature type to create. 

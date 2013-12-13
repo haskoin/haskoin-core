@@ -66,7 +66,7 @@ import Database.Persist
     , replace
     , (=.), (==.), (<-.)
     )
-import Database.Persist.Sqlite (SqlBackend)
+import Database.Persist.Sql (SqlBackend)
 
 import Network.Haskoin.Wallet.Keys
 import Network.Haskoin.Wallet.Manager
@@ -91,10 +91,7 @@ yamlTx tx = object $ concat
     ]
 
 -- |Remove a transaction from the database and any parent transaction
-dbRemoveTx :: ( PersistStore m, PersistQuery m, PersistUnique m
-              , PersistMonadBackend m ~ b, b ~ SqlBackend
-              )
-           => String -> EitherT String m [String]
+dbRemoveTx :: PersistQuery m => String -> EitherT String m [String]
 dbRemoveTx tid = do
     -- Find all parents of this transaction
     -- Partial transactions should not have any coins. Won't check for it
@@ -118,10 +115,10 @@ dbRemoveTx tid = do
     return $ tid:(concat pids)
           
 -- |Import a transaction into the database
-dbImportTx :: ( PersistStore m, PersistQuery m, PersistUnique m
-              , PersistMonadBackend m ~ b, b ~ SqlBackend
+dbImportTx :: ( PersistQuery m, PersistUnique m
+              , PersistMonadBackend m ~ SqlBackend
               ) 
-           => Tx -> EitherT String m [DbTxGeneric b]
+           => Tx -> EitherT String m [DbTxGeneric SqlBackend]
 dbImportTx tx = do
     coinsM <- mapM (getBy . f) $ map prevOutput $ txIn tx
     let inCoins = catMaybes coinsM
@@ -222,11 +219,9 @@ buildAccTx tx inCoins outCoins partial time = map build $ M.toList oMap
 
 -- |Create an orphaned coin if the input spends from an address in the wallet
 -- but the coin doesn't exist in the wallet. This allows out-of-order tx import
-dbImportOrphan :: ( PersistStore m, PersistQuery m, PersistUnique m
-                  , PersistMonadBackend m ~ b, b ~ SqlBackend
-                  ) 
+dbImportOrphan :: (PersistUnique m, PersistMonadBackend m ~ SqlBackend) 
                => CoinStatus -> TxIn 
-               -> EitherT String m (Maybe (DbCoinGeneric b))
+               -> EitherT String m (Maybe (DbCoinGeneric SqlBackend))
 dbImportOrphan status (TxIn (OutPoint h i) s _)
     | isLeft a  = return Nothing
     | otherwise = getBy (UniqueAddress b58) >>= \addrM -> case addrM of
@@ -247,11 +242,11 @@ dbImportOrphan status (TxIn (OutPoint h i) s _)
 -- address in the wallet. Does not actually write anything to the database
 -- if commit is False. This is for correctly reporting on partial transactions
 -- without creating coins in the database from a partial transaction
-dbImportCoin :: ( PersistStore m, PersistQuery m, PersistUnique m
-                , PersistMonadBackend m ~ b, b ~ SqlBackend
+dbImportCoin :: ( PersistQuery m, PersistUnique m
+                , PersistMonadBackend m ~ SqlBackend
                 )
              => String -> Bool -> (TxOut,Int) 
-             -> EitherT String m (Maybe (DbCoinGeneric b))
+             -> EitherT String m (Maybe (DbCoinGeneric SqlBackend))
 dbImportCoin tid commit ((TxOut v s), index) 
     | isLeft a  = return Nothing
     | otherwise = getBy (UniqueAddress b58) >>= \addrM -> case addrM of
@@ -285,10 +280,8 @@ dbImportCoin tid commit ((TxOut v s), index)
     
 -- |Builds a redeem script given an address. Only relevant for addresses
 -- linked to multisig accounts. Otherwise it returns Nothing
-dbGetRedeem :: ( PersistStore m, PersistQuery m, PersistUnique m
-               , PersistMonadBackend m ~ b, b ~ SqlBackend
-               ) 
-            => DbAddressGeneric b -> EitherT String m (Maybe String)
+dbGetRedeem :: (PersistStore m, PersistMonadBackend m ~ SqlBackend) 
+            => DbAddressGeneric SqlBackend -> EitherT String m (Maybe String)
 dbGetRedeem add = do
     acc <- liftMaybe accErr =<< (get $ dbAddressAccount add)
     rdm <- if isMSAcc acc 
@@ -308,7 +301,7 @@ dbGetRedeem add = do
     rdmErr = "dbGetRedeem: Could not generate redeem script"
 
 -- |Build and sign a transactoin given a list of recipients
-dbSendTx :: ( PersistStore m, PersistQuery m, PersistUnique m
+dbSendTx :: ( PersistUnique m, PersistQuery m
             , PersistMonadBackend m ~ SqlBackend
             )
          => AccountName -> [(String,Word64)] -> Word64
@@ -318,7 +311,7 @@ dbSendTx name dests fee = do
     dbSendCoins coins recips (SigAll False)
 
 -- |Given a list of recipients and a fee, finds a valid combination of coins
-dbSendSolution :: ( PersistStore m, PersistQuery m, PersistUnique m
+dbSendSolution :: ( PersistUnique m, PersistQuery m
                   , PersistMonadBackend m ~ SqlBackend
                   )
                => AccountName -> [(String,Word64)] -> Word64
@@ -339,8 +332,8 @@ dbSendSolution name dests fee = do
   where
     tot = sum $ map snd dests
     
--- |Build and sign a transaction by providing coins and recipients
-dbSendCoins :: (PersistStore m, PersistQuery m, PersistUnique m)
+-- | Build and sign a transaction by providing coins and recipients
+dbSendCoins :: PersistUnique m
             => [Coin] -> [(String,Word64)] -> SigHash
             -> EitherT String m (Tx, Bool)
 dbSendCoins coins recipients sh = do
@@ -350,7 +343,7 @@ dbSendCoins coins recipients sh = do
     bsTx <- liftEither $ buildToEither sigTx
     return (bsTx, isComplete sigTx)
 
-dbSignTx :: (PersistStore m, PersistQuery m, PersistUnique m)
+dbSignTx :: PersistUnique m
          => AccountName -> Tx -> SigHash -> EitherT String m (Tx, Bool)
 dbSignTx name tx sh = do
     (Entity ai _) <- dbGetAcc name
@@ -366,7 +359,7 @@ dbSignTx name tx sh = do
     g = ((dbGetSigData sh) =<<) . liftEither . toCoin . entityVal
 
 -- |Given a coin, retrieves the necessary data to sign a transaction
-dbGetSigData :: (PersistStore m, PersistUnique m, PersistQuery m)
+dbGetSigData :: PersistUnique m
              => SigHash -> Coin -> EitherT String m (SigInput,PrvKey)
 dbGetSigData sh coin = do
     (Entity _ w) <- dbGetWallet "main"

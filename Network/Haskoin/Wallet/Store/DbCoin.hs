@@ -20,7 +20,6 @@ import Data.Maybe (isJust, fromJust)
 
 import Database.Persist
     ( PersistStore
-    , PersistUnique
     , PersistQuery
     , PersistMonadBackend
     , Entity(..)
@@ -67,9 +66,7 @@ yamlCoin coin = object $ concat
     , if dbCoinOrphan coin then ["Orphan" .= True] else []
     ]
 
-dbBalance :: ( PersistQuery m
-             , PersistMonadBackend m ~ b
-             )
+dbBalance :: (PersistQuery m, PersistMonadBackend m ~ b)
           => Entity (DbAccountGeneric b)
           -> EitherT String m Int
 dbBalance (Entity ai _) = do
@@ -80,13 +77,9 @@ dbBalance (Entity ai _) = do
         ] []
     return $ sum $ map (dbCoinValue . entityVal) coins
 
-dbCoins :: ( PersistQuery m
-           , PersistUnique m
-           , PersistMonadBackend m ~ b
-           , b ~ SqlBackend
-           ) 
+dbCoins :: (PersistQuery m, PersistMonadBackend m ~ SqlBackend) 
         => DbAccountId 
-        -> EitherT String m [DbCoinGeneric b]
+        -> EitherT String m [DbCoinGeneric SqlBackend]
 dbCoins ai = do
     coins <- selectList 
         [ DbCoinAccount ==. ai

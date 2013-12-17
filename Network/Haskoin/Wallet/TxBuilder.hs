@@ -238,7 +238,7 @@ detSignTxIn txin sigi tx i keys = do
 -- is not empty, we consider it complete.
 toBuildTxIn :: TxIn -> Build TxIn
 toBuildTxIn txin@(TxIn _ s _)
-    | null $ runScript s = Partial txin
+    | null $ scriptOps s = Partial txin
     | otherwise = case decodeScriptHash s of
         Right (ScriptHashInput (SpendMulSig xs r) _) -> 
             guardPartial (length xs == r) >> return txin

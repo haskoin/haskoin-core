@@ -293,7 +293,7 @@ dbGetRedeem add = do
         key      <- loadPubAcc =<< (xPubImport $ dbAccountKey acc)
         msKeys   <- mapM xPubImport $ dbAccountMsKeys acc
         addrKeys <- f key msKeys $ fromIntegral $ dbAddressIndex add
-        let pks = map (xPubKey . runAddrPubKey) addrKeys
+        let pks = map (xPubKey . getAddrPubKey) addrKeys
         sortMulSig . (PayMulSig pks) <$> dbAccountMsRequired acc
       where
         f = if dbAddressInternal add then intMulSigKey else extMulSigKey
@@ -370,7 +370,7 @@ dbGetSigData sh coin = do
     aKey <- liftMaybe prvErr $ accPrvKey mst $ fromIntegral $ dbAccountIndex acc
     let g = if dbAddressInternal add then intPrvKey else extPrvKey
     sigKey <- liftMaybe addErr $ g aKey $ fromIntegral $ dbAddressIndex add
-    return (sigi, xPrvKey $ runAddrPrvKey sigKey)
+    return (sigi, xPrvKey $ getAddrPrvKey sigKey)
   where
     out    = scriptOutput $ coinTxOut coin
     rdm    = coinRedeem coin

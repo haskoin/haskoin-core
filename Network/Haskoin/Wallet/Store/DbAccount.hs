@@ -83,7 +83,7 @@ dbNewAcc name = do
         acc   = DbAccount name 
                           (fromIntegral i) 
                           (concat ["m/",show i,"'/"])
-                          (xPubExport $ runAccPubKey k)
+                          (xPubExport $ getAccPubKey k)
                           (-1) (-1) (-1) (-1)
                           Nothing Nothing [] wk time
     insert_ acc
@@ -113,7 +113,7 @@ dbNewMS name m n mskeys = do
         acc   = DbAccount name 
                           (fromIntegral i) 
                           (concat ["m/",show i,"'/"])
-                          (xPubExport $ runAccPubKey k)
+                          (xPubExport $ getAccPubKey k)
                           (-1) (-1) (-1) (-1) 
                           (Just m) (Just n) 
                           (map xPubExport keys)

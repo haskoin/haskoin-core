@@ -54,14 +54,14 @@ type KeyIndex = Word32
 -- | Data type representing an extended private key at the root of the
 -- derivation tree. Master keys have depth 0 and no parents. They are
 -- represented as m\/ in BIP32 notation.
-newtype MasterKey = MasterKey { runMasterKey :: XPrvKey }
+newtype MasterKey = MasterKey { masterKey :: XPrvKey }
     deriving (Eq, Show)
 
 -- | Data type representing a private account key. Account keys are generated
 -- from a 'MasterKey' through prime derivation. This guarantees that the
 -- 'MasterKey' will not be compromised if the account key is compromised. 
 -- 'AccPrvKey' is represented as m\/i'\/ in BIP32 notation.
-newtype AccPrvKey = AccPrvKey { runAccPrvKey :: XPrvKey }
+newtype AccPrvKey = AccPrvKey { getAccPrvKey :: XPrvKey }
     deriving (Eq, Show)
 
 -- | Data type representing a public account key. It is computed through
@@ -69,7 +69,7 @@ newtype AccPrvKey = AccPrvKey { runAccPrvKey :: XPrvKey }
 -- directly (property of prime derivation). It is represented as M\/i'\/ in
 -- BIP32 notation. 'AccPubKey' is used for generating receiving payment
 -- addresses without the knowledge of the 'AccPrvKey'.
-newtype AccPubKey = AccPubKey { runAccPubKey :: XPubKey }
+newtype AccPubKey = AccPubKey { getAccPubKey :: XPubKey }
     deriving (Eq, Show)
 
 -- | Data type representing a private address key. Private address keys are
@@ -80,7 +80,7 @@ newtype AccPubKey = AccPubKey { runAccPubKey :: XPubKey }
 -- receiving address. Internal (change) addresses are represented as
 -- m\/i'\/1\/j\/. Non-prime subtree 0 is used for regular receiving addresses
 -- and non-prime subtree 1 for internal (change) addresses.
-newtype AddrPrvKey = AddrPrvKey { runAddrPrvKey :: XPrvKey }
+newtype AddrPrvKey = AddrPrvKey { getAddrPrvKey :: XPrvKey }
     deriving (Eq, Show)
 
 -- | Data type representing a public address key. They are generated through
@@ -88,7 +88,7 @@ newtype AddrPrvKey = AddrPrvKey { runAddrPrvKey :: XPrvKey }
 -- read-only wallets. They are represented as M\/i'\/0\/j in BIP32 notation
 -- for regular receiving addresses and by M\/i'\/1\/j for internal (change)
 -- addresses.
-newtype AddrPubKey = AddrPubKey { runAddrPubKey :: XPubKey }
+newtype AddrPubKey = AddrPubKey { getAddrPubKey :: XPubKey }
     deriving (Eq, Show)
 
 -- | Create a 'MasterKey' from a seed.
@@ -196,7 +196,7 @@ intPubKeys a i = mapMaybe f $ cycleIndex i
 
 -- | Computes an 'Address' from an 'AddrPubKey'.
 addr :: AddrPubKey -> Address
-addr = xPubAddr . runAddrPubKey
+addr = xPubAddr . getAddrPubKey
 
 -- | Computes an external base58 address from an 'AccPubKey' and a 
 -- derivation index.
@@ -238,7 +238,7 @@ intAddrs' a i = mapMaybe f $ cycleIndex' i
 -- multisig accounts.
 extMulSigKey :: AccPubKey -> [XPubKey] -> KeyIndex -> Maybe [AddrPubKey]
 extMulSigKey a ps i = (map AddrPubKey) <$> mulSigSubKey keys i
-    where keys = map (fromJust . (flip pubSubKey 0)) $ (runAccPubKey a) : ps
+    where keys = map (fromJust . (flip pubSubKey 0)) $ (getAccPubKey a) : ps
 
 -- | Computes a list of internal 'AddrPubKey' from an 'AccPubKey', a list
 -- of thirdparty multisig keys and a derivation index. This is useful for 
@@ -246,7 +246,7 @@ extMulSigKey a ps i = (map AddrPubKey) <$> mulSigSubKey keys i
 -- multisig accounts.
 intMulSigKey :: AccPubKey -> [XPubKey] -> KeyIndex -> Maybe [AddrPubKey]
 intMulSigKey a ps i = (map AddrPubKey) <$> mulSigSubKey keys i
-    where keys = map (fromJust . (flip pubSubKey 1)) $ (runAccPubKey a) : ps
+    where keys = map (fromJust . (flip pubSubKey 1)) $ (getAccPubKey a) : ps
 
 -- | Cyclic list of all external multisignature 'AddrPubKey' derivations 
 -- starting from an offset index.
@@ -264,14 +264,14 @@ intMulSigKeys a ps i = mapMaybe f $ cycleIndex i
 -- list of thirdparty multisig keys and a derivation index.
 extMulSigAddr :: AccPubKey -> [XPubKey] -> Int -> KeyIndex -> Maybe String
 extMulSigAddr a ps r i = do
-    xs <- (map (xPubKey . runAddrPubKey)) <$> extMulSigKey a ps i
+    xs <- (map (xPubKey . getAddrPubKey)) <$> extMulSigKey a ps i
     return $ addrToBase58 $ scriptAddr $ sortMulSig $ PayMulSig xs r
 
 -- | Computes an internal base58 multisig address from an 'AccPubKey', a
 -- list of thirdparty multisig keys and a derivation index.
 intMulSigAddr :: AccPubKey -> [XPubKey] -> Int -> KeyIndex -> Maybe String
 intMulSigAddr a ps r i = do
-    xs <- (map (xPubKey . runAddrPubKey)) <$> intMulSigKey a ps i
+    xs <- (map (xPubKey . getAddrPubKey)) <$> intMulSigKey a ps i
     return $ addrToBase58 $ scriptAddr $ sortMulSig $ PayMulSig xs r
 
 -- | Cyclic list of all external base58 multisig addresses derived from

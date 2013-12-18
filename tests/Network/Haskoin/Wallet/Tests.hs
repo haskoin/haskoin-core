@@ -71,15 +71,15 @@ b58PubKey k = (fromJust $ xPubImport $ xPubExport k) == k
 
 decEncMaster :: MasterKey -> Bool
 decEncMaster k = (fromJust $ loadMasterKey $ decode' bs) == k
-    where bs = encode' $ runMasterKey k
+    where bs = encode' $ masterKey k
 
 decEncPrvAcc :: AccPrvKey -> Bool
 decEncPrvAcc k = (fromJust $ loadPrvAcc $ decode' bs) == k
-    where bs = encode' $ runAccPrvKey k
+    where bs = encode' $ getAccPrvKey k
 
 decEncPubAcc :: AccPubKey -> Bool
 decEncPubAcc k = (fromJust $ loadPubAcc $ decode' bs) == k
-    where bs = encode' $ runAccPubKey k
+    where bs = encode' $ getAccPubKey k
 
 {- Building Transactions -}
 

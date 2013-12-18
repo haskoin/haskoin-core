@@ -107,7 +107,7 @@ testInit = do
 
     let (Entity _ w) = fromJust walletE
         key          = fromJust $ makeMasterKey $ stringToBS "Hello World"
-        keystr       = xPrvExport $ runMasterKey key
+        keystr       = xPrvExport $ masterKey key
 
     -- Check wallet master key
     liftIO $ assertEqual "Wallet master key" keystr $ dbWalletMaster w
@@ -190,7 +190,7 @@ testNewAcc = do
 
     -- Initialize some keys for future tests
     let mstKey = fromJust $ makeMasterKey $ stringToBS "Hello World"
-        prvKey = runAccPrvKey $ fromJust $ accPrvKey mstKey 1
+        prvKey = getAccPrvKey $ fromJust $ accPrvKey mstKey 1
         pubKey = deriveXPubKey prvKey
        
     -- Dump keys for account "acc1"
@@ -384,9 +384,9 @@ testNewMS = do
     -- Initialize some keys for the next tests
     let mstKey = fromJust $ makeMasterKey $ stringToBS "Hello World"
         mstKey2 = fromJust $ makeMasterKey $ stringToBS "Hello World 2"
-        prvs = map (runAccPrvKey . fst) $ accPrvKeys mstKey 0
+        prvs = map (getAccPrvKey . fst) $ accPrvKeys mstKey 0
         pubs = map deriveXPubKey prvs
-        prvs2 = map (runAccPrvKey . fst) $ accPrvKeys mstKey2 0
+        prvs2 = map (getAccPrvKey . fst) $ accPrvKeys mstKey2 0
         pubs2 = map deriveXPubKey prvs2
 
     -- Count the number of accounts in the database

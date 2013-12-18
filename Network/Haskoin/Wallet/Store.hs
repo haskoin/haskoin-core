@@ -108,7 +108,7 @@ cmdInit seed
     | otherwise = do
         time   <- liftIO getCurrentTime
         master <- liftMaybe err $ makeMasterKey $ stringToBS seed
-        let str = xPrvExport $ runMasterKey master
+        let str = xPrvExport $ masterKey master
         prev <- getBy $ UniqueWalletName "main"
         when (isJust prev) $ left
             "cmdInit: Wallet is already initialized"
@@ -192,7 +192,7 @@ cmdDumpKeys name = do
     master <- liftMaybe keyErr keyM
     prv <- liftMaybe prvErr $ 
         accPrvKey master (fromIntegral $ dbAccountIndex acc)
-    let prvKey = runAccPrvKey prv
+    let prvKey = getAccPrvKey prv
         pubKey = deriveXPubKey prvKey
         ms | isMSAcc acc = ["MSKeys" .= (toJSON $ dbAccountMsKeys acc)]
            | otherwise   = []
@@ -288,7 +288,7 @@ cmdWIF name key = do
     aKey <- liftMaybe prvErr $ accPrvKey mst $ fromIntegral $ dbAccountIndex acc
     let index = fromIntegral $ dbAddressIndex add
     addrPrvKey <- liftMaybe addErr $ extPrvKey aKey index
-    let prvKey = xPrvKey $ runAddrPrvKey addrPrvKey
+    let prvKey = xPrvKey $ getAddrPrvKey addrPrvKey
     return $ object [ "WIF" .= T.pack (toWIF prvKey) ]
   where 
     keyErr = unwords ["cmdWIF: Key",show key,"does not exist"]

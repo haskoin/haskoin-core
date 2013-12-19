@@ -181,7 +181,7 @@ cmdListAcc :: PersistQuery m
 cmdListAcc = toJSON . (map (yamlAcc . entityVal)) <$> selectList [] []
 
 -- | Returns information on extended public and private keys of an account.
--- For multisignature account, thirdparty keys are also returned.
+-- For a multisignature account, thirdparty keys are also returned.
 cmdDumpKeys :: PersistUnique m
             => AccountName            -- ^ Account name.
             -> EitherT String m Value -- ^ Extended key information.
@@ -352,7 +352,7 @@ cmdAllCoins = do
 -- command will only update the existing transaction in the wallet. A new
 -- transaction entry will be created for every account affected by this
 -- transaction. Every transaction entry will summarize the information related
--- to it's account only (such as total movement for this account).
+-- to its account only (such as total movement for this account).
 cmdImportTx :: ( PersistQuery m, PersistUnique m
                , PersistMonadBackend m ~ SqlBackend
                ) 
@@ -375,8 +375,8 @@ cmdRemoveTx tid = do
     removed <- dbRemoveTx tid
     return $ toJSON removed
 
--- | List all the transaction entries for an account. Transaction entries 
--- summarize a transaction's information for a specific account only (such as
+-- | List all the transaction entries for an account. Transaction entries
+-- summarize information for a transaction in a specific account only (such as
 -- the total movement of for this account).
 --
 -- Transaction entries can also be tagged as /Orphan/ or /Partial/. Orphaned
@@ -468,8 +468,8 @@ cmdDecodeTx str = do
 -- Outpoint format as JSON:
 --
 -- >   [ 
--- >       { \"txid\": txid
--- >       , \"vout\": n
+-- >       { "txid": txid
+-- >       , "vout": n
 -- >       },...
 -- >   ] 
 --
@@ -499,10 +499,10 @@ cmdBuildRawTx i o = do
 -- Signing data as JSON (scriptRedeem is optional):
 --
 -- >   [ 
--- >       { \"txid\": txid
--- >       , \"vout\": n
--- >       , \"scriptPubKey\": hex
--- >       , \"scriptRedeem\": hex
+-- >       { "txid": txid
+-- >       , "vout": n
+-- >       , "scriptPubKey": hex
+-- >       , "scriptRedeem": hex
 -- >       },...
 -- >    ]
 --

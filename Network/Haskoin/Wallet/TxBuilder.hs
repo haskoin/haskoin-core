@@ -170,7 +170,7 @@ data SigInput
     -- | Parameters for signing a pay to script hash output.
     | SigInputSH { sigDataOut :: Script   
                  , sigDataOP  :: OutPoint 
-                 , sigRedeem  :: Script   -- ^ Redeem script$.
+                 , sigRedeem  :: Script   -- ^ Redeem script.
                  , sigDataSH  :: SigHash  
                  } deriving (Eq, Show)
 

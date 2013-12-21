@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-import Data.JSONRPC.Message
+import Data.JSONRPC.Types
 import Data.Maybe
 import Data.Aeson
 import Test.HUnit

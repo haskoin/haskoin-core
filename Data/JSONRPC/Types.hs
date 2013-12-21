@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Data.JSONRPC.Message
+module Data.JSONRPC.Types
 ( ID(..)
 , Params(..)
 , Method

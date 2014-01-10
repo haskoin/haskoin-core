@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Data.JSONRPC.Types
-( ID(..)
+module Data.Haskoin.JsonRpc
+( RequestID(..)
 , Params(..)
 , Method
 
@@ -44,13 +44,13 @@ data Params = PObject Object
             | PArray Array
     deriving (Eq, Show)
 
-data ID = IntID Integer
-        | TextID T.Text
-        | NullID
+data RequestID = IntID Integer
+               | TextID T.Text
+               | NullID
     deriving (Eq, Show)
 
 data Request    = Request
-                    { requestID :: ID
+                    { requestID :: RequestID
                     , requestMethod :: Method
                     , requestParams :: Maybe Params
                     }
@@ -59,7 +59,7 @@ data Request    = Request
                     , requestParams :: Maybe Params
                     }
                 | Request1
-                    { requestID :: ID
+                    { requestID :: RequestID
                     , requestMethod :: Method
                     , requestParams :: Maybe Params
                     }
@@ -70,21 +70,21 @@ data Request    = Request
             deriving (Eq, Show)
 
 data Response   = Response
-                    { responseID :: ID
+                    { responseID :: RequestID
                     , responseResult :: Value
                     }
                 | ErrorResponse
-                    { responseID :: ID
+                    { responseID :: RequestID
                     , errorCode :: Int
                     , errorMessage :: String
                     , errorData :: Maybe Value
                     }
                 | Response1
-                    { responseID :: ID
+                    { responseID :: RequestID
                     , responseResult :: Value
                     }
                 | ErrorResponse1
-                    { responseID :: ID
+                    { responseID :: RequestID
                     , responseResult :: Value
                     }
             deriving (Eq, Show)
@@ -97,13 +97,13 @@ data Document   = Batch [Either Value Message]
                 | Single (Either Value Message)
         deriving (Eq, Show)
 
-instance FromJSON ID where
+instance FromJSON RequestID where
     parseJSON (Number (I i)) = return . IntID $ i
-    parseJSON (Null)         = return NullID
+    parseJSON (Null)         = return   NullID
     parseJSON (String t)     = return . TextID $ t
     parseJSON _              = mzero
 
-instance ToJSON ID where
+instance ToJSON RequestID where
     toJSON (IntID  i) = toJSON i
     toJSON (NullID)   = toJSON Null
     toJSON (TextID t) = toJSON t
@@ -278,7 +278,7 @@ invalidRequest = ErrorResponse
     , errorData = Nothing
     }
 
-methodNotFound :: ID -> Response
+methodNotFound :: RequestID -> Response
 methodNotFound i = ErrorResponse
     { responseID = i
     , errorCode = -32601
@@ -286,7 +286,7 @@ methodNotFound i = ErrorResponse
     , errorData = Nothing
     }
 
-invalidParams :: ID -> Response
+invalidParams :: RequestID -> Response
 invalidParams i = ErrorResponse
     { responseID = i
     , errorCode = -32602
@@ -294,7 +294,7 @@ invalidParams i = ErrorResponse
     , errorData = Nothing
     }
 
-internalError :: ID -> Response
+internalError :: RequestID -> Response
 internalError i = ErrorResponse
     { responseID = i
     , errorCode = -32603

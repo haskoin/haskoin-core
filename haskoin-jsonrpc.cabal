@@ -1,17 +1,17 @@
-name:                   jsonrpc-data
+name:                   haskoin-jsonrpc
 version:                0.1.0.0
-synopsis:               Transport-agnostic JSONRPC messages
-homepage:               http://github.com/Xeno-Genesis/jsonrpc-data
+synopsis:               Transport-agnostic JSON-RPC client and server
+homepage:               http://github.com/Xeno-Genesis/haskoin-jsonrpc
 license:                PublicDomain
 license-file:           UNLICENSE
 author:                 Jean-Pierre Rupp
-maintainer:             root@xeno-genesis.com
+maintainer:             root@haskoin.com
 category:               Data
 build-type:             Simple
 cabal-version:          >=1.8
 
 library
-    exposed-modules:    Data.JSONRPC.Types
+    exposed-modules:    Data.Haskoin.JsonRpc
     -- other-modules:        
     build-depends:      base == 4.6.*,
                         text,
@@ -20,9 +20,9 @@ library
                         aeson,
                         attoparsec
 
-Test-Suite test-jsonpc-data
+Test-Suite test-haskoin-jsonrpc
     type:               exitcode-stdio-1.0
-    main-is:            test-jsonrpc-data.hs
+    main-is:            test-haskoin-jsonrpc.hs
     build-depends:      base == 4.6.*,
                         aeson,
                         attoparsec,

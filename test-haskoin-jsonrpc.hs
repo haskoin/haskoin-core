@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-import Data.Haskoin.JsonRpc
+import Data.Haskoin.JsonRpc.Message
 import Data.Maybe
 import Data.Aeson
 import Test.HUnit

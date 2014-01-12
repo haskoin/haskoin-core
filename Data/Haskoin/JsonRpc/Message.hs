@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Data.Haskoin.JsonRpc
+module Data.Haskoin.JsonRpc.Message
 ( RequestID(..)
 , Params(..)
 , Method

@@ -133,7 +133,7 @@ guessMSSize :: (Int,Int) -> Int
           -- OutPoint (36) + Sequence (4) + Script
 guessMSSize (m,n) = 40 + (BS.length $ encode' $ VarInt $ fromIntegral scp) + scp
           -- OP_M + n*PubKey + OP_N + OP_CHECKMULTISIG
-    where rdm = BS.length $ encode' $ OP_PUSHDATA $ BS.replicate (n*34 + 3) 0
+    where rdm = BS.length $ encode' $ opPushData $ BS.replicate (n*34 + 3) 0
           -- Redeem + m*sig + OP_0
           scp = rdm + m*73 + 1 
 

@@ -259,7 +259,7 @@ instance ToJSON ScriptOutput where
         ]
     toJSON (PayPKHash a) = object 
         [ (T.pack "PayToPublicKeyHash") .= object
-            [ (T.pack "Address Hash160") .= (bsToHex $ encode' $ getAddress a)
+            [ (T.pack "Address Hash160") .= (bsToHex $ encode' $ getAddrHash a)
             , (T.pack "Address Base58") .= addrToBase58 a
             ]
         ]
@@ -271,7 +271,7 @@ instance ToJSON ScriptOutput where
         ]
     toJSON (PayScriptHash a) = object 
         [ (T.pack "PayToScriptHash") .= object
-            [ (T.pack "Address Hash160") .= (bsToHex $ encode' $ getAddress a)
+            [ (T.pack "Address Hash160") .= (bsToHex $ encode' $ getAddrHash a)
             , (T.pack "Address Base58") .= addrToBase58 a
             ]
         ]

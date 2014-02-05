@@ -37,6 +37,7 @@ import Database.Persist
 import Network.Haskoin.Wallet.Keys
 import Network.Haskoin.Wallet.Manager
 import Network.Haskoin.Wallet.Store.Util
+import Network.Haskoin.Util
 
 yamlAcc :: DbAccountGeneric b -> Value
 yamlAcc acc = object $ concat

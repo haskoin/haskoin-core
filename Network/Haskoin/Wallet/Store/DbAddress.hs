@@ -39,6 +39,7 @@ import Network.Haskoin.Wallet.Keys
 import Network.Haskoin.Wallet.Manager
 import Network.Haskoin.Wallet.Store.DbAccount
 import Network.Haskoin.Wallet.Store.Util
+import Network.Haskoin.Util
 
 yamlAddr :: DbAddressGeneric b -> Value
 yamlAddr a

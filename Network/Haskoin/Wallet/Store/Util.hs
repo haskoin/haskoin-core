@@ -25,13 +25,11 @@ module Network.Haskoin.Wallet.Store.Util
 , catStatus
 , dbGetWallet
 , dbGetTxBlob
-, liftEither
-, liftMaybe
 , migrateAll
 ) where
 
 import Control.Monad.Trans (lift)
-import Control.Monad.Trans.Either (EitherT, hoistEither)
+import Control.Monad.Trans.Either (EitherT)
 
 import Data.Time (UTCTime)
 import Data.Yaml
@@ -85,12 +83,6 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 type AccountName = String
-
-liftEither :: Monad m => Either String a -> EitherT String m a
-liftEither = hoistEither
-
-liftMaybe :: Monad m => String -> Maybe a -> EitherT String m a
-liftMaybe err = liftEither . (maybeToEither err)
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
 DbWallet json

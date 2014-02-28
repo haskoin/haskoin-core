@@ -11,23 +11,19 @@ build-type:             Simple
 cabal-version:          >=1.8
 
 library
-    exposed-modules:    Data.Haskoin.JsonRpc.Message
-    -- other-modules:        
+    exposed-modules:    Data.Haskoin.JSONRPC.Message
     build-depends:      base == 4.6.*,
                         text,
                         vector,
                         unordered-containers,
-                        aeson,
-                        attoparsec
+                        aeson
 
-Test-Suite test-haskoin-jsonrpc
+Test-Suite haskoin-jsonrpc-tests
     type:               exitcode-stdio-1.0
-    main-is:            test-haskoin-jsonrpc.hs
+    hs-source-dirs:     tests
+    main-is:            Messages.hs
     build-depends:      base == 4.6.*,
-                        aeson,
-                        attoparsec,
                         bytestring,
-                        HUnit,
-                        text,
-                        unordered-containers,
-                        vector
+                        haskoin-jsonrpc,
+                        aeson,
+                        HUnit

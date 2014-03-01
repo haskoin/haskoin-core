@@ -13,7 +13,7 @@ import Database.Persist.TH (derivePersistField)
 import Data.Yaml
 import qualified Data.Text as T (pack)
 
--- |Spent if a complete transaction spends this coin
+-- | Spent if a complete transaction spends this coin
 -- Reserved if a partial transaction is spending these coins
 -- Unspent if the coins are still available
 -- The purpose of the Reserved status is to block this coin from being used in

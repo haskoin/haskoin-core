@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Data.Haskoin.JSONRPC.Message
+module Network.Haskoin.JSONRPC.Message
     (
       -- Data
       Method

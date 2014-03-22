@@ -94,11 +94,12 @@ testInit :: (PersistStore m, PersistUnique m, PersistQuery m)
 testInit = do 
 
     -- Initializing the wallet with an empty seed should fail
-    runEitherT (cmdInit "") >>= liftIO . assertEqual "Init empty seed" 
-        (Left "cmdInit: seed can not be empty") 
+    runEitherT (cmdInit $ stringToBS "") >>=
+        liftIO . assertEqual "Init empty seed"
+            (Left "cmdInit: seed can not be empty")
 
     -- Initialize wallet with seed "Hello World"
-    _ <- cmdInit "Hello World" 
+    _ <- cmdInit $ stringToBS "Hello World" 
 
     walletE <- getBy $ UniqueWalletName "main"
     

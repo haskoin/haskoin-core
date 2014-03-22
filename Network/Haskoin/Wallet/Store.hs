@@ -10,7 +10,8 @@
 -}
 module Network.Haskoin.Wallet.Store
 ( 
-  cmdInit
+  cmdInitMnemo
+, cmdInit
 
 -- *Account Commands
 , cmdNewAcc
@@ -53,6 +54,7 @@ import Control.Monad (when)
 import Control.Monad.Trans (liftIO)
 import Control.Monad.Trans.Either (EitherT, left)
 
+import qualified Data.ByteString as BS
 import Data.Time (getCurrentTime)
 import Data.Yaml 
     ( Value (Null)
@@ -63,7 +65,7 @@ import Data.Yaml
 import Data.Maybe (isJust, fromJust)
 import Data.List (sortBy)
 import qualified Data.Aeson as Json (decode)
-import qualified Data.Text as T (pack)
+import qualified Data.Text as T (pack, unpack)
 
 import Database.Persist
     ( PersistStore
@@ -98,16 +100,36 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Util.BuildMonad
 
+-- | Initialize a wallet from a mnemonic seed and a passphrase, which
+-- could be blank. If mnemonic is Nothing, create new one and print it.
+
+cmdInitMnemo :: PersistUnique m
+             => String
+             => Maybe String
+             => EitherT String m Value
+
+cmdInitMnemo pass (Just ms) = do
+    seed <- liftEither $ mnemonicToSeed english (T.pack pass) (T.pack ms)
+    cmdInit seed
+
+cmdInitMnemo pass Nothing = do
+    ent <- liftIO $ devRandom 16
+    ms <- liftEither $ toMnemonic english ent
+    seed <- liftEither $ mnemonicToSeed english (T.pack pass) ms
+    liftIO $ putStrLn $ "Wallet seed: " ++ T.unpack ms
+    cmdInit seed
+
+
 -- | Initialize a wallet from a secret seed. This function will fail if the
 -- wallet is already initialized.
 cmdInit :: PersistUnique m
-        => String                 -- ^ Secret seed.
+        => BS.ByteString          -- ^ Secret seed.
         -> EitherT String m Value -- ^ Returns Null.
 cmdInit seed 
-    | null seed = left "cmdInit: seed can not be empty"
+    | BS.null seed = left "cmdInit: seed can not be empty"
     | otherwise = do
         time   <- liftIO getCurrentTime
-        master <- liftMaybe err $ makeMasterKey $ stringToBS seed
+        master <- liftMaybe err $ makeMasterKey seed
         let str = xPrvExport $ masterKey master
         prev <- getBy $ UniqueWalletName "main"
         when (isJust prev) $ left

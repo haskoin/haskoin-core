@@ -29,7 +29,7 @@ import Database.Persist
     , PersistMonadBackend
     )
 import Database.Persist.Sql ()
-import Database.Persist.Sqlite (SqlBackend, runSqlite, runMigration)
+import Database.Persist.Sqlite (SqlBackend, runSqlite, runMigrationSilent)
 
 import Data.Maybe (listToMaybe)
 import qualified Data.Text as T (pack, unpack, splitOn)
@@ -204,7 +204,7 @@ process opts xs
     | otherwise = getWorkDir >>= \dir -> do
         let (cmd,args) = (head xs, tail xs)
         res <- tryJust catchEx $ runSqlite (T.pack dir) $ runEitherT $ do
-            lift $ runMigration migrateAll
+            _ <- lift $ runMigrationSilent migrateAll
             dispatchCommand cmd opts args 
         case join res of
             Left err -> formatStr err

@@ -65,7 +65,7 @@ import Data.Yaml
 import Data.Maybe (isJust, fromJust)
 import Data.List (sortBy)
 import qualified Data.Aeson as Json (decode)
-import qualified Data.Text as T (pack, unpack)
+import qualified Data.Text as T (pack)
 
 import Database.Persist
     ( PersistStore
@@ -102,11 +102,10 @@ import Network.Haskoin.Util.BuildMonad
 
 -- | Initialize a wallet from a mnemonic seed and a passphrase, which
 -- could be blank. If mnemonic is Nothing, create new one and print it.
-
 cmdInitMnemo :: PersistUnique m
-             => String
-             => Maybe String
-             => EitherT String m Value
+             => String                   -- ^ Passphrase to protect mnemonic
+             => Maybe String             -- ^ Mnemonic string
+             => EitherT String m Value   -- ^ String mnemonic or Null
 
 cmdInitMnemo pass (Just ms) = do
     checkExisting
@@ -118,8 +117,8 @@ cmdInitMnemo pass Nothing = do
     ent <- liftIO $ devRandom 16
     ms <- liftEither $ toMnemonic english ent
     seed <- liftEither $ mnemonicToSeed english (T.pack pass) ms
-    liftIO $ putStrLn $ "Wallet seed: " ++ T.unpack ms
-    cmdInit seed
+    _ <- cmdInit seed
+    return $ object ["Seed" .= ms]
 
 
 -- | Initialize a wallet from a secret seed. This function will fail if the

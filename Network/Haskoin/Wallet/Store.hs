@@ -10,7 +10,8 @@
 -}
 module Network.Haskoin.Wallet.Store
 ( 
-  cmdInit
+  cmdInitMnemo
+, cmdInit
 
 -- *Account Commands
 , cmdNewAcc
@@ -53,6 +54,7 @@ import Control.Monad (when)
 import Control.Monad.Trans (liftIO)
 import Control.Monad.Trans.Either (EitherT, left)
 
+import qualified Data.ByteString as BS
 import Data.Time (getCurrentTime)
 import Data.Yaml 
     ( Value (Null)
@@ -98,20 +100,39 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Util.BuildMonad
 
+-- | Initialize a wallet from a mnemonic seed and a passphrase, which
+-- could be blank. If mnemonic is Nothing, create new one and print it.
+cmdInitMnemo :: PersistUnique m
+             => String                   -- ^ Passphrase to protect mnemonic
+             => Maybe String             -- ^ Mnemonic string
+             => EitherT String m Value   -- ^ String mnemonic or Null
+
+cmdInitMnemo pass (Just ms) = do
+    checkExisting
+    seed <- liftEither $ mnemonicToSeed english (T.pack pass) (T.pack ms)
+    cmdInit seed
+
+cmdInitMnemo pass Nothing = do
+    checkExisting
+    ent <- liftIO $ devRandom 16
+    ms <- liftEither $ toMnemonic english ent
+    seed <- liftEither $ mnemonicToSeed english (T.pack pass) ms
+    _ <- cmdInit seed
+    return $ object ["Seed" .= ms]
+
+
 -- | Initialize a wallet from a secret seed. This function will fail if the
 -- wallet is already initialized.
 cmdInit :: PersistUnique m
-        => String                 -- ^ Secret seed.
+        => BS.ByteString          -- ^ Secret seed.
         -> EitherT String m Value -- ^ Returns Null.
 cmdInit seed 
-    | null seed = left "cmdInit: seed can not be empty"
+    | BS.null seed = left "cmdInit: seed can not be empty"
     | otherwise = do
+        checkExisting
         time   <- liftIO getCurrentTime
-        master <- liftMaybe err $ makeMasterKey $ stringToBS seed
+        master <- liftMaybe err $ makeMasterKey seed
         let str = xPrvExport $ masterKey master
-        prev <- getBy $ UniqueWalletName "main"
-        when (isJust prev) $ left
-            "cmdInit: Wallet is already initialized"
         insert_ $ DbWallet "main" "full" str (-1) time
         return Null
   where 
@@ -532,3 +553,7 @@ cmdSignRawTx tx strSigi strKeys sh  = do
     keysErr = "cmdSignRawTx: Could not parse private keys (WIF)"
 
 
+checkExisting :: PersistUnique m => EitherT String m ()
+checkExisting = do
+    prev <- getBy $ UniqueWalletName "main"
+    when (isJust prev) $ left "checkExisting: Wallet is already initialized"

@@ -109,10 +109,12 @@ cmdInitMnemo :: PersistUnique m
              => EitherT String m Value
 
 cmdInitMnemo pass (Just ms) = do
+    checkExisting
     seed <- liftEither $ mnemonicToSeed english (T.pack pass) (T.pack ms)
     cmdInit seed
 
 cmdInitMnemo pass Nothing = do
+    checkExisting
     ent <- liftIO $ devRandom 16
     ms <- liftEither $ toMnemonic english ent
     seed <- liftEither $ mnemonicToSeed english (T.pack pass) ms
@@ -128,12 +130,10 @@ cmdInit :: PersistUnique m
 cmdInit seed 
     | BS.null seed = left "cmdInit: seed can not be empty"
     | otherwise = do
+        checkExisting
         time   <- liftIO getCurrentTime
         master <- liftMaybe err $ makeMasterKey seed
         let str = xPrvExport $ masterKey master
-        prev <- getBy $ UniqueWalletName "main"
-        when (isJust prev) $ left
-            "cmdInit: Wallet is already initialized"
         insert_ $ DbWallet "main" "full" str (-1) time
         return Null
   where 
@@ -554,3 +554,7 @@ cmdSignRawTx tx strSigi strKeys sh  = do
     keysErr = "cmdSignRawTx: Could not parse private keys (WIF)"
 
 
+checkExisting :: PersistUnique m => EitherT String m ()
+checkExisting = do
+    prev <- getBy $ UniqueWalletName "main"
+    when (isJust prev) $ left "checkExisting: Wallet is already initialized"

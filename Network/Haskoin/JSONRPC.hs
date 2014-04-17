@@ -28,18 +28,18 @@ import qualified Data.Vector            as V
 type Method = T.Text
 
 data ID
-    = IntID Integer
+    = IntID Int
     | TxtID T.Text
     deriving (Eq, Show)
 
 data ErrorObj
-    = ErrorObj { errCode :: Int , errMessage :: String , errData :: Value }
+    = ErrorObj { errCode :: Int, errMessage :: String, errData :: Value }
     | ErrorVal Value
     deriving (Eq, Show)
 
 data Request
-    = Request { reqMethod  :: Method, reqParams  :: Value, reqID :: ID }
-    | Notification { reqMethod  :: Method, reqParams  :: Value }
+    = Request { reqMethod :: Method, reqParams :: Value, reqID :: ID }
+    | Notification { reqMethod :: Method, reqParams :: Value }
     deriving (Eq, Show)
 
 data Response

@@ -1,0 +1,12 @@
+{ "method": "echo", "params": ["Hello JSON-RPC"], "id": 1}
+{"method": "postMessage", "params": ["Hello all!"], "id": 99}
+{"method": "postMessage", "params": ["I have a question:"], "id": 101}
+{"jsonrpc": "2.0", "method": "subtract", "params": [42, 23], "id": 1}
+{"jsonrpc": "2.0", "method": "subtract", "params": [23, 42], "id": 2}
+{"jsonrpc": "2.0", "method": "subtract", "params": {"subtrahend": 23, "minuend": 42}, "id": 3}
+{"jsonrpc": "2.0", "method": "subtract", "params": {"minuend": 42, "subtrahend": 23}, "id": 4}
+{"jsonrpc": "2.0", "method": "foobar", "id": "1"}
+{"jsonrpc": "2.0", "method": "sum", "params": [1,2,4], "id": "1"}
+{"jsonrpc": "2.0", "method": "subtract", "params": [42,23], "id": "2"}
+{"jsonrpc": "2.0", "method": "foo.get", "params": {"name": "myself"}, "id": "5"}
+{"jsonrpc": "2.0", "method": "get_data", "id": "9"}

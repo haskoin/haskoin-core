@@ -3,34 +3,42 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Network.Haskoin.JSONRPC.Conduit
 ( AppTCP
-, ContextTCP
+, AppContext
 , runAppTCP
-, newID
-, jsonSource
-, jsonSink
+, newReq
+, recvRes
 ) where
 
-import Control.Applicative
 import Control.Monad.State.Lazy
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString as BS
-import Data.Aeson
-import Data.Conduit
 import Data.Conduit.Network
-import Data.Conduit.Binary
-import Data.Conduit.Attoparsec
+import qualified Data.IntMap.Strict as IntMap
+import qualified Data.Traversable as DT
 
-type ContextTCP a = MonadIO m => StateT Integer m a
-type AppTCP = AppData IO -> ContextTCP ()
+data AppState r m o = AppState (IntMap.IntMap (r -> m o)) Int
 
-jsonSink :: (MonadThrow m, FromJSON j) => Consumer BS.ByteString m (Result j)
-jsonSink = sinkParser $ fromJSON <$> json'
+type AppContext r m o = StateT (AppState r m o)
+type AppTCP r m o = AppData IO -> AppContext r m o IO ()
 
-jsonSource :: (Monad m, ToJSON j) => j -> Producer m BS.ByteString
-jsonSource j = sourceLbs $ encode j `BL.append` "\n"
+initialState :: AppState r m o
+initialState = AppState IntMap.empty 0
 
-runAppTCP :: ClientSettings IO -> AppTCP -> IO ()
-runAppTCP cs app = runTCPClient cs (\ad -> evalStateT (app ad) 1)
+runAppTCP :: ClientSettings IO -> AppTCP r m o -> IO ()
+runAppTCP cs app = runTCPClient cs (\ad -> evalStateT (app ad) initialState)
 
-newID :: Monad m => (Integer -> a) -> StateT Integer m a
-newID f = state (\s -> (s, s + 1)) >>= return . f
+newReq :: (Monad m, Monad n)
+       => (Int -> a) -> (r -> m o) -> AppContext r m o n a
+newReq f cb = do
+    AppState c i <- get
+    let ni = i + 1
+        nc = IntMap.insert ni cb c
+    put (AppState nc ni)
+    return (f ni)
+
+recvRes :: (Monad m, Monad n)
+        => (r -> Int) -> r -> AppContext r m o n (m (Maybe o))
+recvRes g x = do
+    AppState c n <- get
+    let (cb, nc) = IntMap.updateLookupWithKey (\_ _ -> Nothing) (g x) c
+    put (AppState nc n)
+    -- return $ maybe (return Nothing) (\f -> f x >>= return . Just) cb
+    return $ DT.sequence (cb >>= \f -> return $ f x)

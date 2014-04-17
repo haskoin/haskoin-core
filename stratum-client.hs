@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings, Rank2Types #-}
-
 import Control.Monad.Error
 import Data.Aeson
 import qualified Data.ByteString.Lazy.Char8 as C
@@ -14,7 +13,7 @@ import Network.Haskoin.JSONRPC.Conduit
 import Network.Haskoin.JSONRPC.Stratum
 import System.Environment
 
-app :: AppTCP Response Result StratumResponse
+app :: AppTCP Response (Either String) StratumResponse
 app ad = do
     addrs <- liftIO getArgs
     when (length addrs < 1) $ error "bitcoin addresses required"
@@ -29,18 +28,17 @@ app ad = do
 
     rs <- (transPipe liftIO $ appSource ad)
         $$ CB.lines
-        =$ CL.isolate (length addrs + 1)
-        =$ CL.mapM (p . decode' . C.fromStrict)
-        =$ CL.consume -- decodeStrict has bug
+        =$ CL.mapMaybe (decode' . C.fromStrict) -- FIX: notifs & invalid data
+        =$ CL.mapMaybeM (recvRes gi) -- FIX: take evasive action
+        =$ CL.isolate (length addrs + 1) -- FIX: look at state and repeat
+        =$ CL.consume
 
     liftIO $ mapM_ print rs
   where
     reqVer = ReqVersion "Haskoin 0.0.1" "0.9"
     reqHist = ReqHistory
-    cb = fromResponse
+    cb req = fromResponse req
     gi s = case resID s of IntID i -> i; TxtID i -> read $ show i
-    p (Just res) = recvRes gi res
-    p _ = error "could not parse response"
 
 main :: IO ()
 main = runAppTCP (clientSettings 50001 "electrum.datemas.de") app

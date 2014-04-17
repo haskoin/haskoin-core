@@ -20,6 +20,7 @@ data StratumRequest
 data StratumResponse
     = ResVersion { resVersionServer :: String }
     | ResHistory { resHistory :: [HeightHash] }
+    | ResError ErrorObj
     deriving (Eq, Show)
 
 toRequest :: StratumRequest -> Int -> Request
@@ -28,10 +29,13 @@ toRequest (ReqVersion c p) i
 toRequest (ReqHistory a) i
     = Request "blockchain.address.get_history" (toJSON [a]) (IntID i)
 
-fromResponse :: StratumRequest -> Response -> Result StratumResponse
+fromResponse :: StratumRequest -> Response -> Either String StratumResponse
 fromResponse (ReqVersion _ _) (Response r _) = do
-    fromJSON r >>= return . ResVersion
+    resultToEither $ fromJSON r >>= return . ResVersion
 fromResponse (ReqHistory _) (Response r _) = do
-    fromJSON r >>= return . ResHistory
-fromResponse _ (ErrorResponse _ _) = do
-    fail $ "got error response"
+    resultToEither $ fromJSON r >>= return . ResHistory
+fromResponse _ (ErrorResponse e _) = return $ ResError e
+
+resultToEither :: Result a -> Either String a
+resultToEither (Success x) = Right x
+resultToEither (Error x) = Left x

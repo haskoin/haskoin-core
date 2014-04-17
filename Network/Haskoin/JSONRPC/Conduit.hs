@@ -12,7 +12,6 @@ module Network.Haskoin.JSONRPC.Conduit
 import Control.Monad.State.Lazy
 import Data.Conduit.Network
 import qualified Data.IntMap.Strict as IntMap
-import qualified Data.Traversable as DT
 
 data AppState r m o = AppState (IntMap.IntMap (r -> m o)) Int
 
@@ -35,10 +34,9 @@ newReq f cb = do
     return (f ni)
 
 recvRes :: (Monad m, Monad n)
-        => (r -> Int) -> r -> AppContext r m o n (m (Maybe o))
+        => (r -> Int) -> r -> AppContext r m o n (Maybe (m o))
 recvRes g x = do
     AppState c n <- get
     let (cb, nc) = IntMap.updateLookupWithKey (\_ _ -> Nothing) (g x) c
     put (AppState nc n)
-    -- return $ maybe (return Nothing) (\f -> f x >>= return . Just) cb
-    return $ DT.sequence (cb >>= \f -> return $ f x)
+    return $ cb >>= \f -> return $ f x

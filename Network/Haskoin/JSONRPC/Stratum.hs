@@ -23,12 +23,17 @@ data StratumResponse
     | ResError ErrorObj
     deriving (Eq, Show)
 
+-- Convert a StratumRequest into a JSONRPC Request. An Int must be provided to
+-- use as ID for the Request.
 toRequest :: StratumRequest -> Int -> Request
 toRequest (ReqVersion c p) i
     = Request "server.version" (toJSON (c, p)) (IntID i)
 toRequest (ReqHistory a) i
     = Request "blockchain.address.get_history" (toJSON [a]) (IntID i)
 
+-- Pair a StratumRequest and a JSONRPC Response to obtain a StratumResponse. It
+-- is suggested to partially apply to generate a function that will receive the
+-- Response.
 fromResponse :: StratumRequest -> Response -> Either String StratumResponse
 fromResponse (ReqVersion _ _) (Response r _) = do
     resultToEither $ fromJSON r >>= return . ResVersion

@@ -17,7 +17,6 @@ library
                         Network.Haskoin.JSONRPC.Types
     build-depends:      base                    >= 4.6  && < 4.7,
                         aeson                   >= 0.6  && < 0.7,
-                        attoparsec-conduit      >= 1.0  && < 1.1,
                         bytestring              >= 0.10 && < 0.11,
                         conduit                 >= 1.0  && < 1.1,
                         containers              >= 0.5  && < 0.6,
@@ -37,7 +36,6 @@ Test-Suite haskoin-jsonrpc-tests
     main-is:            Messages.hs
     build-depends:      base                    >= 4.6  && < 4.7,
                         aeson                   >= 0.6  && < 0.7,
-                        attoparsec-conduit      >= 1.0  && < 1.1,
                         bytestring              >= 0.10 && < 0.11,
                         conduit                 >= 1.0  && < 1.1,
                         containers              >= 0.5  && < 0.6,

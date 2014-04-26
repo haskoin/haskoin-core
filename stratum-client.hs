@@ -12,6 +12,7 @@ import Network.Haskoin.JSONRPC
 import Network.Haskoin.JSONRPC.Conduit
 import Network.Haskoin.JSONRPC.Stratum
 import System.Environment
+import System.Exit
 
 app :: AppTCP Response (Either String) StratumResponse
 app ad = do
@@ -22,23 +23,27 @@ app ad = do
     vreq <- newReq (toRequest reqVer) (cb reqVer)
     hrqs <- mapM (\a -> newReq (toRequest $ reqHist a) (cb $ reqHist a)) as
 
-    CL.sourceList (vreq:hrqs)
+    let sl = vreq : hrqs
+
+    CL.sourceList sl
         $= CL.map (C.toStrict . flip C.append "\n" . encode)
         $$ (transPipe liftIO $ appSink ad)
 
-    rs <- (transPipe liftIO $ appSource ad)
+    transPipe liftIO (appSource ad)
         $$ CB.lines
-        =$ CL.mapMaybe (decode' . C.fromStrict) -- FIX: notifs & invalid data
-        =$ CL.mapMaybeM (recvRes gi) -- FIX: take evasive action
-        =$ CL.isolate (length addrs + 1) -- FIX: look at state and repeat
-        =$ CL.consume
+        =$ CL.mapMaybe (decode' . C.fromStrict) -- Response
+        =$ CL.mapMaybeM (recvRes gi) -- StratumResponse
+        =$ CL.iterM (\x -> liftIO (print x) >>= q)
+        =$ CL.sinkNull
 
-    liftIO $ mapM_ print rs
   where
     reqVer = ReqVersion "Haskoin 0.0.1" "0.9"
     reqHist = ReqHistory
     cb req = fromResponse req
     gi s = case resID s of IntID i -> i; TxtID i -> read $ show i
+    q _ = do
+        b <- noMoreData
+        if b then liftIO exitSuccess else liftIO $ return ()
 
 main :: IO ()
 main = runAppTCP (clientSettings 50001 "electrum.datemas.de") app

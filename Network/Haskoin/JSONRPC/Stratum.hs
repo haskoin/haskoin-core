@@ -24,12 +24,12 @@ data StratumResponse
     deriving (Eq, Show)
 
 -- Convert a StratumRequest into a JSONRPC Request. An Int must be provided to
--- use as ID for the Request.
+-- use as id for the Request.
 toRequest :: StratumRequest -> Int -> Request
 toRequest (ReqVersion c p) i
-    = Request "server.version" (toJSON (c, p)) (IntID i)
+    = Request "server.version" (toJSON (c, p)) (IntId i)
 toRequest (ReqHistory a) i
-    = Request "blockchain.address.get_history" (toJSON [a]) (IntID i)
+    = Request "blockchain.address.get_history" (toJSON [a]) (IntId i)
 
 -- Pair a StratumRequest and a JSONRPC Response to obtain a StratumResponse. It
 -- is suggested to partially apply to generate a function that will receive the

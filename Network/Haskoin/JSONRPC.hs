@@ -2,7 +2,7 @@
 module Network.Haskoin.JSONRPC
 ( -- Data
   Method
-, ID(..)
+, Id(..)
 , ErrorObj(..)
 
   -- Messages
@@ -27,9 +27,9 @@ import qualified Data.Vector            as V
  
 type Method = T.Text
 
-data ID
-    = IntID Int
-    | TxtID T.Text
+data Id
+    = IntId Int
+    | TxtId T.Text
     deriving (Eq, Show)
 
 data ErrorObj
@@ -38,13 +38,13 @@ data ErrorObj
     deriving (Eq, Show)
 
 data Request
-    = Request { reqMethod :: Method, reqParams :: Value, reqID :: ID }
+    = Request { reqMethod :: Method, reqParams :: Value, reqId :: Id }
     | Notification { reqMethod :: Method, reqParams :: Value }
     deriving (Eq, Show)
 
 data Response
-    = Response { resResult :: Value, resID :: ID }
-    | ErrorResponse { errObj :: ErrorObj, errID :: Maybe ID }
+    = Response { resResult :: Value, resId :: Id }
+    | ErrorResponse { errObj :: ErrorObj, errId :: Maybe Id }
     deriving (Eq, Show)
 
 data Message
@@ -52,14 +52,14 @@ data Message
     | MResponse Response
     deriving (Eq, Show)
 
-instance FromJSON ID where
-    parseJSON t@(String _) = parseJSON t >>= return . TxtID
-    parseJSON i@(Number _) = parseJSON i >>= return . IntID
+instance FromJSON Id where
+    parseJSON t@(String _) = parseJSON t >>= return . TxtId
+    parseJSON i@(Number _) = parseJSON i >>= return . IntId
     parseJSON _ = mzero
 
-instance ToJSON ID where
-    toJSON (TxtID s) = toJSON s
-    toJSON (IntID i)  = toJSON i
+instance ToJSON Id where
+    toJSON (TxtId s) = toJSON s
+    toJSON (IntId i)  = toJSON i
 
 instance FromJSON ErrorObj where
     parseJSON v@(Object o) = do

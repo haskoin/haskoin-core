@@ -77,4 +77,4 @@ filterData vfs = do
         True -> return ()
         False -> await >>= \mx -> case mx of
             Just x -> Conduit.yield x >> filterData vfs
-            Nothing -> return ()
+            Nothing -> error "connection closed with unanswered requests"

@@ -13,8 +13,7 @@ cabal-version:          >=1.8
 library
     exposed-modules:    Network.Haskoin.JSONRPC,
                         Network.Haskoin.JSONRPC.Conduit,
-                        Network.Haskoin.JSONRPC.Stratum,
-                        Network.Haskoin.JSONRPC.Types
+                        Network.Haskoin.JSONRPC.Stratum
     build-depends:      base >= 4.6,
                         aeson,
                         bytestring,

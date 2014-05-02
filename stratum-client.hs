@@ -27,4 +27,4 @@ app ad = do
             let r = ReqTx t in newReq s (toRequest r) (cb r)
 
 main :: IO ()
-main = runTCPClient (clientSettings 50001 "electrum.datemas.de") app
+main = runTCPClient (clientSettings 50001 "electrum.chroot.eu") app

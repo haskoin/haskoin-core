@@ -1,6 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts #-}
 module Network.Haskoin.JSONRPC.Conduit
 ( initSession
 , newReq
@@ -18,11 +16,11 @@ import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.List as CL
 import Data.Conduit.Network
 import qualified Data.Text as T
-import qualified Data.IntMap.Strict as IntMap
+import Data.IntMap.Strict as IntMap
 import Network.Haskoin.JSONRPC
 
 type Callback = Response -> IO ()
-type CallbackMap = IntMap.IntMap Callback
+type CallbackMap = IntMap Callback
 data Session = Session (Chan Request) (MVar Int) (MVar CallbackMap)
 
 initSession :: IO Session
@@ -45,15 +43,15 @@ newReq (Session q vl vfs) r f = do
     fs <- takeMVar vfs
     let i = l + 1
     putMVar vl i
-    putMVar vfs (IntMap.insert i f fs)
+    putMVar vfs (insert i f fs)
     writeChan q (r i)
 
 runCB :: MVar CallbackMap -> Response -> IO ()
 runCB vfs r = do
     fs <- takeMVar vfs
     let i = getId r
-    putMVar vfs (i `IntMap.delete` fs)
-    (fs IntMap.! i) r
+    putMVar vfs (i `delete` fs)
+    (fs ! i) r
 
 sourceThread :: Session -> AppData IO -> IO ThreadId
 sourceThread (Session q _ _) ad = forkIO $ do

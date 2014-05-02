@@ -11,6 +11,7 @@ module Network.Haskoin.Wallet.Store.DbCoin
 import Control.Applicative ((<$>))
 import Control.Monad.Trans.Either (EitherT)
 
+import Data.Word (Word64)
 import Data.Yaml
     ( Value 
     , object 
@@ -68,7 +69,7 @@ yamlCoin coin = object $ concat
 
 dbBalance :: (PersistQuery m, PersistMonadBackend m ~ b)
           => Entity (DbAccountGeneric b)
-          -> EitherT String m Int
+          -> EitherT String m Word64
 dbBalance (Entity ai _) = do
     coins <- selectList 
         [ DbCoinAccount ==. ai

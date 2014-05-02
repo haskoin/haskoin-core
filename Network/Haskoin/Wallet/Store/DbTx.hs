@@ -210,7 +210,8 @@ buildAccTx tx inCoins outCoins partial time = map build $ M.toList oMap
       where
         orphan = or $ map dbCoinOrphan i
         total | orphan    = 0
-              | otherwise = sumVal o - sumVal i
+              | otherwise = (fromIntegral $ sumVal o)
+                          - (fromIntegral $ sumVal i)
         addrs = map dbCoinAddress o
         recips | null addrs = allRecip
                | orphan     = allRecip \\ addrs -- assume this is an outgoing tx

@@ -30,6 +30,8 @@ module Network.Haskoin.Wallet.Store.Util
 
 import Control.Monad.Trans.Either (EitherT)
 
+import Data.Word (Word64)
+import Data.Int (Int64)
 import Data.Time (UTCTime)
 import Data.Yaml
     ( ToJSON, toJSON
@@ -106,7 +108,7 @@ DbAddress json
 DbCoin json
     txid String
     pos Int
-    value Int
+    value Word64
     script String
     rdmScript String Maybe
     address String 
@@ -120,7 +122,7 @@ DbCoin json
 DbTx json
     txid String
     recipients [String]
-    value Int
+    value Int64
     account DbAccountId
     orphan Bool
     partial Bool

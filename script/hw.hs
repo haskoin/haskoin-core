@@ -29,8 +29,9 @@ import Database.Persist
     , PersistMonadBackend
     )
 import Database.Persist.Sql ()
-import Database.Persist.Sqlite (SqlBackend, runSqlite, runMigration)
+import Database.Persist.Sqlite (SqlBackend, runSqlite, runMigrationSilent)
 
+import Data.Maybe (listToMaybe)
 import qualified Data.Text as T (pack, unpack, splitOn)
 import qualified Data.Yaml as YAML 
     ( Value(Null)
@@ -56,6 +57,7 @@ data Options = Options
     , optJson     :: Bool
     , optHelp     :: Bool
     , optVersion  :: Bool
+    , optPass     :: String
     } deriving (Eq, Show)
 
 defaultOptions :: Options
@@ -66,6 +68,7 @@ defaultOptions = Options
     , optJson     = False
     , optHelp     = False
     , optVersion  = False
+    , optPass     = ""
     } 
 
 options :: [OptDescr (Options -> IO Options)]
@@ -90,6 +93,9 @@ options =
     , Option ['v'] ["version"]
         (NoArg $ \opts -> return opts{ optVersion = True }) $
         "Show version information"
+    , Option ['p'] ["passphrase"]
+        (ReqArg (\s opts -> return opts{ optPass = s }) "PASSPHRASE") $
+        "Optional Passphrase for mnemonic"
     ]
 
 parseCount :: String -> Options -> IO Options
@@ -112,7 +118,7 @@ usageHeader = "Usage: hw [<options>] <command> [<args>]"
 cmdHelp :: [String]
 cmdHelp = 
     [ "hw wallet commands: " 
-    , "  init       seed                    Initialize a wallet"
+    , "  init       [mnemonic]              Initialize a wallet"
     , "  list       acc                     Display last page of addresses"
     , "  listpage   acc page [-c res/page]  Display addresses by page"
     , "  new        acc {labels...}         Generate address with labels"
@@ -198,7 +204,7 @@ process opts xs
     | otherwise = getWorkDir >>= \dir -> do
         let (cmd,args) = (head xs, tail xs)
         res <- tryJust catchEx $ runSqlite (T.pack dir) $ runEitherT $ do
-            lift $ runMigration migrateAll
+            _ <- lift $ runMigrationSilent migrateAll
             dispatchCommand cmd opts args 
         case join res of
             Left err -> formatStr err
@@ -219,7 +225,8 @@ dispatchCommand :: ( PersistStore m, PersistUnique m, PersistQuery m
                    ) 
                 => String -> Options -> Args -> Command m
 dispatchCommand cmd opts args = case cmd of
-    "init" -> whenArgs args (== 1) $ cmdInit $ head args
+    "init" -> whenArgs args (<= 1) $
+        cmdInitMnemo (optPass opts) (listToMaybe args)
     "list" -> whenArgs args (== 1) $ cmdList (head args) 0 (optCount opts)
     "listpage" -> whenArgs args (== 2) $ 
         cmdList (head args) (read $ args !! 1) (optCount opts)

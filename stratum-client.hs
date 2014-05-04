@@ -29,7 +29,9 @@ app ad = do
     forM_ addrs $ f s . ReqHistory
     _ <- forkIO $ reqSource s $$ appSink ad
     (r, resHs) <- appSource ad $$+ lines =$ (resConduit s :: C) =$ consume
-    let txIds = [ txHash t | h <- rights resHs, i <- rights [resResult h], t <- resHistory i ]
+    let txIds = [ txHash t | h <- rights resHs
+                           , i <- rights [resResult h]
+                           , t <- resHistory i ]
     -- let txIds = map txHash
     --           . concat . map resHistory
     --           . rights . map resResult

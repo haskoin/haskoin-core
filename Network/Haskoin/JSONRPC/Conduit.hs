@@ -1,78 +1,109 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts #-}
 module Network.Haskoin.JSONRPC.Conduit
-( initSession
+( -- * Data types
+  Session
+  -- * Functions
+, initSession
 , newReq
-, sourceThread
-, responsePipe
+, reqSource
+, resConduit
 ) where
 
-import Control.Applicative
-import Control.Concurrent
-import Control.Monad.State.Lazy
-import Data.Aeson
-import Data.ByteString.Lazy.Char8 as C
-import Data.Conduit as Conduit
-import qualified Data.Conduit.Binary as CB
-import qualified Data.Conduit.List as CL
-import Data.Conduit.Network
-import qualified Data.Text as T
-import Data.IntMap.Strict as IntMap
-import Network.Haskoin.JSONRPC
+import Prelude hiding (lines, lookup, map, map, null)
+import Control.Applicative ((<$>), (<*>))
+import Control.Concurrent.MVar (MVar, newMVar, putMVar, readMVar, takeMVar)
+import Control.Concurrent.Chan (Chan, getChanContents, newChan, writeChan)
+import Control.Monad.IO.Class (MonadIO, liftIO)
+import Data.Aeson (Value, ToJSON, FromJSON, eitherDecode, encode)
+import Data.Aeson.Types (Parser, parseEither)
+import Data.ByteString (ByteString)
+import Data.ByteString.Lazy.Char8 (append, fromStrict, toStrict)
+import Data.Conduit (Conduit, Source, ($=), (=$=), await, yield)
+import Data.Conduit.List (sourceList, map)
+import Data.IntMap.Strict (IntMap, delete, empty, insert, lookup, null)
+import Network.Haskoin.JSONRPC (Id(IntId), JSONRes(JSONRes), resId)
+import Network.Haskoin.Util (maybeToEither)
 
-type Callback = Response -> IO ()
-type CallbackMap = IntMap Callback
-data Session = Session (Chan Request) (MVar Int) (MVar CallbackMap)
+-- | Session state in concurrent-friedly MVars.
+-- Contains a Chan q where q is a data type for requests to be sent.
+-- Also an MVar Int holds the last ID to be used to build a request.
+-- Finally an IntMap holds parsers to apply to responses.
+data Session q r = Session
+    (Chan q)
+    (MVar Int)
+    (MVar (IntMap (Value -> Parser r)))
 
-initSession :: IO Session
-initSession = Session <$> newChan <*> newMVar 0 <*> newMVar IntMap.empty
+initSession :: MonadIO m => m (Session q r)
+initSession = liftIO $ Session
+    <$> newChan
+    <*> newMVar 0
+    <*> newMVar empty
 
-getId :: Response -> Int
-getId r = case resId r of
-    IntId i -> i
-    TxtId t -> read $ T.unpack t
+newReq :: MonadIO m
+       => Session q r
+       -> (Int -> q)
+       -> (Value -> Parser r)
+       -> m ()
+newReq (Session rc iv pv) f g = liftIO $ do
+    i <- (+1) <$> takeMVar iv
+    p <- takeMVar pv
+    putMVar pv (insert i g p)
+    putMVar iv i
+    writeChan rc (f i)
 
-nullCB :: MVar CallbackMap -> IO Bool
-nullCB vfs = do
-    fs <- readMVar vfs
-    let b = IntMap.null fs
-    return b
+reqSource :: (MonadIO m, ToJSON q)
+          => Session q r
+          -> Source m ByteString
+reqSource (Session rc _ _) = do
+    reqs <- liftIO $ getChanContents rc
+    sourceList reqs $= map (toStrict . flip append "\n" . encode)
 
-newReq :: Session -> (Int -> Request) -> Callback -> IO ()
-newReq (Session q vl vfs) r f = do
-    l <- takeMVar vl
-    fs <- takeMVar vfs
-    let i = l + 1
-    putMVar vl i
-    putMVar vfs (insert i f fs)
-    writeChan q (r i)
+resConduit :: (MonadIO m, FromJSON e, FromJSON v, Show j, Show e, Show v)
+           => Session q j
+           -> Conduit ByteString m (Either String (JSONRes j e v))
+resConduit (Session _ _ pv) = stopOnNull pv =$= decodeConduit pv
 
-runCB :: MVar CallbackMap -> Response -> IO ()
-runCB vfs r = do
-    fs <- takeMVar vfs
-    let i = getId r
-    putMVar vfs (i `delete` fs)
-    (fs ! i) r
+decodeConduit :: (MonadIO m, FromJSON e, FromJSON v)
+              => MVar (IntMap (Value -> Parser r))
+              -> Conduit ByteString m (Either String (JSONRes r e v))
+decodeConduit pv = await >>= \mx -> case mx of
+    Nothing -> return ()
+    Just x -> do
+        p <- liftIO $ takeMVar pv
+        case decodeRes p x of
+            Right (i, t) -> do
+                liftIO $ putMVar pv (i `delete` p)
+                yield $ Right t
+            Left e -> do
+                liftIO $ putMVar pv p
+                yield $ Left e
+        decodeConduit pv
 
-sourceThread :: Session -> AppData IO -> IO ThreadId
-sourceThread (Session q _ _) ad = forkIO $ do
-    rs <- getChanContents q
-    CL.sourceList rs
-        $= CL.map (C.toStrict . flip C.append "\n" . encode)
-        $$ appSink ad
+stopOnNull :: (MonadIO m)
+           => MVar (IntMap a)
+           -> Conduit i m i
+stopOnNull pv = liftIO (null <$> readMVar pv) >>= \b -> case b of
+    True -> return ()
+    False -> await >>= maybe e yield >> stopOnNull pv
+  where
+    e = error "Connection closed with pending requests."
 
-responsePipe :: Session -> AppData IO -> IO ()
-responsePipe (Session _ _ vfs) ad = appSource ad
-    $$ CB.lines
-    =$ filterData vfs
-    =$ CL.mapMaybe (decode' . C.fromStrict)
-    =$ CL.iterM (runCB vfs)
-    =$ CL.sinkNull
+decodeRes :: (FromJSON e, FromJSON v)
+          => IntMap (Value -> Parser r)
+          -> ByteString
+          -> Either String (Int, JSONRes r e v)
+decodeRes p x = do
+    r <- eitherDecode (fromStrict x)
+    i <- case resId r of
+        Just (IntId n) -> Right n
+        Nothing -> Left "Id is not set."
+        _  -> Left "Non-integer id not supported."
+    l <- maybeToEither "Parser not found." (lookup i p)
+    t <- parseEither (transRes l) r
+    return (i, t)
 
-filterData :: MVar CallbackMap -> ConduitM i i IO ()
-filterData vfs = do
-    b <- liftIO $ nullCB vfs
-    case b of
-        True -> return ()
-        False -> await >>= \mx -> case mx of
-            Just x -> Conduit.yield x >> filterData vfs
-            Nothing -> error "connection closed with unanswered requests"
+transRes :: (Value -> Parser r)
+         -> JSONRes Value e v
+         -> Parser (JSONRes r e v)
+transRes f (JSONRes (Right v) i) = f v >>= \r -> return (JSONRes (Right r) i)
+transRes _ (JSONRes (Left e) i) = return (JSONRes (Left e) i)

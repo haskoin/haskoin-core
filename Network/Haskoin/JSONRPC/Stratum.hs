@@ -1,75 +1,91 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings, FlexibleInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Network.Haskoin.JSONRPC.Stratum
-( TxHeight(..)
+( -- * Data
+  TxHeight(..)
 , CoinHeight(..)
 , Balance(..)
-, StratumRequest(..)
-, StratumResponse(..)
-, toRequest
-, fromResponse )
-where
 
--- import Control.Applicative
+  -- * Request and response data
+, StratumReq(..)
+, StratumRes(..)
+
+  -- * Functions
+, toJSONReq
+, parseResult
+) where
+
 import Control.Monad
 import Control.Monad.Trans.Either
-import Data.Aeson
+import Data.Aeson.Types
 import Data.Maybe
-import qualified Data.Text as T
+import Data.Text (Text, pack, unpack)
 import Data.Word (Word, Word64)
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.JSONRPC
-import Network.Haskoin.Util as U
+import Network.Haskoin.Util
 
+-- | Server Version data.
 newtype ServerVersion = ServerVersion String deriving (Show, Eq)
 
+-- | Transaction height and ID pair. Used in history responses.
 data TxHeight = TxHeight
-    { txHeight :: Word
-    , txHash :: Hash256 }
-    deriving (Show, Eq)
+    { txHeight :: Word  -- ^ Block height.
+    , txHash :: Hash256 -- ^ Transaction id.
+    } deriving (Show, Eq)
 
+-- | Bitcion out point information.
 data CoinHeight = CoinHeight
-    { coinOutPoint :: OutPoint
-    , coinTxHeight :: TxHeight
-    , coinValue :: Word64 }
-    deriving (Show, Eq)
+    { coinOutPoint :: OutPoint   -- ^ Coin data.
+    , coinTxHeight :: TxHeight   -- ^ Transaction information.
+    , coinValue :: Word64        -- ^ Output vale.
+    } deriving (Show, Eq)
 
+-- | Balance information.
 data Balance = Balance
-    { balConfirmed :: Word64
-    , balUnconfirmed :: Word64 }
-    deriving (Show, Eq)
+    { balConfirmed :: Word64   -- ^ Confirmed balance.
+    , balUnconfirmed :: Word64 -- ^ Unconfirmed balance.
+    } deriving (Show, Eq)
 
-data StratumRequest
-    = ReqVersion { reqClientVer :: String, reqProtoVer :: String }
+-- | Stratum Request data. To be placed inside JSONReq.
+data StratumReq
+    = ReqVersion { reqClientVer :: Text, reqProtoVer :: Text }
     | ReqHistory { reqAddress :: Address }
     | ReqBalance { reqAddress :: Address }
     | ReqUnspent { reqAddress :: Address }
     | ReqTx { reqTxId :: Hash256 }
-    | ReqBroadcast { reqTx :: Tx }
+    | ReqBcast { reqTx :: Tx }
     deriving (Eq, Show)
 
-data StratumResponse
+-- | Stratum Response data. Parse JSONRes result into this.
+data StratumRes
     = ResVersion { resVersion :: String }
     | ResHistory { resHistory :: [TxHeight] }
     | ResBalance { resBalance :: Balance }
     | ResUnspent { resUnspent :: [CoinHeight] }
     | ResTx { resTx :: Tx }
-    | ResBroadcast { resTxId :: Hash256 }
-    | ResError { resError :: ErrorObj }
+    | ResBcast { resTxId :: Hash256 }
     deriving (Eq, Show)
+
+instance ToJSON StratumReq where
+    toJSON ( ReqVersion c p ) = toJSON (c, p)
+    toJSON ( ReqHistory a   ) = toJSON [a]
+    toJSON ( ReqUnspent a   ) = toJSON [a]
+    toJSON ( ReqBalance a   ) = toJSON [a]
+    toJSON ( ReqTx      i   ) = toJSON [i]
+    toJSON ( ReqBcast   t   ) = toJSON [t]
 
 instance FromJSON Hash256 where
     parseJSON = withText "transaction id not a string" $ \s -> do
-        return . fromJust . decodeTxid $ T.unpack s
+        return . fromJust . decodeTxid $ unpack s
 
 instance ToJSON Hash256 where
     toJSON = toJSON . encodeTxid
 
 instance FromJSON Address where
     parseJSON (String a) = do
-        let addrS = T.unpack a
+        let addrS = unpack a
             addrM = base58ToAddr addrS
         case addrM of
             Nothing -> fail $ "Not a bitcoin address: " ++ addrS
@@ -77,16 +93,15 @@ instance FromJSON Address where
     parseJSON _ = mzero
 
 instance ToJSON Address where
-    toJSON = String . T.pack . addrToBase58
+    toJSON = String . pack . addrToBase58
 
 instance FromJSON Tx where
     parseJSON = withText "transaction not a string" $ \s -> do
         etx <- runEitherT $ do
-            bs <- liftMaybe "invalid hex encoding" . hexToBS $ T.unpack s
+            bs <- liftMaybe "invalid hex encoding" . hexToBS $ unpack s
             tx <- liftEither $ decodeToEither bs
             return tx
-        let tx = fromRight etx
-        return tx
+        return (fromRight etx)
 
 instance ToJSON Tx where
     toJSON t = toJSON (encode' t)
@@ -129,40 +144,27 @@ instance ToJSON CoinHeight where
         , "tx_hash" .= txHash (coinTxHeight x)
         , "tx_pos" .= outPointIndex (coinOutPoint x) ]
 
--- Convert a StratumRequest into a JSONRPC Request. An Int must be provided to
--- use as id for the Request.
-toRequest :: StratumRequest -> Int -> Request
-toRequest (ReqVersion c p) i
-    = Request "server.version" (toJSON (c, p)) (IntId i)
-toRequest (ReqHistory a) i
-    = Request "blockchain.address.get_history" (toJSON [a]) (IntId i)
-toRequest (ReqBalance a) i
-    = Request "blockchain.address.get_balance" (toJSON [a]) (IntId i)
-toRequest (ReqUnspent a) i
-    = Request "blockchain.address.get_unspent" (toJSON [a]) (IntId i)
-toRequest (ReqTx t) i
-    = Request "blockchain.transaction.get" (toJSON [t]) (IntId i)
-toRequest (ReqBroadcast t) i
-    = Request "blockchain.transaction.broadcast" (toJSON [t]) (IntId i)
+method :: StratumReq -> Text
+method ( ReqVersion _ _ ) = "server.version"
+method ( ReqHistory _   ) = "blockchain.address.get_history"
+method ( ReqBalance _   ) = "blockchain.address.get_balance"
+method ( ReqUnspent _   ) = "blockchain.address.get_unspent"
+method ( ReqTx      _   ) = "blockchain.transaction.get"
+method ( ReqBcast   _   ) = "blockchain.transaction.broadcast"
 
--- Pair a StratumRequest and a JSONRPC Response to obtain a StratumResponse. It
--- is suggested to partially apply to generate a function that will receive the
--- Response.
-fromResponse :: StratumRequest -> Response -> Either String StratumResponse
-fromResponse (ReqVersion _ _) (Response r _) = do
-    resultToEither $ fromJSON r >>= return . ResVersion
-fromResponse (ReqHistory _) (Response r _) = do
-    resultToEither $ fromJSON r >>= return . ResHistory
-fromResponse (ReqBalance _) (Response r _) = do
-    resultToEither $ fromJSON r >>= return . ResBalance
-fromResponse (ReqUnspent _) (Response r _) = do
-    resultToEither $ fromJSON r >>= return . ResUnspent
-fromResponse (ReqTx _) (Response r _) = do
-    resultToEither $ fromJSON r >>= return . ResTx
-fromResponse (ReqBroadcast _) (Response r _) = do
-    resultToEither $ fromJSON r >>= return . ResBroadcast
-fromResponse _ (ErrorResponse e _) = return $ ResError e
+-- | Create a JSON-RPC request from a Stratum request.
+toJSONReq :: StratumReq         -- ^ Stratum request data.
+          -> Int                -- ^ JSON-RPC request id.
+          -> JSONReq StratumReq -- ^ Returns JSON-RPC request object.
+toJSONReq s i = JSONReq (method s) (Just s) (Just (IntId i))
 
-resultToEither :: Result a -> Either String a
-resultToEither (Success x) = Right x
-resultToEither (Error x) = Left x
+-- | Parse result from JSON-RPC request into a Stratum response.
+parseResult :: StratumReq         -- ^ Corresponding Stratum request.
+           -> Value              -- ^ Result Value from JSONRes object.
+           -> Parser StratumRes  -- ^ Returns Aeson Parser.
+parseResult ( ReqVersion _ _ ) v = parseJSON v >>= return . ResVersion
+parseResult ( ReqHistory _   ) v = parseJSON v >>= return . ResHistory
+parseResult ( ReqBalance _   ) v = parseJSON v >>= return . ResBalance
+parseResult ( ReqUnspent _   ) v = parseJSON v >>= return . ResUnspent
+parseResult ( ReqTx      _   ) v = parseJSON v >>= return . ResTx
+parseResult ( ReqBcast   _   ) v = parseJSON v >>= return . ResBcast

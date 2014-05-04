@@ -1,30 +1,44 @@
 {-# LANGUAGE OverloadedStrings, Rank2Types #-}
+import Control.Applicative ((<$>))
+import Control.Concurrent (forkIO)
+import Data.Aeson.Types (Value)
+import Data.ByteString (ByteString)
+import Data.Conduit (Conduit, ($$), (=$), ($$+), ($$+-))
+import Data.Conduit.Binary (lines)
+import Data.Conduit.List (consume)
 import Data.Conduit.Network
-import Data.Foldable
-import Data.Maybe
-import Network.Haskoin.Crypto
+import Data.Either (rights)
+import Data.Foldable (forM_)
+import Data.Maybe (fromJust)
+import Network.Haskoin.Crypto (base58ToAddr)
+import Network.Haskoin.JSONRPC
 import Network.Haskoin.JSONRPC.Conduit
 import Network.Haskoin.JSONRPC.Stratum
-import Network.Haskoin.Util
-import System.Environment
+import Prelude hiding (lines)
+import System.Environment (getArgs)
+
+type R = JSONReq StratumReq
+type S = Session R StratumRes
+type D = Either String (JSONRes StratumRes Value String)
+type C = Conduit ByteString IO D
 
 app :: AppData IO -> IO ()
 app ad = do
-    us <- getArgs
-    let as = map (fromJust . base58ToAddr) us
-    s <- initSession
-    newReq s (toRequest rv) (cb rv)
-    forM_ as (\a -> let r = ReqHistory a in newReq s (toRequest r) (hcb s r))
-    _ <- sourceThread s ad
-    responsePipe s ad
+    addrs <- map (fromJust . base58ToAddr) <$> getArgs
+    s <- initSession :: IO S
+    forM_ addrs $ f s . ReqHistory
+    _ <- forkIO $ reqSource s $$ appSink ad
+    (r, resHs) <- appSource ad $$+ lines =$ (resConduit s :: C) =$ consume
+    let txIds = [ txHash t | h <- rights resHs, i <- rights [resResult h], t <- resHistory i ]
+    -- let txIds = map txHash
+    --           . concat . map resHistory
+    --           . rights . map resResult
+    --           . rights $ resHs
+    forM_ txIds $ f s . ReqTx
+    resTxs <- r $$+- lines =$ (resConduit s :: C) =$ consume
+    mapM_ print resTxs
   where
-    rv = ReqVersion "Haskoin 0.0.1" "0.9"
-    cb r = print . fromResponse r
-    hcb s req res = do
-        let rh@(ResHistory h) = fromRight $ fromResponse req res
-        print rh
-        forM_ h $ \(TxHeight _ t) ->
-            let r = ReqTx t in newReq s (toRequest r) (cb r)
+    f s r = newReq s (toJSONReq r) (parseResult r)
 
 main :: IO ()
 main = runTCPClient (clientSettings 50001 "electrum.chroot.eu") app

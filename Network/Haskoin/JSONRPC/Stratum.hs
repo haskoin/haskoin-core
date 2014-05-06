@@ -5,26 +5,75 @@ module Network.Haskoin.JSONRPC.Stratum
   TxHeight(..)
 , CoinHeight(..)
 , Balance(..)
-
-  -- * Request and response data
-, StratumReq(..)
-, StratumRes(..)
-
+, StratumRequest
+, StratumResult
+, StratumQuery(..)
+, StratumData(..)
   -- * Functions
-, toJSONReq
+, toRequest
 , parseResult
+, newStratumReq
 ) where
 
 import Control.Monad
+    ( mzero )
+import Control.Monad.IO.Class
+    ( MonadIO )
 import Control.Monad.Trans.Either
+    ( runEitherT )
+import Data.Aeson
+    ( FromJSON
+    , ToJSON
+    , Value (Object, String)
+    , (.:)
+    , (.=)
+    , object
+    , parseJSON
+    , toJSON
+    , withText )
 import Data.Aeson.Types
+    ( Parser )
 import Data.Maybe
-import Data.Text (Text, pack, unpack)
-import Data.Word (Word, Word64)
+    ( fromJust )
+import Data.Text
+    ( Text
+    , pack
+    , unpack )
+import Data.Word
+    ( Word
+    , Word64 )
 import Network.Haskoin.Crypto
+    ( Address
+    , Hash256
+    , addrToBase58
+    , base58ToAddr )
 import Network.Haskoin.Protocol
+    ( OutPoint (OutPoint)
+    , Tx
+    , decodeTxid
+    , encodeTxid
+    , outPointHash
+    , outPointIndex )
 import Network.Haskoin.JSONRPC
+    ( Id (IntId)
+    , Request (Request)
+    , ResultValue
+    , Result )
+import Network.Haskoin.JSONRPC.Conduit
+    ( Session
+    , newReq )
 import Network.Haskoin.Util
+    ( decodeToEither
+    , encode'
+    , hexToBS
+    , liftMaybe
+    , liftEither )
+
+-- | JSON-RPC request with Stratum payload.
+type StratumRequest = Request StratumQuery
+
+-- | Stratum result in JSON-RPC response.
+type StratumResult = Result StratumData Value String
 
 -- | Server Version data.
 newtype ServerVersion = ServerVersion String deriving (Show, Eq)
@@ -35,7 +84,7 @@ data TxHeight = TxHeight
     , txHash :: Hash256 -- ^ Transaction id.
     } deriving (Show, Eq)
 
--- | Bitcion out point information.
+-- | Bitcoin outpoint information.
 data CoinHeight = CoinHeight
     { coinOutPoint :: OutPoint   -- ^ Coin data.
     , coinTxHeight :: TxHeight   -- ^ Transaction information.
@@ -49,7 +98,7 @@ data Balance = Balance
     } deriving (Show, Eq)
 
 -- | Stratum Request data. To be placed inside JSONReq.
-data StratumReq
+data StratumQuery
     = ReqVersion { reqClientVer :: Text, reqProtoVer :: Text }
     | ReqHistory { reqAddress :: Address }
     | ReqBalance { reqAddress :: Address }
@@ -59,7 +108,7 @@ data StratumReq
     deriving (Eq, Show)
 
 -- | Stratum Response data. Parse JSONRes result into this.
-data StratumRes
+data StratumData
     = ResVersion { resVersion :: String }
     | ResHistory { resHistory :: [TxHeight] }
     | ResBalance { resBalance :: Balance }
@@ -68,7 +117,7 @@ data StratumRes
     | ResBcast { resTxId :: Hash256 }
     deriving (Eq, Show)
 
-instance ToJSON StratumReq where
+instance ToJSON StratumQuery where
     toJSON ( ReqVersion c p ) = toJSON (c, p)
     toJSON ( ReqHistory a   ) = toJSON [a]
     toJSON ( ReqUnspent a   ) = toJSON [a]
@@ -96,12 +145,12 @@ instance ToJSON Address where
     toJSON = String . pack . addrToBase58
 
 instance FromJSON Tx where
-    parseJSON = withText "transaction not a string" $ \s -> do
+    parseJSON = withText "Transaction not encoded as string." $ \s -> do
         etx <- runEitherT $ do
-            bs <- liftMaybe "invalid hex encoding" . hexToBS $ unpack s
+            bs <- liftMaybe "Invalid hex encoding in tx." . hexToBS $ unpack s
             tx <- liftEither $ decodeToEither bs
             return tx
-        return (fromRight etx)
+        return $ either error id etx
 
 instance ToJSON Tx where
     toJSON t = toJSON (encode' t)
@@ -144,7 +193,7 @@ instance ToJSON CoinHeight where
         , "tx_hash" .= txHash (coinTxHeight x)
         , "tx_pos" .= outPointIndex (coinOutPoint x) ]
 
-method :: StratumReq -> Text
+method :: StratumQuery -> Text
 method ( ReqVersion _ _ ) = "server.version"
 method ( ReqHistory _   ) = "blockchain.address.get_history"
 method ( ReqBalance _   ) = "blockchain.address.get_balance"
@@ -153,18 +202,30 @@ method ( ReqTx      _   ) = "blockchain.transaction.get"
 method ( ReqBcast   _   ) = "blockchain.transaction.broadcast"
 
 -- | Create a JSON-RPC request from a Stratum request.
-toJSONReq :: StratumReq         -- ^ Stratum request data.
-          -> Int                -- ^ JSON-RPC request id.
-          -> JSONReq StratumReq -- ^ Returns JSON-RPC request object.
-toJSONReq s i = JSONReq (method s) (Just s) (Just (IntId i))
+toRequest :: StratumQuery     -- ^ Stratum request data.
+          -> Int              -- ^ JSON-RPC request id.
+          -> StratumRequest   -- ^ Returns JSON-RPC request object.
+toRequest s i = Request (method s) (Just s) (Just (IntId i))
 
--- | Parse result from JSON-RPC request into a Stratum response.
-parseResult :: StratumReq         -- ^ Corresponding Stratum request.
-           -> Value              -- ^ Result Value from JSONRes object.
-           -> Parser StratumRes  -- ^ Returns Aeson Parser.
-parseResult ( ReqVersion _ _ ) v = parseJSON v >>= return . ResVersion
-parseResult ( ReqHistory _   ) v = parseJSON v >>= return . ResHistory
-parseResult ( ReqBalance _   ) v = parseJSON v >>= return . ResBalance
-parseResult ( ReqUnspent _   ) v = parseJSON v >>= return . ResUnspent
-parseResult ( ReqTx      _   ) v = parseJSON v >>= return . ResTx
-parseResult ( ReqBcast   _   ) v = parseJSON v >>= return . ResBcast
+-- | Parse result from JSON-RPC response into a Stratum response.
+parseResult :: StratumQuery -- ^ StratumQuery used in corresponding request.
+            -> ResultValue -- ^ Result from JSON-RPC response
+            -> Parser StratumResult -- ^ Returns Aeson Parser.
+parseResult q (Right v) = parseHelper q v >>= return . Right
+parseResult _ (Left e) = return $ Left e
+
+parseHelper :: StratumQuery -> (Value -> Parser StratumData)
+parseHelper ( ReqVersion _ _ ) v = parseJSON v >>= return . ResVersion
+parseHelper ( ReqHistory _   ) v = parseJSON v >>= return . ResHistory
+parseHelper ( ReqBalance _   ) v = parseJSON v >>= return . ResBalance
+parseHelper ( ReqUnspent _   ) v = parseJSON v >>= return . ResUnspent
+parseHelper ( ReqTx      _   ) v = parseJSON v >>= return . ResTx
+parseHelper ( ReqBcast   _   ) v = parseJSON v >>= return . ResBcast
+
+
+-- | Helper function for Network.Haskoin.JSONRPC.Conduit
+newStratumReq :: MonadIO m
+              => Session StratumRequest StratumResult
+              -> StratumQuery
+              -> m ()
+newStratumReq s r = newReq s (toRequest r) (parseResult r)

@@ -5,5 +5,4 @@
 *.hp
 *.ps
 *.prof
-blockindex
-blockindex-testnet
+dist

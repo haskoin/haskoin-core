@@ -104,8 +104,8 @@ import Network.Haskoin.Util.BuildMonad
 -- could be blank. If mnemonic is Nothing, create new one and print it.
 cmdInitMnemo :: PersistUnique m
              => String                   -- ^ Passphrase to protect mnemonic
-             => Maybe String             -- ^ Mnemonic string
-             => EitherT String m Value   -- ^ String mnemonic or Null
+             -> Maybe String             -- ^ Mnemonic string
+             -> EitherT String m Value   -- ^ String mnemonic or Null
 
 cmdInitMnemo pass (Just ms) = do
     checkExisting

@@ -3,13 +3,10 @@ version:               0.0.1
 synopsis:              
     Implementation of a Bitcoin hierarchical deterministric wallet (BIP32).
 description:         
-    This package provides functions for generating hierarchical deterministic
-    keys (BIP32). It also provides functions for building and signing both
-    simple transactions and multisignature transactions. This package also
-    provides a command lines application called hw (haskoin wallet). It is a
-    lightweight bitcoin wallet featuring BIP32 key management, deterministic
-    signatures (RFC-6979) and first order support for multisignature
-    transactions. A library API for hw is also exposed.
+    This package provides a command lines application called hw (haskoin
+    wallet). It is a lightweight bitcoin wallet featuring BIP32 key management,
+    deterministic signatures (RFC-6979) and first order support for
+    multisignature transactions. A library API for hw is also exposed.
 homepage:              http://github.com/plaprade/haskoin-wallet
 bug-reports:           http://github.com/plaprade/haskoin-wallet/issues
 license:               PublicDomain
@@ -25,100 +22,82 @@ source-repository head
     location: git://github.com/plaprade/haskoin-wallet.git
 
 library
-    exposed-modules:   Network.Haskoin.Wallet,
-                       Network.Haskoin.Wallet.Store,
-                       Network.Haskoin.Wallet.Arbitrary
-    other-modules:     Network.Haskoin.Wallet.Keys,
-                       Network.Haskoin.Wallet.Manager,
-                       Network.Haskoin.Wallet.TxBuilder,
-                       Network.Haskoin.Wallet.Store.DbAccount,
-                       Network.Haskoin.Wallet.Store.DbAddress,
-                       Network.Haskoin.Wallet.Store.DbCoin,
-                       Network.Haskoin.Wallet.Store.DbTx,
-                       Network.Haskoin.Wallet.Store.CoinStatus,
-                       Network.Haskoin.Wallet.Store.Util
-    build-depends:     base                 >= 4.6  && < 4.7, 
+    exposed-modules:   Network.Haskoin.Wallet
+    other-modules:     Network.Haskoin.Wallet.Commands, 
+                       Network.Haskoin.Wallet.DbAccount,
+                       Network.Haskoin.Wallet.DbAddress,
+                       Network.Haskoin.Wallet.DbCoin,
+                       Network.Haskoin.Wallet.DbTx,
+                       Network.Haskoin.Wallet.CoinStatus,
+                       Network.Haskoin.Wallet.Util
+    build-depends:     aeson                >= 0.6  && < 0.7,
+                       aeson-pretty         >= 0.7  && < 0.8,
+                       base                 >= 4.6  && < 4.7, 
                        binary               >= 0.7  && < 0.8, 
                        bytestring           >= 0.10 && < 0.11, 
-                       mtl                  >= 2.1  && < 2.2,
                        containers           >= 0.5  && < 0.6,
-                       unordered-containers >= 0.2  && < 0.3,
-                       vector               >= 0.10 && < 0.11,
                        either               >= 4.0  && < 4.1,
-                       text                 >= 0.11 && < 0.12,
-                       yaml                 >= 0.8  && < 0.9,
-                       time                 >= 1.4  && < 1.5,
-                       aeson                >= 0.6  && < 0.7,
-                       aeson-pretty         >= 0.7  && < 0.8,
+                       haskoin              >= 0.0  && < 0.1, 
+                       mtl                  >= 2.1  && < 2.2,
                        persistent           >= 1.2  && < 1.3,
                        persistent-template  >= 1.2  && < 1.3,
                        persistent-sqlite    >= 1.2  && < 1.3,
-                       haskoin-util         >= 0.0  && < 0.1, 
-                       haskoin-crypto       >= 0.0  && < 0.1, 
-                       haskoin-protocol     >= 0.0  && < 0.1,
-                       haskoin-script       >= 0.0  && < 0.1,
-                       QuickCheck           >= 2.6  && < 2.7
+                       text                 >= 0.11 && < 0.12,
+                       time                 >= 1.4  && < 1.5,
+                       unordered-containers >= 0.2  && < 0.3,
+                       vector               >= 0.10 && < 0.11,
+                       yaml                 >= 0.8  && < 0.9
     ghc-options:       -Wall -fno-warn-orphans
 
 executable hw
     main-is:           hw.hs
-    build-depends:     base                 >= 4.6  && < 4.7, 
+    build-depends:     aeson                >= 0.6  && < 0.7,
+                       aeson-pretty         >= 0.7  && < 0.8,
+                       base                 >= 4.6  && < 4.7, 
                        binary               >= 0.7  && < 0.8, 
                        bytestring           >= 0.10 && < 0.11, 
-                       mtl                  >= 2.1  && < 2.2,
                        containers           >= 0.5  && < 0.6,
-                       unordered-containers >= 0.2  && < 0.3,
-                       vector               >= 0.10 && < 0.11,
                        directory            >= 1.2  && < 1.3,
                        either               >= 4.0  && < 4.1,
-                       text                 >= 0.11 && < 0.12,
-                       yaml                 >= 0.8  && < 0.9,
-                       time                 >= 1.4  && < 1.5,
-                       aeson                >= 0.6  && < 0.7,
-                       aeson-pretty         >= 0.7  && < 0.8,
+                       haskoin              >= 0.0  && < 0.1, 
+                       mtl                  >= 2.1  && < 2.2,
                        persistent           >= 1.2  && < 1.3,
                        persistent-template  >= 1.2  && < 1.3,
                        persistent-sqlite    >= 1.2  && < 1.3,
-                       haskoin-util         >= 0.0  && < 0.1, 
-                       haskoin-crypto       >= 0.0  && < 0.1, 
-                       haskoin-protocol     >= 0.0  && < 0.1,
-                       haskoin-script       >= 0.0  && < 0.1
+                       text                 >= 0.11 && < 0.12,
+                       time                 >= 1.4  && < 1.5,
+                       unordered-containers >= 0.2  && < 0.3,
+                       vector               >= 0.10 && < 0.11,
+                       yaml                 >= 0.8  && < 0.9
     hs-source-dirs:    . script
     ghc-options:       -Wall -fno-warn-orphans
 
 test-suite test-haskoin-wallet
     type:              exitcode-stdio-1.0
     main-is:           Main.hs
-    other-modules:     Network.Haskoin.Wallet.Tests,
-                       Network.Haskoin.Wallet.Store.Units,
-                       QuickCheckUtils,
-                       Units
-    build-depends:     base                       >= 4.6  && < 4.7, 
+    other-modules:     Network.Haskoin.Wallet.Units
+    build-depends:     aeson                      >= 0.6  && < 0.7,
+                       aeson-pretty               >= 0.7  && < 0.8,
+                       base                       >= 4.6  && < 4.7, 
                        binary                     >= 0.7  && < 0.8, 
                        bytestring                 >= 0.10 && < 0.11, 
-                       mtl                        >= 2.1  && < 2.2,
                        containers                 >= 0.5  && < 0.6,
-                       unordered-containers       >= 0.2  && < 0.3,
-                       vector                     >= 0.10 && < 0.11,
                        either                     >= 4.0  && < 4.1,
-                       text                       >= 0.11 && < 0.12,
-                       yaml                       >= 0.8  && < 0.9,
-                       time                       >= 1.4  && < 1.5,
-                       aeson                      >= 0.6  && < 0.7,
-                       aeson-pretty               >= 0.7  && < 0.8,
-                       conduit                    >= 1.0  && < 1.1,
+                       haskoin                    >= 0.0  && < 0.1, 
+                       mtl                        >= 2.1  && < 2.2,
                        persistent                 >= 1.2  && < 1.3,
                        persistent-template        >= 1.2  && < 1.3,
                        persistent-sqlite          >= 1.2  && < 1.3,
-                       haskoin-util               >= 0.0  && < 0.1, 
-                       haskoin-crypto             >= 0.0  && < 0.1, 
-                       haskoin-protocol           >= 0.0  && < 0.1,
-                       haskoin-script             >= 0.0  && < 0.1,
+                       text                       >= 0.11 && < 0.12,
+                       time                       >= 1.4  && < 1.5,
+                       unordered-containers       >= 0.2  && < 0.3,
+                       vector                     >= 0.10 && < 0.11,
+                       yaml                       >= 0.8  && < 0.9,
+                       HUnit                      >= 1.2  && < 1.3,
                        QuickCheck                 >= 2.6  && < 2.7, 
                        test-framework             >= 0.8  && < 0.9, 
                        test-framework-quickcheck2 >= 0.3  && < 0.4, 
-                       test-framework-hunit       >= 0.3  && < 0.4, 
-                       HUnit                      >= 1.2  && < 1.3
+                       test-framework-hunit       >= 0.3  && < 0.4 
     hs-source-dirs:    . tests
     ghc-options:       -Wall -fno-warn-orphans
 

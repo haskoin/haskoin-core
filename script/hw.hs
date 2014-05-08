@@ -43,10 +43,10 @@ import qualified Data.Aeson.Encode.Pretty as JSON
     , confIndent
     )
 
-import Network.Haskoin.Wallet.Keys
-import Network.Haskoin.Wallet.Store
-import Network.Haskoin.Wallet.Store.Util
+import Network.Haskoin.Wallet.Commands
+import Network.Haskoin.Wallet.Util
 import Network.Haskoin.Script
+import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Util.Network
 

@@ -1,12 +1,9 @@
 # haskoin-wallet
 
-This package provides functions for generating hierarchical deterministic keys
-(BIP32). It also provides functions for building and signing both simple
-transactions and multisignature transactions. This package also provides a
-command lines application called hw (haskoin wallet). It is a lightweight
-bitcoin wallet featuring BIP32 key management, deterministic signatures
-(RFC-6979) and first order support for multisignature transactions. A library
-API for hw is also exposed.
+This package provides a command lines application called hw (haskoin wallet).
+It is a lightweight bitcoin wallet featuring BIP32 key management,
+deterministic signatures (RFC-6979) and first order support for multisignature
+transactions. A library API for hw is also exposed.
 
 ## Documentation
 

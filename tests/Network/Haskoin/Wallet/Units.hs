@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE TypeFamilies      #-}
-module Network.Haskoin.Wallet.Store.Units (tests) where
+module Network.Haskoin.Wallet.Units (tests) where
 
 import Test.HUnit (Assertion, assertBool, assertEqual)
 import Test.Framework (Test, testGroup)
@@ -36,12 +36,13 @@ import Database.Persist
     )
 import Database.Persist.Sqlite (SqlBackend, runSqlite, runMigration)
 
-import Network.Haskoin.Wallet
-import Network.Haskoin.Wallet.Store
-import Network.Haskoin.Wallet.Store.DbAddress
-import Network.Haskoin.Wallet.Store.DbAccount
-import Network.Haskoin.Wallet.Store.Util
+import Network.Haskoin.Wallet.Commands
+import Network.Haskoin.Wallet.DbAddress
+import Network.Haskoin.Wallet.DbAccount
+import Network.Haskoin.Wallet.Util
+import Network.Haskoin.Transaction
 import Network.Haskoin.Script
+import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 tests :: [Test]

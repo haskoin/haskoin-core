@@ -5,12 +5,14 @@ import Data.Either
 import Data.Maybe
 import Data.Binary 
 import qualified Data.ByteString as BS
+import Text.Show.Pretty
 
-import Haskoin.Wallet
-import Haskoin.Crypto
-import Haskoin.Script
-import Haskoin.Protocol
-import Haskoin.Util 
+import Network.Haskoin.Transaction
+import Network.Haskoin.Crypto
+import Network.Haskoin.Script
+import Network.Haskoin.Protocol
+import Network.Haskoin.Util 
+import Network.Haskoin.Util.BuildMonad
 
 vectors = 
     [ 
@@ -35,6 +37,9 @@ genVector (xs,ys,zs,ps) = detSignTx tx sigi prv
           pub = map derivePubKey prv
           sps = map (encodeOutput . PayPKHash . pubKeyAddr) pub
           sigi = map (\(s,op) -> SigInput s op $ SigAll False) (zip sps zs)
+
+pp :: Show a => a -> IO ()
+pp s = mapM_ putStrLn $ lines $ ppShow s
 
 main :: IO ()
 main = do

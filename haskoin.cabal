@@ -94,6 +94,7 @@ test-suite test-haskoin
                        Network.Haskoin.Crypto.Base58.Tests,
                        Network.Haskoin.Crypto.Keys.Tests,
                        Network.Haskoin.Crypto.ExtendedKeys.Tests,
+                       Network.Haskoin.Crypto.ExtendedKeys.Units,
                        Network.Haskoin.Crypto.Hash.Tests,
                        Network.Haskoin.Crypto.Hash.Units,
                        Network.Haskoin.Crypto.Mnemonic.Tests,
@@ -107,6 +108,7 @@ test-suite test-haskoin
                        Network.Haskoin.Script.Tests,
                        Network.Haskoin.Script.Units,
                        Network.Haskoin.Transaction.Tests,
+                       Network.Haskoin.Transaction.Units,
                        Network.Haskoin.Transaction.Arbitrary
     build-depends:     aeson                      >= 0.6  && < 0.7,
                        base                       >= 4.6  && < 4.7, 

@@ -12,6 +12,7 @@ import qualified Network.Haskoin.Crypto.ECDSA.Tests (tests)
 import qualified Network.Haskoin.Crypto.Base58.Tests (tests)
 import qualified Network.Haskoin.Crypto.Keys.Tests (tests)
 import qualified Network.Haskoin.Crypto.ExtendedKeys.Tests (tests)
+import qualified Network.Haskoin.Crypto.ExtendedKeys.Units (tests)
 import qualified Network.Haskoin.Crypto.Hash.Tests (tests)
 import qualified Network.Haskoin.Crypto.Hash.Units (tests)
 import qualified Network.Haskoin.Crypto.Mnemonic.Tests (tests)
@@ -28,6 +29,7 @@ import qualified Network.Haskoin.Script.Units (tests)
 
 -- Transaction tests
 import qualified Network.Haskoin.Transaction.Tests (tests)
+import qualified Network.Haskoin.Transaction.Units (tests)
 
 main :: IO ()
 main = defaultMain
@@ -40,6 +42,7 @@ main = defaultMain
     ++ Network.Haskoin.Crypto.Hash.Units.tests
     ++ Network.Haskoin.Crypto.Keys.Tests.tests 
     ++ Network.Haskoin.Crypto.ExtendedKeys.Tests.tests 
+    ++ Network.Haskoin.Crypto.ExtendedKeys.Units.tests 
     ++ Network.Haskoin.Crypto.Mnemonic.Tests.tests 
     ++ Network.Haskoin.Crypto.Mnemonic.Units.tests 
     ++ Network.Haskoin.Crypto.Units.tests
@@ -48,5 +51,6 @@ main = defaultMain
     ++ Network.Haskoin.Script.Tests.tests
     ++ Network.Haskoin.Script.Units.tests
     ++ Network.Haskoin.Transaction.Tests.tests
+    ++ Network.Haskoin.Transaction.Units.tests
     )
 

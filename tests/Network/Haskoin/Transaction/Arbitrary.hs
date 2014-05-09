@@ -9,6 +9,7 @@ module Network.Haskoin.Transaction.Arbitrary
 , RegularTx(..)
 , MSParam(..)
 , PKHashSigTemplate(..)
+, MulSigTemplate(..)
 ) where
 
 import Test.QuickCheck 
@@ -23,7 +24,8 @@ import Test.QuickCheck
 import Control.Monad (liftM)
 import Control.Applicative ((<$>),(<*>))
 
-import Data.List (permutations)
+import Data.List (permutations, zip4, nub)
+import Data.List.Split (chunksOf)
 
 import Network.Haskoin.Crypto.Arbitrary 
 import Network.Haskoin.Protocol.Arbitrary ()
@@ -97,14 +99,18 @@ instance Arbitrary Coin where
 data PKHashSigTemplate = PKHashSigTemplate Tx [SigInput] [PrvKey]
     deriving (Eq, Show)
 
+data MulSigTemplate = MulSigTemplate Tx [SigInput] [PrvKey]
+    deriving (Eq, Show)
+
 -- Generates data for signing a PKHash transaction
 instance Arbitrary PKHashSigTemplate where
     arbitrary = do
-        inCount   <- choose (0,10)
-        perm      <- choose (0,max 0 $ inCount-1)
-        outPoints <- vectorOf inCount arbitrary
-        prvKeys   <- vectorOf inCount arbitrary
-        sigHashes <- vectorOf inCount arbitrary
+        inCount   <- choose (0,5)
+        outPoints <- nub <$> vectorOf inCount arbitrary
+        let c = length outPoints
+        perm      <- choose (0,max 0 $ c-1)
+        prvKeys   <- vectorOf c arbitrary
+        sigHashes <- vectorOf c arbitrary
         payTo <- choose (0,10) >>= \n -> do
             h <- (map (addrToBase58 . PubKeyAddress)) <$> vectorOf n arbitrary    
             v <- vectorOf n $ choose (1,2100000000000000)
@@ -115,7 +121,39 @@ instance Arbitrary PKHashSigTemplate where
             sigInputs = map (\(s,o,h) -> SigInput s o h) 
                             (zip3 scripts outPoints sigHashes)
             perInputs = (permutations sigInputs) !! perm
-            perKeys   = (permutations prvKeys) !! perm
             tx        = fromRight $ buildAddrTx outPoints payTo
-        return $ PKHashSigTemplate tx perInputs perKeys
+        return $ PKHashSigTemplate tx perInputs prvKeys
+
+-- Generates data for signing a P2SH transactions
+instance Arbitrary MulSigTemplate where
+    arbitrary = do
+        inCount   <- choose (0,5)
+        (MSParam m n) <- arbitrary
+        outPoints <- nub <$> vectorOf inCount arbitrary
+        let c = length outPoints
+        perm      <- choose (0,max 0 $ c-1)
+        prvKeys   <- vectorOf (c*m) arbitrary
+        xtraKeys  <- vectorOf (c*(n-m)) arbitrary
+        sigHashes <- vectorOf c arbitrary
+        payTo <- choose (0,10) >>= \i -> do
+            h <- (map (addrToBase58 . ScriptAddress)) <$> vectorOf i arbitrary    
+            v <- vectorOf i $ choose (1,2100000000000000)
+            return $ zip h v
+        let pubKeys   = chunksOf m $ map derivePubKey prvKeys
+            xtraPubs  = chunksOf (n-m) $ map derivePubKey xtraKeys
+            scriptRdm = map (\(a,b) -> PayMulSig (a++b) m) $ 
+                            zip pubKeys (xtraPubs ++ repeat [])
+            scriptOut = map (PayScriptHash . scriptAddr) scriptRdm
+            script    = map encodeOutput scriptOut
+            rdm       = map encodeOutput scriptRdm
+            sigInputs = map (\(s,o,r,h) -> SigInputSH s o r h) 
+                                (zip4 script
+                                      outPoints 
+                                      rdm
+                                      sigHashes
+                                )
+            perInputs = (permutations sigInputs) !! perm
+            tx        = fromRight $ buildAddrTx outPoints payTo
+        return $ MulSigTemplate tx perInputs prvKeys
+
 

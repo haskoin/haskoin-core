@@ -220,9 +220,16 @@ detSignTx tx@(Tx _ ti _ _) sigis keys = do
     when (null ti) $ Broken "detSignTx: Transaction has no inputs"
     newIn <- mapM sign $ orderSigInput ti sigis
     return tx{ txIn = newIn }
-    where sign (maybeSI,txin,i) = case maybeSI of
-              Just sigi -> detSignTxIn txin sigi tx i keys
-              _         -> toBuildTxIn txin
+  where 
+    sign (maybeSI,txin,i) 
+        | isComplete txinB = txinB
+        | otherwise        = case maybeSI of
+            Just sigi -> detSignTxIn txin sigi tx i keys
+            _         -> txinB
+      where
+        txinB = toBuildTxIn txin
+      
+            
 
 detSignTxIn :: TxIn -> SigInput -> Tx -> Int -> [PrvKey] -> Build TxIn
 detSignTxIn txin sigi tx i keys = do
@@ -321,6 +328,8 @@ sigKeys out keys = unzip <$> case out of
 
 {- Tx verification -}
 
+-- This is not the final transaction verification function. It is here mainly
+-- as a helper for tests. It can only validates standard inputs.
 verifyTx :: Tx -> [(Script,OutPoint)] -> Bool
 verifyTx tx xs = flip all z3 $ \(maybeS,txin,i) -> fromMaybe False $ do
     (out,inp) <- maybeS >>= flip decodeVerifySigInput txin

@@ -23,8 +23,8 @@ tests =
         , testProperty "testing chooseMSCoins function" testChooseMSCoins
         ]
     , testGroup "Signing Transactions"
-        [ testProperty "Check signed transaction status" testSignTxBuild
-        , testProperty "Sign and validate transactions" testSignTxValidate
+        [ testProperty "Sign and validate PKHash transactions" testSignTx
+        , testProperty "Sign and validate Multisig transactions" testSignMS
         ]
     ]
 
@@ -83,21 +83,33 @@ testChooseMSCoins target kbfee (MSParam m n) xs =
 
 {- Signing Transactions -}
 
-testSignTxBuild :: PKHashSigTemplate -> Bool
-testSignTxBuild (PKHashSigTemplate tx sigi prv)
+testSignTx :: PKHashSigTemplate -> Bool
+testSignTx (PKHashSigTemplate tx sigi prv)
     | null $ txIn tx = isBroken txSig && isBroken txSigP
-    | otherwise = isComplete txSig && isPartial txSigP
-    where txSig = detSignTx tx sigi prv
-          txSigP = detSignTx tx (tail sigi) (tail prv)
+    | otherwise =  (not $ verifyTx tx verData)
+                && isComplete txSig 
+                && verifyTx (runBuild txSig) verData
+                && isPartial txSigP
+                && (not $ verifyTx (runBuild txSigP) verData)
+                && isComplete txSigC
+                && verifyTx (runBuild txSigC) verData
+    where txSig   = detSignTx tx sigi prv
+          txSigP  = detSignTx tx sigi (tail prv)
+          txSigC  = detSignTx (runBuild txSigP) sigi [head prv]
+          verData = map (\(SigInput s o _) -> (s,o)) sigi
          
-testSignTxValidate :: PKHashSigTemplate -> Bool
-testSignTxValidate (PKHashSigTemplate tx sigi prv) =
-    case detSignTx tx sigi prv of
-        (Broken _)    -> True
-        (Partial btx)  -> not $ verifyTx btx $ map f sigi
-        (Complete btx) -> verifyTx btx $ map f sigi
-    where f si = (sigDataOut si, sigDataOP si)
-
--- todo: test p2sh transactions
-
+testSignMS :: MulSigTemplate -> Bool
+testSignMS (MulSigTemplate tx sigi prv)
+    | null $ txIn tx = isBroken txSig && isBroken txSigP
+    | otherwise =  (not $ verifyTx tx verData)
+                && isComplete txSig 
+                && verifyTx (runBuild txSig) verData
+                && isPartial txSigP
+                && (not $ verifyTx (runBuild txSigP) verData)
+                && isComplete txSigC
+                && verifyTx (runBuild txSigC) verData
+    where txSig   = detSignTx tx sigi prv
+          txSigP  = detSignTx tx sigi (tail prv)
+          txSigC  = detSignTx (runBuild txSigP) sigi [head prv]
+          verData = map (\(SigInputSH s o _ _) -> (s,o)) sigi
 

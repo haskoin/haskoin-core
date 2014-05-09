@@ -32,7 +32,7 @@ import Network.Haskoin.Protocol.Ping
 import Network.Haskoin.Protocol.Alert
 
 import Network.Haskoin.Util (isolate, encode')
-import Network.Haskoin.Crypto (chksum32)
+import Network.Haskoin.Crypto.Hash (chksum32)
 
 networkMagic :: Word32
 networkMagic = 0xf9beb4d9

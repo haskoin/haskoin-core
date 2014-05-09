@@ -23,7 +23,7 @@ import Data.Binary.Put
     )
 
 import Network.Haskoin.Util (stringToBS, bsToString)
-import Network.Haskoin.Crypto (CheckSum32)
+import Network.Haskoin.Crypto.Hash (CheckSum32)
 
 -- | A 'MessageCommand' is included in a 'MessageHeader' in order to identify
 -- the type of message present in the payload. This allows the message 

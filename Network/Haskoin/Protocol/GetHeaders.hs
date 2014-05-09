@@ -11,7 +11,7 @@ import Data.Binary.Put (putWord32le)
 import Network.Haskoin.Protocol.VarInt
 import Network.Haskoin.Protocol.GetBlocks (BlockLocator)
 
-import Network.Haskoin.Crypto (Hash256)
+import Network.Haskoin.Crypto.Hash (Hash256)
 
 -- | Similar to the 'GetBlocks' message type but for retrieving block headers
 -- only. The response to a 'GetHeaders' request is a 'Headers' message

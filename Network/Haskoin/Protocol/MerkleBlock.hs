@@ -10,7 +10,7 @@ import Data.Binary.Put (putWord8, putWord32le)
 
 import Network.Haskoin.Protocol.VarInt
 import Network.Haskoin.Protocol.BlockHeader
-import Network.Haskoin.Crypto (Hash256)
+import Network.Haskoin.Crypto.Hash (Hash256)
 
 data MerkleBlock = 
     MerkleBlock {

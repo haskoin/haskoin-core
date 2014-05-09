@@ -17,6 +17,10 @@ import qualified Network.Haskoin.Crypto.Hash.Tests (tests)
 import qualified Network.Haskoin.Crypto.Hash.Units (tests)
 import qualified Network.Haskoin.Crypto.Mnemonic.Tests (tests)
 import qualified Network.Haskoin.Crypto.Mnemonic.Units (tests)
+import qualified Network.Haskoin.Crypto.Bloom.Tests (tests)
+import qualified Network.Haskoin.Crypto.Bloom.Units (tests)
+import qualified Network.Haskoin.Crypto.Merkle.Tests (tests)
+import qualified Network.Haskoin.Crypto.Merkle.Units (tests)
 import qualified Network.Haskoin.Crypto.Units (tests)
 
 -- Protocol tests
@@ -45,6 +49,10 @@ main = defaultMain
     ++ Network.Haskoin.Crypto.ExtendedKeys.Units.tests 
     ++ Network.Haskoin.Crypto.Mnemonic.Tests.tests 
     ++ Network.Haskoin.Crypto.Mnemonic.Units.tests 
+    ++ Network.Haskoin.Crypto.Bloom.Tests.tests 
+    ++ Network.Haskoin.Crypto.Bloom.Units.tests 
+    ++ Network.Haskoin.Crypto.Merkle.Tests.tests 
+    ++ Network.Haskoin.Crypto.Merkle.Units.tests 
     ++ Network.Haskoin.Crypto.Units.tests
     ++ Network.Haskoin.Protocol.Tests.tests
     ++ Network.Haskoin.Protocol.Units.tests

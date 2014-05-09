@@ -10,7 +10,7 @@ import Data.Binary (Binary, get, put)
 import Data.Binary.Get (getWord32le)
 import Data.Binary.Put (putWord32le)
 
-import Network.Haskoin.Crypto (Hash256, doubleHash256)
+import Network.Haskoin.Crypto.Hash (Hash256, doubleHash256)
 import Network.Haskoin.Util (encode')
 
 -- | Data type recording information on a 'Block'. The hash of a block is

@@ -24,8 +24,8 @@ import Test.QuickCheck
 import Control.Monad (liftM)
 import Control.Applicative ((<$>),(<*>))
 
-import Data.List (permutations, zip4, nub)
-import Data.List.Split (chunksOf)
+import Data.Word (Word64)
+import Data.List (permutations, nubBy)
 
 import Network.Haskoin.Crypto.Arbitrary 
 import Network.Haskoin.Protocol.Arbitrary ()
@@ -78,7 +78,7 @@ genRegularInput = do
 -- address.
 genAddrOutput :: Gen TxOut
 genAddrOutput = do
-    v  <- arbitrary
+    v  <- choose (1,2100000000000000)
     sc <- oneof [ (PayPKHash . pubKeyAddr) <$> arbitrary
                 , (PayScriptHash . scriptAddr) <$> arbitrary
                 ]
@@ -102,58 +102,61 @@ data PKHashSigTemplate = PKHashSigTemplate Tx [SigInput] [PrvKey]
 data MulSigTemplate = MulSigTemplate Tx [SigInput] [PrvKey]
     deriving (Eq, Show)
 
+-- Generates a private key that can sign a input using the OutPoint and SigInput
+genPKHashData :: Gen (OutPoint, SigInput, PrvKey)
+genPKHashData = do
+    op  <- arbitrary
+    prv <- arbitrary
+    sh  <- arbitrary
+    let pub    = derivePubKey prv
+        script = encodeOutput $ PayPKHash $ pubKeyAddr pub
+        sigi   = SigInput script op sh
+    return (op, sigi, prv)
+
+-- Generates private keys that can sign an input using the OutPoint and SigInput
+genMSData :: Gen (OutPoint, SigInput, [PrvKey])
+genMSData = do
+    (MSParam m n) <- arbitrary
+    prv     <- vectorOf n arbitrary
+    perm    <- choose (0,n-1)
+    op      <- arbitrary
+    sh      <- arbitrary
+    let pub    = map derivePubKey prv
+        rdm    = PayMulSig pub m
+        script = encodeOutput $ PayScriptHash $ scriptAddr rdm
+        sigi   = SigInputSH script op (encodeOutput rdm) sh
+        perPrv = permutations prv !! perm
+    return (op, sigi, take m perPrv)
+
+genPayTo :: Gen (String,Word64)
+genPayTo = do
+    v  <- choose (1,2100000000000000)
+    sc <- oneof [ PubKeyAddress <$> arbitrary
+                , ScriptAddress <$> arbitrary
+                ]
+    return (addrToBase58 sc, v)
+
 -- Generates data for signing a PKHash transaction
 instance Arbitrary PKHashSigTemplate where
     arbitrary = do
-        inCount   <- choose (0,5)
-        outPoints <- nub <$> vectorOf inCount arbitrary
-        let c = length outPoints
-        perm      <- choose (0,max 0 $ c-1)
-        prvKeys   <- vectorOf c arbitrary
-        sigHashes <- vectorOf c arbitrary
-        payTo <- choose (0,10) >>= \n -> do
-            h <- (map (addrToBase58 . PubKeyAddress)) <$> vectorOf n arbitrary    
-            v <- vectorOf n $ choose (1,2100000000000000)
-            return $ zip h v
-        let pubKeys   = map derivePubKey prvKeys
-            scriptOut = map (PayPKHash . pubKeyAddr) pubKeys
-            scripts   = map encodeOutput scriptOut
-            sigInputs = map (\(s,o,h) -> SigInput s o h) 
-                            (zip3 scripts outPoints sigHashes)
-            perInputs = (permutations sigInputs) !! perm
-            tx        = fromRight $ buildAddrTx outPoints payTo
-        return $ PKHashSigTemplate tx perInputs prvKeys
+        inC   <- choose (0,5)
+        outC  <- choose (0,10)
+        dat   <- nubBy (\a b -> fst3 a == fst3 b) <$> vectorOf inC genPKHashData
+        perm  <- choose (0,max 0 $ length dat - 1)
+        payTo <- vectorOf outC genPayTo
+        let tx   = fromRight $ buildAddrTx (map fst3 dat) payTo
+            perI = permutations (map snd3 dat) !! perm
+        return $ PKHashSigTemplate tx perI (map lst3 dat)
 
 -- Generates data for signing a P2SH transactions
 instance Arbitrary MulSigTemplate where
     arbitrary = do
-        inCount   <- choose (0,5)
-        (MSParam m n) <- arbitrary
-        outPoints <- nub <$> vectorOf inCount arbitrary
-        let c = length outPoints
-        perm      <- choose (0,max 0 $ c-1)
-        prvKeys   <- vectorOf (c*m) arbitrary
-        xtraKeys  <- vectorOf (c*(n-m)) arbitrary
-        sigHashes <- vectorOf c arbitrary
-        payTo <- choose (0,10) >>= \i -> do
-            h <- (map (addrToBase58 . ScriptAddress)) <$> vectorOf i arbitrary    
-            v <- vectorOf i $ choose (1,2100000000000000)
-            return $ zip h v
-        let pubKeys   = chunksOf m $ map derivePubKey prvKeys
-            xtraPubs  = chunksOf (n-m) $ map derivePubKey xtraKeys
-            scriptRdm = map (\(a,b) -> PayMulSig (a++b) m) $ 
-                            zip pubKeys (xtraPubs ++ repeat [])
-            scriptOut = map (PayScriptHash . scriptAddr) scriptRdm
-            script    = map encodeOutput scriptOut
-            rdm       = map encodeOutput scriptRdm
-            sigInputs = map (\(s,o,r,h) -> SigInputSH s o r h) 
-                                (zip4 script
-                                      outPoints 
-                                      rdm
-                                      sigHashes
-                                )
-            perInputs = (permutations sigInputs) !! perm
-            tx        = fromRight $ buildAddrTx outPoints payTo
-        return $ MulSigTemplate tx perInputs prvKeys
-
+        inC   <- choose (0,5)
+        outC  <- choose (0,10)
+        dat   <- nubBy (\a b -> fst3 a == fst3 b) <$> vectorOf inC genMSData
+        perm  <- choose (0,max 0 $ length dat - 1)
+        payTo <- vectorOf outC genPayTo
+        let tx   = fromRight $ buildAddrTx (map fst3 dat) payTo
+            perI = permutations (map snd3 dat) !! perm
+        return $ MulSigTemplate tx perI (concat $ map lst3 dat)
 

@@ -3,7 +3,8 @@
   Network.Haskoin modules.
 -}
 module Network.Haskoin.Util
-( -- * ByteString helpers
+( 
+  -- * ByteString helpers
   toStrictBS
 , toLazyBS
 , stringToBS
@@ -39,6 +40,11 @@ module Network.Haskoin.Util
   -- * Various helpers
 , updateIndex
 , matchTemplate
+
+  -- Triples
+, fst3
+, snd3
+, lst3
 
 ) where
 
@@ -286,4 +292,13 @@ matchTemplate _  [] _ = []
 matchTemplate as (b:bs) f = case break (flip f b) as of
     (l,(r:rs)) -> (Just r) : matchTemplate (l ++ rs) bs f
     _          -> Nothing  : matchTemplate as bs f
+
+fst3 :: (a,b,c) -> a
+fst3 (a,_,_) = a
+
+snd3 :: (a,b,c) -> b
+snd3 (_,b,_) = b
+
+lst3 :: (a,b,c) -> c
+lst3 (_,_,c) = c
 

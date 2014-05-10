@@ -1,231 +1,255 @@
 {-# LANGUAGE OverloadedStrings, FlexibleInstances #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 module Network.Haskoin.JSONRPC.Stratum
 ( -- * Data
-  TxHeight(..)
-, CoinHeight(..)
-, Balance(..)
-, StratumRequest
-, StratumResult
-, StratumQuery(..)
+  Balance(..)
+, StratumCoin(..)
 , StratumData(..)
+, StratumNotif(..)
+, StratumQuery(..)
+, TxHeight(..)
+, StratumNotifRequest
+, StratumResult
+, StratumQueryRequest
+, StratumResponse
+, StratumMessage
+, StratumSession
   -- * Functions
 , toRequest
 , parseResult
+, parseNotif
 , newStratumReq
 ) where
 
-import Control.Monad
-    ( mzero )
-import Control.Monad.IO.Class
-    ( MonadIO )
-import Control.Monad.Trans.Either
-    ( runEitherT )
+import Control.Monad (mzero)
+import Control.Monad.IO.Class (MonadIO)
 import Data.Aeson
     ( FromJSON
     , ToJSON
-    , Value (Object, String)
-    , (.:)
-    , (.=)
+    , Value (Array, Object, String)
+    , (.:), (.=)
     , object
     , parseJSON
     , toJSON
-    , withText )
-import Data.Aeson.Types
-    ( Parser )
-import Data.Maybe
-    ( fromJust )
-import Data.Text
-    ( Text
-    , pack
-    , unpack )
-import Data.Word
-    ( Word
-    , Word64 )
-import Network.Haskoin.Crypto
-    ( Address
-    , Hash256
-    , addrToBase58
-    , base58ToAddr )
+    , withText
+    )
+import Data.Aeson.Types (Parser)
+import Data.Maybe (fromJust)
+import Data.Text (Text, pack, unpack)
+import qualified Data.Vector as V
+import Data.Word (Word, Word64)
+import Network.Haskoin.Crypto (Address, Hash256)
 import Network.Haskoin.Protocol
     ( OutPoint (OutPoint)
     , Tx
     , decodeTxid
     , encodeTxid
     , outPointHash
-    , outPointIndex )
+    , outPointIndex
+    )
 import Network.Haskoin.JSONRPC
     ( Id (IntId)
+    , Message
+    , Method
     , Request (Request)
+    , Response (Response)
+    , RequestValue
     , ResultValue
-    , Result )
-import Network.Haskoin.JSONRPC.Conduit
-    ( Session
-    , newReq )
+    , Result
+    )
+import Network.Haskoin.JSONRPC.Conduit (Session, newReq)
 import Network.Haskoin.Util
-    ( decodeToEither
+    ( bsToHex
+    , decode'
     , encode'
     , hexToBS
-    , liftMaybe
-    , liftEither )
+    )
 
 -- | JSON-RPC request with Stratum payload.
-type StratumRequest = Request StratumQuery
+type StratumQueryRequest = Request StratumQuery
+
+-- | JSON-RPC notification with Stratum payload.
+type StratumNotifRequest = Request StratumNotif
+
+-- | JSON-RPC response with Stratum payload.
+type StratumResponse = Response StratumData Value String
 
 -- | Stratum result in JSON-RPC response.
 type StratumResult = Result StratumData Value String
 
--- | Server Version data.
-newtype ServerVersion = ServerVersion String deriving (Show, Eq)
+-- | Message from Stratum JSON-RPC server.
+type StratumMessage = Message StratumNotif StratumData Value String
+
+-- | Session type for JSON-RPC conduit.
+type StratumSession
+    = Session StratumQueryRequest StratumData Value String StratumNotif
 
 -- | Transaction height and ID pair. Used in history responses.
 data TxHeight = TxHeight
-    { txHeight :: Word  -- ^ Block height.
+    { blockHeight :: Word  -- ^ Block height.
     , txHash :: Hash256 -- ^ Transaction id.
     } deriving (Show, Eq)
 
 -- | Bitcoin outpoint information.
-data CoinHeight = CoinHeight
-    { coinOutPoint :: OutPoint   -- ^ Coin data.
+data StratumCoin = StratumCoin
+    { outPoint :: OutPoint   -- ^ Coin data.
     , coinTxHeight :: TxHeight   -- ^ Transaction information.
     , coinValue :: Word64        -- ^ Output vale.
     } deriving (Show, Eq)
 
 -- | Balance information.
 data Balance = Balance
-    { balConfirmed :: Word64   -- ^ Confirmed balance.
-    , balUnconfirmed :: Word64 -- ^ Unconfirmed balance.
+    { confirmed :: Word64   -- ^ Confirmed balance.
+    , unconfirmed :: Word64 -- ^ Unconfirmed balance.
     } deriving (Show, Eq)
 
--- | Stratum Request data. To be placed inside JSONReq.
+-- | Stratum Request data. To be placed inside JSON request.
 data StratumQuery
-    = ReqVersion { reqClientVer :: Text, reqProtoVer :: Text }
-    | ReqHistory { reqAddress :: Address }
-    | ReqBalance { reqAddress :: Address }
-    | ReqUnspent { reqAddress :: Address }
-    | ReqTx { reqTxId :: Hash256 }
-    | ReqBcast { reqTx :: Tx }
+    = QueryVersion { queryClientVer :: Text, queryProtoVer :: Text }
+    | QueryHistory { queryAddr :: Address }
+    | QueryBalance { queryAddr :: Address }
+    | QueryUnspent { queryAddr :: Address }
+    | QueryTx { queryTxid :: Hash256 }
+    | QueryBroadcast { queryTx :: Tx }
     deriving (Eq, Show)
 
--- | Stratum Response data. Parse JSONRes result into this.
+-- | Stratum Response data.
 data StratumData
-    = ResVersion { resVersion :: String }
-    | ResHistory { resHistory :: [TxHeight] }
-    | ResBalance { resBalance :: Balance }
-    | ResUnspent { resUnspent :: [CoinHeight] }
-    | ResTx { resTx :: Tx }
-    | ResBcast { resTxId :: Hash256 }
+    = ServerVersion { dataVersion :: String }
+    | AddressHistory { dataHistory :: [TxHeight] }
+    | AddressBalance { dataBalance :: Balance }
+    | AddressUnspent { dataCoins :: [StratumCoin] }
+    | Transaction { dataTx :: Tx }
+    | BroadcastId { dataTxid :: Hash256 }
     deriving (Eq, Show)
+
+data StratumNotif
+    = NotifAddress { notifAddr :: Address, notifTxid :: Hash256 }
+    deriving (Eq, Show)
+
+instance ToJSON StratumNotif where
+    toJSON (NotifAddress a t) = toJSON (a, txidToJSON t)
 
 instance ToJSON StratumQuery where
-    toJSON ( ReqVersion c p ) = toJSON (c, p)
-    toJSON ( ReqHistory a   ) = toJSON [a]
-    toJSON ( ReqUnspent a   ) = toJSON [a]
-    toJSON ( ReqBalance a   ) = toJSON [a]
-    toJSON ( ReqTx      i   ) = toJSON [i]
-    toJSON ( ReqBcast   t   ) = toJSON [t]
-
-instance FromJSON Hash256 where
-    parseJSON = withText "transaction id not a string" $ \s -> do
-        return . fromJust . decodeTxid $ unpack s
-
-instance ToJSON Hash256 where
-    toJSON = toJSON . encodeTxid
-
-instance FromJSON Address where
-    parseJSON (String a) = do
-        let addrS = unpack a
-            addrM = base58ToAddr addrS
-        case addrM of
-            Nothing -> fail $ "Not a bitcoin address: " ++ addrS
-            Just addr -> return addr
-    parseJSON _ = mzero
-
-instance ToJSON Address where
-    toJSON = String . pack . addrToBase58
-
-instance FromJSON Tx where
-    parseJSON = withText "Transaction not encoded as string." $ \s -> do
-        etx <- runEitherT $ do
-            bs <- liftMaybe "Invalid hex encoding in tx." . hexToBS $ unpack s
-            tx <- liftEither $ decodeToEither bs
-            return tx
-        return $ either error id etx
-
-instance ToJSON Tx where
-    toJSON t = toJSON (encode' t)
+    toJSON (QueryVersion c p) = toJSON (c, p)
+    toJSON (QueryHistory a) = toJSON [a]
+    toJSON (QueryUnspent a) = toJSON [a]
+    toJSON (QueryBalance a) = toJSON [a]
+    toJSON (QueryTx i) = toJSON [txidToJSON i]
+    toJSON (QueryBroadcast t) = txToJSON t
 
 instance FromJSON Balance where
     parseJSON (Object o) = do
         c <- o .: "confirmed"
         u <- o .: "unconfirmed"
-        return $ Balance { balConfirmed = c, balUnconfirmed = u }
+        return $ Balance { confirmed = c, unconfirmed = u }
     parseJSON _ = mzero
 
 instance FromJSON TxHeight where
     parseJSON (Object v) = do
         h <- v .: "height"
         t <- v .: "tx_hash"
-        return $ TxHeight { txHeight = h, txHash = t }
+        i <- txidParse t
+        return $ TxHeight { blockHeight = h, txHash = i }
     parseJSON _ = mzero
 
 instance ToJSON TxHeight where
-    toJSON x = object [ "height" .= txHeight x , "tx_hash" .= txHash x ]
+    toJSON x = object
+        [ "height" .= blockHeight x
+        , "tx_hash" .= txidToJSON (txHash x)
+        ]
 
-instance FromJSON CoinHeight where
+instance FromJSON StratumCoin where
     parseJSON (Object o) = do
         h <- o .: "height"
         v <- o .: "value"
         t <- o .: "tx_hash"
         p <- o .: "tx_pos"
-        let op = OutPoint { outPointHash = t, outPointIndex = p }
-            th = TxHeight { txHeight = h, txHash = t }
-        return $ CoinHeight
-            { coinOutPoint = op
+        i <- txidParse t
+        let op = OutPoint { outPointHash = i, outPointIndex = p }
+            th = TxHeight { blockHeight = h, txHash = i }
+        return $ StratumCoin
+            { outPoint = op
             , coinTxHeight = th
-            , coinValue = v }
+            , coinValue = v
+            }
     parseJSON _ = mzero
 
-instance ToJSON CoinHeight where
+instance ToJSON StratumCoin where
     toJSON x = object
-        [ "height" .= txHeight (coinTxHeight x)
+        [ "height" .= blockHeight (coinTxHeight x)
         , "value" .= coinValue x
-        , "tx_hash" .= txHash (coinTxHeight x)
-        , "tx_pos" .= outPointIndex (coinOutPoint x) ]
+        , "tx_hash" .= txidToJSON (txHash $ coinTxHeight x)
+        , "tx_pos" .= outPointIndex (outPoint x)
+        ]
 
 method :: StratumQuery -> Text
-method ( ReqVersion _ _ ) = "server.version"
-method ( ReqHistory _   ) = "blockchain.address.get_history"
-method ( ReqBalance _   ) = "blockchain.address.get_balance"
-method ( ReqUnspent _   ) = "blockchain.address.get_unspent"
-method ( ReqTx      _   ) = "blockchain.transaction.get"
-method ( ReqBcast   _   ) = "blockchain.transaction.broadcast"
+method (QueryVersion _ _) = "server.version"
+method (QueryHistory _) = "blockchain.address.get_history"
+method (QueryBalance _) = "blockchain.address.get_balance"
+method (QueryUnspent _) = "blockchain.address.get_unspent"
+method (QueryTx _) = "blockchain.transaction.get"
+method (QueryBroadcast _) = "blockchain.transaction.broadcast"
 
 -- | Create a JSON-RPC request from a Stratum request.
-toRequest :: StratumQuery     -- ^ Stratum request data.
-          -> Int              -- ^ JSON-RPC request id.
-          -> StratumRequest   -- ^ Returns JSON-RPC request object.
+toRequest :: StratumQuery          -- ^ Stratum request data.
+          -> Int                   -- ^ JSON-RPC request id.
+          -> StratumQueryRequest   -- ^ Returns JSON-RPC request object.
 toRequest s i = Request (method s) (Just s) (Just (IntId i))
 
 -- | Parse result from JSON-RPC response into a Stratum response.
 parseResult :: StratumQuery -- ^ StratumQuery used in corresponding request.
             -> ResultValue -- ^ Result from JSON-RPC response
-            -> Parser StratumResult -- ^ Returns Aeson Parser.
+            -> Parser StratumResult -- ^ Returns Aeson parser.
 parseResult q (Right v) = parseHelper q v >>= return . Right
 parseResult _ (Left e) = return $ Left e
 
-parseHelper :: StratumQuery -> (Value -> Parser StratumData)
-parseHelper ( ReqVersion _ _ ) v = parseJSON v >>= return . ResVersion
-parseHelper ( ReqHistory _   ) v = parseJSON v >>= return . ResHistory
-parseHelper ( ReqBalance _   ) v = parseJSON v >>= return . ResBalance
-parseHelper ( ReqUnspent _   ) v = parseJSON v >>= return . ResUnspent
-parseHelper ( ReqTx      _   ) v = parseJSON v >>= return . ResTx
-parseHelper ( ReqBcast   _   ) v = parseJSON v >>= return . ResBcast
+parseHelper :: StratumQuery -> Value -> Parser StratumData
+parseHelper (QueryVersion _ _) v = parseJSON v >>= return . ServerVersion
+parseHelper (QueryHistory _) v = parseJSON v >>= return . AddressHistory
+parseHelper (QueryBalance _) v = parseJSON v >>= return . AddressBalance
+parseHelper (QueryUnspent _) v = parseJSON v >>= return . AddressUnspent
+parseHelper (QueryTx _) v = txParse v >>= return . Transaction
+parseHelper (QueryBroadcast _) v = txidParse v >>= return . BroadcastId
 
+parseNotifHelper :: Method
+                 -> Value
+                 -> Parser StratumNotif
+parseNotifHelper "blockchain.address.subscribe" (Array v) = do
+    a <- parseJSON (V.head v)
+    t <- txidParse (V.head $ V.tail v)
+    return $ NotifAddress a t
+parseNotifHelper _ _ = mzero
+
+-- | Parse notification from JSON-RPC request into Stratum format.
+parseNotif :: RequestValue
+             -- ^ Request to parse.
+             -> Parser StratumNotifRequest
+             -- ^ Parser to Stratum request format
+parseNotif (Request m (Just p) i) =
+    parseNotifHelper m p >>= \s -> return $ Request m (Just s) i
+parseNotif _ = mzero
 
 -- | Helper function for Network.Haskoin.JSONRPC.Conduit
 newStratumReq :: MonadIO m
-              => Session StratumRequest StratumResult
+              => StratumSession
               -> StratumQuery
-              -> m ()
-newStratumReq s r = newReq s (toRequest r) (parseResult r)
+              -> m Int
+newStratumReq s q = newReq s (toRequest q) p
+  where
+    p (Response r i) = do
+        x <- parseResult q r
+        return $ Response x i
+
+txidToJSON :: Hash256 -> Value
+txidToJSON = String . pack . encodeTxid
+
+txToJSON :: Tx -> Value
+txToJSON = String . pack . bsToHex . encode'
+
+txParse :: Value -> Parser Tx
+txParse = withText "bitcoin transaction" $
+    return . decode' . fromJust . hexToBS . unpack
+
+txidParse :: Value -> Parser Hash256
+txidParse = withText "transaction id" $ return .
+    maybe (error "Could not decode transaction id.") id . decodeTxid . unpack

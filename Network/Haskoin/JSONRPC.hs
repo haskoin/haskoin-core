@@ -22,13 +22,16 @@ module Network.Haskoin.JSONRPC
 , errParams
 , errInternal
 , errStr
+  -- Helpers
 , leftStr
+, numericId
 ) where
 
 import Control.Applicative ((<|>))
 import Control.Monad (mzero)
 import Data.Aeson.Types hiding (Result)
-import Data.Text (Text)
+import Data.Text (Text, unpack)
+import Text.Read (readEither)
  
 -- | JSON-RPC method name.
 type Method = Text
@@ -46,24 +49,21 @@ type MessageValue = Message Value Value Value String
 type ResultValue = Result Value Value String
 
 -- | JSON-RPC id in text or integer form.
-data Id
-    -- | Integral id
-    = IntId { intId :: Int }
-    -- | Text id (discouraged)
-    | TxtId { txtId :: Text }
-    deriving (Eq, Show)
+data Id = IntId { intId :: Int }  -- ^ Id in integer form.
+        | TxtId { txtId :: Text } -- ^ Id in string form (discouraged).
+        deriving (Eq, Show)
 
 -- | JSON-RPC error object. Sent inside a JSONRes in case of error.
-data Error e v
-    -- | Error object in JSON-RPC version 2 format.
-    = ErrObj
-        { errCode :: Int      -- ^ Integer error code.
-        , errMsg :: String    -- ^ Error message.
-        , errData :: Maybe e  -- ^ Optional error object.
-        }
-    -- | Error object in JSON-RPC version 1 format, usually e would be String.
-    | ErrVal { errVal :: v }
-    deriving (Eq, Show)
+data Error e v = ErrObj -- ^ Error object in JSON-RPC version 2 format.
+                   { errCode :: Int      -- ^ Integer error code.
+                   , errMsg :: String    -- ^ Error message.
+                   , errData :: Maybe e  -- ^ Optional error object.
+                   }
+               -- | Error object in JSON-RPC version 1 format
+               | ErrVal
+                   { errVal :: v  -- ^ Usually String.
+                   }
+               deriving (Eq, Show)
 
 -- | JSON-RPC request on notification.
 data Request j = Request
@@ -200,11 +200,17 @@ errInternal :: ToJSON e => Maybe e -> Error e v
 errInternal = ErrObj (-32606) "Internal error"
 
 -- | Get string from error object.
-errStr :: Error e String -> String
+errStr :: Error e Value -> String
 errStr (ErrObj _ m _) = m
-errStr (ErrVal v) = v
+errStr (ErrVal v) = either id id . flip parseEither v $
+    withText "error string" (return . unpack)
 
 -- | Map Left error objects to strings.
-leftStr :: Either (Error e String) r -> Either String r
+leftStr :: Either (Error e Value) r -> Either String r
 leftStr (Left e) = Left (errStr e)
 leftStr (Right r) = Right r
+
+-- | Force an id into a number or fail if not possible.
+numericId :: Id -> Either String Int
+numericId (IntId i) = Right i
+numericId (TxtId t) = readEither $ unpack t

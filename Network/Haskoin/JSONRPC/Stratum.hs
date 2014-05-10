@@ -66,19 +66,14 @@ import Network.Haskoin.Util
 
 -- | JSON-RPC request with Stratum payload.
 type StratumQueryRequest = Request StratumQuery
-
 -- | JSON-RPC notification with Stratum payload.
 type StratumNotifRequest = Request StratumNotif
-
 -- | JSON-RPC response with Stratum payload.
 type StratumResponse = Response StratumData Value String
-
 -- | Stratum result in JSON-RPC response.
 type StratumResult = Result StratumData Value String
-
 -- | Message from Stratum JSON-RPC server.
 type StratumMessage = Message StratumNotif StratumData Value String
-
 -- | Session type for JSON-RPC conduit.
 type StratumSession
     = Session StratumQueryRequest StratumData Value String StratumNotif
@@ -110,6 +105,7 @@ data StratumQuery
     | QueryUnspent { queryAddr :: Address }
     | QueryTx { queryTxid :: Hash256 }
     | QueryBroadcast { queryTx :: Tx }
+    | SubAddress { queryAddr :: Address }
     deriving (Eq, Show)
 
 -- | Stratum Response data.
@@ -120,14 +116,15 @@ data StratumData
     | AddressUnspent { dataCoins :: [StratumCoin] }
     | Transaction { dataTx :: Tx }
     | BroadcastId { dataTxid :: Hash256 }
+    | AddrStatus { addrStatus :: Hash256 }
     deriving (Eq, Show)
 
 data StratumNotif
-    = NotifAddress { notifAddr :: Address, notifTxid :: Hash256 }
+    = NotifAddress { notifAddr :: Address, notifAddrStatus :: Hash256 }
     deriving (Eq, Show)
 
 instance ToJSON StratumNotif where
-    toJSON (NotifAddress a t) = toJSON (a, txidToJSON t)
+    toJSON (NotifAddress a t) = toJSON (a, hashToJSON t)
 
 instance ToJSON StratumQuery where
     toJSON (QueryVersion c p) = toJSON (c, p)
@@ -136,6 +133,7 @@ instance ToJSON StratumQuery where
     toJSON (QueryBalance a) = toJSON [a]
     toJSON (QueryTx i) = toJSON [txidToJSON i]
     toJSON (QueryBroadcast t) = txToJSON t
+    toJSON (SubAddress a) = toJSON [a]
 
 instance FromJSON Balance where
     parseJSON (Object o) = do
@@ -189,6 +187,7 @@ method (QueryBalance _) = "blockchain.address.get_balance"
 method (QueryUnspent _) = "blockchain.address.get_unspent"
 method (QueryTx _) = "blockchain.transaction.get"
 method (QueryBroadcast _) = "blockchain.transaction.broadcast"
+method (SubAddress _) = "blockchain.address.subscribe"
 
 -- | Create a JSON-RPC request from a Stratum request.
 toRequest :: StratumQuery          -- ^ Stratum request data.
@@ -210,14 +209,15 @@ parseHelper (QueryBalance _) v = parseJSON v >>= return . AddressBalance
 parseHelper (QueryUnspent _) v = parseJSON v >>= return . AddressUnspent
 parseHelper (QueryTx _) v = txParse v >>= return . Transaction
 parseHelper (QueryBroadcast _) v = txidParse v >>= return . BroadcastId
+parseHelper (SubAddress _) v = hashParse v >>= return . AddrStatus
 
 parseNotifHelper :: Method
                  -> Value
                  -> Parser StratumNotif
 parseNotifHelper "blockchain.address.subscribe" (Array v) = do
     a <- parseJSON (V.head v)
-    t <- txidParse (V.head $ V.tail v)
-    return $ NotifAddress a t
+    s <- hashParse (V.head $ V.tail v)
+    return $ NotifAddress a s
 parseNotifHelper _ _ = mzero
 
 -- | Parse notification from JSON-RPC request into Stratum format.
@@ -251,5 +251,11 @@ txParse = withText "bitcoin transaction" $
     return . decode' . fromJust . hexToBS . unpack
 
 txidParse :: Value -> Parser Hash256
-txidParse = withText "transaction id" $ return .
-    maybe (error "Could not decode transaction id.") id . decodeTxid . unpack
+txidParse = withText "transaction id" $
+    return . fromJust . decodeTxid . unpack
+
+hashToJSON :: Hash256 -> Value
+hashToJSON = String . pack . bsToHex . encode'
+
+hashParse :: Value -> Parser Hash256
+hashParse = withText "hash" $ return . decode' . fromJust . hexToBS . unpack

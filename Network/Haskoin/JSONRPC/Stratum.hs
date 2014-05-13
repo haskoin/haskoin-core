@@ -46,7 +46,7 @@ import Network.Haskoin.Protocol
     , outPointHash
     , outPointIndex
     )
-import Network.Haskoin.JSONRPC
+import Network.Haskoin.JSONRPC.Message
     ( Id (IntId)
     , Message
     , Method
@@ -57,12 +57,7 @@ import Network.Haskoin.JSONRPC
     , Result
     )
 import Network.Haskoin.JSONRPC.Conduit (Session, newReq)
-import Network.Haskoin.Util
-    ( bsToHex
-    , decode'
-    , encode'
-    , hexToBS
-    )
+import Network.Haskoin.Util (bsToHex, decode', encode', hexToBS)
 
 -- | JSON-RPC request with Stratum payload.
 type StratumQueryRequest = Request StratumQuery
@@ -80,21 +75,21 @@ type StratumSession
 
 -- | Transaction height and ID pair. Used in history responses.
 data TxHeight = TxHeight
-    { blockHeight :: Word  -- ^ Block height.
-    , txHash :: Hash256 -- ^ Transaction id.
+    { txHeightBlock :: Word  -- ^ Block height.
+    , txHeightId :: Hash256 -- ^ Transaction id.
     } deriving (Show, Eq)
 
 -- | Bitcoin outpoint information.
 data StratumCoin = StratumCoin
-    { outPoint :: OutPoint   -- ^ Coin data.
+    { coinOutPoint :: OutPoint   -- ^ Coin data.
     , coinTxHeight :: TxHeight   -- ^ Transaction information.
     , coinValue :: Word64        -- ^ Output vale.
     } deriving (Show, Eq)
 
 -- | Balance information.
 data Balance = Balance
-    { confirmed :: Word64   -- ^ Confirmed balance.
-    , unconfirmed :: Word64 -- ^ Unconfirmed balance.
+    { balConfirmed :: Word64   -- ^ Confirmed balance.
+    , balUnconfirmed :: Word64 -- ^ Unconfirmed balance.
     } deriving (Show, Eq)
 
 -- | Stratum Request data. To be placed inside JSON request.
@@ -110,13 +105,13 @@ data StratumQuery
 
 -- | Stratum Response data.
 data StratumData
-    = ServerVersion { dataVersion :: String }
-    | AddressHistory { dataHistory :: [TxHeight] }
-    | AddressBalance { dataBalance :: Balance }
-    | AddressUnspent { dataCoins :: [StratumCoin] }
-    | Transaction { dataTx :: Tx }
-    | BroadcastId { dataTxid :: Hash256 }
-    | AddrStatus { addrStatus :: Hash256 }
+    = ServerVersion { stratumServerVer :: String }
+    | AddressHistory { stratumAdddrHist :: [TxHeight] }
+    | AddressBalance { stratumBalance :: Balance }
+    | AddressUnspent { stratumCoins :: [StratumCoin] }
+    | Transaction { stratumTx :: Tx }
+    | BroadcastId { stratumTxid :: Hash256 }
+    | AddrStatus { stratumAddrStatus :: Hash256 }
     deriving (Eq, Show)
 
 data StratumNotif
@@ -139,7 +134,7 @@ instance FromJSON Balance where
     parseJSON (Object o) = do
         c <- o .: "confirmed"
         u <- o .: "unconfirmed"
-        return $ Balance { confirmed = c, unconfirmed = u }
+        return $ Balance c u
     parseJSON _ = mzero
 
 instance FromJSON TxHeight where
@@ -147,13 +142,13 @@ instance FromJSON TxHeight where
         h <- v .: "height"
         t <- v .: "tx_hash"
         i <- txidParse t
-        return $ TxHeight { blockHeight = h, txHash = i }
+        return $ TxHeight h i
     parseJSON _ = mzero
 
 instance ToJSON TxHeight where
     toJSON x = object
-        [ "height" .= blockHeight x
-        , "tx_hash" .= txidToJSON (txHash x)
+        [ "height" .= txHeightBlock x
+        , "tx_hash" .= txidToJSON (txHeightId x)
         ]
 
 instance FromJSON StratumCoin where
@@ -163,21 +158,17 @@ instance FromJSON StratumCoin where
         t <- o .: "tx_hash"
         p <- o .: "tx_pos"
         i <- txidParse t
-        let op = OutPoint { outPointHash = i, outPointIndex = p }
-            th = TxHeight { blockHeight = h, txHash = i }
-        return $ StratumCoin
-            { outPoint = op
-            , coinTxHeight = th
-            , coinValue = v
-            }
+        let op = OutPoint i p
+            th = TxHeight h i
+        return $ StratumCoin op th v
     parseJSON _ = mzero
 
 instance ToJSON StratumCoin where
     toJSON x = object
-        [ "height" .= blockHeight (coinTxHeight x)
+        [ "height" .= txHeightBlock (coinTxHeight x)
         , "value" .= coinValue x
-        , "tx_hash" .= txidToJSON (txHash $ coinTxHeight x)
-        , "tx_pos" .= outPointIndex (outPoint x)
+        , "tx_hash" .= txidToJSON (txHeightId $ coinTxHeight x)
+        , "tx_pos" .= outPointIndex (coinOutPoint x)
         ]
 
 method :: StratumQuery -> Text

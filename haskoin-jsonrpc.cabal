@@ -11,7 +11,7 @@ build-type:             Simple
 cabal-version:          >=1.8
 
 library
-    exposed-modules:    Network.Haskoin.JSONRPC,
+    exposed-modules:    Network.Haskoin.JSONRPC.Message,
                         Network.Haskoin.JSONRPC.Conduit,
                         Network.Haskoin.JSONRPC.Stratum
     build-depends:      base >= 4.6,
@@ -21,9 +21,7 @@ library
                         conduit-extra,
                         containers,
                         either,
-                        haskoin-crypto,
-                        haskoin-protocol,
-                        haskoin-util,
+                        haskoin,
                         mtl,
                         network-conduit,
                         text,
@@ -33,8 +31,9 @@ library
 
 Test-Suite haskoin-jsonrpc-tests
     type:               exitcode-stdio-1.0
-    hs-source-dirs:     tests
-    main-is:            Messages.hs
+    hs-source-dirs:     tests, .
+    main-is:            Main.hs
+    other-modules:      Network.Haskoin.JSONRPC.Units
     build-depends:      base >= 4.6,
                         aeson,
                         bytestring,
@@ -42,14 +41,13 @@ Test-Suite haskoin-jsonrpc-tests
                         conduit-extra,
                         containers,
                         either,
-                        haskoin-crypto,
-                        haskoin-protocol,
-                        haskoin-util,
+                        haskoin,
                         mtl,
                         network-conduit,
                         text,
                         transformers,
                         unordered-containers,
                         vector,
-                        HUnit,
-                        haskoin-jsonrpc
+                        test-framework,
+                        test-framework-hunit,
+                        HUnit

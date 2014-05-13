@@ -23,7 +23,7 @@ import Data.ByteString.Lazy.Char8 (append, fromStrict, toStrict)
 import Data.Conduit (Conduit, Source, ($=), (=$=), await, yield)
 import Data.Conduit.List (sourceList, map)
 import Data.IntMap.Strict (IntMap, delete, empty, insert, lookup, null)
-import Network.Haskoin.JSONRPC
+import Network.Haskoin.JSONRPC.Message
 import Network.Haskoin.Util (maybeToEither)
 
 -- | Parse JSON-RPC ResponseValue to expected Response data type.

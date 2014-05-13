@@ -9,7 +9,7 @@ import Data.Conduit.Network
 import Data.Foldable (forM_)
 import Data.Maybe (fromJust)
 import Network.Haskoin.Crypto (base58ToAddr)
-import Network.Haskoin.JSONRPC
+import Network.Haskoin.JSONRPC.Message
 import Network.Haskoin.JSONRPC.Conduit
 import Network.Haskoin.JSONRPC.Stratum
 import Network.Haskoin.Util (bsToHex, encode')

@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | Provides instances of ToJSON and FromJSON to use with the Aeson library.
-module Network.Haskoin.JSONRPC
+module Network.Haskoin.JSONRPC.Message
 ( -- * Types
   Method
 , ErrorValue

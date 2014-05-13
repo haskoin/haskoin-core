@@ -8,7 +8,7 @@ import Data.Conduit.Network
 import Data.Foldable (forM_)
 import Data.Maybe (fromJust)
 import Network.Haskoin.Crypto (base58ToAddr)
-import Network.Haskoin.JSONRPC
+import Network.Haskoin.JSONRPC.Message
 import Network.Haskoin.JSONRPC.Conduit
 import Network.Haskoin.JSONRPC.Stratum
 import Network.Haskoin.Util (bsToHex, encode')
@@ -27,7 +27,7 @@ app ad = do
     f s (Right (MsgResponse (Response (Right r) _))) = g s r
     f _ _ = return Nothing
     g s (AddressHistory hs) = do
-        forM_ hs (newStratumReq s . QueryTx . txHash)
+        forM_ hs (newStratumReq s . QueryTx . txHeightId)
         return Nothing
     g _ (Transaction tx) = return $ Just tx
     g _ _ = error "Unexpected response."

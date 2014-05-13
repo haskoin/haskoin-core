@@ -1,0 +1,10 @@
+{ "result": "Hello JSON-RPC", "error": null, "id": 1}
+{"result": 1, "error": null, "id": 99}
+{"result": 1, "error": null, "id": 101}
+{"jsonrpc": "2.0", "result": 19, "id": 1}
+{"jsonrpc": "2.0", "result": -19, "id": 2}
+{"jsonrpc": "2.0", "result": 19, "id": 3}
+{"jsonrpc": "2.0", "result": 19, "id": 4}
+{"jsonrpc": "2.0", "result": 7, "id": "1"}
+{"jsonrpc": "2.0", "result": 19, "id": "2"}
+{"jsonrpc": "2.0", "result": ["hello", 5], "id": "9"}

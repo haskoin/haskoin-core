@@ -35,6 +35,9 @@ import qualified Network.Haskoin.Script.Units (tests)
 import qualified Network.Haskoin.Transaction.Tests (tests)
 import qualified Network.Haskoin.Transaction.Units (tests)
 
+-- JSON-RPC tests
+import qualified Network.Haskoin.JSONRPC.Units (tests)
+
 main :: IO ()
 main = defaultMain
     (  Network.Haskoin.Util.Tests.tests
@@ -60,5 +63,6 @@ main = defaultMain
     ++ Network.Haskoin.Script.Units.tests
     ++ Network.Haskoin.Transaction.Tests.tests
     ++ Network.Haskoin.Transaction.Units.tests
+    ++ Network.Haskoin.JSONRPC.Units.tests
     )
 

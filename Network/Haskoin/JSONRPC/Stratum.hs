@@ -43,7 +43,6 @@ import Network.Haskoin.Protocol
     , Tx
     , decodeTxid
     , encodeTxid
-    , outPointHash
     , outPointIndex
     )
 import Network.Haskoin.JSONRPC.Message

@@ -24,6 +24,9 @@ library
                        Network.Haskoin.Util.BuildMonad,
                        Network.Haskoin.Util.Constants,
                        Network.Haskoin.Util.Instances,
+                       Network.Haskoin.JSONRPC.Message,
+                       Network.Haskoin.JSONRPC.Conduit,
+                       Network.Haskoin.JSONRPC.Stratum,
                        Network.Haskoin.Crypto,
                        Network.Haskoin.Protocol,
                        Network.Haskoin.Script,
@@ -78,11 +81,15 @@ library
                        cryptohash   >= 0.11 && < 0.12,
                        either       >= 4.0  && < 4.1,
                        mtl          >= 2.1  && < 2.2, 
+                       network-conduit >= 1.0 && < 1.1,
                        pbkdf        >= 1.1  && < 1.2,
                        persistent   >= 1.2  && < 1.3,
                        split        >= 0.2  && < 0.3,
                        text         >= 0.11 && < 0.12,
-                       text-icu     >= 0.6  && < 0.7
+                       text-icu     >= 0.6  && < 0.7,
+                       transformers >= 0.3  && < 0.4,
+                       unordered-containers >= 0.2 && < 0.3,
+                       vector       >= 0.10 && < 0.11
     ghc-options:       -Wall -fno-warn-orphans
 
 test-suite test-haskoin
@@ -115,7 +122,8 @@ test-suite test-haskoin
                        Network.Haskoin.Script.Units,
                        Network.Haskoin.Transaction.Tests,
                        Network.Haskoin.Transaction.Units,
-                       Network.Haskoin.Transaction.Arbitrary
+                       Network.Haskoin.Transaction.Arbitrary,
+                       Network.Haskoin.JSONRPC.Units
     build-depends:     aeson                      >= 0.6  && < 0.7,
                        base                       >= 4.6  && < 4.7, 
                        binary                     >= 0.7  && < 0.8, 

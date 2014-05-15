@@ -71,7 +71,7 @@ library
                        Network.Haskoin.Script.Parser, 
                        Network.Haskoin.Script.SigHash,
                        Network.Haskoin.Transaction.Builder
-    build-depends:     aeson        >= 0.6  && < 0.7,
+    build-depends:     aeson        >= 0.7  && < 0.8,
                        base         >= 4.6  && < 4.7, 
                        binary       >= 0.7  && < 0.8, 
                        byteable     >= 0.1  && < 0.2,
@@ -124,7 +124,7 @@ test-suite test-haskoin
                        Network.Haskoin.Transaction.Units,
                        Network.Haskoin.Transaction.Arbitrary,
                        Network.Haskoin.JSONRPC.Units
-    build-depends:     aeson                      >= 0.6  && < 0.7,
+    build-depends:     aeson                      >= 0.7  && < 0.8,
                        base                       >= 4.6  && < 4.7, 
                        binary                     >= 0.7  && < 0.8, 
                        byteable                   >= 0.1  && < 0.2,

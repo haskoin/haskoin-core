@@ -130,7 +130,7 @@ DbTx json
     UniqueTx txid account
     deriving Show
 
-DbTxBlob json
+DbTxBlob
     txid String
     value BS.ByteString 
     created UTCTime default=CURRENT_TIME

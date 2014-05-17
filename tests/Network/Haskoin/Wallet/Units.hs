@@ -54,8 +54,8 @@ tests =
 
 runTests :: Assertion
 runTests = do
-    _ <- runSqlite ":memory:" $ runEitherT $ do
-        lift $ runMigration migrateAll
+    _ <- runSqlite ":memory:" $ do
+        runMigration migrateAll
         liftIO . (assertBool "Pre init") . isRight =<< runEitherT testPreInit
         liftIO . (assertBool "Init") . isRight =<< runEitherT testInit
         liftIO . (assertBool "New Acc") . isRight =<< runEitherT testNewAcc

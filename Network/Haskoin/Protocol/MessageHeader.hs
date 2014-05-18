@@ -49,7 +49,7 @@ data MessageCommand
     | MCPing 
     | MCPong 
     | MCAlert
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 instance Binary MessageCommand where
     
@@ -117,7 +117,7 @@ data MessageHeader =
                   , headPayloadSize :: !Word32
                   -- | Checksum of the payload. 
                   , headChecksum    :: !CheckSum32
-                  } deriving (Eq, Show)
+                  } deriving (Eq, Show, Read)
 
 instance Binary MessageHeader where
 

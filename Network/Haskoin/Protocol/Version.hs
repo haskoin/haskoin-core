@@ -45,7 +45,7 @@ data Version =
               -- or not. This feature is enabled since version >= 70001. See
               -- BIP37 for more details.
             , relay       :: !Bool
-            } deriving (Eq, Show)
+            } deriving (Eq, Show, Read)
 
 instance Binary Version where
 

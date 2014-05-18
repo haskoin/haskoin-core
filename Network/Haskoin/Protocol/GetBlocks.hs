@@ -35,7 +35,7 @@ data GetBlocks =
                 -- | Hash of the last desired block. If set to zero, the
                 -- maximum number of block hashes is returned (500).
               , getBlocksHashStop :: !Hash256
-              } deriving (Eq, Show)
+              } deriving (Eq, Show, Read)
 
 instance Binary GetBlocks where
 

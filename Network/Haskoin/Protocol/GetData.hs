@@ -20,7 +20,7 @@ data GetData =
     GetData {
               -- | List of object hashes 
               getDataList :: ![InvVector] 
-            } deriving (Eq, Show)
+            } deriving (Eq, Show, Read)
 
 instance Binary GetData where
 

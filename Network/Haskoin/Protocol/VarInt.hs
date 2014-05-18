@@ -20,7 +20,7 @@ import Data.Binary.Put
 -- | Data type representing a variable length integer. The 'VarInt' type
 -- usually precedes an array or a string that can vary in length. 
 newtype VarInt = VarInt { getVarInt :: Word64 }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
     
 instance Binary VarInt where
 

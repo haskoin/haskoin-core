@@ -23,7 +23,7 @@ data BloomFlags
     | BloomUpdateAll
     | BloomUpdateP2PubKeyOnly
     | BloomUpdateMask
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 instance Binary BloomFlags where
     get = go =<< getWord8
@@ -48,7 +48,7 @@ data BloomFilter = BloomFilter
     , bloomTweak     :: Word32
     , bloomFlags     :: BloomFlags
     }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 instance Binary BloomFilter where
 
@@ -67,14 +67,14 @@ instance Binary BloomFilter where
         put flags
 
 newtype FilterLoad = FilterLoad { getBloomFilter :: BloomFilter }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 instance Binary FilterLoad where
     get = FilterLoad <$> get
     put (FilterLoad f) = put f
 
 newtype FilterAdd = FilterAdd { getFilterData :: BS.ByteString }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 instance Binary FilterAdd where
     get = do

@@ -15,7 +15,7 @@ data Inv =
     Inv { 
         -- | Inventory vectors
           invList :: ![InvVector] 
-        } deriving (Eq, Show)
+        } deriving (Eq, Show, Read)
 
 instance Binary Inv where
 

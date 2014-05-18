@@ -17,7 +17,7 @@ newtype Ping =
            -- | A random nonce used to identify the recipient of the ping
            -- request once a Pong response is received.  
            pingNonce :: Word64 
-         } deriving (Eq, Show)
+         } deriving (Eq, Show, Read)
 
 -- | A Pong message is sent as a response to a ping message.
 newtype Pong = 
@@ -25,7 +25,7 @@ newtype Pong =
            -- | When responding to a Ping request, the nonce from the Ping
            -- is copied in the Pong response.
            pongNonce :: Word64 
-         } deriving (Eq, Show)
+         } deriving (Eq, Show, Read)
 
 instance Binary Ping where
     get = Ping <$> getWord64le

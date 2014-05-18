@@ -16,7 +16,7 @@ data NotFound =
     NotFound {
              -- | Inventory vectors related to this request
                notFoundList :: ![InvVector] 
-             } deriving (Eq, Show)
+             } deriving (Eq, Show, Read)
 
 instance Binary NotFound where
 

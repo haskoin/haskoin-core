@@ -79,7 +79,7 @@ import Network.Haskoin.Crypto.BigWord
     )
 
 -- | Data type representing a 32 bit checksum
-newtype CheckSum32 = CheckSum32 Word32 deriving (Show, Eq)
+newtype CheckSum32 = CheckSum32 Word32 deriving (Show, Eq, Read)
 
 instance Binary CheckSum32 where
     get = CheckSum32 <$> get

@@ -38,7 +38,7 @@ data BlockHeader =
                   -- randomness is included in the coinbase transaction of
                   -- this block.
                 , bhNonce        :: !Word32
-                } deriving (Eq, Show)
+                } deriving (Eq, Show, Read)
 
 instance Binary BlockHeader where
 

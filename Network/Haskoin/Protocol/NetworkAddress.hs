@@ -29,7 +29,7 @@ data NetworkAddress =
                    , naAddress  :: !(Word64, Word64)
                    -- | Port number serialized as big endian
                    , naPort     :: !Word16
-                   } deriving (Eq, Show)
+                   } deriving (Eq, Show, Read)
 
 instance Binary NetworkAddress where
 

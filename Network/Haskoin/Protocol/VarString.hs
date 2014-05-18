@@ -15,7 +15,7 @@ import Network.Haskoin.Protocol.VarInt
 -- | Data type for variable length strings. Variable length strings are
 -- serialized as a 'VarInt' followed by a bytestring.
 newtype VarString = VarString { getVarString :: BS.ByteString }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 instance Binary VarString where
 

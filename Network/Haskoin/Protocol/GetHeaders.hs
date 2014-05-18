@@ -29,7 +29,7 @@ data GetHeaders =
                  -- | Hash of the last desired block header. When set to zero,
                  -- the maximum number of block headers is returned (2000)
                , getHeadersHashStop :: !Hash256
-               } deriving (Eq, Show)
+               } deriving (Eq, Show, Read)
 
 instance Binary GetHeaders where
 

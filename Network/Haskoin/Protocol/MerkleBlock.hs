@@ -26,7 +26,7 @@ data MerkleBlock =
                   -- first. Flag bits are used to rebuild a partial merkle
                   -- tree.
                 , mFlags      :: [Bool]
-                } deriving (Eq, Show)
+                } deriving (Eq, Show, Read)
 
 instance Binary MerkleBlock where
 

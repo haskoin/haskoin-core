@@ -13,7 +13,7 @@ data Alert =
             alertPayload   :: !VarString
           -- | ECDSA signature of the payload
           , alertSignature :: !VarString
-          } deriving (Eq, Show)
+          } deriving (Eq, Show, Read)
 
 instance Binary Alert where
     get = Alert <$> get <*> get

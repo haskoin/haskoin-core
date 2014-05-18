@@ -21,7 +21,7 @@ data Headers =
               -- | List of block headers with respective transaction counts
               headersList :: ![BlockHeaderCount] 
             } 
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 instance Binary Headers where
 

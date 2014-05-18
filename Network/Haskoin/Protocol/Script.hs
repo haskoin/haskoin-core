@@ -108,13 +108,12 @@ data PushDataType
       -- | The next four bytes contains the number of bytes to be pushed onto
       -- the stack
     | OPDATA4
-    deriving (Eq, Show)
+    deriving Eq
 
 -- | Data type representing all of the operators allowed inside a 'Script'.
 data ScriptOp 
-    = 
       -- Pushing Data
-    OP_PUSHDATA BS.ByteString PushDataType 
+    = OP_PUSHDATA BS.ByteString PushDataType 
     | OP_0 
     | OP_1NEGATE 
     | OP_1  | OP_2  | OP_3  | OP_4  
@@ -140,7 +139,7 @@ data ScriptOp
       -- Other
     | OP_PUBKEY PubKey 
     | OP_INVALIDOPCODE Word8
-        deriving Eq 
+        deriving Eq
 
 instance Show ScriptOp where
     show op = case op of

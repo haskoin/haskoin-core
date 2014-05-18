@@ -24,7 +24,7 @@ data Addr =
            -- List of addresses of other nodes on the network with timestamps.
            addrList :: ![NetworkAddressTime] 
          } 
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 instance Binary Addr where
 

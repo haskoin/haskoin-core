@@ -17,7 +17,7 @@ data InvType
     | InvTx    -- ^ InvVector hash is related to a transaction 
     | InvBlock -- ^ InvVector hash is related to a block
     | InvMerkleBlock -- ^ InvVector has is related to a merkle block
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 instance Binary InvType where
 
@@ -45,7 +45,7 @@ data InvVector =
                 invType :: !InvType
                 -- | Hash of the object referenced by this inventory vector
               , invHash :: !Hash256
-              } deriving (Eq, Show)
+              } deriving (Eq, Show, Read)
 
 instance Binary InvVector where
     get = InvVector <$> get <*> get

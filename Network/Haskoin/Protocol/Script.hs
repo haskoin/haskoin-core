@@ -38,7 +38,6 @@ import Network.Haskoin.Protocol.VarInt
 import Network.Haskoin.Util 
     ( isolate
     , runPut'
-    , encode'
     , fromRunGet
     )
 import Network.Haskoin.Crypto.Keys (PubKey)

@@ -79,6 +79,14 @@ tests =
         , testProperty "size( put(FieldP) ) = 32" putModPSize
         , testProperty "get( put(FieldN) ) = FieldN" getPutModN
         , testProperty "Verify DER of put(FieldN)" putModNSize
+        ],
+      testGroup "BigWord Read Show"
+        [ testProperty "read( show(Word512) ) = Word512" readShowWord512
+        , testProperty "read( show(Word256) ) = Word256" readShowWord256
+        , testProperty "read( show(Word160) ) = Word160" readShowWord160
+        , testProperty "read( show(Word128) ) = Word128" readShowWord128
+        , testProperty "read( show(FieldP) ) = FieldP" readShowModP
+        , testProperty "read( show(FieldN) ) = FieldN" readShowModN
         ]
     ]
 
@@ -320,3 +328,22 @@ putModNSize r = r > 0 ==>
     c  = BS.index bs 2
     l  = BS.length bs
 
+{- BigWord Read Show -}
+
+readShowWord512 :: Word512 -> Bool
+readShowWord512 r = r == (read $ show r)
+
+readShowWord256 :: Word256 -> Bool
+readShowWord256 r = r == (read $ show r)
+
+readShowWord160 :: Word160 -> Bool
+readShowWord160 r = r == (read $ show r)
+
+readShowWord128 :: Word128 -> Bool
+readShowWord128 r = r == (read $ show r)
+
+readShowModP :: FieldP -> Bool
+readShowModP r = r == (read $ show r)
+
+readShowModN :: FieldN -> Property
+readShowModN r = r > 0 ==> r == (read $ show r)

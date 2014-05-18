@@ -85,7 +85,7 @@ data PubKey
     = PubKey  { pubKeyPoint :: !Point } 
     -- | Uncompressed public key
     | PubKeyU { pubKeyPoint :: !Point }
-    deriving Show
+    deriving (Read, Show)
 
 instance Eq PubKey where
     -- Compression does not matter for InfPoint
@@ -189,7 +189,7 @@ data PrvKey
     = PrvKey  { prvKeyFieldN :: !FieldN } 
     -- | Uncompressed private key
     | PrvKeyU { prvKeyFieldN :: !FieldN } 
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 -- | Returns True if the private key is valid. This will check if the integer
 -- value representing the private key is greater than 0 and smaller than the

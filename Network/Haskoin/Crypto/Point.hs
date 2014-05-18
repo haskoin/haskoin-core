@@ -32,7 +32,7 @@ curveB = fromInteger integerB
   InfPoint is the point at infinity
 -}
 data Point = Point !FieldP !FieldP !FieldP | InfPoint
-    deriving Show
+    deriving (Show, Read)
 
 instance Eq Point where
     InfPoint         == InfPoint         = True

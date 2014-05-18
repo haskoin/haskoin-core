@@ -62,8 +62,6 @@ import Network.Haskoin.Crypto.NumberTheory (mulInverse)
 import Network.Haskoin.Util 
     ( bsToInteger
     , integerToBS
-    , bsToHex
-    , hexToBS
     )
 
 -- | Data type representing a 512 bit unsigned integer.
@@ -94,15 +92,7 @@ data ModP
 data ModN
 
 newtype BigWord n = BigWord { getBigWordInteger :: Integer }
-    deriving (Eq, Ord)
-
-instance BigWordMod n => Read (BigWord n) where
-    readsPrec _ str = case hexToBS str of
-        Just bs -> [(fromIntegral $ bsToInteger bs, "")]
-        Nothing -> []
-
-instance BigWordMod n => Show (BigWord n) where
-    show = bsToHex . integerToBS . getBigWordInteger
+    deriving (Eq, Ord, Read, Show)
 
 toFieldN :: BigWord n -> FieldN
 toFieldN (BigWord i) = fromInteger i

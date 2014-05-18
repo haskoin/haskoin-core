@@ -52,7 +52,7 @@ data Tx =
        , txOut      :: ![TxOut]
          -- | The block number of timestamp at which this transaction is locked
        , txLockTime :: !Word32
-       } deriving (Eq, Show)
+       } deriving (Eq, Show, Read)
 
 instance Binary Tx where
 
@@ -98,7 +98,7 @@ data CoinbaseTx =
                  -- | The block number of timestamp at which this 
                  -- transaction is locked.
                , cbLockTime   :: !Word32
-               } deriving (Eq, Show)
+               } deriving (Eq, Show, Read)
 
 instance Binary CoinbaseTx where
 
@@ -138,7 +138,7 @@ data TxIn =
            -- transaction. The intended use is for replacing transactions with
            -- new information before the transaction is included in a block.
          , txInSequence :: !Word32
-         } deriving (Eq, Show)
+         } deriving (Eq, Show, Read)
 
 instance Binary TxIn where
     get = TxIn <$> get <*> get <*> getWord32le
@@ -151,7 +151,7 @@ data TxOut =
             outValue     :: !Word64
             -- | Script specifying the conditions to spend this output.
           , scriptOutput :: !Script
-          } deriving (Eq, Show)
+          } deriving (Eq, Show, Read)
 
 instance Binary TxOut where
     get = do
@@ -170,12 +170,7 @@ data OutPoint =
                -- | The position of the specific output in the transaction.
                -- The first output position is 0.
              , outPointIndex :: !Word32
-             } deriving Eq
-
-instance Show OutPoint where
-    show (OutPoint h i) = show ("txid = " ++ h',"index = " ++ (show i))
-      where 
-        h' = encodeTxid h
+             } deriving (Read, Show, Eq)
 
 instance Binary OutPoint where
     get = do

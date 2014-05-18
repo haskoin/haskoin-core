@@ -39,7 +39,6 @@ import Network.Haskoin.Util
     ( isolate
     , runPut'
     , encode'
-    , bsToHex
     , fromRunGet
     )
 import Network.Haskoin.Crypto.Keys (PubKey)
@@ -55,7 +54,7 @@ data Script =
              -- | List of script operators defining this script
              scriptOps :: [ScriptOp] 
            }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 instance Binary Script where
     get = do
@@ -108,7 +107,7 @@ data PushDataType
       -- | The next four bytes contains the number of bytes to be pushed onto
       -- the stack
     | OPDATA4
-    deriving Eq
+    deriving (Show, Read, Eq)
 
 -- | Data type representing all of the operators allowed inside a 'Script'.
 data ScriptOp 
@@ -139,38 +138,7 @@ data ScriptOp
       -- Other
     | OP_PUBKEY PubKey 
     | OP_INVALIDOPCODE Word8
-        deriving Eq
-
-instance Show ScriptOp where
-    show op = case op of
-        (OP_PUSHDATA bs _)   -> "OP_PUSHDATA " ++ (bsToHex bs)
-        OP_0                 -> "OP_0"
-        OP_1NEGATE           -> "OP_1NEGATE"
-        OP_1                 -> "OP_1"
-        OP_2                 -> "OP_2"
-        OP_3                 -> "OP_3"
-        OP_4                 -> "OP_4"
-        OP_5                 -> "OP_5"
-        OP_6                 -> "OP_6"
-        OP_7                 -> "OP_7"
-        OP_8                 -> "OP_8"
-        OP_9                 -> "OP_9"
-        OP_10                -> "OP_10"
-        OP_11                -> "OP_11"
-        OP_12                -> "OP_12"
-        OP_13                -> "OP_13"
-        OP_14                -> "OP_14"
-        OP_15                -> "OP_15"
-        OP_16                -> "OP_16"
-        OP_VERIFY            -> "OP_VERIFY"
-        OP_DUP               -> "OP_DUP"
-        OP_EQUAL             -> "OP_EQUAL"
-        OP_EQUALVERIFY       -> "OP_EQUALVERIFY"
-        OP_HASH160           -> "OP_HASH160"
-        OP_CHECKSIG          -> "OP_CHECKSIG"
-        OP_CHECKMULTISIG     -> "OP_CHECKMULTISIG"
-        (OP_PUBKEY p)        -> "OP_PUBKEY " ++ (bsToHex $ encode' p)   
-        (OP_INVALIDOPCODE w) -> "OP_INVALIDOPCODE " ++ (show w)
+        deriving (Show, Read, Eq)
 
 instance Binary ScriptOp where
 

@@ -8,7 +8,7 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
 import Control.Applicative ((<$>))
-import Control.Monad.Trans (liftIO, lift)
+import Control.Monad.Trans (liftIO)
 import Control.Monad.Trans.Either (EitherT, runEitherT)
 
 import Data.Maybe (fromJust, isJust)

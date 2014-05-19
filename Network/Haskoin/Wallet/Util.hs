@@ -57,12 +57,12 @@ import Database.Persist.TH
     , share
     )
 
+import Network.Haskoin.Wallet.Instances ()
 import Network.Haskoin.Wallet.CoinStatus
 import Network.Haskoin.Script
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
-import Network.Haskoin.Util.Instances ()
 
 type AccountName = String
 

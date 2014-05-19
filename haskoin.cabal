@@ -23,7 +23,6 @@ library
                        Network.Haskoin.Util.Network,
                        Network.Haskoin.Util.BuildMonad,
                        Network.Haskoin.Util.Constants,
-                       Network.Haskoin.Util.Instances,
                        Network.Haskoin.JSONRPC.Message,
                        Network.Haskoin.JSONRPC.Conduit,
                        Network.Haskoin.JSONRPC.Stratum,

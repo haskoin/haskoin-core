@@ -603,12 +603,12 @@ cmdSignRawTx :: (MonadIO m, MonadLogger m)
              -> m Value
 cmdSignRawTx tx strSigi strKeys sh 
     | isJust fsM && isJust keysM = do
-        let buildTx = detSignTx tx (map (\f -> f sh) fs) keys
-            tx      = runBuild buildTx
-        when (isBroken buildTx) $ liftIO $ throwIO $
-            TransactionSigningException $ runBroken buildTx
-        return $ object [ (T.pack "Tx") .= (toJSON $ bsToHex $ encode' tx)
-                        , (T.pack "Complete") .= isComplete buildTx
+        let btx    = detSignTx tx (map (\f -> f sh) fs) keys
+            sigTx  = runBuild btx
+        when (isBroken btx) $ do
+            liftIO $ throwIO $ TransactionSigningException $ runBroken btx
+        return $ object [ (T.pack "Tx") .= (toJSON $ bsToHex $ encode' sigTx)
+                        , (T.pack "Complete") .= isComplete btx
                         ]
     | otherwise = liftIO $ throwIO $
         ParsingException "Could not parse input values"

@@ -613,8 +613,6 @@ cmdSignRawTx tx strSigi strKeys sh
     | otherwise = liftIO $ throwIO $
         ParsingException "Could not parse input values"
   where
-    sigiErr = "cmdSignRawTx: Could not parse parent transaction data"
-    keysErr = "cmdSignRawTx: Could not parse private keys (WIF)"
     fsM   = Json.decode $ toLazyBS $ stringToBS strSigi
     keysM = Json.decode $ toLazyBS $ stringToBS strKeys
     (RawSigInput fs) = fromJust fsM

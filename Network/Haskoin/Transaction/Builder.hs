@@ -229,8 +229,6 @@ detSignTx tx@(Tx _ ti _ _) sigis keys = do
       where
         txinB = toBuildTxIn txin
       
-            
-
 detSignTxIn :: TxIn -> SigInput -> Tx -> Int -> [PrvKey] -> Build TxIn
 detSignTxIn txin sigi tx i keys = do
     (out,vKeys,pubs,buildf) <- decodeSigInput sigi keys
@@ -254,7 +252,6 @@ toBuildTxIn txin@(TxIn _ s _)
             Right (SpendMulSig xs r) ->
                 guardPartial (length xs == r) >> return txin
             _ -> return txin
-
 
 orderSigInput :: [TxIn] -> [SigInput] -> [(Maybe SigInput, TxIn, Int)]
 orderSigInput ti si = zip3 (matchTemplate si ti f) ti [0..]

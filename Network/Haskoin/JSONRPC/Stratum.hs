@@ -105,7 +105,7 @@ data StratumQuery
 -- | Stratum Response data.
 data StratumData
     = ServerVersion { stratumServerVer :: String }
-    | AddressHistory { stratumAdddrHist :: [TxHeight] }
+    | AddressHistory { stratumAddrHist :: [TxHeight] }
     | AddressBalance { stratumBalance :: Balance }
     | AddressUnspent { stratumCoins :: [StratumCoin] }
     | Transaction { stratumTx :: Tx }

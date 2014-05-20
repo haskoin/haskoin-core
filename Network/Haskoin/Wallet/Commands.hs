@@ -102,30 +102,20 @@ cmdInitMnemo :: (MonadLogger m, PersistUnique m)
              -> m Value          -- ^ String mnemonic or Null
 
 cmdInitMnemo pass (Just ms) = do
-    isInit <- isWalletInit "main"
-    when isInit $ do
-        logErrorN $ T.pack "The wallet is already initialized"
-        liftIO $ throwIO AlreadyInitializedException
     let seedE = mnemonicToSeed english (T.pack pass) (T.pack ms)
         seed  = fromRight seedE
-    when (isLeft seedE) $ do
-        logErrorN $ T.pack $ fromLeft seedE
-        liftIO $ throwIO BadMnemonicException
+    when (isLeft seedE) $ liftIO $ throwIO $ 
+        InitializationException $ fromLeft seedE
     cmdInit seed
 
 cmdInitMnemo pass Nothing = do
-    isInit <- isWalletInit "main"
-    when isInit $ do
-        logErrorN $ T.pack "The wallet is already initialized"
-        liftIO $ throwIO AlreadyInitializedException
     ent  <- liftIO $ devRandom 16
     let msE   = toMnemonic english ent
         ms    = fromRight msE
         seedE = mnemonicToSeed english (T.pack pass) =<< msE
         seed  = fromRight seedE
-    when (isLeft seedE) $ do
-        logErrorN $ T.pack $ fromLeft seedE
-        liftIO $ throwIO BadMnemonicException
+    when (isLeft seedE) $ liftIO $ throwIO $ 
+        InitializationException $ fromLeft seedE
     _ <- cmdInit seed
     return $ object ["Seed" .= ms]
 
@@ -135,20 +125,16 @@ cmdInit :: (MonadLogger m, PersistUnique m)
         => BS.ByteString    -- ^ Secret seed.
         -> m Value          -- ^ Returns Null.
 cmdInit seed 
-    | BS.null seed = do
-        logErrorN $ T.pack "The seed is empty"
-        liftIO $ throwIO EmptySeedException
+    | BS.null seed = liftIO $ throwIO $ 
+        InitializationException "The seed i sempty"
     | otherwise = do
         isInit <- isWalletInit "main"
-        when isInit $ do
-            logErrorN $ T.pack "The wallet is already initialized."
-            liftIO $ throwIO AlreadyInitializedException
+        when isInit $ liftIO $ throwIO $ 
+            InitializationException "The wallet is already initialized"
         time <- liftIO getCurrentTime
         let master = makeMasterKey seed
-        when (isNothing master) $ do
-            logErrorN $ T.pack 
-                "The seed derivation produced an invalid key. Use another seed."
-            liftIO $ throwIO $ InvalidDerivationException
+        when (isNothing master) $ liftIO $ throwIO $ InitializationException
+            "The seed derivation produced an invalid key. Use another seed"
         insert_ $ DbWallet "main" "full" (fromJust master) (-1) time
         return Null
 
@@ -197,12 +183,10 @@ cmdNewMS :: (MonadLogger m, PersistUnique m, PersistQuery m)
 cmdNewMS name m n mskeys = do
     let keys = nub mskeys
     time <- liftIO getCurrentTime
-    unless (n >= 1 && n <= 16 && m >= 1 && m <= n) $ do
-        logErrorN $ T.pack "Invalid multisig parameters"
-        liftIO $ throwIO InvalidMultiSigException
-    unless (length keys < n) $ do
-        logErrorN $ T.pack "Too many keys"
-        liftIO $ throwIO InvalidMultiSigException
+    unless (n >= 1 && n <= 16 && m >= 1 && m <= n) $ liftIO $ throwIO $ 
+        AccountSetupException "Invalid multisig parameters"
+    unless (length keys < n) $ liftIO $ throwIO $
+        AccountSetupException "Too many keys"
     (Entity wk w) <- dbGetWallet "main"
     let deriv = fromIntegral $ dbWalletAccIndex w + 1
         (k,i) = head $ accPubKeys (dbWalletMaster w) deriv
@@ -230,30 +214,26 @@ cmdAddKeys :: (MonadLogger m, PersistUnique m, PersistQuery m)
            -> [XPubKey]   -- ^ Thirdparty public keys to add.
            -> m Value     -- ^ Returns the account information.
 cmdAddKeys name keys 
-    | null keys = do    
-        logErrorN $ T.pack "Multisig key list can not be empty."
-        liftIO $ throwIO InvalidMultiSigException
+    | null keys = liftIO $ throwIO $
+         AccountSetupException "Multisig key list can not be empty"
     | otherwise = do
         (Entity ai acc) <- dbGetAccount name
-        unless (isMSAcc acc) $ do
-            logErrorN $ T.pack "Can only add keys to a multisig account."
-            liftIO $ throwIO InvalidMultiSigException
+        unless (isMSAcc acc) $ liftIO $ throwIO $ AccountSetupException 
+            "Can only add keys to a multisig account"
         -- TODO: Match PubKey instead of XPubKey to avoid playing 
         -- with height or other values
         exists <- mapM (\x -> count [DbAccountKey ==. AccPubKey x]) keys
-        unless (sum exists == 0) $ do
-            logErrorN $ T.pack 
-                "Can not add your own keys to a multisig account."
-            liftIO $ throwIO InvalidMultiSigException
+        unless (sum exists == 0) $ liftIO $ throwIO $ AccountSetupException 
+            "Can not add your own keys to a multisig account"
         let prevKeys = dbAccountMsKeys acc
-        when (length prevKeys == (fromJust $ dbAccountMsTotal acc) - 1) $ do
-            logErrorN $ T.pack "Account is complete. Can not add any keys."
-            liftIO $ throwIO InvalidMultiSigException
+        when (length prevKeys == (fromJust $ dbAccountMsTotal acc) - 1) $ 
+            liftIO $ throwIO $ AccountSetupException 
+                "The account is complete and no further keys can be added"
         let newKeys = nub $ prevKeys ++ keys
             newAcc  = acc{ dbAccountMsKeys = newKeys }
-        unless (length newKeys < (fromJust $ dbAccountMsTotal acc)) $ do
-            logErrorN $ T.pack "Too many keys have been added"
-            liftIO $ throwIO InvalidMultiSigException
+        unless (length newKeys < (fromJust $ dbAccountMsTotal acc)) $
+            liftIO $ throwIO $ AccountSetupException
+                "Too many keys were added to this account"
         replace ai newAcc
         let n = fromJust $ dbAccountMsTotal newAcc
         when (length (dbAccountMsKeys acc) == n - 1) $ do
@@ -311,14 +291,10 @@ cmdList :: (MonadLogger m, PersistUnique m, PersistQuery m)
         -> Int           -- ^ Number of addresses per page.
         -> m Value       -- ^ The requested page.
 cmdList name pageNum resPerPage 
-    | pageNum < 0 = do
-        logErrorN $ T.pack $ 
-            unwords ["Invalid page number", show pageNum]
-        liftIO $ throwIO InvalidPageException
-    | resPerPage < 1 = do
-        logErrorN $ T.pack $
-            unwords ["Invalid results per page",show resPerPage]
-        liftIO $ throwIO InvalidPageException
+    | pageNum < 0 = liftIO $ throwIO $ InvalidPageException $ 
+        unwords ["Invalid page number", show pageNum]
+    | resPerPage < 1 = liftIO $ throwIO $ InvalidPageException $
+        unwords ["Invalid results per page",show resPerPage]
     | otherwise = do
         (Entity ai acc) <- dbGetAccount name
         addrCount <- count 
@@ -329,9 +305,8 @@ cmdList name pageNum resPerPage
         let maxPage = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
             page | pageNum == 0 = maxPage
                  | otherwise = pageNum
-        when (page > maxPage) $ do
-            logErrorN $ T.pack "Page number too high"
-            liftIO $ throwIO InvalidPageException
+        when (page > maxPage) $ liftIO $ throwIO $
+            InvalidPageException "The page number is too high"
         addrs <- selectList [ DbAddressAccount ==. ai
                             , DbAddressInternal ==. False
                             , DbAddressIndex <=. dbAccountExtIndex acc
@@ -366,9 +341,8 @@ cmdLabel :: (MonadLogger m, PersistUnique m, PersistMonadBackend m ~ SqlBackend)
          -> m Value       -- ^ New address information.
 cmdLabel name key label = do
     (Entity ai acc) <- dbGetAccount name
-    when (key > dbAccountExtIndex acc) $ do
-        logErrorN $ T.pack $ "Invalid address key"
-        liftIO $ throwIO InvalidAddressException
+    when (key > dbAccountExtIndex acc) $ liftIO $ throwIO $
+        InvalidAddressException "This address key does not exist"
     (Entity i add) <- dbGetAddressByIndex ai key False
     let newAddr = add{dbAddressLabel = label}
     replace i newAddr
@@ -382,9 +356,8 @@ cmdWIF :: (MonadLogger m, PersistUnique m, PersistMonadBackend m ~ SqlBackend)
 cmdWIF name key = do
     (Entity ai acc) <- dbGetAccount name
     w <- liftM fromJust (get $ dbAccountWallet acc)
-    when (key > dbAccountExtIndex acc) $ do
-        logErrorN $ T.pack "Invalid address key"
-        liftIO $ throwIO InvalidAddressException
+    when (key > dbAccountExtIndex acc) $ liftIO $ throwIO $
+        InvalidAddressException "The address key does not exist"
     (Entity _ add) <- dbGetAddressByIndex ai key False
     let master     = dbWalletMaster w
         deriv      = fromIntegral $ dbAccountIndex acc
@@ -471,17 +444,11 @@ cmdImportTx tx = do
 -- entries for this transaction as well as any child transactions and coins
 -- deriving from it.
 cmdRemoveTx :: (MonadLogger m, PersistQuery m)
-            => String     -- ^ Transaction id (txid)
+            => Hash256    -- ^ Transaction id (txid)
             -> m Value    -- ^ List of removed transaction entries
-cmdRemoveTx str 
-    | isNothing tidM = do
-        logErrorN $ T.pack "Could not decode transaction id"
-        liftIO $ throwIO CouldNotDecodeException
-    | otherwise = do
-        removed <- dbRemoveTx $ fromJust tidM
-        return $ toJSON $ map encodeTxid removed
-  where
-    tidM = decodeTxid str
+cmdRemoveTx h = do
+    removed <- dbRemoveTx h
+    return $ toJSON $ map encodeTxid removed
 
 -- | List all the transaction entries for an account. Transaction entries
 -- summarize information for a transaction in a specific account only (such as
@@ -570,9 +537,8 @@ cmdDecodeTx :: (MonadIO m, MonadLogger m)
             -> m Value -- ^ Decoded transaction
 cmdDecodeTx str 
     | isJust txM = return $ toJSON (tx :: Tx)
-    | otherwise  = do
-        logErrorN $ T.pack "Could not decode hex transaction"
-        liftIO $ throwIO CouldNotDecodeException
+    | otherwise  = liftIO $ throwIO $
+        ParsingException "Could not parse transaction"
   where 
     txM = decodeToMaybe =<< (hexToBS str)
     tx  = fromJust txM
@@ -598,13 +564,11 @@ cmdBuildRawTx :: (MonadIO m, MonadLogger m)
               -> m Value -- ^ Transaction result.
 cmdBuildRawTx i o 
     | isJust opsM && isJust destsM = do
-        when (isLeft txE) $ do
-            logErrorN $ T.pack $ fromLeft txE
-            liftIO $ throwIO TransactionBuildException
+        when (isLeft txE) $ liftIO $ throwIO $
+            TransactionBuildingException $ fromLeft txE
         return $ object [ (T.pack "Tx") .= (bsToHex $ encode' tx) ]
-    | otherwise = do
-        logErrorN $ T.pack "Could not decode input values"
-        liftIO $ throwIO CouldNotDecodeException
+    | otherwise = liftIO $ throwIO $
+        ParsingException "Could not parse input values"
   where
     opsM   = Json.decode $ toLazyBS $ stringToBS i
     destsM = Json.decode $ toLazyBS $ stringToBS o
@@ -641,15 +605,13 @@ cmdSignRawTx tx strSigi strKeys sh
     | isJust fsM && isJust keysM = do
         let buildTx = detSignTx tx (map (\f -> f sh) fs) keys
             tx      = runBuild buildTx
-        when (isBroken buildTx) $ do
-            logErrorN $ T.pack "Failed to sign transaction"
-            liftIO $ throwIO TransactionSigningException
+        when (isBroken buildTx) $ liftIO $ throwIO $
+            TransactionSigningException $ runBroken buildTx
         return $ object [ (T.pack "Tx") .= (toJSON $ bsToHex $ encode' tx)
                         , (T.pack "Complete") .= isComplete buildTx
                         ]
-    | otherwise = do
-        logErrorN $ T.pack "Could not decode input values"
-        liftIO $ throwIO CouldNotDecodeException
+    | otherwise = liftIO $ throwIO $
+        ParsingException "Could not parse input values"
   where
     sigiErr = "cmdSignRawTx: Could not parse parent transaction data"
     keysErr = "cmdSignRawTx: Could not parse private keys (WIF)"

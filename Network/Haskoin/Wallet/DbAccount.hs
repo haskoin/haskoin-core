@@ -62,10 +62,8 @@ dbGetAccount name = do
     entM <- getBy $ UniqueAccName name
     case entM of
         Just ent -> return ent
-        Nothing   -> do
-            logErrorN $ T.pack $ "Account " ++ name ++ " does not exist"
-            liftIO $ throwIO InvalidAccountException
-
+        Nothing   -> liftIO $ throwIO $ InvalidAccountException $ 
+            unwords ["Account", name, "does not exist"]
 
 isMSAcc :: DbAccountGeneric b -> Bool
 isMSAcc acc = (isJust $ dbAccountMsRequired acc) && 

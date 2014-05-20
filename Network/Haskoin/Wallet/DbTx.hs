@@ -128,9 +128,8 @@ dbImportTx tx = do
         -- OutPoints from this transaction with no associated coins
         unknown = map snd $ filter (isNothing . fst) $ zip coinsM $ txIn tx
     -- Fail if an input is spent by a transaction which is not this one
-    unless (isImportValid tid $ map entityVal inCoins) $ do
-        logErrorN "Double spend detected. Import failed"
-        liftIO $ throwIO DoubleSpendException
+    unless (isImportValid tid $ map entityVal inCoins) $ liftIO $ throwIO $
+        DoubleSpendException "Transaction import failed due to a double spend"
     let toRemove = txToRemove $ map entityVal inCoins
     if length toRemove > 0
         then do
@@ -331,9 +330,8 @@ dbSendSolution name dests fee = do
         resE | isMSAcc acc = chooseMSCoins tot fee msParam unspent
              | otherwise   = chooseCoins tot fee unspent
         (coins, change)    = fromRight resE
-    when (isLeft resE) $ do
-        logErrorN $ T.pack $ fromLeft resE
-        liftIO $ throwIO CoinSelectionException
+    when (isLeft resE) $ liftIO $ throwIO $
+        CoinSelectionException $ fromLeft resE
     recips <- if change < 5000 then return dests else do
         cAddr <- dbGenIntAddrs name 1
         return $ dests ++ [(dbAddressBase58 $ head cAddr,change)]
@@ -348,14 +346,12 @@ dbSendCoins :: (MonadLogger m, PersistUnique m)
 dbSendCoins coins recipients sh = do
     let txE = buildAddrTx (map coinOutPoint coins) recipients
         tx  = fromRight txE
-    when (isLeft txE) $ do
-        logErrorN $ T.pack $ fromLeft txE
-        liftIO $ throwIO TransactionBuildException
+    when (isLeft txE) $ liftIO $ throwIO $
+        TransactionBuildingException $ fromLeft txE
     ys <- mapM (dbGetSigData sh) coins
     let sigTx = detSignTx tx (map fst ys) (map snd ys)
-    when (isBroken sigTx) $ do
-        logErrorN $ T.pack $ runBroken sigTx
-        liftIO $ throwIO TransactionSigningException
+    when (isBroken sigTx) $ liftIO $ throwIO $
+        TransactionSigningException $ runBroken sigTx
     return (runBuild sigTx, isComplete sigTx)
 
 dbSignTx :: (MonadLogger m, PersistUnique m)
@@ -368,9 +364,8 @@ dbSignTx name tx sh = do
         accCoins   = map (toCoin . entityVal) accCoinsDB
     ys <- forM accCoins (dbGetSigData sh)
     let sigTx = detSignTx tx (map fst ys) (map snd ys)
-    when (isBroken sigTx) $ do
-        logErrorN $ T.pack $ runBroken sigTx
-        liftIO $ throwIO TransactionSigningException
+    when (isBroken sigTx) $ liftIO $ throwIO $
+        TransactionSigningException $ runBroken sigTx
     return (runBuild sigTx, isComplete sigTx)
   where
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)

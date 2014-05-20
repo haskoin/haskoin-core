@@ -46,6 +46,7 @@ import qualified Data.Aeson.Encode.Pretty as JSON
 import Network.Haskoin.Wallet.Commands
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Script
+import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Util.Network
@@ -223,9 +224,8 @@ whenArgs :: (MonadLogger m, MonadIO m)
          => Args -> (Int -> Bool) -> Command m -> Command m
 whenArgs args f cmd 
     | f $ length args = cmd
-    | otherwise = do
-        logErrorN $ T.pack "Invalid number of arguments"
-        liftIO $ throwIO InvalidCommandException
+    | otherwise = liftIO $ throwIO $
+        InvalidCommandException "Invalid number of arguments"
 
 dispatchCommand :: ( MonadLogger m
                    , PersistStore m
@@ -258,16 +258,14 @@ dispatchCommand cmd opts args = case cmd of
     "newms" -> whenArgs args (>= 3) $ do
         let keysM = mapM xPubImport $ drop 3 args
             keys  = fromJust keysM
-        when (isNothing keysM) $ do
-            logErrorN $ T.pack "Could not decode keys"
-            liftIO $ throwIO CouldNotDecodeException
+        when (isNothing keysM) $ liftIO $ throwIO $ 
+            ParsingException "Could not parse keys"
         cmdNewMS (args !! 0) (read $ args !! 1) (read $ args !! 2) keys
     "addkeys" -> whenArgs args (>= 2) $ do
         let keysM = mapM xPubImport $ drop 1 args
             keys  = fromJust keysM
-        when (isNothing keysM) $ do
-            logErrorN $ T.pack "Could not decode keys"
-            liftIO $ throwIO CouldNotDecodeException
+        when (isNothing keysM) $ liftIO $ throwIO $
+            ParsingException "Could not parse keys"
         cmdAddKeys (head args) keys
     "accinfo" -> whenArgs args (== 1) $ cmdAccInfo $ head args
     "listacc" -> whenArgs args (== 0) cmdListAcc 
@@ -278,28 +276,29 @@ dispatchCommand cmd opts args = case cmd of
     "signtx" -> whenArgs args (== 2) $ do
         let txM = decodeToMaybe =<< (hexToBS $ args !! 1)
             tx  = fromJust txM
-        when (isNothing txM) $ do
-            logErrorN $ T.pack "Could not decode transaction"
-            liftIO $ throwIO CouldNotDecodeException
+        when (isNothing txM) $ liftIO $ throwIO $
+            ParsingException "Could not parse transaction"
         cmdSignTx (head args) tx (optSigHash opts)
     "importtx" -> whenArgs args (== 1) $ do
         let txM = decodeToMaybe =<< (hexToBS $ head args)
             tx  = fromJust txM
-        when (isNothing txM) $ do
-            logErrorN $ T.pack "Could not decode transaction"
-            liftIO $ throwIO CouldNotDecodeException
+        when (isNothing txM) $ liftIO $ throwIO $
+            ParsingException "Could not parse transaction"
         cmdImportTx tx
-    "removetx" -> whenArgs args (== 1) $ cmdRemoveTx $ head args
+    "removetx" -> whenArgs args (== 1) $ do
+        let idM = decodeTxid $ head args
+        when (isNothing idM) $ liftIO $ throwIO $
+            ParsingException "Could not parse transaction id"
+        cmdRemoveTx $ fromJust idM
     "decodetx" -> whenArgs args (== 1) $ cmdDecodeTx $ head args
     "buildrawtx" -> whenArgs args (== 2) $ cmdBuildRawTx (head args) (args !! 1)
     "signrawtx"    -> whenArgs args (== 3) $ do 
         let txM = decodeToMaybe =<< (hexToBS $ head args)
             tx  = fromJust txM
-        when (isNothing txM) $ do
-            logErrorN $ T.pack "Could not decode transaction"
-            liftIO $ throwIO CouldNotDecodeException
+        when (isNothing txM) $ liftIO $ throwIO $ 
+            ParsingException "Could not parse transaction"
         cmdSignRawTx tx (args !! 1) (args !! 2) (optSigHash opts)
     _ -> do
-        logErrorN $ T.pack $ unwords ["Invalid command:", cmd]
-        liftIO $ throwIO InvalidCommandException
+        liftIO $ throwIO $ InvalidCommandException $ 
+            unwords ["Invalid command:", cmd]
 

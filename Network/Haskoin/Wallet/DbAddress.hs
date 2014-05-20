@@ -75,9 +75,8 @@ dbGetAddr addrStr = do
     entM <- getBy $ UniqueAddress addrStr
     case entM of
         Just ent -> return ent
-        Nothing -> do
-            logErrorN $ T.pack $ unwords ["Invalid address", addrStr]
-            liftIO $ throwIO InvalidAddressException
+        Nothing -> liftIO $ throwIO $
+            InvalidAddressException $ unwords ["Invalid address", addrStr]
 
 dbGetAddressByIndex :: ( MonadLogger m
                        , PersistUnique m
@@ -91,9 +90,8 @@ dbGetAddressByIndex accKey index internal = do
     entM <- getBy $ UniqueAddressKey accKey index internal
     case entM of
         Just ent -> return ent 
-        Nothing  -> do
-            logErrorN $ T.pack $ "Invalid address derivation index"
-            liftIO $ throwIO InvalidAddressException
+        Nothing  -> liftIO $ throwIO $
+            InvalidAddressException "Invalid address key"
 
 dbAdjustGap :: ( MonadLogger m
                , PersistUnique m
@@ -162,10 +160,8 @@ dbGenIntAddrs :: ( MonadLogger m
               => AccountName -> Int 
               -> m [DbAddressGeneric b]
 dbGenIntAddrs name c 
-    | c <= 0    = do
-        logErrorN $ T.pack $ 
-            "dbGenIntAddrs: Count argument must be greater than 0"
-        liftIO $ throwIO AddressGenerationException
+    | c <= 0    = liftIO $ throwIO $ AddressGenerationException 
+        "dbGenIntAddrs: Count argument must be greater than 0"
     | otherwise = dbGenAddrs name (replicate c "") True
 
 dbGenAddrs :: ( MonadLogger m
@@ -176,9 +172,8 @@ dbGenAddrs :: ( MonadLogger m
            => AccountName -> [String] -> Bool 
            -> m [DbAddressGeneric b]
 dbGenAddrs name labels internal
-    | null labels = do
-        logErrorN $ T.pack "Labels can not be empty"
-        liftIO $ throwIO AddressGenerationException
+    | null labels = liftIO $ throwIO $
+        AddressGenerationException "Labels can not be empty"
     | otherwise = do
         time <- liftIO getCurrentTime
         (Entity ai acc) <- dbGetAccount name

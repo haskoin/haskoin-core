@@ -7,17 +7,21 @@ module Network.Haskoin.Wallet.DbAddress
 , dbAdjustGap
 , dbSetGap
 , dbGetAddr
+, dbGetAddressByIndex
 , yamlAddr
 , yamlAddrList
 ) where
 
 import Control.Applicative ((<$>),(<*>))
-import Control.Monad (when, forM)
+import Control.Monad (when, forM, liftM)
 import Control.Monad.Trans (liftIO)
-import Control.Monad.Trans.Either (EitherT, left)
+import Control.Exception (throwIO)
+import Control.Monad.Logger (MonadLogger, logErrorN)
 
+import Data.Maybe (fromJust)
 import Data.Time (getCurrentTime)
 import Data.Yaml (Value, object, (.=), toJSON)
+import qualified Data.Text as T (pack)
 
 import Database.Persist
     ( PersistQuery
@@ -34,9 +38,10 @@ import Database.Persist
     , (==.), (>.), (<=.)
     , SelectOpt( Asc, Desc, LimitTo )
     )
+import Database.Persist.Sql (SqlBackend)
 
 import Network.Haskoin.Wallet.DbAccount
-import Network.Haskoin.Wallet.Util
+import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
@@ -63,31 +68,41 @@ yamlAddrList addrs pageNum resPerPage addrCount = object
     ]
   where totPages = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
 
-dbGetAddr :: (PersistUnique m, PersistMonadBackend m ~ b)
+dbGetAddr :: (MonadLogger m, PersistUnique m, PersistMonadBackend m ~ b)
           => String 
-          -> EitherT String m (Entity (DbAddressGeneric b))
-dbGetAddr addrStr = 
-    liftMaybe addrErr =<< (getBy $ UniqueAddress addrStr)
-  where 
-    addrErr = unwords ["dbGetAddr: Invalid address", addrStr]
+          -> m (Entity (DbAddressGeneric b))
+dbGetAddr addrStr = do
+    entM <- getBy $ UniqueAddress addrStr
+    case entM of
+        Just ent -> return ent
+        Nothing -> do
+            logErrorN $ T.pack $ unwords ["Invalid address", addrStr]
+            liftIO $ throwIO InvalidAddressException
 
-dbGenIntAddrs :: ( PersistUnique m
-                 , PersistQuery m
-                 , PersistMonadBackend m ~ b
-                 )
-              => AccountName -> Int 
-              -> EitherT String m [DbAddressGeneric b]
-dbGenIntAddrs name c 
-    | c <= 0    = left "dbGenIntAddrs: Count argument must be greater than 0"
-    | otherwise = dbGenAddrs name (replicate c "") True
+dbGetAddressByIndex :: ( MonadLogger m
+                       , PersistUnique m
+                       , PersistMonadBackend m ~ SqlBackend
+                       )
+                    => DbAccountId
+                    -> Int
+                    -> Bool 
+                    -> m (Entity (DbAddressGeneric SqlBackend))
+dbGetAddressByIndex accKey index internal = do
+    entM <- getBy $ UniqueAddressKey accKey index internal
+    case entM of
+        Just ent -> return ent 
+        Nothing  -> do
+            logErrorN $ T.pack $ "Invalid address derivation index"
+            liftIO $ throwIO InvalidAddressException
 
-dbAdjustGap :: ( PersistUnique m
+dbAdjustGap :: ( MonadLogger m
+               , PersistUnique m
                , PersistQuery m
                , PersistMonadBackend m ~ b
                )
-            => DbAddressGeneric b -> EitherT String m ()
+            => DbAddressGeneric b -> m ()
 dbAdjustGap a = do
-    acc <- liftMaybe accErr =<< (get $ dbAddressAccount a)
+    acc <- liftM fromJust (get $ dbAddressAccount a)
     let fIndex | dbAddressInternal a = dbAccountIntIndex 
                | otherwise           = dbAccountExtIndex
     diff <- count [ DbAddressIndex >. fIndex acc
@@ -100,15 +115,14 @@ dbAdjustGap a = do
                         (replicate diff "") 
                         (dbAddressInternal a)
         return ()
-  where
-    accErr = "dbAdjustGap: Could not load address account"
 
-dbSetGap :: ( PersistUnique m
+dbSetGap :: ( MonadLogger m
+            , PersistUnique m
             , PersistQuery m
             )
-         => AccountName -> Int -> Bool -> EitherT String m ()
+         => AccountName -> Int -> Bool -> m ()
 dbSetGap name gap internal = do
-    (Entity ai acc) <- dbGetAcc name 
+    (Entity ai acc) <- dbGetAccount name 
     diff <- count [ DbAddressIndex >. fIndex acc
                   , DbAddressIndex <=. fGap acc
                   , DbAddressAccount ==. ai
@@ -117,7 +131,7 @@ dbSetGap name gap internal = do
     when (diff < gap) $ do
         _ <- dbGenAddrs name (replicate (gap - diff) "") internal
         return ()
-    res <- (map entityVal) <$> selectList  
+    res <- liftM (map entityVal) $ selectList  
                 [ DbAddressAccount ==. ai
                 , DbAddressInternal ==. internal
                 ]
@@ -140,25 +154,41 @@ dbSetGap name gap internal = do
     fGap   | internal  = dbAccountIntGap 
            | otherwise = dbAccountExtGap
 
-dbGenAddrs :: ( PersistUnique m
+dbGenIntAddrs :: ( MonadLogger m
+                 , PersistUnique m
+                 , PersistQuery m
+                 , PersistMonadBackend m ~ b
+                 )
+              => AccountName -> Int 
+              -> m [DbAddressGeneric b]
+dbGenIntAddrs name c 
+    | c <= 0    = do
+        logErrorN $ T.pack $ 
+            "dbGenIntAddrs: Count argument must be greater than 0"
+        liftIO $ throwIO AddressGenerationException
+    | otherwise = dbGenAddrs name (replicate c "") True
+
+dbGenAddrs :: ( MonadLogger m
+              , PersistUnique m
               , PersistQuery m
               , PersistMonadBackend m ~ b
               )
            => AccountName -> [String] -> Bool 
-           -> EitherT String m [DbAddressGeneric b]
+           -> m [DbAddressGeneric b]
 dbGenAddrs name labels internal
-    | null labels = left "dbGenAddr: Labels can not be empty"
+    | null labels = do
+        logErrorN $ T.pack "Labels can not be empty"
+        liftIO $ throwIO AddressGenerationException
     | otherwise = do
         time <- liftIO getCurrentTime
-        (Entity ai acc) <- dbGetAcc name
+        (Entity ai acc) <- dbGetAccount name
         let tree | internal  = "1/"
                  | otherwise = "0/"
             build (s,i) = DbAddress 
                              s "" (fromIntegral i)
                              (concat [dbAccountTree acc,tree,show i,"/"])
                              ai internal time
-        ls <- liftMaybe keyErr $ f acc
-        let gapAddr = map build $ take (length labels) ls
+        let gapAddr = map build $ take (length labels) $ f acc
         _ <- insertMany gapAddr
         resAddr <- selectList 
             [ DbAddressIndex >. fIndex acc
@@ -182,15 +212,14 @@ dbGenAddrs name labels internal
             replace idx newAddr 
             return newAddr
   where 
-    keyErr = "dbGenAddr: Error decoding account keys"
     f acc | isMSAcc acc = (if internal then intMulSigAddrs else extMulSigAddrs)
-              <$> (loadPubAcc =<< (xPubImport $ dbAccountKey acc))
-              <*> (mapM xPubImport $ dbAccountMsKeys acc) 
-              <*> (dbAccountMsRequired acc)
-              <*> (return $ fromIntegral $ fGap acc + 1)
+              (dbAccountKey acc)
+              (dbAccountMsKeys acc) 
+              (fromJust $ dbAccountMsRequired acc)
+              (fromIntegral $ fGap acc + 1)
           | otherwise = (if internal then intAddrs else extAddrs)
-              <$> (loadPubAcc =<< (xPubImport $ dbAccountKey acc))
-              <*> (return $ fromIntegral $ fGap acc + 1)
+              (dbAccountKey acc)
+              (fromIntegral $ fGap acc + 1)
     fGap   | internal  = dbAccountIntGap
            | otherwise = dbAccountExtGap
     fIndex | internal  = dbAccountIntIndex

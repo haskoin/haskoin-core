@@ -17,10 +17,10 @@ import System.Console.GetOpt
     )
 import qualified System.Environment as E (getArgs)
 
-import Control.Monad (forM_, join)
-import Control.Monad.Trans (lift)
-import Control.Monad.Trans.Either (EitherT, runEitherT, left)
-import Control.Exception (tryJust)
+import Control.Monad (forM_, join, when)
+import Control.Monad.Trans (lift, liftIO, MonadIO)
+import Control.Exception (tryJust, throwIO)
+import Control.Monad.Logger (MonadLogger, logErrorN, runStderrLoggingT)
 
 import Database.Persist
     ( PersistStore
@@ -31,7 +31,7 @@ import Database.Persist
 import Database.Persist.Sql ()
 import Database.Persist.Sqlite (SqlBackend, runSqlite, runMigrationSilent)
 
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, fromJust, isNothing)
 import qualified Data.Text as T (pack, unpack, splitOn)
 import qualified Data.Yaml as YAML 
     ( Value(Null)
@@ -44,7 +44,7 @@ import qualified Data.Aeson.Encode.Pretty as JSON
     )
 
 import Network.Haskoin.Wallet.Commands
-import Network.Haskoin.Wallet.Util
+import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
@@ -203,24 +203,34 @@ process opts xs
     | null xs = formatStr usage
     | otherwise = getWorkDir >>= \dir -> do
         let (cmd,args) = (head xs, tail xs)
-        res <- tryJust catchEx $ runSqlite (T.pack dir) $ runEitherT $ do
-            _ <- lift $ runMigrationSilent migrateAll
-            dispatchCommand cmd opts args 
-        case join res of
-            Left err -> formatStr err
-            Right val -> if val == YAML.Null then return () else if optJson opts 
+
+        valE <- tryJust catchEx $ runSqlite (T.pack dir) $ do
+             _ <- runMigrationSilent migrateAll
+             runStderrLoggingT $ dispatchCommand cmd opts args 
+
+        -- TODO: Handle the exceptions
+        when (isRight valE) $ do
+            let val = fromRight valE
+            if val == YAML.Null then return () else if optJson opts 
                 then formatStr $ bsToString $ toStrictBS $ 
                     JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } val
                 else formatStr $ bsToString $ YAML.encode val
 
-type Command m = EitherT String m YAML.Value
+type Command m = m YAML.Value
 type Args = [String]
 
-whenArgs :: Monad m => Args -> (Int -> Bool) -> Command m -> Command m
-whenArgs args f cmd = if f $ length args then cmd else argErr
-    where argErr = left "Invalid number of arguments"
+whenArgs :: (MonadLogger m, MonadIO m)
+         => Args -> (Int -> Bool) -> Command m -> Command m
+whenArgs args f cmd 
+    | f $ length args = cmd
+    | otherwise = do
+        logErrorN $ T.pack "Invalid number of arguments"
+        liftIO $ throwIO InvalidCommandException
 
-dispatchCommand :: ( PersistStore m, PersistUnique m, PersistQuery m
+dispatchCommand :: ( MonadLogger m
+                   , PersistStore m
+                   , PersistUnique m
+                   , PersistQuery m
                    , PersistMonadBackend m ~ SqlBackend
                    ) 
                 => String -> Options -> Args -> Command m
@@ -246,10 +256,18 @@ dispatchCommand cmd opts args = case cmd of
         cmdSendMany (head args) dests (optFee opts)
     "newacc" -> whenArgs args (== 1) $ cmdNewAcc $ head args
     "newms" -> whenArgs args (>= 3) $ do
-        keys <- liftMaybe "newms: Invalid keys" $ mapM xPubImport $ drop 3 args
+        let keysM = mapM xPubImport $ drop 3 args
+            keys  = fromJust keysM
+        when (isNothing keysM) $ do
+            logErrorN $ T.pack "Could not decode keys"
+            liftIO $ throwIO CouldNotDecodeException
         cmdNewMS (args !! 0) (read $ args !! 1) (read $ args !! 2) keys
     "addkeys" -> whenArgs args (>= 2) $ do
-        keys <- liftMaybe "newms: Invalid keys" $ mapM xPubImport $ drop 1 args
+        let keysM = mapM xPubImport $ drop 1 args
+            keys  = fromJust keysM
+        when (isNothing keysM) $ do
+            logErrorN $ T.pack "Could not decode keys"
+            liftIO $ throwIO CouldNotDecodeException
         cmdAddKeys (head args) keys
     "accinfo" -> whenArgs args (== 1) $ cmdAccInfo $ head args
     "listacc" -> whenArgs args (== 0) cmdListAcc 
@@ -258,19 +276,30 @@ dispatchCommand cmd opts args = case cmd of
     "coins" -> whenArgs args (== 1) $ cmdCoins $ head args
     "allcoins" -> whenArgs args (== 0) cmdAllCoins
     "signtx" -> whenArgs args (== 2) $ do
-        bs <- liftMaybe "signtx: Invalid HEX encoding" $ hexToBS $ args !! 1
-        tx <- liftEither $ decodeToEither bs
+        let txM = decodeToMaybe =<< (hexToBS $ args !! 1)
+            tx  = fromJust txM
+        when (isNothing txM) $ do
+            logErrorN $ T.pack "Could not decode transaction"
+            liftIO $ throwIO CouldNotDecodeException
         cmdSignTx (head args) tx (optSigHash opts)
     "importtx" -> whenArgs args (== 1) $ do
-        bs <- liftMaybe "signtx: Invalid HEX encoding" $ hexToBS $ head args
-        tx <- liftEither $ decodeToEither bs
+        let txM = decodeToMaybe =<< (hexToBS $ head args)
+            tx  = fromJust txM
+        when (isNothing txM) $ do
+            logErrorN $ T.pack "Could not decode transaction"
+            liftIO $ throwIO CouldNotDecodeException
         cmdImportTx tx
     "removetx" -> whenArgs args (== 1) $ cmdRemoveTx $ head args
     "decodetx" -> whenArgs args (== 1) $ cmdDecodeTx $ head args
     "buildrawtx" -> whenArgs args (== 2) $ cmdBuildRawTx (head args) (args !! 1)
     "signrawtx"    -> whenArgs args (== 3) $ do 
-        bs <- liftMaybe "signtx: Invalid HEX encoding" $ hexToBS $ head args
-        tx <- liftEither $ decodeToEither bs
+        let txM = decodeToMaybe =<< (hexToBS $ head args)
+            tx  = fromJust txM
+        when (isNothing txM) $ do
+            logErrorN $ T.pack "Could not decode transaction"
+            liftIO $ throwIO CouldNotDecodeException
         cmdSignRawTx tx (args !! 1) (args !! 2) (optSigHash opts)
-    _ -> left $ unwords ["Invalid command:", cmd]
+    _ -> do
+        logErrorN $ T.pack $ unwords ["Invalid command:", cmd]
+        liftIO $ throwIO InvalidCommandException
 

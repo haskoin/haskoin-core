@@ -46,6 +46,5 @@ module Network.Haskoin.Wallet
 ) where
 
 import Network.Haskoin.Wallet.Commands
-import Network.Haskoin.Wallet.Instances ()
 
 

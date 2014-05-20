@@ -31,31 +31,20 @@ import Database.Persist
     )
 import Database.Persist.Sqlite (SqlBackend)
 
-import Network.Haskoin.Wallet.Util
+import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Protocol
 import Network.Haskoin.Transaction
 import Network.Haskoin.Util
 
-toCoin :: DbCoinGeneric b -> Either String Coin
-toCoin c = do
-    scp <- decodeScriptOps =<< maybeToEither scpErr (hexToBS $ dbCoinScript c)
-    rdm <- if isJust $ dbCoinRdmScript c
-        then do
-            bs <- maybeToEither rdmErr $ hexToBS =<< dbCoinRdmScript c
-            Just <$> decodeScriptOps bs
-        else return Nothing
-    h <- maybeToEither tidErr $ decodeTxid $ dbCoinTxid c
-    return $ Coin (TxOut (fromIntegral $ dbCoinValue c) scp)
-                  (OutPoint h (fromIntegral $ dbCoinPos c))
-                  rdm
-  where
-    scpErr = "toCoin: Could not decode coin script"
-    tidErr = "toCoin: Could not decode coin txid"
-    rdmErr = "toCoin: Could not decode coin redeem script"
+toCoin :: DbCoinGeneric b -> Coin
+toCoin c = 
+    Coin (TxOut (fromIntegral $ dbCoinValue c) (dbCoinScript c))
+         (OutPoint (dbCoinTxid c) (fromIntegral $ dbCoinPos c))
+         (dbCoinRdmScript c)
 
 yamlCoin :: DbCoinGeneric b -> Value
 yamlCoin coin = object $ concat
-    [ [ "TxID"    .= dbCoinTxid coin 
+    [ [ "TxID"    .= (encodeTxid $ dbCoinTxid coin)
       , "Index"   .= dbCoinPos coin
       , "Value"   .= dbCoinValue coin
       , "Script"  .= dbCoinScript coin
@@ -69,7 +58,7 @@ yamlCoin coin = object $ concat
 
 dbBalance :: (PersistQuery m, PersistMonadBackend m ~ b)
           => Entity (DbAccountGeneric b)
-          -> EitherT String m Word64
+          -> m Word64
 dbBalance (Entity ai _) = do
     coins <- selectList 
         [ DbCoinAccount ==. ai
@@ -80,7 +69,7 @@ dbBalance (Entity ai _) = do
 
 dbCoins :: (PersistQuery m, PersistMonadBackend m ~ SqlBackend) 
         => DbAccountId 
-        -> EitherT String m [DbCoinGeneric SqlBackend]
+        -> m [DbCoinGeneric SqlBackend]
 dbCoins ai = do
     coins <- selectList 
         [ DbCoinAccount ==. ai

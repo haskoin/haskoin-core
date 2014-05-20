@@ -2,8 +2,15 @@
 -- | Mnemonic keys (BIP-0039)
 module Network.Haskoin.Crypto.Mnemonic
 (
+  -- * Data types
+  WordList
+, Entropy
+, Mnemonic
+, Passphrase
+, Seed
+
   -- * Entropy encoding and decoding
-  toMnemonic
+, toMnemonic
 , fromMnemonic
 
   -- * Generating 512-bit seeds
@@ -21,21 +28,22 @@ import Control.Monad (when)
 import qualified Crypto.Hash.SHA256 as SHA256
 import Crypto.PBKDF.ByteString (sha512PBKDF2)
 import Data.Bits ((.&.), shiftL, shiftR)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.List
 import Data.Maybe
+import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8)
 import Data.Text.ICU.Normalize (NormalizationMode(NFKD), normalize)
 import Network.Haskoin.Util (bsToInteger, integerToBS)
 
-type Word = T.Text
-type WordList = [Word]
-type Entropy = BS.ByteString
-type Mnemonic = T.Text
-type Passphrase = T.Text
-type Seed = BS.ByteString
-type Checksum = BS.ByteString
+type WordList = [Text]
+type Entropy = ByteString
+type Mnemonic = Text
+type Passphrase = Text
+type Seed = ByteString
+type Checksum = ByteString
 
 -- | Provide dictionary and intial entropy as a 'ByteString' with length
 -- multiple of 32 bits (4 bytes). Output a mnemonic sentence as 'Text'.
@@ -105,7 +113,7 @@ mnemonicToSeed wl pf ms = do
 -- | Obtain 'Int' bits from beginning of 'ByteString'. Resulting 'ByteString'
 -- will be smallest required to hold that many bits, padded with zeroes to the
 -- right.
-getBits :: Int -> BS.ByteString -> BS.ByteString
+getBits :: Int -> ByteString -> ByteString
 getBits b bs
     | r == 0 = BS.take q bs
     | otherwise = i `BS.snoc` l
@@ -116,7 +124,7 @@ getBits b bs
     l = BS.last s .&. (0xff `shiftL` (8 - r))    -- zero unneeded bits
 
 -- Expects already normalized list of words
-getIndices :: WordList -> [Word] -> Either String [Int]
+getIndices :: WordList -> [Text] -> Either String [Int]
 getIndices wl ws
     | null n = return . fromJust $ sequence i
     | otherwise = Left $ "getIndices: words not found: " ++ T.unpack w
@@ -125,7 +133,7 @@ getIndices wl ws
     n = elemIndices Nothing i
     w = T.unwords $ map (ws !!) n
 
-indicesToBS :: [Int] -> Either String BS.ByteString
+indicesToBS :: [Int] -> Either String ByteString
 indicesToBS is = do
     when lrg $ Left "indicesToBS: index larger or equal than 2048"
     return . pad . integerToBS $ (foldl' f 0 is) `shiftL` shift_width
@@ -137,7 +145,7 @@ indicesToBS is = do
     pad bs = BS.append (BS.replicate (bl - BS.length bs) 0x00) bs
     f acc x = (acc `shiftL` 11) + fromIntegral x
 
-bsToIndices :: BS.ByteString -> [Int]
+bsToIndices :: ByteString -> [Int]
 bsToIndices bs = reverse . go q $ bsToInteger bs `shiftR` r
   where
     (q, r) = (BS.length bs * 8) `quotRem` 11
@@ -145,7 +153,7 @@ bsToIndices bs = reverse . go q $ bsToInteger bs `shiftR` r
     go n i = (fromIntegral $ i `mod` 2048) : go (n - 1) (i `shiftR` 11)
 
 -- | Standard English dictionary from BIP-0039 specification.
-english :: [T.Text]
+english :: [Text]
 english =
     [ "abandon", "ability", "able", "about", "above", "absent"
     , "absorb", "abstract", "absurd", "abuse", "access", "accident"

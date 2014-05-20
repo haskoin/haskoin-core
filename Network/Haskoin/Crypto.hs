@@ -94,6 +94,11 @@ module Network.Haskoin.Crypto
 , decodeBase58Check
 
   -- *Mnemonic keys (BIP-0039)
+, WordList
+, Entropy
+, Mnemonic
+, Passphrase
+, Seed
 , toMnemonic
 , fromMnemonic
 , mnemonicToSeed

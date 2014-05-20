@@ -429,7 +429,7 @@ instance Json.FromJSON RawSigInput where
             tid  <- obj .: T.pack "txid" :: Parser String
             vout <- obj .: T.pack "vout" :: Parser Word32
             scp  <- obj .: T.pack "scriptPubKey" :: Parser String
-            rdm  <- obj .:? T.pack "scriptRedeem" :: Parser (Maybe String)
+            rdm  <- obj .:? T.pack "redeemScript" :: Parser (Maybe String)
             let s = decodeScriptOps =<< maybeToEither "Hex parsing failed" 
                         (hexToBS scp)
                 i = maybeToEither "Failed to decode txid" (decodeTxid tid)

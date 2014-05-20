@@ -158,7 +158,7 @@ cmdHelp =
         , "\"txid\":txid,"
         , "\"vout\":n,"
         , "\"scriptPubKey\":hex,"
-        , "\"scriptRedeem\":hex"
+        , "\"redeemScript\":hex"
         , "},...]'"
         ]
 

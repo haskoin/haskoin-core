@@ -580,13 +580,13 @@ cmdBuildRawTx i o
 -- | Sign a raw transaction by providing the signing parameters and private
 -- keys manually. None of the keys in the wallet will be used for signing.
 --
--- Signing data as JSON (scriptRedeem is optional):
+-- Signing data as JSON (redeemScript is optional):
 --
 -- >   [ 
 -- >       { "txid": txid
 -- >       , "vout": n
 -- >       , "scriptPubKey": hex
--- >       , "scriptRedeem": hex
+-- >       , "redeemScript": hex
 -- >       },...
 -- >    ]
 --

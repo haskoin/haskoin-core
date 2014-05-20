@@ -71,7 +71,7 @@ data XPrvKey = XPrvKey
     , xPrvIndex  :: !Word32    -- ^ Key derivation index.
     , xPrvChain  :: !ChainCode -- ^ Chain code.
     , xPrvKey    :: !PrvKey    -- ^ The private key of this extended key node.
-    } deriving (Eq, Show)
+    } deriving (Eq, Show, Read)
 
 -- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
@@ -80,7 +80,7 @@ data XPubKey = XPubKey
     , xPubIndex  :: !Word32    -- ^ Key derivation index.
     , xPubChain  :: !ChainCode -- ^ Chain code.
     , xPubKey    :: !PubKey    -- ^ The public key of this extended key node.
-    } deriving (Eq, Show)
+    } deriving (Eq, Show, Read)
 
 -- | Build a BIP32 compatible extended private key from a bytestring. This will
 -- produce a root node (depth=0 and parent=0).

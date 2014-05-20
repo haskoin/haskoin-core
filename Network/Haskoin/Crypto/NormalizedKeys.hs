@@ -55,14 +55,14 @@ type KeyIndex = Word32
 -- derivation tree. Master keys have depth 0 and no parents. They are
 -- represented as m\/ in BIP32 notation.
 newtype MasterKey = MasterKey { masterKey :: XPrvKey }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 -- | Data type representing a private account key. Account keys are generated
 -- from a 'MasterKey' through prime derivation. This guarantees that the
 -- 'MasterKey' will not be compromised if the account key is compromised. 
 -- 'AccPrvKey' is represented as m\/i'\/ in BIP32 notation.
 newtype AccPrvKey = AccPrvKey { getAccPrvKey :: XPrvKey }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 -- | Data type representing a public account key. It is computed through
 -- derivation from an 'AccPrvKey'. It can not be derived from the 'MasterKey'
@@ -70,7 +70,7 @@ newtype AccPrvKey = AccPrvKey { getAccPrvKey :: XPrvKey }
 -- BIP32 notation. 'AccPubKey' is used for generating receiving payment
 -- addresses without the knowledge of the 'AccPrvKey'.
 newtype AccPubKey = AccPubKey { getAccPubKey :: XPubKey }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 -- | Data type representing a private address key. Private address keys are
 -- generated through a non-prime derivation from an 'AccPrvKey'. Non-prime
@@ -81,7 +81,7 @@ newtype AccPubKey = AccPubKey { getAccPubKey :: XPubKey }
 -- m\/i'\/1\/j\/. Non-prime subtree 0 is used for regular receiving addresses
 -- and non-prime subtree 1 for internal (change) addresses.
 newtype AddrPrvKey = AddrPrvKey { getAddrPrvKey :: XPrvKey }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 -- | Data type representing a public address key. They are generated through
 -- non-prime derivation from an 'AccPubKey'. This is a useful feature for
@@ -89,7 +89,7 @@ newtype AddrPrvKey = AddrPrvKey { getAddrPrvKey :: XPrvKey }
 -- for regular receiving addresses and by M\/i'\/1\/j for internal (change)
 -- addresses.
 newtype AddrPubKey = AddrPubKey { getAddrPubKey :: XPubKey }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 -- | Create a 'MasterKey' from a seed.
 makeMasterKey :: BS.ByteString -> Maybe MasterKey

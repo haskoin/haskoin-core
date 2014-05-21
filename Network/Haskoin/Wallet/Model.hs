@@ -28,6 +28,7 @@ module Network.Haskoin.Wallet.Model
 , catStatus
 , dbGetWallet
 , isWalletInit
+, checkInit
 , dbGetTxBlob
 , migrateAll
 ) where
@@ -35,6 +36,7 @@ module Network.Haskoin.Wallet.Model
 import Control.Exception (Exception, throwIO)
 import Control.Monad.Logger (MonadLogger, logErrorN)
 import Control.Monad.Trans (liftIO)
+import Control.Monad (unless)
 
 import Data.Typeable (Typeable)
 import Data.Maybe (isJust)
@@ -85,7 +87,7 @@ data WalletException
     | TransactionSigningException String
     | ParsingException String
     | InvalidCommandException String
-    deriving (Show, Typeable)
+    deriving (Eq, Read, Show, Typeable)
 
 instance Exception WalletException
 
@@ -168,6 +170,12 @@ isWalletInit :: PersistUnique m => String -> m Bool
 isWalletInit name = do
     entM <- getBy $ UniqueWalletName name
     return $ isJust entM
+
+checkInit :: PersistUnique m => m ()
+checkInit = do
+    init <- isWalletInit "main"
+    unless init $ liftIO $ throwIO $ 
+        InitializationException "Wallet main is not initialized"
 
 dbGetWallet :: (MonadLogger m, PersistUnique m, PersistMonadBackend m ~ b)
             => String -> m (Entity (DbWalletGeneric b))

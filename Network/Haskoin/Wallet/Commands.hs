@@ -149,7 +149,7 @@ cmdNewAcc :: ( MonadLogger m
              ) 
           => String  -- ^ Account name.
           -> m Value -- ^ Returns the new account information.
-cmdNewAcc name = do
+cmdNewAcc name = checkInit >> do
     time <- liftIO getCurrentTime
     (Entity wk w) <- dbGetWallet "main"
     let deriv = fromIntegral $ dbWalletAccIndex w + 1
@@ -180,7 +180,7 @@ cmdNewMS :: (MonadLogger m, PersistUnique m, PersistQuery m)
          -> Int       -- ^ Total number of keys (n in m of n).
          -> [XPubKey] -- ^ Thirdparty public keys.
          -> m Value   -- ^ Returns the new account information.
-cmdNewMS name m n mskeys = do
+cmdNewMS name m n mskeys = checkInit >> do
     let keys = nub mskeys
     time <- liftIO getCurrentTime
     unless (n >= 1 && n <= 16 && m >= 1 && m <= n) $ liftIO $ throwIO $ 
@@ -216,7 +216,7 @@ cmdAddKeys :: (MonadLogger m, PersistUnique m, PersistQuery m)
 cmdAddKeys name keys 
     | null keys = liftIO $ throwIO $
          AccountSetupException "Multisig key list can not be empty"
-    | otherwise = do
+    | otherwise = checkInit >> do
         (Entity ai acc) <- dbGetAccount name
         unless (isMSAcc acc) $ liftIO $ throwIO $ AccountSetupException 
             "Can only add keys to a multisig account"
@@ -246,14 +246,14 @@ cmdAddKeys name keys
 cmdAccInfo :: (MonadLogger m, PersistUnique m)
            => AccountName   -- ^ Account name.
            -> m Value       -- ^ Account information.
-cmdAccInfo name = do
+cmdAccInfo name = checkInit >> do
     acc <- dbGetAccount name
     return $ yamlAcc $ entityVal acc
 
 -- | Returns a list of all accounts in the wallet.
-cmdListAcc :: PersistQuery m 
+cmdListAcc :: (PersistQuery m, PersistUnique m)
            => m Value       -- ^ List of accounts
-cmdListAcc = do
+cmdListAcc = checkInit >> do
     ls <- selectList [] []
     return $ toJSON $ map (yamlAcc . entityVal) ls
 
@@ -264,7 +264,7 @@ cmdDumpKeys :: ( MonadLogger m
                )
             => AccountName  -- ^ Account name.
             -> m Value      -- ^ Extended key information.
-cmdDumpKeys name = do
+cmdDumpKeys name = checkInit >> do
     (Entity _ acc) <- dbGetAccount name
     w <- liftM fromJust (get $ dbAccountWallet acc)
     let master = dbWalletMaster w
@@ -292,10 +292,10 @@ cmdList :: (MonadLogger m, PersistUnique m, PersistQuery m)
         -> m Value       -- ^ The requested page.
 cmdList name pageNum resPerPage 
     | pageNum < 0 = liftIO $ throwIO $ InvalidPageException $ 
-        unwords ["Invalid page number", show pageNum]
+        unwords ["Invalid page number:", show pageNum]
     | resPerPage < 1 = liftIO $ throwIO $ InvalidPageException $
-        unwords ["Invalid results per page",show resPerPage]
-    | otherwise = do
+        unwords ["Invalid results per page:",show resPerPage]
+    | otherwise = checkInit >> do
         (Entity ai acc) <- dbGetAccount name
         addrCount <- count 
             [ DbAddressAccount ==. ai
@@ -329,7 +329,7 @@ cmdGenWithLabel :: (MonadLogger m, PersistUnique m, PersistQuery m)
                 => AccountName  -- ^ Account name.
                 -> [String]     -- ^ List of address labels. 
                 -> m Value      -- ^ List of new addresses.
-cmdGenWithLabel name labels = do
+cmdGenWithLabel name labels = checkInit >> do
     addrs <- dbGenAddrs name labels False
     return $ toJSON $ map yamlAddr addrs
 
@@ -339,7 +339,7 @@ cmdLabel :: (MonadLogger m, PersistUnique m, PersistMonadBackend m ~ SqlBackend)
          -> Int           -- ^ Derivation index of the address. 
          -> String        -- ^ New label.
          -> m Value       -- ^ New address information.
-cmdLabel name key label = do
+cmdLabel name key label = checkInit >> do
     (Entity ai acc) <- dbGetAccount name
     when (key > dbAccountExtIndex acc) $ liftIO $ throwIO $
         InvalidAddressException "This address key does not exist"
@@ -353,7 +353,7 @@ cmdWIF :: (MonadLogger m, PersistUnique m, PersistMonadBackend m ~ SqlBackend)
        => AccountName      -- ^ Account name.
        -> Int              -- ^ Derivation index of the address. 
        -> m Value          -- ^ WIF value.
-cmdWIF name key = do
+cmdWIF name key = checkInit >> do
     (Entity ai acc) <- dbGetAccount name
     w <- liftM fromJust (get $ dbAccountWallet acc)
     when (key > dbAccountExtIndex acc) $ liftIO $ throwIO $
@@ -373,15 +373,15 @@ cmdWIF name key = do
 cmdBalance :: (MonadLogger m, PersistUnique m, PersistQuery m)
            => AccountName   -- ^ Account name.
            -> m Value       -- ^ Account balance.
-cmdBalance name = do
+cmdBalance name = checkInit >> do
     acc     <- dbGetAccount name
     balance <- dbBalance acc
     return $ object [ "Balance" .= toJSON balance ]
 
 -- | Returns a list of balances for every account in the wallet.
-cmdBalances :: PersistQuery m
+cmdBalances :: (PersistQuery m, PersistUnique m)
             => m Value         -- ^ All account balances
-cmdBalances = do
+cmdBalances = checkInit >> do
     accs <- selectList [] []
     bals <- mapM dbBalance accs
     return $ toJSON $ map f $ zip accs bals
@@ -399,7 +399,7 @@ cmdCoins :: ( MonadLogger m
             )
          => AccountName  -- ^ Account name.
          -> m Value      -- ^ List of unspent coins.
-cmdCoins name = do
+cmdCoins name = checkInit >> do
     (Entity ai _) <- dbGetAccount name
     coins         <- dbCoins ai
     return $ toJSON $ map yamlCoin coins
@@ -409,7 +409,7 @@ cmdAllCoins :: ( PersistQuery m, PersistUnique m
                , PersistMonadBackend m ~ SqlBackend
                )
             => m Value -- ^ Unspent coins for all accounts.
-cmdAllCoins = do
+cmdAllCoins = checkInit >> do
     accs  <- selectList [] []
     coins <- mapM (dbCoins . entityKey) accs
     return $ toJSON $ map g $ zip accs coins
@@ -433,7 +433,7 @@ cmdImportTx :: ( MonadLogger m
                ) 
             => Tx      -- ^ Transaction to import.
             -> m Value -- ^ New transaction entries created.
-cmdImportTx tx = do
+cmdImportTx tx = checkInit >> do
     accTx <- dbImportTx tx
     return $ toJSON $ map yamlTx $ sortBy f accTx
   where
@@ -443,10 +443,10 @@ cmdImportTx tx = do
 -- | Remove a transaction from the database. This will remove all transaction
 -- entries for this transaction as well as any child transactions and coins
 -- deriving from it.
-cmdRemoveTx :: (MonadLogger m, PersistQuery m)
+cmdRemoveTx :: (MonadLogger m, PersistUnique m, PersistQuery m)
             => Hash256    -- ^ Transaction id (txid)
             -> m Value    -- ^ List of removed transaction entries
-cmdRemoveTx h = do
+cmdRemoveTx h = checkInit >> do
     removed <- dbRemoveTx h
     return $ toJSON $ map encodeTxid removed
 
@@ -469,7 +469,7 @@ cmdRemoveTx h = do
 cmdListTx :: (MonadLogger m, PersistQuery m, PersistUnique m)
           => AccountName  -- ^ Account name.
           -> m Value      -- ^ List of transaction entries.
-cmdListTx name = do
+cmdListTx name = checkInit >> do
     (Entity ai _) <- dbGetAccount name
     txs <- selectList [ DbTxAccount ==. ai
                       ] 
@@ -487,7 +487,7 @@ cmdSend :: ( MonadLogger m
         -> Int         -- ^ Amount to send.  
         -> Int         -- ^ Fee per 1000 bytes. 
         -> m Value     -- ^ Payment transaction.
-cmdSend name a v fee = do
+cmdSend name a v fee = checkInit >> do
     (tx,complete) <- dbSendTx name [(a,fromIntegral v)] (fromIntegral fee)
     return $ object [ "Tx" .= (toJSON $ bsToHex $ encode' tx)
                     , "Complete"   .= complete
@@ -503,7 +503,7 @@ cmdSendMany :: ( MonadLogger m
             -> [(String,Int)] -- ^ List of recipient addresses and amounts. 
             -> Int            -- ^ Fee per 1000 bytes. 
             -> m Value        -- ^ Payment transaction.
-cmdSendMany name dests fee = do
+cmdSendMany name dests fee = checkInit >> do
     (tx,complete) <- dbSendTx name dests' (fromIntegral fee)
     return $ object [ "Tx" .= (toJSON $ bsToHex $ encode' tx)
                     , "Complete"   .= complete
@@ -521,7 +521,7 @@ cmdSignTx :: (MonadLogger m, PersistUnique m)
           -> Tx           -- ^ Transaction to sign. 
           -> SigHash      -- ^ Signature type to create. 
           -> m Value      -- ^ Signed transaction.
-cmdSignTx name tx sh = do
+cmdSignTx name tx sh = checkInit >> do
     (newTx, complete) <- dbSignTx name tx sh
     return $ object 
         [ (T.pack "Tx")       .= (toJSON $ bsToHex $ encode' newTx)

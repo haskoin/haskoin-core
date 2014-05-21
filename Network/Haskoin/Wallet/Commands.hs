@@ -85,36 +85,44 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Util.BuildMonad
 
--- | Initialize a wallet from a mnemonic seed and a passphrase, which
--- could be blank. If mnemonic is Nothing, create new one and print it.
+-- | Initialize a wallet from an optional mnemonic seed and a passphrase,
+-- which could be blank.
 cmdInitMnemo :: PersistUnique m
-             => String           -- ^ Passphrase to protect mnemonic
-             -> Maybe String     -- ^ Mnemonic string
-             -> m Value          -- ^ String mnemonic or Null
+             => String
+             -- ^ Passphrase to protect mnemonic.
+             -> Maybe String
+             -- ^ Mnemonic sentence to initialize wallet with.
+             -- Use entropy from /dev/random otherwise.
+             -> m Mnemonic
+             -- ^ Mnemonic sentence used to initialize wallet.
+             -- Impossible to retrieve in the future.
 
 cmdInitMnemo pass (Just ms) = do
-    let seedE = mnemonicToSeed english (T.pack pass) (T.pack ms)
-        seed  = fromRight seedE
-    when (isLeft seedE) $ liftIO $ throwIO $ 
-        InitializationException $ fromLeft seedE
-    cmdInit seed
-
-cmdInitMnemo pass Nothing = do
-    ent  <- liftIO $ devRandom 16
-    let msE   = toMnemonic english ent
-        ms    = fromRight msE
-        seedE = mnemonicToSeed english (T.pack pass) =<< msE
+    let msT = T.pack ms
+        seedE = mnemonicToSeed english (T.pack pass) msT
         seed  = fromRight seedE
     when (isLeft seedE) $ liftIO $ throwIO $ 
         InitializationException $ fromLeft seedE
     _ <- cmdInit seed
-    return $ object ["Seed" .= ms]
+    return msT
+
+cmdInitMnemo pass Nothing = do
+    ent  <- liftIO $ devRandom 16
+    let msSeedE = do
+        m <- toMnemonic english ent
+        s <- mnemonicToSeed english (T.pack pass) m
+        return (m, s)
+    when (isLeft msSeedE) $ liftIO $ throwIO $
+        InitializationException $ fromLeft msSeedE
+    let (ms, seed) = fromRight msSeedE
+    _ <- cmdInit seed
+    return ms
 
 -- | Initialize a wallet from a secret seed. This function will fail if the
 -- wallet is already initialized.
 cmdInit :: PersistUnique m
         => BS.ByteString    -- ^ Secret seed.
-        -> m Value          -- ^ Returns Null.
+        -> m ()             -- ^ Returns Null.
 cmdInit seed 
     | BS.null seed = liftIO $ throwIO $ 
         InitializationException "The seed i sempty"
@@ -127,7 +135,6 @@ cmdInit seed
         when (isNothing master) $ liftIO $ throwIO $ InitializationException
             "The seed derivation produced an invalid key. Use another seed"
         insert_ $ DbWallet "main" "full" (fromJust master) (-1) time
-        return Null
 
 {- Account Commands -}
 

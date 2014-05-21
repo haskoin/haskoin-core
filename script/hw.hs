@@ -11,9 +11,9 @@ import System.IO.Error (ioeGetErrorString)
 import System.Console.GetOpt 
     ( getOpt
     , usageInfo
-    , OptDescr( Option )
-    , ArgDescr( NoArg, ReqArg )
-    , ArgOrder( Permute )
+    , OptDescr (Option)
+    , ArgDescr (NoArg, ReqArg)
+    , ArgOrder (Permute)
     )
 import qualified System.Environment as E (getArgs)
 
@@ -34,9 +34,10 @@ import Database.Persist.Sqlite (SqlBackend, runSqlite, runMigrationSilent)
 import Data.Maybe (listToMaybe, fromJust, isNothing)
 import qualified Data.Text as T (pack, unpack, splitOn)
 import qualified Data.Yaml as YAML 
-    ( Value(Null)
+    ( Value (Null)
     , encode
     )
+import Data.Aeson (Value (String))
 import qualified Data.Aeson.Encode.Pretty as JSON
     ( encodePretty'
     , defConfig
@@ -235,9 +236,11 @@ dispatchCommand :: ( MonadLogger m
                    ) 
                 => String -> Options -> Args -> Command m
 dispatchCommand cmd opts args = case cmd of
-    "init" -> whenArgs args (<= 1) $
-        cmdInitMnemo (optPass opts) (listToMaybe args)
-    "list" -> whenArgs args (== 1) $ cmdList (head args) 0 (optCount opts)
+    "init" -> whenArgs args (<= 1) $ do
+        ms <- cmdInitMnemo (optPass opts) (listToMaybe args)
+        return $ String ms
+    "list" -> whenArgs args (== 1) $ do
+        ls <- cmdList (head args) 0 (optCount opts)
     "listpage" -> whenArgs args (== 2) $ 
         cmdList (head args) (read $ args !! 1) (optCount opts)
     "new" -> whenArgs args (>= 2) $ cmdGenWithLabel (head args) $ drop 1 args

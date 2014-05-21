@@ -125,7 +125,7 @@ cmdInit :: PersistUnique m
         -> m ()             -- ^ Returns Null.
 cmdInit seed 
     | BS.null seed = liftIO $ throwIO $ 
-        InitializationException "The seed i sempty"
+        InitializationException "The seed is empty"
     | otherwise = do
         isInit <- isWalletInit "main"
         when isInit $ liftIO $ throwIO $ 
@@ -184,6 +184,7 @@ cmdNewMS name m n mskeys = checkInit >> do
         AccountSetupException "Invalid multisig parameters"
     unless (length keys < n) $ liftIO $ throwIO $
         AccountSetupException "Too many keys"
+    checkOwnKeys keys
     (Entity wk w) <- dbGetWallet "main"
     let deriv = fromIntegral $ dbWalletAccIndex w + 1
         (k,i) = head $ accPubKeys (dbWalletMaster w) deriv
@@ -212,16 +213,12 @@ cmdAddKeys :: (PersistUnique m, PersistQuery m)
            -> m Value     -- ^ Returns the account information.
 cmdAddKeys name keys 
     | null keys = liftIO $ throwIO $
-         AccountSetupException "Multisig key list can not be empty"
+         AccountSetupException "Thirdparty key list can not be empty"
     | otherwise = checkInit >> do
         (Entity ai acc) <- dbGetAccount name
         unless (isMSAcc acc) $ liftIO $ throwIO $ AccountSetupException 
             "Can only add keys to a multisig account"
-        -- TODO: Match PubKey instead of XPubKey to avoid playing 
-        -- with height or other values
-        exists <- mapM (\x -> count [DbAccountKey ==. AccPubKey x]) keys
-        unless (sum exists == 0) $ liftIO $ throwIO $ AccountSetupException 
-            "Can not add your own keys to a multisig account"
+        checkOwnKeys keys
         let prevKeys = dbAccountMsKeys acc
         when (length prevKeys == (fromJust $ dbAccountMsTotal acc) - 1) $ 
             liftIO $ throwIO $ AccountSetupException 
@@ -230,7 +227,7 @@ cmdAddKeys name keys
             newAcc  = acc{ dbAccountMsKeys = newKeys }
         unless (length newKeys < (fromJust $ dbAccountMsTotal acc)) $
             liftIO $ throwIO $ AccountSetupException
-                "Too many keys were added to this account"
+                "Adding too many keys to the account"
         replace ai newAcc
         let n = fromJust $ dbAccountMsTotal newAcc
         when (length (dbAccountMsKeys acc) == n - 1) $ do
@@ -238,6 +235,14 @@ cmdAddKeys name keys
             dbSetGap name 30 False
             dbSetGap name 30 True
         return $ yamlAcc newAcc
+
+checkOwnKeys :: PersistQuery m => [XPubKey] -> m ()
+checkOwnKeys keys = do
+    -- TODO: Match PubKey instead of XPubKey to avoid playing 
+    -- with height or other values
+    exists <- mapM (\x -> count [DbAccountKey ==. AccPubKey x]) keys
+    unless (sum exists == 0) $ liftIO $ throwIO $ AccountSetupException 
+        "Can not add your own keys to a multisig account"
 
 -- | Returns information on an account.
 cmdAccInfo :: PersistUnique m
@@ -300,8 +305,8 @@ cmdList name pageNum resPerPage
         let maxPage = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
             page | pageNum == 0 = maxPage
                  | otherwise = pageNum
-        when (page > maxPage) $ liftIO $ throwIO $
-            InvalidPageException "The page number is too high"
+        when (page > maxPage) $ liftIO $ throwIO $ InvalidPageException $ 
+            unwords ["The page number", show pageNum, "is too high"]
         addrs <- selectList [ DbAddressAccount ==. ai
                             , DbAddressInternal ==. False
                             , DbAddressIndex <=. dbAccountExtIndex acc
@@ -317,7 +322,10 @@ cmdGenAddrs :: (PersistUnique m, PersistQuery m)
             => AccountName  -- ^ Account name.
             -> Int          -- ^ Number of addresses to generate.
             -> m Value      -- ^ List of new addresses.
-cmdGenAddrs name c = cmdGenWithLabel name (replicate c "")
+cmdGenAddrs name c 
+    | c < 1     = liftIO $ throwIO $
+        AddressGenerationException "Can not generate less than 1 address"
+    | otherwise = cmdGenWithLabel name (replicate c "")
 
 -- | Generate new payment addresses with labels for an account.
 cmdGenWithLabel :: (PersistUnique m, PersistQuery m)
@@ -337,7 +345,7 @@ cmdLabel :: (PersistUnique m, PersistMonadBackend m ~ SqlBackend)
 cmdLabel name key label = checkInit >> do
     (Entity ai acc) <- dbGetAccount name
     when (key > dbAccountExtIndex acc) $ liftIO $ throwIO $
-        InvalidAddressException "This address key does not exist"
+        InvalidAddressException "The address key does not exist"
     (Entity i add) <- dbGetAddressByIndex ai key False
     let newAddr = add{dbAddressLabel = label}
     replace i newAddr

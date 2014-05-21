@@ -153,7 +153,7 @@ dbGenIntAddrs :: ( PersistUnique m
               -> m [DbAddressGeneric b]
 dbGenIntAddrs name c 
     | c <= 0    = liftIO $ throwIO $ AddressGenerationException 
-        "dbGenIntAddrs: Count argument must be greater than 0"
+        "Can not generate less than 1 internal address"
     | otherwise = dbGenAddrs name (replicate c "") True
 
 dbGenAddrs :: ( PersistUnique m

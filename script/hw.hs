@@ -37,7 +37,7 @@ import qualified Data.Yaml as YAML
     ( Value (Null)
     , encode
     )
-import Data.Aeson (Value (String))
+import Data.Aeson ((.=), object)
 import qualified Data.Aeson.Encode.Pretty as JSON
     ( encodePretty'
     , defConfig
@@ -238,9 +238,10 @@ dispatchCommand :: ( MonadLogger m
 dispatchCommand cmd opts args = case cmd of
     "init" -> whenArgs args (<= 1) $ do
         ms <- cmdInitMnemo (optPass opts) (listToMaybe args)
-        return $ String ms
+        return $ object ["Seed" .= ms]
     "list" -> whenArgs args (== 1) $ do
         ls <- cmdList (head args) 0 (optCount opts)
+        return ls
     "listpage" -> whenArgs args (== 2) $ 
         cmdList (head args) (read $ args !! 1) (optCount opts)
     "new" -> whenArgs args (>= 2) $ cmdGenWithLabel (head args) $ drop 1 args

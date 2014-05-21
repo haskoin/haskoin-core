@@ -12,16 +12,13 @@ module Network.Haskoin.Wallet.DbAddress
 , yamlAddrList
 ) where
 
-import Control.Applicative ((<$>),(<*>))
 import Control.Monad (when, forM, liftM)
 import Control.Monad.Trans (liftIO)
 import Control.Exception (throwIO)
-import Control.Monad.Logger (MonadLogger, logErrorN)
 
 import Data.Maybe (fromJust)
 import Data.Time (getCurrentTime)
 import Data.Yaml (Value, object, (.=), toJSON)
-import qualified Data.Text as T (pack)
 
 import Database.Persist
     ( PersistQuery
@@ -43,7 +40,6 @@ import Database.Persist.Sql (SqlBackend)
 import Network.Haskoin.Wallet.DbAccount
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Crypto
-import Network.Haskoin.Util
 
 yamlAddr :: DbAddressGeneric b -> Value
 yamlAddr a
@@ -68,7 +64,7 @@ yamlAddrList addrs pageNum resPerPage addrCount = object
     ]
   where totPages = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
 
-dbGetAddr :: (MonadLogger m, PersistUnique m, PersistMonadBackend m ~ b)
+dbGetAddr :: (PersistUnique m, PersistMonadBackend m ~ b)
           => String 
           -> m (Entity (DbAddressGeneric b))
 dbGetAddr addrStr = do
@@ -78,8 +74,7 @@ dbGetAddr addrStr = do
         Nothing -> liftIO $ throwIO $
             InvalidAddressException $ unwords ["Invalid address", addrStr]
 
-dbGetAddressByIndex :: ( MonadLogger m
-                       , PersistUnique m
+dbGetAddressByIndex :: ( PersistUnique m
                        , PersistMonadBackend m ~ SqlBackend
                        )
                     => DbAccountId
@@ -93,8 +88,7 @@ dbGetAddressByIndex accKey index internal = do
         Nothing  -> liftIO $ throwIO $
             InvalidAddressException "Invalid address key"
 
-dbAdjustGap :: ( MonadLogger m
-               , PersistUnique m
+dbAdjustGap :: ( PersistUnique m
                , PersistQuery m
                , PersistMonadBackend m ~ b
                )
@@ -114,8 +108,7 @@ dbAdjustGap a = do
                         (dbAddressInternal a)
         return ()
 
-dbSetGap :: ( MonadLogger m
-            , PersistUnique m
+dbSetGap :: ( PersistUnique m
             , PersistQuery m
             )
          => AccountName -> Int -> Bool -> m ()
@@ -152,8 +145,7 @@ dbSetGap name gap internal = do
     fGap   | internal  = dbAccountIntGap 
            | otherwise = dbAccountExtGap
 
-dbGenIntAddrs :: ( MonadLogger m
-                 , PersistUnique m
+dbGenIntAddrs :: ( PersistUnique m
                  , PersistQuery m
                  , PersistMonadBackend m ~ b
                  )
@@ -164,8 +156,7 @@ dbGenIntAddrs name c
         "dbGenIntAddrs: Count argument must be greater than 0"
     | otherwise = dbGenAddrs name (replicate c "") True
 
-dbGenAddrs :: ( MonadLogger m
-              , PersistUnique m
+dbGenAddrs :: ( PersistUnique m
               , PersistQuery m
               , PersistMonadBackend m ~ b
               )

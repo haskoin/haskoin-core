@@ -17,10 +17,10 @@ import System.Console.GetOpt
     )
 import qualified System.Environment as E (getArgs)
 
-import Control.Monad (forM_, join, when)
-import Control.Monad.Trans (lift, liftIO, MonadIO)
+import Control.Monad (forM_, when)
+import Control.Monad.Trans (liftIO, MonadIO)
 import Control.Exception (tryJust, throwIO)
-import Control.Monad.Logger (MonadLogger, logErrorN, runStderrLoggingT)
+import Control.Monad.Logger (MonadLogger, runStderrLoggingT)
 
 import Database.Persist
     ( PersistStore

@@ -34,7 +34,6 @@ module Network.Haskoin.Wallet.Model
 ) where
 
 import Control.Exception (Exception, throwIO)
-import Control.Monad.Logger (MonadLogger, logErrorN)
 import Control.Monad.Trans (liftIO)
 import Control.Monad (unless)
 
@@ -173,11 +172,11 @@ isWalletInit name = do
 
 checkInit :: PersistUnique m => m ()
 checkInit = do
-    init <- isWalletInit "main"
-    unless init $ liftIO $ throwIO $ 
+    isInit <- isWalletInit "main"
+    unless isInit $ liftIO $ throwIO $ 
         InitializationException "Wallet main is not initialized"
 
-dbGetWallet :: (MonadLogger m, PersistUnique m, PersistMonadBackend m ~ b)
+dbGetWallet :: (PersistUnique m, PersistMonadBackend m ~ b)
             => String -> m (Entity (DbWalletGeneric b))
 dbGetWallet name = do
     entM <- getBy $ UniqueWalletName name
@@ -186,7 +185,7 @@ dbGetWallet name = do
         Nothing  -> liftIO $ throwIO $ InitializationException $ 
             unwords ["Wallet", name, "is not initialized"]
 
-dbGetTxBlob :: (MonadLogger m, PersistUnique m, PersistMonadBackend m ~ b)
+dbGetTxBlob :: (PersistUnique m, PersistMonadBackend m ~ b)
             => Hash256 -> m (Entity (DbTxBlobGeneric b))
 dbGetTxBlob tid = do
     entM <- getBy $ UniqueTxBlob tid

@@ -7,34 +7,22 @@ module Network.Haskoin.Wallet.DbAccount
 , isMSAcc
 ) where
 
-import Control.Monad (when, unless)
 import Control.Monad.Trans (liftIO)
 import Control.Exception (throwIO)
-import Control.Monad.Logger (MonadLogger, logErrorN)
 
-import Data.Time (getCurrentTime)
 import Data.Yaml (Value, object, (.=))
 import Data.Maybe (fromJust, isJust)
-import Data.List (nub)
 import qualified Data.Text as T (pack)
 
 import Database.Persist 
-    ( PersistQuery
-    , PersistUnique
+    ( PersistUnique
     , PersistStore
     , PersistMonadBackend
     , Entity(..)
     , getBy
-    , insert_
-    , update
-    , count
-    , replace
-    , (==.), (=.)
     )
 
 import Network.Haskoin.Wallet.Model
-import Network.Haskoin.Crypto
-import Network.Haskoin.Util
 
 yamlAcc :: DbAccountGeneric b -> Value
 yamlAcc acc = object $ concat
@@ -55,7 +43,7 @@ yamlAcc acc = object $ concat
                       ]
                   | otherwise = []
 
-dbGetAccount :: (MonadLogger m, PersistUnique m, PersistMonadBackend m ~ b)
+dbGetAccount :: (PersistUnique m, PersistMonadBackend m ~ b)
          => String 
          -> m (Entity (DbAccountGeneric b))
 dbGetAccount name = do

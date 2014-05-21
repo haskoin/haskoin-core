@@ -19,7 +19,6 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Monad (forM, unless, when, mzero, liftM)
 import Control.Monad.Trans (liftIO)
 import Control.Exception (throwIO)
-import Control.Monad.Logger (MonadLogger, logErrorN)
 
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Word (Word32, Word64)
@@ -114,8 +113,7 @@ dbRemoveTx tid = do
     return $ tid:(concat pids)
           
 -- |Import a transaction into the database
-dbImportTx :: ( MonadLogger m 
-              , PersistQuery m
+dbImportTx :: ( PersistQuery m
               , PersistUnique m
               , PersistMonadBackend m ~ SqlBackend
               ) 
@@ -244,8 +242,7 @@ dbImportOrphan status (TxIn (OutPoint h i) s _)
 -- address in the wallet. Does not actually write anything to the database
 -- if commit is False. This is for correctly reporting on partial transactions
 -- without creating coins in the database from a partial transaction
-dbImportCoin :: ( MonadLogger m
-                , PersistQuery m
+dbImportCoin :: ( PersistQuery m
                 , PersistUnique m
                 , PersistMonadBackend m ~ SqlBackend
                 )
@@ -302,8 +299,7 @@ dbGetRedeem add = do
     f = if dbAddressInternal add then intMulSigKey else extMulSigKey
 
 -- |Build and sign a transactoin given a list of recipients
-dbSendTx :: ( MonadLogger m
-            , PersistUnique m
+dbSendTx :: ( PersistUnique m
             , PersistQuery m
             , PersistMonadBackend m ~ SqlBackend
             )
@@ -314,8 +310,7 @@ dbSendTx name dests fee = do
     dbSendCoins coins recips (SigAll False)
 
 -- |Given a list of recipients and a fee, finds a valid combination of coins
-dbSendSolution :: ( MonadLogger m
-                  , PersistUnique m
+dbSendSolution :: ( PersistUnique m
                   , PersistQuery m
                   , PersistMonadBackend m ~ SqlBackend
                   )
@@ -340,7 +335,7 @@ dbSendSolution name dests fee = do
     tot = sum $ map snd dests
     
 -- | Build and sign a transaction by providing coins and recipients
-dbSendCoins :: (MonadLogger m, PersistUnique m)
+dbSendCoins :: PersistUnique m
             => [Coin] -> [(String,Word64)] -> SigHash
             -> m (Tx, Bool)
 dbSendCoins coins recipients sh = do
@@ -354,7 +349,7 @@ dbSendCoins coins recipients sh = do
         TransactionSigningException $ runBroken sigTx
     return (runBuild sigTx, isComplete sigTx)
 
-dbSignTx :: (MonadLogger m, PersistUnique m)
+dbSignTx :: PersistUnique m
          => AccountName -> Tx -> SigHash -> m (Tx, Bool)
 dbSignTx name tx sh = do
     (Entity ai _) <- dbGetAccount name
@@ -371,7 +366,7 @@ dbSignTx name tx sh = do
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
 
 -- |Given a coin, retrieves the necessary data to sign a transaction
-dbGetSigData :: (MonadLogger m, PersistUnique m)
+dbGetSigData :: PersistUnique m
              => SigHash -> Coin -> m (SigInput,PrvKey)
 dbGetSigData sh coin = do
     (Entity _ w) <- dbGetWallet "main"

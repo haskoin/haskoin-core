@@ -8,9 +8,6 @@ module Network.Haskoin.Wallet.DbCoin
 , toCoin
 ) where
 
-import Control.Applicative ((<$>))
-import Control.Monad.Trans.Either (EitherT)
-
 import Data.Word (Word64)
 import Data.Yaml
     ( Value 
@@ -34,7 +31,6 @@ import Database.Persist.Sqlite (SqlBackend)
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Protocol
 import Network.Haskoin.Transaction
-import Network.Haskoin.Util
 
 toCoin :: DbCoinGeneric b -> Coin
 toCoin c = 

@@ -37,17 +37,9 @@ module Network.Haskoin.Wallet.Commands
 , cmdSignRawTx
 ) where
 
-import Control.Applicative ((<$>))
 import Control.Monad (when, unless, liftM)
 import Control.Monad.Trans (liftIO, MonadIO)
 import Control.Exception (throwIO)
-import Control.Monad.Logger 
-    ( MonadLogger
-    , logDebugN
-    , logInfoN
-    , logWarnN
-    , logErrorN
-    )
 
 import qualified Data.ByteString as BS
 import Data.Time (getCurrentTime)
@@ -71,7 +63,6 @@ import Database.Persist
     , entityVal
     , entityKey
     , get
-    , getBy
     , selectList
     , insert_
     , replace
@@ -96,7 +87,7 @@ import Network.Haskoin.Util.BuildMonad
 
 -- | Initialize a wallet from a mnemonic seed and a passphrase, which
 -- could be blank. If mnemonic is Nothing, create new one and print it.
-cmdInitMnemo :: (MonadLogger m, PersistUnique m)
+cmdInitMnemo :: PersistUnique m
              => String           -- ^ Passphrase to protect mnemonic
              -> Maybe String     -- ^ Mnemonic string
              -> m Value          -- ^ String mnemonic or Null
@@ -121,7 +112,7 @@ cmdInitMnemo pass Nothing = do
 
 -- | Initialize a wallet from a secret seed. This function will fail if the
 -- wallet is already initialized.
-cmdInit :: (MonadLogger m, PersistUnique m)
+cmdInit :: PersistUnique m
         => BS.ByteString    -- ^ Secret seed.
         -> m Value          -- ^ Returns Null.
 cmdInit seed 
@@ -142,8 +133,7 @@ cmdInit seed
 
 -- | Create a new account from an account name. Accounts are identified by
 -- their name and they must be unique.
-cmdNewAcc :: ( MonadLogger m
-             , PersistUnique m
+cmdNewAcc :: ( PersistUnique m
              , PersistQuery m
              , PersistMonadBackend m ~ b
              ) 
@@ -174,7 +164,7 @@ cmdNewAcc name = checkInit >> do
 --
 -- In order to prevent usage mistakes, you can not create a multisignature 
 -- account with other keys from your own wallet.
-cmdNewMS :: (MonadLogger m, PersistUnique m, PersistQuery m)
+cmdNewMS :: (PersistUnique m, PersistQuery m)
          => String    -- ^ Account name.
          -> Int       -- ^ Required number of keys (m in m of n).
          -> Int       -- ^ Total number of keys (n in m of n).
@@ -209,7 +199,7 @@ cmdNewMS name m n mskeys = checkInit >> do
 -- | Add new thirdparty keys to a multisignature account. This function can
 -- fail if the multisignature account already has all required keys. In order
 -- to prevent usage mistakes, adding a key from your own wallet will fail.
-cmdAddKeys :: (MonadLogger m, PersistUnique m, PersistQuery m)
+cmdAddKeys :: (PersistUnique m, PersistQuery m)
            => AccountName -- ^ Account name.
            -> [XPubKey]   -- ^ Thirdparty public keys to add.
            -> m Value     -- ^ Returns the account information.
@@ -243,7 +233,7 @@ cmdAddKeys name keys
         return $ yamlAcc newAcc
 
 -- | Returns information on an account.
-cmdAccInfo :: (MonadLogger m, PersistUnique m)
+cmdAccInfo :: PersistUnique m
            => AccountName   -- ^ Account name.
            -> m Value       -- ^ Account information.
 cmdAccInfo name = checkInit >> do
@@ -259,9 +249,7 @@ cmdListAcc = checkInit >> do
 
 -- | Returns information on extended public and private keys of an account.
 -- For a multisignature account, thirdparty keys are also returned.
-cmdDumpKeys :: ( MonadLogger m
-               , PersistUnique m
-               )
+cmdDumpKeys :: PersistUnique m
             => AccountName  -- ^ Account name.
             -> m Value      -- ^ Extended key information.
 cmdDumpKeys name = checkInit >> do
@@ -285,7 +273,7 @@ cmdDumpKeys name = checkInit >> do
 
 -- | Returns a page of addresses for an account. Pages are numbered starting
 -- from page 1. Requesting page 0 will return the last page. 
-cmdList :: (MonadLogger m, PersistUnique m, PersistQuery m) 
+cmdList :: (PersistUnique m, PersistQuery m) 
         => AccountName   -- ^ Account name.
         -> Int           -- ^ Requested page number.
         -> Int           -- ^ Number of addresses per page.
@@ -318,14 +306,14 @@ cmdList name pageNum resPerPage
         return $ yamlAddrList (map entityVal addrs) page resPerPage addrCount
 
 -- | Generate new payment addresses for an account. 
-cmdGenAddrs :: (MonadLogger m, PersistUnique m, PersistQuery m)
+cmdGenAddrs :: (PersistUnique m, PersistQuery m)
             => AccountName  -- ^ Account name.
             -> Int          -- ^ Number of addresses to generate.
             -> m Value      -- ^ List of new addresses.
 cmdGenAddrs name c = cmdGenWithLabel name (replicate c "")
 
 -- | Generate new payment addresses with labels for an account.
-cmdGenWithLabel :: (MonadLogger m, PersistUnique m, PersistQuery m)
+cmdGenWithLabel :: (PersistUnique m, PersistQuery m)
                 => AccountName  -- ^ Account name.
                 -> [String]     -- ^ List of address labels. 
                 -> m Value      -- ^ List of new addresses.
@@ -334,7 +322,7 @@ cmdGenWithLabel name labels = checkInit >> do
     return $ toJSON $ map yamlAddr addrs
 
 -- | Add a label to an address.
-cmdLabel :: (MonadLogger m, PersistUnique m, PersistMonadBackend m ~ SqlBackend)
+cmdLabel :: (PersistUnique m, PersistMonadBackend m ~ SqlBackend)
          => AccountName   -- ^ Account name.
          -> Int           -- ^ Derivation index of the address. 
          -> String        -- ^ New label.
@@ -349,7 +337,7 @@ cmdLabel name key label = checkInit >> do
     return $ yamlAddr newAddr
 
 -- | Returns the private key tied to a payment address in WIF format.
-cmdWIF :: (MonadLogger m, PersistUnique m, PersistMonadBackend m ~ SqlBackend)
+cmdWIF :: (PersistUnique m, PersistMonadBackend m ~ SqlBackend)
        => AccountName      -- ^ Account name.
        -> Int              -- ^ Derivation index of the address. 
        -> m Value          -- ^ WIF value.
@@ -370,7 +358,7 @@ cmdWIF name key = checkInit >> do
 {- Coin Commands -}
 
 -- | Returns the balance of an account.
-cmdBalance :: (MonadLogger m, PersistUnique m, PersistQuery m)
+cmdBalance :: (PersistUnique m, PersistQuery m)
            => AccountName   -- ^ Account name.
            -> m Value       -- ^ Account balance.
 cmdBalance name = checkInit >> do
@@ -392,8 +380,7 @@ cmdBalances = checkInit >> do
         ]
 
 -- | Returns the list of unspent coins for an account.
-cmdCoins :: ( MonadLogger m
-            , PersistQuery m
+cmdCoins :: ( PersistQuery m
             , PersistUnique m 
             , PersistMonadBackend m ~ SqlBackend
             )
@@ -426,8 +413,7 @@ cmdAllCoins = checkInit >> do
 -- transaction entry will be created for every account affected by this
 -- transaction. Every transaction entry will summarize the information related
 -- to its account only (such as total movement for this account).
-cmdImportTx :: ( MonadLogger m
-               , PersistQuery m
+cmdImportTx :: ( PersistQuery m
                , PersistUnique m
                , PersistMonadBackend m ~ SqlBackend
                ) 
@@ -443,7 +429,7 @@ cmdImportTx tx = checkInit >> do
 -- | Remove a transaction from the database. This will remove all transaction
 -- entries for this transaction as well as any child transactions and coins
 -- deriving from it.
-cmdRemoveTx :: (MonadLogger m, PersistUnique m, PersistQuery m)
+cmdRemoveTx :: (PersistUnique m, PersistQuery m)
             => Hash256    -- ^ Transaction id (txid)
             -> m Value    -- ^ List of removed transaction entries
 cmdRemoveTx h = checkInit >> do
@@ -466,7 +452,7 @@ cmdRemoveTx h = checkInit >> do
 -- they are fully signed. However, importing a partial transaction will /lock/
 -- the coins that it spends so that you don't mistakenly spend them. Partial
 -- transactions are replaced once the fully signed transaction is imported.
-cmdListTx :: (MonadLogger m, PersistQuery m, PersistUnique m)
+cmdListTx :: (PersistQuery m, PersistUnique m)
           => AccountName  -- ^ Account name.
           -> m Value      -- ^ List of transaction entries.
 cmdListTx name = checkInit >> do
@@ -477,8 +463,7 @@ cmdListTx name = checkInit >> do
     return $ toJSON $ map (yamlTx . entityVal) txs
 
 -- | Create a transaction sending some coins to a single recipient address.
-cmdSend :: ( MonadLogger m
-           , PersistQuery m
+cmdSend :: ( PersistQuery m
            , PersistUnique m
            , PersistMonadBackend m ~ SqlBackend
            )
@@ -494,8 +479,7 @@ cmdSend name a v fee = checkInit >> do
                     ]
 
 -- | Create a transaction sending some coins to a list of recipient addresses.
-cmdSendMany :: ( MonadLogger m
-               , PersistQuery m
+cmdSendMany :: ( PersistQuery m
                , PersistUnique m
                , PersistMonadBackend m ~ SqlBackend
                )
@@ -516,7 +500,7 @@ cmdSendMany name dests fee = checkInit >> do
 -- work for both normal inputs and multisignature inputs. Signing is limited to
 -- the keys of one account only to allow for more control when the wallet is
 -- used as the backend of a web service.
-cmdSignTx :: (MonadLogger m, PersistUnique m)
+cmdSignTx :: PersistUnique m
           => AccountName  -- ^ Account name.
           -> Tx           -- ^ Transaction to sign. 
           -> SigHash      -- ^ Signature type to create. 
@@ -532,7 +516,7 @@ cmdSignTx name tx sh = checkInit >> do
 
 -- | Decodes a transaction, providing structural information on the inputs
 -- and the outputs of the transaction.
-cmdDecodeTx :: (MonadIO m, MonadLogger m)
+cmdDecodeTx :: MonadIO m
             => String  -- ^ HEX encoded transaction
             -> m Value -- ^ Decoded transaction
 cmdDecodeTx str 
@@ -558,7 +542,7 @@ cmdDecodeTx str
 --
 -- >   { addr: amnt,... }
 --
-cmdBuildRawTx :: (MonadIO m, MonadLogger m) 
+cmdBuildRawTx :: MonadIO m 
               => String  -- ^ List of JSON encoded Outpoints.
               -> String  -- ^ List of JSON encoded Recipients.
               -> m Value -- ^ Transaction result.
@@ -593,13 +577,11 @@ cmdBuildRawTx i o
 -- Private keys in JSON foramt:
 --
 -- >   [ WIF,... ]
-cmdSignRawTx :: (MonadIO m, MonadLogger m)
-             => Tx                      -- ^ Transaction to sign.
-             -> String                  
-                -- ^ List of JSON encoded signing parameters.
-             -> String                  
-                -- ^ List of JSON encoded WIF private keys.
-             -> SigHash                 -- ^ Signature type. 
+cmdSignRawTx :: MonadIO m
+             => Tx       -- ^ Transaction to sign.
+             -> String   -- ^ List of JSON encoded signing parameters.
+             -> String   -- ^ List of JSON encoded WIF private keys.
+             -> SigHash  -- ^ Signature type. 
              -> m Value
 cmdSignRawTx tx strSigi strKeys sh 
     | isJust fsM && isJust keysM = do

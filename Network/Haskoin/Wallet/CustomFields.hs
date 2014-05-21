@@ -18,7 +18,6 @@ import qualified Data.Text as T (pack)
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
-import Network.Haskoin.Util
 
 -- | Spent if a complete transaction spends this coin
 -- Reserved if a partial transaction is spending these coins

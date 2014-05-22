@@ -39,6 +39,7 @@ import Database.Persist.Sql (SqlBackend)
 
 import Network.Haskoin.Wallet.DbAccount
 import Network.Haskoin.Wallet.Model
+import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Crypto
 
 yamlAddr :: DbAddressGeneric b -> Value

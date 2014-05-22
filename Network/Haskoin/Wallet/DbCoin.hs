@@ -8,29 +8,15 @@ module Network.Haskoin.Wallet.DbCoin
 , toCoin
 ) where
 
-import Data.Word (Word64)
-import Data.Yaml
-    ( Value 
-    , object 
-    , (.=)
-    )
-import Data.Maybe (isJust, fromJust)
-
+import Data.Aeson
+import Data.Maybe
+import Data.Word
 import Database.Persist
-    ( PersistStore
-    , PersistQuery
-    , PersistMonadBackend
-    , Entity(..)
-    , entityVal
-    , selectList
-    , (==.)
-    , SelectOpt(Asc)
-    )
-import Database.Persist.Sqlite (SqlBackend)
-
-import Network.Haskoin.Wallet.Model
+import Database.Persist.Sqlite
 import Network.Haskoin.Protocol
 import Network.Haskoin.Transaction
+import Network.Haskoin.Wallet.Model
+import Network.Haskoin.Wallet.Types
 
 toCoin :: DbCoinGeneric b -> Coin
 toCoin c = 

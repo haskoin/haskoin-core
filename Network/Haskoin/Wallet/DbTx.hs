@@ -9,44 +9,22 @@ module Network.Haskoin.Wallet.DbTx
 , dbSendCoins
 , dbSignTx
 , yamlTx
-, RawTxOutPoints(..)
-, RawTxDests(..)
-, RawSigInput(..)
-, RawPrvKey(..)
 ) where
 
-import Control.Applicative ((<$>), (<*>))
-import Control.Monad (forM, unless, when, mzero, liftM)
+import Control.Applicative ((<$>))
+import Control.Monad (forM, unless, when, liftM)
 import Control.Monad.Trans (liftIO)
 import Control.Exception (throwIO)
 
 import Data.Time (UTCTime, getCurrentTime)
-import Data.Word (Word32, Word64)
+import Data.Word (Word64)
 import Data.List ((\\), nub)
 import Data.Maybe (catMaybes, isNothing, isJust, fromJust)
 import Data.Either (rights)
-import Data.Yaml 
-    ( Value
-    , object 
-    , (.=), (.:), (.:?)
-    , parseJSON
-    , Parser
-    )
-import qualified Data.Aeson as Json 
-    ( FromJSON
-    , withObject
-    , withArray
-    )
-import qualified Data.Vector as V (toList)
-import qualified Data.HashMap.Strict as H (toList)
+import Data.Yaml (Value, object, (.=))
 import qualified Data.Map.Strict as M 
-    ( toList
-    , empty
-    , lookup
-    , insert
-    )
-import qualified Data.Text as T (pack, unpack)
 
+import Database.Persist.Sql (SqlBackend)
 import Database.Persist 
     ( PersistStore
     , PersistUnique
@@ -66,18 +44,71 @@ import Database.Persist
     , replace
     , (=.), (==.), (<-.)
     )
-import Database.Persist.Sql (SqlBackend)
 
 import Network.Haskoin.Wallet.DbAccount
 import Network.Haskoin.Wallet.DbAddress
 import Network.Haskoin.Wallet.DbCoin
 import Network.Haskoin.Wallet.Model
+import Network.Haskoin.Wallet.Types
+import Network.Haskoin.Wallet.Util
+
 import Network.Haskoin.Transaction
+    ( SigInput (SigInput, SigInputSH)
+    , Coin
+    , buildAddrTx
+    , chooseCoins
+    , chooseMSCoins
+    , coinOutPoint
+    , coinTxOut
+    , coinRedeem
+    , detSignTx
+    , isTxComplete
+    )
 import Network.Haskoin.Script
+    ( SigHash (SigAll)
+    , ScriptOutput (PayMulSig)
+    , encodeOutput
+    , scriptRecipient
+    , scriptSender
+    , sortMulSig
+    )
 import Network.Haskoin.Protocol
+    ( Tx
+    , TxIn (TxIn)
+    , TxOut (TxOut)
+    , OutPoint (OutPoint)
+    , Script (Script)
+    , prevOutput
+    , scriptOutput
+    , txIn
+    , txOut
+    , txid
+    )
 import Network.Haskoin.Crypto
+    ( Hash256
+    , PrvKey
+    , addrToBase58
+    , accPrvKey
+    , extMulSigKey
+    , intMulSigKey
+    , getAddrPrvKey
+    , getAddrPubKey
+    , intPrvKey
+    , extPrvKey
+    , xPrvKey
+    , xPubKey
+    )
 import Network.Haskoin.Util
+    ( fromRight
+    , fromLeft
+    , isLeft
+    )
 import Network.Haskoin.Util.BuildMonad
+    ( isBroken
+    , isComplete
+    , runBroken
+    , runBuild
+    )
 
 yamlTx :: DbTxGeneric b -> Value
 yamlTx tx = object $ concat
@@ -148,7 +179,7 @@ dbImportTx tx = do
             let accTxs = buildAccTx tx ((map entityVal inCoins) ++ orphans)
                             outCoins (not complete) time
             -- Insert transaction blob. Ignore if already exists
-            _ <- insertUnique $ DbTxBlob tid (encode' tx) time
+            _ <- insertUnique $ DbTxBlob tid tx time
             -- insert account transactions into database, 
             -- rewriting if they exist
             _ <- forM accTxs $ \accTx -> do
@@ -169,7 +200,7 @@ dbImportTx tx = do
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
     complete         = isTxComplete tx
     status           = if complete then Spent tid else Reserved tid
-    dec              = decode' . dbTxBlobValue . entityVal
+    dec              = dbTxBlobValue . entityVal
 
 -- |A transaction can not be imported if it double spends coins in the wallet.
 -- Upstream code needs to remove the conflicting transaction first using
@@ -384,62 +415,3 @@ dbGetSigData sh coin = do
     rdm    = coinRedeem coin
     sigi | isJust rdm = SigInputSH out (coinOutPoint coin) (fromJust rdm) sh
          | otherwise  = SigInput out (coinOutPoint coin) sh
-
-data RawTxOutPoints = RawTxOutPoints [OutPoint] 
-    deriving (Eq, Show)
-
-data RawTxDests = RawTxDests [(String,Word64)]
-    deriving (Eq, Show)
-
-instance Json.FromJSON RawTxOutPoints where
-    parseJSON = Json.withArray "Expected: Array" $ \arr -> do
-        RawTxOutPoints <$> (mapM f $ V.toList arr)
-      where
-        f = Json.withObject "Expected: Object" $ \obj -> do
-            tid  <- obj .: T.pack "txid" :: Parser String
-            vout <- obj .: T.pack "vout" :: Parser Word32
-            let i = maybeToEither ("Failed to decode txid" :: String)
-                                  (decodeTxid tid)
-                o = OutPoint <$> i <*> (return vout)
-            either (const mzero) return o
-
-instance Json.FromJSON RawTxDests where
-    parseJSON = Json.withObject "Expected: Object" $ \obj ->
-        RawTxDests <$> (mapM f $ H.toList obj)
-      where
-        f (add,v) = do
-            amnt <- parseJSON v :: Parser Word64
-            return (T.unpack add, amnt)
-
-data RawSigInput = RawSigInput [(SigHash -> SigInput)]
-
-data RawPrvKey = RawPrvKey [PrvKey]
-    deriving (Eq, Show)
-
-instance Json.FromJSON RawSigInput where
-    parseJSON = Json.withArray "Expected: Array" $ \arr -> do
-        RawSigInput <$> (mapM f $ V.toList arr)
-      where
-        f = Json.withObject "Expected: Object" $ \obj -> do
-            tid  <- obj .: T.pack "txid" :: Parser String
-            vout <- obj .: T.pack "vout" :: Parser Word32
-            scp  <- obj .: T.pack "scriptPubKey" :: Parser String
-            rdm  <- obj .:? T.pack "redeemScript" :: Parser (Maybe String)
-            let s = decodeScriptOps =<< maybeToEither "Hex parsing failed" 
-                        (hexToBS scp)
-                i = maybeToEither "Failed to decode txid" (decodeTxid tid)
-                o = OutPoint <$> i <*> (return vout)
-                r = decodeScriptOps =<< maybeToEither "Hex parsing failed" 
-                        (hexToBS $ fromJust rdm)
-                res | isJust rdm = SigInputSH <$> s <*> o <*> r
-                    | otherwise  = SigInput <$> s <*> o
-            either (const mzero) return res
-
-instance Json.FromJSON RawPrvKey where
-    parseJSON = Json.withArray "Expected: Array" $ \arr ->
-        RawPrvKey <$> (mapM f $ V.toList arr)
-      where
-        f v = do
-            str <- parseJSON v :: Parser String  
-            maybe mzero return $ fromWIF str
-

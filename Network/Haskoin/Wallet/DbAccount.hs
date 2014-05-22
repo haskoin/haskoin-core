@@ -7,22 +7,13 @@ module Network.Haskoin.Wallet.DbAccount
 , isMSAcc
 ) where
 
-import Control.Monad.Trans (liftIO)
 import Control.Exception (throwIO)
-
-import Data.Yaml (Value, object, (.=))
+import Control.Monad.Trans (liftIO)
+import Data.Aeson (Value, (.=), object)
 import Data.Maybe (fromJust, isJust)
-import qualified Data.Text as T (pack)
-
-import Database.Persist 
-    ( PersistUnique
-    , PersistStore
-    , PersistMonadBackend
-    , Entity(..)
-    , getBy
-    )
-
+import Database.Persist  (PersistUnique, PersistMonadBackend, Entity, getBy)
 import Network.Haskoin.Wallet.Model
+import Network.Haskoin.Wallet.Types
 
 yamlAcc :: DbAccountGeneric b -> Value
 yamlAcc acc = object $ concat
@@ -38,8 +29,8 @@ yamlAcc acc = object $ concat
           datType | isMSAcc acc = ["Type" .= unwords [ "Multisig", ms ]]
                   | otherwise   = ["Type" .= ("Regular" :: String)]
           datWarn | isMSAcc acc && miss > 0 =
-                      [ (T.pack "Warning") .= 
-                          unwords [show miss,"multisig keys missing"]
+                      [ "Warning" .=
+                        unwords [show miss,"multisig keys missing"]
                       ]
                   | otherwise = []
 

@@ -43,8 +43,8 @@ import Control.Exception (throwIO)
 
 import qualified Data.ByteString as BS
 import Data.Time (getCurrentTime)
-import Data.Yaml 
-    ( Value (Null)
+import Data.Aeson
+    ( Value
     , object 
     , (.=)
     , toJSON
@@ -73,17 +73,63 @@ import Database.Persist
     )
 import Database.Persist.Sqlite (SqlBackend)
 
+import Network.Haskoin.Transaction
+    ( buildAddrTx
+    , detSignTx
+    )
+import Network.Haskoin.Script
+    ( SigHash )
+import Network.Haskoin.Protocol
+    ( Tx
+    , encodeTxid
+    )
+import Network.Haskoin.Crypto
+    ( AccPubKey (AccPubKey)
+    , Hash256
+    , Mnemonic
+    , XPubKey
+    , accPrvKey
+    , accPubKeys
+    , deriveXPubKey
+    , english
+    , extPrvKey
+    , devRandom
+    , getAccPrvKey
+    , getAddrPrvKey
+    , makeMasterKey
+    , mnemonicToSeed
+    , toMnemonic
+    , toWIF
+    , xPubExport
+    , xPrvExport
+    , xPrvKey
+    )
+import Network.Haskoin.Util
+    ( bsToHex
+    , decodeToMaybe
+    , encode'
+    , fromRight
+    , fromLeft
+    , hexToBS
+    , isLeft
+    , stringToBS
+    , toLazyBS
+    )
+import Network.Haskoin.Util.BuildMonad
+    ( isBroken
+    , isComplete
+    , runBroken
+    , runBuild
+    )
+
 import Network.Haskoin.Wallet.DbAccount
 import Network.Haskoin.Wallet.DbAddress
 import Network.Haskoin.Wallet.DbCoin
 import Network.Haskoin.Wallet.DbTx
 import Network.Haskoin.Wallet.Model
-import Network.Haskoin.Transaction
-import Network.Haskoin.Script
-import Network.Haskoin.Protocol
-import Network.Haskoin.Crypto
-import Network.Haskoin.Util
-import Network.Haskoin.Util.BuildMonad
+import Network.Haskoin.Wallet.Types
+import Network.Haskoin.Wallet.Util
+
 
 -- | Initialize a wallet from an optional mnemonic seed and a passphrase,
 -- which could be blank.
@@ -286,10 +332,10 @@ cmdDumpKeys name = checkInit >> do
 -- | Returns a page of addresses for an account. Pages are numbered starting
 -- from page 1. Requesting page 0 will return the last page. 
 cmdList :: (PersistUnique m, PersistQuery m) 
-        => AccountName   -- ^ Account name.
-        -> Int           -- ^ Requested page number.
-        -> Int           -- ^ Number of addresses per page.
-        -> m Value       -- ^ The requested page.
+        => AccountName             -- ^ Account name.
+        -> Int                     -- ^ Requested page number.
+        -> Int                     -- ^ Number of addresses per page.
+        -> m Value                 -- ^ The requested page.
 cmdList name pageNum resPerPage 
     | pageNum < 0 = liftIO $ throwIO $ InvalidPageException $ 
         unwords ["Invalid page number:", show pageNum]
@@ -315,6 +361,7 @@ cmdList name pageNum resPerPage
                             , LimitTo resPerPage
                             , OffsetBy $ (page - 1) * resPerPage
                             ]
+
         return $ yamlAddrList (map entityVal addrs) page resPerPage addrCount
 
 -- | Generate new payment addresses for an account. 

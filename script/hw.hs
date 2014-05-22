@@ -46,11 +46,23 @@ import qualified Data.Aeson.Encode.Pretty as JSON
 
 import Network.Haskoin.Wallet.Commands
 import Network.Haskoin.Wallet.Model
+import Network.Haskoin.Wallet.Types
+
 import Network.Haskoin.Script
-import Network.Haskoin.Protocol
-import Network.Haskoin.Crypto
+    ( SigHash (SigAll, SigNone, SigSingle)
+    , anyoneCanPay
+    )
+import Network.Haskoin.Protocol (decodeTxid)
+import Network.Haskoin.Crypto (xPubImport)
 import Network.Haskoin.Util
-import Network.Haskoin.Util.Network
+    ( bsToString
+    , decodeToMaybe
+    , hexToBS
+    , isRight
+    , fromRight
+    , toStrictBS
+    )
+import Network.Haskoin.Util.Network (walletFile)
 
 data Options = Options
     { optCount    :: Int

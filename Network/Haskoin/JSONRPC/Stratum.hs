@@ -219,7 +219,7 @@ parseNotif (Request m (Just p) i) =
     parseNotifHelper m p >>= \s -> return $ Request m (Just s) i
 parseNotif _ = mzero
 
--- | Helper function for Network.Haskoin.JSONConduit
+-- | Helper function for Network.Haskoin.JSONRPC.Conduit
 newStratumReq :: MonadIO m
               => StratumSession
               -> StratumQuery

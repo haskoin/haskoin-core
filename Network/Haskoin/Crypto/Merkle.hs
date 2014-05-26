@@ -15,19 +15,31 @@ import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Util.Constants (maxBlockSize)
 import Network.Haskoin.Util
 
-calcTreeHeight :: Int -> Int
+-- | Computes the height of a merkle tree.
+calcTreeHeight :: Int -- ^ Number of transactions (leaf nodes).
+               -> Int -- ^ Height of the merkle tree.
 calcTreeHeight ntx = ceiling $ log (fromIntegral ntx :: Double) / log 2
 
-calcTreeWidth :: Int -> Int -> Int
+-- | Computes the width of a merkle tree at a specific height. The transactions
+-- are at height 0.
+calcTreeWidth :: Int -- ^ Number of transactions (leaf nodes).
+              -> Int -- ^ Height at which we want to compute the width.
+              -> Int -- ^ Width of the merkle tree.
 calcTreeWidth ntx h = (ntx + (1 `shiftL` h) - 1) `shiftR` h
 
-buildMerkleRoot :: [Hash256] -> Hash256
+-- | Computes the root of a merkle tree from a list of leaf node hashes.
+buildMerkleRoot :: [Hash256] -- ^ List of transaction hashes (leaf nodes).
+                -> Hash256   -- ^ Root of the merkle tree.
 buildMerkleRoot txs = calcHash (calcTreeHeight $ length txs) 0 txs
 
 hash2 :: Hash256 -> Hash256 -> Hash256
 hash2 a b = doubleHash256 $ encode' a `BS.append` encode' b
 
-calcHash :: Int -> Int -> [Hash256] -> Hash256
+-- | Computes the hash of a specific node in a merkle tree.
+calcHash :: Int       -- ^ Height of the node in the merkle tree.
+         -> Int       -- ^ Position of the node (0 for the leftmost node).
+         -> [Hash256] -- ^ Transaction hashes of the merkle tree (leaf nodes).
+         -> Hash256   -- ^ Hash of the node at the specified position.
 calcHash height pos txs
     | height < 0 || pos < 0 = error "calcHash: Invalid parameters"
     | height == 0 = txs !! pos
@@ -38,7 +50,15 @@ calcHash height pos txs
                 calcHash (height-1) (pos*2+1) txs
           | otherwise = left
 
-buildPartialMerkle :: [(Hash256,Bool)] -> ([Bool], [Hash256])
+-- | Build a partial merkle tree.
+buildPartialMerkle 
+    :: [(Hash256,Bool)] 
+    -- ^ List of transactions hashes forming the leaves of the merkle tree
+    -- and a bool indicating if that transaction should be included in the 
+    -- partial merkle tree.
+    -> ([Bool], [Hash256]) 
+    -- ^ Flag bits (used to parse the partial merkle tree) and the 
+    -- partial merkle tree.
 buildPartialMerkle hs = traverseAndBuild (calcTreeHeight $ length hs) 0 hs
 
 traverseAndBuild :: Int -> Int -> [(Hash256,Bool)] -> ([Bool], [Hash256])
@@ -79,8 +99,14 @@ traverseAndExtract height pos ntx flags hashes
                 (drop lcf fs) (drop lch hashes)
     (rh,rm,rcf,rch) = fromJust rightM
 
-extractMatches :: [Bool] -> [Hash256] -> Int
+-- | Extracts the matching hashes from a partial merkle tree. This will return
+-- the list of transaction hashes that have been included (set to True) in
+-- a call to 'buildPartialMerkle'.
+extractMatches :: [Bool]    -- ^ Flag bits (produced by buildPartialMerkle).
+               -> [Hash256] -- ^ Partial merkle tree.
+               -> Int       -- ^ Number of transaction at height 0 (leaf nodes).
                -> Either String (Hash256, [Hash256])
+               -- ^ Merkle root and the list of matching transaction hashes.
 extractMatches flags hashes ntx
     | ntx == 0 = Left $
         "extractMatches: number of transactions can not be 0"

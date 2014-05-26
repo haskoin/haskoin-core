@@ -13,10 +13,12 @@ maintainer:            plaprade+hackage@gmail.com
 category:              Bitcoin, Finance, Network
 build-type:            Simple
 cabal-version:         >= 1.9.2
+extra-source-files:    tests/data/*.json
 
 source-repository head
     type:     git
     location: git://github.com/plaprade/haskoin.git
+
 
 library
     exposed-modules:   Network.Haskoin.Util,

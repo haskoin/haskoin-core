@@ -25,8 +25,6 @@ library
                        Network.Haskoin.Util.Network,
                        Network.Haskoin.Util.BuildMonad,
                        Network.Haskoin.Util.Constants,
-                       Network.Haskoin.Stratum.Message,
-                       Network.Haskoin.Stratum.Conduit,
                        Network.Haskoin.Stratum,
                        Network.Haskoin.Crypto,
                        Network.Haskoin.Protocol,
@@ -71,6 +69,8 @@ library
                        Network.Haskoin.Protocol.GetHeaders,
                        Network.Haskoin.Script.Parser, 
                        Network.Haskoin.Script.SigHash,
+                       Network.Haskoin.Stratum.Message,
+                       Network.Haskoin.Stratum.Conduit,
                        Network.Haskoin.Transaction.Builder
     build-depends:     aeson                >= 0.7  && < 0.8,
                        base                 >= 4.6  && < 4.7, 

@@ -21,7 +21,7 @@ module Network.Haskoin.JSONRPC.Stratum
 ) where
 
 import Control.Monad (mzero)
-import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.Trans (MonadIO)
 import Data.Aeson
     ( FromJSON
     , ToJSON

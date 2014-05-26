@@ -1,23 +1,61 @@
 {-# LANGUAGE OverloadedStrings, FlexibleInstances #-}
-module Network.Haskoin.JSONRPC.Stratum
-( -- * Data
+module Network.Haskoin.Stratum
+( -- * Types
+  -- ** Bitcoin
   Balance(..)
 , Coin(..)
+, TxHeight(..)
+  -- ** Stratum data
 , StratumNotif(..)
 , StratumQuery(..)
 , StratumResponse(..)
-, TxHeight(..)
+  -- ** JSON-RPC data for Stratum
 , MessageStratum
 , NotifStratum
 , RequestStratum
 , ResponseStratum
 , ResultStratum
+  -- ** Stratum Session for JSON-RPC Conduit
 , StratumSession
   -- * Functions
 , toRequest
 , parseResult
 , parseNotif
 , newStratumReq
+  -- * Generic JSON-RPC Conduit
+  -- ** Types
+, Session
+  -- ** Functions
+, initSession
+, newReq
+, newNotif
+, reqSource
+, resConduit
+  -- * Generic JSON-RPC Messages
+  -- ** Types
+, Method
+, ErrorValue
+, RequestValue
+, ResponseValue
+, MessageValue
+, ResultValue
+, Id(..)
+, Result
+, Error(..)
+  -- ** Messages
+, Request(..)
+, Response(..)
+, Message(..)
+  -- ** Errors
+, errParse
+, errReq
+, errMeth
+, errParams
+, errInternal
+, errStr
+  -- ** Helpers
+, leftStr
+, numericId
 ) where
 
 import Control.Monad (mzero)
@@ -37,26 +75,11 @@ import Data.Maybe (fromJust)
 import Data.Text (Text, pack, unpack)
 import qualified Data.Vector as V
 import Data.Word (Word, Word64)
-import Network.Haskoin.Crypto (Address, Hash256)
-import Network.Haskoin.Protocol
-    ( OutPoint (OutPoint)
-    , Tx
-    , decodeTxid
-    , encodeTxid
-    , outPointIndex
-    )
-import Network.Haskoin.JSONRPC.Message
-    ( Id (IntId)
-    , Message
-    , Method
-    , Request (Request)
-    , Response (Response)
-    , Result
-    , RequestValue
-    , ResultValue
-    )
-import Network.Haskoin.JSONRPC.Conduit (Session, newReq)
-import Network.Haskoin.Util (bsToHex, decode', encode', hexToBS)
+import Network.Haskoin.Crypto
+import Network.Haskoin.Protocol hiding (Message)
+import Network.Haskoin.Stratum.Message
+import Network.Haskoin.Stratum.Conduit
+import Network.Haskoin.Util
 
 -- | JSON-RPC request with Stratum payload.
 type RequestStratum = Request StratumQuery

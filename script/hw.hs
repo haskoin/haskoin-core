@@ -28,16 +28,14 @@ import Database.Persist
     , PersistQuery
     , PersistMonadBackend
     )
-import Database.Persist.Sql ()
+-- import Database.Persist.Sql ()
 import Database.Persist.Sqlite (SqlBackend, runSqlite, runMigrationSilent)
 
+import Data.List (sortBy)
 import Data.Maybe (listToMaybe, fromJust, isNothing)
 import qualified Data.Text as T (pack, unpack, splitOn)
-import qualified Data.Yaml as YAML 
-    ( Value (Null)
-    , encode
-    )
-import Data.Aeson ((.=), object)
+import qualified Data.Yaml as YAML (encode)
+import Data.Aeson (Value (Null), (.=), object, toJSON)
 import qualified Data.Aeson.Encode.Pretty as JSON
     ( encodePretty'
     , defConfig
@@ -47,22 +45,16 @@ import qualified Data.Aeson.Encode.Pretty as JSON
 import Network.Haskoin.Wallet.Commands
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
+import Network.Haskoin.Wallet.DbAccount
+import Network.Haskoin.Wallet.DbAddress
+import Network.Haskoin.Wallet.DbCoin
+import Network.Haskoin.Wallet.DbTx
 
 import Network.Haskoin.Script
-    ( SigHash (SigAll, SigNone, SigSingle)
-    , anyoneCanPay
-    )
-import Network.Haskoin.Protocol (decodeTxid)
-import Network.Haskoin.Crypto (xPubImport)
+import Network.Haskoin.Protocol
+import Network.Haskoin.Crypto
 import Network.Haskoin.Util
-    ( bsToString
-    , decodeToMaybe
-    , hexToBS
-    , isRight
-    , fromRight
-    , toStrictBS
-    )
-import Network.Haskoin.Util.Network (walletFile)
+import Network.Haskoin.Util.Network
 
 data Options = Options
     { optCount    :: Int
@@ -225,12 +217,12 @@ process opts xs
         -- TODO: Handle the exceptions
         when (isRight valE) $ do
             let val = fromRight valE
-            if val == YAML.Null then return () else if optJson opts 
+            if val == Null then return () else if optJson opts 
                 then formatStr $ bsToString $ toStrictBS $ 
                     JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } val
                 else formatStr $ bsToString $ YAML.encode val
 
-type Command m = m YAML.Value
+type Command m = m Value
 type Args = [String]
 
 whenArgs :: (MonadLogger m, MonadIO m)
@@ -252,68 +244,126 @@ dispatchCommand cmd opts args = case cmd of
         ms <- cmdInitMnemo (optPass opts) (listToMaybe args)
         return $ object ["Seed" .= ms]
     "list" -> whenArgs args (== 1) $ do
-        ls <- cmdList (head args) 0 (optCount opts)
-        return ls
-    "listpage" -> whenArgs args (== 2) $ 
-        cmdList (head args) (read $ args !! 1) (optCount opts)
-    "new" -> whenArgs args (>= 2) $ cmdGenWithLabel (head args) $ drop 1 args
-    "genaddr" -> whenArgs args (== 1) $ cmdGenAddrs (head args) (optCount opts)
-    "label" -> whenArgs args (== 3) $ 
-        cmdLabel (head args) (read $ args !! 1) (args !! 2)
-    "balance" -> whenArgs args (== 1) $ cmdBalance $ head args
-    "balances" -> whenArgs args (== 0) cmdBalances
-    "tx" -> whenArgs args (== 1) $ cmdListTx $ head args
-    "send" -> whenArgs args (== 3) $ 
-        cmdSend (head args) (args !! 1) (read $ args !! 2) (optFee opts)
+        (as, p, r, c) <- cmdList (head args) 0 (optCount opts)
+        return $ yamlAddrList as p r c
+    "listpage" -> whenArgs args (== 2) $ do
+        (as, p, r, c) <- cmdList (head args) (read $ args !! 1) (optCount opts)
+        return $ yamlAddrList as p r c
+    "new" -> whenArgs args (>= 2) $ do
+        addrs <- cmdGenWithLabel (head args) $ drop 1 args
+        return $ toJSON $ map yamlAddr addrs
+    "genaddr" -> whenArgs args (== 1) $ do
+        addrs <- cmdGenAddrs (head args) (optCount opts)
+        return $ toJSON $ map yamlAddr addrs
+    "label" -> whenArgs args (== 3) $ do
+        a <- cmdLabel (head args) (read $ args !! 1) (args !! 2)
+        return $ yamlAddr a
+    "balance" -> whenArgs args (== 1) $ do
+        bal <- cmdBalance $ head args
+        return $ object [ "Balance" .= bal ]
+    "balances" -> whenArgs args (== 0) $ do
+        as <- cmdBalances
+        return $ toJSON $ flip map as $ \(a, b) -> object
+            [ "Account" .= (dbAccountName a)
+            , "Balance" .= b
+            ]
+    "tx" -> whenArgs args (== 1) $ do
+        txs <- cmdListTx $ head args
+        return $ toJSON $ map yamlTx txs
+    "send" -> whenArgs args (== 3) $ do
+        (tx, complete) <- cmdSend
+            (head args) (args !! 1) (read $ args !! 2) (optFee opts)
+        return $ object [ "Tx" .= bsToHex (encode' tx)
+                        , "Complete" .= complete
+                        ]
     "sendmany" -> whenArgs args (>= 2) $ do
         let f [a,b] = (T.unpack a,read $ T.unpack b)
             f _     = error "sendmany: Invalid format addr:amount"
             dests   = map (f . (T.splitOn (T.pack ":")) . T.pack) $ drop 1 args
-        cmdSendMany (head args) dests (optFee opts)
-    "newacc" -> whenArgs args (== 1) $ cmdNewAcc $ head args
+        (tx, complete) <- cmdSendMany (head args) dests (optFee opts)
+        return $ object [ "Tx" .= bsToHex (encode' tx)
+                        , "Complete" .= complete
+                        ]
+    "newacc" -> whenArgs args (== 1) $ do
+        acc <- cmdNewAcc $ head args
+        return $ yamlAcc acc
     "newms" -> whenArgs args (>= 3) $ do
         let keysM = mapM xPubImport $ drop 3 args
             keys  = fromJust keysM
         when (isNothing keysM) $ liftIO $ throwIO $ 
             ParsingException "Could not parse keys"
-        cmdNewMS (args !! 0) (read $ args !! 1) (read $ args !! 2) keys
+        acc <- cmdNewMS (args !! 0) (read $ args !! 1) (read $ args !! 2) keys
+        return $ yamlAcc acc
     "addkeys" -> whenArgs args (>= 2) $ do
         let keysM = mapM xPubImport $ drop 1 args
             keys  = fromJust keysM
         when (isNothing keysM) $ liftIO $ throwIO $
             ParsingException "Could not parse keys"
-        cmdAddKeys (head args) keys
-    "accinfo" -> whenArgs args (== 1) $ cmdAccInfo $ head args
-    "listacc" -> whenArgs args (== 0) cmdListAcc 
-    "dumpkeys" -> whenArgs args (== 1) $ cmdDumpKeys $ head args
-    "wif" -> whenArgs args (== 2) $ cmdWIF (head args) (read $ args !! 1)
-    "coins" -> whenArgs args (== 1) $ cmdCoins $ head args
-    "allcoins" -> whenArgs args (== 0) cmdAllCoins
+        acc <- cmdAddKeys (head args) keys
+        return $ yamlAcc acc
+    "accinfo" -> whenArgs args (== 1) $ do
+        acc <- cmdAccInfo $ head args
+        return $ yamlAcc acc
+    "listacc" -> whenArgs args (== 0) $ do
+        accs <- cmdListAcc 
+        return $ toJSON $ map yamlAcc accs
+    "dumpkeys" -> whenArgs args (== 1) $ do
+        (acc, pub, prv, ms) <- cmdDumpKeys $ head args
+        return $ object $
+            [ "Account" .= yamlAcc acc
+            , "PubKey" .= xPubExport pub
+            , "PrvKey" .= xPrvExport prv
+            ] ++ maybe [] (\ks -> [ "MSKeys" .= map xPubExport ks ]) ms
+    "wif" -> whenArgs args (== 2) $ do
+        prvKey <- cmdPrvKey (head args) (read $ args !! 1)
+        return $ object [ "WIF" .= T.pack (toWIF prvKey) ]
+    "coins" -> whenArgs args (== 1) $ do
+        coins <- cmdCoins $ head args
+        return $ toJSON $ map yamlCoin coins
+    "allcoins" -> whenArgs args (== 0) $ do
+        coins <- cmdAllCoins
+        return $ toJSON $ flip map coins $ \(acc, cs) -> object
+            [ "Account" .= dbAccountName acc
+            , "Coins" .= map yamlCoin cs
+            ]
     "signtx" -> whenArgs args (== 2) $ do
         let txM = decodeToMaybe =<< (hexToBS $ args !! 1)
             tx  = fromJust txM
         when (isNothing txM) $ liftIO $ throwIO $
             ParsingException "Could not parse transaction"
-        cmdSignTx (head args) tx (optSigHash opts)
+        (t, c) <- cmdSignTx (head args) tx (optSigHash opts)
+        return $ object [ "Tx" .= bsToHex (encode' t)
+                        , "Complete" .= c
+                        ]
     "importtx" -> whenArgs args (== 1) $ do
         let txM = decodeToMaybe =<< (hexToBS $ head args)
             tx  = fromJust txM
         when (isNothing txM) $ liftIO $ throwIO $
             ParsingException "Could not parse transaction"
-        cmdImportTx tx
+        txs <- cmdImportTx tx
+        return $ toJSON $ map yamlTx $ flip sortBy txs $
+            \a b -> (dbTxCreated a) `compare` (dbTxCreated b)
     "removetx" -> whenArgs args (== 1) $ do
         let idM = decodeTxid $ head args
         when (isNothing idM) $ liftIO $ throwIO $
             ParsingException "Could not parse transaction id"
-        cmdRemoveTx $ fromJust idM
-    "decodetx" -> whenArgs args (== 1) $ cmdDecodeTx $ head args
-    "buildrawtx" -> whenArgs args (== 2) $ cmdBuildRawTx (head args) (args !! 1)
+        hashes <- cmdRemoveTx $ fromJust idM
+        return $ toJSON $ map encodeTxid hashes
+    "decodetx" -> whenArgs args (== 1) $ do
+        tx <- cmdDecodeTx $ head args
+        return $ toJSON tx
+    "buildrawtx" -> whenArgs args (== 2) $ do
+        tx <- cmdBuildRawTx (head args) (args !! 1)
+        return $ object [ "Tx" .= bsToHex (encode' tx) ]
     "signrawtx"    -> whenArgs args (== 3) $ do 
         let txM = decodeToMaybe =<< (hexToBS $ head args)
             tx  = fromJust txM
         when (isNothing txM) $ liftIO $ throwIO $ 
             ParsingException "Could not parse transaction"
-        cmdSignRawTx tx (args !! 1) (args !! 2) (optSigHash opts)
+        (t, c) <- cmdSignRawTx tx (args !! 1) (args !! 2) (optSigHash opts)
+        return $ object [ "Tx" .= bsToHex (encode' t)
+                        , "Complete" .= c
+                        ]
     _ -> do
         liftIO $ throwIO $ InvalidCommandException $ 
             unwords ["Invalid command:", cmd]

@@ -8,11 +8,20 @@ module Network.Haskoin.Wallet.DbCoin
 , toCoin
 ) where
 
-import Data.Aeson
-import Data.Maybe
-import Data.Word
+import Data.Aeson (Value, (.=), object)
+import Data.Maybe (fromJust, isJust)
+import Data.Word (Word64)
 import Database.Persist
-import Database.Persist.Sqlite
+    ( PersistQuery
+    , PersistMonadBackend
+    , Entity (Entity)
+    , KeyBackend
+    , SelectOpt (Asc)
+    , (==.)
+    , entityVal
+    , selectList
+    )
+
 import Network.Haskoin.Protocol
 import Network.Haskoin.Transaction
 import Network.Haskoin.Wallet.Model
@@ -49,9 +58,11 @@ dbBalance (Entity ai _) = do
         ] []
     return $ sum $ map (dbCoinValue . entityVal) coins
 
-dbCoins :: (PersistQuery m, PersistMonadBackend m ~ SqlBackend) 
-        => DbAccountId 
-        -> m [DbCoinGeneric SqlBackend]
+dbCoins :: ( PersistQuery m
+           , PersistMonadBackend m ~ b
+           ) 
+        => KeyBackend b (DbAccountGeneric b)
+        -> m [DbCoinGeneric b]
 dbCoins ai = do
     coins <- selectList 
         [ DbCoinAccount ==. ai

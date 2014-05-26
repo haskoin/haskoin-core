@@ -26,6 +26,7 @@ import Database.Persist
     , PersistStore
     , PersistMonadBackend
     , Entity(..)
+    , KeyBackend
     , get
     , getBy
     , selectList
@@ -35,8 +36,6 @@ import Database.Persist
     , (==.), (>.), (<=.)
     , SelectOpt( Asc, Desc, LimitTo )
     )
-import Database.Persist.Sql (SqlBackend)
-
 import Network.Haskoin.Wallet.DbAccount
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
@@ -76,12 +75,12 @@ dbGetAddr addrStr = do
             InvalidAddressException $ unwords ["Invalid address", addrStr]
 
 dbGetAddressByIndex :: ( PersistUnique m
-                       , PersistMonadBackend m ~ SqlBackend
+                       , PersistMonadBackend m ~ b
                        )
-                    => DbAccountId
+                    => KeyBackend b (DbAccountGeneric b)
                     -> Int
                     -> Bool 
-                    -> m (Entity (DbAddressGeneric SqlBackend))
+                    -> m (Entity (DbAddressGeneric b))
 dbGetAddressByIndex accKey index internal = do
     entM <- getBy $ UniqueAddressKey accKey index internal
     case entM of

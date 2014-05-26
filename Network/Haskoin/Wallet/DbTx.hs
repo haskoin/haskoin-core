@@ -24,7 +24,6 @@ import Data.Either (rights)
 import Data.Yaml (Value, object, (.=))
 import qualified Data.Map.Strict as M 
 
-import Database.Persist.Sql (SqlBackend)
 import Database.Persist 
     ( PersistStore
     , PersistUnique
@@ -146,9 +145,9 @@ dbRemoveTx tid = do
 -- |Import a transaction into the database
 dbImportTx :: ( PersistQuery m
               , PersistUnique m
-              , PersistMonadBackend m ~ SqlBackend
+              , PersistMonadBackend m ~ b
               ) 
-           => Tx -> m [DbTxGeneric SqlBackend]
+           => Tx -> m [DbTxGeneric b]
 dbImportTx tx = do
     coinsM <- mapM (getBy . f) $ map prevOutput $ txIn tx
     let inCoins = catMaybes coinsM
@@ -250,9 +249,9 @@ buildAccTx tx inCoins outCoins partial time = map build $ M.toList oMap
 
 -- |Create an orphaned coin if the input spends from an address in the wallet
 -- but the coin doesn't exist in the wallet. This allows out-of-order tx import
-dbImportOrphan :: (PersistUnique m, PersistMonadBackend m ~ SqlBackend) 
+dbImportOrphan :: (PersistUnique m, PersistMonadBackend m ~ b) 
                => CoinStatus -> TxIn 
-               -> m (Maybe (DbCoinGeneric SqlBackend))
+               -> m (Maybe (DbCoinGeneric b))
 dbImportOrphan status (TxIn (OutPoint h i) s _)
     | isLeft a  = return Nothing
     | otherwise = getBy (UniqueAddress b58) >>= \addrM -> case addrM of
@@ -275,10 +274,10 @@ dbImportOrphan status (TxIn (OutPoint h i) s _)
 -- without creating coins in the database from a partial transaction
 dbImportCoin :: ( PersistQuery m
                 , PersistUnique m
-                , PersistMonadBackend m ~ SqlBackend
+                , PersistMonadBackend m ~ b
                 )
              => Hash256 -> Bool -> (TxOut,Int) 
-             -> m (Maybe (DbCoinGeneric SqlBackend))
+             -> m (Maybe (DbCoinGeneric b))
 dbImportCoin tid commit ((TxOut v s), index) 
     | isLeft a  = return Nothing
     | otherwise = getBy (UniqueAddress b58) >>= \addrM -> case addrM of
@@ -311,8 +310,8 @@ dbImportCoin tid commit ((TxOut v s), index)
     
 -- |Builds a redeem script given an address. Only relevant for addresses
 -- linked to multisig accounts. Otherwise it returns Nothing
-dbGetRedeem :: (PersistStore m, PersistMonadBackend m ~ SqlBackend) 
-            => DbAddressGeneric SqlBackend -> m (Maybe Script)
+dbGetRedeem :: (PersistStore m, PersistMonadBackend m ~ b) 
+            => DbAddressGeneric b -> m (Maybe Script)
 dbGetRedeem add = do
     acc <- liftM fromJust (get $ dbAddressAccount add)
     rdm <- if isMSAcc acc 
@@ -332,7 +331,6 @@ dbGetRedeem add = do
 -- |Build and sign a transactoin given a list of recipients
 dbSendTx :: ( PersistUnique m
             , PersistQuery m
-            , PersistMonadBackend m ~ SqlBackend
             )
          => AccountName -> [(String,Word64)] -> Word64
          -> m (Tx, Bool)
@@ -343,7 +341,6 @@ dbSendTx name dests fee = do
 -- |Given a list of recipients and a fee, finds a valid combination of coins
 dbSendSolution :: ( PersistUnique m
                   , PersistQuery m
-                  , PersistMonadBackend m ~ SqlBackend
                   )
                => AccountName -> [(String,Word64)] -> Word64
                -> m ([Coin],[(String,Word64)])

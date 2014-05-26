@@ -11,7 +11,14 @@ import Control.Exception (throwIO)
 import Control.Monad.Trans (liftIO)
 import Data.Aeson (Value, (.=), object)
 import Data.Maybe (fromJust, isJust)
-import Database.Persist  (PersistUnique, PersistMonadBackend, Entity, getBy)
+import Database.Persist
+    ( PersistUnique
+    , PersistMonadBackend
+    , PersistEntityBackend
+    , PersistEntity
+    , Entity
+    , getBy
+    )
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 
@@ -34,9 +41,13 @@ yamlAcc acc = object $ concat
                       ]
                   | otherwise = []
 
-dbGetAccount :: (PersistUnique m, PersistMonadBackend m ~ b)
-         => String 
-         -> m (Entity (DbAccountGeneric b))
+dbGetAccount :: ( PersistUnique m
+                , PersistEntityBackend val ~ PersistMonadBackend m
+                , val ~ DbAccountGeneric (PersistMonadBackend m)
+                , PersistEntity val
+                )
+             => String 
+             -> m (Entity val)
 dbGetAccount name = do
     entM <- getBy $ UniqueAccName name
     case entM of

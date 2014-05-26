@@ -23,7 +23,7 @@ module Network.Haskoin.Wallet
 , cmdGenAddrs
 , cmdGenWithLabel
 , cmdLabel
-, cmdWIF
+, cmdPrvKey
 
 -- *Coin Commands
 , cmdBalance

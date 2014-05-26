@@ -2,16 +2,16 @@
 module Network.Haskoin.JSONRPC.Stratum
 ( -- * Data
   Balance(..)
-, StratumCoin(..)
-, StratumData(..)
+, Coin(..)
 , StratumNotif(..)
 , StratumQuery(..)
+, StratumResponse(..)
 , TxHeight(..)
-, StratumNotifRequest
-, StratumResult
-, StratumQueryRequest
-, StratumResponse
-, StratumMessage
+, MessageStratum
+, NotifStratum
+, RequestStratum
+, ResponseStratum
+, ResultStratum
 , StratumSession
   -- * Functions
 , toRequest
@@ -51,26 +51,26 @@ import Network.Haskoin.JSONRPC.Message
     , Method
     , Request (Request)
     , Response (Response)
+    , Result
     , RequestValue
     , ResultValue
-    , Result
     )
 import Network.Haskoin.JSONRPC.Conduit (Session, newReq)
 import Network.Haskoin.Util (bsToHex, decode', encode', hexToBS)
 
 -- | JSON-RPC request with Stratum payload.
-type StratumQueryRequest = Request StratumQuery
+type RequestStratum = Request StratumQuery
 -- | JSON-RPC notification with Stratum payload.
-type StratumNotifRequest = Request StratumNotif
+type NotifStratum = Request StratumNotif
 -- | JSON-RPC response with Stratum payload.
-type StratumResponse = Response StratumData Value String
+type ResponseStratum = Response StratumResponse Value String
 -- | Stratum result in JSON-RPC response.
-type StratumResult = Result StratumData Value String
+type ResultStratum = Result StratumResponse Value String
 -- | Message from Stratum JSON-RPC server.
-type StratumMessage = Message StratumNotif StratumData Value String
+type MessageStratum = Message StratumNotif StratumResponse Value String
 -- | Session type for JSON-RPC conduit.
 type StratumSession
-    = Session StratumQueryRequest StratumData Value String StratumNotif
+    = Session RequestStratum StratumResponse Value String StratumNotif
 
 -- | Transaction height and ID pair. Used in history responses.
 data TxHeight = TxHeight
@@ -79,7 +79,7 @@ data TxHeight = TxHeight
     } deriving (Show, Eq)
 
 -- | Bitcoin outpoint information.
-data StratumCoin = StratumCoin
+data Coin = Coin
     { coinOutPoint :: OutPoint   -- ^ Coin data.
     , coinTxHeight :: TxHeight   -- ^ Transaction information.
     , coinValue :: Word64        -- ^ Output vale.
@@ -102,12 +102,12 @@ data StratumQuery
     | SubAddress { queryAddr :: Address }
     deriving (Eq, Show)
 
--- | Stratum Response data.
-data StratumData
+-- | Stratum Response Result data.
+data StratumResponse
     = ServerVersion { stratumServerVer :: String }
     | AddressHistory { stratumAddrHist :: [TxHeight] }
     | AddressBalance { stratumBalance :: Balance }
-    | AddressUnspent { stratumCoins :: [StratumCoin] }
+    | AddressUnspent { stratumCoins :: [Coin] }
     | Transaction { stratumTx :: Tx }
     | BroadcastId { stratumTxid :: Hash256 }
     | AddrStatus { stratumAddrStatus :: Hash256 }
@@ -150,7 +150,7 @@ instance ToJSON TxHeight where
         , "tx_hash" .= txidToJSON (txHeightId x)
         ]
 
-instance FromJSON StratumCoin where
+instance FromJSON Coin where
     parseJSON (Object o) = do
         h <- o .: "height"
         v <- o .: "value"
@@ -159,10 +159,10 @@ instance FromJSON StratumCoin where
         i <- txidParse t
         let op = OutPoint i p
             th = TxHeight h i
-        return $ StratumCoin op th v
+        return $ Coin op th v
     parseJSON _ = mzero
 
-instance ToJSON StratumCoin where
+instance ToJSON Coin where
     toJSON x = object
         [ "height" .= txHeightBlock (coinTxHeight x)
         , "value" .= coinValue x
@@ -182,17 +182,17 @@ method (SubAddress _) = "blockchain.address.subscribe"
 -- | Create a JSON-RPC request from a Stratum request.
 toRequest :: StratumQuery          -- ^ Stratum request data.
           -> Int                   -- ^ JSON-RPC request id.
-          -> StratumQueryRequest   -- ^ Returns JSON-RPC request object.
+          -> RequestStratum   -- ^ Returns JSON-RPC request object.
 toRequest s i = Request (method s) (Just s) (Just (IntId i))
 
 -- | Parse result from JSON-RPC response into a Stratum response.
 parseResult :: StratumQuery -- ^ StratumQuery used in corresponding request.
             -> ResultValue -- ^ Result from JSON-RPC response
-            -> Parser StratumResult -- ^ Returns Aeson parser.
+            -> Parser ResultStratum -- ^ Returns Aeson parser.
 parseResult q (Right v) = parseHelper q v >>= return . Right
 parseResult _ (Left e) = return $ Left e
 
-parseHelper :: StratumQuery -> Value -> Parser StratumData
+parseHelper :: StratumQuery -> Value -> Parser StratumResponse
 parseHelper (QueryVersion _ _) v = parseJSON v >>= return . ServerVersion
 parseHelper (QueryHistory _) v = parseJSON v >>= return . AddressHistory
 parseHelper (QueryBalance _) v = parseJSON v >>= return . AddressBalance
@@ -213,7 +213,7 @@ parseNotifHelper _ _ = mzero
 -- | Parse notification from JSON-RPC request into Stratum format.
 parseNotif :: RequestValue
              -- ^ Request to parse.
-             -> Parser StratumNotifRequest
+             -> Parser NotifStratum
              -- ^ Parser to Stratum request format
 parseNotif (Request m (Just p) i) =
     parseNotifHelper m p >>= \s -> return $ Request m (Just s) i

@@ -101,7 +101,7 @@ devRandom i = withBinaryFile "/dev/random" ReadMode $ flip BS.hGet i
 nextSecret :: Monad m => SecretT m FieldN
 nextSecret = do
     (ws,f) <- S.get
-    let (ws',randM) = hmacDRBGGen ws 32 (stringToBS "/haskoin:0.1.1/")
+    let (ws',randM) = hmacDRBGGen ws 32 (stringToBS "/haskoin:0.0.2/")
     case randM of
         (Just rand) -> do
             S.put (ws',f)
@@ -111,7 +111,7 @@ nextSecret = do
                 else nextSecret
         Nothing -> do
             seed <- lift $ f 32 -- Read 256 bits to re-seed the PRNG
-            let ws0 = hmacDRBGRsd ws' seed (stringToBS "/haskoin:0.1.1/")
+            let ws0 = hmacDRBGRsd ws' seed (stringToBS "/haskoin:0.0.2/")
             S.put (ws0,f)
             nextSecret
 

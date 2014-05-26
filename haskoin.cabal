@@ -25,9 +25,9 @@ library
                        Network.Haskoin.Util.Network,
                        Network.Haskoin.Util.BuildMonad,
                        Network.Haskoin.Util.Constants,
-                       Network.Haskoin.JSONRPC.Message,
-                       Network.Haskoin.JSONRPC.Conduit,
-                       Network.Haskoin.JSONRPC.Stratum,
+                       Network.Haskoin.Stratum.Message,
+                       Network.Haskoin.Stratum.Conduit,
+                       Network.Haskoin.Stratum,
                        Network.Haskoin.Crypto,
                        Network.Haskoin.Protocol,
                        Network.Haskoin.Script,
@@ -121,7 +121,7 @@ test-suite test-haskoin
                        Network.Haskoin.Transaction.Tests,
                        Network.Haskoin.Transaction.Units,
                        Network.Haskoin.Transaction.Arbitrary,
-                       Network.Haskoin.JSONRPC.Units
+                       Network.Haskoin.Stratum.Units
     build-depends:     aeson                      >= 0.7  && < 0.8,
                        base                       >= 4.6  && < 4.7, 
                        binary                     >= 0.7  && < 0.8, 

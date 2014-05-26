@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
--- | Provides instances of ToJSON and FromJSON to use with the Aeson library.
-module Network.Haskoin.JSONRPC.Message
+-- | Implementation of basic JSON-RPC data types.
+module Network.Haskoin.Stratum.Message
 ( -- * Types
   Method
 , ErrorValue
@@ -22,7 +22,7 @@ module Network.Haskoin.JSONRPC.Message
 , errParams
 , errInternal
 , errStr
-  -- Helpers
+  -- * Helpers
 , leftStr
 , numericId
 ) where
@@ -53,13 +53,15 @@ data Id = IntId { intId :: Int }  -- ^ Id in integer form.
         | TxtId { txtId :: Text } -- ^ Id in string form (discouraged).
         deriving (Eq, Show)
 
--- | JSON-RPC error object. Sent inside a JSONRes in case of error.
-data Error e v = ErrObj -- ^ Error object in JSON-RPC version 2 format.
+-- | JSON-RPC error object in v1 or v2 format.
+-- Sent inside a JSONRes in case of error.
+data Error e v -- | Error object in JSON-RPC version 2 format.
+               = ErrObj
                    { errCode :: Int      -- ^ Integer error code.
                    , errMsg :: String    -- ^ Error message.
                    , errData :: Maybe e  -- ^ Optional error object.
                    }
-               -- | Error object in JSON-RPC version 1 format
+               -- | Error object in JSON-RPC version 1 format.
                | ErrVal
                    { errVal :: v  -- ^ Usually String.
                    }

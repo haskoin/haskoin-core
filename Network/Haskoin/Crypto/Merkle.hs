@@ -12,7 +12,6 @@ import Data.Maybe
 import qualified Data.ByteString as BS 
 
 import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Util.Constants (maxBlockSize)
 import Network.Haskoin.Util
 
 -- | Computes the height of a merkle tree.

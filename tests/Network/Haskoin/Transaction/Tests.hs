@@ -12,7 +12,6 @@ import Network.Haskoin.Protocol
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
-import Network.Haskoin.Util.BuildMonad
 
 tests :: [Test]
 tests = 

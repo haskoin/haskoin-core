@@ -24,7 +24,6 @@ import Data.Word (Word64)
 import qualified Data.ByteString as BS (length, replicate)
 
 import Network.Haskoin.Util
-import Network.Haskoin.Util.BuildMonad
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Script

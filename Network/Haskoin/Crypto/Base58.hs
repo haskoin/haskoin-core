@@ -20,22 +20,15 @@ import Data.Aeson
     , ToJSON
     , parseJSON
     , toJSON
-    , withText )
+    , withText 
+    )
 
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 
-import Network.Haskoin.Crypto.Hash (Hash160, chksum32)
+import Network.Haskoin.Crypto.Hash 
 import Network.Haskoin.Util 
-    ( encode'
-    , integerToBS
-    , bsToInteger
-    , stringToBS
-    , bsToString
-    , decodeToMaybe
-    )
-import Network.Haskoin.Util.Network
 
 b58String :: String
 b58String = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"

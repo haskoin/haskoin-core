@@ -22,16 +22,14 @@ source-repository head
 
 library
     exposed-modules:   Network.Haskoin.Util,
-                       Network.Haskoin.Util.Network,
-                       Network.Haskoin.Util.BuildMonad,
-                       Network.Haskoin.Util.Constants,
                        Network.Haskoin.Stratum,
                        Network.Haskoin.Crypto,
                        Network.Haskoin.Protocol,
                        Network.Haskoin.Script,
                        Network.Haskoin.Transaction
-    other-modules:     Network.Haskoin.Util.Network.Prodnet,
-                       Network.Haskoin.Util.Network.Testnet,
+    other-modules:     Network.Haskoin.Util.BuildMonad,
+                       Network.Haskoin.Util.Constants,
+                       Network.Haskoin.Util.Constants.Testnet,
                        Network.Haskoin.Crypto.NumberTheory, 
                        Network.Haskoin.Crypto.Curve, 
                        Network.Haskoin.Crypto.Hash, 

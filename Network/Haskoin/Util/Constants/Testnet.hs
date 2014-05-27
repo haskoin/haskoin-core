@@ -1,9 +1,7 @@
 {-|
-  Declaration of constant values for Testnet. This module is intended to be
-  imported by Network.Haskoin.Util.Network module and not imported directly by
-  other modules.
+  Declaration of constants used across the testnet bitcoin protocol
 -}
-module Network.Haskoin.Util.Network.Testnet where
+module Network.Haskoin.Util.Constants.Testnet where
 
 import Data.Word (Word8,Word32)
 
@@ -27,9 +25,9 @@ extPubKeyPrefix = 0x043587cf
 extSecretPrefix :: Word32
 extSecretPrefix = 0x04358394
 
--- | Wallet database file name
-walletFile :: String
-walletFile = "testwalletdb"
+-- | Network magic bytes
+networkMagic :: Word32
+networkMagic = 0x0b110907 
 
 -- | Genesis block header information
 genesisHeader :: [Integer]
@@ -43,6 +41,11 @@ genesisHeader =
     , 414098458
     ]
 
-networkMagic :: Word32
-networkMagic = 0x0b110907 
+-- | Maximum size of a block in bytes
+maxBlockSize :: Int
+maxBlockSize = 1000000
+
+-- | Wallet database file name
+walletFile :: String
+walletFile = "testwalletdb"
 

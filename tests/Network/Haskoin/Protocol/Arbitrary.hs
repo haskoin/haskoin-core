@@ -219,7 +219,6 @@ instance Arbitrary BloomFlags where
     arbitrary = elements [ BloomUpdateNone
                          , BloomUpdateAll
                          , BloomUpdateP2PubKeyOnly
-                         , BloomUpdateMask
                          ]
 
 instance Arbitrary BloomFilter where

@@ -34,42 +34,12 @@ import qualified Data.ByteString as BS
     , cons, snoc
     , length
     )
-import Network.Haskoin.Crypto.Curve (pairG, curveN)
+import Network.Haskoin.Crypto.Curve 
 import Network.Haskoin.Crypto.BigWord 
-    ( FieldN, FieldP
-    , isIntegerValidKey
-    , quadraticResidue
-    , toMod256
-    , toFieldN
-    )
 import Network.Haskoin.Crypto.Point 
-    ( Point( InfPoint )
-    , makePoint
-    , mulPoint 
-    , addPoint
-    , getAffine
-    , validatePoint
-    , isInfPoint
-    , curveA, curveB
-    )
 import Network.Haskoin.Crypto.Base58 
-    ( Address(..)
-    , encodeBase58Check
-    , decodeBase58Check
-    )
 import Network.Haskoin.Crypto.Hash 
-    ( Hash256
-    , hash160
-    , hash256BS
-    )
 import Network.Haskoin.Util 
-    ( runPut'
-    , bsToInteger
-    , encode'
-    , stringToBS
-    , bsToString
-    )
-import Network.Haskoin.Util.Network
 
 -- | G parameter of the EC curve expressed as a Point
 curveG :: Point

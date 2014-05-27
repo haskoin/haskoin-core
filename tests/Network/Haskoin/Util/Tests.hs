@@ -10,7 +10,6 @@ import qualified Data.Sequence as Seq (update, fromList)
 import qualified Data.ByteString as BS (ByteString)
 
 import Network.Haskoin.Util 
-import Network.Haskoin.Util.BuildMonad
 import Network.Haskoin.Util.Arbitrary()
 
 tests :: [Test]

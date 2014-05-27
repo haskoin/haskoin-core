@@ -2,17 +2,14 @@
   The Build type, and associated operations.
 -}
 module Network.Haskoin.Util.BuildMonad 
-( -- *Build monad
-  Build(..)
+( Build(..)
+, BuildT(..)
 , isComplete
 , isPartial
 , isBroken
 , eitherToBuild
 , buildToEither
 , guardPartial
-
-  -- *BuildT transformer monad
-, BuildT(..)
 , liftBuild
 ) where
 

@@ -7,7 +7,6 @@ description:
     functions for handling BIP32 extended keys, functions for building and
     signing various types of regular and multisig transactions and a definition
     of the network protocol messages.
-    This package is a library implementing the Bitcoin protocol specification.
 homepage:              http://github.com/plaprade/haskoin
 bug-reports:           http://github.com/plaprade/haskoin/issues
 stability:             experimental

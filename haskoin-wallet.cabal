@@ -22,13 +22,13 @@ source-repository head
     location: git://github.com/plaprade/haskoin-wallet.git
 
 library
-    exposed-modules:   Network.Haskoin.Wallet
+    exposed-modules:   Network.Haskoin.Wallet,
+                       Network.Haskoin.Wallet.Model
     other-modules:     Network.Haskoin.Wallet.Commands, 
                        Network.Haskoin.Wallet.DbAccount,
                        Network.Haskoin.Wallet.DbAddress,
                        Network.Haskoin.Wallet.DbCoin,
                        Network.Haskoin.Wallet.DbTx,
-                       Network.Haskoin.Wallet.Model,
                        Network.Haskoin.Wallet.Types,
                        Network.Haskoin.Wallet.Util
     build-depends:     aeson                >= 0.7  && < 0.8,

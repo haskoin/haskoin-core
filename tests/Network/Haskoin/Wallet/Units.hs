@@ -281,7 +281,7 @@ assertException ex action =
 runUnit :: App a -> Assertion
 runUnit action = do
     _ <- runSqlite ":memory:" $ do
-        _ <- runMigrationSilent migrateAll 
+        _ <- runMigrationSilent migrateWallet 
         action
     return ()
 

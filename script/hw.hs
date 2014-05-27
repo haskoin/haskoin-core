@@ -210,7 +210,7 @@ process opts xs
         let (cmd,args) = (head xs, tail xs)
 
         valE <- tryJust catchEx $ runSqlite (T.pack dir) $ do
-             _ <- runMigrationSilent migrateAll
+             _ <- runMigrationSilent migrateWallet
              runStderrLoggingT $ dispatchCommand cmd opts args 
 
         -- TODO: Handle the exceptions

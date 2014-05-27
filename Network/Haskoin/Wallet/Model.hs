@@ -21,7 +21,7 @@ module Network.Haskoin.Wallet.Model
 , DbTxBlobId
 , EntityField(..)
 , Unique(..)
-, migrateAll
+, migrateWallet
 ) where
 
 import Data.Int (Int64)
@@ -40,7 +40,7 @@ import Network.Haskoin.Wallet.Types (CoinStatus)
 import Network.Haskoin.Protocol (Script, Tx)
 import Network.Haskoin.Crypto (MasterKey, AccPubKey, Hash256, XPubKey)
 
-share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
+share [mkPersist sqlSettings, mkMigrate "migrateWallet"] [persistLowerCase|
 DbWallet 
     name String
     type String

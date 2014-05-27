@@ -51,10 +51,9 @@ import Network.Haskoin.Wallet.DbCoin
 import Network.Haskoin.Wallet.DbTx
 
 import Network.Haskoin.Script
-import Network.Haskoin.Protocol
-import Network.Haskoin.Crypto
+import Network.Haskoin.Protocol 
+import Network.Haskoin.Crypto 
 import Network.Haskoin.Util
-import Network.Haskoin.Util.Network
 
 data Options = Options
     { optCount    :: Int

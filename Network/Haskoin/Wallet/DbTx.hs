@@ -52,62 +52,10 @@ import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Util
 
 import Network.Haskoin.Transaction
-    ( SigInput (SigInput, SigInputSH)
-    , Coin
-    , buildAddrTx
-    , chooseCoins
-    , chooseMSCoins
-    , coinOutPoint
-    , coinTxOut
-    , coinRedeem
-    , detSignTx
-    , isTxComplete
-    )
 import Network.Haskoin.Script
-    ( SigHash (SigAll)
-    , ScriptOutput (PayMulSig)
-    , encodeOutput
-    , scriptRecipient
-    , scriptSender
-    , sortMulSig
-    )
 import Network.Haskoin.Protocol
-    ( Tx
-    , TxIn (TxIn)
-    , TxOut (TxOut)
-    , OutPoint (OutPoint)
-    , Script (Script)
-    , prevOutput
-    , scriptOutput
-    , txIn
-    , txOut
-    , txid
-    )
 import Network.Haskoin.Crypto
-    ( Hash256
-    , PrvKey
-    , addrToBase58
-    , accPrvKey
-    , extMulSigKey
-    , intMulSigKey
-    , getAddrPrvKey
-    , getAddrPubKey
-    , intPrvKey
-    , extPrvKey
-    , xPrvKey
-    , xPubKey
-    )
 import Network.Haskoin.Util
-    ( fromRight
-    , fromLeft
-    , isLeft
-    )
-import Network.Haskoin.Util.BuildMonad
-    ( isBroken
-    , isComplete
-    , runBroken
-    , runBuild
-    )
 
 yamlTx :: DbTxGeneric b -> Value
 yamlTx tx = object $ concat

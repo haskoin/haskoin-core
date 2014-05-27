@@ -70,7 +70,6 @@ import Network.Haskoin.Script
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
-import Network.Haskoin.Util.BuildMonad
 
 import Network.Haskoin.Wallet.DbAccount
 import Network.Haskoin.Wallet.DbAddress

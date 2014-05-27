@@ -37,36 +37,10 @@ import qualified Data.ByteString as BS
     )
   
 import Network.Haskoin.Util 
-    ( stringToBS
-    , isolate
-    , bsToInteger
-    , encode'
-    , runPut'
-    )
 import Network.Haskoin.Crypto.Hash 
-    ( WorkingState
-    , hmacDRBGNew
-    , hmacDRBGGen
-    , hmacDRBGRsd
-    )
 import Network.Haskoin.Crypto.Keys 
-    ( PrvKey(..)
-    , PubKey(..)
-    , curveG
-    , makePrvKey
-    , putPrvKey
-    )
 import Network.Haskoin.Crypto.Point 
-    ( Point, getAffine
-    , mulPoint, shamirsTrick
-    )
 import Network.Haskoin.Crypto.BigWord 
-    ( Hash256
-    , FieldN
-    , toFieldN
-    , inverseN
-    , isIntegerValidKey
-    )
 
 -- | Internal state of the 'SecretT' monad
 type SecretState m = (WorkingState, (Int -> m BS.ByteString))
@@ -82,7 +56,7 @@ withSource :: Monad m => (Int -> m BS.ByteString) -> SecretT m a -> m a
 withSource f m = do
     seed  <- f 32 -- Read 256 bits from the random source
     nonce <- f 16 -- Read 128 bits from the random source
-    let ws = hmacDRBGNew seed nonce (stringToBS "/haskoin:0.1.1/")
+    let ws = hmacDRBGNew seed nonce (stringToBS haskoinUserAgent)
     S.evalStateT m (ws,f)
 
 -- | \/dev\/urandom entropy source. This is only available on machines
@@ -101,7 +75,7 @@ devRandom i = withBinaryFile "/dev/random" ReadMode $ flip BS.hGet i
 nextSecret :: Monad m => SecretT m FieldN
 nextSecret = do
     (ws,f) <- S.get
-    let (ws',randM) = hmacDRBGGen ws 32 (stringToBS "/haskoin:0.0.2/")
+    let (ws',randM) = hmacDRBGGen ws 32 (stringToBS haskoinUserAgent)
     case randM of
         (Just rand) -> do
             S.put (ws',f)
@@ -111,7 +85,7 @@ nextSecret = do
                 else nextSecret
         Nothing -> do
             seed <- lift $ f 32 -- Read 256 bits to re-seed the PRNG
-            let ws0 = hmacDRBGRsd ws' seed (stringToBS "/haskoin:0.0.2/")
+            let ws0 = hmacDRBGRsd ws' seed (stringToBS haskoinUserAgent)
             S.put (ws0,f)
             nextSecret
 

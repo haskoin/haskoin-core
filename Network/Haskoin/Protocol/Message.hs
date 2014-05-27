@@ -3,7 +3,6 @@ module Network.Haskoin.Protocol.Message ( Message(..) ) where
 import Control.Monad (unless)
 import Control.Applicative ((<$>))
 
-import Data.Word (Word32)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get 
     ( lookAhead
@@ -31,11 +30,8 @@ import Network.Haskoin.Protocol.BloomFilter
 import Network.Haskoin.Protocol.Ping
 import Network.Haskoin.Protocol.Alert
 
-import Network.Haskoin.Util (isolate, encode')
-import Network.Haskoin.Crypto.Hash (chksum32)
-
-networkMagic :: Word32
-networkMagic = 0xf9beb4d9
+import Network.Haskoin.Util 
+import Network.Haskoin.Crypto.Hash 
 
 -- | The 'Message' type is used to identify all the valid messages that can be
 -- sent between bitcoin peers. Only values of type 'Message' will be accepted

@@ -12,7 +12,7 @@ import Data.Binary.Get (getWord32le)
 import Data.Binary.Put (putWord32le)
 
 import Network.Haskoin.Protocol.VarInt
-import Network.Haskoin.Crypto.Hash (Hash256)
+import Network.Haskoin.Crypto.Hash 
 
 type BlockLocator = [Hash256]
 

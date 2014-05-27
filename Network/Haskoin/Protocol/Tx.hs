@@ -33,13 +33,8 @@ import qualified Data.ByteString as BS
 
 import Network.Haskoin.Protocol.VarInt
 import Network.Haskoin.Protocol.Script
-import Network.Haskoin.Crypto.Hash (Hash256, doubleHash256)
+import Network.Haskoin.Crypto.Hash 
 import Network.Haskoin.Util 
-    ( bsToHex
-    , hexToBS
-    , encode'
-    , decodeToMaybe
-    )
 
 -- | Data type representing a bitcoin transaction
 data Tx = 

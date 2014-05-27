@@ -57,12 +57,9 @@ import Control.Applicative ((<$>))
 import Data.Ratio (numerator, denominator)
 import qualified Data.ByteString as BS (head, length)
 
-import Network.Haskoin.Crypto.Curve (curveP, curveN)
-import Network.Haskoin.Crypto.NumberTheory (mulInverse)
+import Network.Haskoin.Crypto.Curve 
+import Network.Haskoin.Crypto.NumberTheory 
 import Network.Haskoin.Util 
-    ( bsToInteger
-    , integerToBS
-    )
 
 -- | Data type representing a 512 bit unsigned integer.
 -- It is implemented as an Integer modulo 2^512.

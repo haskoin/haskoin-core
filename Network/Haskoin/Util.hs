@@ -69,6 +69,7 @@ module Network.Haskoin.Util
 , genesisHeader
 , maxBlockSize
 , walletFile
+, haskoinUserAgent
 
 ) where
 

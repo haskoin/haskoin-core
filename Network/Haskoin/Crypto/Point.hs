@@ -16,8 +16,8 @@ module Network.Haskoin.Crypto.Point
 import Data.Bits (shiftR)
 import Control.Applicative ((<$>))
 
-import Network.Haskoin.Crypto.Curve (integerA, integerB)
-import Network.Haskoin.Crypto.BigWord (FieldP, FieldN)
+import Network.Haskoin.Crypto.Curve
+import Network.Haskoin.Crypto.BigWord 
 
 curveA :: FieldP
 curveA = fromInteger integerA

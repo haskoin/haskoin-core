@@ -35,12 +35,8 @@ import qualified Data.ByteString as BS
     )
 
 import Network.Haskoin.Protocol.VarInt
+import Network.Haskoin.Crypto.Keys 
 import Network.Haskoin.Util 
-    ( isolate
-    , runPut'
-    , fromRunGet
-    )
-import Network.Haskoin.Crypto.Keys (PubKey)
 
 -- | Data type representing a transaction script. Scripts are defined as lists
 -- of script operators 'ScriptOp'. Scripts are used to:

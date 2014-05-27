@@ -10,8 +10,8 @@ import Data.Binary (Binary, get, put)
 import Data.Binary.Get (getWord32le)
 import Data.Binary.Put (putWord32le)
 
-import Network.Haskoin.Crypto.Hash (Hash256, doubleHash256)
-import Network.Haskoin.Util (encode')
+import Network.Haskoin.Crypto.Hash 
+import Network.Haskoin.Util 
 
 -- | Data type recording information on a 'Block'. The hash of a block is
 -- defined as the hash of this data structure. The block mining process

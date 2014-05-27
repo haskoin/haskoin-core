@@ -8,7 +8,7 @@ bug-reports:           http://github.com/plaprade/haskoin/issues
 stability:             experimental
 license:               PublicDomain
 license-file:          UNLICENSE
-author:                Philippe Laprade
+author:                Philippe Laprade, Jean-Pierre Rupp
 maintainer:            plaprade+hackage@gmail.com
 category:              Bitcoin, Finance, Network
 build-type:            Simple

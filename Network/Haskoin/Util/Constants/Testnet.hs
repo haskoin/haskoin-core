@@ -49,3 +49,7 @@ maxBlockSize = 1000000
 walletFile :: String
 walletFile = "testwalletdb"
 
+-- | User agent of this haskoin package
+haskoinUserAgent :: String
+haskoinUserAgent = "/haskoin:0.0.2/"
+

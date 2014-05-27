@@ -67,16 +67,7 @@ import qualified Data.ByteString as BS
     )
 
 import Network.Haskoin.Util 
-    ( runGet'
-    , decode'
-    , integerToBS
-    )
 import Network.Haskoin.Crypto.BigWord 
-    ( Hash512
-    , Hash256
-    , Hash160
-    , toMod512
-    )
 
 -- | Data type representing a 32 bit checksum
 newtype CheckSum32 = CheckSum32 Word32 deriving (Show, Eq, Read)

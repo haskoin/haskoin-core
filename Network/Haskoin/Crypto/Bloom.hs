@@ -33,7 +33,16 @@ ln2 = 0.6931471805599453094172321214581765680755001343602552
 bitMask :: [Word8]
 bitMask = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]
 
-bloomCreate :: Int -> Double -> Word32 -> BloomFlags -> BloomFilter
+-- | Build a bloom filter that will provide the given false positive rate when
+-- the given number of elements have been inserted. 
+bloomCreate :: Int          -- ^ Number of elements
+            -> Double       -- ^ False positive rate
+            -> Word32       
+             -- ^ A random nonce (tweak) for the hash function. It should be
+             -- a random number but the secureness of the random value is not
+             -- of geat consequence.
+            -> BloomFlags   -- ^ Bloom filter flags
+            -> BloomFilter  -- ^ Bloom filter
 bloomCreate numElem fpRate tweak flags =
     BloomFilter (S.replicate bloomSize 0) False False numHashF tweak flags
   where
@@ -49,7 +58,11 @@ bloomHash bfilter hashNum bs =
   where
     seed = hashNum * 0xfba4c795 + (bloomTweak bfilter)
 
-bloomInsert :: BloomFilter -> BS.ByteString -> BloomFilter
+-- | Insert arbitrary data into a bloom filter. Returns the new bloom filter
+-- containing the new data.
+bloomInsert :: BloomFilter    -- ^ Original bloom filter
+            -> BS.ByteString  -- ^ New data to insert
+            -> BloomFilter    -- ^ Bloom filter containing the new data
 bloomInsert bfilter bs 
     | bloomFull bfilter = bfilter
     | otherwise = bfilter { bloomData = newData, bloomEmpty = False }
@@ -58,7 +71,13 @@ bloomInsert bfilter bs
     upd s i = S.adjust (.|. bitMask !! (7 .&. i)) (i `shiftR` 3) s
     newData = foldl upd (bloomData bfilter) idxs
 
-bloomContains :: BloomFilter -> BS.ByteString -> Bool
+-- | Tests if some arbitrary data matches the filter. This can be either because
+-- the data was inserted into the filter or because it is a false positive.
+bloomContains :: BloomFilter    -- ^ Bloom filter 
+              -> BS.ByteString  
+              -- ^ Data that will be checked against the given bloom filter
+              -> Bool
+              -- ^ Returns True if the data matches the filter
 bloomContains bfilter bs
     | bloomFull bfilter  = True
     | bloomEmpty bfilter = False
@@ -71,13 +90,18 @@ bloomContains bfilter bs
 -- TODO: Write bloomRelevantUpdate
 -- bloomRelevantUpdate :: BloomFilter -> Tx -> Hash256 -> Maybe BloomFilter
 
-bloomUpdateEmptyFull :: BloomFilter -> BloomFilter
+-- | Sets the bloom filter empty flag to True if the filter is empty, and
+-- the bloom filter full flag to True if the filter is full.
+bloomUpdateEmptyFull :: BloomFilter -- ^ Bloom filter to update
+                     -> BloomFilter -- ^ Filter with updated flags
 bloomUpdateEmptyFull bfilter = 
     bfilter { bloomEmpty = all (== 0x00) l, bloomFull = all (== 0xff) l }
   where
     l = F.toList $ bloomData bfilter
 
-bloomIsValid :: BloomFilter -> Bool
+-- | Tests if a given bloom filter is valid.
+bloomIsValid :: BloomFilter -- ^ Bloom filter to test
+             -> Bool        -- ^ True if the given filter is valid
 bloomIsValid bfilter =
     (S.length $ bloomData bfilter) <= maxBloomSize &&
     (bloomHashFuncs bfilter) <= maxHashFuncs

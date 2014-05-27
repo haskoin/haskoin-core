@@ -49,49 +49,10 @@ import Database.Persist.TH (derivePersistField)
 import Database.Persist.Sql (PersistFieldSql, SqlType (SqlBlob), sqlType)
 
 import Network.Haskoin.Crypto
-    ( Hash256
-    , PrvKey
-    , MasterKey
-    , AccPubKey
-    , XPubKey
-    , addrToBase58
-    , getAddrHash
-    , fromWIF
-    , pubKeyAddr
-    )
 import Network.Haskoin.Protocol
-    ( OutPoint (OutPoint)
-    , Tx (Tx)
-    , TxIn (TxIn)
-    , TxOut (TxOut)
-    , Script (Script)
-    , decodeTxid
-    , encodeTxid
-    , decodeScriptOps
-    , encodeScriptOps
-    , txid
-    )
 import Network.Haskoin.Script
-    ( ScriptHashInput (ScriptHashInput)
-    , ScriptInput (SpendPK, SpendPKHash, SpendMulSig)
-    , ScriptOutput (PayPK, PayPKHash, PayMulSig, PayScriptHash)
-    , SigHash (SigAll, SigNone, SigSingle, SigUnknown)
-    , TxSignature (TxSignature)
-    , decodeScriptHash
-    , decodeInput
-    , decodeOutput
-    , encodeOutput
-    , encodeSig
-    , scriptAddr
-    )
-import Network.Haskoin.Transaction (SigInput (SigInput, SigInputSH))
+import Network.Haskoin.Transaction
 import Network.Haskoin.Util
-    ( bsToHex
-    , hexToBS
-    , encode'
-    , decodeToEither
-    , maybeToEither
-    )
 
 data WalletException 
     = InitializationException String
@@ -161,8 +122,8 @@ instance FromJSON RawTxOutPoints where
         RawTxOutPoints <$> (mapM f $ V.toList arr)
       where
         f = withObject "Expected: Object" $ \obj -> do
-            tid  <- obj .: T.pack "txid" :: Parser String
-            vout <- obj .: T.pack "vout" :: Parser Word32
+            tid  <- obj .: "txid" :: Parser String
+            vout <- obj .: "vout" :: Parser Word32
             let i = maybeToEither ("Failed to decode txid" :: String)
                                   (decodeTxid tid)
                 o = OutPoint <$> i <*> (return vout)
@@ -181,10 +142,10 @@ instance FromJSON RawSigInput where
         RawSigInput <$> (mapM f $ V.toList arr)
       where
         f = withObject "Expected: Object" $ \obj -> do
-            tid  <- obj .: T.pack "txid" :: Parser String
-            vout <- obj .: T.pack "vout" :: Parser Word32
-            scp  <- obj .: T.pack "scriptPubKey" :: Parser String
-            rdm  <- obj .:? T.pack "redeemScript" :: Parser (Maybe String)
+            tid  <- obj .: "txid" :: Parser String
+            vout <- obj .: "vout" :: Parser Word32
+            scp  <- obj .: "scriptPubKey" :: Parser String
+            rdm  <- obj .:? "redeemScript" :: Parser (Maybe String)
             let s = decodeScriptOps =<< maybeToEither "Hex parsing failed" 
                         (hexToBS scp)
                 i = maybeToEither "Failed to decode txid" (decodeTxid tid)
@@ -205,14 +166,14 @@ instance FromJSON RawPrvKey where
 
 instance ToJSON CoinStatus where
     toJSON (Spent tid) = 
-        object [ "Status".= T.pack "Spent"
-               , "Txid"  .= (encodeTxid tid)
+        object [ "Status".= String "Spent"
+               , "Txid"  .= encodeTxid tid
                ]
     toJSON (Reserved tid) = 
-        object [ "Status".= T.pack "Reserved"
-               , "Txid"  .= (encodeTxid tid)
+        object [ "Status".= String "Reserved"
+               , "Txid"  .= encodeTxid tid
                ]
-    toJSON Unspent = object [ "Status".= T.pack "Unspent" ]
+    toJSON Unspent = object [ "Status".= String "Unspent" ]
 
 instance FromJSON CoinStatus where
     parseJSON (Object obj) = obj .: "Status" >>= \status -> case status of
@@ -228,131 +189,122 @@ instance FromJSON CoinStatus where
 
 instance ToJSON OutPoint where
     toJSON (OutPoint h i) = object
-        [ (T.pack "TxID") .= encodeTxid h
-        , (T.pack "Index") .= toJSON i
+        [ "TxID" .= encodeTxid h
+        , "Index" .= toJSON i
         ]
 
 instance ToJSON TxOut where
     toJSON (TxOut v s) = object $
-        [ (T.pack "Value") .= toJSON v
-        , (T.pack "Raw Script") .= (bsToHex $ encodeScriptOps s)
-        , (T.pack "Script") .= toJSON s
+        [ "Value" .= v
+        , "Raw Script" .= bsToHex (encodeScriptOps s)
+        , "Script" .= s
         ] ++ scptPair 
       where scptPair = 
               either (const [])
-                     (\out -> [(T.pack "Decoded Script") .= toJSON out]) 
+                     (\out -> ["Decoded Script" .= out]) 
                      (decodeOutput s)
 
 instance ToJSON TxIn where
     toJSON (TxIn o s i) = object $ concat
-        [ [ (T.pack "OutPoint") .= toJSON o
-          , (T.pack "Sequence") .= toJSON i
-          , (T.pack "Raw Script") .= (bsToHex $ encodeScriptOps s)
-          , (T.pack "Script") .= toJSON s
+        [ [ "OutPoint" .= o
+          , "Sequence" .= i
+          , "Raw Script" .= bsToHex (encodeScriptOps s)
+          , "Script" .= s
           ] 
         , decoded 
         ]
       where decoded = either (const $ either (const []) f $ decodeInput s) 
                              f $ decodeScriptHash s
-            f inp = [(T.pack "Decoded Script") .= toJSON inp]
+            f inp = ["Decoded Script" .= inp]
               
 instance ToJSON Tx where
     toJSON tx@(Tx v is os i) = object
-        [ (T.pack "TxID") .= encodeTxid (txid tx)
-        , (T.pack "Version") .= toJSON v
-        , (T.pack "Inputs") .= (toJSON $ map input $ zip is [0..])
-        , (T.pack "Outputs") .= (toJSON $ map output $ zip os [0..])
-        , (T.pack "LockTime") .= toJSON i
+        [ "TxID" .= encodeTxid (txid tx)
+        , "Version" .= v
+        , "Inputs" .= map input (zip is [0..])
+        , "Outputs" .= map output (zip os [0..])
+        , "LockTime" .= i
         ]
       where input (x,j) = object 
-              [(T.pack $ unwords ["Input", show (j :: Int)]) .= toJSON x]
+              [T.pack ("Input " ++ show (j :: Int)) .= x]
             output (x,j) = object 
-              [(T.pack $ unwords ["Output", show (j :: Int)]) .= toJSON x]
+              [T.pack ("Output " ++ show (j :: Int)) .= x]
 
 instance ToJSON Script where
     toJSON (Script ops) = toJSON $ map show ops
 
 instance ToJSON ScriptOutput where
     toJSON (PayPK p) = object 
-        [ (T.pack "PayToPublicKey") .= object
-            [ (T.pack "Public Key") .= (bsToHex $ encode' p)
-            ]
-        ]
+        [ "PayToPublicKey" .= object [ "Public Key" .= bsToHex (encode' p) ] ]
     toJSON (PayPKHash a) = object 
-        [ (T.pack "PayToPublicKeyHash") .= object
-            [ (T.pack "Address Hash160") .=
-              (bsToHex $ encode' $ getAddrHash a)
-            , (T.pack "Address Base58") .= addrToBase58 a
+        [ "PayToPublicKeyHash" .= object
+            [ "Address Hash160" .= bsToHex (encode' $ getAddrHash a)
+            , "Address Base58" .= addrToBase58 a
             ]
         ]
     toJSON (PayMulSig ks r) = object 
-        [ (T.pack "PayToMultiSig") .= object
-            [ (T.pack "Required Keys (M)") .= toJSON r
-            , (T.pack "Public Keys") .= (toJSON $ map (bsToHex . encode') ks)
+        [ "PayToMultiSig" .= object
+            [ "Required Keys (M)" .= toJSON r
+            , "Public Keys" .= map (bsToHex . encode') ks
             ]
         ]
     toJSON (PayScriptHash a) = object 
-        [ (T.pack "PayToScriptHash") .= object
-            [ (T.pack "Address Hash160") .=
-              (bsToHex $ encode' $ getAddrHash a)
-            , (T.pack "Address Base58") .= addrToBase58 a
+        [ "PayToScriptHash" .= object
+            [ "Address Hash160" .= bsToHex (encode' $ getAddrHash a)
+            , "Address Base58" .= addrToBase58 a
             ]
         ]
 
 instance ToJSON ScriptInput where
     toJSON (SpendPK s) = object 
-        [ (T.pack "SpendPublicKey") .= object
-            [ (T.pack "Signature") .= toJSON s
-            ]
-        ]
+        [ "SpendPublicKey" .= object [ "Signature" .= s ] ]
     toJSON (SpendPKHash s p) = object 
-        [ (T.pack "SpendPublicKeyHash") .= object
-            [ (T.pack "Signature") .= toJSON s
-            , (T.pack "Public Key") .= (bsToHex $ encode' p)
-            , (T.pack "Sender Addr") .= addrToBase58 (pubKeyAddr p)
+        [ "SpendPublicKeyHash" .= object
+            [ "Signature" .= s
+            , "Public Key" .= bsToHex (encode' p)
+            , "Sender Addr" .= addrToBase58 (pubKeyAddr p)
             ]
         ]
     toJSON (SpendMulSig sigs r) = object 
-        [ (T.pack "SpendMultiSig") .= object
-            [ (T.pack "Required Keys (M)") .= toJSON r
-            , (T.pack "Signatures") .= (toJSON $ map toJSON sigs)
+        [ "SpendMultiSig" .= object
+            [ "Required Keys (M)" .= r
+            , "Signatures" .= sigs
             ]
         ]
 
 instance ToJSON ScriptHashInput where
     toJSON (ScriptHashInput s r) = object
-        [ (T.pack "SpendScriptHash") .= object
-            [ (T.pack "ScriptInput") .= toJSON s
-            , (T.pack "RedeemScript") .= toJSON r
-            , (T.pack "Raw Redeem Script") .= 
-                (bsToHex $ encodeScriptOps $ encodeOutput r)
-            , (T.pack "Sender Addr") .= (addrToBase58 $ scriptAddr  r)
+        [ "SpendScriptHash" .= object
+            [ "ScriptInput" .= s
+            , "RedeemScript" .= r
+            , "Raw Redeem Script" .= bsToHex (encodeScriptOps $ encodeOutput r)
+            , "Sender Addr" .= addrToBase58 (scriptAddr  r)
             ]
         ]
 
 instance ToJSON TxSignature where
     toJSON ts@(TxSignature _ h) = object
-        [ (T.pack "Raw Sig") .= (bsToHex $ encodeSig ts)
-        , (T.pack "SigHash") .= toJSON h
+        [ "Raw Sig" .= bsToHex (encodeSig ts)
+        , "SigHash" .= h
         ]
 
 instance ToJSON SigHash where
     toJSON sh = case sh of
         (SigAll acp) -> object
-            [ (T.pack "Type") .= T.pack "SigAll"
-            , (T.pack "AnyoneCanPay") .= acp
+            [ "Type" .= String "SigAll"
+            , "AnyoneCanPay" .= acp
             ]
         (SigNone acp) -> object
-            [ (T.pack "Type") .= T.pack "SigNone"
-            , (T.pack "AnyoneCanPay") .= acp
+            [ "Type" .= String "SigNone"
+            , "AnyoneCanPay" .= acp
             ]
         (SigSingle acp) -> object
-            [ (T.pack "Type") .= T.pack "SigSingle"
-            , (T.pack "AnyoneCanPay") .= acp
+            [ "Type" .= String "SigSingle"
+            , "AnyoneCanPay" .= acp
             ]
         (SigUnknown acp v) -> object
-            [ (T.pack "Type") .= T.pack "SigUnknown"
-            , (T.pack "AnyoneCanPay") .= acp
-            , (T.pack "Value") .= v
+            [ "Type" .= String "SigUnknown"
+            , "AnyoneCanPay" .= acp
+            , "Value" .= v
             ]
 

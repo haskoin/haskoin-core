@@ -263,6 +263,7 @@ cmdDumpKeys :: (PersistUnique m, PersistMonadBackend m ~ b)
             => AccountName  -- ^ Account name.
             -> m (DbAccountGeneric b, XPubKey, XPrvKey, Maybe [XPubKey])
             -- ^ Extended key information.
+            -- Account, Account XPubKey, Account XPrvKey, Multisig XPubKey list.
 cmdDumpKeys name = checkInit >> do
     (Entity _ acc) <- dbGetAccount name
     w <- liftM fromJust (get $ dbAccountWallet acc)

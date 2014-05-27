@@ -1,6 +1,10 @@
 # haskoin
 
-This package is a library implementing the Bitcoin protocol specification.
+Haskoin is a package providing an implementation of the Bitcoin protocol
+specifications. It provides the cryptographic ECDSA and hashing primitives,
+functions for handling BIP32 extended keys, functions for building and signing
+various types of regular and multisig transactions and a definition of the
+network protocol messages.
 
 ## Documentation
 

@@ -2,6 +2,11 @@ name:                  haskoin
 version:               0.0.2
 synopsis:              Implementation of the Bitcoin protocol.
 description:
+    Haskoin is a package providing an implementation of the Bitcoin protocol
+    specifications. It provides the cryptographic ECDSA and hashing primitives,
+    functions for handling BIP32 extended keys, functions for building and
+    signing various types of regular and multisig transactions and a definition
+    of the network protocol messages.
     This package is a library implementing the Bitcoin protocol specification.
 homepage:              http://github.com/plaprade/haskoin
 bug-reports:           http://github.com/plaprade/haskoin/issues

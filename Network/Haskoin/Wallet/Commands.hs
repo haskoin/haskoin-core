@@ -79,7 +79,6 @@ import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Util
 
-
 -- | Initialize a wallet from an optional mnemonic seed and a passphrase,
 -- which could be blank.
 cmdInitMnemo :: PersistUnique m
@@ -118,8 +117,8 @@ cmdInitMnemo p Nothing = do
 -- | Initialize a wallet from a secret seed. This function will fail if the
 -- wallet is already initialized.
 cmdInit :: PersistUnique m
-        => BS.ByteString    -- ^ Secret seed.
-        -> m ()             -- ^ Returns Null.
+        => BS.ByteString    -- ^ Secret seed
+        -> m ()             
 cmdInit seed 
     | BS.null seed = liftIO $ throwIO $ 
         InitializationException "The seed is empty"
@@ -141,8 +140,8 @@ cmdNewAcc :: ( PersistUnique m
              , PersistQuery m
              , PersistMonadBackend m ~ b
              ) 
-          => String  -- ^ Account name.
-          -> m (DbAccountGeneric b) -- ^ Returns the new account information.
+          => String                 -- ^ Account name
+          -> m (DbAccountGeneric b) -- ^ Returns the new account information
 cmdNewAcc name = checkInit >> do
     time <- liftIO getCurrentTime
     (Entity wk w) <- dbGetWallet "main"
@@ -243,8 +242,8 @@ checkOwnKeys keys = do
 
 -- | Returns information on an account.
 cmdAccInfo :: (PersistUnique m, PersistMonadBackend m ~ b)
-           => AccountName   -- ^ Account name.
-           -> m (DbAccountGeneric b)       -- ^ Account information.
+           => AccountName            -- ^ Account name.
+           -> m (DbAccountGeneric b) -- ^ Account information.
 cmdAccInfo name = checkInit >> do
     acc <- dbGetAccount name
     return $ entityVal acc

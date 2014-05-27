@@ -43,8 +43,19 @@ module Network.Haskoin.Wallet
 , cmdDecodeTx
 , cmdBuildRawTx
 , cmdSignRawTx
+
+-- *Database Types 
+, AccountName
+, CoinStatus(..)
+, RawPrvKey(..)
+, RawSigInput(..)
+, RawTxDests(..)
+, RawTxOutPoints(..)
+, WalletException(..)
+
 ) where
 
 import Network.Haskoin.Wallet.Commands
+import Network.Haskoin.Wallet.Types
 
 

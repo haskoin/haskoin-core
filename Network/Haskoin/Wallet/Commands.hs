@@ -16,6 +16,7 @@ module Network.Haskoin.Wallet.Commands
 , cmdAccInfo
 , cmdListAcc
 , cmdDumpKeys
+, cmdListAll
 , cmdList
 , cmdGenAddrs
 , cmdGenWithLabel
@@ -275,6 +276,19 @@ cmdDumpKeys name = checkInit >> do
     return $ (acc, pubKey, prvKey, ms)
 
 {- Address Commands -}
+
+-- | Returns all addresses for an account.
+cmdListAll :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
+           => AccountName
+           -> m [DbAddressGeneric b]
+cmdListAll acc = do
+    (Entity ai acc) <- dbGetAccount name
+    addrs <- selectList [ DbAddressAccount ==. ai
+                        , DbAddressInteral ==. False
+                        , DbAddressIndex <=. dbAccountExtIndex acc
+                        ]
+                        [ Asc DbAddressId ]
+    return $ map entityVal addrs
 
 -- | Returns a page of addresses for an account. Pages are numbered starting
 -- from page 1. Requesting page 0 will return the last page. 

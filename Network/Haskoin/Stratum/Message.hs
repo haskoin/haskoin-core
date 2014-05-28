@@ -54,7 +54,7 @@ data Id = IntId { intId :: Int }  -- ^ Id in integer form.
         deriving (Eq, Show)
 
 -- | JSON-RPC error object in v1 or v2 format.
--- Sent inside a Resoponse in case of error.
+-- Sent inside a Response in case of error.
 data Error e v -- | Error object in JSON-RPC version 2 format.
                = ErrObj
                    { errCode :: Int      -- ^ Integer error code.

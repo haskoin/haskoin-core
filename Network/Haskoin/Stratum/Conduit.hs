@@ -86,7 +86,7 @@ reqSource (Session rc _ _ _) = do
 -- | Conduit that parses messages from network.
 resConduit :: (MonadIO m)
            => Session q r e v j -- ^ Session state.
-           -> Conduit ByteString m (Either String (Message j r e v))
+           -> Conduit ByteString m (Either String (Msg j r e v))
            -- ^ Returns Conduit with parsed data or parsing errors.
 resConduit (Session _ _ pv d) =
     stopOnNull pv (maybe True (const False) d) =$= decodeConduit pv d
@@ -94,7 +94,7 @@ resConduit (Session _ _ pv d) =
 decodeConduit :: (MonadIO m)
               => MVar (ParserMap r e v)
               -> Maybe (RequestParser j)
-              -> Conduit ByteString m (Either String (Message j r e v))
+              -> Conduit ByteString m (Either String (Msg j r e v))
 decodeConduit pv d = do
     mx <- await
     case mx of
@@ -126,7 +126,7 @@ stopOnNull pv d = do
 decodeMsg :: ParserMap r e v
           -> Maybe (RequestParser j)
           -> ByteString
-          -> Either String (Maybe Int, Message j r e v)
+          -> Either String (Maybe Int, Msg j r e v)
 decodeMsg p d x = do
     y <- eitherDecode (fromStrict x)
     case y of

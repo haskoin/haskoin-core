@@ -23,7 +23,7 @@ tests =
       isInvalid "tests/data/invalid.json"
     ]
 
-testFile :: String -> (Maybe MessageValue -> Bool) -> String -> Test
+testFile :: String -> (Maybe MsgValue -> Bool) -> String -> Test
 testFile label f file = buildTest $ do
     vectors <- liftM lines $ readFile file
     let test = g vectors
@@ -36,22 +36,22 @@ testFile label f file = buildTest $ do
         return . testCase lbl . HUnit.assertBool (failure vector) $ f msg
     failure vector = "Failed to decode: " ++ vector
 
-isRequest :: Maybe MessageValue -> Bool
+isRequest :: Maybe MsgValue -> Bool
 isRequest (Just (MsgRequest (Request _ _ (Just _)))) = True
 isRequest _ = False
 
-isNotif :: Maybe MessageValue -> Bool
+isNotif :: Maybe MsgValue -> Bool
 isNotif (Just (MsgRequest (Request _ _ Nothing))) = True
 isNotif _ = False
 
-isResponse :: Maybe MessageValue -> Bool
+isResponse :: Maybe MsgValue -> Bool
 isResponse (Just (MsgResponse (Response (Right _) _))) = True
 isResponse _ = False
 
-isError :: Maybe MessageValue -> Bool
+isError :: Maybe MsgValue -> Bool
 isError (Just (MsgResponse (Response (Left _) _))) = True
 isError _ = False
 
-isInvalid :: Maybe MessageValue -> Bool
+isInvalid :: Maybe MsgValue -> Bool
 isInvalid Nothing = True
 isInvalid _ = False

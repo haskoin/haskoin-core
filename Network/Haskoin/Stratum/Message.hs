@@ -6,7 +6,7 @@ module Network.Haskoin.Stratum.Message
 , ErrorValue
 , RequestValue
 , ResponseValue
-, MessageValue
+, MsgValue
 , ResultValue
 , Id(..)
 , Result
@@ -14,7 +14,7 @@ module Network.Haskoin.Stratum.Message
   -- * Messages
 , Request(..)
 , Response(..)
-, Message(..)
+, Msg(..)
   -- * Errors
 , errParse
 , errReq
@@ -44,7 +44,7 @@ type RequestValue = Request Value
 -- | JSON-RPC response with default JSON values.
 type ResponseValue = Response Value Value String
 -- | JSON-RPC request or response with default JSON values.
-type MessageValue = Message Value Value Value String
+type MsgValue = Msg Value Value Value String
 -- | JSON-RPC result with default JSON values.
 type ResultValue = Result Value Value String
 
@@ -54,7 +54,7 @@ data Id = IntId { intId :: Int }  -- ^ Id in integer form.
         deriving (Eq, Show)
 
 -- | JSON-RPC error object in v1 or v2 format.
--- Sent inside a JSONRes in case of error.
+-- Sent inside a Response in case of error.
 data Error e v -- | Error object in JSON-RPC version 2 format.
                = ErrObj
                    { errCode :: Int      -- ^ Integer error code.
@@ -81,7 +81,7 @@ data Response r e v = Response
     } deriving (Eq, Show)
 
 -- | JSON-RPC message, can contain request or response.
-data Message j r e v
+data Msg j r e v
     -- | Request message container.
     = MsgRequest (Request j)
     -- | response message container.
@@ -162,7 +162,7 @@ instance (ToJSON r, ToJSON e, ToJSON v)
         ]
 
 instance (FromJSON j, FromJSON r, FromJSON e, FromJSON v)
-    => FromJSON (Message j r e v)
+    => FromJSON (Msg j r e v)
   where
     parseJSON o@(Object _) = q <|> s
       where
@@ -171,7 +171,7 @@ instance (FromJSON j, FromJSON r, FromJSON e, FromJSON v)
     parseJSON _ = mzero
 
 instance (ToJSON j, ToJSON r, ToJSON e, ToJSON v)
-    => ToJSON (Message j r e v)
+    => ToJSON (Msg j r e v)
   where
     toJSON (MsgRequest r) = toJSON r
     toJSON (MsgResponse r) = toJSON r

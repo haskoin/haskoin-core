@@ -281,10 +281,10 @@ cmdDumpKeys name = checkInit >> do
 cmdListAll :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
            => AccountName
            -> m [DbAddressGeneric b]
-cmdListAll acc = do
+cmdListAll name = do
     (Entity ai acc) <- dbGetAccount name
     addrs <- selectList [ DbAddressAccount ==. ai
-                        , DbAddressInteral ==. False
+                        , DbAddressInternal ==. False
                         , DbAddressIndex <=. dbAccountExtIndex acc
                         ]
                         [ Asc DbAddressId ]

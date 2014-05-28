@@ -54,7 +54,6 @@ import Network.Haskoin.Script
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto 
 import Network.Haskoin.Util
-import Network.Haskoin.Stratum
 
 data Options = Options
     { optCount    :: Int

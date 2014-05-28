@@ -74,7 +74,7 @@ library
                        Network.Haskoin.Stratum.Message,
                        Network.Haskoin.Stratum.Conduit,
                        Network.Haskoin.Transaction.Builder
-    build-depends:     aeson                >= 0.7  && < 0.8,
+    build-depends:     aeson                >= 0.7.0.5 && < 0.8,
                        base                 >= 4.6  && < 4.7, 
                        binary               >= 0.7  && < 0.8, 
                        byteable             >= 0.1  && < 0.2,
@@ -124,7 +124,7 @@ test-suite test-haskoin
                        Network.Haskoin.Transaction.Units,
                        Network.Haskoin.Transaction.Arbitrary,
                        Network.Haskoin.Stratum.Units
-    build-depends:     aeson                      >= 0.7  && < 0.8,
+    build-depends:     aeson                      >= 0.7.0.5 && < 0.8,
                        base                       >= 4.6  && < 4.7, 
                        binary                     >= 0.7  && < 0.8, 
                        byteable                   >= 0.1  && < 0.2,

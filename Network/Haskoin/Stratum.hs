@@ -10,7 +10,7 @@ module Network.Haskoin.Stratum
 , StratumQuery(..)
 , StratumResponse(..)
   -- ** JSON-RPC data for Stratum
-, MessageStratum
+, MsgStratum
 , NotifStratum
 , RequestStratum
 , ResponseStratum
@@ -37,7 +37,7 @@ module Network.Haskoin.Stratum
 , ErrorValue
 , RequestValue
 , ResponseValue
-, MessageValue
+, MsgValue
 , ResultValue
 , Id(..)
 , Result
@@ -45,7 +45,7 @@ module Network.Haskoin.Stratum
   -- ** Messages
 , Request(..)
 , Response(..)
-, Message(..)
+, Msg(..)
   -- ** Errors
 , errParse
 , errReq
@@ -76,7 +76,7 @@ import Data.Text (Text, pack, unpack)
 import qualified Data.Vector as V
 import Data.Word (Word, Word64)
 import Network.Haskoin.Crypto
-import Network.Haskoin.Protocol hiding (Message)
+import Network.Haskoin.Protocol
 import Network.Haskoin.Stratum.Message
 import Network.Haskoin.Stratum.Conduit
 import Network.Haskoin.Util
@@ -90,7 +90,7 @@ type ResponseStratum = Response StratumResponse Value String
 -- | Stratum result in JSON-RPC response.
 type ResultStratum = Result StratumResponse Value String
 -- | Message from Stratum JSON-RPC server.
-type MessageStratum = Message StratumNotif StratumResponse Value String
+type MsgStratum = Msg StratumNotif StratumResponse Value String
 -- | Session type for JSON-RPC conduit.
 type StratumSession
     = Session RequestStratum StratumResponse Value String StratumNotif

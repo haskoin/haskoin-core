@@ -1,73 +1,18 @@
 module Network.Haskoin.Stratum
-( -- * Stratum
-  -- ** Stratum Client
-  StratumClient
-, StratumSrc(..)
-, getSrc
-, sendReq
-, runStratumTCP
-  -- ** Bitcoin Data
-, Balance(..)
-, Coin(..)
-, TxHeight(..)
-  -- ** Stratum Data
-, StratumNotif(..)
-, StratumQuery(..)
-, StratumResponse(..)
-, StratumSession
-  -- ** JSON-RPC Messages
-, MsgStratum
-, NotifStratum
-, RequestStratum
-, ResponseStratum
-, ResultStratum
-  -- ** Exceptions
-, StratumException(..)
-  -- ** Basic Functions
-, toRequest
-, parseResult
-, parseNotif
-, newStratumReq
-
+( -- * Client Library (Monadic)
+  module Network.Haskoin.Stratum.Client
+  -- * Types & Helpers
+, module Network.Haskoin.Stratum.Types
   -- * JSON-RPC Messages
-  -- ** Types
-, Method
-, ErrorValue
-, RequestValue
-, ResponseValue
-, MsgValue
-, ResultValue
-, Id(..)
-, Result
-, Error(..)
-  -- ** Messages
-, Request(..)
-, Response(..)
-, Msg(..)
-  -- ** Errors
-, errParse
-, errReq
-, errMeth
-, errParams
-, errInternal
-, errStr
-  -- ** Helpers
-, leftStr
-, numericId
-
+, module Network.Haskoin.Stratum.JSONRPC.Message
   -- * JSON-RPC Conduit
-  -- ** Types
-, Session
-  -- ** Functions
-, initSession
-, newReq
-, newNotif
-, reqSource
-, resConduit
+, module Network.Haskoin.Stratum.JSONRPC.Conduit
+  -- * Exceptions
+, module Network.Haskoin.Stratum.Exceptions
 ) where
 
-import Network.Haskoin.Stratum.Message
-import Network.Haskoin.Stratum.Conduit
-import Network.Haskoin.Stratum.Types
+import Network.Haskoin.Stratum.JSONRPC.Message
+import Network.Haskoin.Stratum.JSONRPC.Conduit
 import Network.Haskoin.Stratum.Exceptions
+import Network.Haskoin.Stratum.Types
 import Network.Haskoin.Stratum.Client

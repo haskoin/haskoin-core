@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes, FlexibleContexts #-}
-module Network.Haskoin.Stratum.Conduit
-( -- * Types
+module Network.Haskoin.Stratum.JSONRPC.Conduit
+( -- ** Types
   Session
-  -- * Functions
+  -- ** Functions
 , initSession
 , newReq
 , newNotif
@@ -25,7 +25,7 @@ import Data.Conduit (Conduit, Source, ($=), (=$=), await, yield)
 import Data.Conduit.List (sourceList, map)
 import Data.IntMap.Strict (IntMap, delete, empty, insert, lookup, null)
 import Network.Haskoin.Stratum.Exceptions
-import Network.Haskoin.Stratum.Message
+import Network.Haskoin.Stratum.JSONRPC.Message
 
 -- | Parse JSON-RPC ResponseValue to expected Response data type.
 type ResponseParser r e v = ResponseValue -> Parser (Response r e v)

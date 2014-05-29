@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | Implementation of basic JSON-RPC data types.
-module Network.Haskoin.Stratum.Message
-( -- * Types
+module Network.Haskoin.Stratum.JSONRPC.Message
+( -- ** Types
   Method
 , ErrorValue
 , RequestValue
@@ -11,18 +11,18 @@ module Network.Haskoin.Stratum.Message
 , Id(..)
 , Result
 , Error(..)
-  -- * Messages
+  -- ** Messages
 , Request(..)
 , Response(..)
 , Msg(..)
-  -- * Errors
+  -- ** Errors
 , errParse
 , errReq
 , errMeth
 , errParams
 , errInternal
 , errStr
-  -- * Helpers
+  -- ** Helpers
 , leftStr
 , numericId
 ) where

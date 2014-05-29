@@ -283,10 +283,7 @@ cmdListAll :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
            -> m [DbAddressGeneric b]
 cmdListAll name = do
     (Entity ai acc) <- dbGetAccount name
-    addrs <- selectList [ DbAddressAccount ==. ai
-                        , DbAddressInternal ==. False
-                        , DbAddressIndex <=. dbAccountExtIndex acc
-                        ]
+    addrs <- selectList [ DbAddressAccount ==. ai ]
                         [ Asc DbAddressId ]
     return $ map entityVal addrs
 

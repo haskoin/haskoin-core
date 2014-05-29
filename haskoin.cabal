@@ -71,8 +71,11 @@ library
                        Network.Haskoin.Protocol.GetHeaders,
                        Network.Haskoin.Script.Parser, 
                        Network.Haskoin.Script.SigHash,
-                       Network.Haskoin.Stratum.Message,
+                       Network.Haskoin.Stratum.Client,
                        Network.Haskoin.Stratum.Conduit,
+                       Network.Haskoin.Stratum.Exceptions,
+                       Network.Haskoin.Stratum.Message,
+                       Network.Haskoin.Stratum.Types,
                        Network.Haskoin.Transaction.Builder
     build-depends:     aeson                >= 0.7.0.5 && < 0.8,
                        base                 >= 4.6  && < 4.7, 

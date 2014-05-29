@@ -14,6 +14,7 @@ import Prelude hiding (lines, lookup, map, map, null)
 import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar (MVar, newMVar, putMVar, readMVar, takeMVar)
 import Control.Concurrent.Chan (Chan, getChanContents, newChan, writeChan)
+import Control.Exception (throw, throwIO)
 import Control.Monad (unless)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Data.Aeson (ToJSON, eitherDecode, encode)
@@ -23,8 +24,8 @@ import Data.ByteString.Lazy.Char8 (append, fromStrict, toStrict)
 import Data.Conduit (Conduit, Source, ($=), (=$=), await, yield)
 import Data.Conduit.List (sourceList, map)
 import Data.IntMap.Strict (IntMap, delete, empty, insert, lookup, null)
+import Network.Haskoin.Stratum.Exceptions
 import Network.Haskoin.Stratum.Message
-import Network.Haskoin.Util (maybeToEither)
 
 -- | Parse JSON-RPC ResponseValue to expected Response data type.
 type ResponseParser r e v = ResponseValue -> Parser (Response r e v)
@@ -59,14 +60,15 @@ newReq :: MonadIO m
        => Session q r e v j     -- ^ Session state.
        -> (Int -> q)            -- ^ Request builder.
        -> ResponseParser r e v  -- ^ Parser for response.
-       -> m Int                 -- ^ Output ID of sent request.
+       -> m q                   -- ^ Sent request.
 newReq (Session rc iv pv _) f g = liftIO $ do
     i <- (+1) <$> takeMVar iv
     p <- takeMVar pv
     putMVar pv (insert i g p)
     putMVar iv i
-    writeChan rc (f i)
-    return i
+    let q = f i
+    writeChan rc q
+    return q
 
 -- | New notification, or request with no id tracking.
 newNotif :: MonadIO m
@@ -86,31 +88,26 @@ reqSource (Session rc _ _ _) = do
 -- | Conduit that parses messages from network.
 resConduit :: (MonadIO m)
            => Session q r e v j -- ^ Session state.
-           -> Conduit ByteString m (Either String (Msg j r e v))
-           -- ^ Returns Conduit with parsed data or parsing errors.
+           -> Conduit ByteString m (Msg j r e v)
+           -- ^ Returns Conduit with parsed data.
 resConduit (Session _ _ pv d) =
     stopOnNull pv (maybe True (const False) d) =$= decodeConduit pv d
 
 decodeConduit :: (MonadIO m)
               => MVar (ParserMap r e v)
               -> Maybe (RequestParser j)
-              -> Conduit ByteString m (Either String (Msg j r e v))
+              -> Conduit ByteString m (Msg j r e v)
 decodeConduit pv d = do
     mx <- await
     case mx of
         Nothing -> return ()
         Just x -> do
             p <- liftIO $ takeMVar pv
-            let m = decodeMsg p d x
-            case m of
-                Left e -> yield $ Left e
-                Right (i, t) -> case i of
-                    Nothing -> do
-                        liftIO $ putMVar pv p
-                        yield $ Right t
-                    Just n -> do
-                        liftIO $ putMVar pv $ n `delete` p
-                        yield $ Right t
+            let (i, t) = decodeMsg p d x
+            case i of
+                Nothing -> liftIO $ putMVar pv p
+                Just n -> liftIO $ putMVar pv $ n `delete` p
+            yield t
             decodeConduit pv d
 
 stopOnNull :: MonadIO m
@@ -121,33 +118,35 @@ stopOnNull pv d = do
     b <- null <$> liftIO (readMVar pv)
     unless (d && b) $ await >>= maybe e (\x -> yield x >> stopOnNull pv d)
   where
-    e = error "Connection closed unexpectedly."
+    e = liftIO . throwIO $ ConnectException "Connection closed unexpectedly."
 
 decodeMsg :: ParserMap r e v
           -> Maybe (RequestParser j)
           -> ByteString
-          -> Either String (Maybe Int, Msg j r e v)
-decodeMsg p d x = do
-    y <- eitherDecode (fromStrict x)
+          -> (Maybe Int, Msg j r e v)
+decodeMsg p d x =
     case y of
-        MsgRequest r -> do
-            m <- case d of
-                Nothing -> Left "No parser for requests"
-                Just l -> parseEither l r
-            return $ (Nothing, MsgRequest m)
-        MsgResponse r -> do
-            (i, z) <- decodeRes p r
-            return $ (Just i, MsgResponse z)
+        MsgRequest r ->
+            let m = case d of
+                    Nothing -> throw $
+                        NoRequestsException "No parser for requests"
+                    Just l -> either (throw . ParseException) id $
+                        parseEither l r
+            in (Nothing, MsgRequest m)
+        MsgResponse r ->
+            let (i, z) = decodeRes p r
+            in (Just i, MsgResponse z)
+  where
+    y = either (throw . ParseException) id $ eitherDecode (fromStrict x)
 
 decodeRes :: ParserMap r e v
           -> ResponseValue
-          -> Either String (Int, (Response r e v))
-decodeRes p r = do
-    i <- case resId r of
-        Just n -> numericId n
-        Nothing -> Left "Id is not set."
-    a <- maybeToEither (e i) (lookup i p)
-    t <- parseEither a r
-    return (i, t)
+          -> (Int, (Response r e v))
+decodeRes p r = (i, t)
   where
-    e i = "Parser not found for response id " ++ show i ++ "."
+    i = case resId r of
+        Just n -> either (throw . NoNumericIdException) id $ numericId n
+        Nothing -> throw $ NoIdException "Id is not set."
+    a = maybe (throw . ParserNotFound $ e i) id $ lookup i p
+    t = either (throw . ParseException) id $ parseEither a r
+    e n = "Parser not found for response id " ++ show n ++ "."

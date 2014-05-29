@@ -1,61 +1,26 @@
 {-# LANGUAGE OverloadedStrings, FlexibleInstances #-}
-module Network.Haskoin.Stratum
-( -- * Types
+module Network.Haskoin.Stratum.Types
+( -- * Data
   -- ** Bitcoin
   Balance(..)
 , Coin(..)
 , TxHeight(..)
-  -- ** Stratum data
+  -- ** Stratum
 , StratumNotif(..)
 , StratumQuery(..)
 , StratumResponse(..)
-  -- ** JSON-RPC data for Stratum
+, StratumSession
+  -- ** JSON-RPC
 , MsgStratum
 , NotifStratum
 , RequestStratum
 , ResponseStratum
 , ResultStratum
-  -- ** Stratum Session for JSON-RPC Conduit
-, StratumSession
   -- * Functions
 , toRequest
 , parseResult
 , parseNotif
 , newStratumReq
-  -- * Generic JSON-RPC Conduit
-  -- ** Types
-, Session
-  -- ** Functions
-, initSession
-, newReq
-, newNotif
-, reqSource
-, resConduit
-  -- * Generic JSON-RPC Messages
-  -- ** Types
-, Method
-, ErrorValue
-, RequestValue
-, ResponseValue
-, MsgValue
-, ResultValue
-, Id(..)
-, Result
-, Error(..)
-  -- ** Messages
-, Request(..)
-, Response(..)
-, Msg(..)
-  -- ** Errors
-, errParse
-, errReq
-, errMeth
-, errParams
-, errInternal
-, errStr
-  -- ** Helpers
-, leftStr
-, numericId
 ) where
 
 import Control.Monad (mzero)
@@ -92,8 +57,8 @@ type ResultStratum = Result StratumResponse Value String
 -- | Message from Stratum JSON-RPC server.
 type MsgStratum = Msg StratumNotif StratumResponse Value String
 -- | Session type for JSON-RPC conduit.
-type StratumSession
-    = Session RequestStratum StratumResponse Value String StratumNotif
+type StratumSession =
+    Session RequestStratum StratumResponse Value String StratumNotif
 
 -- | Transaction height and ID pair. Used in history responses.
 data TxHeight = TxHeight
@@ -203,6 +168,13 @@ method (QueryBroadcast _) = "blockchain.transaction.broadcast"
 method (SubAddress _) = "blockchain.address.subscribe"
 
 -- | Create a JSON-RPC request from a Stratum request.
+newStratumReq :: MonadIO m
+              => StratumSession
+              -> StratumQuery
+              -> m RequestStratum
+newStratumReq s q = newReq s (toRequest q) $ \(Response r i) ->
+    parseResult q r >>= \x -> return $ Response x i
+
 toRequest :: StratumQuery          -- ^ Stratum request data.
           -> Int                   -- ^ JSON-RPC request id.
           -> RequestStratum   -- ^ Returns JSON-RPC request object.
@@ -234,24 +206,11 @@ parseNotifHelper "blockchain.address.subscribe" (Array v) = do
 parseNotifHelper _ _ = mzero
 
 -- | Parse notification from JSON-RPC request into Stratum format.
-parseNotif :: RequestValue
-             -- ^ Request to parse.
-             -> Parser NotifStratum
-             -- ^ Parser to Stratum request format
+parseNotif :: RequestValue          -- ^ Request to parse.
+             -> Parser NotifStratum -- ^ Parser to Stratum request format
 parseNotif (Request m (Just p) i) =
     parseNotifHelper m p >>= \s -> return $ Request m (Just s) i
 parseNotif _ = mzero
-
--- | Helper function for Network.Haskoin.JSONRPC.Conduit
-newStratumReq :: MonadIO m
-              => StratumSession
-              -> StratumQuery
-              -> m Int
-newStratumReq s q = newReq s (toRequest q) p
-  where
-    p (Response r i) = do
-        x <- parseResult q r
-        return $ Response x i
 
 txidToJSON :: Hash256 -> Value
 txidToJSON = String . pack . encodeTxid

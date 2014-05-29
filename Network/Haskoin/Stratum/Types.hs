@@ -1,22 +1,21 @@
 {-# LANGUAGE OverloadedStrings, FlexibleInstances #-}
 module Network.Haskoin.Stratum.Types
-( -- * Data
-  -- ** Bitcoin
+( -- ** Bitcoin Data
   Balance(..)
 , Coin(..)
 , TxHeight(..)
-  -- ** Stratum
+  -- ** Stratum Types
 , StratumNotif(..)
 , StratumQuery(..)
 , StratumResponse(..)
 , StratumSession
-  -- ** JSON-RPC
+  -- ** JSON-RPC Stratum Messages
 , MsgStratum
 , NotifStratum
 , RequestStratum
 , ResponseStratum
 , ResultStratum
-  -- * Functions
+  -- ** Helper Functions
 , toRequest
 , parseResult
 , parseNotif
@@ -42,8 +41,8 @@ import qualified Data.Vector as V
 import Data.Word (Word, Word64)
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
-import Network.Haskoin.Stratum.Message
-import Network.Haskoin.Stratum.Conduit
+import Network.Haskoin.Stratum.JSONRPC.Message
+import Network.Haskoin.Stratum.JSONRPC.Conduit
 import Network.Haskoin.Util
 
 -- | JSON-RPC request with Stratum payload.

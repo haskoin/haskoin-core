@@ -4,7 +4,7 @@ module Network.Haskoin.Stratum.Units (tests) where
 import Control.Monad (liftM)
 import Data.Aeson (decode)
 import Data.ByteString.Lazy.Char8 (pack)
-import Network.Haskoin.Stratum.Message
+import Network.Haskoin.Stratum.JSONRPC.Message
 import Test.Framework (Test, testGroup, buildTest)
 import Test.Framework.Providers.HUnit (testCase)
 import qualified Test.HUnit as HUnit

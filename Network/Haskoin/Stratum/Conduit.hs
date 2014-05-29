@@ -10,7 +10,7 @@ module Network.Haskoin.Stratum.Conduit
 , resConduit
 ) where
 
-import Prelude hiding (lines, lookup, map, map, null)
+import Prelude hiding (lines, lookup, map, null)
 import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar (MVar, newMVar, putMVar, readMVar, takeMVar)
 import Control.Concurrent.Chan (Chan, getChanContents, newChan, writeChan)

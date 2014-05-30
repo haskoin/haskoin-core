@@ -19,6 +19,7 @@ module Network.Haskoin.Wallet
 , cmdDumpKeys
 
 -- *Address Commands
+, cmdListAll
 , cmdList
 , cmdGenAddrs
 , cmdGenWithLabel

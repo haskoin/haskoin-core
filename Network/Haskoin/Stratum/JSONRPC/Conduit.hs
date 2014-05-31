@@ -5,12 +5,10 @@ module Network.Haskoin.Stratum.JSONRPC.Conduit
   -- ** Functions
 , initSession
 , newReq
-, newNotif
-, reqSource
+, reqConduit
 , resConduit
 ) where
 
-import Prelude hiding (lines, lookup, map, null)
 import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar (MVar, newMVar, putMVar, readMVar, takeMVar)
 import Control.Concurrent.Chan (Chan, getChanContents, newChan, writeChan)
@@ -20,10 +18,12 @@ import Control.Monad.Trans (MonadIO, liftIO)
 import Data.Aeson (ToJSON, eitherDecode, encode)
 import Data.Aeson.Types (Parser, parseEither)
 import Data.ByteString (ByteString)
-import Data.ByteString.Lazy.Char8 (append, fromStrict, toStrict)
-import Data.Conduit (Conduit, Source, ($=), (=$=), await, yield)
-import Data.Conduit.List (sourceList, map)
-import Data.IntMap.Strict (IntMap, delete, empty, insert, lookup, null)
+import qualified Data.ByteString.Lazy.Char8 as L8
+import Data.Conduit (Conduit, Source, ($=), (=$=))
+import qualified Data.Conduit as Conduit
+import qualified Data.Conduit.List as ConduitList
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap
 import Network.Haskoin.Stratum.Exceptions
 import Network.Haskoin.Stratum.JSONRPC.Message
 
@@ -37,8 +37,7 @@ type RequestParser j = RequestValue -> Parser (Request j)
 type ParserMap r e v = IntMap (ResponseParser r e v)
 
 -- | Session state.
-data Session q r e v j = Session
-    (Chan q)                  -- Requests to be sent.
+data Session r e v j = Session
     (MVar Int)                -- Last id of sent request.
     (MVar (ParserMap r e v))  -- Map of parsers for response result data.
     (Maybe (RequestParser j)) -- Parser for requests or notifications.
@@ -48,49 +47,36 @@ initSession :: MonadIO m
             => Maybe (RequestParser j)
             -- ^ Parse incoming requests and notifications.
             -- Keep connection open.
-            -> m (Session q r e v j)
+            -> m (Session r e v j)
 initSession d = liftIO $ Session
-    <$> newChan
-    <*> newMVar 0
-    <*> newMVar empty
+    <$> newMVar 0
+    <*> newMVar IntMap.empty
     <*> return d
 
--- | Send a new request. Goes to a channel that is read from reqSource.
+-- | Send a new request. Goes to a channel that is read from reqSource.=
 newReq :: MonadIO m
-       => Session q r e v j     -- ^ Session state.
+       => Session r e v j       -- ^ Session state.
        -> (Int -> q)            -- ^ Request builder.
        -> ResponseParser r e v  -- ^ Parser for response.
-       -> m q                   -- ^ Sent request.
-newReq (Session rc iv pv _) f g = liftIO $ do
+       -> m q                   -- ^ Request to send.
+newReq (Session iv pv _) f g = liftIO $ do
     i <- (+1) <$> takeMVar iv
     p <- takeMVar pv
-    putMVar pv (insert i g p)
+    putMVar pv (IntMap.insert i g p)
     putMVar iv i
-    let q = f i
-    writeChan rc q
-    return q
-
--- | New notification, or request with no id tracking.
-newNotif :: MonadIO m
-         => Session q r e v j  -- ^ Session state.
-         -> q                  -- ^ Request to send to the network.
-         -> m ()               -- ^ No meaningful output.
-newNotif (Session rc _ _ _) v = liftIO $ writeChan rc v
+    return (f i)
 
 -- | Source of requests to send to the network.
-reqSource :: (MonadIO m, ToJSON q)
-          => Session q r e v j     -- ^ Session state.
-          -> Source m ByteString   -- ^ Source with serialized requests.
-reqSource (Session rc _ _ _) = do
-    rs <- liftIO $ getChanContents rc
-    sourceList rs $= map (toStrict . flip append "\n" . encode)
+reqConduit :: (MonadIO m, ToJSON q)
+           => Conduit q m ByteString  -- ^ Encode requests in conduit.
+reqConduit = ConduitList.map (L8.toStrict . flip L8.append "\n" . encode)
 
 -- | Conduit that parses messages from network.
 resConduit :: (MonadIO m)
-           => Session q r e v j -- ^ Session state.
+           => Session r e v j -- ^ Session state.
            -> Conduit ByteString m (Msg j r e v)
            -- ^ Returns Conduit with parsed data.
-resConduit (Session _ _ pv d) =
+resConduit (Session _ pv d) =
     stopOnNull pv (maybe True (const False) d) =$= decodeConduit pv d
 
 decodeConduit :: (MonadIO m)
@@ -98,7 +84,7 @@ decodeConduit :: (MonadIO m)
               -> Maybe (RequestParser j)
               -> Conduit ByteString m (Msg j r e v)
 decodeConduit pv d = do
-    mx <- await
+    mx <- Conduit.await
     case mx of
         Nothing -> return ()
         Just x -> do
@@ -106,8 +92,8 @@ decodeConduit pv d = do
             let (i, t) = decodeMsg p d x
             case i of
                 Nothing -> liftIO $ putMVar pv p
-                Just n -> liftIO $ putMVar pv $ n `delete` p
-            yield t
+                Just n -> liftIO $ putMVar pv $ n `IntMap.delete` p
+            Conduit.yield t
             decodeConduit pv d
 
 stopOnNull :: MonadIO m
@@ -115,8 +101,9 @@ stopOnNull :: MonadIO m
            -> Bool
            -> Conduit i m i
 stopOnNull pv d = do
-    b <- null <$> liftIO (readMVar pv)
-    unless (d && b) $ await >>= maybe e (\x -> yield x >> stopOnNull pv d)
+    b <- IntMap.null <$> liftIO (readMVar pv)
+    unless (d && b) $ Conduit.await >>= maybe e
+        (\x -> Conduit.yield x >> stopOnNull pv d)
   where
     e = liftIO . throwIO $ ConnectException "Connection closed unexpectedly."
 
@@ -137,7 +124,7 @@ decodeMsg p d x =
             let (i, z) = decodeRes p r
             in (Just i, MsgResponse z)
   where
-    y = either (throw . ParseException) id $ eitherDecode (fromStrict x)
+    y = either (throw . ParseException) id $ eitherDecode (L8.fromStrict x)
 
 decodeRes :: ParserMap r e v
           -> ResponseValue
@@ -147,6 +134,6 @@ decodeRes p r = (i, t)
     i = case resId r of
         Just n -> either (throw . NoNumericIdException) id $ numericId n
         Nothing -> throw $ NoIdException "Id is not set."
-    a = maybe (throw . ParserNotFound $ e i) id $ lookup i p
+    a = maybe (throw . ParserNotFound $ e i) id $ IntMap.lookup i p
     t = either (throw . ParseException) id $ parseEither a r
     e n = "Parser not found for response id " ++ show n ++ "."

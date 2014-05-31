@@ -56,8 +56,7 @@ type ResultStratum = Result StratumResponse Value String
 -- | Message from Stratum JSON-RPC server.
 type MsgStratum = Msg StratumNotif StratumResponse Value String
 -- | Session type for JSON-RPC conduit.
-type StratumSession =
-    Session RequestStratum StratumResponse Value String StratumNotif
+type StratumSession = Session StratumResponse Value String StratumNotif
 
 -- | Transaction height and ID pair. Used in history responses.
 data TxHeight = TxHeight

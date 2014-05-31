@@ -11,7 +11,6 @@ module Network.Haskoin.Stratum.JSONRPC.Conduit
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent.MVar (MVar, newMVar, putMVar, readMVar, takeMVar)
-import Control.Concurrent.Chan (Chan, getChanContents, newChan, writeChan)
 import Control.Exception (throw, throwIO)
 import Control.Monad (unless)
 import Control.Monad.Trans (MonadIO, liftIO)
@@ -19,7 +18,7 @@ import Data.Aeson (ToJSON, eitherDecode, encode)
 import Data.Aeson.Types (Parser, parseEither)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as L8
-import Data.Conduit (Conduit, Source, ($=), (=$=))
+import Data.Conduit (Conduit, (=$=))
 import qualified Data.Conduit as Conduit
 import qualified Data.Conduit.List as ConduitList
 import Data.IntMap.Strict (IntMap)

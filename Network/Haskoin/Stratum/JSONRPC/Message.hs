@@ -67,7 +67,7 @@ data Error e v -- | Error object in JSON-RPC version 2 format.
                    }
                deriving (Eq, Show)
 
--- | JSON-RPC request on notification.
+-- | JSON-RPC request or notification.
 data Request j = Request
     { reqMethod :: Method   -- ^ Request method.
     , reqParams :: Maybe j  -- ^ Request parameters. Should be Object or Array.

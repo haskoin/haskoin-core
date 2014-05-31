@@ -20,8 +20,11 @@ module Network.Haskoin.Stratum.Types
 , parseResult
 , parseNotif
 , newStratumReq
+, msgToStratumResponse
+, msgToStratumNotif
 ) where
 
+import Control.Exception (throw)
 import Control.Monad (mzero)
 import Control.Monad.Trans (MonadIO)
 import Data.Aeson
@@ -41,6 +44,7 @@ import qualified Data.Vector as V
 import Data.Word (Word, Word64)
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
+import Network.Haskoin.Stratum.Exceptions
 import Network.Haskoin.Stratum.JSONRPC.Message
 import Network.Haskoin.Stratum.JSONRPC.Conduit
 import Network.Haskoin.Util
@@ -229,3 +233,15 @@ hashToJSON = String . pack . bsToHex . encode'
 
 hashParse :: Value -> Parser Hash256
 hashParse = withText "hash" $ return . decode' . fromJust . hexToBS . unpack
+
+msgToStratumResponse :: MsgStratum -> StratumResponse
+msgToStratumResponse (MsgResponse (Response (Right l) _)) = l
+msgToStratumResponse (MsgResponse (Response (Left (ErrVal s)) _)) =
+    throw $ ErrorResponseException s
+msgToStratumResponse (MsgResponse (Response (Left (ErrObj i s _)) _)) =
+    throw $ ErrorResponseException $ show i ++ ": " ++ s
+msgToStratumResponse _ = throw $ ParseException "Unexpected message type"
+
+msgToStratumNotif :: MsgStratum -> StratumNotif
+msgToStratumNotif (MsgRequest (Request _ (Just p) Nothing)) = p
+msgToStratumNotif _ = throw $ ParseException "Unexpected message type"

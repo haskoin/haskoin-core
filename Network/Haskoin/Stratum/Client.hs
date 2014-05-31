@@ -52,14 +52,8 @@ queryStratumTCP cs qs = runStratumTCP False cs $ do
     rs <- mapM genReq qs
     st <- getStratumClient
     lift $ ConduitList.sourceList rs $$ stratumSink st
-    lift $ stratumSrc st $= ConduitList.map m $$ ConduitList.consume
-  where
-    m (MsgResponse (Response p _)) = r p
-    m _ = throw $ ParseException "Unexpected message type"
-    r (Right l) = l
-    r (Left (ErrVal s)) = throw $ ErrorResponseException s
-    r (Left (ErrObj i s _)) = throw $ ErrorResponseException $
-        "Error " ++ show i ++ ": " ++ s
+    lift $ stratumSrc st $= ConduitList.map msgToStratumResponse
+                         $$ ConduitList.consume
 
 -- | Execute Stratum TCP client.
 runStratumTCP :: (MonadIO m, MonadBaseControl IO m)

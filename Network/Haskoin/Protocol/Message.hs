@@ -58,7 +58,7 @@ data Message
     | MPing Ping 
     | MPong Pong 
     | MAlert Alert
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 instance Binary Message where
 

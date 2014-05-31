@@ -19,7 +19,7 @@ data Block =
           , blockCoinbaseTx :: !CoinbaseTx
             -- | List of transactions pertaining to this block.
           , blockTxns       :: ![Tx]
-          } deriving (Eq, Show)
+          } deriving (Eq, Show, Read)
 
 instance Binary Block where
 

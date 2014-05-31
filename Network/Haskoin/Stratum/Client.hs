@@ -8,7 +8,6 @@ module Network.Haskoin.Stratum.Client
 , runStratumTCP
 ) where
 
-import Control.Exception (throw)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.Trans (MonadIO, lift, liftIO)
 import Control.Monad.Trans.Control (MonadBaseControl, liftBaseWith, restoreM)
@@ -21,10 +20,8 @@ import Data.Conduit.Network
     , appSink
     , runTCPClient
     )
-import Network.Haskoin.Stratum.JSONRPC.Message
 import Network.Haskoin.Stratum.JSONRPC.Conduit
 import Network.Haskoin.Stratum.Types
-import Network.Haskoin.Stratum.Exceptions
 
 -- | Stratum client context.
 type StratumClient m = ReaderT (StratumClientState m, StratumSession) m

@@ -6,11 +6,12 @@ module Network.Haskoin.Stratum.Client
 , getStratumClient
 , queryStratumTCP
 , runStratumTCP
+, genReq
 ) where
 
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.Trans (MonadIO, lift, liftIO)
-import Control.Monad.Trans.Control (MonadBaseControl, liftBaseWith, restoreM)
+import Control.Monad.Trans.Control (MonadBaseControl, control)
 import Data.Conduit (Consumer, Producer, ($$), ($=), (=$), transPipe)
 import qualified Data.Conduit.Binary as ConduitBinary
 import qualified Data.Conduit.List as ConduitList
@@ -59,14 +60,13 @@ runStratumTCP :: (MonadIO m, MonadBaseControl IO m)
               -> StratumClient m a  -- ^ Computation to run.
               -> m a                 -- ^ Result from computation.
 runStratumTCP n cs cl = do
-    m <- liftBaseWith $ \r -> do
+    control $ \r -> do
         runTCPClient cs $ \ad -> do
             s <- sess
             let snk = transPipe liftIO $ reqConduit =$ appSink ad
                 src = transPipe liftIO $ appSource ad $= ConduitBinary.lines
                     $= resConduit s
             r $ runReaderT cl (StratumClientStateTCP src snk, s)
-    restoreM m
   where
     sess | n = initSession $ Just parseNotif
          | otherwise = initSession Nothing

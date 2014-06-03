@@ -388,6 +388,7 @@ instance Binary ScriptOp where
                     putWord32le $ fromIntegral len
             putByteString payload
 
+        -- Constants
         OP_0                 -> putWord8 0x00
         OP_1NEGATE           -> putWord8 0x4f
         OP_1                 -> putWord8 0x51
@@ -406,15 +407,115 @@ instance Binary ScriptOp where
         OP_14                -> putWord8 0x5e
         OP_15                -> putWord8 0x5f
         OP_16                -> putWord8 0x60
+
+        -- Crypto Constants
+        (OP_PUBKEY pk)       -> putWord8 0xfe >> put pk
+        (OP_PUBKEYHASH pkh)  -> putWord8 0xfd >> put pkh
+
+        -- Invalid Opcodes (maybe output the actual opcode?)
+        (OP_INVALIDOPCODE _) -> putWord8 0xff
+
+        -- Flow Control
+        OP_NOP               -> putWord8 0x61
+        -- OP_VER            -> putWord8 0x62
+        OP_IF                -> putWord8 0x63
+        OP_NOTIF             -> putWord8 0x64
+        -- OP_VERIF          -> putWord8 0x65
+        -- OP_VERNOTIF       -> putWord8 0x66
+        OP_ELSE              -> putWord8 0x67
+        OP_ENDIF             -> putWord8 0x68
         OP_VERIFY            -> putWord8 0x69
+        OP_RETURN            -> putWord8 0x6a
+
+        -- Stack Operations
+        OP_TOALTSTACK        -> putWord8 0x6b
+        OP_FROMALTSTACK      -> putWord8 0x6c
+        OP_2DROP             -> putWord8 0x6d
+        OP_2DUP              -> putWord8 0x6e
+        OP_3DUP              -> putWord8 0x6f
+        OP_2OVER             -> putWord8 0x70
+        OP_2ROT              -> putWord8 0x71
+        OP_2SWAP             -> putWord8 0x72
+        OP_IFDUP             -> putWord8 0x73
+        OP_DEPTH             -> putWord8 0x74
+        OP_DROP              -> putWord8 0x75
         OP_DUP               -> putWord8 0x76
+        OP_NIP               -> putWord8 0x77
+        OP_OVER              -> putWord8 0x78
+        OP_PICK              -> putWord8 0x79
+        OP_ROLL              -> putWord8 0x7a
+        OP_ROT               -> putWord8 0x7b
+        OP_SWAP              -> putWord8 0x7c
+        OP_TUCK              -> putWord8 0x7d
+
+        -- Splice
+        OP_CAT               -> putWord8 0x7e
+        OP_SUBSTR            -> putWord8 0x7f
+        OP_LEFT              -> putWord8 0x80
+        OP_RIGHT             -> putWord8 0x81
+        OP_SIZE              -> putWord8 0x82
+
+        -- Bitwise Logic
+        OP_INVERT            -> putWord8 0x83
+        OP_AND               -> putWord8 0x84
+        OP_OR                -> putWord8 0x85
+        OP_XOR               -> putWord8 0x86
         OP_EQUAL             -> putWord8 0x87
         OP_EQUALVERIFY       -> putWord8 0x88
+
+        -- Arithmetic
+        OP_1ADD              -> putWord8 0x8b
+        OP_1SUB              -> putWord8 0x8c
+        OP_2MUL              -> putWord8 0x8d
+        OP_2DIV              -> putWord8 0x8e
+        OP_NEGATE            -> putWord8 0x8f
+        OP_ABS               -> putWord8 0x90
+        OP_NOT               -> putWord8 0x91
+        OP_0NOTEQUAL         -> putWord8 0x92
+        OP_ADD               -> putWord8 0x93
+        OP_SUB               -> putWord8 0x94
+        OP_MUL               -> putWord8 0x95
+        OP_DIV               -> putWord8 0x96
+        OP_MOD               -> putWord8 0x97
+        OP_LSHIFT            -> putWord8 0x98
+        OP_RSHIFT            -> putWord8 0x99
+        OP_BOOLAND           -> putWord8 0x9a
+        OP_BOOLOR            -> putWord8 0x9b
+        OP_NUMEQUAL          -> putWord8 0x9c
+        OP_NUMEQUALVERIFY    -> putWord8 0x9d
+        OP_NUMNOTEQUAL       -> putWord8 0x9e
+        OP_LESSTHAN          -> putWord8 0x9f
+        OP_GREATERTHAN       -> putWord8 0xa0
+        OP_LESSTHANOREQUAL   -> putWord8 0xa1
+        OP_GREATERTHANOREQUAL-> putWord8 0xa2
+        OP_MIN               -> putWord8 0xa3
+        OP_MAX               -> putWord8 0xa4
+        OP_WITHIN            -> putWord8 0xa5
+
+        -- Crypto
+        OP_RIPEMD160         -> putWord8 0xa6
+        OP_SHA1              -> putWord8 0xa7
+        OP_SHA256            -> putWord8 0xa8
         OP_HASH160           -> putWord8 0xa9
+        OP_HASH256           -> putWord8 0xaa
+        OP_CODESEPARATOR     -> putWord8 0xab
         OP_CHECKSIG          -> putWord8 0xac
+        OP_CHECKSIGVERIFY    -> putWord8 0xad
         OP_CHECKMULTISIG     -> putWord8 0xae
-        (OP_PUBKEY pk)       -> putWord8 0xfe >> put pk
-        (OP_INVALIDOPCODE _) -> putWord8 0xff
+        OP_CHECKMULTISIGVERIFY -> putWord8 0xaf
+
+        -- More NOPs
+        OP_NOP1              -> putWord8 0xb0
+        OP_NOP2              -> putWord8 0xb1
+        OP_NOP3              -> putWord8 0xb2
+        OP_NOP4              -> putWord8 0xb3
+        OP_NOP5              -> putWord8 0xb4
+        OP_NOP6              -> putWord8 0xb5
+        OP_NOP7              -> putWord8 0xb6
+        OP_NOP8              -> putWord8 0xb7
+        OP_NOP9              -> putWord8 0xb8
+        OP_NOP10             -> putWord8 0xb9
+
 
 -- | Optimally encode data using one of the 4 types of data pushing opcodes
 opPushData :: BS.ByteString -> ScriptOp

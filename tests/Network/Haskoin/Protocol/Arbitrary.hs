@@ -5,7 +5,6 @@
 module Network.Haskoin.Protocol.Arbitrary () where
 
 import Test.QuickCheck
-import Network.Haskoin.Util.Arbitrary (nonEmptyBS)
 import Network.Haskoin.Crypto.Arbitrary()
 
 import Control.Monad

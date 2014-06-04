@@ -11,16 +11,14 @@ import Control.Applicative ((<$>))
 import Data.Word (Word8)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get 
-    ( Get
-    , isEmpty
+    ( isEmpty
     , getWord8
     , getWord16le
     , getWord32le
     , getByteString
     )
 import Data.Binary.Put 
-    ( Put 
-    , putWord8
+    ( putWord8
     , putWord16le
     , putWord32le
     , putByteString
@@ -29,10 +27,6 @@ import qualified Data.ByteString as BS
     ( ByteString
     , length
     )
-
-import Network.Haskoin.Protocol.VarInt
-import Network.Haskoin.Crypto.Keys 
-import Network.Haskoin.Util 
 
 -- | Data type representing a transaction script. Scripts are defined as lists
 -- of script operators 'ScriptOp'. Scripts are used to:

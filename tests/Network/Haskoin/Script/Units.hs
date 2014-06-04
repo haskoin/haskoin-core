@@ -7,7 +7,6 @@ import Test.Framework.Providers.HUnit (testCase)
 import Data.Maybe (fromJust)
 
 import Network.Haskoin.Script
-import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 

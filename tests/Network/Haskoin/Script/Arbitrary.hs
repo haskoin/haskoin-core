@@ -23,7 +23,6 @@ import Data.Word (Word8)
 
 import Network.Haskoin.Util.Arbitrary (nonEmptyBS)
 import Network.Haskoin.Script
-import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 
 instance Arbitrary Script where

@@ -1,37 +1,144 @@
-module Network.Haskoin.Protocol.Message ( Message(..) ) where
+module Network.Haskoin.Protocol.Message 
+( Message(..) 
+, MessageHeader(..) 
+, MessageCommand(..)
+) where
 
 import Control.Monad (unless)
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>),(<*>))
 
+import Data.Word (Word32)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get 
     ( lookAhead
     , getByteString
+    , getWord32le
+    , getWord32be
     )
-import Data.Binary.Put (putByteString)
+import Data.Binary.Put 
+    ( putByteString
+    , putWord32le
+    , putWord32be
+    )
 import qualified Data.ByteString as BS 
-    ( length 
+    ( ByteString
+    , takeWhile
+    , length 
     , append
     , empty
     )
 
-import Network.Haskoin.Protocol.MessageHeader
-import Network.Haskoin.Protocol.Version
-import Network.Haskoin.Protocol.Addr
-import Network.Haskoin.Protocol.Inv
-import Network.Haskoin.Protocol.GetData
-import Network.Haskoin.Protocol.NotFound
-import Network.Haskoin.Protocol.GetBlocks
-import Network.Haskoin.Protocol.GetHeaders
-import Network.Haskoin.Protocol.Tx
-import Network.Haskoin.Protocol.Block
-import Network.Haskoin.Protocol.Headers
-import Network.Haskoin.Protocol.BloomFilter
-import Network.Haskoin.Protocol.Ping
-import Network.Haskoin.Protocol.Alert
+import Network.Haskoin.Protocol.Types
 
 import Network.Haskoin.Util 
 import Network.Haskoin.Crypto.Hash 
+
+-- | A 'MessageCommand' is included in a 'MessageHeader' in order to identify
+-- the type of message present in the payload. This allows the message 
+-- de-serialization code to know how to decode a particular message payload.
+-- Every valid 'Message' constructor has a corresponding 'MessageCommand'
+-- constructor.
+data MessageCommand 
+    = MCVersion 
+    | MCVerAck 
+    | MCAddr 
+    | MCInv 
+    | MCGetData 
+    | MCNotFound 
+    | MCGetBlocks 
+    | MCGetHeaders 
+    | MCTx 
+    | MCBlock 
+    | MCHeaders 
+    | MCGetAddr 
+    | MCFilterLoad
+    | MCFilterAdd
+    | MCFilterClear
+    | MCPing 
+    | MCPong 
+    | MCAlert
+    deriving (Eq, Show, Read)
+
+instance Binary MessageCommand where
+    
+    get = go =<< getByteString 12
+      where 
+        go bs = case unpackCommand bs of
+            "version"     -> return MCVersion
+            "verack"      -> return MCVerAck
+            "addr"        -> return MCAddr
+            "inv"         -> return MCInv
+            "getdata"     -> return MCGetData
+            "notfound"    -> return MCNotFound
+            "getblocks"   -> return MCGetBlocks
+            "getheaders"  -> return MCGetHeaders
+            "tx"          -> return MCTx
+            "block"       -> return MCBlock
+            "headers"     -> return MCHeaders
+            "getaddr"     -> return MCGetAddr
+            "filterload"  -> return MCFilterLoad
+            "filteradd"   -> return MCFilterAdd
+            "filterclear" -> return MCFilterClear
+            "ping"        -> return MCPing
+            "pong"        -> return MCPong
+            "alert"       -> return MCAlert
+            _             -> fail "get MessageCommand : Invalid command"
+
+    put mc = putByteString $ packCommand $ case mc of
+        MCVersion     -> "version"
+        MCVerAck      -> "verack"
+        MCAddr        -> "addr"
+        MCInv         -> "inv"
+        MCGetData     -> "getdata"
+        MCNotFound    -> "notfound"
+        MCGetBlocks   -> "getblocks"
+        MCGetHeaders  -> "getheaders"
+        MCTx          -> "tx"
+        MCBlock       -> "block"
+        MCHeaders     -> "headers"
+        MCGetAddr     -> "getaddr"
+        MCFilterLoad  -> "filterload"
+        MCFilterAdd   -> "filteradd"
+        MCFilterClear -> "filterclear"
+        MCPing        -> "ping"
+        MCPong        -> "pong"
+        MCAlert       -> "alert"
+
+packCommand :: String -> BS.ByteString
+packCommand s = stringToBS $ take 12 $ s ++ repeat '\NUL'
+
+unpackCommand :: BS.ByteString -> String
+unpackCommand bs = bsToString $ BS.takeWhile (/= 0) bs
+
+-- | Data type representing the header of a 'Message'. All messages sent between
+-- nodes contain a message header.
+data MessageHeader = 
+    MessageHeader {
+                  -- | Network magic bytes. It is used to differentiate 
+                  -- messages meant for different bitcoin networks, such as
+                  -- prodnet and testnet.
+                    headMagic       :: !Word32
+                  -- | Message command identifying the type of message.
+                  -- included in the payload.
+                  , headCmd         :: !MessageCommand
+                  -- | Byte length of the payload.
+                  , headPayloadSize :: !Word32
+                  -- | Checksum of the payload. 
+                  , headChecksum    :: !CheckSum32
+                  } deriving (Eq, Show, Read)
+
+instance Binary MessageHeader where
+
+    get = MessageHeader <$> getWord32be
+                        <*> get
+                        <*> getWord32le
+                        <*> get
+
+    put (MessageHeader m c l chk) = do
+        putWord32be m
+        put         c
+        putWord32le l
+        put         chk
 
 -- | The 'Message' type is used to identify all the valid messages that can be
 -- sent between bitcoin peers. Only values of type 'Message' will be accepted

@@ -44,10 +44,10 @@ runVerifyVec (is,bsTx) i =
     where name = "    > Verify transaction " ++ (show i)
           tx  = decode' (fromJust $ hexToBS bsTx)
           f (o1,o2,bsScript) = 
-              let ops = runGet' getScriptOps (fromJust $ hexToBS bsScript)
-                  op  = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS o1) 
+              let s  = decode' $ fromJust $ hexToBS bsScript
+                  op = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS o1) 
                                  (runGet' getWord32le $ fromJust $ hexToBS o2)
-                  in (Script ops,op)
+                  in (s,op)
 
 -- These test vectors have been generated from bitcoind raw transaction api
 

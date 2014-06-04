@@ -69,8 +69,8 @@ genRegularInput :: Gen TxIn
 genRegularInput = do
     op <- arbitrary
     sq <- arbitrary
-    sc <- oneof [ encodeScriptHash <$> genMulSigInput
-                , encodeInput <$> (SpendPKHash <$> arbitrary <*> genPubKeyC)
+    sc <- oneof [ encodeScriptHashBS <$> genMulSigInput
+                , encodeInputBS <$> (SpendPKHash <$> arbitrary <*> genPubKeyC)
                 ]
     return $ TxIn op sc sq
 
@@ -82,7 +82,7 @@ genAddrOutput = do
     sc <- oneof [ (PayPKHash . pubKeyAddr) <$> arbitrary
                 , (PayScriptHash . scriptAddr) <$> arbitrary
                 ]
-    return $ TxOut v $ encodeOutput sc
+    return $ TxOut v $ encodeOutputBS sc
 
 instance Arbitrary RegularTx where
     arbitrary = do

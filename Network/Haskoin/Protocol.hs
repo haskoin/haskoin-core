@@ -25,18 +25,6 @@ module Network.Haskoin.Protocol
 , InvType(..)
 , NotFound(..)
 
-  -- *Scripts
-  -- | More informations on scripts is available here:
-  -- <http://en.bitcoin.it/wiki/Script>
-, Script(..)
-, ScriptOp(..)
-, PushDataType(..)
-, opPushData
-, getScriptOps
-, putScriptOps
-, decodeScriptOps
-, encodeScriptOps
-
   -- *Transactions
 , Tx(..)
 , txid
@@ -90,7 +78,6 @@ import Network.Haskoin.Protocol.MessageHeader
 import Network.Haskoin.Protocol.NetworkAddress
 import Network.Haskoin.Protocol.NotFound
 import Network.Haskoin.Protocol.Ping
-import Network.Haskoin.Protocol.Script
 import Network.Haskoin.Protocol.Tx
 import Network.Haskoin.Protocol.VarInt
 import Network.Haskoin.Protocol.VarString

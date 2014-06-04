@@ -21,7 +21,7 @@ import Control.Monad.Trans  (lift)
 import Data.Maybe (catMaybes, maybeToList, fromMaybe)
 import Data.List (sortBy, find)
 import Data.Word (Word64)
-import qualified Data.ByteString as BS (length, replicate)
+import qualified Data.ByteString as BS (length, replicate, empty, null)
 
 import Network.Haskoin.Util
 import Network.Haskoin.Crypto
@@ -151,8 +151,8 @@ buildAddrTx xs ys = buildTx xs =<< mapM f ys
 -- and a list of 'ScriptOutput' and amounts as outputs.
 buildTx :: [OutPoint] -> [(ScriptOutput,Word64)] -> Either String Tx
 buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
-    where fi outPoint = TxIn outPoint (Script []) maxBound
-          fo (o,v) | v <= 2100000000000000 = return $ TxOut v $ encodeOutput o
+    where fi outPoint = TxIn outPoint BS.empty maxBound
+          fo (o,v) | v <= 2100000000000000 = return $ TxOut v $ encodeOutputBS o
                    | otherwise = Left $ "buildTx: Invalid amount " ++ (show v)
 
 -- | Data type used to specify the signing parameters of a transaction input.
@@ -242,12 +242,12 @@ detSignTxIn txin sigi tx i keys = do
 -- is not empty, we consider it complete.
 toBuildTxIn :: TxIn -> Build TxIn
 toBuildTxIn txin@(TxIn _ s _)
-    | null $ scriptOps s = Partial txin
-    | otherwise = case decodeScriptHash s of
+    | BS.null s = Partial txin
+    | otherwise = case decodeScriptHashBS s of
         Right (ScriptHashInput (SpendMulSig xs r) _) -> 
             guardPartial (length xs == r) >> return txin
         Right _ -> return txin
-        Left _ -> case decodeInput s of
+        Left _ -> case decodeInputBS s of
             Right (SpendMulSig xs r) ->
                 guardPartial (length xs == r) >> return txin
             _ -> return txin
@@ -276,13 +276,13 @@ buildTxInSH :: BuildFunction
 buildTxInSH txin tx rdm i pubs sigs = do
     s   <- scriptInput <$> buildTxIn txin tx rdm i pubs sigs
     res <- either emptyIn return $ 
-        encodeScriptHash . (flip ScriptHashInput rdm) <$> decodeInput s
+        encodeScriptHashBS . (flip ScriptHashInput rdm) <$> decodeInputBS s
     return txin{ scriptInput = res }
-    where emptyIn = const $ Partial $ Script []
+    where emptyIn = const $ Partial BS.empty
 
 buildTxIn :: BuildFunction
 buildTxIn txin tx out i pubs sigs 
-    | null sigs = Partial txin{ scriptInput = Script [] }
+    | null sigs = Partial txin{ scriptInput = BS.empty }
     | otherwise = buildRes <$> case out of
         PayPK _     -> return $ SpendPK $ head sigs
         PayPKHash _ -> return $ SpendPKHash (head sigs) (head pubs)
@@ -291,12 +291,12 @@ buildTxIn txin tx out i pubs sigs
             guardPartial $ length mSigs == r
             return $ SpendMulSig mSigs r
         _ -> Broken "buildTxIn: Can't sign a P2SH script here"
-    where buildRes res = txin{ scriptInput = encodeInput res }
+    where buildRes res = txin{ scriptInput = encodeInputBS res }
           aSigs = concat
             [ sigs 
-            , case decodeScriptHash $ scriptInput txin of
+            , case decodeScriptHashBS $ scriptInput txin of
                 Right (ScriptHashInput (SpendMulSig xs _) _) -> xs
-                _ -> case decodeInput $ scriptInput txin of
+                _ -> case decodeInputBS $ scriptInput txin of
                         Right (SpendMulSig xs _) -> xs
                         _ -> []
             ]
@@ -355,8 +355,8 @@ countMulSig tx so i (pub:pubs) sigs@(TxSignature sig sh:rest)
 decodeVerifySigInput :: Script -> TxIn -> Maybe (ScriptOutput, ScriptInput)
 decodeVerifySigInput so (TxIn _ si _ ) = case decodeOutput so of
     Right (PayScriptHash a) -> do
-        (ScriptHashInput inp rdm) <- eitherToMaybe $ decodeScriptHash si
+        (ScriptHashInput inp rdm) <- eitherToMaybe $ decodeScriptHashBS si
         guard $ scriptAddr rdm == a
         return (rdm,inp)
-    out -> eitherToMaybe $ liftM2 (,) out (decodeInput si)
+    out -> eitherToMaybe $ liftM2 (,) out (decodeInputBS si)
 

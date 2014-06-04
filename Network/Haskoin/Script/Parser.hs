@@ -7,11 +7,17 @@ module Network.Haskoin.Script.Parser
 , scriptRecipient
 , scriptSender
 , encodeInput
+, encodeInputBS
 , decodeInput
+, decodeInputBS
 , encodeOutput
+, encodeOutputBS
 , decodeOutput
+, decodeOutputBS
 , encodeScriptHash
+, encodeScriptHashBS
 , decodeScriptHash
+, decodeScriptHashBS
 , sortMulSig
 , intToScriptOp
 , scriptOpToInt
@@ -28,13 +34,17 @@ import Control.Monad (liftM2)
 import Control.Applicative ((<$>),(<*>))
 
 import Data.List (sortBy)
-import qualified Data.ByteString as BS (head, singleton)
+import qualified Data.ByteString as BS 
+    ( ByteString
+    , head
+    , singleton
+    )
 
 import Network.Haskoin.Util
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Base58
 import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Protocol.Script
+import Network.Haskoin.Script.Types
 import Network.Haskoin.Script.SigHash
 
 -- | Data type describing standard transaction output scripts. Output scripts
@@ -76,9 +86,7 @@ isPayScriptHash _ = False
 -- | Computes a script address from a script output. This address can be used
 -- in a pay to script hash output.
 scriptAddr :: ScriptOutput -> Address
-scriptAddr = ScriptAddress . hash160 . hash256BS . toBS
-  where 
-    toBS = encodeScriptOps . encodeOutput 
+scriptAddr = ScriptAddress . hash160 . hash256BS . encodeOutputBS
 
 -- | Sorts the public keys of a multisignature output in ascending order by
 -- comparing their serialized representations. This feature allows for easier
@@ -121,6 +129,10 @@ encodeOutput s = Script $ case s of
         (PubKeyAddress _) -> 
             error "encodeOutput: PubKeyAddress is invalid in PayScriptHash"
 
+-- | Similar to 'encodeOutput' but encodes to a ByteString
+encodeOutputBS :: ScriptOutput -> BS.ByteString
+encodeOutputBS = encode' . encodeOutput
+
 -- | Tries to decode a 'ScriptOutput' from a 'Script'. This can fail if the
 -- script is not recognized as any of the standard output types.
 decodeOutput :: Script -> Either String ScriptOutput
@@ -135,6 +147,10 @@ decodeOutput s = case scriptOps s of
         (PayScriptHash . ScriptAddress) <$> decodeToEither bs
     -- Pay to MultiSig Keys
     _ -> matchPayMulSig s
+
+-- | Similar to 'decodeOutput' but decodes from a ByteString
+decodeOutputBS :: BS.ByteString -> Either String ScriptOutput
+decodeOutputBS = (decodeOutput =<<) . decodeToEither
 
 -- Match [ OP_N, PubKey1, ..., PubKeyM, OP_M, OP_CHECKMULTISIG ]
 matchPayMulSig :: Script -> Either String ScriptOutput
@@ -233,6 +249,10 @@ encodeInput s = Script $ case s of
                 in OP_0 : sigs ++ replicate (r - length ts) OP_0
         | otherwise -> error "SpendMulSig: Bad multisig parameters"
 
+-- | Similar to 'encodeInput' but encodes to a ByteString
+encodeInputBS :: ScriptInput -> BS.ByteString
+encodeInputBS = encode' . encodeInput
+
 -- | Decodes a 'ScriptInput' from a 'Script'. This function fails if the 
 -- script can not be parsed as a standard script input.
 decodeInput :: Script -> Either String ScriptInput
@@ -242,6 +262,10 @@ decodeInput s = case scriptOps s of
         liftM2 SpendPKHash (decodeSig sig) (decodeToEither p)
     (OP_0 : xs) -> matchSpendMulSig $ Script xs
     _ -> Left "decodeInput: Script did not match input templates"
+
+-- | Similar to 'decodeInput' but decodes from a ByteString
+decodeInputBS :: BS.ByteString -> Either String ScriptInput
+decodeInputBS = (decodeInput =<<) . decodeToEither 
 
 matchSpendMulSig :: Script -> Either String ScriptInput
 matchSpendMulSig (Script ops) = 
@@ -271,10 +295,14 @@ data ScriptHashInput = ScriptHashInput
 -- 'ScriptOp' can can be used to build a 'Tx'.
 encodeScriptHash :: ScriptHashInput -> Script
 encodeScriptHash (ScriptHashInput i o) =
-    Script $ (scriptOps si) ++ [opPushData $ encodeScriptOps so]
+    Script $ (scriptOps si) ++ [opPushData so]
   where 
     si = encodeInput i
-    so = encodeOutput o
+    so = encodeOutputBS o
+
+-- | Similar to 'encodeScriptHash' but encodes to a ByteString
+encodeScriptHashBS :: ScriptHashInput -> BS.ByteString
+encodeScriptHashBS = encode' . encodeScriptHash
 
 -- | Tries to decode a 'ScriptHashInput' from a 'Script'. This function fails
 -- if the script can not be parsed as a script hash input.
@@ -282,6 +310,10 @@ decodeScriptHash :: Script -> Either String ScriptHashInput
 decodeScriptHash (Script ops) = case splitAt (length ops - 1) ops of
     (is,[OP_PUSHDATA bs _]) -> 
         ScriptHashInput <$> (decodeInput $ Script is) 
-                        <*> (decodeOutput =<< decodeScriptOps bs)
+                        <*> (decodeOutputBS bs)
     _ -> Left "decodeScriptHash: Script did not match input template"
+
+-- | Similar to 'decodeScriptHash' but decodes from a ByteString
+decodeScriptHashBS :: BS.ByteString -> Either String ScriptHashInput
+decodeScriptHashBS = (decodeScriptHash =<<) . decodeToEither 
 

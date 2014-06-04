@@ -36,7 +36,7 @@ testBuildAddrTx os a v
         x@(ScriptAddress _) -> Right (PayScriptHash x) == out
     | otherwise = isLeft tx
     where tx  = buildAddrTx os [(addrToBase58 a,v)]
-          out = decodeOutput $ scriptOutput $ txOut (fromRight tx) !! 0
+          out = decodeOutputBS $ scriptOutput $ txOut (fromRight tx) !! 0
 
 testGuessSize :: RegularTx -> Bool
 testGuessSize (RegularTx tx) =
@@ -46,14 +46,14 @@ testGuessSize (RegularTx tx) =
     where delta = pki + (sum $ map fst msi)
           guess = guessTxSize pki msi pkout msout
           len = BS.length $ encode' tx
-          rIns = map (decodeInput . scriptInput) $ txIn tx
-          mIns = map (decodeScriptHash . scriptInput) $ txIn tx
+          rIns = map (decodeInputBS . scriptInput) $ txIn tx
+          mIns = map (decodeScriptHashBS . scriptInput) $ txIn tx
           pki = length $ filter (isSpendPKHash . fromRight) $ 
                     filter isRight rIns
           msi = concat $ map (shData . fromRight) $ filter isRight mIns
           shData (ScriptHashInput _ (PayMulSig keys r)) = [(r,length keys)]
           shData _ = []
-          out  = map (fromRight . decodeOutput . scriptOutput) $ txOut tx
+          out  = map (fromRight . decodeOutputBS . scriptOutput) $ txOut tx
           pkout = length $ filter isPayPKHash out
           msout = length $ filter isPayScriptHash out
 

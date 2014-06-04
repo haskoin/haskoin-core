@@ -32,7 +32,6 @@ import qualified Data.ByteString as BS
     )
 
 import Network.Haskoin.Protocol.VarInt
-import Network.Haskoin.Protocol.Script
 import Network.Haskoin.Crypto.Hash 
 import Network.Haskoin.Util 
 
@@ -128,7 +127,7 @@ data TxIn =
            prevOutput   :: !OutPoint
            -- | Script providing the requirements of the previous transaction
            -- output to spend those coins.
-         , scriptInput  :: !Script
+         , scriptInput  :: !BS.ByteString
            -- | Transaction version as defined by the sender of the
            -- transaction. The intended use is for replacing transactions with
            -- new information before the transaction is included in a block.
@@ -136,8 +135,17 @@ data TxIn =
          } deriving (Eq, Show, Read)
 
 instance Binary TxIn where
-    get = TxIn <$> get <*> get <*> getWord32le
-    put (TxIn o s q) = put o >> put s >> putWord32le q
+
+    get = 
+        TxIn <$> get <*> (readBS =<< get) <*> getWord32le
+      where
+        readBS (VarInt len) = getByteString $ fromIntegral len
+
+    put (TxIn o s q) = do
+        put o 
+        put $ VarInt $ fromIntegral $ BS.length s
+        putByteString s
+        putWord32le q
 
 -- | Data type representing a transaction output.
 data TxOut = 
@@ -145,16 +153,22 @@ data TxOut =
             -- | Transaction output value.
             outValue     :: !Word64
             -- | Script specifying the conditions to spend this output.
-          , scriptOutput :: !Script
+          , scriptOutput :: !BS.ByteString
           } deriving (Eq, Show, Read)
 
 instance Binary TxOut where
+
     get = do
         val <- getWord64le
         unless (val <= 2100000000000000) $ fail $
             "Invalid TxOut value: " ++ (show val)
-        TxOut val <$> get
-    put (TxOut o s) = putWord64le o >> put s
+        (VarInt len) <- get
+        TxOut val <$> (getByteString $ fromIntegral len)
+
+    put (TxOut o s) = do
+        putWord64le o 
+        put $ VarInt $ fromIntegral $ BS.length s
+        putByteString s
 
 -- | The OutPoint is used inside a transaction input to reference the previous
 -- transaction output that it is spending.

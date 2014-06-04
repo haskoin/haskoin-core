@@ -34,7 +34,7 @@ import Data.Aeson.Types
     , withObject
     )
 import qualified Data.HashMap.Strict as H
-import Data.Maybe (fromJust, isJust)
+import Data.Maybe (fromJust, isJust, fromMaybe)
 import qualified Data.Text as T
 import Data.Typeable (Typeable)
 import qualified Data.Vector as V
@@ -146,11 +146,11 @@ instance FromJSON RawSigInput where
             vout <- obj .: "vout" :: Parser Word32
             scp  <- obj .: "scriptPubKey" :: Parser String
             rdm  <- obj .:? "redeemScript" :: Parser (Maybe String)
-            let s = decodeScriptOps =<< maybeToEither "Hex parsing failed" 
+            let s = decodeToEither =<< maybeToEither "Hex parsing failed" 
                         (hexToBS scp)
                 i = maybeToEither "Failed to decode txid" (decodeTxid tid)
                 o = OutPoint <$> i <*> (return vout)
-                r = decodeScriptOps =<< maybeToEither "Hex parsing failed" 
+                r = decodeToEither =<< maybeToEither "Hex parsing failed" 
                         (hexToBS $ fromJust rdm)
                 res | isJust rdm = SigInputSH <$> s <*> o <*> r
                     | otherwise  = SigInput <$> s <*> o
@@ -196,25 +196,25 @@ instance ToJSON OutPoint where
 instance ToJSON TxOut where
     toJSON (TxOut v s) = object $
         [ "Value" .= v
-        , "Raw Script" .= bsToHex (encodeScriptOps s)
-        , "Script" .= s
+        , "Raw Script" .= bsToHex (encode' s)
+        , "Script" .= (fromMaybe (Script []) $ decodeToMaybe s)
         ] ++ scptPair 
       where scptPair = 
               either (const [])
                      (\out -> ["Decoded Script" .= out]) 
-                     (decodeOutput s)
+                     (decodeOutputBS s)
 
 instance ToJSON TxIn where
     toJSON (TxIn o s i) = object $ concat
         [ [ "OutPoint" .= o
           , "Sequence" .= i
-          , "Raw Script" .= bsToHex (encodeScriptOps s)
-          , "Script" .= s
+          , "Raw Script" .= bsToHex (encode' s)
+          , "Script" .= (fromMaybe (Script []) $ decodeToMaybe s)
           ] 
         , decoded 
         ]
-      where decoded = either (const $ either (const []) f $ decodeInput s) 
-                             f $ decodeScriptHash s
+      where decoded = either (const $ either (const []) f $ decodeInputBS s) 
+                             f $ decodeScriptHashBS s
             f inp = ["Decoded Script" .= inp]
               
 instance ToJSON Tx where
@@ -277,7 +277,7 @@ instance ToJSON ScriptHashInput where
         [ "SpendScriptHash" .= object
             [ "ScriptInput" .= s
             , "RedeemScript" .= r
-            , "Raw Redeem Script" .= bsToHex (encodeScriptOps $ encodeOutput r)
+            , "Raw Redeem Script" .= bsToHex (encodeOutputBS r)
             , "Sender Addr" .= addrToBase58 (scriptAddr  r)
             ]
         ]

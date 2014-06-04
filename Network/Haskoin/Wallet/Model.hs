@@ -36,9 +36,10 @@ import Database.Persist.TH
     , mkMigrate
     , persistLowerCase
     )
-import Network.Haskoin.Wallet.Types (CoinStatus)
-import Network.Haskoin.Protocol (Script, Tx)
-import Network.Haskoin.Crypto (MasterKey, AccPubKey, Hash256, XPubKey)
+import Network.Haskoin.Wallet.Types 
+import Network.Haskoin.Script
+import Network.Haskoin.Protocol 
+import Network.Haskoin.Crypto 
 
 share [mkPersist sqlSettings, mkMigrate "migrateWallet"] [persistLowerCase|
 DbWallet 

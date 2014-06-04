@@ -26,10 +26,11 @@ import Network.Haskoin.Protocol
 import Network.Haskoin.Transaction
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
+import Network.Haskoin.Util
 
 toCoin :: DbCoinGeneric b -> Coin
 toCoin c = 
-    Coin (TxOut (fromIntegral $ dbCoinValue c) (dbCoinScript c))
+    Coin (TxOut (fromIntegral $ dbCoinValue c) (encode' $ dbCoinScript c))
          (OutPoint (dbCoinTxid c) (fromIntegral $ dbCoinPos c))
          (dbCoinRdmScript c)
 

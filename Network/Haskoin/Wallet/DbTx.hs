@@ -180,7 +180,8 @@ buildAccTx tx inCoins outCoins partial time = map build $ M.toList oMap
         Just tuple -> M.insert (dbCoinAccount coin) (g tuple coin) accMap
         Nothing    -> M.insert (dbCoinAccount coin) (g ([],[]) coin) accMap
     allRecip = rights $ map toAddr $ txOut tx
-    toAddr   = (addrToBase58 <$>) . scriptRecipient . scriptOutput
+    toAddr   = (addrToBase58 <$>) . (scriptRecipient =<<) 
+               . decodeToEither . scriptOutput
     sumVal   = sum . (map dbCoinValue)
     build (ai,(i,o)) = 
         DbTx (txid tx) recips total ai orphan partial time
@@ -210,7 +211,7 @@ dbImportOrphan status (TxIn (OutPoint h i) s _)
             let coin = build rdm add time
             insert_ coin >> return (Just coin)
   where
-    a   = scriptSender s
+    a   = scriptSender =<< decodeToEither s
     b58 = addrToBase58 $ fromRight a
     build rdm add time = 
         DbCoin h (fromIntegral i) 0 (Script []) rdm b58 status
@@ -238,7 +239,7 @@ dbImportCoin tid commit ((TxOut v s), index)
                     -- Update existing coin with up to date information
                     let newCoin = coin{ dbCoinOrphan  = False
                                       , dbCoinValue   = (fromIntegral v)
-                                      , dbCoinScript  = s
+                                      , dbCoinScript  = scp
                                       , dbCoinCreated = time
                                       }
                     when commit $ replace ci newCoin
@@ -250,10 +251,12 @@ dbImportCoin tid commit ((TxOut v s), index)
                     dbAdjustGap add -- Adjust address gap
                     return $ Just coin
   where
-    a   = scriptRecipient s
-    b58 = addrToBase58 $ fromRight a
+    scpE = decodeToEither s
+    scp  = fromRight scpE
+    a    = scriptRecipient =<< scpE
+    b58  = addrToBase58 $ fromRight a
     build rdm add time = 
-        DbCoin tid index (fromIntegral v) s rdm b58 Unspent
+        DbCoin tid index (fromIntegral v) scp rdm b58 Unspent
                (dbAddressAccount add) False time
     
 -- |Builds a redeem script given an address. Only relevant for addresses
@@ -356,7 +359,9 @@ dbGetSigData sh coin = do
         sigKey = fromJust $ g accKey $ fromIntegral $ dbAddressIndex add
     return (sigi, xPrvKey $ getAddrPrvKey sigKey)
   where
-    out    = scriptOutput $ coinTxOut coin
+    out    = decode' $ scriptOutput $ coinTxOut coin
     rdm    = coinRedeem coin
     sigi | isJust rdm = SigInputSH out (coinOutPoint coin) (fromJust rdm) sh
          | otherwise  = SigInput out (coinOutPoint coin) sh
+
+

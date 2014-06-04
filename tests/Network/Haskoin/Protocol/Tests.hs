@@ -27,8 +27,6 @@ tests =
         , testProperty "TxIn" (metaGetPut :: TxIn -> Bool)
         , testProperty "TxOut" (metaGetPut :: TxOut -> Bool)
         , testProperty "OutPoint" (metaGetPut :: OutPoint -> Bool)
-        , testProperty "ScriptOp" (metaGetPut :: ScriptOp -> Bool)
-        , testProperty "Script" (metaGetPut :: Script -> Bool)
         , testProperty "Tx" (metaGetPut :: Tx -> Bool)
         , testProperty "CoinbaseTx" (metaGetPut :: CoinbaseTx -> Bool)
         , testProperty "BlockHeader" (metaGetPut :: BlockHeader -> Bool)

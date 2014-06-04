@@ -1,15 +1,11 @@
-module Network.Haskoin.Protocol.Script 
+module Network.Haskoin.Script.Types
 ( ScriptOp(..)
 , Script(..)
 , PushDataType(..)
 , opPushData
-, getScriptOps
-, putScriptOps
-, decodeScriptOps
-, encodeScriptOps
 ) where
 
-import Control.Monad (liftM2, unless, when)
+import Control.Monad (liftM2, unless, when, forM_)
 import Control.Applicative ((<$>))
 
 import Data.Word (Word8)
@@ -52,41 +48,16 @@ data Script =
     deriving (Eq, Show, Read)
 
 instance Binary Script where
-    get = do
-        (VarInt len) <- get
-        isolate (fromIntegral len) $ Script <$> getScriptOps
+    get = 
+        Script <$> getScriptOps
+      where
+        getScriptOps = do
+            empty <- isEmpty
+            if empty 
+                then return [] 
+                else liftM2 (:) get getScriptOps
 
-    put (Script ops) = do
-        let bs = runPut' $ putScriptOps ops
-        put $ VarInt $ fromIntegral $ BS.length bs
-        putByteString bs
-
--- | Deserialize a list of 'ScriptOp' inside the 'Data.Binary.Get' monad.
--- This deserialization does not take into account the length of the script.
-getScriptOps :: Get [ScriptOp]
-getScriptOps = do
-    empty <- isEmpty
-    if empty 
-        then return [] 
-        else liftM2 (:) get getScriptOps
-
--- | Serialize a list of 'ScriptOp' inside the 'Data.Binary.Put' monad.
--- This serialization does not take into account the length of the script.
-putScriptOps :: [ScriptOp] -> Put
-putScriptOps (x:xs) = put x >> putScriptOps xs
-putScriptOps _       = return ()
-
--- | Decode a 'Script' from a ByteString by omiting the length of the script.
--- This is used to produce scripthash addresses.
-decodeScriptOps :: BS.ByteString -> Either String Script
-decodeScriptOps bs = fromRunGet getScriptOps bs msg (return . Script)
-  where 
-    msg = Left "decodeScriptOps: Could not decode scriptops"
-
--- | Encode a 'Script' into a ByteString by omiting the length of the script.
--- This is used to produce scripthash addresses.
-encodeScriptOps :: Script -> BS.ByteString
-encodeScriptOps = runPut' . putScriptOps . scriptOps
+    put (Script ops) = forM_ ops put
 
 -- | Data type representing the type of an OP_PUSHDATA opcode.
 data PushDataType
@@ -131,7 +102,6 @@ data ScriptOp
     | OP_CHECKMULTISIG 
 
       -- Other
-    | OP_PUBKEY PubKey 
     | OP_INVALIDOPCODE Word8
         deriving (Show, Read, Eq)
 
@@ -180,7 +150,6 @@ instance Binary ScriptOp where
             | op == 0xa9 = return $ OP_HASH160
             | op == 0xac = return $ OP_CHECKSIG
             | op == 0xae = return $ OP_CHECKMULTISIG
-            | op == 0xfe = OP_PUBKEY <$> get
             | otherwise = return $ OP_INVALIDOPCODE op
 
     put op = case op of
@@ -235,7 +204,6 @@ instance Binary ScriptOp where
         OP_HASH160           -> putWord8 0xa9
         OP_CHECKSIG          -> putWord8 0xac
         OP_CHECKMULTISIG     -> putWord8 0xae
-        (OP_PUBKEY pk)       -> putWord8 0xfe >> put pk
         (OP_INVALIDOPCODE _) -> putWord8 0xff
 
 -- | Optimally encode data using one of the 4 types of data pushing opcodes

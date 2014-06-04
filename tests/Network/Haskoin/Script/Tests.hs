@@ -7,7 +7,7 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 import Control.Applicative ((<$>))
 
 import Data.Bits (setBit, testBit)
-import Data.Binary (Word8)
+import Data.Binary (Binary, Word8)
 import qualified Data.ByteString as BS 
     ( singleton
     , length
@@ -26,7 +26,11 @@ import Network.Haskoin.Util
 
 tests :: [Test]
 tests = 
-    [ testGroup "Script Parser"
+    [ testGroup "Script types"
+        [ testProperty "ScriptOp" (metaGetPut :: ScriptOp -> Bool)
+        , testProperty "Script" (metaGetPut :: Script -> Bool)
+        ]
+    , testGroup "Script Parser"
         [ testProperty "decode . encode OP_1 .. OP_16" testScriptOpInt
         , testProperty "decode . encode ScriptOutput" testScriptOutput
         , testProperty "decode . encode ScriptInput" testScriptInput
@@ -43,6 +47,9 @@ tests =
         , testProperty "Testing txSigHash with SigSingle" testSigHashOne
         ]
     ]
+
+metaGetPut :: (Binary a, Eq a) => a -> Bool
+metaGetPut x = (decode' . encode') x == x
 
 {- Script Parser -}
 

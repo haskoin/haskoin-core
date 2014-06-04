@@ -32,7 +32,7 @@ import qualified Data.ByteString as BS
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.ECDSA
 import Network.Haskoin.Script.Types
-import Network.Haskoin.Protocol.Tx
+import Network.Haskoin.Protocol
 import Network.Haskoin.Util
 
 -- | Data type representing the different ways a transaction can be signed.

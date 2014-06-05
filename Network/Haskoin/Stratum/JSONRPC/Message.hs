@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BangPatterns #-}
 -- | Implementation of basic JSON-RPC data types.
 module Network.Haskoin.Stratum.JSONRPC.Message
 ( -- ** Types

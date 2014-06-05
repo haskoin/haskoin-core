@@ -59,6 +59,7 @@ library
                        Network.Haskoin.Stratum.Client,
                        Network.Haskoin.Transaction.Builder
     build-depends:     aeson                >= 0.7.0.5 && < 0.8,
+                       async                >= 2.0  && < 2.1,
                        base                 >= 4.6  && < 4.7, 
                        binary               >= 0.7  && < 0.8, 
                        byteable             >= 0.1  && < 0.2,
@@ -72,6 +73,8 @@ library
                        mtl                  >= 2.1  && < 2.2, 
                        pbkdf                >= 1.1  && < 1.2,
                        split                >= 0.2  && < 0.3,
+                       stm                  >= 2.4  && < 2.5,
+                       stm-conduit          >= 2.4  && < 2.5,
                        text                 >= 0.11 && < 0.12,
                        text-icu             >= 0.6  && < 0.7,
                        vector               >= 0.10 && < 0.11
@@ -110,6 +113,7 @@ test-suite test-haskoin
                        Network.Haskoin.Transaction.Arbitrary,
                        Network.Haskoin.Stratum.Units
     build-depends:     aeson                      >= 0.7.0.5 && < 0.8,
+                       async                      >= 2.0  && < 2.1,
                        base                       >= 4.6  && < 4.7, 
                        binary                     >= 0.7  && < 0.8, 
                        byteable                   >= 0.1  && < 0.2,
@@ -123,6 +127,8 @@ test-suite test-haskoin
                        mtl                        >= 2.1  && < 2.2, 
                        pbkdf                      >= 1.1  && < 1.2,
                        split                      >= 0.2  && < 0.3,
+                       stm                        >= 2.4  && < 2.5,
+                       stm-conduit                >= 2.4  && < 2.5,
                        text                       >= 0.11 && < 0.12,
                        text-icu                   >= 0.6  && < 0.7,
                        HUnit                      >= 1.2  && < 1.3,

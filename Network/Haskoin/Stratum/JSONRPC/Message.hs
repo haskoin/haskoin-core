@@ -83,9 +83,9 @@ data Response r e v = Response
 -- | JSON-RPC message, can contain request or response.
 data Msg j r e v
     -- | Request message container.
-    = MsgRequest (Request j)
+    = MsgRequest { msgRequest :: Request j }
     -- | response message container.
-    | MsgResponse (Response r e v)
+    | MsgResponse { msgResponse :: Response r e v }
     deriving (Eq, Show)
 
 instance FromJSON Id where

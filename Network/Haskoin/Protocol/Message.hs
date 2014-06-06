@@ -1,7 +1,6 @@
 module Network.Haskoin.Protocol.Message 
 ( Message(..) 
 , MessageHeader(..) 
-, MessageCommand(..)
 ) where
 
 import Control.Monad (unless)
@@ -21,9 +20,7 @@ import Data.Binary.Put
     , putWord32be
     )
 import qualified Data.ByteString as BS 
-    ( ByteString
-    , takeWhile
-    , length 
+    ( length 
     , append
     , empty
     )
@@ -32,83 +29,6 @@ import Network.Haskoin.Protocol.Types
 
 import Network.Haskoin.Util 
 import Network.Haskoin.Crypto.Hash 
-
--- | A 'MessageCommand' is included in a 'MessageHeader' in order to identify
--- the type of message present in the payload. This allows the message 
--- de-serialization code to know how to decode a particular message payload.
--- Every valid 'Message' constructor has a corresponding 'MessageCommand'
--- constructor.
-data MessageCommand 
-    = MCVersion 
-    | MCVerAck 
-    | MCAddr 
-    | MCInv 
-    | MCGetData 
-    | MCNotFound 
-    | MCGetBlocks 
-    | MCGetHeaders 
-    | MCTx 
-    | MCBlock 
-    | MCHeaders 
-    | MCGetAddr 
-    | MCFilterLoad
-    | MCFilterAdd
-    | MCFilterClear
-    | MCPing 
-    | MCPong 
-    | MCAlert
-    deriving (Eq, Show, Read)
-
-instance Binary MessageCommand where
-    
-    get = go =<< getByteString 12
-      where 
-        go bs = case unpackCommand bs of
-            "version"     -> return MCVersion
-            "verack"      -> return MCVerAck
-            "addr"        -> return MCAddr
-            "inv"         -> return MCInv
-            "getdata"     -> return MCGetData
-            "notfound"    -> return MCNotFound
-            "getblocks"   -> return MCGetBlocks
-            "getheaders"  -> return MCGetHeaders
-            "tx"          -> return MCTx
-            "block"       -> return MCBlock
-            "headers"     -> return MCHeaders
-            "getaddr"     -> return MCGetAddr
-            "filterload"  -> return MCFilterLoad
-            "filteradd"   -> return MCFilterAdd
-            "filterclear" -> return MCFilterClear
-            "ping"        -> return MCPing
-            "pong"        -> return MCPong
-            "alert"       -> return MCAlert
-            _             -> fail "get MessageCommand : Invalid command"
-
-    put mc = putByteString $ packCommand $ case mc of
-        MCVersion     -> "version"
-        MCVerAck      -> "verack"
-        MCAddr        -> "addr"
-        MCInv         -> "inv"
-        MCGetData     -> "getdata"
-        MCNotFound    -> "notfound"
-        MCGetBlocks   -> "getblocks"
-        MCGetHeaders  -> "getheaders"
-        MCTx          -> "tx"
-        MCBlock       -> "block"
-        MCHeaders     -> "headers"
-        MCGetAddr     -> "getaddr"
-        MCFilterLoad  -> "filterload"
-        MCFilterAdd   -> "filteradd"
-        MCFilterClear -> "filterclear"
-        MCPing        -> "ping"
-        MCPong        -> "pong"
-        MCAlert       -> "alert"
-
-packCommand :: String -> BS.ByteString
-packCommand s = stringToBS $ take 12 $ s ++ repeat '\NUL'
-
-unpackCommand :: BS.ByteString -> String
-unpackCommand bs = bsToString $ BS.takeWhile (/= 0) bs
 
 -- | Data type representing the header of a 'Message'. All messages sent between
 -- nodes contain a message header.
@@ -165,6 +85,7 @@ data Message
     | MPing Ping 
     | MPong Pong 
     | MAlert Alert
+    | MReject Reject
     deriving (Eq, Show, Read)
 
 instance Binary Message where
@@ -193,6 +114,7 @@ instance Binary Message where
                 MCPing        -> MPing <$> get
                 MCPong        -> MPong <$> get
                 MCAlert       -> MAlert <$> get
+                MCReject      -> MReject <$> get
                 _             -> fail $ "get: Invalid command " ++ (show cmd)
             else case cmd of
                 MCGetAddr     -> return MGetAddr 
@@ -202,24 +124,25 @@ instance Binary Message where
 
     put msg = do
         let (cmd, payload) = case msg of
-                (MVersion m)    -> (MCVersion, encode' m)
-                (MVerAck)       -> (MCVerAck, BS.empty)
-                (MAddr m)       -> (MCAddr, encode' m)
-                (MInv m)        -> (MCInv, encode' m)
-                (MGetData m)    -> (MCGetData, encode' m)
-                (MNotFound m)   -> (MCNotFound, encode' m)
-                (MGetBlocks m)  -> (MCGetBlocks, encode' m)
-                (MGetHeaders m) -> (MCGetHeaders, encode' m)
-                (MTx m)         -> (MCTx, encode' m)
-                (MBlock m)      -> (MCBlock, encode' m)
-                (MHeaders m)    -> (MCHeaders, encode' m)
-                (MGetAddr)      -> (MCGetAddr, BS.empty)
-                (MFilterLoad m) -> (MCFilterLoad, encode' m)
-                (MFilterAdd m)  -> (MCFilterAdd, encode' m)
-                (MFilterClear)  -> (MCFilterClear, BS.empty)
-                (MPing m)       -> (MCPing, encode' m)
-                (MPong m)       -> (MCPong, encode' m)
-                (MAlert m)      -> (MCAlert, encode' m)
+                MVersion m    -> (MCVersion, encode' m)
+                MVerAck       -> (MCVerAck, BS.empty)
+                MAddr m       -> (MCAddr, encode' m)
+                MInv m        -> (MCInv, encode' m)
+                MGetData m    -> (MCGetData, encode' m)
+                MNotFound m   -> (MCNotFound, encode' m)
+                MGetBlocks m  -> (MCGetBlocks, encode' m)
+                MGetHeaders m -> (MCGetHeaders, encode' m)
+                MTx m         -> (MCTx, encode' m)
+                MBlock m      -> (MCBlock, encode' m)
+                MHeaders m    -> (MCHeaders, encode' m)
+                MGetAddr      -> (MCGetAddr, BS.empty)
+                MFilterLoad m -> (MCFilterLoad, encode' m)
+                MFilterAdd m  -> (MCFilterAdd, encode' m)
+                MFilterClear  -> (MCFilterClear, BS.empty)
+                MPing m       -> (MCPing, encode' m)
+                MPong m       -> (MCPong, encode' m)
+                MAlert m      -> (MCAlert, encode' m)
+                MReject m     -> (MCReject, encode' m)
             chk = chksum32 payload
             len = fromIntegral $ BS.length payload
             header = MessageHeader networkMagic cmd len chk

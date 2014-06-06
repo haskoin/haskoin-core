@@ -24,6 +24,7 @@ tests =
         , testProperty "Version" (metaGetPut :: Version -> Bool)
         , testProperty "Addr" (metaGetPut :: Addr -> Bool)
         , testProperty "Alert" (metaGetPut :: Alert -> Bool)
+        , testProperty "Reject" (metaGetPut :: Reject -> Bool)
         , testProperty "TxIn" (metaGetPut :: TxIn -> Bool)
         , testProperty "TxOut" (metaGetPut :: TxOut -> Bool)
         , testProperty "OutPoint" (metaGetPut :: OutPoint -> Bool)

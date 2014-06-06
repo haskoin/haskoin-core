@@ -54,6 +54,20 @@ instance Arbitrary Addr where
 instance Arbitrary Alert where
     arbitrary = Alert <$> arbitrary <*> arbitrary
 
+instance Arbitrary Reject where
+    arbitrary = Reject <$> arbitrary <*> arbitrary <*> arbitrary
+
+instance Arbitrary RejectCode where
+    arbitrary = elements [ RejectMalformed
+                         , RejectInvalid
+                         , RejectInvalid
+                         , RejectDuplicate
+                         , RejectNonStandard
+                         , RejectDust
+                         , RejectInsufficientFee
+                         , RejectCheckpoint
+                         ]
+
 instance Arbitrary BlockHeader where
     arbitrary = BlockHeader <$> arbitrary
                             <*> (hash256 <$> arbitrary)

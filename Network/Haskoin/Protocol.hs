@@ -55,6 +55,9 @@ module Network.Haskoin.Protocol
 , Ping(..)
 , Pong(..)
 , Alert(..)
+, Reject(..)
+, RejectCode(..)
+, reject
 
   -- *Messages
 , Message(..)

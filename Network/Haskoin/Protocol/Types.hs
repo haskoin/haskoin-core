@@ -23,6 +23,9 @@ module Network.Haskoin.Protocol.Types
 , NotFound(..)
 , Ping(..)
 , Pong(..)
+, Reject(..)
+, RejectCode(..)
+, reject
 , Tx(..) 
 , TxIn(..)
 , TxOut(..)
@@ -35,6 +38,7 @@ module Network.Haskoin.Protocol.Types
 , VarInt(..)
 , VarString(..)
 , Version(..)
+, MessageCommand(..)
 ) where
 
 import Control.Monad (liftM2, replicateM, forM_, unless)
@@ -70,6 +74,7 @@ import qualified Data.ByteString as BS
     ( ByteString
     , length
     , reverse
+    , takeWhile
     )
 
 import Network.Haskoin.Crypto.Hash 
@@ -569,6 +574,73 @@ instance Binary Pong where
     get = Pong <$> getWord64le
     put (Pong n) = putWord64le n
 
+-- | The reject message is sent when messages are rejected by a peer.
+data Reject =
+    Reject { 
+            -- | Type of message rejected
+             rejectMessage :: MessageCommand
+             -- | Code related to the rejected message
+           , rejectCode    :: RejectCode
+             -- | Text version of rejected reason
+           , rejectReason  :: VarString
+           } deriving (Eq, Show, Read)
+
+
+data RejectCode 
+    = RejectMalformed
+    | RejectInvalid
+    | RejectObsolete
+    | RejectDuplicate
+    | RejectNonStandard
+    | RejectDust
+    | RejectInsufficientFee
+    | RejectCheckpoint
+    deriving (Eq, Show, Read)
+
+instance Binary RejectCode where
+
+    get = getWord8 >>= \code -> case code of
+        0x01 -> return RejectMalformed
+        0x10 -> return RejectInvalid
+        0x11 -> return RejectObsolete
+        0x12 -> return RejectDuplicate
+        0x40 -> return RejectNonStandard
+        0x41 -> return RejectDust
+        0x42 -> return RejectInsufficientFee
+        0x43 -> return RejectCheckpoint
+        _    -> fail $ unwords
+            [ "Reject get: Invalid code"
+            , show code
+            ]
+
+    put code = putWord8 $ case code of
+        RejectMalformed       -> 0x01
+        RejectInvalid         -> 0x10
+        RejectObsolete        -> 0x11
+        RejectDuplicate       -> 0x12
+        RejectNonStandard     -> 0x40
+        RejectDust            -> 0x41
+        RejectInsufficientFee -> 0x42
+        RejectCheckpoint      -> 0x43
+
+-- | Convenience function to build a Reject message
+reject :: MessageCommand -> RejectCode -> String -> Reject
+reject cmd code reason = Reject cmd code (VarString $ stringToBS reason)
+
+instance Binary Reject where
+
+    get = get >>= \(VarString bs) -> case stringToCommand $ bsToString bs of
+        Just cmd -> Reject cmd <$> get <*> get
+        _        -> fail $ unwords $
+            [ "Reason get: Invalid message command"
+            , bsToString bs
+            ]
+
+    put (Reject cmd code reason) = do
+        put $ VarString $ stringToBS $ commandToString cmd
+        put code
+        put reason
+
 -- | Data type representing a bitcoin transaction
 data Tx = 
     Tx { 
@@ -845,4 +917,93 @@ getBool = go =<< getWord8
 putBool :: Bool -> Put 
 putBool True  = putWord8 1
 putBool False = putWord8 0
+
+-- | A 'MessageCommand' is included in a 'MessageHeader' in order to identify
+-- the type of message present in the payload. This allows the message 
+-- de-serialization code to know how to decode a particular message payload.
+-- Every valid 'Message' constructor has a corresponding 'MessageCommand'
+-- constructor.
+data MessageCommand 
+    = MCVersion 
+    | MCVerAck 
+    | MCAddr 
+    | MCInv 
+    | MCGetData 
+    | MCNotFound 
+    | MCGetBlocks 
+    | MCGetHeaders 
+    | MCTx 
+    | MCBlock 
+    | MCHeaders 
+    | MCGetAddr 
+    | MCFilterLoad
+    | MCFilterAdd
+    | MCFilterClear
+    | MCPing 
+    | MCPong 
+    | MCAlert
+    | MCReject
+    deriving (Eq, Show, Read)
+
+instance Binary MessageCommand where
+    
+    get = go =<< getByteString 12
+      where 
+        go bs = case stringToCommand $ unpackCommand bs of
+            Just cmd -> return cmd
+            Nothing  -> fail "get MessageCommand : Invalid command"
+
+    put mc = putByteString $ packCommand $ commandToString mc
+
+
+stringToCommand :: String -> Maybe MessageCommand
+stringToCommand str = case str of
+    "version"     -> Just MCVersion
+    "verack"      -> Just MCVerAck
+    "addr"        -> Just MCAddr
+    "inv"         -> Just MCInv
+    "getdata"     -> Just MCGetData
+    "notfound"    -> Just MCNotFound
+    "getblocks"   -> Just MCGetBlocks
+    "getheaders"  -> Just MCGetHeaders
+    "tx"          -> Just MCTx
+    "block"       -> Just MCBlock
+    "headers"     -> Just MCHeaders
+    "getaddr"     -> Just MCGetAddr
+    "filterload"  -> Just MCFilterLoad
+    "filteradd"   -> Just MCFilterAdd
+    "filterclear" -> Just MCFilterClear
+    "ping"        -> Just MCPing
+    "pong"        -> Just MCPong
+    "alert"       -> Just MCAlert
+    "reject"      -> Just MCReject
+    _             -> Nothing
+
+commandToString :: MessageCommand -> String
+commandToString mc = case mc of
+    MCVersion     -> "version"
+    MCVerAck      -> "verack"
+    MCAddr        -> "addr"
+    MCInv         -> "inv"
+    MCGetData     -> "getdata"
+    MCNotFound    -> "notfound"
+    MCGetBlocks   -> "getblocks"
+    MCGetHeaders  -> "getheaders"
+    MCTx          -> "tx"
+    MCBlock       -> "block"
+    MCHeaders     -> "headers"
+    MCGetAddr     -> "getaddr"
+    MCFilterLoad  -> "filterload"
+    MCFilterAdd   -> "filteradd"
+    MCFilterClear -> "filterclear"
+    MCPing        -> "ping"
+    MCPong        -> "pong"
+    MCAlert       -> "alert"
+    MCReject      -> "reject"
+
+packCommand :: String -> BS.ByteString
+packCommand s = stringToBS $ take 12 $ s ++ repeat '\NUL'
+
+unpackCommand :: BS.ByteString -> String
+unpackCommand bs = bsToString $ BS.takeWhile (/= 0) bs
 

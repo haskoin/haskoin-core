@@ -33,9 +33,9 @@ import Data.Text (Text, unpack)
 import Data.Word (Word, Word64)
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
+import Network.Haskoin.Util
 import Network.Haskoin.Stratum.JSONRPC.Message
 import Network.Haskoin.Stratum.JSONRPC.Conduit
-import Network.Haskoin.Util
 
 -- | JSON-RPC request with Stratum payload.
 type RequestStratum = Request StratumQuery
@@ -52,47 +52,47 @@ type StratumSession = Session StratumResponse Value String StratumNotif
 
 -- | Transaction height and ID pair. Used in history responses.
 data TxHeight = TxHeight
-    { txHeightBlock :: Word  -- ^ Block height.
-    , txHeightId :: Hash256 -- ^ Transaction id.
+    { txHeightBlock :: !Word  -- ^ Block height.
+    , txHeightId :: !Hash256 -- ^ Transaction id.
     } deriving (Show, Eq)
 
 -- | Bitcoin outpoint information.
 data Coin = Coin
-    { coinOutPoint :: OutPoint   -- ^ Coin data.
-    , coinTxHeight :: TxHeight   -- ^ Transaction information.
-    , coinValue :: Word64        -- ^ Output vale.
+    { coinOutPoint :: !OutPoint   -- ^ Coin data.
+    , coinTxHeight :: !TxHeight   -- ^ Transaction information.
+    , coinValue :: !Word64        -- ^ Output vale.
     } deriving (Show, Eq)
 
 -- | Balance information.
 data Balance = Balance
-    { balConfirmed :: Word64   -- ^ Confirmed balance.
-    , balUnconfirmed :: Word64 -- ^ Unconfirmed balance.
+    { balConfirmed :: !Word64   -- ^ Confirmed balance.
+    , balUnconfirmed :: !Word64 -- ^ Unconfirmed balance.
     } deriving (Show, Eq)
 
 -- | Stratum Request data. To be placed inside JSON request.
 data StratumQuery
-    = QueryVersion { queryClientVer :: Text, queryProtoVer :: Text }
-    | QueryHistory { queryAddr :: Address }
-    | QueryBalance { queryAddr :: Address }
-    | QueryUnspent { queryAddr :: Address }
-    | QueryTx { queryTxid :: Hash256 }
-    | QueryBroadcast { queryTx :: Tx }
-    | SubAddress { queryAddr :: Address }
+    = QueryVersion { queryClientVer :: !Text, queryProtoVer :: !Text }
+    | QueryHistory { queryAddr :: !Address }
+    | QueryBalance { queryAddr :: !Address }
+    | QueryUnspent { queryAddr :: !Address }
+    | QueryTx { queryTxid :: !Hash256 }
+    | QueryBroadcast { queryTx :: !Tx }
+    | SubAddress { queryAddr :: !Address }
     deriving (Eq, Show)
 
 -- | Stratum Response Result data.
 data StratumResponse
-    = ServerVersion { stratumServerVer :: String }
-    | AddressHistory { stratumAddrHist :: [TxHeight] }
-    | AddressBalance { stratumBalance :: Balance }
-    | AddressUnspent { stratumCoins :: [Coin] }
-    | Transaction { stratumTx :: Tx }
-    | BroadcastId { stratumTxid :: Hash256 }
-    | AddrStatus { stratumAddrStatus :: Hash256 }
+    = ServerVersion { stratumServerVer :: !String }
+    | AddressHistory { stratumAddrHist :: ![TxHeight] }
+    | AddressBalance { stratumBalance :: !Balance }
+    | AddressUnspent { stratumCoins :: ![Coin] }
+    | Transaction { stratumTx :: !Tx }
+    | BroadcastId { stratumTxid :: !Hash256 }
+    | AddrStatus { stratumAddrStatus :: !Hash256 }
     deriving (Eq, Show)
 
 data StratumNotif
-    = NotifAddress { notifAddr :: Address, notifAddrStatus :: Hash256 }
+    = NotifAddress { notifAddr :: !Address, notifAddrStatus :: !Hash256 }
     deriving (Eq, Show)
 
 instance ToJSON StratumNotif where

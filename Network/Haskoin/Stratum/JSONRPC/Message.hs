@@ -50,43 +50,44 @@ type MsgValue = Msg Value Value Value String
 type ResultValue = Result Value Value String
 
 -- | JSON-RPC id in text or integer form.
-data Id = IntId { intId :: Int }  -- ^ Id in integer form.
-        | TxtId { txtId :: Text } -- ^ Id in string form (discouraged).
+data Id = IntId { intId :: !Int }  -- ^ Id in integer form.
+        | TxtId { txtId :: !Text } -- ^ Id in string form (discouraged).
         deriving (Eq, Show)
 
 -- | JSON-RPC error object in v1 or v2 format.
 -- Sent inside a Response in case of error.
 data Error e v -- | Error object in JSON-RPC version 2 format.
                = ErrObj
-                   { errCode :: Int      -- ^ Integer error code.
-                   , errMsg :: String    -- ^ Error message.
-                   , errData :: Maybe e  -- ^ Optional error object.
+                   { errCode :: !Int        -- ^ Integer error code.
+                   , errMsg  :: !String     -- ^ Error message.
+                   , errData :: !(Maybe e)  -- ^ Optional error object.
                    }
                -- | Error object in JSON-RPC version 1 format.
                | ErrVal
-                   { errVal :: v  -- ^ Usually String.
+                   { errVal :: !v  -- ^ Usually String.
                    }
                deriving (Eq, Show)
 
 -- | JSON-RPC request or notification.
 data Request j = Request
-    { reqMethod :: Method   -- ^ Request method.
-    , reqParams :: Maybe j  -- ^ Request parameters. Should be Object or Array.
-    , reqId :: Maybe Id     -- ^ Request id. Nothing for notifications.
+    { reqMethod :: !Method   -- ^ Request method.
+    , reqParams :: !(Maybe j)
+    -- ^ Request parameters. Should be Object or Array.
+    , reqId :: !(Maybe Id) -- ^ Request id. Nothing for notifications.
     } deriving (Eq, Show)
 
 -- | JSON-RPC response or error.
 data Response r e v = Response
-    { resResult :: Result r e v -- ^ Result or error.
-    , resId :: Maybe Id         -- ^ Result id.
+    { resResult :: !(Result r e v) -- ^ Result or error.
+    , resId :: !(Maybe Id)         -- ^ Result id.
     } deriving (Eq, Show)
 
 -- | JSON-RPC message, can contain request or response.
 data Msg j r e v
     -- | Request message container.
-    = MsgRequest { msgRequest :: Request j }
+    = MsgRequest { msgRequest :: !(Request j) }
     -- | response message container.
-    | MsgResponse { msgResponse :: Response r e v }
+    | MsgResponse { msgResponse :: !(Response r e v) }
     deriving (Eq, Show)
 
 instance FromJSON Id where

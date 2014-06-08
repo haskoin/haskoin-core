@@ -26,12 +26,13 @@ import qualified Data.ByteString as BS
     , append
     , pack
     , splitAt
+    , empty
     )
 
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.ECDSA
-import Network.Haskoin.Protocol.Script
-import Network.Haskoin.Protocol.Tx
+import Network.Haskoin.Script.Types
+import Network.Haskoin.Protocol
 import Network.Haskoin.Util
 
 -- | Data type representing the different ways a transaction can be signed.
@@ -124,12 +125,12 @@ txSigHash tx out i sh = do
 -- Builds transaction inputs for computing SigHashes
 buildInputs :: [TxIn] -> Script -> Int -> SigHash -> [TxIn]
 buildInputs txins out i sh
-    | anyoneCanPay sh   = (txins !! i) { scriptInput = out } : []
+    | anyoneCanPay sh   = (txins !! i) { scriptInput = encode' out } : []
     | isSigAll sh || isSigUnknown sh = single
     | otherwise         = map noSeq $ zip single [0..]
   where 
-    empty  = map (\ti -> ti{ scriptInput = Script [] }) txins
-    single = updateIndex i empty $ \ti -> ti{ scriptInput = out }
+    empty  = map (\ti -> ti{ scriptInput = BS.empty }) txins
+    single = updateIndex i empty $ \ti -> ti{ scriptInput = encode' out }
     noSeq (ti,j) = if i == j then ti else ti{ txInSequence = 0 }
 
 -- Build transaction outputs for computing SigHashes
@@ -140,7 +141,7 @@ buildOutputs txos i sh
     | i >= length txos = Nothing
     | otherwise = return $ buffer ++ [txos !! i]
   where 
-    buffer = replicate i $ TxOut (-1) $ Script []
+    buffer = replicate i $ TxOut (-1) BS.empty
 
 -- | Data type representing a 'Signature' together with a 'SigHash'. The
 -- 'SigHash' is serialized as one byte at the end of a regular ECDSA

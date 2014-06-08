@@ -21,9 +21,36 @@ import Control.Applicative ((<$>),(<*>))
 import Data.Bits (testBit, clearBit)
 import Data.Word (Word8)
 
+import Network.Haskoin.Util.Arbitrary (nonEmptyBS)
 import Network.Haskoin.Script
-import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
+
+instance Arbitrary Script where
+    arbitrary = do
+        i <- choose (1,10)
+        Script <$> (vectorOf i arbitrary)
+
+instance Arbitrary ScriptOp where
+    arbitrary = oneof [ opPushData <$> nonEmptyBS
+                      , return OP_0
+                      , return OP_1NEGATE
+                      , return OP_1
+                      , return OP_2, return OP_3, return OP_4, return OP_5
+                      , return OP_6, return OP_7, return OP_8, return OP_9
+                      , return OP_10, return OP_11, return OP_12, return OP_13
+                      , return OP_14, return OP_15, return OP_16
+                      , return OP_VERIFY
+                      , return OP_DUP
+                      , return OP_EQUAL
+                      , return OP_EQUALVERIFY
+                      , return OP_HASH160
+                      , return OP_CHECKSIG
+                      , return OP_CHECKMULTISIG
+                      , return $ OP_INVALIDOPCODE 0xff
+                      ]
+
+instance Arbitrary PushDataType where
+    arbitrary = elements [ OPCODE, OPDATA1, OPDATA2, OPDATA4 ]
 
 instance Arbitrary TxSignature where
     arbitrary = liftM2 TxSignature arbitrary arbitrary

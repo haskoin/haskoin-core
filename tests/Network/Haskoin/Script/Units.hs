@@ -7,7 +7,6 @@ import Test.Framework.Providers.HUnit (testCase)
 import Data.Maybe (fromJust)
 
 import Network.Haskoin.Script
-import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
@@ -55,7 +54,7 @@ runMulSigVector :: (String,String) -> Assertion
 runMulSigVector (a,ops) = 
     assertBool "    >  MultiSig Vector" $ a == b
   where 
-    s = Script $ runGet' getScriptOps $ fromJust $ hexToBS ops
+    s = decode' $ fromJust $ hexToBS ops
     b = addrToBase58 $ scriptAddr $ fromRight $ decodeOutput s
 
 {- Canonical Signatures -}

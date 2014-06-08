@@ -8,6 +8,7 @@ module Network.Haskoin.Crypto.Base58
 , decodeBase58Check
 ) where
 
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (guard)
 import Control.Applicative ((<$>),(<*>))
 
@@ -104,6 +105,10 @@ data Address
     -- | Script Hash Address
     | ScriptAddress { getAddrHash :: Hash160 }
        deriving (Eq, Show)
+
+instance NFData Address where
+    rnf (PubKeyAddress h) = rnf h
+    rnf (ScriptAddress h) = rnf h
 
 instance FromJSON Address where
     parseJSON = withText "Address not a string: " $ \a -> do

@@ -29,6 +29,7 @@ module Network.Haskoin.Stratum.JSONRPC.Message
 ) where
 
 import Control.Applicative ((<|>))
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (mzero)
 import Data.Aeson.Types hiding (Result)
 import Data.Text (Text, unpack)
@@ -89,6 +90,24 @@ data Msg j r e v
     -- | response message container.
     | MsgResponse { msgResponse :: !(Response r e v) }
     deriving (Eq, Show)
+
+instance NFData Id where
+    rnf (IntId i) = rnf i
+    rnf (TxtId t) = rnf t
+
+instance (NFData e, NFData v) => NFData (Error e v) where
+    rnf (ErrObj c m d) = rnf c `seq` rnf m `seq` rnf d
+    rnf (ErrVal v) = rnf v
+
+instance NFData j => NFData (Request j) where
+    rnf (Request m p i) = rnf m `seq` rnf p `seq` rnf i
+
+instance (NFData r, NFData e, NFData v) => NFData (Response r e v) where
+    rnf (Response r i) = rnf r `seq` rnf i
+
+instance (NFData j, NFData r, NFData e, NFData v) => NFData (Msg j r e v) where
+    rnf (MsgRequest r) = rnf r
+    rnf (MsgResponse r) = rnf r
 
 instance FromJSON Id where
     parseJSON (String s) = return (TxtId s)

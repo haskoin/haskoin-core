@@ -24,6 +24,7 @@ import Data.Binary (Binary, get, put)
 import Data.Binary.Get (Get, getWord8)
 import Data.Binary.Put (Put, putWord8)
 
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (when, unless, guard)
 import Control.Applicative ((<$>),(<*>))
 import Data.Maybe (isJust, fromJust)
@@ -56,6 +57,10 @@ data PubKey
     -- | Uncompressed public key
     | PubKeyU { pubKeyPoint :: !Point }
     deriving (Read, Show)
+
+instance NFData PubKey where
+    rnf (PubKey p) = rnf p
+    rnf (PubKeyU p) = rnf p
 
 instance Eq PubKey where
     -- Compression does not matter for InfPoint
@@ -160,6 +165,10 @@ data PrvKey
     -- | Uncompressed private key
     | PrvKeyU { prvKeyFieldN :: !FieldN } 
     deriving (Eq, Show, Read)
+
+instance NFData PrvKey where
+    rnf (PrvKey p) = rnf p
+    rnf (PrvKeyU p) = rnf p
 
 -- | Returns True if the private key is valid. This will check if the integer
 -- value representing the private key is greater than 0 and smaller than the

@@ -38,6 +38,7 @@ module Network.Haskoin.Crypto.NormalizedKeys
 , intMulSigAddrs
 ) where
 
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM2, guard)
 import Control.Applicative ((<$>))
 
@@ -57,12 +58,18 @@ type KeyIndex = Word32
 newtype MasterKey = MasterKey { masterKey :: XPrvKey }
     deriving (Eq, Show, Read)
 
+instance NFData MasterKey where
+    rnf (MasterKey m) = rnf m
+
 -- | Data type representing a private account key. Account keys are generated
 -- from a 'MasterKey' through prime derivation. This guarantees that the
 -- 'MasterKey' will not be compromised if the account key is compromised. 
 -- 'AccPrvKey' is represented as m\/i'\/ in BIP32 notation.
 newtype AccPrvKey = AccPrvKey { getAccPrvKey :: XPrvKey }
     deriving (Eq, Show, Read)
+
+instance NFData AccPrvKey where
+    rnf (AccPrvKey k) = rnf k
 
 -- | Data type representing a public account key. It is computed through
 -- derivation from an 'AccPrvKey'. It can not be derived from the 'MasterKey'
@@ -71,6 +78,9 @@ newtype AccPrvKey = AccPrvKey { getAccPrvKey :: XPrvKey }
 -- addresses without the knowledge of the 'AccPrvKey'.
 newtype AccPubKey = AccPubKey { getAccPubKey :: XPubKey }
     deriving (Eq, Show, Read)
+
+instance NFData AccPubKey where
+    rnf (AccPubKey k) = rnf k
 
 -- | Data type representing a private address key. Private address keys are
 -- generated through a non-prime derivation from an 'AccPrvKey'. Non-prime
@@ -83,6 +93,9 @@ newtype AccPubKey = AccPubKey { getAccPubKey :: XPubKey }
 newtype AddrPrvKey = AddrPrvKey { getAddrPrvKey :: XPrvKey }
     deriving (Eq, Show, Read)
 
+instance NFData AddrPrvKey where
+    rnf (AddrPrvKey k) = rnf k
+
 -- | Data type representing a public address key. They are generated through
 -- non-prime derivation from an 'AccPubKey'. This is a useful feature for
 -- read-only wallets. They are represented as M\/i'\/0\/j in BIP32 notation
@@ -90,6 +103,9 @@ newtype AddrPrvKey = AddrPrvKey { getAddrPrvKey :: XPrvKey }
 -- addresses.
 newtype AddrPubKey = AddrPubKey { getAddrPubKey :: XPubKey }
     deriving (Eq, Show, Read)
+
+instance NFData AddrPubKey where
+    rnf (AddrPubKey k) = rnf k
 
 -- | Create a 'MasterKey' from a seed.
 makeMasterKey :: BS.ByteString -> Maybe MasterKey

@@ -65,7 +65,6 @@ module Network.Haskoin.Script
 , encodeSig
 , decodeSig
 , decodeCanonicalSig
-
 ) where
 
 import Network.Haskoin.Script.Types

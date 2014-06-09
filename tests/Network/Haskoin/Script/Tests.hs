@@ -20,9 +20,11 @@ import Network.Haskoin.Protocol.Arbitrary ()
 import Network.Haskoin.Script.Arbitrary (ScriptOpInt(..))
 
 import Network.Haskoin.Script
+import Network.Haskoin.Script.Evaluator (Stack, runStack, runProgram, evalScript)
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Util
+
 
 tests :: [Test]
 tests = 
@@ -45,6 +47,14 @@ tests =
         , testProperty "decode . encode TxSignature" binTxSig
         , testProperty "decodeCanonical . encode TxSignature" binTxSigCanonical
         , testProperty "Testing txSigHash with SigSingle" testSigHashOne
+        ]
+    , testGroup "Script Evaluator"
+        [ testProperty "OP_DUP"
+            (testStackEqual [OP_3, OP_DUP] [[3], [3]])
+        , testProperty "OP_IF then"
+            (testStackEqual [OP_1, OP_IF, OP_2, OP_ELSE, OP_3, OP_ENDIF] [[2]])
+        , testProperty "OP_IF else"
+            (testStackEqual [OP_0, OP_IF, OP_2, OP_ELSE, OP_3, OP_ENDIF] [[3]])
         ]
     ]
 
@@ -121,3 +131,18 @@ testSigHashOne tx s acp = not (null $ txIn tx) ==>
         else res /= (setBit 0 248)
     where res = txSigHash tx s (length (txIn tx) - 1) (SigSingle acp)
 
+
+
+
+{- Script Evaluation -}
+
+rejectSignature _ _ = False
+
+testScriptEvalFalse :: Script -> Bool
+testScriptEvalFalse sc = not $ evalScript sc rejectSignature
+
+testStackEqual :: [ScriptOp] -> Stack -> Bool
+testStackEqual instructions result =
+    case runProgram instructions rejectSignature of
+        Left _ -> False
+        Right ((), prog) -> result == runStack prog

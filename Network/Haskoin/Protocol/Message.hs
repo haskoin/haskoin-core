@@ -3,6 +3,7 @@ module Network.Haskoin.Protocol.Message
 , MessageHeader(..) 
 ) where
 
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (unless)
 import Control.Applicative ((<$>),(<*>))
 
@@ -47,6 +48,9 @@ data MessageHeader =
                   , headChecksum    :: !CheckSum32
                   } deriving (Eq, Show, Read)
 
+instance NFData MessageHeader where
+    rnf (MessageHeader m c p s) = rnf m `seq` rnf c `seq` rnf p `seq` rnf s
+
 instance Binary MessageHeader where
 
     get = MessageHeader <$> getWord32be
@@ -67,26 +71,44 @@ instance Binary MessageHeader where
 -- include the 'MessageHeader' with the correct checksum value automatically.
 -- No need to add the 'MessageHeader' separately.
 data Message 
-    = MVersion Version 
+    = MVersion !Version 
     | MVerAck 
-    | MAddr Addr 
-    | MInv Inv 
-    | MGetData GetData 
-    | MNotFound NotFound 
-    | MGetBlocks GetBlocks 
-    | MGetHeaders GetHeaders 
-    | MTx Tx 
-    | MBlock Block 
-    | MHeaders Headers 
+    | MAddr !Addr 
+    | MInv !Inv 
+    | MGetData !GetData 
+    | MNotFound !NotFound 
+    | MGetBlocks !GetBlocks 
+    | MGetHeaders !GetHeaders 
+    | MTx !Tx 
+    | MBlock !Block 
+    | MHeaders !Headers 
     | MGetAddr 
-    | MFilterLoad FilterLoad
-    | MFilterAdd FilterAdd
+    | MFilterLoad !FilterLoad
+    | MFilterAdd !FilterAdd
     | MFilterClear
-    | MPing Ping 
-    | MPong Pong 
-    | MAlert Alert
+    | MPing !Ping 
+    | MPong !Pong 
+    | MAlert !Alert
     | MReject Reject
     deriving (Eq, Show, Read)
+
+instance NFData Message where
+    rnf (MVersion v) = rnf v
+    rnf (MAddr a) = rnf a
+    rnf (MInv i) = rnf i
+    rnf (MGetData d) = rnf d
+    rnf (MNotFound n) = rnf n
+    rnf (MGetBlocks b) = rnf b
+    rnf (MGetHeaders h) = rnf h
+    rnf (MTx t) = rnf t
+    rnf (MBlock b) = rnf b
+    rnf (MHeaders h) = rnf h
+    rnf (MFilterLoad f) = rnf f
+    rnf (MFilterAdd f) = rnf f
+    rnf (MPing p) = rnf p
+    rnf (MPong p) = rnf p
+    rnf (MAlert a) = rnf a
+    rnf x = x `seq` ()
 
 instance Binary Message where
 

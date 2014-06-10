@@ -30,6 +30,7 @@ module Network.Haskoin.Crypto.Hash
 ) where
 
 import Control.Applicative ((<$>))
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (replicateM)
 
 import Crypto.Hash 
@@ -71,6 +72,9 @@ import Network.Haskoin.Crypto.BigWord
 
 -- | Data type representing a 32 bit checksum
 newtype CheckSum32 = CheckSum32 Word32 deriving (Show, Eq, Read)
+
+instance NFData CheckSum32 where
+    rnf (CheckSum32 w) = rnf w
 
 instance Binary CheckSum32 where
     get = CheckSum32 <$> get

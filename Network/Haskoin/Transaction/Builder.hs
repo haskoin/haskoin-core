@@ -14,6 +14,7 @@ module Network.Haskoin.Transaction.Builder
 , isTxComplete
 ) where
 
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (when, guard, liftM2)
 import Control.Applicative ((<$>))
 import Control.Monad.Trans  (lift)
@@ -32,10 +33,13 @@ import Network.Haskoin.Script
 -- represented by a transaction output, an outpoint and optionally a
 -- redeem script.
 data Coin = 
-    Coin { coinTxOut    :: TxOut        -- ^ Transaction output
-         , coinOutPoint :: OutPoint     -- ^ Previous outpoint
-         , coinRedeem   :: Maybe Script -- ^ Redeem script
+    Coin { coinTxOut    :: !TxOut          -- ^ Transaction output
+         , coinOutPoint :: !OutPoint       -- ^ Previous outpoint
+         , coinRedeem   :: !(Maybe Script) -- ^ Redeem script
          } deriving (Eq, Show)
+
+instance NFData Coin where
+    rnf (Coin t p r) = rnf t `seq` rnf p `seq` rnf r
 
 -- | Coin selection algorithm for normal (non-multisig) transactions. This
 -- function returns the selected coins together with the amount of change to
@@ -161,17 +165,21 @@ buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
 -- script is required.
 data SigInput 
     -- | Parameters for signing a pay to public key hash output.
-    = SigInput   { sigDataOut :: Script   -- ^ Output script to spend.
-                 , sigDataOP  :: OutPoint 
+    = SigInput   { sigDataOut :: !Script   -- ^ Output script to spend.
+                 , sigDataOP  :: !OutPoint 
                    -- ^ Reference to the transaction output to spend.
-                 , sigDataSH  :: SigHash  -- ^ Signature type.
+                 , sigDataSH  :: !SigHash  -- ^ Signature type.
                  } 
     -- | Parameters for signing a pay to script hash output.
-    | SigInputSH { sigDataOut :: Script   
-                 , sigDataOP  :: OutPoint 
-                 , sigRedeem  :: Script   -- ^ Redeem script.
-                 , sigDataSH  :: SigHash  
+    | SigInputSH { sigDataOut :: !Script   
+                 , sigDataOP  :: !OutPoint 
+                 , sigRedeem  :: !Script   -- ^ Redeem script.
+                 , sigDataSH  :: !SigHash  
                  } deriving (Eq, Show)
+
+instance NFData SigInput where
+    rnf (SigInput o p h) = rnf o `seq` rnf p `seq` rnf h
+    rnf (SigInputSH o p r h) = rnf o `seq` rnf p `seq` rnf r `seq` rnf h
 
 liftSecret :: Monad m => Build a -> SecretT (BuildT m) a
 liftSecret = lift . liftBuild

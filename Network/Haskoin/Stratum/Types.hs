@@ -124,7 +124,7 @@ instance NFData StratumResponse where
     rnf (AddrStatus s) = rnf s
 
 instance NFData StratumNotif where
-    rnf (NotifAddress a s) = s `seq` rnf a
+    rnf (NotifAddress a s) = rnf a `seq` rnf s
 
 instance ToJSON StratumNotif where
     toJSON (NotifAddress a t) = toJSON (a, bsToHex $ encode' t)

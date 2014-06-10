@@ -283,14 +283,14 @@ decodeSigInput sigi keys = case sigi of
 buildTxInSH :: BuildFunction
 buildTxInSH txin tx rdm i pubs sigs = do
     s   <- scriptInput <$> buildTxIn txin tx rdm i pubs sigs
-    res <- either emptyIn return $ 
+    res <- either prevIn return $ 
         encodeScriptHashBS . (flip ScriptHashInput rdm) <$> decodeInputBS s
     return txin{ scriptInput = res }
-    where emptyIn = const $ Partial BS.empty
+    where prevIn = const $ Partial $ scriptInput txin
 
 buildTxIn :: BuildFunction
 buildTxIn txin tx out i pubs sigs 
-    | null sigs = Partial txin{ scriptInput = BS.empty }
+    | null sigs = Partial txin
     | otherwise = buildRes <$> case out of
         PayPK _     -> return $ SpendPK $ head sigs
         PayPKHash _ -> return $ SpendPKHash (head sigs) (head pubs)

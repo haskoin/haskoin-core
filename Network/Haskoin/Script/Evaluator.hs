@@ -3,8 +3,13 @@ module Network.Haskoin.Script.Evaluator
 ( Program
 , Stack
 , evalScript
+, encodeInt
+, decodeInt
+, encodeBool
+, decodeBool
 , runProgram
 , runStack
+, dumpStack
 ) where
 
 import Debug.Trace (trace)
@@ -18,7 +23,9 @@ import Control.Applicative ((<$>), (<*>))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 
-import Data.Word (Word8)
+import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit, bit)
+import Data.Int (Int64)
+import Data.Word (Word8, Word64)
 
 import Data.Binary.Put (runPut)
 
@@ -84,27 +91,60 @@ programError s = get >>= throwError . ProgramError s
 --------------------------------------------------------------------------------
 -- Type Conversions
 
-isConstant :: ScriptOp -> Bool
-isConstant op = case op of
-    (OP_PUSHDATA _ _) -> True
-    OP_0  -> True
-    OP_1  -> True
-    OP_2  -> True
-    OP_4  -> True
-    OP_5  -> True
-    OP_7  -> True
-    OP_8  -> True
-    OP_9  -> True
-    OP_10 -> True
-    OP_11 -> True
-    OP_12 -> True
-    OP_13 -> True
-    OP_14 -> True
-    OP_15 -> True
-    OP_16 -> True
-    OP_1NEGATE -> True
-    _ -> False
 
+encodeInt :: Int64 -> StackValue
+encodeInt 0 = []
+encodeInt i = prefix $ reverse $ encode (fromIntegral $ abs i) []
+    where encode :: Word64 -> StackValue -> StackValue
+          encode 0 bytes = bytes
+          encode j bytes = (fromIntegral j):(encode (j `shiftR` 8) bytes)
+          prefix [] = []
+          prefix (x:xs) | testBit x 7 = prefix (0:x:xs)
+                        | i < 0       = (setBit x 7):xs
+                        | otherwise   = (x:xs)
+
+
+decodeInt :: StackValue -> Int64
+decodeInt [] = 0
+decodeInt (x:xs) | testBit x 7 = -(decode 0 ((clearBit x 7):xs))
+                 | otherwise   = decode 0 (x:xs)
+    where decode :: Int64 -> StackValue -> Int64
+          decode s [] = s
+          decode s (y:ys) = decode ((s `shiftL` 8) + (fromIntegral y)) ys
+
+
+decodeBool :: StackValue -> Bool
+decodeBool v = decodeInt v /= 0
+
+
+encodeBool :: Bool -> StackValue
+encodeBool True = [1]
+encodeBool False = []
+
+
+
+constValue :: ScriptOp -> Maybe StackValue
+constValue op = case op of
+    OP_0  -> Just $ encodeInt 0
+    OP_1  -> Just $ encodeInt 1
+    OP_2  -> Just $ encodeInt 2
+    OP_3  -> Just $ encodeInt 3
+    OP_4  -> Just $ encodeInt 4
+    OP_5  -> Just $ encodeInt 5
+    OP_6  -> Just $ encodeInt 6
+    OP_7  -> Just $ encodeInt 7
+    OP_8  -> Just $ encodeInt 8
+    OP_9  -> Just $ encodeInt 9
+    OP_10 -> Just $ encodeInt 10
+    OP_11 -> Just $ encodeInt 11
+    OP_12 -> Just $ encodeInt 12
+    OP_13 -> Just $ encodeInt 13
+    OP_14 -> Just $ encodeInt 14
+    OP_15 -> Just $ encodeInt 15
+    OP_16 -> Just $ encodeInt 16
+    OP_1NEGATE -> Just $ encodeInt $ -1
+    (OP_PUSHDATA string _) -> Just $ BS.unpack string
+    _ -> Nothing
 
 rejectSignature :: SigCheck
 rejectSignature _ _ = False
@@ -114,51 +154,23 @@ isDisabled op = case runProgram [op] rejectSignature of
     Left (DisabledOp _) -> True
     _ -> False
 
-intToSv :: Int -> StackValue
-intToSv i = undefined
-
-svToInt :: StackValue -> Int
-svToInt sv = undefined
-
-svSize :: StackValue -> Int
-svSize = undefined
-
--- see CastToBool
--- TODO probably incomplete
-svToBool :: StackValue -> Bool
-svToBool sv = undefined
-
-boolToSv :: Bool -> StackValue
-boolToSv sv = undefined
-
-svTrue :: StackValue
-svTrue = undefined
-
-svFalse :: StackValue
-svFalse = undefined
-
-
+popInt :: ProgramTransition Int64
+popInt = popStack >>= \sv ->
+    if (length sv) > 4 then
+        programError $ "integer > nMaxNumSize: " ++ show (length sv)
+    else
+        return $ decodeInt sv
 
 -- see CastToBignum
 -- https://github.com/piotrnar/gocoin/blob/master/btc/stack.go#L56
 -- https://github.com/bitcoin/bitcoin/blob/master/src/bignum.h
 
 
-
 opToSv :: StackValue -> BS.ByteString
-opToSv op = undefined
+opToSv = BS.pack
 
 bsToSv :: BS.ByteString -> StackValue
-bsToSv op = undefined
-
-
-
-opSize :: ScriptOp -> Int
-opSize op = undefined -- TODO
-
-
-stackValue :: ScriptOp -> StackValue
-stackValue = undefined
+bsToSv = BS.unpack
 
 --------------------------------------------------------------------------------
 -- Script Primitives
@@ -260,14 +272,19 @@ tStack3L p q f = tStack3 $ \a b c -> return $ q $ f (p a) (p b) (p c)
 
 
 
-arith1 :: (Int -> Int) -> ProgramTransition ()
-arith1 = tStack1L svToInt intToSv
+arith1 :: (Int64 -> Int64) -> ProgramTransition ()
+arith1 f = do
+    i <- popInt
+    pushStack $ encodeInt (f i)
 
-arith2 :: (Int -> Int -> Int) -> ProgramTransition ()
-arith2 = tStack2L svToInt intToSv
+arith2 :: (Int64 -> Int64 -> Int64) -> ProgramTransition ()
+arith2 f = do
+    i <- popInt
+    j <- popInt
+    pushStack $ encodeInt (f i j)
 
 bool2 :: (Bool -> Bool -> Bool) -> ProgramTransition ()
-bool2 = tStack2L svToBool boolToSv
+bool2 = tStack2L decodeBool encodeBool
 
 
 stackError :: ProgramTransition a
@@ -314,12 +331,12 @@ evalIf cond = case cond of
 
 
 eval OP_NOP     = return ()
-eval OP_IF      = popStack >>= evalIf . svToBool
-eval OP_NOTIF   = popStack >>= evalIf . not . svToBool
+eval OP_IF      = popStack >>= evalIf . decodeBool
+eval OP_NOTIF   = popStack >>= evalIf . not . decodeBool
 eval OP_ELSE    = programError "OP_ELSE outside OP_IF"
 eval OP_ENDIF   = programError "OP_ENDIF outside OP_IF"
 
-eval OP_VERIFY = svToBool <$> popStack >>= \case
+eval OP_VERIFY = decodeBool <$> popStack >>= \case
     False -> programError "OP_VERIFY failed"
     True  -> return ()
 
@@ -331,18 +348,18 @@ eval OP_RETURN = programError "explicit OP_RETURN"
 
 eval OP_TOALTSTACK = popStack >>= pushAltStack
 eval OP_FROMALTSTACK = popAltStack >>= pushStack
-eval OP_IFDUP   = tStack1 $ \a -> if svToBool a then [a, a] else []
-eval OP_DEPTH   = getStack >>= pushStack . intToSv . length
+eval OP_IFDUP   = tStack1 $ \a -> if decodeBool a then [a, a] else []
+eval OP_DEPTH   = getStack >>= pushStack . encodeInt . fromIntegral . length
 eval OP_DROP    = void popStack
 eval OP_DUP     = tStack1 $ \a -> [a, a]
-eval OP_NIP     = tStack2 $ \a b -> [a]
+eval OP_NIP     = tStack2 $ \a _ -> [a]
 eval OP_OVER    = tStack2 $ \a b -> [a, b, a]
-eval OP_PICK    = svToInt <$> popStack >>= (pickStack False)
-eval OP_ROLL    = svToInt <$> popStack >>= (pickStack True)
+eval OP_PICK    = decodeInt <$> popStack >>= (pickStack False . fromIntegral)
+eval OP_ROLL    = decodeInt <$> popStack >>= (pickStack True . fromIntegral)
 eval OP_ROT     = tStack3 $ \a b c -> [c, b, a]
 eval OP_SWAP    = tStack2 $ \a b -> [b, a]
 eval OP_TUCK    = tStack2 $ \a b -> [b, a, b]
-eval OP_2DROP   = tStack2 $ \a b -> []
+eval OP_2DROP   = tStack2 $ \_ _ -> []
 eval OP_2DUP    = tStack2 $ \a b -> [a, b, a, b]
 eval OP_3DUP    = tStack3 $ \a b c -> [a, b, c, a, b, c]
 eval OP_2OVER   = tStack4 $ \a b c d -> [a, b, c, d, a, b]
@@ -355,7 +372,7 @@ eval OP_CAT     = disabled
 eval OP_SUBSTR  = disabled
 eval OP_LEFT    = disabled
 eval OP_RIGHT   = disabled
-eval OP_SIZE    = (svSize <$> popStack) >>= pushStack . intToSv
+eval OP_SIZE    = (fromIntegral . length <$> popStack) >>= pushStack . encodeInt
 
 -- Bitwise Logic
 
@@ -363,7 +380,7 @@ eval OP_INVERT  = disabled
 eval OP_AND     = disabled
 eval OP_OR      = disabled
 eval OP_XOR     = disabled
-eval OP_EQUAL   = tStack2 $ \a b -> if a == b then [svTrue] else [svFalse]
+eval OP_EQUAL   = tStack2 $ \a b -> [encodeBool (a == b)]
 eval OP_EQUALVERIFY = (eval OP_EQUAL) >> (eval OP_VERIFY)
 
 -- Arithmetic
@@ -387,14 +404,14 @@ eval OP_BOOLAND     = bool2 (&&)
 eval OP_BOOLOR      = bool2 (||)
 eval OP_NUMEQUAL    = bool2 (==)
 eval OP_NUMEQUALVERIFY = eval OP_NUMEQUAL >> eval OP_VERIFY
-eval OP_NUMNOTEQUAL         = tStack2L svToInt boolToSv (/=)
-eval OP_LESSTHAN            = tStack2L svToInt boolToSv (<)
-eval OP_GREATERTHAN         = tStack2L svToInt boolToSv (>)
-eval OP_LESSTHANOREQUAL     = tStack2L svToInt boolToSv (<=)
-eval OP_GREATERTHANOREQUAL  = tStack2L svToInt boolToSv (>=)
-eval OP_MIN     = tStack2L svToInt intToSv min
-eval OP_MAX     = tStack2L svToInt intToSv max
-eval OP_WITHIN  = tStack3L svToInt boolToSv $
+eval OP_NUMNOTEQUAL         = tStack2L decodeInt encodeBool (/=)
+eval OP_LESSTHAN            = tStack2L decodeInt encodeBool (<)
+eval OP_GREATERTHAN         = tStack2L decodeInt encodeBool (>)
+eval OP_LESSTHANOREQUAL     = tStack2L decodeInt encodeBool (<=)
+eval OP_GREATERTHANOREQUAL  = tStack2L decodeInt encodeBool (>=)
+eval OP_MIN     = tStack2L decodeInt encodeInt min
+eval OP_MAX     = tStack2L decodeInt encodeInt max
+eval OP_WITHIN  = tStack3L decodeInt encodeBool $
     \a x y -> (x <= a) && (a < y)
 
 eval OP_RIPEMD160 = tStack1 $ return . bsToSv . hash160BS . opToSv
@@ -406,15 +423,16 @@ eval OP_HASH160 = tStack1 $ return . bsToSv . hash160BS . hash256BS . opToSv
 eval OP_HASH256 = tStack1 $ return . bsToSv . doubleHash256BS  . opToSv
 eval OP_CODESEPARATOR = clearHashOps
 eval OP_CHECKSIG = undefined
-eval OP_CHECKMULTISIG = popStack >>= checkMultiSig . svToInt
+eval OP_CHECKMULTISIG = popStack >>= checkMultiSig . decodeInt
     where  checkMultiSig 0 = return ()
            checkMultiSig x = eval OP_CHECKSIG >> checkMultiSig (x - 1)
 
 eval OP_CHECKSIGVERIFY      = eval OP_CHECKSIG      >> eval OP_VERIFY
 eval OP_CHECKMULTISIGVERIFY = eval OP_CHECKMULTISIG >> eval OP_VERIFY
 
-eval op | isConstant op = pushStack $ stackValue op
-        | otherwise     = programError $ "unknown op " ++ show op
+eval op = case constValue op of
+    Just sv -> pushStack sv
+    Nothing -> programError $ "unknown op " ++ show op
 
 --------------------------------------------------------------------------------
 
@@ -443,7 +461,7 @@ evalScript :: Script -> SigCheck -> Bool
 evalScript script sigCheck = case runProgram (scriptOps script) sigCheck of
     Left _ -> False
     Right ((), prog) -> case stack prog of
-        (x:_)  -> svToBool x
+        (x:_)  -> decodeBool x
         []     -> False
 
 runStack :: Program -> Stack

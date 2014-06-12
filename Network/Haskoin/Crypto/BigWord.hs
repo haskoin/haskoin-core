@@ -52,6 +52,7 @@ import Data.Binary.Put
     , putWord8
     , putByteString
     )
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (unless, guard)
 import Control.Applicative ((<$>))
 import Data.Ratio (numerator, denominator)
@@ -90,6 +91,9 @@ data ModN
 
 newtype BigWord n = BigWord { getBigWordInteger :: Integer }
     deriving (Eq, Ord, Read, Show)
+
+instance NFData (BigWord n) where
+    rnf (BigWord n) = rnf n
 
 toFieldN :: BigWord n -> FieldN
 toFieldN (BigWord i) = fromInteger i

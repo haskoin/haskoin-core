@@ -15,6 +15,7 @@ module Network.Haskoin.Crypto.ECDSA
 
 import System.IO
 
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM, guard, unless)
 import Control.Monad.Trans (MonadTrans, lift)
 import Control.Applicative (Applicative, (<*>), (<$>))
@@ -110,6 +111,9 @@ data Signature =
               , sigS :: !FieldN 
               }
     deriving (Show, Eq)
+
+instance NFData Signature where
+    rnf (Signature r s) = rnf r `seq` rnf s
 
 -- Section 4.1.3 http://www.secg.org/download/aid-780/sec1-v2.pdf
 -- | Safely sign a message inside the 'SecretT' monad. The 'SecretT' monad will

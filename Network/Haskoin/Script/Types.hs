@@ -5,6 +5,7 @@ module Network.Haskoin.Script.Types
 , opPushData
 ) where
 
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM2, unless, when, forM_)
 import Control.Applicative ((<$>))
 
@@ -40,9 +41,12 @@ import Network.Haskoin.Crypto.Keys (PubKey)
 data Script = 
     Script { 
              -- | List of script operators defining this script
-             scriptOps :: [ScriptOp] 
+             scriptOps :: ![ScriptOp] 
            }
     deriving (Eq, Show, Read)
+
+instance NFData Script where
+    rnf (Script o) = rnf o
 
 instance Binary Script where
     get = 
@@ -72,10 +76,12 @@ data PushDataType
     | OPDATA4
     deriving (Show, Read, Eq)
 
+instance NFData PushDataType
+
 -- | Data type representing all of the operators allowed inside a 'Script'.
 data ScriptOp 
       -- Pushing Data
-    = OP_PUSHDATA BS.ByteString PushDataType 
+    = OP_PUSHDATA !BS.ByteString !PushDataType 
     | OP_0 
     | OP_1NEGATE 
     | OP_1  | OP_2  | OP_3  | OP_4  
@@ -176,10 +182,15 @@ data ScriptOp
 
     | OP_PUBKEYHASH Hash160
     | OP_PUBKEY PubKey
-    | OP_INVALIDOPCODE Word8
+    | OP_INVALIDOPCODE !Word8
 
         deriving (Show, Read, Eq)
 
+
+instance NFData ScriptOp where
+    rnf (OP_PUSHDATA b t) = rnf b `seq` rnf t
+    rnf (OP_INVALIDOPCODE c) = rnf c
+    rnf x = x `seq` ()
 
 
 instance Binary ScriptOp where

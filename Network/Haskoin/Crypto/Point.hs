@@ -15,6 +15,7 @@ module Network.Haskoin.Crypto.Point
 
 import Data.Bits (shiftR)
 import Control.Applicative ((<$>))
+import Control.DeepSeq (NFData, rnf)
 
 import Network.Haskoin.Crypto.Curve
 import Network.Haskoin.Crypto.BigWord 
@@ -33,6 +34,10 @@ curveB = fromInteger integerB
 -}
 data Point = Point !FieldP !FieldP !FieldP | InfPoint
     deriving (Show, Read)
+
+instance NFData Point where
+    rnf (Point p1 p2 p3) = rnf p1 `seq` rnf p2 `seq` rnf p3
+    rnf x = x `seq` ()
 
 instance Eq Point where
     InfPoint         == InfPoint         = True

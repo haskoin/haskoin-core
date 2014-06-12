@@ -30,6 +30,7 @@ module Network.Haskoin.Script.Parser
 , isSpendMulSig
 ) where
 
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM2)
 import Control.Applicative ((<$>),(<*>))
 
@@ -62,6 +63,12 @@ data ScriptOutput =
       -- | Pay to a script hash.
     | PayScriptHash { getOutputAddress  :: !Address }
     deriving (Eq, Show)
+
+instance NFData ScriptOutput where
+    rnf (PayPK k) = rnf k
+    rnf (PayPKHash a) = rnf a
+    rnf (PayMulSig k r) = rnf k `seq` rnf r
+    rnf (PayScriptHash a) = rnf a
 
 -- | Returns True if the script is a pay to public key output.
 isPayPK :: ScriptOutput -> Bool
@@ -220,6 +227,11 @@ data ScriptInput =
                   }
     deriving (Eq, Show)
 
+instance NFData ScriptInput where
+    rnf (SpendPK i) = rnf i
+    rnf (SpendPKHash i k) = rnf i `seq` rnf k
+    rnf (SpendMulSig k r) = rnf k `seq` rnf r
+
 -- | Returns True if the input script is spending a public key.
 isSpendPK :: ScriptInput -> Bool
 isSpendPK (SpendPK _) = True
@@ -290,6 +302,9 @@ data ScriptHashInput = ScriptHashInput
       -- | Redeem script
     , spendSHOutput :: RedeemScript
     } deriving (Eq, Show)
+
+instance NFData ScriptHashInput where
+    rnf (ScriptHashInput i r) = rnf i `seq` rnf r
 
 -- | Compute a 'Script' from a 'ScriptHashInput'. The 'Script' is a list of 
 -- 'ScriptOp' can can be used to build a 'Tx'.

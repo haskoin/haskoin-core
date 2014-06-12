@@ -12,6 +12,7 @@ module Network.Haskoin.Script.SigHash
 , decodeCanonicalSig
 ) where
 
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM2)
 
 import Data.Word (Word8)
@@ -50,19 +51,25 @@ data SigHash
     -- | Sign all of the outputs of a transaction (This is the default value).
     -- Changing any of the outputs of the transaction will invalidate the
     -- signature.
-    = SigAll     { anyoneCanPay :: Bool }   
+    = SigAll     { anyoneCanPay :: !Bool }   
     -- | Sign none of the outputs of a transaction. This allows anyone to
     -- change any of the outputs of the transaction.
-    | SigNone    { anyoneCanPay :: Bool }     
+    | SigNone    { anyoneCanPay :: !Bool }     
     -- | Sign only the output corresponding the the current transaction input.
     -- You care about your own output in the transaction but you don't
     -- care about any of the other outputs.
-    | SigSingle  { anyoneCanPay :: Bool }   
+    | SigSingle  { anyoneCanPay :: !Bool }   
     -- | Unrecognized sighash types will decode to SigUnknown.
-    | SigUnknown { anyoneCanPay :: Bool
-                 , getSigCode   :: Word8 
+    | SigUnknown { anyoneCanPay :: !Bool
+                 , getSigCode   :: !Word8 
                  }
     deriving (Eq, Show)
+
+instance NFData SigHash where
+    rnf (SigAll a) = rnf a
+    rnf (SigNone a) = rnf a
+    rnf (SigSingle a) = rnf a
+    rnf (SigUnknown a c) = rnf a `seq` rnf c
 
 -- | Returns True if the 'SigHash' has the value SigAll.
 isSigAll :: SigHash -> Bool
@@ -147,9 +154,12 @@ buildOutputs txos i sh
 -- 'SigHash' is serialized as one byte at the end of a regular ECDSA
 -- 'Signature'. All signatures in transaction inputs are of type 'TxSignature'.
 data TxSignature = TxSignature 
-    { txSignature :: Signature 
-    , sigHashType :: SigHash
+    { txSignature :: !Signature 
+    , sigHashType :: !SigHash
     } deriving (Eq, Show)
+
+instance NFData TxSignature where
+    rnf (TxSignature s h) = rnf s `seq` rnf h
 
 -- | Serialize a 'TxSignature' to a ByteString.
 encodeSig :: TxSignature -> BS.ByteString

@@ -41,6 +41,7 @@ module Network.Haskoin.Protocol.Types
 , MessageCommand(..)
 ) where
 
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM2, replicateM, forM_, unless)
 import Control.Applicative ((<$>),(<*>))
 
@@ -92,6 +93,9 @@ data Addr =
          } 
     deriving (Eq, Show, Read)
 
+instance NFData Addr where
+    rnf (Addr as) = rnf as
+
 instance Binary Addr where
 
     get = Addr <$> (repList =<< get)
@@ -114,6 +118,9 @@ data Alert =
           , alertSignature :: !VarString
           } deriving (Eq, Show, Read)
 
+instance NFData Alert where
+    rnf (Alert p s) = rnf p `seq` rnf s
+
 instance Binary Alert where
     get = Alert <$> get <*> get
     put (Alert p s) = put p >> put s
@@ -130,6 +137,9 @@ data Block =
             -- | List of transactions pertaining to this block.
           , blockTxns       :: ![Tx]
           } deriving (Eq, Show, Read)
+
+instance NFData Block where
+    rnf (Block h c ts) = rnf h `seq` rnf c `seq` rnf ts
 
 instance Binary Block where
 
@@ -173,6 +183,10 @@ data BlockHeader =
                 , bhNonce        :: !Word32
                 } deriving (Eq, Show, Read)
 
+instance NFData BlockHeader where
+    rnf (BlockHeader v p m t b n) =
+        rnf v `seq` rnf p `seq` rnf m `seq` rnf t `seq` rnf b `seq` rnf n
+
 instance Binary BlockHeader where
 
     get = BlockHeader <$> getWord32le
@@ -204,6 +218,8 @@ data BloomFlags
     -- This is the default setting.
     deriving (Eq, Show, Read)
 
+instance NFData BloomFlags
+
 instance Binary BloomFlags where
     get = go =<< getWord8
       where
@@ -224,16 +240,24 @@ instance Binary BloomFlags where
 -- controlling the false positive rate, SPV nodes can trade off bandwidth
 -- versus privacy.
 data BloomFilter = BloomFilter
-    { bloomData      :: S.Seq Word8 -- ^ Bloom filter data
-    , bloomFull      :: Bool        
+    { bloomData      :: !(S.Seq Word8)
+    -- ^ Bloom filter data
+    , bloomFull      :: !Bool
     -- ^ Flag indicating if the filter is full ('bloomData' is all 0x00)
-    , bloomEmpty     :: Bool
+    , bloomEmpty     :: !Bool
     -- ^ Flag indicating if the filter is empty ('bloomData' is all 0xff)
-    , bloomHashFuncs :: Word32     -- ^ Number of hash functions for this filter
-    , bloomTweak     :: Word32     -- ^ Hash function random nonce
-    , bloomFlags     :: BloomFlags -- ^ Bloom filter auto-update flags
+    , bloomHashFuncs :: !Word32
+    -- ^ Number of hash functions for this filter
+    , bloomTweak     :: !Word32
+    -- ^ Hash function random nonce
+    , bloomFlags     :: !BloomFlags
+    -- ^ Bloom filter auto-update flags
     }
     deriving (Eq, Show, Read)
+
+instance NFData BloomFilter where
+    rnf (BloomFilter d f e h t g) =
+        rnf d `seq` rnf f `seq` rnf e `seq` rnf h `seq` rnf t `seq` rnf g
 
 instance Binary BloomFilter where
 
@@ -255,6 +279,9 @@ instance Binary BloomFilter where
 newtype FilterLoad = FilterLoad { getBloomFilter :: BloomFilter }
     deriving (Eq, Show, Read)
 
+instance NFData FilterLoad where
+    rnf (FilterLoad f) = rnf f
+
 instance Binary FilterLoad where
     get = FilterLoad <$> get
     put (FilterLoad f) = put f
@@ -263,6 +290,9 @@ instance Binary FilterLoad where
 -- requiring a completely new one to be set.
 newtype FilterAdd = FilterAdd { getFilterData :: BS.ByteString }
     deriving (Eq, Show, Read)
+
+instance NFData FilterAdd where
+    rnf (FilterAdd f) = rnf f
 
 instance Binary FilterAdd where
     get = do
@@ -297,6 +327,9 @@ data GetBlocks =
               , getBlocksHashStop :: !Hash256
               } deriving (Eq, Show, Read)
 
+instance NFData GetBlocks where
+    rnf (GetBlocks v l h) = rnf v `seq` rnf l `seq` rnf h
+
 instance Binary GetBlocks where
 
     get = GetBlocks <$> getWord32le
@@ -324,6 +357,9 @@ data GetData =
               -- | List of object hashes 
               getDataList :: ![InvVector] 
             } deriving (Eq, Show, Read)
+
+instance NFData GetData where
+    rnf (GetData l) = rnf l
 
 instance Binary GetData where
 
@@ -353,6 +389,9 @@ data GetHeaders =
                , getHeadersHashStop :: !Hash256
                } deriving (Eq, Show, Read)
 
+instance NFData GetHeaders where
+    rnf (GetHeaders v l h) = rnf v `seq` rnf l `seq` rnf h
+
 instance Binary GetHeaders where
 
     get = GetHeaders <$> getWord32le
@@ -379,6 +418,9 @@ data Headers =
             } 
     deriving (Eq, Show, Read)
 
+instance NFData Headers where
+    rnf (Headers l) = rnf l
+
 instance Binary Headers where
 
     get = Headers <$> (repList =<< get)
@@ -399,6 +441,9 @@ data Inv =
           invList :: ![InvVector] 
         } deriving (Eq, Show, Read)
 
+instance NFData Inv where
+    rnf (Inv l) = rnf l
+
 instance Binary Inv where
 
     get = Inv <$> (repList =<< get)
@@ -416,6 +461,8 @@ data InvType
     | InvBlock -- ^ InvVector hash is related to a block
     | InvMerkleBlock -- ^ InvVector has is related to a merkle block
     deriving (Eq, Show, Read)
+
+instance NFData InvType
 
 instance Binary InvType where
 
@@ -445,6 +492,9 @@ data InvVector =
               , invHash :: !Hash256
               } deriving (Eq, Show, Read)
 
+instance NFData InvVector where
+    rnf (InvVector t h) = rnf t `seq` rnf h
+
 instance Binary InvVector where
     get = InvVector <$> get <*> get
     put (InvVector t h) = put t >> put h
@@ -458,12 +508,15 @@ data MerkleBlock =
                 , merkleTotalTxns :: !Word32
                   -- | Hashes in depth-first order. They are used to rebuild a
                   -- partial merkle tree.
-                , mHashes     :: [Hash256]
+                , mHashes     :: ![Hash256]
                   -- | Flag bits, packed per 8 in a byte. Least significant bit
                   -- first. Flag bits are used to rebuild a partial merkle
                   -- tree.
-                , mFlags      :: [Bool]
+                , mFlags      :: ![Bool]
                 } deriving (Eq, Show, Read)
+
+instance NFData MerkleBlock where
+    rnf (MerkleBlock m t h f) = rnf m `seq` rnf t `seq` rnf h `seq` rnf f
 
 instance Binary MerkleBlock where
 
@@ -517,6 +570,9 @@ data NetworkAddress =
                    , naPort     :: !Word16
                    } deriving (Eq, Show, Read)
 
+instance NFData NetworkAddress where
+    rnf (NetworkAddress s a p) = rnf s `seq` rnf a `seq` rnf p
+
 instance Binary NetworkAddress where
 
     get = NetworkAddress <$> getWord64le
@@ -539,6 +595,9 @@ data NotFound =
                notFoundList :: ![InvVector] 
              } deriving (Eq, Show, Read)
 
+instance NFData NotFound where
+    rnf (NotFound l) = rnf l
+
 instance Binary NotFound where
 
     get = NotFound <$> (repList =<< get)
@@ -558,6 +617,9 @@ newtype Ping =
            pingNonce :: Word64 
          } deriving (Eq, Show, Read)
 
+instance NFData Ping where
+    rnf (Ping n) = rnf n
+
 -- | A Pong message is sent as a response to a ping message.
 newtype Pong = 
     Pong { 
@@ -565,6 +627,9 @@ newtype Pong =
            -- is copied in the Pong response.
            pongNonce :: Word64 
          } deriving (Eq, Show, Read)
+
+instance NFData Pong where
+    rnf (Pong n) = rnf n
 
 instance Binary Ping where
     get = Ping <$> getWord64le
@@ -578,11 +643,11 @@ instance Binary Pong where
 data Reject =
     Reject { 
             -- | Type of message rejected
-             rejectMessage :: MessageCommand
+             rejectMessage :: !MessageCommand
              -- | Code related to the rejected message
-           , rejectCode    :: RejectCode
+           , rejectCode    :: !RejectCode
              -- | Text version of rejected reason
-           , rejectReason  :: VarString
+           , rejectReason  :: !VarString
            } deriving (Eq, Show, Read)
 
 
@@ -654,6 +719,9 @@ data Tx =
        , txLockTime :: !Word32
        } deriving (Eq, Show, Read)
 
+instance NFData Tx where
+    rnf (Tx v i o l) = rnf v `seq` rnf i `seq` rnf o `seq` rnf l
+
 instance Binary Tx where
 
     get = Tx <$> getWord32le
@@ -700,6 +768,10 @@ data CoinbaseTx =
                , cbLockTime   :: !Word32
                } deriving (Eq, Show, Read)
 
+instance NFData CoinbaseTx where
+    rnf (CoinbaseTx v p d i o l) =
+        rnf v `seq` rnf p `seq` rnf d `seq` rnf i `seq` rnf o `seq` rnf l
+
 instance Binary CoinbaseTx where
 
     get = do
@@ -740,6 +812,9 @@ data TxIn =
          , txInSequence :: !Word32
          } deriving (Eq, Show, Read)
 
+instance NFData TxIn where
+    rnf (TxIn p i s) = rnf p `seq` rnf i `seq` rnf s
+
 instance Binary TxIn where
 
     get = 
@@ -761,6 +836,9 @@ data TxOut =
             -- | Script specifying the conditions to spend this output.
           , scriptOutput :: !BS.ByteString
           } deriving (Eq, Show, Read)
+
+instance NFData TxOut where
+    rnf (TxOut v o) = rnf v `seq` rnf o
 
 instance Binary TxOut where
 
@@ -786,6 +864,9 @@ data OutPoint =
                -- The first output position is 0.
              , outPointIndex :: !Word32
              } deriving (Read, Show, Eq)
+
+instance NFData OutPoint where
+    rnf (OutPoint h i) = rnf h `seq` rnf i
 
 instance Binary OutPoint where
     get = do
@@ -816,7 +897,10 @@ decodeTxid = (decodeToMaybe . BS.reverse =<<) . hexToBS
 -- usually precedes an array or a string that can vary in length. 
 newtype VarInt = VarInt { getVarInt :: Word64 }
     deriving (Eq, Show, Read)
-    
+
+instance NFData VarInt where
+    rnf (VarInt w) = rnf w
+
 instance Binary VarInt where
 
     get = VarInt <$> ( getWord8 >>= go )
@@ -843,6 +927,9 @@ instance Binary VarInt where
 -- serialized as a 'VarInt' followed by a bytestring.
 newtype VarString = VarString { getVarString :: BS.ByteString }
     deriving (Eq, Show, Read)
+
+instance NFData VarString where
+    rnf (VarString s) = rnf s
 
 instance Binary VarString where
 
@@ -881,6 +968,11 @@ data Version =
               -- BIP37 for more details.
             , relay       :: !Bool
             } deriving (Eq, Show, Read)
+
+instance NFData Version where
+    rnf (Version ver ser ts ar as vn ua sh re) =
+        rnf ver `seq` rnf ser `seq` rnf ts `seq` rnf ar `seq`
+        rnf as `seq` rnf vn `seq` rnf ua `seq` rnf sh `seq` rnf re
 
 instance Binary Version where
 
@@ -944,6 +1036,8 @@ data MessageCommand
     | MCAlert
     | MCReject
     deriving (Eq, Show, Read)
+
+instance NFData MessageCommand
 
 instance Binary MessageCommand where
     

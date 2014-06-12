@@ -18,6 +18,7 @@ module Network.Haskoin.Stratum.Types
 , ResultStratum
 ) where
 
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (mzero)
 import Data.Aeson
     ( FromJSON
@@ -94,6 +95,36 @@ data StratumResponse
 data StratumNotif
     = NotifAddress { notifAddr :: !Address, notifAddrStatus :: !Hash256 }
     deriving (Eq, Show)
+
+instance NFData TxHeight where
+    rnf (TxHeight b i) = rnf b `seq` rnf i
+
+instance NFData Coin where
+    rnf (Coin o t v) = rnf v `seq` rnf o `seq` rnf t
+
+instance NFData Balance where
+    rnf (Balance c u) = rnf c `seq` rnf u
+
+instance NFData StratumQuery where
+    rnf (QueryVersion c p) = rnf c `seq` rnf p
+    rnf (QueryHistory a) = rnf a
+    rnf (QueryBalance a) = rnf a
+    rnf (QueryUnspent a) = rnf a
+    rnf (QueryTx i) = rnf i
+    rnf (QueryBroadcast t) = rnf t
+    rnf (SubAddress a) = rnf a
+
+instance NFData StratumResponse where
+    rnf (ServerVersion s) = rnf s
+    rnf (AddressHistory ts) = rnf ts
+    rnf (AddressBalance b) = rnf b
+    rnf (AddressUnspent cs) = rnf cs
+    rnf (Transaction t) = rnf t
+    rnf (BroadcastId i) = rnf i
+    rnf (AddrStatus s) = rnf s
+
+instance NFData StratumNotif where
+    rnf (NotifAddress a s) = rnf a `seq` rnf s
 
 instance ToJSON StratumNotif where
     toJSON (NotifAddress a t) = toJSON (a, bsToHex $ encode' t)

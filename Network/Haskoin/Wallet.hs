@@ -39,6 +39,7 @@ module Network.Haskoin.Wallet
 , cmdSend
 , cmdSendMany
 , cmdSignTx
+, dbGetBloomFilter
 
 -- *Utility Commands
 , cmdDecodeTx
@@ -58,5 +59,6 @@ module Network.Haskoin.Wallet
 
 import Network.Haskoin.Wallet.Commands
 import Network.Haskoin.Wallet.Types
+import Network.Haskoin.Wallet.DbTx
 
 

@@ -8,6 +8,7 @@ module Network.Haskoin.Wallet.DbTx
 , dbSendSolution
 , dbSendCoins
 , dbSignTx
+, dbGetBloomFilter
 , yamlTx
 ) where
 
@@ -363,5 +364,18 @@ dbGetSigData sh coin = do
     rdm    = coinRedeem coin
     sigi | isJust rdm = SigInputSH out (coinOutPoint coin) (fromJust rdm) sh
          | otherwise  = SigInput out (coinOutPoint coin) sh
+
+-- |Produces a bloom filter containing all the addresses in this wallet. This
+-- includes internal, external and look-ahead addresses. The bloom filter can
+-- be set on a peer connection to filter the transactions received by that
+-- peer.
+dbGetBloomFilter :: PersistQuery m => m BloomFilter
+dbGetBloomFilter = do
+    addrs <- selectList [] []
+    -- TODO: Choose a random nonce for the bloom filter
+    let bloom  = bloomCreate (length addrs * 2) 0.001 0 BloomUpdateP2PubKeyOnly
+        bloom' = foldl f bloom $ map (dbAddressBase58 . entityVal) addrs
+        f b d  = bloomInsert b $ stringToBS d
+    return bloom'
 
 

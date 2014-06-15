@@ -45,10 +45,6 @@ genesisHeader =
 maxBlockSize :: Int
 maxBlockSize = 1000000
 
--- | Wallet database file name
-walletFile :: String
-walletFile = "testwalletdb"
-
 -- | User agent of this haskoin package
 haskoinUserAgent :: String
 haskoinUserAgent = "/haskoin:0.0.2.1/"

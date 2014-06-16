@@ -81,6 +81,7 @@ data Message
     | MGetHeaders !GetHeaders 
     | MTx !Tx 
     | MBlock !Block 
+    | MMerkleBlock !MerkleBlock 
     | MHeaders !Headers 
     | MGetAddr 
     | MFilterLoad !FilterLoad
@@ -102,6 +103,7 @@ instance NFData Message where
     rnf (MGetHeaders h) = rnf h
     rnf (MTx t) = rnf t
     rnf (MBlock b) = rnf b
+    rnf (MMerkleBlock b) = rnf b
     rnf (MHeaders h) = rnf h
     rnf (MFilterLoad f) = rnf f
     rnf (MFilterAdd f) = rnf f
@@ -130,6 +132,7 @@ instance Binary Message where
                 MCGetHeaders  -> MGetHeaders <$> get
                 MCTx          -> MTx <$> get
                 MCBlock       -> MBlock <$> get
+                MCMerkleBlock -> MMerkleBlock <$> get
                 MCHeaders     -> MHeaders <$> get
                 MCFilterLoad  -> MFilterLoad <$> get
                 MCFilterAdd   -> MFilterAdd <$> get
@@ -146,25 +149,26 @@ instance Binary Message where
 
     put msg = do
         let (cmd, payload) = case msg of
-                MVersion m    -> (MCVersion, encode' m)
-                MVerAck       -> (MCVerAck, BS.empty)
-                MAddr m       -> (MCAddr, encode' m)
-                MInv m        -> (MCInv, encode' m)
-                MGetData m    -> (MCGetData, encode' m)
-                MNotFound m   -> (MCNotFound, encode' m)
-                MGetBlocks m  -> (MCGetBlocks, encode' m)
-                MGetHeaders m -> (MCGetHeaders, encode' m)
-                MTx m         -> (MCTx, encode' m)
-                MBlock m      -> (MCBlock, encode' m)
-                MHeaders m    -> (MCHeaders, encode' m)
-                MGetAddr      -> (MCGetAddr, BS.empty)
-                MFilterLoad m -> (MCFilterLoad, encode' m)
-                MFilterAdd m  -> (MCFilterAdd, encode' m)
-                MFilterClear  -> (MCFilterClear, BS.empty)
-                MPing m       -> (MCPing, encode' m)
-                MPong m       -> (MCPong, encode' m)
-                MAlert m      -> (MCAlert, encode' m)
-                MReject m     -> (MCReject, encode' m)
+                MVersion m     -> (MCVersion, encode' m)
+                MVerAck        -> (MCVerAck, BS.empty)
+                MAddr m        -> (MCAddr, encode' m)
+                MInv m         -> (MCInv, encode' m)
+                MGetData m     -> (MCGetData, encode' m)
+                MNotFound m    -> (MCNotFound, encode' m)
+                MGetBlocks m   -> (MCGetBlocks, encode' m)
+                MGetHeaders m  -> (MCGetHeaders, encode' m)
+                MTx m          -> (MCTx, encode' m)
+                MBlock m       -> (MCBlock, encode' m)
+                MMerkleBlock m -> (MCMerkleBlock, encode' m)
+                MHeaders m     -> (MCHeaders, encode' m)
+                MGetAddr       -> (MCGetAddr, BS.empty)
+                MFilterLoad m  -> (MCFilterLoad, encode' m)
+                MFilterAdd m   -> (MCFilterAdd, encode' m)
+                MFilterClear   -> (MCFilterClear, BS.empty)
+                MPing m        -> (MCPing, encode' m)
+                MPong m        -> (MCPong, encode' m)
+                MAlert m       -> (MCAlert, encode' m)
+                MReject m      -> (MCReject, encode' m)
             chk = chksum32 payload
             len = fromIntegral $ BS.length payload
             header = MessageHeader networkMagic cmd len chk

@@ -163,6 +163,7 @@ instance Arbitrary MessageCommand where
                          , MCGetHeaders
                          , MCTx
                          , MCBlock
+                         , MCMerkleBlock
                          , MCHeaders
                          , MCGetAddr
                          , MCFilterLoad
@@ -190,6 +191,7 @@ instance Arbitrary Message where
                       , MGetHeaders  <$> arbitrary
                       , MTx          <$> arbitrary
                       , MBlock       <$> arbitrary
+                      , MMerkleBlock <$> arbitrary
                       , MHeaders     <$> arbitrary
                       , return MGetAddr
                       , MFilterLoad  <$> arbitrary

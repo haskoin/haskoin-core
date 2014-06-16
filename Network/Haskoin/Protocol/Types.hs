@@ -1026,6 +1026,7 @@ data MessageCommand
     | MCGetHeaders 
     | MCTx 
     | MCBlock 
+    | MCMerkleBlock
     | MCHeaders 
     | MCGetAddr 
     | MCFilterLoad
@@ -1062,6 +1063,7 @@ stringToCommand str = case str of
     "getheaders"  -> Just MCGetHeaders
     "tx"          -> Just MCTx
     "block"       -> Just MCBlock
+    "merkleblock" -> Just MCMerkleBlock
     "headers"     -> Just MCHeaders
     "getaddr"     -> Just MCGetAddr
     "filterload"  -> Just MCFilterLoad
@@ -1085,6 +1087,7 @@ commandToString mc = case mc of
     MCGetHeaders  -> "getheaders"
     MCTx          -> "tx"
     MCBlock       -> "block"
+    MCMerkleBlock -> "merkleblock"
     MCHeaders     -> "headers"
     MCGetAddr     -> "getaddr"
     MCFilterLoad  -> "filterload"

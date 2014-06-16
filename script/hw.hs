@@ -19,8 +19,9 @@ import qualified System.Environment as E (getArgs)
 
 import Control.Monad (forM_, when)
 import Control.Monad.Trans (liftIO, MonadIO)
+import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import Control.Exception (tryJust, throwIO)
-import Control.Monad.Logger (MonadLogger, runStderrLoggingT)
+import Control.Monad.Logger (LoggingT, MonadLogger, runStderrLoggingT)
 
 import Database.Persist
     ( PersistStore
@@ -28,8 +29,14 @@ import Database.Persist
     , PersistQuery
     , PersistMonadBackend
     )
--- import Database.Persist.Sql ()
-import Database.Persist.Sqlite (SqlBackend, runSqlite, runMigrationSilent)
+import Database.Persist.Sql 
+    ( SqlBackend
+    , ConnectionPool
+    , SqlPersistT
+    , runSqlPool
+    , runMigrationSilent
+    )
+import Database.Persist.Sqlite (createSqlitePool)
 
 import Data.List (sortBy)
 import Data.Maybe (listToMaybe, fromJust, isNothing)
@@ -41,6 +48,8 @@ import qualified Data.Aeson.Encode.Pretty as JSON
     , defConfig
     , confIndent
     )
+
+import Network.Haskoin.Node.PeerManager
 
 import Network.Haskoin.Wallet.Commands
 import Network.Haskoin.Wallet.Model
@@ -146,6 +155,7 @@ cmdHelp =
     , "  signtx     acc tx                  Sign a transaction"
     , "  importtx   tx                      Import transaction"
     , "  removetx   txid                    Remove transaction"
+    , "  daemon                             Run haskoin as an SPV node"
     , ""
     , "hw utility commands: "
     , "  decodetx   tx                      Decode HEX transaction"
@@ -194,10 +204,13 @@ getWorkDir :: IO FilePath
 getWorkDir = do
     dir <- getAppUserDataDirectory "haskoin"
     createDirectoryIfMissing True dir
-    return $ concat [dir, "/", walletFile]
+    return dir
 
 catchEx :: IOError -> Maybe String
 catchEx = return . ioeGetErrorString
+
+runDB :: ConnectionPool -> SqlPersistT (LoggingT (ResourceT IO)) a -> IO a
+runDB pool m = runResourceT $ runStderrLoggingT $ runSqlPool m pool
 
 process :: Options -> [String] -> IO ()
 process opts xs 
@@ -208,18 +221,23 @@ process opts xs
     | null xs = formatStr usage
     | otherwise = getWorkDir >>= \dir -> do
         let (cmd,args) = (head xs, tail xs)
+            walletFile = T.pack $ concat [dir, "/wallet"]
+            headerFile = concat [dir, "/headerchain"]
 
-        valE <- tryJust catchEx $ runSqlite (T.pack dir) $ do
-             _ <- runMigrationSilent migrateWallet
-             runStderrLoggingT $ dispatchCommand cmd opts args 
+        pool <- createSqlitePool walletFile 10
+        runDB pool $ runMigrationSilent migrateWallet
 
-        -- TODO: Handle the exceptions
-        when (isRight valE) $ do
-            let val = fromRight valE
-            if val == Null then return () else if optJson opts 
-                then formatStr $ bsToString $ toStrictBS $ 
-                    JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } val
-                else formatStr $ bsToString $ YAML.encode val
+        if cmd == "daemon" then runManager pool headerFile else do
+            valE <- tryJust catchEx $ runDB pool $ dispatchCommand cmd opts args 
+
+            -- TODO: Handle the exceptions
+            when (isRight valE) $ do
+                let val = fromRight valE
+                if val == Null then return () else if optJson opts 
+                    then formatStr $ bsToString $ toStrictBS $ 
+                        JSON.encodePretty' 
+                        JSON.defConfig{ JSON.confIndent = 2 } val
+                    else formatStr $ bsToString $ YAML.encode val
 
 type Command m = m Value
 type Args = [String]

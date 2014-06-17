@@ -10,7 +10,7 @@ import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.Logger 
 import Control.Monad.Trans.Resource
-import Control.Concurrent (forkIO, ThreadId, myThreadId)
+import Control.Concurrent (forkFinally, ThreadId, myThreadId)
 import Control.Exception (throwIO, throw)
 import qualified Control.Monad.State as S
 import Control.Concurrent.STM.TBMChan
@@ -76,9 +76,16 @@ peer pChan mChan remote = do
     -- Thread sending messages to the remote peer
     -- TODO: Make sure that we catch a socket disconnect here. We want the
     -- cleanup code in PeerManager to run in such a case.
-    _ <- forkIO $ (sourceTBMChan $ peerChan session) 
-                $= encodeMessage 
-                $$ (appSink remote)
+    let pipe = (sourceTBMChan $ peerChan session)
+               $= encodeMessage 
+               $$ (appSink remote)
+    -- TODO: Handle the error here
+    _ <- forkFinally pipe $ \ret -> case ret of
+        Left e -> throwIO e
+        Right x -> error $ unwords
+            [ "Thread stopped with result:"
+            , show x
+            ]
 
     -- process incomming messages from the remote peer
     runStdoutLoggingT $ flip S.evalStateT session $
@@ -152,6 +159,7 @@ decodeMessage = do
             , "Bytes:"
             , bsToHex headerBytes
             ]
+        -- TODO: Is this ground for deconnection or can we recover?
         throw $ ProtocolException "Could not decode message header"
 
     payloadBytes <- if len > 0
@@ -166,11 +174,13 @@ decodeMessage = do
             [ "Could not decode message payload:"
             , fromLeft resE
             ]
+        -- TODO: Is this ground for deconnection or can we recover?
         throw $ ProtocolException "Could not decode message payload"
 
     yield res
     decodeMessage
 
-encodeMessage :: Monad m => Conduit Message m BS.ByteString
+encodeMessage :: MonadIO m => Conduit Message m BS.ByteString
 encodeMessage = awaitForever $ yield . encode'
+
 

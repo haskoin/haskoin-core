@@ -18,8 +18,11 @@ import qualified Control.Monad.State as S
 
 import Data.Maybe
 import Data.Word
+import Data.Time
 import Data.Time.Clock.POSIX
+import Data.Foldable (toList)
 import qualified Data.Map as M
+import qualified Data.Sequence as Q
 import Data.Conduit 
     ( Sink
     , awaitForever
@@ -39,25 +42,29 @@ import Database.Persist.Sql
 import Network.Haskoin.Node.Peer
 import Network.Haskoin.Node.HeaderChain
 import Network.Haskoin.Wallet
+import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Util
 
 type ManagerHandle = S.StateT ManagerSession (LoggingT IO)
 
 data ManagerSession = ManagerSession
-    { mngrVersion :: Version
-    , mngrChan    :: TBMChan (ThreadId, ManagerRequest)
-    , peerMap     :: M.Map ThreadId PeerData
-    , syncPeer    :: Maybe ThreadId
-    , dbHandle    :: DB.DB
-    , walletPool  :: ConnectionPool
+    { mngrVersion      :: Version
+    , mngrChan         :: TBMChan (ThreadId, ManagerRequest)
+    , peerMap          :: M.Map ThreadId PeerData
+    , syncPeer         :: Maybe ThreadId
+    , dbHandle         :: DB.DB
+    , walletPool       :: ConnectionPool
+    , blocksToDownload :: Q.Seq (Word32, Hash256)
     } 
 
 -- Data stored about a peer in the Manager
 data PeerData = PeerData
-    { peerHandshake :: Bool
-    , peerHeight    :: Word32
-    , peerMsgChan   :: TBMChan Message
+    { peerHandshake  :: Bool
+    , peerHeight     :: Word32
+    , peerMsgChan    :: TBMChan Message
+    , inflightBlocks :: [(Word32, Hash256)]
+    , inflightStart  :: Maybe UTCTime
     }
 
 runManager :: ConnectionPool -> FilePath -> IO ()
@@ -68,18 +75,21 @@ runManager pool fp = do
                                }
     mChan <- atomically $ newTBMChan 1024
     vers  <- buildVersion
-    let session = ManagerSession { mngrVersion = vers
-                                 , mngrChan    = mChan
-                                 , peerMap     = M.empty
-                                 , syncPeer    = Nothing
-                                 , dbHandle    = db
-                                 , walletPool  = pool
+    let session = ManagerSession { mngrVersion      = vers
+                                 , mngrChan         = mChan
+                                 , peerMap          = M.empty
+                                 , syncPeer         = Nothing
+                                 , dbHandle         = db
+                                 , walletPool       = pool
+                                 , blocksToDownload = Q.empty
                                  }
 
     runStdoutLoggingT $ flip S.evalStateT session $ do 
 
         -- Initialize the database
-        runDB initDB
+        toDwn <- runDB $ initDB >> getBlocksToDownload
+        -- Put the missing blocks into the download queue
+        S.modify $ \s -> s{ blocksToDownload = Q.fromList toDwn }
 
         -- Spin up some peer threads
         startPeer $ clientSettings 8333 "localhost"
@@ -100,11 +110,11 @@ startPeer remote = do
     $(logDebug) "Starting peer ..."
     tid   <- liftIO $ forkFinally 
         (runTCPClient remote $ peer pChan mChan) $ \ret -> do
-        -- TODO: remote this or move it into the PeerDisconnect message to log
-        print ret
         -- Thread cleanup
         tid <- myThreadId
-        -- TODO: Check if the peer had pending work
+        -- TODO: If the peer had some inflight blocks, move them to the 
+        -- download queue.
+        -- TODO: Check if the peer had pending work in pChan
         atomically $ do
             closeTBMChan pChan
             writeTBMChan mChan (tid, PeerDisconnect)
@@ -112,6 +122,8 @@ startPeer remote = do
     let peerData = PeerData { peerHandshake = False
                             , peerMsgChan   = pChan
                             , peerHeight    = 0
+                            , inflightBlocks = []
+                            , inflightStart  = Nothing
                             }
     S.modify $ \s -> s{ peerMap = M.insert tid peerData (peerMap s) }
 
@@ -134,8 +146,9 @@ managerSink = awaitForever $ \(tid,req) -> lift $ do
         PeerHandshake v -> processPeerHandshake tid v
         PeerDisconnect  -> processPeerDisconnect tid
         PeerMessage msg -> case msg of
-            MHeaders headers -> processHeaders tid headers
-            _                -> return () -- Ignore them for now
+            MHeaders headers   -> processHeaders tid headers
+            MMerkleBlock block -> processMerkleBlock tid block
+            _                  -> return () -- Ignore them for now
 
 processPeerDisconnect :: ThreadId -> ManagerHandle ()
 processPeerDisconnect tid = do
@@ -163,48 +176,128 @@ processPeerHandshake tid remoteVer = do
     -- Set the bloom filter for this connection
     bloom <- runWallet dbGetBloomFilter
     sendMessage tid $ MFilterLoad $ FilterLoad bloom
+
     -- TODO: Implement a smarter algorithm for choosing download peer. Here,
     -- we just select the first node that completed the remote peer handshake.
     syn <- S.gets syncPeer
     when (isNothing syn) $ do
         S.modify $ \s -> s{ syncPeer = Just tid }
         sendGetHeaders tid
+    -- Download more block if some are pending
+    downloadBlocks tid
 
 processHeaders :: ThreadId -> Headers -> ManagerHandle ()
 processHeaders tid (Headers h) = do
     -- TODO: The time here is incorrect. It should be a median of all peers.
     adjustedTime <- liftIO getPOSIXTime
     -- TODO: If a block headers can't be added, update DOS status
-    newBest <- runDB $ do
-        before <- bestHeight
-        -- TODO: Handle errors in addBlockHeader
-        forM_ (map fst h) $ \x -> do
+    (newBest, newToDwn) <- runDB $ do
+        before <- bestHeaderHeight
+        -- TODO: Handle errors in addBlockHeader. We only don't do anything
+        -- in case of RejectHeader
+        newToDwn <- forM (map fst h) $ \x -> do
             res <- addBlockHeader x $ round adjustedTime
-            -- TODO: This is for debug only
             case res of
-                (AcceptHeader _) -> return ()
-                x                -> liftIO $ print x
-        after  <- bestHeight
-        return $ after > before
+                -- Return the data that will be inserted at the end of
+                -- the download queue
+                (AcceptHeader n) -> 
+                    return $ Just (nodeHeaderHeight n, nodeBlockId n)
+                -- TODO: Remove? This is for debug only
+                x -> do
+                    liftIO $ print x
+                    return Nothing
+        after  <- bestHeaderHeight
+        return $ (after > before, newToDwn)
+
+    -- Add the blocks to download to the end of the queue
+    -- TODO: Should we only download blocks if the headers is 
+    -- a best header? (i.e. not a side block). Probably not but we
+    -- need to consider the case when an old fork may become the
+    -- new head.
+    let newToDwnQ = Q.fromList $ catMaybes newToDwn
+    S.modify $ \s -> s{ blocksToDownload = (blocksToDownload s) Q.>< newToDwnQ }
+
     -- Continue syncing from this node
+    -- TODO: If this is another node than the sync node, we could have issues
     when newBest $ sendGetHeaders tid
 
+    -- Request block downloads for all peers that are currently idling
+    -- TODO: Even for the peer that is syncing the headers?
+    tids <- M.keys <$> S.gets peerMap 
+    forM_ tids downloadBlocks
+
+processMerkleBlock :: ThreadId -> MerkleBlock -> ManagerHandle ()
+processMerkleBlock tid b@(MerkleBlock h ntx nhs fs) = do
+    nodeM <- runDB $ getBlockHeaderNode bid
+    -- Ignore unsolicited merkle blocks
+    when (isJust nodeM) $ do
+        dat <- getPeerData tid
+        -- Remove this merkle block from the inflight inventory
+        let newInflight = filter (\(_,h) -> h /= bid) $ inflightBlocks dat
+            newTime = if null newInflight then Nothing else inflightStart dat
+        putPeerData tid dat{ inflightBlocks = newInflight
+                           , inflightStart  = newTime
+                           }
+        runDB $ addMerkleBlock b
+        --TODO: We have to validate the partial merkle hash and import
+        --transactions if any
+        when (null newInflight) $ downloadBlocks tid
+  where
+    bid = blockid h
+
+-- Send out a GetHeaders request for a given peer
 sendGetHeaders :: ThreadId -> ManagerHandle ()
 sendGetHeaders tid = do
     d    <- getPeerData tid
     -- TODO: height is only for the log. Maybe remove it?
     -- TODO: Only build a block locator the first time. Then send the last
     -- known hash from the previous headers message
-    (loc,height) <- runDB $ (,) <$> blockLocator <*> bestHeight
+    (loc,height) <- runDB $ (,) <$> blockLocator <*> bestHeaderHeight
     sendMessage tid $ MGetHeaders $ GetHeaders 0x01 loc 0x00
     $(logInfo) $ T.pack $ unwords
         [ "Requesting block headers:"
-        -- TODO: This can be negative if the remote note got a new block More
-        -- generallz, we need to correctly track peerHeight when a remote peer
+        -- TODO: This can be negative if the remote note got a new block. More
+        -- generally, we need to correctly track peerHeight when a remote peer
         -- receives new blocks
         , show $ (peerHeight d) - fromIntegral height 
         , "left to download."
         ]
+
+-- Look at the block download queue and request a peer to download more blocks
+-- if the peer is connected, idling and meets the block height requirements.
+downloadBlocks :: ThreadId -> ManagerHandle ()
+downloadBlocks tid = do
+    -- Request block downloads if some are pending
+    queue           <- S.gets blocksToDownload
+    peerData        <- getPeerData tid
+    let remoteHeight    = peerHeight peerData
+        currentInflight = inflightBlocks peerData
+        handshake       = peerHandshake peerData
+    -- Only download blocks from peers that have a completed handshake
+    -- and that are not already requesting blocks
+    when ((not $ Q.null queue) && handshake && null currentInflight) $ do
+        let firstHeight   = fst $ Q.index queue 0
+            (toDwn, rest) = Q.spanl f queue
+            -- First 100 blocks that match the peer height requirements
+            f (i,_) = i <= remoteHeight && i < firstHeight + 100
+        when (not $ Q.null toDwn) $ do
+            height <- runDB bestBlockHeight
+            $(logInfo) $ T.pack $ unwords
+                [ "Requesting merkle blocks:"
+                -- TODO: This can be negative if the remote note got a new block. More
+                -- generally, we need to correctly track peerHeight when a remote peer
+                -- receives new blocks
+                , show $ (peerHeight peerData) - fromIntegral height 
+                , "left to download."
+                ]
+            let dwnList = toList toDwn
+            currTime <- liftIO getCurrentTime
+            modifyPeerData tid $ \d -> d{ inflightBlocks = dwnList
+                                        , inflightStart  = Just currTime
+                                        }
+            S.modify $ \s -> s{ blocksToDownload = rest }
+            sendMessage tid $ MGetData $ GetData $ 
+                map ((InvVector InvMerkleBlock) . snd) dwnList
 
 getPeerData :: ThreadId -> ManagerHandle PeerData
 getPeerData tid = do
@@ -237,7 +330,7 @@ sendMessage tid msg = do
 runDB :: DBHandle a -> ManagerHandle a
 runDB m = do
     db <- S.gets dbHandle
-    liftIO $ S.evalStateT m $ Session db
+    liftIO $ S.evalStateT m $ LevelSession db
 
 runWallet :: SqlPersistT (LoggingT (ResourceT IO)) a -> ManagerHandle a
 runWallet m = do

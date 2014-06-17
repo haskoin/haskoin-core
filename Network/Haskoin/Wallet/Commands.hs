@@ -37,17 +37,19 @@ module Network.Haskoin.Wallet.Commands
 , cmdSignRawTx
 ) where
 
+import Control.Applicative ((<$>))
 import Control.Monad (when, unless, liftM)
 import Control.Monad.Trans (liftIO, MonadIO)
 import Control.Exception (throwIO)
 
 import qualified Data.ByteString as BS
 import Data.Time (getCurrentTime)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Maybe (isJust, isNothing, fromJust)
 import Data.List (nub)
 import qualified Data.Aeson as JSON (decode)
 import qualified Data.Text as T (pack)
-import Data.Word (Word64)
+import Data.Word (Word32, Word64)
 
 import Database.Persist
     ( PersistStore
@@ -59,6 +61,7 @@ import Database.Persist
     , entityKey
     , get
     , selectList
+    , selectFirst
     , insert_
     , replace
     , update
@@ -503,6 +506,13 @@ cmdSignTx :: PersistUnique m
           -> SigHash      -- ^ Signature type to create. 
           -> m (Tx, Bool) -- ^ Signed transaction.
 cmdSignTx name tx sh = checkInit >> dbSignTx name tx sh
+
+cmdFirstKeyTime :: PersistQuery m => m (Maybe Word32)
+cmdFirstKeyTime = do
+    res <- selectFirst [] [Asc DbAddressCreated] 
+    return $ (fromIntegral . round . toPOSIX) <$> res
+  where
+    toPOSIX = utcTimeToPOSIXSeconds . dbAddressCreated . entityVal
 
 {- Utility Commands -}
 

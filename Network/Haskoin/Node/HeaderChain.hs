@@ -39,9 +39,9 @@ targetSpacing = 10 * 60
 diffInterval :: Word32
 diffInterval = targetTimespan `div` targetSpacing
 
-data Session = Session { handle :: DB.DB }
+data LevelSession = LevelSession { handle :: DB.DB }
 
-type DBHandle = S.StateT Session IO
+type DBHandle = S.StateT LevelSession IO
 
 -- Represent a node in the block header chain
 data BlockHeaderNode 
@@ -89,13 +89,41 @@ data BlockHeaderAction
 indexKey :: Hash256 -> BS.ByteString
 indexKey h = "index_" `BS.append` encode' h
 
-headKey :: BS.ByteString
-headKey = "chainhead"
+bestHeaderKey :: BS.ByteString
+bestHeaderKey = "bestheader"
+
+bestBlockKey :: BS.ByteString
+bestBlockKey = "bestblock"
+
+getBlockHeaderNode :: Hash256 -> DBHandle (Maybe BlockHeaderNode)
+getBlockHeaderNode h = do
+    db  <- S.gets handle
+    res <- DB.get db def $ indexKey h
+    return $ decodeToMaybe =<< res
+
+putBlockHeaderNode :: BlockHeaderNode -> DBHandle ()
+putBlockHeaderNode bhn = do
+    db <- S.gets handle
+    DB.put db def (indexKey $ nodeBlockId bhn) $ encode' bhn
+
+getBestBlock :: DBHandle BlockHeaderNode
+getBestBlock = do
+    db  <- S.gets handle
+    -- TODO: We assume the key always exists. Is this correct?
+    key <- decode' . fromJust <$> DB.get db def bestBlockKey
+    fromJust <$> getBlockHeaderNode key
+
+getBestHeader :: DBHandle BlockHeaderNode
+getBestHeader = do
+    db  <- S.gets handle
+    -- TODO: We assume the key always exists. Is this correct?
+    key <- decode' . fromJust <$> DB.get db def bestHeaderKey
+    fromJust <$> getBlockHeaderNode key
 
 -- Insert the genesis block if it is not already there
 initDB :: DBHandle ()
 initDB = S.gets handle >>= \db -> do
-    prevGen <- DB.get db def $ indexKey genid
+    prevGen <- getBlockHeaderNode genid
     when (isNothing prevGen) $ DB.write db def
         [ DB.Put (indexKey genid) $ encode' BlockHeaderGenesis
            { nodeBlockId      = genid
@@ -103,7 +131,8 @@ initDB = S.gets handle >>= \db -> do
            , nodeHeaderHeight = 0
            , nodeChainWork    = headerWork genesis
            }
-        , DB.Put headKey $ encode' genid
+        , DB.Put bestHeaderKey $ encode' genid
+        , DB.Put bestBlockKey  $ encode' genid
         ]
   where
     genid = blockid genesis
@@ -112,16 +141,15 @@ initDB = S.gets handle >>= \db -> do
 -- TODO: Add DOS return values
 addBlockHeader :: BlockHeader -> Word32 -> DBHandle BlockHeaderAction
 addBlockHeader bh adjustedTime = ((f <$>) . runEitherT) $ do
-    db <- lift $ S.gets handle
     unless (checkProofOfWork bh) $ 
         left $ RejectHeader "Invalid proof of work"
     unless (blockTimestamp bh <= adjustedTime + 2 * 60 * 60) $
         left $ RejectHeader "Invalid header timestamp"
-    existsM <- lift $ DB.get db def $ indexKey bid
+    existsM <- lift $ getBlockHeaderNode bid
     unless (isNothing existsM) $
-        left $ HeaderAlreadyExists $ decode' $ fromJust existsM
-    prevNodeM <- lift $ DB.get db def $ indexKey $ prevBlock bh
-    let prevNode  = decode' $ fromJust prevNodeM
+        left $ HeaderAlreadyExists $ fromJust existsM
+    prevNodeM <- lift $ getBlockHeaderNode $ prevBlock bh
+    let prevNode  = fromJust prevNodeM
     unless (isJust prevNodeM) $
         left $ RejectHeader "Previous block not found"
     nextWork <- lift $ getNextWorkRequired prevNode
@@ -146,18 +174,26 @@ addBlockHeader bh adjustedTime = ((f <$>) . runEitherT) $ do
     f (Left  x) = x
     bid = blockid bh
 
+addMerkleBlock :: MerkleBlock -> DBHandle ()
+addMerkleBlock (MerkleBlock h _ _ _) = do
+    db        <- S.gets handle
+    node      <- fromJust <$> getBlockHeaderNode bid
+    bestBlock <- getBestBlock
+    -- Ignore unsolicited merkle blocks
+    when (nodeHeaderHeight node > nodeHeaderHeight bestBlock) $ 
+        DB.put db def bestBlockKey $ encode' bid
+  where
+    bid = blockid h
+
 storeBlockHeader :: BlockHeader -> BlockHeaderNode 
                  -> DBHandle BlockHeaderAction
 storeBlockHeader bh prevNode = S.gets handle >>= \db -> do
-    DB.put db def (indexKey bid) $ encode' newNode
-    -- TODO: Can fromJust ever fail ?
-    currentHeadId <- fromJust <$> (DB.get db def headKey)
-    currentHead   <- (decode' . fromJust) <$> 
-                        (DB.get db def $ indexKey $ decode' currentHeadId)
+    putBlockHeaderNode newNode
+    currentHead <- getBestHeader
     -- TODO: We're not handling reorgs here. What is the reorg logic in
     -- headers-first mode? Do we only reorg on blocks?
     when (nodeChainWork newNode > nodeChainWork currentHead) $ 
-        DB.put db def headKey $ encode' bid
+        DB.put db def bestHeaderKey $ encode' bid
     return $ AcceptHeader newNode
   where
     bid       = blockid bh
@@ -197,26 +233,38 @@ getNextWorkRequired lastNode
   where
     fs = replicate (fromIntegral diffInterval - 1) getParent
 
+getBlocksToDownload :: DBHandle [(Word32, Hash256)]
+getBlocksToDownload = do
+    bestHeader <- getBestHeader
+    bestBlock  <- getBestBlock
+    -- reverse the list so that smaller block heights are first
+    reverse <$> go bestHeader (nodeBlockId bestBlock)
+  where
+    go h b | (nodeBlockId h) == b = return []
+           | otherwise = do
+               p <- getParent h
+               ((nodeHeaderHeight h, nodeBlockId h) :) <$> go p b
+
 -- This can fail if the node has no parent 
 getParent :: BlockHeaderNode -> DBHandle BlockHeaderNode
 getParent (BlockHeaderGenesis _ _ _ _) = error "Genesis block has no parent"
-getParent node = S.gets handle >>= \db -> do
-    bsM <- DB.get db def $ indexKey $ nodeParent node
-    -- TODO: We assume decode' will succeed as we are managing this database
-    return $ decode' $ fromJust bsM
+getParent node = do
+    bsM <- getBlockHeaderNode $ nodeParent node
+    -- TODO: Throw exception instead of crashing fromJust
+    return $ fromJust bsM
 
-bestHeight :: DBHandle Word32
-bestHeight = S.gets handle >>= \db -> do
-    h <- fromJust <$> DB.get db def headKey
-    b <- fromJust <$> (DB.get db def $ indexKey $ decode' h)
-    return $ nodeHeaderHeight $ decode' b
+bestHeaderHeight :: DBHandle Word32
+bestHeaderHeight = nodeHeaderHeight <$> getBestHeader
+
+bestBlockHeight :: DBHandle Word32
+bestBlockHeight = nodeHeaderHeight <$> getBestBlock
 
 -- Only return the best hash
 -- TODO: Change this in the context of headers-first?
 blockLocator :: DBHandle [Hash256]
-blockLocator = S.gets handle >>= \db -> do
-    h <- fromJust <$> DB.get db def headKey
-    return [decode' h]
+blockLocator = do
+    n <- getBestHeader
+    return [nodeBlockId n]
 
 -- Get the last checkpoint that we have seen
 lastCheckpoint :: DBHandle (Maybe (Int, Hash256))
@@ -224,7 +272,7 @@ lastCheckpoint = S.gets handle >>= \db ->
     foldM (f db) Nothing $ reverse checkpointsList
   where
     f db res (i,chk) = if isJust res then return res else do
-        haveChk <- DB.get db def $ indexKey chk
+        haveChk <- getBlockHeaderNode chk
         return $ if isJust haveChk then Just (i,chk) else Nothing
 
 -- Pure function

@@ -86,6 +86,7 @@ runManager pool fp = do
                                  , dbHandle         = db
                                  , walletPool       = pool
                                  , blocksToDownload = Q.empty
+                                 , inflightTxs      = M.empty
                                  }
 
     runStdoutLoggingT $ flip S.evalStateT session $ do 

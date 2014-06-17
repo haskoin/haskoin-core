@@ -56,6 +56,7 @@ data BlockHeaderNode
         , nodeHeader       :: !BlockHeader
         , nodeHeaderHeight :: !Word32
         , nodeChainWork    :: !Integer
+        -- TODO: Remove this and use the parent field in nodeHeader
         , nodeParent       :: !Hash256
         } deriving (Show, Read, Eq)
 
@@ -174,6 +175,7 @@ addBlockHeader bh adjustedTime = ((f <$>) . runEitherT) $ do
     f (Left  x) = x
     bid = blockid bh
 
+-- TODO: Handle forks
 addMerkleBlock :: MerkleBlock -> DBHandle ()
 addMerkleBlock (MerkleBlock h _ _ _) = do
     db        <- S.gets handle

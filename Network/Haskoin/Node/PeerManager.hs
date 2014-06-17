@@ -56,6 +56,8 @@ data ManagerSession = ManagerSession
     , dbHandle         :: DB.DB
     , walletPool       :: ConnectionPool
     , blocksToDownload :: Q.Seq (Word32, Hash256)
+    -- Transactions not received but advertised in a merkle block
+    , inflightTxs      :: M.Map Hash256 UTCTime
     } 
 
 -- Data stored about a peer in the Manager
@@ -63,6 +65,8 @@ data PeerData = PeerData
     { peerHandshake  :: Bool
     , peerHeight     :: Word32
     , peerMsgChan    :: TBMChan Message
+    -- TODO: Move to ManagerSession and key by hash. So that even if another
+    -- peer downloads a inflight block, we still detect it and remove it.
     , inflightBlocks :: [(Word32, Hash256)]
     , inflightStart  :: Maybe UTCTime
     }
@@ -85,6 +89,8 @@ runManager pool fp = do
                                  }
 
     runStdoutLoggingT $ flip S.evalStateT session $ do 
+
+        $(logDebug) "Building list of merkle blocks to download..."
 
         -- Initialize the database
         toDwn <- runDB $ initDB >> getBlocksToDownload
@@ -227,7 +233,9 @@ processHeaders tid (Headers h) = do
     forM_ tids downloadBlocks
 
 processMerkleBlock :: ThreadId -> MerkleBlock -> ManagerHandle ()
-processMerkleBlock tid b@(MerkleBlock h ntx nhs fs) = do
+processMerkleBlock tid b@(MerkleBlock h ntx hs fs) = do
+    -- TODO: We read the node both here and in addMerkleBlock. It's duplication
+    -- of work. Can we avoid it?
     nodeM <- runDB $ getBlockHeaderNode bid
     -- Ignore unsolicited merkle blocks
     when (isJust nodeM) $ do
@@ -238,9 +246,21 @@ processMerkleBlock tid b@(MerkleBlock h ntx nhs fs) = do
         putPeerData tid dat{ inflightBlocks = newInflight
                            , inflightStart  = newTime
                            }
+
+        when (ntx > 0) $ do
+            let matchesE    = extractMatches fs hs $ fromIntegral ntx
+                (root, txs) = fromRight matchesE
+            -- TODO: Handle this error better
+            when (isLeft matchesE) $
+                error $ fromLeft matchesE
+            -- TODO: Handle this error better
+            when (root /= (merkleRoot $ nodeHeader $ fromJust nodeM)) $
+                error "Invalid partial merkle tree received"
+            -- TODO: The transactions txs are going to arrive now. Track them
+            -- as we know they are valid if they passed the merkle checks.
+        
         runDB $ addMerkleBlock b
-        --TODO: We have to validate the partial merkle hash and import
-        --transactions if any
+        -- If this peer is done, get more merkle blocks to download
         when (null newInflight) $ downloadBlocks tid
   where
     bid = blockid h
@@ -261,6 +281,7 @@ sendGetHeaders tid = do
         -- receives new blocks
         , show $ (peerHeight d) - fromIntegral height 
         , "left to download."
+        , show tid
         ]
 
 -- Look at the block download queue and request a peer to download more blocks
@@ -275,11 +296,14 @@ downloadBlocks tid = do
         handshake       = peerHandshake peerData
     -- Only download blocks from peers that have a completed handshake
     -- and that are not already requesting blocks
+    -- TODO: The peer downloading the headers should not also download
+    -- merkle blocks
+    -- TODO: Only download blocks after the wallet first key timestamp
     when ((not $ Q.null queue) && handshake && null currentInflight) $ do
         let firstHeight   = fst $ Q.index queue 0
             (toDwn, rest) = Q.spanl f queue
-            -- First 100 blocks that match the peer height requirements
-            f (i,_) = i <= remoteHeight && i < firstHeight + 100
+            -- First 500 blocks that match the peer height requirements
+            f (i,_) = i <= remoteHeight && i < firstHeight + 500
         when (not $ Q.null toDwn) $ do
             height <- runDB bestBlockHeight
             $(logInfo) $ T.pack $ unwords
@@ -289,6 +313,7 @@ downloadBlocks tid = do
                 -- receives new blocks
                 , show $ (peerHeight peerData) - fromIntegral height 
                 , "left to download."
+                , show tid
                 ]
             let dwnList = toList toDwn
             currTime <- liftIO getCurrentTime

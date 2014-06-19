@@ -176,16 +176,16 @@ addBlockHeader bh adjustedTime = ((f <$>) . runEitherT) $ do
     bid = blockid bh
 
 -- TODO: Handle forks
-addMerkleBlock :: MerkleBlock -> DBHandle ()
-addMerkleBlock (MerkleBlock h _ _ _) = do
+-- We assume the merkle block are sorted from smallest to highest height
+addMerkleBlocks :: MerkleBlock -> DBHandle ()
+addMerkleBlocks mb = do
     db        <- S.gets handle
     node      <- fromJust <$> getBlockHeaderNode bid
     bestBlock <- getBestBlock
-    -- Ignore unsolicited merkle blocks
     when (nodeHeaderHeight node > nodeHeaderHeight bestBlock) $ 
         DB.put db def bestBlockKey $ encode' bid
   where
-    bid = blockid h
+    bid = blockid $ merkleHeader mb
 
 storeBlockHeader :: BlockHeader -> BlockHeaderNode 
                  -> DBHandle BlockHeaderAction

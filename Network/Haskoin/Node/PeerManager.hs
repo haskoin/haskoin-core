@@ -248,11 +248,10 @@ processMerkleBlock tid mb root txs = do
         when (root /= (merkleRoot $ nodeHeader node)) $
             error "Invalid partial merkle tree received"
 
+        blockMap <- S.gets receivedBlocks
+        let height = nodeHeaderHeight node
         -- Add this merkle block to the received list
-        S.modify $ \s -> 
-            let height     = nodeHeaderHeight node
-                prevBlocks = receivedBlocks s
-                in s{ receivedBlocks = M.insert height (mb,txs) prevBlocks }
+        S.modify $ \s -> s{ receivedBlocks = M.insert height (mb,txs) blockMap }
 
         -- Import the merkle block in-order into the wallet
         bestHeight <- nodeHeaderHeight <$> runDB getBestBlock
@@ -274,17 +273,12 @@ importMerkleBlocks :: BlockHeight -> ManagerHandle ()
 importMerkleBlocks height = do
     blockMap <- S.gets receivedBlocks
     let ascList  = M.toAscList blockMap
-        toImport = reverse $ go height ascList
+        toImport = go height ascList
         toKeep   = drop (length toImport) ascList
     S.modify $ \s -> s{ receivedBlocks = M.fromList toKeep }
-    forM_ toImport $ \(height, (mb, txs)) -> do
-        runDB $ addMerkleBlock mb
-        -- TODO: Import in the wallet
-        -- TODO: Deal with reorgs 
-        $(logDebug) $ T.pack $ unwords
-            [ "Importing merkle block"
-            , show height
-            ]
+    -- TODO: Import in the wallet
+    -- TODO: Deal with reorgs 
+    runDB $ forM_ toImport $ \(_,(mb,txs)) -> addMerkleBlocks mb
   where
     go prevHeight ((currHeight, x):xs) 
         | currHeight == prevHeight + 1 = (currHeight, x) : go currHeight xs
@@ -335,9 +329,9 @@ downloadBlocks tid = do
             height <- runDB bestBlockHeight
             $(logInfo) $ T.pack $ unwords
                 [ "Requesting merkle blocks:"
-                -- TODO: This can be negative if the remote note got a new block. More
-                -- generally, we need to correctly track peerHeight when a remote peer
-                -- receives new blocks
+                -- TODO: This can be negative if the remote note got a new
+                -- block. More generally, we need to correctly track peerHeight
+                -- when a remote peer receives new blocks
                 , show $ (peerHeight peerData) - fromIntegral height 
                 , "left to download."
                 , show tid
@@ -348,6 +342,10 @@ downloadBlocks tid = do
                 d{ peerInflightRequests = Q.length toDwn }
             sendMessage tid $ MGetData $ GetData $ 
                 map ((InvVector InvMerkleBlock) . snd) $ toList toDwn
+            -- Send a ping to have a recognizable end message for the last
+            -- merkle block download
+            -- TODO: Compute a random nonce for the ping
+            sendMessage tid $ MPing $ Ping 0
 
 getPeerData :: ThreadId -> ManagerHandle PeerData
 getPeerData tid = do

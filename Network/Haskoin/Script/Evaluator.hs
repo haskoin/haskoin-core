@@ -9,10 +9,9 @@ module Network.Haskoin.Script.Evaluator
 , decodeBool
 , runProgram
 , runStack
-, dumpStack
 ) where
 
-import Debug.Trace (trace)
+-- import Debug.Trace (trace)
 
 import Control.Monad.State
 import Control.Monad.Error
@@ -21,17 +20,12 @@ import Control.Monad.Identity
 import Control.Applicative ((<$>), (<*>))
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
 
-import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit, bit)
+import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit)
 import Data.Int (Int64)
 import Data.Word (Word8, Word64)
 
-import Data.Binary.Put (runPut)
-
-
 import Network.Haskoin.Crypto
-import Network.Haskoin.Protocol
 import Network.Haskoin.Script.Types
 
 
@@ -93,7 +87,6 @@ programError s = get >>= throwError . ProgramError s
 
 
 encodeInt :: Int64 -> StackValue
-encodeInt 0 = []
 encodeInt i = prefix $ reverse $ encode (fromIntegral $ abs i) []
     where encode :: Word64 -> StackValue -> StackValue
           encode 0 bytes = bytes
@@ -161,6 +154,7 @@ popInt = popStack >>= \sv ->
     else
         return $ decodeInt sv
 
+
 -- see CastToBignum
 -- https://github.com/piotrnar/gocoin/blob/master/btc/stack.go#L56
 -- https://github.com/bitcoin/bitcoin/blob/master/src/bignum.h
@@ -171,6 +165,8 @@ opToSv = BS.pack
 
 bsToSv :: BS.ByteString -> StackValue
 bsToSv = BS.unpack
+
+
 
 --------------------------------------------------------------------------------
 -- Script Primitives
@@ -313,24 +309,38 @@ eval :: ScriptOp -> ProgramTransition ()
 -- Flow Control
 
 -- TODO check nested conditionals
+-- TODO multiple ELSE's are valid!
+-- https://github.com/bitcoin/bitcoin/blob/master/src/test/data/script_valid.json
 
 evalIf :: Bool -> ProgramTransition ()
 evalIf cond = case cond of
-    True -> popOp >> evalUntil OP_ELSE >> popOp >> skipUntil OP_ENDIF
-    False -> popOp >> skipUntil OP_ELSE >> popOp >> evalUntil OP_ENDIF
+    True -> popOp >> evalUntil stops >> popOp >> skipUntil stops
+    False -> popOp >> skipUntil stops >> popOp >> evalUntil stops
     where
         doUntil stop evalOps = do
             op <- getOp
-            unless (op == stop) $ do
+            unless (op `elem` stop) $ do
                 when evalOps $ (eval op)
                 void popOp
                 doUntil stop evalOps
 
         skipUntil stop = doUntil stop False
         evalUntil stop = doUntil stop True
+        stops = [OP_ELSE, OP_ENDIF]
 
 
 eval OP_NOP     = return ()
+eval OP_NOP1    = return ()
+eval OP_NOP2    = return ()
+eval OP_NOP3    = return ()
+eval OP_NOP4    = return ()
+eval OP_NOP5    = return ()
+eval OP_NOP6    = return ()
+eval OP_NOP7    = return ()
+eval OP_NOP8    = return ()
+eval OP_NOP9    = return ()
+eval OP_NOP10   = return ()
+
 eval OP_IF      = popStack >>= evalIf . decodeBool
 eval OP_NOTIF   = popStack >>= evalIf . not . decodeBool
 eval OP_ELSE    = programError "OP_ELSE outside OP_IF"
@@ -447,28 +457,22 @@ evalAll = do
 
 -- exported functions
 
-runProgram :: [ScriptOp] -> SigCheck -> Either EvalError ((), Program)
+runProgram :: [ScriptOp] -> SigCheck -> Either EvalError Program
 runProgram i sigCheck =
-    runIdentity . runErrorT . runStateT evalAll $ Program {
+    snd <$> (runIdentity . runErrorT . runStateT evalAll $ Program {
         instructions = i,
         stack = [],
         altStack = [],
         hashOps = [],
         sigCheck = sigCheck
-    }
+    })
 
 evalScript :: Script -> SigCheck -> Bool
 evalScript script sigCheck = case runProgram (scriptOps script) sigCheck of
     Left _ -> False
-    Right ((), prog) -> case stack prog of
+    Right prog -> case stack prog of
         (x:_)  -> decodeBool x
         []     -> False
 
 runStack :: Program -> Stack
 runStack = stack
-
-dumpStack :: [ScriptOp] -> IO ()
-dumpStack instructions =
-    case runProgram instructions rejectSignature of
-        Left e -> putStrLn $ "error " ++ show e
-        Right ((), prog) -> putStrLn $ show $ stack prog

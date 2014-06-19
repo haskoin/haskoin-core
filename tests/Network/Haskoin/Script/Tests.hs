@@ -20,7 +20,8 @@ import Network.Haskoin.Protocol.Arbitrary ()
 import Network.Haskoin.Script.Arbitrary (ScriptOpInt(..))
 
 import Network.Haskoin.Script
-import Network.Haskoin.Script.Evaluator (Stack, runStack, runProgram, evalScript)
+import Network.Haskoin.Script.Evaluator
+import Network.Haskoin.Script.Types
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Util

@@ -331,4 +331,3 @@ decodeScriptHash (Script ops) = case splitAt (length ops - 1) ops of
 -- | Similar to 'decodeScriptHash' but decodes from a ByteString
 decodeScriptHashBS :: BS.ByteString -> Either String ScriptHashInput
 decodeScriptHashBS = (decodeScriptHash =<<) . decodeToEither 
-

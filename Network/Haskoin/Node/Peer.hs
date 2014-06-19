@@ -2,6 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Network.Haskoin.Node.Peer 
 ( ManagerRequest(..)
+, MerkleRoot
 , peer
 ) where
 
@@ -38,23 +39,32 @@ import Data.Conduit.TMChan
 import qualified Data.Conduit.Binary as CB
 import qualified Data.ByteString as BS
 
+import Network.Haskoin.Node.HeaderChain
 import Network.Haskoin.Node.Util
+import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Util
 
 type PeerHandle = S.StateT PeerSession (LoggingT IO)
+type MerkleRoot = Hash256
+type TxHash     = Hash256
 
 data PeerSession = PeerSession
-    { peerId      :: ThreadId
-    , peerChan    :: TBMChan Message
-    , mngrChan    :: TBMChan (ThreadId, ManagerRequest)
-    , peerVersion :: Maybe Version
+    { peerId         :: ThreadId
+    , peerChan       :: TBMChan Message
+    , mngrChan       :: TBMChan (ThreadId, ManagerRequest)
+    , peerVersion    :: Maybe Version
+    -- Aggregate all the transaction of a merkle block before sending
+    -- them up to the manager
+    , inflightMerkle :: Maybe (MerkleBlock, MerkleRoot, [TxHash])
+    , inflightTxs    :: [Tx]
     } 
 
 -- Data sent from peers to the central manager queue
 data ManagerRequest
     = PeerHandshake Version
     | PeerDisconnect 
+    | PeerMerkleBlock MerkleBlock Hash256 [Tx]
     | PeerMessage Message   
 
 -- TODO: Move constants elsewhere ?
@@ -68,10 +78,12 @@ peer :: TBMChan Message -> TBMChan (ThreadId, ManagerRequest)
      -> AppData -> IO ()
 peer pChan mChan remote = do
     tid <- myThreadId 
-    let session = PeerSession { peerId      = tid
-                              , mngrChan    = mChan
-                              , peerChan    = pChan
-                              , peerVersion = Nothing
+    let session = PeerSession { peerId         = tid
+                              , mngrChan       = mChan
+                              , peerChan       = pChan
+                              , peerVersion    = Nothing
+                              , inflightMerkle = Nothing
+                              , inflightTxs    = []
                               }
     -- Thread sending messages to the remote peer
     -- TODO: Make sure that we catch a socket disconnect here. We want the
@@ -92,11 +104,27 @@ peer pChan mChan remote = do
         (appSource remote) $= decodeMessage $$ processMessage
          
 processMessage :: Sink Message PeerHandle ()
-processMessage = awaitForever $ \msg ->do
-    lift $ case msg of
-        MVersion v -> processVersion v
-        MVerAck    -> processVerAck 
-        _          -> sendManager $ PeerMessage msg
+processMessage = awaitForever $ \msg -> lift $ do
+    merkleM <- S.gets inflightMerkle
+    when (isJust merkleM && not (isTx msg)) $ do
+        let (mb, root, expectedTxs) = fromJust merkleM
+        txs <- S.gets inflightTxs
+        S.modify $ \s -> s{ inflightMerkle = Nothing
+                          , inflightTxs    = []
+                          }
+        -- Keep the same transaction order as in the merkle block
+        let orderedTxs = catMaybes $ matchTemplate txs expectedTxs f
+            f a b      = txid a == b
+        sendManager $ PeerMerkleBlock mb root orderedTxs
+    case msg of
+        MVersion v     -> processVersion v
+        MVerAck        -> processVerAck 
+        MMerkleBlock m -> processMerkleBlock m
+        MTx t          -> processTx t
+        _              -> sendManager $ PeerMessage msg
+  where
+    isTx (MTx _) = True
+    isTx _       = False
 
 processVersion :: Version -> PeerHandle ()
 processVersion remoteVer = go =<< S.get
@@ -132,6 +160,41 @@ processVersion remoteVer = go =<< S.get
 processVerAck :: PeerHandle ()
 processVerAck = do
     $(logDebug) "Version ACK received."
+
+processMerkleBlock :: MerkleBlock -> PeerHandle ()
+processMerkleBlock mb@(MerkleBlock h ntx hs fs)
+    -- TODO: Handle this error better
+    | isLeft matchesE  = error $ fromLeft matchesE
+    | null expectedTxs = sendManager $ PeerMerkleBlock mb root []
+    | otherwise        = S.modify $ \s -> 
+        s{ inflightMerkle = Just (mb, root, expectedTxs)
+         , inflightTxs    = []
+         }
+  where
+    matchesE            = extractMatches fs hs $ fromIntegral ntx
+    (root, expectedTxs) = fromRight matchesE
+
+processTx :: Tx -> PeerHandle ()
+processTx tx = do
+    merkleM <- S.gets inflightMerkle
+    let (mb, root, expectedTxs) = fromJust merkleM
+    -- If the transaction is part of a merkle block, buffer it. We will send
+    -- everything to the manager together.
+    if isJust merkleM
+        then 
+            if txid tx `elem` expectedTxs
+                then S.modify $ \s -> s{ inflightTxs = tx : (inflightTxs s) }
+                else do
+                    txs <- S.gets inflightTxs
+                    S.modify $ \s -> s{ inflightMerkle = Nothing
+                                      , inflightTxs    = []
+                                      }
+                    -- Keep the same transaction order as in the merkle block
+                    let orderedTxs = catMaybes $ matchTemplate txs expectedTxs f
+                        f a b      = txid a == b
+                    sendManager $ PeerMerkleBlock mb root orderedTxs
+                    sendManager $ PeerMessage $ MTx tx
+        else sendManager $ PeerMessage $ MTx tx
 
 sendMessage :: Message -> PeerHandle ()
 sendMessage msg = do

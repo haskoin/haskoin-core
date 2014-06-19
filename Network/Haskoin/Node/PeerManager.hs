@@ -47,6 +47,8 @@ import Network.Haskoin.Protocol
 import Network.Haskoin.Util
 
 type ManagerHandle = S.StateT ManagerSession (LoggingT IO)
+type BlockHash   = Hash256
+type BlockHeight = Word32
 
 data ManagerSession = ManagerSession
     { mngrVersion      :: Version
@@ -55,20 +57,19 @@ data ManagerSession = ManagerSession
     , syncPeer         :: Maybe ThreadId
     , dbHandle         :: DB.DB
     , walletPool       :: ConnectionPool
-    , blocksToDownload :: Q.Seq (Word32, Hash256)
-    -- Transactions not received but advertised in a merkle block
-    , inflightTxs      :: M.Map Hash256 UTCTime
+    -- We got the headers but still need to download the merkle blocks
+    , blocksToDownload :: Q.Seq (Word32, BlockHash)
+    -- We received the merkle blocks but buffer them to send them in-order to
+    -- the wallet
+    , receivedBlocks   :: M.Map BlockHeight (MerkleBlock, [Tx])
     } 
 
 -- Data stored about a peer in the Manager
 data PeerData = PeerData
-    { peerHandshake  :: Bool
-    , peerHeight     :: Word32
-    , peerMsgChan    :: TBMChan Message
-    -- TODO: Move to ManagerSession and key by hash. So that even if another
-    -- peer downloads a inflight block, we still detect it and remove it.
-    , inflightBlocks :: [(Word32, Hash256)]
-    , inflightStart  :: Maybe UTCTime
+    { peerHandshake        :: Bool
+    , peerHeight           :: Word32
+    , peerMsgChan          :: TBMChan Message
+    , peerInflightRequests :: Int
     }
 
 runManager :: ConnectionPool -> FilePath -> IO ()
@@ -86,7 +87,7 @@ runManager pool fp = do
                                  , dbHandle         = db
                                  , walletPool       = pool
                                  , blocksToDownload = Q.empty
-                                 , inflightTxs      = M.empty
+                                 , receivedBlocks   = M.empty
                                  }
 
     runStdoutLoggingT $ flip S.evalStateT session $ do 
@@ -126,11 +127,10 @@ startPeer remote = do
             closeTBMChan pChan
             writeTBMChan mChan (tid, PeerDisconnect)
 
-    let peerData = PeerData { peerHandshake = False
-                            , peerMsgChan   = pChan
-                            , peerHeight    = 0
-                            , inflightBlocks = []
-                            , inflightStart  = Nothing
+    let peerData = PeerData { peerHandshake        = False
+                            , peerMsgChan          = pChan
+                            , peerHeight           = 0
+                            , peerInflightRequests = 0
                             }
     S.modify $ \s -> s{ peerMap = M.insert tid peerData (peerMap s) }
 
@@ -150,11 +150,11 @@ managerSink = awaitForever $ \(tid,req) -> lift $ do
     -- Discard messages from peers that are gone
     -- TODO: Is this always the correct behavior ?
     when exists $ case req of
-        PeerHandshake v -> processPeerHandshake tid v
-        PeerDisconnect  -> processPeerDisconnect tid
+        PeerHandshake v             -> processPeerHandshake tid v
+        PeerDisconnect              -> processPeerDisconnect tid
+        PeerMerkleBlock mb root txs -> processMerkleBlock tid mb root txs
         PeerMessage msg -> case msg of
             MHeaders headers   -> processHeaders tid headers
-            MMerkleBlock block -> processMerkleBlock tid block
             _                  -> return () -- Ignore them for now
 
 processPeerDisconnect :: ThreadId -> ManagerHandle ()
@@ -173,6 +173,7 @@ processPeerDisconnect tid = do
         S.modify $ \s -> s{ syncPeer = tidM }
         -- Continue the header download if we have a new peer
         when (isJust tidM) $ sendGetHeaders $ fromJust tidM
+    -- TODO: Do something about the inflight merkle blocks of this peer
 
 processPeerHandshake :: ThreadId -> Version -> ManagerHandle ()
 processPeerHandshake tid remoteVer = do
@@ -233,38 +234,62 @@ processHeaders tid (Headers h) = do
     tids <- M.keys <$> S.gets peerMap 
     forM_ tids downloadBlocks
 
-processMerkleBlock :: ThreadId -> MerkleBlock -> ManagerHandle ()
-processMerkleBlock tid b@(MerkleBlock h ntx hs fs) = do
+processMerkleBlock :: ThreadId -> MerkleBlock -> MerkleRoot -> [Tx] 
+                   -> ManagerHandle ()
+processMerkleBlock tid mb root txs = do
     -- TODO: We read the node both here and in addMerkleBlock. It's duplication
     -- of work. Can we avoid it?
     nodeM <- runDB $ getBlockHeaderNode bid
+    let node = fromJust nodeM
+
     -- Ignore unsolicited merkle blocks
     when (isJust nodeM) $ do
-        dat <- getPeerData tid
-        -- Remove this merkle block from the inflight inventory
-        let newInflight = filter (\(_,h) -> h /= bid) $ inflightBlocks dat
-            newTime = if null newInflight then Nothing else inflightStart dat
-        putPeerData tid dat{ inflightBlocks = newInflight
-                           , inflightStart  = newTime
-                           }
+        -- TODO: Handle this error better
+        when (root /= (merkleRoot $ nodeHeader node)) $
+            error "Invalid partial merkle tree received"
 
-        when (ntx > 0) $ do
-            let matchesE    = extractMatches fs hs $ fromIntegral ntx
-                (root, txs) = fromRight matchesE
-            -- TODO: Handle this error better
-            when (isLeft matchesE) $
-                error $ fromLeft matchesE
-            -- TODO: Handle this error better
-            when (root /= (merkleRoot $ nodeHeader $ fromJust nodeM)) $
-                error "Invalid partial merkle tree received"
-            -- TODO: The transactions txs are going to arrive now. Track them
-            -- as we know they are valid if they passed the merkle checks.
-        
-        runDB $ addMerkleBlock b
+        -- Add this merkle block to the received list
+        S.modify $ \s -> 
+            let height     = nodeHeaderHeight node
+                prevBlocks = receivedBlocks s
+                in s{ receivedBlocks = M.insert height (mb,txs) prevBlocks }
+
+        -- Import the merkle block in-order into the wallet
+        bestHeight <- nodeHeaderHeight <$> runDB getBestBlock
+        importMerkleBlocks bestHeight
+
+        -- Decrement the peer request counter
+        requests <- peerInflightRequests <$> getPeerData tid
+        let newRequests = max 0 (requests - 1)
+        modifyPeerData tid $ \d -> d{ peerInflightRequests = newRequests }
+
         -- If this peer is done, get more merkle blocks to download
-        when (null newInflight) $ downloadBlocks tid
+        when (newRequests == 0) $ downloadBlocks tid
   where
-    bid = blockid h
+    bid = blockid $ merkleHeader mb
+
+-- This function will make sure that the merkle blocks are importe in-order
+-- as they may be received out-of-order from the network (concurrent download)
+importMerkleBlocks :: BlockHeight -> ManagerHandle ()
+importMerkleBlocks height = do
+    blockMap <- S.gets receivedBlocks
+    let ascList  = M.toAscList blockMap
+        toImport = reverse $ go height ascList
+        toKeep   = drop (length toImport) ascList
+    S.modify $ \s -> s{ receivedBlocks = M.fromList toKeep }
+    forM_ toImport $ \(height, (mb, txs)) -> do
+        runDB $ addMerkleBlock mb
+        -- TODO: Import in the wallet
+        -- TODO: Deal with reorgs 
+        $(logDebug) $ T.pack $ unwords
+            [ "Importing merkle block"
+            , show height
+            ]
+  where
+    go prevHeight ((currHeight, x):xs) 
+        | currHeight == prevHeight + 1 = (currHeight, x) : go currHeight xs
+        | otherwise = []
+    go _ [] = []
 
 -- Send out a GetHeaders request for a given peer
 sendGetHeaders :: ThreadId -> ManagerHandle ()
@@ -290,17 +315,18 @@ sendGetHeaders tid = do
 downloadBlocks :: ThreadId -> ManagerHandle ()
 downloadBlocks tid = do
     -- Request block downloads if some are pending
-    queue           <- S.gets blocksToDownload
-    peerData        <- getPeerData tid
-    let remoteHeight    = peerHeight peerData
-        currentInflight = inflightBlocks peerData
-        handshake       = peerHandshake peerData
+    queue         <- S.gets blocksToDownload
+    peerData      <- getPeerData tid
+    let remoteHeight  = peerHeight peerData
+        handshake     = peerHandshake peerData
+        requests      = peerInflightRequests peerData
     -- Only download blocks from peers that have a completed handshake
     -- and that are not already requesting blocks
     -- TODO: The peer downloading the headers should not also download
     -- merkle blocks
     -- TODO: Only download blocks after the wallet first key timestamp
-    when ((not $ Q.null queue) && handshake && null currentInflight) $ do
+    -- TODO: Should we allow download if, say, requests < x ?
+    when ((not $ Q.null queue) && handshake && requests == 0) $ do
         let firstHeight   = fst $ Q.index queue 0
             (toDwn, rest) = Q.spanl f queue
             -- First 500 blocks that match the peer height requirements
@@ -316,14 +342,12 @@ downloadBlocks tid = do
                 , "left to download."
                 , show tid
                 ]
-            let dwnList = toList toDwn
-            currTime <- liftIO getCurrentTime
-            modifyPeerData tid $ \d -> d{ inflightBlocks = dwnList
-                                        , inflightStart  = Just currTime
-                                        }
             S.modify $ \s -> s{ blocksToDownload = rest }
+            -- Store the work count for this peer
+            modifyPeerData tid $ \d -> 
+                d{ peerInflightRequests = Q.length toDwn }
             sendMessage tid $ MGetData $ GetData $ 
-                map ((InvVector InvMerkleBlock) . snd) dwnList
+                map ((InvVector InvMerkleBlock) . snd) $ toList toDwn
 
 getPeerData :: ThreadId -> ManagerHandle PeerData
 getPeerData tid = do

@@ -9,6 +9,7 @@ module Network.Haskoin.Wallet.DbTx
 , dbSendCoins
 , dbSignTx
 , dbGetBloomFilter
+, dbIsTxInWallet
 , yamlTx
 ) where
 
@@ -309,6 +310,7 @@ dbSendSolution name dests fee = do
         CoinSelectionException $ fromLeft resE
     recips <- if change < 5000 then return dests else do
         cAddr <- dbGenIntAddrs name 1
+        -- TODO: Change must be randomly placed
         return $ dests ++ [(dbAddressBase58 $ head cAddr,change)]
     return (coins,recips)
   where
@@ -378,4 +380,6 @@ dbGetBloomFilter = do
         f b d  = bloomInsert b $ stringToBS d
     return bloom'
 
+dbIsTxInWallet :: PersistUnique m => Hash256 -> m Bool
+dbIsTxInWallet txid = liftM isJust $ getBy $ UniqueTxBlob txid
 

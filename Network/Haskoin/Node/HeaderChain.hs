@@ -87,6 +87,15 @@ data BlockHeaderAction
     | AcceptHeader BlockHeaderNode
     deriving (Show, Read, Eq)
 
+data BlockChainAction
+    = BestBlock  { actionBestBlock :: BlockHeaderNode }
+    | SideBlock  { actionSideBlock :: BlockHeaderNode }
+    | BlockReorg { reorgSplitPoint :: BlockHeaderNode
+                 , reorgOldBlocks  :: [BlockHeaderNode]
+                 , reorgNewBlocks  :: [BlockHeaderNode]
+                 }
+    deriving (Read, Show, Eq)
+
 indexKey :: Hash256 -> BS.ByteString
 indexKey h = "index_" `BS.append` encode' h
 
@@ -114,12 +123,22 @@ getBestBlock = do
     key <- decode' . fromJust <$> DB.get db def bestBlockKey
     fromJust <$> getBlockHeaderNode key
 
+putBestBlock :: Hash256 -> DBHandle ()
+putBestBlock h = do
+    db <- S.gets handle
+    DB.put db def bestBlockKey $ encode' h
+
 getBestHeader :: DBHandle BlockHeaderNode
 getBestHeader = do
     db  <- S.gets handle
     -- TODO: We assume the key always exists. Is this correct?
     key <- decode' . fromJust <$> DB.get db def bestHeaderKey
     fromJust <$> getBlockHeaderNode key
+
+putBestHeader :: Hash256 -> DBHandle ()
+putBestHeader h = do
+    db <- S.gets handle
+    DB.put db def bestHeaderKey $ encode' h
 
 -- Insert the genesis block if it is not already there
 initDB :: DBHandle ()
@@ -175,18 +194,6 @@ addBlockHeader bh adjustedTime = ((f <$>) . runEitherT) $ do
     f (Left  x) = x
     bid = blockid bh
 
--- TODO: Handle forks
--- We assume the merkle block are sorted from smallest to highest height
-addMerkleBlocks :: MerkleBlock -> DBHandle ()
-addMerkleBlocks mb = do
-    db        <- S.gets handle
-    node      <- fromJust <$> getBlockHeaderNode bid
-    bestBlock <- getBestBlock
-    when (nodeHeaderHeight node > nodeHeaderHeight bestBlock) $ 
-        DB.put db def bestBlockKey $ encode' bid
-  where
-    bid = blockid $ merkleHeader mb
-
 storeBlockHeader :: BlockHeader -> BlockHeaderNode 
                  -> DBHandle BlockHeaderAction
 storeBlockHeader bh prevNode = S.gets handle >>= \db -> do
@@ -195,7 +202,7 @@ storeBlockHeader bh prevNode = S.gets handle >>= \db -> do
     -- TODO: We're not handling reorgs here. What is the reorg logic in
     -- headers-first mode? Do we only reorg on blocks?
     when (nodeChainWork newNode > nodeChainWork currentHead) $ 
-        DB.put db def bestHeaderKey $ encode' bid
+        putBestHeader bid
     return $ AcceptHeader newNode
   where
     bid       = blockid bh
@@ -218,22 +225,67 @@ getNextWorkRequired lastNode
     | (nodeHeaderHeight lastNode + 1) `mod` diffInterval /= 0 = 
         return $ blockBits $ nodeHeader lastNode
     | otherwise = do
-        -- TODO: Can this break if there are not enough block in the chain?
+        -- TODO: Can this break if there are not enough blocks in the chain?
         firstNode <- foldM (\x f -> f x) lastNode fs
-        let t  = fromIntegral $ (blockTimestamp $ nodeHeader lastNode) - 
-                                (blockTimestamp $ nodeHeader firstNode)
-            timespan 
-                | t < targetTimespan `div` 4 = targetTimespan `div` 4
-                | t > targetTimespan * 4     = targetTimespan * 4
-                | otherwise                  = t
-            lastDiff = decodeCompact $ blockBits $ nodeHeader lastNode
-            newDiff  = lastDiff * (toInteger timespan) `div` 
-                       (toInteger targetTimespan)
-        return $ encodeCompact $ if newDiff > proofOfWorkLimit
-            then proofOfWorkLimit
-            else newDiff
+        return $ getNewWork (nodeHeader firstNode) (nodeHeader lastNode)
   where
     fs = replicate (fromIntegral diffInterval - 1) getParent
+
+-- | Given two block headers, compute the work required for the block following
+-- the second block. The two input blocks should be spaced out by the number of
+-- blocks between difficulty jumps (2016 in prodnet). 
+getNewWork :: BlockHeader -> BlockHeader -> Word32
+getNewWork firstB lastB
+    | newDiff > proofOfWorkLimit = encodeCompact proofOfWorkLimit
+    | otherwise                  = encodeCompact newDiff
+  where
+    t = fromIntegral $ (blockTimestamp lastB) - (blockTimestamp firstB)
+    actualTime 
+        | t < targetTimespan `div` 4 = targetTimespan `div` 4
+        | t > targetTimespan * 4     = targetTimespan * 4
+        | otherwise                  = t
+    lastDiff = decodeCompact $ blockBits lastB
+    newDiff = lastDiff * (toInteger actualTime) `div` (toInteger targetTimespan)
+
+-- TODO: Handle forks
+-- We assume the merkle block are sorted from smallest to highest height
+addMerkleBlock :: MerkleBlock -> DBHandle BlockChainAction
+addMerkleBlock mb = do
+    db        <- S.gets handle
+    newNode   <- fromJust <$> getBlockHeaderNode bid
+    chainHead <- getBestBlock
+    if nodeParent newNode == nodeBlockId chainHead
+        -- We connect to the best chain
+        then do
+            putBestBlock bid
+            return $ BestBlock newNode
+        else if nodeChainWork newNode > nodeChainWork chainHead
+                 then handleNewBestChain newNode chainHead
+                 else return $ SideBlock newNode
+  where
+    bid = blockid $ merkleHeader mb
+
+handleNewBestChain :: BlockHeaderNode -> BlockHeaderNode 
+                   -> DBHandle BlockChainAction
+handleNewBestChain newChainHead oldChainHead = do
+    (splitPoint, oldChain, newChain) <- findSplit oldChainHead newChainHead
+    putBestBlock $ nodeBlockId newChainHead
+    return $ BlockReorg splitPoint oldChain newChain
+
+-- | Find the split point between two nodes. It also returns the two partial
+-- chains leading from the split point to the respective nodes.
+findSplit :: BlockHeaderNode -> BlockHeaderNode 
+          -> DBHandle (BlockHeaderNode, [BlockHeaderNode], [BlockHeaderNode])
+findSplit n1 n2 = go [] [] n1 n2
+  where
+    go xs ys x y
+        | nodeBlockId x == nodeBlockId y = return (x, x:xs, y:ys)
+        | nodeHeaderHeight x > nodeHeaderHeight y = do
+            par <- getParent x
+            go (x:xs) ys par y
+        | otherwise = do
+            par <- getParent y
+            go xs (y:ys) x par
 
 getBlocksToDownload :: DBHandle [(Word32, Hash256)]
 getBlocksToDownload = do

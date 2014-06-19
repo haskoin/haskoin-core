@@ -278,7 +278,12 @@ importMerkleBlocks height = do
     S.modify $ \s -> s{ receivedBlocks = M.fromList toKeep }
     -- TODO: Import in the wallet
     -- TODO: Deal with reorgs 
-    runDB $ forM_ toImport $ \(_,(mb,txs)) -> addMerkleBlocks mb
+    forM_ toImport $ \(h,(mb,txs)) -> do
+        res <- runDB $ addMerkleBlock mb
+        -- TODO remove this, it's just for testing
+        case res of
+            BestBlock _ -> return ()
+            x           -> liftIO $ print x
   where
     go prevHeight ((currHeight, x):xs) 
         | currHeight == prevHeight + 1 = (currHeight, x) : go currHeight xs

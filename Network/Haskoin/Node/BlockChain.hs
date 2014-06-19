@@ -275,8 +275,8 @@ dbConnectBlock prev block = do
                     split <- dbFindSplit newBlock chainHead
                     if dbBlockHeaderHash split /= dbBlockHeaderHash newBlock
                         then do
-                            newHead <- dbPutHeader newBlock
-                            return [SideBlock newHead]
+                            newSide <- dbPutHeader newBlock
+                            return [SideBlock newSide]
                         else return []
   where
     newBlock   = buildNextBlock prev block 1

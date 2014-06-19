@@ -270,19 +270,19 @@ testFile label f path = buildTest $ do
         Just tests -> return $ testGroup label $ map parseTest tests
 
     where   parseTest :: [String] -> Test
-            parseTest (sig:key:[])       = makeTest "(anonymous)" sig key
-            parseTest (sig:key:label:[]) = makeTest label sig key
+            parseTest (sig:pubKey:[])       = makeTest "" sig pubKey
+            parseTest (sig:pubKey:label:[]) = makeTest label sig pubKey
 
             parseTest v =
                 testCase "can't parse test case" $
                          HUnit.assertFailure $ "json element " ++ show v
 
             makeTest :: String -> String -> String -> Test
-            makeTest label sig key =
-                testCase label' $ case (parseScript sig, parseScript key) of
+            makeTest label sig pubKey =
+                testCase label' $ case (parseScript sig, parseScript pubKey) of
                     (Left e, _) -> fail $ "can't parse sig: " ++ show sig
                                           ++ " error: " ++ e
-                    (_, Left e) -> fail $ "can't parse key: " ++ show key
+                    (_, Left e) -> fail $ "can't parse key: " ++ show pubKey
                                           ++ " error: " ++ e
                     (Right sigOps, Right keyOps) ->
                         HUnit.assertBool "parsed" True
@@ -296,9 +296,11 @@ testFile label f path = buildTest $ do
                                 HUnit.assertBool "runProgram" (f True)
                     -}
                     where fail = HUnit.assertFailure
-                          label' = "sig: " ++ sig ++
-                                   " key: " ++ key ++
-                                   " label: " ++ label
+                          label' = "sig: [" ++ sig ++ "] " ++
+                                   " pubKey: [" ++ pubKey ++ "] " ++
+                                   (if null label
+                                        then ""
+                                        else " label: " ++ label)
 
 
 dumpStack :: [ScriptOp] -> IO ()

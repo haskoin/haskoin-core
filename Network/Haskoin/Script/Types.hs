@@ -30,9 +30,6 @@ import qualified Data.ByteString as BS
     , length
     )
 
-import Network.Haskoin.Crypto.Hash (Hash160)
-import Network.Haskoin.Crypto.Keys (PubKey)
-
 -- | Data type representing a transaction script. Scripts are defined as lists
 -- of script operators 'ScriptOp'. Scripts are used to:
 --
@@ -188,8 +185,8 @@ data ScriptOp
 
 
       -- Other
-    | OP_PUBKEYHASH Hash160
-    | OP_PUBKEY PubKey
+    | OP_PUBKEYHASH
+    | OP_PUBKEY
     | OP_INVALIDOPCODE !Word8
 
         deriving (Show, Read, Eq)
@@ -345,8 +342,8 @@ instance Binary ScriptOp where
             | op == 0xb9 = return $ OP_NOP10
 
             -- Constants
-            | op == 0xfd = OP_PUBKEYHASH <$> get
-            | op == 0xfe = OP_PUBKEY <$> get
+            | op == 0xfd = return $ OP_PUBKEYHASH
+            | op == 0xfe = return $ OP_PUBKEY
 
             | otherwise = return $ OP_INVALIDOPCODE op
 
@@ -399,11 +396,11 @@ instance Binary ScriptOp where
         OP_16                -> putWord8 0x60
 
         -- Crypto Constants
-        (OP_PUBKEY pk)       -> putWord8 0xfe >> put pk
-        (OP_PUBKEYHASH pkh)  -> putWord8 0xfd >> put pkh
+        OP_PUBKEY            -> putWord8 0xfe
+        OP_PUBKEYHASH        -> putWord8 0xfd
 
-        -- Invalid Opcodes (maybe output the actual opcode?)
-        (OP_INVALIDOPCODE _) -> putWord8 0xff
+        -- Invalid Opcodes
+        (OP_INVALIDOPCODE x) -> putWord8 x
 
         -- Flow Control
         OP_NOP               -> putWord8 0x61

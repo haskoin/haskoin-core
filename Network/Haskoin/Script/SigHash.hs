@@ -63,7 +63,7 @@ data SigHash
     | SigUnknown { anyoneCanPay :: !Bool
                  , getSigCode   :: !Word8 
                  }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 instance NFData SigHash where
     rnf (SigAll a) = rnf a
@@ -156,7 +156,7 @@ buildOutputs txos i sh
 data TxSignature = TxSignature 
     { txSignature :: !Signature 
     , sigHashType :: !SigHash
-    } deriving (Eq, Show)
+    } deriving (Eq, Show, Read)
 
 instance NFData TxSignature where
     rnf (TxSignature s h) = rnf s `seq` rnf h

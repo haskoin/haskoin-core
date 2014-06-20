@@ -6,7 +6,7 @@ module Network.Haskoin.Wallet.Util
 , isWalletInit
 , checkInit
 , dbGetWallet
-, dbGetTxBlob
+, dbGetTx
 ) where
 
 import Control.Exception
@@ -46,10 +46,10 @@ dbGetWallet name = do
         Nothing  -> liftIO $ throwIO $ InitializationException $ 
             unwords ["Wallet", name, "is not initialized"]
 
-dbGetTxBlob :: (PersistUnique m, PersistMonadBackend m ~ b)
-            => Hash256 -> m (Entity (DbTxBlobGeneric b))
-dbGetTxBlob tid = do
-    entM <- getBy $ UniqueTxBlob tid
+dbGetTx :: (PersistUnique m, PersistMonadBackend m ~ b)
+        => Hash256 -> m (Entity (DbTxGeneric b))
+dbGetTx tid = do
+    entM <- getBy $ UniqueTx tid
     case entM of
         Just ent -> return ent
         Nothing  -> liftIO $ throwIO $ InvalidTransactionException $

@@ -11,14 +11,14 @@ module Network.Haskoin.Wallet.Model
 , DbAccountGeneric(..)
 , DbAddressGeneric(..)
 , DbCoinGeneric(..)
+, DbAccTxGeneric(..)
 , DbTxGeneric(..)
-, DbTxBlobGeneric(..)
 , DbWalletId
 , DbAccountId
 , DbAddressId
 , DbCoinId
+, DbAccTxId
 , DbTxId
-, DbTxBlobId
 , EntityField(..)
 , Unique(..)
 , migrateWallet
@@ -84,32 +84,31 @@ DbCoin
     txid Hash256
     pos Int
     value Word64
-    script Script
-    rdmScript Script Maybe
+    script ScriptOutput
+    rdmScript ScriptOutput Maybe
     address String 
     status CoinStatus
     account DbAccountId
-    orphan Bool
     created UTCTime default=CURRENT_TIME
     CoinOutPoint txid pos
     deriving Show
 
-DbTx 
+DbAccTx
     txid Hash256
     recipients [String]
     value Int64
     account DbAccountId
-    orphan Bool
     partial Bool
     created UTCTime default=CURRENT_TIME
-    UniqueTx txid account
+    UniqueAccTx txid account
     deriving Show
 
-DbTxBlob
+DbTx
     txid Hash256
     value Tx
+    orphan Bool
     created UTCTime default=CURRENT_TIME
-    UniqueTxBlob txid
+    UniqueTx txid
     deriving Show
 
 |]

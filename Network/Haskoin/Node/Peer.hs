@@ -2,7 +2,9 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Network.Haskoin.Node.Peer 
 ( ManagerRequest(..)
+, DecodedMerkleBlock(..)
 , MerkleRoot
+, TxHash
 , peer
 ) where
 
@@ -56,16 +58,22 @@ data PeerSession = PeerSession
     , peerVersion    :: Maybe Version
     -- Aggregate all the transaction of a merkle block before sending
     -- them up to the manager
-    , inflightMerkle :: Maybe (MerkleBlock, MerkleRoot, [TxHash])
-    , inflightTxs    :: [Tx]
+    , inflightMerkle :: Maybe DecodedMerkleBlock
     } 
 
 -- Data sent from peers to the central manager queue
 data ManagerRequest
     = PeerHandshake Version
     | PeerDisconnect 
-    | PeerMerkleBlock MerkleBlock Hash256 [Tx]
+    | PeerMerkleBlock DecodedMerkleBlock
     | PeerMessage Message   
+
+data DecodedMerkleBlock = DecodedMerkleBlock
+    { decodedMerkle :: MerkleBlock
+    , decodedRoot   :: MerkleRoot
+    , expectedTxs   :: [TxHash]
+    , merkleTxs     :: [Tx]
+    }
 
 -- TODO: Move constants elsewhere ?
 minProtocolVersion :: Word32 
@@ -83,7 +91,6 @@ peer pChan mChan remote = do
                               , peerChan       = pChan
                               , peerVersion    = Nothing
                               , inflightMerkle = Nothing
-                              , inflightTxs    = []
                               }
     -- Thread sending messages to the remote peer
     -- TODO: Make sure that we catch a socket disconnect here. We want the
@@ -107,15 +114,13 @@ processMessage :: Sink Message PeerHandle ()
 processMessage = awaitForever $ \msg -> lift $ do
     merkleM <- S.gets inflightMerkle
     when (isJust merkleM && not (isTx msg)) $ do
-        let (mb, root, expectedTxs) = fromJust merkleM
-        txs <- S.gets inflightTxs
-        S.modify $ \s -> s{ inflightMerkle = Nothing
-                          , inflightTxs    = []
-                          }
+        let dmb = fromJust merkleM
+            txs = merkleTxs dmb
+        S.modify $ \s -> s{ inflightMerkle = Nothing }
         -- Keep the same transaction order as in the merkle block
-        let orderedTxs = catMaybes $ matchTemplate txs expectedTxs f
+        let orderedTxs = catMaybes $ matchTemplate txs (expectedTxs dmb) f
             f a b      = txid a == b
-        sendManager $ PeerMerkleBlock mb root orderedTxs
+        sendManager $ PeerMerkleBlock dmb{ merkleTxs = orderedTxs }
     case msg of
         MVersion v     -> processVersion v
         MVerAck        -> processVerAck 
@@ -164,35 +169,35 @@ processVerAck = do
 processMerkleBlock :: MerkleBlock -> PeerHandle ()
 processMerkleBlock mb@(MerkleBlock h ntx hs fs)
     -- TODO: Handle this error better
-    | isLeft matchesE  = error $ fromLeft matchesE
-    | null expectedTxs = sendManager $ PeerMerkleBlock mb root []
-    | otherwise        = S.modify $ \s -> 
-        s{ inflightMerkle = Just (mb, root, expectedTxs)
-         , inflightTxs    = []
-         }
+    | isLeft matchesE = error $ fromLeft matchesE
+    | null match      = sendManager $ PeerMerkleBlock dmb
+    | otherwise       = S.modify $ \s -> s{ inflightMerkle = Just dmb }
   where
-    matchesE            = extractMatches fs hs $ fromIntegral ntx
-    (root, expectedTxs) = fromRight matchesE
+    matchesE      = extractMatches fs hs $ fromIntegral ntx
+    (root, match) = fromRight matchesE
+    dmb           = DecodedMerkleBlock { decodedMerkle = mb
+                                       , decodedRoot   = root
+                                       , expectedTxs   = match
+                                       , merkleTxs     = []
+                                       }
 
 processTx :: Tx -> PeerHandle ()
 processTx tx = do
     merkleM <- S.gets inflightMerkle
-    let (mb, root, expectedTxs) = fromJust merkleM
+    let dmb@(DecodedMerkleBlock mb root match txs) = fromJust merkleM
     -- If the transaction is part of a merkle block, buffer it. We will send
     -- everything to the manager together.
     if isJust merkleM
         then 
-            if txid tx `elem` expectedTxs
-                then S.modify $ \s -> s{ inflightTxs = tx : (inflightTxs s) }
+            if txid tx `elem` match
+                then S.modify $ \s -> 
+                    s{ inflightMerkle = Just dmb{ merkleTxs = tx : txs } }
                 else do
-                    txs <- S.gets inflightTxs
-                    S.modify $ \s -> s{ inflightMerkle = Nothing
-                                      , inflightTxs    = []
-                                      }
+                    S.modify $ \s -> s{ inflightMerkle = Nothing }
                     -- Keep the same transaction order as in the merkle block
-                    let orderedTxs = catMaybes $ matchTemplate txs expectedTxs f
+                    let orderedTxs = catMaybes $ matchTemplate txs match f
                         f a b      = txid a == b
-                    sendManager $ PeerMerkleBlock mb root orderedTxs
+                    sendManager $ PeerMerkleBlock dmb{ merkleTxs = orderedTxs }
                     sendManager $ PeerMessage $ MTx tx
         else sendManager $ PeerMessage $ MTx tx
 

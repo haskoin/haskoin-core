@@ -101,7 +101,7 @@ derivePersistField "MasterKey"
 derivePersistField "AccPubKey"
 derivePersistField "XPubKey"
 derivePersistField "Hash256"
-derivePersistField "Script"
+derivePersistField "ScriptOutput"
 
 instance PersistField Tx where
     toPersistValue = PersistByteString . encode'

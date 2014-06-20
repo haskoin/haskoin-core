@@ -28,6 +28,7 @@ module Network.Haskoin.Wallet.Commands
 , cmdAllCoins
 , cmdImportTx 
 , cmdRemoveTx
+, cmdImportBlock
 , cmdListTx
 , cmdSend
 , cmdSendMany
@@ -38,7 +39,7 @@ module Network.Haskoin.Wallet.Commands
 ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (when, unless, liftM)
+import Control.Monad (when, unless, liftM, forM_)
 import Control.Monad.Trans (liftIO, MonadIO)
 import Control.Exception (throwIO)
 
@@ -75,6 +76,7 @@ import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
+import Network.Haskoin.Node.HeaderChain
 import Network.Haskoin.Wallet.DbAccount
 import Network.Haskoin.Wallet.DbAddress
 import Network.Haskoin.Wallet.DbCoin
@@ -419,6 +421,14 @@ cmdAllCoins = checkInit >> do
     coins <- mapM (dbCoins . entityKey) accs
     return $ zip (map entityVal accs) coins
 
+cmdImportBlock :: (PersistQuery m, PersistUnique m)
+               => BlockChainAction -> [Hash256] -> m ()
+cmdImportBlock a txs = case a of
+    -- TODO: update transaction
+    BestBlock node   -> return ()
+    SideBlock node   -> liftIO $ print "Side block detected"
+    BlockReorg s o n -> liftIO $ print "Fork detected"
+
 {- Tx Commands -}
 
 -- | Import a transaction into the wallet. If called multiple times, this
@@ -430,10 +440,9 @@ cmdImportTx :: ( PersistQuery m
                , PersistUnique m
                , PersistMonadBackend m ~ b
                ) 
-            => Tx                -- ^ Transaction to import.
-            -> m [DbTxGeneric b] -- ^ New transaction entries created.
+            => Tx                   -- ^ Transaction to import.
+            -> m [DbAccTxGeneric b] -- ^ New transaction entries created.
 cmdImportTx tx = checkInit >> dbImportTx tx
-
 
 -- | Remove a transaction from the database. This will remove all transaction
 -- entries for this transaction as well as any child transactions and coins
@@ -447,24 +456,20 @@ cmdRemoveTx h = checkInit >> dbRemoveTx h
 -- summarize information for a transaction in a specific account only (such as
 -- the total movement of for this account).
 --
--- Transaction entries can also be tagged as /Orphan/ or /Partial/. Orphaned
--- transactions are transactions with a parent transaction that should be in
--- the wallet but has not been imported yet. Balances for orphaned transactions
--- can not be accurately computed until the parent transaction is imported.
---
--- Partial transactions are transactions that are not fully signed yet, such
--- as a partially signed multisignature transaction. Partial transactions
--- are visible in the wallet mostly for informational purposes. They can not
--- generate any coins as the txid or partial transactions will change once
--- they are fully signed. However, importing a partial transaction will /lock/
--- the coins that it spends so that you don't mistakenly spend them. Partial
--- transactions are replaced once the fully signed transaction is imported.
+-- Transaction entries can also be tagged as /Partial/. Partial transactions
+-- are transactions that are not fully signed yet, such as a partially signed
+-- multisignature transaction. Partial transactions are visible in the wallet
+-- mostly for informational purposes. They can not generate any coins as the
+-- txid or partial transactions will change once they are fully signed.
+-- However, importing a partial transaction will /lock/ the coins that it
+-- spends so that you don't mistakenly spend them. Partial transactions are
+-- replaced once the fully signed transaction is imported.
 cmdListTx :: (PersistQuery m, PersistUnique m, PersistMonadBackend m ~ b)
-          => AccountName                 -- ^ Account name.
-          -> m [DbTxGeneric b]  -- ^ List of transaction entries.
+          => AccountName           -- ^ Account name.
+          -> m [DbAccTxGeneric b]  -- ^ List of transaction entries.
 cmdListTx name = checkInit >> do
     (Entity ai _) <- dbGetAccount name
-    e <- selectList [ DbTxAccount ==. ai ] [ Asc DbTxCreated ]
+    e <- selectList [ DbAccTxAccount ==. ai ] [ Asc DbAccTxCreated ]
     return $ map entityVal e
 
 -- | Create a transaction sending some coins to a single recipient address.

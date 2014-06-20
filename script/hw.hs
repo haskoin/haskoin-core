@@ -359,7 +359,7 @@ dispatchCommand cmd opts args = case cmd of
             ParsingException "Could not parse transaction"
         txs <- cmdImportTx tx
         return $ toJSON $ map yamlTx $ flip sortBy txs $
-            \a b -> (dbTxCreated a) `compare` (dbTxCreated b)
+            \a b -> (dbAccTxCreated a) `compare` (dbAccTxCreated b)
     "removetx" -> whenArgs args (== 1) $ do
         let idM = decodeTxid $ head args
         when (isNothing idM) $ liftIO $ throwIO $

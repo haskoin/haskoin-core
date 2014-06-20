@@ -61,7 +61,7 @@ data ManagerSession = ManagerSession
     , blocksToDownload :: Q.Seq (Word32, BlockHash)
     -- We received the merkle blocks but buffer them to send them in-order to
     -- the wallet
-    , receivedBlocks   :: M.Map BlockHeight (MerkleBlock, [Tx])
+    , receivedBlocks   :: M.Map BlockHeight DecodedMerkleBlock
     } 
 
 -- Data stored about a peer in the Manager
@@ -150,12 +150,12 @@ managerSink = awaitForever $ \(tid,req) -> lift $ do
     -- Discard messages from peers that are gone
     -- TODO: Is this always the correct behavior ?
     when exists $ case req of
-        PeerHandshake v             -> processPeerHandshake tid v
-        PeerDisconnect              -> processPeerDisconnect tid
-        PeerMerkleBlock mb root txs -> processMerkleBlock tid mb root txs
+        PeerHandshake v     -> processPeerHandshake tid v
+        PeerDisconnect      -> processPeerDisconnect tid
+        PeerMerkleBlock dmb -> processMerkleBlock tid dmb
         PeerMessage msg -> case msg of
-            MHeaders headers   -> processHeaders tid headers
-            _                  -> return () -- Ignore them for now
+            MHeaders headers -> processHeaders tid headers
+            _                -> return () -- Ignore them for now
 
 processPeerDisconnect :: ThreadId -> ManagerHandle ()
 processPeerDisconnect tid = do
@@ -182,6 +182,7 @@ processPeerHandshake tid remoteVer = do
                                 , peerHeight    = startHeight remoteVer
                                 }
     -- Set the bloom filter for this connection
+    -- TODO: Something fishy is going on when the filter is empty
     bloom <- runWallet dbGetBloomFilter
     sendMessage tid $ MFilterLoad $ FilterLoad bloom
 
@@ -234,9 +235,8 @@ processHeaders tid (Headers h) = do
     tids <- M.keys <$> S.gets peerMap 
     forM_ tids downloadBlocks
 
-processMerkleBlock :: ThreadId -> MerkleBlock -> MerkleRoot -> [Tx] 
-                   -> ManagerHandle ()
-processMerkleBlock tid mb root txs = do
+processMerkleBlock :: ThreadId -> DecodedMerkleBlock -> ManagerHandle ()
+processMerkleBlock tid dmb = do
     -- TODO: We read the node both here and in addMerkleBlock. It's duplication
     -- of work. Can we avoid it?
     nodeM <- runDB $ getBlockHeaderNode bid
@@ -245,13 +245,13 @@ processMerkleBlock tid mb root txs = do
     -- Ignore unsolicited merkle blocks
     when (isJust nodeM) $ do
         -- TODO: Handle this error better
-        when (root /= (merkleRoot $ nodeHeader node)) $
+        when (decodedRoot dmb /= (merkleRoot $ nodeHeader node)) $
             error "Invalid partial merkle tree received"
 
         blockMap <- S.gets receivedBlocks
         let height = nodeHeaderHeight node
         -- Add this merkle block to the received list
-        S.modify $ \s -> s{ receivedBlocks = M.insert height (mb,txs) blockMap }
+        S.modify $ \s -> s{ receivedBlocks = M.insert height dmb blockMap }
 
         -- Import the merkle block in-order into the wallet
         bestHeight <- nodeHeaderHeight <$> runDB getBestBlock
@@ -265,9 +265,9 @@ processMerkleBlock tid mb root txs = do
         -- If this peer is done, get more merkle blocks to download
         when (newRequests == 0) $ downloadBlocks tid
   where
-    bid = blockid $ merkleHeader mb
+    bid = blockid $ merkleHeader $ decodedMerkle dmb
 
--- This function will make sure that the merkle blocks are importe in-order
+-- This function will make sure that the merkle blocks are imported in-order
 -- as they may be received out-of-order from the network (concurrent download)
 importMerkleBlocks :: BlockHeight -> ManagerHandle ()
 importMerkleBlocks height = do
@@ -278,12 +278,14 @@ importMerkleBlocks height = do
     S.modify $ \s -> s{ receivedBlocks = M.fromList toKeep }
     -- TODO: Import in the wallet
     -- TODO: Deal with reorgs 
-    forM_ toImport $ \(h,(mb,txs)) -> do
-        res <- runDB $ addMerkleBlock mb
-        -- TODO remove this, it's just for testing
-        case res of
-            BestBlock _ -> return ()
-            x           -> liftIO $ print x
+    -- TODO: Stall solo transactions until we have synced the chain. This is
+    -- to prevent missing aa transaction that is in our wallet but we have
+    -- not generated the address yet
+    forM_ toImport $ \(h, dmb) -> do
+        node <- runDB $ addMerkleBlock $ decodedMerkle dmb
+        runWallet $ do
+            forM_ (merkleTxs dmb) cmdImportTx
+            cmdImportBlock node (expectedTxs dmb)
   where
     go prevHeight ((currHeight, x):xs) 
         | currHeight == prevHeight + 1 = (currHeight, x) : go currHeight xs

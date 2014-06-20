@@ -41,6 +41,9 @@ module Network.Haskoin.Wallet
 , cmdSignTx
 , dbGetBloomFilter
 
+-- *Block Commands
+, cmdImportBlock
+
 -- *Utility Commands
 , cmdDecodeTx
 , cmdBuildRawTx

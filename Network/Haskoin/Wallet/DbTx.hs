@@ -14,7 +14,7 @@ module Network.Haskoin.Wallet.DbTx
 ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (forM, unless, when, liftM)
+import Control.Monad (forM, forM_, unless, when, liftM, void)
 import Control.Monad.Trans (liftIO)
 import Control.Exception (throwIO)
 
@@ -36,6 +36,7 @@ import Database.Persist
     , entityKey
     , get
     , getBy
+    , deleteBy
     , selectList
     , deleteWhere
     , updateWhere
@@ -59,106 +60,168 @@ import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
-yamlTx :: DbTxGeneric b -> Value
+yamlTx :: DbAccTxGeneric b -> Value
 yamlTx tx = object $ concat
-    [ [ "Recipients" .= dbTxRecipients tx
-      , "Value" .= dbTxValue tx
+    [ [ "Recipients" .= dbAccTxRecipients tx
+      , "Value" .= dbAccTxValue tx
       ]
-    , if dbTxOrphan tx then ["Orphan" .= True] else []
-    , if dbTxPartial tx then ["Partial" .= True] else []
+    , if dbAccTxPartial tx then ["Partial" .= True] else []
     ]
 
--- |Remove a transaction from the database and any parent transaction
-dbRemoveTx :: PersistQuery m => Hash256 -> m [Hash256]
-dbRemoveTx tid = do
-    -- Find all parents of this transaction
-    -- Partial transactions should not have any coins. Won't check for it
-    coins <- selectList [ DbCoinTxid ==. tid ] []
-    let parents = nub $ catStatus $ map (dbCoinStatus . entityVal) coins
-    -- Recursively remove parents
-    pids <- forM parents dbRemoveTx
-    -- Delete output coins generated from this transaction
-    deleteWhere [ DbCoinTxid ==. tid ]
-    -- Delete account transactions
-    deleteWhere [ DbTxTxid ==. tid ]
-    -- Delete transaction blob
-    deleteWhere [ DbTxBlobTxid ==. tid ]
-    -- Delete orphaned input coins spent by this transaction
-    deleteWhere [ DbCoinOrphan ==. True
-                , DbCoinStatus <-. [Spent tid, Reserved tid]
-                ]
-    -- Unspend input coins that were previously spent by this transaction
-    updateWhere [ DbCoinStatus <-. [Spent tid, Reserved tid] ]
-                [ DbCoinStatus =. Unspent ]
-    return $ tid:(concat pids)
-          
 -- |Import a transaction into the database
 dbImportTx :: ( PersistQuery m
               , PersistUnique m
               , PersistMonadBackend m ~ b
               ) 
-           => Tx -> m [DbTxGeneric b]
+           => Tx -> m [DbAccTxGeneric b]
 dbImportTx tx = do
-    coinsM <- mapM (getBy . f) $ map prevOutput $ txIn tx
-    let inCoins = catMaybes coinsM
-        -- Unspent coins in the wallet related to this transaction
-        unspent = filter ((== Unspent) . dbCoinStatus . entityVal) inCoins
-        -- OutPoints from this transaction with no associated coins
-        unknown = map snd $ filter (isNothing . fst) $ zip coinsM $ txIn tx
-    -- Fail if an input is spent by a transaction which is not this one
-    unless (isImportValid tid $ map entityVal inCoins) $ liftIO $ throwIO $
-        DoubleSpendException "Transaction import failed due to a double spend"
-    let toRemove = txToRemove $ map entityVal inCoins
-    if length toRemove > 0
-        then do
-            -- Partial transactions need to be removed 
-            -- before trying to re-import
-            _ <- mapM dbRemoveTx toRemove
-            dbImportTx tx
-        else do
+    existsM  <- getBy $ UniqueTx tid
+    isOrphan <- isOrphanTx tx
+    -- Do not re-import existing transactions and do not proccess orphans yet
+    if isJust existsM || isOrphan then return [] else do
+        -- Retrieve the coins we have from the transaction inputs
+        eCoins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
+        let coins = map entityVal eCoins
+        when (isDoubleSpend tid coins) $ liftIO $ throwIO $
+            DoubleSpendException "Transaction is double spending coins"
+        -- We must remove partial transactions which spend the same coins as us
+        forM_ (txToRemove coins) dbRemoveTx 
+        -- Change status of the coins
+        forM_ eCoins $ \(Entity ci _) -> update ci [DbCoinStatus =. status]
+        -- Import new coins 
+        outCoins <- liftM catMaybes $ 
+            (mapM (dbImportCoin tid complete) $ zip (txOut tx) [0..])
+        -- Ignore this transaction if it is not ours
+        if null $ coins ++ outCoins then return [] else do
             time <- liftIO getCurrentTime
-            -- Change status of all the unspent coins
-            _ <- forM unspent $ \(Entity ci _) -> 
-                update ci [DbCoinStatus =. status]
-            -- Insert orphaned coins
-            orphans <- liftM catMaybes $ mapM (dbImportOrphan status) unknown
-            -- Import new coins and update existing coins
-            outCoins <- liftM catMaybes $ 
-                (mapM (dbImportCoin tid complete) $ zip (txOut tx) [0..])
-            let accTxs = buildAccTx tx ((map entityVal inCoins) ++ orphans)
-                            outCoins (not complete) time
-            -- Insert transaction blob. Ignore if already exists
-            _ <- insertUnique $ DbTxBlob tid tx time
-            -- insert account transactions into database, 
-            -- rewriting if they exist
-            _ <- forM accTxs $ \accTx -> do
-                prev <- getBy $ UniqueTx (dbTxTxid accTx) (dbTxAccount accTx)
-                if isNothing prev 
-                    then insert_ accTx  
-                    else replace (entityKey $ fromJust prev) accTx
-            -- Re-import parent transactions (transactions spending this one)
-            if complete
-                then do
-                    let ids = nub $ catStatus $ map dbCoinStatus outCoins
-                    blobs <- mapM dbGetTxBlob ids
-                    reImported <- forM blobs $ dbImportTx . dec
-                    return $ accTxs ++ (concat reImported)
-                else return accTxs
+            -- Build transactions that report on individual accounts
+            let accTxs = buildAccTx tx coins outCoins (not complete) time
+            -- insert account transactions into database
+            forM_ accTxs insert_
+            -- Save the whole transaction
+            insertUnique $ DbTx tid tx False time
+            -- Re-import orphans
+            liftM (accTxs ++) tryImportOrphans
   where
-    tid              = txid tx
+    tid = txid tx
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
     complete         = isTxComplete tx
     status           = if complete then Spent tid else Reserved tid
-    dec              = dbTxBlobValue . entityVal
+
+-- Try to re-import all orphan transactions
+tryImportOrphans :: ( PersistQuery m
+                    , PersistUnique m
+                    , PersistMonadBackend m ~ b
+                    ) 
+                 => m [DbAccTxGeneric b]
+tryImportOrphans = do
+    orphans <- selectList [DbTxOrphan ==. True] []
+    res <- forM orphans $ \(Entity _ otx) -> do
+        deleteBy $ UniqueTx $ dbTxTxid otx
+        dbImportTx $ dbTxValue otx
+    return $ concat res
+
+-- | Create a new coin for an output if it is ours. If commit is False, it will
+-- not write the coin to the database, it will only return it. We need the coin
+-- data for partial transactions (for reporting) but we don't want to store
+-- them as they can not be spent.
+dbImportCoin :: ( PersistQuery m
+                , PersistUnique m
+                , PersistMonadBackend m ~ b
+                )
+             => Hash256 -> Bool -> (TxOut,Int)
+             -> m (Maybe (DbCoinGeneric b))
+dbImportCoin tid commit (out, i) = do
+    dbAddr <- isMyOutput out
+    let script = decodeOutputBS $ scriptOutput out
+    if isNothing dbAddr || isLeft script then return Nothing else do
+        rdm   <- dbGetRedeem $ fromJust dbAddr
+        time  <- liftIO getCurrentTime
+        let coin = DbCoin tid i (fromIntegral $ outValue out) 
+                                (fromRight script) rdm 
+                                (dbAddressBase58 $ fromJust dbAddr)
+                                Unspent
+                                (dbAddressAccount $ fromJust dbAddr)
+                                time
+        when commit $ insert_ coin
+        return $ Just coin
+
+-- |Builds a redeem script given an address. Only relevant for addresses
+-- linked to multisig accounts. Otherwise it returns Nothing
+dbGetRedeem :: (PersistStore m, PersistMonadBackend m ~ b) 
+            => DbAddressGeneric b -> m (Maybe ScriptOutput)
+dbGetRedeem add = do
+    acc <- liftM fromJust (get $ dbAddressAccount add)
+    if isMSAcc acc 
+        then do
+            let key      = dbAccountKey acc
+                msKeys   = dbAccountMsKeys acc
+                deriv    = fromIntegral $ dbAddressIndex add
+                addrKeys = fromJust $ f key msKeys deriv
+                pks      = map (xPubKey . getAddrPubKey) addrKeys
+                req      = fromJust $ dbAccountMsRequired acc
+            return $ Just $ sortMulSig $ PayMulSig pks req
+        else return Nothing
+  where
+    f = if dbAddressInternal add then intMulSigKey else extMulSigKey
+
+-- Returns True if the transaction has an input that belongs to the wallet
+-- but we don't have a coin for it yet. We are missing a parent transaction.
+-- This function will also add the transaction to the orphan pool if it is
+-- orphaned.
+isOrphanTx :: PersistUnique m => Tx -> m Bool
+isOrphanTx tx = do
+    myInputFlags <- mapM isMyInput $ txIn tx
+    coinsM       <- mapM (getBy . f) $ map prevOutput $ txIn tx
+    let missing = filter g $ zip myInputFlags coinsM
+    when (length missing > 0) $ do
+        -- Add transaction to the orphan pool
+        time <- liftIO getCurrentTime
+        _ <- insertUnique $ DbTx tid tx True time
+        return ()
+    return $ length missing > 0
+  where
+    tid               = txid tx
+    f (OutPoint h i)  = CoinOutPoint h (fromIntegral i)
+    g (isMine, coinM) = isJust isMine && isNothing coinM
+
+-- Returns True if the input address is part of the wallet
+isMyInput :: ( PersistUnique m
+             , PersistMonadBackend m ~ b
+             ) 
+          => TxIn -> m (Maybe (DbAddressGeneric b))
+isMyInput input = do
+    let senderE = scriptSender =<< (decodeToEither $ scriptInput input)
+        sender  = fromRight senderE
+    if isLeft senderE 
+        then return Nothing
+        else do
+            res <- getBy $ UniqueAddress $ addrToBase58 sender
+            return $ entityVal <$> res
+
+-- Returns True if the output address is part of the wallet
+isMyOutput :: ( PersistUnique m
+              , PersistMonadBackend m ~ b
+              ) 
+           => TxOut -> m (Maybe (DbAddressGeneric b))
+isMyOutput out = do
+    let recipientE = scriptRecipient =<< (decodeToEither $ scriptOutput out)
+        recipient  = fromRight recipientE
+    if isLeft recipientE
+        then return Nothing 
+        else do
+            res <- getBy $ UniqueAddress $ addrToBase58 recipient
+            return $ entityVal <$> res
 
 -- |A transaction can not be imported if it double spends coins in the wallet.
 -- Upstream code needs to remove the conflicting transaction first using
 -- dbTxRemove function
-isImportValid :: Hash256 -> [DbCoinGeneric b] -> Bool
-isImportValid tid coins = all (f . dbCoinStatus) coins
+-- TODO: We need to consider malleability here
+isDoubleSpend :: Hash256 -> [DbCoinGeneric b] -> Bool
+isDoubleSpend tid coins = any (f . dbCoinStatus) coins
   where
-    f (Spent parent) = parent == tid
-    f _              = True
+    f (Spent parent) = parent /= tid
+    f _              = False
 
 -- When a transaction spends coins previously spent by a partial transaction,
 -- we need to remove the partial transactions from the database and try to
@@ -173,9 +236,10 @@ txToRemove coins = catMaybes $ map (f . dbCoinStatus) coins
 -- |Group input and output coins by accounts and create 
 -- account-level transaction
 buildAccTx :: Tx -> [DbCoinGeneric b] -> [DbCoinGeneric b]
-           -> Bool -> UTCTime -> [DbTxGeneric b]
+           -> Bool -> UTCTime -> [DbAccTxGeneric b]
 buildAccTx tx inCoins outCoins partial time = map build $ M.toList oMap
   where
+    -- We build a map of accounts to ([input coins], [output coins])
     iMap = foldr (f (\(i,o) x -> (x:i,o))) M.empty inCoins
     oMap = foldr (f (\(i,o) x -> (i,x:o))) iMap outCoins
     f g coin accMap = case M.lookup (dbCoinAccount coin) accMap of
@@ -185,101 +249,33 @@ buildAccTx tx inCoins outCoins partial time = map build $ M.toList oMap
     toAddr   = (addrToBase58 <$>) . (scriptRecipient =<<) 
                . decodeToEither . scriptOutput
     sumVal   = sum . (map dbCoinValue)
-    build (ai,(i,o)) = 
-        DbTx (txid tx) recips total ai orphan partial time
+    build (ai,(i,o)) = DbAccTx (txid tx) recips total ai partial time
       where
-        orphan = or $ map dbCoinOrphan i
-        total | orphan    = 0
-              | otherwise = (fromIntegral $ sumVal o)
-                          - (fromIntegral $ sumVal i)
+        total = (fromIntegral $ sumVal o) - (fromIntegral $ sumVal i)
         addrs = map dbCoinAddress o
         recips | null addrs = allRecip
-               | orphan     = allRecip \\ addrs -- assume this is an outgoing tx
                | total < 0  = allRecip \\ addrs -- remove the change
                | otherwise  = addrs
 
--- |Create an orphaned coin if the input spends from an address in the wallet
--- but the coin doesn't exist in the wallet. This allows out-of-order tx import
-dbImportOrphan :: (PersistUnique m, PersistMonadBackend m ~ b) 
-               => CoinStatus -> TxIn 
-               -> m (Maybe (DbCoinGeneric b))
-dbImportOrphan status (TxIn (OutPoint h i) s _)
-    | isLeft a  = return Nothing
-    | otherwise = getBy (UniqueAddress b58) >>= \addrM -> case addrM of
-        Nothing              -> return Nothing
-        Just (Entity _ add) -> do
-            time <- liftIO $ getCurrentTime
-            rdm  <- dbGetRedeem add
-            let coin = build rdm add time
-            insert_ coin >> return (Just coin)
-  where
-    a   = scriptSender =<< decodeToEither s
-    b58 = addrToBase58 $ fromRight a
-    build rdm add time = 
-        DbCoin h (fromIntegral i) 0 (Script []) rdm b58 status
-               (dbAddressAccount add) True time
-
--- |Create a new coin for an output if it sends coins to an 
--- address in the wallet. Does not actually write anything to the database
--- if commit is False. This is for correctly reporting on partial transactions
--- without creating coins in the database from a partial transaction
-dbImportCoin :: ( PersistQuery m
-                , PersistUnique m
-                , PersistMonadBackend m ~ b
-                )
-             => Hash256 -> Bool -> (TxOut,Int) 
-             -> m (Maybe (DbCoinGeneric b))
-dbImportCoin tid commit ((TxOut v s), index) 
-    | isLeft a  = return Nothing
-    | otherwise = getBy (UniqueAddress b58) >>= \addrM -> case addrM of
-        Nothing              -> return Nothing
-        Just (Entity _ add) -> do
-            time  <- liftIO getCurrentTime
-            coinM <- getBy $ CoinOutPoint tid index
-            case coinM of
-                Just (Entity ci coin) -> do
-                    -- Update existing coin with up to date information
-                    let newCoin = coin{ dbCoinOrphan  = False
-                                      , dbCoinValue   = (fromIntegral v)
-                                      , dbCoinScript  = scp
-                                      , dbCoinCreated = time
-                                      }
-                    when commit $ replace ci newCoin
-                    return $ Just newCoin
-                Nothing -> do
-                    rdm <- dbGetRedeem add
-                    let coin = build rdm add time
-                    when commit $ insert_ coin
-                    dbAdjustGap add -- Adjust address gap
-                    return $ Just coin
-  where
-    scpE = decodeToEither s
-    scp  = fromRight scpE
-    a    = scriptRecipient =<< scpE
-    b58  = addrToBase58 $ fromRight a
-    build rdm add time = 
-        DbCoin tid index (fromIntegral v) scp rdm b58 Unspent
-               (dbAddressAccount add) False time
-    
--- |Builds a redeem script given an address. Only relevant for addresses
--- linked to multisig accounts. Otherwise it returns Nothing
-dbGetRedeem :: (PersistStore m, PersistMonadBackend m ~ b) 
-            => DbAddressGeneric b -> m (Maybe Script)
-dbGetRedeem add = do
-    acc <- liftM fromJust (get $ dbAddressAccount add)
-    rdm <- if isMSAcc acc 
-        then do
-            let key      = dbAccountKey acc
-                msKeys   = dbAccountMsKeys acc
-                deriv    = fromIntegral $ dbAddressIndex add
-                addrKeys = fromJust $ f key msKeys deriv
-                pks      = map (xPubKey . getAddrPubKey) addrKeys
-                req      = fromJust $ dbAccountMsRequired acc
-            return $ Just $ sortMulSig $ PayMulSig pks req
-        else return Nothing
-    return $ encodeOutput <$> rdm
-  where
-    f = if dbAddressInternal add then intMulSigKey else extMulSigKey
+-- |Remove a transaction from the database and all parent transaction
+dbRemoveTx :: PersistQuery m => Hash256 -> m [Hash256]
+dbRemoveTx tid = do
+    -- Find all parents of this transaction
+    -- Partial transactions should not have any coins. Won't check for it
+    coins <- selectList [ DbCoinTxid ==. tid ] []
+    let parents = nub $ catStatus $ map (dbCoinStatus . entityVal) coins
+    -- Recursively remove parents
+    pids <- forM parents dbRemoveTx
+    -- Delete output coins generated from this transaction
+    deleteWhere [ DbCoinTxid ==. tid ]
+    -- Delete account transactions
+    deleteWhere [ DbAccTxTxid ==. tid ]
+    -- Delete transaction
+    deleteWhere [ DbTxTxid ==. tid ]
+    -- Unspend input coins that were previously spent by this transaction
+    updateWhere [ DbCoinStatus <-. [Spent tid, Reserved tid] ]
+                [ DbCoinStatus =. Unspent ]
+    return $ tid:(concat pids)
 
 -- |Build and sign a transactoin given a list of recipients
 dbSendTx :: ( PersistUnique m
@@ -381,5 +377,5 @@ dbGetBloomFilter = do
     return bloom'
 
 dbIsTxInWallet :: PersistUnique m => Hash256 -> m Bool
-dbIsTxInWallet txid = liftM isJust $ getBy $ UniqueTxBlob txid
+dbIsTxInWallet txid = liftM isJust $ getBy $ UniqueTx txid
 

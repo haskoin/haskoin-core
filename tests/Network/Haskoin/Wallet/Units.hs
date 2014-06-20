@@ -51,6 +51,7 @@ import Database.Persist.Sqlite
 import Network.Haskoin.Wallet.Commands
 import Network.Haskoin.Wallet.DbAddress
 import Network.Haskoin.Wallet.DbAccount
+import Network.Haskoin.Wallet.DbTx
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Transaction
@@ -266,11 +267,14 @@ tests =
                     cmdGenAddrs "default" 5
                     cmdPrvKey "default" 5
         ]
+    , testGroup "Transaction tests"
+        [ testCase "Tx import" $ runUnit testImportTx
+        ]
     ]
 
 assertException :: ( Exception e
                    , Eq e
-                   ) => e -> App a -> IO ()
+                   ) => e -> App a -> Assertion
 assertException ex action = 
     handleJust matchEx (const $ return ()) $ do
         runUnit action
@@ -284,4 +288,44 @@ runUnit action = do
         _ <- runMigrationSilent migrateWallet 
         action
     return ()
+
+mnemo :: String
+mnemo = unwords
+    [ "mass", "coast", "dance"
+    , "birth", "online", "various"
+    , "renew", "alert", "crunch" 
+    , "middle", "absurd", "health"
+    ]
+
+pass :: String
+pass = "passw0rd"
+
+testImportTx :: App ()
+testImportTx = do
+    cmdInitMnemo pass $ Just mnemo
+    cmdNewAcc "a"
+    cmdGenAddrs "a" 5 
+    cmdNewAcc "b"
+    cmdGenAddrs "b" 5 
+    let fundingTx = 
+            Tx 0 [ TxIn (OutPoint 0 0) (BS.pack [1]) maxBound ] -- dummy input
+                 [ TxOut 10000000 $
+                    encodeOutputBS $ PayPKHash $ fromJust $ 
+                    base58ToAddr "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" -- a
+                 , TxOut 15000000 $
+                    encodeOutputBS $ PayPKHash $ fromJust $ 
+                    base58ToAddr "141gt8RK8uiohKXGNDw25Zih4ugCsW4iUt" -- b
+                 , TxOut 20000000 $
+                    encodeOutputBS $ PayPKHash $ fromJust $ 
+                    base58ToAddr "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" -- a
+                 , TxOut 25000000 $
+                    encodeOutputBS $ PayPKHash $ fromJust $ 
+                    base58ToAddr "16rEcC1w39g7VpVbmkqiPZZi4oJ1tkQnjU" -- b
+                 ] maxBound 
+    res <- dbImportTx fundingTx
+    --TODO: Test res
+    return ()
+    
+
+
 

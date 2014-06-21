@@ -7,17 +7,24 @@ module Network.Haskoin.Wallet.Util
 , checkInit
 , dbGetWallet
 , dbGetTx
+, dbGetBestHeight
+, dbSetBestHeight
 ) where
 
+import Control.Applicative
 import Control.Exception
 import Control.Monad
 import Control.Monad.Trans
+
+import Data.Word
 import Data.Maybe
+
+import Database.Persist
+
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
-import Database.Persist
 
 catStatus :: [CoinStatus] -> [Hash256]
 catStatus = foldr f []
@@ -54,4 +61,13 @@ dbGetTx tid = do
         Just ent -> return ent
         Nothing  -> liftIO $ throwIO $ InvalidTransactionException $
             unwords ["Transaction", encodeTxid tid, "not in database"]
+
+dbGetBestHeight :: PersistQuery m => m Word32
+dbGetBestHeight = do
+    cnf <- selectFirst [] []
+    -- TODO: throw an exception here instead of fromJust
+    return $ dbConfigBestHeight $ entityVal $ fromJust cnf
+
+dbSetBestHeight :: PersistQuery m => Word32 -> m ()
+dbSetBestHeight h = updateWhere [] [DbConfigBestHeight =. h]
 

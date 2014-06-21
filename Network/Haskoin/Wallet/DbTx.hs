@@ -19,7 +19,7 @@ import Control.Monad.Trans (liftIO)
 import Control.Exception (throwIO)
 
 import Data.Time (UTCTime, getCurrentTime)
-import Data.Word (Word64)
+import Data.Word (Word32, Word64)
 import Data.List ((\\), nub)
 import Data.Maybe (catMaybes, isNothing, isJust, fromJust)
 import Data.Either (rights)
@@ -60,13 +60,17 @@ import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
-yamlTx :: DbAccTxGeneric b -> Value
-yamlTx tx = object $ concat
-    [ [ "Recipients" .= dbAccTxRecipients tx
-      , "Value" .= dbAccTxValue tx
+yamlTx :: DbAccTxGeneric b -> DbTxGeneric b -> Word32 -> Value
+yamlTx acctx tx chainHeight = object $ concat
+    [ [ "Recipients" .= dbAccTxRecipients acctx
+      , "Value" .= dbAccTxValue acctx
+      , "Confirmations" .= conf
       ]
-    , if dbAccTxPartial tx then ["Partial" .= True] else []
+    , if dbAccTxPartial acctx then ["Partial" .= True] else []
     ]
+  where
+    conf | isNothing $ dbTxConfirmedHeight tx = 0
+         | otherwise = chainHeight - (fromJust $ dbTxConfirmedHeight tx) + 1
 
 -- |Import a transaction into the database
 dbImportTx :: ( PersistQuery m
@@ -99,7 +103,7 @@ dbImportTx tx = do
             -- insert account transactions into database
             forM_ accTxs insert_
             -- Save the whole transaction
-            insertUnique $ DbTx tid tx False time
+            insertUnique $ DbTx tid tx False Nothing Nothing time
             -- Re-import orphans
             liftM (accTxs ++) tryImportOrphans
   where
@@ -139,7 +143,7 @@ dbImportCoin tid commit (out, i) = do
         time  <- liftIO getCurrentTime
         let coin = DbCoin tid i (fromIntegral $ outValue out) 
                                 (fromRight script) rdm 
-                                (dbAddressBase58 $ fromJust dbAddr)
+                                (dbAddressValue $ fromJust dbAddr)
                                 Unspent
                                 (dbAddressAccount $ fromJust dbAddr)
                                 time
@@ -177,7 +181,7 @@ isOrphanTx tx = do
     when (length missing > 0) $ do
         -- Add transaction to the orphan pool
         time <- liftIO getCurrentTime
-        _ <- insertUnique $ DbTx tid tx True time
+        _ <- insertUnique $ DbTx tid tx True Nothing Nothing time
         return ()
     return $ length missing > 0
   where
@@ -196,7 +200,7 @@ isMyInput input = do
     if isLeft senderE 
         then return Nothing
         else do
-            res <- getBy $ UniqueAddress $ addrToBase58 sender
+            res <- getBy $ UniqueAddress sender
             return $ entityVal <$> res
 
 -- Returns True if the output address is part of the wallet
@@ -210,7 +214,7 @@ isMyOutput out = do
     if isLeft recipientE
         then return Nothing 
         else do
-            res <- getBy $ UniqueAddress $ addrToBase58 recipient
+            res <- getBy $ UniqueAddress recipient
             return $ entityVal <$> res
 
 -- |A transaction can not be imported if it double spends coins in the wallet.
@@ -246,8 +250,7 @@ buildAccTx tx inCoins outCoins partial time = map build $ M.toList oMap
         Just tuple -> M.insert (dbCoinAccount coin) (g tuple coin) accMap
         Nothing    -> M.insert (dbCoinAccount coin) (g ([],[]) coin) accMap
     allRecip = rights $ map toAddr $ txOut tx
-    toAddr   = (addrToBase58 <$>) . (scriptRecipient =<<) 
-               . decodeToEither . scriptOutput
+    toAddr   = (scriptRecipient =<<) . decodeToEither . scriptOutput
     sumVal   = sum . (map dbCoinValue)
     build (ai,(i,o)) = DbAccTx (txid tx) recips total ai partial time
       where
@@ -283,8 +286,8 @@ dbSendTx :: ( PersistUnique m
             )
          => AccountName -> [(String,Word64)] -> Word64
          -> m (Tx, Bool)
-dbSendTx name dests fee = do
-    (coins,recips) <- dbSendSolution name dests fee
+dbSendTx name strDests fee = do
+    (coins,recips) <- dbSendSolution name strDests fee
     dbSendCoins coins recips (SigAll False)
 
 -- |Given a list of recipients and a fee, finds a valid combination of coins
@@ -292,8 +295,10 @@ dbSendSolution :: ( PersistUnique m
                   , PersistQuery m
                   )
                => AccountName -> [(String,Word64)] -> Word64
-               -> m ([Coin],[(String,Word64)])
-dbSendSolution name dests fee = do
+               -> m ([Coin],[(Address,Word64)])
+dbSendSolution name strDests fee = do
+    unless (all isJust decodeDest) $ liftIO $ throwIO $
+        InvalidAddressException "Invalid addresses"
     (Entity ai acc) <- dbGetAccount name
     unspent <- liftM (map toCoin) $ dbCoins ai
     let msParam = ( fromJust $ dbAccountMsRequired acc
@@ -307,17 +312,20 @@ dbSendSolution name dests fee = do
     recips <- if change < 5000 then return dests else do
         cAddr <- dbGenIntAddrs name 1
         -- TODO: Change must be randomly placed
-        return $ dests ++ [(dbAddressBase58 $ head cAddr,change)]
+        return $ dests ++ [(dbAddressValue $ head cAddr,change)]
     return (coins,recips)
   where
-    tot = sum $ map snd dests
+    decodeDest = map f strDests
+    f (str,v)  = (\x -> (x,v)) <$> base58ToAddr str
+    dests      = map fromJust decodeDest
+    tot        = sum $ map snd dests
     
 -- | Build and sign a transaction by providing coins and recipients
 dbSendCoins :: PersistUnique m
-            => [Coin] -> [(String,Word64)] -> SigHash
+            => [Coin] -> [(Address,Word64)] -> SigHash
             -> m (Tx, Bool)
 dbSendCoins coins recipients sh = do
-    let txE = buildAddrTx (map coinOutPoint coins) recipients
+    let txE = buildAddrTx (map coinOutPoint coins) $ map f recipients
         tx  = fromRight txE
     when (isLeft txE) $ liftIO $ throwIO $
         TransactionBuildingException $ fromLeft txE
@@ -326,6 +334,8 @@ dbSendCoins coins recipients sh = do
     when (isBroken sigTx) $ liftIO $ throwIO $
         TransactionSigningException $ runBroken sigTx
     return (runBuild sigTx, isComplete sigTx)
+  where
+    f (a,v) = (addrToBase58 a, v)
 
 dbSignTx :: PersistUnique m
          => AccountName -> Tx -> SigHash -> m (Tx, Bool)
@@ -372,8 +382,8 @@ dbGetBloomFilter = do
     addrs <- selectList [] []
     -- TODO: Choose a random nonce for the bloom filter
     let bloom  = bloomCreate (length addrs * 2) 0.001 0 BloomUpdateP2PubKeyOnly
-        bloom' = foldl f bloom $ map (dbAddressBase58 . entityVal) addrs
-        f b d  = bloomInsert b $ stringToBS d
+        bloom' = foldl f bloom $ map (dbAddressValue . entityVal) addrs
+        f b a  = bloomInsert b $ encode' $ getAddrHash a
     return bloom'
 
 dbIsTxInWallet :: PersistUnique m => Hash256 -> m Bool

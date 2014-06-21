@@ -17,17 +17,19 @@ import System.Console.GetOpt
     )
 import qualified System.Environment as E (getArgs)
 
-import Control.Monad (forM_, when)
+import Control.Monad (forM, forM_, when, liftM)
 import Control.Monad.Trans (liftIO, MonadIO)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import Control.Exception (tryJust, throwIO)
-import Control.Monad.Logger (LoggingT, MonadLogger, runStderrLoggingT)
+import Control.Monad.Logger 
+    (NoLoggingT, runNoLoggingT, LoggingT, MonadLogger, runStderrLoggingT)
 
 import Database.Persist
     ( PersistStore
     , PersistUnique
     , PersistQuery
     , PersistMonadBackend
+    , entityVal
     )
 import Database.Persist.Sql 
     ( SqlBackend
@@ -58,6 +60,7 @@ import Network.Haskoin.Wallet.DbAccount
 import Network.Haskoin.Wallet.DbAddress
 import Network.Haskoin.Wallet.DbCoin
 import Network.Haskoin.Wallet.DbTx
+import Network.Haskoin.Wallet.Util
 
 import Network.Haskoin.Script
 import Network.Haskoin.Protocol
@@ -209,8 +212,8 @@ getWorkDir = do
 catchEx :: IOError -> Maybe String
 catchEx = return . ioeGetErrorString
 
-runDB :: ConnectionPool -> SqlPersistT (LoggingT (ResourceT IO)) a -> IO a
-runDB pool m = runResourceT $ runStderrLoggingT $ runSqlPool m pool
+runDB :: ConnectionPool -> SqlPersistT (ResourceT (NoLoggingT IO)) a -> IO a
+runDB pool m = runNoLoggingT $ runResourceT $ runSqlPool m pool
 
 process :: Options -> [String] -> IO ()
 process opts xs 
@@ -285,8 +288,12 @@ dispatchCommand cmd opts args = case cmd of
             , "Balance" .= b
             ]
     "tx" -> whenArgs args (== 1) $ do
-        txs <- cmdListTx $ head args
-        return $ toJSON $ map yamlTx txs
+        height <- dbGetBestHeight 
+        accTxs <- cmdListTx $ head args
+        res <- forM accTxs $ \accTx -> do
+            tx <- liftM entityVal $ dbGetTx $ dbAccTxTxid accTx
+            return $ toJSON $ yamlTx accTx tx height
+        return $ toJSON res
     "send" -> whenArgs args (== 3) $ do
         (tx, complete) <- cmdSend
             (head args) (args !! 1) (read $ args !! 2) (optFee opts)
@@ -357,9 +364,13 @@ dispatchCommand cmd opts args = case cmd of
             tx  = fromJust txM
         when (isNothing txM) $ liftIO $ throwIO $
             ParsingException "Could not parse transaction"
-        txs <- cmdImportTx tx
-        return $ toJSON $ map yamlTx $ flip sortBy txs $
-            \a b -> (dbAccTxCreated a) `compare` (dbAccTxCreated b)
+        accTxs <- cmdImportTx tx
+        let f a b = (dbAccTxCreated a) `compare` (dbAccTxCreated b)
+        height <- dbGetBestHeight 
+        res <- forM (sortBy f accTxs) $ \accTx -> do
+            tx <- liftM entityVal $ dbGetTx $ dbAccTxTxid accTx
+            return $ toJSON $ yamlTx accTx tx height
+        return $ toJSON res
     "removetx" -> whenArgs args (== 1) $ do
         let idM = decodeTxid $ head args
         when (isNothing idM) $ liftIO $ throwIO $

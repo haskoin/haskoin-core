@@ -28,7 +28,7 @@ module Network.Haskoin.Wallet.Commands
 , cmdAllCoins
 , cmdImportTx 
 , cmdRemoveTx
-, cmdImportBlock
+, cmdImportBlocks
 , cmdListTx
 , cmdSend
 , cmdSendMany
@@ -66,8 +66,9 @@ import Database.Persist
     , insert_
     , replace
     , update
+    , updateWhere
     , count
-    , (=.), (<=.), (==.)
+    , (=.), (<=.), (==.), (<-.)
     , SelectOpt( Asc, OffsetBy, LimitTo )
     )
 import Network.Haskoin.Transaction
@@ -137,6 +138,7 @@ cmdInit seed
         when (isNothing master) $ liftIO $ throwIO $ InitializationException
             "The seed derivation produced an invalid key. Use another seed"
         insert_ $ DbWallet "main" "full" (fromJust master) (-1) time
+        insert_ $ DbConfig 0 1 time
 
 {- Account Commands -}
 
@@ -421,13 +423,33 @@ cmdAllCoins = checkInit >> do
     coins <- mapM (dbCoins . entityKey) accs
     return $ zip (map entityVal accs) coins
 
-cmdImportBlock :: (PersistQuery m, PersistUnique m)
-               => BlockChainAction -> [Hash256] -> m ()
-cmdImportBlock a txs = case a of
-    -- TODO: update transaction
-    BestBlock node   -> return ()
-    SideBlock node   -> liftIO $ print "Side block detected"
-    BlockReorg s o n -> liftIO $ print "Fork detected"
+-- Blocks are imported in batches for efficiency
+cmdImportBlocks :: (PersistQuery m, PersistUnique m)
+                => [(BlockChainAction, [Hash256])] -> m ()
+cmdImportBlocks xs = do
+    forM_ xs $ \(a,txs) -> case a of
+        -- TODO: update transaction
+        BestBlock node -> do
+            -- TODO: The transactions *need* to be in the wallet already to get
+            -- their first confirmation mark. Otherwise they will stay unconfirmed
+            -- forever. Look into this.
+            when (not $ null txs) $ do
+                updateWhere 
+                    [ DbTxTxid <-. txs ]
+                    [ DbTxConfirmedBy     =. Just (nodeBlockId node)
+                    , DbTxConfirmedHeight =. Just (nodeHeaderHeight node)
+                    ]
+        -- TODO: Handle these cases
+        SideBlock node   -> liftIO $ print "Side block detected"
+        BlockReorg s o n -> liftIO $ print "Fork detected"
+    dbSetBestHeight best
+  where
+    best = case head $ dropWhile isSideBlock $ map fst $ reverse xs of
+        BestBlock node   -> nodeHeaderHeight node
+        -- TODO: Verify if this is correct, i.e. last and not first
+        BlockReorg _ _ n -> nodeHeaderHeight $ last n
+    isSideBlock (SideBlock _) = True
+    isSideBlock _             = False
 
 {- Tx Commands -}
 

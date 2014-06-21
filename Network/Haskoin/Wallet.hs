@@ -42,7 +42,7 @@ module Network.Haskoin.Wallet
 , dbGetBloomFilter
 
 -- *Block Commands
-, cmdImportBlock
+, cmdImportBlocks
 
 -- *Utility Commands
 , cmdDecodeTx

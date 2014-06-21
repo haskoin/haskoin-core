@@ -16,7 +16,7 @@ import Control.Monad (when, forM, liftM)
 import Control.Monad.Trans (liftIO)
 import Control.Exception (throwIO)
 
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, isNothing)
 import Data.Time (getCurrentTime)
 import Data.Yaml (Value, object, (.=), toJSON)
 
@@ -46,7 +46,7 @@ yamlAddr a
     | null $ dbAddressLabel a = object base
     | otherwise = object $ label:base
   where 
-    base  = [ "Addr" .= dbAddressBase58 a
+    base  = [ "Addr" .= (addrToBase58 $ dbAddressValue a)
             , "Key"  .= dbAddressIndex a
             , "Tree" .= dbAddressTree a
             ]
@@ -68,11 +68,13 @@ dbGetAddr :: (PersistUnique m, PersistMonadBackend m ~ b)
           => String 
           -> m (Entity (DbAddressGeneric b))
 dbGetAddr addrStr = do
-    entM <- getBy $ UniqueAddress addrStr
-    case entM of
-        Just ent -> return ent
-        Nothing -> liftIO $ throwIO $
-            InvalidAddressException $ unwords ["Invalid address", addrStr]
+    let addrM = base58ToAddr addrStr
+    when (isNothing addrM) $ liftIO $ throwIO $
+        InvalidAddressException $ unwords ["Invalid address", addrStr]
+    entM <- getBy $ UniqueAddress $ fromJust addrM
+    when (isNothing entM) $ liftIO $ throwIO $
+        InvalidAddressException $ unwords ["Invalid address", addrStr]
+    return $ fromJust entM
 
 dbGetAddressByIndex :: ( PersistUnique m
                        , PersistMonadBackend m ~ b
@@ -170,8 +172,8 @@ dbGenAddrs name labels internal
         (Entity ai acc) <- dbGetAccount name
         let tree | internal  = "1/"
                  | otherwise = "0/"
-            build (s,i) = DbAddress 
-                             s "" (fromIntegral i)
+            build (a,i) = DbAddress 
+                             a "" (fromIntegral i)
                              (concat [dbAccountTree acc,tree,show i,"/"])
                              ai internal time
         let gapAddr = map build $ take (length labels) $ f acc

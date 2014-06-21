@@ -102,6 +102,7 @@ derivePersistField "AccPubKey"
 derivePersistField "XPubKey"
 derivePersistField "Hash256"
 derivePersistField "ScriptOutput"
+derivePersistField "Address"
 
 instance PersistField Tx where
     toPersistValue = PersistByteString . encode'

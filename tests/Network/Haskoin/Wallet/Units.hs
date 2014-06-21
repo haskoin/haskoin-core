@@ -322,7 +322,14 @@ testImportTx = do
                     encodeOutputBS $ PayPKHash $ fromJust $ 
                     base58ToAddr "16rEcC1w39g7VpVbmkqiPZZi4oJ1tkQnjU" -- b
                  ] maxBound 
+    let fundingTx2 = 
+            Tx 0 [ TxIn (OutPoint 0 0) (BS.pack [1]) maxBound ] -- dummy input
+                 [ TxOut 10000000 $
+                    encodeOutputBS $ PayPKHash $ fromJust $ 
+                    base58ToAddr "13r5SQ9YQ5Xxk1RUbTvZ7VB9xB7EMprWNj"
+                 ] maxBound 
     res <- dbImportTx fundingTx
+    liftIO $ print $ bsToHex $ encode' fundingTx2
     --TODO: Test res
     return ()
     

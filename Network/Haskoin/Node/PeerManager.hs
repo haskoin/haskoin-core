@@ -271,21 +271,24 @@ processMerkleBlock tid dmb = do
 -- as they may be received out-of-order from the network (concurrent download)
 importMerkleBlocks :: BlockHeight -> ManagerHandle ()
 importMerkleBlocks height = do
+    dwnQueue <- S.gets blocksToDownload
     blockMap <- S.gets receivedBlocks
     let ascList  = M.toAscList blockMap
         toImport = go height ascList
         toKeep   = drop (length toImport) ascList
-    S.modify $ \s -> s{ receivedBlocks = M.fromList toKeep }
-    -- TODO: Import in the wallet
-    -- TODO: Deal with reorgs 
-    -- TODO: Stall solo transactions until we have synced the chain. This is
-    -- to prevent missing aa transaction that is in our wallet but we have
-    -- not generated the address yet
-    forM_ toImport $ \(h, dmb) -> do
-        node <- runDB $ addMerkleBlock $ decodedMerkle dmb
-        runWallet $ do
-            forM_ (merkleTxs dmb) cmdImportTx
-            cmdImportBlock node (expectedTxs dmb)
+    -- Send blocks in batches
+    when ( length toImport >= 500 || (Q.null dwnQueue && null toKeep) ) $ do
+        S.modify $ \s -> s{ receivedBlocks = M.fromList toKeep }
+        -- TODO: Import in the wallet
+        -- TODO: Deal with reorgs 
+        -- TODO: Stall solo transactions until we have synced the chain. This is
+        -- to prevent missing aa transaction that is in our wallet but we have
+        -- not generated the address yet
+        pairs <- forM toImport $ \(h, dmb) -> do
+            node <- runDB $ addMerkleBlock $ decodedMerkle dmb
+            runWallet $ forM_ (merkleTxs dmb) cmdImportTx
+            return (node, expectedTxs dmb)
+        runWallet $ cmdImportBlocks pairs
   where
     go prevHeight ((currHeight, x):xs) 
         | currHeight == prevHeight + 1 = (currHeight, x) : go currHeight xs
@@ -387,10 +390,10 @@ runDB m = do
     db <- S.gets dbHandle
     liftIO $ S.evalStateT m $ LevelSession db
 
-runWallet :: SqlPersistT (LoggingT (ResourceT IO)) a -> ManagerHandle a
+runWallet :: SqlPersistT (ResourceT (NoLoggingT IO)) a -> ManagerHandle a
 runWallet m = do
     pool <- S.gets walletPool
-    liftIO $ runResourceT $ runStderrLoggingT $ runSqlPool m pool
+    liftIO $ runNoLoggingT $ runResourceT $ runSqlPool m pool
 
 -- TODO: Remove this if not needed
 splitIn :: Int -> [a] -> [[a]]

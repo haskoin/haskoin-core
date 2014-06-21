@@ -11,7 +11,7 @@ module Network.Haskoin.Script.Evaluator
 , runStack
 ) where
 
--- import Debug.Trace (trace)
+import Debug.Trace (trace, traceM)
 
 import Control.Monad.State
 import Control.Monad.Error
@@ -60,13 +60,15 @@ data Program = Program {
     instructions :: Instructions,
     stack        :: Stack,
     altStack     :: AltStack,
+    condStack    :: [Bool],
     hashOps      :: HashOps,
     sigCheck     :: SigCheck
 }
 
 instance Show Program where
     show p = "script: " ++ (show $ instructions p) ++
-             " stack: " ++ (show $ stack p)
+             " stack: " ++ (show $ stack p) ++
+             " condStack: " ++ (show $ condStack p)
 
 type ProgramState = ErrorT EvalError Identity
 
@@ -186,6 +188,21 @@ popOp = get >>= \prog -> case instructions prog of
 getStack :: ProgramTransition Stack
 getStack = stack <$> get
 
+getCond :: ProgramTransition [Bool]
+getCond = condStack <$> get
+
+popCond :: ProgramTransition Bool
+popCond = get >>= \prog -> case condStack prog of
+    [] -> programError "popCond: empty condStack"
+    (c:cs) -> put prog { condStack = cs } >> return c
+
+pushCond :: Bool -> ProgramTransition ()
+pushCond c = get >>= \prog ->
+    put prog { condStack = (c:condStack prog) }
+
+flipCond :: ProgramTransition ()
+flipCond = popCond >>= pushCond . not
+
 withStack :: ProgramTransition Stack
 withStack = getStack >>= \case
     [] -> stackError
@@ -302,33 +319,14 @@ popAltStack = get >>= \p -> case altStack p of
 
 
 
+
+dumpState :: String -> ProgramTransition ()
+dumpState message = do
+    traceM message
+    get >>= \s -> traceM $ show s
+
 -- Instruction Evaluation
-
 eval :: ScriptOp -> ProgramTransition ()
-
--- Flow Control
-
--- TODO check nested conditionals
--- TODO multiple ELSE's are valid!
--- https://github.com/bitcoin/bitcoin/blob/master/src/test/data/script_valid.json
-
-evalIf :: Bool -> ProgramTransition ()
-evalIf cond = case cond of
-    True -> popOp >> evalUntil stops >> popOp >> skipUntil stops
-    False -> popOp >> skipUntil stops >> popOp >> evalUntil stops
-    where
-        doUntil stop evalOps = do
-            op <- getOp
-            unless (op `elem` stop) $ do
-                when evalOps $ (eval op)
-                void popOp
-                doUntil stop evalOps
-
-        skipUntil stop = doUntil stop False
-        evalUntil stop = doUntil stop True
-        stops = [OP_ELSE, OP_ENDIF]
-
-
 eval OP_NOP     = return ()
 eval OP_NOP1    = return ()
 eval OP_NOP2    = return ()
@@ -341,10 +339,10 @@ eval OP_NOP8    = return ()
 eval OP_NOP9    = return ()
 eval OP_NOP10   = return ()
 
-eval OP_IF      = popStack >>= evalIf . decodeBool
-eval OP_NOTIF   = popStack >>= evalIf . not . decodeBool
-eval OP_ELSE    = programError "OP_ELSE outside OP_IF"
-eval OP_ENDIF   = programError "OP_ENDIF outside OP_IF"
+eval OP_IF      = popStack >>= pushCond . decodeBool
+eval OP_NOTIF   = popStack >>= pushCond . not . decodeBool
+eval OP_ELSE    = flipCond
+eval OP_ENDIF   = void popCond
 
 eval OP_VERIFY = decodeBool <$> popStack >>= \case
     False -> programError "OP_VERIFY failed"
@@ -358,7 +356,7 @@ eval OP_RETURN = programError "explicit OP_RETURN"
 
 eval OP_TOALTSTACK = popStack >>= pushAltStack
 eval OP_FROMALTSTACK = popAltStack >>= pushStack
-eval OP_IFDUP   = tStack1 $ \a -> if decodeBool a then [a, a] else []
+eval OP_IFDUP   = tStack1 $ \a -> if decodeBool a then [a, a] else [a]
 eval OP_DEPTH   = getStack >>= pushStack . encodeInt . fromIntegral . length
 eval OP_DROP    = void popStack
 eval OP_DUP     = tStack1 $ \a -> [a, a]
@@ -366,7 +364,7 @@ eval OP_NIP     = tStack2 $ \a _ -> [a]
 eval OP_OVER    = tStack2 $ \a b -> [a, b, a]
 eval OP_PICK    = decodeInt <$> popStack >>= (pickStack False . fromIntegral)
 eval OP_ROLL    = decodeInt <$> popStack >>= (pickStack True . fromIntegral)
-eval OP_ROT     = tStack3 $ \a b c -> [c, b, a]
+eval OP_ROT     = tStack3 $ \a b c -> [b, c, a]
 eval OP_SWAP    = tStack2 $ \a b -> [b, a]
 eval OP_TUCK    = tStack2 $ \a b -> [b, a, b]
 eval OP_2DROP   = tStack2 $ \_ _ -> []
@@ -447,13 +445,25 @@ eval op = case constValue op of
 --------------------------------------------------------------------------------
 
 evalAll :: ProgramTransition ()
-evalAll = do
-    instructions <$> get >>= \case
-        [] -> return ()
-        (op:ops) -> do
-            eval op
-            popOp >>= pushHashOp
-            evalAll
+evalAll = instructions <$> get >>= \case
+            [] -> return ()
+            (op:_) -> do
+                -- dumpState "evalAll"
+                condStack <- getCond
+                let ex = all id condStack
+
+                if all id condStack
+                    then (getOp >>= eval)
+                    else (getOp >>= evalFalse)
+
+                void popOp
+                evalAll
+
+          where evalFalse OP_IF = pushCond False
+                evalFalse OP_ELSE = flipCond
+                evalFalse OP_NOTIF = pushCond False
+                evalFalse OP_ENDIF = void popCond
+                evalFalse _ = return ()
 
 -- exported functions
 
@@ -464,6 +474,7 @@ runProgram i sigCheck =
         stack = [],
         altStack = [],
         hashOps = [],
+        condStack = [],
         sigCheck = sigCheck
     })
 

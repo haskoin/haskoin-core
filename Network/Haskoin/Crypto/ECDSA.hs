@@ -110,7 +110,7 @@ data Signature =
     Signature { sigR :: !FieldN 
               , sigS :: !FieldN 
               }
-    deriving (Show, Eq)
+    deriving (Read, Show, Eq)
 
 instance NFData Signature where
     rnf (Signature r s) = rnf r `seq` rnf s

@@ -104,7 +104,7 @@ data Address
     = PubKeyAddress { getAddrHash :: Hash160 }
     -- | Script Hash Address
     | ScriptAddress { getAddrHash :: Hash160 }
-       deriving (Eq, Show)
+       deriving (Eq, Show, Read)
 
 instance NFData Address where
     rnf (PubKeyAddress h) = rnf h

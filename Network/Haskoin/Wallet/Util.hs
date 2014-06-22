@@ -26,12 +26,12 @@ import Network.Haskoin.Protocol
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 
-catStatus :: [CoinStatus] -> [Hash256]
+catStatus :: [CoinStatus] -> [TxHash]
 catStatus = foldr f []
   where
-    f (Spent str) acc    = str:acc
-    f (Reserved str) acc = str:acc
-    f _ acc              = acc
+    f (Spent h) acc    = h:acc
+    f (Reserved h) acc = h:acc
+    f _ acc            = acc
 
 isWalletInit :: PersistUnique m => String -> m Bool
 isWalletInit name = do
@@ -54,13 +54,13 @@ dbGetWallet name = do
             unwords ["Wallet", name, "is not initialized"]
 
 dbGetTx :: (PersistUnique m, PersistMonadBackend m ~ b)
-        => Hash256 -> m (Entity (DbTxGeneric b))
+        => TxHash -> m (DbTxGeneric b)
 dbGetTx tid = do
     entM <- getBy $ UniqueTx tid
     case entM of
-        Just ent -> return ent
+        Just ent -> return $ entityVal ent
         Nothing  -> liftIO $ throwIO $ InvalidTransactionException $
-            unwords ["Transaction", encodeTxid tid, "not in database"]
+            unwords ["Transaction", encodeTxHashLE tid, "not in database"]
 
 dbGetBestHeight :: PersistQuery m => m Word32
 dbGetBestHeight = do

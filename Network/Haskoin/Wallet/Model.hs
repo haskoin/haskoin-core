@@ -87,7 +87,7 @@ DbAddress
     deriving Show
 
 DbCoin 
-    txid Hash256
+    hash TxHash
     pos Int
     value Word64
     script ScriptOutput
@@ -96,27 +96,27 @@ DbCoin
     status CoinStatus
     account DbAccountId
     created UTCTime default=CURRENT_TIME
-    CoinOutPoint txid pos
+    CoinOutPoint hash pos
     deriving Show
 
 DbAccTx
-    txid Hash256
+    hash TxHash
     recipients [Address]
     value Int64
     account DbAccountId
     partial Bool
     created UTCTime default=CURRENT_TIME
-    UniqueAccTx txid account
+    UniqueAccTx hash account
     deriving Show
 
 DbTx
-    txid Hash256
+    hash TxHash
     value Tx
     orphan Bool
-    confirmedBy Hash256 Maybe
+    confirmedBy BlockHash Maybe
     confirmedHeight Word32 Maybe
     created UTCTime default=CURRENT_TIME
-    UniqueTx txid
+    UniqueTx hash
     deriving Show
 
 DbConfig

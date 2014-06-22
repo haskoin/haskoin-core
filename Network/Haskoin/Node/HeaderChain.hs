@@ -25,7 +25,7 @@ import Network.Haskoin.Util
 
 -- | Lower bound for the proof of work difficulty
 proofOfWorkLimit :: Integer
-proofOfWorkLimit = fromIntegral (maxBound `shiftR` 32 :: Hash256)
+proofOfWorkLimit = fromIntegral (maxBound `shiftR` 32 :: Word256)
 
 -- | Time between difficulty cycles (2 weeks on average)
 targetTimespan :: Word32
@@ -46,25 +46,25 @@ type DBHandle = S.StateT LevelSession IO
 -- Represent a node in the block header chain
 data BlockHeaderNode 
     = BlockHeaderGenesis
-        { nodeBlockId      :: !Hash256
+        { nodeBlockHash    :: !BlockHash
         , nodeHeader       :: !BlockHeader
         , nodeHeaderHeight :: !Word32
         , nodeChainWork    :: !Integer
         }
     | BlockHeaderNode 
-        { nodeBlockId      :: !Hash256
+        { nodeBlockHash    :: !BlockHash
         , nodeHeader       :: !BlockHeader
         , nodeHeaderHeight :: !Word32
         , nodeChainWork    :: !Integer
         -- TODO: Remove this and use the parent field in nodeHeader
-        , nodeParent       :: !Hash256
+        , nodeParent       :: !BlockHash
         } deriving (Show, Read, Eq)
 
 instance Binary BlockHeaderNode where
 
     get = go =<< get
       where
-        genid = blockid genesis
+        genid = headerHash genesis
         go i | i == genid = BlockHeaderGenesis i <$> get 
                                                  <*> getWord32le 
                                                  <*> get 
@@ -96,7 +96,7 @@ data BlockChainAction
                  }
     deriving (Read, Show, Eq)
 
-indexKey :: Hash256 -> BS.ByteString
+indexKey :: BlockHash -> BS.ByteString
 indexKey h = "index_" `BS.append` encode' h
 
 bestHeaderKey :: BS.ByteString
@@ -105,7 +105,7 @@ bestHeaderKey = "bestheader"
 bestBlockKey :: BS.ByteString
 bestBlockKey = "bestblock"
 
-getBlockHeaderNode :: Hash256 -> DBHandle (Maybe BlockHeaderNode)
+getBlockHeaderNode :: BlockHash -> DBHandle (Maybe BlockHeaderNode)
 getBlockHeaderNode h = do
     db  <- S.gets handle
     res <- DB.get db def $ indexKey h
@@ -114,7 +114,7 @@ getBlockHeaderNode h = do
 putBlockHeaderNode :: BlockHeaderNode -> DBHandle ()
 putBlockHeaderNode bhn = do
     db <- S.gets handle
-    DB.put db def (indexKey $ nodeBlockId bhn) $ encode' bhn
+    DB.put db def (indexKey $ nodeBlockHash bhn) $ encode' bhn
 
 getBestBlock :: DBHandle BlockHeaderNode
 getBestBlock = do
@@ -123,7 +123,7 @@ getBestBlock = do
     key <- decode' . fromJust <$> DB.get db def bestBlockKey
     fromJust <$> getBlockHeaderNode key
 
-putBestBlock :: Hash256 -> DBHandle ()
+putBestBlock :: BlockHash -> DBHandle ()
 putBestBlock h = do
     db <- S.gets handle
     DB.put db def bestBlockKey $ encode' h
@@ -135,7 +135,7 @@ getBestHeader = do
     key <- decode' . fromJust <$> DB.get db def bestHeaderKey
     fromJust <$> getBlockHeaderNode key
 
-putBestHeader :: Hash256 -> DBHandle ()
+putBestHeader :: BlockHash -> DBHandle ()
 putBestHeader h = do
     db <- S.gets handle
     DB.put db def bestHeaderKey $ encode' h
@@ -146,7 +146,7 @@ initDB = S.gets handle >>= \db -> do
     prevGen <- getBlockHeaderNode genid
     when (isNothing prevGen) $ DB.write db def
         [ DB.Put (indexKey genid) $ encode' BlockHeaderGenesis
-           { nodeBlockId      = genid
+           { nodeBlockHash      = genid
            , nodeHeader       = genesis
            , nodeHeaderHeight = 0
            , nodeChainWork    = headerWork genesis
@@ -155,7 +155,7 @@ initDB = S.gets handle >>= \db -> do
         , DB.Put bestBlockKey  $ encode' genid
         ]
   where
-    genid = blockid genesis
+    genid = headerHash genesis
 
 -- bitcoind function ProcessBlockHeader and AcceptBlockHeader in main.cpp
 -- TODO: Add DOS return values
@@ -192,7 +192,7 @@ addBlockHeader bh adjustedTime = ((f <$>) . runEitherT) $ do
   where
     f (Right x) = x
     f (Left  x) = x
-    bid = blockid bh
+    bid = headerHash bh
 
 storeBlockHeader :: BlockHeader -> BlockHeaderNode 
                  -> DBHandle BlockHeaderAction
@@ -205,10 +205,10 @@ storeBlockHeader bh prevNode = S.gets handle >>= \db -> do
         putBestHeader bid
     return $ AcceptHeader newNode
   where
-    bid       = blockid bh
+    bid       = headerHash bh
     newHeight = nodeHeaderHeight prevNode + 1
     newWork   = nodeChainWork prevNode + headerWork bh
-    newNode   = BlockHeaderNode { nodeBlockId      = bid
+    newNode   = BlockHeaderNode { nodeBlockHash      = bid
                                 , nodeHeader       = bh
                                 , nodeHeaderHeight = newHeight
                                 , nodeChainWork    = newWork
@@ -254,7 +254,7 @@ addMerkleBlock mb = do
     db        <- S.gets handle
     newNode   <- fromJust <$> getBlockHeaderNode bid
     chainHead <- getBestBlock
-    if nodeParent newNode == nodeBlockId chainHead
+    if nodeParent newNode == nodeBlockHash chainHead
         -- We connect to the best chain
         then do
             putBestBlock bid
@@ -263,13 +263,13 @@ addMerkleBlock mb = do
                  then handleNewBestChain newNode chainHead
                  else return $ SideBlock newNode
   where
-    bid = blockid $ merkleHeader mb
+    bid = headerHash $ merkleHeader mb
 
 handleNewBestChain :: BlockHeaderNode -> BlockHeaderNode 
                    -> DBHandle BlockChainAction
 handleNewBestChain newChainHead oldChainHead = do
     (splitPoint, oldChain, newChain) <- findSplit oldChainHead newChainHead
-    putBestBlock $ nodeBlockId newChainHead
+    putBestBlock $ nodeBlockHash newChainHead
     return $ BlockReorg splitPoint oldChain newChain
 
 -- | Find the split point between two nodes. It also returns the two partial
@@ -279,7 +279,7 @@ findSplit :: BlockHeaderNode -> BlockHeaderNode
 findSplit n1 n2 = go [] [] n1 n2
   where
     go xs ys x y
-        | nodeBlockId x == nodeBlockId y = return (x, x:xs, y:ys)
+        | nodeBlockHash x == nodeBlockHash y = return (x, x:xs, y:ys)
         | nodeHeaderHeight x > nodeHeaderHeight y = do
             par <- getParent x
             go (x:xs) ys par y
@@ -287,17 +287,17 @@ findSplit n1 n2 = go [] [] n1 n2
             par <- getParent y
             go xs (y:ys) x par
 
-getBlocksToDownload :: DBHandle [(Word32, Hash256)]
+getBlocksToDownload :: DBHandle [(Word32, BlockHash)]
 getBlocksToDownload = do
     bestHeader <- getBestHeader
     bestBlock  <- getBestBlock
     -- reverse the list so that smaller block heights are first
-    reverse <$> go bestHeader (nodeBlockId bestBlock)
+    reverse <$> go bestHeader (nodeBlockHash bestBlock)
   where
-    go h b | (nodeBlockId h) == b = return []
+    go h b | (nodeBlockHash h) == b = return []
            | otherwise = do
                p <- getParent h
-               ((nodeHeaderHeight h, nodeBlockId h) :) <$> go p b
+               ((nodeHeaderHeight h, nodeBlockHash h) :) <$> go p b
 
 -- This can fail if the node has no parent 
 getParent :: BlockHeaderNode -> DBHandle BlockHeaderNode
@@ -315,13 +315,13 @@ bestBlockHeight = nodeHeaderHeight <$> getBestBlock
 
 -- Only return the best hash
 -- TODO: Change this in the context of headers-first?
-blockLocator :: DBHandle [Hash256]
+blockLocator :: DBHandle [BlockHash]
 blockLocator = do
     n <- getBestHeader
-    return [nodeBlockId n]
+    return [nodeBlockHash n]
 
 -- Get the last checkpoint that we have seen
-lastCheckpoint :: DBHandle (Maybe (Int, Hash256))
+lastCheckpoint :: DBHandle (Maybe (Int, BlockHash))
 lastCheckpoint = S.gets handle >>= \db -> 
     foldM (f db) Nothing $ reverse checkpointsList
   where
@@ -341,7 +341,7 @@ checkProofOfWork bh
     target = decodeCompact $ blockBits bh
 
 getProofOfWork :: BlockHeader -> Integer
-getProofOfWork =  bsToInteger . BS.reverse . encode' . blockid
+getProofOfWork =  bsToInteger . BS.reverse . encode' . headerHash
 
 -- | Returns the work represented by this block. Work is defined as the number 
 -- of tries needed to solve a block in the average case with respect to the

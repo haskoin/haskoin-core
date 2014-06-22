@@ -48,8 +48,7 @@ import Network.Haskoin.Protocol
 import Network.Haskoin.Util
 
 type PeerHandle = S.StateT PeerSession (LoggingT IO)
-type MerkleRoot = Hash256
-type TxHash     = Hash256
+type MerkleRoot = Word256
 
 data PeerSession = PeerSession
     { peerId         :: ThreadId
@@ -119,7 +118,7 @@ processMessage = awaitForever $ \msg -> lift $ do
         S.modify $ \s -> s{ inflightMerkle = Nothing }
         -- Keep the same transaction order as in the merkle block
         let orderedTxs = catMaybes $ matchTemplate txs (expectedTxs dmb) f
-            f a b      = txid a == b
+            f a b      = txHash a == b
         sendManager $ PeerMerkleBlock dmb{ merkleTxs = orderedTxs }
     case msg of
         MVersion v     -> processVersion v
@@ -189,14 +188,14 @@ processTx tx = do
     -- everything to the manager together.
     if isJust merkleM
         then 
-            if txid tx `elem` match
+            if txHash tx `elem` match
                 then S.modify $ \s -> 
                     s{ inflightMerkle = Just dmb{ merkleTxs = tx : txs } }
                 else do
                     S.modify $ \s -> s{ inflightMerkle = Nothing }
                     -- Keep the same transaction order as in the merkle block
                     let orderedTxs = catMaybes $ matchTemplate txs match f
-                        f a b      = txid a == b
+                        f a b      = txHash a == b
                     sendManager $ PeerMerkleBlock dmb{ merkleTxs = orderedTxs }
                     sendManager $ PeerMessage $ MTx tx
         else sendManager $ PeerMessage $ MTx tx

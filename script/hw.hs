@@ -290,10 +290,7 @@ dispatchCommand cmd opts args = case cmd of
     "tx" -> whenArgs args (== 1) $ do
         height <- dbGetBestHeight 
         accTxs <- cmdListTx $ head args
-        res <- forM accTxs $ \accTx -> do
-            tx <- liftM entityVal $ dbGetTx $ dbAccTxTxid accTx
-            return $ toJSON $ yamlTx accTx tx height
-        return $ toJSON res
+        return $ toJSON $ map yamlTx accTxs
     "send" -> whenArgs args (== 3) $ do
         (tx, complete) <- cmdSend
             (head args) (args !! 1) (read $ args !! 2) (optFee opts)
@@ -365,18 +362,13 @@ dispatchCommand cmd opts args = case cmd of
         when (isNothing txM) $ liftIO $ throwIO $
             ParsingException "Could not parse transaction"
         accTxs <- cmdImportTx tx
-        let f a b = (dbAccTxCreated a) `compare` (dbAccTxCreated b)
-        height <- dbGetBestHeight 
-        res <- forM (sortBy f accTxs) $ \accTx -> do
-            tx <- liftM entityVal $ dbGetTx $ dbAccTxTxid accTx
-            return $ toJSON $ yamlTx accTx tx height
-        return $ toJSON res
+        return $ toJSON $ map yamlTx accTxs
     "removetx" -> whenArgs args (== 1) $ do
-        let idM = decodeTxid $ head args
+        let idM = decodeTxHashLE $ head args
         when (isNothing idM) $ liftIO $ throwIO $
             ParsingException "Could not parse transaction id"
         hashes <- cmdRemoveTx $ fromJust idM
-        return $ toJSON $ map encodeTxid hashes
+        return $ toJSON $ map encodeTxHashLE hashes
     "decodetx" -> whenArgs args (== 1) $ do
         tx <- cmdDecodeTx $ head args
         return $ toJSON tx

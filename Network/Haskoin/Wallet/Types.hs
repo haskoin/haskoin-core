@@ -76,7 +76,7 @@ data WalletException
 -- The purpose of the Reserved status is to block this coin from being used in
 -- subsequent coin selection algorithms. However, Reserved coins can always be
 -- spent (set status to Spent) by complete transactions.
-data CoinStatus = Spent Hash256 | Reserved Hash256 | Unspent
+data CoinStatus = Spent TxHash | Reserved TxHash | Unspent
     deriving (Show, Read, Eq)
 
 data RawTxOutPoints = RawTxOutPoints [OutPoint] 
@@ -100,7 +100,8 @@ derivePersistField "CoinStatus"
 derivePersistField "MasterKey"
 derivePersistField "AccPubKey"
 derivePersistField "XPubKey"
-derivePersistField "Hash256"
+derivePersistField "TxHash"
+derivePersistField "BlockHash"
 derivePersistField "ScriptOutput"
 derivePersistField "Address"
 
@@ -126,7 +127,7 @@ instance FromJSON RawTxOutPoints where
             tid  <- obj .: "txid" :: Parser String
             vout <- obj .: "vout" :: Parser Word32
             let i = maybeToEither ("Failed to decode txid" :: String)
-                                  (decodeTxid tid)
+                                  (decodeTxHashLE tid)
                 o = OutPoint <$> i <*> (return vout)
             either (const mzero) return o
 
@@ -149,7 +150,7 @@ instance FromJSON RawSigInput where
             rdm  <- obj .:? "redeemScript" :: Parser (Maybe String)
             let s = decodeToEither =<< maybeToEither "Hex parsing failed" 
                         (hexToBS scp)
-                i = maybeToEither "Failed to decode txid" (decodeTxid tid)
+                i = maybeToEither "Failed to decode txid" (decodeTxHashLE tid)
                 o = OutPoint <$> i <*> (return vout)
                 r = decodeToEither =<< maybeToEither "Hex parsing failed" 
                         (hexToBS $ fromJust rdm)
@@ -168,20 +169,20 @@ instance FromJSON RawPrvKey where
 instance ToJSON CoinStatus where
     toJSON (Spent tid) = 
         object [ "Status".= String "Spent"
-               , "Txid"  .= encodeTxid tid
+               , "Txid"  .= encodeTxHashLE tid
                ]
     toJSON (Reserved tid) = 
         object [ "Status".= String "Reserved"
-               , "Txid"  .= encodeTxid tid
+               , "Txid"  .= encodeTxHashLE tid
                ]
     toJSON Unspent = object [ "Status".= String "Unspent" ]
 
 instance FromJSON CoinStatus where
     parseJSON (Object obj) = obj .: "Status" >>= \status -> case status of
         (String "Spent")    -> 
-            (Spent . fromJust . decodeTxid)    <$> obj .: "Txid"
+            (Spent . fromJust . decodeTxHashLE)    <$> obj .: "Txid"
         (String "Reserved") -> 
-            (Reserved . fromJust . decodeTxid) <$> obj .: "Txid"
+            (Reserved . fromJust . decodeTxHashLE) <$> obj .: "Txid"
         (String "Unspent")  -> return Unspent
         _                   -> mzero
     parseJSON _ = mzero
@@ -190,7 +191,7 @@ instance FromJSON CoinStatus where
 
 instance ToJSON OutPoint where
     toJSON (OutPoint h i) = object
-        [ "TxID" .= encodeTxid h
+        [ "TxID" .= encodeTxHashLE h
         , "Index" .= toJSON i
         ]
 
@@ -220,7 +221,7 @@ instance ToJSON TxIn where
               
 instance ToJSON Tx where
     toJSON tx@(Tx v is os i) = object
-        [ "TxID" .= encodeTxid (txid tx)
+        [ "TxID" .= encodeTxHashLE (txHash tx)
         , "Version" .= v
         , "Inputs" .= map input (zip is [0..])
         , "Outputs" .= map output (zip os [0..])

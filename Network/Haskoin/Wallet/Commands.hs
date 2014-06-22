@@ -425,7 +425,7 @@ cmdAllCoins = checkInit >> do
 
 -- Blocks are imported in batches for efficiency
 cmdImportBlocks :: (PersistQuery m, PersistUnique m)
-                => [(BlockChainAction, [Hash256])] -> m ()
+                => [(BlockChainAction, [TxHash])] -> m ()
 cmdImportBlocks xs = do
     forM_ xs $ \(a,txs) -> case a of
         -- TODO: update transaction
@@ -435,8 +435,8 @@ cmdImportBlocks xs = do
             -- forever. Look into this.
             when (not $ null txs) $ do
                 updateWhere 
-                    [ DbTxTxid <-. txs ]
-                    [ DbTxConfirmedBy     =. Just (nodeBlockId node)
+                    [ DbTxHash <-. txs ]
+                    [ DbTxConfirmedBy     =. Just (nodeBlockHash node)
                     , DbTxConfirmedHeight =. Just (nodeHeaderHeight node)
                     ]
         -- TODO: Handle these cases
@@ -462,17 +462,17 @@ cmdImportTx :: ( PersistQuery m
                , PersistUnique m
                , PersistMonadBackend m ~ b
                ) 
-            => Tx                   -- ^ Transaction to import.
-            -> m [DbAccTxGeneric b] -- ^ New transaction entries created.
-cmdImportTx tx = checkInit >> dbImportTx tx
+            => Tx        -- ^ Transaction to import.
+            -> m [AccTx] -- ^ New transaction entries created.
+cmdImportTx tx = checkInit >> importTx tx
 
 -- | Remove a transaction from the database. This will remove all transaction
 -- entries for this transaction as well as any child transactions and coins
 -- deriving from it.
 cmdRemoveTx :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
-            => Hash256        -- ^ Transaction id (txid)
-            -> m [Hash256]    -- ^ List of removed transaction entries
-cmdRemoveTx h = checkInit >> dbRemoveTx h
+            => TxHash        -- ^ Transaction hash to remove 
+            -> m [TxHash]    -- ^ List of removed transaction hashes
+cmdRemoveTx h = checkInit >> removeTx h
 
 -- | List all the transaction entries for an account. Transaction entries
 -- summarize information for a transaction in a specific account only (such as
@@ -487,12 +487,12 @@ cmdRemoveTx h = checkInit >> dbRemoveTx h
 -- spends so that you don't mistakenly spend them. Partial transactions are
 -- replaced once the fully signed transaction is imported.
 cmdListTx :: (PersistQuery m, PersistUnique m, PersistMonadBackend m ~ b)
-          => AccountName           -- ^ Account name.
-          -> m [DbAccTxGeneric b]  -- ^ List of transaction entries.
+          => AccountName  -- ^ Account name.
+          -> m [AccTx]    -- ^ List of transaction entries.
 cmdListTx name = checkInit >> do
     (Entity ai _) <- dbGetAccount name
     e <- selectList [ DbAccTxAccount ==. ai ] [ Asc DbAccTxCreated ]
-    return $ map entityVal e
+    mapM (toAccTx . entityVal) e
 
 -- | Create a transaction sending some coins to a single recipient address.
 cmdSend :: ( PersistQuery m
@@ -505,7 +505,7 @@ cmdSend :: ( PersistQuery m
         -> Int              -- ^ Fee per 1000 bytes. 
         -> m (Tx, Bool)     -- ^ Payment transaction, complete?
 cmdSend name a v fee = checkInit >> do
-    dbSendTx name [(a,fromIntegral v)] (fromIntegral fee)
+    sendTx name [(a,fromIntegral v)] (fromIntegral fee)
 
 -- | Create a transaction sending some coins to a list of recipient addresses.
 cmdSendMany :: ( PersistQuery m
@@ -517,7 +517,7 @@ cmdSendMany :: ( PersistQuery m
             -> Int            -- ^ Fee per 1000 bytes. 
             -> m (Tx, Bool)   -- ^ Payment transaction.
 cmdSendMany name dests fee = checkInit >> do
-    dbSendTx name dests' (fromIntegral fee)
+    sendTx name dests' (fromIntegral fee)
   where
     dests' = map (\(a,b) -> (a,fromIntegral b)) dests
 
@@ -532,7 +532,7 @@ cmdSignTx :: PersistUnique m
           -> Tx           -- ^ Transaction to sign. 
           -> SigHash      -- ^ Signature type to create. 
           -> m (Tx, Bool) -- ^ Signed transaction.
-cmdSignTx name tx sh = checkInit >> dbSignTx name tx sh
+cmdSignTx name tx sh = checkInit >> signWalletTx name tx sh
 
 cmdFirstKeyTime :: PersistQuery m => m (Maybe Word32)
 cmdFirstKeyTime = do

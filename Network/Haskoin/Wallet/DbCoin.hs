@@ -24,6 +24,7 @@ import Database.Persist
     , selectList
     )
 
+import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Script
 import Network.Haskoin.Transaction
@@ -34,12 +35,12 @@ import Network.Haskoin.Util
 toCoin :: DbCoinGeneric b -> Coin
 toCoin c = Coin 
     (TxOut (fromIntegral $ dbCoinValue c) (encodeOutputBS $ dbCoinScript c))
-    (OutPoint (dbCoinTxid c) (fromIntegral $ dbCoinPos c))
+    (OutPoint (dbCoinHash c) (fromIntegral $ dbCoinPos c))
     (encodeOutput <$> dbCoinRdmScript c)
 
 yamlCoin :: DbCoinGeneric b -> Value
 yamlCoin coin = object $ concat
-    [ [ "TxID"    .= (encodeTxid $ dbCoinTxid coin)
+    [ [ "TxID"    .= (encodeTxHashLE $ dbCoinHash coin)
       , "Index"   .= dbCoinPos coin
       , "Value"   .= dbCoinValue coin
       , "Script"  .= dbCoinScript coin

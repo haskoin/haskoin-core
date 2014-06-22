@@ -39,7 +39,7 @@ module Network.Haskoin.Wallet
 , cmdSend
 , cmdSendMany
 , cmdSignTx
-, dbGetBloomFilter
+, walletBloomFilter
 
 -- *Block Commands
 , cmdImportBlocks

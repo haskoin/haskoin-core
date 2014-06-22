@@ -13,11 +13,11 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 -- | Checkpoints from bitcoind reference implementation /src/checkpoints.cpp
-checkpoints :: M.IntMap Hash256
+checkpoints :: M.IntMap BlockHash
 checkpoints = M.fromList checkpointsList
 
-checkpointsList :: [(Int, Hash256)]
-checkpointsList = map (\(a,b) -> (a,rev (b :: Hash256)))
+checkpointsList :: [(Int, BlockHash)]
+checkpointsList = map (\(a,b) -> (a,rev (b :: BlockHash)))
     -- These are in little endian notation!
     [ ( 11111, 0x0000000069e244f73d78e8fd29ba2fd2ed618bd6fa2ee92559f542fdb26e7c1d)
     , ( 33333, 0x000000002dd5588a74784eaa7ab0507a18ad16a236e7b1ce69f00d7ddfb5d0a6)
@@ -37,7 +37,7 @@ checkpointsList = map (\(a,b) -> (a,rev (b :: Hash256)))
 
 -- | Verify that a block hash at a given height either matches an existing 
 -- checkpoint or is not a checkpoint. 
-verifyCheckpoint :: Int -> Hash256 -> Bool
+verifyCheckpoint :: Int -> BlockHash -> Bool
 verifyCheckpoint height hash = case M.lookup height checkpoints of
     Just value -> hash == value
     Nothing    -> True

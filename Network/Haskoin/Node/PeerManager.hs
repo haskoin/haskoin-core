@@ -47,7 +47,6 @@ import Network.Haskoin.Protocol
 import Network.Haskoin.Util
 
 type ManagerHandle = S.StateT ManagerSession (LoggingT IO)
-type BlockHash   = Hash256
 type BlockHeight = Word32
 
 data ManagerSession = ManagerSession
@@ -183,7 +182,7 @@ processPeerHandshake tid remoteVer = do
                                 }
     -- Set the bloom filter for this connection
     -- TODO: Something fishy is going on when the filter is empty
-    bloom <- runWallet dbGetBloomFilter
+    bloom <- runWallet walletBloomFilter
     sendMessage tid $ MFilterLoad $ FilterLoad bloom
 
     -- TODO: Implement a smarter algorithm for choosing download peer. Here,
@@ -210,7 +209,7 @@ processHeaders tid (Headers h) = do
                 -- Return the data that will be inserted at the end of
                 -- the download queue
                 (AcceptHeader n) -> 
-                    return $ Just (nodeHeaderHeight n, nodeBlockId n)
+                    return $ Just (nodeHeaderHeight n, nodeBlockHash n)
                 -- TODO: Remove? This is for debug only
                 x -> do
                     liftIO $ print x
@@ -265,7 +264,7 @@ processMerkleBlock tid dmb = do
         -- If this peer is done, get more merkle blocks to download
         when (newRequests == 0) $ downloadBlocks tid
   where
-    bid = blockid $ merkleHeader $ decodedMerkle dmb
+    bid = headerHash $ merkleHeader $ decodedMerkle dmb
 
 -- This function will make sure that the merkle blocks are imported in-order
 -- as they may be received out-of-order from the network (concurrent download)
@@ -351,7 +350,8 @@ downloadBlocks tid = do
             modifyPeerData tid $ \d -> 
                 d{ peerInflightRequests = Q.length toDwn }
             sendMessage tid $ MGetData $ GetData $ 
-                map ((InvVector InvMerkleBlock) . snd) $ toList toDwn
+                map ((InvVector InvMerkleBlock) . fromIntegral . snd) $ 
+                    toList toDwn
             -- Send a ping to have a recognizable end message for the last
             -- merkle block download
             -- TODO: Compute a random nonce for the ping

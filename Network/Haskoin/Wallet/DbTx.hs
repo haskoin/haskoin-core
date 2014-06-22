@@ -2,15 +2,15 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE TypeFamilies      #-}
 module Network.Haskoin.Wallet.DbTx
-( dbImportTx
-, dbRemoveTx
-, dbSendTx
-, dbSendSolution
-, dbSendCoins
-, dbSignTx
-, dbGetBloomFilter
-, dbIsTxInWallet
+( AccTx
+, toAccTx
 , yamlTx
+, importTx
+, removeTx
+, sendTx
+, signWalletTx
+, walletBloomFilter
+, isTxInWallet
 ) where
 
 import Control.Applicative ((<$>))
@@ -18,6 +18,7 @@ import Control.Monad (forM, forM_, unless, when, liftM, void)
 import Control.Monad.Trans (liftIO)
 import Control.Exception (throwIO)
 
+import Data.Int (Int64)
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Word (Word32, Word64)
 import Data.List ((\\), nub)
@@ -60,25 +61,44 @@ import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
-yamlTx :: DbAccTxGeneric b -> DbTxGeneric b -> Word32 -> Value
-yamlTx acctx tx chainHeight = object $ concat
-    [ [ "Recipients" .= dbAccTxRecipients acctx
-      , "Value" .= dbAccTxValue acctx
-      , "Confirmations" .= conf
+data AccTx = AccTx
+    { accTxHash          :: TxHash
+    , accTxRecipients    :: [Address]
+    , accTxValue         :: Int64
+    , accTxPartial       :: Bool
+    , accTxConfirmations :: Int
+    , accTxCreated       :: UTCTime
+    } deriving (Read, Eq, Show)
+
+-- TODO: Change this to an instance
+yamlTx :: AccTx -> Value
+yamlTx accTx = object $ concat
+    [ [ "Recipients" .= accTxRecipients accTx
+      , "Value" .= accTxValue accTx
+      , "Confirmations" .= accTxConfirmations accTx
       ]
-    , if dbAccTxPartial acctx then ["Partial" .= True] else []
+    , if accTxPartial accTx then ["Partial" .= True] else []
     ]
-  where
-    conf | isNothing $ dbTxConfirmedHeight tx = 0
-         | otherwise = chainHeight - (fromJust $ dbTxConfirmedHeight tx) + 1
+
+toAccTx :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b) 
+        => DbAccTxGeneric b -> m AccTx
+toAccTx accTx = do
+    -- TODO: Keep fromJust?
+    tx     <- dbGetTx $ dbAccTxHash accTx
+    height <- dbGetBestHeight
+    let conf | isNothing $ dbTxConfirmedBy tx = 0
+             | otherwise = height - (fromJust $ dbTxConfirmedHeight tx) + 1
+    return $ AccTx { accTxHash          = dbAccTxHash accTx
+                   , accTxRecipients    = dbAccTxRecipients accTx
+                   , accTxValue         = dbAccTxValue accTx
+                   , accTxPartial       = dbAccTxPartial accTx
+                   , accTxConfirmations = fromIntegral conf
+                   , accTxCreated       = dbAccTxCreated accTx
+                   }
 
 -- |Import a transaction into the database
-dbImportTx :: ( PersistQuery m
-              , PersistUnique m
-              , PersistMonadBackend m ~ b
-              ) 
-           => Tx -> m [DbAccTxGeneric b]
-dbImportTx tx = do
+importTx :: (PersistQuery m, PersistUnique m) => Tx -> m [AccTx]
+importTx tx = do
     existsM  <- getBy $ UniqueTx tid
     isOrphan <- isOrphanTx tx
     -- Do not re-import existing transactions and do not proccess orphans yet
@@ -89,7 +109,7 @@ dbImportTx tx = do
         when (isDoubleSpend tid coins) $ liftIO $ throwIO $
             DoubleSpendException "Transaction is double spending coins"
         -- We must remove partial transactions which spend the same coins as us
-        forM_ (txToRemove coins) dbRemoveTx 
+        forM_ (txToRemove coins) removeTx 
         -- Change status of the coins
         forM_ eCoins $ \(Entity ci _) -> update ci [DbCoinStatus =. status]
         -- Import new coins 
@@ -98,31 +118,28 @@ dbImportTx tx = do
         -- Ignore this transaction if it is not ours
         if null $ coins ++ outCoins then return [] else do
             time <- liftIO getCurrentTime
-            -- Build transactions that report on individual accounts
-            let accTxs = buildAccTx tx coins outCoins (not complete) time
-            -- insert account transactions into database
-            forM_ accTxs insert_
             -- Save the whole transaction
             insertUnique $ DbTx tid tx False Nothing Nothing time
+            -- Build transactions that report on individual accounts
+            let dbAccTxs = buildAccTx tx coins outCoins (not complete) time
+            accTxs <- forM dbAccTxs toAccTx
+            -- insert account transactions into database
+            forM_ dbAccTxs insert_
             -- Re-import orphans
             liftM (accTxs ++) tryImportOrphans
   where
-    tid = txid tx
+    tid              = txHash tx
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
     complete         = isTxComplete tx
     status           = if complete then Spent tid else Reserved tid
 
 -- Try to re-import all orphan transactions
-tryImportOrphans :: ( PersistQuery m
-                    , PersistUnique m
-                    , PersistMonadBackend m ~ b
-                    ) 
-                 => m [DbAccTxGeneric b]
+tryImportOrphans :: (PersistQuery m, PersistUnique m) => m [AccTx]
 tryImportOrphans = do
     orphans <- selectList [DbTxOrphan ==. True] []
     res <- forM orphans $ \(Entity _ otx) -> do
-        deleteBy $ UniqueTx $ dbTxTxid otx
-        dbImportTx $ dbTxValue otx
+        deleteBy $ UniqueTx $ dbTxHash otx
+        importTx $ dbTxValue otx
     return $ concat res
 
 -- | Create a new coin for an output if it is ours. If commit is False, it will
@@ -133,7 +150,7 @@ dbImportCoin :: ( PersistQuery m
                 , PersistUnique m
                 , PersistMonadBackend m ~ b
                 )
-             => Hash256 -> Bool -> (TxOut,Int)
+             => TxHash -> Bool -> (TxOut,Int)
              -> m (Maybe (DbCoinGeneric b))
 dbImportCoin tid commit (out, i) = do
     dbAddr <- isMyOutput out
@@ -185,7 +202,7 @@ isOrphanTx tx = do
         return ()
     return $ length missing > 0
   where
-    tid               = txid tx
+    tid               = txHash tx
     f (OutPoint h i)  = CoinOutPoint h (fromIntegral i)
     g (isMine, coinM) = isJust isMine && isNothing coinM
 
@@ -221,7 +238,7 @@ isMyOutput out = do
 -- Upstream code needs to remove the conflicting transaction first using
 -- dbTxRemove function
 -- TODO: We need to consider malleability here
-isDoubleSpend :: Hash256 -> [DbCoinGeneric b] -> Bool
+isDoubleSpend :: TxHash -> [DbCoinGeneric b] -> Bool
 isDoubleSpend tid coins = any (f . dbCoinStatus) coins
   where
     f (Spent parent) = parent /= tid
@@ -231,7 +248,7 @@ isDoubleSpend tid coins = any (f . dbCoinStatus) coins
 -- we need to remove the partial transactions from the database and try to
 -- re-import the transaction. Coins with Reserved status are spent by a partial
 -- transaction.
-txToRemove :: [DbCoinGeneric b] -> [Hash256]
+txToRemove :: [DbCoinGeneric b] -> [TxHash]
 txToRemove coins = catMaybes $ map (f . dbCoinStatus) coins
   where
     f (Reserved parent) = Just parent
@@ -252,7 +269,7 @@ buildAccTx tx inCoins outCoins partial time = map build $ M.toList oMap
     allRecip = rights $ map toAddr $ txOut tx
     toAddr   = (scriptRecipient =<<) . decodeToEither . scriptOutput
     sumVal   = sum . (map dbCoinValue)
-    build (ai,(i,o)) = DbAccTx (txid tx) recips total ai partial time
+    build (ai,(i,o)) = DbAccTx (txHash tx) recips total ai partial time
       where
         total = (fromIntegral $ sumVal o) - (fromIntegral $ sumVal i)
         addrs = map dbCoinAddress o
@@ -261,39 +278,34 @@ buildAccTx tx inCoins outCoins partial time = map build $ M.toList oMap
                | otherwise  = addrs
 
 -- |Remove a transaction from the database and all parent transaction
-dbRemoveTx :: PersistQuery m => Hash256 -> m [Hash256]
-dbRemoveTx tid = do
+removeTx :: PersistQuery m => TxHash -> m [TxHash]
+removeTx tid = do
     -- Find all parents of this transaction
     -- Partial transactions should not have any coins. Won't check for it
-    coins <- selectList [ DbCoinTxid ==. tid ] []
+    coins <- selectList [ DbCoinHash ==. tid ] []
     let parents = nub $ catStatus $ map (dbCoinStatus . entityVal) coins
     -- Recursively remove parents
-    pids <- forM parents dbRemoveTx
+    pids <- forM parents removeTx
     -- Delete output coins generated from this transaction
-    deleteWhere [ DbCoinTxid ==. tid ]
+    deleteWhere [ DbCoinHash ==. tid ]
     -- Delete account transactions
-    deleteWhere [ DbAccTxTxid ==. tid ]
+    deleteWhere [ DbAccTxHash ==. tid ]
     -- Delete transaction
-    deleteWhere [ DbTxTxid ==. tid ]
+    deleteWhere [ DbTxHash ==. tid ]
     -- Unspend input coins that were previously spent by this transaction
     updateWhere [ DbCoinStatus <-. [Spent tid, Reserved tid] ]
                 [ DbCoinStatus =. Unspent ]
     return $ tid:(concat pids)
 
 -- |Build and sign a transactoin given a list of recipients
-dbSendTx :: ( PersistUnique m
-            , PersistQuery m
-            )
-         => AccountName -> [(String,Word64)] -> Word64
-         -> m (Tx, Bool)
-dbSendTx name strDests fee = do
+sendTx :: (PersistUnique m, PersistQuery m)
+         => AccountName -> [(String,Word64)] -> Word64 -> m (Tx, Bool)
+sendTx name strDests fee = do
     (coins,recips) <- dbSendSolution name strDests fee
     dbSendCoins coins recips (SigAll False)
 
 -- |Given a list of recipients and a fee, finds a valid combination of coins
-dbSendSolution :: ( PersistUnique m
-                  , PersistQuery m
-                  )
+dbSendSolution :: (PersistUnique m, PersistQuery m)
                => AccountName -> [(String,Word64)] -> Word64
                -> m ([Coin],[(Address,Word64)])
 dbSendSolution name strDests fee = do
@@ -337,9 +349,9 @@ dbSendCoins coins recipients sh = do
   where
     f (a,v) = (addrToBase58 a, v)
 
-dbSignTx :: PersistUnique m
+signWalletTx :: PersistUnique m
          => AccountName -> Tx -> SigHash -> m (Tx, Bool)
-dbSignTx name tx sh = do
+signWalletTx name tx sh = do
     (Entity ai _) <- dbGetAccount name
     coins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
     -- Filter coins for this account only
@@ -377,8 +389,8 @@ dbGetSigData sh coin = do
 -- includes internal, external and look-ahead addresses. The bloom filter can
 -- be set on a peer connection to filter the transactions received by that
 -- peer.
-dbGetBloomFilter :: PersistQuery m => m BloomFilter
-dbGetBloomFilter = do
+walletBloomFilter :: PersistQuery m => m BloomFilter
+walletBloomFilter = do
     addrs <- selectList [] []
     -- TODO: Choose a random nonce for the bloom filter
     let bloom  = bloomCreate (length addrs * 2) 0.001 0 BloomUpdateP2PubKeyOnly
@@ -386,6 +398,6 @@ dbGetBloomFilter = do
         f b a  = bloomInsert b $ encode' $ getAddrHash a
     return bloom'
 
-dbIsTxInWallet :: PersistUnique m => Hash256 -> m Bool
-dbIsTxInWallet txid = liftM isJust $ getBy $ UniqueTx txid
+isTxInWallet :: PersistUnique m => TxHash -> m Bool
+isTxInWallet tid = liftM isJust $ getBy $ UniqueTx tid
 

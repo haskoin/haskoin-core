@@ -44,10 +44,11 @@ import Network.Haskoin.Util
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.Base58
+import Network.Haskoin.Crypto.BigWord
 
 {- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
 
-type ChainCode = Hash256
+type ChainCode = Word256
 
 -- | Data type representing an extended BIP32 private key. An extended key
 -- is a node in a tree of key derivations. It has a depth in the tree, a 
@@ -213,11 +214,11 @@ xPubChild :: XPubKey -> Word32
 xPubChild k = clearBit (xPubIndex k) 31
 
 -- | Computes the key identifier of an extended private key.
-xPrvID :: XPrvKey -> Hash160
+xPrvID :: XPrvKey -> Word160
 xPrvID = xPubID . deriveXPubKey
 
 -- | Computes the key identifier of an extended public key.
-xPubID :: XPubKey -> Hash160
+xPubID :: XPubKey -> Word160
 xPubID = hash160 . hash256BS . encode' . xPubKey 
 
 -- | Computes the key fingerprint of an extended private key.

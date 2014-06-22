@@ -113,21 +113,21 @@ deriveFromInt i = maybe True (isValidPubKey . derivePubKey) $ makePrvKey i
 
 {- Key properties -}
 
-testAddPubKey :: TestPrvKeyC -> Hash256 -> Bool
+testAddPubKey :: TestPrvKeyC -> Word256 -> Bool
 testAddPubKey (TestPrvKeyC key) i 
     | toInteger i >= curveN = isNothing res
     | model == InfPoint     = isNothing res
     | otherwise             = PubKey model == fromJust res
     where pub   = derivePubKey key
-          pt    = mulPoint (toFieldN i) curveG
+          pt    = mulPoint (fromIntegral i :: FieldN) curveG
           model = addPoint (pubKeyPoint pub) pt
           res   = addPubKeys pub i
 
-testAddPrvKey :: TestPrvKeyC -> Hash256 -> Bool
+testAddPrvKey :: TestPrvKeyC -> Word256 -> Bool
 testAddPrvKey (TestPrvKeyC key) i
     | toInteger i >= curveN = isNothing res
     | model == 0  = isNothing res
     | otherwise   = PrvKey model == fromJust res
-    where model = (prvKeyFieldN key) + (toFieldN i)
+    where model = (prvKeyFieldN key) + (fromIntegral i :: FieldN)
           res   = addPrvKeys key i
 

@@ -70,7 +70,7 @@ instance Arbitrary RejectCode where
 
 instance Arbitrary BlockHeader where
     arbitrary = BlockHeader <$> arbitrary
-                            <*> (hash256 <$> arbitrary)
+                            <*> (fromIntegral . hash256 <$> arbitrary)
                             <*> (hash256 <$> arbitrary)
                             <*> arbitrary
                             <*> arbitrary

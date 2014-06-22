@@ -162,11 +162,11 @@ txParse :: Value -> Parser Tx
 txParse = withText "bitcoin transaction" $
     return . decode' . fromJust . hexToBS . Text.unpack
 
-txidParse :: Value -> Parser Hash256
+txidParse :: Value -> Parser TxHash
 txidParse = withText "transaction id" $
-    return . fromJust . decodeTxid . Text.unpack
+    return . fromJust . decodeTxHashLE . Text.unpack
 
-hashParse :: Value -> Parser Hash256
+hashParse :: Value -> Parser Word256
 hashParse = withText "hash" $
     return . decode' . fromJust . hexToBS . Text.unpack
 

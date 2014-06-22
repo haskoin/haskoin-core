@@ -31,7 +31,7 @@ tests =
 
 {- ECDSA Signatures -}
 
-signAndVerify :: Hash256 -> FieldN -> FieldN -> Property
+signAndVerify :: Word256 -> FieldN -> FieldN -> Property
 signAndVerify msg k n = k > 0 && n > 0 ==> case sM of
     (Just s) -> verifySig msg s (PubKey kP)
     Nothing  -> True -- very bad luck
@@ -39,7 +39,7 @@ signAndVerify msg k n = k > 0 && n > 0 ==> case sM of
           nP = mulPoint n curveG
           sM = unsafeSignMsg msg k (n,nP)
 
-signAndVerifyD :: Hash256 -> TestPrvKeyC -> Bool
+signAndVerifyD :: Word256 -> TestPrvKeyC -> Bool
 signAndVerifyD msg (TestPrvKeyC k) = verifySig msg (detSignMsg msg k) p
     where p = derivePubKey k
            

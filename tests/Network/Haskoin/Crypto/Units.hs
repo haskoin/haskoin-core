@@ -169,7 +169,7 @@ checkMatchingAddress = do
     assertBool "Key 1C" $ addr1C == (addrToBase58 $ pubKeyAddr pub1C)
     assertBool "Key 2C" $ addr2C == (addrToBase58 $ pubKeyAddr pub2C)
     
-checkSignatures :: Hash256 -> Assertion
+checkSignatures :: Word256 -> Assertion
 checkSignatures h = do
     (sign1, sign2, sign1C, sign2C) <- liftIO $ withSource devURandom $ do
         a <- signMsg h sec1
@@ -258,7 +258,7 @@ testDetSigning (prv,msg,str) = do
     where sig@(Signature r s) = detSignMsg msg' prv'
           msg' = hash256 $ stringToBS msg
           prv' = fromJust $ makePrvKey prv
-          res = runPut' $ put (fromIntegral r :: Hash256) >> 
-                          put (fromIntegral s :: Hash256)
+          res = runPut' $ put (fromIntegral r :: Word256) >> 
+                          put (fromIntegral s :: Word256)
 
 

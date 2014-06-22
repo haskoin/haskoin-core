@@ -6,7 +6,7 @@ import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Maybe
 
-import Network.Haskoin.Protocol
+import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 tests :: [Test]
@@ -22,7 +22,7 @@ mapTxIDVec (v,i) = testCase name $ runTxIDVec v
 
 runTxIDVec :: (String,String) -> Assertion
 runTxIDVec (tid,tx) = assertBool "TxID" $ 
-    (encodeTxid $ txid txBS) == tid
+    (encodeTxHashLE $ txHash txBS) == tid
   where 
     txBS = decode' $ fromJust $ hexToBS tx
 

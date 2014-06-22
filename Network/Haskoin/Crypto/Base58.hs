@@ -28,7 +28,8 @@ import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 
-import Network.Haskoin.Crypto.Hash 
+import Network.Haskoin.Crypto.BigWord
+import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Util 
 
 b58String :: String
@@ -101,9 +102,9 @@ decodeBase58Check bs = do
 -- |Data type representing a Bitcoin address
 data Address 
     -- | Public Key Hash Address
-    = PubKeyAddress { getAddrHash :: Hash160 }
+    = PubKeyAddress { getAddrHash :: Word160 }
     -- | Script Hash Address
-    | ScriptAddress { getAddrHash :: Hash160 }
+    | ScriptAddress { getAddrHash :: Word160 }
        deriving (Eq, Show, Read)
 
 instance NFData Address where

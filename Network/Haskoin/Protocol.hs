@@ -16,7 +16,6 @@ module Network.Haskoin.Protocol
 , GetHeaders(..)
 , Headers(..)
 , BlockHeaderCount
-, blockid
 
   -- * Requesting data
 , GetData(..)
@@ -27,14 +26,10 @@ module Network.Haskoin.Protocol
 
   -- *Transactions
 , Tx(..)
-, txid
-, cbid
 , CoinbaseTx(..)
 , TxIn(..)
 , TxOut(..)
 , OutPoint(..)
-, encodeTxid
-, decodeTxid
 
   -- * Merkle trees and bloom filters
 , MerkleBlock(..)

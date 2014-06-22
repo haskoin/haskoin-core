@@ -30,6 +30,7 @@ import qualified Data.ByteString as BS
     , empty
     )
 
+import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.ECDSA
 import Network.Haskoin.Script.Types
@@ -120,7 +121,7 @@ txSigHash :: Tx      -- ^ Transaction to sign.
           -> Script  -- ^ Output script that is being spent.
           -> Int     -- ^ Index of the input that is being signed.
           -> SigHash -- ^ What parts of the transaction should be signed.
-          -> Hash256 -- ^ Result hash to be signed.
+          -> Word256 -- ^ Result hash to be signed.
 txSigHash tx out i sh = do
     let newIn = buildInputs (txIn tx) out i sh
     -- When SigSingle and input index > outputs, then sign integer 1

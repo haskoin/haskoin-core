@@ -18,7 +18,6 @@ import Control.Applicative ((<$>), (<*>))
 import Data.Maybe
 
 import Network.Haskoin.Crypto.Point
-import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.ECDSA
 import Network.Haskoin.Crypto.Keys
@@ -36,9 +35,6 @@ instance BigWordMod Mod32 where
 
 instance BigWordMod n => Arbitrary (BigWord n) where
     arbitrary = arbitrarySizedBoundedIntegral
-
-instance Arbitrary CheckSum32 where
-    arbitrary = chksum32 <$> arbitrary
 
 instance Arbitrary Point where
     arbitrary = frequency

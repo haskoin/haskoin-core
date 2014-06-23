@@ -206,9 +206,10 @@ testStackEqual instructions result =
 
 type ParseError = String
 
-isValid :: Bool -> Bool
-isValid = id
-
+isValid :: Program -> Bool
+isValid p = case runStack p of
+              [] -> False
+              (top:_) -> top /= encodeBool False
 
 decodeByte :: Word8 -> Maybe ScriptOp
 decodeByte = decode . LBS.singleton
@@ -216,7 +217,8 @@ decodeByte = decode . LBS.singleton
 parseHex' :: String -> Maybe [Word8]
 parseHex' (a:b:xs) = case readHex $ a:b:[] of
                       [(i, "")] -> case parseHex' xs of
-                                    Just ops -> Just $ (fromIntegral i):ops
+                                    -- Just ops -> Just $ ops ++ [fromIntegral i]
+                                    Just ops -> Just $ fromIntegral i:ops
                                     Nothing -> Nothing
                       _ -> Nothing
 parseHex' [_] = Nothing
@@ -262,7 +264,7 @@ parseScript script =
                     parseOp = encodeBytes <$> (readMaybe $ "OP_" ++ tok)
                     encodeBytes = LBS.unpack . encode
 
-testFile :: String -> (Bool -> Bool) -> String -> Test
+testFile :: String -> (Program -> Bool) -> String -> Test
 testFile label f path = buildTest $ do
     dat <- C.readFile path
     case (A.decode dat) :: Maybe [[String]] of
@@ -288,7 +290,7 @@ testFile label f path = buildTest $ do
                                           ++ " error: " ++ e
                     (Right sigOps, Right keyOps) ->
                         if ignore keyOps
-                            then HUnit.assertBool "ignore " (f True)
+                            then HUnit.assertBool "ignore " True
                             else check $ runProgram prog rejectSignature
 
                         where prog = sigOps ++ keyOps
@@ -312,7 +314,9 @@ testFile label f path = buildTest $ do
 
                     where fail = HUnit.assertFailure
                           checkProgram p =
-                            HUnit.assertBool "invalid stack" ((runStack p) == [encodeBool True])
+                            HUnit.assertBool
+                            ("invalid stack " ++ (show $ runStack p))
+                            (f p)
                           label' = "sig: [" ++ sig ++ "] " ++
                                    " pubKey: [" ++ pubKey ++ "] " ++
                                    (if null label

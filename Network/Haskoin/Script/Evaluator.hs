@@ -91,23 +91,24 @@ disabled = getOp >>= throwError . DisabledOp
 
 
 encodeInt :: Int64 -> StackValue
-encodeInt i = prefix $ reverse $ encode (fromIntegral $ abs i) []
+encodeInt i = prefix $ encode (fromIntegral $ abs i) []
     where encode :: Word64 -> StackValue -> StackValue
           encode 0 bytes = bytes
           encode j bytes = (fromIntegral j):(encode (j `shiftR` 8) bytes)
+          prefix :: StackValue -> StackValue
           prefix [] = []
-          prefix (x:xs) | testBit x 7 = prefix (0:x:xs)
-                        | i < 0       = (setBit x 7):xs
-                        | otherwise   = (x:xs)
-
+          prefix xs | testBit (last xs) 7 = prefix $ xs ++ [0]
+                    | i < 0 = (init xs) ++ [setBit (last xs) 7]
+                    | otherwise = xs
 
 decodeInt :: StackValue -> Int64
-decodeInt [] = 0
-decodeInt (x:xs) | testBit x 7 = -(decode 0 ((clearBit x 7):xs))
-                 | otherwise   = decode 0 (x:xs)
-    where decode :: Int64 -> StackValue -> Int64
-          decode s [] = s
-          decode s (y:ys) = decode ((s `shiftL` 8) + (fromIntegral y)) ys
+decodeInt bytes = sign' (decode' bytes)
+    where decode' [] = 0
+          decode' [x] = fromIntegral $ clearBit x 7
+          decode' (x:xs) = (fromIntegral x) + (decode' xs) `shiftL` 8
+          sign' i | bytes == [] = 0
+                  | testBit (last bytes) 7 = -i
+                  | otherwise = i
 
 
 decodeBool :: StackValue -> Bool

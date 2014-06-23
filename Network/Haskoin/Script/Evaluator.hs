@@ -83,6 +83,8 @@ type SigCheck = PubKey -> [ScriptOp] -> Bool
 programError :: String -> ProgramTransition a
 programError s = get >>= throwError . ProgramError s
 
+disabled :: ProgramTransition ()
+disabled = getOp >>= throwError . DisabledOp
 
 --------------------------------------------------------------------------------
 -- Type Conversions
@@ -304,9 +306,6 @@ stackError :: ProgramTransition a
 -- stackError = getOp >>= throwError . StackError
 stackError = programError "stack error"
 
-disabled :: ProgramTransition ()
-disabled = getOp >>= throwError . DisabledOp
-
 -- AltStack Primitives
 
 pushAltStack :: StackValue -> ProgramTransition ()
@@ -338,11 +337,6 @@ eval OP_NOP7    = return ()
 eval OP_NOP8    = return ()
 eval OP_NOP9    = return ()
 eval OP_NOP10   = return ()
-
-eval OP_IF      = popStack >>= pushCond . decodeBool
-eval OP_NOTIF   = popStack >>= pushCond . not . decodeBool
-eval OP_ELSE    = flipCond
-eval OP_ENDIF   = void popCond
 
 eval OP_VERIFY = decodeBool <$> popStack >>= \case
     False -> programError "OP_VERIFY failed"
@@ -447,24 +441,25 @@ eval op = case constValue op of
 evalAll :: ProgramTransition ()
 evalAll = instructions <$> get >>= \case
             [] -> return ()
-            (op:_) -> do
-                -- dumpState "evalAll"
-                condStack <- getCond
-                let ex = all id condStack
+            _ -> do join $ eval' <$> getExec <*> getOp
+                    void popOp
+                    evalAll
 
-                if all id condStack
-                    then (getOp >>= eval)
-                    else (getOp >>= evalFalse)
+          where getExec = all id <$> getCond
+                eval' :: Bool -> ScriptOp -> ProgramTransition ()
 
-                void popOp
-                evalAll
+                eval' True  OP_IF      = popStack >>= pushCond . decodeBool
+                eval' True  OP_NOTIF   = popStack >>= pushCond . not . decodeBool
+                eval' True  OP_ELSE    = flipCond
+                eval' True  OP_ENDIF   = void popCond
+                eval' True  op = eval op
 
-          where evalFalse OP_IF = pushCond False
-                evalFalse OP_ELSE = flipCond
-                evalFalse OP_NOTIF = pushCond False
-                evalFalse OP_ENDIF = void popCond
-                evalFalse _ = return ()
-
+                eval' False OP_IF    = pushCond False
+                eval' False OP_NOTIF = pushCond False
+                eval' False OP_ELSE  = flipCond
+                eval' False OP_ENDIF = void popCond
+                eval' False _ = return ()
+--
 -- exported functions
 
 runProgram :: [ScriptOp] -> SigCheck -> Either EvalError Program

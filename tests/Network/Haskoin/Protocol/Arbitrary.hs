@@ -5,6 +5,7 @@
 module Network.Haskoin.Protocol.Arbitrary () where
 
 import Test.QuickCheck
+import Network.Haskoin.Types.Arbitrary()
 import Network.Haskoin.Crypto.Arbitrary()
 
 import Control.Monad
@@ -102,7 +103,7 @@ instance Arbitrary TxIn where
                      <*> arbitrary
 
 instance Arbitrary TxOut where
-    arbitrary = TxOut <$> (choose (0,2100000000000000))
+    arbitrary = TxOut <$> arbitrary
                       <*> arbitrary
 
 instance Arbitrary OutPoint where

@@ -24,16 +24,17 @@ import Test.QuickCheck
 import Control.Monad (liftM)
 import Control.Applicative ((<$>),(<*>))
 
-import Data.Word (Word64)
 import Data.List (permutations, nubBy)
 
 import Network.Haskoin.Crypto.Arbitrary 
 import Network.Haskoin.Protocol.Arbitrary ()
 import Network.Haskoin.Script.Arbitrary ()
+import Network.Haskoin.Types.Arbitrary ()
 
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Protocol
+import Network.Haskoin.Types
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
@@ -78,7 +79,7 @@ genRegularInput = do
 -- address.
 genAddrOutput :: Gen TxOut
 genAddrOutput = do
-    v  <- choose (1,2100000000000000)
+    v  <- arbitrary
     sc <- oneof [ (PayPKHash . pubKeyAddr) <$> arbitrary
                 , (PayScriptHash . scriptAddr) <$> arbitrary
                 ]
@@ -95,7 +96,7 @@ instance Arbitrary RegularTx where
 
 instance Arbitrary Coin where
     arbitrary = Coin <$> arbitrary <*> arbitrary <*> arbitrary
-        
+
 data PKHashSigTemplate = PKHashSigTemplate Tx [SigInput] [PrvKey]
     deriving (Eq, Show)
 
@@ -128,9 +129,9 @@ genMSData = do
         perPrv = permutations prv !! perm
     return (op, sigi, take m perPrv)
 
-genPayTo :: Gen (String,Word64)
+genPayTo :: Gen (String,BTC)
 genPayTo = do
-    v  <- choose (1,2100000000000000)
+    v  <- arbitrary
     sc <- oneof [ PubKeyAddress <$> arbitrary
                 , ScriptAddress <$> arbitrary
                 ]

@@ -286,8 +286,6 @@ instance Binary (BigWord ModN) where
         unless (t == 0x02) (fail $
             "Bad DER identifier byte " ++ (show t) ++ ". Expecting 0x02" )
         l <- getWord8
-        unless (l <= 33) (fail $
-            "Bad DER length " ++ (show l) ++ ". Expecting length <= 33" )
         i <- bsToInteger <$> getByteString (fromIntegral l)
         unless (isIntegerValidKey i) $ fail $ 
             "Invalid fieldN element: " ++ (show i)

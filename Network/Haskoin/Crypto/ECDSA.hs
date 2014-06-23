@@ -202,8 +202,6 @@ instance Binary Signature where
             "Bad DER identifier byte " ++ (show t) ++ ". Expecting 0x30")
         l <- getWord8
         -- Length = (33 + 1 identifier byte + 1 length byte) * 2
-        unless (l <= 70) (fail $
-            "Bad DER length " ++ (show l) ++ ". Expecting length <= 70")
         isolate (fromIntegral l) $ do
             Signature <$> get <*> get
 

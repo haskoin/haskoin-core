@@ -53,6 +53,6 @@ tests =
 metaGetPut :: (Binary a, Eq a) => a -> Bool
 metaGetPut x = (runGet get (runPut $ put x)) == x
 
-decEncTxid :: Hash256 -> Bool
-decEncTxid h = (fromJust $ decodeTxid $ encodeTxid h) == h
+decEncTxid :: TxHash -> Bool
+decEncTxid h = (fromJust $ decodeTxHashLE $ encodeTxHashLE h) == h
 

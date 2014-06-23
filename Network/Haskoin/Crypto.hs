@@ -59,14 +59,20 @@ module Network.Haskoin.Crypto
 , Word128
 
   -- *Hash functions
-, Hash512
-, Hash256
-, Hash160
+, TxHash
+, BlockHash
 , CheckSum32
+, txHash
+, cbHash
+, headerHash
+, encodeTxHashLE
+, decodeTxHashLE
 , hash512
 , hash512BS
 , hash256
 , hash256BS
+, hashSha1
+, hashSha1BS
 , hash160
 , hash160BS
 , doubleHash256

@@ -49,10 +49,10 @@ type Checksum = ByteString
 -- multiple of 32 bits (4 bytes). Output a mnemonic sentence as 'Text'.
 toMnemonic :: WordList -> Entropy -> Either String Mnemonic
 toMnemonic wl ent = do
-    when (remainder /= 0)
-        $ Left "toMnemonic: entropy must be multiples of 32 bits"
-    when (cs_len > 16)
-        $ Left "toMnemonic: maximum entropy is 512 bits"
+    when (remainder /= 0) $ 
+        Left "toMnemonic: entropy must be multiples of 32 bits"
+    when (cs_len > 16) $ 
+        Left "toMnemonic: maximum entropy is 512 bits"
     return ms
   where
     (cs_len, remainder) = BS.length ent `quotRem` 4
@@ -64,16 +64,16 @@ toMnemonic wl ent = do
 -- 'mnemonicToSeed'.
 fromMnemonic :: WordList -> Mnemonic -> Either String Entropy
 fromMnemonic wl ms = do
-    when (word_count > 48)
-        . Left $ "fromMnemonic: too many words: " ++ show word_count
-    when (word_count `mod` 3 /= 0)
-        . Left $ "fromMnemonic: wrong number of words: " ++ show word_count
+    when (word_count > 48) $ 
+        Left $ "fromMnemonic: too many words: " ++ show word_count
+    when (word_count `mod` 3 /= 0) $ 
+        Left $ "fromMnemonic: wrong number of words: " ++ show word_count
     ms_bs <- indicesToBS =<< getIndices wl ms_words
     let (ms_ent, ms_cs) = BS.splitAt (ent_len * 4) ms_bs
         ms_cs_num = numCS cs_len ms_cs
         ent_cs_num = numCS cs_len $ calcCS cs_len ms_ent
-    when (ent_cs_num /= ms_cs_num)
-        . Left $ "fromMnemonic: checksum failed: " ++ sh ent_cs_num ms_cs_num
+    when (ent_cs_num /= ms_cs_num) $ 
+        Left $ "fromMnemonic: checksum failed: " ++ sh ent_cs_num ms_cs_num
     return ms_ent
   where
     ms_words = T.words $ normalize NFKD ms

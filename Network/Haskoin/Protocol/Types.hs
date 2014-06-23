@@ -4,7 +4,6 @@ module Network.Haskoin.Protocol.Types
 , Alert(..)
 , Block(..)
 , BlockHeader(..) 
-, blockid
 , BloomFlags(..)
 , BloomFilter(..)
 , FilterLoad(..)
@@ -31,10 +30,6 @@ module Network.Haskoin.Protocol.Types
 , TxOut(..)
 , OutPoint(..)
 , CoinbaseTx(..)
-, txid
-, cbid
-, encodeTxid
-, decodeTxid
 , VarInt(..)
 , VarString(..)
 , Version(..)
@@ -74,12 +69,11 @@ import qualified Data.Sequence as S (Seq, fromList, length)
 import qualified Data.ByteString as BS 
     ( ByteString
     , length
-    , reverse
     , takeWhile
     )
 
-import Network.Haskoin.Crypto.Hash 
 import Network.Haskoin.Util 
+import Network.Haskoin.Crypto.BigWord
 
 -- | Network address with a timestamp
 type NetworkAddressTime = (Word32, NetworkAddress)
@@ -169,10 +163,10 @@ data BlockHeader =
                   blockVersion   :: !Word32
                   -- | Hash of the previous block (parent) referenced by this
                   -- block.
-                , prevBlock      :: !Hash256
+                , prevBlock      :: !BlockHash
                   -- | Root of the merkle tree of all transactions pertaining
                   -- to this block.
-                , merkleRoot     :: !Hash256
+                , merkleRoot     :: !Word256
                   -- | Unix timestamp recording when this block was created
                 , blockTimestamp :: !Word32
                   -- | The difficulty target being used for this block
@@ -203,10 +197,6 @@ instance Binary BlockHeader where
         putWord32le bt
         putWord32le bb
         putWord32le n 
-
--- | Compute the hash of a block header
-blockid :: BlockHeader -> Hash256
-blockid = doubleHash256 . encode'
 
 -- | The bloom flags are used to tell the remote peer how to auto-update
 -- the provided bloom filter. 
@@ -304,7 +294,7 @@ instance Binary FilterAdd where
         put $ VarInt $ fromIntegral $ BS.length bs
         putByteString bs
 
-type BlockLocator = [Hash256]
+type BlockLocator = [BlockHash]
 
 -- | Data type representing a GetBlocks message request. It is used in the
 -- bitcoin protocol to retrieve blocks from a peer by providing it a
@@ -324,7 +314,7 @@ data GetBlocks =
               , getBlocksLocator  :: !BlockLocator
                 -- | Hash of the last desired block. If set to zero, the
                 -- maximum number of block hashes is returned (500).
-              , getBlocksHashStop :: !Hash256
+              , getBlocksHashStop :: !BlockHash
               } deriving (Eq, Show, Read)
 
 instance NFData GetBlocks where
@@ -386,7 +376,7 @@ data GetHeaders =
                , getHeadersBL       :: !BlockLocator
                  -- | Hash of the last desired block header. When set to zero,
                  -- the maximum number of block headers is returned (2000)
-               , getHeadersHashStop :: !Hash256
+               , getHeadersHashStop :: !BlockHash
                } deriving (Eq, Show, Read)
 
 instance NFData GetHeaders where
@@ -489,7 +479,7 @@ data InvVector =
                 -- | Type of the object referenced by this inventory vector
                 invType :: !InvType
                 -- | Hash of the object referenced by this inventory vector
-              , invHash :: !Hash256
+              , invHash :: !Word256
               } deriving (Eq, Show, Read)
 
 instance NFData InvVector where
@@ -508,11 +498,11 @@ data MerkleBlock =
                 , merkleTotalTxns :: !Word32
                   -- | Hashes in depth-first order. They are used to rebuild a
                   -- partial merkle tree.
-                , mHashes     :: ![Hash256]
+                , mHashes :: ![Word256]
                   -- | Flag bits, packed per 8 in a byte. Least significant bit
                   -- first. Flag bits are used to rebuild a partial merkle
                   -- tree.
-                , mFlags      :: ![Bool]
+                , mFlags :: ![Bool]
                 } deriving (Eq, Show, Read)
 
 instance NFData MerkleBlock where
@@ -859,7 +849,7 @@ instance Binary TxOut where
 data OutPoint = 
     OutPoint { 
                -- | The hash of the referenced transaction.
-               outPointHash  :: !Hash256
+               outPointHash  :: !TxHash
                -- | The position of the specific output in the transaction.
                -- The first output position is 0.
              , outPointIndex :: !Word32
@@ -873,25 +863,6 @@ instance Binary OutPoint where
         (h,i) <- liftM2 (,) get getWord32le
         return $ OutPoint h i
     put (OutPoint h i) = put h >> putWord32le i
-
--- | Computes the hash of a transaction.
-txid :: Tx -> Hash256
-txid = doubleHash256 . encode' 
-
--- | Computes the hash of a coinbase transaction.
-cbid :: CoinbaseTx -> Hash256
-cbid = doubleHash256 . encode' 
-
--- | Encodes a transaction hash as little endian in HEX format.
--- This is mostly used for displaying transaction ids. Internally, these ids
--- are handled as big endian but are transformed to little endian when
--- displaying them.
-encodeTxid :: Hash256 -> String
-encodeTxid = bsToHex . BS.reverse .  encode' 
-
--- | Decodes a little endian transaction hash in HEX format. 
-decodeTxid :: String -> Maybe Hash256
-decodeTxid = (decodeToMaybe . BS.reverse =<<) . hexToBS
 
 -- | Data type representing a variable length integer. The 'VarInt' type
 -- usually precedes an array or a string that can vary in length. 
@@ -1026,6 +997,7 @@ data MessageCommand
     | MCGetHeaders 
     | MCTx 
     | MCBlock 
+    | MCMerkleBlock
     | MCHeaders 
     | MCGetAddr 
     | MCFilterLoad
@@ -1062,6 +1034,7 @@ stringToCommand str = case str of
     "getheaders"  -> Just MCGetHeaders
     "tx"          -> Just MCTx
     "block"       -> Just MCBlock
+    "merkleblock" -> Just MCMerkleBlock
     "headers"     -> Just MCHeaders
     "getaddr"     -> Just MCGetAddr
     "filterload"  -> Just MCFilterLoad
@@ -1085,6 +1058,7 @@ commandToString mc = case mc of
     MCGetHeaders  -> "getheaders"
     MCTx          -> "tx"
     MCBlock       -> "block"
+    MCMerkleBlock -> "merkleblock"
     MCHeaders     -> "headers"
     MCGetAddr     -> "getaddr"
     MCFilterLoad  -> "filterload"

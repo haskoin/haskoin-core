@@ -62,7 +62,7 @@ data ScriptOutput =
                     }
       -- | Pay to a script hash.
     | PayScriptHash { getOutputAddress  :: !Address }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 instance NFData ScriptOutput where
     rnf (PayPK k) = rnf k
@@ -216,7 +216,7 @@ scriptSender s = case decodeInput s of
 -- trying to spend. 
 data ScriptInput = 
       -- | Spend the coins of a PayPK output.
-      SpendPK     { getInputSig       :: !TxSignature }
+      SpendPK     { getInputSig :: !TxSignature }
       -- | Spend the coins of a PayPKHash output.
     | SpendPKHash { getInputSig :: !TxSignature 
                   , getInputKey :: !PubKey
@@ -225,7 +225,7 @@ data ScriptInput =
     | SpendMulSig { getInputMulSigKeys     :: ![TxSignature] 
                   , getInputMulSigRequired :: !Int
                   }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 instance NFData ScriptInput where
     rnf (SpendPK i) = rnf i
@@ -248,7 +248,7 @@ isSpendMulSig (SpendMulSig _ _) = True
 isSpendMulSig _ = False
 
 -- | Computes a 'Script' from a 'ScriptInput'. The 'Script' is a list of 
--- 'ScriptOp' can can be used to build a 'Tx'.
+-- 'ScriptOp' that can be used to build a 'Tx'.
 encodeInput :: ScriptInput -> Script
 encodeInput s = Script $ case s of
     SpendPK ts        -> [ opPushData $ encodeSig ts ]
@@ -301,7 +301,7 @@ data ScriptHashInput = ScriptHashInput
       spendSHInput  :: ScriptInput   
       -- | Redeem script
     , spendSHOutput :: RedeemScript
-    } deriving (Eq, Show)
+    } deriving (Eq, Show, Read)
 
 instance NFData ScriptHashInput where
     rnf (ScriptHashInput i r) = rnf i `seq` rnf r

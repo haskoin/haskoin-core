@@ -10,6 +10,7 @@ import Data.Binary.Get (getWord32le)
 import qualified Data.ByteString as BS (reverse)
 
 import Network.Haskoin.Transaction.Builder
+import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Util
 
@@ -30,7 +31,7 @@ runPKHashVec :: ([(String,Word32)],[(String,Word64)],String) -> Assertion
 runPKHashVec (xs,ys,res) = 
     assertBool "Build PKHash Tx" $ (bsToHex $ encode' tx) == res
     where tx = fromRight $ buildAddrTx (map f xs) ys
-          f (tid,ix) = OutPoint (fromJust $ decodeTxid tid) ix
+          f (tid,ix) = OutPoint (fromJust $ decodeTxHashLE tid) ix
 
 
 mapVerifyVec :: (([(String,String,String)],String),Int) 

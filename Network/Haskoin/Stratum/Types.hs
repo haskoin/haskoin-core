@@ -54,7 +54,7 @@ type StratumSession = Session StratumResponse Value String StratumNotif
 -- | Transaction height and ID pair. Used in history responses.
 data TxHeight = TxHeight
     { txHeightBlock :: !Word  -- ^ Block height.
-    , txHeightId :: !Hash256 -- ^ Transaction id.
+    , txHeightId :: !TxHash -- ^ Transaction id.
     } deriving (Show, Eq)
 
 -- | Bitcoin outpoint information.
@@ -76,7 +76,7 @@ data StratumQuery
     | QueryHistory { queryAddr :: !Address }
     | QueryBalance { queryAddr :: !Address }
     | QueryUnspent { queryAddr :: !Address }
-    | QueryTx { queryTxid :: !Hash256 }
+    | QueryTx { queryTxid :: !TxHash }
     | QueryBroadcast { queryTx :: !Tx }
     | SubAddress { queryAddr :: !Address }
     deriving (Eq, Show)
@@ -88,12 +88,12 @@ data StratumResponse
     | AddressBalance { stratumBalance :: !Balance }
     | AddressUnspent { stratumCoins :: ![Coin] }
     | Transaction { stratumTx :: !Tx }
-    | BroadcastId { stratumTxid :: !Hash256 }
-    | AddrStatus { stratumAddrStatus :: !Hash256 }
+    | BroadcastId { stratumTxid :: !TxHash }
+    | AddrStatus { stratumAddrStatus :: !Word256 }
     deriving (Eq, Show)
 
 data StratumNotif
-    = NotifAddress { notifAddr :: !Address, notifAddrStatus :: !Hash256 }
+    = NotifAddress { notifAddr :: !Address, notifAddrStatus :: !Word256 }
     deriving (Eq, Show)
 
 instance NFData TxHeight where
@@ -134,7 +134,7 @@ instance ToJSON StratumQuery where
     toJSON (QueryHistory a) = toJSON [a]
     toJSON (QueryUnspent a) = toJSON [a]
     toJSON (QueryBalance a) = toJSON [a]
-    toJSON (QueryTx i) = toJSON [encodeTxid i]
+    toJSON (QueryTx i) = toJSON [encodeTxHashLE i]
     toJSON (QueryBroadcast t) = toJSON [bsToHex $ encode' t]
     toJSON (SubAddress a) = toJSON [a]
 
@@ -149,14 +149,14 @@ instance FromJSON TxHeight where
     parseJSON (Object v) = do
         h <- v .: "height"
         t <- v .: "tx_hash"
-        let i = fromJust . decodeTxid $ unpack t
+        let i = fromJust . decodeTxHashLE $ unpack t
         return $ TxHeight h i
     parseJSON _ = mzero
 
 instance ToJSON TxHeight where
     toJSON x = object
         [ "height" .= txHeightBlock x
-        , "tx_hash" .= encodeTxid (txHeightId x)
+        , "tx_hash" .= encodeTxHashLE (txHeightId x)
         ]
 
 instance FromJSON Coin where
@@ -165,7 +165,7 @@ instance FromJSON Coin where
         v <- o .: "value"
         t <- o .: "tx_hash"
         p <- o .: "tx_pos"
-        let i  = fromJust . decodeTxid $ unpack t
+        let i  = fromJust . decodeTxHashLE $ unpack t
             op = OutPoint i p
             th = TxHeight h i
         return $ Coin op th v
@@ -175,6 +175,6 @@ instance ToJSON Coin where
     toJSON x = object
         [ "height" .= txHeightBlock (coinTxHeight x)
         , "value" .= coinValue x
-        , "tx_hash" .= encodeTxid (txHeightId $ coinTxHeight x)
+        , "tx_hash" .= encodeTxHashLE (txHeightId $ coinTxHeight x)
         , "tx_pos" .= outPointIndex (coinOutPoint x)
         ]

@@ -70,7 +70,7 @@ instance Arbitrary RejectCode where
 
 instance Arbitrary BlockHeader where
     arbitrary = BlockHeader <$> arbitrary
-                            <*> (hash256 <$> arbitrary)
+                            <*> (fromIntegral . hash256 <$> arbitrary)
                             <*> (hash256 <$> arbitrary)
                             <*> arbitrary
                             <*> arbitrary
@@ -163,6 +163,7 @@ instance Arbitrary MessageCommand where
                          , MCGetHeaders
                          , MCTx
                          , MCBlock
+                         , MCMerkleBlock
                          , MCHeaders
                          , MCGetAddr
                          , MCFilterLoad
@@ -190,6 +191,7 @@ instance Arbitrary Message where
                       , MGetHeaders  <$> arbitrary
                       , MTx          <$> arbitrary
                       , MBlock       <$> arbitrary
+                      , MMerkleBlock <$> arbitrary
                       , MHeaders     <$> arbitrary
                       , return MGetAddr
                       , MFilterLoad  <$> arbitrary

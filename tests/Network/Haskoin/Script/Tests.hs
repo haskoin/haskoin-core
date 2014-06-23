@@ -19,7 +19,7 @@ import Data.Bits (setBit, testBit)
 import Text.Read (readMaybe)
 import Data.Binary (Binary, Word8)
 import Data.List.Split (splitOn)
-import Data.List (isPrefixOf, isSuffixOf, intercalate)
+import Data.List (isPrefixOf, isSuffixOf, intercalate, intersect)
 import Data.Char (ord)
 import qualified Data.ByteString as BS
     ( ByteString
@@ -84,6 +84,7 @@ tests =
         , testProperty "decode . encode TxSignature" binTxSig
         , testProperty "decodeCanonical . encode TxSignature" binTxSigCanonical
         , testProperty "Testing txSigHash with SigSingle" testSigHashOne
+        ]
     , testGroup "Integer Types"
         [ testProperty "decodeInt . encodeInt Int"  testEncodeInt
         , testProperty "decodeBool . encodeBool Bool" testEncodeBool
@@ -96,6 +97,7 @@ tests =
         , testProperty "OP_IF else"
             (testStackEqual [OP_0, OP_IF, OP_2, OP_ELSE, OP_3, OP_ENDIF] [[3]])
         ]
+
     , testFile "Canonical Valid Script Test Cases"
       isValid "tests/data/script_valid.json"
 
@@ -124,13 +126,13 @@ testSortMulSig :: ScriptOutput -> Bool
 testSortMulSig out = case out of
     (PayMulSig _ _) -> check $ sortMulSig out
     _ -> True
-    where check (PayMulSig ps _) 
+    where check (PayMulSig ps _)
               | length ps <= 1 = True
               | otherwise = snd $ foldl f (head ps,True) $ tail ps
           check _ = False
           f (a,t) b | t && encode' a <= encode' b = (b,True)
                     | otherwise   = (b,False)
-        
+
 {- Script SigHash -}
 
 testCanonicalSig :: TxSignature -> Bool
@@ -285,17 +287,32 @@ testFile label f path = buildTest $ do
                     (_, Left e) -> fail $ "can't parse key: " ++ show pubKey
                                           ++ " error: " ++ e
                     (Right sigOps, Right keyOps) ->
-                        HUnit.assertBool "parsed" True
-                    {-
-                        case runProgram (sigOps ++ keyOps) rejectSignature of
-                            Left err ->
+                        if ignore keyOps
+                            then HUnit.assertBool "ignore " (f True)
+                            else check $ runProgram prog rejectSignature
+
+                        where prog = sigOps ++ keyOps
+                              check (Left err) =
                                 fail $ "\nprogram: " ++
                                        dumpScript (sigOps ++ keyOps) ++
                                        "\nerror: " ++ show err
-                            Right program -> -- TODO check stack value
-                                HUnit.assertBool "runProgram" (f True)
-                    -}
+                              check (Right program) = checkProgram program
+
+                              ignore prog = [] /=
+                                prog `intersect` [
+                                         OP_CHECKMULTISIG
+                                       , OP_CHECKMULTISIGVERIFY
+                                       , OP_SHA1
+                                       , OP_RIPEMD160
+                                       , OP_HASH160
+                                       , OP_HASH256
+                                       , OP_SHA256
+                                       , OP_2DUP
+                                       ]
+
                     where fail = HUnit.assertFailure
+                          checkProgram p =
+                            HUnit.assertBool "invalid stack" ((runStack p) == [encodeBool True])
                           label' = "sig: [" ++ sig ++ "] " ++
                                    " pubKey: [" ++ pubKey ++ "] " ++
                                    (if null label

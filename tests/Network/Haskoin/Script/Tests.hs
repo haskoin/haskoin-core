@@ -190,7 +190,8 @@ testEncodeBool b = (decodeBool $ encodeBool b) == b
 
 {- Script Evaluation -}
 
-rejectSignature _ _ = False
+rejectSignature :: SigCheck
+rejectSignature _ _ _ = False
 
 testScriptEvalFalse :: Script -> Bool
 testScriptEvalFalse sc = not $ evalScript sc rejectSignature
@@ -248,7 +249,7 @@ parseScript script =
                     parseHex | "0x" `isPrefixOf` tok = parseHex' (drop 2 tok)
                              | otherwise = Nothing
                     parseInt = fromInt . fromIntegral <$> (readMaybe tok)
-                    parseQuote | tok == "''" = Just []
+                    parseQuote | tok == "''" = Just [0]
                                | (head tok) == '\'' && (last tok) == '\'' =
                                  Just $ encodeBytes $ opPushData $ BS.pack
                                       $ map (fromIntegral . ord)
@@ -289,28 +290,13 @@ testFile label f path = buildTest $ do
                     (_, Left e) -> fail $ "can't parse key: " ++ show pubKey
                                           ++ " error: " ++ e
                     (Right sigOps, Right keyOps) ->
-                        if ignore keyOps
-                            then HUnit.assertBool "ignore " True
-                            else check $ runProgram prog rejectSignature
-
+                        check $ runProgram prog rejectSignature
                         where prog = sigOps ++ keyOps
                               check (Left err) =
                                 fail $ "\nprogram: " ++
                                        dumpScript (sigOps ++ keyOps) ++
                                        "\nerror: " ++ show err
                               check (Right program) = checkProgram program
-
-                              ignore prog = [] /=
-                                prog `intersect` [
-                                         OP_CHECKMULTISIG
-                                       , OP_CHECKMULTISIGVERIFY
-                                       , OP_SHA1
-                                       , OP_RIPEMD160
-                                       , OP_HASH160
-                                       , OP_HASH256
-                                       , OP_SHA256
-                                       , OP_2DUP
-                                       ]
 
                     where fail = HUnit.assertFailure
                           checkProgram p =
@@ -324,30 +310,18 @@ testFile label f path = buildTest $ do
                                         else " label: " ++ label)
 
 
-dumpStack :: [ScriptOp] -> IO ()
-dumpStack instructions =
+evalDumpStack :: [ScriptOp] -> IO ()
+evalDumpStack instructions =
     case runProgram instructions rejectSignature of
         Left e -> putStrLn $ "error " ++ show e
-        Right prog -> putStrLn $ show $ map decodeInt $ runStack prog
-
-dumpHex :: BS.ByteString -> String
-dumpHex = C.unpack . BSB.toLazyByteString . BSB.byteStringHex
-
-dumpOp :: ScriptOp -> String
-dumpOp (OP_PUSHDATA payload optype) =
-  "OP_PUSHDATA(" ++ (show optype) ++ ")" ++
-  " 0x" ++ (dumpHex payload)
-dumpOp op = show op
-
-dumpScript :: [ScriptOp] -> String
-dumpScript script = "[" ++ (intercalate ", " $ map dumpOp script) ++ "]"
+        Right prog -> putStrLn $ dumpStack $ runStack prog
 
 runScript :: String -> IO ()
 runScript s = case parseScript s of
   Left e -> print $ "parse error: " ++ e
   Right s -> do
     putStrLn $ "executing " ++ dumpScript s
-    dumpStack s
+    evalDumpStack s
 
 
 

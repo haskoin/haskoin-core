@@ -2,6 +2,7 @@
 module Network.Haskoin.Script.Evaluator
 ( Program
 , Stack
+, SigCheck
 , evalScript
 , encodeInt
 , decodeInt
@@ -9,6 +10,8 @@ module Network.Haskoin.Script.Evaluator
 , decodeBool
 , runProgram
 , runStack
+, dumpScript
+, dumpStack
 ) where
 
 import Debug.Trace (trace, traceM)
@@ -20,7 +23,15 @@ import Control.Monad.Identity
 import Control.Applicative ((<$>), (<*>))
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 
+import qualified Data.ByteString.Builder as BSB
+    ( toLazyByteString
+    , byteStringHex
+    )
+
+
+import Data.List (intercalate)
 import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit)
 import Data.Int (Int64)
 import Data.Word (Word8, Word64)
@@ -37,6 +48,7 @@ data EvalError =
     | ProgramError String Program
     | StackError ScriptOp
     | DisabledOp ScriptOp
+    | UnexpectedOp ScriptOp
 
 instance Error EvalError where
     noMsg = EvalError "Evaluation Error"
@@ -47,6 +59,7 @@ instance Show EvalError where
     show (ProgramError m prog) = m ++ " - program: " ++ (show prog)
     show (StackError op) = (show op) ++ ": Stack Error"
     show (DisabledOp op) = (show op) ++ ": disabled"
+    show (UnexpectedOp op) = "unexpected " ++ show op
 
 type StackValue = [Word8]
 type Instructions = [ScriptOp]
@@ -54,7 +67,8 @@ type AltStack = [StackValue]
 type Stack = [StackValue]
 type HashOps = [ScriptOp] -- the code that is verified by OP_CHECKSIG
 
--- type Program = (Instructions, Stack, AltStack, HashCode)
+-- in tests we also allow invalid public keys
+type SigCheck = StackValue -> StackValue -> [ScriptOp] -> Bool
 
 data Program = Program {
     instructions :: Instructions,
@@ -65,16 +79,34 @@ data Program = Program {
     sigCheck     :: SigCheck
 }
 
+dumpHex :: BS.ByteString -> String
+dumpHex = show . BSB.toLazyByteString . BSB.byteStringHex
+
+dumpOp :: ScriptOp -> String
+dumpOp (OP_PUSHDATA payload optype) =
+  "OP_PUSHDATA(" ++ (show optype) ++ ")" ++
+  " 0x" ++ (dumpHex payload)
+dumpOp op = show op
+
+
+dumpList :: [String] -> String
+dumpList xs = "[" ++ (intercalate "," xs) ++ "]"
+
+dumpScript :: [ScriptOp] -> String
+dumpScript script = dumpList $ map dumpOp script
+
+dumpStack :: Stack -> String
+dumpStack s = dumpList $ map (dumpHex . BS.pack) s
+
+
 instance Show Program where
-    show p = "script: " ++ (show $ instructions p) ++
-             " stack: " ++ (show $ stack p) ++
+    show p = "script: " ++ (dumpScript $ instructions p) ++
+             " stack: " ++ (dumpStack $ stack p) ++
              " condStack: " ++ (show $ condStack p)
 
 type ProgramState = ErrorT EvalError Identity
 
 type ProgramTransition a = StateT Program ProgramState a
-
-type SigCheck = PubKey -> [ScriptOp] -> Bool
 
 
 --------------------------------------------------------------------------------
@@ -82,6 +114,9 @@ type SigCheck = PubKey -> [ScriptOp] -> Bool
 
 programError :: String -> ProgramTransition a
 programError s = get >>= throwError . ProgramError s
+
+unexpected :: ProgramTransition ()
+unexpected = getOp >>= throwError . UnexpectedOp
 
 disabled :: ProgramTransition ()
 disabled = getOp >>= throwError . DisabledOp
@@ -145,7 +180,7 @@ constValue op = case op of
     _ -> Nothing
 
 rejectSignature :: SigCheck
-rejectSignature _ _ = False
+rejectSignature _ _ _ = False
 
 isDisabled :: ScriptOp -> Bool
 isDisabled op = case runProgram [op] rejectSignature of
@@ -159,6 +194,8 @@ popInt = popStack >>= \sv ->
     else
         return $ decodeInt sv
 
+pushBool :: Bool -> ProgramTransition ()
+pushBool = pushStack . encodeBool
 
 -- see CastToBignum
 -- https://github.com/piotrnar/gocoin/blob/master/btc/stack.go#L56
@@ -222,6 +259,10 @@ pushStack v = getStack >>= \s -> putStack (v:s)
 
 popStack :: ProgramTransition StackValue
 popStack = withStack >>= \(s:ss) -> putStack ss >> return s
+
+popStackN :: Integer -> ProgramTransition [StackValue]
+popStackN 0 = return []
+popStackN n = (:) <$> popStack <*> (popStackN (n - 1))
 
 peekStack :: ProgramTransition StackValue
 peekStack = withStack >>= \(s:ss) -> return s
@@ -357,8 +398,8 @@ eval OP_DROP    = void popStack
 eval OP_DUP     = tStack1 $ \a -> [a, a]
 eval OP_NIP     = tStack2 $ \a _ -> [a]
 eval OP_OVER    = tStack2 $ \a b -> [b, a, b]
-eval OP_PICK    = decodeInt <$> popStack >>= (pickStack False . fromIntegral)
-eval OP_ROLL    = decodeInt <$> popStack >>= (pickStack True . fromIntegral)
+eval OP_PICK    = popInt >>= (pickStack False . fromIntegral)
+eval OP_ROLL    = popInt >>= (pickStack True . fromIntegral)
 eval OP_ROT     = tStack3 $ \a b c -> [c, a, b]
 eval OP_SWAP    = tStack2 $ \a b -> [b, a]
 eval OP_TUCK    = tStack2 $ \a b -> [a, b, a]
@@ -417,17 +458,29 @@ eval OP_MAX     = tStack2L decodeInt encodeInt max
 eval OP_WITHIN  = tStack3L decodeInt encodeBool $ \y x a -> (x <= a) && (a < y)
 
 eval OP_RIPEMD160 = tStack1 $ return . bsToSv . hash160BS . opToSv
-eval OP_SHA1 = undefined  -- TODO: add sha160 to Network.Haskoin.Crypto.Hash
--- eval OP_SHA1 = tStack1 $ return . bsToSv . hashSha160BS . opToSv
+eval OP_SHA1 = tStack1 $ return . bsToSv . hashSha1BS . opToSv
 
 eval OP_SHA256 = tStack1 $ return . bsToSv . hash256BS . opToSv
 eval OP_HASH160 = tStack1 $ return . bsToSv . hash160BS . hash256BS . opToSv
 eval OP_HASH256 = tStack1 $ return . bsToSv . doubleHash256BS  . opToSv
 eval OP_CODESEPARATOR = clearHashOps
-eval OP_CHECKSIG = undefined
-eval OP_CHECKMULTISIG = popStack >>= checkMultiSig . decodeInt
-    where  checkMultiSig 0 = return ()
-           checkMultiSig x = eval OP_CHECKSIG >> checkMultiSig (x - 1)
+eval OP_CHECKSIG = (join $ f <$> popStack <*> popStack) >>= pushStack . encodeBool
+    where f :: StackValue -> StackValue -> ProgramTransition Bool
+          f key sig = do c <- sigCheck <$> get
+                         h <- hashOps <$> get
+                         return $ c key sig h
+
+eval OP_CHECKMULTISIG =
+    do pubKeys <- (popInt >>= popStackN . fromIntegral)
+       sigs <- (popInt >>= popStackN . fromIntegral)
+       void popStack -- spec bug
+       f <- sigCheck <$> get
+       h <- hashOps <$> get
+       pushBool $ checkMultiSigVerify f sigs pubKeys h
+    where checkMultiSigVerify _ [] _ _ = True
+          checkMultiSigVerify f (s:_) keys h = trySignature f s keys h
+          trySignature f sig keys h = f sig (head keys) h
+
 
 eval OP_CHECKSIGVERIFY      = eval OP_CHECKSIG      >> eval OP_VERIFY
 eval OP_CHECKMULTISIGVERIFY = eval OP_CHECKMULTISIG >> eval OP_VERIFY

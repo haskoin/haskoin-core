@@ -236,7 +236,7 @@ pickStack remove n = do
         programError "pickStack: n > size"
 
     let v = stack !! n
-    when remove $ putStack $ (take (n-1) stack) ++ (drop n stack)
+    when remove $ putStack $ (take n stack) ++ (drop (n+1) stack)
     pushStack v
 
 
@@ -265,7 +265,7 @@ tStack3 f = f <$> popStack <*> popStack <*> popStack >>= prependStack
 tStack4 :: (StackValue -> StackValue -> StackValue -> StackValue -> Stack)
             -> ProgramTransition ()
 tStack4 f = f <$> popStack <*> popStack <*> popStack <*> popStack
-            >>= prependStack
+              >>= prependStack
 
 tStack6 :: (StackValue -> StackValue -> StackValue ->
             StackValue -> StackValue -> StackValue -> Stack) -> ProgramTransition ()
@@ -356,17 +356,17 @@ eval OP_DEPTH   = getStack >>= pushStack . encodeInt . fromIntegral . length
 eval OP_DROP    = void popStack
 eval OP_DUP     = tStack1 $ \a -> [a, a]
 eval OP_NIP     = tStack2 $ \a _ -> [a]
-eval OP_OVER    = tStack2 $ \a b -> [a, b, a]
+eval OP_OVER    = tStack2 $ \a b -> [b, a, b]
 eval OP_PICK    = decodeInt <$> popStack >>= (pickStack False . fromIntegral)
 eval OP_ROLL    = decodeInt <$> popStack >>= (pickStack True . fromIntegral)
-eval OP_ROT     = tStack3 $ \a b c -> [b, c, a]
+eval OP_ROT     = tStack3 $ \a b c -> [c, a, b]
 eval OP_SWAP    = tStack2 $ \a b -> [b, a]
-eval OP_TUCK    = tStack2 $ \a b -> [b, a, b]
+eval OP_TUCK    = tStack2 $ \a b -> [a, b, a]
 eval OP_2DROP   = tStack2 $ \_ _ -> []
 eval OP_2DUP    = tStack2 $ \a b -> [a, b, a, b]
 eval OP_3DUP    = tStack3 $ \a b c -> [a, b, c, a, b, c]
-eval OP_2OVER   = tStack4 $ \a b c d -> [a, b, c, d, a, b]
-eval OP_2ROT    = tStack6 $ \a b c d e f -> [c, d, e, f, a, b]
+eval OP_2OVER   = tStack4 $ \a b c d -> [c, d, a, b, c, d]
+eval OP_2ROT    = tStack6 $ \a b c d e f -> [e, f, a, b, c, d]
 eval OP_2SWAP   = tStack4 $ \a b c d -> [c, d, a, b]
 
 -- Splice
@@ -397,7 +397,7 @@ eval OP_ABS     = arith1 abs
 eval OP_NOT         = arith1 $ \case 0 -> 1; _ -> 0
 eval OP_0NOTEQUAL   = arith1 $ \case 0 -> 0; _ -> 1
 eval OP_ADD     = arith2 (+)
-eval OP_SUB     = arith2 (-)
+eval OP_SUB     = arith2 $ flip (-)
 eval OP_MUL     = disabled
 eval OP_DIV     = disabled
 eval OP_MOD     = disabled
@@ -405,17 +405,16 @@ eval OP_LSHIFT  = disabled
 eval OP_RSHIFT  = disabled
 eval OP_BOOLAND     = bool2 (&&)
 eval OP_BOOLOR      = bool2 (||)
-eval OP_NUMEQUAL    = bool2 (==)
+eval OP_NUMEQUAL    = tStack2L decodeInt encodeBool (==)
 eval OP_NUMEQUALVERIFY = eval OP_NUMEQUAL >> eval OP_VERIFY
 eval OP_NUMNOTEQUAL         = tStack2L decodeInt encodeBool (/=)
-eval OP_LESSTHAN            = tStack2L decodeInt encodeBool (<)
-eval OP_GREATERTHAN         = tStack2L decodeInt encodeBool (>)
-eval OP_LESSTHANOREQUAL     = tStack2L decodeInt encodeBool (<=)
-eval OP_GREATERTHANOREQUAL  = tStack2L decodeInt encodeBool (>=)
+eval OP_LESSTHAN            = tStack2L decodeInt encodeBool (>)
+eval OP_GREATERTHAN         = tStack2L decodeInt encodeBool (<)
+eval OP_LESSTHANOREQUAL     = tStack2L decodeInt encodeBool (>=)
+eval OP_GREATERTHANOREQUAL  = tStack2L decodeInt encodeBool (<=)
 eval OP_MIN     = tStack2L decodeInt encodeInt min
 eval OP_MAX     = tStack2L decodeInt encodeInt max
-eval OP_WITHIN  = tStack3L decodeInt encodeBool $
-    \a x y -> (x <= a) && (a < y)
+eval OP_WITHIN  = tStack3L decodeInt encodeBool $ \y x a -> (x <= a) && (a < y)
 
 eval OP_RIPEMD160 = tStack1 $ return . bsToSv . hash160BS . opToSv
 eval OP_SHA1 = undefined  -- TODO: add sha160 to Network.Haskoin.Crypto.Hash

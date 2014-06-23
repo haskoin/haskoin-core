@@ -3,12 +3,12 @@ module Network.Haskoin.Transaction.Tests (tests) where
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Data.Word (Word64)
 import qualified Data.ByteString as BS (length)
 
 import Network.Haskoin.Transaction.Arbitrary
 import Network.Haskoin.Transaction.Builder
 import Network.Haskoin.Protocol
+import Network.Haskoin.Types
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
@@ -29,12 +29,11 @@ tests =
 
 {- Building Transactions -}
 
-testBuildAddrTx :: [OutPoint] -> Address -> Word64 -> Bool
-testBuildAddrTx os a v 
-    | v <= 2100000000000000 = isRight tx && case a of
+testBuildAddrTx :: [OutPoint] -> Address -> BTC -> Bool
+testBuildAddrTx os a v = 
+    isRight tx && case a of
         x@(PubKeyAddress _) -> Right (PayPKHash x) == out
         x@(ScriptAddress _) -> Right (PayScriptHash x) == out
-    | otherwise = isLeft tx
     where tx  = buildAddrTx os [(addrToBase58 a,v)]
           out = decodeOutputBS $ scriptOutput $ txOut (fromRight tx) !! 0
 
@@ -57,18 +56,19 @@ testGuessSize (RegularTx tx) =
           pkout = length $ filter isPayPKHash out
           msout = length $ filter isPayScriptHash out
 
-testChooseCoins :: Word64 -> Word64 -> [Coin] -> Bool
-testChooseCoins target kbfee xs = case chooseCoins target kbfee xs of
-    Right (chosen,change) ->
-        let outSum = sum $ map (outValue . coinTxOut) chosen
-            fee    = getFee kbfee (length chosen) 
-        in outSum == target + change + fee
-    Left _ -> 
-        let fee = getFee kbfee (length xs) 
-        in target == 0 || s < target || s < target + fee
+testChooseCoins :: BTC -> BTC -> [Coin] -> Bool
+testChooseCoins target kbfee xs = 
+    case chooseCoins target kbfee xs of
+        Right (chosen,change) ->
+            let outSum = sum $ map (outValue . coinTxOut) chosen
+                fee    = getFee kbfee (length chosen) 
+            in outSum == target + change + fee
+        Left _ -> 
+            let fee = getFee kbfee (length xs) 
+            in target == 0 || s < target || s < target + fee
     where s = sum $ map (outValue . coinTxOut) xs
 
-testChooseMSCoins :: Word64 -> Word64 -> MSParam -> [Coin] -> Bool
+testChooseMSCoins :: BTC -> BTC -> MSParam -> [Coin] -> Bool
 testChooseMSCoins target kbfee (MSParam m n) xs = 
     case chooseMSCoins target kbfee (m,n) xs of
         Right (chosen,change) ->

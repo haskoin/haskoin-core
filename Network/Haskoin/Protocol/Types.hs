@@ -74,14 +74,14 @@ import qualified Data.ByteString as BS
 
 import Network.Haskoin.Util 
 import Network.Haskoin.Crypto.BigWord
+import Network.Haskoin.Types.BTC
 
 -- | Network address with a timestamp
 type NetworkAddressTime = (Word32, NetworkAddress)
 
 -- | Provides information on known nodes in the bitcoin network. An 'Addr'
 -- type is sent inside a 'Message' as a response to a 'GetAddr' message.
-data Addr = 
-    Addr { 
+data Addr = Addr { 
            -- List of addresses of other nodes on the network with timestamps.
            addrList :: ![NetworkAddressTime] 
          } 
@@ -822,7 +822,7 @@ instance Binary TxIn where
 data TxOut = 
     TxOut { 
             -- | Transaction output value.
-            outValue     :: !Word64
+            outValue     :: !BTC
             -- | Script specifying the conditions to spend this output.
           , scriptOutput :: !BS.ByteString
           } deriving (Eq, Show, Read)
@@ -833,14 +833,12 @@ instance NFData TxOut where
 instance Binary TxOut where
 
     get = do
-        val <- getWord64le
-        unless (val <= 2100000000000000) $ fail $
-            "Invalid TxOut value: " ++ (show val)
+        val <- get
         (VarInt len) <- get
         TxOut val <$> (getByteString $ fromIntegral len)
 
     put (TxOut o s) = do
-        putWord64le o 
+        put o 
         put $ VarInt $ fromIntegral $ BS.length s
         putByteString s
 

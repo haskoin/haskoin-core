@@ -27,6 +27,9 @@ import qualified Network.Haskoin.Crypto.Units (tests)
 import qualified Network.Haskoin.Protocol.Tests (tests)
 import qualified Network.Haskoin.Protocol.Units (tests)
 
+-- Types tests
+import qualified Network.Haskoin.Types.Tests (tests)
+
 -- Script tests
 import qualified Network.Haskoin.Script.Tests (tests)
 import qualified Network.Haskoin.Script.Units (tests)
@@ -59,6 +62,7 @@ main = defaultMain
     ++ Network.Haskoin.Crypto.Units.tests
     ++ Network.Haskoin.Protocol.Tests.tests
     ++ Network.Haskoin.Protocol.Units.tests
+    ++ Network.Haskoin.Types.Tests.tests
     ++ Network.Haskoin.Script.Tests.tests
     ++ Network.Haskoin.Script.Units.tests
     ++ Network.Haskoin.Transaction.Tests.tests

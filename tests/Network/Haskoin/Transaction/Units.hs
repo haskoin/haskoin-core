@@ -4,12 +4,13 @@ import Test.HUnit (Assertion, assertBool)
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
-import Data.Word (Word32, Word64)
+import Data.Word (Word32)
 import Data.Maybe (fromJust)
 import Data.Binary.Get (getWord32le)
 import qualified Data.ByteString as BS (reverse)
 
 import Network.Haskoin.Transaction.Builder
+import Network.Haskoin.Types
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Util
@@ -22,15 +23,16 @@ tests =
         ( map mapVerifyVec $ zip verifyVec [0..] )
     ]
 
-mapPKHashVec :: (([(String,Word32)],[(String,Word64)],String),Int)
+mapPKHashVec :: (([(String,Word32)],[(String,Integer)],String),Int)
             -> Test.Framework.Test
 mapPKHashVec (v,i) = testCase name $ runPKHashVec v
     where name = "Build PKHash Tx " ++ (show i)
 
-runPKHashVec :: ([(String,Word32)],[(String,Word64)],String) -> Assertion
+runPKHashVec :: ([(String,Word32)],[(String,Integer)],String) -> Assertion
 runPKHashVec (xs,ys,res) = 
     assertBool "Build PKHash Tx" $ (bsToHex $ encode' tx) == res
-    where tx = fromRight $ buildAddrTx (map f xs) ys
+    where tx = fromRight $ 
+                buildAddrTx (map f xs) $ map (\(a,b) -> (a, satoshi b)) ys
           f (tid,ix) = OutPoint (fromJust $ decodeTxHashLE tid) ix
 
 
@@ -52,7 +54,7 @@ runVerifyVec (is,bsTx) i =
 
 -- These test vectors have been generated from bitcoind raw transaction api
 
-pkHashVec :: [([(String,Word32)],[(String,Word64)],String)]
+pkHashVec :: [([(String,Word32)],[(String,Integer)],String)]
 pkHashVec =
     [
       ( [("eb29eba154166f6541ebcc9cbdf5088756e026af051f123bcfb526df594549db",14)]

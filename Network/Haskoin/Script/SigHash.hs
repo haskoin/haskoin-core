@@ -35,6 +35,7 @@ import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.ECDSA
 import Network.Haskoin.Script.Types
 import Network.Haskoin.Protocol
+import Network.Haskoin.Types.BTC
 import Network.Haskoin.Util
 
 -- | Data type representing the different ways a transaction can be signed.
@@ -149,7 +150,7 @@ buildOutputs txos i sh
     | i >= length txos = Nothing
     | otherwise = return $ buffer ++ [txos !! i]
   where 
-    buffer = replicate i $ TxOut (-1) BS.empty
+    buffer = replicate i $ TxOut BTCMinusOne BS.empty
 
 -- | Data type representing a 'Signature' together with a 'SigHash'. The
 -- 'SigHash' is serialized as one byte at the end of a regular ECDSA

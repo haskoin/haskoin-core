@@ -285,9 +285,9 @@ importMerkleBlocks height = do
         -- not generated the address yet
         pairs <- forM toImport $ \(h, dmb) -> do
             node <- runDB $ addMerkleBlock $ decodedMerkle dmb
-            runWallet $ forM_ (merkleTxs dmb) cmdImportTx
+            runWallet $ forM_ (merkleTxs dmb) importTx
             return (node, expectedTxs dmb)
-        runWallet $ cmdImportBlocks pairs
+        runWallet $ importBlocks pairs
   where
     go prevHeight ((currHeight, x):xs) 
         | currHeight == prevHeight + 1 = (currHeight, x) : go currHeight xs

@@ -211,7 +211,7 @@ sendManager req = do
     chan <- S.gets mngrChan
     liftIO . atomically $ writeTBMChan chan (pid,req)
 
-decodeMessage :: MonadLogger m  => Conduit BS.ByteString m Message
+decodeMessage :: MonadLogger m => Conduit BS.ByteString m Message
 decodeMessage = do
     -- Message header is always 24 bytes
     headerBytes <- toStrictBS <$> CB.take 24

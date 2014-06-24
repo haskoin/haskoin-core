@@ -1,16 +1,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE TypeFamilies      #-}
-module Network.Haskoin.Wallet.DbTx
-( AccTx
+module Network.Haskoin.Wallet.Tx
+( AccTx(..)
+, getTx
 , toAccTx
-, yamlTx
+, txList
 , importTx
 , removeTx
 , sendTx
 , signWalletTx
 , walletBloomFilter
 , isTxInWallet
+, firstKeyTime
+, importBlocks
+, getBestHeight
+, setBestHeight
 ) where
 
 import Control.Applicative ((<$>))
@@ -20,11 +25,11 @@ import Control.Exception (throwIO)
 
 import Data.Int (Int64)
 import Data.Time (UTCTime, getCurrentTime)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Word (Word32, Word64)
 import Data.List ((\\), nub)
 import Data.Maybe (catMaybes, isNothing, isJust, fromJust)
 import Data.Either (rights)
-import Data.Yaml (Value, object, (.=))
 import qualified Data.Map.Strict as M 
 
 import Database.Persist 
@@ -39,6 +44,7 @@ import Database.Persist
     , getBy
     , deleteBy
     , selectList
+    , selectFirst
     , deleteWhere
     , updateWhere
     , update
@@ -46,14 +52,15 @@ import Database.Persist
     , insertUnique
     , replace
     , (=.), (==.), (<-.)
+    , SelectOpt( Asc )
     )
 
-import Network.Haskoin.Wallet.DbAccount
-import Network.Haskoin.Wallet.DbAddress
-import Network.Haskoin.Wallet.DbCoin
+import Network.Haskoin.Node.HeaderChain
+
+import Network.Haskoin.Wallet.Account
+import Network.Haskoin.Wallet.Coin
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
-import Network.Haskoin.Wallet.Util
 
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
@@ -70,22 +77,12 @@ data AccTx = AccTx
     , accTxCreated       :: UTCTime
     } deriving (Read, Eq, Show)
 
--- TODO: Change this to an instance
-yamlTx :: AccTx -> Value
-yamlTx accTx = object $ concat
-    [ [ "Recipients" .= accTxRecipients accTx
-      , "Value" .= accTxValue accTx
-      , "Confirmations" .= accTxConfirmations accTx
-      ]
-    , if accTxPartial accTx then ["Partial" .= True] else []
-    ]
-
 toAccTx :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b) 
         => DbAccTxGeneric b -> m AccTx
 toAccTx accTx = do
     -- TODO: Keep fromJust?
-    tx     <- dbGetTx $ dbAccTxHash accTx
-    height <- dbGetBestHeight
+    tx     <- getTx $ dbAccTxHash accTx
+    height <- getBestHeight
     let conf | isNothing $ dbTxConfirmedBy tx = 0
              | otherwise = height - (fromJust $ dbTxConfirmedHeight tx) + 1
     return $ AccTx { accTxHash          = dbAccTxHash accTx
@@ -96,8 +93,43 @@ toAccTx accTx = do
                    , accTxCreated       = dbAccTxCreated accTx
                    }
 
--- |Import a transaction into the database
-importTx :: (PersistQuery m, PersistUnique m) => Tx -> m [AccTx]
+getTx :: (PersistUnique m, PersistMonadBackend m ~ b)
+        => TxHash -> m (DbTxGeneric b)
+getTx tid = do
+    entM <- getBy $ UniqueTx tid
+    case entM of
+        Just ent -> return $ entityVal ent
+        Nothing  -> liftIO $ throwIO $ InvalidTransactionException $
+            unwords ["Transaction", encodeTxHashLE tid, "not in database"]
+
+-- TODO: Make a paged version of this
+-- | List all the transaction entries for an account. Transaction entries
+-- summarize information for a transaction in a specific account only (such as
+-- the total movement of for this account).
+--
+-- Transaction entries can also be tagged as /Partial/. Partial transactions
+-- are transactions that are not fully signed yet, such as a partially signed
+-- multisignature transaction. Partial transactions are visible in the wallet
+-- mostly for informational purposes. They can not generate any coins as the
+-- txid or partial transactions will change once they are fully signed.
+-- However, importing a partial transaction will /lock/ the coins that it
+-- spends so that you don't mistakenly spend them. Partial transactions are
+-- replaced once the fully signed transaction is imported.
+txList :: (PersistQuery m, PersistUnique m, PersistMonadBackend m ~ b)
+       => AccountName  -- ^ Account name.
+       -> m [AccTx]    -- ^ List of transaction entries.
+txList name = do
+    (Entity ai _) <- getAccountEntity name
+    e <- selectList [ DbAccTxAccount ==. ai ] [ Asc DbAccTxCreated ]
+    mapM (toAccTx . entityVal) e
+
+-- | Import a transaction into the wallet. A new transaction entry will be
+-- created for every account affected by this transaction. Every transaction
+-- entry will summarize the information related to its account only (such as
+-- total movement for this account).
+importTx :: (PersistQuery m, PersistUnique m) 
+         => Tx        -- ^ Transaction to import
+         -> m [AccTx] -- ^ New transaction entries created
 importTx tx = do
     existsM  <- getBy $ UniqueTx tid
     isOrphan <- isOrphanTx tx
@@ -114,13 +146,13 @@ importTx tx = do
         forM_ eCoins $ \(Entity ci _) -> update ci [DbCoinStatus =. status]
         -- Import new coins 
         outCoins <- liftM catMaybes $ 
-            (mapM (dbImportCoin tid complete) $ zip (txOut tx) [0..])
+            (mapM (importCoin tid complete) $ zip (txOut tx) [0..])
         -- Ignore this transaction if it is not ours
         if null $ coins ++ outCoins then return [] else do
             time <- liftIO getCurrentTime
-            -- Save the whole transaction
-            insertUnique $ DbTx tid tx False Nothing Nothing time
-            -- Build transactions that report on individual accounts
+            -- Save the whole transaction insertUnique $ DbTx tid tx False
+            -- Nothing Nothing time Build transactions that report on
+            -- individual accounts
             let dbAccTxs = buildAccTx tx coins outCoins (not complete) time
             accTxs <- forM dbAccTxs toAccTx
             -- insert account transactions into database
@@ -146,34 +178,36 @@ tryImportOrphans = do
 -- not write the coin to the database, it will only return it. We need the coin
 -- data for partial transactions (for reporting) but we don't want to store
 -- them as they can not be spent.
-dbImportCoin :: ( PersistQuery m
+importCoin :: ( PersistQuery m
                 , PersistUnique m
                 , PersistMonadBackend m ~ b
                 )
              => TxHash -> Bool -> (TxOut,Int)
              -> m (Maybe (DbCoinGeneric b))
-dbImportCoin tid commit (out, i) = do
-    dbAddr <- isMyOutput out
+importCoin tid commit (out, i) = do
+    dbAddrM <- isMyOutput out
+    let dbAddr = fromJust dbAddrM
     let script = decodeOutputBS $ scriptOutput out
-    if isNothing dbAddr || isLeft script then return Nothing else do
-        rdm   <- dbGetRedeem $ fromJust dbAddr
+    if isNothing dbAddrM || isLeft script then return Nothing else do
+        rdm   <- getRedeem dbAddr
         time  <- liftIO getCurrentTime
         let coin = DbCoin tid i (fromIntegral $ outValue out) 
                                 (fromRight script) rdm 
-                                (dbAddressValue $ fromJust dbAddr)
+                                (dbAddressValue dbAddr)
                                 Unspent
-                                (dbAddressAccount $ fromJust dbAddr)
+                                (dbAddressAccount dbAddr)
                                 time
         when commit $ insert_ coin
+        adjustLookAhead dbAddr
         return $ Just coin
 
 -- |Builds a redeem script given an address. Only relevant for addresses
 -- linked to multisig accounts. Otherwise it returns Nothing
-dbGetRedeem :: (PersistStore m, PersistMonadBackend m ~ b) 
+getRedeem :: (PersistStore m, PersistMonadBackend m ~ b) 
             => DbAddressGeneric b -> m (Maybe ScriptOutput)
-dbGetRedeem add = do
+getRedeem add = do
     acc <- liftM fromJust (get $ dbAddressAccount add)
-    if isMSAcc acc 
+    if isMSAccount acc 
         then do
             let key      = dbAccountKey acc
                 msKeys   = dbAccountMsKeys acc
@@ -277,8 +311,12 @@ buildAccTx tx inCoins outCoins partial time = map build $ M.toList oMap
                | total < 0  = allRecip \\ addrs -- remove the change
                | otherwise  = addrs
 
--- |Remove a transaction from the database and all parent transaction
-removeTx :: PersistQuery m => TxHash -> m [TxHash]
+-- | Remove a transaction from the database. This will remove all transaction
+-- entries for this transaction as well as any parent transactions and coins
+-- deriving from it.
+removeTx :: PersistQuery m 
+         => TxHash      -- ^ Transaction hash to remove
+         -> m [TxHash]  -- ^ List of removed transaction hashes
 removeTx tid = do
     -- Find all parents of this transaction
     -- Partial transactions should not have any coins. Won't check for it
@@ -297,32 +335,35 @@ removeTx tid = do
                 [ DbCoinStatus =. Unspent ]
     return $ tid:(concat pids)
 
--- |Build and sign a transactoin given a list of recipients
+-- | Create a transaction sending some coins to a list of recipient addresses.
 sendTx :: (PersistUnique m, PersistQuery m)
-         => AccountName -> [(String,Word64)] -> Word64 -> m (Tx, Bool)
+       => AccountName        -- ^ Account name
+       -> [(String,Word64)]  -- ^ List of recipient addresses and amounts
+       -> Word64             -- ^ Fee per 1000 bytes 
+       -> m (Tx, Bool)       -- ^ (Payment transaction, completed flag)
 sendTx name strDests fee = do
-    (coins,recips) <- dbSendSolution name strDests fee
-    dbSendCoins coins recips (SigAll False)
+    (coins,recips) <- sendSolution name strDests fee
+    sendCoins coins recips (SigAll False)
 
 -- |Given a list of recipients and a fee, finds a valid combination of coins
-dbSendSolution :: (PersistUnique m, PersistQuery m)
-               => AccountName -> [(String,Word64)] -> Word64
-               -> m ([Coin],[(Address,Word64)])
-dbSendSolution name strDests fee = do
+sendSolution :: (PersistUnique m, PersistQuery m)
+             => AccountName -> [(String,Word64)] -> Word64
+             -> m ([Coin],[(Address,Word64)])
+sendSolution name strDests fee = do
     unless (all isJust decodeDest) $ liftIO $ throwIO $
         InvalidAddressException "Invalid addresses"
-    (Entity ai acc) <- dbGetAccount name
-    unspent <- liftM (map toCoin) $ dbCoins ai
+    (Entity ai acc) <- getAccountEntity name
+    unspent <- liftM (map toCoin) $ unspentCoins name
     let msParam = ( fromJust $ dbAccountMsRequired acc
                   , fromJust $ dbAccountMsTotal acc
                   )
-        resE | isMSAcc acc = chooseMSCoins tot fee msParam unspent
+        resE | isMSAccount acc = chooseMSCoins tot fee msParam unspent
              | otherwise   = chooseCoins tot fee unspent
         (coins, change)    = fromRight resE
     when (isLeft resE) $ liftIO $ throwIO $
         CoinSelectionException $ fromLeft resE
     recips <- if change < 5000 then return dests else do
-        cAddr <- dbGenIntAddrs name 1
+        cAddr <- newAddrsGeneric name 1 True -- internal addresses
         -- TODO: Change must be randomly placed
         return $ dests ++ [(dbAddressValue $ head cAddr,change)]
     return (coins,recips)
@@ -333,15 +374,15 @@ dbSendSolution name strDests fee = do
     tot        = sum $ map snd dests
     
 -- | Build and sign a transaction by providing coins and recipients
-dbSendCoins :: PersistUnique m
-            => [Coin] -> [(Address,Word64)] -> SigHash
-            -> m (Tx, Bool)
-dbSendCoins coins recipients sh = do
+sendCoins :: PersistUnique m
+          => [Coin] -> [(Address,Word64)] -> SigHash
+          -> m (Tx, Bool)
+sendCoins coins recipients sh = do
     let txE = buildAddrTx (map coinOutPoint coins) $ map f recipients
         tx  = fromRight txE
     when (isLeft txE) $ liftIO $ throwIO $
         TransactionBuildingException $ fromLeft txE
-    ys <- mapM (dbGetSigData sh) coins
+    ys <- mapM (getSigData sh) coins
     let sigTx = detSignTx tx (map fst ys) (map snd ys)
     when (isBroken sigTx) $ liftIO $ throwIO $
         TransactionSigningException $ runBroken sigTx
@@ -349,15 +390,24 @@ dbSendCoins coins recipients sh = do
   where
     f (a,v) = (addrToBase58 a, v)
 
+-- | Try to sign the inputs of an existing transaction using the private keys
+-- of an account. This command will return an indication if the transaction is
+-- fully signed or if additional signatures are required. This command will
+-- work for both normal inputs and multisignature inputs. Signing is limited to
+-- the keys of one account only to allow for more control when the wallet is
+-- used as the backend of a web service.
 signWalletTx :: PersistUnique m
-         => AccountName -> Tx -> SigHash -> m (Tx, Bool)
+             => AccountName    -- ^ Account name
+             -> Tx             -- ^ Transaction to sign 
+             -> SigHash        -- ^ Signature type to create 
+             -> m (Tx, Bool)   -- ^ (Signed transaction, completed flag)
 signWalletTx name tx sh = do
-    (Entity ai _) <- dbGetAccount name
+    (Entity ai _) <- getAccountEntity name
     coins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
     -- Filter coins for this account only
     let accCoinsDB = filter ((== ai) . dbCoinAccount . entityVal) coins
         accCoins   = map (toCoin . entityVal) accCoinsDB
-    ys <- forM accCoins (dbGetSigData sh)
+    ys <- forM accCoins (getSigData sh)
     let sigTx = detSignTx tx (map fst ys) (map snd ys)
     when (isBroken sigTx) $ liftIO $ throwIO $
         TransactionSigningException $ runBroken sigTx
@@ -365,14 +415,14 @@ signWalletTx name tx sh = do
   where
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
 
--- |Given a coin, retrieves the necessary data to sign a transaction
-dbGetSigData :: PersistUnique m
-             => SigHash -> Coin -> m (SigInput,PrvKey)
-dbGetSigData sh coin = do
-    (Entity _ w) <- dbGetWallet "main"
+-- Given a coin, retrieves the necessary data to sign a transaction
+getSigData :: PersistUnique m
+           => SigHash -> Coin -> m (SigInput,PrvKey)
+getSigData sh coin = do
+    (Entity _ w) <- getWalletEntity "main"
     let a = fromRight $ scriptRecipient out
-    (Entity _ add) <- dbGetAddr $ addrToBase58 a
-    acc  <- liftM fromJust (get $ dbAddressAccount add)
+    (Entity _ add) <- liftM fromJust $ getBy $ UniqueAddress a
+    acc <- liftM fromJust (get $ dbAddressAccount add)
     let master = dbWalletMaster w
         deriv  = fromIntegral $ dbAccountIndex acc
         accKey = fromJust $ accPrvKey master deriv
@@ -385,7 +435,7 @@ dbGetSigData sh coin = do
     sigi | isJust rdm = SigInputSH out (coinOutPoint coin) (fromJust rdm) sh
          | otherwise  = SigInput out (coinOutPoint coin) sh
 
--- |Produces a bloom filter containing all the addresses in this wallet. This
+-- | Produces a bloom filter containing all the addresses in this wallet. This
 -- includes internal, external and look-ahead addresses. The bloom filter can
 -- be set on a peer connection to filter the transactions received by that
 -- peer.
@@ -398,6 +448,54 @@ walletBloomFilter = do
         f b a  = bloomInsert b $ encode' $ getAddrHash a
     return bloom'
 
+-- | Return the creation time (POSIX seconds) of the first key in the wallet.
+-- This is used to ignore full/filtered blocks prior to this time.
+firstKeyTime :: PersistQuery m => m (Maybe Word32)
+firstKeyTime = do
+    res <- selectFirst [] [Asc DbAddressCreated] 
+    return $ (fromIntegral . round . toPOSIX) <$> res
+  where
+    toPOSIX = utcTimeToPOSIXSeconds . dbAddressCreated . entityVal
+
+-- | Returns true if the transaction is in the wallet
 isTxInWallet :: PersistUnique m => TxHash -> m Bool
 isTxInWallet tid = liftM isJust $ getBy $ UniqueTx tid
+
+-- | Import filtered blocks into the wallet. This will update the confirmations
+-- of the relevant transactions.
+importBlocks :: (PersistQuery m, PersistUnique m)
+             => [(BlockChainAction, [TxHash])] -> m ()
+importBlocks xs = do
+    forM_ xs $ \(a,txs) -> case a of
+        -- TODO: update transaction
+        BestBlock node -> do
+            -- TODO: The transactions *need* to be in the wallet already to get
+            -- their first confirmation mark. Otherwise they will stay unconfirmed
+            -- forever. Look into this.
+            when (not $ null txs) $ do
+                updateWhere 
+                    [ DbTxHash <-. txs ]
+                    [ DbTxConfirmedBy     =. Just (nodeBlockHash node)
+                    , DbTxConfirmedHeight =. Just (nodeHeaderHeight node)
+                    ]
+        -- TODO: Handle these cases
+        SideBlock node   -> liftIO $ print "Side block detected"
+        BlockReorg s o n -> liftIO $ print "Fork detected"
+    setBestHeight best
+  where
+    best = case head $ dropWhile isSideBlock $ map fst $ reverse xs of
+        BestBlock node   -> nodeHeaderHeight node
+        -- TODO: Verify if this is correct, i.e. last and not first
+        BlockReorg _ _ n -> nodeHeaderHeight $ last n
+    isSideBlock (SideBlock _) = True
+    isSideBlock _             = False
+
+getBestHeight :: PersistQuery m => m Word32
+getBestHeight = do
+    cnf <- selectFirst [] []
+    -- TODO: throw an exception here instead of fromJust
+    return $ dbConfigBestHeight $ entityVal $ fromJust cnf
+
+setBestHeight :: PersistQuery m => Word32 -> m ()
+setBestHeight h = updateWhere [] [DbConfigBestHeight =. h]
 

@@ -1,10 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE TypeFamilies      #-}
-module Network.Haskoin.Wallet.DbCoin 
-( dbCoins
-, dbBalance
-, yamlCoin
+module Network.Haskoin.Wallet.Coin 
+( balance
+, unspentCoins
 , toCoin
 ) where
 
@@ -15,6 +14,7 @@ import Data.Maybe (fromJust, isJust)
 import Data.Word (Word64)
 import Database.Persist
     ( PersistQuery
+    , PersistUnique
     , PersistMonadBackend
     , Entity (Entity)
     , KeyBackend
@@ -27,10 +27,11 @@ import Database.Persist
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Script
+import Network.Haskoin.Util
 import Network.Haskoin.Transaction
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
-import Network.Haskoin.Util
+import Network.Haskoin.Wallet.Account
 
 toCoin :: DbCoinGeneric b -> Coin
 toCoin c = Coin 
@@ -38,35 +39,23 @@ toCoin c = Coin
     (OutPoint (dbCoinHash c) (fromIntegral $ dbCoinPos c))
     (encodeOutput <$> dbCoinRdmScript c)
 
-yamlCoin :: DbCoinGeneric b -> Value
-yamlCoin coin = object $ concat
-    [ [ "TxID"    .= (encodeTxHashLE $ dbCoinHash coin)
-      , "Index"   .= dbCoinPos coin
-      , "Value"   .= dbCoinValue coin
-      , "Script"  .= dbCoinScript coin
-      , "Address" .= dbCoinAddress coin
-      ] 
-    , if isJust $ dbCoinRdmScript coin 
-        then ["Redeem" .= fromJust (dbCoinRdmScript coin)] 
-        else []
-    ]
-
-dbBalance :: (PersistQuery m, PersistMonadBackend m ~ b)
-          => Entity (DbAccountGeneric b)
-          -> m Word64
-dbBalance (Entity ai _) = do
+-- | Returns the balance of an account.
+balance :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
+        => AccountName -- ^ Account name
+        -> m Word64    -- ^ Account balance
+balance name = do
+    (Entity ai _) <- getAccountEntity name
     coins <- selectList 
         [ DbCoinAccount ==. ai
         , DbCoinStatus  ==. Unspent
         ] []
     return $ sum $ map (dbCoinValue . entityVal) coins
 
-dbCoins :: ( PersistQuery m
-           , PersistMonadBackend m ~ b
-           ) 
-        => KeyBackend b (DbAccountGeneric b)
-        -> m [DbCoinGeneric b]
-dbCoins ai = do
+unspentCoins :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b) 
+             => AccountName         -- ^ Account name
+             -> m [DbCoinGeneric b] -- ^ List of unspent coins
+unspentCoins name = do
+    (Entity ai _) <- getAccountEntity name
     coins <- selectList 
         [ DbCoinAccount ==. ai
         , DbCoinStatus  ==. Unspent

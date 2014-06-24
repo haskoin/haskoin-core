@@ -63,9 +63,9 @@ DbAccount
     tree String
     key AccPubKey
     extIndex Int
-    extGap Int
+    extLookAhead Int
     intIndex Int
-    intGap Int
+    intLookAhead Int
     msRequired Int Maybe
     msTotal Int Maybe
     msKeys [XPubKey] 

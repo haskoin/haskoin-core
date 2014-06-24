@@ -48,10 +48,9 @@ import Database.Persist.Sqlite
     , SqlPersistT
     )
 
-import Network.Haskoin.Wallet.Commands
-import Network.Haskoin.Wallet.DbAddress
-import Network.Haskoin.Wallet.DbAccount
-import Network.Haskoin.Wallet.DbTx
+import Network.Haskoin.Wallet
+import Network.Haskoin.Wallet.Account
+import Network.Haskoin.Wallet.Tx
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Transaction
@@ -65,207 +64,200 @@ type App = SqlPersistT (NoLoggingT (ResourceT IO))
 tests :: [Test]
 tests =
     [ testGroup "Wallet pre-initialization tests" 
-        [ testCase "cmdNewAcc fails if the wallet is not initialized" $ 
+        [ testCase "newAccount fails if the wallet is not initialized" $ 
             assertException
                 (InitializationException "Wallet main is not initialized") 
-                (cmdNewAcc "default")
+                (newAccount "default")
 
-        , testCase "cmdNewMS fails if the wallet is not initialized" $ 
+        , testCase "newMSAccount fails if the wallet is not initialized" $ 
             assertException
                 (InitializationException "Wallet main is not initialized") 
-                (cmdNewMS "default" 2 3 [])
+                (newMSAccount "default" 2 3 [])
 
-        , testCase "cmdList fails if the wallet is not initialized" $
+        , testCase "addressPage fails if the wallet is not initialized" $
             assertException
                 (InitializationException "Wallet main is not initialized") 
-                (cmdList "default" 0 1)
+                (addressPage "default" 0 1)
 
-        , testCase "cmdBalances fails if the wallet is not initialized" $
+        , testCase "balance fails if the wallet is not initialized" $
             assertException
                 (InitializationException "Wallet main is not initialized") 
-                cmdBalances
+                (balance "default")
 
-        , testCase "cmdGenAddrs fails if the wallet is not initialized" $
+        , testCase "newAddrs fails if the wallet is not initialized" $
             assertException
                 (InitializationException "Wallet main is not initialized") 
-                (cmdGenAddrs "default" 3)
+                (newAddrs "default" 3)
 
-        , testCase "cmdAllCoins fails if the wallet is not initialized" $
+        , testCase "unspentCoins fails if the wallet is not initialized" $
             assertException
                 (InitializationException "Wallet main is not initialized") 
-                cmdAllCoins
+                (unspentCoins "default")
 
-        , testCase "cmdImportTx fails if the wallet is not initialized" $
+        , testCase "importTx fails if the wallet is not initialized" $
             assertException
                 (InitializationException "Wallet main is not initialized") $
-                cmdImportTx (Tx 1 [] [] 0)
+                importTx (Tx 1 [] [] 0)
         ] 
     , testGroup "Wallet initialization tests"
-        [ testCase "Calling cmdInitMnemo with a bad mnemonic should fail" $
+        [ testCase "Calling initMnemo with a bad mnemonic should fail" $
             assertException
                 (InitializationException 
                     "fromMnemonic: wrong number of words: 1") 
-                (cmdInitMnemo "password" (Just "hello"))
+                (initMnemo "password" (Just "hello"))
 
-        , testCase "Calling cmdInit with an empty seed should fail" $
+        , testCase "Calling initWallet with an empty seed should fail" $
             assertException
                 (InitializationException "The seed is empty") 
-                (cmdInit BS.empty)
+                (initWallet BS.empty)
 
-        , testCase "Calling cmdInit twice should fail" $
+        , testCase "Calling initWallet twice should fail" $
             assertException
                 (InitializationException "The wallet is already initialized") 
-                (cmdInit (BS.pack [0]) >> cmdInit (BS.pack [0]))
+                (initWallet (BS.pack [0]) >> initWallet (BS.pack [0]))
         ]
     , testGroup "Account tests"
         [ testCase "Invalid multisig parameters (0 of 1)" $
             assertException
                 (AccountSetupException "Invalid multisig parameters") 
-                (cmdInit (BS.pack [0]) >> cmdNewMS "ms" 0 1 [])
+                (initWallet (BS.pack [0]) >> newMSAccount "ms" 0 1 [])
                 
         , testCase "Invalid multisig parameters (2 of 1)" $
             assertException
                 (AccountSetupException "Invalid multisig parameters") 
-                (cmdInit (BS.pack [0]) >> cmdNewMS "ms" 2 1 [])
+                (initWallet (BS.pack [0]) >> newMSAccount "ms" 2 1 [])
 
         , testCase "Invalid multisig parameters (16 of 17)" $
             assertException
                 (AccountSetupException "Invalid multisig parameters") 
-                (cmdInit (BS.pack [0]) >> cmdNewMS "ms" 16 17 [])
+                (initWallet (BS.pack [0]) >> newMSAccount "ms" 16 17 [])
 
         , testCase "To many multisig keys (2 keys for 1 of 2)" $
             assertException
                 (AccountSetupException "Too many keys") 
-                ( cmdInit (BS.pack [0]) >> cmdNewMS "ms" 1 2 
+                ( initWallet (BS.pack [0]) >> newMSAccount "ms" 1 2 
                     [ deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [1])
                     , deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [2])
                     ]
                 )
 
-        , testCase "Calling cmdAddKeys with an empty key list should fail" $
+        , testCase "Calling addAccountKeys with an empty key list should fail" $
             assertException
                 (AccountSetupException "Thirdparty key list can not be empty") 
-                (cmdInit (BS.pack [0]) >> cmdAddKeys "default" [])
+                (initWallet (BS.pack [0]) >> addAccountKeys "default" [])
 
-        , testCase "Calling cmdAddKeys on a non-multisig account should fail" $
+        , testCase "Calling addAccountKeys on a non-multisig account should fail" $
             assertException
                 (AccountSetupException 
                     "Can only add keys to a multisig account") $ do
-                    cmdInit (BS.pack [0])
-                    cmdNewAcc "default" 
-                    cmdAddKeys "default"
+                    initWallet (BS.pack [0])
+                    newAccount "default" 
+                    addAccountKeys "default"
                         [ deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [1]) ]
 
-        , testCase "Calling cmdNewMS with keys in your wallet should fail" $
+        , testCase "Calling newMSAccount with keys in your wallet should fail" $
             assertException
                 (AccountSetupException 
                     "Can not add your own keys to a multisig account") $ do
-                    cmdInit (BS.pack [0])
-                    cmdNewAcc "default" 
+                    initWallet (BS.pack [0])
+                    newAccount "default" 
                     let master = fromJust $ makeMasterKey $ BS.pack [0]
                         accKey = fromJust $ accPubKey master 0
-                    cmdNewMS "ms" 1 2 [ getAccPubKey accKey ]
+                    newMSAccount "ms" 1 2 [ getAccPubKey accKey ]
 
-        , testCase "Calling cmdAddKeys with keys in your wallet should fail" $
+        , testCase "Calling addAccountKeys with keys in your wallet should fail" $
             assertException
                 (AccountSetupException 
                     "Can not add your own keys to a multisig account") $ do
-                    cmdInit (BS.pack [0])
-                    cmdNewAcc "default" 
+                    initWallet (BS.pack [0])
+                    newAccount "default" 
                     let master = fromJust $ makeMasterKey $ BS.pack [0]
                         accKey = fromJust $ accPubKey master 0
-                    cmdNewMS "ms" 1 2 []
-                    cmdAddKeys "ms" [getAccPubKey accKey]
+                    newMSAccount "ms" 1 2 []
+                    addAccountKeys "ms" [getAccPubKey accKey]
 
         , testCase "Adding keys to a complete multisig account should fail" $
             assertException
                 (AccountSetupException 
                     "The account is complete and no further keys can be added") $ do
-                    cmdInit (BS.pack [0])
-                    cmdNewMS "ms" 2 3 
+                    initWallet (BS.pack [0])
+                    newMSAccount "ms" 2 3 
                         [ deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [1])
                         , deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [2])
                         ]
-                    cmdAddKeys "ms" 
+                    addAccountKeys "ms" 
                         [deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [3])]
 
         , testCase "Adding more keys than the account can hold should fail" $
             assertException
                 (AccountSetupException 
                     "Adding too many keys to the account") $ do
-                    cmdInit (BS.pack [0])
-                    cmdNewMS "ms" 2 3 
+                    initWallet (BS.pack [0])
+                    newMSAccount "ms" 2 3 
                         [ deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [1])
                         ]
-                    cmdAddKeys "ms" 
+                    addAccountKeys "ms" 
                         [ deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [2])
                         , deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [3])
                         ]
 
-        , testCase "Displaying a non-existing account should fail" $
+        , testCase "Getting a non-existing account should fail" $
             assertException
                 (InvalidAccountException "Account default does not exist") 
-                (cmdInit (BS.pack [0]) >> cmdAccInfo "default")
+                (initWallet (BS.pack [0]) >> getAccount "default")
 
         , testCase "Dumping keys of a non-existing account should fail" $
             assertException
                 (InvalidAccountException "Account default does not exist") 
-                (cmdInit (BS.pack [0]) >> cmdDumpKeys "default")
+                (initWallet (BS.pack [0]) >> accountPrvKey "default")
 
         , testCase "Listing addresses of a non-existing account should fail" $
             assertException
                 (InvalidAccountException "Account default does not exist") 
-                (cmdInit (BS.pack [0]) >> cmdList "default" 0 1)
+                (initWallet (BS.pack [0]) >> addressPage "default" 0 1)
                 
         ]
     , testGroup "Address tests"
         [ testCase "Displaying page -1 should fail" $
             assertException
                 (InvalidPageException "Invalid page number: -1") 
-                (cmdInit (BS.pack [0]) >> cmdList "default" (-1) 1)
+                (initWallet (BS.pack [0]) >> addressPage "default" (-1) 1)
 
         , testCase "Displaying 0 results per page should fail" $
             assertException
                 (InvalidPageException "Invalid results per page: 0") 
-                (cmdInit (BS.pack [0]) >> cmdList "default" 0 0)
+                (initWallet (BS.pack [0]) >> addressPage "default" 0 0)
 
         , testCase "Displaying a page number that is too high should fail" $
             assertException
                 (InvalidPageException "The page number 2 is too high") $ do
-                    cmdInit $ BS.pack [0] 
-                    cmdNewAcc "default"
-                    cmdGenAddrs "default" 5
-                    cmdList "default" 2 5
+                    initWallet $ BS.pack [0] 
+                    newAccount "default"
+                    newAddrs "default" 5
+                    addressPage "default" 2 5
 
         , testCase "Generating less than 1 address should fail" $
             assertException
                 (AddressGenerationException "Can not generate less than 1 address") $ do
-                    cmdInit $ BS.pack [0] 
-                    cmdNewAcc "default"
-                    cmdGenAddrs "default" 0
-
-        , testCase "Generating addresses with empty label list should fail" $
-            assertException
-                (AddressGenerationException "Labels can not be empty") $ do
-                    cmdInit $ BS.pack [0] 
-                    cmdNewAcc "default"
-                    cmdGenWithLabel "default" []
+                    initWallet $ BS.pack [0] 
+                    newAccount "default"
+                    newAddrs "default" 0
 
         , testCase "Setting a label on an invalid address key should fail" $
             assertException
                 (InvalidAddressException "The address key does not exist") $ do
-                    cmdInit $ BS.pack [0] 
-                    cmdNewAcc "default"
-                    cmdGenAddrs "default" 5
-                    cmdLabel "default" 5 "Gym membership"
+                    initWallet $ BS.pack [0] 
+                    newAccount "default"
+                    newAddrs "default" 5
+                    addressLabel "default" 5 "Gym membership"
 
-        , testCase "Requesting the WIF on an invalid address key should fail" $
+        , testCase "Requesting the private key on an invalid address key should fail" $
             assertException
-                (InvalidAddressException "The address key does not exist") $ do
-                    cmdInit $ BS.pack [0] 
-                    cmdNewAcc "default"
-                    cmdGenAddrs "default" 5
-                    cmdPrvKey "default" 5
+                (InvalidAddressException "Invalid address key") $ do
+                    initWallet $ BS.pack [0] 
+                    newAccount "default"
+                    newAddrs "default" 5
+                    addressPrvKey "default" 5
         ]
     , testGroup "Transaction tests"
         [ testCase "Tx import" $ runUnit testImportTx
@@ -302,11 +294,11 @@ pass = "passw0rd"
 
 testImportTx :: App ()
 testImportTx = do
-    cmdInitMnemo pass $ Just mnemo
-    cmdNewAcc "a"
-    cmdGenAddrs "a" 5 
-    cmdNewAcc "b"
-    cmdGenAddrs "b" 5 
+    initMnemo pass $ Just mnemo
+    newAccount "a"
+    newAddrs "a" 5 
+    newAccount "b"
+    newAddrs "b" 5 
     let fundingTx = 
             Tx 0 [ TxIn (OutPoint 0 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $

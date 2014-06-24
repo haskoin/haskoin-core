@@ -118,7 +118,7 @@ getTx tid = do
 txList :: (PersistQuery m, PersistUnique m, PersistMonadBackend m ~ b)
        => AccountName  -- ^ Account name.
        -> m [AccTx]    -- ^ List of transaction entries.
-txList name = do
+txList name = checkInit >> do
     (Entity ai _) <- getAccountEntity name
     e <- selectList [ DbAccTxAccount ==. ai ] [ Asc DbAccTxCreated ]
     mapM (toAccTx . entityVal) e
@@ -130,7 +130,7 @@ txList name = do
 importTx :: (PersistQuery m, PersistUnique m) 
          => Tx        -- ^ Transaction to import
          -> m [AccTx] -- ^ New transaction entries created
-importTx tx = do
+importTx tx = checkInit >> do
     existsM  <- getBy $ UniqueTx tid
     isOrphan <- isOrphanTx tx
     -- Do not re-import existing transactions and do not proccess orphans yet
@@ -150,9 +150,9 @@ importTx tx = do
         -- Ignore this transaction if it is not ours
         if null $ coins ++ outCoins then return [] else do
             time <- liftIO getCurrentTime
-            -- Save the whole transaction insertUnique $ DbTx tid tx False
-            -- Nothing Nothing time Build transactions that report on
-            -- individual accounts
+            -- Save the whole transaction 
+            insertUnique $ DbTx tid tx False Nothing Nothing time 
+            -- Build transactions that report on individual accounts
             let dbAccTxs = buildAccTx tx coins outCoins (not complete) time
             accTxs <- forM dbAccTxs toAccTx
             -- insert account transactions into database
@@ -314,10 +314,10 @@ buildAccTx tx inCoins outCoins partial time = map build $ M.toList oMap
 -- | Remove a transaction from the database. This will remove all transaction
 -- entries for this transaction as well as any parent transactions and coins
 -- deriving from it.
-removeTx :: PersistQuery m 
+removeTx :: (PersistUnique m, PersistQuery m)
          => TxHash      -- ^ Transaction hash to remove
          -> m [TxHash]  -- ^ List of removed transaction hashes
-removeTx tid = do
+removeTx tid = checkInit >> do
     -- Find all parents of this transaction
     -- Partial transactions should not have any coins. Won't check for it
     coins <- selectList [ DbCoinHash ==. tid ] []
@@ -341,7 +341,7 @@ sendTx :: (PersistUnique m, PersistQuery m)
        -> [(String,Word64)]  -- ^ List of recipient addresses and amounts
        -> Word64             -- ^ Fee per 1000 bytes 
        -> m (Tx, Bool)       -- ^ (Payment transaction, completed flag)
-sendTx name strDests fee = do
+sendTx name strDests fee = checkInit >> do
     (coins,recips) <- sendSolution name strDests fee
     sendCoins coins recips (SigAll False)
 
@@ -401,7 +401,7 @@ signWalletTx :: PersistUnique m
              -> Tx             -- ^ Transaction to sign 
              -> SigHash        -- ^ Signature type to create 
              -> m (Tx, Bool)   -- ^ (Signed transaction, completed flag)
-signWalletTx name tx sh = do
+signWalletTx name tx sh = checkInit >> do
     (Entity ai _) <- getAccountEntity name
     coins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
     -- Filter coins for this account only
@@ -439,8 +439,8 @@ getSigData sh coin = do
 -- includes internal, external and look-ahead addresses. The bloom filter can
 -- be set on a peer connection to filter the transactions received by that
 -- peer.
-walletBloomFilter :: PersistQuery m => m BloomFilter
-walletBloomFilter = do
+walletBloomFilter :: (PersistUnique m, PersistQuery m) => m BloomFilter
+walletBloomFilter = checkInit >> do
     addrs <- selectList [] []
     -- TODO: Choose a random nonce for the bloom filter
     let bloom  = bloomCreate (length addrs * 2) 0.001 0 BloomUpdateP2PubKeyOnly
@@ -459,19 +459,19 @@ firstKeyTime = do
 
 -- | Returns true if the transaction is in the wallet
 isTxInWallet :: PersistUnique m => TxHash -> m Bool
-isTxInWallet tid = liftM isJust $ getBy $ UniqueTx tid
+isTxInWallet tid = checkInit >> (liftM isJust $ getBy $ UniqueTx tid)
 
 -- | Import filtered blocks into the wallet. This will update the confirmations
 -- of the relevant transactions.
 importBlocks :: (PersistQuery m, PersistUnique m)
              => [(BlockChainAction, [TxHash])] -> m ()
-importBlocks xs = do
+importBlocks xs = checkInit >> do
     forM_ xs $ \(a,txs) -> case a of
         -- TODO: update transaction
         BestBlock node -> do
             -- TODO: The transactions *need* to be in the wallet already to get
-            -- their first confirmation mark. Otherwise they will stay unconfirmed
-            -- forever. Look into this.
+            -- their first confirmation mark. Otherwise they will stay
+            -- unconfirmed forever. Look into this.
             when (not $ null txs) $ do
                 updateWhere 
                     [ DbTxHash <-. txs ]

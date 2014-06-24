@@ -9,7 +9,6 @@ module Network.Haskoin.Wallet
 -- *Initialization Commands
   initMnemo
 , initWallet
-, checkInit
 
 -- *Account Commands
 , AccountName
@@ -146,15 +145,4 @@ initWallet seed
             "The seed derivation produced an invalid key. Use another seed"
         insert_ $ DbWallet "main" "full" (fromJust master) (-1) time
         insert_ $ DbConfig 0 1 time
-
-isWalletInit :: PersistUnique m => String -> m Bool
-isWalletInit name = do
-    entM <- getBy $ UniqueWalletName name
-    return $ isJust entM
-
-checkInit :: PersistUnique m => m ()
-checkInit = do
-    isInit <- isWalletInit "main"
-    unless isInit $ liftIO $ throwIO $ 
-        InitializationException "Wallet main is not initialized"
 

@@ -25,6 +25,9 @@ module Network.Haskoin.Wallet.Account
 , addressPrvKey
 , setLookAhead
 , adjustLookAhead
+
+, checkInit
+, isWalletInit
 ) where
 
 import Control.Monad (liftM, unless, when)
@@ -61,6 +64,17 @@ import Network.Haskoin.Wallet.Types
 
 type AccountName = String
 
+isWalletInit :: PersistUnique m => String -> m Bool
+isWalletInit name = do
+    entM <- getBy $ UniqueWalletName name
+    return $ isJust entM
+
+checkInit :: PersistUnique m => m ()
+checkInit = do
+    isInit <- isWalletInit "main"
+    unless isInit $ liftIO $ throwIO $ 
+        InitializationException "Wallet main is not initialized"
+
 getWalletEntity :: (PersistUnique m, PersistMonadBackend m ~ b)
             => String -> m (Entity (DbWalletGeneric b))
 getWalletEntity name = do
@@ -72,15 +86,17 @@ getWalletEntity name = do
 
 getAccountEntity :: (PersistUnique m, PersistMonadBackend m ~ b)
              => AccountName -> m (Entity (DbAccountGeneric b))
-getAccountEntity name = do
+getAccountEntity name = checkInit >> do
     entM <- getBy $ UniqueAccName name
     case entM of
         Just ent -> return ent
         Nothing   -> liftIO $ throwIO $ InvalidAccountException $ 
             unwords ["Account", name, "does not exist"]
                   
+-- | Get an account by name
 getAccount :: (PersistUnique m, PersistMonadBackend m ~ b)
-           => AccountName -> m (DbAccountGeneric b)
+           => AccountName             -- ^ Account name
+           -> m (DbAccountGeneric b)  -- ^ Account
 getAccount name = liftM entityVal $ getAccountEntity name
 
 isMSAccount :: DbAccountGeneric b -> Bool
@@ -92,7 +108,7 @@ isMSAccount acc = (isJust $ dbAccountMsRequired acc) &&
 newAccount :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b) 
              => String                 -- ^ Account name
              -> m (DbAccountGeneric b) -- ^ Returns the new account information
-newAccount name = do
+newAccount name = checkInit >> do
     time <- liftIO getCurrentTime
     (Entity wk w) <- getWalletEntity "main"
     let deriv = fromIntegral $ dbWalletAccIndex w + 1
@@ -118,12 +134,12 @@ newAccount name = do
 -- In order to prevent usage mistakes, you can not create a multisignature 
 -- account with other keys from your own wallet.
 newMSAccount :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
-             => String    -- ^ Account name.
-             -> Int       -- ^ Required number of keys (m in m of n).
-             -> Int       -- ^ Total number of keys (n in m of n).
-             -> [XPubKey] -- ^ Thirdparty public keys.
-             -> m (DbAccountGeneric b) -- ^ Returns the new account information.
-newMSAccount name m n mskeys = do
+             => String    -- ^ Account name
+             -> Int       -- ^ Required number of keys (m in m of n)
+             -> Int       -- ^ Total number of keys (n in m of n)
+             -> [XPubKey] -- ^ Thirdparty public keys
+             -> m (DbAccountGeneric b) -- ^ Returns the new account information
+newMSAccount name m n mskeys = checkInit >> do
     let keys = nub mskeys
     time <- liftIO getCurrentTime
     unless (n >= 1 && n <= 16 && m >= 1 && m <= n) $ liftIO $ throwIO $ 
@@ -154,13 +170,13 @@ newMSAccount name m n mskeys = do
 -- fail if the multisignature account already has all required keys. In order
 -- to prevent usage mistakes, adding a key from your own wallet will fail.
 addAccountKeys :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
-               => AccountName -- ^ Account name.
-               -> [XPubKey]   -- ^ Thirdparty public keys to add.
-               -> m (DbAccountGeneric b) -- ^ Returns the account information.
+               => AccountName -- ^ Account name
+               -> [XPubKey]   -- ^ Thirdparty public keys to add
+               -> m (DbAccountGeneric b) -- ^ Returns the account information
 addAccountKeys name keys 
     | null keys = liftIO $ throwIO $
          AccountSetupException "Thirdparty key list can not be empty"
-    | otherwise = do
+    | otherwise = checkInit >> do
         (Entity ai acc) <- getAccountEntity name
         unless (isMSAccount acc) $ liftIO $ throwIO $ AccountSetupException 
             "Can only add keys to a multisig account"
@@ -193,14 +209,14 @@ checkOwnKeys keys = do
 -- | Returns a list of all accounts in the wallet.
 accountList :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
             => m [DbAccountGeneric b] -- ^ List of accounts in the wallet
-accountList = liftM (map entityVal) $ selectList [] []
+accountList = checkInit >> (liftM (map entityVal) $ selectList [] [])
 
 -- | Returns information on extended public and private keys of an account.
 -- For a multisignature account, thirdparty keys are also returned.
 accountPrvKey :: (PersistUnique m, PersistMonadBackend m ~ b)
-              => AccountName -- ^ Account name.
-              -> m AccPrvKey -- ^ Account private key.
-accountPrvKey name = do
+              => AccountName -- ^ Account name
+              -> m AccPrvKey -- ^ Account private key
+accountPrvKey name = checkInit >> do
     acc <- getAccount name
     w   <- liftM fromJust (get $ dbAccountWallet acc)
     let master = dbWalletMaster w
@@ -220,7 +236,7 @@ getAddress accName key internal =
 getAddressEntity :: (PersistUnique m, PersistMonadBackend m ~ b)
                  => AccountName -> Int -> Bool 
                  -> m (Entity (DbAddressGeneric b))
-getAddressEntity accName key internal = do
+getAddressEntity accName key internal = checkInit >> do
     (Entity ai acc) <- getAccountEntity accName
     entM <- getBy $ UniqueAddressKey ai key internal
     -- Make sure we are not fetching a look-ahead address
@@ -233,7 +249,7 @@ getAddressEntity accName key internal = do
 addressList :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
             => AccountName
             -> m [DbAddressGeneric b]
-addressList name = do
+addressList name = checkInit >> do
     (Entity ai acc) <- getAccountEntity name
     addrs <- selectList [ DbAddressAccount ==. ai 
                         , DbAddressInternal ==. False
@@ -246,7 +262,7 @@ addressList name = do
 -- internal addresses)
 addressCount :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
              => AccountName -> m Int
-addressCount name = do
+addressCount name = checkInit >> do
     (Entity ai acc) <- getAccountEntity name
     count [ DbAddressAccount ==. ai 
           , DbAddressInternal ==. False
@@ -256,9 +272,9 @@ addressCount name = do
 -- | Returns a page of addresses for an account. Pages are numbered starting
 -- from page 1. Requesting page 0 will return the last page. 
 addressPage :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
-            => AccountName            -- ^ Account name.
-            -> Int                    -- ^ Requested page number.
-            -> Int                    -- ^ Number of addresses per page.
+            => AccountName            -- ^ Account name
+            -> Int                    -- ^ Requested page number
+            -> Int                    -- ^ Number of addresses per page
             -> m ([DbAddressGeneric b], Int) 
                 -- ^ (Requested page, Highest page number)
 addressPage name pageNum resPerPage 
@@ -266,7 +282,7 @@ addressPage name pageNum resPerPage
         unwords ["Invalid page number:", show pageNum]
     | resPerPage < 1 = liftIO $ throwIO $ InvalidPageException $
         unwords ["Invalid results per page:",show resPerPage]
-    | otherwise = do
+    | otherwise = checkInit >> do
         (Entity ai acc) <- getAccountEntity name
         addrCount <- addressCount name
         let maxPage = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
@@ -299,7 +315,7 @@ newAddrsGeneric :: ( PersistUnique m
 newAddrsGeneric name cnt internal
     | cnt <= 0 = liftIO $ throwIO $
         AddressGenerationException "Can not generate less than 1 address"
-    | otherwise = do
+    | otherwise = checkInit >> do
         time <- liftIO getCurrentTime
         (Entity ai acc) <- getAccountEntity name
         let tree | internal  = "1/"
@@ -345,11 +361,11 @@ newAddrsGeneric name cnt internal
 
 -- | Add a label to an address.
 addressLabel :: (PersistUnique m, PersistMonadBackend m ~ b)
-             => AccountName   -- ^ Account name.
-             -> Int           -- ^ Derivation index of the address. 
-             -> String        -- ^ New label.
-             -> m (DbAddressGeneric b) -- ^ New address information.
-addressLabel name key label = do
+             => AccountName   -- ^ Account name
+             -> Int           -- ^ Derivation index of the address
+             -> String        -- ^ New label
+             -> m (DbAddressGeneric b) -- ^ New address information
+addressLabel name key label = checkInit >> do
     acc <- getAccount name
     when (key > dbAccountExtIndex acc) $ liftIO $ throwIO $
         InvalidAddressException "The address key does not exist"
@@ -360,10 +376,10 @@ addressLabel name key label = do
 
 -- | Returns the private key of an address.
 addressPrvKey :: (PersistUnique m, PersistMonadBackend m ~ b)
-              => AccountName      -- ^ Account name.
-              -> Int              -- ^ Derivation index of the address. 
-              -> m PrvKey         -- ^ Private key.
-addressPrvKey name key = do
+              => AccountName      -- ^ Account name
+              -> Int              -- ^ Derivation index of the address
+              -> m PrvKey         -- ^ Private key
+addressPrvKey name key = checkInit >> do
     acc <- getAccount name
     w   <- liftM fromJust (get $ dbAccountWallet acc)
     add <- getAddress name key False
@@ -389,9 +405,13 @@ adjustLookAhead a = do
         _ <- newAddrsGeneric (dbAccountName acc) diff (dbAddressInternal a)
         return ()
 
+-- | Set how many look ahead addresses to generate for an account
 setLookAhead :: (PersistUnique m, PersistQuery m)
-             => AccountName -> Int -> Bool -> m ()
-setLookAhead name lookAhead internal = do
+             => AccountName -- ^ Account name
+             -> Int         -- ^ Number of look-ahead addresses 
+             -> Bool        -- ^ True for internal addresses
+             -> m ()
+setLookAhead name lookAhead internal = checkInit >> do
     (Entity ai acc) <- getAccountEntity name 
     diff <- count [ DbAddressIndex >. fIndex acc
                   , DbAddressIndex <=. fLookAhead acc

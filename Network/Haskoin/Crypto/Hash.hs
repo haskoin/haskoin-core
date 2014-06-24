@@ -3,9 +3,11 @@ module Network.Haskoin.Crypto.Hash
 ( CheckSum32
 , hash512
 , hash256
+, hashSha1
 , hash160
 , hash512BS
 , hash256BS
+, hashSha1BS
 , hash160BS
 , doubleHash256
 , doubleHash256BS
@@ -34,9 +36,10 @@ module Network.Haskoin.Crypto.Hash
 import Control.Monad (replicateM)
 
 import Crypto.Hash 
-    ( Digest 
+    ( Digest
     , SHA512
     , SHA256
+    , SHA1
     , RIPEMD160
     , hash
     )
@@ -83,6 +86,9 @@ run256 = (toBytes :: Digest SHA256 -> BS.ByteString) . hash
 run160 :: BS.ByteString -> BS.ByteString
 run160 = (toBytes :: Digest RIPEMD160 -> BS.ByteString) . hash
 
+runSha1 :: BS.ByteString -> BS.ByteString
+runSha1 = (toBytes :: Digest SHA1 -> BS.ByteString) . hash
+
 -- | Computes SHA-512.
 hash512 :: BS.ByteString -> Word512
 hash512 bs = runGet' get (run512 bs)
@@ -98,6 +104,14 @@ hash256 bs = runGet' get (run256 bs)
 -- | Computes SHA-256 and returns the result as a bytestring.
 hash256BS :: BS.ByteString -> BS.ByteString
 hash256BS bs = run256 bs
+
+-- | Computes SHA-160.
+hashSha1 :: BS.ByteString -> Word160
+hashSha1 bs = runGet' get (runSha1 bs)
+
+-- | Computes SHA-160 and returns the result as a bytestring.
+hashSha1BS :: BS.ByteString -> BS.ByteString
+hashSha1BS bs = runSha1 bs
 
 -- | Computes RIPEMD-160.
 hash160 :: BS.ByteString -> Word160

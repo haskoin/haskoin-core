@@ -71,6 +71,8 @@ module Network.Haskoin.Crypto
 , hash512BS
 , hash256
 , hash256BS
+, hashSha1
+, hashSha1BS
 , hash160
 , hash160BS
 , doubleHash256

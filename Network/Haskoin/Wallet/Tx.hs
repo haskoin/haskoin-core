@@ -483,12 +483,11 @@ importBlocks xs = checkInit >> do
         BlockReorg s o n -> liftIO $ print "Fork detected"
     setBestHeight best
   where
-    best = case head $ dropWhile isSideBlock $ map fst $ reverse xs of
-        BestBlock node   -> nodeHeaderHeight node
+    best = head $ catMaybes $ map (f . fst) $ reverse xs
+    f (BestBlock node)   = Just $ nodeHeaderHeight node
         -- TODO: Verify if this is correct, i.e. last and not first
-        BlockReorg _ _ n -> nodeHeaderHeight $ last n
-    isSideBlock (SideBlock _) = True
-    isSideBlock _             = False
+    f (BlockReorg _ _ n) = Just $ nodeHeaderHeight $ last n
+    f (SideBlock _)      = Nothing
 
 getBestHeight :: PersistQuery m => m Word32
 getBestHeight = do

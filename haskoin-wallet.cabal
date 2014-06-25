@@ -26,6 +26,7 @@ library
                        Network.Haskoin.Wallet.Model,
                        Network.Haskoin.Node
     other-modules:     Network.Haskoin.Wallet.Account,
+                       Network.Haskoin.Wallet.Address,
                        Network.Haskoin.Wallet.Coin,
                        Network.Haskoin.Wallet.Tx,
                        Network.Haskoin.Wallet.Types,

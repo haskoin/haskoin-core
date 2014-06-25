@@ -90,6 +90,7 @@ import Database.Persist
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Wallet.Account
+import Network.Haskoin.Wallet.Address
 import Network.Haskoin.Wallet.Tx
 import Network.Haskoin.Wallet.Coin
 import Network.Haskoin.Wallet.Types

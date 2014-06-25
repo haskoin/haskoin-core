@@ -326,14 +326,19 @@ dispatchCommand cmd opts args = unless (cmd `elem` vs) checkInit >> case cmd of
                         ]
     "newacc" -> whenArgs args (== 1) $ do
         acc <- newAccount $ head args
+        setLookAhead (head args) 30 
         return $ yamlAcc acc
     "newms" -> whenArgs args (>= 3) $ do
         let keysM = mapM xPubImport $ drop 3 args
             keys  = fromJust keysM
         when (isNothing keysM) $ liftIO $ throwIO $ 
             ParsingException "Could not parse keys"
-        acc <- newMSAccount 
-            (args !! 0) (read $ args !! 1) (read $ args !! 2) keys
+        let name = head args
+            m    = read $ args !! 1
+            n    = read $ args !! 2
+        acc <- newMSAccount name m n keys
+        when (length (dbAccountMsKeys acc) == n - 1) $ do
+            setLookAhead name 30 
         return $ yamlAcc acc
     "addkeys" -> whenArgs args (>= 2) $ do
         let keysM = mapM xPubImport $ drop 1 args
@@ -341,6 +346,9 @@ dispatchCommand cmd opts args = unless (cmd `elem` vs) checkInit >> case cmd of
         when (isNothing keysM) $ liftIO $ throwIO $
             ParsingException "Could not parse keys"
         acc <- addAccountKeys (head args) keys
+        let n = fromJust $ dbAccountMsTotal acc
+        when (length (dbAccountMsKeys acc) == n - 1) $ do
+            setLookAhead (head args) 30 
         return $ yamlAcc acc
     "accinfo" -> whenArgs args (== 1) $ do
         acc <- getAccount $ head args

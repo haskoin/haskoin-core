@@ -46,6 +46,7 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Account
+import Network.Haskoin.Wallet.Root
 
 getAddress :: (PersistUnique m, PersistMonadBackend m ~ b)
            => AccountName
@@ -58,7 +59,7 @@ getAddress accName key internal =
 getAddressEntity :: (PersistUnique m, PersistMonadBackend m ~ b)
                  => AccountName -> Int -> Bool 
                  -> m (Entity (DbAddressGeneric b))
-getAddressEntity accName key internal = checkInit >> do
+getAddressEntity accName key internal = do
     (Entity ai acc) <- getAccountEntity accName
     entM <- getBy $ UniqueAddressKey ai key internal
     -- Make sure we are not fetching a look-ahead address
@@ -71,7 +72,7 @@ getAddressEntity accName key internal = checkInit >> do
 addressList :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
             => AccountName
             -> m [DbAddressGeneric b]
-addressList name = checkInit >> do
+addressList name = do
     (Entity ai acc) <- getAccountEntity name
     addrs <- selectList [ DbAddressAccount ==. ai 
                         , DbAddressInternal ==. False
@@ -84,7 +85,7 @@ addressList name = checkInit >> do
 -- internal addresses)
 addressCount :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
              => AccountName -> m Int
-addressCount name = checkInit >> do
+addressCount name = do
     (Entity ai acc) <- getAccountEntity name
     count [ DbAddressAccount ==. ai 
           , DbAddressInternal ==. False
@@ -104,7 +105,7 @@ addressPage name pageNum resPerPage
         unwords ["Invalid page number:", show pageNum]
     | resPerPage < 1 = liftIO $ throwIO $ InvalidPageException $
         unwords ["Invalid results per page:",show resPerPage]
-    | otherwise = checkInit >> do
+    | otherwise = do
         (Entity ai acc) <- getAccountEntity name
         addrCount <- addressCount name
         let maxPage = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
@@ -137,7 +138,7 @@ newAddrsGeneric :: ( PersistUnique m
 newAddrsGeneric name cnt internal
     | cnt <= 0 = liftIO $ throwIO $
         AddressGenerationException "Can not generate less than 1 address"
-    | otherwise = checkInit >> do
+    | otherwise = do
         time <- liftIO getCurrentTime
         (Entity ai acc) <- getAccountEntity name
         let tree | internal  = "1/"
@@ -187,7 +188,7 @@ addressLabel :: (PersistUnique m, PersistMonadBackend m ~ b)
              -> Int           -- ^ Derivation index of the address
              -> String        -- ^ New label
              -> m (DbAddressGeneric b) -- ^ New address information
-addressLabel name key label = checkInit >> do
+addressLabel name key label = do
     acc <- getAccount name
     when (key > dbAccountExtIndex acc) $ liftIO $ throwIO $
         InvalidAddressException "The address key does not exist"
@@ -201,15 +202,11 @@ addressPrvKey :: (PersistUnique m, PersistMonadBackend m ~ b)
               => AccountName      -- ^ Account name
               -> Int              -- ^ Derivation index of the address
               -> m PrvKey         -- ^ Private key
-addressPrvKey name key = checkInit >> do
-    acc <- getAccount name
-    w   <- liftM fromJust (get $ dbAccountWallet acc)
-    add <- getAddress name key False
-    let master     = dbWalletMaster w
-        deriv      = fromIntegral $ dbAccountIndex acc
-        accKey     = fromJust $ accPrvKey master deriv
-        index      = fromIntegral $ dbAddressIndex add
-        addrPrvKey = fromJust $ extPrvKey accKey index
+addressPrvKey name key = do
+    accPrv <- accountPrvKey name
+    add    <- getAddress name key False
+    let index      = fromIntegral $ dbAddressIndex add
+        addrPrvKey = fromJust $ extPrvKey accPrv index
     return $ xPrvKey $ getAddrPrvKey addrPrvKey
 
 adjustLookAhead :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
@@ -241,7 +238,7 @@ setLookAheadGeneric :: (PersistUnique m, PersistQuery m)
                     -> Int         -- Number of look-ahead addresses 
                     -> Bool        -- True for internal addresses
                     -> m ()
-setLookAheadGeneric name lookAhead internal = checkInit >> do
+setLookAheadGeneric name lookAhead internal = do
     (Entity ai acc) <- getAccountEntity name 
     diff <- count [ DbAddressIndex >. fIndex acc
                   , DbAddressIndex <=. fLookAhead acc

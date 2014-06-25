@@ -50,7 +50,7 @@ import Network.Haskoin.Crypto
 share [mkPersist sqlSettings, mkMigrate "migrateWallet"] [persistLowerCase|
 DbWallet 
     name String
-    type String
+    type WalletType
     master MasterKey 
     accIndex Int
     created UTCTime default=CURRENT_TIME

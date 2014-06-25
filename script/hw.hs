@@ -152,30 +152,30 @@ usageHeader = "Usage: hw [<options>] <command> [<args>]"
 cmdHelp :: [String]
 cmdHelp = 
     [ "hw wallet commands: " 
-    , "  init       [mnemonic]              Initialize a wallet"
-    , "  list       acc                     Display last page of addresses"
-    , "  listpage   acc page [-c res/page]  Display addresses by page"
-    , "  new        acc {labels...}         Generate address with labels"
-    , "  genaddr    acc [-c count]          Generate new addresses"
-    , "  label      acc index label         Add a label to an address"
-    , "  balance    acc                     Display account balance"
-    , "  balances                           Display all balances"
-    , "  tx         acc                     Display transactions"
-    , "  send       acc addr amount         Send coins to an address"
-    , "  sendmany   acc {addr:amount...}    Send coins to many addresses"
-    , "  newacc     name                    Create a new account"
-    , "  newms      name M N [pubkey...]    Create a new multisig account"
-    , "  addkeys    acc {pubkey...}         Add pubkeys to a multisig account"
-    , "  accinfo    acc                     Display account information"
-    , "  listacc                            List all accounts"
-    , "  dumpkeys   acc                     Dump account keys to stdout"
-    , "  wif        acc index               Dump prvkey as WIF to stdout"
-    , "  coins      acc                     List coins"
-    , "  allcoins                           List all coins per account"
-    , "  signtx     acc tx                  Sign a transaction"
-    , "  importtx   tx                      Import transaction"
-    , "  removetx   txid                    Remove transaction"
-    , "  daemon                             Run haskoin as an SPV node"
+    , "  newwallet name [mnemonic]         Create a new wallet"
+    , "  newacc    wallet name             Create a new account"
+    , "  newms     wallet name M N [pubkey...] Create a new multisig account"
+    , "  new       acc {labels...}         Generate address with labels"
+    , "  genaddr   acc [-c count]          Generate new addresses"
+    , "  list      acc                     Display last page of addresses"
+    , "  listpage  acc page [-c res/page]  Display addresses by page"
+    , "  label     acc index label         Add a label to an address"
+    , "  balance   acc                     Display account balance"
+    , "  balances                          Display all balances"
+    , "  tx        acc                     Display transactions"
+    , "  send      acc addr amount         Send coins to an address"
+    , "  sendmany  acc {addr:amount...}    Send coins to many addresses"
+    , "  addkeys   acc {pubkey...}         Add pubkeys to a multisig account"
+    , "  accinfo   acc                     Display account information"
+    , "  listacc                           List all accounts"
+    , "  dumpkeys  acc                     Dump account keys to stdout"
+    , "  wif       acc index               Dump prvkey as WIF to stdout"
+    , "  coins     acc                     List coins"
+    , "  allcoins                          List all coins per account"
+    , "  signtx    acc tx                  Sign a transaction"
+    , "  importtx  tx                      Import transaction"
+    , "  removetx  txid                    Remove transaction"
+    , "  daemon                            Run haskoin as an SPV node"
     , ""
     , "hw utility commands: "
     , "  decodetx   tx                      Decode HEX transaction"
@@ -242,7 +242,7 @@ process opts xs
             headerFile = concat [dir, "/headerchain"]
 
         pool <- createSqlitePool walletFile 10
-        runDB pool $ runMigrationSilent migrateWallet
+        runDB pool $ runMigrationSilent migrateWallet >> initWalletDB
 
         if cmd == "daemon" then runManager pool headerFile else do
             valE <- tryJust catchEx $ runDB pool $ dispatchCommand cmd opts args 
@@ -274,9 +274,10 @@ dispatchCommand :: ( MonadLogger m
                    , PersistMonadBackend m ~ SqlBackend
                    ) 
                 => String -> Options -> Args -> Command m
-dispatchCommand cmd opts args = unless (cmd `elem` vs) checkInit >> case cmd of
-    "init" -> whenArgs args (<= 1) $ do
-        ms <- initMnemo (optPass opts) (listToMaybe args)
+dispatchCommand cmd opts args = case cmd of
+    "newwallet" -> whenArgs args (<= 2) $ do
+        ms <- newWalletMnemo 
+                (head args) (optPass opts) (listToMaybe $ drop 1 args)
         return $ object ["Seed" .= ms]
     "list" -> whenArgs args (== 1) $ do
         (as, m) <- addressPage (head args) 0 (optCount opts)
@@ -324,19 +325,20 @@ dispatchCommand cmd opts args = unless (cmd `elem` vs) checkInit >> case cmd of
         return $ object [ "Tx" .= bsToHex (encode' tx)
                         , "Complete" .= complete
                         ]
-    "newacc" -> whenArgs args (== 1) $ do
-        acc <- newAccount $ head args
+    "newacc" -> whenArgs args (== 2) $ do
+        acc <- newAccount (head args) (args !! 1)
         setLookAhead (head args) 30 
         return $ yamlAcc acc
-    "newms" -> whenArgs args (>= 3) $ do
-        let keysM = mapM xPubImport $ drop 3 args
+    "newms" -> whenArgs args (>= 4) $ do
+        let keysM = mapM xPubImport $ drop 4 args
             keys  = fromJust keysM
         when (isNothing keysM) $ liftIO $ throwIO $ 
             ParsingException "Could not parse keys"
-        let name = head args
-            m    = read $ args !! 1
-            n    = read $ args !! 2
-        acc <- newMSAccount name m n keys
+        let wname = head args
+            name  = args !! 1
+            m     = read $ args !! 2
+            n     = read $ args !! 3
+        acc <- newMSAccount wname name m n keys
         when (length (dbAccountMsKeys acc) == n - 1) $ do
             setLookAhead name 30 
         return $ yamlAcc acc
@@ -418,8 +420,6 @@ dispatchCommand cmd opts args = unless (cmd `elem` vs) checkInit >> case cmd of
     _ -> do
         liftIO $ throwIO $ InvalidCommandException $ 
             unwords ["Invalid command:", cmd]
-  where
-    vs = ["init", "decodetx", "buildrawtx", "signrawtx"]
 
 {- Utility Commands -}
 

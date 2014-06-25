@@ -7,6 +7,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Network.Haskoin.Wallet.Types
 ( CoinStatus(..)
+, WalletType(..)
 , catStatus
 , WalletException(..)
 ) where
@@ -51,7 +52,7 @@ import Network.Haskoin.Transaction
 import Network.Haskoin.Util
 
 data WalletException 
-    = InitializationException String
+    = WalletException String
     | AccountSetupException String
     | InvalidAccountException String
     | InvalidPageException String
@@ -65,6 +66,8 @@ data WalletException
     | ParsingException String
     | InvalidCommandException String
     deriving (Eq, Read, Show, Typeable)
+
+instance Exception WalletException
 
 -- | Spent if a complete transaction spends this coin
 -- Reserved if a partial transaction is spending these coins
@@ -82,11 +85,13 @@ catStatus = foldr f []
     f (Reserved h) acc = h:acc
     f _ acc            = acc
 
-instance Exception WalletException
+data WalletType = WalletFull | WalletRead
+    deriving (Show, Read, Eq)
 
 {- Instances for PersistField and PersistFieldSql -}
 
 derivePersistField "CoinStatus"
+derivePersistField "WalletType"
 derivePersistField "MasterKey"
 derivePersistField "AccPubKey"
 derivePersistField "XPubKey"

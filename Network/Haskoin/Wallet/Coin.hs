@@ -43,7 +43,7 @@ toCoin c = Coin
 balance :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
         => AccountName -- ^ Account name
         -> m Word64    -- ^ Account balance
-balance name = checkInit >> do
+balance name = do
     (Entity ai _) <- getAccountEntity name
     coins <- selectList 
         [ DbCoinAccount ==. ai
@@ -54,7 +54,7 @@ balance name = checkInit >> do
 unspentCoins :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b) 
              => AccountName         -- ^ Account name
              -> m [DbCoinGeneric b] -- ^ List of unspent coins
-unspentCoins name = checkInit >> do
+unspentCoins name = do
     (Entity ai _) <- getAccountEntity name
     coins <- selectList 
         [ DbCoinAccount ==. ai

@@ -119,7 +119,7 @@ getTx tid = do
 txList :: (PersistQuery m, PersistUnique m, PersistMonadBackend m ~ b)
        => AccountName  -- ^ Account name.
        -> m [AccTx]    -- ^ List of transaction entries.
-txList name = checkInit >> do
+txList name = do
     (Entity ai _) <- getAccountEntity name
     e <- selectList [ DbAccTxAccount ==. ai ] [ Asc DbAccTxCreated ]
     mapM (toAccTx . entityVal) e
@@ -131,7 +131,7 @@ txList name = checkInit >> do
 importTx :: (PersistQuery m, PersistUnique m) 
          => Tx        -- ^ Transaction to import
          -> m [AccTx] -- ^ New transaction entries created
-importTx tx = checkInit >> do
+importTx tx = do
     existsM  <- getBy $ UniqueTx tid
     isOrphan <- isOrphanTx tx
     -- Do not re-import existing transactions and do not proccess orphans yet
@@ -318,7 +318,7 @@ buildAccTx tx inCoins outCoins partial time = map build $ M.toList oMap
 removeTx :: (PersistUnique m, PersistQuery m)
          => TxHash      -- ^ Transaction hash to remove
          -> m [TxHash]  -- ^ List of removed transaction hashes
-removeTx tid = checkInit >> do
+removeTx tid = do
     -- Find all parents of this transaction
     -- Partial transactions should not have any coins. Won't check for it
     coins <- selectList [ DbCoinHash ==. tid ] []
@@ -342,7 +342,7 @@ sendTx :: (PersistUnique m, PersistQuery m)
        -> [(String,Word64)]  -- ^ List of recipient addresses and amounts
        -> Word64             -- ^ Fee per 1000 bytes 
        -> m (Tx, Bool)       -- ^ (Payment transaction, completed flag)
-sendTx name strDests fee = checkInit >> do
+sendTx name strDests fee = do
     (coins,recips) <- sendSolution name strDests fee
     sendCoins coins recips (SigAll False)
 
@@ -402,7 +402,7 @@ signWalletTx :: PersistUnique m
              -> Tx             -- ^ Transaction to sign 
              -> SigHash        -- ^ Signature type to create 
              -> m (Tx, Bool)   -- ^ (Signed transaction, completed flag)
-signWalletTx name tx sh = checkInit >> do
+signWalletTx name tx sh = do
     (Entity ai _) <- getAccountEntity name
     coins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
     -- Filter coins for this account only
@@ -441,7 +441,7 @@ getSigData sh coin = do
 -- be set on a peer connection to filter the transactions received by that
 -- peer.
 walletBloomFilter :: (PersistUnique m, PersistQuery m) => m BloomFilter
-walletBloomFilter = checkInit >> do
+walletBloomFilter = do
     addrs <- selectList [] []
     -- TODO: Choose a random nonce for the bloom filter
     let bloom  = bloomCreate (length addrs * 2) 0.001 0 BloomUpdateP2PubKeyOnly
@@ -460,13 +460,13 @@ firstKeyTime = do
 
 -- | Returns true if the transaction is in the wallet
 isTxInWallet :: PersistUnique m => TxHash -> m Bool
-isTxInWallet tid = checkInit >> (liftM isJust $ getBy $ UniqueTx tid)
+isTxInWallet tid = liftM isJust $ getBy $ UniqueTx tid
 
 -- | Import filtered blocks into the wallet. This will update the confirmations
 -- of the relevant transactions.
 importBlocks :: (PersistQuery m, PersistUnique m)
              => [(BlockChainAction, [TxHash])] -> m ()
-importBlocks xs = checkInit >> do
+importBlocks xs = do
     forM_ xs $ \(a,txs) -> case a of
         -- TODO: update transaction
         BestBlock node -> do

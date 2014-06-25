@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Network.Haskoin.Crypto.Base58
 ( Address(..)
 , addrToBase58
@@ -27,16 +29,17 @@ import Data.Aeson
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
+--import qualified Data.ByteString.Char8 as B8
 
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Util 
 
-b58String :: String
-b58String = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+--b58String :: String
+--b58String = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 b58Data :: BS.ByteString
-b58Data = BS.pack $ map (fromIntegral . ord) b58String
+b58Data = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 b58Data' :: M.Map Word8 Int
 b58Data' = M.fromList $ zip (BS.unpack b58Data) [0..57]

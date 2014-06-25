@@ -3,11 +3,17 @@
 -}
 module Network.Haskoin.Node
 ( 
+ -- *Node
+ startNode
+, NodeEvent(..)
+, NodeRequest(..)
+
 -- *Checkpoints
-  checkpoints
+, checkpoints
 , checkpointsList
 , verifyCheckpoint
 ) where
 
 import Network.Haskoin.Node.Checkpoints
+import Network.Haskoin.Node.PeerManager
 

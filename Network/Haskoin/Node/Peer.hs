@@ -66,6 +66,7 @@ data ManagerRequest
     | PeerDisconnect 
     | PeerMerkleBlock DecodedMerkleBlock
     | PeerMessage Message   
+    | UserBloomFilter BloomFilter
 
 data DecodedMerkleBlock = DecodedMerkleBlock
     { decodedMerkle :: MerkleBlock

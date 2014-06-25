@@ -1,14 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Network.Haskoin.Node.PeerManager
-( runManager
+( startNode
+, NodeEvent(..)
+, NodeRequest(..)
 ) where
 
 import System.Random
 
 import Control.Applicative
 import Control.Monad
-import Control.Concurrent (forkFinally, ThreadId, myThreadId)
+import Control.Concurrent (forkIO, forkFinally, ThreadId, myThreadId)
 import Control.Monad.Logger 
 import Control.Monad.Trans
 import Control.Concurrent.STM.TBMChan
@@ -37,11 +39,8 @@ import Data.Conduit.TMChan
 import qualified Data.Text as T
 import qualified Database.LevelDB.Base as DB
 
-import Database.Persist.Sql
-
 import Network.Haskoin.Node.Peer
 import Network.Haskoin.Node.HeaderChain
-import Network.Haskoin.Wallet
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Util
@@ -52,14 +51,15 @@ type BlockHeight = Word32
 data ManagerSession = ManagerSession
     { mngrVersion      :: Version
     , mngrChan         :: TBMChan (ThreadId, ManagerRequest)
+    , eventChan        :: TBMChan NodeEvent
     , peerMap          :: M.Map ThreadId PeerData
     , syncPeer         :: Maybe ThreadId
     , dbHandle         :: DB.DB
-    , walletPool       :: ConnectionPool
+    , mngrBloom        :: Maybe BloomFilter
     -- We got the headers but still need to download the merkle blocks
     , blocksToDownload :: Q.Seq (Word32, BlockHash)
     -- We received the merkle blocks but buffer them to send them in-order to
-    -- the wallet
+    -- the user app
     , receivedBlocks   :: M.Map BlockHeight DecodedMerkleBlock
     } 
 
@@ -71,25 +71,41 @@ data PeerData = PeerData
     , peerInflightRequests :: Int
     }
 
-runManager :: ConnectionPool -> FilePath -> IO ()
-runManager pool fp = do
+data NodeEvent 
+    = MerkleBlockEvent [(BlockChainAction, [TxHash])]
+    | TxEvent Tx
+    deriving (Eq, Show)
+
+data NodeRequest
+    = BloomFilterUpdate BloomFilter
+    deriving (Eq, Show)
+
+startNode :: FilePath -> IO (TBMChan NodeEvent, TBMChan NodeRequest)
+startNode fp = do
     db <- DB.open fp
               DB.defaultOptions{ DB.createIfMissing = True
                                , DB.cacheSize       = 2048
                                }
     mChan <- atomically $ newTBMChan 1024
+    eChan <- atomically $ newTBMChan 1024
+    rChan <- atomically $ newTBMChan 1024
     vers  <- buildVersion
     let session = ManagerSession { mngrVersion      = vers
                                  , mngrChan         = mChan
+                                 , eventChan        = eChan
                                  , peerMap          = M.empty
                                  , syncPeer         = Nothing
                                  , dbHandle         = db
-                                 , walletPool       = pool
+                                 , mngrBloom        = Nothing
                                  , blocksToDownload = Q.empty
                                  , receivedBlocks   = M.empty
                                  }
+    -- Launch thread listening to user requests
+    -- TODO: Should we catch exception here?
+    _ <- forkIO $ sourceTBMChan rChan $$ processUserRequest mChan
 
-    runStdoutLoggingT $ flip S.evalStateT session $ do 
+    -- TODO: Catch exceptions here?
+    _ <- forkIO $ runStdoutLoggingT $ flip S.evalStateT session $ do 
 
         $(logDebug) "Building list of merkle blocks to download..."
 
@@ -105,6 +121,15 @@ runManager pool fp = do
         -- Process messages
         -- TODO: Close database handle on exception with DB.close
         sourceTBMChan mChan $$ managerSink
+
+    return (eChan, rChan)
+
+processUserRequest :: TBMChan (ThreadId, ManagerRequest) 
+                   -> Sink NodeRequest IO ()
+processUserRequest mChan = awaitForever $ \r -> case r of
+    BloomFilterUpdate b -> do
+        tid <- lift myThreadId
+        lift $ atomically $ writeTBMChan mChan (tid, UserBloomFilter b)
 
 startPeer :: ClientSettings -> ManagerHandle ()
 startPeer remote = do
@@ -152,8 +177,10 @@ managerSink = awaitForever $ \(tid,req) -> lift $ do
         PeerHandshake v     -> processPeerHandshake tid v
         PeerDisconnect      -> processPeerDisconnect tid
         PeerMerkleBlock dmb -> processMerkleBlock tid dmb
+        UserBloomFilter b   -> processBloomFilter b
         PeerMessage msg -> case msg of
             MHeaders headers -> processHeaders tid headers
+            MTx tx           -> processTx tid tx
             _                -> return () -- Ignore them for now
 
 processPeerDisconnect :: ThreadId -> ManagerHandle ()
@@ -182,8 +209,9 @@ processPeerHandshake tid remoteVer = do
                                 }
     -- Set the bloom filter for this connection
     -- TODO: Something fishy is going on when the filter is empty
-    bloom <- runWallet walletBloomFilter
-    sendMessage tid $ MFilterLoad $ FilterLoad bloom
+    bloom <- S.gets mngrBloom
+    when (isJust bloom) $
+        sendMessage tid $ MFilterLoad $ FilterLoad $ fromJust bloom
 
     -- TODO: Implement a smarter algorithm for choosing download peer. Here,
     -- we just select the first node that completed the remote peer handshake.
@@ -193,6 +221,17 @@ processPeerHandshake tid remoteVer = do
         sendGetHeaders tid
     -- Download more block if some are pending
     downloadBlocks tid
+
+processBloomFilter :: BloomFilter -> ManagerHandle ()
+processBloomFilter bloom = do
+    prevBloom <- S.gets mngrBloom
+    when (prevBloom /= Just bloom) $ do
+        S.modify $ \s -> s{ mngrBloom = Just bloom }
+        m <- S.gets peerMap 
+        forM_ (M.keys m) $ \tid -> do
+            dat <- getPeerData tid
+            when (peerHandshake dat) $ 
+                sendMessage tid $ MFilterLoad $ FilterLoad bloom
 
 processHeaders :: ThreadId -> Headers -> ManagerHandle ()
 processHeaders tid (Headers h) = do
@@ -252,7 +291,7 @@ processMerkleBlock tid dmb = do
         -- Add this merkle block to the received list
         S.modify $ \s -> s{ receivedBlocks = M.insert height dmb blockMap }
 
-        -- Import the merkle block in-order into the wallet
+        -- Import the merkle block in-order into the user app
         bestHeight <- nodeHeaderHeight <$> runDB getBestBlock
         importMerkleBlocks bestHeight
 
@@ -278,21 +317,29 @@ importMerkleBlocks height = do
     -- Send blocks in batches
     when ( length toImport >= 500 || (Q.null dwnQueue && null toKeep) ) $ do
         S.modify $ \s -> s{ receivedBlocks = M.fromList toKeep }
+        eChan <- S.gets eventChan
         -- TODO: Import in the wallet
         -- TODO: Deal with reorgs 
         -- TODO: Stall solo transactions until we have synced the chain. This is
-        -- to prevent missing aa transaction that is in our wallet but we have
+        -- to prevent missing a transaction that is in our wallet but we have
         -- not generated the address yet
         pairs <- forM toImport $ \(h, dmb) -> do
+            -- Import in blockchain
             node <- runDB $ addMerkleBlock $ decodedMerkle dmb
-            runWallet $ forM_ (merkleTxs dmb) importTx
+            liftIO $ atomically $ forM_ (merkleTxs dmb) $ \t ->
+                writeTBMChan eChan $ TxEvent t
             return (node, expectedTxs dmb)
-        runWallet $ importBlocks pairs
+        liftIO $ atomically $ writeTBMChan eChan $ MerkleBlockEvent pairs
   where
     go prevHeight ((currHeight, x):xs) 
         | currHeight == prevHeight + 1 = (currHeight, x) : go currHeight xs
         | otherwise = []
     go _ [] = []
+
+processTx :: ThreadId -> Tx -> ManagerHandle ()
+processTx tid tx = do
+    eChan <- S.gets eventChan
+    liftIO $ atomically $ writeTBMChan eChan $ TxEvent tx
 
 -- Send out a GetHeaders request for a given peer
 sendGetHeaders :: ThreadId -> ManagerHandle ()
@@ -389,11 +436,6 @@ runDB :: DBHandle a -> ManagerHandle a
 runDB m = do
     db <- S.gets dbHandle
     liftIO $ S.evalStateT m $ LevelSession db
-
-runWallet :: SqlPersistT (ResourceT (NoLoggingT IO)) a -> ManagerHandle a
-runWallet m = do
-    pool <- S.gets walletPool
-    liftIO $ runNoLoggingT $ runResourceT $ runSqlPool m pool
 
 -- TODO: Remove this if not needed
 splitIn :: Int -> [a] -> [[a]]

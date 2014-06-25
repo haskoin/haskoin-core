@@ -18,12 +18,19 @@ import System.Console.GetOpt
 import qualified System.Environment as E (getArgs)
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (forM, forM_, when, liftM, unless, mzero)
-import Control.Monad.Trans (liftIO, MonadIO)
+import Control.Monad (void, forM, forM_, when, liftM, unless, mzero)
+import Control.Monad.Trans (lift, liftIO, MonadIO)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import Control.Exception (tryJust, throwIO)
 import Control.Monad.Logger 
-    (NoLoggingT, runNoLoggingT, LoggingT, MonadLogger, runStderrLoggingT)
+    ( NoLoggingT
+    , runNoLoggingT
+    , LoggingT
+    , MonadLogger
+    , runStderrLoggingT
+    )
+import Control.Concurrent.STM.TBMChan
+import Control.Concurrent.STM
 
 import Database.Persist
     ( PersistStore
@@ -48,6 +55,12 @@ import qualified Data.HashMap.Strict as H
 import qualified Data.Vector as V
 import qualified Data.Text as T (pack, unpack, splitOn)
 import qualified Data.Yaml as YAML (encode)
+import Data.Conduit.TMChan
+import Data.Conduit 
+    ( Sink
+    , awaitForever
+    , ($$) 
+    )
 import Data.Aeson (Value (Null), (.=), object, toJSON, decode)
 import Data.Aeson.Types
     ( Value (Object, String)
@@ -252,17 +265,29 @@ process opts xs
         pool <- createSqlitePool walletFile 10
         runDB pool $ runMigrationSilent migrateWallet >> initWalletDB
 
-        if cmd == "daemon" then runManager pool headerFile else do
-            valE <- tryJust catchEx $ runDB pool $ dispatchCommand cmd opts args 
+        if cmd == "daemon" 
+            then do
+                (eChan, rChan) <- startNode headerFile 
+                bloom <- runDB pool walletBloomFilter
+                atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
+                sourceTBMChan eChan $$ processNodeEvents pool
+            else do
+                valE <- tryJust catchEx $ runDB pool $ 
+                            dispatchCommand cmd opts args 
 
-            -- TODO: Handle the exceptions
-            when (isRight valE) $ do
-                let val = fromRight valE
-                if val == Null then return () else if optJson opts 
-                    then formatStr $ bsToString $ toStrictBS $ 
-                        JSON.encodePretty' 
-                        JSON.defConfig{ JSON.confIndent = 2 } val
-                    else formatStr $ bsToString $ YAML.encode val
+                -- TODO: Handle the exceptions
+                when (isRight valE) $ do
+                    let val = fromRight valE
+                    if val == Null then return () else if optJson opts 
+                        then formatStr $ bsToString $ toStrictBS $ 
+                            JSON.encodePretty' 
+                            JSON.defConfig{ JSON.confIndent = 2 } val
+                        else formatStr $ bsToString $ YAML.encode val
+
+processNodeEvents :: ConnectionPool -> Sink NodeEvent IO ()
+processNodeEvents pool = awaitForever $ \e -> lift $ runDB pool $ case e of
+    MerkleBlockEvent xs -> void $ importBlocks xs
+    TxEvent tx          -> void $ importTx tx
 
 type Command m = m Value
 type Args = [String]

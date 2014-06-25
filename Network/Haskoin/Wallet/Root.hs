@@ -4,6 +4,7 @@
 module Network.Haskoin.Wallet.Root 
 ( getWalletEntity
 , getWallet
+, walletList
 , newWalletMnemo
 , newWallet
 , initWalletDB
@@ -60,6 +61,10 @@ getWalletEntity name = do
         Just ent -> return ent
         Nothing  -> liftIO $ throwIO $ WalletException $ 
             unwords ["Wallet", name, "is not initialized"]
+
+walletList :: (PersistQuery m, PersistMonadBackend  m ~ b) 
+           => m [DbWalletGeneric b]
+walletList = liftM (map entityVal) $ selectList [] [Asc DbWalletCreated]
 
 -- | Initialize a wallet from an optional mnemonic seed and a passphrase,
 -- which could be blank.

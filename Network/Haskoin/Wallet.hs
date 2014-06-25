@@ -10,6 +10,7 @@ module Network.Haskoin.Wallet
   initWalletDB
 , newWalletMnemo
 , newWallet
+, walletList
 
 -- *Account Commands
 , AccountName

@@ -174,7 +174,7 @@ checkOwnKeys keys = do
 -- | Returns a list of all accounts in the wallet.
 accountList :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
             => m [DbAccountGeneric b] -- ^ List of accounts in the wallet
-accountList = liftM (map entityVal) $ selectList [] []
+accountList = liftM (map entityVal) $ selectList [] [Asc DbAccountCreated]
 
 -- | Returns information on extended public and private keys of an account.
 -- For a multisignature account, thirdparty keys are also returned.

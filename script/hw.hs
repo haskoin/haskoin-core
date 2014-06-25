@@ -151,34 +151,42 @@ usageHeader = "Usage: hw [<options>] <command> [<args>]"
 
 cmdHelp :: [String]
 cmdHelp = 
-    [ "hw wallet commands: " 
+    [ "Wallet commands:" 
     , "  newwallet name [mnemonic]         Create a new wallet"
+    , "  walletlist                        List all wallets"
+    , ""
+    , "Account commands:" 
     , "  newacc    wallet name             Create a new account"
-    , "  newms     wallet name M N [pubkey...] Create a new multisig account"
+    , "  newms     wallet name M N [pubkey...]"
+    , "                                    Create a new multisig account"
+    , "  addkeys   acc {pubkey...}         Add pubkeys to a multisig account"
+    , "  acclist                           List all accounts"
+    , "  accinfo   acc                     Display account information"
+    , "  dumpkeys  acc                     Dump account keys to stdout"
+    , ""
+    , "Address commands:" 
     , "  new       acc {labels...}         Generate address with labels"
     , "  genaddr   acc [-c count]          Generate new addresses"
     , "  list      acc                     Display last page of addresses"
-    , "  listpage  acc page [-c res/page]  Display addresses by page"
+    , "  page      acc page [-c res/page]  Display addresses by page"
     , "  label     acc index label         Add a label to an address"
-    , "  balance   acc                     Display account balance"
-    , "  balances                          Display all balances"
+    , "  wif       acc index               Dump prvkey as WIF to stdout"
+    , ""
+    , "Transaction commands:" 
     , "  tx        acc                     Display transactions"
     , "  send      acc addr amount         Send coins to an address"
     , "  sendmany  acc {addr:amount...}    Send coins to many addresses"
-    , "  addkeys   acc {pubkey...}         Add pubkeys to a multisig account"
-    , "  accinfo   acc                     Display account information"
-    , "  listacc                           List all accounts"
-    , "  dumpkeys  acc                     Dump account keys to stdout"
-    , "  wif       acc index               Dump prvkey as WIF to stdout"
-    , "  coins     acc                     List coins"
-    , "  allcoins                          List all coins per account"
+    , "  balance   acc                     Display account balance"
+    , "  balances                          Display all balances"
     , "  signtx    acc tx                  Sign a transaction"
     , "  importtx  tx                      Import transaction"
     , "  removetx  txid                    Remove transaction"
-    , "  daemon                            Run haskoin as an SPV node"
+    , "  coins     acc                     List coins"
+    , "  allcoins                          List all coins per account"
     , ""
-    , "hw utility commands: "
-    , "  decodetx   tx                      Decode HEX transaction"
+    , "Utility commands: "
+    , "  daemon                            Run haskoin as an SPV node"
+    , "  decodetx   tx                     Decode HEX transaction"
     , "  buildrawtx"
     , "      '[{\"txid\":txid,\"vout\":n},...]' '{addr:amnt,...}'"
     , "  signrawtx "  
@@ -279,10 +287,13 @@ dispatchCommand cmd opts args = case cmd of
         ms <- newWalletMnemo 
                 (head args) (optPass opts) (listToMaybe $ drop 1 args)
         return $ object ["Seed" .= ms]
+    "walletlist" -> whenArgs args (== 0) $ do
+        ws <- walletList
+        return $ toJSON $ map yamlWallet ws
     "list" -> whenArgs args (== 1) $ do
         (as, m) <- addressPage (head args) 0 (optCount opts)
         return $ yamlAddrList as m (optCount opts) m
-    "listpage" -> whenArgs args (== 2) $ do
+    "page" -> whenArgs args (== 2) $ do
         let pageNum = read $ args !! 1
         (as, m) <- addressPage (head args) pageNum (optCount opts)
         return $ yamlAddrList as pageNum (optCount opts) m
@@ -355,7 +366,7 @@ dispatchCommand cmd opts args = case cmd of
     "accinfo" -> whenArgs args (== 1) $ do
         acc <- getAccount $ head args
         return $ yamlAcc acc
-    "listacc" -> whenArgs args (== 0) $ do
+    "acclist" -> whenArgs args (== 0) $ do
         accs <- accountList 
         return $ toJSON $ map yamlAcc accs
     "dumpkeys" -> whenArgs args (== 1) $ do
@@ -528,6 +539,12 @@ yamlAcc acc = object $ concat
                       ]
                   | otherwise = []
 
+yamlWallet :: DbWalletGeneric b -> Value
+yamlWallet w = object $ 
+    [ "Name" .= dbWalletName w
+    , "Type" .= dbWalletType w
+    ]
+
 yamlAddr :: DbAddressGeneric b -> Value
 yamlAddr a
     | null $ dbAddressLabel a = object base
@@ -649,6 +666,15 @@ instance FromJSON CoinStatus where
             (Reserved . fromJust . decodeTxHashLE) <$> obj .: "Txid"
         (String "Unspent")  -> return Unspent
         _                   -> mzero
+    parseJSON _ = mzero
+
+instance ToJSON WalletType where
+    toJSON WalletFull = String "WalletFull"
+    toJSON WalletRead = String "WalletRead"
+
+instance FromJSON WalletType where
+    parseJSON (String "WalletFull")  = return WalletFull
+    parseJSON (String "WalletRead")  = return WalletRead
     parseJSON _ = mzero
 
 {- YAML templates -}

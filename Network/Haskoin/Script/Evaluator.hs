@@ -31,7 +31,7 @@ import qualified Data.ByteString.Builder as BSB
     )
 
 
-import Data.List (intercalate)
+import Data.List (intercalate, dropWhile)
 import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit)
 import Data.Int (Int64)
 import Data.Word (Word8, Word64)
@@ -281,14 +281,16 @@ pickStack remove n = do
     pushStack v
 
 
-pushHashOp :: ScriptOp -> ProgramTransition ()
-pushHashOp op = modify $ \p -> p { hashOps = op:(hashOps p) }
-
 getHashOps :: ProgramTransition HashOps
 getHashOps = hashOps <$> get
 
-clearHashOps :: ProgramTransition ()
-clearHashOps = modify $ \p -> p { hashOps = [] }
+dropHashOpsSeparatedCode :: ProgramTransition ()
+dropHashOpsSeparatedCode = modify $ \p ->
+   p { hashOps = tail . ( dropWhile ( /= OP_CODESEPARATOR ) ) $ hashOps p }
+
+preparedHashOps :: ProgramTransition HashOps
+preparedHashOps = filter ( /= OP_CODESEPARATOR ) <$> hashOps <$> get
+
 
 -- transformStack :: (Stack -> Stack) -> ProgramTransition ()
 -- transformStack f = (getStack >>= putStack . f)
@@ -463,7 +465,7 @@ eval OP_SHA1 = tStack1 $ return . bsToSv . hashSha1BS . opToSv
 eval OP_SHA256 = tStack1 $ return . bsToSv . hash256BS . opToSv
 eval OP_HASH160 = tStack1 $ return . bsToSv . hash160BS . hash256BS . opToSv
 eval OP_HASH256 = tStack1 $ return . bsToSv . doubleHash256BS  . opToSv
-eval OP_CODESEPARATOR = clearHashOps
+eval OP_CODESEPARATOR = dropHashOpsSeparatedCode
 eval OP_CHECKSIG = (join $ f <$> popStack <*> popStack) >>= pushStack . encodeBool
     where f :: StackValue -> StackValue -> ProgramTransition Bool
           f key sig = do c <- sigCheck <$> get
@@ -511,6 +513,7 @@ evalAll = instructions <$> get >>= \case
                 eval' False OP_NOTIF = pushCond False
                 eval' False OP_ELSE  = flipCond
                 eval' False OP_ENDIF = void popCond
+                eval' False OP_CODESEPARATOR = eval OP_CODESEPARATOR
                 eval' False _ = return ()
 --
 -- exported functions
@@ -521,7 +524,7 @@ runProgram i sigCheck =
         instructions = i,
         stack = [],
         altStack = [],
-        hashOps = [],
+        hashOps = i,
         condStack = [],
         sigCheck = sigCheck
     })

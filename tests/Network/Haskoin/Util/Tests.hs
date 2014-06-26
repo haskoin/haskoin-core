@@ -28,10 +28,6 @@ tests =
             "testing matchTemplate with two lists" testMatchTemplateLen
         , testProperty "Testing either helper functions" testEither
         ]
-    , testGroup "Build Monad"
-        [ testProperty "Build monadic composition" testBuildCompose
-        , testProperty "Testing guardPartial" testGuardPartial
-        ]
     ]
 
 {- Various utilities -}
@@ -91,25 +87,4 @@ testEither e = case e of
               && (not $ isRight e)
               && (fromLeft e == v)
               && (eitherToMaybe e == Nothing)
-
-{- Build Monad -}
-
-testBuildCompose :: Build Int -> Build Int -> Bool
-testBuildCompose ma mb
-    | isBroken ma || isBroken mb   = isBroken res
-    | isPartial ma || isPartial mb = isPartial res
-    | otherwise                    = isComplete res
-  where 
-    res = ma >>= (\a -> mb >>= (\b -> return $ a + b ))
-
-testGuardPartial :: Build Int -> Build Int -> Bool
-testGuardPartial ma mb
-    | isBroken ma || isBroken mb   = isBroken res
-    | otherwise                    = isPartial res
-  where 
-    res = do
-        a <- ma
-        guardPartial False
-        b <- mb
-        return $ a + b
 

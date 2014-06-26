@@ -311,8 +311,8 @@ getInputStatus (TxIn _ s _) sigiM
                 (Right (SpendMulSig xs), Just (Right (PayMulSig _ r))) ->
                     if length xs >= r then SigComplete else SigPartial
                 (Right (SpendMulSig _), Nothing) -> SigNeedPrevOut
-                (Right _, _) -> SigComplete
-                _ -> SigInvalid "Non-standard input"
+                -- If we can not decode an input, we consider it complete
+                _ -> SigComplete
 
 -- Order the SigInput with respect to the transaction inputs. This allow the
 -- users to provide the SigInput in any order. Users can also provide only a

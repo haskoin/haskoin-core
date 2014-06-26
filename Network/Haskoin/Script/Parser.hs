@@ -31,7 +31,7 @@ module Network.Haskoin.Script.Parser
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM2)
+import Control.Monad (liftM, liftM2)
 import Control.Applicative ((<$>),(<*>))
 
 import Data.List (sortBy)
@@ -223,14 +223,13 @@ data ScriptInput =
                   }
       -- | Spend the coins of a PayMulSig output.
     | SpendMulSig { getInputMulSigKeys     :: ![TxSignature] 
-                  , getInputMulSigRequired :: !Int
                   }
     deriving (Eq, Show, Read)
 
 instance NFData ScriptInput where
     rnf (SpendPK i) = rnf i
     rnf (SpendPKHash i k) = rnf i `seq` rnf k
-    rnf (SpendMulSig k r) = rnf k `seq` rnf r
+    rnf (SpendMulSig k) = rnf k 
 
 -- | Returns True if the input script is spending a public key.
 isSpendPK :: ScriptInput -> Bool
@@ -244,7 +243,7 @@ isSpendPKHash _ = False
 
 -- | Returns True if the input script is spending a multisignature output.
 isSpendMulSig :: ScriptInput -> Bool
-isSpendMulSig (SpendMulSig _ _) = True
+isSpendMulSig (SpendMulSig _) = True
 isSpendMulSig _ = False
 
 -- | Computes a 'Script' from a 'ScriptInput'. The 'Script' is a list of 
@@ -255,11 +254,9 @@ encodeInput s = Script $ case s of
     SpendPKHash ts p  -> [ opPushData $ encodeSig ts
                          , opPushData $ encode' p
                          ]
-    SpendMulSig ts r 
-        | length ts <= 16 && r >= 1 && r <= 16 ->
-            let sigs = map (opPushData . encodeSig) ts
-                in OP_0 : sigs ++ replicate (r - length ts) OP_0
-        | otherwise -> error "SpendMulSig: Bad multisig parameters"
+    SpendMulSig ts
+        | length ts <= 16 -> OP_0 : map (opPushData . encodeSig) ts
+        | otherwise -> error "SpendMulSig: Too many signatures"
 
 -- | Similar to 'encodeInput' but encodes to a ByteString
 encodeInputBS :: ScriptInput -> BS.ByteString
@@ -281,12 +278,9 @@ decodeInputBS = (decodeInput =<<) . decodeToEither
 
 matchSpendMulSig :: Script -> Either String ScriptInput
 matchSpendMulSig (Script ops) = 
-    liftM2 SpendMulSig (go ops) (return $ length ops)
+    liftM SpendMulSig $ go ops 
   where 
     go (OP_PUSHDATA bs _:xs) = liftM2 (:) (decodeSig bs) (go xs)
-    go (OP_0:xs)
-        | all (== OP_0) xs = return []
-        | otherwise = Left "matchSpendMulSig: invalid opcode after OP_0"
     go [] = return []
     go _  = Left "matchSpendMulSig: invalid multisig opcode"
 

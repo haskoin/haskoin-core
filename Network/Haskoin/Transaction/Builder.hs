@@ -20,7 +20,7 @@ import Control.Applicative ((<$>))
 import Control.Monad.Trans  (lift)
 
 import Data.Maybe (catMaybes, maybeToList, fromMaybe)
-import Data.List (sortBy, find)
+import Data.List (sortBy, find, nub)
 import Data.Word (Word64)
 import qualified Data.ByteString as BS (length, replicate, empty, null)
 
@@ -185,9 +185,12 @@ liftSecret :: Monad m => Build a -> SecretT (BuildT m) a
 liftSecret = lift . liftBuild
 
 -- | Returns True if all the inputs of a transactions are non-empty and if
--- all multisignature inputs are fully signed.
+-- all multisignature inputs are fully signed. Without the previous outputs
+-- of this transaction, we are unable to verify if SpendMulSig inputs are
+-- complete. Only P2SH inputs can be reliably checked as we have access to
+-- the redeem script.
 isTxComplete :: Tx -> Bool
-isTxComplete = isComplete . (mapM toBuildTxIn) . txIn
+isTxComplete = isComplete . (mapM (flip checkPartial Nothing)) . txIn
 
 -- | Sign a transaction by providing the 'SigInput' signing parameters and a
 -- list of private keys. The signature is computed within the 'SecretT' monad
@@ -202,9 +205,14 @@ signTx tx@(Tx _ ti _ _) sigis keys = do
     liftSecret $ when (null ti) $ Broken "signTx: Transaction has no inputs"
     newIn <- mapM sign $ orderSigInput ti sigis
     return tx{ txIn = newIn }
-    where sign (maybeSI,txin,i) = case maybeSI of
+  where 
+    sign (sigiM,txin,i) 
+        | isComplete txinB = liftSecret txinB
+        | otherwise        = case sigiM of
               Just sigi -> signTxIn txin sigi tx i keys
-              _         -> liftSecret $ toBuildTxIn txin
+              _         -> liftSecret txinB
+      where
+        txinB = checkPartial txin sigiM
 
 signTxIn :: Monad m => TxIn -> SigInput -> Tx -> Int -> [PrvKey] 
          -> SecretT (BuildT m) TxIn
@@ -228,13 +236,13 @@ detSignTx tx@(Tx _ ti _ _) sigis keys = do
     newIn <- mapM sign $ orderSigInput ti sigis
     return tx{ txIn = newIn }
   where 
-    sign (maybeSI,txin,i) 
+    sign (sigiM,txin,i) 
         | isComplete txinB = txinB
-        | otherwise        = case maybeSI of
+        | otherwise        = case sigiM of
             Just sigi -> detSignTxIn txin sigi tx i keys
             _         -> txinB
       where
-        txinB = toBuildTxIn txin
+        txinB = checkPartial txin sigiM
       
 detSignTxIn :: TxIn -> SigInput -> Tx -> Int -> [PrvKey] -> Build TxIn
 detSignTxIn txin sigi tx i keys = do
@@ -246,19 +254,20 @@ detSignTxIn txin sigi tx i keys = do
 
 {- Helpers for signing transactions -}
 
--- |Decides if a TxIn is complete. If the TxIn could not be decoded and it
+-- Decides if a TxIn is complete. If the TxIn could not be decoded and it
 -- is not empty, we consider it complete.
-toBuildTxIn :: TxIn -> Build TxIn
-toBuildTxIn txin@(TxIn _ s _)
+checkPartial :: TxIn -> (Maybe SigInput) -> Build TxIn
+checkPartial txin@(TxIn _ s _) sigiM
     | BS.null s = Partial txin
     | otherwise = case decodeScriptHashBS s of
-        Right (ScriptHashInput (SpendMulSig xs r) _) -> 
+        Right (ScriptHashInput (SpendMulSig xs) (PayMulSig _ r)) -> 
             guardPartial (length xs == r) >> return txin
         Right _ -> return txin
-        Left _ -> case decodeInputBS s of
-            Right (SpendMulSig xs r) ->
-                guardPartial (length xs == r) >> return txin
-            _ -> return txin
+        Left _  -> 
+            case (decodeInputBS s, (decodeOutput . sigDataOut) <$> sigiM) of
+                (Right (SpendMulSig xs), Just (Right (PayMulSig _ r))) ->
+                    guardPartial (length xs == r) >> return txin
+                _ -> return txin
 
 orderSigInput :: [TxIn] -> [SigInput] -> [(Maybe SigInput, TxIn, Int)]
 orderSigInput ti si = zip3 (matchTemplate si ti f) ti [0..]
@@ -273,11 +282,13 @@ decodeSigInput sigi keys = case sigi of
     SigInput s _ _ -> do
         out          <- eitherToBuild $ decodeOutput s
         (vKeys,pubs) <- sigKeys out keys
+        -- The input is signed using the output
         return (out,vKeys,pubs,buildTxIn)
     SigInputSH s _ sr _ -> do
         out          <- eitherToBuild $ decodeOutput s
         rdm          <- eitherToBuild $ decodeOutput sr
         (vKeys,pubs) <- sigKeysSH out rdm keys
+        -- The inputs is signed using the redeem script
         return (rdm,vKeys,pubs,buildTxInSH)
 
 buildTxInSH :: BuildFunction
@@ -295,17 +306,19 @@ buildTxIn txin tx out i pubs sigs
         PayPK _     -> return $ SpendPK $ head sigs
         PayPKHash _ -> return $ SpendPKHash (head sigs) (head pubs)
         PayMulSig msPubs r -> do
-            let mSigs = take r $ catMaybes $ matchTemplate aSigs msPubs f
+            -- We need to order the existing sigs and new sigs with respect
+            -- to the order of the public keys
+            let mSigs = take r $ catMaybes $ matchTemplate allSigs msPubs f
             guardPartial $ length mSigs == r
-            return $ SpendMulSig mSigs r
+            return $ SpendMulSig mSigs
         _ -> Broken "buildTxIn: Can't sign a P2SH script here"
     where buildRes res = txin{ scriptInput = encodeInputBS res }
-          aSigs = concat
+          allSigs = nub $ concat
             [ sigs 
             , case decodeScriptHashBS $ scriptInput txin of
-                Right (ScriptHashInput (SpendMulSig xs _) _) -> xs
+                Right (ScriptHashInput (SpendMulSig xs) _) -> xs
                 _ -> case decodeInputBS $ scriptInput txin of
-                        Right (SpendMulSig xs _) -> xs
+                        Right (SpendMulSig xs) -> xs
                         _ -> []
             ]
           f (TxSignature sig sh) pub = 
@@ -339,12 +352,12 @@ verifyTx tx xs = flip all z3 $ \(maybeS,txin,i) -> fromMaybe False $ do
     (out,inp) <- maybeS >>= flip decodeVerifySigInput txin
     let so = encodeOutput out
     case (out,inp) of
-        (PayPK pub,SpendPK (TxSignature sig sh)) -> 
+        (PayPK pub, SpendPK (TxSignature sig sh)) -> 
             return $ verifySig (txSigHash tx so i sh) sig pub
-        (PayPKHash a,SpendPKHash (TxSignature sig sh) pub) -> do
+        (PayPKHash a, SpendPKHash (TxSignature sig sh) pub) -> do
             guard $ pubKeyAddr pub == a
             return $ verifySig (txSigHash tx so i sh) sig pub
-        (PayMulSig pubs r,SpendMulSig sigs _) ->
+        (PayMulSig pubs r, SpendMulSig sigs) ->
             (== r) <$> countMulSig tx so i pubs sigs 
         _ -> Nothing
     where m = map (fst <$>) $ matchTemplate xs (txIn tx) f

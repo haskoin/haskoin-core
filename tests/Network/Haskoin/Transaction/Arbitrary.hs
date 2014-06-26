@@ -60,7 +60,7 @@ genMulSigInput :: Gen ScriptHashInput
 genMulSigInput = do
     (MSParam m n) <- arbitrary
     rdm <- PayMulSig <$> (vectorOf n genPubKeyC) <*> (return m)
-    inp <- SpendMulSig <$> (vectorOf m arbitrary) <*> (return m)
+    inp <- SpendMulSig <$> (vectorOf m arbitrary)
     return $ ScriptHashInput inp rdm
 
 -- | Generate an arbitrary transaction input spending a public key hash or

@@ -782,11 +782,9 @@ instance ToJSON ScriptInput where
             , "Sender Addr" .= addrToBase58 (pubKeyAddr p)
             ]
         ]
-    toJSON (SpendMulSig sigs r) = object 
+    toJSON (SpendMulSig sigs) = object 
         [ "SpendMultiSig" .= object
-            [ "Required Keys (M)" .= r
-            , "Signatures" .= sigs
-            ]
+            [ "Signatures" .= sigs ]
         ]
 
 instance ToJSON ScriptHashInput where

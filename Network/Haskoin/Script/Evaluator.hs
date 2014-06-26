@@ -50,7 +50,6 @@ data EvalError =
     | ProgramError String Program
     | StackError ScriptOp
     | DisabledOp ScriptOp
-    | UnexpectedOp ScriptOp
 
 instance Error EvalError where
     noMsg = EvalError "Evaluation Error"
@@ -61,10 +60,8 @@ instance Show EvalError where
     show (ProgramError m prog) = m ++ " - program: " ++ (show prog)
     show (StackError op) = (show op) ++ ": Stack Error"
     show (DisabledOp op) = (show op) ++ ": disabled"
-    show (UnexpectedOp op) = "unexpected " ++ show op
 
 type StackValue = [Word8]
-type Instructions = [ScriptOp]
 type AltStack = [StackValue]
 type Stack = [StackValue]
 type HashOps = [ScriptOp] -- the code that is verified by OP_CHECKSIG
@@ -73,7 +70,6 @@ type HashOps = [ScriptOp] -- the code that is verified by OP_CHECKSIG
 type SigCheck = [ScriptOp] -> TxSignature -> PubKey -> Bool
 
 data Program = Program {
-    instructions :: Instructions,
     stack        :: Stack,
     altStack     :: AltStack,
     condStack    :: [Bool],
@@ -102,8 +98,7 @@ dumpStack s = dumpList $ map (dumpHex . BS.pack) s
 
 
 instance Show Program where
-    show p = "script: " ++ (dumpScript $ instructions p) ++
-             " stack: " ++ (dumpStack $ stack p) ++
+    show p = " stack: " ++ (dumpStack $ stack p) ++
              " condStack: " ++ (show $ condStack p)
 
 type ProgramState = ErrorT EvalError Identity
@@ -117,11 +112,8 @@ type ProgramTransition a = StateT Program ProgramState a
 programError :: String -> ProgramTransition a
 programError s = get >>= throwError . ProgramError s
 
-unexpected :: ProgramTransition ()
-unexpected = getOp >>= throwError . UnexpectedOp
-
-disabled :: ProgramTransition ()
-disabled = getOp >>= throwError . DisabledOp
+disabled :: ScriptOp -> ProgramTransition ()
+disabled op = throwError . DisabledOp $ op
 
 --------------------------------------------------------------------------------
 -- Type Conversions
@@ -213,18 +205,6 @@ bsToSv = BS.unpack
 
 
 --------------------------------------------------------------------------------
--- Script Primitives
-
-getOp :: ProgramTransition ScriptOp
-getOp = instructions <$> get >>= \case
-    [] -> programError "getOp: empty script"
-    (i:_) -> return i
-
-popOp :: ProgramTransition ScriptOp
-popOp = get >>= \prog -> case instructions prog of
-    [] -> programError "popOp: empty script"
-    (i:is) -> put prog { instructions = is } >> return i
-
 -- Stack Primitives
 
 getStack :: ProgramTransition Stack
@@ -416,18 +396,18 @@ eval OP_2SWAP   = tStack4 $ \a b c d -> [c, d, a, b]
 
 -- Splice
 
-eval OP_CAT     = disabled
-eval OP_SUBSTR  = disabled
-eval OP_LEFT    = disabled
-eval OP_RIGHT   = disabled
-eval OP_SIZE    = (fromIntegral . length <$> popStack) >>= pushStack . encodeInt
+eval op@OP_CAT    = disabled op
+eval op@OP_SUBSTR = disabled op
+eval op@OP_LEFT   = disabled op
+eval op@OP_RIGHT  = disabled op
+eval OP_SIZE   = (fromIntegral . length <$> popStack) >>= pushStack . encodeInt
 
 -- Bitwise Logic
 
-eval OP_INVERT  = disabled
-eval OP_AND     = disabled
-eval OP_OR      = disabled
-eval OP_XOR     = disabled
+eval op@OP_INVERT  = disabled op
+eval op@OP_AND     = disabled op
+eval op@OP_OR      = disabled op
+eval op@OP_XOR     = disabled op
 eval OP_EQUAL   = tStack2 $ \a b -> [encodeBool (a == b)]
 eval OP_EQUALVERIFY = (eval OP_EQUAL) >> (eval OP_VERIFY)
 
@@ -435,19 +415,19 @@ eval OP_EQUALVERIFY = (eval OP_EQUAL) >> (eval OP_VERIFY)
 
 eval OP_1ADD    = arith1 (+1)
 eval OP_1SUB    = arith1 (subtract 1)
-eval OP_2MUL    = disabled
-eval OP_2DIV    = disabled
+eval op@OP_2MUL    = disabled op
+eval op@OP_2DIV    = disabled op
 eval OP_NEGATE  = arith1 negate
 eval OP_ABS     = arith1 abs
 eval OP_NOT         = arith1 $ \case 0 -> 1; _ -> 0
 eval OP_0NOTEQUAL   = arith1 $ \case 0 -> 0; _ -> 1
 eval OP_ADD     = arith2 (+)
 eval OP_SUB     = arith2 $ flip (-)
-eval OP_MUL     = disabled
-eval OP_DIV     = disabled
-eval OP_MOD     = disabled
-eval OP_LSHIFT  = disabled
-eval OP_RSHIFT  = disabled
+eval op@OP_MUL     = disabled op
+eval op@OP_DIV     = disabled op
+eval op@OP_MOD     = disabled op
+eval op@OP_LSHIFT  = disabled op
+eval op@OP_RSHIFT  = disabled op
 eval OP_BOOLAND     = bool2 (&&)
 eval OP_BOOLOR      = bool2 (||)
 eval OP_NUMEQUAL    = tStack2L decodeInt encodeBool (==)
@@ -496,36 +476,37 @@ eval op = case constValue op of
     Nothing -> programError $ "unknown op " ++ show op
 
 --------------------------------------------------------------------------------
+getExec :: ProgramTransition ( Bool )
+getExec = all id <$> getCond
 
-evalAll :: ProgramTransition ()
-evalAll = instructions <$> get >>= \case
-            [] -> return ()
-            _ -> do join $ eval' <$> getExec <*> getOp
-                    void popOp
-                    evalAll
+conditionalEval :: ScriptOp -> ProgramTransition ()
+conditionalEval op = do
+  e  <- getExec
+  eval' e op
+  where
+    eval' :: Bool -> ScriptOp -> ProgramTransition ()
 
-          where getExec = all id <$> getCond
-                eval' :: Bool -> ScriptOp -> ProgramTransition ()
+    eval' True  OP_IF      = popStack >>= pushCond . decodeBool
+    eval' True  OP_NOTIF   = popStack >>= pushCond . not . decodeBool
+    eval' True  OP_ELSE    = flipCond
+    eval' True  OP_ENDIF   = void popCond
+    eval' True  op = eval op
 
-                eval' True  OP_IF      = popStack >>= pushCond . decodeBool
-                eval' True  OP_NOTIF   = popStack >>= pushCond . not . decodeBool
-                eval' True  OP_ELSE    = flipCond
-                eval' True  OP_ENDIF   = void popCond
-                eval' True  op = eval op
+    eval' False OP_IF    = pushCond False
+    eval' False OP_NOTIF = pushCond False
+    eval' False OP_ELSE  = flipCond
+    eval' False OP_ENDIF = void popCond
+    eval' False OP_CODESEPARATOR = eval OP_CODESEPARATOR
+    eval' False _ = return ()
 
-                eval' False OP_IF    = pushCond False
-                eval' False OP_NOTIF = pushCond False
-                eval' False OP_ELSE  = flipCond
-                eval' False OP_ENDIF = void popCond
-                eval' False OP_CODESEPARATOR = eval OP_CODESEPARATOR
-                eval' False _ = return ()
+evalAll :: [ ScriptOp ] -> ProgramTransition ()
+evalAll = mapM_ conditionalEval
 --
 -- exported functions
 
 runProgram :: [ScriptOp] -> SigCheck -> Either EvalError Program
 runProgram i sigCheck =
-    snd <$> (runIdentity . runErrorT . runStateT evalAll $ Program {
-        instructions = i,
+    snd <$> (runIdentity . runErrorT . runStateT ( evalAll i ) $ Program {
         stack = [],
         altStack = [],
         hashOps = i,

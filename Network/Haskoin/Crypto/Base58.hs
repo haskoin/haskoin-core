@@ -14,9 +14,11 @@ import Control.DeepSeq (NFData, rnf)
 import Control.Monad (guard)
 import Control.Applicative ((<$>),(<*>))
 
-import Data.Char (ord)
+import Data.Char (ord, chr)
 import Data.Word (Word8)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, isJust, listToMaybe)
+import Numeric (showIntAtBase, readInt)
+import Data.String (fromString)
 import Data.Aeson
     ( Value (String)
     , FromJSON
@@ -34,10 +36,6 @@ import qualified Data.Text as T
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Util 
-import Data.Char
-import Numeric
-import Data.String
-import Data.Maybe
 
 b58Data :: BS.ByteString
 b58Data = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -56,7 +54,7 @@ encodeBase58I i = fromString $ showIntAtBase 58 f (fromIntegral i) ""
 decodeBase58I :: BS.ByteString -> Maybe Integer
 decodeBase58I s = case go of 
     Just (r,[]) -> Just r
-    otherwise -> Nothing
+    otherwise   -> Nothing
   where
     c = b58' . fromIntegral . ord
     p = isJust . c 

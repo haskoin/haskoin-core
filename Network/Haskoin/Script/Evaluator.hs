@@ -31,14 +31,16 @@ import qualified Data.ByteString.Builder as BSB
     )
 
 
-import Data.List (intercalate)
+import Data.List (intercalate, dropWhile)
 import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit)
 import Data.Int (Int64)
 import Data.Word (Word8, Word64)
+import Data.Either ( rights )
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Script.Types
-
+import Network.Haskoin.Script( TxSignature(..), decodeSig )
+import Network.Haskoin.Util ( bsToHex, decode' )
 
 -- see https://github.com/bitcoin/bitcoin/blob/master/src/script.cpp EvalScript
 -- see https://en.bitcoin.it/wiki/Script
@@ -68,7 +70,7 @@ type Stack = [StackValue]
 type HashOps = [ScriptOp] -- the code that is verified by OP_CHECKSIG
 
 -- in tests we also allow invalid public keys
-type SigCheck = StackValue -> StackValue -> [ScriptOp] -> Bool
+type SigCheck = [ScriptOp] -> TxSignature -> PubKey -> Bool
 
 data Program = Program {
     instructions :: Instructions,
@@ -281,14 +283,16 @@ pickStack remove n = do
     pushStack v
 
 
-pushHashOp :: ScriptOp -> ProgramTransition ()
-pushHashOp op = modify $ \p -> p { hashOps = op:(hashOps p) }
-
 getHashOps :: ProgramTransition HashOps
 getHashOps = hashOps <$> get
 
-clearHashOps :: ProgramTransition ()
-clearHashOps = modify $ \p -> p { hashOps = [] }
+dropHashOpsSeparatedCode :: ProgramTransition ()
+dropHashOpsSeparatedCode = modify $ \p ->
+   p { hashOps = tail . ( dropWhile ( /= OP_CODESEPARATOR ) ) $ hashOps p }
+
+preparedHashOps :: ProgramTransition HashOps
+preparedHashOps = filter ( /= OP_CODESEPARATOR ) <$> hashOps <$> get
+
 
 -- transformStack :: (Stack -> Stack) -> ProgramTransition ()
 -- transformStack f = (getStack >>= putStack . f)
@@ -463,23 +467,25 @@ eval OP_SHA1 = tStack1 $ return . bsToSv . hashSha1BS . opToSv
 eval OP_SHA256 = tStack1 $ return . bsToSv . hash256BS . opToSv
 eval OP_HASH160 = tStack1 $ return . bsToSv . hash160BS . hash256BS . opToSv
 eval OP_HASH256 = tStack1 $ return . bsToSv . doubleHash256BS  . opToSv
-eval OP_CODESEPARATOR = clearHashOps
+eval OP_CODESEPARATOR = dropHashOpsSeparatedCode
 eval OP_CHECKSIG = (join $ f <$> popStack <*> popStack) >>= pushStack . encodeBool
     where f :: StackValue -> StackValue -> ProgramTransition Bool
           f key sig = do c <- sigCheck <$> get
-                         h <- hashOps <$> get
-                         return $ c key sig h
+                         h <- preparedHashOps
+                         case decodeSig $ opToSv sig  of
+                           Left e -> programError $  "Invalid signature: " ++ e
+                           Right s -> return $ c h s ( decode' $ opToSv key )
 
 eval OP_CHECKMULTISIG =
-    do pubKeys <- (popInt >>= popStackN . fromIntegral)
-       sigs <- (popInt >>= popStackN . fromIntegral)
+    do pubKeys <- map ( decode' . opToSv ) <$> (popInt >>= popStackN . fromIntegral)
+       sigs <- rights . map ( decodeSig . opToSv ) <$> (popInt >>= popStackN . fromIntegral)
        void popStack -- spec bug
        f <- sigCheck <$> get
-       h <- hashOps <$> get
-       pushBool $ checkMultiSigVerify f sigs pubKeys h
-    where checkMultiSigVerify _ [] _ _ = True
-          checkMultiSigVerify f (s:_) keys h = trySignature f s keys h
-          trySignature f sig keys h = f sig (head keys) h
+       h <- preparedHashOps
+       pushBool $ checkMultiSigVerify ( f h ) sigs pubKeys
+    where checkMultiSigVerify g s keys = let results = liftM2 g s keys
+                                             count = length . ( filter id ) $ results
+                                           in count >= length s
 
 
 eval OP_CHECKSIGVERIFY      = eval OP_CHECKSIG      >> eval OP_VERIFY
@@ -511,6 +517,7 @@ evalAll = instructions <$> get >>= \case
                 eval' False OP_NOTIF = pushCond False
                 eval' False OP_ELSE  = flipCond
                 eval' False OP_ENDIF = void popCond
+                eval' False OP_CODESEPARATOR = eval OP_CODESEPARATOR
                 eval' False _ = return ()
 --
 -- exported functions
@@ -521,7 +528,7 @@ runProgram i sigCheck =
         instructions = i,
         stack = [],
         altStack = [],
-        hashOps = [],
+        hashOps = i,
         condStack = [],
         sigCheck = sigCheck
     })

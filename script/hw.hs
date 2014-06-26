@@ -348,18 +348,18 @@ dispatchCommand cmd opts args = case cmd of
         accTxs <- txList $ head args
         return $ toJSON $ map yamlTx accTxs
     "send" -> whenArgs args (== 3) $ do
-        (tx, complete) <- 
+        (tx, status) <- 
             sendTx (head args) [(args !! 1, read $ args !! 2)] (optFee opts)
         return $ object [ "Tx" .= bsToHex (encode' tx)
-                        , "Complete" .= complete
+                        , "Status" .= status
                         ]
     "sendmany" -> whenArgs args (>= 2) $ do
         let f [a,b] = (T.unpack a,read $ T.unpack b)
             f _     = error "sendmany: Invalid format addr:amount"
             dests   = map (f . (T.splitOn (T.pack ":")) . T.pack) $ drop 1 args
-        (tx, complete) <- sendTx (head args) dests (optFee opts)
+        (tx, status) <- sendTx (head args) dests (optFee opts)
         return $ object [ "Tx" .= bsToHex (encode' tx)
-                        , "Complete" .= complete
+                        , "Status" .= status
                         ]
     "newacc" -> whenArgs args (== 2) $ do
         acc <- newAccount (head args) (args !! 1)
@@ -421,9 +421,9 @@ dispatchCommand cmd opts args = case cmd of
             tx  = fromJust txM
         when (isNothing txM) $ liftIO $ throwIO $
             ParsingException "Could not parse transaction"
-        (t, c) <- signWalletTx (head args) tx (optSigHash opts)
+        (t, s) <- signWalletTx (head args) tx (optSigHash opts)
         return $ object [ "Tx"       .= bsToHex (encode' t)
-                        , "Complete" .= c
+                        , "Status"   .= s
                         ]
     "importtx" -> whenArgs args (== 1) $ do
         let txM = decodeToMaybe =<< (hexToBS $ head args)
@@ -449,9 +449,9 @@ dispatchCommand cmd opts args = case cmd of
             tx  = fromJust txM
         when (isNothing txM) $ liftIO $ throwIO $ 
             ParsingException "Could not parse transaction"
-        (t, c) <- signRawTx tx (args !! 1) (args !! 2) (optSigHash opts)
-        return $ object [ "Tx"       .= bsToHex (encode' t)
-                        , "Complete" .= c
+        (t, s) <- signRawTx tx (args !! 1) (args !! 2) (optSigHash opts)
+        return $ object [ "Tx"     .= bsToHex (encode' t)
+                        , "Status" .= s
                         ]
     _ -> do
         liftIO $ throwIO $ InvalidCommandException $ 
@@ -527,14 +527,10 @@ signRawTx :: MonadIO m
           -> String   -- ^ List of JSON encoded signing parameters.
           -> String   -- ^ List of JSON encoded WIF private keys.
           -> SigHash  -- ^ Signature type. 
-          -> m (Tx, Bool)
+          -> m (Tx, SigStatus)
 signRawTx tx strSigi strKeys sh 
-    | isJust fsM && isJust keysM = do
-        let btx    = detSignTx tx (map (\f -> f sh) fs) keys
-            sigTx  = runBuild btx
-        when (isBroken btx) $ do
-            liftIO $ throwIO $ TransactionSigningException $ runBroken btx
-        return (sigTx, isComplete btx)
+    | isJust fsM && isJust keysM =
+        return $ detSignTx tx (map (\f -> f sh) fs) keys
     | otherwise = liftIO $ throwIO $
         ParsingException "Could not parse input values"
   where
@@ -703,6 +699,14 @@ instance FromJSON WalletType where
     parseJSON _ = mzero
 
 {- YAML templates -}
+
+instance ToJSON SigStatus where
+    toJSON SigComplete    = String "Complete"
+    toJSON SigPartial     = String "Partial"
+    -- TODO: We should handle SigNeedPrevOut internally and not expose it
+    -- to the users.
+    toJSON SigNeedPrevOut = String "NeedPrevOut"
+    toJSON (SigInvalid s) = String $ T.pack $ unwords ["Invalid:", s]
 
 instance ToJSON OutPoint where
     toJSON (OutPoint h i) = object

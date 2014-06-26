@@ -163,7 +163,12 @@ importTx tx = do
   where
     tid              = txHash tx
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
-    complete         = isTxComplete tx
+    -- TODO: If we have PayMulSig inputs, we could have a SigNeedPrevOut status.
+    -- In that case, the tx may be complete. We need to test that case by
+    -- providing the previous outputs. Transactions from the network will
+    -- always be complete. We only need to check transactions from side
+    -- channels.
+    complete         = txSigStatus tx == SigComplete
     status           = if complete then Spent tid else Reserved tid
 
 -- Try to re-import all orphan transactions
@@ -341,7 +346,7 @@ sendTx :: (PersistUnique m, PersistQuery m)
        => AccountName        -- ^ Account name
        -> [(String,Word64)]  -- ^ List of recipient addresses and amounts
        -> Word64             -- ^ Fee per 1000 bytes 
-       -> m (Tx, Bool)       -- ^ (Payment transaction, completed flag)
+       -> m (Tx, SigStatus)  -- ^ (Payment transaction, status flag)
 sendTx name strDests fee = do
     (coins,recips) <- sendSolution name strDests fee
     sendCoins coins recips (SigAll False)
@@ -377,17 +382,14 @@ sendSolution name strDests fee = do
 -- | Build and sign a transaction by providing coins and recipients
 sendCoins :: PersistUnique m
           => [Coin] -> [(Address,Word64)] -> SigHash
-          -> m (Tx, Bool)
+          -> m (Tx, SigStatus)
 sendCoins coins recipients sh = do
     let txE = buildAddrTx (map coinOutPoint coins) $ map f recipients
         tx  = fromRight txE
     when (isLeft txE) $ liftIO $ throwIO $
         TransactionBuildingException $ fromLeft txE
     ys <- mapM (getSigData sh) coins
-    let sigTx = detSignTx tx (map fst ys) (map snd ys)
-    when (isBroken sigTx) $ liftIO $ throwIO $
-        TransactionSigningException $ runBroken sigTx
-    return (runBuild sigTx, isComplete sigTx)
+    return $ detSignTx tx (map fst ys) (map snd ys)
   where
     f (a,v) = (addrToBase58 a, v)
 
@@ -398,10 +400,10 @@ sendCoins coins recipients sh = do
 -- the keys of one account only to allow for more control when the wallet is
 -- used as the backend of a web service.
 signWalletTx :: PersistUnique m
-             => AccountName    -- ^ Account name
-             -> Tx             -- ^ Transaction to sign 
-             -> SigHash        -- ^ Signature type to create 
-             -> m (Tx, Bool)   -- ^ (Signed transaction, completed flag)
+             => AccountName       -- ^ Account name
+             -> Tx                -- ^ Transaction to sign 
+             -> SigHash           -- ^ Signature type to create 
+             -> m (Tx, SigStatus) -- ^ (Signed transaction, completed flag)
 signWalletTx name tx sh = do
     (Entity ai _) <- getAccountEntity name
     coins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
@@ -409,10 +411,7 @@ signWalletTx name tx sh = do
     let accCoinsDB = filter ((== ai) . dbCoinAccount . entityVal) coins
         accCoins   = map (toCoin . entityVal) accCoinsDB
     ys <- forM accCoins (getSigData sh)
-    let sigTx = detSignTx tx (map fst ys) (map snd ys)
-    when (isBroken sigTx) $ liftIO $ throwIO $
-        TransactionSigningException $ runBroken sigTx
-    return (runBuild sigTx, isComplete sigTx)
+    return $ detSignTx tx (map fst ys) (map snd ys)
   where
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
 

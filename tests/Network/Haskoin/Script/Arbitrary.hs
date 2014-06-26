@@ -90,9 +90,8 @@ instance Arbitrary ScriptInput where
 -- | Generate an arbitrary 'ScriptInput' of value SpendMulSig.
 genSpendMulSig :: Gen ScriptInput
 genSpendMulSig = do
-    m <- choose (1,16)
-    s <- choose (1,m)
-    SpendMulSig <$> (vectorOf s arbitrary) <*> (return m)
+    s <- choose (1,16)
+    SpendMulSig <$> (vectorOf s arbitrary)
 
 instance Arbitrary ScriptHashInput where
     arbitrary = ScriptHashInput <$> arbitrary <*> arbitrary

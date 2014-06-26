@@ -12,7 +12,6 @@ module Network.Haskoin.Transaction
 , SigInput(..)
 , SigStatus(..)
 , isSigInvalid
-, txSigStatus
 , signTx
 , detSignTx
 

@@ -27,6 +27,7 @@ import Data.Aeson
     )
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as B8
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 
@@ -37,31 +38,9 @@ import Data.Char
 import Numeric
 import Data.String
 import Data.Maybe
--- ord: dona 'char' dona unicode  (char -> int)
--- chr: inversa de ord
-
-
-
---readBin :: Integral a => String -> Maybe a
---readBin = fmap fst . listToMaybe . readInt 2 (`elem` "01") digitToInt
-
---decodeBase58I :: BS.ByteString -> Integer
-decodeBase58I s = fmap fst . listToMaybe $ readInt 58 p f (fromString s)
-  where
-    c = b58' . fromIntegral . ord
-    p = isJust . c 
-    f = fromIntegral . fromJust . c
-
-
 
 b58Data :: BS.ByteString
 b58Data = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-
-merda :: BS.ByteString
-merda = "\NUL\NULhola"
-
-merda2 :: BS.ByteString
-merda2 = "\NUL\NULho\NULla"
 
 b58 :: Word8 -> Word8
 b58 i = BS.index b58Data (fromIntegral i)
@@ -69,13 +48,20 @@ b58 i = BS.index b58Data (fromIntegral i)
 b58' :: Word8 -> Maybe Word8
 b58' w = fromIntegral <$> BS.elemIndex w b58Data
 
-
-
-
 encodeBase58I :: Integer -> BS.ByteString
 encodeBase58I i = fromString $ showIntAtBase 58 f (fromIntegral i) ""
   where
     f = chr . fromIntegral . b58 . fromIntegral
+
+decodeBase58I :: BS.ByteString -> Maybe Integer
+decodeBase58I s = case go of 
+    Just (r,[]) -> Just r
+    otherwise -> Nothing
+  where
+    c = b58' . fromIntegral . ord
+    p = isJust . c 
+    f = fromIntegral . fromJust . c
+    go = listToMaybe $ readInt 58 p f (B8.unpack s)
 
 -- | Encode a bytestring to a base 58 representation.
 encodeBase58 :: BS.ByteString -> BS.ByteString
@@ -94,11 +80,7 @@ decodeBase58 bs = r >>= return . (BS.append prefix)
     (z,b)  = BS.span (== (b58 0)) bs
     prefix = BS.map (fromJust . b58') z -- preserve leading 1's
     r | BS.null b = Just BS.empty
-      | otherwise = integerToBS <$> foldl f (Just 0) (BS.unpack b)
-    f i w  = do
-        n <- fromIntegral <$> b58' w
-        p <- i
-        return $ p*58 + n
+      | otherwise = integerToBS <$> decodeBase58I b
 
 -- | Computes a checksum for the input bytestring and encodes the input and
 -- the checksum to a base 58 representation.

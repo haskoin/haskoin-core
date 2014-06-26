@@ -29,38 +29,53 @@ import Data.Aeson
 import qualified Data.ByteString as BS
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
---import qualified Data.ByteString.Char8 as B8
 
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Util 
+import Data.Char
+import Numeric
+import Data.String
+import Data.Maybe
+-- ord: dona 'char' dona unicode  (char -> int)
+-- chr: inversa de ord
 
---b58String :: String
---b58String = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+--readBin :: Integral a => String -> Maybe a
+--readBin = fmap fst . listToMaybe . readInt 2 (`elem` "01") digitToInt
+
+--decodeBase58I :: BS.ByteString -> Integer
+decodeBase58I s = fmap fst . listToMaybe $ readInt 58 p f (fromString s)
+  where
+    c = b58' . fromIntegral . ord
+    p = isJust . c 
+    f = fromIntegral . fromJust . c
+
+
 
 b58Data :: BS.ByteString
 b58Data = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
-b58Data' :: M.Map Word8 Int
-b58Data' = M.fromList $ zip (BS.unpack b58Data) [0..57]
+merda :: BS.ByteString
+merda = "\NUL\NULhola"
+
+merda2 :: BS.ByteString
+merda2 = "\NUL\NULho\NULla"
 
 b58 :: Word8 -> Word8
 b58 i = BS.index b58Data (fromIntegral i)
 
 b58' :: Word8 -> Maybe Word8
-b58' w = fromIntegral <$> M.lookup w b58Data'
+b58' w = fromIntegral <$> BS.elemIndex w b58Data
+
+
+
 
 encodeBase58I :: Integer -> BS.ByteString
-encodeBase58I 0 = BS.pack [b58 0]
-encodeBase58I i
-    | i >= 0 = go BS.empty i
-    | otherwise = error "encodeBase58 is not defined for negative Integers"
-  where 
-    go acc 0 = acc
-    go acc n = go (BS.cons (fromIntegral b) acc) q
-      where 
-        (q,r) = n `quotRem` 58
-        b     = b58 $ fromIntegral r
+encodeBase58I i = fromString $ showIntAtBase 58 f (fromIntegral i) ""
+  where
+    f = chr . fromIntegral . b58 . fromIntegral
 
 -- | Encode a bytestring to a base 58 representation.
 encodeBase58 :: BS.ByteString -> BS.ByteString

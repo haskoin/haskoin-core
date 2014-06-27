@@ -46,14 +46,15 @@ b58' :: Word8 -> Maybe Word8
 b58' w = fromIntegral <$> BS.elemIndex w b58Data
 
 encodeBase58I :: Integer -> BS.ByteString
-encodeBase58I i = fromString $ showIntAtBase 58 f (fromIntegral i) ""
+encodeBase58I i = 
+    fromString $ showIntAtBase (58 :: Integer) f (fromIntegral i) ""
   where
     f = chr . fromIntegral . b58 . fromIntegral
 
 decodeBase58I :: BS.ByteString -> Maybe Integer
 decodeBase58I s = case go of 
     Just (r,[]) -> Just r
-    otherwise -> Nothing
+    _           -> Nothing
   where
     c = b58' . fromIntegral . ord
     p = isJust . c 

@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Network.Haskoin.Crypto.Base58
 ( Address(..)
 , addrToBase58
@@ -12,9 +14,11 @@ import Control.DeepSeq (NFData, rnf)
 import Control.Monad (guard)
 import Control.Applicative ((<$>),(<*>))
 
-import Data.Char (ord)
+import Data.Char (ord, chr)
 import Data.Word (Word8)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, isJust, listToMaybe)
+import Numeric (showIntAtBase, readInt)
+import Data.String (fromString)
 import Data.Aeson
     ( Value (String)
     , FromJSON
@@ -25,39 +29,36 @@ import Data.Aeson
     )
 
 import qualified Data.ByteString as BS
-import qualified Data.Map.Strict as M
+import qualified Data.ByteString.Char8 as B8
 import qualified Data.Text as T
 
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Util 
 
-b58String :: String
-b58String = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-
 b58Data :: BS.ByteString
-b58Data = BS.pack $ map (fromIntegral . ord) b58String
-
-b58Data' :: M.Map Word8 Int
-b58Data' = M.fromList $ zip (BS.unpack b58Data) [0..57]
+b58Data = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 b58 :: Word8 -> Word8
 b58 i = BS.index b58Data (fromIntegral i)
 
 b58' :: Word8 -> Maybe Word8
-b58' w = fromIntegral <$> M.lookup w b58Data'
+b58' w = fromIntegral <$> BS.elemIndex w b58Data
 
 encodeBase58I :: Integer -> BS.ByteString
-encodeBase58I 0 = BS.pack [b58 0]
-encodeBase58I i
-    | i >= 0 = go BS.empty i
-    | otherwise = error "encodeBase58 is not defined for negative Integers"
-  where 
-    go acc 0 = acc
-    go acc n = go (BS.cons (fromIntegral b) acc) q
-      where 
-        (q,r) = n `quotRem` 58
-        b     = b58 $ fromIntegral r
+encodeBase58I i = fromString $ showIntAtBase 58 f (fromIntegral i) ""
+  where
+    f = chr . fromIntegral . b58 . fromIntegral
+
+decodeBase58I :: BS.ByteString -> Maybe Integer
+decodeBase58I s = case go of 
+    Just (r,[]) -> Just r
+    otherwise -> Nothing
+  where
+    c = b58' . fromIntegral . ord
+    p = isJust . c 
+    f = fromIntegral . fromJust . c
+    go = listToMaybe $ readInt 58 p f (B8.unpack s)
 
 -- | Encode a bytestring to a base 58 representation.
 encodeBase58 :: BS.ByteString -> BS.ByteString
@@ -76,11 +77,7 @@ decodeBase58 bs = r >>= return . (BS.append prefix)
     (z,b)  = BS.span (== (b58 0)) bs
     prefix = BS.map (fromJust . b58') z -- preserve leading 1's
     r | BS.null b = Just BS.empty
-      | otherwise = integerToBS <$> foldl f (Just 0) (BS.unpack b)
-    f i w  = do
-        n <- fromIntegral <$> b58' w
-        p <- i
-        return $ p*58 + n
+      | otherwise = integerToBS <$> decodeBase58I b
 
 -- | Computes a checksum for the input bytestring and encodes the input and
 -- the checksum to a base 58 representation.

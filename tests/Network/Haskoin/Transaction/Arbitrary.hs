@@ -60,7 +60,7 @@ genMulSigInput :: Gen ScriptHashInput
 genMulSigInput = do
     (MSParam m n) <- arbitrary
     rdm <- PayMulSig <$> (vectorOf n genPubKeyC) <*> (return m)
-    inp <- SpendMulSig <$> (vectorOf m arbitrary)
+    inp <- (flip SpendMulSig m) <$> (vectorOf m arbitrary)
     return $ ScriptHashInput inp rdm
 
 -- | Generate an arbitrary transaction input spending a public key hash or
@@ -99,7 +99,7 @@ instance Arbitrary Coin where
 data PKHashSigTemplate = PKHashSigTemplate Tx [SigInput] [PrvKey]
     deriving (Eq, Show)
 
-data MulSigTemplate = MulSigTemplate Tx [SigInput] [PrvKey]
+data MulSigTemplate = MulSigTemplate Tx [(Script, SigInput)] [PrvKey]
     deriving (Eq, Show)
 
 -- Generates a private key that can sign a input using the OutPoint and SigInput
@@ -110,11 +110,11 @@ genPKHashData = do
     sh  <- arbitrary
     let pub    = derivePubKey prv
         script = encodeOutput $ PayPKHash $ pubKeyAddr pub
-        sigi   = SigInput script op sh
+        sigi   = SigInput script op sh False
     return (op, sigi, prv)
 
 -- Generates private keys that can sign an input using the OutPoint and SigInput
-genMSData :: Gen (OutPoint, SigInput, [PrvKey])
+genMSData :: Gen (OutPoint, Script, SigInput, [PrvKey])
 genMSData = do
     (MSParam m n) <- arbitrary
     prv     <- vectorOf n arbitrary
@@ -124,9 +124,9 @@ genMSData = do
     let pub    = map derivePubKey prv
         rdm    = PayMulSig pub m
         script = encodeOutput $ PayScriptHash $ scriptAddr rdm
-        sigi   = SigInputSH script op (encodeOutput rdm) sh
+        sigi   = SigInput (encodeOutput rdm) op sh True
         perPrv = permutations prv !! perm
-    return (op, sigi, take m perPrv)
+    return (op, script, sigi, take m perPrv)
 
 genPayTo :: Gen (String,Word64)
 genPayTo = do
@@ -153,10 +153,13 @@ instance Arbitrary MulSigTemplate where
     arbitrary = do
         inC   <- choose (0,5)
         outC  <- choose (0,10)
-        dat   <- nubBy (\a b -> fst3 a == fst3 b) <$> vectorOf inC genMSData
+        dat   <- nubBy (\a b -> f1 a == f1 b) <$> vectorOf inC genMSData
         perm  <- choose (0,max 0 $ length dat - 1)
         payTo <- vectorOf outC genPayTo
-        let tx   = fromRight $ buildAddrTx (map fst3 dat) payTo
-            perI = permutations (map snd3 dat) !! perm
-        return $ MulSigTemplate tx perI (concat $ map lst3 dat)
+        let tx   = fromRight $ buildAddrTx (map f1 dat) payTo
+            perI = permutations (map (\(_,a,b,_) -> (a,b)) dat) !! perm
+        return $ MulSigTemplate tx perI (concat $ map f4 dat)
+      where
+        f1 (a,_,_,_) = a
+        f4 (_,_,_,d) = d
 

@@ -6,7 +6,9 @@ module Network.Haskoin.Transaction.Builder
 , SigStatus(..)
 , isSigInvalid
 , signTx
+, signInput
 , detSignTx
+, detSignInput
 , verifyTx
 , guessTxSize
 , chooseCoins
@@ -16,7 +18,7 @@ module Network.Haskoin.Transaction.Builder
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (guard, liftM2)
+import Control.Monad (guard, liftM2, liftM, foldM)
 import Control.Applicative ((<$>))
 
 import Data.Maybe (catMaybes, maybeToList, fromMaybe)
@@ -165,25 +167,17 @@ buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
 -- script is required.
 data SigInput 
     -- | Parameters for signing a pay to public key hash output.
-    = SigInput   { sigDataOut :: !Script   -- ^ Output script to spend.
-                 , sigDataOP  :: !OutPoint 
-                   -- ^ Reference to the transaction output to spend.
-                 , sigDataSH  :: !SigHash  -- ^ Signature type.
-                 } 
-    -- | Parameters for signing a pay to script hash output.
-    | SigInputSH { sigDataOut :: !Script   
-                 , sigDataOP  :: !OutPoint 
-                 , sigRedeem  :: !Script   -- ^ Redeem script.
-                 , sigDataSH  :: !SigHash  
-                 } deriving (Eq, Show)
+    = SigInput { sigDataOut :: !Script   
+                 -- ^ Output script to spend. This is the redeem script
+                 -- in the case of P2SH.
+               , sigDataOP  :: !OutPoint 
+                 -- ^ Reference to the transaction output to spend.
+               , sigDataSH  :: !SigHash  -- ^ Signature type.
+               , sigIsP2SH  :: Bool
+               } deriving (Eq, Read, Show) 
 
 instance NFData SigInput where
-    rnf (SigInput o p h) = rnf o `seq` rnf p `seq` rnf h
-    rnf (SigInputSH o p r h) = rnf o `seq` rnf p `seq` rnf r `seq` rnf h
-
-isSigInputSH :: SigInput -> Bool
-isSigInputSH (SigInputSH _ _ _ _) = True
-isSigInputSH _                    = False
+    rnf (SigInput o p h b) = rnf o `seq` rnf p `seq` rnf h `seq` rnf b
 
 data SigStatus
     = SigComplete
@@ -210,6 +204,17 @@ lcdStatus (x:xs) = foldl' go x xs
         (_, SigPartial)     -> SigPartial
         _                   -> SigComplete
 
+gcdStatus :: [SigStatus] -> SigStatus
+gcdStatus []     = error "gcdStatus can not be called on an empty list"
+gcdStatus (x:xs) = foldl' go x xs
+  where
+    go p n = case (p, n) of
+        (SigInvalid s, _)   -> SigInvalid s
+        (_, SigInvalid s)   -> SigInvalid s
+        (SigComplete, _)    -> SigComplete
+        (_, SigComplete)    -> SigComplete
+        _                   -> SigPartial
+
 -- | Sign a transaction by providing the 'SigInput' signing parameters and a
 -- list of private keys. The signature is computed within the 'SecretT' monad
 -- to generate the random signing nonce and within the 'BuildT' monad to add
@@ -219,34 +224,43 @@ signTx :: Monad m
        -> [SigInput]                -- ^ SigInput signing parameters
        -> [PrvKey]                  -- ^ List of private keys to use for signing
        -> SecretT m (Tx, SigStatus) -- ^ (Signed transaction, Status)
-signTx tx@(Tx _ ti _ _) sigis keys 
-    | null ti   = return (tx, SigInvalid "signTx: Transaction has no inputs")
-    | otherwise = do
-        inResults <- mapM sign $ orderSigInput ti sigis
-        return (tx{ txIn = map fst inResults }, lcdStatus $ map snd inResults)
+signTx otx@(Tx _ ti _ _) sigis allKeys 
+    | null ti   = return (otx, SigInvalid "signTx: Transaction has no inputs")
+    | otherwise = foldM go (otx, SigComplete) $ findSigInput sigis ti
   where 
-    sign (sigiM, i) = case sigiM of
-        Just sigi -> signInput tx i sigi keys
-        Nothing   -> return (txIn tx !! i, SigComplete)
+    go (tx, stat) (sigi@(SigInput out _ _ isSH), i)
+        | isLeft keysE = return (tx, SigInvalid $ fromLeft keysE)
+        | null keys    = return (tx, getInputStatus tx i out isSH)
+        | otherwise    = do
+            (newTx, newStat) <- foldM f (tx, SigPartial) keys
+            return (newTx, lcdStatus [stat, newStat])
+      where
+        keysE = sigKeys out allKeys
+        keys  = fromRight keysE
+        f (t,s) k = do
+            (t', s') <- signInput t i sigi k 
+            return (t', gcdStatus [s, s']) 
 
-signInput :: Monad m 
-          => Tx -> Int -> SigInput -> [PrvKey] 
-          -> SecretT m (TxIn, SigStatus)
-signInput tx i sigi keys
-    | status == SigComplete = return (txin, SigComplete)
-    | isLeft resE = return (txin, SigInvalid $ fromLeft resE)
-    | otherwise   = do
-        sigs <- mapM (signMsg msg) vKeys
-        return $ f $ (map $ flip TxSignature sh) sigs
-  where 
-    txin               = txIn tx !! i
-    status             = getInputStatus txin sigi
-    resE               = decodeSigInput sigi keys
-    (out, vKeys, pubs) = fromRight resE
-    sh                 = sigDataSH sigi
-    msg                = txSigHash tx (encodeOutput out) i sh
-    f | isSigInputSH sigi = buildInputSH tx i out pubs
-      | otherwise         = buildInput   tx i out pubs
+-- | Sign a single input in a transaction
+signInput :: Monad m => Tx -> Int -> SigInput -> PrvKey 
+          -> SecretT m (Tx, SigStatus)
+signInput tx i (SigInput out _ sh isSH) key
+    | status == SigComplete = return (tx, SigComplete)
+    | otherwise = do
+        sig <- liftM (flip TxSignature sh) $ signMsg msg key
+        let resE             = buildInput tx i out sig $ derivePubKey key
+            (inScp, newStat) = fromRight resE
+            scp | isSH       = encodeScriptHashBS $ ScriptHashInput inScp so
+                | otherwise  = encodeInputBS inScp
+            newTx            = tx{ txIn = updateIndex i (txIn tx) fIn }
+            fIn x            = x{ scriptInput = scp }
+        if isLeft resE
+            then return (tx, SigInvalid $ fromLeft resE)
+            else return (newTx, newStat)
+  where
+    status = getInputStatus tx i out isSH
+    msg    = txSigHash tx out i sh
+    so     = fromRight $ decodeOutput out
 
 -- | Sign a transaction by providing the 'SigInput' signing paramters and 
 -- a list of private keys. The signature is computed deterministically as
@@ -256,141 +270,102 @@ detSignTx :: Tx              -- ^ Transaction to sign
           -> [SigInput]      -- ^ SigInput signing parameters
           -> [PrvKey]        -- ^ List of private keys to use for signing
           -> (Tx, SigStatus) -- ^ Signed transaction
-detSignTx tx@(Tx _ ti _ _) sigis keys
-    | null ti   = 
-        (tx, SigInvalid "signTx: Transaction has no inputs")
-    | otherwise = 
-        (tx{ txIn = map fst inResults }, lcdStatus $ map snd inResults)
+detSignTx otx@(Tx _ ti _ _) sigis allKeys
+    | null ti   = (otx, SigInvalid "signTx: Transaction has no inputs")
+    | otherwise = foldl' go (otx, SigComplete) $ findSigInput sigis ti
   where 
-    inResults             = map sign $ orderSigInput ti sigis
-    sign (sigiM, i) = case sigiM of
-        Just sigi -> detSignInput tx i sigi keys
-        Nothing   -> (txIn tx !! i, SigComplete)
+    go (tx, stat) (sigi@(SigInput out _ _ isSH), i)
+        | isLeft keysE = (tx, SigInvalid $ fromLeft keysE)
+        | null keys    = (tx, getInputStatus tx i out isSH)
+        | otherwise    = (newTx, lcdStatus [stat, newStat])
+      where
+        keysE = sigKeys out allKeys
+        keys  = fromRight keysE
+        (newTx, newStat)  = foldl' f (tx, SigPartial) keys
+        f (t,s) k = let (t', s') = detSignInput t i sigi k 
+                    in  (t', gcdStatus [s, s']) 
 
-detSignInput :: Tx -> Int -> SigInput -> [PrvKey] -> (TxIn, SigStatus)
-detSignInput tx i sigi keys 
-    | status == SigComplete = (txin, SigComplete)
-    | isLeft resE = (txin, SigInvalid $ fromLeft resE)
-    | otherwise = f $ (map $ flip TxSignature sh) sigs
+-- | Sign a single input in a transaction
+detSignInput :: Tx -> Int -> SigInput -> PrvKey -> (Tx, SigStatus)
+detSignInput tx i (SigInput out _ sh isSH) key 
+    | status == SigComplete = (tx, SigComplete)
+    | isLeft resE           = (tx, SigInvalid $ fromLeft resE)
+    | otherwise             = (newTx, newStat)
   where
-    txin               = txIn tx !! i
-    status             = getInputStatus txin sigi
-    resE               = decodeSigInput sigi keys
-    (out, vKeys, pubs) = fromRight resE
-    sh                 = sigDataSH sigi
-    msg                = txSigHash tx (encodeOutput out) i sh
-    sigs               = map (detSignMsg msg) vKeys
-    f | isSigInputSH sigi = buildInputSH tx i out pubs
-      | otherwise         = buildInput   tx i out pubs
-
-{- Helpers for signing transactions -}
-
--- Parse an input and return its completion status. If the input is
--- non-standard, we return SigComplete.
-getInputStatus :: TxIn -> SigInput -> SigStatus
-getInputStatus (TxIn _ s _) sigi
-    | BS.null s = SigPartial
-    | otherwise = case decodeScriptHashBS s of
-        Right (ScriptHashInput (SpendMulSig xs) (PayMulSig _ r)) -> 
-            if length xs >= r then SigComplete else SigPartial
-        Right _ -> SigComplete
-        Left _  -> case (decodeInputBS s, decodeOutput $ sigDataOut sigi) of
-            (Right (SpendMulSig xs), Right (PayMulSig _ r)) ->
-                if length xs >= r then SigComplete else SigPartial
-            -- If we can not decode an input, we consider it complete
-            _ -> SigComplete
+    status           = getInputStatus tx i out isSH
+    msg              = txSigHash tx out i sh
+    sig              = TxSignature (detSignMsg msg key) sh
+    resE             = buildInput tx i out sig $ derivePubKey key
+    (inScp, newStat) = fromRight resE
+    so               = fromRight $ decodeOutput out
+    scp | isSH       = encodeScriptHashBS $ ScriptHashInput inScp so
+        | otherwise  = encodeInputBS inScp
+    newTx            = tx{ txIn = updateIndex i (txIn tx) fIn }
+    fIn x            = x{ scriptInput = scp }
 
 -- Order the SigInput with respect to the transaction inputs. This allow the
 -- users to provide the SigInput in any order. Users can also provide only a
 -- partial set of SigInputs.
-orderSigInput :: [TxIn] -> [SigInput] -> [(Maybe SigInput, Int)]
-orderSigInput ti si = 
-    zip (matchTemplate si ti f) [0..]
+findSigInput :: [SigInput] -> [TxIn] -> [(SigInput, Int)]
+findSigInput si ti = 
+    catMaybes $ map g $ zip (matchTemplate si ti f) [0..]
   where 
     f s txin = sigDataOP s == prevOutput txin
-
-decodeSigInput :: SigInput 
-               -> [PrvKey] 
-               -> Either String (ScriptOutput, [PrvKey], [PubKey])
-decodeSigInput sigi keys = case sigi of
-    SigInput s _ _ -> do
-        out           <- decodeOutput s
-        (vKeys, pubs) <- sigKeys out keys
-        -- The input is signed using the output
-        return (out, vKeys, pubs)
-    SigInputSH s _ sr _ -> do
-        out           <- decodeOutput s
-        rdm           <- decodeOutput sr
-        (vKeys, pubs) <- sigKeysSH out rdm keys
-        -- The inputs is signed using the redeem script
-        return (rdm, vKeys, pubs)
-
-buildInputSH :: Tx -> Int -> ScriptOutput -> [PubKey] -> [TxSignature] 
-             -> (TxIn, SigStatus)
-buildInputSH tx i rdm pubs sigs
-    | isSigInvalid status = (txin, status)
-    | BS.null $ scriptInput newIn = (txin, SigPartial)
-    | otherwise = (txin{ scriptInput = fromRight newSH }, status)
-  where 
-    txin            = txIn tx !! i
-    (newIn, status) = buildInput tx i rdm pubs sigs
-    newSH           = toP2SH <$> decodeInputBS (scriptInput newIn)
-    toP2SH          = encodeScriptHashBS . (flip ScriptHashInput rdm)
-
-buildInput :: Tx -> Int -> ScriptOutput -> [PubKey] -> [TxSignature] 
-           -> (TxIn, SigStatus)
-buildInput tx i out pubs sigs 
-    | null sigs = (txin, SigPartial)
-    | otherwise = case out of
-        PayPK _     -> 
-            (buildRes $ SpendPK $ head sigs, SigComplete)
-        PayPKHash _ -> 
-            (buildRes $ SpendPKHash (head sigs) (head pubs), SigComplete)
-        PayMulSig msPubs r -> 
-            -- We need to order the existing sigs and new sigs with respect
-            -- to the order of the public keys
-            let mSigs = take r $ catMaybes $ matchTemplate allSigs msPubs f
-                inp   = buildRes $ SpendMulSig mSigs
-                in if length mSigs == r 
-                    then (inp, SigComplete) 
-                    else (inp, SigPartial)
-        _ -> (txin, SigInvalid "buildInput: Invalid P2SH input")
-    where 
-      txin = txIn tx !! i
-      buildRes res = txin{ scriptInput = encodeInputBS res }
-      allSigs = nub $ concat
-        [ sigs 
-        , case decodeScriptHashBS $ scriptInput txin of
-            Right (ScriptHashInput (SpendMulSig xs) _) -> xs
-            _ -> case decodeInputBS $ scriptInput txin of
-                    Right (SpendMulSig xs) -> xs
-                    _ -> []
-        ]
-      f (TxSignature sig sh) pub = 
-          verifySig (txSigHash tx (encodeOutput out) i sh) sig pub
-
-sigKeysSH :: ScriptOutput -> RedeemScript -> [PrvKey]
-          -> Either String ([PrvKey], [PubKey])
-sigKeysSH out rdm keys = case out of
-    PayScriptHash a -> if scriptAddr rdm == a
-        then sigKeys rdm keys
-        else Left "sigKeys: Redeem script does not match P2SH script"
-    _ -> Left "sigKeys: Invalid PayScriptHash output"
+    g (Just s, i)  = Just (s,i)
+    g (Nothing, _) = Nothing
 
 -- Find from the list of private keys which one is required to sign the 
--- provided ScriptOutput. It also return the public key of that private key
--- if one could be found.
-sigKeys :: ScriptOutput -> [PrvKey] -> Either String ([PrvKey], [PubKey])
-sigKeys out keys = unzip <$> case out of
-    PayPK p        -> Right $ maybeToList $ 
-        find ((== p) . snd) zipKeys
-    PayPKHash a    -> Right $ maybeToList $ 
-        find ((== a) . pubKeyAddr . snd) zipKeys
-    PayMulSig ps r -> Right $ take r $ 
-        filter ((`elem` ps) . snd) zipKeys
-    _ -> Left "sigKeys: Invalid output" 
+-- provided ScriptOutput. 
+sigKeys :: Script -> [PrvKey] -> Either String [PrvKey]
+sigKeys out keys = liftM (map fst) $ case decodeOutput out of
+    Right (PayPK p)        -> 
+        return $ maybeToList $ find ((== p) . snd) zipKeys
+    Right (PayPKHash a)    -> 
+        return $ maybeToList $ find ((== a) . pubKeyAddr . snd) zipKeys
+    Right (PayMulSig ps r) -> 
+        return $ take r $ filter ((`elem` ps) . snd) zipKeys
+    _ -> Left "sigKeys: Invalid output script" 
+  where
+    zipKeys = zip keys (map derivePubKey keys)
+
+-- Parse an input and return its completion status. If the input is
+-- non-standard, we return SigComplete.
+getInputStatus :: Tx -> Int -> Script -> Bool -> SigStatus
+getInputStatus tx i out isSH
+    | BS.null s = SigPartial
+    | isSH = case decodeScriptHashBS s of
+        Right (ScriptHashInput (SpendMulSig xs) (PayMulSig _ r)) -> 
+            if length xs >= r then SigComplete else SigPartial
+        _ -> SigComplete
+    | otherwise = case (decodeInputBS s, decodeOutput out) of
+        (Right (SpendMulSig xs), Right (PayMulSig _ r)) ->
+            if length xs >= r then SigComplete else SigPartial
+        _ -> SigComplete
+  where
+    s = scriptInput $ txIn tx !! i
+
+-- Construct an input, given a signature and a public key
+buildInput :: Tx -> Int -> Script -> TxSignature -> PubKey
+           -> Either String (ScriptInput, SigStatus)
+buildInput tx i out sig pub = case decodeOutput out of
+    Right (PayPK _)     -> return (SpendPK sig, SigComplete)
+    Right (PayPKHash _) -> return (SpendPKHash sig pub, SigComplete)
+    Right (PayMulSig msPubs r) -> 
+        -- We need to order the existing sigs and new sigs with respect
+        -- to the order of the public keys
+        let mSigs = take r $ catMaybes $ matchTemplate allSigs msPubs f
+        in  return $ if length mSigs == r 
+                then (SpendMulSig mSigs, SigComplete) 
+                else (SpendMulSig mSigs, SigPartial)
+    _ -> Left "buildInput: Invalid output script"
   where 
-    zipKeys = zip keys $ map derivePubKey keys
+    scp = scriptInput $ txIn tx !! i
+    allSigs = nub $ sig : case decodeScriptHashBS scp of
+        Right (ScriptHashInput (SpendMulSig xs) _) -> xs
+        _ -> case decodeInputBS scp of
+                Right (SpendMulSig xs) -> xs
+                _ -> []
+    f (TxSignature s sh) p = verifySig (txSigHash tx out i sh) s p
 
 {- Tx verification -}
 

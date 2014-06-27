@@ -86,19 +86,19 @@ testSignTx :: PKHashSigTemplate -> Bool
 testSignTx (PKHashSigTemplate tx sigi prv)
     | null $ txIn tx = isSigInvalid stat && isSigInvalid statP
     | otherwise = (not $ verifyTx tx verData)
-                && stat == SigComplete
-                && verifyTx txSig verData
-                && statP == SigPartial
-                && (not $ verifyTx txSigP verData)
-                && statC == SigComplete
-                && verifyTx txSigC verData
+                   && stat == SigComplete
+                   && verifyTx txSig verData
+                   && statP == SigPartial
+                   && (not $ verifyTx txSigP verData)
+                   && statC == SigComplete
+                   && verifyTx txSigC verData
     where (txSig, stat)   = detSignTx tx sigi prv
           (txSigP, statP) = detSignTx tx sigi (tail prv)
           (txSigC, statC) = detSignTx txSigP sigi [head prv]
-          verData = map (\(SigInput s o _) -> (s,o)) sigi
+          verData = map (\(SigInput s o _ _) -> (s,o)) sigi
          
 testSignMS :: MulSigTemplate -> Bool
-testSignMS (MulSigTemplate tx sigi prv)
+testSignMS (MulSigTemplate tx sigis prv)
     | null $ txIn tx = isSigInvalid stat && isSigInvalid statP
     | otherwise = (not $ verifyTx tx verData)
                 && stat == SigComplete
@@ -107,8 +107,8 @@ testSignMS (MulSigTemplate tx sigi prv)
                 && (not $ verifyTx txSigP verData)
                 && statC == SigComplete
                 && verifyTx txSigC verData
-    where (txSig, stat)    = detSignTx tx sigi prv
-          (txSigP, statP)  = detSignTx tx sigi (tail prv)
-          (txSigC, statC)  = detSignTx txSigP sigi [head prv]
-          verData = map (\(SigInputSH s o _ _) -> (s,o)) sigi
+    where (txSig, stat)    = detSignTx tx (map snd sigis) prv
+          (txSigP, statP)  = detSignTx tx (map snd sigis) (tail prv)
+          (txSigC, statC)  = detSignTx txSigP (map snd sigis) [head prv]
+          verData = map (\(s, (SigInput _ o _ _)) -> (s,o)) sigis
 

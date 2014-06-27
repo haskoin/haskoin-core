@@ -13,7 +13,9 @@ module Network.Haskoin.Transaction
 , SigStatus(..)
 , isSigInvalid
 , signTx
+, signInput
 , detSignTx
+, detSignInput
 
   -- *Coin selection
 , Coin(..)

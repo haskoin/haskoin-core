@@ -84,17 +84,28 @@ instance Arbitrary ScriptInput where
     arbitrary = oneof
         [ SpendPK <$> arbitrary
         , SpendPKHash <$> arbitrary <*> arbitrary
-        , genSpendMulSig
+        , genSpendMulSig =<< choose (1,16)
         ]
 
 -- | Generate an arbitrary 'ScriptInput' of value SpendMulSig.
-genSpendMulSig :: Gen ScriptInput
-genSpendMulSig = do
-    s <- choose (1,16)
-    SpendMulSig <$> (vectorOf s arbitrary)
+genSpendMulSig :: Int -> Gen ScriptInput
+genSpendMulSig r = do
+    s <- choose (1,r)
+    flip SpendMulSig r <$> (vectorOf s arbitrary)
 
 instance Arbitrary ScriptHashInput where
-    arbitrary = ScriptHashInput <$> arbitrary <*> arbitrary
+    arbitrary = do
+        out <- oneof 
+            [ PayPK <$> arbitrary
+            , (PayPKHash . pubKeyAddr) <$> arbitrary 
+            , genPayMulSig
+            ]
+        inp <- case out of
+            (PayPK _)         -> SpendPK <$> arbitrary
+            (PayPKHash _)     -> SpendPKHash <$> arbitrary <*> arbitrary
+            (PayMulSig _ r)   -> genSpendMulSig r
+            _                 -> error "Won't happen"
+        return $ ScriptHashInput inp out
 
 -- | Data type for generating an arbitrary 'ScriptOp' with a value in
 -- [OP_1 .. OP_16]

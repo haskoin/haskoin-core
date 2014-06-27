@@ -18,7 +18,7 @@ module Network.Haskoin.Transaction.Builder
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (guard, liftM2, liftM, foldM)
+import Control.Monad (guard, liftM, foldM)
 import Control.Applicative ((<$>))
 
 import Data.Maybe (catMaybes, maybeToList, fromMaybe)
@@ -244,11 +244,11 @@ signTx otx@(Tx _ ti _ _) sigis allKeys
 -- | Sign a single input in a transaction
 signInput :: Monad m => Tx -> Int -> SigInput -> PrvKey 
           -> SecretT m (Tx, SigStatus)
-signInput tx i (SigInput out _ sh isSH) key
-    | status == SigComplete = return (tx, SigComplete)
+signInput tx i (SigInput out _ sh isSH) key 
+    | isLeft soE = return (tx, SigInvalid "Could not decode output")
     | otherwise = do
         sig <- liftM (flip TxSignature sh) $ signMsg msg key
-        let resE             = buildInput tx i out sig $ derivePubKey key
+        let resE             = buildInput tx i so sig $ derivePubKey key
             (inScp, newStat) = fromRight resE
             scp | isSH       = encodeScriptHashBS $ ScriptHashInput inScp so
                 | otherwise  = encodeInputBS inScp
@@ -258,9 +258,9 @@ signInput tx i (SigInput out _ sh isSH) key
             then return (tx, SigInvalid $ fromLeft resE)
             else return (newTx, newStat)
   where
-    status = getInputStatus tx i out isSH
-    msg    = txSigHash tx out i sh
-    so     = fromRight $ decodeOutput out
+    msg = txSigHash tx out i sh
+    soE = decodeOutput out
+    so  = fromRight soE
 
 -- | Sign a transaction by providing the 'SigInput' signing paramters and 
 -- a list of private keys. The signature is computed deterministically as
@@ -288,16 +288,16 @@ detSignTx otx@(Tx _ ti _ _) sigis allKeys
 -- | Sign a single input in a transaction
 detSignInput :: Tx -> Int -> SigInput -> PrvKey -> (Tx, SigStatus)
 detSignInput tx i (SigInput out _ sh isSH) key 
-    | status == SigComplete = (tx, SigComplete)
-    | isLeft resE           = (tx, SigInvalid $ fromLeft resE)
-    | otherwise             = (newTx, newStat)
+    | isLeft soE  = (tx, SigInvalid "Could not decode output" )
+    | isLeft resE = (tx, SigInvalid $ fromLeft resE)
+    | otherwise   = (newTx, newStat)
   where
-    status           = getInputStatus tx i out isSH
     msg              = txSigHash tx out i sh
     sig              = TxSignature (detSignMsg msg key) sh
-    resE             = buildInput tx i out sig $ derivePubKey key
+    resE             = buildInput tx i so sig $ derivePubKey key
     (inScp, newStat) = fromRight resE
-    so               = fromRight $ decodeOutput out
+    soE              = decodeOutput out
+    so               = fromRight soE
     scp | isSH       = encodeScriptHashBS $ ScriptHashInput inScp so
         | otherwise  = encodeInputBS inScp
     newTx            = tx{ txIn = updateIndex i (txIn tx) fIn }
@@ -334,38 +334,40 @@ getInputStatus :: Tx -> Int -> Script -> Bool -> SigStatus
 getInputStatus tx i out isSH
     | BS.null s = SigPartial
     | isSH = case decodeScriptHashBS s of
-        Right (ScriptHashInput (SpendMulSig xs) (PayMulSig _ r)) -> 
+        Right (ScriptHashInput (SpendMulSig xs _) (PayMulSig _ r)) -> 
             if length xs >= r then SigComplete else SigPartial
         _ -> SigComplete
-    | otherwise = case (decodeInputBS s, decodeOutput out) of
-        (Right (SpendMulSig xs), Right (PayMulSig _ r)) ->
+    | isLeft so = SigComplete
+    | otherwise = case (decodeInputBS (fromRight so) s) of
+        Right (SpendMulSig xs r) ->
             if length xs >= r then SigComplete else SigPartial
         _ -> SigComplete
   where
-    s = scriptInput $ txIn tx !! i
+    s  = scriptInput $ txIn tx !! i
+    so = decodeOutput out
 
 -- Construct an input, given a signature and a public key
-buildInput :: Tx -> Int -> Script -> TxSignature -> PubKey
+buildInput :: Tx -> Int -> ScriptOutput -> TxSignature -> PubKey
            -> Either String (ScriptInput, SigStatus)
-buildInput tx i out sig pub = case decodeOutput out of
-    Right (PayPK _)     -> return (SpendPK sig, SigComplete)
-    Right (PayPKHash _) -> return (SpendPKHash sig pub, SigComplete)
-    Right (PayMulSig msPubs r) -> 
+buildInput tx i so sig pub = case so of
+    PayPK _            -> return (SpendPK sig, SigComplete)
+    PayPKHash _        -> return (SpendPKHash sig pub, SigComplete)
+    PayMulSig msPubs r -> 
         -- We need to order the existing sigs and new sigs with respect
         -- to the order of the public keys
         let mSigs = take r $ catMaybes $ matchTemplate allSigs msPubs f
         in  return $ if length mSigs == r 
-                then (SpendMulSig mSigs, SigComplete) 
-                else (SpendMulSig mSigs, SigPartial)
+                then (SpendMulSig mSigs r, SigComplete) 
+                else (SpendMulSig mSigs r, SigPartial)
     _ -> Left "buildInput: Invalid output script"
   where 
     scp = scriptInput $ txIn tx !! i
     allSigs = nub $ sig : case decodeScriptHashBS scp of
-        Right (ScriptHashInput (SpendMulSig xs) _) -> xs
-        _ -> case decodeInputBS scp of
-                Right (SpendMulSig xs) -> xs
+        Right (ScriptHashInput (SpendMulSig xs _) _) -> xs
+        _ -> case decodeInputBS so scp of
+                Right (SpendMulSig xs _) -> xs
                 _ -> []
-    f (TxSignature s sh) p = verifySig (txSigHash tx out i sh) s p
+    f (TxSignature s sh) p = verifySig (txSigHash tx (encodeOutput so) i sh) s p
 
 {- Tx verification -}
 
@@ -381,7 +383,7 @@ verifyTx tx xs = flip all z3 $ \(maybeS,txin,i) -> fromMaybe False $ do
         (PayPKHash a, SpendPKHash (TxSignature sig sh) pub) -> do
             guard $ pubKeyAddr pub == a
             return $ verifySig (txSigHash tx so i sh) sig pub
-        (PayMulSig pubs r, SpendMulSig sigs) ->
+        (PayMulSig pubs r, SpendMulSig sigs _) ->
             (== r) <$> countMulSig tx so i pubs sigs 
         _ -> Nothing
     where m = map (fst <$>) $ matchTemplate xs (txIn tx) f
@@ -403,5 +405,6 @@ decodeVerifySigInput so (TxIn _ si _ ) = case decodeOutput so of
         (ScriptHashInput inp rdm) <- eitherToMaybe $ decodeScriptHashBS si
         guard $ scriptAddr rdm == a
         return (rdm,inp)
-    out -> eitherToMaybe $ liftM2 (,) out (decodeInputBS si)
+    Right out -> ((,) out) <$> eitherToMaybe (decodeInputBS out si)
+    Left _ -> Nothing
 

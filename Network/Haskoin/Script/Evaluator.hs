@@ -8,7 +8,6 @@ module Network.Haskoin.Script.Evaluator
 , decodeInt
 , encodeBool
 , decodeBool
-, runProgram
 , runStack
 , dumpScript
 , dumpStack
@@ -105,6 +104,11 @@ type ProgramState = ErrorT EvalError Identity
 
 type ProgramTransition a = StateT Program ProgramState a
 
+runProgramTransition :: ProgramTransition a -> Program -> Either EvalError ( a, Program )
+runProgramTransition m s = runIdentity . runErrorT $ runStateT m s
+
+evalProgramTransition :: ProgramTransition a -> Program -> Either EvalError a
+evalProgramTransition m s = runIdentity . runErrorT $ evalStateT m s
 
 --------------------------------------------------------------------------------
 -- Error utils
@@ -177,7 +181,13 @@ rejectSignature :: SigCheck
 rejectSignature _ _ _ = False
 
 isDisabled :: ScriptOp -> Bool
-isDisabled op = case runProgram [op] rejectSignature of
+isDisabled op = let emptyProgram = Program {
+        stack = [],
+        altStack = [],
+        hashOps = [],
+        condStack = [],
+        sigCheck = rejectSignature } in
+  case evalProgramTransition ( eval op ) emptyProgram of
     Left (DisabledOp _) -> True
     _ -> False
 
@@ -209,6 +219,9 @@ bsToSv = BS.unpack
 
 getStack :: ProgramTransition Stack
 getStack = stack <$> get
+
+getDualStack :: ProgramTransition ( Stack, Stack )
+getDualStack = get >>= \p -> return ( stack p , altStack p )
 
 getCond :: ProgramTransition [Bool]
 getCond = condStack <$> get
@@ -501,6 +514,13 @@ conditionalEval op = do
 
 evalAll :: [ ScriptOp ] -> ProgramTransition ()
 evalAll = mapM_ conditionalEval
+
+checkResult :: ProgramTransition Bool
+checkResult = do
+  s <- getStack
+  case s of
+    (x:_) -> return $ decodeBool x
+    []    -> return False
 --
 -- exported functions
 
@@ -514,12 +534,27 @@ runProgram i sigCheck =
         sigCheck = sigCheck
     })
 
-evalScript :: Script -> SigCheck -> Bool
-evalScript script sigCheck = case runProgram (scriptOps script) sigCheck of
-    Left _ -> False
-    Right prog -> case stack prog of
-        (x:_)  -> decodeBool x
-        []     -> False
+evalScript :: Script -- ^ scriptSig ( redeemScript )
+           -> Script -- ^ scriptPubKey
+           -> SigCheck -- ^ signature verification Function
+           -> Bool
+evalScript scriptSig scriptPubKey sigCheck = 
+  let pubKeyOps = scriptOps scriptPubKey
+      emptyProgram = Program {
+        stack = [],
+        altStack = [],
+        hashOps = pubKeyOps,
+        condStack = [],
+        sigCheck = sigCheck }
+      redeemEval = evalAll ( scriptOps scriptSig ) >> getDualStack
+      pubKeyEval = evalAll pubKeyOps >> checkResult
+
+      result = do -- Either monad
+        ( s, a ) <- evalProgramTransition redeemEval emptyProgram
+        evalProgramTransition pubKeyEval emptyProgram { stack = s, altStack = a }
+      in case result of
+         Left _ -> False
+         Right x -> x
 
 runStack :: Program -> Stack
 runStack = stack

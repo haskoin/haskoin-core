@@ -89,6 +89,7 @@ test-suite test-haskoin
                        Network.Haskoin.Crypto.Point.Tests,
                        Network.Haskoin.Crypto.ECDSA.Tests,
                        Network.Haskoin.Crypto.Base58.Tests,
+                       Network.Haskoin.Crypto.Base58.Units,
                        Network.Haskoin.Crypto.Keys.Tests,
                        Network.Haskoin.Crypto.ExtendedKeys.Tests,
                        Network.Haskoin.Crypto.ExtendedKeys.Units,

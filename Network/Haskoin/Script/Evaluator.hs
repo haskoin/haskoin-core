@@ -22,7 +22,6 @@ import Control.Monad.Identity
 import Control.Applicative ((<$>), (<*>))
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BSL
 
 import qualified Data.ByteString.Builder as BSB
     ( toLazyByteString
@@ -30,7 +29,7 @@ import qualified Data.ByteString.Builder as BSB
     )
 
 
-import Data.List (intercalate, dropWhile)
+import Data.List (intercalate)
 import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit)
 import Data.Int (Int64)
 import Data.Word (Word8, Word64)
@@ -104,9 +103,6 @@ type ProgramState = ErrorT EvalError Identity
 
 type ProgramTransition a = StateT Program ProgramState a
 
-runProgramTransition :: ProgramTransition a -> Program -> Either EvalError ( a, Program )
-runProgramTransition m s = runIdentity . runErrorT $ runStateT m s
-
 evalProgramTransition :: ProgramTransition a -> Program -> Either EvalError a
 evalProgramTransition m s = runIdentity . runErrorT $ evalStateT m s
 
@@ -135,10 +131,10 @@ encodeInt i = prefix $ encode (fromIntegral $ abs i) []
                     | otherwise = xs
 
 decodeInt :: StackValue -> Int64
-decodeInt bytes = sign' (decode' bytes)
-    where decode' [] = 0
-          decode' [x] = fromIntegral $ clearBit x 7
-          decode' (x:xs) = (fromIntegral x) + (decode' xs) `shiftL` 8
+decodeInt bytes = sign' (decodeW bytes)
+    where decodeW [] = 0
+          decodeW [x] = fromIntegral $ clearBit x 7
+          decodeW (x:xs) = (fromIntegral x) + (decodeW xs) `shiftL` 8
           sign' i | bytes == [] = 0
                   | testBit (last bytes) 7 = -i
                   | otherwise = i
@@ -260,7 +256,7 @@ popStackN 0 = return []
 popStackN n = (:) <$> popStack <*> (popStackN (n - 1))
 
 peekStack :: ProgramTransition StackValue
-peekStack = withStack >>= \(s:ss) -> return s
+peekStack = withStack >>= \(s:_) -> return s
 
 pickStack :: Bool -> Int -> ProgramTransition ()
 pickStack remove n = do
@@ -284,7 +280,7 @@ dropHashOpsSeparatedCode = modify $ \p ->
    p { hashOps = tail . ( dropWhile ( /= OP_CODESEPARATOR ) ) $ hashOps p }
 
 preparedHashOps :: ProgramTransition HashOps
-preparedHashOps = filter ( /= OP_CODESEPARATOR ) <$> hashOps <$> get
+preparedHashOps = filter ( /= OP_CODESEPARATOR ) <$> getHashOps
 
 
 -- transformStack :: (Stack -> Stack) -> ProgramTransition ()
@@ -382,8 +378,6 @@ eval OP_VERIFY = decodeBool <$> popStack >>= \case
     True  -> return ()
 
 eval OP_RETURN = programError "explicit OP_RETURN"
-
-
 
 -- Stack
 
@@ -493,9 +487,9 @@ getExec :: ProgramTransition ( Bool )
 getExec = all id <$> getCond
 
 conditionalEval :: ScriptOp -> ProgramTransition ()
-conditionalEval op = do
+conditionalEval scrpOp = do
   e  <- getExec
-  eval' e op
+  eval' e scrpOp
   where
     eval' :: Bool -> ScriptOp -> ProgramTransition ()
 
@@ -524,28 +518,18 @@ checkResult = do
 --
 -- exported functions
 
-runProgram :: [ScriptOp] -> SigCheck -> Either EvalError Program
-runProgram i sigCheck =
-    snd <$> (runIdentity . runErrorT . runStateT ( evalAll i ) $ Program {
-        stack = [],
-        altStack = [],
-        hashOps = i,
-        condStack = [],
-        sigCheck = sigCheck
-    })
-
 evalScript :: Script -- ^ scriptSig ( redeemScript )
            -> Script -- ^ scriptPubKey
            -> SigCheck -- ^ signature verification Function
            -> Bool
-evalScript scriptSig scriptPubKey sigCheck = 
+evalScript scriptSig scriptPubKey sigCheckFcn = 
   let pubKeyOps = scriptOps scriptPubKey
       emptyProgram = Program {
         stack = [],
         altStack = [],
         hashOps = pubKeyOps,
         condStack = [],
-        sigCheck = sigCheck }
+        sigCheck = sigCheckFcn }
       redeemEval = evalAll ( scriptOps scriptSig ) >> getDualStack
       pubKeyEval = evalAll pubKeyOps >> checkResult
 

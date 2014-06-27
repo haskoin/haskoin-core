@@ -59,8 +59,9 @@ testScriptOpInt (ScriptOpInt i) = (intToScriptOp <$> scriptOpToInt i) == Right i
 testScriptOutput :: ScriptOutput -> Bool
 testScriptOutput so = (decodeOutput $ encodeOutput so) == Right so
 
-testScriptInput :: ScriptInput -> Bool
-testScriptInput si = (decodeInput $ encodeInput si) == Right si
+testScriptInput :: ScriptHashInput -> Bool
+testScriptInput (ScriptHashInput si so) = 
+    (decodeInput so $ encodeInput si) == Right si
 
 testScriptHashInput :: ScriptHashInput -> Bool
 testScriptHashInput sh = (decodeScriptHash $ encodeScriptHash sh) == Right sh

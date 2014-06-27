@@ -30,7 +30,6 @@ import Data.Aeson
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as B8
-import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 
 import Network.Haskoin.Crypto.BigWord
@@ -54,7 +53,7 @@ encodeBase58I i = fromString $ showIntAtBase 58 f (fromIntegral i) ""
 decodeBase58I :: BS.ByteString -> Maybe Integer
 decodeBase58I s = case go of 
     Just (r,[]) -> Just r
-    otherwise   -> Nothing
+    otherwise -> Nothing
   where
     c = b58' . fromIntegral . ord
     p = isJust . c 

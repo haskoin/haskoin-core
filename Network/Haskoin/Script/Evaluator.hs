@@ -72,7 +72,6 @@ type SigCheck = [ScriptOp] -> TxSignature -> PubKey -> Bool
 data Program = Program {
     stack        :: Stack,
     altStack     :: AltStack,
-    condStack    :: [Bool],
     hashOps      :: HashOps,
     sigCheck     :: SigCheck
 }
@@ -98,15 +97,25 @@ dumpStack s = dumpList $ map (dumpHex . BS.pack) s
 
 
 instance Show Program where
-    show p = " stack: " ++ (dumpStack $ stack p) ++
-             " condStack: " ++ (show $ condStack p)
+    show p = " stack: " ++ (dumpStack $ stack p)
 
 type ProgramState = ErrorT EvalError Identity
+type IfStack = [ Bool ]
 
-type ProgramTransition a = StateT Program ProgramState a
+-- | Actions idependant of conditional statements
+type ProgramTransition = StateT Program ProgramState
+-- | Actions taking if statements into account.  Separate State types
+-- for type safety
+type ConditionalProgramTransition a = StateT IfStack ProgramTransition a
 
 evalProgramTransition :: ProgramTransition a -> Program -> Either EvalError a
 evalProgramTransition m s = runIdentity . runErrorT $ evalStateT m s
+
+evalConditionalProgram :: ConditionalProgramTransition a -- ^ Program monad
+                       -> [ Bool ]                       -- ^ Initial if state stack
+                       -> Program                        -- ^ Initial computation data
+                       -> Either EvalError a
+evalConditionalProgram m s p = evalProgramTransition ( evalStateT m s ) p
 
 --------------------------------------------------------------------------------
 -- Error utils
@@ -183,7 +192,6 @@ isDisabled op = let emptyProgram = Program {
         stack = [],
         altStack = [],
         hashOps = [],
-        condStack = [],
         sigCheck = rejectSignature } in
   case evalProgramTransition ( eval op ) emptyProgram of
     Left (DisabledOp _) -> True
@@ -221,19 +229,19 @@ getStack = stack <$> get
 getDualStack :: ProgramTransition ( Stack, Stack )
 getDualStack = get >>= \p -> return ( stack p , altStack p )
 
-getCond :: ProgramTransition [Bool]
-getCond = condStack <$> get
+getCond :: ConditionalProgramTransition [Bool]
+getCond = get
 
-popCond :: ProgramTransition Bool
-popCond = get >>= \prog -> case condStack prog of
-    [] -> programError "popCond: empty condStack"
-    (c:cs) -> put prog { condStack = cs } >> return c
+popCond :: ConditionalProgramTransition Bool
+popCond = get >>= \condStack -> case condStack of
+    [] -> lift $ programError "popCond: empty condStack"
+    (c:cs) -> put cs >> return c
 
-pushCond :: Bool -> ProgramTransition ()
-pushCond c = get >>= \prog ->
-    put prog { condStack = (c:condStack prog) }
+pushCond :: Bool -> ConditionalProgramTransition ()
+pushCond c = get >>= \s ->
+    put (c:s)
 
-flipCond :: ProgramTransition ()
+flipCond :: ConditionalProgramTransition ()
 flipCond = popCond >>= pushCond . not
 
 withStack :: ProgramTransition Stack
@@ -485,35 +493,35 @@ eval op = case constValue op of
     Nothing -> programError $ "unknown op " ++ show op
 
 --------------------------------------------------------------------------------
-getExec :: ProgramTransition ( Bool )
+getExec :: ConditionalProgramTransition ( Bool )
 getExec = all id <$> getCond
 
-conditionalEval :: ScriptOp -> ProgramTransition ()
+conditionalEval :: ScriptOp -> ConditionalProgramTransition ()
 conditionalEval scrpOp = do
   e  <- getExec
   eval' e scrpOp
   where
-    eval' :: Bool -> ScriptOp -> ProgramTransition ()
+    eval' :: Bool -> ScriptOp -> ConditionalProgramTransition ()
 
-    eval' True  OP_IF      = popStack >>= pushCond . decodeBool
-    eval' True  OP_NOTIF   = popStack >>= pushCond . not . decodeBool
+    eval' True  OP_IF      = ( lift $ popStack ) >>= pushCond . decodeBool
+    eval' True  OP_NOTIF   = ( lift $ popStack ) >>= pushCond . not . decodeBool
     eval' True  OP_ELSE    = flipCond
     eval' True  OP_ENDIF   = void popCond
-    eval' True  op = eval op
+    eval' True  op = lift $ eval op
 
     eval' False OP_IF    = pushCond False
     eval' False OP_NOTIF = pushCond False
     eval' False OP_ELSE  = flipCond
     eval' False OP_ENDIF = void popCond
-    eval' False OP_CODESEPARATOR = eval OP_CODESEPARATOR
+    eval' False OP_CODESEPARATOR = lift $ eval OP_CODESEPARATOR
     eval' False _ = return ()
 
-evalAll :: [ ScriptOp ] -> ProgramTransition ()
+evalAll :: [ ScriptOp ] -> ConditionalProgramTransition ()
 evalAll = mapM_ conditionalEval
 
-checkResult :: ProgramTransition Bool
+checkResult :: ConditionalProgramTransition Bool
 checkResult = do
-  s <- getStack
+  s <- lift getStack
   case s of
     (x:_) -> return $ decodeBool x
     []    -> return False
@@ -530,14 +538,13 @@ evalScript scriptSig scriptPubKey sigCheckFcn =
         stack = [],
         altStack = [],
         hashOps = pubKeyOps,
-        condStack = [],
         sigCheck = sigCheckFcn }
-      redeemEval = evalAll ( scriptOps scriptSig ) >> getDualStack
+      redeemEval = evalAll ( scriptOps scriptSig ) >> ( lift $ getDualStack )
       pubKeyEval = evalAll pubKeyOps >> checkResult
 
       result = do -- Either monad
-        ( s, a ) <- evalProgramTransition redeemEval emptyProgram
-        evalProgramTransition pubKeyEval emptyProgram { stack = s, altStack = a }
+        ( s, a ) <- evalConditionalProgram redeemEval [] emptyProgram
+        evalConditionalProgram pubKeyEval [] emptyProgram { stack = s, altStack = a }
       in case result of
          Left _ -> False
          Right x -> x

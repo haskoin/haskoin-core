@@ -11,6 +11,7 @@ module Network.Haskoin.Script.Evaluator
 , runStack
 , dumpScript
 , dumpStack
+, verifySpend
 ) where
 
 import Debug.Trace (trace, traceM)
@@ -37,8 +38,9 @@ import Data.Either ( rights )
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Script.Types
-import Network.Haskoin.Script( TxSignature(..), decodeSig )
+import Network.Haskoin.Script( TxSignature(..), decodeSig, txSigHash )
 import Network.Haskoin.Util ( bsToHex, decode' )
+import Network.Haskoin.Protocol( Tx(..), TxIn(..) )
 
 -- see https://github.com/bitcoin/bitcoin/blob/master/src/script.cpp EvalScript
 -- see https://en.bitcoin.it/wiki/Script
@@ -542,3 +544,22 @@ evalScript scriptSig scriptPubKey sigCheckFcn =
 
 runStack :: Program -> Stack
 runStack = stack
+
+-- | A wrapper around 'verifySig' which handles grabbing the hash type
+verifySigWithType :: Tx -> Int -> [ ScriptOp ] -> TxSignature -> PubKey -> Bool
+verifySigWithType tx i outOps txSig pubKey = 
+  let outScript = Script outOps
+      h = txSigHash tx outScript i ( sigHashType txSig ) in
+  verifySig h ( txSignature txSig ) pubKey
+
+-- | Check that the input script of a spending transaction satisfies
+-- the output script.
+verifySpend :: Tx     -- ^ The spending transaction
+            -> Int    -- ^ The input index
+            -> Script -- ^ The output script we are spending
+            -> Bool
+verifySpend tx i outscript = 
+  let scriptSig = decode' . scriptInput $ txIn tx !! i
+      verifyFcn = verifySigWithType tx i
+  in
+  evalScript scriptSig outscript verifyFcn

@@ -93,20 +93,6 @@ genSpendMulSig r = do
     s <- choose (1,r)
     flip SpendMulSig r <$> (vectorOf s arbitrary)
 
-instance Arbitrary ScriptHashInput where
-    arbitrary = do
-        out <- oneof 
-            [ PayPK <$> arbitrary
-            , (PayPKHash . pubKeyAddr) <$> arbitrary 
-            , genPayMulSig
-            ]
-        inp <- case out of
-            (PayPK _)         -> SpendPK <$> arbitrary
-            (PayPKHash _)     -> SpendPKHash <$> arbitrary <*> arbitrary
-            (PayMulSig _ r)   -> genSpendMulSig r
-            _                 -> error "Won't happen"
-        return $ ScriptHashInput inp out
-
 -- | Data type for generating an arbitrary 'ScriptOp' with a value in
 -- [OP_1 .. OP_16]
 data ScriptOpInt = ScriptOpInt ScriptOp

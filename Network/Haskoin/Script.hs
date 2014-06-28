@@ -37,13 +37,10 @@ module Network.Haskoin.Script
 , isSpendPKHash
 , isSpendMulSig
 
-  -- **ScriptHash Inputs
-, ScriptHashInput(..)
+  -- **Pay To Script Hash
 , RedeemScript
-, encodeScriptHash
-, encodeScriptHashBS
-, decodeScriptHash
-, decodeScriptHashBS
+, getRedeem
+, appendRedeem
 
   -- * Helpers
 , scriptRecipient

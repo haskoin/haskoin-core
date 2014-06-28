@@ -17,7 +17,7 @@ import qualified Data.ByteString as BS
     )
 
 import Network.Haskoin.Protocol.Arbitrary ()
-import Network.Haskoin.Script.Arbitrary (ScriptOpInt(..))
+import Network.Haskoin.Script.Arbitrary 
 
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
@@ -34,7 +34,6 @@ tests =
         [ testProperty "decode . encode OP_1 .. OP_16" testScriptOpInt
         , testProperty "decode . encode ScriptOutput" testScriptOutput
         , testProperty "decode . encode ScriptInput" testScriptInput
-        , testProperty "decode . encode ScriptHashInput" testScriptHashInput
         , testProperty "sorting MultiSig scripts" testSortMulSig
         ]
     , testGroup "Script SigHash"
@@ -59,12 +58,9 @@ testScriptOpInt (ScriptOpInt i) = (intToScriptOp <$> scriptOpToInt i) == Right i
 testScriptOutput :: ScriptOutput -> Bool
 testScriptOutput so = (decodeOutput $ encodeOutput so) == Right so
 
-testScriptInput :: ScriptHashInput -> Bool
-testScriptInput (ScriptHashInput si so) = 
+testScriptInput :: ScriptPair -> Bool
+testScriptInput (ScriptPair si so) = 
     (decodeInput so $ encodeInput si) == Right si
-
-testScriptHashInput :: ScriptHashInput -> Bool
-testScriptHashInput sh = (decodeScriptHash $ encodeScriptHash sh) == Right sh
 
 testSortMulSig :: ScriptOutput -> Bool
 testSortMulSig out = case out of

@@ -2,7 +2,11 @@
   This module provides arbitrary instances for data types in
   'Network.Haskoin.Script'.
 -}
-module Network.Haskoin.Script.Arbitrary where
+module Network.Haskoin.Script.Arbitrary 
+( ScriptPair(..)
+, ScriptOpInt(..)
+)
+where
 
 import Test.QuickCheck 
     ( Gen
@@ -69,43 +73,58 @@ instance Arbitrary ScriptOutput where
     arbitrary = oneof 
         [ PayPK <$> arbitrary
         , (PayPKHash . pubKeyAddr) <$> arbitrary 
-        , genPayMulSig
+        , genPayMulSig =<< choose (1,16)
         , (PayScriptHash . scriptAddr) <$> arbitrary
         ]
 
 -- | Generate an arbitrary 'ScriptOutput' of value PayMulSig.
-genPayMulSig :: Gen ScriptOutput
-genPayMulSig = do
-    n <- choose (1,16)
-    m <- choose (1,n)
+genPayMulSig :: Int -> Gen ScriptOutput
+genPayMulSig m = do
+    n <- choose (m,16)
     PayMulSig <$> (vectorOf n arbitrary) <*> (return m)
 
-instance Arbitrary ScriptInput where
+instance Arbitrary SimpleInput where
     arbitrary = oneof
         [ SpendPK <$> arbitrary
         , SpendPKHash <$> arbitrary <*> arbitrary
         , genSpendMulSig =<< choose (1,16)
         ]
 
--- | Generate an arbitrary 'ScriptInput' of value SpendMulSig.
-genSpendMulSig :: Int -> Gen ScriptInput
+instance Arbitrary ScriptInput where
+    arbitrary = oneof
+        [ RegularInput <$> arbitrary
+        , genScriptHashInput
+        ]
+
+-- | Generate an arbitrary 'SimpleInput of value SpendMulSig.
+genSpendMulSig :: Int -> Gen SimpleInput
 genSpendMulSig r = do
     s <- choose (1,r)
     flip SpendMulSig r <$> (vectorOf s arbitrary)
 
-instance Arbitrary ScriptHashInput where
+genScriptHashInput :: Gen ScriptInput
+genScriptHashInput = do
+    inp <- arbitrary :: Gen SimpleInput
+    out <- case inp of
+        SpendPK _       -> PayPK <$> arbitrary
+        SpendPKHash _ _ -> (PayPKHash . pubKeyAddr) <$> arbitrary
+        SpendMulSig _ r -> genPayMulSig r
+    return $ ScriptHashInput inp out
+
+-- Generates a matching script output and script input
+data ScriptPair = ScriptPair ScriptInput ScriptOutput
+    deriving (Eq, Read, Show)
+
+instance Arbitrary ScriptPair where
     arbitrary = do
-        out <- oneof 
-            [ PayPK <$> arbitrary
-            , (PayPKHash . pubKeyAddr) <$> arbitrary 
-            , genPayMulSig
-            ]
+        out <- arbitrary :: Gen ScriptOutput
         inp <- case out of
-            (PayPK _)         -> SpendPK <$> arbitrary
-            (PayPKHash _)     -> SpendPKHash <$> arbitrary <*> arbitrary
-            (PayMulSig _ r)   -> genSpendMulSig r
-            _                 -> error "Won't happen"
-        return $ ScriptHashInput inp out
+            PayPK _         -> RegularInput . SpendPK <$> arbitrary
+            PayPKHash _     -> RegularInput <$> 
+                (SpendPKHash <$> arbitrary <*> arbitrary)
+            PayMulSig _ r   -> RegularInput <$> genSpendMulSig r
+            PayScriptHash _ -> genScriptHashInput
+        return $ ScriptPair inp out
 
 -- | Data type for generating an arbitrary 'ScriptOp' with a value in
 -- [OP_1 .. OP_16]

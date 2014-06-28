@@ -101,12 +101,12 @@ testSignMS :: MulSigTemplate -> Bool
 testSignMS (MulSigTemplate tx sigis prv)
     | null $ txIn tx = isSigInvalid stat && isSigInvalid statP
     | otherwise = (not $ verifyTx tx verData)
-                && stat == SigComplete
-                && verifyTx txSig verData
-                && statP == SigPartial
-                && (not $ verifyTx txSigP verData)
-                && statC == SigComplete
-                && verifyTx txSigC verData
+                  && stat == SigComplete
+                  && verifyTx txSig verData
+                  && statP == SigPartial
+                  && (not $ verifyTx txSigP verData)
+                  && statC == SigComplete
+                  && verifyTx txSigC verData
     where (txSig, stat)    = detSignTx tx (map snd sigis) prv
           (txSigP, statP)  = detSignTx tx (map snd sigis) (tail prv)
           (txSigC, statC)  = detSignTx txSigP (map snd sigis) [head prv]

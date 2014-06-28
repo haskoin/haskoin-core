@@ -18,10 +18,9 @@ module Network.Haskoin.Transaction.Builder
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (guard, liftM, foldM)
-import Control.Applicative ((<$>))
+import Control.Monad (liftM, foldM)
 
-import Data.Maybe (catMaybes, maybeToList, fromMaybe)
+import Data.Maybe (catMaybes, isJust, fromJust, maybeToList)
 import Data.List (sortBy, find, foldl')
 import Data.Word (Word64)
 import qualified Data.ByteString as BS (length, replicate, empty)
@@ -361,37 +360,61 @@ sigKeys out keys = liftM (map fst) $ case decodeOutput out of
 
 {- Tx verification -}
 
--- This is not the final transaction verification function. It is here mainly
--- as a helper for tests. It can only validates standard inputs.
-verifyTx :: Tx -> [(Script,OutPoint)] -> Bool
-verifyTx tx xs = flip all z3 $ \(maybeS,txin,i) -> fromMaybe False $ do
-    (out,inp) <- maybeS >>= flip decodeVerifySigInput txin
-    let so = encodeOutput out
-    case (out,inp) of
-        (PayPK pub, SpendPK (TxSignature sig sh)) -> 
-            return $ verifySig (txSigHash tx so i sh) sig pub
-        (PayPKHash a, SpendPKHash (TxSignature sig sh) pub) -> do
-            guard $ pubKeyAddr pub == a
-            return $ verifySig (txSigHash tx so i sh) sig pub
-        (PayMulSig pubs r, SpendMulSig sigs _) ->
-            (== r) <$> countMulSig tx so i pubs sigs 
-        _ -> Nothing
-    where m = map (fst <$>) $ matchTemplate xs (txIn tx) f
-          f (_,o) txin = o == prevOutput txin
-          z3 = zip3 m (txIn tx) [0..]
-                      
--- Count the number of valid signatures
-countMulSig :: Tx -> Script -> Int -> [PubKey] -> [TxSignature] -> Maybe Int
-countMulSig _ _ _ [] _  = return 0
-countMulSig _ _ _ _  [] = return 0
-countMulSig tx so i (pub:pubs) sigs@(TxSignature sig sh:rest)
-    | verifySig (txSigHash tx so i sh) sig pub = 
-         (+1) <$> countMulSig tx so i pubs rest
-    | otherwise = countMulSig tx so i pubs sigs
-                  
-decodeVerifySigInput :: Script -> TxIn -> Maybe (ScriptOutput, ScriptInput)
-decodeVerifySigInput so (TxIn _ si _ ) = case decodeOutput so of
-    Right x -> do
-        (sgs, pks, _) <- eitherToMaybe $ decodeInputBS x si
-        return (pks, sgs)
-    Left _ -> Nothing
+-- | Validate a list of signatures against a list of public keys. Returns True
+-- if all signatures are valid.
+checkSigs :: Tx             -- ^ Transaction
+          -> Script         -- ^ PkScript
+          -> Int            -- ^ Input index
+          -> [TxSignature]  -- ^ Signatures
+          -> [PubKey]       -- ^ Corresponding public keys
+          -> Bool           -- ^ Result from verification
+checkSigs tx scr ini sigs pubs = length sigs == length (catMaybes vs)
+  where
+    vs = matchTemplate sigs pubs f
+    f (TxSignature sig sh) pub =
+        let msg = txSigHash tx scr ini sh
+        in  verifySig msg sig pub
+
+-- | Validate signatures in transaction input.
+validInput :: Tx            -- ^ Transaction
+           -> Int           -- ^ Input index
+           -> Script        -- ^ PkScript
+           -> Bool          -- ^ Result from verification
+validInput tx ini out = if bad then False else chk
+  where
+    (TxIn _ scr _) = txIn tx !! ini
+    pksE = decodeOutput out
+    pks = fromRight pksE
+    dinE = decodeInputBS pks scr
+    Right (sgs, pks', _) = dinE
+    chk = case sgs of
+        SpendPK (TxSignature sig sh) ->
+            let (PayPK pub) = pks'
+                msg = txSigHash tx (encodeOutput pks') ini sh
+            in  verifySig msg sig pub
+        SpendPKHash (TxSignature sig sh) pub ->
+            let msg = txSigHash tx (encodeOutput pks') ini sh
+            in  verifySig msg sig pub
+        SpendMulSig txsigs _ ->
+            let (PayMulSig pubs r) = pks'
+            in  if length txsigs < r
+                then False
+                else checkSigs tx (encodeOutput pks') ini txsigs pubs
+    bad = isLeft dinE || isLeft pksE
+
+-- | Limited transaction signature validation for standard transactions only.
+verifyTx :: Tx                     -- ^ Transaction
+         -> [(Script, OutPoint)]   -- ^ (PkScript, OutPoint)
+         -> Bool
+         -- ^ Validation result, will result in false negatives for
+         -- non-standard scripts
+verifyTx tx xs = if bad then False else and (map v ip)
+  where
+    ip = [ (ini, out)
+         | (ini, soM) <- zip [0..] $ matchTemplate xs (txIn tx) f
+         , isJust soM
+         , let (out, _) = fromJust soM
+         ]
+    bad = length ip < length xs
+    v (ini, out) = validInput tx ini out
+    f (_, op) ti = op == prevOutput ti

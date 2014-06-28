@@ -12,6 +12,7 @@ module Network.Haskoin.Script
 , ScriptOp(..)
 , PushDataType(..)
 , opPushData
+, isPushOp
 
   -- *Script Parsing
   -- **Script Outputs

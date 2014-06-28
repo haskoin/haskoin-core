@@ -280,10 +280,12 @@ decodeInput pks sgs = go False pks sgs
                 return (SpendPKHash dsig dpub, o, p)
             _ -> Left "decodeInput: could not decode script as SpendPKHash"
         PayMulSig _ r -> case scriptOps i of
-            OP_PUSHDATA _ _ : xs -> do
+            x : xs -> do
+                unless (isPushOp x) $ Left "decodeInput: invalid SpendMulSig"
                 ms <- matchSpendMulSig (Script xs) r
                 return (ms, o, p)
-            _ -> Left "decodeInput: could not decode script as SpendMulSig"
+            -- _ -> Left "decodeInput: could not decode script as SpendMulSig"
+            _ -> Left $ show $ scriptOps i
         PayScriptHash a -> do
             when p $ Left "decodeInput: nested P2SH scrpt"
             out <- getRedeem $ Script (scriptOps i)
@@ -312,9 +314,9 @@ type RedeemScript = ScriptOutput
 getRedeem :: Script                      -- ^ Sigscript
           -> Either String RedeemScript
 getRedeem (Script ops) = do
-    when (null ops) $ Left "Cannot extract redeem script from empty sigscript"
+    when (null ops) $ Left "getRedeem: empty sigscript"
     out <- decodeOutputBS bs
-    when (isPayScriptHash out) $ Left "Nested P2SH script"
+    when (isPayScriptHash out) $ Left "getRedeem: nested P2SH script"
     return out
   where
     (OP_PUSHDATA bs _) = last ops

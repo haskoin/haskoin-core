@@ -19,12 +19,11 @@ module Network.Haskoin.Transaction.Builder
 
 import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM, foldM)
-import Control.Applicative ((<$>))
 
 import Data.Maybe (catMaybes, maybeToList, isJust, fromJust)
 import Data.List (sortBy, find, nub, foldl')
 import Data.Word (Word64)
-import qualified Data.ByteString as BS (length, replicate, empty, null)
+import qualified Data.ByteString as BS (length, replicate, empty)
 
 import Network.Haskoin.Util
 import Network.Haskoin.Crypto
@@ -226,13 +225,15 @@ signTx otx@(Tx _ ti _ _) sigis allKeys
   where 
     go (tx, stat) (sigi@(SigInput out _ _ rdmM), i)
         | isLeft keysE = return (tx, SigInvalid $ fromLeft keysE)
-        | null keys    = return (tx, getInputStatus tx i out)
+        | null keys    = return (tx, status)
         | otherwise    = do
             (newTx, newStat) <- foldM f (tx, SigPartial) keys
             return (newTx, lcdStatus [stat, newStat])
       where
         keysE = sigKeys out rdmM allKeys
         keys  = fromRight keysE
+        status | verifyInput tx i out = SigComplete
+               | otherwise            = SigPartial
         f (t,s) k = do
             (t', s') <- signInput t i sigi k 
             return (t', gcdStatus [s, s']) 
@@ -267,11 +268,13 @@ detSignTx otx@(Tx _ ti _ _) sigis allKeys
   where 
     go (tx, stat) (sigi@(SigInput out _ _ rdmM), i)
         | isLeft keysE = (tx, SigInvalid $ fromLeft keysE)
-        | null keys    = (tx, getInputStatus tx i out)
+        | null keys    = (tx, status)
         | otherwise    = (newTx, lcdStatus [stat, newStat])
       where
         keysE = sigKeys out rdmM allKeys
         keys  = fromRight keysE
+        status | verifyInput tx i out = SigComplete
+               | otherwise            = SigPartial
         (newTx, newStat)  = foldl' f (tx, SigPartial) keys
         f (t,s) k = let (t', s') = detSignInput t i sigi k 
                     in  (t', gcdStatus [s, s']) 
@@ -317,23 +320,6 @@ sigKeys out rdmM keys = case (decodeOutput out, rdmM) of
   where
     zipKeys = zip keys (map derivePubKey keys)
 
--- Parse an input and return its completion status. If the input is
--- non-standard, we return SigComplete.
-getInputStatus :: Tx -> Int -> Script -> SigStatus
-getInputStatus tx i out
-    | BS.null s  = SigPartial
-    | isLeft soE = SigInvalid $ fromLeft soE
-    | otherwise  = case decodeInputBS so s of
-        Right (ScriptHashInput (SpendMulSig xs _) (PayMulSig _ r)) ->
-            if length xs >= r then SigComplete else SigPartial
-        Right (RegularInput (SpendMulSig xs r)) ->
-            if length xs >= r then SigComplete else SigPartial
-        _ -> SigComplete
-  where
-    s   = scriptInput $ txIn tx !! i
-    soE = decodeOutput out
-    so  = fromRight soE
-
 -- Construct an input, given a signature and a public key
 buildInput :: Tx -> Int -> Script -> (Maybe Script) -> TxSignature -> PubKey 
            -> Either String (ScriptInput, SigStatus)
@@ -370,28 +356,39 @@ buildInput tx i out rdmM sig pub =
 
 -- This is not the final transaction verification function. It is here mainly
 -- as a helper for tests. It can only validates standard inputs.
-verifyTx :: Tx -> [(Script,OutPoint)] -> Bool
-verifyTx tx xs = flip all z3 $ \dat -> case dat of
-    (Just s, txin, i) -> case decodeVerifySigInput s txin of
-        Just (so, si) -> go so si i
-        Nothing       -> False
-    (Nothing, _, _)   -> False
-  where 
-    m = map (fst <$>) $ matchTemplate xs (txIn tx) f
-    f (_,o) txin = o == prevOutput txin
-    z3 = zip3 m (txIn tx) [0..]
-    go so si i = case (so,si) of
-        (PayPK pub, RegularInput (SpendPK (TxSignature sig sh))) -> 
-            verifySig (txSigHash tx out i sh) sig pub
-        (PayPKHash a, RegularInput (SpendPKHash (TxSignature sig sh) pub)) ->
-            pubKeyAddr pub == a && verifySig (txSigHash tx out i sh) sig pub
-        (PayMulSig pubs r, RegularInput (SpendMulSig sigs _)) ->
-            countMulSig tx out i pubs sigs == r
-        (PayScriptHash a, ScriptHashInput inp rdm) ->
-            scriptAddr rdm == a && go rdm (RegularInput inp) i
-        _ -> False
+verifyTx :: Tx -> [(Script, OutPoint)] -> Bool
+verifyTx tx xs = 
+    all go $ zip (matchTemplate xs (txIn tx) f) [0..]
+  where
+    f (_,o) txin       = o == prevOutput txin
+    go (Just (s,_), i) = verifyInput tx i s
+    go _               = False
+
+verifyInput :: Tx -> Int -> Script -> Bool
+verifyInput tx i s = 
+    go (scriptInput $ txIn tx !! i) s
+  where
+    go inp out
+        | isLeft soE = False
+        | otherwise  = case decodeInputBS so inp of
+            Right (RegularInput (SpendPK (TxSignature sig sh))) -> 
+                let pub = getOutputPubKey so
+                in  verifySig (txSigHash tx out i sh) sig pub
+            Right (RegularInput (SpendPKHash (TxSignature sig sh) pub)) ->
+                let a = getOutputAddress so
+                in pubKeyAddr pub == a && 
+                   verifySig (txSigHash tx out i sh) sig pub
+            Right (RegularInput (SpendMulSig sigs _)) ->
+                let pubs = getOutputMulSigKeys so
+                    r    = getOutputMulSigRequired so
+                in  countMulSig tx out i pubs sigs == r
+            Right (ScriptHashInput si rdm) ->
+                scriptAddr rdm == getOutputAddress so && 
+                go (encodeInputBS $ RegularInput si) (encodeOutput rdm)
+            _ -> False
       where
-        out = encodeOutput so
+        soE = decodeOutput out
+        so  = fromRight soE
                       
 -- Count the number of valid signatures
 countMulSig :: Tx -> Script -> Int -> [PubKey] -> [TxSignature] -> Int
@@ -401,11 +398,4 @@ countMulSig tx so i (pub:pubs) sigs@(TxSignature sig sh:rest)
     | verifySig (txSigHash tx so i sh) sig pub = 
          1 + countMulSig tx so i pubs rest
     | otherwise = countMulSig tx so i pubs sigs
-                  
-decodeVerifySigInput :: Script -> TxIn -> Maybe (ScriptOutput, ScriptInput)
-decodeVerifySigInput out (TxIn _ si _ ) = case decodeOutput out of
-    Right so -> do
-        inp <- eitherToMaybe $ decodeInputBS so si
-        return (so, inp)
-    _ -> Nothing
 

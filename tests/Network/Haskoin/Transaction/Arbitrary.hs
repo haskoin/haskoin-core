@@ -139,7 +139,7 @@ genPayTo = do
 -- Generates data for signing a PKHash transaction
 instance Arbitrary PKHashSigTemplate where
     arbitrary = do
-        inC   <- choose (0,5)
+        inC   <- choose (1,5)
         outC  <- choose (0,10)
         dat   <- nubBy (\a b -> fst3 a == fst3 b) <$> vectorOf inC genPKHashData
         perm  <- choose (0,max 0 $ length dat - 1)
@@ -151,7 +151,7 @@ instance Arbitrary PKHashSigTemplate where
 -- Generates data for signing a P2SH transactions
 instance Arbitrary MulSigTemplate where
     arbitrary = do
-        inC   <- choose (0,5)
+        inC   <- choose (1,5)
         outC  <- choose (0,10)
         dat   <- nubBy (\a b -> f1 a == f1 b) <$> vectorOf inC genMSData
         perm  <- choose (0,max 0 $ length dat - 1)

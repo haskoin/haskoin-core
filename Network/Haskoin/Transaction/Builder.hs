@@ -3,8 +3,6 @@ module Network.Haskoin.Transaction.Builder
 , buildTx
 , buildAddrTx
 , SigInput(..)
-, SigStatus(..)
-, isSigInvalid
 , signTx
 , signInput
 , detSignTx
@@ -179,20 +177,6 @@ data SigInput
 instance NFData SigInput where
     rnf (SigInput o p h b) = rnf o `seq` rnf p `seq` rnf h `seq` rnf b
 
-data SigStatus
-    = SigComplete
-    | SigPartial
-    | SigInvalid !String
-    deriving (Eq, Read, Show)
-
-instance NFData SigStatus where
-    rnf (SigInvalid s) = rnf s
-    rnf x = x `seq` ()
-
-isSigInvalid :: SigStatus -> Bool
-isSigInvalid (SigInvalid _) = True
-isSigInvalid _              = False
-
 -- | Prepare input for signing.
 signInputParams :: Tx                 -- ^ Transaction to sign
                 -> Int                -- ^ Input index to sign
@@ -208,7 +192,7 @@ signInputParams tx ini prv si = (pub, pks, sgs, sh, p2s)
     pks = either error id $ decodeOutput $ sigDataOut si
     sgs = decode' $ scriptInput (txIn tx !! ini)
 
--- | Replace input script in a transaction. Use after signing.
+-- | Replace input script in a transaction. Used internally by signing code.
 replaceInput :: Tx           -- ^ Transaction
              -> Int          -- ^ Input index
              -> ScriptOutput -- ^ PkScript
@@ -258,8 +242,7 @@ addSig tx ini pks scr pub ts p2s = case pks of
       ops = scriptOps scr
       scr' = if p2s && not (null ops) then Script (init ops) else scr
 
--- | Sign a transaction input with a private key. Return a new transaction with
--- the signature applied to the specified input.
+-- | Sign a transaction input with a private key. Monadic version.
 signInput :: Monad m
           => Tx              -- ^ Transaction to sign
           -> Int             -- ^ Input index to sign
@@ -274,8 +257,7 @@ signInput tx ini si prv = do
     msg = txSigHash tx (encodeOutput pks) ini sh
     (pub, pks, sgs, sh, p2s) = signInputParams tx ini prv si
 
--- | Sign a transaction input with a private key. Return a new transaction with
--- the signature applied to the specified input.
+-- | Sign a transaction input with a private key. Deterministic version.
 detSignInput :: Tx          -- ^ Transaction to sign
              -> Int         -- ^ Input index to sign
              -> SigInput    -- ^ Signature parameters
@@ -304,35 +286,16 @@ getSigParms (Tx _ ti _ _) sigis keys =
   where
     e s = error $ "getSigParms: " ++ s
 
--- | Verify transaction to obtain SigStatus.
-sigStatusTx :: Tx -> [SigInput] -> SigStatus
-sigStatusTx tx sigis = valid
-  where
-    valid = case mapM mf sigis of
-        Left e -> SigInvalid e
-        Right sops -> if verifyTx tx sops
-          then
-            SigComplete
-          else
-            SigPartial
-    mf (SigInput s o _ p) = if p
-      then do
-        rdm <- decodeOutput s
-        let out = encodeOutput . PayScriptHash $ scriptAddr rdm
-        return (out, o)
-      else
-        return (s, o)
-
 -- | Sign a transaction by providing signing parameters and corresponding
 -- private keys. The signature is computed within the 'SecretT' monad to
 -- generate the random signing nonce.
 signTx :: Monad m 
-       => Tx                        -- ^ Transaction to sign
-       -> [SigInput]                -- ^ Signing parameters
-       -> [PrvKey]                  -- ^ Private keys
-       -> SecretT m (Tx, SigStatus) -- ^ (Signed transaction, Status)
+       => Tx                   -- ^ Transaction to sign
+       -> [SigInput]           -- ^ Signing parameters
+       -> [PrvKey]             -- ^ Private keys
+       -> SecretT m (Tx, Bool) -- ^ (Signed transaction, Status)
 signTx tx@(Tx _ ti _ _) sigis keys 
-    | null ti = return (tx, SigInvalid "Transaction has no inputs")
+    | null ti = error "signTx: transaction has no inputs"
     | otherwise = mtx >>= \tx' -> return (tx', sigStatusTx tx' sigis)
   where
     mtx = foldM msign tx $ getSigParms tx sigis keys
@@ -340,20 +303,21 @@ signTx tx@(Tx _ ti _ _) sigis keys
 
 -- | Sign a transaction by providing signing parameters and corresponding
 -- private keys. This version is deterministic and does not require context.
-detSignTx :: Tx               -- ^ Transaction to sign
-          -> [SigInput]       -- ^ Signing parameters
-          -> [PrvKey]         -- ^ Private keys
-          -> (Tx, SigStatus)  -- ^ (Signed transaction, Status)
+detSignTx :: Tx          -- ^ Transaction to sign
+          -> [SigInput]  -- ^ Signing parameters
+          -> [PrvKey]    -- ^ Private keys
+          -> (Tx, Bool)  -- ^ (Signed transaction, Status)
 detSignTx tx@(Tx _ ti _ _) sigis keys 
-    | null ti = (tx, SigInvalid "Transaction has no inputs")
+    | null ti = error "detSignTx: transaction has no inputs"
     | otherwise = (tx', sigStatusTx tx' sigis)
   where 
     tx' = foldl' sign tx $ getSigParms tx sigis keys
     sign t (si, ini, prvM) = maybe t (detSignInput t ini si) prvM
 
--- Order the SigInput with respect to the transaction inputs. This allow the
--- users to provide the SigInput in any order. Users can also provide only a
--- partial set of SigInputs.
+-- Order 'SigInput' list with respect to the transaction inputs. This allows
+-- users to provide list of 'SigInput' in any order. Users can also provide
+-- only a partial list for signing or verification. Other inputs will be
+-- ignored.
 findSigInput :: [SigInput] -> [TxIn] -> [(SigInput, Int)]
 findSigInput si ti =
     catMaybes $ map g $ zip (matchTemplate si ti f) [0..]
@@ -363,7 +327,7 @@ findSigInput si ti =
     g (Nothing, _) = Nothing
 
 -- Find from the list of private keys which one is required to sign the 
--- provided ScriptOutput. 
+-- provided 'ScriptOutput'.
 sigKeys :: Script -> [PrvKey] -> Either String [PrvKey]
 sigKeys out keys = liftM (map fst) $ case decodeOutput out of
     Right (PayPK p)        -> 
@@ -424,8 +388,7 @@ verifyInput tx ini out = if bad then False else chk
 verifyTx :: Tx                     -- ^ Transaction
          -> [(Script, OutPoint)]   -- ^ (PkScript, OutPoint)
          -> Bool
-         -- ^ Validation result, will result in false negatives for
-         -- non-standard scripts
+         -- ^ Result of validation, may return False for non-standard scripts
 verifyTx tx xs = if bad then False else and (map v ip)
   where
     ip = [ (ini, out)
@@ -436,3 +399,17 @@ verifyTx tx xs = if bad then False else and (map v ip)
     bad = length ip < length xs
     v (ini, out) = verifyInput tx ini out
     f (_, op) ti = op == prevOutput ti
+
+-- | Verify transaction to obtain status. Used by signature function.
+sigStatusTx :: Tx -> [SigInput] -> Bool
+sigStatusTx tx sigis = valid
+  where
+    valid = either error (verifyTx tx) $ mapM mf sigis
+    mf (SigInput s o _ p) = if p
+      then do
+        rdm <- decodeOutput s
+        let out = encodeOutput . PayScriptHash $ scriptAddr rdm
+        return (out, o)
+      else
+        return (s, o)
+

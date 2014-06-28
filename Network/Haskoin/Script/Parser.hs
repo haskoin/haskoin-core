@@ -272,23 +272,23 @@ decodeInput pks sgs = go False pks sgs
             [OP_PUSHDATA sig _] -> do
                 dsig <- decodeSig sig
                 return (SpendPK dsig, o, p)
-            _ -> Left "Could not decode script as SpendPK"
+            _ -> Left "decodeInput: could not decode script as SpendPK"
         PayPKHash _ -> case scriptOps i of
             [OP_PUSHDATA sig _, OP_PUSHDATA pub _] -> do
                 dsig <- decodeSig sig
                 dpub <- decodeToEither pub
                 return (SpendPKHash dsig dpub, o, p)
-            _ -> Left "Could not decode script as SpendPKHash"
+            _ -> Left "decodeInput: could not decode script as SpendPKHash"
         PayMulSig _ r -> case scriptOps i of
             OP_PUSHDATA _ _ : xs -> do
                 ms <- matchSpendMulSig (Script xs) r
                 return (ms, o, p)
-            _ -> Left "Could not decode script as SpendMulSig"
+            _ -> Left "decodeInput: could not decode script as SpendMulSig"
         PayScriptHash a -> do
-            when p $ Left "Nested P2SH scrpt"
+            when p $ Left "decodeInput: nested P2SH scrpt"
             out <- getRedeem $ Script (scriptOps i)
             unless (scriptAddr out == a) $
-                Left "Address doesn't match redeem script"
+                Left "decodeInput: address doesn't match redeem script"
             go True out $ Script (init $ scriptOps i)
 
 -- | Similar to 'decodeInput' but decodes from a ByteString.

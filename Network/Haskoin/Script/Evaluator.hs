@@ -14,8 +14,6 @@ module Network.Haskoin.Script.Evaluator
 , verifySpend
 ) where
 
-import Debug.Trace (trace, traceM)
-
 import Control.Monad.State
 import Control.Monad.Error
 import Control.Monad.Identity
@@ -23,12 +21,6 @@ import Control.Monad.Identity
 import Control.Applicative ((<$>), (<*>))
 
 import qualified Data.ByteString as BS
-
-import qualified Data.ByteString.Builder as BSB
-    ( toLazyByteString
-    , byteStringHex
-    )
-
 
 import Data.List (intercalate)
 import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit)
@@ -76,15 +68,11 @@ data Program = Program {
     sigCheck     :: SigCheck
 }
 
-dumpHex :: BS.ByteString -> String
-dumpHex = show . BSB.toLazyByteString . BSB.byteStringHex
-
 dumpOp :: ScriptOp -> String
 dumpOp (OP_PUSHDATA payload optype) =
   "OP_PUSHDATA(" ++ (show optype) ++ ")" ++
-  " 0x" ++ (dumpHex payload)
+  " 0x" ++ (bsToHex payload)
 dumpOp op = show op
-
 
 dumpList :: [String] -> String
 dumpList xs = "[" ++ (intercalate "," xs) ++ "]"
@@ -93,7 +81,7 @@ dumpScript :: [ScriptOp] -> String
 dumpScript script = dumpList $ map dumpOp script
 
 dumpStack :: Stack -> String
-dumpStack s = dumpList $ map (dumpHex . BS.pack) s
+dumpStack s = dumpList $ map (bsToHex . BS.pack) s
 
 
 instance Show Program where
@@ -360,14 +348,6 @@ popAltStack :: ProgramTransition StackValue
 popAltStack = get >>= \p -> case altStack p of
     a:as -> put p { altStack = as } >> return a
     []   -> programError "popAltStack: empty stack"
-
-
-
-
-dumpState :: String -> ProgramTransition ()
-dumpState message = do
-    traceM message
-    get >>= \s -> traceM $ show s
 
 -- Instruction Evaluation
 eval :: ScriptOp -> ProgramTransition ()

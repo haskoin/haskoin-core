@@ -285,6 +285,7 @@ decodeInput pks sgs = go False pks sgs
                 return (ms, o, p)
             _ -> Left "Could not decode script as SpendMulSig"
         PayScriptHash a -> do
+            when p $ Left "Nested P2SH scrpt"
             out <- getRedeem $ Script (scriptOps i)
             unless (scriptAddr out == a) $
                 Left "Address doesn't match redeem script"

@@ -471,8 +471,8 @@ eval op = case constValue op of
 --------------------------------------------------------------------------------
 -- | Based on the IfStack, returns whether the script is within an
 -- evaluating if-branch.
-getExec :: ConditionalProgramTransition ( Bool )
-getExec = all id <$> getCond
+getExec :: ConditionalProgramTransition Bool
+getExec = and <$> getCond
 
 -- | Converts a `ScriptOp` to a program monad.
 conditionalEval :: ScriptOp -> ConditionalProgramTransition ()

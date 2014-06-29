@@ -288,14 +288,12 @@ detSignInput tx ini si prv = do
 getSigParms :: Tx           -- ^ Transaction to sign
             -> [SigInput]   -- ^ Signing parameters
             -> [PrvKey]     -- ^ Private keys
-            -> Either String [(SigInput, Int, Maybe PrvKey)]
+            -> Either String [(SigInput, Int, PrvKey)]
 getSigParms (Tx _ ti _ _) sigis keys = do
     ps <- sequence pEs
     return $ concat ps
   where
-    f si ini prvs = if null prvs
-      then [(si, ini, Nothing)]
-      else map (\prv -> (si, ini, Just prv)) prvs
+    f si ini prvs = map (\prv -> (si, ini, prv)) prvs
     pEs = [ fmap (f si ini) $ sigKeys (sigDataOut si) keys
           | (si, ini) <- findSigInput sigis ti ]
 
@@ -314,7 +312,7 @@ signTx tx@(Tx _ ti _ _) sigis keys = do
     tx' <- foldM msign tx sigp
     return (tx', sigStatusTx tx' sigis)
   where
-    msign t (si, ini, prvM) = maybe (return t) (signInput t ini si) prvM
+    msign t (si, ini, prv) = signInput t ini si prv
 
 -- | Sign a transaction by providing signing parameters and corresponding
 -- private keys. This version is deterministic and does not require context.
@@ -329,7 +327,7 @@ detSignTx tx@(Tx _ ti _ _) sigis keys = do
     tx' <- foldM msign tx sigp
     return (tx', sigStatusTx tx' sigis)
   where 
-    msign t (si, ini, prvM) = maybe (return t) (detSignInput t ini si) prvM
+    msign t (si, ini, prv) = detSignInput t ini si prv
 
 -- Order 'SigInput' list with respect to the transaction inputs. This allows
 -- users to provide list of 'SigInput' in any order. Users can also provide

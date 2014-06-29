@@ -84,31 +84,37 @@ testChooseMSCoins target kbfee (MSParam m n) xs =
 
 testSignTx :: PKHashSigTemplate -> Bool
 testSignTx (PKHashSigTemplate tx sigi prv)
-    | null $ txIn tx = isSigInvalid stat && isSigInvalid statP
+    | null $ txIn tx = (isLeft res) && (isLeft resP)
     | otherwise = (not $ verifyTx tx verData)
-                   && stat == SigComplete
-                   && verifyTx txSig verData
-                   && statP == SigPartial
-                   && (not $ verifyTx txSigP verData)
-                   && statC == SigComplete
-                   && verifyTx txSigC verData
-    where (txSig, stat)   = detSignTx tx sigi prv
-          (txSigP, statP) = detSignTx tx sigi (tail prv)
-          (txSigC, statC) = detSignTx txSigP sigi [head prv]
+                      && isRight res && stat
+                      && verifyTx txSig verData
+                      && isRight resP && (not statP)
+                      && (not $ verifyTx txSigP verData)
+                      && isRight resC && statC
+                      && verifyTx txSigC verData
+    where res             = detSignTx tx sigi prv
+          (txSig, stat)   = fromRight res
+          resP            = detSignTx tx sigi (tail prv)
+          (txSigP, statP) = fromRight resP
+          resC            = detSignTx txSigP sigi [head prv]
+          (txSigC, statC) = fromRight resC
           verData = map (\(SigInput s o _ _) -> (s,o)) sigi
          
 testSignMS :: MulSigTemplate -> Bool
 testSignMS (MulSigTemplate tx sigis prv)
-    | null $ txIn tx = isSigInvalid stat && isSigInvalid statP
+    | null $ txIn tx = (isLeft res) && (isLeft resP)
     | otherwise = (not $ verifyTx tx verData)
-                  && stat == SigComplete
-                  && verifyTx txSig verData
-                  && statP == SigPartial
-                  && (not $ verifyTx txSigP verData)
-                  && statC == SigComplete
-                  && verifyTx txSigC verData
-    where (txSig, stat)    = detSignTx tx (map snd sigis) prv
-          (txSigP, statP)  = detSignTx tx (map snd sigis) (tail prv)
-          (txSigC, statC)  = detSignTx txSigP (map snd sigis) [head prv]
+                      && isRight res && stat
+                      && verifyTx txSig verData
+                      && isRight resP && (not statP)
+                      && (not $ verifyTx txSigP verData)
+                      && isRight resC && statC
+                      && verifyTx txSigC verData
+    where res             = detSignTx tx (map snd sigis) prv
+          (txSig, stat)   = fromRight res
+          resP            = detSignTx tx (map snd sigis) (tail prv)
+          (txSigP, statP) = fromRight resP
+          resC            = detSignTx txSigP (map snd sigis) [head prv]
+          (txSigC, statC) = fromRight resC
           verData = map (\(s, (SigInput _ o _ _)) -> (s,o)) sigis
 

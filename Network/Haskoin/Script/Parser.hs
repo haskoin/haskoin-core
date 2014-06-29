@@ -24,6 +24,7 @@ module Network.Haskoin.Script.Parser
 , isSpendPK
 , isSpendPKHash
 , isSpendMulSig
+, isScriptHashInput
 ) where
 
 import Control.DeepSeq (NFData, rnf)
@@ -228,19 +229,23 @@ instance NFData SimpleInput where
     rnf (SpendMulSig k r) = rnf k `seq` rnf r
 
 -- | Returns True if the input script is spending a public key.
-isSpendPK :: SimpleInput -> Bool
-isSpendPK (SpendPK _) = True
+isSpendPK :: ScriptInput -> Bool
+isSpendPK (RegularInput (SpendPK _)) = True
 isSpendPK _ = False
 
 -- | Returns True if the input script is spending a public key hash.
-isSpendPKHash :: SimpleInput -> Bool
-isSpendPKHash (SpendPKHash _ _) = True
+isSpendPKHash :: ScriptInput -> Bool
+isSpendPKHash (RegularInput (SpendPKHash _ _)) = True
 isSpendPKHash _ = False
 
 -- | Returns True if the input script is spending a multisignature output.
-isSpendMulSig :: SimpleInput -> Bool
-isSpendMulSig (SpendMulSig _ _) = True
+isSpendMulSig :: ScriptInput -> Bool
+isSpendMulSig (RegularInput (SpendMulSig _ _)) = True
 isSpendMulSig _ = False
+
+isScriptHashInput :: ScriptInput -> Bool
+isScriptHashInput (ScriptHashInput _ _) = True
+isScriptHashInput _ = False
 
 type RedeemScript = ScriptOutput
 

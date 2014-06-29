@@ -3,7 +3,7 @@
 -}
 module Network.Haskoin.Transaction.Arbitrary 
 ( genPubKeyC
-, genMulSigInput
+, genMulSigP2SH
 , genSpendAddrInput
 , genAddrOutput
 , SpendAddrTx(..)
@@ -21,7 +21,6 @@ import Test.QuickCheck
     , choose
     )
 
-import Control.Monad (liftM)
 import Control.Applicative ((<$>),(<*>))
 
 import Data.Word (Word64)
@@ -52,8 +51,8 @@ genPubKeyC = derivePubKey <$> genPrvKeyC
 
 -- | Generate an arbitrary script hash input spending a multisignature
 -- pay to script hash.
-genMulSigInput :: Gen ScriptInput
-genMulSigInput = do
+genMulSigP2SH :: Gen ScriptInput
+genMulSigP2SH = do
     (MSParam m n) <- arbitrary
     rdm <- PayMulSig <$> (vectorOf n genPubKeyC) <*> (return m)
     inp <- (flip SpendMulSig m) <$> (vectorOf m arbitrary)
@@ -61,14 +60,18 @@ genMulSigInput = do
 
 -- | Generate an arbitrary transaction input spending a public key hash or
 -- script hash output.
-genSpendAddrInput :: Gen TxIn
+genSpendAddrInput :: Gen (TxIn, ScriptOutput)
 genSpendAddrInput = do
     op <- arbitrary
     sq <- arbitrary
-    sc <- oneof [ genMulSigInput
-                , RegularInput <$> (SpendPKHash <$> arbitrary <*> genPubKeyC)
-                ]
-    return $ TxIn op (encodeInputBS sc) sq
+    (TxOut _ s) <- genAddrOutput
+    let so = fromRight $ decodeOutputBS s
+    si <- case so of
+        PayPKHash _ -> 
+            RegularInput <$> (SpendPKHash <$> arbitrary <*> genPubKeyC)
+        PayScriptHash _ -> genMulSigP2SH
+        _ -> undefined
+    return (TxIn op (encodeInputBS si) sq, so)
 
 -- | Generate an arbitrary output paying to a public key hash or script hash
 -- address.
@@ -82,16 +85,16 @@ genAddrOutput = do
 
 -- | Data type for generating arbitrary transaction with inputs and outputs
 -- consisting only of script hash or pub key hash scripts.
-data SpendAddrTx = SpendAddrTx Tx deriving (Eq, Show)
+data SpendAddrTx = SpendAddrTx Tx [ScriptOutput] deriving (Eq, Show)
 
 instance Arbitrary SpendAddrTx where
     arbitrary = do
-        x <- choose (1,10)
-        y <- choose (1,10)
-        liftM SpendAddrTx $ Tx <$> arbitrary 
-                               <*> (vectorOf x genSpendAddrInput) 
-                               <*> (vectorOf y genAddrOutput) 
-                               <*> arbitrary
+        x  <- choose (1,5)
+        y  <- choose (1,10)
+        xs <- vectorOf x genSpendAddrInput
+        ys <- vectorOf y genAddrOutput
+        let tx = Tx 1 (map fst xs) ys 0
+        return $ SpendAddrTx tx (map snd xs)
 
 instance Arbitrary Coin where
     arbitrary = Coin <$> arbitrary <*> arbitrary <*> arbitrary
@@ -128,7 +131,7 @@ genMSData = do
         perPrv = permutations prv !! perm
     return (op, script, sigi, take m perPrv)
 
-genPayTo :: Gen (String,Word64)
+genPayTo :: Gen (String, Word64)
 genPayTo = do
     v  <- choose (1,2100000000000000)
     sc <- oneof [ PubKeyAddress <$> arbitrary

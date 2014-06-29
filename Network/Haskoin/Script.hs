@@ -38,6 +38,7 @@ module Network.Haskoin.Script
 , isSpendPK
 , isSpendPKHash
 , isSpendMulSig
+, isScriptHashInput
 
   -- * Helpers
 , scriptRecipient

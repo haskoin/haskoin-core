@@ -27,7 +27,7 @@ module Network.Haskoin.Script.Parser
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM, liftM2)
+import Control.Monad (liftM, liftM2, unless)
 import Control.Applicative ((<$>))
 
 import Data.List (sortBy)
@@ -274,7 +274,8 @@ decodeSimpleInput out s = case (out, scriptOps s) of
         SpendPK <$> decodeSig bs
     (PayPKHash _, [OP_PUSHDATA sig _, OP_PUSHDATA p _]) -> 
         liftM2 SpendPKHash (decodeSig sig) (decodeToEither p)
-    (PayMulSig _ r, (_:xs)) -> 
+    (PayMulSig _ r, (x:xs)) -> do
+        unless (isPushOp x) $ Left "decodeInput: invalid SpendMulSig"
         matchSpendMulSig (Script xs) r
     _ -> Left "decodeInput: Could not decode script input"
 

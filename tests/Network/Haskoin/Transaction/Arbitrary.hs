@@ -56,12 +56,12 @@ genPubKeyC = derivePubKey <$> genPrvKeyC
 
 -- | Generate an arbitrary script hash input spending a multisignature
 -- pay to script hash.
-genMulSigInput :: Gen ScriptHashInput
+genMulSigInput :: Gen Script
 genMulSigInput = do
     (MSParam m n) <- arbitrary
     rdm <- PayMulSig <$> (vectorOf n genPubKeyC) <*> (return m)
     inp <- (flip SpendMulSig m) <$> (vectorOf m arbitrary)
-    return $ ScriptHashInput inp rdm
+    return $ appendRedeem inp rdm
 
 -- | Generate an arbitrary transaction input spending a public key hash or
 -- script hash output.
@@ -69,7 +69,7 @@ genRegularInput :: Gen TxIn
 genRegularInput = do
     op <- arbitrary
     sq <- arbitrary
-    sc <- oneof [ encodeScriptHashBS <$> genMulSigInput
+    sc <- oneof [ encode' <$> genMulSigInput
                 , encodeInputBS <$> (SpendPKHash <$> arbitrary <*> genPubKeyC)
                 ]
     return $ TxIn op sc sq

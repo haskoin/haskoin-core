@@ -12,6 +12,7 @@ module Network.Haskoin.Script
 , ScriptOp(..)
 , PushDataType(..)
 , opPushData
+, isPushOp
 
   -- *Script Parsing
   -- **Script Outputs
@@ -37,13 +38,11 @@ module Network.Haskoin.Script
 , isSpendPKHash
 , isSpendMulSig
 
-  -- **ScriptHash Inputs
-, ScriptHashInput(..)
+  -- **Pay To Script Hash
 , RedeemScript
-, encodeScriptHash
-, encodeScriptHashBS
-, decodeScriptHash
-, decodeScriptHashBS
+, getRedeem
+, appendRedeem
+, removeRedeem
 
   -- * Helpers
 , scriptRecipient

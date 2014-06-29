@@ -8,7 +8,6 @@ import Test.QuickCheck
     , Gen
     , arbitrary
     , choose
-    , oneof
     )
 import qualified Data.ByteString as BS 
     ( ByteString
@@ -16,10 +15,6 @@ import qualified Data.ByteString as BS
     , drop
     , null
     )
-
-import Control.Applicative
-
-import Network.Haskoin.Util.BuildMonad (Build(..))
 
 -- Arbitrary instance for strict ByteStrings
 instance Arbitrary BS.ByteString where
@@ -33,11 +28,4 @@ nonEmptyBS :: Gen BS.ByteString
 nonEmptyBS = do
     bs <- arbitrary
     return $ if BS.null bs then BS.pack [0] else bs
-
--- Arbitrary instance for the Build monad
-instance Arbitrary a => Arbitrary (Build a) where
-    arbitrary = oneof [ Complete <$> arbitrary
-                      , Partial <$> arbitrary
-                      , return $ Broken "Arbitrary: Broken"
-                      ]
 

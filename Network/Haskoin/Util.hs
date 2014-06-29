@@ -46,19 +46,6 @@ module Network.Haskoin.Util
 , snd3
 , lst3
 
- -- *Build monad
-, Build(..)
-, isComplete
-, isPartial
-, isBroken
-, eitherToBuild
-, buildToEither
-, guardPartial
-
-  -- *BuildT transformer monad
-, BuildT(..)
-, liftBuild
-
   -- *Constants
 , addrPrefix
 , scriptPrefix
@@ -115,7 +102,6 @@ import qualified Data.ByteString.Char8 as C
     , unpack
     )
 
-import Network.Haskoin.Util.BuildMonad
 import Network.Haskoin.Util.Constants
 
 -- ByteString helpers

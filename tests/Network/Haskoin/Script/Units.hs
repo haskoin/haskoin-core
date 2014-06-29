@@ -18,6 +18,8 @@ tests =
         (map notCanonicalVectorsMap $ zip notCanonicalVectors [0..])
     , testGroup "Multi Signatures" 
         (map mapMulSigVector $ zip mulSigVectors [0..])
+    , testGroup "Signature decoding"
+        (map sigDecodeMap $ zip scriptSigSignatures [0..])
     ]
 
 canonicalVectorsMap :: (String,Int) -> Test.Framework.Test
@@ -31,6 +33,12 @@ notCanonicalVectorsMap (_,i) =
     testCase ("Not canonical Sig " ++ (show i)) func
   where 
     func = testNotCanonicalSig $ notCanonicalVectors !! i
+    
+sigDecodeMap :: ( String, Int ) -> Test.Framework.Test    
+sigDecodeMap (_,i) =
+    testCase ( "Signature " ++ ( show i ) ) func
+  where
+    func = testSigDecode $ scriptSigSignatures !! i
 
 testCanonicalSig :: String -> Assertion
 testCanonicalSig str = 
@@ -56,6 +64,13 @@ runMulSigVector (a,ops) =
   where 
     s = decode' $ fromJust $ hexToBS ops
     b = addrToBase58 $ scriptAddr $ fromRight $ decodeOutput s
+    
+testSigDecode :: String -> Assertion
+testSigDecode str =
+  let bs = fromJust $ hexToBS str
+      eitherSig = decodeSig bs
+  in
+  assertBool ( unwords [ "Decode failed:", fromLeft eitherSig ] ) $ isRight eitherSig
 
 {- Canonical Signatures -}
 
@@ -97,3 +112,10 @@ mulSigVectors =
       ) 
     ]
 
+scriptSigSignatures :: [ String ]
+scriptSigSignatures =
+     -- Signature in input of txid 1983a69265920c24f89aac81942b1a59f7eb30821a8b3fb258f88882b6336053
+    [ "304402205ca6249f43538908151fe67b26d020306c0e59fa206cf9f3ccf641f33357119d02206c82f244d04ac0a48024fb9cc246b66e58598acf206139bdb7b75a2941a2b1e401"
+      -- Signature in input of txid fb0a1d8d34fa5537e461ac384bac761125e1bfa7fec286fa72511240fa66864d  Strange DER sizes. But in Blockchain
+    , "3048022200002b83d59c1d23c08efd82ee0662fec23309c3adbcbd1f0b8695378db4b14e736602220000334a96676e58b1bb01784cb7c556dd8ce1c220171904da22e18fe1e7d1510db501"
+    ]

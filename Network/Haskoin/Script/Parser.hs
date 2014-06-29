@@ -31,8 +31,8 @@ module Network.Haskoin.Script.Parser
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM2)
-import Control.Applicative ((<$>),(<*>))
+import Control.Monad (liftM, liftM2)
+import Control.Applicative ((<$>))
 
 import Data.List (sortBy)
 import qualified Data.ByteString as BS 
@@ -203,8 +203,8 @@ scriptRecipient s = case decodeOutput s of
 -- | Computes the sender address of a script. This function fails if the
 -- script could not be decoded as a spend public key hash or script hash
 -- input. 
-scriptSender :: Script -> Either String Address
-scriptSender s = case decodeInput s of
+scriptSender :: ScriptOutput -> Script -> Either String Address
+scriptSender so s = case decodeInput so s of
     Right (SpendPKHash _ key) -> return $ pubKeyAddr key
     Right _ -> Left "scriptSender: bad input script type"
     _ -> case decodeScriptHash s of
@@ -222,8 +222,8 @@ data ScriptInput =
                   , getInputKey :: !PubKey
                   }
       -- | Spend the coins of a PayMulSig output.
-    | SpendMulSig { getInputMulSigKeys     :: ![TxSignature] 
-                  , getInputMulSigRequired :: !Int
+    | SpendMulSig { getInputMulSigKeys :: ![TxSignature] 
+                  , getInputRequired   :: Int
                   }
     deriving (Eq, Show, Read)
 
@@ -255,11 +255,10 @@ encodeInput s = Script $ case s of
     SpendPKHash ts p  -> [ opPushData $ encodeSig ts
                          , opPushData $ encode' p
                          ]
-    SpendMulSig ts r 
-        | length ts <= 16 && r >= 1 && r <= 16 ->
-            let sigs = map (opPushData . encodeSig) ts
-                in OP_0 : sigs ++ replicate (r - length ts) OP_0
-        | otherwise -> error "SpendMulSig: Bad multisig parameters"
+    SpendMulSig ts r
+        | length ts <= 16 && r <= 16 && length ts <= r -> 
+            OP_0 : map (opPushData . encodeSig) ts
+        | otherwise -> error "SpendMulSig: Too many signatures"
 
 -- | Similar to 'encodeInput' but encodes to a ByteString
 encodeInputBS :: ScriptInput -> BS.ByteString
@@ -267,26 +266,23 @@ encodeInputBS = encode' . encodeInput
 
 -- | Decodes a 'ScriptInput' from a 'Script'. This function fails if the 
 -- script can not be parsed as a standard script input.
-decodeInput :: Script -> Either String ScriptInput
-decodeInput s = case scriptOps s of
-    [OP_PUSHDATA bs _] -> SpendPK <$> decodeSig bs 
-    [OP_PUSHDATA sig _, OP_PUSHDATA p _] -> 
+decodeInput :: ScriptOutput -> Script -> Either String ScriptInput
+decodeInput out s = case (out, scriptOps s) of
+    (PayPK _, [OP_PUSHDATA bs _]) -> SpendPK <$> decodeSig bs 
+    (PayPKHash _, [OP_PUSHDATA sig _, OP_PUSHDATA p _]) -> 
         liftM2 SpendPKHash (decodeSig sig) (decodeToEither p)
-    (OP_0 : xs) -> matchSpendMulSig $ Script xs
+    (PayMulSig _ r, (_:xs)) -> matchSpendMulSig (Script xs) r
     _ -> Left "decodeInput: Script did not match input templates"
 
 -- | Similar to 'decodeInput' but decodes from a ByteString
-decodeInputBS :: BS.ByteString -> Either String ScriptInput
-decodeInputBS = (decodeInput =<<) . decodeToEither 
+decodeInputBS :: ScriptOutput -> BS.ByteString -> Either String ScriptInput
+decodeInputBS so = (decodeInput so =<<) . decodeToEither 
 
-matchSpendMulSig :: Script -> Either String ScriptInput
-matchSpendMulSig (Script ops) = 
-    liftM2 SpendMulSig (go ops) (return $ length ops)
+matchSpendMulSig :: Script -> Int -> Either String ScriptInput
+matchSpendMulSig (Script ops) r = 
+    liftM (flip SpendMulSig r) $ go ops
   where 
     go (OP_PUSHDATA bs _:xs) = liftM2 (:) (decodeSig bs) (go xs)
-    go (OP_0:xs)
-        | all (== OP_0) xs = return []
-        | otherwise = Left "matchSpendMulSig: invalid opcode after OP_0"
     go [] = return []
     go _  = Left "matchSpendMulSig: invalid multisig opcode"
 
@@ -323,9 +319,9 @@ encodeScriptHashBS = encode' . encodeScriptHash
 -- if the script can not be parsed as a script hash input.
 decodeScriptHash :: Script -> Either String ScriptHashInput
 decodeScriptHash (Script ops) = case splitAt (length ops - 1) ops of
-    (is,[OP_PUSHDATA bs _]) -> 
-        ScriptHashInput <$> (decodeInput $ Script is) 
-                        <*> (decodeOutputBS bs)
+    (is,[OP_PUSHDATA bs _]) -> do
+        out <- decodeOutputBS bs
+        flip ScriptHashInput out <$> (decodeInput out $ Script is) 
     _ -> Left "decodeScriptHash: Script did not match input template"
 
 -- | Similar to 'decodeScriptHash' but decodes from a ByteString

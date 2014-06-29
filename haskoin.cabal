@@ -31,8 +31,7 @@ library
                        Network.Haskoin.Protocol,
                        Network.Haskoin.Script,
                        Network.Haskoin.Transaction
-    other-modules:     Network.Haskoin.Util.BuildMonad,
-                       Network.Haskoin.Util.Constants,
+    other-modules:     Network.Haskoin.Util.Constants,
                        Network.Haskoin.Util.Constants.Testnet,
                        Network.Haskoin.Crypto.NumberTheory, 
                        Network.Haskoin.Crypto.Curve, 
@@ -91,6 +90,7 @@ test-suite test-haskoin
                        Network.Haskoin.Crypto.Point.Tests,
                        Network.Haskoin.Crypto.ECDSA.Tests,
                        Network.Haskoin.Crypto.Base58.Tests,
+                       Network.Haskoin.Crypto.Base58.Units,
                        Network.Haskoin.Crypto.Keys.Tests,
                        Network.Haskoin.Crypto.ExtendedKeys.Tests,
                        Network.Haskoin.Crypto.ExtendedKeys.Units,

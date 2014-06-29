@@ -29,6 +29,8 @@ module Network.Haskoin.Script
 
   -- **Script Inputs
 , ScriptInput(..)
+, SimpleInput(..)
+, RedeemScript
 , encodeInput
 , encodeInputBS
 , decodeInput
@@ -36,14 +38,7 @@ module Network.Haskoin.Script
 , isSpendPK
 , isSpendPKHash
 , isSpendMulSig
-
-  -- **ScriptHash Inputs
-, ScriptHashInput(..)
-, RedeemScript
-, encodeScriptHash
-, encodeScriptHashBS
-, decodeScriptHash
-, decodeScriptHashBS
+, isScriptHashInput
 
   -- * Helpers
 , scriptRecipient

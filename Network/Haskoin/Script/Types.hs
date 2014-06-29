@@ -3,6 +3,7 @@ module Network.Haskoin.Script.Types
 ( ScriptOp(..)
 , Script(..)
 , PushDataType(..)
+, isPushOp
 , opPushData
 ) where
 
@@ -505,6 +506,30 @@ instance Binary ScriptOp where
         OP_NOP9              -> putWord8 0xb8
         OP_NOP10             -> putWord8 0xb9
 
+
+ -- | Check whether opcode is only data.
+isPushOp :: ScriptOp -> Bool
+isPushOp op = case op of
+    OP_PUSHDATA _ _ -> True
+    OP_0            -> True
+    OP_1NEGATE      -> True
+    OP_1            -> True
+    OP_2            -> True
+    OP_3            -> True
+    OP_4            -> True
+    OP_5            -> True
+    OP_6            -> True
+    OP_7            -> True
+    OP_8            -> True
+    OP_9            -> True
+    OP_10           -> True
+    OP_11           -> True
+    OP_12           -> True
+    OP_13           -> True
+    OP_14           -> True
+    OP_15           -> True
+    OP_16           -> True
+    _               -> False       
 
 -- | Optimally encode data using one of the 4 types of data pushing opcodes
 opPushData :: BS.ByteString -> ScriptOp

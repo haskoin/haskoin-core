@@ -49,7 +49,7 @@ type SecretState m = (WorkingState, (Int -> m BS.ByteString))
 -- | StateT monad stack tracking the internal state of HMAC DRBG 
 -- pseudo random number generator using SHA-256. The 'SecretT' monad is
 -- run with the 'withSource' function by providing it a source of entropy.
-type SecretT m a = S.StateT (SecretState m) m a
+type SecretT m = S.StateT (SecretState m) m
 
 -- | Run a 'SecretT' monad by providing it a source of entropy. You can
 -- use 'devURandom', 'devRandom' or provide your own entropy source function.

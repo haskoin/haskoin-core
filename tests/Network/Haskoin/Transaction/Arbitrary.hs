@@ -3,10 +3,10 @@
 -}
 module Network.Haskoin.Transaction.Arbitrary 
 ( genPubKeyC
-, genMulSigInput
-, genRegularInput 
+, genMulSigP2SH
+, genSpendAddrInput
 , genAddrOutput
-, RegularTx(..)
+, SpendAddrTx(..)
 , MSParam(..)
 , PKHashSigTemplate(..)
 , MulSigTemplate(..)
@@ -21,7 +21,6 @@ import Test.QuickCheck
     , choose
     )
 
-import Control.Monad (liftM)
 import Control.Applicative ((<$>),(<*>))
 
 import Data.Word (Word64)
@@ -46,18 +45,14 @@ instance Arbitrary MSParam where
         m <- choose (1,n)
         return $ MSParam m n
 
--- | Data type for generating arbitrary transaction with inputs and outputs
--- consisting only of script hash or pub key hash scripts.
-data RegularTx = RegularTx Tx deriving (Eq, Show)
-
 -- | Generate an arbitrary compressed public key.
 genPubKeyC :: Gen PubKey
 genPubKeyC = derivePubKey <$> genPrvKeyC
 
 -- | Generate an arbitrary script hash input spending a multisignature
 -- pay to script hash.
-genMulSigInput :: Gen ScriptHashInput
-genMulSigInput = do
+genMulSigP2SH :: Gen ScriptInput
+genMulSigP2SH = do
     (MSParam m n) <- arbitrary
     rdm <- PayMulSig <$> (vectorOf n genPubKeyC) <*> (return m)
     inp <- (flip SpendMulSig m) <$> (vectorOf m arbitrary)
@@ -65,14 +60,18 @@ genMulSigInput = do
 
 -- | Generate an arbitrary transaction input spending a public key hash or
 -- script hash output.
-genRegularInput :: Gen TxIn
-genRegularInput = do
+genSpendAddrInput :: Gen (TxIn, ScriptOutput)
+genSpendAddrInput = do
     op <- arbitrary
     sq <- arbitrary
-    sc <- oneof [ encodeScriptHashBS <$> genMulSigInput
-                , encodeInputBS <$> (SpendPKHash <$> arbitrary <*> genPubKeyC)
-                ]
-    return $ TxIn op sc sq
+    (TxOut _ s) <- genAddrOutput
+    let so = fromRight $ decodeOutputBS s
+    si <- case so of
+        PayPKHash _ -> 
+            RegularInput <$> (SpendPKHash <$> arbitrary <*> genPubKeyC)
+        PayScriptHash _ -> genMulSigP2SH
+        _ -> undefined
+    return (TxIn op (encodeInputBS si) sq, so)
 
 -- | Generate an arbitrary output paying to a public key hash or script hash
 -- address.
@@ -84,14 +83,18 @@ genAddrOutput = do
                 ]
     return $ TxOut v $ encodeOutputBS sc
 
-instance Arbitrary RegularTx where
+-- | Data type for generating arbitrary transaction with inputs and outputs
+-- consisting only of script hash or pub key hash scripts.
+data SpendAddrTx = SpendAddrTx Tx [ScriptOutput] deriving (Eq, Show)
+
+instance Arbitrary SpendAddrTx where
     arbitrary = do
-        x <- choose (1,10)
-        y <- choose (1,10)
-        liftM RegularTx $ Tx <$> arbitrary 
-                             <*> (vectorOf x genRegularInput) 
-                             <*> (vectorOf y genAddrOutput) 
-                             <*> arbitrary
+        x  <- choose (1,5)
+        y  <- choose (1,10)
+        xs <- vectorOf x genSpendAddrInput
+        ys <- vectorOf y genAddrOutput
+        let tx = Tx 1 (map fst xs) ys 0
+        return $ SpendAddrTx tx (map snd xs)
 
 instance Arbitrary Coin where
     arbitrary = Coin <$> arbitrary <*> arbitrary <*> arbitrary
@@ -110,7 +113,7 @@ genPKHashData = do
     sh  <- arbitrary
     let pub    = derivePubKey prv
         script = encodeOutput $ PayPKHash $ pubKeyAddr pub
-        sigi   = SigInput script op sh False
+        sigi   = SigInput script op sh Nothing
     return (op, sigi, prv)
 
 -- Generates private keys that can sign an input using the OutPoint and SigInput
@@ -124,11 +127,11 @@ genMSData = do
     let pub    = map derivePubKey prv
         rdm    = PayMulSig pub m
         script = encodeOutput $ PayScriptHash $ scriptAddr rdm
-        sigi   = SigInput (encodeOutput rdm) op sh True
+        sigi   = SigInput script op sh (Just $ encodeOutput rdm)
         perPrv = permutations prv !! perm
     return (op, script, sigi, take m perPrv)
 
-genPayTo :: Gen (String,Word64)
+genPayTo :: Gen (String, Word64)
 genPayTo = do
     v  <- choose (1,2100000000000000)
     sc <- oneof [ PubKeyAddress <$> arbitrary

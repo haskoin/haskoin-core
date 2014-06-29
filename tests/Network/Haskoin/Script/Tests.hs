@@ -97,7 +97,6 @@ tests =
         , testProperty "OP_IF else"
             (testStackEqual [OP_0, OP_IF, OP_2, OP_ELSE, OP_3, OP_ENDIF] [[3]])
         ]
-    -}
 
     , testFile "Canonical Valid Script Test Cases"
                "tests/data/script_valid.json"
@@ -106,6 +105,7 @@ tests =
     , testFile "Canonical Invalid Script Test Cases"
                "tests/data/script_valid.json"
                False
+    -}
     ]
 
 metaGetPut :: (Binary a, Eq a) => a -> Bool

@@ -18,10 +18,12 @@ module Network.Haskoin.Transaction.Builder
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM, foldM)
+import Control.Monad (liftM, foldM, when)
+import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Either (EitherT, hoistEither)
 
 import Data.Maybe (catMaybes, isJust, fromJust, maybeToList)
-import Data.List (sortBy, find, foldl')
+import Data.List (sortBy, find)
 import Data.Word (Word64)
 import qualified Data.ByteString as BS (length, replicate, empty)
 
@@ -182,15 +184,18 @@ signInputParams :: Tx                 -- ^ Transaction to sign
                 -> Int                -- ^ Input index to sign
                 -> PrvKey             -- ^ Key to sign input with
                 -> SigInput           -- ^ Signature parameters
-                -> (PubKey, ScriptOutput, Script, SigHash, Bool)
-                -- ^ (Public key, pkscript, sigscript, hashtype, P2SH)
-signInputParams tx ini prv si = (pub, pks, sgs, sh, p2s)
+                -> Either String (PubKey, ScriptOutput, Script, SigHash, Bool)
+                -- ^ (Public key, PkScript, Sigscript, HashType, P2SH)
+signInputParams tx ini prv si = do
+    when (ini < 0 || ini >= length (txIn tx)) $
+        Left "signInputParams: index out of bounds"
+    sgs <- decodeToEither $ scriptInput (txIn tx !! ini)
+    pks <- decodeOutput $ sigDataOut si
+    return (pub, pks, sgs, sh, p2s)
   where
     pub = derivePubKey prv
     sh  = sigDataSH si
     p2s = sigIsP2SH si
-    pks = either error id $ decodeOutput $ sigDataOut si
-    sgs = decode' $ scriptInput (txIn tx !! ini)
 
 -- | Replace input script in a transaction. Used internally by signing code.
 replaceInput :: Tx           -- ^ Transaction
@@ -199,10 +204,9 @@ replaceInput :: Tx           -- ^ Transaction
              -> ScriptInput  -- ^ SigScript
              -> Bool         -- ^ P2SH flag
              -> Tx           -- ^ Modified transaction
-replaceInput tx ini pks sgs p2s = tx { txIn = ls ++ (nti:rs) }
+replaceInput tx ini pks sgs p2s = tx { txIn = updateIndex ini (txIn tx) f }
   where
-    (ls, (ti:rs)) = splitAt ini $ txIn tx
-    nti = ti { scriptInput = encode' $ rdm sgs }
+    f txi = txi { scriptInput = encode' $ rdm sgs }
     rdm i = if p2s then appendRedeem i pks else encodeInput i
 
 -- | Add signature to multisig input. Used internally by signing code.
@@ -211,14 +215,16 @@ msAddSig :: Tx             -- ^ Signed transaction
          -> ScriptOutput   -- ^ Multisig output script
          -> ScriptInput    -- ^ Transaction input
          -> TxSignature    -- ^ Signature
-         -> ScriptInput    -- ^ Input with added signature
-msAddSig tx ini pks@(PayMulSig pubs r) (SpendMulSig sigs _) sig =
-    SpendMulSig (take r sigs') r
+         -> Either String ScriptInput
+         -- ^ Input with added signature
+msAddSig tx ini pks@(PayMulSig pubs r) (SpendMulSig sigs _) sig = do
+    when (not $ sig `elem` sigs) $ Left "msAddSig: invalid signature provided"
+    return $ SpendMulSig (take r sigs') r
   where
     msg h = txSigHash tx (encodeOutput pks) ini h
     sigs' = catMaybes $ matchTemplate (sig:sigs) pubs f
     f (TxSignature s h) p = verifySig (msg h) s p
-msAddSig _ _ _ _ _ = undefined
+msAddSig _ _ _ _ _ = Left "No multisig PkScript or SigScript provided"
 
 -- | Add signature to input. Used internally by signing code.
 addSig :: Tx            -- ^ Signed transaction
@@ -228,19 +234,22 @@ addSig :: Tx            -- ^ Signed transaction
        -> PubKey        -- ^ Public key
        -> TxSignature   -- ^ Transaction signature
        -> Bool          -- ^ P2SH
-       -> ScriptInput   -- ^ SigScript
-addSig tx ini pks scr pub ts p2s = case pks of
-        PayPKHash _     -> SpendPKHash ts pub
-        PayPK _         -> SpendPK ts
-        PayMulSig _ r   -> case null (scriptOps scr') of
-            True  -> msAddSig tx ini pks (SpendMulSig [] r) ts
-            False -> case decodeInput pks scr' of
-                Right (sgs, _, _) -> msAddSig tx ini pks sgs ts
-                Left e -> error $ "addSig: " ++ e
-        PayScriptHash _ -> undefined
-    where
-      ops = scriptOps scr
-      scr' = if p2s && not (null ops) then Script (init ops) else scr
+       -> Either String ScriptInput
+       -- ^ SigScript
+addSig tx ini pks scr pub ts p2s = do
+    scr' <- if p2s && not (null ops) then removeRedeem scr else return scr
+    case pks of
+        PayPKHash _     -> return $ SpendPKHash ts pub
+        PayPK _         -> return $ SpendPK ts
+        PayMulSig _ r   -> if null (scriptOps scr')
+          then
+            msAddSig tx ini pks (SpendMulSig [] r) ts
+          else do
+            (sgs, _, _) <- decodeInput pks scr'
+            msAddSig tx ini pks sgs ts
+        PayScriptHash _ -> Left "addSig: cannot sign P2SH directly"
+  where
+    ops = scriptOps scr
 
 -- | Sign a transaction input with a private key. Monadic version.
 signInput :: Monad m
@@ -248,57 +257,63 @@ signInput :: Monad m
           -> Int             -- ^ Input index to sign
           -> SigInput        -- ^ Signature parameters
           -> PrvKey          -- ^ Key to sign input with
-          -> SecretT m Tx    -- ^ Resulting transaction
+          -> EitherT String (SecretT m) Tx
+          -- ^ Resulting transaction
 signInput tx ini si prv = do
-    sig <- signMsg msg prv
-    let ipt = addSig tx ini pks sgs pub (TxSignature sig sh) p2s
+    (pub, pks, sgs, sh, p2s) <- hoistEither $ signInputParams tx ini prv si
+    sig <- lift $ signMsg (msg pks sh) prv
+    ipt <- hoistEither $ addSig tx ini pks sgs pub (TxSignature sig sh) p2s
     return $ replaceInput tx ini pks ipt p2s
   where
-    msg = txSigHash tx (encodeOutput pks) ini sh
-    (pub, pks, sgs, sh, p2s) = signInputParams tx ini prv si
+    msg p h = txSigHash tx (encodeOutput p) ini h
 
 -- | Sign a transaction input with a private key. Deterministic version.
-detSignInput :: Tx          -- ^ Transaction to sign
-             -> Int         -- ^ Input index to sign
-             -> SigInput    -- ^ Signature parameters
-             -> PrvKey      -- ^ Key to sign input with
-             -> Tx          -- ^ Resulting transaction
-detSignInput tx ini si prv = replaceInput tx ini pks ipt p2s
+detSignInput :: Tx                 -- ^ Transaction to sign
+             -> Int                -- ^ Input index to sign
+             -> SigInput           -- ^ Signature parameters
+             -> PrvKey             -- ^ Key to sign input with
+             -> Either String Tx   -- ^ Resulting transaction
+detSignInput tx ini si prv = do
+    (pub, pks, sgs, sh, p2s) <- signInputParams tx ini prv si
+    ipt <- addSig tx ini pks sgs pub (TxSignature (sig pks sh) sh) p2s
+    return $ replaceInput tx ini pks ipt p2s
   where
-    msg = txSigHash tx (encodeOutput pks) ini sh
-    (pub, pks, sgs, sh, p2s) = signInputParams tx ini prv si
-    sig = detSignMsg msg prv
-    ipt = addSig tx ini pks sgs pub (TxSignature sig sh) p2s
+    msg p h = txSigHash tx (encodeOutput p) ini h
+    sig p h = detSignMsg (msg p h) prv
 
--- | Obtain parameters required internally by signTx and detSignTx.
+-- | Obtain parameters required internally by signTx and detSignTx. Resulting
+-- list contains as many tuples as combinations of inputs and private keys
+-- there are. For input parameters lacking a private key, there will be a tuple
+-- with no private key to perform signature validation on the input only.
 getSigParms :: Tx           -- ^ Transaction to sign
             -> [SigInput]   -- ^ Signing parameters
             -> [PrvKey]     -- ^ Private keys
-            -> [(SigInput, Int, Maybe PrvKey)]
-            -- ^ Returns tuple with parameters required to sign inputs
-getSigParms (Tx _ ti _ _) sigis keys =
-    [ (si, input, prvM)
-    | (si, input) <- findSigInput sigis ti
-    , let out = sigDataOut si
-    , let sks = map Just . either e id $ sigKeys out keys
-    , prvM <- if null sks then [Nothing] else sks
-    ]
+            -> Either String [(SigInput, Int, Maybe PrvKey)]
+getSigParms (Tx _ ti _ _) sigis keys = do
+    ps <- sequence pEs
+    return $ concat ps
   where
-    e s = error $ "getSigParms: " ++ s
+    f si ini prvs = if null prvs
+      then [(si, ini, Nothing)]
+      else map (\prv -> (si, ini, Just prv)) prvs
+    pEs = [ fmap (f si ini) $ sigKeys (sigDataOut si) keys
+          | (si, ini) <- findSigInput sigis ti ]
 
 -- | Sign a transaction by providing signing parameters and corresponding
 -- private keys. The signature is computed within the 'SecretT' monad to
 -- generate the random signing nonce.
 signTx :: Monad m 
-       => Tx                   -- ^ Transaction to sign
-       -> [SigInput]           -- ^ Signing parameters
-       -> [PrvKey]             -- ^ Private keys
-       -> SecretT m (Tx, Bool) -- ^ (Signed transaction, Status)
-signTx tx@(Tx _ ti _ _) sigis keys 
-    | null ti = error "signTx: transaction has no inputs"
-    | otherwise = mtx >>= \tx' -> return (tx', sigStatusTx tx' sigis)
+       => Tx                             -- ^ Transaction to sign
+       -> [SigInput]                     -- ^ Signing parameters
+       -> [PrvKey]                       -- ^ Private keys
+       -> EitherT String (SecretT m) (Tx, Bool)
+       -- ^ (Signed transaction, Complete?)
+signTx tx@(Tx _ ti _ _) sigis keys = do
+    when (null ti) . hoistEither $ Left "signTx: transaction has no inputs"
+    sigp <- hoistEither $ getSigParms tx sigis keys
+    tx' <- foldM msign tx sigp
+    return (tx', sigStatusTx tx' sigis)
   where
-    mtx = foldM msign tx $ getSigParms tx sigis keys
     msign t (si, ini, prvM) = maybe (return t) (signInput t ini si) prvM
 
 -- | Sign a transaction by providing signing parameters and corresponding
@@ -306,13 +321,15 @@ signTx tx@(Tx _ ti _ _) sigis keys
 detSignTx :: Tx          -- ^ Transaction to sign
           -> [SigInput]  -- ^ Signing parameters
           -> [PrvKey]    -- ^ Private keys
-          -> (Tx, Bool)  -- ^ (Signed transaction, Status)
-detSignTx tx@(Tx _ ti _ _) sigis keys 
-    | null ti = error "detSignTx: transaction has no inputs"
-    | otherwise = (tx', sigStatusTx tx' sigis)
+          -> Either String (Tx, Bool)
+          -- ^ (Signed transaction, Complete?)
+detSignTx tx@(Tx _ ti _ _) sigis keys = do
+    when (null ti) $ Left "detSignTx: transaction has no inputs"
+    sigp <- getSigParms tx sigis keys
+    tx' <- foldM msign tx sigp
+    return (tx', sigStatusTx tx' sigis)
   where 
-    tx' = foldl' sign tx $ getSigParms tx sigis keys
-    sign t (si, ini, prvM) = maybe t (detSignInput t ini si) prvM
+    msign t (si, ini, prvM) = maybe (return t) (detSignInput t ini si) prvM
 
 -- Order 'SigInput' list with respect to the transaction inputs. This allows
 -- users to provide list of 'SigInput' in any order. Users can also provide

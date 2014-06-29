@@ -25,6 +25,7 @@ module Network.Haskoin.Script.Parser
 , isSpendMulSig
 , getRedeem
 , appendRedeem
+, removeRedeem
 ) where
 
 import Control.DeepSeq (NFData, rnf)
@@ -321,7 +322,7 @@ getRedeem (Script ops) = do
   where
     (OP_PUSHDATA bs _) = last ops
 
--- | Append redeem script to end of sigscript.
+-- | Append redeem script to end of SigScript.
 appendRedeem :: ScriptInput
              -> RedeemScript
              -> Script
@@ -329,3 +330,16 @@ appendRedeem i r = Script $ si ++ [rdm]
   where
     si = scriptOps $ encodeInput i
     rdm = opPushData $ encodeOutputBS r
+
+-- | Remove redeem script from SigScript.
+removeRedeem :: Script
+             -> Either String Script
+removeRedeem (Script ops) = do
+    when (null ops) $ Left "removeRedeem: empty script"
+    when (not isdata) $ Left "removeRedeem: unexpected opcode"
+    return (Script ops')
+  where
+    ops' = init ops
+    isdata = case last ops of
+        OP_PUSHDATA _ _ -> True
+        _ -> False

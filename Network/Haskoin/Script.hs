@@ -42,6 +42,7 @@ module Network.Haskoin.Script
 , RedeemScript
 , getRedeem
 , appendRedeem
+, removeRedeem
 
   -- * Helpers
 , scriptRecipient

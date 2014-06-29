@@ -83,8 +83,11 @@ testChooseMSCoins target kbfee (MSParam m n) xs =
 {- Signing Transactions -}
 
 testSignTx :: PKHashSigTemplate -> Bool
-testSignTx (PKHashSigTemplate tx sigi prv) =
-    (not $ verifyTx tx verData)
+testSignTx (PKHashSigTemplate tx sigi prv) = either l id $ do
+    (txSig, stat)   <- detSignTx tx sigi prv
+    (txSigP, statP) <- detSignTx tx sigi (tail prv)
+    (txSigC, statC) <- detSignTx txSigP sigi [head prv]
+    return $ (not $ verifyTx tx verData)
         && stat
         && verifyTx txSig verData
         && not statP
@@ -92,14 +95,15 @@ testSignTx (PKHashSigTemplate tx sigi prv) =
         && statC
         && verifyTx txSigC verData
   where
-    (txSig, stat)   = detSignTx tx sigi prv
-    (txSigP, statP) = detSignTx tx sigi (tail prv)
-    (txSigC, statC) = detSignTx txSigP sigi [head prv]
     verData = map (\(SigInput s o _ _) -> (s,o)) sigi
+    l _ = if (null $ txIn tx) then True else False
          
 testSignMS :: MulSigTemplate -> Bool
-testSignMS (MulSigTemplate tx sigis prv) =
-    (not $ verifyTx tx verData)
+testSignMS (MulSigTemplate tx sigis prv) = either l id $ do
+    (txSig, stat)    <- detSignTx tx (map snd sigis) prv
+    (txSigP, statP)  <- detSignTx tx (map snd sigis) (tail prv)
+    (txSigC, statC)  <- detSignTx txSigP (map snd sigis) [head prv]
+    return $ (not $ verifyTx tx verData)
         && stat
         && verifyTx txSig verData
         && not statP
@@ -107,8 +111,6 @@ testSignMS (MulSigTemplate tx sigis prv) =
         && statC
         && verifyTx txSigC verData
   where
-    (txSig, stat)    = detSignTx tx (map snd sigis) prv
-    (txSigP, statP)  = detSignTx tx (map snd sigis) (tail prv)
-    (txSigC, statC)  = detSignTx txSigP (map snd sigis) [head prv]
     verData = map (\(s, (SigInput _ o _ _)) -> (s,o)) sigis
+    l _ = if (null $ txIn tx) then True else False
 

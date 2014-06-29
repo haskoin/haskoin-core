@@ -2,7 +2,11 @@
   This module provides arbitrary instances for data types in
   'Network.Haskoin.Script'.
 -}
-module Network.Haskoin.Script.Arbitrary where
+module Network.Haskoin.Script.Arbitrary 
+( ScriptPair(..)
+, ScriptOpInt(..)
+)
+where
 
 import Test.QuickCheck 
     ( Gen
@@ -12,6 +16,7 @@ import Test.QuickCheck
     , choose
     , vectorOf
     , elements
+    , suchThat
     )
 import Network.Haskoin.Crypto.Arbitrary()
 
@@ -69,15 +74,14 @@ instance Arbitrary ScriptOutput where
     arbitrary = oneof 
         [ PayPK <$> arbitrary
         , (PayPKHash . pubKeyAddr) <$> arbitrary 
-        , genPayMulSig
+        , genPayMulSig =<< choose (1,16)
         , (PayScriptHash . scriptAddr) <$> arbitrary
         ]
 
 -- | Generate an arbitrary 'ScriptOutput' of value PayMulSig.
-genPayMulSig :: Gen ScriptOutput
-genPayMulSig = do
-    n <- choose (1,16)
-    m <- choose (1,n)
+genPayMulSig :: Int -> Gen ScriptOutput
+genPayMulSig m = do
+    n <- choose (m,16)
     PayMulSig <$> (vectorOf n arbitrary) <*> (return m)
 
 instance Arbitrary ScriptInput where
@@ -87,11 +91,30 @@ instance Arbitrary ScriptInput where
         , genSpendMulSig =<< choose (1,16)
         ]
 
--- | Generate an arbitrary 'ScriptInput' of value SpendMulSig.
+-- | Generate an arbitrary 'SimpleInput of value SpendMulSig.
 genSpendMulSig :: Int -> Gen ScriptInput
 genSpendMulSig r = do
     s <- choose (1,r)
     flip SpendMulSig r <$> (vectorOf s arbitrary)
+
+-- Generates a matching script output and script input
+data ScriptPair = ScriptPair Script ScriptOutput
+    deriving (Eq, Read, Show)
+
+instance Arbitrary ScriptPair where
+    arbitrary = do
+        out <- arbitrary `suchThat` noP2SH :: Gen ScriptOutput
+        p2s <- arbitrary :: Gen Bool
+        inp <- case out of
+            PayPK _         -> SpendPK <$> arbitrary
+            PayPKHash _     -> SpendPKHash <$> arbitrary <*> arbitrary
+            PayMulSig _ r   -> genSpendMulSig r
+        let out' = if p2s then PayScriptHash $ scriptAddr out else out
+            inp' = if p2s then appendRedeem inp out else (encodeInput inp)
+        return $ ScriptPair inp' out'
+      where
+        noP2SH (PayScriptHash _) = False
+        noP2SH _ = True
 
 -- | Data type for generating an arbitrary 'ScriptOp' with a value in
 -- [OP_1 .. OP_16]

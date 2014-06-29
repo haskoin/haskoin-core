@@ -218,7 +218,7 @@ msAddSig :: Tx             -- ^ Signed transaction
          -> Either String ScriptInput
          -- ^ Input with added signature
 msAddSig tx ini pks@(PayMulSig pubs r) (SpendMulSig sigs _) sig = do
-    when (not $ sig `elem` sigs) $ Left "msAddSig: invalid signature provided"
+    when (not $ sig `elem` sigs') $ Left "msAddSig: invalid signature provided"
     return $ SpendMulSig (take r sigs') r
   where
     msg h = txSigHash tx (encodeOutput pks) ini h

@@ -1,6 +1,7 @@
 module Network.Haskoin.Script.Tests (tests) where
 
 import Test.QuickCheck.Property (Property, (==>))
+import Test.QuickCheck ( Positive(..) )
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
@@ -14,12 +15,15 @@ import qualified Data.ByteString as BS
     , tail
     , head
     , pack
+    , last
+    , reverse
     )
 
 import Network.Haskoin.Protocol.Arbitrary ()
 import Network.Haskoin.Script.Arbitrary 
 
 import Network.Haskoin.Script
+import Network.Haskoin.Script.Exec
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Util
@@ -45,6 +49,12 @@ tests =
         , testProperty "decodeCanonical . encode TxSignature" binTxSigCanonical
         , testProperty "Testing txSigHash with SigSingle" testSigHashOne
         ]
+    , testGroup "Stack Value Conversions"
+       [ testProperty "One way Inverse" testOneWayInverse
+       , testProperty "Positive MSB" testPositiveMSB
+       , testProperty "Negative MSB" testNegativeMSB
+       , testProperty "Simple Positive Inverse" testSimplePositiveInverse
+       ]
     ]
 
 metaGetPut :: (Binary a, Eq a) => a -> Bool
@@ -118,3 +128,14 @@ testSigHashOne tx s acp = not (null $ txIn tx) ==>
         else res /= (setBit 0 248)
     where res = txSigHash tx s (length (txIn tx) - 1) (SigSingle acp)
 
+testOneWayInverse :: Integer -> Bool
+testOneWayInverse x = ( fromStackVal . toStackVal $ x ) == x
+
+testPositiveMSB :: Positive Integer -> Bool
+testPositiveMSB ( Positive x ) = not $ ( flip testBit ) 7 $ BS.last $ toStackVal x
+
+testNegativeMSB :: Positive Integer -> Bool
+testNegativeMSB ( Positive x ) = ( flip testBit ) 7 $ BS.last $ toStackVal $ negate x
+
+testSimplePositiveInverse :: Positive Integer -> Bool
+testSimplePositiveInverse ( Positive x ) = ( bsToInteger . BS.reverse . toStackVal $ x ) == x

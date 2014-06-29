@@ -89,6 +89,10 @@ data ScriptOp
 
       -- Flow control
     | OP_VERIFY 
+    | OP_IF
+    | OP_NOTIF
+    | OP_ELSE
+    | OP_ENDIF
 
       -- Stack operations
     | OP_DUP 
@@ -103,6 +107,7 @@ data ScriptOp
     | OP_CHECKMULTISIG 
 
       -- Other
+    | OP_NOP
     | OP_INVALIDOPCODE !Word8
         deriving (Show, Read, Eq)
 
@@ -149,6 +154,10 @@ instance Binary ScriptOp where
             | op == 0x5e = return $ OP_14
             | op == 0x5f = return $ OP_15
             | op == 0x60 = return $ OP_16
+            | op == 0x63 = return $ OP_IF
+            | op == 0x64 = return $ OP_NOTIF
+            | op == 0x67 = return $ OP_ELSE
+            | op == 0x68 = return $ OP_ENDIF
             | op == 0x69 = return $ OP_VERIFY
             | op == 0x76 = return $ OP_DUP
             | op == 0x87 = return $ OP_EQUAL
@@ -156,6 +165,7 @@ instance Binary ScriptOp where
             | op == 0xa9 = return $ OP_HASH160
             | op == 0xac = return $ OP_CHECKSIG
             | op == 0xae = return $ OP_CHECKMULTISIG
+            | op == 0x61 = return $ OP_NOP
             | otherwise = return $ OP_INVALIDOPCODE op
 
     put op = case op of
@@ -203,6 +213,10 @@ instance Binary ScriptOp where
         OP_14                -> putWord8 0x5e
         OP_15                -> putWord8 0x5f
         OP_16                -> putWord8 0x60
+        OP_IF                -> putWord8 0x63
+        OP_NOTIF             -> putWord8 0x64
+        OP_ELSE              -> putWord8 0x67
+        OP_ENDIF             -> putWord8 0x68
         OP_VERIFY            -> putWord8 0x69
         OP_DUP               -> putWord8 0x76
         OP_EQUAL             -> putWord8 0x87
@@ -210,6 +224,7 @@ instance Binary ScriptOp where
         OP_HASH160           -> putWord8 0xa9
         OP_CHECKSIG          -> putWord8 0xac
         OP_CHECKMULTISIG     -> putWord8 0xae
+        OP_NOP               -> putWord8 0x61
         (OP_INVALIDOPCODE _) -> putWord8 0xff
 
  -- | Check whether opcode is only data.

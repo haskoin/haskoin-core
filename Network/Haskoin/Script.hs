@@ -65,9 +65,14 @@ module Network.Haskoin.Script
 , encodeSig
 , decodeSig
 , decodeCanonicalSig
+
+-- *Evaluation
+, evalScript
+, verifySpend
+, SigCheck
 ) where
 
 import Network.Haskoin.Script.Types
 import Network.Haskoin.Script.Parser
 import Network.Haskoin.Script.SigHash
-
+import Network.Haskoin.Script.Evaluator

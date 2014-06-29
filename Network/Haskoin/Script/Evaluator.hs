@@ -1,9 +1,21 @@
 {-# LANGUAGE LambdaCase #-}
+{-|
+
+Module providing Bitcoin script evaluation.  See
+<https://github.com/bitcoin/bitcoin/blob/master/src/script.cpp>
+EvalScript and <https://en.bitcoin.it/wiki/Script>
+
+-}
 module Network.Haskoin.Script.Evaluator
-( Program
-, Stack
-, SigCheck
+( 
+-- * Script evaluation
+  verifySpend
 , evalScript
+, SigCheck
+-- * Evaluation data types
+, Program
+, Stack
+-- * Helper functions
 , encodeInt
 , decodeInt
 , encodeBool
@@ -11,7 +23,6 @@ module Network.Haskoin.Script.Evaluator
 , runStack
 , dumpScript
 , dumpStack
-, verifySpend
 ) where
 
 import Control.Monad.State
@@ -30,12 +41,9 @@ import Data.Either ( rights )
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Script.Types
-import Network.Haskoin.Script( TxSignature(..), decodeSig, txSigHash )
+import Network.Haskoin.Script.SigHash( TxSignature(..), decodeSig, txSigHash )
 import Network.Haskoin.Util ( bsToHex, decode' )
 import Network.Haskoin.Protocol( Tx(..), TxIn(..) )
-
--- see https://github.com/bitcoin/bitcoin/blob/master/src/script.cpp EvalScript
--- see https://en.bitcoin.it/wiki/Script
 
 data EvalError =
     EvalError String
@@ -58,9 +66,11 @@ type AltStack = [StackValue]
 type Stack = [StackValue]
 type HashOps = [ScriptOp] -- the code that is verified by OP_CHECKSIG
 
--- in tests we also allow invalid public keys
+-- | Defines the type of function required by script evaluating
+-- functions to check transaction signatures.
 type SigCheck = [ScriptOp] -> TxSignature -> PubKey -> Bool
 
+-- | Data type of the evaluation state.
 data Program = Program {
     stack        :: Stack,
     altStack     :: AltStack,
@@ -83,17 +93,16 @@ dumpScript script = dumpList $ map dumpOp script
 dumpStack :: Stack -> String
 dumpStack s = dumpList $ map (bsToHex . BS.pack) s
 
-
 instance Show Program where
     show p = " stack: " ++ (dumpStack $ stack p)
 
 type ProgramState = ErrorT EvalError Identity
 type IfStack = [ Bool ]
 
--- | Actions idependant of conditional statements
+-- | Monad of actions idependant of conditional statements.
 type ProgramTransition = StateT Program ProgramState
--- | Actions taking if statements into account.  Separate State types
--- for type safety
+-- | Monad of actions which taking if statements into account.
+-- Separate state type from ProgramTransition for type safety
 type ConditionalProgramTransition a = StateT IfStack ProgramTransition a
 
 evalProgramTransition :: ProgramTransition a -> Program -> Either EvalError a
@@ -117,7 +126,8 @@ disabled op = throwError . DisabledOp $ op
 --------------------------------------------------------------------------------
 -- Type Conversions
 
-
+-- | Encoding function for the stack value format of integers.  Most
+-- significant bit defines sign.
 encodeInt :: Int64 -> StackValue
 encodeInt i = prefix $ encode (fromIntegral $ abs i) []
     where encode :: Word64 -> StackValue -> StackValue
@@ -129,6 +139,7 @@ encodeInt i = prefix $ encode (fromIntegral $ abs i) []
                     | i < 0 = (init xs) ++ [setBit (last xs) 7]
                     | otherwise = xs
 
+-- | Inverse of `encodeInt`.
 decodeInt :: StackValue -> Int64
 decodeInt bytes = sign' (decodeW bytes)
     where decodeW [] = 0
@@ -138,16 +149,13 @@ decodeInt bytes = sign' (decodeW bytes)
                   | testBit (last bytes) 7 = -i
                   | otherwise = i
 
-
+-- | Conversion of StackValue to Bool (true if non-zero).
 decodeBool :: StackValue -> Bool
 decodeBool v = decodeInt v /= 0
-
 
 encodeBool :: Bool -> StackValue
 encodeBool True = [1]
 encodeBool False = []
-
-
 
 constValue :: ScriptOp -> Maybe StackValue
 constValue op = case op of
@@ -172,6 +180,7 @@ constValue op = case op of
     (OP_PUSHDATA string _) -> Just $ BS.unpack string
     _ -> Nothing
 
+-- | A trivial `SigCheck` always reporting False
 rejectSignature :: SigCheck
 rejectSignature _ _ _ = False
 
@@ -195,18 +204,11 @@ popInt = popStack >>= \sv ->
 pushBool :: Bool -> ProgramTransition ()
 pushBool = pushStack . encodeBool
 
--- see CastToBignum
--- https://github.com/piotrnar/gocoin/blob/master/btc/stack.go#L56
--- https://github.com/bitcoin/bitcoin/blob/master/src/bignum.h
-
-
 opToSv :: StackValue -> BS.ByteString
 opToSv = BS.pack
 
 bsToSv :: BS.ByteString -> StackValue
 bsToSv = BS.unpack
-
-
 
 --------------------------------------------------------------------------------
 -- Stack Primitives
@@ -269,21 +271,19 @@ pickStack remove n = do
     when remove $ putStack $ (take n stack) ++ (drop (n+1) stack)
     pushStack v
 
-
 getHashOps :: ProgramTransition HashOps
 getHashOps = hashOps <$> get
 
+-- | Function to track the verified OPs signed by OP_CHECK(MULTI) sig.
+-- Dependent on the sequence of `OP_CODESEPARATOR`
 dropHashOpsSeparatedCode :: ProgramTransition ()
 dropHashOpsSeparatedCode = modify $ \p ->
    p { hashOps = tail . ( dropWhile ( /= OP_CODESEPARATOR ) ) $ hashOps p }
 
+-- | Filters out `OP_CODESEPARATOR` from the output script used by
+-- OP_CHECK(MULTI)SIG
 preparedHashOps :: ProgramTransition HashOps
 preparedHashOps = filter ( /= OP_CODESEPARATOR ) <$> getHashOps
-
-
--- transformStack :: (Stack -> Stack) -> ProgramTransition ()
--- transformStack f = (getStack >>= putStack . f)
-
 
 tStack1 :: (StackValue -> Stack) -> ProgramTransition ()
 tStack1 f = f <$> popStack >>= prependStack
@@ -313,12 +313,9 @@ tStack2L :: (StackValue -> a) -> (b -> StackValue) ->
             (a -> a -> b) -> ProgramTransition ()
 tStack2L p q f = tStack2 $ \a b -> return $ q $ f (p a) (p b)
 
-
 tStack3L :: (StackValue -> a) -> (b -> StackValue) ->
             (a -> a -> a -> b) -> ProgramTransition ()
 tStack3L p q f = tStack3 $ \a b c -> return $ q $ f (p a) (p b) (p c)
-
-
 
 arith1 :: (Int64 -> Int64) -> ProgramTransition ()
 arith1 f = do
@@ -334,9 +331,7 @@ arith2 f = do
 bool2 :: (Bool -> Bool -> Bool) -> ProgramTransition ()
 bool2 = tStack2L decodeBool encodeBool
 
-
 stackError :: ProgramTransition a
--- stackError = getOp >>= throwError . StackError
 stackError = programError "stack error"
 
 -- AltStack Primitives
@@ -464,7 +459,6 @@ eval OP_CHECKMULTISIG =
                                              count = length . ( filter id ) $ results
                                            in count >= length s
 
-
 eval OP_CHECKSIGVERIFY      = eval OP_CHECKSIG      >> eval OP_VERIFY
 eval OP_CHECKMULTISIGVERIFY = eval OP_CHECKMULTISIG >> eval OP_VERIFY
 
@@ -473,9 +467,12 @@ eval op = case constValue op of
     Nothing -> programError $ "unknown op " ++ show op
 
 --------------------------------------------------------------------------------
+-- | Based on the IfStack, returns whether the script is within an
+-- evaluating if-branch.
 getExec :: ConditionalProgramTransition ( Bool )
 getExec = all id <$> getCond
 
+-- | Converts a `ScriptOp` to a program monad.
 conditionalEval :: ScriptOp -> ConditionalProgramTransition ()
 conditionalEval scrpOp = do
   e  <- getExec
@@ -496,9 +493,12 @@ conditionalEval scrpOp = do
     eval' False OP_CODESEPARATOR = lift $ eval OP_CODESEPARATOR
     eval' False _ = return ()
 
+-- | Builds a Script evaluation monad.
 evalAll :: [ ScriptOp ] -> ConditionalProgramTransition ()
 evalAll = mapM_ conditionalEval
 
+-- | Returns the Boolean condition on the stack.  Used at the end of
+-- evaluation to check for success.
 checkResult :: ConditionalProgramTransition Bool
 checkResult = do
   s <- lift getStack
@@ -508,8 +508,10 @@ checkResult = do
 --
 -- exported functions
 
-evalScript :: Script -- ^ scriptSig ( redeemScript )
-           -> Script -- ^ scriptPubKey
+-- | Evaluates a pair of scripts sequentially, sharing stacks.
+-- Typically used with a scriptSig and redeemScript.
+evalScript :: Script -- ^ scriptSig
+           -> Script -- ^ scriptPubKey  ( redeemScript )
            -> SigCheck -- ^ signature verification Function
            -> Bool
 evalScript scriptSig scriptPubKey sigCheckFcn = 
@@ -539,8 +541,8 @@ verifySigWithType tx i outOps txSig pubKey =
       h = txSigHash tx outScript i ( sigHashType txSig ) in
   verifySig h ( txSignature txSig ) pubKey
 
--- | Check that the input script of a spending transaction satisfies
--- the output script.
+-- | Uses `evalScript` to check that the input script of a spending
+-- transaction satisfies the output script.
 verifySpend :: Tx     -- ^ The spending transaction
             -> Int    -- ^ The input index
             -> Script -- ^ The output script we are spending

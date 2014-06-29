@@ -21,8 +21,10 @@ module Network.Haskoin.Script.Evaluator
 , encodeBool
 , decodeBool
 , runStack
+, checkStack
 , dumpScript
 , dumpStack
+, execScript
 ) where
 
 import Control.Monad.State
@@ -469,8 +471,8 @@ eval op = case constValue op of
 --------------------------------------------------------------------------------
 -- | Based on the IfStack, returns whether the script is within an
 -- evaluating if-branch.
-getExec :: ConditionalProgramTransition ( Bool )
-getExec = all id <$> getCond
+getExec :: ConditionalProgramTransition Bool
+getExec = and <$> getCond
 
 -- | Converts a `ScriptOp` to a program monad.
 conditionalEval :: ScriptOp -> ConditionalProgramTransition ()
@@ -497,24 +499,18 @@ conditionalEval scrpOp = do
 evalAll :: [ ScriptOp ] -> ConditionalProgramTransition ()
 evalAll = mapM_ conditionalEval
 
--- | Returns the Boolean condition on the stack.  Used at the end of
--- evaluation to check for success.
-checkResult :: ConditionalProgramTransition Bool
-checkResult = do
-  s <- lift getStack
-  case s of
-    (x:_) -> return $ decodeBool x
-    []    -> return False
+checkStack :: Stack -> Bool
+checkStack (x:_) = decodeBool x
+checkStack []  = False
+
 --
 -- exported functions
 
--- | Evaluates a pair of scripts sequentially, sharing stacks.
--- Typically used with a scriptSig and redeemScript.
-evalScript :: Script -- ^ scriptSig
-           -> Script -- ^ scriptPubKey  ( redeemScript )
-           -> SigCheck -- ^ signature verification Function
-           -> Bool
-evalScript scriptSig scriptPubKey sigCheckFcn = 
+execScript :: Script -- ^ scriptSig ( redeemScript )
+          -> Script -- ^ scriptPubKey
+          -> SigCheck -- ^ signature verification Function
+          -> Either EvalError Program
+execScript scriptSig scriptPubKey sigCheckFcn =
   let pubKeyOps = scriptOps scriptPubKey
       emptyProgram = Program {
         stack = [],
@@ -522,14 +518,19 @@ evalScript scriptSig scriptPubKey sigCheckFcn =
         hashOps = pubKeyOps,
         sigCheck = sigCheckFcn }
       redeemEval = evalAll ( scriptOps scriptSig ) >> ( lift $ getDualStack )
-      pubKeyEval = evalAll pubKeyOps >> checkResult
+      pubKeyEval = evalAll pubKeyOps >> (lift get)
 
-      result = do -- Either monad
-        ( s, a ) <- evalConditionalProgram redeemEval [] emptyProgram
-        evalConditionalProgram pubKeyEval [] emptyProgram { stack = s, altStack = a }
-      in case result of
-         Left _ -> False
-         Right x -> x
+      in do ( s, a ) <- evalConditionalProgram redeemEval [] emptyProgram
+            evalConditionalProgram pubKeyEval [] emptyProgram {
+              stack = s,
+              altStack = a
+            }
+
+evalScript :: Script -> Script -> SigCheck -> Bool
+evalScript scriptSig scriptPubKey sigCheckFcn =
+              case execScript scriptSig scriptPubKey sigCheckFcn of
+                  Left _ -> False
+                  Right p -> checkStack . runStack $ p
 
 runStack :: Program -> Stack
 runStack = stack

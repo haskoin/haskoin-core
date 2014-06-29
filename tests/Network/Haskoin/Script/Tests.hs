@@ -88,6 +88,7 @@ tests =
         [ testProperty "decodeInt . encodeInt Int"  testEncodeInt
         , testProperty "decodeBool . encodeBool Bool" testEncodeBool
         ]
+    {-
     , testGroup "Script Evaluator"
         [ testProperty "OP_DUP"
             (testStackEqual [OP_3, OP_DUP] [[3], [3]])
@@ -96,12 +97,15 @@ tests =
         , testProperty "OP_IF else"
             (testStackEqual [OP_0, OP_IF, OP_2, OP_ELSE, OP_3, OP_ENDIF] [[3]])
         ]
+    -}
 
     , testFile "Canonical Valid Script Test Cases"
-      isValid "tests/data/script_valid.json"
+               "tests/data/script_valid.json"
+               True
 
     , testFile "Canonical Invalid Script Test Cases"
-      isValid "tests/data/script_valid.json"
+               "tests/data/script_valid.json"
+               False
     ]
 
 metaGetPut :: (Binary a, Eq a) => a -> Bool
@@ -187,27 +191,24 @@ testEncodeBool b = (decodeBool $ encodeBool b) == b
 
 {- Script Evaluation -}
 
+emptyScript :: Script
+emptyScript = Script { scriptOps = [] }
+
 rejectSignature :: SigCheck
 rejectSignature _ _ _ = False
 
-testScriptEvalFalse :: Script -> Bool
-testScriptEvalFalse sc = not $ evalScript sc rejectSignature
-
+{-
 testStackEqual :: [ScriptOp] -> Stack -> Bool
-testStackEqual instructions result =
-    case runProgram instructions rejectSignature of
+testStackEqual scriptOps result =
+    case get <$> evalAll scriptOps of
         Left _ -> False
-        Right prog -> result == runStack prog
+        Right p -> True
 
+-}
 
 {- Parse tests from bitcoin-qt repository -}
 
 type ParseError = String
-
-isValid :: Program -> Bool
-isValid p = case runStack p of
-              [] -> False
-              (top:_) -> top /= encodeBool False
 
 decodeByte :: Word8 -> Maybe ScriptOp
 decodeByte = decode . LBS.singleton
@@ -222,14 +223,15 @@ parseHex' (a:b:xs) = case readHex $ a:b:[] of
 parseHex' [_] = Nothing
 parseHex' [] = Just []
 
-parseScript :: String -> Either ParseError [ScriptOp]
-parseScript "" = Right []
+parseScript :: String -> Either ParseError Script
+parseScript "" = Right emptyScript
 parseScript script =
       case LBS.pack <$> bytes of
           Left e -> Left $ "string decode error: " ++ e
-          Right lazyBytes -> case decodeOrFail lazyBytes of
-              Left  (_, _, e) -> Left $ "byte decode error: " ++ e
-              Right (_, _, s) -> Right $ scriptOps s
+          Right bytes -> case decodeOrFail bytes of
+              Left  (_, _, e) -> Left $ "byte decode error: " ++ e ++
+                                        "bytes: " ++ (show bytes)
+              Right (_, _, s) -> Right $ Script { scriptOps =  s }
       where
           bytes = concat <$> (sequence $ map parseToken $ words script)
           parseToken :: String -> Either ParseError [Word8]
@@ -262,8 +264,8 @@ parseScript script =
                     parseOp = encodeBytes <$> (readMaybe $ "OP_" ++ tok)
                     encodeBytes = LBS.unpack . encode
 
-testFile :: String -> (Program -> Bool) -> String -> Test
-testFile label f path = buildTest $ do
+testFile :: String -> String -> Bool -> Test
+testFile label path expected = buildTest $ do
     dat <- C.readFile path
     case (A.decode dat) :: Maybe [[String]] of
         Nothing -> return $
@@ -286,43 +288,35 @@ testFile label f path = buildTest $ do
                                           ++ " error: " ++ e
                     (_, Left e) -> fail $ "can't parse key: " ++ show pubKey
                                           ++ " error: " ++ e
-                    (Right sigOps, Right keyOps) ->
-                        check $ runProgram prog rejectSignature
-                        where prog = sigOps ++ keyOps
-                              check (Left err) =
-                                fail $ "\nprogram: " ++
-                                       dumpScript (sigOps ++ keyOps) ++
-                                       "\nerror: " ++ show err
-                              check (Right program) = checkProgram program
+                    (Right scriptSig, Right scriptPubKey) ->
+                        check $ execScript scriptSig scriptPubKey rejectSignature
+                        where check (Left err) =
+                                  HUnit.assertFailure $ "error: " ++ show err
+                              check (Right p) =
+                                  let x = checkStack . runStack $ p
+                                  in HUnit.assertBool
+                                     ("unexpected eval result: " ++ (show x))
+                                     (expected == x)
 
-                    where fail = HUnit.assertFailure
-                          checkProgram p =
-                            HUnit.assertBool
-                            ("invalid stack " ++ (show $ runStack p))
-                            (f p)
-                          label' = "sig: [" ++ sig ++ "] " ++
+                    where label' = "sig: [" ++ sig ++ "] " ++
                                    " pubKey: [" ++ pubKey ++ "] " ++
                                    (if null label
                                         then ""
                                         else " label: " ++ label)
 
-
-evalDumpStack :: [ScriptOp] -> IO ()
-evalDumpStack instructions =
-    case runProgram instructions rejectSignature of
-        Left e -> putStrLn $ "error " ++ show e
-        Right prog -> putStrLn $ dumpStack $ runStack prog
-
-runScript :: String -> IO ()
-runScript s = case parseScript s of
+execScriptIO :: String -> IO ()
+execScriptIO s = case parseScript s of
   Left e -> print $ "parse error: " ++ e
-  Right s -> do
-    putStrLn $ "executing " ++ dumpScript s
-    evalDumpStack s
-
+  Right s -> case execScript emptyScript s rejectSignature of
+                  Left e -> putStrLn $ "error " ++ show e
+                  Right p -> do putStrLn $ "successful execution"
+                                putStrLn $ dumpStack $ runStack p
 
 
 testValid = testFile "Canonical Valid Script Test Cases"
-            isValid "tests/data/script_valid.json"
+            "tests/data/script_valid.json" True
+
+testInvalid = testFile "Canonical Valid Script Test Cases"
+              "tests/data/script_invalid.json" False
 
 runTest = defaultMainWithArgs [testValid] ["--hide-success"]

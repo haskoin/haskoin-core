@@ -90,9 +90,11 @@ tests =
     , testFile "Canonical Valid Script Test Cases"
                "tests/data/script_valid.json"
                True
+    {-
     , testFile "Canonical Invalid Script Test Cases"
-               "tests/data/script_valid.json"
+               "tests/data/script_invalid.json"
                False
+    -}
     ]
 
 metaGetPut :: (Binary a, Eq a) => a -> Bool
@@ -281,6 +283,11 @@ testFile label path expected = buildTest $ do
                                    (if null label
                                         then ""
                                         else " label: " ++ label)
+
+
+
+
+-- repl utils
 
 execScriptIO :: String -> IO ()
 execScriptIO s = case parseScript s of

@@ -9,7 +9,7 @@ Haskoin is an implementation of the Bitcoin protocol in Haskell.
 - Cryptographic ECDSA and hashing primitives
 - Hierarchical Deterministic Wallet support (BIP32)
 - Pay-to-script-hash (P2SH, BIP16) support
-- Multi-signature transaction support
+- Multisig transaction support
 - JSON-RPC/Stratum client library
 - Mnemonic keys (BIP39)
 

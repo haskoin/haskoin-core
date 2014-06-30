@@ -101,7 +101,7 @@ instance Show Program where
 type ProgramState = ErrorT EvalError Identity
 type IfStack = [ Bool ]
 
--- | Monad of actions idependant of conditional statements.
+-- | Monad of actions independent of conditional statements.
 type ProgramTransition = StateT Program ProgramState
 -- | Monad of actions which taking if statements into account.
 -- Separate state type from ProgramTransition for type safety

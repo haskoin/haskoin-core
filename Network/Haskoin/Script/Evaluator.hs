@@ -195,9 +195,11 @@ isDisabled op = op `elem` [ OP_CAT
                           , OP_2MUL
                           , OP_2DIV
                           , OP_MUL
+                          , OP_DIV
                           , OP_MOD
                           , OP_LSHIFT
                           , OP_RSHIFT
+                          , OP_VER
                           , OP_VERIF
                           , OP_VERNOTIF ]
 
@@ -467,33 +469,42 @@ getExec = and <$> getCond
 
 -- | Converts a `ScriptOp` to a program monad.
 conditionalEval :: ScriptOp -> ConditionalProgramTransition ()
-conditionalEval scrpOp
-  | isDisabled scrpOp = lift $ disabled scrpOp
-  | otherwise = do
-       e  <- getExec
-       eval' e scrpOp
+conditionalEval scrpOp = do
+   e  <- getExec
+   eval' e scrpOp
 
-    where
-      eval' :: Bool -> ScriptOp -> ConditionalProgramTransition ()
+   where
+     eval' :: Bool -> ScriptOp -> ConditionalProgramTransition ()
 
-      eval' True  OP_IF      = ( lift $ popStack ) >>= pushCond . decodeBool
-      eval' True  OP_NOTIF   = ( lift $ popStack ) >>= pushCond . not . decodeBool
-      eval' True  OP_ELSE    = flipCond
-      eval' True  OP_ENDIF   = void popCond
-      eval' True  op = lift $ eval op
+     eval' True  OP_IF      = ( lift $ popStack ) >>= pushCond . decodeBool
+     eval' True  OP_NOTIF   = ( lift $ popStack ) >>= pushCond . not . decodeBool
+     eval' True  OP_ELSE    = flipCond
+     eval' True  OP_ENDIF   = void popCond
+     eval' True  op = lift $ eval op
 
-      eval' False OP_IF    = pushCond False
-      eval' False OP_NOTIF = pushCond False
-      eval' False OP_ELSE  = flipCond
-      eval' False OP_ENDIF = void popCond
-      eval' False OP_CODESEPARATOR = lift $ eval OP_CODESEPARATOR
-      eval' False _ = return ()
+     eval' False OP_IF    = pushCond False
+     eval' False OP_NOTIF = pushCond False
+     eval' False OP_ELSE  = flipCond
+     eval' False OP_ENDIF = void popCond
+     eval' False OP_CODESEPARATOR = lift $ eval OP_CODESEPARATOR
+     eval' False OP_VER = return ()
+     eval' False op | isDisabled op = lift $ disabled op
+                    | otherwise = return ()
 
 -- | Builds a Script evaluation monad.
 evalAll :: [ ScriptOp ] -> ConditionalProgramTransition ()
 evalAll ops = do mapM_ conditionalEval ops
                  cond <- getCond
                  unless (null cond) (lift $ programError "ifStack not empty")
+
+
+checkPushOnly :: [ ScriptOp ] -> ConditionalProgramTransition ()
+checkPushOnly ops
+      | not (all checkPushOp ops) = lift $ programError "only push ops allowed"
+      | otherwise = return ()
+      where checkPushOp op = case constValue op of
+                                  Just _ -> True
+                                  Nothing -> False
 
 checkStack :: Stack -> Bool
 checkStack (x:_) = decodeBool x
@@ -507,13 +518,16 @@ execScript :: Script -- ^ scriptSig ( redeemScript )
            -> SigCheck -- ^ signature verification Function
            -> Either EvalError Program
 execScript scriptSig scriptPubKey sigCheckFcn =
-  let pubKeyOps = scriptOps scriptPubKey
+  let sigOps = scriptOps scriptSig
+      pubKeyOps = scriptOps scriptPubKey
       emptyProgram = Program {
         stack = [],
         altStack = [],
         hashOps = pubKeyOps,
         sigCheck = sigCheckFcn }
-      redeemEval = evalAll ( scriptOps scriptSig ) >> ( lift $ stack <$> get )
+
+      redeemEval = -- (checkPushOnly sigOps) >>  -- FIXME: disabled
+                   (evalAll sigOps) >> (lift $ stack <$> get)
       pubKeyEval = evalAll pubKeyOps >> (lift $ get)
 
       in do s <- evalConditionalProgram redeemEval [] emptyProgram

@@ -182,19 +182,26 @@ constValue op = case op of
     (OP_PUSHDATA string _) -> Just $ BS.unpack string
     _ -> Nothing
 
+
+isDisabled :: ScriptOp -> Bool
+isDisabled op = op `elem` [ OP_CAT
+                          , OP_SUBSTR
+                          , OP_LEFT
+                          , OP_RIGHT
+                          , OP_INVERT
+                          , OP_AND
+                          , OP_OR
+                          , OP_XOR
+                          , OP_2MUL
+                          , OP_2DIV
+                          , OP_MUL
+                          , OP_MOD
+                          , OP_LSHIFT
+                          , OP_RSHIFT ]
+
 -- | A trivial `SigCheck` always reporting False
 rejectSignature :: SigCheck
 rejectSignature _ _ _ = False
-
-isDisabled :: ScriptOp -> Bool
-isDisabled op = let emptyProgram = Program {
-        stack = [],
-        altStack = [],
-        hashOps = [],
-        sigCheck = rejectSignature } in
-  case evalProgramTransition ( eval op ) emptyProgram of
-    Left (DisabledOp _) -> True
-    _ -> False
 
 popInt :: ProgramTransition Int64
 popInt = popStack >>= \sv ->
@@ -390,18 +397,10 @@ eval OP_2SWAP   = tStack4 $ \a b c d -> [c, d, a, b]
 
 -- Splice
 
-eval op@OP_CAT    = disabled op
-eval op@OP_SUBSTR = disabled op
-eval op@OP_LEFT   = disabled op
-eval op@OP_RIGHT  = disabled op
 eval OP_SIZE   = (fromIntegral . length <$> popStack) >>= pushStack . encodeInt
 
 -- Bitwise Logic
 
-eval op@OP_INVERT  = disabled op
-eval op@OP_AND     = disabled op
-eval op@OP_OR      = disabled op
-eval op@OP_XOR     = disabled op
 eval OP_EQUAL   = tStack2 $ \a b -> [encodeBool (a == b)]
 eval OP_EQUALVERIFY = (eval OP_EQUAL) >> (eval OP_VERIFY)
 
@@ -409,19 +408,12 @@ eval OP_EQUALVERIFY = (eval OP_EQUAL) >> (eval OP_VERIFY)
 
 eval OP_1ADD    = arith1 (+1)
 eval OP_1SUB    = arith1 (subtract 1)
-eval op@OP_2MUL    = disabled op
-eval op@OP_2DIV    = disabled op
 eval OP_NEGATE  = arith1 negate
 eval OP_ABS     = arith1 abs
 eval OP_NOT         = arith1 $ \case 0 -> 1; _ -> 0
 eval OP_0NOTEQUAL   = arith1 $ \case 0 -> 0; _ -> 1
 eval OP_ADD     = arith2 (+)
 eval OP_SUB     = arith2 $ flip (-)
-eval op@OP_MUL     = disabled op
-eval op@OP_DIV     = disabled op
-eval op@OP_MOD     = disabled op
-eval op@OP_LSHIFT  = disabled op
-eval op@OP_RSHIFT  = disabled op
 eval OP_BOOLAND     = bool2 (&&)
 eval OP_BOOLOR      = bool2 (||)
 eval OP_NUMEQUAL    = tStack2L decodeInt encodeBool (==)
@@ -466,7 +458,7 @@ eval OP_CHECKMULTISIGVERIFY = eval OP_CHECKMULTISIG >> eval OP_VERIFY
 
 eval op = case constValue op of
     Just sv -> pushStack sv
-    Nothing -> programError $ "unknown op " ++ show op
+    Nothing -> programError $ "unexpected op " ++ show op
 
 --------------------------------------------------------------------------------
 -- | Based on the IfStack, returns whether the script is within an
@@ -476,24 +468,27 @@ getExec = and <$> getCond
 
 -- | Converts a `ScriptOp` to a program monad.
 conditionalEval :: ScriptOp -> ConditionalProgramTransition ()
-conditionalEval scrpOp = do
-  e  <- getExec
-  eval' e scrpOp
-  where
-    eval' :: Bool -> ScriptOp -> ConditionalProgramTransition ()
+conditionalEval scrpOp
+  | isDisabled scrpOp = lift $ disabled scrpOp
+  | otherwise = do
+       e  <- getExec
+       eval' e scrpOp
 
-    eval' True  OP_IF      = ( lift $ popStack ) >>= pushCond . decodeBool
-    eval' True  OP_NOTIF   = ( lift $ popStack ) >>= pushCond . not . decodeBool
-    eval' True  OP_ELSE    = flipCond
-    eval' True  OP_ENDIF   = void popCond
-    eval' True  op = lift $ eval op
+    where
+      eval' :: Bool -> ScriptOp -> ConditionalProgramTransition ()
 
-    eval' False OP_IF    = pushCond False
-    eval' False OP_NOTIF = pushCond False
-    eval' False OP_ELSE  = flipCond
-    eval' False OP_ENDIF = void popCond
-    eval' False OP_CODESEPARATOR = lift $ eval OP_CODESEPARATOR
-    eval' False _ = return ()
+      eval' True  OP_IF      = ( lift $ popStack ) >>= pushCond . decodeBool
+      eval' True  OP_NOTIF   = ( lift $ popStack ) >>= pushCond . not . decodeBool
+      eval' True  OP_ELSE    = flipCond
+      eval' True  OP_ENDIF   = void popCond
+      eval' True  op = lift $ eval op
+
+      eval' False OP_IF    = pushCond False
+      eval' False OP_NOTIF = pushCond False
+      eval' False OP_ELSE  = flipCond
+      eval' False OP_ENDIF = void popCond
+      eval' False OP_CODESEPARATOR = lift $ eval OP_CODESEPARATOR
+      eval' False _ = return ()
 
 -- | Builds a Script evaluation monad.
 evalAll :: [ ScriptOp ] -> ConditionalProgramTransition ()

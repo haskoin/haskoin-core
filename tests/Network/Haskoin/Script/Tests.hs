@@ -264,12 +264,12 @@ testFile label path expected = buildTest $ do
             makeTest :: String -> String -> String -> Test
             makeTest label sig pubKey =
                 testCase label' $ case (parseScript sig, parseScript pubKey) of
-                    (Left e, _) -> fail $ "can't parse sig: " ++ show sig
-                                          ++ " error: " ++ e
-                    (_, Left e) -> fail $ "can't parse key: " ++ show pubKey
-                                          ++ " error: " ++ e
+                    (Left e, _) -> parseError $ "can't parse sig: " ++
+                                                show sig ++ " error: " ++ e
+                    (_, Left e) -> parseError $ "can't parse key: " ++
+                                                show pubKey ++ " error: " ++ e
                     (Right scriptSig, Right scriptPubKey) ->
-                        runTest scriptSig scriptPubKey
+                        runTest label' scriptSig scriptPubKey
 
                 where label' = "sig: [" ++ sig ++ "] " ++
                                " pubKey: [" ++ pubKey ++ "] " ++
@@ -277,12 +277,14 @@ testFile label path expected = buildTest $ do
                                     then ""
                                     else " label: " ++ label)
 
-            runTest scriptSig scriptPubKey =
-                if expected == run evalScript
-                  then HUnit.assertBool "expected result" True
-                  else HUnit.assertFailure $
-                       "unexpected result " ++ (show $ not expected) ++
-                       " error: " ++ errorMessage
+            parseError message = HUnit.assertBool
+                                ("parse error in valid script: " ++ message)
+                                (expected == False)
+
+            runTest label scriptSig scriptPubKey =
+                HUnit.assertBool
+                  (label ++ " eval error: " ++ errorMessage)
+                  (expected == run evalScript)
 
                 where run f = f scriptSig scriptPubKey rejectSignature
                       errorMessage = case run execScript of

@@ -266,7 +266,7 @@ pickStack remove n = do
 
     when (n < 0) $
         programError "pickStack: n < 0"
-    when (n > (length stack)) $
+    when (n > (length stack) - 1) $
         programError "pickStack: n > size"
 
     let v = stack !! n

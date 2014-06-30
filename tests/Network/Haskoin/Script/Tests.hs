@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Script.Tests (tests) where
 
 import Test.QuickCheck.Property (Property, (==>))
@@ -48,7 +47,7 @@ import Data.Maybe (catMaybes)
 
 import Data.Binary (encode, decode, decodeOrFail)
 
-import qualified Data.ByteString.Lazy.Char8 as C
+import qualified Data.ByteString.Lazy.Char8 as C (readFile)
 
 import Data.Int (Int64)
 
@@ -88,22 +87,12 @@ tests =
         [ testProperty "decodeInt . encodeInt Int"  testEncodeInt
         , testProperty "decodeBool . encodeBool Bool" testEncodeBool
         ]
-    {-
-    , testGroup "Script Evaluator"
-        [ testProperty "OP_DUP"
-            (testStackEqual [OP_3, OP_DUP] [[3], [3]])
-        , testProperty "OP_IF then"
-            (testStackEqual [OP_1, OP_IF, OP_2, OP_ELSE, OP_3, OP_ENDIF] [[2]])
-        , testProperty "OP_IF else"
-            (testStackEqual [OP_0, OP_IF, OP_2, OP_ELSE, OP_3, OP_ENDIF] [[3]])
-        ]
-
     , testFile "Canonical Valid Script Test Cases"
                "tests/data/script_valid.json"
                True
-
+    {-
     , testFile "Canonical Invalid Script Test Cases"
-               "tests/data/script_valid.json"
+               "tests/data/script_invalid.json"
                False
     -}
     ]
@@ -197,14 +186,6 @@ emptyScript = Script { scriptOps = [] }
 rejectSignature :: SigCheck
 rejectSignature _ _ _ = False
 
-{-
-testStackEqual :: [ScriptOp] -> Stack -> Bool
-testStackEqual scriptOps result =
-    case get <$> evalAll scriptOps of
-        Left _ -> False
-        Right p -> True
-
--}
 
 {- Parse tests from bitcoin-qt repository -}
 
@@ -214,9 +195,8 @@ decodeByte :: Word8 -> Maybe ScriptOp
 decodeByte = decode . LBS.singleton
 
 parseHex' :: String -> Maybe [Word8]
-parseHex' (a:b:xs) = case readHex $ a:b:[] of
+parseHex' (a:b:xs) = case readHex $ [a, b] of
                       [(i, "")] -> case parseHex' xs of
-                                    -- Just ops -> Just $ ops ++ [fromIntegral i]
                                     Just ops -> Just $ fromIntegral i:ops
                                     Nothing -> Nothing
                       _ -> Nothing
@@ -224,16 +204,16 @@ parseHex' [_] = Nothing
 parseHex' [] = Just []
 
 parseScript :: String -> Either ParseError Script
-parseScript "" = Right emptyScript
 parseScript script =
-      case LBS.pack <$> bytes of
+      case parseBytes of
           Left e -> Left $ "string decode error: " ++ e
-          Right bytes -> case decodeOrFail bytes of
+          Right bytes -> case decodeOrFail $ LBS.pack bytes of
               Left  (_, _, e) -> Left $ "byte decode error: " ++ e ++
-                                        "bytes: " ++ (show bytes)
-              Right (_, _, s) -> Right $ Script { scriptOps =  s }
+                                        "bytes: " ++ (bsToHex $ BS.pack bytes)
+              Right (_, _, Script s) -> Right Script { scriptOps = s }
       where
-          bytes = concat <$> (sequence $ map parseToken $ words script)
+          parseBytes :: Either ParseError [Word8]
+          parseBytes = concat <$> mapM parseToken (words script)
           parseToken :: String -> Either ParseError [Word8]
           parseToken tok =
               case alternatives of
@@ -304,6 +284,11 @@ testFile label path expected = buildTest $ do
                                         then ""
                                         else " label: " ++ label)
 
+
+
+
+-- repl utils
+
 execScriptIO :: String -> IO ()
 execScriptIO s = case parseScript s of
   Left e -> print $ "parse error: " ++ e
@@ -319,4 +304,4 @@ testValid = testFile "Canonical Valid Script Test Cases"
 testInvalid = testFile "Canonical Valid Script Test Cases"
               "tests/data/script_invalid.json" False
 
-runTest = defaultMainWithArgs [testValid] ["--hide-success"]
+runTests tests = defaultMainWithArgs tests ["--hide-success"]

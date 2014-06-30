@@ -97,7 +97,7 @@ testSignTx (PKHashSigTemplate tx sigi prv)
           (txSigP, statP) = fromRight resP
           resC            = detSignTx txSigP sigi [head prv]
           (txSigC, statC) = fromRight resC
-          verData = map (\(SigInput s o _ _) -> (s,o)) sigi
+          verData = map (\(SigInput s o _ _) -> (encodeOutput s,o)) sigi
          
 testSignMS :: MulSigTemplate -> Bool
 testSignMS (MulSigTemplate tx sigis prv)
@@ -115,5 +115,5 @@ testSignMS (MulSigTemplate tx sigis prv)
           (txSigP, statP) = fromRight resP
           resC            = detSignTx txSigP (map snd sigis) [head prv]
           (txSigC, statC) = fromRight resC
-          verData = map (\(s, (SigInput _ o _ _)) -> (s,o)) sigis
+          verData = map (\(s, (SigInput _ o _ _)) -> (encodeOutput s,o)) sigis
 

@@ -197,7 +197,9 @@ isDisabled op = op `elem` [ OP_CAT
                           , OP_MUL
                           , OP_MOD
                           , OP_LSHIFT
-                          , OP_RSHIFT ]
+                          , OP_RSHIFT
+                          , OP_VERIF
+                          , OP_VERNOTIF ]
 
 -- | A trivial `SigCheck` always reporting False
 rejectSignature :: SigCheck

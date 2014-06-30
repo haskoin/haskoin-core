@@ -6,7 +6,6 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Maybe (fromJust)
-import qualified Data.Text as T
 import Network.Haskoin.Crypto.Mnemonic
 import Network.Haskoin.Util (hexToBS, bsToHex, fromRight)
 
@@ -22,22 +21,22 @@ toMnemonicTest = map f $ zip ents mss
   where
     f (e, m) = g e . assertEqual "" m . h $ e
     g = testCase
-    h = fromRight . toMnemonic english . fromJust . hexToBS
+    h = fromRight . toMnemonic . fromJust . hexToBS
 
 fromMnemonicTest :: [Test]
 fromMnemonicTest = map f $ zip ents mss
   where
     f (e, m) = g e . assertEqual "" e . h $ m
     g = testCase
-    h = bsToHex . fromRight . fromMnemonic english
+    h = bsToHex . fromRight . fromMnemonic
 
 mnemonicToSeedTest :: [Test]
 mnemonicToSeedTest = map f $ zip mss seeds
   where
     f (m, s) = g s . assertEqual "" s . h $ m
     g = testCase . (++ "...") . take 50
-    h = bsToHex . fromRight . mnemonicToSeed english "TREZOR"
-    
+    h = bsToHex . fromRight . mnemonicToSeed "TREZOR"
+
 
 ents :: [String]
 ents =
@@ -67,7 +66,7 @@ ents =
     , "15da872c95a13dd738fbf50e427583ad61f18fd99f628c417a61cf8343c90419"
     ]
 
-mss :: [T.Text]
+mss :: [Mnemonic]
 mss =
     [ "abandon abandon abandon abandon abandon abandon abandon abandon abandon\
       \ abandon abandon about"

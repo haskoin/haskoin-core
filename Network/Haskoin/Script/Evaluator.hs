@@ -227,9 +227,6 @@ bsToSv = BS.unpack
 getStack :: ProgramTransition Stack
 getStack = stack <$> get
 
-getDualStack :: ProgramTransition ( Stack, Stack )
-getDualStack = get >>= \p -> return ( stack p , altStack p )
-
 getCond :: ConditionalProgramTransition [Bool]
 getCond = get
 
@@ -516,14 +513,11 @@ execScript scriptSig scriptPubKey sigCheckFcn =
         altStack = [],
         hashOps = pubKeyOps,
         sigCheck = sigCheckFcn }
-      redeemEval = evalAll ( scriptOps scriptSig ) >> ( lift $ getDualStack )
+      redeemEval = evalAll ( scriptOps scriptSig ) >> ( lift $ stack <$> get )
       pubKeyEval = evalAll pubKeyOps >> (lift $ get)
 
-      in do ( s, a ) <- evalConditionalProgram redeemEval [] emptyProgram
-            evalConditionalProgram pubKeyEval [] emptyProgram {
-              stack = s,
-              altStack = a
-            }
+      in do s <- evalConditionalProgram redeemEval [] emptyProgram
+            evalConditionalProgram pubKeyEval [] emptyProgram { stack = s }
 
 evalScript :: Script -> Script -> SigCheck -> Bool
 evalScript scriptSig scriptPubKey sigCheckFcn =

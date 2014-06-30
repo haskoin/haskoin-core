@@ -10,6 +10,7 @@ import Data.Binary.Get (getWord32le)
 import qualified Data.ByteString as BS (reverse)
 
 import Network.Haskoin.Transaction.Builder
+import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Util
 
@@ -30,7 +31,7 @@ runPKHashVec :: ([(String,Word32)],[(String,Word64)],String) -> Assertion
 runPKHashVec (xs,ys,res) = 
     assertBool "Build PKHash Tx" $ (bsToHex $ encode' tx) == res
     where tx = fromRight $ buildAddrTx (map f xs) ys
-          f (tid,ix) = OutPoint (fromJust $ decodeTxid tid) ix
+          f (tid,ix) = OutPoint (fromJust $ decodeTxHashLE tid) ix
 
 
 mapVerifyVec :: (([(String,String,String)],String),Int) 
@@ -44,10 +45,10 @@ runVerifyVec (is,bsTx) i =
     where name = "    > Verify transaction " ++ (show i)
           tx  = decode' (fromJust $ hexToBS bsTx)
           f (o1,o2,bsScript) = 
-              let ops = runGet' getScriptOps (fromJust $ hexToBS bsScript)
-                  op  = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS o1) 
+              let s  = decode' $ fromJust $ hexToBS bsScript
+                  op = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS o1) 
                                  (runGet' getWord32le $ fromJust $ hexToBS o2)
-                  in (Script ops,op)
+                  in (s,op)
 
 -- These test vectors have been generated from bitcoind raw transaction api
 

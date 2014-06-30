@@ -2,7 +2,11 @@
   This module provides arbitrary instances for data types in
   'Network.Haskoin.Script'.
 -}
-module Network.Haskoin.Script.Arbitrary where
+module Network.Haskoin.Script.Arbitrary 
+( ScriptPair(..)
+, ScriptOpInt(..)
+)
+where
 
 import Test.QuickCheck 
     ( Gen
@@ -21,9 +25,139 @@ import Control.Applicative ((<$>),(<*>))
 import Data.Bits (testBit, clearBit)
 import Data.Word (Word8)
 
+import Network.Haskoin.Util.Arbitrary (nonEmptyBS)
 import Network.Haskoin.Script
-import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
+
+instance Arbitrary Script where
+    arbitrary = do
+        i <- choose (1,10)
+        Script <$> (vectorOf i arbitrary)
+
+instance Arbitrary ScriptOp where
+    arbitrary = oneof [ opPushData <$> nonEmptyBS
+                      , return $ OP_1NEGATE
+                      , return $ OP_0
+                      , return $ OP_1
+                      , return $ OP_2
+                      , return $ OP_3
+                      , return $ OP_4
+                      , return $ OP_5
+                      , return $ OP_6
+                      , return $ OP_7
+                      , return $ OP_8
+                      , return $ OP_9
+                      , return $ OP_10
+                      , return $ OP_11
+                      , return $ OP_12
+                      , return $ OP_13
+                      , return $ OP_14
+                      , return $ OP_15
+                      , return $ OP_16
+
+                      -- Flow control
+                      , return $ OP_NOP
+                      , return $ OP_IF
+                      , return $ OP_NOTIF
+                      , return $ OP_ELSE
+                      , return $ OP_ENDIF
+                      , return $ OP_VERIFY
+                      , return $ OP_RETURN
+
+                      -- Stack
+                      , return $ OP_TOALTSTACK
+                      , return $ OP_FROMALTSTACK
+                      , return $ OP_2DROP
+                      , return $ OP_2DUP
+                      , return $ OP_3DUP
+                      , return $ OP_2OVER
+                      , return $ OP_2ROT
+                      , return $ OP_2SWAP
+                      , return $ OP_IFDUP
+                      , return $ OP_DEPTH
+                      , return $ OP_DROP
+                      , return $ OP_DUP
+                      , return $ OP_NIP
+                      , return $ OP_OVER
+                      , return $ OP_PICK
+                      , return $ OP_ROLL
+                      , return $ OP_ROT
+                      , return $ OP_SWAP
+                      , return $ OP_TUCK
+
+                      -- Splice
+                      , return $ OP_CAT
+                      , return $ OP_SUBSTR
+                      , return $ OP_LEFT
+                      , return $ OP_RIGHT
+                      , return $ OP_SIZE
+
+                      -- Bitwise logic
+                      , return $ OP_INVERT
+                      , return $ OP_AND
+                      , return $ OP_OR
+                      , return $ OP_XOR
+                      , return $ OP_EQUAL
+                      , return $ OP_EQUALVERIFY
+
+                      -- Arithmetic
+                      , return $ OP_1ADD
+                      , return $ OP_1SUB
+                      , return $ OP_2MUL
+                      , return $ OP_2DIV
+                      , return $ OP_NEGATE
+                      , return $ OP_ABS
+                      , return $ OP_NOT
+                      , return $ OP_0NOTEQUAL
+                      , return $ OP_ADD
+                      , return $ OP_SUB
+                      , return $ OP_MUL
+                      , return $ OP_DIV
+                      , return $ OP_MOD
+                      , return $ OP_LSHIFT
+                      , return $ OP_RSHIFT
+                      , return $ OP_BOOLAND
+                      , return $ OP_BOOLOR
+                      , return $ OP_NUMEQUAL
+                      , return $ OP_NUMEQUALVERIFY
+                      , return $ OP_NUMNOTEQUAL
+                      , return $ OP_LESSTHAN
+                      , return $ OP_GREATERTHAN
+                      , return $ OP_LESSTHANOREQUAL
+                      , return $ OP_GREATERTHANOREQUAL
+                      , return $ OP_MIN
+                      , return $ OP_MAX
+                      , return $ OP_WITHIN
+
+                      -- Crypto
+                      , return $ OP_RIPEMD160
+                      , return $ OP_SHA1
+                      , return $ OP_SHA256
+                      , return $ OP_HASH160
+                      , return $ OP_HASH256
+                      , return $ OP_CODESEPARATOR
+                      , return $ OP_CHECKSIG
+                      , return $ OP_CHECKSIGVERIFY
+                      , return $ OP_CHECKMULTISIG
+                      , return $ OP_CHECKMULTISIGVERIFY
+
+                      -- More NOPs
+                      , return $ OP_NOP1
+                      , return $ OP_NOP2
+                      , return $ OP_NOP3
+                      , return $ OP_NOP4
+                      , return $ OP_NOP5
+                      , return $ OP_NOP6
+                      , return $ OP_NOP7
+                      , return $ OP_NOP8
+                      , return $ OP_NOP9
+                      , return $ OP_NOP10
+
+                      , return $ OP_INVALIDOPCODE 0xff
+                      ]
+
+instance Arbitrary PushDataType where
+    arbitrary = elements [ OPCODE, OPDATA1, OPDATA2, OPDATA4 ]
 
 instance Arbitrary TxSignature where
     arbitrary = liftM2 TxSignature arbitrary arbitrary
@@ -42,33 +176,58 @@ instance Arbitrary ScriptOutput where
     arbitrary = oneof 
         [ PayPK <$> arbitrary
         , (PayPKHash . pubKeyAddr) <$> arbitrary 
-        , genPayMulSig
+        , genPayMulSig =<< choose (1,16)
         , (PayScriptHash . scriptAddr) <$> arbitrary
         ]
 
 -- | Generate an arbitrary 'ScriptOutput' of value PayMulSig.
-genPayMulSig :: Gen ScriptOutput
-genPayMulSig = do
-    n <- choose (1,16)
-    m <- choose (1,n)
+genPayMulSig :: Int -> Gen ScriptOutput
+genPayMulSig m = do
+    n <- choose (m,16)
     PayMulSig <$> (vectorOf n arbitrary) <*> (return m)
 
-instance Arbitrary ScriptInput where
+instance Arbitrary SimpleInput where
     arbitrary = oneof
         [ SpendPK <$> arbitrary
         , SpendPKHash <$> arbitrary <*> arbitrary
-        , genSpendMulSig
+        , genSpendMulSig =<< choose (1,16)
         ]
 
--- | Generate an arbitrary 'ScriptInput' of value SpendMulSig.
-genSpendMulSig :: Gen ScriptInput
-genSpendMulSig = do
-    m <- choose (1,16)
-    s <- choose (1,m)
-    SpendMulSig <$> (vectorOf s arbitrary) <*> (return m)
+instance Arbitrary ScriptInput where
+    arbitrary = oneof
+        [ RegularInput <$> arbitrary
+        , genScriptHashInput
+        ]
 
-instance Arbitrary ScriptHashInput where
-    arbitrary = ScriptHashInput <$> arbitrary <*> arbitrary
+-- | Generate an arbitrary 'SimpleInput of value SpendMulSig.
+genSpendMulSig :: Int -> Gen SimpleInput
+genSpendMulSig r = do
+    s <- choose (1,r)
+    flip SpendMulSig r <$> (vectorOf s arbitrary)
+
+genScriptHashInput :: Gen ScriptInput
+genScriptHashInput = do
+    inp <- arbitrary :: Gen SimpleInput
+    out <- case inp of
+        SpendPK _       -> PayPK <$> arbitrary
+        SpendPKHash _ _ -> (PayPKHash . pubKeyAddr) <$> arbitrary
+        SpendMulSig _ r -> genPayMulSig r
+    return $ ScriptHashInput inp out
+
+-- Generates a matching script output and script input
+data ScriptPair = ScriptPair ScriptInput ScriptOutput
+    deriving (Eq, Read, Show)
+
+instance Arbitrary ScriptPair where
+    arbitrary = do
+        out <- arbitrary :: Gen ScriptOutput
+        inp <- case out of
+            PayPK _         -> RegularInput . SpendPK <$> arbitrary
+            PayPKHash _     -> RegularInput <$> 
+                (SpendPKHash <$> arbitrary <*> arbitrary)
+            PayMulSig _ r   -> RegularInput <$> genSpendMulSig r
+            PayScriptHash _ -> genScriptHashInput
+        return $ ScriptPair inp out
 
 -- | Data type for generating an arbitrary 'ScriptOp' with a value in
 -- [OP_1 .. OP_16]

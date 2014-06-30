@@ -15,6 +15,7 @@ module Network.Haskoin.Crypto.ECDSA
 
 import System.IO
 
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM, guard, unless)
 import Control.Monad.Trans (MonadTrans, lift)
 import Control.Applicative (Applicative, (<*>), (<$>))
@@ -48,7 +49,7 @@ type SecretState m = (WorkingState, (Int -> m BS.ByteString))
 -- | StateT monad stack tracking the internal state of HMAC DRBG 
 -- pseudo random number generator using SHA-256. The 'SecretT' monad is
 -- run with the 'withSource' function by providing it a source of entropy.
-type SecretT m a = S.StateT (SecretState m) m a
+type SecretT m = S.StateT (SecretState m) m
 
 -- | Run a 'SecretT' monad by providing it a source of entropy. You can
 -- use 'devURandom', 'devRandom' or provide your own entropy source function.
@@ -109,12 +110,15 @@ data Signature =
     Signature { sigR :: !FieldN 
               , sigS :: !FieldN 
               }
-    deriving (Show, Eq)
+    deriving (Read, Show, Eq)
+
+instance NFData Signature where
+    rnf (Signature r s) = rnf r `seq` rnf s
 
 -- Section 4.1.3 http://www.secg.org/download/aid-780/sec1-v2.pdf
 -- | Safely sign a message inside the 'SecretT' monad. The 'SecretT' monad will
 -- generate a new nonce for each signature.
-signMsg :: Monad m => Hash256 -> PrvKey -> SecretT m Signature
+signMsg :: Monad m => Word256 -> PrvKey -> SecretT m Signature
 signMsg _ (PrvKey  0) = error "signMsg: Invalid private key 0"
 signMsg _ (PrvKeyU 0) = error "signMsg: Invalid private key 0"
 signMsg h d = do
@@ -127,7 +131,7 @@ signMsg h d = do
 
 -- | Sign a message using ECDSA deterministic signatures as defined by
 -- RFC 6979 <http://tools.ietf.org/html/rfc6979>
-detSignMsg :: Hash256 -> PrvKey -> Signature
+detSignMsg :: Word256 -> PrvKey -> Signature
 detSignMsg _ (PrvKey  0) = error "detSignMsg: Invalid private key 0"
 detSignMsg _ (PrvKeyU 0) = error "detSignMsg: Invalid private key 0"
 detSignMsg h d = go $ hmacDRBGNew (runPut' $ putPrvKey d) (encode' h) BS.empty
@@ -146,16 +150,16 @@ detSignMsg h d = go $ hmacDRBGNew (runPut' $ putPrvKey d) (encode' h) BS.empty
 -- Re-using the same nonce twice will expose the private keys
 -- Use signMsg within the SecretT monad or detSignMsg instead
 -- Section 4.1.3 http://www.secg.org/download/aid-780/sec1-v2.pdf
-unsafeSignMsg :: Hash256 -> FieldN -> (FieldN, Point) -> Maybe Signature
+unsafeSignMsg :: Word256 -> FieldN -> (FieldN, Point) -> Maybe Signature
 unsafeSignMsg _ 0 _ = Nothing
 unsafeSignMsg h d (k,p) = do
     -- 4.1.3.1 (4.1.3.2 not required)
     (x,_) <- getAffine p
     -- 4.1.3.3
-    let r = toFieldN x
+    let r = (fromIntegral x :: FieldN)
     guard (r /= 0)
     -- 4.1.3.4 / 4.1.3.5
-    let e = toFieldN h
+    let e = (fromIntegral h :: FieldN)
     -- 4.1.3.6
     let s' = (e + r*d)/k
         -- Canonicalize signatures: s <= order/2
@@ -167,17 +171,17 @@ unsafeSignMsg h d (k,p) = do
 
 -- Section 4.1.4 http://www.secg.org/download/aid-780/sec1-v2.pdf
 -- | Verify an ECDSA signature
-verifySig :: Hash256 -> Signature -> PubKey -> Bool
+verifySig :: Word256 -> Signature -> PubKey -> Bool
 -- 4.1.4.1 (r and s can not be zero)
 verifySig _ (Signature 0 _) _ = False
 verifySig _ (Signature _ 0) _ = False
 verifySig h (Signature r s) q = case getAffine p of
     Nothing      -> False
     -- 4.1.4.7 / 4.1.4.8
-    (Just (x,_)) -> (toFieldN x) == r
+    (Just (x,_)) -> (fromIntegral x :: FieldN) == r
   where 
     -- 4.1.4.2 / 4.1.4.3
-    e  = toFieldN h
+    e  = (fromIntegral h :: FieldN)
     -- 4.1.4.4
     s' = inverseN s
     u1 = e*s'
@@ -198,8 +202,6 @@ instance Binary Signature where
             "Bad DER identifier byte " ++ (show t) ++ ". Expecting 0x30")
         l <- getWord8
         -- Length = (33 + 1 identifier byte + 1 length byte) * 2
-        unless (l <= 70) (fail $
-            "Bad DER length " ++ (show t) ++ ". Expecting length <= 70")
         isolate (fromIntegral l) $ do
             Signature <$> get <*> get
 

@@ -1,14 +1,13 @@
 -- | Hashing functions and HMAC DRBG definition
 module Network.Haskoin.Crypto.Hash
-( Hash512
-, Hash256
-, Hash160
-, CheckSum32
+( CheckSum32
 , hash512
 , hash256
+, hashSha1
 , hash160
 , hash512BS
 , hash256BS
+, hashSha1BS
 , hash160BS
 , doubleHash256
 , doubleHash256BS
@@ -27,15 +26,20 @@ module Network.Haskoin.Crypto.Hash
 , join512
 , decodeCompact
 , encodeCompact
+, txHash
+, cbHash
+, headerHash
+, encodeTxHashLE
+, decodeTxHashLE
 ) where
 
-import Control.Applicative ((<$>))
 import Control.Monad (replicateM)
 
 import Crypto.Hash 
-    ( Digest 
+    ( Digest
     , SHA512
     , SHA256
+    , SHA1
     , RIPEMD160
     , hash
     )
@@ -43,7 +47,7 @@ import Crypto.MAC.HMAC (hmac)
 
 import Data.Word (Word16, Word32)
 import Data.Byteable (toBytes)
-import Data.Binary (Binary, get, put)
+import Data.Binary (Binary, get)
 import Data.Binary.Get (getWord32le)
 import Data.Bits 
     ( shiftL
@@ -64,17 +68,14 @@ import qualified Data.ByteString as BS
     , length
     , replicate
     , drop
+    , reverse
     )
 
 import Network.Haskoin.Util 
 import Network.Haskoin.Crypto.BigWord 
+import Network.Haskoin.Protocol.Types
 
--- | Data type representing a 32 bit checksum
-newtype CheckSum32 = CheckSum32 Word32 deriving (Show, Eq, Read)
-
-instance Binary CheckSum32 where
-    get = CheckSum32 <$> get
-    put (CheckSum32 w) = put w
+type CheckSum32 = Word32
 
 run512 :: BS.ByteString -> BS.ByteString
 run512 = (toBytes :: Digest SHA512 -> BS.ByteString) . hash
@@ -85,8 +86,11 @@ run256 = (toBytes :: Digest SHA256 -> BS.ByteString) . hash
 run160 :: BS.ByteString -> BS.ByteString
 run160 = (toBytes :: Digest RIPEMD160 -> BS.ByteString) . hash
 
+runSha1 :: BS.ByteString -> BS.ByteString
+runSha1 = (toBytes :: Digest SHA1 -> BS.ByteString) . hash
+
 -- | Computes SHA-512.
-hash512 :: BS.ByteString -> Hash512
+hash512 :: BS.ByteString -> Word512
 hash512 bs = runGet' get (run512 bs)
 
 -- | Computes SHA-512 and returns the result as a bytestring.
@@ -94,15 +98,23 @@ hash512BS :: BS.ByteString -> BS.ByteString
 hash512BS bs = run512 bs
 
 -- | Computes SHA-256.
-hash256 :: BS.ByteString -> Hash256
+hash256 :: BS.ByteString -> Word256
 hash256 bs = runGet' get (run256 bs)
 
 -- | Computes SHA-256 and returns the result as a bytestring.
 hash256BS :: BS.ByteString -> BS.ByteString
 hash256BS bs = run256 bs
 
+-- | Computes SHA-160.
+hashSha1 :: BS.ByteString -> Word160
+hashSha1 bs = runGet' get (runSha1 bs)
+
+-- | Computes SHA-160 and returns the result as a bytestring.
+hashSha1BS :: BS.ByteString -> BS.ByteString
+hashSha1BS bs = runSha1 bs
+
 -- | Computes RIPEMD-160.
-hash160 :: BS.ByteString -> Hash160
+hash160 :: BS.ByteString -> Word160
 hash160 bs = runGet' get (run160 bs)
 
 -- | Computes RIPEMD-160 and returns the result as a bytestring.
@@ -110,7 +122,7 @@ hash160BS :: BS.ByteString -> BS.ByteString
 hash160BS bs = run160 bs
 
 -- | Computes two rounds of SHA-256.
-doubleHash256 :: BS.ByteString -> Hash256
+doubleHash256 :: BS.ByteString -> Word256
 doubleHash256 bs = runGet' get (run256 $ run256 bs)
 
 -- | Computes two rounds of SHA-256 and returns the result as a bytestring.
@@ -121,12 +133,12 @@ doubleHash256BS bs = run256 $ run256 bs
 
 -- | Computes a 32 bit checksum.
 chksum32 :: BS.ByteString -> CheckSum32
-chksum32 bs = CheckSum32 $ fromIntegral $ (doubleHash256 bs) `shiftR` 224
+chksum32 bs = fromIntegral $ (doubleHash256 bs) `shiftR` 224
 
 {- HMAC -}
 
 -- | Computes HMAC over SHA-512.
-hmac512 :: BS.ByteString -> BS.ByteString -> Hash512
+hmac512 :: BS.ByteString -> BS.ByteString -> Word512
 hmac512 key = decode' . (hmac512BS key)
 
 -- | Computes HMAC over SHA-512 and return the result as a bytestring.
@@ -134,20 +146,21 @@ hmac512BS :: BS.ByteString -> BS.ByteString -> BS.ByteString
 hmac512BS key msg = hmac hash512BS 128 key msg
 
 -- | Computes HMAC over SHA-256.
-hmac256 :: BS.ByteString -> BS.ByteString -> Hash256
+hmac256 :: BS.ByteString -> BS.ByteString -> Word256
 hmac256 key = decode' . (hmac256BS key)
 
 -- | Computes HMAC over SHA-256 and return the result as a bytestring.
 hmac256BS :: BS.ByteString -> BS.ByteString -> BS.ByteString
 hmac256BS key msg = hmac hash256BS 64 key msg
 
--- | Split a 'Hash512' into a pair of 'Hash256'.
-split512 :: Hash512 -> (Hash256, Hash256)
+-- | Split a 'Word512' into a pair of 'Word256'.
+split512 :: Word512 -> (Word256, Word256)
 split512 i = (fromIntegral $ i `shiftR` 256, fromIntegral i)
 
--- | Join a pair of 'Hash256' into a 'Hash512'.
-join512 :: (Hash256, Hash256) -> Hash512
-join512 (a,b) = ((toMod512 a) `shiftL` 256) + (toMod512 b)
+-- | Join a pair of 'Word256' into a 'Word512'.
+join512 :: (Word256, Word256) -> Word512
+join512 (a,b) = 
+    ((fromIntegral a :: Word512) `shiftL` 256) + (fromIntegral b :: Word512)
 
 -- | Decode the compact number used in the difficulty target of a block into an
 -- Integer. 
@@ -185,6 +198,29 @@ encodeCompact i
     (s2,c2) | c1 .&. 0x00800000 /= 0  = (s1 + 1, c1 `shiftR` 8)
             | otherwise               = (s1, c1)
     c3 = fromIntegral $ c2 .|. ((toInteger s2) `shiftL` 24)
+
+-- | Encodes a transaction hash as little endian in HEX format.
+-- This is mostly used for displaying transaction ids. Internally, these ids
+-- are handled as big endian but are transformed to little endian when
+-- displaying them.
+encodeTxHashLE :: TxHash -> String
+encodeTxHashLE = bsToHex . BS.reverse .  encode' 
+
+-- | Decodes a little endian transaction hash in HEX format. 
+decodeTxHashLE :: String -> Maybe TxHash
+decodeTxHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS
+
+-- | Computes the hash of a transaction.
+txHash :: Tx -> TxHash
+txHash = fromIntegral . doubleHash256 . encode' 
+
+-- | Computes the hash of a coinbase transaction.
+cbHash :: CoinbaseTx -> TxHash
+cbHash = fromIntegral . doubleHash256 . encode' 
+
+-- | Compute the hash of a block header
+headerHash :: BlockHeader -> BlockHash
+headerHash = fromIntegral . doubleHash256 . encode'
 
 {- 10.1.2 HMAC_DRBG with HMAC-SHA256
    http://csrc.nist.gov/publications/nistpubs/800-90A/SP800-90A.pdf 

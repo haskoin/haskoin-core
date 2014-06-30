@@ -3,9 +3,8 @@
 module Network.Haskoin.Crypto.BigWord
 (
 -- Useful type aliases
-  Hash512
-, Hash256
-, Hash160
+  TxHash
+, BlockHash
 , Word512
 , Word256
 , Word160
@@ -18,12 +17,6 @@ module Network.Haskoin.Crypto.BigWord
 , BigWordMod(..)
 
 -- Functions
-, toFieldN
-, toFieldP
-, toMod512
-, toMod256
-, toMod160
-, toMod128
 , inverseP
 , inverseN
 , quadraticResidue
@@ -52,6 +45,7 @@ import Data.Binary.Put
     , putWord8
     , putByteString
     )
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (unless, guard)
 import Control.Applicative ((<$>))
 import Data.Ratio (numerator, denominator)
@@ -61,18 +55,19 @@ import Network.Haskoin.Crypto.Curve
 import Network.Haskoin.Crypto.NumberTheory 
 import Network.Haskoin.Util 
 
+-- | Type representing a transaction hash.
+type TxHash  = BigWord Mod256Tx
+-- | Type representing a block hash.
+type BlockHash = BigWord Mod256Block
 -- | Data type representing a 512 bit unsigned integer.
 -- It is implemented as an Integer modulo 2^512.
 type Word512 = BigWord Mod512
-type Hash512 = Word512
 -- | Data type representing a 256 bit unsigned integer.
 -- It is implemented as an Integer modulo 2^256.
 type Word256 = BigWord Mod256
-type Hash256 = Word256
 -- | Data type representing a 160 bit unsigned integer.
 -- It is implemented as an Integer modulo 2^160.
 type Word160 = BigWord Mod160
-type Hash160 = Word160
 -- | Data type representing a 128 bit unsigned integer.
 -- It is implemented as an Integer modulo 2^128.
 type Word128 = BigWord Mod128
@@ -83,6 +78,8 @@ type FieldN  = BigWord ModN
 
 data Mod512
 data Mod256 
+data Mod256Tx
+data Mod256Block
 data Mod160
 data Mod128
 data ModP
@@ -91,23 +88,8 @@ data ModN
 newtype BigWord n = BigWord { getBigWordInteger :: Integer }
     deriving (Eq, Ord, Read, Show)
 
-toFieldN :: BigWord n -> FieldN
-toFieldN (BigWord i) = fromInteger i
-
-toFieldP :: BigWord n -> FieldP
-toFieldP (BigWord i) = fromInteger i
-
-toMod512 :: BigWord n -> Word512
-toMod512 (BigWord i) = fromInteger i
-
-toMod256 :: BigWord n -> Word256
-toMod256 (BigWord i) = fromInteger i
-
-toMod160 :: BigWord n -> Word160
-toMod160 (BigWord i) = fromInteger i
-
-toMod128 :: BigWord n -> Word128
-toMod128 (BigWord i) = fromInteger i
+instance NFData (BigWord n) where
+    rnf (BigWord n) = rnf n
 
 inverseP :: FieldP -> FieldP
 inverseP (BigWord i) = fromInteger $ mulInverse i curveP
@@ -124,6 +106,14 @@ instance BigWordMod Mod512 where
     rBitSize     _ = 512
 
 instance BigWordMod Mod256 where
+    rFromInteger i = BigWord $ i `mod` 2 ^ (256 :: Int)
+    rBitSize     _ = 256
+
+instance BigWordMod Mod256Tx where
+    rFromInteger i = BigWord $ i `mod` 2 ^ (256 :: Int)
+    rBitSize     _ = 256
+
+instance BigWordMod Mod256Block where
     rFromInteger i = BigWord $ i `mod` 2 ^ (256 :: Int)
     rBitSize     _ = 256
 
@@ -216,15 +206,43 @@ instance Fractional (BigWord ModN) where
 
 instance Binary (BigWord Mod512) where
     get = do
-        a <- fromIntegral <$> (get :: Get Hash256)
-        b <- fromIntegral <$> (get :: Get Hash256)
+        a <- fromIntegral <$> (get :: Get Word256)
+        b <- fromIntegral <$> (get :: Get Word256)
         return $ (a `shiftL` 256) + b
 
     put (BigWord i) = do
-        put $ (fromIntegral (i `shiftR` 256) :: Hash256)
-        put $ (fromIntegral i :: Hash256)
+        put $ (fromIntegral (i `shiftR` 256) :: Word256)
+        put $ (fromIntegral i :: Word256)
 
 instance Binary (BigWord Mod256) where
+    get = do
+        a <- fromIntegral <$> getWord64be
+        b <- fromIntegral <$> getWord64be
+        c <- fromIntegral <$> getWord64be
+        d <- fromIntegral <$> getWord64be
+        return $ (a `shiftL` 192) + (b `shiftL` 128) + (c `shiftL` 64) + d
+
+    put (BigWord i) = do
+        putWord64be $ fromIntegral (i `shiftR` 192)
+        putWord64be $ fromIntegral (i `shiftR` 128)
+        putWord64be $ fromIntegral (i `shiftR` 64)
+        putWord64be $ fromIntegral i
+
+instance Binary (BigWord Mod256Tx) where
+    get = do
+        a <- fromIntegral <$> getWord64be
+        b <- fromIntegral <$> getWord64be
+        c <- fromIntegral <$> getWord64be
+        d <- fromIntegral <$> getWord64be
+        return $ (a `shiftL` 192) + (b `shiftL` 128) + (c `shiftL` 64) + d
+
+    put (BigWord i) = do
+        putWord64be $ fromIntegral (i `shiftR` 192)
+        putWord64be $ fromIntegral (i `shiftR` 128)
+        putWord64be $ fromIntegral (i `shiftR` 64)
+        putWord64be $ fromIntegral i
+
+instance Binary (BigWord Mod256Block) where
     get = do
         a <- fromIntegral <$> getWord64be
         b <- fromIntegral <$> getWord64be
@@ -268,8 +286,6 @@ instance Binary (BigWord ModN) where
         unless (t == 0x02) (fail $
             "Bad DER identifier byte " ++ (show t) ++ ". Expecting 0x02" )
         l <- getWord8
-        unless (l <= 33) (fail $
-            "Bad DER length " ++ (show l) ++ ". Expecting length <= 33" )
         i <- bsToInteger <$> getByteString (fromIntegral l)
         unless (isIntegerValidKey i) $ fail $ 
             "Invalid fieldN element: " ++ (show i)
@@ -292,12 +308,12 @@ instance Binary (BigWord ModP) where
 
     -- Section 2.3.6 http://www.secg.org/download/aid-780/sec1-v2.pdf
     get = do
-        (BigWord i) <- get :: Get Hash256
+        (BigWord i) <- get :: Get Word256
         unless (i < curveP) (fail $ "Get: Integer not in FieldP: " ++ (show i))
         return $ fromInteger i
 
     -- Section 2.3.7 http://www.secg.org/download/aid-780/sec1-v2.pdf
-    put r = put $ toMod256 r
+    put r = put (fromIntegral r :: Word256)
          
 
 -- curveP = 3 (mod 4), thus Lagrange solutions apply

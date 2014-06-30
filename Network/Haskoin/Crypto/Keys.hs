@@ -24,6 +24,7 @@ import Data.Binary (Binary, get, put)
 import Data.Binary.Get (Get, getWord8)
 import Data.Binary.Put (Put, putWord8)
 
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (when, unless, guard)
 import Control.Applicative ((<$>),(<*>))
 import Data.Maybe (isJust, fromJust)
@@ -57,6 +58,10 @@ data PubKey
     | PubKeyU { pubKeyPoint :: !Point }
     deriving (Read, Show)
 
+instance NFData PubKey where
+    rnf (PubKey p) = rnf p
+    rnf (PubKeyU p) = rnf p
+
 instance Eq PubKey where
     -- Compression does not matter for InfPoint
     (PubKey  InfPoint) == (PubKeyU InfPoint) = True
@@ -70,16 +75,16 @@ instance Eq PubKey where
 isValidPubKey :: PubKey -> Bool
 isValidPubKey = validatePoint . pubKeyPoint
 
--- | Add a public key to a private key defined by its Hash256 value. This will
+-- | Add a public key to a private key defined by its Word256 value. This will
 -- transform the private key into a public key and add the respective public
 -- key points together. This is provided as a helper for BIP32 wallet
 -- implementations. This function fails for uncompressed keys and returns
 -- Nothing if the private key value is >= than the order of the curve N.
-addPubKeys :: PubKey -> Hash256 -> Maybe PubKey
+addPubKeys :: PubKey -> Word256 -> Maybe PubKey
 addPubKeys pub i
     | isPubKeyU pub = error "Add: HDW only supports compressed formats"
     | toInteger i < curveN =
-        let pt1 = mulPoint (toFieldN i) curveG
+        let pt1 = mulPoint (fromIntegral i :: FieldN) curveG
             pt2 = addPoint (pubKeyPoint pub) pt1
             in if isInfPoint pt2 then Nothing
                                  else Just $ PubKey pt2
@@ -161,6 +166,10 @@ data PrvKey
     | PrvKeyU { prvKeyFieldN :: !FieldN } 
     deriving (Eq, Show, Read)
 
+instance NFData PrvKey where
+    rnf (PrvKey p) = rnf p
+    rnf (PrvKeyU p) = rnf p
+
 -- | Returns True if the private key is valid. This will check if the integer
 -- value representing the private key is greater than 0 and smaller than the
 -- curve order N.
@@ -187,15 +196,15 @@ makePrvKeyU i
 fromPrvKey :: PrvKey -> Integer
 fromPrvKey = fromIntegral . prvKeyFieldN
 
--- | Add two private keys together. One of the keys is defined by a Hash256.
+-- | Add two private keys together. One of the keys is defined by a Word256.
 -- The functions fails on uncompressed private keys and return Nothing if the
--- Hash256 is smaller than the order of the curve N. This is provided
+-- Word256 is smaller than the order of the curve N. This is provided
 -- as a helper for implementing BIP32 wallets.
-addPrvKeys :: PrvKey -> Hash256 -> Maybe PrvKey
+addPrvKeys :: PrvKey -> Word256 -> Maybe PrvKey
 addPrvKeys key i
     | isPrvKeyU key = error "Add: HDW only supports compressed formats"
     | toInteger i < curveN =
-        let r = (prvKeyFieldN key) + (toFieldN i) 
+        let r = (prvKeyFieldN key) + (fromIntegral i :: FieldN) 
             in makePrvKey $ toInteger r
     | otherwise = Nothing
 
@@ -209,13 +218,13 @@ isPrvKeyU (PrvKeyU _) = True
 -- format for private keys is required
 putPrvKey :: PrvKey -> Put
 putPrvKey k | prvKeyFieldN k == 0 = error "Put: 0 is an invalid private key"
-            | otherwise        = put $ toMod256 $ prvKeyFieldN k
+            | otherwise = put $ (fromIntegral (prvKeyFieldN k) :: Word256)
 
 -- | Deserializes a compressed private key from the Data.Binary.Get monad as a
 -- 32 byte big endian ByteString.
 getPrvKey :: Get PrvKey
 getPrvKey = do
-        i <- get :: Get Hash256
+        i <- get :: Get Word256
         let res = makePrvKey $ fromIntegral i
         unless (isJust res) $ fail "Get: PrivateKey is invalid"
         return $ fromJust res
@@ -224,7 +233,7 @@ getPrvKey = do
 -- a 32 byte big endian ByteString
 getPrvKeyU :: Get PrvKey
 getPrvKeyU = do
-        i <- get :: Get Hash256
+        i <- get :: Get Word256
         let res = makePrvKeyU $ fromIntegral i
         unless (isJust res) $ fail "Get: PrivateKey is invalid"
         return $ fromJust res

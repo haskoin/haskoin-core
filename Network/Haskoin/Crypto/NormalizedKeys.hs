@@ -38,6 +38,7 @@ module Network.Haskoin.Crypto.NormalizedKeys
 , intMulSigAddrs
 ) where
 
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM2, guard)
 import Control.Applicative ((<$>))
 
@@ -57,12 +58,18 @@ type KeyIndex = Word32
 newtype MasterKey = MasterKey { masterKey :: XPrvKey }
     deriving (Eq, Show, Read)
 
+instance NFData MasterKey where
+    rnf (MasterKey m) = rnf m
+
 -- | Data type representing a private account key. Account keys are generated
 -- from a 'MasterKey' through prime derivation. This guarantees that the
 -- 'MasterKey' will not be compromised if the account key is compromised. 
 -- 'AccPrvKey' is represented as m\/i'\/ in BIP32 notation.
 newtype AccPrvKey = AccPrvKey { getAccPrvKey :: XPrvKey }
     deriving (Eq, Show, Read)
+
+instance NFData AccPrvKey where
+    rnf (AccPrvKey k) = rnf k
 
 -- | Data type representing a public account key. It is computed through
 -- derivation from an 'AccPrvKey'. It can not be derived from the 'MasterKey'
@@ -71,6 +78,9 @@ newtype AccPrvKey = AccPrvKey { getAccPrvKey :: XPrvKey }
 -- addresses without the knowledge of the 'AccPrvKey'.
 newtype AccPubKey = AccPubKey { getAccPubKey :: XPubKey }
     deriving (Eq, Show, Read)
+
+instance NFData AccPubKey where
+    rnf (AccPubKey k) = rnf k
 
 -- | Data type representing a private address key. Private address keys are
 -- generated through a non-prime derivation from an 'AccPrvKey'. Non-prime
@@ -83,6 +93,9 @@ newtype AccPubKey = AccPubKey { getAccPubKey :: XPubKey }
 newtype AddrPrvKey = AddrPrvKey { getAddrPrvKey :: XPrvKey }
     deriving (Eq, Show, Read)
 
+instance NFData AddrPrvKey where
+    rnf (AddrPrvKey k) = rnf k
+
 -- | Data type representing a public address key. They are generated through
 -- non-prime derivation from an 'AccPubKey'. This is a useful feature for
 -- read-only wallets. They are represented as M\/i'\/0\/j in BIP32 notation
@@ -90,6 +103,9 @@ newtype AddrPrvKey = AddrPrvKey { getAddrPrvKey :: XPrvKey }
 -- addresses.
 newtype AddrPubKey = AddrPubKey { getAddrPubKey :: XPubKey }
     deriving (Eq, Show, Read)
+
+instance NFData AddrPubKey where
+    rnf (AddrPubKey k) = rnf k
 
 -- | Create a 'MasterKey' from a seed.
 makeMasterKey :: BS.ByteString -> Maybe MasterKey
@@ -198,35 +214,35 @@ intPubKeys a i = mapMaybe f $ cycleIndex i
 addr :: AddrPubKey -> Address
 addr = xPubAddr . getAddrPubKey
 
--- | Computes an external base58 address from an 'AccPubKey' and a 
+-- | Computes an external address from an 'AccPubKey' and a 
 -- derivation index.
-extAddr :: AccPubKey -> KeyIndex -> Maybe String
-extAddr a i = addrToBase58 . addr <$> extPubKey a i
+extAddr :: AccPubKey -> KeyIndex -> Maybe Address
+extAddr a i = addr <$> extPubKey a i
 
--- | Computes an internal base58 addres from an 'AccPubKey' and a 
+-- | Computes an internal addres from an 'AccPubKey' and a 
 -- derivation index.
-intAddr :: AccPubKey -> KeyIndex -> Maybe String
-intAddr a i = addrToBase58 . addr <$> intPubKey a i
+intAddr :: AccPubKey -> KeyIndex -> Maybe Address
+intAddr a i = addr <$> intPubKey a i
 
--- | Cyclic list of all external base58 addresses derived from a 'AccPubKey'
+-- | Cyclic list of all external addresses derived from a 'AccPubKey'
 -- and starting from an offset index.
-extAddrs :: AccPubKey -> KeyIndex -> [(String,KeyIndex)]
+extAddrs :: AccPubKey -> KeyIndex -> [(Address,KeyIndex)]
 extAddrs a i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (extAddr a j) (return j)
 
--- | Cyclic list of all internal base58 addresses derived from a 'AccPubKey'
+-- | Cyclic list of all internal addresses derived from a 'AccPubKey'
 -- and starting from an offset index.
-intAddrs :: AccPubKey -> KeyIndex -> [(String,KeyIndex)]
+intAddrs :: AccPubKey -> KeyIndex -> [(Address,KeyIndex)]
 intAddrs a i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (intAddr a j) (return j)
 
 -- | Same as 'extAddrs' with the list reversed.
-extAddrs' :: AccPubKey -> KeyIndex -> [(String,KeyIndex)]
+extAddrs' :: AccPubKey -> KeyIndex -> [(Address,KeyIndex)]
 extAddrs' a i = mapMaybe f $ cycleIndex' i
     where f j = liftM2 (,) (extAddr a j) (return j)
 
 -- | Same as 'intAddrs' with the list reversed.
-intAddrs' :: AccPubKey -> KeyIndex -> [(String,KeyIndex)]
+intAddrs' :: AccPubKey -> KeyIndex -> [(Address,KeyIndex)]
 intAddrs' a i = mapMaybe f $ cycleIndex' i
     where f j = liftM2 (,) (intAddr a j) (return j)
 
@@ -260,33 +276,33 @@ intMulSigKeys :: AccPubKey -> [XPubKey] -> KeyIndex -> [([AddrPubKey],KeyIndex)]
 intMulSigKeys a ps i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (intMulSigKey a ps j) (return j)
 
--- | Computes an external base58 multisig address from an 'AccPubKey', a
+-- | Computes an external multisig address from an 'AccPubKey', a
 -- list of thirdparty multisig keys and a derivation index.
-extMulSigAddr :: AccPubKey -> [XPubKey] -> Int -> KeyIndex -> Maybe String
+extMulSigAddr :: AccPubKey -> [XPubKey] -> Int -> KeyIndex -> Maybe Address
 extMulSigAddr a ps r i = do
     xs <- (map (xPubKey . getAddrPubKey)) <$> extMulSigKey a ps i
-    return $ addrToBase58 $ scriptAddr $ sortMulSig $ PayMulSig xs r
+    return $ scriptAddr $ sortMulSig $ PayMulSig xs r
 
--- | Computes an internal base58 multisig address from an 'AccPubKey', a
+-- | Computes an internal multisig address from an 'AccPubKey', a
 -- list of thirdparty multisig keys and a derivation index.
-intMulSigAddr :: AccPubKey -> [XPubKey] -> Int -> KeyIndex -> Maybe String
+intMulSigAddr :: AccPubKey -> [XPubKey] -> Int -> KeyIndex -> Maybe Address
 intMulSigAddr a ps r i = do
     xs <- (map (xPubKey . getAddrPubKey)) <$> intMulSigKey a ps i
-    return $ addrToBase58 $ scriptAddr $ sortMulSig $ PayMulSig xs r
+    return $ scriptAddr $ sortMulSig $ PayMulSig xs r
 
--- | Cyclic list of all external base58 multisig addresses derived from
+-- | Cyclic list of all external multisig addresses derived from
 -- an 'AccPubKey' and a list of thirdparty multisig keys. The list starts
 -- at an offset index.
 extMulSigAddrs :: AccPubKey -> [XPubKey] -> Int -> KeyIndex 
-              -> [(String,KeyIndex)]
+              -> [(Address,KeyIndex)]
 extMulSigAddrs a ps r i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (extMulSigAddr a ps r j) (return j)
 
--- | Cyclic list of all internal base58 multisig addresses derived from
+-- | Cyclic list of all internal multisig addresses derived from
 -- an 'AccPubKey' and a list of thirdparty multisig keys. The list starts
 -- at an offset index.
 intMulSigAddrs :: AccPubKey -> [XPubKey] -> Int -> KeyIndex 
-              -> [(String,KeyIndex)]
+              -> [(Address,KeyIndex)]
 intMulSigAddrs a ps r i = mapMaybe f $ cycleIndex i
     where f j = liftM2 (,) (intMulSigAddr a ps r j) (return j)
 

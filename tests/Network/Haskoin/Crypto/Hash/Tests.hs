@@ -4,6 +4,7 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Network.Haskoin.Crypto.Hash
+import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Arbitrary()
 
 tests :: [Test]
@@ -14,7 +15,7 @@ tests =
         ]
     ]
 
-joinSplit512 :: Hash512 -> Bool
+joinSplit512 :: Word512 -> Bool
 joinSplit512 h = (join512 $ split512 h) == h
 
 -- After encoding and decoding, we may loose precision so the new result is >=

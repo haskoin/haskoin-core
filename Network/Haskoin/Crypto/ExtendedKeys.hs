@@ -30,36 +30,25 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , cycleIndex'
 ) where
 
-import Control.Monad 
-    ( guard
-    , unless
-    , when
-    , liftM2
-    )
+import Control.DeepSeq (NFData, rnf)
+import Control.Monad (guard, unless, when, liftM2)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get (Get, getWord8, getWord32be)
 import Data.Binary.Put (Put, runPut, putWord8, putWord32be)
 import Data.Word (Word8, Word32)
-import Data.Bits 
-    ( shiftR
-    , setBit
-    , testBit
-    , clearBit
-    )
+import Data.Bits (shiftR, setBit, testBit, clearBit)
 import Data.Maybe (mapMaybe)
-import qualified Data.ByteString as BS 
-    ( ByteString
-    , append
-    )
+import qualified Data.ByteString as BS (ByteString, append)
 
 import Network.Haskoin.Util
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.Base58
+import Network.Haskoin.Crypto.BigWord
 
 {- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
 
-type ChainCode = Hash256
+type ChainCode = Word256
 
 -- | Data type representing an extended BIP32 private key. An extended key
 -- is a node in a tree of key derivations. It has a depth in the tree, a 
@@ -72,6 +61,10 @@ data XPrvKey = XPrvKey
     , xPrvKey    :: !PrvKey    -- ^ The private key of this extended key node.
     } deriving (Eq, Show, Read)
 
+instance NFData XPrvKey where
+    rnf (XPrvKey d p i c k) =
+        rnf d `seq` rnf p `seq` rnf i `seq` rnf c `seq` rnf k
+
 -- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
     { xPubDepth  :: !Word8     -- ^ Depth in the tree of key derivations.
@@ -80,6 +73,10 @@ data XPubKey = XPubKey
     , xPubChain  :: !ChainCode -- ^ Chain code.
     , xPubKey    :: !PubKey    -- ^ The public key of this extended key node.
     } deriving (Eq, Show, Read)
+
+instance NFData XPubKey where
+    rnf (XPubKey d p i c k) =
+        rnf d `seq` rnf p `seq` rnf i `seq` rnf c `seq` rnf k
 
 -- | Build a BIP32 compatible extended private key from a bytestring. This will
 -- produce a root node (depth=0 and parent=0).
@@ -217,11 +214,11 @@ xPubChild :: XPubKey -> Word32
 xPubChild k = clearBit (xPubIndex k) 31
 
 -- | Computes the key identifier of an extended private key.
-xPrvID :: XPrvKey -> Hash160
+xPrvID :: XPrvKey -> Word160
 xPrvID = xPubID . deriveXPubKey
 
 -- | Computes the key identifier of an extended public key.
-xPubID :: XPubKey -> Hash160
+xPubID :: XPubKey -> Word160
 xPubID = hash160 . hash256BS . encode' . xPubKey 
 
 -- | Computes the key fingerprint of an extended private key.

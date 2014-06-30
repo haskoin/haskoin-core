@@ -5,7 +5,6 @@
 module Network.Haskoin.Protocol.Arbitrary () where
 
 import Test.QuickCheck
-import Network.Haskoin.Util.Arbitrary (nonEmptyBS)
 import Network.Haskoin.Crypto.Arbitrary()
 
 import Control.Monad
@@ -55,19 +54,28 @@ instance Arbitrary Addr where
 instance Arbitrary Alert where
     arbitrary = Alert <$> arbitrary <*> arbitrary
 
+instance Arbitrary Reject where
+    arbitrary = Reject <$> arbitrary <*> arbitrary <*> arbitrary
+
+instance Arbitrary RejectCode where
+    arbitrary = elements [ RejectMalformed
+                         , RejectInvalid
+                         , RejectInvalid
+                         , RejectDuplicate
+                         , RejectNonStandard
+                         , RejectDust
+                         , RejectInsufficientFee
+                         , RejectCheckpoint
+                         ]
+
 instance Arbitrary BlockHeader where
     arbitrary = BlockHeader <$> arbitrary
-                            <*> (hash256 <$> arbitrary)
+                            <*> (fromIntegral . hash256 <$> arbitrary)
                             <*> (hash256 <$> arbitrary)
                             <*> arbitrary
                             <*> arbitrary
                             <*> arbitrary
                             
-instance Arbitrary Script where
-    arbitrary = do
-        i <- choose (1,10)
-        Script <$> (vectorOf i arbitrary)
-
 instance Arbitrary Tx where
     arbitrary = do
         v   <- arbitrary
@@ -119,29 +127,6 @@ instance Arbitrary MerkleBlock where
         flags <- vectorOf (c*8) arbitrary
         return $ MerkleBlock h ntx hashes flags
 
-instance Arbitrary PushDataType where
-    arbitrary = elements [ OPCODE, OPDATA1, OPDATA2, OPDATA4 ]
-
-instance Arbitrary ScriptOp where
-    arbitrary = oneof [ opPushData <$> nonEmptyBS
-                      , return OP_0
-                      , return OP_1NEGATE
-                      , return OP_1
-                      , return OP_2, return OP_3, return OP_4, return OP_5
-                      , return OP_6, return OP_7, return OP_8, return OP_9
-                      , return OP_10, return OP_11, return OP_12, return OP_13
-                      , return OP_14, return OP_15, return OP_16
-                      , return OP_VERIFY
-                      , return OP_DUP
-                      , return OP_EQUAL
-                      , return OP_EQUALVERIFY
-                      , return OP_HASH160
-                      , return OP_CHECKSIG
-                      , return OP_CHECKMULTISIG
-                      , OP_PUBKEY <$> arbitrary
-                      , return $ OP_INVALIDOPCODE 0xff
-                      ]
-
 instance Arbitrary GetBlocks where
     arbitrary = GetBlocks <$> arbitrary
                           <*> (listOf arbitrary)
@@ -178,6 +163,7 @@ instance Arbitrary MessageCommand where
                          , MCGetHeaders
                          , MCTx
                          , MCBlock
+                         , MCMerkleBlock
                          , MCHeaders
                          , MCGetAddr
                          , MCFilterLoad
@@ -205,6 +191,7 @@ instance Arbitrary Message where
                       , MGetHeaders  <$> arbitrary
                       , MTx          <$> arbitrary
                       , MBlock       <$> arbitrary
+                      , MMerkleBlock <$> arbitrary
                       , MHeaders     <$> arbitrary
                       , return MGetAddr
                       , MFilterLoad  <$> arbitrary

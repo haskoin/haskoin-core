@@ -5,10 +5,8 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Maybe (fromJust)
-import qualified Data.ByteString as BS (reverse)
 
 import Network.Haskoin.Crypto
-import Network.Haskoin.Util
 
 tests :: [Test]
 tests =
@@ -24,9 +22,10 @@ mapMerkleVectors (v,i) =
 
 runMerkleVector :: (String,[String]) -> Assertion
 runMerkleVector (r,hs) = do
-    assertBool "    >  Merkle Vector" $ buildMerkleRoot (map f hs) == (f r)
+    assertBool "    >  Merkle Vector" $ 
+        buildMerkleRoot (map f hs) == fromIntegral (f r)
   where
-    f = decode' . BS.reverse . fromJust . hexToBS
+    f = fromJust . decodeTxHashLE
 
 merkleVectors :: [(String,[String])]
 merkleVectors =

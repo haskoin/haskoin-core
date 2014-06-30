@@ -36,26 +36,25 @@ testBuildAddrTx os a v
         x@(ScriptAddress _) -> Right (PayScriptHash x) == out
     | otherwise = isLeft tx
     where tx  = buildAddrTx os [(addrToBase58 a,v)]
-          out = decodeOutput $ scriptOutput $ txOut (fromRight tx) !! 0
+          out = decodeOutputBS $ scriptOutput $ txOut (fromRight tx) !! 0
 
-testGuessSize :: RegularTx -> Bool
-testGuessSize (RegularTx tx) =
+testGuessSize :: SpendAddrTx -> Bool
+testGuessSize (SpendAddrTx tx xs) =
     -- We compute an upper bound but it should be close enough to the real size
-    -- We give 3 bytes of slack on every signature (1 on r and 2 on s)
-    guess >= len && guess - 3*delta <= len
-    where delta = pki + (sum $ map fst msi)
-          guess = guessTxSize pki msi pkout msout
-          len = BS.length $ encode' tx
-          rIns = map (decodeInput . scriptInput) $ txIn tx
-          mIns = map (decodeScriptHash . scriptInput) $ txIn tx
-          pki = length $ filter (isSpendPKHash . fromRight) $ 
-                    filter isRight rIns
-          msi = concat $ map (shData . fromRight) $ filter isRight mIns
+    -- We give 2 bytes of slack on every signature (1 on r and 1 on s)
+    guess >= len && guess - 2*delta <= len
+    where delta   = pki + (sum $ map fst msi)
+          guess   = guessTxSize pki msi pkout msout
+          len     = BS.length $ encode' tx
+          ins     = map f $ zip (txIn tx) xs
+          f (i,o) = fromRight $ decodeInputBS o $ scriptInput i
+          pki     = length $ filter isSpendPKHash ins
+          msi     = concat $ map shData ins
           shData (ScriptHashInput _ (PayMulSig keys r)) = [(r,length keys)]
           shData _ = []
-          out  = map (fromRight . decodeOutput . scriptOutput) $ txOut tx
-          pkout = length $ filter isPayPKHash out
-          msout = length $ filter isPayScriptHash out
+          out      = map (fromRight . decodeOutputBS . scriptOutput) $ txOut tx
+          pkout    = length $ filter isPayPKHash out
+          msout    = length $ filter isPayScriptHash out
 
 testChooseCoins :: Word64 -> Word64 -> [Coin] -> Bool
 testChooseCoins target kbfee xs = case chooseCoins target kbfee xs of
@@ -84,31 +83,37 @@ testChooseMSCoins target kbfee (MSParam m n) xs =
 
 testSignTx :: PKHashSigTemplate -> Bool
 testSignTx (PKHashSigTemplate tx sigi prv)
-    | null $ txIn tx = isBroken txSig && isBroken txSigP
-    | otherwise =  (not $ verifyTx tx verData)
-                && isComplete txSig 
-                && verifyTx (runBuild txSig) verData
-                && isPartial txSigP
-                && (not $ verifyTx (runBuild txSigP) verData)
-                && isComplete txSigC
-                && verifyTx (runBuild txSigC) verData
-    where txSig   = detSignTx tx sigi prv
-          txSigP  = detSignTx tx sigi (tail prv)
-          txSigC  = detSignTx (runBuild txSigP) sigi [head prv]
-          verData = map (\(SigInput s o _) -> (s,o)) sigi
+    | null $ txIn tx = (isLeft res) && (isLeft resP)
+    | otherwise = (not $ verifyTx tx verData)
+                      && isRight res && stat
+                      && verifyTx txSig verData
+                      && isRight resP && (not statP)
+                      && (not $ verifyTx txSigP verData)
+                      && isRight resC && statC
+                      && verifyTx txSigC verData
+    where res             = detSignTx tx sigi prv
+          (txSig, stat)   = fromRight res
+          resP            = detSignTx tx sigi (tail prv)
+          (txSigP, statP) = fromRight resP
+          resC            = detSignTx txSigP sigi [head prv]
+          (txSigC, statC) = fromRight resC
+          verData = map (\(SigInput s o _ _) -> (s,o)) sigi
          
 testSignMS :: MulSigTemplate -> Bool
-testSignMS (MulSigTemplate tx sigi prv)
-    | null $ txIn tx = isBroken txSig && isBroken txSigP
-    | otherwise =  (not $ verifyTx tx verData)
-                && isComplete txSig 
-                && verifyTx (runBuild txSig) verData
-                && isPartial txSigP
-                && (not $ verifyTx (runBuild txSigP) verData)
-                && isComplete txSigC
-                && verifyTx (runBuild txSigC) verData
-    where txSig   = detSignTx tx sigi prv
-          txSigP  = detSignTx tx sigi (tail prv)
-          txSigC  = detSignTx (runBuild txSigP) sigi [head prv]
-          verData = map (\(SigInputSH s o _ _) -> (s,o)) sigi
+testSignMS (MulSigTemplate tx sigis prv)
+    | null $ txIn tx = (isLeft res) && (isLeft resP)
+    | otherwise = (not $ verifyTx tx verData)
+                      && isRight res && stat
+                      && verifyTx txSig verData
+                      && isRight resP && (not statP)
+                      && (not $ verifyTx txSigP verData)
+                      && isRight resC && statC
+                      && verifyTx txSigC verData
+    where res             = detSignTx tx (map snd sigis) prv
+          (txSig, stat)   = fromRight res
+          resP            = detSignTx tx (map snd sigis) (tail prv)
+          (txSigP, statP) = fromRight resP
+          resC            = detSignTx txSigP (map snd sigis) [head prv]
+          (txSigC, statC) = fromRight resC
+          verData = map (\(s, (SigInput _ o _ _)) -> (s,o)) sigis
 

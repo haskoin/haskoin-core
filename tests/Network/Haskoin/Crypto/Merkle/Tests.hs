@@ -25,7 +25,7 @@ testTreeWidth i = i > 0 ==> calcTreeWidth i (calcTreeHeight i) == 1
 testBaseWidth :: Int -> Property
 testBaseWidth i = i > 0 ==> calcTreeWidth i 0 == i
 
-buildExtractTree :: [(Hash256,Bool)] -> Property
+buildExtractTree :: [(TxHash,Bool)] -> Property
 buildExtractTree txs = not (null txs) ==>
     r == (buildMerkleRoot hashes) && m == (map fst $ filter snd txs)
   where

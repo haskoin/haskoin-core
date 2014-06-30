@@ -12,6 +12,7 @@ module Network.Haskoin.Script.SigHash
 , decodeCanonicalSig
 ) where
 
+import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM2)
 
 import Data.Word (Word8)
@@ -26,12 +27,14 @@ import qualified Data.ByteString as BS
     , append
     , pack
     , splitAt
+    , empty
     )
 
+import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.ECDSA
-import Network.Haskoin.Protocol.Script
-import Network.Haskoin.Protocol.Tx
+import Network.Haskoin.Script.Types
+import Network.Haskoin.Protocol
 import Network.Haskoin.Util
 
 -- | Data type representing the different ways a transaction can be signed.
@@ -49,19 +52,25 @@ data SigHash
     -- | Sign all of the outputs of a transaction (This is the default value).
     -- Changing any of the outputs of the transaction will invalidate the
     -- signature.
-    = SigAll     { anyoneCanPay :: Bool }   
+    = SigAll     { anyoneCanPay :: !Bool }   
     -- | Sign none of the outputs of a transaction. This allows anyone to
     -- change any of the outputs of the transaction.
-    | SigNone    { anyoneCanPay :: Bool }     
+    | SigNone    { anyoneCanPay :: !Bool }     
     -- | Sign only the output corresponding the the current transaction input.
     -- You care about your own output in the transaction but you don't
     -- care about any of the other outputs.
-    | SigSingle  { anyoneCanPay :: Bool }   
+    | SigSingle  { anyoneCanPay :: !Bool }   
     -- | Unrecognized sighash types will decode to SigUnknown.
-    | SigUnknown { anyoneCanPay :: Bool
-                 , getSigCode   :: Word8 
+    | SigUnknown { anyoneCanPay :: !Bool
+                 , getSigCode   :: !Word8 
                  }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
+
+instance NFData SigHash where
+    rnf (SigAll a) = rnf a
+    rnf (SigNone a) = rnf a
+    rnf (SigSingle a) = rnf a
+    rnf (SigUnknown a c) = rnf a `seq` rnf c
 
 -- | Returns True if the 'SigHash' has the value SigAll.
 isSigAll :: SigHash -> Bool
@@ -112,7 +121,7 @@ txSigHash :: Tx      -- ^ Transaction to sign.
           -> Script  -- ^ Output script that is being spent.
           -> Int     -- ^ Index of the input that is being signed.
           -> SigHash -- ^ What parts of the transaction should be signed.
-          -> Hash256 -- ^ Result hash to be signed.
+          -> Word256 -- ^ Result hash to be signed.
 txSigHash tx out i sh = do
     let newIn = buildInputs (txIn tx) out i sh
     -- When SigSingle and input index > outputs, then sign integer 1
@@ -124,12 +133,12 @@ txSigHash tx out i sh = do
 -- Builds transaction inputs for computing SigHashes
 buildInputs :: [TxIn] -> Script -> Int -> SigHash -> [TxIn]
 buildInputs txins out i sh
-    | anyoneCanPay sh   = (txins !! i) { scriptInput = out } : []
+    | anyoneCanPay sh   = (txins !! i) { scriptInput = encode' out } : []
     | isSigAll sh || isSigUnknown sh = single
     | otherwise         = map noSeq $ zip single [0..]
   where 
-    empty  = map (\ti -> ti{ scriptInput = Script [] }) txins
-    single = updateIndex i empty $ \ti -> ti{ scriptInput = out }
+    empty  = map (\ti -> ti{ scriptInput = BS.empty }) txins
+    single = updateIndex i empty $ \ti -> ti{ scriptInput = encode' out }
     noSeq (ti,j) = if i == j then ti else ti{ txInSequence = 0 }
 
 -- Build transaction outputs for computing SigHashes
@@ -140,15 +149,18 @@ buildOutputs txos i sh
     | i >= length txos = Nothing
     | otherwise = return $ buffer ++ [txos !! i]
   where 
-    buffer = replicate i $ TxOut (-1) $ Script []
+    buffer = replicate i $ TxOut (-1) BS.empty
 
 -- | Data type representing a 'Signature' together with a 'SigHash'. The
 -- 'SigHash' is serialized as one byte at the end of a regular ECDSA
 -- 'Signature'. All signatures in transaction inputs are of type 'TxSignature'.
 data TxSignature = TxSignature 
-    { txSignature :: Signature 
-    , sigHashType :: SigHash
-    } deriving (Eq, Show)
+    { txSignature :: !Signature 
+    , sigHashType :: !SigHash
+    } deriving (Eq, Show, Read)
+
+instance NFData TxSignature where
+    rnf (TxSignature s h) = rnf s `seq` rnf h
 
 -- | Serialize a 'TxSignature' to a ByteString.
 encodeSig :: TxSignature -> BS.ByteString

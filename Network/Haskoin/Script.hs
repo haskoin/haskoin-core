@@ -5,29 +5,41 @@
 -}
 module Network.Haskoin.Script
 (
+  -- *Scripts
+  -- | More informations on scripts is available here:
+  -- <http://en.bitcoin.it/wiki/Script>
+  Script(..)
+, ScriptOp(..)
+, PushDataType(..)
+, opPushData
+
   -- *Script Parsing
   -- **Script Outputs
-  ScriptOutput(..)
+, ScriptOutput(..)
 , encodeOutput
+, encodeOutputBS
 , decodeOutput
+, decodeOutputBS
 , isPayPK
 , isPayPKHash
 , isPayMulSig
 , isPayScriptHash
 , scriptAddr
 , sortMulSig
+
   -- **Script Inputs
 , ScriptInput(..)
+, SimpleInput(..)
+, RedeemScript
 , encodeInput
+, encodeInputBS
 , decodeInput
+, decodeInputBS
 , isSpendPK
 , isSpendPKHash
 , isSpendMulSig
-  -- **ScriptHash Inputs
-, ScriptHashInput(..)
-, RedeemScript
-, encodeScriptHash
-, decodeScriptHash
+, isScriptHashInput
+
   -- * Helpers
 , scriptRecipient
 , scriptSender
@@ -49,8 +61,13 @@ module Network.Haskoin.Script
 , decodeSig
 , decodeCanonicalSig
 
+-- *Evaluation
+, evalScript
+, verifySpend
+, SigCheck
 ) where
 
+import Network.Haskoin.Script.Types
 import Network.Haskoin.Script.Parser
 import Network.Haskoin.Script.SigHash
-
+import Network.Haskoin.Script.Evaluator

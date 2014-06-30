@@ -499,6 +499,11 @@ conditionalEval scrpOp = do
 evalAll :: [ ScriptOp ] -> ConditionalProgramTransition ()
 evalAll = mapM_ conditionalEval
 
+checkEmptyIfStack :: ConditionalProgramTransition ()
+checkEmptyIfStack = getCond >>= \case
+    [] -> return ()
+    _ -> fail $ "ifStack not empty"
+
 checkStack :: Stack -> Bool
 checkStack (x:_) = decodeBool x
 checkStack []  = False
@@ -507,9 +512,9 @@ checkStack []  = False
 -- exported functions
 
 execScript :: Script -- ^ scriptSig ( redeemScript )
-          -> Script -- ^ scriptPubKey
-          -> SigCheck -- ^ signature verification Function
-          -> Either EvalError Program
+           -> Script -- ^ scriptPubKey
+           -> SigCheck -- ^ signature verification Function
+           -> Either EvalError Program
 execScript scriptSig scriptPubKey sigCheckFcn =
   let pubKeyOps = scriptOps scriptPubKey
       emptyProgram = Program {
@@ -518,7 +523,7 @@ execScript scriptSig scriptPubKey sigCheckFcn =
         hashOps = pubKeyOps,
         sigCheck = sigCheckFcn }
       redeemEval = evalAll ( scriptOps scriptSig ) >> ( lift $ getDualStack )
-      pubKeyEval = evalAll pubKeyOps >> (lift get)
+      pubKeyEval = evalAll pubKeyOps >> checkEmptyIfStack >> (lift $ get)
 
       in do ( s, a ) <- evalConditionalProgram redeemEval [] emptyProgram
             evalConditionalProgram pubKeyEval [] emptyProgram {

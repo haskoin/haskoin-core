@@ -494,12 +494,9 @@ conditionalEval scrpOp
 
 -- | Builds a Script evaluation monad.
 evalAll :: [ ScriptOp ] -> ConditionalProgramTransition ()
-evalAll = mapM_ conditionalEval
-
-checkEmptyIfStack :: ConditionalProgramTransition ()
-checkEmptyIfStack = getCond >>= \case
-    [] -> return ()
-    _ -> fail $ "ifStack not empty"
+evalAll ops = do mapM_ conditionalEval ops
+                 cond <- getCond
+                 unless (null cond) (lift $ programError "ifStack not empty")
 
 checkStack :: Stack -> Bool
 checkStack (x:_) = decodeBool x
@@ -520,7 +517,7 @@ execScript scriptSig scriptPubKey sigCheckFcn =
         hashOps = pubKeyOps,
         sigCheck = sigCheckFcn }
       redeemEval = evalAll ( scriptOps scriptSig ) >> ( lift $ getDualStack )
-      pubKeyEval = evalAll pubKeyOps >> checkEmptyIfStack >> (lift $ get)
+      pubKeyEval = evalAll pubKeyOps >> (lift $ get)
 
       in do ( s, a ) <- evalConditionalProgram redeemEval [] emptyProgram
             evalConditionalProgram pubKeyEval [] emptyProgram {

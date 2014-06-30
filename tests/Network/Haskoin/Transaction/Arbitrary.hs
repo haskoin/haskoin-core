@@ -102,7 +102,7 @@ instance Arbitrary Coin where
 data PKHashSigTemplate = PKHashSigTemplate Tx [SigInput] [PrvKey]
     deriving (Eq, Show)
 
-data MulSigTemplate = MulSigTemplate Tx [(Script, SigInput)] [PrvKey]
+data MulSigTemplate = MulSigTemplate Tx [(ScriptOutput, SigInput)] [PrvKey]
     deriving (Eq, Show)
 
 -- Generates a private key that can sign a input using the OutPoint and SigInput
@@ -112,12 +112,12 @@ genPKHashData = do
     prv <- arbitrary
     sh  <- arbitrary
     let pub    = derivePubKey prv
-        script = encodeOutput $ PayPKHash $ pubKeyAddr pub
+        script = PayPKHash $ pubKeyAddr pub
         sigi   = SigInput script op sh Nothing
     return (op, sigi, prv)
 
 -- Generates private keys that can sign an input using the OutPoint and SigInput
-genMSData :: Gen (OutPoint, Script, SigInput, [PrvKey])
+genMSData :: Gen (OutPoint, ScriptOutput, SigInput, [PrvKey])
 genMSData = do
     (MSParam m n) <- arbitrary
     prv     <- vectorOf n arbitrary
@@ -126,8 +126,8 @@ genMSData = do
     sh      <- arbitrary
     let pub    = map derivePubKey prv
         rdm    = PayMulSig pub m
-        script = encodeOutput $ PayScriptHash $ scriptAddr rdm
-        sigi   = SigInput script op sh (Just $ encodeOutput rdm)
+        script = PayScriptHash $ scriptAddr rdm
+        sigi   = SigInput script op sh (Just rdm)
         perPrv = permutations prv !! perm
     return (op, script, sigi, take m perPrv)
 

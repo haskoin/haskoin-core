@@ -48,11 +48,20 @@ import Network.Haskoin.Script.SigHash( TxSignature(..), decodeSig, txSigHash )
 import Network.Haskoin.Util ( bsToHex, decode' )
 import Network.Haskoin.Protocol( Tx(..), TxIn(..) )
 
-import Data.Binary (decode)
+import Data.Binary (encode, decode)
 
+
+maxScriptSize :: Int
+maxScriptSize = 10000
 
 maxScriptElementSize :: Int
 maxScriptElementSize = 520
+
+maxStackSize :: Int
+maxStackSize = 1000
+
+maxOpcodes :: Int
+maxOpcodes = 200
 
 data EvalError =
     EvalError String
@@ -84,7 +93,8 @@ data Program = Program {
     stack        :: Stack,
     altStack     :: AltStack,
     hashOps      :: HashOps,
-    sigCheck     :: SigCheck
+    sigCheck     :: SigCheck,
+    opCount      :: Int
 }
 
 dumpOp :: ScriptOp -> String
@@ -190,6 +200,10 @@ constValue op = case op of
     _ -> Nothing
 
 
+-- | Check if OpCode is constant
+isConstant :: ScriptOp -> Bool
+isConstant op = Nothing /= constValue op
+
 -- | Check if OpCode is disabled
 isDisabled :: ScriptOp -> Bool
 isDisabled op = op `elem` [ OP_CAT
@@ -210,6 +224,13 @@ isDisabled op = op `elem` [ OP_CAT
                           , OP_VER
                           , OP_VERIF
                           , OP_VERNOTIF ]
+
+-- | Check if OpCode counts towards opcount limit
+
+countOp :: ScriptOp -> Bool
+countOp op | isConstant op     = False
+           | op == OP_RESERVED = False
+           | otherwise         = True
 
 -- | A trivial `SigCheck` always reporting False
 rejectSignature :: SigCheck
@@ -263,13 +284,21 @@ putStack stack = modify $ \p -> p { stack = stack }
 prependStack :: Stack -> ProgramTransition ()
 prependStack s = getStack >>= \s' -> putStack $ s ++ s'
 
-checkPushData :: StackValue -> ProgramTransition ()
-checkPushData v | length v > maxScriptElementSize = programError $
-                                                    "OP_PUSHDATA too big"
-                | otherwise = return ()
+checkPushData :: ScriptOp -> ProgramTransition ()
+checkPushData (OP_PUSHDATA v _) | BS.length v > fromIntegral maxScriptElementSize
+                                  = programError $
+                                    "OP_PUSHDATA > maxScriptElementSize"
+                                | otherwise = return ()
+checkPushData _ = return ()
+
+checkStackSize :: ProgramTransition ()
+checkStackSize = do n <- length <$> stack <$> get
+                    m <- length <$> altStack <$> get
+                    when ((n + m) > fromIntegral maxStackSize) $
+                         programError $ "stack > maxStackSize"
 
 pushStack :: StackValue -> ProgramTransition ()
-pushStack v = (checkPushData v) >> getStack >>= \s -> putStack (v:s)
+pushStack v = getStack >>= \s -> putStack (v:s)
 
 popStack :: ProgramTransition StackValue
 popStack = withStack >>= \(s:ss) -> putStack ss >> return s
@@ -367,6 +396,11 @@ popAltStack = get >>= \p -> case altStack p of
     a:as -> put p { altStack = as } >> return a
     []   -> programError "popAltStack: empty stack"
 
+
+incrementOpCount :: Int -> ProgramTransition ()
+incrementOpCount i | i > maxOpcodes = programError $ "reached opcode limit"
+                   | otherwise      = modify $ \p -> p { opCount = i + 1 }
+
 -- Instruction Evaluation
 eval :: ScriptOp -> ProgramTransition ()
 eval OP_NOP     = return ()
@@ -463,6 +497,7 @@ eval OP_CHECKMULTISIG =
        f <- sigCheck <$> get
        h <- preparedHashOps
        pushBool $ checkMultiSigVerify ( f h ) sigs pubKeys
+       modify $ \p -> p { opCount = (opCount p) + (length pubKeys) }
     where checkMultiSigVerify g s keys = let results = liftM2 g s keys
                                              count = length . ( filter id ) $ results
                                            in count >= length s
@@ -483,8 +518,15 @@ getExec = and <$> getCond
 -- | Converts a `ScriptOp` to a program monad.
 conditionalEval :: ScriptOp -> ConditionalProgramTransition ()
 conditionalEval scrpOp = do
+   -- lift $ checkOpEnabled scrpOp
+   lift $ checkPushData scrpOp
+
    e  <- getExec
    eval' e scrpOp
+
+   when (countOp scrpOp) $ lift $ join $ incrementOpCount <$> opCount <$> get
+
+   lift $ checkStackSize
 
    where
      eval' :: Bool -> ScriptOp -> ConditionalProgramTransition ()
@@ -501,8 +543,7 @@ conditionalEval scrpOp = do
      eval' False OP_ENDIF = void popCond
      eval' False OP_CODESEPARATOR = lift $ eval OP_CODESEPARATOR
      eval' False OP_VER = return ()
-     eval' False op | Just v <- constValue op = lift $ checkPushData v
-                    | isDisabled op = lift $ disabled op
+     eval' False op | isDisabled op = lift $ disabled op
                     | otherwise = return ()
 
 -- | Builds a Script evaluation monad.
@@ -526,7 +567,8 @@ checkStack []  = False
 
 
 isPayToScriptHash :: [ ScriptOp ] -> Bool
-isPayToScriptHash [OP_HASH160, OP_PUSHDATA _ _, OP_EQUAL] = True
+isPayToScriptHash [OP_HASH160, OP_PUSHDATA bytes OPCODE, OP_EQUAL]
+                    = (BS.length bytes) == 20
 isPayToScriptHash _ = False
 
 stackToScriptOps :: StackValue -> [ ScriptOp ]
@@ -546,14 +588,21 @@ execScript scriptSig scriptPubKey sigCheckFcn =
         stack = [],
         altStack = [],
         hashOps = pubKeyOps,
-        sigCheck = sigCheckFcn }
+        sigCheck = sigCheckFcn,
+        opCount = 0
+      }
 
 
-      checkSig | isPayToScriptHash pubKeyOps = checkPushOnly
-               | otherwise = const $ return ()
+      checkSig | isPayToScriptHash pubKeyOps = checkPushOnly sigOps
+               | otherwise = return ()
 
-      redeemEval = (checkSig sigOps) >> (evalAll sigOps) >> (lift $ stack <$> get)
-      pubKeyEval = evalAll pubKeyOps >> (lift $ get)
+      checkKey | (BSL.length $ encode scriptPubKey) > fromIntegral maxScriptSize
+                 = lift $ programError $ "pubKey > maxScriptSize"
+               | otherwise = return ()
+
+
+      redeemEval = checkSig >> evalAll sigOps >> (lift $ stack <$> get)
+      pubKeyEval = checkKey >> evalAll pubKeyOps >> (lift $ get)
       p2shEval [] = lift $ programError $ "PayToScriptHash: no script on stack"
       p2shEval (sv:_) = (evalAll $ stackToScriptOps sv) >> (lift $ get)
 

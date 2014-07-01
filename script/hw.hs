@@ -192,7 +192,7 @@ cmdHelp =
     , "  balance   acc                     Display account balance"
     , "  balances                          Display all balances"
     , "  signtx    acc tx                  Sign a transaction"
-    , "  importtx  tx                      Import transaction"
+    , "  importtx  tx                      Import offline transaction"
     , "  removetx  txid                    Remove transaction"
     , "  coins     acc                     List coins"
     , "  allcoins                          List all coins per account"
@@ -287,7 +287,7 @@ process opts xs
 processNodeEvents :: ConnectionPool -> Sink NodeEvent IO ()
 processNodeEvents pool = awaitForever $ \e -> lift $ runDB pool $ case e of
     MerkleBlockEvent xs -> void $ importBlocks xs
-    TxEvent tx          -> void $ importTx tx
+    TxEvent tx          -> void $ importTx tx False
 
 type Command m = m Value
 type Args = [String]
@@ -430,7 +430,7 @@ dispatchCommand cmd opts args = case cmd of
             tx  = fromJust txM
         when (isNothing txM) $ liftIO $ throwIO $
             ParsingException "Could not parse transaction"
-        accTxs <- importTx tx
+        accTxs <- importTx tx True
         return $ toJSON $ map yamlTx accTxs
     "removetx" -> whenArgs args (== 1) $ do
         let idM = decodeTxHashLE $ head args
@@ -527,10 +527,13 @@ signRawTx :: MonadIO m
           -> String   -- ^ List of JSON encoded signing parameters.
           -> String   -- ^ List of JSON encoded WIF private keys.
           -> SigHash  -- ^ Signature type. 
-          -> m (Tx, SigStatus)
+          -> m (Tx, Bool)
 signRawTx tx strSigi strKeys sh 
-    | isJust fsM && isJust keysM =
-        return $ detSignTx tx (map (\f -> f sh) fs) keys
+    | isJust fsM && isJust keysM = do
+        let resE = detSignTx tx (map (\f -> f sh) fs) keys
+        when (isLeft resE) $ liftIO $ throwIO $
+            TransactionSigningException $ fromLeft resE
+        return $ fromRight resE
     | otherwise = liftIO $ throwIO $
         ParsingException "Could not parse input values"
   where
@@ -594,19 +597,19 @@ yamlTx accTx = object $ concat
       , "Value" .= accTxValue accTx
       , "Confirmations" .= accTxConfirmations accTx
       ]
-    , if accTxPartial accTx then ["Partial" .= True] else []
+    , if accTxOffline accTx then ["Offline" .= True] else []
     ]
 
 yamlCoin :: DbCoinGeneric b -> Value
 yamlCoin coin = object $ concat
     [ [ "TxID"    .= (encodeTxHashLE $ dbCoinHash coin)
       , "Index"   .= dbCoinPos coin
-      , "Value"   .= dbCoinValue coin
-      , "Script"  .= dbCoinScript coin
+      , "Value"   .= (coinValue $ dbCoinValue coin)
+      , "Script"  .= (coinScript $ dbCoinValue coin)
       , "Address" .= dbCoinAddress coin
       ] 
-    , if isJust $ dbCoinRdmScript coin 
-        then ["Redeem" .= fromJust (dbCoinRdmScript coin)] 
+    , if isJust $ coinRedeem $ dbCoinValue coin 
+        then ["Redeem" .= fromJust (coinRedeem $ dbCoinValue coin)] 
         else []
     ]
 
@@ -647,14 +650,16 @@ instance FromJSON RawSigInput where
             vout <- obj .: "vout" :: Parser Word32
             scp  <- obj .: "scriptPubKey" :: Parser String
             rdm  <- obj .:? "redeemScript" :: Parser (Maybe String)
-            let s = decodeToEither =<< maybeToEither "Hex parsing failed" 
+            let s = decodeOutputBS =<< maybeToEither "Hex parsing failed" 
                         (hexToBS scp)
                 i = maybeToEither "Failed to decode txid" (decodeTxHashLE tid)
                 o = OutPoint <$> i <*> (return vout)
-                r = decodeToEither =<< maybeToEither "Hex parsing failed" 
+                r = decodeOutputBS =<< maybeToEither "Hex parsing failed" 
                         (hexToBS $ fromJust rdm)
-                res | isJust rdm = SigInputSH <$> s <*> o <*> r
-                    | otherwise  = SigInput <$> s <*> o
+                res | isJust rdm = 
+                        (flip <$> (SigInput <$> s <*> o)) <*> (Just <$> r)
+                    | otherwise  = 
+                        (flip <$> (SigInput <$> s <*> o)) <*> (return Nothing)
             either (const mzero) return res
 
 data RawPrvKey = RawPrvKey [PrvKey]
@@ -698,16 +703,6 @@ instance FromJSON WalletType where
     parseJSON (String "WalletRead")  = return WalletRead
     parseJSON _ = mzero
 
-{- YAML templates -}
-
-instance ToJSON SigStatus where
-    toJSON SigComplete    = String "Complete"
-    toJSON SigPartial     = String "Partial"
-    -- TODO: We should handle SigNeedPrevOut internally and not expose it
-    -- to the users.
-    toJSON SigNeedPrevOut = String "NeedPrevOut"
-    toJSON (SigInvalid s) = String $ T.pack $ unwords ["Invalid:", s]
-
 instance ToJSON OutPoint where
     toJSON (OutPoint h i) = object
         [ "TxID" .= encodeTxHashLE h
@@ -717,7 +712,7 @@ instance ToJSON OutPoint where
 instance ToJSON TxOut where
     toJSON (TxOut v s) = object $
         [ "Value" .= v
-        , "Raw Script" .= bsToHex (encode' s)
+        , "Raw Script" .= bsToHex s
         , "Script" .= (fromMaybe (Script []) $ decodeToMaybe s)
         ] ++ scptPair 
       where scptPair = 
@@ -729,14 +724,14 @@ instance ToJSON TxIn where
     toJSON (TxIn o s i) = object $ concat
         [ [ "OutPoint" .= o
           , "Sequence" .= i
-          , "Raw Script" .= bsToHex (encode' s)
+          , "Raw Script" .= bsToHex s
           , "Script" .= (fromMaybe (Script []) $ decodeToMaybe s)
           ] 
-        , decoded 
+          , decoded
         ]
-      where decoded = either (const $ either (const []) f $ decodeInputBS s) 
-                             f $ decodeScriptHashBS s
-            f inp = ["Decoded Script" .= inp]
+      where 
+        decoded = either (const []) f $ decodeInputBS s
+        f inp = ["Decoded Script" .= inp]
               
 instance ToJSON Tx where
     toJSON tx@(Tx v is os i) = object
@@ -752,7 +747,11 @@ instance ToJSON Tx where
               [T.pack ("Output " ++ show (j :: Int)) .= x]
 
 instance ToJSON Script where
-    toJSON (Script ops) = toJSON $ map show ops
+    toJSON (Script ops) = toJSON $ map f ops
+      where
+        f (OP_PUSHDATA bs _) = String $ T.pack $ unwords 
+            ["OP_PUSHDATA", bsToHex bs]
+        f x = String $ T.pack $ show x
 
 instance ToJSON ScriptOutput where
     toJSON (PayPK p) = object 
@@ -777,24 +776,22 @@ instance ToJSON ScriptOutput where
         ]
 
 instance ToJSON ScriptInput where
-    toJSON (SpendPK s) = object 
+    toJSON (RegularInput (SpendPK s)) = object 
         [ "SpendPublicKey" .= object [ "Signature" .= s ] ]
-    toJSON (SpendPKHash s p) = object 
+    toJSON (RegularInput (SpendPKHash s p)) = object 
         [ "SpendPublicKeyHash" .= object
             [ "Signature" .= s
             , "Public Key" .= bsToHex (encode' p)
             , "Sender Addr" .= addrToBase58 (pubKeyAddr p)
             ]
         ]
-    toJSON (SpendMulSig sigs) = object 
+    toJSON (RegularInput (SpendMulSig sigs)) = object 
         [ "SpendMultiSig" .= object
             [ "Signatures" .= sigs ]
         ]
-
-instance ToJSON ScriptHashInput where
     toJSON (ScriptHashInput s r) = object
         [ "SpendScriptHash" .= object
-            [ "ScriptInput" .= s
+            [ "ScriptInput" .= (RegularInput s)
             , "RedeemScript" .= r
             , "Raw Redeem Script" .= bsToHex (encodeOutputBS r)
             , "Sender Addr" .= addrToBase58 (scriptAddr  r)

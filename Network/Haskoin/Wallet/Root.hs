@@ -81,18 +81,18 @@ newWalletMnemo :: PersistUnique m
                -- Impossible to retrieve in the future.
 
 newWalletMnemo wname p (Just s) = do
-    let seedE = mnemonicToSeed english (T.pack p) $ T.pack s
+    let seedE = mnemonicToSeed p s
         seed  = fromRight seedE
     when (isLeft seedE) $ liftIO $ throwIO $ 
         WalletException $ fromLeft seedE
     _ <- newWallet wname seed
-    return $ T.pack s
+    return s
 
 newWalletMnemo wname p Nothing = do
     ent <- liftIO $ devRandom 16
     let msSeedE = do
-            m <- toMnemonic english ent
-            s <- mnemonicToSeed english (T.pack p) m
+            m <- toMnemonic ent
+            s <- mnemonicToSeed p m
             return (m, s)
     when (isLeft msSeedE) $ liftIO $ throwIO $
         WalletException $ fromLeft msSeedE

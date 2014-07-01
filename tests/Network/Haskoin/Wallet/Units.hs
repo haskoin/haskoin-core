@@ -290,7 +290,7 @@ testImportTx = do
                     base58ToAddr "16rEcC1w39g7VpVbmkqiPZZi4oJ1tkQnjU" -- b
                  ] maxBound 
     --TODO: Test res
-    res <- importTx fundingTx
+    res <- importTx fundingTx True
     liftIO $ print res
     
 

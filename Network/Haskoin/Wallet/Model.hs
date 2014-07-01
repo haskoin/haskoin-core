@@ -39,7 +39,9 @@ import Database.Persist.TH
     , mkMigrate
     , persistLowerCase
     )
+
 import Network.Haskoin.Wallet.Types 
+import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Protocol 
 import Network.Haskoin.Crypto 
@@ -89,9 +91,7 @@ DbAddress
 DbCoin 
     hash TxHash
     pos Int
-    value Word64
-    script ScriptOutput
-    rdmScript ScriptOutput Maybe
+    value Coin
     address Address 
     status CoinStatus
     account DbAccountId
@@ -104,7 +104,6 @@ DbAccTx
     recipients [Address]
     value Int64
     account DbAccountId
-    partial Bool
     created UTCTime default=CURRENT_TIME
     UniqueAccTx hash account
     deriving Show
@@ -113,6 +112,7 @@ DbTx
     hash TxHash
     value Tx
     orphan Bool
+    offline Bool
     confirmedBy BlockHash Maybe
     confirmedHeight Word32 Maybe
     created UTCTime default=CURRENT_TIME

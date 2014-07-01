@@ -39,7 +39,7 @@ data Coin =
          , coinScript   :: !ScriptOutput
          , coinOutPoint :: !OutPoint       -- ^ Previous outpoint
          , coinRedeem   :: !(Maybe RedeemScript) -- ^ Redeem script
-         } deriving (Eq, Show)
+         } deriving (Eq, Show, Read)
 
 instance NFData Coin where
     rnf (Coin v s o r) = rnf v `seq` rnf s `seq` rnf o `seq` rnf r
@@ -283,29 +283,26 @@ sigKeys so rdmM keys = do
 -- Construct an input, given a signature and a public key
 buildInput :: Tx -> Int -> ScriptOutput -> (Maybe RedeemScript) 
            -> TxSignature -> PubKey -> Either String ScriptInput
-buildInput tx i so' rdmM' sig pub = 
-    go so' rdmM'
+buildInput tx i so rdmM sig pub = case (so, rdmM) of
+    (PayPK _, Nothing) -> 
+        return $ RegularInput $ SpendPK sig
+    (PayPKHash _, Nothing) -> 
+        return $ RegularInput $ SpendPKHash sig pub
+    (PayMulSig msPubs r, Nothing) -> do
+        let mSigs = take r $ catMaybes $ matchTemplate allSigs msPubs f
+        return $ RegularInput $ SpendMulSig mSigs
+    (PayScriptHash _, Just rdm) -> do
+        inp  <- buildInput tx i rdm Nothing sig pub
+        return $ ScriptHashInput (getRegularInput inp) rdm
+    _ -> Left "buildInput: Invalid output/redeem script combination"
   where 
-    go so rdmM = case (so, rdmM) of
-        (PayPK _, Nothing) -> 
-            return $ RegularInput $ SpendPK sig
-        (PayPKHash _, Nothing) -> 
-            return $ RegularInput $ SpendPKHash sig pub
-        (PayMulSig msPubs r, Nothing) -> do
-            let mSigs = take r $ catMaybes $ matchTemplate allSigs msPubs f
-            return $ RegularInput $ SpendMulSig mSigs r
-        (PayScriptHash _, Just rdm) -> do
-            inp  <- go rdm Nothing
-            return $ ScriptHashInput (getRegularInput inp) rdm
-        _ -> Left "buildInput: Invalid output/redeem script combination"
-      where
-        scp     = scriptInput $ txIn tx !! i
-        allSigs = nub $ sig : case decodeInputBS so' scp of
-            Right (ScriptHashInput (SpendMulSig xs _) _) -> xs
-            Right (RegularInput    (SpendMulSig xs _))   -> xs
-            _ -> []
-        out = encodeOutput so
-        f (TxSignature x sh) p = verifySig (txSigHash tx out i sh) x p
+    scp     = scriptInput $ txIn tx !! i
+    allSigs = nub $ sig : case decodeInputBS scp of
+        Right (ScriptHashInput (SpendMulSig xs) _) -> xs
+        Right (RegularInput    (SpendMulSig xs))   -> xs
+        _ -> []
+    out = encodeOutput so
+    f (TxSignature x sh) p = verifySig (txSigHash tx out i sh) x p
 
 {- Tx verification -}
 
@@ -327,7 +324,7 @@ verifyInput :: Tx -> Int -> ScriptOutput -> Bool
 verifyInput tx i so' = 
     go (scriptInput $ txIn tx !! i) so'
   where
-    go inp so = case decodeInputBS so inp of
+    go inp so = case decodeInputBS inp of
         Right (RegularInput (SpendPK (TxSignature sig sh))) -> 
             let pub = getOutputPubKey so
             in  verifySig (txSigHash tx out i sh) sig pub
@@ -335,7 +332,7 @@ verifyInput tx i so' =
             let a = getOutputAddress so
             in pubKeyAddr pub == a && 
                 verifySig (txSigHash tx out i sh) sig pub
-        Right (RegularInput (SpendMulSig sigs _)) ->
+        Right (RegularInput (SpendMulSig sigs)) ->
             let pubs = getOutputMulSigKeys so
                 r    = getOutputMulSigRequired so
             in  countMulSig tx out i pubs sigs == r

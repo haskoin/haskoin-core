@@ -39,15 +39,15 @@ testBuildAddrTx os a v
           out = decodeOutputBS $ scriptOutput $ txOut (fromRight tx) !! 0
 
 testGuessSize :: SpendAddrTx -> Bool
-testGuessSize (SpendAddrTx tx xs) =
+testGuessSize (SpendAddrTx tx) =
     -- We compute an upper bound but it should be close enough to the real size
     -- We give 2 bytes of slack on every signature (1 on r and 1 on s)
     guess >= len && guess - 2*delta <= len
     where delta   = pki + (sum $ map fst msi)
           guess   = guessTxSize pki msi pkout msout
           len     = BS.length $ encode' tx
-          ins     = map f $ zip (txIn tx) xs
-          f (i,o) = fromRight $ decodeInputBS o $ scriptInput i
+          ins     = map f $ txIn tx
+          f i     = fromRight $ decodeInputBS $ scriptInput i
           pki     = length $ filter isSpendPKHash ins
           msi     = concat $ map shData ins
           shData (ScriptHashInput _ (PayMulSig keys r)) = [(r,length keys)]

@@ -37,7 +37,7 @@ import Network.Haskoin.Script
 data Coin = 
     Coin { coinTxOut    :: !TxOut          -- ^ Transaction output
          , coinOutPoint :: !OutPoint       -- ^ Previous outpoint
-         , coinRedeem   :: !(Maybe Script) -- ^ Redeem script
+         , coinRedeem   :: !(Maybe ScriptOutput) -- ^ Redeem script
          } deriving (Eq, Show)
 
 instance NFData Coin where

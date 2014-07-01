@@ -35,13 +35,14 @@ import Network.Haskoin.Script
 -- represented by a transaction output, an outpoint and optionally a
 -- redeem script.
 data Coin = 
-    Coin { coinTxOut    :: !TxOut          -- ^ Transaction output
+    Coin { coinValue    :: !Word64
+         , coinScript   :: !ScriptOutput
          , coinOutPoint :: !OutPoint       -- ^ Previous outpoint
-         , coinRedeem   :: !(Maybe Script) -- ^ Redeem script
+         , coinRedeem   :: !(Maybe RedeemScript) -- ^ Redeem script
          } deriving (Eq, Show)
 
 instance NFData Coin where
-    rnf (Coin t p r) = rnf t `seq` rnf p `seq` rnf r
+    rnf (Coin v s o r) = rnf v `seq` rnf s `seq` rnf o `seq` rnf r
 
 -- | Coin selection algorithm for normal (non-multisig) transactions. This
 -- function returns the selected coins together with the amount of change to
@@ -74,7 +75,7 @@ chooseMSCoins target kbfee ms xs
 -- Select coins greedily by starting from an empty solution
 greedyAdd :: Word64 -> (Int -> Word64) -> [Coin] -> Maybe ([Coin],Word64)
 greedyAdd target fee xs = go [] 0 [] 0 $ sortBy desc xs
-    where desc a b = compare (outValue $ coinTxOut b) (outValue $ coinTxOut a)
+    where desc a b = compare (coinValue b) (coinValue a)
           goal c = target + fee c
           go _ _ [] _ []    = Nothing
           go _ _ ps pTot [] = return (ps,pTot - (goal $ length ps))
@@ -84,7 +85,7 @@ greedyAdd target fee xs = go [] 0 [] 0 $ sortBy desc xs
                     then go [] 0 (y:acc) (aTot + val) ys
                     else return (ps,pTot - (goal $ length ps))
             | otherwise = go (y:acc) (aTot + val) ps pTot ys
-            where val = outValue $ coinTxOut y
+            where val = coinValue y
 
 {-
 -- Start from a solution containing all coins and greedily remove them

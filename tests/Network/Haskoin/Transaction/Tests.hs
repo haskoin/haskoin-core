@@ -59,25 +59,25 @@ testGuessSize (SpendAddrTx tx xs) =
 testChooseCoins :: Word64 -> Word64 -> [Coin] -> Bool
 testChooseCoins target kbfee xs = case chooseCoins target kbfee xs of
     Right (chosen,change) ->
-        let outSum = sum $ map (outValue . coinTxOut) chosen
+        let outSum = sum $ map coinValue chosen
             fee    = getFee kbfee (length chosen) 
         in outSum == target + change + fee
     Left _ -> 
         let fee = getFee kbfee (length xs) 
         in target == 0 || s < target || s < target + fee
-    where s = sum $ map (outValue . coinTxOut) xs
+    where s = sum $ map coinValue xs
 
 testChooseMSCoins :: Word64 -> Word64 -> MSParam -> [Coin] -> Bool
 testChooseMSCoins target kbfee (MSParam m n) xs = 
     case chooseMSCoins target kbfee (m,n) xs of
         Right (chosen,change) ->
-            let outSum = sum $ map (outValue . coinTxOut) chosen
+            let outSum = sum $ map coinValue chosen
                 fee    = getMSFee kbfee (m,n) (length chosen) 
             in outSum == target + change + fee
         Left _ -> 
             let fee = getMSFee kbfee (m,n) (length xs) 
             in target == 0 || s < target + fee
-    where s = sum $ map (outValue . coinTxOut) xs
+    where s = sum $ map coinValue xs
 
 {- Signing Transactions -}
 

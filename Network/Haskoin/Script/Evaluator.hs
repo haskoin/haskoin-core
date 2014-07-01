@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase, PatternGuards #-}
 {-|
 
 Module providing Bitcoin script evaluation.  See
@@ -49,6 +49,10 @@ import Network.Haskoin.Util ( bsToHex, decode' )
 import Network.Haskoin.Protocol( Tx(..), TxIn(..) )
 
 import Data.Binary (decode)
+
+
+maxScriptElementSize :: Int
+maxScriptElementSize = 520
 
 data EvalError =
     EvalError String
@@ -186,6 +190,7 @@ constValue op = case op of
     _ -> Nothing
 
 
+-- | Check if OpCode is disabled
 isDisabled :: ScriptOp -> Bool
 isDisabled op = op `elem` [ OP_CAT
                           , OP_SUBSTR
@@ -258,8 +263,13 @@ putStack stack = modify $ \p -> p { stack = stack }
 prependStack :: Stack -> ProgramTransition ()
 prependStack s = getStack >>= \s' -> putStack $ s ++ s'
 
+checkPushData :: StackValue -> ProgramTransition ()
+checkPushData v | length v > maxScriptElementSize = programError $
+                                                    "OP_PUSHDATA too big"
+                | otherwise = return ()
+
 pushStack :: StackValue -> ProgramTransition ()
-pushStack v = getStack >>= \s -> putStack (v:s)
+pushStack v = (checkPushData v) >> getStack >>= \s -> putStack (v:s)
 
 popStack :: ProgramTransition StackValue
 popStack = withStack >>= \(s:ss) -> putStack ss >> return s
@@ -491,7 +501,8 @@ conditionalEval scrpOp = do
      eval' False OP_ENDIF = void popCond
      eval' False OP_CODESEPARATOR = lift $ eval OP_CODESEPARATOR
      eval' False OP_VER = return ()
-     eval' False op | isDisabled op = lift $ disabled op
+     eval' False op | Just v <- constValue op = lift $ checkPushData v
+                    | isDisabled op = lift $ disabled op
                     | otherwise = return ()
 
 -- | Builds a Script evaluation monad.

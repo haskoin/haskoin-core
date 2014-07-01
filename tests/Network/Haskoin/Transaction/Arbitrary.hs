@@ -55,23 +55,20 @@ genMulSigP2SH :: Gen ScriptInput
 genMulSigP2SH = do
     (MSParam m n) <- arbitrary
     rdm <- PayMulSig <$> (vectorOf n genPubKeyC) <*> (return m)
-    inp <- (flip SpendMulSig m) <$> (vectorOf m arbitrary)
+    inp <- SpendMulSig <$> (vectorOf m arbitrary)
     return $ ScriptHashInput inp rdm
 
 -- | Generate an arbitrary transaction input spending a public key hash or
 -- script hash output.
-genSpendAddrInput :: Gen (TxIn, ScriptOutput)
+genSpendAddrInput :: Gen TxIn
 genSpendAddrInput = do
     op <- arbitrary
     sq <- arbitrary
-    (TxOut _ s) <- genAddrOutput
-    let so = fromRight $ decodeOutputBS s
-    si <- case so of
-        PayPKHash _ -> 
-            RegularInput <$> (SpendPKHash <$> arbitrary <*> genPubKeyC)
-        PayScriptHash _ -> genMulSigP2SH
-        _ -> undefined
-    return (TxIn op (encodeInputBS si) sq, so)
+    si <- oneof 
+        [ RegularInput <$> (SpendPKHash <$> arbitrary <*> genPubKeyC)
+        , genMulSigP2SH
+        ]
+    return $ TxIn op (encodeInputBS si) sq
 
 -- | Generate an arbitrary output paying to a public key hash or script hash
 -- address.
@@ -85,7 +82,7 @@ genAddrOutput = do
 
 -- | Data type for generating arbitrary transaction with inputs and outputs
 -- consisting only of script hash or pub key hash scripts.
-data SpendAddrTx = SpendAddrTx Tx [ScriptOutput] deriving (Eq, Show)
+data SpendAddrTx = SpendAddrTx Tx deriving (Eq, Show)
 
 instance Arbitrary SpendAddrTx where
     arbitrary = do
@@ -93,8 +90,8 @@ instance Arbitrary SpendAddrTx where
         y  <- choose (1,10)
         xs <- vectorOf x genSpendAddrInput
         ys <- vectorOf y genAddrOutput
-        let tx = Tx 1 (map fst xs) ys 0
-        return $ SpendAddrTx tx (map snd xs)
+        let tx = Tx 1 xs ys 0
+        return $ SpendAddrTx tx
 
 instance Arbitrary Coin where
     arbitrary = Coin <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary

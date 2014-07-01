@@ -203,15 +203,15 @@ instance Arbitrary ScriptInput where
 genSpendMulSig :: Int -> Gen SimpleInput
 genSpendMulSig r = do
     s <- choose (1,r)
-    flip SpendMulSig r <$> (vectorOf s arbitrary)
+    SpendMulSig <$> (vectorOf s arbitrary)
 
 genScriptHashInput :: Gen ScriptInput
 genScriptHashInput = do
     inp <- arbitrary :: Gen SimpleInput
     out <- case inp of
-        SpendPK _       -> PayPK <$> arbitrary
-        SpendPKHash _ _ -> (PayPKHash . pubKeyAddr) <$> arbitrary
-        SpendMulSig _ r -> genPayMulSig r
+        SpendPK _        -> PayPK <$> arbitrary
+        SpendPKHash _ _  -> (PayPKHash . pubKeyAddr) <$> arbitrary
+        SpendMulSig sigs -> genPayMulSig $ length sigs
     return $ ScriptHashInput inp out
 
 -- Generates a matching script output and script input

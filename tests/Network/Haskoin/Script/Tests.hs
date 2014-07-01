@@ -283,7 +283,7 @@ testFile label path expected = buildTest $ do
 
             runTest label scriptSig scriptPubKey =
                 HUnit.assertBool
-                  (label ++ " eval error: " ++ errorMessage)
+                  (" eval error: " ++ errorMessage)
                   (expected == run evalScript)
 
                 where run f = f scriptSig scriptPubKey rejectSignature

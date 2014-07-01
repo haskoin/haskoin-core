@@ -34,6 +34,7 @@ import Control.Monad.Identity
 import Control.Applicative ((<$>), (<*>))
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 
 import Data.List (intercalate)
 import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit)
@@ -46,6 +47,8 @@ import Network.Haskoin.Script.Types
 import Network.Haskoin.Script.SigHash( TxSignature(..), decodeSig, txSigHash )
 import Network.Haskoin.Util ( bsToHex, decode' )
 import Network.Haskoin.Protocol( Tx(..), TxIn(..) )
+
+import Data.Binary (decode)
 
 data EvalError =
     EvalError String
@@ -510,6 +513,14 @@ checkStack :: Stack -> Bool
 checkStack (x:_) = decodeBool x
 checkStack []  = False
 
+
+isPayToScriptHash :: [ ScriptOp ] -> Bool
+isPayToScriptHash [OP_HASH160, OP_PUSHDATA _ _, OP_EQUAL] = True
+isPayToScriptHash _ = False
+
+stackToScriptOps :: StackValue -> [ ScriptOp ]
+stackToScriptOps sv = scriptOps $ decode $ BSL.pack sv
+
 --
 -- exported functions
 
@@ -526,12 +537,20 @@ execScript scriptSig scriptPubKey sigCheckFcn =
         hashOps = pubKeyOps,
         sigCheck = sigCheckFcn }
 
-      redeemEval = -- (checkPushOnly sigOps) >>  -- FIXME: disabled
-                   (evalAll sigOps) >> (lift $ stack <$> get)
+
+      checkSig | isPayToScriptHash pubKeyOps = checkPushOnly
+               | otherwise = const $ return ()
+
+      redeemEval = (checkSig sigOps) >> (evalAll sigOps) >> (lift $ stack <$> get)
       pubKeyEval = evalAll pubKeyOps >> (lift $ get)
+      p2shEval [] = lift $ programError $ "PayToScriptHash: no script on stack"
+      p2shEval (sv:_) = (evalAll $ stackToScriptOps sv) >> (lift $ get)
 
       in do s <- evalConditionalProgram redeemEval [] emptyProgram
-            evalConditionalProgram pubKeyEval [] emptyProgram { stack = s }
+            p <- evalConditionalProgram pubKeyEval [] emptyProgram { stack = s }
+            if isPayToScriptHash pubKeyOps
+                then evalConditionalProgram (p2shEval s) [] emptyProgram
+                else return p
 
 evalScript :: Script -> Script -> SigCheck -> Bool
 evalScript scriptSig scriptPubKey sigCheckFcn =

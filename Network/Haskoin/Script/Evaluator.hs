@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase, PatternGuards #-}
 {-|
 
 Module providing Bitcoin script evaluation.  See
@@ -34,6 +34,7 @@ import Control.Monad.Identity
 import Control.Applicative ((<$>), (<*>))
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 
 import Data.List (intercalate)
 import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit)
@@ -46,6 +47,21 @@ import Network.Haskoin.Script.Types
 import Network.Haskoin.Script.SigHash( TxSignature(..), decodeSig, txSigHash )
 import Network.Haskoin.Util ( bsToHex, decode' )
 import Network.Haskoin.Protocol( Tx(..), TxIn(..) )
+
+import Data.Binary (encode, decode)
+
+
+maxScriptSize :: Int
+maxScriptSize = 10000
+
+maxScriptElementSize :: Int
+maxScriptElementSize = 520
+
+maxStackSize :: Int
+maxStackSize = 1000
+
+maxOpcodes :: Int
+maxOpcodes = 200
 
 data EvalError =
     EvalError String
@@ -77,7 +93,8 @@ data Program = Program {
     stack        :: Stack,
     altStack     :: AltStack,
     hashOps      :: HashOps,
-    sigCheck     :: SigCheck
+    sigCheck     :: SigCheck,
+    opCount      :: Int
 }
 
 dumpOp :: ScriptOp -> String
@@ -101,7 +118,7 @@ instance Show Program where
 type ProgramState = ErrorT EvalError Identity
 type IfStack = [ Bool ]
 
--- | Monad of actions idependant of conditional statements.
+-- | Monad of actions independent of conditional statements.
 type ProgramTransition = StateT Program ProgramState
 -- | Monad of actions which taking if statements into account.
 -- Separate state type from ProgramTransition for type safety
@@ -182,19 +199,42 @@ constValue op = case op of
     (OP_PUSHDATA string _) -> Just $ BS.unpack string
     _ -> Nothing
 
+
+-- | Check if OpCode is constant
+isConstant :: ScriptOp -> Bool
+isConstant op = Nothing /= constValue op
+
+-- | Check if OpCode is disabled
+isDisabled :: ScriptOp -> Bool
+isDisabled op = op `elem` [ OP_CAT
+                          , OP_SUBSTR
+                          , OP_LEFT
+                          , OP_RIGHT
+                          , OP_INVERT
+                          , OP_AND
+                          , OP_OR
+                          , OP_XOR
+                          , OP_2MUL
+                          , OP_2DIV
+                          , OP_MUL
+                          , OP_DIV
+                          , OP_MOD
+                          , OP_LSHIFT
+                          , OP_RSHIFT
+                          , OP_VER
+                          , OP_VERIF
+                          , OP_VERNOTIF ]
+
+-- | Check if OpCode counts towards opcount limit
+
+countOp :: ScriptOp -> Bool
+countOp op | isConstant op     = False
+           | op == OP_RESERVED = False
+           | otherwise         = True
+
 -- | A trivial `SigCheck` always reporting False
 rejectSignature :: SigCheck
 rejectSignature _ _ _ = False
-
-isDisabled :: ScriptOp -> Bool
-isDisabled op = let emptyProgram = Program {
-        stack = [],
-        altStack = [],
-        hashOps = [],
-        sigCheck = rejectSignature } in
-  case evalProgramTransition ( eval op ) emptyProgram of
-    Left (DisabledOp _) -> True
-    _ -> False
 
 popInt :: ProgramTransition Int64
 popInt = popStack >>= \sv ->
@@ -202,6 +242,12 @@ popInt = popStack >>= \sv ->
         programError $ "integer > nMaxNumSize: " ++ show (length sv)
     else
         return $ decodeInt sv
+
+pushInt :: Int64 -> ProgramTransition ()
+pushInt = pushStack . encodeInt
+
+popBool :: ProgramTransition Bool
+popBool = decodeBool <$> popStack
 
 pushBool :: Bool -> ProgramTransition ()
 pushBool = pushStack . encodeBool
@@ -217,9 +263,6 @@ bsToSv = BS.unpack
 
 getStack :: ProgramTransition Stack
 getStack = stack <$> get
-
-getDualStack :: ProgramTransition ( Stack, Stack )
-getDualStack = get >>= \p -> return ( stack p , altStack p )
 
 getCond :: ConditionalProgramTransition [Bool]
 getCond = get
@@ -247,6 +290,19 @@ putStack stack = modify $ \p -> p { stack = stack }
 prependStack :: Stack -> ProgramTransition ()
 prependStack s = getStack >>= \s' -> putStack $ s ++ s'
 
+checkPushData :: ScriptOp -> ProgramTransition ()
+checkPushData (OP_PUSHDATA v _) | BS.length v > fromIntegral maxScriptElementSize
+                                  = programError $
+                                    "OP_PUSHDATA > maxScriptElementSize"
+                                | otherwise = return ()
+checkPushData _ = return ()
+
+checkStackSize :: ProgramTransition ()
+checkStackSize = do n <- length <$> stack <$> get
+                    m <- length <$> altStack <$> get
+                    when ((n + m) > fromIntegral maxStackSize) $
+                         programError $ "stack > maxStackSize"
+
 pushStack :: StackValue -> ProgramTransition ()
 pushStack v = getStack >>= \s -> putStack (v:s)
 
@@ -266,7 +322,7 @@ pickStack remove n = do
 
     when (n < 0) $
         programError "pickStack: n < 0"
-    when (n > (length stack)) $
+    when (n > (length stack) - 1) $
         programError "pickStack: n > size"
 
     let v = stack !! n
@@ -306,19 +362,6 @@ tStack6 :: (StackValue -> StackValue -> StackValue ->
 tStack6 f = f <$> popStack <*> popStack <*> popStack
               <*> popStack <*> popStack <*> popStack >>= prependStack
 
-tStack1L :: (StackValue -> a) -> (b -> StackValue) ->
-            (a -> b) -> ProgramTransition ()
-tStack1L p q f = tStack1 $ return . q . f . p
-
-
-tStack2L :: (StackValue -> a) -> (b -> StackValue) ->
-            (a -> a -> b) -> ProgramTransition ()
-tStack2L p q f = tStack2 $ \a b -> return $ q $ f (p a) (p b)
-
-tStack3L :: (StackValue -> a) -> (b -> StackValue) ->
-            (a -> a -> a -> b) -> ProgramTransition ()
-tStack3L p q f = tStack3 $ \a b c -> return $ q $ f (p a) (p b) (p c)
-
 arith1 :: (Int64 -> Int64) -> ProgramTransition ()
 arith1 f = do
     i <- popInt
@@ -329,9 +372,6 @@ arith2 f = do
     i <- popInt
     j <- popInt
     pushStack $ encodeInt (f i j)
-
-bool2 :: (Bool -> Bool -> Bool) -> ProgramTransition ()
-bool2 = tStack2L decodeBool encodeBool
 
 stackError :: ProgramTransition a
 stackError = programError "stack error"
@@ -345,6 +385,11 @@ popAltStack :: ProgramTransition StackValue
 popAltStack = get >>= \p -> case altStack p of
     a:as -> put p { altStack = as } >> return a
     []   -> programError "popAltStack: empty stack"
+
+
+incrementOpCount :: Int -> ProgramTransition ()
+incrementOpCount i | i > maxOpcodes = programError $ "reached opcode limit"
+                   | otherwise      = modify $ \p -> p { opCount = i + 1 }
 
 -- Instruction Evaluation
 eval :: ScriptOp -> ProgramTransition ()
@@ -390,18 +435,10 @@ eval OP_2SWAP   = tStack4 $ \a b c d -> [c, d, a, b]
 
 -- Splice
 
-eval op@OP_CAT    = disabled op
-eval op@OP_SUBSTR = disabled op
-eval op@OP_LEFT   = disabled op
-eval op@OP_RIGHT  = disabled op
 eval OP_SIZE   = (fromIntegral . length <$> popStack) >>= pushStack . encodeInt
 
 -- Bitwise Logic
 
-eval op@OP_INVERT  = disabled op
-eval op@OP_AND     = disabled op
-eval op@OP_OR      = disabled op
-eval op@OP_XOR     = disabled op
 eval OP_EQUAL   = tStack2 $ \a b -> [encodeBool (a == b)]
 eval OP_EQUALVERIFY = (eval OP_EQUAL) >> (eval OP_VERIFY)
 
@@ -409,31 +446,25 @@ eval OP_EQUALVERIFY = (eval OP_EQUAL) >> (eval OP_VERIFY)
 
 eval OP_1ADD    = arith1 (+1)
 eval OP_1SUB    = arith1 (subtract 1)
-eval op@OP_2MUL    = disabled op
-eval op@OP_2DIV    = disabled op
 eval OP_NEGATE  = arith1 negate
 eval OP_ABS     = arith1 abs
 eval OP_NOT         = arith1 $ \case 0 -> 1; _ -> 0
 eval OP_0NOTEQUAL   = arith1 $ \case 0 -> 0; _ -> 1
 eval OP_ADD     = arith2 (+)
 eval OP_SUB     = arith2 $ flip (-)
-eval op@OP_MUL     = disabled op
-eval op@OP_DIV     = disabled op
-eval op@OP_MOD     = disabled op
-eval op@OP_LSHIFT  = disabled op
-eval op@OP_RSHIFT  = disabled op
-eval OP_BOOLAND     = bool2 (&&)
-eval OP_BOOLOR      = bool2 (||)
-eval OP_NUMEQUAL    = tStack2L decodeInt encodeBool (==)
+eval OP_BOOLAND     = (&&) <$> popBool <*> popBool >>= pushBool
+eval OP_BOOLOR      = (||) <$> popBool <*> popBool >>= pushBool
+eval OP_NUMEQUAL    = (==) <$> popInt <*> popInt >>= pushBool
 eval OP_NUMEQUALVERIFY = eval OP_NUMEQUAL >> eval OP_VERIFY
-eval OP_NUMNOTEQUAL         = tStack2L decodeInt encodeBool (/=)
-eval OP_LESSTHAN            = tStack2L decodeInt encodeBool (>)
-eval OP_GREATERTHAN         = tStack2L decodeInt encodeBool (<)
-eval OP_LESSTHANOREQUAL     = tStack2L decodeInt encodeBool (>=)
-eval OP_GREATERTHANOREQUAL  = tStack2L decodeInt encodeBool (<=)
-eval OP_MIN     = tStack2L decodeInt encodeInt min
-eval OP_MAX     = tStack2L decodeInt encodeInt max
-eval OP_WITHIN  = tStack3L decodeInt encodeBool $ \y x a -> (x <= a) && (a < y)
+eval OP_NUMNOTEQUAL         = (/=) <$> popInt <*> popInt >>= pushBool
+eval OP_LESSTHAN            = (>)  <$> popInt <*> popInt >>= pushBool
+eval OP_GREATERTHAN         = (<)  <$> popInt <*> popInt >>= pushBool
+eval OP_LESSTHANOREQUAL     = (>=) <$> popInt <*> popInt >>= pushBool
+eval OP_GREATERTHANOREQUAL  = (<=) <$> popInt <*> popInt >>= pushBool
+eval OP_MIN     = min <$> popInt <*> popInt >>= pushInt
+eval OP_MAX     = max <$> popInt <*> popInt >>= pushInt
+eval OP_WITHIN  = within <$> popInt <*> popInt <*> popInt >>= pushBool
+                  where within y x a = (x <= a) && (a < y)
 
 eval OP_RIPEMD160 = tStack1 $ return . bsToSv . hash160BS . opToSv
 eval OP_SHA1 = tStack1 $ return . bsToSv . hashSha1BS . opToSv
@@ -457,6 +488,7 @@ eval OP_CHECKMULTISIG =
        f <- sigCheck <$> get
        h <- preparedHashOps
        pushBool $ checkMultiSigVerify ( f h ) sigs pubKeys
+       modify $ \p -> p { opCount = (opCount p) + (length pubKeys) }
     where checkMultiSigVerify g s keys = let results = liftM2 g s keys
                                              count = length . ( filter id ) $ results
                                            in count >= length s
@@ -466,7 +498,7 @@ eval OP_CHECKMULTISIGVERIFY = eval OP_CHECKMULTISIG >> eval OP_VERIFY
 
 eval op = case constValue op of
     Just sv -> pushStack sv
-    Nothing -> programError $ "unknown op " ++ show op
+    Nothing -> programError $ "unexpected op " ++ show op
 
 --------------------------------------------------------------------------------
 -- | Based on the IfStack, returns whether the script is within an
@@ -477,54 +509,99 @@ getExec = and <$> getCond
 -- | Converts a `ScriptOp` to a program monad.
 conditionalEval :: ScriptOp -> ConditionalProgramTransition ()
 conditionalEval scrpOp = do
-  e  <- getExec
-  eval' e scrpOp
-  where
-    eval' :: Bool -> ScriptOp -> ConditionalProgramTransition ()
+   -- lift $ checkOpEnabled scrpOp
+   lift $ checkPushData scrpOp
 
-    eval' True  OP_IF      = ( lift $ popStack ) >>= pushCond . decodeBool
-    eval' True  OP_NOTIF   = ( lift $ popStack ) >>= pushCond . not . decodeBool
-    eval' True  OP_ELSE    = flipCond
-    eval' True  OP_ENDIF   = void popCond
-    eval' True  op = lift $ eval op
+   e  <- getExec
+   eval' e scrpOp
 
-    eval' False OP_IF    = pushCond False
-    eval' False OP_NOTIF = pushCond False
-    eval' False OP_ELSE  = flipCond
-    eval' False OP_ENDIF = void popCond
-    eval' False OP_CODESEPARATOR = lift $ eval OP_CODESEPARATOR
-    eval' False _ = return ()
+   when (countOp scrpOp) $ lift $ join $ incrementOpCount <$> opCount <$> get
+
+   lift $ checkStackSize
+
+   where
+     eval' :: Bool -> ScriptOp -> ConditionalProgramTransition ()
+
+     eval' True  OP_IF      = ( lift $ popStack ) >>= pushCond . decodeBool
+     eval' True  OP_NOTIF   = ( lift $ popStack ) >>= pushCond . not . decodeBool
+     eval' True  OP_ELSE    = flipCond
+     eval' True  OP_ENDIF   = void popCond
+     eval' True  op = lift $ eval op
+
+     eval' False OP_IF    = pushCond False
+     eval' False OP_NOTIF = pushCond False
+     eval' False OP_ELSE  = flipCond
+     eval' False OP_ENDIF = void popCond
+     eval' False OP_CODESEPARATOR = lift $ eval OP_CODESEPARATOR
+     eval' False OP_VER = return ()
+     eval' False op | isDisabled op = lift $ disabled op
+                    | otherwise = return ()
 
 -- | Builds a Script evaluation monad.
 evalAll :: [ ScriptOp ] -> ConditionalProgramTransition ()
-evalAll = mapM_ conditionalEval
+evalAll ops = do mapM_ conditionalEval ops
+                 cond <- getCond
+                 unless (null cond) (lift $ programError "ifStack not empty")
+
+
+checkPushOnly :: [ ScriptOp ] -> ConditionalProgramTransition ()
+checkPushOnly ops
+      | not (all checkPushOp ops) = lift $ programError "only push ops allowed"
+      | otherwise = return ()
+      where checkPushOp op = case constValue op of
+                                  Just _ -> True
+                                  Nothing -> False
 
 checkStack :: Stack -> Bool
 checkStack (x:_) = decodeBool x
 checkStack []  = False
 
+
+isPayToScriptHash :: [ ScriptOp ] -> Bool
+isPayToScriptHash [OP_HASH160, OP_PUSHDATA bytes OPCODE, OP_EQUAL]
+                    = (BS.length bytes) == 20
+isPayToScriptHash _ = False
+
+stackToScriptOps :: StackValue -> [ ScriptOp ]
+stackToScriptOps sv = scriptOps $ decode $ BSL.pack sv
+
 --
 -- exported functions
 
 execScript :: Script -- ^ scriptSig ( redeemScript )
-          -> Script -- ^ scriptPubKey
-          -> SigCheck -- ^ signature verification Function
-          -> Either EvalError Program
+           -> Script -- ^ scriptPubKey
+           -> SigCheck -- ^ signature verification Function
+           -> Either EvalError Program
 execScript scriptSig scriptPubKey sigCheckFcn =
-  let pubKeyOps = scriptOps scriptPubKey
+  let sigOps = scriptOps scriptSig
+      pubKeyOps = scriptOps scriptPubKey
       emptyProgram = Program {
         stack = [],
         altStack = [],
         hashOps = pubKeyOps,
-        sigCheck = sigCheckFcn }
-      redeemEval = evalAll ( scriptOps scriptSig ) >> ( lift $ getDualStack )
-      pubKeyEval = evalAll pubKeyOps >> (lift get)
+        sigCheck = sigCheckFcn,
+        opCount = 0
+      }
 
-      in do ( s, a ) <- evalConditionalProgram redeemEval [] emptyProgram
-            evalConditionalProgram pubKeyEval [] emptyProgram {
-              stack = s,
-              altStack = a
-            }
+
+      checkSig | isPayToScriptHash pubKeyOps = checkPushOnly sigOps
+               | otherwise = return ()
+
+      checkKey | (BSL.length $ encode scriptPubKey) > fromIntegral maxScriptSize
+                 = lift $ programError $ "pubKey > maxScriptSize"
+               | otherwise = return ()
+
+
+      redeemEval = checkSig >> evalAll sigOps >> (lift $ stack <$> get)
+      pubKeyEval = checkKey >> evalAll pubKeyOps >> (lift $ get)
+      p2shEval [] = lift $ programError $ "PayToScriptHash: no script on stack"
+      p2shEval (sv:_) = (evalAll $ stackToScriptOps sv) >> (lift $ get)
+
+      in do s <- evalConditionalProgram redeemEval [] emptyProgram
+            p <- evalConditionalProgram pubKeyEval [] emptyProgram { stack = s }
+            if isPayToScriptHash pubKeyOps
+                then evalConditionalProgram (p2shEval s) [] emptyProgram
+                else return p
 
 evalScript :: Script -> Script -> SigCheck -> Bool
 evalScript scriptSig scriptPubKey sigCheckFcn =

@@ -90,11 +90,9 @@ tests =
     , testFile "Canonical Valid Script Test Cases"
                "tests/data/script_valid.json"
                True
-    {-
     , testFile "Canonical Invalid Script Test Cases"
                "tests/data/script_invalid.json"
                False
-    -}
     ]
 
 metaGetPut :: (Binary a, Eq a) => a -> Bool
@@ -263,38 +261,45 @@ testFile label path expected = buildTest $ do
             makeTest :: String -> String -> String -> Test
             makeTest label sig pubKey =
                 testCase label' $ case (parseScript sig, parseScript pubKey) of
-                    (Left e, _) -> fail $ "can't parse sig: " ++ show sig
-                                          ++ " error: " ++ e
-                    (_, Left e) -> fail $ "can't parse key: " ++ show pubKey
-                                          ++ " error: " ++ e
+                    (Left e, _) -> parseError $ "can't parse sig: " ++
+                                                show sig ++ " error: " ++ e
+                    (_, Left e) -> parseError $ "can't parse key: " ++
+                                                show pubKey ++ " error: " ++ e
                     (Right scriptSig, Right scriptPubKey) ->
-                        check $ execScript scriptSig scriptPubKey rejectSignature
-                        where check (Left err) =
-                                  HUnit.assertFailure $ "error: " ++ show err
-                              check (Right p) =
-                                  let x = checkStack . runStack $ p
-                                  in HUnit.assertBool
-                                     ("unexpected eval result: " ++ (show x))
-                                     (expected == x)
+                        runTest label' scriptSig scriptPubKey
 
-                    where label' = "sig: [" ++ sig ++ "] " ++
-                                   " pubKey: [" ++ pubKey ++ "] " ++
-                                   (if null label
-                                        then ""
-                                        else " label: " ++ label)
+                where label' = "sig: [" ++ sig ++ "] " ++
+                               " pubKey: [" ++ pubKey ++ "] " ++
+                               (if null label
+                                    then ""
+                                    else " label: " ++ label)
 
+            parseError message = HUnit.assertBool
+                                ("parse error in valid script: " ++ message)
+                                (expected == False)
 
+            runTest label scriptSig scriptPubKey =
+                HUnit.assertBool
+                  (" eval error: " ++ errorMessage)
+                  (expected == run evalScript)
+
+                where run f = f scriptSig scriptPubKey rejectSignature
+                      errorMessage = case run execScript of
+                        Left e -> show e
+                        Right _ -> " none"
 
 
 -- repl utils
 
-execScriptIO :: String -> IO ()
-execScriptIO s = case parseScript s of
-  Left e -> print $ "parse error: " ++ e
-  Right s -> case execScript emptyScript s rejectSignature of
-                  Left e -> putStrLn $ "error " ++ show e
-                  Right p -> do putStrLn $ "successful execution"
-                                putStrLn $ dumpStack $ runStack p
+execScriptIO :: String -> String -> IO ()
+execScriptIO sig key = case (parseScript sig, parseScript key) of
+  (Left e, _) -> print $ "sig parse error: " ++ e
+  (_, Left e) -> print $ "key parse error: " ++ e
+  (Right scriptSig, Right scriptPubKey) ->
+      case execScript scriptSig scriptPubKey rejectSignature of
+          Left e -> putStrLn $ "error " ++ show e
+          Right p -> do putStrLn $ "successful execution"
+                        putStrLn $ dumpStack $ runStack p
 
 
 testValid = testFile "Canonical Valid Script Test Cases"

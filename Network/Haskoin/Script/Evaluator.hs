@@ -243,6 +243,12 @@ popInt = popStack >>= \sv ->
     else
         return $ decodeInt sv
 
+pushInt :: Int64 -> ProgramTransition ()
+pushInt = pushStack . encodeInt
+
+popBool :: ProgramTransition Bool
+popBool = decodeBool <$> popStack
+
 pushBool :: Bool -> ProgramTransition ()
 pushBool = pushStack . encodeBool
 
@@ -356,19 +362,6 @@ tStack6 :: (StackValue -> StackValue -> StackValue ->
 tStack6 f = f <$> popStack <*> popStack <*> popStack
               <*> popStack <*> popStack <*> popStack >>= prependStack
 
-tStack1L :: (StackValue -> a) -> (b -> StackValue) ->
-            (a -> b) -> ProgramTransition ()
-tStack1L p q f = tStack1 $ return . q . f . p
-
-
-tStack2L :: (StackValue -> a) -> (b -> StackValue) ->
-            (a -> a -> b) -> ProgramTransition ()
-tStack2L p q f = tStack2 $ \a b -> return $ q $ f (p a) (p b)
-
-tStack3L :: (StackValue -> a) -> (b -> StackValue) ->
-            (a -> a -> a -> b) -> ProgramTransition ()
-tStack3L p q f = tStack3 $ \a b c -> return $ q $ f (p a) (p b) (p c)
-
 arith1 :: (Int64 -> Int64) -> ProgramTransition ()
 arith1 f = do
     i <- popInt
@@ -379,9 +372,6 @@ arith2 f = do
     i <- popInt
     j <- popInt
     pushStack $ encodeInt (f i j)
-
-bool2 :: (Bool -> Bool -> Bool) -> ProgramTransition ()
-bool2 = tStack2L decodeBool encodeBool
 
 stackError :: ProgramTransition a
 stackError = programError "stack error"
@@ -462,18 +452,19 @@ eval OP_NOT         = arith1 $ \case 0 -> 1; _ -> 0
 eval OP_0NOTEQUAL   = arith1 $ \case 0 -> 0; _ -> 1
 eval OP_ADD     = arith2 (+)
 eval OP_SUB     = arith2 $ flip (-)
-eval OP_BOOLAND     = bool2 (&&)
-eval OP_BOOLOR      = bool2 (||)
-eval OP_NUMEQUAL    = tStack2L decodeInt encodeBool (==)
+eval OP_BOOLAND     = (&&) <$> popBool <*> popBool >>= pushBool
+eval OP_BOOLOR      = (||) <$> popBool <*> popBool >>= pushBool
+eval OP_NUMEQUAL    = (==) <$> popInt <*> popInt >>= pushBool
 eval OP_NUMEQUALVERIFY = eval OP_NUMEQUAL >> eval OP_VERIFY
-eval OP_NUMNOTEQUAL         = tStack2L decodeInt encodeBool (/=)
-eval OP_LESSTHAN            = tStack2L decodeInt encodeBool (>)
-eval OP_GREATERTHAN         = tStack2L decodeInt encodeBool (<)
-eval OP_LESSTHANOREQUAL     = tStack2L decodeInt encodeBool (>=)
-eval OP_GREATERTHANOREQUAL  = tStack2L decodeInt encodeBool (<=)
-eval OP_MIN     = tStack2L decodeInt encodeInt min
-eval OP_MAX     = tStack2L decodeInt encodeInt max
-eval OP_WITHIN  = tStack3L decodeInt encodeBool $ \y x a -> (x <= a) && (a < y)
+eval OP_NUMNOTEQUAL         = (/=) <$> popInt <*> popInt >>= pushBool
+eval OP_LESSTHAN            = (>)  <$> popInt <*> popInt >>= pushBool
+eval OP_GREATERTHAN         = (<)  <$> popInt <*> popInt >>= pushBool
+eval OP_LESSTHANOREQUAL     = (>=) <$> popInt <*> popInt >>= pushBool
+eval OP_GREATERTHANOREQUAL  = (<=) <$> popInt <*> popInt >>= pushBool
+eval OP_MIN     = min <$> popInt <*> popInt >>= pushInt
+eval OP_MAX     = max <$> popInt <*> popInt >>= pushInt
+eval OP_WITHIN  = within <$> popInt <*> popInt <*> popInt >>= pushBool
+                  where within y x a = (x <= a) && (a < y)
 
 eval OP_RIPEMD160 = tStack1 $ return . bsToSv . hash160BS . opToSv
 eval OP_SHA1 = tStack1 $ return . bsToSv . hashSha1BS . opToSv

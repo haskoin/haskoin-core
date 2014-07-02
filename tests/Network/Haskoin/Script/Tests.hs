@@ -90,11 +90,9 @@ tests =
     , testFile "Canonical Valid Script Test Cases"
                "tests/data/script_valid.json"
                True
-    {-
     , testFile "Canonical Invalid Script Test Cases"
                "tests/data/script_invalid.json"
                False
-    -}
     ]
 
 metaGetPut :: (Binary a, Eq a) => a -> Bool

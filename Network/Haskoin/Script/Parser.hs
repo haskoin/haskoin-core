@@ -28,10 +28,11 @@ module Network.Haskoin.Script.Parser
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM, liftM2, unless)
-import Control.Applicative ((<$>))
+import Control.Monad (liftM2, guard)
+import Control.Applicative ((<$>), (<|>))
 
 import Data.List (sortBy)
+import Data.Foldable (foldrM)
 import qualified Data.ByteString as BS 
     ( ByteString
     , head
@@ -200,8 +201,8 @@ scriptRecipient s = case decodeOutput s of
 -- | Computes the sender address of a script. This function fails if the
 -- script could not be decoded as a spend public key hash or script hash
 -- input. 
-scriptSender :: ScriptOutput -> Script -> Either String Address
-scriptSender so s = case decodeInput so s of
+scriptSender :: Script -> Either String Address
+scriptSender s = case decodeInput s of
     Right (RegularInput (SpendPKHash _ key)) -> return $ pubKeyAddr key
     Right (ScriptHashInput _ rdm)            -> return $ scriptAddr rdm
     Right _ -> Left "scriptSender: bad input script type"
@@ -218,15 +219,13 @@ data SimpleInput
                   , getInputKey :: !PubKey
                   }
       -- | Spend the coins of a PayMulSig output.
-    | SpendMulSig { getInputMulSigKeys :: ![TxSignature] 
-                  , getInputRequired   :: Int
-                  }
+    | SpendMulSig { getInputMulSigKeys :: ![TxSignature] }
     deriving (Eq, Show, Read)
 
 instance NFData SimpleInput where
     rnf (SpendPK i) = rnf i
     rnf (SpendPKHash i k) = rnf i `seq` rnf k
-    rnf (SpendMulSig k r) = rnf k `seq` rnf r
+    rnf (SpendMulSig k) = rnf k 
 
 -- | Returns True if the input script is spending a public key.
 isSpendPK :: ScriptInput -> Bool
@@ -240,7 +239,7 @@ isSpendPKHash _ = False
 
 -- | Returns True if the input script is spending a multisignature output.
 isSpendMulSig :: ScriptInput -> Bool
-isSpendMulSig (RegularInput (SpendMulSig _ _)) = True
+isSpendMulSig (RegularInput (SpendMulSig _)) = True
 isSpendMulSig _ = False
 
 isScriptHashInput :: ScriptInput -> Bool
@@ -264,33 +263,29 @@ instance NFData ScriptInput where
 -- 'ScriptOp' that can be used to build a 'Tx'.
 encodeSimpleInput :: SimpleInput -> Script
 encodeSimpleInput s = Script $ case s of
-    SpendPK ts        -> [ opPushData $ encodeSig ts ]
-    SpendPKHash ts p  -> [ opPushData $ encodeSig ts
-                         , opPushData $ encode' p
-                         ]
-    SpendMulSig ts r
-        | length ts <= 16 && r <= 16 && length ts <= r -> 
-            OP_0 : map (opPushData . encodeSig) ts
-        | otherwise -> error "SpendMulSig: Too many signatures"
+    SpendPK ts       -> [ opPushData $ encodeSig ts ]
+    SpendPKHash ts p -> [ opPushData $ encodeSig ts
+                        , opPushData $ encode' p
+                        ]
+    SpendMulSig ts   -> OP_0 : map (opPushData . encodeSig) ts
 
-decodeSimpleInput :: ScriptOutput -> Script -> Either String SimpleInput
-decodeSimpleInput out s = case (out, scriptOps s) of
-    (PayPK _, [OP_PUSHDATA bs _]) -> 
-        SpendPK <$> decodeSig bs
-    (PayPKHash _, [OP_PUSHDATA sig _, OP_PUSHDATA p _]) -> 
-        liftM2 SpendPKHash (decodeSig sig) (decodeToEither p)
-    (PayMulSig _ r, (x:xs)) -> do
-        unless (isPushOp x) $ Left "decodeInput: invalid SpendMulSig"
-        matchSpendMulSig (Script xs) r
-    _ -> Left "decodeInput: Could not decode script input"
-
-matchSpendMulSig :: Script -> Int -> Either String SimpleInput
-matchSpendMulSig (Script ops) r = 
-    liftM (flip SpendMulSig r) $ go ops
-  where 
-    go (OP_PUSHDATA bs _:xs) = liftM2 (:) (decodeSig bs) (go xs)
-    go [] = return []
-    go _  = Left "matchSpendMulSig: invalid multisig opcode"
+decodeSimpleInput :: Script -> Either String SimpleInput
+decodeSimpleInput (Script ops) = maybeToEither errMsg $
+    matchPK ops <|> matchPKHash ops <|> matchMulSig ops
+  where
+    matchPK [OP_PUSHDATA bs _] = SpendPK <$> eitherToMaybe (decodeSig bs)
+    matchPK _ = Nothing
+    matchPKHash [OP_PUSHDATA sig _, OP_PUSHDATA pub _] =
+        liftM2 SpendPKHash (eitherToMaybe $ decodeSig sig) (decodeToMaybe pub)
+    matchPKHash _ = Nothing
+    matchMulSig (x:xs) = do
+        guard $ isPushOp x
+        SpendMulSig <$> foldrM f [] xs
+    matchMulSig _ = Nothing
+    f (OP_PUSHDATA bs _) acc = 
+        liftM2 (:) (eitherToMaybe $ decodeSig bs) (Just acc)
+    f _ _ = Nothing
+    errMsg = "decodeInput: Could not decode script input"
 
 encodeInput :: ScriptInput -> Script
 encodeInput s = case s of
@@ -304,21 +299,20 @@ encodeInputBS = encode' . encodeInput
 
 -- | Decodes a 'ScriptInput' from a 'Script'. This function fails if the 
 -- script can not be parsed as a standard script input.
-decodeInput :: ScriptOutput -> Script -> Either String ScriptInput
-decodeInput out s = case decodeSimpleInput out s of
-    Right si -> return $ RegularInput si
-    _        -> case out of
-        PayScriptHash _ -> case splitAt (length ops - 1) ops of
-            (is, [OP_PUSHDATA bs _]) -> do
-                rdm <- decodeOutputBS bs
-                inp <- decodeSimpleInput rdm $ Script is
-                return $ ScriptHashInput inp rdm
-            _ -> Left "decodeInput: Could not decode script input"
-        _ -> Left "decodeInput: Could not decode script input"
+decodeInput :: Script -> Either String ScriptInput
+decodeInput s@(Script ops) = maybeToEither errMsg $
+    matchSimpleInput <|> matchPayScriptHash
   where
-    ops = scriptOps s
-
+    matchSimpleInput = RegularInput <$> (eitherToMaybe $ decodeSimpleInput s)
+    matchPayScriptHash = case splitAt (length (scriptOps s) - 1) ops of
+        (is, [OP_PUSHDATA bs _]) -> do
+            rdm <- eitherToMaybe $ decodeOutputBS bs
+            inp <- eitherToMaybe $ decodeSimpleInput $ Script is
+            return $ ScriptHashInput inp rdm
+        _ -> Nothing
+    errMsg = "decodeInput: Could not decode script input"
+        
 -- | Similar to 'decodeInput' but decodes from a ByteString
-decodeInputBS :: ScriptOutput -> BS.ByteString -> Either String ScriptInput
-decodeInputBS so = (decodeInput so =<<) . decodeToEither 
+decodeInputBS :: BS.ByteString -> Either String ScriptInput
+decodeInputBS = (decodeInput =<<) . decodeToEither 
 

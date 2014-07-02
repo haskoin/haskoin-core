@@ -39,15 +39,15 @@ testBuildAddrTx os a v
           out = decodeOutputBS $ scriptOutput $ txOut (fromRight tx) !! 0
 
 testGuessSize :: SpendAddrTx -> Bool
-testGuessSize (SpendAddrTx tx xs) =
+testGuessSize (SpendAddrTx tx) =
     -- We compute an upper bound but it should be close enough to the real size
     -- We give 2 bytes of slack on every signature (1 on r and 1 on s)
     guess >= len && guess - 2*delta <= len
     where delta   = pki + (sum $ map fst msi)
           guess   = guessTxSize pki msi pkout msout
           len     = BS.length $ encode' tx
-          ins     = map f $ zip (txIn tx) xs
-          f (i,o) = fromRight $ decodeInputBS o $ scriptInput i
+          ins     = map f $ txIn tx
+          f i     = fromRight $ decodeInputBS $ scriptInput i
           pki     = length $ filter isSpendPKHash ins
           msi     = concat $ map shData ins
           shData (ScriptHashInput _ (PayMulSig keys r)) = [(r,length keys)]
@@ -59,25 +59,25 @@ testGuessSize (SpendAddrTx tx xs) =
 testChooseCoins :: Word64 -> Word64 -> [Coin] -> Bool
 testChooseCoins target kbfee xs = case chooseCoins target kbfee xs of
     Right (chosen,change) ->
-        let outSum = sum $ map (outValue . coinTxOut) chosen
+        let outSum = sum $ map coinValue chosen
             fee    = getFee kbfee (length chosen) 
         in outSum == target + change + fee
     Left _ -> 
         let fee = getFee kbfee (length xs) 
         in target == 0 || s < target || s < target + fee
-    where s = sum $ map (outValue . coinTxOut) xs
+    where s = sum $ map coinValue xs
 
 testChooseMSCoins :: Word64 -> Word64 -> MSParam -> [Coin] -> Bool
 testChooseMSCoins target kbfee (MSParam m n) xs = 
     case chooseMSCoins target kbfee (m,n) xs of
         Right (chosen,change) ->
-            let outSum = sum $ map (outValue . coinTxOut) chosen
+            let outSum = sum $ map coinValue chosen
                 fee    = getMSFee kbfee (m,n) (length chosen) 
             in outSum == target + change + fee
         Left _ -> 
             let fee = getMSFee kbfee (m,n) (length xs) 
             in target == 0 || s < target + fee
-    where s = sum $ map (outValue . coinTxOut) xs
+    where s = sum $ map coinValue xs
 
 {- Signing Transactions -}
 
@@ -97,7 +97,7 @@ testSignTx (PKHashSigTemplate tx sigi prv)
           (txSigP, statP) = fromRight resP
           resC            = detSignTx txSigP sigi [head prv]
           (txSigC, statC) = fromRight resC
-          verData = map (\(SigInput s o _ _) -> (s,o)) sigi
+          verData = map (\(SigInput s o _ _) -> (encodeOutput s,o)) sigi
          
 testSignMS :: MulSigTemplate -> Bool
 testSignMS (MulSigTemplate tx sigis prv)
@@ -115,5 +115,5 @@ testSignMS (MulSigTemplate tx sigis prv)
           (txSigP, statP) = fromRight resP
           resC            = detSignTx txSigP (map snd sigis) [head prv]
           (txSigC, statC) = fromRight resC
-          verData = map (\(s, (SigInput _ o _ _)) -> (s,o)) sigis
+          verData = map (\(s, (SigInput _ o _ _)) -> (encodeOutput s,o)) sigis
 

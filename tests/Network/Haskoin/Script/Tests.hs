@@ -108,9 +108,8 @@ testScriptOpInt (ScriptOpInt i) = (intToScriptOp <$> scriptOpToInt i) == Right i
 testScriptOutput :: ScriptOutput -> Bool
 testScriptOutput so = (decodeOutput $ encodeOutput so) == Right so
 
-testScriptInput :: ScriptPair -> Bool
-testScriptInput (ScriptPair si so) = 
-    (decodeInput so $ encodeInput si) == Right si
+testScriptInput :: ScriptInput -> Bool
+testScriptInput si = (decodeInput $ encodeInput si) == Right si
 
 testSortMulSig :: ScriptOutput -> Bool
 testSortMulSig out = case out of

@@ -3,7 +3,6 @@ module Network.Haskoin.Crypto.Mnemonic.Tests (tests) where
 
 import Data.Bits ((.&.), shiftR)
 import Data.Binary (Binary)
-import qualified Data.Text as T
 import Data.Word (Word32)
 import qualified Data.ByteString as BS
 import Network.Haskoin.Crypto.Arbitrary()
@@ -55,25 +54,25 @@ toMnemonic128 :: Word128 -> Bool
 toMnemonic128 x = l == 12
   where
     bs = encode' x
-    l = length . T.words . fromRight $ toMnemonic english bs
+    l = length . words . fromRight $ toMnemonic bs
 
 toMnemonic160 :: Word160 -> Bool
 toMnemonic160 x = l == 15
   where
     bs = encode' x
-    l = length . T.words . fromRight $ toMnemonic english bs
+    l = length . words . fromRight $ toMnemonic bs
 
 toMnemonic256 :: Word256 -> Bool
 toMnemonic256 x = l == 24
   where
     bs = encode' x
-    l = length . T.words . fromRight $ toMnemonic english bs
+    l = length . words . fromRight $ toMnemonic bs
 
 toMnemonic512 :: Word512 -> Bool
 toMnemonic512 x = l == 48
   where
     bs = encode' x
-    l = length . T.words . fromRight $ toMnemonic english bs
+    l = length . words . fromRight $ toMnemonic bs
 
 toMnemonicVar :: [Word32] -> Property
 toMnemonicVar ls = not (length ls > 8) ==> l == wc
@@ -82,7 +81,7 @@ toMnemonicVar ls = not (length ls > 8) ==> l == wc
     bl = BS.length bs
     cb = bl `div` 4
     wc = (cb + bl * 8) `div` 11
-    l = length . T.words . fromRight $ toMnemonic english bs
+    l = length . words . fromRight $ toMnemonic bs
 
 {- Encode/Decode -}
 
@@ -90,31 +89,31 @@ fromToMnemonic128 :: Word128 -> Bool
 fromToMnemonic128 x = bs == bs'
   where
     bs = encode' x
-    bs' = fromRight (fromMnemonic english =<< toMnemonic english bs)
+    bs' = fromRight (fromMnemonic =<< toMnemonic bs)
 
 fromToMnemonic160 :: Word160 -> Bool
 fromToMnemonic160 x = bs == bs'
   where
     bs = encode' x
-    bs' = fromRight (fromMnemonic english =<< toMnemonic english bs)
+    bs' = fromRight (fromMnemonic =<< toMnemonic bs)
 
 fromToMnemonic256 :: Word256 -> Bool
 fromToMnemonic256 x = bs == bs'
   where
     bs = encode' x
-    bs' = fromRight (fromMnemonic english =<< toMnemonic english bs)
+    bs' = fromRight (fromMnemonic =<< toMnemonic bs)
 
 fromToMnemonic512 :: Word512 -> Bool
 fromToMnemonic512 x = bs == bs'
   where
     bs = encode' x
-    bs' = fromRight (fromMnemonic english =<< toMnemonic english bs)
+    bs' = fromRight (fromMnemonic =<< toMnemonic bs)
 
 fromToMnemonicVar :: [Word32] -> Property
 fromToMnemonicVar ls = not (length ls > 8) ==> bs == bs'
   where
     bs = binWordsToBS ls
-    bs' = fromRight (fromMnemonic english =<< toMnemonic english bs)
+    bs' = fromRight (fromMnemonic =<< toMnemonic bs)
 
 {- Mnemonic to seed -}
 
@@ -122,35 +121,35 @@ mnemonicToSeed128 :: Word128 -> Bool
 mnemonicToSeed128 x = l == 64
   where
     bs = encode' x
-    seed = fromRight (mnemonicToSeed english "" =<< toMnemonic english bs)
+    seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
 mnemonicToSeed160 :: Word160 -> Bool
 mnemonicToSeed160 x = l == 64
   where
     bs = encode' x
-    seed = fromRight (mnemonicToSeed english "" =<< toMnemonic english bs)
+    seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
 mnemonicToSeed256 :: Word256 -> Bool
 mnemonicToSeed256 x = l == 64
   where
     bs = encode' x
-    seed = fromRight (mnemonicToSeed english "" =<< toMnemonic english bs)
+    seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
 mnemonicToSeed512 :: Word512 -> Bool
 mnemonicToSeed512 x = l == 64
   where
     bs = encode' x
-    seed = fromRight (mnemonicToSeed english "" =<< toMnemonic english bs)
+    seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
 mnemonicToSeedVar :: [Word32] -> Property
 mnemonicToSeedVar ls = not (length ls > 16) ==> l == 64
   where
     bs = binWordsToBS ls
-    seed = fromRight (mnemonicToSeed english "" =<< toMnemonic english bs)
+    seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
 {- Get bits from ByteString -}

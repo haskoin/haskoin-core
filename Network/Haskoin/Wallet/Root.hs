@@ -10,14 +10,12 @@ module Network.Haskoin.Wallet.Root
 , initWalletDB
 ) where
 
-import Control.Monad (liftM, unless, when)
+import Control.Monad (liftM, when)
 import Control.Exception (throwIO)
 import Control.Monad.Trans (liftIO)
 
-import Data.List (nub)
 import Data.Maybe (fromJust, isJust, isNothing)
 import Data.Time (getCurrentTime)
-import qualified Data.Text as T (pack)
 import qualified Data.ByteString as BS
 
 import Database.Persist
@@ -25,29 +23,19 @@ import Database.Persist
     , PersistQuery
     , PersistStore
     , PersistMonadBackend
-    , PersistEntityBackend
-    , PersistEntity
     , Entity(..)
     , getBy
-    , get
-    , replace
     , insert_
-    , update
-    , count
     , selectList
     , selectFirst
-    , insertMany
     , entityVal
-    , (=.), (==.), (<=.), (>.)
-    , SelectOpt( Asc, Desc, LimitTo, OffsetBy )
+    , SelectOpt( Asc )
     )
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Util
-
-type AccountName = String
 
 getWallet :: (PersistUnique m, PersistMonadBackend m ~ b)
           => String -> m (DbWalletGeneric b)

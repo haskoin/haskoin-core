@@ -19,15 +19,13 @@ import Control.Exception (throwIO)
 import Control.Monad.Trans (liftIO)
 
 import Data.List (nub)
-import Data.Maybe (fromJust, isJust, isNothing)
+import Data.Maybe (fromJust, isJust )
 import Data.Time (getCurrentTime)
 
 import Database.Persist
     ( PersistUnique
     , PersistQuery
     , PersistMonadBackend
-    , PersistEntityBackend
-    , PersistEntity
     , Entity(..)
     , getBy
     , get
@@ -36,10 +34,9 @@ import Database.Persist
     , update
     , count
     , selectList
-    , insertMany
     , entityVal
-    , (=.), (==.), (<=.), (>.)
-    , SelectOpt( Asc, Desc, LimitTo, OffsetBy )
+    , (=.), (==.)
+    , SelectOpt( Asc )
     )
 
 import Network.Haskoin.Crypto
@@ -160,7 +157,6 @@ addAccountKeys name keys
             liftIO $ throwIO $ AccountSetupException
                 "Adding too many keys to the account"
         replace ai newAcc
-        let n = fromJust $ dbAccountMsTotal newAcc
         return newAcc
 
 checkOwnKeys :: PersistQuery m => [XPubKey] -> m ()

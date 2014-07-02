@@ -28,7 +28,7 @@ module Network.Haskoin.Wallet.Model
 ) where
 
 import Data.Int (Int64)
-import Data.Word (Word32, Word64)
+import Data.Word (Word32)
 import Data.Time (UTCTime)
 import Database.Persist (EntityField, Unique)
 import Database.Persist.Sql ()
@@ -42,7 +42,6 @@ import Database.Persist.TH
 
 import Network.Haskoin.Wallet.Types 
 import Network.Haskoin.Transaction
-import Network.Haskoin.Script
 import Network.Haskoin.Protocol 
 import Network.Haskoin.Crypto 
 

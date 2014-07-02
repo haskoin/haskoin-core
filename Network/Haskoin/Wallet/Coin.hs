@@ -6,27 +6,18 @@ module Network.Haskoin.Wallet.Coin
 , unspentCoins
 ) where
 
-import Control.Applicative ((<$>))
-
-import Data.Aeson (Value, (.=), object)
-import Data.Maybe (fromJust, isJust)
 import Data.Word (Word64)
 import Database.Persist
     ( PersistQuery
     , PersistUnique
     , PersistMonadBackend
     , Entity (Entity)
-    , KeyBackend
     , SelectOpt (Asc)
     , (==.)
     , entityVal
     , selectList
     )
 
-import Network.Haskoin.Crypto
-import Network.Haskoin.Protocol
-import Network.Haskoin.Script
-import Network.Haskoin.Util
 import Network.Haskoin.Transaction
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types

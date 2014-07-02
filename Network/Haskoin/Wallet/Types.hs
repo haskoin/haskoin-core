@@ -12,35 +12,16 @@ module Network.Haskoin.Wallet.Types
 , WalletException(..)
 ) where
 
-import Control.Monad (mzero)
-import Control.Applicative ((<$>), (<*>))
 import Control.Exception (Exception)
 
-import Data.Aeson.Types
-    ( Value (Object, String)
-    , FromJSON
-    , ToJSON
-    , Parser
-    , (.=)
-    , (.:)
-    , (.:?)
-    , object
-    , parseJSON
-    , toJSON
-    , withArray
-    , withObject
-    )
-import qualified Data.HashMap.Strict as H
-import Data.Maybe (fromJust, isJust, fromMaybe)
 import qualified Data.Text as T
 import Data.Typeable (Typeable)
-import qualified Data.Vector as V
-import Data.Word (Word32, Word64)
 
 import Database.Persist.Class
     ( PersistField
     , toPersistValue
-    , fromPersistValue )
+    , fromPersistValue 
+    )
 import Database.Persist.Types (PersistValue (PersistByteString))
 import Database.Persist.TH (derivePersistField)
 import Database.Persist.Sql (PersistFieldSql, SqlType (SqlBlob), sqlType)

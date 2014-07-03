@@ -275,7 +275,7 @@ testImportTx = do
     newAccount "main" "b"
     newAddrs "b" 5 
     let fundingTx = 
-            Tx 0 [ TxIn (OutPoint 0 0) (BS.pack [1]) maxBound ] -- dummy input
+            Tx 1 [ TxIn (OutPoint 0 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
                     encodeOutputBS $ PayPKHash $ fromJust $ 
                     base58ToAddr "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" -- a
@@ -288,10 +288,14 @@ testImportTx = do
                  , TxOut 25000000 $
                     encodeOutputBS $ PayPKHash $ fromJust $ 
                     base58ToAddr "16rEcC1w39g7VpVbmkqiPZZi4oJ1tkQnjU" -- b
-                 ] maxBound 
+                 ] 0
     --TODO: Test res
-    res <- importTx fundingTx True
-    liftIO $ print res
+    importTx fundingTx True
+    b1 <- balance "a"
+    liftIO $ print b1
+    importTx fundingTx False
+    b2 <- balance "a"
+    liftIO $ print b2
     
 
 

@@ -141,38 +141,42 @@ importTx tx offline = do
     -- was False and now is True
     let updatedFlag = dbTxOffline (entityVal $ fromJust txM) && not offline
     if isJust txM && not updatedFlag then return [] else do
+        when (isJust txM) $ removeTx tid >> return ()
         isOrphan <- isOrphanTx tx
-        if isOrphan 
-            then do
-                when (isJust txM) $ deleteBy $ UniqueTx tid
-                time <- liftIO getCurrentTime
-                insert_ $ DbTx tid tx True offline Nothing Nothing time
-                return []
-            else do
-                -- Retrieve the coins we have from the transaction inputs
-                eCoins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
-                let coins = map entityVal eCoins
-                when (isDoubleSpend tid coins) $ liftIO $ throwIO $
-                    DoubleSpendException "Transaction is double spending coins"
-                -- We must remove offline transactions which spend the same coins as us
-                forM_ (txToRemove coins) removeTx 
-                -- Change status of the coins
-                forM_ eCoins $ \(Entity ci _) -> update ci [DbCoinStatus =. status]
-                -- Import new coins 
-                outCoins <- liftM catMaybes $ 
-                    (mapM (importCoin tid (not offline)) $ zip (txOut tx) [0..])
-                -- Ignore this transaction if it is not ours
-                if null $ coins ++ outCoins then return [] else do
-                    time <- liftIO getCurrentTime
-                    -- Save the whole transaction 
-                    insert_ $ DbTx tid tx False offline Nothing Nothing time 
-                    -- Build transactions that report on individual accounts
-                    let dbAccTxs = buildAccTx tx coins outCoins time
-                    accTxs <- forM dbAccTxs toAccTx
-                    -- insert account transactions into database
-                    forM_ dbAccTxs insert_
-                    -- Re-import orphans
-                    liftM (accTxs ++) tryImportOrphans
+        if not isOrphan then addTx tx offline else do
+            time <- liftIO getCurrentTime
+            insert_ $ DbTx tid tx True offline Nothing Nothing time
+            return []
+  where
+    tid = txHash tx
+
+addTx :: (PersistQuery m, PersistUnique m) 
+      => Tx -> Bool -> m [AccTx] 
+addTx tx offline = do
+    -- Retrieve the coins we have from the transaction inputs
+    eCoins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
+    let coins = map entityVal eCoins
+    when (isDoubleSpend tid coins) $ liftIO $ throwIO $
+        DoubleSpendException "Transaction is double spending coins"
+    -- We must remove offline transactions which spend the same coins as us
+    forM_ (txToRemove coins) removeTx 
+    -- Change status of the coins
+    forM_ eCoins $ \(Entity ci _) -> update ci [DbCoinStatus =. status]
+    -- Import new coins 
+    outCoins <- liftM catMaybes $ 
+        (mapM (importCoin tid (not offline)) $ zip (txOut tx) [0..])
+    -- Ignore this transaction if it is not ours
+    if null $ coins ++ outCoins then return [] else do
+        time <- liftIO getCurrentTime
+        -- Save the whole transaction 
+        insert_ $ DbTx tid tx False offline Nothing Nothing time 
+        -- Build transactions that report on individual accounts
+        let dbAccTxs = buildAccTx tx coins outCoins time
+        accTxs <- forM dbAccTxs toAccTx
+        -- insert account transactions into database
+        forM_ dbAccTxs insert_
+        -- Re-import orphans
+        liftM (accTxs ++) tryImportOrphans
   where
     tid              = txHash tx
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)

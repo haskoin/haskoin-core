@@ -38,7 +38,7 @@ data Coin =
     Coin { coinTxOut    :: !TxOut          -- ^ Transaction output
          , coinOutPoint :: !OutPoint       -- ^ Previous outpoint
          , coinRedeem   :: !(Maybe Script) -- ^ Redeem script
-         } deriving (Eq, Show)
+         } deriving (Eq, Read, Show)
 
 instance NFData Coin where
     rnf (Coin t p r) = rnf t `seq` rnf p `seq` rnf r

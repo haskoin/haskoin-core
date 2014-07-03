@@ -40,9 +40,9 @@ import Database.Persist.Class
     , toPersistValue
     , fromPersistValue 
     )
-import Database.Persist.Types (PersistValue (PersistByteString))
+import Database.Persist.Types (PersistValue(..))
 import Database.Persist.TH (derivePersistField)
-import Database.Persist.Sql (PersistFieldSql, SqlType (SqlBlob), sqlType)
+import Database.Persist.Sql (PersistFieldSql, SqlType(..), sqlType)
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
@@ -234,6 +234,15 @@ derivePersistField "BlockHash"
 derivePersistField "Address"
 derivePersistField "Wallet"
 derivePersistField "Account"
+
+instance PersistField XPubKey where
+    toPersistValue = PersistText . T.pack . xPubExport
+    fromPersistValue (PersistText key) = 
+        maybeToEither "Not a valid XPubKey" . xPubImport $ T.unpack key
+    fromPersistValue _ = Left "Has to be a PersistText"
+
+instance PersistFieldSql XPubKey where
+    sqlType _ = SqlString
 
 instance PersistField Tx where
     toPersistValue = PersistByteString . encode'

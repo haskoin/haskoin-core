@@ -362,21 +362,21 @@ dispatchCommand cmd opts args = case cmd of
                         , "Status" .= status
                         ]
     "newacc" -> whenArgs args (== 2) $ do
-        acc <- newAccount (head args) (args !! 1)
-        setLookAhead (head args) 30 
+        let [wallet, account] = args
+        acc <- newAccount wallet account
+        setLookAhead account 30 
         return $ yamlAcc acc
     "newms" -> whenArgs args (>= 4) $ do
         let keysM = mapM xPubImport $ drop 4 args
             keys  = fromJust keysM
         when (isNothing keysM) $ liftIO $ throwIO $ 
             ParsingException "Could not parse keys"
-        let wname = head args
-            name  = args !! 1
-            m     = read $ args !! 2
-            n     = read $ args !! 3
-        acc <- newMSAccount wname name m n keys
-        when (length (dbAccountMsKeys acc) == n - 1) $ do
-            setLookAhead name 30 
+        let wallet : account : mS : nS : _ = args
+            m = read mS
+            n = read nS
+        acc <- newMSAccount wallet account m n keys
+        when (length (dbAccountMsKeys acc) == n - 1) $
+            setLookAhead account 30 
         return $ yamlAcc acc
     "addkeys" -> whenArgs args (>= 2) $ do
         let keysM = mapM xPubImport $ drop 1 args

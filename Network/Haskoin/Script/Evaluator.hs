@@ -337,7 +337,13 @@ getHashOps = hashOps <$> get
 -- Dependent on the sequence of `OP_CODESEPARATOR`
 dropHashOpsSeparatedCode :: ProgramTransition ()
 dropHashOpsSeparatedCode = modify $ \p ->
-   p { hashOps = tail . ( dropWhile ( /= OP_CODESEPARATOR ) ) $ hashOps p }
+   let tryDrop = dropWhile ( /= OP_CODESEPARATOR ) $ hashOps p in
+   case tryDrop of
+     -- If no OP_CODESEPARATOR, take the whole script.  This case is
+     -- possible when there is no OP_CODESEPARATOR in scriptPubKey but
+     -- one exists in scriptSig
+     [] -> p
+     _  -> p { hashOps = tail tryDrop }
 
 -- | Filters out `OP_CODESEPARATOR` from the output script used by
 -- OP_CHECK(MULTI)SIG

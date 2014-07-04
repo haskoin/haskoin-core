@@ -343,6 +343,14 @@ dropHashOpsSeparatedCode = modify $ \p ->
 preparedHashOps :: ProgramTransition HashOps
 preparedHashOps = filter ( /= OP_CODESEPARATOR ) <$> getHashOps
 
+-- | Removes any PUSHDATA that contains the signatures.  Used in
+-- CHECK(MULTI)SIG so that signatures can be contained in output
+-- scripts.  See FindAndDelete() in Bitcoin Core.
+findAndDelete :: [ StackValue ] -> [ ScriptOp ] -> [ ScriptOp ]
+findAndDelete [] ops = ops
+findAndDelete (s:ss) ops = let pushOp = opPushData . opToSv $ s in 
+  findAndDelete ss $ filter ( /= pushOp ) ops
+
 tStack1 :: (StackValue -> Stack) -> ProgramTransition ()
 tStack1 f = f <$> popStack >>= prependStack
 
@@ -479,14 +487,15 @@ eval OP_CHECKSIG = (join $ f <$> popStack <*> popStack) >>= pushStack . encodeBo
                          h <- preparedHashOps
                          case decodeSig $ opToSv sig  of
                            Left e -> programError $  "Invalid signature: " ++ e
-                           Right s -> return $ c h s ( decode' $ opToSv key )
+                           Right s -> return $ c ( findAndDelete [sig] h ) s ( decode' $ opToSv key )
 
 eval OP_CHECKMULTISIG =
     do pubKeys <- map ( decode' . opToSv ) <$> (popInt >>= popStackN . fromIntegral)
-       sigs <- rights . map ( decodeSig . opToSv ) <$> (popInt >>= popStackN . fromIntegral)
+       encSigs <- popInt >>= popStackN . fromIntegral
+       let sigs = rights . map ( decodeSig . opToSv ) $ encSigs
        void popStack -- spec bug
        f <- sigCheck <$> get
-       h <- preparedHashOps
+       h <- findAndDelete encSigs <$> preparedHashOps
        pushBool $ checkMultiSigVerify ( f h ) sigs pubKeys
        modify $ \p -> p { opCount = (opCount p) + (length pubKeys) }
     where checkMultiSigVerify g s keys = let results = liftM2 g s keys

@@ -41,11 +41,12 @@ import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit)
 import Data.Int (Int64)
 import Data.Word (Word8, Word64)
 import Data.Either ( rights )
+import Data.Maybe ( catMaybes )
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Script.Types
 import Network.Haskoin.Script.SigHash( TxSignature(..), decodeSig, txSigHash )
-import Network.Haskoin.Util ( bsToHex, decode' )
+import Network.Haskoin.Util ( bsToHex, decode', decodeToMaybe )
 import Network.Haskoin.Protocol( Tx(..), TxIn(..) )
 
 import Data.Binary (encode, decode)
@@ -351,6 +352,36 @@ findAndDelete [] ops = ops
 findAndDelete (s:ss) ops = let pushOp = opPushData . opToSv $ s in 
   findAndDelete ss $ filter ( /= pushOp ) ops
 
+checkMultiSig :: SigCheck -- ^ Signature checking function
+              -> [ StackValue ] -- ^ PubKeys
+              -> [ StackValue ] -- ^ Signatures
+              -> [ ScriptOp ]   -- ^ CODESEPARATOR'd hashops
+              -> Bool
+checkMultiSig f encPubKeys encSigs hOps = 
+  let pubKeys = catMaybes $ map ( decodeToMaybe . opToSv ) encPubKeys
+      sigs = rights $ map ( decodeSig . opToSv ) encSigs
+      cleanHashOps = findAndDelete encSigs hOps
+  in if length sigs < length encSigs
+    then False -- A bad signature exists.
+    else orderedSatisfy (f cleanHashOps) sigs pubKeys
+
+-- | Tests whether a function is satisfied for every a with some b "in
+-- order".  By "in order" we mean, if a pair satisfies the function,
+-- any other satisfying pair must be deeper in each list.  Designed to
+-- return as soon as the result is known to minimize expensive
+-- function calls.  Used in checkMultiSig to verify signature/pubKey
+-- pairs with a values as signatures and b values as pubkeys
+orderedSatisfy :: ( a -> b -> Bool )
+                    -> [ a ]
+                    -> [ b ]
+                    -> Bool
+orderedSatisfy _ [] _ = True
+orderedSatisfy _ (_:_) [] = False
+orderedSatisfy f x@(a:as) y@(b:bs) = if length x > length y then False
+  else case f a b of
+    False -> orderedSatisfy f x bs
+    True -> orderedSatisfy f as bs
+
 tStack1 :: (StackValue -> Stack) -> ProgramTransition ()
 tStack1 f = f <$> popStack >>= prependStack
 
@@ -481,26 +512,21 @@ eval OP_SHA256 = tStack1 $ return . bsToSv . hash256BS . opToSv
 eval OP_HASH160 = tStack1 $ return . bsToSv . hash160BS . hash256BS . opToSv
 eval OP_HASH256 = tStack1 $ return . bsToSv . doubleHash256BS  . opToSv
 eval OP_CODESEPARATOR = dropHashOpsSeparatedCode
-eval OP_CHECKSIG = (join $ f <$> popStack <*> popStack) >>= pushStack . encodeBool
-    where f :: StackValue -> StackValue -> ProgramTransition Bool
-          f key sig = do c <- sigCheck <$> get
-                         h <- preparedHashOps
-                         case decodeSig $ opToSv sig  of
-                           Left e -> programError $  "Invalid signature: " ++ e
-                           Right s -> return $ c ( findAndDelete [sig] h ) s ( decode' $ opToSv key )
+eval OP_CHECKSIG = do
+  pubKey <- popStack
+  sig <- popStack
+  checker <- sigCheck <$> get
+  hOps <- preparedHashOps
+  pushBool $ checkMultiSig checker [ pubKey ] [ sig ] hOps -- Reuse checkMultiSig code
 
 eval OP_CHECKMULTISIG =
-    do pubKeys <- map ( decode' . opToSv ) <$> (popInt >>= popStackN . fromIntegral)
-       encSigs <- popInt >>= popStackN . fromIntegral
-       let sigs = rights . map ( decodeSig . opToSv ) $ encSigs
+    do pubKeys <- (popInt >>= popStackN . fromIntegral)
+       sigs <- popInt >>= popStackN . fromIntegral
        void popStack -- spec bug
-       f <- sigCheck <$> get
-       h <- findAndDelete encSigs <$> preparedHashOps
-       pushBool $ checkMultiSigVerify ( f h ) sigs pubKeys
+       checker <- sigCheck <$> get
+       hOps <- preparedHashOps
+       pushBool $ checkMultiSig checker pubKeys sigs hOps
        modify $ \p -> p { opCount = (opCount p) + (length pubKeys) }
-    where checkMultiSigVerify g s keys = let results = liftM2 g s keys
-                                             count = length . ( filter id ) $ results
-                                           in count >= length s
 
 eval OP_CHECKSIGVERIFY      = eval OP_CHECKSIG      >> eval OP_VERIFY
 eval OP_CHECKMULTISIGVERIFY = eval OP_CHECKMULTISIG >> eval OP_VERIFY

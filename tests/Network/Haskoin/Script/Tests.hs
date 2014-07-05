@@ -28,14 +28,13 @@ import qualified Data.ByteString as BS
     )
 
 import qualified Data.ByteString.Lazy as LBS
-    ( singleton
-    , pack
+    ( pack
     , unpack
     )
 
 import Data.Maybe (catMaybes)
 
-import Data.Binary (encode, decode, decodeOrFail)
+import Data.Binary (encode, decodeOrFail)
 
 import qualified Data.ByteString.Lazy.Char8 as C (readFile)
 
@@ -166,22 +165,15 @@ testEncodeBool b = (decodeBool $ encodeBool b) == b
 
 {- Script Evaluation -}
 
-emptyScript :: Script
-emptyScript = Script { scriptOps = [] }
-
 rejectSignature :: SigCheck
 rejectSignature _ _ _ = False
-
 
 {- Parse tests from bitcoin-qt repository -}
 
 type ParseError = String
 
-decodeByte :: Word8 -> Maybe ScriptOp
-decodeByte = decode . LBS.singleton
-
 parseHex' :: String -> Maybe [Word8]
-parseHex' (a:b:xs) = case readHex $ [a, b] of
+parseHex' (a:b:xs) = case readHex $ [a, b] :: [(Integer, String)] of
                       [(i, "")] -> case parseHex' xs of
                                     Just ops -> Just $ fromIntegral i:ops
                                     Nothing -> Nothing
@@ -213,7 +205,8 @@ parseScript script =
                                               ]
                     parseHex | "0x" `isPrefixOf` tok = parseHex' (drop 2 tok)
                              | otherwise = Nothing
-                    parseInt = fromInt . fromIntegral <$> (readMaybe tok)
+                    parseInt = fromInt . fromIntegral <$>
+                               (readMaybe tok :: Maybe Integer)
                     parseQuote | tok == "''" = Just [0]
                                | (head tok) == '\'' && (last tok) == '\'' =
                                  Just $ encodeBytes $ opPushData $ BS.pack
@@ -231,13 +224,13 @@ parseScript script =
                     encodeBytes = LBS.unpack . encode
 
 testFile :: String -> String -> Bool -> Test
-testFile label path expected = buildTest $ do
+testFile groupLabel path expected = buildTest $ do
     dat <- C.readFile path
     case (A.decode dat) :: Maybe [[String]] of
         Nothing -> return $
-                    testCase label $
+                    testCase groupLabel $
                     HUnit.assertFailure $ "can't read test file " ++ path
-        Just tests -> return $ testGroup label $ map parseTest tests
+        Just testDefs -> return $ testGroup groupLabel $ map parseTest testDefs
 
     where   parseTest :: [String] -> Test
             parseTest (sig:pubKey:[])       = makeTest "" sig pubKey
@@ -255,7 +248,7 @@ testFile label path expected = buildTest $ do
                     (_, Left e) -> parseError $ "can't parse key: " ++
                                                 show pubKey ++ " error: " ++ e
                     (Right scriptSig, Right scriptPubKey) ->
-                        runTest label' scriptSig scriptPubKey
+                        runTest scriptSig scriptPubKey
 
                 where label' = "sig: [" ++ sig ++ "] " ++
                                " pubKey: [" ++ pubKey ++ "] " ++
@@ -267,7 +260,7 @@ testFile label path expected = buildTest $ do
                                 ("parse error in valid script: " ++ message)
                                 (expected == False)
 
-            runTest label scriptSig scriptPubKey =
+            runTest scriptSig scriptPubKey =
                 HUnit.assertBool
                   (" eval error: " ++ errorMessage)
                   (expected == run evalScript)
@@ -297,4 +290,5 @@ testValid = testFile "Canonical Valid Script Test Cases"
 testInvalid = testFile "Canonical Valid Script Test Cases"
               "tests/data/script_invalid.json" False
 
-runTests tests = defaultMainWithArgs tests ["--hide-success"]
+runTests :: [Test] -> IO ()
+runTests ts = defaultMainWithArgs ts ["--hide-success"]

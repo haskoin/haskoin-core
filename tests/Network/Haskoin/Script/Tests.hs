@@ -9,36 +9,26 @@ import Test.Framework.Runners.Console (defaultMainWithArgs)
 
 import qualified Test.HUnit as HUnit
 
-import Control.Applicative ((<$>), (<*>))
+import Control.Applicative ((<$>))
 
-import Numeric (showHex, readHex)
+import Numeric (readHex)
 
 import qualified Data.Aeson as A (decode)
 import Data.Bits (setBit, testBit)
 import Text.Read (readMaybe)
 import Data.Binary (Binary, Word8)
-import Data.List.Split (splitOn)
-import Data.List (isPrefixOf, isSuffixOf, intercalate, intersect)
+import Data.List (isPrefixOf)
 import Data.Char (ord)
 import qualified Data.ByteString as BS
-    ( ByteString
-    , singleton
+    ( singleton
     , length
     , tail
     , head
     , pack
-    , unpack
     )
 
-import qualified Data.ByteString.Builder as BSB
-    ( toLazyByteString
-    , byteStringHex
-    , word8
-    )
-
-import qualified Data.ByteString.Lazy as LBS 
-    ( ByteString
-    , singleton
+import qualified Data.ByteString.Lazy as LBS
+    ( singleton
     , pack
     , unpack
     )
@@ -56,7 +46,6 @@ import Network.Haskoin.Script.Arbitrary
 
 import Network.Haskoin.Script
 import Network.Haskoin.Script.Evaluator
-import Network.Haskoin.Script.Types
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Util

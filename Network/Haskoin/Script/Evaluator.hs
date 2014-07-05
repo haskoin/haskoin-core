@@ -149,10 +149,10 @@ disabled op = throwError . DisabledOp $ op
 -- | Encoding function for the stack value format of integers.  Most
 -- significant bit defines sign.
 encodeInt :: Int64 -> StackValue
-encodeInt i = prefix $ encode (fromIntegral $ abs i) []
-    where encode :: Word64 -> StackValue -> StackValue
-          encode 0 bytes = bytes
-          encode j bytes = (fromIntegral j):(encode (j `shiftR` 8) bytes)
+encodeInt i = prefix $ encode' (fromIntegral $ abs i) []
+    where encode' :: Word64 -> StackValue -> StackValue
+          encode' 0 bytes = bytes
+          encode' j bytes = (fromIntegral j):(encode' (j `shiftR` 8) bytes)
           prefix :: StackValue -> StackValue
           prefix [] = []
           prefix xs | testBit (last xs) 7 = prefix $ xs ++ [0]
@@ -233,10 +233,6 @@ countOp op | isConstant op     = False
            | op == OP_RESERVED = False
            | otherwise         = True
 
--- | A trivial `SigCheck` always reporting False
-rejectSignature :: SigCheck
-rejectSignature _ _ _ = False
-
 popInt :: ProgramTransition Int64
 popInt = popStack >>= \sv ->
     if (length sv) > 4 then
@@ -286,7 +282,7 @@ withStack = getStack >>= \case
     s  -> return s
 
 putStack :: Stack -> ProgramTransition ()
-putStack stack = modify $ \p -> p { stack = stack }
+putStack st = modify $ \p -> p { stack = st }
 
 prependStack :: Stack -> ProgramTransition ()
 prependStack s = getStack >>= \s' -> putStack $ s ++ s'
@@ -314,20 +310,17 @@ popStackN :: Integer -> ProgramTransition [StackValue]
 popStackN 0 = return []
 popStackN n = (:) <$> popStack <*> (popStackN (n - 1))
 
-peekStack :: ProgramTransition StackValue
-peekStack = withStack >>= \(s:_) -> return s
-
 pickStack :: Bool -> Int -> ProgramTransition ()
 pickStack remove n = do
-    stack <- getStack
+    st <- getStack
 
     when (n < 0) $
         programError "pickStack: n < 0"
-    when (n > (length stack) - 1) $
+    when (n > length st - 1) $
         programError "pickStack: n > size"
 
-    let v = stack !! n
-    when remove $ putStack $ (take n stack) ++ (drop (n+1) stack)
+    let v = st !! n
+    when remove $ putStack $ take n st ++ drop (n+1) st
     pushStack v
 
 getHashOps :: ProgramTransition HashOps

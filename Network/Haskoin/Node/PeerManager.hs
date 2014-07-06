@@ -105,6 +105,7 @@ startNode fp = do
     _ <- forkIO $ sourceTBMChan rChan $$ processUserRequest mChan
 
     -- TODO: Catch exceptions here?
+    -- TODO: Maybe log to a place like ~/.haskoin/debug.log ?
     _ <- forkIO $ runStdoutLoggingT $ flip S.evalStateT session $ do 
 
         $(logDebug) "Building list of merkle blocks to download..."
@@ -115,6 +116,7 @@ startNode fp = do
         S.modify $ \s -> s{ blocksToDownload = Q.fromList toDwn }
 
         -- Spin up some peer threads
+        -- TODO: Put the peers in a config file or write peer discovery
         startPeer $ clientSettings 8333 "localhost"
         startPeer $ clientSettings 8333 "haskoin.com"
 
@@ -226,12 +228,14 @@ processBloomFilter :: BloomFilter -> ManagerHandle ()
 processBloomFilter bloom = do
     prevBloom <- S.gets mngrBloom
     when (prevBloom /= Just bloom) $ do
+        $(logDebug) "Loading new bloom filter"
         S.modify $ \s -> s{ mngrBloom = Just bloom }
         m <- S.gets peerMap 
         forM_ (M.keys m) $ \tid -> do
             dat <- getPeerData tid
             when (peerHandshake dat) $ 
                 sendMessage tid $ MFilterLoad $ FilterLoad bloom
+            downloadBlocks tid
 
 processHeaders :: ThreadId -> Headers -> ManagerHandle ()
 processHeaders tid (Headers h) = do
@@ -365,18 +369,22 @@ sendGetHeaders tid = do
 downloadBlocks :: ThreadId -> ManagerHandle ()
 downloadBlocks tid = do
     -- Request block downloads if some are pending
-    queue         <- S.gets blocksToDownload
-    peerData      <- getPeerData tid
-    let remoteHeight  = peerHeight peerData
-        handshake     = peerHandshake peerData
-        requests      = peerInflightRequests peerData
+    queue    <- S.gets blocksToDownload
+    peerData <- getPeerData tid
+    bloom    <- S.gets mngrBloom
+    let remoteHeight = peerHeight peerData
+        handshake    = peerHandshake peerData
+        requests     = peerInflightRequests peerData
+        -- Only start block download if we have a non-empty bloom filter
+        emptyBloom   = bloomEmpty $ bloomUpdateEmptyFull $ fromJust bloom
+        goodBloom    = isJust bloom && not emptyBloom
     -- Only download blocks from peers that have a completed handshake
     -- and that are not already requesting blocks
     -- TODO: The peer downloading the headers should not also download
     -- merkle blocks
     -- TODO: Only download blocks after the wallet first key timestamp
     -- TODO: Should we allow download if, say, requests < x ?
-    when ((not $ Q.null queue) && handshake && requests == 0) $ do
+    when (goodBloom && (not $ Q.null queue) && handshake && requests == 0) $ do
         let firstHeight   = fst $ Q.index queue 0
             (toDwn, rest) = Q.spanl f queue
             -- First 500 blocks that match the peer height requirements

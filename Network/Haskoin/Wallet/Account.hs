@@ -46,6 +46,12 @@ import Network.Haskoin.Wallet.Types
 
 type AccountName = String
 
+-- | Get an account by name
+getAccount :: PersistUnique m
+           => AccountName   -- ^ Account name
+           -> m Account     -- ^ Account
+getAccount name = liftM (dbAccountValue . entityVal) $ getAccountEntity name
+
 getAccountEntity :: (PersistUnique m, PersistMonadBackend m ~ b)
              => AccountName -> m (Entity (DbAccountGeneric b))
 getAccountEntity name = do
@@ -54,24 +60,22 @@ getAccountEntity name = do
         Just ent -> return ent
         Nothing   -> liftIO $ throwIO $ InvalidAccountException $ 
             unwords ["Account", name, "does not exist"]
+
+-- | Returns a list of all accounts in the wallet.
+accountList :: PersistQuery m
+            => m [Account] -- ^ List of accounts in the wallet
+accountList = 
+    liftM (map f) $ selectList [] [Asc DbAccountCreated]
+  where
+    f = dbAccountValue . entityVal
                   
--- | Get an account by name
-getAccount :: (PersistUnique m, PersistMonadBackend m ~ b)
-           => AccountName             -- ^ Account name
-           -> m (DbAccountGeneric b)  -- ^ Account
-getAccount name = liftM entityVal $ getAccountEntity name
-
-isMSAccount :: DbAccountGeneric b -> Bool
-isMSAccount acc = (isJust $ dbAccountMsRequired acc) && 
-              (isJust $ dbAccountMsTotal acc) 
-
 -- | Create a new account from an account name. Accounts are identified by
 -- their name and they must be unique. After creating a new account, you may
 -- want to call 'setLookAhead'.
-newAccount :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b) 
-             => String                 -- ^ Wallet name 
-             -> String                 -- ^ Account name
-             -> m (DbAccountGeneric b) -- ^ Returns the new account information
+newAccount :: (PersistUnique m, PersistQuery m) 
+             => String     -- ^ Wallet name 
+             -> String     -- ^ Account name
+             -> m Account  -- ^ Returns the new account information
 newAccount wname name = do
     prevAcc <- getBy $ UniqueAccName name
     when (isJust prevAcc) $ liftIO $ throwIO $ AccountSetupException $
@@ -79,14 +83,10 @@ newAccount wname name = do
     time <- liftIO getCurrentTime
     (Entity wk w) <- getWalletEntity wname
     let deriv = fromIntegral $ dbWalletAccIndex w + 1
-        (k,i) = head $ accPubKeys (dbWalletMaster w) deriv
-        acc   = DbAccount name 
-                          (fromIntegral i) 
-                          (concat ["m/",show i,"'/"])
-                          k
-                          (-1) (-1) (-1) (-1)
-                          Nothing Nothing [] wk time
-    insert_ acc
+        (k,i) = head $ accPubKeys (walletMasterKey $ dbWalletValue w) deriv
+        acc   = RegularAccount name wname (fromIntegral i) k
+        dbacc = DbAccount name acc (-1) (-1) (-1) (-1) wk time
+    insert_ dbacc
     update wk [DbWalletAccIndex =. fromIntegral i]
     return acc
 
@@ -99,13 +99,13 @@ newAccount wname name = do
 -- In order to prevent usage mistakes, you can not create a multisignature 
 -- account with other keys from your own wallet. Once the account is set up
 -- with all the keys, you may want to call 'setLookAhead'.
-newMSAccount :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
-             => String    -- ^ Wallet name
-             -> String    -- ^ Account name
-             -> Int       -- ^ Required number of keys (m in m of n)
-             -> Int       -- ^ Total number of keys (n in m of n)
-             -> [XPubKey] -- ^ Thirdparty public keys
-             -> m (DbAccountGeneric b) -- ^ Returns the new account information
+newMSAccount :: (PersistUnique m, PersistQuery m)
+             => String       -- ^ Wallet name
+             -> String       -- ^ Account name
+             -> Int          -- ^ Required number of keys (m in m of n)
+             -> Int          -- ^ Total number of keys (n in m of n)
+             -> [XPubKey]    -- ^ Thirdparty public keys
+             -> m Account    -- ^ Returns the new account information
 newMSAccount wname name m n mskeys = do
     prevAcc <- getBy $ UniqueAccName name
     when (isJust prevAcc) $ liftIO $ throwIO $ AccountSetupException $
@@ -119,68 +119,65 @@ newMSAccount wname name m n mskeys = do
     checkOwnKeys keys
     (Entity wk w) <- getWalletEntity wname
     let deriv = fromIntegral $ dbWalletAccIndex w + 1
-        (k,i) = head $ accPubKeys (dbWalletMaster w) deriv
-        acc   = DbAccount name 
-                          (fromIntegral i) 
-                          (concat ["m/",show i,"'/"])
-                          k
-                          (-1) (-1) (-1) (-1) 
-                          (Just m) (Just n) 
-                          keys
-                          wk time
-    insert_ acc
+        (k,i) = head $ accPubKeys (walletMasterKey $ dbWalletValue w) deriv
+        acc   = MultisigAccount name wname (fromIntegral i) k m n keys
+        dbacc = DbAccount name acc (-1) (-1) (-1) (-1) wk time
+    insert_ dbacc
     update wk [DbWalletAccIndex =. fromIntegral i]
     return acc
 
 -- | Add new thirdparty keys to a multisignature account. This function can
 -- fail if the multisignature account already has all required keys. In order
 -- to prevent usage mistakes, adding a key from your own wallet will fail.
-addAccountKeys :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
+addAccountKeys :: (PersistUnique m, PersistQuery m)
                => AccountName -- ^ Account name
                -> [XPubKey]   -- ^ Thirdparty public keys to add
-               -> m (DbAccountGeneric b) -- ^ Returns the account information
+               -> m Account   -- ^ Returns the account information
 addAccountKeys name keys 
     | null keys = liftIO $ throwIO $
          AccountSetupException "Thirdparty key list can not be empty"
     | otherwise = do
-        (Entity ai acc) <- getAccountEntity name
-        unless (isMSAccount acc) $ liftIO $ throwIO $ AccountSetupException 
+        (Entity ai dbacc) <- getAccountEntity name
+        unless (isMSAccount dbacc) $ liftIO $ throwIO $ AccountSetupException 
             "Can only add keys to a multisig account"
         checkOwnKeys keys
-        let prevKeys = dbAccountMsKeys acc
-        when (length prevKeys == (fromJust $ dbAccountMsTotal acc) - 1) $ 
+        let acc      = dbAccountValue dbacc
+            prevKeys = accountKeys acc
+        when (length prevKeys == (accountTotal acc) - 1) $ 
             liftIO $ throwIO $ AccountSetupException 
                 "The account is complete and no further keys can be added"
         let newKeys = nub $ prevKeys ++ keys
-            newAcc  = acc { dbAccountMsKeys = newKeys }
-        unless (length newKeys < (fromJust $ dbAccountMsTotal acc)) $
+            newAcc  = acc { accountKeys = newKeys }
+        unless (length newKeys < accountTotal acc) $
             liftIO $ throwIO $ AccountSetupException
                 "Adding too many keys to the account"
-        replace ai newAcc
+        replace ai dbacc{ dbAccountValue = newAcc }
         return newAcc
 
 checkOwnKeys :: PersistQuery m => [XPubKey] -> m ()
 checkOwnKeys keys = do
-    -- TODO: Match PubKey instead of XPubKey to avoid playing 
-    -- with height or other values
-    exists <- mapM (\x -> count [DbAccountKey ==. AccPubKey x]) keys
-    unless (sum exists == 0) $ liftIO $ throwIO $ AccountSetupException 
+    accs <- accountList
+    let myKeys  = map (xPubKey . getAccPubKey . accountKey) accs
+        overlap = filter (`elem` myKeys) $ map xPubKey keys
+    unless (null overlap) $ liftIO $ throwIO $ AccountSetupException 
         "Can not add your own keys to a multisig account"
-
--- | Returns a list of all accounts in the wallet.
-accountList :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
-            => m [DbAccountGeneric b] -- ^ List of accounts in the wallet
-accountList = liftM (map entityVal) $ selectList [] [Asc DbAccountCreated]
 
 -- | Returns information on extended public and private keys of an account.
 -- For a multisignature account, thirdparty keys are also returned.
-accountPrvKey :: (PersistUnique m, PersistMonadBackend m ~ b)
+accountPrvKey :: PersistUnique m
               => AccountName -- ^ Account name
               -> m AccPrvKey -- ^ Account private key
 accountPrvKey name = do
-    acc <- getAccount name
-    w   <- liftM fromJust (get $ dbAccountWallet acc)
-    let master = dbWalletMaster w
-        deriv  = fromIntegral $ dbAccountIndex acc
+    account <- getAccount name
+    wallet  <- getWallet $ accountWallet account
+    let master = walletMasterKey wallet
+        deriv  = accountIndex account
     return $ fromJust $ accPrvKey master deriv
+
+{- Helpers -}
+
+isMSAccount :: DbAccountGeneric b -> Bool
+isMSAccount dbacc = case dbAccountValue dbacc of
+    MultisigAccount _ _ _ _ _ _ _ -> True
+    _                             -> False
 

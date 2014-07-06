@@ -8,7 +8,7 @@ module Network.Haskoin.Wallet.Address
 , addressPage
 , newAddrs
 , newAddrsGeneric
-, addressLabel
+, setAddrLabel
 , addressPrvKey
 , setLookAhead
 , adjustLookAhead
@@ -48,16 +48,21 @@ import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Account
 import Network.Haskoin.Wallet.Root
 
-getAddress :: (PersistUnique m, PersistMonadBackend m ~ b)
-           => AccountName
-           -> Int
-           -> Bool 
-           -> m (DbAddressGeneric b)
-getAddress accName key internal = 
-    liftM entityVal $ getAddressEntity accName key internal
+toPaymentAddr :: DbAddressGeneric b -> PaymentAddress
+toPaymentAddr x = PaymentAddress (dbAddressValue x) 
+                                 (dbAddressLabel x) 
+                                 (dbAddressIndex x)
+
+-- Get an address by account name and key
+getAddress :: PersistUnique m
+           => AccountName       -- ^ Account name
+           -> KeyIndex          -- ^ Derivation index (key)
+           -> m PaymentAddress  -- ^ Payment address
+getAddress accName key = 
+    liftM (toPaymentAddr . entityVal) $ getAddressEntity accName key False
 
 getAddressEntity :: (PersistUnique m, PersistMonadBackend m ~ b)
-                 => AccountName -> Int -> Bool 
+                 => AccountName -> KeyIndex -> Bool 
                  -> m (Entity (DbAddressGeneric b))
 getAddressEntity accName key internal = do
     (Entity ai acc) <- getAccountEntity accName
@@ -69,9 +74,9 @@ getAddressEntity accName key internal = do
 
 -- | Returns all addresses for an account (excluding look-aheads and internal
 -- addresses)
-addressList :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
-            => AccountName
-            -> m [DbAddressGeneric b]
+addressList :: (PersistUnique m, PersistQuery m)
+            => AccountName        -- ^ Account name
+            -> m [PaymentAddress] -- ^ Payment addresses
 addressList name = do
     (Entity ai acc) <- getAccountEntity name
     addrs <- selectList [ DbAddressAccount ==. ai 
@@ -79,12 +84,13 @@ addressList name = do
                         , DbAddressIndex <=. dbAccountExtIndex acc
                         ]
                         [ Asc DbAddressId ]
-    return $ map entityVal addrs
+    return $ map (toPaymentAddr . entityVal) addrs
 
 -- | Returns a count of all addresses in an account (excluding look-aheads and
 -- internal addresses)
 addressCount :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
-             => AccountName -> m Int
+             => AccountName  -- ^ Account name
+             -> m Int        -- ^ Address count
 addressCount name = do
     (Entity ai acc) <- getAccountEntity name
     count [ DbAddressAccount ==. ai 
@@ -94,11 +100,11 @@ addressCount name = do
 
 -- | Returns a page of addresses for an account. Pages are numbered starting
 -- from page 1. Requesting page 0 will return the last page. 
-addressPage :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
+addressPage :: (PersistUnique m, PersistQuery m)
             => AccountName            -- ^ Account name
             -> Int                    -- ^ Requested page number
             -> Int                    -- ^ Number of addresses per page
-            -> m ([DbAddressGeneric b], Int) 
+            -> m ([PaymentAddress], Int) 
                 -- ^ (Requested page, Highest page number)
 addressPage name pageNum resPerPage 
     | pageNum < 0 = liftIO $ throwIO $ InvalidPageException $ 
@@ -110,25 +116,26 @@ addressPage name pageNum resPerPage
         addrCount <- addressCount name
         let maxPage = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
             page | pageNum == 0 = maxPage
-                 | otherwise = pageNum
+                 | otherwise    = pageNum
         when (page > maxPage) $ liftIO $ throwIO $ InvalidPageException $ 
             unwords ["The page number", show pageNum, "is too high"]
-        addrs <- selectList [ DbAddressAccount ==. ai
-                            , DbAddressInternal ==. False
-                            , DbAddressIndex <=. dbAccountExtIndex acc
-                            ] 
-                            [ Asc DbAddressId
-                            , LimitTo resPerPage
-                            , OffsetBy $ (page - 1) * resPerPage
-                            ]
+        addrs <- selectList 
+            [ DbAddressAccount ==. ai
+            , DbAddressInternal ==. False
+            , DbAddressIndex <=. dbAccountExtIndex acc
+            ] 
+            [ Asc DbAddressId
+            , LimitTo resPerPage
+            , OffsetBy $ (page - 1) * resPerPage
+            ]
+        return $ ((map (toPaymentAddr . entityVal) addrs), maxPage)
 
-        return $ ((map entityVal addrs), maxPage)
-
-newAddrs :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
-         => AccountName 
-         -> Int 
-         -> m [DbAddressGeneric b]
-newAddrs name cnt = newAddrsGeneric name cnt False
+-- | Generate new payment addresses for an account
+newAddrs :: (PersistUnique m, PersistQuery m)
+         => AccountName         -- ^ Account name
+         -> Int                 -- ^ Number of addresses to generate 
+         -> m [PaymentAddress]  -- ^ Newly generated addresses
+newAddrs name cnt = liftM (map toPaymentAddr) $ newAddrsGeneric name cnt False
 
 newAddrsGeneric :: ( PersistUnique m
                    , PersistQuery m
@@ -141,13 +148,8 @@ newAddrsGeneric name cnt internal
     | otherwise = do
         time <- liftIO getCurrentTime
         (Entity ai acc) <- getAccountEntity name
-        let tree | internal  = "1/"
-                 | otherwise = "0/"
-            build (a,i) = DbAddress 
-                             a "" (fromIntegral i)
-                             (concat [dbAccountTree acc,tree,show i,"/"])
-                             ai internal time
-        let gapAddr = map build $ take cnt $ f acc
+        let build (a,i) = DbAddress a "" (fromIntegral i) ai internal time
+            gapAddr     = map build $ take cnt $ f acc
         _ <- insertMany gapAddr
         resAddr <- liftM (map entityVal) $ selectList 
             [ DbAddressIndex >. fIndex acc
@@ -170,12 +172,12 @@ newAddrsGeneric name cnt internal
   where 
     f acc | isMSAccount acc = 
               (if internal then intMulSigAddrs else extMulSigAddrs)
-                  (dbAccountKey acc)
-                  (dbAccountMsKeys acc) 
-                  (fromJust $ dbAccountMsRequired acc)
+                  (accountKey $ dbAccountValue acc)
+                  (accountKeys $ dbAccountValue acc) 
+                  (accountRequired $ dbAccountValue acc)
                   (fromIntegral $ fLookAhead acc + 1)
           | otherwise = (if internal then intAddrs else extAddrs)
-              (dbAccountKey acc)
+              (accountKey $ dbAccountValue acc)
               (fromIntegral $ fLookAhead acc + 1)
     fLookAhead | internal  = dbAccountIntLookAhead
                | otherwise = dbAccountExtLookAhead
@@ -183,30 +185,29 @@ newAddrsGeneric name cnt internal
            | otherwise = dbAccountExtIndex
 
 -- | Add a label to an address.
-addressLabel :: (PersistUnique m, PersistMonadBackend m ~ b)
-             => AccountName   -- ^ Account name
-             -> Int           -- ^ Derivation index of the address
-             -> String        -- ^ New label
-             -> m (DbAddressGeneric b) -- ^ New address information
-addressLabel name key label = do
-    acc <- getAccount name
-    when (key > dbAccountExtIndex acc) $ liftIO $ throwIO $
+setAddrLabel :: PersistUnique m
+             => AccountName      -- ^ Account name
+             -> KeyIndex         -- ^ Derivation index of the address
+             -> String           -- ^ New label
+             -> m PaymentAddress -- ^ New address information
+setAddrLabel name key label = do
+    (Entity _ dbacc) <- getAccountEntity name
+    when (key > dbAccountExtIndex dbacc) $ liftIO $ throwIO $
         InvalidAddressException "The address key does not exist"
     (Entity i add) <- getAddressEntity name key False
     let newAddr = add { dbAddressLabel = label }
     replace i newAddr
-    return newAddr
+    return $ toPaymentAddr newAddr
 
 -- | Returns the private key of an address.
-addressPrvKey :: (PersistUnique m, PersistMonadBackend m ~ b)
+addressPrvKey :: PersistUnique m
               => AccountName      -- ^ Account name
-              -> Int              -- ^ Derivation index of the address
+              -> KeyIndex         -- ^ Derivation index of the address
               -> m PrvKey         -- ^ Private key
 addressPrvKey name key = do
     accPrv <- accountPrvKey name
-    add    <- getAddress name key False
-    let index      = fromIntegral $ dbAddressIndex add
-        addrPrvKey = fromJust $ extPrvKey accPrv index
+    add    <- getAddress name key 
+    let addrPrvKey = fromJust $ extPrvKey accPrv $ addressIndex add
     return $ xPrvKey $ getAddrPrvKey addrPrvKey
 
 adjustLookAhead :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
@@ -224,11 +225,12 @@ adjustLookAhead a = do
         _ <- newAddrsGeneric (dbAccountName acc) diff (dbAddressInternal a)
         return ()
 
--- | Set how many look ahead addresses to generate for an account
+-- | Set how many look ahead addresses to generate for an account. This will
+-- set the look-ahead for both internal and external addresses.
 setLookAhead :: (PersistUnique m, PersistQuery m)
-                    => AccountName -- ^ Account name
-                    -> Int         -- ^ Number of look-ahead addresses 
-                    -> m ()
+             => AccountName -- ^ Account name
+             -> Int         -- ^ Number of look-ahead addresses 
+             -> m ()
 setLookAhead name lookAhead = do
     setLookAheadGeneric name lookAhead True
     setLookAheadGeneric name lookAhead False

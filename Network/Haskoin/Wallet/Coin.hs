@@ -36,14 +36,14 @@ balance name = do
     return $ sum $ map (coinValue . dbCoinValue . entityVal) coins
 
 unspentCoins :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b) 
-             => AccountName         -- ^ Account name
-             -> m [DbCoinGeneric b] -- ^ List of unspent coins
+             => AccountName   -- ^ Account name
+             -> m [Coin]      -- ^ List of unspent coins
 unspentCoins name = do
     (Entity ai _) <- getAccountEntity name
     coins <- selectList 
         [ DbCoinAccount ==. ai
         , DbCoinStatus  ==. Unspent
         ] [Asc DbCoinCreated]
-    return $ map entityVal coins
+    return $ map (dbCoinValue . entityVal) coins
 
 

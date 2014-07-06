@@ -16,6 +16,7 @@ import System.Console.GetOpt
     , ArgOrder (Permute)
     )
 import qualified System.Environment as E (getArgs)
+import System.Posix.Daemon
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (void, forM, forM_, when, liftM, unless, mzero)
@@ -48,9 +49,12 @@ import Database.Persist.Sql
     )
 import Database.Persist.Sqlite (createSqlitePool)
 
+import Data.Default
 import Data.Word (Word32, Word64)
 import Data.List (sortBy)
 import Data.Maybe (listToMaybe, fromJust, isNothing, isJust, fromMaybe)
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString as BS
 import qualified Data.HashMap.Strict as H
 import qualified Data.Vector as V
 import qualified Data.Text as T (pack, unpack, splitOn)
@@ -59,8 +63,19 @@ import Data.Conduit.TMChan
 import Data.Conduit 
     ( Sink
     , awaitForever
-    , ($$) 
+    , ($$), (=$) 
+    , yield
+    , await
     )
+import Data.Conduit.Network 
+    ( ClientSettings(..)
+    , runTCPClient
+    , clientSettings
+    , appSink
+    , appSource
+    , AppData
+    )
+import qualified Data.Conduit.Binary as CB
 import Data.Aeson (Value (Null), (.=), object, toJSON, decode)
 import Data.Aeson.Types
     ( Value (Object, String)
@@ -82,6 +97,8 @@ import qualified Data.Aeson.Encode.Pretty as JSON
     , confIndent
     )
 
+import Network.Haskoin.Server
+import Network.Haskoin.Server.Types
 import Network.Haskoin.Node.PeerManager
 
 import Network.Haskoin.Wallet
@@ -95,15 +112,16 @@ import Network.Haskoin.Script
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto 
 import Network.Haskoin.Transaction
+import Network.Haskoin.Stratum hiding (Coin(coinValue))
 import Network.Haskoin.Util
+
+type Args = [String]
 
 data Options = Options
     { optCount    :: Int
     , optSigHash  :: SigHash
     , optFee      :: Word64
     , optJson     :: Bool
-    , optHelp     :: Bool
-    , optVersion  :: Bool
     , optPass     :: String
     } deriving (Eq, Show)
 
@@ -113,8 +131,6 @@ defaultOptions = Options
     , optSigHash  = SigAll False
     , optFee      = 10000
     , optJson     = False
-    , optHelp     = False
-    , optVersion  = False
     , optPass     = ""
     } 
 
@@ -134,12 +150,6 @@ options =
     , Option ['j'] ["json"]
         (NoArg $ \opts -> return opts{ optJson = True }) $
         "Format result as JSON (default: YAML)"
-    , Option ['h'] ["help"]
-        (NoArg $ \opts -> return opts{ optHelp = True }) $
-        "Display this help message"
-    , Option ['v'] ["version"]
-        (NoArg $ \opts -> return opts{ optVersion = True }) $
-        "Show version information"
     , Option ['p'] ["passphrase"]
         (ReqArg (\s opts -> return opts{ optPass = s }) "PASSPHRASE") $
         "Optional Passphrase for mnemonic"
@@ -164,7 +174,11 @@ usageHeader = "Usage: hw [<options>] <command> [<args>]"
 
 cmdHelp :: [String]
 cmdHelp = 
-    [ "Wallet commands:" 
+    [ "Server commands:" 
+    , "  start                             Start the haskoin daemon"
+    , "  stop                              Stop the haskoin daemon"
+    , ""
+    , "Wallet commands:" 
     , "  newwallet name [mnemonic]         Create a new wallet"
     , "  walletlist                        List all wallets"
     , ""
@@ -198,7 +212,6 @@ cmdHelp =
     , "  allcoins                          List all coins per account"
     , ""
     , "Utility commands: "
-    , "  daemon                            Run haskoin as an SPV node"
     , "  decodetx   tx                     Decode HEX transaction"
     , "  buildrawtx"
     , "      '[{\"txid\":txid,\"vout\":n},...]' '{addr:amnt,...}'"
@@ -206,6 +219,10 @@ cmdHelp =
     , "      tx" 
     , "      " ++ sigdata
     , "      '[prvkey,...]' [-s SigHash]" 
+    , ""
+    , "Other commands: "
+    , "  version                           Display version information"
+    , "  help                              Display this help information"
     ]
   where 
     sigdata = concat
@@ -234,228 +251,225 @@ main :: IO ()
 main = E.getArgs >>= \args -> case getOpt Permute options args of
     (o,xs,[]) -> do
         opts <- foldl (>>=) (return defaultOptions) o
-        process opts xs
+        processCommand opts xs
     (_,_,msgs) -> print $ unlines $ msgs ++ [usage]
-
--- Create and return haskoin working directory
-getWorkDir :: IO FilePath
-getWorkDir = do
-    dir <- getAppUserDataDirectory "haskoin"
-    createDirectoryIfMissing True dir
-    return dir
 
 catchEx :: IOError -> Maybe String
 catchEx = return . ioeGetErrorString
 
-runDB :: ConnectionPool -> SqlPersistT (ResourceT (NoLoggingT IO)) a -> IO a
-runDB pool m = runNoLoggingT $ runResourceT $ runSqlPool m pool
+        -- TODO: Handle the exceptions
+        -- when (isRight valE) $ do
+        --     let val = fromRight valE
+        --     if val == Null then return () else if optJson opts 
+        --         then formatStr $ bsToString $ toStrictBS $ 
+        --             JSON.encodePretty' 
+        --             JSON.defConfig{ JSON.confIndent = 2 } val
+        --         else formatStr $ bsToString $ YAML.encode val
 
-process :: Options -> [String] -> IO ()
-process opts xs 
-    -- -h and -v can be called without a command
-    | optHelp opts = formatStr usage
-    | optVersion opts = print haskoinUserAgent
-    -- otherwise require a command
-    | null xs = formatStr usage
-    | otherwise = getWorkDir >>= \dir -> do
-        let (cmd,args) = (head xs, tail xs)
-            walletFile = T.pack $ concat [dir, "/wallet"]
-            headerFile = concat [dir, "/headerchain"]
+invalidErr :: String
+invalidErr = "Invalid request"
 
-        pool <- createSqlitePool walletFile 10
-        runDB pool $ runMigrationSilent migrateWallet >> initWalletDB
+-- TODO: Rename existing log files to prevent overriding them
+processCommand :: Options -> Args -> IO ()
+processCommand opts args = getWorkDir >>= \dir -> case args of
+    ["start"] -> do
+        runDetached (Just $ pidFile dir) (ToFile $ logFile dir) runServer
+        putStrLn "haskoin daemon started"
+    ["stop"] -> do
+        killAndWait $ pidFile dir
+        putStrLn "haskoin daemon stopped"
+    "newwallet" : name : mnemonic -> do
+        let req = case mnemonic of
+                []  -> CreateFullWallet name (optPass opts) Nothing
+                [m] -> CreateFullWallet name (optPass opts) (Just m)
+                _   -> error invalidErr
+        res <- sendRequest req 
+        print res
+    ["walletlist"] -> do
+        res <- sendRequest WalletList
+        print res
+    [] -> formatStr usage
+    ["help"] -> formatStr usage
+    ["version"] -> putStrLn haskoinUserAgent
+    _ -> error invalidErr
+  where
+    pidFile dir = concat [dir, "/hwnode.pid"]
+    logFile dir = concat [dir, "/stdout.log"]
 
-        if cmd == "daemon" 
-            then do
-                (eChan, rChan) <- startNode headerFile 
-                bloom <- runDB pool walletBloomFilter
-                atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
-                sourceTBMChan eChan $$ processNodeEvents pool
-            else do
-                valE <- tryJust catchEx $ runDB pool $ 
-                            dispatchCommand cmd opts args 
+sendRequest :: WalletRequest -> IO (Either String WalletResponse)
+sendRequest req = runTCPClient (clientSettings 4000 "127.0.0.1") go
+  where
+    source = CB.sourceLbs $ toLazyBS $ encodeWalletRequest req (Just $ IntId 0)
+    go server = do
+        source $$ appSink server
+        appSource server $$ decodeResult req
 
-                -- TODO: Handle the exceptions
-                when (isRight valE) $ do
-                    let val = fromRight valE
-                    if val == Null then return () else if optJson opts 
-                        then formatStr $ bsToString $ toStrictBS $ 
-                            JSON.encodePretty' 
-                            JSON.defConfig{ JSON.confIndent = 2 } val
-                        else formatStr $ bsToString $ YAML.encode val
-
-processNodeEvents :: ConnectionPool -> Sink NodeEvent IO ()
-processNodeEvents pool = awaitForever $ \e -> lift $ runDB pool $ case e of
-    MerkleBlockEvent xs -> void $ importBlocks xs
-    TxEvent tx          -> void $ importTx tx False
-
-type Command m = m Value
-type Args = [String]
-
-whenArgs :: (MonadLogger m, MonadIO m)
-         => Args -> (Int -> Bool) -> Command m -> Command m
-whenArgs args f cmd 
-    | f $ length args = cmd
-    | otherwise = liftIO $ throwIO $
-        InvalidCommandException "Invalid number of arguments"
+decodeResult :: Monad m 
+             => WalletRequest
+             -> Sink BS.ByteString m (Either String WalletResponse)
+decodeResult req = do
+    bs <- await 
+    if isJust bs
+        then return $ decodeWalletResponse (fromJust bs) req
+        else decodeResult req
 
 -- TODO: Split this in individual functions ?
-dispatchCommand :: ( MonadLogger m
-                   , PersistStore m
-                   , PersistUnique m
-                   , PersistQuery m
-                   , PersistMonadBackend m ~ SqlBackend
-                   ) 
-                => String -> Options -> Args -> Command m
-dispatchCommand cmd opts args = case cmd of
-    "newwallet" -> whenArgs args (<= 2) $ do
-        ms <- newWalletMnemo 
-                (head args) (optPass opts) (listToMaybe $ drop 1 args)
-        return $ object ["Seed" .= ms]
-    "walletlist" -> whenArgs args (== 0) $ do
-        ws <- walletList
-        return $ toJSON $ map yamlWallet ws
-    "list" -> whenArgs args (== 1) $ do
-        (as, m) <- addressPage (head args) 0 (optCount opts)
-        return $ yamlAddrList as m (optCount opts) m
-    "page" -> whenArgs args (== 2) $ do
-        let pageNum = read $ args !! 1
-        (as, m) <- addressPage (head args) pageNum (optCount opts)
-        return $ yamlAddrList as pageNum (optCount opts) m
-    "new" -> whenArgs args (>= 2) $ do
-        let labels = drop 1 args
-        addrs  <- newAddrs (head args) $ length labels
-        lAddrs <- forM (zip labels addrs) $ \(l,a) -> 
-            addressLabel (head args) (dbAddressIndex a) l
-        return $ toJSON $ map yamlAddr lAddrs
-    "genaddr" -> whenArgs args (== 1) $ do
-        addrs <- newAddrs (head args) (optCount opts)
-        return $ toJSON $ map yamlAddr addrs
-    "label" -> whenArgs args (== 3) $ do
-        a <- addressLabel (head args) (read $ args !! 1) (args !! 2)
-        return $ yamlAddr a
-    "balance" -> whenArgs args (== 1) $ do
-        bal <- balance $ head args
-        return $ object [ "Balance" .= bal ]
-    "balances" -> whenArgs args (== 0) $ do
-        accs <- accountList
-        bals <- forM accs $ \a -> balance $ dbAccountName a
-        return $ toJSON $ flip map (zip accs bals) $ \(a, b) -> object
-            [ "Account" .= (dbAccountName a)
-            , "Balance" .= b
-            ]
-    "tx" -> whenArgs args (== 1) $ do
-        accTxs <- txList $ head args
-        return $ toJSON $ map yamlTx accTxs
-    "send" -> whenArgs args (== 3) $ do
-        (tx, status) <- 
-            sendTx (head args) [(args !! 1, read $ args !! 2)] (optFee opts)
-        return $ object [ "Tx" .= bsToHex (encode' tx)
-                        , "Status" .= status
-                        ]
-    "sendmany" -> whenArgs args (>= 2) $ do
-        let f [a,b] = (T.unpack a,read $ T.unpack b)
-            f _     = error "sendmany: Invalid format addr:amount"
-            dests   = map (f . (T.splitOn (T.pack ":")) . T.pack) $ drop 1 args
-        (tx, status) <- sendTx (head args) dests (optFee opts)
-        return $ object [ "Tx" .= bsToHex (encode' tx)
-                        , "Status" .= status
-                        ]
-    "newacc" -> whenArgs args (== 2) $ do
-        let [wallet, account] = args
-        acc <- newAccount wallet account
-        setLookAhead account 30 
-        return $ yamlAcc acc
-    "newms" -> whenArgs args (>= 4) $ do
-        let keysM = mapM xPubImport $ drop 4 args
-            keys  = fromJust keysM
-        when (isNothing keysM) $ liftIO $ throwIO $ 
-            ParsingException "Could not parse keys"
-        let wallet : account : mS : nS : _ = args
-            m = read mS
-            n = read nS
-        acc <- newMSAccount wallet account m n keys
-        when (length (dbAccountMsKeys acc) == n - 1) $
-            setLookAhead account 30 
-        return $ yamlAcc acc
-    "addkeys" -> whenArgs args (>= 2) $ do
-        let keysM = mapM xPubImport $ drop 1 args
-            keys  = fromJust keysM
-        when (isNothing keysM) $ liftIO $ throwIO $
-            ParsingException "Could not parse keys"
-        acc <- addAccountKeys (head args) keys
-        let n = fromJust $ dbAccountMsTotal acc
-        when (length (dbAccountMsKeys acc) == n - 1) $ do
-            setLookAhead (head args) 30 
-        return $ yamlAcc acc
-    "accinfo" -> whenArgs args (== 1) $ do
-        acc <- getAccount $ head args
-        return $ yamlAcc acc
-    "acclist" -> whenArgs args (== 0) $ do
-        accs <- accountList 
-        return $ toJSON $ map yamlAcc accs
-    "dumpkeys" -> whenArgs args (== 1) $ do
-        acc <- getAccount $ head args
-        prv <- accountPrvKey $ head args
-        let ms = if isMSAccount acc then Just $ dbAccountMsKeys acc else Nothing
-        return $ object $
-            [ "Account" .= yamlAcc acc
-            , "PubKey" .= (xPubExport $ getAccPubKey $ dbAccountKey acc)
-            , "PrvKey" .= (xPrvExport $ getAccPrvKey prv)
-            ] ++ maybe [] (\ks -> [ "MSKeys" .= map xPubExport ks ]) ms
-    "wif" -> whenArgs args (== 2) $ do
-        prvKey <- addressPrvKey (head args) (read $ args !! 1)
-        return $ object [ "WIF" .= T.pack (toWIF prvKey) ]
-    "coins" -> whenArgs args (== 1) $ do
-        coins <- unspentCoins $ head args
-        return $ toJSON $ map yamlCoin coins
-    "allcoins" -> whenArgs args (== 0) $ do
-        accs <- accountList 
-        coins <- forM accs $ \a -> unspentCoins $ dbAccountName a
-        return $ toJSON $ flip map (zip accs coins) $ \(acc, cs) -> object
-            [ "Account" .= dbAccountName acc
-            , "Coins" .= map yamlCoin cs
-            ]
-    "signtx" -> whenArgs args (== 2) $ do
-        let txM = decodeToMaybe =<< (hexToBS $ args !! 1)
-            tx  = fromJust txM
-        when (isNothing txM) $ liftIO $ throwIO $
-            ParsingException "Could not parse transaction"
-        (t, s) <- signWalletTx (head args) tx (optSigHash opts)
-        return $ object [ "Tx"       .= bsToHex (encode' t)
-                        , "Status"   .= s
-                        ]
-    "importtx" -> whenArgs args (== 1) $ do
-        let txM = decodeToMaybe =<< (hexToBS $ head args)
-            tx  = fromJust txM
-        when (isNothing txM) $ liftIO $ throwIO $
-            ParsingException "Could not parse transaction"
-        accTxs <- importTx tx True
-        return $ toJSON $ map yamlTx accTxs
-    "removetx" -> whenArgs args (== 1) $ do
-        let idM = decodeTxHashLE $ head args
-        when (isNothing idM) $ liftIO $ throwIO $
-            ParsingException "Could not parse transaction id"
-        hashes <- removeTx $ fromJust idM
-        return $ toJSON $ map encodeTxHashLE hashes
-    "decodetx" -> whenArgs args (== 1) $ do
-        tx <- decodeRawTx $ head args
-        return $ toJSON tx
-    "buildrawtx" -> whenArgs args (== 2) $ do
-        tx <- buildRawTx (head args) (args !! 1)
-        return $ object [ "Tx" .= bsToHex (encode' tx) ]
-    "signrawtx"    -> whenArgs args (== 3) $ do 
-        let txM = decodeToMaybe =<< (hexToBS $ head args)
-            tx  = fromJust txM
-        when (isNothing txM) $ liftIO $ throwIO $ 
-            ParsingException "Could not parse transaction"
-        (t, s) <- signRawTx tx (args !! 1) (args !! 2) (optSigHash opts)
-        return $ object [ "Tx"     .= bsToHex (encode' t)
-                        , "Status" .= s
-                        ]
-    _ -> do
-        liftIO $ throwIO $ InvalidCommandException $ 
-            unwords ["Invalid command:", cmd]
+-- dispatchCommand :: ( MonadLogger m
+--                    , PersistStore m
+--                    , PersistUnique m
+--                    , PersistQuery m
+--                    , PersistMonadBackend m ~ SqlBackend
+--                    ) 
+--                 => String -> Options -> Args -> Command m
+-- dispatchCommand cmd opts args = case cmd of
+--     "newwallet" -> whenArgs args (<= 2) $ do
+--         ms <- newWalletMnemo 
+--                 (head args) (optPass opts) (listToMaybe $ drop 1 args)
+--         return $ object ["Seed" .= ms]
+--     "walletlist" -> whenArgs args (== 0) $ do
+--         ws <- walletList
+--         return $ toJSON $ map yamlWallet ws
+--     "list" -> whenArgs args (== 1) $ do
+--         (as, m) <- addressPage (head args) 0 (optCount opts)
+--         return $ yamlAddrList as m (optCount opts) m
+--     "page" -> whenArgs args (== 2) $ do
+--         let pageNum = read $ args !! 1
+--         (as, m) <- addressPage (head args) pageNum (optCount opts)
+--         return $ yamlAddrList as pageNum (optCount opts) m
+--     "new" -> whenArgs args (>= 2) $ do
+--         let labels = drop 1 args
+--         addrs  <- newAddrs (head args) $ length labels
+--         lAddrs <- forM (zip labels addrs) $ \(l,a) -> 
+--             addressLabel (head args) (dbAddressIndex a) l
+--         return $ toJSON $ map yamlAddr lAddrs
+--     "genaddr" -> whenArgs args (== 1) $ do
+--         addrs <- newAddrs (head args) (optCount opts)
+--         return $ toJSON $ map yamlAddr addrs
+--     "label" -> whenArgs args (== 3) $ do
+--         a <- addressLabel (head args) (read $ args !! 1) (args !! 2)
+--         return $ yamlAddr a
+--     "balance" -> whenArgs args (== 1) $ do
+--         bal <- balance $ head args
+--         return $ object [ "Balance" .= bal ]
+--     "balances" -> whenArgs args (== 0) $ do
+--         accs <- accountList
+--         bals <- forM accs $ \a -> balance $ dbAccountName a
+--         return $ toJSON $ flip map (zip accs bals) $ \(a, b) -> object
+--             [ "Account" .= (dbAccountName a)
+--             , "Balance" .= b
+--             ]
+--     "tx" -> whenArgs args (== 1) $ do
+--         accTxs <- txList $ head args
+--         return $ toJSON $ map yamlTx accTxs
+--     "send" -> whenArgs args (== 3) $ do
+--         (tx, status) <- 
+--             sendTx (head args) [(args !! 1, read $ args !! 2)] (optFee opts)
+--         return $ object [ "Tx" .= bsToHex (encode' tx)
+--                         , "Status" .= status
+--                         ]
+--     "sendmany" -> whenArgs args (>= 2) $ do
+--         let f [a,b] = (T.unpack a,read $ T.unpack b)
+--             f _     = error "sendmany: Invalid format addr:amount"
+--             dests   = map (f . (T.splitOn (T.pack ":")) . T.pack) $ drop 1 args
+--         (tx, status) <- sendTx (head args) dests (optFee opts)
+--         return $ object [ "Tx" .= bsToHex (encode' tx)
+--                         , "Status" .= status
+--                         ]
+--     "newacc" -> whenArgs args (== 2) $ do
+--         let [wallet, account] = args
+--         acc <- newAccount wallet account
+--         setLookAhead account 30 
+--         return $ yamlAcc acc
+--     "newms" -> whenArgs args (>= 4) $ do
+--         let keysM = mapM xPubImport $ drop 4 args
+--             keys  = fromJust keysM
+--         when (isNothing keysM) $ liftIO $ throwIO $ 
+--             ParsingException "Could not parse keys"
+--         let wallet : account : mS : nS : _ = args
+--             m = read mS
+--             n = read nS
+--         acc <- newMSAccount wallet account m n keys
+--         when (length (dbAccountMsKeys acc) == n - 1) $
+--             setLookAhead account 30 
+--         return $ yamlAcc acc
+--     "addkeys" -> whenArgs args (>= 2) $ do
+--         let keysM = mapM xPubImport $ drop 1 args
+--             keys  = fromJust keysM
+--         when (isNothing keysM) $ liftIO $ throwIO $
+--             ParsingException "Could not parse keys"
+--         acc <- addAccountKeys (head args) keys
+--         let n = fromJust $ dbAccountMsTotal acc
+--         when (length (dbAccountMsKeys acc) == n - 1) $ do
+--             setLookAhead (head args) 30 
+--         return $ yamlAcc acc
+--     "accinfo" -> whenArgs args (== 1) $ do
+--         acc <- getAccount $ head args
+--         return $ yamlAcc acc
+--     "acclist" -> whenArgs args (== 0) $ do
+--         accs <- accountList 
+--         return $ toJSON $ map yamlAcc accs
+--     "dumpkeys" -> whenArgs args (== 1) $ do
+--         acc <- getAccount $ head args
+--         prv <- accountPrvKey $ head args
+--         let ms = if isMSAccount acc then Just $ dbAccountMsKeys acc else Nothing
+--         return $ object $
+--             [ "Account" .= yamlAcc acc
+--             , "PubKey" .= (xPubExport $ getAccPubKey $ dbAccountKey acc)
+--             , "PrvKey" .= (xPrvExport $ getAccPrvKey prv)
+--             ] ++ maybe [] (\ks -> [ "MSKeys" .= map xPubExport ks ]) ms
+--     "wif" -> whenArgs args (== 2) $ do
+--         prvKey <- addressPrvKey (head args) (read $ args !! 1)
+--         return $ object [ "WIF" .= T.pack (toWIF prvKey) ]
+--     "coins" -> whenArgs args (== 1) $ do
+--         coins <- unspentCoins $ head args
+--         return $ toJSON $ map yamlCoin coins
+--     "allcoins" -> whenArgs args (== 0) $ do
+--         accs <- accountList 
+--         coins <- forM accs $ \a -> unspentCoins $ dbAccountName a
+--         return $ toJSON $ flip map (zip accs coins) $ \(acc, cs) -> object
+--             [ "Account" .= dbAccountName acc
+--             , "Coins" .= map yamlCoin cs
+--             ]
+--     "signtx" -> whenArgs args (== 2) $ do
+--         let txM = decodeToMaybe =<< (hexToBS $ args !! 1)
+--             tx  = fromJust txM
+--         when (isNothing txM) $ liftIO $ throwIO $
+--             ParsingException "Could not parse transaction"
+--         (t, s) <- signWalletTx (head args) tx (optSigHash opts)
+--         return $ object [ "Tx"       .= bsToHex (encode' t)
+--                         , "Status"   .= s
+--                         ]
+--     "importtx" -> whenArgs args (== 1) $ do
+--         let txM = decodeToMaybe =<< (hexToBS $ head args)
+--             tx  = fromJust txM
+--         when (isNothing txM) $ liftIO $ throwIO $
+--             ParsingException "Could not parse transaction"
+--         accTxs <- importTx tx True
+--         return $ toJSON $ map yamlTx accTxs
+--     "removetx" -> whenArgs args (== 1) $ do
+--         let idM = decodeTxHashLE $ head args
+--         when (isNothing idM) $ liftIO $ throwIO $
+--             ParsingException "Could not parse transaction id"
+--         hashes <- removeTx $ fromJust idM
+--         return $ toJSON $ map encodeTxHashLE hashes
+--     "decodetx" -> whenArgs args (== 1) $ do
+--         tx <- decodeRawTx $ head args
+--         return $ toJSON tx
+--     "buildrawtx" -> whenArgs args (== 2) $ do
+--         tx <- buildRawTx (head args) (args !! 1)
+--         return $ object [ "Tx" .= bsToHex (encode' tx) ]
+--     "signrawtx"    -> whenArgs args (== 3) $ do 
+--         let txM = decodeToMaybe =<< (hexToBS $ head args)
+--             tx  = fromJust txM
+--         when (isNothing txM) $ liftIO $ throwIO $ 
+--             ParsingException "Could not parse transaction"
+--         (t, s) <- signRawTx tx (args !! 1) (args !! 2) (optSigHash opts)
+--         return $ object [ "Tx"     .= bsToHex (encode' t)
+--                         , "Status" .= s
+--                         ]
+--     _ -> do
+--         liftIO $ throwIO $ InvalidCommandException $ 
+--             unwords ["Invalid command:", cmd]
 
 {- Utility Commands -}
 
@@ -544,74 +558,74 @@ signRawTx tx strSigi strKeys sh
 
 {- Instances for JSON -}
 
-yamlAcc :: DbAccountGeneric b -> Value
-yamlAcc acc = object $ concat
-    [ [ "Name" .= dbAccountName acc
-      , "Tree" .= dbAccountTree acc
-      ]
-    , datType, datWarn
-    ]
-    where msReq = fromJust $ dbAccountMsRequired acc
-          msTot = fromJust $ dbAccountMsTotal acc
-          ms    = unwords [show msReq,"of",show msTot]
-          miss  = msTot - length (dbAccountMsKeys acc) - 1
-          datType | isMSAccount acc = ["Type" .= unwords [ "Multisig", ms ]]
-                  | otherwise   = ["Type" .= ("Regular" :: String)]
-          datWarn | isMSAccount acc && miss > 0 =
-                      [ "Warning" .=
-                        unwords [show miss,"multisig keys missing"]
-                      ]
-                  | otherwise = []
-
-yamlWallet :: DbWalletGeneric b -> Value
-yamlWallet w = object $ 
-    [ "Name" .= dbWalletName w
-    , "Type" .= dbWalletType w
-    ]
-
-yamlAddr :: DbAddressGeneric b -> Value
-yamlAddr a
-    | null $ dbAddressLabel a = object base
-    | otherwise = object $ label:base
-  where 
-    base  = [ "Addr" .= (addrToBase58 $ dbAddressValue a)
-            , "Key"  .= dbAddressIndex a
-            , "Tree" .= dbAddressTree a
-            ]
-    label = "Label" .= dbAddressLabel a
-
-yamlAddrList :: [DbAddressGeneric b] -> Int -> Int -> Int -> Value
-yamlAddrList addrs pageNum resPerPage totPages = object
-    [ "Addresses" .= (toJSON $ map yamlAddr addrs)
-    , "Page results" .= object
-        [ "Current page"     .= pageNum
-        , "Total pages"      .= totPages
-        , "Results per page" .= resPerPage
-        ]
-    ]
-
--- TODO: Change this to an instance
-yamlTx :: AccTx -> Value
-yamlTx accTx = object $ concat
-    [ [ "Recipients" .= accTxRecipients accTx
-      , "Value" .= accTxValue accTx
-      , "Confirmations" .= accTxConfirmations accTx
-      ]
-    , if accTxOffline accTx then ["Offline" .= True] else []
-    ]
-
-yamlCoin :: DbCoinGeneric b -> Value
-yamlCoin coin = object $ concat
-    [ [ "TxID"    .= (encodeTxHashLE $ dbCoinHash coin)
-      , "Index"   .= dbCoinPos coin
-      , "Value"   .= (coinValue $ dbCoinValue coin)
-      , "Script"  .= (coinScript $ dbCoinValue coin)
-      , "Address" .= dbCoinAddress coin
-      ] 
-    , if isJust $ coinRedeem $ dbCoinValue coin 
-        then ["Redeem" .= fromJust (coinRedeem $ dbCoinValue coin)] 
-        else []
-    ]
+-- yamlAcc :: DbAccountGeneric b -> Value
+-- yamlAcc acc = object $ concat
+--     [ [ "Name" .= dbAccountName acc
+--       , "Tree" .= dbAccountTree acc
+--       ]
+--     , datType, datWarn
+--     ]
+--     where msReq = fromJust $ dbAccountMsRequired acc
+--           msTot = fromJust $ dbAccountMsTotal acc
+--           ms    = unwords [show msReq,"of",show msTot]
+--           miss  = msTot - length (dbAccountMsKeys acc) - 1
+--           datType | isMSAccount acc = ["Type" .= unwords [ "Multisig", ms ]]
+--                   | otherwise   = ["Type" .= ("Regular" :: String)]
+--           datWarn | isMSAccount acc && miss > 0 =
+--                       [ "Warning" .=
+--                         unwords [show miss,"multisig keys missing"]
+--                       ]
+--                   | otherwise = []
+-- 
+-- yamlWallet :: DbWalletGeneric b -> Value
+-- yamlWallet w = object $ 
+--     [ "Name" .= dbWalletName w
+--     , "Type" .= dbWalletType w
+--     ]
+-- 
+-- yamlAddr :: DbAddressGeneric b -> Value
+-- yamlAddr a
+--     | null $ dbAddressLabel a = object base
+--     | otherwise = object $ label:base
+--   where 
+--     base  = [ "Addr" .= (addrToBase58 $ dbAddressValue a)
+--             , "Key"  .= dbAddressIndex a
+--             , "Tree" .= dbAddressTree a
+--             ]
+--     label = "Label" .= dbAddressLabel a
+-- 
+-- yamlAddrList :: [DbAddressGeneric b] -> Int -> Int -> Int -> Value
+-- yamlAddrList addrs pageNum resPerPage totPages = object
+--     [ "Addresses" .= (toJSON $ map yamlAddr addrs)
+--     , "Page results" .= object
+--         [ "Current page"     .= pageNum
+--         , "Total pages"      .= totPages
+--         , "Results per page" .= resPerPage
+--         ]
+--     ]
+-- 
+-- -- TODO: Change this to an instance
+-- yamlTx :: AccTx -> Value
+-- yamlTx accTx = object $ concat
+--     [ [ "Recipients" .= accTxRecipients accTx
+--       , "Value" .= accTxValue accTx
+--       , "Confirmations" .= accTxConfirmations accTx
+--       ]
+--     , if accTxOffline accTx then ["Offline" .= True] else []
+--     ]
+-- 
+-- yamlCoin :: DbCoinGeneric b -> Value
+-- yamlCoin coin = object $ concat
+--     [ [ "TxID"    .= (encodeTxHashLE $ dbCoinHash coin)
+--       , "Index"   .= dbCoinPos coin
+--       , "Value"   .= (coinValue $ dbCoinValue coin)
+--       , "Script"  .= (coinScript $ dbCoinValue coin)
+--       , "Address" .= dbCoinAddress coin
+--       ] 
+--     , if isJust $ coinRedeem $ dbCoinValue coin 
+--         then ["Redeem" .= fromJust (coinRedeem $ dbCoinValue coin)] 
+--         else []
+--     ]
 
 data RawTxOutPoints = RawTxOutPoints [OutPoint] 
     deriving (Eq, Show)
@@ -692,15 +706,6 @@ instance FromJSON CoinStatus where
             (Reserved . fromJust . decodeTxHashLE) <$> obj .: "Txid"
         (String "Unspent")  -> return Unspent
         _                   -> mzero
-    parseJSON _ = mzero
-
-instance ToJSON WalletType where
-    toJSON WalletFull = String "WalletFull"
-    toJSON WalletRead = String "WalletRead"
-
-instance FromJSON WalletType where
-    parseJSON (String "WalletFull")  = return WalletFull
-    parseJSON (String "WalletRead")  = return WalletRead
     parseJSON _ = mzero
 
 instance ToJSON OutPoint where

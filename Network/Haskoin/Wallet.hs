@@ -28,7 +28,7 @@ module Network.Haskoin.Wallet
 , addressCount
 , addressPage
 , newAddrs
-, addressLabel
+, setAddrLabel
 , setLookAhead
 , addressPrvKey
 
@@ -39,6 +39,7 @@ module Network.Haskoin.Wallet
 -- *Tx Commands
 , AccTx(..) 
 , txList
+, txPage
 , importTx
 , removeTx
 , sendTx

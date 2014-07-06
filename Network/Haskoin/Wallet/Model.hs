@@ -51,8 +51,7 @@ import Network.Haskoin.Crypto
 share [mkPersist sqlSettings, mkMigrate "migrateWallet"] [persistLowerCase|
 DbWallet 
     name String
-    type WalletType
-    master MasterKey 
+    value Wallet
     accIndex Int
     created UTCTime default=CURRENT_TIME
     UniqueWalletName name
@@ -60,16 +59,11 @@ DbWallet
 
 DbAccount 
     name String
-    index Int
-    tree String
-    key AccPubKey
-    extIndex Int
-    extLookAhead Int
-    intIndex Int
-    intLookAhead Int
-    msRequired Int Maybe
-    msTotal Int Maybe
-    msKeys [XPubKey] 
+    value Account
+    extIndex KeyIndex
+    extLookAhead KeyIndex
+    intIndex KeyIndex
+    intLookAhead KeyIndex
     wallet DbWalletId
     created UTCTime default=CURRENT_TIME
     UniqueAccName name
@@ -78,8 +72,7 @@ DbAccount
 DbAddress 
     value Address
     label String
-    index Int
-    tree String
+    index KeyIndex
     account DbAccountId
     internal Bool
     created UTCTime default=CURRENT_TIME

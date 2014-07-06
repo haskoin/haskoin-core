@@ -2,7 +2,8 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE TypeFamilies      #-}
 module Network.Haskoin.Wallet.Root 
-( getWalletEntity
+( isFullWallet
+, getWalletEntity
 , getWallet
 , walletList
 , newWalletMnemo
@@ -37,9 +38,13 @@ import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Util
 
-getWallet :: (PersistUnique m, PersistMonadBackend m ~ b)
-          => String -> m (DbWalletGeneric b)
-getWallet name = liftM entityVal $ getWalletEntity name
+isFullWallet :: Wallet -> Bool
+isFullWallet (WalletFull _ _) = True
+isFullWallet _                = False
+
+-- | Get a wallet by name
+getWallet :: PersistUnique m => String -> m Wallet
+getWallet name = liftM (dbWalletValue . entityVal) $ getWalletEntity name
 
 getWalletEntity :: (PersistUnique m, PersistMonadBackend m ~ b)
             => String -> m (Entity (DbWalletGeneric b))
@@ -48,11 +53,14 @@ getWalletEntity name = do
     case entM of
         Just ent -> return ent
         Nothing  -> liftIO $ throwIO $ WalletException $ 
-            unwords ["Wallet", name, "is not initialized"]
+            unwords ["Wallet", name, "does not exist"]
 
-walletList :: (PersistQuery m, PersistMonadBackend  m ~ b) 
-           => m [DbWalletGeneric b]
-walletList = liftM (map entityVal) $ selectList [] [Asc DbWalletCreated]
+-- | Get a list of all the wallets
+walletList :: PersistQuery m => m [Wallet]
+walletList = 
+    liftM (map f) $ selectList [] [Asc DbWalletCreated]
+  where
+    f = dbWalletValue . entityVal
 
 -- | Initialize a wallet from an optional mnemonic seed and a passphrase,
 -- which could be blank.
@@ -77,6 +85,10 @@ newWalletMnemo wname p (Just s) = do
     return s
 
 newWalletMnemo wname p Nothing = do
+    -- Check this to avoid an unnecessary call to /dev/random if it fails
+    prevWallet <- getBy $ UniqueWalletName wname
+    when (isJust prevWallet) $ liftIO $ throwIO $ WalletException $
+        unwords [ "Wallet", wname, "already exists" ]
     ent <- liftIO $ devRandom 16
     let msSeedE = do
             m <- toMnemonic ent
@@ -103,10 +115,11 @@ newWallet wname seed
             unwords [ "Wallet", wname, "already exists" ]
         time <- liftIO getCurrentTime
         let master = makeMasterKey seed
+            wallet = WalletFull wname $ fromJust master
         -- This should never happen
         when (isNothing master) $ liftIO $ throwIO $ WalletException
             "The seed derivation produced an invalid key. Use another seed."
-        insert_ $ DbWallet wname WalletFull (fromJust master) (-1) time
+        insert_ $ DbWallet wname wallet (-1) time
 
 initWalletDB :: PersistQuery m => m ()
 initWalletDB = do

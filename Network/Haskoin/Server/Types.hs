@@ -136,4 +136,3 @@ decodeWalletResponse bs req = do
         return $ ResWalletList ws
     go _ _ = mzero
         
-

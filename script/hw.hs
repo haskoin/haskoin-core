@@ -384,7 +384,7 @@ decodeResult req = do
 --         let keysM = mapM xPubImport $ drop 4 args
 --             keys  = fromJust keysM
 --         when (isNothing keysM) $ liftIO $ throwIO $ 
---             ParsingException "Could not parse keys"
+--             WalletException "Could not parse keys"
 --         let wallet : account : mS : nS : _ = args
 --             m = read mS
 --             n = read nS
@@ -396,7 +396,7 @@ decodeResult req = do
 --         let keysM = mapM xPubImport $ drop 1 args
 --             keys  = fromJust keysM
 --         when (isNothing keysM) $ liftIO $ throwIO $
---             ParsingException "Could not parse keys"
+--             WalletException "Could not parse keys"
 --         acc <- addAccountKeys (head args) keys
 --         let n = fromJust $ dbAccountMsTotal acc
 --         when (length (dbAccountMsKeys acc) == n - 1) $ do
@@ -434,7 +434,7 @@ decodeResult req = do
 --         let txM = decodeToMaybe =<< (hexToBS $ args !! 1)
 --             tx  = fromJust txM
 --         when (isNothing txM) $ liftIO $ throwIO $
---             ParsingException "Could not parse transaction"
+--             WalletException "Could not parse transaction"
 --         (t, s) <- signWalletTx (head args) tx (optSigHash opts)
 --         return $ object [ "Tx"       .= bsToHex (encode' t)
 --                         , "Status"   .= s
@@ -443,13 +443,13 @@ decodeResult req = do
 --         let txM = decodeToMaybe =<< (hexToBS $ head args)
 --             tx  = fromJust txM
 --         when (isNothing txM) $ liftIO $ throwIO $
---             ParsingException "Could not parse transaction"
+--             WalletException "Could not parse transaction"
 --         accTxs <- importTx tx True
 --         return $ toJSON $ map yamlTx accTxs
 --     "removetx" -> whenArgs args (== 1) $ do
 --         let idM = decodeTxHashLE $ head args
 --         when (isNothing idM) $ liftIO $ throwIO $
---             ParsingException "Could not parse transaction id"
+--             WalletException "Could not parse transaction id"
 --         hashes <- removeTx $ fromJust idM
 --         return $ toJSON $ map encodeTxHashLE hashes
 --     "decodetx" -> whenArgs args (== 1) $ do
@@ -462,7 +462,7 @@ decodeResult req = do
 --         let txM = decodeToMaybe =<< (hexToBS $ head args)
 --             tx  = fromJust txM
 --         when (isNothing txM) $ liftIO $ throwIO $ 
---             ParsingException "Could not parse transaction"
+--             WalletException "Could not parse transaction"
 --         (t, s) <- signRawTx tx (args !! 1) (args !! 2) (optSigHash opts)
 --         return $ object [ "Tx"     .= bsToHex (encode' t)
 --                         , "Status" .= s
@@ -481,7 +481,7 @@ decodeRawTx :: MonadIO m
 decodeRawTx str 
     | isJust txM = return tx
     | otherwise  = liftIO $ throwIO $
-        ParsingException "Could not parse transaction"
+        WalletException "Could not parse transaction"
   where 
     txM = decodeToMaybe =<< (hexToBS str)
     tx  = fromJust txM
@@ -508,10 +508,10 @@ buildRawTx :: MonadIO m
 buildRawTx i o 
     | isJust opsM && isJust destsM = do
         when (isLeft txE) $ liftIO $ throwIO $
-            TransactionBuildingException $ fromLeft txE
+            WalletException $ fromLeft txE
         return tx
     | otherwise = liftIO $ throwIO $
-        ParsingException "Could not parse input values"
+        WalletException "Could not parse input values"
   where
     opsM   = decode $ toLazyBS $ stringToBS i
     destsM = decode $ toLazyBS $ stringToBS o
@@ -546,10 +546,10 @@ signRawTx tx strSigi strKeys sh
     | isJust fsM && isJust keysM = do
         let resE = detSignTx tx (map (\f -> f sh) fs) keys
         when (isLeft resE) $ liftIO $ throwIO $
-            TransactionSigningException $ fromLeft resE
+            WalletException $ fromLeft resE
         return $ fromRight resE
     | otherwise = liftIO $ throwIO $
-        ParsingException "Could not parse input values"
+        WalletException "Could not parse input values"
   where
     fsM   = decode $ toLazyBS $ stringToBS strSigi
     keysM = decode $ toLazyBS $ stringToBS strKeys

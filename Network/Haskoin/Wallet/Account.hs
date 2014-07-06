@@ -58,7 +58,7 @@ getAccountEntity name = do
     entM <- getBy $ UniqueAccName name
     case entM of
         Just ent -> return ent
-        Nothing   -> liftIO $ throwIO $ InvalidAccountException $ 
+        Nothing   -> liftIO $ throwIO $ WalletException $ 
             unwords ["Account", name, "does not exist"]
 
 -- | Returns a list of all accounts in the wallet.
@@ -78,7 +78,7 @@ newAccount :: (PersistUnique m, PersistQuery m)
              -> m Account  -- ^ Returns the new account information
 newAccount wname name = do
     prevAcc <- getBy $ UniqueAccName name
-    when (isJust prevAcc) $ liftIO $ throwIO $ AccountSetupException $
+    when (isJust prevAcc) $ liftIO $ throwIO $ WalletException $
         unwords [ "Account", name, "already exists" ]
     time <- liftIO getCurrentTime
     (Entity wk w) <- getWalletEntity wname
@@ -108,14 +108,14 @@ newMSAccount :: (PersistUnique m, PersistQuery m)
              -> m Account    -- ^ Returns the new account information
 newMSAccount wname name m n mskeys = do
     prevAcc <- getBy $ UniqueAccName name
-    when (isJust prevAcc) $ liftIO $ throwIO $ AccountSetupException $
+    when (isJust prevAcc) $ liftIO $ throwIO $ WalletException $
         unwords [ "Account", name, "already exists" ]
     let keys = nub mskeys
     time <- liftIO getCurrentTime
     unless (n >= 1 && n <= 16 && m >= 1 && m <= n) $ liftIO $ throwIO $ 
-        AccountSetupException "Invalid multisig parameters"
+        WalletException "Invalid multisig parameters"
     unless (length keys < n) $ liftIO $ throwIO $
-        AccountSetupException "Too many keys"
+        WalletException "Too many keys"
     checkOwnKeys keys
     (Entity wk w) <- getWalletEntity wname
     let deriv = fromIntegral $ dbWalletAccIndex w + 1
@@ -135,21 +135,21 @@ addAccountKeys :: (PersistUnique m, PersistQuery m)
                -> m Account   -- ^ Returns the account information
 addAccountKeys name keys 
     | null keys = liftIO $ throwIO $
-         AccountSetupException "Thirdparty key list can not be empty"
+         WalletException "Thirdparty key list can not be empty"
     | otherwise = do
         (Entity ai dbacc) <- getAccountEntity name
-        unless (isMSAccount dbacc) $ liftIO $ throwIO $ AccountSetupException 
+        unless (isMSAccount dbacc) $ liftIO $ throwIO $ WalletException 
             "Can only add keys to a multisig account"
         checkOwnKeys keys
         let acc      = dbAccountValue dbacc
             prevKeys = accountKeys acc
         when (length prevKeys == (accountTotal acc) - 1) $ 
-            liftIO $ throwIO $ AccountSetupException 
+            liftIO $ throwIO $ WalletException 
                 "The account is complete and no further keys can be added"
         let newKeys = nub $ prevKeys ++ keys
             newAcc  = acc { accountKeys = newKeys }
         unless (length newKeys < accountTotal acc) $
-            liftIO $ throwIO $ AccountSetupException
+            liftIO $ throwIO $ WalletException
                 "Adding too many keys to the account"
         replace ai dbacc{ dbAccountValue = newAcc }
         return newAcc
@@ -159,7 +159,7 @@ checkOwnKeys keys = do
     accs <- accountList
     let myKeys  = map (xPubKey . getAccPubKey . accountKey) accs
         overlap = filter (`elem` myKeys) $ map xPubKey keys
-    unless (null overlap) $ liftIO $ throwIO $ AccountSetupException 
+    unless (null overlap) $ liftIO $ throwIO $ WalletException 
         "Can not add your own keys to a multisig account"
 
 -- | Returns information on extended public and private keys of an account.

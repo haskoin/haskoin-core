@@ -44,6 +44,7 @@ import Network.Haskoin.Node.PeerManager
 import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Tx
 import Network.Haskoin.Wallet.Model
+import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Server.Types
 
 -- TODO: Handle parse errors and exceptions
@@ -82,7 +83,7 @@ processWalletRequest pool (wr, i) = do
     return (res, i)
   where
     -- TODO: Catch the relevant error message here
-    f (SomeException _) = Just "An error occured"
+    f (WalletException err) = Just err
     go (CreateFullWallet n p m) = liftM ResCreateWallet $ newWalletMnemo n p m
     go (CreateReadWallet n k)   = error "Not implemented"
     go WalletList               = liftM ResWalletList $ walletList

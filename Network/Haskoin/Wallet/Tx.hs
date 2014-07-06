@@ -92,7 +92,7 @@ getTx tid = do
     entM <- getBy $ UniqueTx tid
     case entM of
         Just ent -> return $ entityVal ent
-        Nothing  -> liftIO $ throwIO $ InvalidTransactionException $
+        Nothing  -> liftIO $ throwIO $ WalletException $
             unwords ["Transaction", encodeTxHashLE tid, "not in database"]
 
 -- TODO: Make a paged version of this
@@ -124,9 +124,9 @@ txPage :: (PersistQuery m, PersistUnique m)
        -> Int           -- ^ Number of addresses per page
        -> m ([AccTx], Int)
 txPage name pageNum resPerPage
-    | pageNum < 0 = liftIO $ throwIO $ InvalidPageException $ 
+    | pageNum < 0 = liftIO $ throwIO $ WalletException $ 
         unwords ["Invalid page number:", show pageNum]
-    | resPerPage < 1 = liftIO $ throwIO $ InvalidPageException $
+    | resPerPage < 1 = liftIO $ throwIO $ WalletException $
         unwords ["Invalid results per page:",show resPerPage]
     | otherwise = do
         (Entity ai acc) <- getAccountEntity name
@@ -134,7 +134,7 @@ txPage name pageNum resPerPage
         let maxPage = max 1 $ (txCount + resPerPage - 1) `div` resPerPage
             page | pageNum == 0 = maxPage
                  | otherwise    = pageNum
-        when (page > maxPage) $ liftIO $ throwIO $ InvalidPageException $ 
+        when (page > maxPage) $ liftIO $ throwIO $ WalletException $ 
             unwords ["The page number", show pageNum, "is too high"]
         dbTxs <- selectList 
             [ DbAccTxAccount ==. ai ] 
@@ -177,7 +177,7 @@ addTx tx offline = do
     eCoins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
     let coins = map entityVal eCoins
     when (isDoubleSpend tid coins) $ liftIO $ throwIO $
-        DoubleSpendException "Transaction is double spending coins"
+        WalletException "Transaction is double spending coins"
     -- We must remove offline transactions which spend the same coins as us
     forM_ (txToRemove coins) removeTx 
     -- Change status of the coins
@@ -372,7 +372,7 @@ sendTx name strDests fee = do
     (coins,recips) <- sendSolution name strDests fee
     resE <- sendCoins coins recips (SigAll False)
     when (isLeft resE) $ liftIO $ throwIO $
-        TransactionSigningException $ fromLeft resE
+        WalletException $ fromLeft resE
     return $ fromRight resE
 
 -- Given a list of recipients and a fee, finds a valid combination of coins
@@ -381,7 +381,7 @@ sendSolution :: (PersistUnique m, PersistQuery m)
              -> m ([Coin],[(Address,Word64)])
 sendSolution name strDests fee = do
     unless (all isJust decodeDest) $ liftIO $ throwIO $
-        InvalidAddressException "Invalid addresses"
+        WalletException "Invalid addresses"
     (Entity ai acc) <- getAccountEntity name
     unspent <- unspentCoins name
     let msParam = ( accountRequired $ dbAccountValue acc
@@ -391,7 +391,7 @@ sendSolution name strDests fee = do
              | otherwise       = chooseCoins tot fee unspent
         (coins, change)        = fromRight resE
     when (isLeft resE) $ liftIO $ throwIO $
-        CoinSelectionException $ fromLeft resE
+        WalletException $ fromLeft resE
     recips <- if change < 5000 then return dests else do
         cAddr <- newAddrsGeneric name 1 True -- internal addresses
         -- TODO: Change must be randomly placed
@@ -411,7 +411,7 @@ sendCoins coins recipients sh = do
     let txE = buildAddrTx (map coinOutPoint coins) $ map f recipients
         tx  = fromRight txE
     when (isLeft txE) $ liftIO $ throwIO $
-        TransactionBuildingException $ fromLeft txE
+        WalletException $ fromLeft txE
     ys <- mapM (getSigData sh) coins
     return $ detSignTx tx (map fst ys) (map snd ys)
   where
@@ -437,7 +437,7 @@ signWalletTx name tx sh = do
     ys <- forM accCoins (getSigData sh)
     let resE = detSignTx tx (map fst ys) (map snd ys)
     when (isLeft resE) $ liftIO $ throwIO $
-        TransactionSigningException $ fromLeft resE
+        WalletException $ fromLeft resE
     return $ fromRight resE
   where
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
@@ -448,8 +448,7 @@ getSigData :: PersistUnique m
 getSigData sh coin = do
     (Entity _ w) <- getWalletEntity "main"
     unless (isFullWallet $ dbWalletValue w) $ liftIO $ throwIO $ 
-        TransactionSigningException 
-            "This operation is not supported on read-only wallets"
+        WalletException "This operation is not supported on read-only wallets"
     (Entity _ add) <- liftM fromJust $ getBy $ UniqueAddress a
     acc <- liftM fromJust (get $ dbAddressAccount add)
     let master = walletMasterKey $ dbWalletValue w

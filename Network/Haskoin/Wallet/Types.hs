@@ -48,20 +48,7 @@ import Network.Haskoin.Script
 import Network.Haskoin.Transaction
 import Network.Haskoin.Util
 
-data WalletException 
-    = WalletException String
-    | AccountSetupException String
-    | InvalidAccountException String
-    | InvalidPageException String
-    | AddressGenerationException String
-    | InvalidAddressException String
-    | InvalidTransactionException String
-    | DoubleSpendException String
-    | CoinSelectionException String
-    | TransactionBuildingException String
-    | TransactionSigningException String
-    | ParsingException String
-    | InvalidCommandException String
+data WalletException = WalletException String
     deriving (Eq, Read, Show, Typeable)
 
 instance Exception WalletException

@@ -69,7 +69,7 @@ getAddressEntity accName key internal = do
     entM <- getBy $ UniqueAddressKey ai key internal
     -- Make sure we are not fetching a look-ahead address
     when (isNothing entM || key > dbAccountExtIndex acc) $ liftIO $ throwIO $
-        InvalidAddressException "Invalid address key"
+        WalletException "Invalid address key"
     return $ fromJust entM
 
 -- | Returns all addresses for an account (excluding look-aheads and internal
@@ -107,9 +107,9 @@ addressPage :: (PersistUnique m, PersistQuery m)
             -> m ([PaymentAddress], Int) 
                 -- ^ (Requested page, Highest page number)
 addressPage name pageNum resPerPage 
-    | pageNum < 0 = liftIO $ throwIO $ InvalidPageException $ 
+    | pageNum < 0 = liftIO $ throwIO $ WalletException $ 
         unwords ["Invalid page number:", show pageNum]
-    | resPerPage < 1 = liftIO $ throwIO $ InvalidPageException $
+    | resPerPage < 1 = liftIO $ throwIO $ WalletException $
         unwords ["Invalid results per page:",show resPerPage]
     | otherwise = do
         (Entity ai acc) <- getAccountEntity name
@@ -117,7 +117,7 @@ addressPage name pageNum resPerPage
         let maxPage = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
             page | pageNum == 0 = maxPage
                  | otherwise    = pageNum
-        when (page > maxPage) $ liftIO $ throwIO $ InvalidPageException $ 
+        when (page > maxPage) $ liftIO $ throwIO $ WalletException $ 
             unwords ["The page number", show pageNum, "is too high"]
         addrs <- selectList 
             [ DbAddressAccount ==. ai
@@ -144,7 +144,7 @@ newAddrsGeneric :: ( PersistUnique m
                 => AccountName -> Int -> Bool -> m [DbAddressGeneric b]
 newAddrsGeneric name cnt internal
     | cnt <= 0 = liftIO $ throwIO $
-        AddressGenerationException "Can not generate less than 1 address"
+        WalletException "Can not generate less than 1 address"
     | otherwise = do
         time <- liftIO getCurrentTime
         (Entity ai acc) <- getAccountEntity name
@@ -193,7 +193,7 @@ setAddrLabel :: PersistUnique m
 setAddrLabel name key label = do
     (Entity _ dbacc) <- getAccountEntity name
     when (key > dbAccountExtIndex dbacc) $ liftIO $ throwIO $
-        InvalidAddressException "The address key does not exist"
+        WalletException "The address key does not exist"
     (Entity i add) <- getAddressEntity name key False
     let newAddr = add { dbAddressLabel = label }
     replace i newAddr

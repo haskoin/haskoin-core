@@ -149,8 +149,10 @@ hexToBS xs = BS.pack <$> mapM hexWord (chunksOf 2 xs)
   where
     hexWord x = do
         guard $ length x == 2
-        let (w, s) = head $ readHex x
-        guard $ s == ""
+        let hs = readHex x
+        guard $ not $ null hs
+        let [(w, s)] = hs
+        guard $ null s
         return w
 
 -- Data.Binary helpers

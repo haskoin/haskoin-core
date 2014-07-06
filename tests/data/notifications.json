@@ -1,7 +1,1 @@
-{"method": "handleMessage", "params": ["user1", "we were just talking"], "id": null}
-{"method": "handleMessage", "params": ["user3", "sorry, gotta go now, ttyl"], "id": null}
-{"method": "userLeft", "params": ["user3"], "id": null}
-{"jsonrpc": "2.0", "method": "update", "params": [1,2,3,4,5]}
-{"jsonrpc": "2.0", "method": "foobar"}
-{"jsonrpc": "2.0", "method": "notify_hello", "params": [7]}
-{"jsonrpc": "2.0", "method": "notify_sum", "params": [1,2,4]}
+{"params": ["1dice8EMZmqKvrGE4Qc9bUFf9PX3xaYDp", "a0d3dca049edc8671f8e6232606d3bf65ac802fb816eed7f2aeceac05f2e3da1"], "id": null, "method": "blockchain.address.subscribe"}

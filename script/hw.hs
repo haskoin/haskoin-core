@@ -19,7 +19,7 @@ import qualified System.Environment as E (getArgs)
 import System.Posix.Daemon
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (void, forM, forM_, when, liftM, unless, mzero)
+import Control.Monad (join, void, forM, forM_, when, liftM, unless, mzero)
 import Control.Monad.Trans (lift, liftIO, MonadIO)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import Control.Exception (tryJust, throwIO)
@@ -190,15 +190,15 @@ cmdHelp =
     , "  addkeys   acc {pubkey...}         Add pubkeys to a multisig account"
     , "  acclist                           List all accounts"
     , "  getacc    acc                     Display an account by name"
-    , "  dumpkeys  acc                     Display all keys for an account"
+    , "  (disabled) dumpkeys  acc          Display all keys for an account"
     , ""
     , "Address commands:" 
-    , "  new       acc {labels...}         Generate address with labels"
+    , "  new       acc labels              Generate an address with a label"
     , "  genaddr   acc [-c count]          Generate new addresses"
     , "  list      acc                     Display last page of addresses"
     , "  page      acc page [-c res/page]  Display addresses by page"
     , "  label     acc index label         Add a label to an address"
-    , "  wif       acc index               Dump prvkey as WIF to stdout"
+    , "  (disabled) wif       acc index    Dump prvkey as WIF to stdout"
     , ""
     , "Transaction commands:" 
     , "  tx        acc                     Display transactions"
@@ -209,8 +209,8 @@ cmdHelp =
     , "  signtx    acc tx                  Sign a transaction"
     , "  importtx  tx                      Import offline transaction"
     , "  removetx  txid                    Remove transaction"
-    , "  coins     acc                     List coins"
-    , "  allcoins                          List all coins per account"
+    , "  (disabled) coins     acc          List coins"
+    , "  (disabled) allcoins               List all coins per account"
     , ""
     , "Utility commands: "
     , "  decodetx   tx                     Decode HEX transaction"
@@ -315,6 +315,16 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
     ["acclist"] -> do
         res <- sendRequest AccountList
         print res
+    ["new", name, label] -> do
+        addE <- sendRequest $ GenAddress name 1
+        case addE of
+            Right (ResAddressList (a:_)) -> do
+                res <- sendRequest $ AddressLabel name (addressIndex a) label
+                print res
+            Left err -> liftIO $ throwIO $ WalletException err
+    ["genaddr", name] -> do
+        res <- sendRequest $ GenAddress name $ optCount opts
+        print res
     [] -> formatStr usage
     ["help"] -> formatStr usage
     ["version"] -> putStrLn haskoinUserAgent
@@ -337,7 +347,7 @@ decodeResult :: Monad m
 decodeResult req = do
     bs <- await 
     if isJust bs
-        then return $ decodeWalletResponse (fromJust bs) req
+        then return $ join $ fst <$> decodeWalletResponse (fromJust bs) req
         else decodeResult req
 
 -- TODO: Split this in individual functions ?

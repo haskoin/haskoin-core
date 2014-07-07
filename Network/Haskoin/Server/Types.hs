@@ -63,6 +63,8 @@ data WalletRequest
     | AddAccountKeys AccountName [XPubKey]
     | GetAccount AccountName
     | AccountList
+    | GenAddress AccountName Int
+    | AddressLabel AccountName KeyIndex String
     deriving (Eq, Show, Read)
 
 encodeWalletRequest :: WalletRequest -> (Maybe Id) -> BS.ByteString
@@ -70,34 +72,43 @@ encodeWalletRequest wr i =
     toStrictBS $ encode $ Request (walletMethod wr) (go wr) i
   where
     go (NewFullWallet n p m) = Just $ object $ concat
-        [ [ "name"       .= n
+        [ [ "walletname" .= n
           , "passphrase" .= p
           ]
         , if isJust m then ["mnemonic" .= (fromJust m)] else []
         ]
     go (NewReadWallet n k) = Just $ object
-        [ "name" .= n
-        , "key"  .= xPubExport k
+        [ "walletname" .= n
+        , "key"        .= xPubExport k
         ]
-    go (GetWallet n) = Just $ object [ "name" .= n ]
+    go (GetWallet n) = Just $ object [ "walletname" .= n ]
     go WalletList = Nothing
     go (NewAccount w n) = Just $ object
-        [ "wallet" .= w
-        , "name"   .= n
+        [ "walletname"  .= w
+        , "accountname" .= n
         ]
     go (NewMSAccount w n r t ks) = Just $ object
-        [ "wallet"    .= w
-        , "name"      .= n
-        , "required" .= r
-        , "total"     .= t
-        , "keys"      .= map xPubExport ks
+        [ "walletname"  .= w
+        , "accountname" .= n
+        , "required"    .= r
+        , "total"       .= t
+        , "keys"        .= map xPubExport ks
         ]
     go (AddAccountKeys n ks) = Just $ object
-        [ "name" .= n
-        , "keys" .= map xPubExport ks
+        [ "accountname" .= n
+        , "keys"        .= map xPubExport ks
         ]
-    go (GetAccount n) = Just $ object [ "name" .= n ]
+    go (GetAccount n) = Just $ object [ "accountname" .= n ]
     go AccountList = Nothing
+    go (GenAddress n i) = Just $ object
+        [ "accountname" .= n
+        , "count"       .= i
+        ]
+    go (AddressLabel n i l) = Just $ object
+        [ "accountname" .= n
+        , "index"       .= i
+        , "label"       .= l
+        ]
 
 walletMethod :: WalletRequest -> T.Text
 walletMethod wr = case wr of
@@ -110,6 +121,8 @@ walletMethod wr = case wr of
     AddAccountKeys _ _     -> "network.haskoin.wallet.addaccountkeys"
     GetAccount _           -> "network.haskoin.wallet.getaccount"
     AccountList            -> "network.haskoin.wallet.accountlist"
+    GenAddress _ _         -> "network.haskoin.wallet.genaddress"
+    AddressLabel _ _ _     -> "network.haskoin.wallet.addresslabel"
 
 decodeWalletRequest :: BS.ByteString -> Either String (WalletRequest, Maybe Id)
 decodeWalletRequest bs = 
@@ -119,35 +132,44 @@ decodeWalletRequest bs =
   where
     go m p = case (m,p) of
         ("network.haskoin.wallet.newfullwallet", Just (Object o)) -> do
-            n <- o .:  "name"
+            n <- o .:  "walletname"
             p <- o .:  "passphrase"
             m <- o .:? "mnemonic"
             return $ NewFullWallet n p m
         ("network.haskoin.wallet.getwallet", (Just (Object o))) -> do
-            n <- o .: "name"
+            n <- o .: "walletname"
             return $ GetWallet n
         ("network.haskoin.wallet.walletlist", Nothing) -> return WalletList
         ("network.haskoin.wallet.newaccount", Just (Object o)) -> do
-            w <- o .:  "wallet"
-            n <- o .:  "name"
+            w <- o .:  "walletname"
+            n <- o .:  "accountname"
             return $ NewAccount w n
         ("network.haskoin.wallet.newmsaccount", Just (Object o)) -> do
-            w  <- o .:  "wallet"
-            n  <- o .:  "name"
+            w  <- o .:  "walletname"
+            n  <- o .:  "accountname"
             r  <- o .:  "required"
             t  <- o .:  "total"
             ks <- o .:  "keys"
             let keysM = mapM xPubImport ks
             maybe mzero (return . (NewMSAccount w n r t)) keysM
         ("network.haskoin.wallet.addaccountkeys", Just (Object o)) -> do
-            n  <- o .: "name"
+            n  <- o .: "accountname"
             ks <- o .: "keys"
             let keysM = mapM xPubImport ks
             maybe mzero (return . (AddAccountKeys n)) keysM
         ("network.haskoin.wallet.getaccount", (Just (Object o))) -> do
-            n <- o .: "name"
+            n <- o .: "accountname"
             return $ GetAccount n
         ("network.haskoin.wallet.accountlist", Nothing) -> return AccountList
+        ("network.haskoin.wallet.genaddress", (Just (Object o))) -> do
+            n <- o .: "accountname"
+            i <- o .: "count"
+            return $ GenAddress n i
+        ("network.haskoin.wallet.addresslabel", (Just (Object o))) -> do
+            n <- o .: "accountname"
+            i <- o .: "index"
+            l <- o .: "label"
+            return $ AddressLabel n i l
         _ -> mzero
 
 {- Response -}
@@ -158,6 +180,8 @@ data WalletResponse
     | ResWalletList [Wallet]
     | ResAccount Account
     | ResAccountList [Account]
+    | ResAddress PaymentAddress
+    | ResAddressList [PaymentAddress]
     deriving (Eq, Show, Read)
 
 encodeWalletResponse :: (Either String WalletResponse, (Maybe Id)) 
@@ -175,17 +199,20 @@ encodeWalletResponse (wr, i) = toStrictBS $ encode $
     go (ResWalletList ws)  = object ["walletlist" .= ws]
     go (ResAccount a)      = object ["account" .= a]
     go (ResAccountList as) = object ["accountlist" .= as]
+    go (ResAddressList as) = object ["addresslist" .= as]
+    go (ResAddress a)      = object ["address" .= a]
 
 decodeWalletResponse :: BS.ByteString -> WalletRequest
-                     -> Either String WalletResponse
+                     -> Either String (Either String WalletResponse, (Maybe Id))
 decodeWalletResponse bs req = do
     response <- eitherDecode $ toLazyBS bs 
-        :: Either String (Response Value Value String)
-    let res = resResult response
-    when (isLeft res) $ Left $ case fromLeft res of
-        ErrObj _ err _ -> err
-        ErrVal err     -> err
-    parseEither (go req) $ fromRight res
+            :: Either String (Response Value Value String)
+    let resE = resResult response
+        res | isLeft resE = Left $ case fromLeft resE of
+                                ErrObj _ err _ -> err
+                                ErrVal err     -> err
+            | otherwise = parseEither (go req) $ fromRight resE
+    return (res, resId response)
   where
     -- TODO: refactor this?
     go (NewFullWallet _ _ _) (Object o) = do
@@ -213,5 +240,11 @@ decodeWalletResponse bs req = do
     go AccountList (Object o) = do
         as <- o .: "accountlist"
         return $ ResAccountList as
+    go (GenAddress _ _) (Object o) = do
+        as <- o .: "addresslist" 
+        return $ ResAddressList as
+    go (AddressLabel _ _ _) (Object o) = do
+        a <- o .: "address"
+        return $ ResAddress a
     go _ _ = mzero
     

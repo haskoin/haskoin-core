@@ -107,6 +107,8 @@ processWalletRequest pool (wr, i) = do
         return $ ResAccount a
     go (GetAccount n)        = liftM ResAccount $ getAccount n
     go AccountList           = liftM ResAccountList $ accountList
+    go (GenAddress n i)      = liftM ResAddressList $ newAddrs n i
+    go (AddressLabel n i l)  = liftM ResAddress $ setAddrLabel n i l
 
 processNodeEvents :: ConnectionPool -> Sink NodeEvent IO ()
 processNodeEvents pool = awaitForever $ \e -> lift $ runDB pool $ case e of

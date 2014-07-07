@@ -56,10 +56,12 @@ import Network.Haskoin.Wallet.Types
 data WalletRequest 
     = NewFullWallet WalletName String (Maybe String)
     | NewReadWallet WalletName XPubKey
+    | GetWallet WalletName
     | WalletList 
     | NewAccount WalletName AccountName
     | NewMSAccount WalletName AccountName Int Int [XPubKey]
     | AddAccountKeys AccountName [XPubKey]
+    | AccountList
     deriving (Eq, Show, Read)
 
 encodeWalletRequest :: WalletRequest -> (Maybe Id) -> BS.ByteString
@@ -76,6 +78,7 @@ encodeWalletRequest wr i =
         [ "name" .= n
         , "key"  .= xPubExport k
         ]
+    go (GetWallet n) = Just $ object [ "name" .= n ]
     go WalletList = Nothing
     go (NewAccount w n) = Just $ object
         [ "wallet" .= w
@@ -92,15 +95,18 @@ encodeWalletRequest wr i =
         [ "name" .= n
         , "keys" .= map xPubExport ks
         ]
+    go AccountList = Nothing
 
 walletMethod :: WalletRequest -> T.Text
 walletMethod wr = case wr of
     NewFullWallet _ _ _    -> "network.haskoin.wallet.newfullwallet"
     NewReadWallet _ _      -> error "not implemented"
+    GetWallet _            -> "network.haskoin.wallet.getwallet"
     WalletList             -> "network.haskoin.wallet.walletlist"
     NewAccount _ _         -> "network.haskoin.wallet.newaccount"
     NewMSAccount _ _ _ _ _ -> "network.haskoin.wallet.newmsaccount"
     AddAccountKeys _ _     -> "network.haskoin.wallet.addaccountkeys"
+    AccountList            -> "network.haskoin.wallet.accountlist"
 
 decodeWalletRequest :: BS.ByteString -> Either String (WalletRequest, Maybe Id)
 decodeWalletRequest bs = 
@@ -114,6 +120,9 @@ decodeWalletRequest bs =
             p <- o .:  "passphrase"
             m <- o .:? "mnemonic"
             return $ NewFullWallet n p m
+        ("network.haskoin.wallet.getwallet", (Just (Object o))) -> do
+            n <- o .: "name"
+            return $ GetWallet n
         ("network.haskoin.wallet.walletlist", Nothing) -> return WalletList
         ("network.haskoin.wallet.newaccount", Just (Object o)) -> do
             w <- o .:  "wallet"
@@ -132,14 +141,17 @@ decodeWalletRequest bs =
             ks <- o .: "keys"
             let keysM = mapM xPubImport ks
             maybe mzero (return . (AddAccountKeys n)) keysM
+        ("network.haskoin.wallet.accountlist", Nothing) -> return AccountList
         _ -> mzero
 
 {- Response -}
 
 data WalletResponse
     = ResMnemonic String
+    | ResWallet Wallet
     | ResWalletList [Wallet]
     | ResAccount Account
+    | ResAccountList [Account]
     deriving (Eq, Show, Read)
 
 encodeWalletResponse :: (Either String WalletResponse, (Maybe Id)) 
@@ -152,9 +164,11 @@ encodeWalletResponse (wr, i) = toStrictBS $ encode $
   where
     f (Left err) = Left $ ErrVal err
     f (Right x)  = return x
-    go (ResMnemonic s)    = object ["mnemonic" .= s]
-    go (ResWalletList ws) = object ["walletlist" .= ws]
-    go (ResAccount a)     = object ["account" .= a]
+    go (ResMnemonic s)     = object ["mnemonic" .= s]
+    go (ResWallet w)       = object ["wallet" .= w]
+    go (ResWalletList ws)  = object ["walletlist" .= ws]
+    go (ResAccount a)      = object ["account" .= a]
+    go (ResAccountList as) = object ["accountlist" .= as]
 
 decodeWalletResponse :: BS.ByteString -> WalletRequest
                      -> Either String WalletResponse
@@ -171,6 +185,9 @@ decodeWalletResponse bs req = do
         m <- o .: "mnemonic" 
         return $ ResMnemonic m
     go (NewReadWallet _ _) _ = error "Not implemented"
+    go (GetWallet _) (Object o) = do
+        w <- o .: "wallet"
+        return $ ResWallet w
     go WalletList (Object o) = do
         ws <- o .: "walletlist"
         return $ ResWalletList ws
@@ -183,6 +200,8 @@ decodeWalletResponse bs req = do
     go (AddAccountKeys _ _) (Object o) = do
         a <- o .: "account"
         return $ ResAccount a
+    go AccountList (Object o) = do
+        as <- o .: "accountlist"
+        return $ ResAccountList as
     go _ _ = mzero
     
-        

@@ -89,6 +89,7 @@ processWalletRequest pool (wr, i) = do
     f (WalletException err)  = Just err
     go (NewFullWallet n p m) = liftM ResMnemonic $ newWalletMnemo n p m
     go (NewReadWallet n k)   = error "Not implemented"
+    go (GetWallet n)         = liftM ResWallet $ getWallet n
     go WalletList            = liftM ResWalletList $ walletList
     go (NewAccount w n)      = do
         a <- newAccount w n
@@ -104,6 +105,7 @@ processWalletRequest pool (wr, i) = do
         when (length (accountKeys a) == accountTotal a - 1) $
             setLookAhead n 30
         return $ ResAccount a
+    go AccountList           = liftM ResAccountList $ accountList
 
 processNodeEvents :: ConnectionPool -> Sink NodeEvent IO ()
 processNodeEvents pool = awaitForever $ \e -> lift $ runDB pool $ case e of

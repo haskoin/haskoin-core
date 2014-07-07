@@ -180,6 +180,7 @@ cmdHelp =
     , ""
     , "Wallet commands:" 
     , "  newwallet name [mnemonic]         Create a new wallet"
+    , "  getwallet name                    Display a wallet by name"
     , "  walletlist                        List all wallets"
     , ""
     , "Account commands:" 
@@ -188,8 +189,8 @@ cmdHelp =
     , "                                    Create a new multisig account"
     , "  addkeys   acc {pubkey...}         Add pubkeys to a multisig account"
     , "  acclist                           List all accounts"
-    , "  accinfo   acc                     Display account information"
-    , "  dumpkeys  acc                     Dump account keys to stdout"
+    , "  getacc    acc                     Display an account by name"
+    , "  dumpkeys  acc                     Display all keys for an account"
     , ""
     , "Address commands:" 
     , "  new       acc {labels...}         Generate address with labels"
@@ -285,6 +286,9 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
                 _   -> error invalidErr
         res <- sendRequest req 
         print res
+    ["getwallet", name] -> do
+        res <- sendRequest $ GetWallet name
+        print res
     ["walletlist"] -> do
         res <- sendRequest WalletList
         print res
@@ -304,6 +308,9 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         when (isNothing keysM) $ liftIO $ throwIO $ 
             WalletException "Could not parse keys"
         res <- sendRequest $ AddAccountKeys name $ fromJust keysM
+        print res
+    ["acclist"] -> do
+        res <- sendRequest AccountList
         print res
     [] -> formatStr usage
     ["help"] -> formatStr usage

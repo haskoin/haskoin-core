@@ -40,9 +40,12 @@ import Database.Persist.Sqlite
 
 import Network.Haskoin.Util
 import Network.Haskoin.Stratum
+
 import Network.Haskoin.Node.PeerManager
 import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Tx
+import Network.Haskoin.Wallet.Account
+import Network.Haskoin.Wallet.Address
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Server.Types
@@ -87,7 +90,15 @@ processWalletRequest pool (wr, i) = do
     go (CreateFullWallet n p m) = liftM ResCreateWallet $ newWalletMnemo n p m
     go (CreateReadWallet n k)   = error "Not implemented"
     go WalletList               = liftM ResWalletList $ walletList
-
+    go (CreateAccount w n)      = do
+        a <- newAccount w n
+        setLookAhead n 30
+        return $ ResCreateAccount a
+    go (CreateMSAccount w n r t ks) = do
+        a <- newMSAccount w n r t ks
+        when (length (accountKeys a) == t - 1) $
+            setLookAhead n 30
+        return $ ResCreateAccount a
 
 processNodeEvents :: ConnectionPool -> Sink NodeEvent IO ()
 processNodeEvents pool = awaitForever $ \e -> lift $ runDB pool $ case e of
@@ -104,4 +115,3 @@ getWorkDir = do
     createDirectoryIfMissing True dir
     return dir
 
-    

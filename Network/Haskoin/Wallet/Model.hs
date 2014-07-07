@@ -52,7 +52,7 @@ share [mkPersist sqlSettings, mkMigrate "migrateWallet"] [persistLowerCase|
 DbWallet 
     name String
     value Wallet
-    accIndex Int
+    accIndex KeyIndex Maybe
     created UTCTime default=CURRENT_TIME
     UniqueWalletName name
     deriving Show
@@ -60,10 +60,10 @@ DbWallet
 DbAccount 
     name String
     value Account
-    extIndex KeyIndex
-    extLookAhead KeyIndex
-    intIndex KeyIndex
-    intLookAhead KeyIndex
+    extIndex KeyIndex Maybe
+    extLookAhead KeyIndex Maybe
+    intIndex KeyIndex Maybe
+    intLookAhead KeyIndex Maybe
     wallet DbWalletId
     created UTCTime default=CURRENT_TIME
     UniqueAccName name

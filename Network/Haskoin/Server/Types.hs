@@ -57,6 +57,8 @@ data WalletRequest
     = CreateFullWallet String String (Maybe String)
     | CreateReadWallet String XPubKey
     | WalletList 
+    | CreateAccount String String
+    | CreateMSAccount String String Int Int [XPubKey]
     deriving (Eq, Show, Read)
 
 encodeWalletRequest :: WalletRequest -> (Maybe Id) -> BS.ByteString
@@ -74,12 +76,25 @@ encodeWalletRequest wr i =
         , "key"  .= xPubExport k
         ]
     go WalletList = Nothing
+    go (CreateAccount w n) = Just $ object
+        [ "wallet" .= w
+        , "name"   .= n
+        ]
+    go (CreateMSAccount w n r t ks) = Just $ object
+        [ "wallet"    .= w
+        , "name"      .= n
+        , "requipred" .= r
+        , "total"     .= t
+        , "keys"      .= map xPubExport ks
+        ]
 
 walletMethod :: WalletRequest -> T.Text
 walletMethod wr = case wr of
-    CreateFullWallet _ _ _ -> "network.haskoin.wallet.newwalletmnemo"
-    CreateReadWallet _ _   -> error "not implemented"
-    WalletList             -> "network.haskoin.wallet.walletlist"
+    CreateFullWallet _ _ _    -> "network.haskoin.wallet.newwalletmnemo"
+    CreateReadWallet _ _      -> error "not implemented"
+    WalletList                -> "network.haskoin.wallet.walletlist"
+    CreateAccount _ _         -> "network.haskoin.wallet.newaccount"
+    CreateMSAccount _ _ _ _ _ -> "network.haskoin.wallet.newmsaccount"
 
 decodeWalletRequest :: BS.ByteString -> Either String (WalletRequest, Maybe Id)
 decodeWalletRequest bs = 
@@ -94,6 +109,18 @@ decodeWalletRequest bs =
             m <- o .:? "mnemonic"
             return $ CreateFullWallet n p m
         ("network.haskoin.wallet.walletlist", Nothing) -> return WalletList
+        ("network.haskoin.wallet.newaccount", Just (Object o)) -> do
+            w <- o .:  "wallet"
+            n <- o .:  "name"
+            return $ CreateAccount w n
+        ("network.haskoin.wallet.newmsaccount", Just (Object o)) -> do
+            w  <- o .:  "wallet"
+            n  <- o .:  "name"
+            r  <- o .:  "required"
+            t  <- o .:  "total"
+            ks <- o .:  "keys"
+            let keysM = mapM xPubImport ks
+            maybe mzero (return . (CreateMSAccount w n r t)) keysM
         _ -> mzero
 
 {- Response -}
@@ -101,6 +128,7 @@ decodeWalletRequest bs =
 data WalletResponse
     = ResCreateWallet String
     | ResWalletList [Wallet]
+    | ResCreateAccount Account
     deriving (Eq, Show, Read)
 
 encodeWalletResponse :: (Either String WalletResponse, (Maybe Id)) 
@@ -113,8 +141,9 @@ encodeWalletResponse (wr, i) = toStrictBS $ encode $
   where
     f (Left err) = Left $ ErrVal err
     f (Right x)  = return x
-    go (ResCreateWallet s) = object ["mnemonic" .= s]
-    go (ResWalletList ws)  = object ["walletlist" .= ws]
+    go (ResCreateWallet s)  = object ["mnemonic" .= s]
+    go (ResWalletList ws)   = object ["walletlist" .= ws]
+    go (ResCreateAccount a) = object ["account" .= a]
 
 decodeWalletResponse :: BS.ByteString -> WalletRequest
                      -> Either String WalletResponse
@@ -134,5 +163,11 @@ decodeWalletResponse bs req = do
     go WalletList (Object o) = do
         ws <- o .: "walletlist"
         return $ ResWalletList ws
+    go (CreateAccount _ _) (Object o) = do
+        a <- o .: "account"
+        return $ ResCreateAccount a
+    go (CreateMSAccount _ _ _ _ _) (Object o) = do
+        a <- o .: "account"
+        return $ ResCreateAccount a
     go _ _ = mzero
         

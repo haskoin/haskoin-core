@@ -119,7 +119,7 @@ newWallet wname seed
         -- This should never happen
         when (isNothing master) $ liftIO $ throwIO $ WalletException
             "The seed derivation produced an invalid key. Use another seed."
-        insert_ $ DbWallet wname wallet (-1) time
+        insert_ $ DbWallet wname wallet Nothing time
 
 initWalletDB :: PersistQuery m => m ()
 initWalletDB = do

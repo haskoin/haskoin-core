@@ -288,6 +288,17 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
     ["walletlist"] -> do
         res <- sendRequest WalletList
         print res
+    ["newacc", wname, name] -> do
+        res <- sendRequest $ CreateAccount wname name
+        print res
+    "newms" : wname : name : r : t : ks -> do
+        let keysM = mapM xPubImport ks
+            r'    = read r
+            t'    = read t
+        when (isNothing keysM) $ liftIO $ throwIO $ 
+            WalletException "Could not parse keys"
+        res <- sendRequest $ CreateMSAccount wname name r' t' $ fromJust keysM
+        print res
     [] -> formatStr usage
     ["help"] -> formatStr usage
     ["version"] -> putStrLn haskoinUserAgent

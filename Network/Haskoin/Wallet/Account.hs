@@ -82,12 +82,12 @@ newAccount wname name = do
         unwords [ "Account", name, "already exists" ]
     time <- liftIO getCurrentTime
     (Entity wk w) <- getWalletEntity wname
-    let deriv = fromIntegral $ dbWalletAccIndex w + 1
+    let deriv = maybe 0 (+1) $ dbWalletAccIndex w
         (k,i) = head $ accPubKeys (walletMasterKey $ dbWalletValue w) deriv
-        acc   = RegularAccount name wname (fromIntegral i) k
-        dbacc = DbAccount name acc (-1) (-1) (-1) (-1) wk time
+        acc   = RegularAccount name wname i k
+        dbacc = DbAccount name acc Nothing Nothing Nothing Nothing wk time
     insert_ dbacc
-    update wk [DbWalletAccIndex =. fromIntegral i]
+    update wk [DbWalletAccIndex =. Just i]
     return acc
 
 -- | Create a new multisignature account. The thirdparty keys can be provided
@@ -118,12 +118,12 @@ newMSAccount wname name m n mskeys = do
         WalletException "Too many keys"
     checkOwnKeys keys
     (Entity wk w) <- getWalletEntity wname
-    let deriv = fromIntegral $ dbWalletAccIndex w + 1
+    let deriv = maybe 0 (+1) $ dbWalletAccIndex w
         (k,i) = head $ accPubKeys (walletMasterKey $ dbWalletValue w) deriv
-        acc   = MultisigAccount name wname (fromIntegral i) k m n keys
-        dbacc = DbAccount name acc (-1) (-1) (-1) (-1) wk time
+        acc   = MultisigAccount name wname i k m n keys
+        dbacc = DbAccount name acc Nothing Nothing Nothing Nothing wk time
     insert_ dbacc
-    update wk [DbWalletAccIndex =. fromIntegral i]
+    update wk [DbWalletAccIndex =. Just i]
     return acc
 
 -- | Add new thirdparty keys to a multisignature account. This function can

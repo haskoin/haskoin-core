@@ -61,6 +61,7 @@ data WalletRequest
     | NewAccount WalletName AccountName
     | NewMSAccount WalletName AccountName Int Int [XPubKey]
     | AddAccountKeys AccountName [XPubKey]
+    | GetAccount AccountName
     | AccountList
     deriving (Eq, Show, Read)
 
@@ -95,6 +96,7 @@ encodeWalletRequest wr i =
         [ "name" .= n
         , "keys" .= map xPubExport ks
         ]
+    go (GetAccount n) = Just $ object [ "name" .= n ]
     go AccountList = Nothing
 
 walletMethod :: WalletRequest -> T.Text
@@ -106,6 +108,7 @@ walletMethod wr = case wr of
     NewAccount _ _         -> "network.haskoin.wallet.newaccount"
     NewMSAccount _ _ _ _ _ -> "network.haskoin.wallet.newmsaccount"
     AddAccountKeys _ _     -> "network.haskoin.wallet.addaccountkeys"
+    GetAccount _           -> "network.haskoin.wallet.getaccount"
     AccountList            -> "network.haskoin.wallet.accountlist"
 
 decodeWalletRequest :: BS.ByteString -> Either String (WalletRequest, Maybe Id)
@@ -141,6 +144,9 @@ decodeWalletRequest bs =
             ks <- o .: "keys"
             let keysM = mapM xPubImport ks
             maybe mzero (return . (AddAccountKeys n)) keysM
+        ("network.haskoin.wallet.getaccount", (Just (Object o))) -> do
+            n <- o .: "name"
+            return $ GetAccount n
         ("network.haskoin.wallet.accountlist", Nothing) -> return AccountList
         _ -> mzero
 
@@ -181,6 +187,7 @@ decodeWalletResponse bs req = do
         ErrVal err     -> err
     parseEither (go req) $ fromRight res
   where
+    -- TODO: refactor this?
     go (NewFullWallet _ _ _) (Object o) = do
         m <- o .: "mnemonic" 
         return $ ResMnemonic m
@@ -198,6 +205,9 @@ decodeWalletResponse bs req = do
         a <- o .: "account"
         return $ ResAccount a
     go (AddAccountKeys _ _) (Object o) = do
+        a <- o .: "account"
+        return $ ResAccount a
+    go (GetAccount _) (Object o) = do
         a <- o .: "account"
         return $ ResAccount a
     go AccountList (Object o) = do

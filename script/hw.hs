@@ -309,6 +309,9 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             WalletException "Could not parse keys"
         res <- sendRequest $ AddAccountKeys name $ fromJust keysM
         print res
+    ["getacc", name] -> do
+        res <- sendRequest $ GetAccount name
+        print res
     ["acclist"] -> do
         res <- sendRequest AccountList
         print res

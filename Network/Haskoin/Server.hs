@@ -105,6 +105,7 @@ processWalletRequest pool (wr, i) = do
         when (length (accountKeys a) == accountTotal a - 1) $
             setLookAhead n 30
         return $ ResAccount a
+    go (GetAccount n)        = liftM ResAccount $ getAccount n
     go AccountList           = liftM ResAccountList $ accountList
 
 processNodeEvents :: ConnectionPool -> Sink NodeEvent IO ()

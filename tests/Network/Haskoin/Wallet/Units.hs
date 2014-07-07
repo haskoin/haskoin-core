@@ -84,31 +84,31 @@ tests =
     , testGroup "Account tests"
         [ testCase "Creating two accounts with the same name should fail" $
             assertException
-                (AccountSetupException "Account acc already exists") $ do
+                (WalletException "Account acc already exists") $ do
                 newWallet "main" (BS.pack [1])
                 newAccount "main" "acc" 
                 newAccount "main" "acc" 
         , testCase "Invalid multisig parameters (0 of 1)" $
             assertException
-                (AccountSetupException "Invalid multisig parameters") 
+                (WalletException "Invalid multisig parameters") 
                 (newWallet "main" (BS.pack [0]) 
                     >> newMSAccount "main" "ms" 0 1 [])
                 
         , testCase "Invalid multisig parameters (2 of 1)" $
             assertException
-                (AccountSetupException "Invalid multisig parameters") 
+                (WalletException "Invalid multisig parameters") 
                 (newWallet "main" (BS.pack [0]) 
                     >> newMSAccount "main" "ms" 2 1 [])
 
         , testCase "Invalid multisig parameters (16 of 17)" $
             assertException
-                (AccountSetupException "Invalid multisig parameters") 
+                (WalletException "Invalid multisig parameters") 
                 (newWallet "main" (BS.pack [0]) 
                     >> newMSAccount "main" "ms" 16 17 [])
 
         , testCase "To many multisig keys (2 keys for 1 of 2)" $
             assertException
-                (AccountSetupException "Too many keys") 
+                (WalletException "Too many keys") 
                 ( newWallet "main" (BS.pack [0]) 
                     >> newMSAccount "main" "ms" 1 2 
                         [ deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [1])
@@ -118,12 +118,12 @@ tests =
 
         , testCase "Calling addAccountKeys with an empty key list should fail" $
             assertException
-                (AccountSetupException "Thirdparty key list can not be empty") 
+                (WalletException "Thirdparty key list can not be empty") 
                 (newWallet "main" (BS.pack [0]) >> addAccountKeys "default" [])
 
         , testCase "Calling addAccountKeys on a non-multisig account should fail" $
             assertException
-                (AccountSetupException 
+                (WalletException 
                     "Can only add keys to a multisig account") $ do
                     newWallet "main" (BS.pack [0])
                     newAccount "main" "default" 
@@ -132,7 +132,7 @@ tests =
 
         , testCase "Calling newMSAccount with keys in your wallet should fail" $
             assertException
-                (AccountSetupException 
+                (WalletException 
                     "Can not add your own keys to a multisig account") $ do
                     newWallet "main" (BS.pack [0])
                     newAccount "main" "default" 
@@ -142,7 +142,7 @@ tests =
 
         , testCase "Calling addAccountKeys with keys in your wallet should fail" $
             assertException
-                (AccountSetupException 
+                (WalletException 
                     "Can not add your own keys to a multisig account") $ do
                     newWallet "main" (BS.pack [0])
                     newAccount "main" "default" 
@@ -153,7 +153,7 @@ tests =
 
         , testCase "Adding keys to a complete multisig account should fail" $
             assertException
-                (AccountSetupException 
+                (WalletException 
                     "The account is complete and no further keys can be added") $ do
                     newWallet "main" (BS.pack [0])
                     newMSAccount "main" "ms" 2 3 
@@ -165,7 +165,7 @@ tests =
 
         , testCase "Adding more keys than the account can hold should fail" $
             assertException
-                (AccountSetupException 
+                (WalletException 
                     "Adding too many keys to the account") $ do
                     newWallet "main" (BS.pack [0])
                     newMSAccount "main" "ms" 2 3 
@@ -178,34 +178,34 @@ tests =
 
         , testCase "Getting a non-existing account should fail" $
             assertException
-                (InvalidAccountException "Account default does not exist") 
+                (WalletException "Account default does not exist") 
                 (newWallet "main" (BS.pack [0]) >> getAccount "default")
 
         , testCase "Dumping keys of a non-existing account should fail" $
             assertException
-                (InvalidAccountException "Account default does not exist") 
+                (WalletException "Account default does not exist") 
                 (newWallet "main" (BS.pack [0]) >> accountPrvKey "default")
 
         , testCase "Listing addresses of a non-existing account should fail" $
             assertException
-                (InvalidAccountException "Account default does not exist") 
+                (WalletException "Account default does not exist") 
                 (newWallet "main" (BS.pack [0]) >> addressPage "default" 0 1)
                 
         ]
     , testGroup "Address tests"
         [ testCase "Displaying page -1 should fail" $
             assertException
-                (InvalidPageException "Invalid page number: -1") 
+                (WalletException "Invalid page number: -1") 
                 (newWallet "main" (BS.pack [0]) >> addressPage "default" (-1) 1)
 
         , testCase "Displaying 0 results per page should fail" $
             assertException
-                (InvalidPageException "Invalid results per page: 0") 
+                (WalletException "Invalid results per page: 0") 
                 (newWallet "main" (BS.pack [0]) >> addressPage "default" 0 0)
 
         , testCase "Displaying a page number that is too high should fail" $
             assertException
-                (InvalidPageException "The page number 2 is too high") $ do
+                (WalletException "The page number 2 is too high") $ do
                     newWallet "main" $ BS.pack [0] 
                     newAccount "main" "default"
                     newAddrs "default" 5
@@ -213,22 +213,22 @@ tests =
 
         , testCase "Generating less than 1 address should fail" $
             assertException
-                (AddressGenerationException "Can not generate less than 1 address") $ do
+                (WalletException "Can not generate less than 1 address") $ do
                     newWallet "main" $ BS.pack [0] 
                     newAccount "main" "default"
                     newAddrs "default" 0
 
         , testCase "Setting a label on an invalid address key should fail" $
             assertException
-                (InvalidAddressException "The address key does not exist") $ do
+                (WalletException "The address has not been generated yet") $ do
                     newWallet "main" $ BS.pack [0] 
                     newAccount "main" "default"
                     newAddrs "default" 5
-                    addressLabel "default" 5 "Gym membership"
+                    setAddrLabel "default" 5 "Gym membership"
 
         , testCase "Requesting the private key on an invalid address key should fail" $
             assertException
-                (InvalidAddressException "Invalid address key") $ do
+                (WalletException "The address has not been generated yet") $ do
                     newWallet "main" $ BS.pack [0] 
                     newAccount "main" "default"
                     newAddrs "default" 5

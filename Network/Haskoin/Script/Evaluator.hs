@@ -630,8 +630,9 @@ execScript scriptSig scriptPubKey sigCheckFcn =
 
       in do s <- evalConditionalProgram redeemEval [] emptyProgram
             p <- evalConditionalProgram pubKeyEval [] emptyProgram { stack = s }
-            if isPayToScriptHash pubKeyOps
-                then evalConditionalProgram (p2shEval s) [] emptyProgram
+            if ( checkStack . runStack $ p ) &&  ( isPayToScriptHash pubKeyOps ) && ( not . null $ s )
+                then evalConditionalProgram (p2shEval s) [] emptyProgram { stack = drop 1 s,
+                                                                           hashOps = stackToScriptOps $ head s }
                 else return p
 
 evalScript :: Script -> Script -> SigCheck -> Bool

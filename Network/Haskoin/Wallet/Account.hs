@@ -2,8 +2,7 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE TypeFamilies      #-}
 module Network.Haskoin.Wallet.Account 
-( AccountName
-, getAccount
+( getAccount
 , getAccountEntity
 , getWalletEntity
 , newAccount
@@ -43,8 +42,6 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
-
-type AccountName = String
 
 -- | Get an account by name
 getAccount :: PersistUnique m

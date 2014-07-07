@@ -280,8 +280,8 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         putStrLn "haskoin daemon stopped"
     "newwallet" : name : mnemonic -> do
         let req = case mnemonic of
-                []  -> CreateFullWallet name (optPass opts) Nothing
-                [m] -> CreateFullWallet name (optPass opts) (Just m)
+                []  -> NewFullWallet name (optPass opts) Nothing
+                [m] -> NewFullWallet name (optPass opts) (Just m)
                 _   -> error invalidErr
         res <- sendRequest req 
         print res
@@ -289,7 +289,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         res <- sendRequest WalletList
         print res
     ["newacc", wname, name] -> do
-        res <- sendRequest $ CreateAccount wname name
+        res <- sendRequest $ NewAccount wname name
         print res
     "newms" : wname : name : r : t : ks -> do
         let keysM = mapM xPubImport ks
@@ -297,7 +297,13 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             t'    = read t
         when (isNothing keysM) $ liftIO $ throwIO $ 
             WalletException "Could not parse keys"
-        res <- sendRequest $ CreateMSAccount wname name r' t' $ fromJust keysM
+        res <- sendRequest $ NewMSAccount wname name r' t' $ fromJust keysM
+        print res
+    "addkeys" : name : ks -> do
+        let keysM = mapM xPubImport ks
+        when (isNothing keysM) $ liftIO $ throwIO $ 
+            WalletException "Could not parse keys"
+        res <- sendRequest $ AddAccountKeys name $ fromJust keysM
         print res
     [] -> formatStr usage
     ["help"] -> formatStr usage

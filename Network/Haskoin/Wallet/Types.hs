@@ -6,7 +6,9 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Network.Haskoin.Wallet.Types
-( Wallet(..)
+( WalletName
+, AccountName
+, Wallet(..)
 , Account(..)
 , PaymentAddress(..)
 , AccTx(..)
@@ -47,6 +49,9 @@ import Network.Haskoin.Protocol
 import Network.Haskoin.Script
 import Network.Haskoin.Transaction
 import Network.Haskoin.Util
+
+type WalletName  = String
+type AccountName = String
 
 data WalletException = WalletException String
     deriving (Eq, Read, Show, Typeable)

@@ -85,20 +85,25 @@ processWalletRequest pool (wr, i) = do
     res <- tryJust f $ runDB pool $ go wr
     return (res, i)
   where
-    -- TODO: Catch the relevant error message here
-    f (WalletException err) = Just err
-    go (CreateFullWallet n p m) = liftM ResCreateWallet $ newWalletMnemo n p m
-    go (CreateReadWallet n k)   = error "Not implemented"
-    go WalletList               = liftM ResWalletList $ walletList
-    go (CreateAccount w n)      = do
+    -- TODO: What if we have other exceptions than WalletException ?
+    f (WalletException err)  = Just err
+    go (NewFullWallet n p m) = liftM ResMnemonic $ newWalletMnemo n p m
+    go (NewReadWallet n k)   = error "Not implemented"
+    go WalletList            = liftM ResWalletList $ walletList
+    go (NewAccount w n)      = do
         a <- newAccount w n
         setLookAhead n 30
-        return $ ResCreateAccount a
-    go (CreateMSAccount w n r t ks) = do
+        return $ ResAccount a
+    go (NewMSAccount w n r t ks) = do
         a <- newMSAccount w n r t ks
         when (length (accountKeys a) == t - 1) $
             setLookAhead n 30
-        return $ ResCreateAccount a
+        return $ ResAccount a
+    go (AddAccountKeys n ks) = do
+        a <- addAccountKeys n ks
+        when (length (accountKeys a) == accountTotal a - 1) $
+            setLookAhead n 30
+        return $ ResAccount a
 
 processNodeEvents :: ConnectionPool -> Sink NodeEvent IO ()
 processNodeEvents pool = awaitForever $ \e -> lift $ runDB pool $ case e of

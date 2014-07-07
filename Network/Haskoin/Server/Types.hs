@@ -54,47 +54,53 @@ import Network.Haskoin.Wallet.Types
 
 -- TODO: Create NFData intstances for WalletRequest and WalletResponse
 data WalletRequest 
-    = CreateFullWallet String String (Maybe String)
-    | CreateReadWallet String XPubKey
+    = NewFullWallet WalletName String (Maybe String)
+    | NewReadWallet WalletName XPubKey
     | WalletList 
-    | CreateAccount String String
-    | CreateMSAccount String String Int Int [XPubKey]
+    | NewAccount WalletName AccountName
+    | NewMSAccount WalletName AccountName Int Int [XPubKey]
+    | AddAccountKeys AccountName [XPubKey]
     deriving (Eq, Show, Read)
 
 encodeWalletRequest :: WalletRequest -> (Maybe Id) -> BS.ByteString
 encodeWalletRequest wr i = 
     toStrictBS $ encode $ Request (walletMethod wr) (go wr) i
   where
-    go (CreateFullWallet n p m) = Just $ object $ concat
+    go (NewFullWallet n p m) = Just $ object $ concat
         [ [ "name"       .= n
           , "passphrase" .= p
           ]
         , if isJust m then ["mnemonic" .= (fromJust m)] else []
         ]
-    go (CreateReadWallet n k) = Just $ object
+    go (NewReadWallet n k) = Just $ object
         [ "name" .= n
         , "key"  .= xPubExport k
         ]
     go WalletList = Nothing
-    go (CreateAccount w n) = Just $ object
+    go (NewAccount w n) = Just $ object
         [ "wallet" .= w
         , "name"   .= n
         ]
-    go (CreateMSAccount w n r t ks) = Just $ object
+    go (NewMSAccount w n r t ks) = Just $ object
         [ "wallet"    .= w
         , "name"      .= n
-        , "requipred" .= r
+        , "required" .= r
         , "total"     .= t
         , "keys"      .= map xPubExport ks
+        ]
+    go (AddAccountKeys n ks) = Just $ object
+        [ "name" .= n
+        , "keys" .= map xPubExport ks
         ]
 
 walletMethod :: WalletRequest -> T.Text
 walletMethod wr = case wr of
-    CreateFullWallet _ _ _    -> "network.haskoin.wallet.newwalletmnemo"
-    CreateReadWallet _ _      -> error "not implemented"
-    WalletList                -> "network.haskoin.wallet.walletlist"
-    CreateAccount _ _         -> "network.haskoin.wallet.newaccount"
-    CreateMSAccount _ _ _ _ _ -> "network.haskoin.wallet.newmsaccount"
+    NewFullWallet _ _ _    -> "network.haskoin.wallet.newfullwallet"
+    NewReadWallet _ _      -> error "not implemented"
+    WalletList             -> "network.haskoin.wallet.walletlist"
+    NewAccount _ _         -> "network.haskoin.wallet.newaccount"
+    NewMSAccount _ _ _ _ _ -> "network.haskoin.wallet.newmsaccount"
+    AddAccountKeys _ _     -> "network.haskoin.wallet.addaccountkeys"
 
 decodeWalletRequest :: BS.ByteString -> Either String (WalletRequest, Maybe Id)
 decodeWalletRequest bs = 
@@ -103,16 +109,16 @@ decodeWalletRequest bs =
         return (r,i)
   where
     go m p = case (m,p) of
-        ("network.haskoin.wallet.newwalletmnemo", Just (Object o)) -> do
+        ("network.haskoin.wallet.newfullwallet", Just (Object o)) -> do
             n <- o .:  "name"
             p <- o .:  "passphrase"
             m <- o .:? "mnemonic"
-            return $ CreateFullWallet n p m
+            return $ NewFullWallet n p m
         ("network.haskoin.wallet.walletlist", Nothing) -> return WalletList
         ("network.haskoin.wallet.newaccount", Just (Object o)) -> do
             w <- o .:  "wallet"
             n <- o .:  "name"
-            return $ CreateAccount w n
+            return $ NewAccount w n
         ("network.haskoin.wallet.newmsaccount", Just (Object o)) -> do
             w  <- o .:  "wallet"
             n  <- o .:  "name"
@@ -120,15 +126,20 @@ decodeWalletRequest bs =
             t  <- o .:  "total"
             ks <- o .:  "keys"
             let keysM = mapM xPubImport ks
-            maybe mzero (return . (CreateMSAccount w n r t)) keysM
+            maybe mzero (return . (NewMSAccount w n r t)) keysM
+        ("network.haskoin.wallet.addaccountkeys", Just (Object o)) -> do
+            n  <- o .: "name"
+            ks <- o .: "keys"
+            let keysM = mapM xPubImport ks
+            maybe mzero (return . (AddAccountKeys n)) keysM
         _ -> mzero
 
 {- Response -}
 
 data WalletResponse
-    = ResCreateWallet String
+    = ResMnemonic String
     | ResWalletList [Wallet]
-    | ResCreateAccount Account
+    | ResAccount Account
     deriving (Eq, Show, Read)
 
 encodeWalletResponse :: (Either String WalletResponse, (Maybe Id)) 
@@ -141,9 +152,9 @@ encodeWalletResponse (wr, i) = toStrictBS $ encode $
   where
     f (Left err) = Left $ ErrVal err
     f (Right x)  = return x
-    go (ResCreateWallet s)  = object ["mnemonic" .= s]
-    go (ResWalletList ws)   = object ["walletlist" .= ws]
-    go (ResCreateAccount a) = object ["account" .= a]
+    go (ResMnemonic s)    = object ["mnemonic" .= s]
+    go (ResWalletList ws) = object ["walletlist" .= ws]
+    go (ResAccount a)     = object ["account" .= a]
 
 decodeWalletResponse :: BS.ByteString -> WalletRequest
                      -> Either String WalletResponse
@@ -156,18 +167,22 @@ decodeWalletResponse bs req = do
         ErrVal err     -> err
     parseEither (go req) $ fromRight res
   where
-    go (CreateFullWallet _ _ _) (Object o) = do
+    go (NewFullWallet _ _ _) (Object o) = do
         m <- o .: "mnemonic" 
-        return $ ResCreateWallet m
-    go (CreateReadWallet _ _) _ = error "Not implemented"
+        return $ ResMnemonic m
+    go (NewReadWallet _ _) _ = error "Not implemented"
     go WalletList (Object o) = do
         ws <- o .: "walletlist"
         return $ ResWalletList ws
-    go (CreateAccount _ _) (Object o) = do
+    go (NewAccount _ _) (Object o) = do
         a <- o .: "account"
-        return $ ResCreateAccount a
-    go (CreateMSAccount _ _ _ _ _) (Object o) = do
+        return $ ResAccount a
+    go (NewMSAccount _ _ _ _ _) (Object o) = do
         a <- o .: "account"
-        return $ ResCreateAccount a
+        return $ ResAccount a
+    go (AddAccountKeys _ _) (Object o) = do
+        a <- o .: "account"
+        return $ ResAccount a
     go _ _ = mzero
+    
         

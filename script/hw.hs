@@ -76,7 +76,7 @@ import Data.Conduit.Network
     , AppData
     )
 import qualified Data.Conduit.Binary as CB
-import Data.Aeson (Value (Null), (.=), object, toJSON, decode)
+import Data.Aeson (Value (Null), (.=), object, toJSON, decode, encode)
 import Data.Aeson.Types
     ( Value (Object, String)
     , FromJSON
@@ -336,7 +336,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
 sendRequest :: WalletRequest -> IO (Either String WalletResponse)
 sendRequest req = runTCPClient (clientSettings 4000 "127.0.0.1") go
   where
-    source = CB.sourceLbs $ toLazyBS $ encodeWalletRequest req (Just $ IntId 0)
+    source = CB.sourceLbs $ toLazyBS $ encodeWalletRequest req 0
     go server = do
         source $$ appSink server
         appSource server $$ decodeResult req
@@ -347,7 +347,7 @@ decodeResult :: Monad m
 decodeResult req = do
     bs <- await 
     if isJust bs
-        then return $ join $ fst <$> decodeWalletResponse (fromJust bs) req
+        then return $ join $ fst <$> decodeWalletResponse req (fromJust bs) 
         else decodeResult req
 
 -- TODO: Split this in individual functions ?

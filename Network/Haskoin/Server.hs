@@ -76,11 +76,11 @@ runServer = do
             -- TODO: The server ignores bad requests here. Change that?
             $= CL.mapMaybe (eitherToMaybe . decodeWalletRequest)
             $$ CL.mapM (processWalletRequest pool)
-            =$ CL.map encodeWalletResponse
+            =$ CL.map (\(res,i) -> encodeWalletResponse res i)
             =$ appSink client
 
-processWalletRequest :: ConnectionPool -> (WalletRequest, Maybe Id) 
-                     -> IO (Either String WalletResponse, Maybe Id)
+processWalletRequest :: ConnectionPool -> (WalletRequest, Int) 
+                     -> IO (Either String WalletResponse, Int)
 processWalletRequest pool (wr, i) = do
     res <- tryJust f $ runDB pool $ go wr
     return (res, i)
@@ -107,8 +107,8 @@ processWalletRequest pool (wr, i) = do
         return $ ResAccount a
     go (GetAccount n)        = liftM ResAccount $ getAccount n
     go AccountList           = liftM ResAccountList $ accountList
-    go (GenAddress n i)      = liftM ResAddressList $ newAddrs n i
-    go (AddressLabel n i l)  = liftM ResAddress $ setAddrLabel n i l
+    go (GenAddress n i')      = liftM ResAddressList $ newAddrs n i'
+    go (AddressLabel n i' l)  = liftM ResAddress $ setAddrLabel n i' l
 
 processNodeEvents :: ConnectionPool -> Sink NodeEvent IO ()
 processNodeEvents pool = awaitForever $ \e -> lift $ runDB pool $ case e of

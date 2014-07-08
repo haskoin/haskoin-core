@@ -68,6 +68,8 @@ data WalletRequest
     | AccountList
     | GenAddress AccountName Int
     | AddressLabel AccountName KeyIndex String
+    | AddressList AccountName
+    | AddressPage AccountName Int Int
     deriving (Eq, Show, Read)
 
 instance ToJSON WalletRequest where
@@ -110,6 +112,12 @@ instance ToJSON WalletRequest where
             , "index"       .= i
             , "label"       .= l
             ]
+        AddressList n -> object [ "accountname" .= n ]
+        AddressPage n p a -> object
+            [ "accountname" .= n
+            , "page"        .= p
+            , "addrperpage" .= a
+            ]
 
 data WalletResponse
     = ResMnemonic String
@@ -119,6 +127,7 @@ data WalletResponse
     | ResAccountList [Account]
     | ResAddress PaymentAddress
     | ResAddressList [PaymentAddress]
+    | ResAddressPage [PaymentAddress] Int -- Int = Max page number
     deriving (Eq, Show, Read)
 
 instance ToJSON WalletResponse where
@@ -130,6 +139,10 @@ instance ToJSON WalletResponse where
         ResAccountList as -> object ["accountlist" .= as]
         ResAddressList as -> object ["addresslist" .= as]
         ResAddress a      -> object ["address" .= a]
+        ResAddressPage as m -> object
+            [ "addresslist" .= as
+            , "maxpage"     .= m
+            ]
 
 instance RPCRequest WalletRequest String WalletResponse where
     rpcMethod   = walletMethod
@@ -151,6 +164,8 @@ walletMethod wr = case wr of
     AccountList            -> "network.haskoin.wallet.accountlist"
     GenAddress _ _         -> "network.haskoin.wallet.genaddress"
     AddressLabel _ _ _     -> "network.haskoin.wallet.addresslabel"
+    AddressList _          -> "network.haskoin.wallet.addresslist"
+    AddressPage _ _ _      -> "network.haskoin.wallet.addresspage"
 
 parseWalletRequest :: Method -> Value -> Parser WalletRequest
 parseWalletRequest m v = case (m,v) of
@@ -193,6 +208,14 @@ parseWalletRequest m v = case (m,v) of
         i <- o .: "index"
         l <- o .: "label"
         return $ AddressLabel n i l
+    ("network.haskoin.wallet.addresslist", Object o) -> do
+        n <- o .: "accountname"
+        return $ AddressList n
+    ("network.haskoin.wallet.addresspage", Object o) -> do
+        n <- o .: "accountname"
+        p <- o .: "page"
+        a <- o .: "addrperpage"
+        return $ AddressPage n p a
     _ -> mzero
 
 parseWalletResponse :: WalletRequest -> Value -> Parser WalletResponse
@@ -229,6 +252,13 @@ parseWalletResponse w v = case (w, v) of
     (AddressLabel _ _ _, Object o) -> do
         a <- o .: "address"
         return $ ResAddress a
+    (AddressList _, Object o) -> do
+        as <- o .: "addresslist"
+        return $ ResAddressList as
+    (AddressPage _ _ _, Object o) -> do
+        as <- o .: "addresslist"
+        m  <- o .: "maxpage"
+        return $ ResAddressPage as m
     _ -> mzero
 
 encodeWalletRequest :: WalletRequest -> Int -> BS.ByteString

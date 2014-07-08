@@ -1,4 +1,6 @@
-module Network.Haskoin.Wallet.Arbitrary () where
+module Network.Haskoin.Wallet.Arbitrary 
+( RequestPair(..)
+) where
 
 import Test.QuickCheck
 
@@ -17,6 +19,7 @@ import qualified Data.ByteString as BS
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Wallet.Types
+import Network.Haskoin.Server.Types
 
 -- Arbitrary instance for strict ByteStrings
 -- TODO: Remove this if we integrate the project into Haskoin (use Util)
@@ -58,6 +61,65 @@ instance Arbitrary AccTx where
                       <*> arbitrary
                       <*> (abs <$> arbitrary)
 
+instance Arbitrary WalletRequest where
+    arbitrary = oneof
+        [ NewFullWallet <$> arbitrary <*> arbitrary <*> arbitrary
+        -- Not implemented yet
+        -- , NewReadWallet <$> arbitrary <*> arbitrary
+        , GetWallet <$> arbitrary
+        , return WalletList
+        , NewAccount <$> arbitrary <*> arbitrary
+        , NewMSAccount <$> arbitrary 
+                       <*> arbitrary
+                       <*> (choose (1,16))
+                       <*> (choose (1,16))
+                       <*> (flip vectorOf (getAccPubKey <$> genKey) =<< choose (1,10))
+        , AddAccountKeys <$> arbitrary 
+                         <*> (flip vectorOf (getAccPubKey <$> genKey) =<< choose (1,10))
+        , GetAccount <$> arbitrary
+        , return AccountList
+        , GenAddress <$> arbitrary <*> (choose (1,maxBound))
+        , AddressLabel <$> arbitrary 
+                       <*> (choose (0, clearBit maxBound 31))
+                       <*> arbitrary
+        , AddressList <$> arbitrary
+        , AddressPage <$> arbitrary 
+                      <*> (abs <$> arbitrary) 
+                      <*> (choose (1, maxBound))
+        ]
+
+data RequestPair = RequestPair WalletRequest (Either String WalletResponse)
+    deriving (Eq, Show, Read)
+
+instance Arbitrary RequestPair where
+    arbitrary = do
+        req <- arbitrary
+        res <- frequency
+            [ (1, Left <$> arbitrary)
+            , (9, Right <$> go req)  -- Generate Right more frequently
+            ]
+        return $ RequestPair req res
+      where
+        go (NewFullWallet _ _ _) = ResMnemonic <$> arbitrary
+        -- Not implemented yet
+        -- go (NewReadWallet _ _, _) = error "Not implemented"
+        go (GetWallet _) = ResWallet <$> arbitrary
+        go WalletList = 
+            ResWalletList <$> (flip vectorOf arbitrary =<< choose (0,10))
+        go (NewAccount _ _) = ResAccount <$> arbitrary
+        go (NewMSAccount _ _ _ _ _) = ResAccount <$> arbitrary
+        go (AddAccountKeys _ _) = ResAccount <$> arbitrary
+        go (GetAccount _) = ResAccount <$> arbitrary
+        go AccountList = ResAccountList <$> arbitrary
+        go (GenAddress _ _) = 
+            ResAddressList <$> (flip vectorOf arbitrary =<< choose (0,10))
+        go (AddressLabel _ _ _) = ResAddress <$> arbitrary
+        go (AddressList _) = 
+            ResAddressList <$> (flip vectorOf arbitrary =<< choose (0,10))
+        go (AddressPage _ _ _) =
+            ResAddressPage <$> (flip vectorOf arbitrary =<< choose (0,10)) 
+                           <*> (abs <$> arbitrary)
+
 -- TODO: Remove this if we integrate into Haskoin
 genKey :: Gen AccPubKey
 genKey = do
@@ -72,3 +134,4 @@ genAddr :: Gen Address
 genAddr = oneof [ PubKeyAddress <$> (fromInteger <$> arbitrary)
                 , ScriptAddress <$> (fromInteger <$> arbitrary)
                 ]
+

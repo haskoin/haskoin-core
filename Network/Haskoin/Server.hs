@@ -105,10 +105,14 @@ processWalletRequest pool (wr, i) = do
         when (length (accountKeys a) == accountTotal a - 1) $
             setLookAhead n 30
         return $ ResAccount a
-    go (GetAccount n)        = liftM ResAccount $ getAccount n
-    go AccountList           = liftM ResAccountList $ accountList
+    go (GetAccount n)         = liftM ResAccount $ getAccount n
+    go AccountList            = liftM ResAccountList $ accountList
     go (GenAddress n i')      = liftM ResAddressList $ newAddrs n i'
     go (AddressLabel n i' l)  = liftM ResAddress $ setAddrLabel n i' l
+    go (AddressList n)        = liftM ResAddressList $ addressList n
+    go (AddressPage n p a)    = do
+        (as, m) <- addressPage n p a
+        return $ ResAddressPage as m
 
 processNodeEvents :: ConnectionPool -> Sink NodeEvent IO ()
 processNodeEvents pool = awaitForever $ \e -> lift $ runDB pool $ case e of

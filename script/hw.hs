@@ -195,8 +195,8 @@ cmdHelp =
     , "Address commands:" 
     , "  new       acc labels              Generate an address with a label"
     , "  genaddr   acc [-c count]          Generate new addresses"
-    , "  list      acc                     Display last page of addresses"
-    , "  page      acc page [-c res/page]  Display addresses by page"
+    , "  list      acc                     Display all addresses of an account"
+    , "  page      acc page [-c addr/page] Display addresses by page"
     , "  label     acc index label         Add a label to an address"
     , "  (disabled) wif       acc index    Dump prvkey as WIF to stdout"
     , ""
@@ -299,13 +299,13 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         let keysM = mapM xPubImport ks
             r'    = read r
             t'    = read t
-        when (isNothing keysM) $ liftIO $ throwIO $ 
+        when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
         res <- sendRequest $ NewMSAccount wname name r' t' $ fromJust keysM
         print res
     "addkeys" : name : ks -> do
         let keysM = mapM xPubImport ks
-        when (isNothing keysM) $ liftIO $ throwIO $ 
+        when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
         res <- sendRequest $ AddAccountKeys name $ fromJust keysM
         print res
@@ -321,9 +321,17 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             Right (ResAddressList (a:_)) -> do
                 res <- sendRequest $ AddressLabel name (addressIndex a) label
                 print res
-            Left err -> liftIO $ throwIO $ WalletException err
+            Right _ -> throwIO $ WalletException "Invalid response"
+            Left err -> throwIO $ WalletException err
     ["genaddr", name] -> do
         res <- sendRequest $ GenAddress name $ optCount opts
+        print res
+    ["list", name] -> do
+        res <- sendRequest $ AddressList name
+        print res
+    ["page", name, page] -> do
+        let p = read page
+        res <- sendRequest $ AddressPage name p $ optCount opts
         print res
     [] -> formatStr usage
     ["help"] -> formatStr usage

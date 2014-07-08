@@ -54,7 +54,7 @@ newRequest :: MonadIO m
 newRequest (ClientSession iV mV) a = liftIO $ do
     i <- (+1) <$> takeMVar iV
     m <- takeMVar mV
-    putMVar mV $ IntMap.insert i (parseResponse a) m
+    putMVar mV $ IntMap.insert i (\v -> fst <$> parseResponse a v) m
     putMVar iV i
     return $ encodeRequest a i
 

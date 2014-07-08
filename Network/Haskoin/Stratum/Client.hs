@@ -36,7 +36,7 @@ import Network.Haskoin.Stratum.Types
 -- | Session state.
 data ClientSession = ClientSession
     (MVar Int)  -- ^ Last used id
-    (MVar (IntMap (Value -> Parser (Either String StratumResponse))))
+    (MVar (IntMap (Value -> Parser (Either StratumError StratumResponse))))
     -- ^ Parser map
 
 -- | Create initial session.
@@ -88,10 +88,10 @@ incomingConduit n s@(ClientSession _ mV) = do
                             Conduit.yield $ StratumMsgNotif o
                             incomingConduit n s
                 Just p -> do
-                    let rE = parseEither p v
+                    let rE = parse p v
                     Conduit.yield $ case rE of
-                        Left e -> StratumMsgError e
-                        Right r -> either StratumMsgError StratumMsgResponse r
+                        Error e -> StratumMsgError $ StratumErrUnknown e
+                        Success r -> either StratumMsgError StratumMsgResponse r
                     incomingConduit n s
   where
     pe   = throw $ ParseException $ "incomingConduit: invalid JSON"

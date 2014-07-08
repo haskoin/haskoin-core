@@ -8,6 +8,7 @@ module Network.Haskoin.Stratum.Types
 , StratumNotif(..)
 , StratumRequest(..)
 , StratumResponse(..)
+, StratumError(..)
   -- ** Bitcoin Data
 , StratumTxInfo(..)
 , StratumCoin(..)
@@ -21,7 +22,8 @@ import Control.Exception (Exception)
 import Control.Monad (when)
 
 import Data.Aeson
-import Data.Text (Text, unpack)
+import Data.Text (Text)
+import qualified Data.Text as Text
 import Data.Vector ((!))
 import qualified Data.Vector as Vector
 import Data.Word (Word, Word64)
@@ -46,7 +48,7 @@ data StratumMessage
     = StratumMsgRequest  { stratumMsgRequest  :: !StratumRequest  }
     | StratumMsgNotif    { stratumMsgNotif    :: !StratumNotif    }
     | StratumMsgResponse { stratumMsgResponse :: !StratumResponse }
-    | StratumMsgError    { stratumMsgError    :: !String          }
+    | StratumMsgError    { stratumMsgError    :: !StratumError    }
     deriving (Eq, Show)
 
 instance NFData StratumMessage where
@@ -84,7 +86,7 @@ instance ToJSON StratumRequest where
     toJSON (BroadcastTx t) = toJSON [bsToHex $ encode' t]
     toJSON (SubscribeAddr a) = toJSON [a]
 
-instance RPCRequest StratumRequest String StratumResponse where
+instance RPCRequest StratumRequest StratumError StratumResponse where
     rpcMethod (RequestVersion _ _)  = "server.version"
     rpcMethod (RequestHistory _)    = "blockchain.address.get_history"
     rpcMethod (RequestBalance _)    = "blockchain.address.get_balance"
@@ -139,10 +141,11 @@ instance RPCRequest StratumRequest String StratumResponse where
       where
         et = fail "parseParams: could not decode transaction hex"
 
-    parseParams m = fail $ "parseParams: unknown method " ++ unpack m
+    parseParams m = withArray "unknown method" $ \_ ->
+        fail $ "parseParams: unknown method " ++ Text.unpack m
 
     parseResult (RequestVersion _ _) = withText "version" $ \t ->
-        return $ ServerVersion $ unpack t
+        return $ ServerVersion $ Text.unpack t
 
     parseResult (RequestHistory a) = withArray "history" $ \v ->
         AddrHistory a <$> parseJSON (Array v)
@@ -154,27 +157,36 @@ instance RPCRequest StratumRequest String StratumResponse where
         AddrUnspent a <$> parseJSON (Array v)
 
     parseResult (RequestTx i) = withText "transaction" $ \t -> do
-        h <- maybe eh return $ hexToBS $ unpack t
+        h <- maybe eh return $ hexToBS $ Text.unpack t
         x <- either fail return $ decodeToEither h
         return $ Transaction i x
       where
         eh = fail "parseResult: could not decode hex transaction"
 
     parseResult (BroadcastTx x) = withText "txid" $ \t -> do
-        let iM = decodeTxHashLE $ unpack t
+        let iM = decodeTxHashLE $ Text.unpack t
         i <- maybe ei return iM
         return $ BroadcastId i x
       where
         ei = fail "parseResult: could not parse transaction id"
 
     parseResult (SubscribeAddr a) = withText "status" $ \t -> do
-        b <- maybe eh return $ hexToBS $ unpack t
+        b <- maybe eh return $ hexToBS $ Text.unpack t
         h <- either fail return $ decodeToEither b
         return $ AddrStatus a h
       where
         eh = fail "parseResult: failed to read status from hex"
 
-    parseError _ = withText "error" $ return . unpack
+    parseError x = withText "error" $ \u -> do
+        let s = Text.unpack u
+        return $ case x of
+            RequestVersion _ _ -> StratumErrVersion       s
+            RequestHistory   a -> StratumErrHistory       s a
+            RequestBalance   a -> StratumErrBalance       s a
+            RequestUnspent   a -> StratumErrUnspent       s a
+            RequestTx        i -> StratumErrTx            s i
+            BroadcastTx      t -> StratumErrBroadcastTx   s t
+            SubscribeAddr    a -> StratumErrSubscribeAddr s a
 
 data StratumNotif = NotifAddress
     { notifAddr         :: !Address
@@ -192,17 +204,20 @@ instance RPCNotif StratumNotif where
 
     parseNotifParams "blockchain.address.subscribe" =
         withArray "blockchain.address.subscribe" $ \v -> do
-            a <- parseJSON (v ! 0)
+            when (Vector.length v < 2) $
+                fail "parseNotifParams: array too small"
+            a <- parseJSON (Vector.head v)
             s <- f $ v ! 1
             return $ NotifAddress a s
       where
         f = withText "status" $ \t -> do
-            let bsM = hexToBS $ unpack t
+            let bsM = hexToBS $ Text.unpack t
             bs <- maybe ebs return bsM
             either fail return $ decodeToEither bs
         ebs = fail "parseNotifParams: could not parse status hex"
 
-    parseNotifParams m = fail $ "parseNotifParams: unknown method " ++ unpack m
+    parseNotifParams m = withArray "unknown method" $ \_ ->
+        fail $ "parseNotifParams: unknown method " ++ Text.unpack m
 
 -- | Stratum Response Result data.
 data StratumResponse
@@ -244,6 +259,52 @@ instance NFData StratumResponse where
     rnf (AddrStatus a s)        = rnf a `seq` rnf s
     rnf (Transaction i t)       = rnf i `seq` rnf t
     rnf (BroadcastId i t)       = rnf i `seq` rnf t
+
+data StratumError
+    = StratumErrVersion
+        { stratumErr               :: !String
+        }
+    | StratumErrHistory
+        { stratumErr               :: !String
+        , stratumErrAddr           :: !Address
+        }
+    | StratumErrBalance
+        { stratumErr               :: !String
+        , stratumErrAddr           :: !Address
+        }
+    | StratumErrUnspent
+        { stratumErr               :: !String
+        , stratumErrAddr           :: !Address
+        }
+    | StratumErrTx
+        { stratumErr               :: !String
+        , stratumErrTxId           :: !TxHash
+        }
+    | StratumErrBroadcastTx
+        { stratumErr               :: !String
+        , stratumErrTx             :: !Tx
+        }
+    | StratumErrSubscribeAddr
+        { stratumErr               :: !String
+        , stratumErrAddr           :: !Address
+        }
+    | StratumErrUnknown
+        { stratumErr               :: !String
+        }
+    deriving (Eq, Show)
+
+instance NFData StratumError where
+    rnf (StratumErrVersion         s) = rnf s
+    rnf (StratumErrHistory       s a) = rnf s `seq` rnf a
+    rnf (StratumErrBalance       s a) = rnf s `seq` rnf a
+    rnf (StratumErrUnspent       s a) = rnf s `seq` rnf a
+    rnf (StratumErrTx            s i) = rnf s `seq` rnf i
+    rnf (StratumErrBroadcastTx   s t) = rnf s `seq` rnf t
+    rnf (StratumErrSubscribeAddr s a) = rnf s `seq` rnf a
+    rnf (StratumErrUnknown         s) = rnf s
+
+instance FromJSON StratumError where
+    parseJSON = withText "error" $ return . StratumErrUnknown . Text.unpack
 
 -- | Transaction height and ID pair. Used in history responses.
 data StratumTxInfo = StratumTxInfo

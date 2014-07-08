@@ -17,6 +17,7 @@ import qualified Data.ByteString as BS
     , null
     )
 
+import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Server.Types
@@ -86,6 +87,15 @@ instance Arbitrary WalletRequest where
         , AddressPage <$> arbitrary 
                       <*> (abs <$> arbitrary) 
                       <*> (choose (1, maxBound))
+        , TxList <$> arbitrary
+        , TxPage <$> arbitrary 
+                 <*> (abs <$> arbitrary)
+                 <*> (choose (1, maxBound))
+        , TxSend <$> arbitrary 
+                 <*> (flip vectorOf (liftM2 (,) genAddr arbitrary) =<< choose (0,10))
+                 <*> arbitrary
+        , TxSign <$> arbitrary <*> genTx
+        , Balance <$> arbitrary
         ]
 
 data RequestPair = RequestPair WalletRequest (Either String WalletResponse)
@@ -119,6 +129,16 @@ instance Arbitrary RequestPair where
         go (AddressPage _ _ _) =
             ResAddressPage <$> (flip vectorOf arbitrary =<< choose (0,10)) 
                            <*> (abs <$> arbitrary)
+        go (TxList _) = 
+            ResAccTxList <$> (flip vectorOf arbitrary =<< choose (0,10))
+        go (TxPage _ _ _) = 
+            ResAccTxPage <$> (flip vectorOf arbitrary =<< choose (0,10)) 
+                         <*> (abs <$> arbitrary)
+        go (TxSend _ _ _) = 
+            ResTxStatus <$> (fromInteger <$> arbitrary) <*> arbitrary
+        go (TxSign _ _) = 
+            ResTxStatus <$> (fromInteger <$> arbitrary) <*> arbitrary
+        go (Balance _) = ResBalance <$> arbitrary
 
 -- TODO: Remove this if we integrate into Haskoin
 genKey :: Gen AccPubKey
@@ -134,4 +154,23 @@ genAddr :: Gen Address
 genAddr = oneof [ PubKeyAddress <$> (fromInteger <$> arbitrary)
                 , ScriptAddress <$> (fromInteger <$> arbitrary)
                 ]
+
+-- TODO: Remove this if we integrate into Haskoin
+genTx :: Gen Tx
+genTx = Tx <$> arbitrary 
+           <*> (flip vectorOf genTxIn =<< choose (0,10))
+           <*> (flip vectorOf genTxOut =<< choose (0,10))
+           <*> arbitrary
+
+-- TODO: Remove this if we integrate into Haskoin
+genTxIn :: Gen TxIn
+genTxIn = TxIn <$> genOutPoint <*> arbitrary <*> arbitrary
+
+-- TODO: Remove this if we integrate into Haskoin
+genTxOut :: Gen TxOut
+genTxOut = TxOut <$> (choose (1,2100000000000000)) <*> arbitrary
+
+-- TODO: Remove this if we integrate into Haskoin
+genOutPoint :: Gen OutPoint
+genOutPoint = OutPoint <$> (fromInteger <$> arbitrary) <*> arbitrary
 

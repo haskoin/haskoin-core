@@ -40,12 +40,14 @@ import Database.Persist.Sqlite
 
 import Network.Haskoin.Util
 import Network.Haskoin.Stratum
+import Network.Haskoin.Script
 
 import Network.Haskoin.Node.PeerManager
 import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Tx
 import Network.Haskoin.Wallet.Account
 import Network.Haskoin.Wallet.Address
+import Network.Haskoin.Wallet.Coin
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Server.Types
@@ -113,6 +115,17 @@ processWalletRequest pool (wr, i) = do
     go (AddressPage n p a)    = do
         (as, m) <- addressPage n p a
         return $ ResAddressPage as m
+    go (TxList n)      = liftM ResAccTxList $ txList n
+    go (TxPage n p t)  = do
+        (l,i) <- txPage n p t
+        return $ ResAccTxPage l i
+    go (TxSend n xs f) = do
+        (h,b) <- sendTx n xs f
+        return $ ResTxStatus h b
+    go (TxSign n tx)   = do
+        (h,b) <- signWalletTx n tx (SigAll False)
+        return $ ResTxStatus h b
+    go (Balance n)     = liftM ResBalance $ balance n
 
 processNodeEvents :: ConnectionPool -> Sink NodeEvent IO ()
 processNodeEvents pool = awaitForever $ \e -> lift $ runDB pool $ case e of

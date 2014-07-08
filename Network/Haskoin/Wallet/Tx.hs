@@ -364,24 +364,24 @@ removeTx tid = do
 
 -- | Create a transaction sending some coins to a list of recipient addresses.
 sendTx :: (PersistUnique m, PersistQuery m)
-       => AccountName        -- ^ Account name
-       -> [(String,Word64)]  -- ^ List of recipient addresses and amounts
-       -> Word64             -- ^ Fee per 1000 bytes 
-       -> m (Tx, Bool)  -- ^ (Payment transaction, status flag)
+       => AccountName         -- ^ Account name
+       -> [(Address,Word64)]  -- ^ List of recipient addresses and amounts
+       -> Word64              -- ^ Fee per 1000 bytes 
+       -> m (TxHash, Bool)    -- ^ (Payment transaction, status flag)
 sendTx name strDests fee = do
     (coins,recips) <- sendSolution name strDests fee
     resE <- sendCoins coins recips (SigAll False)
-    when (isLeft resE) $ liftIO $ throwIO $
-        WalletException $ fromLeft resE
-    return $ fromRight resE
+    case resE of
+        Left err    -> liftIO $ throwIO $ WalletException err
+        -- TODO: Import the transaction into the wallet and send it if 
+        -- necessary to the network.
+        Right (t,b) -> return (txHash t, b)
 
 -- Given a list of recipients and a fee, finds a valid combination of coins
 sendSolution :: (PersistUnique m, PersistQuery m)
-             => AccountName -> [(String,Word64)] -> Word64
+             => AccountName -> [(Address,Word64)] -> Word64
              -> m ([Coin],[(Address,Word64)])
-sendSolution name strDests fee = do
-    unless (all isJust decodeDest) $ liftIO $ throwIO $
-        WalletException "Invalid addresses"
+sendSolution name dests fee = do
     (Entity ai acc) <- getAccountEntity name
     unspent <- unspentCoins name
     let msParam = ( accountRequired $ dbAccountValue acc
@@ -398,9 +398,6 @@ sendSolution name strDests fee = do
         return $ dests ++ [(dbAddressValue $ head cAddr,change)]
     return (coins,recips)
   where
-    decodeDest = map f strDests
-    f (str,v)  = (\x -> (x,v)) <$> base58ToAddr str
-    dests      = map fromJust decodeDest
     tot        = sum $ map snd dests
     
 -- Build and sign a transaction by providing coins and recipients
@@ -424,10 +421,10 @@ sendCoins coins recipients sh = do
 -- the keys of one account only to allow for more control when the wallet is
 -- used as the backend of a web service.
 signWalletTx :: PersistUnique m
-             => AccountName  -- ^ Account name
-             -> Tx           -- ^ Transaction to sign 
-             -> SigHash      -- ^ Signature type to create 
-             -> m (Tx, Bool) -- ^ (Signed transaction, completed flag)
+             => AccountName      -- ^ Account name
+             -> Tx               -- ^ Transaction to sign 
+             -> SigHash          -- ^ Signature type to create 
+             -> m (TxHash, Bool) -- ^ (Signed transaction, completed flag)
 signWalletTx name tx sh = do
     (Entity ai _) <- getAccountEntity name
     coins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
@@ -436,9 +433,11 @@ signWalletTx name tx sh = do
         accCoins   = map (dbCoinValue . entityVal) accCoinsDB
     ys <- forM accCoins (getSigData sh)
     let resE = detSignTx tx (map fst ys) (map snd ys)
-    when (isLeft resE) $ liftIO $ throwIO $
-        WalletException $ fromLeft resE
-    return $ fromRight resE
+    case resE of
+        Left err    -> liftIO $ throwIO $ WalletException err
+        -- TODO: Import the transaction into the wallet and send it if 
+        -- necessary to the network.
+        Right (t,b) -> return (txHash t, b)
   where
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
 

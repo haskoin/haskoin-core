@@ -22,6 +22,7 @@ import Control.Concurrent.STM.TBMChan
 import Control.Concurrent.STM
 import Control.DeepSeq (NFData, rnf)
 
+import Data.Word
 import Data.Maybe
 import Data.Aeson
 import Data.Aeson.Types
@@ -43,6 +44,7 @@ import Database.Persist
 import Database.Persist.Sql
 import Database.Persist.Sqlite
 
+import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Stratum
 import Network.Haskoin.Util
@@ -70,6 +72,11 @@ data WalletRequest
     | AddressLabel AccountName KeyIndex String
     | AddressList AccountName
     | AddressPage AccountName Int Int
+    | TxList AccountName
+    | TxPage AccountName Int Int
+    | TxSend AccountName [(Address, Word64)] Word64
+    | TxSign AccountName Tx
+    | Balance AccountName
     deriving (Eq, Show, Read)
 
 instance ToJSON WalletRequest where
@@ -118,6 +125,22 @@ instance ToJSON WalletRequest where
             , "page"        .= p
             , "addrperpage" .= a
             ]
+        TxList n -> object [ "accountname" .= n]
+        TxPage n p t -> object
+            [ "accountname" .= n
+            , "page"        .= p
+            , "txperpage"   .= t
+            ]
+        TxSend n rs f -> object
+            [ "accountname" .= n
+            , "recipients"  .= map (\(a,v) -> (addrToBase58 a, v)) rs
+            , "fee"         .= f
+            ]
+        TxSign n tx -> object
+            [ "accountname" .= n
+            , "tx"          .= bsToHex (encode' tx)
+            ]
+        Balance n -> object [ "accountname" .= n ]
 
 data WalletResponse
     = ResMnemonic String
@@ -128,6 +151,10 @@ data WalletResponse
     | ResAddress PaymentAddress
     | ResAddressList [PaymentAddress]
     | ResAddressPage [PaymentAddress] Int -- Int = Max page number
+    | ResAccTxList [AccTx]
+    | ResAccTxPage [AccTx] Int -- Int = Max page number
+    | ResTxStatus TxHash Bool
+    | ResBalance Word64
     deriving (Eq, Show, Read)
 
 instance ToJSON WalletResponse where
@@ -140,9 +167,19 @@ instance ToJSON WalletResponse where
         ResAddressList as -> object ["addresslist" .= as]
         ResAddress a      -> object ["address" .= a]
         ResAddressPage as m -> object
-            [ "addresslist" .= as
+            [ "addresspage" .= as
             , "maxpage"     .= m
             ]
+        ResAccTxList xs -> object ["txlist" .= xs]
+        ResAccTxPage xs m -> object
+            [ "txpage"  .= xs
+            , "maxpage" .= m
+            ]
+        ResTxStatus h b -> object 
+            [ "txhash"   .= encodeTxHashLE h 
+            , "complete" .= b
+            ]
+        ResBalance b -> object [ "balance" .= b ]
 
 instance RPCRequest WalletRequest String WalletResponse where
     rpcMethod   = walletMethod
@@ -166,6 +203,11 @@ walletMethod wr = case wr of
     AddressLabel _ _ _     -> "network.haskoin.wallet.addresslabel"
     AddressList _          -> "network.haskoin.wallet.addresslist"
     AddressPage _ _ _      -> "network.haskoin.wallet.addresspage"
+    TxList _               -> "network.haskoin.wallet.txlist"
+    TxPage _ _ _           -> "network.haskoin.wallet.txpage"
+    TxSend _ _ _           -> "network.haskoin.wallet.txsend"
+    TxSign _ _             -> "network.haskoin.wallet.txsign"
+    Balance _              -> "network.haskoin.wallet.balance"
 
 parseWalletRequest :: Method -> Value -> Parser WalletRequest
 parseWalletRequest m v = case (m,v) of
@@ -216,6 +258,29 @@ parseWalletRequest m v = case (m,v) of
         p <- o .: "page"
         a <- o .: "addrperpage"
         return $ AddressPage n p a
+    ("network.haskoin.wallet.txlist", Object o) -> do
+        n <- o .: "accountname"
+        return $ TxList n
+    ("network.haskoin.wallet.txpage", Object o) -> do
+        n <- o .: "accountname"
+        p <- o .: "page"
+        t <- o .: "txperpage"
+        return $ TxPage n p t
+    ("network.haskoin.wallet.txsend", Object o) -> do
+        n  <- o .: "accountname"
+        xs <- o .: "recipients"
+        f  <- o .: "fee"
+        let xsM = mapM (\(a,v) -> liftM2 (,) (base58ToAddr a) (return v)) xs
+            g x = return $ TxSend n x f
+        maybe mzero g xsM
+    ("network.haskoin.wallet.txsign", Object o) -> do
+        n  <- o .: "accountname"
+        tx <- o .: "tx"
+        let txM = decodeToMaybe =<< hexToBS tx
+        maybe mzero (return . (TxSign n)) txM
+    ("network.haskoin.wallet.balance", Object o) -> do
+        n <- o .: "accountname"
+        return $ Balance n
     _ -> mzero
 
 parseWalletResponse :: WalletRequest -> Value -> Parser WalletResponse
@@ -256,9 +321,27 @@ parseWalletResponse w v = case (w, v) of
         as <- o .: "addresslist"
         return $ ResAddressList as
     (AddressPage _ _ _, Object o) -> do
-        as <- o .: "addresslist"
+        as <- o .: "addresspage"
         m  <- o .: "maxpage"
         return $ ResAddressPage as m
+    (TxList _, Object o) -> do
+        xs <- o .: "txlist"
+        return $ ResAccTxList xs
+    (TxPage _ _ _, Object o) -> do
+        xs <- o .: "txpage"
+        m  <- o .: "maxpage"
+        return $ ResAccTxPage xs m
+    (TxSend _ _ _, Object o) -> do
+        h <- o .: "txhash"
+        b <- o .: "complete"
+        maybe mzero (return . (flip ResTxStatus b)) $ decodeTxHashLE h
+    (TxSign _ _, Object o) -> do
+        h <- o .: "txhash"
+        b <- o .: "complete"
+        maybe mzero (return . (flip ResTxStatus b)) $ decodeTxHashLE h
+    (Balance _, Object o) -> do
+        b <- o .: "balance"
+        return $ ResBalance b
     _ -> mzero
 
 encodeWalletRequest :: WalletRequest -> Int -> BS.ByteString

@@ -19,10 +19,20 @@ import qualified System.Environment as E (getArgs)
 import System.Posix.Daemon
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (join, void, forM, forM_, when, liftM, unless, mzero)
+import Control.Monad 
+    ( join
+    , void
+    , forM
+    , forM_
+    , when
+    , liftM
+    , unless
+    , mzero
+    , liftM2
+    )
 import Control.Monad.Trans (lift, liftIO, MonadIO)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
-import Control.Exception (tryJust, throwIO)
+import Control.Exception (tryJust, throwIO, throw)
 import Control.Monad.Logger 
     ( NoLoggingT
     , runNoLoggingT
@@ -201,14 +211,15 @@ cmdHelp =
     , "  (disabled) wif       acc index    Dump prvkey as WIF to stdout"
     , ""
     , "Transaction commands:" 
-    , "  tx        acc                     Display transactions"
+    , "  txlist    acc                     Display transactions in an account"
+    , "  txpage    acc page [-c tx/page]   Display transactions by page"
     , "  send      acc addr amount         Send coins to an address"
     , "  sendmany  acc {addr:amount...}    Send coins to many addresses"
-    , "  balance   acc                     Display account balance"
-    , "  balances                          Display all balances"
     , "  signtx    acc tx                  Sign a transaction"
-    , "  importtx  tx                      Import offline transaction"
-    , "  removetx  txid                    Remove transaction"
+    , "  balance   acc                     Display account balance"
+    , "  (disabled) balances               Display all balances"
+    , "  (disabled) importtx  tx           Import offline transaction"
+    , "  (disabled) removetx  txid         Remove transaction"
     , "  (disabled) coins     acc          List coins"
     , "  (disabled) allcoins               List all coins per account"
     , ""
@@ -332,6 +343,38 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
     ["page", name, page] -> do
         let p = read page
         res <- sendRequest $ AddressPage name p $ optCount opts
+        print res
+    ["txlist", name] -> do
+        res <- sendRequest $ TxList name
+        print res
+    ["txpage", name, page] -> do
+        let p = read page
+        res <- sendRequest $ TxPage name p $ optCount opts 
+        print res
+    ["send", name, add, amount] -> do
+        let a = base58ToAddr add
+            v = read amount
+        when (isNothing a) $ throwIO $ 
+            WalletException "Could not parse address"
+        res <- sendRequest $ TxSend name [(fromJust a, v)] $ optFee opts
+        print res
+    "sendmany" : name : xs -> do
+        let g str   = map T.unpack $ T.splitOn ":" (T.pack str)
+            f [a,v] = liftM2 (,) (base58ToAddr a) (return $ read v)
+            f _     = throw $ WalletException "Could not parse recipient list"
+            recipients = mapM (f . g) xs
+        when (isNothing recipients) $ throwIO $
+            WalletException "Could not parse recipient list"
+        res <- sendRequest $ TxSend name (fromJust recipients) $ optFee opts
+        print res
+    ["signtx", name, tx] -> do
+        let txM = decodeToMaybe =<< hexToBS tx
+        when (isNothing txM) $ throwIO $
+            WalletException "Could not parse transaction"
+        res <- sendRequest $ TxSign name $ fromJust txM
+        print res
+    ["balance", name] -> do
+        res <- sendRequest $ Balance name
         print res
     [] -> formatStr usage
     ["help"] -> formatStr usage

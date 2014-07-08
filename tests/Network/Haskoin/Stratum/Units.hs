@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Stratum.Units (tests) where
 
+import Control.Applicative
 import Control.Monad
 import Data.Aeson
 import Data.Aeson.Types
@@ -50,11 +51,11 @@ testPair label f rF vF = buildTest $ do
     return test
   where
     p :: String -> StratumRequest
-    p = fromJust . parseMaybe parseRequest . fromJust . decodeStrict' . B8.pack
+    p = fst . fromJust . parseMaybe parseRequest . fromJust . decodeStrict' . B8.pack
     failure = ("Failed to decode: " ++)
 
 isRequest :: Value -> Bool
-isRequest v = case (parse parseRequest v :: Result StratumRequest) of
+isRequest v = case (fst <$> parse parseRequest v :: Result StratumRequest) of
     Error _ -> False
     Success _ -> True
 
@@ -64,13 +65,13 @@ isNotif v = case (parse parseNotif v :: Result StratumNotif) of
     Success _ -> True
 
 isResponse :: StratumRequest -> Value -> Bool
-isResponse r v = case (parse (parseResponse r) v) of
+isResponse r v = case (fst <$> parse (parseResponse r) v) of
     Success (Right _) -> True
     Success _ -> False
     Error _ -> False
 
 isError :: StratumRequest -> Value -> Bool
-isError r v = case (parse (parseResponse r) v) of
+isError r v = case (fst <$> parse (parseResponse r) v) of
     Success (Left _) -> True
     Success _ -> False
     Error _ -> False

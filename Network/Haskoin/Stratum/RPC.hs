@@ -6,6 +6,7 @@
 module Network.Haskoin.Stratum.RPC
 ( -- ** Requests
   RPCRequest
+, Method
 , rpcMethod
 , encodeRequest
 , encodeResponse
@@ -22,13 +23,10 @@ module Network.Haskoin.Stratum.RPC
 , encodeNotif
 , parseNotifParams
 , parseNotif
-  -- ** Encoding
 ) where
 
-import Control.Applicative ((<$>))
 import Data.Aeson.Types
 import Data.Text (Text)
-import Data.IntMap.Strict (IntMap)
 
 type Method = Text
  
@@ -51,18 +49,25 @@ class (ToJSON a, FromJSON e) => RPCRequest a e r | a -> e, a -> r
     parseError :: a -> Value -> Parser e
 
     -- | Parse JSON-RPC request.
-    parseRequest :: Value -> Parser a
+    parseRequest :: Value -> Parser (a, Int)
     parseRequest = withObject "request" $ \o -> do
+        i <- o .: "id"
         m <- o .: "method"
         p <- o .: "params"
-        parseParams m p
+        res <- parseParams m p
+        return (res, i)
 
     -- | Parse response using request.
-    parseResponse :: a -> Value -> Parser (Either e r)
-    parseResponse a = withObject "response" $ \o ->
+    parseResponse :: a -> Value -> Parser (Either e r, Int)
+    parseResponse a = withObject "response" $ \o -> do
+        i <- o .: "id"
         o .:? "error" .!= Null >>= \e -> case e of
-            Null -> o .: "result" >>= \r -> Right <$> parseResult a r
-            _ -> Left <$> parseError a e
+            Null -> o .: "result" >>= \r -> do
+                res <- parseResult a r
+                return (Right res, i)
+            _ -> do
+                err <- parseError a e
+                return (Left err, i)
 
     -- | Encode JSON-RPC request.
     encodeRequest :: a -> Int -> Value

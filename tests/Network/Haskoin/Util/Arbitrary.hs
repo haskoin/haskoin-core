@@ -28,4 +28,3 @@ nonEmptyBS :: Gen BS.ByteString
 nonEmptyBS = do
     bs <- arbitrary
     return $ if BS.null bs then BS.pack [0] else bs
-

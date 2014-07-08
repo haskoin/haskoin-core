@@ -4,3 +4,4 @@
 []
 [1,2,3]
 {"foo": "boo"}
+{"id": 6, "result": "{u'message': u'TX rejected', u'code': -22}"}

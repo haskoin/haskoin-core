@@ -52,9 +52,7 @@ library
                        Network.Haskoin.Script.Parser, 
                        Network.Haskoin.Script.SigHash,
                        Network.Haskoin.Script.Evaluator,
-                       Network.Haskoin.Stratum.JSONRPC.Message,
-                       Network.Haskoin.Stratum.JSONRPC.Conduit,
-                       Network.Haskoin.Stratum.Exceptions,
+                       Network.Haskoin.Stratum.RPC,
                        Network.Haskoin.Stratum.Types,
                        Network.Haskoin.Stratum.Client,
                        Network.Haskoin.Transaction.Builder

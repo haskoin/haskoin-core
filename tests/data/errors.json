@@ -1,7 +1,5 @@
-{"id": 3, "error": "unknown method:blockchain.foo"}
-{"jsonrpc": "2.0", "error": {"code": -32601, "message": "Method not found"}, "id": "1"}
-{"jsonrpc": "2.0", "error": {"code": -32700, "message": "Parse error"}, "id": null}
-{"jsonrpc": "2.0", "error": {"code": -32600, "message": "Invalid Request"}, "id": null}
-{"jsonrpc": "2.0", "error": {"code": -32700, "message": "Parse error"}, "id": null}
-{"jsonrpc": "2.0", "error": {"code": -32600, "message": "Invalid Request"}, "id": null}
-{"jsonrpc": "2.0", "error": {"code": -32601, "message": "Method not found"}, "id": "5"}
+{"id": 1, "error": "unknown method:blockchain.bad"}
+{"id": 2, "error": "'NoneType' object has no attribute '__getitem__': badaddress"}
+{"id": 3, "error": "'NoneType' object has no attribute '__getitem__': badaddress"}
+{"id": 4, "error": "'NoneType' object has no attribute '__getitem__': badaddress"}
+{"id": 5, "error": "{u'message': u\"parameter 1 must be hexadecimal string (not 'badtxid')\", u'code': -8}: [u'badtxid']"}

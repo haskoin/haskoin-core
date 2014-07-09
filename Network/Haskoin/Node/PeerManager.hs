@@ -78,6 +78,7 @@ data NodeEvent
 
 data NodeRequest
     = BloomFilterUpdate BloomFilter
+    | PublishTx Tx
     deriving (Eq, Show)
 
 startNode :: FilePath -> IO (TBMChan NodeEvent, TBMChan NodeRequest)
@@ -132,6 +133,10 @@ processUserRequest mChan = awaitForever $ \r -> case r of
     BloomFilterUpdate b -> do
         tid <- lift myThreadId
         lift $ atomically $ writeTBMChan mChan (tid, UserBloomFilter b)
+    PublishTx tx -> do
+        tid <- lift myThreadId
+        lift $ atomically $ writeTBMChan mChan (tid, UserPublishTx tx)
+        
 
 startPeer :: ClientSettings -> ManagerHandle ()
 startPeer remote = do
@@ -172,18 +177,21 @@ buildVersion = do
 
 managerSink :: Sink (ThreadId, ManagerRequest) ManagerHandle ()
 managerSink = awaitForever $ \(tid,req) -> lift $ do
-    exists <- peerExists tid
-    -- Discard messages from peers that are gone
-    -- TODO: Is this always the correct behavior ?
-    when exists $ case req of
-        PeerHandshake v     -> processPeerHandshake tid v
-        PeerDisconnect      -> processPeerDisconnect tid
-        PeerMerkleBlock dmb -> processMerkleBlock tid dmb
-        UserBloomFilter b   -> processBloomFilter b
-        PeerMessage msg -> case msg of
-            MHeaders headers -> processHeaders tid headers
-            MTx tx           -> processTx tid tx
-            _                -> return () -- Ignore them for now
+    case req of
+        UserBloomFilter b -> processBloomFilter b
+        UserPublishTx tx  -> processPublishTx tx
+        _   -> do
+            exists <- peerExists tid
+            -- Discard messages from peers that are gone
+            -- TODO: Is this always the correct behavior ?
+            when exists $ case req of
+                PeerHandshake v     -> processPeerHandshake tid v
+                PeerDisconnect      -> processPeerDisconnect tid
+                PeerMerkleBlock dmb -> processMerkleBlock tid dmb
+                PeerMessage msg -> case msg of
+                    MHeaders headers -> processHeaders tid headers
+                    MTx tx           -> processTx tid tx
+                    _                -> return () -- Ignore them for now
 
 processPeerDisconnect :: ThreadId -> ManagerHandle ()
 processPeerDisconnect tid = do
@@ -226,6 +234,7 @@ processPeerHandshake tid remoteVer = do
 
 processBloomFilter :: BloomFilter -> ManagerHandle ()
 processBloomFilter bloom = do
+    $(logDebug) "Got BloomFilterUpdate request from user"
     prevBloom <- S.gets mngrBloom
     when (prevBloom /= Just bloom) $ do
         $(logDebug) "Loading new bloom filter"
@@ -237,6 +246,15 @@ processBloomFilter bloom = do
                 sendMessage tid $ MFilterLoad $ FilterLoad bloom
             downloadBlocks tid
 
+-- TODO: Buffer the broadcast if no peers are currently connected
+processPublishTx :: Tx -> ManagerHandle ()
+processPublishTx tx = do
+    $(logDebug) "Got PublishTx request from user"
+    m <- S.gets peerMap 
+    forM_ (M.keys m) $ \tid -> do
+        dat <- getPeerData tid
+        when (peerHandshake dat) $ sendMessage tid $ MTx tx
+        
 processHeaders :: ThreadId -> Headers -> ManagerHandle ()
 processHeaders tid (Headers h) = do
     -- TODO: The time here is incorrect. It should be a median of all peers.

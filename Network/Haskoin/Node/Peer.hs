@@ -67,6 +67,7 @@ data ManagerRequest
     | PeerMerkleBlock DecodedMerkleBlock
     | PeerMessage Message   
     | UserBloomFilter BloomFilter
+    | UserPublishTx Tx
 
 data DecodedMerkleBlock = DecodedMerkleBlock
     { decodedMerkle :: MerkleBlock

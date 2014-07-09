@@ -68,8 +68,8 @@ runServer = do
 
     -- Launch SPV node
     (eChan, rChan) <- startNode headerFile 
-    atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
     forkIO $ sourceTBMChan eChan $$ processNodeEvents pool
+    atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
 
     -- Launch JSON-RPC server
     -- TODO: Put connection stuff in config file
@@ -77,13 +77,15 @@ runServer = do
         appSource client
             -- TODO: The server ignores bad requests here. Change that?
             $= CL.mapMaybe (eitherToMaybe . decodeWalletRequest)
-            $$ CL.mapM (processWalletRequest pool)
+            $$ CL.mapM (processWalletRequest pool rChan)
             =$ CL.map (\(res,i) -> encodeWalletResponse res i)
             =$ appSink client
 
-processWalletRequest :: ConnectionPool -> (WalletRequest, Int) 
+processWalletRequest :: ConnectionPool 
+                     -> TBMChan NodeRequest
+                     -> (WalletRequest, Int) 
                      -> IO (Either String WalletResponse, Int)
-processWalletRequest pool (wr, i) = do
+processWalletRequest pool rChan (wr, i) = do
     res <- tryJust f $ runDB pool $ go wr
     return (res, i)
   where
@@ -96,20 +98,30 @@ processWalletRequest pool (wr, i) = do
     go (NewAccount w n)      = do
         a <- newAccount w n
         setLookAhead n 30
+        bloom <- walletBloomFilter
+        liftIO $ atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
         return $ ResAccount a
     go (NewMSAccount w n r t ks) = do
         a <- newMSAccount w n r t ks
-        when (length (accountKeys a) == t - 1) $
+        when (length (accountKeys a) == t - 1) $ do
             setLookAhead n 30
+            bloom <- walletBloomFilter
+            liftIO $ atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
         return $ ResAccount a
     go (AddAccountKeys n ks) = do
         a <- addAccountKeys n ks
-        when (length (accountKeys a) == accountTotal a - 1) $
+        when (length (accountKeys a) == accountTotal a - 1) $ do
             setLookAhead n 30
+            bloom <- walletBloomFilter
+            liftIO $ atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
         return $ ResAccount a
     go (GetAccount n)         = liftM ResAccount $ getAccount n
     go AccountList            = liftM ResAccountList $ accountList
-    go (GenAddress n i')      = liftM ResAddressList $ newAddrs n i'
+    go (GenAddress n i')      = do
+        addrs <- newAddrs n i'
+        bloom <- walletBloomFilter
+        liftIO $ atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
+        return $ ResAddressList addrs
     go (AddressLabel n i' l)  = liftM ResAddress $ setAddrLabel n i' l
     go (AddressList n)        = liftM ResAddressList $ addressList n
     go (AddressPage n p a)    = do
@@ -120,11 +132,17 @@ processWalletRequest pool (wr, i) = do
         (l,i) <- txPage n p t
         return $ ResAccTxPage l i
     go (TxSend n xs f) = do
-        (h,b) <- sendTx n xs f
-        return $ ResTxStatus h b
+        (tid, complete) <- sendTx n xs f
+        when complete $ do
+            newTx <- getTx tid
+            liftIO $ atomically $ writeTBMChan rChan $ PublishTx newTx
+        return $ ResTxStatus tid complete
     go (TxSign n tx)   = do
-        (h,b) <- signWalletTx n tx (SigAll False)
-        return $ ResTxStatus h b
+        (tid, complete) <- signWalletTx n tx (SigAll False)
+        when complete $ do
+            newTx <- getTx tid
+            liftIO $ atomically $ writeTBMChan rChan $ PublishTx newTx
+        return $ ResTxStatus tid complete
     go (Balance n)     = liftM ResBalance $ balance n
 
 processNodeEvents :: ConnectionPool -> Sink NodeEvent IO ()

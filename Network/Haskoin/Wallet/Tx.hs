@@ -4,6 +4,7 @@
 module Network.Haskoin.Wallet.Tx
 ( AccTx(..)
 , getTx
+, getTxEntity
 , toAccTx
 , txList
 , txPage
@@ -75,7 +76,7 @@ toAccTx :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
         => DbAccTxGeneric b -> m AccTx
 toAccTx accTx = do
     -- TODO: Keep fromJust?
-    tx     <- getTx $ dbAccTxHash accTx
+    (Entity _ tx) <- getTxEntity $ dbAccTxHash accTx
     height <- getBestHeight
     let conf | isNothing $ dbTxConfirmedBy tx = 0
              | otherwise = height - (fromJust $ dbTxConfirmedHeight tx) + 1
@@ -86,14 +87,16 @@ toAccTx accTx = do
                    , accTxConfirmations = fromIntegral conf
                    }
 
-getTx :: (PersistUnique m, PersistMonadBackend m ~ b)
-        => TxHash -> m (DbTxGeneric b)
-getTx tid = do
+getTxEntity :: (PersistUnique m, PersistMonadBackend m ~ b)
+            => TxHash -> m (Entity (DbTxGeneric b))
+getTxEntity tid = do
     entM <- getBy $ UniqueTx tid
-    case entM of
-        Just ent -> return $ entityVal ent
-        Nothing  -> liftIO $ throwIO $ WalletException $
-            unwords ["Transaction", encodeTxHashLE tid, "not in database"]
+    when (isNothing entM) $ liftIO $ throwIO $ WalletException $
+        unwords ["Transaction", encodeTxHashLE tid, "not in database"]
+    return $ fromJust entM
+
+getTx :: PersistUnique m => TxHash -> m Tx
+getTx tid = liftM (dbTxValue . entityVal) $ getTxEntity tid
 
 -- TODO: Make a paged version of this
 -- | List all the transaction entries for an account. Transaction entries
@@ -375,7 +378,9 @@ sendTx name strDests fee = do
         Left err    -> liftIO $ throwIO $ WalletException err
         -- TODO: Import the transaction into the wallet and send it if 
         -- necessary to the network.
-        Right (t,b) -> return (txHash t, b)
+        Right (tx, complete) -> do
+            importTx tx $ not complete
+            return (txHash tx, complete)
 
 -- Given a list of recipients and a fee, finds a valid combination of coins
 sendSolution :: (PersistUnique m, PersistQuery m)
@@ -420,7 +425,7 @@ sendCoins coins recipients sh = do
 -- work for both normal inputs and multisignature inputs. Signing is limited to
 -- the keys of one account only to allow for more control when the wallet is
 -- used as the backend of a web service.
-signWalletTx :: PersistUnique m
+signWalletTx :: (PersistUnique m, PersistQuery m)
              => AccountName      -- ^ Account name
              -> Tx               -- ^ Transaction to sign 
              -> SigHash          -- ^ Signature type to create 
@@ -435,9 +440,14 @@ signWalletTx name tx sh = do
     let resE = detSignTx tx (map fst ys) (map snd ys)
     case resE of
         Left err    -> liftIO $ throwIO $ WalletException err
-        -- TODO: Import the transaction into the wallet and send it if 
-        -- necessary to the network.
-        Right (t,b) -> return (txHash t, b)
+        Right (t, complete) -> do
+            -- TODO: If a complete transaction is imported as offline, it will
+            -- not be broadcast to the network. This happens if we do not know
+            -- about some of the inputs in the transaction.
+            let knowAllInputs = length coins == length (txIn tx)
+                online        = complete && knowAllInputs
+            importTx t $ not online
+            return (txHash t, online)
   where
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
 

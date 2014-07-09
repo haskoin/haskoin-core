@@ -38,6 +38,7 @@ module Network.Haskoin.Wallet
 
 -- *Tx Commands
 , AccTx(..) 
+, getTx
 , txList
 , txPage
 , importTx

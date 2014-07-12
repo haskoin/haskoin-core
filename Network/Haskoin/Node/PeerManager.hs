@@ -225,7 +225,10 @@ processPeerDisconnect tid = do
 
 processPeerHandshake :: ThreadId -> Version -> ManagerHandle ()
 processPeerHandshake tid remoteVer = do
-    $(logDebug) "Peer connected"
+    $(logDebug) $ T.pack $ unwords
+        [ "Peer connected:"
+        , show tid
+        ]
     modifyPeerData tid $ \d -> d{ peerHandshake = True 
                                 , peerHeight    = startHeight remoteVer
                                 }
@@ -310,20 +313,41 @@ processHeaders tid (Headers h) = do
 
     tids <- M.keys <$> S.gets peerMap 
 
-    -- Adjust the height of nodes that sent us INV messages for these headers
-    forM tids $ \tid -> getPeerData tid >>= \dat -> do
-        forM newToDwn $ \(h, bid) -> do
+    -- Adjust the height of peers that sent us INV messages for these headers
+    forM newToDwn $ \(h, bid) -> do
+        -- Add the current thread as well
+        forM tids $ \ti -> do
+            dat <- getPeerData ti
             let (xs, ys) = partition (== bid) $ peerBlocks dat
-            unless (null xs) $ modifyPeerData tid $ \d ->
-                d{ peerBlocks = ys
-                 , peerHeight = max (peerHeight d) h
-                 }
+            unless (null xs) $ do
+                putPeerData ti dat{ peerBlocks = ys
+                                  , peerHeight = max (peerHeight dat) h
+                                  }
+                when (h > peerHeight dat) $
+                    $(logDebug) $ T.pack $ unwords
+                        [ "Adjusting peer height to"
+                        , show h, ":", show ti
+                        ]
 
-    -- Continue syncing from this node only if it made some progress. Otherwise,
-    -- another peer is probably faster/ahead already.
+    -- Continue syncing from this node only if it made some progress.
+    -- Otherwise, another peer is probably faster/ahead already.
     when newBest $ do
+        -- Adjust height of this thread
+        let m = fst $ last $ newToDwn
+        dat <- getPeerData tid
+        when (m > peerHeight dat) $ do
+            modifyPeerData tid $ \d -> d{ peerHeight = m }
+            $(logDebug) $ T.pack $ unwords
+                [ "Adjusting peer height to"
+                , show m, ":", show tid
+                ]
         -- Update the sync peer 
         S.modify $ \s -> s{ syncPeer = Just tid }
+        $(logInfo) $ T.pack $ unwords
+            [ "New best header height:"
+            , show $ fst $ last newToDwn
+            ]
+        -- Requesting more headers
         sendGetHeaders tid 0x00
 
     -- Request block downloads for all peers that are currently idling
@@ -387,6 +411,18 @@ importMerkleBlocks height = do
                 writeTBMChan eChan $ TxEvent t
             return (node, expectedTxs dmb)
         liftIO $ atomically $ writeTBMChan eChan $ MerkleBlockEvent pairs
+
+        -- TODO: This is very complex just for logging purposes. Simplify ?
+        let best = catMaybes $ map (f . fst) $ reverse pairs
+            f (BestBlock node)   = Just $ nodeHeaderHeight node
+                -- TODO: Verify if this is correct, i.e. last and not first
+            f (BlockReorg _ _ n) = Just $ nodeHeaderHeight $ last n
+            f (SideBlock _)      = Nothing
+        unless (null best) $ 
+            $(logInfo) $ T.pack $ unwords
+                [ "New best block height:"
+                , show $ head best
+                ]
   where
     go prevHeight ((currHeight, x):xs) 
         | currHeight == prevHeight + 1 = (currHeight, x) : go currHeight xs
@@ -404,14 +440,22 @@ processInv tid (Inv vs) = do
     let f (a, b) h = getBlockHeaderNode h >>= \resM -> return $ case resM of
             Just r -> (r:a, b)
             _      -> (a, h:b)
+
     -- Partition blocks that we know and don't know
     (have, notHave) <- runDB $ foldM f ([],[]) blocklist
 
     -- Update the peer height and unknown block list
     let m = foldl max 0 $ map nodeHeaderHeight have
-    modifyPeerData tid $ \d -> d{ peerBlocks = peerBlocks d ++ notHave 
-                                , peerHeight = max m (peerHeight d)
-                                } 
+    dat <- getPeerData tid
+    putPeerData tid dat{ peerBlocks = peerBlocks dat ++ notHave 
+                       , peerHeight = max m (peerHeight dat)
+                       } 
+
+    when (m > peerHeight dat) $ do
+        $(logDebug) $ T.pack $ unwords
+            [ "Adjusting peer height to"
+            , show m, ":", show tid
+            ]
 
     -- Request headers for blocks we don't have
     forM_ notHave $ \b -> sendGetHeaders tid b
@@ -431,20 +475,12 @@ processTx tid tx = do
 sendGetHeaders :: ThreadId -> BlockHash -> ManagerHandle ()
 sendGetHeaders tid hstop = do
     d    <- getPeerData tid
-    -- TODO: height is only for the log. Maybe remove it?
     -- TODO: Only build a block locator the first time. Then send the last
     -- known hash from the previous headers message
-    (loc,height) <- runDB $ (,) <$> blockLocator <*> bestHeaderHeight
+    loc <- runDB blockLocator 
     sendMessage tid $ MGetHeaders $ GetHeaders 0x01 loc hstop
-    $(logInfo) $ T.pack $ unwords
-        [ "Requesting block headers:"
-        -- TODO: This can be negative if the remote note got a new block. More
-        -- generally, we need to correctly track peerHeight when a remote peer
-        -- receives new blocks
-        , show $ (peerHeight d) - fromIntegral height 
-        , "left to download."
-        , show tid
-        ]
+    $(logDebug) $ T.pack $ unwords 
+        [ "Requesting more block headers:", show tid ]
 
 -- Look at the block download queue and request a peer to download more blocks
 -- if the peer is connected, idling and meets the block height requirements.
@@ -472,16 +508,8 @@ downloadBlocks tid = do
             -- First 500 blocks that match the peer height requirements
             f (i,_) = i <= remoteHeight && i < firstHeight + 500
         when (not $ Q.null toDwn) $ do
-            height <- runDB bestBlockHeight
-            $(logInfo) $ T.pack $ unwords
-                [ "Requesting merkle blocks:"
-                -- TODO: This can be negative if the remote note got a new
-                -- block. More generally, we need to correctly track peerHeight
-                -- when a remote peer receives new blocks
-                , show $ (peerHeight peerData) - fromIntegral height 
-                , "left to download."
-                , show tid
-                ]
+            $(logDebug) $ T.pack $ unwords 
+                [ "Requesting more merkle blocks:", show tid ]
             S.modify $ \s -> s{ blocksToDownload = rest }
             -- Store the work count for this peer
             modifyPeerData tid $ \d -> 

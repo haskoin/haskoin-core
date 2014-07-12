@@ -517,9 +517,9 @@ importBlocks xs = do
         -- TODO: Handle these cases
         SideBlock node   -> liftIO $ print "Side block detected"
         BlockReorg s o n -> liftIO $ print "Fork detected"
-    setBestHeight best
+    unless (null best) $ setBestHeight $ head best
   where
-    best = head $ catMaybes $ map (f . fst) $ reverse xs
+    best = catMaybes $ map (f . fst) $ reverse xs
     f (BestBlock node)   = Just $ nodeHeaderHeight node
         -- TODO: Verify if this is correct, i.e. last and not first
     f (BlockReorg _ _ n) = Just $ nodeHeaderHeight $ last n

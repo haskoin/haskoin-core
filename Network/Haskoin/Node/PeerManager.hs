@@ -23,6 +23,7 @@ import Data.Word
 import Data.Time
 import Data.Time.Clock.POSIX
 import Data.Foldable (toList)
+import Data.List (partition)
 import qualified Data.Map as M
 import qualified Data.Sequence as Q
 import Data.Conduit 
@@ -59,7 +60,7 @@ data ManagerSession = ManagerSession
     -- We got the headers but still need to download the merkle blocks
     , blocksToDownload :: Q.Seq (Word32, BlockHash)
     -- We received the merkle blocks but buffer them to send them in-order to
-    -- the user app
+    -- the wallet
     , receivedBlocks   :: M.Map BlockHeight DecodedMerkleBlock
     } 
 
@@ -67,18 +68,26 @@ data ManagerSession = ManagerSession
 data PeerData = PeerData
     { peerHandshake        :: Bool
     , peerHeight           :: Word32
+    , peerBlocks           :: [BlockHash] 
     , peerMsgChan          :: TBMChan Message
     , peerInflightRequests :: Int
     }
 
 data NodeEvent 
     = MerkleBlockEvent [(BlockChainAction, [TxHash])]
+    -- We send the ThreadId to keep less state here. It also allows the wallet
+    -- to see how many unique peers sent a transaction.
+    | TxHashEvent (ThreadId, [TxHash])
     | TxEvent Tx
     deriving (Eq, Show)
 
 data NodeRequest
     = BloomFilterUpdate BloomFilter
     | PublishTx Tx
+    -- The wallet replies with the ThreadId so that we know which peer to 
+    -- request the transaction from. We could keep a map here, but it would
+    -- be more state management.
+    | RequestTx (ThreadId, [TxHash])
     deriving (Eq, Show)
 
 startNode :: FilePath -> IO (TBMChan NodeEvent, TBMChan NodeRequest)
@@ -136,7 +145,8 @@ processUserRequest mChan = awaitForever $ \r -> case r of
     PublishTx tx -> do
         tid <- lift myThreadId
         lift $ atomically $ writeTBMChan mChan (tid, UserPublishTx tx)
-        
+    RequestTx (tid, txs) -> 
+        lift $ atomically $ writeTBMChan mChan (tid, UserRequestTx txs)
 
 startPeer :: ClientSettings -> ManagerHandle ()
 startPeer remote = do
@@ -146,7 +156,6 @@ startPeer remote = do
         c <- newTBMChan 1024
         writeTBMChan c $ MVersion vers
         return c
-    $(logDebug) "Starting peer ..."
     tid   <- liftIO $ forkFinally 
         (runTCPClient remote $ peer pChan mChan) $ \ret -> do
         -- Thread cleanup
@@ -161,6 +170,7 @@ startPeer remote = do
     let peerData = PeerData { peerHandshake        = False
                             , peerMsgChan          = pChan
                             , peerHeight           = 0
+                            , peerBlocks           = []
                             , peerInflightRequests = 0
                             }
     S.modify $ \s -> s{ peerMap = M.insert tid peerData (peerMap s) }
@@ -180,6 +190,7 @@ managerSink = awaitForever $ \(tid,req) -> lift $ do
     case req of
         UserBloomFilter b -> processBloomFilter b
         UserPublishTx tx  -> processPublishTx tx
+        UserRequestTx txs -> processRequestTx tid txs
         _   -> do
             exists <- peerExists tid
             -- Discard messages from peers that are gone
@@ -190,6 +201,7 @@ managerSink = awaitForever $ \(tid,req) -> lift $ do
                 PeerMerkleBlock dmb -> processMerkleBlock tid dmb
                 PeerMessage msg -> case msg of
                     MHeaders headers -> processHeaders tid headers
+                    MInv inv         -> processInv tid inv
                     MTx tx           -> processTx tid tx
                     _                -> return () -- Ignore them for now
 
@@ -208,7 +220,7 @@ processPeerDisconnect tid = do
             tidM = fst <$> listToMaybe vals
         S.modify $ \s -> s{ syncPeer = tidM }
         -- Continue the header download if we have a new peer
-        when (isJust tidM) $ sendGetHeaders $ fromJust tidM
+        when (isJust tidM) $ sendGetHeaders (fromJust tidM) 0x00
     -- TODO: Do something about the inflight merkle blocks of this peer
 
 processPeerHandshake :: ThreadId -> Version -> ManagerHandle ()
@@ -228,7 +240,7 @@ processPeerHandshake tid remoteVer = do
     syn <- S.gets syncPeer
     when (isNothing syn) $ do
         S.modify $ \s -> s{ syncPeer = Just tid }
-        sendGetHeaders tid
+        sendGetHeaders tid 0x00
     -- Download more block if some are pending
     downloadBlocks tid
 
@@ -254,15 +266,23 @@ processPublishTx tx = do
     forM_ (M.keys m) $ \tid -> do
         dat <- getPeerData tid
         when (peerHandshake dat) $ sendMessage tid $ MTx tx
+
+processRequestTx :: ThreadId -> [TxHash] -> ManagerHandle ()
+processRequestTx tid txs = peerExists tid >>= \exists -> when exists $ do
+    dat <- getPeerData tid  
+    when (peerHandshake dat) $ do
+        sendMessage tid $ MGetData $ GetData $ map f txs
+  where
+    f h = InvVector InvTx $ fromIntegral h
         
 processHeaders :: ThreadId -> Headers -> ManagerHandle ()
 processHeaders tid (Headers h) = do
     -- TODO: The time here is incorrect. It should be a median of all peers.
     adjustedTime <- liftIO getPOSIXTime
     -- TODO: If a block headers can't be added, update DOS status
-    (newBest, newToDwn) <- runDB $ do
+    (newBest, newToDwnM) <- runDB $ do
         before <- bestHeaderHeight
-        -- TODO: Handle errors in addBlockHeader. We only don't do anything
+        -- TODO: Handle errors in addBlockHeader. We don't do anything
         -- in case of RejectHeader
         newToDwn <- forM (map fst h) $ \x -> do
             res <- addBlockHeader x $ round adjustedTime
@@ -282,17 +302,32 @@ processHeaders tid (Headers h) = do
     -- TODO: Should we only download blocks if the headers is 
     -- a best header? (i.e. not a side block). Probably not but we
     -- need to consider the case when an old fork may become the
-    -- new head.
-    let newToDwnQ = Q.fromList $ catMaybes newToDwn
+    -- new head. I think in such a case, a node would send us a
+    -- headers message long enough to bring us over the old main chain.
+    let newToDwn  = catMaybes newToDwnM
+        newToDwnQ = Q.fromList newToDwn
     S.modify $ \s -> s{ blocksToDownload = (blocksToDownload s) Q.>< newToDwnQ }
 
-    -- Continue syncing from this node
-    -- TODO: If this is another node than the sync node, we could have issues
-    when newBest $ sendGetHeaders tid
+    tids <- M.keys <$> S.gets peerMap 
+
+    -- Adjust the height of nodes that sent us INV messages for these headers
+    forM tids $ \tid -> getPeerData tid >>= \dat -> do
+        forM newToDwn $ \(h, bid) -> do
+            let (xs, ys) = partition (== bid) $ peerBlocks dat
+            unless (null xs) $ modifyPeerData tid $ \d ->
+                d{ peerBlocks = ys
+                 , peerHeight = max (peerHeight d) h
+                 }
+
+    -- Continue syncing from this node only if it made some progress. Otherwise,
+    -- another peer is probably faster/ahead already.
+    when newBest $ do
+        -- Update the sync peer 
+        S.modify $ \s -> s{ syncPeer = Just tid }
+        sendGetHeaders tid 0x00
 
     -- Request block downloads for all peers that are currently idling
     -- TODO: Even for the peer that is syncing the headers?
-    tids <- M.keys <$> S.gets peerMap 
     forM_ tids downloadBlocks
 
 processMerkleBlock :: ThreadId -> DecodedMerkleBlock -> ManagerHandle ()
@@ -358,20 +393,49 @@ importMerkleBlocks height = do
         | otherwise = []
     go _ [] = []
 
+processInv :: ThreadId -> Inv -> ManagerHandle ()
+processInv tid (Inv vs) = do
+    -- TODO: Misbehave if the size of the INV is too big
+    eChan <- S.gets eventChan 
+    -- Inform the wallet about new transactions
+    unless (null txlist) $
+        liftIO $ atomically $ writeTBMChan eChan $ TxHashEvent (tid, txlist)
+
+    let f (a, b) h = getBlockHeaderNode h >>= \resM -> return $ case resM of
+            Just r -> (r:a, b)
+            _      -> (a, h:b)
+    -- Partition blocks that we know and don't know
+    (have, notHave) <- runDB $ foldM f ([],[]) blocklist
+
+    -- Update the peer height and unknown block list
+    let m = foldl max 0 $ map nodeHeaderHeight have
+    modifyPeerData tid $ \d -> d{ peerBlocks = peerBlocks d ++ notHave 
+                                , peerHeight = max m (peerHeight d)
+                                } 
+
+    -- Request headers for blocks we don't have
+    forM_ notHave $ \b -> sendGetHeaders tid b
+
+  where
+    txlist = map (fromIntegral . invHash) $ 
+        filter ((== InvTx) . invType) vs
+    blocklist = map (fromIntegral . invHash) $ 
+        filter ((== InvBlock) . invType) vs
+
 processTx :: ThreadId -> Tx -> ManagerHandle ()
 processTx tid tx = do
     eChan <- S.gets eventChan
     liftIO $ atomically $ writeTBMChan eChan $ TxEvent tx
 
 -- Send out a GetHeaders request for a given peer
-sendGetHeaders :: ThreadId -> ManagerHandle ()
-sendGetHeaders tid = do
+sendGetHeaders :: ThreadId -> BlockHash -> ManagerHandle ()
+sendGetHeaders tid hstop = do
     d    <- getPeerData tid
     -- TODO: height is only for the log. Maybe remove it?
     -- TODO: Only build a block locator the first time. Then send the last
     -- known hash from the previous headers message
     (loc,height) <- runDB $ (,) <$> blockLocator <*> bestHeaderHeight
-    sendMessage tid $ MGetHeaders $ GetHeaders 0x01 loc 0x00
+    sendMessage tid $ MGetHeaders $ GetHeaders 0x01 loc hstop
     $(logInfo) $ T.pack $ unwords
         [ "Requesting block headers:"
         -- TODO: This can be negative if the remote note got a new block. More

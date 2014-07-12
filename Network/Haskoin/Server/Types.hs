@@ -183,10 +183,10 @@ instance ToJSON WalletResponse where
 
 instance RPCRequest WalletRequest String WalletResponse where
     rpcMethod   = walletMethod
-    parseParams = parseWalletRequest
-    parseResult = parseWalletResponse
-    parseError _ (String s) = return $ T.unpack s
-    parseError _ _          = mzero
+    parseRPCParams = parseWalletRequest
+    parseRPCResult = parseWalletResponse
+    parseRPCError _ (String s) = return $ T.unpack s
+    parseRPCError _ _          = mzero
 
 walletMethod :: WalletRequest -> T.Text
 walletMethod wr = case wr of
@@ -345,19 +345,19 @@ parseWalletResponse w v = case (w, v) of
     _ -> mzero
 
 encodeWalletRequest :: WalletRequest -> Int -> BS.ByteString
-encodeWalletRequest wr i = toStrictBS $ encode $ encodeRequest wr i
+encodeWalletRequest wr i = toStrictBS $ encode $ encodeRPCRequest wr i
 
 decodeWalletRequest :: BS.ByteString -> Either String (WalletRequest, Int)
-decodeWalletRequest bs = parseEither parseRequest =<< eitherDecodeStrict bs
+decodeWalletRequest bs = parseEither parseRPCRequest =<< eitherDecodeStrict bs
 
 encodeWalletResponse :: Either String WalletResponse -> Int -> BS.ByteString
 encodeWalletResponse resE i = toStrictBS $ encode $ case resE of
-    Left err  -> encodeError err i
-    Right res -> encodeResponse res i
+    Left err  -> encodeRPCError err i
+    Right res -> encodeRPCResponse res i
 
 decodeWalletResponse :: WalletRequest -> BS.ByteString 
                      -> Either String (Either String WalletResponse, Int)
 decodeWalletResponse req bs = do
     v <- eitherDecodeStrict bs
-    parseEither (parseResponse req) v
+    parseEither (parseRPCResponse req) v
 

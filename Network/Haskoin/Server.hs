@@ -39,7 +39,6 @@ import Database.Persist.Sql
 import Database.Persist.Sqlite
 
 import Network.Haskoin.Util
-import Network.Haskoin.Stratum
 import Network.Haskoin.Script
 
 import Network.Haskoin.Node.PeerManager
@@ -68,7 +67,7 @@ runServer = do
 
     -- Launch SPV node
     (eChan, rChan) <- startNode headerFile 
-    forkIO $ sourceTBMChan eChan $$ processNodeEvents pool
+    forkIO $ sourceTBMChan eChan $$ processNodeEvents pool rChan
     atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
 
     -- Launch JSON-RPC server
@@ -92,7 +91,7 @@ processWalletRequest pool rChan (wr, i) = do
     -- TODO: What if we have other exceptions than WalletException ?
     f (WalletException err)  = Just err
     go (NewFullWallet n p m) = liftM ResMnemonic $ newWalletMnemo n p m
-    go (NewReadWallet n k)   = error "Not implemented"
+    go (NewReadWallet _ _)   = error "Not implemented"
     go (GetWallet n)         = liftM ResWallet $ getWallet n
     go WalletList            = liftM ResWalletList $ walletList
     go (NewAccount w n)      = do
@@ -129,10 +128,10 @@ processWalletRequest pool rChan (wr, i) = do
         return $ ResAddressPage as m
     go (TxList n)      = liftM ResAccTxList $ txList n
     go (TxPage n p t)  = do
-        (l,i) <- txPage n p t
-        return $ ResAccTxPage l i
-    go (TxSend n xs f) = do
-        (tid, complete) <- sendTx n xs f
+        (l,m) <- txPage n p t
+        return $ ResAccTxPage l m
+    go (TxSend n xs s) = do
+        (tid, complete) <- sendTx n xs s
         when complete $ do
             newTx <- getTx tid
             liftIO $ atomically $ writeTBMChan rChan $ PublishTx newTx
@@ -145,10 +144,16 @@ processWalletRequest pool rChan (wr, i) = do
         return $ ResTxStatus tid complete
     go (Balance n)     = liftM ResBalance $ balance n
 
-processNodeEvents :: ConnectionPool -> Sink NodeEvent IO ()
-processNodeEvents pool = awaitForever $ \e -> lift $ runDB pool $ case e of
-    MerkleBlockEvent xs -> void $ importBlocks xs
-    TxEvent tx          -> void $ importTx tx False
+processNodeEvents :: ConnectionPool -> TBMChan NodeRequest
+                  -> Sink NodeEvent IO ()
+processNodeEvents pool rChan = awaitForever $ \e -> lift $ runDB pool $ 
+    case e of
+        MerkleBlockEvent xs -> void $ importBlocks xs
+        TxHashEvent (tid, txs) -> do
+            req <- filterM ((not <$>) . isTxInWallet) txs
+            unless (null req) $ liftIO $ atomically $ 
+                writeTBMChan rChan $ RequestTx (tid, req)
+        TxEvent tx -> void $ importTx tx False
 
 runDB :: ConnectionPool -> SqlPersistT (NoLoggingT (ResourceT IO)) a -> IO a
 runDB pool m = runResourceT $ runNoLoggingT $ runSqlPool m pool

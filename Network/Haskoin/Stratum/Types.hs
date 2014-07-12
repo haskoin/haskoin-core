@@ -36,9 +36,9 @@ import Network.Haskoin.Stratum.RPC
 import Data.Typeable (Typeable)
 
 data StratumException
-    = ParseException String
-    | UnknownId String
-    | ConnectException String
+    = StratumParseException String
+    | StratumUnknownId String
+    | StratumConnectException String
     deriving (Eq, Read, Show, Typeable)
 
 instance Exception StratumException
@@ -52,213 +52,215 @@ data StratumMessage
     deriving (Eq, Show)
 
 instance NFData StratumMessage where
-    rnf (StratumMsgRequest r)  = rnf r
-    rnf (StratumMsgNotif n)    = rnf n
+    rnf (StratumMsgRequest  r) = rnf r
+    rnf (StratumMsgNotif    n) = rnf n
     rnf (StratumMsgResponse r) = rnf r
-    rnf (StratumMsgError e)    = rnf e
+    rnf (StratumMsgError    e) = rnf e
 
 -- | Stratum Request data. To be placed inside JSON request.
 data StratumRequest
-    = RequestVersion { requestClientVer :: !Text, requestProtoVer :: !Text }
-    | RequestHistory { requestAddr :: !Address }
-    | RequestBalance { requestAddr :: !Address }
-    | RequestUnspent { requestAddr :: !Address }
-    | RequestTx      { requestTxid :: !TxHash  }
-    | BroadcastTx    { requestTx   :: !Tx      }
-    | SubscribeAddr  { requestAddr :: !Address }
+    = StratumRequestVersion { stratumRequestClientVer :: !Text
+                            , stratumRequestProtoVer  :: !Text    }
+    | StratumRequestHistory { stratumRequestAddr      :: !Address }
+    | StratumRequestBalance { stratumRequestAddr      :: !Address }
+    | StratumRequestUnspent { stratumRequestAddr      :: !Address }
+    | StratumRequestTx      { stratumRequestTxid      :: !TxHash  }
+    | StratumBroadcastTx    { stratumRequestTx        :: !Tx      }
+    | StratumSubscribeAddr  { stratumRequestAddr      :: !Address }
     deriving (Eq, Show)
 
 instance NFData StratumRequest where
-    rnf (RequestVersion c p) = rnf c `seq` rnf p
-    rnf (RequestHistory a) = rnf a
-    rnf (RequestBalance a) = rnf a
-    rnf (RequestUnspent a) = rnf a
-    rnf (RequestTx i) = rnf i
-    rnf (BroadcastTx t) = rnf t
-    rnf (SubscribeAddr a) = rnf a
+    rnf (StratumRequestVersion c p) = rnf c `seq` rnf p
+    rnf (StratumRequestHistory   a) = rnf a
+    rnf (StratumRequestBalance   a) = rnf a
+    rnf (StratumRequestUnspent   a) = rnf a
+    rnf (StratumRequestTx        i) = rnf i
+    rnf (StratumBroadcastTx      t) = rnf t
+    rnf (StratumSubscribeAddr    a) = rnf a
 
 instance ToJSON StratumRequest where
-    toJSON (RequestVersion c p) = toJSON (c, p)
-    toJSON (RequestHistory a) = toJSON [a]
-    toJSON (RequestBalance a) = toJSON [a]
-    toJSON (RequestUnspent a) = toJSON [a]
-    toJSON (RequestTx i) = toJSON [encodeTxHashLE i]
-    toJSON (BroadcastTx t) = toJSON [bsToHex $ encode' t]
-    toJSON (SubscribeAddr a) = toJSON [a]
+    toJSON (StratumRequestVersion c p) = toJSON (c, p)
+    toJSON (StratumRequestHistory   a) = toJSON [a]
+    toJSON (StratumRequestBalance   a) = toJSON [a]
+    toJSON (StratumRequestUnspent   a) = toJSON [a]
+    toJSON (StratumRequestTx        i) = toJSON [encodeTxHashLE i]
+    toJSON (StratumBroadcastTx      t) = toJSON [bsToHex $ encode' t]
+    toJSON (StratumSubscribeAddr    a) = toJSON [a]
 
 instance RPCRequest StratumRequest StratumError StratumResponse where
-    rpcMethod (RequestVersion _ _)  = "server.version"
-    rpcMethod (RequestHistory _)    = "blockchain.address.get_history"
-    rpcMethod (RequestBalance _)    = "blockchain.address.get_balance"
-    rpcMethod (RequestUnspent _)    = "blockchain.address.listunspent"
-    rpcMethod (RequestTx _)         = "blockchain.transaction.get"
-    rpcMethod (BroadcastTx _)       = "blockchain.transaction.broadcast"
-    rpcMethod (SubscribeAddr _)     = "blockchain.address.subscribe"
+    rpcMethod (StratumRequestVersion _ _) = "server.version"
+    rpcMethod (StratumRequestHistory   _) = "blockchain.address.get_history"
+    rpcMethod (StratumRequestBalance   _) = "blockchain.address.get_balance"
+    rpcMethod (StratumRequestUnspent   _) = "blockchain.address.listunspent"
+    rpcMethod (StratumRequestTx        _) = "blockchain.transaction.get"
+    rpcMethod (StratumBroadcastTx      _) = "blockchain.transaction.broadcast"
+    rpcMethod (StratumSubscribeAddr    _) = "blockchain.address.subscribe"
 
-    parseParams "server.version" =
+    parseRPCParams "server.version" =
         withArray "version" $ \v -> do
-            when (Vector.length v < 2) $ fail "parseParams: not enough elements"
+            when (Vector.length v < 2) $
+                fail "parseRPCParams: not enough elements"
             c <- parseJSON $ v ! 0
             p <- parseJSON $ v ! 1
-            return $ RequestVersion c p
+            return $ StratumRequestVersion c p
 
-    parseParams "blockchain.address.get_history" =
+    parseRPCParams "blockchain.address.get_history" =
         withArray "history" $ \v -> do
-            when (Vector.null v) $ fail "parseParams: empty array"
-            RequestHistory <$> parseJSON (Vector.head v)
+            when (Vector.null v) $ fail "parseRPCParams: empty array"
+            StratumRequestHistory <$> parseJSON (Vector.head v)
 
-    parseParams "blockchain.address.get_balance" =
+    parseRPCParams "blockchain.address.get_balance" =
         withArray "balance" $ \v -> do
-            when (Vector.null v) $ fail "parseParams: empty array"
-            RequestBalance <$> parseJSON (Vector.head v)
+            when (Vector.null v) $ fail "parseRPCParams: empty array"
+            StratumRequestBalance <$> parseJSON (Vector.head v)
 
-    parseParams "blockchain.address.listunspent" =
+    parseRPCParams "blockchain.address.listunspent" =
         withArray "unspent" $ \v -> do
-            when (Vector.null v) $ fail "parseParams: empty array"
-            RequestUnspent <$> parseJSON (Vector.head v)
+            when (Vector.null v) $ fail "parseRPCParams: empty array"
+            StratumRequestUnspent <$> parseJSON (Vector.head v)
 
-    parseParams "blockchain.address.subscribe" =
+    parseRPCParams "blockchain.address.subscribe" =
         withArray "subscribe" $ \v -> do
-            when (Vector.null v) $ fail "parseParams: empty array"
-            SubscribeAddr <$> parseJSON (Vector.head v)
+            when (Vector.null v) $ fail "parseRPCParams: empty array"
+            StratumSubscribeAddr <$> parseJSON (Vector.head v)
 
-    parseParams "blockchain.transaction.get" =
+    parseRPCParams "blockchain.transaction.get" =
         withArray "get transaction" $ \v -> do
-            when (Vector.null v) $ fail "parseParams: empty array"
+            when (Vector.null v) $ fail "parseRPCParams: empty array"
             s <- parseJSON $ Vector.head v
             i <- maybe ei return $ decodeTxHashLE s
-            return $ RequestTx i
+            return $ StratumRequestTx i
       where
         ei = fail "parseParams: could not decode transaction id"
 
-    parseParams "blockchain.transaction.broadcast" =
+    parseRPCParams "blockchain.transaction.broadcast" =
         withArray "broadcast" $ \v -> do
-            when (Vector.null v) $ fail "parseParams: empty array"
+            when (Vector.null v) $ fail "parseRPCParams: empty array"
             hM <- hexToBS <$> parseJSON (Vector.head v)
             h <- maybe et return hM
             t <- either fail return $ decodeToEither h
-            return $ BroadcastTx t
+            return $ StratumBroadcastTx t
       where
-        et = fail "parseParams: could not decode transaction hex"
+        et = fail "parseRPCParams: could not decode transaction hex"
 
-    parseParams m = withArray "unknown method" $ \_ ->
-        fail $ "parseParams: unknown method " ++ Text.unpack m
+    parseRPCParams m = withArray "unknown method" $ \_ ->
+        fail $ "parseRPCParams: unknown method " ++ Text.unpack m
 
-    parseResult (RequestVersion _ _) = withText "version" $ \t ->
-        return $ ServerVersion $ Text.unpack t
+    parseRPCResult (StratumRequestVersion _ _) = withText "version" $ \t ->
+        return $ StratumServerVersion $ Text.unpack t
 
-    parseResult (RequestHistory a) = withArray "history" $ \v ->
-        AddrHistory a <$> parseJSON (Array v)
+    parseRPCResult (StratumRequestHistory a) = withArray "history" $ \v ->
+        StratumAddrHistory a <$> parseJSON (Array v)
 
-    parseResult (RequestBalance a) = withObject "balance" $ \o ->
-        AddrBalance a <$> o .: "confirmed" <*> o .: "unconfirmed"
+    parseRPCResult (StratumRequestBalance a) = withObject "balance" $ \o ->
+        StratumAddrBalance a <$> o .: "confirmed" <*> o .: "unconfirmed"
 
-    parseResult (RequestUnspent a) = withArray "unspent" $ \v ->
-        AddrUnspent a <$> parseJSON (Array v)
+    parseRPCResult (StratumRequestUnspent a) = withArray "unspent" $ \v ->
+        StratumAddrUnspent a <$> parseJSON (Array v)
 
-    parseResult (RequestTx i) = withText "transaction" $ \t -> do
+    parseRPCResult (StratumRequestTx i) = withText "transaction" $ \t -> do
         h <- maybe eh return $ hexToBS $ Text.unpack t
         x <- either fail return $ decodeToEither h
-        return $ Transaction i x
+        return $ StratumTransaction i x
       where
-        eh = fail "parseResult: could not decode hex transaction"
+        eh = fail "parseRPCResult: could not decode hex transaction"
 
-    parseResult (BroadcastTx x) = withText "txid" $ \t -> do
+    parseRPCResult (StratumBroadcastTx x) = withText "txid" $ \t -> do
         let iM = decodeTxHashLE $ Text.unpack t
         i <- maybe ei return iM
-        return $ BroadcastId i x
+        return $ StratumBroadcastId i x
       where
-        ei = fail "parseResult: could not parse transaction id"
+        ei = fail "parseRPCResult: could not parse transaction id"
 
-    parseResult (SubscribeAddr a) = withText "status" $ \t -> do
+    parseRPCResult (StratumSubscribeAddr a) = withText "status" $ \t -> do
         b <- maybe eh return $ hexToBS $ Text.unpack t
         h <- either fail return $ decodeToEither b
-        return $ AddrStatus a h
+        return $ StratumAddrStatus a h
       where
-        eh = fail "parseResult: failed to read status from hex"
+        eh = fail "parseRPCResult: failed to read status from hex"
 
-    parseError x = withText "error" $ \u -> do
+    parseRPCError x = withText "error" $ \u -> do
         let s = Text.unpack u
         return $ case x of
-            RequestVersion _ _ -> StratumErrVersion       s
-            RequestHistory   a -> StratumErrHistory       s a
-            RequestBalance   a -> StratumErrBalance       s a
-            RequestUnspent   a -> StratumErrUnspent       s a
-            RequestTx        i -> StratumErrTx            s i
-            BroadcastTx      t -> StratumErrBroadcastTx   s t
-            SubscribeAddr    a -> StratumErrSubscribeAddr s a
+            StratumRequestVersion _ _ -> StratumErrVersion       s
+            StratumRequestHistory   a -> StratumErrHistory       s a
+            StratumRequestBalance   a -> StratumErrBalance       s a
+            StratumRequestUnspent   a -> StratumErrUnspent       s a
+            StratumRequestTx        i -> StratumErrTx            s i
+            StratumBroadcastTx      t -> StratumErrBroadcastTx   s t
+            StratumSubscribeAddr    a -> StratumErrSubscribeAddr s a
 
-data StratumNotif = NotifAddress
-    { notifAddr         :: !Address
-    , notifAddrStatus   :: !Word256
+data StratumNotif = StratumNotifAddr
+    { stratumNotifAddr       :: !Address
+    , stratumNotifAddrStatus :: !Word256
     } deriving (Eq, Show)
 
 instance NFData StratumNotif where
-    rnf (NotifAddress a s) = rnf a `seq` rnf s
+    rnf (StratumNotifAddr a s) = rnf a `seq` rnf s
 
 instance ToJSON StratumNotif where
-    toJSON (NotifAddress a t) = toJSON (a, bsToHex $ encode' t)
+    toJSON (StratumNotifAddr a t) = toJSON (a, bsToHex $ encode' t)
 
 instance RPCNotif StratumNotif where
-    rpcNotifMethod (NotifAddress _ _) = "blockchain.address.subscribe"
+    rpcNotifMethod (StratumNotifAddr _ _) = "blockchain.address.subscribe"
 
-    parseNotifParams "blockchain.address.subscribe" =
+    parseRPCNotifParams "blockchain.address.subscribe" =
         withArray "blockchain.address.subscribe" $ \v -> do
             when (Vector.length v < 2) $
-                fail "parseNotifParams: array too small"
+                fail "parseRPCNotifParams: array too small"
             a <- parseJSON (Vector.head v)
             s <- f $ v ! 1
-            return $ NotifAddress a s
+            return $ StratumNotifAddr a s
       where
         f = withText "status" $ \t -> do
             let bsM = hexToBS $ Text.unpack t
             bs <- maybe ebs return bsM
             either fail return $ decodeToEither bs
-        ebs = fail "parseNotifParams: could not parse status hex"
+        ebs = fail "parseRPCNotifParams: could not parse status hex"
 
-    parseNotifParams m = withArray "unknown method" $ \_ ->
-        fail $ "parseNotifParams: unknown method " ++ Text.unpack m
+    parseRPCNotifParams m = withArray "unknown method" $ \_ ->
+        fail $ "parseRPCNotifParams: unknown method " ++ Text.unpack m
 
 -- | Stratum Response Result data.
 data StratumResponse
-    = ServerVersion
-        { stratumVersion        :: !String
+    = StratumServerVersion
+        { stratumServerVersion  :: !String
         }
-    | AddrHistory
+    | StratumAddrHistory
         { stratumAddr           :: !Address
         , stratumAddrHist       :: ![StratumTxInfo]
         }
-    | AddrBalance
+    | StratumAddrBalance
         { stratumAddr           :: !Address
         , stratumConfirmed      :: !Word64
         , stratumUnconfirmed    :: !Word64
         }
-    | AddrUnspent
+    | StratumAddrUnspent
         { stratumAddr           :: !Address
         , stratumCoins          :: ![StratumCoin]
         }
-    | AddrStatus
+    | StratumAddrStatus
         { stratumAddr           :: !Address
         , stratumAddrStatus     :: !Word256
         }
-    | Transaction
+    | StratumTransaction
         { stratumTxId           :: !TxHash
         , stratumTx             :: !Tx
         }
-    | BroadcastId
+    | StratumBroadcastId
         { stratumTxId           :: !TxHash
         , stratumTx             :: !Tx
         }
     deriving (Eq, Show)
 
 instance NFData StratumResponse where
-    rnf (ServerVersion s)       = rnf s
-    rnf (AddrHistory a ts)      = rnf a `seq` rnf ts
-    rnf (AddrBalance a c u)     = rnf a `seq` rnf c `seq` rnf u
-    rnf (AddrUnspent a cs)      = rnf a `seq` rnf cs
-    rnf (AddrStatus a s)        = rnf a `seq` rnf s
-    rnf (Transaction i t)       = rnf i `seq` rnf t
-    rnf (BroadcastId i t)       = rnf i `seq` rnf t
+    rnf (StratumServerVersion    s) = rnf s
+    rnf (StratumAddrHistory   a ts) = rnf a `seq` rnf ts
+    rnf (StratumAddrBalance a c  u) = rnf a `seq` rnf c `seq` rnf u
+    rnf (StratumAddrUnspent   a cs) = rnf a `seq` rnf cs
+    rnf (StratumAddrStatus    a  s) = rnf a `seq` rnf s
+    rnf (StratumTransaction   i  t) = rnf i `seq` rnf t
+    rnf (StratumBroadcastId   i  t) = rnf i `seq` rnf t
 
 data StratumError
     = StratumErrVersion
@@ -317,16 +319,16 @@ instance NFData StratumTxInfo where
 
 instance FromJSON StratumTxInfo where
     parseJSON = withObject "txheight" $ \o -> do
-        h <- o .: "height"
+        h  <- o .: "height"
         iM <- decodeTxHashLE <$> o .: "tx_hash"
-        i <- maybe ei return iM
+        i  <- maybe ei return iM
         return $ StratumTxInfo h i
       where
         ei = fail "cannot decode transaction id"
 
 instance ToJSON StratumTxInfo where
     toJSON (StratumTxInfo h i) = object
-        [ "height" .= h
+        [ "height"  .= h
         , "tx_hash" .= encodeTxHashLE i
         ]
 
@@ -342,11 +344,11 @@ instance NFData StratumCoin where
 
 instance FromJSON StratumCoin where
     parseJSON = withObject "coin" $ \o -> do
-        h <- o .: "height"
-        v <- o .: "value"
-        p <- o .: "tx_pos"
+        h  <- o .: "height"
+        v  <- o .: "value"
+        p  <- o .: "tx_pos"
         iM <- decodeTxHashLE <$> o .: "tx_hash"
-        i <- maybe ei return iM
+        i  <- maybe ei return iM
         let op = OutPoint i p
             th = StratumTxInfo h i
         return $ StratumCoin op th v

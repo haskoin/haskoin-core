@@ -8,21 +8,21 @@ module Network.Haskoin.Stratum.RPC
   RPCRequest
 , Method
 , rpcMethod
-, encodeRequest
-, encodeResponse
-, encodeError
-, encodeErrorU
-, parseParams
-, parseResult
-, parseError
-, parseRequest
-, parseResponse
+, encodeRPCRequest
+, encodeRPCResponse
+, encodeRPCError
+, encodeRPCErrorU
+, parseRPCParams
+, parseRPCResult
+, parseRPCError
+, parseRPCRequest
+, parseRPCResponse
   -- ** Notifications
 , RPCNotif
 , rpcNotifMethod
-, encodeNotif
-, parseNotifParams
-, parseNotif
+, encodeRPCNotif
+, parseRPCNotifParams
+, parseRPCNotif
 ) where
 
 import Data.Aeson.Types
@@ -40,62 +40,62 @@ class (ToJSON a, FromJSON e) => RPCRequest a e r | a -> e, a -> r
     rpcMethod :: a -> Method
 
     -- | Parse params field of request object given method.
-    parseParams :: Method -> Value -> Parser a
+    parseRPCParams :: Method -> Value -> Parser a
 
     -- | Parse result field in response given corresponding request.
-    parseResult :: a -> Value -> Parser r
+    parseRPCResult :: a -> Value -> Parser r
 
     -- | Parse error field of response given corresponding request.
-    parseError :: a -> Value -> Parser e
+    parseRPCError :: a -> Value -> Parser e
 
     -- | Parse JSON-RPC request.
-    parseRequest :: Value -> Parser (a, Int)
-    parseRequest = withObject "request" $ \o -> do
+    parseRPCRequest :: Value -> Parser (a, Int)
+    parseRPCRequest = withObject "request" $ \o -> do
         i <- o .: "id"
         m <- o .: "method"
         p <- o .: "params"
-        res <- parseParams m p
+        res <- parseRPCParams m p
         return (res, i)
 
     -- | Parse response using request.
-    parseResponse :: a -> Value -> Parser (Either e r, Int)
-    parseResponse a = withObject "response" $ \o -> do
+    parseRPCResponse :: a -> Value -> Parser (Either e r, Int)
+    parseRPCResponse a = withObject "response" $ \o -> do
         i <- o .: "id"
         o .:? "error" .!= Null >>= \e -> case e of
             Null -> o .: "result" >>= \r -> do
-                res <- parseResult a r
+                res <- parseRPCResult a r
                 return (Right res, i)
             _ -> do
-                err <- parseError a e
+                err <- parseRPCError a e
                 return (Left err, i)
 
     -- | Encode JSON-RPC request.
-    encodeRequest :: a -> Int -> Value
-    encodeRequest a i = object [ "jsonrpc" .= ("2.0" :: Text)
-                               , "method"  .= rpcMethod a
-                               , "params"  .= a
+    encodeRPCRequest :: a -> Int -> Value
+    encodeRPCRequest a i = object [ "jsonrpc" .= ("2.0" :: Text)
+                                  , "method"  .= rpcMethod a
+                                  , "params"  .= a
+                                  , "id"      .= i
+                                  ]
+
+-- | Encode JSON-RPC response.
+encodeRPCResponse :: ToJSON r => r -> Int -> Value
+encodeRPCResponse x i = object [ "jsonrpc" .= ("2.0" :: Text)
+                               , "result"  .= x
                                , "id"      .= i
                                ]
 
--- | Encode JSON-RPC response.
-encodeResponse :: ToJSON r => r -> Int -> Value
-encodeResponse x i = object [ "jsonrpc" .= ("2.0" :: Text)
-                            , "result"  .= x
+-- | Encode JSON-RPC error with id.
+encodeRPCError :: ToJSON e => e -> Int -> Value
+encodeRPCError e i = object [ "jsonrpc" .= ("2.0" :: Text)
+                            , "error"   .= e
                             , "id"      .= i
                             ]
 
--- | Encode JSON-RPC error with id.
-encodeError :: ToJSON e => e -> Int -> Value
-encodeError e i = object [ "jsonrpc" .= ("2.0" :: Text)
-                         , "error"   .= e
-                         , "id"      .= i
-                         ]
-
 -- | Encode JSON-RPC error without id.
-encodeErrorU :: ToJSON e => e -> Value
-encodeErrorU e = object [ "jsonrpc" .= ("2.0" :: Text)
-                        , "error"   .= e
-                        ]
+encodeRPCErrorU :: ToJSON e => e -> Value
+encodeRPCErrorU e = object [ "jsonrpc" .= ("2.0" :: Text)
+                           , "error"   .= e
+                           ]
 
 
 -- | Class for JSON-RPC notifications. Only rpcNotifMethod and parseNotifParams
@@ -106,18 +106,18 @@ class ToJSON a => RPCNotif a where
     rpcNotifMethod :: a -> Method
 
     -- | Parse params field of notification object given method.
-    parseNotifParams :: Method -> Value -> Parser a
+    parseRPCNotifParams :: Method -> Value -> Parser a
 
     -- Encode JSON-RPC notification.
-    encodeNotif :: a -> Value
-    encodeNotif a = object [ "jsonrpc" .= ("2.0" :: Text)
-                           , "method"  .= rpcNotifMethod a
-                           , "params"  .= a
-                           ]
+    encodeRPCNotif :: a -> Value
+    encodeRPCNotif a = object [ "jsonrpc" .= ("2.0" :: Text)
+                              , "method"  .= rpcNotifMethod a
+                              , "params"  .= a
+                              ]
 
     -- | Parse notification.
-    parseNotif :: Value -> Parser a
-    parseNotif = withObject "notification" $ \o -> do
+    parseRPCNotif :: Value -> Parser a
+    parseRPCNotif = withObject "notification" $ \o -> do
         m <- o .: "method"
         p <- o .: "params"
-        parseNotifParams m p
+        parseRPCNotifParams m p

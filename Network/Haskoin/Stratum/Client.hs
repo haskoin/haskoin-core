@@ -54,9 +54,9 @@ newRequest :: MonadIO m
 newRequest (ClientSession iV mV) a = liftIO $ do
     i <- (+1) <$> takeMVar iV
     m <- takeMVar mV
-    putMVar mV $ IntMap.insert i (\v -> fst <$> parseResponse a v) m
+    putMVar mV $ IntMap.insert i (\v -> fst <$> parseRPCResponse a v) m
     putMVar iV i
-    return $ encodeRequest a i
+    return $ encodeRPCRequest a i
 
 -- | Conduit that serializes requests.
 outgoingConduit :: (MonadIO m, ToJSON j) => Conduit j m ByteString
@@ -73,7 +73,7 @@ incomingConduit n s@(ClientSession _ mV) = do
     unless b $ Conduit.await >>= \xM -> case xM of
         Nothing -> if n
             then return ()
-            else liftIO . throwIO $ ConnectException "connection lost"
+            else liftIO . throwIO $ StratumConnectException "connection lost"
         Just x -> do
             let vM = decodeStrict' x
             v <- maybe pe return vM
@@ -82,7 +82,7 @@ incomingConduit n s@(ClientSession _ mV) = do
             liftIO $ putMVar mV m'
             case pM of
                 Nothing -> do
-                    case parse parseNotif v of
+                    case parse parseRPCNotif v of
                         Error e -> pn e
                         Success o -> do
                             Conduit.yield $ StratumMsgNotif o
@@ -90,21 +90,21 @@ incomingConduit n s@(ClientSession _ mV) = do
                 Just p -> do
                     let rE = parse p v
                     Conduit.yield $ case rE of
-                        Error e -> StratumMsgError $ StratumErrUnknown e
+                        Error   e -> StratumMsgError $ StratumErrUnknown e
                         Success r -> either StratumMsgError StratumMsgResponse r
                     incomingConduit n s
   where
-    pe   = throw $ ParseException $ "incomingConduit: invalid JSON"
-    pn e = throw $ ParseException $ "incomingConduit: " ++ e
+    pe   = throw $ StratumParseException $ "incomingConduit: invalid JSON"
+    pn e = throw $ StratumParseException $ "incomingConduit: " ++ e
     pm m v = case parseMaybe (pa m) v of
         Just (p, m') -> (Just p, m')
-        Nothing -> (Nothing, m)
+        Nothing      -> (Nothing, m)
     pa m = withObject "response" $ \o -> do
         i <- o .: "id"
         f <- maybe pnf return $ IntMap.lookup i m
         let m' = IntMap.delete i m
         return (f, m')
-    pnf = throw $ UnknownId "parseWithMap: unknown response id"
+    pnf = throw $ StratumUnknownId "parseWithMap: unknown response id"
 
 -- | Stratum client context.
 type StratumClient m = ReaderT (StratumClientState m, ClientSession) m

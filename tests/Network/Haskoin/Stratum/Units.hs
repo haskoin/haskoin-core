@@ -65,43 +65,43 @@ testPair label f rF vF = buildTest $ do
         return $ testCase l $ HUnit.assertBool (fl vS) t
   where
     p :: String -> Maybe StratumRequest
-    p s = fst <$> (parseMaybe parseRequest =<< decodeStrict' (B8.pack s))
+    p s = fst <$> (parseMaybe parseRPCRequest =<< decodeStrict' (B8.pack s))
     fl = ("Failed to decode: " ++)
 
 isRequest :: Maybe Value -> Bool
 isRequest vM = case vM of
     Nothing -> False
     Just v -> case f v of
-        Error _ -> False
+        Error   _ -> False
         Success _ -> True
   where
     f :: Value -> Result StratumRequest
-    f v = fst <$> parse parseRequest v
+    f v = fst <$> parse parseRPCRequest v
 
 isNotif :: Maybe Value -> Bool
 isNotif vM = case vM of
     Nothing -> False
     Just v -> case f v of
-        Error _ -> False
+        Error   _ -> False
         Success _ -> True
   where
     f :: Value -> Result StratumNotif
-    f = parse parseNotif
+    f = parse parseRPCNotif
 
 isResponse :: Maybe StratumRequest -> Maybe Value -> Bool
 isResponse rM vM = maybe False id $ do
     r <- rM
     v <- vM
-    return $ case (fst <$> parse (parseResponse r) v) of
+    return $ case (fst <$> parse (parseRPCResponse r) v) of
         Success (Right _) -> True
         Success _ -> False
-        Error _ -> False
+        Error   _ -> False
 
 isError :: Maybe StratumRequest -> Maybe Value -> Bool
 isError rM vM = maybe False id $ do
     r <- rM
     v <- vM
-    return $ case (fst <$> parse (parseResponse r) v) of
+    return $ case (fst <$> parse (parseRPCResponse r) v) of
         Success (Left _) -> True
         Success _ -> False
-        Error _ -> False
+        Error   _ -> False

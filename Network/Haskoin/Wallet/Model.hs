@@ -14,6 +14,7 @@ module Network.Haskoin.Wallet.Model
 , DbCoinGeneric(..)
 , DbAccTxGeneric(..)
 , DbTxGeneric(..)
+, DbConfirmationGeneric(..)
 , DbConfigGeneric(..)
 , DbWalletId
 , DbAccountId
@@ -21,6 +22,7 @@ module Network.Haskoin.Wallet.Model
 , DbCoinId
 , DbAccTxId
 , DbTxId
+, DbConfirmationId
 , DbConfigId
 , EntityField(..)
 , Unique(..)
@@ -109,6 +111,12 @@ DbTx
     confirmedHeight Word32 Maybe
     created UTCTime default=CURRENT_TIME
     UniqueTx hash
+    deriving Show
+
+DbConfirmation
+    tx TxHash
+    block BlockHash
+    UniqueConfirmation tx block
     deriving Show
 
 DbConfig

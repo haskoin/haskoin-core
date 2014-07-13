@@ -145,7 +145,7 @@ processUserRequest mChan = awaitForever $ \r -> case r of
     PublishTx tx -> do
         tid <- lift myThreadId
         lift $ atomically $ writeTBMChan mChan (tid, UserPublishTx tx)
-    RequestTx (tid, txs) -> 
+    RequestTx (tid, txs) -> unless (null txs) $
         lift $ atomically $ writeTBMChan mChan (tid, UserRequestTx txs)
 
 startPeer :: ClientSettings -> ManagerHandle ()

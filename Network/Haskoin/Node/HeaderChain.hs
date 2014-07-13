@@ -7,6 +7,7 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Either
 import qualified Control.Monad.State as S
 
+import Data.List
 import Data.Bits
 import Data.Word
 import Data.Maybe
@@ -146,7 +147,7 @@ initDB = S.gets handle >>= \db -> do
     prevGen <- getBlockHeaderNode genid
     when (isNothing prevGen) $ DB.write db def
         [ DB.Put (indexKey genid) $ encode' BlockHeaderGenesis
-           { nodeBlockHash      = genid
+           { nodeBlockHash    = genid
            , nodeHeader       = genesis
            , nodeHeaderHeight = 0
            , nodeChainWork    = headerWork genesis
@@ -313,12 +314,19 @@ bestHeaderHeight = nodeHeaderHeight <$> getBestHeader
 bestBlockHeight :: DBHandle Word32
 bestBlockHeight = nodeHeaderHeight <$> getBestBlock
 
--- Only return the best hash
--- TODO: Change this in the context of headers-first?
 blockLocator :: DBHandle [BlockHash]
 blockLocator = do
-    n <- getBestHeader
-    return [nodeBlockHash n]
+    h  <- getBestHeader
+    ns <- f [h] $ replicate 10 (go 1) ++ [go (2^x) | x <- [0..]]
+    return $ reverse $ nub $ genid : map nodeBlockHash ns
+  where
+    genid = headerHash genesis
+    f acc (g:gs) = g (head acc) >>= \resM -> case resM of
+        Just res -> f (res:acc) gs
+        Nothing  -> return acc
+    go _ (BlockHeaderGenesis _ _ _ _) = return Nothing
+    go 0 n = return $ Just n
+    go step n = go (step-1) =<< getParent n
 
 -- Get the last checkpoint that we have seen
 lastCheckpoint :: DBHandle (Maybe (Int, BlockHash))

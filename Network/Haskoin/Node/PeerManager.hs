@@ -129,6 +129,7 @@ startNode fp = do
         -- TODO: Put the peers in a config file or write peer discovery
         startPeer $ clientSettings 8333 "localhost"
         startPeer $ clientSettings 8333 "haskoin.com"
+        startPeer $ clientSettings 8333 "95.215.47.133"
 
         -- Process messages
         -- TODO: Close database handle on exception with DB.close
@@ -220,7 +221,7 @@ processPeerDisconnect tid = do
             tidM = fst <$> listToMaybe vals
         S.modify $ \s -> s{ syncPeer = tidM }
         -- Continue the header download if we have a new peer
-        when (isJust tidM) $ sendGetHeaders (fromJust tidM) 0x00
+        when (isJust tidM) $ sendGetHeaders (fromJust tidM) True 0x00
     -- TODO: Do something about the inflight merkle blocks of this peer
 
 processPeerHandshake :: ThreadId -> Version -> ManagerHandle ()
@@ -243,7 +244,7 @@ processPeerHandshake tid remoteVer = do
     syn <- S.gets syncPeer
     when (isNothing syn) $ do
         S.modify $ \s -> s{ syncPeer = Just tid }
-        sendGetHeaders tid 0x00
+        sendGetHeaders tid True 0x00
     -- Download more block if some are pending
     downloadBlocks tid
 
@@ -348,7 +349,7 @@ processHeaders tid (Headers h) = do
             , show $ fst $ last newToDwn
             ]
         -- Requesting more headers
-        sendGetHeaders tid 0x00
+        sendGetHeaders tid False 0x00
 
     -- Request block downloads for all peers that are currently idling
     -- TODO: Even for the peer that is syncing the headers?
@@ -399,8 +400,6 @@ importMerkleBlocks height = do
     when ( length toImport >= 500 || (Q.null dwnQueue && null toKeep) ) $ do
         S.modify $ \s -> s{ receivedBlocks = M.fromList toKeep }
         eChan <- S.gets eventChan
-        -- TODO: Import in the wallet
-        -- TODO: Deal with reorgs 
         -- TODO: Stall solo transactions until we have synced the chain. This is
         -- to prevent missing a transaction that is in our wallet but we have
         -- not generated the address yet
@@ -458,7 +457,7 @@ processInv tid (Inv vs) = do
             ]
 
     -- Request headers for blocks we don't have
-    forM_ notHave $ \b -> sendGetHeaders tid b
+    forM_ notHave $ \b -> sendGetHeaders tid True b
 
   where
     txlist = map (fromIntegral . invHash) $ 
@@ -472,12 +471,11 @@ processTx tid tx = do
     liftIO $ atomically $ writeTBMChan eChan $ TxEvent tx
 
 -- Send out a GetHeaders request for a given peer
-sendGetHeaders :: ThreadId -> BlockHash -> ManagerHandle ()
-sendGetHeaders tid hstop = do
-    d    <- getPeerData tid
-    -- TODO: Only build a block locator the first time. Then send the last
-    -- known hash from the previous headers message
-    loc <- runDB blockLocator 
+sendGetHeaders :: ThreadId -> Bool -> BlockHash -> ManagerHandle ()
+sendGetHeaders tid full hstop = do
+    loc <- runDB $ if full then blockLocator else do
+        h <- getBestHeader
+        return [nodeBlockHash h]
     sendMessage tid $ MGetHeaders $ GetHeaders 0x01 loc hstop
     $(logDebug) $ T.pack $ unwords 
         [ "Requesting more block headers:", show tid ]

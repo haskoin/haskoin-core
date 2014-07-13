@@ -56,7 +56,6 @@ runServer :: IO ()
 runServer = do
     dir <- getWorkDir
     let walletFile = T.pack $ concat [dir, "/wallet"]
-        headerFile = concat [dir, "/headerchain"]
 
     -- Create sqlite connection pool & initialization
     pool <- createSqlitePool walletFile 10 -- TODO: Put 10 in a config file?
@@ -66,7 +65,7 @@ runServer = do
         walletBloomFilter
 
     -- Launch SPV node
-    (eChan, rChan) <- startNode headerFile 
+    (eChan, rChan) <- startNode dir 
     forkIO $ sourceTBMChan eChan $$ processNodeEvents pool rChan
     atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
 
@@ -149,11 +148,7 @@ processNodeEvents :: ConnectionPool -> TBMChan NodeRequest
 processNodeEvents pool rChan = awaitForever $ \e -> lift $ runDB pool $ 
     case e of
         MerkleBlockEvent xs -> void $ importBlocks xs
-        TxHashEvent (tid, txs) -> do
-            req <- filterM ((not <$>) . isTxInWallet) txs
-            unless (null req) $ liftIO $ atomically $ 
-                writeTBMChan rChan $ RequestTx (tid, req)
-        TxEvent tx -> void $ importTx tx False
+        TxEvent tx          -> void $ importTx tx False
 
 runDB :: ConnectionPool -> SqlPersistT (NoLoggingT (ResourceT IO)) a -> IO a
 runDB pool m = runResourceT $ runNoLoggingT $ runSqlPool m pool

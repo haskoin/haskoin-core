@@ -22,8 +22,10 @@ import Data.Maybe
 import Data.Word
 import Data.Time
 import Data.Time.Clock.POSIX
+import Data.Default
 import Data.Foldable (toList)
-import Data.List (partition)
+import Data.List (partition, nub, delete)
+import qualified Data.ByteString as BS
 import qualified Data.Map as M
 import qualified Data.Sequence as Q
 import Data.Conduit 
@@ -56,12 +58,15 @@ data ManagerSession = ManagerSession
     , peerMap          :: M.Map ThreadId PeerData
     , syncPeer         :: Maybe ThreadId
     , dbHandle         :: DB.DB
+    , dbTxHandle       :: DB.DB
     , mngrBloom        :: Maybe BloomFilter
     -- We got the headers but still need to download the merkle blocks
     , blocksToDownload :: Q.Seq (Word32, BlockHash)
     -- We received the merkle blocks but buffer them to send them in-order to
     -- the wallet
     , receivedBlocks   :: M.Map BlockHeight DecodedMerkleBlock
+    -- We requested a GetData but are still waiting for a response
+    , inflightTxs      :: [TxHash]
     } 
 
 -- Data stored about a peer in the Manager
@@ -75,24 +80,21 @@ data PeerData = PeerData
 
 data NodeEvent 
     = MerkleBlockEvent [(BlockChainAction, [TxHash])]
-    -- We send the ThreadId to keep less state here. It also allows the wallet
-    -- to see how many unique peers sent a transaction.
-    | TxHashEvent (ThreadId, [TxHash])
     | TxEvent Tx
     deriving (Eq, Show)
 
 data NodeRequest
     = BloomFilterUpdate BloomFilter
     | PublishTx Tx
-    -- The wallet replies with the ThreadId so that we know which peer to 
-    -- request the transaction from. We could keep a map here, but it would
-    -- be more state management.
-    | RequestTx (ThreadId, [TxHash])
     deriving (Eq, Show)
 
 startNode :: FilePath -> IO (TBMChan NodeEvent, TBMChan NodeRequest)
 startNode fp = do
-    db <- DB.open fp
+    db <- DB.open (concat [fp, "/headerchain"])
+              DB.defaultOptions{ DB.createIfMissing = True
+                               , DB.cacheSize       = 2048
+                               }
+    txdb <- DB.open (concat [fp, "/txdb"])
               DB.defaultOptions{ DB.createIfMissing = True
                                , DB.cacheSize       = 2048
                                }
@@ -106,9 +108,11 @@ startNode fp = do
                                  , peerMap          = M.empty
                                  , syncPeer         = Nothing
                                  , dbHandle         = db
+                                 , dbTxHandle       = txdb
                                  , mngrBloom        = Nothing
                                  , blocksToDownload = Q.empty
                                  , receivedBlocks   = M.empty
+                                 , inflightTxs      = []
                                  }
     -- Launch thread listening to user requests
     -- TODO: Should we catch exception here?
@@ -146,8 +150,6 @@ processUserRequest mChan = awaitForever $ \r -> case r of
     PublishTx tx -> do
         tid <- lift myThreadId
         lift $ atomically $ writeTBMChan mChan (tid, UserPublishTx tx)
-    RequestTx (tid, txs) -> unless (null txs) $
-        lift $ atomically $ writeTBMChan mChan (tid, UserRequestTx txs)
 
 startPeer :: ClientSettings -> ManagerHandle ()
 startPeer remote = do
@@ -191,7 +193,6 @@ managerSink = awaitForever $ \(tid,req) -> lift $ do
     case req of
         UserBloomFilter b -> processBloomFilter b
         UserPublishTx tx  -> processPublishTx tx
-        UserRequestTx txs -> processRequestTx tid txs
         _   -> do
             exists <- peerExists tid
             -- Discard messages from peers that are gone
@@ -271,14 +272,6 @@ processPublishTx tx = do
         dat <- getPeerData tid
         when (peerHandshake dat) $ sendMessage tid $ MTx tx
 
-processRequestTx :: ThreadId -> [TxHash] -> ManagerHandle ()
-processRequestTx tid txs = peerExists tid >>= \exists -> when exists $ do
-    dat <- getPeerData tid  
-    when (peerHandshake dat) $ do
-        sendMessage tid $ MGetData $ GetData $ map f txs
-  where
-    f h = InvVector InvTx $ fromIntegral h
-        
 processHeaders :: ThreadId -> Headers -> ManagerHandle ()
 processHeaders tid (Headers h) = do
     -- TODO: The time here is incorrect. It should be a median of all peers.
@@ -374,8 +367,7 @@ processMerkleBlock tid dmb = do
         S.modify $ \s -> s{ receivedBlocks = M.insert height dmb blockMap }
 
         -- Import the merkle block in-order into the user app
-        bestHeight <- nodeHeaderHeight <$> runDB getBestBlock
-        importMerkleBlocks bestHeight
+        importMerkleBlocks
 
         -- Decrement the peer request counter
         requests <- peerInflightRequests <$> getPeerData tid
@@ -389,30 +381,49 @@ processMerkleBlock tid dmb = do
 
 -- This function will make sure that the merkle blocks are imported in-order
 -- as they may be received out-of-order from the network (concurrent download)
-importMerkleBlocks :: BlockHeight -> ManagerHandle ()
-importMerkleBlocks height = do
+importMerkleBlocks :: ManagerHandle ()
+importMerkleBlocks = do
+    height   <- nodeHeaderHeight <$> runDB getBestBlock
     dwnQueue <- S.gets blocksToDownload
     blockMap <- S.gets receivedBlocks
-    let ascList  = M.toAscList blockMap
-        toImport = go height ascList
-        toKeep   = drop (length toImport) ascList
+    dwnTxs   <- S.gets inflightTxs
+    let ascList   = M.toAscList blockMap
+        toImport  = go height ascList
+        toKeep    = drop (length toImport) ascList
+        -- We stall merkle block imports when transactions are inflight. This
+        -- is to prevent this race condition where tx1 would miss it's
+        -- confirmation:
+        -- INV tx1 -> GetData tx1 -> MerkleBlock (all tx except tx1) -> Tx1
+        canImport = null dwnTxs && 
+                    (  length toImport >= 500 
+                    -- If we are at the end of the download, we won't get to 500
+                    || (  Q.null dwnQueue 
+                       && null toKeep
+                       && (not $ null toImport)
+                       )
+                    )
     -- Send blocks in batches
-    when ( length toImport >= 500 || (Q.null dwnQueue && null toKeep) ) $ do
+    when canImport $ do
         S.modify $ \s -> s{ receivedBlocks = M.fromList toKeep }
         eChan <- S.gets eventChan
         -- TODO: Stall solo transactions until we have synced the chain. This is
         -- to prevent missing a transaction that is in our wallet but we have
         -- not generated the address yet
-        pairs <- forM toImport $ \(h, dmb) -> do
+        res <- forM toImport $ \(h, dmb) -> do
             -- Import in blockchain
             node <- runDB $ addMerkleBlock $ decodedMerkle dmb
-            liftIO $ atomically $ forM_ (merkleTxs dmb) $ \t ->
-                writeTBMChan eChan $ TxEvent t
+            forM_ (merkleTxs dmb) $ \t -> do
+                let txhash = txHash t
+                seenTx <- existsDbTx txhash
+                -- Send to the wallet if we have not seen it yet
+                when (not seenTx) $ do
+                    putDbTx txhash -- Save that we have seen this tx
+                    liftIO $ atomically $ writeTBMChan eChan $ TxEvent t
             return (node, expectedTxs dmb)
-        liftIO $ atomically $ writeTBMChan eChan $ MerkleBlockEvent pairs
+        liftIO $ atomically $ writeTBMChan eChan $ MerkleBlockEvent res
 
         -- TODO: This is very complex just for logging purposes. Simplify ?
-        let best = catMaybes $ map (f . fst) $ reverse pairs
+        let best = catMaybes $ map (f . fst) $ reverse res
             f (BestBlock node)   = Just $ nodeHeaderHeight node
                 -- TODO: Verify if this is correct, i.e. last and not first
             f (BlockReorg _ _ n) = Just $ nodeHeaderHeight $ last n
@@ -430,11 +441,13 @@ importMerkleBlocks height = do
 
 processInv :: ThreadId -> Inv -> ManagerHandle ()
 processInv tid (Inv vs) = do
-    -- TODO: Misbehave if the size of the INV is too big
-    eChan <- S.gets eventChan 
-    -- Inform the wallet about new transactions
-    unless (null txlist) $
-        liftIO $ atomically $ writeTBMChan eChan $ TxHashEvent (tid, txlist)
+
+    -- Request transactions that we have not seen yet
+    notHaveTxs <- filterM ((not <$>) . existsDbTx) txlist
+    -- Nub because we may have duplicates (same Tx from many peers)
+    S.modify $ \s -> s{ inflightTxs = nub $ inflightTxs s ++ notHaveTxs }
+    let getData = GetData $ map (InvVector InvTx . fromIntegral) notHaveTxs
+    sendMessage tid $ MGetData getData
 
     let f (a, b) h = getBlockHeaderNode h >>= \resM -> return $ case resM of
             Just r -> (r:a, b)
@@ -467,8 +480,23 @@ processInv tid (Inv vs) = do
 
 processTx :: ThreadId -> Tx -> ManagerHandle ()
 processTx tid tx = do
-    eChan <- S.gets eventChan
-    liftIO $ atomically $ writeTBMChan eChan $ TxEvent tx
+    -- Only send the transaction to the wallet if we have not seen it yet, to
+    -- avoid sending duplicates. This can happen when multiple peers get an INV
+    -- for this transaction at the same time.
+    seenTx <- existsDbTx txhash
+    when (not seenTx) $ do
+        -- Remove the inflight transaction from the inflight list
+        S.modify $ \s -> s{ inflightTxs = delete txhash $ inflightTxs s }
+        putDbTx txhash
+        eChan <- S.gets eventChan
+        liftIO $ atomically $ writeTBMChan eChan $ TxEvent tx
+        
+        -- If no more transactions are inflight, trigger the download of
+        -- the merkle blocks again
+        dwnTxs <- S.gets inflightTxs
+        when (null dwnTxs) $ importMerkleBlocks 
+  where
+    txhash = txHash tx
 
 -- Send out a GetHeaders request for a given peer
 sendGetHeaders :: ThreadId -> Bool -> BlockHash -> ManagerHandle ()
@@ -552,6 +580,16 @@ runDB :: DBHandle a -> ManagerHandle a
 runDB m = do
     db <- S.gets dbHandle
     liftIO $ S.evalStateT m $ LevelSession db
+
+existsDbTx :: TxHash -> ManagerHandle Bool
+existsDbTx txhash = do
+    db <- S.gets dbTxHandle
+    isJust <$> (liftIO $ DB.get db def $ encode' txhash)
+
+putDbTx :: TxHash -> ManagerHandle ()
+putDbTx txhash = do
+    db <- S.gets dbTxHandle
+    liftIO $ DB.put db def (encode' $ txhash) BS.empty
 
 -- TODO: Remove this if not needed
 splitIn :: Int -> [a] -> [[a]]

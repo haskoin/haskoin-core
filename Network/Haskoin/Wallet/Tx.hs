@@ -75,7 +75,6 @@ import Network.Haskoin.Util
 toAccTx :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b) 
         => DbAccTxGeneric b -> m AccTx
 toAccTx accTx = do
-    -- TODO: Keep fromJust?
     (Entity _ tx) <- getTxEntity $ dbAccTxHash accTx
     height <- getBestHeight
     let conf | isNothing $ dbTxConfirmedBy tx = 0
@@ -98,7 +97,6 @@ getTxEntity tid = do
 getTx :: PersistUnique m => TxHash -> m Tx
 getTx tid = liftM (dbTxValue . entityVal) $ getTxEntity tid
 
--- TODO: Make a paged version of this
 -- | List all the transaction entries for an account. Transaction entries
 -- summarize information for a transaction in a specific account only (such as
 -- the total movement of for this account).
@@ -376,8 +374,6 @@ sendTx name strDests fee = do
     resE <- sendCoins coins recips (SigAll False)
     case resE of
         Left err    -> liftIO $ throwIO $ WalletException err
-        -- TODO: Import the transaction into the wallet and send it if 
-        -- necessary to the network.
         Right (tx, complete) -> do
             importTx tx $ not complete
             return (txHash tx, complete)
@@ -552,7 +548,8 @@ importBlocks xs = do
 getBestHeight :: PersistQuery m => m Word32
 getBestHeight = do
     cnf <- selectFirst [] []
-    -- TODO: throw an exception here instead of fromJust
+    when (isNothing cnf) $ liftIO $ throwIO $
+        WalletException "getBestHeight: Database not initialized"
     return $ dbConfigBestHeight $ entityVal $ fromJust cnf
 
 setBestHeight :: PersistQuery m => Word32 -> m ()

@@ -24,7 +24,7 @@ import Data.Time
 import Data.Time.Clock.POSIX
 import Data.Default
 import Data.Foldable (toList)
-import Data.List (partition, nub, delete)
+import Data.List 
 import qualified Data.ByteString as BS
 import qualified Data.Map as M
 import qualified Data.Sequence as Q
@@ -65,8 +65,10 @@ data ManagerSession = ManagerSession
     -- We received the merkle blocks but buffer them to send them in-order to
     -- the wallet
     , receivedBlocks   :: M.Map BlockHeight DecodedMerkleBlock
-    -- We requested a GetData but are still waiting for a response
+    -- Stall merkle block while a GetData for a transaction is pending
     , inflightTxs      :: [TxHash]
+    -- Stall solo transactions while the blockchain is syncing
+    , soloTxs          :: [Tx]
     } 
 
 -- Data stored about a peer in the Manager
@@ -113,6 +115,7 @@ startNode fp = do
                                  , blocksToDownload = Q.empty
                                  , receivedBlocks   = M.empty
                                  , inflightTxs      = []
+                                 , soloTxs          = []
                                  }
     -- Launch thread listening to user requests
     -- TODO: Should we catch exception here?
@@ -209,7 +212,10 @@ managerSink = awaitForever $ \(tid,req) -> lift $ do
 
 processPeerDisconnect :: ThreadId -> ManagerHandle ()
 processPeerDisconnect tid = do
-    $(logDebug) "Peer disconnected"
+    $(logDebug) $ T.pack $ unwords
+        [ "Peer disconnected:"
+        , show tid
+        ]
     deletePeerData tid
     syn <- S.gets syncPeer
     -- TODO: Implement a smarter algorithm for choosing the download peer
@@ -309,7 +315,6 @@ processHeaders tid (Headers h) = do
 
     -- Adjust the height of peers that sent us INV messages for these headers
     forM newToDwn $ \(h, bid) -> do
-        -- Add the current thread as well
         forM tids $ \ti -> do
             dat <- getPeerData ti
             let (xs, ys) = partition (== bid) $ peerBlocks dat
@@ -366,6 +371,9 @@ processMerkleBlock tid dmb = do
         -- Add this merkle block to the received list
         S.modify $ \s -> s{ receivedBlocks = M.insert height dmb blockMap }
 
+        -- Mark transactions inside the merkle block as received
+        forM (merkleTxs dmb) $ putDbTx . txHash
+
         -- Import the merkle block in-order into the user app
         importMerkleBlocks
 
@@ -406,26 +414,35 @@ importMerkleBlocks = do
     when canImport $ do
         S.modify $ \s -> s{ receivedBlocks = M.fromList toKeep }
         eChan <- S.gets eventChan
-        -- TODO: Stall solo transactions until we have synced the chain. This is
-        -- to prevent missing a transaction that is in our wallet but we have
-        -- not generated the address yet
+        solo  <- S.gets soloTxs
+
         res <- forM toImport $ \(h, dmb) -> do
             -- Import in blockchain
             node <- runDB $ addMerkleBlock $ decodedMerkle dmb
-            forM_ (merkleTxs dmb) $ \t -> do
-                let txhash = txHash t
-                seenTx <- existsDbTx txhash
-                -- Send to the wallet if we have not seen it yet
-                when (not seenTx) $ do
-                    putDbTx txhash -- Save that we have seen this tx
-                    liftIO $ atomically $ writeTBMChan eChan $ TxEvent t
+            -- If solo transactions belong to this merkle block, we have
+            -- to import them and remove them from the solo list.
+            let f x                 = txHash x `elem` expectedTxs dmb
+                (soloAdd, soloKeep) = partition f solo
+                txImport            = nub $ merkleTxs dmb ++ soloAdd
+            -- Send transactions to the wallet
+            S.modify $ \s -> s{ soloTxs = soloKeep }
+            liftIO $ atomically $ forM_ txImport (writeTBMChan eChan . TxEvent)
             return (node, expectedTxs dmb)
+
+        -- Send merkle blocks to the wallet 
         liftIO $ atomically $ writeTBMChan eChan $ MerkleBlockEvent res
+
+        -- If we are synced, send solo transactions to the wallet
+        synced <- nodeIsSynced
+        when synced $ do
+            $(logDebug) "We are in sync with the network"
+            solo <- S.gets soloTxs
+            S.modify $ \s -> s{ soloTxs = [] }
+            liftIO $ atomically $ forM_ solo (writeTBMChan eChan . TxEvent)
 
         -- TODO: This is very complex just for logging purposes. Simplify ?
         let best = catMaybes $ map (f . fst) $ reverse res
             f (BestBlock node)   = Just $ nodeHeaderHeight node
-                -- TODO: Verify if this is correct, i.e. last and not first
             f (BlockReorg _ _ n) = Just $ nodeHeaderHeight $ last n
             f (SideBlock _)      = Nothing
         unless (null best) $ 
@@ -478,6 +495,7 @@ processInv tid (Inv vs) = do
     blocklist = map (fromIntegral . invHash) $ 
         filter ((== InvBlock) . invType) vs
 
+-- These are solo transactions not linked to a merkle block (yet)
 processTx :: ThreadId -> Tx -> ManagerHandle ()
 processTx tid tx = do
     -- Only send the transaction to the wallet if we have not seen it yet, to
@@ -488,8 +506,14 @@ processTx tid tx = do
         -- Remove the inflight transaction from the inflight list
         S.modify $ \s -> s{ inflightTxs = delete txhash $ inflightTxs s }
         putDbTx txhash
-        eChan <- S.gets eventChan
-        liftIO $ atomically $ writeTBMChan eChan $ TxEvent tx
+
+        -- Only send to wallet if we are in sync
+        synced <- nodeIsSynced
+        if synced 
+            then do
+                eChan <- S.gets eventChan
+                liftIO $ atomically $ writeTBMChan eChan $ TxEvent tx
+            else S.modify $ \s -> s{ soloTxs = tx : soloTxs s } 
         
         -- If no more transactions are inflight, trigger the download of
         -- the merkle blocks again
@@ -497,6 +521,13 @@ processTx tid tx = do
         when (null dwnTxs) $ importMerkleBlocks 
   where
     txhash = txHash tx
+
+nodeIsSynced :: ManagerHandle Bool
+nodeIsSynced = do
+    pDats <- M.elems <$> S.gets peerMap 
+    let netHeight = foldl max 0 $ map peerHeight pDats
+    ourHeight <- runDB bestBlockHeight
+    return $ ourHeight == netHeight
 
 -- Send out a GetHeaders request for a given peer
 sendGetHeaders :: ThreadId -> Bool -> BlockHash -> ManagerHandle ()

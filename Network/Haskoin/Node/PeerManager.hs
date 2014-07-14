@@ -202,6 +202,8 @@ managerSink = awaitForever $ \(tid,req) -> lift $ do
                     MTx tx           -> processTx tid tx
                     _                -> return () -- Ignore them for now
 
+-- TODO: When a peer disconnects, try to reconnect using exponential backoff
+-- We should do this if we have a static list of peers in a config file.
 processPeerDisconnect :: ThreadId -> ManagerHandle ()
 processPeerDisconnect tid = do
     $(logDebug) $ T.pack $ unwords
@@ -322,14 +324,8 @@ processHeaders tid (Headers h) = do
                 ]
 
         -- Update the sync peer 
-        pDats <- M.elems <$> S.gets peerMap 
-        let netHeight = foldl max 0 $ map peerHeight pDats
-        ourHeight <- runDB bestHeaderHeight
-        if ourHeight == netHeight
-            -- Headers are in sync with the network.
-            then S.modify $ \s -> s{ syncPeer = Nothing }
-            -- This peer can continue as the syncPeer
-            else S.modify $ \s -> s{ syncPeer = Just tid }
+        dwnSynced <- downloadSynced
+        S.modify $ \s -> s{ syncPeer = if dwnSynced then Nothing else Just tid }
         $(logInfo) $ T.pack $ unwords
             [ "New best header height:"
             , show $ fst $ last newToDwn
@@ -421,7 +417,7 @@ importMerkleBlocks = do
         liftIO $ atomically $ writeTBMChan eChan $ MerkleBlockEvent res
 
         -- If we are synced, send solo transactions to the wallet
-        synced <- nodeIsSynced
+        synced <- nodeSynced
         when synced $ do
             solo <- S.gets soloTxs
             S.modify $ \s -> s{ soloTxs = [] }
@@ -496,7 +492,7 @@ processTx tid tx = do
         putDbTx txhash
 
         -- Only send to wallet if we are in sync
-        synced <- nodeIsSynced
+        synced <- nodeSynced
         if synced 
             then do
                 eChan <- S.gets eventChan
@@ -510,11 +506,20 @@ processTx tid tx = do
   where
     txhash = txHash tx
 
-nodeIsSynced :: ManagerHandle Bool
-nodeIsSynced = do
+-- Block height = network height
+nodeSynced :: ManagerHandle Bool
+nodeSynced = do
     pDats <- M.elems <$> S.gets peerMap 
     let netHeight = foldl max 0 $ map peerHeight pDats
     ourHeight <- runDB bestBlockHeight
+    return $ ourHeight == netHeight
+
+-- Header height = network height
+downloadSynced :: ManagerHandle Bool
+downloadSynced = do
+    pDats <- M.elems <$> S.gets peerMap 
+    let netHeight = foldl max 0 $ map peerHeight pDats
+    ourHeight <- runDB bestHeaderHeight
     return $ ourHeight == netHeight
 
 -- Send out a GetHeaders request for a given peer

@@ -112,7 +112,10 @@ bestBlockKey = "bestblock"
 
 -- Points to the last downloaded block. It is initialized to the genesis.
 downloadKey :: BS.ByteString
-downloadKey = "download"
+downloadKey = "lastdownload"
+
+fastCatchupKey :: BS.ByteString
+fastCatchupKey = "starttime"
 
 getBlockHeaderNode :: BlockHash -> DBHandle (Maybe BlockHeaderNode)
 getBlockHeaderNode h = do
@@ -125,12 +128,12 @@ putBlockHeaderNode bhn = do
     db <- S.gets handle
     DB.put db def (indexKey $ nodeBlockHash bhn) $ encode' bhn
 
-getBestBlock :: DBHandle BlockHeaderNode
+getBestBlock :: DBHandle (Maybe BlockHeaderNode)
 getBestBlock = do
     db <- S.gets handle
-    -- TODO: We assume the key always exists. Is this correct?
-    key <- decode' . fromJust <$> DB.get db def bestBlockKey
-    fromJust <$> getBlockHeaderNode key
+    keyM <- DB.get db def bestBlockKey
+    if isNothing keyM then return Nothing else do
+        getBlockHeaderNode $ decode' $ fromJust keyM
 
 putBestBlock :: BlockHash -> DBHandle ()
 putBestBlock h = do
@@ -161,7 +164,27 @@ putLastDownloadNode h = do
     db <- S.gets handle
     DB.put db def downloadKey $ encode' h
 
+getFastCatchup :: DBHandle (Maybe Word32)
+getFastCatchup = do
+    db <- S.gets handle
+    res <- DB.get db def fastCatchupKey
+    return $ decode' <$> res
+
+setFastCatchup :: Word32 -> DBHandle ()
+setFastCatchup fstKeyTime = do
+    db    <- S.gets handle
+    prevM <- getFastCatchup
+    -- Only set a new start time if a previous one doesn't exist. 
+    -- Otherwise, a full re-scan might be necessary.
+    when (isNothing prevM) $ do
+        -- Adjust time backwards by a week to handle clock drifts.
+        let fastCatchup = max 0 ((toInteger fstKeyTime) - 86400 * 7)
+        DB.put db def fastCatchupKey $ 
+            encode' (fromInteger fastCatchup :: Word32)
+
 -- Insert the genesis block if it is not already there
+-- TODO: If dwnStart is not equal to the one in the database, issue a warning
+-- or an error.
 initDB :: DBHandle ()
 initDB = S.gets handle >>= \db -> do
     prevGen <- getBlockHeaderNode genid
@@ -174,7 +197,6 @@ initDB = S.gets handle >>= \db -> do
            , nodeChild        = Nothing
            }
         , DB.Put bestHeaderKey $ encode' genid
-        , DB.Put bestBlockKey  $ encode' genid
         , DB.Put downloadKey   $ encode' genid
         ]
   where
@@ -188,18 +210,31 @@ isDownloadFinished = do
 
 nextDownloadRange :: Int -> Word32 -> DBHandle [BlockHash]
 nextDownloadRange count height = do
-    n <- getLastDownloadNode 
-    let availableCount = min (fromIntegral count) (height - nodeHeaderHeight n)
-    res <- reverse <$> go [] availableCount n
-    unless (null res) $ putLastDownloadNode $ last res
-    return res
+    fastCatchup <- getFastCatchup
+    if isNothing fastCatchup then return [] else do
+        n <- getLastDownloadNode 
+        let minCount = min (fromIntegral count) (height - nodeHeaderHeight n)
+        (res, lstDwn) <- go (fromJust fastCatchup) [] minCount n
+        putLastDownloadNode $ nodeBlockHash lstDwn
+        return $ reverse res
   where
-    go acc step n
-        | step <= 0 = return acc
-        | isNothing $ nodeChild n = return acc
+    go fastCatchup acc step n 
+        | step <= 0               = return (acc, n)
+        | isNothing $ nodeChild n = return (acc, n)
         | otherwise = do
             c <- fromJust <$> (getBlockHeaderNode $ fromJust $ nodeChild n)
-            go ((nodeBlockHash c):acc) (step-1) c
+            let nodeTime = blockTimestamp $ nodeHeader c
+                prevTime = blockTimestamp $ nodeHeader n
+            if nodeTime < fastCatchup
+                -- Ignore nodes that are before the start time
+                then go fastCatchup acc step c 
+                else do
+                    -- When we crossed the download point, we set the
+                    -- best block hash. This will allow the download to start
+                    -- from this point.
+                    when (prevTime < fastCatchup) $ 
+                        putBestBlock $ nodeBlockHash n 
+                    go fastCatchup ((nodeBlockHash c):acc) (step-1) c 
         
 -- bitcoind function ProcessBlockHeader and AcceptBlockHeader in main.cpp
 -- TODO: Add DOS return values
@@ -253,7 +288,7 @@ storeBlockHeader bh prevNode = S.gets handle >>= \db -> do
     bid       = headerHash bh
     newHeight = nodeHeaderHeight prevNode + 1
     newWork   = nodeChainWork prevNode + headerWork bh
-    newNode   = BlockHeaderNode { nodeBlockHash      = bid
+    newNode   = BlockHeaderNode { nodeBlockHash    = bid
                                 , nodeHeader       = bh
                                 , nodeHeaderHeight = newHeight
                                 , nodeChainWork    = newWork
@@ -293,13 +328,13 @@ getNewWork firstB lastB
     lastDiff = decodeCompact $ blockBits lastB
     newDiff = lastDiff * (toInteger actualTime) `div` (toInteger targetTimespan)
 
--- TODO: Handle forks
 -- We assume the merkle block are sorted from smallest to highest height
 addMerkleBlock :: MerkleBlock -> DBHandle BlockChainAction
 addMerkleBlock mb = do
     db        <- S.gets handle
     newNode   <- fromJust <$> getBlockHeaderNode bid
-    chainHead <- getBestBlock
+    -- TODO: This breaks if we haven't reached the fast catchup yet
+    chainHead <- fromJust <$> getBestBlock
     if nodeParent newNode == nodeBlockHash chainHead
         -- We connect to the best chain
         then do
@@ -344,8 +379,8 @@ getParent node = do
 bestHeaderHeight :: DBHandle Word32
 bestHeaderHeight = nodeHeaderHeight <$> getBestHeader
 
-bestBlockHeight :: DBHandle Word32
-bestBlockHeight = nodeHeaderHeight <$> getBestBlock
+bestBlockHeight :: DBHandle (Maybe Word32)
+bestBlockHeight = (nodeHeaderHeight <$>) <$> getBestBlock
 
 blockLocator :: DBHandle [BlockHash]
 blockLocator = do

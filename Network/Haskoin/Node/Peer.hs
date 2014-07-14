@@ -68,6 +68,7 @@ data ManagerRequest
     | PeerMessage Message   
     | UserBloomFilter BloomFilter
     | UserPublishTx Tx
+    | UserFastCatchup Word32
 
 data DecodedMerkleBlock = DecodedMerkleBlock
     { decodedMerkle :: MerkleBlock

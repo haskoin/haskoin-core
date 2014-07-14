@@ -59,15 +59,18 @@ runServer = do
 
     -- Create sqlite connection pool & initialization
     pool <- createSqlitePool walletFile 10 -- TODO: Put 10 in a config file?
-    bloom <- runDB pool $ do
+    (bloom, fstKeyTime) <- runDB pool $ do
         runMigrationSilent migrateWallet 
         initWalletDB
-        walletBloomFilter
+        liftM2 (,) walletBloomFilter firstKeyTime
 
     -- Launch SPV node
     (eChan, rChan) <- startNode dir 
     forkIO $ sourceTBMChan eChan $$ processNodeEvents pool rChan
-    atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
+    atomically $ do
+        writeTBMChan rChan $ BloomFilterUpdate bloom
+        when (isJust fstKeyTime) $ writeTBMChan rChan $ 
+            FastCatchupTime $ fromJust fstKeyTime
 
     -- Launch JSON-RPC server
     -- TODO: Put connection stuff in config file
@@ -96,29 +99,41 @@ processWalletRequest pool rChan (wr, i) = do
     go (NewAccount w n)      = do
         a <- newAccount w n
         setLookAhead n 30
-        bloom <- walletBloomFilter
-        liftIO $ atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
+        bloom      <- walletBloomFilter
+        fstKeyTime <- liftM fromJust firstKeyTime
+        liftIO $ atomically $ do
+            writeTBMChan rChan $ BloomFilterUpdate bloom
+            writeTBMChan rChan $ FastCatchupTime fstKeyTime
         return $ ResAccount a
     go (NewMSAccount w n r t ks) = do
         a <- newMSAccount w n r t ks
         when (length (accountKeys a) == t - 1) $ do
             setLookAhead n 30
-            bloom <- walletBloomFilter
-            liftIO $ atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
+            bloom      <- walletBloomFilter
+            fstKeyTime <- liftM fromJust firstKeyTime
+            liftIO $ atomically $ do
+                writeTBMChan rChan $ BloomFilterUpdate bloom
+                writeTBMChan rChan $ FastCatchupTime fstKeyTime
         return $ ResAccount a
     go (AddAccountKeys n ks) = do
         a <- addAccountKeys n ks
         when (length (accountKeys a) == accountTotal a - 1) $ do
             setLookAhead n 30
-            bloom <- walletBloomFilter
-            liftIO $ atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
+            bloom      <- walletBloomFilter
+            fstKeyTime <- liftM fromJust firstKeyTime
+            liftIO $ atomically $ do
+                writeTBMChan rChan $ BloomFilterUpdate bloom
+                writeTBMChan rChan $ FastCatchupTime fstKeyTime
         return $ ResAccount a
     go (GetAccount n)         = liftM ResAccount $ getAccount n
     go AccountList            = liftM ResAccountList $ accountList
     go (GenAddress n i')      = do
-        addrs <- newAddrs n i'
-        bloom <- walletBloomFilter
-        liftIO $ atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
+        addrs      <- newAddrs n i'
+        bloom      <- walletBloomFilter
+        fstKeyTime <- liftM fromJust firstKeyTime
+        liftIO $ atomically $ do
+            writeTBMChan rChan $ BloomFilterUpdate bloom
+            writeTBMChan rChan $ FastCatchupTime fstKeyTime
         return $ ResAddressList addrs
     go (AddressLabel n i' l)  = liftM ResAddress $ setAddrLabel n i' l
     go (AddressList n)        = liftM ResAddressList $ addressList n

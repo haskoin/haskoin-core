@@ -83,8 +83,9 @@ data NodeEvent
     deriving (Eq, Show)
 
 data NodeRequest
-    = BloomFilterUpdate BloomFilter
+    = BloomFilterUpdate BloomFilter 
     | PublishTx Tx
+    | FastCatchupTime Word32
     deriving (Eq, Show)
 
 startNode :: FilePath -> IO (TBMChan NodeEvent, TBMChan NodeRequest)
@@ -122,7 +123,7 @@ startNode fp = do
     _ <- forkIO $ runStdoutLoggingT $ flip S.evalStateT session $ do 
 
         -- Initialize the database
-        runDB initDB
+        runDB initDB 
 
         -- Spin up some peer threads
         -- TODO: Put the peers in a config file or write peer discovery
@@ -145,6 +146,9 @@ processUserRequest mChan = awaitForever $ \r -> case r of
     PublishTx tx -> do
         tid <- lift myThreadId
         lift $ atomically $ writeTBMChan mChan (tid, UserPublishTx tx)
+    FastCatchupTime t -> do
+        tid <- lift myThreadId
+        lift $ atomically $ writeTBMChan mChan (tid, UserFastCatchup t)
 
 startPeer :: ClientSettings -> ManagerHandle ()
 startPeer remote = do
@@ -188,6 +192,7 @@ managerSink = awaitForever $ \(tid,req) -> lift $ do
     case req of
         UserBloomFilter b -> processBloomFilter b
         UserPublishTx tx  -> processPublishTx tx
+        UserFastCatchup t -> processFastCatchupTime t
         _   -> do
             exists <- peerExists tid
             -- Discard messages from peers that are gone
@@ -245,10 +250,10 @@ processPeerHandshake tid remoteVer = do
     downloadBlocks tid
 
 processBloomFilter :: BloomFilter -> ManagerHandle ()
-processBloomFilter bloom = do
-    $(logDebug) "Got BloomFilterUpdate request from user"
+processBloomFilter b = do
     prevBloom <- S.gets mngrBloom
-    when (prevBloom /= Just bloom) $ do
+    -- Don't load an empty bloom filter
+    when (prevBloom /= Just bloom && (not $ bloomEmpty bloom)) $ do
         $(logDebug) "Loading new bloom filter"
         S.modify $ \s -> s{ mngrBloom = Just bloom }
         m <- S.gets peerMap 
@@ -257,15 +262,33 @@ processBloomFilter bloom = do
             when (peerHandshake dat) $ 
                 sendMessage tid $ MFilterLoad $ FilterLoad bloom
             downloadBlocks tid
+  where
+    bloom = bloomUpdateEmptyFull b
 
 -- TODO: Buffer the broadcast if no peers are currently connected
 processPublishTx :: Tx -> ManagerHandle ()
 processPublishTx tx = do
-    $(logDebug) "Got PublishTx request from user"
+    $(logDebug) $ T.pack $ unwords
+        [ "Broadcasting transaction to the network:"
+        , encodeTxHashLE $ txHash tx
+        ]
     m <- S.gets peerMap 
     forM_ (M.keys m) $ \tid -> do
         dat <- getPeerData tid
         when (peerHandshake dat) $ sendMessage tid $ MTx tx
+
+processFastCatchupTime :: Word32 -> ManagerHandle ()
+processFastCatchupTime t = do
+    hasFastCatchup <- runDB getFastCatchup
+    when (isNothing hasFastCatchup) $ do
+        $(logDebug) $ T.pack $ unwords
+            [ "Setting fast catchup time:"
+            , show t
+            ]
+        runDB $ setFastCatchup t
+        -- Trigger download if the node is idle
+        tids <- M.keys <$> S.gets peerMap 
+        forM_ tids downloadBlocks
 
 processHeaders :: ThreadId -> Headers -> ManagerHandle ()
 processHeaders tid (Headers h) = do
@@ -375,25 +398,26 @@ processMerkleBlock tid dmb = do
 -- as they may be received out-of-order from the network (concurrent download)
 importMerkleBlocks :: ManagerHandle ()
 importMerkleBlocks = do
-    height      <- nodeHeaderHeight <$> runDB getBestBlock
+    heightM     <- runDB bestBlockHeight
     blockMap    <- S.gets receivedBlocks
     dwnTxs      <- S.gets inflightTxs
     dwnFinished <- runDB isDownloadFinished
     let ascList   = M.toAscList blockMap
-        toImport  = go height ascList
+        toImport  = go (fromJust heightM) ascList
         toKeep    = drop (length toImport) ascList
         -- We stall merkle block imports when transactions are inflight. This
         -- is to prevent this race condition where tx1 would miss it's
         -- confirmation:
         -- INV tx1 -> GetData tx1 -> MerkleBlock (all tx except tx1) -> Tx1
-        canImport = null dwnTxs && 
-                    (  length toImport >= 500 
-                    -- If we are at the end of the download, we won't get to 500
-                    || (  dwnFinished
-                       && null toKeep
-                       && (not $ null toImport)
-                       )
-                    )
+        canImport =  (isJust heightM)
+                  && (null dwnTxs)
+                  && (  length toImport >= 500 
+                     -- If we are at the end of the download we won't get to 500
+                     || (  dwnFinished
+                        && null toKeep
+                        && (not $ null toImport)
+                        )
+                     )
     -- Send blocks in batches
     when canImport $ do
         S.modify $ \s -> s{ receivedBlocks = M.fromList toKeep }
@@ -512,7 +536,7 @@ nodeSynced = do
     pDats <- M.elems <$> S.gets peerMap 
     let netHeight = foldl max 0 $ map peerHeight pDats
     ourHeight <- runDB bestBlockHeight
-    return $ ourHeight == netHeight
+    return $ ourHeight == Just netHeight
 
 -- Header height = network height
 downloadSynced :: ManagerHandle Bool
@@ -541,16 +565,16 @@ downloadBlocks tid = do
     bloom    <- S.gets mngrBloom
     sync     <- S.gets syncPeer
     let remoteHeight = peerHeight peerData
-        handshake    = peerHandshake peerData
         requests     = peerInflightRequests peerData
-        -- Only start block download if we have a non-empty bloom filter
-        emptyBloom   = bloomEmpty $ bloomUpdateEmptyFull $ fromJust bloom
-        goodBloom    = isJust bloom && not emptyBloom
+        canDownload  =  (sync /= Just tid)
+                     && (isJust bloom)
+                     && (peerHandshake peerData)
+                     && (requests == 0)
     -- Only download blocks from peers that have a completed handshake
     -- and that are not already requesting blocks
     -- TODO: Only download blocks after the wallet first key timestamp
     -- TODO: Should we allow download if, say, requests < x ?
-    when ((sync /= Just tid) && goodBloom && handshake && requests == 0) $ do
+    when canDownload $ do
         toDwn <- runDB $ nextDownloadRange 500 remoteHeight
         unless (null toDwn) $ do
             $(logDebug) $ T.pack $ unwords 

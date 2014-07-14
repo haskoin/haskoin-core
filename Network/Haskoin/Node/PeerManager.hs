@@ -27,7 +27,6 @@ import Data.Foldable (toList)
 import Data.List 
 import qualified Data.ByteString as BS
 import qualified Data.Map as M
-import qualified Data.Sequence as Q
 import Data.Conduit 
     ( Sink
     , awaitForever
@@ -60,8 +59,6 @@ data ManagerSession = ManagerSession
     , dbHandle         :: DB.DB
     , dbTxHandle       :: DB.DB
     , mngrBloom        :: Maybe BloomFilter
-    -- We got the headers but still need to download the merkle blocks
-    , blocksToDownload :: Q.Seq (Word32, BlockHash)
     -- We received the merkle blocks but buffer them to send them in-order to
     -- the wallet
     , receivedBlocks   :: M.Map BlockHeight DecodedMerkleBlock
@@ -112,7 +109,6 @@ startNode fp = do
                                  , dbHandle         = db
                                  , dbTxHandle       = txdb
                                  , mngrBloom        = Nothing
-                                 , blocksToDownload = Q.empty
                                  , receivedBlocks   = M.empty
                                  , inflightTxs      = []
                                  , soloTxs          = []
@@ -125,12 +121,8 @@ startNode fp = do
     -- TODO: Maybe log to a place like ~/.haskoin/debug.log ?
     _ <- forkIO $ runStdoutLoggingT $ flip S.evalStateT session $ do 
 
-        $(logDebug) "Building list of merkle blocks to download..."
-
         -- Initialize the database
-        toDwn <- runDB $ initDB >> getBlocksToDownload
-        -- Put the missing blocks into the download queue
-        S.modify $ \s -> s{ blocksToDownload = Q.fromList toDwn }
+        runDB initDB
 
         -- Spin up some peer threads
         -- TODO: Put the peers in a config file or write peer discovery
@@ -301,16 +293,12 @@ processHeaders tid (Headers h) = do
         after  <- bestHeaderHeight
         return $ (after > before, newToDwn)
 
-    -- Add the blocks to download to the end of the queue
     -- TODO: Should we only download blocks if the headers is 
     -- a best header? (i.e. not a side block). Probably not but we
     -- need to consider the case when an old fork may become the
     -- new head. I think in such a case, a node would send us a
     -- headers message long enough to bring us over the old main chain.
     let newToDwn  = catMaybes newToDwnM
-        newToDwnQ = Q.fromList newToDwn
-    S.modify $ \s -> s{ blocksToDownload = (blocksToDownload s) Q.>< newToDwnQ }
-
     tids <- M.keys <$> S.gets peerMap 
 
     -- Adjust the height of peers that sent us INV messages for these headers
@@ -391,10 +379,10 @@ processMerkleBlock tid dmb = do
 -- as they may be received out-of-order from the network (concurrent download)
 importMerkleBlocks :: ManagerHandle ()
 importMerkleBlocks = do
-    height   <- nodeHeaderHeight <$> runDB getBestBlock
-    dwnQueue <- S.gets blocksToDownload
-    blockMap <- S.gets receivedBlocks
-    dwnTxs   <- S.gets inflightTxs
+    height      <- nodeHeaderHeight <$> runDB getBestBlock
+    blockMap    <- S.gets receivedBlocks
+    dwnTxs      <- S.gets inflightTxs
+    dwnFinished <- runDB isDownloadFinished
     let ascList   = M.toAscList blockMap
         toImport  = go height ascList
         toKeep    = drop (length toImport) ascList
@@ -405,7 +393,7 @@ importMerkleBlocks = do
         canImport = null dwnTxs && 
                     (  length toImport >= 500 
                     -- If we are at the end of the download, we won't get to 500
-                    || (  Q.null dwnQueue 
+                    || (  dwnFinished
                        && null toKeep
                        && (not $ null toImport)
                        )
@@ -435,7 +423,6 @@ importMerkleBlocks = do
         -- If we are synced, send solo transactions to the wallet
         synced <- nodeIsSynced
         when synced $ do
-            $(logDebug) "We are in sync with the network"
             solo <- S.gets soloTxs
             S.modify $ \s -> s{ soloTxs = [] }
             liftIO $ atomically $ forM_ solo (writeTBMChan eChan . TxEvent)
@@ -445,11 +432,12 @@ importMerkleBlocks = do
             f (BestBlock node)   = Just $ nodeHeaderHeight node
             f (BlockReorg _ _ n) = Just $ nodeHeaderHeight $ last n
             f (SideBlock _)      = Nothing
-        unless (null best) $ 
+        unless (null best) $ do
             $(logInfo) $ T.pack $ unwords
                 [ "New best block height:"
                 , show $ head best
                 ]
+            when synced $ $(logDebug) "We are in sync with the network"
   where
     go prevHeight ((currHeight, x):xs) 
         | currHeight == prevHeight + 1 = (currHeight, x) : go currHeight xs
@@ -544,7 +532,6 @@ sendGetHeaders tid full hstop = do
 downloadBlocks :: ThreadId -> ManagerHandle ()
 downloadBlocks tid = do
     -- Request block downloads if some are pending
-    queue    <- S.gets blocksToDownload
     peerData <- getPeerData tid
     bloom    <- S.gets mngrBloom
     let remoteHeight = peerHeight peerData
@@ -559,21 +546,16 @@ downloadBlocks tid = do
     -- merkle blocks
     -- TODO: Only download blocks after the wallet first key timestamp
     -- TODO: Should we allow download if, say, requests < x ?
-    when (goodBloom && (not $ Q.null queue) && handshake && requests == 0) $ do
-        let firstHeight   = fst $ Q.index queue 0
-            (toDwn, rest) = Q.spanl f queue
-            -- First 500 blocks that match the peer height requirements
-            f (i,_) = i <= remoteHeight && i < firstHeight + 500
-        when (not $ Q.null toDwn) $ do
+    when (goodBloom && handshake && requests == 0) $ do
+        toDwn <- runDB $ nextDownloadRange 500 remoteHeight
+        unless (null toDwn) $ do
             $(logDebug) $ T.pack $ unwords 
                 [ "Requesting more merkle blocks:", show tid ]
-            S.modify $ \s -> s{ blocksToDownload = rest }
             -- Store the work count for this peer
             modifyPeerData tid $ \d -> 
-                d{ peerInflightRequests = Q.length toDwn }
+                d{ peerInflightRequests = length toDwn }
             sendMessage tid $ MGetData $ GetData $ 
-                map ((InvVector InvMerkleBlock) . fromIntegral . snd) $ 
-                    toList toDwn
+                map ((InvVector InvMerkleBlock) . fromIntegral) toDwn
             -- Send a ping to have a recognizable end message for the last
             -- merkle block download
             -- TODO: Compute a random nonce for the ping

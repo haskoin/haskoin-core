@@ -51,6 +51,7 @@ data BlockHeaderNode
         , nodeHeader       :: !BlockHeader
         , nodeHeaderHeight :: !Word32
         , nodeChainWork    :: !Integer
+        , nodeChild        :: !(Maybe BlockHash)
         }
     | BlockHeaderNode 
         { nodeBlockHash    :: !BlockHash
@@ -59,6 +60,7 @@ data BlockHeaderNode
         , nodeChainWork    :: !Integer
         -- TODO: Remove this and use the parent field in nodeHeader
         , nodeParent       :: !BlockHash
+        , nodeChild        :: !(Maybe BlockHash)
         } deriving (Show, Read, Eq)
 
 instance Binary BlockHeaderNode where
@@ -69,15 +71,17 @@ instance Binary BlockHeaderNode where
         go i | i == genid = BlockHeaderGenesis i <$> get 
                                                  <*> getWord32le 
                                                  <*> get 
+                                                 <*> get 
              | otherwise  = BlockHeaderNode i <$> get 
                                               <*> getWord32le 
                                               <*> get 
                                               <*> get
+                                              <*> get
 
-    put (BlockHeaderGenesis i b h w) =
-        put i >> put b >> putWord32le h >> put w
-    put (BlockHeaderNode i b h w p) =
-        put i >> put b >> putWord32le h >> put w >> put p
+    put (BlockHeaderGenesis i b h w c) =
+        put i >> put b >> putWord32le h >> put w >> put c
+    put (BlockHeaderNode i b h w p c) =
+        put i >> put b >> putWord32le h >> put w >> put p >> put c
 
 
 -- Return value of linking a new block header in the chain
@@ -106,6 +110,10 @@ bestHeaderKey = "bestheader"
 bestBlockKey :: BS.ByteString
 bestBlockKey = "bestblock"
 
+-- Points to the last downloaded block. It is initialized to the genesis.
+downloadKey :: BS.ByteString
+downloadKey = "download"
+
 getBlockHeaderNode :: BlockHash -> DBHandle (Maybe BlockHeaderNode)
 getBlockHeaderNode h = do
     db  <- S.gets handle
@@ -119,7 +127,7 @@ putBlockHeaderNode bhn = do
 
 getBestBlock :: DBHandle BlockHeaderNode
 getBestBlock = do
-    db  <- S.gets handle
+    db <- S.gets handle
     -- TODO: We assume the key always exists. Is this correct?
     key <- decode' . fromJust <$> DB.get db def bestBlockKey
     fromJust <$> getBlockHeaderNode key
@@ -141,6 +149,18 @@ putBestHeader h = do
     db <- S.gets handle
     DB.put db def bestHeaderKey $ encode' h
 
+getLastDownloadNode :: DBHandle BlockHeaderNode
+getLastDownloadNode = do
+    db <- S.gets handle
+    -- TODO: We assume the key always exists. Is this correct?
+    key <- decode' . fromJust <$> DB.get db def downloadKey
+    fromJust <$> getBlockHeaderNode key
+
+putLastDownloadNode :: BlockHash -> DBHandle ()
+putLastDownloadNode h = do
+    db <- S.gets handle
+    DB.put db def downloadKey $ encode' h
+
 -- Insert the genesis block if it is not already there
 initDB :: DBHandle ()
 initDB = S.gets handle >>= \db -> do
@@ -151,13 +171,36 @@ initDB = S.gets handle >>= \db -> do
            , nodeHeader       = genesis
            , nodeHeaderHeight = 0
            , nodeChainWork    = headerWork genesis
+           , nodeChild        = Nothing
            }
         , DB.Put bestHeaderKey $ encode' genid
         , DB.Put bestBlockKey  $ encode' genid
+        , DB.Put downloadKey   $ encode' genid
         ]
   where
     genid = headerHash genesis
 
+isDownloadFinished :: DBHandle Bool
+isDownloadFinished = do
+    h <- getBestHeader
+    d <- getLastDownloadNode
+    return $ nodeBlockHash h == nodeBlockHash d
+
+nextDownloadRange :: Int -> Word32 -> DBHandle [BlockHash]
+nextDownloadRange count height = do
+    n <- getLastDownloadNode 
+    let availableCount = min (fromIntegral count) (height - nodeHeaderHeight n)
+    res <- reverse <$> go [] availableCount n
+    unless (null res) $ putLastDownloadNode $ last res
+    return res
+  where
+    go acc step n
+        | step <= 0 = return acc
+        | isNothing $ nodeChild n = return acc
+        | otherwise = do
+            c <- fromJust <$> (getBlockHeaderNode $ fromJust $ nodeChild n)
+            go ((nodeBlockHash c):acc) (step-1) c
+        
 -- bitcoind function ProcessBlockHeader and AcceptBlockHeader in main.cpp
 -- TODO: Add DOS return values
 addBlockHeader :: BlockHeader -> Word32 -> DBHandle BlockHeaderAction
@@ -199,6 +242,7 @@ storeBlockHeader :: BlockHeader -> BlockHeaderNode
                  -> DBHandle BlockHeaderAction
 storeBlockHeader bh prevNode = S.gets handle >>= \db -> do
     putBlockHeaderNode newNode
+    putBlockHeaderNode $ prevNode{ nodeChild = Just $ nodeBlockHash newNode }
     currentHead <- getBestHeader
     -- TODO: We're not handling reorgs here. What is the reorg logic in
     -- headers-first mode? Do we only reorg on blocks?
@@ -214,12 +258,13 @@ storeBlockHeader bh prevNode = S.gets handle >>= \db -> do
                                 , nodeHeaderHeight = newHeight
                                 , nodeChainWork    = newWork
                                 , nodeParent       = prevBlock bh
+                                , nodeChild        = Nothing
                                 }
 
 -- bitcoind function GetNextWorkRequired in main.cpp
 -- TODO: Add testnet support
 getNextWorkRequired :: BlockHeaderNode -> DBHandle Word32
-getNextWorkRequired (BlockHeaderGenesis _ _ _ _) = 
+getNextWorkRequired (BlockHeaderGenesis _ _ _ _ _) = 
     return $ encodeCompact proofOfWorkLimit
 getNextWorkRequired lastNode
     -- Only change the difficulty once per interval
@@ -288,21 +333,9 @@ findSplit n1 n2 = go [] [] n1 n2
             par <- getParent y
             go xs (y:ys) x par
 
-getBlocksToDownload :: DBHandle [(Word32, BlockHash)]
-getBlocksToDownload = do
-    bestHeader <- getBestHeader
-    bestBlock  <- getBestBlock
-    -- reverse the list so that smaller block heights are first
-    reverse <$> go bestHeader (nodeBlockHash bestBlock)
-  where
-    go h b | (nodeBlockHash h) == b = return []
-           | otherwise = do
-               p <- getParent h
-               ((nodeHeaderHeight h, nodeBlockHash h) :) <$> go p b
-
 -- This can fail if the node has no parent 
 getParent :: BlockHeaderNode -> DBHandle BlockHeaderNode
-getParent (BlockHeaderGenesis _ _ _ _) = error "Genesis block has no parent"
+getParent (BlockHeaderGenesis _ _ _ _ _) = error "Genesis block has no parent"
 getParent node = do
     bsM <- getBlockHeaderNode $ nodeParent node
     -- TODO: Throw exception instead of crashing fromJust
@@ -324,7 +357,7 @@ blockLocator = do
     f acc (g:gs) = g (head acc) >>= \resM -> case resM of
         Just res -> f (res:acc) gs
         Nothing  -> return acc
-    go _ (BlockHeaderGenesis _ _ _ _) = return Nothing
+    go _ (BlockHeaderGenesis _ _ _ _ _) = return Nothing
     go 0 n = return $ Just n
     go step n = go (step-1) =<< getParent n
 

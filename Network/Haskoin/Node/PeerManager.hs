@@ -210,17 +210,14 @@ processPeerDisconnect tid = do
         ]
     deletePeerData tid
     syn <- S.gets syncPeer
-    -- TODO: Implement a smarter algorithm for choosing the download peer
-    -- Here, when the download peer dies, we just select the next one in
-    -- the list of peers that has a remote peer version.
     when (syn == Just tid) $ do
+        S.modify $ \s -> s{ syncPeer = Nothing }
         m <- S.gets peerMap
         -- Choose only peers that have finished the connection handshake
         let vals = filter (\(_,d) -> peerHandshake d) $ M.assocs m
-            tidM = fst <$> listToMaybe vals
-        S.modify $ \s -> s{ syncPeer = tidM }
-        -- Continue the header download if we have a new peer
-        when (isJust tidM) $ sendGetHeaders (fromJust tidM) True 0x00
+        -- Send a GetHeaders message to all peers. The fastest will become
+        -- the new syncPeer
+        forM_ vals $ \(t,_) -> sendGetHeaders t True 0x00
     -- TODO: Do something about the inflight merkle blocks of this peer
 
 processPeerHandshake :: ThreadId -> Version -> ManagerHandle ()
@@ -238,12 +235,10 @@ processPeerHandshake tid remoteVer = do
     when (isJust bloom) $
         sendMessage tid $ MFilterLoad $ FilterLoad $ fromJust bloom
 
-    -- TODO: Implement a smarter algorithm for choosing download peer. Here,
-    -- we just select the first node that completed the remote peer handshake.
-    syn <- S.gets syncPeer
-    when (isNothing syn) $ do
-        S.modify $ \s -> s{ syncPeer = Just tid }
-        sendGetHeaders tid True 0x00
+    -- Send a GetHeaders regardless if there is already a peerSync. This peer
+    -- could still be faster and become the new peerSync.
+    sendGetHeaders tid True 0x00
+
     -- Download more block if some are pending
     downloadBlocks tid
 
@@ -286,10 +281,7 @@ processHeaders tid (Headers h) = do
                 -- the download queue
                 (AcceptHeader n) -> 
                     return $ Just (nodeHeaderHeight n, nodeBlockHash n)
-                -- TODO: Remove? This is for debug only
-                x -> do
-                    liftIO $ print x
-                    return Nothing
+                _ -> return Nothing
         after  <- bestHeaderHeight
         return $ (after > before, newToDwn)
 
@@ -328,17 +320,25 @@ processHeaders tid (Headers h) = do
                 [ "Adjusting peer height to"
                 , show m, ":", show tid
                 ]
+
         -- Update the sync peer 
-        S.modify $ \s -> s{ syncPeer = Just tid }
+        pDats <- M.elems <$> S.gets peerMap 
+        let netHeight = foldl max 0 $ map peerHeight pDats
+        ourHeight <- runDB bestHeaderHeight
+        if ourHeight == netHeight
+            -- Headers are in sync with the network.
+            then S.modify $ \s -> s{ syncPeer = Nothing }
+            -- This peer can continue as the syncPeer
+            else S.modify $ \s -> s{ syncPeer = Just tid }
         $(logInfo) $ T.pack $ unwords
             [ "New best header height:"
             , show $ fst $ last newToDwn
             ]
+
         -- Requesting more headers
         sendGetHeaders tid False 0x00
 
     -- Request block downloads for all peers that are currently idling
-    -- TODO: Even for the peer that is syncing the headers?
     forM_ tids downloadBlocks
 
 processMerkleBlock :: ThreadId -> DecodedMerkleBlock -> ManagerHandle ()
@@ -534,6 +534,7 @@ downloadBlocks tid = do
     -- Request block downloads if some are pending
     peerData <- getPeerData tid
     bloom    <- S.gets mngrBloom
+    sync     <- S.gets syncPeer
     let remoteHeight = peerHeight peerData
         handshake    = peerHandshake peerData
         requests     = peerInflightRequests peerData
@@ -542,11 +543,9 @@ downloadBlocks tid = do
         goodBloom    = isJust bloom && not emptyBloom
     -- Only download blocks from peers that have a completed handshake
     -- and that are not already requesting blocks
-    -- TODO: The peer downloading the headers should not also download
-    -- merkle blocks
     -- TODO: Only download blocks after the wallet first key timestamp
     -- TODO: Should we allow download if, say, requests < x ?
-    when (goodBloom && handshake && requests == 0) $ do
+    when ((sync /= Just tid) && goodBloom && handshake && requests == 0) $ do
         toDwn <- runDB $ nextDownloadRange 500 remoteHeight
         unless (null toDwn) $ do
             $(logDebug) $ T.pack $ unwords 
@@ -604,13 +603,3 @@ putDbTx txhash = do
     db <- S.gets dbTxHandle
     liftIO $ DB.put db def (encode' $ txhash) BS.empty
 
--- TODO: Remove this if not needed
-splitIn :: Int -> [a] -> [[a]]
-splitIn i xs 
-    | i < 1 = error "Split count must be greater than 0"
-    | otherwise = go i xs
-  where
-    len = length xs `div` i
-    go 1 ls = [ls]
-    go n ls = (take len ls) : (go (n-1) (drop len ls))
-    

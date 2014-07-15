@@ -162,8 +162,8 @@ processNodeEvents :: ConnectionPool -> TBMChan NodeRequest
                   -> Sink NodeEvent IO ()
 processNodeEvents pool rChan = awaitForever $ \e -> lift $ runDB pool $ 
     case e of
-        MerkleBlockEvent xs -> void $ importBlocks xs
-        TxEvent tx          -> void $ importTx tx False
+        MerkleBlockEvent a txs -> void $ importBlock a txs
+        TxEvent tx             -> void $ importTx tx False
 
 runDB :: ConnectionPool -> SqlPersistT (NoLoggingT (ResourceT IO)) a -> IO a
 runDB pool m = runResourceT $ runNoLoggingT $ runSqlPool m pool

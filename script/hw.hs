@@ -288,6 +288,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         runDetached (Just $ pidFile dir) (ToFile $ logFile dir) runServer
         putStrLn "haskoin daemon started"
     ["stop"] -> do
+        -- TODO: Should we send a message instead of killing the process ?
         killAndWait $ pidFile dir
         putStrLn "haskoin daemon stopped"
     "newwallet" : name : mnemonic -> do

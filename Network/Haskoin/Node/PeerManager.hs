@@ -78,7 +78,7 @@ data PeerData = PeerData
     }
 
 data NodeEvent 
-    = MerkleBlockEvent [(BlockChainAction, [TxHash])]
+    = MerkleBlockEvent BlockChainAction [TxHash]
     | TxEvent Tx
     deriving (Eq, Show)
 
@@ -212,8 +212,8 @@ managerSink = awaitForever $ \(tid,req) -> lift $ do
 processPeerDisconnect :: ThreadId -> ManagerHandle ()
 processPeerDisconnect tid = do
     $(logDebug) $ T.pack $ unwords
-        [ "Peer disconnected:"
-        , show tid
+        [ "Peer disconnected"
+        , "(", show tid, ")"
         ]
     deletePeerData tid
     syn <- S.gets syncPeer
@@ -230,14 +230,13 @@ processPeerDisconnect tid = do
 processPeerHandshake :: ThreadId -> Version -> ManagerHandle ()
 processPeerHandshake tid remoteVer = do
     $(logDebug) $ T.pack $ unwords
-        [ "Peer connected:"
-        , show tid
+        [ "Peer connected"
+        , "(", show tid, ")"
         ]
     modifyPeerData tid $ \d -> d{ peerHandshake = True 
                                 , peerHeight    = startHeight remoteVer
                                 }
     -- Set the bloom filter for this connection
-    -- TODO: Something fishy is going on when the filter is empty
     bloom <- S.gets mngrBloom
     when (isJust bloom) $
         sendMessage tid $ MFilterLoad $ FilterLoad $ fromJust bloom
@@ -248,6 +247,16 @@ processPeerHandshake tid remoteVer = do
 
     -- Download more block if some are pending
     downloadBlocks tid
+
+    bestM <- runDB bestBlockHeight
+    when (isJust bestM && (fromJust bestM) >= startHeight remoteVer) $
+        $(logInfo) $ T.pack $ unwords
+            [ "Node is synced with peer. Peer height:"
+            , show $ startHeight remoteVer 
+            , "Out height:"
+            , show $ fromJust bestM
+            , "(", show tid, ")"
+            ]
 
 processBloomFilter :: BloomFilter -> ManagerHandle ()
 processBloomFilter b = do
@@ -343,7 +352,8 @@ processHeaders tid (Headers h) = do
             modifyPeerData tid $ \d -> d{ peerHeight = m }
             $(logDebug) $ T.pack $ unwords
                 [ "Adjusting peer height to"
-                , show m, ":", show tid
+                , show m
+                , "(", show tid, ")"
                 ]
 
         -- Update the sync peer 
@@ -409,16 +419,8 @@ importMerkleBlocks = do
         -- is to prevent this race condition where tx1 would miss it's
         -- confirmation:
         -- INV tx1 -> GetData tx1 -> MerkleBlock (all tx except tx1) -> Tx1
-        canImport =  (isJust heightM)
-                  && (null dwnTxs)
-                  && (  length toImport >= 500 
-                     -- If we are at the end of the download we won't get to 500
-                     || (  dwnFinished
-                        && null toKeep
-                        && (not $ null toImport)
-                        )
-                     )
-    -- Send blocks in batches
+        canImport = isJust heightM && null dwnTxs && (not $ null toImport)
+
     when canImport $ do
         S.modify $ \s -> s{ receivedBlocks = M.fromList toKeep }
         eChan <- S.gets eventChan
@@ -432,32 +434,39 @@ importMerkleBlocks = do
             let f x                 = txHash x `elem` expectedTxs dmb
                 (soloAdd, soloKeep) = partition f solo
                 txImport            = nub $ merkleTxs dmb ++ soloAdd
-            -- Send transactions to the wallet
             S.modify $ \s -> s{ soloTxs = soloKeep }
-            liftIO $ atomically $ forM_ txImport (writeTBMChan eChan . TxEvent)
-            return (node, expectedTxs dmb)
 
-        -- Send merkle blocks to the wallet 
-        liftIO $ atomically $ writeTBMChan eChan $ MerkleBlockEvent res
+            liftIO $ atomically $ do
+            -- Send transactions to the wallet
+                forM_ txImport (writeTBMChan eChan . TxEvent)
+            -- Send merkle blocks to the wallet 
+                writeTBMChan eChan $ MerkleBlockEvent node (expectedTxs dmb)
 
-        -- If we are synced, send solo transactions to the wallet
+            case node of
+                BestBlock b      -> return $ Just b
+                BlockReorg _ _ n -> return $ Just $ last n
+                _                -> return Nothing
+
+        let bestM = foldl (<|>) Nothing $ reverse res
+
         synced <- nodeSynced
-        when synced $ do
-            solo <- S.gets soloTxs
-            S.modify $ \s -> s{ soloTxs = [] }
-            liftIO $ atomically $ forM_ solo (writeTBMChan eChan . TxEvent)
+        if synced 
+            then do
+                -- If we are synced, send solo transactions to the wallet
+                solo <- S.gets soloTxs
+                S.modify $ \s -> s{ soloTxs = [] }
+                liftIO $ atomically $ forM_ solo (writeTBMChan eChan . TxEvent)
+                when (isJust bestM) $ $(logDebug) $ T.pack $ unwords
+                    [ "We are in sync with the network: block height"
+                    , show $ nodeHeaderHeight $ fromJust $ bestM
+                    ]
+            else do
+                let h = nodeHeaderHeight $ fromJust bestM
+                -- Only display a new height every 100 blocks
+                when (isJust bestM && h `mod` 100 == 0) $ 
+                    $(logDebug) $ T.pack $ unwords
+                        [ "Best block height:", show h ]
 
-        -- TODO: This is very complex just for logging purposes. Simplify ?
-        let best = catMaybes $ map (f . fst) $ reverse res
-            f (BestBlock node)   = Just $ nodeHeaderHeight node
-            f (BlockReorg _ _ n) = Just $ nodeHeaderHeight $ last n
-            f (SideBlock _)      = Nothing
-        unless (null best) $ do
-            $(logInfo) $ T.pack $ unwords
-                [ "New best block height:"
-                , show $ head best
-                ]
-            when synced $ $(logDebug) "We are in sync with the network"
   where
     go prevHeight ((currHeight, x):xs) 
         | currHeight == prevHeight + 1 = (currHeight, x) : go currHeight xs
@@ -491,7 +500,8 @@ processInv tid (Inv vs) = do
     when (m > peerHeight dat) $ do
         $(logDebug) $ T.pack $ unwords
             [ "Adjusting peer height to"
-            , show m, ":", show tid
+            , show m
+            , "(", show tid, ")"
             ]
 
     -- Request headers for blocks we don't have
@@ -554,7 +564,7 @@ sendGetHeaders tid full hstop = do
         return [nodeBlockHash h]
     sendMessage tid $ MGetHeaders $ GetHeaders 0x01 loc hstop
     $(logDebug) $ T.pack $ unwords 
-        [ "Requesting more block headers:", show tid ]
+        [ "Requesting more block headers", "(", show tid, ")" ]
 
 -- Look at the block download queue and request a peer to download more blocks
 -- if the peer is connected, idling and meets the block height requirements.
@@ -578,7 +588,7 @@ downloadBlocks tid = do
         toDwn <- runDB $ nextDownloadRange 500 remoteHeight
         unless (null toDwn) $ do
             $(logDebug) $ T.pack $ unwords 
-                [ "Requesting more merkle blocks:", show tid ]
+                [ "Requesting more merkle blocks:", "(", show tid, ")" ]
             -- Store the work count for this peer
             modifyPeerData tid $ \d -> 
                 d{ peerInflightRequests = length toDwn }

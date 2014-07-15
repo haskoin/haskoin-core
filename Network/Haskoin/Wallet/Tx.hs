@@ -15,7 +15,7 @@ module Network.Haskoin.Wallet.Tx
 , walletBloomFilter
 , isTxInWallet
 , firstKeyTime
-, importBlocks
+, importBlock
 , getBestHeight
 , setBestHeight
 ) where
@@ -493,54 +493,49 @@ firstKeyTime = do
 isTxInWallet :: PersistUnique m => TxHash -> m Bool
 isTxInWallet tid = liftM isJust $ getBy $ UniqueTx tid
 
+-- TODO: The transactions *need* to be in the wallet already to get their first
+-- confirmation mark. Otherwise they will stay unconfirmed forever. Look into
+-- this.
 -- | Import filtered blocks into the wallet. This will update the confirmations
 -- of the relevant transactions.
-importBlocks :: (PersistQuery m, PersistUnique m)
-             => [(BlockChainAction, [TxHash])] -> m ()
-importBlocks xs = do
-    -- TODO: The transactions *need* to be in the wallet already to get
-    -- their first confirmation mark. Otherwise they will stay
-    -- unconfirmed forever. Look into this.
-    forM_ xs $ \(a,txs) -> do
-        -- Insert transaction/block confirmation links. We have to keep this
-        -- information even for side blocks as we need it when a reorg occurs.
-        myTxs <- liftM (map (dbTxHash . entityVal)) $ 
-                            selectList [DbTxHash <-. txs] []
-        forM_ myTxs $ \x -> insert_ $ 
-                            DbConfirmation x (nodeBlockHash $ newNode a)
-        case a of
-            SideBlock _ -> return () -- Do nothing
-            BestBlock node -> do
+importBlock :: (PersistQuery m, PersistUnique m)
+            => BlockChainAction -> [TxHash] -> m ()
+importBlock a txs = do
+    -- Insert transaction/block confirmation links. We have to keep this
+    -- information even for side blocks as we need it when a reorg occurs.
+    myTxs <- liftM (map (dbTxHash . entityVal)) $ 
+                        selectList [DbTxHash <-. txs] []
+    forM_ myTxs $ \x -> insert_ $ DbConfirmation x (nodeBlockHash $ newNode a)
+    case a of
+        SideBlock _ -> return () -- Do nothing
+        BestBlock node -> do
+            updateWhere 
+                [ DbTxHash <-. myTxs]
+                [ DbTxConfirmedBy     =. Just (nodeBlockHash node)
+                , DbTxConfirmedHeight =. Just (nodeHeaderHeight node)
+                ]
+            setBestHeight $ nodeHeaderHeight node
+        BlockReorg _ o n -> do
+            -- Unconfirm transactions from the old chain
+            forM_ (reverse o) $ \x -> do
+                updateWhere [ DbTxConfirmedBy ==. Just (nodeBlockHash x) ]
+                            [ DbTxConfirmedBy     =. Nothing
+                            , DbTxConfirmedHeight =. Nothing
+                            ]
+            -- Confirm transactions in the new chain This will also confirm
+            -- the transactions in the best block of the new chain as we
+            -- inserted it in DbConfirmations at the start of the function.
+            forM_ n $ \x -> do
+                cnfs <- selectList 
+                            [DbConfirmationBlock ==. nodeBlockHash x] []
+                let ntxs = map (dbConfirmationTx . entityVal) cnfs 
                 updateWhere 
-                    [ DbTxHash <-. myTxs]
-                    [ DbTxConfirmedBy     =. Just (nodeBlockHash node)
-                    , DbTxConfirmedHeight =. Just (nodeHeaderHeight node)
+                    [ DbTxHash <-. ntxs ] 
+                    [ DbTxConfirmedBy     =. Just (nodeBlockHash x)
+                    , DbTxConfirmedHeight =. Just (nodeHeaderHeight x)
                     ]
-            BlockReorg _ o n -> do
-                -- Unconfirm transactions from the old chain
-                forM_ (reverse o) $ \x -> do
-                    updateWhere [ DbTxConfirmedBy ==. Just (nodeBlockHash x) ]
-                                [ DbTxConfirmedBy     =. Nothing
-                                , DbTxConfirmedHeight =. Nothing
-                                ]
-                -- Confirm transactions in the new chain This will also confirm
-                -- the transactions in the best block of the new chain as we
-                -- inserted it in DbConfirmations at the start of the function.
-                forM_ n $ \x -> do
-                    cnfs <- selectList 
-                                [DbConfirmationBlock ==. nodeBlockHash x] []
-                    let ntxs = map (dbConfirmationTx . entityVal) cnfs 
-                    updateWhere 
-                        [ DbTxHash <-. ntxs ] 
-                        [ DbTxConfirmedBy     =. Just (nodeBlockHash x)
-                        , DbTxConfirmedHeight =. Just (nodeHeaderHeight x)
-                        ]
-    unless (null best) $ setBestHeight $ head best
+            setBestHeight $ nodeHeaderHeight $ last n
   where
-    best = catMaybes $ map (f . fst) $ reverse xs
-    f (BestBlock node)   = Just $ nodeHeaderHeight node
-    f (BlockReorg _ _ n) = Just $ nodeHeaderHeight $ last n
-    f (SideBlock _)      = Nothing
     newNode (BestBlock node) = node
     newNode (SideBlock node) = node
     newNode (BlockReorg _ _ n) = last n

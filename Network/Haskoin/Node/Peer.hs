@@ -128,6 +128,7 @@ processMessage = awaitForever $ \msg -> lift $ do
         MVerAck        -> processVerAck 
         MMerkleBlock m -> processMerkleBlock m
         MTx t          -> processTx t
+        MPing (Ping n) -> sendMessage $ MPong $ Pong n
         _              -> sendManager $ PeerMessage msg
   where
     isTx (MTx _) = True

@@ -444,13 +444,13 @@ importMerkleBlocks = do
     when canImport $ do
         S.modify $ \s -> s{ receivedBlocks = M.fromList toKeep }
         eChan <- S.gets eventChan
-        solo  <- S.gets soloTxs
 
         res <- forM toImport $ \(h, dmb) -> do
             -- Import in blockchain
             node <- runDB $ addMerkleBlock $ decodedMerkle dmb
             -- If solo transactions belong to this merkle block, we have
             -- to import them and remove them from the solo list.
+            solo  <- S.gets soloTxs
             let f x                 = txHash x `elem` expectedTxs dmb
                 (soloAdd, soloKeep) = partition f solo
                 txImport            = nub $ merkleTxs dmb ++ soloAdd
@@ -541,8 +541,6 @@ processTx tid tx = do
     -- for this transaction at the same time.
     seenTx <- existsDbTx txhash
     when (not seenTx) $ do
-        -- Remove the inflight transaction from the inflight list
-        S.modify $ \s -> s{ inflightTxs = delete txhash $ inflightTxs s }
         putDbTx txhash
 
         -- Only send to wallet if we are in sync
@@ -552,11 +550,14 @@ processTx tid tx = do
                 eChan <- S.gets eventChan
                 liftIO $ atomically $ writeTBMChan eChan $ TxEvent tx
             else S.modify $ \s -> s{ soloTxs = tx : soloTxs s } 
+
+    -- Remove the inflight transaction from the inflight list
+    S.modify $ \s -> s{ inflightTxs = delete txhash $ inflightTxs s }
         
-        -- If no more transactions are inflight, trigger the download of
-        -- the merkle blocks again
-        dwnTxs <- S.gets inflightTxs
-        when (null dwnTxs) $ importMerkleBlocks 
+    -- If no more transactions are inflight, trigger the download of
+    -- the merkle blocks again
+    dwnTxs <- S.gets inflightTxs
+    when (null dwnTxs) $ importMerkleBlocks 
   where
     txhash = txHash tx
 

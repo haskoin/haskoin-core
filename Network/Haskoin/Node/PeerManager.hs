@@ -340,11 +340,6 @@ processHeaders tid (Headers h) = do
         after  <- bestHeaderHeight
         return $ (after > before, newToDwn)
 
-    -- TODO: Should we only download blocks if the headers is 
-    -- a best header? (i.e. not a side block). Probably not but we
-    -- need to consider the case when an old fork may become the
-    -- new head. I think in such a case, a node would send us a
-    -- headers message long enough to bring us over the old main chain.
     let newToDwn  = catMaybes newToDwnM
     tids <- M.keys <$> S.gets peerMap 
 
@@ -604,8 +599,6 @@ downloadBlocks tid = do
                      && (null requests)
     -- Only download blocks from peers that have a completed handshake
     -- and that are not already requesting blocks
-    -- TODO: Only download blocks after the wallet first key timestamp
-    -- TODO: Should we allow download if, say, requests < x ?
     when canDownload $ do
         toDwn <- runDB $ nextDownloadRange 500 remoteHeight
         unless (null toDwn) $ do

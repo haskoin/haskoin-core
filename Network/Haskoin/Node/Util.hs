@@ -11,25 +11,15 @@ import Database.Persist.TH
 
 import Network.Haskoin.Protocol
 
-data PeerException
-    = ProtocolException String
+data NodeException
+    = NodeException String
     deriving (Eq, Read, Show, Typeable)
 
-instance Exception PeerException
-
-data BlockStoreException 
-    = BlockStoreException String
-    deriving (Eq, Read, Show, Typeable)
-
-instance Exception BlockStoreException
+instance Exception NodeException
 
 data BlockChainException 
     = BlockChainException String
     deriving (Eq, Read, Show, Typeable)
 
 instance Exception BlockChainException
-
-derivePersistField "Integer"
-derivePersistField "BlockHeader"
-
 

@@ -103,8 +103,8 @@ peer pChan mChan remote = do
     -- TODO: Handle the error here
     _ <- forkFinally pipe $ \ret -> case ret of
         Left e -> throwIO e
-        Right x -> error $ unwords
-            [ "Thread stopped with result:"
+        Right x -> throwIO $ NodeException $ unwords
+            [ "Message sending thread stopped with result:"
             , show x
             ]
 
@@ -149,7 +149,7 @@ processVersion remoteVer = go =<< S.get
                 , "but need" 
                 , show $ minProtocolVersion
                 ]
-            liftIO $ throwIO $ ProtocolException "Bad peer version"
+            liftIO $ throwIO $ NodeException "Bad peer version"
         | otherwise = do
             $(logInfo) $ T.pack $ unwords
                 [ "Connected to", show $ addrSend remoteVer
@@ -216,42 +216,41 @@ sendManager req = do
 
 decodeMessage :: MonadLogger m => Conduit BS.ByteString m Message
 decodeMessage = do
-    -- Message header is always 24 bytes
     headerBytes <- toStrictBS <$> CB.take 24
-
-    -- Just loop if we read 0 bytes
     if BS.null headerBytes then decodeMessage else do
-        -- Introspection required to know the length of the payload
-        let headerE                     = decodeToEither headerBytes
-            (MessageHeader _ cmd len _) = fromRight headerE
-
-        when (isLeft headerE) $ do
-            $(logError) $ T.pack $ unwords
-                [ "Could not decode message header:"
-                , fromLeft headerE 
-                , "Bytes:"
-                , bsToHex headerBytes
-                ]
-            -- TODO: Is this ground for deconnection or can we recover?
-            throw $ ProtocolException "Could not decode message header"
-
+        msgHead@(MessageHeader _ cmd len _) <- findHeader headerBytes
         payloadBytes <- if len > 0
                             then toStrictBS <$> (CB.take $ fromIntegral len)
                             else return BS.empty
 
-        let resE = decodeToEither $ headerBytes `BS.append` payloadBytes
-            res  = fromRight resE
+        let headerBytes = encode' msgHead
+            resE        = decodeToEither $ headerBytes `BS.append` payloadBytes
 
-        when (isLeft resE) $ do
-            $(logError) $ T.pack $ unwords
-                [ "Could not decode message payload:"
-                , fromLeft resE
-                ]
-            -- TODO: Is this ground for deconnection or can we recover?
-            throw $ ProtocolException "Could not decode message payload"
-
-        yield res
+        case resE of
+            Left err -> $(logError) $ T.pack $ unwords
+                [ "Could not decode message payload:", err ]
+            Right res -> yield res
         decodeMessage
+  where
+    findHeader acc
+        | BS.length acc < 24 = do
+            rest <- toStrictBS <$> CB.take (24 - BS.length acc)
+            findHeader $ acc `BS.append` rest
+        | otherwise = do
+            let headerE = decodeToEither acc
+            if isLeft headerE
+                then do
+                    -- We failed to decode a header. Seek the input
+                    -- intil we succeed.
+                    $(logError) $ T.pack $ unwords
+                        [ "Could not decode message header:"
+                        , fromLeft headerE 
+                        , "with Bytes:"
+                        , bsToHex acc
+                        ]
+                    next <- toStrictBS <$> CB.take 1
+                    findHeader $ BS.tail acc `BS.append` next
+                else return $ fromRight headerE 
 
 encodeMessage :: MonadIO m => Conduit Message m BS.ByteString
 encodeMessage = awaitForever $ yield . encode'

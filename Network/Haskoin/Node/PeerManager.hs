@@ -253,7 +253,7 @@ processPeerHandshake tid remoteVer = do
         $(logInfo) $ T.pack $ unwords
             [ "Node is synced with peer. Peer height:"
             , show $ startHeight remoteVer 
-            , "Out height:"
+            , "Our height:"
             , show $ fromJust bestM
             , "(", show tid, ")"
             ]

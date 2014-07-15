@@ -218,37 +218,40 @@ decodeMessage :: MonadLogger m => Conduit BS.ByteString m Message
 decodeMessage = do
     -- Message header is always 24 bytes
     headerBytes <- toStrictBS <$> CB.take 24
-    -- Introspection required to know the length of the payload
-    let headerE                     = decodeToEither headerBytes
-        (MessageHeader _ cmd len _) = fromRight headerE
 
-    when (isLeft headerE) $ do
-        $(logError) $ T.pack $ unwords
-            [ "Could not decode message header:"
-            , fromLeft headerE 
-            , "Bytes:"
-            , bsToHex headerBytes
-            ]
-        -- TODO: Is this ground for deconnection or can we recover?
-        throw $ ProtocolException "Could not decode message header"
+    -- Just loop if we read 0 bytes
+    if BS.null headerBytes then decodeMessage else do
+        -- Introspection required to know the length of the payload
+        let headerE                     = decodeToEither headerBytes
+            (MessageHeader _ cmd len _) = fromRight headerE
 
-    payloadBytes <- if len > 0
-                        then toStrictBS <$> (CB.take $ fromIntegral len)
-                        else return BS.empty
+        when (isLeft headerE) $ do
+            $(logError) $ T.pack $ unwords
+                [ "Could not decode message header:"
+                , fromLeft headerE 
+                , "Bytes:"
+                , bsToHex headerBytes
+                ]
+            -- TODO: Is this ground for deconnection or can we recover?
+            throw $ ProtocolException "Could not decode message header"
 
-    let resE = decodeToEither $ headerBytes `BS.append` payloadBytes
-        res  = fromRight resE
+        payloadBytes <- if len > 0
+                            then toStrictBS <$> (CB.take $ fromIntegral len)
+                            else return BS.empty
 
-    when (isLeft resE) $ do
-        $(logError) $ T.pack $ unwords
-            [ "Could not decode message payload:"
-            , fromLeft resE
-            ]
-        -- TODO: Is this ground for deconnection or can we recover?
-        throw $ ProtocolException "Could not decode message payload"
+        let resE = decodeToEither $ headerBytes `BS.append` payloadBytes
+            res  = fromRight resE
 
-    yield res
-    decodeMessage
+        when (isLeft resE) $ do
+            $(logError) $ T.pack $ unwords
+                [ "Could not decode message payload:"
+                , fromLeft resE
+                ]
+            -- TODO: Is this ground for deconnection or can we recover?
+            throw $ ProtocolException "Could not decode message payload"
+
+        yield res
+        decodeMessage
 
 encodeMessage :: MonadIO m => Conduit Message m BS.ByteString
 encodeMessage = awaitForever $ yield . encode'

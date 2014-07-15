@@ -120,6 +120,7 @@ startNode fp = do
                                  , receivedBlocks   = M.empty
                                  , inflightTxs      = []
                                  , soloTxs          = []
+                                 , broadcastBuffer  = []
                                  }
     -- Launch thread listening to user requests
     -- TODO: Should we catch exception here?

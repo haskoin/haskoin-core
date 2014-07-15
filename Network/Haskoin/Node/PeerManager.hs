@@ -66,15 +66,22 @@ data ManagerSession = ManagerSession
     , inflightTxs      :: [TxHash]
     -- Stall solo transactions while the blockchain is syncing
     , soloTxs          :: [Tx]
+    -- Transactions from users that need to be broadcasted
+    , broadcastBuffer  :: [Tx]
     } 
 
 -- Data stored about a peer in the Manager
 data PeerData = PeerData
     { peerHandshake        :: Bool
     , peerHeight           :: Word32
+    -- Blocks that a peer sent us but we haven't linked them yet to our chain.
+    -- We use this list to update the peer height when we link those blocks.
     , peerBlocks           :: [BlockHash] 
     , peerMsgChan          :: TBMChan Message
-    , peerInflightRequests :: Int
+    -- Inflight merkle block requests for this peer.
+    -- TODO: What if a remote peer doesn't respond? Perhaps track timestamp
+    -- and re-submit?
+    , peerInflightMerkle   :: [BlockHash]
     }
 
 data NodeEvent 
@@ -119,7 +126,6 @@ startNode fp = do
     _ <- forkIO $ sourceTBMChan rChan $$ processUserRequest mChan
 
     -- TODO: Catch exceptions here?
-    -- TODO: Maybe log to a place like ~/.haskoin/debug.log ?
     _ <- forkIO $ runStdoutLoggingT $ flip S.evalStateT session $ do 
 
         -- Initialize the database
@@ -173,7 +179,7 @@ startPeer remote = do
                             , peerMsgChan          = pChan
                             , peerHeight           = 0
                             , peerBlocks           = []
-                            , peerInflightRequests = 0
+                            , peerInflightMerkle = []
                             }
     S.modify $ \s -> s{ peerMap = M.insert tid peerData (peerMap s) }
 
@@ -241,6 +247,12 @@ processPeerHandshake tid remoteVer = do
     when (isJust bloom) $
         sendMessage tid $ MFilterLoad $ FilterLoad $ fromJust bloom
 
+    -- Send pending transactions to broadcast
+    -- TODO: Is it enough just to broadcast to 1 peer ?
+    pendingTxs <- S.gets broadcastBuffer
+    forM_ pendingTxs $ \tx -> sendMessage tid $ MTx tx
+    S.modify $ \s -> s{ broadcastBuffer = [] }
+
     -- Send a GetHeaders regardless if there is already a peerSync. This peer
     -- could still be faster and become the new peerSync.
     sendGetHeaders tid True 0x00
@@ -274,7 +286,6 @@ processBloomFilter b = do
   where
     bloom = bloomUpdateEmptyFull b
 
--- TODO: Buffer the broadcast if no peers are currently connected
 processPublishTx :: Tx -> ManagerHandle ()
 processPublishTx tx = do
     $(logDebug) $ T.pack $ unwords
@@ -282,9 +293,18 @@ processPublishTx tx = do
         , encodeTxHashLE $ txHash tx
         ]
     m <- S.gets peerMap 
-    forM_ (M.keys m) $ \tid -> do
+    flags <- forM (M.keys m) $ \tid -> do
         dat <- getPeerData tid
-        when (peerHandshake dat) $ sendMessage tid $ MTx tx
+        if (peerHandshake dat) 
+            then do
+                sendMessage tid $ MTx tx
+                return True
+            else return False
+
+    -- If no peers are connected, we buffer the transaction and try to send
+    -- it later.
+    unless (or flags) $ 
+        S.modify $ \s -> s{ broadcastBuffer = tx : broadcastBuffer s }
 
 processFastCatchupTime :: Word32 -> ManagerHandle ()
 processFastCatchupTime t = do
@@ -395,12 +415,12 @@ processMerkleBlock tid dmb = do
         importMerkleBlocks
 
         -- Decrement the peer request counter
-        requests <- peerInflightRequests <$> getPeerData tid
-        let newRequests = max 0 (requests - 1)
-        modifyPeerData tid $ \d -> d{ peerInflightRequests = newRequests }
+        requests <- peerInflightMerkle <$> getPeerData tid
+        let newRequests = delete (nodeBlockHash node) requests
+        modifyPeerData tid $ \d -> d{ peerInflightMerkle = newRequests }
 
         -- If this peer is done, get more merkle blocks to download
-        when (newRequests == 0) $ downloadBlocks tid
+        when (null newRequests) $ downloadBlocks tid
   where
     bid = headerHash $ merkleHeader $ decodedMerkle dmb
 
@@ -575,11 +595,11 @@ downloadBlocks tid = do
     bloom    <- S.gets mngrBloom
     sync     <- S.gets syncPeer
     let remoteHeight = peerHeight peerData
-        requests     = peerInflightRequests peerData
+        requests     = peerInflightMerkle peerData
         canDownload  =  (sync /= Just tid)
                      && (isJust bloom)
                      && (peerHandshake peerData)
-                     && (requests == 0)
+                     && (null requests)
     -- Only download blocks from peers that have a completed handshake
     -- and that are not already requesting blocks
     -- TODO: Only download blocks after the wallet first key timestamp
@@ -591,7 +611,7 @@ downloadBlocks tid = do
                 [ "Requesting more merkle blocks:", "(", show tid, ")" ]
             -- Store the work count for this peer
             modifyPeerData tid $ \d -> 
-                d{ peerInflightRequests = length toDwn }
+                d{ peerInflightMerkle = toDwn }
             sendMessage tid $ MGetData $ GetData $ 
                 map ((InvVector InvMerkleBlock) . fromIntegral) toDwn
             -- Send a ping to have a recognizable end message for the last

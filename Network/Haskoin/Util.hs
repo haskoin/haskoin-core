@@ -97,6 +97,10 @@ import qualified Data.ByteString as BS
     , foldl'
     , null
     )
+import qualified Data.ByteString.Builder as BSB
+    ( toLazyByteString
+    , byteStringHex
+    )
 import qualified Data.ByteString.Char8 as C
     ( pack
     , unpack
@@ -140,7 +144,7 @@ integerToBS i
 
 -- | Encode a bytestring to a base16 (HEX) representation
 bsToHex :: BS.ByteString -> String
-bsToHex = BS.foldl' (\a x -> mappend a (printf "%02x" x)) ""
+bsToHex = bsToString . toStrictBS . BSB.toLazyByteString . BSB.byteStringHex
 
 -- | Decode a base16 (HEX) string from a bytestring. This function can fail
 -- if the string contains invalid HEX characters

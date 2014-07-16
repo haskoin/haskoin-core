@@ -355,7 +355,7 @@ processHeaders tid (Headers h) = do
                 when (h > peerHeight dat) $
                     $(logDebug) $ T.pack $ unwords
                         [ "Adjusting peer height to"
-                        , show h, ":", show ti
+                        , show h, "(", show ti, ")"
                         ]
 
     -- Continue syncing from this node only if it made some progress.
@@ -588,13 +588,15 @@ sendGetHeaders tid full hstop = do
 downloadBlocks :: ThreadId -> ManagerHandle ()
 downloadBlocks tid = do
     -- Request block downloads if some are pending
-    peerData <- getPeerData tid
-    bloom    <- S.gets mngrBloom
-    sync     <- S.gets syncPeer
+    peerData   <- getPeerData tid
+    bloom      <- S.gets mngrBloom
+    sync       <- S.gets syncPeer
+    hasCatchup <- runDB getFastCatchup
     let remoteHeight = peerHeight peerData
         requests     = peerInflightMerkle peerData
         canDownload  =  (sync /= Just tid)
                      && (isJust bloom)
+                     && (isJust hasCatchup)
                      && (peerHandshake peerData)
                      && (null requests)
     -- Only download blocks from peers that have a completed handshake

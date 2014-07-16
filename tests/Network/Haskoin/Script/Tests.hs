@@ -10,13 +10,13 @@ import Test.Framework.Runners.Console (defaultMainWithArgs)
 import qualified Test.HUnit as HUnit
 
 import Control.Applicative ((<$>))
+import Control.Monad (when)
 
 import Numeric (readHex)
 
 import qualified Data.Aeson as A (decode)
 import Data.Bits (setBit, testBit)
 import Text.Read (readMaybe)
-import Data.Binary (Binary, Word8)
 import Data.List (isPrefixOf)
 import Data.Char (ord)
 import qualified Data.ByteString as BS
@@ -34,7 +34,12 @@ import qualified Data.ByteString.Lazy as LBS
 
 import Data.Maybe (catMaybes)
 
-import Data.Binary (encode, decodeOrFail)
+import Data.Binary
+    ( Binary
+    , Word8
+    , encode
+    , decode
+    , decodeOrFail)
 
 import qualified Data.ByteString.Lazy.Char8 as C (readFile)
 
@@ -182,16 +187,20 @@ parseHex' [_] = Nothing
 parseHex' [] = Just []
 
 parseScript :: String -> Either ParseError Script
-parseScript script =
-      case parseBytes of
-          Left e -> Left $ "string decode error: " ++ e
-          Right bytes -> case decodeOrFail $ LBS.pack bytes of
-              Left  (_, _, e) -> Left $ "byte decode error: " ++ e ++
-                                        "bytes: " ++ (bsToHex $ BS.pack bytes)
-              Right (_, _, Script s) -> Right Script { scriptOps = s }
+parseScript scriptString =
+      do bytes <- LBS.pack <$> parseBytes scriptString
+         script <- decodeScript bytes
+         when (encode script /= bytes) $
+            Left "encode script /= bytes"
+         when (decode (encode script) /= script) $
+            Left "decode (encode script) /= script"
+         return script
       where
-          parseBytes :: Either ParseError [Word8]
-          parseBytes = concat <$> mapM parseToken (words script)
+          decodeScript bytes = case decodeOrFail bytes of
+            Left (_, _, e) -> Left $ "decode error: " ++ e
+            Right (_, _, Script s) -> Right $ Script s
+          parseBytes :: String -> Either ParseError [Word8]
+          parseBytes string = concat <$> mapM parseToken (words string)
           parseToken :: String -> Either ParseError [Word8]
           parseToken tok =
               case alternatives of

@@ -8,7 +8,7 @@ module Network.Haskoin.Script.Types
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM2, unless, when, forM_)
+import Control.Monad (liftM2, unless, forM_)
 import Control.Applicative ((<$>))
 
 import Data.Word (Word8)
@@ -352,7 +352,6 @@ instance Binary ScriptOp where
 
         (OP_PUSHDATA payload optype)-> do
             let len = BS.length payload
-            when (len == 0) $ fail "OP_PUSHDATA: Payload size must be > 0"
             case optype of
                 OPCODE -> do
                     unless (len <= 0x4b) $ fail 
@@ -534,7 +533,6 @@ isPushOp op = case op of
 -- | Optimally encode data using one of the 4 types of data pushing opcodes
 opPushData :: BS.ByteString -> ScriptOp
 opPushData bs
-    | len <= 0          = error "opPushData: data length must be > 0"
     | len <= 0x4b       = OP_PUSHDATA bs OPCODE
     | len <= 0xff       = OP_PUSHDATA bs OPDATA1
     | len <= 0xffff     = OP_PUSHDATA bs OPDATA2

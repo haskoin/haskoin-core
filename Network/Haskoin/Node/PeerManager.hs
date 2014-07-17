@@ -130,7 +130,12 @@ startNode fp = do
     _ <- forkIO $ runStdoutLoggingT $ flip S.evalStateT session $ do 
 
         -- Initialize the database
-        runDB initDB 
+        runDB $ do 
+            initDB 
+            bestM <- getBestBlock
+            -- Reset the download pointer
+            when (isJust bestM) $
+                putLastDownloadNode $ nodeBlockHash $ fromJust bestM
 
         -- Spin up some peer threads
         -- TODO: Put the peers in a config file or write peer discovery

@@ -198,7 +198,6 @@ decodeMessage = do
     -- Message header is always 24 bytes
     headerBytes <- toStrictBS <$> CB.take 24
 
-    -- TODO: Should we loop or throw an exception?
     unless (BS.null headerBytes) $ do
         -- Introspection required to know the length of the payload
         let headerE = decodeToEither headerBytes

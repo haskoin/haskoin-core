@@ -69,6 +69,8 @@ data ManagerSession = ManagerSession
     -- We received the merkle blocks but buffer them to send them in-order to
     -- the wallet
     , receivedBlocks   :: M.Map BlockHeight DecodedMerkleBlock
+    -- Blocks that were inflight when a peer disconnected
+    , missingBlocks    :: [BlockHash]
     -- Stall merkle block while a GetData for a transaction is pending
     , inflightTxs      :: [TxHash]
     -- Stall solo transactions while the blockchain is syncing
@@ -116,6 +118,7 @@ startNode fp = do
                                  , dbTxHandle       = txdb
                                  , mngrBloom        = Nothing
                                  , receivedBlocks   = M.empty
+                                 , missingBlocks    = []
                                  , inflightTxs      = []
                                  , soloTxs          = []
                                  , broadcastBuffer  = []
@@ -235,6 +238,11 @@ processPeerDisconnect remote = do
     dat <- getPeerData remote
     -- TODO: Check if the peer had pending work in pChan
     liftIO $ atomically $ closeTBMChan $ peerMsgChan dat
+
+    -- Store inflight merkle blocks of this peer
+    S.modify $ \s -> 
+        s{ missingBlocks = missingBlocks s ++ peerInflightMerkle dat }
+
     -- TODO: Do something about peerInflightMerkle
     let reconnect = peerReconnectTimer dat
     modifyPeerData remote $ \d -> d{ peerHandshake      = False 
@@ -637,7 +645,12 @@ downloadBlocks remote = do
     -- Only download blocks from peers that have a completed handshake
     -- and that are not already requesting blocks
     when canDownload $ do
-        toDwn <- runDB $ nextDownloadRange 500 remoteHeight
+        -- Get blocks missing from other peers that have disconnected
+        (missing, rest) <- splitAt 500 <$> S.gets missingBlocks
+        S.modify $ \s -> s{ missingBlocks = rest }
+        -- Get more blocks to download from the database
+        xs <- runDB $ nextDownloadRange (500 - length missing) remoteHeight
+        let toDwn = missing ++ xs
         unless (null toDwn) $ do
             $(logDebug) $ T.pack $ unwords 
                 [ "Requesting more merkle blocks:"

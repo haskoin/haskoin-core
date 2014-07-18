@@ -175,8 +175,8 @@ decodeBool :: StackValue -> Bool
 decodeBool []     = False
 decodeBool [0x00] = False
 decodeBool [0x80] = False
-decodeBool [_]    = True
-decodeBool (_:vs) = decodeBool vs
+decodeBool (0x00:vs) = decodeBool vs
+decodeBool _ = True
 
 encodeBool :: Bool -> StackValue
 encodeBool True = [1]

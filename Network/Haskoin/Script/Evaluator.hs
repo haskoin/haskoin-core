@@ -444,8 +444,8 @@ eval OP_NOP9    = return ()
 eval OP_NOP10   = return ()
 
 eval OP_VERIFY = popBool >>= \case
-    False -> programError "OP_VERIFY failed"
     True  -> return ()
+    False -> programError "OP_VERIFY failed"
 
 eval OP_RETURN = programError "explicit OP_RETURN"
 

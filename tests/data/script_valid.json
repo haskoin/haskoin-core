@@ -71,6 +71,7 @@
 
 ["0 IFDUP", "DEPTH 1 EQUALVERIFY 0 EQUAL"],
 ["1 IFDUP", "DEPTH 2 EQUALVERIFY 1 EQUALVERIFY 1 EQUAL"],
+["0x02 0x01 0x00 IFDUP", "DEPTH 2 EQUALVERIFY", "the last stack item byte can be 0x00, still true"],
 ["0 DROP", "DEPTH 0 EQUAL"],
 ["0", "DUP 1 ADD 1 EQUALVERIFY 0 EQUAL"],
 ["0 1", "NIP"],

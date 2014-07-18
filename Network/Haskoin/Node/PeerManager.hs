@@ -193,6 +193,10 @@ managerSink = awaitForever $ \req -> lift $ do
 
 processStartPeer :: RemoteHost -> ManagerHandle ()
 processStartPeer remote = do
+    $(logInfo) $ T.pack $ unwords
+        [ "Starting peer"
+        , "(", show remote, ")" 
+        ] 
     vers  <- S.gets mngrVersion
     mChan <- S.gets mngrChan
     pChan <- liftIO . atomically $ do
@@ -224,7 +228,7 @@ processStartPeer remote = do
 -- TODO: Do something about the inflight merkle blocks of this peer
 processPeerDisconnect :: RemoteHost -> ManagerHandle ()
 processPeerDisconnect remote = do
-    $(logDebug) $ T.pack $ unwords
+    $(logInfo) $ T.pack $ unwords
         [ "Peer disconnected"
         , "(", show remote, ")" 
         ]
@@ -253,7 +257,10 @@ processPeerDisconnect remote = do
     -- Handle reconnection
     mChan <- S.gets mngrChan
     void $ liftIO $ forkIO $ do
-        threadDelay $ 1000000 * reconnect -- reconnect is in microseconds
+        -- TODO: Put this value in a config file
+        let maxDelay = 1000000 * 900 -- 15 minutes
+        -- reconnect is in microseconds
+        threadDelay $ min maxDelay (1000000 * reconnect) 
         atomically $ writeTBMChan mChan $ StartPeer remote
 
 processPeerHandshake :: RemoteHost -> Version -> ManagerHandle ()

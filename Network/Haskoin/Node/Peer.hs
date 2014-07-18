@@ -13,11 +13,12 @@ import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.Logger 
 import Control.Monad.Trans.Resource
-import Control.Concurrent (forkFinally, ThreadId, myThreadId)
+import Control.Concurrent (forkIO, ThreadId, myThreadId)
 import Control.Exception (throwIO, throw)
 import qualified Control.Monad.State as S
 import Control.Concurrent.STM.TBMChan
 import Control.Concurrent.STM
+import Control.Concurrent.Async
 
 import Database.Persist.Sqlite
 
@@ -76,23 +77,14 @@ peer pChan mChan remote ad = do
                               , peerVersion    = Nothing
                               , inflightMerkle = Nothing
                               }
-    -- Thread sending messages to the remote peer
-    -- TODO: Make sure that we catch a socket disconnect here. We want the
-    -- cleanup code in PeerManager to run in such a case.
-    let pipe = (sourceTBMChan $ peerChan session)
-               $= encodeMessage 
-               $$ (appSink ad)
-    -- TODO: Handle the error here
-    _ <- forkFinally pipe $ \ret -> case ret of
-        Left e -> throwIO e
-        Right x -> throwIO $ NodeException $ unwords
-            [ "Message sending thread stopped with result:"
-            , show x
-            ]
 
-    -- process incomming messages from the remote peer
-    runStdoutLoggingT $ flip S.evalStateT session $
-        (appSource ad) $= decodeMessage $$ processMessage
+    let peerEncode = (sourceTBMChan $ peerChan session)
+                        $= encodeMessage 
+                        $$ (appSink ad)
+
+    void $ withAsync (async peerEncode) $ \_ -> 
+        runStdoutLoggingT $ flip S.evalStateT session $
+            (appSource ad) $= decodeMessage $$ processMessage
          
 processMessage :: Sink Message PeerHandle ()
 processMessage = awaitForever $ \msg -> lift $ do
@@ -206,9 +198,8 @@ decodeMessage = do
     -- Message header is always 24 bytes
     headerBytes <- toStrictBS <$> CB.take 24
 
-    -- Just loop if we read 0 bytes
     -- TODO: Should we loop or throw an exception?
-    if BS.null headerBytes then decodeMessage else do
+    unless (BS.null headerBytes) $ do
         -- Introspection required to know the length of the payload
         let headerE = decodeToEither headerBytes
             (MessageHeader _ cmd len _) = fromRight headerE

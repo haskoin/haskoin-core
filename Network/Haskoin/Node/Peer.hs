@@ -43,7 +43,6 @@ import qualified Data.Conduit.Binary as CB
 import qualified Data.ByteString as BS
 
 import Network.Haskoin.Node.HeaderChain
-import Network.Haskoin.Node.Util
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol

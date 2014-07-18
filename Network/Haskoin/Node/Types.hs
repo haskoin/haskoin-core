@@ -1,5 +1,9 @@
+{-# LANGUAGE DeriveDataTypeable #-}
 module Network.Haskoin.Node.Types where
 
+import Control.Exception (Exception)
+
+import Data.Typeable (Typeable)
 import Data.Word
 
 import Network.Haskoin.Node.HeaderChain
@@ -40,4 +44,16 @@ data DecodedMerkleBlock = DecodedMerkleBlock
     , expectedTxs   :: [TxHash]
     , merkleTxs     :: [Tx]
     }
+
+data NodeException
+    = NodeException String
+    deriving (Eq, Read, Show, Typeable)
+
+instance Exception NodeException
+
+data BlockChainException 
+    = BlockChainException String
+    deriving (Eq, Read, Show, Typeable)
+
+instance Exception BlockChainException
 

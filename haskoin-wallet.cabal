@@ -35,7 +35,7 @@ library
                        Network.Haskoin.Node.Checkpoints,
                        Network.Haskoin.Node.Peer,
                        Network.Haskoin.Node.PeerManager,
-                       Network.Haskoin.Node.Util
+                       Network.Haskoin.Node.Types
     build-depends:     aeson                >= 0.7.0.5  && < 0.8,
                        aeson-pretty         >= 0.7  && < 0.8,
                        async                >= 2.0  && < 2.1,

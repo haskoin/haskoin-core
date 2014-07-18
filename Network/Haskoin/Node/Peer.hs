@@ -43,39 +43,22 @@ import qualified Data.ByteString as BS
 
 import Network.Haskoin.Node.HeaderChain
 import Network.Haskoin.Node.Util
+import Network.Haskoin.Node.Types
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Util
 
 type PeerHandle = S.StateT PeerSession (LoggingT IO)
-type MerkleRoot = Word256
 
 data PeerSession = PeerSession
-    { peerId         :: ThreadId
+    { remoteSettings :: RemoteHost
     , peerChan       :: TBMChan Message
-    , mngrChan       :: TBMChan (ThreadId, ManagerRequest)
+    , mngrChan       :: TBMChan ManagerRequest
     , peerVersion    :: Maybe Version
     -- Aggregate all the transaction of a merkle block before sending
     -- them up to the manager
     , inflightMerkle :: Maybe DecodedMerkleBlock
     } 
-
--- Data sent from peers to the central manager queue
-data ManagerRequest
-    = PeerHandshake Version
-    | PeerDisconnect 
-    | PeerMerkleBlock DecodedMerkleBlock
-    | PeerMessage Message   
-    | UserBloomFilter BloomFilter
-    | UserPublishTx Tx
-    | UserFastCatchup Word32
-
-data DecodedMerkleBlock = DecodedMerkleBlock
-    { decodedMerkle :: MerkleBlock
-    , decodedRoot   :: MerkleRoot
-    , expectedTxs   :: [TxHash]
-    , merkleTxs     :: [Tx]
-    }
 
 -- TODO: Move constants elsewhere ?
 minProtocolVersion :: Word32 
@@ -84,11 +67,10 @@ minProtocolVersion = 60001
 maxHeaders :: Int
 maxHeaders = 2000
 
-peer :: TBMChan Message -> TBMChan (ThreadId, ManagerRequest)
+peer :: TBMChan Message -> TBMChan ManagerRequest -> RemoteHost 
      -> AppData -> IO ()
-peer pChan mChan remote = do
-    tid <- myThreadId 
-    let session = PeerSession { peerId         = tid
+peer pChan mChan remote ad = do
+    let session = PeerSession { remoteSettings = remote
                               , mngrChan       = mChan
                               , peerChan       = pChan
                               , peerVersion    = Nothing
@@ -99,7 +81,7 @@ peer pChan mChan remote = do
     -- cleanup code in PeerManager to run in such a case.
     let pipe = (sourceTBMChan $ peerChan session)
                $= encodeMessage 
-               $$ (appSink remote)
+               $$ (appSink ad)
     -- TODO: Handle the error here
     _ <- forkFinally pipe $ \ret -> case ret of
         Left e -> throwIO e
@@ -110,10 +92,11 @@ peer pChan mChan remote = do
 
     -- process incomming messages from the remote peer
     runStdoutLoggingT $ flip S.evalStateT session $
-        (appSource remote) $= decodeMessage $$ processMessage
+        (appSource ad) $= decodeMessage $$ processMessage
          
 processMessage :: Sink Message PeerHandle ()
 processMessage = awaitForever $ \msg -> lift $ do
+    remote <- S.gets remoteSettings
     merkleM <- S.gets inflightMerkle
     when (isJust merkleM && not (isTx msg)) $ do
         let dmb = fromJust merkleM
@@ -122,14 +105,14 @@ processMessage = awaitForever $ \msg -> lift $ do
         -- Keep the same transaction order as in the merkle block
         let orderedTxs = catMaybes $ matchTemplate txs (expectedTxs dmb) f
             f a b      = txHash a == b
-        sendManager $ PeerMerkleBlock dmb{ merkleTxs = orderedTxs }
+        sendManager $ PeerMerkleBlock remote dmb{ merkleTxs = orderedTxs }
     case msg of
         MVersion v     -> processVersion v
         MVerAck        -> processVerAck 
         MMerkleBlock m -> processMerkleBlock m
         MTx t          -> processTx t
         MPing (Ping n) -> sendMessage $ MPong $ Pong n
-        _              -> sendManager $ PeerMessage msg
+        _              -> sendManager $ PeerMessage remote msg
   where
     isTx (MTx _) = True
     isTx _       = False
@@ -163,17 +146,19 @@ processVersion remoteVer = go =<< S.get
             S.modify $ \s -> s{ peerVersion = Just remoteVer }
             sendMessage MVerAck
             -- Notify the manager that the handshake was succesfull
-            sendManager $ PeerHandshake remoteVer
+            remote <- S.gets remoteSettings
+            sendManager $ PeerHandshake remote remoteVer
 
 processVerAck :: PeerHandle ()
-processVerAck = do
-    $(logDebug) "Version ACK received."
+processVerAck = $(logDebug) "Version ACK received"
 
 processMerkleBlock :: MerkleBlock -> PeerHandle ()
 processMerkleBlock mb@(MerkleBlock h ntx hs fs)
     -- TODO: Handle this error better
     | isLeft matchesE = error $ fromLeft matchesE
-    | null match      = sendManager $ PeerMerkleBlock dmb
+    | null match      = do
+        remote <- S.gets remoteSettings
+        sendManager $ PeerMerkleBlock remote dmb
     | otherwise       = S.modify $ \s -> s{ inflightMerkle = Just dmb }
   where
     matchesE      = extractMatches fs hs $ fromIntegral ntx
@@ -186,6 +171,7 @@ processMerkleBlock mb@(MerkleBlock h ntx hs fs)
 
 processTx :: Tx -> PeerHandle ()
 processTx tx = do
+    remote <- S.gets remoteSettings
     merkleM <- S.gets inflightMerkle
     let dmb@(DecodedMerkleBlock mb root match txs) = fromJust merkleM
     -- If the transaction is part of a merkle block, buffer it. We will send
@@ -200,9 +186,10 @@ processTx tx = do
                     -- Keep the same transaction order as in the merkle block
                     let orderedTxs = catMaybes $ matchTemplate txs match f
                         f a b      = txHash a == b
-                    sendManager $ PeerMerkleBlock dmb{ merkleTxs = orderedTxs }
-                    sendManager $ PeerMessage $ MTx tx
-        else sendManager $ PeerMessage $ MTx tx
+                    sendManager $ 
+                        PeerMerkleBlock remote dmb{ merkleTxs = orderedTxs }
+                    sendManager $ PeerMessage remote $ MTx tx
+        else sendManager $ PeerMessage remote $ MTx tx
 
 sendMessage :: Message -> PeerHandle ()
 sendMessage msg = do
@@ -211,9 +198,8 @@ sendMessage msg = do
 
 sendManager :: ManagerRequest -> PeerHandle ()
 sendManager req = do
-    pid  <- S.gets peerId
     chan <- S.gets mngrChan
-    liftIO . atomically $ writeTBMChan chan (pid,req)
+    liftIO . atomically $ writeTBMChan chan req
 
 decodeMessage :: MonadLogger m => Conduit BS.ByteString m Message
 decodeMessage = do
@@ -221,6 +207,7 @@ decodeMessage = do
     headerBytes <- toStrictBS <$> CB.take 24
 
     -- Just loop if we read 0 bytes
+    -- TODO: Should we loop or throw an exception?
     if BS.null headerBytes then decodeMessage else do
         -- Introspection required to know the length of the payload
         let headerE = decodeToEither headerBytes

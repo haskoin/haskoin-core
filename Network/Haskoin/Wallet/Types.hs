@@ -19,10 +19,11 @@ module Network.Haskoin.Wallet.Types
 
 import Control.Monad (mzero, liftM2)
 import Control.Exception (Exception)
+import Control.Applicative
 
 import Data.Int (Int64)
 import Data.Typeable (Typeable)
-import Data.Maybe (maybe)
+import Data.Maybe (maybe, fromJust)
 import qualified Data.Text as T
 import Data.Aeson
     ( Value (Object, String)
@@ -227,23 +228,89 @@ instance FromJSON AccTx where
 
 {- Instances for PersistField and PersistFieldSql -}
 
+-- No se si te sentit (dins te un hash)
 derivePersistField "CoinStatus"
 derivePersistField "Coin"
-derivePersistField "TxHash"
+-- derivePersistField "TxHash"
 derivePersistField "BlockHash"
-derivePersistField "Address"
+-- derivePersistField "Address"
 derivePersistField "Wallet"
 derivePersistField "Account"
 
-instance PersistField XPubKey where
-    toPersistValue = PersistText . T.pack . xPubExport
-    fromPersistValue (PersistText key) = 
-        maybeToEither "Not a valid XPubKey" . xPubImport $ T.unpack key
-    fromPersistValue _ = Left "Has to be a PersistText"
 
-instance PersistFieldSql XPubKey where
+persistTextErrMsg :: T.Text
+persistTextErrMsg = "Has to be a PersistText"
+persistBSErrMsg :: T.Text 
+persistBSErrMsg = "Has to be a PersistByteString" 
+--------------------------------------------------------------------------------
+instance PersistField Address where
+    toPersistValue = PersistText . T.pack . addrToBase58
+    fromPersistValue (PersistText a) = 
+        maybeToEither "Not a valid Address" . base58ToAddr $ T.unpack a
+    fromPersistValue _ = Left persistTextErrMsg
+
+instance PersistFieldSql Address where
     sqlType _ = SqlString
+--------------------------------------------------------------------------------
+instance PersistField [Address] where
+    toPersistValue = PersistText . T.unwords . map (T.pack . addrToBase58)
+    fromPersistValue (PersistText t) =
+        mapM f (T.words t)
+      where
+        f = maybeToEither "Not a valid Address list" . base58ToAddr . T.unpack
+    fromPersistValue _ = Left persistTextErrMsg
 
+instance PersistFieldSql [Address] where
+    sqlType _ = SqlString
+--------------------------------------------------------------------------------
+instance PersistField TxHash where
+    toPersistValue = PersistText . T.pack . bsToHex . encode'
+    fromPersistValue (PersistText h) =
+        maybeToEither "Not a valid Hash" (hola h)
+      where
+        hola x = decodeToMaybe =<< hexToBS (T.unpack x)
+    fromPersistValue _ = Left persistTextErrMsg
+
+instance PersistFieldSql TxHash where
+    sqlType _ = SqlString    
+--------------------------------------------------------------------------------
+--instance PersistField MasterKey where
+--    toPersistValue = PersistText . T.pack . xPrvExport . masterKey 
+--    fromPersistValue (PersistText k) = f k >>= return . MasterKey
+--      where
+--        f = maybeToEither "Not a valid XPrvKey" . xPrvImport . T.unpack
+--    fromPersistValue _ = Left persistTextErrMsg
+
+--instance PersistFieldSql MasterKey where
+--    sqlType _ = SqlString
+--------------------------------------------------------------------------------
+--instance PersistField AccPubKey where
+--    toPersistValue (AccPubKey x) = toPersistValue x
+--    fromPersistValue k = fromPersistValue k >>= return . AccPubKey
+
+--instance PersistFieldSql AccPubKey where
+--    sqlType _ = SqlString
+--------------------------------------------------------------------------------
+--instance PersistField XPubKey where
+--    toPersistValue = PersistText . T.pack . xPubExport
+--    fromPersistValue (PersistText k) = 
+--        maybeToEither "Not a valid XPubKey" . xPubImport $ T.unpack k
+--    fromPersistValue _ = Left persistTextErrMsg
+
+--instance PersistFieldSql XPubKey where
+--    sqlType _ = SqlString
+--------------------------------------------------------------------------------
+--instance PersistField [XPubKey] where
+--    toPersistValue = PersistText . T.unwords . map (T.pack . xPubExport)
+--    fromPersistValue (PersistText ks) =
+--        mapM f (T.words ks)
+--      where
+--        f = maybeToEither "Not a valid XPubKey list" . xPubImport . T.unpack
+--    fromPersistValue _ = Left persistTextErrMsg
+
+--instance PersistFieldSql [XPubKey] where
+--    sqlType _ = SqlString
+--------------------------------------------------------------------------------
 instance PersistField Tx where
     toPersistValue = PersistByteString . encode'
     fromPersistValue (PersistByteString bs) = case txE of
@@ -251,9 +318,9 @@ instance PersistField Tx where
         Left str -> Left $ T.pack str
       where
         txE = decodeToEither bs
-    fromPersistValue _ = Left "Has to be a PersistByteString"
+    fromPersistValue _ = Left persistBSErrMsg
 
 instance PersistFieldSql Tx where
     sqlType _ = SqlBlob
-
+--------------------------------------------------------------------------------
 

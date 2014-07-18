@@ -171,7 +171,11 @@ decodeInt bytes = sign' (decodeW bytes)
 
 -- | Conversion of StackValue to Bool (true if non-zero).
 decodeBool :: StackValue -> Bool
-decodeBool v = decodeInt v /= 0
+decodeBool []     = False
+decodeBool [0x00] = False
+decodeBool [0x80] = False
+decodeBool [_]    = True
+decodeBool (_:vs) = decodeBool vs
 
 encodeBool :: Bool -> StackValue
 encodeBool True = [1]
@@ -440,7 +444,7 @@ eval OP_NOP8    = return ()
 eval OP_NOP9    = return ()
 eval OP_NOP10   = return ()
 
-eval OP_VERIFY = decodeBool <$> popStack >>= \case
+eval OP_VERIFY = popBool >>= \case
     False -> programError "OP_VERIFY failed"
     True  -> return ()
 
@@ -470,7 +474,7 @@ eval OP_2SWAP   = tStack4 $ \a b c d -> [c, d, a, b]
 
 -- Splice
 
-eval OP_SIZE   = (fromIntegral . length <$> popStack) >>= pushStack . encodeInt
+eval OP_SIZE   = (fromIntegral . length <$> head <$> withStack) >>= pushInt
 
 -- Bitwise Logic
 
@@ -487,8 +491,10 @@ eval OP_NOT         = arith1 $ \case 0 -> 1; _ -> 0
 eval OP_0NOTEQUAL   = arith1 $ \case 0 -> 0; _ -> 1
 eval OP_ADD     = arith2 (+)
 eval OP_SUB     = arith2 $ flip (-)
-eval OP_BOOLAND     = (&&) <$> popBool <*> popBool >>= pushBool
-eval OP_BOOLOR      = (||) <$> popBool <*> popBool >>= pushBool
+eval OP_BOOLAND     = (&&) <$> ((0 /=) <$> popInt)
+                           <*> ((0 /=) <$> popInt) >>= pushBool
+eval OP_BOOLOR      = (||) <$> ((0 /=) <$> popInt)
+                           <*> ((0 /=) <$> popInt) >>= pushBool
 eval OP_NUMEQUAL    = (==) <$> popInt <*> popInt >>= pushBool
 eval OP_NUMEQUALVERIFY = eval OP_NUMEQUAL >> eval OP_VERIFY
 eval OP_NUMNOTEQUAL         = (/=) <$> popInt <*> popInt >>= pushBool

@@ -32,7 +32,10 @@ import qualified Data.ByteString.Lazy as LBS
     , unpack
     )
 
-import Data.Maybe (catMaybes)
+import Data.Maybe
+    ( catMaybes
+    , isNothing
+    )
 
 import Data.Binary
     ( Binary
@@ -163,10 +166,13 @@ testSigHashOne tx s acp = not (null $ txIn tx) ==>
 {- Script Evaluation Primitives -}
 
 testEncodeInt :: Int64 -> Bool
-testEncodeInt i = (decodeInt $ encodeInt i) == i
+testEncodeInt i | i >  0x7fffffff = isNothing i'
+                | i < -0x7fffffff = isNothing i'
+                | otherwise = i' == Just i
+                where i' = decodeInt $ encodeInt i
 
 testEncodeBool :: Bool -> Bool
-testEncodeBool b = (decodeBool $ encodeBool b) == b
+testEncodeBool b = decodeBool (encodeBool b) == b
 
 {- Script Evaluation -}
 

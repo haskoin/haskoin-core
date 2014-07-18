@@ -160,14 +160,15 @@ encodeInt i = prefix $ encode' (fromIntegral $ abs i) []
                     | otherwise = xs
 
 -- | Inverse of `encodeInt`.
-decodeInt :: StackValue -> Int64
-decodeInt bytes = sign' (decodeW bytes)
-    where decodeW [] = 0
-          decodeW [x] = fromIntegral $ clearBit x 7
-          decodeW (x:xs) = fromIntegral x + decodeW xs `shiftL` 8
-          sign' i | null bytes = 0
-                  | testBit (last bytes) 7 = -i
-                  | otherwise = i
+decodeInt :: StackValue -> Maybe Int64
+decodeInt bytes | length bytes > 4 = Nothing
+                | otherwise = Just $ sign' (decodeW bytes)
+                  where decodeW [] = 0
+                        decodeW [x] = fromIntegral $ clearBit x 7
+                        decodeW (x:xs) = fromIntegral x + decodeW xs `shiftL` 8
+                        sign' i | null bytes = 0
+                                | testBit (last bytes) 7 = -i
+                                | otherwise = i
 
 -- | Conversion of StackValue to Bool (true if non-zero).
 decodeBool :: StackValue -> Bool
@@ -238,11 +239,9 @@ countOp op | isConstant op     = False
            | otherwise         = True
 
 popInt :: ProgramTransition Int64
-popInt = popStack >>= \sv ->
-    if length sv > 4 then
-        programError $ "integer > nMaxNumSize: " ++ show (length sv)
-    else
-        return $ decodeInt sv
+popInt = decodeInt <$> popStack >>= \case
+    Nothing -> programError "popInt: data > nMaxNumSize"
+    Just i -> return i
 
 pushInt :: Int64 -> ProgramTransition ()
 pushInt = pushStack . encodeInt

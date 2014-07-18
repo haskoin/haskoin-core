@@ -10,6 +10,7 @@
 ["  1  2  ", "2 EQUALVERIFY 1 EQUAL"],
 
 ["1", ""],
+["0x02 0x01 0x00", "all bytes are significant, not only the last one"],
 ["0x09 0x00000000 0x00000000 0x10", "", "equals zero when cast to Int64"],
 
 ["0x01 0x0b", "11 EQUAL", "push 1 byte"],
@@ -71,7 +72,6 @@
 
 ["0 IFDUP", "DEPTH 1 EQUALVERIFY 0 EQUAL"],
 ["1 IFDUP", "DEPTH 2 EQUALVERIFY 1 EQUALVERIFY 1 EQUAL"],
-["0x02 0x01 0x00 IFDUP", "DEPTH 2 EQUALVERIFY", "the last stack item byte can be 0x00, still true"],
 ["0 DROP", "DEPTH 0 EQUAL"],
 ["0", "DUP 1 ADD 1 EQUALVERIFY 0 EQUAL"],
 ["0 1", "NIP"],

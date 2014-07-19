@@ -63,9 +63,7 @@ import Numeric (readHex)
 import Control.Applicative ((<$>))
 import Control.Monad (guard)
 import Control.Monad.Trans.Either (EitherT, hoistEither)
-import Text.Printf (printf)
 
-import Data.Monoid (mappend)
 import Data.Word (Word8)
 import Data.Bits ((.|.), shiftL, shiftR)
 import Data.List (unfoldr)
@@ -94,7 +92,6 @@ import qualified Data.ByteString as BS
     ( ByteString
     , concat
     , pack, unpack
-    , foldl'
     , null
     )
 import qualified Data.ByteString.Builder as BSB

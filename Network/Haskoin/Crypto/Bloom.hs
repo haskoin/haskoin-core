@@ -4,8 +4,9 @@ module Network.Haskoin.Crypto.Bloom
 , bloomCreate
 , bloomInsert
 , bloomContains
-, bloomUpdateEmptyFull
-, bloomIsValid
+, isBloomValid
+, isBloomEmpty
+, isBloomFull
 ) where
 
 import Data.Word
@@ -44,7 +45,7 @@ bloomCreate :: Int          -- ^ Number of elements
             -> BloomFlags   -- ^ Bloom filter flags
             -> BloomFilter  -- ^ Bloom filter
 bloomCreate numElem fpRate tweak flags =
-    BloomFilter (S.replicate bloomSize 0) False False numHashF tweak flags
+    BloomFilter (S.replicate bloomSize 0) numHashF tweak flags
   where
     bloomSize = truncate $ (min a b) / 8
     a         = -1 / ln2Squared * (fromIntegral numElem) * log fpRate
@@ -64,8 +65,8 @@ bloomInsert :: BloomFilter    -- ^ Original bloom filter
             -> BS.ByteString  -- ^ New data to insert
             -> BloomFilter    -- ^ Bloom filter containing the new data
 bloomInsert bfilter bs 
-    | bloomFull bfilter = bfilter
-    | otherwise = bfilter { bloomData = newData, bloomEmpty = False }
+    | isBloomFull bfilter = bfilter
+    | otherwise = bfilter { bloomData = newData }
   where
     idxs    = map (\i -> bloomHash bfilter i bs) [0..bloomHashFuncs bfilter - 1]
     upd s i = S.adjust (.|. bitMask !! (7 .&. i)) (i `shiftR` 3) s
@@ -79,9 +80,9 @@ bloomContains :: BloomFilter    -- ^ Bloom filter
               -> Bool
               -- ^ Returns True if the data matches the filter
 bloomContains bfilter bs
-    | bloomFull bfilter  = True
-    | bloomEmpty bfilter = False
-    | otherwise         = and $ map isSet idxs
+    | isBloomFull bfilter  = True
+    | isBloomEmpty bfilter = False
+    | otherwise            = and $ map isSet idxs
   where
     s       = bloomData bfilter
     idxs    = map (\i -> bloomHash bfilter i bs) [0..bloomHashFuncs bfilter - 1]
@@ -90,19 +91,18 @@ bloomContains bfilter bs
 -- TODO: Write bloomRelevantUpdate
 -- bloomRelevantUpdate :: BloomFilter -> Tx -> Hash256 -> Maybe BloomFilter
 
--- | Sets the bloom filter empty flag to True if the filter is empty, and
--- the bloom filter full flag to True if the filter is full.
-bloomUpdateEmptyFull :: BloomFilter -- ^ Bloom filter to update
-                     -> BloomFilter -- ^ Filter with updated flags
-bloomUpdateEmptyFull bfilter = 
-    bfilter { bloomEmpty = all (== 0x00) l, bloomFull = all (== 0xff) l }
-  where
-    l = F.toList $ bloomData bfilter
+-- | Returns True if the filter is empty (all bytes set to 0x00)
+isBloomEmpty :: BloomFilter -> Bool
+isBloomEmpty bfilter = all (== 0x00) $ F.toList $ bloomData bfilter
+
+-- | Returns True if the filter is full (all bytes set to 0xff)
+isBloomFull :: BloomFilter -> Bool
+isBloomFull bfilter = all (== 0xff) $ F.toList $ bloomData bfilter
 
 -- | Tests if a given bloom filter is valid.
-bloomIsValid :: BloomFilter -- ^ Bloom filter to test
+isBloomValid :: BloomFilter -- ^ Bloom filter to test
              -> Bool        -- ^ True if the given filter is valid
-bloomIsValid bfilter =
+isBloomValid bfilter =
     (S.length $ bloomData bfilter) <= maxBloomSize &&
     (bloomHashFuncs bfilter) <= maxHashFuncs
 

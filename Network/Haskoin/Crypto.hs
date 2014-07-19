@@ -208,8 +208,9 @@ module Network.Haskoin.Crypto
 , bloomCreate
 , bloomInsert
 , bloomContains
-, bloomUpdateEmptyFull
-, bloomIsValid
+, isBloomValid
+, isBloomEmpty
+, isBloomFull
 
   -- *Partial merkle trees
 , calcTreeHeight

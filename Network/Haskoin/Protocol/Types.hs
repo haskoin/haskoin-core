@@ -232,10 +232,6 @@ instance Binary BloomFlags where
 data BloomFilter = BloomFilter
     { bloomData      :: !(S.Seq Word8)
     -- ^ Bloom filter data
-    , bloomFull      :: !Bool
-    -- ^ Flag indicating if the filter is full ('bloomData' is all 0x00)
-    , bloomEmpty     :: !Bool
-    -- ^ Flag indicating if the filter is empty ('bloomData' is all 0xff)
     , bloomHashFuncs :: !Word32
     -- ^ Number of hash functions for this filter
     , bloomTweak     :: !Word32
@@ -246,19 +242,18 @@ data BloomFilter = BloomFilter
     deriving (Eq, Show, Read)
 
 instance NFData BloomFilter where
-    rnf (BloomFilter d f e h t g) =
-        rnf d `seq` rnf f `seq` rnf e `seq` rnf h `seq` rnf t `seq` rnf g
+    rnf (BloomFilter d h t g) =
+        rnf d `seq` rnf h `seq` rnf t `seq` rnf g
 
 instance Binary BloomFilter where
 
     get = BloomFilter <$> (S.fromList <$> (readDat =<< get))
-                      <*> (return False) <*> (return False)
                       <*> getWord32le <*> getWord32le
                       <*> get
       where
         readDat (VarInt len) = replicateM (fromIntegral len) getWord8   
 
-    put (BloomFilter dat _ _ hashFuncs tweak flags) = do
+    put (BloomFilter dat hashFuncs tweak flags) = do
         put $ VarInt $ fromIntegral $ S.length dat
         forM_ (F.toList dat) putWord8
         putWord32le hashFuncs

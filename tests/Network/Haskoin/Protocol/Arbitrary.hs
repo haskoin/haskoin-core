@@ -210,8 +210,6 @@ instance Arbitrary BloomFlags where
 
 instance Arbitrary BloomFilter where
     arbitrary = BloomFilter <$> (S.fromList <$> arbitrary)
-                            <*> (return False)
-                            <*> (return False)
                             <*> arbitrary
                             <*> arbitrary
                             <*> arbitrary

@@ -14,6 +14,7 @@ import Control.Monad.Logger
 import Control.Concurrent (forkIO)
 import Control.Concurrent.STM.TBMChan
 import Control.Concurrent.STM
+import Control.Concurrent.MVar
 import Control.Concurrent.Async
 import Control.DeepSeq (NFData, rnf)
 import Control.Exception
@@ -38,6 +39,7 @@ import qualified Data.ByteString.Lazy as BL
 import Database.Persist
 import Database.Persist.Sql
 import Database.Persist.Sqlite
+import Database.Sqlite (open)
 
 import Network.Haskoin.Util
 import Network.Haskoin.Script
@@ -58,17 +60,16 @@ runServer = do
     dir <- getWorkDir
     let walletFile = T.pack $ concat [dir, "/wallet"]
 
-    -- Create sqlite connection pool & initialization
-    pool <- createSqlitePool walletFile 10 -- TODO: Put 10 in a config file?
-    (bloom, fstKeyTime) <- runDB pool $ do
+    -- Create sqlite connection & initialization
+    mvar <- newMVar =<< wrapConnection =<< open walletFile
+    (bloom, fstKeyTime) <- runDB mvar $ do
         runMigrationSilent migrateWallet 
         initWalletDB
         liftM2 (,) walletBloomFilter firstKeyTime
 
-
     -- Launch SPV node
     withAsyncNode dir $ \eChan rChan _ -> do
-        let eventPipe = sourceTBMChan eChan $$ processNodeEvents pool rChan 
+        let eventPipe = sourceTBMChan eChan $$ processNodeEvents mvar rChan 
         withAsync eventPipe $ \_ -> do
             atomically $ do
                 writeTBMChan rChan $ BloomFilterUpdate bloom
@@ -81,16 +82,16 @@ runServer = do
                 appSource client
                     -- TODO: The server ignores bad requests here. Change that?
                     $= CL.mapMaybe (eitherToMaybe . decodeWalletRequest)
-                    $$ CL.mapM (processWalletRequest pool rChan)
+                    $$ CL.mapM (processWalletRequest mvar rChan)
                     =$ CL.map (\(res,i) -> encodeWalletResponse res i)
                     =$ appSink client
 
-processWalletRequest :: ConnectionPool 
+processWalletRequest :: MVar Connection 
                      -> TBMChan NodeRequest
                      -> (WalletRequest, Int) 
                      -> IO (Either String WalletResponse, Int)
-processWalletRequest pool rChan (wr, i) = do
-    res <- tryJust f $ runDB pool $ go wr
+processWalletRequest mvar rChan (wr, i) = do
+    res <- tryJust f $ runDB mvar $ go wr
     return (res, i)
   where
     -- TODO: What if we have other exceptions than WalletException ?
@@ -161,15 +162,16 @@ processWalletRequest pool rChan (wr, i) = do
         return $ ResTxStatus tid complete
     go (Balance n)     = liftM ResBalance $ balance n
 
-processNodeEvents :: ConnectionPool -> TBMChan NodeRequest
+processNodeEvents :: MVar Connection -> TBMChan NodeRequest
                   -> Sink NodeEvent IO ()
-processNodeEvents pool rChan = awaitForever $ \e -> lift $ runDB pool $ 
+processNodeEvents mvar rChan = awaitForever $ \e -> lift $ runDB mvar $ 
     case e of
         MerkleBlockEvent a txs -> void $ importBlock a txs
         TxEvent tx             -> void $ importTx tx False
 
-runDB :: ConnectionPool -> SqlPersistT (NoLoggingT (ResourceT IO)) a -> IO a
-runDB pool m = runResourceT $ runNoLoggingT $ runSqlPool m pool
+runDB :: MVar Connection -> SqlPersistT (NoLoggingT (ResourceT IO)) a -> IO a
+runDB mvar m = withMVar mvar $ \conn -> 
+    runResourceT $ runNoLoggingT $ runSqlConn m conn
 
 -- Create and return haskoin working directory
 getWorkDir :: IO FilePath

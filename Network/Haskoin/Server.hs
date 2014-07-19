@@ -45,6 +45,7 @@ import Database.Sqlite (open)
 
 import Network.Haskoin.Util
 import Network.Haskoin.Script
+import Network.Haskoin.Constants
 
 import Network.Haskoin.Node.PeerManager
 import Network.Haskoin.Node.Types
@@ -199,7 +200,8 @@ runDB mvar m = withMVar mvar $ \conn ->
 -- Create and return haskoin working directory
 getWorkDir :: IO FilePath
 getWorkDir = do
-    dir <- getAppUserDataDirectory "haskoin"
+    haskoinDir <- getAppUserDataDirectory "haskoin"
+    let dir = concat [ haskoinDir, "/", networkName ]
     createDirectoryIfMissing True dir
     return dir
 

@@ -50,6 +50,7 @@ import Network.Haskoin.Node.Types
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Util
+import Network.Haskoin.Constants
 
 type ManagerHandle = S.StateT ManagerSession (LoggingT IO)
 type BlockHeight = Word32
@@ -215,7 +216,6 @@ processStartPeer remote = do
             closeTBMChan pChan
             writeTBMChan mChan $ PeerDisconnect remote
 
--- TODO: Do something about the inflight merkle blocks of this peer
 processPeerDisconnect :: RemoteHost -> ManagerHandle ()
 processPeerDisconnect remote = do
     $(logInfo) $ T.pack $ unwords
@@ -228,7 +228,6 @@ processPeerDisconnect remote = do
     S.modify $ \s -> 
         s{ missingBlocks = missingBlocks s ++ peerInflightMerkle dat }
 
-    -- TODO: Do something about peerInflightMerkle
     let reconnect = peerReconnectTimer dat
     modifyPeerData remote $ \d -> d{ peerHandshake      = False 
                                    , peerInflightMerkle = []

@@ -23,6 +23,7 @@ import Network.Haskoin.Node.Checkpoints
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Util
+import Network.Haskoin.Constants
 
 -- | Lower bound for the proof of work difficulty
 proofOfWorkLimit :: Integer

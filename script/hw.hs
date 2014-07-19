@@ -124,6 +124,7 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Transaction
 import Network.Haskoin.Stratum hiding (Coin(coinValue))
 import Network.Haskoin.Util
+import Network.Haskoin.Constants
 
 type Args = [String]
 

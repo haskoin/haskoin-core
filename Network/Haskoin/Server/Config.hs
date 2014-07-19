@@ -8,6 +8,7 @@ module Network.Haskoin.Server.Config
 where
 
 import Control.Monad (mzero)
+import Network.Haskoin.Constants
 
 import Data.Yaml 
     ( ToJSON
@@ -28,7 +29,7 @@ data ServerConfig = ServerConfig
     } deriving (Eq, Show, Read)
 
 defaultServerConfig = ServerConfig 
-    { configHosts = [ ("127.0.0.1", 8333) ]
+    { configHosts = [ ("127.0.0.1", defaultPort) ]
     , configPort  = 4000
     , configBind  = "127.0.0.1"
     }

@@ -159,28 +159,22 @@ buildVersion = do
 
 managerSink :: Sink ManagerRequest ManagerHandle ()
 managerSink = awaitForever $ \req -> lift $ do
-    -- Discard messages from peers that are gone
-    -- TODO: Is this always the correct behavior ?
     case req of
         StartPeer c -> processStartPeer c
-        PeerHandshake remote v -> do
-            exists <- peerExists remote
-            when exists $ processPeerHandshake remote v
-        PeerDisconnect remote -> do 
-            exists <- peerExists remote
-            when exists $ processPeerDisconnect remote
-        PeerMerkleBlock remote dmb -> do
-            exists <- peerExists remote
-            when exists $ processMerkleBlock remote dmb
-        PeerMessage remote msg -> do
-            exists <- peerExists remote
-            when exists $ case msg of
-                MHeaders headers -> processHeaders remote headers
-                MInv inv         -> processInv remote inv
-                MTx tx           -> processTx remote tx
-                _                -> return () -- Ignore them for now
+        PeerHandshake remote v     -> processPeerHandshake remote v
+        PeerDisconnect remote      -> processPeerDisconnect remote
+        PeerMerkleBlock remote dmb -> processMerkleBlock remote dmb
+        PeerMessage remote msg -> case msg of
+            MHeaders headers -> processHeaders remote headers
+            MInv inv         -> processInv remote inv
+            MTx tx           -> processTx remote tx
+            _                -> return () -- Ignore them for now
         UserRequest r -> case r of
-            ConnectNode h p     -> processStartPeer $ RemoteHost h p
+            ConnectNode h p     -> do
+                let remote = RemoteHost h p
+                exists <- peerExists remote
+                -- Do not allow a user to start multiple times the same peer
+                unless exists $ processStartPeer remote
             BloomFilterUpdate b -> processBloomFilter b
             PublishTx tx        -> processPublishTx tx
             FastCatchupTime t   -> processFastCatchupTime t
@@ -217,8 +211,9 @@ processStartPeer remote = do
     -- Start peer thread
     let cs = clientSettings (remotePort remote) (stringToBS $ remoteHost remote) 
     void $ liftIO $ forkFinally 
-        (runTCPClient cs $ peer pChan mChan remote) $ \_ -> 
-            atomically $ writeTBMChan mChan $ PeerDisconnect remote
+        (runTCPClient cs $ peer pChan mChan remote) $ \_ -> atomically $ do
+            closeTBMChan pChan
+            writeTBMChan mChan $ PeerDisconnect remote
 
 -- TODO: Do something about the inflight merkle blocks of this peer
 processPeerDisconnect :: RemoteHost -> ManagerHandle ()
@@ -228,8 +223,6 @@ processPeerDisconnect remote = do
         , "(", show remote, ")" 
         ]
     dat <- getPeerData remote
-    -- TODO: Check if the peer had pending work in pChan
-    liftIO $ atomically $ closeTBMChan $ peerMsgChan dat
 
     -- Store inflight merkle blocks of this peer
     S.modify $ \s -> 

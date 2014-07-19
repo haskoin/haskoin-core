@@ -60,7 +60,6 @@ import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Server.Types
 import Network.Haskoin.Server.Config
 
--- TODO: Handle parse errors and exceptions
 runServer :: IO ()
 runServer = do
     dir <- getWorkDir
@@ -102,7 +101,6 @@ runServer = do
                 forM_ hosts $ \(h,p) -> writeTBMChan rChan $ ConnectNode h p
 
             -- Launch JSON-RPC server
-            -- TODO: Put connection stuff in config file
             runTCPServer (serverSettings port bind) $ \client ->
                 appSource client
                     -- TODO: The server ignores bad requests here. Change that?

@@ -309,10 +309,10 @@ processPeerHandshake remote remoteVer = do
             ]
 
 processBloomFilter :: BloomFilter -> ManagerHandle ()
-processBloomFilter b = do
+processBloomFilter bloom = do
     prevBloom <- S.gets mngrBloom
     -- Don't load an empty bloom filter
-    when (prevBloom /= Just bloom && (not $ bloomEmpty bloom)) $ do
+    when (prevBloom /= Just bloom && (not $ isBloomEmpty bloom)) $ do
         $(logDebug) "Loading new bloom filter"
         S.modify $ \s -> s{ mngrBloom = Just bloom }
         m <- S.gets peerMap 
@@ -321,8 +321,6 @@ processBloomFilter b = do
             when (peerHandshake dat) $ 
                 sendMessage remote $ MFilterLoad $ FilterLoad bloom
             downloadBlocks remote
-  where
-    bloom = bloomUpdateEmptyFull b
 
 processPublishTx :: Tx -> ManagerHandle ()
 processPublishTx tx = do

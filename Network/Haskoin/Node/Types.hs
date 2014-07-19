@@ -31,6 +31,7 @@ data NodeRequest
     = BloomFilterUpdate BloomFilter 
     | PublishTx Tx
     | FastCatchupTime Word32
+    | ConnectNode String Int
     deriving (Eq, Show)
 
 data NodeEvent 

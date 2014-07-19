@@ -4,6 +4,7 @@ module Network.Haskoin.Server where
 import System.Directory 
     ( getAppUserDataDirectory
     , createDirectoryIfMissing
+    , doesFileExist
     )
 
 import Control.Applicative
@@ -20,6 +21,7 @@ import Control.DeepSeq (NFData, rnf)
 import Control.Exception
 
 import Data.Maybe
+import Data.String (fromString)
 import Data.Aeson
 import Data.Aeson.Types
 import Data.Conduit 
@@ -45,6 +47,8 @@ import Network.Haskoin.Util
 import Network.Haskoin.Script
 
 import Network.Haskoin.Node.PeerManager
+import Network.Haskoin.Node.Types
+
 import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Tx
 import Network.Haskoin.Wallet.Account
@@ -52,13 +56,30 @@ import Network.Haskoin.Wallet.Address
 import Network.Haskoin.Wallet.Coin
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
+
 import Network.Haskoin.Server.Types
+import Network.Haskoin.Server.Config
 
 -- TODO: Handle parse errors and exceptions
 runServer :: IO ()
 runServer = do
     dir <- getWorkDir
     let walletFile = T.pack $ concat [dir, "/wallet"]
+        configFile = concat [dir, "/config"]
+
+    configExists <- doesFileExist configFile
+
+    unless configExists $ encodeFile configFile defaultServerConfig
+
+    configM <- decodeFile configFile
+    unless (isJust configM) $ throwIO $ NodeException $ unwords
+        [ "Could node parse config file"
+        , configFile
+        ]
+
+    let bind  = fromString $ configBind $ fromJust configM
+        port  = configPort $ fromJust configM
+        hosts = configHosts $ fromJust configM
 
     -- Create sqlite connection & initialization
     mvar <- newMVar =<< wrapConnection =<< open walletFile
@@ -72,13 +93,17 @@ runServer = do
         let eventPipe = sourceTBMChan eChan $$ processNodeEvents mvar rChan 
         withAsync eventPipe $ \_ -> do
             atomically $ do
+                -- Bloom filter
                 writeTBMChan rChan $ BloomFilterUpdate bloom
+                -- Fast catchup time
                 when (isJust fstKeyTime) $ writeTBMChan rChan $ 
                     FastCatchupTime $ fromJust fstKeyTime
+                -- Bitcoin hosts to connect to
+                forM_ hosts $ \(h,p) -> writeTBMChan rChan $ ConnectNode h p
 
             -- Launch JSON-RPC server
             -- TODO: Put connection stuff in config file
-            runTCPServer (serverSettings 4000 "127.0.0.1") $ \client ->
+            runTCPServer (serverSettings port bind) $ \client ->
                 appSource client
                     -- TODO: The server ignores bad requests here. Change that?
                     $= CL.mapMaybe (eitherToMaybe . decodeWalletRequest)

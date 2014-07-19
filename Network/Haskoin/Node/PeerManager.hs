@@ -123,13 +123,6 @@ withAsyncNode fp f = do
                                  , broadcastBuffer  = []
                                  }
 
-    atomically $ do
-        -- Spin up some peer threads
-        -- TODO: Put the peers in a config file or write peer discovery
-        writeTBMChan mChan $ StartPeer $ RemoteHost "localhost" 8333
-        writeTBMChan mChan $ StartPeer $ RemoteHost "haskoin.com" 8333
-        writeTBMChan mChan $ StartPeer $ RemoteHost "95.215.47.133" 8333
-
     let runNode = runStdoutLoggingT $ flip S.evalStateT session $ do 
 
         -- Initialize the database
@@ -187,6 +180,7 @@ managerSink = awaitForever $ \req -> lift $ do
                 MTx tx           -> processTx remote tx
                 _                -> return () -- Ignore them for now
         UserRequest r -> case r of
+            ConnectNode h p     -> processStartPeer $ RemoteHost h p
             BloomFilterUpdate b -> processBloomFilter b
             PublishTx tx        -> processPublishTx tx
             FastCatchupTime t   -> processFastCatchupTime t

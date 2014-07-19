@@ -14,6 +14,7 @@ import Control.Monad.Logger
 import Control.Concurrent (forkIO)
 import Control.Concurrent.STM.TBMChan
 import Control.Concurrent.STM
+import Control.Concurrent.Async
 import Control.DeepSeq (NFData, rnf)
 import Control.Exception
 
@@ -64,23 +65,25 @@ runServer = do
         initWalletDB
         liftM2 (,) walletBloomFilter firstKeyTime
 
-    -- Launch SPV node
-    (eChan, rChan) <- startNode dir 
-    forkIO $ sourceTBMChan eChan $$ processNodeEvents pool rChan
-    atomically $ do
-        writeTBMChan rChan $ BloomFilterUpdate bloom
-        when (isJust fstKeyTime) $ writeTBMChan rChan $ 
-            FastCatchupTime $ fromJust fstKeyTime
 
-    -- Launch JSON-RPC server
-    -- TODO: Put connection stuff in config file
-    runTCPServer (serverSettings 4000 "127.0.0.1") $ \client ->
-        appSource client
-            -- TODO: The server ignores bad requests here. Change that?
-            $= CL.mapMaybe (eitherToMaybe . decodeWalletRequest)
-            $$ CL.mapM (processWalletRequest pool rChan)
-            =$ CL.map (\(res,i) -> encodeWalletResponse res i)
-            =$ appSink client
+    -- Launch SPV node
+    withAsyncNode dir $ \eChan rChan _ -> do
+        let eventPipe = sourceTBMChan eChan $$ processNodeEvents pool rChan 
+        withAsync eventPipe $ \_ -> do
+            atomically $ do
+                writeTBMChan rChan $ BloomFilterUpdate bloom
+                when (isJust fstKeyTime) $ writeTBMChan rChan $ 
+                    FastCatchupTime $ fromJust fstKeyTime
+
+            -- Launch JSON-RPC server
+            -- TODO: Put connection stuff in config file
+            runTCPServer (serverSettings 4000 "127.0.0.1") $ \client ->
+                appSource client
+                    -- TODO: The server ignores bad requests here. Change that?
+                    $= CL.mapMaybe (eitherToMaybe . decodeWalletRequest)
+                    $$ CL.mapM (processWalletRequest pool rChan)
+                    =$ CL.map (\(res,i) -> encodeWalletResponse res i)
+                    =$ appSink client
 
 processWalletRequest :: ConnectionPool 
                      -> TBMChan NodeRequest

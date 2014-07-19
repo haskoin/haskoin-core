@@ -4,7 +4,7 @@
 module Network.Haskoin.Node
 ( 
  -- *Node
- startNode
+ withAsyncNode
 , NodeEvent(..)
 , NodeRequest(..)
 

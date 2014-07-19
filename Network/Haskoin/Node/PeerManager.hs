@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Network.Haskoin.Node.PeerManager
-( startNode
+( withAsyncNode
 , NodeEvent(..)
 , NodeRequest(..)
 ) where
@@ -10,15 +10,12 @@ import System.Random
 
 import Control.Applicative
 import Control.Monad
-import Control.Concurrent 
-    ( forkIO
-    , forkFinally
-    , threadDelay
-    )
+import Control.Concurrent (forkFinally, forkIO, threadDelay)
 import Control.Monad.Logger 
 import Control.Monad.Trans
 import Control.Concurrent.STM.TBMChan
 import Control.Concurrent.STM
+import Control.Concurrent.Async
 import Control.Monad.Trans.Resource
 import qualified Control.Monad.State as S
 
@@ -95,8 +92,10 @@ data PeerData = PeerData
     , peerReconnectTimer   :: Int
     }
 
-startNode :: FilePath -> IO (TBMChan NodeEvent, TBMChan NodeRequest)
-startNode fp = do
+withAsyncNode :: FilePath 
+              -> (TBMChan NodeEvent -> TBMChan NodeRequest -> Async () -> IO ())
+              -> IO ()
+withAsyncNode fp f = do
     db <- DB.open (concat [fp, "/headerchain"])
               DB.defaultOptions{ DB.createIfMissing = True
                                , DB.cacheSize       = 2048
@@ -123,10 +122,6 @@ startNode fp = do
                                  , soloTxs          = []
                                  , broadcastBuffer  = []
                                  }
-    -- Launch thread listening to user requests
-    -- TODO: Should we catch exception here?
-    _ <- forkIO $ sourceTBMChan rChan $$ processUserRequest mChan
-
 
     atomically $ do
         -- Spin up some peer threads
@@ -135,8 +130,7 @@ startNode fp = do
         writeTBMChan mChan $ StartPeer $ RemoteHost "haskoin.com" 8333
         writeTBMChan mChan $ StartPeer $ RemoteHost "95.215.47.133" 8333
 
-    -- TODO: Catch exceptions here?
-    _ <- forkIO $ runStdoutLoggingT $ flip S.evalStateT session $ do 
+    let runNode = runStdoutLoggingT $ flip S.evalStateT session $ do 
 
         -- Initialize the database
         runDB $ do 
@@ -150,7 +144,11 @@ startNode fp = do
         -- TODO: Close database handle on exception with DB.close
         sourceTBMChan mChan $$ managerSink
 
-    return (eChan, rChan)
+    -- Launch node
+    withAsync runNode $ \a -> 
+        -- Launch thread listening to user requests
+        withAsync (sourceTBMChan rChan $$ processUserRequest mChan) $ \_ -> 
+            f eChan rChan a
 
 processUserRequest :: TBMChan ManagerRequest -> Sink NodeRequest IO ()
 processUserRequest mChan = awaitForever $ \r -> 
@@ -520,6 +518,8 @@ importMerkleBlocks = do
             else do
                 let h = nodeHeaderHeight $ fromJust bestM
                 -- Only display a new height every 100 blocks
+                -- TODO: modulo 100 doesn't work if we import more than 1 
+                -- block.
                 when (isJust bestM && h `mod` 100 == 0) $ 
                     $(logDebug) $ T.pack $ unwords
                         [ "Best block height:", show h ]

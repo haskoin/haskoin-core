@@ -81,7 +81,7 @@ peer pChan mChan remote ad = do
                         $= encodeMessage 
                         $$ (appSink ad)
 
-    void $ withAsync (async peerEncode) $ \_ -> 
+    void $ withAsync peerEncode $ \_ -> 
         runStdoutLoggingT $ flip S.evalStateT session $
             (appSource ad) $= decodeMessage $$ processMessage
          

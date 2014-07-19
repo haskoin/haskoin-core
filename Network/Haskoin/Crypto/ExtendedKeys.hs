@@ -41,6 +41,7 @@ import Data.Maybe (mapMaybe)
 import qualified Data.ByteString as BS (ByteString, append)
 
 import Network.Haskoin.Util
+import Network.Haskoin.Constants
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.Base58

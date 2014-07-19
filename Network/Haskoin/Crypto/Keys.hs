@@ -40,6 +40,7 @@ import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Point 
 import Network.Haskoin.Crypto.Base58 
 import Network.Haskoin.Crypto.Hash 
+import Network.Haskoin.Constants
 import Network.Haskoin.Util 
 
 -- | G parameter of the EC curve expressed as a Point

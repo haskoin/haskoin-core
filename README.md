@@ -23,15 +23,18 @@ You can install the latest stable version of the haskoin package automatically
 through the cabal package manager:
 
 ```sh
-# Install
+# Compile for prodnet 
 cabal install haskoin
+
+# Compile for testnet
+cabal install haskoin --flags=testnet
 ```
 
 ## Contributing
 
 Commits are done through GitHub pull requests.
 
-We do a lot of our technical discussions at the IRC channel #haskoin on
+We do a lot of our technical discussions in the IRC channel #haskoin on
 chat.freenode.net.
 
 Code guidelines:

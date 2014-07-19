@@ -30,6 +30,7 @@ import Network.Haskoin.Protocol.Types
 
 import Network.Haskoin.Util 
 import Network.Haskoin.Crypto.Hash 
+import Network.Haskoin.Constants
 
 -- | Data type representing the header of a 'Message'. All messages sent between
 -- nodes contain a message header.

@@ -34,6 +34,7 @@ import qualified Data.Text as T
 
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
+import Network.Haskoin.Constants
 import Network.Haskoin.Util 
 
 b58Data :: BS.ByteString

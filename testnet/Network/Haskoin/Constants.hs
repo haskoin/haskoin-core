@@ -5,6 +5,10 @@ module Network.Haskoin.Constants where
 
 import Data.Word (Word8,Word32)
 
+-- | Name of the bitcoin network
+networkName :: String
+networkName = "testnet"
+
 -- | Prefix for base58 PubKey hash address
 addrPrefix :: Word8
 addrPrefix = 111

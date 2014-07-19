@@ -53,3 +53,6 @@ maxBlockSize = 1000000
 haskoinUserAgent :: String
 haskoinUserAgent = "/haskoin:0.0.2.1/"
 
+defaultPort :: Int
+defaultPort = 8333
+

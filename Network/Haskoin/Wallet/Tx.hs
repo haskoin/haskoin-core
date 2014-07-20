@@ -58,6 +58,7 @@ import Database.Persist
     )
 
 import Network.Haskoin.Node.HeaderChain
+import Network.Haskoin.Node.Types
 
 import Network.Haskoin.Wallet.Account
 import Network.Haskoin.Wallet.Address

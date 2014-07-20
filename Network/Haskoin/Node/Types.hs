@@ -1,7 +1,10 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 module Network.Haskoin.Node.Types where
 
+import Control.Applicative ((<$>), (<*>))
 import Control.Exception (Exception)
+
+import Data.Binary (Binary, get, put)
 
 import Data.Typeable (Typeable)
 import Data.Word
@@ -16,6 +19,10 @@ data RemoteHost = RemoteHost
     { remoteHost :: String
     , remotePort :: Int
     } deriving (Eq, Ord, Show, Read)
+
+instance Binary RemoteHost where
+    get = RemoteHost <$> get <*> get
+    put (RemoteHost h p) = put h >> put p
 
 -- Data sent from peers to the central manager queue
 data ManagerRequest
@@ -44,7 +51,7 @@ data DecodedMerkleBlock = DecodedMerkleBlock
     , decodedRoot   :: MerkleRoot
     , expectedTxs   :: [TxHash]
     , merkleTxs     :: [Tx]
-    }
+    } deriving (Eq, Read, Show)
 
 data NodeException
     = NodeException String

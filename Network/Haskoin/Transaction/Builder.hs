@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Transaction.Builder 
 ( Coin(..)
 , buildTx
@@ -15,8 +16,8 @@ module Network.Haskoin.Transaction.Builder
 , getMSFee
 ) where
 
-import Control.Applicative ((<$>))
-import Control.Monad (foldM)
+import Control.Applicative ((<$>),(<*>))
+import Control.Monad (mzero, foldM)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Either (EitherT, left)
 import Control.DeepSeq (NFData, rnf)
@@ -25,6 +26,16 @@ import Data.Maybe (catMaybes, maybeToList, isJust, fromJust)
 import Data.List (sortBy, find, nub)
 import Data.Word (Word64)
 import qualified Data.ByteString as BS (length, replicate, empty)
+import Data.Aeson
+    ( Value (Object)
+    , FromJSON
+    , ToJSON
+    , (.=)
+    , (.:)
+    , object
+    , parseJSON
+    , toJSON
+    )
 
 import Network.Haskoin.Util
 import Network.Haskoin.Crypto
@@ -40,6 +51,22 @@ data Coin =
          , coinOutPoint :: !OutPoint       -- ^ Previous outpoint
          , coinRedeem   :: !(Maybe RedeemScript) -- ^ Redeem script
          } deriving (Eq, Show, Read)
+
+instance ToJSON Coin where
+    toJSON (Coin v s o r) = object
+      [ "value"     .= v
+      , "script"    .= s
+      , "outpoint"  .= o
+      , "redeem"    .= r
+      ]
+
+instance FromJSON Coin where
+    parseJSON (Object o) =
+        Coin <$> o .: "value"
+             <*> o .: "script"
+             <*> o .: "outpoint"
+             <*> o .: "redeem"
+    parseJSON _ = mzero
 
 instance NFData Coin where
     rnf (Coin v s o r) = rnf v `seq` rnf s `seq` rnf o `seq` rnf r

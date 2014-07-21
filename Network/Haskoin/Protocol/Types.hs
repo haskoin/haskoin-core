@@ -862,6 +862,14 @@ data OutPoint =
 instance NFData OutPoint where
     rnf (OutPoint h i) = rnf h `seq` rnf i
 
+instance FromJSON OutPoint where
+    parseJSON = withText "outpoint" $ \t -> either fail return $
+        maybeToEither "outpoint not hex" 
+          (hexToBS $ T.unpack t) >>= decodeToEither
+
+instance ToJSON OutPoint where
+    toJSON = String . T.pack . bsToHex . encode'
+
 instance Binary OutPoint where
     get = do
         (h,i) <- liftM2 (,) get getWord32le

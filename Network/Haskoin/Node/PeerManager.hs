@@ -66,12 +66,12 @@ data ManagerSession = ManagerSession
     , mngrBloom        :: Maybe BloomFilter
     -- Merkle blocks that need to be downloaded
     , blocksToDwn      :: [(Word32, BlockHash)]
-    -- We received the merkle blocks but buffer them to send them in-order to
-    -- the wallet
-    , receivedBlocks   :: M.Map BlockHeight DecodedMerkleBlock
-    -- Stall merkle block while a GetData for a transaction is pending
+    -- Received merkle blocks pending to be sent to the user (wallet)
+    , receivedMerkle   :: [DecodedMerkleBlock]
+    -- Transaction pending the GetData response. Used to stall merkle blocks.
     , inflightTxs      :: [TxHash]
-    -- Stall solo transactions while the blockchain is syncing
+    -- Transactions not included in a merkle block. We stall them until the
+    -- chain is synced.
     , soloTxs          :: [Tx]
     -- Transactions from users that need to be broadcasted
     , broadcastBuffer  :: [Tx]
@@ -118,7 +118,7 @@ withAsyncNode fp f = do
                                  , dataHandle       = dataDb
                                  , mngrBloom        = Nothing
                                  , blocksToDwn      = []
-                                 , receivedBlocks   = M.empty
+                                 , receivedMerkle   = []
                                  , inflightTxs      = []
                                  , soloTxs          = []
                                  , broadcastBuffer  = []
@@ -446,8 +446,6 @@ processHeaders remote (Headers h) = do
 
 processMerkleBlock :: RemoteHost -> DecodedMerkleBlock -> ManagerHandle ()
 processMerkleBlock remote dmb = do
-    -- TODO: We read the node both here and in addMerkleBlock. It's duplication
-    -- of work. Can we avoid it?
     nodeM <- runDB $ getBlockHeaderNode bid
     let node = fromJust nodeM
 
@@ -458,21 +456,19 @@ processMerkleBlock remote dmb = do
         when (decodedRoot dmb /= (merkleRoot $ nodeHeader node)) $
             error "Invalid partial merkle tree received"
 
-        blockMap <- S.gets receivedBlocks
-        let height = nodeHeaderHeight node
-        -- Add this merkle block to the received list
-        S.modify $ \s -> s{ receivedBlocks = M.insert height dmb blockMap }
-
-        -- Import the merkle block in-order into the user app
-        importMerkleBlocks
+        -- Put the block first as most of the time, blocks in here will
+        -- be orphaned waiting for another block to be processed first.
+        S.modify $ \s -> s{ receivedMerkle = dmb : receivedMerkle s }
 
         -- Decrement the peer request counter
         requests <- peerInflightMerkle <$> getPeerData remote
         let newRequests = delete (nodeBlockHash node) requests
         modifyPeerData remote $ \d -> d{ peerInflightMerkle = newRequests }
 
+        importMerkleBlocks 
+
         -- If this peer is done, get more merkle blocks to download
-        when (null newRequests) $ downloadBlocks remote
+        downloadBlocks remote
   where
     bid = headerHash $ merkleHeader $ decodedMerkle dmb
 
@@ -480,110 +476,116 @@ processMerkleBlock remote dmb = do
 -- as they may be received out-of-order from the network (concurrent download)
 importMerkleBlocks :: ManagerHandle ()
 importMerkleBlocks = do
-    height      <- runDB bestBlockHeight
-    blockMap    <- S.gets receivedBlocks
-    dwnTxs      <- S.gets inflightTxs
-    let ascList  = M.toAscList blockMap
-        go prevHeight ((currHeight, x):xs) 
-            | currHeight == prevHeight + 1 = (currHeight, x) : go currHeight xs
-            | otherwise = []
-        go _ [] = []
-        toImport = go height ascList
-        toKeep   = drop (length toImport) ascList
-        -- We stall merkle block imports when transactions are inflight. This
-        -- is to prevent this race condition where tx1 would miss it's
-        -- confirmation:
-        -- INV tx1 -> GetData tx1 -> MerkleBlock (all tx except tx1) -> Tx1
-        canImport = null dwnTxs && (not $ null toImport)
-
-    when canImport $ do
-        S.modify $ \s -> s{ receivedBlocks = M.fromList toKeep }
-        eChan <- S.gets eventChan
-
-        res <- forM toImport $ \(h, dmb) -> do
-            -- Import in blockchain
-            node <- runDB $ addMerkleBlock $ decodedMerkle dmb
-            -- If solo transactions belong to this merkle block, we have
-            -- to import them and remove them from the solo list.
-            solo  <- S.gets soloTxs
-            let f x                 = txHash x `elem` expectedTxs dmb
-                (soloAdd, soloKeep) = partition f solo
-                txImport            = nub $ merkleTxs dmb ++ soloAdd
-            S.modify $ \s -> s{ soloTxs = soloKeep }
-
-            unless (null txImport) $ $(logInfo) $ T.pack $ unwords
-                [ "Merkle block import: sending"
-                , show $ length txImport
-                , "transactions to the user"
-                ]
-
-            unless (null soloAdd) $ $(logInfo) $ T.pack $ unwords
-                [ "Importing these solo txs in the merkle block"
-                , "["
-                , unwords $ map (bsToHex . BS.reverse . encode') soloAdd
-                , "]"
-                ]
-
-            -- Never send twice the same data to the user
-            txUniqueImport <- filterM filterTx txImport
-            alreadySentNode <- existsData $ fromIntegral $ 
-                nodeBlockHash $ getActionNode node
-
-            liftIO $ atomically $ do
-                -- Send transactions to the wallet
-                forM_ txUniqueImport (writeTBMChan eChan . TxEvent)
-                -- Send merkle blocks to the wallet 
-                unless alreadySentNode $ 
-                    writeTBMChan eChan $ MerkleBlockEvent node (expectedTxs dmb)
-
-            -- Save the fact that we sent the data to the user
-            forM txUniqueImport $ \tx -> putData $ fromIntegral $ txHash tx
-            putData $ fromIntegral $ nodeBlockHash $ getActionNode node
-
-            case node of
-                BestBlock b -> do
-                    $(logInfo) $ T.pack $ unwords
-                        [ "Best block at height"
-                        , show $ nodeHeaderHeight b, ":"
-                        , enc $ nodeBlockHash b
-                        ]
-                    return $ Just b
-                BlockReorg _ o n -> do
-                    $(logInfo) $ T.pack $ unwords
-                        [ "Block reorg. Orphaned blocks:"
-                        , "[", unwords $ map (enc . nodeBlockHash) o ,"]"
-                        , "New blocks:"
-                        , "[", unwords $ map (enc . nodeBlockHash) n ,"]"
-                        , "New height:"
-                        , show $ nodeHeaderHeight $ last n
-                        ]
-                    return $ Just $ last n
-                SideBlock b -> do
-                    $(logInfo) $ T.pack $ unwords
-                        [ "Side block at height"
-                        , show $ nodeHeaderHeight b, ":"
-                        , enc $ nodeBlockHash b
-                        ]
-                    return Nothing
-
-        let bestM = foldl (<|>) Nothing $ reverse res
-
-        synced <- nodeSynced
+    dwnTxs <- S.gets inflightTxs
+    -- We stall merkle block imports when transactions are inflight. This
+    -- is to prevent this race condition where tx1 would miss it's
+    -- confirmation:
+    -- INV tx1 -> GetData tx1 -> MerkleBlock (all tx except tx1) -> Tx1
+    when (null dwnTxs) $ do
+        toImport <- S.gets receivedMerkle
+        res      <- catMaybes <$> forM toImport importMerkleBlock
+        synced   <- nodeSynced
         when synced $ do
             -- If we are synced, send solo transactions to the wallet
-            solo       <- S.gets soloTxs
-            uniqueSolo <- filterM filterTx solo
-            liftIO $ atomically $ 
-                forM_ uniqueSolo (writeTBMChan eChan . TxEvent)
-            forM uniqueSolo $ \tx -> putData $ fromIntegral $ txHash tx
+            solo    <- S.gets soloTxs
+            notHave <- filterM filterTx solo
+            eChan   <- S.gets eventChan
+            liftIO $ atomically $ forM_ notHave (writeTBMChan eChan . TxEvent)
+            forM notHave $ putData . fromIntegral . txHash
             S.modify $ \s -> s{ soloTxs = [] }
-            when (isJust bestM) $ $(logInfo) $ T.pack $ unwords
+            height <- runDB bestBlockHeight
+            unless (null res) $ $(logInfo) $ T.pack $ unwords
                 [ "We are in sync with the network at height"
-                , show $ nodeHeaderHeight $ fromJust $ bestM
+                , show height
                 ]
+        -- Try to import more merkle blocks if some were imported this round
+        unless (null res) importMerkleBlocks
   where
     filterTx = ((not <$>) . existsData . fromIntegral . txHash)
-    enc = bsToHex . BS.reverse . encode'
+
+-- Import a single merkle block if its parent has already been imported
+importMerkleBlock :: DecodedMerkleBlock 
+                  -> ManagerHandle (Maybe BlockChainAction)
+importMerkleBlock dmb = do
+    let prevHash = prevBlock $ merkleHeader $ decodedMerkle dmb
+    prevNode <- fromJust <$> (runDB $ getBlockHeaderNode prevHash)
+    fastCatchupM <- runDB getFastCatchup
+    let fastCatchup   = fromJust fastCatchupM
+        beforeCatchup = 
+            isJust fastCatchupM &&
+            blockTimestamp (nodeHeader prevNode) < fastCatchup
+    havePrev <- existsData $ fromIntegral prevHash
+
+    -- We must have sent the previous merkle to the user (wallet) to import
+    -- this one. Or the previous block can be becore the fast catchup time.
+    if not (havePrev || beforeCatchup) then return Nothing else do
+        -- Import into the blockchain
+        action <- runDB $ addMerkleBlock $ decodedMerkle dmb
+
+        -- If solo transactions belong to this merkle block, we have
+        -- to import them and remove them from the solo list.
+        solo <- S.gets soloTxs
+        let f x                 = txHash x `elem` expectedTxs dmb
+            (soloAdd, soloKeep) = partition f solo
+            allTxs              = nub $ merkleTxs dmb ++ soloAdd
+        S.modify $ \s -> s{ soloTxs = soloKeep }
+
+        -- Never send twice the same data to the user
+        let filterTx = ((not <$>) . existsData . fromIntegral . txHash)
+        txToImport <- filterM filterTx allTxs
+
+        unless (null txToImport) $ $(logInfo) $ T.pack $ unwords
+            [ "Merkle block import: sending"
+            , show $ length txToImport
+            , "transactions to the user"
+            ]
+
+        unless (null soloAdd) $ $(logInfo) $ T.pack $ unwords
+            [ "Importing these solo txs in the merkle block"
+            , "["
+            , unwords $ map (bsToHex . BS.reverse . encode') soloAdd
+            , "]"
+            ]
+
+        let bHash = nodeBlockHash $ getActionNode action
+        haveNode <- existsData $ fromIntegral bHash 
+
+        unless haveNode $ do
+            eChan <- S.gets eventChan
+            liftIO $ atomically $ do
+                -- Send transactions to the wallet
+                forM_ txToImport (writeTBMChan eChan . TxEvent)
+                -- Send merkle blocks to the wallet 
+                writeTBMChan eChan $ MerkleBlockEvent action (expectedTxs dmb)
+            -- Save the fact that we sent the data to the user
+            forM txToImport $ putData . fromIntegral . txHash
+            putData $ fromIntegral bHash
+
+        -- Remove this block from the receive list
+        S.modify $ \s -> s{ receivedMerkle = delete dmb $ receivedMerkle s }
+
+        let enc = bsToHex . BS.reverse . encode'
+        case action of
+            BestBlock b -> $(logInfo) $ T.pack $ unwords
+                [ "Best block at height"
+                , show $ nodeHeaderHeight b, ":"
+                , enc $ nodeBlockHash b
+                ]
+            BlockReorg _ o n -> $(logInfo) $ T.pack $ unwords
+                [ "Block reorg. Orphaned blocks:"
+                , "[", unwords $ map (enc . nodeBlockHash) o ,"]"
+                , "New blocks:"
+                , "[", unwords $ map (enc . nodeBlockHash) n ,"]"
+                , "New height:"
+                , show $ nodeHeaderHeight $ last n
+                ]
+            SideBlock b -> $(logInfo) $ T.pack $ unwords
+                [ "Side block at height"
+                , show $ nodeHeaderHeight b, ":"
+                , enc $ nodeBlockHash b
+                ]
+        return $ Just action
+
 
 processInv :: RemoteHost -> Inv -> ManagerHandle ()
 processInv remote (Inv vs) = do
@@ -657,8 +659,7 @@ processTx remote tx = do
         
     -- If no more transactions are inflight, trigger the download of
     -- the merkle blocks again
-    dwnTxs <- S.gets inflightTxs
-    when (null dwnTxs) $ importMerkleBlocks 
+    importMerkleBlocks 
   where
     txhash = txHash tx
 

@@ -47,7 +47,6 @@ import Data.Aeson
     , toJSON
     , withText
     )
-
 import Network.Haskoin.Util
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Base58

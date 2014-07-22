@@ -21,6 +21,8 @@ module Network.Haskoin.Crypto.BigWord
 , inverseN
 , quadraticResidue
 , isIntegerValidKey
+, encodeTxHashLE
+, decodeTxHashLE
 ) where
 
 import Data.Bits 
@@ -45,11 +47,20 @@ import Data.Binary.Put
     , putWord8
     , putByteString
     )
+import Data.Aeson
+    ( Value (String)
+    , FromJSON
+    , ToJSON
+    , parseJSON
+    , toJSON
+    , withText
+    )
 import Control.DeepSeq (NFData, rnf)
 import Control.Monad (unless, guard)
 import Control.Applicative ((<$>))
 import Data.Ratio (numerator, denominator)
-import qualified Data.ByteString as BS (head, length)
+import qualified Data.ByteString as BS (head, length, reverse)
+import qualified Data.Text as T (pack, unpack)
 
 import Network.Haskoin.Crypto.Curve 
 import Network.Haskoin.Crypto.NumberTheory 
@@ -314,7 +325,23 @@ instance Binary (BigWord ModP) where
 
     -- Section 2.3.7 http://www.secg.org/download/aid-780/sec1-v2.pdf
     put r = put (fromIntegral r :: Word256)
-         
+      
+instance ToJSON (BigWord Mod256Tx) where
+    toJSON = String . T.pack . encodeTxHashLE
+
+instance FromJSON (BigWord Mod256Tx) where
+    parseJSON = withText "TxHash not a string: " $ \a -> do
+        let s = T.unpack a
+        maybe (fail $ "Not a TxHash: " ++ s) return $ decodeTxHashLE s
+
+instance ToJSON (BigWord Mod256) where
+    toJSON = String . T.pack . bsToHex . encode'
+
+instance FromJSON (BigWord Mod256) where
+    parseJSON = withText "Word256 not a string: " $ \a -> do
+        let s = T.unpack a
+        maybe (fail $ "Not a Word256: " ++ s) return $ 
+            hexToBS s >>= decodeToMaybe
 
 -- curveP = 3 (mod 4), thus Lagrange solutions apply
 -- http://en.wikipedia.org/wiki/Quadratic_residue
@@ -327,3 +354,13 @@ quadraticResidue x = guard (y^(2 :: Int) == x) >> [y, (-y)]
 isIntegerValidKey :: Integer -> Bool
 isIntegerValidKey i = i > 0 && i < curveN
 
+-- | Encodes a transaction hash as little endian in HEX format.
+-- This is mostly used for displaying transaction ids. Internally, these ids
+-- are handled as big endian but are transformed to little endian when
+-- displaying them.
+encodeTxHashLE :: TxHash -> String
+encodeTxHashLE = bsToHex . BS.reverse .  encode' 
+
+-- | Decodes a little endian transaction hash in HEX format. 
+decodeTxHashLE :: String -> Maybe TxHash
+decodeTxHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS

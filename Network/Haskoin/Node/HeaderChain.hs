@@ -163,7 +163,7 @@ getFastCatchup = do
 -- | Set the fast catchup time 
 setFastCatchup :: Word32 -> DBHandle ()
 setFastCatchup fstKeyTime = do
-    db        <- S.gets handle
+    db <- S.gets handle
     let -- Adjust time backwards by a week to handle clock drifts.
         fastCatchupI = max 0 ((toInteger fstKeyTime) - 86400 * 7)
         fastCatchup  = fromInteger fastCatchupI :: Word32
@@ -171,11 +171,8 @@ setFastCatchup fstKeyTime = do
     DB.put db def fastCatchupKey $ encode' fastCatchup
     -- Find the position of the new best header
     currentHead <- getBestHeader 
-    bestBlock   <- getBestBlock
-    bestBlock'  <- findBestBlock fastCatchup currentHead
-    let f a b        = nodeHeaderHeight a `compare` nodeHeaderHeight b
-        newBestBlock = minimumBy f [bestBlock, bestBlock']
-    putBestBlock $ nodeBlockHash newBestBlock
+    bestBlock   <- findBestBlock fastCatchup currentHead
+    putBestBlock $ nodeBlockHash bestBlock
   where
     findBestBlock _ g@(BlockHeaderGenesis _ _ _ _ _) = return g
     findBestBlock fastCatchup n

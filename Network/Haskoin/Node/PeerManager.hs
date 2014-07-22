@@ -72,6 +72,7 @@ data ManagerSession = ManagerSession
     , soloTxs          :: [Tx]
     -- Transactions from users that need to be broadcasted
     , broadcastBuffer  :: [Tx]
+    , pendingRescan    :: Maybe Word32
     } 
 
 -- Data stored about a peer in the Manager
@@ -118,6 +119,7 @@ withAsyncNode fp f = do
                                  , receivedMerkle   = []
                                  , soloTxs          = []
                                  , broadcastBuffer  = []
+                                 , pendingRescan    = Nothing
                                  }
 
     let runNode = runStdoutLoggingT $ flip S.evalStateT session $ do 
@@ -127,6 +129,9 @@ withAsyncNode fp f = do
 
         -- Add merkle blocks that need to be downloaded
         S.modify $ \s -> s{ blocksToDwn = toDwn }
+
+        -- Make sure the genesis block is marked as sent
+        putData $ fromIntegral $ headerHash genesis
 
         -- Process messages
         -- TODO: Close database handle on exception with DB.close
@@ -400,17 +405,31 @@ processPublishTx tx = do
 
 processFastCatchupTime :: Word32 -> ManagerHandle ()
 processFastCatchupTime t = do
-    $(logInfo) $ T.pack $ unwords
-        [ "Setting fast catchup time:"
-        , show t
-        ]
-    toDwn <- runDB $ do
-        setFastCatchup t
-        getBlocksToDownload
-    S.modify $ \s -> s{ blocksToDwn = nub $ blocksToDwn s ++ toDwn }
-    -- Trigger download if the node is idle
     remotes <- M.keys <$> S.gets peerMap 
-    forM_ remotes downloadBlocks
+    pendingMerkles <- concat <$> 
+        forM remotes ((inflightMerkle <$>) . getPeerData)
+    if null pendingMerkles
+        then do
+            $(logInfo) $ T.pack $ unwords
+                [ "Setting fast catchup time:"
+                , show t
+                ]
+            toDwn <- runDB $ do
+                setFastCatchup t
+                getBlocksToDownload
+            clearData
+            -- Don't remember old requests
+            S.modify $ \s -> s{ blocksToDwn    = toDwn 
+                              , pendingRescan  = Nothing
+                              , receivedMerkle = []
+                              }
+            -- Trigger downloads
+            remotes <- M.keys <$> S.gets peerMap 
+            forM_ remotes downloadBlocks
+        else do
+            $(logInfo) $ T.pack $ unwords
+                [ "Waiting for pending merkle blocks to finish" ]
+            S.modify $ \s -> s{ pendingRescan = Just t }
 
 processHeaders :: RemoteHost -> Headers -> ManagerHandle ()
 processHeaders remote (Headers h) = do
@@ -521,6 +540,11 @@ processMerkleBlock remote dmb = do
 
         -- If this peer is done, get more merkle blocks to download
         downloadBlocks remote
+
+        -- Try to launch the rescan if one is pending
+        rescan <- S.gets pendingRescan
+        when (isJust rescan && null rest) $ 
+            processFastCatchupTime $ fromJust rescan
   where
     bid = headerHash $ merkleHeader $ decodedMerkle dmb
 
@@ -530,12 +554,14 @@ importMerkleBlocks :: ManagerHandle ()
 importMerkleBlocks = do
     -- Find all inflight transactions
     remotes <- M.keys <$> S.gets peerMap 
-    dwnTxs <- concat <$> forM remotes ((inflightTxs <$>) . getPeerData)
+    dwnTxs  <- concat <$> forM remotes ((inflightTxs <$>) . getPeerData)
+    -- If we are pending a rescan, do not import anything
+    rescan  <- S.gets pendingRescan
     -- We stall merkle block imports when transactions are inflight. This
     -- is to prevent this race condition where tx1 would miss it's
     -- confirmation:
     -- INV tx1 -> GetData tx1 -> MerkleBlock (all tx except tx1) -> Tx1
-    when (null dwnTxs) $ do
+    when (null dwnTxs && isNothing rescan) $ do
         toImport <- S.gets receivedMerkle
         res      <- catMaybes <$> forM toImport importMerkleBlock
         synced   <- nodeSynced
@@ -821,12 +847,14 @@ downloadBlocks remote = do
     peerData   <- getPeerData remote
     bloom      <- S.gets mngrBloom
     sync       <- S.gets syncPeer
+    rescan     <- S.gets pendingRescan
     let remoteHeight = peerHeight peerData
         requests     = inflightMerkle peerData
         canDownload  =  (sync /= Just remote)
                      && (isJust bloom)
                      && (peerHandshake peerData)
                      && (null requests)
+                     && (isNothing rescan)
     -- Only download blocks from peers that have a completed handshake
     -- and that are not already requesting blocks
     when canDownload $ do
@@ -904,4 +932,13 @@ putData :: Word256 -> ManagerHandle ()
 putData h = do
     db <- S.gets dataHandle
     liftIO $ DB.put db def (encode' h) BS.empty
+
+clearData :: ManagerHandle ()
+clearData = do
+    db <- S.gets dataHandle
+    DB.withIter db def $ \iter -> do
+        DB.iterFirst iter
+        keys <- DB.iterKeys iter
+        forM_ keys $ DB.delete db def
+    putData $ fromIntegral $ headerHash genesis
 

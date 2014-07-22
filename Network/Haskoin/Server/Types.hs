@@ -77,6 +77,7 @@ data WalletRequest
     | TxSend AccountName [(Address, Word64)] Word64
     | TxSign AccountName Tx
     | Balance AccountName
+    | Rescan (Maybe Word32)
     deriving (Eq, Show, Read)
 
 instance ToJSON WalletRequest where
@@ -141,6 +142,8 @@ instance ToJSON WalletRequest where
             , "tx"          .= bsToHex (encode' tx)
             ]
         Balance n -> object [ "accountname" .= n ]
+        Rescan (Just t) -> object [ "timestamp" .= t ]
+        Rescan Nothing  -> Null
 
 data WalletResponse
     = ResMnemonic String
@@ -155,6 +158,7 @@ data WalletResponse
     | ResAccTxPage [AccTx] Int -- Int = Max page number
     | ResTxStatus TxHash Bool
     | ResBalance Word64
+    | ResRescan Word32
     deriving (Eq, Show, Read)
 
 instance ToJSON WalletResponse where
@@ -180,6 +184,7 @@ instance ToJSON WalletResponse where
             , "complete" .= b
             ]
         ResBalance b -> object [ "balance" .= b ]
+        ResRescan t -> object [ "timestamp" .= t ]
 
 instance RPCRequest WalletRequest String WalletResponse where
     rpcMethod   = walletMethod
@@ -208,6 +213,7 @@ walletMethod wr = case wr of
     TxSend _ _ _           -> "network.haskoin.wallet.txsend"
     TxSign _ _             -> "network.haskoin.wallet.txsign"
     Balance _              -> "network.haskoin.wallet.balance"
+    Rescan _               -> "network.haskoin.wallet.rescan"
 
 parseWalletRequest :: Method -> Value -> Parser WalletRequest
 parseWalletRequest m v = case (m,v) of
@@ -281,6 +287,10 @@ parseWalletRequest m v = case (m,v) of
     ("network.haskoin.wallet.balance", Object o) -> do
         n <- o .: "accountname"
         return $ Balance n
+    ("network.haskoin.wallet.rescan", Object o) -> do
+        t <- o .: "timestamp"
+        return $ Rescan $ Just t
+    ("network.haskoin.wallet.rescan", Null) -> return $ Rescan Nothing
     _ -> mzero
 
 parseWalletResponse :: WalletRequest -> Value -> Parser WalletResponse
@@ -342,6 +352,9 @@ parseWalletResponse w v = case (w, v) of
     (Balance _, Object o) -> do
         b <- o .: "balance"
         return $ ResBalance b
+    (Rescan _, Object o) -> do
+        t <- o .: "timestamp"
+        return $ ResRescan t
     _ -> mzero
 
 encodeWalletRequest :: WalletRequest -> Int -> BS.ByteString

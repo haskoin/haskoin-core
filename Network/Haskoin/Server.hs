@@ -190,6 +190,18 @@ processWalletRequest mvar rChan (wr, i) = do
             liftIO $ atomically $ writeTBMChan rChan $ PublishTx newTx
         return $ ResTxStatus tid complete
     go (Balance n)     = liftM ResBalance $ balance n
+    go (Rescan (Just t)) = do
+        liftIO $ atomically $ writeTBMChan rChan $ FastCatchupTime t
+        return $ ResRescan t
+    go (Rescan Nothing) = do
+        fstKeyTimeM <- firstKeyTime
+        if (isJust fstKeyTimeM)
+            then do
+                liftIO $ atomically $ writeTBMChan rChan $ 
+                    FastCatchupTime $ fromJust fstKeyTimeM
+                return $ ResRescan $ fromJust fstKeyTimeM
+            else liftIO $ throwIO $ WalletException
+                "No keys have been generated in the wallet"
 
 processNodeEvents :: MVar Connection -> TBMChan NodeRequest
                   -> Sink NodeEvent IO ()

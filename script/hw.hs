@@ -193,6 +193,7 @@ cmdHelp =
     , "  newwallet name [mnemonic]         Create a new wallet"
     , "  getwallet name                    Display a wallet by name"
     , "  walletlist                        List all wallets"
+    , "  rescan [timestamp]                Rescan the wallet"
     , ""
     , "Account commands:" 
     , "  newacc    wallet name             Create a new account"
@@ -225,10 +226,10 @@ cmdHelp =
     , "  (disabled) allcoins               List all coins per account"
     , ""
     , "Utility commands: "
-    , "  decodetx   tx                     Decode HEX transaction"
-    , "  buildrawtx"
+    , "  (disable) decodetx   tx           Decode HEX transaction"
+    , "  (disabled) buildrawtx"
     , "      '[{\"txid\":txid,\"vout\":n},...]' '{addr:amnt,...}'"
-    , "  signrawtx "  
+    , "  (disabled) signrawtx "  
     , "      tx" 
     , "      " ++ sigdata
     , "      '[prvkey,...]' [-s SigHash]" 
@@ -377,6 +378,10 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         print res
     ["balance", name] -> do
         res <- sendRequest $ Balance name
+        print res
+    "rescan" : timestamp -> do
+        let t = read <$> listToMaybe timestamp
+        res <- sendRequest $ Rescan t
         print res
     [] -> formatStr usage
     ["help"] -> formatStr usage

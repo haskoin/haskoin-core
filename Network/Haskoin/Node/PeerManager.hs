@@ -54,6 +54,7 @@ import Network.Haskoin.Constants
 
 type ManagerHandle = S.StateT ManagerSession (LoggingT IO)
 type BlockHeight = Word32
+type Timestamp   = Word32
 
 data ManagerSession = ManagerSession
     { mngrVersion      :: Version
@@ -68,8 +69,6 @@ data ManagerSession = ManagerSession
     , blocksToDwn      :: [(BlockHeight, BlockHash)]
     -- Received merkle blocks pending to be sent to the user (wallet)
     , receivedMerkle   :: [DecodedMerkleBlock]
-    -- Transaction pending the GetData response. Used to stall merkle blocks.
-    , inflightTxs      :: [TxHash]
     -- Transactions not included in a merkle block. We stall them until the
     -- chain is synced.
     , soloTxs          :: [Tx]
@@ -79,18 +78,18 @@ data ManagerSession = ManagerSession
 
 -- Data stored about a peer in the Manager
 data PeerData = PeerData
-    { peerSettings         :: RemoteHost
-    , peerHandshake        :: Bool
-    , peerHeight           :: Word32
+    { peerSettings       :: RemoteHost
+    , peerHandshake      :: Bool
+    , peerHeight         :: BlockHeight
     -- Blocks that a peer sent us but we haven't linked them yet to our chain.
     -- We use this list to update the peer height when we link those blocks.
-    , peerBlocks           :: [BlockHash] 
-    , peerMsgChan          :: TBMChan Message
-    -- Inflight merkle block requests for this peer.
-    -- TODO: What if a remote peer doesn't respond? Perhaps track timestamp
-    -- and re-submit?
-    , peerInflightMerkle   :: [((BlockHeight, BlockHash), Word32)]
-    , peerReconnectTimer   :: Int
+    , peerBlocks         :: [BlockHash] 
+    , peerMsgChan        :: TBMChan Message
+    -- Inflight merkleblock requests for this peer.
+    , inflightMerkle     :: [((BlockHeight, BlockHash), Timestamp)]
+    -- Transaction pending the GetData response. Used to stall merkle blocks.
+    , inflightTxs        :: [(TxHash, Timestamp)]
+    , peerReconnectTimer :: Int
     }
 
 withAsyncNode :: FilePath 
@@ -119,7 +118,6 @@ withAsyncNode fp f = do
                                  , mngrBloom        = Nothing
                                  , blocksToDwn      = []
                                  , receivedMerkle   = []
-                                 , inflightTxs      = []
                                  , soloTxs          = []
                                  , broadcastBuffer  = []
                                  }
@@ -211,7 +209,8 @@ processStartPeer remote = do
                                     , peerMsgChan        = pChan
                                     , peerHeight         = 0
                                     , peerBlocks         = []
-                                    , peerInflightMerkle = []
+                                    , inflightMerkle     = []
+                                    , inflightTxs        = []
                                     , peerReconnectTimer = 1
                                     }
             S.modify $ \s -> s{ peerMap = M.insert remote peerData (peerMap s) }
@@ -226,14 +225,14 @@ processStartPeer remote = do
 processMonitor :: ManagerHandle ()
 processMonitor = do
     $(logDebug) "Monitor heartbeat"
-    now <- round <$> liftIO getPOSIXTime
 
-    -- Check merkle block timings
+    -- Check stalled merkle blocks
     remotes <- M.keys <$> S.gets peerMap 
     forM_ remotes $ \remote -> do
+        now <- round <$> liftIO getPOSIXTime
         dat <- getPeerData remote
-        let f (_,t) = t + 120 < now -- Stalled for over 2 minutes
-            (stalled, rest) = partition f $ peerInflightMerkle dat
+        let f (_,t)         = t + 120 < now -- Stalled for over 2 minutes
+            (stalled, rest) = partition f $ inflightMerkle dat
         unless (null stalled) $ do
             $(logWarn) $ T.pack $ unwords
                 [ "Resubmitting stalled merkle blocks:"
@@ -242,13 +241,33 @@ processMonitor = do
                     map (snd . fst) stalled
                 , "]"
                 ]
-            modifyPeerData remote $ \d -> d{ peerInflightMerkle = rest }
+            modifyPeerData remote $ \d -> d{ inflightMerkle = rest }
             let g a b = fst a `compare` fst b
             S.modify $ \s -> 
                 s{ blocksToDwn = sortBy g $ blocksToDwn s ++ map fst stalled }
             -- Reissue merkle blocks download
             let reorderRemotes = (delete remote remotes) ++ [remote]
             forM_ reorderRemotes downloadBlocks
+
+    -- Check stalled transactions
+    forM_ remotes $ \remote -> do
+        now <- round <$> liftIO getPOSIXTime
+        txs <- inflightTxs <$> getPeerData remote
+        let f (_,t)         = t + 120 < now
+            (stalled, rest) = partition f txs
+        unless (null stalled) $ do
+            $(logWarn) $ T.pack $ unwords
+                [ "Resubmitting stalled transactions:"
+                , "["
+                , unwords $ map encodeTxHashLE $ map fst stalled
+                , "]"
+                ]
+            let newTxs  = map (\x -> (fst x,now)) stalled
+            modifyPeerData remote $ \d -> d{ inflightTxs = rest ++ newTxs }
+            -- Request the transactions again
+            let vs      = map (InvVector InvTx . fromIntegral) $ map fst stalled
+                getData = GetData vs
+            sendMessage remote $ MGetData getData
 
 processPeerDisconnect :: RemoteHost -> ManagerHandle ()
 processPeerDisconnect remote = do
@@ -263,10 +282,10 @@ processPeerDisconnect remote = do
         , "(", show remote, ")" 
         ]
 
-    let toDwn = map fst $ peerInflightMerkle dat
+    let toDwn = map fst $ inflightMerkle dat
 
     modifyPeerData remote $ \d -> d{ peerHandshake      = False 
-                                   , peerInflightMerkle = []
+                                   , inflightMerkle = []
                                    , peerBlocks         = []
                                    , peerHeight         = 0
                                    , peerReconnectTimer = reconnect*2
@@ -495,10 +514,10 @@ processMerkleBlock remote dmb = do
         S.modify $ \s -> s{ receivedMerkle = receivedMerkle s ++ [dmb] }
 
         -- Decrement the peer request counter
-        requests <- peerInflightMerkle <$> getPeerData remote
+        requests <- inflightMerkle <$> getPeerData remote
         let f ((_,x),_) = x /= nodeBlockHash node
             rest        = filter f requests
-        modifyPeerData remote $ \d -> d{ peerInflightMerkle = rest }
+        modifyPeerData remote $ \d -> d{ inflightMerkle = rest }
 
         importMerkleBlocks 
 
@@ -511,7 +530,9 @@ processMerkleBlock remote dmb = do
 -- as they may be received out-of-order from the network (concurrent download)
 importMerkleBlocks :: ManagerHandle ()
 importMerkleBlocks = do
-    dwnTxs <- S.gets inflightTxs
+    -- Find all inflight transactions
+    remotes <- M.keys <$> S.gets peerMap 
+    dwnTxs <- concat <$> forM remotes ((inflightTxs <$>) . getPeerData)
     -- We stall merkle block imports when transactions are inflight. This
     -- is to prevent this race condition where tx1 would miss it's
     -- confirmation:
@@ -637,9 +658,10 @@ processInv remote (Inv vs) = do
         -- Request transactions that we have not sent to the user yet
         notHaveTxs <- filterM ((not <$>) . existsData . fromIntegral) txlist
         unless (null notHaveTxs) $ do
-            -- Nub because we may have duplicates (same Tx from many peers)
-            S.modify $ \s -> 
-                s{ inflightTxs = nub $ inflightTxs s ++ notHaveTxs }
+            now <- round <$> liftIO getPOSIXTime
+            let addInflight = map (\x -> (x,now)) notHaveTxs
+            modifyPeerData remote $ \d -> 
+                d{ inflightTxs = inflightTxs d ++ addInflight }
             let vs      = map (InvVector InvTx . fromIntegral) notHaveTxs
                 getData = GetData vs
             sendMessage remote $ MGetData getData
@@ -710,8 +732,10 @@ processTx remote tx = do
                     ]
                 S.modify $ \s -> s{ soloTxs = nub $ tx : soloTxs s } 
 
-    -- Remove the inflight transaction from the inflight list
-    S.modify $ \s -> s{ inflightTxs = delete txhash $ inflightTxs s }
+    -- Remove the inflight transaction from all remote inflight lists
+    remotes <- M.keys <$> S.gets peerMap 
+    forM_ remotes $ \r -> modifyPeerData r $ \d ->
+        d{ inflightTxs = filter ((/= txhash) . fst) $ inflightTxs d }
         
     -- If no more transactions are inflight, trigger the download of
     -- the merkle blocks again
@@ -732,7 +756,7 @@ processNotFound remote (NotFound vs) = do
 
     forM_ blocklist $ \bhash -> do
         dat <- getPeerData remote
-        let (match, rest) = partition g $ peerInflightMerkle dat
+        let (match, rest) = partition g $ inflightMerkle dat
             g             = (== bhash) . snd . fst
         unless (null match) $ do
             $(logInfo) $ T.pack $ unwords
@@ -742,7 +766,7 @@ processNotFound remote (NotFound vs) = do
                 ]
 
             -- remove this block from the inflight list of the peer
-            modifyPeerData remote $ \d -> d{ peerInflightMerkle = rest }
+            modifyPeerData remote $ \d -> d{ inflightMerkle = rest }
 
             -- Add the block to the download list
             let f a b = fst a `compare` fst b
@@ -800,7 +824,7 @@ downloadBlocks remote = do
     bloom      <- S.gets mngrBloom
     sync       <- S.gets syncPeer
     let remoteHeight = peerHeight peerData
-        requests     = peerInflightMerkle peerData
+        requests     = inflightMerkle peerData
         canDownload  =  (sync /= Just remote)
                      && (isJust bloom)
                      && (peerHandshake peerData)
@@ -825,7 +849,7 @@ downloadBlocks remote = do
             -- Store the inflight blocks
             now <- round <$> liftIO getPOSIXTime
             modifyPeerData remote $ \d -> 
-                d{ peerInflightMerkle = map (\x -> (x,now)) toDwn }
+                d{ inflightMerkle = map (\x -> (x,now)) toDwn }
             sendMerkleGetData remote $ map snd toDwn
 
 sendMerkleGetData :: RemoteHost -> [BlockHash] -> ManagerHandle ()
@@ -863,9 +887,10 @@ peerExists remote = do
 
 sendMessage :: RemoteHost -> Message -> ManagerHandle ()
 sendMessage remote msg = do
-    d <- getPeerData remote
-    -- The message is discarded if the channel is closed.
-    liftIO . atomically $ writeTBMChan (peerMsgChan d) msg
+    dat <- getPeerData remote
+    when (peerHandshake dat) $ do
+        -- The message is discarded if the channel is closed.
+        liftIO . atomically $ writeTBMChan (peerMsgChan dat) msg
 
 runDB :: DBHandle a -> ManagerHandle a
 runDB m = do

@@ -143,7 +143,7 @@ withAsyncNode fp f = do
                 f eChan rChan a
 
 heartBeat :: TBMChan ManagerRequest -> IO ()
-heartBeat mChan = do
+heartBeat mChan = forever $ do
     threadDelay $ 1000000 * 120 -- Sleep for 2 minutes
     atomically $ writeTBMChan mChan MonitorRequests
 

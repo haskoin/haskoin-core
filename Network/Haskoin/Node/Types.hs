@@ -32,6 +32,7 @@ data ManagerRequest
     | PeerMerkleBlock RemoteHost DecodedMerkleBlock
     | PeerMessage RemoteHost Message   
     | UserRequest NodeRequest
+    | MonitorRequests
 
 -- User requests
 data NodeRequest

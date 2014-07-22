@@ -278,12 +278,8 @@ instance PersistFieldSql Address where
     sqlType _ = SqlString
 
 instance PersistField [Address] where
-    toPersistValue = PersistText . T.unwords . map (T.pack . addrToBase58)
-    fromPersistValue (PersistText t) =
-        mapM f (T.words t)
-      where
-        f = maybeToEither "Not a valid Address list" . base58ToAddr . T.unpack
-    fromPersistValue _ = Left persistTextErrMsg
+    toPersistValue = toPersistJson
+    fromPersistValue = fromPersistJson "Not a valid Address list"
 
 instance PersistFieldSql [Address] where
     sqlType _ = SqlString

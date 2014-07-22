@@ -14,6 +14,8 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 
 type MerkleRoot = Word256
+type BlockHeight = Word32
+type Timestamp   = Word32
 
 data RemoteHost = RemoteHost
     { remoteHost :: String
@@ -38,7 +40,7 @@ data ManagerRequest
 data NodeRequest
     = BloomFilterUpdate BloomFilter 
     | PublishTx Tx
-    | FastCatchupTime Word32
+    | FastCatchupTime Timestamp
     | ConnectNode String Int
     deriving (Eq, Show)
 

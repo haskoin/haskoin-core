@@ -160,29 +160,30 @@ getFastCatchup = do
     res <- DB.get db def fastCatchupKey
     return $ decode' <$> res
 
--- | Set the fast catchup time and return the blocks that must be downloaded
+-- | Set the fast catchup time 
 setFastCatchup :: Word32 -> DBHandle ()
 setFastCatchup fstKeyTime = do
-    db    <- S.gets handle
-    prevM <- getFastCatchup
-    -- Only set a new start time if a previous one doesn't exist. 
-    -- Otherwise, a full re-scan might be necessary.
-    when (isNothing prevM) $ do
-        -- Adjust time backwards by a week to handle clock drifts.
-        let fastCatchupI = max 0 ((toInteger fstKeyTime) - 86400 * 7)
-            fastCatchup  = fromInteger fastCatchupI :: Word32
-        DB.put db def fastCatchupKey $ encode' fastCatchup
-        -- Set the best block
-        currentHead <- getBestHeader 
-        go fastCatchup currentHead
+    db        <- S.gets handle
+    let -- Adjust time backwards by a week to handle clock drifts.
+        fastCatchupI = max 0 ((toInteger fstKeyTime) - 86400 * 7)
+        fastCatchup  = fromInteger fastCatchupI :: Word32
+    -- Save the new fast catchup time
+    DB.put db def fastCatchupKey $ encode' fastCatchup
+    -- Find the position of the new best header
+    currentHead <- getBestHeader 
+    bestBlock   <- getBestBlock
+    bestBlock'  <- findBestBlock fastCatchup currentHead
+    let f a b        = nodeHeaderHeight a `compare` nodeHeaderHeight b
+        newBestBlock = minimumBy f [bestBlock, bestBlock']
+    putBestBlock $ nodeBlockHash newBestBlock
   where
-    go _ (BlockHeaderGenesis _ _ _ _ _) = return ()
-    go fastCatchup n
+    findBestBlock _ g@(BlockHeaderGenesis _ _ _ _ _) = return g
+    findBestBlock fastCatchup n
         | blockTimestamp (nodeHeader n) < fastCatchup = 
-            putBestBlock $ nodeBlockHash n
+            return n
         | otherwise = do
             par <- getParent n
-            go fastCatchup par
+            findBestBlock fastCatchup par
 
 getBlocksToDownload :: DBHandle [(Word32, BlockHash)]
 getBlocksToDownload = do

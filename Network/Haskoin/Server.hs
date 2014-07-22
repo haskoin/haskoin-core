@@ -83,10 +83,10 @@ runServer = do
 
     -- Create sqlite connection & initialization
     mvar <- newMVar =<< wrapConnection =<< open walletFile
-    (bloom, fstKeyTime) <- runDB mvar $ do
+    bloom <- runDB mvar $ do
         runMigrationSilent migrateWallet 
         initWalletDB
-        liftM2 (,) walletBloomFilter firstKeyTime
+        walletBloomFilter 
 
     -- Launch SPV node
     withAsyncNode dir $ \eChan rChan _ -> do
@@ -95,9 +95,6 @@ runServer = do
             atomically $ do
                 -- Bloom filter
                 writeTBMChan rChan $ BloomFilterUpdate bloom
-                -- Fast catchup time
-                when (isJust fstKeyTime) $ writeTBMChan rChan $ 
-                    FastCatchupTime $ fromJust fstKeyTime
                 -- Bitcoin hosts to connect to
                 forM_ hosts $ \(h,p) -> writeTBMChan rChan $ ConnectNode h p
 
@@ -125,15 +122,18 @@ processWalletRequest mvar rChan (wr, i) = do
     go (GetWallet n)         = liftM ResWallet $ getWallet n
     go WalletList            = liftM ResWalletList $ walletList
     go (NewAccount w n)      = do
+        fstKeyBefore <- firstKeyTime
         a <- newAccount w n
         setLookAhead n 30
         bloom      <- walletBloomFilter
         fstKeyTime <- liftM fromJust firstKeyTime
         liftIO $ atomically $ do
             writeTBMChan rChan $ BloomFilterUpdate bloom
-            writeTBMChan rChan $ FastCatchupTime fstKeyTime
+            when (isNothing fstKeyBefore) $
+                writeTBMChan rChan $ FastCatchupTime fstKeyTime
         return $ ResAccount a
     go (NewMSAccount w n r t ks) = do
+        fstKeyBefore <- firstKeyTime
         a <- newMSAccount w n r t ks
         when (length (accountKeys a) == t - 1) $ do
             setLookAhead n 30
@@ -141,9 +141,11 @@ processWalletRequest mvar rChan (wr, i) = do
             fstKeyTime <- liftM fromJust firstKeyTime
             liftIO $ atomically $ do
                 writeTBMChan rChan $ BloomFilterUpdate bloom
-                writeTBMChan rChan $ FastCatchupTime fstKeyTime
+                when (isNothing fstKeyBefore) $
+                    writeTBMChan rChan $ FastCatchupTime fstKeyTime
         return $ ResAccount a
     go (AddAccountKeys n ks) = do
+        fstKeyBefore <- firstKeyTime
         a <- addAccountKeys n ks
         when (length (accountKeys a) == accountTotal a - 1) $ do
             setLookAhead n 30
@@ -151,17 +153,20 @@ processWalletRequest mvar rChan (wr, i) = do
             fstKeyTime <- liftM fromJust firstKeyTime
             liftIO $ atomically $ do
                 writeTBMChan rChan $ BloomFilterUpdate bloom
-                writeTBMChan rChan $ FastCatchupTime fstKeyTime
+                when (isNothing fstKeyBefore) $
+                    writeTBMChan rChan $ FastCatchupTime fstKeyTime
         return $ ResAccount a
     go (GetAccount n)         = liftM ResAccount $ getAccount n
     go AccountList            = liftM ResAccountList $ accountList
     go (GenAddress n i')      = do
+        fstKeyBefore <- firstKeyTime
         addrs      <- newAddrs n i'
         bloom      <- walletBloomFilter
         fstKeyTime <- liftM fromJust firstKeyTime
         liftIO $ atomically $ do
             writeTBMChan rChan $ BloomFilterUpdate bloom
-            writeTBMChan rChan $ FastCatchupTime fstKeyTime
+            when (isNothing fstKeyBefore) $
+                writeTBMChan rChan $ FastCatchupTime fstKeyTime
         return $ ResAddressList addrs
     go (AddressLabel n i' l)  = liftM ResAddress $ setAddrLabel n i' l
     go (AddressList n)        = liftM ResAddressList $ addressList n

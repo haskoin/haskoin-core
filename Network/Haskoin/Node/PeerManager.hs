@@ -53,8 +53,6 @@ import Network.Haskoin.Util
 import Network.Haskoin.Constants
 
 type ManagerHandle = S.StateT ManagerSession (LoggingT IO)
-type BlockHeight = Word32
-type Timestamp   = Word32
 
 data ManagerSession = ManagerSession
     { mngrVersion      :: Version
@@ -222,6 +220,8 @@ processStartPeer remote = do
             closeTBMChan pChan
             writeTBMChan mChan $ PeerDisconnect remote
 
+-- TODO: Add Ping?
+-- TODO: Should we also check for stalled header downloads?
 processMonitor :: ManagerHandle ()
 processMonitor = do
     $(logDebug) "Monitor heartbeat"
@@ -400,19 +400,17 @@ processPublishTx tx = do
 
 processFastCatchupTime :: Word32 -> ManagerHandle ()
 processFastCatchupTime t = do
-    hasFastCatchup <- runDB getFastCatchup
-    when (isNothing hasFastCatchup) $ do
-        $(logInfo) $ T.pack $ unwords
-            [ "Setting fast catchup time:"
-            , show t
-            ]
-        toDwn <- runDB $ do
-            setFastCatchup t
-            getBlocksToDownload
-        S.modify $ \s -> s{ blocksToDwn = blocksToDwn s ++ toDwn }
-        -- Trigger download if the node is idle
-        remotes <- M.keys <$> S.gets peerMap 
-        forM_ remotes downloadBlocks
+    $(logInfo) $ T.pack $ unwords
+        [ "Setting fast catchup time:"
+        , show t
+        ]
+    toDwn <- runDB $ do
+        setFastCatchup t
+        getBlocksToDownload
+    S.modify $ \s -> s{ blocksToDwn = nub $ blocksToDwn s ++ toDwn }
+    -- Trigger download if the node is idle
+    remotes <- M.keys <$> S.gets peerMap 
+    forM_ remotes downloadBlocks
 
 processHeaders :: RemoteHost -> Headers -> ManagerHandle ()
 processHeaders remote (Headers h) = do

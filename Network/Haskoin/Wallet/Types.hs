@@ -19,12 +19,13 @@ module Network.Haskoin.Wallet.Types
 
 import Control.Monad (mzero, liftM2)
 import Control.Exception (Exception)
-import Control.Applicative
 
 import Data.Int (Int64)
 import Data.Typeable (Typeable)
-import Data.Maybe (maybe, fromJust)
+-- import Data.Maybe (maybe)
 import qualified Data.Text as T
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Data.ByteString.Lazy (toStrict, fromStrict)
 import Data.Aeson
     ( Value (Object, String)
     , FromJSON
@@ -34,6 +35,8 @@ import Data.Aeson
     , object
     , parseJSON
     , toJSON
+    , encode
+    , decode
     )
 
 import Database.Persist.Class
@@ -47,7 +50,6 @@ import Database.Persist.Sql (PersistFieldSql, SqlType(..), sqlType)
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
-import Network.Haskoin.Script
 import Network.Haskoin.Transaction
 import Network.Haskoin.Util
 
@@ -67,6 +69,33 @@ instance Exception WalletException
 -- spent (set status to Spent) by complete transactions.
 data CoinStatus = Spent TxHash | Reserved TxHash | Unspent
     deriving (Show, Read, Eq)
+
+instance ToJSON CoinStatus where
+    toJSON (Spent h) = object
+        [ "status" .= String "spent"
+        , "txid" .= encodeTxHashLE h
+        ]
+    toJSON (Reserved h) = object
+        [ "status"   .= String "reserved"
+        , "txid"   .= encodeTxHashLE h
+        ]
+    toJSON Unspent = object
+        [ "status"   .= String "unspent"
+        ]
+
+instance FromJSON CoinStatus where
+    parseJSON (Object o) = do
+        s <- o .: "status"
+        case s of
+            String "spent" -> do
+                t <- o .: "txid"
+                maybe mzero (return . Spent) (decodeTxHashLE t)
+            String "reserved" -> do
+                t <- o .: "txid"
+                maybe mzero (return . Reserved) (decodeTxHashLE t)
+            String "unspent" -> return Unspent
+            _ -> mzero
+    parseJSON _ = mzero
 
 catStatus :: [CoinStatus] -> [TxHash]
 catStatus = foldr f []
@@ -226,23 +255,19 @@ instance FromJSON AccTx where
         maybe mzero f $ liftM2 (,) txidM addrsM
     parseJSON _ = mzero
 
-{- Instances for PersistField and PersistFieldSql -}
-
--- No se si te sentit (dins te un hash)
-derivePersistField "CoinStatus"
-derivePersistField "Coin"
--- derivePersistField "TxHash"
-derivePersistField "BlockHash"
--- derivePersistField "Address"
-derivePersistField "Wallet"
-derivePersistField "Account"
-
-
 persistTextErrMsg :: T.Text
 persistTextErrMsg = "Has to be a PersistText"
 persistBSErrMsg :: T.Text 
 persistBSErrMsg = "Has to be a PersistByteString" 
---------------------------------------------------------------------------------
+
+toPersistJson :: (ToJSON a) => a -> PersistValue
+toPersistJson = PersistText . decodeUtf8 . toStrict . encode
+
+fromPersistJson :: (FromJSON a) => T.Text -> PersistValue -> Either T.Text a
+fromPersistJson msg (PersistText w) = 
+    maybeToEither msg (decode . fromStrict $ encodeUtf8 w)
+fromPersistJson _ _ = Left persistTextErrMsg
+
 instance PersistField Address where
     toPersistValue = PersistText . T.pack . addrToBase58
     fromPersistValue (PersistText a) = 
@@ -251,7 +276,7 @@ instance PersistField Address where
 
 instance PersistFieldSql Address where
     sqlType _ = SqlString
---------------------------------------------------------------------------------
+
 instance PersistField [Address] where
     toPersistValue = PersistText . T.unwords . map (T.pack . addrToBase58)
     fromPersistValue (PersistText t) =
@@ -262,55 +287,55 @@ instance PersistField [Address] where
 
 instance PersistFieldSql [Address] where
     sqlType _ = SqlString
---------------------------------------------------------------------------------
+
 instance PersistField TxHash where
-    toPersistValue = PersistText . T.pack . bsToHex . encode'
+    toPersistValue = PersistText . T.pack . encodeTxHashLE
     fromPersistValue (PersistText h) =
-        maybeToEither "Not a valid Hash" (hola h)
-      where
-        hola x = decodeToMaybe =<< hexToBS (T.unpack x)
+        maybeToEither "Not a valid TxHash" (decodeTxHashLE $ T.unpack h)
     fromPersistValue _ = Left persistTextErrMsg
 
 instance PersistFieldSql TxHash where
-    sqlType _ = SqlString    
---------------------------------------------------------------------------------
---instance PersistField MasterKey where
---    toPersistValue = PersistText . T.pack . xPrvExport . masterKey 
---    fromPersistValue (PersistText k) = f k >>= return . MasterKey
---      where
---        f = maybeToEither "Not a valid XPrvKey" . xPrvImport . T.unpack
---    fromPersistValue _ = Left persistTextErrMsg
+    sqlType _ = SqlString
 
---instance PersistFieldSql MasterKey where
---    sqlType _ = SqlString
---------------------------------------------------------------------------------
---instance PersistField AccPubKey where
---    toPersistValue (AccPubKey x) = toPersistValue x
---    fromPersistValue k = fromPersistValue k >>= return . AccPubKey
+instance PersistField BlockHash where
+    toPersistValue = PersistText . T.pack . bsToHex . encode'
+    fromPersistValue (PersistText h) =
+        maybeToEither "Not a valid BlockHash" (f h)
+      where
+        f x = decodeToMaybe =<< hexToBS (T.unpack x) 
+    fromPersistValue _ = Left persistTextErrMsg
 
---instance PersistFieldSql AccPubKey where
---    sqlType _ = SqlString
---------------------------------------------------------------------------------
---instance PersistField XPubKey where
---    toPersistValue = PersistText . T.pack . xPubExport
---    fromPersistValue (PersistText k) = 
---        maybeToEither "Not a valid XPubKey" . xPubImport $ T.unpack k
---    fromPersistValue _ = Left persistTextErrMsg
+instance PersistFieldSql BlockHash where
+    sqlType _ = SqlString
 
---instance PersistFieldSql XPubKey where
---    sqlType _ = SqlString
---------------------------------------------------------------------------------
---instance PersistField [XPubKey] where
---    toPersistValue = PersistText . T.unwords . map (T.pack . xPubExport)
---    fromPersistValue (PersistText ks) =
---        mapM f (T.words ks)
---      where
---        f = maybeToEither "Not a valid XPubKey list" . xPubImport . T.unpack
---    fromPersistValue _ = Left persistTextErrMsg
+instance PersistField Wallet where
+    toPersistValue = toPersistJson
+    fromPersistValue = fromPersistJson "Not a valid Wallet"
 
---instance PersistFieldSql [XPubKey] where
---    sqlType _ = SqlString
---------------------------------------------------------------------------------
+instance PersistFieldSql Wallet where
+    sqlType _ = SqlString
+
+instance PersistField Account where
+    toPersistValue = toPersistJson
+    fromPersistValue = fromPersistJson "Not a valid Account"
+
+instance PersistFieldSql Account where
+    sqlType _ = SqlString
+
+instance PersistField CoinStatus where
+    toPersistValue = toPersistJson
+    fromPersistValue = fromPersistJson "Not a valid CoinStatus"
+
+instance PersistFieldSql CoinStatus where
+    sqlType _ = SqlString
+
+instance PersistField Coin where
+    toPersistValue = toPersistJson
+    fromPersistValue = fromPersistJson "Not a valid Coin"
+
+instance PersistFieldSql Coin where
+    sqlType _ = SqlString
+
 instance PersistField Tx where
     toPersistValue = PersistByteString . encode'
     fromPersistValue (PersistByteString bs) = case txE of
@@ -322,5 +347,3 @@ instance PersistField Tx where
 
 instance PersistFieldSql Tx where
     sqlType _ = SqlBlob
---------------------------------------------------------------------------------
-

@@ -14,6 +14,7 @@ import qualified Data.ByteString as BS
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Util
+import Network.Haskoin.Constants
 
 type MerkleRoot        = Word256
 type FlagBits          = [Bool]

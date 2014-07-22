@@ -38,6 +38,7 @@ import qualified Data.ByteString as BS
     )
   
 import Network.Haskoin.Util 
+import Network.Haskoin.Constants
 import Network.Haskoin.Crypto.Hash 
 import Network.Haskoin.Crypto.Keys 
 import Network.Haskoin.Crypto.Point 

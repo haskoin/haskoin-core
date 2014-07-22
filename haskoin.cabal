@@ -23,6 +23,9 @@ source-repository head
     type:     git
     location: git://github.com/haskoin/haskoin.git
 
+Flag Testnet
+    Description: Compile the library against Testnet instead of Prodnet
+    Default:     False
 
 library
     exposed-modules:   Network.Haskoin.Util,
@@ -30,10 +33,9 @@ library
                        Network.Haskoin.Crypto,
                        Network.Haskoin.Protocol,
                        Network.Haskoin.Script,
-                       Network.Haskoin.Transaction
-    other-modules:     Network.Haskoin.Util.Constants,
-                       Network.Haskoin.Util.Constants.Testnet,
-                       Network.Haskoin.Crypto.NumberTheory, 
+                       Network.Haskoin.Transaction,
+                       Network.Haskoin.Constants
+    other-modules:     Network.Haskoin.Crypto.NumberTheory, 
                        Network.Haskoin.Crypto.Curve, 
                        Network.Haskoin.Crypto.Hash, 
                        Network.Haskoin.Crypto.BigWord,
@@ -77,6 +79,10 @@ library
                        text                 >= 1.1 && < 1.2,
                        vector               >= 0.10 && < 0.11
     ghc-options:       -Wall -fno-warn-orphans
+  if flag(testnet)
+    hs-source-dirs:    . testnet
+  else
+    hs-source-dirs:    . prodnet
 
 test-suite test-haskoin
     type:              exitcode-stdio-1.0
@@ -136,6 +142,9 @@ test-suite test-haskoin
                        test-framework             >= 0.8  && < 0.9, 
                        test-framework-quickcheck2 >= 0.3  && < 0.4, 
                        test-framework-hunit       >= 0.3  && < 0.4 
-    hs-source-dirs:    . tests
     ghc-options:       -Wall -fno-warn-orphans
+  if flag(testnet)
+    hs-source-dirs:    . tests testnet
+  else
+    hs-source-dirs:    . tests prodnet
 

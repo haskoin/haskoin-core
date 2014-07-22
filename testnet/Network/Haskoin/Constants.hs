@@ -1,44 +1,48 @@
 {-|
-  Declaration of constants used across the bitcoin protocol.
+  Declaration of constants used across the testnet bitcoin protocol
 -}
-module Network.Haskoin.Util.Constants where
+module Network.Haskoin.Constants where
 
 import Data.Word (Word8,Word32)
 
+-- | Name of the bitcoin network
+networkName :: String
+networkName = "testnet"
+
 -- | Prefix for base58 PubKey hash address
 addrPrefix :: Word8
-addrPrefix = 0
+addrPrefix = 111
 
 -- | Prefix for base58 script hash address
 scriptPrefix :: Word8
-scriptPrefix = 5
+scriptPrefix = 196
 
 -- | Prefix for private key WIF format
 secretPrefix :: Word8
-secretPrefix = 128
+secretPrefix = 239
 
 -- | Prefix for extended public keys (BIP32)
 extPubKeyPrefix :: Word32
-extPubKeyPrefix = 0x0488b21e
+extPubKeyPrefix = 0x043587cf
 
 -- | Prefix for extended private keys (BIP32)
 extSecretPrefix :: Word32
-extSecretPrefix = 0x0488ade4
+extSecretPrefix = 0x04358394
 
 -- | Network magic bytes
 networkMagic :: Word32
-networkMagic = 0xf9beb4d9 
+networkMagic = 0x0b110907 
 
 -- | Genesis block header information
 genesisHeader :: [Integer]
 genesisHeader =
-    -- Hash = 000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f
+    -- Hash = 000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943
     [ 0x01
     , 0x00
     , 0x3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a
-    , 1231006505
+    , 1296688602
     , 486604799
-    , 2083236893
+    , 414098458
     ]
 
 -- | Maximum size of a block in bytes
@@ -47,5 +51,8 @@ maxBlockSize = 1000000
 
 -- | User agent of this haskoin package
 haskoinUserAgent :: String
-haskoinUserAgent = "/haskoin:0.0.2.1/"
+haskoinUserAgent = "/haskoin-testnet:0.0.2.1/"
+
+defaultPort :: Int
+defaultPort = 18333
 

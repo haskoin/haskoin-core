@@ -46,17 +46,6 @@ module Network.Haskoin.Util
 , snd3
 , lst3
 
-  -- *Constants
-, addrPrefix
-, scriptPrefix
-, secretPrefix
-, extPubKeyPrefix
-, extSecretPrefix
-, networkMagic
-, genesisHeader
-, maxBlockSize
-, haskoinUserAgent
-
 ) where
 
 import Numeric (readHex)
@@ -102,8 +91,6 @@ import qualified Data.ByteString.Char8 as C
     ( pack
     , unpack
     )
-
-import Network.Haskoin.Util.Constants
 
 -- ByteString helpers
 

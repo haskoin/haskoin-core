@@ -492,9 +492,7 @@ processMerkleBlock remote dmb = do
         when (decodedRoot dmb /= (merkleRoot $ nodeHeader node)) $
             error "Invalid partial merkle tree received"
 
-        -- Put the block first as most of the time, blocks in here will
-        -- be orphaned waiting for another block to be processed first.
-        S.modify $ \s -> s{ receivedMerkle = dmb : receivedMerkle s }
+        S.modify $ \s -> s{ receivedMerkle = receivedMerkle s ++ [dmb] }
 
         -- Decrement the peer request counter
         requests <- peerInflightMerkle <$> getPeerData remote

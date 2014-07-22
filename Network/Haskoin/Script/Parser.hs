@@ -33,12 +33,20 @@ import Control.Applicative ((<$>), (<|>))
 
 import Data.List (sortBy)
 import Data.Foldable (foldrM)
+import qualified Data.Text as T
 import qualified Data.ByteString as BS 
     ( ByteString
     , head
     , singleton
     )
-
+import Data.Aeson
+    ( Value (String)
+    , FromJSON
+    , ToJSON
+    , parseJSON
+    , toJSON
+    , withText
+    )
 import Network.Haskoin.Util
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Base58
@@ -61,6 +69,14 @@ data ScriptOutput =
       -- | Pay to a script hash.
     | PayScriptHash { getOutputAddress  :: !Address }
     deriving (Eq, Show, Read)
+
+instance FromJSON ScriptOutput where
+    parseJSON = withText "scriptoutput" $ \t -> either fail return $
+        maybeToEither "scriptoutput not hex" 
+          (hexToBS $ T.unpack t) >>= decodeOutputBS
+
+instance ToJSON ScriptOutput where
+    toJSON = String . T.pack . bsToHex . encodeOutputBS
 
 instance NFData ScriptOutput where
     rnf (PayPK k) = rnf k

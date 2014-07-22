@@ -40,8 +40,10 @@ import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM2, replicateM, forM_, unless)
 import Control.Applicative ((<$>),(<*>))
 
+import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
 import Data.Bits (testBit, setBit)
 import Data.Word (Word8, Word16, Word32, Word64)
+import qualified Data.Text as T
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get 
     ( Get
@@ -724,6 +726,13 @@ instance Binary Tx where
         forM_ os put
         putWord32le l
 
+instance FromJSON Tx where
+    parseJSON = withText "transaction" $ \t -> either fail return $
+        maybeToEither "tx not hex" (hexToBS $ T.unpack t) >>= decodeToEither
+
+instance ToJSON Tx where
+    toJSON = String . T.pack . bsToHex . encode'
+
 -- | Data type representing the coinbase transaction of a 'Block'. Coinbase
 -- transactions are special types of transactions which are created by miners
 -- when they find a new block. Coinbase transactions have no inputs. They have
@@ -852,6 +861,14 @@ data OutPoint =
 
 instance NFData OutPoint where
     rnf (OutPoint h i) = rnf h `seq` rnf i
+
+instance FromJSON OutPoint where
+    parseJSON = withText "outpoint" $ \t -> either fail return $
+        maybeToEither "outpoint not hex" 
+          (hexToBS $ T.unpack t) >>= decodeToEither
+
+instance ToJSON OutPoint where
+    toJSON = String . T.pack . bsToHex . encode'
 
 instance Binary OutPoint where
     get = do

@@ -29,8 +29,6 @@ module Network.Haskoin.Crypto.Hash
 , txHash
 , cbHash
 , headerHash
-, encodeTxHashLE
-, decodeTxHashLE
 ) where
 
 import Control.Monad (replicateM)
@@ -68,7 +66,6 @@ import qualified Data.ByteString as BS
     , length
     , replicate
     , drop
-    , reverse
     )
 
 import Network.Haskoin.Util 
@@ -198,17 +195,6 @@ encodeCompact i
     (s2,c2) | c1 .&. 0x00800000 /= 0  = (s1 + 1, c1 `shiftR` 8)
             | otherwise               = (s1, c1)
     c3 = fromIntegral $ c2 .|. ((toInteger s2) `shiftL` 24)
-
--- | Encodes a transaction hash as little endian in HEX format.
--- This is mostly used for displaying transaction ids. Internally, these ids
--- are handled as big endian but are transformed to little endian when
--- displaying them.
-encodeTxHashLE :: TxHash -> String
-encodeTxHashLE = bsToHex . BS.reverse .  encode' 
-
--- | Decodes a little endian transaction hash in HEX format. 
-decodeTxHashLE :: String -> Maybe TxHash
-decodeTxHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS
 
 -- | Computes the hash of a transaction.
 txHash :: Tx -> TxHash

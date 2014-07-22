@@ -31,7 +31,8 @@ import qualified Data.ByteString.Char8 as B8
 import Data.Char (isAscii)
 import Data.List
 import Data.Maybe
-import qualified Data.Map.Strict as M
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as M
 import qualified Data.Vector as V
 import Network.Haskoin.Util (bsToInteger, integerToBS)
 
@@ -149,7 +150,7 @@ bsToIndices bs = reverse . go q $ bsToInteger bs `shiftR` r
     go 0 _ = []
     go n i = (fromIntegral $ i `mod` 2048) : go (n - 1) (i `shiftR` 11)
 
-wlRev :: M.Map String Int
+wlRev :: HashMap String Int
 wlRev = M.fromList $ zip (V.toList wl) [0..]
 
 -- | Standard English dictionary from BIP-0039 specification.

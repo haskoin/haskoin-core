@@ -37,6 +37,7 @@ import qualified Network.Haskoin.Transaction.Tests (tests)
 import qualified Network.Haskoin.Transaction.Units (tests)
 
 -- Stratum tests
+import qualified Network.Haskoin.Stratum.Tests (tests)
 import qualified Network.Haskoin.Stratum.Units (tests)
 
 -- Json tests
@@ -68,6 +69,7 @@ main = defaultMain
     ++ Network.Haskoin.Script.Units.tests
     ++ Network.Haskoin.Transaction.Tests.tests
     ++ Network.Haskoin.Transaction.Units.tests
+    ++ Network.Haskoin.Stratum.Tests.tests
     ++ Network.Haskoin.Stratum.Units.tests
     ++ Network.Haskoin.Json.Tests.tests
     )

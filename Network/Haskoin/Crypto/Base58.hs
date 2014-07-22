@@ -111,7 +111,7 @@ instance NFData Address where
     rnf (ScriptAddress h) = rnf h
 
 instance FromJSON Address where
-    parseJSON = withText "Address not a string: " $ \a -> do
+    parseJSON = withText "address" $ \a -> do
         let s = T.unpack a
         maybe (fail $ "Not a Bitcoin address: " ++ s) return $ base58ToAddr s
 

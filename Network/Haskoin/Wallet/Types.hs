@@ -294,11 +294,9 @@ instance PersistFieldSql TxHash where
     sqlType _ = SqlString
 
 instance PersistField BlockHash where
-    toPersistValue = PersistText . T.pack . bsToHex . encode'
+    toPersistValue = PersistText . T.pack . encodeBlockHashLE
     fromPersistValue (PersistText h) =
-        maybeToEither "Not a valid BlockHash" (f h)
-      where
-        f x = decodeToMaybe =<< hexToBS (T.unpack x) 
+        maybeToEither "Not a valid BlockHash" (decodeBlockHashLE $ T.unpack h)
     fromPersistValue _ = Left persistTextErrMsg
 
 instance PersistFieldSql BlockHash where

@@ -116,7 +116,6 @@ DbTx
 DbConfirmation
     tx TxHash
     block BlockHash
-    UniqueConfirmation tx block
     deriving Show
 
 DbConfig

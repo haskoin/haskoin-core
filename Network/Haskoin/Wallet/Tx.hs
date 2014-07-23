@@ -159,7 +159,7 @@ importTx :: (PersistQuery m, PersistUnique m)
          -> m [AccTx] -- ^ New transaction entries created
 importTx tx offline = do
     txM <- getBy $ UniqueTx tid
-    -- Allow the same transaction to replace itself it the offline flag
+    -- Allow the same transaction to replace itself if the offline flag
     -- was False and now is True
     let updatedFlag = dbTxOffline (entityVal $ fromJust txM) && not offline
     if isJust txM && not updatedFlag then return [] else do
@@ -337,8 +337,10 @@ buildAccTx tx inCoins outCoins time = map build $ M.toList oMap
         total = (fromIntegral $ sumVal o) - (fromIntegral $ sumVal i)
         addrs = map dbCoinAddress o
         recips | null addrs = allRecip
-               | total < 0  = allRecip \\ addrs -- remove the change
-               | otherwise  = addrs
+               | total < 0 = 
+                   let xs = allRecip \\ addrs -- Remove the change
+                   in if null xs then allRecip else xs
+               | otherwise = addrs
 
 -- | Remove a transaction from the database. This will remove all transaction
 -- entries for this transaction as well as any parent transactions and coins
@@ -475,11 +477,15 @@ getSigData sh coin = do
 walletBloomFilter :: (PersistUnique m, PersistQuery m) => m BloomFilter
 walletBloomFilter = do
     addrs <- selectList [] []
+    rdms  <- liftM catMaybes $ forM addrs (getRedeem . entityVal)
     -- TODO: Choose a random nonce for the bloom filter
-    let bloom  = bloomCreate (length addrs * 2) 0.001 0 BloomUpdateP2PubKeyOnly
-        bloom' = foldl f bloom $ map (dbAddressValue . entityVal) addrs
-        f b a  = bloomInsert b $ encode' $ getAddrHash a
-    return bloom'
+    let len     = length addrs + length rdms
+        bloom   = bloomCreate (len*2) 0.0001 0 BloomUpdateNone
+        bloom'  = foldl f bloom $ map (dbAddressValue . entityVal) addrs
+        f b a   = bloomInsert b $ encode' $ getAddrHash a
+        bloom'' = foldl g bloom' rdms
+        g b r   = bloomInsert b $ encodeOutputBS r
+    return bloom''
 
 -- | Return the creation time (POSIX seconds) of the first key in the wallet.
 -- This is used to ignore full/filtered blocks prior to this time.
@@ -505,18 +511,20 @@ importBlocks xs = do
     hsM <- forM xs $ \(a, txs) -> do
         -- Insert transaction/block confirmation links. We have to keep this
         -- information even for side blocks as we need it when a reorg occurs.
-        myTxs <- liftM (map (dbTxHash . entityVal)) $ 
-                            selectList [DbTxHash <-. txs] []
+        -- TODO: This breaks if txs is too large
+        myTxsEnt <- liftM catMaybes $ forM txs $ \tx -> getBy $ UniqueTx tx
+        let myTxs = map (dbTxHash . entityVal) myTxsEnt
         forM_ myTxs $ \x -> insert_ $ 
             DbConfirmation x (nodeBlockHash $ newNode a)
         case a of
             SideBlock _ -> return Nothing
             BestBlock node -> do
-                updateWhere 
-                    [ DbTxHash <-. myTxs]
-                    [ DbTxConfirmedBy     =. Just (nodeBlockHash node)
-                    , DbTxConfirmedHeight =. Just (nodeHeaderHeight node)
-                    ]
+                forM_ myTxs $ \tx ->
+                    updateWhere 
+                        [ DbTxHash ==. tx ]
+                        [ DbTxConfirmedBy     =. Just (nodeBlockHash node)
+                        , DbTxConfirmedHeight =. Just (nodeHeaderHeight node)
+                        ]
                 return $ Just $ nodeHeaderHeight node
             BlockReorg _ o n -> do
                 -- Unconfirm transactions from the old chain
@@ -532,11 +540,12 @@ importBlocks xs = do
                     cnfs <- selectList 
                                 [DbConfirmationBlock ==. nodeBlockHash x] []
                     let ntxs = map (dbConfirmationTx . entityVal) cnfs 
-                    updateWhere 
-                        [ DbTxHash <-. ntxs ] 
-                        [ DbTxConfirmedBy     =. Just (nodeBlockHash x)
-                        , DbTxConfirmedHeight =. Just (nodeHeaderHeight x)
-                        ]
+                    forM_ ntxs $ \ntx ->
+                        updateWhere 
+                            [ DbTxHash ==. ntx ] 
+                            [ DbTxConfirmedBy     =. Just (nodeBlockHash x)
+                            , DbTxConfirmedHeight =. Just (nodeHeaderHeight x)
+                            ]
                 return $ Just $ nodeHeaderHeight $ last n
     -- Update best height
     let hs = catMaybes hsM

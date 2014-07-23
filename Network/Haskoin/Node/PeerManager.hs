@@ -103,9 +103,9 @@ withAsyncNode fp f = do
                 DB.defaultOptions{ DB.createIfMissing = True
                                 , DB.cacheSize       = 2048
                                 }
-    mChan <- atomically $ newTBMChan 100000
-    eChan <- atomically $ newTBMChan 100000
-    rChan <- atomically $ newTBMChan 100000
+    mChan <- atomically $ newTBMChan 10000
+    eChan <- atomically $ newTBMChan 10000
+    rChan <- atomically $ newTBMChan 10000
     vers  <- buildVersion
     let session = ManagerSession { mngrVersion      = vers
                                  , mngrChan         = mChan

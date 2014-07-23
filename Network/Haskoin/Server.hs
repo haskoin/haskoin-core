@@ -107,6 +107,17 @@ runServer = do
                     =$ CL.map (\(res,i) -> encodeWalletResponse res i)
                     =$ appSink client
 
+processNodeEvents :: MVar Connection -> TBMChan NodeRequest
+                  -> Sink NodeEvent IO ()
+processNodeEvents mvar rChan = awaitForever $ \e -> do
+    res <- lift $ tryJust f $ runDB mvar $ case e of
+        MerkleBlockEvent xs -> void $ importBlocks xs
+        TxEvent ts          -> forM_ ts $ \tx -> importTx tx False
+    when (isLeft res) $ liftIO $ print $ fromLeft res
+  where
+    -- TODO: What if we have other exceptions than WalletException ?
+    f (SomeException e) = Just $ show e
+
 processWalletRequest :: MVar Connection 
                      -> TBMChan NodeRequest
                      -> (WalletRequest, Int) 
@@ -115,8 +126,7 @@ processWalletRequest mvar rChan (wr, i) = do
     res <- tryJust f $ runDB mvar $ go wr
     return (res, i)
   where
-    -- TODO: What if we have other exceptions than WalletException ?
-    f (WalletException err)  = Just err
+    f (SomeException e)  = Just $ show e
     go (NewFullWallet n p m) = liftM ResMnemonic $ newWalletMnemo n p m
     go (NewReadWallet _ _)   = error "Not implemented"
     go (GetWallet n)         = liftM ResWallet $ getWallet n
@@ -202,13 +212,6 @@ processWalletRequest mvar rChan (wr, i) = do
                 return $ ResRescan $ fromJust fstKeyTimeM
             else liftIO $ throwIO $ WalletException
                 "No keys have been generated in the wallet"
-
-processNodeEvents :: MVar Connection -> TBMChan NodeRequest
-                  -> Sink NodeEvent IO ()
-processNodeEvents mvar rChan = awaitForever $ \e -> lift $ runDB mvar $ 
-    case e of
-        MerkleBlockEvent xs -> void $ importBlocks xs
-        TxEvent ts          -> forM_ ts $ \tx -> importTx tx False
 
 runDB :: MVar Connection -> SqlPersistT (NoLoggingT (ResourceT IO)) a -> IO a
 runDB mvar m = withMVar mvar $ \conn -> 

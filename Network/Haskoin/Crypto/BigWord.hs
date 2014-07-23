@@ -23,6 +23,8 @@ module Network.Haskoin.Crypto.BigWord
 , isIntegerValidKey
 , encodeTxHashLE
 , decodeTxHashLE
+, encodeBlockHashLE
+, decodeBlockHashLE
 ) where
 
 import Data.Bits 
@@ -364,3 +366,14 @@ encodeTxHashLE = bsToHex . BS.reverse .  encode'
 -- | Decodes a little endian transaction hash in HEX format. 
 decodeTxHashLE :: String -> Maybe TxHash
 decodeTxHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS
+
+-- | Encodes a Block hash as little endian in HEX format.
+-- This is mostly used for displaying Block hash ids. Internally, these ids
+-- are handled as big endian but are transformed to little endian when
+-- displaying them.
+encodeBlockHashLE :: BlockHash -> String
+encodeBlockHashLE = bsToHex . BS.reverse .  encode' 
+
+-- | Decodes a little endian transaction hash in HEX format. 
+decodeBlockHashLE :: String -> Maybe BlockHash
+decodeBlockHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS

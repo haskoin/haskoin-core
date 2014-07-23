@@ -67,6 +67,8 @@ module Network.Haskoin.Crypto
 , headerHash
 , encodeTxHashLE
 , decodeTxHashLE
+, encodeBlockHashLE
+, decodeBlockHashLE
 , hash512
 , hash512BS
 , hash256

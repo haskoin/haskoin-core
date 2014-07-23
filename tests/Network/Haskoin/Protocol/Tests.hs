@@ -48,6 +48,8 @@ tests =
         ]
     , testGroup "Transactions"
         [ testProperty "decode . encode Txid" decEncTxid ]
+    , testGroup "Blocks"
+        [ testProperty "decode . encode BlockHash id" decEncBlockHashid ]
     ]
 
 metaGetPut :: (Binary a, Eq a) => a -> Bool
@@ -56,3 +58,5 @@ metaGetPut x = (runGet get (runPut $ put x)) == x
 decEncTxid :: TxHash -> Bool
 decEncTxid h = (fromJust $ decodeTxHashLE $ encodeTxHashLE h) == h
 
+decEncBlockHashid :: BlockHash -> Bool
+decEncBlockHashid h = (fromJust $ decodeBlockHashLE $ encodeBlockHashLE h) == h

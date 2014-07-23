@@ -7,36 +7,27 @@ import System.Directory
     , doesFileExist
     )
 
-import Control.Applicative
 import Control.Monad 
 import Control.Monad.Trans 
 import Control.Monad.Trans.Resource
 import Control.Monad.Logger
-import Control.Concurrent (forkIO)
 import Control.Concurrent.STM.TBMChan
 import Control.Concurrent.STM
 import Control.Concurrent.MVar
 import Control.Concurrent.Async
-import Control.DeepSeq (NFData, rnf)
 import Control.Exception
 
 import Data.Maybe
 import Data.String (fromString)
-import Data.Aeson
-import Data.Aeson.Types
 import Data.Conduit 
     ( Sink
     , awaitForever
-    , yield
-    , addCleanup
     , ($$), ($=), (=$)
     )
 import Data.Conduit.Network
 import Data.Conduit.TMChan
 import qualified Data.Text as T
 import qualified Data.Conduit.List as CL
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
 
 import Database.Persist
 import Database.Persist.Sql
@@ -84,7 +75,7 @@ runServer = do
     -- Create sqlite connection & initialization
     mvar <- newMVar =<< wrapConnection =<< open walletFile
     bloom <- runDB mvar $ do
-        runMigrationSilent migrateWallet 
+        _ <- runMigrationSilent migrateWallet 
         initWalletDB
         walletBloomFilter 
 
@@ -112,7 +103,16 @@ processNodeEvents :: MVar Connection -> TBMChan NodeRequest
 processNodeEvents mvar rChan = awaitForever $ \e -> do
     res <- lift $ tryJust f $ runDB mvar $ case e of
         MerkleBlockEvent xs -> void $ importBlocks xs
-        TxEvent ts          -> forM_ ts $ \tx -> importTx tx False
+        TxEvent ts          -> do
+            before <- count ([] :: [Filter (DbAddressGeneric b)])
+            forM_ ts $ \tx -> importTx tx False
+            after <- count ([] :: [Filter (DbAddressGeneric b)])
+            -- Update the bloom filter if new addresses were generated
+            when (after > before) $ do
+                bloom <- walletBloomFilter
+                liftIO $ atomically $ do
+                    writeTBMChan rChan $ BloomFilterUpdate bloom
+                
     when (isLeft res) $ liftIO $ print $ fromLeft res
   where
     -- TODO: What if we have other exceptions than WalletException ?

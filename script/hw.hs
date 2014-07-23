@@ -68,7 +68,6 @@ import qualified Data.ByteString as BS
 import qualified Data.HashMap.Strict as H
 import qualified Data.Vector as V
 import qualified Data.Text as T (pack, unpack, splitOn)
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import qualified Data.Yaml as YAML (encode)
 import Data.Conduit.TMChan
 import Data.Conduit 

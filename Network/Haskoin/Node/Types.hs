@@ -45,8 +45,8 @@ data NodeRequest
     deriving (Eq, Show)
 
 data NodeEvent 
-    = MerkleBlockEvent BlockChainAction [TxHash]
-    | TxEvent Tx
+    = MerkleBlockEvent [(BlockChainAction, [TxHash])]
+    | TxEvent [Tx]
     deriving (Eq, Show)
 
 data DecodedMerkleBlock = DecodedMerkleBlock

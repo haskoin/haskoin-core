@@ -50,7 +50,7 @@ module Network.Haskoin.Wallet
 , firstKeyTime
 
 -- *Block Commands
-, importBlock
+, importBlocks
 
 -- *Database Types 
 , CoinStatus(..)

@@ -207,8 +207,8 @@ processNodeEvents :: MVar Connection -> TBMChan NodeRequest
                   -> Sink NodeEvent IO ()
 processNodeEvents mvar rChan = awaitForever $ \e -> lift $ runDB mvar $ 
     case e of
-        MerkleBlockEvent a txs -> void $ importBlock a txs
-        TxEvent tx             -> void $ importTx tx False
+        MerkleBlockEvent xs -> void $ importBlocks xs
+        TxEvent ts          -> forM_ ts $ \tx -> importTx tx False
 
 runDB :: MVar Connection -> SqlPersistT (NoLoggingT (ResourceT IO)) a -> IO a
 runDB mvar m = withMVar mvar $ \conn -> 

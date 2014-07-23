@@ -120,6 +120,9 @@ bestBlockKey = "bestblock"
 fastCatchupKey :: BS.ByteString
 fastCatchupKey = "starttime"
 
+lastDownloadKey :: BS.ByteString
+lastDownloadKey = "lastdownload"
+
 getBlockHeaderNode :: BlockHash -> DBHandle (Maybe BlockHeaderNode)
 getBlockHeaderNode h = do
     db  <- S.gets handle
@@ -169,10 +172,11 @@ setFastCatchup fstKeyTime = do
         fastCatchup  = fromInteger fastCatchupI :: Word32
     -- Save the new fast catchup time
     DB.put db def fastCatchupKey $ encode' fastCatchup
-    -- Find the position of the new best header
+    -- Find the position of the new best header and download pointer
     currentHead <- getBestHeader 
     bestBlock   <- findBestBlock fastCatchup currentHead
     putBestBlock $ nodeBlockHash bestBlock
+    putLastDownload $ nodeBlockHash bestBlock
   where
     findBestBlock _ g@(BlockHeaderGenesis _ _ _ _ _) = return g
     findBestBlock fastCatchup n
@@ -182,19 +186,17 @@ setFastCatchup fstKeyTime = do
             par <- getParent n
             findBestBlock fastCatchup par
 
-getBlocksToDownload :: DBHandle [(Word32, BlockHash)]
-getBlocksToDownload = do
-    fastCatchupM <- getFastCatchup
-    if isNothing fastCatchupM then return [] else do
-        bestHead  <- getBestHeader
-        bestBlock <- getBestBlock
-        go bestBlock [] bestHead
-  where
-    go b acc h 
-        | nodeBlockHash b == nodeBlockHash h = return acc
-        | otherwise = do
-            par <- getParent h
-            go b ((nodeHeaderHeight h, nodeBlockHash h):acc) par
+getLastDownload :: DBHandle BlockHeaderNode
+getLastDownload = do
+    db  <- S.gets handle
+    -- TODO: We assume the key always exists. Is this correct?
+    key <- decode' . fromJust <$> DB.get db def lastDownloadKey
+    fromJust <$> getBlockHeaderNode key
+
+putLastDownload :: BlockHash -> DBHandle ()
+putLastDownload h = do
+    db <- S.gets handle
+    DB.put db def lastDownloadKey $ encode' h
 
 -- Insert the genesis block if it is not already there
 -- TODO: If dwnStart is not equal to the one in the database, issue a warning
@@ -210,8 +212,9 @@ initDB = S.gets handle >>= \db -> do
            , nodeChainWork    = headerWork genesis
            , nodeChild        = Nothing
            }
-        , DB.Put bestHeaderKey $ encode' genid
-        , DB.Put bestBlockKey  $ encode' genid
+        , DB.Put bestHeaderKey   $ encode' genid
+        , DB.Put bestBlockKey    $ encode' genid
+        , DB.Put lastDownloadKey $ encode' genid
         ]
   where
     genid = headerHash genesis
@@ -268,7 +271,9 @@ storeBlockHeader bh prevNode = S.gets handle >>= \db -> do
             updateBest = 
                 isJust fastCatchupM && 
                 blockTimestamp (nodeHeader newNode) < fastCatchup
-        when updateBest $ putBestBlock bid
+        when updateBest $ do
+            putBestBlock bid
+            putLastDownload bid
     return $ AcceptHeader newNode
   where
     bid       = headerHash bh
@@ -281,6 +286,24 @@ storeBlockHeader bh prevNode = S.gets handle >>= \db -> do
                                 , nodeParent       = prevBlock bh
                                 , nodeChild        = Nothing
                                 }
+
+getDownloads :: Int -> Word32 -> DBHandle [BlockHash]
+getDownloads count height = do
+    fastCatchupM <- getFastCatchup
+    if isNothing fastCatchupM then return [] else do
+        n <- getLastDownload
+        let minCount = min (fromIntegral count) (height - nodeHeaderHeight n)
+        (res, lstDwn) <- go [] minCount n
+        putLastDownload $ nodeBlockHash lstDwn
+        return $ reverse res
+  where
+    go acc step n
+        | step <= 0 = return (acc, n)
+        -- TODO: Check if we are in an orpaned fork here
+        | isNothing $ nodeChild n = return (acc, n)
+        | otherwise = do
+            c <- fromJust <$> (getBlockHeaderNode $ fromJust $ nodeChild n)
+            go ((nodeBlockHash c):acc) (step-1) c 
 
 -- bitcoind function GetNextWorkRequired in main.cpp
 -- TODO: Add testnet support

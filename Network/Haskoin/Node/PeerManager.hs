@@ -63,10 +63,10 @@ data ManagerSession = ManagerSession
     , dbHandle         :: DB.DB
     , dataHandle       :: DB.DB
     , mngrBloom        :: Maybe BloomFilter
-    -- Merkle blocks that need to be downloaded
-    , blocksToDwn      :: [(BlockHeight, BlockHash)]
+    -- Missing blocks that need to be re-downloaded
+    , blocksToDwn      :: [BlockHash]
     -- Received merkle blocks pending to be sent to the user (wallet)
-    , receivedMerkle   :: [DecodedMerkleBlock]
+    , receivedMerkle   :: M.Map BlockHeight [DecodedMerkleBlock]
     -- Transactions not included in a merkle block. We stall them until the
     -- chain is synced.
     , soloTxs          :: [Tx]
@@ -85,7 +85,7 @@ data PeerData = PeerData
     , peerBlocks         :: [BlockHash] 
     , peerMsgChan        :: TBMChan Message
     -- Inflight merkleblock requests for this peer.
-    , inflightMerkle     :: [((BlockHeight, BlockHash), Timestamp)]
+    , inflightMerkle     :: M.Map BlockHash Timestamp
     -- Transaction pending the GetData response. Used to stall merkle blocks.
     , inflightTxs        :: [(TxHash, Timestamp)]
     , peerReconnectTimer :: Int
@@ -116,7 +116,7 @@ withAsyncNode fp f = do
                                  , dataHandle       = dataDb
                                  , mngrBloom        = Nothing
                                  , blocksToDwn      = []
-                                 , receivedMerkle   = []
+                                 , receivedMerkle   = M.empty
                                  , soloTxs          = []
                                  , broadcastBuffer  = []
                                  , pendingRescan    = Nothing
@@ -125,10 +125,11 @@ withAsyncNode fp f = do
     let runNode = runStdoutLoggingT $ flip S.evalStateT session $ do 
 
         -- Initialize the database
-        toDwn <- runDB $ initDB >> getBlocksToDownload
-
-        -- Add merkle blocks that need to be downloaded
-        S.modify $ \s -> s{ blocksToDwn = toDwn }
+        runDB $ do
+            initDB 
+            -- reset the download pointer
+            best <- getBestBlock
+            putLastDownload $ nodeBlockHash best
 
         -- Make sure the genesis block is marked as sent
         putData $ fromIntegral $ headerHash genesis
@@ -212,7 +213,7 @@ processStartPeer remote = do
                                     , peerMsgChan        = pChan
                                     , peerHeight         = 0
                                     , peerBlocks         = []
-                                    , inflightMerkle     = []
+                                    , inflightMerkle     = M.empty
                                     , inflightTxs        = []
                                     , peerReconnectTimer = 1
                                     }
@@ -236,20 +237,19 @@ processMonitor = do
     forM_ remotes $ \remote -> do
         now <- round <$> liftIO getPOSIXTime
         dat <- getPeerData remote
-        let f (_,t)         = t + 120 < now -- Stalled for over 2 minutes
-            (stalled, rest) = partition f $ inflightMerkle dat
-        unless (null stalled) $ do
+        let f t = t + 120 < now -- Stalled for over 2 minutes
+            (stalled, rest) = M.partition f $ inflightMerkle dat
+        unless (M.null stalled) $ do
             $(logWarn) $ T.pack $ unwords
                 [ "Resubmitting stalled merkle blocks:"
                 , "["
                 , unwords $ map (bsToHex . BS.reverse . encode') $ 
-                    map (snd . fst) stalled
+                    M.keys stalled
                 , "]"
                 ]
             modifyPeerData remote $ \d -> d{ inflightMerkle = rest }
-            let g a b = fst a `compare` fst b
-            S.modify $ \s -> 
-                s{ blocksToDwn = sortBy g $ blocksToDwn s ++ map fst stalled }
+            let toDwn = M.keys stalled
+            S.modify $ \s -> s{ blocksToDwn = blocksToDwn s ++ toDwn }
             -- Reissue merkle blocks download
             let reorderRemotes = (delete remote remotes) ++ [remote]
             forM_ reorderRemotes downloadBlocks
@@ -287,10 +287,10 @@ processPeerDisconnect remote = do
         , "(", show remote, ")" 
         ]
 
-    let toDwn = map fst $ inflightMerkle dat
+    let toDwn = M.keys $ inflightMerkle dat
 
     modifyPeerData remote $ \d -> d{ peerHandshake      = False 
-                                   , inflightMerkle = []
+                                   , inflightMerkle     = M.empty
                                    , peerBlocks         = []
                                    , peerHeight         = 0
                                    , peerReconnectTimer = reconnect*2
@@ -303,11 +303,10 @@ processPeerDisconnect remote = do
         $(logInfo) $ T.pack $ unwords
             [ "Peer had inflight merkle blocks. Adding them to download list:"
             , "[", unwords $ 
-                map (bsToHex . BS.reverse . encode' . snd) toDwn
+                map (bsToHex . BS.reverse . encode') toDwn
             , "]"
             ]
-        let f a b = fst a `compare` fst b
-        S.modify $ \s -> s{ blocksToDwn = sortBy f $ blocksToDwn s ++ toDwn }
+        S.modify $ \s -> s{ blocksToDwn = blocksToDwn s ++ toDwn }
         -- Request new merkle block downloads
         forM_ remotes downloadBlocks
 
@@ -406,22 +405,19 @@ processPublishTx tx = do
 processFastCatchupTime :: Word32 -> ManagerHandle ()
 processFastCatchupTime t = do
     remotes <- M.keys <$> S.gets peerMap 
-    pendingMerkles <- concat <$> 
-        forM remotes ((inflightMerkle <$>) . getPeerData)
-    if null pendingMerkles
+    pendingMerkles <- forM remotes ((inflightMerkle <$>) . getPeerData)
+    if (and $ map M.null pendingMerkles)
         then do
             $(logInfo) $ T.pack $ unwords
                 [ "Setting fast catchup time:"
                 , show t
                 ]
-            toDwn <- runDB $ do
-                setFastCatchup t
-                getBlocksToDownload
+            runDB $ setFastCatchup t
             clearData
             -- Don't remember old requests
-            S.modify $ \s -> s{ blocksToDwn    = toDwn 
+            S.modify $ \s -> s{ blocksToDwn    = [] 
                               , pendingRescan  = Nothing
-                              , receivedMerkle = []
+                              , receivedMerkle = M.empty
                               }
             -- Trigger downloads
             remotes <- M.keys <$> S.gets peerMap 
@@ -504,15 +500,6 @@ processHeaders remote (Headers h) = do
         -- Requesting more headers
         sendGetHeaders remote False 0x00
 
-    -- Adding new merkle blocks to download
-    fastCatchupM <- runDB getFastCatchup
-    let fastCatchup = fromJust fastCatchupM
-        toDwn       = map (\n -> (nodeHeaderHeight n, nodeBlockHash n)) $ 
-                        filter f newBlocks
-        f n         = blockTimestamp (nodeHeader n) >= fastCatchup
-    when (isJust fastCatchupM) $
-        S.modify $ \s -> s{ blocksToDwn = blocksToDwn s ++ toDwn }
-
     -- Request block downloads for all peers that are currently idling
     forM_ remotes downloadBlocks
 
@@ -528,22 +515,31 @@ processMerkleBlock remote dmb = do
         when (decodedRoot dmb /= (merkleRoot $ nodeHeader node)) $
             error "Invalid partial merkle tree received"
 
-        S.modify $ \s -> s{ receivedMerkle = receivedMerkle s ++ [dmb] }
+        -- Remove merkle blocks from the inflight list
+        modifyPeerData remote $ \d -> 
+            let newMap = M.delete (nodeBlockHash node) $ inflightMerkle d
+            in d{ inflightMerkle = newMap }
 
-        -- Decrement the peer request counter
-        requests <- inflightMerkle <$> getPeerData remote
-        let f ((_,x),_) = x /= nodeBlockHash node
-            rest        = filter f requests
-        modifyPeerData remote $ \d -> d{ inflightMerkle = rest }
+        rescan <- S.gets pendingRescan
 
-        importMerkleBlocks 
+        -- When a rescan is pending, don't store the merkle blocks
+        when (isNothing rescan) $ do
+            S.modify $ \s -> 
+                let k      = nodeHeaderHeight node
+                    prevM  = M.lookup k $ receivedMerkle s
+                    newVal = case prevM of
+                        Just prev -> prev ++ [dmb]
+                        Nothing   -> [dmb]
+                in s{ receivedMerkle = M.insert k newVal $ receivedMerkle s }
 
-        -- If this peer is done, get more merkle blocks to download
-        downloadBlocks remote
+            importMerkleBlocks 
+
+            -- If this peer is done, get more merkle blocks to download
+            downloadBlocks remote
 
         -- Try to launch the rescan if one is pending
-        rescan <- S.gets pendingRescan
-        when (isJust rescan && null rest) $ 
+        pending <- inflightMerkle <$> getPeerData remote
+        when (isJust rescan && M.null pending) $ 
             processFastCatchupTime $ fromJust rescan
   where
     bid = headerHash $ merkleHeader $ decodedMerkle dmb
@@ -562,7 +558,7 @@ importMerkleBlocks = do
     -- confirmation:
     -- INV tx1 -> GetData tx1 -> MerkleBlock (all tx except tx1) -> Tx1
     when (null dwnTxs && isNothing rescan) $ do
-        toImport <- S.gets receivedMerkle
+        toImport <- concat . M.elems <$> S.gets receivedMerkle
         res      <- catMaybes <$> forM toImport importMerkleBlock
         synced   <- nodeSynced
         when synced $ do
@@ -642,7 +638,14 @@ importMerkleBlock dmb = do
             putData $ fromIntegral bHash
 
         -- Remove this block from the receive list
-        S.modify $ \s -> s{ receivedMerkle = delete dmb $ receivedMerkle s }
+        S.modify $ \s -> 
+            let k      = nodeHeaderHeight $ getActionNode action
+                prevM  = M.lookup k $ receivedMerkle s
+                newMap = case prevM of
+                    Just [dmb] -> M.delete k $ receivedMerkle s
+                    Just xs    -> M.insert k (delete dmb xs) $ receivedMerkle s
+                    Nothing    -> receivedMerkle s
+            in s{ receivedMerkle = newMap }
 
         let enc = bsToHex . BS.reverse . encode'
         case action of
@@ -780,9 +783,7 @@ processNotFound remote (NotFound vs) = do
 
     forM_ blocklist $ \bhash -> do
         dat <- getPeerData remote
-        let (match, rest) = partition g $ inflightMerkle dat
-            g             = (== bhash) . snd . fst
-        unless (null match) $ do
+        when (M.member bhash $ inflightMerkle dat) $ do
             $(logInfo) $ T.pack $ unwords
                 [ "Block not found: adding"
                 , bsToHex $ BS.reverse $ encode' bhash
@@ -790,12 +791,12 @@ processNotFound remote (NotFound vs) = do
                 ]
 
             -- remove this block from the inflight list of the peer
-            modifyPeerData remote $ \d -> d{ inflightMerkle = rest }
+            modifyPeerData remote $ \d ->
+                let newMap = M.delete bhash $ inflightMerkle d
+                in d{ inflightMerkle = newMap }
 
             -- Add the block to the download list
-            let f a b = fst a `compare` fst b
-            S.modify $ \s -> 
-                s{ blocksToDwn = sortBy f $ blocksToDwn s ++ map fst match }
+            S.modify $ \s -> s{ blocksToDwn = blocksToDwn s ++ [bhash] }
 
     -- Trigger block downloads, but put this peer at the end
     remotes <- M.keys <$> S.gets peerMap 
@@ -853,21 +854,23 @@ downloadBlocks remote = do
         canDownload  =  (sync /= Just remote)
                      && (isJust bloom)
                      && (peerHandshake peerData)
-                     && (null requests)
+                     && (M.null requests)
                      && (isNothing rescan)
     -- Only download blocks from peers that have a completed handshake
     -- and that are not already requesting blocks
     when canDownload $ do
-        xs <- S.gets blocksToDwn
-        let (valid, rest) = span (\(h,_) -> h <= remoteHeight) xs
-            toDwn         = take 500 valid
-        S.modify $ \s -> s{ blocksToDwn = drop (length toDwn) valid ++ rest }
+        -- Get blocks missing from other peers that have disconnected
+        (missing, rest) <- splitAt 500 <$> S.gets blocksToDwn
+        S.modify $ \s -> s{ blocksToDwn = rest }
+        -- Get more blocks to download from the database
+        xs <- runDB $ getDownloads (500 - length missing) remoteHeight
+        let toDwn = missing ++ xs
         unless (null toDwn) $ do
             $(logInfo) $ T.pack $ unwords 
                 [ "Requesting more merkle block(s)"
                 , "["
                 , if length toDwn == 1
-                    then bsToHex $ BS.reverse $ encode' $ snd $ head toDwn
+                    then bsToHex $ BS.reverse $ encode' $ head toDwn
                     else unwords [show $ length toDwn, "block(s)"]
                 , "]"
                 , "(", show remote, ")" 
@@ -875,8 +878,9 @@ downloadBlocks remote = do
             -- Store the inflight blocks
             now <- round <$> liftIO getPOSIXTime
             modifyPeerData remote $ \d -> 
-                d{ inflightMerkle = map (\x -> (x,now)) toDwn }
-            sendMerkleGetData remote $ map snd toDwn
+                let newMap = M.fromList $ map (\x -> (x,now)) toDwn
+                in d{ inflightMerkle = newMap }
+            sendMerkleGetData remote toDwn
 
 sendMerkleGetData :: RemoteHost -> [BlockHash] -> ManagerHandle ()
 sendMerkleGetData remote hs = do

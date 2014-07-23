@@ -68,6 +68,7 @@ import qualified Data.ByteString as BS
 import qualified Data.HashMap.Strict as H
 import qualified Data.Vector as V
 import qualified Data.Text as T (pack, unpack, splitOn)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import qualified Data.Yaml as YAML (encode)
 import Data.Conduit.TMChan
 import Data.Conduit 
@@ -261,6 +262,12 @@ usage = unlines $ [warningMsg, usageInfo usageHeader options] ++ cmdHelp
 formatStr :: String -> IO ()
 formatStr str = forM_ (lines str) putStrLn
 
+printWalletResponse :: Either String WalletResponse -> IO ()
+printWalletResponse (Right res) = 
+        formatStr . bsToString . toStrictBS $  
+            (JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 }) res
+printWalletResponse (Left  err) = print $ "Error: " ++ err        
+
 main :: IO ()
 main = E.getArgs >>= \args -> case getOpt Permute options args of
     (o,xs,[]) -> do
@@ -299,16 +306,16 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
                 [m] -> NewFullWallet name (optPass opts) (Just m)
                 _   -> error invalidErr
         res <- sendRequest req 
-        print res
+        printWalletResponse res
     ["getwallet", name] -> do
         res <- sendRequest $ GetWallet name
-        print res
+        printWalletResponse res
     ["walletlist"] -> do
         res <- sendRequest WalletList
-        print res
+        printWalletResponse res
     ["newacc", wname, name] -> do
         res <- sendRequest $ NewAccount wname name
-        print res
+        printWalletResponse res
     "newms" : wname : name : r : t : ks -> do
         let keysM = mapM xPubImport ks
             r'    = read r
@@ -316,51 +323,52 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
         res <- sendRequest $ NewMSAccount wname name r' t' $ fromJust keysM
-        print res
+        printWalletResponse res
+
     "addkeys" : name : ks -> do
         let keysM = mapM xPubImport ks
         when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
         res <- sendRequest $ AddAccountKeys name $ fromJust keysM
-        print res
+        printWalletResponse res
     ["getacc", name] -> do
         res <- sendRequest $ GetAccount name
-        print res
+        printWalletResponse res
     ["acclist"] -> do
         res <- sendRequest AccountList
-        print res
+        printWalletResponse res
     ["new", name, label] -> do
         addE <- sendRequest $ GenAddress name 1
         case addE of
             Right (ResAddressList (a:_)) -> do
                 res <- sendRequest $ AddressLabel name (addressIndex a) label
-                print res
+                printWalletResponse res
             Right _ -> throwIO $ WalletException "Invalid response"
             Left err -> throwIO $ WalletException err
     ["genaddr", name] -> do
         res <- sendRequest $ GenAddress name $ optCount opts
-        print res
+        printWalletResponse res
     ["list", name] -> do
         res <- sendRequest $ AddressList name
-        print res
+        printWalletResponse res
     ["page", name, page] -> do
         let p = read page
         res <- sendRequest $ AddressPage name p $ optCount opts
-        print res
+        printWalletResponse res
     ["txlist", name] -> do
         res <- sendRequest $ TxList name
-        print res
+        printWalletResponse res
     ["txpage", name, page] -> do
         let p = read page
         res <- sendRequest $ TxPage name p $ optCount opts 
-        print res
+        printWalletResponse res
     ["send", name, add, amount] -> do
         let a = base58ToAddr add
             v = read amount
         when (isNothing a) $ throwIO $ 
             WalletException "Could not parse address"
         res <- sendRequest $ TxSend name [(fromJust a, v)] $ optFee opts
-        print res
+        printWalletResponse res
     "sendmany" : name : xs -> do
         let g str   = map T.unpack $ T.splitOn ":" (T.pack str)
             f [a,v] = liftM2 (,) (base58ToAddr a) (return $ read v)
@@ -369,20 +377,20 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         when (isNothing recipients) $ throwIO $
             WalletException "Could not parse recipient list"
         res <- sendRequest $ TxSend name (fromJust recipients) $ optFee opts
-        print res
+        printWalletResponse res
     ["signtx", name, tx] -> do
         let txM = decodeToMaybe =<< hexToBS tx
         when (isNothing txM) $ throwIO $
             WalletException "Could not parse transaction"
         res <- sendRequest $ TxSign name $ fromJust txM
-        print res
+        printWalletResponse res
     ["balance", name] -> do
         res <- sendRequest $ Balance name
-        print res
+        printWalletResponse res
     "rescan" : timestamp -> do
         let t = read <$> listToMaybe timestamp
         res <- sendRequest $ Rescan t
-        print res
+        printWalletResponse res
     [] -> formatStr usage
     ["help"] -> formatStr usage
     ["version"] -> putStrLn haskoinUserAgent

@@ -22,7 +22,6 @@ import Control.Exception (Exception)
 
 import Data.Int (Int64)
 import Data.Typeable (Typeable)
--- import Data.Maybe (maybe)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.ByteString.Lazy (toStrict, fromStrict)

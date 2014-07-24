@@ -299,8 +299,14 @@ getDownloads count height = do
   where
     go acc step n
         | step <= 0 = return (acc, n)
-        -- TODO: Check if we are in an orpaned fork here
-        | isNothing $ nodeChild n = return (acc, n)
+        | isNothing $ nodeChild n = do
+            bestHead <- getBestHeader
+            -- The pointer could be stuck in an orphaned fork
+            if nodeChainWork bestHead > nodeChainWork n
+                then do
+                    (split,_,_) <- findSplit bestHead n
+                    go ((nodeBlockHash split):acc) (step-1) split
+                else return (acc, n)
         | otherwise = do
             c <- fromJust <$> (getBlockHeaderNode $ fromJust $ nodeChild n)
             go ((nodeBlockHash c):acc) (step-1) c 

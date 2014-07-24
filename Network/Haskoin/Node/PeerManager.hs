@@ -73,6 +73,8 @@ data ManagerSession = ManagerSession
     -- Transactions from users that need to be broadcasted
     , broadcastBuffer  :: [Tx]
     , pendingRescan    :: Maybe Word32
+    -- How many block should be batched together for download/import
+    , blockBatch       :: Int
     } 
 
 -- Data stored about a peer in the Manager
@@ -91,10 +93,10 @@ data PeerData = PeerData
     , peerReconnectTimer :: Int
     }
 
-withAsyncNode :: FilePath 
+withAsyncNode :: FilePath -> Int
               -> (TBMChan NodeEvent -> TBMChan NodeRequest -> Async () -> IO ())
               -> IO ()
-withAsyncNode fp f = do
+withAsyncNode fp batch f = do
     db <- DB.open (concat [fp, "/headerchain"])
               DB.defaultOptions{ DB.createIfMissing = True
                                , DB.cacheSize       = 2048
@@ -120,23 +122,38 @@ withAsyncNode fp f = do
                                  , soloTxs          = []
                                  , broadcastBuffer  = []
                                  , pendingRescan    = Nothing
+                                 , blockBatch       = batch
                                  }
 
     let runNode = runStdoutLoggingT $ flip S.evalStateT session $ do 
 
         -- Initialize the database
-        runDB $ do
-            initDB 
-            -- reset the download pointer
-            best <- getBestBlock
-            putLastDownload $ nodeBlockHash best
+        runDB initDB
 
         -- Make sure the genesis block is marked as sent
         putData $ fromIntegral $ headerHash genesis
 
+        -- Find the position of the best block/download pointer
+        let go n = do
+                exists <- existsData $ fromIntegral $ nodeBlockHash n
+                if exists then return n else do
+                    par <- runDB $ getParent n
+                    go par
+        best <- go =<< runDB getBestBlock
+        runDB $ do
+            putBestBlock $ nodeBlockHash best
+            putLastDownload $ nodeBlockHash best
+
+        $(logInfo) $ T.pack $ unwords
+            [ "Setting best block to:"
+            , encodeBlockHashLE $ nodeBlockHash best
+            , "height:"
+            , show $ nodeHeaderHeight best
+            ]
+
         -- Process messages
         -- TODO: Close database handle on exception with DB.close
-        sourceTBMChan mChan $$ managerSink
+        sourceTBMChan mChan $$ managerSink 
 
     -- Launch node
     withAsync runNode $ \a -> 
@@ -861,11 +878,12 @@ downloadBlocks remote = do
     -- Only download blocks from peers that have a completed handshake
     -- and that are not already requesting blocks
     when canDownload $ do
+        batch <- S.gets blockBatch
         -- Get blocks missing from other peers that have disconnected
-        (missing, rest) <- splitAt 500 <$> S.gets blocksToDwn
+        (missing, rest) <- splitAt batch <$> S.gets blocksToDwn
         S.modify $ \s -> s{ blocksToDwn = rest }
         -- Get more blocks to download from the database
-        xs <- runDB $ getDownloads (500 - length missing) remoteHeight
+        xs <- runDB $ getDownloads (batch - length missing) remoteHeight
         let toDwn = missing ++ xs
         unless (null toDwn) $ do
             $(logInfo) $ T.pack $ unwords 

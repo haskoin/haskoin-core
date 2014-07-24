@@ -71,17 +71,19 @@ runServer = do
     let bind  = fromString $ configBind $ fromJust configM
         port  = configPort $ fromJust configM
         hosts = configHosts $ fromJust configM
+        batch = configBatch $ fromJust configM
+        fp    = configFpRate $ fromJust configM
 
     -- Create sqlite connection & initialization
     mvar <- newMVar =<< wrapConnection =<< open walletFile
     bloom <- runDB mvar $ do
         _ <- runMigrationSilent migrateWallet 
         initWalletDB
-        walletBloomFilter 
+        walletBloomFilter fp
 
     -- Launch SPV node
-    withAsyncNode dir $ \eChan rChan _ -> do
-        let eventPipe = sourceTBMChan eChan $$ processNodeEvents mvar rChan 
+    withAsyncNode dir batch $ \eChan rChan _ -> do
+        let eventPipe = sourceTBMChan eChan $$ processNodeEvents mvar rChan fp
         withAsync eventPipe $ \_ -> do
             atomically $ do
                 -- Bloom filter
@@ -94,13 +96,13 @@ runServer = do
                 appSource client
                     -- TODO: The server ignores bad requests here. Change that?
                     $= CL.mapMaybe (eitherToMaybe . decodeWalletRequest)
-                    $$ CL.mapM (processWalletRequest mvar rChan)
+                    $$ CL.mapM (processWalletRequest mvar rChan fp)
                     =$ CL.map (\(res,i) -> encodeWalletResponse res i)
                     =$ appSink client
 
-processNodeEvents :: MVar Connection -> TBMChan NodeRequest
+processNodeEvents :: MVar Connection -> TBMChan NodeRequest -> Double
                   -> Sink NodeEvent IO ()
-processNodeEvents mvar rChan = awaitForever $ \e -> do
+processNodeEvents mvar rChan fp = awaitForever $ \e -> do
     res <- lift $ tryJust f $ runDB mvar $ case e of
         MerkleBlockEvent xs -> void $ importBlocks xs
         TxEvent ts          -> do
@@ -109,7 +111,7 @@ processNodeEvents mvar rChan = awaitForever $ \e -> do
             after <- count ([] :: [Filter (DbAddressGeneric b)])
             -- Update the bloom filter if new addresses were generated
             when (after > before) $ do
-                bloom <- walletBloomFilter
+                bloom <- walletBloomFilter fp
                 liftIO $ atomically $ do
                     writeTBMChan rChan $ BloomFilterUpdate bloom
                 
@@ -120,9 +122,10 @@ processNodeEvents mvar rChan = awaitForever $ \e -> do
 
 processWalletRequest :: MVar Connection 
                      -> TBMChan NodeRequest
+                     -> Double
                      -> (WalletRequest, Int) 
                      -> IO (Either String WalletResponse, Int)
-processWalletRequest mvar rChan (wr, i) = do
+processWalletRequest mvar rChan fp (wr, i) = do
     res <- tryJust f $ runDB mvar $ go wr
     return (res, i)
   where
@@ -135,7 +138,7 @@ processWalletRequest mvar rChan (wr, i) = do
         fstKeyBefore <- firstKeyTime
         a <- newAccount w n
         setLookAhead n 30
-        bloom      <- walletBloomFilter
+        bloom      <- walletBloomFilter fp
         fstKeyTime <- liftM fromJust firstKeyTime
         liftIO $ atomically $ do
             writeTBMChan rChan $ BloomFilterUpdate bloom
@@ -147,7 +150,7 @@ processWalletRequest mvar rChan (wr, i) = do
         a <- newMSAccount w n r t ks
         when (length (accountKeys a) == t - 1) $ do
             setLookAhead n 30
-            bloom      <- walletBloomFilter
+            bloom      <- walletBloomFilter fp
             fstKeyTime <- liftM fromJust firstKeyTime
             liftIO $ atomically $ do
                 writeTBMChan rChan $ BloomFilterUpdate bloom
@@ -159,7 +162,7 @@ processWalletRequest mvar rChan (wr, i) = do
         a <- addAccountKeys n ks
         when (length (accountKeys a) == accountTotal a - 1) $ do
             setLookAhead n 30
-            bloom      <- walletBloomFilter
+            bloom      <- walletBloomFilter fp
             fstKeyTime <- liftM fromJust firstKeyTime
             liftIO $ atomically $ do
                 writeTBMChan rChan $ BloomFilterUpdate bloom
@@ -171,7 +174,7 @@ processWalletRequest mvar rChan (wr, i) = do
     go (GenAddress n i')      = do
         fstKeyBefore <- firstKeyTime
         addrs      <- newAddrs n i'
-        bloom      <- walletBloomFilter
+        bloom      <- walletBloomFilter fp
         fstKeyTime <- liftM fromJust firstKeyTime
         liftIO $ atomically $ do
             writeTBMChan rChan $ BloomFilterUpdate bloom

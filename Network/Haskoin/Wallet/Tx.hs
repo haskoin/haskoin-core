@@ -474,13 +474,15 @@ getSigData sh coin = do
 -- includes internal, external and look-ahead addresses. The bloom filter can
 -- be set on a peer connection to filter the transactions received by that
 -- peer.
-walletBloomFilter :: (PersistUnique m, PersistQuery m) => m BloomFilter
-walletBloomFilter = do
+walletBloomFilter :: (PersistUnique m, PersistQuery m) 
+                  => Double
+                  -> m BloomFilter
+walletBloomFilter fpRate = do
     addrs <- selectList [] []
     rdms  <- liftM catMaybes $ forM addrs (getRedeem . entityVal)
     -- TODO: Choose a random nonce for the bloom filter
     let len     = length addrs + length rdms
-        bloom   = bloomCreate (len*2) 0.0001 0 BloomUpdateNone
+        bloom   = bloomCreate len fpRate 0 BloomUpdateNone
         bloom'  = foldl f bloom $ map (dbAddressValue . entityVal) addrs
         f b a   = bloomInsert b $ encode' $ getAddrHash a
         bloom'' = foldl g bloom' rdms

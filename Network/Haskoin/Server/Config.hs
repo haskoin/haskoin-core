@@ -23,22 +23,28 @@ import Data.Yaml
     )
 
 data ServerConfig = ServerConfig
-    { configHosts :: [(String,Int)]
-    , configPort :: Int
-    , configBind :: String
+    { configHosts  :: [(String,Int)]
+    , configPort   :: Int
+    , configBind   :: String
+    , configBatch  :: Int
+    , configFpRate :: Double
     } deriving (Eq, Show, Read)
 
 defaultServerConfig = ServerConfig 
-    { configHosts = [ ("127.0.0.1", defaultPort) ]
-    , configPort  = 4000
-    , configBind  = "127.0.0.1"
+    { configHosts  = [ ("127.0.0.1", defaultPort) ]
+    , configPort   = 4000
+    , configBind   = "127.0.0.1"
+    , configBatch  = 100
+    , configFpRate = 0.00001
     }
 
 instance ToJSON ServerConfig where
-    toJSON (ServerConfig hs p a) = object
+    toJSON (ServerConfig hs p a b fp) = object
         [ "bitcoin nodes" .= map f hs
-        , "server port"  .= p
-        , "server bind"  .= a
+        , "server port"   .= p
+        , "server bind"   .= a
+        , "block batch"   .= b
+        , "fp rate"       .= fp
         ]
       where
         f (a,b) = object
@@ -51,7 +57,9 @@ instance FromJSON ServerConfig where
         hs <- mapM f =<< o .: "bitcoin nodes"
         p  <- o .: "server port"
         a  <- o .: "server bind"
-        return $ ServerConfig hs p a
+        b  <- o .: "block batch"
+        fp <- o .: "fp rate"
+        return $ ServerConfig hs p a b fp
       where
         f (Object x) = do
             a <- x .: "host"

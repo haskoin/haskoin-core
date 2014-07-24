@@ -454,11 +454,11 @@ signWalletTx name tx sh = do
 getSigData :: PersistUnique m
            => SigHash -> Coin -> m (SigInput,PrvKey)
 getSigData sh coin = do
-    (Entity _ w) <- getWalletEntity "main"
-    unless (isFullWallet $ dbWalletValue w) $ liftIO $ throwIO $ 
-        WalletException "This operation is not supported on read-only wallets"
     (Entity _ add) <- liftM fromJust $ getBy $ UniqueAddress a
     acc <- liftM fromJust (get $ dbAddressAccount add)
+    w   <- liftM fromJust $ get (dbAccountWallet acc)
+    unless (isFullWallet $ dbWalletValue w) $ liftIO $ throwIO $ 
+        WalletException "This operation is not supported on read-only wallets"
     let master = walletMasterKey $ dbWalletValue w
         deriv  = accountIndex $ dbAccountValue acc
         accKey = fromJust $ accPrvKey master deriv

@@ -76,6 +76,7 @@ data WalletRequest
     | TxPage AccountName Int Int
     | TxSend AccountName [(Address, Word64)] Word64
     | TxSign AccountName Tx
+    | TxGet TxHash
     | Balance AccountName
     | Rescan (Maybe Word32)
     deriving (Eq, Show, Read)
@@ -134,13 +135,14 @@ instance ToJSON WalletRequest where
             ]
         TxSend n rs f -> object
             [ "accountname" .= n
-            , "recipients"  .= map (\(a,v) -> (addrToBase58 a, v)) rs
+            , "recipients"  .= rs
             , "fee"         .= f
             ]
         TxSign n tx -> object
             [ "accountname" .= n
-            , "tx"          .= bsToHex (encode' tx)
+            , "tx"          .= tx
             ]
+        TxGet h -> object [ "txhash" .= h ]
         Balance n -> object [ "accountname" .= n ]
         Rescan (Just t) -> object [ "timestamp" .= t ]
         Rescan Nothing  -> Null
@@ -157,6 +159,7 @@ data WalletResponse
     | ResAccTxList [AccTx]
     | ResAccTxPage [AccTx] Int -- Int = Max page number
     | ResTxStatus TxHash Bool
+    | ResTx Tx
     | ResBalance Word64
     | ResRescan Word32
     deriving (Eq, Show, Read)
@@ -180,9 +183,10 @@ instance ToJSON WalletResponse where
             , "maxpage" .= m
             ]
         ResTxStatus h b -> object 
-            [ "txhash"   .= encodeTxHashLE h 
+            [ "txhash"   .= h
             , "complete" .= b
             ]
+        ResTx tx -> object [ "tx" .= tx ]
         ResBalance b -> object [ "balance" .= b ]
         ResRescan t -> object [ "timestamp" .= t ]
 
@@ -212,6 +216,7 @@ walletMethod wr = case wr of
     TxPage _ _ _           -> "network.haskoin.wallet.txpage"
     TxSend _ _ _           -> "network.haskoin.wallet.txsend"
     TxSign _ _             -> "network.haskoin.wallet.txsign"
+    TxGet _                -> "network.haskoin.wallet.txget"
     Balance _              -> "network.haskoin.wallet.balance"
     Rescan _               -> "network.haskoin.wallet.rescan"
 
@@ -276,14 +281,14 @@ parseWalletRequest m v = case (m,v) of
         n  <- o .: "accountname"
         xs <- o .: "recipients"
         f  <- o .: "fee"
-        let xsM = mapM (\(a,v) -> liftM2 (,) (base58ToAddr a) (return v)) xs
-            g x = return $ TxSend n x f
-        maybe mzero g xsM
+        return $ TxSend n xs f
     ("network.haskoin.wallet.txsign", Object o) -> do
         n  <- o .: "accountname"
         tx <- o .: "tx"
-        let txM = decodeToMaybe =<< hexToBS tx
-        maybe mzero (return . (TxSign n)) txM
+        return $ TxSign n tx
+    ("network.haskoin.wallet.txget", Object o) -> do
+        h <- o .: "txhash"
+        return $ TxGet h
     ("network.haskoin.wallet.balance", Object o) -> do
         n <- o .: "accountname"
         return $ Balance n
@@ -344,11 +349,14 @@ parseWalletResponse w v = case (w, v) of
     (TxSend _ _ _, Object o) -> do
         h <- o .: "txhash"
         b <- o .: "complete"
-        maybe mzero (return . (flip ResTxStatus b)) $ decodeTxHashLE h
+        return $ ResTxStatus h b
     (TxSign _ _, Object o) -> do
         h <- o .: "txhash"
         b <- o .: "complete"
-        maybe mzero (return . (flip ResTxStatus b)) $ decodeTxHashLE h
+        return $ ResTxStatus h b
+    (TxGet _, Object o) -> do
+        tx <- o .: "tx"
+        return $ ResTx tx
     (Balance _, Object o) -> do
         b <- o .: "balance"
         return $ ResBalance b

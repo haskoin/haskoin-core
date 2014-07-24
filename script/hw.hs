@@ -218,6 +218,7 @@ cmdHelp =
     , "  send      acc addr amount         Send coins to an address"
     , "  sendmany  acc {addr:amount...}    Send coins to many addresses"
     , "  signtx    acc tx                  Sign a transaction"
+    , "  gettx     hash                    Get a raw transaction"
     , "  balance   acc                     Display account balance"
     , "  (disabled) balances               Display all balances"
     , "  (disabled) importtx  tx           Import offline transaction"
@@ -382,6 +383,12 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         when (isNothing txM) $ throwIO $
             WalletException "Could not parse transaction"
         res <- sendRequest $ TxSign name $ fromJust txM
+        printWalletResponse res
+    ["gettx", hash] -> do
+        let h = decodeTxHashLE hash
+        when (isNothing h) $ throwIO $
+            WalletException "Could not parse hash"
+        res <- sendRequest $ TxGet $ fromJust h
         printWalletResponse res
     ["balance", name] -> do
         res <- sendRequest $ Balance name

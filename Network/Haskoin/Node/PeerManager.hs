@@ -260,8 +260,7 @@ processMonitor = do
             $(logWarn) $ T.pack $ unwords
                 [ "Resubmitting stalled merkle blocks:"
                 , "["
-                , unwords $ map (bsToHex . BS.reverse . encode') $ 
-                    M.keys stalled
+                , unwords $ map encodeBlockHashLE $ M.keys stalled
                 , "]"
                 ]
             modifyPeerData remote $ \d -> d{ inflightMerkle = rest }
@@ -320,7 +319,7 @@ processPeerDisconnect remote = do
         $(logInfo) $ T.pack $ unwords
             [ "Peer had inflight merkle blocks. Adding them to download list:"
             , "[", unwords $ 
-                map (bsToHex . BS.reverse . encode') toDwn
+                map encodeBlockHashLE toDwn
             , "]"
             ]
         S.modify $ \s -> s{ blocksToDwn = blocksToDwn s ++ toDwn }
@@ -461,7 +460,7 @@ processHeaders remote (Headers h) = do
                     [ "Block header already exists at height"
                     , show $ nodeHeaderHeight n
                     , "["
-                    , bsToHex $ BS.reverse $ encode' $ nodeBlockHash n
+                    , encodeBlockHashLE $ nodeBlockHash n
                     , "]"
                     ]
                 return Nothing
@@ -667,21 +666,22 @@ importMerkleBlock dmb = do
             let filterTx = ((not <$>) . existsData . fromIntegral . txHash)
             txToImport <- filterM filterTx allTxs
 
-            let enc = bsToHex . BS.reverse . encode'
             case action of
                 BestBlock b -> return ()
                 BlockReorg _ o n -> $(logInfo) $ T.pack $ unwords
                     [ "Block reorg. Orphaned blocks:"
-                    , "[", unwords $ map (enc . nodeBlockHash) o ,"]"
+                    , "[", unwords $ 
+                        map (encodeBlockHashLE . nodeBlockHash) o ,"]"
                     , "New blocks:"
-                    , "[", unwords $ map (enc . nodeBlockHash) n ,"]"
+                    , "[", unwords $ 
+                        map (encodeBlockHashLE . nodeBlockHash) n ,"]"
                     , "New height:"
                     , show $ nodeHeaderHeight $ last n
                     ]
                 SideBlock b -> $(logInfo) $ T.pack $ unwords
                     [ "Side block at height"
                     , show $ nodeHeaderHeight b, ":"
-                    , enc $ nodeBlockHash b
+                    , encodeBlockHashLE $ nodeBlockHash b
                     ]
 
             -- Save the fact that we sent the data to the user
@@ -717,7 +717,7 @@ processInv remote (Inv vs) = do
         $(logInfo) $ T.pack $ unwords
             [ "Got block inv"
             , "["
-            , unwords $ map (bsToHex . BS.reverse . encode') blocklist
+            , unwords $ map encodeBlockHashLE blocklist
             , "]"
             , "(", show remote, ")" 
             ]
@@ -805,7 +805,7 @@ processNotFound remote (NotFound vs) = do
         when (M.member bhash $ inflightMerkle dat) $ do
             $(logInfo) $ T.pack $ unwords
                 [ "Block not found: adding"
-                , bsToHex $ BS.reverse $ encode' bhash
+                , encodeBlockHashLE bhash
                 , "to the block download list"
                 ]
 
@@ -890,7 +890,7 @@ downloadBlocks remote = do
                 [ "Requesting more merkle block(s)"
                 , "["
                 , if length toDwn == 1
-                    then bsToHex $ BS.reverse $ encode' $ head toDwn
+                    then encodeBlockHashLE $ head toDwn
                     else unwords [show $ length toDwn, "block(s)"]
                 , "]"
                 , "(", show remote, ")" 

@@ -123,9 +123,6 @@ fastCatchupKey = "starttime"
 lastDownloadKey :: BS.ByteString
 lastDownloadKey = "lastdownload"
 
-regularWorkKey :: BS.ByteString
-regularWorkKey = "regularwork"
-
 getBlockHeaderNode :: BlockHash -> DBHandle (Maybe BlockHeaderNode)
 getBlockHeaderNode h = do
     db  <- S.gets handle
@@ -201,17 +198,6 @@ putLastDownload h = do
     db <- S.gets handle
     DB.put db def lastDownloadKey $ encode' h
 
-getRegularWork :: DBHandle Word32
-getRegularWork = do
-    db <- S.gets handle
-    res <- DB.get db def regularWorkKey
-    return $ decode' $ fromJust res
-
-putRegularWork :: Word32 -> DBHandle ()
-putRegularWork w = do
-    db <- S.gets handle
-    DB.put db def regularWorkKey $ encode' w
-
 -- Insert the genesis block if it is not already there
 -- TODO: If dwnStart is not equal to the one in the database, issue a warning
 -- or an error.
@@ -230,8 +216,6 @@ initDB = S.gets handle >>= \db -> do
         , DB.Put bestBlockKey    $ encode' genid
         , DB.Put lastDownloadKey $ encode' genid
         ]
-    when allowMinDifficultyBlocks $
-        putRegularWork $ encodeCompact proofOfWorkLimit
   where
     genid = headerHash genesisHeader
 
@@ -339,20 +323,22 @@ getNextWorkRequired lastNode bh
     | otherwise = do
         -- TODO: Can this break if there are not enough blocks in the chain?
         firstNode <- foldM (\x f -> f x) lastNode fs
-        let res = getNewWork (nodeHeader firstNode) (nodeHeader lastNode)
-        when allowMinDifficultyBlocks $ putRegularWork res
-        return res
+        return $ getNewWork (nodeHeader firstNode) (nodeHeader lastNode)
   where
     fs    = replicate (fromIntegral diffInterval - 1) getParent
     delta =  targetSpacing * 2
     minWork
         | blockTimestamp bh > (blockTimestamp $ nodeHeader lastNode) + delta =
             return $ encodeCompact proofOfWorkLimit
-        | otherwise = do
-            res <- getRegularWork
-            when (res /= encodeCompact proofOfWorkLimit) $
-                putRegularWork res
-            return res
+        | otherwise = go lastNode
+    go n@(BlockHeaderGenesis _ _ _ _ _) = return $ blockBits $ nodeHeader n
+    go n = do
+        let isDiffChange = nodeHeaderHeight n `mod` diffInterval == 0
+            isNotLimit   = blockBits (nodeHeader n) 
+                           /= encodeCompact proofOfWorkLimit
+        if isDiffChange || isNotLimit
+            then return $ blockBits $ nodeHeader n
+            else go =<< getParent n
 
 -- | Given two block headers, compute the work required for the block following
 -- the second block. The two input blocks should be spaced out by the number of

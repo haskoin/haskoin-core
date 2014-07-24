@@ -95,7 +95,10 @@ instance Arbitrary WalletRequest where
                  <*> (flip vectorOf (liftM2 (,) genAddr arbitrary) =<< choose (0,10))
                  <*> arbitrary
         , TxSign <$> arbitrary <*> genTx
+        , TxGet <$> (fromInteger <$> arbitrary)
         , Balance <$> arbitrary
+        , return $ Rescan Nothing
+        , Rescan . Just <$> arbitrary
         ]
 
 data RequestPair = RequestPair WalletRequest (Either String WalletResponse)
@@ -138,7 +141,9 @@ instance Arbitrary RequestPair where
             ResTxStatus <$> (fromInteger <$> arbitrary) <*> arbitrary
         go (TxSign _ _) = 
             ResTxStatus <$> (fromInteger <$> arbitrary) <*> arbitrary
+        go (TxGet _) = ResTx <$> genTx
         go (Balance _) = ResBalance <$> arbitrary
+        go (Rescan _) = ResRescan <$> arbitrary
 
 -- TODO: Remove this if we integrate into Haskoin
 genKey :: Gen AccPubKey

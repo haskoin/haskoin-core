@@ -202,6 +202,9 @@ processWalletRequest mvar rChan fp (wr, i) = do
             newTx <- getTx tid
             liftIO $ atomically $ writeTBMChan rChan $ PublishTx newTx
         return $ ResTxStatus tid complete
+    go (TxGet h) = do
+        tx <- getTx h
+        return $ ResTx tx
     go (Balance n)     = liftM ResBalance $ balance n
     go (Rescan (Just t)) = do
         liftIO $ atomically $ writeTBMChan rChan $ FastCatchupTime t

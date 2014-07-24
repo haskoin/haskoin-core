@@ -68,7 +68,7 @@ instance Binary BlockHeaderNode where
 
     get = go =<< get
       where
-        genid = headerHash genesis
+        genid = headerHash genesisHeader
         go i | i == genid = BlockHeaderGenesis i <$> get 
                                                  <*> getWord32le 
                                                  <*> get 
@@ -122,6 +122,9 @@ fastCatchupKey = "starttime"
 
 lastDownloadKey :: BS.ByteString
 lastDownloadKey = "lastdownload"
+
+regularWorkKey :: BS.ByteString
+regularWorkKey = "regularwork"
 
 getBlockHeaderNode :: BlockHash -> DBHandle (Maybe BlockHeaderNode)
 getBlockHeaderNode h = do
@@ -198,6 +201,17 @@ putLastDownload h = do
     db <- S.gets handle
     DB.put db def lastDownloadKey $ encode' h
 
+getRegularWork :: DBHandle Word32
+getRegularWork = do
+    db <- S.gets handle
+    res <- DB.get db def regularWorkKey
+    return $ decode' $ fromJust res
+
+putRegularWork :: Word32 -> DBHandle ()
+putRegularWork w = do
+    db <- S.gets handle
+    DB.put db def regularWorkKey $ encode' w
+
 -- Insert the genesis block if it is not already there
 -- TODO: If dwnStart is not equal to the one in the database, issue a warning
 -- or an error.
@@ -207,17 +221,19 @@ initDB = S.gets handle >>= \db -> do
     when (isNothing prevGen) $ DB.write db def
         [ DB.Put (indexKey genid) $ encode' BlockHeaderGenesis
            { nodeBlockHash    = genid
-           , nodeHeader       = genesis
+           , nodeHeader       = genesisHeader
            , nodeHeaderHeight = 0
-           , nodeChainWork    = headerWork genesis
+           , nodeChainWork    = headerWork genesisHeader
            , nodeChild        = Nothing
            }
         , DB.Put bestHeaderKey   $ encode' genid
         , DB.Put bestBlockKey    $ encode' genid
         , DB.Put lastDownloadKey $ encode' genid
         ]
+    when allowMinDifficultyBlocks $
+        putRegularWork $ encodeCompact proofOfWorkLimit
   where
-    genid = headerHash genesis
+    genid = headerHash genesisHeader
 
 -- bitcoind function ProcessBlockHeader and AcceptBlockHeader in main.cpp
 -- TODO: Add DOS return values
@@ -234,7 +250,7 @@ addBlockHeader bh adjustedTime = ((f <$>) . runEitherT) $ do
     let prevNode  = fromJust prevNodeM
     unless (isJust prevNodeM) $
         left $ RejectHeader "Previous block not found"
-    nextWork <- lift $ getNextWorkRequired prevNode
+    nextWork <- lift $ getNextWorkRequired prevNode bh
     unless (blockBits bh == nextWork) $
         left $ RejectHeader "Incorrect work transition (bits)"
     -- TODO: Implement nodeMedianTimePast
@@ -312,20 +328,31 @@ getDownloads count height = do
             go ((nodeBlockHash c):acc) (step-1) c 
 
 -- bitcoind function GetNextWorkRequired in main.cpp
--- TODO: Add testnet support
-getNextWorkRequired :: BlockHeaderNode -> DBHandle Word32
-getNextWorkRequired (BlockHeaderGenesis _ _ _ _ _) = 
+getNextWorkRequired :: BlockHeaderNode -> BlockHeader -> DBHandle Word32
+getNextWorkRequired (BlockHeaderGenesis _ _ _ _ _) _ = 
     return $ encodeCompact proofOfWorkLimit
-getNextWorkRequired lastNode
+getNextWorkRequired lastNode bh
     -- Only change the difficulty once per interval
     | (nodeHeaderHeight lastNode + 1) `mod` diffInterval /= 0 = 
-        return $ blockBits $ nodeHeader lastNode
+        if allowMinDifficultyBlocks then minWork else
+            return $ blockBits $ nodeHeader lastNode
     | otherwise = do
         -- TODO: Can this break if there are not enough blocks in the chain?
         firstNode <- foldM (\x f -> f x) lastNode fs
-        return $ getNewWork (nodeHeader firstNode) (nodeHeader lastNode)
+        let res = getNewWork (nodeHeader firstNode) (nodeHeader lastNode)
+        when allowMinDifficultyBlocks $ putRegularWork res
+        return res
   where
-    fs = replicate (fromIntegral diffInterval - 1) getParent
+    fs    = replicate (fromIntegral diffInterval - 1) getParent
+    delta =  targetSpacing * 2
+    minWork
+        | blockTimestamp bh > (blockTimestamp $ nodeHeader lastNode) + delta =
+            return $ encodeCompact proofOfWorkLimit
+        | otherwise = do
+            res <- getRegularWork
+            when (res /= encodeCompact proofOfWorkLimit) $
+                putRegularWork res
+            return res
 
 -- | Given two block headers, compute the work required for the block following
 -- the second block. The two input blocks should be spaced out by the number of
@@ -402,7 +429,7 @@ blockLocator = do
     ns <- f [h] $ replicate 10 (go 1) ++ [go (2^x) | x <- [0..]]
     return $ reverse $ nub $ genid : map nodeBlockHash ns
   where
-    genid = headerHash genesis
+    genid = headerHash genesisHeader
     f acc (g:gs) = g (head acc) >>= \resM -> case resM of
         Just res -> f (res:acc) gs
         Nothing  -> return acc
@@ -413,7 +440,7 @@ blockLocator = do
 -- Get the last checkpoint that we have seen
 lastCheckpoint :: DBHandle (Maybe (Int, BlockHash))
 lastCheckpoint = S.gets handle >>= \db -> 
-    foldM (f db) Nothing $ reverse checkpointsList
+    foldM (f db) Nothing $ reverse checkpointList
   where
     f db res (i,chk) = if isJust res then return res else do
         haveChk <- getBlockHeaderNode chk
@@ -442,13 +469,4 @@ headerWork bh =
   where
     target      = decodeCompact (blockBits bh)
     largestHash = 1 `shiftL` 256
-
-genesis :: BlockHeader
-genesis = BlockHeader 
-            (fromIntegral $ genesisHeader !! 0)
-            (fromIntegral $ genesisHeader !! 1)
-            (fromIntegral $ genesisHeader !! 2)
-            (fromIntegral $ genesisHeader !! 3)
-            (fromIntegral $ genesisHeader !! 4)
-            (fromIntegral $ genesisHeader !! 5)
 

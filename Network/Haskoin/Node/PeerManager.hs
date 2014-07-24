@@ -131,7 +131,7 @@ withAsyncNode fp batch f = do
         runDB initDB
 
         -- Make sure the genesis block is marked as sent
-        putData $ fromIntegral $ headerHash genesis
+        putData $ fromIntegral $ headerHash genesisHeader
 
         -- Find the position of the best block/download pointer
         let go n = do
@@ -964,5 +964,5 @@ clearData = do
         DB.iterFirst iter
         keys <- DB.iterKeys iter
         forM_ keys $ DB.delete db def
-    putData $ fromIntegral $ headerHash genesis
+    putData $ fromIntegral $ headerHash genesisHeader
 

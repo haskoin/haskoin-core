@@ -9,8 +9,8 @@ module Network.Haskoin.Node
 , NodeRequest(..)
 
 -- *Checkpoints
-, checkpoints
-, checkpointsList
+, checkpointMap
+, checkpointList
 , verifyCheckpoint
 ) where
 

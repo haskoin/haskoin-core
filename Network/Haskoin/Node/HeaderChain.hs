@@ -53,6 +53,7 @@ data BlockHeaderNode
         , nodeHeaderHeight :: !Word32
         , nodeChainWork    :: !Integer
         , nodeChild        :: !(Maybe BlockHash)
+        , nodeMinWork      :: !Word32
         }
     | BlockHeaderNode 
         { nodeBlockHash    :: !BlockHash
@@ -62,6 +63,7 @@ data BlockHeaderNode
         -- TODO: Remove this and use the parent field in nodeHeader
         , nodeParent       :: !BlockHash
         , nodeChild        :: !(Maybe BlockHash)
+        , nodeMinWork      :: !Word32
         } deriving (Show, Read, Eq)
 
 instance Binary BlockHeaderNode where
@@ -73,16 +75,18 @@ instance Binary BlockHeaderNode where
                                                  <*> getWord32le 
                                                  <*> get 
                                                  <*> get 
+                                                 <*> get 
              | otherwise  = BlockHeaderNode i <$> get 
                                               <*> getWord32le 
                                               <*> get 
                                               <*> get
                                               <*> get
+                                              <*> get
 
-    put (BlockHeaderGenesis i b h w c) =
-        put i >> put b >> putWord32le h >> put w >> put c
-    put (BlockHeaderNode i b h w p c) =
-        put i >> put b >> putWord32le h >> put w >> put p >> put c
+    put (BlockHeaderGenesis i b h w c m) =
+        put i >> put b >> putWord32le h >> put w >> put c >> put m
+    put (BlockHeaderNode i b h w p c m) =
+        put i >> put b >> putWord32le h >> put w >> put p >> put c >> put m
 
 
 -- Return value of linking a new block header in the chain
@@ -178,7 +182,7 @@ setFastCatchup fstKeyTime = do
     putBestBlock $ nodeBlockHash bestBlock
     putLastDownload $ nodeBlockHash bestBlock
   where
-    findBestBlock _ g@(BlockHeaderGenesis _ _ _ _ _) = return g
+    findBestBlock _ g@(BlockHeaderGenesis _ _ _ _ _ _) = return g
     findBestBlock fastCatchup n
         | blockTimestamp (nodeHeader n) < fastCatchup = 
             return n
@@ -211,6 +215,7 @@ initDB = S.gets handle >>= \db -> do
            , nodeHeaderHeight = 0
            , nodeChainWork    = headerWork genesisHeader
            , nodeChild        = Nothing
+           , nodeMinWork      = blockBits genesisHeader
            }
         , DB.Put bestHeaderKey   $ encode' genid
         , DB.Put bestBlockKey    $ encode' genid
@@ -259,7 +264,15 @@ addBlockHeader bh adjustedTime = ((f <$>) . runEitherT) $ do
 storeBlockHeader :: BlockHeader -> BlockHeaderNode 
                  -> DBHandle BlockHeaderAction
 storeBlockHeader bh prevNode = S.gets handle >>= \db -> do
-    putBlockHeaderNode newNode
+    if allowMinDifficultyBlocks
+        then do
+            let isDiffChange = nodeHeaderHeight newNode `mod` diffInterval == 0
+                isNotLimit   = blockBits (nodeHeader newNode) 
+                               /= encodeCompact proofOfWorkLimit
+                minWork | isDiffChange || isNotLimit = blockBits bh
+                        | otherwise                  = nodeMinWork prevNode
+            putBlockHeaderNode newNode{ nodeMinWork = minWork }
+        else putBlockHeaderNode newNode
     putBlockHeaderNode $ prevNode{ nodeChild = Just $ nodeBlockHash newNode }
     currentHead <- getBestHeader
     when (nodeChainWork newNode > nodeChainWork currentHead) $ do
@@ -285,6 +298,7 @@ storeBlockHeader bh prevNode = S.gets handle >>= \db -> do
                                 , nodeChainWork    = newWork
                                 , nodeParent       = prevBlock bh
                                 , nodeChild        = Nothing
+                                , nodeMinWork      = 0
                                 }
 
 getDownloads :: Int -> Word32 -> DBHandle [BlockHash]
@@ -313,7 +327,7 @@ getDownloads count height = do
 
 -- bitcoind function GetNextWorkRequired in main.cpp
 getNextWorkRequired :: BlockHeaderNode -> BlockHeader -> DBHandle Word32
-getNextWorkRequired (BlockHeaderGenesis _ _ _ _ _) _ = 
+getNextWorkRequired (BlockHeaderGenesis _ _ _ _ _ _) _ = 
     return $ encodeCompact proofOfWorkLimit
 getNextWorkRequired lastNode bh
     -- Only change the difficulty once per interval
@@ -330,15 +344,7 @@ getNextWorkRequired lastNode bh
     minWork
         | blockTimestamp bh > (blockTimestamp $ nodeHeader lastNode) + delta =
             return $ encodeCompact proofOfWorkLimit
-        | otherwise = go lastNode
-    go n@(BlockHeaderGenesis _ _ _ _ _) = return $ blockBits $ nodeHeader n
-    go n = do
-        let isDiffChange = nodeHeaderHeight n `mod` diffInterval == 0
-            isNotLimit   = blockBits (nodeHeader n) 
-                           /= encodeCompact proofOfWorkLimit
-        if isDiffChange || isNotLimit
-            then return $ blockBits $ nodeHeader n
-            else go =<< getParent n
+        | otherwise = return $ nodeMinWork lastNode
 
 -- | Given two block headers, compute the work required for the block following
 -- the second block. The two input blocks should be spaced out by the number of
@@ -397,7 +403,7 @@ findSplit n1 n2 = go [] [] n1 n2
 
 -- This can fail if the node has no parent 
 getParent :: BlockHeaderNode -> DBHandle BlockHeaderNode
-getParent (BlockHeaderGenesis _ _ _ _ _) = error "Genesis block has no parent"
+getParent (BlockHeaderGenesis _ _ _ _ _ _) = error "Genesis block has no parent"
 getParent node = do
     bsM <- getBlockHeaderNode $ nodeParent node
     -- TODO: Throw exception instead of crashing fromJust
@@ -419,7 +425,7 @@ blockLocator = do
     f acc (g:gs) = g (head acc) >>= \resM -> case resM of
         Just res -> f (res:acc) gs
         Nothing  -> return acc
-    go _ (BlockHeaderGenesis _ _ _ _ _) = return Nothing
+    go _ (BlockHeaderGenesis _ _ _ _ _ _) = return Nothing
     go 0 n = return $ Just n
     go step n = go (step-1) =<< getParent n
 

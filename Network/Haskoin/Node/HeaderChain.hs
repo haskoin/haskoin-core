@@ -53,6 +53,8 @@ data BlockHeaderNode
         , nodeHeaderHeight :: !Word32
         , nodeChainWork    :: !Integer
         , nodeChild        :: !(Maybe BlockHash)
+        , nodeMedianTimes  :: ![Word32]
+        -- Only used for testnet
         , nodeMinWork      :: !Word32
         }
     | BlockHeaderNode 
@@ -63,6 +65,8 @@ data BlockHeaderNode
         -- TODO: Remove this and use the parent field in nodeHeader
         , nodeParent       :: !BlockHash
         , nodeChild        :: !(Maybe BlockHash)
+        , nodeMedianTimes  :: ![Word32]
+        -- Only used for testnet
         , nodeMinWork      :: !Word32
         } deriving (Show, Read, Eq)
 
@@ -76,18 +80,32 @@ instance Binary BlockHeaderNode where
                                                  <*> get 
                                                  <*> get 
                                                  <*> get 
+                                                 <*> get 
              | otherwise  = BlockHeaderNode i <$> get 
                                               <*> getWord32le 
                                               <*> get 
                                               <*> get
                                               <*> get
                                               <*> get
+                                              <*> get
 
-    put (BlockHeaderGenesis i b h w c m) =
-        put i >> put b >> putWord32le h >> put w >> put c >> put m
-    put (BlockHeaderNode i b h w p c m) =
-        put i >> put b >> putWord32le h >> put w >> put p >> put c >> put m
-
+    put (BlockHeaderGenesis i b h w c t m) = do
+        put i
+        put b
+        putWord32le h
+        put w
+        put c
+        put t 
+        put m
+    put (BlockHeaderNode i b h w p c t m) = do
+        put i 
+        put b 
+        putWord32le h 
+        put w 
+        put p 
+        put c
+        put t 
+        put m
 
 -- Return value of linking a new block header in the chain
 -- TODO: Add more options if required
@@ -182,7 +200,7 @@ setFastCatchup fstKeyTime = do
     putBestBlock $ nodeBlockHash bestBlock
     putLastDownload $ nodeBlockHash bestBlock
   where
-    findBestBlock _ g@(BlockHeaderGenesis _ _ _ _ _ _) = return g
+    findBestBlock _ g@(BlockHeaderGenesis _ _ _ _ _ _ _) = return g
     findBestBlock fastCatchup n
         | blockTimestamp (nodeHeader n) < fastCatchup = 
             return n
@@ -215,6 +233,7 @@ initDB = S.gets handle >>= \db -> do
            , nodeHeaderHeight = 0
            , nodeChainWork    = headerWork genesisHeader
            , nodeChild        = Nothing
+           , nodeMedianTimes  = [blockTimestamp genesisHeader]
            , nodeMinWork      = blockBits genesisHeader
            }
         , DB.Put bestHeaderKey   $ encode' genid
@@ -242,9 +261,10 @@ addBlockHeader bh adjustedTime = ((f <$>) . runEitherT) $ do
     nextWork <- lift $ getNextWorkRequired prevNode bh
     unless (blockBits bh == nextWork) $
         left $ RejectHeader "Incorrect work transition (bits)"
-    -- TODO: Implement nodeMedianTimePast
-    -- unless (blockTimestamp bh > nodeMedianTimePast prevNode) $
-    --     left $ RejectHeader "Block timestamp is too early"
+    let sortedMedians = sort $ nodeMedianTimes prevNode
+        medianTime    = sortedMedians !! (length sortedMedians `div` 2)
+    when (blockTimestamp bh <= medianTime) $
+        left $ RejectHeader "Block timestamp is too early"
     chkPointM <- lift lastCheckpoint
     let chkPoint  = fromJust chkPointM
         newHeight = nodeHeaderHeight prevNode + 1
@@ -292,12 +312,18 @@ storeBlockHeader bh prevNode = S.gets handle >>= \db -> do
     bid       = headerHash bh
     newHeight = nodeHeaderHeight prevNode + 1
     newWork   = nodeChainWork prevNode + headerWork bh
+    newMedian 
+        | length (nodeMedianTimes prevNode) == 11 =
+            tail (nodeMedianTimes prevNode) ++ [blockTimestamp bh]
+        | otherwise = 
+            (nodeMedianTimes prevNode) ++ [blockTimestamp bh]
     newNode   = BlockHeaderNode { nodeBlockHash    = bid
                                 , nodeHeader       = bh
                                 , nodeHeaderHeight = newHeight
                                 , nodeChainWork    = newWork
                                 , nodeParent       = prevBlock bh
                                 , nodeChild        = Nothing
+                                , nodeMedianTimes  = newMedian
                                 , nodeMinWork      = 0
                                 }
 
@@ -327,7 +353,7 @@ getDownloads count height = do
 
 -- bitcoind function GetNextWorkRequired in main.cpp
 getNextWorkRequired :: BlockHeaderNode -> BlockHeader -> DBHandle Word32
-getNextWorkRequired (BlockHeaderGenesis _ _ _ _ _ _) _ = 
+getNextWorkRequired (BlockHeaderGenesis _ _ _ _ _ _ _) _ = 
     return $ encodeCompact proofOfWorkLimit
 getNextWorkRequired lastNode bh
     -- Only change the difficulty once per interval
@@ -403,7 +429,8 @@ findSplit n1 n2 = go [] [] n1 n2
 
 -- This can fail if the node has no parent 
 getParent :: BlockHeaderNode -> DBHandle BlockHeaderNode
-getParent (BlockHeaderGenesis _ _ _ _ _ _) = error "Genesis block has no parent"
+getParent (BlockHeaderGenesis _ _ _ _ _ _ _) = 
+    error "Genesis block has no parent"
 getParent node = do
     bsM <- getBlockHeaderNode $ nodeParent node
     -- TODO: Throw exception instead of crashing fromJust
@@ -425,7 +452,7 @@ blockLocator = do
     f acc (g:gs) = g (head acc) >>= \resM -> case resM of
         Just res -> f (res:acc) gs
         Nothing  -> return acc
-    go _ (BlockHeaderGenesis _ _ _ _ _ _) = return Nothing
+    go _ (BlockHeaderGenesis _ _ _ _ _ _ _) = return Nothing
     go 0 n = return $ Just n
     go step n = go (step-1) =<< getParent n
 

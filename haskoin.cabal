@@ -34,6 +34,7 @@ library
                        Network.Haskoin.Protocol,
                        Network.Haskoin.Script,
                        Network.Haskoin.Transaction,
+                       Network.Haskoin.Internals,
                        Network.Haskoin.Constants
     other-modules:     Network.Haskoin.Crypto.NumberTheory, 
                        Network.Haskoin.Crypto.Curve, 

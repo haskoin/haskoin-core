@@ -209,8 +209,8 @@ addTx tx offline = do
 tryImportOrphans :: (PersistQuery m, PersistUnique m) => m [AccTx]
 tryImportOrphans = do
     orphans <- selectList [DbTxOrphan ==. True] []
+    forM_ orphans $ deleteBy . UniqueTx . dbTxHash . entityVal
     res <- forM orphans $ \(Entity _ otx) -> do
-        deleteBy $ UniqueTx $ dbTxHash otx
         importTx (dbTxValue otx) $ dbTxOffline otx
     return $ concat res
 

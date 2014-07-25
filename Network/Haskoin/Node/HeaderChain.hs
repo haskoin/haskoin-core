@@ -272,9 +272,12 @@ addBlockHeader bh adjustedTime = ((f <$>) . runEitherT) $ do
         left $ RejectHeader "Rewriting pre-checkpoint chain"
     unless (verifyCheckpoint (fromIntegral newHeight) bid) $
         left $ RejectHeader "Rejected by checkpoint lock-in"
-    -- TODO: Implement isSuperMajority
-    -- unless (version bh >= 2 || (not $ isSuperMajority 2 prevNode)) $
-    --     left $ RejectHeader "Rejected version=1 block"
+    -- All block of height 227836 or more use version 2 in prodnet
+    -- TODO: Find out the value here for prodnet
+    when (  networkName == "prodnet" 
+         && blockVersion bh == 1 
+         && nodeHeaderHeight prevNode + 1 >= 227836) $
+        left $ RejectHeader "Rejected version=1 block"
     lift $ storeBlockHeader bh prevNode
   where
     f (Right x) = x

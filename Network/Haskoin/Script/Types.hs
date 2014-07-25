@@ -506,7 +506,7 @@ instance Binary ScriptOp where
         OP_NOP10             -> putWord8 0xb9
 
 
- -- | Check whether opcode is only data.
+-- | Check whether opcode is only data.
 isPushOp :: ScriptOp -> Bool
 isPushOp op = case op of
     OP_PUSHDATA _ _ -> True

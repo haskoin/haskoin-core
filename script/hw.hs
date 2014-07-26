@@ -115,14 +115,13 @@ import Network.Haskoin.Wallet
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Account
-import Network.Haskoin.Wallet.Coin
 import Network.Haskoin.Wallet.Tx
 
 import Network.Haskoin.Script
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto 
 import Network.Haskoin.Transaction
-import Network.Haskoin.Stratum hiding (Coin(coinValue))
+import Network.Haskoin.Stratum 
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
 

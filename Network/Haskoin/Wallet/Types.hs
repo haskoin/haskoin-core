@@ -229,15 +229,17 @@ data AccTx = AccTx
     , accTxRecipients    :: [Address]
     , accTxValue         :: Int64
     , accTxOffline       :: Bool
+    , accIsCoinbase      :: Bool
     , accTxConfirmations :: Int
     } deriving (Eq, Show, Read)
 
 instance ToJSON AccTx where
-    toJSON (AccTx h as v x c) = object
-        [ "txid"          .= encodeTxHashLE h 
-        , "recipients"    .= map addrToBase58 as
+    toJSON (AccTx h as v x cb c) = object
+        [ "txid"          .= h
+        , "recipients"    .= as
         , "value"         .= v
         , "offline"       .= x
+        , "isCoinbase"    .= cb
         , "confirmations" .= c
         ]
 
@@ -247,11 +249,9 @@ instance FromJSON AccTx where
         as <- o .: "recipients"
         v  <- o .: "value"
         x  <- o .: "offline"
+        cb <- o .: "isCoinbase"
         c  <- o .: "confirmations"
-        let txidM          = decodeTxHashLE h
-            addrsM         = mapM base58ToAddr as
-            f (tid, addrs) = return $ AccTx tid addrs v x c
-        maybe mzero f $ liftM2 (,) txidM addrsM
+        return $ AccTx h as v x cb c
     parseJSON _ = mzero
 
 persistTextErrMsg :: T.Text

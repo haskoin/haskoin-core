@@ -35,6 +35,7 @@ module Network.Haskoin.Wallet
 -- *Coin Commands
 , balance
 , unspentCoins
+, spendableCoins
 
 -- *Tx Commands
 , AccTx(..) 
@@ -64,7 +65,6 @@ import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Account
 import Network.Haskoin.Wallet.Address
 import Network.Haskoin.Wallet.Tx
-import Network.Haskoin.Wallet.Coin
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Model
 

@@ -5,6 +5,7 @@ module Network.Haskoin.Wallet.Tx
 ( AccTx(..)
 , getTx
 , getTxEntity
+, getConf
 , toAccTx
 , txList
 , txPage
@@ -18,6 +19,9 @@ module Network.Haskoin.Wallet.Tx
 , importBlocks
 , getBestHeight
 , setBestHeight
+, balance
+, unspentCoins
+, spendableCoins
 ) where
 
 import Control.Applicative ((<$>))
@@ -62,7 +66,6 @@ import Network.Haskoin.Node.Types
 
 import Network.Haskoin.Wallet.Account
 import Network.Haskoin.Wallet.Address
-import Network.Haskoin.Wallet.Coin
 import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
@@ -77,15 +80,21 @@ toAccTx :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
         => DbAccTxGeneric b -> m AccTx
 toAccTx accTx = do
     (Entity _ tx) <- getTxEntity $ dbAccTxHash accTx
-    height <- getBestHeight
-    let conf | isNothing $ dbTxConfirmedBy tx = 0
-             | otherwise = height - (fromJust $ dbTxConfirmedHeight tx) + 1
+    conf <- getConf $ dbAccTxHash accTx
     return $ AccTx { accTxHash          = dbAccTxHash accTx
                    , accTxRecipients    = dbAccTxRecipients accTx
                    , accTxValue         = dbAccTxValue accTx
                    , accTxOffline       = dbTxOffline tx
+                   , accIsCoinbase      = dbTxIsCoinbase tx
                    , accTxConfirmations = fromIntegral conf
                    }
+
+getConf :: (PersistUnique m, PersistQuery m) => TxHash -> m Int
+getConf h = do
+    (Entity _ tx) <- getTxEntity h
+    height <- getBestHeight
+    return $ if isNothing $ dbTxConfirmedBy tx then 0 else 
+        fromIntegral $ height - (fromJust $ dbTxConfirmedHeight tx) + 1
 
 getTxEntity :: (PersistUnique m, PersistMonadBackend m ~ b)
             => TxHash -> m (Entity (DbTxGeneric b))
@@ -167,7 +176,8 @@ importTx tx offline = do
         isOrphan <- isOrphanTx tx
         if not isOrphan then addTx tx offline else do
             time <- liftIO getCurrentTime
-            insert_ $ DbTx tid tx True offline Nothing Nothing time
+            let isCB = isCoinbaseTx tx
+            insert_ $ DbTx tid tx True offline Nothing Nothing isCB time
             return []
   where
     tid = txHash tx
@@ -191,7 +201,8 @@ addTx tx offline = do
     if null $ coins ++ outCoins then return [] else do
         time <- liftIO getCurrentTime
         -- Save the whole transaction 
-        insert_ $ DbTx tid tx False offline Nothing Nothing time 
+        let isCB = isCoinbaseTx tx
+        insert_ $ DbTx tid tx False offline Nothing Nothing isCB time 
         -- Build transactions that report on individual accounts
         let dbAccTxs = buildAccTx tx coins outCoins time
         accTxs <- forM dbAccTxs toAccTx
@@ -213,6 +224,10 @@ tryImportOrphans = do
     res <- forM orphans $ \(Entity _ otx) -> do
         importTx (dbTxValue otx) $ dbTxOffline otx
     return $ concat res
+
+isCoinbaseTx :: Tx -> Bool
+isCoinbaseTx (Tx _ tin _ _) =
+    length tin == 1 && (outPointHash $ prevOutput $ head tin) == 0x00
 
 -- Create a new coin for an output if it is ours. If commit is False, it will
 -- not write the coin to the database, it will only return it. We need the coin
@@ -387,16 +402,18 @@ sendSolution :: (PersistUnique m, PersistQuery m)
              -> m ([Coin],[(Address,Word64)])
 sendSolution name dests fee = do
     (Entity ai acc) <- getAccountEntity name
-    unspent <- unspentCoins name
+    spendable <- spendableCoins name
     let msParam = ( accountRequired $ dbAccountValue acc
                   , accountTotal $ dbAccountValue acc
                   )
-        resE | isMSAccount acc = chooseMSCoins tot fee msParam unspent
-             | otherwise       = chooseCoins tot fee unspent
+        resE | isMSAccount acc = chooseMSCoins tot fee msParam spendable
+             | otherwise       = chooseCoins tot fee spendable
         (coins, change)        = fromRight resE
     when (isLeft resE) $ liftIO $ throwIO $
         WalletException $ fromLeft resE
-    recips <- if change < 5000 then return dests else do
+    -- TODO: Put this value in a constant file somewhere
+    -- TODO: We need a better way to identify dust transactions
+    recips <- if change < 5430 then return dests else do
         cAddr <- newAddrsGeneric name 1 True -- internal addresses
         -- TODO: Change must be randomly placed
         return $ dests ++ [(dbAddressValue $ head cAddr,change)]
@@ -567,4 +584,42 @@ getBestHeight = do
 
 setBestHeight :: PersistQuery m => Word32 -> m ()
 setBestHeight h = updateWhere [] [DbConfigBestHeight =. h]
+
+-- Coin functions
+
+-- | Returns the balance of an account.
+balance :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
+        => AccountName -- ^ Account name
+        -> m Word64    -- ^ Account balance
+balance name = do
+    (Entity ai _) <- getAccountEntity name
+    coins <- selectList 
+        [ DbCoinAccount ==. ai
+        , DbCoinStatus  ==. Unspent
+        ] []
+    return $ sum $ map (coinValue . dbCoinValue . entityVal) coins
+
+unspentCoins :: (PersistUnique m, PersistQuery m) 
+             => AccountName   -- ^ Account name
+             -> m [Coin]      -- ^ List of unspent coins
+unspentCoins name = do
+    (Entity ai _) <- getAccountEntity name
+    coins <- selectList 
+        [ DbCoinAccount ==. ai
+        , DbCoinStatus  ==. Unspent
+        ] [Asc DbCoinCreated]
+    return $ map (dbCoinValue . entityVal) coins
+
+spendableCoins :: (PersistUnique m, PersistQuery m) 
+               => AccountName   -- ^ Account name
+               -> m [Coin]      -- ^ List of coins that can be spent
+spendableCoins name = do
+    coins <- unspentCoins name
+    res <- forM coins $ \c -> do
+        tx   <- getTx $ outPointHash $ coinOutPoint c
+        conf <- getConf $ outPointHash $ coinOutPoint c
+        return $ if isCoinbaseTx tx && conf < 100 
+            then Nothing 
+            else Just c
+    return $ catMaybes res
 

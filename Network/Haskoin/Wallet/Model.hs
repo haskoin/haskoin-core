@@ -109,6 +109,7 @@ DbTx
     offline Bool
     confirmedBy BlockHash Maybe
     confirmedHeight Word32 Maybe
+    isCoinbase Bool
     created UTCTime default=CURRENT_TIME
     UniqueTx hash
     deriving Show

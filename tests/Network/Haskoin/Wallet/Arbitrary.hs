@@ -60,6 +60,7 @@ instance Arbitrary AccTx where
                       <*> (flip vectorOf genAddr =<< choose (1,10))
                       <*> arbitrary
                       <*> arbitrary
+                      <*> arbitrary
                       <*> (abs <$> arbitrary)
 
 instance Arbitrary WalletRequest where

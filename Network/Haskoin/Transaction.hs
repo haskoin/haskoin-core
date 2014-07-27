@@ -14,6 +14,7 @@ module Network.Haskoin.Transaction
 , signInput
 , detSignTx
 , detSignInput
+, verifyTx
 
   -- *Coin selection
 , Coin(..)

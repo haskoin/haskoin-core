@@ -54,7 +54,8 @@ module Network.Haskoin.Wallet
 , importBlocks
 
 -- *Database Types 
-, CoinStatus(..)
+, TxConfidence(..)
+, TxSource(..)
 , WalletException(..)
 
 ) where

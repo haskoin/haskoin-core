@@ -146,6 +146,12 @@ instance Arbitrary RequestPair where
         go (Balance _) = ResBalance <$> arbitrary
         go (Rescan _) = ResRescan <$> arbitrary
 
+instance Arbitrary TxConfidence where
+    arbitrary = elements [ TxOffline, TxDead, TxPending, TxBuilding ]
+
+instance Arbitrary TxSource where
+    arbitrary = elements [ NetworkSource, WalletSource, UnknownSource ]
+
 -- TODO: Remove this if we integrate into Haskoin
 genKey :: Gen AccPubKey
 genKey = do

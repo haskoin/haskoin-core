@@ -106,7 +106,7 @@ processNodeEvents mvar rChan fp = awaitForever $ \e -> do
         MerkleBlockEvent xs -> void $ importBlocks xs
         TxEvent ts          -> do
             before <- count ([] :: [Filter (DbAddressGeneric b)])
-            forM_ ts $ \tx -> importTx tx False
+            forM_ ts $ \tx -> importTx tx NetworkSource
             after <- count ([] :: [Filter (DbAddressGeneric b)])
             -- Update the bloom filter if new addresses were generated
             when (after > before) $ do

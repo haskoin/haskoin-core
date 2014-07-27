@@ -12,8 +12,8 @@ module Network.Haskoin.Wallet.Types
 , Account(..)
 , PaymentAddress(..)
 , AccTx(..)
-, CoinStatus(..)
-, catStatus
+, TxConfidence(..)
+, TxSource(..)
 , WalletException(..)
 ) where
 
@@ -29,6 +29,7 @@ import Data.Aeson
     ( Value (Object, String)
     , FromJSON
     , ToJSON
+    , withText
     , (.=)
     , (.:)
     , object
@@ -60,48 +61,46 @@ data WalletException = WalletException String
 
 instance Exception WalletException
 
--- | Spent if a complete transaction spends this coin
--- Reserved if a partial transaction is spending these coins
--- Unspent if the coins are still available
--- The purpose of the Reserved status is to block this coin from being used in
--- subsequent coin selection algorithms. However, Reserved coins can always be
--- spent (set status to Spent) by complete transactions.
-data CoinStatus = Spent TxHash | Reserved TxHash | Unspent
-    deriving (Show, Read, Eq)
+data TxConfidence
+    = TxOffline
+    | TxDead 
+    | TxPending
+    | TxBuilding
+    deriving (Eq, Show, Read)
 
-instance ToJSON CoinStatus where
-    toJSON (Spent h) = object
-        [ "status" .= String "spent"
-        , "txid" .= encodeTxHashLE h
-        ]
-    toJSON (Reserved h) = object
-        [ "status"   .= String "reserved"
-        , "txid"   .= encodeTxHashLE h
-        ]
-    toJSON Unspent = object
-        [ "status"   .= String "unspent"
-        ]
+instance ToJSON TxConfidence where
+    toJSON conf = case conf of
+        TxOffline  -> "offline"
+        TxDead     -> "dead"
+        TxPending  -> "pending"
+        TxBuilding -> "building"
 
-instance FromJSON CoinStatus where
-    parseJSON (Object o) = do
-        s <- o .: "status"
-        case s of
-            String "spent" -> do
-                t <- o .: "txid"
-                maybe mzero (return . Spent) (decodeTxHashLE t)
-            String "reserved" -> do
-                t <- o .: "txid"
-                maybe mzero (return . Reserved) (decodeTxHashLE t)
-            String "unspent" -> return Unspent
-            _ -> mzero
-    parseJSON _ = mzero
+instance FromJSON TxConfidence where
+    parseJSON = withText "TxConfidence" $ \t -> case t of
+        "offline"  -> return TxOffline
+        "dead"     -> return TxDead
+        "pending"  -> return TxPending
+        "building" -> return TxBuilding
+        _          -> mzero
+        
+data TxSource
+    = NetworkSource
+    | WalletSource
+    | UnknownSource
+    deriving (Eq, Show, Read)
 
-catStatus :: [CoinStatus] -> [TxHash]
-catStatus = foldr f []
-  where
-    f (Spent h) acc    = h:acc
-    f (Reserved h) acc = h:acc
-    f _ acc            = acc
+instance ToJSON TxSource where
+    toJSON s = case s of
+        NetworkSource -> "network"
+        WalletSource  -> "wallet"
+        UnknownSource -> "unknown"
+
+instance FromJSON TxSource where
+    parseJSON = withText "TxSource" $ \t -> case t of
+        "network" -> return NetworkSource
+        "wallet"  -> return WalletSource
+        "unknown" -> return UnknownSource
+        _         -> mzero
 
 -- TODO: Add NFData instances for all those types
 data Wallet 
@@ -228,7 +227,7 @@ data AccTx = AccTx
     { accTxHash          :: TxHash
     , accTxRecipients    :: [Address]
     , accTxValue         :: Int64
-    , accTxOffline       :: Bool
+    , accTxConfidence    :: TxConfidence
     , accIsCoinbase      :: Bool
     , accTxConfirmations :: Int
     } deriving (Eq, Show, Read)
@@ -238,7 +237,7 @@ instance ToJSON AccTx where
         [ "txid"          .= h
         , "recipients"    .= as
         , "value"         .= v
-        , "offline"       .= x
+        , "confidence"    .= x
         , "isCoinbase"    .= cb
         , "confirmations" .= c
         ]
@@ -248,7 +247,7 @@ instance FromJSON AccTx where
         h  <- o .: "txid"
         as <- o .: "recipients"
         v  <- o .: "value"
-        x  <- o .: "offline"
+        x  <- o .: "confidence"
         cb <- o .: "isCoinbase"
         c  <- o .: "confirmations"
         return $ AccTx h as v x cb c
@@ -315,11 +314,38 @@ instance PersistField Account where
 instance PersistFieldSql Account where
     sqlType _ = SqlString
 
-instance PersistField CoinStatus where
-    toPersistValue = toPersistJson
-    fromPersistValue = fromPersistJson "Not a valid CoinStatus"
+instance PersistField TxConfidence where
+    toPersistValue tc = PersistText $ decodeUtf8 $ stringToBS $ case tc of
+        TxOffline  -> "offline"
+        TxDead     -> "dead"
+        TxPending  -> "pending"
+        TxBuilding -> "building"
 
-instance PersistFieldSql CoinStatus where
+    fromPersistValue (PersistText t) = case bsToString $ encodeUtf8 t of
+        "offline"  -> return TxOffline
+        "dead"     -> return TxDead
+        "pending"  -> return TxPending
+        "building" -> return TxBuilding
+        _          -> Left "Not a valid TxConfidence"
+    fromPersistValue _ = Left "Not a valid TxConfidence"
+        
+instance PersistFieldSql TxConfidence where
+    sqlType _ = SqlString
+
+instance PersistField TxSource where
+    toPersistValue ts = PersistText $ decodeUtf8 $ stringToBS $ case ts of
+        NetworkSource -> "network"
+        WalletSource  -> "wallet"
+        UnknownSource -> "unknown"
+
+    fromPersistValue (PersistText t) = case bsToString $ encodeUtf8 t of
+        "network" -> return NetworkSource
+        "wallet"  -> return WalletSource
+        "unknown" -> return UnknownSource
+        _         -> Left "Not a valid TxSource"
+    fromPersistValue _ = Left "Not a valid TxSource"
+
+instance PersistFieldSql TxSource where
     sqlType _ = SqlString
 
 instance PersistField Coin where
@@ -340,3 +366,4 @@ instance PersistField Tx where
 
 instance PersistFieldSql Tx where
     sqlType _ = SqlBlob
+

@@ -17,6 +17,8 @@ tests =
         , testProperty "Account" (metaID :: Account -> Bool)
         , testProperty "PaymentAddress" (metaID :: PaymentAddress -> Bool)
         , testProperty "AccTx" (metaID :: AccTx -> Bool)
+        , testProperty "TxConfidence" (metaID :: TxConfidence -> Bool)
+        , testProperty "TxSource" (metaID :: TxSource -> Bool)
         ]
     , testGroup "Serialize & de-serialize JSON-RPC types"
         [ testProperty "WalletRequest" testWalletRequest 
@@ -25,7 +27,7 @@ tests =
     ]
 
 metaID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
-metaID x = (decode . encode) x == Just x
+metaID x = (decode . encode) [x] == Just [x]
 
 testWalletRequest :: WalletRequest -> Int -> Bool
 testWalletRequest wr i = 

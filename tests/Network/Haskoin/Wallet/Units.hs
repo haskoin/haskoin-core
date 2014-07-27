@@ -290,10 +290,10 @@ testImportTx = do
                     base58ToAddr "16rEcC1w39g7VpVbmkqiPZZi4oJ1tkQnjU" -- b
                  ] 0
     --TODO: Test res
-    importTx fundingTx True
+    importTx fundingTx NetworkSource
     b1 <- balance "a"
     liftIO $ print b1
-    importTx fundingTx False
+    importTx fundingTx WalletSource
     b2 <- balance "a"
     liftIO $ print b2
     

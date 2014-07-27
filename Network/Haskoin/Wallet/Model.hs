@@ -6,7 +6,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE EmptyDataDecls #-}
-
 module Network.Haskoin.Wallet.Model 
 ( DbWalletGeneric(..)
 , DbAccountGeneric(..)
@@ -14,14 +13,19 @@ module Network.Haskoin.Wallet.Model
 , DbCoinGeneric(..)
 , DbAccTxGeneric(..)
 , DbTxGeneric(..)
+, DbTxConflictGeneric(..)
+, DbOrphanGeneric(..)
 , DbConfirmationGeneric(..)
 , DbConfigGeneric(..)
+, DbSpentCoinGeneric(..)
 , DbWalletId
 , DbAccountId
 , DbAddressId
 , DbCoinId
 , DbAccTxId
 , DbTxId
+, DbTxConflictId
+, DbSpentCoinId
 , DbConfirmationId
 , DbConfigId
 , EntityField(..)
@@ -87,10 +91,22 @@ DbCoin
     pos Int
     value Coin
     address Address 
-    status CoinStatus
     account DbAccountId
     created UTCTime default=CURRENT_TIME
     CoinOutPoint hash pos
+    deriving Show
+
+DbSpentCoin
+    key DbCoinId
+    tx TxHash
+    created UTCTime default=CURRENT_TIME
+    deriving Show
+
+DbTxConflict
+    fst TxHash
+    snd TxHash
+    created UTCTime default=CURRENT_TIME
+    UniqueConflict fst snd
     deriving Show
 
 DbAccTx
@@ -105,13 +121,20 @@ DbAccTx
 DbTx
     hash TxHash
     value Tx
-    orphan Bool
-    offline Bool
+    confidence TxConfidence
     confirmedBy BlockHash Maybe
     confirmedHeight Word32 Maybe
     isCoinbase Bool
     created UTCTime default=CURRENT_TIME
     UniqueTx hash
+    deriving Show
+
+DbOrphan
+    hash TxHash
+    value Tx
+    source TxSource
+    created UTCTime default=CURRENT_TIME
+    UniqueOrphan hash
     deriving Show
 
 DbConfirmation

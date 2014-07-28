@@ -693,7 +693,8 @@ balance name = do
     coins <- spendableCoins name
     return $ sum $ map coinValue coins
 
--- Returns coins that have not been spent
+-- Returns coins that have not been spent. A coin spent by a dead transaction
+-- is considered unspent.
 unspentCoins :: (PersistUnique m, PersistQuery m) 
              => AccountName   -- ^ Account name
              -> m [Coin]      -- ^ List of unspent coins
@@ -701,9 +702,13 @@ unspentCoins name = do
     (Entity ai _) <- getAccountEntity name
     coinsE <- selectList [ DbCoinAccount ==. ai ] [Asc DbCoinCreated]
     let coins = map (dbCoinValue . entityVal) coinsE
-    filterM (f . coinOutPoint) coins
-  where
-    f op = liftM (== 0) $ count [DbSpentCoinKey ==. op]
+    resM <- forM coins $ \c -> do
+        spent <- selectList [DbSpentCoinKey ==. coinOutPoint c] []
+        let hs = nub $ map (dbSpentCoinTx . entityVal) spent
+        txsM <- mapM (getBy . UniqueTx) hs
+        let confidences = map (dbTxConfidence . entityVal) $ catMaybes txsM
+        return $ if all (== TxDead) confidences then Just c else Nothing
+    return $ catMaybes resM
 
 -- Returns unspent coins that can be spent. For example, coins from 
 -- conflicting transactions cannot be spent, even if they are unspent.

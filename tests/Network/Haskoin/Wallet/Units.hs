@@ -242,6 +242,7 @@ tests =
         [ testCase "Outgoing tx double spend" $ runUnit testOutDoubleSpend
         , testCase "Incoming tx double spend" $ runUnit testInDoubleSpend
         , testCase "Chaing of double spent tx" $ runUnit testDoubleSpendChain
+        , testCase "Groups of double spent tx" $ runUnit testDoubleSpendGroup
         ]
     ]
 
@@ -582,4 +583,129 @@ testDoubleSpendChain = do
     liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx2, txHash tx3, txHash tx3])
 
+-- We have 2 coins, c1 and c2. tx1 spends from c1, tx2 spends from c1 and c2,
+-- tx3 spends from c2. So we can either have tx2 valid or tx1 and tx3 as valid.
+testDoubleSpendGroup :: App ()
+testDoubleSpendGroup = do
+    newWalletMnemo "test" pass $ Just mnemo
+    newAccount "test" "acc1"
+    setLookAhead "acc1" 30
+    newAddrs "acc1" 5 
+    let fundingTx = 
+            Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
+                 [ TxOut 10000000 $
+                    encodeOutputBS $ PayPKHash $ fromJust $ 
+                    base58ToAddr "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" 
+                 , TxOut 20000000 $
+                    encodeOutputBS $ PayPKHash $ fromJust $ 
+                    base58ToAddr "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" 
+                 ] 0
+        -- sendTx "acc1" [("1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ",9990000)] 10000
+        -- sendTx "acc1" [("184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF",29990000)] 10000
+        -- sendTx "acc1" [("1FkBfN2P6RdvSE6M4k1BGZqFYRLXMXyJen",19990000)] 10000
+        tx1 = decode' $ fromJust $ hexToBS "010000000177c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be000000006a47304402203e79947165a72de92581a6a53afaa552593a966db52477d18e4d97b5338d9451022037696e5e6f6792b92e796bfac6eb37ad16038dbbe019b8fffc9ad5407c1bf34a01210320e6fef44dc34322ce8e5d0a20efe55ae1308c321fab6496eece4473b9f12dd6ffffffff01706f9800000000001976a914bbc24a1dbb213c82dc6bd3e008e411e7a22ba74488ac00000000" :: Tx
+        tx2 = decode' $ fromJust $ hexToBS "010000000277c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be000000006a473044022041814327248f0d5dc3f2046e5d04d9429e08ba1364062755b381ef4b85a195f202200d6968e737ff15767af1663cf582e6954b56f8dd717de2b7c05ecb8460f6a13601210320e6fef44dc34322ce8e5d0a20efe55ae1308c321fab6496eece4473b9f12dd6ffffffff77c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be010000006a47304402200d03e75b7fb298c6025f3134834e937a4d3180c1fc29b18f888406ac117a19320220180ebebc8468c3750142f3b0df3d242d53237861fc987f16a94735686284f2e801210206ac706bccb9a4ba7c1a6f133d5f17d847875d5ff29019913224cb32f6c57fa7ffffffff01709cc901000000001976a9144d816754accc18bb7b2cef479d948be74399337788ac00000000" :: Tx
+        tx3 = decode' $ fromJust $ hexToBS "010000000177c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be010000006a47304402205ebb211e7e073ab79a02af5db840d4829335e110ddffa81a26cacc91569f963802201bf901de4dc626b5ccce4f15ef22682cb210b7a22bb5817d310f0d65fbef20bc01210206ac706bccb9a4ba7c1a6f133d5f17d847875d5ff29019913224cb32f6c57fa7ffffffff01f0053101000000001976a914a1bc8c0a9a20bf4d629be585f8764a475090cae788ac00000000" :: Tx
+    
+    -- Import funding transaction
+    importTx fundingTx NetworkSource >>=
+        liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
+    spendableCoins "acc1" >>= 
+        liftIO . (assertEqual "Spendable coins is not 2" 2) . length
+
+    -- Import first transaction
+    importTx tx1 NetworkSource >>=
+        liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
+    spendableCoins "acc1" >>= 
+        liftIO . (assertEqual "Spendable coins is not 2" 2) . length
+    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29990000" 29990000)
+
+    -- Let's confirm the first transaction
+    importBlocks [(BestBlock $ fakeNode 0 0x01, [])]
+    importBlocks [(BestBlock $ fakeNode 1 0x02, [txHash tx1])]
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
+        >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
+    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29990000" 29990000)
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+        >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash fundingTx, txHash tx1])
+
+    -- Import second transaction
+    importTx tx2 NetworkSource >>=
+        liftIO . (assertEqual "Confidence is not TxDead" (Just TxDead))
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
+        >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
+        >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
+    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29990000" 29990000)
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+        >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash fundingTx, txHash tx1])
+
+    -- Import third transaction
+    importTx tx3 NetworkSource >>=
+        liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
+        >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
+        >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx3)
+        >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
+    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29980000" 29980000)
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+        >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx1, txHash tx3])
+
+    -- Let's confirm tx3
+    importBlocks [(BestBlock $ fakeNode 2 0x03, [])]
+    importBlocks [(BestBlock $ fakeNode 3 0x04, [txHash tx3])]
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
+        >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
+        >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx3)
+        >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
+    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29980000" 29980000)
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+        >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx1, txHash tx3])
+
+    -- Now we unconfirm tx3. tx2 should remain dead because it it still in
+    -- conflict with building tx1
+    importBlocks [(SideBlock $ fakeNode 3 0x05, [])]
+    let s = fakeNode 2 0x03
+        o = [fakeNode 2 0x03, fakeNode 3 0x04]
+        n = [fakeNode 2 0x03, fakeNode 3 0x05, fakeNode 4 0x06] 
+    importBlocks [(BlockReorg s o n, [])]
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
+        >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
+        >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx3)
+        >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxPending) 
+    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29980000" 29980000)
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+        >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx1, txHash tx3])
+    
+    -- Now let's reorg on a new chain that makes tx2 valid. tx1 and tx3 should
+    -- then be dead
+    importBlocks [(SideBlock $ fakeNode 1 0x07, [txHash tx2])]
+    importBlocks [(SideBlock $ fakeNode 2 0x08, [])]
+    importBlocks [(SideBlock $ fakeNode 3 0x09, [])]
+    importBlocks [(SideBlock $ fakeNode 4 0x0a, [])]
+    let s' = fakeNode 0 0x01
+        o' = [ fakeNode 0 0x01, fakeNode 1 0x02
+             , fakeNode 2 0x03, fakeNode 3 0x05
+             , fakeNode 4 0x06
+             ]
+        n' = [ fakeNode 0 0x01, fakeNode 1 0x07
+             , fakeNode 2 0x08, fakeNode 3 0x09
+             , fakeNode 4 0x0a, fakeNode 5 0x0b
+             ] 
+    importBlocks [(BlockReorg s' o' n', [])]
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
+        >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
+        >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx3)
+        >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
+    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29990000" 29990000)
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+        >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx2])
 

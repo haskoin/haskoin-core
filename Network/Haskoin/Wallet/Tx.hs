@@ -178,21 +178,22 @@ importTx tx source = do
 addTx :: (PersistQuery m, PersistUnique m) 
       => Tx -> TxSource -> m (Maybe TxConfidence)
 addTx tx source = do
-    time <- liftIO getCurrentTime
-    -- Retrieve the coins we have from the transaction inputs
-    eCoins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
-    let coins = map entityVal eCoins
     -- A non-network transaction can not double spend coins
-    checkDoubleSpend (map entityKey eCoins) source
-    -- We must remove offline transactions which spend the same coins as us
-    removeOfflineTxs $ map entityKey eCoins
-    -- Add coin spent link
-    forM_ eCoins $ \c -> insert_ $ DbSpentCoin (entityKey c) tid time
+    checkDoubleSpend tx source
+    -- Retrieve the coins we have from the transaction inputs
+    coinsE <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
+    let coins = map entityVal coinsE
     -- Import new coins 
     outCoins <- liftM catMaybes $ mapM (importCoin tid) $ zip (txOut tx) [0..]
     -- Ignore this transaction if it is not ours
     if null coins && null outCoins then return Nothing else do
-        conf <- updateConflicts tx eCoins source 
+        time <- liftIO getCurrentTime
+        -- We must remove offline transactions which spend the same coins as us
+        removeOfflineTxs $ map prevOutput $ txIn tx
+        -- Mark all inputs of this transaction as spent
+        forM_ (txIn tx) $ \(TxIn op _ _) -> insert_ $ DbSpentCoin op tid time
+        -- Update conflicts with other transactions
+        conf <- updateConflicts tx (map dbCoinValue coins) source 
         -- Save the transaction 
         let isCB = isCoinbaseTx tx
         insert_ $ DbTx tid tx conf Nothing Nothing isCB time 
@@ -208,85 +209,68 @@ addTx tx source = do
     tid              = txHash tx
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
 
-checkDoubleSpend :: ( PersistUnique m
-                    , PersistQuery m
-                    , PersistMonadBackend m ~ b
-                    )
-                 => [Key (DbCoinGeneric b)] -> TxSource -> m ()
-checkDoubleSpend coins source
+checkDoubleSpend :: (PersistUnique m, PersistQuery m)
+                 => Tx -> TxSource -> m ()
+checkDoubleSpend tx source
     -- We only allow double spends that come from the network
     | source == NetworkSource = return ()
     | otherwise = do
-        spentList <- selectList [DbSpentCoinKey <-. coins] []
-        forM_ spentList $ \s -> do
-            isOffline <- isTxOffline $ dbSpentCoinTx $ entityVal s
-            unless isOffline $ liftIO $ throwIO $ 
-                WalletException "Can not import double-spending transaction"
+        res <- filterM ((liftM not) . isTxOffline) =<< findSpendingTxs outpoints
+        unless (null res) $ liftIO $ throwIO $
+            WalletException "Can not import double-spending transaction"
+  where
+    outpoints = map prevOutput $ txIn tx
 
-updateConflicts :: ( PersistUnique m
-                  , PersistQuery m
-                  , PersistMonadBackend m ~ b
-                  )
-                => Tx -> [Entity (DbCoinGeneric b)] -> TxSource 
-                -> m TxConfidence
+updateConflicts :: (PersistUnique m, PersistQuery m)
+                => Tx -> [Coin] -> TxSource -> m TxConfidence
 updateConflicts tx coins source 
     | source == NetworkSource = do
         -- Find conflicts with transactions that spend the same coins
-        spentCoins <- selectList [DbSpentCoinKey <-. (map entityKey coins)] []
-        let confs = nub $ map (dbSpentCoinTx . entityVal) spentCoins
+        confls <- liftM (filter (/= tid)) $ findSpendingTxs outpoints
+
         -- We are also in conflict with any children of a conflicted tx
-        childConfs <- forM confs findChildTxs
-        let allConfs = nub $ filter (/= tid) $ concat $ confs : childConfs
-        xs <- forM allConfs $ \h -> do
-            (Entity _ t) <- getTxEntity h
-            return $ case dbTxConfidence t of
-                TxBuilding -> TxDead
-                _          -> TxPending
+        childConfls <- forM confls findChildTxs
+        let allConfls = nub $ concat $ confls : childConfls
+        isDead <- liftM or $ mapM isTxBuilding allConfls 
 
         -- A transaction iherits the conflicts of its parent transaction
-        ys <- forM (map (dbCoinHash . entityVal) coins) $ \h -> do
-            (Entity _ t) <- getTxEntity h
-            cs <- getConflicts h
-            return (cs, dbTxConfidence t)
+        txsM <- mapM (getBy . UniqueTx) $ nub $ map outPointHash outpoints
+        let txs     = catMaybes txsM
+            parDead = any ((== TxDead) . dbTxConfidence . entityVal) txs
+        cs <- mapM (getConflicts . dbTxHash . entityVal) txs
 
         -- Insert unique conflict links
         time  <- liftIO getCurrentTime
-        forM (nub $ concat $ allConfs : (map fst ys)) $ \h -> 
+        forM (nub $ concat $ allConfls : cs) $ \h -> 
             insert_ $ DbTxConflict tid h time
 
         -- Compute the confidence
-        let conflictConfidence = xs ++ map snd ys
-        if null conflictConfidence 
-            then return TxPending 
-            else return $ catConfidence conflictConfidence
+        return $ if isDead || parDead then TxDead else TxPending
 
     | verifyTx tx vs = return TxPending
     | otherwise      = return TxOffline
   where
-    vs = map (f . dbCoinValue . entityVal) coins
+    outpoints        = map prevOutput $ txIn tx
+    vs               = map f coins
     f (Coin _ s o _) = (encodeOutput s, o)
-    tid = txHash tx
-    catConfidence (x:xs) = foldl g x xs
-    g TxDead _    = TxDead
-    g _ TxDead    = TxDead
-    g TxOffline _ = TxOffline
-    g _ TxOffline = TxOffline
-    g TxPending _ = TxPending
-    g _ TxPending = TxPending
-    g _ _         = TxBuilding
+    tid              = txHash tx
 
 -- Finds all the children of a given transaction recursively
-findChildTxs :: PersistQuery m => TxHash -> m [TxHash]
+findChildTxs :: (PersistUnique m, PersistQuery m) => TxHash -> m [TxHash]
 findChildTxs tid = do
-    hs   <- findSpendingTxs tid
-    rest <- forM hs findChildTxs
-    return $ nub $ concat $ hs : rest
+    txM <- getBy $ UniqueTx tid
+    let tx        = dbTxValue $ entityVal $ fromJust txM
+        len       = fromIntegral $ length (txOut tx)
+        outpoints = map (OutPoint tid) [0 .. (len - 1)]
+    if isNothing txM then return [] else do
+        hs   <- findSpendingTxs outpoints
+        rest <- forM hs findChildTxs
+        return $ nub $ concat $ hs : rest
 
--- Returns the transactions that spend the coins of the given transaction
-findSpendingTxs :: PersistQuery m => TxHash -> m [TxHash]
-findSpendingTxs tid = do
-    coins <- selectList [DbCoinHash ==. tid] [] 
-    res <- selectList [DbSpentCoinKey <-. map entityKey coins] []
+-- Returns the transactions that spend the given outpoints
+findSpendingTxs :: PersistQuery m => [OutPoint] -> m [TxHash]
+findSpendingTxs outpoints = do
+    res <- selectList [DbSpentCoinKey <-. outpoints] []
     return $ nub $ map (dbSpentCoinTx . entityVal) res
 
 -- Try to re-import all orphan transactions
@@ -298,24 +282,18 @@ tryImportOrphans = do
     forM_ orphans $ \(Entity _ otx) -> do
         importTx (dbOrphanValue otx) $ dbOrphanSource otx
 
-removeOfflineTxs :: ( PersistUnique m
-                    , PersistQuery m
-                    , PersistMonadBackend m ~ b
-                    ) => [Key (DbCoinGeneric b)] -> m ()
-removeOfflineTxs coins = do
-    spentList <- selectList [DbSpentCoinKey <-. coins] []
-    let txs = nub $ map (dbSpentCoinTx . entityVal) spentList 
-    forM_ txs $ \h -> do
-        txM <- getBy (UniqueTx h)
-        let tx = entityVal $ fromJust txM
-        when (isJust txM && dbTxConfidence tx == TxOffline) $ 
-            removeTx h >> return ()
+removeOfflineTxs :: (PersistUnique m, PersistQuery m) => [OutPoint] -> m ()
+removeOfflineTxs outpoints = do
+    hs  <- findSpendingTxs outpoints
+    txs <- liftM catMaybes $ mapM (getBy . UniqueTx) hs
+    let offline = filter ((== TxOffline) . dbTxConfidence . entityVal) txs
+    forM_ offline $ removeTx . dbTxHash . entityVal
 
 isCoinbaseTx :: Tx -> Bool
 isCoinbaseTx (Tx _ tin _ _) =
     length tin == 1 && (outPointHash $ prevOutput $ head tin) == 0x00
 
--- Create a new coin for an output if it is ours. 
+-- Create a new coin for an output if it is ours
 importCoin :: ( PersistQuery m
               , PersistUnique m
               , PersistMonadBackend m ~ b
@@ -426,25 +404,30 @@ removeTx :: (PersistUnique m, PersistQuery m)
          => TxHash      -- ^ Transaction hash to remove
          -> m [TxHash]  -- ^ List of removed transaction hashes
 removeTx tid = do
-    childs <- findSpendingTxs tid
-    -- Recursively remove children
-    cids <- forM childs removeTx
-    -- Delete output coins generated from this transaction
-    deleteWhere [ DbCoinHash ==. tid ]
-    -- Delete account transactions
-    deleteWhere [ DbAccTxHash ==. tid ]
-    -- Delete conflicts
-    deleteWhere [ DbTxConflictFst ==. tid ]
-    deleteWhere [ DbTxConflictSnd ==. tid ]
-    -- Delete transaction
-    deleteWhere [ DbTxHash ==. tid ]
-    -- Delete from orphan pool
-    deleteWhere [ DbOrphanHash ==. tid ]
-    -- Delete from confirmation table
-    deleteWhere [ DbConfirmationTx ==. tid ]
-    -- Unspend input coins that were previously spent by this transaction
-    deleteWhere [ DbSpentCoinTx ==. tid ]
-    return $ tid:(concat cids)
+    txM <- getBy $ UniqueTx tid
+    let tx        = dbTxValue $ entityVal $ fromJust txM
+        len       = fromIntegral $ length (txOut tx)
+        outpoints = map (OutPoint tid) [0 .. (len - 1)]
+    if isNothing txM then return [] else do 
+        childs <- findSpendingTxs outpoints
+        -- Recursively remove children
+        cids <- forM childs removeTx
+        -- Delete output coins generated from this transaction
+        deleteWhere [ DbCoinHash ==. tid ]
+        -- Delete account transactions
+        deleteWhere [ DbAccTxHash ==. tid ]
+        -- Delete conflicts
+        deleteWhere [ DbTxConflictFst ==. tid ]
+        deleteWhere [ DbTxConflictSnd ==. tid ]
+        -- Delete transaction
+        deleteWhere [ DbTxHash ==. tid ]
+        -- Delete from orphan pool
+        deleteWhere [ DbOrphanHash ==. tid ]
+        -- Delete from confirmation table
+        deleteWhere [ DbConfirmationTx ==. tid ]
+        -- Unspend input coins that were previously spent by this transaction
+        deleteWhere [ DbSpentCoinTx ==. tid ]
+        return $ tid:(concat cids)
 
 -- | Create a transaction sending some coins to a list of recipient addresses.
 sendTx :: (PersistUnique m, PersistQuery m)
@@ -716,11 +699,11 @@ unspentCoins :: (PersistUnique m, PersistQuery m)
              -> m [Coin]      -- ^ List of unspent coins
 unspentCoins name = do
     (Entity ai _) <- getAccountEntity name
-    coins   <- selectList [ DbCoinAccount ==. ai ] [Asc DbCoinCreated]
-    unspent <- filterM f coins
-    return $ map (dbCoinValue . entityVal) unspent
+    coinsE <- selectList [ DbCoinAccount ==. ai ] [Asc DbCoinCreated]
+    let coins = map (dbCoinValue . entityVal) coinsE
+    filterM (f . coinOutPoint) coins
   where
-    f (Entity cKey _) = liftM (== 0) $ count [DbSpentCoinKey ==. cKey]
+    f op = liftM (== 0) $ count [DbSpentCoinKey ==. op]
 
 -- Returns unspent coins that can be spent. For example, coins from 
 -- conflicting transactions cannot be spent, even if they are unspent.

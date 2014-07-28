@@ -355,6 +355,15 @@ instance PersistField Coin where
 instance PersistFieldSql Coin where
     sqlType _ = SqlString
 
+instance PersistField OutPoint where
+    toPersistValue = PersistText . decodeUtf8 . stringToBS . bsToHex . encode'
+    fromPersistValue (PersistText t) = maybeToEither "Not a valid OutPoint" $
+        decodeToMaybe =<< (hexToBS $ bsToString $ encodeUtf8 t)
+    fromPersistValue _ = Left "Not a valid OutPoint"
+
+instance PersistFieldSql OutPoint where
+    sqlType _ = SqlString
+
 instance PersistField Tx where
     toPersistValue = PersistByteString . encode'
     fromPersistValue (PersistByteString bs) = case txE of

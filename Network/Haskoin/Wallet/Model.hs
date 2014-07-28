@@ -97,7 +97,7 @@ DbCoin
     deriving Show
 
 DbSpentCoin
-    key DbCoinId
+    key OutPoint
     tx TxHash
     created UTCTime default=CURRENT_TIME
     deriving Show

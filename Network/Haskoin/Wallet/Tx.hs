@@ -192,9 +192,9 @@ addTx tx source = do
     outCoins <- liftM catMaybes $ mapM (importCoin tid) $ zip (txOut tx) [0..]
     -- Ignore this transaction if it is not ours
     if null coins && null outCoins then return Nothing else do
-        let isCB = isCoinbaseTx tx
         conf <- updateConflicts tx eCoins source 
-        -- Save the whole transaction 
+        -- Save the transaction 
+        let isCB = isCoinbaseTx tx
         insert_ $ DbTx tid tx conf Nothing Nothing isCB time 
         -- Build transactions that report on individual accounts
         let dbAccTxs = buildAccTx tx coins outCoins time
@@ -234,9 +234,9 @@ updateConflicts tx coins source
         -- Find conflicts with transactions that spend the same coins
         spentCoins <- selectList [DbSpentCoinKey <-. (map entityKey coins)] []
         let confs = nub $ map (dbSpentCoinTx . entityVal) spentCoins
-        -- We are also in conflict with any children on a conflicted tx
+        -- We are also in conflict with any children of a conflicted tx
         childConfs <- forM confs findChildTxs
-        let allConfs = nub $ concat $ confs : childConfs
+        let allConfs = nub $ filter (/= tid) $ concat $ confs : childConfs
         xs <- forM allConfs $ \h -> do
             (Entity _ t) <- getTxEntity h
             return $ case dbTxConfidence t of
@@ -592,7 +592,6 @@ importBlocks xs = do
     hsM <- forM xs $ \(a, txs) -> do
         -- Insert transaction/block confirmation links. We have to keep this
         -- information even for side blocks as we need it when a reorg occurs.
-        -- TODO: This breaks if txs is too large
         myTxsEnt <- liftM catMaybes $ forM txs $ \tx -> getBy $ UniqueTx tx
         let myTxs = map (dbTxHash . entityVal) myTxsEnt
         forM_ myTxs $ \h -> insert_ $ 

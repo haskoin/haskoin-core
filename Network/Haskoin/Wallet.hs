@@ -7,12 +7,14 @@
 module Network.Haskoin.Wallet
 ( 
 -- *Wallet Commands
-  initWalletDB
+  Wallet(..)
+, initWalletDB
 , newWalletMnemo
 , newWallet
 , walletList
 
 -- *Account Commands
+, Account(..)
 , AccountName
 , getAccount
 , newAccount
@@ -23,6 +25,7 @@ module Network.Haskoin.Wallet
 , isMSAccount
 
 -- *Address Commands
+, PaymentAddress(..)
 , getAddress
 , addressList
 , addressCount

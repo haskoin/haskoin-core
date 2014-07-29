@@ -246,6 +246,7 @@ tests =
         , testCase "Incoming tx double spend" $ runUnit testInDoubleSpend
         , testCase "Chain of double spent tx" $ runUnit testDoubleSpendChain
         , testCase "Groups of double spent tx" $ runUnit testDoubleSpendGroup
+        , testCase "Wallet double spend" testWalletDoubleSpend
         ]
     ]
 
@@ -757,4 +758,98 @@ testDoubleSpendGroup = do
     balance "acc1" >>= liftIO . (assertEqual "Balance is not 29990000" 29990000)
     liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx2])
+
+testWalletDoubleSpend :: Assertion
+testWalletDoubleSpend = do
+    let fundingTx = 
+            Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
+                 [ TxOut 10000000 $
+                    encodeOutputBS $ PayPKHash $ fromJust $ 
+                    base58ToAddr "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" 
+                 , TxOut 20000000 $
+                    encodeOutputBS $ PayPKHash $ fromJust $ 
+                    base58ToAddr "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" 
+                 ] 0
+        -- sendTx "acc1" [("1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ",9990000)] 10000
+        -- sendTx "acc1" [("184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF",29990000)] 10000
+        -- sendTx "acc1" [("1FkBfN2P6RdvSE6M4k1BGZqFYRLXMXyJen",19990000)] 10000
+        -- sendTx "acc1" [("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR",9980000)] 10000
+        tx1 = decode' $ fromJust $ hexToBS "010000000177c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be000000006a47304402203e79947165a72de92581a6a53afaa552593a966db52477d18e4d97b5338d9451022037696e5e6f6792b92e796bfac6eb37ad16038dbbe019b8fffc9ad5407c1bf34a01210320e6fef44dc34322ce8e5d0a20efe55ae1308c321fab6496eece4473b9f12dd6ffffffff01706f9800000000001976a914bbc24a1dbb213c82dc6bd3e008e411e7a22ba74488ac00000000" :: Tx
+        tx2 = decode' $ fromJust $ hexToBS "010000000277c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be000000006a473044022041814327248f0d5dc3f2046e5d04d9429e08ba1364062755b381ef4b85a195f202200d6968e737ff15767af1663cf582e6954b56f8dd717de2b7c05ecb8460f6a13601210320e6fef44dc34322ce8e5d0a20efe55ae1308c321fab6496eece4473b9f12dd6ffffffff77c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be010000006a47304402200d03e75b7fb298c6025f3134834e937a4d3180c1fc29b18f888406ac117a19320220180ebebc8468c3750142f3b0df3d242d53237861fc987f16a94735686284f2e801210206ac706bccb9a4ba7c1a6f133d5f17d847875d5ff29019913224cb32f6c57fa7ffffffff01709cc901000000001976a9144d816754accc18bb7b2cef479d948be74399337788ac00000000" :: Tx
+        tx3 = decode' $ fromJust $ hexToBS "010000000177c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be010000006a47304402205ebb211e7e073ab79a02af5db840d4829335e110ddffa81a26cacc91569f963802201bf901de4dc626b5ccce4f15ef22682cb210b7a22bb5817d310f0d65fbef20bc01210206ac706bccb9a4ba7c1a6f133d5f17d847875d5ff29019913224cb32f6c57fa7ffffffff01f0053101000000001976a914a1bc8c0a9a20bf4d629be585f8764a475090cae788ac00000000" :: Tx
+        tx4 = decode' $ fromJust $ hexToBS "01000000018f8beb42a53d2fab0614867e8aec484d3e0b1097ab91a6ad3967b5f753770eb2000000006b483045022100ccf17481bd37aecb9fc6130f9fcfa73914bb0ea535af45fc989e6b3faa3f271802201b90209622ecd01417fb7e263598278541ac359cb7572dd3e4dec9fca2bd01ad0121038fecbf5bca807297c0290d8912dcb4348b46de7272c942a71bb8465de7d63293ffffffff0160489800000000001976a9141bb874c1b168e928ff148f2cf7ae9ad69e3e49f988ac00000000" :: Tx
+
+    assertException (WalletException "Can not import double-spending transaction") $ do
+        newWalletMnemo "test" pass $ Just mnemo
+        newAccount "test" "acc1"
+        setLookAhead "acc1" 30
+        newAddrs "acc1" 5 
+        -- Import funding transaction
+        importTx fundingTx NetworkSource >>=
+            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+        -- Import first transaction
+        importTx tx1 NetworkSource >>=
+            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+        -- Import second transaction
+        importTx tx2 NetworkSource >>=
+            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+        -- Importing this transaction as a wallet transaction should fail as it
+        -- double spends a coin
+        importTx tx3 WalletSource 
+
+    assertException (WalletException "Can not import double-spending transaction") $ do
+        newWalletMnemo "test" pass $ Just mnemo
+        newAccount "test" "acc1"
+        setLookAhead "acc1" 30
+        newAddrs "acc1" 5 
+        -- Import funding transaction
+        importTx fundingTx NetworkSource >>=
+            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+        -- Import first transaction
+        importTx tx1 NetworkSource >>=
+            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+        -- Import second transaction
+        importTx tx2 NetworkSource >>=
+            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+        -- Importing this transaction as a wallet transaction should fail as it
+        -- builds on top of a conflicting chain
+        importTx tx4 WalletSource 
+
+    -- Now we make tx2 dead so we can import tx3 and tx4 from the wallet
+    runUnit $ do
+        newWalletMnemo "test" pass $ Just mnemo
+        newAccount "test" "acc1"
+        setLookAhead "acc1" 30
+        newAddrs "acc1" 5 
+        -- Import funding transaction
+        importTx fundingTx NetworkSource >>=
+            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+        -- Import first transaction
+        importTx tx1 NetworkSource >>=
+            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+        -- Import second transaction
+        importTx tx2 NetworkSource >>=
+            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+
+        -- confirm the first transaction
+        importBlocks [(BestBlock $ fakeNode 0 0x01, [])]
+        importBlocks [(BestBlock $ fakeNode 1 0x02, [txHash tx1])]
+
+        -- now we can import tx3
+        importTx tx3 WalletSource >>=
+            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+        liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx3)
+            >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxPending) 
+        balance "acc1" >>= liftIO . (assertEqual "Balance is not 29980000" 29980000)
+        liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+            >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx1, txHash tx3])
+
+        -- and tx4
+        importTx tx4 WalletSource >>=
+            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+        liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx4)
+            >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxPending) 
+        balance "acc1" >>= liftIO . (assertEqual "Balance is not 29970000" 29970000)
+        liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+            >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx3, txHash tx4])
 

@@ -215,14 +215,19 @@ checkDoubleSpend tx source
     -- We only allow double spends that come from the network
     | source == NetworkSource = return ()
     | otherwise = do
-        spent <- findSpendingTxs outpoints
-        xs <- forM spent $ \h -> do
-            txM <- getBy $ UniqueTx h
-            let tx = entityVal $ fromJust $ txM
-            -- A coin is spent if the transaction is not offline or dead
-            return $ isJust txM && 
-                     dbTxConfidence tx `elem` [TxBuilding, TxPending]
-        when (or xs) $ liftIO $ throwIO $
+        -- We can not spend the same coins as someone else
+        spendM <- mapM (getBy . UniqueTx) =<< findSpendingTxs outpoints
+        let spendConfs = map (dbTxConfidence . entityVal) $ catMaybes spendM
+            isDoubleSpend = any (`elem` [TxBuilding, TxPending]) spendConfs
+
+        -- We can not build on top of a chain with conflicts
+        txsM <- mapM (getBy . UniqueTx) $ nub $ map outPointHash outpoints
+        xs   <- mapM (getConflicts . dbTxHash . entityVal) $ catMaybes txsM
+        conflM <- mapM (getBy . UniqueTx) $ nub $ concat xs
+        let confidences = map (dbTxConfidence . entityVal) $ catMaybes conflM
+            hasConflict = any (`elem` [TxBuilding, TxPending]) confidences
+
+        when (isDoubleSpend || hasConflict) $ liftIO $ throwIO $
             WalletException "Can not import double-spending transaction"
   where
     outpoints = map prevOutput $ txIn tx

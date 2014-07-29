@@ -215,8 +215,14 @@ checkDoubleSpend tx source
     -- We only allow double spends that come from the network
     | source == NetworkSource = return ()
     | otherwise = do
-        res <- filterM ((liftM not) . isTxOffline) =<< findSpendingTxs outpoints
-        unless (null res) $ liftIO $ throwIO $
+        spent <- findSpendingTxs outpoints
+        xs <- forM spent $ \h -> do
+            txM <- getBy $ UniqueTx h
+            let tx = entityVal $ fromJust $ txM
+            -- A coin is spent if the transaction is not offline or dead
+            return $ isJust txM && 
+                     dbTxConfidence tx `elem` [TxBuilding, TxPending]
+        when (or xs) $ liftIO $ throwIO $
             WalletException "Can not import double-spending transaction"
   where
     outpoints = map prevOutput $ txIn tx

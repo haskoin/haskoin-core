@@ -79,8 +79,7 @@ data ManagerSession = ManagerSession
 
 -- Data stored about a peer in the Manager
 data PeerData = PeerData
-    { peerSettings       :: RemoteHost
-    , peerHandshake      :: Bool
+    { peerHandshake      :: Bool
     , peerHeight         :: BlockHeight
     -- Blocks that a peer sent us but we haven't linked them yet to our chain.
     -- We use this list to update the peer height when we link those blocks.
@@ -205,7 +204,6 @@ managerSink = awaitForever $ \req -> lift $ do
             BloomFilterUpdate b -> processBloomFilter b
             PublishTx tx        -> processPublishTx tx
             FastCatchupTime t   -> processFastCatchupTime t
-            _                   -> return () -- Ignore them for now
 
 processStartPeer :: RemoteHost -> ManagerHandle ()
 processStartPeer remote = do

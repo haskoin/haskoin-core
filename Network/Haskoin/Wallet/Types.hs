@@ -15,6 +15,10 @@ module Network.Haskoin.Wallet.Types
 , TxConfidence(..)
 , TxSource(..)
 , WalletException(..)
+, printWallet
+, printAccount
+, printAddress
+, printAccTx
 ) where
 
 import Control.Monad (mzero, liftM2)
@@ -141,6 +145,19 @@ instance FromJSON Wallet where
             _ -> mzero
     parseJSON _ = mzero
 
+printWallet :: Wallet -> String
+printWallet w = case w of
+    WalletFull n k -> unlines
+        [ unwords [ "Wallet    :", n ]
+        , unwords [ "Type      :", "Full" ]
+        , unwords [ "Master key:", xPrvExport $ masterKey k ]
+        ]
+    WalletRead n k -> unlines
+        [ unwords [ "Wallet     :", n ]
+        , unwords [ "Type       :", "Read-only" ]
+        , unwords [ "Public key :", xPubExport k ]
+        ]
+
 data Account
     = RegularAccount 
         { accountName   :: String
@@ -197,9 +214,26 @@ instance FromJSON Account where
                     f (k',ks') = return $ MultisigAccount n w i k' r t ks'
                 maybe mzero f $ liftM2 (,) keyM keysM
             _ -> mzero
-      where
-        
     parseJSON _ = mzero
+
+printAccount :: Account -> String
+printAccount a = case a of
+    RegularAccount n w i k -> unlines
+        [ unwords [ "Account:", n ]
+        , unwords [ "Wallet :", w ]
+        , unwords [ "Type   :", "Regular" ]
+        , unwords [ "Tree   :", concat [ "m/",show i,"'/" ] ]
+        , unwords [ "Key    :", xPubExport $ getAccPubKey k ]
+        ]
+    MultisigAccount n w i k r t ks -> unlines $
+        [ unwords [ "Account:", n ]
+        , unwords [ "Wallet :", w ]
+        , unwords [ "Type   :", "Multisig", show r, "of", show t ]
+        , unwords [ "Tree   :", concat [ "m/",show i,"'/" ] ]
+        , unwords [ "Key    :", xPubExport $ getAccPubKey k ]
+        ] ++ if null ks then [] else 
+            (unwords [ "3rd Key:", xPubExport $ head ks ]) : 
+                (map (\x -> unwords ["        ", xPubExport x]) $ tail ks)
 
 data PaymentAddress = PaymentAddress 
     { paymentAddress :: Address
@@ -222,6 +256,12 @@ instance FromJSON PaymentAddress where
         let f add = return $ PaymentAddress add l i
         maybe mzero f $ base58ToAddr a
     parseJSON _ = mzero
+
+printAddress :: PaymentAddress -> String
+printAddress (PaymentAddress a l i) = unwords $
+    [ concat [show i, ":"]
+    , addrToBase58 a
+    ] ++ if null l then [] else [concat ["(",l,")"]]
 
 data AccTx = AccTx
     { accTxHash          :: TxHash
@@ -252,6 +292,28 @@ instance FromJSON AccTx where
         c  <- o .: "confirmations"
         return $ AccTx h as v x cb c
     parseJSON _ = mzero
+
+printAccTx :: AccTx -> String
+printAccTx (AccTx h r v ci cb co) = unlines $
+    [ unwords [ "Value     :", show v ]
+    , unwords [ "Recipients:", addrToBase58 $ head r ]
+    ]
+    ++
+    (map (\x -> unwords ["           ", addrToBase58 x]) $ tail r)
+    ++
+    [ unwords [ "Confidence:"
+              , printConfidence ci
+              , concat ["(",show co," confirmations)"] 
+              ]
+    , unwords [ "TxHash    :", encodeTxHashLE h ]
+    ] ++ if cb then [unwords ["Coinbase  :", "Yes"]] else []
+
+printConfidence :: TxConfidence -> String
+printConfidence c = case c of
+    TxBuilding -> "Building"
+    TxPending  -> "Pending"
+    TxDead     -> "Dead"
+    TxOffline  -> "Offline"
 
 persistTextErrMsg :: T.Text
 persistTextErrMsg = "Has to be a PersistText"

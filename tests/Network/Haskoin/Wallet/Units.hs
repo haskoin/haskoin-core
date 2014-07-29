@@ -238,10 +238,13 @@ tests =
                     newAddrs "default" 5
                     addressPrvKey "default" 5
         ]
-    , testGroup "Transaction tests"
+    , testGroup "Transaction import tests"
+        [ testCase "Importing orphan transaction" $ runUnit testImportOrphan
+        ]
+    , testGroup "Double spend tests"
         [ testCase "Outgoing tx double spend" $ runUnit testOutDoubleSpend
         , testCase "Incoming tx double spend" $ runUnit testInDoubleSpend
-        , testCase "Chaing of double spent tx" $ runUnit testDoubleSpendChain
+        , testCase "Chain of double spent tx" $ runUnit testDoubleSpendChain
         , testCase "Groups of double spent tx" $ runUnit testDoubleSpendGroup
         ]
     ]
@@ -275,7 +278,53 @@ mnemo = unwords
 pass :: String
 pass = "passw0rd"
 
--- create a fake block for testing at height 1
+testImportOrphan :: App ()
+testImportOrphan = do
+    newWalletMnemo "test" pass $ Just mnemo
+    newAccount "test" "acc1"
+    setLookAhead "acc1" 30
+    newAddrs "acc1" 5 
+    let fundingTx = 
+            Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
+                 [ TxOut 10000000 $
+                    encodeOutputBS $ PayPKHash $ fromJust $ 
+                    base58ToAddr "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" 
+                 , TxOut 20000000 $
+                    encodeOutputBS $ PayPKHash $ fromJust $ 
+                    base58ToAddr "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" 
+                 ] 0
+        -- sendTx "acc1" [("1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ",9990000)] 10000
+        -- sendTx "acc1" [("184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF",19990000)] 10000
+        tx1 = decode' $ fromJust $ hexToBS "010000000177c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be000000006a47304402203e79947165a72de92581a6a53afaa552593a966db52477d18e4d97b5338d9451022037696e5e6f6792b92e796bfac6eb37ad16038dbbe019b8fffc9ad5407c1bf34a01210320e6fef44dc34322ce8e5d0a20efe55ae1308c321fab6496eece4473b9f12dd6ffffffff01706f9800000000001976a914bbc24a1dbb213c82dc6bd3e008e411e7a22ba74488ac00000000" :: Tx
+        tx2 = decode' $ fromJust $ hexToBS "010000000177c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be010000006b483045022100e73c4bac3519d6dc42a0410d1a2caad3b2445a2be82ed4588cb94443550e3afc022077a590e6d49f534db74a2c30e97f735d7affb0142a91d60455a53b02afaba7dd01210206ac706bccb9a4ba7c1a6f133d5f17d847875d5ff29019913224cb32f6c57fa7ffffffff01f0053101000000001976a9144d816754accc18bb7b2cef479d948be74399337788ac00000000" :: Tx
+
+    -- import first orphan
+    importTx tx1 NetworkSource >>=
+        liftIO . (assertEqual "Confidence is not Nothing" Nothing)
+    liftM (map (dbOrphanHash . entityVal)) (selectList [] [])
+        >>= liftIO . (assertEqual "Wrong orphans" [txHash tx1])
+    balance "acc1" >>= liftIO . (assertEqual "Balance is not 0" 0)
+
+    -- import second orphan
+    importTx tx2 NetworkSource >>=
+        liftIO . (assertEqual "Confidence is not Nothing" Nothing)
+    liftM (map (dbOrphanHash . entityVal)) (selectList [] [])
+        >>= liftIO . (assertEqual "Wrong orphans" [txHash tx1, txHash tx2])
+    balance "acc1" >>= liftIO . (assertEqual "Balance is not 0" 0)
+
+    importTx fundingTx NetworkSource >>=
+        liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
+    liftM (map (dbOrphanHash . entityVal)) (selectList [] [])
+        >>= liftIO . (assertEqual "Orphan list should be empty" [])
+    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29980000" 29980000)
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash fundingTx)
+        >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
+        >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
+        >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
+
+-- Creates fake testing blocks
 fakeNode :: Word32 -> BlockHash -> BlockHeaderNode
 fakeNode i h = BlockHeaderNode
     { nodeBlockHash = h
@@ -549,7 +598,7 @@ testDoubleSpendChain = do
     liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx4])
 
-    -- Now we add tx3 on top of tx2. If should be dead.
+    -- Now we add tx3 on top of tx2. It should be dead.
     importTx tx3 NetworkSource >>=
         liftIO . (assertEqual "Confidence is not dead" (Just TxDead))
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)

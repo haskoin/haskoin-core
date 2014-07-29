@@ -239,7 +239,9 @@ tests =
                     addressPrvKey "default" 5
         ]
     , testGroup "Transaction import tests"
-        [ testCase "Importing orphan transaction" $ runUnit testImportOrphan
+        [ testCase "Importing orphan tx" $ runUnit testImportOrphan
+        , testCase "Importing multisig tx" $ runUnit testImportMultisig
+        , testCase "Importing multisig tx 2" $ runUnit testImportMultisig2
         ]
     , testGroup "Double spend tests"
         [ testCase "Outgoing tx double spend" $ runUnit testOutDoubleSpend
@@ -274,6 +276,14 @@ mnemo = unwords
     , "birth", "online", "various"
     , "renew", "alert", "crunch" 
     , "middle", "absurd", "health"
+    ]
+
+mnemo2 :: String
+mnemo2 = unwords
+    [ "couple", "wrong", "toss"
+    , "light", "trust", "abandon"
+    , "define", "copy", "radar"
+    , "power", "useful", "simple"
     ]
 
 pass :: String
@@ -852,4 +862,81 @@ testWalletDoubleSpend = do
         balance "acc1" >>= liftIO . (assertEqual "Balance is not 29970000" 29970000)
         liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
             >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx3, txHash tx4])
+
+-- This test create a multisig account with the key of testImportMultisig2
+testImportMultisig :: App ()
+testImportMultisig = do
+    --testImportMultisig2
+    newWalletMnemo "test" pass $ Just mnemo
+    res <- newMSAccount "test" "ms1" 2 2 $
+        [fromJust $ xPubImport "xpub68yUKy6M9BSM3HMejgrwGipKXSn22QzTqhFguvcE4yksoHP2TJjCadfE2fHyvBAE9VpGkxygrqsDqohyeXMZUM8Fh3GxRGKpFXQiJ6vgrNG"]
+    setLookAhead "ms1" 30
+    newAddrs "ms1" 5 
+    let fundingTx = 
+            Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
+                 [ TxOut 10000000 $
+                    encodeOutputBS $ PayScriptHash $ fromJust $ 
+                    base58ToAddr "38pfoRLKzxUTcCdA4PTgeVQBePLtcC28iv" 
+                 ] 0
+        toImport = decode' $ fromJust $ hexToBS "0100000001d53c19abd25c333a0d348b10c10f1781e12ddc9fc82d95743b249b88cc50a72900000000da00483045022100ae08adb9dbb3974c95f39400f22b28b8f3920e131fe8c43b942632718c018b2902204510743685522f4e29bc0cac7938b7ece87ae4e2a93182e5bafc0e88bdf9e3c2014730440220351bafa1f3f0c82720d9f887d97c23681bfbded78119201cbed00b57e5eff73e02205da173d08be046d125cc3bbc35ce1be16652d0990f247662f7a171c49381badd014752210320e6fef44dc34322ce8e5d0a20efe55ae1308c321fab6496eece4473b9f12dd62103d9097c7e36d393672fd366f303e1c30c1421e1e72bedc73d49ae92e4ba5ed83552aeffffffff02404b4c000000000017a9143c8ea9e0b86430bed5805b86023ce11175c26ad38730244c000000000017a91473a92334bcf250c85a30fd3cb7fbebc49d822ccc8700000000" :: Tx
+
+    importTx fundingTx NetworkSource
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash fundingTx)
+        >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
+    balance "ms1" >>= liftIO . (assertEqual "Balance is not 10000000" 10000000)
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "ms1")
+        >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash fundingTx])
+
+    (h,c) <- sendTx "ms1" [(fromJust $ base58ToAddr "37DDNVZZqU5i8XjyKyvZZv7edjCn3XrRsm", 5000000)] 10000
+    liftIO $ assertEqual "Completed status is not False" False c
+    liftM (dbTxConfidence . entityVal) (getTxEntity h)
+        >>= liftIO . (assertEqual "Confidence is not TxOffline" TxOffline) 
+    balance "ms1" >>= liftIO . (assertEqual "Balance is not 0" 0)
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "ms1")
+        >>= liftIO . (assertEqual "Wrong txhash in coins" [])
+    liftM (map accTxHash) (txList "ms1") 
+        >>= liftIO . (assertEqual "Wrong txhash in acc list" [txHash fundingTx, h])
+
+    (h2,c2) <- signWalletTx "ms1" toImport (SigAll False)
+    liftIO $ assertEqual "Completed status is not True" True c2
+    liftM (dbTxConfidence . entityVal) (getTxEntity h2)
+        >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
+    balance "ms1" >>= liftIO . (assertEqual "Balance is not 9990000" 9990000)
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "ms1")
+        >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash toImport, txHash toImport])
+    liftM (map accTxHash) (txList "ms1") 
+        >>= liftIO . (assertEqual "Wrong txhash in acc list" [txHash fundingTx, h2])
+
+
+-- This test create a multisig account with the key of testImportMultisig1
+testImportMultisig2 :: App ()
+testImportMultisig2 = do
+    newWalletMnemo "test" pass $ Just mnemo2
+    newMSAccount "test" "ms1" 2 2 [fromJust $ xPubImport "xpub69iinth3CTrfh5efv7baTWwk9hHi4zqcQEsNFgVwEJvdaZVEPytZzmNxjYTnF5F5x2CamLXvmD1T4RhpsuaXSFPo2MnLN5VqWqrWb82U7ED"]
+    setLookAhead "ms1" 30
+    res <- newAddrs "ms1" 5 
+    let fundingTx = 
+            Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
+                 [ TxOut 10000000 $
+                    encodeOutputBS $ PayScriptHash $ fromJust $ 
+                    base58ToAddr "38pfoRLKzxUTcCdA4PTgeVQBePLtcC28iv" 
+                 ] 0
+        toSign = decode' $ fromJust $ hexToBS "0100000001d53c19abd25c333a0d348b10c10f1781e12ddc9fc82d95743b249b88cc50a729000000009200483045022100ae08adb9dbb3974c95f39400f22b28b8f3920e131fe8c43b942632718c018b2902204510743685522f4e29bc0cac7938b7ece87ae4e2a93182e5bafc0e88bdf9e3c2014752210320e6fef44dc34322ce8e5d0a20efe55ae1308c321fab6496eece4473b9f12dd62103d9097c7e36d393672fd366f303e1c30c1421e1e72bedc73d49ae92e4ba5ed83552aeffffffff02404b4c000000000017a9143c8ea9e0b86430bed5805b86023ce11175c26ad38730244c000000000017a91473a92334bcf250c85a30fd3cb7fbebc49d822ccc8700000000" :: Tx
+    importTx fundingTx NetworkSource
+    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash fundingTx)
+        >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
+    balance "ms1" >>= liftIO . (assertEqual "Balance is not 10000000" 10000000)
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "ms1")
+        >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash fundingTx])
+    return ()
+
+    (h,c) <- signWalletTx "ms1" toSign (SigAll False)
+    liftIO $ assertEqual "Completed status is not True" True c
+    liftM (dbTxConfidence . entityVal) (getTxEntity h)
+        >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
+    balance "ms1" >>= liftIO . (assertEqual "Balance is not 9990000" 9990000)
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "ms1")
+        >>= liftIO . (assertEqual "Wrong txhash in coins" [h,h])
+    liftM (map accTxHash) (txList "ms1") 
+        >>= liftIO . (assertEqual "Wrong txhash in acc list" [txHash fundingTx, h])
 

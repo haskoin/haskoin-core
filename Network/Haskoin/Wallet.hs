@@ -6,57 +6,69 @@
 -}
 module Network.Haskoin.Wallet
 ( 
--- *Initialization Commands
-  cmdInitMnemo
-, cmdInit
+-- *Wallet Commands
+  Wallet(..)
+, initWalletDB
+, newWalletMnemo
+, newWallet
+, walletList
 
 -- *Account Commands
-, cmdNewAcc
-, cmdNewMS
-, cmdAddKeys
-, cmdAccInfo
-, cmdListAcc
-, cmdDumpKeys
+, Account(..)
+, AccountName
+, getAccount
+, newAccount
+, newMSAccount
+, addAccountKeys
+, accountList
+, accountPrvKey
+, isMSAccount
 
 -- *Address Commands
-, cmdListAll
-, cmdList
-, cmdGenAddrs
-, cmdGenWithLabel
-, cmdLabel
-, cmdPrvKey
+, PaymentAddress(..)
+, getAddress
+, addressList
+, addressCount
+, addressPage
+, newAddrs
+, setAddrLabel
+, setLookAhead
+, addressPrvKey
 
 -- *Coin Commands
-, cmdBalance
-, cmdBalances
-, cmdCoins
-, cmdAllCoins
+, balance
+, unspentCoins
+, spendableCoins
 
 -- *Tx Commands
-, cmdImportTx 
-, cmdRemoveTx
-, cmdListTx
-, cmdSend
-, cmdSendMany
-, cmdSignTx
+, AccTx(..) 
+, getTx
+, txList
+, txPage
+, importTx
+, removeTx
+, sendTx
+, signWalletTx
+, walletBloomFilter
+, isTxInWallet
+, firstKeyTime
 
--- *Utility Commands
-, cmdDecodeTx
-, cmdBuildRawTx
-, cmdSignRawTx
+-- *Block Commands
+, importBlocks
 
 -- *Database Types 
-, AccountName
-, CoinStatus(..)
-, RawPrvKey(..)
-, RawSigInput(..)
-, RawTxDests(..)
-, RawTxOutPoints(..)
+, TxConfidence(..)
+, TxSource(..)
 , WalletException(..)
 
 ) where
 
-import Network.Haskoin.Wallet.Commands
+import Network.Haskoin.Crypto
+import Network.Haskoin.Util
+import Network.Haskoin.Wallet.Root
+import Network.Haskoin.Wallet.Account
+import Network.Haskoin.Wallet.Address
+import Network.Haskoin.Wallet.Tx
 import Network.Haskoin.Wallet.Types
-
+import Network.Haskoin.Wallet.Model
 

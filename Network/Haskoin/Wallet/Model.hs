@@ -5,27 +5,36 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
-
+{-# LANGUAGE EmptyDataDecls #-}
 module Network.Haskoin.Wallet.Model 
 ( DbWalletGeneric(..)
 , DbAccountGeneric(..)
 , DbAddressGeneric(..)
 , DbCoinGeneric(..)
+, DbAccTxGeneric(..)
 , DbTxGeneric(..)
-, DbTxBlobGeneric(..)
+, DbTxConflictGeneric(..)
+, DbOrphanGeneric(..)
+, DbConfirmationGeneric(..)
+, DbConfigGeneric(..)
+, DbSpentCoinGeneric(..)
 , DbWalletId
 , DbAccountId
 , DbAddressId
 , DbCoinId
+, DbAccTxId
 , DbTxId
-, DbTxBlobId
+, DbTxConflictId
+, DbSpentCoinId
+, DbConfirmationId
+, DbConfigId
 , EntityField(..)
 , Unique(..)
 , migrateWallet
 ) where
 
 import Data.Int (Int64)
-import Data.Word (Word64)
+import Data.Word (Word32)
 import Data.Time (UTCTime)
 import Database.Persist (EntityField, Unique)
 import Database.Persist.Sql ()
@@ -36,81 +45,107 @@ import Database.Persist.TH
     , mkMigrate
     , persistLowerCase
     )
+
 import Network.Haskoin.Wallet.Types 
-import Network.Haskoin.Script
+import Network.Haskoin.Transaction
 import Network.Haskoin.Protocol 
 import Network.Haskoin.Crypto 
+
+-- TODO: We only care about pubkeyhash and not pubkey. Should we do
+-- something about it?
 
 share [mkPersist sqlSettings, mkMigrate "migrateWallet"] [persistLowerCase|
 DbWallet 
     name String
-    type String
-    master MasterKey 
-    accIndex Int
+    value Wallet
+    accIndex KeyIndex Maybe
     created UTCTime default=CURRENT_TIME
     UniqueWalletName name
     deriving Show
 
 DbAccount 
     name String
-    index Int
-    tree String
-    key AccPubKey
-    extIndex Int
-    extGap Int
-    intIndex Int
-    intGap Int
-    msRequired Int Maybe
-    msTotal Int Maybe
-    msKeys [XPubKey] 
+    value Account
+    extIndex KeyIndex Maybe
+    extLookAhead KeyIndex Maybe
+    intIndex KeyIndex Maybe
+    intLookAhead KeyIndex Maybe
     wallet DbWalletId
     created UTCTime default=CURRENT_TIME
     UniqueAccName name
     deriving Show
 
 DbAddress 
-    base58 String
+    value Address
     label String
-    index Int
-    tree String
+    index KeyIndex
     account DbAccountId
     internal Bool
     created UTCTime default=CURRENT_TIME
-    UniqueAddress base58
+    UniqueAddress value
     UniqueAddressKey account index internal
     deriving Show
 
 DbCoin 
-    txid Hash256
+    hash TxHash
     pos Int
-    value Word64
-    script Script
-    rdmScript Script Maybe
-    address String 
-    status CoinStatus
+    value Coin
+    address Address 
     account DbAccountId
-    orphan Bool
     created UTCTime default=CURRENT_TIME
-    CoinOutPoint txid pos
+    CoinOutPoint hash pos
     deriving Show
 
-DbTx 
-    txid Hash256
-    recipients [String]
+DbSpentCoin
+    key OutPoint
+    tx TxHash
+    created UTCTime default=CURRENT_TIME
+    deriving Show
+
+DbTxConflict
+    fst TxHash
+    snd TxHash
+    created UTCTime default=CURRENT_TIME
+    UniqueConflict fst snd
+    deriving Show
+
+DbAccTx
+    hash TxHash
+    recipients [Address]
     value Int64
     account DbAccountId
-    orphan Bool
-    partial Bool
     created UTCTime default=CURRENT_TIME
-    UniqueTx txid account
+    UniqueAccTx hash account
     deriving Show
 
-DbTxBlob
-    txid Hash256
+DbTx
+    hash TxHash
     value Tx
+    confidence TxConfidence
+    confirmedBy BlockHash Maybe
+    confirmedHeight Word32 Maybe
+    isCoinbase Bool
     created UTCTime default=CURRENT_TIME
-    UniqueTxBlob txid
+    UniqueTx hash
     deriving Show
 
+DbOrphan
+    hash TxHash
+    value Tx
+    source TxSource
+    created UTCTime default=CURRENT_TIME
+    UniqueOrphan hash
+    deriving Show
+
+DbConfirmation
+    tx TxHash
+    block BlockHash
+    deriving Show
+
+DbConfig
+    bestHeight Word32
+    version Int
+    created UTCTime default=CURRENT_TIME
+    deriving Show
 |]
 

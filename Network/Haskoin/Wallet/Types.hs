@@ -6,102 +6,425 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Network.Haskoin.Wallet.Types
-( AccountName
-, CoinStatus(..)
-, RawPrvKey(..)
-, RawSigInput(..)
-, RawTxDests(..)
-, RawTxOutPoints(..)
+( WalletName
+, AccountName
+, Wallet(..)
+, Account(..)
+, PaymentAddress(..)
+, AccTx(..)
+, TxConfidence(..)
+, TxSource(..)
 , WalletException(..)
+, printWallet
+, printAccount
+, printAddress
+, printAccTx
 ) where
 
-import Control.Monad (mzero)
-import Control.Applicative ((<$>), (<*>))
+import Control.Monad (mzero, liftM2)
 import Control.Exception (Exception)
 
-import Data.Aeson.Types
+import Data.Int (Int64)
+import Data.Typeable (Typeable)
+import qualified Data.Text as T
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Data.ByteString.Lazy (toStrict, fromStrict)
+import Data.Aeson
     ( Value (Object, String)
     , FromJSON
     , ToJSON
-    , Parser
+    , withText
     , (.=)
     , (.:)
-    , (.:?)
     , object
     , parseJSON
     , toJSON
-    , withArray
-    , withObject
+    , encode
+    , decode
     )
-import qualified Data.HashMap.Strict as H
-import Data.Maybe (fromJust, isJust, fromMaybe)
-import qualified Data.Text as T
-import Data.Typeable (Typeable)
-import qualified Data.Vector as V
-import Data.Word (Word32, Word64)
 
 import Database.Persist.Class
     ( PersistField
     , toPersistValue
-    , fromPersistValue )
-import Database.Persist.Types (PersistValue (PersistByteString))
+    , fromPersistValue 
+    )
+import Database.Persist.Types (PersistValue(..))
 import Database.Persist.TH (derivePersistField)
-import Database.Persist.Sql (PersistFieldSql, SqlType (SqlBlob), sqlType)
+import Database.Persist.Sql (PersistFieldSql, SqlType(..), sqlType)
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
-import Network.Haskoin.Script
 import Network.Haskoin.Transaction
 import Network.Haskoin.Util
 
-data WalletException 
-    = InitializationException String
-    | AccountSetupException String
-    | InvalidAccountException String
-    | InvalidPageException String
-    | AddressGenerationException String
-    | InvalidAddressException String
-    | InvalidTransactionException String
-    | DoubleSpendException String
-    | CoinSelectionException String
-    | TransactionBuildingException String
-    | TransactionSigningException String
-    | ParsingException String
-    | InvalidCommandException String
-    deriving (Eq, Read, Show, Typeable)
-
--- | Spent if a complete transaction spends this coin
--- Reserved if a partial transaction is spending these coins
--- Unspent if the coins are still available
--- The purpose of the Reserved status is to block this coin from being used in
--- subsequent coin selection algorithms. However, Reserved coins can always be
--- spent (set status to Spent) by complete transactions.
-data CoinStatus = Spent Hash256 | Reserved Hash256 | Unspent
-    deriving (Show, Read, Eq)
-
-data RawTxOutPoints = RawTxOutPoints [OutPoint] 
-    deriving (Eq, Show)
-
-data RawTxDests = RawTxDests [(String,Word64)]
-    deriving (Eq, Show)
-
-data RawSigInput = RawSigInput [(SigHash -> SigInput)]
-
-data RawPrvKey = RawPrvKey [PrvKey]
-    deriving (Eq, Show)
-
+type WalletName  = String
 type AccountName = String
+
+data WalletException = WalletException String
+    deriving (Eq, Read, Show, Typeable)
 
 instance Exception WalletException
 
-{- Instances for PersistField and PersistFieldSql -}
+data TxConfidence
+    = TxOffline
+    | TxDead 
+    | TxPending
+    | TxBuilding
+    deriving (Eq, Show, Read)
 
-derivePersistField "CoinStatus"
-derivePersistField "MasterKey"
-derivePersistField "AccPubKey"
-derivePersistField "XPubKey"
-derivePersistField "Hash256"
-derivePersistField "Script"
+instance ToJSON TxConfidence where
+    toJSON conf = case conf of
+        TxOffline  -> "offline"
+        TxDead     -> "dead"
+        TxPending  -> "pending"
+        TxBuilding -> "building"
+
+instance FromJSON TxConfidence where
+    parseJSON = withText "TxConfidence" $ \t -> case t of
+        "offline"  -> return TxOffline
+        "dead"     -> return TxDead
+        "pending"  -> return TxPending
+        "building" -> return TxBuilding
+        _          -> mzero
+        
+data TxSource
+    = NetworkSource
+    | WalletSource
+    | UnknownSource
+    deriving (Eq, Show, Read)
+
+instance ToJSON TxSource where
+    toJSON s = case s of
+        NetworkSource -> "network"
+        WalletSource  -> "wallet"
+        UnknownSource -> "unknown"
+
+instance FromJSON TxSource where
+    parseJSON = withText "TxSource" $ \t -> case t of
+        "network" -> return NetworkSource
+        "wallet"  -> return WalletSource
+        "unknown" -> return UnknownSource
+        _         -> mzero
+
+-- TODO: Add NFData instances for all those types
+data Wallet 
+    = WalletFull
+        { walletName      :: String
+        , walletMasterKey :: MasterKey
+        } 
+    | WalletRead
+        { walletName      :: String
+        , walletPubKey    :: XPubKey
+        }
+    deriving (Eq, Show, Read)
+
+instance ToJSON Wallet where
+    toJSON (WalletFull n k) = object
+        [ "type"   .= String "full"
+        , "name"   .= n
+        , "master" .= (xPrvExport $ masterKey k)
+        ]
+    toJSON (WalletRead n k) = object
+        [ "type"   .= String "read"
+        , "name"   .= n
+        , "key"    .= xPubExport k
+        ]
+
+instance FromJSON Wallet where
+    parseJSON (Object o) = do
+        x <- o .: "type"
+        n <- o .: "name"
+        case x of
+            String "full" -> do
+                m <- o .: "master" 
+                let masterM = loadMasterKey =<< xPrvImport m
+                maybe mzero (return . (WalletFull n)) masterM
+            String "read" -> do
+                k <- o .: "key"
+                maybe mzero (return . (WalletRead n)) $ xPubImport k
+            _ -> mzero
+    parseJSON _ = mzero
+
+printWallet :: Wallet -> String
+printWallet w = case w of
+    WalletFull n k -> unlines
+        [ unwords [ "Wallet    :", n ]
+        , unwords [ "Type      :", "Full" ]
+        , unwords [ "Master key:", xPrvExport $ masterKey k ]
+        ]
+    WalletRead n k -> unlines
+        [ unwords [ "Wallet     :", n ]
+        , unwords [ "Type       :", "Read-only" ]
+        , unwords [ "Public key :", xPubExport k ]
+        ]
+
+data Account
+    = RegularAccount 
+        { accountName   :: String
+        , accountWallet :: String
+        , accountIndex  :: KeyIndex
+        , accountKey    :: AccPubKey
+        }
+    | MultisigAccount
+        { accountName     :: String
+        , accountWallet   :: String
+        , accountIndex    :: KeyIndex
+        , accountKey      :: AccPubKey
+        , accountRequired :: Int
+        , accountTotal    :: Int
+        , accountKeys     :: [XPubKey]
+        }
+    deriving (Eq, Show, Read)
+
+instance ToJSON Account where
+    toJSON (RegularAccount n w i k) = object
+        [ "type"   .= String "regular"
+        , "name"   .= n
+        , "wallet" .= w
+        , "index"  .= i
+        , "key"    .= (xPubExport $ getAccPubKey k)
+        ]
+    toJSON (MultisigAccount n w i k r t ks) = object
+        [ "type"     .= String "multisig"
+        , "name"     .= n
+        , "wallet"   .= w
+        , "index"    .= i
+        , "key"      .= (xPubExport $ getAccPubKey k)
+        , "required" .= r
+        , "total"    .= t
+        , "keys"     .= map xPubExport ks
+        ]
+
+instance FromJSON Account where
+    parseJSON (Object o) = do
+        x <- o .: "type"
+        n <- o .: "name"
+        w <- o .: "wallet"
+        i <- o .: "index"
+        k <- o .: "key"
+        let keyM = loadPubAcc =<< xPubImport k
+        case x of
+            String "regular" -> 
+                maybe mzero (return . (RegularAccount n w i)) keyM
+            String "multisig" -> do
+                r  <- o .: "required"
+                t  <- o .: "total"
+                ks <- o .: "keys"
+                let keysM      = mapM xPubImport ks
+                    f (k',ks') = return $ MultisigAccount n w i k' r t ks'
+                maybe mzero f $ liftM2 (,) keyM keysM
+            _ -> mzero
+    parseJSON _ = mzero
+
+printAccount :: Account -> String
+printAccount a = case a of
+    RegularAccount n w i k -> unlines
+        [ unwords [ "Account:", n ]
+        , unwords [ "Wallet :", w ]
+        , unwords [ "Type   :", "Regular" ]
+        , unwords [ "Tree   :", concat [ "m/",show i,"'/" ] ]
+        , unwords [ "Key    :", xPubExport $ getAccPubKey k ]
+        ]
+    MultisigAccount n w i k r t ks -> unlines $
+        [ unwords [ "Account:", n ]
+        , unwords [ "Wallet :", w ]
+        , unwords [ "Type   :", "Multisig", show r, "of", show t ]
+        , unwords [ "Tree   :", concat [ "m/",show i,"'/" ] ]
+        , unwords [ "Key    :", xPubExport $ getAccPubKey k ]
+        ] ++ if null ks then [] else 
+            (unwords [ "3rd Key:", xPubExport $ head ks ]) : 
+                (map (\x -> unwords ["        ", xPubExport x]) $ tail ks)
+
+data PaymentAddress = PaymentAddress 
+    { paymentAddress :: Address
+    , addressLabel   :: String
+    , addressIndex   :: KeyIndex
+    } deriving (Eq, Show, Read)
+
+instance ToJSON PaymentAddress where
+    toJSON (PaymentAddress a l i) = object
+        [ "address" .= addrToBase58 a
+        , "label"   .= l
+        , "index"   .= i
+        ]
+
+instance FromJSON PaymentAddress where
+    parseJSON (Object o) = do
+        a <- o .: "address"
+        l <- o .: "label"
+        i <- o .: "index"
+        let f add = return $ PaymentAddress add l i
+        maybe mzero f $ base58ToAddr a
+    parseJSON _ = mzero
+
+printAddress :: PaymentAddress -> String
+printAddress (PaymentAddress a l i) = unwords $
+    [ concat [show i, ":"]
+    , addrToBase58 a
+    ] ++ if null l then [] else [concat ["(",l,")"]]
+
+data AccTx = AccTx
+    { accTxHash          :: TxHash
+    , accTxRecipients    :: [Address]
+    , accTxValue         :: Int64
+    , accTxConfidence    :: TxConfidence
+    , accIsCoinbase      :: Bool
+    , accTxConfirmations :: Int
+    } deriving (Eq, Show, Read)
+
+instance ToJSON AccTx where
+    toJSON (AccTx h as v x cb c) = object
+        [ "txid"          .= h
+        , "recipients"    .= as
+        , "value"         .= v
+        , "confidence"    .= x
+        , "isCoinbase"    .= cb
+        , "confirmations" .= c
+        ]
+
+instance FromJSON AccTx where
+    parseJSON (Object o) = do
+        h  <- o .: "txid"
+        as <- o .: "recipients"
+        v  <- o .: "value"
+        x  <- o .: "confidence"
+        cb <- o .: "isCoinbase"
+        c  <- o .: "confirmations"
+        return $ AccTx h as v x cb c
+    parseJSON _ = mzero
+
+printAccTx :: AccTx -> String
+printAccTx (AccTx h r v ci cb co) = unlines $
+    [ unwords [ "Value     :", show v ]
+    , unwords [ "Recipients:", addrToBase58 $ head r ]
+    ]
+    ++
+    (map (\x -> unwords ["           ", addrToBase58 x]) $ tail r)
+    ++
+    [ unwords [ "Confidence:"
+              , printConfidence ci
+              , concat ["(",show co," confirmations)"] 
+              ]
+    , unwords [ "TxHash    :", encodeTxHashLE h ]
+    ] ++ if cb then [unwords ["Coinbase  :", "Yes"]] else []
+
+printConfidence :: TxConfidence -> String
+printConfidence c = case c of
+    TxBuilding -> "Building"
+    TxPending  -> "Pending"
+    TxDead     -> "Dead"
+    TxOffline  -> "Offline"
+
+persistTextErrMsg :: T.Text
+persistTextErrMsg = "Has to be a PersistText"
+persistBSErrMsg :: T.Text 
+persistBSErrMsg = "Has to be a PersistByteString" 
+
+toPersistJson :: (ToJSON a) => a -> PersistValue
+toPersistJson = PersistText . decodeUtf8 . toStrict . encode
+
+fromPersistJson :: (FromJSON a) => T.Text -> PersistValue -> Either T.Text a
+fromPersistJson msg (PersistText w) = 
+    maybeToEither msg (decode . fromStrict $ encodeUtf8 w)
+fromPersistJson _ _ = Left persistTextErrMsg
+
+instance PersistField Address where
+    toPersistValue = PersistText . T.pack . addrToBase58
+    fromPersistValue (PersistText a) = 
+        maybeToEither "Not a valid Address" . base58ToAddr $ T.unpack a
+    fromPersistValue _ = Left persistTextErrMsg
+
+instance PersistFieldSql Address where
+    sqlType _ = SqlString
+
+instance PersistField [Address] where
+    toPersistValue = toPersistJson
+    fromPersistValue = fromPersistJson "Not a valid Address list"
+
+instance PersistFieldSql [Address] where
+    sqlType _ = SqlString
+
+instance PersistField TxHash where
+    toPersistValue = PersistText . T.pack . encodeTxHashLE
+    fromPersistValue (PersistText h) =
+        maybeToEither "Not a valid TxHash" (decodeTxHashLE $ T.unpack h)
+    fromPersistValue _ = Left persistTextErrMsg
+
+instance PersistFieldSql TxHash where
+    sqlType _ = SqlString
+
+instance PersistField BlockHash where
+    toPersistValue = PersistText . T.pack . encodeBlockHashLE
+    fromPersistValue (PersistText h) =
+        maybeToEither "Not a valid BlockHash" (decodeBlockHashLE $ T.unpack h)
+    fromPersistValue _ = Left persistTextErrMsg
+
+instance PersistFieldSql BlockHash where
+    sqlType _ = SqlString
+
+instance PersistField Wallet where
+    toPersistValue = toPersistJson
+    fromPersistValue = fromPersistJson "Not a valid Wallet"
+
+instance PersistFieldSql Wallet where
+    sqlType _ = SqlString
+
+instance PersistField Account where
+    toPersistValue = toPersistJson
+    fromPersistValue = fromPersistJson "Not a valid Account"
+
+instance PersistFieldSql Account where
+    sqlType _ = SqlString
+
+instance PersistField TxConfidence where
+    toPersistValue tc = PersistText $ decodeUtf8 $ stringToBS $ case tc of
+        TxOffline  -> "offline"
+        TxDead     -> "dead"
+        TxPending  -> "pending"
+        TxBuilding -> "building"
+
+    fromPersistValue (PersistText t) = case bsToString $ encodeUtf8 t of
+        "offline"  -> return TxOffline
+        "dead"     -> return TxDead
+        "pending"  -> return TxPending
+        "building" -> return TxBuilding
+        _          -> Left "Not a valid TxConfidence"
+    fromPersistValue _ = Left "Not a valid TxConfidence"
+        
+instance PersistFieldSql TxConfidence where
+    sqlType _ = SqlString
+
+instance PersistField TxSource where
+    toPersistValue ts = PersistText $ decodeUtf8 $ stringToBS $ case ts of
+        NetworkSource -> "network"
+        WalletSource  -> "wallet"
+        UnknownSource -> "unknown"
+
+    fromPersistValue (PersistText t) = case bsToString $ encodeUtf8 t of
+        "network" -> return NetworkSource
+        "wallet"  -> return WalletSource
+        "unknown" -> return UnknownSource
+        _         -> Left "Not a valid TxSource"
+    fromPersistValue _ = Left "Not a valid TxSource"
+
+instance PersistFieldSql TxSource where
+    sqlType _ = SqlString
+
+instance PersistField Coin where
+    toPersistValue = toPersistJson
+    fromPersistValue = fromPersistJson "Not a valid Coin"
+
+instance PersistFieldSql Coin where
+    sqlType _ = SqlString
+
+instance PersistField OutPoint where
+    toPersistValue = PersistText . decodeUtf8 . stringToBS . bsToHex . encode'
+    fromPersistValue (PersistText t) = maybeToEither "Not a valid OutPoint" $
+        decodeToMaybe =<< (hexToBS $ bsToString $ encodeUtf8 t)
+    fromPersistValue _ = Left "Not a valid OutPoint"
+
+instance PersistFieldSql OutPoint where
+    sqlType _ = SqlString
 
 instance PersistField Tx where
     toPersistValue = PersistByteString . encode'
@@ -110,201 +433,8 @@ instance PersistField Tx where
         Left str -> Left $ T.pack str
       where
         txE = decodeToEither bs
-    fromPersistValue _ = Left "Has to be a PersistByteString"
+    fromPersistValue _ = Left persistBSErrMsg
 
 instance PersistFieldSql Tx where
     sqlType _ = SqlBlob
-
-{- Instances for JSON -}
-
-instance FromJSON RawTxOutPoints where
-    parseJSON = withArray "Expected: Array" $ \arr -> do
-        RawTxOutPoints <$> (mapM f $ V.toList arr)
-      where
-        f = withObject "Expected: Object" $ \obj -> do
-            tid  <- obj .: "txid" :: Parser String
-            vout <- obj .: "vout" :: Parser Word32
-            let i = maybeToEither ("Failed to decode txid" :: String)
-                                  (decodeTxid tid)
-                o = OutPoint <$> i <*> (return vout)
-            either (const mzero) return o
-
-instance FromJSON RawTxDests where
-    parseJSON = withObject "Expected: Object" $ \obj ->
-        RawTxDests <$> (mapM f $ H.toList obj)
-      where
-        f (add,v) = do
-            amnt <- parseJSON v :: Parser Word64
-            return (T.unpack add, amnt)
-
-instance FromJSON RawSigInput where
-    parseJSON = withArray "Expected: Array" $ \arr -> do
-        RawSigInput <$> (mapM f $ V.toList arr)
-      where
-        f = withObject "Expected: Object" $ \obj -> do
-            tid  <- obj .: "txid" :: Parser String
-            vout <- obj .: "vout" :: Parser Word32
-            scp  <- obj .: "scriptPubKey" :: Parser String
-            rdm  <- obj .:? "redeemScript" :: Parser (Maybe String)
-            let s = decodeToEither =<< maybeToEither "Hex parsing failed" 
-                        (hexToBS scp)
-                i = maybeToEither "Failed to decode txid" (decodeTxid tid)
-                o = OutPoint <$> i <*> (return vout)
-                r = decodeToEither =<< maybeToEither "Hex parsing failed" 
-                        (hexToBS $ fromJust rdm)
-                res | isJust rdm = SigInputSH <$> s <*> o <*> r
-                    | otherwise  = SigInput <$> s <*> o
-            either (const mzero) return res
-
-instance FromJSON RawPrvKey where
-    parseJSON = withArray "Expected: Array" $ \arr ->
-        RawPrvKey <$> (mapM f $ V.toList arr)
-      where
-        f v = do
-            str <- parseJSON v :: Parser String  
-            maybe mzero return $ fromWIF str
-
-instance ToJSON CoinStatus where
-    toJSON (Spent tid) = 
-        object [ "Status".= String "Spent"
-               , "Txid"  .= encodeTxid tid
-               ]
-    toJSON (Reserved tid) = 
-        object [ "Status".= String "Reserved"
-               , "Txid"  .= encodeTxid tid
-               ]
-    toJSON Unspent = object [ "Status".= String "Unspent" ]
-
-instance FromJSON CoinStatus where
-    parseJSON (Object obj) = obj .: "Status" >>= \status -> case status of
-        (String "Spent")    -> 
-            (Spent . fromJust . decodeTxid)    <$> obj .: "Txid"
-        (String "Reserved") -> 
-            (Reserved . fromJust . decodeTxid) <$> obj .: "Txid"
-        (String "Unspent")  -> return Unspent
-        _                   -> mzero
-    parseJSON _ = mzero
-
-{- YAML templates -}
-
-instance ToJSON OutPoint where
-    toJSON (OutPoint h i) = object
-        [ "TxID" .= encodeTxid h
-        , "Index" .= toJSON i
-        ]
-
-instance ToJSON TxOut where
-    toJSON (TxOut v s) = object $
-        [ "Value" .= v
-        , "Raw Script" .= bsToHex (encode' s)
-        , "Script" .= (fromMaybe (Script []) $ decodeToMaybe s)
-        ] ++ scptPair 
-      where scptPair = 
-              either (const [])
-                     (\out -> ["Decoded Script" .= out]) 
-                     (decodeOutputBS s)
-
-instance ToJSON TxIn where
-    toJSON (TxIn o s i) = object $ concat
-        [ [ "OutPoint" .= o
-          , "Sequence" .= i
-          , "Raw Script" .= bsToHex (encode' s)
-          , "Script" .= (fromMaybe (Script []) $ decodeToMaybe s)
-          ] 
-        , decoded 
-        ]
-      where decoded = either (const $ either (const []) f $ decodeInputBS s) 
-                             f $ decodeScriptHashBS s
-            f inp = ["Decoded Script" .= inp]
-              
-instance ToJSON Tx where
-    toJSON tx@(Tx v is os i) = object
-        [ "TxID" .= encodeTxid (txid tx)
-        , "Version" .= v
-        , "Inputs" .= map input (zip is [0..])
-        , "Outputs" .= map output (zip os [0..])
-        , "LockTime" .= i
-        ]
-      where input (x,j) = object 
-              [T.pack ("Input " ++ show (j :: Int)) .= x]
-            output (x,j) = object 
-              [T.pack ("Output " ++ show (j :: Int)) .= x]
-
-instance ToJSON Script where
-    toJSON (Script ops) = toJSON $ map show ops
-
-instance ToJSON ScriptOutput where
-    toJSON (PayPK p) = object 
-        [ "PayToPublicKey" .= object [ "Public Key" .= bsToHex (encode' p) ] ]
-    toJSON (PayPKHash a) = object 
-        [ "PayToPublicKeyHash" .= object
-            [ "Address Hash160" .= bsToHex (encode' $ getAddrHash a)
-            , "Address Base58" .= addrToBase58 a
-            ]
-        ]
-    toJSON (PayMulSig ks r) = object 
-        [ "PayToMultiSig" .= object
-            [ "Required Keys (M)" .= toJSON r
-            , "Public Keys" .= map (bsToHex . encode') ks
-            ]
-        ]
-    toJSON (PayScriptHash a) = object 
-        [ "PayToScriptHash" .= object
-            [ "Address Hash160" .= bsToHex (encode' $ getAddrHash a)
-            , "Address Base58" .= addrToBase58 a
-            ]
-        ]
-
-instance ToJSON ScriptInput where
-    toJSON (SpendPK s) = object 
-        [ "SpendPublicKey" .= object [ "Signature" .= s ] ]
-    toJSON (SpendPKHash s p) = object 
-        [ "SpendPublicKeyHash" .= object
-            [ "Signature" .= s
-            , "Public Key" .= bsToHex (encode' p)
-            , "Sender Addr" .= addrToBase58 (pubKeyAddr p)
-            ]
-        ]
-    toJSON (SpendMulSig sigs r) = object 
-        [ "SpendMultiSig" .= object
-            [ "Required Keys (M)" .= r
-            , "Signatures" .= sigs
-            ]
-        ]
-
-instance ToJSON ScriptHashInput where
-    toJSON (ScriptHashInput s r) = object
-        [ "SpendScriptHash" .= object
-            [ "ScriptInput" .= s
-            , "RedeemScript" .= r
-            , "Raw Redeem Script" .= bsToHex (encodeOutputBS r)
-            , "Sender Addr" .= addrToBase58 (scriptAddr  r)
-            ]
-        ]
-
-instance ToJSON TxSignature where
-    toJSON ts@(TxSignature _ h) = object
-        [ "Raw Sig" .= bsToHex (encodeSig ts)
-        , "SigHash" .= h
-        ]
-
-instance ToJSON SigHash where
-    toJSON sh = case sh of
-        (SigAll acp) -> object
-            [ "Type" .= String "SigAll"
-            , "AnyoneCanPay" .= acp
-            ]
-        (SigNone acp) -> object
-            [ "Type" .= String "SigNone"
-            , "AnyoneCanPay" .= acp
-            ]
-        (SigSingle acp) -> object
-            [ "Type" .= String "SigSingle"
-            , "AnyoneCanPay" .= acp
-            ]
-        (SigUnknown acp v) -> object
-            [ "Type" .= String "SigUnknown"
-            , "AnyoneCanPay" .= acp
-            , "Value" .= v
-            ]
 

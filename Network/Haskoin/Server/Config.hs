@@ -1,0 +1,71 @@
+{-# LANGUAGE OverloadedStrings #-}
+module Network.Haskoin.Server.Config 
+( ServerConfig(..)
+, defaultServerConfig
+, encodeFile
+, decodeFile
+)
+where
+
+import Control.Monad (mzero)
+import Network.Haskoin.Constants
+
+import Data.Yaml 
+    ( ToJSON
+    , toJSON
+    , FromJSON
+    , parseJSON
+    , object
+    , Value (Object)
+    , encodeFile
+    , decodeFile
+    , (.=), (.:)
+    )
+
+data ServerConfig = ServerConfig
+    { configHosts  :: [(String,Int)]
+    , configPort   :: Int
+    , configBind   :: String
+    , configBatch  :: Int
+    , configFpRate :: Double
+    } deriving (Eq, Show, Read)
+
+defaultServerConfig = ServerConfig 
+    { configHosts  = [ ("127.0.0.1", defaultPort) ]
+    , configPort   = 4000
+    , configBind   = "127.0.0.1"
+    , configBatch  = 100
+    , configFpRate = 0.00001
+    }
+
+instance ToJSON ServerConfig where
+    toJSON (ServerConfig hs p a b fp) = object
+        [ "bitcoin nodes" .= map f hs
+        , "server port"   .= p
+        , "server bind"   .= a
+        , "block batch"   .= b
+        , "fp rate"       .= fp
+        ]
+      where
+        f (a,b) = object
+            [ "host" .= a
+            , "port" .= b
+            ]
+
+instance FromJSON ServerConfig where
+    parseJSON (Object o) = do
+        hs <- mapM f =<< o .: "bitcoin nodes"
+        p  <- o .: "server port"
+        a  <- o .: "server bind"
+        b  <- o .: "block batch"
+        fp <- o .: "fp rate"
+        return $ ServerConfig hs p a b fp
+      where
+        f (Object x) = do
+            a <- x .: "host"
+            b <- x .: "port"
+            return (a,b)
+        f _ = mzero
+    parseJSON _ = mzero
+
+

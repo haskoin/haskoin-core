@@ -30,6 +30,7 @@ data ServerConfig = ServerConfig
     , configFpRate :: Double
     } deriving (Eq, Show, Read)
 
+defaultServerConfig :: ServerConfig
 defaultServerConfig = ServerConfig 
     { configHosts  = [ ("127.0.0.1", defaultPort) ]
     , configPort   = 4000
@@ -47,9 +48,9 @@ instance ToJSON ServerConfig where
         , "fp rate"       .= fp
         ]
       where
-        f (a,b) = object
-            [ "host" .= a
-            , "port" .= b
+        f (x,y) = object
+            [ "host" .= x
+            , "port" .= y
             ]
 
 instance FromJSON ServerConfig where

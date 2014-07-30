@@ -49,7 +49,6 @@ import Database.Persist.Class
     , fromPersistValue 
     )
 import Database.Persist.Types (PersistValue(..))
-import Database.Persist.TH (derivePersistField)
 import Database.Persist.Sql (PersistFieldSql, SqlType(..), sqlType)
 
 import Network.Haskoin.Crypto

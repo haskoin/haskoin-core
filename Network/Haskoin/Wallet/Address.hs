@@ -14,31 +14,26 @@ module Network.Haskoin.Wallet.Address
 , adjustLookAhead
 ) where
 
-import Control.Monad (liftM, unless, when)
+import Control.Monad (liftM, when)
 import Control.Exception (throwIO)
 import Control.Monad.Trans (liftIO)
 
-import Data.List (nub)
-import Data.Maybe (fromJust, isJust, isNothing)
+import Data.Maybe (fromJust, isNothing)
 import Data.Time (getCurrentTime)
 
 import Database.Persist
     ( PersistUnique
     , PersistQuery
     , PersistMonadBackend
-    , PersistEntityBackend
-    , PersistEntity
     , Entity(..)
     , getBy
     , get
     , replace
-    , insert_
-    , update
     , count
     , selectList
     , insertMany
     , entityVal
-    , (=.), (==.), (<=.), (>.), (>=.)
+    , (==.), (<=.), (>.), (>=.)
     , SelectOpt( Asc, Desc, LimitTo, OffsetBy )
     )
 
@@ -46,7 +41,6 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Account
-import Network.Haskoin.Wallet.Root
 
 toPaymentAddr :: DbAddressGeneric b -> PaymentAddress
 toPaymentAddr x = PaymentAddress (dbAddressValue x) 
@@ -203,7 +197,6 @@ setAddrLabel :: PersistUnique m
              -> String           -- ^ New label
              -> m PaymentAddress -- ^ New address information
 setAddrLabel name key label = do
-    (Entity _ dbacc) <- getAccountEntity name
     (Entity i add)   <- getAddressEntity name key False
     let newAddr = add { dbAddressLabel = label }
     replace i newAddr

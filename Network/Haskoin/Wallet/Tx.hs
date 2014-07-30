@@ -25,7 +25,7 @@ module Network.Haskoin.Wallet.Tx
 ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (forM, forM_, unless, when, liftM, void, filterM)
+import Control.Monad (forM, forM_, unless, when, liftM, filterM)
 import Control.Monad.Trans (liftIO)
 import Control.Exception (throwIO)
 
@@ -35,7 +35,7 @@ import Data.Word (Word32, Word64)
 import Data.List ((\\), nub)
 import Data.Maybe (catMaybes, isNothing, isJust, fromJust)
 import Data.Either (rights)
-import qualified Data.Map.Strict as M 
+import qualified Data.Map.Strict as M (toList, empty, lookup, insert)
 
 import Database.Persist 
     ( PersistStore
@@ -43,28 +43,24 @@ import Database.Persist
     , PersistQuery
     , PersistMonadBackend
     , Entity(..)
-    , Key(..)
     , entityVal
     , entityKey
     , get
     , getBy
-    , deleteBy
     , selectList
     , selectFirst
     , deleteWhere
     , updateWhere
     , update
     , insert_
-    , insertUnique
     , replace
     , count
     , delete
     , (=.), (==.), (<-.)
-    , SelectOpt( Asc, Desc, LimitTo, OffsetBy )
+    , SelectOpt( Asc, LimitTo, OffsetBy )
     )
 
 import Network.Haskoin.Node.HeaderChain
-import Network.Haskoin.Node.Types
 
 import Network.Haskoin.Wallet.Account
 import Network.Haskoin.Wallet.Address
@@ -133,7 +129,7 @@ txPage name pageNum resPerPage
     | resPerPage < 1 = liftIO $ throwIO $ WalletException $
         unwords ["Invalid results per page:",show resPerPage]
     | otherwise = do
-        (Entity ai acc) <- getAccountEntity name
+        (Entity ai _) <- getAccountEntity name
         txCount <- count [ DbAccTxAccount ==. ai ]
         let maxPage = max 1 $ (txCount + resPerPage - 1) `div` resPerPage
             page | pageNum == 0 = maxPage
@@ -199,7 +195,6 @@ addTx tx source = do
         insert_ $ DbTx tid tx conf Nothing Nothing isCB time 
         -- Build transactions that report on individual accounts
         let dbAccTxs = buildAccTx tx coins outCoins time
-        accTxs <- forM dbAccTxs toAccTx
         -- insert account transactions into database
         forM_ dbAccTxs insert_
         -- Re-import orphans
@@ -252,7 +247,7 @@ updateConflicts tx coins source
 
         -- Insert unique conflict links
         time  <- liftIO getCurrentTime
-        forM (nub $ concat $ allConfls : cs) $ \h -> 
+        forM_ (nub $ concat $ allConfls : cs) $ \h -> 
             insert_ $ DbTxConflict tid h time
 
         -- Compute the confidence
@@ -451,7 +446,7 @@ sendTx name strDests fee = do
     resE <- sendCoins coins recips (SigAll False)
     case resE of
         Left err -> liftIO $ throwIO $ WalletException err
-        Right (tx, complete) -> do
+        Right (tx, _) -> do
             confM <- importTx tx WalletSource
             let conf = fromJust confM
             return (txHash tx, isJust confM && conf == TxPending)
@@ -461,7 +456,7 @@ sendSolution :: (PersistUnique m, PersistQuery m)
              => AccountName -> [(Address,Word64)] -> Word64
              -> m ([Coin],[(Address,Word64)])
 sendSolution name dests fee = do
-    (Entity ai acc) <- getAccountEntity name
+    (Entity _ acc) <- getAccountEntity name
     spendable <- spendableCoins name
     let msParam = ( accountRequired $ dbAccountValue acc
                   , accountTotal $ dbAccountValue acc
@@ -567,7 +562,7 @@ walletBloomFilter fpRate = do
 firstKeyTime :: PersistQuery m => m (Maybe Word32)
 firstKeyTime = do
     res <- selectFirst [] [Asc DbAddressCreated] 
-    return $ (fromIntegral . round . toPOSIX) <$> res
+    return $ (fromInteger . round . toPOSIX) <$> res
   where
     toPOSIX = utcTimeToPOSIXSeconds . dbAddressCreated . entityVal
 
@@ -700,7 +695,6 @@ balance :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
         => AccountName -- ^ Account name
         -> m Word64    -- ^ Account balance
 balance name = do
-    (Entity ai _) <- getAccountEntity name
     coins <- spendableCoins name
     return $ sum $ map coinValue coins
 

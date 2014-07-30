@@ -3,48 +3,30 @@
 {-# LANGUAGE TypeFamilies      #-}
 module Network.Haskoin.Wallet.Units (tests) where
 
-import Test.HUnit (Assertion, assertBool, assertEqual, assertFailure)
+import Test.HUnit (Assertion, assertEqual, assertFailure)
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
 import Control.Monad (liftM, guard)
-import Control.Applicative ((<$>))
 import Control.Monad.Trans (liftIO, MonadIO)
-import Control.Monad.Logger (MonadLogger, NoLoggingT)
 import Control.Exception (Exception, handleJust)
 import Control.Monad.Trans.Resource (ResourceT)
+import Control.Monad.Logger (NoLoggingT)
 
 import Data.Word (Word32)
-import Data.Maybe (fromJust, isJust)
-import Data.Yaml as YAML
-    ( Value
-    , object 
-    , toJSON
-    , (.=)
-    )
-import qualified Data.Text as T (pack)
+import Data.Maybe (fromJust)
 import qualified Data.ByteString as BS 
     ( empty
     , pack
     )
 
 import Database.Persist 
-    ( PersistStore
-    , PersistUnique
-    , PersistQuery
-    , PersistMonadBackend
-    , Entity(..)
+    ( Entity(..)
     , entityVal
-    , getBy
     , selectList
-    , count
-    , (==.)
-    , Filter
-    , SelectOpt(Asc)
     )
 import Database.Persist.Sqlite 
-    ( SqlBackend
-    , runSqlite
+    ( runSqlite
     , runMigrationSilent
     , SqlPersistT
     )
@@ -52,10 +34,8 @@ import Database.Persist.Sqlite
 import Network.Haskoin.Node.HeaderChain
 
 import Network.Haskoin.Wallet
-import Network.Haskoin.Wallet.Account
 import Network.Haskoin.Wallet.Tx
 import Network.Haskoin.Wallet.Model
-import Network.Haskoin.Wallet.Types
 
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
@@ -90,7 +70,7 @@ tests =
             assertException
                 (WalletException "Account acc already exists") $ do
                 newWallet "main" (BS.pack [1])
-                newAccount "main" "acc" 
+                _ <- newAccount "main" "acc" 
                 newAccount "main" "acc" 
         , testCase "Invalid multisig parameters (0 of 1)" $
             assertException
@@ -130,7 +110,7 @@ tests =
                 (WalletException 
                     "Can only add keys to a multisig account") $ do
                     newWallet "main" (BS.pack [0])
-                    newAccount "main" "default" 
+                    _ <- newAccount "main" "default" 
                     addAccountKeys "default"
                         [ deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [1]) ]
 
@@ -139,7 +119,7 @@ tests =
                 (WalletException 
                     "Can not add your own keys to a multisig account") $ do
                     newWallet "main" (BS.pack [0])
-                    newAccount "main" "default" 
+                    _ <- newAccount "main" "default" 
                     let master = fromJust $ makeMasterKey $ BS.pack [0]
                         accKey = fromJust $ accPubKey master 0
                     newMSAccount "main" "ms" 1 2 [ getAccPubKey accKey ]
@@ -149,10 +129,10 @@ tests =
                 (WalletException 
                     "Can not add your own keys to a multisig account") $ do
                     newWallet "main" (BS.pack [0])
-                    newAccount "main" "default" 
+                    _ <- newAccount "main" "default" 
                     let master = fromJust $ makeMasterKey $ BS.pack [0]
                         accKey = fromJust $ accPubKey master 0
-                    newMSAccount "main" "ms" 1 2 []
+                    _ <- newMSAccount "main" "ms" 1 2 []
                     addAccountKeys "ms" [getAccPubKey accKey]
 
         , testCase "Adding keys to a complete multisig account should fail" $
@@ -160,7 +140,7 @@ tests =
                 (WalletException 
                     "The account is complete and no further keys can be added") $ do
                     newWallet "main" (BS.pack [0])
-                    newMSAccount "main" "ms" 2 3 
+                    _ <- newMSAccount "main" "ms" 2 3 
                         [ deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [1])
                         , deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [2])
                         ]
@@ -172,7 +152,7 @@ tests =
                 (WalletException 
                     "Adding too many keys to the account") $ do
                     newWallet "main" (BS.pack [0])
-                    newMSAccount "main" "ms" 2 3 
+                    _ <- newMSAccount "main" "ms" 2 3 
                         [ deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [1])
                         ]
                     addAccountKeys "ms" 
@@ -211,31 +191,31 @@ tests =
             assertException
                 (WalletException "The page number 2 is too high") $ do
                     newWallet "main" $ BS.pack [0] 
-                    newAccount "main" "default"
-                    newAddrs "default" 5
+                    _ <- newAccount "main" "default"
+                    _ <- newAddrs "default" 5
                     addressPage "default" 2 5
 
         , testCase "Generating less than 1 address should fail" $
             assertException
                 (WalletException "Can not generate less than 1 address") $ do
                     newWallet "main" $ BS.pack [0] 
-                    newAccount "main" "default"
+                    _ <- newAccount "main" "default"
                     newAddrs "default" 0
 
         , testCase "Setting a label on an invalid address key should fail" $
             assertException
                 (WalletException "The address has not been generated yet") $ do
                     newWallet "main" $ BS.pack [0] 
-                    newAccount "main" "default"
-                    newAddrs "default" 5
+                    _ <- newAccount "main" "default"
+                    _ <- newAddrs "default" 5
                     setAddrLabel "default" 5 "Gym membership"
 
         , testCase "Requesting the private key on an invalid address key should fail" $
             assertException
                 (WalletException "The address has not been generated yet") $ do
                     newWallet "main" $ BS.pack [0] 
-                    newAccount "main" "default"
-                    newAddrs "default" 5
+                    _ <- newAccount "main" "default"
+                    _ <- newAddrs "default" 5
                     addressPrvKey "default" 5
         ]
     , testGroup "Transaction import tests"
@@ -291,10 +271,10 @@ pass = "passw0rd"
 
 testImportOrphan :: App ()
 testImportOrphan = do
-    newWalletMnemo "test" pass $ Just mnemo
-    newAccount "test" "acc1"
+    _ <- newWalletMnemo "test" pass $ Just mnemo
+    _ <- newAccount "test" "acc1"
     setLookAhead "acc1" 30
-    newAddrs "acc1" 5 
+    _ <- newAddrs "acc1" 5 
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -350,10 +330,10 @@ fakeNode i h = BlockHeaderNode
 
 testOutDoubleSpend :: App ()
 testOutDoubleSpend = do
-    newWalletMnemo "test" pass $ Just mnemo
-    newAccount "test" "acc1"
+    _ <- newWalletMnemo "test" pass $ Just mnemo
+    _ <- newAccount "test" "acc1"
     setLookAhead "acc1" 30
-    newAddrs "acc1" 5 
+    _ <- newAddrs "acc1" 5 
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -444,10 +424,10 @@ testOutDoubleSpend = do
 
 testInDoubleSpend :: App ()
 testInDoubleSpend = do
-    newWalletMnemo "test" pass $ Just mnemo
-    newAccount "test" "acc1"
+    _ <- newWalletMnemo "test" pass $ Just mnemo
+    _ <- newAccount "test" "acc1"
     setLookAhead "acc1" 30
-    newAddrs "acc1" 5 
+    _ <- newAddrs "acc1" 5 
     let tx1 = Tx 1 [ TxIn (OutPoint 5 5) (BS.pack [1]) maxBound ] 
                    [ TxOut 10000000 $
                       encodeOutputBS $ PayPKHash $ fromJust $ 
@@ -525,10 +505,10 @@ testInDoubleSpend = do
 -- tx1, tx2 and tx3 form a chain, and tx4 is in conflict with tx1
 testDoubleSpendChain :: App ()
 testDoubleSpendChain = do
-    newWalletMnemo "test" pass $ Just mnemo
-    newAccount "test" "acc1"
+    _ <- newWalletMnemo "test" pass $ Just mnemo
+    _ <- newAccount "test" "acc1"
     setLookAhead "acc1" 30
-    newAddrs "acc1" 5 
+    _ <- newAddrs "acc1" 5 
     let tx1 = Tx 1 [ TxIn (OutPoint 4 4) (BS.pack [1]) maxBound ] 
                    [ TxOut 10000000 $
                       encodeOutputBS $ PayPKHash $ fromJust $ 
@@ -647,10 +627,10 @@ testDoubleSpendChain = do
 -- tx3 spends from c2. So we can either have tx2 valid or tx1 and tx3 as valid.
 testDoubleSpendGroup :: App ()
 testDoubleSpendGroup = do
-    newWalletMnemo "test" pass $ Just mnemo
-    newAccount "test" "acc1"
+    _ <- newWalletMnemo "test" pass $ Just mnemo
+    _ <- newAccount "test" "acc1"
     setLookAhead "acc1" 30
-    newAddrs "acc1" 5 
+    _ <- newAddrs "acc1" 5 
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -790,10 +770,10 @@ testWalletDoubleSpend = do
         tx4 = decode' $ fromJust $ hexToBS "01000000018f8beb42a53d2fab0614867e8aec484d3e0b1097ab91a6ad3967b5f753770eb2000000006b483045022100ccf17481bd37aecb9fc6130f9fcfa73914bb0ea535af45fc989e6b3faa3f271802201b90209622ecd01417fb7e263598278541ac359cb7572dd3e4dec9fca2bd01ad0121038fecbf5bca807297c0290d8912dcb4348b46de7272c942a71bb8465de7d63293ffffffff0160489800000000001976a9141bb874c1b168e928ff148f2cf7ae9ad69e3e49f988ac00000000" :: Tx
 
     assertException (WalletException "Can not import double-spending transaction") $ do
-        newWalletMnemo "test" pass $ Just mnemo
-        newAccount "test" "acc1"
+        _ <- newWalletMnemo "test" pass $ Just mnemo
+        _ <- newAccount "test" "acc1"
         setLookAhead "acc1" 30
-        newAddrs "acc1" 5 
+        _ <- newAddrs "acc1" 5 
         -- Import funding transaction
         importTx fundingTx NetworkSource >>=
             liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
@@ -808,10 +788,10 @@ testWalletDoubleSpend = do
         importTx tx3 WalletSource 
 
     assertException (WalletException "Can not import double-spending transaction") $ do
-        newWalletMnemo "test" pass $ Just mnemo
-        newAccount "test" "acc1"
+        _ <- newWalletMnemo "test" pass $ Just mnemo
+        _ <- newAccount "test" "acc1"
         setLookAhead "acc1" 30
-        newAddrs "acc1" 5 
+        _ <- newAddrs "acc1" 5 
         -- Import funding transaction
         importTx fundingTx NetworkSource >>=
             liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
@@ -827,10 +807,10 @@ testWalletDoubleSpend = do
 
     -- Now we make tx2 dead so we can import tx3 and tx4 from the wallet
     runUnit $ do
-        newWalletMnemo "test" pass $ Just mnemo
-        newAccount "test" "acc1"
+        _ <- newWalletMnemo "test" pass $ Just mnemo
+        _ <- newAccount "test" "acc1"
         setLookAhead "acc1" 30
-        newAddrs "acc1" 5 
+        _ <- newAddrs "acc1" 5 
         -- Import funding transaction
         importTx fundingTx NetworkSource >>=
             liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
@@ -867,11 +847,11 @@ testWalletDoubleSpend = do
 testImportMultisig :: App ()
 testImportMultisig = do
     --testImportMultisig2
-    newWalletMnemo "test" pass $ Just mnemo
-    res <- newMSAccount "test" "ms1" 2 2 $
+    _ <- newWalletMnemo "test" pass $ Just mnemo
+    _ <- newMSAccount "test" "ms1" 2 2 $
         [fromJust $ xPubImport "xpub68yUKy6M9BSM3HMejgrwGipKXSn22QzTqhFguvcE4yksoHP2TJjCadfE2fHyvBAE9VpGkxygrqsDqohyeXMZUM8Fh3GxRGKpFXQiJ6vgrNG"]
     setLookAhead "ms1" 30
-    newAddrs "ms1" 5 
+    _ <- newAddrs "ms1" 5 
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -880,7 +860,7 @@ testImportMultisig = do
                  ] 0
         toImport = decode' $ fromJust $ hexToBS "0100000001d53c19abd25c333a0d348b10c10f1781e12ddc9fc82d95743b249b88cc50a72900000000da00483045022100ae08adb9dbb3974c95f39400f22b28b8f3920e131fe8c43b942632718c018b2902204510743685522f4e29bc0cac7938b7ece87ae4e2a93182e5bafc0e88bdf9e3c2014730440220351bafa1f3f0c82720d9f887d97c23681bfbded78119201cbed00b57e5eff73e02205da173d08be046d125cc3bbc35ce1be16652d0990f247662f7a171c49381badd014752210320e6fef44dc34322ce8e5d0a20efe55ae1308c321fab6496eece4473b9f12dd62103d9097c7e36d393672fd366f303e1c30c1421e1e72bedc73d49ae92e4ba5ed83552aeffffffff02404b4c000000000017a9143c8ea9e0b86430bed5805b86023ce11175c26ad38730244c000000000017a91473a92334bcf250c85a30fd3cb7fbebc49d822ccc8700000000" :: Tx
 
-    importTx fundingTx NetworkSource
+    _ <- importTx fundingTx NetworkSource
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash fundingTx)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
     balance "ms1" >>= liftIO . (assertEqual "Balance is not 10000000" 10000000)
@@ -911,10 +891,10 @@ testImportMultisig = do
 -- This test create a multisig account with the key of testImportMultisig1
 testImportMultisig2 :: App ()
 testImportMultisig2 = do
-    newWalletMnemo "test" pass $ Just mnemo2
-    newMSAccount "test" "ms1" 2 2 [fromJust $ xPubImport "xpub69iinth3CTrfh5efv7baTWwk9hHi4zqcQEsNFgVwEJvdaZVEPytZzmNxjYTnF5F5x2CamLXvmD1T4RhpsuaXSFPo2MnLN5VqWqrWb82U7ED"]
+    _ <- newWalletMnemo "test" pass $ Just mnemo2
+    _ <- newMSAccount "test" "ms1" 2 2 [fromJust $ xPubImport "xpub69iinth3CTrfh5efv7baTWwk9hHi4zqcQEsNFgVwEJvdaZVEPytZzmNxjYTnF5F5x2CamLXvmD1T4RhpsuaXSFPo2MnLN5VqWqrWb82U7ED"]
     setLookAhead "ms1" 30
-    res <- newAddrs "ms1" 5 
+    _ <- newAddrs "ms1" 5 
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -922,7 +902,7 @@ testImportMultisig2 = do
                     base58ToAddr "38pfoRLKzxUTcCdA4PTgeVQBePLtcC28iv" 
                  ] 0
         toSign = decode' $ fromJust $ hexToBS "0100000001d53c19abd25c333a0d348b10c10f1781e12ddc9fc82d95743b249b88cc50a729000000009200483045022100ae08adb9dbb3974c95f39400f22b28b8f3920e131fe8c43b942632718c018b2902204510743685522f4e29bc0cac7938b7ece87ae4e2a93182e5bafc0e88bdf9e3c2014752210320e6fef44dc34322ce8e5d0a20efe55ae1308c321fab6496eece4473b9f12dd62103d9097c7e36d393672fd366f303e1c30c1421e1e72bedc73d49ae92e4ba5ed83552aeffffffff02404b4c000000000017a9143c8ea9e0b86430bed5805b86023ce11175c26ad38730244c000000000017a91473a92334bcf250c85a30fd3cb7fbebc49d822ccc8700000000" :: Tx
-    importTx fundingTx NetworkSource
+    _ <- importTx fundingTx NetworkSource
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash fundingTx)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
     balance "ms1" >>= liftIO . (assertEqual "Balance is not 10000000" 10000000)

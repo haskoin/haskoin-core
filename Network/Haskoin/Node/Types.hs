@@ -7,7 +7,7 @@ import Control.Exception (Exception)
 import Data.Binary (Binary, get, put)
 
 import Data.Typeable (Typeable)
-import Data.Word
+import Data.Word (Word32)
 
 import Network.Haskoin.Node.HeaderChain
 import Network.Haskoin.Crypto

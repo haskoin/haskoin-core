@@ -4,10 +4,8 @@ module Network.Haskoin.Node.Checkpoints
 , verifyCheckpoint
 ) where
 
-import Control.Applicative
-
-import qualified Data.IntMap.Strict as M
-import qualified Data.ByteString as BS
+import qualified Data.IntMap.Strict as M (IntMap, fromList, lookup)
+import qualified Data.ByteString as BS (reverse)
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Constants

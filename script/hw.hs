@@ -3,10 +3,6 @@
 {-# LANGUAGE TypeFamilies      #-}
 module Main where
 
-import System.Directory 
-    ( getAppUserDataDirectory
-    , createDirectoryIfMissing
-    )
 import System.IO.Error (ioeGetErrorString)
 import System.Console.GetOpt 
     ( getOpt
@@ -16,90 +12,42 @@ import System.Console.GetOpt
     , ArgOrder (Permute)
     )
 import qualified System.Environment as E (getArgs)
-import System.Posix.Daemon
+import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad 
-    ( join
-    , void
-    , forM
-    , forM_
-    , when
-    , liftM
-    , unless
-    , mzero
-    , liftM2
-    )
-import Control.Monad.Trans (lift, liftIO, MonadIO)
-import Control.Monad.Trans.Resource (ResourceT, runResourceT)
-import Control.Exception (tryJust, throwIO, throw)
-import Control.Monad.Logger 
-    ( NoLoggingT
-    , runNoLoggingT
-    , LoggingT
-    , MonadLogger
-    , runStderrLoggingT
-    )
-import Control.Concurrent.STM.TBMChan
-import Control.Concurrent.STM
+import Control.Monad (join, forM_, when, mzero, liftM2)
+import Control.Monad.Trans (liftIO, MonadIO)
+import Control.Exception (throwIO, throw)
 
-import Database.Persist
-    ( PersistStore
-    , PersistUnique
-    , PersistQuery
-    , PersistMonadBackend
-    , entityVal
-    )
-import Database.Persist.Sql 
-    ( SqlBackend
-    , ConnectionPool
-    , SqlPersistT
-    , runSqlPool
-    , runMigrationSilent
-    )
-import Database.Persist.Sqlite (createSqlitePool)
-
-import Data.Default
 import Data.Word (Word32, Word64)
-import Data.List (sortBy, intersperse)
+import Data.List (intersperse)
 import Data.Maybe (listToMaybe, fromJust, isNothing, isJust, fromMaybe)
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString as BS
-import qualified Data.HashMap.Strict as H
-import qualified Data.Vector as V
+import qualified Data.ByteString as BS (ByteString)
+import qualified Data.HashMap.Strict as H (toList)
+import qualified Data.Vector as V (toList)
 import qualified Data.Text as T (pack, unpack, splitOn)
 import qualified Data.Yaml as YAML (encode)
-import Data.Conduit.TMChan
-import Data.Conduit 
-    ( Sink
-    , awaitForever
-    , ($$), (=$) 
-    , yield
-    , await
-    )
+import Data.Conduit (Sink, ($$), await)
 import Data.Conduit.Network 
-    ( ClientSettings(..)
-    , runTCPClient
+    ( runTCPClient
     , clientSettings
     , appSink
     , appSource
-    , AppData
     )
-import qualified Data.Conduit.Binary as CB
-import Data.Aeson (Value (Null), (.=), object, toJSON, decode, encode)
-import Data.Aeson.Types
-    ( Value (Object, String)
+import qualified Data.Conduit.Binary as CB (sourceLbs)
+import Data.Aeson 
+    ( Value (String)
     , FromJSON
-    , ToJSON
-    , Parser
-    , (.=)
-    , (.:)
-    , (.:?)
     , object
-    , parseJSON
     , toJSON
-    , withArray
+    , decode
     , withObject
+    , withArray
+    , (.=), (.:), (.:?)
+    )
+import Data.Aeson.Types
+    ( Parser
+    , parseJSON
     )
 import qualified Data.Aeson.Encode.Pretty as JSON
     ( encodePretty'
@@ -109,19 +57,14 @@ import qualified Data.Aeson.Encode.Pretty as JSON
 
 import Network.Haskoin.Server
 import Network.Haskoin.Server.Types
-import Network.Haskoin.Node.PeerManager
 
 import Network.Haskoin.Wallet
-import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
-import Network.Haskoin.Wallet.Account
-import Network.Haskoin.Wallet.Tx
 
 import Network.Haskoin.Script
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto 
 import Network.Haskoin.Transaction
-import Network.Haskoin.Stratum 
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
 
@@ -277,13 +220,13 @@ printJSONOr :: Options
             -> Either String WalletResponse 
             -> (WalletResponse -> IO ()) 
             -> IO ()
-printJSONOr opts resE def
+printJSONOr opts resE action
     | isLeft resE = error $ fromLeft resE
     | optJson opts = do
         let bs = JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } res
         formatStr $ bsToString $ toStrictBS bs
     | optYaml opts = formatStr $ bsToString $ YAML.encode res
-    | otherwise = def res
+    | otherwise = action res
   where
     res = fromRight resE
 
@@ -326,9 +269,9 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         printJSONOr opts res $ \r -> case r of
             ResAccount a -> putStr $ printAccount a
             _ -> error "Received an invalid response"
-    "newms" : wname : name : r : t : ks -> do
+    "newms" : wname : name : m : t : ks -> do
         let keysM = mapM xPubImport ks
-            r'    = read r
+            r'    = read m
             t'    = read t
         when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
@@ -362,7 +305,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             Right (ResAddressList (a:_)) -> do
                 res <- sendRequest $ AddressLabel name (addressIndex a) label
                 printJSONOr opts res $ \r -> case r of
-                    ResAddress a -> putStrLn $ printAddress a
+                    ResAddress add -> putStrLn $ printAddress add
                     _ -> error "Received an invalid response"
             Right _ -> throwIO $ WalletException "Invalid response"
             Left err -> throwIO $ WalletException err
@@ -457,11 +400,11 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         printJSONOr opts res $ \r -> case r of
             ResBalance b -> putStrLn $ unwords [ "Balance:", show b ]
             _ -> error "Received an invalid response"
-    "rescan" : timestamp -> do
-        let t = read <$> listToMaybe timestamp
+    "rescan" : rescantime -> do
+        let t = read <$> listToMaybe rescantime
         res <- sendRequest $ Rescan t
         printJSONOr opts res $ \r -> case r of
-            ResRescan t -> putStrLn $ unwords [ "Timestamp:", show t]
+            ResRescan ts -> putStrLn $ unwords [ "Timestamp:", show ts]
             _ -> error "Received an invalid response"
     ["decodetx", tx] -> do
         let txM = decodeToMaybe =<< hexToBS tx
@@ -576,7 +519,7 @@ encodeScriptInputJSON si = case si of
 
 encodeScriptOutputJSON :: ScriptOutput -> Value
 encodeScriptOutputJSON so = case so of
-    PayPK p -> object 
+    PayPK p -> object
         [ "pay2pubkey" .= object [ "pubkey" .= bsToHex (encode' p) ] ]
     PayPKHash a -> object 
         [ "pay2pubkeyhash" .= object

@@ -1,23 +1,53 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Node.HeaderChain where
+module Network.Haskoin.Node.HeaderChain
+( LevelSession(..)
+, DBHandle
+, BlockHeaderNode(..)
+, BlockHeaderAction(..)
+, BlockChainAction(..)
+, initDB
+, getActionNode
+, getBlockHeaderNode
+, getBestBlock
+, putBestBlock
+, getBestHeader
+, getFastCatchup
+, setFastCatchup
+, getLastDownload
+, putLastDownload
+, getParent
+, addBlockHeader
+, getDownloads
+, addMerkleBlock
+, blockLocator
+, bestBlockHeight
+, bestHeaderHeight
+)
+where
 
-import Control.Monad
-import Control.Applicative
-import Control.Monad.Trans
-import Control.Monad.Trans.Either
-import qualified Control.Monad.State as S
+import Control.Monad (when, unless, foldM)
+import Control.Applicative ((<$>), (<*>))
+import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Either (left, runEitherT)
+import qualified Control.Monad.State as S (StateT, gets)
 
-import Data.List
-import Data.Bits
-import Data.Word
-import Data.Maybe
-import Data.Binary
-import Data.Binary.Get
-import Data.Binary.Put
-import Data.Default
-import qualified Data.ByteString as BS
+import Data.Word (Word32)
+import Data.List (sort, nub)
+import Data.Bits (shiftR, shiftL)
+import Data.Maybe (fromJust, isNothing, isJust)
+import Data.Binary (Binary, get, put)
+import Data.Binary.Get (getWord32le)
+import Data.Binary.Put (putWord32le)
+import Data.Default (def)
+import qualified Data.ByteString as BS (ByteString, append, reverse)
 
-import qualified Database.LevelDB.Base as DB
+import qualified Database.LevelDB.Base as DB 
+    ( DB
+    , get
+    , put
+    , write
+    , BatchOp( Put )
+    )
 
 import Network.Haskoin.Node.Checkpoints
 import Network.Haskoin.Crypto
@@ -286,7 +316,7 @@ addBlockHeader bh adjustedTime = ((f <$>) . runEitherT) $ do
 
 storeBlockHeader :: BlockHeader -> BlockHeaderNode 
                  -> DBHandle BlockHeaderAction
-storeBlockHeader bh prevNode = S.gets handle >>= \db -> do
+storeBlockHeader bh prevNode = do
     if allowMinDifficultyBlocks
         then do
             let isDiffChange = nodeHeaderHeight newNode `mod` diffInterval == 0
@@ -394,7 +424,6 @@ getNewWork firstB lastB
 -- We assume the merkle block are sorted by ascending height
 addMerkleBlock :: MerkleBlock -> DBHandle BlockChainAction
 addMerkleBlock mb = do
-    db        <- S.gets handle
     newNode   <- fromJust <$> getBlockHeaderNode bid
     chainHead <- getBestBlock
     if nodeParent newNode == nodeBlockHash chainHead
@@ -448,23 +477,25 @@ bestBlockHeight = nodeHeaderHeight <$> getBestBlock
 blockLocator :: DBHandle [BlockHash]
 blockLocator = do
     h  <- getBestHeader
-    ns <- f [h] $ replicate 10 (go 1) ++ [go (2^x) | x <- [0..]]
+    let xs = [go ((2 :: Int)^x) | x <- ([0..] :: [Int])]
+    ns <- f [h] $ replicate 10 (go (1 :: Int)) ++ xs
     return $ reverse $ nub $ genid : map nodeBlockHash ns
   where
     genid = headerHash genesisHeader
     f acc (g:gs) = g (head acc) >>= \resM -> case resM of
         Just res -> f (res:acc) gs
         Nothing  -> return acc
+    f _ _ = undefined
     go _ (BlockHeaderGenesis _ _ _ _ _ _ _) = return Nothing
     go 0 n = return $ Just n
     go step n = go (step-1) =<< getParent n
 
 -- Get the last checkpoint that we have seen
 lastCheckpoint :: DBHandle (Maybe (Int, BlockHash))
-lastCheckpoint = S.gets handle >>= \db -> 
-    foldM (f db) Nothing $ reverse checkpointList
+lastCheckpoint = 
+    foldM f Nothing $ reverse checkpointList
   where
-    f db res (i,chk) = if isJust res then return res else do
+    f res (i,chk) = if isJust res then return res else do
         haveChk <- getBlockHeaderNode chk
         return $ if isJust haveChk then Just (i,chk) else Nothing
 

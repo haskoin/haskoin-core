@@ -28,6 +28,7 @@ module Network.Haskoin.Wallet.Model
 , DbSpentCoinId
 , DbConfirmationId
 , DbConfigId
+, DbOrphanId
 , EntityField(..)
 , Unique(..)
 , migrateWallet

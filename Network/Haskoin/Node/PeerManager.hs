@@ -6,43 +6,74 @@ module Network.Haskoin.Node.PeerManager
 , NodeRequest(..)
 ) where
 
-import System.Random
+import System.Random (randomIO)
 
-import Control.Applicative
-import Control.Monad
-import Control.Concurrent (forkFinally, forkIO, threadDelay)
-import Control.Monad.Logger 
+import Control.Applicative ((<$>))
+import Control.Monad (when, unless, forM, forM_, filterM, foldM, void, forever)
 import Control.Monad.Trans
-import Control.Concurrent.STM.TBMChan
-import Control.Concurrent.STM
-import Control.Concurrent.Async
-import Control.Monad.Trans.Resource
-import qualified Control.Monad.State as S
+import Control.Concurrent (forkFinally, forkIO, threadDelay)
+import Control.Concurrent.STM (atomically)
+import Control.Concurrent.Async (Async, withAsync)
+import qualified Control.Monad.State as S (StateT, evalStateT, gets, modify)
+import Control.Monad.Logger 
+    ( LoggingT
+    , runStdoutLoggingT
+    , logInfo
+    , logWarn
+    , logDebug
+    , logError
+    )
 
-import Data.Maybe
-import Data.Word
-import Data.Time
-import Data.Time.Clock.POSIX
-import Data.Default
-import Data.Foldable (toList)
-import Data.List 
-import qualified Data.ByteString as BS
-import qualified Data.Map as M
+import qualified Data.Text as T (pack)
+import Data.Maybe (isJust, isNothing, fromJust, catMaybes)
+import Data.Word (Word32)
+import Data.Time.Clock.POSIX (getPOSIXTime)
+import Data.Default (def)
+import Data.List (nub, partition, delete)
+import qualified Data.ByteString as BS (empty)
+import qualified Data.Map as M 
+    ( Map
+    , insert
+    , member
+    , delete
+    , lookup
+    , fromList
+    , keys
+    , elems
+    , null
+    , empty
+    , partition
+    )
 import Data.Conduit 
     ( Sink
     , awaitForever
     , ($$) 
     )
 import Data.Conduit.Network 
-    ( ClientSettings
-    , getHost
-    , getPort
-    , runTCPClient
+    ( runTCPClient
     , clientSettings
     )
-import Data.Conduit.TMChan
-import qualified Data.Text as T
-import qualified Database.LevelDB.Base as DB
+import Data.Conduit.TMChan 
+    ( TBMChan
+    , newTBMChan
+    , sourceTBMChan
+    , writeTBMChan
+    , closeTBMChan
+    )
+
+import qualified Database.LevelDB.Base as DB 
+    ( DB
+    , open
+    , defaultOptions
+    , createIfMissing
+    , cacheSize
+    , get
+    , put
+    , delete
+    , withIter
+    , iterFirst
+    , iterKeys
+    )
 
 import Network.Haskoin.Node.Peer
 import Network.Haskoin.Node.HeaderChain
@@ -434,7 +465,6 @@ processFastCatchupTime t = do
                               , receivedMerkle = M.empty
                               }
             -- Trigger downloads
-            remotes <- M.keys <$> S.gets peerMap 
             forM_ remotes downloadBlocks
         else do
             $(logInfo) $ T.pack $ unwords
@@ -442,14 +472,14 @@ processFastCatchupTime t = do
             S.modify $ \s -> s{ pendingRescan = Just t }
 
 processHeaders :: RemoteHost -> Headers -> ManagerHandle ()
-processHeaders remote (Headers h) = do
+processHeaders remote (Headers hs) = do
     -- TODO: The time here is incorrect. It should be a median of all peers.
     adjustedTime <- liftIO getPOSIXTime
     -- TODO: If a block headers can't be added, update DOS status
     before      <- runDB bestHeaderHeight
     -- TODO: Handle errors in addBlockHeader. We don't do anything
     -- in case of RejectHeader
-    newBlocksM <- forM (map fst h) $ \x -> do
+    newBlocksM <- forM (map fst hs) $ \x -> do
         res <- runDB $ addBlockHeader x (round adjustedTime)
         case res of
             AcceptHeader n -> return $ Just n
@@ -472,7 +502,7 @@ processHeaders remote (Headers h) = do
     remotes <- M.keys <$> S.gets peerMap 
 
     -- Adjust the height of peers that sent us INV messages for these headers
-    forM newBlocks $ \n -> do
+    forM_ newBlocks $ \n -> do
         let h = nodeHeaderHeight n
         forM remotes $ \r -> do
             dat <- getPeerData r
@@ -602,7 +632,7 @@ importMerkleBlocks = do
             solo    <- S.gets soloTxs
             notHave <- filterM filterTx solo
             liftIO $ atomically $ writeTBMChan eChan $ TxEvent notHave
-            forM notHave $ putData . fromIntegral . txHash
+            forM_ notHave $ putData . fromIntegral . txHash
             S.modify $ \s -> s{ soloTxs = [] }
             height <- runDB bestBlockHeight
             unless (null res) $ $(logInfo) $ T.pack $ unwords
@@ -642,7 +672,7 @@ importMerkleBlock dmb = do
             let k      = nodeHeaderHeight $ getActionNode action
                 prevM  = M.lookup k $ receivedMerkle s
                 newMap = case prevM of
-                    Just [dmb] -> M.delete k $ receivedMerkle s
+                    Just [_]   -> M.delete k $ receivedMerkle s
                     Just xs    -> M.insert k (delete dmb xs) $ receivedMerkle s
                     Nothing    -> receivedMerkle s
             in s{ receivedMerkle = newMap }
@@ -665,7 +695,7 @@ importMerkleBlock dmb = do
             txToImport <- filterM filterTx allTxs
 
             case action of
-                BestBlock b -> return ()
+                BestBlock _ -> return ()
                 BlockReorg _ o n -> $(logInfo) $ T.pack $ unwords
                     [ "Block reorg. Orphaned blocks:"
                     , "[", unwords $ 
@@ -683,7 +713,7 @@ importMerkleBlock dmb = do
                     ]
 
             -- Save the fact that we sent the data to the user
-            forM txToImport $ putData . fromIntegral . txHash
+            forM_ txToImport $ putData . fromIntegral . txHash
             putData $ fromIntegral bHash
             return $ Just (action, expectedTxs dmb, txToImport)
 
@@ -706,8 +736,8 @@ processInv remote (Inv vs) = do
             let addInflight = map (\x -> (x,now)) notHaveTxs
             modifyPeerData remote $ \d -> 
                 d{ inflightTxs = inflightTxs d ++ addInflight }
-            let vs      = map (InvVector InvTx . fromIntegral) notHaveTxs
-                getData = GetData vs
+            let newvs   = map (InvVector InvTx . fromIntegral) notHaveTxs
+                getData = GetData newvs
             sendMessage remote $ MGetData getData
 
     -- Process blocks
@@ -821,8 +851,6 @@ processNotFound remote (NotFound vs) = do
     forM_ reorderRemotes downloadBlocks
   where
     -- TODO: Should we handle NotFound for transactions?
-    txlist = map (fromIntegral . invHash) $ 
-        filter ((== InvTx) . invType) vs
     blocklist = map (fromIntegral . invHash) $ 
         filter ((== InvMerkleBlock) . invType) vs
 

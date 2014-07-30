@@ -8,23 +8,32 @@ module Network.Haskoin.Node.Peer
 , peer
 ) where
 
-import Control.Applicative 
-import Control.Monad 
-import Control.Monad.Trans
-import Control.Monad.Logger 
-import Control.Monad.Trans.Resource
-import Control.Concurrent (forkIO, ThreadId, myThreadId)
+import Control.Applicative ((<$>))
+import Control.Monad (void, when, unless)
+import Control.Monad.Trans (lift, liftIO, MonadIO)
 import Control.Exception (throwIO, throw)
-import qualified Control.Monad.State as S
-import Control.Concurrent.STM.TBMChan
-import Control.Concurrent.STM
-import Control.Concurrent.Async
+import Control.Concurrent.STM (atomically)
+import Control.Concurrent.Async (withAsync)
+import qualified Control.Monad.State as S 
+    ( StateT
+    , evalStateT
+    , get
+    , gets
+    , modify
+    )
+import Control.Monad.Logger 
+    ( LoggingT
+    , MonadLogger
+    , runStdoutLoggingT
+    , logDebug
+    , logInfo
+    , logError
+    )
 
-import Database.Persist.Sqlite
-
-import Data.Maybe
-import Data.Word
-import qualified Data.Text as T
+import Data.Maybe (isJust, fromJust, catMaybes)
+import Data.Word (Word32)
+import qualified Data.Text as T (pack)
+import qualified Data.ByteString as BS (ByteString, null, empty, append)
 import Data.Conduit 
     ( Conduit
     , Sink
@@ -37,12 +46,13 @@ import Data.Conduit.Network
     , appSink
     , appSource
     )
-import Data.Conduit.TMChan
+import Data.Conduit.TMChan 
+    ( TBMChan
+    , sourceTBMChan
+    , writeTBMChan
+    )
+import qualified Data.Conduit.Binary as CB (take)
 
-import qualified Data.Conduit.Binary as CB
-import qualified Data.ByteString as BS
-
-import Network.Haskoin.Node.HeaderChain
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
@@ -144,7 +154,7 @@ processVerAck :: PeerHandle ()
 processVerAck = $(logDebug) "Version ACK received"
 
 processMerkleBlock :: MerkleBlock -> PeerHandle ()
-processMerkleBlock mb@(MerkleBlock h ntx hs fs)
+processMerkleBlock mb@(MerkleBlock _ ntx hs fs)
     -- TODO: Handle this error better
     | isLeft matchesE = error $ fromLeft matchesE
     | null match      = do
@@ -164,7 +174,7 @@ processTx :: Tx -> PeerHandle ()
 processTx tx = do
     remote <- S.gets remoteSettings
     merkleM <- S.gets inflightMerkle
-    let dmb@(DecodedMerkleBlock mb root match txs) = fromJust merkleM
+    let dmb@(DecodedMerkleBlock _ _ match txs) = fromJust merkleM
     -- If the transaction is part of a merkle block, buffer it. We will send
     -- everything to the manager together.
     if isJust merkleM

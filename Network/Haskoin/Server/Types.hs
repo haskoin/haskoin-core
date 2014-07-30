@@ -12,47 +12,29 @@ module Network.Haskoin.Server.Types
 )
 where
 
-import Control.Applicative
-import Control.Monad 
-import Control.Monad.Trans 
-import Control.Monad.Trans.Resource
-import Control.Monad.Logger
-import Control.Concurrent (forkIO)
-import Control.Concurrent.STM.TBMChan
-import Control.Concurrent.STM
-import Control.DeepSeq (NFData, rnf)
+import Control.Monad (mzero)
 
-import Data.Word
-import Data.Maybe
-import Data.Aeson
-import Data.Aeson.Types
-import Data.Conduit 
-    ( Sink
-    , awaitForever
-    , yield
-    , addCleanup
-    , ($$), ($=), (=$)
+import Data.Word (Word32, Word64)
+import Data.Maybe (isJust, fromJust)
+import Data.Aeson 
+    ( Value (Object, String, Null)
+    , object
+    , ToJSON
+    , toJSON
+    , encode
+    , eitherDecodeStrict
+    , (.:), (.:?), (.=)
     )
-import Data.Conduit.Network
-import Data.Conduit.TMChan
-import qualified Data.Text as T
-import qualified Data.Conduit.List as CL
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
-
-import Database.Persist
-import Database.Persist.Sql
-import Database.Persist.Sqlite
+import Data.Aeson.Types (Parser, parseEither)
+import qualified Data.Text as T (Text, unpack)
+import qualified Data.ByteString as BS (ByteString)
 
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Stratum
 import Network.Haskoin.Util
 
-import Network.Haskoin.Node.PeerManager
-import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Tx
-import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 
 {- Request -}
@@ -225,8 +207,8 @@ parseWalletRequest m v = case (m,v) of
     ("network.haskoin.wallet.newfullwallet", Object o) -> do
         n <- o .:  "walletname"
         p <- o .:  "passphrase"
-        m <- o .:? "mnemonic"
-        return $ NewFullWallet n p m
+        x <- o .:? "mnemonic"
+        return $ NewFullWallet n p x
     ("network.haskoin.wallet.getwallet", Object o) -> do
         n <- o .: "walletname"
         return $ GetWallet n
@@ -306,8 +288,8 @@ parseWalletResponse w v = case (w, v) of
         return $ ResMnemonic m
     (NewReadWallet _ _, _) -> error "Not implemented"
     (GetWallet _, Object o) -> do
-        w <- o .: "wallet"
-        return $ ResWallet w
+        x <- o .: "wallet"
+        return $ ResWallet x
     (WalletList, Object o) -> do
         ws <- o .: "walletlist"
         return $ ResWalletList ws

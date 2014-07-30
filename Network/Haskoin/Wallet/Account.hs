@@ -27,14 +27,12 @@ import Database.Persist
     , PersistMonadBackend
     , Entity(..)
     , getBy
-    , get
     , replace
     , insert_
     , update
-    , count
     , selectList
     , entityVal
-    , (=.), (==.)
+    , (=.)
     , SelectOpt( Asc )
     )
 

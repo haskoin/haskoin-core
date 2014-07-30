@@ -3,8 +3,7 @@ module Network.Haskoin.Wallet.Tests (tests) where
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Data.Maybe
-import Data.Aeson
+import Data.Aeson (FromJSON, ToJSON, encode, decode)
 
 import Network.Haskoin.Wallet.Arbitrary
 import Network.Haskoin.Wallet.Types

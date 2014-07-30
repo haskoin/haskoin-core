@@ -14,7 +14,6 @@ import qualified Data.ByteString as BS
     ( ByteString
     , pack
     , drop
-    , null
     )
 
 import Network.Haskoin.Protocol
@@ -116,7 +115,7 @@ instance Arbitrary RequestPair where
       where
         go (NewFullWallet _ _ _) = ResMnemonic <$> arbitrary
         -- Not implemented yet
-        -- go (NewReadWallet _ _, _) = error "Not implemented"
+        go (NewReadWallet _ _) = error "Not implemented"
         go (GetWallet _) = ResWallet <$> arbitrary
         go WalletList = 
             ResWalletList <$> (flip vectorOf arbitrary =<< choose (0,10))

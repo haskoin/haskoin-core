@@ -125,7 +125,7 @@ newMSAccount wname name m n mskeys = do
     return acc
 
 -- | Create a new read-only account.
-newReadAccount :: PersistUnique m
+newReadAccount :: (PersistUnique m, PersistQuery m)
                => String    -- ^ Account name
                -> XPubKey   -- ^ Read-only key
                -> m Account -- ^ New account
@@ -133,6 +133,7 @@ newReadAccount name key = do
     prevAcc <- getBy $ UniqueAccName name
     when (isJust prevAcc) $ liftIO $ throwIO $ WalletException $
         unwords [ "Account", name, "already exists" ]
+    checkOwnKeys [key]
     let accKeyM = loadPubAcc key
     -- TODO: Should we relax the rules for account keys?
     when (isNothing accKeyM) $ liftIO $ throwIO $ WalletException $
@@ -176,7 +177,7 @@ checkOwnKeys keys = do
     let myKeys  = map (xPubKey . getAccPubKey . accountKey) accs
         overlap = filter (`elem` myKeys) $ map xPubKey keys
     unless (null overlap) $ liftIO $ throwIO $ WalletException 
-        "Can not add your own keys to a multisig account"
+        "Can not add your own keys to an account"
 
 -- | Returns information on extended public and private keys of an account.
 -- For a multisignature account, thirdparty keys are also returned.

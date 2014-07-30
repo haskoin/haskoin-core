@@ -182,7 +182,7 @@ instance RPCRequest WalletRequest String WalletResponse where
 walletMethod :: WalletRequest -> T.Text
 walletMethod wr = case wr of
     NewFullWallet _ _ _    -> "network.haskoin.wallet.newfullwallet"
-    NewReadWallet _ _      -> error "not implemented"
+    NewReadWallet _ _      -> "network.haskoin.wallet.newreadwallet"
     GetWallet _            -> "network.haskoin.wallet.getwallet"
     WalletList             -> "network.haskoin.wallet.walletlist"
     NewAccount _ _         -> "network.haskoin.wallet.newaccount"
@@ -209,6 +209,11 @@ parseWalletRequest m v = case (m,v) of
         p <- o .:  "passphrase"
         x <- o .:? "mnemonic"
         return $ NewFullWallet n p x
+    ("network.haskoin.wallet.newreadwallet", Object o) -> do
+        n <- o .: "walletname" 
+        k <- o .: "key"
+        let keyM = xPubImport k
+        maybe mzero (return . NewReadWallet n) keyM
     ("network.haskoin.wallet.getwallet", Object o) -> do
         n <- o .: "walletname"
         return $ GetWallet n
@@ -286,7 +291,9 @@ parseWalletResponse w v = case (w, v) of
     (NewFullWallet _ _ _, Object o) -> do
         m <- o .: "mnemonic" 
         return $ ResMnemonic m
-    (NewReadWallet _ _, _) -> error "Not implemented"
+    (NewReadWallet _ _, Object o) -> do
+        x <- o .: "wallet"
+        return $ ResWallet x
     (GetWallet _, Object o) -> do
         x <- o .: "wallet"
         return $ ResWallet x

@@ -65,8 +65,7 @@ instance Arbitrary AccTx where
 instance Arbitrary WalletRequest where
     arbitrary = oneof
         [ NewFullWallet <$> arbitrary <*> arbitrary <*> arbitrary
-        -- Not implemented yet
-        -- , NewReadWallet <$> arbitrary <*> arbitrary
+        , NewReadWallet <$> arbitrary <*> (getAccPubKey <$> genKey)
         , GetWallet <$> arbitrary
         , return WalletList
         , NewAccount <$> arbitrary <*> arbitrary
@@ -114,8 +113,7 @@ instance Arbitrary RequestPair where
         return $ RequestPair req res
       where
         go (NewFullWallet _ _ _) = ResMnemonic <$> arbitrary
-        -- Not implemented yet
-        go (NewReadWallet _ _) = error "Not implemented"
+        go (NewReadWallet _ _) = ResWallet <$> arbitrary
         go (GetWallet _) = ResWallet <$> arbitrary
         go WalletList = 
             ResWalletList <$> (flip vectorOf arbitrary =<< choose (0,10))

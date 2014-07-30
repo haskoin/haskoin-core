@@ -69,7 +69,7 @@ tests =
         [ testCase "Creating two accounts with the same name should fail" $
             assertException
                 (WalletException "Account acc already exists") $ do
-                newWallet "main" (BS.pack [1])
+                _ <- newWallet "main" (BS.pack [1])
                 _ <- newAccount "main" "acc" 
                 newAccount "main" "acc" 
         , testCase "Invalid multisig parameters (0 of 1)" $
@@ -109,7 +109,7 @@ tests =
             assertException
                 (WalletException 
                     "Can only add keys to a multisig account") $ do
-                    newWallet "main" (BS.pack [0])
+                    _ <- newWallet "main" (BS.pack [0])
                     _ <- newAccount "main" "default" 
                     addAccountKeys "default"
                         [ deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [1]) ]
@@ -118,7 +118,7 @@ tests =
             assertException
                 (WalletException 
                     "Can not add your own keys to a multisig account") $ do
-                    newWallet "main" (BS.pack [0])
+                    _ <- newWallet "main" (BS.pack [0])
                     _ <- newAccount "main" "default" 
                     let master = fromJust $ makeMasterKey $ BS.pack [0]
                         accKey = fromJust $ accPubKey master 0
@@ -128,7 +128,7 @@ tests =
             assertException
                 (WalletException 
                     "Can not add your own keys to a multisig account") $ do
-                    newWallet "main" (BS.pack [0])
+                    _ <- newWallet "main" (BS.pack [0])
                     _ <- newAccount "main" "default" 
                     let master = fromJust $ makeMasterKey $ BS.pack [0]
                         accKey = fromJust $ accPubKey master 0
@@ -139,7 +139,7 @@ tests =
             assertException
                 (WalletException 
                     "The account is complete and no further keys can be added") $ do
-                    newWallet "main" (BS.pack [0])
+                    _ <- newWallet "main" (BS.pack [0])
                     _ <- newMSAccount "main" "ms" 2 3 
                         [ deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [1])
                         , deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [2])
@@ -151,7 +151,7 @@ tests =
             assertException
                 (WalletException 
                     "Adding too many keys to the account") $ do
-                    newWallet "main" (BS.pack [0])
+                    _ <- newWallet "main" (BS.pack [0])
                     _ <- newMSAccount "main" "ms" 2 3 
                         [ deriveXPubKey $ fromJust $ makeXPrvKey (BS.pack [1])
                         ]
@@ -190,7 +190,7 @@ tests =
         , testCase "Displaying a page number that is too high should fail" $
             assertException
                 (WalletException "The page number 2 is too high") $ do
-                    newWallet "main" $ BS.pack [0] 
+                    _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
                     _ <- newAddrs "default" 5
                     addressPage "default" 2 5
@@ -198,14 +198,14 @@ tests =
         , testCase "Generating less than 1 address should fail" $
             assertException
                 (WalletException "Can not generate less than 1 address") $ do
-                    newWallet "main" $ BS.pack [0] 
+                    _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
                     newAddrs "default" 0
 
         , testCase "Setting a label on an invalid address key should fail" $
             assertException
                 (WalletException "The address has not been generated yet") $ do
-                    newWallet "main" $ BS.pack [0] 
+                    _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
                     _ <- newAddrs "default" 5
                     setAddrLabel "default" 5 "Gym membership"
@@ -213,7 +213,7 @@ tests =
         , testCase "Requesting the private key on an invalid address key should fail" $
             assertException
                 (WalletException "The address has not been generated yet") $ do
-                    newWallet "main" $ BS.pack [0] 
+                    _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
                     _ <- newAddrs "default" 5
                     addressPrvKey "default" 5

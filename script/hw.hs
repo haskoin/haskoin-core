@@ -225,7 +225,7 @@ cmdHelp =
     , "  (disabled) coins     acc          List coins"
     , ""
     , "Utility commands: "
-    , "  (disable) decodetx   tx           Decode HEX transaction"
+    , "  decodetx  tx                      Decode HEX transaction"
     , "  (disabled) buildrawtx"
     , "      '[{\"txid\":txid,\"vout\":n},...]' '{addr:amnt,...}'"
     , "  (disabled) signrawtx "  
@@ -463,6 +463,15 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         printJSONOr opts res $ \r -> case r of
             ResRescan t -> putStrLn $ unwords [ "Timestamp:", show t]
             _ -> error "Received an invalid response"
+    ["decodetx", tx] -> do
+        let txM = decodeToMaybe =<< hexToBS tx
+        when (isNothing txM) $ throwIO $
+            WalletException "Could not parse transaction"
+        let res = encodeTxJSON $ fromJust txM
+            bs = JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } res
+        if optJson opts
+            then formatStr $ bsToString $ toStrictBS bs
+            else formatStr $ bsToString $ YAML.encode res
     [] -> formatStr usage
     ["help"] -> formatStr usage
     ["version"] -> putStrLn haskoinUserAgent
@@ -489,20 +498,132 @@ decodeResult req = do
         then return $ join $ fst <$> decodeWalletResponse req (fromJust bs) 
         else decodeResult req
 
-{- Utility Commands -}
-
--- | Decodes a transaction, providing structural information on the inputs
--- and the outputs of the transaction.
-decodeRawTx :: MonadIO m
-            => String  -- ^ HEX encoded transaction
-            -> m Tx    -- ^ Decoded transaction
-decodeRawTx str 
-    | isJust txM = return tx
-    | otherwise  = liftIO $ throwIO $
-        WalletException "Could not parse transaction"
+encodeTxJSON :: Tx -> Value
+encodeTxJSON tx@(Tx v is os i) = object
+    [ "txid"     .= encodeTxHashLE (txHash tx)
+    , "version"  .= v
+    , "inputs"   .= map input (zip is [0..])
+    , "outputs"  .= map output (zip os [0..])
+    , "locktime" .= i
+    ]
   where 
-    txM = decodeToMaybe =<< (hexToBS str)
-    tx  = fromJust txM
+    input (x,j) = object 
+      [T.pack ("input " ++ show (j :: Int)) .= encodeTxInJSON x]
+    output (x,j) = object 
+      [T.pack ("output " ++ show (j :: Int)) .= encodeTxOutJSON x]
+
+encodeTxInJSON :: TxIn -> Value
+encodeTxInJSON (TxIn o s i) = object $ concat 
+    [ [ "outpoint"   .= encodeOutPointJSON o
+      , "sequence"   .= i
+      , "raw-script" .= bsToHex s
+      , "script"     .= encodeScriptJSON sp
+      ] 
+      , decoded
+    ]
+  where 
+    sp = fromMaybe (Script []) $ decodeToMaybe s
+    decoded = either (const []) f $ decodeInputBS s
+    f inp = ["decoded-script" .= encodeScriptInputJSON inp]
+
+encodeTxOutJSON :: TxOut -> Value
+encodeTxOutJSON (TxOut v s) = object $
+    [ "value"      .= v
+    , "raw-script" .= bsToHex s
+    , "script"     .= encodeScriptJSON sp
+    ] ++ decoded 
+  where 
+    sp = fromMaybe (Script []) $ decodeToMaybe s
+    decoded = either (const [])
+                 (\out -> ["decoded-script" .= encodeScriptOutputJSON out]) 
+                 (decodeOutputBS s)
+
+encodeOutPointJSON :: OutPoint -> Value
+encodeOutPointJSON (OutPoint h i) = object
+    [ "txid" .= encodeTxHashLE h
+    , "pos"  .= toJSON i
+    ]
+
+encodeScriptJSON :: Script -> Value
+encodeScriptJSON (Script ops) = 
+    toJSON $ map f ops
+  where
+    f (OP_PUSHDATA bs _) = String $ T.pack $ unwords 
+        ["OP_PUSHDATA", bsToHex bs]
+    f x = String $ T.pack $ show x
+
+encodeScriptInputJSON :: ScriptInput -> Value
+encodeScriptInputJSON si = case si of
+    RegularInput (SpendPK s) -> object 
+        [ "spendpubkey" .= object [ "sig" .= encodeSigJSON s ] ]
+    RegularInput (SpendPKHash s p) -> object 
+        [ "spendpubkeyhash" .= object
+            [ "sig"            .= encodeSigJSON s
+            , "pubkey"         .= bsToHex (encode' p)
+            , "sender-address" .= addrToBase58 (pubKeyAddr p)
+            ]
+        ]
+    RegularInput (SpendMulSig sigs) -> object 
+        [ "spendmulsig" .= object [ "sigs" .= map encodeSigJSON sigs ] ]
+    ScriptHashInput s r -> object
+        [ "spendscripthash" .= object
+            [ "scriptinput" .= encodeScriptInputJSON (RegularInput s)
+            , "redeem" .= encodeScriptOutputJSON r
+            , "raw-redeem" .= bsToHex (encodeOutputBS r)
+            , "sender-address" .= addrToBase58 (scriptAddr r)
+            ]
+        ]
+
+encodeScriptOutputJSON :: ScriptOutput -> Value
+encodeScriptOutputJSON so = case so of
+    PayPK p -> object 
+        [ "pay2pubkey" .= object [ "pubkey" .= bsToHex (encode' p) ] ]
+    PayPKHash a -> object 
+        [ "pay2pubkeyhash" .= object
+            [ "address-base64" .= bsToHex (encode' $ getAddrHash a)
+            , "address-base58" .= addrToBase58 a
+            ]
+        ]
+    PayMulSig ks r -> object 
+        [ "pay2mulsig" .= object
+            [ "required-keys" .= r
+            , "pubkeys"       .= map (bsToHex . encode') ks
+            ]
+        ]
+    PayScriptHash a -> object 
+        [ "pay2scripthash" .= object
+            [ "address-base64" .= bsToHex (encode' $ getAddrHash a)
+            , "address-base58" .= addrToBase58 a
+            ]
+        ]
+
+encodeSigJSON :: TxSignature -> Value
+encodeSigJSON ts@(TxSignature _ sh) = object
+    [ "raw-sig" .= bsToHex (encodeSig ts)
+    , "sighash" .= encodeSigHashJSON sh
+    ]
+
+encodeSigHashJSON :: SigHash -> Value
+encodeSigHashJSON sh = case sh of
+    SigAll acp -> object
+        [ "type" .= String "SigAll"
+        , "acp"  .= acp
+        ]
+    SigNone acp -> object
+        [ "type" .= String "SigNone"
+        , "acp"  .= acp
+        ]
+    SigSingle acp -> object
+        [ "type" .= String "SigSingle"
+        , "acp"  .= acp
+        ]
+    SigUnknown acp v -> object
+        [ "type"  .= String "SigUnknown"
+        , "acp"   .= acp
+        , "value" .= v
+        ]
+
+{- Utility Commands -}
 
 -- | Build a raw transaction from a list of outpoints and recipients encoded
 -- in JSON.
@@ -634,145 +755,3 @@ instance FromJSON RawPrvKey where
             str <- parseJSON v :: Parser String  
             maybe mzero return $ fromWIF str
 
--- instance ToJSON CoinStatus where
---     toJSON (Spent tid) = 
---         object [ "Status".= String "Spent"
---                , "Txid"  .= encodeTxHashLE tid
---                ]
---     toJSON (Reserved tid) = 
---         object [ "Status".= String "Reserved"
---                , "Txid"  .= encodeTxHashLE tid
---                ]
---     toJSON Unspent = object [ "Status".= String "Unspent" ]
--- 
--- instance FromJSON CoinStatus where
---     parseJSON (Object obj) = obj .: "Status" >>= \status -> case status of
---         (String "Spent")    -> 
---             (Spent . fromJust . decodeTxHashLE)    <$> obj .: "Txid"
---         (String "Reserved") -> 
---             (Reserved . fromJust . decodeTxHashLE) <$> obj .: "Txid"
---         (String "Unspent")  -> return Unspent
---         _                   -> mzero
---     parseJSON _ = mzero
--- 
--- instance ToJSON OutPoint where
---     toJSON (OutPoint h i) = object
---         [ "TxID" .= encodeTxHashLE h
---         , "Index" .= toJSON i
---         ]
--- 
--- instance ToJSON TxOut where
---     toJSON (TxOut v s) = object $
---         [ "Value" .= v
---         , "Raw Script" .= bsToHex s
---         , "Script" .= (fromMaybe (Script []) $ decodeToMaybe s)
---         ] ++ scptPair 
---       where scptPair = 
---               either (const [])
---                      (\out -> ["Decoded Script" .= out]) 
---                      (decodeOutputBS s)
--- 
--- instance ToJSON TxIn where
---     toJSON (TxIn o s i) = object $ concat
---         [ [ "OutPoint" .= o
---           , "Sequence" .= i
---           , "Raw Script" .= bsToHex s
---           , "Script" .= (fromMaybe (Script []) $ decodeToMaybe s)
---           ] 
---           , decoded
---         ]
---       where 
---         decoded = either (const []) f $ decodeInputBS s
---         f inp = ["Decoded Script" .= inp]
---               
--- instance ToJSON Tx where
---     toJSON tx@(Tx v is os i) = object
---         [ "TxID" .= encodeTxHashLE (txHash tx)
---         , "Version" .= v
---         , "Inputs" .= map input (zip is [0..])
---         , "Outputs" .= map output (zip os [0..])
---         , "LockTime" .= i
---         ]
---       where input (x,j) = object 
---               [T.pack ("Input " ++ show (j :: Int)) .= x]
---             output (x,j) = object 
---               [T.pack ("Output " ++ show (j :: Int)) .= x]
--- 
--- instance ToJSON Script where
---     toJSON (Script ops) = toJSON $ map f ops
---       where
---         f (OP_PUSHDATA bs _) = String $ T.pack $ unwords 
---             ["OP_PUSHDATA", bsToHex bs]
---         f x = String $ T.pack $ show x
--- 
--- instance ToJSON ScriptOutput where
---     toJSON (PayPK p) = object 
---         [ "PayToPublicKey" .= object [ "Public Key" .= bsToHex (encode' p) ] ]
---     toJSON (PayPKHash a) = object 
---         [ "PayToPublicKeyHash" .= object
---             [ "Address Hash160" .= bsToHex (encode' $ getAddrHash a)
---             , "Address Base58" .= addrToBase58 a
---             ]
---         ]
---     toJSON (PayMulSig ks r) = object 
---         [ "PayToMultiSig" .= object
---             [ "Required Keys (M)" .= toJSON r
---             , "Public Keys" .= map (bsToHex . encode') ks
---             ]
---         ]
---     toJSON (PayScriptHash a) = object 
---         [ "PayToScriptHash" .= object
---             [ "Address Hash160" .= bsToHex (encode' $ getAddrHash a)
---             , "Address Base58" .= addrToBase58 a
---             ]
---         ]
--- 
--- instance ToJSON ScriptInput where
---     toJSON (RegularInput (SpendPK s)) = object 
---         [ "SpendPublicKey" .= object [ "Signature" .= s ] ]
---     toJSON (RegularInput (SpendPKHash s p)) = object 
---         [ "SpendPublicKeyHash" .= object
---             [ "Signature" .= s
---             , "Public Key" .= bsToHex (encode' p)
---             , "Sender Addr" .= addrToBase58 (pubKeyAddr p)
---             ]
---         ]
---     toJSON (RegularInput (SpendMulSig sigs)) = object 
---         [ "SpendMultiSig" .= object
---             [ "Signatures" .= sigs ]
---         ]
---     toJSON (ScriptHashInput s r) = object
---         [ "SpendScriptHash" .= object
---             [ "ScriptInput" .= (RegularInput s)
---             , "RedeemScript" .= r
---             , "Raw Redeem Script" .= bsToHex (encodeOutputBS r)
---             , "Sender Addr" .= addrToBase58 (scriptAddr  r)
---             ]
---         ]
--- 
--- instance ToJSON TxSignature where
---     toJSON ts@(TxSignature _ h) = object
---         [ "Raw Sig" .= bsToHex (encodeSig ts)
---         , "SigHash" .= h
---         ]
--- 
--- instance ToJSON SigHash where
---     toJSON sh = case sh of
---         (SigAll acp) -> object
---             [ "Type" .= String "SigAll"
---             , "AnyoneCanPay" .= acp
---             ]
---         (SigNone acp) -> object
---             [ "Type" .= String "SigNone"
---             , "AnyoneCanPay" .= acp
---             ]
---         (SigSingle acp) -> object
---             [ "Type" .= String "SigSingle"
---             , "AnyoneCanPay" .= acp
---             ]
---         (SigUnknown acp v) -> object
---             [ "Type" .= String "SigUnknown"
---             , "AnyoneCanPay" .= acp
---             , "Value" .= v
---             ]
---

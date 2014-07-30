@@ -19,6 +19,7 @@ module Network.Haskoin.Wallet
 , getAccount
 , newAccount
 , newMSAccount
+, newReadAccount
 , addAccountKeys
 , accountList
 , accountPrvKey

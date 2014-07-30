@@ -31,10 +31,7 @@ instance Arbitrary BS.ByteString where
 
 -- TODO: Rewrite this correctly if we integrate into Haskoin
 instance Arbitrary Wallet where
-    arbitrary = oneof
-        [ WalletFull <$> arbitrary <*> (fromJust . makeMasterKey <$> arbitrary)
-        , WalletRead <$> arbitrary <*> (getAccPubKey <$> genKey)
-        ]
+    arbitrary = Wallet <$> arbitrary <*> (fromJust . makeMasterKey <$> arbitrary)
             
 -- TODO: Rewrite this correctly if we integrate into Haskoin
 instance Arbitrary Account where
@@ -47,6 +44,7 @@ instance Arbitrary Account where
                           <*> arbitrary
                           <*> arbitrary
                           <*> (flip vectorOf (getAccPubKey <$> genKey) =<< choose (0,16))
+        , ReadAccount <$> arbitrary <*> genKey
         ]
 
 -- TODO: Rewrite this correctly if we integrate into Haskoin
@@ -64,8 +62,7 @@ instance Arbitrary AccTx where
 
 instance Arbitrary WalletRequest where
     arbitrary = oneof
-        [ NewFullWallet <$> arbitrary <*> arbitrary <*> arbitrary
-        , NewReadWallet <$> arbitrary <*> (getAccPubKey <$> genKey)
+        [ NewWallet <$> arbitrary <*> arbitrary <*> arbitrary
         , GetWallet <$> arbitrary
         , return WalletList
         , NewAccount <$> arbitrary <*> arbitrary
@@ -74,6 +71,7 @@ instance Arbitrary WalletRequest where
                        <*> (choose (1,16))
                        <*> (choose (1,16))
                        <*> (flip vectorOf (getAccPubKey <$> genKey) =<< choose (1,10))
+        , NewReadAccount <$> arbitrary <*> (getAccPubKey <$> genKey)
         , AddAccountKeys <$> arbitrary 
                          <*> (flip vectorOf (getAccPubKey <$> genKey) =<< choose (1,10))
         , GetAccount <$> arbitrary
@@ -112,13 +110,13 @@ instance Arbitrary RequestPair where
             ]
         return $ RequestPair req res
       where
-        go (NewFullWallet _ _ _) = ResMnemonic <$> arbitrary
-        go (NewReadWallet _ _) = ResWallet <$> arbitrary
+        go (NewWallet _ _ _) = ResMnemonic <$> arbitrary
         go (GetWallet _) = ResWallet <$> arbitrary
         go WalletList = 
             ResWalletList <$> (flip vectorOf arbitrary =<< choose (0,10))
         go (NewAccount _ _) = ResAccount <$> arbitrary
         go (NewMSAccount _ _ _ _ _) = ResAccount <$> arbitrary
+        go (NewReadAccount _ _) = ResAccount <$> arbitrary
         go (AddAccountKeys _ _) = ResAccount <$> arbitrary
         go (GetAccount _) = ResAccount <$> arbitrary
         go AccountList = ResAccountList <$> arbitrary

@@ -7,6 +7,7 @@ module Network.Haskoin.Wallet.Account
 , getWalletEntity
 , newAccount
 , newMSAccount
+, newReadAccount
 , addAccountKeys
 , accountList
 , accountPrvKey
@@ -18,7 +19,7 @@ import Control.Exception (throwIO)
 import Control.Monad.Trans (liftIO)
 
 import Data.List (nub)
-import Data.Maybe (fromJust, isJust )
+import Data.Maybe (fromJust, isJust, isNothing)
 import Data.Time (getCurrentTime)
 
 import Database.Persist
@@ -80,7 +81,8 @@ newAccount wname name = do
     let deriv = maybe 0 (+1) $ dbWalletAccIndex w
         (k,i) = head $ accPubKeys (walletMasterKey $ dbWalletValue w) deriv
         acc   = RegularAccount name wname i k
-        dbacc = DbAccount name acc Nothing Nothing Nothing Nothing wk time
+        dbacc = 
+            DbAccount name acc Nothing Nothing Nothing Nothing (Just wk) time
     insert_ dbacc
     update wk [DbWalletAccIndex =. Just i]
     return acc
@@ -116,9 +118,28 @@ newMSAccount wname name m n mskeys = do
     let deriv = maybe 0 (+1) $ dbWalletAccIndex w
         (k,i) = head $ accPubKeys (walletMasterKey $ dbWalletValue w) deriv
         acc   = MultisigAccount name wname i k m n keys
-        dbacc = DbAccount name acc Nothing Nothing Nothing Nothing wk time
+        dbacc = 
+            DbAccount name acc Nothing Nothing Nothing Nothing (Just wk) time
     insert_ dbacc
     update wk [DbWalletAccIndex =. Just i]
+    return acc
+
+-- | Create a new read-only account.
+newReadAccount :: PersistUnique m
+               => String    -- ^ Account name
+               -> XPubKey   -- ^ Read-only key
+               -> m Account -- ^ New account
+newReadAccount name key = do
+    prevAcc <- getBy $ UniqueAccName name
+    when (isJust prevAcc) $ liftIO $ throwIO $ WalletException $
+        unwords [ "Account", name, "already exists" ]
+    let accKeyM = loadPubAcc key
+    -- TODO: Should we relax the rules for account keys?
+    when (isNothing accKeyM) $ liftIO $ throwIO $ WalletException $
+        "Invalid account key provided"
+    time <- liftIO getCurrentTime
+    let acc = ReadAccount name $ fromJust accKeyM
+    insert_ $ DbAccount name acc Nothing Nothing Nothing Nothing Nothing time
     return acc
 
 -- | Add new thirdparty keys to a multisignature account. This function can

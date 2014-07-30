@@ -71,7 +71,7 @@ DbAccount
     extLookAhead KeyIndex Maybe
     intIndex KeyIndex Maybe
     intLookAhead KeyIndex Maybe
-    wallet DbWalletId
+    wallet DbWalletId Maybe
     created UTCTime default=CURRENT_TIME
     UniqueAccName name
     deriving Show

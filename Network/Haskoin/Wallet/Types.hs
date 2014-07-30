@@ -106,56 +106,30 @@ instance FromJSON TxSource where
         _         -> mzero
 
 -- TODO: Add NFData instances for all those types
-data Wallet 
-    = WalletFull
-        { walletName      :: String
-        , walletMasterKey :: MasterKey
-        } 
-    | WalletRead
-        { walletName      :: String
-        , walletPubKey    :: XPubKey
-        }
-    deriving (Eq, Show, Read)
+data Wallet = Wallet
+    { walletName      :: String
+    , walletMasterKey :: MasterKey
+    } deriving (Eq, Show, Read)
 
 instance ToJSON Wallet where
-    toJSON (WalletFull n k) = object
-        [ "type"   .= String "full"
-        , "name"   .= n
+    toJSON (Wallet n k) = object
+        [ "name"   .= n
         , "master" .= (xPrvExport $ masterKey k)
-        ]
-    toJSON (WalletRead n k) = object
-        [ "type"   .= String "read"
-        , "name"   .= n
-        , "key"    .= xPubExport k
         ]
 
 instance FromJSON Wallet where
     parseJSON (Object o) = do
-        x <- o .: "type"
         n <- o .: "name"
-        case x of
-            String "full" -> do
-                m <- o .: "master" 
-                let masterM = loadMasterKey =<< xPrvImport m
-                maybe mzero (return . (WalletFull n)) masterM
-            String "read" -> do
-                k <- o .: "key"
-                maybe mzero (return . (WalletRead n)) $ xPubImport k
-            _ -> mzero
+        m <- o .: "master" 
+        let masterM = loadMasterKey =<< xPrvImport m
+        maybe mzero (return . (Wallet n)) masterM
     parseJSON _ = mzero
 
 printWallet :: Wallet -> String
-printWallet w = case w of
-    WalletFull n k -> unlines
-        [ unwords [ "Wallet    :", n ]
-        , unwords [ "Type      :", "Full" ]
-        , unwords [ "Master key:", xPrvExport $ masterKey k ]
-        ]
-    WalletRead n k -> unlines
-        [ unwords [ "Wallet     :", n ]
-        , unwords [ "Type       :", "Read-only" ]
-        , unwords [ "Public key :", xPubExport k ]
-        ]
+printWallet (Wallet n k) = unlines
+    [ unwords [ "Wallet    :", n ]
+    , unwords [ "Master key:", xPrvExport $ masterKey k ]
+    ]
 
 data Account
     = RegularAccount 
@@ -172,6 +146,10 @@ data Account
         , accountRequired :: Int
         , accountTotal    :: Int
         , accountKeys     :: [XPubKey]
+        }
+    | ReadAccount
+        { accountName :: String
+        , accountKey  :: AccPubKey
         }
     deriving (Eq, Show, Read)
 
@@ -193,25 +171,33 @@ instance ToJSON Account where
         , "total"    .= t
         , "keys"     .= map xPubExport ks
         ]
+    toJSON (ReadAccount n k) = object
+        [ "type" .= String "read"
+        , "name" .= n
+        , "key"  .= (xPubExport $ getAccPubKey k)
+        ]
 
 instance FromJSON Account where
     parseJSON (Object o) = do
         x <- o .: "type"
         n <- o .: "name"
-        w <- o .: "wallet"
-        i <- o .: "index"
         k <- o .: "key"
         let keyM = loadPubAcc =<< xPubImport k
         case x of
-            String "regular" -> 
+            String "regular" -> do
+                i <- o .: "index"
+                w <- o .: "wallet"
                 maybe mzero (return . (RegularAccount n w i)) keyM
             String "multisig" -> do
+                i <- o .: "index"
+                w <- o .: "wallet"
                 r  <- o .: "required"
                 t  <- o .: "total"
                 ks <- o .: "keys"
                 let keysM      = mapM xPubImport ks
                     f (k',ks') = return $ MultisigAccount n w i k' r t ks'
                 maybe mzero f $ liftM2 (,) keyM keysM
+            String "read" -> maybe mzero (return . (ReadAccount n)) keyM
             _ -> mzero
     parseJSON _ = mzero
 
@@ -233,6 +219,11 @@ printAccount a = case a of
         ] ++ if null ks then [] else 
             (unwords [ "3rd Key:", xPubExport $ head ks ]) : 
                 (map (\x -> unwords ["        ", xPubExport x]) $ tail ks)
+    ReadAccount n k -> unlines
+        [ unwords [ "Account:", n ]
+        , unwords [ "Type   :", "Read-only" ]
+        , unwords [ "Key    :", xPubExport $ getAccPubKey k ]
+        ]
 
 data PaymentAddress = PaymentAddress 
     { paymentAddress :: Address

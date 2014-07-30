@@ -2,8 +2,7 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE TypeFamilies      #-}
 module Network.Haskoin.Wallet.Root 
-( isFullWallet
-, getWalletEntity
+( getWalletEntity
 , getWallet
 , walletList
 , newWalletMnemo
@@ -37,10 +36,6 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Util
-
-isFullWallet :: Wallet -> Bool
-isFullWallet (WalletFull _ _) = True
-isFullWallet _                = False
 
 -- | Get a wallet by name
 getWallet :: PersistUnique m => String -> m Wallet
@@ -105,7 +100,7 @@ newWalletMnemo wname p Nothing = do
 newWallet :: PersistUnique m
           => String         -- ^ Wallet name
           -> BS.ByteString  -- ^ Secret seed
-          -> m ()             
+          -> m Wallet       -- ^ New wallet
 newWallet wname seed 
     | BS.null seed = liftIO $ throwIO $ 
         WalletException "The seed is empty"
@@ -115,11 +110,12 @@ newWallet wname seed
             unwords [ "Wallet", wname, "already exists" ]
         time <- liftIO getCurrentTime
         let master = makeMasterKey seed
-            wallet = WalletFull wname $ fromJust master
+            wallet = Wallet wname $ fromJust master
         -- This should never happen
         when (isNothing master) $ liftIO $ throwIO $ WalletException
             "The seed derivation produced an invalid key. Use another seed."
         insert_ $ DbWallet wname wallet Nothing time
+        return wallet
 
 initWalletDB :: PersistQuery m => m ()
 initWalletDB = do

@@ -146,6 +146,7 @@ cmdHelp =
     , "  newacc    wallet name             Create a new account"
     , "  newms     wallet name M N [pubkey...]"
     , "                                    Create a new multisig account"
+    , "  newread   name pubkey             Create a new read-only account"
     , "  addkeys   acc {pubkey...}         Add pubkeys to a multisig account"
     , "  acclist                           List all accounts"
     , "  getacc    acc                     Display an account by name"
@@ -243,8 +244,8 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         putStrLn "Haskoin daemon stopped"
     "newwallet" : name : mnemonic -> do
         let req = case mnemonic of
-                []  -> NewFullWallet name (optPass opts) Nothing
-                [m] -> NewFullWallet name (optPass opts) (Just m)
+                []  -> NewWallet name (optPass opts) Nothing
+                [m] -> NewWallet name (optPass opts) (Just m)
                 _   -> error invalidErr
         res <- sendRequest req 
         printJSONOr opts res $ \r -> case r of
@@ -276,6 +277,14 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
         res <- sendRequest $ NewMSAccount wname name r' t' $ fromJust keysM
+        printJSONOr opts res $ \r -> case r of
+            ResAccount a -> putStr $ printAccount a
+            _ -> error "Received an invalid response"
+    ["newread", name, key] -> do
+        let keyM = xPubImport key
+        when (isNothing keyM) $ throwIO $ 
+            WalletException "Could not parse key"
+        res <- sendRequest $ NewReadAccount name $ fromJust keyM
         printJSONOr opts res $ \r -> case r of
             ResAccount a -> putStr $ printAccount a
             _ -> error "Received an invalid response"

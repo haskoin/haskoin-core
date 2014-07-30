@@ -41,12 +41,12 @@ import Network.Haskoin.Wallet.Types
 
 -- TODO: Create NFData intstances for WalletRequest and WalletResponse
 data WalletRequest 
-    = NewFullWallet WalletName String (Maybe String)
-    | NewReadWallet WalletName XPubKey
+    = NewWallet WalletName String (Maybe String)
     | GetWallet WalletName
     | WalletList 
     | NewAccount WalletName AccountName
     | NewMSAccount WalletName AccountName Int Int [XPubKey]
+    | NewReadAccount AccountName XPubKey
     | AddAccountKeys AccountName [XPubKey]
     | GetAccount AccountName
     | AccountList
@@ -65,15 +65,11 @@ data WalletRequest
 
 instance ToJSON WalletRequest where
     toJSON req = case req of
-        NewFullWallet n p m -> object $ concat
+        NewWallet n p m -> object $ concat
             [ [ "walletname" .= n
               , "passphrase" .= p
               ]
             , if isJust m then ["mnemonic" .= (fromJust m)] else []
-            ]
-        NewReadWallet n k -> object
-            [ "walletname" .= n
-            , "key"        .= xPubExport k
             ]
         GetWallet n -> object [ "walletname" .= n ]
         WalletList -> Null
@@ -87,6 +83,10 @@ instance ToJSON WalletRequest where
             , "required"    .= r
             , "total"       .= t
             , "keys"        .= map xPubExport ks
+            ]
+        NewReadAccount n k -> object
+            [ "accountname" .= n
+            , "key"         .= xPubExport k
             ]
         AddAccountKeys n ks -> object
             [ "accountname" .= n
@@ -181,12 +181,12 @@ instance RPCRequest WalletRequest String WalletResponse where
 
 walletMethod :: WalletRequest -> T.Text
 walletMethod wr = case wr of
-    NewFullWallet _ _ _    -> "network.haskoin.wallet.newfullwallet"
-    NewReadWallet _ _      -> "network.haskoin.wallet.newreadwallet"
+    NewWallet _ _ _        -> "network.haskoin.wallet.newwallet"
     GetWallet _            -> "network.haskoin.wallet.getwallet"
     WalletList             -> "network.haskoin.wallet.walletlist"
     NewAccount _ _         -> "network.haskoin.wallet.newaccount"
     NewMSAccount _ _ _ _ _ -> "network.haskoin.wallet.newmsaccount"
+    NewReadAccount _ _     -> "network.haskoin.wallet.newreadaccount"
     AddAccountKeys _ _     -> "network.haskoin.wallet.addaccountkeys"
     GetAccount _           -> "network.haskoin.wallet.getaccount"
     AccountList            -> "network.haskoin.wallet.accountlist"
@@ -204,16 +204,11 @@ walletMethod wr = case wr of
 
 parseWalletRequest :: Method -> Value -> Parser WalletRequest
 parseWalletRequest m v = case (m,v) of
-    ("network.haskoin.wallet.newfullwallet", Object o) -> do
+    ("network.haskoin.wallet.newwallet", Object o) -> do
         n <- o .:  "walletname"
         p <- o .:  "passphrase"
         x <- o .:? "mnemonic"
-        return $ NewFullWallet n p x
-    ("network.haskoin.wallet.newreadwallet", Object o) -> do
-        n <- o .: "walletname" 
-        k <- o .: "key"
-        let keyM = xPubImport k
-        maybe mzero (return . NewReadWallet n) keyM
+        return $ NewWallet n p x
     ("network.haskoin.wallet.getwallet", Object o) -> do
         n <- o .: "walletname"
         return $ GetWallet n
@@ -230,6 +225,11 @@ parseWalletRequest m v = case (m,v) of
         ks <- o .:  "keys"
         let keysM = mapM xPubImport ks
         maybe mzero (return . (NewMSAccount w n r t)) keysM
+    ("network.haskoin.wallet.newreadaccount", Object o) -> do
+        n <- o .: "accountname" 
+        k <- o .: "key"
+        let keyM = xPubImport k
+        maybe mzero (return . NewReadAccount n) keyM
     ("network.haskoin.wallet.addaccountkeys", Object o) -> do
         n  <- o .: "accountname"
         ks <- o .: "keys"
@@ -288,12 +288,9 @@ parseWalletRequest m v = case (m,v) of
 parseWalletResponse :: WalletRequest -> Value -> Parser WalletResponse
 parseWalletResponse w v = case (w, v) of
     -- TODO: refactor this? We decode many times the same type.
-    (NewFullWallet _ _ _, Object o) -> do
+    (NewWallet _ _ _, Object o) -> do
         m <- o .: "mnemonic" 
         return $ ResMnemonic m
-    (NewReadWallet _ _, Object o) -> do
-        x <- o .: "wallet"
-        return $ ResWallet x
     (GetWallet _, Object o) -> do
         x <- o .: "wallet"
         return $ ResWallet x
@@ -304,6 +301,9 @@ parseWalletResponse w v = case (w, v) of
         a <- o .: "account"
         return $ ResAccount a
     (NewMSAccount _ _ _ _ _, Object o) -> do
+        a <- o .: "account"
+        return $ ResAccount a
+    (NewReadAccount _ _, Object o) -> do
         a <- o .: "account"
         return $ ResAccount a
     (AddAccountKeys _ _, Object o) -> do

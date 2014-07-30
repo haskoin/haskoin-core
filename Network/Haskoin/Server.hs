@@ -129,8 +129,7 @@ processWalletRequest mvar rChan fp (wr, i) = do
     return (res, i)
   where
     f (SomeException e)  = Just $ show e
-    go (NewFullWallet n p m) = liftM ResMnemonic $ newWalletMnemo n p m
-    go (NewReadWallet _ _)   = error "Not implemented"
+    go (NewWallet n p m) = liftM ResMnemonic $ newWalletMnemo n p m
     go (GetWallet n)         = liftM ResWallet $ getWallet n
     go WalletList            = liftM ResWalletList $ walletList
     go (NewAccount w n)      = do
@@ -155,6 +154,17 @@ processWalletRequest mvar rChan fp (wr, i) = do
                 writeTBMChan rChan $ BloomFilterUpdate bloom
                 when (isNothing fstKeyBefore) $
                     writeTBMChan rChan $ FastCatchupTime fstKeyTime
+        return $ ResAccount a
+    go (NewReadAccount n k) = do
+        fstKeyBefore <- firstKeyTime
+        a <- newReadAccount n k
+        setLookAhead n 30
+        bloom      <- walletBloomFilter fp
+        fstKeyTime <- liftM fromJust firstKeyTime
+        liftIO $ atomically $ do
+            writeTBMChan rChan $ BloomFilterUpdate bloom
+            when (isNothing fstKeyBefore) $
+                writeTBMChan rChan $ FastCatchupTime fstKeyTime
         return $ ResAccount a
     go (AddAccountKeys n ks) = do
         fstKeyBefore <- firstKeyTime

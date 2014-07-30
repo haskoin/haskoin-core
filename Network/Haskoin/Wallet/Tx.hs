@@ -64,7 +64,6 @@ import Network.Haskoin.Node.HeaderChain
 
 import Network.Haskoin.Wallet.Account
 import Network.Haskoin.Wallet.Address
-import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 
@@ -524,9 +523,9 @@ getSigData :: PersistUnique m
 getSigData sh coin = do
     (Entity _ add) <- liftM fromJust $ getBy $ UniqueAddress a
     acc <- liftM fromJust (get $ dbAddressAccount add)
-    w   <- liftM fromJust $ get (dbAccountWallet acc)
-    unless (isFullWallet $ dbWalletValue w) $ liftIO $ throwIO $ 
-        WalletException "This operation is not supported on read-only wallets"
+    when (isNothing $ dbAccountWallet acc) $ liftIO $ throwIO $ 
+        WalletException "This operation is not supported on read-only accounts"
+    w <- liftM fromJust $ get (fromJust $ dbAccountWallet acc)
     let master = walletMasterKey $ dbWalletValue w
         deriv  = accountIndex $ dbAccountValue acc
         accKey = fromJust $ accPrvKey master deriv

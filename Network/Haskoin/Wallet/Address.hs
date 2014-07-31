@@ -178,8 +178,8 @@ newAddrsGeneric name cnt internal
   where 
     f acc | isMSAccount acc = 
               (if internal then intMulSigAddrs else extMulSigAddrs)
-                  (accountKey $ dbAccountValue acc)
-                  (accountKeys $ dbAccountValue acc) 
+                  (AccPubKey $ head $ accountKeys $ dbAccountValue acc)
+                  (tail $ accountKeys $ dbAccountValue acc) 
                   (accountRequired $ dbAccountValue acc)
                   (maybe 0 (+1) $ fLookAhead acc)
           | otherwise = (if internal then intAddrs else extAddrs)

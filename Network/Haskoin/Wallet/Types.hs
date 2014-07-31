@@ -21,7 +21,7 @@ module Network.Haskoin.Wallet.Types
 , printAccTx
 ) where
 
-import Control.Monad (mzero, liftM2)
+import Control.Monad (mzero)
 import Control.Exception (Exception)
 
 import Data.Int (Int64)
@@ -142,7 +142,6 @@ data Account
         { accountName     :: String
         , accountWallet   :: String
         , accountIndex    :: KeyIndex
-        , accountKey      :: AccPubKey
         , accountRequired :: Int
         , accountTotal    :: Int
         , accountKeys     :: [XPubKey]
@@ -150,6 +149,12 @@ data Account
     | ReadAccount
         { accountName :: String
         , accountKey  :: AccPubKey
+        }
+    | ReadMSAccount
+        { accountName     :: String
+        , accountRequired :: Int
+        , accountTotal    :: Int
+        , accountKeys     :: [XPubKey]
         }
     deriving (Eq, Show, Read)
 
@@ -161,12 +166,11 @@ instance ToJSON Account where
         , "index"  .= i
         , "key"    .= (xPubExport $ getAccPubKey k)
         ]
-    toJSON (MultisigAccount n w i k r t ks) = object
+    toJSON (MultisigAccount n w i r t ks) = object
         [ "type"     .= String "multisig"
         , "name"     .= n
         , "wallet"   .= w
         , "index"    .= i
-        , "key"      .= (xPubExport $ getAccPubKey k)
         , "required" .= r
         , "total"    .= t
         , "keys"     .= map xPubExport ks
@@ -176,28 +180,43 @@ instance ToJSON Account where
         , "name" .= n
         , "key"  .= (xPubExport $ getAccPubKey k)
         ]
+    toJSON (ReadMSAccount n r t ks) = object
+        [ "type"     .= String "readmultisig"
+        , "name"     .= n
+        , "required" .= r
+        , "total"    .= t
+        , "keys"     .= map xPubExport ks
+        ]
 
 instance FromJSON Account where
     parseJSON (Object o) = do
         x <- o .: "type"
         n <- o .: "name"
-        k <- o .: "key"
-        let keyM = loadPubAcc =<< xPubImport k
         case x of
             String "regular" -> do
+                k <- o .: "key"
                 i <- o .: "index"
                 w <- o .: "wallet"
+                let keyM = loadPubAcc =<< xPubImport k
                 maybe mzero (return . (RegularAccount n w i)) keyM
             String "multisig" -> do
-                i <- o .: "index"
-                w <- o .: "wallet"
+                i  <- o .: "index"
+                w  <- o .: "wallet"
+                r  <- o .: "required"
+                t  <- o .: "total"
+                ks <- o .: "keys"
+                let keysM = mapM xPubImport ks
+                maybe mzero (return . (MultisigAccount n w i r t)) keysM
+            String "read" -> do
+                k  <- o .: "key"
+                let keyM       = loadPubAcc =<< xPubImport k
+                maybe mzero (return . (ReadAccount n)) keyM
+            String "readmultisig" -> do
                 r  <- o .: "required"
                 t  <- o .: "total"
                 ks <- o .: "keys"
                 let keysM      = mapM xPubImport ks
-                    f (k',ks') = return $ MultisigAccount n w i k' r t ks'
-                maybe mzero f $ liftM2 (,) keyM keysM
-            String "read" -> maybe mzero (return . (ReadAccount n)) keyM
+                maybe mzero (return . (ReadMSAccount n r t)) keysM
             _ -> mzero
     parseJSON _ = mzero
 
@@ -210,20 +229,25 @@ printAccount a = case a of
         , unwords [ "Tree   :", concat [ "m/",show i,"'/" ] ]
         , unwords [ "Key    :", xPubExport $ getAccPubKey k ]
         ]
-    MultisigAccount n w i k r t ks -> unlines $
+    MultisigAccount n w i r t ks -> unlines $
         [ unwords [ "Account:", n ]
         , unwords [ "Wallet :", w ]
         , unwords [ "Type   :", "Multisig", show r, "of", show t ]
         , unwords [ "Tree   :", concat [ "m/",show i,"'/" ] ]
-        , unwords [ "Key    :", xPubExport $ getAccPubKey k ]
         ] ++ if null ks then [] else 
-            (unwords [ "3rd Key:", xPubExport $ head ks ]) : 
+            (unwords [ "Keys:", xPubExport $ head ks ]) : 
                 (map (\x -> unwords ["        ", xPubExport x]) $ tail ks)
     ReadAccount n k -> unlines
         [ unwords [ "Account:", n ]
         , unwords [ "Type   :", "Read-only" ]
         , unwords [ "Key    :", xPubExport $ getAccPubKey k ]
         ]
+    ReadMSAccount n r t ks -> unlines $
+        [ unwords [ "Account:", n ]
+        , unwords [ "Type   :", "Read-only multisig", show r, "of", show t ]
+        ] ++ if null ks then [] else 
+            (unwords [ "Keys:", xPubExport $ head ks ]) : 
+                (map (\x -> unwords ["        ", xPubExport x]) $ tail ks)
 
 data PaymentAddress = PaymentAddress 
     { paymentAddress :: Address

@@ -47,6 +47,7 @@ data WalletRequest
     | NewAccount WalletName AccountName
     | NewMSAccount WalletName AccountName Int Int [XPubKey]
     | NewReadAccount AccountName XPubKey
+    | NewReadMSAccount AccountName Int Int [XPubKey]
     | AddAccountKeys AccountName [XPubKey]
     | GetAccount AccountName
     | AccountList
@@ -87,6 +88,12 @@ instance ToJSON WalletRequest where
         NewReadAccount n k -> object
             [ "accountname" .= n
             , "key"         .= xPubExport k
+            ]
+        NewReadMSAccount n r t ks -> object
+            [ "accountname" .= n
+            , "required"    .= r
+            , "total"       .= t
+            , "keys"        .= map xPubExport ks
             ]
         AddAccountKeys n ks -> object
             [ "accountname" .= n
@@ -181,26 +188,27 @@ instance RPCRequest WalletRequest String WalletResponse where
 
 walletMethod :: WalletRequest -> T.Text
 walletMethod wr = case wr of
-    NewWallet _ _ _        -> "network.haskoin.wallet.newwallet"
-    GetWallet _            -> "network.haskoin.wallet.getwallet"
-    WalletList             -> "network.haskoin.wallet.walletlist"
-    NewAccount _ _         -> "network.haskoin.wallet.newaccount"
-    NewMSAccount _ _ _ _ _ -> "network.haskoin.wallet.newmsaccount"
-    NewReadAccount _ _     -> "network.haskoin.wallet.newreadaccount"
-    AddAccountKeys _ _     -> "network.haskoin.wallet.addaccountkeys"
-    GetAccount _           -> "network.haskoin.wallet.getaccount"
-    AccountList            -> "network.haskoin.wallet.accountlist"
-    GenAddress _ _         -> "network.haskoin.wallet.genaddress"
-    AddressLabel _ _ _     -> "network.haskoin.wallet.addresslabel"
-    AddressList _          -> "network.haskoin.wallet.addresslist"
-    AddressPage _ _ _      -> "network.haskoin.wallet.addresspage"
-    TxList _               -> "network.haskoin.wallet.txlist"
-    TxPage _ _ _           -> "network.haskoin.wallet.txpage"
-    TxSend _ _ _           -> "network.haskoin.wallet.txsend"
-    TxSign _ _             -> "network.haskoin.wallet.txsign"
-    TxGet _                -> "network.haskoin.wallet.txget"
-    Balance _              -> "network.haskoin.wallet.balance"
-    Rescan _               -> "network.haskoin.wallet.rescan"
+    NewWallet _ _ _          -> "network.haskoin.wallet.newwallet"
+    GetWallet _              -> "network.haskoin.wallet.getwallet"
+    WalletList               -> "network.haskoin.wallet.walletlist"
+    NewAccount _ _           -> "network.haskoin.wallet.newaccount"
+    NewMSAccount _ _ _ _ _   -> "network.haskoin.wallet.newmsaccount"
+    NewReadAccount _ _       -> "network.haskoin.wallet.newreadaccount"
+    NewReadMSAccount _ _ _ _ -> "network.haskoin.wallet.newreadmsaccount"
+    AddAccountKeys _ _       -> "network.haskoin.wallet.addaccountkeys"
+    GetAccount _             -> "network.haskoin.wallet.getaccount"
+    AccountList              -> "network.haskoin.wallet.accountlist"
+    GenAddress _ _           -> "network.haskoin.wallet.genaddress"
+    AddressLabel _ _ _       -> "network.haskoin.wallet.addresslabel"
+    AddressList _            -> "network.haskoin.wallet.addresslist"
+    AddressPage _ _ _        -> "network.haskoin.wallet.addresspage"
+    TxList _                 -> "network.haskoin.wallet.txlist"
+    TxPage _ _ _             -> "network.haskoin.wallet.txpage"
+    TxSend _ _ _             -> "network.haskoin.wallet.txsend"
+    TxSign _ _               -> "network.haskoin.wallet.txsign"
+    TxGet _                  -> "network.haskoin.wallet.txget"
+    Balance _                -> "network.haskoin.wallet.balance"
+    Rescan _                 -> "network.haskoin.wallet.rescan"
 
 parseWalletRequest :: Method -> Value -> Parser WalletRequest
 parseWalletRequest m v = case (m,v) of
@@ -230,6 +238,13 @@ parseWalletRequest m v = case (m,v) of
         k <- o .: "key"
         let keyM = xPubImport k
         maybe mzero (return . NewReadAccount n) keyM
+    ("network.haskoin.wallet.newreadmsaccount", Object o) -> do
+        n  <- o .:  "accountname"
+        r  <- o .:  "required"
+        t  <- o .:  "total"
+        ks <- o .:  "keys"
+        let keysM = mapM xPubImport ks
+        maybe mzero (return . (NewReadMSAccount n r t)) keysM
     ("network.haskoin.wallet.addaccountkeys", Object o) -> do
         n  <- o .: "accountname"
         ks <- o .: "keys"
@@ -304,6 +319,9 @@ parseWalletResponse w v = case (w, v) of
         a <- o .: "account"
         return $ ResAccount a
     (NewReadAccount _ _, Object o) -> do
+        a <- o .: "account"
+        return $ ResAccount a
+    (NewReadMSAccount _ _ _ _, Object o) -> do
         a <- o .: "account"
         return $ ResAccount a
     (AddAccountKeys _ _, Object o) -> do

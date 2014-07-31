@@ -8,6 +8,7 @@ module Network.Haskoin.Wallet.Account
 , newAccount
 , newMSAccount
 , newReadAccount
+, newReadMSAccount
 , addAccountKeys
 , accountList
 , accountPrvKey
@@ -81,9 +82,7 @@ newAccount wname name = do
     let deriv = maybe 0 (+1) $ dbWalletAccIndex w
         (k,i) = head $ accPubKeys (walletMasterKey $ dbWalletValue w) deriv
         acc   = RegularAccount name wname i k
-        dbacc = 
-            DbAccount name acc Nothing Nothing Nothing Nothing (Just wk) time
-    insert_ dbacc
+    insert_ $ DbAccount name acc Nothing Nothing Nothing Nothing (Just wk) time
     update wk [DbWalletAccIndex =. Just i]
     return acc
 
@@ -117,10 +116,8 @@ newMSAccount wname name m n mskeys = do
     (Entity wk w) <- getWalletEntity wname
     let deriv = maybe 0 (+1) $ dbWalletAccIndex w
         (k,i) = head $ accPubKeys (walletMasterKey $ dbWalletValue w) deriv
-        acc   = MultisigAccount name wname i k m n keys
-        dbacc = 
-            DbAccount name acc Nothing Nothing Nothing Nothing (Just wk) time
-    insert_ dbacc
+        acc   = MultisigAccount name wname i m n $ getAccPubKey k:keys
+    insert_ $ DbAccount name acc Nothing Nothing Nothing Nothing (Just wk) time
     update wk [DbWalletAccIndex =. Just i]
     return acc
 
@@ -143,6 +140,27 @@ newReadAccount name key = do
     insert_ $ DbAccount name acc Nothing Nothing Nothing Nothing Nothing time
     return acc
 
+newReadMSAccount :: (PersistUnique m, PersistQuery m)
+                 => String       -- ^ Account name
+                 -> Int          -- ^ Required number of keys (m in m of n)
+                 -> Int          -- ^ Total number of keys (n in m of n)
+                 -> [XPubKey]    -- ^ Keys
+                 -> m Account    -- ^ Returns the new account information
+newReadMSAccount name m n mskeys = do
+    prevAcc <- getBy $ UniqueAccName name
+    when (isJust prevAcc) $ liftIO $ throwIO $ WalletException $
+        unwords [ "Account", name, "already exists" ]
+    let keys = nub mskeys
+    time <- liftIO getCurrentTime
+    unless (n >= 1 && n <= 16 && m >= 1 && m <= n) $ liftIO $ throwIO $ 
+        WalletException "Invalid multisig parameters"
+    unless (length keys <= n) $ liftIO $ throwIO $
+        WalletException "Too many keys"
+    checkOwnKeys keys
+    let acc   = ReadMSAccount name m n keys
+    insert_ $ DbAccount name acc Nothing Nothing Nothing Nothing Nothing time
+    return acc
+
 -- | Add new thirdparty keys to a multisignature account. This function can
 -- fail if the multisignature account already has all required keys. In order
 -- to prevent usage mistakes, adding a key from your own wallet will fail.
@@ -160,12 +178,12 @@ addAccountKeys name keys
         checkOwnKeys keys
         let acc      = dbAccountValue dbacc
             prevKeys = accountKeys acc
-        when (length prevKeys == (accountTotal acc) - 1) $ 
+        when (length prevKeys == accountTotal acc) $ 
             liftIO $ throwIO $ WalletException 
                 "The account is complete and no further keys can be added"
         let newKeys = nub $ prevKeys ++ keys
             newAcc  = acc { accountKeys = newKeys }
-        unless (length newKeys < accountTotal acc) $
+        when (length newKeys > accountTotal acc) $
             liftIO $ throwIO $ WalletException
                 "Adding too many keys to the account"
         replace ai dbacc{ dbAccountValue = newAcc }
@@ -195,6 +213,7 @@ accountPrvKey name = do
 
 isMSAccount :: DbAccountGeneric b -> Bool
 isMSAccount dbacc = case dbAccountValue dbacc of
-    MultisigAccount _ _ _ _ _ _ _ -> True
-    _                             -> False
+    MultisigAccount _ _ _ _ _ _ -> True
+    ReadMSAccount _ _ _ _       -> True
+    _                           -> False
 

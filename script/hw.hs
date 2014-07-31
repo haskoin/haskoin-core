@@ -147,7 +147,8 @@ cmdHelp =
     , "  newms     wallet name M N [pubkey...]"
     , "                                    Create a new multisig account"
     , "  newread   name pubkey             Create a new read-only account"
-    , "  addkeys   acc {pubkey...}         Add pubkeys to a multisig account"
+    , "  newreadms name [pubkey...]        Create a new read-only ms account"
+    , "  addkeys   acc  {pubkey...}        Add pubkeys to a multisig account"
     , "  acclist                           List all accounts"
     , "  getacc    acc                     Display an account by name"
     , ""
@@ -270,13 +271,13 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         printJSONOr opts res $ \r -> case r of
             ResAccount a -> putStr $ printAccount a
             _ -> error "Received an invalid response"
-    "newms" : wname : name : m : t : ks -> do
+    "newms" : wname : name : m : n : ks -> do
         let keysM = mapM xPubImport ks
-            r'    = read m
-            t'    = read t
+            m'    = read m
+            n'    = read n
         when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
-        res <- sendRequest $ NewMSAccount wname name r' t' $ fromJust keysM
+        res <- sendRequest $ NewMSAccount wname name m' n' $ fromJust keysM
         printJSONOr opts res $ \r -> case r of
             ResAccount a -> putStr $ printAccount a
             _ -> error "Received an invalid response"
@@ -285,6 +286,16 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         when (isNothing keyM) $ throwIO $ 
             WalletException "Could not parse key"
         res <- sendRequest $ NewReadAccount name $ fromJust keyM
+        printJSONOr opts res $ \r -> case r of
+            ResAccount a -> putStr $ printAccount a
+            _ -> error "Received an invalid response"
+    "newreadms" : name : m : n : ks -> do
+        let keysM = mapM xPubImport ks
+            m'    = read m
+            n'    = read n
+        when (isNothing keysM) $ throwIO $ 
+            WalletException "Could not parse keys"
+        res <- sendRequest $ NewReadMSAccount name m' n' $ fromJust keysM
         printJSONOr opts res $ \r -> case r of
             ResAccount a -> putStr $ printAccount a
             _ -> error "Received an invalid response"

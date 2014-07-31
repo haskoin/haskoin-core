@@ -328,10 +328,10 @@ getRedeem add = do
     acc <- liftM fromJust (get $ dbAddressAccount add)
     if isMSAccount $ dbAccountValue acc 
         then do
-            let key      = accountKey $ dbAccountValue acc
-                msKeys   = accountKeys $ dbAccountValue acc
+            let key      = head $ accountKeys $ dbAccountValue acc
+                msKeys   = tail $ accountKeys $ dbAccountValue acc
                 deriv    = dbAddressIndex add
-                addrKeys = fromJust $ f key msKeys deriv
+                addrKeys = fromJust $ f (AccPubKey key) msKeys deriv
                 pks      = map (xPubKey . getAddrPubKey) addrKeys
                 req      = accountRequired $ dbAccountValue acc
             return $ Just $ sortMulSig $ PayMulSig pks req

@@ -15,10 +15,11 @@ import qualified System.Environment as E (getArgs)
 import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (join, forM_, when, mzero, liftM2)
+import Control.Monad (unless, join, forM_, when, mzero, liftM2)
 import Control.Monad.Trans (liftIO, MonadIO)
 import Control.Exception (throwIO, throw)
 
+import Data.String (fromString)
 import Data.Word (Word32, Word64)
 import Data.List (intersperse)
 import Data.Maybe (listToMaybe, fromJust, isNothing, isJust, fromMaybe)
@@ -57,6 +58,7 @@ import qualified Data.Aeson.Encode.Pretty as JSON
 
 import Network.Haskoin.Server
 import Network.Haskoin.Server.Types
+import Network.Haskoin.Server.Config
 
 import Network.Haskoin.Wallet
 import Network.Haskoin.Wallet.Types
@@ -445,7 +447,17 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
     configFile dir = concat [dir, "/config"]
 
 sendRequest :: WalletRequest -> IO (Either String WalletResponse)
-sendRequest req = runTCPClient (clientSettings 4000 "127.0.0.1") go
+sendRequest req = do
+    dir <- getWorkDir
+    let configFile = concat [dir, "/config"]
+    configM <- decodeFile configFile
+    unless (isJust configM) $ throwIO $ WalletException $ unwords
+        [ "Could node parse config file"
+        , configFile
+        ]
+    let host       = fromString $ configBind $ fromJust configM
+        port       = configPort $ fromJust configM
+    runTCPClient (clientSettings port host) go
   where
     source = CB.sourceLbs $ toLazyBS $ encodeWalletRequest req 0
     go server = do

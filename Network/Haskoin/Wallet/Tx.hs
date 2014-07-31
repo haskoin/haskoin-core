@@ -326,7 +326,7 @@ getRedeem :: (PersistStore m, PersistMonadBackend m ~ b)
           => DbAddressGeneric b -> m (Maybe RedeemScript)
 getRedeem add = do
     acc <- liftM fromJust (get $ dbAddressAccount add)
-    if isMSAccount acc 
+    if isMSAccount $ dbAccountValue acc 
         then do
             let key      = accountKey $ dbAccountValue acc
                 msKeys   = accountKeys $ dbAccountValue acc
@@ -460,9 +460,10 @@ sendSolution name dests fee = do
     let msParam = ( accountRequired $ dbAccountValue acc
                   , accountTotal $ dbAccountValue acc
                   )
-        resE | isMSAccount acc = chooseMSCoins tot fee msParam spendable
-             | otherwise       = chooseCoins tot fee spendable
-        (coins, change)        = fromRight resE
+        resE | isMSAccount $ dbAccountValue acc = 
+                chooseMSCoins tot fee msParam spendable
+             | otherwise = chooseCoins tot fee spendable
+        (coins, change)  = fromRight resE
     when (isLeft resE) $ liftIO $ throwIO $
         WalletException $ fromLeft resE
     -- TODO: Put this value in a constant file somewhere

@@ -235,7 +235,7 @@ printAccount a = case a of
         , unwords [ "Type   :", "Multisig", show r, "of", show t ]
         , unwords [ "Tree   :", concat [ "m/",show i,"'/" ] ]
         ] ++ if null ks then [] else 
-            (unwords [ "Keys:", xPubExport $ head ks ]) : 
+            (unwords [ "Keys   :", xPubExport $ head ks ]) : 
                 (map (\x -> unwords ["        ", xPubExport x]) $ tail ks)
     ReadAccount n k -> unlines
         [ unwords [ "Account:", n ]

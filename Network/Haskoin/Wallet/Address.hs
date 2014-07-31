@@ -176,7 +176,7 @@ newAddrsGeneric name cnt internal
         replace ai newAcc
         return resAddr
   where 
-    f acc | isMSAccount acc = 
+    f acc | isMSAccount $ dbAccountValue acc = 
               (if internal then intMulSigAddrs else extMulSigAddrs)
                   (AccPubKey $ head $ accountKeys $ dbAccountValue acc)
                   (tail $ accountKeys $ dbAccountValue acc) 

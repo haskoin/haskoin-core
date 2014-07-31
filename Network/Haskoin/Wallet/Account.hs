@@ -20,7 +20,7 @@ import Control.Exception (throwIO)
 import Control.Monad.Trans (liftIO)
 
 import Data.List (nub)
-import Data.Maybe (fromJust, isJust, isNothing)
+import Data.Maybe (fromJust, isJust, isNothing, catMaybes)
 import Data.Time (getCurrentTime)
 
 import Database.Persist
@@ -173,8 +173,8 @@ addAccountKeys name keys
          WalletException "Thirdparty key list can not be empty"
     | otherwise = do
         (Entity ai dbacc) <- getAccountEntity name
-        unless (isMSAccount dbacc) $ liftIO $ throwIO $ WalletException 
-            "Can only add keys to a multisig account"
+        unless (isMSAccount $ dbAccountValue dbacc) $ liftIO $ throwIO $ 
+            WalletException "Can only add keys to a multisig account"
         checkOwnKeys keys
         let acc      = dbAccountValue dbacc
             prevKeys = accountKeys acc
@@ -192,10 +192,15 @@ addAccountKeys name keys
 checkOwnKeys :: PersistQuery m => [XPubKey] -> m ()
 checkOwnKeys keys = do
     accs <- accountList
-    let myKeys  = map (xPubKey . getAccPubKey . accountKey) accs
+    let myKeysM = map f accs
+        myKeys  = catMaybes myKeysM
         overlap = filter (`elem` myKeys) $ map xPubKey keys
     unless (null overlap) $ liftIO $ throwIO $ WalletException 
         "Can not add your own keys to an account"
+  where
+    f acc | isReadAccount acc = Nothing
+          | isMSAccount acc   = Just $ xPubKey $ head $ accountKeys acc
+          | otherwise         = Just $ xPubKey $ getAccPubKey $ accountKey acc
 
 -- | Returns information on extended public and private keys of an account.
 -- For a multisignature account, thirdparty keys are also returned.
@@ -211,9 +216,15 @@ accountPrvKey name = do
 
 {- Helpers -}
 
-isMSAccount :: DbAccountGeneric b -> Bool
-isMSAccount dbacc = case dbAccountValue dbacc of
+isMSAccount :: Account -> Bool
+isMSAccount acc = case acc of
     MultisigAccount _ _ _ _ _ _ -> True
     ReadMSAccount _ _ _ _       -> True
     _                           -> False
+
+isReadAccount :: Account -> Bool
+isReadAccount acc = case acc of
+    ReadAccount _ _       -> True
+    ReadMSAccount _ _ _ _ -> True
+    _                     -> False
 

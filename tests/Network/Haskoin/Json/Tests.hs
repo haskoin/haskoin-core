@@ -25,6 +25,8 @@ tests =
         , testProperty "Tx" (metaID :: Tx -> Bool)
         , testProperty "TxHash" (metaID :: TxHash -> Bool)
         , testProperty "Word256" (metaID :: Word256 -> Bool)
+        , testProperty "SigHash" (metaID :: SigHash -> Bool)
+        , testProperty "SigInput" (metaID :: SigInput -> Bool)
         ]
     ]
 

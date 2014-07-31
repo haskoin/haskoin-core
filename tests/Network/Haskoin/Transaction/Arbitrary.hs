@@ -95,6 +95,12 @@ instance Arbitrary SpendAddrTx where
 
 instance Arbitrary Coin where
     arbitrary = Coin <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
+
+instance Arbitrary SigInput where
+    arbitrary = SigInput <$> arbitrary
+                         <*> arbitrary
+                         <*> arbitrary
+                         <*> arbitrary
         
 data PKHashSigTemplate = PKHashSigTemplate Tx [SigInput] [PrvKey]
     deriving (Eq, Show)

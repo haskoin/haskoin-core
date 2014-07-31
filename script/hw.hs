@@ -41,6 +41,7 @@ import Data.Aeson
     , FromJSON
     , object
     , toJSON
+    , encode
     , decode
     , withObject
     , withArray
@@ -170,6 +171,10 @@ cmdHelp =
     , "  gettx     hash                    Get a raw transaction"
     , "  balance   acc                     Display account balance"
     , "  (disabled) coins     acc          List coins"
+    , ""
+    , "Offline tx commands:" 
+    , "  getblob   acc txhash              Get data to sign a tx offline"
+    , "  signblob  wallet blob             Sign an offline tx"
     , ""
     , "Utility commands: "
     , "  decodetx  tx                      Decode HEX transaction"
@@ -382,7 +387,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             WalletException "Could not parse address"
         res <- sendRequest $ TxSend name [(fromJust a, v)] $ optFee opts
         printJSONOr opts res $ \r -> case r of
-            ResTxStatus h c -> do
+            ResTxHashStatus h c -> do
                 putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
                 putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
             _ -> error "Received an invalid response"
@@ -395,7 +400,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             WalletException "Could not parse recipient list"
         res <- sendRequest $ TxSend name (fromJust recipients) $ optFee opts
         printJSONOr opts res $ \r -> case r of
-            ResTxStatus h c -> do
+            ResTxHashStatus h c -> do
                 putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
                 putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
             _ -> error "Received an invalid response"
@@ -405,8 +410,26 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             WalletException "Could not parse transaction"
         res <- sendRequest $ TxSign name $ fromJust txM
         printJSONOr opts res $ \r -> case r of
-            ResTxStatus h c -> do
+            ResTxHashStatus h c -> do
                 putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
+                putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
+            _ -> error "Received an invalid response"
+    ["getblob", name, tid] -> do
+        let h = decodeTxHashLE tid
+        when (isNothing h) $ throwIO $
+            WalletException "Could not parse hash"
+        res <- sendRequest $ GetSigBlob name $ fromJust h
+        printJSONOr opts res $ \r -> case r of
+            ResSigBlob blob -> putStrLn $ bsToHex $ toStrictBS $ encode blob
+            _ -> error "Received an invalid response"
+    ["signblob", wname, blob] -> do
+        let blobM = decode . toLazyBS =<< hexToBS blob
+        when (isNothing blobM) $ throwIO $
+            WalletException "Could not parse sig blob"
+        res <- sendRequest $ SignSigBlob wname $ fromJust blobM
+        printJSONOr opts res $ \r -> case r of
+            ResTxStatus tx c -> do
+                putStrLn $ unwords [ "Tx  :", bsToHex $ encode' tx]
                 putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
             _ -> error "Received an invalid response"
     ["gettx", hash] -> do

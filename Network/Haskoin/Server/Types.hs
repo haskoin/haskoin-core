@@ -59,6 +59,8 @@ data WalletRequest
     | TxPage AccountName Int Int
     | TxSend AccountName [(Address, Word64)] Word64
     | TxSign AccountName Tx
+    | GetSigBlob AccountName TxHash
+    | SignSigBlob WalletName SigBlob
     | TxGet TxHash
     | Balance AccountName
     | Rescan (Maybe Word32)
@@ -131,6 +133,14 @@ instance ToJSON WalletRequest where
             [ "accountname" .= n
             , "tx"          .= tx
             ]
+        GetSigBlob n h -> object
+            [ "accountname" .= n
+            , "txhash"      .= h
+            ]
+        SignSigBlob w b -> object
+            [ "walletname" .= w
+            , "sigblob"    .= b
+            ]
         TxGet h -> object [ "txhash" .= h ]
         Balance n -> object [ "accountname" .= n ]
         Rescan (Just t) -> object [ "timestamp" .= t ]
@@ -147,8 +157,10 @@ data WalletResponse
     | ResAddressPage [PaymentAddress] Int -- Int = Max page number
     | ResAccTxList [AccTx]
     | ResAccTxPage [AccTx] Int -- Int = Max page number
-    | ResTxStatus TxHash Bool
+    | ResTxStatus Tx Bool
+    | ResTxHashStatus TxHash Bool
     | ResTx Tx
+    | ResSigBlob SigBlob
     | ResBalance Word64
     | ResRescan Word32
     deriving (Eq, Show, Read)
@@ -171,11 +183,16 @@ instance ToJSON WalletResponse where
             [ "txpage"  .= xs
             , "maxpage" .= m
             ]
-        ResTxStatus h b -> object 
+        ResTxStatus t b -> object 
+            [ "tx"       .= t
+            , "complete" .= b
+            ]
+        ResTxHashStatus h b -> object 
             [ "txhash"   .= h
             , "complete" .= b
             ]
         ResTx tx -> object [ "tx" .= tx ]
+        ResSigBlob b -> object [ "sigblob" .= b ]
         ResBalance b -> object [ "balance" .= b ]
         ResRescan t -> object [ "timestamp" .= t ]
 
@@ -206,6 +223,8 @@ walletMethod wr = case wr of
     TxPage _ _ _             -> "network.haskoin.wallet.txpage"
     TxSend _ _ _             -> "network.haskoin.wallet.txsend"
     TxSign _ _               -> "network.haskoin.wallet.txsign"
+    GetSigBlob _ _           -> "network.haskoin.wallet.getsigblob"
+    SignSigBlob _ _          -> "network.haskoin.wallet.signsigblob"
     TxGet _                  -> "network.haskoin.wallet.txget"
     Balance _                -> "network.haskoin.wallet.balance"
     Rescan _                 -> "network.haskoin.wallet.rescan"
@@ -288,6 +307,14 @@ parseWalletRequest m v = case (m,v) of
         n  <- o .: "accountname"
         tx <- o .: "tx"
         return $ TxSign n tx
+    ("network.haskoin.wallet.getsigblob", Object o) -> do
+        n <- o .: "accountname"
+        h <- o .: "txhash"
+        return $ GetSigBlob n h
+    ("network.haskoin.wallet.signsigblob", Object o) -> do
+        w <- o .: "walletname"
+        b <- o .: "sigblob"
+        return $ SignSigBlob w b
     ("network.haskoin.wallet.txget", Object o) -> do
         h <- o .: "txhash"
         return $ TxGet h
@@ -356,11 +383,18 @@ parseWalletResponse w v = case (w, v) of
     (TxSend _ _ _, Object o) -> do
         h <- o .: "txhash"
         b <- o .: "complete"
-        return $ ResTxStatus h b
+        return $ ResTxHashStatus h b
     (TxSign _ _, Object o) -> do
         h <- o .: "txhash"
         b <- o .: "complete"
-        return $ ResTxStatus h b
+        return $ ResTxHashStatus h b
+    (GetSigBlob _ _, Object o) -> do
+        b <- o .: "sigblob"
+        return $ ResSigBlob b
+    (SignSigBlob _ _, Object o) -> do
+        t <- o .: "tx"
+        b <- o .: "complete"
+        return $ ResTxStatus t b
     (TxGet _, Object o) -> do
         tx <- o .: "tx"
         return $ ResTx tx

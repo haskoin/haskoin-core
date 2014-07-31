@@ -9,17 +9,21 @@ import Data.Maybe
 import Control.Monad
 import Control.Applicative 
 
-import Data.Bits (clearBit)
+import Data.Word (Word8)
+import Data.Bits (clearBit, testBit)
 import qualified Data.ByteString as BS 
     ( ByteString
     , pack
     , drop
     )
 
-import Network.Haskoin.Protocol
-import Network.Haskoin.Crypto
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Server.Types
+
+import Network.Haskoin.Transaction
+import Network.Haskoin.Script
+import Network.Haskoin.Protocol
+import Network.Haskoin.Crypto
 
 -- Arbitrary instance for strict ByteStrings
 -- TODO: Remove this if we integrate the project into Haskoin (use Util)
@@ -99,6 +103,8 @@ instance Arbitrary WalletRequest where
                  <*> (flip vectorOf (liftM2 (,) genAddr arbitrary) =<< choose (0,10))
                  <*> arbitrary
         , TxSign <$> arbitrary <*> genTx
+        , GetSigBlob <$> arbitrary <*> (fromInteger <$> arbitrary)
+        , SignSigBlob <$> arbitrary <*> arbitrary
         , TxGet <$> (fromInteger <$> arbitrary)
         , Balance <$> arbitrary
         , return $ Rescan Nothing
@@ -142,9 +148,11 @@ instance Arbitrary RequestPair where
             ResAccTxPage <$> (flip vectorOf arbitrary =<< choose (0,10)) 
                          <*> (abs <$> arbitrary)
         go (TxSend _ _ _) = 
-            ResTxStatus <$> (fromInteger <$> arbitrary) <*> arbitrary
+            ResTxHashStatus <$> (fromInteger <$> arbitrary) <*> arbitrary
         go (TxSign _ _) = 
-            ResTxStatus <$> (fromInteger <$> arbitrary) <*> arbitrary
+            ResTxHashStatus <$> (fromInteger <$> arbitrary) <*> arbitrary
+        go (GetSigBlob _ _) = ResSigBlob <$> arbitrary
+        go (SignSigBlob _ _) = ResTxStatus <$> genTx <*> arbitrary
         go (TxGet _) = ResTx <$> genTx
         go (Balance _) = ResBalance <$> arbitrary
         go (Rescan _) = ResRescan <$> arbitrary
@@ -154,6 +162,41 @@ instance Arbitrary TxConfidence where
 
 instance Arbitrary TxSource where
     arbitrary = elements [ NetworkSource, WalletSource, UnknownSource ]
+
+instance Arbitrary SigBlob where
+    arbitrary = SigBlob <$> arbitrary
+                        <*> ((flip vectorOf arbitrary) =<< choose (1,10))
+                        <*> ((flip vectorOf genSigInput) =<< choose (1,10))
+                        <*> genTx
+
+genSigInput :: Gen SigInput
+genSigInput = SigInput <$> genScriptOutput
+                       <*> genOutPoint
+                       <*> genSigHash
+                       <*> (oneof [return Nothing, Just <$> genScriptOutput])
+
+genSigHash :: Gen SigHash
+genSigHash = do
+    w <- arbitrary :: Gen Word8
+    let acp = testBit w 7
+    return $ case clearBit w 7 of
+        1 -> SigAll acp
+        2 -> SigNone acp
+        3 -> SigSingle acp
+        _ -> SigUnknown acp w
+
+genScriptOutput :: Gen ScriptOutput
+genScriptOutput = oneof 
+    [ PayPK <$> (xPubKey . getAccPubKey <$> genKey)
+    , (PayPKHash . pubKeyAddr) <$> (xPubKey . getAccPubKey <$> genKey)
+    , genPayMulSig =<< choose (1,16)
+    , (PayScriptHash . scriptAddr) <$> genScriptOutput
+    ]
+
+genPayMulSig :: Int -> Gen ScriptOutput
+genPayMulSig m = do
+    n <- choose (m,16)
+    PayMulSig <$> (vectorOf n (xPubKey . getAccPubKey <$> genKey)) <*> (return m)
 
 -- TODO: Remove this if we integrate into Haskoin
 genKey :: Gen AccPubKey

@@ -215,13 +215,19 @@ processWalletRequest mvar rChan fp (wr, i) = do
         when complete $ do
             newTx <- getTx tid
             liftIO $ atomically $ writeTBMChan rChan $ PublishTx newTx
-        return $ ResTxStatus tid complete
+        return $ ResTxHashStatus tid complete
     go (TxSign n tx)   = do
         (tid, complete) <- signWalletTx n tx 
         when complete $ do
             newTx <- getTx tid
             liftIO $ atomically $ writeTBMChan rChan $ PublishTx newTx
-        return $ ResTxStatus tid complete
+        return $ ResTxHashStatus tid complete
+    go (GetSigBlob n tid) = do
+        blob <- getSigBlob n tid 
+        return $ ResSigBlob blob
+    go (SignSigBlob w blob) = do
+        (tx, c) <- signSigBlob w blob
+        return $ ResTxStatus tx c
     go (TxGet h) = do
         tx <- getTx h
         return $ ResTx tx

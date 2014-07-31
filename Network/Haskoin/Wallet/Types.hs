@@ -72,6 +72,23 @@ data SigBlob = SigBlob
     , sigBlobTx       :: Tx
     } deriving (Eq, Show, Read)
 
+instance ToJSON SigBlob where
+    toJSON (SigBlob i as si tx) = object
+        [ "accderiv"  .= i
+        , "addrderiv" .= as
+        , "siginputs" .= si
+        , "tx"        .= tx
+        ]
+
+instance FromJSON SigBlob where
+    parseJSON (Object o) = do
+        i  <- o .: "accderiv"
+        as <- o .: "addrderiv"
+        si <- o .: "siginputs"
+        tx <- o .: "tx"
+        return $ SigBlob i as si tx
+    parseJSON _ = mzero
+
 data TxConfidence
     = TxOffline
     | TxDead 

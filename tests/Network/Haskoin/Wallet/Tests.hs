@@ -18,6 +18,7 @@ tests =
         , testProperty "AccTx" (metaID :: AccTx -> Bool)
         , testProperty "TxConfidence" (metaID :: TxConfidence -> Bool)
         , testProperty "TxSource" (metaID :: TxSource -> Bool)
+        , testProperty "SigBlob" (metaID :: SigBlob -> Bool)
         ]
     , testGroup "Serialize & de-serialize JSON-RPC types"
         [ testProperty "WalletRequest" testWalletRequest 

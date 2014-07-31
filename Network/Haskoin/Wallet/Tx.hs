@@ -449,7 +449,7 @@ sendTx name dests fee = do
     dat <- buildSigBlob name tx 
     (tx',_) <- if isReadAccount acc 
                     then return (tx,False) 
-                    else signSigBlob (accountWallet acc) dat
+                    else signSigBlob name dat
     confM <- importTx tx' WalletSource
     let conf = fromJust confM
     return (txHash tx', isJust confM && conf == TxPending)
@@ -469,7 +469,7 @@ signWalletTx name tx = do
     dat <- buildSigBlob name tx 
     (tx',_) <- if isReadAccount acc 
                    then return (tx,False)
-                   else signSigBlob (accountWallet acc) dat
+                   else signSigBlob name dat
     confM <- importTx tx' UnknownSource
     let conf = fromJust confM
     return (txHash tx', isJust confM && conf == TxPending)
@@ -519,18 +519,17 @@ buildSigBlob :: (PersistUnique m, PersistQuery m)
              -> Tx
              -> m SigBlob
 buildSigBlob name tx = do
-    (Entity ai acc) <- getAccountEntity name
+    (Entity ai _) <- getAccountEntity name
     coins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
     -- Filter coins for this account only
-    let accDeriv   = accountIndex $ dbAccountValue acc
-        accCoinsDB = filter ((== ai) . dbCoinAccount . entityVal) coins
+    let accCoinsDB = filter ((== ai) . dbCoinAccount . entityVal) coins
         accCoins   = map (dbCoinValue . entityVal) accCoinsDB
         recips     = map toRecip accCoins
         sigis      = map toSigi accCoins
     addrs <- liftM catMaybes $ mapM (getBy . UniqueAddress) recips
     let g (Entity _ a) = (dbAddressInternal a, dbAddressIndex a)
         addrData       = map g addrs
-    return $ SigBlob accDeriv addrData sigis tx
+    return $ SigBlob addrData sigis tx
   where
     sh = SigAll False
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
@@ -538,13 +537,16 @@ buildSigBlob name tx = do
     toRecip  = fromRight . scriptRecipient . encodeOutput . coinScript
 
 signSigBlob :: (PersistUnique m, PersistQuery m)
-            => WalletName
+            => AccountName
             -> SigBlob
             -> m (Tx, Bool)
-signSigBlob wname (SigBlob accDeriv as si tx) = do
-    w <- getWallet wname
+signSigBlob name (SigBlob as si tx) = do
+    acc <- getAccount name  
+    when (isReadAccount acc) $ liftIO $ throwIO $
+        WalletException "This operation is not supported on read-only accounts"
+    w <- getWallet $ accountWallet acc
     let master  = walletMasterKey w
-        accKey  = fromJust $ accPrvKey master accDeriv
+        accKey  = fromJust $ accPrvKey master $ accountIndex acc
         f (internal, deriv) | internal  = intPrvKey accKey deriv
                             | otherwise = extPrvKey accKey deriv
         prvKeys = map (xPrvKey . getAddrPrvKey . fromJust . f) as

@@ -174,7 +174,7 @@ cmdHelp =
     , ""
     , "Offline tx commands:" 
     , "  getblob   acc txhash              Get data to sign a tx offline"
-    , "  signblob  wallet blob             Sign an offline tx"
+    , "  signblob  acc blob                Sign an offline tx"
     , ""
     , "Utility commands: "
     , "  decodetx  tx                      Decode HEX transaction"
@@ -422,11 +422,11 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         printJSONOr opts res $ \r -> case r of
             ResSigBlob blob -> putStrLn $ bsToHex $ toStrictBS $ encode blob
             _ -> error "Received an invalid response"
-    ["signblob", wname, blob] -> do
+    ["signblob", name, blob] -> do
         let blobM = decode . toLazyBS =<< hexToBS blob
         when (isNothing blobM) $ throwIO $
             WalletException "Could not parse sig blob"
-        res <- sendRequest $ SignSigBlob wname $ fromJust blobM
+        res <- sendRequest $ SignSigBlob name $ fromJust blobM
         printJSONOr opts res $ \r -> case r of
             ResTxStatus tx c -> do
                 putStrLn $ unwords [ "Tx  :", bsToHex $ encode' tx]

@@ -164,8 +164,7 @@ instance Arbitrary TxSource where
     arbitrary = elements [ NetworkSource, WalletSource, UnknownSource ]
 
 instance Arbitrary SigBlob where
-    arbitrary = SigBlob <$> arbitrary
-                        <*> ((flip vectorOf arbitrary) =<< choose (1,10))
+    arbitrary = SigBlob <$> ((flip vectorOf arbitrary) =<< choose (1,10))
                         <*> ((flip vectorOf genSigInput) =<< choose (1,10))
                         <*> genTx
 

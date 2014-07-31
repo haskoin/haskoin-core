@@ -66,27 +66,24 @@ data WalletException = WalletException String
 instance Exception WalletException
 
 data SigBlob = SigBlob
-    { sigBlobAcc      :: KeyIndex
-    , sigBlobAddrs    :: [(Bool,KeyIndex)]
+    { sigBlobAddrs    :: [(Bool,KeyIndex)]
     , sigBlobSigInput :: [SigInput]
     , sigBlobTx       :: Tx
     } deriving (Eq, Show, Read)
 
 instance ToJSON SigBlob where
-    toJSON (SigBlob i as si tx) = object
-        [ "accderiv"  .= i
-        , "addrderiv" .= as
+    toJSON (SigBlob as si tx) = object
+        [ "addrderiv" .= as
         , "siginputs" .= si
         , "tx"        .= tx
         ]
 
 instance FromJSON SigBlob where
     parseJSON (Object o) = do
-        i  <- o .: "accderiv"
         as <- o .: "addrderiv"
         si <- o .: "siginputs"
         tx <- o .: "tx"
-        return $ SigBlob i as si tx
+        return $ SigBlob as si tx
     parseJSON _ = mzero
 
 data TxConfidence

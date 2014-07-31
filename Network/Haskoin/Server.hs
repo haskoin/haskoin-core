@@ -225,8 +225,8 @@ processWalletRequest mvar rChan fp (wr, i) = do
     go (GetSigBlob n tid) = do
         blob <- getSigBlob n tid 
         return $ ResSigBlob blob
-    go (SignSigBlob w blob) = do
-        (tx, c) <- signSigBlob w blob
+    go (SignSigBlob n blob) = do
+        (tx, c) <- signSigBlob n blob
         return $ ResTxStatus tx c
     go (TxGet h) = do
         tx <- getTx h

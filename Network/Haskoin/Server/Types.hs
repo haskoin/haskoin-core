@@ -60,7 +60,7 @@ data WalletRequest
     | TxSend AccountName [(Address, Word64)] Word64
     | TxSign AccountName Tx
     | GetSigBlob AccountName TxHash
-    | SignSigBlob WalletName SigBlob
+    | SignSigBlob AccountName SigBlob
     | TxGet TxHash
     | Balance AccountName
     | Rescan (Maybe Word32)
@@ -137,9 +137,9 @@ instance ToJSON WalletRequest where
             [ "accountname" .= n
             , "txhash"      .= h
             ]
-        SignSigBlob w b -> object
-            [ "walletname" .= w
-            , "sigblob"    .= b
+        SignSigBlob n b -> object
+            [ "accountname" .= n
+            , "sigblob"     .= b
             ]
         TxGet h -> object [ "txhash" .= h ]
         Balance n -> object [ "accountname" .= n ]
@@ -312,9 +312,9 @@ parseWalletRequest m v = case (m,v) of
         h <- o .: "txhash"
         return $ GetSigBlob n h
     ("network.haskoin.wallet.signsigblob", Object o) -> do
-        w <- o .: "walletname"
+        n <- o .: "accountname"
         b <- o .: "sigblob"
-        return $ SignSigBlob w b
+        return $ SignSigBlob n b
     ("network.haskoin.wallet.txget", Object o) -> do
         h <- o .: "txhash"
         return $ TxGet h

@@ -169,7 +169,7 @@ processWalletRequest mvar rChan fp (wr, i) = do
     go (NewReadMSAccount n r t ks) = do
         fstKeyBefore <- firstKeyTime
         a <- newReadMSAccount n r t ks
-        when (length (accountKeys a) == t - 1) $ do
+        when (length (accountKeys a) == t) $ do
             setLookAhead n 30
             bloom      <- walletBloomFilter fp
             fstKeyTime <- liftM fromJust firstKeyTime
@@ -181,7 +181,7 @@ processWalletRequest mvar rChan fp (wr, i) = do
     go (AddAccountKeys n ks) = do
         fstKeyBefore <- firstKeyTime
         a <- addAccountKeys n ks
-        when (length (accountKeys a) == accountTotal a - 1) $ do
+        when (length (accountKeys a) == accountTotal a) $ do
             setLookAhead n 30
             bloom      <- walletBloomFilter fp
             fstKeyTime <- liftM fromJust firstKeyTime

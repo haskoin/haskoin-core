@@ -246,7 +246,7 @@ printAccount a = case a of
         [ unwords [ "Account:", n ]
         , unwords [ "Type   :", "Read-only multisig", show r, "of", show t ]
         ] ++ if null ks then [] else 
-            (unwords [ "Keys:", xPubExport $ head ks ]) : 
+            (unwords [ "Keys   :", xPubExport $ head ks ]) : 
                 (map (\x -> unwords ["        ", xPubExport x]) $ tail ks)
 
 data PaymentAddress = PaymentAddress 

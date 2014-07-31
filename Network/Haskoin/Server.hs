@@ -35,7 +35,6 @@ import Database.Persist.Sqlite
 import Database.Sqlite (open)
 
 import Network.Haskoin.Util
-import Network.Haskoin.Script
 import Network.Haskoin.Constants
 
 import Network.Haskoin.Node.PeerManager
@@ -218,7 +217,7 @@ processWalletRequest mvar rChan fp (wr, i) = do
             liftIO $ atomically $ writeTBMChan rChan $ PublishTx newTx
         return $ ResTxStatus tid complete
     go (TxSign n tx)   = do
-        (tid, complete) <- signWalletTx n tx (SigAll False)
+        (tid, complete) <- signWalletTx n tx 
         when complete $ do
             newTx <- getTx tid
             liftIO $ atomically $ writeTBMChan rChan $ PublishTx newTx

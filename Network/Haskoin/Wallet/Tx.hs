@@ -13,6 +13,8 @@ module Network.Haskoin.Wallet.Tx
 , removeTx
 , sendTx
 , signWalletTx
+, getSigBlob
+, signSigBlob
 , walletBloomFilter
 , isTxInWallet
 , firstKeyTime
@@ -64,6 +66,7 @@ import Network.Haskoin.Node.HeaderChain
 
 import Network.Haskoin.Wallet.Account
 import Network.Haskoin.Wallet.Address
+import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 
@@ -440,55 +443,16 @@ sendTx :: (PersistUnique m, PersistQuery m)
        -> [(Address,Word64)]  -- ^ List of recipient addresses and amounts
        -> Word64              -- ^ Fee per 1000 bytes 
        -> m (TxHash, Bool)    -- ^ (Payment transaction, Completed flag)
-sendTx name strDests fee = do
-    (coins,recips) <- sendSolution name strDests fee
-    resE <- sendCoins coins recips (SigAll False)
-    case resE of
-        Left err -> liftIO $ throwIO $ WalletException err
-        Right (tx, _) -> do
-            confM <- importTx tx WalletSource
-            let conf = fromJust confM
-            return (txHash tx, isJust confM && conf == TxPending)
-
--- Given a list of recipients and a fee, finds a valid combination of coins
-sendSolution :: (PersistUnique m, PersistQuery m)
-             => AccountName -> [(Address,Word64)] -> Word64
-             -> m ([Coin],[(Address,Word64)])
-sendSolution name dests fee = do
-    (Entity _ acc) <- getAccountEntity name
-    spendable <- spendableCoins name
-    let msParam = ( accountRequired $ dbAccountValue acc
-                  , accountTotal $ dbAccountValue acc
-                  )
-        resE | isMSAccount $ dbAccountValue acc = 
-                chooseMSCoins tot fee msParam spendable
-             | otherwise = chooseCoins tot fee spendable
-        (coins, change)  = fromRight resE
-    when (isLeft resE) $ liftIO $ throwIO $
-        WalletException $ fromLeft resE
-    -- TODO: Put this value in a constant file somewhere
-    -- TODO: We need a better way to identify dust transactions
-    recips <- if change < 5430 then return dests else do
-        cAddr <- newAddrsGeneric name 1 True -- internal addresses
-        -- TODO: Change must be randomly placed
-        return $ dests ++ [(dbAddressValue $ head cAddr,change)]
-    return (coins,recips)
-  where
-    tot        = sum $ map snd dests
-    
--- Build and sign a transaction by providing coins and recipients
-sendCoins :: PersistUnique m
-          => [Coin] -> [(Address,Word64)] -> SigHash
-          -> m (Either String (Tx, Bool))
-sendCoins coins recipients sh = do
-    let txE = buildAddrTx (map coinOutPoint coins) $ map f recipients
-        tx  = fromRight txE
-    when (isLeft txE) $ liftIO $ throwIO $
-        WalletException $ fromLeft txE
-    ys <- mapM (getSigData sh) coins
-    return $ detSignTx tx (map fst ys) (map snd ys)
-  where
-    f (a,v) = (addrToBase58 a, v)
+sendTx name dests fee = do
+    acc <- getAccount name
+    tx  <- buildUnsignedTx name dests fee
+    dat <- buildSigBlob name tx 
+    (tx',_) <- if isReadAccount acc 
+                    then return (tx,False) 
+                    else signSigBlob (accountWallet acc) dat
+    confM <- importTx tx' WalletSource
+    let conf = fromJust confM
+    return (txHash tx', isJust confM && conf == TxPending)
 
 -- | Try to sign the inputs of an existing transaction using the private keys
 -- of an account. This command will return an indication if the transaction is
@@ -499,44 +463,97 @@ sendCoins coins recipients sh = do
 signWalletTx :: (PersistUnique m, PersistQuery m)
              => AccountName      -- ^ Account name
              -> Tx               -- ^ Transaction to sign 
-             -> SigHash          -- ^ Signature type to create 
              -> m (TxHash, Bool) -- ^ (Signed transaction, Completed flag)
-signWalletTx name tx sh = do
-    (Entity ai _) <- getAccountEntity name
+signWalletTx name tx = do
+    acc <- getAccount name
+    dat <- buildSigBlob name tx 
+    (tx',_) <- if isReadAccount acc 
+                   then return (tx,False)
+                   else signSigBlob (accountWallet acc) dat
+    confM <- importTx tx' UnknownSource
+    let conf = fromJust confM
+    return (txHash tx', isJust confM && conf == TxPending)
+
+-- | Retrieve the 'OfflineSignData' that can be used to sign a transaction from
+-- an offline wallet
+getSigBlob :: (PersistUnique m, PersistQuery m)
+           => AccountName
+           -> TxHash
+           -> m SigBlob
+getSigBlob name tid = do
+    tx <- getTx tid
+    buildSigBlob name tx 
+
+-- Build an unsigned transaction given a list of recipients and a fee
+buildUnsignedTx :: (PersistUnique m, PersistQuery m)
+                => AccountName        
+                -> [(Address,Word64)] 
+                -> Word64
+                -> m Tx
+buildUnsignedTx name dests fee = do
+    (Entity _ acc) <- getAccountEntity name
+    spendable <- spendableCoins name
+    let msParam = ( accountRequired $ dbAccountValue acc
+                  , accountTotal $ dbAccountValue acc
+                  )
+        resE | isMSAccount $ dbAccountValue acc = 
+                chooseMSCoins tot fee msParam spendable
+             | otherwise = chooseCoins tot fee spendable
+        (coins, change)  = fromRight resE
+    when (isLeft resE) $ liftIO $ throwIO $ WalletException $ fromLeft resE
+    -- TODO: Put this value in a constant file somewhere
+    -- TODO: We need a better way to identify dust transactions
+    recips <- if change < 5430 then return dests else do
+        cAddr <- newAddrsGeneric name 1 True -- internal addresses
+        -- TODO: Change must be randomly placed
+        return $ dests ++ [(dbAddressValue $ head cAddr,change)]
+    let txE = buildAddrTx (map coinOutPoint coins) $ map f recips
+    when (isLeft txE) $ liftIO $ throwIO $ WalletException $ fromLeft txE
+    return $ fromRight txE
+  where
+    tot     = sum $ map snd dests
+    f (a,v) = (addrToBase58 a,v)
+    
+buildSigBlob :: (PersistUnique m, PersistQuery m)
+             => AccountName
+             -> Tx
+             -> m SigBlob
+buildSigBlob name tx = do
+    (Entity ai acc) <- getAccountEntity name
     coins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
     -- Filter coins for this account only
-    let accCoinsDB = filter ((== ai) . dbCoinAccount . entityVal) coins
+    let accDeriv   = accountIndex $ dbAccountValue acc
+        accCoinsDB = filter ((== ai) . dbCoinAccount . entityVal) coins
         accCoins   = map (dbCoinValue . entityVal) accCoinsDB
-    ys <- forM accCoins (getSigData sh)
-    let resE = detSignTx tx (map fst ys) (map snd ys)
-    case resE of
-        Left err    -> liftIO $ throwIO $ WalletException err
-        Right (t,_) -> do
-            confM <- importTx t UnknownSource
-            let conf = fromJust confM
-            return (txHash t, isJust confM && conf == TxPending)
+        recips     = map toRecip accCoins
+        sigis      = map toSigi accCoins
+    addrs <- liftM catMaybes $ mapM (getBy . UniqueAddress) recips
+    let g (Entity _ a) = (dbAddressInternal a, dbAddressIndex a)
+        addrData       = map g addrs
+    return $ SigBlob accDeriv addrData sigis tx
   where
+    sh = SigAll False
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
+    toSigi c = SigInput (coinScript c) (coinOutPoint c) sh (coinRedeem c)
+    toRecip  = fromRight . scriptRecipient . encodeOutput . coinScript
 
--- Given a coin, retrieves the necessary data to sign a transaction
-getSigData :: PersistUnique m
-           => SigHash -> Coin -> m (SigInput,PrvKey)
-getSigData sh coin = do
-    (Entity _ add) <- liftM fromJust $ getBy $ UniqueAddress a
-    acc <- liftM fromJust (get $ dbAddressAccount add)
-    when (isNothing $ dbAccountWallet acc) $ liftIO $ throwIO $ 
-        WalletException "This operation is not supported on read-only accounts"
-    w <- liftM fromJust $ get (fromJust $ dbAccountWallet acc)
-    let master = walletMasterKey $ dbWalletValue w
-        deriv  = accountIndex $ dbAccountValue acc
-        accKey = fromJust $ accPrvKey master deriv
-        g      = if dbAddressInternal add then intPrvKey else extPrvKey
-        sigKey = fromJust $ g accKey $ dbAddressIndex add
-    return (sigi, xPrvKey $ getAddrPrvKey sigKey)
-  where
-    so   = coinScript coin
-    a    = fromRight $ scriptRecipient $ encodeOutput so
-    sigi = SigInput so (coinOutPoint coin) sh (coinRedeem coin)
+signSigBlob :: (PersistUnique m, PersistQuery m)
+            => WalletName
+            -> SigBlob
+            -> m (Tx, Bool)
+signSigBlob wname (SigBlob accDeriv as si tx) = do
+    w <- getWallet wname
+    let master  = walletMasterKey w
+        accKey  = fromJust $ accPrvKey master accDeriv
+        f (internal, deriv) | internal  = intPrvKey accKey deriv
+                            | otherwise = extPrvKey accKey deriv
+        prvKeys = map (xPrvKey . getAddrPrvKey . fromJust . f) as
+        -- TODO: Here we override the SigHash to be SigAll False all the time.
+        -- Should we be more flexible?
+        newSI = map (\s -> s{ sigDataSH = SigAll False }) si
+        resE  = detSignTx tx newSI prvKeys
+    when (isLeft resE) $ liftIO $ throwIO $ WalletException $ fromLeft resE
+    return $ fromRight resE
 
 -- | Produces a bloom filter containing all the addresses in this wallet. This
 -- includes internal, external and look-ahead addresses. The bloom filter can

@@ -13,6 +13,7 @@ module Network.Haskoin.Wallet.Account
 , accountList
 , accountPrvKey
 , isMSAccount
+, isReadAccount
 ) where
 
 import Control.Monad (liftM, unless, when)

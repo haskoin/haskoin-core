@@ -50,6 +50,8 @@ module Network.Haskoin.Wallet
 , removeTx
 , sendTx
 , signWalletTx
+, getSigBlob
+, signSigBlob
 , walletBloomFilter
 , isTxInWallet
 , firstKeyTime

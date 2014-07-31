@@ -117,7 +117,7 @@ tests =
         , testCase "Calling newMSAccount with keys in your wallet should fail" $
             assertException
                 (WalletException 
-                    "Can not add your own keys to a multisig account") $ do
+                    "Can not add your own keys to an account") $ do
                     _ <- newWallet "main" (BS.pack [0])
                     _ <- newAccount "main" "default" 
                     let master = fromJust $ makeMasterKey $ BS.pack [0]
@@ -127,7 +127,7 @@ tests =
         , testCase "Calling addAccountKeys with keys in your wallet should fail" $
             assertException
                 (WalletException 
-                    "Can not add your own keys to a multisig account") $ do
+                    "Can not add your own keys to an account") $ do
                     _ <- newWallet "main" (BS.pack [0])
                     _ <- newAccount "main" "default" 
                     let master = fromJust $ makeMasterKey $ BS.pack [0]
@@ -877,7 +877,7 @@ testImportMultisig = do
     liftM (map accTxHash) (txList "ms1") 
         >>= liftIO . (assertEqual "Wrong txhash in acc list" [txHash fundingTx, h])
 
-    (h2,c2) <- signWalletTx "ms1" toImport (SigAll False)
+    (h2,c2) <- signWalletTx "ms1" toImport 
     liftIO $ assertEqual "Completed status is not True" True c2
     liftM (dbTxConfidence . entityVal) (getTxEntity h2)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
@@ -910,7 +910,7 @@ testImportMultisig2 = do
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash fundingTx])
     return ()
 
-    (h,c) <- signWalletTx "ms1" toSign (SigAll False)
+    (h,c) <- signWalletTx "ms1" toSign 
     liftIO $ assertEqual "Completed status is not True" True c
     liftM (dbTxConfidence . entityVal) (getTxEntity h)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 

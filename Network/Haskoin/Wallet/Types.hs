@@ -15,6 +15,7 @@ module Network.Haskoin.Wallet.Types
 , TxConfidence(..)
 , TxSource(..)
 , WalletException(..)
+, SigBlob(..)
 , printWallet
 , printAccount
 , printAddress
@@ -63,6 +64,13 @@ data WalletException = WalletException String
     deriving (Eq, Read, Show, Typeable)
 
 instance Exception WalletException
+
+data SigBlob = SigBlob
+    { sigBlobAcc      :: KeyIndex
+    , sigBlobAddrs    :: [(Bool,KeyIndex)]
+    , sigBlobSigInput :: [SigInput]
+    , sigBlobTx       :: Tx
+    } deriving (Eq, Show, Read)
 
 data TxConfidence
     = TxOffline

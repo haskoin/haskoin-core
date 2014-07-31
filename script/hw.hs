@@ -96,12 +96,12 @@ options =
     [ Option ['c'] ["count"] (ReqArg parseCount "INT") $
         "Count: see commands for details"
     , Option ['s'] ["sighash"] (ReqArg parseSigHash "SIGHASH") $
-        "Signature type = ALL|NONE|SINGLE"
+        "(disabled) Signature type = ALL|NONE|SINGLE"
     , Option ['a'] ["anyonecanpay"]
         (NoArg $ \opts -> do
             let sh = optSigHash opts
             return opts{ optSigHash = sh{ anyoneCanPay = True } }
-        ) $ "Set signature flag AnyoneCanPay"
+        ) $ "(disabled) Set signature flag AnyoneCanPay"
     , Option ['f'] ["fee"] (ReqArg parseCount "INT") $
         "Transaction fee (default: 10000)"
     , Option ['j'] ["json"]

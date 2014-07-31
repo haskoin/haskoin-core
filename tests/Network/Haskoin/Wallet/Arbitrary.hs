@@ -40,11 +40,14 @@ instance Arbitrary Account where
         , MultisigAccount <$> arbitrary
                           <*> arbitrary
                           <*> arbitrary
-                          <*> genKey
                           <*> arbitrary
                           <*> arbitrary
-                          <*> (flip vectorOf (getAccPubKey <$> genKey) =<< choose (0,16))
+                          <*> (flip vectorOf (getAccPubKey <$> genKey) =<< choose (1,16))
         , ReadAccount <$> arbitrary <*> genKey
+        , ReadMSAccount <$> arbitrary
+                        <*> arbitrary
+                        <*> arbitrary
+                        <*> (flip vectorOf (getAccPubKey <$> genKey) =<< choose (1,16))
         ]
 
 -- TODO: Rewrite this correctly if we integrate into Haskoin
@@ -72,6 +75,10 @@ instance Arbitrary WalletRequest where
                        <*> (choose (1,16))
                        <*> (flip vectorOf (getAccPubKey <$> genKey) =<< choose (1,10))
         , NewReadAccount <$> arbitrary <*> (getAccPubKey <$> genKey)
+        , NewReadMSAccount <$> arbitrary 
+                           <*> arbitrary 
+                           <*> arbitrary 
+                           <*> (flip vectorOf (getAccPubKey <$> genKey) =<< choose (1,10))
         , AddAccountKeys <$> arbitrary 
                          <*> (flip vectorOf (getAccPubKey <$> genKey) =<< choose (1,10))
         , GetAccount <$> arbitrary
@@ -117,6 +124,7 @@ instance Arbitrary RequestPair where
         go (NewAccount _ _) = ResAccount <$> arbitrary
         go (NewMSAccount _ _ _ _ _) = ResAccount <$> arbitrary
         go (NewReadAccount _ _) = ResAccount <$> arbitrary
+        go (NewReadMSAccount _ _ _ _) = ResAccount <$> arbitrary
         go (AddAccountKeys _ _) = ResAccount <$> arbitrary
         go (GetAccount _) = ResAccount <$> arbitrary
         go AccountList = ResAccountList <$> arbitrary

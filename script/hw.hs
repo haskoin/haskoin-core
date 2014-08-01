@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeFamilies      #-}
 module Main where
 
+import System.Directory (removeFile, doesFileExist)
 import System.IO.Error (ioeGetErrorString)
 import System.Console.GetOpt 
     ( getOpt
@@ -243,6 +244,9 @@ printJSONOr opts resE action
 processCommand :: Options -> Args -> IO ()
 processCommand opts args = getWorkDir >>= \dir -> case args of
     ["start"] -> do
+        prevLog <- doesFileExist $ logFile dir
+        -- TODO: Shoul we move the log file to an archive directory?
+        when prevLog $ removeFile $ logFile dir
         runDetached (Just $ pidFile dir) (ToFile $ logFile dir) runServer
         putStrLn "Haskoin daemon started"
         putStrLn $ unwords [ "Configuration file:", configFile dir ]
@@ -473,9 +477,14 @@ sendRequest :: WalletRequest -> IO (Either String WalletResponse)
 sendRequest req = do
     dir <- getWorkDir
     let configFile = concat [dir, "/config"]
+    configExists <- doesFileExist configFile
+    unless configExists $ throwIO $ WalletException $ unwords
+        [ "Config file does not exist. Call 'hw start' to generate one in:"
+        , configFile
+        ]
     configM <- decodeFile configFile
     unless (isJust configM) $ throwIO $ WalletException $ unwords
-        [ "Could node parse config file"
+        [ "Could node parse config file:"
         , configFile
         ]
     let host       = fromString $ configBind $ fromJust configM

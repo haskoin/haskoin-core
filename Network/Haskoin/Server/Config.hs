@@ -23,29 +23,32 @@ import Data.Yaml
     )
 
 data ServerConfig = ServerConfig
-    { configHosts  :: [(String,Int)]
-    , configPort   :: Int
-    , configBind   :: String
-    , configBatch  :: Int
-    , configFpRate :: Double
+    { configHosts   :: [(String,Int)]
+    , configPort    :: Int
+    , configBind    :: String
+    , configBatch   :: Int
+    , configFpRate  :: Double
+    , configOffline :: Bool
     } deriving (Eq, Show, Read)
 
 defaultServerConfig :: ServerConfig
 defaultServerConfig = ServerConfig 
-    { configHosts  = [ ("127.0.0.1", defaultPort) ]
-    , configPort   = 4000
-    , configBind   = "127.0.0.1"
-    , configBatch  = 100
-    , configFpRate = 0.00001
+    { configHosts   = [ ("127.0.0.1", defaultPort) ]
+    , configPort    = 4000
+    , configBind    = "127.0.0.1"
+    , configBatch   = 100
+    , configFpRate  = 0.00001
+    , configOffline = False
     }
 
 instance ToJSON ServerConfig where
-    toJSON (ServerConfig hs p a b fp) = object
+    toJSON (ServerConfig hs p a b fp o) = object
         [ "bitcoin nodes" .= map f hs
         , "server port"   .= p
         , "server bind"   .= a
         , "block batch"   .= b
         , "fp rate"       .= fp
+        , "offline"       .= o
         ]
       where
         f (x,y) = object
@@ -60,7 +63,8 @@ instance FromJSON ServerConfig where
         a  <- o .: "server bind"
         b  <- o .: "block batch"
         fp <- o .: "fp rate"
-        return $ ServerConfig hs p a b fp
+        ol <- o .: "offline"
+        return $ ServerConfig hs p a b fp ol
       where
         f (Object x) = do
             a <- x .: "host"

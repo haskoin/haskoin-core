@@ -20,7 +20,6 @@ import qualified Data.ByteString as BS
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Server.Types
 
-import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
@@ -164,25 +163,14 @@ instance Arbitrary TxSource where
     arbitrary = elements [ NetworkSource, WalletSource, UnknownSource ]
 
 instance Arbitrary SigBlob where
-    arbitrary = SigBlob <$> ((flip vectorOf arbitrary) =<< choose (1,10))
-                        <*> ((flip vectorOf genSigInput) =<< choose (1,10))
+    arbitrary = SigBlob <$> ((flip vectorOf genDat) =<< choose (1,10))
                         <*> genTx
 
-genSigInput :: Gen SigInput
-genSigInput = SigInput <$> genScriptOutput
-                       <*> genOutPoint
-                       <*> genSigHash
-                       <*> (oneof [return Nothing, Just <$> genScriptOutput])
-
-genSigHash :: Gen SigHash
-genSigHash = do
-    w <- arbitrary :: Gen Word8
-    let acp = testBit w 7
-    return $ case clearBit w 7 of
-        1 -> SigAll acp
-        2 -> SigNone acp
-        3 -> SigSingle acp
-        _ -> SigUnknown acp w
+genDat :: Gen (OutPoint, ScriptOutput, Bool, KeyIndex)
+genDat = (,,,) <$> genOutPoint
+               <*> genScriptOutput
+               <*> arbitrary
+               <*> arbitrary
 
 genScriptOutput :: Gen ScriptOutput
 genScriptOutput = oneof 

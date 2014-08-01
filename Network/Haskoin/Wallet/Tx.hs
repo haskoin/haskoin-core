@@ -325,22 +325,28 @@ importCoin tid (tout, i) = do
 
 -- Builds a redeem script given an address. Only relevant for addresses
 -- linked to multisig accounts. Otherwise it returns Nothing
-getRedeem :: (PersistStore m, PersistMonadBackend m ~ b) 
+getRedeem :: (PersistUnique m, PersistMonadBackend m ~ b) 
           => DbAddressGeneric b -> m (Maybe RedeemScript)
 getRedeem add = do
     acc <- liftM fromJust (get $ dbAddressAccount add)
-    if isMSAccount $ dbAccountValue acc 
-        then do
-            let key      = head $ accountKeys $ dbAccountValue acc
-                msKeys   = tail $ accountKeys $ dbAccountValue acc
-                deriv    = dbAddressIndex add
-                addrKeys = fromJust $ f (AccPubKey key) msKeys deriv
-                pks      = map (xPubKey . getAddrPubKey) addrKeys
-                req      = accountRequired $ dbAccountValue acc
-            return $ Just $ sortMulSig $ PayMulSig pks req
-        else return Nothing
+    let name     = dbAccountName acc
+        deriv    = dbAddressIndex add
+        internal = dbAddressInternal add
+    getRedeemIndex name deriv internal
+
+getRedeemIndex :: PersistUnique m 
+               => AccountName -> KeyIndex -> Bool -> m (Maybe RedeemScript)
+getRedeemIndex name deriv internal = do
+    acc <- getAccount name
+    if not $ isMSAccount acc then return Nothing else do
+        let key      = head $ accountKeys acc 
+            msKeys   = tail $ accountKeys acc
+            addrKeys = fromJust $ f (AccPubKey key) msKeys deriv
+            pks      = map (xPubKey . getAddrPubKey) addrKeys
+            req      = accountRequired acc
+        return $ Just $ sortMulSig $ PayMulSig pks req
   where
-    f = if dbAddressInternal add then intMulSigKey else extMulSigKey
+    f = if internal then intMulSigKey else extMulSigKey
 
 -- Returns True if the transaction has an input that belongs to the wallet
 -- but we don't have a coin for it yet. We are missing a parent transaction.
@@ -446,10 +452,11 @@ sendTx :: (PersistUnique m, PersistQuery m)
 sendTx name dests fee = do
     acc <- getAccount name
     tx  <- buildUnsignedTx name dests fee
-    dat <- buildSigBlob name tx 
     (tx',_) <- if isReadAccount acc 
-                    then return (tx,False) 
-                    else signSigBlob name dat
+        then return (tx,False)
+        else do 
+            dat <- buildSigBlob name tx 
+            signSigBlob name dat
     confM <- importTx tx' WalletSource
     let conf = fromJust confM
     return (txHash tx', isJust confM && conf == TxPending)
@@ -466,10 +473,11 @@ signWalletTx :: (PersistUnique m, PersistQuery m)
              -> m (TxHash, Bool) -- ^ (Signed transaction, Completed flag)
 signWalletTx name tx = do
     acc <- getAccount name
-    dat <- buildSigBlob name tx 
     (tx',_) <- if isReadAccount acc 
-                   then return (tx,False)
-                   else signSigBlob name dat
+        then return (tx,False)
+        else do 
+            dat <- buildSigBlob name tx 
+            signSigBlob name dat
     confM <- importTx tx' UnknownSource
     let conf = fromJust confM
     return (txHash tx', isJust confM && conf == TxPending)
@@ -523,39 +531,42 @@ buildSigBlob name tx = do
     coins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
     -- Filter coins for this account only
     let accCoinsDB = filter ((== ai) . dbCoinAccount . entityVal) coins
-        accCoins   = map (dbCoinValue . entityVal) accCoinsDB
-        recips     = map toRecip accCoins
-        sigis      = map toSigi accCoins
-    addrs <- liftM catMaybes $ mapM (getBy . UniqueAddress) recips
-    let g (Entity _ a) = (dbAddressInternal a, dbAddressIndex a)
-        addrData       = map g addrs
-    return $ SigBlob addrData sigis tx
+    dat <- mapM toDat $ map entityVal accCoinsDB 
+    return $ SigBlob dat tx
   where
-    sh = SigAll False
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
-    toSigi c = SigInput (coinScript c) (coinOutPoint c) sh (coinRedeem c)
-    toRecip  = fromRight . scriptRecipient . encodeOutput . coinScript
+    toDat c = do
+        a <- liftM fromJust $ getBy $ UniqueAddress $ dbCoinAddress c
+        return ( coinOutPoint $ dbCoinValue c
+               , coinScript $ dbCoinValue c
+               , dbAddressInternal $ entityVal a
+               , dbAddressIndex $ entityVal a
+               )
 
 signSigBlob :: (PersistUnique m, PersistQuery m)
             => AccountName
             -> SigBlob
             -> m (Tx, Bool)
-signSigBlob name (SigBlob as si tx) = do
+signSigBlob name (SigBlob dat tx) = do
     acc <- getAccount name  
     when (isReadAccount acc) $ liftIO $ throwIO $
         WalletException "This operation is not supported on read-only accounts"
     w <- getWallet $ accountWallet acc
     let master  = walletMasterKey w
         accKey  = fromJust $ accPrvKey master $ accountIndex acc
-        f (internal, deriv) | internal  = intPrvKey accKey deriv
-                            | otherwise = extPrvKey accKey deriv
-        prvKeys = map (xPrvKey . getAddrPrvKey . fromJust . f) as
-        -- TODO: Here we override the SigHash to be SigAll False all the time.
-        -- Should we be more flexible?
-        newSI = map (\s -> s{ sigDataSH = SigAll False }) si
-        resE  = detSignTx tx newSI prvKeys
+        f (_,_,internal,k) | internal  = intPrvKey accKey k
+                           | otherwise = extPrvKey accKey k
+        prvKeys = map (xPrvKey . getAddrPrvKey . fromJust . f) dat
+    sigi <- mapM toSigi dat
+    let resE = detSignTx tx sigi prvKeys
     when (isLeft resE) $ liftIO $ throwIO $ WalletException $ fromLeft resE
     return $ fromRight resE
+  where
+    toSigi (op, so, i,k) = do
+        rdm <- getRedeemIndex name k i 
+        -- TODO: Here we override the SigHash to be SigAll False all the time.
+        -- Should we be more flexible?
+        return $ SigInput so op (SigAll False) rdm
 
 -- | Produces a bloom filter containing all the addresses in this wallet. This
 -- includes internal, external and look-ahead addresses. The bloom filter can

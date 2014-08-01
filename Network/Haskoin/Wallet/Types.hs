@@ -54,6 +54,7 @@ import Database.Persist.Sql (PersistFieldSql, SqlType(..), sqlType)
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
+import Network.Haskoin.Script
 import Network.Haskoin.Transaction
 import Network.Haskoin.Util
 
@@ -66,24 +67,21 @@ data WalletException = WalletException String
 instance Exception WalletException
 
 data SigBlob = SigBlob
-    { sigBlobAddrs    :: [(Bool,KeyIndex)]
-    , sigBlobSigInput :: [SigInput]
-    , sigBlobTx       :: Tx
+    { sigBlobData :: [(OutPoint, ScriptOutput, Bool, KeyIndex)]
+    , sigBlobTx     :: Tx
     } deriving (Eq, Show, Read)
 
 instance ToJSON SigBlob where
-    toJSON (SigBlob as si tx) = object
-        [ "addrderiv" .= as
-        , "siginputs" .= si
-        , "tx"        .= tx
+    toJSON (SigBlob dat tx) = object
+        [ "data" .= dat
+        , "tx"   .= tx
         ]
 
 instance FromJSON SigBlob where
     parseJSON (Object o) = do
-        as <- o .: "addrderiv"
-        si <- o .: "siginputs"
-        tx <- o .: "tx"
-        return $ SigBlob as si tx
+        dat <- o .: "data"
+        tx  <- o .: "tx"
+        return $ SigBlob dat tx
     parseJSON _ = mzero
 
 data TxConfidence

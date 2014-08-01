@@ -153,7 +153,7 @@ processWalletRequest mvar rChanM fp offline (wr, i) = do
     go (NewAccount w n)  = do
         fstKeyBefore <- firstKeyTime
         a <- newAccount w n
-        unlessOffline $ do
+        unless offline $ do
             setLookAhead n 30
             bloom      <- walletBloomFilter fp
             fstKeyTime <- liftM fromJust firstKeyTime
@@ -165,7 +165,7 @@ processWalletRequest mvar rChanM fp offline (wr, i) = do
     go (NewMSAccount w n r t ks) = do
         fstKeyBefore <- firstKeyTime
         a <- newMSAccount w n r t ks
-        unlessOffline $ when (length (accountKeys a) == t) $ do
+        unless offline $ when (length (accountKeys a) == t) $ do
             setLookAhead n 30
             bloom      <- walletBloomFilter fp
             fstKeyTime <- liftM fromJust firstKeyTime
@@ -177,7 +177,7 @@ processWalletRequest mvar rChanM fp offline (wr, i) = do
     go (NewReadAccount n k) = do
         fstKeyBefore <- firstKeyTime
         a <- newReadAccount n k
-        unlessOffline $ do
+        unless offline $ do
             setLookAhead n 30
             bloom      <- walletBloomFilter fp
             fstKeyTime <- liftM fromJust firstKeyTime
@@ -189,7 +189,7 @@ processWalletRequest mvar rChanM fp offline (wr, i) = do
     go (NewReadMSAccount n r t ks) = do
         fstKeyBefore <- firstKeyTime
         a <- newReadMSAccount n r t ks
-        unlessOffline $ when (length (accountKeys a) == t) $ do
+        unless offline $ when (length (accountKeys a) == t) $ do
             setLookAhead n 30
             bloom      <- walletBloomFilter fp
             fstKeyTime <- liftM fromJust firstKeyTime
@@ -201,7 +201,7 @@ processWalletRequest mvar rChanM fp offline (wr, i) = do
     go (AddAccountKeys n ks) = do
         fstKeyBefore <- firstKeyTime
         a <- addAccountKeys n ks
-        unlessOffline $ when (length (accountKeys a) == accountTotal a) $ do
+        unless offline $ when (length (accountKeys a) == accountTotal a) $ do
             setLookAhead n 30
             bloom      <- walletBloomFilter fp
             fstKeyTime <- liftM fromJust firstKeyTime
@@ -216,7 +216,7 @@ processWalletRequest mvar rChanM fp offline (wr, i) = do
         fstKeyBefore <- firstKeyTime
         addrs      <- newAddrs n i'
         bloom      <- walletBloomFilter fp
-        unlessOffline $ do
+        unless offline $ do
             fstKeyTime <- liftM fromJust firstKeyTime
             when (isJust rChanM) $ liftIO $ atomically $ do
                 writeTBMChan rChan $ BloomFilterUpdate bloom

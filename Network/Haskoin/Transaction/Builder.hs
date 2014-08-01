@@ -22,7 +22,7 @@ import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Either (EitherT, left)
 import Control.DeepSeq (NFData, rnf)
 
-import Data.Maybe (catMaybes, maybeToList, isJust, fromJust)
+import Data.Maybe (catMaybes, maybeToList, isJust, fromJust, isNothing)
 import Data.List (sortBy, find, nub)
 import Data.Word (Word64)
 import qualified Data.ByteString as BS (length, replicate, empty)
@@ -30,8 +30,7 @@ import Data.Aeson
     ( Value (Object)
     , FromJSON
     , ToJSON
-    , (.=)
-    , (.:)
+    , (.=), (.:), (.:?)
     , object
     , parseJSON
     , toJSON
@@ -202,6 +201,22 @@ data SigInput = SigInput
 
 instance NFData SigInput where
     rnf (SigInput o p h b) = rnf o `seq` rnf p `seq` rnf h `seq` rnf b
+
+instance ToJSON SigInput where
+    toJSON (SigInput so op sh rdm) = object $
+        [ "pkscript" .= so
+        , "outpoint" .= op
+        , "sighash"  .= sh
+        ] ++ if isNothing rdm then [] else [ "redeem" .= fromJust rdm ]
+
+instance FromJSON SigInput where
+    parseJSON (Object o) = do
+        so  <- o .: "pkscript"
+        op  <- o .: "outpoint"
+        sh  <- o .: "sighash"
+        rdm <- o .:? "redeem"
+        return $ SigInput so op sh rdm
+    parseJSON _ = mzero
 
 -- | Sign a transaction by providing the 'SigInput' signing parameters and a
 -- list of private keys. The signature is computed within the 'SecretT' monad

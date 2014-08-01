@@ -13,12 +13,14 @@ module Network.Haskoin.Script.SigHash
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM2)
+import Control.Monad (liftM2, mzero)
 
 import Data.Word (Word8)
 import Data.Bits (testBit, clearBit, setBit)
 import Data.Maybe (fromMaybe)
 import Data.Binary (Binary, get, put, getWord8, putWord8)
+import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
+import qualified Data.Text as T
 import qualified Data.ByteString as BS 
     ( ByteString
     , index
@@ -111,6 +113,13 @@ instance Binary SigHash where
         SigNone acp -> if acp then 0x82 else 0x02
         SigSingle acp -> if acp then 0x83 else 0x03
         SigUnknown _ w -> w
+
+instance ToJSON SigHash where
+    toJSON = String . T.pack . bsToHex . encode'
+
+instance FromJSON SigHash where
+    parseJSON = withText "sighash" $ \t ->
+        maybe mzero return $ decodeToMaybe =<< (hexToBS $ T.unpack t)
 
 -- | Encodes a 'SigHash' to a 32 bit-long bytestring.
 encodeSigHash32 :: SigHash -> BS.ByteString

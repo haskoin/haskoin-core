@@ -81,6 +81,7 @@ data Options = Options
     , optJson     :: Bool
     , optYaml     :: Bool
     , optPass     :: String
+    , optDetach   :: Bool
     } deriving (Eq, Show)
 
 defaultOptions :: Options
@@ -91,6 +92,7 @@ defaultOptions = Options
     , optJson     = False
     , optYaml     = False
     , optPass     = ""
+    , optDetach   = False
     } 
 
 options :: [OptDescr (Options -> IO Options)]
@@ -112,6 +114,9 @@ options =
     , Option ['y'] ["yaml"]
         (NoArg $ \opts -> return opts{ optYaml = True }) $
         "Format result as YAML"
+    , Option ['d'] ["detach"]
+        (NoArg $ \opts -> return opts{ optDetach = True }) $
+        "Detach the process from the terminal"
     , Option ['p'] ["passphrase"]
         (ReqArg (\s opts -> return opts{ optPass = s }) "PASSPHRASE") $
         "Optional Passphrase for mnemonic"
@@ -137,7 +142,7 @@ usageHeader = "Usage: hw [<options>] <command> [<args>]"
 cmdHelp :: [String]
 cmdHelp = 
     [ "Server commands:" 
-    , "  start                             Start the haskoin daemon"
+    , "  start [--detach]                  Start the haskoin daemon"
     , "  stop                              Stop the haskoin daemon"
     , ""
     , "Wallet commands:" 
@@ -245,9 +250,12 @@ processCommand :: Options -> Args -> IO ()
 processCommand opts args = getWorkDir >>= \dir -> case args of
     ["start"] -> do
         prevLog <- doesFileExist $ logFile dir
-        -- TODO: Shoul we move the log file to an archive directory?
+        -- TODO: Should we move the log file to an archive directory?
         when prevLog $ removeFile $ logFile dir
-        runDetached (Just $ pidFile dir) (ToFile $ logFile dir) runServer
+        if optDetach opts
+            then runDetached 
+                    (Just $ pidFile dir) (ToFile $ logFile dir) runServer
+            else runServer
         putStrLn "Haskoin daemon started"
         putStrLn $ unwords [ "Configuration file:", configFile dir ]
     ["stop"] -> do

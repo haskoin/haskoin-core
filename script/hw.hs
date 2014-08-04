@@ -16,7 +16,7 @@ import qualified System.Environment as E (getArgs)
 import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (unless, join, forM_, when, mzero, liftM2)
+import Control.Monad (unless, forM_, when, mzero, liftM2)
 import Control.Monad.Trans (liftIO, MonadIO)
 import Control.Exception (throwIO, throw)
 
@@ -24,19 +24,13 @@ import Data.String (fromString)
 import Data.Word (Word32, Word64)
 import Data.List (intersperse)
 import Data.Maybe (listToMaybe, fromJust, isNothing, isJust, fromMaybe)
-import qualified Data.ByteString as BS (ByteString)
 import qualified Data.HashMap.Strict as H (toList)
 import qualified Data.Vector as V (toList)
 import qualified Data.Text as T (pack, unpack, splitOn)
 import qualified Data.Yaml as YAML (encode)
-import Data.Conduit (Sink, ($$), await)
-import Data.Conduit.Network 
-    ( runTCPClient
-    , clientSettings
-    , appSink
-    , appSource
-    )
-import qualified Data.Conduit.Binary as CB (sourceLbs)
+import Data.Conduit (($$), ($=))
+import Data.Conduit.Network (clientSettings)
+import qualified Data.Conduit.List as CL
 import Data.Aeson 
     ( Value (String)
     , FromJSON
@@ -71,6 +65,7 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Transaction
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
+import Network.Haskoin.Stratum
 
 type Args = [String]
 
@@ -481,7 +476,9 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
     logFile dir    = concat [dir, "/stdout.log"]
     configFile dir = concat [dir, "/config"]
 
-sendRequest :: WalletRequest -> IO (Either String WalletResponse)
+sendRequest :: WalletRequest
+            -- -> IO (RPCInMsg WalletRequest () () WalletResponse)
+            -> IO (Either String WalletResponse)
 sendRequest req = do
     dir <- getWorkDir
     let configFile = concat [dir, "/config"]
@@ -497,21 +494,17 @@ sendRequest req = do
         ]
     let host       = fromString $ configBind $ fromJust configM
         port       = configPort $ fromJust configM
-    runTCPClient (clientSettings port host) go
+    head <$> runRPCClientTCP True True (clientSettings port host) go
   where
-    source = CB.sourceLbs $ toLazyBS $ encodeWalletRequest req 0
+    source = CL.sourceList [RPCMReq (buildRPCReq req)]
+    go :: RPCConduits WalletRequest () () () () WalletResponse IO
+       -> IO [Either String WalletResponse]
     go server = do
-        source $$ appSink server
-        appSource server $$ decodeResult req
-
-decodeResult :: Monad m 
-             => WalletRequest
-             -> Sink BS.ByteString m (Either String WalletResponse)
-decodeResult req = do
-    bs <- await 
-    if isJust bs
-        then return $ join $ fst <$> decodeWalletResponse req (fromJust bs) 
-        else decodeResult req
+        source $$ rpcMsgSink server
+        rpcMsgSource server $= CL.map f $$ CL.consume
+    f (RPCInErr (RPCErr (RPCErrObj m _ _) _)) = Left m
+    f (RPCInMsg (RPCMRes (RPCRes rs _)) _) = Right rs
+    f _ = undefined
 
 encodeTxJSON :: Tx -> Value
 encodeTxJSON tx@(Tx v is os i) = object

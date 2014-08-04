@@ -9,8 +9,7 @@ import Data.Maybe
 import Control.Monad
 import Control.Applicative 
 
-import Data.Word (Word8)
-import Data.Bits (clearBit, testBit)
+import Data.Bits (clearBit)
 import qualified Data.ByteString as BS 
     ( ByteString
     , pack
@@ -110,16 +109,13 @@ instance Arbitrary WalletRequest where
         , Rescan . Just <$> arbitrary
         ]
 
-data RequestPair = RequestPair WalletRequest (Either String WalletResponse)
+data RequestPair = RequestPair WalletRequest WalletResponse
     deriving (Eq, Show, Read)
 
 instance Arbitrary RequestPair where
     arbitrary = do
         req <- arbitrary
-        res <- frequency
-            [ (1, Left <$> arbitrary)
-            , (9, Right <$> go req)  -- Generate Right more frequently
-            ]
+        res <- go req
         return $ RequestPair req res
       where
         go (NewWallet _ _ _) = ResMnemonic <$> arbitrary

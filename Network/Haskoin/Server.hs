@@ -7,6 +7,7 @@ import System.Directory
     , doesFileExist
     )
 
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad 
 import Control.Monad.Trans 
 import Control.Monad.Trans.Resource
@@ -17,13 +18,10 @@ import Control.Concurrent.MVar
 import Control.Concurrent.Async
 import Control.Exception
 
+import Data.Aeson.Types (Value(Null))
 import Data.Maybe
 import Data.String (fromString)
-import Data.Conduit 
-    ( Sink
-    , awaitForever
-    , ($$), ($=), (=$)
-    )
+import Data.Conduit (Sink, awaitForever, ($$), ($=))
 import Data.Conduit.Network
 import Data.Conduit.TMChan
 import qualified Data.Text as T
@@ -33,6 +31,8 @@ import Database.Persist
 import Database.Persist.Sql
 import Database.Persist.Sqlite
 import Database.Sqlite (open)
+
+import Network.Haskoin.Stratum
 
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
@@ -80,35 +80,30 @@ runServer = do
         initWalletDB
 
     if offline || null hosts
+      then
         -- Launch JSON-RPC server
-        then runTCPServer (serverSettings port bind) $ \client ->
-            appSource client
-                -- TODO: The server ignores bad requests here. 
-                $= CL.mapMaybe (eitherToMaybe . decodeWalletRequest)
-                $$ CL.mapM (processWalletRequest mvar Nothing fp offline)
-                =$ CL.map (\(res,i) -> encodeWalletResponse res i)
-                =$ appSink client
+        runRPCServerTCP True (serverSettings port bind) $ \client ->
+            rpcMsgSource client
+                $= CL.mapM (processWalletRequest mvar Nothing fp offline)
+                $$ rpcMsgSink client
+      else
         -- Launch SPV node
-        else withAsyncNode dir batch $ \eChan rChan _ -> do
-            let eventPipe = sourceTBMChan eChan $$ 
-                            processNodeEvents mvar rChan fp
-            withAsync eventPipe $ \_ -> do
-                bloom <- runDB mvar $ walletBloomFilter fp
-                atomically $ do
-                    -- Bloom filter
-                    writeTBMChan rChan $ BloomFilterUpdate bloom
-                    -- Bitcoin hosts to connect to
-                    forM_ hosts $ \(h,p) -> writeTBMChan rChan $ ConnectNode h p
+        withAsyncNode dir batch $ \eChan rChan _ -> do
+        let eventPipe = sourceTBMChan eChan $$ 
+                        processNodeEvents mvar rChan fp
+        withAsync eventPipe $ \_ -> do
+        bloom <- runDB mvar $ walletBloomFilter fp
+        atomically $ do
+            -- Bloom filter
+            writeTBMChan rChan $ BloomFilterUpdate bloom
+            -- Bitcoin hosts to connect to
+            forM_ hosts $ \(h,p) -> writeTBMChan rChan $ ConnectNode h p
 
-                -- Launch JSON-RPC server
-                runTCPServer (serverSettings port bind) $ \client ->
-                    appSource client
-                        -- TODO: The server ignores bad requests here. 
-                        $= CL.mapMaybe (eitherToMaybe . decodeWalletRequest)
-                        $$ CL.mapM 
-                            (processWalletRequest mvar (Just rChan) fp offline)
-                        =$ CL.map (\(res,i) -> encodeWalletResponse res i)
-                        =$ appSink client
+        -- Launch JSON-RPC server
+        runRPCServerTCP True (serverSettings port bind) $ \client ->
+            rpcMsgSource client
+                $= CL.mapM (processWalletRequest mvar (Just rChan) fp offline)
+                $$ rpcMsgSink client
 
 processNodeEvents :: MVar Connection -> TBMChan NodeRequest -> Double
                   -> Sink NodeEvent IO ()
@@ -121,9 +116,9 @@ processNodeEvents mvar rChan fp = awaitForever $ \e -> do
             after <- count ([] :: [Filter (DbAddressGeneric b)])
             -- Update the bloom filter if new addresses were generated
             when (after > before) $ do
-                bloom <- walletBloomFilter fp
-                liftIO $ atomically $ do
-                    writeTBMChan rChan $ BloomFilterUpdate bloom
+            bloom <- walletBloomFilter fp
+            liftIO $ atomically $ do
+            writeTBMChan rChan $ BloomFilterUpdate bloom
                 
     when (isLeft res) $ liftIO $ print $ fromLeft res
   where
@@ -134,18 +129,29 @@ processWalletRequest :: MVar Connection
                      -> Maybe (TBMChan NodeRequest)
                      -> Double
                      -> Bool
-                     -> (WalletRequest, Int) 
-                     -> IO (Either String WalletResponse, Int)
-processWalletRequest mvar rChanM fp offline (wr, i) = do
-    res <- tryJust f $ runDB mvar $ go wr
-    return (res, i)
+                     -- -> (WalletRequest, Int) 
+                     -> RPCInMsg () WalletRequest () ()
+                     -- -> IO (Either String WalletResponse, Int)
+                     -> IO (RPCMsg () () WalletResponse)
+processWalletRequest mvar rChanM fp offline inmsg =
+    handle f $ runDB mvar $ g inmsg
   where
     rChan = fromJust rChanM
+
     unlessOffline action
         | offline = liftIO $ throwIO $ WalletException 
             "This operation is not supported in offline mode"
         | otherwise = action
-    f (SomeException e)  = Just $ show e
+
+    f (SomeException e) = return $ RPCMErr (RPCErr o Nothing)
+      where
+        o = RPCErrObj (show e) (-32603) Null
+
+    g (RPCInErr e) = return $ RPCMErr e
+    g (RPCInMsg (RPCMReq rq) Nothing) =
+        RPCMRes <$> (RPCRes <$> go (getReqParams rq) <*> return (getReqId rq))
+    g _ = undefined
+
     go (NewWallet n p m) = unlessOffline $
         liftM ResMnemonic $ newWalletMnemo n p m
     go (GetWallet n) = unlessOffline $ liftM ResWallet $ getWallet n

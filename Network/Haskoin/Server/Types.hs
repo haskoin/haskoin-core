@@ -5,34 +5,27 @@
 module Network.Haskoin.Server.Types 
 ( WalletRequest(..)
 , WalletResponse(..)
-, encodeWalletRequest
-, decodeWalletRequest
-, encodeWalletResponse
-, decodeWalletResponse
 )
 where
 
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad (mzero)
 
 import Data.Word (Word32, Word64)
 import Data.Maybe (isJust, fromJust)
 import Data.Aeson 
-    ( Value (Object, String, Null)
+    ( Value (Object, Null)
     , object
     , ToJSON
     , toJSON
-    , encode
-    , eitherDecodeStrict
+    , withObject
     , (.:), (.:?), (.=)
     )
-import Data.Aeson.Types (Parser, parseEither)
-import qualified Data.Text as T (Text, unpack)
-import qualified Data.ByteString as BS (ByteString)
+import Data.Aeson.Types (Parser)
 
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Stratum
-import Network.Haskoin.Util
 
 import Network.Haskoin.Wallet.Tx
 import Network.Haskoin.Wallet.Types
@@ -196,14 +189,16 @@ instance ToJSON WalletResponse where
         ResBalance b -> object [ "balance" .= b ]
         ResRescan t -> object [ "timestamp" .= t ]
 
-instance RPCRequest WalletRequest String WalletResponse where
-    rpcMethod   = walletMethod
-    parseRPCParams = parseWalletRequest
-    parseRPCResult = parseWalletResponse
-    parseRPCError _ (String s) = return $ T.unpack s
-    parseRPCError _ _          = mzero
+instance ToRPCReq WalletRequest where
+    rpcReqMethod   = walletMethod
 
-walletMethod :: WalletRequest -> T.Text
+instance FromRPCReq WalletRequest where
+    fromRPCReqParams = parseWalletRequest
+
+instance FromRPCResult WalletResponse where
+    parseRPCResult = parseWalletResponse
+
+walletMethod :: WalletRequest -> Method
 walletMethod wr = case wr of
     NewWallet _ _ _          -> "network.haskoin.wallet.newwallet"
     GetWallet _              -> "network.haskoin.wallet.getwallet"
@@ -229,197 +224,177 @@ walletMethod wr = case wr of
     Balance _                -> "network.haskoin.wallet.balance"
     Rescan _                 -> "network.haskoin.wallet.rescan"
 
-parseWalletRequest :: Method -> Value -> Parser WalletRequest
-parseWalletRequest m v = case (m,v) of
-    ("network.haskoin.wallet.newwallet", Object o) -> do
-        n <- o .:  "walletname"
-        p <- o .:  "passphrase"
-        x <- o .:? "mnemonic"
-        return $ NewWallet n p x
-    ("network.haskoin.wallet.getwallet", Object o) -> do
-        n <- o .: "walletname"
-        return $ GetWallet n
-    ("network.haskoin.wallet.walletlist", Null) -> return WalletList
-    ("network.haskoin.wallet.newaccount", Object o) -> do
-        w <- o .:  "walletname"
-        n <- o .:  "accountname"
-        return $ NewAccount w n
-    ("network.haskoin.wallet.newmsaccount", Object o) -> do
-        w  <- o .:  "walletname"
-        n  <- o .:  "accountname"
-        r  <- o .:  "required"
-        t  <- o .:  "total"
-        ks <- o .:  "keys"
-        let keysM = mapM xPubImport ks
-        maybe mzero (return . (NewMSAccount w n r t)) keysM
-    ("network.haskoin.wallet.newreadaccount", Object o) -> do
-        n <- o .: "accountname" 
-        k <- o .: "key"
-        let keyM = xPubImport k
-        maybe mzero (return . NewReadAccount n) keyM
-    ("network.haskoin.wallet.newreadmsaccount", Object o) -> do
-        n  <- o .:  "accountname"
-        r  <- o .:  "required"
-        t  <- o .:  "total"
-        ks <- o .:  "keys"
-        let keysM = mapM xPubImport ks
-        maybe mzero (return . (NewReadMSAccount n r t)) keysM
-    ("network.haskoin.wallet.addaccountkeys", Object o) -> do
-        n  <- o .: "accountname"
-        ks <- o .: "keys"
-        let keysM = mapM xPubImport ks
-        maybe mzero (return . (AddAccountKeys n)) keysM
-    ("network.haskoin.wallet.getaccount", Object o) -> do
-        n <- o .: "accountname"
-        return $ GetAccount n
-    ("network.haskoin.wallet.accountlist", Null) -> return AccountList
-    ("network.haskoin.wallet.genaddress", Object o) -> do
-        n <- o .: "accountname"
-        i <- o .: "count"
-        return $ GenAddress n i
-    ("network.haskoin.wallet.addresslabel", Object o) -> do
-        n <- o .: "accountname"
-        i <- o .: "index"
-        l <- o .: "label"
-        return $ AddressLabel n i l
-    ("network.haskoin.wallet.addresslist", Object o) -> do
-        n <- o .: "accountname"
-        return $ AddressList n
-    ("network.haskoin.wallet.addresspage", Object o) -> do
-        n <- o .: "accountname"
-        p <- o .: "page"
-        a <- o .: "addrperpage"
-        return $ AddressPage n p a
-    ("network.haskoin.wallet.txlist", Object o) -> do
-        n <- o .: "accountname"
-        return $ TxList n
-    ("network.haskoin.wallet.txpage", Object o) -> do
-        n <- o .: "accountname"
-        p <- o .: "page"
-        t <- o .: "txperpage"
-        return $ TxPage n p t
-    ("network.haskoin.wallet.txsend", Object o) -> do
-        n  <- o .: "accountname"
-        xs <- o .: "recipients"
-        f  <- o .: "fee"
-        return $ TxSend n xs f
-    ("network.haskoin.wallet.txsign", Object o) -> do
-        n  <- o .: "accountname"
-        tx <- o .: "tx"
-        return $ TxSign n tx
-    ("network.haskoin.wallet.getsigblob", Object o) -> do
-        n <- o .: "accountname"
-        h <- o .: "txhash"
-        return $ GetSigBlob n h
-    ("network.haskoin.wallet.signsigblob", Object o) -> do
-        n <- o .: "accountname"
-        b <- o .: "sigblob"
-        return $ SignSigBlob n b
-    ("network.haskoin.wallet.txget", Object o) -> do
-        h <- o .: "txhash"
-        return $ TxGet h
-    ("network.haskoin.wallet.balance", Object o) -> do
-        n <- o .: "accountname"
-        return $ Balance n
-    ("network.haskoin.wallet.rescan", Object o) -> do
-        t <- o .: "timestamp"
-        return $ Rescan $ Just t
-    ("network.haskoin.wallet.rescan", Null) -> return $ Rescan Nothing
+parseWalletRequest :: Method -> Maybe (Value -> Parser WalletRequest)
+parseWalletRequest "network.haskoin.wallet.newwallet" = Just $
+    withObject "newwallet" $ \o ->
+        NewWallet
+            <$> o .: "walletname"
+            <*> o .: "passphrase"
+            <*> o .:? "mnemonic"
+parseWalletRequest "network.haskoin.wallet.getwallet" = Just $
+    withObject "getwallet" $ \o ->
+        GetWallet
+            <$> o .: "walletname"
+parseWalletRequest "network.haskoin.wallet.walletlist" = Just $
+    const $ return $
+        WalletList
+parseWalletRequest "network.haskoin.wallet.newaccount" = Just $
+    withObject "newaccount" $ \o ->
+        NewAccount
+            <$> o .: "walletname"
+            <*> o .: "accountname"
+parseWalletRequest "network.haskoin.wallet.newmsaccount" = Just $
+    withObject "newmsaccount" $ \o ->
+        NewMSAccount
+            <$> o .: "walletname"
+            <*> o .: "accountname"
+            <*> o .: "required"
+            <*> o .: "total"
+            <*> (o .: "keys" >>= maybe mzero return . mapM xPubImport)
+parseWalletRequest "network.haskoin.wallet.newreadaccount" = Just $
+    withObject "newreadaccount" $ \o ->
+        NewReadAccount
+            <$> o .: "accountname"
+            <*> (o .: "key" >>= maybe mzero return . xPubImport)
+parseWalletRequest "network.haskoin.wallet.newreadmsaccount" = Just $
+    withObject "newreadmsaccount" $ \o ->
+        NewReadMSAccount
+            <$> o .: "accountname"
+            <*> o .: "required"
+            <*> o .: "total"
+            <*> (o .: "keys" >>= maybe mzero return . mapM xPubImport)
+parseWalletRequest "network.haskoin.wallet.addaccountkeys" = Just $
+    withObject "addaccountkeys" $ \o ->
+        AddAccountKeys
+            <$> o .: "accountname"
+            <*> (o .: "keys" >>= maybe mzero return . mapM xPubImport)
+parseWalletRequest "network.haskoin.wallet.getaccount" = Just $
+    withObject "getaccount" $ \o ->
+        GetAccount
+            <$> o .: "accountname"
+parseWalletRequest "network.haskoin.wallet.accountlist" = Just $
+    const $ return $
+        AccountList
+parseWalletRequest "network.haskoin.wallet.genaddress" = Just $
+    withObject "genaddress" $ \o ->
+        GenAddress
+            <$> o .: "accountname"
+            <*> o .: "count"
+parseWalletRequest "network.haskoin.wallet.addresslabel" = Just $
+    withObject "addresslabel" $ \o ->
+        AddressLabel
+            <$> o .: "accountname"
+            <*> o .: "index"
+            <*> o .: "label"
+parseWalletRequest "network.haskoin.wallet.addresslist" = Just $
+    withObject "addresslist" $ \o ->
+        AddressList
+            <$> o .: "accountname"
+parseWalletRequest "network.haskoin.wallet.addresspage" = Just $
+    withObject "addresspage" $ \o ->
+        AddressPage
+            <$> o .: "accountname"
+            <*> o .: "page"
+            <*> o .: "addrperpage"
+parseWalletRequest "network.haskoin.wallet.txlist" = Just $
+    withObject "txlist" $ \o ->
+        TxList
+            <$> o .: "accountname"
+parseWalletRequest "network.haskoin.wallet.txpage" = Just $
+    withObject "txpage" $ \o ->
+        TxPage
+            <$> o .: "accountname"
+            <*> o .: "page"
+            <*> o .: "txperpage"
+parseWalletRequest "network.haskoin.wallet.txsend" = Just $
+    withObject "txsend" $ \o ->
+        TxSend
+            <$> o .: "accountname"
+            <*> o .: "recipients"
+            <*> o .: "fee"
+parseWalletRequest "network.haskoin.wallet.txsign" = Just $
+    withObject "txsign" $ \o ->
+        TxSign
+            <$> o .: "accountname"
+            <*> o .: "tx"
+parseWalletRequest "network.haskoin.wallet.getsigblob" = Just $
+    withObject "getsigblob" $ \o ->
+        GetSigBlob
+            <$> o .: "accountname"
+            <*> o .: "txhash"
+parseWalletRequest "network.haskoin.wallet.signsigblob" = Just $
+    withObject "signsigblob" $ \o ->
+        SignSigBlob
+            <$> o .: "accountname"
+            <*> o .: "sigblob"
+parseWalletRequest "network.haskoin.wallet.txget" = Just $
+    withObject "txget" $ \o ->
+        TxGet
+            <$> o .: "txhash"
+parseWalletRequest "network.haskoin.wallet.balance" = Just $
+    withObject "balance" $ \o ->
+        Balance
+            <$> o .: "accountname"
+parseWalletRequest "network.haskoin.wallet.rescan" = Just $ \v -> case v of
+    Null -> return $
+        Rescan Nothing
+    (Object o) ->
+        Rescan
+            <$> o .:? "timestamp"
     _ -> mzero
+parseWalletRequest _ = mzero
 
-parseWalletResponse :: WalletRequest -> Value -> Parser WalletResponse
-parseWalletResponse w v = case (w, v) of
-    -- TODO: refactor this? We decode many times the same type.
-    (NewWallet _ _ _, Object o) -> do
-        m <- o .: "mnemonic" 
-        return $ ResMnemonic m
-    (GetWallet _, Object o) -> do
-        x <- o .: "wallet"
-        return $ ResWallet x
-    (WalletList, Object o) -> do
-        ws <- o .: "walletlist"
-        return $ ResWalletList ws
-    (NewAccount _ _, Object o) -> do
-        a <- o .: "account"
-        return $ ResAccount a
-    (NewMSAccount _ _ _ _ _, Object o) -> do
-        a <- o .: "account"
-        return $ ResAccount a
-    (NewReadAccount _ _, Object o) -> do
-        a <- o .: "account"
-        return $ ResAccount a
-    (NewReadMSAccount _ _ _ _, Object o) -> do
-        a <- o .: "account"
-        return $ ResAccount a
-    (AddAccountKeys _ _, Object o) -> do
-        a <- o .: "account"
-        return $ ResAccount a
-    (GetAccount _, Object o) -> do
-        a <- o .: "account"
-        return $ ResAccount a
-    (AccountList, Object o) -> do
-        as <- o .: "accountlist"
-        return $ ResAccountList as
-    (GenAddress _ _, Object o) -> do
-        as <- o .: "addresslist" 
-        return $ ResAddressList as
-    (AddressLabel _ _ _, Object o) -> do
-        a <- o .: "address"
-        return $ ResAddress a
-    (AddressList _, Object o) -> do
-        as <- o .: "addresslist"
-        return $ ResAddressList as
-    (AddressPage _ _ _, Object o) -> do
-        as <- o .: "addresspage"
-        m  <- o .: "maxpage"
-        return $ ResAddressPage as m
-    (TxList _, Object o) -> do
-        xs <- o .: "txlist"
-        return $ ResAccTxList xs
-    (TxPage _ _ _, Object o) -> do
-        xs <- o .: "txpage"
-        m  <- o .: "maxpage"
-        return $ ResAccTxPage xs m
-    (TxSend _ _ _, Object o) -> do
-        h <- o .: "txhash"
-        b <- o .: "complete"
-        return $ ResTxHashStatus h b
-    (TxSign _ _, Object o) -> do
-        h <- o .: "txhash"
-        b <- o .: "complete"
-        return $ ResTxHashStatus h b
-    (GetSigBlob _ _, Object o) -> do
-        b <- o .: "sigblob"
-        return $ ResSigBlob b
-    (SignSigBlob _ _, Object o) -> do
-        t <- o .: "tx"
-        b <- o .: "complete"
-        return $ ResTxStatus t b
-    (TxGet _, Object o) -> do
-        tx <- o .: "tx"
-        return $ ResTx tx
-    (Balance _, Object o) -> do
-        b <- o .: "balance"
-        return $ ResBalance b
-    (Rescan _, Object o) -> do
-        t <- o .: "timestamp"
-        return $ ResRescan t
-    _ -> mzero
-
-encodeWalletRequest :: WalletRequest -> Int -> BS.ByteString
-encodeWalletRequest wr i = toStrictBS $ encode $ encodeRPCRequest wr i
-
-decodeWalletRequest :: BS.ByteString -> Either String (WalletRequest, Int)
-decodeWalletRequest bs = parseEither parseRPCRequest =<< eitherDecodeStrict bs
-
-encodeWalletResponse :: Either String WalletResponse -> Int -> BS.ByteString
-encodeWalletResponse resE i = toStrictBS $ encode $ case resE of
-    Left err  -> encodeRPCError err i
-    Right res -> encodeRPCResponse res i
-
-decodeWalletResponse :: WalletRequest -> BS.ByteString 
-                     -> Either String (Either String WalletResponse, Int)
-decodeWalletResponse req bs = do
-    v <- eitherDecodeStrict bs
-    parseEither (parseRPCResponse req) v
+parseWalletResponse :: Method -> Value -> Parser WalletResponse
+parseWalletResponse "network.haskoin.wallet.newwallet" =
+    withObject "newwallet" $ \o -> ResMnemonic <$> o .: "mnemonic"
+parseWalletResponse "network.haskoin.wallet.getwallet" =
+    withObject "getwallet" $ \o -> ResWallet <$> o .: "wallet"
+parseWalletResponse "network.haskoin.wallet.walletlist" =
+    withObject "walletlist" $ \o -> ResWalletList <$> o .: "walletlist"
+parseWalletResponse "network.haskoin.wallet.newaccount" =
+    withObject "newaccount" $ \o -> ResAccount <$> o .: "account"
+parseWalletResponse "network.haskoin.wallet.newmsaccount" =
+    withObject "newmsaccount" $ \o -> ResAccount <$> o .: "account"
+parseWalletResponse "network.haskoin.wallet.newreadaccount" =
+    withObject "newreadaccount" $ \o -> ResAccount <$> o .: "account"
+parseWalletResponse "network.haskoin.wallet.newreadmsaccount" =
+    withObject "newreadmsaccount" $ \o -> ResAccount <$> o .: "account"
+parseWalletResponse "network.haskoin.wallet.addaccountkeys" =
+    withObject "addaccountkeys" $ \o -> ResAccount <$> o .: "account"
+parseWalletResponse "network.haskoin.wallet.getaccount" =
+    withObject "getaccount" $ \o -> ResAccount <$> o .: "account"
+parseWalletResponse "network.haskoin.wallet.accountlist" =
+    withObject "accountlist" $ \o -> ResAccountList <$> o .: "accountlist"
+parseWalletResponse "network.haskoin.wallet.genaddress" =
+    withObject "genaddress" $ \o -> ResAddressList <$> o .: "addresslist"
+parseWalletResponse "network.haskoin.wallet.addresslabel" =
+    withObject "addresslabel" $ \o -> ResAddress <$> o .: "address"
+parseWalletResponse "network.haskoin.wallet.addresslist" =
+    withObject "addresslist" $ \o -> ResAddressList <$> o .: "addresslist"
+parseWalletResponse "network.haskoin.wallet.addresspage" =
+    withObject "addresspage" $ \o -> ResAddressPage <$> o .: "addresspage"
+                                                    <*> o .: "maxpage"
+parseWalletResponse "network.haskoin.wallet.txlist" =
+    withObject "txlist" $ \o -> ResAccTxList <$> o .: "txlist"
+parseWalletResponse "network.haskoin.wallet.txpage" =
+    withObject "txpage" $ \o -> ResAccTxPage <$> o .: "txpage"
+                                             <*> o .: "maxpage"
+parseWalletResponse "network.haskoin.wallet.txsend" =
+    withObject "txsend" $ \o -> ResTxHashStatus <$> o .: "txhash"
+                                                <*> o .: "complete"
+parseWalletResponse "network.haskoin.wallet.txsign" =
+    withObject "txsign" $ \o -> ResTxHashStatus <$> o .: "txhash"
+                                                <*> o .: "complete"
+parseWalletResponse "network.haskoin.wallet.getsigblob" =
+    withObject "getsigblob" $ \o -> ResSigBlob <$> o .: "sigblob"
+parseWalletResponse "network.haskoin.wallet.signsigblob" =
+    withObject "signsigblob" $ \o -> ResTxStatus <$> o .: "tx"
+                                                 <*> o .: "complete"
+parseWalletResponse "network.haskoin.wallet.txget" =
+    withObject "txget" $ \o -> ResTx <$> o .: "tx"
+parseWalletResponse "network.haskoin.wallet.balance" =
+    withObject "balance" $ \o -> ResBalance <$> o .: "balance"
+parseWalletResponse "network.haskoin.wallet.rescan" =
+    withObject "rescan" $ \o -> ResRescan <$> o .: "timestamp"
+parseWalletResponse _ = const mzero
 

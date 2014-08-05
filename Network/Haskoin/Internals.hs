@@ -24,7 +24,6 @@ module Network.Haskoin.Internals
 , module Network.Haskoin.Script.Evaluator
 , module Network.Haskoin.Stratum.RPC
 , module Network.Haskoin.Stratum.Types
-, module Network.Haskoin.Stratum.Client
 , module Network.Haskoin.Transaction.Builder
 ) where
 
@@ -49,5 +48,4 @@ import Network.Haskoin.Script.SigHash
 import Network.Haskoin.Script.Evaluator
 import Network.Haskoin.Stratum.RPC
 import Network.Haskoin.Stratum.Types
-import Network.Haskoin.Stratum.Client
 import Network.Haskoin.Transaction.Builder

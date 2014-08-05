@@ -183,6 +183,7 @@ queryRPC :: (ToJSON qo, ToRPCReq qo, FromRPCResult ri)
          -> IO [RPCInMsg qo () () ri]
 queryRPC r1 qs rc = do
     withAsync (rpcMsgSource rc $$ CL.consume) $ \a -> do
+    link a
     CL.sourceList qs $= CL.map r $$ rpcMsgSink rc
     wait a
   where
@@ -217,14 +218,14 @@ runRPCConduits r1 d rpcSnk rpcSrc f = do
     rpcThread outSrc inbSnk = do
         qs <- atomically initRPCSession
         withAsync (outThread qs outSrc) $ \a -> do
+        link a
         _ <- rpcSrc $= rpcDecodeMsg r1 d qs $$ inbSnk
         wait a
     outThread qs outSrc =
         outSrc $= rpcNewMsg qs $= rpcEncode $$ rpcSnk
     g inbSrc outSnk a = do
-        let src = toProducer inbSrc
-            snk = toConsumer outSnk
-        x <- f (RPCConduits src snk)
+        link a
+        x <- f (RPCConduits inbSrc outSnk)
         _ <- wait a
         return x
 

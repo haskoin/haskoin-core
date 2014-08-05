@@ -504,6 +504,7 @@ sendRequest req = do
         rpcMsgSource server $= CL.map f $$ CL.consume
     f (RPCInErr (RPCErr (RPCErrObj m _ _) _)) = Left m
     f (RPCInMsg (RPCMRes (RPCRes rs _)) _) = Right rs
+    f (RPCInMsg (RPCMErr (RPCErr (RPCErrObj m _ _) _)) _) = Left m
     f _ = undefined
 
 encodeTxJSON :: Tx -> Value

@@ -143,9 +143,12 @@ processWalletRequest mvar rChanM fp offline inmsg =
             "This operation is not supported in offline mode"
         | otherwise = action
 
-    f (SomeException e) = return $ RPCMErr (RPCErr o Nothing)
+    f (SomeException e) = return $ RPCMErr (RPCErr o i)
       where
         o = RPCErrObj (show e) (-32603) Null
+        i = case inmsg of
+            RPCInMsg (RPCMReq rq) Nothing -> Just (getReqId rq)
+            _ -> Nothing
 
     g (RPCInErr e) = return $ RPCMErr e
     g (RPCInMsg (RPCMReq rq) Nothing) =

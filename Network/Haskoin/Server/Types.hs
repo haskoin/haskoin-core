@@ -23,9 +23,10 @@ import Data.Aeson
     )
 import Data.Aeson.Types (Parser)
 
+import Network.JsonRpc
+
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
-import Network.Haskoin.Stratum
 
 import Network.Haskoin.Wallet.Tx
 import Network.Haskoin.Wallet.Types
@@ -34,29 +35,29 @@ import Network.Haskoin.Wallet.Types
 
 -- TODO: Create NFData intstances for WalletRequest and WalletResponse
 data WalletRequest 
-    = NewWallet WalletName String (Maybe String)
-    | GetWallet WalletName
+    = NewWallet !WalletName !String !(Maybe String)
+    | GetWallet !WalletName
     | WalletList 
-    | NewAccount WalletName AccountName
-    | NewMSAccount WalletName AccountName Int Int [XPubKey]
-    | NewReadAccount AccountName XPubKey
-    | NewReadMSAccount AccountName Int Int [XPubKey]
-    | AddAccountKeys AccountName [XPubKey]
-    | GetAccount AccountName
+    | NewAccount !WalletName !AccountName
+    | NewMSAccount !WalletName !AccountName !Int !Int ![XPubKey]
+    | NewReadAccount !AccountName !XPubKey
+    | NewReadMSAccount !AccountName !Int !Int ![XPubKey]
+    | AddAccountKeys !AccountName ![XPubKey]
+    | GetAccount !AccountName
     | AccountList
-    | GenAddress AccountName Int
-    | AddressLabel AccountName KeyIndex String
-    | AddressList AccountName
-    | AddressPage AccountName Int Int
-    | TxList AccountName
-    | TxPage AccountName Int Int
-    | TxSend AccountName [(Address, Word64)] Word64
-    | TxSign AccountName Tx
-    | GetSigBlob AccountName TxHash
-    | SignSigBlob AccountName SigBlob
-    | TxGet TxHash
-    | Balance AccountName
-    | Rescan (Maybe Word32)
+    | GenAddress !AccountName !Int
+    | AddressLabel !AccountName !KeyIndex !String
+    | AddressList !AccountName
+    | AddressPage !AccountName !Int !Int
+    | TxList !AccountName
+    | TxPage !AccountName !Int !Int
+    | TxSend !AccountName ![(Address, Word64)] !Word64
+    | TxSign !AccountName !Tx
+    | GetSigBlob !AccountName !TxHash
+    | SignSigBlob !AccountName !SigBlob
+    | TxGet !TxHash
+    | Balance !AccountName
+    | Rescan !(Maybe Word32)
     deriving (Eq, Show, Read)
 
 instance ToJSON WalletRequest where
@@ -140,22 +141,22 @@ instance ToJSON WalletRequest where
         Rescan Nothing  -> Null
 
 data WalletResponse
-    = ResMnemonic String
-    | ResWallet Wallet
-    | ResWalletList [Wallet]
-    | ResAccount Account
-    | ResAccountList [Account]
-    | ResAddress PaymentAddress
-    | ResAddressList [PaymentAddress]
-    | ResAddressPage [PaymentAddress] Int -- Int = Max page number
-    | ResAccTxList [AccTx]
-    | ResAccTxPage [AccTx] Int -- Int = Max page number
-    | ResTxStatus Tx Bool
-    | ResTxHashStatus TxHash Bool
-    | ResTx Tx
-    | ResSigBlob SigBlob
-    | ResBalance Word64
-    | ResRescan Word32
+    = ResMnemonic !String
+    | ResWallet !Wallet
+    | ResWalletList ![Wallet]
+    | ResAccount !Account
+    | ResAccountList ![Account]
+    | ResAddress !PaymentAddress
+    | ResAddressList ![PaymentAddress]
+    | ResAddressPage ![PaymentAddress] !Int -- Int = Max page number
+    | ResAccTxList ![AccTx]
+    | ResAccTxPage ![AccTx] !Int -- Int = Max page number
+    | ResTxStatus !Tx !Bool
+    | ResTxHashStatus !TxHash !Bool
+    | ResTx !Tx
+    | ResSigBlob !SigBlob
+    | ResBalance !Word64
+    | ResRescan !Word32
     deriving (Eq, Show, Read)
 
 instance ToJSON WalletResponse where
@@ -189,14 +190,14 @@ instance ToJSON WalletResponse where
         ResBalance b -> object [ "balance" .= b ]
         ResRescan t -> object [ "timestamp" .= t ]
 
-instance ToRPCReq WalletRequest where
-    rpcReqMethod   = walletMethod
+instance ToRequest WalletRequest where
+    requestMethod   = walletMethod
 
-instance FromRPCReq WalletRequest where
-    fromRPCReqParams = parseWalletRequest
+instance FromRequest WalletRequest where
+    paramsParser = parseWalletRequest
 
-instance FromRPCResult WalletResponse where
-    parseRPCResult = parseWalletResponse
+instance FromResponse WalletResponse where
+    parseResult = parseWalletResponse
 
 walletMethod :: WalletRequest -> Method
 walletMethod wr = case wr of

@@ -52,6 +52,8 @@ import qualified Data.Aeson.Encode.Pretty as JSON
     , confIndent
     )
 
+import Network.JsonRpc
+
 import Network.Haskoin.Server
 import Network.Haskoin.Server.Types
 import Network.Haskoin.Server.Config
@@ -65,7 +67,6 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Transaction
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
-import Network.Haskoin.Stratum
 
 type Args = [String]
 
@@ -477,7 +478,6 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
     configFile dir = concat [dir, "/config"]
 
 sendRequest :: WalletRequest
-            -- -> IO (RPCInMsg WalletRequest () () WalletResponse)
             -> IO (Either String WalletResponse)
 sendRequest req = do
     dir <- getWorkDir
@@ -494,17 +494,17 @@ sendRequest req = do
         ]
     let host       = fromString $ configBind $ fromJust configM
         port       = configPort $ fromJust configM
-    head <$> runRPCClientTCP True True (clientSettings port host) go
+    head <$> tcpClient V2 True (clientSettings port host) go
   where
-    source = CL.sourceList [RPCMReq (buildRPCReq req)]
-    go :: RPCConduits WalletRequest () () () () WalletResponse IO
+    source = CL.sourceList [MsgRequest (buildRequest V2 req)]
+    go :: AppConduits WalletRequest () () () () WalletResponse IO
        -> IO [Either String WalletResponse]
-    go server = do
-        source $$ rpcMsgSink server
-        rpcMsgSource server $= CL.map f $$ CL.consume
-    f (RPCInErr (RPCErr (RPCErrObj m _ _) _)) = Left m
-    f (RPCInMsg (RPCMRes (RPCRes rs _)) _) = Right rs
-    f (RPCInMsg (RPCMErr (RPCErr (RPCErrObj m _ _) _)) _) = Left m
+    go (src, snk) = do
+        source $$ snk
+        src $= CL.map f $$ CL.consume
+    f (IncomingError (ErrorObj _ m _ _ _)) = Left m
+    f (IncomingMsg (MsgResponse (Response _ rs _)) _) = Right rs
+    f (IncomingMsg (MsgError (ErrorObj _ m _ _ _)) _) = Left m
     f _ = undefined
 
 encodeTxJSON :: Tx -> Value

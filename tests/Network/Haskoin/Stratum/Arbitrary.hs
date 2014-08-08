@@ -1,64 +1,73 @@
 {-# LANGUAGE FlexibleInstances #-}
-module Network.Haskoin.Stratum.Arbitrary where
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+-- | Arbitrary instances and data types for use in test suites.
+module Network.Haskoin.Stratum.Arbitrary
+( -- * Arbitrary Data
+  ReqRes(..)
+) where
 
 import Control.Applicative
-import Data.Aeson.Types
+import Data.Aeson.Types hiding (Error)
 import qualified Data.HashMap.Strict as M
 import Data.Text (Text)
 import qualified Data.Text as T
-import Network.Haskoin.Crypto.Arbitrary ()
-import Network.Haskoin.Protocol
-import Network.Haskoin.Protocol.Arbitrary ()
-import Network.Haskoin.Stratum.RPC
-import Network.Haskoin.Stratum.Types
+import Network.JsonRpc
 import Test.QuickCheck.Arbitrary
 import Test.QuickCheck.Gen
+import Network.Haskoin.Protocol.Arbitrary ()
+import Network.Haskoin.Stratum
+import Network.Haskoin.Protocol hiding (Message)
 
-data ReqRes q r = ReqRes !(RPCReq q) !(RPCRes r)
+-- | A pair of a request and its corresponding response.
+-- Id and version should match.
+data ReqRes q r = ReqRes !(Request q) !(Response r)
     deriving (Show, Eq)
 
 instance Arbitrary (ReqRes Value Value) where
-    arbitrary = ReqRes <$> arbitrary <*> arbitrary
+    arbitrary = do
+        rq <- arbitrary
+        rs <- arbitrary
+        let rs' = rs { getResId = getReqId rq, getResVer = getReqVer rq }
+        return $ ReqRes rq rs'
 
 instance Arbitrary Text where
     arbitrary = T.pack <$> arbitrary
 
-instance (Arbitrary q, ToRPCReq q) => Arbitrary (RPCReq q) where
+instance Arbitrary Ver where
+    arbitrary = elements [V1, V2]
+
+instance (Arbitrary q, ToRequest q) => Arbitrary (Request q) where
     arbitrary = do
         q <- arbitrary
-        let m = rpcReqMethod q
-        oneof [ RPCReq  m q <$> arbitrary
-              , RPCReq1 m q <$> arbitrary
-              ]
+        v <- arbitrary
+        let m = requestMethod q
+        Request v m q <$> arbitrary
 
-instance (Arbitrary n, ToRPCNotif n) => Arbitrary (RPCNotif n) where
+instance (Arbitrary n, ToNotif n) => Arbitrary (Notif n) where
     arbitrary = do
         n <- arbitrary
-        let m = rpcNotifMethod n
-        oneof $ map return [RPCNotif m n, RPCNotif1 m n]
+        v <- arbitrary
+        let m = notifMethod n
+        return $ Notif v m n
 
-instance Arbitrary r => Arbitrary (RPCRes r) where
-    arbitrary = oneof [ RPCRes1 <$> arbitrary <*> arbitrary
-                      , RPCRes  <$> arbitrary <*> arbitrary ]
+instance Arbitrary r => Arbitrary (Response r) where
+    arbitrary = Response <$> arbitrary <*> arbitrary <*> arbitrary
 
-instance Arbitrary RPCErr where
-    arbitrary = oneof [ RPCErr1 <$> arbitrary <*> arbitrary
-                      , RPCErr  <$> arbitrary <*> arbitrary ]
+instance Arbitrary ErrorObj where
+    arbitrary = ErrorObj <$> arbitrary <*> arbitrary <*> arbitrary
+                         <*> arbitrary <*> arbitrary
 
 instance ( Arbitrary q, Arbitrary n, Arbitrary r
-         , ToRPCReq q, ToRPCNotif n, ToJSON r )
-    => Arbitrary (RPCMsg q n r)
+         , ToRequest q, ToNotif n, ToJSON r )
+    => Arbitrary (Message q n r)
   where
-    arbitrary = oneof [ RPCMReq   <$> arbitrary
-                      , RPCMNotif <$> arbitrary
-                      , RPCMRes   <$> arbitrary
-                      , RPCMErr   <$> arbitrary ]
+    arbitrary = oneof [ MsgRequest  <$> arbitrary
+                      , MsgNotif    <$> arbitrary
+                      , MsgResponse <$> arbitrary
+                      , MsgError    <$> arbitrary ]
 
-instance Arbitrary RPCId where
-    arbitrary = oneof [RPCIdInt <$> arbitrary, RPCIdTxt <$> arbitrary]
-
-instance Arbitrary RPCErrObj where
-    arbitrary = RPCErrObj <$> arbitrary <*> arbitrary <*> arbitrary
+instance Arbitrary Id where
+    arbitrary = oneof [IdInt <$> arbitrary, IdTxt <$> arbitrary]
 
 instance Arbitrary Value where
     arbitrary = resize 10 $ oneof [val, lsn, objn] where
@@ -73,12 +82,11 @@ instance Arbitrary Value where
         objn = toJSON . M.fromList <$> listOf psn
         psn  = (,) <$> (arbitrary :: Gen String) <*> oneof [val, ls, obj]
 
+
+
 --
 -- Stratum
 --
-
-data StratumPair = StratumPair !(RPCReq StratumRequest) !(RPCRes StratumResult)
-    deriving (Show, Eq)
 
 instance Arbitrary StratumTxInfo where
     arbitrary = StratumTxInfo <$> arbitrary <*> arbitrary
@@ -127,5 +135,5 @@ instance Arbitrary (ReqRes StratumRequest StratumResult) where
             , (,) <$> (StratumBcastTx     <$> arbitrary)
                   <*> (StratumBcastId     <$> arbitrary) ]
         i <- arbitrary
-        j <- arbitrary
-        return $ ReqRes (RPCReq (rpcReqMethod q) q i) (RPCRes s j)
+        ver <- arbitrary
+        return $ ReqRes (Request ver (requestMethod q) q i) (Response ver s i)

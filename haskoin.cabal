@@ -17,7 +17,9 @@ maintainer:            plaprade+hackage@gmail.com
 category:              Bitcoin, Finance, Network
 build-type:            Simple
 cabal-version:         >= 1.9.2
-extra-source-files:    tests/data/*.json
+extra-source-files:    tests/data/*.json,
+                       testnet/Network/Haskoin/Constants.hs,
+                       prodnet/Network/Haskoin/Constants.hs
 
 source-repository head
     type:     git
@@ -119,7 +121,8 @@ test-suite test-haskoin
                        Network.Haskoin.Transaction.Arbitrary,
                        Network.Haskoin.Stratum.Tests,
                        Network.Haskoin.Stratum.Units,
-                       Network.Haskoin.Stratum.Arbitrary
+                       Network.Haskoin.Stratum.Arbitrary,
+                       Network.Haskoin.Json.Tests
     build-depends:     aeson                      >= 0.7.0.5 && < 0.8,
                        async                      >= 2.0  && < 2.1,
                        base                       >= 4.6  && < 5, 

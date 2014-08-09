@@ -105,7 +105,7 @@ instance Arbitrary SigInput where
 data PKHashSigTemplate = PKHashSigTemplate Tx [SigInput] [PrvKey]
     deriving (Eq, Show)
 
-data MulSigTemplate = MulSigTemplate Tx [(ScriptOutput, SigInput)] [PrvKey]
+data MulSigTemplate = MulSigTemplate Tx [SigInput] [PrvKey]
     deriving (Eq, Show)
 
 -- Generates a private key that can sign a input using the OutPoint and SigInput
@@ -120,7 +120,7 @@ genPKHashData = do
     return (op, sigi, prv)
 
 -- Generates private keys that can sign an input using the OutPoint and SigInput
-genMSData :: Gen (OutPoint, ScriptOutput, SigInput, [PrvKey])
+genMSData :: Gen (OutPoint, SigInput, [PrvKey])
 genMSData = do
     (MSParam m n) <- arbitrary
     prv     <- vectorOf n arbitrary
@@ -132,7 +132,7 @@ genMSData = do
         script = PayScriptHash $ scriptAddr rdm
         sigi   = SigInput script op sh (Just rdm)
         perPrv = permutations prv !! perm
-    return (op, script, sigi, take m perPrv)
+    return (op, sigi, take m perPrv)
 
 genPayTo :: Gen (String, Word64)
 genPayTo = do
@@ -145,8 +145,8 @@ genPayTo = do
 -- Generates data for signing a PKHash transaction
 instance Arbitrary PKHashSigTemplate where
     arbitrary = do
-        inC   <- choose (0,5)
-        outC  <- choose (0,10)
+        inC   <- choose (0,3)
+        outC  <- choose (0,5)
         dat   <- nubBy (\a b -> fst3 a == fst3 b) <$> vectorOf inC genPKHashData
         perm  <- choose (0,max 0 $ length dat - 1)
         payTo <- vectorOf outC genPayTo
@@ -157,15 +157,12 @@ instance Arbitrary PKHashSigTemplate where
 -- Generates data for signing a P2SH transactions
 instance Arbitrary MulSigTemplate where
     arbitrary = do
-        inC   <- choose (0,5)
-        outC  <- choose (0,10)
-        dat   <- nubBy (\a b -> f1 a == f1 b) <$> vectorOf inC genMSData
+        inC   <- choose (0,2)
+        outC  <- choose (0,5)
+        dat   <- nubBy (\a b -> fst3 a == fst3 b) <$> vectorOf inC genMSData
         perm  <- choose (0,max 0 $ length dat - 1)
         payTo <- vectorOf outC genPayTo
-        let tx   = fromRight $ buildAddrTx (map f1 dat) payTo
-            perI = permutations (map (\(_,a,b,_) -> (a,b)) dat) !! perm
-        return $ MulSigTemplate tx perI (concat $ map f4 dat)
-      where
-        f1 (a,_,_,_) = a
-        f4 (_,_,_,d) = d
+        let tx   = fromRight $ buildAddrTx (map fst3 dat) payTo
+            perI = permutations (map snd3 dat) !! perm
+        return $ MulSigTemplate tx perI (concat $ map lst3 dat)
 

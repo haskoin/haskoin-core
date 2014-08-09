@@ -21,6 +21,7 @@ tests =
         , testProperty "testing chooseCoins function" testChooseCoins
         , testProperty "testing chooseMSCoins function" testChooseMSCoins
         ]
+    -- TODO: Turn these tests into unit tests as they are very heavy 
     , testGroup "Signing Transactions"
         [ testProperty "Sign and validate PKHash transactions" testSignTx
         , testProperty "Sign and validate Multisig transactions" testSignMS
@@ -84,36 +85,36 @@ testChooseMSCoins target kbfee (MSParam m n) xs =
 testSignTx :: PKHashSigTemplate -> Bool
 testSignTx (PKHashSigTemplate tx sigi prv)
     | null $ txIn tx = (isLeft res) && (isLeft resP)
-    | otherwise = (not $ verifyTx tx verData)
+    | otherwise = (not $ verifyStdTx tx verData)
                       && isRight res && stat
-                      && verifyTx txSig verData
+                      && verifyStdTx txSig verData
                       && isRight resP && (not statP)
-                      && (not $ verifyTx txSigP verData)
+                      && (not $ verifyStdTx txSigP verData)
                       && isRight resC && statC
-                      && verifyTx txSigC verData
+                      && verifyStdTx txSigC verData
     where res             = detSignTx tx sigi prv
           (txSig, stat)   = fromRight res
           resP            = detSignTx tx sigi (tail prv)
           (txSigP, statP) = fromRight resP
           resC            = detSignTx txSigP sigi [head prv]
           (txSigC, statC) = fromRight resC
-          verData = map (\(SigInput s o _ _) -> (encodeOutput s,o)) sigi
+          verData = map (\(SigInput s o _ _) -> (s,o)) sigi
          
 testSignMS :: MulSigTemplate -> Bool
-testSignMS (MulSigTemplate tx sigis prv)
+testSignMS (MulSigTemplate tx sigi prv)
     | null $ txIn tx = (isLeft res) && (isLeft resP)
-    | otherwise = (not $ verifyTx tx verData)
+    | otherwise = (not $ verifyStdTx tx verData)
                       && isRight res && stat
-                      && verifyTx txSig verData
+                      && verifyStdTx txSig verData
                       && isRight resP && (not statP)
-                      && (not $ verifyTx txSigP verData)
+                      && (not $ verifyStdTx txSigP verData)
                       && isRight resC && statC
-                      && verifyTx txSigC verData
-    where res             = detSignTx tx (map snd sigis) prv
+                      && verifyStdTx txSigC verData
+    where res             = detSignTx tx sigi prv
           (txSig, stat)   = fromRight res
-          resP            = detSignTx tx (map snd sigis) (tail prv)
+          resP            = detSignTx tx sigi (tail prv)
           (txSigP, statP) = fromRight resP
-          resC            = detSignTx txSigP (map snd sigis) [head prv]
+          resC            = detSignTx txSigP sigi [head prv]
           (txSigC, statC) = fromRight resC
-          verData = map (\(s, (SigInput _ o _ _)) -> (encodeOutput s,o)) sigis
+          verData = map (\(SigInput s o _ _) -> (s,o)) sigi
 

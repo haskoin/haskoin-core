@@ -255,12 +255,12 @@ updateConflicts tx coins source
         -- Compute the confidence
         return $ if isDead || parDead then TxDead else TxPending
 
-    | verifyTx tx vs = return TxPending
-    | otherwise      = return TxOffline
+    | verifyStdTx tx vs = return TxPending
+    | otherwise         = return TxOffline
   where
     outpoints        = map prevOutput $ txIn tx
     vs               = map f coins
-    f (Coin _ s o _) = (encodeOutput s, o)
+    f (Coin _ s o _) = (s,o)
     tid              = txHash tx
 
 -- Finds all the children of a given transaction recursively

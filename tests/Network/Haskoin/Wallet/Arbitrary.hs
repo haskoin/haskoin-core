@@ -169,12 +169,19 @@ genDat = (,,,) <$> genOutPoint
                <*> arbitrary
 
 genScriptOutput :: Gen ScriptOutput
-genScriptOutput = oneof 
+genScriptOutput = oneof [ genSimpleOutput
+                        , genPaySHOutput
+                        ]
+
+genSimpleOutput :: Gen ScriptOutput
+genSimpleOutput = oneof
     [ PayPK <$> (xPubKey . getAccPubKey <$> genKey)
     , (PayPKHash . pubKeyAddr) <$> (xPubKey . getAccPubKey <$> genKey)
     , genPayMulSig =<< choose (1,16)
-    , (PayScriptHash . scriptAddr) <$> genScriptOutput
     ]
+    
+genPaySHOutput :: Gen ScriptOutput
+genPaySHOutput = (PayScriptHash . scriptAddr) <$> genSimpleOutput
 
 genPayMulSig :: Int -> Gen ScriptOutput
 genPayMulSig m = do

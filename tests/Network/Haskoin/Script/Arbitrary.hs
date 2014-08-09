@@ -2,10 +2,7 @@
   This module provides arbitrary instances for data types in
   'Network.Haskoin.Script'.
 -}
-module Network.Haskoin.Script.Arbitrary 
-( ScriptPair(..)
-, ScriptOpInt(..)
-)
+module Network.Haskoin.Script.Arbitrary (ScriptOpInt(..))
 where
 
 import Test.QuickCheck 
@@ -22,7 +19,7 @@ import Network.Haskoin.Crypto.Arbitrary()
 import Control.Monad (liftM2)
 import Control.Applicative ((<$>),(<*>))
 
-import Data.Bits (testBit, clearBit)
+import Data.Bits (testBit, clearBit, (.&.))
 import Data.Word (Word8)
 
 import Network.Haskoin.Util.Arbitrary (nonEmptyBS)
@@ -164,21 +161,32 @@ instance Arbitrary TxSignature where
 
 instance Arbitrary SigHash where
     arbitrary = do
-        w <- arbitrary :: Gen Word8
-        let acp = testBit w 7
-        return $ case clearBit w 7 of
-            1 -> SigAll acp
-            2 -> SigNone acp
-            3 -> SigSingle acp
-            _ -> SigUnknown acp w
+        oneof [ SigAll    <$> arbitrary
+              , SigNone   <$> arbitrary
+              , SigSingle <$> arbitrary
+              , f
+              ]
+      where
+        f = do
+            wGen <- arbitrary :: Gen Word8
+            -- Make sure we don't have an unknown which is actually known
+            let w = if clearBit wGen 7 <= 3 then wGen .&. 0xfc else wGen
+            return $ SigUnknown (testBit w 7) w
 
 instance Arbitrary ScriptOutput where
-    arbitrary = oneof 
-        [ PayPK <$> arbitrary
-        , (PayPKHash . pubKeyAddr) <$> arbitrary 
-        , genPayMulSig =<< choose (1,16)
-        , (PayScriptHash . scriptAddr) <$> arbitrary
-        ]
+    arbitrary = oneof [ genSimpleOutput
+                      , genPaySHOutput
+                      ]
+
+genSimpleOutput :: Gen ScriptOutput
+genSimpleOutput = oneof
+    [ PayPK <$> arbitrary
+    , (PayPKHash . pubKeyAddr) <$> arbitrary 
+    , genPayMulSig =<< choose (1,16)
+    ]
+    
+genPaySHOutput :: Gen ScriptOutput
+genPaySHOutput = (PayScriptHash . scriptAddr) <$> genSimpleOutput
 
 -- | Generate an arbitrary 'ScriptOutput' of value PayMulSig.
 genPayMulSig :: Int -> Gen ScriptOutput
@@ -213,21 +221,6 @@ genScriptHashInput = do
         SpendPKHash _ _  -> (PayPKHash . pubKeyAddr) <$> arbitrary
         SpendMulSig sigs -> genPayMulSig $ length sigs
     return $ ScriptHashInput inp out
-
--- Generates a matching script output and script input
-data ScriptPair = ScriptPair ScriptInput ScriptOutput
-    deriving (Eq, Read, Show)
-
-instance Arbitrary ScriptPair where
-    arbitrary = do
-        out <- arbitrary :: Gen ScriptOutput
-        inp <- case out of
-            PayPK _         -> RegularInput . SpendPK <$> arbitrary
-            PayPKHash _     -> RegularInput <$> 
-                (SpendPKHash <$> arbitrary <*> arbitrary)
-            PayMulSig _ r   -> RegularInput <$> genSpendMulSig r
-            PayScriptHash _ -> genScriptHashInput
-        return $ ScriptPair inp out
 
 -- | Data type for generating an arbitrary 'ScriptOp' with a value in
 -- [OP_1 .. OP_16]

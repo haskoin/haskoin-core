@@ -1,4 +1,10 @@
-module Network.Haskoin.Script.Tests (tests) where
+module Network.Haskoin.Script.Tests 
+( tests
+, execScriptIO
+, testValid
+, testInvalid
+, runTests
+) where
 
 import Test.QuickCheck.Property (Property, (==>))
 import Test.Framework (Test, testGroup, buildTest)
@@ -298,12 +304,14 @@ execScriptIO sig key = case (parseScript sig, parseScript key) of
           Right p -> do putStrLn $ "successful execution"
                         putStrLn $ dumpStack $ runStack p
 
-
+testValid :: Test
 testValid = testFile "Canonical Valid Script Test Cases"
             "tests/data/script_valid.json" True
 
+testInvalid :: Test
 testInvalid = testFile "Canonical Valid Script Test Cases"
               "tests/data/script_invalid.json" False
 
 runTests :: [Test] -> IO ()
 runTests ts = defaultMainWithArgs ts ["--hide-success"]
+

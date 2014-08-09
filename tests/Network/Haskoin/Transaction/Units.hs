@@ -10,6 +10,7 @@ import Data.Binary.Get (getWord32le)
 import qualified Data.ByteString as BS (reverse)
 
 import Network.Haskoin.Transaction.Builder
+import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Util
@@ -41,11 +42,11 @@ mapVerifyVec (v,i) = testCase name $ runVerifyVec v i
 
 runVerifyVec :: ([(String,String,String)],String) -> Int -> Assertion
 runVerifyVec (is,bsTx) i = 
-    assertBool name $ verifyTx tx $ map f is
+    assertBool name $ verifyStdTx tx $ map f is
     where name = "    > Verify transaction " ++ (show i)
           tx  = decode' (fromJust $ hexToBS bsTx)
           f (o1,o2,bsScript) = 
-              let s  = decode' $ fromJust $ hexToBS bsScript
+              let s  = fromRight $ decodeOutputBS $ fromJust $ hexToBS bsScript
                   op = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS o1) 
                                  (runGet' getWord32le $ fromJust $ hexToBS o2)
                   in (s,op)

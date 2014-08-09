@@ -8,7 +8,8 @@ module Network.Haskoin.Transaction.Builder
 , signInput
 , detSignTx
 , detSignInput
-, verifyTx
+, verifyStdTx
+, verifyStdInput
 , guessTxSize
 , chooseCoins
 , chooseMSCoins
@@ -113,23 +114,6 @@ greedyAdd target fee xs = go [] 0 [] 0 $ sortBy desc xs
             | otherwise = go (y:acc) (aTot + val) ps pTot ys
             where val = coinValue y
 
-{-
--- Start from a solution containing all coins and greedily remove them
-greedyRem :: Word64 -> (Int -> Word64) -> [Coin] -> Maybe ([Coin],Word64)
-greedyRem target fee xs 
-    | s < goal (length xs) = Nothing
-    | otherwise = return $ go [] s $ sortBy desc xs
-    where desc a b = compare (outValue $ coinTxOut b) (outValue $ coinTxOut a)
-          s        = sum $ map (outValue . coinTxOut) xs
-          goal   c = target + fee c
-          go acc tot [] = (acc,tot - (goal $ length acc))
-          go acc tot (y:ys) 
-            | tot - val >= (goal $ length ys + length acc) = 
-                go acc (tot - val) ys
-            | otherwise = go (y:acc) tot ys
-            where val = outValue $ coinTxOut y
--}
-
 getFee :: Word64 -> Int -> Word64
 getFee kbfee count = kbfee*((len + 999) `div` 1000)
     where len = fromIntegral $ guessTxSize count [] 2 0
@@ -230,19 +214,16 @@ signTx :: Monad m
           -- ^ (Signed transaction, Status)
 signTx otx@(Tx _ ti _ _) sigis allKeys 
     | null ti   = left "signTx: Transaction has no inputs"
-    | otherwise = foldM go (otx, True) $ findSigInput sigis ti
+    | otherwise = do
+        tx <- foldM go otx $ findSigInput sigis ti
+        return (tx, verifyStdTx tx sigDat)
   where 
-    go (tx, complete) (sigi@(SigInput so _ _ rdmM), i) = do
+    sigDat = map (\(SigInput so op _ _) -> (so, op)) sigis
+    go tx (sigi@(SigInput so _ _ rdmM), i) = do
         keys <- liftEither $ sigKeys so rdmM allKeys
         if null keys
-            then return (tx, verifyInput tx i so)
-            else do
-                (newTx, complete') <- foldM f (tx, False) keys
-                return (newTx, complete && complete')
-      where
-        f (t, b) k = do
-            (t', b') <- liftEither $ detSignInput t i sigi k 
-            return (t', b || b') 
+            then return tx
+            else foldM (\t k -> fst <$> signInput t i sigi k) tx keys
 
 -- | Sign a single input in a transaction
 signInput :: Monad m => Tx -> Int -> SigInput -> PrvKey 
@@ -251,7 +232,7 @@ signInput tx i (SigInput so _ sh rdmM) key = do
     sig <- flip TxSignature sh <$> lift (signMsg msg key)
     si  <- liftEither $ buildInput tx i so rdmM sig $ derivePubKey key
     let newTx = tx{ txIn = updateIndex i (txIn tx) (f si) }
-    return (newTx, verifyInput newTx i so)
+    return (newTx, verifyStdInput newTx i so)
   where
     f si x = x{ scriptInput = encodeInputBS si }
     msg | isJust rdmM = txSigHash tx (encodeOutput $ fromJust rdmM) i sh
@@ -267,19 +248,16 @@ detSignTx :: Tx              -- ^ Transaction to sign
           -> Either String (Tx, Bool) -- ^ Signed transaction
 detSignTx otx@(Tx _ ti _ _) sigis allKeys
     | null ti   = Left "signTx: Transaction has no inputs"
-    | otherwise = foldM go (otx, True) $ findSigInput sigis ti
+    | otherwise = do
+        tx <- foldM go otx $ findSigInput sigis ti
+        return (tx, verifyStdTx tx sigDat)
   where 
-    go (tx, complete) (sigi@(SigInput so _ _ rdmM), i) = do
+    sigDat = map (\(SigInput so op _ _) -> (so, op)) sigis
+    go tx (sigi@(SigInput so _ _ rdmM), i) = do
         keys <- sigKeys so rdmM allKeys
         if null keys
-            then return (tx, verifyInput tx i so)
-            else do
-                (newTx, complete') <- foldM f (tx, False) keys
-                return (newTx, complete && complete')
-      where
-        f (t, b) k = do
-            (t', b') <- detSignInput t i sigi k 
-            return (t', b || b') 
+            then return tx
+            else foldM (\t k -> fst <$> detSignInput t i sigi k) tx keys
 
 -- | Sign a single input in a transaction
 detSignInput :: Tx -> Int -> SigInput -> PrvKey -> Either String (Tx, Bool)
@@ -287,7 +265,7 @@ detSignInput tx i (SigInput so _ sh rdmM) key = do
     let sig = TxSignature (detSignMsg msg key) sh
     si <- buildInput tx i so rdmM sig $ derivePubKey key
     let newTx = tx{ txIn = updateIndex i (txIn tx) (f si) }
-    return (newTx, verifyInput newTx i so)
+    return (newTx, verifyStdInput newTx i so)
   where
     f si x = x{ scriptInput = encodeInputBS si }
     msg | isJust rdmM = txSigHash tx (encodeOutput $ fromJust rdmM) i sh
@@ -350,20 +328,16 @@ buildInput tx i so rdmM sig pub = case (so, rdmM) of
 
 -- This is not the final transaction verification function. It is here mainly
 -- as a helper for tests. It can only validates standard inputs.
-verifyTx :: Tx -> [(Script, OutPoint)] -> Bool
-verifyTx tx xs = 
+verifyStdTx :: Tx -> [(ScriptOutput, OutPoint)] -> Bool
+verifyStdTx tx xs = 
     all go $ zip (matchTemplate xs (txIn tx) f) [0..]
   where
-    f (_,o) txin       = o == prevOutput txin
-    go (Just (out,_), i) 
-        | isLeft soE = False
-        | otherwise  = verifyInput tx i $ fromRight soE
-      where
-        soE = decodeOutput out
-    go _             = False
+    f (_,o) txin        = o == prevOutput txin
+    go (Just (so,_), i) = verifyStdInput tx i so
+    go _                = False
 
-verifyInput :: Tx -> Int -> ScriptOutput -> Bool
-verifyInput tx i so' = 
+verifyStdInput :: Tx -> Int -> ScriptOutput -> Bool
+verifyStdInput tx i so' = 
     go (scriptInput $ txIn tx !! i) so'
   where
     go inp so = case decodeInputBS inp of

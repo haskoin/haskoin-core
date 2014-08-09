@@ -165,7 +165,7 @@ newMsgConduit :: ( ToRequest q, ToJSON q, ToNotif n, ToJSON n
 newMsgConduit (snds) = monadicIO $ do
     msgs <- run $ do
         qs <- atomically initSession
-        CL.sourceList snds' $= msgConduit qs $$ CL.consume
+        CL.sourceList snds' $= msgConduit False qs $$ CL.consume
     assert $ length msgs == length snds'
     assert $ length (filter rqs msgs) == length (filter rqs snds')
     assert $ map idn (filter rqs msgs) == take (length (filter rqs msgs)) [1..]
@@ -186,9 +186,9 @@ decodeReqConduit (vs, ver) = monadicIO $ do
         qs' <- atomically initSession
         CL.sourceList vs
             $= CL.map f
-            $= msgConduit qs
+            $= msgConduit False qs
             $= encodeConduit
-            $= decodeConduit ver True qs'
+            $= decodeConduit ver False qs'
             $$ CL.consume
     assert $ null $ filter unexpected inmsgs
     assert $ all (uncurry match) (zip vs inmsgs)
@@ -211,12 +211,12 @@ decodeResConduit (rr, ver) = monadicIO $ do
         qs' <- atomically initSession
         CL.sourceList vs
             $= CL.map f
-            $= msgConduit qs
+            $= msgConduit False qs
             $= encodeConduit
-            $= decodeConduit ver True qs'
+            $= decodeConduit ver False qs'
             $= CL.map respond
             $= encodeConduit
-            $= decodeConduit ver True qs
+            $= decodeConduit ver False qs
             $$ CL.consume
     assert $ null $ filter unexpected inmsgs
     assert $ all (uncurry match) (zip vs inmsgs)
@@ -251,12 +251,12 @@ decodeErrConduit (vs, ver) = monadicIO $ do
         qs' <- atomically initSession
         CL.sourceList vs
             $= CL.map f
-            $= msgConduit qs
+            $= msgConduit False qs
             $= encodeConduit
-            $= decodeConduit ver True qs'
+            $= decodeConduit ver False qs'
             $= CL.map respond
             $= encodeConduit
-            $= decodeConduit ver True qs
+            $= decodeConduit ver False qs
             $$ CL.consume
     assert $ null $ filter unexpected inmsgs
     assert $ all (uncurry match) (zip vs inmsgs)

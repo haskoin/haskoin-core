@@ -9,26 +9,26 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 import Data.Aeson
 import Data.Aeson.Types
 
-import Network.Haskoin.Stratum
+import Network.JsonRpc
 
 import Network.Haskoin.Wallet.Arbitrary
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Server.Types
 
-encodeWalletRequest :: (ToRPCReq q, ToJSON q) => q -> Int -> Value
+encodeWalletRequest :: (ToRequest q, ToJSON q) => q -> Int -> Value
 encodeWalletRequest wr i = toJSON $
-    RPCReq (rpcReqMethod wr) wr (RPCIdInt i)
+    Request V2 (requestMethod wr) wr (IdInt i)
 
-decodeWalletRequest :: (FromRPCReq q) => Value -> Maybe (RPCReq q)
+decodeWalletRequest :: (FromRequest q) => Value -> Maybe (Request q)
 decodeWalletRequest v =
-    parseMaybe parseRPCReq v >>= either (const Nothing) return
+    parseMaybe parseRequest v >>= either (const Nothing) return
 
 encodeWalletResponse :: ToJSON r => r -> Int -> Value
-encodeWalletResponse res i = toJSON $ RPCRes res (RPCIdInt i)
+encodeWalletResponse res i = toJSON $ Response V2 res (IdInt i)
 
-decodeWalletResponse :: FromRPCResult r => RPCReq q -> Value -> Maybe (RPCRes r)
+decodeWalletResponse :: FromResponse r => Request q -> Value -> Maybe (Response r)
 decodeWalletResponse rq v =
-    parseMaybe (parseRPCRes rq) v >>= either (const Nothing) return
+    parseMaybe (parseResponse rq) v >>= either (const Nothing) return
 
 tests :: [Test]
 tests = 
@@ -53,12 +53,12 @@ metaID x = (decode . encode) [x] == Just [x]
 testWalletRequest :: WalletRequest -> Int -> Bool
 testWalletRequest wr i = fromMaybe False $ do
     rq <- decodeWalletRequest (encodeWalletRequest wr i)
-    guard $ getReqId rq == RPCIdInt i
+    guard $ getReqId rq == IdInt i
     return $ getReqParams rq == wr
 
 testWalletResponse :: RequestPair -> Int -> Bool
 testWalletResponse (RequestPair req res) i = fromMaybe False $ do
-    let rq = RPCReq (rpcReqMethod req) req (RPCIdInt i)
+    let rq = Request V2 (requestMethod req) req (IdInt i)
     rs <- decodeWalletResponse rq (encodeWalletResponse res i)
-    guard $ getResId rs == RPCIdInt i
+    guard $ getResId rs == IdInt i
     return $ getResult rs == res

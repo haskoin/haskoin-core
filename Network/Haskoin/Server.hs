@@ -7,7 +7,6 @@ import System.Directory
     , doesFileExist
     )
 
-import Control.Applicative ((<$>), (<*>))
 import Control.Monad 
 import Control.Monad.Trans 
 import Control.Monad.Trans.Resource
@@ -32,7 +31,7 @@ import Database.Persist.Sql
 import Database.Persist.Sqlite
 import Database.Sqlite (open)
 
-import Network.Haskoin.Stratum
+import Network.JsonRpc
 
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
@@ -82,10 +81,9 @@ runServer = do
     if offline || null hosts
       then
         -- Launch JSON-RPC server
-        runRPCServerTCP True (serverSettings port bind) $ \client ->
-            rpcMsgSource client
-                $= CL.mapM (processWalletRequest mvar Nothing fp offline)
-                $$ rpcMsgSink client
+        tcpServer V2 (serverSettings port bind) $ \(src, snk) -> src
+            $= CL.mapM (processWalletRequest mvar Nothing fp offline)
+            $$ snk
       else
         -- Launch SPV node
         withAsyncNode dir batch $ \eChan rChan _ -> do
@@ -100,10 +98,9 @@ runServer = do
             forM_ hosts $ \(h,p) -> writeTBMChan rChan $ ConnectNode h p
 
         -- Launch JSON-RPC server
-        runRPCServerTCP True (serverSettings port bind) $ \client ->
-            rpcMsgSource client
-                $= CL.mapM (processWalletRequest mvar (Just rChan) fp offline)
-                $$ rpcMsgSink client
+        tcpServer V2 (serverSettings port bind) $ \(src, snk) -> src
+            $= CL.mapM (processWalletRequest mvar (Just rChan) fp offline)
+            $$ snk
 
 processNodeEvents :: MVar Connection -> TBMChan NodeRequest -> Double
                   -> Sink NodeEvent IO ()
@@ -130,9 +127,9 @@ processWalletRequest :: MVar Connection
                      -> Double
                      -> Bool
                      -- -> (WalletRequest, Int) 
-                     -> RPCInMsg () WalletRequest () ()
+                     -> IncomingMsg () WalletRequest () ()
                      -- -> IO (Either String WalletResponse, Int)
-                     -> IO (RPCMsg () () WalletResponse)
+                     -> IO (Message () () WalletResponse)
 processWalletRequest mvar rChanM fp offline inmsg =
     handle f $ runDB mvar $ g inmsg
   where
@@ -143,16 +140,17 @@ processWalletRequest mvar rChanM fp offline inmsg =
             "This operation is not supported in offline mode"
         | otherwise = action
 
-    f (SomeException e) = return $ RPCMErr (RPCErr o i)
+    f (SomeException e) =
+        return $ MsgError (ErrorObj V2 (show e) (-32603) Null i)
       where
-        o = RPCErrObj (show e) (-32603) Null
         i = case inmsg of
-            RPCInMsg (RPCMReq rq) Nothing -> Just (getReqId rq)
-            _ -> Nothing
+            IncomingMsg (MsgRequest rq) Nothing -> (getReqId rq)
+            _ -> IdNull
 
-    g (RPCInErr e) = return $ RPCMErr e
-    g (RPCInMsg (RPCMReq rq) Nothing) =
-        RPCMRes <$> (RPCRes <$> go (getReqParams rq) <*> return (getReqId rq))
+    g (IncomingError e) = return $ MsgError e
+    g (IncomingMsg (MsgRequest rq) Nothing) = do
+        s <- go (getReqParams rq)
+        return $ MsgResponse (Response (getReqVer rq) s (getReqId rq))
     g _ = undefined
 
     go (NewWallet n p m) = unlessOffline $

@@ -20,6 +20,7 @@ import Control.Monad (unless, forM_, when, mzero, liftM2)
 import Control.Monad.Trans (liftIO, MonadIO)
 import Control.Exception (throwIO, throw)
 
+import Data.Default (def)
 import Data.String (fromString)
 import Data.Word (Word32, Word64)
 import Data.List (intersperse)
@@ -30,16 +31,20 @@ import qualified Data.Text as T (pack, unpack, splitOn)
 import qualified Data.Yaml as YAML (encode)
 import Data.Conduit (($$), ($=))
 import Data.Conduit.Network (clientSettings)
+import qualified Data.ByteString.Lazy as BL (ByteString)
+import qualified Data.ByteString as BS (ByteString)
 import qualified Data.Conduit.List as CL
 import Data.Aeson 
     ( Value (String)
     , FromJSON
+    , ToJSON
     , object
     , toJSON
     , encode
     , decode
     , withObject
     , withArray
+    , eitherDecode
     , (.=), (.:), (.:?)
     )
 import Data.Aeson.Types
@@ -52,11 +57,17 @@ import qualified Data.Aeson.Encode.Pretty as JSON
     , confIndent
     )
 
-import Network.JsonRpc
+import Network.HTTP.Conduit 
+    ( RequestBody(..)
+    , Request(..)
+    , Response(..)
+    , httpLbs
+    , parseUrl
+    , withManager
+    )
 
-import Network.Haskoin.Server
-import Network.Haskoin.Server.Types
-import Network.Haskoin.Server.Config
+import Network.Haskoin.REST
+import Network.Haskoin.REST.Types
 
 import Network.Haskoin.Wallet
 import Network.Haskoin.Wallet.Types
@@ -227,11 +238,12 @@ invalidErr = "Invalid request"
 formatStr :: String -> IO ()
 formatStr str = forM_ (lines str) putStrLn
 
-printJSONOr :: Options 
-            -> Either String WalletResponse 
-            -> (WalletResponse -> IO ()) 
+printJSONOr :: (FromJSON a, ToJSON a)
+            => Options 
+            -> BL.ByteString
+            -> (a -> IO ()) 
             -> IO ()
-printJSONOr opts resE action
+printJSONOr opts bs action
     | isLeft resE = error $ fromLeft resE
     | optJson opts = do
         let bs = JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } res
@@ -239,7 +251,8 @@ printJSONOr opts resE action
     | optYaml opts = formatStr $ bsToString $ YAML.encode res
     | otherwise = action res
   where
-    res = fromRight resE
+    resE = eitherDecode bs
+    res  = fromRight resE
 
 -- TODO: Rename existing log files to prevent overriding them
 processCommand :: Options -> Args -> IO ()
@@ -263,6 +276,11 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
                 []  -> NewWallet name (optPass opts) Nothing
                 [m] -> NewWallet name (optPass opts) (Just m)
                 _   -> error invalidErr
+        res <- sendRequest "/api/wallets" "POST" $ encode req
+        printJSONOr opts res $ \(MnemonicRes m) -> do
+            putStrLn "Write down your seed:"
+            putStrLn m
+    {-
         res <- sendRequest req 
         printJSONOr opts res $ \r -> case r of
             ResMnemonic m -> do
@@ -459,6 +477,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         printJSONOr opts res $ \r -> case r of
             ResRescan ts -> putStrLn $ unwords [ "Timestamp:", show ts]
             _ -> error "Received an invalid response"
+    -}
     ["decodetx", tx] -> do
         let txM = decodeToMaybe =<< hexToBS tx
         when (isNothing txM) $ throwIO $
@@ -477,6 +496,20 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
     logFile dir    = concat [dir, "/stdout.log"]
     configFile dir = concat [dir, "/config"]
 
+sendRequest :: BS.ByteString   -- Path
+            -> BS.ByteString   -- Method
+            -> BL.ByteString   -- Body 
+            -> IO BL.ByteString -- Response
+sendRequest p m b = withManager $ \manager -> responseBody <$>
+    flip httpLbs manager def
+        { host        = "localhost"
+        , port        = 8555
+        , path        = p
+        , method      = m
+        , requestBody = RequestBodyLBS b
+        }
+
+{-
 sendRequest :: WalletRequest
             -> IO (Either String WalletResponse)
 sendRequest req = do
@@ -506,6 +539,7 @@ sendRequest req = do
     f (IncomingMsg (MsgResponse (Response _ rs _)) _) = Right rs
     f (IncomingMsg (MsgError (ErrorObj _ m _ _ _)) _) = Left m
     f _ = undefined
+-}
 
 encodeTxJSON :: Tx -> Value
 encodeTxJSON tx@(Tx v is os i) = object

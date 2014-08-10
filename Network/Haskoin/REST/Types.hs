@@ -2,15 +2,17 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-module Network.Haskoin.Server.Types 
-( WalletRequest(..)
-, WalletResponse(..)
+module Network.Haskoin.REST.Types 
+( NewWallet(..) 
+, MnemonicRes(..)
 )
 where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (mzero)
+import Control.Concurrent.MVar
 
+import Data.Text (Text)
 import Data.Word (Word32, Word64)
 import Data.Maybe (isJust, fromJust)
 import Data.Aeson 
@@ -18,12 +20,11 @@ import Data.Aeson
     , object
     , ToJSON
     , toJSON
+    , FromJSON
+    , parseJSON
     , withObject
     , (.:), (.:?), (.=)
     )
-import Data.Aeson.Types (Parser)
-
-import Network.JsonRpc
 
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
@@ -31,7 +32,33 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Wallet.Tx
 import Network.Haskoin.Wallet.Types
 
+data NewWallet = NewWallet !WalletName !String !(Maybe String)
+
+instance ToJSON NewWallet where
+    toJSON (NewWallet n p m) = object $ concat
+        [ [ "walletname" .= n
+            , "passphrase" .= p
+            ]
+        , if isJust m then ["mnemonic" .= (fromJust m)] else []
+        ]
+
+instance FromJSON NewWallet where
+    parseJSON = withObject "newwallet" $ \o -> NewWallet
+        <$> o .: "walletname"
+        <*> o .: "passphrase"
+        <*> o .:? "mnemonic"
+
+data MnemonicRes = MnemonicRes Mnemonic
+
+instance ToJSON MnemonicRes where
+    toJSON (MnemonicRes m) = object [ "mnemonic" .= m ]
+
+instance FromJSON MnemonicRes where
+    parseJSON = withObject "mnemonic" $ \o ->
+        MnemonicRes <$> o .: "mnemonic"
+
 {- Request -}
+{-
 
 -- TODO: Create NFData intstances for WalletRequest and WalletResponse
 data WalletRequest 
@@ -399,3 +426,4 @@ parseWalletResponse "network.haskoin.wallet.rescan" =
     withObject "rescan" $ \o -> ResRescan <$> o .: "timestamp"
 parseWalletResponse _ = const mzero
 
+-}

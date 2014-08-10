@@ -1,5 +1,8 @@
-{-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Server where
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE QuasiQuotes                #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeFamilies               #-}
+module Network.Haskoin.REST where
 
 import System.Directory 
     ( getAppUserDataDirectory
@@ -7,31 +10,60 @@ import System.Directory
     , doesFileExist
     )
 
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad 
 import Control.Monad.Trans 
 import Control.Monad.Trans.Resource
+import Control.Monad.Trans.Control
 import Control.Monad.Logger
 import Control.Concurrent.STM.TBMChan
 import Control.Concurrent.STM
 import Control.Concurrent.MVar
 import Control.Concurrent.Async
-import Control.Exception
+import Control.Exception (SomeException(..), throwIO, tryJust, handle)
 
-import Data.Aeson.Types (Value(Null))
+import Data.Aeson 
+    ( Value (Object, Null)
+    , Result(..)
+    , object
+    , ToJSON
+    , toJSON
+    , FromJSON
+    , parseJSON
+    , withObject
+    , (.:), (.:?), (.=)
+    )
 import Data.Maybe
 import Data.String (fromString)
 import Data.Conduit (Sink, awaitForever, ($$), ($=))
-import Data.Conduit.Network
+import Data.Conduit.Network ()
 import Data.Conduit.TMChan
-import qualified Data.Text as T
+import Data.Text (Text, unpack, pack)
 import qualified Data.Conduit.List as CL
 
-import Database.Persist
-import Database.Persist.Sql
 import Database.Persist.Sqlite
 import Database.Sqlite (open)
 
-import Network.JsonRpc
+import Yesod.Platform 
+    ( Yesod
+    , YesodPersist(..)
+    , AForm
+    , getYesod
+    , runDB
+    , mkYesod
+    , parseRoutes
+    , defaultLayout
+    , whamlet
+    , toWaiApp
+    , renderRoute
+    , returnJson
+    , areq, aopt
+    , textField
+    , runFormPost
+    , FormResult (FormSuccess)
+    , parseJsonBody
+    )
+import Network.Wai.Handler.Warp (runSettings, defaultSettings, setHost, setPort)
 
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
@@ -46,9 +78,59 @@ import Network.Haskoin.Wallet.Address
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 
-import Network.Haskoin.Server.Types
-import Network.Haskoin.Server.Config
+import Network.Haskoin.REST.Types
 
+data HaskoinServer = HaskoinServer (MVar Connection)
+
+instance Yesod HaskoinServer
+
+instance YesodPersist HaskoinServer where
+    type YesodPersistBackend HaskoinServer = SqlPersistT
+    
+    runDB action = do
+        HaskoinServer mvar <- getYesod
+        control $ \b -> withMVar mvar $ \conn -> b $ runSqlConn action conn
+
+mkYesod "HaskoinServer" [parseRoutes|
+/api/wallets       WalletsR GET POST
+/api/wallets/#Text WalletR  GET
+|]
+
+getWalletsR :: Handler Value
+getWalletsR = toJSON <$> runDB walletList
+
+postWalletsR :: Handler Value
+postWalletsR = parseJsonBody >>= \res -> case res of
+    Success (NewWallet n p m) -> do
+        mnemonic <- runDB (newWalletMnemo n p m)
+        return $ toJSON $ MnemonicRes mnemonic
+    Error err -> undefined
+
+getWalletR :: Text -> Handler Value
+getWalletR wname = toJSON <$> runDB (getWallet $ unpack wname)
+
+runServer :: IO ()
+runServer = do
+    dir <- getWorkDir
+    let walletFile = pack $ concat [dir, "/wallet"]
+    conn <- wrapConnection =<< open walletFile
+    mvar <- newMVar conn
+    runResourceT $ runNoLoggingT $ flip runSqlConn conn $ do 
+        _ <- runMigrationSilent migrateWallet 
+        initWalletDB
+    app <- toWaiApp $ HaskoinServer mvar
+    let settings = setHost "127.0.0.1" $ setPort 8555 defaultSettings
+    runSettings settings app
+
+-- Create and return haskoin working directory
+getWorkDir :: IO FilePath
+getWorkDir = do
+    haskoinDir <- getAppUserDataDirectory "haskoin"
+    let dir = concat [ haskoinDir, "/", networkName ]
+    createDirectoryIfMissing True dir
+    return dir
+
+{-
 runServer :: IO ()
 runServer = do
     dir <- getWorkDir
@@ -277,15 +359,5 @@ processWalletRequest mvar rChanM fp offline inmsg =
             else liftIO $ throwIO $ WalletException
                 "No keys have been generated in the wallet"
 
-runDB :: MVar Connection -> SqlPersistT (NoLoggingT (ResourceT IO)) a -> IO a
-runDB mvar m = withMVar mvar $ \conn -> 
-    runResourceT $ runNoLoggingT $ runSqlConn m conn
-
--- Create and return haskoin working directory
-getWorkDir :: IO FilePath
-getWorkDir = do
-    haskoinDir <- getAppUserDataDirectory "haskoin"
-    let dir = concat [ haskoinDir, "/", networkName ]
-    createDirectoryIfMissing True dir
-    return dir
+-}
 

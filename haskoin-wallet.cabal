@@ -25,7 +25,7 @@ library
     exposed-modules:   Network.Haskoin.Wallet,
                        Network.Haskoin.Wallet.Model,
                        Network.Haskoin.Node,
-                       Network.Haskoin.Server
+                       Network.Haskoin.REST
     other-modules:     Network.Haskoin.Wallet.Account,
                        Network.Haskoin.Wallet.Root,
                        Network.Haskoin.Wallet.Address,
@@ -36,9 +36,8 @@ library
                        Network.Haskoin.Node.Peer,
                        Network.Haskoin.Node.PeerManager,
                        Network.Haskoin.Node.Types,
-                       Network.Haskoin.Server.Config,
-                       Network.Haskoin.Server.Types
-    build-depends:     aeson                >= 0.8  && < 0.9,
+                       Network.Haskoin.REST.Types
+    build-depends:     aeson                >= 0.8 && < 0.9,
                        async                >= 2.0  && < 2.1,
                        base                 >= 4.6  && < 5, 
                        binary               >= 0.7  && < 0.8, 
@@ -52,6 +51,7 @@ library
                        haskoin              >= 0.0  && < 0.1, 
                        json-rpc             >= 0.2  && < 0.3,
                        leveldb-haskell      >= 0.3  && < 0.4,
+                       monad-control        >= 0.3  && < 0.4,
                        monad-logger         >= 0.3  && < 0.4,
                        mtl                  >= 2.2  && < 2.3,
                        persistent           >= 1.3  && < 1.4,
@@ -64,7 +64,9 @@ library
                        stm-conduit          >= 2.5  && < 2.6,
                        text                 >= 1.1  && < 1.2,
                        time                 >= 1.4  && < 1.5,
-                       yaml                 >= 0.8  && < 0.9
+                       warp                 >= 3.0  && < 3.1,
+                       yaml                 >= 0.8  && < 0.9,
+                       yesod-platform       == 1.2.13
     ghc-options:       -Wall -fno-warn-orphans
 
 executable hw
@@ -83,8 +85,10 @@ executable hw
                        directory            >= 1.2  && < 1.3,
                        either               >= 4.3  && < 4.4,
                        haskoin              >= 0.0  && < 0.1, 
+                       http-conduit         >= 2.1  && < 2.2,
                        json-rpc             >= 0.2  && < 0.3,
                        leveldb-haskell      >= 0.3  && < 0.4,
+                       monad-control        >= 0.3  && < 0.4,
                        monad-logger         >= 0.3  && < 0.4,
                        mtl                  >= 2.2  && < 2.3,
                        persistent           >= 1.3  && < 1.4,
@@ -99,7 +103,9 @@ executable hw
                        time                 >= 1.4  && < 1.5,
                        unordered-containers >= 0.2  && < 0.3,
                        vector               >= 0.10 && < 0.11,
-                       yaml                 >= 0.8  && < 0.9
+                       warp                 >= 3.0  && < 3.1,
+                       yaml                 >= 0.8  && < 0.9,
+                       yesod-platform       == 1.2.13
     hs-source-dirs:    . script
     ghc-options:       -Wall -fno-warn-orphans
 
@@ -136,6 +142,7 @@ test-suite test-haskoin-wallet
                        text                       >= 1.1  && < 1.2,
                        time                       >= 1.4  && < 1.5,
                        yaml                       >= 0.8  && < 0.9,
+                       yesod-platform             == 1.2.13,
                        HUnit                      >= 1.2  && < 1.3,
                        QuickCheck                 >= 2.7  && < 2.8, 
                        test-framework             >= 0.8  && < 0.9, 

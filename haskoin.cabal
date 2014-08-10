@@ -71,9 +71,7 @@ library
                        mtl >= 2.2 && < 2.3, 
                        pbkdf >= 1.1 && < 1.2,
                        split >= 0.2 && < 0.3,
-                       text >= 1.1 && < 1.2,
-                       unordered-containers >= 0.2 && < 0.3,
-                       vector >= 0.10 && < 0.11
+                       text >= 1.1 && < 1.2
     ghc-options:       -Wall -fno-warn-orphans
   if flag(testnet)
     hs-source-dirs:    . testnet
@@ -122,7 +120,6 @@ test-suite test-haskoin
                        binary >= 0.7 && < 0.8, 
                        byteable >= 0.1 && < 0.2,
                        bytestring >= 0.10.4 && < 0.11, 
-                       conduit >= 1.1 && < 1.2,
                        containers >= 0.5 && < 0.6,
                        cryptohash >= 0.11 && < 0.12,
                        deepseq >= 1.3 && < 1.4,
@@ -131,11 +128,7 @@ test-suite test-haskoin
                        mtl >= 2.2 && < 2.3, 
                        pbkdf >= 1.1 && < 1.2,
                        split >= 0.2 && < 0.3,
-                       stm >= 2.4 && < 2.5,
-                       stm-conduit >= 2.5 && < 2.6,
                        text >= 1.1 && < 1.2,
-                       unordered-containers >= 0.2 && < 0.3,
-                       vector >= 0.10 && < 0.11,
                        HUnit >= 1.2 && < 1.3,
                        QuickCheck >= 2.7 && < 2.8,
                        test-framework >= 0.8 && < 0.9, 

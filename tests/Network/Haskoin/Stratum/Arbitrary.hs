@@ -8,7 +8,6 @@ module Network.Haskoin.Stratum.Arbitrary
 
 import Control.Applicative
 import Data.Aeson.Types hiding (Error)
-import qualified Data.HashMap.Strict as M
 import Data.Text (Text)
 import qualified Data.Text as T
 import Network.JsonRpc
@@ -76,10 +75,10 @@ instance Arbitrary Value where
                     , toJSON <$> (arbitrary :: Gen Double)
                     , toJSON <$> (arbitrary :: Gen Bool) ]
         ls   = toJSON <$> listOf val
-        obj  = toJSON . M.fromList <$> listOf ps
+        obj  = object . map (\(t, v) -> (T.pack t, v)) <$> listOf ps
         ps   = (,) <$> (arbitrary :: Gen String) <*> oneof [val, ls]
         lsn  = toJSON <$> listOf (oneof [ls, obj, val])
-        objn = toJSON . M.fromList <$> listOf psn
+        objn = object . map (\(t, v) -> (T.pack t, v)) <$> listOf psn
         psn  = (,) <$> (arbitrary :: Gen String) <*> oneof [val, ls, obj]
 
 

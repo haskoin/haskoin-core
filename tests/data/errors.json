@@ -3,3 +3,4 @@
 {"id": 3, "error": "'NoneType' object has no attribute '__getitem__': badaddress"}
 {"id": 4, "error": "'NoneType' object has no attribute '__getitem__': badaddress"}
 {"id": 5, "error": "{u'message': u\"parameter 1 must be hexadecimal string (not 'badtxid')\", u'code': -8}: [u'badtxid']"}
+{"id": 6, "result": "{u'message': u'TX rejected', u'code': -22}"}

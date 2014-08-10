@@ -31,9 +31,6 @@ import qualified Data.ByteString.Char8 as B8
 import Data.Char (isAscii)
 import Data.List
 import Data.Maybe
-import Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as M
-import qualified Data.Vector as V
 import Network.Haskoin.Util (bsToInteger, integerToBS)
 
 type Entropy = ByteString
@@ -57,7 +54,7 @@ toMnemonic ent = do
     (cs_len, remainder) = BS.length ent `quotRem` 4
     cs = calcCS cs_len ent
     indices = bsToIndices $ ent `BS.append` cs
-    ms = unwords $ map (wl V.!) indices
+    ms = unwords $ map (wl !!) indices
 
 -- | Revert 'toMnemonic'. Do not use this to generate seeds. Instead use
 -- 'mnemonicToSeed'.
@@ -127,7 +124,7 @@ getIndices ws
     | null n = return $ catMaybes i
     | otherwise = Left $ "getIndices: words not found: " ++ w
   where
-    i = map (flip M.lookup wlRev) ws
+    i = map (flip elemIndex wl) ws
     n = elemIndices Nothing i
     w = unwords $ map (ws !!) n
 
@@ -150,12 +147,9 @@ bsToIndices bs = reverse . go q $ bsToInteger bs `shiftR` r
     go 0 _ = []
     go n i = (fromIntegral $ i `mod` 2048) : go (n - 1) (i `shiftR` 11)
 
-wlRev :: HashMap String Int
-wlRev = M.fromList $ zip (V.toList wl) [0..]
-
 -- | Standard English dictionary from BIP-0039 specification.
-wl :: V.Vector String
-wl = V.fromList
+wl :: [String]
+wl =
     [ "abandon", "ability", "able", "about", "above", "absent"
     , "absorb", "abstract", "absurd", "abuse", "access", "accident"
     , "account", "accuse", "achieve", "acid", "acoustic", "acquire"

@@ -70,11 +70,11 @@ instance NFData XPrvKey where
         rnf d `seq` rnf p `seq` rnf i `seq` rnf c `seq` rnf k
 
 instance ToJSON XPrvKey where
-    toJSON = String . T.pack . bsToHex . encode'
+    toJSON = String . T.pack . xPrvExport
 
 instance FromJSON XPrvKey where
     parseJSON = withText "xprvkey" $ \t -> 
-        maybe mzero return $ decodeToMaybe =<< hexToBS (T.unpack t)
+        maybe mzero return $ xPrvImport (T.unpack t)
 
 -- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
@@ -90,11 +90,11 @@ instance NFData XPubKey where
         rnf d `seq` rnf p `seq` rnf i `seq` rnf c `seq` rnf k
 
 instance ToJSON XPubKey where
-    toJSON = String . T.pack . bsToHex . encode'
+    toJSON = String . T.pack . xPubExport
 
 instance FromJSON XPubKey where
     parseJSON = withText "xpubkey" $ \t -> 
-        maybe mzero return $ decodeToMaybe =<< hexToBS (T.unpack t)
+        maybe mzero return $ xPubImport (T.unpack t)
 
 -- | Build a BIP32 compatible extended private key from a bytestring. This will
 -- produce a root node (depth=0 and parent=0).

@@ -1,10 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 module Network.Haskoin.REST.Types 
 ( NewWallet(..) 
 , MnemonicRes(..)
+, NewAccount(..)
 )
 where
 
@@ -16,7 +14,7 @@ import Data.Text (Text)
 import Data.Word (Word32, Word64)
 import Data.Maybe (isJust, fromJust)
 import Data.Aeson 
-    ( Value (Object, Null)
+    ( Value (..)
     , object
     , ToJSON
     , toJSON
@@ -33,6 +31,7 @@ import Network.Haskoin.Wallet.Tx
 import Network.Haskoin.Wallet.Types
 
 data NewWallet = NewWallet !WalletName !String !(Maybe String)
+    deriving (Eq, Read, Show)
 
 instance ToJSON NewWallet where
     toJSON (NewWallet n p m) = object $ concat
@@ -49,6 +48,7 @@ instance FromJSON NewWallet where
         <*> o .:? "mnemonic"
 
 data MnemonicRes = MnemonicRes Mnemonic
+    deriving (Eq, Read, Show)
 
 instance ToJSON MnemonicRes where
     toJSON (MnemonicRes m) = object [ "mnemonic" .= m ]
@@ -56,6 +56,64 @@ instance ToJSON MnemonicRes where
 instance FromJSON MnemonicRes where
     parseJSON = withObject "mnemonic" $ \o ->
         MnemonicRes <$> o .: "mnemonic"
+
+data NewAccount
+    = NewAccount !WalletName !AccountName
+    | NewMSAccount !WalletName !AccountName !Int !Int ![XPubKey]
+    | NewReadAccount !AccountName !XPubKey
+    | NewReadMSAccount !AccountName !Int !Int ![XPubKey]
+    deriving (Eq, Read, Show)
+
+instance ToJSON NewAccount where
+    toJSON acc = case acc of
+        NewAccount w n -> object
+            [ "type"        .= String "regular"
+            , "walletname"  .= w
+            , "accountname" .= n
+            ]
+        NewMSAccount w n r t ks -> object
+            [ "type"        .= String "multisig"
+            , "walletname"  .= w
+            , "accountname" .= n
+            , "required"    .= r
+            , "total"       .= t
+            , "keys"        .= map xPubExport ks
+            ]
+        NewReadAccount n k -> object
+            [ "type"        .= String "readregular"
+            , "accountname" .= n
+            , "key"         .= xPubExport k
+            ]
+        NewReadMSAccount n r t ks -> object
+            [ "type"        .= String "readmultisig"
+            , "accountname" .= n
+            , "required"    .= r
+            , "total"       .= t
+            , "keys"        .= map xPubExport ks
+            ]
+
+instance FromJSON NewAccount where
+    parseJSON = withObject "newaccount" $ \o -> do
+        (String t) <- o .: "type"
+        case t of
+            "regular" -> NewAccount
+                <$> o .: "walletname"
+                <*> o .: "accountname"
+            "multisig" -> NewMSAccount
+                <$> o .: "walletname"
+                <*> o .: "accountname"
+                <*> o .: "required"
+                <*> o .: "total"
+                <*> (o .: "keys" >>= maybe mzero return . mapM xPubImport)
+            "readregular" -> NewReadAccount
+                <$> o .: "accountname"
+                <*> (o .: "key" >>= maybe mzero return . xPubImport)
+            "readmultisig" -> NewReadMSAccount
+                <$> o .: "accountname"
+                <*> o .: "required"
+                <*> o .: "total"
+                <*> (o .: "keys" >>= maybe mzero return . mapM xPubImport)
+            _ -> mzero
 
 {- Request -}
 {-

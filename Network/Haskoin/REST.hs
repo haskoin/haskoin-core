@@ -92,8 +92,11 @@ instance YesodPersist HaskoinServer where
         control $ \b -> withMVar mvar $ \conn -> b $ runSqlConn action conn
 
 mkYesod "HaskoinServer" [parseRoutes|
-/api/wallets       WalletsR GET POST
-/api/wallets/#Text WalletR  GET
+/api/wallets             WalletsR     GET POST
+/api/wallets/#Text       WalletR      GET
+/api/accounts            AccountsR    GET POST
+/api/accounts/#Text      AccountR     GET
+/api/accounts/#Text/keys AccountKeysR POST
 |]
 
 getWalletsR :: Handler Value
@@ -108,6 +111,78 @@ postWalletsR = parseJsonBody >>= \res -> case res of
 
 getWalletR :: Text -> Handler Value
 getWalletR wname = toJSON <$> runDB (getWallet $ unpack wname)
+
+getAccountsR :: Handler Value
+getAccountsR = toJSON <$> runDB accountList
+
+postAccountsR :: Handler Value
+postAccountsR = parseJsonBody >>= \res -> case res of
+    Success (NewAccount w n) -> runDB $ do
+        fstKeyBefore <- firstKeyTime
+        a <- newAccount w n
+        setLookAhead n 30
+        -- bloom <- walletBloomFilter fp
+        -- fstKeyTime <- liftM fromJust firstKeyTime
+        -- liftIO $ atomically $ do
+        --     writeTBMChan rChan $ BloomFilterUpdate bloom
+        --     when (isNothing fstKeyBefore) $
+        --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
+        return $ toJSON a
+    Success (NewMSAccount w n r t ks) -> runDB $ do
+        fstKeyBefore <- firstKeyTime
+        a <- newMSAccount w n r t ks
+        when (length (accountKeys a) == t) $ do
+            setLookAhead n 30
+            -- bloom <- walletBloomFilter fp
+            -- fstKeyTime <- liftM fromJust firstKeyTime
+            -- liftIO $ atomically $ do
+            --     writeTBMChan rChan $ BloomFilterUpdate bloom
+            --     when (isNothing fstKeyBefore) $
+            --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
+        return $ toJSON a
+    Success (NewReadAccount n k) -> runDB $ do
+        fstKeyBefore <- firstKeyTime
+        a <- newReadAccount n k
+        setLookAhead n 30
+        -- bloom <- walletBloomFilter fp
+        -- fstKeyTime <- liftM fromJust firstKeyTime
+        -- liftIO $ atomically $ do
+        --     writeTBMChan rChan $ BloomFilterUpdate bloom
+        --     when (isNothing fstKeyBefore) $
+        --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
+        return $ toJSON a
+    Success (NewReadMSAccount n r t ks) -> runDB $ do
+        fstKeyBefore <- firstKeyTime
+        a <- newReadMSAccount n r t ks
+        when (length (accountKeys a) == t) $ do
+            setLookAhead n 30
+            -- bloom <- walletBloomFilter fp
+            -- fstKeyTime <- liftM fromJust firstKeyTime
+            -- liftIO $ atomically $ do
+            --     writeTBMChan rChan $ BloomFilterUpdate bloom
+            --     when (isNothing fstKeyBefore) $
+            --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
+        return $ toJSON a
+    Error err -> undefined
+
+getAccountR :: Text -> Handler Value
+getAccountR name = toJSON <$> runDB (getAccount $ unpack name)
+
+postAccountKeysR :: Text -> Handler Value
+postAccountKeysR name = parseJsonBody >>= \res -> case res of
+    Success [ks] -> runDB $ do
+        fstKeyBefore <- firstKeyTime
+        a <- addAccountKeys (unpack name) ks
+        when (length (accountKeys a) == accountTotal a) $ do
+            setLookAhead (unpack name) 30
+            -- bloom      <- walletBloomFilter fp
+            -- fstKeyTime <- liftM fromJust firstKeyTime
+            -- liftIO $ atomically $ do
+            --     writeTBMChan rChan $ BloomFilterUpdate bloom
+            --     when (isNothing fstKeyBefore) $
+            --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
+        return $ toJSON a
+    Error err -> undefined
 
 runServer :: IO ()
 runServer = do

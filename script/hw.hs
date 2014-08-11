@@ -273,86 +273,70 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         killAndWait $ pidFile dir
         putStrLn "Haskoin daemon stopped"
     "newwallet" : name : mnemonic -> do
-        let req = case mnemonic of
+        let req = Just $ encode $ case mnemonic of
                 []  -> NewWallet name (optPass opts) Nothing
                 [m] -> NewWallet name (optPass opts) (Just m)
                 _   -> error invalidErr
-        res <- sendRequest "/api/wallets" "POST" $ encode req
+        res <- sendRequest "/api/wallets" "POST" req
         printJSONOr opts res $ \(MnemonicRes m) -> do
             putStrLn "Write down your seed:"
             putStrLn m
-    {-
-        res <- sendRequest req 
-        printJSONOr opts res $ \r -> case r of
-            ResMnemonic m -> do
-                putStrLn "Write down your seed:"
-                putStrLn m
-            _ -> error "Received an invalid response"
     ["getwallet", name] -> do
-        res <- sendRequest $ GetWallet name
-        printJSONOr opts res $ \r -> case r of
-            ResWallet w -> putStr $ printWallet w
-            _ -> error "Received an invalid response"
+        let url = stringToBS $ concat [ "/api/wallets/", name ]
+        res <- sendRequest url "GET" Nothing
+        printJSONOr opts res $ putStr . printWallet
     ["walletlist"] -> do
-        res <- sendRequest WalletList
-        printJSONOr opts res $ \r -> case r of
-            ResWalletList ws -> do
-                let xs = map (putStr . printWallet) ws
-                sequence_ $ intersperse (putStrLn "-") xs
-            _ -> error "Received an invalid response"
+        res <- sendRequest "/api/wallets" "GET" Nothing
+        printJSONOr opts res $ \ws -> do
+            let xs = map (putStr . printWallet) ws
+            sequence_ $ intersperse (putStrLn "-") xs
     ["newacc", wname, name] -> do
-        res <- sendRequest $ NewAccount wname name
-        printJSONOr opts res $ \r -> case r of
-            ResAccount a -> putStr $ printAccount a
-            _ -> error "Received an invalid response"
+        let req = Just $ encode $ NewAccount wname name
+        res <- sendRequest "/api/accounts" "POST" req
+        printJSONOr opts res $ putStr . printAccount
     "newms" : wname : name : m : n : ks -> do
         let keysM = mapM xPubImport ks
             m'    = read m
             n'    = read n
         when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
-        res <- sendRequest $ NewMSAccount wname name m' n' $ fromJust keysM
-        printJSONOr opts res $ \r -> case r of
-            ResAccount a -> putStr $ printAccount a
-            _ -> error "Received an invalid response"
+        let req = Just $ encode $ NewMSAccount wname name m' n' $ fromJust keysM
+        res <- sendRequest "/api/accounts" "POST" req
+        printJSONOr opts res $ putStr . printAccount
     ["newread", name, key] -> do
         let keyM = xPubImport key
         when (isNothing keyM) $ throwIO $ 
             WalletException "Could not parse key"
-        res <- sendRequest $ NewReadAccount name $ fromJust keyM
-        printJSONOr opts res $ \r -> case r of
-            ResAccount a -> putStr $ printAccount a
-            _ -> error "Received an invalid response"
+        let req = Just $ encode $ NewReadAccount name $ fromJust keyM
+        res <- sendRequest "/api/accounts" "POST" req
+        printJSONOr opts res $ putStr . printAccount
     "newreadms" : name : m : n : ks -> do
         let keysM = mapM xPubImport ks
             m'    = read m
             n'    = read n
         when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
-        res <- sendRequest $ NewReadMSAccount name m' n' $ fromJust keysM
-        printJSONOr opts res $ \r -> case r of
-            ResAccount a -> putStr $ printAccount a
-            _ -> error "Received an invalid response"
+        let req = Just $ encode $ NewReadMSAccount name m' n' $ fromJust keysM
+        res <- sendRequest "/api/accounts" "POST" req
+        printJSONOr opts res $ putStr . printAccount
     "addkeys" : name : ks -> do
         let keysM = mapM xPubImport ks
         when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
-        res <- sendRequest $ AddAccountKeys name $ fromJust keysM
-        printJSONOr opts res $ \r -> case r of
-            ResAccount a -> putStr $ printAccount a
-            _ -> error "Received an invalid response"
+        let req = encode <$> keysM
+            url = stringToBS $ concat [ "/api/accounts/", name, "/keys" ]
+        res <- sendRequest url "POST" req
+        printJSONOr opts res $ putStr . printAccount
     ["getacc", name] -> do
-        res <- sendRequest $ GetAccount name
-        printJSONOr opts res $ \r -> case r of
-            ResAccount a -> putStr $ printAccount a
-            _ -> error "Received an invalid response"
+        let url = stringToBS $ concat [ "/api/accounts/", name ]
+        res <- sendRequest url "GET" Nothing
+        printJSONOr opts res $ putStr . printAccount
     ["acclist"] -> do
-        res <- sendRequest AccountList
-        printJSONOr opts res $ \r -> case r of
-            ResAccountList as -> do
-                let xs = map (putStr . printAccount) as
-                sequence_ $ intersperse (putStrLn "-") xs
-            _ -> error "Received an invalid response"
+        res <- sendRequest "/api/accounts" "GET" Nothing
+        printJSONOr opts res $ \as -> do
+            let xs = map (putStr . printAccount) as
+            sequence_ $ intersperse (putStrLn "-") xs
+    {-
     ["new", name, label] -> do
         addE <- sendRequest $ GenAddress name 1
         case addE of
@@ -497,17 +481,24 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
     logFile dir    = concat [dir, "/stdout.log"]
     configFile dir = concat [dir, "/config"]
 
-sendRequest :: BS.ByteString   -- Path
-            -> BS.ByteString   -- Method
-            -> BL.ByteString   -- Body 
-            -> IO BL.ByteString -- Response
-sendRequest p m b = withManager $ \manager -> responseBody <$>
+sendRequest :: BS.ByteString       -- Path
+            -> BS.ByteString       -- Method
+            -> Maybe BL.ByteString -- Body 
+            -> IO BL.ByteString    -- Response
+sendRequest p m (Just b) = withManager $ \manager -> responseBody <$>
     flip httpLbs manager def
         { host        = "localhost"
         , port        = 8555
         , path        = p
         , method      = m
         , requestBody = RequestBodyLBS b
+        }
+sendRequest p m Nothing = withManager $ \manager -> responseBody <$>
+    flip httpLbs manager def
+        { host        = "localhost"
+        , port        = 8555
+        , path        = p
+        , method      = m
         }
 
 {-

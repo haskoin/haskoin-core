@@ -27,6 +27,8 @@ tests =
         , testProperty "Word256" (metaID :: Word256 -> Bool)
         , testProperty "SigHash" (metaID :: SigHash -> Bool)
         , testProperty "SigInput" (metaID :: SigInput -> Bool)
+        , testProperty "XPrvKey" (metaID :: XPrvKey -> Bool)
+        , testProperty "XPubKey" (metaID :: XPubKey -> Bool)
         ]
     ]
 

@@ -31,13 +31,16 @@ module Network.Haskoin.Crypto.ExtendedKeys
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (guard, unless, when, liftM2)
+import Control.Monad (mzero, guard, unless, when, liftM2)
+
+import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get (Get, getWord8, getWord32be)
 import Data.Binary.Put (Put, runPut, putWord8, putWord32be)
 import Data.Word (Word8, Word32)
 import Data.Bits (shiftR, setBit, testBit, clearBit)
 import Data.Maybe (mapMaybe)
+import qualified Data.Text as T (pack, unpack)
 import qualified Data.ByteString as BS (ByteString, append)
 
 import Network.Haskoin.Util
@@ -66,6 +69,13 @@ instance NFData XPrvKey where
     rnf (XPrvKey d p i c k) =
         rnf d `seq` rnf p `seq` rnf i `seq` rnf c `seq` rnf k
 
+instance ToJSON XPrvKey where
+    toJSON = String . T.pack . xPrvExport
+
+instance FromJSON XPrvKey where
+    parseJSON = withText "xprvkey" $ \t -> 
+        maybe mzero return $ xPrvImport (T.unpack t)
+
 -- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
     { xPubDepth  :: !Word8     -- ^ Depth in the tree of key derivations.
@@ -78,6 +88,13 @@ data XPubKey = XPubKey
 instance NFData XPubKey where
     rnf (XPubKey d p i c k) =
         rnf d `seq` rnf p `seq` rnf i `seq` rnf c `seq` rnf k
+
+instance ToJSON XPubKey where
+    toJSON = String . T.pack . xPubExport
+
+instance FromJSON XPubKey where
+    parseJSON = withText "xpubkey" $ \t -> 
+        maybe mzero return $ xPubImport (T.unpack t)
 
 -- | Build a BIP32 compatible extended private key from a bytestring. This will
 -- produce a root node (depth=0 and parent=0).

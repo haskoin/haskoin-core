@@ -44,6 +44,8 @@ import qualified Data.Conduit.List as CL
 import Database.Persist.Sqlite
 import Database.Sqlite (open)
 
+import Network.Haskoin.Crypto
+
 import Yesod.Platform 
     ( Yesod
     , YesodPersist(..)
@@ -80,7 +82,7 @@ import Network.Haskoin.Wallet.Types
 
 import Network.Haskoin.REST.Types
 
-data HaskoinServer = HaskoinServer (MVar Connection)
+data HaskoinServer = HaskoinServer ConnectionPool
 
 instance Yesod HaskoinServer
 
@@ -88,8 +90,8 @@ instance YesodPersist HaskoinServer where
     type YesodPersistBackend HaskoinServer = SqlPersistT
     
     runDB action = do
-        HaskoinServer mvar <- getYesod
-        control $ \b -> withMVar mvar $ \conn -> b $ runSqlConn action conn
+        HaskoinServer pool <- getYesod
+        runSqlPool action pool
 
 mkYesod "HaskoinServer" [parseRoutes|
 /api/wallets             WalletsR     GET POST
@@ -104,9 +106,22 @@ getWalletsR = toJSON <$> runDB walletList
 
 postWalletsR :: Handler Value
 postWalletsR = parseJsonBody >>= \res -> case res of
-    Success (NewWallet n p m) -> do
-        mnemonic <- runDB (newWalletMnemo n p m)
-        return $ toJSON $ MnemonicRes mnemonic
+    Success (NewWallet name pass msM) -> do
+        (ms, seed) <- case msM of
+            Just ms -> case mnemonicToSeed pass ms of
+                Left err -> liftIO $ throwIO $ WalletException err
+                Right seed -> return (ms, seed)
+            Nothing -> do
+                ent <- liftIO $ devURandom 16
+                let msSeedE = do
+                    ms <- toMnemonic ent
+                    seed <- mnemonicToSeed pass ms
+                    return (ms, seed)
+                case msSeedE of
+                    Left err -> liftIO $ throwIO $ WalletException err
+                    Right msSeed -> return msSeed
+        _ <- runDB $ newWallet name seed
+        return $ toJSON $ MnemonicRes ms
     Error err -> undefined
 
 getWalletR :: Text -> Handler Value
@@ -117,10 +132,11 @@ getAccountsR = toJSON <$> runDB accountList
 
 postAccountsR :: Handler Value
 postAccountsR = parseJsonBody >>= \res -> case res of
-    Success (NewAccount w n) -> runDB $ do
-        fstKeyBefore <- firstKeyTime
-        a <- newAccount w n
-        setLookAhead n 30
+    Success (NewAccount w n) -> do
+        a <- runDB $ do
+            fstKeyBefore <- firstKeyTime
+            newAccount w n
+        replicateM_ 30 $ runDB $ addLookAhead n
         -- bloom <- walletBloomFilter fp
         -- fstKeyTime <- liftM fromJust firstKeyTime
         -- liftIO $ atomically $ do
@@ -128,11 +144,12 @@ postAccountsR = parseJsonBody >>= \res -> case res of
         --     when (isNothing fstKeyBefore) $
         --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
         return $ toJSON a
-    Success (NewMSAccount w n r t ks) -> runDB $ do
-        fstKeyBefore <- firstKeyTime
-        a <- newMSAccount w n r t ks
+    Success (NewMSAccount w n r t ks) -> do
+        a <- runDB $ do
+            fstKeyBefore <- firstKeyTime
+            newMSAccount w n r t ks
         when (length (accountKeys a) == t) $ do
-            setLookAhead n 30
+            replicateM_ 30 $ runDB $ addLookAhead n
             -- bloom <- walletBloomFilter fp
             -- fstKeyTime <- liftM fromJust firstKeyTime
             -- liftIO $ atomically $ do
@@ -140,10 +157,11 @@ postAccountsR = parseJsonBody >>= \res -> case res of
             --     when (isNothing fstKeyBefore) $
             --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
         return $ toJSON a
-    Success (NewReadAccount n k) -> runDB $ do
-        fstKeyBefore <- firstKeyTime
-        a <- newReadAccount n k
-        setLookAhead n 30
+    Success (NewReadAccount n k) -> do
+        a <- runDB $ do
+            fstKeyBefore <- firstKeyTime
+            newReadAccount n k
+        replicateM_ 30 $ runDB $ addLookAhead n
         -- bloom <- walletBloomFilter fp
         -- fstKeyTime <- liftM fromJust firstKeyTime
         -- liftIO $ atomically $ do
@@ -151,11 +169,12 @@ postAccountsR = parseJsonBody >>= \res -> case res of
         --     when (isNothing fstKeyBefore) $
         --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
         return $ toJSON a
-    Success (NewReadMSAccount n r t ks) -> runDB $ do
-        fstKeyBefore <- firstKeyTime
-        a <- newReadMSAccount n r t ks
+    Success (NewReadMSAccount n r t ks) -> do
+        a <- runDB $ do
+            fstKeyBefore <- firstKeyTime
+            newReadMSAccount n r t ks
         when (length (accountKeys a) == t) $ do
-            setLookAhead n 30
+            replicateM_ 30 $ runDB $ addLookAhead n
             -- bloom <- walletBloomFilter fp
             -- fstKeyTime <- liftM fromJust firstKeyTime
             -- liftIO $ atomically $ do
@@ -170,11 +189,12 @@ getAccountR name = toJSON <$> runDB (getAccount $ unpack name)
 
 postAccountKeysR :: Text -> Handler Value
 postAccountKeysR name = parseJsonBody >>= \res -> case res of
-    Success [ks] -> runDB $ do
-        fstKeyBefore <- firstKeyTime
-        a <- addAccountKeys (unpack name) ks
+    Success [ks] -> do
+        a <- runDB $ do
+            fstKeyBefore <- firstKeyTime
+            addAccountKeys (unpack name) ks
         when (length (accountKeys a) == accountTotal a) $ do
-            setLookAhead (unpack name) 30
+            replicateM_ 30 $ runDB $ addLookAhead (unpack name)
             -- bloom      <- walletBloomFilter fp
             -- fstKeyTime <- liftM fromJust firstKeyTime
             -- liftIO $ atomically $ do
@@ -188,12 +208,11 @@ runServer :: IO ()
 runServer = do
     dir <- getWorkDir
     let walletFile = pack $ concat [dir, "/wallet"]
-    conn <- wrapConnection =<< open walletFile
-    mvar <- newMVar conn
-    runResourceT $ runNoLoggingT $ flip runSqlConn conn $ do 
+    pool <- createSqlPool (wrapConnection =<< open walletFile) 1
+    flip runSqlPersistMPool pool $ do 
         _ <- runMigrationSilent migrateWallet 
         initWalletDB
-    app <- toWaiApp $ HaskoinServer mvar
+    app <- toWaiApp $ HaskoinServer pool
     let settings = setHost "127.0.0.1" $ setPort 8555 defaultSettings
     runSettings settings app
 

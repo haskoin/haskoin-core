@@ -9,7 +9,6 @@ module Network.Haskoin.Wallet
 -- *Wallet Commands
   Wallet(..)
 , initWalletDB
-, newWalletMnemo
 , newWallet
 , walletList
 
@@ -31,9 +30,9 @@ module Network.Haskoin.Wallet
 , addressList
 , addressCount
 , addressPage
-, newAddrs
+, newAddr
 , setAddrLabel
-, setLookAhead
+, addLookAhead
 , addressPrvKey
 
 -- *Coin Commands

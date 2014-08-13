@@ -5,7 +5,6 @@ module Network.Haskoin.Wallet.Root
 ( getWalletEntity
 , getWallet
 , walletList
-, newWalletMnemo
 , newWallet
 , initWalletDB
 ) where
@@ -35,14 +34,13 @@ import Database.Persist
 import Network.Haskoin.Crypto
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
-import Network.Haskoin.Util
 
 -- | Get a wallet by name
 getWallet :: PersistUnique m => String -> m Wallet
 getWallet name = liftM (dbWalletValue . entityVal) $ getWalletEntity name
 
 getWalletEntity :: (PersistUnique m, PersistMonadBackend m ~ b)
-            => String -> m (Entity (DbWalletGeneric b))
+                => String -> m (Entity (DbWalletGeneric b))
 getWalletEntity name = do
     entM <- getBy $ UniqueWalletName name
     case entM of
@@ -56,44 +54,6 @@ walletList =
     liftM (map f) $ selectList [] [Asc DbWalletCreated]
   where
     f = dbWalletValue . entityVal
-
--- | Initialize a wallet from an optional mnemonic seed and a passphrase,
--- which could be blank.
-newWalletMnemo :: PersistUnique m
-               => String
-               -- ^ Wallet name
-               -> String
-               -- ^ Passphrase to protect mnemonic.
-               -> Maybe String
-               -- ^ Mnemonic sentence to initialize wallet with.
-               -- Use entropy from /dev/random otherwise.
-               -> m Mnemonic
-               -- ^ Mnemonic sentence used to initialize wallet.
-               -- Impossible to retrieve in the future.
-
-newWalletMnemo wname p (Just s) = do
-    let seedE = mnemonicToSeed p s
-        seed  = fromRight seedE
-    when (isLeft seedE) $ liftIO $ throwIO $ 
-        WalletException $ fromLeft seedE
-    _ <- newWallet wname seed
-    return s
-
-newWalletMnemo wname p Nothing = do
-    -- Check this to avoid an unnecessary call to /dev/random if it fails
-    prevWallet <- getBy $ UniqueWalletName wname
-    when (isJust prevWallet) $ liftIO $ throwIO $ WalletException $
-        unwords [ "Wallet", wname, "already exists" ]
-    ent <- liftIO $ devRandom 16
-    let msSeedE = do
-            m <- toMnemonic ent
-            s <- mnemonicToSeed p m
-            return (m, s)
-    when (isLeft msSeedE) $ liftIO $ throwIO $
-        WalletException $ fromLeft msSeedE
-    let (ms, seed) = fromRight msSeedE
-    _ <- newWallet wname seed
-    return ms
 
 -- | Initialize a wallet from a secret seed. This function will fail if the
 -- wallet is already initialized.

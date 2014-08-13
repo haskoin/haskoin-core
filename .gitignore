@@ -6,3 +6,4 @@
 *.ps
 *.prof
 dist
+client_session_key.aes

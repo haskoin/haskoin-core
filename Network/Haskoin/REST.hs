@@ -135,8 +135,9 @@ postAccountsR = parseJsonBody >>= \res -> case res of
     Success (NewAccount w n) -> do
         a <- runDB $ do
             fstKeyBefore <- firstKeyTime
-            newAccount w n
-        replicateM_ 30 $ runDB $ addLookAhead n
+            a <- newAccount w n
+            replicateM_ 30 $ addLookAhead n
+            return a
         -- bloom <- walletBloomFilter fp
         -- fstKeyTime <- liftM fromJust firstKeyTime
         -- liftIO $ atomically $ do
@@ -147,9 +148,10 @@ postAccountsR = parseJsonBody >>= \res -> case res of
     Success (NewMSAccount w n r t ks) -> do
         a <- runDB $ do
             fstKeyBefore <- firstKeyTime
-            newMSAccount w n r t ks
-        when (length (accountKeys a) == t) $ do
-            replicateM_ 30 $ runDB $ addLookAhead n
+            a <- newMSAccount w n r t ks
+            when (length (accountKeys a) == t) $
+                replicateM_ 30 $ addLookAhead n
+            return a
             -- bloom <- walletBloomFilter fp
             -- fstKeyTime <- liftM fromJust firstKeyTime
             -- liftIO $ atomically $ do
@@ -160,8 +162,9 @@ postAccountsR = parseJsonBody >>= \res -> case res of
     Success (NewReadAccount n k) -> do
         a <- runDB $ do
             fstKeyBefore <- firstKeyTime
-            newReadAccount n k
-        replicateM_ 30 $ runDB $ addLookAhead n
+            a <- newReadAccount n k
+            replicateM_ 30 $ addLookAhead n
+            return a
         -- bloom <- walletBloomFilter fp
         -- fstKeyTime <- liftM fromJust firstKeyTime
         -- liftIO $ atomically $ do
@@ -172,9 +175,9 @@ postAccountsR = parseJsonBody >>= \res -> case res of
     Success (NewReadMSAccount n r t ks) -> do
         a <- runDB $ do
             fstKeyBefore <- firstKeyTime
-            newReadMSAccount n r t ks
-        when (length (accountKeys a) == t) $ do
-            replicateM_ 30 $ runDB $ addLookAhead n
+            a <- newReadMSAccount n r t ks
+            when (length (accountKeys a) == t) $
+                replicateM_ 30 $ addLookAhead n
             -- bloom <- walletBloomFilter fp
             -- fstKeyTime <- liftM fromJust firstKeyTime
             -- liftIO $ atomically $ do
@@ -192,9 +195,9 @@ postAccountKeysR name = parseJsonBody >>= \res -> case res of
     Success [ks] -> do
         a <- runDB $ do
             fstKeyBefore <- firstKeyTime
-            addAccountKeys (unpack name) ks
-        when (length (accountKeys a) == accountTotal a) $ do
-            replicateM_ 30 $ runDB $ addLookAhead (unpack name)
+            a <- addAccountKeys (unpack name) ks
+            when (length (accountKeys a) == accountTotal a) $ do
+                replicateM_ 30 $ addLookAhead (unpack name)
             -- bloom      <- walletBloomFilter fp
             -- fstKeyTime <- liftM fromJust firstKeyTime
             -- liftIO $ atomically $ do

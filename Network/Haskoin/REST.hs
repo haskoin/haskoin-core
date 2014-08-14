@@ -1,7 +1,8 @@
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE QuasiQuotes                #-}
-{-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE QuasiQuotes           #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Network.Haskoin.REST where
 
 import System.Directory 
@@ -46,10 +47,13 @@ import Database.Sqlite (open)
 
 import Network.Haskoin.Crypto
 
-import Yesod.Platform 
+import Yesod
     ( Yesod
     , YesodPersist(..)
-    , AForm
+    , RenderMessage
+    , FormMessage
+    , renderMessage
+    , defaultFormMessage
     , getYesod
     , runDB
     , mkYesod
@@ -59,11 +63,13 @@ import Yesod.Platform
     , toWaiApp
     , renderRoute
     , returnJson
-    , areq, aopt
     , textField
+    , intField
     , runFormPost
     , FormResult (FormSuccess)
     , parseJsonBody
+    , iopt
+    , runInputGet
     )
 import Network.Wai.Handler.Warp (runSettings, defaultSettings, setHost, setPort)
 
@@ -93,13 +99,26 @@ instance YesodPersist HaskoinServer where
         HaskoinServer pool <- getYesod
         runSqlPool action pool
 
+instance RenderMessage HaskoinServer FormMessage where
+    renderMessage _ _ = defaultFormMessage
+
 mkYesod "HaskoinServer" [parseRoutes|
-/api/wallets             WalletsR     GET POST
-/api/wallets/#Text       WalletR      GET
-/api/accounts            AccountsR    GET POST
-/api/accounts/#Text      AccountR     GET
-/api/accounts/#Text/keys AccountKeysR POST
+/api/wallets                               WalletsR     GET POST
+/api/wallets/#Text                         WalletR      GET
+/api/accounts                              AccountsR    GET POST
+/api/accounts/#Text                        AccountR     GET
+/api/accounts/#Text/keys                   AccountKeysR POST
+/api/accounts/#Text/addresses              AddressesR   GET POST
 |]
+{-
+/api/accounts/#Text/addresses/#Int         AddressR     GET POST
+/api/accounts/#Text/txs                    TxsR         GET POST
+/api/accounts/#Text/txs/#TxHash            TxR          GET 
+/api/accounts/#Text/balance                BalanceR     GET
+/api/accounts/#Text/txs/#TxHash/sigblob    SigBlobR     GET 
+/api/accounts/#Text/sigblobs               SigBlobsR    GET
+/api/node                                  NodeR        POST
+-}
 
 getWalletsR :: Handler Value
 getWalletsR = toJSON <$> runDB walletList
@@ -205,6 +224,34 @@ postAccountKeysR name = parseJsonBody >>= \res -> case res of
             --     when (isNothing fstKeyBefore) $
             --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
         return $ toJSON a
+    Error err -> undefined
+
+getAddressesR :: Text -> Handler Value
+getAddressesR name = do
+    (pageM, elemM) <- runInputGet $ (,)
+        <$> iopt intField "page"
+        <*> iopt intField "elemperpage"
+    if isJust pageM
+        then do
+            let elem | isJust elemM = fromJust elemM
+                     | otherwise    = 10
+            (as, m) <- runDB $ addressPage (unpack name) (fromJust pageM) elem
+            return $ toJSON $ AddressPageRes as m
+        else toJSON <$> runDB (addressList $ unpack name)
+
+postAddressesR :: Text -> Handler Value
+postAddressesR name = parseJsonBody >>= \res -> case res of
+    Success (AddressData label) -> runDB $ do
+        fstKeyBefore <- firstKeyTime
+        addr' <- newAddr $ unpack name
+        addr  <- setAddrLabel (unpack name) (addressIndex addr') label
+        -- bloom <- walletBloomFilter fp
+        -- fstKeyTime <- liftM fromJust firstKeyTime
+        -- liftIO $ atomically $ do
+        --     writeTBMChan rChan $ BloomFilterUpdate bloom
+        --     when (isNothing fstKeyBefore) $
+        --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
+        return $ toJSON addr
     Error err -> undefined
 
 runServer :: IO ()

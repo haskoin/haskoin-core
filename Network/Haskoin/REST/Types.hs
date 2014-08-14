@@ -8,10 +8,7 @@ where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (mzero)
-import Control.Concurrent.MVar
 
-import Data.Text (Text)
-import Data.Word (Word32, Word64)
 import Data.Maybe (isJust, fromJust)
 import Data.Aeson 
     ( Value (..)
@@ -24,10 +21,8 @@ import Data.Aeson
     , (.:), (.:?), (.=)
     )
 
-import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 
-import Network.Haskoin.Wallet.Tx
 import Network.Haskoin.Wallet.Types
 
 data NewWallet = NewWallet !WalletName !String !(Maybe String)

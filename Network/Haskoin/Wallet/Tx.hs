@@ -512,9 +512,9 @@ buildUnsignedTx name dests fee = do
     -- TODO: Put this value in a constant file somewhere
     -- TODO: We need a better way to identify dust transactions
     recips <- if change < 5430 then return dests else do
-        cAddr <- newAddrsGeneric name 1 True -- internal addresses
+        cAddr <- newAddrGeneric name True False -- internal addresses
         -- TODO: Change must be randomly placed
-        return $ dests ++ [(dbAddressValue $ head cAddr,change)]
+        return $ dests ++ [(dbAddressValue $ cAddr,change)]
     let txE = buildAddrTx (map coinOutPoint coins) $ map f recips
     when (isLeft txE) $ liftIO $ throwIO $ WalletException $ fromLeft txE
     return $ fromRight txE

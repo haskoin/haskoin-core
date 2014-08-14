@@ -358,18 +358,13 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             req = Just $ encode $ AddressData label
         res <- sendRequest url "POST" [] req
         printJSONOr opts res $ putStrLn . printAddress
-    {-
-    ["genaddr", name] -> do
-        res <- sendRequest $ GenAddress name $ optCount opts
-        printJSONOr opts res $ \r -> case r of
-            ResAddressList as -> forM_ as $ putStrLn . printAddress
-            _ -> error "Received an invalid response"
     ["label", name, index, label] -> do
-        let i = read index
-        res <- sendRequest $ AddressLabel name i label
-        printJSONOr opts res $ \r -> case r of
-            ResAddress a -> putStrLn $ printAddress a
-            _ -> error "Received an invalid response"
+        let url = stringToBS $ concat 
+                [ "/api/accounts/", name, "/addresses/", index ]
+            req = Just $ encode $ AddressData label
+        res <- sendRequest url "PUT" [] req
+        printJSONOr opts res $ putStrLn . printAddress
+    {-
     ["txlist", name] -> do
         res <- sendRequest $ TxList name
         printJSONOr opts res $ \r -> case r of

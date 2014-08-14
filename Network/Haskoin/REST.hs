@@ -109,9 +109,9 @@ mkYesod "HaskoinServer" [parseRoutes|
 /api/accounts/#Text                        AccountR     GET
 /api/accounts/#Text/keys                   AccountKeysR POST
 /api/accounts/#Text/addresses              AddressesR   GET POST
+/api/accounts/#Text/addresses/#Int         AddressR     GET PUT
 |]
 {-
-/api/accounts/#Text/addresses/#Int         AddressR     GET POST
 /api/accounts/#Text/txs                    TxsR         GET POST
 /api/accounts/#Text/txs/#TxHash            TxR          GET 
 /api/accounts/#Text/balance                BalanceR     GET
@@ -251,6 +251,18 @@ postAddressesR name = parseJsonBody >>= \res -> case res of
         --     writeTBMChan rChan $ BloomFilterUpdate bloom
         --     when (isNothing fstKeyBefore) $
         --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
+        return $ toJSON addr
+    Error err -> undefined
+
+getAddressR :: Text -> Int -> Handler Value
+getAddressR name i = do
+    addr <- runDB $ getAddress (unpack name) (fromIntegral i)
+    return $ toJSON addr
+
+putAddressR :: Text -> Int -> Handler Value
+putAddressR name i = parseJsonBody >>= \res -> case res of
+    Success (AddressData label) -> runDB $ do
+        addr <- setAddrLabel (unpack name) (fromIntegral i) label
         return $ toJSON addr
     Error err -> undefined
 

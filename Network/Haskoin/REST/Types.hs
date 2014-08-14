@@ -3,6 +3,8 @@ module Network.Haskoin.REST.Types
 ( NewWallet(..) 
 , MnemonicRes(..)
 , NewAccount(..)
+, AddressPageRes(..)
+, AddressData(..)
 )
 where
 
@@ -109,6 +111,30 @@ instance FromJSON NewAccount where
                 <*> o .: "total"
                 <*> (o .: "keys" >>= maybe mzero return . mapM xPubImport)
             _ -> mzero
+
+data AddressPageRes = AddressPageRes ![PaymentAddress] !Int
+    deriving (Eq, Show, Read)
+
+instance ToJSON AddressPageRes where
+    toJSON (AddressPageRes as m) = object
+        [ "addresspage" .= as
+        , "maxpage"     .= m
+        ]
+
+instance FromJSON AddressPageRes where
+    parseJSON = withObject "addresspageres" $ \o -> 
+        AddressPageRes <$> o .: "addresspage"
+                       <*> o .: "maxpage"
+
+data AddressData = AddressData !String
+    deriving (Eq, Show, Read)
+
+instance ToJSON AddressData where
+    toJSON (AddressData s) = object [ "label" .= s ]
+
+instance FromJSON AddressData where
+    parseJSON = withObject "addressdata" $ \o ->
+        AddressData <$> o .: "label"
 
 {- Request -}
 {-

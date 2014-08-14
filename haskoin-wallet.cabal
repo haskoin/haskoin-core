@@ -66,7 +66,7 @@ library
                        time                 >= 1.4  && < 1.5,
                        warp                 >= 3.0  && < 3.1,
                        yaml                 >= 0.8  && < 0.9,
-                       yesod-platform       == 1.2.13
+                       yesod                >= 1.2  && < 1.3
     ghc-options:       -Wall -fno-warn-orphans
 
 executable hw
@@ -105,7 +105,7 @@ executable hw
                        vector               >= 0.10 && < 0.11,
                        warp                 >= 3.0  && < 3.1,
                        yaml                 >= 0.8  && < 0.9,
-                       yesod-platform       == 1.2.13
+                       yesod                >= 1.2  && < 1.3
     hs-source-dirs:    . script
     ghc-options:       -Wall -fno-warn-orphans
 
@@ -142,7 +142,7 @@ test-suite test-haskoin-wallet
                        text                       >= 1.1  && < 1.2,
                        time                       >= 1.4  && < 1.5,
                        yaml                       >= 0.8  && < 0.9,
-                       yesod-platform             == 1.2.13,
+                       yesod                      >= 1.2  && < 1.3,
                        HUnit                      >= 1.2  && < 1.3,
                        QuickCheck                 >= 2.7  && < 2.8, 
                        test-framework             >= 0.8  && < 0.9, 

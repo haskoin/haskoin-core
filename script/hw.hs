@@ -64,6 +64,7 @@ import Network.HTTP.Conduit
     , httpLbs
     , parseUrl
     , withManager
+    , setQueryString
     )
 
 import Network.Haskoin.REST
@@ -170,7 +171,7 @@ cmdHelp =
     , ""
     , "Address commands:" 
     , "  new       acc labels              Generate an address with a label"
-    , "  genaddr   acc [-c count]          Generate new addresses"
+    , "  (disabled) genaddr   acc [-c count]          Generate new addresses"
     , "  list      acc                     Display all addresses of an account"
     , "  page      acc page [-c addr/page] Display addresses by page"
     , "  label     acc index label         Add a label to an address"
@@ -276,22 +277,22 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
                 []  -> NewWallet name (optPass opts) Nothing
                 [m] -> NewWallet name (optPass opts) (Just m)
                 _   -> error invalidErr
-        res <- sendRequest "/api/wallets" "POST" req
+        res <- sendRequest "/api/wallets" "POST" [] req
         printJSONOr opts res $ \(MnemonicRes m) -> do
             putStrLn "Write down your seed:"
             putStrLn m
     ["getwallet", name] -> do
         let url = stringToBS $ concat [ "/api/wallets/", name ]
-        res <- sendRequest url "GET" Nothing
+        res <- sendRequest url "GET" [] Nothing
         printJSONOr opts res $ putStr . printWallet
     ["walletlist"] -> do
-        res <- sendRequest "/api/wallets" "GET" Nothing
+        res <- sendRequest "/api/wallets" "GET" [] Nothing
         printJSONOr opts res $ \ws -> do
             let xs = map (putStr . printWallet) ws
             sequence_ $ intersperse (putStrLn "-") xs
     ["newacc", wname, name] -> do
         let req = Just $ encode $ NewAccount wname name
-        res <- sendRequest "/api/accounts" "POST" req
+        res <- sendRequest "/api/accounts" "POST" [] req
         printJSONOr opts res $ putStr . printAccount
     "newms" : wname : name : m : n : ks -> do
         let keysM = mapM xPubImport ks
@@ -300,14 +301,14 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
         let req = Just $ encode $ NewMSAccount wname name m' n' $ fromJust keysM
-        res <- sendRequest "/api/accounts" "POST" req
+        res <- sendRequest "/api/accounts" "POST" [] req
         printJSONOr opts res $ putStr . printAccount
     ["newread", name, key] -> do
         let keyM = xPubImport key
         when (isNothing keyM) $ throwIO $ 
             WalletException "Could not parse key"
         let req = Just $ encode $ NewReadAccount name $ fromJust keyM
-        res <- sendRequest "/api/accounts" "POST" req
+        res <- sendRequest "/api/accounts" "POST" [] req
         printJSONOr opts res $ putStr . printAccount
     "newreadms" : name : m : n : ks -> do
         let keysM = mapM xPubImport ks
@@ -316,7 +317,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
         let req = Just $ encode $ NewReadMSAccount name m' n' $ fromJust keysM
-        res <- sendRequest "/api/accounts" "POST" req
+        res <- sendRequest "/api/accounts" "POST" [] req
         printJSONOr opts res $ putStr . printAccount
     "addkeys" : name : ks -> do
         let keysM = mapM xPubImport ks
@@ -324,47 +325,43 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             WalletException "Could not parse keys"
         let req = encode <$> keysM
             url = stringToBS $ concat [ "/api/accounts/", name, "/keys" ]
-        res <- sendRequest url "POST" req
+        res <- sendRequest url "POST" [] req
         printJSONOr opts res $ putStr . printAccount
     ["getacc", name] -> do
         let url = stringToBS $ concat [ "/api/accounts/", name ]
-        res <- sendRequest url "GET" Nothing
+        res <- sendRequest url "GET" [] Nothing
         printJSONOr opts res $ putStr . printAccount
     ["acclist"] -> do
-        res <- sendRequest "/api/accounts" "GET" Nothing
+        res <- sendRequest "/api/accounts" "GET" [] Nothing
         printJSONOr opts res $ \as -> do
             let xs = map (putStr . printAccount) as
             sequence_ $ intersperse (putStrLn "-") xs
-    {-
+    ["list", name] -> do
+        let url = stringToBS $ concat [ "/api/accounts/", name, "/addresses" ]
+        res <- sendRequest url "GET" [] Nothing
+        printJSONOr opts res $ mapM_ (putStrLn . printAddress)
+    ["page", name, page] -> do
+        let p   = read page :: Int
+            url = stringToBS $ concat [ "/api/accounts/", name, "/addresses" ]
+            qs  = [ ("page",Just $ stringToBS $ show p)
+                  , ("elemperpage",Just $ stringToBS $ show $ optCount opts)
+                  ]
+        res <- sendRequest url "GET" qs Nothing
+        printJSONOr opts res $ \(AddressPageRes as m) -> do
+            -- page 0 is the last page
+            let x = if p == 0 then m else p
+            putStrLn $ unwords [ "Page", show x, "of", show m ]
+            forM_ as $ putStrLn . printAddress
     ["new", name, label] -> do
-        addE <- sendRequest $ GenAddress name 1
-        case addE of
-            Right (ResAddressList (a:_)) -> do
-                res <- sendRequest $ AddressLabel name (addressIndex a) label
-                printJSONOr opts res $ \r -> case r of
-                    ResAddress add -> putStrLn $ printAddress add
-                    _ -> error "Received an invalid response"
-            Right _ -> throwIO $ WalletException "Invalid response"
-            Left err -> throwIO $ WalletException err
+        let url = stringToBS $ concat [ "/api/accounts/", name, "/addresses" ]
+            req = Just $ encode $ AddressData label
+        res <- sendRequest url "POST" [] req
+        printJSONOr opts res $ putStrLn . printAddress
+    {-
     ["genaddr", name] -> do
         res <- sendRequest $ GenAddress name $ optCount opts
         printJSONOr opts res $ \r -> case r of
             ResAddressList as -> forM_ as $ putStrLn . printAddress
-            _ -> error "Received an invalid response"
-    ["list", name] -> do
-        res <- sendRequest $ AddressList name
-        printJSONOr opts res $ \r -> case r of
-            ResAddressList as -> forM_ as $ putStrLn . printAddress
-            _ -> error "Received an invalid response"
-    ["page", name, page] -> do
-        let p = read page
-        res <- sendRequest $ AddressPage name p $ optCount opts
-        printJSONOr opts res $ \r -> case r of
-            ResAddressPage as m -> do
-                -- page 0 is the last page
-                let x = if p == 0 then m else p
-                putStrLn $ unwords [ "Page", show x, "of", show m ]
-                forM_ as $ putStrLn . printAddress
             _ -> error "Received an invalid response"
     ["label", name, index, label] -> do
         let i = read index
@@ -482,25 +479,21 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
 
 sendRequest :: BS.ByteString       -- Path
             -> BS.ByteString       -- Method
+            -> [(BS.ByteString, Maybe BS.ByteString)] -- Query String
             -> Maybe BL.ByteString -- Body 
             -> IO BL.ByteString    -- Response
-sendRequest p m (Just b) = withManager $ \manager -> responseBody <$>
-    flip httpLbs manager def
-        { host        = "localhost"
-        , port        = 8555
-        , path        = p
-        , method      = m
-        , requestBody = RequestBodyLBS b
-        , requestHeaders = [("accept", "application/json")]
-        }
-sendRequest p m Nothing = withManager $ \manager -> responseBody <$>
-    flip httpLbs manager def
-        { host        = "localhost"
-        , port        = 8555
-        , path        = p
-        , method      = m
-        , requestHeaders = [("accept", "application/json")]
-        }
+sendRequest p m qs bodyM = withManager $ \manager -> do
+    let req = setQueryString qs $ def
+                { host        = "localhost"
+                , port        = 8555
+                , path        = p
+                , method      = m
+                , requestHeaders = [("accept", "application/json")]
+                }
+    res <- flip httpLbs manager $ case bodyM of
+        Just b -> req{ requestBody = RequestBodyLBS b }
+        _      -> req
+    return $ responseBody res
 
 {-
 sendRequest :: WalletRequest

@@ -492,6 +492,7 @@ sendRequest p m (Just b) = withManager $ \manager -> responseBody <$>
         , path        = p
         , method      = m
         , requestBody = RequestBodyLBS b
+        , requestHeaders = [("accept", "application/json")]
         }
 sendRequest p m Nothing = withManager $ \manager -> responseBody <$>
     flip httpLbs manager def
@@ -499,6 +500,7 @@ sendRequest p m Nothing = withManager $ \manager -> responseBody <$>
         , port        = 8555
         , path        = p
         , method      = m
+        , requestHeaders = [("accept", "application/json")]
         }
 
 {-

@@ -112,11 +112,11 @@ mkYesod "HaskoinServer" [parseRoutes|
 /api/accounts/#Text/addresses/#Int    AddressR     GET PUT
 /api/accounts/#Text/txs               TxsR         GET POST
 /api/txs/#Text                        TxR          GET 
+/api/accounts/#Text/balance           BalanceR     GET
 /api/accounts/#Text/txs/#Text/sigblob SigBlobR     GET 
 /api/accounts/#Text/sigblobs          SigBlobsR    POST
 |]
 {-
-/api/accounts/#Text/balance                BalanceR     GET
 /api/node                                  NodeR        POST
 -}
 
@@ -304,6 +304,9 @@ getTxR tidStr = do
         WalletException "Could not parse txhash"
     tx <- runDB $ getTx $ fromJust tidM
     return $ toJSON $ TxRes tx
+
+getBalanceR :: Text -> Handler Value
+getBalanceR name = toJSON . BalanceRes <$> runDB (balance $ unpack name)
 
 getSigBlobR :: Text -> Text -> Handler Value
 getSigBlobR name tidStr = do

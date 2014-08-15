@@ -423,6 +423,11 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         let url = stringToBS $ concat ["/api/txs/", encodeTxHashLE $ fromJust h]
         res <- sendRequest url "GET" [] Nothing
         printJSONOr opts res $ \(TxRes tx) -> putStrLn $ bsToHex $ encode' tx
+    ["balance", name] -> do
+        let url = stringToBS $ concat [ "/api/accounts/", name, "/balance" ]
+        res <- sendRequest url "GET" [] Nothing
+        printJSONOr opts res $ \(BalanceRes b) ->
+            putStrLn $ unwords [ "Balance:", show b ]
     ["getblob", name, tid] -> do
         let h = decodeTxHashLE tid
         when (isNothing h) $ throwIO $
@@ -446,11 +451,6 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             putStrLn $ unwords [ "Tx      :", bsToHex $ encode' tx ]
             putStrLn $ unwords [ "Complete:", if c then "Yes" else "No" ]
     {-
-    ["balance", name] -> do
-        res <- sendRequest $ Balance name
-        printJSONOr opts res $ \r -> case r of
-            ResBalance b -> putStrLn $ unwords [ "Balance:", show b ]
-            _ -> error "Received an invalid response"
     "rescan" : rescantime -> do
         let t = read <$> listToMaybe rescantime
         res <- sendRequest $ Rescan t

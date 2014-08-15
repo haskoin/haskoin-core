@@ -284,21 +284,21 @@ postAccountsR :: Handler Value
 postAccountsR = parseJsonBody >>= \res -> toJSON <$> case res of
     Success (NewAccount w n) -> do
         acc <- runDB $ newAccount w n
-        updateNode $ replicateM_ 30 $ runDB $ addLookAhead n
+        updateNode $ runDB $ addLookAhead n 10
         return acc
     Success (NewMSAccount w n r t ks) -> do
         acc <- runDB $ newMSAccount w n r t ks
         when (length (accountKeys acc) == t) $ 
-            updateNode $ replicateM_ 30 $ runDB $ addLookAhead n
+            updateNode $ runDB $ addLookAhead n 10
         return acc
     Success (NewReadAccount n k) -> do
         acc <- runDB $ newReadAccount n k
-        updateNode $ replicateM_ 30 $ runDB $ addLookAhead n
+        updateNode $ runDB $ addLookAhead n 10
         return acc
     Success (NewReadMSAccount n r t ks) -> do
         acc <- runDB $ newReadMSAccount n r t ks
         when (length (accountKeys acc) == t) $ 
-            updateNode $ replicateM_ 30 $ runDB $ addLookAhead n
+            updateNode $ runDB $ addLookAhead n 10
         return acc
     Error err -> undefined
 
@@ -310,7 +310,7 @@ postAccountKeysR name = parseJsonBody >>= \res -> toJSON <$> case res of
     Success [ks] -> do
         acc <- runDB $ addAccountKeys (unpack name) ks
         when (length (accountKeys acc) == accountTotal acc) $ do
-            updateNode $ replicateM_ 30 $ runDB $ addLookAhead (unpack name)
+            updateNode $ runDB $ addLookAhead (unpack name) 10
         return acc
     Error err -> undefined
 
@@ -330,7 +330,7 @@ getAddressesR name = do
 postAddressesR :: Text -> Handler Value
 postAddressesR name = parseJsonBody >>= \res -> toJSON <$> case res of
     Success (AddressData label) -> updateNode $ do
-        addr' <- runDB $ newAddr $ unpack name
+        addr' <- runDB $ unlabeledAddr $ unpack name
         runDB $ setAddrLabel (unpack name) (addressIndex addr') label
     Error err -> undefined
 

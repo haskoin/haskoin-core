@@ -451,14 +451,12 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         printJSONOr opts res $ \(TxStatusRes tx c) -> do
             putStrLn $ unwords [ "Tx      :", bsToHex $ encode' tx ]
             putStrLn $ unwords [ "Complete:", if c then "Yes" else "No" ]
-    {-
     "rescan" : rescantime -> do
         let t = read <$> listToMaybe rescantime
-        res <- sendRequest $ Rescan t
-        printJSONOr opts res $ \r -> case r of
-            ResRescan ts -> putStrLn $ unwords [ "Timestamp:", show ts]
-            _ -> error "Received an invalid response"
-    -}
+            req = Just $ encode $ Rescan t
+        res <- sendRequest "/api/node" "POST" [] req
+        printJSONOr opts res $ \(RescanRes ts) ->
+            putStrLn $ unwords [ "Timestamp:", show ts]
     ["decodetx", tx] -> do
         let txM = decodeToMaybe =<< hexToBS tx
         when (isNothing txM) $ throwIO $

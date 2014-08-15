@@ -145,10 +145,8 @@ mkYesod "HaskoinServer" [parseRoutes|
 /api/accounts/#Text/balance           BalanceR     GET
 /api/accounts/#Text/txs/#Text/sigblob SigBlobR     GET 
 /api/accounts/#Text/sigblobs          SigBlobsR    POST
+/api/node                             NodeR        POST
 |]
-{-
-/api/node                                  NodeR        POST
--}
 
 runServer :: ServerConfig -> IO ()
 runServer config = do
@@ -386,6 +384,27 @@ postSigBlobsR name = parseJsonBody >>= \res -> case res of
     Success blob -> do
         (tx, c) <- runDB $ signSigBlob (unpack name) blob
         return $ toJSON $ TxStatusRes tx c
+    Error err -> undefined
+
+postNodeR :: Handler Value
+postNodeR = guardVault >> parseJsonBody >>= \res -> toJSON <$> case res of
+    Success (Rescan (Just t)) -> do
+        whenOnline $ do
+            HaskoinServer _ rChanM _ <- getYesod
+            let rChan = fromJust rChanM
+            liftIO $ atomically $ writeTBMChan rChan $ FastCatchupTime t
+        return $ RescanRes t
+    Success (Rescan Nothing) -> do
+        fstKeyTimeM <- runDB firstKeyTime
+        let fstKeyTime = fromJust fstKeyTimeM       
+        when (isNothing fstKeyTimeM) $ liftIO $ throwIO $
+            WalletException "No keys have been generated in the wallet"
+        whenOnline $ do
+            HaskoinServer _ rChanM _ <- getYesod
+            let rChan      = fromJust rChanM
+            liftIO $ atomically $ do
+                writeTBMChan rChan $ FastCatchupTime fstKeyTime
+        return $ RescanRes fstKeyTime
     Error err -> undefined
 
 -- Create and return haskoin working directory

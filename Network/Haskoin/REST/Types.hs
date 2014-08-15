@@ -8,6 +8,7 @@ module Network.Haskoin.REST.Types
 , AddressData(..)
 , TxAction(..)
 , TxHashStatusRes(..)
+, TxRes(..)
 )
 where
 
@@ -196,6 +197,14 @@ instance FromJSON TxHashStatusRes where
     parseJSON = withObject "txhashstatusres" $ \o ->
         TxHashStatusRes <$> o .: "txhash"
                         <*> o .: "complete"
+
+data TxRes = TxRes !Tx deriving (Eq, Show, Read)
+
+instance ToJSON TxRes where
+    toJSON (TxRes tx) = object [ "tx" .= tx ]
+
+instance FromJSON TxRes where
+    parseJSON = withObject "txres" $ \o -> TxRes <$> o .: "tx"
         
 
 {- Request -}

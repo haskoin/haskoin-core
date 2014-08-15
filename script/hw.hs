@@ -417,6 +417,13 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         printJSONOr opts res $ \(TxHashStatusRes h c) -> do
             putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
             putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
+    ["gettx", hash] -> do
+        let h = decodeTxHashLE hash
+        when (isNothing h) $ throwIO $
+            WalletException "Could not parse hash"
+        let url = stringToBS $ concat ["/api/txs/", encodeTxHashLE $ fromJust h]
+        res <- sendRequest url "GET" [] Nothing
+        printJSONOr opts res $ \(TxRes tx) -> putStrLn $ bsToHex $ encode' tx
     {-
     ["getblob", name, tid] -> do
         let h = decodeTxHashLE tid
@@ -435,14 +442,6 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             ResTxStatus tx c -> do
                 putStrLn $ unwords [ "Tx  :", bsToHex $ encode' tx]
                 putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
-            _ -> error "Received an invalid response"
-    ["gettx", hash] -> do
-        let h = decodeTxHashLE hash
-        when (isNothing h) $ throwIO $
-            WalletException "Could not parse hash"
-        res <- sendRequest $ TxGet $ fromJust h
-        printJSONOr opts res $ \r -> case r of
-            ResTx t -> putStrLn $ bsToHex $ encode' t
             _ -> error "Received an invalid response"
     ["balance", name] -> do
         res <- sendRequest $ Balance name

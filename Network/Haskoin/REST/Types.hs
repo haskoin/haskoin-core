@@ -11,13 +11,15 @@ module Network.Haskoin.REST.Types
 , TxRes(..)
 , TxStatusRes(..)
 , BalanceRes(..)
+, NodeAction(..)
+, RescanRes(..)
 )
 where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (mzero)
 
-import Data.Word (Word64)
+import Data.Word (Word32, Word64)
 import Data.Maybe (isJust, fromJust)
 import Data.Aeson 
     ( Value (..)
@@ -231,6 +233,36 @@ instance ToJSON BalanceRes where
 instance FromJSON BalanceRes where
     parseJSON = withObject "balanceres" $ \o ->
         BalanceRes <$> o .: "balance"
+
+data NodeAction = Rescan !(Maybe Word32)
+    deriving (Eq, Show, Read)
+
+instance ToJSON NodeAction where
+    toJSON a = case a of
+        Rescan (Just t) -> object 
+            [ "type"      .= String "rescan"
+            , "timestamp" .= t 
+            ]
+        Rescan Nothing  -> object
+            [ "type" .= String "rescan" ]
+            
+
+instance FromJSON NodeAction where
+    parseJSON = withObject "nodeaction" $ \o -> do
+        (String t) <- o .: "type"
+        case t of
+            "rescan" -> Rescan <$> o .:? "timestamp"
+            _ -> mzero
+
+data RescanRes = RescanRes !Word32
+    deriving (Eq, Show, Read)
+
+instance ToJSON RescanRes where
+    toJSON (RescanRes t) = object [ "timestamp" .= t ]
+
+instance FromJSON RescanRes where
+    parseJSON = withObject "rescanres" $ \o ->
+        RescanRes <$> o .: "timestamp"
 
 {- Request -}
 {-

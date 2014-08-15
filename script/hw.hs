@@ -493,38 +493,6 @@ sendRequest p m qs bodyM = withManager $ \manager -> do
         _      -> req
     return $ responseBody res
 
-{-
-sendRequest :: WalletRequest
-            -> IO (Either String WalletResponse)
-sendRequest req = do
-    dir <- getWorkDir
-    let configFile = concat [dir, "/config"]
-    configExists <- doesFileExist configFile
-    unless configExists $ throwIO $ WalletException $ unwords
-        [ "Config file does not exist. Call 'hw start' to generate one in:"
-        , configFile
-        ]
-    configM <- decodeFile configFile
-    unless (isJust configM) $ throwIO $ WalletException $ unwords
-        [ "Could node parse config file:"
-        , configFile
-        ]
-    let host       = fromString $ configBind $ fromJust configM
-        port       = configPort $ fromJust configM
-    head <$> tcpClient V2 True (clientSettings port host) go
-  where
-    source = CL.sourceList [MsgRequest (buildRequest V2 req)]
-    go :: AppConduits WalletRequest () () () () WalletResponse IO
-       -> IO [Either String WalletResponse]
-    go (src, snk) = do
-        source $$ snk
-        src $= CL.map f $$ CL.consume
-    f (IncomingError (ErrorObj _ m _ _ _)) = Left m
-    f (IncomingMsg (MsgResponse (Response _ rs _)) _) = Right rs
-    f (IncomingMsg (MsgError (ErrorObj _ m _ _ _)) _) = Left m
-    f _ = undefined
--}
-
 encodeTxJSON :: Tx -> Value
 encodeTxJSON tx@(Tx v is os i) = object
     [ "txid"     .= encodeTxHashLE (txHash tx)

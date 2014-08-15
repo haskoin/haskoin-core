@@ -512,7 +512,7 @@ buildUnsignedTx name dests fee = do
     -- TODO: Put this value in a constant file somewhere
     -- TODO: We need a better way to identify dust transactions
     recips <- if change < 5430 then return dests else do
-        cAddr <- newAddrGeneric name True False -- internal addresses
+        cAddr <- changeAddr name -- internal address
         -- TODO: Change must be randomly placed
         return $ dests ++ [(dbAddressValue $ cAddr,change)]
     let txE = buildAddrTx (map coinOutPoint coins) $ map f recips
@@ -569,9 +569,8 @@ signSigBlob name (SigBlob dat tx) = do
         return $ SigInput so op (SigAll False) rdm
 
 -- | Produces a bloom filter containing all the addresses in this wallet. This
--- includes internal, external and look-ahead addresses. The bloom filter can
--- be set on a peer connection to filter the transactions received by that
--- peer.
+-- includes internal and external addresses. The bloom filter can be set on a
+-- peer connection to filter the transactions received by that peer.
 walletBloomFilter :: (PersistUnique m, PersistQuery m) 
                   => Double
                   -> m BloomFilter

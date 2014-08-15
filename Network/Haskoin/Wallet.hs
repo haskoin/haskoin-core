@@ -30,7 +30,10 @@ module Network.Haskoin.Wallet
 , addressList
 , addressCount
 , addressPage
-, newAddr
+, unusedAddrs
+, unusedAddr
+, unlabeledAddr
+, changeAddr
 , setAddrLabel
 , addLookAhead
 , addressPrvKey

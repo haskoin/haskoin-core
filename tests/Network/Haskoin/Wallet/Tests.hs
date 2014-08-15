@@ -13,7 +13,7 @@ import Network.JsonRpc
 
 import Network.Haskoin.Wallet.Arbitrary
 import Network.Haskoin.Wallet.Types
-import Network.Haskoin.Server.Types
+import Network.Haskoin.REST.Types
 
 encodeWalletRequest :: (ToRequest q, ToJSON q) => q -> Int -> Value
 encodeWalletRequest wr i = toJSON $
@@ -41,24 +41,8 @@ tests =
         , testProperty "TxSource" (metaID :: TxSource -> Bool)
         , testProperty "SigBlob" (metaID :: SigBlob -> Bool)
         ]
-    , testGroup "Serialize & de-serialize JSON-RPC types"
-        [ testProperty "WalletRequest" testWalletRequest 
-        , testProperty "WalletResponse" testWalletResponse
-        ]
     ]
 
 metaID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
 metaID x = (decode . encode) [x] == Just [x]
 
-testWalletRequest :: WalletRequest -> Int -> Bool
-testWalletRequest wr i = fromMaybe False $ do
-    rq <- decodeWalletRequest (encodeWalletRequest wr i)
-    guard $ getReqId rq == IdInt i
-    return $ getReqParams rq == wr
-
-testWalletResponse :: RequestPair -> Int -> Bool
-testWalletResponse (RequestPair req res) i = fromMaybe False $ do
-    let rq = Request V2 (requestMethod req) req (IdInt i)
-    rs <- decodeWalletResponse rq (encodeWalletResponse res i)
-    guard $ getResId rs == IdInt i
-    return $ getResult rs == res

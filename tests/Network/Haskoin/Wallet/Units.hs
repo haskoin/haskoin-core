@@ -7,7 +7,7 @@ import Test.HUnit (Assertion, assertEqual, assertFailure)
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
-import Control.Monad (liftM, guard)
+import Control.Monad (liftM, guard, replicateM_)
 import Control.Monad.Trans (liftIO, MonadIO)
 import Control.Exception (Exception, handleJust)
 import Control.Monad.Trans.Resource (ResourceT)
@@ -16,7 +16,8 @@ import Control.Monad.Logger (NoLoggingT)
 import Data.Word (Word32)
 import Data.Maybe (fromJust)
 import qualified Data.ByteString as BS 
-    ( empty
+    ( ByteString
+    , empty
     , pack
     )
 
@@ -48,13 +49,7 @@ type App = SqlPersistT (NoLoggingT (ResourceT IO))
 tests :: [Test]
 tests =
     [ testGroup "Wallet creation tests"
-        [ testCase "Calling newWalletMnemo with a bad mnemonic should fail" $
-            assertException
-                (WalletException 
-                    "fromMnemonic: wrong number of words: 1") 
-                (newWalletMnemo "main" "password" (Just "hello"))
-
-        , testCase "Calling newWallet with an empty seed should fail" $
+        [ testCase "Calling newWallet with an empty seed should fail" $
             assertException
                 (WalletException "The seed is empty") 
                 (newWallet "main" BS.empty)
@@ -192,22 +187,15 @@ tests =
                 (WalletException "The page number 2 is too high") $ do
                     _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
-                    _ <- newAddrs "default" 5
+                    _ <- replicateM_ 5 $ newAddr "default"
                     addressPage "default" 2 5
-
-        , testCase "Generating less than 1 address should fail" $
-            assertException
-                (WalletException "Can not generate less than 1 address") $ do
-                    _ <- newWallet "main" $ BS.pack [0] 
-                    _ <- newAccount "main" "default"
-                    newAddrs "default" 0
 
         , testCase "Setting a label on an invalid address key should fail" $
             assertException
                 (WalletException "The address has not been generated yet") $ do
                     _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
-                    _ <- newAddrs "default" 5
+                    _ <- replicateM_ 5 $ newAddr "default"
                     setAddrLabel "default" 5 "Gym membership"
 
         , testCase "Requesting the private key on an invalid address key should fail" $
@@ -215,7 +203,7 @@ tests =
                 (WalletException "The address has not been generated yet") $ do
                     _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
-                    _ <- newAddrs "default" 5
+                    _ <- replicateM_ 5 $ newAddr "default"
                     addressPrvKey "default" 5
         ]
     , testGroup "Transaction import tests"
@@ -250,16 +238,16 @@ runUnit action = do
         action
     return ()
 
-mnemo :: String
-mnemo = unwords
+bs1 :: BS.ByteString
+bs1 = fromRight $ mnemonicToSeed pass $ unwords
     [ "mass", "coast", "dance"
     , "birth", "online", "various"
     , "renew", "alert", "crunch" 
     , "middle", "absurd", "health"
     ]
 
-mnemo2 :: String
-mnemo2 = unwords
+bs2 :: BS.ByteString
+bs2 = fromRight $ mnemonicToSeed pass $ unwords
     [ "couple", "wrong", "toss"
     , "light", "trust", "abandon"
     , "define", "copy", "radar"
@@ -271,10 +259,10 @@ pass = "passw0rd"
 
 testImportOrphan :: App ()
 testImportOrphan = do
-    _ <- newWalletMnemo "test" pass $ Just mnemo
+    _ <- newWallet "test" bs1
     _ <- newAccount "test" "acc1"
-    setLookAhead "acc1" 30
-    _ <- newAddrs "acc1" 5 
+    replicateM_ 30 $ addLookAhead "acc1"
+    _ <- replicateM_ 5 $ newAddr "acc1"
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -330,10 +318,10 @@ fakeNode i h = BlockHeaderNode
 
 testOutDoubleSpend :: App ()
 testOutDoubleSpend = do
-    _ <- newWalletMnemo "test" pass $ Just mnemo
+    _ <- newWallet "test" bs1
     _ <- newAccount "test" "acc1"
-    setLookAhead "acc1" 30
-    _ <- newAddrs "acc1" 5 
+    replicateM_ 30 $ addLookAhead "acc1"
+    _ <- replicateM_ 5 $ newAddr "acc1"
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -424,10 +412,10 @@ testOutDoubleSpend = do
 
 testInDoubleSpend :: App ()
 testInDoubleSpend = do
-    _ <- newWalletMnemo "test" pass $ Just mnemo
+    _ <- newWallet "test" bs1
     _ <- newAccount "test" "acc1"
-    setLookAhead "acc1" 30
-    _ <- newAddrs "acc1" 5 
+    replicateM_ 30 $ addLookAhead "acc1"
+    _ <- replicateM_ 5 $ newAddr "acc1"
     let tx1 = Tx 1 [ TxIn (OutPoint 5 5) (BS.pack [1]) maxBound ] 
                    [ TxOut 10000000 $
                       encodeOutputBS $ PayPKHash $ fromJust $ 
@@ -505,10 +493,10 @@ testInDoubleSpend = do
 -- tx1, tx2 and tx3 form a chain, and tx4 is in conflict with tx1
 testDoubleSpendChain :: App ()
 testDoubleSpendChain = do
-    _ <- newWalletMnemo "test" pass $ Just mnemo
+    _ <- newWallet "test" bs1
     _ <- newAccount "test" "acc1"
-    setLookAhead "acc1" 30
-    _ <- newAddrs "acc1" 5 
+    replicateM_ 30 $ addLookAhead "acc1"
+    _ <- replicateM_ 5 $ newAddr "acc1"
     let tx1 = Tx 1 [ TxIn (OutPoint 4 4) (BS.pack [1]) maxBound ] 
                    [ TxOut 10000000 $
                       encodeOutputBS $ PayPKHash $ fromJust $ 
@@ -627,10 +615,10 @@ testDoubleSpendChain = do
 -- tx3 spends from c2. So we can either have tx2 valid or tx1 and tx3 as valid.
 testDoubleSpendGroup :: App ()
 testDoubleSpendGroup = do
-    _ <- newWalletMnemo "test" pass $ Just mnemo
+    _ <- newWallet "test" bs1
     _ <- newAccount "test" "acc1"
-    setLookAhead "acc1" 30
-    _ <- newAddrs "acc1" 5 
+    replicateM_ 30 $ addLookAhead "acc1"
+    _ <- replicateM_ 5 $ newAddr "acc1"
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -770,10 +758,10 @@ testWalletDoubleSpend = do
         tx4 = decode' $ fromJust $ hexToBS "01000000018f8beb42a53d2fab0614867e8aec484d3e0b1097ab91a6ad3967b5f753770eb2000000006b483045022100ccf17481bd37aecb9fc6130f9fcfa73914bb0ea535af45fc989e6b3faa3f271802201b90209622ecd01417fb7e263598278541ac359cb7572dd3e4dec9fca2bd01ad0121038fecbf5bca807297c0290d8912dcb4348b46de7272c942a71bb8465de7d63293ffffffff0160489800000000001976a9141bb874c1b168e928ff148f2cf7ae9ad69e3e49f988ac00000000" :: Tx
 
     assertException (WalletException "Can not import double-spending transaction") $ do
-        _ <- newWalletMnemo "test" pass $ Just mnemo
+        _ <- newWallet "test" bs1
         _ <- newAccount "test" "acc1"
-        setLookAhead "acc1" 30
-        _ <- newAddrs "acc1" 5 
+        replicateM_ 30 $ addLookAhead "acc1"
+        _ <- replicateM_ 5 $ newAddr "acc1"
         -- Import funding transaction
         importTx fundingTx NetworkSource >>=
             liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
@@ -788,10 +776,10 @@ testWalletDoubleSpend = do
         importTx tx3 WalletSource 
 
     assertException (WalletException "Can not import double-spending transaction") $ do
-        _ <- newWalletMnemo "test" pass $ Just mnemo
+        _ <- newWallet "test" bs1
         _ <- newAccount "test" "acc1"
-        setLookAhead "acc1" 30
-        _ <- newAddrs "acc1" 5 
+        replicateM_ 30 $ addLookAhead "acc1"
+        _ <- replicateM_ 5 $ newAddr "acc1"
         -- Import funding transaction
         importTx fundingTx NetworkSource >>=
             liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
@@ -807,10 +795,10 @@ testWalletDoubleSpend = do
 
     -- Now we make tx2 dead so we can import tx3 and tx4 from the wallet
     runUnit $ do
-        _ <- newWalletMnemo "test" pass $ Just mnemo
+        _ <- newWallet "test" bs1
         _ <- newAccount "test" "acc1"
-        setLookAhead "acc1" 30
-        _ <- newAddrs "acc1" 5 
+        replicateM_ 30 $ addLookAhead "acc1"
+        _ <- replicateM_ 5 $ newAddr "acc1"
         -- Import funding transaction
         importTx fundingTx NetworkSource >>=
             liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
@@ -847,11 +835,11 @@ testWalletDoubleSpend = do
 testImportMultisig :: App ()
 testImportMultisig = do
     --testImportMultisig2
-    _ <- newWalletMnemo "test" pass $ Just mnemo
+    _ <- newWallet "test" bs1
     _ <- newMSAccount "test" "ms1" 2 2 $
         [fromJust $ xPubImport "xpub68yUKy6M9BSM3HMejgrwGipKXSn22QzTqhFguvcE4yksoHP2TJjCadfE2fHyvBAE9VpGkxygrqsDqohyeXMZUM8Fh3GxRGKpFXQiJ6vgrNG"]
-    setLookAhead "ms1" 30
-    _ <- newAddrs "ms1" 5 
+    replicateM_ 30 $ addLookAhead "ms1"
+    _ <- replicateM_ 5 $ newAddr "ms1"
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -891,10 +879,10 @@ testImportMultisig = do
 -- This test create a multisig account with the key of testImportMultisig1
 testImportMultisig2 :: App ()
 testImportMultisig2 = do
-    _ <- newWalletMnemo "test" pass $ Just mnemo2
+    _ <- newWallet "test" bs2
     _ <- newMSAccount "test" "ms1" 2 2 [fromJust $ xPubImport "xpub69iinth3CTrfh5efv7baTWwk9hHi4zqcQEsNFgVwEJvdaZVEPytZzmNxjYTnF5F5x2CamLXvmD1T4RhpsuaXSFPo2MnLN5VqWqrWb82U7ED"]
-    setLookAhead "ms1" 30
-    _ <- newAddrs "ms1" 5 
+    replicateM_ 30 $ addLookAhead "ms1"
+    _ <- replicateM_ 5 $ newAddr "ms1"
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $

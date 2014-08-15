@@ -1,6 +1,4 @@
-module Network.Haskoin.Wallet.Arbitrary 
-( RequestPair(..)
-) where
+module Network.Haskoin.Wallet.Arbitrary where
 
 import Test.QuickCheck
 
@@ -17,7 +15,7 @@ import qualified Data.ByteString as BS
     )
 
 import Network.Haskoin.Wallet.Types
-import Network.Haskoin.Server.Types
+import Network.Haskoin.REST.Types
 
 import Network.Haskoin.Script
 import Network.Haskoin.Protocol
@@ -64,93 +62,6 @@ instance Arbitrary AccTx where
                       <*> arbitrary
                       <*> arbitrary
                       <*> (abs <$> arbitrary)
-
-instance Arbitrary WalletRequest where
-    arbitrary = oneof
-        [ NewWallet <$> arbitrary <*> arbitrary <*> arbitrary
-        , GetWallet <$> arbitrary
-        , return WalletList
-        , NewAccount <$> arbitrary <*> arbitrary
-        , NewMSAccount <$> arbitrary 
-                       <*> arbitrary
-                       <*> (choose (1,16))
-                       <*> (choose (1,16))
-                       <*> (flip vectorOf (getAccPubKey <$> genKey) =<< choose (1,10))
-        , NewReadAccount <$> arbitrary <*> (getAccPubKey <$> genKey)
-        , NewReadMSAccount <$> arbitrary 
-                           <*> arbitrary 
-                           <*> arbitrary 
-                           <*> (flip vectorOf (getAccPubKey <$> genKey) =<< choose (1,10))
-        , AddAccountKeys <$> arbitrary 
-                         <*> (flip vectorOf (getAccPubKey <$> genKey) =<< choose (1,10))
-        , GetAccount <$> arbitrary
-        , return AccountList
-        , GenAddress <$> arbitrary <*> (choose (1,maxBound))
-        , AddressLabel <$> arbitrary 
-                       <*> (choose (0, clearBit maxBound 31))
-                       <*> arbitrary
-        , AddressList <$> arbitrary
-        , AddressPage <$> arbitrary 
-                      <*> (abs <$> arbitrary) 
-                      <*> (choose (1, maxBound))
-        , TxList <$> arbitrary
-        , TxPage <$> arbitrary 
-                 <*> (abs <$> arbitrary)
-                 <*> (choose (1, maxBound))
-        , TxSend <$> arbitrary 
-                 <*> (flip vectorOf (liftM2 (,) genAddr arbitrary) =<< choose (0,10))
-                 <*> arbitrary
-        , TxSign <$> arbitrary <*> genTx
-        , GetSigBlob <$> arbitrary <*> (fromInteger <$> arbitrary)
-        , SignSigBlob <$> arbitrary <*> arbitrary
-        , TxGet <$> (fromInteger <$> arbitrary)
-        , Balance <$> arbitrary
-        , return $ Rescan Nothing
-        , Rescan . Just <$> arbitrary
-        ]
-
-data RequestPair = RequestPair WalletRequest WalletResponse
-    deriving (Eq, Show, Read)
-
-instance Arbitrary RequestPair where
-    arbitrary = do
-        req <- arbitrary
-        res <- go req
-        return $ RequestPair req res
-      where
-        go (NewWallet _ _ _) = ResMnemonic <$> arbitrary
-        go (GetWallet _) = ResWallet <$> arbitrary
-        go WalletList = 
-            ResWalletList <$> (flip vectorOf arbitrary =<< choose (0,10))
-        go (NewAccount _ _) = ResAccount <$> arbitrary
-        go (NewMSAccount _ _ _ _ _) = ResAccount <$> arbitrary
-        go (NewReadAccount _ _) = ResAccount <$> arbitrary
-        go (NewReadMSAccount _ _ _ _) = ResAccount <$> arbitrary
-        go (AddAccountKeys _ _) = ResAccount <$> arbitrary
-        go (GetAccount _) = ResAccount <$> arbitrary
-        go AccountList = ResAccountList <$> arbitrary
-        go (GenAddress _ _) = 
-            ResAddressList <$> (flip vectorOf arbitrary =<< choose (0,10))
-        go (AddressLabel _ _ _) = ResAddress <$> arbitrary
-        go (AddressList _) = 
-            ResAddressList <$> (flip vectorOf arbitrary =<< choose (0,10))
-        go (AddressPage _ _ _) =
-            ResAddressPage <$> (flip vectorOf arbitrary =<< choose (0,10)) 
-                           <*> (abs <$> arbitrary)
-        go (TxList _) = 
-            ResAccTxList <$> (flip vectorOf arbitrary =<< choose (0,10))
-        go (TxPage _ _ _) = 
-            ResAccTxPage <$> (flip vectorOf arbitrary =<< choose (0,10)) 
-                         <*> (abs <$> arbitrary)
-        go (TxSend _ _ _) = 
-            ResTxHashStatus <$> (fromInteger <$> arbitrary) <*> arbitrary
-        go (TxSign _ _) = 
-            ResTxHashStatus <$> (fromInteger <$> arbitrary) <*> arbitrary
-        go (GetSigBlob _ _) = ResSigBlob <$> arbitrary
-        go (SignSigBlob _ _) = ResTxStatus <$> genTx <*> arbitrary
-        go (TxGet _) = ResTx <$> genTx
-        go (Balance _) = ResBalance <$> arbitrary
-        go (Rescan _) = ResRescan <$> arbitrary
 
 instance Arbitrary TxConfidence where
     arbitrary = elements [ TxOffline, TxDead, TxPending, TxBuilding ]

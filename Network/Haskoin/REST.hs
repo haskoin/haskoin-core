@@ -111,9 +111,9 @@ mkYesod "HaskoinServer" [parseRoutes|
 /api/accounts/#Text/addresses              AddressesR   GET POST
 /api/accounts/#Text/addresses/#Int         AddressR     GET PUT
 /api/accounts/#Text/txs                    TxsR         GET POST
+/api/txs/#Text                             TxR          GET 
 |]
 {-
-/api/accounts/#Text/txs/#TxHash            TxR          GET 
 /api/accounts/#Text/balance                BalanceR     GET
 /api/accounts/#Text/txs/#TxHash/sigblob    SigBlobR     GET 
 /api/accounts/#Text/sigblobs               SigBlobsR    GET
@@ -296,6 +296,14 @@ postTxsR name = parseJsonBody >>= \res -> case res of
         --         writeTBMChan rChan $ PublishTx newTx
         return $ toJSON $ TxHashStatusRes tid complete
     Error err -> undefined
+
+getTxR :: Text -> Handler Value
+getTxR tidStr = do
+    let tidM = decodeTxHashLE $ unpack tidStr
+    unless (isJust tidM) $ liftIO $ throwIO $
+        WalletException "Could not parse txhash"
+    tx <- runDB $ getTx $ fromJust tidM
+    return $ toJSON $ TxRes tx
 
 runServer :: IO ()
 runServer = do

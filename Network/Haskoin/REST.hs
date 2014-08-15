@@ -103,20 +103,20 @@ instance RenderMessage HaskoinServer FormMessage where
     renderMessage _ _ = defaultFormMessage
 
 mkYesod "HaskoinServer" [parseRoutes|
-/api/wallets                               WalletsR     GET POST
-/api/wallets/#Text                         WalletR      GET
-/api/accounts                              AccountsR    GET POST
-/api/accounts/#Text                        AccountR     GET
-/api/accounts/#Text/keys                   AccountKeysR POST
-/api/accounts/#Text/addresses              AddressesR   GET POST
-/api/accounts/#Text/addresses/#Int         AddressR     GET PUT
-/api/accounts/#Text/txs                    TxsR         GET POST
-/api/txs/#Text                             TxR          GET 
+/api/wallets                          WalletsR     GET POST
+/api/wallets/#Text                    WalletR      GET
+/api/accounts                         AccountsR    GET POST
+/api/accounts/#Text                   AccountR     GET
+/api/accounts/#Text/keys              AccountKeysR POST
+/api/accounts/#Text/addresses         AddressesR   GET POST
+/api/accounts/#Text/addresses/#Int    AddressR     GET PUT
+/api/accounts/#Text/txs               TxsR         GET POST
+/api/txs/#Text                        TxR          GET 
+/api/accounts/#Text/txs/#Text/sigblob SigBlobR     GET 
+/api/accounts/#Text/sigblobs          SigBlobsR    POST
 |]
 {-
 /api/accounts/#Text/balance                BalanceR     GET
-/api/accounts/#Text/txs/#TxHash/sigblob    SigBlobR     GET 
-/api/accounts/#Text/sigblobs               SigBlobsR    GET
 /api/node                                  NodeR        POST
 -}
 
@@ -304,6 +304,21 @@ getTxR tidStr = do
         WalletException "Could not parse txhash"
     tx <- runDB $ getTx $ fromJust tidM
     return $ toJSON $ TxRes tx
+
+getSigBlobR :: Text -> Text -> Handler Value
+getSigBlobR name tidStr = do
+    let tidM = decodeTxHashLE $ unpack tidStr
+    unless (isJust tidM) $ liftIO $ throwIO $
+        WalletException "Could not parse txhash"
+    blob <- runDB $ getSigBlob (unpack name) $ fromJust tidM
+    return $ toJSON blob
+
+postSigBlobsR :: Text -> Handler Value
+postSigBlobsR name = parseJsonBody >>= \res -> case res of
+    Success blob -> do
+        (tx, c) <- runDB $ signSigBlob (unpack name) blob
+        return $ toJSON $ TxStatusRes tx c
+    Error err -> undefined
 
 runServer :: IO ()
 runServer = do

@@ -9,6 +9,7 @@ module Network.Haskoin.REST.Types
 , TxAction(..)
 , TxHashStatusRes(..)
 , TxRes(..)
+, TxStatusRes(..)
 )
 where
 
@@ -206,6 +207,19 @@ instance ToJSON TxRes where
 instance FromJSON TxRes where
     parseJSON = withObject "txres" $ \o -> TxRes <$> o .: "tx"
         
+data TxStatusRes = TxStatusRes !Tx !Bool
+    deriving (Eq, Show, Read)
+
+instance ToJSON TxStatusRes where
+    toJSON (TxStatusRes tx b) = object
+        [ "tx"       .= tx
+        , "complete" .= b
+        ]
+
+instance FromJSON TxStatusRes where
+    parseJSON = withObject "txstatusres" $ \o ->
+        TxStatusRes <$> o .: "tx"
+                    <*> o .: "complete"
 
 {- Request -}
 {-

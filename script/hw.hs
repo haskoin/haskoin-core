@@ -248,8 +248,8 @@ printJSONOr :: (FromJSON a, ToJSON a)
 printJSONOr opts bs action
     | isLeft resE = error $ fromLeft resE
     | optJson opts = do
-        let bs = JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } res
-        formatStr $ bsToString $ toStrictBS bs
+        let bs' = JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } res
+        formatStr $ bsToString $ toStrictBS bs'
     | optYaml opts = formatStr $ bsToString $ YAML.encode res
     | otherwise = action res
   where
@@ -260,13 +260,14 @@ printJSONOr opts bs action
 processCommand :: Options -> Args -> IO ()
 processCommand opts args = getWorkDir >>= \dir -> case args of
     ["start"] -> do
+        let config = def { configBitcoinHosts = [("haskoin.com", defaultPort)] }
         prevLog <- doesFileExist $ logFile dir
         -- TODO: Should we move the log file to an archive directory?
         when prevLog $ removeFile $ logFile dir
         if optDetach opts
-            then runDetached 
-                    (Just $ pidFile dir) (ToFile $ logFile dir) runServer
-            else runServer
+            then runDetached (Just $ pidFile dir) (ToFile $ logFile dir) $
+                    runServer config
+            else runServer config
         putStrLn "Haskoin daemon started"
         putStrLn $ unwords [ "Configuration file:", configFile dir ]
     ["stop"] -> do

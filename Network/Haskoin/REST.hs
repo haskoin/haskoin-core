@@ -110,9 +110,9 @@ mkYesod "HaskoinServer" [parseRoutes|
 /api/accounts/#Text/keys                   AccountKeysR POST
 /api/accounts/#Text/addresses              AddressesR   GET POST
 /api/accounts/#Text/addresses/#Int         AddressR     GET PUT
+/api/accounts/#Text/txs                    TxsR         GET POST
 |]
 {-
-/api/accounts/#Text/txs                    TxsR         GET POST
 /api/accounts/#Text/txs/#TxHash            TxR          GET 
 /api/accounts/#Text/balance                BalanceR     GET
 /api/accounts/#Text/txs/#TxHash/sigblob    SigBlobR     GET 
@@ -264,6 +264,37 @@ putAddressR name i = parseJsonBody >>= \res -> case res of
     Success (AddressData label) -> runDB $ do
         addr <- setAddrLabel (unpack name) (fromIntegral i) label
         return $ toJSON addr
+    Error err -> undefined
+
+getTxsR :: Text -> Handler Value
+getTxsR name = do
+    (pageM, elemM) <- runInputGet $ (,)
+        <$> iopt intField "page"
+        <*> iopt intField "elemperpage"
+    if isJust pageM
+        then do
+            let elem | isJust elemM = fromJust elemM
+                     | otherwise    = 10
+            (as, m) <- runDB $ txPage (unpack name) (fromJust pageM) elem
+            return $ toJSON $ TxPageRes as m
+        else toJSON <$> runDB (txList $ unpack name)
+
+postTxsR :: Text -> Handler Value
+postTxsR name = parseJsonBody >>= \res -> case res of
+    Success (SendCoins rs fee) -> runDB $ do
+        (tid, complete) <- sendTx (unpack name) rs fee
+        -- when complete $ do
+        --     newTx <- getTx tid
+        --     when (isJust rChanM) $ liftIO $ atomically $ do
+        --         writeTBMChan rChan $ PublishTx newTx
+        return $ toJSON $ TxHashStatusRes tid complete
+    Success (SignTx tx) -> runDB $ do
+        (tid, complete) <- signWalletTx (unpack name) tx
+        -- when complete $ do
+        --     newTx <- getTx tid
+        --     when (isJust rChanM) $ liftIO $ atomically $ do
+        --         writeTBMChan rChan $ PublishTx newTx
+        return $ toJSON $ TxHashStatusRes tid complete
     Error err -> undefined
 
 runServer :: IO ()

@@ -132,9 +132,9 @@ withAsyncNode fp batch f = do
                                , DB.cacheSize       = 2048
                                }
     dataDb <- DB.open (concat [fp, "/datadb"])
-                DB.defaultOptions{ DB.createIfMissing = True
-                                , DB.cacheSize       = 2048
-                                }
+              DB.defaultOptions{ DB.createIfMissing = True
+                               , DB.cacheSize       = 2048
+                               }
     mChan <- atomically $ newTBMChan 10000
     eChan <- atomically $ newTBMChan 10000
     rChan <- atomically $ newTBMChan 10000

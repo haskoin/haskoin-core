@@ -40,6 +40,7 @@ import Data.Conduit (Sink, awaitForever, ($$), ($=))
 import Data.Conduit.Network ()
 import Data.Conduit.TMChan
 import Data.Text (Text, unpack, pack)
+import Data.Default (Default, def)
 import qualified Data.Conduit.List as CL
 
 import Database.Persist.Sqlite
@@ -88,7 +89,36 @@ import Network.Haskoin.Wallet.Types
 
 import Network.Haskoin.REST.Types
 
-data HaskoinServer = HaskoinServer ConnectionPool
+data ServerMode
+    = ServerOnline
+    | ServerOffline
+    | ServerVault
+    deriving (Eq, Show, Read)
+
+data ServerConfig = ServerConfig
+    { configBind         :: String
+    , configPort         :: Int
+    , configBitcoinHosts :: [(String, Int)]
+    , configBatch        :: Int
+    , configBloomFP      :: Double
+    , configMode         :: ServerMode
+    } deriving (Eq, Read, Show)
+
+instance Default ServerConfig where
+    def = ServerConfig
+        { configBind         = "127.0.0.1"
+        , configPort         = 8555
+        , configBitcoinHosts = [("127.0.0.1", defaultPort)]
+        , configBatch        = 100
+        , configBloomFP      = 0.00001
+        , configMode         = ServerOnline
+        }
+
+data HaskoinServer = HaskoinServer 
+    { serverPool   :: ConnectionPool
+    , serverNode   :: Maybe (TBMChan NodeRequest)
+    , serverConfig :: ServerConfig
+    }
 
 instance Yesod HaskoinServer
 
@@ -96,7 +126,7 @@ instance YesodPersist HaskoinServer where
     type YesodPersistBackend HaskoinServer = SqlPersistT
     
     runDB action = do
-        HaskoinServer pool <- getYesod
+        HaskoinServer pool _ _ <- getYesod
         runSqlPool action pool
 
 instance RenderMessage HaskoinServer FormMessage where
@@ -120,11 +150,95 @@ mkYesod "HaskoinServer" [parseRoutes|
 /api/node                                  NodeR        POST
 -}
 
+runServer :: ServerConfig -> IO ()
+runServer config = do
+    dir <- getWorkDir
+    let walletFile = pack $ concat [dir, "/wallet"]
+
+    pool <- createSqlPool (wrapConnection =<< open walletFile) 1
+    flip runSqlPersistMPool pool $ do 
+        _ <- runMigrationSilent migrateWallet 
+        initWalletDB
+
+    let bind     = fromString $ configBind config
+        port     = configPort config
+        hosts    = configBitcoinHosts config
+        batch    = configBatch config
+        fp       = configBloomFP config
+        mode     = configMode config 
+        settings = setHost bind $ setPort port defaultSettings
+
+    if mode `elem` [ServerOffline, ServerVault]
+        then do
+            app <- toWaiApp $ HaskoinServer pool Nothing config
+            runSettings settings app
+        else do
+            -- Launch SPV node
+            withAsyncNode dir batch $ \eChan rChan _ -> do
+            let eventPipe = sourceTBMChan eChan $$ 
+                            processNodeEvents pool rChan fp
+            withAsync eventPipe $ \_ -> do
+            bloom <- flip runSqlPersistMPool pool $ walletBloomFilter fp
+            atomically $ do
+                -- Bloom filter
+                writeTBMChan rChan $ BloomFilterUpdate bloom
+                -- Bitcoin hosts to connect to
+                forM_ hosts $ \(h,p) -> writeTBMChan rChan $ ConnectNode h p
+
+            app <- toWaiApp $ HaskoinServer pool (Just rChan) config
+            runSettings settings app
+
+processNodeEvents :: ConnectionPool 
+                  -> TBMChan NodeRequest 
+                  -> Double 
+                  -> Sink NodeEvent IO ()
+processNodeEvents pool rChan fp = awaitForever $ \e -> do
+    res <- lift $ tryJust f $ flip runSqlPersistMPool pool $ case e of
+        MerkleBlockEvent xs -> void $ importBlocks xs
+        TxEvent ts          -> do
+            before <- count ([] :: [Filter (DbAddressGeneric b)])
+            forM_ ts $ \tx -> importTx tx NetworkSource
+            after <- count ([] :: [Filter (DbAddressGeneric b)])
+            -- Update the bloom filter if new addresses were generated
+            when (after > before) $ do
+                bloom <- walletBloomFilter fp
+                liftIO $ atomically $ writeTBMChan rChan $ 
+                    BloomFilterUpdate bloom
+    when (isLeft res) $ liftIO $ print $ fromLeft res
+  where
+    f (SomeException e) = Just $ show e
+
+guardVault :: Handler ()
+guardVault = do
+    HaskoinServer _ _ config <- getYesod
+    when (configMode config == ServerVault) $ liftIO $ throwIO $
+        WalletException "This operation is not supported in vault mode"
+
+whenOnline :: Handler () -> Handler ()
+whenOnline action = do
+    HaskoinServer _ _ config <- getYesod
+    when (configMode config == ServerOnline) action
+
+updateNode :: Handler a -> Handler a
+updateNode action = do
+    fstKeyBefore <- runDB firstKeyTime
+    res <- action
+    whenOnline $ do
+        HaskoinServer _ rChanM config <- getYesod
+        let rChan = fromJust rChanM
+        bloom      <- runDB $ walletBloomFilter $ configBloomFP config
+        fstKeyTime <- runDB $ liftM fromJust firstKeyTime
+        liftIO $ atomically $ do
+            writeTBMChan rChan $ BloomFilterUpdate bloom
+            when (isNothing fstKeyBefore) $
+                writeTBMChan rChan $ FastCatchupTime fstKeyTime
+    return res
+
 getWalletsR :: Handler Value
-getWalletsR = toJSON <$> runDB walletList
+getWalletsR = guardVault >> toJSON <$> runDB walletList
 
 postWalletsR :: Handler Value
-postWalletsR = parseJsonBody >>= \res -> case res of
+postWalletsR = guardVault >> parseJsonBody >>= \res -> case res of
     Success (NewWallet name pass msM) -> do
         (ms, seed) <- case msM of
             Just ms -> case mnemonicToSeed pass ms of
@@ -144,86 +258,43 @@ postWalletsR = parseJsonBody >>= \res -> case res of
     Error err -> undefined
 
 getWalletR :: Text -> Handler Value
-getWalletR wname = toJSON <$> runDB (getWallet $ unpack wname)
+getWalletR wname = guardVault >> toJSON <$> runDB (getWallet $ unpack wname)
 
 getAccountsR :: Handler Value
 getAccountsR = toJSON <$> runDB accountList
 
 postAccountsR :: Handler Value
-postAccountsR = parseJsonBody >>= \res -> case res of
+postAccountsR = parseJsonBody >>= \res -> toJSON <$> case res of
     Success (NewAccount w n) -> do
-        a <- runDB $ do
-            fstKeyBefore <- firstKeyTime
-            a <- newAccount w n
-            replicateM_ 30 $ addLookAhead n
-            return a
-        -- bloom <- walletBloomFilter fp
-        -- fstKeyTime <- liftM fromJust firstKeyTime
-        -- liftIO $ atomically $ do
-        --     writeTBMChan rChan $ BloomFilterUpdate bloom
-        --     when (isNothing fstKeyBefore) $
-        --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
-        return $ toJSON a
+        acc <- runDB $ newAccount w n
+        updateNode $ replicateM_ 30 $ runDB $ addLookAhead n
+        return acc
     Success (NewMSAccount w n r t ks) -> do
-        a <- runDB $ do
-            fstKeyBefore <- firstKeyTime
-            a <- newMSAccount w n r t ks
-            when (length (accountKeys a) == t) $
-                replicateM_ 30 $ addLookAhead n
-            return a
-            -- bloom <- walletBloomFilter fp
-            -- fstKeyTime <- liftM fromJust firstKeyTime
-            -- liftIO $ atomically $ do
-            --     writeTBMChan rChan $ BloomFilterUpdate bloom
-            --     when (isNothing fstKeyBefore) $
-            --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
-        return $ toJSON a
+        acc <- runDB $ newMSAccount w n r t ks
+        when (length (accountKeys acc) == t) $ 
+            updateNode $ replicateM_ 30 $ runDB $ addLookAhead n
+        return acc
     Success (NewReadAccount n k) -> do
-        a <- runDB $ do
-            fstKeyBefore <- firstKeyTime
-            a <- newReadAccount n k
-            replicateM_ 30 $ addLookAhead n
-            return a
-        -- bloom <- walletBloomFilter fp
-        -- fstKeyTime <- liftM fromJust firstKeyTime
-        -- liftIO $ atomically $ do
-        --     writeTBMChan rChan $ BloomFilterUpdate bloom
-        --     when (isNothing fstKeyBefore) $
-        --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
-        return $ toJSON a
+        acc <- runDB $ newReadAccount n k
+        updateNode $ replicateM_ 30 $ runDB $ addLookAhead n
+        return acc
     Success (NewReadMSAccount n r t ks) -> do
-        a <- runDB $ do
-            fstKeyBefore <- firstKeyTime
-            a <- newReadMSAccount n r t ks
-            when (length (accountKeys a) == t) $
-                replicateM_ 30 $ addLookAhead n
-            -- bloom <- walletBloomFilter fp
-            -- fstKeyTime <- liftM fromJust firstKeyTime
-            -- liftIO $ atomically $ do
-            --     writeTBMChan rChan $ BloomFilterUpdate bloom
-            --     when (isNothing fstKeyBefore) $
-            --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
-        return $ toJSON a
+        acc <- runDB $ newReadMSAccount n r t ks
+        when (length (accountKeys acc) == t) $ 
+            updateNode $ replicateM_ 30 $ runDB $ addLookAhead n
+        return acc
     Error err -> undefined
 
 getAccountR :: Text -> Handler Value
 getAccountR name = toJSON <$> runDB (getAccount $ unpack name)
 
 postAccountKeysR :: Text -> Handler Value
-postAccountKeysR name = parseJsonBody >>= \res -> case res of
+postAccountKeysR name = parseJsonBody >>= \res -> toJSON <$> case res of
     Success [ks] -> do
-        a <- runDB $ do
-            fstKeyBefore <- firstKeyTime
-            a <- addAccountKeys (unpack name) ks
-            when (length (accountKeys a) == accountTotal a) $ do
-                replicateM_ 30 $ addLookAhead (unpack name)
-            -- bloom      <- walletBloomFilter fp
-            -- fstKeyTime <- liftM fromJust firstKeyTime
-            -- liftIO $ atomically $ do
-            --     writeTBMChan rChan $ BloomFilterUpdate bloom
-            --     when (isNothing fstKeyBefore) $
-            --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
-        return $ toJSON a
+        acc <- runDB $ addAccountKeys (unpack name) ks
+        when (length (accountKeys acc) == accountTotal acc) $ do
+            updateNode $ replicateM_ 30 $ runDB $ addLookAhead (unpack name)
+        return acc
     Error err -> undefined
 
 getAddressesR :: Text -> Handler Value
@@ -240,18 +311,10 @@ getAddressesR name = do
         else toJSON <$> runDB (addressList $ unpack name)
 
 postAddressesR :: Text -> Handler Value
-postAddressesR name = parseJsonBody >>= \res -> case res of
-    Success (AddressData label) -> runDB $ do
-        fstKeyBefore <- firstKeyTime
-        addr' <- newAddr $ unpack name
-        addr  <- setAddrLabel (unpack name) (addressIndex addr') label
-        -- bloom <- walletBloomFilter fp
-        -- fstKeyTime <- liftM fromJust firstKeyTime
-        -- liftIO $ atomically $ do
-        --     writeTBMChan rChan $ BloomFilterUpdate bloom
-        --     when (isNothing fstKeyBefore) $
-        --         writeTBMChan rChan $ FastCatchupTime fstKeyTime
-        return $ toJSON addr
+postAddressesR name = parseJsonBody >>= \res -> toJSON <$> case res of
+    Success (AddressData label) -> updateNode $ do
+        addr' <- runDB $ newAddr $ unpack name
+        runDB $ setAddrLabel (unpack name) (addressIndex addr') label
     Error err -> undefined
 
 getAddressR :: Text -> Int -> Handler Value
@@ -280,21 +343,23 @@ getTxsR name = do
         else toJSON <$> runDB (txList $ unpack name)
 
 postTxsR :: Text -> Handler Value
-postTxsR name = parseJsonBody >>= \res -> case res of
-    Success (SendCoins rs fee) -> runDB $ do
-        (tid, complete) <- sendTx (unpack name) rs fee
-        -- when complete $ do
-        --     newTx <- getTx tid
-        --     when (isJust rChanM) $ liftIO $ atomically $ do
-        --         writeTBMChan rChan $ PublishTx newTx
-        return $ toJSON $ TxHashStatusRes tid complete
-    Success (SignTx tx) -> runDB $ do
-        (tid, complete) <- signWalletTx (unpack name) tx
-        -- when complete $ do
-        --     newTx <- getTx tid
-        --     when (isJust rChanM) $ liftIO $ atomically $ do
-        --         writeTBMChan rChan $ PublishTx newTx
-        return $ toJSON $ TxHashStatusRes tid complete
+postTxsR name = guardVault >> parseJsonBody >>= \res -> toJSON <$> case res of
+    Success (SendCoins rs fee) -> do
+        (tid, complete) <- runDB $ sendTx (unpack name) rs fee
+        whenOnline $ when complete $ do
+            HaskoinServer _ rChanM _ <- getYesod
+            let rChan = fromJust rChanM
+            newTx <- runDB $ getTx tid
+            liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
+        return $ TxHashStatusRes tid complete
+    Success (SignTx tx) -> do
+        (tid, complete) <- runDB $ signWalletTx (unpack name) tx
+        whenOnline $ when complete $ do
+            HaskoinServer _ rChanM _ <- getYesod
+            let rChan = fromJust rChanM
+            newTx <- runDB $ getTx tid
+            liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
+        return $ TxHashStatusRes tid complete
     Error err -> undefined
 
 getTxR :: Text -> Handler Value
@@ -322,18 +387,6 @@ postSigBlobsR name = parseJsonBody >>= \res -> case res of
         (tx, c) <- runDB $ signSigBlob (unpack name) blob
         return $ toJSON $ TxStatusRes tx c
     Error err -> undefined
-
-runServer :: IO ()
-runServer = do
-    dir <- getWorkDir
-    let walletFile = pack $ concat [dir, "/wallet"]
-    pool <- createSqlPool (wrapConnection =<< open walletFile) 1
-    flip runSqlPersistMPool pool $ do 
-        _ <- runMigrationSilent migrateWallet 
-        initWalletDB
-    app <- toWaiApp $ HaskoinServer pool
-    let settings = setHost "127.0.0.1" $ setPort 8555 defaultSettings
-    runSettings settings app
 
 -- Create and return haskoin working directory
 getWorkDir :: IO FilePath

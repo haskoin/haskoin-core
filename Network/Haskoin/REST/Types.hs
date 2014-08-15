@@ -10,6 +10,7 @@ module Network.Haskoin.REST.Types
 , TxHashStatusRes(..)
 , TxRes(..)
 , TxStatusRes(..)
+, BalanceRes(..)
 )
 where
 
@@ -220,6 +221,16 @@ instance FromJSON TxStatusRes where
     parseJSON = withObject "txstatusres" $ \o ->
         TxStatusRes <$> o .: "tx"
                     <*> o .: "complete"
+
+data BalanceRes = BalanceRes !Word64
+    deriving (Eq, Show, Read)
+
+instance ToJSON BalanceRes where
+    toJSON (BalanceRes b) = object [ "balance" .= b ]
+
+instance FromJSON BalanceRes where
+    parseJSON = withObject "balanceres" $ \o ->
+        BalanceRes <$> o .: "balance"
 
 {- Request -}
 {-

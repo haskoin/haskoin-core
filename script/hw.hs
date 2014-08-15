@@ -424,25 +424,29 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         let url = stringToBS $ concat ["/api/txs/", encodeTxHashLE $ fromJust h]
         res <- sendRequest url "GET" [] Nothing
         printJSONOr opts res $ \(TxRes tx) -> putStrLn $ bsToHex $ encode' tx
-    {-
     ["getblob", name, tid] -> do
         let h = decodeTxHashLE tid
         when (isNothing h) $ throwIO $
             WalletException "Could not parse hash"
-        res <- sendRequest $ GetSigBlob name $ fromJust h
-        printJSONOr opts res $ \r -> case r of
-            ResSigBlob blob -> putStrLn $ bsToHex $ toStrictBS $ encode blob
-            _ -> error "Received an invalid response"
+        let url = stringToBS $ concat 
+                [ "/api/accounts/", name
+                , "/txs/", encodeTxHashLE $ fromJust h
+                , "/sigblob"
+                ]
+        res <- sendRequest url "GET" [] Nothing
+        printJSONOr opts res $ \blob ->
+            putStrLn $ bsToHex $ toStrictBS $ encode (blob :: SigBlob)
     ["signblob", name, blob] -> do
-        let blobM = decode . toLazyBS =<< hexToBS blob
+        let blobM = decode . toLazyBS =<< hexToBS blob :: Maybe SigBlob
         when (isNothing blobM) $ throwIO $
             WalletException "Could not parse sig blob"
-        res <- sendRequest $ SignSigBlob name $ fromJust blobM
-        printJSONOr opts res $ \r -> case r of
-            ResTxStatus tx c -> do
-                putStrLn $ unwords [ "Tx  :", bsToHex $ encode' tx]
-                putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
-            _ -> error "Received an invalid response"
+        let url = stringToBS $ concat [ "/api/accounts/", name, "/sigblobs" ]
+            req = Just $ encode $ fromJust blobM
+        res <- sendRequest url "POST" [] req 
+        printJSONOr opts res $ \(TxStatusRes tx c) -> do
+            putStrLn $ unwords [ "Tx      :", bsToHex $ encode' tx ]
+            putStrLn $ unwords [ "Complete:", if c then "Yes" else "No" ]
+    {-
     ["balance", name] -> do
         res <- sendRequest $ Balance name
         printJSONOr opts res $ \r -> case r of

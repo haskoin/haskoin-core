@@ -364,36 +364,36 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             req = Just $ encode $ AddressData label
         res <- sendRequest url "PUT" [] req
         printJSONOr opts res $ putStrLn . printAddress
-    {-
     ["txlist", name] -> do
-        res <- sendRequest $ TxList name
-        printJSONOr opts res $ \r -> case r of
-            ResAccTxList ts -> do
-                let xs = map (putStr . printAccTx) ts
-                sequence_ $ intersperse (putStrLn "-") xs
-            _ -> error "Received an invalid response"
+        let url = stringToBS $ concat [ "/api/accounts/", name, "/txs" ]
+        res <- sendRequest url "GET" [] Nothing
+        printJSONOr opts res $ \ts -> do
+            let xs = map (putStr . printAccTx) ts
+            sequence_ $ intersperse (putStrLn "-") xs
     ["txpage", name, page] -> do
-        let p = read page
-        res <- sendRequest $ TxPage name p $ optCount opts 
-        printJSONOr opts res $ \r -> case r of
-            ResAccTxPage ts m -> do
-                -- page 0 is the last page
-                let x = if p == 0 then m else p
-                putStrLn $ unwords [ "Page", show x, "of", show m ]
-                let xs = map (putStr . printAccTx) ts
-                sequence_ $ intersperse (putStrLn "-") xs
-            _ -> error "Received an invalid response"
+        let p   = read page
+            url = stringToBS $ concat [ "/api/accounts/", name, "/txs" ]
+            qs  = [ ("page",Just $ stringToBS $ show p)
+                  , ("elemperpage",Just $ stringToBS $ show $ optCount opts)
+                  ]
+        res <- sendRequest url "GET" qs Nothing
+        printJSONOr opts res $ \(TxPageRes ts m) -> do
+            -- page 0 is the last page
+            let x = if p == 0 then m else p
+            putStrLn $ unwords [ "Page", show x, "of", show m ]
+            let xs = map (putStr . printAccTx) ts
+            sequence_ $ intersperse (putStrLn "-") xs
     ["send", name, add, amount] -> do
         let a = base58ToAddr add
             v = read amount
         when (isNothing a) $ throwIO $ 
             WalletException "Could not parse address"
-        res <- sendRequest $ TxSend name [(fromJust a, v)] $ optFee opts
-        printJSONOr opts res $ \r -> case r of
-            ResTxHashStatus h c -> do
-                putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
-                putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
-            _ -> error "Received an invalid response"
+        let url = stringToBS $ concat [ "/api/accounts/", name, "/txs" ]
+            req = Just $ encode $ SendCoins [(fromJust a, v)] $ optFee opts
+        res <- sendRequest url "POST" [] req
+        printJSONOr opts res $ \(TxHashStatusRes h c) -> do
+            putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
+            putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
     "sendmany" : name : xs -> do
         let g str   = map T.unpack $ T.splitOn ":" (T.pack str)
             f [a,v] = liftM2 (,) (base58ToAddr a) (return $ read v)
@@ -401,22 +401,23 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             recipients = mapM (f . g) xs
         when (isNothing recipients) $ throwIO $
             WalletException "Could not parse recipient list"
-        res <- sendRequest $ TxSend name (fromJust recipients) $ optFee opts
-        printJSONOr opts res $ \r -> case r of
-            ResTxHashStatus h c -> do
-                putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
-                putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
-            _ -> error "Received an invalid response"
+        let url = stringToBS $ concat [ "/api/accounts/", name, "/txs" ]
+            req = Just $ encode $ SendCoins (fromJust recipients) $ optFee opts
+        res <- sendRequest url "POST" [] req
+        printJSONOr opts res $ \(TxHashStatusRes h c) -> do
+            putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
+            putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
     ["signtx", name, tx] -> do
         let txM = decodeToMaybe =<< hexToBS tx
         when (isNothing txM) $ throwIO $
             WalletException "Could not parse transaction"
-        res <- sendRequest $ TxSign name $ fromJust txM
-        printJSONOr opts res $ \r -> case r of
-            ResTxHashStatus h c -> do
-                putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
-                putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
-            _ -> error "Received an invalid response"
+        let url = stringToBS $ concat [ "/api/accounts/", name, "/txs" ]
+            req = Just $ encode $ SignTx $ fromJust txM
+        res <- sendRequest url "POST" [] req
+        printJSONOr opts res $ \(TxHashStatusRes h c) -> do
+            putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
+            putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
+    {-
     ["getblob", name, tid] -> do
         let h = decodeTxHashLE tid
         when (isNothing h) $ throwIO $

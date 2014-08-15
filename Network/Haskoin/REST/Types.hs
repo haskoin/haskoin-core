@@ -4,13 +4,17 @@ module Network.Haskoin.REST.Types
 , MnemonicRes(..)
 , NewAccount(..)
 , AddressPageRes(..)
+, TxPageRes(..)
 , AddressData(..)
+, TxAction(..)
+, TxHashStatusRes(..)
 )
 where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (mzero)
 
+import Data.Word (Word64)
 import Data.Maybe (isJust, fromJust)
 import Data.Aeson 
     ( Value (..)
@@ -24,6 +28,7 @@ import Data.Aeson
     )
 
 import Network.Haskoin.Crypto
+import Network.Haskoin.Protocol
 
 import Network.Haskoin.Wallet.Types
 
@@ -126,6 +131,20 @@ instance FromJSON AddressPageRes where
         AddressPageRes <$> o .: "addresspage"
                        <*> o .: "maxpage"
 
+data TxPageRes = TxPageRes ![AccTx] !Int
+    deriving (Eq, Show, Read)
+
+instance ToJSON TxPageRes where
+    toJSON (TxPageRes txs m) = object
+        [ "txpage"  .= txs 
+        , "maxpage" .= m
+        ]
+
+instance FromJSON TxPageRes where
+    parseJSON = withObject "txpageres" $ \o -> 
+        TxPageRes <$> o .: "txpage"
+                  <*> o .: "maxpage"
+
 data AddressData = AddressData !String
     deriving (Eq, Show, Read)
 
@@ -135,6 +154,49 @@ instance ToJSON AddressData where
 instance FromJSON AddressData where
     parseJSON = withObject "addressdata" $ \o ->
         AddressData <$> o .: "label"
+
+data TxAction
+    = SendCoins ![(Address, Word64)] !Word64
+    | SignTx !Tx
+    deriving (Eq, Read, Show)
+
+instance ToJSON TxAction where
+    toJSON action = case action of
+        SendCoins rs f -> object
+            [ "type"        .= String "send"
+            , "recipients"  .= rs
+            , "fee"         .= f
+            ]
+        SignTx tx -> object
+            [ "type"        .= String "sign"
+            , "tx"          .= tx
+            ]
+
+instance FromJSON TxAction where
+    parseJSON = withObject "txaction" $ \o -> do
+        (String t) <- o .: "type"
+        case t of
+            "send" -> SendCoins
+                <$> o .: "recipients"
+                <*> o .: "fee"
+            "sign" -> SignTx
+                <$> o .: "tx"
+            _ -> mzero
+
+data TxHashStatusRes = TxHashStatusRes !TxHash !Bool
+    deriving (Eq, Show, Read)
+
+instance ToJSON TxHashStatusRes where
+    toJSON (TxHashStatusRes h b) = object
+        [ "txhash"   .= h
+        , "complete" .= b
+        ]
+
+instance FromJSON TxHashStatusRes where
+    parseJSON = withObject "txhashstatusres" $ \o ->
+        TxHashStatusRes <$> o .: "txhash"
+                        <*> o .: "complete"
+        
 
 {- Request -}
 {-

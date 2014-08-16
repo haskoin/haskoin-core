@@ -32,6 +32,7 @@ import Data.Aeson
     , FromJSON
     , parseJSON
     , withObject
+    , withText
     , (.:), (.:?), (.=)
     )
 import Data.Maybe
@@ -95,6 +96,18 @@ data ServerMode
     | ServerVault
     deriving (Eq, Show, Read)
 
+instance ToJSON ServerMode where
+    toJSON m = case m of
+        ServerOnline  -> "online"
+        ServerOffline -> "offline"
+        ServerVault   -> "vault"
+
+instance FromJSON ServerMode where
+    parseJSON = withText "servermode" $ \t -> return $ case t of
+        "online"  -> ServerOnline
+        "offline" -> ServerOffline
+        "vault"   -> ServerVault
+
 data ServerConfig = ServerConfig
     { configBind         :: String
     , configPort         :: Int
@@ -104,10 +117,15 @@ data ServerConfig = ServerConfig
     , configMode         :: ServerMode
     } deriving (Eq, Read, Show)
 
+haskoinPort :: Int
+haskoinPort 
+    | networkName == "prodnet" = 8555
+    | otherwise                = 18555
+
 instance Default ServerConfig where
     def = ServerConfig
         { configBind         = "127.0.0.1"
-        , configPort         = 8555
+        , configPort         = haskoinPort
         , configBitcoinHosts = [("127.0.0.1", defaultPort)]
         , configBatch        = 100
         , configBloomFP      = 0.00001

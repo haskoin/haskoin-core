@@ -28,7 +28,7 @@ import Data.Maybe (listToMaybe, fromJust, isNothing, isJust, fromMaybe)
 import qualified Data.HashMap.Strict as H (toList)
 import qualified Data.Vector as V (toList)
 import qualified Data.Text as T (pack, unpack, splitOn)
-import qualified Data.Yaml as YAML (encode)
+import qualified Data.Yaml as YAML (encode, encodeFile, decodeFile)
 import Data.Conduit (($$), ($=))
 import Data.Conduit.Network (clientSettings)
 import qualified Data.ByteString.Lazy as BL (ByteString)
@@ -84,50 +84,100 @@ type Args = [String]
 
 data Options = Options
     { optCount    :: Int
-    , optSigHash  :: SigHash
     , optFee      :: Word64
     , optJson     :: Bool
     , optYaml     :: Bool
     , optPass     :: String
     , optDetach   :: Bool
+    , optBind     :: String
+    , optPort     :: Int
+    , optHosts    :: [(String, Int)]
+    , optBatch    :: Int
+    , optBloomFP  :: Double
+    , optMode     :: ServerMode
     } deriving (Eq, Show)
 
 defaultOptions :: Options
 defaultOptions = Options
     { optCount    = 5
-    , optSigHash  = SigAll False
     , optFee      = 10000
     , optJson     = False
     , optYaml     = False
     , optPass     = ""
     , optDetach   = False
+    , optBind     = configBind def
+    , optPort     = configPort def
+    , optHosts    = configBitcoinHosts def
+    , optBatch    = configBatch def
+    , optBloomFP  = configBloomFP def
+    , optMode     = configMode def
     } 
+
+instance ToJSON Options where
+    toJSON opt = object
+        [ "count"          .= optCount opt
+        , "fee"            .= optFee opt
+        , "json"           .= optJson opt
+        , "yaml"           .= optYaml opt
+        , "passphrase"     .= optPass opt
+        , "detach"         .= optDetach opt
+        , "bind"           .= optBind opt
+        , "port"           .= optPort opt
+        , "bitcoin-hosts"  .= (map f $ optHosts opt)
+        , "batch"          .= optBatch opt
+        , "false-positive" .= optBloomFP opt
+        , "operation-mode" .= optMode opt
+        ]
+      where
+        f (x,y) = object
+            [ "host" .= x
+            , "port" .= y
+            ]
+
+instance FromJSON Options where
+    parseJSON = withObject "options" $ \o -> Options
+        <$> o .: "count"
+        <*> o .: "fee"
+        <*> o .: "json"
+        <*> o .: "yaml"
+        <*> o .: "passphrase"
+        <*> o .: "detach"
+        <*> o .: "bind"
+        <*> o .: "port"
+        <*> (mapM f =<< o .: "bitcoin-hosts")
+        <*> o .: "batch"
+        <*> o .: "false-positive"
+        <*> o .: "operation-mode"
+      where
+        f = withObject "bitcoinhost" $ \x -> do
+            a <- x .: "host"
+            b <- x .: "port"
+            return (a,b)
 
 options :: [OptDescr (Options -> IO Options)]
 options =
-    [ Option ['c'] ["count"] (ReqArg parseCount "INT") $
+    [ Option ['c'] ["count"] (ReqArg parseCount "INT")
         "Count: see commands for details"
-    , Option ['s'] ["sighash"] (ReqArg parseSigHash "SIGHASH") $
-        "(disabled) Signature type = ALL|NONE|SINGLE"
-    , Option ['a'] ["anyonecanpay"]
-        (NoArg $ \opts -> do
-            let sh = optSigHash opts
-            return opts{ optSigHash = sh{ anyoneCanPay = True } }
-        ) $ "(disabled) Set signature flag AnyoneCanPay"
-    , Option ['f'] ["fee"] (ReqArg parseCount "INT") $
+    , Option ['f'] ["fee"] (ReqArg parseCount "INT")
         "Transaction fee (default: 10000)"
     , Option ['j'] ["json"]
-        (NoArg $ \opts -> return opts{ optJson = True }) $
+        (NoArg $ \opts -> return opts{ optJson = True })
         "Format result as JSON"
     , Option ['y'] ["yaml"]
-        (NoArg $ \opts -> return opts{ optYaml = True }) $
+        (NoArg $ \opts -> return opts{ optYaml = True })
         "Format result as YAML"
     , Option ['d'] ["detach"]
-        (NoArg $ \opts -> return opts{ optDetach = True }) $
+        (NoArg $ \opts -> return opts{ optDetach = True })
         "Detach the process from the terminal"
     , Option ['p'] ["passphrase"]
-        (ReqArg (\s opts -> return opts{ optPass = s }) "PASSPHRASE") $
+        (ReqArg (\s opts -> return opts{ optPass = s }) "PASSPHRASE")
         "Optional Passphrase for mnemonic"
+    , Option ['h'] ["host"]
+        (ReqArg (\h opts -> return opts{ optBind = h }) "HOST")
+        "API server bind address"
+    , Option ['P'] ["port"] 
+        (ReqArg (\p opts -> return opts{ optPort = read p }) "PORT")
+        "API server port"
     ]
 
 parseCount :: String -> Options -> IO Options
@@ -135,14 +185,6 @@ parseCount s opts
     | res > 0   = return opts{ optCount = res }
     | otherwise = error $ unwords ["Invalid count option:", s]
     where res = read s
-
-parseSigHash :: String -> Options -> IO Options
-parseSigHash s opts = return opts{ optSigHash = res }
-    where acp = anyoneCanPay $ optSigHash opts
-          res | s == "ALL" = SigAll acp
-              | s == "NONE" = SigNone acp
-              | s == "SINGLE" = SigSingle acp
-              | otherwise = error "SigHash must be one of ALL|NONE|SINGLE"
 
 usageHeader :: String
 usageHeader = "Usage: hw [<options>] <command> [<args>]"
@@ -226,12 +268,22 @@ usage = unlines $ [warningMsg, usageInfo usageHeader options] ++ cmdHelp
 main :: IO ()
 main = E.getArgs >>= \args -> case getOpt Permute options args of
     (o,xs,[]) -> do
-        opts <- foldl (>>=) (return defaultOptions) o
+        opts <- foldl (>>=) getConfig o
         processCommand opts xs
     (_,_,msgs) -> print $ unlines $ msgs ++ [usage]
 
-catchEx :: IOError -> Maybe String
-catchEx = return . ioeGetErrorString
+getConfig :: IO Options
+getConfig = do
+    dir <- getWorkDir
+    let configFile = concat [dir, "/config"]
+    prevConfig <- doesFileExist configFile
+    unless prevConfig $ YAML.encodeFile configFile defaultOptions
+    configM <- YAML.decodeFile configFile
+    unless (isJust configM) $ throwIO $ WalletException $ unwords
+        [ "Could not parse config file:"
+        , configFile
+        ]
+    return $ fromJust configM
 
 invalidErr :: String
 invalidErr = "Invalid request"
@@ -259,7 +311,14 @@ printJSONOr opts bs action
 processCommand :: Options -> Args -> IO ()
 processCommand opts args = getWorkDir >>= \dir -> case args of
     ["start"] -> do
-        let config = def { configBitcoinHosts = [("haskoin.com", defaultPort)] }
+        let config = ServerConfig
+                { configBind         = optBind opts
+                , configPort         = optPort opts
+                , configBitcoinHosts = optHosts opts
+                , configBatch        = optBatch opts
+                , configBloomFP      = optBloomFP opts
+                , configMode         = optMode opts
+                }
         prevLog <- doesFileExist $ logFile dir
         -- TODO: Should we move the log file to an archive directory?
         when prevLog $ removeFile $ logFile dir
@@ -278,22 +337,22 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
                 []  -> NewWallet name (optPass opts) Nothing
                 [m] -> NewWallet name (optPass opts) (Just m)
                 _   -> error invalidErr
-        res <- sendRequest "/api/wallets" "POST" [] req
+        res <- sendRequest "/api/wallets" "POST" [] req opts
         printJSONOr opts res $ \(MnemonicRes m) -> do
             putStrLn "Write down your seed:"
             putStrLn m
     ["getwallet", name] -> do
         let url = stringToBS $ concat [ "/api/wallets/", name ]
-        res <- sendRequest url "GET" [] Nothing
+        res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ putStr . printWallet
     ["walletlist"] -> do
-        res <- sendRequest "/api/wallets" "GET" [] Nothing
+        res <- sendRequest "/api/wallets" "GET" [] Nothing opts
         printJSONOr opts res $ \ws -> do
             let xs = map (putStr . printWallet) ws
             sequence_ $ intersperse (putStrLn "-") xs
     ["newacc", wname, name] -> do
         let req = Just $ encode $ NewAccount wname name
-        res <- sendRequest "/api/accounts" "POST" [] req
+        res <- sendRequest "/api/accounts" "POST" [] req opts
         printJSONOr opts res $ putStr . printAccount
     "newms" : wname : name : m : n : ks -> do
         let keysM = mapM xPubImport ks
@@ -302,14 +361,14 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
         let req = Just $ encode $ NewMSAccount wname name m' n' $ fromJust keysM
-        res <- sendRequest "/api/accounts" "POST" [] req
+        res <- sendRequest "/api/accounts" "POST" [] req opts
         printJSONOr opts res $ putStr . printAccount
     ["newread", name, key] -> do
         let keyM = xPubImport key
         when (isNothing keyM) $ throwIO $ 
             WalletException "Could not parse key"
         let req = Just $ encode $ NewReadAccount name $ fromJust keyM
-        res <- sendRequest "/api/accounts" "POST" [] req
+        res <- sendRequest "/api/accounts" "POST" [] req opts
         printJSONOr opts res $ putStr . printAccount
     "newreadms" : name : m : n : ks -> do
         let keysM = mapM xPubImport ks
@@ -318,7 +377,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
         let req = Just $ encode $ NewReadMSAccount name m' n' $ fromJust keysM
-        res <- sendRequest "/api/accounts" "POST" [] req
+        res <- sendRequest "/api/accounts" "POST" [] req opts
         printJSONOr opts res $ putStr . printAccount
     "addkeys" : name : ks -> do
         let keysM = mapM xPubImport ks
@@ -326,20 +385,20 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             WalletException "Could not parse keys"
         let req = encode <$> keysM
             url = stringToBS $ concat [ "/api/accounts/", name, "/keys" ]
-        res <- sendRequest url "POST" [] req
+        res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ putStr . printAccount
     ["getacc", name] -> do
         let url = stringToBS $ concat [ "/api/accounts/", name ]
-        res <- sendRequest url "GET" [] Nothing
+        res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ putStr . printAccount
     ["acclist"] -> do
-        res <- sendRequest "/api/accounts" "GET" [] Nothing
+        res <- sendRequest "/api/accounts" "GET" [] Nothing opts
         printJSONOr opts res $ \as -> do
             let xs = map (putStr . printAccount) as
             sequence_ $ intersperse (putStrLn "-") xs
     ["list", name] -> do
         let url = stringToBS $ concat [ "/api/accounts/", name, "/addresses" ]
-        res <- sendRequest url "GET" [] Nothing
+        res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ mapM_ (putStrLn . printAddress)
     ["page", name, page] -> do
         let p   = read page :: Int
@@ -347,7 +406,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             qs  = [ ("page",Just $ stringToBS $ show p)
                   , ("elemperpage",Just $ stringToBS $ show $ optCount opts)
                   ]
-        res <- sendRequest url "GET" qs Nothing
+        res <- sendRequest url "GET" qs Nothing opts
         printJSONOr opts res $ \(AddressPageRes as m) -> do
             -- page 0 is the last page
             let x = if p == 0 then m else p
@@ -356,17 +415,17 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
     ["new", name, label] -> do
         let url = stringToBS $ concat [ "/api/accounts/", name, "/addresses" ]
             req = Just $ encode $ AddressData label
-        res <- sendRequest url "POST" [] req
+        res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ putStrLn . printAddress
     ["label", name, index, label] -> do
         let url = stringToBS $ concat 
                 [ "/api/accounts/", name, "/addresses/", index ]
             req = Just $ encode $ AddressData label
-        res <- sendRequest url "PUT" [] req
+        res <- sendRequest url "PUT" [] req opts
         printJSONOr opts res $ putStrLn . printAddress
     ["txlist", name] -> do
         let url = stringToBS $ concat [ "/api/accounts/", name, "/txs" ]
-        res <- sendRequest url "GET" [] Nothing
+        res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ \ts -> do
             let xs = map (putStr . printAccTx) ts
             sequence_ $ intersperse (putStrLn "-") xs
@@ -376,7 +435,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             qs  = [ ("page",Just $ stringToBS $ show p)
                   , ("elemperpage",Just $ stringToBS $ show $ optCount opts)
                   ]
-        res <- sendRequest url "GET" qs Nothing
+        res <- sendRequest url "GET" qs Nothing opts
         printJSONOr opts res $ \(TxPageRes ts m) -> do
             -- page 0 is the last page
             let x = if p == 0 then m else p
@@ -390,7 +449,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             WalletException "Could not parse address"
         let url = stringToBS $ concat [ "/api/accounts/", name, "/txs" ]
             req = Just $ encode $ SendCoins [(fromJust a, v)] $ optFee opts
-        res <- sendRequest url "POST" [] req
+        res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxHashStatusRes h c) -> do
             putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
             putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
@@ -403,7 +462,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             WalletException "Could not parse recipient list"
         let url = stringToBS $ concat [ "/api/accounts/", name, "/txs" ]
             req = Just $ encode $ SendCoins (fromJust recipients) $ optFee opts
-        res <- sendRequest url "POST" [] req
+        res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxHashStatusRes h c) -> do
             putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
             putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
@@ -413,7 +472,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             WalletException "Could not parse transaction"
         let url = stringToBS $ concat [ "/api/accounts/", name, "/txs" ]
             req = Just $ encode $ SignTx $ fromJust txM
-        res <- sendRequest url "POST" [] req
+        res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxHashStatusRes h c) -> do
             putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
             putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
@@ -422,11 +481,11 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         when (isNothing h) $ throwIO $
             WalletException "Could not parse hash"
         let url = stringToBS $ concat ["/api/txs/", encodeTxHashLE $ fromJust h]
-        res <- sendRequest url "GET" [] Nothing
+        res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ \(TxRes tx) -> putStrLn $ bsToHex $ encode' tx
     ["balance", name] -> do
         let url = stringToBS $ concat [ "/api/accounts/", name, "/balance" ]
-        res <- sendRequest url "GET" [] Nothing
+        res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ \(BalanceRes b) ->
             putStrLn $ unwords [ "Balance:", show b ]
     ["getblob", name, tid] -> do
@@ -438,7 +497,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
                 , "/txs/", encodeTxHashLE $ fromJust h
                 , "/sigblob"
                 ]
-        res <- sendRequest url "GET" [] Nothing
+        res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ \blob ->
             putStrLn $ bsToHex $ toStrictBS $ encode (blob :: SigBlob)
     ["signblob", name, blob] -> do
@@ -447,14 +506,14 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             WalletException "Could not parse sig blob"
         let url = stringToBS $ concat [ "/api/accounts/", name, "/sigblobs" ]
             req = Just $ encode $ fromJust blobM
-        res <- sendRequest url "POST" [] req 
+        res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxStatusRes tx c) -> do
             putStrLn $ unwords [ "Tx      :", bsToHex $ encode' tx ]
             putStrLn $ unwords [ "Complete:", if c then "Yes" else "No" ]
     "rescan" : rescantime -> do
         let t = read <$> listToMaybe rescantime
             req = Just $ encode $ Rescan t
-        res <- sendRequest "/api/node" "POST" [] req
+        res <- sendRequest "/api/node" "POST" [] req opts
         printJSONOr opts res $ \(RescanRes ts) ->
             putStrLn $ unwords [ "Timestamp:", show ts]
     ["decodetx", tx] -> do
@@ -479,13 +538,14 @@ sendRequest :: BS.ByteString       -- Path
             -> BS.ByteString       -- Method
             -> [(BS.ByteString, Maybe BS.ByteString)] -- Query String
             -> Maybe BL.ByteString -- Body 
+            -> Options             -- Options
             -> IO BL.ByteString    -- Response
-sendRequest p m qs bodyM = withManager $ \manager -> do
+sendRequest p m qs bodyM opts = withManager $ \manager -> do
     let req = setQueryString qs $ def
-                { host        = "localhost"
-                , port        = 8555
-                , path        = p
-                , method      = m
+                { host           = stringToBS $ optBind opts
+                , port           = optPort opts
+                , path           = p
+                , method         = m
                 , requestHeaders = [("accept", "application/json")]
                 }
     res <- flip httpLbs manager $ case bodyM of

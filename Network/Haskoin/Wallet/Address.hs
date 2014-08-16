@@ -9,7 +9,7 @@ module Network.Haskoin.Wallet.Address
 , unusedAddrs
 , unusedAddr
 , unlabeledAddr
-, changeAddr
+, internalAddr
 , newAddrs
 , newAddrsGeneric
 , setAddrLabel
@@ -161,10 +161,10 @@ unusedAddr :: (PersistUnique m, PersistQuery m)
 unusedAddr name = liftM toPaymentAddr $ unusedAddrGeneric name False
 
 -- | Get first unused change address.
-changeAddr :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
+internalAddr :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
            => AccountName               -- ^ Account name
            -> m (DbAddressGeneric b)    -- ^ First unused change address
-changeAddr name = unusedAddrGeneric name True
+internalAddr name = unusedAddrGeneric name True
 
 -- | Get first unused payment or change address.
 unusedAddrGeneric

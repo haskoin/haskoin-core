@@ -4,14 +4,12 @@ module Network.Haskoin.Crypto.Keys
 , isPubKeyU
 , derivePubKey
 , pubKeyAddr
-, addPubKeys
 , PrvKey(..)
 , isValidPrvKey
 , makePrvKey
 , makePrvKeyU
 , fromPrvKey
 , isPrvKeyU
-, addPrvKeys
 , putPrvKey
 , getPrvKey
 , getPrvKeyU
@@ -75,21 +73,6 @@ instance Eq PubKey where
 -- key point lies on the curve.
 isValidPubKey :: PubKey -> Bool
 isValidPubKey = validatePoint . pubKeyPoint
-
--- | Add a public key to a private key defined by its Word256 value. This will
--- transform the private key into a public key and add the respective public
--- key points together. This is provided as a helper for BIP32 wallet
--- implementations. This function fails for uncompressed keys and returns
--- Nothing if the private key value is >= than the order of the curve N.
-addPubKeys :: PubKey -> Word256 -> Maybe PubKey
-addPubKeys pub i
-    | isPubKeyU pub = error "Add: HDW only supports compressed formats"
-    | toInteger i < curveN =
-        let pt1 = mulPoint (fromIntegral i :: FieldN) curveG
-            pt2 = addPoint (pubKeyPoint pub) pt1
-            in if isInfPoint pt2 then Nothing
-                                 else Just $ PubKey pt2
-    | otherwise = Nothing
 
 -- | Returns True if the public key is uncompressed
 isPubKeyU :: PubKey -> Bool
@@ -196,18 +179,6 @@ makePrvKeyU i
 -- | Returns the Integer value of a private key
 fromPrvKey :: PrvKey -> Integer
 fromPrvKey = fromIntegral . prvKeyFieldN
-
--- | Add two private keys together. One of the keys is defined by a Word256.
--- The functions fails on uncompressed private keys and return Nothing if the
--- Word256 is smaller than the order of the curve N. This is provided
--- as a helper for implementing BIP32 wallets.
-addPrvKeys :: PrvKey -> Word256 -> Maybe PrvKey
-addPrvKeys key i
-    | isPrvKeyU key = error "Add: HDW only supports compressed formats"
-    | toInteger i < curveN =
-        let r = (prvKeyFieldN key) + (fromIntegral i :: FieldN) 
-            in makePrvKey $ toInteger r
-    | otherwise = Nothing
 
 -- | Returns True of the private key is uncompressed
 isPrvKeyU :: PrvKey -> Bool

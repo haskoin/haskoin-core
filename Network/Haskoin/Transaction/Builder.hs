@@ -42,13 +42,12 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Protocol
 import Network.Haskoin.Script
 
--- | A Coin is something that can be spent by a transaction and is
--- represented by a transaction output, an outpoint and optionally a
--- redeem script.
+-- | A Coin is an output of a transaction that can be spent by another
+-- transaction. 
 data Coin = 
-    Coin { coinValue    :: !Word64
-         , coinScript   :: !ScriptOutput
-         , coinOutPoint :: !OutPoint       -- ^ Previous outpoint
+    Coin { coinValue    :: !Word64               -- ^ Value in Satoshis
+         , coinScript   :: !ScriptOutput         -- ^ Output script
+         , coinOutPoint :: !OutPoint             -- ^ Previous outpoint
          , coinRedeem   :: !(Maybe RedeemScript) -- ^ Redeem script
          } deriving (Eq, Show, Read)
 
@@ -204,8 +203,9 @@ instance FromJSON SigInput where
 
 -- | Sign a transaction by providing the 'SigInput' signing parameters and a
 -- list of private keys. The signature is computed within the 'SecretT' monad
--- to generate the random signing nonce and within the 'BuildT' monad to add
--- information on wether the result was fully or partially signed.
+-- to generate the random signing nonce. This function returns a transaction
+-- completion status. If false, some of the inputs are not fully signed or are
+-- non-standard. 
 signTx :: Monad m 
        => Tx                        -- ^ Transaction to sign
        -> [SigInput]                -- ^ SigInput signing parameters
@@ -225,7 +225,9 @@ signTx otx@(Tx _ ti _ _) sigis allKeys
             then return tx
             else foldM (\t k -> fst <$> signInput t i sigi k) tx keys
 
--- | Sign a single input in a transaction
+-- | Sign a single input in a transaction within the 'SecretT' monad. This 
+-- function will return a completion status only for that input. If false, 
+-- that input is either non-standard or not fully signed.
 signInput :: Monad m => Tx -> Int -> SigInput -> PrvKey 
           -> EitherT String (SecretT m) (Tx, Bool)
 signInput tx i (SigInput so _ sh rdmM) key = do
@@ -240,12 +242,13 @@ signInput tx i (SigInput so _ sh rdmM) key = do
 
 -- | Sign a transaction by providing the 'SigInput' signing paramters and 
 -- a list of private keys. The signature is computed deterministically as
--- defined in RFC-6979. The signature is computed within the 'Build' monad
--- to add information on wether the result was fully or partially signed.
+-- defined in RFC-6979. This function returns a transaction completion status.
+-- If false, some of the inputs are not fully signed or are non-standard.
 detSignTx :: Tx              -- ^ Transaction to sign
           -> [SigInput]      -- ^ SigInput signing parameters
           -> [PrvKey]        -- ^ List of private keys to use for signing
-          -> Either String (Tx, Bool) -- ^ Signed transaction
+          -> Either String (Tx, Bool) 
+            -- ^ (Signed transaction, Status)
 detSignTx otx@(Tx _ ti _ _) sigis allKeys
     | null ti   = Left "signTx: Transaction has no inputs"
     | otherwise = do
@@ -259,7 +262,9 @@ detSignTx otx@(Tx _ ti _ _) sigis allKeys
             then return tx
             else foldM (\t k -> fst <$> detSignInput t i sigi k) tx keys
 
--- | Sign a single input in a transaction
+-- | Sign a single input in a transaction deterministically (RFC-6979). This
+-- function will return a completion status only for that input. If false, 
+-- that input is either non-standard or not fully signed.
 detSignInput :: Tx -> Int -> SigInput -> PrvKey -> Either String (Tx, Bool)
 detSignInput tx i (SigInput so _ sh rdmM) key = do
     let sig = TxSignature (detSignMsg msg key) sh
@@ -326,8 +331,7 @@ buildInput tx i so rdmM sig pub = case (so, rdmM) of
 
 {- Tx verification -}
 
--- This is not the final transaction verification function. It is here mainly
--- as a helper for tests. It can only validates standard inputs.
+-- | Verify if a transaction is valid and all of its inputs are standard.
 verifyStdTx :: Tx -> [(ScriptOutput, OutPoint)] -> Bool
 verifyStdTx tx xs = 
     all go $ zip (matchTemplate xs (txIn tx) f) [0..]
@@ -336,6 +340,7 @@ verifyStdTx tx xs =
     go (Just (so,_), i) = verifyStdInput tx i so
     go _                = False
 
+-- | Verify if a transaction input is valid and standard.
 verifyStdInput :: Tx -> Int -> ScriptOutput -> Bool
 verifyStdInput tx i so' = 
     go (scriptInput $ txIn tx !! i) so'

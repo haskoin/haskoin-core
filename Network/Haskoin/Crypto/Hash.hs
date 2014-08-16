@@ -281,7 +281,7 @@ hmacDRBGGen (k0,v0,c0) bytes info
 {- MurmurHash3 -}
     
 -- | MurmurHash3 (x86_32). For more details, see
--- http://code.google.com/p/smhasher/source/browse/trunk/MurmurHash3.cpp
+-- <http://code.google.com/p/smhasher/source/browse/trunk/MurmurHash3.cpp>
 -- This code is used in the bloom filters of SPV nodes.
 murmurHash3 :: Word32 -> BS.ByteString -> Word32
 murmurHash3 nHashSeed bs = h8

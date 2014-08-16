@@ -33,7 +33,7 @@ module Network.Haskoin.Wallet
 , unusedAddrs
 , unusedAddr
 , unlabeledAddr
-, changeAddr
+, internalAddr
 , setAddrLabel
 , addLookAhead
 , addressPrvKey

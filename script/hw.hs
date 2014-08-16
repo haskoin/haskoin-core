@@ -235,26 +235,12 @@ cmdHelp =
     , ""
     , "Utility commands: "
     , "  decodetx  tx                      Decode HEX transaction"
-    , "  (disabled) buildrawtx"
-    , "      '[{\"txid\":txid,\"vout\":n},...]' '{addr:amnt,...}'"
-    , "  (disabled) signrawtx "  
-    , "      tx" 
-    , "      " ++ sigdata
-    , "      '[prvkey,...]' [-s SigHash]" 
     , ""
     , "Other commands: "
     , "  version                           Display version information"
     , "  help                              Display this help information"
     ]
   where 
-    sigdata = concat
-        [ "'[{"
-        , "\"txid\":txid,"
-        , "\"vout\":n,"
-        , "\"scriptPubKey\":hex,"
-        , "\"redeemScript\":hex"
-        , "},...]'"
-        ]
 
 warningMsg :: String
 warningMsg = unwords [ "***"

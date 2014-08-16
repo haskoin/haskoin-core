@@ -67,10 +67,7 @@ DbWallet
 DbAccount 
     name String
     value Account
-    extIndex KeyIndex Maybe
-    extLookAhead KeyIndex Maybe
-    intIndex KeyIndex Maybe
-    intLookAhead KeyIndex Maybe
+    gap Int
     wallet DbWalletId Maybe
     created UTCTime default=CURRENT_TIME
     UniqueAccName name

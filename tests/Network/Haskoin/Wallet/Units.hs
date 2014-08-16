@@ -7,7 +7,7 @@ import Test.HUnit (Assertion, assertEqual, assertFailure)
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
-import Control.Monad (liftM, guard, replicateM_)
+import Control.Monad (liftM, guard)
 import Control.Monad.Trans (liftIO, MonadIO)
 import Control.Exception (Exception, handleJust)
 import Control.Monad.Trans.Resource (ResourceT)
@@ -35,6 +35,7 @@ import Database.Persist.Sqlite
 import Network.Haskoin.Node.HeaderChain
 
 import Network.Haskoin.Wallet
+import Network.Haskoin.Wallet.Address
 import Network.Haskoin.Wallet.Tx
 import Network.Haskoin.Wallet.Model
 
@@ -187,7 +188,7 @@ tests =
                 (WalletException "The page number 2 is too high") $ do
                     _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
-                    _ <- replicateM_ 5 $ newAddr "default"
+                    _ <- newAddrs "default" 5
                     addressPage "default" 2 5
 
         , testCase "Setting a label on an invalid address key should fail" $
@@ -195,7 +196,7 @@ tests =
                 (WalletException "The address has not been generated yet") $ do
                     _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
-                    _ <- replicateM_ 5 $ newAddr "default"
+                    _ <- newAddrs "default" 5
                     setAddrLabel "default" 5 "Gym membership"
 
         , testCase "Requesting the private key on an invalid address key should fail" $
@@ -203,7 +204,7 @@ tests =
                 (WalletException "The address has not been generated yet") $ do
                     _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
-                    _ <- replicateM_ 5 $ newAddr "default"
+                    _ <- newAddrs "default" 5
                     addressPrvKey "default" 5
         ]
     , testGroup "Transaction import tests"
@@ -261,8 +262,8 @@ testImportOrphan :: App ()
 testImportOrphan = do
     _ <- newWallet "test" bs1
     _ <- newAccount "test" "acc1"
-    replicateM_ 30 $ addLookAhead "acc1"
-    _ <- replicateM_ 5 $ newAddr "acc1"
+    addLookAhead "acc1" 30
+    _ <- newAddrs "acc1" 5
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -320,8 +321,8 @@ testOutDoubleSpend :: App ()
 testOutDoubleSpend = do
     _ <- newWallet "test" bs1
     _ <- newAccount "test" "acc1"
-    replicateM_ 30 $ addLookAhead "acc1"
-    _ <- replicateM_ 5 $ newAddr "acc1"
+    addLookAhead "acc1" 30
+    _ <- newAddrs "acc1" 5
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -414,8 +415,8 @@ testInDoubleSpend :: App ()
 testInDoubleSpend = do
     _ <- newWallet "test" bs1
     _ <- newAccount "test" "acc1"
-    replicateM_ 30 $ addLookAhead "acc1"
-    _ <- replicateM_ 5 $ newAddr "acc1"
+    addLookAhead "acc1" 30
+    _ <- newAddrs "acc1" 5
     let tx1 = Tx 1 [ TxIn (OutPoint 5 5) (BS.pack [1]) maxBound ] 
                    [ TxOut 10000000 $
                       encodeOutputBS $ PayPKHash $ fromJust $ 
@@ -495,8 +496,8 @@ testDoubleSpendChain :: App ()
 testDoubleSpendChain = do
     _ <- newWallet "test" bs1
     _ <- newAccount "test" "acc1"
-    replicateM_ 30 $ addLookAhead "acc1"
-    _ <- replicateM_ 5 $ newAddr "acc1"
+    addLookAhead "acc1" 30
+    _ <- newAddrs "acc1" 5
     let tx1 = Tx 1 [ TxIn (OutPoint 4 4) (BS.pack [1]) maxBound ] 
                    [ TxOut 10000000 $
                       encodeOutputBS $ PayPKHash $ fromJust $ 
@@ -617,8 +618,8 @@ testDoubleSpendGroup :: App ()
 testDoubleSpendGroup = do
     _ <- newWallet "test" bs1
     _ <- newAccount "test" "acc1"
-    replicateM_ 30 $ addLookAhead "acc1"
-    _ <- replicateM_ 5 $ newAddr "acc1"
+    addLookAhead "acc1" 30
+    _ <- newAddrs "acc1" 5
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -760,8 +761,8 @@ testWalletDoubleSpend = do
     assertException (WalletException "Can not import double-spending transaction") $ do
         _ <- newWallet "test" bs1
         _ <- newAccount "test" "acc1"
-        replicateM_ 30 $ addLookAhead "acc1"
-        _ <- replicateM_ 5 $ newAddr "acc1"
+        addLookAhead "acc1" 30
+        _ <- newAddrs "acc1" 5
         -- Import funding transaction
         importTx fundingTx NetworkSource >>=
             liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
@@ -778,8 +779,8 @@ testWalletDoubleSpend = do
     assertException (WalletException "Can not import double-spending transaction") $ do
         _ <- newWallet "test" bs1
         _ <- newAccount "test" "acc1"
-        replicateM_ 30 $ addLookAhead "acc1"
-        _ <- replicateM_ 5 $ newAddr "acc1"
+        addLookAhead "acc1" 30
+        _ <- newAddrs "acc1" 5
         -- Import funding transaction
         importTx fundingTx NetworkSource >>=
             liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
@@ -797,8 +798,8 @@ testWalletDoubleSpend = do
     runUnit $ do
         _ <- newWallet "test" bs1
         _ <- newAccount "test" "acc1"
-        replicateM_ 30 $ addLookAhead "acc1"
-        _ <- replicateM_ 5 $ newAddr "acc1"
+        addLookAhead "acc1" 30
+        _ <- newAddrs "acc1" 5
         -- Import funding transaction
         importTx fundingTx NetworkSource >>=
             liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
@@ -838,8 +839,8 @@ testImportMultisig = do
     _ <- newWallet "test" bs1
     _ <- newMSAccount "test" "ms1" 2 2 $
         [fromJust $ xPubImport "xpub68yUKy6M9BSM3HMejgrwGipKXSn22QzTqhFguvcE4yksoHP2TJjCadfE2fHyvBAE9VpGkxygrqsDqohyeXMZUM8Fh3GxRGKpFXQiJ6vgrNG"]
-    replicateM_ 30 $ addLookAhead "ms1"
-    _ <- replicateM_ 5 $ newAddr "ms1"
+    addLookAhead "ms1" 30
+    _ <- newAddrs "ms1" 5
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -881,8 +882,8 @@ testImportMultisig2 :: App ()
 testImportMultisig2 = do
     _ <- newWallet "test" bs2
     _ <- newMSAccount "test" "ms1" 2 2 [fromJust $ xPubImport "xpub69iinth3CTrfh5efv7baTWwk9hHi4zqcQEsNFgVwEJvdaZVEPytZzmNxjYTnF5F5x2CamLXvmD1T4RhpsuaXSFPo2MnLN5VqWqrWb82U7ED"]
-    replicateM_ 30 $ addLookAhead "ms1"
-    _ <- replicateM_ 5 $ newAddr "ms1"
+    addLookAhead "ms1" 30
+    _ <- newAddrs "ms1" 5
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $

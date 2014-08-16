@@ -18,7 +18,7 @@ import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (unless, forM_, when, mzero, liftM2)
 import Control.Monad.Trans (liftIO, MonadIO)
-import Control.Exception (throwIO, throw)
+import Control.Exception (throwIO, throw, catch)
 
 import Data.Default (def)
 import Data.String (fromString)
@@ -61,11 +61,14 @@ import Network.HTTP.Conduit
     ( RequestBody(..)
     , Request(..)
     , Response(..)
+    , HttpException(..)
     , httpLbs
     , parseUrl
     , withManager
     , setQueryString
     )
+
+import Network.HTTP.Types (Status(..))
 
 import Network.Haskoin.REST
 import Network.Haskoin.REST.Types
@@ -521,6 +524,13 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
     logFile dir    = concat [dir, "/stdout.log"]
     configFile dir = concat [dir, "/config"]
 
+data ErrorMsg = ErrorMsg !String
+    deriving (Eq, Show, Read)
+
+instance FromJSON ErrorMsg where
+    parseJSON = withObject "errormsg" $ \o ->
+        ErrorMsg <$> o .: "message"
+
 sendRequest :: BS.ByteString       -- Path
             -> BS.ByteString       -- Method
             -> [(BS.ByteString, Maybe BS.ByteString)] -- Query String
@@ -533,12 +543,19 @@ sendRequest p m qs bodyM opts = withManager $ \manager -> do
                 , port           = optPort opts
                 , path           = p
                 , method         = m
+                -- Do not throw exceptions on error status codes
+                , checkStatus    = (\_ _ _ -> Nothing) 
                 , requestHeaders = [("accept", "application/json")]
                 }
     res <- flip httpLbs manager $ case bodyM of
         Just b -> req{ requestBody = RequestBodyLBS b }
         _      -> req
-    return $ responseBody res
+    let b    = responseBody res
+        errM = decode b
+    when (statusCode (responseStatus res) >= 400 && isJust errM) $ do
+        let (ErrorMsg err) = fromJust errM
+        error err
+    return b
 
 encodeTxJSON :: Tx -> Value
 encodeTxJSON tx@(Tx v is os i) = object

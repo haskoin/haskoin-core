@@ -72,6 +72,7 @@ import Yesod
     , parseJsonBody
     , iopt
     , runInputGet
+    , permissionDenied
     )
 import Network.Wai.Handler.Warp (runSettings, defaultSettings, setHost, setPort)
 
@@ -227,8 +228,8 @@ processNodeEvents pool rChan fp = awaitForever $ \e -> do
 guardVault :: Handler ()
 guardVault = do
     HaskoinServer _ _ config <- getYesod
-    when (configMode config == ServerVault) $ liftIO $ throwIO $
-        WalletException "This operation is not supported in vault mode"
+    when (configMode config == ServerVault) $ 
+        permissionDenied "This operation is not supported in vault mode"
 
 whenOnline :: Handler () -> Handler ()
 whenOnline action = do

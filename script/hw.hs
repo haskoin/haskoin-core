@@ -523,12 +523,14 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
     logFile dir    = concat [dir, "/stdout.log"]
     configFile dir = concat [dir, "/config"]
 
-data ErrorMsg = ErrorMsg !String
+data ErrorMsg = ErrorMsg !String ![String]
     deriving (Eq, Show, Read)
 
 instance FromJSON ErrorMsg where
-    parseJSON = withObject "errormsg" $ \o ->
-        ErrorMsg <$> o .: "message"
+    parseJSON = withObject "errormsg" $ \o -> do
+        err  <- o .: "message"
+        msgM <- o .:? "errors"
+        return $ ErrorMsg err $ fromMaybe [] msgM
 
 sendRequest :: BS.ByteString       -- Path
             -> BS.ByteString       -- Method
@@ -552,8 +554,9 @@ sendRequest p m qs bodyM opts = withManager $ \manager -> do
     let b    = responseBody res
         errM = decode b
     when (statusCode (responseStatus res) >= 400 && isJust errM) $ do
-        let (ErrorMsg err) = fromJust errM
-        error err
+        let (ErrorMsg err msgs) = fromJust errM
+        if null msgs then error err else
+            error $ unwords $ (err ++ ":") : msgs
     return b
 
 encodeTxJSON :: Tx -> Value

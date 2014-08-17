@@ -104,7 +104,6 @@ module Network.Haskoin.Crypto
 , Passphrase
 , Seed
 , toMnemonic
-, fromMnemonic
 , mnemonicToSeed
 
   -- *Extended Keys

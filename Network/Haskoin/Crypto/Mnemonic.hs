@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
--- | Mnemonic keys (BIP-0039). This library no longer supports Unicode NFKD
--- normalization to reduce dependencies, therefore it should only be used with
--- ASCII characters.
+-- | Mnemonic keys (BIP-39). Only the English dictionary in the BIP is
+-- supported.
 module Network.Haskoin.Crypto.Mnemonic
 (
   -- * Data types
@@ -39,14 +38,14 @@ type Passphrase = String
 type Seed = ByteString
 type Checksum = ByteString
 
--- | Provide dictionary and intial entropy as a 'ByteString' with length
--- multiple of 32 bits (4 bytes). Output a mnemonic sentence as 'Text'.
+-- | Provide intial entropy as a 'ByteString' of length multiple of 4 bytes.
+-- Output a mnemonic sentence.
 toMnemonic :: Entropy -> Either String Mnemonic
 toMnemonic ent = do
     when (remainder /= 0) $ 
-        Left "toMnemonic: entropy must be multiples of 32 bits"
+        Left "toMnemonic: entropy must be multiples of 4 bytes"
     when (cs_len > 16) $ 
-        Left "toMnemonic: maximum entropy is 512 bits"
+        Left "toMnemonic: maximum entropy is 64 bytes (512 bits)"
     when (isJust $ find (not . isAscii) ms) $
         Left "fromMnemonic: non-ASCII characters not supported"
     return ms
@@ -57,7 +56,8 @@ toMnemonic ent = do
     ms = unwords $ map (wl !!) indices
 
 -- | Revert 'toMnemonic'. Do not use this to generate seeds. Instead use
--- 'mnemonicToSeed'.
+-- 'mnemonicToSeed'. This outputs the original entropy used to generate a
+-- mnemonic.
 fromMnemonic :: Mnemonic -> Either String Entropy
 fromMnemonic ms = do
     when (isJust $ find (not . isAscii) ms) $
@@ -89,15 +89,15 @@ numCS len = shiftCS . bsToInteger
         0 -> id
         x -> flip shiftR x
 
--- | Turn any sequence of characters to a seed. Does not have to be a mnemonic
--- sentence generated from 'toMnemonic'. Use 'mnemonicToSeed' to get a seed
--- from a mnemonic sentence. Warning: Does not perform NFKD normalization.
+-- | Turn any sequence of characters into a 512-bit seed.  Does not have to be
+-- a mnemonic sentence generated from 'toMnemonic'.  Use 'mnemonicToSeed' to
+-- get a seed from a mnemonic sentence.  Warning: Does not perform NFKD
+-- normalization.
 anyToSeed :: Passphrase -> Mnemonic -> Seed
 anyToSeed pf ms = sha512PBKDF2 (B8.pack ms) (B8.pack $ "mnemonic" ++ pf) 2048 64
 
--- | Get a seed from a mnemonic sentence. Will calculate checksum. Requires
--- same dictionary used to generate the mnemonic sentence as first argument.
--- Passphrase can be used to protect the mnemonic. Use an empty string as
+-- | Get a 512-bit seed from a mnemonic sentence.  Will calculate checksum.
+-- Passphrase can be used to protect the mnemonic.  Use an empty string as
 -- passphrase if none is required.
 mnemonicToSeed :: Passphrase -> Mnemonic -> Either String Seed
 mnemonicToSeed pf ms = do
@@ -147,7 +147,7 @@ bsToIndices bs = reverse . go q $ bsToInteger bs `shiftR` r
     go 0 _ = []
     go n i = (fromIntegral $ i `mod` 2048) : go (n - 1) (i `shiftR` 11)
 
--- | Standard English dictionary from BIP-0039 specification.
+-- | Standard English dictionary from BIP-39 specification.
 wl :: [String]
 wl =
     [ "abandon", "ability", "able", "about", "above", "absent"

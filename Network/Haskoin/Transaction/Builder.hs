@@ -45,7 +45,7 @@ import Network.Haskoin.Script
 -- | A Coin is an output of a transaction that can be spent by another
 -- transaction. 
 data Coin = 
-    Coin { coinValue    :: !Word64               -- ^ Value in Satoshis
+    Coin { coinValue    :: !Word64               -- ^ Value in satoshi
          , coinScript   :: !ScriptOutput         -- ^ Output script
          , coinOutPoint :: !OutPoint             -- ^ Previous outpoint
          , coinRedeem   :: !(Maybe RedeemScript) -- ^ Redeem script

@@ -15,6 +15,7 @@ import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Point
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Curve
+import Network.Haskoin.Crypto.ExtendedKeys
 import Network.Haskoin.Util
 
 tests :: [Test]

@@ -356,24 +356,23 @@ quadraticResidue x = guard (y^(2 :: Int) == x) >> [y, (-y)]
 isIntegerValidKey :: Integer -> Bool
 isIntegerValidKey i = i > 0 && i < curveN
 
--- | Encodes a transaction hash as little endian in HEX format.
--- This is mostly used for displaying transaction ids. Internally, these ids
--- are handled as big endian but are transformed to little endian when
--- displaying them.
+-- | Encodes a 'TxHash' as little endian in HEX format. This is mostly used for
+-- displaying transaction ids. Internally, these ids are handled as big endian
+-- but are transformed to little endian when displaying them.
 encodeTxHashLE :: TxHash -> String
 encodeTxHashLE = bsToHex . BS.reverse .  encode' 
 
--- | Decodes a little endian transaction hash in HEX format. 
+-- | Decodes a little endian 'TxHash' in HEX format. 
 decodeTxHashLE :: String -> Maybe TxHash
 decodeTxHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS
 
--- | Encodes a Block hash as little endian in HEX format.
--- This is mostly used for displaying Block hash ids. Internally, these ids
--- are handled as big endian but are transformed to little endian when
--- displaying them.
+-- | Encodes a 'BlockHash' as little endian in HEX format. This is mostly used
+-- for displaying Block hash ids. Internally, these ids are handled as big
+-- endian but are transformed to little endian when displaying them.
 encodeBlockHashLE :: BlockHash -> String
 encodeBlockHashLE = bsToHex . BS.reverse .  encode' 
 
--- | Decodes a little endian transaction hash in HEX format. 
+-- | Decodes a little endian 'BlockHash' in HEX format. 
 decodeBlockHashLE :: String -> Maybe BlockHash
 decodeBlockHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS
+

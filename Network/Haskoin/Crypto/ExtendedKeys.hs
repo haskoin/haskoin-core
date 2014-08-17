@@ -28,6 +28,8 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , xPrvWIF
 , cycleIndex
 , cycleIndex'
+, addPubKeys
+, addPrvKeys
 ) where
 
 import Control.DeepSeq (NFData, rnf)
@@ -49,6 +51,8 @@ import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.Base58
 import Network.Haskoin.Crypto.BigWord
+import Network.Haskoin.Crypto.Curve
+import Network.Haskoin.Crypto.Point
 
 {- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
 
@@ -155,6 +159,32 @@ primeSubKey xkey child = guardIndex child >> do
     where i     = setBit child 31
           msg   = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode' i)
           (a,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
+
+-- Add two private keys together. One of the keys is defined by a Word256.
+-- The functions fails on uncompressed private keys and return Nothing if the
+-- Word256 is smaller than the order of the curve N.
+addPrvKeys :: PrvKey -> Word256 -> Maybe PrvKey
+addPrvKeys key i
+    | isPrvKeyU key = error "Add: HDW only supports compressed formats"
+    | toInteger i < curveN =
+        let r = (prvKeyFieldN key) + (fromIntegral i :: FieldN) 
+            in makePrvKey $ toInteger r
+    | otherwise = Nothing
+
+-- Add a public key to a private key defined by its Word256 value. This will
+-- transform the private key into a public key and add the respective public
+-- key points together. This function fails for uncompressed keys and returns
+-- Nothing if the private key value is >= than the order of the curve N.
+addPubKeys :: PubKey -> Word256 -> Maybe PubKey
+addPubKeys pub i
+    | isPubKeyU pub = error "Add: HDW only supports compressed formats"
+    | toInteger i < curveN =
+        let pt1 = mulPoint (fromIntegral i :: FieldN) curveG
+            pt2 = addPoint (pubKeyPoint pub) pt1
+            in if isInfPoint pt2 then Nothing
+                                 else Just $ PubKey pt2
+    | otherwise = Nothing
+
 
 -- | Cyclic list of all private non-prime child key derivations of a parent key
 -- starting from an offset index.

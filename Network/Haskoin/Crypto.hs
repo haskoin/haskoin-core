@@ -13,7 +13,6 @@ module Network.Haskoin.Crypto
 , isPubKeyU
 , derivePubKey
 , pubKeyAddr
-, addPubKeys
 
   -- **Private Keys
 , PrvKey(..)
@@ -22,7 +21,6 @@ module Network.Haskoin.Crypto
 , makePrvKeyU
 , fromPrvKey
 , isPrvKeyU
-, addPrvKeys
 , putPrvKey
 , getPrvKey
 , getPrvKeyU
@@ -32,8 +30,7 @@ module Network.Haskoin.Crypto
   -- *ECDSA
   -- **SecretT Monad
   -- | The SecretT monad is a monadic wrapper around  HMAC DRBG (deterministic
-  -- random byte generator) using SHA-256. The implementation is provided in 
-  -- 'Network.Haskoin.Crypto.Hash' and the specification is defined in
+  -- random byte generator) using SHA-256. The specification is defined in
   -- <http://csrc.nist.gov/publications/nistpubs/800-90A/SP800-90A.pdf>. The
   -- SecretT monad is used to generate random private keys and random nonces
   -- for ECDSA signatures.

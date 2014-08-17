@@ -271,7 +271,7 @@ liftMaybe err = liftEither . (maybeToEither err)
 -- Various helpers
 
 -- | Applies a function to only one element of a list defined by it's index.
--- If the index is out of the bounds of the list, the original list is returned
+-- If the index is out of the bounds of the list, the original list is returned.
 updateIndex :: Int      -- ^ The index of the element to change
             -> [a]      -- ^ The list of elements
             -> (a -> a) -- ^ The function to apply
@@ -296,12 +296,15 @@ matchTemplate as (b:bs) f = case break (flip f b) as of
     (l,(r:rs)) -> (Just r) : matchTemplate (l ++ rs) bs f
     _          -> Nothing  : matchTemplate as bs f
 
+-- | Returns the first value of a triple.
 fst3 :: (a,b,c) -> a
 fst3 (a,_,_) = a
 
+-- | Returns the second value of a triple.
 snd3 :: (a,b,c) -> b
 snd3 (_,b,_) = b
 
+-- | Returns the last value of a triple.
 lst3 :: (a,b,c) -> c
 lst3 (_,_,c) = c
 

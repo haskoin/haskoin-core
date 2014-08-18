@@ -102,7 +102,8 @@ options =
             let sh = optSigHash opts
             return opts{ optSigHash = sh{ anyoneCanPay = True } }
         ) $ "(disabled) Set signature flag AnyoneCanPay"
-    , Option ['f'] ["fee"] (ReqArg parseCount "INT") $
+    , Option ['f'] ["fee"] 
+        (ReqArg (\f opts -> return opts{ optFee = read f }) "SATOSHI")
         "Transaction fee (default: 10000)"
     , Option ['j'] ["json"]
         (NoArg $ \opts -> return opts{ optJson = True }) $

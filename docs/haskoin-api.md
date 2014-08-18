@@ -6,7 +6,7 @@ The Haskoin API is designed to help you manage your Haskoin wallet through a web
 
 | Resource                                     | Verbs     | Description                                    |
 | -------------------------------------------- | --------- | ---------------------------------------------- |
-| /api/wallets                                 | GET, POST | List all wallets, Create a new wallet          |
+| [/api/wallets](#get-apiwallets)              | GET, POST | List all wallets, Create a new wallet          |
 | /api/wallets/{name}                          | GET       | Get a wallet by name                           |
 | /api/accounts                                | GET, POST | List all accounts, Create a new account        |
 | /api/accounts/{name}                         | GET       | Get an account by name                         |

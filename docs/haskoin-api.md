@@ -1,0 +1,21 @@
+## Haskoin RESTful API
+
+The Haskoin API is designed to help you manage your Haskoin wallet through a web friendly REST api. It is accessible from the haskoin daemon when you start it with `hw start`.
+
+### Overview
+
+| Resource                                  | Verbs      | Description                                         |
+| ----------------------------------------- | ---------- | --------------------------------------------------- |
+| /api/wallets                              | GET, POST  | List all wallets, Create a new allet                |
+| /api/wallets/{name}                       | GET        | Fetch a wallet by name                              |
+| /api/accounts                             | GET, POST  | List all accounts, Create a new account             |
+| /api/accounts/{name}                      | GET        | Get an account by name                              |
+| /api/accounts/{name}/keys                 | POST       | Add keys to a multisig account                      |
+| /api/accounts/{name}/addresses            | GET, POST  | List addresses by account, Get a new unused address |
+| /api/accounts/{name}/addresses/{key}      | GET, PUT   | Fetch an address by key, Update an address label    |
+| /api/accounts/{name}/txs                  | GET, POST  | List txs by account, Send bitcoins and sign txs     |
+| /api/accounts/{name}/txs/{txhash}/sigblob | GET        | Get data to sign a transaction offline              |
+| /api/accounts/{name}/balance              | GET        | Get an account balance in satoshi                   |
+| /api/accounts/{name}/sigblob              | POST       | Sign a transaction offline                          |
+| /api/txs/{txhash}                         | GET        | Fetch a full transaction by transaction id          |
+| /api/node                                 | POST       | Rescan the wallet from a given timestamp            |

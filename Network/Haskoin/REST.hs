@@ -159,19 +159,19 @@ instance RenderMessage HaskoinServer FormMessage where
     renderMessage _ _ = defaultFormMessage
 
 mkYesod "HaskoinServer" [parseRoutes|
-/api/wallets                          WalletsR     GET POST
-/api/wallets/#Text                    WalletR      GET
-/api/accounts                         AccountsR    GET POST
-/api/accounts/#Text                   AccountR     GET
-/api/accounts/#Text/keys              AccountKeysR POST
-/api/accounts/#Text/addresses         AddressesR   GET POST
-/api/accounts/#Text/addresses/#Int    AddressR     GET PUT
-/api/accounts/#Text/txs               TxsR         GET POST
-/api/txs/#Text                        TxR          GET 
-/api/accounts/#Text/balance           BalanceR     GET
-/api/accounts/#Text/txs/#Text/sigblob SigBlobR     GET 
-/api/accounts/#Text/sigblobs          SigBlobsR    POST
-/api/node                             NodeR        POST
+/api/wallets                             WalletsR     GET POST
+/api/wallets/#Text                       WalletR      GET
+/api/accounts                            AccountsR    GET POST
+/api/accounts/#Text                      AccountR     GET
+/api/accounts/#Text/keys                 AccountKeysR POST
+/api/accounts/#Text/addrs                AddressesR   GET POST
+/api/accounts/#Text/addrs/#Int           AddressR     GET PUT
+/api/accounts/#Text/acctxs               AccTxsR      GET POST
+/api/accounts/#Text/acctxs/#Text         AccTxR       GET
+/api/accounts/#Text/acctxs/#Text/sigblob SigBlobR     GET
+/api/accounts/#Text/balance              BalanceR     GET
+/api/txs/#Text                           TxR          GET 
+/api/node                                NodeR        POST
 |]
 
 runServer :: ServerConfig -> IO ()
@@ -369,8 +369,8 @@ putAddressR name i = handleErrors $ do
             return $ toJSON addr
         Error err -> undefined
 
-getTxsR :: Text -> Handler Value
-getTxsR name = handleErrors $ do
+getAccTxsR :: Text -> Handler Value
+getAccTxsR name = handleErrors $ do
     (pageM, elemM) <- runInputGet $ (,)
         <$> iopt intField "page"
         <*> iopt intField "elemperpage"
@@ -382,9 +382,9 @@ getTxsR name = handleErrors $ do
             return $ toJSON $ TxPageRes as m
         else toJSON <$> runDB (txList $ unpack name)
 
-postTxsR :: Text -> Handler Value
-postTxsR name = handleErrors $ guardVault >>
-    parseJsonBody >>= \res -> toJSON <$> case res of
+postAccTxsR :: Text -> Handler Value
+postAccTxsR name = handleErrors $ guardVault >>
+    parseJsonBody >>= \res -> case res of
         Success (SendCoins rs fee) -> do
             (tid, complete) <- runDB $ sendTx (unpack name) rs fee
             whenOnline $ when complete $ do
@@ -392,7 +392,7 @@ postTxsR name = handleErrors $ guardVault >>
                 let rChan = fromJust rChanM
                 newTx <- runDB $ getTx tid
                 liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
-            return $ TxHashStatusRes tid complete
+            return $ toJSON $ TxHashStatusRes tid complete
         Success (SignTx tx) -> do
             (tid, complete) <- runDB $ signWalletTx (unpack name) tx
             whenOnline $ when complete $ do
@@ -400,15 +400,28 @@ postTxsR name = handleErrors $ guardVault >>
                 let rChan = fromJust rChanM
                 newTx <- runDB $ getTx tid
                 liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
-            return $ TxHashStatusRes tid complete
+            return $ toJSON $ TxHashStatusRes tid complete
+        Success (SignSigBlob blob) -> do
+            (tx, c) <- runDB $ signSigBlob (unpack name) blob
+            return $ toJSON $ TxStatusRes tx c
         Error err -> undefined
+
+getAccTxR :: Text -> Text -> Handler Value
+getAccTxR name tidStr = handleErrors $ do
+    let tidM = decodeTxHashLE $ unpack tidStr
+        tid  = fromJust tidM
+    unless (isJust tidM) $ liftIO $ throwIO $
+        WalletException "Could not parse txhash"
+    accTx <- runDB $ getAccTx (unpack name) tid
+    return $ toJSON accTx
 
 getTxR :: Text -> Handler Value
 getTxR tidStr = handleErrors $ do
     let tidM = decodeTxHashLE $ unpack tidStr
+        tid  = fromJust tidM
     unless (isJust tidM) $ liftIO $ throwIO $
         WalletException "Could not parse txhash"
-    tx <- runDB $ getTx $ fromJust tidM
+    tx <- runDB $ getTx tid
     return $ toJSON $ TxRes tx
 
 getBalanceR :: Text -> Handler Value
@@ -422,14 +435,6 @@ getSigBlobR name tidStr = handleErrors $ do
         WalletException "Could not parse txhash"
     blob <- runDB $ getSigBlob (unpack name) $ fromJust tidM
     return $ toJSON blob
-
-postSigBlobsR :: Text -> Handler Value
-postSigBlobsR name = handleErrors $ do
-    parseJsonBody >>= \res -> case res of
-        Success blob -> do
-            (tx, c) <- runDB $ signSigBlob (unpack name) blob
-            return $ toJSON $ TxStatusRes tx c
-        Error err -> undefined
 
 postNodeR :: Handler Value
 postNodeR = handleErrors $ guardVault >> 

@@ -383,12 +383,12 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             let xs = map (putStr . printAccount) as
             sequence_ $ intersperse (putStrLn "-") xs
     ["list", name] -> do
-        let url = stringToBS $ concat [ "/api/accounts/", name, "/addresses" ]
+        let url = stringToBS $ concat [ "/api/accounts/", name, "/addrs" ]
         res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ mapM_ (putStrLn . printAddress)
     ["page", name, page] -> do
         let p   = read page :: Int
-            url = stringToBS $ concat [ "/api/accounts/", name, "/addresses" ]
+            url = stringToBS $ concat [ "/api/accounts/", name, "/addrs" ]
             qs  = [ ("page",Just $ stringToBS $ show p)
                   , ("elemperpage",Just $ stringToBS $ show $ optCount opts)
                   ]
@@ -399,25 +399,25 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             putStrLn $ unwords [ "Page", show x, "of", show m ]
             forM_ as $ putStrLn . printAddress
     ["new", name, label] -> do
-        let url = stringToBS $ concat [ "/api/accounts/", name, "/addresses" ]
+        let url = stringToBS $ concat [ "/api/accounts/", name, "/addrs" ]
             req = Just $ encode $ AddressData label
         res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ putStrLn . printAddress
     ["label", name, index, label] -> do
         let url = stringToBS $ concat 
-                [ "/api/accounts/", name, "/addresses/", index ]
+                [ "/api/accounts/", name, "/addrs/", index ]
             req = Just $ encode $ AddressData label
         res <- sendRequest url "PUT" [] req opts
         printJSONOr opts res $ putStrLn . printAddress
     ["txlist", name] -> do
-        let url = stringToBS $ concat [ "/api/accounts/", name, "/txs" ]
+        let url = stringToBS $ concat [ "/api/accounts/", name, "/acctxs" ]
         res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ \ts -> do
             let xs = map (putStr . printAccTx) ts
             sequence_ $ intersperse (putStrLn "-") xs
     ["txpage", name, page] -> do
         let p   = read page
-            url = stringToBS $ concat [ "/api/accounts/", name, "/txs" ]
+            url = stringToBS $ concat [ "/api/accounts/", name, "/acctxs" ]
             qs  = [ ("page",Just $ stringToBS $ show p)
                   , ("elemperpage",Just $ stringToBS $ show $ optCount opts)
                   ]
@@ -433,7 +433,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             v = read amount
         when (isNothing a) $ throwIO $ 
             WalletException "Could not parse address"
-        let url = stringToBS $ concat [ "/api/accounts/", name, "/txs" ]
+        let url = stringToBS $ concat [ "/api/accounts/", name, "/acctxs" ]
             req = Just $ encode $ SendCoins [(fromJust a, v)] $ optFee opts
         res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxHashStatusRes h c) -> do
@@ -446,7 +446,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             recipients = mapM (f . g) xs
         when (isNothing recipients) $ throwIO $
             WalletException "Could not parse recipient list"
-        let url = stringToBS $ concat [ "/api/accounts/", name, "/txs" ]
+        let url = stringToBS $ concat [ "/api/accounts/", name, "/acctxs" ]
             req = Just $ encode $ SendCoins (fromJust recipients) $ optFee opts
         res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxHashStatusRes h c) -> do
@@ -456,7 +456,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         let txM = decodeToMaybe =<< hexToBS tx
         when (isNothing txM) $ throwIO $
             WalletException "Could not parse transaction"
-        let url = stringToBS $ concat [ "/api/accounts/", name, "/txs" ]
+        let url = stringToBS $ concat [ "/api/accounts/", name, "/acctxs" ]
             req = Just $ encode $ SignTx $ fromJust txM
         res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxHashStatusRes h c) -> do
@@ -480,7 +480,7 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
             WalletException "Could not parse hash"
         let url = stringToBS $ concat 
                 [ "/api/accounts/", name
-                , "/txs/", encodeTxHashLE $ fromJust h
+                , "/acctxs/", encodeTxHashLE $ fromJust h
                 , "/sigblob"
                 ]
         res <- sendRequest url "GET" [] Nothing opts
@@ -490,8 +490,8 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
         let blobM = decode . toLazyBS =<< hexToBS blob :: Maybe SigBlob
         when (isNothing blobM) $ throwIO $
             WalletException "Could not parse sig blob"
-        let url = stringToBS $ concat [ "/api/accounts/", name, "/sigblobs" ]
-            req = Just $ encode $ fromJust blobM
+        let url = stringToBS $ concat [ "/api/accounts/", name, "/acctxs" ]
+            req = Just $ encode $ SignSigBlob $ fromJust blobM
         res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxStatusRes tx c) -> do
             putStrLn $ unwords [ "Tx      :", bsToHex $ encode' tx ]

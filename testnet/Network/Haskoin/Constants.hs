@@ -54,7 +54,7 @@ maxBlockSize = 1000000
 
 -- | User agent of this haskoin package
 haskoinUserAgent :: String
-haskoinUserAgent = "/haskoin-testnet:0.1.0/"
+haskoinUserAgent = "/haskoin-testnet:0.1.0.1/"
 
 -- | Default port
 defaultPort :: Int

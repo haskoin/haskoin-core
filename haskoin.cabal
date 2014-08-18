@@ -1,5 +1,5 @@
 name:                  haskoin
-version:               0.1.0
+version:               0.1.0.1
 synopsis:              Implementation of the Bitcoin protocol.
 description:
     Haskoin is a package providing an implementation of the Bitcoin protocol

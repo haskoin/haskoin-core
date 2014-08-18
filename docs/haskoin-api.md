@@ -19,3 +19,44 @@ The Haskoin API is designed to help you manage your Haskoin wallet through a web
 | /api/accounts/{name}/balance                 | GET       | Get an account balance in satoshi              |
 | /api/txs/{txhash}                            | GET       | Get a full transaction by transaction id       |
 | /api/node                                    | POST      | Rescan the wallet from a given timestamp       |
+
+### API Specification
+
+#### GET /api/wallets
+
+* **Input**: Nothing
+* **Output**: Returns a list of all available wallets in the following format:
+
+```json
+[
+  {
+    "name": "wallet1",
+    "master": "xprv..."
+  },
+  {
+    "name": "wallet2",
+    "master": "xprv..."
+  }
+]
+```
+
+#### POST /api/wallets
+
+* **Input**: A JSON object representing a new wallet containing a wallet name, a passphrase and an optional BIP39 mnemonic. If no mnemonic is provided, a new random mnemonic for this wallet will be generated.
+
+```json
+{
+  "walletname": "wallet1",
+  "passphrase": "correct horse battery staple",
+  "mnemonic": "film pig subway ..."
+}
+```
+
+* **Output**: Returns the new wallet in the following JSON format:
+
+```json
+{
+  "name": "wallet1",
+  "master": "xprv..."
+}
+```

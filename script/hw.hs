@@ -161,7 +161,8 @@ options :: [OptDescr (Options -> IO Options)]
 options =
     [ Option ['c'] ["count"] (ReqArg parseCount "INT")
         "Count: see commands for details"
-    , Option ['f'] ["fee"] (ReqArg parseCount "INT")
+    , Option ['f'] ["fee"] 
+        (ReqArg (\f opts -> return opts{ optFee = read f }) "SATOSHI")
         "Transaction fee (default: 10000)"
     , Option ['j'] ["json"]
         (NoArg $ \opts -> return opts{ optJson = True })

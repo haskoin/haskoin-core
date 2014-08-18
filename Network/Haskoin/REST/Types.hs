@@ -43,8 +43,8 @@ data NewWallet = NewWallet !WalletName !String !(Maybe String)
 instance ToJSON NewWallet where
     toJSON (NewWallet n p m) = object $ concat
         [ [ "walletname" .= n
-            , "passphrase" .= p
-            ]
+          , "passphrase" .= p
+          ]
         , if isJust m then ["mnemonic" .= (fromJust m)] else []
         ]
 

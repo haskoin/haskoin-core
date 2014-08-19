@@ -163,6 +163,7 @@ instance FromJSON AddressData where
 data TxAction
     = SendCoins ![(Address, Word64)] !Word64
     | SignTx !Tx
+    | SignSigBlob !SigBlob
     deriving (Eq, Read, Show)
 
 instance ToJSON TxAction where
@@ -176,6 +177,10 @@ instance ToJSON TxAction where
             [ "type"        .= String "sign"
             , "tx"          .= tx
             ]
+        SignSigBlob blob -> object
+            [ "type"        .= String "sigblob"
+            , "sigblob"     .= blob
+            ]
 
 instance FromJSON TxAction where
     parseJSON = withObject "txaction" $ \o -> do
@@ -186,6 +191,8 @@ instance FromJSON TxAction where
                 <*> o .: "fee"
             "sign" -> SignTx
                 <$> o .: "tx"
+            "sigblob" -> SignSigBlob
+                <$> o .: "sigblob"
             _ -> mzero
 
 data TxHashStatusRes = TxHashStatusRes !TxHash !Bool

@@ -5,6 +5,7 @@ module Network.Haskoin.Wallet.Tx
 ( AccTx(..)
 , getTx
 , getTxEntity
+, getAccTx
 , getConfirmations
 , toAccTx
 , txList
@@ -104,8 +105,21 @@ getTxEntity tid = do
         unwords ["Transaction", encodeTxHashLE tid, "not in database"]
     return $ fromJust entM
 
+-- | Fetch a full transaction by transaction id.
 getTx :: PersistUnique m => TxHash -> m Tx
 getTx tid = liftM (dbTxValue . entityVal) $ getTxEntity tid
+
+-- | Fetch an account transaction by account name and transaction id.
+getAccTx :: (PersistUnique m, PersistQuery m)
+         => AccountName -- ^ Account name
+         -> TxHash      -- ^ Transaction id
+         -> m AccTx     -- ^ Account transaction
+getAccTx name tid = do
+    (Entity ai _) <- getAccountEntity name
+    entM <- getBy $ UniqueAccTx tid ai
+    when (isNothing entM) $ liftIO $ throwIO $ WalletException $
+        unwords ["Transaction", encodeTxHashLE tid, "not in database"]
+    toAccTx $ entityVal $ fromJust entM
 
 -- | List all the transaction entries for an account. Transaction entries
 -- summarize information for a transaction in a specific account only (such as

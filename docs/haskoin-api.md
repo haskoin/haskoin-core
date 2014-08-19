@@ -24,7 +24,6 @@ The Haskoin API is designed to help you manage your Haskoin wallet through a web
 
 #### GET /api/wallets
 
-* **Input**: Nothing
 * **Output**: Returns a list of all available wallets in the following format:
 
 ```json
@@ -42,7 +41,10 @@ The Haskoin API is designed to help you manage your Haskoin wallet through a web
 
 #### POST /api/wallets
 
-* **Input**: A JSON object representing a new wallet containing a wallet name, a passphrase and an optional BIP39 mnemonic. If no mnemonic is provided, a new random mnemonic for this wallet will be generated.
+* **Input**: A JSON object representing a new wallet containing a wallet name,
+a passphrase and an optional BIP39 mnemonic. If no mnemonic is provided, a new
+random mnemonic for this wallet will be generated. You can provide a passphrase
+to protect your mnemonic sentence.
 
 ```json
 {
@@ -52,7 +54,20 @@ The Haskoin API is designed to help you manage your Haskoin wallet through a web
 }
 ```
 
-* **Output**: Returns the new wallet in the following JSON format:
+* **Output**: Returns the mnemonic sentence of your new wallet:
+
+```json
+{ "mnemonic": "film pig subway ..." }
+```
+#### GET /api/wallets/{name}
+
+* **Input**: A wallet resource is identified by its name. For example:
+
+```
+/api/wallets/wallet1
+```
+
+* **Output**: A JSON object representing a wallet in the following format:
 
 ```json
 {
@@ -60,3 +75,8 @@ The Haskoin API is designed to help you manage your Haskoin wallet through a web
   "master": "xprv..."
 }
 ```
+
+It contains both the wallet name and the extended private key (master key) for
+that wallet.
+
+

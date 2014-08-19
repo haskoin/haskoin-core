@@ -7,8 +7,8 @@ The Haskoin API is designed to help you manage your Haskoin wallet through a web
 | Resource                                     | Verbs     | Description                                    |
 | -------------------------------------------- | --------- | ---------------------------------------------- |
 | [/api/wallets](#get-apiwallets)              | GET, POST | List all wallets, Create a new wallet          |
-| /api/wallets/{name}                          | GET       | Get a wallet by name                           |
-| /api/accounts                                | GET, POST | List all accounts, Create a new account        |
+| [/api/wallets/{name}](#get-apiwalletsname)   | GET       | Get a wallet by name                           |
+| [/api/accounts](#get-apiaccounts)            | GET, POST | List all accounts, Create a new account        |
 | /api/accounts/{name}                         | GET       | Get an account by name                         |
 | /api/accounts/{name}/keys                    | POST      | Add keys to a multisig account                 |
 | /api/accounts/{name}/addrs                   | GET, POST | List addresses, Get a new unused address       |
@@ -79,4 +79,65 @@ to protect your mnemonic sentence.
 It contains both the wallet name and the extended private key (master key) for
 that wallet.
 
+#### GET /api/accounts
 
+* **Output**: Returns a list of all available accounts. There are 4 types of accounts
+having each a different JSON representation:
+
+  * **Regular account**
+  
+  A regular account creates pay-to-pubkey-hash addresses which are derived from the xpub key.
+
+  ```json
+  {
+    "type": "regular",
+    "name": "account1",
+    "wallet": "wallet1",
+    "index": 4,
+    "key": "xpub..."
+  }
+  ```
+  * **Multisig account**
+  
+  A multisig accounts creates pay-to-script-hash (p2sh) addresses which are derived from the keys.
+
+  ```json
+  {
+    "type": "multisig",
+    "name": "account2",
+    "wallet": "wallet1",
+    "index": 5,
+    "required": 2,
+    "total": 3,
+    "keys": [ "xpub1...", "xpub2...", "xpub3..." ]
+  }
+  ```
+  * **Regular read-only account**
+  
+  A regular read-only account is similar to a regular account. It can derive pay-to-pubkey-hash addresses
+  from the key, but it can not derive the associated private keys. It is useful for monitoring payments
+  in an environment where security is not optimal, such as on a web server.
+
+  ```json
+  {
+    "type": "read",
+    "name": "account3",
+    "key": "xpub..."
+  }
+  ```
+  
+  * **Multisig read-only account**
+
+  A multisig read-only account is similar to a multisig account. It can derive pay-to-script-hash (p2sh)
+  addresses from the keys, but it can not derive the associated private keys. It is useful for monitoring
+  payments in an environment where security is not optimal, such as on a web server.
+
+  ```json
+  {
+    "type": "readmultisig",
+    "name": "account4",
+    "required": 2,
+    "total": 3,
+    "keys": [ "xpub1...", "xpub2...", "xpub3..." ]
+  }
+  ```

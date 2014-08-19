@@ -141,6 +141,7 @@ having each a different JSON representation:
     "keys": [ "xpub1...", "xpub2...", "xpub3..." ]
   }
   ```
+  
 #### POST /api/accounts
 
 * **Input**: A JSON object representing the type of account you want to create. 
@@ -221,3 +222,14 @@ having each a different JSON representation:
 * **Output**: A JSON representation of the given account as defined [here](#get-apiaccounts).
 
 #### POST /api/accounts/{name}/keys
+
+When creating a multisignature account, you can add the keys at a later time by using this resource.
+Adding too many keys will result in a failure.
+
+* **Input**: A JSON list of extended public keys:
+
+```json
+  [ "xpub1...", "xpub2", ... ]
+```
+
+* **Output**: A JSON representation of the given account as defined [here](#get-apiaccounts).

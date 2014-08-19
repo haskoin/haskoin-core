@@ -87,7 +87,7 @@ instance ToJSON NewAccount where
             , "keys"        .= map xPubExport ks
             ]
         NewReadAccount n k -> object
-            [ "type"        .= String "readregular"
+            [ "type"        .= String "read"
             , "accountname" .= n
             , "key"         .= xPubExport k
             ]
@@ -112,7 +112,7 @@ instance FromJSON NewAccount where
                 <*> o .: "required"
                 <*> o .: "total"
                 <*> (o .: "keys" >>= maybe mzero return . mapM xPubImport)
-            "readregular" -> NewReadAccount
+            "read" -> NewReadAccount
                 <$> o .: "accountname"
                 <*> (o .: "key" >>= maybe mzero return . xPubImport)
             "readmultisig" -> NewReadMSAccount

@@ -16,6 +16,7 @@ module Network.Haskoin.Wallet.Address
 , addressPrvKey
 , addLookAhead
 , adjustLookAhead
+, addrPubKey
 ) where
 
 import Control.Monad (liftM, when)
@@ -69,6 +70,19 @@ getAddressEntity accName key internal = do
     when (isNothing entM) $ liftIO $ 
         throwIO $ WalletException "The address has not been generated yet"
     return $ fromJust entM
+
+addrPubKey :: (PersistUnique m, PersistMonadBackend m ~ b)
+           => DbAddressGeneric b
+           -> m (Maybe PubKey)
+addrPubKey add = do
+    acc <- liftM fromJust (get $ dbAddressAccount add)
+    if isMSAccount (dbAccountValue acc) then return Nothing else do
+        let deriv    = dbAddressIndex add
+            internal = dbAddressInternal add
+            accKey   = accountKey $ dbAccountValue acc
+            f        = if internal then intPubKey else extPubKey
+            pk       = fromJust $ f accKey deriv
+        return $ Just $ xPubKey $ getAddrPubKey pk
 
 -- | Returns all addresses for an account.
 addressList :: (PersistUnique m, PersistQuery m)

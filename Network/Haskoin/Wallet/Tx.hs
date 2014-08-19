@@ -591,14 +591,21 @@ walletBloomFilter :: (PersistUnique m, PersistQuery m)
 walletBloomFilter fpRate = do
     addrs <- selectList [] []
     rdms  <- liftM catMaybes $ forM addrs (getRedeem . entityVal)
+    pks   <- liftM catMaybes $ forM addrs (addrPubKey . entityVal)
     -- TODO: Choose a random nonce for the bloom filter
-    let len     = length addrs + length rdms
+    let len     = length addrs + length rdms + length pks
+        -- Create bloom filter
         bloom   = bloomCreate len fpRate 0 BloomUpdateNone
-        bloom'  = foldl f bloom $ map (dbAddressValue . entityVal) addrs
+        -- Add the Hash160 of the addresses
         f b a   = bloomInsert b $ encode' $ getAddrHash a
-        bloom'' = foldl g bloom' rdms
+        bloom1  = foldl f bloom $ map (dbAddressValue . entityVal) addrs
+        -- Add the redeem scripts
         g b r   = bloomInsert b $ encodeOutputBS r
-    return bloom''
+        bloom2  = foldl g bloom1 rdms
+        -- Add the public keys
+        h b p   = bloomInsert b $ encode' p
+        bloom3  = foldl h bloom2 pks
+    return bloom3
 
 -- | Return the creation time (POSIX seconds) of the first key in the wallet.
 -- This is used to ignore full/filtered blocks prior to this time.

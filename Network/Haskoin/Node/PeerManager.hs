@@ -123,15 +123,15 @@ data PeerData = PeerData
     , peerReconnectTimer :: Int
     }
 
-withAsyncNode :: FilePath -> Int
+withAsyncNode :: Int
               -> (TBMChan NodeEvent -> TBMChan NodeRequest -> Async () -> IO ())
               -> IO ()
-withAsyncNode fp batch f = do
-    db <- DB.open (concat [fp, "/headerchain"])
+withAsyncNode batch f = do
+    db <- DB.open "headerchain"
               DB.defaultOptions{ DB.createIfMissing = True
                                , DB.cacheSize       = 2048
                                }
-    dataDb <- DB.open (concat [fp, "/datadb"])
+    dataDb <- DB.open "datadb"
               DB.defaultOptions{ DB.createIfMissing = True
                                , DB.cacheSize       = 2048
                                }

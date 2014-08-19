@@ -3,7 +3,13 @@
 {-# LANGUAGE TypeFamilies      #-}
 module Main where
 
-import System.Directory (removeFile, doesFileExist)
+import System.Directory
+    ( removeFile
+    , createDirectoryIfMissing
+    , doesFileExist
+    , getAppUserDataDirectory
+    , setCurrentDirectory
+    )
 import System.IO.Error (ioeGetErrorString)
 import System.Console.GetOpt 
     ( getOpt
@@ -98,6 +104,10 @@ data Options = Options
     , optBatch    :: Int
     , optBloomFP  :: Double
     , optMode     :: ServerMode
+    , optDir      :: Maybe FilePath
+    , optLog      :: Maybe FilePath
+    , optPid      :: Maybe FilePath
+    , optCfg      :: Maybe FilePath
     } deriving (Eq, Show)
 
 defaultOptions :: Options
@@ -114,10 +124,14 @@ defaultOptions = Options
     , optBatch    = configBatch def
     , optBloomFP  = configBloomFP def
     , optMode     = configMode def
+    , optDir      = Nothing
+    , optLog      = Nothing
+    , optPid      = Nothing
+    , optCfg      = Nothing
     } 
 
 instance ToJSON Options where
-    toJSON opt = object
+    toJSON opt = object $
         [ "count"          .= optCount opt
         , "fee"            .= optFee opt
         , "json"           .= optJson opt
@@ -131,6 +145,9 @@ instance ToJSON Options where
         , "false-positive" .= optBloomFP opt
         , "operation-mode" .= optMode opt
         ]
+        ++ maybe [] (\x -> [("workdir" .= x)]) (optDir opt)
+        ++ maybe [] (\x -> [("logfile" .= x)]) (optLog opt)
+        ++ maybe [] (\x -> [("pidfile" .= x)]) (optPid opt)
       where
         f (x,y) = object
             [ "host" .= x
@@ -151,6 +168,10 @@ instance FromJSON Options where
         <*> o .: "batch"
         <*> o .: "false-positive"
         <*> o .: "operation-mode"
+        <*> o .:? "workdir"
+        <*> o .:? "logfile"
+        <*> o .:? "pidfile"
+        <*> return Nothing -- configuration file does not contain its own path
       where
         f = withObject "bitcoinhost" $ \x -> do
             a <- x .: "host"
@@ -182,6 +203,18 @@ options =
     , Option ['P'] ["port"] 
         (ReqArg (\p opts -> return opts{ optPort = read p }) "PORT")
         "API server port"
+    , Option ['w'] ["workdir"]
+        (ReqArg (\w opts -> return opts{ optDir = Just w }) "DIR")
+        "Working directory"
+    , Option ['l'] ["logfile"]
+        (ReqArg (\l opts -> return opts{ optLog = Just l }) "FILE")
+        "Log file"
+    , Option ['i'] ["pidfile"]
+        (ReqArg (\i opts -> return opts{ optPid = Just i }) "FILE")
+        "PID file"
+    , Option ['g'] ["conf"]
+        (ReqArg (\g opts -> return opts{ optCfg = Just g }) "FILE")
+        "Configuration file"
     ]
 
 parseCount :: String -> Options -> IO Options
@@ -240,7 +273,6 @@ cmdHelp =
     , "  version                            Display version information"
     , "  help                               Display this help information"
     ]
-  where 
 
 warningMsg :: String
 warningMsg = unwords [ "***"
@@ -255,14 +287,23 @@ usage = unlines $ [warningMsg, usageInfo usageHeader options] ++ cmdHelp
 main :: IO ()
 main = E.getArgs >>= \args -> case getOpt Permute options args of
     (o,xs,[]) -> do
-        opts <- foldl (>>=) getConfig o
+        opts0 <- foldl (>>=) (return defaultOptions) o
+        opts  <- foldl (>>=) (getConfig opts0) o
+        workDir <- maybe getWorkDir return $ optDir opts
+        setCurrentDirectory workDir
         processCommand opts xs
     (_,_,msgs) -> print $ unlines $ msgs ++ [usage]
 
-getConfig :: IO Options
-getConfig = do
-    dir <- getWorkDir
-    let configFile = concat [dir, "/config"]
+getConfig :: Options -> IO Options
+getConfig opts = do
+    configFile <- case optCfg opts of
+        Nothing -> case (optDir opts) of
+            Nothing -> do
+                dir <- getWorkDir
+                return $ concat [dir, "/config"]
+            Just wd -> do
+                return $ concat [wd, "/config"]
+        Just cfg -> return cfg
     prevConfig <- doesFileExist configFile
     unless prevConfig $ YAML.encodeFile configFile defaultOptions
     configM <- YAML.decodeFile configFile
@@ -296,7 +337,7 @@ printJSONOr opts bs action
 
 -- TODO: Rename existing log files to prevent overriding them
 processCommand :: Options -> Args -> IO ()
-processCommand opts args = getWorkDir >>= \dir -> case args of
+processCommand opts args = case args of
     ["start"] -> do
         let config = ServerConfig
                 { configBind         = optBind opts
@@ -306,18 +347,18 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
                 , configBloomFP      = optBloomFP opts
                 , configMode         = optMode opts
                 }
-        prevLog <- doesFileExist $ logFile dir
+        prevLog <- doesFileExist $ logFile
         -- TODO: Should we move the log file to an archive directory?
-        when prevLog $ removeFile $ logFile dir
+        when prevLog $ removeFile $ logFile
         if optDetach opts
-            then runDetached (Just $ pidFile dir) (ToFile $ logFile dir) $
+            then runDetached (Just $ pidFile) (ToFile $ logFile) $
                     runServer config
             else runServer config
         putStrLn "Haskoin daemon started"
-        putStrLn $ unwords [ "Configuration file:", configFile dir ]
+        putStrLn $ unwords [ "Configuration file:", configFile ]
     ["stop"] -> do
         -- TODO: Should we send a message instead of killing the process ?
-        killAndWait $ pidFile dir
+        killAndWait $ pidFile
         putStrLn "Haskoin daemon stopped"
     "newwallet" : name : mnemonic -> do
         let req = Just $ encode $ case mnemonic of
@@ -517,9 +558,9 @@ processCommand opts args = getWorkDir >>= \dir -> case args of
     ["version"] -> putStrLn haskoinUserAgent
     _ -> error invalidErr
   where
-    pidFile dir    = concat [dir, "/hwnode.pid"]
-    logFile dir    = concat [dir, "/stdout.log"]
-    configFile dir = concat [dir, "/config"]
+    pidFile     = fromMaybe "hw.pid"     $ optPid opts
+    logFile     = fromMaybe "stdout.log" $ optLog opts
+    configFile  = fromMaybe "config"     $ optCfg opts
 
 data ErrorMsg = ErrorMsg !String ![String]
     deriving (Eq, Show, Read)
@@ -814,3 +855,10 @@ instance FromJSON RawPrvKey where
             str <- parseJSON v :: Parser String  
             maybe mzero return $ fromWIF str
 
+-- Create and return haskoin working directory
+getWorkDir :: IO FilePath
+getWorkDir = do
+    haskoinDir <- getAppUserDataDirectory "haskoin"
+    let dir = concat [ haskoinDir, "/", networkName ]
+    createDirectoryIfMissing True dir
+    return dir

@@ -3,12 +3,12 @@
 -}
 module Network.Haskoin.Node
 ( 
- -- *Node
- withAsyncNode
+  -- *Node
+  withAsyncNode
 , NodeEvent(..)
 , NodeRequest(..)
 
--- *Checkpoints
+  -- *Checkpoints
 , checkpointMap
 , checkpointList
 , verifyCheckpoint

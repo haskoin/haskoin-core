@@ -5,12 +5,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Network.Haskoin.REST where
 
-import System.Directory 
-    ( getAppUserDataDirectory
-    , createDirectoryIfMissing
-    , doesFileExist
-    )
-
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad 
 import Control.Monad.Trans 
@@ -176,8 +170,7 @@ mkYesod "HaskoinServer" [parseRoutes|
 
 runServer :: ServerConfig -> IO ()
 runServer config = do
-    dir <- getWorkDir
-    let walletFile = pack $ concat [dir, "/wallet"]
+    let walletFile = pack $ "wallet"
 
     pool <- createSqlPool (wrapConnection =<< open walletFile) 1
     flip runSqlPersistMPool pool $ do 
@@ -198,7 +191,7 @@ runServer config = do
             runSettings settings app
         else do
             -- Launch SPV node
-            withAsyncNode dir batch $ \eChan rChan _ -> do
+            withAsyncNode batch $ \eChan rChan _ -> do
             let eventPipe = sourceTBMChan eChan $$ 
                             processNodeEvents pool rChan fp
             withAsync eventPipe $ \_ -> do
@@ -457,12 +450,3 @@ postNodeR = handleErrors $ guardVault >>
                     writeTBMChan rChan $ FastCatchupTime fstKeyTime
             return $ RescanRes fstKeyTime
         Error err -> undefined
-
--- Create and return haskoin working directory
-getWorkDir :: IO FilePath
-getWorkDir = do
-    haskoinDir <- getAppUserDataDirectory "haskoin"
-    let dir = concat [ haskoinDir, "/", networkName ]
-    createDirectoryIfMissing True dir
-    return dir
-

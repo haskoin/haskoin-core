@@ -5,6 +5,7 @@ module Network.Haskoin.Wallet.Tx
 ( AccTx(..)
 , getTx
 , getTxEntity
+, getAccTx
 , getConfirmations
 , toAccTx
 , txList
@@ -104,8 +105,21 @@ getTxEntity tid = do
         unwords ["Transaction", encodeTxHashLE tid, "not in database"]
     return $ fromJust entM
 
+-- | Fetch a full transaction by transaction id.
 getTx :: PersistUnique m => TxHash -> m Tx
 getTx tid = liftM (dbTxValue . entityVal) $ getTxEntity tid
+
+-- | Fetch an account transaction by account name and transaction id.
+getAccTx :: (PersistUnique m, PersistQuery m)
+         => AccountName -- ^ Account name
+         -> TxHash      -- ^ Transaction id
+         -> m AccTx     -- ^ Account transaction
+getAccTx name tid = do
+    (Entity ai _) <- getAccountEntity name
+    entM <- getBy $ UniqueAccTx tid ai
+    when (isNothing entM) $ liftIO $ throwIO $ WalletException $
+        unwords ["Transaction", encodeTxHashLE tid, "not in database"]
+    toAccTx $ entityVal $ fromJust entM
 
 -- | List all the transaction entries for an account. Transaction entries
 -- summarize information for a transaction in a specific account only (such as
@@ -512,9 +526,9 @@ buildUnsignedTx name dests fee = do
     -- TODO: Put this value in a constant file somewhere
     -- TODO: We need a better way to identify dust transactions
     recips <- if change < 5430 then return dests else do
-        cAddr <- newAddrsGeneric name 1 True -- internal addresses
+        cAddr <- internalAddr name -- internal address
         -- TODO: Change must be randomly placed
-        return $ dests ++ [(dbAddressValue $ head cAddr,change)]
+        return $ dests ++ [(dbAddressValue $ cAddr,change)]
     let txE = buildAddrTx (map coinOutPoint coins) $ map f recips
     when (isLeft txE) $ liftIO $ throwIO $ WalletException $ fromLeft txE
     return $ fromRight txE
@@ -569,23 +583,29 @@ signSigBlob name (SigBlob dat tx) = do
         return $ SigInput so op (SigAll False) rdm
 
 -- | Produces a bloom filter containing all the addresses in this wallet. This
--- includes internal, external and look-ahead addresses. The bloom filter can
--- be set on a peer connection to filter the transactions received by that
--- peer.
+-- includes internal and external addresses. The bloom filter can be set on a
+-- peer connection to filter the transactions received by that peer.
 walletBloomFilter :: (PersistUnique m, PersistQuery m) 
                   => Double
                   -> m BloomFilter
 walletBloomFilter fpRate = do
     addrs <- selectList [] []
     rdms  <- liftM catMaybes $ forM addrs (getRedeem . entityVal)
+    pks   <- liftM catMaybes $ forM addrs (addrPubKey . entityVal)
     -- TODO: Choose a random nonce for the bloom filter
-    let len     = length addrs + length rdms
+    let len     = length addrs + length rdms + length pks
+        -- Create bloom filter
         bloom   = bloomCreate len fpRate 0 BloomUpdateNone
-        bloom'  = foldl f bloom $ map (dbAddressValue . entityVal) addrs
+        -- Add the Hash160 of the addresses
         f b a   = bloomInsert b $ encode' $ getAddrHash a
-        bloom'' = foldl g bloom' rdms
+        bloom1  = foldl f bloom $ map (dbAddressValue . entityVal) addrs
+        -- Add the redeem scripts
         g b r   = bloomInsert b $ encodeOutputBS r
-    return bloom''
+        bloom2  = foldl g bloom1 rdms
+        -- Add the public keys
+        h b p   = bloomInsert b $ encode' p
+        bloom3  = foldl h bloom2 pks
+    return bloom3
 
 -- | Return the creation time (POSIX seconds) of the first key in the wallet.
 -- This is used to ignore full/filtered blocks prior to this time.

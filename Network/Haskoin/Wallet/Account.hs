@@ -83,7 +83,7 @@ newAccount wname name = do
     let deriv = maybe 0 (+1) $ dbWalletAccIndex w
         (k,i) = head $ accPubKeys (walletMasterKey $ dbWalletValue w) deriv
         acc   = RegularAccount name wname i k
-    insert_ $ DbAccount name acc Nothing Nothing Nothing Nothing (Just wk) time
+    insert_ $ DbAccount name acc 0 (Just wk) time
     update wk [DbWalletAccIndex =. Just i]
     return acc
 
@@ -118,7 +118,7 @@ newMSAccount wname name m n mskeys = do
     let deriv = maybe 0 (+1) $ dbWalletAccIndex w
         (k,i) = head $ accPubKeys (walletMasterKey $ dbWalletValue w) deriv
         acc   = MultisigAccount name wname i m n $ getAccPubKey k:keys
-    insert_ $ DbAccount name acc Nothing Nothing Nothing Nothing (Just wk) time
+    insert_ $ DbAccount name acc 0 (Just wk) time
     update wk [DbWalletAccIndex =. Just i]
     return acc
 
@@ -138,7 +138,7 @@ newReadAccount name key = do
         "Invalid account key provided"
     time <- liftIO getCurrentTime
     let acc = ReadAccount name $ fromJust accKeyM
-    insert_ $ DbAccount name acc Nothing Nothing Nothing Nothing Nothing time
+    insert_ $ DbAccount name acc 0 Nothing time
     return acc
 
 newReadMSAccount :: (PersistUnique m, PersistQuery m)
@@ -159,7 +159,7 @@ newReadMSAccount name m n mskeys = do
         WalletException "Too many keys"
     checkOwnKeys keys
     let acc   = ReadMSAccount name m n keys
-    insert_ $ DbAccount name acc Nothing Nothing Nothing Nothing Nothing time
+    insert_ $ DbAccount name acc 0 Nothing time
     return acc
 
 -- | Add new thirdparty keys to a multisignature account. This function can

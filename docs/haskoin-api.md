@@ -11,7 +11,7 @@ The Haskoin API is designed to help you manage your Haskoin wallet through a web
 | [/api/accounts](#get-apiaccounts)            | GET, POST | List all accounts, Create a new account        |
 | [/api/accounts/{name}](#get-apiaccountsname) | GET       | Get an account by name                         |
 | [/api/accounts/{name}/keys](#post-apiaccountsnamekeys) | POST | Add keys to a multisig account |
-| [/api/accounts/{name}/addrs](#get-apiaccountsnameaddrskey) | GET, POST | List addresses, Get a new unused address |
+| [/api/accounts/{name}/addrs](#get-apiaccountsnameaddrs) | GET, POST | List addresses, Get a new unused address |
 | /api/accounts/{name}/addrs/{key}             | GET, PUT  | Get an address by key, Update an address label |
 | /api/accounts/{name}/acctxs                  | GET, POST | List txs, Send coins, Sign txs/sigblobs        |
 | /api/accounts/{name}/acctxs/{txhash}         | GET       | Get a tx by account and transaction id         |

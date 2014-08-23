@@ -11,7 +11,7 @@ The Haskoin API is designed to help you manage your Haskoin wallet through a web
 | [/api/accounts](#get-apiaccounts)            | GET, POST | List all accounts, Create a new account        |
 | [/api/accounts/{name}](#get-apiaccountsname) | GET       | Get an account by name                         |
 | [/api/accounts/{name}/keys](#post-apiaccountsnamekeys) | POST | Add keys to a multisig account |
-| /api/accounts/{name}/addrs                   | GET, POST | List addresses, Get a new unused address       |
+| [/api/accounts/{name}/addrs](#get-apiaccountsnameaddrskey) | GET, POST | List addresses, Get a new unused address |
 | /api/accounts/{name}/addrs/{key}             | GET, PUT  | Get an address by key, Update an address label |
 | /api/accounts/{name}/acctxs                  | GET, POST | List txs, Send coins, Sign txs/sigblobs        |
 | /api/accounts/{name}/acctxs/{txhash}         | GET       | Get a tx by account and transaction id         |
@@ -233,3 +233,75 @@ Adding too many keys will result in a failure.
 ```
 
 * **Output**: A JSON representation of the given account as defined [here](#get-apiaccounts).
+
+#### GET /api/accounts/{name}/addrs
+
+* **Input**: This resource accepts optional query parameters to receive paged results. If no paging parameters
+  are set, the entire list is returned. Asking for page 0 will return the last page.
+  Here are some valid example queries:
+
+```
+GET /api/accounts/account1/addrs
+GET /api/accounts/account1/addrs?page=1
+GET /api/accounts/account1/addrs?page=2&elemperpage=50
+```
+
+* **Output**: When requesting the entire address list (no paging parameters), the following JSON result is returned:
+
+```json
+[
+  {
+    "address": "n3uypZFbRqscWNqRvR64cgoMnygDHfQajD",
+    "index": 0,
+    "label": "Label 1"
+  },
+  {
+    "address": "mymqB9Bk5s5KaYDRAgjznEbnLVyrajxtjm",
+    "index": 1,
+    "label": "Label 2"
+  }
+]
+```
+
+When requesting a page, you also get the maximum page number:
+
+```json
+{
+  "maxpage": 6,
+  "addresspage": [
+    {
+      "address": "msKuXqKp9MZdmR4V86YTWZewjSJMVrmZTu",
+      "index": 5,
+      "label": ""
+    },
+    {
+      "address": "n1Gh9BbzV3b3MJHsMLCPrFyB4mMK9mRG4x",
+      "index": 6,
+      "label": ""
+    }
+  ]
+}
+```
+
+#### POST /api/accounts/{name}/addrs
+
+You can POST a label to this resource to create a new address. It will find the next
+unused and unlabeled address in your wallet and add a label to it.
+
+* **Input**: A JSON object with the label that the new address should have:
+
+```json
+{ 
+  "label": "my label" 
+}
+```
+
+* **Output**: A JSON representation of the newly created address:
+
+```json
+{
+  "address": "mv6hqrDt9qeHjxo3n5dMUfhScoVHVTXyEt",
+  "index": 17,
+  "label": "my label"
+}
+```

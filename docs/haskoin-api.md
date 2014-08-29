@@ -13,7 +13,7 @@ The Haskoin API is designed to help you manage your Haskoin wallet through a web
 | [/api/accounts/{name}/keys](#post-apiaccountsnamekeys) | POST | Add keys to a multisig account |
 | [/api/accounts/{name}/addrs](#get-apiaccountsnameaddrs) | GET, POST | List addresses, Get a new unused address |
 | [/api/accounts/{name}/addrs/{key}](#get-apiaccountsnameaddrskey)|GET, PUT | Get an address by key, Update an address label |
-| [/api/accounts/{name}/acctxs](get-apiaccountsnameacctxs) | GET, POST | List txs, Send coins, Sign txs/sigblobs|
+| [/api/accounts/{name}/acctxs](#get-apiaccountsnameacctxs) | GET, POST | List txs, Send coins, Sign txs/sigblobs|
 | /api/accounts/{name}/acctxs/{txhash}         | GET       | Get a tx by account and transaction id         |
 | /api/accounts/{name}/acctxs/{txhash}/sigblob | GET       | Get data to sign a transaction offline         |
 | /api/accounts/{name}/balance                 | GET       | Get an account balance in satoshi              |
@@ -445,8 +445,8 @@ By POSTing to this resource, you can send coins, sign a transactions or sign an 
 
 ```json
 {
-  txhash: "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c",
-  complete: true
+  "txhash": "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c",
+  "complete": true
 }
 ```
 
@@ -470,8 +470,8 @@ signed, it will simply be imported as-is in the wallet.
 
 ```json
 {
-  txhash: "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f",
-  complete: true
+  "txhash": "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f",
+  "complete": true
 }
 ```
 
@@ -492,15 +492,17 @@ You can only sign a sigblob using the keys of one account at a time.
 * **Input**: The sigblob to sign in base16 (hex) format:
 
 ```json
+{
   "type": "sigblob",
   "sigblob": "7b227478223a223..."
+}
 ```
 
 * **output**: The resulting transaction and a status indicating if the transaction is complete.
 
 ```json
 {
-  tx: "0100000001a65337...",
-  complete: true
+  "tx": "0100000001a65337...",
+  "complete": true
 }
 ```

@@ -16,9 +16,9 @@ The Haskoin API is designed to help you manage your Haskoin wallet through a web
 | [/api/accounts/{name}/acctxs](#get-apiaccountsnameacctxs) | GET, POST | List txs, Send coins, Sign txs/sigblobs|
 | [/api/accounts/{name}/acctxs/{txhash}](#get-apiaccountsnameacctxstxhash) | GET| Get a tx by account and transaction id |
 | [/api/accounts/{name}/acctxs/{txhash}/sigblob](#get-apiaccountsnameacctxstxhashsigblob) | GET | Get data to sign a transaction offline         |
-| /api/accounts/{name}/balance                 | GET       | Get an account balance in satoshi              |
-| /api/txs/{txhash}                            | GET       | Get a full transaction by transaction id       |
-| /api/node                                    | POST      | Rescan the wallet from a given timestamp       |
+| [/api/accounts/{name}/balance](#get-apiaccountsnamebalance) | GET | Get an account balance in satoshi              |
+| [/api/txs/{txhash}](#get-apitxstxhash) | GET       | Get a full transaction by transaction id       |
+| [/api/node](#post-apinode)                    | POST      | Rescan the wallet from a given timestamp       |
 
 ### API Specification
 
@@ -552,7 +552,7 @@ Use this resource to compute the offline sigblob for a given transaction. A sigb
 any type of account (including read-only accounts). You can then sign the transaction included in the
 sigblob by using this resource on another account containing the private keys (ideally on an offline wallet):
 
-POST [/api/accounts/{name}/acctxs](#post-apiaccountsnameacctxs)
+POST [/api/accounts/{name}/acctxs](#sign-offline-transaction)
 
 * **Output**: The sigblob contaings the transaction and data required for signing the transaction. The data part
   consists of a list of the following elements:
@@ -573,5 +573,55 @@ POST [/api/accounts/{name}/acctxs](#post-apiaccountsnameacctxs)
       7
     ]
   ]
+}
+```
+
+#### GET /api/accounts/{name}/balance
+
+Use this resource to request the balance of an account.
+
+* **Output**: The spendable balance of an account. Any conflicting transactions (double spends, malled transactions)
+  do not have their outputs counted towards the balance until the conflicts are resolved.
+
+```json
+{ 
+  "balance": 3330000 
+}
+```
+
+#### GET /api/txs/{txhash}
+
+Use this resource to query a whole transaction by transaction id. Only transactions that exist in your
+wallet can be queried.
+
+* **Output**: The requested transaction:
+
+```json
+{ 
+  "tx": "0100000001a65337..." 
+}
+```
+
+#### POST /api/node
+
+POST to this resource to call actions on the p2p node.
+
+* **Input**: The requested action for the p2p node. Only rescan is supported at this time. The rescan
+  action will trigger a re-download and importing of all the transactions in merkle blocks after the given
+  timestamp. If the timestamp is 0, all transactions from the genesis will be re-imported. The timestamp is
+  optional: if the timestamp is omitted, the creation time of the first key in your wallet will be used.
+
+```json
+{
+  "type": "rescan",
+  "timestamp": 1408222895
+}
+```
+
+* **Output**: The timestamp from which the rescan will be started:
+
+```json
+{
+  "timestamp": 1408222895
 }
 ```

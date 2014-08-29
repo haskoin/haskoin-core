@@ -7,8 +7,8 @@ description:
     wallet). It is a lightweight bitcoin wallet featuring BIP32 key management,
     deterministic signatures (RFC-6979) and first order support for
     multisignature transactions. A library API for hw is also exposed.
-homepage:              http://github.com/plaprade/haskoin-wallet
-bug-reports:           http://github.com/plaprade/haskoin-wallet/issues
+homepage:              http://github.com/haskoin/haskoin-wallet
+bug-reports:           http://github.com/haskoin/haskoin-wallet/issues
 license:               PublicDomain
 license-file:          UNLICENSE
 author:                Philippe Laprade
@@ -19,7 +19,7 @@ cabal-version:         >= 1.9.2
 
 source-repository head
     type:     git
-    location: git://github.com/plaprade/haskoin-wallet.git
+    location: git://github.com/haskoin/haskoin-wallet.git
 
 library
     exposed-modules:   Network.Haskoin.Wallet,

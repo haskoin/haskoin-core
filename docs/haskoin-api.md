@@ -14,8 +14,8 @@ The Haskoin API is designed to help you manage your Haskoin wallet through a web
 | [/api/accounts/{name}/addrs](#get-apiaccountsnameaddrs) | GET, POST | List addresses, Get a new unused address |
 | [/api/accounts/{name}/addrs/{key}](#get-apiaccountsnameaddrskey)|GET, PUT | Get an address by key, Update an address label |
 | [/api/accounts/{name}/acctxs](#get-apiaccountsnameacctxs) | GET, POST | List txs, Send coins, Sign txs/sigblobs|
-| /api/accounts/{name}/acctxs/{txhash}         | GET       | Get a tx by account and transaction id         |
-| /api/accounts/{name}/acctxs/{txhash}/sigblob | GET       | Get data to sign a transaction offline         |
+| [/api/accounts/{name}/acctxs/{txhash}](#get-apiaccountsnameacctxstxhash) | GET| Get a tx by account and transaction id |
+| [/api/accounts/{name}/acctxs/{txhash}/sigblob](#get-apiaccountsnameacctxstxhashsigblob) | GET | Get data to sign a transaction offline         |
 | /api/accounts/{name}/balance                 | GET       | Get an account balance in satoshi              |
 | /api/txs/{txhash}                            | GET       | Get a full transaction by transaction id       |
 | /api/node                                    | POST      | Rescan the wallet from a given timestamp       |
@@ -350,7 +350,11 @@ You can PUT a label to this resource to update the label of an address.
 
 #### GET /api/accounts/{name}/acctxs
 
-This resource will return a list of transactions pertaining to an account.
+This resource will return a list of transactions pertaining to an account. Account transactions
+summarize the results of a transaction for a given account. For instance, the value of an
+account transaction is the sum of the input coins + the sum of the output coins for a
+specific account. When importing a transaction, it might produce several account transaction for
+each account affected by the transaction.
 
 * **Input**: This resource accepts optional query parameters to receive paged results. If no paging parameters
   are set, the entire list is returned. Asking for page 0 will return the last page.
@@ -489,12 +493,28 @@ This call will not import the transaction into the wallet.
 
 You can only sign a sigblob using the keys of one account at a time. 
 
-* **Input**: The sigblob to sign in base16 (hex) format:
+* **Input**: The sigblob containing the transaction and the signing data. The signing data is a list of the
+  following elements:
+
+  * Previous outpoint (hash + position)
+  * Previous script output
+  * True if the private key is internal. False otherwise.
+  * Derivation index for the public (and private) key.
 
 ```json
 {
   "type": "sigblob",
-  "sigblob": "7b227478223a223..."
+  "sigblob": {
+    "tx": "01000000014db...",
+    "data": [
+      [
+        "8ffe3bc0bbec5ee6e4cfa7649036d8364a0f86ed102f5e353faac64765a93f9b00000000",
+        "76a9147ae65d18f30406333d304293af1d783ab83b87d288ac",
+        false,
+        7
+      ]
+    ]
+  }
 }
 ```
 
@@ -504,5 +524,54 @@ You can only sign a sigblob using the keys of one account at a time.
 {
   "tx": "0100000001a65337...",
   "complete": true
+}
+```
+
+#### GET /api/accounts/{name}/acctxs/{txhash}
+
+You can use this resource to query individual account transactions.
+
+* **Output**: Returns the requested account transaction:
+
+```json
+{
+  "value": -333000,
+  "confidence": "pending",
+  "isCoinbase": false,
+  "confirmations": 0,
+  "recipients": [
+    "mkwNK8zgNtVxF8CqZCFU83qxTNcwj4cs8q"
+  ],
+  "txid": "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c"
+  }
+```
+
+#### GET /api/accounts/{name}/acctxs/{txhash}/sigblob
+
+Use this resource to compute the offline sigblob for a given transaction. A sigblob can be produced from
+any type of account (including read-only accounts). You can then sign the transaction included in the
+sigblob by using this resource on another account containing the private keys (ideally on an offline wallet):
+
+POST [/api/accounts/{name}/acctxs](#post-apiaccountsnameacctxs)
+
+* **Output**: The sigblob contaings the transaction and data required for signing the transaction. The data part
+  consists of a list of the following elements:
+
+  * Previous outpoint (hash + position)
+  * Previous script output
+  * True if the private key is internal. False otherwise.
+  * Derivation index for the public (and private) key.
+
+```json
+{
+  "tx": "01000000014db...",
+  "data": [
+    [
+      "8ffe3bc0bbec5ee6e4cfa7649036d8364a0f86ed102f5e353faac64765a93f9b00000000",
+      "76a9147ae65d18f30406333d304293af1d783ab83b87d288ac",
+      false,
+      7
+    ]
+  ]
 }
 ```

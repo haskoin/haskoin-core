@@ -13,7 +13,7 @@ http://hackage.haskell.org/package/haskoin-wallet
 
 ## REST API Documentation
 
-https://github.com/plaprade/haskoin-wallet/blob/master/docs/haskoin-api.md
+https://github.com/haskoin/haskoin-wallet/blob/master/docs/haskoin-api.md
 
 ## Installing from Cabal
 

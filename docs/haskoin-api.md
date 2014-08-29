@@ -13,7 +13,7 @@ The Haskoin API is designed to help you manage your Haskoin wallet through a web
 | [/api/accounts/{name}/keys](#post-apiaccountsnamekeys) | POST | Add keys to a multisig account |
 | [/api/accounts/{name}/addrs](#get-apiaccountsnameaddrs) | GET, POST | List addresses, Get a new unused address |
 | [/api/accounts/{name}/addrs/{key}](#get-apiaccountsnameaddrskey)|GET, PUT | Get an address by key, Update an address label |
-| /api/accounts/{name}/acctxs                  | GET, POST | List txs, Send coins, Sign txs/sigblobs        |
+| [/api/accounts/{name}/acctxs](get-apiaccountsnameacctxs) | GET, POST | List txs, Send coins, Sign txs/sigblobs|
 | /api/accounts/{name}/acctxs/{txhash}         | GET       | Get a tx by account and transaction id         |
 | /api/accounts/{name}/acctxs/{txhash}/sigblob | GET       | Get data to sign a transaction offline         |
 | /api/accounts/{name}/balance                 | GET       | Get an account balance in satoshi              |
@@ -236,6 +236,8 @@ Adding too many keys will result in a failure.
 
 #### GET /api/accounts/{name}/addrs
 
+This resource will return a list of addresses pertaining to an account.
+
 * **Input**: This resource accepts optional query parameters to receive paged results. If no paging parameters
   are set, the entire list is returned. Asking for page 0 will return the last page.
   Here are some valid example queries:
@@ -343,5 +345,162 @@ You can PUT a label to this resource to update the label of an address.
   "address": "mv6hqrDt9qeHjxo3n5dMUfhScoVHVTXyEt",
   "index": 17,
   "label": "my updated label"
+}
+```
+
+#### GET /api/accounts/{name}/acctxs
+
+This resource will return a list of transactions pertaining to an account.
+
+* **Input**: This resource accepts optional query parameters to receive paged results. If no paging parameters
+  are set, the entire list is returned. Asking for page 0 will return the last page.
+  Here are some valid example queries:
+
+```
+GET /api/accounts/account1/acctxs
+GET /api/accounts/account1/acctxs?page=1
+GET /api/accounts/account1/acctxs?page=2&elemperpage=50
+```
+
+* **Output**: When requesting the entire transaction list (no paging parameters), 
+  the following JSON result is returned:
+
+```json
+[
+  {
+    "value": 333000,
+    "confidence": "building",
+    "isCoinbase": false,
+    "confirmations": 3343,
+    "recipients": [
+      "mrinhQTEfn5qepFNHcEo3zD5FpJFNi5AeW"
+    ],
+    "txid": "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f"
+  },
+  {
+    "value": -333000,
+    "confidence": "pending",
+    "isCoinbase": false,
+    "confirmations": 0,
+    "recipients": [
+      "mkwNK8zgNtVxF8CqZCFU83qxTNcwj4cs8q"
+    ],
+    "txid": "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c"
+  }
+]
+```
+
+When requesting a page, you also get the maximum page number:
+
+```json
+{
+  "maxpage": 2,
+  "txpage": [
+    {
+      "value": 333000,
+      "confidence": "building",
+      "isCoinbase": false,
+      "confirmations": 3343,
+      "recipients": [
+        "mrinhQTEfn5qepFNHcEo3zD5FpJFNi5AeW"
+      ],
+      "txid": "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f"
+    },
+    {
+      "value": -333000,
+      "confidence": "pending",
+      "isCoinbase": false,
+      "confirmations": 0,
+      "recipients": [
+        "mkwNK8zgNtVxF8CqZCFU83qxTNcwj4cs8q"
+      ],
+      "txid": "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c"
+    }
+  ]
+}
+
+```
+
+#### POST /api/accounts/{name}/acctxs
+
+By POSTing to this resource, you can send coins, sign a transactions or sign an offline transaction blob.
+
+##### Send Coins
+
+* **Input**: A JSON object with the recipient addresses, the amount in satoshi and 
+  the fee to pay (in satoshi/1000 bytes).
+
+```json
+{
+  "type": "send",
+  "recipients": [
+    [ "mrinhQTEfn5qepFNHcEo3zD5FpJFNi5AeW", 333000 ],
+    [ "mkwNK8zgNtVxF8CqZCFU83qxTNcwj4cs8q", 336000 ]
+  ],
+  "fee": 10000
+}
+```
+
+* **output**: The resulting transaction hash and a status indicating if the transaction is complete.
+
+```json
+{
+  txhash: "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c",
+  complete: true
+}
+```
+
+##### Sign a transaction
+
+You can only sign a transaction with the keys of one account at a time. If a transactions requires
+keys from multiple accounts, you have to call this resource for every account. This resource is
+also the standard way of importing a transaction into your wallet. If a transaction is already
+signed, it will simply be imported as-is in the wallet.
+
+* **Input**: A JSON object containing the raw transaction to sign in base16 (Hex):
+
+```json
+{
+  "type": "sign",
+  "tx": "0100000001a65337..."
+}
+```
+
+* **output**: The resulting transaction hash and a status indicating if the transaction is complete.
+
+```json
+{
+  txhash: "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f",
+  complete: true
+}
+```
+
+##### Sign offline transaction
+
+Use this resource to sign an offline sigblob that was produced from the following resource:
+
+GET [/api/accounts/{name}/acctxs/{txhash}/sigblob](#get-apiaccountsnameacctxstxhashsigblob)
+
+You can have an online read-only wallet produce a sigblob that you can sign using an offline wallet
+containing the private keys. The sigblob contains a transaction and the data required to sign it
+(previous outpoints, previous scripts, redeem scripts).
+
+This call will not import the transaction into the wallet.
+
+You can only sign a sigblob using the keys of one account at a time. 
+
+* **Input**: The sigblob to sign in base16 (hex) format:
+
+```json
+  "type": "sigblob",
+  "sigblob": "7b227478223a223..."
+```
+
+* **output**: The resulting transaction and a status indicating if the transaction is complete.
+
+```json
+{
+  tx: "0100000001a65337...",
+  complete: true
 }
 ```

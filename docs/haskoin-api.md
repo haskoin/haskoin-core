@@ -12,7 +12,7 @@ The Haskoin API is designed to help you manage your Haskoin wallet through a web
 | [/api/accounts/{name}](#get-apiaccountsname) | GET       | Get an account by name                         |
 | [/api/accounts/{name}/keys](#post-apiaccountsnamekeys) | POST | Add keys to a multisig account |
 | [/api/accounts/{name}/addrs](#get-apiaccountsnameaddrs) | GET, POST | List addresses, Get a new unused address |
-| /api/accounts/{name}/addrs/{key}             | GET, PUT  | Get an address by key, Update an address label |
+| [/api/accounts/{name}/addrs/{key}](#get-apiaccountsnameaddrskey)|GET, PUT | Get an address by key, Update an address label |
 | /api/accounts/{name}/acctxs                  | GET, POST | List txs, Send coins, Sign txs/sigblobs        |
 | /api/accounts/{name}/acctxs/{txhash}         | GET       | Get a tx by account and transaction id         |
 | /api/accounts/{name}/acctxs/{txhash}/sigblob | GET       | Get data to sign a transaction offline         |
@@ -303,5 +303,45 @@ unused and unlabeled address in your wallet and add a label to it.
   "address": "mv6hqrDt9qeHjxo3n5dMUfhScoVHVTXyEt",
   "index": 17,
   "label": "my label"
+}
+```
+
+#### GET /api/accounts/{name}/addrs/{key}
+
+* **Input**: You can retrieve an individual address using its derivation index (key):
+
+```
+GET /api/accounts/account1/addrs/17
+```
+
+* **Output**: A JSON representation of the given address:
+ 
+```json
+{
+  "address": "mv6hqrDt9qeHjxo3n5dMUfhScoVHVTXyEt",
+  "index": 17,
+  "label": "my label"
+}
+```
+
+#### PUT /api/accounts/{name}/addrs/{key}
+
+You can PUT a label to this resource to update the label of an address.
+
+* **Input**: A JSON object with the new label:
+
+```json
+{ 
+  "label": "my updated label"
+}
+```
+
+* **Output**: A JSON representation of the updated address:
+
+```json
+{
+  "address": "mv6hqrDt9qeHjxo3n5dMUfhScoVHVTXyEt",
+  "index": 17,
+  "label": "my updated label"
 }
 ```

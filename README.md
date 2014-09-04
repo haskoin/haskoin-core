@@ -15,20 +15,26 @@ http://hackage.haskell.org/package/haskoin-wallet
 
 https://github.com/haskoin/haskoin-wallet/blob/master/docs/haskoin-api.md
 
-## Installing from Cabal
+## Installing
+
+To compile Haskoin, it is necessary to install GHC, the ‘cabal’ command, and
+development libraries from LevelDB and Snappy.
+
+```sh
+# Debian/Ubuntu installation
+sudo apt-get update
+sudo apt-get install cabal-install libleveldb-dev libsnappy-dev zlib1g-dev
+```
 
 You can install the latest stable version of the haskoin-wallet package
 automatically through the cabal package manager:
 
 ```sh
-    # You may have to update your cabal package list:
-    cabal update
+# Update cabal package list
+cabal update
 
-    # Install
-    cabal install haskoin-wallet
-
-    # Run test suites and install:
-    cabal install haskoin-wallet --enable-tests
+# Install
+cabal install haskoin-wallet
 ```
 
 ## Contributing

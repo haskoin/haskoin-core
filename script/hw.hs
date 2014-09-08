@@ -300,9 +300,9 @@ getConfig opts = do
         Nothing -> case (optDir opts) of
             Nothing -> do
                 dir <- getWorkDir
-                return $ concat [dir, "/config"]
+                return $ concat [dir, "/config.yaml"]
             Just wd -> do
-                return $ concat [wd, "/config"]
+                return $ concat [wd, "/config.yaml"]
         Just cfg -> return cfg
     prevConfig <- doesFileExist configFile
     unless prevConfig $ YAML.encodeFile configFile defaultOptions
@@ -558,9 +558,9 @@ processCommand opts args = case args of
     ["version"] -> putStrLn haskoinUserAgent
     _ -> error invalidErr
   where
-    pidFile     = fromMaybe "hw.pid"     $ optPid opts
-    logFile     = fromMaybe "stdout.log" $ optLog opts
-    configFile  = fromMaybe "config"     $ optCfg opts
+    pidFile     = fromMaybe "hw.pid"      $ optPid opts
+    logFile     = fromMaybe "stdout.log"  $ optLog opts
+    configFile  = fromMaybe "config.yaml" $ optCfg opts
 
 data ErrorMsg = ErrorMsg !String ![String]
     deriving (Eq, Show, Read)

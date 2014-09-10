@@ -10,7 +10,6 @@ import System.Directory
     , getAppUserDataDirectory
     , setCurrentDirectory
     )
-import System.IO.Error (ioeGetErrorString)
 import System.Console.GetOpt 
     ( getOpt
     , usageInfo
@@ -24,10 +23,9 @@ import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (unless, forM_, when, mzero, liftM2)
 import Control.Monad.Trans (liftIO, MonadIO)
-import Control.Exception (throwIO, throw, catch)
+import Control.Exception (throwIO, throw)
 
 import Data.Default (def)
-import Data.String (fromString)
 import Data.Word (Word32, Word64)
 import Data.List (intersperse)
 import Data.Maybe (listToMaybe, fromJust, isNothing, isJust, fromMaybe)
@@ -35,11 +33,8 @@ import qualified Data.HashMap.Strict as H (toList)
 import qualified Data.Vector as V (toList)
 import qualified Data.Text as T (pack, unpack, splitOn)
 import qualified Data.Yaml as YAML (encode, encodeFile, decodeFile)
-import Data.Conduit (($$), ($=))
-import Data.Conduit.Network (clientSettings)
 import qualified Data.ByteString.Lazy as BL (ByteString)
 import qualified Data.ByteString as BS (ByteString)
-import qualified Data.Conduit.List as CL
 import Data.Aeson 
     ( Value (String)
     , FromJSON
@@ -67,9 +62,7 @@ import Network.HTTP.Conduit
     ( RequestBody(..)
     , Request(..)
     , Response(..)
-    , HttpException(..)
     , httpLbs
-    , parseUrl
     , withManager
     , setQueryString
     )
@@ -180,11 +173,14 @@ instance FromJSON Options where
 
 options :: [OptDescr (Options -> IO Options)]
 options =
-    [ Option ['c'] ["count"] (ReqArg parseCount "INT")
+    [ Option ['c'] ["conf"]
+        (ReqArg (\g opts -> return opts{ optCfg = Just g }) "FILE")
+        "Configuration file"
+    , Option ['n'] ["count"] (ReqArg parseCount "INT")
         "Count: see commands for details"
     , Option ['f'] ["fee"] 
-        (ReqArg (\f opts -> return opts{ optFee = read f }) "SATOSHI")
-        "Transaction fee (default: 10000)"
+       (ReqArg (\f opts -> return opts{ optFee = read f }) "SATOSHI")
+       "Transaction fee (default: 10000)"
     , Option ['j'] ["json"]
         (NoArg $ \opts -> return opts{ optJson = True })
         "Format result as JSON"
@@ -212,9 +208,6 @@ options =
     , Option ['i'] ["pidfile"]
         (ReqArg (\i opts -> return opts{ optPid = Just i }) "FILE")
         "PID file"
-    , Option ['g'] ["conf"]
-        (ReqArg (\g opts -> return opts{ optCfg = Just g }) "FILE")
-        "Configuration file"
     ]
 
 parseCount :: String -> Options -> IO Options

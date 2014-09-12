@@ -1,9 +1,9 @@
 # haskoin-wallet
 
-This package provides a command lines application called hw (haskoin wallet).
+This package provides a command line application called hw (haskoin wallet).
 It is a lightweight bitcoin wallet featuring BIP32 key management,
 deterministic signatures (RFC-6979) and first order support for multisignature
-transactions. Both a Haskell and a REST api are exposed for the wallet.
+transactions. Both Haskell and REST APIs are exposed for the wallet.
 
 This package also provides an SPV (simple payment verification) node.
 

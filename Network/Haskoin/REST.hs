@@ -117,6 +117,7 @@ data ServerConfig = ServerConfig
     , configBatch        :: Int
     , configBloomFP      :: Double
     , configMode         :: ServerMode
+    , configGap          :: Int
     } deriving (Eq, Read, Show)
 
 haskoinPort :: Int
@@ -294,24 +295,26 @@ getAccountsR = handleErrors $ toJSON <$> runDB accountList
 
 postAccountsR :: Handler Value
 postAccountsR = handleErrors $ do
+    HaskoinServer _ _ config <- getYesod
+    let c = configGap config
     parseJsonBody >>= \res -> toJSON <$> case res of
         Success (NewAccount w n) -> do
             acc <- runDB $ newAccount w n
-            updateNode $ runDB $ addLookAhead n 10
+            updateNode $ runDB $ addLookAhead n c
             return acc
         Success (NewMSAccount w n r t ks) -> do
             acc <- runDB $ newMSAccount w n r t ks
             when (length (accountKeys acc) == t) $ 
-                updateNode $ runDB $ addLookAhead n 10
+                updateNode $ runDB $ addLookAhead n c
             return acc
         Success (NewReadAccount n k) -> do
             acc <- runDB $ newReadAccount n k
-            updateNode $ runDB $ addLookAhead n 10
+            updateNode $ runDB $ addLookAhead n c
             return acc
         Success (NewReadMSAccount n r t ks) -> do
             acc <- runDB $ newReadMSAccount n r t ks
             when (length (accountKeys acc) == t) $ 
-                updateNode $ runDB $ addLookAhead n 10
+                updateNode $ runDB $ addLookAhead n c
             return acc
         Error err -> undefined
 
@@ -320,11 +323,13 @@ getAccountR name = handleErrors $ toJSON <$> runDB (getAccount $ unpack name)
 
 postAccountKeysR :: Text -> Handler Value
 postAccountKeysR name = handleErrors $ do
+    HaskoinServer _ _ config <- getYesod
+    let c = configGap config
     parseJsonBody >>= \res -> toJSON <$> case res of
         Success [ks] -> do
             acc <- runDB $ addAccountKeys (unpack name) ks
             when (length (accountKeys acc) == accountTotal acc) $ do
-                updateNode $ runDB $ addLookAhead (unpack name) 10
+                updateNode $ runDB $ addLookAhead (unpack name) c
             return acc
         Error err -> undefined
 

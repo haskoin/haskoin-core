@@ -86,6 +86,7 @@ type Args = [String]
 
 data Options = Options
     { optCount    :: Int
+    , optGap      :: Int
     , optFee      :: Word64
     , optJson     :: Bool
     , optYaml     :: Bool
@@ -106,6 +107,7 @@ data Options = Options
 defaultOptions :: Options
 defaultOptions = Options
     { optCount    = 5
+    , optGap      = 10
     , optFee      = 10000
     , optJson     = False
     , optYaml     = False
@@ -126,6 +128,7 @@ defaultOptions = Options
 instance ToJSON Options where
     toJSON opt = object $
         [ "count"          .= optCount opt
+        , "gap"            .= optGap opt
         , "fee"            .= optFee opt
         , "json"           .= optJson opt
         , "yaml"           .= optYaml opt
@@ -150,6 +153,7 @@ instance ToJSON Options where
 instance FromJSON Options where
     parseJSON = withObject "options" $ \o -> Options
         <$> o .: "count"
+        <*> o .: "gap"
         <*> o .: "fee"
         <*> o .: "json"
         <*> o .: "yaml"
@@ -328,7 +332,7 @@ printJSONOr opts bs action
     resE = eitherDecode bs
     res  = fromRight resE
 
--- TODO: Rename existing log files to prevent overriding them
+-- TODO: Rename existing log files to prevent overwriting them
 processCommand :: Options -> Args -> IO ()
 processCommand opts args = case args of
     ["start"] -> do
@@ -339,6 +343,7 @@ processCommand opts args = case args of
                 , configBatch        = optBatch opts
                 , configBloomFP      = optBloomFP opts
                 , configMode         = optMode opts
+                , configGap          = optGap opts
                 }
         prevLog <- doesFileExist $ logFile
         -- TODO: Should we move the log file to an archive directory?

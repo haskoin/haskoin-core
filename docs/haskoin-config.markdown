@@ -77,6 +77,13 @@ Port to listen to RESTful API requests from.
 
 Default: 18555
 
+### gap
+
+Number of addresses to generate in account by default.  The wallet will always
+have this many unused addresses generated.
+
+Default: 10
+
 
 
 ## Client Directives

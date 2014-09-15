@@ -12,6 +12,8 @@ import Control.Applicative
 
 import qualified Data.Sequence as S (fromList)
 
+import Network.Socket
+
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 
@@ -24,9 +26,15 @@ instance Arbitrary VarString where
 instance Arbitrary NetworkAddress where
     arbitrary = do
         s <- arbitrary
-        a <- liftM2 (,) arbitrary arbitrary
+        a <- arbitrary
+        b <- arbitrary
+        c <- arbitrary
+        d <- arbitrary
         p <- arbitrary
-        return $ NetworkAddress s a p
+        NetworkAddress s <$> elements
+            [ SockAddrInet6 (PortNum p) 0x00000000 (a,b,c,d) 0x00000000
+            , SockAddrInet (PortNum p) a
+            ]
 
 instance Arbitrary InvType where
     arbitrary = elements [InvError, InvTx, InvBlock, InvMerkleBlock]

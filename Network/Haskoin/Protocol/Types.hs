@@ -42,7 +42,7 @@ import Control.Applicative ((<$>),(<*>))
 
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
 import Data.Bits (testBit, setBit)
-import Data.Word (Word8, Word16, Word32, Word64)
+import Data.Word (Word8, Word32, Word64)
 import qualified Data.Text as T
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get 
@@ -50,9 +50,10 @@ import Data.Binary.Get
     , getWord8
     , getWord16le
     , getWord16be
+    , getWord32be
+    , getWord32host
     , getWord32le
     , getWord64le
-    , getWord64be
     , getByteString
     , isEmpty
     )
@@ -61,9 +62,10 @@ import Data.Binary.Put
     , putWord8
     , putWord16le
     , putWord16be
+    , putWord32be
+    , putWord32host
     , putWord32le
     , putWord64le
-    , putWord64be
     , putByteString
     )
 import qualified Data.Foldable as F (toList)
@@ -72,6 +74,10 @@ import qualified Data.ByteString as BS
     ( ByteString
     , length
     , takeWhile
+    )
+import Network.Socket
+    ( SockAddr (SockAddrInet, SockAddrInet6)
+    , PortNumber (PortNum)
     )
 
 import Network.Haskoin.Util 
@@ -87,10 +93,7 @@ data Addr =
            -- List of addresses of other nodes on the network with timestamps.
            addrList :: ![NetworkAddressTime] 
          } 
-    deriving (Eq, Show, Read)
-
-instance NFData Addr where
-    rnf (Addr as) = rnf as
+    deriving (Eq, Show)
 
 instance Binary Addr where
 
@@ -551,26 +554,46 @@ data NetworkAddress =
     NetworkAddress {
                    -- | Bitmask of services available for this address
                      naServices :: !Word64
-                   -- | IPv6 address serialized as big endian
-                   , naAddress  :: !(Word64, Word64)
-                   -- | Port number serialized as big endian
-                   , naPort     :: !Word16
-                   } deriving (Eq, Show, Read)
-
-instance NFData NetworkAddress where
-    rnf (NetworkAddress s a p) = rnf s `seq` rnf a `seq` rnf p
+                   -- | IPv6 address and port
+                   , naAddress  :: !SockAddr
+                   } deriving (Eq, Show)
 
 instance Binary NetworkAddress where
 
     get = NetworkAddress <$> getWord64le
-                         <*> (liftM2 (,) getWord64be getWord64be)
-                         <*> getWord16be
+                         <*> getAddrPort
+      where
+        getAddrPort = do
+            a <- getWord32be
+            b <- getWord32be
+            c <- getWord32be
+            if a == 0x00000000 && b == 0x00000000 && c == 0x0000ffff
+              then do
+                d <- getWord32host
+                p <- getWord16be
+                return $ SockAddrInet (PortNum p) d
+              else do
+                d <- getWord32be
+                p <- getWord16be
+                return $ SockAddrInet6 (PortNum p) 0 (a,b,c,d) 0
 
-    put (NetworkAddress s (al,ar) p) = do
+    put (NetworkAddress s (SockAddrInet6 (PortNum p) _ (a,b,c,d) _)) = do
         putWord64le s
-        putWord64be al
-        putWord64be ar
+        putWord32be a
+        putWord32be b
+        putWord32be c
+        putWord32be d
         putWord16be p
+
+    put (NetworkAddress s (SockAddrInet (PortNum p) a)) = do
+        putWord64le s
+        putWord32be 0x00000000
+        putWord32be 0x00000000
+        putWord32be 0x0000ffff
+        putWord32host a
+        putWord16be p
+
+    put _ = error "NetworkAddress can onle be IPv4 or IPv6"
 
 -- | A 'NotFound' message is returned as a response to a 'GetData' message
 -- whe one of the requested objects could not be retrieved. This could happen,
@@ -950,12 +973,7 @@ data Version =
               -- or not. This feature is enabled since version >= 70001. See
               -- BIP37 for more details.
             , relay       :: !Bool
-            } deriving (Eq, Show, Read)
-
-instance NFData Version where
-    rnf (Version ver ser ts ar as vn ua sh re) =
-        rnf ver `seq` rnf ser `seq` rnf ts `seq` rnf ar `seq`
-        rnf as `seq` rnf vn `seq` rnf ua `seq` rnf sh `seq` rnf re
+            } deriving (Eq, Show)
 
 instance Binary Version where
 

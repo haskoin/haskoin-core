@@ -92,26 +92,7 @@ data Message
     | MPong !Pong 
     | MAlert !Alert
     | MReject Reject
-    deriving (Eq, Show, Read)
-
-instance NFData Message where
-    rnf (MVersion v) = rnf v
-    rnf (MAddr a) = rnf a
-    rnf (MInv i) = rnf i
-    rnf (MGetData d) = rnf d
-    rnf (MNotFound n) = rnf n
-    rnf (MGetBlocks b) = rnf b
-    rnf (MGetHeaders h) = rnf h
-    rnf (MTx t) = rnf t
-    rnf (MBlock b) = rnf b
-    rnf (MMerkleBlock b) = rnf b
-    rnf (MHeaders h) = rnf h
-    rnf (MFilterLoad f) = rnf f
-    rnf (MFilterAdd f) = rnf f
-    rnf (MPing p) = rnf p
-    rnf (MPong p) = rnf p
-    rnf (MAlert a) = rnf a
-    rnf x = x `seq` ()
+    deriving (Eq, Show)
 
 instance Binary Message where
 

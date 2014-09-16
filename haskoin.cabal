@@ -69,6 +69,7 @@ library
                        either >= 4.3 && < 4.4,
                        json-rpc >= 0.2.0.1 && < 0.3,
                        mtl >= 2.1 && < 2.3, 
+                       network >= 2.6 && < 2.7,
                        pbkdf >= 1.1 && < 1.2,
                        split >= 0.2 && < 0.3,
                        text >= 1.1 && < 1.2
@@ -126,6 +127,7 @@ test-suite test-haskoin
                        either >= 4.3 && < 4.4,
                        json-rpc >= 0.2.0.1 && < 0.3,
                        mtl >= 2.1 && < 2.3, 
+                       network >= 2.6 && < 2.7,
                        pbkdf >= 1.1 && < 1.2,
                        split >= 0.2 && < 0.3,
                        text >= 1.1 && < 1.2,

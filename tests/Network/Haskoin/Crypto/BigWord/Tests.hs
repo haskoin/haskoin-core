@@ -234,17 +234,19 @@ ringPred i = (fromIntegral i) /= minB ==>
     ring  = pred (fromInteger i) :: Test32
     minB   = minBound :: Word32
 
-ringToEnum :: Word32 -> Bool
-ringToEnum w = getBigWordInteger ring == fromIntegral model
+ringToEnum :: Int -> Property
+ringToEnum w = w >= 0 && w < fromIntegral (maxBound :: Test32)
+    ==> getBigWordInteger ring == fromIntegral model
   where 
-    model = toEnum (fromIntegral w) :: Word32
-    ring  = toEnum (fromIntegral w) :: Test32
+    model = toEnum w :: Word32
+    ring  = toEnum w :: Test32
 
-ringFromEnum :: Integer -> Bool
-ringFromEnum i = model == ring
+ringFromEnum :: Int -> Property
+ringFromEnum i = i >= 0 && i < fromIntegral (maxBound :: Test32)
+    ==> model == ring
   where 
-    model = fromEnum ((fromInteger i) :: Word32)
-    ring  = fromEnum ((fromInteger i) :: Test32)
+    model = fromEnum ((fromIntegral i) :: Word32)
+    ring  = fromEnum ((fromIntegral i) :: Test32)
 
 {- BigWord Integral -}
 

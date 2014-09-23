@@ -368,7 +368,7 @@ instance Binary ScriptOp where
                     putWord8 0x4d
                     putWord16le $ fromIntegral len
                 OPDATA4 -> do
-                    unless (len <= 0xffffffff) $ fail 
+                    unless (len <= 0x7fffffff) $ fail 
                         "OP_PUSHDATA OPDATA4: Payload size too big"
                     putWord8 0x4e
                     putWord32le $ fromIntegral len

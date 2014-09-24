@@ -23,7 +23,9 @@ type PartialMerkleTree = [Word256]
 -- | Computes the height of a merkle tree.
 calcTreeHeight :: Int -- ^ Number of transactions (leaf nodes).
                -> Int -- ^ Height of the merkle tree.
-calcTreeHeight ntx = ceiling $ log (fromIntegral ntx :: Double) / log 2
+calcTreeHeight ntx | ntx < 2 = 0
+                   | even ntx  = 1 + calcTreeHeight (ntx `div` 2)
+                   | otherwise = calcTreeHeight $ ntx + 1
 
 -- | Computes the width of a merkle tree at a specific height. The transactions
 -- are at height 0.

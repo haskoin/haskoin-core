@@ -14,6 +14,7 @@ import Data.Bits
     , (.&.), (.|.)
     , xor, complement
     )
+import Data.Int (Int32)
 import Data.Word (Word8, Word32)
 import qualified Data.ByteString as BS (length, index)
 
@@ -234,17 +235,17 @@ ringPred i = (fromIntegral i) /= minB ==>
     ring  = pred (fromInteger i) :: Test32
     minB   = minBound :: Word32
 
-ringToEnum :: Word32 -> Bool
-ringToEnum w = getBigWordInteger ring == fromIntegral model
+ringToEnum :: Int32 -> Property
+ringToEnum w = w >= 0 ==> getBigWordInteger ring == fromIntegral model
   where 
     model = toEnum (fromIntegral w) :: Word32
     ring  = toEnum (fromIntegral w) :: Test32
 
-ringFromEnum :: Integer -> Bool
-ringFromEnum i = model == ring
+ringFromEnum :: Int32 -> Property
+ringFromEnum i = i >= 0 ==> model == ring
   where 
-    model = fromEnum ((fromInteger i) :: Word32)
-    ring  = fromEnum ((fromInteger i) :: Test32)
+    model = fromEnum (fromIntegral i :: Word32)
+    ring  = fromEnum (fromIntegral i :: Test32)
 
 {- BigWord Integral -}
 

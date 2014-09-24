@@ -53,9 +53,9 @@ bloomCreate numElem fpRate tweak flags =
     numHashF  = truncate $ min c (fromIntegral maxHashFuncs)
     c         = (fromIntegral bloomSize) * 8 / (fromIntegral numElem) * ln2
 
-bloomHash :: BloomFilter -> Word32 -> BS.ByteString -> Int
+bloomHash :: BloomFilter -> Word32 -> BS.ByteString -> Word32
 bloomHash bfilter hashNum bs =
-    fromIntegral (murmurHash3 seed bs) `mod` (S.length (bloomData bfilter) * 8)
+    murmurHash3 seed bs `mod` (fromIntegral (S.length (bloomData bfilter)) * 8)
   where
     seed = hashNum * 0xfba4c795 + (bloomTweak bfilter)
 
@@ -69,7 +69,8 @@ bloomInsert bfilter bs
     | otherwise = bfilter { bloomData = newData }
   where
     idxs    = map (\i -> bloomHash bfilter i bs) [0..bloomHashFuncs bfilter - 1]
-    upd s i = S.adjust (.|. bitMask !! (7 .&. i)) (i `shiftR` 3) s
+    upd s i = S.adjust (.|. bitMask !! fromIntegral (7 .&. i))
+                       (fromIntegral $ i `shiftR` 3) s
     newData = foldl upd (bloomData bfilter) idxs
 
 -- | Tests if some arbitrary data matches the filter. This can be either because
@@ -86,7 +87,8 @@ bloomContains bfilter bs
   where
     s       = bloomData bfilter
     idxs    = map (\i -> bloomHash bfilter i bs) [0..bloomHashFuncs bfilter - 1]
-    isSet i = (S.index s (i `shiftR` 3)) .&. (bitMask !! (7 .&. i)) /= 0
+    isSet i = (S.index s (fromIntegral $ i `shiftR` 3))
+          .&. (bitMask !! fromIntegral (7 .&. i)) /= 0
 
 -- TODO: Write bloomRelevantUpdate
 -- bloomRelevantUpdate :: BloomFilter -> Tx -> Hash256 -> Maybe BloomFilter

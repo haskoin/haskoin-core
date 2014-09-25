@@ -35,7 +35,9 @@ it with `hw start`.
 
 ## API Specification
 
-### GET /api/wallets (online, offline)
+### GET /api/wallets
+
+**Modes**: online, offline
 
 #### Output
 
@@ -54,7 +56,9 @@ Returns a list of all available wallets in the following format:
 ]
 ```
 
-### POST /api/wallets (online, offline)
+### POST /api/wallets
+
+**Modes**: online, offline
 
 #### Input
 
@@ -79,7 +83,9 @@ Returns the mnemonic sentence of your new wallet:
 { "mnemonic": "film pig subway ..." }
 ```
 
-### GET /api/wallets/{name} (online, offline)
+### GET /api/wallets/{name}
+
+**Modes**: online, offline
 
 #### Input
 
@@ -103,7 +109,9 @@ A JSON object representing a wallet in the following format:
 It contains both the wallet name and the extended private key (master key) for
 that wallet.
 
-### GET /api/accounts (online, offline, vault)
+### GET /api/accounts
+
+**Modes**: online, offline, vault
 
 #### Output
 
@@ -174,7 +182,9 @@ where security is not optimal, such as on a web server.
 }
 ```
   
-### POST /api/accounts (online, offline, vault)
+### POST /api/accounts
+
+**Modes**: online, offline, vault
 
 #### Input
 
@@ -250,7 +260,9 @@ at a later time through the resource
 
 A JSON representation of your new account as defined [here](#get-apiaccounts).
 
-### GET /api/accounts/{name} (online, offline, vault)
+### GET /api/accounts/{name}
+
+**Modes**: online, offline, vault
 
 #### Input
 
@@ -264,7 +276,9 @@ An account resource is identified by its name. For example:
 
 A JSON representation of the given account as defined [here](#get-apiaccounts).
 
-### POST /api/accounts/{name}/keys (online, offline, vault)
+### POST /api/accounts/{name}/keys
+
+**Modes**: online, offline, vault
 
 When creating a multisignature account, you can add the keys at a later time by
 using this resource.  Adding too many keys will result in a failure.
@@ -282,7 +296,9 @@ A JSON list of extended public keys:
 
 A JSON representation of the given account as defined [here](#get-apiaccounts).
 
-### GET /api/accounts/{name}/addrs (online, offline, vault)
+### GET /api/accounts/{name}/addrs
+
+**Modes**: online, offline, vault
 
 This resource will return a list of addresses pertaining to an account.
 
@@ -338,7 +354,9 @@ When requesting a page, you also get the maximum page number:
 }
 ```
 
-### POST /api/accounts/{name}/addrs (online, offline, vault)
+### POST /api/accounts/{name}/addrs
+
+**Modes**: online, offline, vault
 
 You can POST a label to this resource to create a new address. It will find the
 next unused and unlabeled address in your wallet and add a label to it.
@@ -365,7 +383,9 @@ A JSON representation of the newly created address:
 }
 ```
 
-### GET /api/accounts/{name}/addrs/{key} (online, offline, vault)
+### GET /api/accounts/{name}/addrs/{key}
+
+**Modes**: online, offline, vault
 
 #### Input
 
@@ -387,7 +407,9 @@ A JSON representation of the given address:
 }
 ```
 
-### PUT /api/accounts/{name}/addrs/{key} (online, offline, vault)
+### PUT /api/accounts/{name}/addrs/{key}
+
+**Modes**: online, offline, vault
 
 You can PUT a label to this resource to update the label of an address.
 
@@ -413,7 +435,9 @@ A JSON representation of the updated address:
 }
 ```
 
-### GET /api/accounts/{name}/acctxs (online, offline, vault)
+### GET /api/accounts/{name}/acctxs
+
+**Modes**: online, offline, vault
 
 This resource will return a list of transactions pertaining to an account.
 Account transactions summarize the results of a transaction for a given
@@ -495,7 +519,9 @@ When requesting a page, you also get the maximum page number:
 
 ```
 
-### POST /api/accounts/{name}/acctxs (offline, online)
+### POST /api/accounts/{name}/acctxs
+
+**Modes**: offline, online
 
 By POSTing to this resource, you can send coins, sign transactions or sign an
 offline transaction blob.
@@ -615,7 +641,9 @@ complete.
 }
 ```
 
-### GET /api/accounts/{name}/acctxs/{txhash} (online, offline, vault)
+### GET /api/accounts/{name}/acctxs/{txhash}
+
+**Modes**: online, offline, vault
 
 You can use this resource to query individual account transactions.
 
@@ -636,7 +664,9 @@ Returns the requested account transaction:
   }
 ```
 
-### GET /api/accounts/{name}/acctxs/{txhash}/sigblob (online, offline, vault)
+### GET /api/accounts/{name}/acctxs/{txhash}/sigblob
+
+**Modes**: online, offline, vault
 
 Use this resource to compute the offline sigblob for a given transaction. A
 sigblob can be produced from any type of account (including read-only
@@ -668,7 +698,9 @@ transaction. The data part consists of a list of the following elements:
 }
 ```
 
-### GET /api/accounts/{name}/balance (online, offline, vault)
+### GET /api/accounts/{name}/balance
+
+**Modes**: online, offline, vault
 
 Use this resource to request the balance of an account.
 
@@ -684,7 +716,9 @@ balance until the conflicts are resolved.
 }
 ```
 
-### GET /api/txs/{txhash} (online, offline, vault)
+### GET /api/txs/{txhash}
+
+**Modes**: online, offline, vault
 
 Use this resource to query a whole transaction by transaction id. Only
 transactions that exist in your wallet can be queried.
@@ -699,7 +733,9 @@ The requested transaction:
 }
 ```
 
-### POST /api/node (online, offline)
+### POST /api/node
+
+**Modes**: online, offline
 
 POST to this resource to call actions on the p2p node.
 

@@ -75,6 +75,11 @@ import qualified Database.LevelDB.Base as DB
     , iterKeys
     )
 
+import Network.Socket
+    ( SockAddr (SockAddrInet, SockAddrInet6)
+    , PortNumber (PortNum)
+    )
+
 import Network.Haskoin.Node.Peer
 import Network.Haskoin.Node.HeaderChain
 import Network.Haskoin.Node.Types
@@ -205,8 +210,7 @@ processUserRequest mChan = awaitForever $ \r ->
 buildVersion :: IO Version
 buildVersion = do
     -- TODO: Get our correct IP here
-    let zeroAddr = (0x00, 0xffff00000000)
-        add      = NetworkAddress 1 zeroAddr 0
+    let add      = NetworkAddress 1 $ SockAddrInet (PortNum 0) 0
         ua       = VarString $ stringToBS haskoinUserAgent
     time <- getPOSIXTime
     rdmn <- randomIO -- nonce

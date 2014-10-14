@@ -54,6 +54,7 @@ import Yesod
     , YesodPersist(..)
     , RenderMessage
     , FormMessage
+    , makeSessionBackend
     , renderMessage
     , defaultFormMessage
     , getYesod
@@ -141,7 +142,8 @@ data HaskoinServer = HaskoinServer
     , serverConfig :: ServerConfig
     }
 
-instance Yesod HaskoinServer
+instance Yesod HaskoinServer where
+    makeSessionBackend _ = return Nothing
 
 instance YesodPersist HaskoinServer where
     type YesodPersistBackend HaskoinServer = SqlPersistT

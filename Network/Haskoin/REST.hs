@@ -42,6 +42,7 @@ import Data.Conduit (Sink, awaitForever, ($$), ($=))
 import Data.Conduit.Network ()
 import Data.Conduit.TMChan
 import Data.Text (Text, unpack, pack)
+import Data.Text.Encoding (encodeUtf8)
 import Data.Default (Default, def)
 import qualified Data.Conduit.List as CL
 
@@ -78,6 +79,7 @@ import Yesod
     , invalidArgs
     )
 import Network.Wai.Handler.Warp (runSettings, defaultSettings, setHost, setPort)
+import Network.Wai.Middleware.HttpAuth (basicAuth)
 
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
@@ -120,6 +122,8 @@ data ServerConfig = ServerConfig
     , configBloomFP      :: Double
     , configMode         :: ServerMode
     , configGap          :: Int
+    , configUser         :: Text
+    , configPassword     :: Text
     } deriving (Eq, Read, Show)
 
 haskoinPort :: Int
@@ -135,6 +139,8 @@ instance Default ServerConfig where
         , configBatch        = 100
         , configBloomFP      = 0.00001
         , configMode         = ServerOnline
+        , configUser         = "haskoin"
+        , configPassword     = "haskoin"
         }
 
 data HaskoinServer = HaskoinServer 
@@ -189,11 +195,15 @@ runServer config = do
         fp       = configBloomFP config
         mode     = configMode config 
         settings = setHost bind $ setPort port defaultSettings
+        user     = encodeUtf8 $ configUser config
+        password = encodeUtf8 $ configPassword config
+        checkCreds u p = return $ u == user && p == password
+        runApp = runSettings settings . basicAuth checkCreds "haskoin"
 
     if mode `elem` [ServerOffline, ServerVault]
         then do
             app <- toWaiApp $ HaskoinServer pool Nothing config
-            runSettings settings app
+            runApp app
         else do
             -- Launch SPV node
             withAsyncNode batch $ \eChan rChan _ -> do
@@ -208,7 +218,7 @@ runServer config = do
                 forM_ hosts $ \(h,p) -> writeTBMChan rChan $ ConnectNode h p
 
             app <- toWaiApp $ HaskoinServer pool (Just rChan) config
-            runSettings settings app
+            runApp app
 
 processNodeEvents :: ConnectionPool 
                   -> TBMChan NodeRequest 

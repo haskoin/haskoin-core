@@ -68,11 +68,11 @@ library
                        deepseq >= 1.3 && < 1.4,
                        either >= 4.3 && < 4.4,
                        json-rpc >= 0.2.0.1 && < 0.3,
-                       mtl >= 2.1 && < 2.3, 
+                       mtl >= 2.2 && < 2.3, 
                        network >= 2.6 && < 2.7,
                        pbkdf >= 1.1 && < 1.2,
                        split >= 0.2 && < 0.3,
-                       text >= 1.1 && < 1.3
+                       text >= 1.2 && < 1.3
     ghc-options:       -Wall -fno-warn-orphans
   if flag(testnet)
     hs-source-dirs:    . testnet
@@ -126,7 +126,7 @@ test-suite test-haskoin
                        deepseq >= 1.3 && < 1.4,
                        either >= 4.3 && < 4.4,
                        json-rpc >= 0.2.0.1 && < 0.3,
-                       mtl >= 2.1 && < 2.3, 
+                       mtl >= 2.2 && < 2.3, 
                        network >= 2.6 && < 2.7,
                        pbkdf >= 1.1 && < 1.2,
                        split >= 0.2 && < 0.3,

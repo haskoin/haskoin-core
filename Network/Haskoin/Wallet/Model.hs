@@ -1,6 +1,8 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -41,6 +43,7 @@ import Database.Persist (EntityField, Unique)
 import Database.Persist.Sql ()
 import Database.Persist.TH
     ( share
+    , mpsGeneric
     , mkPersist
     , sqlSettings
     , mkMigrate
@@ -55,14 +58,15 @@ import Network.Haskoin.Crypto
 -- TODO: We only care about pubkeyhash and not pubkey. Should we do
 -- something about it?
 
-share [mkPersist sqlSettings, mkMigrate "migrateWallet"] [persistLowerCase|
+share [mkPersist (sqlSettings { mpsGeneric = True })
+      , mkMigrate "migrateWallet"
+      ] [persistLowerCase|
 DbWallet 
     name String
     value Wallet
     accIndex KeyIndex Maybe
     created UTCTime default=CURRENT_TIME
     UniqueWalletName name
-    deriving Show
 
 DbAccount 
     name String
@@ -71,7 +75,6 @@ DbAccount
     wallet DbWalletId Maybe
     created UTCTime default=CURRENT_TIME
     UniqueAccName name
-    deriving Show
 
 DbAddress 
     value Address
@@ -82,7 +85,6 @@ DbAddress
     created UTCTime default=CURRENT_TIME
     UniqueAddress value
     UniqueAddressKey account index internal
-    deriving Show
 
 DbCoin 
     hash TxHash
@@ -92,20 +94,17 @@ DbCoin
     account DbAccountId
     created UTCTime default=CURRENT_TIME
     CoinOutPoint hash pos
-    deriving Show
 
 DbSpentCoin
     key OutPoint
     tx TxHash
     created UTCTime default=CURRENT_TIME
-    deriving Show
 
 DbTxConflict
     fst TxHash
     snd TxHash
     created UTCTime default=CURRENT_TIME
     UniqueConflict fst snd
-    deriving Show
 
 DbAccTx
     hash TxHash
@@ -114,7 +113,6 @@ DbAccTx
     account DbAccountId
     created UTCTime default=CURRENT_TIME
     UniqueAccTx hash account
-    deriving Show
 
 DbTx
     hash TxHash
@@ -125,7 +123,6 @@ DbTx
     isCoinbase Bool
     created UTCTime default=CURRENT_TIME
     UniqueTx hash
-    deriving Show
 
 DbOrphan
     hash TxHash
@@ -133,17 +130,14 @@ DbOrphan
     source TxSource
     created UTCTime default=CURRENT_TIME
     UniqueOrphan hash
-    deriving Show
 
 DbConfirmation
     tx TxHash
     block BlockHash
-    deriving Show
 
 DbConfig
     bestHeight Word32
     version Int
     created UTCTime default=CURRENT_TIME
-    deriving Show
 |]
 

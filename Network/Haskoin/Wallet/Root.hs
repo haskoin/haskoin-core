@@ -10,8 +10,9 @@ module Network.Haskoin.Wallet.Root
 ) where
 
 import Control.Monad (liftM, when)
+import Control.Monad.Reader (ReaderT)
 import Control.Exception (throwIO)
-import Control.Monad.Trans (liftIO)
+import Control.Monad.Trans (MonadIO, liftIO)
 
 import Data.Maybe (fromJust, isJust, isNothing)
 import Data.Time (getCurrentTime)
@@ -21,7 +22,6 @@ import Database.Persist
     ( PersistUnique
     , PersistQuery
     , PersistStore
-    , PersistMonadBackend
     , Entity(..)
     , getBy
     , insert_
@@ -36,11 +36,12 @@ import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 
 -- | Get a wallet by name
-getWallet :: PersistUnique m => String -> m Wallet
+getWallet :: (MonadIO m, PersistStore b, PersistUnique b)
+          => String -> ReaderT b m Wallet
 getWallet name = liftM (dbWalletValue . entityVal) $ getWalletEntity name
 
-getWalletEntity :: (PersistUnique m, PersistMonadBackend m ~ b)
-                => String -> m (Entity (DbWalletGeneric b))
+getWalletEntity :: (MonadIO m, PersistStore b, PersistUnique b)
+                => String -> ReaderT b m (Entity (DbWalletGeneric b))
 getWalletEntity name = do
     entM <- getBy $ UniqueWalletName name
     case entM of
@@ -49,7 +50,7 @@ getWalletEntity name = do
             unwords ["Wallet", name, "does not exist"]
 
 -- | Get a list of all the wallets
-walletList :: PersistQuery m => m [Wallet]
+walletList :: (MonadIO m, PersistQuery b) => ReaderT b m [Wallet]
 walletList = 
     liftM (map f) $ selectList [] [Asc DbWalletCreated]
   where
@@ -57,10 +58,10 @@ walletList =
 
 -- | Initialize a wallet from a secret seed. This function will fail if the
 -- wallet is already initialized.
-newWallet :: PersistUnique m
+newWallet :: (MonadIO m, PersistQuery b, PersistUnique b)
           => String         -- ^ Wallet name
           -> BS.ByteString  -- ^ Secret seed
-          -> m Wallet       -- ^ New wallet
+          -> ReaderT b m Wallet -- ^ New wallet
 newWallet wname seed 
     | BS.null seed = liftIO $ throwIO $ 
         WalletException "The seed is empty"
@@ -77,7 +78,7 @@ newWallet wname seed
         insert_ $ DbWallet wname wallet Nothing time
         return wallet
 
-initWalletDB :: PersistQuery m => m ()
+initWalletDB :: (MonadIO m, PersistQuery b) => ReaderT b m ()
 initWalletDB = do
     prevConfig <- selectFirst [] [Asc DbConfigCreated]
     when (isNothing prevConfig) $ do

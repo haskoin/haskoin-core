@@ -3,6 +3,7 @@
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ViewPatterns          #-}
 module Network.Haskoin.REST where
 
 import Control.Applicative ((<$>), (<*>))
@@ -146,7 +147,7 @@ instance Yesod HaskoinServer where
     makeSessionBackend _ = return Nothing
 
 instance YesodPersist HaskoinServer where
-    type YesodPersistBackend HaskoinServer = SqlPersistT
+    type YesodPersistBackend HaskoinServer = SqlBackend
     
     runDB action = do
         HaskoinServer pool _ _ <- getYesod
@@ -175,7 +176,8 @@ runServer :: ServerConfig -> IO ()
 runServer config = do
     let walletFile = pack $ "wallet"
 
-    pool <- createSqlPool (wrapConnection =<< open walletFile) 1
+    pool <- runNoLoggingT $
+        createSqlPool (\lf -> open walletFile >>= flip wrapConnection lf) 1
     flip runSqlPersistMPool pool $ do 
         _ <- runMigrationSilent migrateWallet 
         initWalletDB

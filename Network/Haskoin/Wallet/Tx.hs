@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE TypeFamilies      #-}
 module Network.Haskoin.Wallet.Tx
@@ -29,7 +30,8 @@ module Network.Haskoin.Wallet.Tx
 
 import Control.Applicative ((<$>))
 import Control.Monad (forM, forM_, unless, when, liftM, filterM)
-import Control.Monad.Trans (liftIO)
+import Control.Monad.Reader (ReaderT)
+import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Exception (throwIO)
 
 import Data.Time (UTCTime, getCurrentTime)
@@ -44,8 +46,8 @@ import Database.Persist
     ( PersistStore
     , PersistUnique
     , PersistQuery
-    , PersistMonadBackend
     , Entity(..)
+    , BackendKey
     , entityVal
     , entityKey
     , get
@@ -77,8 +79,8 @@ import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
-toAccTx :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b) 
-        => DbAccTxGeneric b -> m AccTx
+toAccTx :: (MonadIO m, PersistUnique b, PersistQuery b)
+        => DbAccTxGeneric b -> ReaderT b m AccTx
 toAccTx accTx = do
     (Entity _ tx) <- getTxEntity $ dbAccTxHash accTx
     conf <- getConfirmations $ dbAccTxHash accTx
@@ -90,15 +92,16 @@ toAccTx accTx = do
                    , accTxConfirmations = fromIntegral conf
                    }
 
-getConfirmations :: (PersistUnique m, PersistQuery m) => TxHash -> m Int
+getConfirmations :: (MonadIO m, PersistUnique b, PersistQuery b)
+                 => TxHash -> ReaderT b m Int
 getConfirmations h = do
     (Entity _ tx) <- getTxEntity h
     height <- getBestHeight
     return $ if isNothing $ dbTxConfirmedBy tx then 0 else 
         fromIntegral $ height - (fromJust $ dbTxConfirmedHeight tx) + 1
 
-getTxEntity :: (PersistUnique m, PersistMonadBackend m ~ b)
-            => TxHash -> m (Entity (DbTxGeneric b))
+getTxEntity :: (MonadIO m, PersistUnique b, PersistQuery b)
+            => TxHash -> ReaderT b m (Entity (DbTxGeneric b))
 getTxEntity tid = do
     entM <- getBy $ UniqueTx tid
     when (isNothing entM) $ liftIO $ throwIO $ WalletException $
@@ -106,14 +109,15 @@ getTxEntity tid = do
     return $ fromJust entM
 
 -- | Fetch a full transaction by transaction id.
-getTx :: PersistUnique m => TxHash -> m Tx
+getTx :: (MonadIO m, PersistQuery b, PersistUnique b)
+      => TxHash -> ReaderT b m Tx
 getTx tid = liftM (dbTxValue . entityVal) $ getTxEntity tid
 
 -- | Fetch an account transaction by account name and transaction id.
-getAccTx :: (PersistUnique m, PersistQuery m)
+getAccTx :: (MonadIO m, PersistUnique b, PersistQuery b)
          => AccountName -- ^ Account name
          -> TxHash      -- ^ Transaction id
-         -> m AccTx     -- ^ Account transaction
+         -> ReaderT b m AccTx     -- ^ Account transaction
 getAccTx name tid = do
     (Entity ai _) <- getAccountEntity name
     entM <- getBy $ UniqueAccTx tid ai
@@ -124,9 +128,9 @@ getAccTx name tid = do
 -- | List all the transaction entries for an account. Transaction entries
 -- summarize information for a transaction in a specific account only (such as
 -- the total movement of for this account).
-txList :: (PersistQuery m, PersistUnique m)
+txList :: (MonadIO m, PersistQuery b, PersistUnique b)
        => AccountName  -- ^ Account name
-       -> m [AccTx]    -- ^ List of transaction entries
+       -> ReaderT b m [AccTx]    -- ^ List of transaction entries
 txList name = do
     (Entity ai _) <- getAccountEntity name
     e <- selectList [ DbAccTxAccount ==. ai ] [ Asc DbAccTxCreated ]
@@ -134,11 +138,11 @@ txList name = do
 
 -- | Returns a page of transactions for an account. Pages are numbered starting
 -- from page 1. Requesting page 0 will return the last page.
-txPage :: (PersistQuery m, PersistUnique m)
+txPage :: (MonadIO m, PersistQuery b, PersistUnique b)
        => AccountName   -- ^ Account name
        -> Int           -- ^ Requested page number
        -> Int           -- ^ Number of addresses per page
-       -> m ([AccTx], Int)
+       -> ReaderT b m ([AccTx], Int)
 txPage name pageNum resPerPage
     | pageNum < 0 = liftIO $ throwIO $ WalletException $ 
         unwords ["Invalid page number:", show pageNum]
@@ -161,10 +165,11 @@ txPage name pageNum resPerPage
         liftM (flip (,) maxPage) $ mapM (toAccTx . entityVal) dbTxs
 
 -- | Import a transaction into the wallet
-importTx :: (PersistQuery m, PersistUnique m) 
+importTx :: (MonadIO m, PersistQuery b, PersistUnique b) 
          => Tx        -- ^ Transaction to import
          -> TxSource  -- ^ Where does the transaction come from
-         -> m (Maybe TxConfidence) -- ^ New transaction entries created
+         -> ReaderT b m (Maybe TxConfidence)
+         -- ^ New transaction entries created
 importTx tx source = do
     txM <- getBy $ UniqueTx tid
     let (Entity tkey dbtx) = fromJust txM
@@ -187,8 +192,8 @@ importTx tx source = do
   where
     tid = txHash tx
 
-addTx :: (PersistQuery m, PersistUnique m) 
-      => Tx -> TxSource -> m (Maybe TxConfidence)
+addTx :: (MonadIO m, PersistQuery b, PersistUnique b) 
+      => Tx -> TxSource -> ReaderT b m (Maybe TxConfidence)
 addTx tx source = do
     -- A non-network transaction can not double spend coins
     checkDoubleSpend tx source
@@ -220,8 +225,8 @@ addTx tx source = do
     tid              = txHash tx
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
 
-checkDoubleSpend :: (PersistUnique m, PersistQuery m)
-                 => Tx -> TxSource -> m ()
+checkDoubleSpend :: (MonadIO m, PersistUnique b, PersistQuery b)
+                 => Tx -> TxSource -> ReaderT b m ()
 checkDoubleSpend tx source
     -- We only allow double spends that come from the network
     | source == NetworkSource = return ()
@@ -243,8 +248,8 @@ checkDoubleSpend tx source
   where
     outpoints = map prevOutput $ txIn tx
 
-updateConflicts :: (PersistUnique m, PersistQuery m)
-                => Tx -> [Coin] -> TxSource -> m TxConfidence
+updateConflicts :: (MonadIO m, PersistUnique b, PersistQuery b)
+                => Tx -> [Coin] -> TxSource -> ReaderT b m TxConfidence
 updateConflicts tx coins source 
     | source == NetworkSource = do
         -- Find conflicts with transactions that spend the same coins
@@ -278,7 +283,8 @@ updateConflicts tx coins source
     tid              = txHash tx
 
 -- Finds all the children of a given transaction recursively
-findChildTxs :: (PersistUnique m, PersistQuery m) => TxHash -> m [TxHash]
+findChildTxs :: (MonadIO m, PersistUnique b, PersistQuery b)
+             => TxHash -> ReaderT b m [TxHash]
 findChildTxs tid = do
     txM <- getBy $ UniqueTx tid
     let tx        = dbTxValue $ entityVal $ fromJust txM
@@ -290,13 +296,15 @@ findChildTxs tid = do
         return $ nub $ concat $ hs : rest
 
 -- Returns the transactions that spend the given outpoints
-findSpendingTxs :: PersistQuery m => [OutPoint] -> m [TxHash]
+findSpendingTxs :: (MonadIO m, PersistQuery b)
+                => [OutPoint] -> ReaderT b m [TxHash]
 findSpendingTxs outpoints = do
     res <- selectList [DbSpentCoinKey <-. outpoints] []
     return $ nub $ map (dbSpentCoinTx . entityVal) res
 
 -- Try to re-import all orphan transactions
-tryImportOrphans :: (PersistQuery m, PersistUnique m) => m ()
+tryImportOrphans :: (MonadIO m, PersistQuery b, PersistUnique b)
+                 => ReaderT b m ()
 tryImportOrphans = do
     orphans <- selectList [] []
     -- TODO: Can we use deleteWhere [] ?
@@ -304,7 +312,8 @@ tryImportOrphans = do
     forM_ orphans $ \(Entity _ otx) -> do
         importTx (dbOrphanValue otx) $ dbOrphanSource otx
 
-removeOfflineTxs :: (PersistUnique m, PersistQuery m) => [OutPoint] -> m ()
+removeOfflineTxs :: (MonadIO m, PersistUnique b, PersistQuery b)
+                 => [OutPoint] -> ReaderT b m ()
 removeOfflineTxs outpoints = do
     hs  <- findSpendingTxs outpoints
     txs <- liftM catMaybes $ mapM (getBy . UniqueTx) hs
@@ -316,11 +325,8 @@ isCoinbaseTx (Tx _ tin _ _) =
     length tin == 1 && (outPointHash $ prevOutput $ head tin) == 0x00
 
 -- Create a new coin for an output if it is ours
-importCoin :: ( PersistQuery m
-              , PersistUnique m
-              , PersistMonadBackend m ~ b
-              )
-           => TxHash -> (TxOut, Int) -> m (Maybe (DbCoinGeneric b))
+importCoin :: (MonadIO m, PersistQuery b, PersistUnique b)
+           => TxHash -> (TxOut, Int) -> ReaderT b m (Maybe (DbCoinGeneric b))
 importCoin tid (tout, i) = do
     dbAddrM <- isMyOutput tout
     let dbAddr = fromJust dbAddrM
@@ -339,8 +345,8 @@ importCoin tid (tout, i) = do
 
 -- Builds a redeem script given an address. Only relevant for addresses
 -- linked to multisig accounts. Otherwise it returns Nothing
-getRedeem :: (PersistUnique m, PersistMonadBackend m ~ b) 
-          => DbAddressGeneric b -> m (Maybe RedeemScript)
+getRedeem :: (MonadIO m, PersistUnique b, PersistQuery b)
+          => DbAddressGeneric b -> ReaderT b m (Maybe RedeemScript)
 getRedeem add = do
     acc <- liftM fromJust (get $ dbAddressAccount add)
     let name     = dbAccountName acc
@@ -348,8 +354,9 @@ getRedeem add = do
         internal = dbAddressInternal add
     getRedeemIndex name deriv internal
 
-getRedeemIndex :: PersistUnique m 
-               => AccountName -> KeyIndex -> Bool -> m (Maybe RedeemScript)
+getRedeemIndex :: (MonadIO m, PersistUnique b, PersistQuery b)
+               => AccountName -> KeyIndex -> Bool
+               -> ReaderT b m (Maybe RedeemScript)
 getRedeemIndex name deriv internal = do
     acc <- getAccount name
     if not $ isMSAccount acc then return Nothing else do
@@ -364,7 +371,8 @@ getRedeemIndex name deriv internal = do
 
 -- Returns True if the transaction has an input that belongs to the wallet
 -- but we don't have a coin for it yet. We are missing a parent transaction.
-isOrphanTx :: PersistUnique m => Tx -> m Bool
+isOrphanTx :: (MonadIO m, PersistUnique b, PersistQuery b)
+           => Tx -> ReaderT b m Bool
 isOrphanTx tx = do
     myInputFlags <- mapM isMyInput $ txIn tx
     coinsM       <- mapM (getBy . f) $ map prevOutput $ txIn tx
@@ -377,8 +385,8 @@ isOrphanTx tx = do
     g _ = return False
 
 -- Returns True if the input address is part of the wallet
-isMyInput :: (PersistUnique m, PersistMonadBackend m ~ b) 
-          => TxIn -> m (Maybe (DbAddressGeneric b))
+isMyInput :: (MonadIO m, PersistUnique b)
+          => TxIn -> ReaderT b m (Maybe (DbAddressGeneric b))
 isMyInput input = do
     let senderE = scriptSender =<< (decodeToEither $ scriptInput input)
         sender  = fromRight senderE
@@ -389,8 +397,8 @@ isMyInput input = do
             return $ entityVal <$> res
 
 -- Returns True if the output address is part of the wallet
-isMyOutput :: (PersistUnique m, PersistMonadBackend m ~ b) 
-           => TxOut -> m (Maybe (DbAddressGeneric b))
+isMyOutput :: (MonadIO m, PersistUnique b)
+           => TxOut -> ReaderT b m (Maybe (DbAddressGeneric b))
 isMyOutput out = do
     let recipientE = scriptRecipient =<< (decodeToEither $ scriptOutput out)
         recipient  = fromRight recipientE
@@ -402,7 +410,8 @@ isMyOutput out = do
 
 -- |Group input and output coins by accounts and create 
 -- account-level transaction
-buildAccTx :: Tx -> [DbCoinGeneric b] -> [DbCoinGeneric b] -> UTCTime 
+buildAccTx :: (Ord (BackendKey b))
+           => Tx -> [DbCoinGeneric b] -> [DbCoinGeneric b] -> UTCTime 
            -> [DbAccTxGeneric b]
 buildAccTx tx inCoins outCoins time = map build $ M.toList oMap
   where
@@ -428,9 +437,9 @@ buildAccTx tx inCoins outCoins time = map build $ M.toList oMap
 -- | Remove a transaction from the database. This will remove all transaction
 -- entries for this transaction as well as any child transactions and coins
 -- deriving from it.
-removeTx :: (PersistUnique m, PersistQuery m)
+removeTx :: (MonadIO m, PersistUnique b, PersistQuery b)
          => TxHash      -- ^ Transaction hash to remove
-         -> m [TxHash]  -- ^ List of removed transaction hashes
+         -> ReaderT b m [TxHash]  -- ^ List of removed transaction hashes
 removeTx tid = do
     txM <- getBy $ UniqueTx tid
     let tx        = dbTxValue $ entityVal $ fromJust txM
@@ -458,11 +467,11 @@ removeTx tid = do
         return $ tid:(concat cids)
 
 -- | Create a transaction sending some coins to a list of recipient addresses.
-sendTx :: (PersistUnique m, PersistQuery m)
+sendTx :: (MonadIO m, PersistUnique b, PersistQuery b)
        => AccountName         -- ^ Account name
        -> [(Address,Word64)]  -- ^ List of recipient addresses and amounts
        -> Word64              -- ^ Fee per 1000 bytes 
-       -> m (TxHash, Bool)    -- ^ (Payment transaction, Completed flag)
+       -> ReaderT b m (TxHash, Bool) -- ^ (Payment transaction, Completed flag)
 sendTx name dests fee = do
     acc <- getAccount name
     tx  <- buildUnsignedTx name dests fee
@@ -481,10 +490,11 @@ sendTx name dests fee = do
 -- work for both normal inputs and multisignature inputs. Signing is limited to
 -- the keys of one account only to allow for more control when the wallet is
 -- used as the backend of a web service.
-signWalletTx :: (PersistUnique m, PersistQuery m)
+signWalletTx :: (MonadIO m, PersistUnique b, PersistQuery b)
              => AccountName      -- ^ Account name
              -> Tx               -- ^ Transaction to sign 
-             -> m (TxHash, Bool) -- ^ (Signed transaction, Completed flag)
+             -> ReaderT b m (TxHash, Bool)
+             -- ^ (Signed transaction, Completed flag)
 signWalletTx name tx = do
     acc <- getAccount name
     (tx',_) <- if isReadAccount acc 
@@ -498,20 +508,20 @@ signWalletTx name tx = do
 
 -- | Retrieve the 'OfflineSignData' that can be used to sign a transaction from
 -- an offline wallet
-getSigBlob :: (PersistUnique m, PersistQuery m)
+getSigBlob :: (MonadIO m, PersistUnique b, PersistQuery b)
            => AccountName
            -> TxHash
-           -> m SigBlob
+           -> ReaderT b m SigBlob
 getSigBlob name tid = do
     tx <- getTx tid
     buildSigBlob name tx 
 
 -- Build an unsigned transaction given a list of recipients and a fee
-buildUnsignedTx :: (PersistUnique m, PersistQuery m)
+buildUnsignedTx :: (MonadIO m, PersistUnique b, PersistQuery b)
                 => AccountName        
                 -> [(Address,Word64)] 
                 -> Word64
-                -> m Tx
+                -> ReaderT b m Tx
 buildUnsignedTx name dests fee = do
     (Entity _ acc) <- getAccountEntity name
     spendable <- spendableCoins name
@@ -536,10 +546,10 @@ buildUnsignedTx name dests fee = do
     tot     = sum $ map snd dests
     f (a,v) = (addrToBase58 a,v)
     
-buildSigBlob :: (PersistUnique m, PersistQuery m)
+buildSigBlob :: (MonadIO m, PersistUnique b, PersistQuery b)
              => AccountName
              -> Tx
-             -> m SigBlob
+             -> ReaderT b m SigBlob
 buildSigBlob name tx = do
     (Entity ai _) <- getAccountEntity name
     coins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
@@ -557,10 +567,10 @@ buildSigBlob name tx = do
                , dbAddressIndex $ entityVal a
                )
 
-signSigBlob :: (PersistUnique m, PersistQuery m)
+signSigBlob :: (MonadIO m, PersistUnique b, PersistQuery b)
             => AccountName
             -> SigBlob
-            -> m (Tx, Bool)
+            -> ReaderT b m (Tx, Bool)
 signSigBlob name (SigBlob dat tx) = do
     acc <- getAccount name  
     when (isReadAccount acc) $ liftIO $ throwIO $
@@ -585,9 +595,9 @@ signSigBlob name (SigBlob dat tx) = do
 -- | Produces a bloom filter containing all the addresses in this wallet. This
 -- includes internal and external addresses. The bloom filter can be set on a
 -- peer connection to filter the transactions received by that peer.
-walletBloomFilter :: (PersistUnique m, PersistQuery m) 
+walletBloomFilter :: (MonadIO m, PersistUnique b, PersistQuery b) 
                   => Double
-                  -> m BloomFilter
+                  -> ReaderT b m BloomFilter
 walletBloomFilter fpRate = do
     addrs <- selectList [] []
     rdms  <- liftM catMaybes $ forM addrs (getRedeem . entityVal)
@@ -609,7 +619,7 @@ walletBloomFilter fpRate = do
 
 -- | Return the creation time (POSIX seconds) of the first key in the wallet.
 -- This is used to ignore full/filtered blocks prior to this time.
-firstKeyTime :: PersistQuery m => m (Maybe Word32)
+firstKeyTime :: (MonadIO m, PersistQuery b) => ReaderT b m (Maybe Word32)
 firstKeyTime = do
     res <- selectFirst [] [Asc DbAddressCreated] 
     return $ (fromInteger . round . toPOSIX) <$> res
@@ -617,7 +627,7 @@ firstKeyTime = do
     toPOSIX = utcTimeToPOSIXSeconds . dbAddressCreated . entityVal
 
 -- | Returns true if the transaction is in the wallet
-isTxInWallet :: PersistUnique m => TxHash -> m Bool
+isTxInWallet :: (MonadIO m, PersistUnique b) => TxHash -> ReaderT b m Bool
 isTxInWallet tid = liftM isJust $ getBy $ UniqueTx tid
 
 -- TODO: The transactions *need* to be in the wallet already to get their first
@@ -625,8 +635,8 @@ isTxInWallet tid = liftM isJust $ getBy $ UniqueTx tid
 -- this.
 -- | Import filtered blocks into the wallet. This will update the confirmations
 -- of the relevant transactions.
-importBlocks :: (PersistQuery m, PersistUnique m)
-             => [(BlockChainAction, [TxHash])] -> m ()
+importBlocks :: (MonadIO m, PersistQuery b, PersistUnique b)
+             => [(BlockChainAction, [TxHash])] -> ReaderT b m ()
 importBlocks xs = do
     hsM <- forM xs $ \(a, txs) -> do
         -- Insert transaction/block confirmation links. We have to keep this
@@ -697,7 +707,8 @@ importBlocks xs = do
 
 -- If a transaction is Dead but has no more conflicting Building transactions,
 -- we update the status to Pending
-reviveTransaction :: (PersistUnique m, PersistQuery m) => TxHash -> m ()
+reviveTransaction :: (MonadIO m, PersistUnique b, PersistQuery b)
+                  => TxHash -> ReaderT b m ()
 reviveTransaction tid = do
     (Entity tKey tx) <- getTxEntity tid
     when (dbTxConfidence tx == TxDead) $ do
@@ -705,17 +716,17 @@ reviveTransaction tid = do
         res <- filterM isTxBuilding conflicts
         when (null res) $ update tKey [ DbTxConfidence =. TxPending ]
 
-getBestHeight :: PersistQuery m => m Word32
+getBestHeight :: (MonadIO m, PersistQuery b) => ReaderT b m Word32
 getBestHeight = do
     cnf <- selectFirst [] []
     when (isNothing cnf) $ liftIO $ throwIO $
         WalletException "getBestHeight: Database not initialized"
     return $ dbConfigBestHeight $ entityVal $ fromJust cnf
 
-setBestHeight :: PersistQuery m => Word32 -> m ()
+setBestHeight :: (MonadIO m, PersistQuery b) => Word32 -> ReaderT b m ()
 setBestHeight h = updateWhere [] [DbConfigBestHeight =. h]
 
-getConflicts :: PersistQuery m => TxHash -> m [TxHash]
+getConflicts :: (MonadIO m, PersistQuery b) => TxHash -> ReaderT b m [TxHash]
 getConflicts h = do
     asE <- selectList [DbTxConflictFst ==. h] []
     bsE <- selectList [DbTxConflictSnd ==. h] []
@@ -723,17 +734,20 @@ getConflicts h = do
         bs = map (dbTxConflictFst . entityVal) bsE
     return $ nub $ as ++ bs
 
-isTxDead :: PersistUnique m => TxHash -> m Bool
+isTxDead :: (MonadIO m, PersistUnique b, PersistQuery b)
+         => TxHash -> ReaderT b m Bool
 isTxDead h = do
     (Entity _ tx) <- getTxEntity h
     return $ dbTxConfidence tx == TxDead
 
-isTxBuilding :: PersistUnique m => TxHash -> m Bool
+isTxBuilding :: (MonadIO m, PersistUnique b, PersistQuery b)
+             => TxHash -> ReaderT b m Bool
 isTxBuilding h = do
     (Entity _ tx) <- getTxEntity h
     return $ dbTxConfidence tx == TxBuilding
 
-isTxOffline :: PersistUnique m => TxHash -> m Bool
+isTxOffline :: (MonadIO m, PersistUnique b, PersistQuery b)
+            => TxHash -> ReaderT b m Bool
 isTxOffline h = do
     (Entity _ tx) <- getTxEntity h
     return $ dbTxConfidence tx == TxOffline
@@ -741,18 +755,18 @@ isTxOffline h = do
 -- Coin functions
 
 -- | Returns the balance of an account.
-balance :: (PersistUnique m, PersistQuery m, PersistMonadBackend m ~ b)
+balance :: (MonadIO m, PersistUnique b, PersistQuery b)
         => AccountName -- ^ Account name
-        -> m Word64    -- ^ Account balance
+        -> ReaderT b m Word64    -- ^ Account balance
 balance name = do
     coins <- spendableCoins name
     return $ sum $ map coinValue coins
 
 -- Returns coins that have not been spent. A coin spent by a dead transaction
 -- is considered unspent.
-unspentCoins :: (PersistUnique m, PersistQuery m) 
+unspentCoins :: (MonadIO m, PersistUnique b, PersistQuery b) 
              => AccountName   -- ^ Account name
-             -> m [Coin]      -- ^ List of unspent coins
+             -> ReaderT b m [Coin]      -- ^ List of unspent coins
 unspentCoins name = do
     (Entity ai _) <- getAccountEntity name
     coinsE <- selectList [ DbCoinAccount ==. ai ] [Asc DbCoinCreated]
@@ -767,9 +781,9 @@ unspentCoins name = do
 
 -- Returns unspent coins that can be spent. For example, coins from 
 -- conflicting transactions cannot be spent, even if they are unspent.
-spendableCoins :: (PersistUnique m, PersistQuery m) 
+spendableCoins :: (MonadIO m, PersistUnique b, PersistQuery b) 
                => AccountName   -- ^ Account name
-               -> m [Coin]      -- ^ List of coins that can be spent
+               -> ReaderT b m [Coin]      -- ^ List of coins that can be spent
 spendableCoins name = do
     coins <- unspentCoins name
     res <- forM coins $ \c -> do

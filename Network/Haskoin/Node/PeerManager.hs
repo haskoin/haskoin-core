@@ -76,7 +76,7 @@ import qualified Database.LevelDB.Base as DB
     )
 
 import Network.Socket
-    ( SockAddr (SockAddrInet, SockAddrInet6)
+    ( SockAddr (SockAddrInet)
     , PortNumber (PortNum)
     )
 

@@ -31,7 +31,9 @@ import Data.List (intersperse)
 import Data.Maybe (listToMaybe, fromJust, isNothing, isJust, fromMaybe)
 import qualified Data.HashMap.Strict as H (toList)
 import qualified Data.Vector as V (toList)
+import Data.Text (Text)
 import qualified Data.Text as T (pack, unpack, splitOn)
+import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Yaml as YAML (encode, encodeFile, decodeFile)
 import qualified Data.ByteString.Lazy as BL (ByteString)
 import qualified Data.ByteString as BS (ByteString)
@@ -57,6 +59,8 @@ import qualified Data.Aeson.Encode.Pretty as JSON
     , defConfig
     , confIndent
     )
+
+import Network.HTTP.Client (applyBasicAuth)
 
 import Network.HTTP.Conduit 
     ( RequestBody(..)
@@ -98,6 +102,8 @@ data Options = Options
     , optBatch    :: Int
     , optBloomFP  :: Double
     , optMode     :: ServerMode
+    , optUser     :: Text
+    , optPassword :: Text
     , optDir      :: Maybe FilePath
     , optLog      :: Maybe FilePath
     , optPid      :: Maybe FilePath
@@ -119,6 +125,8 @@ defaultOptions = Options
     , optBatch    = configBatch def
     , optBloomFP  = configBloomFP def
     , optMode     = configMode def
+    , optUser     = "haskoin"
+    , optPassword = "haskoin"
     , optDir      = Nothing
     , optLog      = Nothing
     , optPid      = Nothing
@@ -140,6 +148,8 @@ instance ToJSON Options where
         , "batch"          .= optBatch opt
         , "false-positive" .= optBloomFP opt
         , "operation-mode" .= optMode opt
+        , "user"           .= optUser opt
+        , "password"       .= optPassword opt
         ]
         ++ maybe [] (\x -> [("workdir" .= x)]) (optDir opt)
         ++ maybe [] (\x -> [("logfile" .= x)]) (optLog opt)
@@ -165,6 +175,8 @@ instance FromJSON Options where
         <*> o .: "batch"
         <*> o .: "false-positive"
         <*> o .: "operation-mode"
+        <*> o .: "user"
+        <*> o .: "password"
         <*> o .:? "workdir"
         <*> o .:? "logfile"
         <*> o .:? "pidfile"
@@ -344,6 +356,8 @@ processCommand opts args = case args of
                 , configBloomFP      = optBloomFP opts
                 , configMode         = optMode opts
                 , configGap          = optGap opts
+                , configUser         = optUser opts
+                , configPassword     = optPassword opts
                 }
         prevLog <- doesFileExist $ logFile
         -- TODO: Should we move the log file to an archive directory?
@@ -576,7 +590,7 @@ sendRequest :: BS.ByteString       -- Path
             -> Options             -- Options
             -> IO BL.ByteString    -- Response
 sendRequest p m qs bodyM opts = withManager $ \manager -> do
-    let req = setQueryString qs $ def
+    let req' = setQueryString qs $ def
                 { host           = stringToBS $ optBind opts
                 , port           = optPort opts
                 , path           = p
@@ -585,6 +599,9 @@ sendRequest p m qs bodyM opts = withManager $ \manager -> do
                 , checkStatus    = (\_ _ _ -> Nothing) 
                 , requestHeaders = [("accept", "application/json")]
                 }
+        req = applyBasicAuth (encodeUtf8 $ optUser opts)
+                             (encodeUtf8 $ optPassword opts)
+                             req'
     res <- flip httpLbs manager $ case bodyM of
         Just b -> req{ requestBody = RequestBodyLBS b }
         _      -> req

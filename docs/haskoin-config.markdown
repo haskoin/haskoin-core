@@ -10,6 +10,14 @@ default location for the configuration file is:
 
 ## Server Directives
 
+### user
+
+Username to connect to the API via HTTP basic authentication.
+
+### password
+
+Password to connect to the API via HTTP basic authentication.
+
 ### batch
 
 How many block should be batched together for download/import.

@@ -4,18 +4,29 @@ import Test.QuickCheck.Property (Property, (==>))
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Network.Haskoin.Crypto.Arbitrary ()
+import Data.Binary
+import Data.Binary.Get
+import Data.Binary.Put
+
+import Network.Haskoin.Crypto.Arbitrary()
+import Network.Haskoin.Block.Arbitrary()
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 tests :: [Test]
 tests = 
-    [ testGroup "Merkle Trees"
+    [ testGroup "Serialize & de-serialize merkle blocks"
+        [ testProperty "MerkleBlock" (metaBinary :: MerkleBlock -> Bool)
+        ]
+    , testGroup "Merkle Trees"
         [ testProperty "Width of tree at maxmum height = 1" testTreeWidth
         , testProperty "Width of tree at height 0 is # txns" testBaseWidth
         , testProperty "extract . build partial merkle tree" buildExtractTree
         ]
     ]
+
+metaBinary :: (Binary a, Eq a) => a -> Bool
+metaBinary x = (decode' $ encode' x) == x
 
 {- Merkle Trees -}
 

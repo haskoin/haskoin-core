@@ -4,10 +4,13 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.Word (Word64)
+import Data.Maybe (fromJust)
 import qualified Data.ByteString as BS (length)
+import Data.Binary (Binary)
 
 import Network.Haskoin.Transaction.Arbitrary
 import Network.Haskoin.Transaction.Builder
+import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Protocol
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
@@ -15,7 +18,17 @@ import Network.Haskoin.Util
 
 tests :: [Test]
 tests = 
-    [ testGroup "Building Transactions"
+    [ testGroup "Serialize & de-serialize transaction types"
+        [ testProperty "TxIn" (metaBinary :: TxIn -> Bool)
+        , testProperty "TxOut" (metaBinary :: TxOut -> Bool)
+        , testProperty "OutPoint" (metaBinary :: OutPoint -> Bool)
+        , testProperty "Tx" (metaBinary :: Tx -> Bool)
+        , testProperty "CoinbaseTx" (metaBinary :: CoinbaseTx -> Bool)
+        ]
+    , testGroup "Transaction tests"
+        [ testProperty "decode . encode Txid" decEncTxid 
+        ]
+    , testGroup "Building Transactions"
         [ testProperty "building address tx" testBuildAddrTx
         , testProperty "testing guessTxSize function" testGuessSize
         , testProperty "testing chooseCoins function" testChooseCoins
@@ -27,6 +40,14 @@ tests =
         , testProperty "Sign and validate Multisig transactions" testSignMS
         ]
     ]
+
+metaBinary :: (Binary a, Eq a) => a -> Bool
+metaBinary x = (decode' $ encode' x) == x
+
+{- Transaction Tests -}
+
+decEncTxid :: TxHash -> Bool
+decEncTxid h = (fromJust $ decodeTxHashLE $ encodeTxHashLE h) == h
 
 {- Building Transactions -}
 

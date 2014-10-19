@@ -19,6 +19,7 @@ import Test.QuickCheck
     , vectorOf
     , oneof
     , choose
+    , listOf
     )
 
 import Control.Applicative ((<$>),(<*>))
@@ -35,6 +36,39 @@ import Network.Haskoin.Script
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
+
+instance Arbitrary Tx where
+    arbitrary = do
+        v   <- arbitrary
+        tin <- do 
+            l <- choose (0,10)
+            vectorOf l arbitrary
+        tout <- do
+            l <- choose (0,10)
+            vectorOf l arbitrary
+        t    <- arbitrary
+        return $ Tx v tin tout t
+
+instance Arbitrary CoinbaseTx where
+    arbitrary = CoinbaseTx <$> arbitrary
+                           <*> (return $ OutPoint 0 0xffffffff)
+                           <*> arbitrary
+                           <*> (return $ 0xffffffff)
+                           <*> (listOf arbitrary)
+                           <*> arbitrary
+
+instance Arbitrary TxIn where
+    arbitrary = TxIn <$> arbitrary
+                     <*> arbitrary
+                     <*> arbitrary
+
+instance Arbitrary TxOut where
+    arbitrary = TxOut <$> (choose (0,2100000000000000))
+                      <*> arbitrary
+
+instance Arbitrary OutPoint where
+    arbitrary = OutPoint <$> arbitrary
+                         <*> arbitrary
 
 -- | Data type for generating arbitrary valid multisignature parameters (m of n)
 data MSParam = MSParam Int Int deriving (Eq, Show)

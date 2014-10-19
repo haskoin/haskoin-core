@@ -4,11 +4,18 @@
 -}
 module Network.Haskoin.Transaction
 (
+  -- *Transaction Types
+  Tx(..)
+, TxIn(..)
+, TxOut(..)
+, OutPoint(..)
+, CoinbaseTx(..)
+
   -- *Build Transactions
-  buildTx
+, buildTx
 , buildAddrTx
 
-  -- *Transaction signing
+  -- *Sign Transactions
 , SigInput(..)
 , signTx
 , signInput
@@ -26,4 +33,5 @@ module Network.Haskoin.Transaction
 ) where
 
 import Network.Haskoin.Transaction.Builder
+import Network.Haskoin.Transaction.Types
 

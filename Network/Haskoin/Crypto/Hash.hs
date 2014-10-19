@@ -70,7 +70,8 @@ import qualified Data.ByteString as BS
 
 import Network.Haskoin.Util 
 import Network.Haskoin.Crypto.BigWord 
-import Network.Haskoin.Protocol.Types
+import Network.Haskoin.Block.Types
+import Network.Haskoin.Transaction.Types
 
 type CheckSum32 = Word32
 

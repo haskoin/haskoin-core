@@ -26,7 +26,6 @@ import qualified Network.Haskoin.Crypto.Units (tests)
 
 -- Protocol tests
 import qualified Network.Haskoin.Protocol.Tests (tests)
-import qualified Network.Haskoin.Protocol.Units (tests)
 
 -- Script tests
 import qualified Network.Haskoin.Script.Tests (tests)
@@ -35,6 +34,9 @@ import qualified Network.Haskoin.Script.Units (tests)
 -- Transaction tests
 import qualified Network.Haskoin.Transaction.Tests (tests)
 import qualified Network.Haskoin.Transaction.Units (tests)
+
+-- Block tests
+import qualified Network.Haskoin.Block.Tests (tests)
 
 -- Stratum tests
 import qualified Network.Haskoin.Stratum.Tests (tests)
@@ -64,11 +66,11 @@ main = defaultMain
     ++ Network.Haskoin.Crypto.Merkle.Units.tests 
     ++ Network.Haskoin.Crypto.Units.tests
     ++ Network.Haskoin.Protocol.Tests.tests
-    ++ Network.Haskoin.Protocol.Units.tests
     ++ Network.Haskoin.Script.Tests.tests
     ++ Network.Haskoin.Script.Units.tests
     ++ Network.Haskoin.Transaction.Tests.tests
     ++ Network.Haskoin.Transaction.Units.tests
+    ++ Network.Haskoin.Block.Tests.tests
     ++ Network.Haskoin.Stratum.Tests.tests
     ++ Network.Haskoin.Stratum.Units.tests
     ++ Network.Haskoin.Json.Tests.tests

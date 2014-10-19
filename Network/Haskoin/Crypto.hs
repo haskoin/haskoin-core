@@ -211,6 +211,7 @@ module Network.Haskoin.Crypto
 , isBloomFull
 
   -- *Partial merkle trees
+, MerkleBlock(..)
 , calcTreeHeight
 , calcTreeWidth
 , buildMerkleRoot

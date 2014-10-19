@@ -7,13 +7,20 @@ module Network.Haskoin.Stratum.Arbitrary
 ) where
 
 import Control.Applicative
+
+import Test.QuickCheck.Arbitrary
+import Test.QuickCheck.Gen
+
 import Data.Aeson.Types hiding (Error)
 import Data.Text (Text)
 import qualified Data.Text as T
+
 import Network.JsonRpc
-import Test.QuickCheck.Arbitrary
-import Test.QuickCheck.Gen
+
 import Network.Haskoin.Protocol.Arbitrary ()
+import Network.Haskoin.Transaction.Arbitrary ()
+
+import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Stratum
 import Network.Haskoin.Protocol hiding (Message)
 

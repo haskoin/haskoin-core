@@ -54,9 +54,11 @@ import qualified Data.ByteString.Lazy.Char8 as C (readFile)
 
 import Data.Int (Int64)
 
-import Network.Haskoin.Protocol.Arbitrary ()
+import Network.Haskoin.Transaction.Arbitrary()
+import Network.Haskoin.Protocol.Arbitrary()
 import Network.Haskoin.Script.Arbitrary 
 
+import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Script
 import Network.Haskoin.Script.Evaluator
 import Network.Haskoin.Crypto
@@ -166,8 +168,6 @@ testSigHashOne tx s acp = not (null $ txIn tx) ==>
         then res == (setBit 0 248)
         else res /= (setBit 0 248)
     where res = txSigHash tx s (length (txIn tx) - 1) (SigSingle acp)
-
-
 
 {- Script Evaluation Primitives -}
 

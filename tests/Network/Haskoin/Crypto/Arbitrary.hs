@@ -25,6 +25,7 @@ import Network.Haskoin.Crypto.Base58
 import Network.Haskoin.Crypto.Curve
 import Network.Haskoin.Crypto.ExtendedKeys
 import Network.Haskoin.Crypto.NormalizedKeys
+import Network.Haskoin.Crypto.Merkle
 
 data Mod32
 type Test32 = BigWord Mod32

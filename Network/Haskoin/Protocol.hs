@@ -6,33 +6,12 @@
 -}
 module Network.Haskoin.Protocol
 ( 
-  -- * Blocks
-  Block(..)
-, BlockLocator
-, GetBlocks(..)
-
-  -- * Block Headers
-, BlockHeader(..)
-, GetHeaders(..)
-, Headers(..)
-, BlockHeaderCount
-
   -- * Requesting data
-, GetData(..)
+  GetData(..)
 , Inv(..)
 , InvVector(..)
 , InvType(..)
 , NotFound(..)
-
-  -- *Transactions
-, Tx(..)
-, CoinbaseTx(..)
-, TxIn(..)
-, TxOut(..)
-, OutPoint(..)
-
-  -- * Merkle trees and bloom filters
-, MerkleBlock(..)
 
  -- * Bloom Filter
 , BloomFlags(..)

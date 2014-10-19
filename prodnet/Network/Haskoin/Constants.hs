@@ -5,7 +5,7 @@ module Network.Haskoin.Constants where
 
 import Data.Word (Word8,Word32)
 import Network.Haskoin.Crypto.BigWord
-import Network.Haskoin.Protocol.Types
+import Network.Haskoin.Block.Types
 
 -- | Name of the bitcoin network
 networkName :: String

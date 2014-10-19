@@ -201,8 +201,10 @@ module Network.Haskoin.Crypto
 , intMulSigAddrs
 
   -- *Bloom filters
-, BloomFilter
 , BloomFlags(..)
+, BloomFilter(..)
+, FilterLoad(..)
+, FilterAdd(..)
 , bloomCreate
 , bloomInsert
 , bloomContains

@@ -110,21 +110,3 @@ instance Arbitrary MessageCommand where
                          , MCAlert
                          ]
 
-instance Arbitrary BloomFlags where
-    arbitrary = elements [ BloomUpdateNone
-                         , BloomUpdateAll
-                         , BloomUpdateP2PubKeyOnly
-                         ]
-
-instance Arbitrary BloomFilter where
-    arbitrary = BloomFilter <$> (S.fromList <$> arbitrary)
-                            <*> arbitrary
-                            <*> arbitrary
-                            <*> arbitrary
-                        
-instance Arbitrary FilterLoad where
-    arbitrary = FilterLoad <$> arbitrary
-
-instance Arbitrary FilterAdd where
-    arbitrary = FilterAdd <$> arbitrary
-

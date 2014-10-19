@@ -16,6 +16,7 @@ import Network.Haskoin.Util.Arbitrary()
 import Control.Applicative ((<$>), (<*>))
 
 import Data.Maybe
+import qualified Data.Sequence as S (fromList)
 
 import Network.Haskoin.Crypto.Point
 import Network.Haskoin.Crypto.BigWord
@@ -26,6 +27,7 @@ import Network.Haskoin.Crypto.Curve
 import Network.Haskoin.Crypto.ExtendedKeys
 import Network.Haskoin.Crypto.NormalizedKeys
 import Network.Haskoin.Crypto.Merkle
+import Network.Haskoin.Crypto.Bloom
 
 data Mod32
 type Test32 = BigWord Mod32
@@ -130,4 +132,22 @@ instance Arbitrary AddrPubKey where
         elements [ fromJust $ extPubKey accKey index
                  , fromJust $ intPubKey accKey index
                  ]
+
+instance Arbitrary BloomFlags where
+    arbitrary = elements [ BloomUpdateNone
+                         , BloomUpdateAll
+                         , BloomUpdateP2PubKeyOnly
+                         ]
+
+instance Arbitrary BloomFilter where
+    arbitrary = BloomFilter <$> (S.fromList <$> arbitrary)
+                            <*> arbitrary
+                            <*> arbitrary
+                            <*> arbitrary
+                        
+instance Arbitrary FilterLoad where
+    arbitrary = FilterLoad <$> arbitrary
+
+instance Arbitrary FilterAdd where
+    arbitrary = FilterAdd <$> arbitrary
 

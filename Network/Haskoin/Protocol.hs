@@ -13,12 +13,6 @@ module Network.Haskoin.Protocol
 , InvType(..)
 , NotFound(..)
 
- -- * Bloom Filter
-, BloomFlags(..)
-, BloomFilter(..)
-, FilterLoad(..)
-, FilterAdd(..)
-
   -- * Network types
 , VarInt(..)
 , VarString(..)

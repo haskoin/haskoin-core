@@ -5,8 +5,6 @@ import Test.QuickCheck
 import Control.Monad
 import Control.Applicative 
 
-import qualified Data.Sequence as S (fromList)
-
 import Network.Haskoin.Protocol.Arbitrary ()
 import Network.Haskoin.Block.Arbitrary ()
 import Network.Haskoin.Transaction.Arbitrary ()

@@ -22,6 +22,7 @@ import Control.Applicative ((<$>), (<*>))
 
 import Data.Maybe
 import qualified Data.Sequence as S (fromList)
+import qualified Data.ByteString as BS (ByteString, pack, drop, null)
 
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Point
@@ -33,6 +34,27 @@ import Network.Haskoin.Crypto.ExtendedKeys
 import Network.Haskoin.Crypto.NormalizedKeys
 import Network.Haskoin.Crypto.Merkle
 import Network.Haskoin.Crypto.Bloom
+
+-- | Arbitrary strict ByteString
+data ArbitraryByteString = ArbitraryByteString BS.ByteString
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryByteString where
+    arbitrary = do
+        bs <- BS.pack `fmap` arbitrary
+        n <- choose (0, 2)
+        -- to give us some with non-0 offset
+        return $ ArbitraryByteString $ BS.drop n bs 
+
+-- | Arbitrary strict ByteString that is not empty
+data ArbitraryNotNullByteString = ArbitraryNotNullByteString BS.ByteString
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryNotNullByteString where
+    arbitrary = do
+        ArbitraryByteString bs <- arbitrary
+        return $ ArbitraryNotNullByteString $ 
+            if BS.null bs then BS.pack [0] else bs
 
 -- | Arbitrary BigWord using arbitrarySizedBoundedIntegral
 data ArbitraryBigWord n = ArbitraryBigWord (BigWord n)
@@ -89,33 +111,34 @@ instance Arbitrary ArbitraryPrvKeyU where
         i <- fromInteger <$> choose (1, curveN-1)
         return $ ArbitraryPrvKeyU $ fromJust $ makePrvKeyU i
 
--- | Arbitrary public key (can be both compressed or uncompressed)
-newtype ArbitraryPubKey = ArbitraryPubKey PubKey
+-- | Arbitrary public key (can be both compressed or uncompressed) with its
+-- corresponding private key.
+data ArbitraryPubKey = ArbitraryPubKey PrvKey PubKey
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryPubKey where
-    arbitrary = ArbitraryPubKey <$> oneof
-        [ arbitrary >>= \(ArbitraryPubKeyC p) -> return p
-        , arbitrary >>= \(ArbitraryPubKeyU p) -> return p
+    arbitrary = oneof
+        [ arbitrary >>= \(ArbitraryPubKeyC k p) -> return $ ArbitraryPubKey k p
+        , arbitrary >>= \(ArbitraryPubKeyU k p) -> return $ ArbitraryPubKey k p
         ]
 
--- | Arbitrary compressed public key
-newtype ArbitraryPubKeyC = ArbitraryPubKeyC PubKey
+-- | Arbitrary compressed public key with its corresponding private key.
+data ArbitraryPubKeyC = ArbitraryPubKeyC PrvKey PubKey
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryPubKeyC where
     arbitrary = do
         ArbitraryPrvKeyC k <- arbitrary
-        return $ ArbitraryPubKeyC $ derivePubKey k
+        return $ ArbitraryPubKeyC k $ derivePubKey k
 
--- | Arbitrary uncompressed public key
-newtype ArbitraryPubKeyU = ArbitraryPubKeyU PubKey
+-- | Arbitrary uncompressed public key with its corresponding private key.
+data ArbitraryPubKeyU = ArbitraryPubKeyU PrvKey PubKey
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryPubKeyU where
     arbitrary = do
         ArbitraryPrvKeyU k <- arbitrary
-        return $ ArbitraryPubKeyU $ derivePubKey k
+        return $ ArbitraryPubKeyU k $ derivePubKey k
 
 -- | Arbitrary address (can be a pubkey or script hash address)
 newtype ArbitraryAddress = ArbitraryAddress Address
@@ -144,4 +167,116 @@ instance Arbitrary ArbitraryScriptAddress where
     arbitrary = do
         ArbitraryBigWord i <- arbitrary
         return $ ArbitraryScriptAddress $ ScriptAddress i
+
+-- | Arbitrary message hash, private key, nonce and corresponding signature.
+-- The signature is generated with a random message, random private key and a
+-- random nonce.
+data ArbitrarySignature = ArbitrarySignature Word256 PrvKey FieldN Signature
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitrarySignature where
+    arbitrary = do
+        ArbitraryBigWord msg  <- arbitrary
+        ArbitraryPrvKey prv   <- arbitrary
+        ArbitraryPrvKey nonce <- arbitrary
+        let k   = prvKeyFieldN nonce
+            p   = pubKeyPoint $ derivePubKey nonce
+        case unsafeSignMsg msg (prvKeyFieldN prv) (k,p) of
+            (Just sig) -> return $ ArbitrarySignature msg prv k sig
+            Nothing    -> arbitrary
+
+-- | Arbitrary message hash, private key and corresponding signature. The
+-- signature is generated deterministically using a random message and random
+-- private key.
+data ArbitraryDetSignature = ArbitraryDetSignature Word256 PrvKey Signature
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryDetSignature where
+    arbitrary = do
+        ArbitraryBigWord msg  <- arbitrary
+        ArbitraryPrvKey prv   <- arbitrary
+        return $ ArbitraryDetSignature msg prv $ detSignMsg msg prv
+
+-- | Arbitrary extended private key.
+data ArbitraryXPrvKey = ArbitraryXPrvKey XPrvKey 
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryXPrvKey where
+    arbitrary = do
+        d <- arbitrary
+        p <- arbitrary
+        i <- arbitrary
+        ArbitraryBigWord c <- arbitrary
+        ArbitraryPrvKeyC k <- arbitrary
+        return $ ArbitraryXPrvKey $ XPrvKey d p i c k
+
+-- | Arbitrary extended public key with its corresponding private key.
+data ArbitraryXPubKey = ArbitraryXPubKey XPrvKey XPubKey 
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryXPubKey where
+    arbitrary = do
+        ArbitraryXPrvKey k <- arbitrary
+        return $ ArbitraryXPubKey k $ deriveXPubKey k
+
+-- | Arbitrary master key
+data ArbitraryMasterKey = ArbitraryMasterKey MasterKey
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryMasterKey where
+    arbitrary = do
+        ArbitraryByteString bs <- arbitrary
+        case makeMasterKey bs of
+            Just k  -> return $ ArbitraryMasterKey k
+            Nothing -> arbitrary
+
+-- | Arbitrary private account key with its corresponding master key.
+data ArbitraryAccPrvKey = ArbitraryAccPrvKey MasterKey AccPrvKey
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryAccPrvKey where
+    arbitrary = do
+        ArbitraryMasterKey m <- arbitrary
+        i <- choose (0,0x7fffffff)
+        case accPrvKey m i of
+            Just k -> return $ ArbitraryAccPrvKey m k
+            Nothing -> arbitrary
+
+-- | Arbitrary public account key with its corresponding master key
+-- and private account key.
+data ArbitraryAccPubKey = 
+    ArbitraryAccPubKey MasterKey AccPrvKey AccPubKey
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryAccPubKey where
+    arbitrary = do
+        ArbitraryAccPrvKey m k <- arbitrary
+        let p = AccPubKey $ deriveXPubKey $ getAccPrvKey k
+        return $ ArbitraryAccPubKey m k p
+
+-- | Arbitrary private address key with its corresponding master key and
+-- private account key.
+data ArbitraryAddrPrvKey = ArbitraryAddrPrvKey MasterKey AccPrvKey AddrPrvKey
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryAddrPrvKey where
+    arbitrary = do
+        ArbitraryAccPrvKey m k <- arbitrary
+        i <- choose (0,0x7fffffff)
+        f <- elements [extPrvKey, intPrvKey]
+        case f k i of
+            Just a  -> return $ ArbitraryAddrPrvKey m k a
+            Nothing -> arbitrary
+
+-- | Arbitrary public address key with its corresponding master key,
+-- private account key and private address key.
+data ArbitraryAddrPubKey = 
+    ArbitraryAddrPubKey MasterKey AccPrvKey AddrPrvKey AddrPubKey
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryAddrPubKey where
+    arbitrary = do
+        ArbitraryAddrPrvKey m k a <- arbitrary
+        let p = AddrPubKey $ deriveXPubKey $ getAddrPrvKey a
+        return $ ArbitraryAddrPubKey m k a p
 

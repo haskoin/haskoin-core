@@ -26,9 +26,6 @@ module Network.Haskoin.Crypto.Hash
 , join512
 , decodeCompact
 , encodeCompact
-, txHash
-, cbHash
-, headerHash
 ) where
 
 import Control.Monad (replicateM)
@@ -70,8 +67,6 @@ import qualified Data.ByteString as BS
 
 import Network.Haskoin.Util 
 import Network.Haskoin.Crypto.BigWord 
-import Network.Haskoin.Block.Types
-import Network.Haskoin.Transaction.Types
 
 type CheckSum32 = Word32
 
@@ -196,18 +191,6 @@ encodeCompact i
     (s2,c2) | c1 .&. 0x00800000 /= 0  = (s1 + 1, c1 `shiftR` 8)
             | otherwise               = (s1, c1)
     c3 = fromIntegral $ c2 .|. ((toInteger s2) `shiftL` 24)
-
--- | Computes the hash of a transaction.
-txHash :: Tx -> TxHash
-txHash = fromIntegral . doubleHash256 . encode' 
-
--- | Computes the hash of a coinbase transaction.
-cbHash :: CoinbaseTx -> TxHash
-cbHash = fromIntegral . doubleHash256 . encode' 
-
--- | Compute the hash of a block header
-headerHash :: BlockHeader -> BlockHash
-headerHash = fromIntegral . doubleHash256 . encode'
 
 {- 10.1.2 HMAC_DRBG with HMAC-SHA256
    http://csrc.nist.gov/publications/nistpubs/800-90A/SP800-90A.pdf 

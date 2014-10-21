@@ -37,8 +37,9 @@ library
                        Network.Haskoin.Script,
                        Network.Haskoin.Transaction,
                        Network.Haskoin.Block,
-                       Network.Haskoin.Internals,
-                       Network.Haskoin.Constants
+                       Network.Haskoin.Constants,
+                       Network.Haskoin.Test,
+                       Network.Haskoin.Internals
     other-modules:     Network.Haskoin.Crypto.NumberTheory, 
                        Network.Haskoin.Crypto.Curve, 
                        Network.Haskoin.Crypto.Hash, 
@@ -73,6 +74,7 @@ library
                        mtl >= 2.2 && < 2.3, 
                        network >= 2.6 && < 2.7,
                        pbkdf >= 1.1 && < 1.2,
+                       QuickCheck >= 2.7 && < 2.8,
                        split >= 0.2 && < 0.3,
                        text >= 1.2 && < 1.3
     ghc-options:       -Wall -fno-warn-orphans

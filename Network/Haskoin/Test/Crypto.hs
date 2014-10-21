@@ -2,7 +2,9 @@
   Arbitrary types for Network.Haskoin.Crypto
 -}
 module Network.Haskoin.Test.Crypto
-( ArbitraryBigWord(..)
+( ArbitraryByteString(..)
+, ArbitraryNotNullByteString(..)
+, ArbitraryBigWord(..)
 , ArbitraryPoint(..)
 , ArbitraryInfPoint(..)
 , ArbitraryPrvKey(..)
@@ -14,6 +16,19 @@ module Network.Haskoin.Test.Crypto
 , ArbitraryAddress(..)
 , ArbitraryPubKeyAddress(..)
 , ArbitraryScriptAddress(..)
+, ArbitrarySignature(..)
+, ArbitraryDetSignature(..)
+, ArbitraryXPrvKey(..)
+, ArbitraryXPubKey(..)
+, ArbitraryMasterKey(..)
+, ArbitraryAccPrvKey(..)
+, ArbitraryAccPubKey(..)
+, ArbitraryAddrPrvKey(..)
+, ArbitraryAddrPubKey(..)
+, ArbitraryBloomFlags(..)
+, ArbitraryBloomFilter(..)
+, ArbitraryFilterLoad(..)
+, ArbitraryFilterAdd(..)
 ) where
 
 import Test.QuickCheck
@@ -52,9 +67,8 @@ data ArbitraryNotNullByteString = ArbitraryNotNullByteString BS.ByteString
 
 instance Arbitrary ArbitraryNotNullByteString where
     arbitrary = do
-        ArbitraryByteString bs <- arbitrary
-        return $ ArbitraryNotNullByteString $ 
-            if BS.null bs then BS.pack [0] else bs
+        bs <- BS.pack `fmap` (listOf1 arbitrary)
+        return $ ArbitraryNotNullByteString bs
 
 -- | Arbitrary BigWord using arbitrarySizedBoundedIntegral
 data ArbitraryBigWord n = ArbitraryBigWord (BigWord n)
@@ -279,4 +293,46 @@ instance Arbitrary ArbitraryAddrPubKey where
         ArbitraryAddrPrvKey m k a <- arbitrary
         let p = AddrPubKey $ deriveXPubKey $ getAddrPrvKey a
         return $ ArbitraryAddrPubKey m k a p
+
+-- | Arbitrary bloom filter flags
+data ArbitraryBloomFlags = ArbitraryBloomFlags BloomFlags
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryBloomFlags where
+    arbitrary = ArbitraryBloomFlags <$> elements 
+        [ BloomUpdateNone
+        , BloomUpdateAll
+        , BloomUpdateP2PubKeyOnly
+        ]
+
+-- | Arbitrary bloom filter with its corresponding number of elements
+-- and false positive rate.
+data ArbitraryBloomFilter = ArbitraryBloomFilter Int Double BloomFilter
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryBloomFilter where
+    arbitrary = do
+        n     <- choose (0,100000)
+        fp    <- choose (1e-8,1)
+        tweak <- arbitrary
+        ArbitraryBloomFlags fl <- arbitrary
+        return $ ArbitraryBloomFilter n fp $ bloomCreate n fp tweak fl
+
+-- | Arbitrary FilterLoad
+data ArbitraryFilterLoad = ArbitraryFilterLoad FilterLoad
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryFilterLoad where
+    arbitrary = do
+        ArbitraryBloomFilter _ _ bf <- arbitrary
+        return $ ArbitraryFilterLoad $ FilterLoad bf
+
+-- | Arbitrary FilterAdd
+data ArbitraryFilterAdd = ArbitraryFilterAdd FilterAdd
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryFilterAdd where
+    arbitrary = do
+        ArbitraryByteString bs <- arbitrary
+        return $ ArbitraryFilterAdd $ FilterAdd bs
 

@@ -6,6 +6,7 @@ module Network.Haskoin.Block.Types
 , GetHeaders(..)
 , BlockHeaderCount
 , Headers(..)
+, headerHash
 ) where
 
 import Control.DeepSeq (NFData, rnf)
@@ -54,6 +55,7 @@ import Network.Socket
 
 import Network.Haskoin.Util 
 import Network.Haskoin.Crypto.BigWord
+import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Protocol.Types
 import Network.Haskoin.Transaction.Types
 
@@ -87,6 +89,10 @@ instance Binary Block where
         put $ VarInt $ fromIntegral $ (length txs) + 1
         put cb
         forM_ txs put
+
+-- | Compute the hash of a block header
+headerHash :: BlockHeader -> BlockHash
+headerHash = fromIntegral . doubleHash256 . encode'
 
 -- | Data type recording information on a 'Block'. The hash of a block is
 -- defined as the hash of this data structure. The block mining process

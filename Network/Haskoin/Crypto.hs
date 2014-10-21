@@ -59,9 +59,6 @@ module Network.Haskoin.Crypto
 , TxHash
 , BlockHash
 , CheckSum32
-, txHash
-, cbHash
-, headerHash
 , encodeTxHashLE
 , decodeTxHashLE
 , encodeBlockHashLE

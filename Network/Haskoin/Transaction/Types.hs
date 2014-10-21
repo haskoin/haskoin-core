@@ -4,6 +4,8 @@ module Network.Haskoin.Transaction.Types
 , TxOut(..)
 , OutPoint(..)
 , CoinbaseTx(..)
+, txHash
+, cbHash
 ) where
 
 import Control.DeepSeq (NFData, rnf)
@@ -48,7 +50,16 @@ import qualified Data.ByteString as BS
 
 import Network.Haskoin.Util 
 import Network.Haskoin.Crypto.BigWord
+import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Protocol.Types
+
+-- | Computes the hash of a transaction.
+txHash :: Tx -> TxHash
+txHash = fromIntegral . doubleHash256 . encode' 
+
+-- | Computes the hash of a coinbase transaction.
+cbHash :: CoinbaseTx -> TxHash
+cbHash = fromIntegral . doubleHash256 . encode' 
 
 -- | Data type representing a bitcoin transaction
 data Tx = 

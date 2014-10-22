@@ -37,12 +37,12 @@ data MerkleBlock =
                 -- | Number of transactions in the block (including
                 -- unmatched transactions).
                 , merkleTotalTxns :: !Word32
-                  -- | Hashes in depth-first order. They are used to rebuild a
-                  -- partial merkle tree.
+                -- | Hashes in depth-first order. They are used to rebuild a
+                -- partial merkle tree.
                 , mHashes :: ![Word256]
-                  -- | Flag bits, packed per 8 in a byte. Least significant bit
-                  -- first. Flag bits are used to rebuild a partial merkle
-                  -- tree.
+                -- | Flag bits, packed per 8 in a byte. Least significant bit
+                -- first. Flag bits are used to rebuild a partial merkle
+                -- tree.
                 , mFlags :: ![Bool]
                 } deriving (Eq, Show, Read)
 

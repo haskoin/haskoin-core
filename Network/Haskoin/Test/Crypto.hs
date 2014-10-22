@@ -5,6 +5,14 @@ module Network.Haskoin.Test.Crypto
 ( ArbitraryByteString(..)
 , ArbitraryNotNullByteString(..)
 , ArbitraryBigWord(..)
+, ArbitraryWord512 
+, ArbitraryWord256 
+, ArbitraryWord160 
+, ArbitraryWord128 
+, ArbitraryFieldP  
+, ArbitraryFieldN  
+, ArbitraryTxHash  
+, ArbitraryBlockHash
 , ArbitraryPoint(..)
 , ArbitraryInfPoint(..)
 , ArbitraryPrvKey(..)
@@ -76,6 +84,15 @@ data ArbitraryBigWord n = ArbitraryBigWord (BigWord n)
 
 instance BigWordMod n => Arbitrary (ArbitraryBigWord n) where
     arbitrary = ArbitraryBigWord <$> arbitrarySizedBoundedIntegral
+
+type ArbitraryWord512 = ArbitraryBigWord Mod512
+type ArbitraryWord256 = ArbitraryBigWord Mod256
+type ArbitraryWord160 = ArbitraryBigWord Mod160
+type ArbitraryWord128 = ArbitraryBigWord Mod128
+type ArbitraryFieldP = ArbitraryBigWord ModP
+type ArbitraryFieldN = ArbitraryBigWord ModN
+type ArbitraryTxHash = ArbitraryBigWord Mod256Tx
+type ArbitraryBlockHash = ArbitraryBigWord Mod256Block
 
 -- | Arbitrary Point on the secp256k1 curve
 newtype ArbitraryPoint = ArbitraryPoint Point

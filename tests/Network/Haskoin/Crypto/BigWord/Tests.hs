@@ -1,5 +1,7 @@
+{-# LANGUAGE EmptyDataDecls #-}
 module Network.Haskoin.Crypto.BigWord.Tests (tests) where
 
+import Test.QuickCheck (Arbitrary)
 import Test.QuickCheck.Property (Property, (==>))
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
@@ -18,7 +20,7 @@ import Data.Int (Int32)
 import Data.Word (Word8, Word32)
 import qualified Data.ByteString as BS (length, index)
 
-import Network.Haskoin.Crypto.Arbitrary 
+import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.NumberTheory
 import Network.Haskoin.Crypto.Curve
@@ -91,6 +93,15 @@ tests =
         ]
     ]
 
+-- Define Test32 as BigWord Mod32 to compare it against Word32
+data Mod32
+type Test32 = BigWord Mod32
+type ArbitraryTest32 = ArbitraryBigWord Mod32
+
+instance BigWordMod Mod32 where
+    rFromInteger i = BigWord $ i `mod` 2 ^ (32 :: Integer)
+    rBitSize     _ = 32
+
 {- Number Theory -}
 
 inverseMod :: Integer -> Property
@@ -98,14 +109,15 @@ inverseMod i = p > 0 ==> (p * (mulInverse p curveP)) `mod` curveP == 1
   where 
     p = abs i
 
-inverseModP :: FieldP -> Property
-inverseModP r = r > 0 ==> r/r == 1
+inverseModP :: ArbitraryFieldP -> Property
+inverseModP (ArbitraryBigWord r) = r > 0 ==> r/r == 1
 
-inverseModN :: FieldN -> Property
-inverseModN r = r > 0 ==> r/r == 1
+inverseModN :: ArbitraryFieldN -> Property
+inverseModN (ArbitraryBigWord r) = r > 0 ==> r/r == 1
 
-sqrtP :: FieldP -> Bool
-sqrtP x = (a == x && b == (-x)) || (a == (-x) && b == x)
+sqrtP :: ArbitraryFieldP -> Bool
+sqrtP (ArbitraryBigWord x) = 
+    (a == x && b == (-x)) || (a == (-x) && b == x)
   where 
     (a:b:_) = quadraticResidue (x^(2 :: Int))
 
@@ -211,11 +223,11 @@ ringIsSigned i = ring == model
 
 {- BigWord Bounded -}
 
-ringMinBound :: Test32 -> Bool
-ringMinBound _ = (minBound :: Test32) - 1 == (maxBound :: Test32)
+ringMinBound :: Bool
+ringMinBound = (minBound :: Test32) - 1 == (maxBound :: Test32)
 
-ringMaxBound :: Test32 -> Bool
-ringMaxBound _ = (maxBound :: Test32) + 1 == (minBound :: Test32)
+ringMaxBound :: Bool
+ringMaxBound = (maxBound :: Test32) + 1 == (minBound :: Test32)
 
 {- BigWord Enum -}
 
@@ -289,34 +301,34 @@ ringDivMod i1 i2 = i2 /= 0 ==>
     (m1,m2) = (fromInteger i1) `divMod` (fromInteger i2) :: (Word32, Word32)
     (r1,r2) = (fromInteger i1) `divMod` (fromInteger i2) :: (Test32, Test32)
 
-ringToInteger :: Test32 -> Bool
-ringToInteger r@(BigWord i) = toInteger r == i
+ringToInteger :: ArbitraryTest32 -> Bool
+ringToInteger (ArbitraryBigWord r@(BigWord i)) = toInteger r == i
 
 {- BigWord Binary -}
 
-getPutWord512 :: Word512 -> Bool
-getPutWord512 r = r == (decode' $ encode' r)
+getPutWord512 :: ArbitraryWord512 -> Bool
+getPutWord512 (ArbitraryBigWord r) = r == (decode' $ encode' r)
 
-getPutWord256 :: Word256 -> Bool
-getPutWord256 r = r == (decode' $ encode' r)
+getPutWord256 :: ArbitraryWord256 -> Bool
+getPutWord256 (ArbitraryBigWord r) = r == (decode' $ encode' r)
 
-getPutWord160 :: Word160 -> Bool
-getPutWord160 r = r == (decode' $ encode' r)
+getPutWord160 :: ArbitraryWord160 -> Bool
+getPutWord160 (ArbitraryBigWord r) = r == (decode' $ encode' r)
 
-getPutWord128 :: Word128 -> Bool
-getPutWord128 r = r == (decode' $ encode' r)
+getPutWord128 :: ArbitraryWord128 -> Bool
+getPutWord128 (ArbitraryBigWord r) = r == (decode' $ encode' r)
 
-getPutModP :: FieldP -> Bool
-getPutModP r = r == (decode' $ encode' r)
+getPutModP :: ArbitraryFieldP -> Bool
+getPutModP (ArbitraryBigWord r) = r == (decode' $ encode' r)
 
-putModPSize :: FieldP -> Bool
-putModPSize r = BS.length (encode' r) == 32
+putModPSize :: ArbitraryFieldP -> Bool
+putModPSize (ArbitraryBigWord r) = BS.length (encode' r) == 32
 
-getPutModN :: FieldN -> Property
-getPutModN r = r > 0 ==> r == (decode' $ encode' r)
+getPutModN :: ArbitraryFieldN -> Property
+getPutModN (ArbitraryBigWord r) = r > 0 ==> r == (decode' $ encode' r)
 
-putModNSize :: FieldN -> Property
-putModNSize r = r > 0 ==>
+putModNSize :: ArbitraryFieldN -> Property
+putModNSize (ArbitraryBigWord r) = r > 0 ==>
     (  a == 0x02    -- DER type is Integer
     && b <= 33      -- Can't be bigger than 32 + 0x00 padding
     && l == fromIntegral (b + 2) -- Advertised length matches
@@ -331,20 +343,21 @@ putModNSize r = r > 0 ==>
 
 {- BigWord Read Show -}
 
-readShowWord512 :: Word512 -> Bool
-readShowWord512 r = r == (read $ show r)
+readShowWord512 :: ArbitraryWord512 -> Bool
+readShowWord512 (ArbitraryBigWord r) = r == (read $ show r)
 
-readShowWord256 :: Word256 -> Bool
-readShowWord256 r = r == (read $ show r)
+readShowWord256 :: ArbitraryWord256 -> Bool
+readShowWord256 (ArbitraryBigWord r) = r == (read $ show r)
 
-readShowWord160 :: Word160 -> Bool
-readShowWord160 r = r == (read $ show r)
+readShowWord160 :: ArbitraryWord160 -> Bool
+readShowWord160 (ArbitraryBigWord r) = r == (read $ show r)
 
-readShowWord128 :: Word128 -> Bool
-readShowWord128 r = r == (read $ show r)
+readShowWord128 :: ArbitraryWord128 -> Bool
+readShowWord128 (ArbitraryBigWord r) = r == (read $ show r)
 
-readShowModP :: FieldP -> Bool
-readShowModP r = r == (read $ show r)
+readShowModP :: ArbitraryFieldP -> Bool
+readShowModP (ArbitraryBigWord r) = r == (read $ show r)
 
-readShowModN :: FieldN -> Property
-readShowModN r = r > 0 ==> r == (read $ show r)
+readShowModN :: ArbitraryFieldN -> Property
+readShowModN (ArbitraryBigWord r) = r > 0 ==> r == (read $ show r)
+

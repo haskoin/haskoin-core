@@ -15,6 +15,14 @@ module Network.Haskoin.Crypto.BigWord
 -- Data types
 , BigWord(..)
 , BigWordMod(..)
+, Mod512
+, Mod256 
+, Mod256Tx
+, Mod256Block
+, Mod160
+, Mod128
+, ModP
+, ModN
 
 -- Functions
 , inverseP

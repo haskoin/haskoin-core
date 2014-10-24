@@ -6,15 +6,6 @@ module Network.Haskoin.Test
   -- * Crypto Arbitrary instances
   ArbitraryByteString(..)
 , ArbitraryNotNullByteString(..)
-, ArbitraryBigWord(..)
-, ArbitraryWord512 
-, ArbitraryWord256 
-, ArbitraryWord160 
-, ArbitraryWord128 
-, ArbitraryFieldP  
-, ArbitraryFieldN  
-, ArbitraryTxHash  
-, ArbitraryBlockHash
 , ArbitraryPoint(..)
 , ArbitraryInfPoint(..)
 , ArbitraryPrvKey(..)

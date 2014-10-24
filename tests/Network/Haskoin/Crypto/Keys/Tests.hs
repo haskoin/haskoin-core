@@ -65,14 +65,14 @@ isCanonicalPubKey (ArbitraryPubKey _ p) = not $
   where 
     bs = encode' p
 
-makeToKey :: ArbitraryFieldN -> Property
-makeToKey (ArbitraryBigWord i) = i /= 0 ==> 
+makeToKey :: FieldN -> Property
+makeToKey i = i /= 0 ==> 
     (fromPrvKey $ makeKey (fromIntegral i)) == (fromIntegral i)
   where 
     makeKey = fromJust . makePrvKey
 
-makeToKeyU :: ArbitraryFieldN -> Property
-makeToKeyU (ArbitraryBigWord i) = i /= 0 ==> 
+makeToKeyU :: FieldN -> Property
+makeToKeyU i = i /= 0 ==> 
     (fromPrvKey $ makeKey (fromIntegral i)) == (fromIntegral i)
   where 
     makeKey = fromJust . makePrvKeyU
@@ -89,20 +89,20 @@ binaryPrvKey (ArbitraryPrvKey k) = case k of
 
 {- Key Compression -}
 
-testCompressed :: ArbitraryFieldN -> Property
-testCompressed (ArbitraryBigWord n) = n > 0 ==> 
+testCompressed :: FieldN -> Property
+testCompressed n = n > 0 ==> 
     not $ isPubKeyU $ derivePubKey $ fromJust $ makePrvKey $ fromIntegral n
 
-testUnCompressed :: ArbitraryFieldN -> Property
-testUnCompressed (ArbitraryBigWord n) = n > 0 ==> 
+testUnCompressed :: FieldN -> Property
+testUnCompressed n = n > 0 ==> 
     isPubKeyU $ derivePubKey $ fromJust $ makePrvKeyU $ fromIntegral n
 
-testPrivateCompressed :: ArbitraryFieldN -> Property
-testPrivateCompressed (ArbitraryBigWord n) = n > 0 ==> 
+testPrivateCompressed :: FieldN -> Property
+testPrivateCompressed n = n > 0 ==> 
     not $ isPrvKeyU $ fromJust $ makePrvKey $ fromIntegral n
 
-testPrivateUnCompressed :: ArbitraryFieldN -> Property
-testPrivateUnCompressed (ArbitraryBigWord n) = n > 0 ==> 
+testPrivateUnCompressed :: FieldN -> Property
+testPrivateUnCompressed n = n > 0 ==> 
     isPrvKeyU $ fromJust $ makePrvKeyU $ fromIntegral n
 
 testDerivedPubKey :: ArbitraryPrvKey -> Bool

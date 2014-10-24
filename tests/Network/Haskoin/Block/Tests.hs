@@ -62,18 +62,8 @@ testBaseWidth i = i /= 0 ==>
   where
     i' = abs i
 
-newtype ArbitraryTxHashMatch = ArbitraryTxHashMatch [(TxHash,Bool)]
-    deriving (Eq, Show, Read)
-
-instance Arbitrary ArbitraryTxHashMatch where
-    arbitrary = do
-        hs <- listOf1 arbitrary
-        bs <- vectorOf (length hs) arbitrary
-        return $ ArbitraryTxHashMatch $ 
-            zip (map (\(ArbitraryBigWord x) -> x) hs) bs
-
-buildExtractTree :: ArbitraryTxHashMatch -> Bool
-buildExtractTree (ArbitraryTxHashMatch txs) = 
+buildExtractTree :: [(TxHash,Bool)] -> Property
+buildExtractTree txs = not (null txs) ==>
     r == (buildMerkleRoot hashes) && m == (map fst $ filter snd txs)
   where
     (f,h)  = buildPartialMerkle txs

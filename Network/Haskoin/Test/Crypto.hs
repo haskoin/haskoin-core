@@ -4,15 +4,6 @@
 module Network.Haskoin.Test.Crypto
 ( ArbitraryByteString(..)
 , ArbitraryNotNullByteString(..)
-, ArbitraryBigWord(..)
-, ArbitraryWord512 
-, ArbitraryWord256 
-, ArbitraryWord160 
-, ArbitraryWord128 
-, ArbitraryFieldP  
-, ArbitraryFieldN  
-, ArbitraryTxHash  
-, ArbitraryBlockHash
 , ArbitraryPoint(..)
 , ArbitraryInfPoint(..)
 , ArbitraryPrvKey(..)
@@ -77,29 +68,13 @@ instance Arbitrary ArbitraryNotNullByteString where
         bs <- BS.pack `fmap` (listOf1 arbitrary)
         return $ ArbitraryNotNullByteString bs
 
--- | Arbitrary BigWord using arbitrarySizedBoundedIntegral
-data ArbitraryBigWord n = ArbitraryBigWord (BigWord n)
-    deriving (Eq, Show, Read)
-
-instance BigWordMod n => Arbitrary (ArbitraryBigWord n) where
-    arbitrary = ArbitraryBigWord <$> arbitrarySizedBoundedIntegral
-
-type ArbitraryWord512 = ArbitraryBigWord Mod512
-type ArbitraryWord256 = ArbitraryBigWord Mod256
-type ArbitraryWord160 = ArbitraryBigWord Mod160
-type ArbitraryWord128 = ArbitraryBigWord Mod128
-type ArbitraryFieldP = ArbitraryBigWord ModP
-type ArbitraryFieldN = ArbitraryBigWord ModN
-type ArbitraryTxHash = ArbitraryBigWord Mod256Tx
-type ArbitraryBlockHash = ArbitraryBigWord Mod256Block
-
 -- | Arbitrary Point on the secp256k1 curve
 newtype ArbitraryPoint = ArbitraryPoint Point
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryPoint where
     arbitrary = do
-        ArbitraryBigWord x <- arbitrary
+        x <- arbitrary
         return $ ArbitraryPoint $ mulPoint x curveG
 
 -- | Arbitrary Point on the secp256k1 curve with 10% chance 
@@ -186,7 +161,7 @@ newtype ArbitraryPubKeyAddress = ArbitraryPubKeyAddress Address
 
 instance Arbitrary ArbitraryPubKeyAddress where
     arbitrary = do
-        ArbitraryBigWord i <- arbitrary
+        i <- arbitrary
         return $ ArbitraryPubKeyAddress $ PubKeyAddress i
 
 -- | Arbitrary script hash address
@@ -195,7 +170,7 @@ newtype ArbitraryScriptAddress = ArbitraryScriptAddress Address
 
 instance Arbitrary ArbitraryScriptAddress where
     arbitrary = do
-        ArbitraryBigWord i <- arbitrary
+        i <- arbitrary
         return $ ArbitraryScriptAddress $ ScriptAddress i
 
 -- | Arbitrary message hash, private key, nonce and corresponding signature.
@@ -206,7 +181,7 @@ data ArbitrarySignature = ArbitrarySignature Word256 PrvKey FieldN Signature
 
 instance Arbitrary ArbitrarySignature where
     arbitrary = do
-        ArbitraryBigWord msg  <- arbitrary
+        msg  <- arbitrary
         ArbitraryPrvKey prv   <- arbitrary
         ArbitraryPrvKey nonce <- arbitrary
         let k   = prvKeyFieldN nonce
@@ -223,7 +198,7 @@ data ArbitraryDetSignature = ArbitraryDetSignature Word256 PrvKey Signature
 
 instance Arbitrary ArbitraryDetSignature where
     arbitrary = do
-        ArbitraryBigWord msg  <- arbitrary
+        msg  <- arbitrary
         ArbitraryPrvKey prv   <- arbitrary
         return $ ArbitraryDetSignature msg prv $ detSignMsg msg prv
 
@@ -236,7 +211,7 @@ instance Arbitrary ArbitraryXPrvKey where
         d <- arbitrary
         p <- arbitrary
         i <- arbitrary
-        ArbitraryBigWord c <- arbitrary
+        c <- arbitrary
         ArbitraryPrvKeyC k <- arbitrary
         return $ ArbitraryXPrvKey $ XPrvKey d p i c k
 

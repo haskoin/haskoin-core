@@ -96,7 +96,7 @@ newtype ArbitraryInvVector = ArbitraryInvVector InvVector
 instance Arbitrary ArbitraryInvVector where
     arbitrary = do
         ArbitraryInvType t <- arbitrary
-        ArbitraryBigWord h <- arbitrary
+        h <- arbitrary
         return $ ArbitraryInvVector $ InvVector t h
 
 -- | Arbitrary non-empty Inv

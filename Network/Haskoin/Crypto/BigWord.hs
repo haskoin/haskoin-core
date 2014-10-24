@@ -35,6 +35,12 @@ module Network.Haskoin.Crypto.BigWord
 , decodeBlockHashLE
 ) where
 
+import Test.QuickCheck
+    ( Arbitrary
+    , arbitrary
+    , arbitrarySizedBoundedIntegral
+    )
+
 import Data.Bits 
     ( Bits
     , (.&.), (.|.), xor
@@ -352,6 +358,9 @@ instance FromJSON (BigWord Mod256) where
         let s = T.unpack a
         maybe (fail $ "Not a Word256: " ++ s) return $ 
             hexToBS s >>= decodeToMaybe
+
+instance BigWordMod n => Arbitrary (BigWord n) where
+    arbitrary = arbitrarySizedBoundedIntegral
 
 -- curveP = 3 (mod 4), thus Lagrange solutions apply
 -- http://en.wikipedia.org/wiki/Quadratic_residue

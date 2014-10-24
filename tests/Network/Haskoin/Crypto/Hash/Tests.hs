@@ -16,8 +16,8 @@ tests =
         ]
     ]
 
-joinSplit512 :: ArbitraryWord512 -> Bool
-joinSplit512 (ArbitraryBigWord h) = (join512 $ split512 h) == h
+joinSplit512 :: Word512 -> Bool
+joinSplit512 h = (join512 $ split512 h) == h
 
 -- After encoding and decoding, we may loose precision so the new result is >=
 -- to the old one.

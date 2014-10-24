@@ -35,9 +35,6 @@ instance BigWordMod Mod32 where
     rFromInteger i = BigWord $ i `mod` 2 ^ (32 :: Integer)
     rBitSize     _ = 32
 
-instance BigWordMod n => Arbitrary (BigWord n) where
-    arbitrary = arbitrarySizedBoundedIntegral
-
 instance Arbitrary Point where
     arbitrary = frequency
         [ (1, return makeInfPoint)

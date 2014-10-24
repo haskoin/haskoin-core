@@ -1,4 +1,4 @@
-module Network.Haskoin.Crypto.Merkle.Units (tests) where
+module Network.Haskoin.Block.Units (tests) where
 
 import Test.HUnit (Assertion, assertBool)
 import Test.Framework (Test, testGroup)
@@ -6,7 +6,8 @@ import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Maybe (fromJust)
 
-import Network.Haskoin.Crypto
+import Network.Haskoin.Crypto.BigWord
+import Network.Haskoin.Block.Merkle
 
 tests :: [Test]
 tests =

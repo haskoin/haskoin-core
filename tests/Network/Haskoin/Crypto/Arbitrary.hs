@@ -26,7 +26,6 @@ import Network.Haskoin.Crypto.Base58
 import Network.Haskoin.Crypto.Curve
 import Network.Haskoin.Crypto.ExtendedKeys
 import Network.Haskoin.Crypto.NormalizedKeys
-import Network.Haskoin.Crypto.Merkle
 import Network.Haskoin.Crypto.Bloom
 
 data Mod32

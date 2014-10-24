@@ -9,7 +9,7 @@ import Data.Binary.Get (runGet)
 import Data.Binary.Put (runPut)
 import qualified Data.ByteString as BS (ByteString, length, index)
 
-import Network.Haskoin.Crypto.Arbitrary
+import Network.Haskoin.Test.Crypto
 
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Point
@@ -21,15 +21,14 @@ import Network.Haskoin.Util
 tests :: [Test]
 tests = 
     [ testGroup "PubKey Binary"
-        [ testProperty "get( put(PubKey) ) = PubKey" getPutPubKey
+        [ testProperty "decode . encode PubKey" binaryPubKey
         , testProperty "is public key canonical" isCanonicalPubKey
-        , testProperty "makeKey( toKey(k) ) = k" makeToKey
-        , testProperty "makeKeyU( toKey(k) ) = k" makeToKeyU
-        , testProperty "decoded PubKey is always valid" decodePubKey
+        , testProperty "makeKey . toKey" makeToKey
+        , testProperty "makeKeyU . toKey" makeToKeyU
         ],
       testGroup "Key formats"
-        [ testProperty "fromWIF( toWIF(i) ) = i" fromToWIF
-        , testProperty "get( put(PrvKey) )" getPutPrv
+        [ testProperty "fromWIF . toWIF PrvKey" fromToWIF
+        , testProperty "decode . encode PrvKey" binaryPrvKey
         ],
       testGroup "Key compression"
         [ testProperty "Compressed public key" testCompressed
@@ -42,20 +41,19 @@ tests =
         , testProperty "Derived public key from Integer valid" deriveFromInt
         ],
       testGroup "Key properties"
-        [ testProperty "PubKey addition" testAddPubKey
-        , testProperty "PrvKey addition" testAddPrvKey
+        [ testProperty "PrvKey and PubKey are valid" validKeys
         ]
     ]
 
 {- Public Key Binary -}
 
-getPutPubKey :: PubKey -> Bool
-getPutPubKey p = p == (decode' $ encode' p)
+binaryPubKey :: ArbitraryPubKey -> Bool
+binaryPubKey (ArbitraryPubKey _ p) = p == (decode' $ encode' p)
 
 -- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
 -- from function IsCanonicalPubKey
-isCanonicalPubKey :: PubKey -> Bool
-isCanonicalPubKey p = not $
+isCanonicalPubKey :: ArbitraryPubKey -> Bool
+isCanonicalPubKey (ArbitraryPubKey _ p) = not $
     -- Non-canonical public key: too short
     (BS.length bs < 33) ||
     -- Non-canonical public key: invalid length for uncompressed key
@@ -64,71 +62,59 @@ isCanonicalPubKey p = not $
     (BS.index bs 0 `elem` [2,3] && BS.length bs /= 33) ||
     -- Non-canonical public key: compressed nor uncompressed
     (not $ BS.index bs 0 `elem` [2,3,4])
-    where bs = encode' p
+  where 
+    bs = encode' p
 
-makeToKey :: FieldN -> Property
-makeToKey i = i /= 0 ==> 
+makeToKey :: ArbitraryFieldN -> Property
+makeToKey (ArbitraryBigWord i) = i /= 0 ==> 
     (fromPrvKey $ makeKey (fromIntegral i)) == (fromIntegral i)
-    where makeKey = fromJust . makePrvKey
+  where 
+    makeKey = fromJust . makePrvKey
 
-makeToKeyU :: FieldN -> Property
-makeToKeyU i = i /= 0 ==> 
+makeToKeyU :: ArbitraryFieldN -> Property
+makeToKeyU (ArbitraryBigWord i) = i /= 0 ==> 
     (fromPrvKey $ makeKey (fromIntegral i)) == (fromIntegral i)
-    where makeKey = fromJust . makePrvKeyU
-
-decodePubKey :: BS.ByteString -> Bool
-decodePubKey bs = fromDecode bs True isValidPubKey
+  where 
+    makeKey = fromJust . makePrvKeyU
 
 {- Key formats -}
 
-fromToWIF :: PrvKey -> Bool
-fromToWIF pk = pk == (fromJust $ fromWIF $ toWIF pk)
+fromToWIF :: ArbitraryPrvKey -> Bool
+fromToWIF (ArbitraryPrvKey pk) = (fromWIF $ toWIF pk) == Just pk
 
-getPutPrv :: PrvKey -> Bool
-getPutPrv k@(PrvKey  _) = k == runGet getPrvKey  (runPut $ putPrvKey k)
-getPutPrv k@(PrvKeyU _) = k == runGet getPrvKeyU (runPut $ putPrvKey k)
+binaryPrvKey :: ArbitraryPrvKey -> Bool
+binaryPrvKey (ArbitraryPrvKey k) = case k of
+    PrvKey _  -> k == runGet getPrvKey  (runPut $ putPrvKey k)
+    PrvKeyU _ -> k == runGet getPrvKeyU (runPut $ putPrvKey k)
 
 {- Key Compression -}
 
-testCompressed :: FieldN -> Property
-testCompressed n = n > 0 ==> 
+testCompressed :: ArbitraryFieldN -> Property
+testCompressed (ArbitraryBigWord n) = n > 0 ==> 
     not $ isPubKeyU $ derivePubKey $ fromJust $ makePrvKey $ fromIntegral n
 
-testUnCompressed :: FieldN -> Property
-testUnCompressed n = n > 0 ==> 
+testUnCompressed :: ArbitraryFieldN -> Property
+testUnCompressed (ArbitraryBigWord n) = n > 0 ==> 
     isPubKeyU $ derivePubKey $ fromJust $ makePrvKeyU $ fromIntegral n
 
-testPrivateCompressed :: FieldN -> Property
-testPrivateCompressed n = n > 0 ==> 
+testPrivateCompressed :: ArbitraryFieldN -> Property
+testPrivateCompressed (ArbitraryBigWord n) = n > 0 ==> 
     not $ isPrvKeyU $ fromJust $ makePrvKey $ fromIntegral n
 
-testPrivateUnCompressed :: FieldN -> Property
-testPrivateUnCompressed n = n > 0 ==> 
+testPrivateUnCompressed :: ArbitraryFieldN -> Property
+testPrivateUnCompressed (ArbitraryBigWord n) = n > 0 ==> 
     isPrvKeyU $ fromJust $ makePrvKeyU $ fromIntegral n
 
-testDerivedPubKey :: PrvKey -> Bool
-testDerivedPubKey k = isValidPubKey $ derivePubKey k
+testDerivedPubKey :: ArbitraryPrvKey -> Bool
+testDerivedPubKey (ArbitraryPrvKey k) = isValidPubKey $ derivePubKey k
 
 deriveFromInt :: Integer -> Bool
 deriveFromInt i = maybe True (isValidPubKey . derivePubKey) $ makePrvKey i
 
 {- Key properties -}
 
-testAddPubKey :: TestPrvKeyC -> Word256 -> Bool
-testAddPubKey (TestPrvKeyC key) i 
-    | toInteger i >= curveN = isNothing res
-    | model == InfPoint     = isNothing res
-    | otherwise             = PubKey model == fromJust res
-    where pub   = derivePubKey key
-          pt    = mulPoint (fromIntegral i :: FieldN) curveG
-          model = addPoint (pubKeyPoint pub) pt
-          res   = addPubKeys pub i
+validKeys :: ArbitraryPubKey -> Bool
+validKeys (ArbitraryPubKey prv pub) = 
+    isValidPubKey pub && isValidPrvKey (fromPrvKey prv)
 
-testAddPrvKey :: TestPrvKeyC -> Word256 -> Bool
-testAddPrvKey (TestPrvKeyC key) i
-    | toInteger i >= curveN = isNothing res
-    | model == 0  = isNothing res
-    | otherwise   = PrvKey model == fromJust res
-    where model = (prvKeyFieldN key) + (fromIntegral i :: FieldN)
-          res   = addPrvKeys key i
 

@@ -1,4 +1,4 @@
-module Network.Haskoin.Crypto.Merkle 
+module Network.Haskoin.Block.Merkle 
 ( MerkleBlock(..)
 , calcTreeHeight
 , calcTreeWidth

@@ -29,8 +29,8 @@ import qualified Data.ByteString as BS
 import Network.Haskoin.Protocol.Types
 import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Block.Types
+import Network.Haskoin.Block.Merkle
 import Network.Haskoin.Crypto.Hash 
-import Network.Haskoin.Crypto.Merkle
 import Network.Haskoin.Crypto.Bloom
 import Network.Haskoin.Constants
 import Network.Haskoin.Util 

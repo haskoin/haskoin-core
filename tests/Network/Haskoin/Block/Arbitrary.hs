@@ -14,8 +14,8 @@ import Network.Haskoin.Protocol.Arbitrary ()
 import Network.Haskoin.Transaction.Arbitrary ()
 
 import Network.Haskoin.Block.Types
+import Network.Haskoin.Block.Merkle
 import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Crypto.Merkle
 
 instance Arbitrary Block where
     arbitrary = do

@@ -8,8 +8,7 @@ import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
 
-import Network.Haskoin.Protocol.Arbitrary()
-import Network.Haskoin.Protocol.ArbitraryMsg()
+import Network.Haskoin.Test.Protocol
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
@@ -17,25 +16,23 @@ import Network.Haskoin.Util
 tests :: [Test]
 tests = 
     [ testGroup "Serialize & de-serialize protocol messages"
-        [ testProperty "VarInt" (metaBinary :: VarInt -> Bool)
-        , testProperty "VarString" (metaBinary :: VarString -> Bool)
-        , testProperty "NetworkAddress" (metaBinary :: NetworkAddress -> Bool)
-        , testProperty "InvType" (metaBinary :: InvType -> Bool)
-        , testProperty "InvVector" (metaBinary :: InvVector -> Bool)
-        , testProperty "Inv" (metaBinary :: Inv -> Bool)
-        , testProperty "Version" (metaBinary :: Version -> Bool)
-        , testProperty "Addr" (metaBinary :: Addr -> Bool)
-        , testProperty "Alert" (metaBinary :: Alert -> Bool)
-        , testProperty "Reject" (metaBinary :: Reject -> Bool)
-        , testProperty "GetData" (metaBinary :: GetData -> Bool)
-        , testProperty "FilterLoad" (metaBinary :: FilterLoad -> Bool)
-        , testProperty "FilterAdd" (metaBinary :: FilterAdd -> Bool)
-        , testProperty "NotFound" (metaBinary :: NotFound -> Bool)
-        , testProperty "Ping" (metaBinary :: Ping -> Bool)
-        , testProperty "Pong" (metaBinary :: Pong -> Bool)
-        , testProperty "MessageCommand" (metaBinary :: MessageCommand -> Bool)
-        , testProperty "MessageHeader" (metaBinary :: MessageHeader -> Bool)
-        , testProperty "Message" (metaBinary :: Message -> Bool)
+        [ testProperty "VarInt" $ \(ArbitraryVarInt x) -> metaBinary x
+        , testProperty "VarString" $ \(ArbitraryVarString x) -> metaBinary x
+        , testProperty "NetworkAddress" $ \(ArbitraryNetworkAddress x) -> metaBinary x
+        , testProperty "InvType" $ \(ArbitraryInvType x) -> metaBinary x
+        , testProperty "InvVector" $ \(ArbitraryInvVector x) -> metaBinary x
+        , testProperty "Inv" $ \(ArbitraryInv x) -> metaBinary x
+        , testProperty "Version" $ \(ArbitraryVersion x) -> metaBinary x
+        , testProperty "Addr" $ \(ArbitraryAddr x) -> metaBinary x
+        , testProperty "Alert" $ \(ArbitraryAlert x) -> metaBinary x
+        , testProperty "Reject" $ \(ArbitraryReject x) -> metaBinary x
+        , testProperty "GetData" $ \(ArbitraryGetData x) -> metaBinary x
+        , testProperty "NotFound" $ \(ArbitraryNotFound x) -> metaBinary x
+        , testProperty "Ping" $ \(ArbitraryPing x) -> metaBinary x
+        , testProperty "Pong" $ \(ArbitraryPong x) -> metaBinary x
+        , testProperty "MessageCommand" $ \(ArbitraryMessageCommand x) -> metaBinary x
+       -- , testProperty "MessageHeader" $ \(ArbitraryMessageHeader x) -> metaBinary x
+       -- , testProperty "Message" $ \(ArbitraryMessage x) -> metaBinary x
         ]
     ]
 

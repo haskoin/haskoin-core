@@ -7,17 +7,17 @@ import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
 
-import Network.Haskoin.Crypto.Arbitrary ()
+import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 tests :: [Test]
 tests = 
     [ testGroup "Serialize & de-serialize protocol messages"
-        [ testProperty "BloomFlags" (metaBinary :: BloomFlags -> Bool)
-        , testProperty "BloomFilter" (metaBinary :: BloomFilter -> Bool)
-        , testProperty "FilterLoad" (metaBinary :: FilterLoad -> Bool)
-        , testProperty "FilterAdd" (metaBinary :: FilterAdd -> Bool)
+        [ testProperty "BloomFlags" $ \(ArbitraryBloomFlags x) -> metaBinary x
+        , testProperty "BloomFilter" $ \(ArbitraryBloomFilter _ _ x) -> metaBinary x
+        , testProperty "FilterLoad" $ \(ArbitraryFilterLoad x) -> metaBinary x
+        , testProperty "FilterAdd" $ \(ArbitraryFilterAdd x) -> metaBinary x
         ]
     ]
 

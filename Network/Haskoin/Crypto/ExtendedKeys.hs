@@ -28,8 +28,6 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , xPrvWIF
 , cycleIndex
 , cycleIndex'
-, addPubKeys
-, addPrvKeys
 ) where
 
 import Control.DeepSeq (NFData, rnf)

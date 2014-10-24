@@ -9,7 +9,7 @@ module Network.Haskoin.Crypto.NormalizedKeys
 , loadMasterKey
 , loadPrvAcc
 , loadPubAcc
-, addr
+, toAddr
 , accPrvKey
 , accPubKey
 , extPrvKey
@@ -211,18 +211,18 @@ intPubKeys a i = mapMaybe f $ cycleIndex i
 {- Generate addresses -}
 
 -- | Computes an 'Address' from an 'AddrPubKey'.
-addr :: AddrPubKey -> Address
-addr = xPubAddr . getAddrPubKey
+toAddr :: AddrPubKey -> Address
+toAddr = xPubAddr . getAddrPubKey
 
 -- | Computes an external address from an 'AccPubKey' and a 
 -- derivation index.
 extAddr :: AccPubKey -> KeyIndex -> Maybe Address
-extAddr a i = addr <$> extPubKey a i
+extAddr a i = toAddr <$> extPubKey a i
 
 -- | Computes an internal addres from an 'AccPubKey' and a 
 -- derivation index.
 intAddr :: AccPubKey -> KeyIndex -> Maybe Address
-intAddr a i = addr <$> intPubKey a i
+intAddr a i = toAddr <$> intPubKey a i
 
 -- | Cyclic list of all external addresses derived from a 'AccPubKey'
 -- and starting from an offset index.

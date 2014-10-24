@@ -15,7 +15,17 @@ module Network.Haskoin.Block
 , Headers(..)
 , BlockHeaderCount
 
+  -- *Merkle Blocks
+, MerkleBlock(..)
+, calcTreeHeight
+, calcTreeWidth
+, buildMerkleRoot
+, calcHash
+, buildPartialMerkle
+, extractMatches
+
 ) where
 
 import Network.Haskoin.Block.Types
+import Network.Haskoin.Block.Merkle
 

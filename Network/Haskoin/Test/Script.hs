@@ -4,6 +4,7 @@
 module Network.Haskoin.Test.Script
 ( ArbitraryScriptOp(..)
 , ArbitraryScript(..)
+, ArbitraryIntScriptOp(..)
 , ArbitraryPushDataType(..)
 , ArbitraryTxSignature(..)
 , ArbitraryDetTxSignature(..)
@@ -173,7 +174,19 @@ instance Arbitrary ArbitraryScriptOp where
         -- Other
         ,return OP_PUBKEYHASH
         ,return OP_PUBKEY
-        ,OP_INVALIDOPCODE <$> arbitrary
+        ,return $ OP_INVALIDOPCODE 0xff
+        ]
+
+-- | Arbtirary ScriptOp with a value in [OP_1 .. OP_16]
+newtype ArbitraryIntScriptOp = ArbitraryIntScriptOp ScriptOp
+    deriving (Eq, Show)
+
+instance Arbitrary ArbitraryIntScriptOp where
+    arbitrary = ArbitraryIntScriptOp <$> elements 
+        [ OP_1,  OP_2,  OP_3,  OP_4
+        , OP_5,  OP_6,  OP_7,  OP_8
+        , OP_9,  OP_10, OP_11, OP_12
+        , OP_13, OP_14, OP_15, OP_16
         ]
 
 -- | Arbitrary PushDataType

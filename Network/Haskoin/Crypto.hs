@@ -54,6 +54,8 @@ module Network.Haskoin.Crypto
 , Word256
 , Word160
 , Word128
+, FieldN
+, FieldP
 
   -- *Hash functions
 , TxHash

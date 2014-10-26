@@ -3,7 +3,7 @@
 -}
 module Network.Haskoin.Constants where
 
-import Data.Word (Word8,Word32)
+import Data.Word (Word8, Word32, Word64)
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Block.Types
 
@@ -51,6 +51,10 @@ genesisHeader = BlockHeader
 -- | Maximum size of a block in bytes
 maxBlockSize :: Int
 maxBlockSize = 1000000
+
+-- | Maximum number of satoshis
+maxSatoshi :: Word64
+maxSatoshi = 2100000000000000
 
 -- | User agent of this haskoin package
 haskoinUserAgent :: String

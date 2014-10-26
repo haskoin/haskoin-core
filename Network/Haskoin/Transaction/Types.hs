@@ -206,8 +206,6 @@ instance Binary TxOut where
 
     get = do
         val <- getWord64le
-        unless (val <= 2100000000000000) $ fail $
-            "Invalid TxOut value: " ++ (show val)
         (VarInt len) <- get
         TxOut val <$> (getByteString $ fromIntegral len)
 

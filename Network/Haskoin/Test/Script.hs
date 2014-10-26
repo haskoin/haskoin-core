@@ -23,6 +23,7 @@ module Network.Haskoin.Test.Script
 , ArbitraryPKHashInput(..)
 , ArbitraryMSInput(..)
 , ArbitrarySHInput(..)
+, ArbitraryMulSigSHInput(..)
 ) where
 
 import Test.QuickCheck 
@@ -395,4 +396,15 @@ instance Arbitrary ArbitrarySHInput where
         ArbitrarySimpleInput i <- arbitrary
         ArbitrarySimpleOutput o <- arbitrary
         return $ ArbitrarySHInput $ ScriptHashInput (getRegularInput i) o
+
+-- | Arbitrary ScriptInput of type ScriptHashInput containing a RedeemScript
+-- of type PayMulSig and an input of type SpendMulSig
+newtype ArbitraryMulSigSHInput = ArbitraryMulSigSHInput ScriptInput
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryMulSigSHInput where
+    arbitrary = do
+        ArbitraryMSInput i <- arbitrary
+        ArbitraryMSOutput o <- arbitrary
+        return $ ArbitraryMulSigSHInput $ ScriptHashInput (getRegularInput i) o
 

@@ -64,7 +64,8 @@ library
                        Network.Haskoin.Block.Merkle,
                        Network.Haskoin.Test.Crypto,
                        Network.Haskoin.Test.Protocol,
-                       Network.Haskoin.Test.Script
+                       Network.Haskoin.Test.Script,
+                       Network.Haskoin.Test.Transaction
     build-depends:     aeson >= 0.8 && < 0.9,
                        base >= 4.6 && < 5, 
                        binary >= 0.7 && < 0.8, 

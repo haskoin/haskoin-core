@@ -16,14 +16,16 @@ module Network.Haskoin.Test.Script
 , ArbitraryPKOutput(..)
 , ArbitraryPKHashOutput(..)
 , ArbitraryMSOutput(..)
+, ArbitraryMSCOutput(..)
 , ArbitrarySHOutput(..)
 , ArbitraryScriptInput(..)
 , ArbitrarySimpleInput(..)
 , ArbitraryPKInput(..)
 , ArbitraryPKHashInput(..)
+, ArbitraryPKHashCInput(..)
 , ArbitraryMSInput(..)
 , ArbitrarySHInput(..)
-, ArbitraryMulSigSHInput(..)
+, ArbitraryMulSigSHCInput(..)
 ) where
 
 import Test.QuickCheck 
@@ -316,6 +318,18 @@ instance Arbitrary ArbitraryMSOutput where
       where
         f (ArbitraryPubKey _ key) = key
 
+-- | Arbitrary ScriptOutput of type PayMS containing only compressed keys
+newtype ArbitraryMSCOutput = ArbitraryMSCOutput ScriptOutput
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryMSCOutput where
+    arbitrary = do
+        ArbitraryMSParam m n <- arbitrary
+        keys <- map f <$> vectorOf n arbitrary
+        return $ ArbitraryMSCOutput $ PayMulSig keys m
+      where
+        f (ArbitraryPubKeyC _ key) = key
+
 -- | Arbitrary ScriptOutput of type PayScriptHash
 newtype ArbitrarySHOutput = ArbitrarySHOutput ScriptOutput
     deriving (Eq, Show, Read)
@@ -372,6 +386,19 @@ instance Arbitrary ArbitraryPKHashInput where
         ArbitraryPubKey _ key <- arbitrary
         return $ ArbitraryPKHashInput $ RegularInput $ SpendPKHash sig key
 
+-- | Arbitrary ScriptInput of type SpendPK with a compressed public key
+newtype ArbitraryPKHashCInput = ArbitraryPKHashCInput ScriptInput
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryPKHashCInput where
+    arbitrary = do
+        sig <- oneof
+            [ arbitrary >>= \(ArbitraryTxSignature _ _ _ sig) -> return sig
+            , arbitrary >>= \(ArbitraryDetTxSignature _ _ sig) -> return sig
+            ]
+        ArbitraryPubKeyC _ key <- arbitrary
+        return $ ArbitraryPKHashCInput $ RegularInput $ SpendPKHash sig key
+
 -- | Arbitrary ScriptInput of type SpendMulSig
 newtype ArbitraryMSInput = ArbitraryMSInput ScriptInput
     deriving (Eq, Show, Read)
@@ -398,13 +425,19 @@ instance Arbitrary ArbitrarySHInput where
         return $ ArbitrarySHInput $ ScriptHashInput (getRegularInput i) o
 
 -- | Arbitrary ScriptInput of type ScriptHashInput containing a RedeemScript
--- of type PayMulSig and an input of type SpendMulSig
-newtype ArbitraryMulSigSHInput = ArbitraryMulSigSHInput ScriptInput
+-- of type PayMulSig and an input of type SpendMulSig. Only compressed keys
+-- are used.
+newtype ArbitraryMulSigSHCInput = ArbitraryMulSigSHCInput ScriptInput
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryMulSigSHInput where
+instance Arbitrary ArbitraryMulSigSHCInput where
     arbitrary = do
-        ArbitraryMSInput i <- arbitrary
-        ArbitraryMSOutput o <- arbitrary
-        return $ ArbitraryMulSigSHInput $ ScriptHashInput (getRegularInput i) o
+        ArbitraryMSCOutput rdm@(PayMulSig _ m) <- arbitrary
+        sigs <- vectorOf m f
+        return $ ArbitraryMulSigSHCInput $ ScriptHashInput (SpendMulSig sigs) rdm
+      where
+        f = oneof
+            [ arbitrary >>= \(ArbitraryTxSignature _ _ _ sig) -> return sig
+            , arbitrary >>= \(ArbitraryDetTxSignature _ _ sig) -> return sig
+            ]
 

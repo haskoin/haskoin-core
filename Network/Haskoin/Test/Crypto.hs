@@ -74,7 +74,7 @@ newtype ArbitraryPoint = ArbitraryPoint Point
 
 instance Arbitrary ArbitraryPoint where
     arbitrary = do
-        x <- arbitrary
+        x <- fromInteger <$> choose (1, toInteger (maxBound :: FieldN))
         return $ ArbitraryPoint $ mulPoint x curveG
 
 -- | Arbitrary Point on the secp256k1 curve with 10% chance 

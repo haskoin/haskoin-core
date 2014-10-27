@@ -105,6 +105,9 @@ module Network.Haskoin.Test
 , ArbitraryGetHeaders(..)
 , ArbitraryHeaders(..)
 , ArbitraryMerkleBlock(..)
+
+  -- * Stratum Arbitrary instances
+, ReqRes(..)
 ) where
 
 import Network.Haskoin.Test.Crypto
@@ -113,4 +116,5 @@ import Network.Haskoin.Test.Message
 import Network.Haskoin.Test.Script
 import Network.Haskoin.Test.Transaction
 import Network.Haskoin.Test.Block
+import Network.Haskoin.Test.Stratum
 

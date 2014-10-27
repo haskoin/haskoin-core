@@ -67,7 +67,8 @@ library
                        Network.Haskoin.Test.Message,
                        Network.Haskoin.Test.Script,
                        Network.Haskoin.Test.Transaction,
-                       Network.Haskoin.Test.Block
+                       Network.Haskoin.Test.Block,
+                       Network.Haskoin.Test.Stratum
     build-depends:     aeson >= 0.8 && < 0.9,
                        base >= 4.6 && < 5, 
                        binary >= 0.7 && < 0.8, 
@@ -94,7 +95,6 @@ test-suite test-haskoin
     type:              exitcode-stdio-1.0
     main-is:           Main.hs
     other-modules:     Network.Haskoin.Util.Tests,
-                       Network.Haskoin.Util.Arbitrary,
                        Network.Haskoin.Crypto.BigWord.Tests,
                        Network.Haskoin.Crypto.Point.Tests,
                        Network.Haskoin.Crypto.ECDSA.Tests,
@@ -109,23 +109,16 @@ test-suite test-haskoin
                        Network.Haskoin.Crypto.Mnemonic.Units,
                        Network.Haskoin.Crypto.Bloom.Tests,
                        Network.Haskoin.Crypto.Bloom.Units,
-                       Network.Haskoin.Crypto.Arbitrary,
                        Network.Haskoin.Crypto.Units,
-                       Network.Haskoin.Protocol.Arbitrary,
-                       Network.Haskoin.Protocol.ArbitraryMsg,
                        Network.Haskoin.Protocol.Tests,
-                       Network.Haskoin.Script.Arbitrary,
                        Network.Haskoin.Script.Tests,
                        Network.Haskoin.Script.Units,
                        Network.Haskoin.Transaction.Tests,
                        Network.Haskoin.Transaction.Units,
-                       Network.Haskoin.Transaction.Arbitrary,
                        Network.Haskoin.Block.Tests,
-                       Network.Haskoin.Block.Arbitrary,
                        Network.Haskoin.Block.Units,
                        Network.Haskoin.Stratum.Tests,
                        Network.Haskoin.Stratum.Units,
-                       Network.Haskoin.Stratum.Arbitrary,
                        Network.Haskoin.Json.Tests
     build-depends:     aeson >= 0.8 && < 0.9,
                        async >= 2.0 && < 2.1,

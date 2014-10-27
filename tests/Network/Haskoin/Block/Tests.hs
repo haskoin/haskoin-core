@@ -15,9 +15,9 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 import Data.Maybe
 import Data.Binary (Binary)
 
+import Network.Haskoin.Test.Block
 import Network.Haskoin.Test.Crypto
 
-import Network.Haskoin.Block.Arbitrary()
 import Network.Haskoin.Block.Types
 import Network.Haskoin.Block.Merkle
 import Network.Haskoin.Crypto
@@ -26,12 +26,12 @@ import Network.Haskoin.Util
 tests :: [Test]
 tests = 
     [ testGroup "Serialize & de-serialize block types"
-        [ testProperty "Block" (metaBinary :: Block -> Bool)
-        , testProperty "BlockHeader" (metaBinary :: BlockHeader -> Bool)
-        , testProperty "GetBlocks" (metaBinary :: GetBlocks -> Bool)
-        , testProperty "GetHeaders" (metaBinary :: GetHeaders -> Bool)
-        , testProperty "Headers" (metaBinary :: Headers -> Bool)
-        , testProperty "MerkleBlock" (metaBinary :: MerkleBlock -> Bool)
+        [ testProperty "Block" $ \(ArbitraryBlock x) -> metaBinary x
+        , testProperty "BlockHeader" $ \(ArbitraryBlockHeader x) -> metaBinary x
+        , testProperty "GetBlocks" $ \(ArbitraryGetBlocks x) -> metaBinary x
+        , testProperty "GetHeaders" $ \(ArbitraryGetHeaders x) -> metaBinary x
+        , testProperty "Headers" $ \(ArbitraryHeaders x) -> metaBinary x
+        , testProperty "MerkleBlock" $ \(ArbitraryMerkleBlock x) -> metaBinary x
         ]
     , testGroup "Block tests"
         [ testProperty "decode . encode BlockHash id" decEncBlockHashid ]

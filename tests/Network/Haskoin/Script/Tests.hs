@@ -56,6 +56,7 @@ import qualified Data.ByteString.Lazy.Char8 as C (readFile)
 import Data.Int (Int64)
 
 import Network.Haskoin.Test.Script
+import Network.Haskoin.Test.Transaction
 
 import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Script
@@ -93,7 +94,7 @@ tests =
             \(ArbitraryTxSignature _ _ _ sig) -> binTxSigCanonical sig
         , testProperty "decodeCanonical . encode deterministic TxSignature" $
             \(ArbitraryDetTxSignature _ _ sig) -> binTxSigCanonical sig
-        -- , testProperty "Testing txSigHash with SigSingle" testSigHashOne
+        , testProperty "Testing txSigHash with SigSingle" testSigHashOne
         ]
     , testGroup "Integer Types"
         [ testProperty "decodeInt . encodeInt Int"  testEncodeInt
@@ -171,8 +172,8 @@ binTxSigCanonical ts@(TxSignature _ sh)
     | isSigUnknown sh = isLeft $ decodeCanonicalSig $ encodeSig ts
     | otherwise = (fromRight $ decodeCanonicalSig $ encodeSig ts) == ts
 
-testSigHashOne :: Tx -> Script -> Bool -> Property
-testSigHashOne tx s acp = not (null $ txIn tx) ==> 
+testSigHashOne :: ArbitraryTx -> ArbitraryScript -> Bool -> Property
+testSigHashOne (ArbitraryTx tx) (ArbitraryScript s) acp = not (null $ txIn tx) ==> 
     if length (txIn tx) > length (txOut tx) 
         then res == (setBit 0 248)
         else res /= (setBit 0 248)

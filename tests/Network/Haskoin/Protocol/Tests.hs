@@ -9,6 +9,8 @@ import Data.Binary.Get
 import Data.Binary.Put
 
 import Network.Haskoin.Test.Protocol
+import Network.Haskoin.Test.Message
+
 import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
@@ -31,8 +33,8 @@ tests =
         , testProperty "Ping" $ \(ArbitraryPing x) -> metaBinary x
         , testProperty "Pong" $ \(ArbitraryPong x) -> metaBinary x
         , testProperty "MessageCommand" $ \(ArbitraryMessageCommand x) -> metaBinary x
-       -- , testProperty "MessageHeader" $ \(ArbitraryMessageHeader x) -> metaBinary x
-       -- , testProperty "Message" $ \(ArbitraryMessage x) -> metaBinary x
+        , testProperty "MessageHeader" $ \(ArbitraryMessageHeader x) -> metaBinary x
+        , testProperty "Message" $ \(ArbitraryMessage x) -> metaBinary x
         ]
     ]
 

@@ -64,6 +64,7 @@ library
                        Network.Haskoin.Block.Merkle,
                        Network.Haskoin.Test.Crypto,
                        Network.Haskoin.Test.Protocol,
+                       Network.Haskoin.Test.Message,
                        Network.Haskoin.Test.Script,
                        Network.Haskoin.Test.Transaction,
                        Network.Haskoin.Test.Block

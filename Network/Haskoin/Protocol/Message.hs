@@ -94,7 +94,7 @@ data Message
     | MPing !Ping 
     | MPong !Pong 
     | MAlert !Alert
-    | MReject Reject
+    | MReject !Reject
     deriving (Eq, Show)
 
 instance Binary Message where

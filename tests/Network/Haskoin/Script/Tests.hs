@@ -6,7 +6,6 @@ module Network.Haskoin.Script.Tests
 , runTests
 ) where
 
-import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Property (Property, (==>))
 import Test.Framework (Test, testGroup, buildTest)
 import Test.Framework.Providers.HUnit (testCase)
@@ -62,9 +61,7 @@ import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Script
 import Network.Haskoin.Script.Evaluator
 import Network.Haskoin.Crypto
-import Network.Haskoin.Protocol
 import Network.Haskoin.Util
-
 
 tests :: [Test]
 tests = 

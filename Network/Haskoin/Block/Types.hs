@@ -10,48 +10,13 @@ module Network.Haskoin.Block.Types
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM2, replicateM, forM_, unless)
+import Control.Monad (liftM2, replicateM, forM_)
 import Control.Applicative ((<$>),(<*>))
 
-import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
-import Data.Bits (testBit, setBit)
-import Data.Word (Word8, Word32, Word64)
-import qualified Data.Text as T
+import Data.Word (Word32)
 import Data.Binary (Binary, get, put)
-import Data.Binary.Get 
-    ( Get
-    , getWord8
-    , getWord16le
-    , getWord16be
-    , getWord32be
-    , getWord32host
-    , getWord32le
-    , getWord64le
-    , getByteString
-    , isEmpty
-    )
-import Data.Binary.Put 
-    ( Put
-    , putWord8
-    , putWord16le
-    , putWord16be
-    , putWord32be
-    , putWord32host
-    , putWord32le
-    , putWord64le
-    , putByteString
-    )
-import qualified Data.Foldable as F (toList)
-import qualified Data.Sequence as S (Seq, fromList, length)
-import qualified Data.ByteString as BS 
-    ( ByteString
-    , length
-    , takeWhile
-    )
-import Network.Socket
-    ( SockAddr (SockAddrInet, SockAddrInet6)
-    , PortNumber (PortNum)
-    )
+import Data.Binary.Get (getWord32le)
+import Data.Binary.Put (putWord32le)
 
 import Network.Haskoin.Util 
 import Network.Haskoin.Crypto.BigWord

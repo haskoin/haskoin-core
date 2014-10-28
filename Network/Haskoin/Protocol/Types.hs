@@ -20,13 +20,10 @@ module Network.Haskoin.Protocol.Types
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM2, replicateM, forM_, unless)
+import Control.Monad (replicateM, liftM2, forM_)
 import Control.Applicative ((<$>),(<*>))
 
-import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
-import Data.Bits (testBit, setBit)
-import Data.Word (Word8, Word32, Word64)
-import qualified Data.Text as T
+import Data.Word (Word32, Word64)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get 
     ( Get
@@ -51,8 +48,6 @@ import Data.Binary.Put
     , putWord64le
     , putByteString
     )
-import qualified Data.Foldable as F (toList)
-import qualified Data.Sequence as S (Seq, fromList, length)
 import qualified Data.ByteString as BS 
     ( ByteString
     , length

@@ -7,9 +7,12 @@ module Network.Haskoin.Test.Message
 ) where
 
 import Test.QuickCheck
+    ( Arbitrary
+    , arbitrary
+    , oneof
+    )
 
-import Control.Monad
-import Control.Applicative 
+import Control.Applicative ((<$>))
 
 import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Test.Protocol
@@ -17,7 +20,6 @@ import Network.Haskoin.Test.Transaction
 import Network.Haskoin.Test.Block
 
 import Network.Haskoin.Protocol.Message
-import Network.Haskoin.Crypto
 
 -- | Arbitrary MessageHeader
 newtype ArbitraryMessageHeader = ArbitraryMessageHeader MessageHeader

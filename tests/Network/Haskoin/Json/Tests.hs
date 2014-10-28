@@ -3,17 +3,12 @@ module Network.Haskoin.Json.Tests (tests) where
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Data.Aeson
+import Data.Aeson (FromJSON, ToJSON, decode, encode)
 
 import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Test.Script
 import Network.Haskoin.Test.Transaction
-
 import Network.Haskoin.Crypto
-import Network.Haskoin.Script
-import Network.Haskoin.Protocol
-import Network.Haskoin.Transaction
-
 
 tests :: [Test]
 tests = 

@@ -4,11 +4,8 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.Binary
-import Data.Binary.Get
-import Data.Binary.Put
 
 import Network.Haskoin.Test.Crypto
-import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 tests :: [Test]

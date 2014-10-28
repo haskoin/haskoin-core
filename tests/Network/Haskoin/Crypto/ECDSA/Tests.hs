@@ -2,7 +2,6 @@ module Network.Haskoin.Crypto.ECDSA.Tests (tests) where
 
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
-import Test.QuickCheck.Property ((==>), Property)
 
 import Data.Bits (testBit)
 import qualified Data.ByteString as BS
@@ -10,7 +9,6 @@ import qualified Data.ByteString as BS
 import Network.Haskoin.Test.Crypto
 
 import Network.Haskoin.Crypto.ECDSA
-import Network.Haskoin.Crypto.Point
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Curve
@@ -27,7 +25,7 @@ tests =
             \(ArbitraryDetSignature _ _ sig) -> halfOrderSig sig
         ],
       testGroup "ECDSA Binary"
-        [ testProperty "get( put(Sig) ) = Sig" getPutSig
+        [ testProperty "decode . encode Sig" binarySig
         , testProperty "Encoded signature is canonical" $ 
             \(ArbitrarySignature _ _ _ sig) -> testIsCanonical sig 
         , testProperty "Encoded deterministic signature is canonical" $ 
@@ -55,8 +53,8 @@ halfOrderSig sig@(Signature _ (BigWord s)) =
 
 {- ECDSA Binary -}
 
-getPutSig :: ArbitrarySignature -> Bool
-getPutSig (ArbitrarySignature _ _ _ sig) = (decode' $ encode' sig) == sig
+binarySig :: ArbitrarySignature -> Bool
+binarySig (ArbitrarySignature _ _ _ sig) = (decode' $ encode' sig) == sig
 
 -- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
 -- from function IsCanonicalSignature
@@ -96,8 +94,9 @@ testIsCanonical sig = not $
     && BS.index s (fromIntegral rlen+6) == 0 
     && not (testBit (BS.index s (fromIntegral rlen+7)) 7)
     ) 
-    where s = encode' sig
-          len = fromIntegral $ BS.length s
-          rlen = BS.index s 3
-          slen = BS.index s (fromIntegral rlen + 5)
+  where 
+    s = encode' sig
+    len = fromIntegral $ BS.length s
+    rlen = BS.index s 3
+    slen = BS.index s (fromIntegral rlen + 5)
 

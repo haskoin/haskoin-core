@@ -3,9 +3,6 @@ module Network.Haskoin.Crypto.Base58.Tests (tests) where
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Data.Maybe (fromJust)
-import qualified Data.ByteString as BS (ByteString)
-
 import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Crypto.Base58
 

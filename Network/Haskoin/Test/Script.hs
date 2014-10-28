@@ -29,8 +29,7 @@ module Network.Haskoin.Test.Script
 ) where
 
 import Test.QuickCheck 
-    ( Gen
-    , Arbitrary
+    ( Arbitrary
     , arbitrary
     , oneof
     , choose
@@ -38,11 +37,9 @@ import Test.QuickCheck
     , elements
     )
 
-import Control.Monad (liftM2)
-import Control.Applicative ((<$>),(<*>))
+import Control.Applicative ((<$>))
 
-import Data.Bits (testBit, clearBit, (.&.))
-import Data.Word (Word8)
+import Data.Bits (testBit)
 
 import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Script

@@ -4,7 +4,6 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.Word (Word64)
-import Data.Maybe (fromJust)
 import qualified Data.ByteString as BS (length)
 import Data.Binary (Binary)
 
@@ -14,7 +13,6 @@ import Network.Haskoin.Test.Crypto
 
 import Network.Haskoin.Transaction.Builder
 import Network.Haskoin.Transaction.Types
-import Network.Haskoin.Protocol
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
@@ -37,7 +35,6 @@ tests =
         , testProperty "testing chooseCoins function" testChooseCoins
         , testProperty "testing chooseMSCoins function" testChooseMSCoins
         ]
-    -- TODO: Turn these tests into unit tests as they are very heavy 
     , testGroup "Signing Transactions"
         [ testProperty "Sign and validate transactions" testDetSignTx
         ]

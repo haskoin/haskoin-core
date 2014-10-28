@@ -32,11 +32,10 @@ module Network.Haskoin.Test.Crypto
 
 import Test.QuickCheck
 
-import Control.Applicative ((<$>), (<*>))
+import Control.Applicative ((<$>))
 
 import Data.Maybe
-import qualified Data.Sequence as S (fromList)
-import qualified Data.ByteString as BS (ByteString, pack, drop, null)
+import qualified Data.ByteString as BS (ByteString, pack, drop)
 
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Point

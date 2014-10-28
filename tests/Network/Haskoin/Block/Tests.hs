@@ -1,24 +1,14 @@
 module Network.Haskoin.Block.Tests (tests) where
 
-import Test.QuickCheck 
-    ( Arbitrary
-    , listOf1
-    , arbitrary
-    , vectorOf
-    , Property
-    , (==>)
-    )
-
+import Test.QuickCheck (Property, (==>))
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Data.Maybe
+import Data.Maybe (fromJust)
 import Data.Binary (Binary)
 
 import Network.Haskoin.Test.Block
-import Network.Haskoin.Test.Crypto
 
-import Network.Haskoin.Block.Types
 import Network.Haskoin.Block.Merkle
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util

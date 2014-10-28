@@ -21,15 +21,11 @@ module Network.Haskoin.Test.Transaction
 ) where
 
 import Test.QuickCheck 
-    ( Gen
-    , Arbitrary
+    ( Arbitrary
     , arbitrary
     , vectorOf
     , oneof
     , choose
-    , listOf
-    , listOf1
-    , frequency
     )
 
 import Control.Monad (forM)
@@ -44,10 +40,8 @@ import Network.Haskoin.Test.Script
 
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
-import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto
 import Network.Haskoin.Constants
-import Network.Haskoin.Util
 
 -- | Arbitrary amount of Satoshi as Word64 (Between 1 and 21e14)
 newtype ArbitrarySatoshi = ArbitrarySatoshi Word64
@@ -81,8 +75,8 @@ instance Arbitrary ArbitraryTxIn where
     arbitrary = do
         ArbitraryOutPoint o <- arbitrary 
         ArbitraryScriptInput inp <- arbitrary
-        seq <- arbitrary
-        return $ ArbitraryTxIn $ TxIn o (encodeInputBS inp) seq
+        s <- arbitrary
+        return $ ArbitraryTxIn $ TxIn o (encodeInputBS inp) s
 
 -- | Arbitrary Tx
 newtype ArbitraryTx = ArbitraryTx Tx
@@ -108,11 +102,11 @@ instance Arbitrary ArbitraryCoinbaseTx where
         v <- arbitrary
         ArbitraryOutPoint op <- arbitrary
         ArbitraryByteString d <- arbitrary
-        seq <- arbitrary
+        s <- arbitrary
         no <- choose (0,5)
         outs <- vectorOf no $ arbitrary >>= \(ArbitraryTxOut o) -> return o
         t <- arbitrary
-        return $ ArbitraryCoinbaseTx $ CoinbaseTx v op d seq outs t
+        return $ ArbitraryCoinbaseTx $ CoinbaseTx v op d s outs t
 
 -- | Arbitrary Tx containing only inputs of type SpendPKHash, SpendScriptHash
 -- (multisig) and outputs of type PayPKHash and PaySH. Only compressed
@@ -144,8 +138,8 @@ instance Arbitrary ArbitraryAddrOnlyTxIn where
             [ arbitrary >>= \(ArbitraryPKHashCInput i) -> return i
             , arbitrary >>= \(ArbitraryMulSigSHCInput i) -> return i
             ]
-        seq <- arbitrary
-        return $ ArbitraryAddrOnlyTxIn $ TxIn o (encodeInputBS inp) seq
+        s <- arbitrary
+        return $ ArbitraryAddrOnlyTxIn $ TxIn o (encodeInputBS inp) s
 
 -- | Arbitrary TxOut that can only be of type PayPKHash or PaySH
 newtype ArbitraryAddrOnlyTxOut = ArbitraryAddrOnlyTxOut TxOut
@@ -257,8 +251,8 @@ instance Arbitrary ArbitrarySigningData where
         sigis <- map f <$> vectorOf ni arbitrary 
         let uSigis = nubBy (\(a,_) (b,_) -> sigDataOP a == sigDataOP b) sigis
         inps <- forM uSigis $ \(s,_) -> do
-            seq <- arbitrary
-            return $ TxIn (sigDataOP s) BS.empty seq
+            sq <- arbitrary
+            return $ TxIn (sigDataOP s) BS.empty sq
         outs <- map (\(ArbitraryTxOut o) -> o) <$> vectorOf no arbitrary 
         l <- arbitrary
         perm <- choose (0, length inps - 1)

@@ -7,7 +7,6 @@ import Data.List (permutations)
 import Data.Maybe (fromJust, catMaybes)
 import Data.Foldable (toList)
 import qualified Data.Sequence as Seq (update, fromList)
-import qualified Data.ByteString as BS (ByteString)
 
 import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Util 

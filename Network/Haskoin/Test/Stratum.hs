@@ -22,7 +22,6 @@ import Network.Haskoin.Test.Transaction
 
 import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Stratum
-import Network.Haskoin.Protocol hiding (Message)
 
 -- | A pair of a request and its corresponding response.
 -- Id and version should match.

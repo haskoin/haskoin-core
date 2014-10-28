@@ -4,18 +4,15 @@ import Test.QuickCheck.Property (Property, (==>))
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Data.Maybe (fromJust, isNothing)
+import Data.Maybe (fromJust)
 import Data.Binary.Get (runGet)
 import Data.Binary.Put (runPut)
-import qualified Data.ByteString as BS (ByteString, length, index)
+import qualified Data.ByteString as BS (length, index)
 
 import Network.Haskoin.Test.Crypto
 
 import Network.Haskoin.Crypto.Keys
-import Network.Haskoin.Crypto.Point
 import Network.Haskoin.Crypto.BigWord
-import Network.Haskoin.Crypto.Curve
-import Network.Haskoin.Crypto.ExtendedKeys
 import Network.Haskoin.Util
 
 tests :: [Test]
@@ -116,5 +113,4 @@ deriveFromInt i = maybe True (isValidPubKey . derivePubKey) $ makePrvKey i
 validKeys :: ArbitraryPubKey -> Bool
 validKeys (ArbitraryPubKey prv pub) = 
     isValidPubKey pub && isValidPrvKey (fromPrvKey prv)
-
 

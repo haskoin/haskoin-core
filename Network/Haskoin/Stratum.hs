@@ -23,7 +23,6 @@ import Data.Word (Word, Word64)
 import Network.JsonRpc
 
 import Network.Haskoin.Crypto
-import Network.Haskoin.Protocol.Types
 import Network.Haskoin.Transaction.Types
 
 --

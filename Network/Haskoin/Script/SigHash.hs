@@ -36,7 +36,6 @@ import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.ECDSA
 import Network.Haskoin.Script.Types
-import Network.Haskoin.Protocol.Types
 import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Util
 

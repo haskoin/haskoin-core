@@ -189,10 +189,10 @@ extractMatches flags hashes ntx
         "extractMatches: All bits were not consumed"
     | nHashUsed /= length hashes = Left $
         "extractMatches: All hashes were not consumed: " ++ (show nHashUsed)
-    | otherwise = return (merkleRoot, matches)
+    | otherwise = return (merkRoot, matches)
   where
     resM = traverseAndExtract (calcTreeHeight ntx) 0 ntx flags hashes
-    (merkleRoot, matches, nBitsUsed, nHashUsed) = fromJust resM
+    (merkRoot, matches, nBitsUsed, nHashUsed) = fromJust resM
 
 splitIn :: Int -> [a] -> [[a]]
 splitIn _ [] = []

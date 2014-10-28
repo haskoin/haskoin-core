@@ -21,21 +21,22 @@ module Network.Haskoin.Test.Protocol
 , ArbitraryMessageCommand(..)
 ) where
 
-import Test.QuickCheck
+import Test.QuickCheck 
+    ( Arbitrary
+    , arbitrary
+    , elements
+    , listOf1
+    , oneof
+    )
 
-import Control.Monad
-import Control.Applicative 
+import Control.Applicative ((<$>))
 
 import Data.Word (Word32)
-import qualified Data.Sequence as S (fromList)
 
-import Network.Socket
+import Network.Socket (PortNumber(..), SockAddr(..))
 
 import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Protocol
-import Network.Haskoin.Crypto
-
-import Network.Haskoin.Protocol.Types
 
 -- | Arbitrary VarInt
 newtype ArbitraryVarInt = ArbitraryVarInt VarInt

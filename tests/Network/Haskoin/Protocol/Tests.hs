@@ -3,16 +3,10 @@ module Network.Haskoin.Protocol.Tests (tests) where
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Data.Maybe
 import Data.Binary
-import Data.Binary.Get
-import Data.Binary.Put
 
 import Network.Haskoin.Test.Protocol
 import Network.Haskoin.Test.Message
-
-import Network.Haskoin.Protocol
-import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 tests :: [Test]

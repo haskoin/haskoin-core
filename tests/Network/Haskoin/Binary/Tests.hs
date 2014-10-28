@@ -1,5 +1,6 @@
 module Network.Haskoin.Binary.Tests (tests) where
 
+import Test.QuickCheck (Property, (==>))
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
@@ -25,7 +26,7 @@ tests =
         , testProperty "Word160" (metaBinary :: Word160 -> Bool)
         , testProperty "Word128" (metaBinary :: Word128 -> Bool)
         , testProperty "FieldP" (metaBinary :: FieldP -> Bool)
-        , testProperty "FieldN" (metaBinary :: FieldN -> Bool)
+        , testProperty "FieldN" binaryFieldN
         ]
     , testGroup "Binary encoding and decoding of crypto types"
         [ testProperty "Signature" $ \(ArbitrarySignature _ _ _ x) -> metaBinary x
@@ -83,5 +84,8 @@ tests =
     ]
 
 metaBinary :: (Binary a, Eq a) => a -> Bool
-metaBinary x = (decode' $ encode' x) == x
+metaBinary x = decode' (encode' x) == x
+
+binaryFieldN :: FieldN -> Property
+binaryFieldN r = r > 0 ==> decode' (encode' r) == r
 

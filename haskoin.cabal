@@ -85,7 +85,7 @@ library
                        QuickCheck >= 2.7 && < 2.8,
                        split >= 0.2 && < 0.3,
                        text >= 1.2 && < 1.3
-    ghc-options:       -Wall -fno-warn-orphans
+    ghc-options:       -Wall 
   if flag(testnet)
     hs-source-dirs:    . testnet
   else
@@ -140,7 +140,7 @@ test-suite test-haskoin
                        test-framework >= 0.8 && < 0.9, 
                        test-framework-quickcheck2 >= 0.3 && < 0.4, 
                        test-framework-hunit >= 0.3 && < 0.4 
-    ghc-options:       -Wall -fno-warn-orphans
+    ghc-options:       -Wall 
   if flag(testnet)
     hs-source-dirs:    . tests testnet
   else

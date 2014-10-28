@@ -14,18 +14,17 @@ import Network.Haskoin.Util
 tests :: [Test]
 tests = 
     [ testGroup "Utility functions"
-        [ testProperty "toStrict( toLazy(bs) ) = bs" fromToLazy
-        , testProperty "get( put(Integer) ) = Integer" getPutInteger
-        , testProperty "stringToBS( bsToString(s) ) = s" fromToString
-        , testProperty "decode'( encode'(s) ) = s" decEncBS
-        , testProperty "decodeOrFail'( encode'(s) ) = s" decEncFailBS
-        , testProperty "fromHex( toHex(bs) ) = bs" fromToHex
-        , testProperty "testing decodeEither" testFromDecode
+        [ testProperty "toStrict . toLazy bytestring" fromToLazy
+        , testProperty "bsToInteger . integerToBS Integer" getPutInteger
+        , testProperty "stringToBS . bsToString bytestring" fromToString
+        , testProperty "decodeOrFail' . encode' bytestring" decEncFailBS
+        , testProperty "fromHex . toHex bytestring" fromToHex
+        , testProperty "fromDecode" testFromDecode
         , testProperty "compare updateIndex with Data.Sequence" testUpdateIndex
-        , testProperty "testing matchTemplate" testMatchTemplate
+        , testProperty "matchTemplate" testMatchTemplate
         , testProperty 
             "testing matchTemplate with two lists" testMatchTemplateLen
-        , testProperty "Testing either helper functions" testEither
+        , testProperty "Testing Either helper functions" testEither
         ]
     ]
 
@@ -36,9 +35,6 @@ fromToLazy (ArbitraryByteString bs) = (toStrictBS $ toLazyBS bs) == bs
 
 fromToString :: ArbitraryByteString  -> Bool
 fromToString (ArbitraryByteString bs) = (stringToBS $ bsToString bs) == bs
-
-decEncBS :: ArbitraryByteString -> Bool
-decEncBS (ArbitraryByteString bs) = (decode' $ encode' bs) == bs
 
 decEncFailBS :: ArbitraryByteString -> Bool
 decEncFailBS (ArbitraryByteString bs) = case (decodeOrFail' $ encode' bs) of

@@ -5,7 +5,6 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.Word (Word64)
 import qualified Data.ByteString as BS (length)
-import Data.Binary (Binary)
 
 import Network.Haskoin.Test.Transaction
 import Network.Haskoin.Test.Script
@@ -19,14 +18,7 @@ import Network.Haskoin.Util
 
 tests :: [Test]
 tests = 
-    [ testGroup "Serialize & de-serialize transaction types"
-        [ testProperty "TxIn" $ \(ArbitraryTxIn x) -> metaBinary x
-        , testProperty "TxOut" $ \(ArbitraryTxOut x) -> metaBinary x
-        , testProperty "OutPoint" $ \(ArbitraryOutPoint x) -> metaBinary x
-        , testProperty "Tx" $ \(ArbitraryTx x) -> metaBinary x
-        , testProperty "CoinbaseTx" $ \(ArbitraryCoinbaseTx x) -> metaBinary x
-        ]
-    , testGroup "Transaction tests"
+    [ testGroup "Transaction tests"
         [ testProperty "decode . encode Txid" decEncTxid 
         ]
     , testGroup "Building Transactions"
@@ -39,9 +31,6 @@ tests =
         [ testProperty "Sign and validate transactions" testDetSignTx
         ]
     ]
-
-metaBinary :: (Binary a, Eq a) => a -> Bool
-metaBinary x = (decode' $ encode' x) == x
 
 {- Transaction Tests -}
 

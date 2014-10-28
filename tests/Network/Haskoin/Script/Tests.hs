@@ -44,8 +44,7 @@ import Data.Maybe
     )
 
 import Data.Binary
-    ( Binary
-    , Word8
+    ( Word8
     , encode
     , decode
     , decodeOrFail)
@@ -65,12 +64,7 @@ import Network.Haskoin.Util
 
 tests :: [Test]
 tests = 
-    [ testGroup "Script binary"
-        [ testProperty "ScriptOp" $ \(ArbitraryScriptOp x) -> metaBinary x
-        , testProperty "Script" $ \(ArbitraryScript x) -> metaBinary x
-        , testProperty "Script" $ \(ArbitrarySigHash x) -> metaBinary x
-        ]
-    , testGroup "Script Parser"
+    [ testGroup "Script Parser"
         [ testProperty "decode . encode OP_1 .. OP_16" testScriptOpInt
         , testProperty "decode . encode ScriptOutput" testScriptOutput
         , testProperty "decode . encode ScriptInput" testScriptInput
@@ -104,9 +98,6 @@ tests =
                "tests/data/script_invalid.json"
                False
     ]
-
-metaBinary :: (Binary a, Eq a) => a -> Bool
-metaBinary x = (decode' $ encode' x) == x
 
 {- Script Parser -}
 

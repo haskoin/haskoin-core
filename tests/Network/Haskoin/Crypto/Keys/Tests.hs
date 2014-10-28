@@ -18,14 +18,13 @@ import Network.Haskoin.Util
 tests :: [Test]
 tests = 
     [ testGroup "PubKey Binary"
-        [ testProperty "decode . encode PubKey" binaryPubKey
-        , testProperty "is public key canonical" isCanonicalPubKey
+        [ testProperty "is public key canonical" isCanonicalPubKey
         , testProperty "makeKey . toKey" makeToKey
         , testProperty "makeKeyU . toKey" makeToKeyU
         ],
       testGroup "Key formats"
         [ testProperty "fromWIF . toWIF PrvKey" fromToWIF
-        , testProperty "decode . encode PrvKey" binaryPrvKey
+        , testProperty "constant 32-byte encoding PrvKey" binaryPrvKey
         ],
       testGroup "Key compression"
         [ testProperty "Compressed public key" testCompressed
@@ -41,11 +40,6 @@ tests =
         [ testProperty "PrvKey and PubKey are valid" validKeys
         ]
     ]
-
-{- Public Key Binary -}
-
-binaryPubKey :: ArbitraryPubKey -> Bool
-binaryPubKey (ArbitraryPubKey _ p) = p == (decode' $ encode' p)
 
 -- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
 -- from function IsCanonicalPubKey

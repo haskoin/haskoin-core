@@ -19,15 +19,13 @@ tests :: [Test]
 tests = 
     [ testGroup "HDW Extended Keys"
         [ testProperty "prvSubKey(k,c)*G = pubSubKey(k*G,c)" subkeyTest
-        , testProperty "decode . encode prvKey" binXPrvKey
-        , testProperty "decode . encode pubKey" binXPubKey
         , testProperty "fromB58 . toB58 prvKey" b58PrvKey
         , testProperty "fromB58 . toB58 pubKey" b58PubKey
         ]
     , testGroup "HDW Normalized Keys"
-        [ testProperty "decode . encode masterKey" decEncMaster
-        , testProperty "decode . encode prvAccKey" decEncPrvAcc
-        , testProperty "decode . encode pubAccKey" decEncPubAcc
+        [ testProperty "load . decode . encode masterKey" decEncMaster
+        , testProperty "load . decode . encode prvAccKey" decEncPrvAcc
+        , testProperty "load . decode . encode pubAccKey" decEncPubAcc
         ]
     ]
 
@@ -38,12 +36,6 @@ subkeyTest (ArbitraryXPrvKey k) i = fromJust $ liftM2 (==)
     (deriveXPubKey <$> prvSubKey k i') (pubSubKey (deriveXPubKey k) i')
   where 
     i' = fromIntegral $ i .&. 0x7fffffff -- make it a public derivation
-
-binXPrvKey :: ArbitraryXPrvKey -> Bool
-binXPrvKey (ArbitraryXPrvKey k) = (decode' $ encode' k) == k
-
-binXPubKey :: ArbitraryXPubKey -> Bool
-binXPubKey (ArbitraryXPubKey _ k) = (decode' $ encode' k) == k
 
 b58PrvKey :: ArbitraryXPrvKey -> Bool
 b58PrvKey (ArbitraryXPrvKey k) = (xPrvImport $ xPrvExport k) == Just k

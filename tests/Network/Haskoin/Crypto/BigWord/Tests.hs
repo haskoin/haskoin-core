@@ -31,16 +31,16 @@ tests =
         , testProperty "a * inv(a) = 1 (mod p) in FieldP" inverseModP
         , testProperty "a * inv(a) = 1 (mod n) in FieldN" inverseModN
         , testProperty "sqrt( a^2 ) = a (mod p)" sqrtP
-        ],
-      testGroup "BigWord Numeric"
+        ]
+    , testGroup "BigWord Numeric"
         [ testProperty "BigWord fromInteger" ringFromInteger
         , testProperty "BigWord addition" ringAddition
         , testProperty "BigWord multiplication" ringMult
         , testProperty "BigWord negation" ringNegate
         , testProperty "BigWord abs" ringAbs
         , testProperty "BigWord signum" ringSignum
-        ],
-      testGroup "BigWord Bits"
+        ]
+    , testGroup "BigWord Bits"
         [ testProperty "BigWord AND" ringAnd
         , testProperty "BigWord OR" ringOr
         , testProperty "BigWord XOR" ringXor
@@ -51,18 +51,18 @@ tests =
         , testProperty "BigWord Bit" ringBit
         , testProperty "BigWord PopCount" ringPopCount
         , testProperty "BigWord IsSigned" ringIsSigned
-        ],
-      testGroup "BigWord Bounded"
+        ]
+    , testGroup "BigWord Bounded"
         [ testProperty "BigWord minBound" ringMinBound
         , testProperty "BigWord maxBound" ringMaxBound
-        ],
-      testGroup "BigWord Enum"
+        ]
+    , testGroup "BigWord Enum"
         [ testProperty "BigWord succ" ringSucc
         , testProperty "BigWord pred" ringPred
         , testProperty "BigWord toEnum" ringToEnum
         , testProperty "BigWord fromEnum" ringFromEnum
-        ],
-      testGroup "BigWord Integral"
+        ]
+    , testGroup "BigWord Integral"
         [ testProperty "BigWord Quot" ringQuot
         , testProperty "BigWord Rem" ringRem
         , testProperty "BigWord Div" ringDiv
@@ -70,24 +70,10 @@ tests =
         , testProperty "BigWord QuotRem" ringQuotRem
         , testProperty "BigWord DivMod" ringDivMod
         , testProperty "BigWord toInteger" ringToInteger
-        ],
-      testGroup "BigWord Binary"
-        [ testProperty "get( put(Word512) ) = Word512" getPutWord512
-        , testProperty "get( put(Word256) ) = Word256" getPutWord256
-        , testProperty "get( put(Word160) ) = Word160" getPutWord160
-        , testProperty "get( put(Word128) ) = Word128" getPutWord128
-        , testProperty "get( put(FieldP) ) = FieldP" getPutModP
-        , testProperty "size( put(FieldP) ) = 32" putModPSize
-        , testProperty "get( put(FieldN) ) = FieldN" getPutModN
-        , testProperty "Verify DER of put(FieldN)" putModNSize
-        ],
-      testGroup "BigWord Read Show"
-        [ testProperty "read( show(Word512) ) = Word512" readShowWord512
-        , testProperty "read( show(Word256) ) = Word256" readShowWord256
-        , testProperty "read( show(Word160) ) = Word160" readShowWord160
-        , testProperty "read( show(Word128) ) = Word128" readShowWord128
-        , testProperty "read( show(FieldP) ) = FieldP" readShowModP
-        , testProperty "read( show(FieldN) ) = FieldN" readShowModN
+        ]
+    , testGroup "BigWord binary representation"
+        [ testProperty "size (put FieldP) = 32" putModPSize
+        , testProperty "Verify DER of (put FieldN)" putModNSize
         ]
     ]
 
@@ -300,28 +286,10 @@ ringDivMod i1 i2 = i2 /= 0 ==>
 ringToInteger :: Test32 -> Bool
 ringToInteger r@(BigWord i) = toInteger r == i
 
-{- BigWord Binary -}
-
-getPutWord512 :: Word512 -> Bool
-getPutWord512 r = r == (decode' $ encode' r)
-
-getPutWord256 :: Word256 -> Bool
-getPutWord256 r = r == (decode' $ encode' r)
-
-getPutWord160 :: Word160 -> Bool
-getPutWord160 r = r == (decode' $ encode' r)
-
-getPutWord128 :: Word128 -> Bool
-getPutWord128 r = r == (decode' $ encode' r)
-
-getPutModP :: FieldP -> Bool
-getPutModP r = r == (decode' $ encode' r)
+{- BigWord binary representation -}
 
 putModPSize :: FieldP -> Bool
 putModPSize r = BS.length (encode' r) == 32
-
-getPutModN :: FieldN -> Property
-getPutModN r = r > 0 ==> r == (decode' $ encode' r)
 
 putModNSize :: FieldN -> Property
 putModNSize r = r > 0 ==>
@@ -336,24 +304,4 @@ putModNSize r = r > 0 ==>
     b  = BS.index bs 1
     c  = BS.index bs 2
     l  = BS.length bs
-
-{- BigWord Read Show -}
-
-readShowWord512 :: Word512 -> Bool
-readShowWord512 r = r == (read $ show r)
-
-readShowWord256 :: Word256 -> Bool
-readShowWord256 r = r == (read $ show r)
-
-readShowWord160 :: Word160 -> Bool
-readShowWord160 r = r == (read $ show r)
-
-readShowWord128 :: Word128 -> Bool
-readShowWord128 r = r == (read $ show r)
-
-readShowModP :: FieldP -> Bool
-readShowModP r = r == (read $ show r)
-
-readShowModN :: FieldN -> Property
-readShowModN r = r > 0 ==> r == (read $ show r)
 

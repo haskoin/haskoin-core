@@ -25,8 +25,7 @@ tests =
             \(ArbitraryDetSignature _ _ sig) -> halfOrderSig sig
         ],
       testGroup "ECDSA Binary"
-        [ testProperty "decode . encode Sig" binarySig
-        , testProperty "Encoded signature is canonical" $ 
+        [ testProperty "Encoded signature is canonical" $ 
             \(ArbitrarySignature _ _ _ sig) -> testIsCanonical sig 
         , testProperty "Encoded deterministic signature is canonical" $ 
             \(ArbitraryDetSignature _ _ sig) -> testIsCanonical sig 
@@ -52,9 +51,6 @@ halfOrderSig sig@(Signature _ (BigWord s)) =
     s <= (curveN `div` 2) && isCanonicalHalfOrder sig
 
 {- ECDSA Binary -}
-
-binarySig :: ArbitrarySignature -> Bool
-binarySig (ArbitrarySignature _ _ _ sig) = (decode' $ encode' sig) == sig
 
 -- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
 -- from function IsCanonicalSignature

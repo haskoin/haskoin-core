@@ -5,9 +5,6 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.Maybe (fromJust)
-import Data.Binary (Binary)
-
-import Network.Haskoin.Test.Block
 
 import Network.Haskoin.Block.Merkle
 import Network.Haskoin.Crypto
@@ -15,15 +12,7 @@ import Network.Haskoin.Util
 
 tests :: [Test]
 tests = 
-    [ testGroup "Serialize & de-serialize block types"
-        [ testProperty "Block" $ \(ArbitraryBlock x) -> metaBinary x
-        , testProperty "BlockHeader" $ \(ArbitraryBlockHeader x) -> metaBinary x
-        , testProperty "GetBlocks" $ \(ArbitraryGetBlocks x) -> metaBinary x
-        , testProperty "GetHeaders" $ \(ArbitraryGetHeaders x) -> metaBinary x
-        , testProperty "Headers" $ \(ArbitraryHeaders x) -> metaBinary x
-        , testProperty "MerkleBlock" $ \(ArbitraryMerkleBlock x) -> metaBinary x
-        ]
-    , testGroup "Block tests"
+    [ testGroup "Block tests"
         [ testProperty "decode . encode BlockHash id" decEncBlockHashid ]
     , testGroup "Merkle Trees"
         [ testProperty "Width of tree at maxmum height = 1" testTreeWidth
@@ -31,9 +20,6 @@ tests =
         , testProperty "extract . build partial merkle tree" buildExtractTree
         ]
     ]
-
-metaBinary :: (Binary a, Eq a) => a -> Bool
-metaBinary x = (decode' $ encode' x) == x
 
 decEncBlockHashid :: BlockHash -> Bool
 decEncBlockHashid h = (fromJust $ decodeBlockHashLE $ encodeBlockHashLE h) == h

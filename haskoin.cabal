@@ -107,10 +107,8 @@ test-suite test-haskoin
                        Network.Haskoin.Crypto.Hash.Units,
                        Network.Haskoin.Crypto.Mnemonic.Tests,
                        Network.Haskoin.Crypto.Mnemonic.Units,
-                       Network.Haskoin.Crypto.Bloom.Tests,
                        Network.Haskoin.Crypto.Bloom.Units,
                        Network.Haskoin.Crypto.Units,
-                       Network.Haskoin.Protocol.Tests,
                        Network.Haskoin.Script.Tests,
                        Network.Haskoin.Script.Units,
                        Network.Haskoin.Transaction.Tests,
@@ -119,7 +117,8 @@ test-suite test-haskoin
                        Network.Haskoin.Block.Units,
                        Network.Haskoin.Stratum.Tests,
                        Network.Haskoin.Stratum.Units,
-                       Network.Haskoin.Json.Tests
+                       Network.Haskoin.Json.Tests,
+                       Network.Haskoin.Binary.Tests
     build-depends:     aeson >= 0.8 && < 0.9,
                        async >= 2.0 && < 2.1,
                        base >= 4.6 && < 5, 

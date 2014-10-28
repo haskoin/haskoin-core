@@ -34,7 +34,7 @@ import qualified Data.ByteString as BS
 import Network.Haskoin.Util 
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Protocol.Types
+import Network.Haskoin.Node.Types
 
 -- | Computes the hash of a transaction.
 txHash :: Tx -> TxHash

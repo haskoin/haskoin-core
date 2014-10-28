@@ -18,8 +18,10 @@ import qualified Network.Haskoin.Crypto.Hash.Tests (tests)
 import qualified Network.Haskoin.Crypto.Hash.Units (tests)
 import qualified Network.Haskoin.Crypto.Mnemonic.Tests (tests)
 import qualified Network.Haskoin.Crypto.Mnemonic.Units (tests)
-import qualified Network.Haskoin.Crypto.Bloom.Units (tests)
 import qualified Network.Haskoin.Crypto.Units (tests)
+
+-- Node tests
+import qualified Network.Haskoin.Node.Units (tests)
 
 -- Script tests
 import qualified Network.Haskoin.Script.Tests (tests)
@@ -60,8 +62,8 @@ main = defaultMain
     ++ Network.Haskoin.Crypto.ExtendedKeys.Units.tests 
     ++ Network.Haskoin.Crypto.Mnemonic.Tests.tests 
     ++ Network.Haskoin.Crypto.Mnemonic.Units.tests 
-    ++ Network.Haskoin.Crypto.Bloom.Units.tests 
     ++ Network.Haskoin.Crypto.Units.tests
+    ++ Network.Haskoin.Node.Units.tests 
     ++ Network.Haskoin.Script.Tests.tests
     ++ Network.Haskoin.Script.Units.tests
     ++ Network.Haskoin.Transaction.Tests.tests

@@ -21,7 +21,7 @@ import Test.QuickCheck
 import Control.Applicative ((<$>), (<*>))
 
 import Network.Haskoin.Test.Transaction
-import Network.Haskoin.Test.Protocol
+import Network.Haskoin.Test.Node
 
 import Network.Haskoin.Block.Types
 import Network.Haskoin.Block.Merkle

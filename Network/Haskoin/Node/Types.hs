@@ -1,4 +1,4 @@
-module Network.Haskoin.Protocol.Types 
+module Network.Haskoin.Node.Types 
 ( Addr(..)
 , NetworkAddressTime 
 , Alert(..)

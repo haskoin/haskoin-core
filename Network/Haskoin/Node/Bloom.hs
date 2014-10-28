@@ -1,4 +1,4 @@
-module Network.Haskoin.Crypto.Bloom 
+module Network.Haskoin.Node.Bloom 
 ( BloomFlags(..)
 , BloomFilter(..)
 , FilterLoad(..)
@@ -33,7 +33,7 @@ import qualified Data.Sequence as S
 import qualified Data.ByteString as BS
 
 import Network.Haskoin.Crypto.Hash 
-import Network.Haskoin.Protocol.Types
+import Network.Haskoin.Node.Types
 
 -- 20,000 items with fp rate < 0.1% or 10,000 items and <0.0001%
 maxBloomSize :: Int

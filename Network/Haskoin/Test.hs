@@ -26,12 +26,8 @@ module Network.Haskoin.Test
 , ArbitraryAccPubKey(..)
 , ArbitraryAddrPrvKey(..)
 , ArbitraryAddrPubKey(..)
-, ArbitraryBloomFlags(..)
-, ArbitraryBloomFilter(..)
-, ArbitraryFilterLoad(..)
-, ArbitraryFilterAdd(..)
 
-  -- * Protocol Arbitrary instances
+  -- * Node Arbitrary instances
 , ArbitraryVarInt(..)
 , ArbitraryVarString(..)
 , ArbitraryNetworkAddress(..)
@@ -48,6 +44,10 @@ module Network.Haskoin.Test
 , ArbitraryNotFound(..)
 , ArbitraryPing(..)
 , ArbitraryPong(..)
+, ArbitraryBloomFlags(..)
+, ArbitraryBloomFilter(..)
+, ArbitraryFilterLoad(..)
+, ArbitraryFilterAdd(..)
 , ArbitraryMessageCommand(..)
 
   -- * Message Arbitrary instances
@@ -111,7 +111,7 @@ module Network.Haskoin.Test
 ) where
 
 import Network.Haskoin.Test.Crypto
-import Network.Haskoin.Test.Protocol
+import Network.Haskoin.Test.Node
 import Network.Haskoin.Test.Message
 import Network.Haskoin.Test.Script
 import Network.Haskoin.Test.Transaction

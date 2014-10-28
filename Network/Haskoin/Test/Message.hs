@@ -1,5 +1,5 @@
 {-| 
-  Arbitrary types for Network.Haskoin.Protocol.Message
+  Arbitrary types for Network.Haskoin.Node.Message
 -}
 module Network.Haskoin.Test.Message
 ( ArbitraryMessageHeader(..)
@@ -14,12 +14,11 @@ import Test.QuickCheck
 
 import Control.Applicative ((<$>))
 
-import Network.Haskoin.Test.Crypto
-import Network.Haskoin.Test.Protocol
+import Network.Haskoin.Test.Node
 import Network.Haskoin.Test.Transaction
 import Network.Haskoin.Test.Block
 
-import Network.Haskoin.Protocol.Message
+import Network.Haskoin.Node.Message
 
 -- | Arbitrary MessageHeader
 newtype ArbitraryMessageHeader = ArbitraryMessageHeader MessageHeader

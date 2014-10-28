@@ -21,7 +21,7 @@ import Data.Binary.Put (putWord32le)
 import Network.Haskoin.Util 
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Protocol.Types
+import Network.Haskoin.Node.Types
 import Network.Haskoin.Transaction.Types
 
 -- | Data type describing a block in the bitcoin protocol. Blocks are sent in

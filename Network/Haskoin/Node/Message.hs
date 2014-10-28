@@ -1,4 +1,4 @@
-module Network.Haskoin.Protocol.Message 
+module Network.Haskoin.Node.Message 
 ( Message(..) 
 , MessageHeader(..) 
 ) where
@@ -26,12 +26,12 @@ import qualified Data.ByteString as BS
     , empty
     )
 
-import Network.Haskoin.Protocol.Types
+import Network.Haskoin.Node.Types
 import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Block.Types
 import Network.Haskoin.Block.Merkle
 import Network.Haskoin.Crypto.Hash 
-import Network.Haskoin.Crypto.Bloom
+import Network.Haskoin.Node.Bloom
 import Network.Haskoin.Constants
 import Network.Haskoin.Util 
 

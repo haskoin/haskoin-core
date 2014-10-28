@@ -24,7 +24,7 @@ import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Block.Types
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
-import Network.Haskoin.Protocol.Types
+import Network.Haskoin.Node.Types
 
 type MerkleRoot        = Word256
 type FlagBits          = [Bool]

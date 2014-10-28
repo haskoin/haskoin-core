@@ -199,18 +199,6 @@ module Network.Haskoin.Crypto
 , extMulSigAddrs
 , intMulSigAddrs
 
-  -- *Bloom filters
-, BloomFlags(..)
-, BloomFilter(..)
-, FilterLoad(..)
-, FilterAdd(..)
-, bloomCreate
-, bloomInsert
-, bloomContains
-, isBloomValid
-, isBloomEmpty
-, isBloomFull
-
 ) where
 
 import Network.Haskoin.Crypto.ECDSA
@@ -221,5 +209,4 @@ import Network.Haskoin.Crypto.Mnemonic
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.ExtendedKeys
 import Network.Haskoin.Crypto.NormalizedKeys
-import Network.Haskoin.Crypto.Bloom
 

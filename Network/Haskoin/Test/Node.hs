@@ -1,7 +1,7 @@
 {-| 
-  Arbitrary types for Network.Haskoin.Protocol
+  Arbitrary types for Network.Haskoin.Node
 -}
-module Network.Haskoin.Test.Protocol
+module Network.Haskoin.Test.Node
 ( ArbitraryVarInt(..)
 , ArbitraryVarString(..)
 , ArbitraryNetworkAddress(..)
@@ -18,6 +18,10 @@ module Network.Haskoin.Test.Protocol
 , ArbitraryNotFound(..)
 , ArbitraryPing(..)
 , ArbitraryPong(..)
+, ArbitraryBloomFlags(..)
+, ArbitraryBloomFilter(..)
+, ArbitraryFilterLoad(..)
+, ArbitraryFilterAdd(..)
 , ArbitraryMessageCommand(..)
 ) where
 
@@ -27,6 +31,7 @@ import Test.QuickCheck
     , elements
     , listOf1
     , oneof
+    , choose
     )
 
 import Control.Applicative ((<$>))
@@ -36,7 +41,7 @@ import Data.Word (Word32)
 import Network.Socket (PortNumber(..), SockAddr(..))
 
 import Network.Haskoin.Test.Crypto
-import Network.Haskoin.Protocol
+import Network.Haskoin.Node
 
 -- | Arbitrary VarInt
 newtype ArbitraryVarInt = ArbitraryVarInt VarInt
@@ -207,6 +212,49 @@ newtype ArbitraryPong = ArbitraryPong Pong
 
 instance Arbitrary ArbitraryPong where
     arbitrary = ArbitraryPong . Pong <$> arbitrary
+
+-- | Arbitrary bloom filter flags
+data ArbitraryBloomFlags = ArbitraryBloomFlags BloomFlags
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryBloomFlags where
+    arbitrary = ArbitraryBloomFlags <$> elements 
+        [ BloomUpdateNone
+        , BloomUpdateAll
+        , BloomUpdateP2PubKeyOnly
+        ]
+
+-- | Arbitrary bloom filter with its corresponding number of elements
+-- and false positive rate.
+data ArbitraryBloomFilter = ArbitraryBloomFilter Int Double BloomFilter
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryBloomFilter where
+    arbitrary = do
+        n     <- choose (0,100000)
+        fp    <- choose (1e-8,1)
+        tweak <- arbitrary
+        ArbitraryBloomFlags fl <- arbitrary
+        return $ ArbitraryBloomFilter n fp $ bloomCreate n fp tweak fl
+
+-- | Arbitrary FilterLoad
+data ArbitraryFilterLoad = ArbitraryFilterLoad FilterLoad
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryFilterLoad where
+    arbitrary = do
+        ArbitraryBloomFilter _ _ bf <- arbitrary
+        return $ ArbitraryFilterLoad $ FilterLoad bf
+
+-- | Arbitrary FilterAdd
+data ArbitraryFilterAdd = ArbitraryFilterAdd FilterAdd
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryFilterAdd where
+    arbitrary = do
+        ArbitraryByteString bs <- arbitrary
+        return $ ArbitraryFilterAdd $ FilterAdd bs
+
 
 -- | Arbitrary MessageCommand
 newtype ArbitraryMessageCommand = ArbitraryMessageCommand MessageCommand

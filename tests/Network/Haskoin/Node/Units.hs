@@ -1,4 +1,4 @@
-module Network.Haskoin.Crypto.Bloom.Units (tests) where
+module Network.Haskoin.Node.Units (tests) where
 
 import Test.HUnit (Assertion, assertBool)
 import Test.Framework (Test, testGroup)
@@ -7,6 +7,7 @@ import Test.Framework.Providers.HUnit (testCase)
 import Data.Maybe (fromJust)
 
 import Network.Haskoin.Crypto
+import Network.Haskoin.Node.Bloom
 import Network.Haskoin.Util
 
 tests :: [Test]

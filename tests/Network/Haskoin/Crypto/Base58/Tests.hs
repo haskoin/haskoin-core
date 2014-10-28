@@ -3,12 +3,7 @@ module Network.Haskoin.Crypto.Base58.Tests (tests) where
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Data.Maybe (fromJust)
-import qualified Data.ByteString as BS (ByteString)
-
-import Network.Haskoin.Crypto.Arbitrary()
-import Network.Haskoin.Util.Arbitrary()
-
+import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Crypto.Base58
 
 tests :: [Test]
@@ -20,13 +15,14 @@ tests =
         ]
     ]
 
-decodeEncode58 :: BS.ByteString -> Bool
-decodeEncode58 bs = (fromJust $ decodeBase58 $ encodeBase58 bs) == bs
+decodeEncode58 :: ArbitraryByteString -> Bool
+decodeEncode58 (ArbitraryByteString bs) = 
+    decodeBase58 (encodeBase58 bs) == Just bs
 
-decodeEncode58Check :: BS.ByteString -> Bool
-decodeEncode58Check bs = 
-    (fromJust $ decodeBase58Check $ encodeBase58Check bs) == bs
+decodeEncode58Check :: ArbitraryByteString -> Bool
+decodeEncode58Check (ArbitraryByteString bs) = 
+    decodeBase58Check (encodeBase58Check bs) == Just bs
 
-decEncAddr :: Address -> Bool
-decEncAddr a = (fromJust $ base58ToAddr $ addrToBase58 a) == a
+decEncAddr :: ArbitraryAddress -> Bool
+decEncAddr (ArbitraryAddress a) = base58ToAddr (addrToBase58 a) == Just a
 

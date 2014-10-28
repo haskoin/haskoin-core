@@ -23,7 +23,7 @@ import Data.Word (Word, Word64)
 import Network.JsonRpc
 
 import Network.Haskoin.Crypto
-import Network.Haskoin.Protocol
+import Network.Haskoin.Transaction.Types
 
 --
 -- Stratum Request

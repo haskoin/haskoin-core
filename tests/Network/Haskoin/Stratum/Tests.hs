@@ -6,7 +6,7 @@ import Test.Framework
 import Test.Framework.Providers.QuickCheck2
 import Network.JsonRpc
 import Network.Haskoin.Stratum
-import Network.Haskoin.Stratum.Arbitrary
+import Network.Haskoin.Test.Stratum
 
 tests :: [Test]
 tests =

@@ -1,21 +1,27 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | Arbitrary instances and data types for use in test suites.
-module Network.Haskoin.Stratum.Arbitrary
+module Network.Haskoin.Test.Stratum
 ( -- * Arbitrary Data
   ReqRes(..)
 ) where
 
 import Control.Applicative
+
+import Test.QuickCheck.Arbitrary
+import Test.QuickCheck.Gen
+
 import Data.Aeson.Types hiding (Error)
 import Data.Text (Text)
 import qualified Data.Text as T
+
 import Network.JsonRpc
-import Test.QuickCheck.Arbitrary
-import Test.QuickCheck.Gen
-import Network.Haskoin.Protocol.Arbitrary ()
+
+import Network.Haskoin.Test.Crypto
+import Network.Haskoin.Test.Transaction
+
+import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Stratum
-import Network.Haskoin.Protocol hiding (Message)
 
 -- | A pair of a request and its corresponding response.
 -- Id and version should match.
@@ -93,46 +99,61 @@ instance Arbitrary StratumTxInfo where
 instance Arbitrary StratumCoin where
     arbitrary = do
         h <- arbitrary
-        o@(OutPoint i _) <- arbitrary
+        ArbitraryOutPoint o@(OutPoint i _) <- arbitrary
         let t = StratumTxInfo h i
         StratumCoin o t <$> arbitrary
 
 instance Arbitrary StratumRequest where
-    arbitrary = oneof [ StratumReqVersion <$> arbitrary <*> arbitrary
-                      , StratumReqHistory <$> arbitrary
-                      , StratumReqBalance <$> arbitrary
-                      , StratumReqUnspent <$> arbitrary
-                      , StratumReqTx      <$> arbitrary
-                      , StratumBcastTx    <$> arbitrary
-                      , StratumSubAddr    <$> arbitrary ]
+    arbitrary = oneof 
+        [ StratumReqVersion <$> arbitrary <*> arbitrary
+        , StratumReqHistory <$> aAddr
+        , StratumReqBalance <$> aAddr
+        , StratumReqUnspent <$> aAddr
+        , StratumReqTx      <$> arbitrary
+        , StratumBcastTx    <$> aTx
+        , StratumSubAddr    <$> aAddr
+        ]
+      where
+        aAddr = arbitrary >>= \(ArbitraryAddress a) -> return a
+        aTx   = arbitrary >>= \(ArbitraryTx tx) -> return tx
 
 instance Arbitrary StratumNotif where
-    arbitrary = StratumNotifAddr <$> arbitrary <*> arbitrary
+    arbitrary = 
+        StratumNotifAddr <$> aAddr <*> arbitrary
+      where
+        aAddr = arbitrary >>= \(ArbitraryAddress a) -> return a
 
 instance Arbitrary StratumResult where
-    arbitrary = oneof [ StratumSrvVersion  <$> arbitrary
-                      , StratumAddrHistory <$> arbitrary
-                      , StratumAddrBalance <$> arbitrary <*> arbitrary
-                      , StratumAddrUnspent <$> arbitrary
-                      , StratumAddrStatus  <$> arbitrary
-                      , StratumTx          <$> arbitrary
-                      , StratumBcastId     <$> arbitrary ]
+    arbitrary = oneof 
+        [ StratumSrvVersion  <$> arbitrary
+        , StratumAddrHistory <$> arbitrary
+        , StratumAddrBalance <$> arbitrary <*> arbitrary
+        , StratumAddrUnspent <$> arbitrary
+        , StratumAddrStatus  <$> arbitrary
+        , StratumTx          <$> (arbitrary >>= \(ArbitraryTx tx) -> return tx)
+        , StratumBcastId     <$> arbitrary 
+        ]
 
 instance Arbitrary (ReqRes StratumRequest StratumResult) where
     arbitrary = do
         (q, s) <- oneof
             [ (,) <$> (StratumReqVersion  <$> arbitrary <*> arbitrary)
                   <*> (StratumSrvVersion  <$> arbitrary)
-            , (,) <$> (StratumReqHistory  <$> arbitrary)
+            , (,) <$> (StratumReqHistory  <$> aAddr)
                   <*> (StratumAddrHistory <$> arbitrary)
-            , (,) <$> (StratumReqBalance  <$> arbitrary)
+            , (,) <$> (StratumReqBalance  <$> aAddr)
                   <*> (StratumAddrBalance <$> arbitrary <*> arbitrary)
-            , (,) <$> (StratumReqUnspent  <$> arbitrary)
+            , (,) <$> (StratumReqUnspent  <$> aAddr)
                   <*> (StratumAddrUnspent <$> arbitrary)
             , (,) <$> (StratumReqTx       <$> arbitrary)
-                  <*> (StratumTx          <$> arbitrary)
-            , (,) <$> (StratumBcastTx     <$> arbitrary)
-                  <*> (StratumBcastId     <$> arbitrary) ]
+                  <*> (StratumTx          <$> aTx)
+            , (,) <$> (StratumBcastTx     <$> aTx)
+                  <*> (StratumBcastId     <$> arbitrary) 
+            ]
         i <- arbitrary
         ver <- arbitrary
         return $ ReqRes (Request ver (requestMethod q) q i) (Response ver s i)
+      where
+        aAddr = arbitrary >>= \(ArbitraryAddress a) -> return a
+        aTx   = arbitrary >>= \(ArbitraryTx tx) -> return tx
+

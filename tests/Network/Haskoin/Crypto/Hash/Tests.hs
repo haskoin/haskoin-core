@@ -5,7 +5,6 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.BigWord
-import Network.Haskoin.Crypto.Arbitrary()
 
 tests :: [Test]
 tests = 

@@ -1,29 +1,42 @@
-module Network.Haskoin.Crypto.Merkle.Tests (tests) where
+module Network.Haskoin.Block.Tests (tests) where
 
-import Test.QuickCheck.Property (Property, (==>))
+import Test.QuickCheck (Property, (==>))
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Network.Haskoin.Crypto.Arbitrary ()
+import Data.Maybe (fromJust)
+
+import Network.Haskoin.Block.Merkle
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 tests :: [Test]
 tests = 
-    [ testGroup "Merkle Trees"
+    [ testGroup "Block tests"
+        [ testProperty "decode . encode BlockHash id" decEncBlockHashid ]
+    , testGroup "Merkle Trees"
         [ testProperty "Width of tree at maxmum height = 1" testTreeWidth
         , testProperty "Width of tree at height 0 is # txns" testBaseWidth
         , testProperty "extract . build partial merkle tree" buildExtractTree
         ]
     ]
 
+decEncBlockHashid :: BlockHash -> Bool
+decEncBlockHashid h = (fromJust $ decodeBlockHashLE $ encodeBlockHashLE h) == h
+
 {- Merkle Trees -}
 
 testTreeWidth :: Int -> Property
-testTreeWidth i = i > 0 ==> calcTreeWidth i (calcTreeHeight i) == 1
+testTreeWidth i = i /= 0 ==>
+    calcTreeWidth i' (calcTreeHeight i') == 1
+  where
+    i' = abs i
 
 testBaseWidth :: Int -> Property
-testBaseWidth i = i > 0 ==> calcTreeWidth i 0 == i
+testBaseWidth i = i /= 0 ==>
+    calcTreeWidth i' 0 == i'
+  where
+    i' = abs i
 
 buildExtractTree :: [(TxHash,Bool)] -> Property
 buildExtractTree txs = not (null txs) ==>
@@ -32,5 +45,4 @@ buildExtractTree txs = not (null txs) ==>
     (f,h)  = buildPartialMerkle txs
     (r,m)  = fromRight $ extractMatches f h (length txs)
     hashes = map fst txs
-
 

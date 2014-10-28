@@ -39,8 +39,9 @@ import Data.Aeson
 
 import Network.Haskoin.Util
 import Network.Haskoin.Crypto
-import Network.Haskoin.Protocol
+import Network.Haskoin.Node
 import Network.Haskoin.Script
+import Network.Haskoin.Transaction.Types
 
 -- | A Coin is an output of a transaction that can be spent by another
 -- transaction. 

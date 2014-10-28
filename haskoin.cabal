@@ -33,11 +33,13 @@ library
     exposed-modules:   Network.Haskoin.Util,
                        Network.Haskoin.Stratum,
                        Network.Haskoin.Crypto,
-                       Network.Haskoin.Protocol,
+                       Network.Haskoin.Node,
                        Network.Haskoin.Script,
                        Network.Haskoin.Transaction,
-                       Network.Haskoin.Internals,
-                       Network.Haskoin.Constants
+                       Network.Haskoin.Block,
+                       Network.Haskoin.Constants,
+                       Network.Haskoin.Test,
+                       Network.Haskoin.Internals
     other-modules:     Network.Haskoin.Crypto.NumberTheory, 
                        Network.Haskoin.Crypto.Curve, 
                        Network.Haskoin.Crypto.Hash, 
@@ -49,15 +51,24 @@ library
                        Network.Haskoin.Crypto.NormalizedKeys,
                        Network.Haskoin.Crypto.ECDSA,
                        Network.Haskoin.Crypto.Mnemonic,
-                       Network.Haskoin.Crypto.Merkle,
-                       Network.Haskoin.Crypto.Bloom,
-                       Network.Haskoin.Protocol.Message,
-                       Network.Haskoin.Protocol.Types,
+                       Network.Haskoin.Node.Types,
+                       Network.Haskoin.Node.Message,
+                       Network.Haskoin.Node.Bloom,
                        Network.Haskoin.Script.Types, 
                        Network.Haskoin.Script.Parser, 
                        Network.Haskoin.Script.SigHash,
                        Network.Haskoin.Script.Evaluator,
-                       Network.Haskoin.Transaction.Builder
+                       Network.Haskoin.Transaction.Types,
+                       Network.Haskoin.Transaction.Builder,
+                       Network.Haskoin.Block.Types,
+                       Network.Haskoin.Block.Merkle,
+                       Network.Haskoin.Test.Crypto,
+                       Network.Haskoin.Test.Node,
+                       Network.Haskoin.Test.Message,
+                       Network.Haskoin.Test.Script,
+                       Network.Haskoin.Test.Transaction,
+                       Network.Haskoin.Test.Block,
+                       Network.Haskoin.Test.Stratum
     build-depends:     aeson >= 0.8 && < 0.9,
                        base >= 4.6 && < 5, 
                        binary >= 0.7 && < 0.8, 
@@ -71,9 +82,10 @@ library
                        mtl >= 2.2 && < 2.3, 
                        network >= 2.6 && < 2.7,
                        pbkdf >= 1.1 && < 1.2,
+                       QuickCheck >= 2.7 && < 2.8,
                        split >= 0.2 && < 0.3,
                        text >= 1.2 && < 1.3
-    ghc-options:       -Wall -fno-warn-orphans
+    ghc-options:       -Wall 
   if flag(testnet)
     hs-source-dirs:    . testnet
   else
@@ -83,7 +95,6 @@ test-suite test-haskoin
     type:              exitcode-stdio-1.0
     main-is:           Main.hs
     other-modules:     Network.Haskoin.Util.Tests,
-                       Network.Haskoin.Util.Arbitrary,
                        Network.Haskoin.Crypto.BigWord.Tests,
                        Network.Haskoin.Crypto.Point.Tests,
                        Network.Haskoin.Crypto.ECDSA.Tests,
@@ -96,25 +107,18 @@ test-suite test-haskoin
                        Network.Haskoin.Crypto.Hash.Units,
                        Network.Haskoin.Crypto.Mnemonic.Tests,
                        Network.Haskoin.Crypto.Mnemonic.Units,
-                       Network.Haskoin.Crypto.Bloom.Tests,
-                       Network.Haskoin.Crypto.Bloom.Units,
-                       Network.Haskoin.Crypto.Merkle.Tests,
-                       Network.Haskoin.Crypto.Merkle.Units,
-                       Network.Haskoin.Crypto.Arbitrary,
                        Network.Haskoin.Crypto.Units,
-                       Network.Haskoin.Protocol.Arbitrary,
-                       Network.Haskoin.Protocol.Tests,
-                       Network.Haskoin.Protocol.Units,
-                       Network.Haskoin.Script.Arbitrary,
+                       Network.Haskoin.Node.Units,
                        Network.Haskoin.Script.Tests,
                        Network.Haskoin.Script.Units,
                        Network.Haskoin.Transaction.Tests,
                        Network.Haskoin.Transaction.Units,
-                       Network.Haskoin.Transaction.Arbitrary,
+                       Network.Haskoin.Block.Tests,
+                       Network.Haskoin.Block.Units,
                        Network.Haskoin.Stratum.Tests,
                        Network.Haskoin.Stratum.Units,
-                       Network.Haskoin.Stratum.Arbitrary,
-                       Network.Haskoin.Json.Tests
+                       Network.Haskoin.Json.Tests,
+                       Network.Haskoin.Binary.Tests
     build-depends:     aeson >= 0.8 && < 0.9,
                        async >= 2.0 && < 2.1,
                        base >= 4.6 && < 5, 
@@ -136,7 +140,7 @@ test-suite test-haskoin
                        test-framework >= 0.8 && < 0.9, 
                        test-framework-quickcheck2 >= 0.3 && < 0.4, 
                        test-framework-hunit >= 0.3 && < 0.4 
-    ghc-options:       -Wall -fno-warn-orphans
+    ghc-options:       -Wall 
   if flag(testnet)
     hs-source-dirs:    . tests testnet
   else

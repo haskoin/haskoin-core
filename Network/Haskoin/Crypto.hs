@@ -54,14 +54,13 @@ module Network.Haskoin.Crypto
 , Word256
 , Word160
 , Word128
+, FieldN
+, FieldP
 
   -- *Hash functions
 , TxHash
 , BlockHash
 , CheckSum32
-, txHash
-, cbHash
-, headerHash
 , encodeTxHashLE
 , decodeTxHashLE
 , encodeBlockHashLE
@@ -174,7 +173,7 @@ module Network.Haskoin.Crypto
   -- **Address keys
 , AddrPrvKey(..)
 , AddrPubKey(..)
-, addr
+, toAddr
 , extPrvKey
 , extPubKey
 , intPrvKey
@@ -200,24 +199,6 @@ module Network.Haskoin.Crypto
 , extMulSigAddrs
 , intMulSigAddrs
 
-  -- *Bloom filters
-, BloomFilter
-, BloomFlags(..)
-, bloomCreate
-, bloomInsert
-, bloomContains
-, isBloomValid
-, isBloomEmpty
-, isBloomFull
-
-  -- *Partial merkle trees
-, calcTreeHeight
-, calcTreeWidth
-, buildMerkleRoot
-, calcHash
-, buildPartialMerkle
-, extractMatches
-
 ) where
 
 import Network.Haskoin.Crypto.ECDSA
@@ -228,6 +209,4 @@ import Network.Haskoin.Crypto.Mnemonic
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.ExtendedKeys
 import Network.Haskoin.Crypto.NormalizedKeys
-import Network.Haskoin.Crypto.Merkle
-import Network.Haskoin.Crypto.Bloom
 

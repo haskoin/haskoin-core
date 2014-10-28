@@ -45,9 +45,9 @@ import Data.Maybe ( mapMaybe, isJust )
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Script.Types
-import Network.Haskoin.Script.SigHash( TxSignature(..), decodeSig, txSigHash )
-import Network.Haskoin.Util ( bsToHex, decode', decodeToMaybe )
-import Network.Haskoin.Protocol( Tx(..), TxIn(..) )
+import Network.Haskoin.Script.SigHash
+import Network.Haskoin.Util 
+import Network.Haskoin.Transaction.Types
 
 import Data.Binary (encode, decode)
 

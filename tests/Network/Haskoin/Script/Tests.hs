@@ -44,8 +44,7 @@ import Data.Maybe
     )
 
 import Data.Binary
-    ( Binary
-    , Word8
+    ( Word8
     , encode
     , decode
     , decodeOrFail)
@@ -54,35 +53,38 @@ import qualified Data.ByteString.Lazy.Char8 as C (readFile)
 
 import Data.Int (Int64)
 
-import Network.Haskoin.Protocol.Arbitrary ()
-import Network.Haskoin.Script.Arbitrary 
+import Network.Haskoin.Test.Script
+import Network.Haskoin.Test.Transaction
 
+import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Script
 import Network.Haskoin.Script.Evaluator
 import Network.Haskoin.Crypto
-import Network.Haskoin.Protocol
 import Network.Haskoin.Util
-
 
 tests :: [Test]
 tests = 
-    [ testGroup "Script types"
-        [ testProperty "ScriptOp" (metaGetPut :: ScriptOp -> Bool)
-        , testProperty "Script" (metaGetPut :: Script -> Bool)
-        ]
-    , testGroup "Script Parser"
+    [ testGroup "Script Parser"
         [ testProperty "decode . encode OP_1 .. OP_16" testScriptOpInt
         , testProperty "decode . encode ScriptOutput" testScriptOutput
         , testProperty "decode . encode ScriptInput" testScriptInput
         , testProperty "sorting MultiSig scripts" testSortMulSig
         ]
     , testGroup "Script SigHash"
-        [ testProperty "canonical signatures" testCanonicalSig
-        , testProperty "decode . encode SigHash" binSigHash
+        [ testProperty "canonical signatures" $
+            \(ArbitraryTxSignature _ _ _ sig) -> testCanonicalSig sig
+        , testProperty "canonical deterministic signatures" $
+            \(ArbitraryDetTxSignature _ _ sig) -> testCanonicalSig sig
         , testProperty "decode SigHash from Word8" binSigHashByte
         , testProperty "encodeSigHash32 is 4 bytes long" testEncodeSH32
-        , testProperty "decode . encode TxSignature" binTxSig
-        , testProperty "decodeCanonical . encode TxSignature" binTxSigCanonical
+        , testProperty "decode . encode TxSignature" $
+            \(ArbitraryTxSignature _ _ _ sig) -> binTxSig sig
+        , testProperty "decode . encode deterministic TxSignature" $
+            \(ArbitraryDetTxSignature _ _ sig) -> binTxSig sig
+        , testProperty "decodeCanonical . encode TxSignature" $
+            \(ArbitraryTxSignature _ _ _ sig) -> binTxSigCanonical sig
+        , testProperty "decodeCanonical . encode deterministic TxSignature" $
+            \(ArbitraryDetTxSignature _ _ sig) -> binTxSigCanonical sig
         , testProperty "Testing txSigHash with SigSingle" testSigHashOne
         ]
     , testGroup "Integer Types"
@@ -97,42 +99,37 @@ tests =
                False
     ]
 
-metaGetPut :: (Binary a, Eq a) => a -> Bool
-metaGetPut x = (decode' . encode') x == x
-
 {- Script Parser -}
 
-testScriptOpInt :: ScriptOpInt -> Bool
-testScriptOpInt (ScriptOpInt i) = (intToScriptOp <$> scriptOpToInt i) == Right i
+testScriptOpInt :: ArbitraryIntScriptOp -> Bool
+testScriptOpInt (ArbitraryIntScriptOp i) = 
+    (intToScriptOp <$> scriptOpToInt i) == Right i
 
-testScriptOutput :: ScriptOutput -> Bool
-testScriptOutput so = (decodeOutput $ encodeOutput so) == Right so
+testScriptOutput :: ArbitraryScriptOutput -> Bool
+testScriptOutput (ArbitraryScriptOutput so) = 
+    decodeOutput (encodeOutput so) == Right so
 
-testScriptInput :: ScriptInput -> Bool
-testScriptInput si = (decodeInput $ encodeInput si) == Right si
+testScriptInput :: ArbitraryScriptInput -> Bool
+testScriptInput (ArbitraryScriptInput si) = 
+    decodeInput (encodeInput si) == Right si
 
-testSortMulSig :: ScriptOutput -> Bool
-testSortMulSig out = case out of
-    (PayMulSig _ _) -> check $ sortMulSig out
-    _ -> True
-    where check (PayMulSig ps _)
-              | length ps <= 1 = True
-              | otherwise = snd $ foldl f (head ps,True) $ tail ps
-          check _ = False
-          f (a,t) b | t && encode' a <= encode' b = (b,True)
-                    | otherwise   = (b,False)
+testSortMulSig :: ArbitraryMSOutput -> Bool
+testSortMulSig (ArbitraryMSOutput out) = 
+    snd $ foldl f (head pubs,True) $ tail pubs
+  where 
+    pubs = getOutputMulSigKeys $ sortMulSig out
+    f (a,t) b | t && encode' a <= encode' b = (b,True)
+              | otherwise                   = (b,False)
 
 {- Script SigHash -}
 
 testCanonicalSig :: TxSignature -> Bool
-testCanonicalSig ts@(TxSignature _ sh) 
+testCanonicalSig ts@(TxSignature _ sh)
     | isSigUnknown sh = isLeft $ decodeCanonicalSig bs
     | otherwise       = isRight (decodeCanonicalSig bs) && 
                         isCanonicalHalfOrder (txSignature ts)
-    where bs = encodeSig ts
-
-binSigHash :: SigHash -> Bool
-binSigHash sh = (decode' $ encode' sh) == sh
+  where 
+    bs = encodeSig ts
 
 binSigHashByte :: Word8 -> Bool
 binSigHashByte w
@@ -144,38 +141,41 @@ binSigHashByte w
     | w == 0x83 = res == SigSingle True
     | testBit w 7 = res == SigUnknown True w
     | otherwise = res == SigUnknown False w
-    where res = decode' $ BS.singleton w
+  where 
+    res = decode' $ BS.singleton w
 
-testEncodeSH32 :: SigHash -> Bool
-testEncodeSH32 sh = BS.length bs == 4 && BS.head bs == w && BS.tail bs == zs
-    where bs = encodeSigHash32 sh
-          w  = BS.head $ encode' sh
-          zs = BS.pack [0,0,0]
+testEncodeSH32 :: ArbitrarySigHash -> Bool
+testEncodeSH32 (ArbitrarySigHash sh) = 
+    BS.length bs == 4 && 
+    BS.head bs == (BS.head $ encode' sh) && 
+    BS.tail bs == BS.pack [0,0,0]
+  where 
+    bs = encodeSigHash32 sh
 
 binTxSig :: TxSignature -> Bool
-binTxSig ts = (fromRight $ decodeSig $ encodeSig ts) == ts
+binTxSig ts = decodeSig (encodeSig ts) == Right ts
 
 binTxSigCanonical :: TxSignature -> Bool
 binTxSigCanonical ts@(TxSignature _ sh) 
     | isSigUnknown sh = isLeft $ decodeCanonicalSig $ encodeSig ts
     | otherwise = (fromRight $ decodeCanonicalSig $ encodeSig ts) == ts
 
-testSigHashOne :: Tx -> Script -> Bool -> Property
-testSigHashOne tx s acp = not (null $ txIn tx) ==> 
+testSigHashOne :: ArbitraryTx -> ArbitraryScript -> Bool -> Property
+testSigHashOne (ArbitraryTx tx) (ArbitraryScript s) acp = not (null $ txIn tx) ==> 
     if length (txIn tx) > length (txOut tx) 
         then res == (setBit 0 248)
         else res /= (setBit 0 248)
     where res = txSigHash tx s (length (txIn tx) - 1) (SigSingle acp)
 
-
-
 {- Script Evaluation Primitives -}
 
 testEncodeInt :: Int64 -> Bool
-testEncodeInt i | i >  0x7fffffff = isNothing i'
-                | i < -0x7fffffff = isNothing i'
-                | otherwise = i' == Just i
-                where i' = decodeInt $ encodeInt i
+testEncodeInt i 
+    | i >  0x7fffffff = isNothing i'
+    | i < -0x7fffffff = isNothing i'
+    | otherwise       = i' == Just i
+  where 
+    i' = decodeInt $ encodeInt i
 
 testEncodeBool :: Bool -> Bool
 testEncodeBool b = decodeBool (encodeBool b) == b

@@ -1,17 +1,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Mnemonic.Tests (tests) where
 
+import Test.QuickCheck (Arbitrary, Property, arbitrary, choose, (==>))
+import Test.Framework (Test, testGroup)
+import Test.Framework.Providers.QuickCheck2 (testProperty)
+
 import Data.Bits ((.&.), shiftR)
 import Data.Binary (Binary)
 import Data.Word (Word32)
 import qualified Data.ByteString as BS
-import Network.Haskoin.Crypto.Arbitrary()
+
+import Network.Haskoin.Test.Crypto
+
 import Network.Haskoin.Crypto.Mnemonic
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Util (encode', fromRight)
-import Test.QuickCheck (Arbitrary, Property, arbitrary, choose, (==>))
-import Test.Framework (Test, testGroup)
-import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 
 tests :: [Test]
@@ -158,7 +161,7 @@ data ByteCountGen = ByteCountGen BS.ByteString Int deriving Show
 
 instance Arbitrary ByteCountGen where
     arbitrary = do
-        bs <- arbitrary
+        ArbitraryByteString bs <- arbitrary
         i <- choose (0, BS.length bs * 8)
         return $ ByteCountGen bs i
 

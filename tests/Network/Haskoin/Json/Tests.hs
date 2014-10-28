@@ -3,34 +3,30 @@ module Network.Haskoin.Json.Tests (tests) where
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Data.Aeson
+import Data.Aeson (FromJSON, ToJSON, decode, encode)
 
+import Network.Haskoin.Test.Crypto
+import Network.Haskoin.Test.Script
+import Network.Haskoin.Test.Transaction
 import Network.Haskoin.Crypto
-import Network.Haskoin.Script
-import Network.Haskoin.Protocol
-import Network.Haskoin.Transaction
-import Network.Haskoin.Crypto.Arbitrary()
-import Network.Haskoin.Script.Arbitrary()
-import Network.Haskoin.Protocol.Arbitrary()
-import Network.Haskoin.Transaction.Arbitrary()
-
 
 tests :: [Test]
 tests = 
     [ testGroup "Serialize & de-serialize haskoin types to JSON"
-        [ testProperty "Coin" (metaID :: Coin -> Bool)
-        , testProperty "ScriptOutput" (metaID :: ScriptOutput -> Bool)
-        , testProperty "OutPoint" (metaID :: OutPoint -> Bool)
-        , testProperty "Address" (metaID :: Address -> Bool)
-        , testProperty "Tx" (metaID :: Tx -> Bool)
+        [ testProperty "Coin" $ \(ArbitraryCoin x) -> metaID x
+        , testProperty "ScriptOutput" $ \(ArbitraryScriptOutput x) -> metaID x
+        , testProperty "OutPoint" $ \(ArbitraryOutPoint x) -> metaID x
+        , testProperty "Address" $ \(ArbitraryAddress x) -> metaID x
+        , testProperty "Tx" $ \(ArbitraryTx x) -> metaID x
         , testProperty "TxHash" (metaID :: TxHash -> Bool)
         , testProperty "Word256" (metaID :: Word256 -> Bool)
-        , testProperty "SigHash" (metaID :: SigHash -> Bool)
-        , testProperty "SigInput" (metaID :: SigInput -> Bool)
-        , testProperty "XPrvKey" (metaID :: XPrvKey -> Bool)
-        , testProperty "XPubKey" (metaID :: XPubKey -> Bool)
+        , testProperty "SigHash" $ \(ArbitrarySigHash x) -> metaID x
+        , testProperty "SigInput" $ \(ArbitrarySigInput x _) -> metaID x
+        , testProperty "XPrvKey" $ \(ArbitraryXPrvKey x) -> metaID x
+        , testProperty "XPubKey" $ \(ArbitraryXPubKey _ x) -> metaID x
         ]
     ]
 
 metaID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
 metaID x = (decode . encode) [x] == Just [x]
+

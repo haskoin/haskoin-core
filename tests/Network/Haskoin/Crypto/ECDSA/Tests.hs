@@ -2,15 +2,13 @@ module Network.Haskoin.Crypto.ECDSA.Tests (tests) where
 
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
-import Test.QuickCheck.Property ((==>), Property)
 
 import Data.Bits (testBit)
 import qualified Data.ByteString as BS
 
-import Network.Haskoin.Crypto.Arbitrary
+import Network.Haskoin.Test.Crypto
 
 import Network.Haskoin.Crypto.ECDSA
-import Network.Haskoin.Crypto.Point
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Curve
@@ -19,38 +17,40 @@ import Network.Haskoin.Util
 tests :: [Test]
 tests = 
     [ testGroup "ECDSA signatures"
-        [ testProperty "verify( sign(msg) ) = True" signAndVerify
-        , testProperty "verify( detSign(msg) ) = True" signAndVerifyD
-        , testProperty "S component <= order/2" halfOrderSig
+        [ testProperty "Verify signature" testVerifySig
+        , testProperty "verify deterministic signature" testVerifyDetSig
+        , testProperty "S component <= order/2" $ 
+            \(ArbitrarySignature _ _ _ sig) -> halfOrderSig sig
+        , testProperty "S component <= order/2 (deterministic)" $
+            \(ArbitraryDetSignature _ _ sig) -> halfOrderSig sig
         ],
       testGroup "ECDSA Binary"
-        [ testProperty "get( put(Sig) ) = Sig" getPutSig
-        , testProperty "Encoded signature is canonical" testIsCanonical
+        [ testProperty "Encoded signature is canonical" $ 
+            \(ArbitrarySignature _ _ _ sig) -> testIsCanonical sig 
+        , testProperty "Encoded deterministic signature is canonical" $ 
+            \(ArbitraryDetSignature _ _ sig) -> testIsCanonical sig 
         ]
     ]
 
 {- ECDSA Signatures -}
 
-signAndVerify :: Word256 -> FieldN -> FieldN -> Property
-signAndVerify msg k n = k > 0 && n > 0 ==> case sM of
-    (Just s) -> verifySig msg s (PubKey kP)
-    Nothing  -> True -- very bad luck
-    where kP = mulPoint k curveG
-          nP = mulPoint n curveG
-          sM = unsafeSignMsg msg k (n,nP)
+testVerifySig :: ArbitrarySignature -> Bool
+testVerifySig (ArbitrarySignature msg key _ sig) = 
+    verifySig msg sig pubkey
+  where
+    pubkey = derivePubKey key
 
-signAndVerifyD :: Word256 -> TestPrvKeyC -> Bool
-signAndVerifyD msg (TestPrvKeyC k) = verifySig msg (detSignMsg msg k) p
-    where p = derivePubKey k
-           
+testVerifyDetSig :: ArbitraryDetSignature -> Bool
+testVerifyDetSig (ArbitraryDetSignature msg key sig) = 
+    verifySig msg sig pubkey
+  where
+    pubkey = derivePubKey key
+
 halfOrderSig :: Signature -> Bool
 halfOrderSig sig@(Signature _ (BigWord s)) = 
     s <= (curveN `div` 2) && isCanonicalHalfOrder sig
 
 {- ECDSA Binary -}
-
-getPutSig :: Signature -> Bool
-getPutSig sig = (decode' $ encode' sig) == sig
 
 -- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
 -- from function IsCanonicalSignature
@@ -90,8 +90,9 @@ testIsCanonical sig = not $
     && BS.index s (fromIntegral rlen+6) == 0 
     && not (testBit (BS.index s (fromIntegral rlen+7)) 7)
     ) 
-    where s = encode' sig
-          len = fromIntegral $ BS.length s
-          rlen = BS.index s 3
-          slen = BS.index s (fromIntegral rlen + 5)
+  where 
+    s = encode' sig
+    len = fromIntegral $ BS.length s
+    rlen = BS.index s 3
+    slen = BS.index s (fromIntegral rlen + 5)
 

@@ -1,4 +1,4 @@
-module Network.Haskoin.Protocol.Message 
+module Network.Haskoin.Node.Message 
 ( Message(..) 
 , MessageHeader(..) 
 ) where
@@ -26,11 +26,14 @@ import qualified Data.ByteString as BS
     , empty
     )
 
-import Network.Haskoin.Protocol.Types
-
-import Network.Haskoin.Util 
+import Network.Haskoin.Node.Types
+import Network.Haskoin.Transaction.Types
+import Network.Haskoin.Block.Types
+import Network.Haskoin.Block.Merkle
 import Network.Haskoin.Crypto.Hash 
+import Network.Haskoin.Node.Bloom
 import Network.Haskoin.Constants
+import Network.Haskoin.Util 
 
 -- | Data type representing the header of a 'Message'. All messages sent between
 -- nodes contain a message header.
@@ -91,7 +94,7 @@ data Message
     | MPing !Ping 
     | MPong !Pong 
     | MAlert !Alert
-    | MReject Reject
+    | MReject !Reject
     deriving (Eq, Show)
 
 instance Binary Message where

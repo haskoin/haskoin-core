@@ -7,42 +7,37 @@ import Data.List (permutations)
 import Data.Maybe (fromJust, catMaybes)
 import Data.Foldable (toList)
 import qualified Data.Sequence as Seq (update, fromList)
-import qualified Data.ByteString as BS (ByteString)
 
+import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Util 
-import Network.Haskoin.Util.Arbitrary()
 
 tests :: [Test]
 tests = 
     [ testGroup "Utility functions"
-        [ testProperty "toStrict( toLazy(bs) ) = bs" fromToLazy
-        , testProperty "get( put(Integer) ) = Integer" getPutInteger
-        , testProperty "stringToBS( bsToString(s) ) = s" fromToString
-        , testProperty "decode'( encode'(s) ) = s" decEncBS
-        , testProperty "decodeOrFail'( encode'(s) ) = s" decEncFailBS
-        , testProperty "fromHex( toHex(bs) ) = bs" fromToHex
-        , testProperty "testing decodeEither" testFromDecode
+        [ testProperty "toStrict . toLazy bytestring" fromToLazy
+        , testProperty "bsToInteger . integerToBS Integer" getPutInteger
+        , testProperty "stringToBS . bsToString bytestring" fromToString
+        , testProperty "decodeOrFail' . encode' bytestring" decEncFailBS
+        , testProperty "fromHex . toHex bytestring" fromToHex
+        , testProperty "fromDecode" testFromDecode
         , testProperty "compare updateIndex with Data.Sequence" testUpdateIndex
-        , testProperty "testing matchTemplate" testMatchTemplate
+        , testProperty "matchTemplate" testMatchTemplate
         , testProperty 
             "testing matchTemplate with two lists" testMatchTemplateLen
-        , testProperty "Testing either helper functions" testEither
+        , testProperty "Testing Either helper functions" testEither
         ]
     ]
 
 {- Various utilities -}
 
-fromToLazy :: BS.ByteString -> Bool
-fromToLazy bs = (toStrictBS $ toLazyBS bs) == bs
+fromToLazy :: ArbitraryByteString -> Bool
+fromToLazy (ArbitraryByteString bs) = (toStrictBS $ toLazyBS bs) == bs
 
-fromToString :: BS.ByteString -> Bool
-fromToString bs = (stringToBS $ bsToString bs) == bs
+fromToString :: ArbitraryByteString  -> Bool
+fromToString (ArbitraryByteString bs) = (stringToBS $ bsToString bs) == bs
 
-decEncBS :: BS.ByteString -> Bool
-decEncBS bs = (decode' $ encode' bs) == bs
-
-decEncFailBS :: BS.ByteString -> Bool
-decEncFailBS bs = case (decodeOrFail' $ encode' bs) of
+decEncFailBS :: ArbitraryByteString -> Bool
+decEncFailBS (ArbitraryByteString bs) = case (decodeOrFail' $ encode' bs) of
     (Left _)            -> False
     (Right (_, _, res)) -> res == bs
 
@@ -51,11 +46,11 @@ getPutInteger i = (bsToInteger $ integerToBS p) == p
   where 
     p = abs i
 
-fromToHex :: BS.ByteString -> Bool
-fromToHex bs = (fromJust $ hexToBS $ bsToHex bs) == bs
+fromToHex :: ArbitraryByteString -> Bool
+fromToHex (ArbitraryByteString bs) = (fromJust $ hexToBS $ bsToHex bs) == bs
 
-testFromDecode :: BS.ByteString -> Integer -> Integer -> Bool
-testFromDecode bs def v = case decodeOrFail' bs of
+testFromDecode :: ArbitraryByteString -> Integer -> Integer -> Bool
+testFromDecode (ArbitraryByteString bs) def v = case decodeOrFail' bs of
     (Left _)          -> fromDecode bs def (*v) == def 
     (Right (_,_,res)) -> fromDecode bs def (*v) == res*v 
 

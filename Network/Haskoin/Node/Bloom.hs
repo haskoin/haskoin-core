@@ -1,6 +1,8 @@
-module Network.Haskoin.Crypto.Bloom 
-( BloomFilter(..)
-, BloomFlags(..)
+module Network.Haskoin.Node.Bloom 
+( BloomFlags(..)
+, BloomFilter(..)
+, FilterLoad(..)
+, FilterAdd(..)
 , bloomCreate
 , bloomInsert
 , bloomContains
@@ -9,14 +11,29 @@ module Network.Haskoin.Crypto.Bloom
 , isBloomFull
 ) where
 
+import Control.Monad (replicateM, forM_)
+import Control.DeepSeq (NFData, rnf)
+import Control.Applicative ((<$>),(<*>))
+
 import Data.Word
 import Data.Bits
+import Data.Binary (Binary, get, put)
+import Data.Binary.Get 
+    ( getWord8
+    , getWord32le
+    , getByteString
+    )
+import Data.Binary.Put 
+    ( putWord8
+    , putWord32le
+    , putByteString
+    )
 import qualified Data.Foldable as F
 import qualified Data.Sequence as S
 import qualified Data.ByteString as BS
 
 import Network.Haskoin.Crypto.Hash 
-import Network.Haskoin.Protocol
+import Network.Haskoin.Node.Types
 
 -- 20,000 items with fp rate < 0.1% or 10,000 items and <0.0001%
 maxBloomSize :: Int
@@ -33,6 +50,98 @@ ln2 = 0.6931471805599453094172321214581765680755001343602552
 
 bitMask :: [Word8]
 bitMask = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]
+
+-- | The bloom flags are used to tell the remote peer how to auto-update
+-- the provided bloom filter. 
+data BloomFlags
+    = BloomUpdateNone         -- ^ Never update
+    | BloomUpdateAll          -- ^ Auto-update on all outputs
+    | BloomUpdateP2PubKeyOnly 
+    -- ^ Only auto-update on outputs that are pay-to-pubkey or pay-to-multisig.
+    -- This is the default setting.
+    deriving (Eq, Show, Read)
+
+instance NFData BloomFlags
+
+instance Binary BloomFlags where
+    get = go =<< getWord8
+      where
+        go 0 = return BloomUpdateNone
+        go 1 = return BloomUpdateAll
+        go 2 = return BloomUpdateP2PubKeyOnly
+        go _ = fail "BloomFlags get: Invalid bloom flag"
+
+    put f = putWord8 $ case f of
+        BloomUpdateNone         -> 0
+        BloomUpdateAll          -> 1
+        BloomUpdateP2PubKeyOnly -> 2
+            
+-- | A bloom filter is a probabilistic data structure that SPV clients send to
+-- other peers to filter the set of transactions received from them. Bloom
+-- filters are probabilistic and have a false positive rate. Some transactions
+-- that pass the filter may not be relevant to the receiving peer. By
+-- controlling the false positive rate, SPV nodes can trade off bandwidth
+-- versus privacy.
+data BloomFilter = BloomFilter
+    { bloomData      :: !(S.Seq Word8)
+    -- ^ Bloom filter data
+    , bloomHashFuncs :: !Word32
+    -- ^ Number of hash functions for this filter
+    , bloomTweak     :: !Word32
+    -- ^ Hash function random nonce
+    , bloomFlags     :: !BloomFlags
+    -- ^ Bloom filter auto-update flags
+    }
+    deriving (Eq, Show, Read)
+
+instance NFData BloomFilter where
+    rnf (BloomFilter d h t g) =
+        rnf d `seq` rnf h `seq` rnf t `seq` rnf g
+
+instance Binary BloomFilter where
+
+    get = BloomFilter <$> (S.fromList <$> (readDat =<< get))
+                      <*> getWord32le <*> getWord32le
+                      <*> get
+      where
+        readDat (VarInt len) = replicateM (fromIntegral len) getWord8   
+
+    put (BloomFilter dat hashFuncs tweak flags) = do
+        put $ VarInt $ fromIntegral $ S.length dat
+        forM_ (F.toList dat) putWord8
+        putWord32le hashFuncs
+        putWord32le tweak
+        put flags
+
+-- | Set a new bloom filter on the peer connection.
+newtype FilterLoad = FilterLoad { getBloomFilter :: BloomFilter }
+    deriving (Eq, Show, Read)
+
+instance NFData FilterLoad where
+    rnf (FilterLoad f) = rnf f
+
+instance Binary FilterLoad where
+    get = FilterLoad <$> get
+    put (FilterLoad f) = put f
+
+-- | Add the given data element to the connections current filter without
+-- requiring a completely new one to be set.
+newtype FilterAdd = FilterAdd { getFilterData :: BS.ByteString }
+    deriving (Eq, Show, Read)
+
+instance NFData FilterAdd where
+    rnf (FilterAdd f) = rnf f
+
+instance Binary FilterAdd where
+    get = do
+        (VarInt len) <- get
+        dat <- getByteString $ fromIntegral len
+        return $ FilterAdd dat
+
+    put (FilterAdd bs) = do
+        put $ VarInt $ fromIntegral $ BS.length bs
+        putByteString bs
+
 
 -- | Build a bloom filter that will provide the given false positive rate when
 -- the given number of elements have been inserted. 

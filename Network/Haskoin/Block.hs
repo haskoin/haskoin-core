@@ -15,7 +15,7 @@ module Network.Haskoin.Block
 , Headers(..)
 , BlockHeaderCount
 
-  -- *Merkle Blocks
+  -- * Merkle Blocks
 , MerkleBlock(..)
 , calcTreeHeight
 , calcTreeWidth
@@ -24,8 +24,34 @@ module Network.Haskoin.Block
 , buildPartialMerkle
 , extractMatches
 
+  -- * HeaderChain
+, BlockHeaderNode(..)
+, BlockHeaderStore(..)
+, BlockHeaderAction(..)
+, BlockChainAction(..)
+, initHeaderChain
+, connectBlockHeader
+, connectBlock
+, downloadBlockHeaders
+, blockLocator
+, lastSeenCheckpoint
+, findSplitNode
+, getParentNode
+, nextWorkRequired
+, workFromInterval
+, isValidPOW
+, headerPOW
+, headerWork
+
+  -- * Checkpoints
+, checkpointMap
+, checkpointList
+, verifyCheckpoint
+
 ) where
 
 import Network.Haskoin.Block.Types
 import Network.Haskoin.Block.Merkle
+import Network.Haskoin.Block.HeaderChain
+import Network.Haskoin.Block.Checkpoints
 

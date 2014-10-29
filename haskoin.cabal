@@ -62,6 +62,8 @@ library
                        Network.Haskoin.Transaction.Builder,
                        Network.Haskoin.Block.Types,
                        Network.Haskoin.Block.Merkle,
+                       Network.Haskoin.Block.HeaderChain,
+                       Network.Haskoin.Block.Checkpoints,
                        Network.Haskoin.Test.Crypto,
                        Network.Haskoin.Test.Node,
                        Network.Haskoin.Test.Message,

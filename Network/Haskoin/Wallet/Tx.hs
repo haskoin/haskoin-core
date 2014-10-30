@@ -65,17 +65,16 @@ import Database.Persist
     , SelectOpt( Asc, LimitTo, OffsetBy )
     )
 
-import Network.Haskoin.Node.HeaderChain
-
 import Network.Haskoin.Wallet.Account
 import Network.Haskoin.Wallet.Address
 import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 
+import Network.Haskoin.Block
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
-import Network.Haskoin.Protocol
+import Network.Haskoin.Node
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 

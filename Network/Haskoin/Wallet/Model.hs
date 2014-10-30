@@ -52,7 +52,7 @@ import Database.Persist.TH
 
 import Network.Haskoin.Wallet.Types 
 import Network.Haskoin.Transaction
-import Network.Haskoin.Protocol 
+import Network.Haskoin.Node 
 import Network.Haskoin.Crypto 
 
 -- TODO: We only care about pubkeyhash and not pubkey. Should we do

@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
-module Network.Haskoin.Node.Peer 
+module Network.Haskoin.SPV.Peer 
 ( ManagerRequest(..)
 , DecodedMerkleBlock(..)
 , MerkleRoot
@@ -53,9 +53,11 @@ import Data.Conduit.TMChan
     )
 import qualified Data.Conduit.Binary as CB (take)
 
-import Network.Haskoin.Node.Types
+import Network.Haskoin.SPV.Types
 import Network.Haskoin.Crypto
-import Network.Haskoin.Protocol
+import Network.Haskoin.Node
+import Network.Haskoin.Block
+import Network.Haskoin.Transaction
 import Network.Haskoin.Util
 
 type PeerHandle = S.StateT PeerSession (LoggingT IO)

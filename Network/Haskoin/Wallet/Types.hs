@@ -53,7 +53,7 @@ import Database.Persist.Types (PersistValue(..))
 import Database.Persist.Sql (PersistFieldSql, SqlType(..), sqlType)
 
 import Network.Haskoin.Crypto
-import Network.Haskoin.Protocol
+import Network.Haskoin.Node
 import Network.Haskoin.Script
 import Network.Haskoin.Transaction
 import Network.Haskoin.Util

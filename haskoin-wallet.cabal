@@ -24,18 +24,17 @@ source-repository head
 library
     exposed-modules:   Network.Haskoin.Wallet,
                        Network.Haskoin.Wallet.Model,
-                       Network.Haskoin.Node,
+                       Network.Haskoin.SPV,
                        Network.Haskoin.REST
     other-modules:     Network.Haskoin.Wallet.Account,
                        Network.Haskoin.Wallet.Root,
                        Network.Haskoin.Wallet.Address,
                        Network.Haskoin.Wallet.Tx,
                        Network.Haskoin.Wallet.Types,
-                       Network.Haskoin.Node.HeaderChain,
-                       Network.Haskoin.Node.Checkpoints,
-                       Network.Haskoin.Node.Peer,
-                       Network.Haskoin.Node.PeerManager,
-                       Network.Haskoin.Node.Types,
+                       Network.Haskoin.SPV.Peer,
+                       Network.Haskoin.SPV.PeerManager,
+                       Network.Haskoin.SPV.Types,
+                       Network.Haskoin.SPV.LevelDBChain,
                        Network.Haskoin.REST.Types
     build-depends:     aeson                >= 0.8 && < 0.9,
                        async                >= 2.0  && < 2.1,

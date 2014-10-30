@@ -37,12 +37,14 @@ import Data.Aeson
     , (.:), (.:?), (.=)
     )
 import Data.Maybe
+import Data.Word (Word32)
 import Data.String (fromString)
 import Data.Conduit (Sink, awaitForever, ($$), ($=))
 import Data.Conduit.Network ()
 import Data.Conduit.TMChan
 import Data.Text (Text, unpack, pack)
 import Data.Text.Encoding (encodeUtf8)
+import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Default (Default, def)
 import qualified Data.Conduit.List as CL
 
@@ -84,8 +86,9 @@ import Network.Wai.Middleware.HttpAuth (basicAuth)
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
 
-import Network.Haskoin.Node.PeerManager
-import Network.Haskoin.Node.Types
+import Network.Haskoin.REST.Types
+import Network.Haskoin.SPV.PeerManager
+import Network.Haskoin.SPV.Types
 
 import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Tx
@@ -93,8 +96,6 @@ import Network.Haskoin.Wallet.Account
 import Network.Haskoin.Wallet.Address
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
-
-import Network.Haskoin.REST.Types
 
 data ServerMode
     = ServerOnline
@@ -205,8 +206,18 @@ runServer config = do
             app <- toWaiApp $ HaskoinServer pool Nothing config
             runApp app
         else do
+
+            fstKeyTimeM <- flip runSqlPersistMPool pool firstKeyTime
+            fstKeyTime  <- case fstKeyTimeM of
+                Just t  -> return t
+                Nothing -> round <$> getPOSIXTime
+
+            -- Adjust time backwards by a week to handle clock drifts.
+            let fastCatchupI = max 0 ((toInteger fstKeyTime) - 86400 * 7)
+                fastCatchup = fromInteger fastCatchupI :: Word32
+
             -- Launch SPV node
-            withAsyncNode batch $ \eChan rChan _ -> do
+            withAsyncNode batch fastCatchup $ \eChan rChan _ -> do
             let eventPipe = sourceTBMChan eChan $$ 
                             processNodeEvents pool rChan fp
             withAsync eventPipe $ \_ -> do
@@ -253,17 +264,11 @@ whenOnline action = do
 
 updateNode :: Handler a -> Handler a
 updateNode action = do
-    fstKeyBefore <- runDB firstKeyTime
     res <- action
     whenOnline $ do
-        HaskoinServer _ rChanM config <- getYesod
-        let rChan = fromJust rChanM
-        bloom      <- runDB $ walletBloomFilter $ configBloomFP config
-        fstKeyTime <- runDB $ liftM fromJust firstKeyTime
-        liftIO $ atomically $ do
-            writeTBMChan rChan $ BloomFilterUpdate bloom
-            when (isNothing fstKeyBefore) $
-                writeTBMChan rChan $ FastCatchupTime fstKeyTime
+        HaskoinServer _ (Just rChan) config <- getYesod
+        bloom <- runDB $ walletBloomFilter $ configBloomFP config
+        liftIO $ atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
     return res
 
 handleErrors :: Handler a -> Handler a
@@ -455,17 +460,20 @@ postNodeR = handleErrors $ guardVault >>
             whenOnline $ do
                 HaskoinServer _ rChanM _ <- getYesod
                 let rChan = fromJust rChanM
-                liftIO $ atomically $ writeTBMChan rChan $ FastCatchupTime t
+                liftIO $ atomically $ writeTBMChan rChan $ NodeRescan t
             return $ RescanRes t
         Success (Rescan Nothing) -> do
             fstKeyTimeM <- runDB firstKeyTime
-            let fstKeyTime = fromJust fstKeyTimeM       
+            let fstKeyTime   = fromJust fstKeyTimeM       
+                fastCatchupI = max 0 ((toInteger fstKeyTime) - 86400 * 7)
+                fastCatchup  = fromInteger fastCatchupI :: Word32
             when (isNothing fstKeyTimeM) $ liftIO $ throwIO $
                 WalletException "No keys have been generated in the wallet"
             whenOnline $ do
                 HaskoinServer _ rChanM _ <- getYesod
                 let rChan      = fromJust rChanM
                 liftIO $ atomically $ do
-                    writeTBMChan rChan $ FastCatchupTime fstKeyTime
+                    writeTBMChan rChan $ NodeRescan fastCatchup
             return $ RescanRes fstKeyTime
         Error err -> undefined
+

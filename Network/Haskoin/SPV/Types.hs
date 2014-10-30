@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveDataTypeable #-}
-module Network.Haskoin.Node.Types where
+module Network.Haskoin.SPV.Types where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Exception (Exception)
@@ -9,9 +9,11 @@ import Data.Binary (Binary, get, put)
 import Data.Typeable (Typeable)
 import Data.Word (Word32)
 
-import Network.Haskoin.Node.HeaderChain
+import Network.Haskoin.SPV.LevelDBChain
 import Network.Haskoin.Crypto
-import Network.Haskoin.Protocol
+import Network.Haskoin.Transaction
+import Network.Haskoin.Block
+import Network.Haskoin.Node
 
 type MerkleRoot = Word256
 type BlockHeight = Word32
@@ -40,7 +42,7 @@ data ManagerRequest
 data NodeRequest
     = BloomFilterUpdate BloomFilter 
     | PublishTx Tx
-    | FastCatchupTime Timestamp
+    | NodeRescan Timestamp
     | ConnectNode String Int
     deriving (Eq, Show)
 

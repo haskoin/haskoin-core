@@ -29,11 +29,15 @@ module Network.Haskoin.Block
 , BlockHeaderStore(..)
 , BlockHeaderAction(..)
 , BlockChainAction(..)
+, getActionNode
 , initHeaderChain
 , connectBlockHeader
 , connectBlock
 , downloadBlockHeaders
 , blockLocator
+, rescanFrom
+, bestBlockHeaderHeight
+, bestBlockHeight
 , lastSeenCheckpoint
 , findSplitNode
 , getParentNode

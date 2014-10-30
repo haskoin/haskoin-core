@@ -3,12 +3,16 @@ module Network.Haskoin.Block.HeaderChain
 , BlockHeaderStore(..)
 , BlockHeaderAction(..)
 , BlockChainAction(..)
+, getActionNode
 , genesisBlockHeaderNode
 , initHeaderChain
 , connectBlockHeader
 , connectBlock
 , downloadBlockHeaders
 , blockLocator
+, rescanFrom
+, bestBlockHeaderHeight
+, bestBlockHeight
 , lastSeenCheckpoint
 , findSplitNode
 , getParentNode
@@ -20,6 +24,7 @@ module Network.Haskoin.Block.HeaderChain
 )
 where
 
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad (foldM, when, unless, liftM)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Either (left, runEitherT)
@@ -28,6 +33,9 @@ import Data.Word (Word32)
 import Data.Bits (shiftL)
 import Data.Maybe (fromJust, isNothing)
 import Data.List (sort, nub)
+import Data.Binary (Binary, get, put)
+import Data.Binary.Get (getWord32le)
+import Data.Binary.Put (putWord32le)
 import qualified Data.ByteString as BS (reverse)
 
 import Network.Haskoin.Block.Types
@@ -49,6 +57,25 @@ data BlockHeaderNode = BlockHeaderNode
     , nodeMinWork      :: !Word32 -- Only used for testnet
     } deriving (Show, Read, Eq)
 
+instance Binary BlockHeaderNode where
+
+    get = BlockHeaderNode <$> get 
+                          <*> get
+                          <*> getWord32le 
+                          <*> get
+                          <*> get
+                          <*> get
+                          <*> get
+
+    put (BlockHeaderNode i b h w c t m) = do
+        put i 
+        put b 
+        putWord32le h 
+        put w 
+        put c
+        put t 
+        put m
+
 -- Return value of linking a new block header in the chain
 -- TODO: Add more options if required
 data BlockHeaderAction
@@ -65,6 +92,12 @@ data BlockChainAction
                  , reorgNewBlocks  :: [BlockHeaderNode]
                  }
     deriving (Read, Show, Eq)
+
+getActionNode :: BlockChainAction -> BlockHeaderNode
+getActionNode a = case a of
+    BestBlock n -> n
+    SideBlock n -> n
+    BlockReorg _ _ ns -> last ns
 
 class Monad m => BlockHeaderStore m where
     getBlockHeaderNode    :: BlockHash -> m BlockHeaderNode
@@ -93,6 +126,8 @@ genesisBlockHeaderNode = BlockHeaderNode
     , nodeMinWork      = blockBits genesisHeader
     }
 
+-- TODO: If dwnStart is not equal to the one in the database, issue a warning
+-- or an error.
 -- | Initialize the block header chain by inserting the genesis block if
 -- it doesn't already exist.
 initHeaderChain :: BlockHeaderStore m => m ()
@@ -327,6 +362,27 @@ blockLocator = do
         | prevBlock (nodeHeader n) == 0 = return Nothing
         | step == 0 = return $ Just n
         | otherwise = go (step - 1) =<< getParentNode n
+
+bestBlockHeaderHeight :: BlockHeaderStore m => m Word32
+bestBlockHeaderHeight = liftM nodeHeaderHeight getBestBlockHeader
+
+bestBlockHeight :: BlockHeaderStore m => m Word32
+bestBlockHeight = liftM nodeHeaderHeight getBestBlock
+
+-- | Reset the BestBlock and LastDownload pointers to a block prior to the
+-- given timestamp
+rescanFrom :: BlockHeaderStore m => Word32 -> m ()
+rescanFrom t = do
+    -- Find the position of the new best header and download pointer
+    currentHead <- getBestBlockHeader
+    newHead <- findNewBestBlock t currentHead
+    setBestBlock newHead
+    setLastDownload newHead
+  where
+    findNewBestBlock fastCatchup n
+        | prevBlock (nodeHeader n) == 0 = return n
+        | blockTimestamp (nodeHeader n) < fastCatchup = return n
+        | otherwise = findNewBestBlock fastCatchup =<< getParentNode n
 
 -- | Returns True if the difficulty target (bits) of the header is valid
 -- and the proof of work of the header matches the advertised difficulty target.

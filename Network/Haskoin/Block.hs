@@ -28,16 +28,12 @@ module Network.Haskoin.Block
 , BlockHeaderNode(..)
 , BlockHeaderStore(..)
 , BlockHeaderAction(..)
-, BlockChainAction(..)
-, getActionNode
+, genesisBlockHeaderNode
 , initHeaderChain
 , connectBlockHeader
-, connectBlock
-, downloadBlockHeaders
 , blockLocator
-, rescanFrom
 , bestBlockHeaderHeight
-, bestBlockHeight
+, getBlockHeaderHeight
 , lastSeenCheckpoint
 , findSplitNode
 , getParentNode
@@ -46,6 +42,11 @@ module Network.Haskoin.Block
 , isValidPOW
 , headerPOW
 , headerWork
+, BlockChainAction(..)
+, getActionNode
+, connectBlock
+, blocksToDownload
+, blockBeforeTimestamp
 
   -- * Checkpoints
 , checkpointMap

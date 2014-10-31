@@ -2,17 +2,12 @@ module Network.Haskoin.Block.HeaderChain
 ( BlockHeaderNode(..)
 , BlockHeaderStore(..)
 , BlockHeaderAction(..)
-, BlockChainAction(..)
-, getActionNode
 , genesisBlockHeaderNode
 , initHeaderChain
 , connectBlockHeader
-, connectBlock
-, downloadBlockHeaders
 , blockLocator
-, rescanFrom
 , bestBlockHeaderHeight
-, bestBlockHeight
+, getBlockHeaderHeight
 , lastSeenCheckpoint
 , findSplitNode
 , getParentNode
@@ -21,6 +16,11 @@ module Network.Haskoin.Block.HeaderChain
 , isValidPOW
 , headerPOW
 , headerWork
+, BlockChainAction(..)
+, getActionNode
+, connectBlock
+, blocksToDownload
+, blockBeforeTimestamp
 )
 where
 
@@ -52,7 +52,6 @@ data BlockHeaderNode = BlockHeaderNode
     , nodeHeader       :: !BlockHeader
     , nodeHeaderHeight :: !Word32
     , nodeChainWork    :: !Integer
-    , nodeChild        :: !(Maybe BlockHash)
     , nodeMedianTimes  :: ![Word32]
     , nodeMinWork      :: !Word32 -- Only used for testnet
     } deriving (Show, Read, Eq)
@@ -65,39 +64,21 @@ instance Binary BlockHeaderNode where
                           <*> get
                           <*> get
                           <*> get
-                          <*> get
 
-    put (BlockHeaderNode i b h w c t m) = do
+    put (BlockHeaderNode i b h w t m) = do
         put i 
         put b 
         putWord32le h 
         put w 
-        put c
         put t 
         put m
 
 -- Return value of linking a new block header in the chain
--- TODO: Add more options if required
 data BlockHeaderAction
     = RejectHeader String
     | HeaderAlreadyExists BlockHeaderNode
     | AcceptHeader BlockHeaderNode
     deriving (Show, Read, Eq)
-
-data BlockChainAction
-    = BestBlock  { actionBestBlock :: BlockHeaderNode }
-    | SideBlock  { actionSideBlock :: BlockHeaderNode }
-    | BlockReorg { reorgSplitPoint :: BlockHeaderNode
-                 , reorgOldBlocks  :: [BlockHeaderNode]
-                 , reorgNewBlocks  :: [BlockHeaderNode]
-                 }
-    deriving (Read, Show, Eq)
-
-getActionNode :: BlockChainAction -> BlockHeaderNode
-getActionNode a = case a of
-    BestBlock n -> n
-    SideBlock n -> n
-    BlockReorg _ _ ns -> last ns
 
 class Monad m => BlockHeaderStore m where
     getBlockHeaderNode    :: BlockHash -> m BlockHeaderNode
@@ -105,10 +86,6 @@ class Monad m => BlockHeaderStore m where
     existsBlockHeaderNode :: BlockHash -> m Bool
     getBestBlockHeader    :: m BlockHeaderNode
     setBestBlockHeader    :: BlockHeaderNode -> m ()
-    getBestBlock          :: m BlockHeaderNode
-    setBestBlock          :: BlockHeaderNode -> m ()
-    getLastDownload       :: m BlockHeaderNode
-    setLastDownload       :: BlockHeaderNode -> m ()
 
 -- | Number of blocks on average between difficulty cycles (2016 blocks)
 diffInterval :: Word32
@@ -121,7 +98,6 @@ genesisBlockHeaderNode = BlockHeaderNode
     , nodeHeader       = genesisHeader
     , nodeHeaderHeight = 0
     , nodeChainWork    = headerWork genesisHeader
-    , nodeChild        = Nothing
     , nodeMedianTimes  = [blockTimestamp genesisHeader]
     , nodeMinWork      = blockBits genesisHeader
     }
@@ -136,8 +112,6 @@ initHeaderChain = do
     unless existsGen $ do
         putBlockHeaderNode genesisBlockHeaderNode
         setBestBlockHeader genesisBlockHeaderNode
-        setBestBlock       genesisBlockHeaderNode
-        setLastDownload    genesisBlockHeaderNode
 
 -- TODO: Add DOS return values
 -- | Connect a block header to this block header chain. Corresponds to bitcoind
@@ -145,9 +119,8 @@ initHeaderChain = do
 connectBlockHeader :: BlockHeaderStore m 
                    => BlockHeader 
                    -> Word32 
-                   -> Word32
                    -> m BlockHeaderAction
-connectBlockHeader bh adjustedTime fastCatchup = ((liftM f) . runEitherT) $ do
+connectBlockHeader bh adjustedTime = ((liftM f) . runEitherT) $ do
     unless (isValidPOW bh) $ 
         left $ RejectHeader "Invalid proof of work"
     unless (blockTimestamp bh <= adjustedTime + 2 * 60 * 60) $
@@ -179,7 +152,7 @@ connectBlockHeader bh adjustedTime fastCatchup = ((liftM f) . runEitherT) $ do
          && blockVersion bh == 1 
          && nodeHeaderHeight prevNode + 1 >= 227836) $
         left $ RejectHeader "Rejected version=1 block"
-    lift $ storeBlockHeader prevNode bh fastCatchup
+    lift $ storeBlockHeader prevNode bh 
   where
     f (Right x) = x
     f (Left  x) = x
@@ -188,19 +161,11 @@ connectBlockHeader bh adjustedTime fastCatchup = ((liftM f) . runEitherT) $ do
 storeBlockHeader :: BlockHeaderStore m 
                  => BlockHeaderNode 
                  -> BlockHeader 
-                 -> Word32
                  -> m BlockHeaderAction
-storeBlockHeader prevNode bh fastCatchup = do
+storeBlockHeader prevNode bh = do
     putBlockHeaderNode newNode
-    putBlockHeaderNode $ prevNode{ nodeChild = Just bid }
     currentHead <- getBestBlockHeader
-    when (newWork > nodeChainWork currentHead) $ do
-        setBestBlockHeader newNode
-        -- Update the block head if we are before the fast catchup time
-        -- By setting a new best block, we sort of flag it as downloaded
-        when (blockTimestamp bh < fastCatchup) $ do
-            setBestBlock newNode
-            setLastDownload newNode
+    when (newWork > nodeChainWork currentHead) $ setBestBlockHeader newNode
     return $ AcceptHeader newNode
   where
     bid       = headerHash bh
@@ -219,56 +184,9 @@ storeBlockHeader prevNode bh fastCatchup = do
                               , nodeHeader       = bh
                               , nodeHeaderHeight = newHeight
                               , nodeChainWork    = newWork
-                              , nodeChild        = Nothing
                               , nodeMedianTimes  = newMedian
                               , nodeMinWork      = minWork
                               }
-
--- | Returns a list of BlockHash that needs to be downloaded.
-downloadBlockHeaders :: BlockHeaderStore m => Int -> m [BlockHash]
-downloadBlockHeaders count = do
-    n <- getLastDownload
-    (res, lstDwn) <- go [] count n
-    setLastDownload lstDwn
-    return $ reverse res
-  where
-    go acc step n
-        | step == 0 = return (acc, n)
-        | isNothing $ nodeChild n = do
-            bestHead <- getBestBlockHeader
-            -- The pointer could be stuck in an orphaned fork
-            if nodeChainWork bestHead > nodeChainWork n
-                then do
-                    (split,_,_) <- findSplitNode bestHead n
-                    go ((nodeBlockHash split):acc) (step-1) split
-                else return (acc, n)
-        | otherwise = do
-            c <- getBlockHeaderNode $ fromJust $ nodeChild n
-            go ((nodeBlockHash c):acc) (step-1) c 
-
--- | Connect a block to blockchain. Blocks need to be imported in the order
--- of the parent links (oldest to newest).
-connectBlock :: BlockHeaderStore m => BlockHeader -> m BlockChainAction
-connectBlock bh = do
-    newNode   <- getBlockHeaderNode bid
-    bestBlock <- getBestBlock
-    if prevBlock (nodeHeader newNode) == nodeBlockHash bestBlock
-        -- We connect to the best chain
-        then do
-            setBestBlock newNode
-            return $ BestBlock newNode
-        else if nodeChainWork newNode > nodeChainWork bestBlock
-                 then handleNewBestChain newNode bestBlock
-                 else return $ SideBlock newNode
-  where
-    bid = headerHash bh
-
-handleNewBestChain :: BlockHeaderStore m 
-                   => BlockHeaderNode -> BlockHeaderNode -> m BlockChainAction
-handleNewBestChain newChainHead oldChainHead = do
-    (splitPoint, oldChain, newChain) <- findSplitNode oldChainHead newChainHead
-    setBestBlock newChainHead
-    return $ BlockReorg splitPoint oldChain newChain
 
 -- | Get the last checkpoint that we have seen
 lastSeenCheckpoint :: BlockHeaderStore m => m (Maybe (Int, BlockHash))
@@ -279,21 +197,6 @@ lastSeenCheckpoint =
     f Nothing (i,chk) = do
         existsChk <- existsBlockHeaderNode chk
         return $ if existsChk then Just (i,chk) else Nothing
-
--- | Find the split point between two nodes. It also returns the two partial
--- chains leading from the split point to the respective nodes.
-findSplitNode :: BlockHeaderStore m => BlockHeaderNode -> BlockHeaderNode
-              -> m (BlockHeaderNode, [BlockHeaderNode], [BlockHeaderNode])
-findSplitNode n1 n2 = go [] [] n1 n2
-  where
-    go xs ys x y
-        | nodeBlockHash x == nodeBlockHash y = return (x, x:xs, y:ys)
-        | nodeHeaderHeight x > nodeHeaderHeight y = do
-            par <- getParentNode x
-            go (x:xs) ys par y
-        | otherwise = do
-            par <- getParentNode y
-            go xs (y:ys) x par
 
 -- | Finds the parent of a BlockHeaderNode. Returns an error if a parent
 -- node doesn't exist (for example, the genesis block).
@@ -366,23 +269,8 @@ blockLocator = do
 bestBlockHeaderHeight :: BlockHeaderStore m => m Word32
 bestBlockHeaderHeight = liftM nodeHeaderHeight getBestBlockHeader
 
-bestBlockHeight :: BlockHeaderStore m => m Word32
-bestBlockHeight = liftM nodeHeaderHeight getBestBlock
-
--- | Reset the BestBlock and LastDownload pointers to a block prior to the
--- given timestamp
-rescanFrom :: BlockHeaderStore m => Word32 -> m ()
-rescanFrom t = do
-    -- Find the position of the new best header and download pointer
-    currentHead <- getBestBlockHeader
-    newHead <- findNewBestBlock t currentHead
-    setBestBlock newHead
-    setLastDownload newHead
-  where
-    findNewBestBlock fastCatchup n
-        | prevBlock (nodeHeader n) == 0 = return n
-        | blockTimestamp (nodeHeader n) < fastCatchup = return n
-        | otherwise = findNewBestBlock fastCatchup =<< getParentNode n
+getBlockHeaderHeight :: BlockHeaderStore m => BlockHash -> m Word32
+getBlockHeaderHeight h = liftM nodeHeaderHeight $ getBlockHeaderNode h
 
 -- | Returns True if the difficulty target (bits) of the header is valid
 -- and the proof of work of the header matches the advertised difficulty target.
@@ -408,4 +296,77 @@ headerWork bh =
   where
     target      = decodeCompact (blockBits bh)
     largestHash = 1 `shiftL` 256
+
+{- Functions for connecting blocks -}
+
+data BlockChainAction
+    = BestBlock  { actionBestBlock :: BlockHeaderNode }
+    | SideBlock  { actionSideBlock :: BlockHeaderNode }
+    | BlockReorg { reorgSplitPoint :: BlockHeaderNode
+                 , reorgOldBlocks  :: [BlockHeaderNode]
+                 , reorgNewBlocks  :: [BlockHeaderNode]
+                 }
+    deriving (Read, Show, Eq)
+
+getActionNode :: BlockChainAction -> BlockHeaderNode
+getActionNode a = case a of
+    BestBlock n -> n
+    SideBlock n -> n
+    BlockReorg _ _ ns -> last ns
+
+-- | Connect a block to the blockchain. Blocks need to be imported in the order
+-- of the parent links (oldest to newest).
+connectBlock :: BlockHeaderStore m 
+             => BlockHash
+             -> BlockHash
+             -> m BlockChainAction
+connectBlock prevBestHash newBlockHash = do
+    prevBest <- getBlockHeaderNode prevBestHash
+    newNode  <- getBlockHeaderNode newBlockHash
+    if prevBlock (nodeHeader newNode) == nodeBlockHash prevBest
+        -- We connect to the best chain
+        then return $ BestBlock newNode
+        else if nodeChainWork newNode > nodeChainWork prevBest
+                 then handleNewBestChain prevBest newNode 
+                 else return $ SideBlock newNode
+  where
+    handleNewBestChain oldChainHead newChainHead = do
+        (s,o,n) <- findSplitNode oldChainHead newChainHead
+        return $ BlockReorg s o n
+
+-- | Find the split point between two nodes. It also returns the two partial
+-- chains leading from the split point to the respective nodes.
+findSplitNode :: BlockHeaderStore m => BlockHeaderNode -> BlockHeaderNode
+              -> m (BlockHeaderNode, [BlockHeaderNode], [BlockHeaderNode])
+findSplitNode n1 n2 = go [] [] n1 n2
+  where
+    go xs ys x y
+        | nodeBlockHash x == nodeBlockHash y = return (x, x:xs, y:ys)
+        | nodeHeaderHeight x > nodeHeaderHeight y = do
+            par <- getParentNode x
+            go (x:xs) ys par y
+        | otherwise = do
+            par <- getParentNode y
+            go xs (y:ys) x par
+
+-- | Find all blocks between the best block and the given hash that have
+-- a timestamp greater than the given time.
+blocksToDownload :: BlockHeaderStore m => BlockHash -> Word32 -> m [BlockHash]
+blocksToDownload bestBlockHash fastCatchup = do
+    bestHead  <- getBestBlockHeader
+    bestBlock <- getBlockHeaderNode bestBlockHash 
+    (_,_,(_:toDwn)) <- findSplitNode bestBlock bestHead
+    let valid = filter ((>= fastCatchup) . (blockTimestamp . nodeHeader)) toDwn
+    return $ map nodeBlockHash valid
+
+-- | Searches for the first block header with a timestamp smaller than the
+-- given time, starting from the chain head.
+blockBeforeTimestamp :: BlockHeaderStore m => Word32 -> m BlockHash
+blockBeforeTimestamp t = do
+    h <- getBestBlockHeader
+    liftM nodeBlockHash $ go h
+  where
+    go n | blockTimestamp (nodeHeader n) < t = return n
+         | prevBlock (nodeHeader n) == 0 = return n
+         | otherwise = go =<< getParentNode n
 

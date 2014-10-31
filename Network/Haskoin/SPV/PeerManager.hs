@@ -135,7 +135,7 @@ withAsyncNode :: Int
               -> Timestamp
               -> (TBMChan NodeEvent -> TBMChan NodeRequest -> Async () -> IO ())
               -> IO ()
-withAsyncNode batch fs f = do
+withAsyncNode batch fc f = do
     db <- DB.open "headerchain"
               DB.defaultOptions{ DB.createIfMissing = True
                                , DB.cacheSize       = 2048
@@ -162,7 +162,7 @@ withAsyncNode batch fs f = do
                                  , broadcastBuffer  = []
                                  , pendingRescan    = Nothing
                                  , blockBatch       = batch
-                                 , fastCatchup      = fs
+                                 , fastCatchup      = fc
                                  }
 
     let runNode = runStdoutLoggingT $ flip S.evalStateT session $ do 
@@ -174,21 +174,23 @@ withAsyncNode batch fs f = do
         putData $ fromIntegral $ headerHash genesisHeader
 
         -- Find the position of the best block/download pointer
-        let go n = do
-                exists <- existsData $ fromIntegral $ nodeBlockHash n
-                if exists then return n else do
-                    par <- runDB $ getParentNode n
-                    go par
-        best <- go =<< runDB getBestBlock
+        let go n | blockTimestamp (nodeHeader n) < fc = return n
+                 | otherwise = do
+                     exists <- existsData $ fromIntegral $ nodeBlockHash n
+                     if exists 
+                         then return n 
+                         else go =<< (runDB $ getParentNode n)
+
+        newBest <- go =<< runDB getBestBlock
         runDB $ do
-            setBestBlock best
-            setLastDownload best
+            setBestBlock newBest
+            setLastDownload newBest
 
         $(logInfo) $ T.pack $ unwords
             [ "Setting best block to:"
-            , encodeBlockHashLE $ nodeBlockHash best
+            , encodeBlockHashLE $ nodeBlockHash newBest
             , "height:"
-            , show $ nodeHeaderHeight best
+            , show $ nodeHeaderHeight newBest
             ]
 
         -- Process messages

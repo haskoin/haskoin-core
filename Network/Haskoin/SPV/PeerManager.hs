@@ -29,7 +29,7 @@ import Data.Maybe (isJust, isNothing, fromJust, catMaybes)
 import Data.Word (Word32)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Default (def)
-import Data.List (nub, partition, delete)
+import Data.List (nub, partition, delete, maximumBy)
 import qualified Data.ByteString as BS (empty)
 import qualified Data.Map as M 
     ( Map
@@ -101,7 +101,7 @@ data ManagerSession = ManagerSession
     , dbHandle         :: DB.DB
     , dataHandle       :: DB.DB
     , mngrBloom        :: Maybe BloomFilter
-    -- Missing blocks that need to be re-downloaded
+    -- Blocks that need to be downloaded
     , blocksToDwn      :: [BlockHash]
     -- Received merkle blocks pending to be sent to the user (wallet)
     , receivedMerkle   :: M.Map BlockHeight [DecodedMerkleBlock]
@@ -114,6 +114,7 @@ data ManagerSession = ManagerSession
     -- How many block should be batched together for download/import
     , blockBatch       :: Int
     , fastCatchup      :: Timestamp
+    , bestBlock        :: BlockHash
     } 
 
 -- Data stored about a peer in the Manager
@@ -133,9 +134,10 @@ data PeerData = PeerData
 
 withAsyncNode :: Int
               -> Timestamp
+              -> BlockHash
               -> (TBMChan NodeEvent -> TBMChan NodeRequest -> Async () -> IO ())
               -> IO ()
-withAsyncNode batch fc f = do
+withAsyncNode batch fc bb f = do
     db <- DB.open "headerchain"
               DB.defaultOptions{ DB.createIfMissing = True
                                , DB.cacheSize       = 2048
@@ -163,6 +165,7 @@ withAsyncNode batch fc f = do
                                  , pendingRescan    = Nothing
                                  , blockBatch       = batch
                                  , fastCatchup      = fc
+                                 , bestBlock        = bb
                                  }
 
     let runNode = runStdoutLoggingT $ flip S.evalStateT session $ do 
@@ -170,28 +173,19 @@ withAsyncNode batch fc f = do
         -- Initialize the database
         runDB initHeaderChain
 
+        -- Adjust the bestBlock if the given one is before the fastCatchup
+        bestNode <- runDB $ getBlockHeaderNode bb
+        when (blockTimestamp (nodeHeader bestNode) < fc) $ do
+            bestHash <- runDB $ blockBeforeTimestamp fc
+            S.modify $ \s -> s{ bestBlock = bestHash }
+
+        -- Find blocks that need to be downloaded
+        bb' <- S.gets bestBlock
+        toDwn <- runDB $ blocksToDownload bb' fc
+        S.modify $ \s -> s{ blocksToDwn = toDwn }
+
         -- Make sure the genesis block is marked as sent
         putData $ fromIntegral $ headerHash genesisHeader
-
-        -- Find the position of the best block/download pointer
-        let go n | blockTimestamp (nodeHeader n) < fc = return n
-                 | otherwise = do
-                     exists <- existsData $ fromIntegral $ nodeBlockHash n
-                     if exists 
-                         then return n 
-                         else go =<< (runDB $ getParentNode n)
-
-        newBest <- go =<< runDB getBestBlock
-        runDB $ do
-            setBestBlock newBest
-            setLastDownload newBest
-
-        $(logInfo) $ T.pack $ unwords
-            [ "Setting best block to:"
-            , encodeBlockHashLE $ nodeBlockHash newBest
-            , "height:"
-            , show $ nodeHeaderHeight newBest
-            ]
 
         -- Process messages
         -- TODO: Close database handle on exception with DB.close
@@ -305,7 +299,7 @@ processMonitor = do
                 ]
             modifyPeerData remote $ \d -> d{ inflightMerkle = rest }
             let toDwn = M.keys stalled
-            S.modify $ \s -> s{ blocksToDwn = blocksToDwn s ++ toDwn }
+            S.modify $ \s -> s{ blocksToDwn = toDwn ++ blocksToDwn s }
             -- Reissue merkle blocks download
             let reorderRemotes = (delete remote remotes) ++ [remote]
             forM_ reorderRemotes downloadBlocks
@@ -411,13 +405,14 @@ processPeerHandshake remote remoteVer = do
     -- Download more block if some are pending
     downloadBlocks remote
 
-    best <- runDB bestBlockHeight
-    when (best >= startHeight remoteVer) $
+    bb <- S.gets bestBlock
+    bestHeight <- runDB $ getBlockHeaderHeight bb
+    when (bestHeight >= startHeight remoteVer) $
         $(logInfo) $ T.pack $ unwords
             [ "We are synced with peer. Peer height:"
             , show $ startHeight remoteVer 
             , "Our height:"
-            , show best
+            , show bestHeight
             , "(", show remote, ")" 
             ]
 
@@ -468,12 +463,14 @@ processRescan t = do
                 , show t
                 ]
             clearData
-            runDB $ rescanFrom t
+            newBestBlock <- runDB $ blockBeforeTimestamp t
+            toDwn        <- runDB $ blocksToDownload newBestBlock t
             -- Don't remember old requests
-            S.modify $ \s -> s{ blocksToDwn    = [] 
+            S.modify $ \s -> s{ blocksToDwn    = toDwn
                               , pendingRescan  = Nothing
                               , receivedMerkle = M.empty
                               , fastCatchup    = t
+                              , bestBlock      = newBestBlock
                               }
             -- Trigger downloads
             forM_ remotes downloadBlocks
@@ -484,15 +481,14 @@ processRescan t = do
 
 processHeaders :: RemoteHost -> Headers -> ManagerHandle ()
 processHeaders remote (Headers hs) = do
-    fc <- S.gets fastCatchup
     -- TODO: The time here is incorrect. It should be a median of all peers.
     adjustedTime <- liftIO getPOSIXTime
     -- TODO: If a block headers can't be added, update DOS status
-    before      <- runDB bestBlockHeaderHeight
+    before      <- runDB $ nodeChainWork <$> getBestBlockHeader
     -- TODO: Handle errors in addBlockHeader. We don't do anything
     -- in case of RejectHeader
     newBlocksM <- forM (map fst hs) $ \x -> do
-        res <- runDB $ connectBlockHeader x (round adjustedTime) fc
+        res <- runDB $ connectBlockHeader x (round adjustedTime)
         case res of
             AcceptHeader n -> return $ Just n
             HeaderAlreadyExists n -> do
@@ -507,10 +503,26 @@ processHeaders remote (Headers hs) = do
             RejectHeader err -> do
                 $(logError) $ T.pack err
                 return Nothing
-    after  <- runDB bestBlockHeaderHeight
+    after  <- runDB $ nodeChainWork <$> getBestBlockHeader
 
     let newBlocks = catMaybes newBlocksM
         newBest  = after > before
+
+    -- Update the bestBlock for blocks before the fastCatchup time
+    fc <- S.gets fastCatchup
+    let (toDwn, beforeFC) = 
+            partition ((>= fc) . blockTimestamp . nodeHeader) newBlocks
+    unless (null beforeFC) $ do
+        bb <- S.gets bestBlock
+        currBest <- runDB $ getBlockHeaderNode bb
+        let f a b = nodeChainWork a `compare` nodeChainWork b
+            m     = maximumBy f beforeFC
+        when (nodeChainWork m > nodeChainWork currBest) $
+            S.modify $ \s -> s{ bestBlock = nodeBlockHash m }
+
+    -- Add block to download list
+    S.modify $ \s -> s{ blocksToDwn = blocksToDwn s ++ map nodeBlockHash toDwn }
+
     remotes <- M.keys <$> S.gets peerMap 
 
     -- Adjust the height of peers that sent us INV messages for these headers
@@ -621,6 +633,7 @@ importMerkleBlocks = do
 
             let merkles  = map (\x -> (fst3 x, snd3 x)) res
                 txGroups = map lst3 res
+
             liftIO $ atomically $ do
                 forM_ txGroups $ \gs -> unless (null gs) $
                     writeTBMChan eChan $ TxEvent gs
@@ -645,7 +658,8 @@ importMerkleBlocks = do
             liftIO $ atomically $ writeTBMChan eChan $ TxEvent notHave
             forM_ notHave $ putData . fromIntegral . txHash
             S.modify $ \s -> s{ soloTxs = [] }
-            height <- runDB bestBlockHeight
+            bb <- S.gets bestBlock
+            height <- runDB $ getBlockHeaderHeight bb
             unless (null res) $ $(logInfo) $ T.pack $ unwords
                 [ "We are in sync with the network at height"
                 , show height
@@ -664,15 +678,23 @@ importMerkleBlock :: DecodedMerkleBlock
                   -> ManagerHandle (Maybe (BlockChainAction, [TxHash], [Tx]))
 importMerkleBlock dmb = do
     let prevHash = prevBlock $ merkleHeader $ decodedMerkle dmb
+    havePrev <- existsData $ fromIntegral prevHash
     prevNode <- runDB $ getBlockHeaderNode prevHash
     fc <- S.gets fastCatchup
     let beforeCatchup = blockTimestamp (nodeHeader prevNode) < fc
-    havePrev <- existsData $ fromIntegral prevHash
     -- We must have sent the previous merkle to the user (wallet) to import
     -- this one. Or the previous block can be becore the fast catchup time.
     if not (havePrev || beforeCatchup) then return Nothing else do
         -- Import into the blockchain
-        action <- runDB $ connectBlock $ merkleHeader $ decodedMerkle dmb
+        oldBest <- S.gets bestBlock
+        let newBlock = headerHash $ merkleHeader $ decodedMerkle dmb
+        action <- runDB $ connectBlock oldBest newBlock
+
+        -- Update the bestBlock
+        S.modify $ \s -> case action of
+            BestBlock n -> s{ bestBlock = nodeBlockHash n}
+            BlockReorg _ _ ns -> s{ bestBlock = nodeBlockHash $ last ns}
+            _ -> s{ bestBlock = bestBlock s }
 
         -- Remove this block from the receive list
         S.modify $ \s -> 
@@ -703,16 +725,17 @@ importMerkleBlock dmb = do
 
             case action of
                 BestBlock _ -> return ()
-                BlockReorg _ o n -> $(logInfo) $ T.pack $ unwords
-                    [ "Block reorg. Orphaned blocks:"
-                    , "[", unwords $ 
-                        map (encodeBlockHashLE . nodeBlockHash) o ,"]"
-                    , "New blocks:"
-                    , "[", unwords $ 
-                        map (encodeBlockHashLE . nodeBlockHash) n ,"]"
-                    , "New height:"
-                    , show $ nodeHeaderHeight $ last n
-                    ]
+                BlockReorg _ o n -> do
+                    $(logInfo) $ T.pack $ unwords
+                        [ "Block reorg. Orphaned blocks:"
+                        , "[", unwords $ 
+                            map (encodeBlockHashLE . nodeBlockHash) o ,"]"
+                        , "New blocks:"
+                        , "[", unwords $ 
+                            map (encodeBlockHashLE . nodeBlockHash) n ,"]"
+                        , "New height:"
+                        , show $ nodeHeaderHeight $ last n
+                        ]
                 SideBlock b -> $(logInfo) $ T.pack $ unwords
                     [ "Side block at height"
                     , show $ nodeHeaderHeight b, ":"
@@ -867,7 +890,8 @@ nodeSynced :: ManagerHandle Bool
 nodeSynced = do
     pDats <- M.elems <$> S.gets peerMap 
     let netHeight = foldl max 0 $ map peerHeight pDats
-    ourHeight <- runDB bestBlockHeight
+    bb <- S.gets bestBlock
+    ourHeight <- runDB $ getBlockHeaderHeight bb
     return $ ourHeight == netHeight
 
 -- Header height = network height
@@ -914,11 +938,8 @@ downloadBlocks remote = do
     when canDownload $ do
         batch <- S.gets blockBatch
         -- Get blocks missing from other peers that have disconnected
-        (missing, rest) <- splitAt batch <$> S.gets blocksToDwn
+        (toDwn, rest) <- splitAt batch <$> S.gets blocksToDwn
         S.modify $ \s -> s{ blocksToDwn = rest }
-        -- Get more blocks to download from the database
-        xs <- runDB $ downloadBlockHeaders $ batch - length missing
-        let toDwn = missing ++ xs
         unless (null toDwn) $ do
             $(logInfo) $ T.pack $ unwords 
                 [ "Requesting more merkle block(s)"

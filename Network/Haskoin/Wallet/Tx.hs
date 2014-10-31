@@ -22,7 +22,7 @@ module Network.Haskoin.Wallet.Tx
 , firstKeyTime
 , importBlocks
 , getBestHeight
-, setBestHeight
+, setBestHash
 , balance
 , unspentCoins
 , spendableCoins
@@ -37,7 +37,7 @@ import Control.Exception (throwIO)
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Word (Word32, Word64)
-import Data.List ((\\), nub)
+import Data.List ((\\), nub, maximumBy)
 import Data.Maybe (catMaybes, isNothing, isJust, fromJust)
 import Data.Either (rights)
 import qualified Data.Map.Strict as M (toList, empty, lookup, insert)
@@ -660,7 +660,7 @@ importBlocks xs = do
                         , DbTxConfirmedHeight =. Just (nodeHeaderHeight node)
                         , DbTxConfidence      =. TxBuilding
                         ]
-                return $ Just $ nodeHeaderHeight node
+                return $ Just (nodeHeaderHeight node, nodeBlockHash node)
             BlockReorg _ o n -> do
                 -- Unconfirm transactions from the old chain
                 forM_ (reverse o) $ \b -> do
@@ -694,11 +694,13 @@ importBlocks xs = do
                             , DbTxConfirmedHeight =. Just (nodeHeaderHeight b)
                             , DbTxConfidence      =. TxBuilding
                             ]
-                return $ Just $ nodeHeaderHeight $ last n
+                return $ Just ( nodeHeaderHeight $ last n
+                              , nodeBlockHash $ last n
+                              )
     -- Update best height
     let hs = catMaybes hsM
-        m  = foldl max 0 hs
-    unless (null hs) $ setBestHeight m
+        m  = maximumBy (\a b -> fst a `compare` fst b) hs
+    unless (null hs) $ setBestHash (fst m) (snd m)
   where
     newNode (BestBlock node) = node
     newNode (SideBlock node) = node
@@ -722,8 +724,11 @@ getBestHeight = do
         WalletException "getBestHeight: Database not initialized"
     return $ dbConfigBestHeight $ entityVal $ fromJust cnf
 
-setBestHeight :: (MonadIO m, PersistQuery b) => Word32 -> ReaderT b m ()
-setBestHeight h = updateWhere [] [DbConfigBestHeight =. h]
+setBestHash :: (MonadIO m, PersistQuery b) 
+            => Word32 -> BlockHash -> ReaderT b m ()
+setBestHash i h = updateWhere [] [ DbConfigBestHeight    =. i
+                                 , DbConfigBestBlockHash =. h
+                                 ]
 
 getConflicts :: (MonadIO m, PersistQuery b) => TxHash -> ReaderT b m [TxHash]
 getConflicts h = do

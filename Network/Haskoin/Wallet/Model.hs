@@ -137,6 +137,7 @@ DbConfirmation
 
 DbConfig
     bestHeight Word32
+    bestBlockHash BlockHash
     version Int
     created UTCTime default=CURRENT_TIME
 |]

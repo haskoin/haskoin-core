@@ -32,6 +32,9 @@ import Database.Persist
     )
 
 import Network.Haskoin.Crypto
+import Network.Haskoin.Block
+import Network.Haskoin.Constants
+
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 
@@ -83,5 +86,5 @@ initWalletDB = do
     prevConfig <- selectFirst [] [Asc DbConfigCreated]
     when (isNothing prevConfig) $ do
         time <- liftIO getCurrentTime
-        insert_ $ DbConfig 0 1 time
+        insert_ $ DbConfig 0 (headerHash genesisHeader) 1 time
 

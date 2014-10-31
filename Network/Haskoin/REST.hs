@@ -207,6 +207,7 @@ runServer config = do
             runApp app
         else do
 
+            -- Find earliest key creation time
             fstKeyTimeM <- flip runSqlPersistMPool pool firstKeyTime
             fstKeyTime  <- case fstKeyTimeM of
                 Just t  -> return t
@@ -216,8 +217,13 @@ runServer config = do
             let fastCatchupI = max 0 ((toInteger fstKeyTime) - 86400 * 7)
                 fastCatchup = fromInteger fastCatchupI :: Word32
 
+            -- Get best known blockhash
+            conf <- flip runSqlPersistMPool pool $
+                        selectFirst [] [Asc DbConfigCreated]
+            let bb = dbConfigBestBlockHash $ entityVal $ fromJust conf
+
             -- Launch SPV node
-            withAsyncNode batch fastCatchup $ \eChan rChan _ -> do
+            withAsyncNode batch fastCatchup bb $ \eChan rChan _ -> do
             let eventPipe = sourceTBMChan eChan $$ 
                             processNodeEvents pool rChan fp
             withAsync eventPipe $ \_ -> do

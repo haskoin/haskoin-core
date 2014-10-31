@@ -46,15 +46,6 @@ indexKey h = "index_" `BS.append` encode' h
 bestHeaderKey :: BS.ByteString
 bestHeaderKey = "bestheader"
 
-bestBlockKey :: BS.ByteString
-bestBlockKey = "bestblock"
-
-fastCatchupKey :: BS.ByteString
-fastCatchupKey = "starttime"
-
-lastDownloadKey :: BS.ByteString
-lastDownloadKey = "lastdownload"
-
 instance BlockHeaderStore DBHandle where
 
     getBlockHeaderNode h = do
@@ -80,22 +71,4 @@ instance BlockHeaderStore DBHandle where
     setBestBlockHeader bhn = do
         db <- S.gets handle
         DB.put db def bestHeaderKey $ encode' $ nodeBlockHash bhn
-
-    getBestBlock = do
-        db <- S.gets handle
-        key <- (decodeToMaybe =<<) <$> DB.get db def bestBlockKey
-        getBlockHeaderNode $ fromJust key
-
-    setBestBlock bhn = do
-        db <- S.gets handle
-        DB.put db def bestBlockKey $ encode' $ nodeBlockHash bhn
-
-    getLastDownload = do
-        db  <- S.gets handle
-        key <- (decodeToMaybe =<<) <$> DB.get db def lastDownloadKey
-        getBlockHeaderNode $ fromJust key
-
-    setLastDownload bhn = do
-        db <- S.gets handle
-        DB.put db def lastDownloadKey $ encode' $ nodeBlockHash bhn
 

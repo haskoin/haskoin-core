@@ -17,6 +17,9 @@ module Network.Haskoin.Block
 
   -- * Merkle Blocks
 , MerkleBlock(..)
+, MerkleRoot
+, FlagBits
+, PartialMerkleTree
 , calcTreeHeight
 , calcTreeWidth
 , buildMerkleRoot

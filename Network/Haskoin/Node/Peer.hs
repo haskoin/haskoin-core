@@ -107,14 +107,15 @@ data NodeException
 
 instance Exception NodeException
 
-startPeer :: TBMChan Message 
+startPeer :: (MonadIO m, MonadLogger m, MonadState PeerSession m)
+          => TBMChan Message 
           -> TBMChan PeerMessage 
           -> RemoteHost 
+          -> (m () -> IO ())
           -> AppData -> IO ()
-startPeer pChan mChan remote ad = 
-    void $ withAsync peerEncode $ \_ -> 
-        runStdoutLoggingT $ flip S.evalStateT session $
-            (appSource ad) $= decodeMessage $$ processMessage
+startPeer pChan mChan remote f ad = 
+    void $ withAsync peerEncode $ \_ -> f $ 
+        (appSource ad) $= decodeMessage $$ processMessage
   where
     peerEncode = (sourceTBMChan pChan) $= encodeMessage $$ (appSink ad)
     session = PeerSession 

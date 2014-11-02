@@ -2,18 +2,24 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-module Network.Haskoin.Node.Peer (startPeer) where
+module Network.Haskoin.Node.Peer 
+( startPeer
+, PeerMessage(..)
+, DecodedMerkleBlock(..)
+, RemoteHost(..)
+, NodeException(..)
+) where
 
 import Control.Applicative ((<$>))
 import Control.Monad (void, when, unless)
 import Control.Monad.Trans (lift, liftIO, MonadIO)
-import qualified Control.Monad.State as S 
-    ( StateT
-    , evalStateT
+import Control.Monad.State.Class 
+    ( MonadState
     , get
     , gets
     , modify
     )
+import qualified Control.Monad.State as S (evalStateT)
 import Control.Exception (Exception, throwIO, throw)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async (withAsync)
@@ -65,8 +71,6 @@ minProtocolVersion = 60001
 
 maxHeaders :: Int
 maxHeaders = 2000
-
-type PeerHandle = S.StateT PeerSession (LoggingT IO)
 
 data PeerSession = PeerSession
     { remoteSettings :: RemoteHost
@@ -122,10 +126,11 @@ startPeer pChan mChan remote ad =
         }
 
 -- Process incomming messages from the remote peer
-processMessage :: Sink Message PeerHandle ()
+processMessage :: (MonadLogger m, MonadIO m, MonadState PeerSession m) 
+               => Sink Message m ()
 processMessage = awaitForever $ \msg -> lift $ do
-    remote <- S.gets remoteSettings
-    merkleM <- S.gets inflightMerkle
+    remote <- gets remoteSettings
+    merkleM <- gets inflightMerkle
     -- After a merkle block we expect to receive transactions related to that
     -- merkle block. As soon as we get a different message than a transaction,
     -- we know that we are done processing the merkle block.
@@ -141,8 +146,9 @@ processMessage = awaitForever $ \msg -> lift $ do
     isTx (MTx _) = True
     isTx _       = False
 
-processVersion :: Version -> PeerHandle ()
-processVersion remoteVer = go =<< S.get
+processVersion :: (MonadLogger m, MonadIO m, MonadState PeerSession m) 
+               => Version -> m ()
+processVersion remoteVer = go =<< get
   where
     go session
         | isJust $ peerVersion session = do
@@ -167,23 +173,24 @@ processVersion remoteVer = go =<< S.get
                 , ", time =",     show $ timestamp remoteVer 
                 , ", blocks =",   show $ startHeight remoteVer
                 ]
-            S.modify $ \s -> s{ peerVersion = Just remoteVer }
+            modify $ \s -> s{ peerVersion = Just remoteVer }
             sendMessage MVerAck
             -- Notify the manager that the handshake was succesfull
-            remote <- S.gets remoteSettings
+            remote <- gets remoteSettings
             sendManager $ PeerHandshake remote remoteVer
 
-processVerAck :: PeerHandle ()
+processVerAck :: MonadLogger m => m ()
 processVerAck = $(logInfo) "Version ACK received"
 
-processMerkleBlock :: MerkleBlock -> PeerHandle ()
+processMerkleBlock :: (MonadIO m, MonadState PeerSession m) 
+                   => MerkleBlock -> m ()
 processMerkleBlock mb@(MerkleBlock _ ntx hs fs)
     -- TODO: Handle this error better
     | isLeft matchesE = error $ fromLeft matchesE
     | null match      = do
-        remote <- S.gets remoteSettings
+        remote <- gets remoteSettings
         sendManager $ PeerMerkleBlock remote dmb
-    | otherwise       = S.modify $ \s -> s{ inflightMerkle = Just dmb }
+    | otherwise       = modify $ \s -> s{ inflightMerkle = Just dmb }
   where
     matchesE      = extractMatches fs hs $ fromIntegral ntx
     (root, match) = fromRight matchesE
@@ -193,41 +200,42 @@ processMerkleBlock mb@(MerkleBlock _ ntx hs fs)
                                        , merkleTxs     = []
                                        }
 
-processTx :: Tx -> PeerHandle ()
+processTx :: (MonadIO m, MonadState PeerSession m) => Tx -> m ()
 processTx tx = do
-    remote <- S.gets remoteSettings
-    merkleM <- S.gets inflightMerkle
+    remote <- gets remoteSettings
+    merkleM <- gets inflightMerkle
     let dmb@(DecodedMerkleBlock _ _ match txs) = fromJust merkleM
     -- If the transaction is part of a merkle block, buffer it. We will send
     -- everything to the manager together.
     if isJust merkleM
         then 
             if txHash tx `elem` match
-                then S.modify $ \s -> 
+                then modify $ \s -> 
                     s{ inflightMerkle = Just dmb{ merkleTxs = tx : txs } }
                 else do
                     endMerkleBlock dmb
                     sendManager $ PeerMessage remote $ MTx tx
         else sendManager $ PeerMessage remote $ MTx tx
 
-endMerkleBlock :: DecodedMerkleBlock -> PeerHandle ()
+endMerkleBlock :: (MonadIO m, MonadState PeerSession m) 
+               => DecodedMerkleBlock -> m ()
 endMerkleBlock dmb@(DecodedMerkleBlock _ _ match txs) = do
-    remote <- S.gets remoteSettings
-    S.modify $ \s -> s{ inflightMerkle = Nothing }
+    remote <- gets remoteSettings
+    modify $ \s -> s{ inflightMerkle = Nothing }
     sendManager $ PeerMerkleBlock remote dmb{ merkleTxs = orderedTxs }
   where
     -- Keep the same transaction order as in the merkle block
     orderedTxs = catMaybes $ matchTemplate txs match f
     f a b      = txHash a == b
 
-sendMessage :: Message -> PeerHandle ()
+sendMessage :: (MonadIO m, MonadState PeerSession m) => Message -> m ()
 sendMessage msg = do
-    chan <- S.gets peerChan
+    chan <- gets peerChan
     liftIO . atomically $ writeTBMChan chan msg
 
-sendManager :: PeerMessage -> PeerHandle ()
+sendManager :: (MonadIO m, MonadState PeerSession m) => PeerMessage -> m ()
 sendManager req = do
-    chan <- S.gets mngrChan
+    chan <- gets mngrChan
     liftIO . atomically $ writeTBMChan chan req
 
 decodeMessage :: MonadLogger m => Conduit BS.ByteString m Message

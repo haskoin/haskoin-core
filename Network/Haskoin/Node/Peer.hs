@@ -3,14 +3,16 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 module Network.Haskoin.Node.Peer 
-( startPeer
+( runPeer
+, runCustomPeer
+, peerLogStdout
 , PeerMessage(..)
 , DecodedMerkleBlock(..)
 , RemoteHost(..)
 , NodeException(..)
 ) where
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad (void, when, unless)
 import Control.Monad.Trans (lift, liftIO, MonadIO)
 import Control.Monad.State.Class 
@@ -19,7 +21,7 @@ import Control.Monad.State.Class
     , gets
     , modify
     )
-import qualified Control.Monad.State as S (evalStateT)
+import qualified Control.Monad.State as S (StateT, evalStateT)
 import Control.Exception (Exception, throwIO, throw)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async (withAsync)
@@ -36,6 +38,7 @@ import Control.Monad.Logger
 import Data.Word (Word32)
 import Data.Typeable (Typeable)
 import Data.Maybe (isJust, fromJust, catMaybes)
+import qualified Data.Binary as B (Binary, get, put)
 import Data.Conduit.Network (ClientSettings)
 import Data.Conduit 
     ( Conduit
@@ -62,7 +65,7 @@ import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Crypto
 import Network.Haskoin.Block
-import Network.Haskoin.Transaction
+import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Util
 
 -- TODO: Move constants elsewhere ?
@@ -94,6 +97,10 @@ data RemoteHost = RemoteHost
     , remotePort :: Int
     } deriving (Eq, Ord, Show, Read)
 
+instance B.Binary RemoteHost where
+    get = RemoteHost <$> B.get <*> B.get
+    put (RemoteHost h p) = B.put h >> B.put p
+
 data DecodedMerkleBlock = DecodedMerkleBlock
     { decodedMerkle :: MerkleBlock
     , decodedRoot   :: MerkleRoot
@@ -107,14 +114,21 @@ data NodeException
 
 instance Exception NodeException
 
-startPeer :: (MonadIO m, MonadLogger m, MonadState PeerSession m)
-          => TBMChan Message 
-          -> TBMChan PeerMessage 
-          -> RemoteHost 
-          -> (m () -> IO ())
-          -> AppData -> IO ()
-startPeer pChan mChan remote f ad = 
-    void $ withAsync peerEncode $ \_ -> f $ 
+runPeer :: TBMChan Message 
+        -> TBMChan PeerMessage 
+        -> RemoteHost 
+        -> AppData -> IO ()
+runPeer pChan mChan remote ad = 
+    runCustomPeer pChan mChan remote peerLogStdout ad
+
+runCustomPeer :: (MonadIO m, MonadLogger m, MonadState PeerSession m)
+              => TBMChan Message 
+              -> TBMChan PeerMessage 
+              -> RemoteHost 
+              -> (PeerSession -> m () -> IO ())
+              -> AppData -> IO ()
+runCustomPeer pChan mChan remote f ad = 
+    void $ withAsync peerEncode $ \_ -> f session $ 
         (appSource ad) $= decodeMessage $$ processMessage
   where
     peerEncode = (sourceTBMChan pChan) $= encodeMessage $$ (appSink ad)
@@ -125,6 +139,9 @@ startPeer pChan mChan remote f ad =
         , peerVersion    = Nothing
         , inflightMerkle = Nothing
         }
+
+peerLogStdout :: PeerSession -> S.StateT PeerSession (LoggingT IO) () -> IO () 
+peerLogStdout session m = runStdoutLoggingT $ S.evalStateT m session
 
 -- Process incomming messages from the remote peer
 processMessage :: (MonadLogger m, MonadIO m, MonadState PeerSession m) 

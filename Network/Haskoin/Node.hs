@@ -58,9 +58,6 @@ module Network.Haskoin.Node
 , PeerManager(..)
 , PeerData(..)
 , withAsyncNode
-, getSession
-, modifySession
-, sendEvent
 , sendMessage
 , getPeerData
 , putPeerData
@@ -78,8 +75,6 @@ module Network.Haskoin.Node
 , SPVRequest(..)
 , SPVEvent(..)
 , withAsyncSPV
-, getSPVSession
-, modifySPVSession
 
 ) where
 

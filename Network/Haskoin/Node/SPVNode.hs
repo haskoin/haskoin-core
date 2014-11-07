@@ -12,8 +12,6 @@ module Network.Haskoin.Node.SPVNode
 , SPVRequest(..)
 , SPVEvent(..)
 , withAsyncSPV
-, getSPVSession
-, modifySPVSession
 )
 where
 
@@ -116,22 +114,23 @@ data SPVEvent
     = MerkleBlockEvent [(BlockChainAction, [TxHash])]
     | TxEvent [Tx]
 
-data SPVSession u = SPVSession
+data SPVSession = SPVSession
     { spvSyncPeer :: Maybe RemoteHost
-    , spvSession :: u
+    , spvEventChan :: TBMChan SPVEvent
     }
+
+type SPVHandle m = S.StateT ManagerSession (S.StateT SPVSession m)
 
 class ( BlockHeaderStore s 
       , MonadIO m
       , MonadLogger m
-      , MonadState (ManagerSession SPVEvent (SPVSession u)) m
       , MonadResource m
       , MonadBaseControl IO m
       )
-    => SPVNode s u m | m -> s u where
-    runHeaderChain :: s a -> m a
+    => SPVNode s m | m -> s where
+    runHeaderChain :: s a -> SPVHandle m a
 
-instance SPVNode s u m => PeerManager SPVEvent SPVRequest (SPVSession u) m where
+instance SPVNode s m => PeerManager SPVRequest (S.StateT SPVSession m) where
     initNode = spvInitNode
     nodeRequest r = spvNodeRequest r
     peerHandshake remote ver = spvPeerHandshake remote ver
@@ -141,56 +140,57 @@ instance SPVNode s u m => PeerManager SPVEvent SPVRequest (SPVSession u) m where
     peerMessage remote msg = spvPeerMessage remote msg
     peerMerkleBlock remote dmb = spvPeerMerkleBlock remote dmb
 
-withAsyncSPV :: SPVNode s u m 
+withAsyncSPV :: SPVNode s m
              => [(String, Int)] 
-             -> u
-             -> (ManagerSession SPVEvent (SPVSession u) -> m () -> IO ())
+             -> (m () -> IO ())
              -> (TBMChan SPVEvent -> TBMChan SPVRequest -> Async () -> IO ())
              -> IO ()
-withAsyncSPV peers uSession runPeerManager f = 
-    withAsyncNode peers session runPeerManager f
-  where
-    session = SPVSession
-        { spvSyncPeer = Nothing
-        , spvSession  = uSession
-        }
+withAsyncSPV peers runStack f = do
+    eChan <- liftIO $ atomically $ newTBMChan 10000
+    let session = SPVSession
+            { spvSyncPeer = Nothing
+            , spvEventChan = eChan
+            }
+        g = runStack . (flip S.evalStateT session)
+    withAsyncNode peers g $ \rChan a -> f eChan rChan a
 
-spvInitNode :: SPVNode s u m => m ()
+spvInitNode :: SPVNode s m => SPVHandle m ()
 spvInitNode = runHeaderChain initHeaderChain 
 
-spvNodeRequest :: SPVNode s u m => SPVRequest -> m ()
+spvNodeRequest :: SPVNode s m => SPVRequest -> SPVHandle m ()
 spvNodeRequest r = return ()
 
-spvPeerHandshake :: SPVNode s u m => RemoteHost -> Version -> m ()
+spvPeerHandshake :: SPVNode s m => RemoteHost -> Version -> SPVHandle m ()
 spvPeerHandshake remote ver = do
     -- Send a GetHeaders regardless if there is already a peerSync. This peer
     -- could still be faster and become the new peerSync.
     sendGetHeaders remote True 0x00
 
-spvPeerDisconnect :: SPVNode s u m => RemoteHost -> m ()
+spvPeerDisconnect :: SPVNode s m => RemoteHost -> SPVHandle m ()
 spvPeerDisconnect remote = do
-    syn <- liftM spvSyncPeer getSession
+    syn <- lift $ S.gets spvSyncPeer
     when (syn == Just remote) $ do
         $(logInfo) "Finding a new block header syncing peer"
-        modifySession $ \s -> s{ spvSyncPeer = Nothing }
+        lift $ S.modify $ \s -> s{ spvSyncPeer = Nothing }
         remotes <- getPeerKeys
         forM_ remotes $ \r -> sendGetHeaders r True 0x00
 
-spvStartPeer :: SPVNode s u m => String -> Int -> m ()
+spvStartPeer :: SPVNode s m => String -> Int -> SPVHandle m ()
 spvStartPeer host port = return ()
 
-spvRestartPeer :: SPVNode s u m => RemoteHost -> m ()
+spvRestartPeer :: SPVNode s m => RemoteHost -> SPVHandle m ()
 spvRestartPeer remote = return ()
 
-spvPeerMessage :: SPVNode s u m => RemoteHost -> Message -> m ()
+spvPeerMessage :: SPVNode s m => RemoteHost -> Message -> SPVHandle m ()
 spvPeerMessage remote msg = case msg of
     MHeaders headers -> processHeaders remote headers
     _ -> return ()
 
-spvPeerMerkleBlock :: SPVNode s u m => RemoteHost -> DecodedMerkleBlock -> m ()
+spvPeerMerkleBlock :: SPVNode s m 
+                   => RemoteHost -> DecodedMerkleBlock -> SPVHandle m ()
 spvPeerMerkleBlock remote dmb = return ()
 
-processHeaders :: SPVNode s u m => RemoteHost -> Headers -> m ()
+processHeaders :: SPVNode s m => RemoteHost -> Headers -> SPVHandle m ()
 processHeaders remote (Headers hs) = do
     adjustedTime <- liftM round $ liftIO getPOSIXTime
     workBefore <- liftM nodeChainWork $ runHeaderChain getBestBlockHeader
@@ -220,7 +220,7 @@ processHeaders remote (Headers hs) = do
 
         -- Update the sync peer 
         isSynced <- blockHeadersSynced
-        modifySession $ \s -> 
+        lift $ S.modify $ \s -> 
             s{ spvSyncPeer = if isSynced then Nothing else Just remote }
 
         $(logInfo) $ T.pack $ unwords
@@ -232,7 +232,8 @@ processHeaders remote (Headers hs) = do
         sendGetHeaders remote False 0x00
 
 -- Send out a GetHeaders request for a given peer
-sendGetHeaders :: SPVNode s u m => RemoteHost -> Bool -> BlockHash -> m ()
+sendGetHeaders :: SPVNode s m 
+               => RemoteHost -> Bool -> BlockHash -> SPVHandle m ()
 sendGetHeaders remote full hstop = do
     handshake <- liftM peerCompleteHandshake $ getPeerData remote
     -- Only peers that have finished the connection handshake
@@ -252,15 +253,9 @@ sendGetHeaders remote full hstop = do
         sendMessage remote $ MGetHeaders $ GetHeaders 0x01 loc hstop
 
 -- Header height = network height
-blockHeadersSynced :: SPVNode s u m => m Bool
+blockHeadersSynced :: SPVNode s m => SPVHandle m Bool
 blockHeadersSynced = do
     networkHeight <- getBestPeerHeight
     ourHeight <- runHeaderChain bestBlockHeaderHeight
     return $ ourHeight >= networkHeight
-    
-getSPVSession :: SPVNode s u m => m u
-getSPVSession = liftM spvSession getSession
-
-modifySPVSession :: SPVNode s u m => (u -> u) -> m ()
-modifySPVSession f = modifySession $ \s -> s{ spvSession = f $ spvSession s }
 

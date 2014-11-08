@@ -66,6 +66,7 @@ module Network.Haskoin.Node
 , peerExists
 , getPeerKeys
 , getPeerValues
+, getPeers
 , increasePeerHeight
 , getBestPeerHeight
 

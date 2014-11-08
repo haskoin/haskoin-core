@@ -16,6 +16,7 @@ module Network.Haskoin.Node.PeerManager
 , peerExists
 , getPeerKeys
 , getPeerValues
+, getPeers
 , increasePeerHeight
 , getBestPeerHeight
 )
@@ -79,6 +80,7 @@ import qualified Data.Map as M
     , fromList
     , keys
     , elems
+    , toList
     , null
     , empty
     , partition
@@ -116,7 +118,6 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
 
-type BlockHeight = Word32
 type ManagerHandle m = S.StateT ManagerSession m
 
 class ( MonadIO m
@@ -164,7 +165,7 @@ withAsyncNode :: PeerManager r m
               -> (m () -> IO ())
               -> (TBMChan r -> Async () -> IO ())
               -> IO ()
-withAsyncNode peers runStack f = do
+withAsyncNode hosts runStack f = do
     vers  <- buildVersion
     pChan <- liftIO $ atomically $ newTBMChan 10000
     rChan <- liftIO $ atomically $ newTBMChan 10000
@@ -186,7 +187,7 @@ withAsyncNode peers runStack f = do
             -- Merge 3 channels into 1
             mergedSource <- (mSource >=<) =<< rSource >=< pSource
             -- Start peers
-            forM_ peers $ \(host,port) -> processStartPeer host port
+            forM_ hosts $ \(host,port) -> processStartPeer host port
             -- Process messages
             mergedSource $$ managerSink
 
@@ -350,6 +351,9 @@ getPeerKeys = liftM M.keys $ S.gets peerMap
 
 getPeerValues :: PeerManager r m => ManagerHandle m [PeerData]
 getPeerValues = liftM M.elems $ S.gets peerMap
+
+getPeers :: PeerManager r m => ManagerHandle m [(RemoteHost, PeerData)]
+getPeers = liftM M.toList $ S.gets peerMap
 
 -- Increase the height of a peer to the given height if it is greater than
 -- the existing one.

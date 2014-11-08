@@ -31,6 +31,8 @@ module Network.Haskoin.Block
 , BlockHeaderNode(..)
 , BlockHeaderStore(..)
 , BlockHeaderAction(..)
+, BlockHeight
+, Timestamp
 , genesisBlockHeaderNode
 , initHeaderChain
 , connectBlockHeader

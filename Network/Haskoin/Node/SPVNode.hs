@@ -428,12 +428,51 @@ processBloomFilter bloom = do
             -- downloads are paused if no bloom filter is loaded.
             downloadBlocks remote
 
-
 publishTx :: SPVNode s m => Tx -> SPVHandle m ()
-publishTx tx = return ()
+publishTx tx = do
+    $(logInfo) $ T.pack $ unwords
+        [ "Broadcasting transaction to the network:"
+        , encodeTxHashLE $ txHash tx
+        ]
+
+    peers <- getPeers
+    -- TODO: Should we send the transaction through an INV message first?
+    forM_ peers $ \(remote, _) -> sendMessage remote $ MTx tx
+
+    -- If no peers are connected, we save the transaction and send it later.
+    let txSent = or $ map (peerCompleteHandshake . snd) peers
+    unless txSent $ lift $ S.modify $ 
+        \s -> s{pendingTxBroadcast = tx : pendingTxBroadcast s}
 
 processRescan :: SPVNode s m => Timestamp -> SPVHandle m ()
-processRescan ts = return ()
+processRescan ts = do
+    pending <- liftM (concat . M.elems) $ lift $ S.gets peerInflightMerkles
+    -- Can't process a rescan while merkle blocks are still inflight
+    if (null pending)
+        then do
+            $(logInfo) $ T.pack $ unwords
+                [ "Running rescan from time:"
+                , show ts
+                ]
+            clearWalletHash
+            newBestBlock <- runHeaderChain $ blockBeforeTimestamp ts
+            toDwn        <- runHeaderChain $ blocksToDownload newBestBlock ts
+
+            -- Don't remember old requests
+            lift $ S.modify $ \s -> 
+                s{ blocksToDwn    = toDwn
+                 , pendingRescan  = Nothing
+                 , receivedMerkle = M.empty
+                 , fastCatchup    = ts
+                 , bestBlockHash  = newBestBlock
+                 }
+            -- Trigger downloads
+            remotePeers <- getPeerKeys
+            forM_ remotePeers downloadBlocks
+        else do
+            $(logInfo) $ T.pack $ unwords
+                [ "Rescan: waiting for pending merkle blocks to download" ]
+            lift $ S.modify $ \s -> s{ pendingRescan = Just ts }
 
 heartbeatMonitor :: SPVNode s m => SPVHandle m ()
 heartbeatMonitor = return ()

@@ -351,13 +351,15 @@ findSplitNode n1 n2 = go [] [] n1 n2
 
 -- | Find all blocks between the best block and the given hash that have
 -- a timestamp greater than the given time.
-blocksToDownload :: BlockHeaderStore m => BlockHash -> Timestamp -> m [BlockHash]
-blocksToDownload bestBlockHash fastCatchup = do
+blocksToDownload :: BlockHeaderStore m 
+                 => BlockHash -> m [(BlockHeight, BlockHash)]
+blocksToDownload bestBlockHash = do
     bestHead  <- getBestBlockHeader
     bestBlock <- getBlockHeaderNode bestBlockHash 
     (_,_,(_:toDwn)) <- findSplitNode bestBlock bestHead
-    let valid = filter ((>= fastCatchup) . (blockTimestamp . nodeHeader)) toDwn
-    return $ map nodeBlockHash valid
+    return $ map f toDwn
+  where
+    f n = (nodeHeaderHeight n, nodeBlockHash n)
 
 -- | Searches for the first block header with a timestamp smaller than the
 -- given time, starting from the chain head.

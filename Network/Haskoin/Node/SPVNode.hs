@@ -558,7 +558,6 @@ importMerkleBlocks = do
         toImport  <- liftM (concat . M.elems) $ lift $ S.gets receivedMerkle
         importRes <- liftM catMaybes $ forM toImport importMerkleBlock
 
-        -- Send data to the user
         unless (null importRes) $ do
 
             let merkles  = map (\x -> (fst3 x, snd3 x)) importRes
@@ -617,7 +616,7 @@ importMerkleBlock dmb = do
     prevNode <- runHeaderChain $ getBlockHeaderNode prevHash
     let parentBeforeCatchup = blockTimestamp (nodeHeader prevNode) < fc
     
-    -- Check if we sent the parent block to thew allet
+    -- Check if we sent the parent block to the wallet
     haveParent <- existsWalletHash $ fromIntegral prevHash
 
     -- We must have sent the previous merkle to the user (wallet) to import
@@ -626,11 +625,8 @@ importMerkleBlock dmb = do
 
         -- Import the block into the blockchain
         oldBestHash <- lift $ S.gets bestBlockHash
-        let newBlockHash = headerHash $ merkleHeader $ decodedMerkle dmb
-        action <- runHeaderChain $ connectBlock oldBestHash newBlockHash
-
-        -- Get the blockhash
-        let bid = nodeBlockHash $ getActionNode action
+        let bid = headerHash $ merkleHeader $ decodedMerkle dmb
+        action <- runHeaderChain $ connectBlock oldBestHash bid
 
         -- Remove the merkle block from the received merkle list
         receivedMap <- lift $ S.gets receivedMerkle
@@ -730,8 +726,13 @@ processRescan ts = do
                 [ "Running rescan from time:"
                 , show ts
                 ]
+            -- Clear the saved hashes that we sent to the wallet
             clearWalletHash
+            saveWalletHash $ fromIntegral $ headerHash genesisHeader
+
+            -- Find the new best blocks that matches the fastCatchup time
             newBestBlock <- runHeaderChain $ blockBeforeTimestamp ts
+            -- Find the new blocks that we have to download
             toDwn        <- runHeaderChain $ blocksToDownload newBestBlock
             let toDwnList = map (\(a,b) -> (a,[b])) toDwn
 
@@ -743,6 +744,7 @@ processRescan ts = do
                  , fastCatchup    = ts
                  , bestBlockHash  = newBestBlock
                  }
+
             -- Trigger downloads
             remotePeers <- getPeerKeys
             forM_ remotePeers downloadBlocks

@@ -75,9 +75,9 @@ instance Binary BlockHeaderNode where
 
 -- Return value of linking a new block header in the chain
 data BlockHeaderAction
-    = RejectHeader String
-    | HeaderAlreadyExists BlockHeaderNode
-    | AcceptHeader BlockHeaderNode
+    = RejectHeader !String
+    | HeaderAlreadyExists !BlockHeaderNode
+    | AcceptHeader !BlockHeaderNode
     deriving (Show, Read, Eq)
 
 class Monad m => BlockHeaderStore m where
@@ -300,11 +300,11 @@ headerWork bh =
 {- Functions for connecting blocks -}
 
 data BlockChainAction
-    = BestBlock  { actionBestBlock :: BlockHeaderNode }
-    | SideBlock  { actionSideBlock :: BlockHeaderNode }
-    | BlockReorg { reorgSplitPoint :: BlockHeaderNode
-                 , reorgOldBlocks  :: [BlockHeaderNode]
-                 , reorgNewBlocks  :: [BlockHeaderNode]
+    = BestBlock  { actionBestBlock :: !BlockHeaderNode }
+    | SideBlock  { actionSideBlock :: !BlockHeaderNode }
+    | BlockReorg { reorgSplitPoint :: !BlockHeaderNode
+                 , reorgOldBlocks  :: ![BlockHeaderNode]
+                 , reorgNewBlocks  :: ![BlockHeaderNode]
                  }
     deriving (Read, Show, Eq)
 

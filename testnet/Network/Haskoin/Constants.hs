@@ -3,6 +3,7 @@
 -}
 module Network.Haskoin.Constants where
 
+import Data.Bits (shiftR)
 import Data.Word (Word8, Word32, Word64)
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Block.Types
@@ -68,6 +69,18 @@ defaultPort = 18333
 -- for testnet.
 allowMinDifficultyBlocks :: Bool
 allowMinDifficultyBlocks = True
+
+-- | Lower bound for the proof of work difficulty
+powLimit :: Integer
+powLimit = fromIntegral (maxBound `shiftR` 32 :: Word256)
+
+-- | Time between difficulty cycles (2 weeks on average)
+targetTimespan :: Word32
+targetTimespan = 14 * 24 * 60 * 60
+
+-- | Time between blocks (10 minutes per block)
+targetSpacing :: Word32
+targetSpacing = 10 * 60
 
 -- | Checkpoints to enfore
 checkpoints :: [(Int, BlockHash)]

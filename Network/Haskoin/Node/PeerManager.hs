@@ -138,27 +138,27 @@ class ( MonadIO m
                     -> ManagerHandle m ()
 
 data ManagerSession = ManagerSession
-    { mngrVersion      :: Version
-    , mngrChan         :: TBMChan ManagerRequest
-    , mngrPeerChan     :: TBMChan PeerMessage
-    , peerMap          :: M.Map RemoteHost PeerData
+    { mngrVersion      :: !Version
+    , mngrChan         :: !(TBMChan ManagerRequest)
+    , mngrPeerChan     :: !(TBMChan PeerMessage)
+    , peerMap          :: !(M.Map RemoteHost PeerData)
     } 
 
 -- Data stored about a peer in the Manager
 data PeerData = PeerData
-    { peerCompleteHandshake :: Bool
-    , peerHeight            :: BlockHeight
-    , peerMsgChan           :: TBMChan Message
-    , peerReconnectTimer    :: Int
+    { peerCompleteHandshake :: !Bool
+    , peerHeight            :: !BlockHeight
+    , peerMsgChan           :: !(TBMChan Message)
+    , peerReconnectTimer    :: !Int
     }
 
 data MergedRequest r
-    = MergedPeerMessage PeerMessage
-    | MergedNodeRequest r
-    | MergedMngrRequest ManagerRequest
+    = MergedPeerMessage !PeerMessage
+    | MergedNodeRequest !r
+    | MergedMngrRequest !ManagerRequest
 
 data ManagerRequest 
-    = RestartPeer RemoteHost
+    = RestartPeer !RemoteHost
 
 withAsyncNode :: PeerManager r m
               => [(String, Int)]

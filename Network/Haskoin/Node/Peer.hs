@@ -76,25 +76,25 @@ maxHeaders :: Int
 maxHeaders = 2000
 
 data PeerSession = PeerSession
-    { remoteSettings :: RemoteHost
-    , peerChan       :: TBMChan Message
-    , mngrChan       :: TBMChan PeerMessage
-    , peerVersion    :: Maybe Version
+    { remoteSettings :: !RemoteHost
+    , peerChan       :: !(TBMChan Message)
+    , mngrChan       :: !(TBMChan PeerMessage)
+    , peerVersion    :: !(Maybe Version)
     -- Aggregate all the transaction of a merkle block before sending
     -- them up to the manager
-    , inflightMerkle :: Maybe DecodedMerkleBlock
+    , inflightMerkle :: !(Maybe DecodedMerkleBlock)
     } 
 
 -- Data sent from peers to the central manager queue
 data PeerMessage
-    = PeerHandshake RemoteHost Version
-    | PeerDisconnect RemoteHost
-    | PeerMerkleBlock RemoteHost DecodedMerkleBlock
-    | PeerMessage RemoteHost Message   
+    = PeerHandshake !RemoteHost !Version
+    | PeerDisconnect !RemoteHost
+    | PeerMerkleBlock !RemoteHost !DecodedMerkleBlock
+    | PeerMessage !RemoteHost !Message   
 
 data RemoteHost = RemoteHost
-    { remoteHost :: String
-    , remotePort :: Int
+    { remoteHost :: !String
+    , remotePort :: !Int
     } deriving (Eq, Ord, Show, Read)
 
 instance B.Binary RemoteHost where
@@ -102,14 +102,14 @@ instance B.Binary RemoteHost where
     put (RemoteHost h p) = B.put h >> B.put p
 
 data DecodedMerkleBlock = DecodedMerkleBlock
-    { decodedMerkle :: MerkleBlock
-    , decodedRoot   :: MerkleRoot
-    , expectedTxs   :: [TxHash]
-    , merkleTxs     :: [Tx]
+    { decodedMerkle :: !MerkleBlock
+    , decodedRoot   :: !MerkleRoot
+    , expectedTxs   :: ![TxHash]
+    , merkleTxs     :: ![Tx]
     } deriving (Eq, Read, Show)
 
 data NodeException
-    = NodeException String
+    = NodeException !String
     deriving (Eq, Read, Show, Typeable)
 
 instance Exception NodeException

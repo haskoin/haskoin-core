@@ -117,54 +117,54 @@ import Network.Haskoin.Node.PeerManager
 import Network.Haskoin.Node.Peer
 
 data SPVRequest 
-    = BloomFilterUpdate BloomFilter
-    | PublishTx Tx
-    | NodeRescan Timestamp
+    = BloomFilterUpdate !BloomFilter
+    | PublishTx !Tx
+    | NodeRescan !Timestamp
     | Heartbeat
 
 data SPVEvent 
-    = MerkleBlockEvent [(BlockChainAction, [TxHash])]
-    | TxEvent [Tx]
+    = MerkleBlockEvent ![(BlockChainAction, [TxHash])]
+    | TxEvent ![Tx]
 
 data SPVSession = SPVSession
     { -- Server event channel
-      spvEventChan :: TBMChan SPVEvent
+      spvEventChan :: !(TBMChan SPVEvent)
       -- Peer currently synchronizing the block headers
-    , spvSyncPeer :: Maybe RemoteHost
+    , spvSyncPeer :: !(Maybe RemoteHost)
       -- Latest bloom filter provided by the wallet
-    , spvBloom :: Maybe BloomFilter
+    , spvBloom :: !(Maybe BloomFilter)
       -- Block hashes that have to be downloaded
-    , blocksToDwn :: M.Map BlockHeight [BlockHash]
+    , blocksToDwn :: !(M.Map BlockHeight [BlockHash])
       -- Received merkle blocks pending to be sent to the wallet
-    , receivedMerkle :: M.Map BlockHeight [DecodedMerkleBlock]
+    , receivedMerkle :: !(M.Map BlockHeight [DecodedMerkleBlock])
       -- The best merkle block hash
-    , bestBlockHash :: BlockHash
+    , bestBlockHash :: !BlockHash
       -- Transactions that have not been sent in a merkle block.
       -- We stall solo transactions until the merkle blocks are synced.
-    , soloTxs :: [Tx]
+    , soloTxs :: ![Tx]
       -- Transactions from users that need to be broadcasted
-    , pendingTxBroadcast :: [Tx]
+    , pendingTxBroadcast :: ![Tx]
       -- This flag is set if the wallet triggered a rescan.
       -- The rescan can only be executed if no merkle block are still
       -- being downloaded.
-    , pendingRescan :: Maybe Timestamp
+    , pendingRescan :: !(Maybe Timestamp)
       -- How many merkle blocks requests are batched together in a GetData
       -- request and how many merkle blocks are sent together to the wallet.
-    , blockBatch :: Int
+    , blockBatch :: !Int
       -- Do not request merkle blocks with a timestamp before the
       -- fast catchup time.
-    , fastCatchup :: Timestamp
+    , fastCatchup :: !Timestamp
       -- Block hashes that a peer advertised to us but we haven't linked them
       -- yet to our chain. We use this list to update the peer height once
       -- those blocks are linked.
-    , peerBroadcastBlocks :: M.Map RemoteHost [BlockHash]
+    , peerBroadcastBlocks :: !(M.Map RemoteHost [BlockHash])
       -- Inflight merkle block requests for each peer
     , peerInflightMerkles :: 
-        M.Map RemoteHost [((BlockHeight, BlockHash), Timestamp)]
+        !(M.Map RemoteHost [((BlockHeight, BlockHash), Timestamp)])
       -- Inflight transaction requests for each peer. We are waiting for
       -- the GetData response. We stall merkle blocks if there are pending
       -- transaction downloads.
-    , peerInflightTxs :: M.Map RemoteHost [(TxHash, Timestamp)]
+    , peerInflightTxs :: !(M.Map RemoteHost [(TxHash, Timestamp)])
     }
 
 type SPVHandle m = S.StateT ManagerSession (S.StateT SPVSession m)

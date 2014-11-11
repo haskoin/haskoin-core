@@ -31,10 +31,6 @@ library
                        Network.Haskoin.Wallet.Address,
                        Network.Haskoin.Wallet.Tx,
                        Network.Haskoin.Wallet.Types,
-                       Network.Haskoin.SPV.Peer,
-                       Network.Haskoin.SPV.PeerManager,
-                       Network.Haskoin.SPV.Types,
-                       Network.Haskoin.SPV.LevelDBChain,
                        Network.Haskoin.REST.Types
     build-depends:     aeson                >= 0.8 && < 0.9,
                        async                >= 2.0  && < 2.1,

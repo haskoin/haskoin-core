@@ -877,3 +877,4 @@ getWorkDir = do
     let dir = concat [ haskoinDir, "/", networkName ]
     createDirectoryIfMissing True dir
     return dir
+

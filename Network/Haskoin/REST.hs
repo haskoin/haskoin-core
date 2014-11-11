@@ -83,12 +83,24 @@ import Yesod
 import Network.Wai.Handler.Warp (runSettings, defaultSettings, setHost, setPort)
 import Network.Wai.Middleware.HttpAuth (basicAuth)
 
+import qualified Database.LevelDB.Base as DB 
+    ( DB
+    , open
+    , defaultOptions
+    , createIfMissing
+    , cacheSize
+    , get
+    , put
+    , write
+    , BatchOp( Put )
+    )
+
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
+import Network.Haskoin.Node
 
 import Network.Haskoin.REST.Types
-import Network.Haskoin.SPV.PeerManager
-import Network.Haskoin.SPV.Types
+import Network.Haskoin.SPV
 
 import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Tx
@@ -146,7 +158,7 @@ instance Default ServerConfig where
 
 data HaskoinServer = HaskoinServer 
     { serverPool   :: ConnectionPool
-    , serverNode   :: Maybe (TBMChan NodeRequest)
+    , serverNode   :: Maybe (TBMChan SPVRequest)
     , serverConfig :: ServerConfig
     }
 
@@ -181,7 +193,7 @@ mkYesod "HaskoinServer" [parseRoutes|
 
 runServer :: ServerConfig -> IO ()
 runServer config = do
-    let walletFile = pack $ "wallet"
+    let walletFile = pack "wallet"
 
     pool <- runNoLoggingT $
         createSqlPool (\lf -> open walletFile >>= flip wrapConnection lf) 1
@@ -223,24 +235,22 @@ runServer config = do
             let bb = dbConfigBestBlockHash $ entityVal $ fromJust conf
 
             -- Launch SPV node
-            withAsyncNode batch fastCatchup bb $ \eChan rChan _ -> do
-            let eventPipe = sourceTBMChan eChan $$ 
-                            processNodeEvents pool rChan fp
-            withAsync eventPipe $ \_ -> do
-            bloom <- flip runSqlPersistMPool pool $ walletBloomFilter fp
-            atomically $ do
-                -- Bloom filter
-                writeTBMChan rChan $ BloomFilterUpdate bloom
-                -- Bitcoin hosts to connect to
-                forM_ hosts $ \(h,p) -> writeTBMChan rChan $ ConnectNode h p
-
-            app <- toWaiApp $ HaskoinServer pool (Just rChan) config
-            runApp app
+            withAsyncSPV hosts batch fastCatchup bb runNodeHandle $ 
+                \eChan rChan _ -> do
+                let eventPipe = sourceTBMChan eChan $$ 
+                                processNodeEvents pool rChan fp
+                withAsync eventPipe $ \_ -> do
+                    -- Send the bloom filter
+                    bloom <- flip runSqlPersistMPool pool $ walletBloomFilter fp
+                    atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
+                    -- Launch the haskoin server
+                    app <- toWaiApp $ HaskoinServer pool (Just rChan) config
+                    runApp app
 
 processNodeEvents :: ConnectionPool 
-                  -> TBMChan NodeRequest 
+                  -> TBMChan SPVRequest 
                   -> Double 
-                  -> Sink NodeEvent IO ()
+                  -> Sink SPVEvent IO ()
 processNodeEvents pool rChan fp = awaitForever $ \e -> do
     res <- lift $ tryJust f $ flip runSqlPersistMPool pool $ case e of
         MerkleBlockEvent xs -> void $ importBlocks xs

@@ -74,8 +74,8 @@ module Network.Haskoin.Node
 , SPVNode(..)
 , SPVSession(..)
 , SPVRequest(..)
-, SPVEvent(..)
 , withAsyncSPV
+, processBloomFilter
 
 ) where
 

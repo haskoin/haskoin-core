@@ -10,8 +10,8 @@ module Network.Haskoin.Node.SPVNode
 ( SPVNode(..)
 , SPVSession(..)
 , SPVRequest(..)
-, SPVEvent(..)
 , withAsyncSPV
+, processBloomFilter
 )
 where
 
@@ -122,15 +122,9 @@ data SPVRequest
     | NodeRescan !Timestamp
     | Heartbeat
 
-data SPVEvent 
-    = MerkleBlockEvent ![(BlockChainAction, [TxHash])]
-    | TxEvent ![Tx]
-
 data SPVSession = SPVSession
-    { -- Server event channel
-      spvEventChan :: !(TBMChan SPVEvent)
-      -- Peer currently synchronizing the block headers
-    , spvSyncPeer :: !(Maybe RemoteHost)
+    { -- Peer currently synchronizing the block headers
+      spvSyncPeer :: !(Maybe RemoteHost)
       -- Latest bloom filter provided by the wallet
     , spvBloom :: !(Maybe BloomFilter)
       -- Block hashes that have to be downloaded
@@ -177,9 +171,11 @@ class ( BlockHeaderStore s
       )
     => SPVNode s m | m -> s where
     runHeaderChain :: s a -> SPVHandle m a
-    saveWalletHash :: Word256 -> SPVHandle m ()
-    existsWalletHash :: Word256 -> SPVHandle m Bool
-    clearWalletHash :: SPVHandle m ()
+    wantTxHash :: TxHash -> SPVHandle m Bool
+    haveMerkleHash :: BlockHash -> SPVHandle m Bool
+    rescanCleanup :: SPVHandle m ()
+    spvImportTxs :: [Tx] -> SPVHandle m ()
+    spvImportMerkleBlock :: BlockChainAction -> [TxHash] -> SPVHandle m ()
 
 instance SPVNode s m => PeerManager SPVRequest (S.StateT SPVSession m) where
     initNode = spvInitNode
@@ -197,14 +193,11 @@ withAsyncSPV :: SPVNode s m
              -> Timestamp
              -> BlockHash
              -> (m () -> IO ())
-             -> (TBMChan SPVEvent -> TBMChan SPVRequest -> Async () -> IO ())
+             -> (TBMChan SPVRequest -> Async () -> IO ())
              -> IO ()
 withAsyncSPV hosts batch fc bb runStack f = do
-    -- Channel for sending server events to the wallet
-    eChan <- liftIO $ atomically $ newTBMChan 10000
     let session = SPVSession
-            { spvEventChan = eChan
-            , spvSyncPeer = Nothing
+            { spvSyncPeer = Nothing
             , spvBloom = Nothing
             , blocksToDwn = M.empty
             , receivedMerkle = M.empty
@@ -223,7 +216,7 @@ withAsyncSPV hosts batch fc bb runStack f = do
     -- Launch PeerManager main loop
     withAsyncNode hosts g $ \rChan a -> 
         -- Launch heartbeat thread to monitor stalled requests
-        withAsync (heartbeat rChan) $ \_ -> f eChan rChan a
+        withAsync (heartbeat rChan) $ \_ -> f rChan a
 
 heartbeat :: TBMChan SPVRequest -> IO ()
 heartbeat rChan = forever $ do
@@ -262,9 +255,6 @@ spvInitNode = do
     toDwn <- runHeaderChain $ blocksToDownload bestHash
     let toDwnList = map (\(a,b) -> (a,[b])) toDwn
     lift $ S.modify $ \s -> s{ blocksToDwn = M.fromListWith (++) toDwnList }
-
-    -- Mark the genesis block as sent to the wallet
-    saveWalletHash $ fromIntegral $ headerHash genesisHeader
 
 {- Peer events -}
 
@@ -422,10 +412,9 @@ processInv remote (Inv vs) = do
             , "]"
             , "(", show remote, ")" 
             ]
-        -- Filter transactions that have not been sent to the wallet yet
-        let f = (not <$>) . existsWalletHash . fromIntegral
-        notHaveTxs <- filterM f txlist
-        downloadTxs remote notHaveTxs
+        -- Filter transactions that the wallet wants us to download
+        txsToDwn <- filterM wantTxHash txlist
+        downloadTxs remote txsToDwn
 
     -- Process blocks
     unless (null blocklist) $ do
@@ -463,28 +452,23 @@ processInv remote (Inv vs) = do
 -- These are solo transactions not linked to a merkle block (yet)
 processTx :: SPVNode s m => RemoteHost -> Tx -> SPVHandle m ()
 processTx remote tx = do
-    -- Only process the transaction if we have not sent it to the wallet yet.
-    alreadyHave <- existsWalletHash $ fromIntegral txhash
-    unless alreadyHave $ do
-        -- Only send to wallet if we are in sync
-        synced <- merkleBlocksSynced
-        if synced 
-            then do
-                $(logInfo) $ T.pack $ unwords 
-                    [ "Got solo tx"
-                    , encodeTxHashLE txhash 
-                    , "Sending to the wallet"
-                    ]
-                eChan <- lift $ S.gets spvEventChan
-                liftIO $ atomically $ writeTBMChan eChan $ TxEvent [tx]
-                saveWalletHash $ fromIntegral txhash
-            else do
-                $(logInfo) $ T.pack $ unwords 
-                    [ "Got solo tx"
-                    , encodeTxHashLE txhash 
-                    , "We are not synced. Buffering it."
-                    ]
-                lift $ S.modify $ \s -> s{ soloTxs = nub $ tx : soloTxs s } 
+    -- Only send to wallet if we are in sync
+    synced <- merkleBlocksSynced
+    if synced 
+        then do
+            $(logInfo) $ T.pack $ unwords 
+                [ "Got solo tx"
+                , encodeTxHashLE txhash 
+                , "Sending to the wallet"
+                ]
+            spvImportTxs [tx]
+        else do
+            $(logInfo) $ T.pack $ unwords 
+                [ "Got solo tx"
+                , encodeTxHashLE txhash 
+                , "We are not synced. Buffering it."
+                ]
+            lift $ S.modify $ \s -> s{ soloTxs = nub $ tx : soloTxs s } 
 
     -- Remove the inflight transaction from all remote inflight lists
     txMap <- lift $ S.gets peerInflightTxs
@@ -499,18 +483,14 @@ processTx remote tx = do
 spvPeerMerkleBlock :: SPVNode s m 
                    => RemoteHost -> DecodedMerkleBlock -> SPVHandle m ()
 spvPeerMerkleBlock remote dmb = do
-    existsNode <- runHeaderChain $ existsBlockHeaderNode bid
     -- Ignore unsolicited merkle blocks
+    existsNode <- runHeaderChain $ existsBlockHeaderNode bid
     when existsNode $ do
         node <- runHeaderChain $ getBlockHeaderNode bid
-        
         -- Remove merkle blocks from the inflight list
-        merkleMap <- lift $ S.gets peerInflightMerkles
-        let f xs   = g $ filter ((/= bid) . snd . fst) xs
-            g res  = if null res then Nothing else Just res
-            newMap = M.update f remote merkleMap
-        lift $ S.modify $ \s -> s{ peerInflightMerkles = newMap }
+        removeInflightMerkle remote bid
 
+        -- Check if the merkle block is valid
         let isValid = decodedRoot dmb == (merkleRoot $ nodeHeader node)
         unless isValid $ $(logWarn) $ T.pack $ unwords
             [ "Received invalid merkle block: "
@@ -520,22 +500,16 @@ spvPeerMerkleBlock remote dmb = do
 
         -- When a rescan is pending, don't store the merkle blocks
         rescan <- lift $ S.gets pendingRescan
-        let hasMoreInflight = M.member remote newMap
         when (isNothing rescan && isValid) $ do
-
             -- Insert the merkle block into the received list
-            receivedMap <- lift $ S.gets receivedMerkle
-            let singletonMap = M.singleton (nodeHeaderHeight node) [dmb]
-                newMap = M.unionWith (++) receivedMap singletonMap
-            lift $ S.modify $ \s -> s{ receivedMerkle = newMap }
-            
-            -- When the peer is done with the current batch, import the
-            -- merkle blocks and trigger a new download
-            unless hasMoreInflight $ do
-                importMerkleBlocks 
-                downloadBlocks remote
+            addReceivedMerkle (nodeHeaderHeight node) dmb
+            -- Import merkle blocks in order
+            importMerkleBlocks 
+            downloadBlocks remote
 
         -- Try to launch the rescan if one is pending
+        hasMoreInflight <- liftM (M.member remote) $ 
+            lift $ S.gets peerInflightMerkles
         when (isJust rescan && not hasMoreInflight) $ 
             processRescan $ fromJust rescan
   where
@@ -554,46 +528,21 @@ importMerkleBlocks = do
     -- confirmation:
     -- INV tx1 -> GetData tx1 -> MerkleBlock (all tx except tx1) -> Tx1
     when (null inflightTxs && isNothing rescan) $ do
-        eChan     <- lift $ S.gets spvEventChan
         toImport  <- liftM (concat . M.elems) $ lift $ S.gets receivedMerkle
-        importRes <- liftM catMaybes $ forM toImport importMerkleBlock
+        wasImported <- liftM or $ forM toImport importMerkleBlock
+        when wasImported $ do
 
-        unless (null importRes) $ do
-
-            let merkles  = map (\x -> (fst3 x, snd3 x)) importRes
-                txGroups = map lst3 importRes
-
-            liftIO $ atomically $ do
-                -- Send transactions to the wallet
-                forM_ txGroups $ \gs -> unless (null gs) $
-                    writeTBMChan eChan $ TxEvent gs
-                -- Send merkle blocks to the wallet
-                writeTBMChan eChan $ MerkleBlockEvent merkles
-
-            unless (null txGroups) $ $(logInfo) $ T.pack $ unwords
-                [ "Merkle block import: sending"
-                , show $ length $ concat txGroups
-                , "transactions to the user"
-                ]
-
-            bestBlock  <- lift $ S.gets bestBlockHash
-            bestHeight <- runHeaderChain $ getBlockHeaderHeight bestBlock
-
-            $(logInfo) $ T.pack $ unwords
-                [ "New block height:"
-                , show bestHeight
-                ]
-
+            -- Check if we are in sync
             synced <- merkleBlocksSynced
             when synced $ do
                 -- If we are synced, send solo transactions to the wallet
-                solo    <- lift $ S.gets soloTxs
-                notHave <- filterM filterTx solo
-                liftIO $ atomically $ writeTBMChan eChan $ TxEvent notHave
-                forM_ notHave $ saveWalletHash . fromIntegral . txHash
+                solo <- lift $ S.gets soloTxs
                 lift $ S.modify $ \s -> s{ soloTxs = [] }
+                spvImportTxs solo
 
                 -- Log current height
+                bestBlock  <- lift $ S.gets bestBlockHash
+                bestHeight <- runHeaderChain $ getBlockHeaderHeight bestBlock
                 $(logInfo) $ T.pack $ unwords
                     [ "Merkle blocks are in sync at height:"
                     , show bestHeight
@@ -601,13 +550,11 @@ importMerkleBlocks = do
 
             -- Try to import more merkle blocks if some were imported this round
             importMerkleBlocks
-  where
-    filterTx = ((liftM not) . existsWalletHash . fromIntegral . txHash)
 
 -- Import a single merkle block if its parent has already been imported
 importMerkleBlock :: SPVNode s m 
                   => DecodedMerkleBlock
-                  -> SPVHandle m (Maybe (BlockChainAction, [TxHash], [Tx]))
+                  -> SPVHandle m Bool
 importMerkleBlock dmb = do
 
     -- Check if the previous block is before the fast catchup time
@@ -617,11 +564,13 @@ importMerkleBlock dmb = do
     let parentBeforeCatchup = blockTimestamp (nodeHeader prevNode) < fc
     
     -- Check if we sent the parent block to the wallet
-    haveParent <- existsWalletHash $ fromIntegral prevHash
+    haveParent <- if prevHash == headerHash genesisHeader 
+        then return True 
+        else haveMerkleHash prevHash
 
     -- We must have sent the previous merkle to the user (wallet) to import
     -- this one. Or the previous block can be before the fast catchup time.
-    if not (haveParent || parentBeforeCatchup) then return Nothing else do
+    if not (haveParent || parentBeforeCatchup) then return False else do
 
         -- Import the block into the blockchain
         oldBestHash <- lift $ S.gets bestBlockHash
@@ -629,58 +578,57 @@ importMerkleBlock dmb = do
         action <- runHeaderChain $ connectBlock oldBestHash bid
 
         -- Remove the merkle block from the received merkle list
-        receivedMap <- lift $ S.gets receivedMerkle
-        let height = nodeHeaderHeight $ getActionNode action
-            f xs   = g $ delete dmb xs
-            g res  = if null res then Nothing else Just res
-            newMap = M.update f height receivedMap
-        lift $ S.modify $ \s -> s{ receivedMerkle = newMap }
+        removeReceivedMerkle (nodeHeaderHeight $ getActionNode action) dmb
 
         -- If solo transactions belong to this merkle block, we have
         -- to import them and remove them from the solo list.
         solo <- lift $ S.gets soloTxs
         let isInMerkle x        = txHash x `elem` expectedTxs dmb
             (soloAdd, soloKeep) = partition isInMerkle solo
-            allTxs              = nub $ merkleTxs dmb ++ soloAdd
+            txsToImport         = nub $ merkleTxs dmb ++ soloAdd
         lift $ S.modify $ \s -> s{ soloTxs = soloKeep }
 
-        haveNode <- existsWalletHash $ fromIntegral bid 
-        if haveNode then return Nothing else do
+        -- Update the bestBlockHash
+        case action of
+            BestBlock b -> do
+                lift $ S.modify $ \s -> s{ bestBlockHash = bid }
+                logBestBlock b $ length txsToImport
+            BlockReorg _ o n -> do
+                lift $ S.modify $ \s -> s{ bestBlockHash = bid }
+                logReorg o n $ length txsToImport
+            SideBlock b -> logSideblock b $ length txsToImport
 
-            -- Update the bestBlockHash
-            case action of
-                SideBlock _ -> return ()
-                _           -> lift $ S.modify $ \s -> s{ bestBlockHash = bid }
+        -- Import transactions and merkle block into the wallet
+        unless (null txsToImport) $ spvImportTxs txsToImport
+        spvImportMerkleBlock action $ expectedTxs dmb
 
-            -- Filter duplicate transaction
-            txToImport <- filterM filterTx allTxs
-
-            -- Save the fact that we sent the data to the wallet
-            forM_ txToImport $ saveWalletHash . fromIntegral . txHash
-            saveWalletHash $ fromIntegral bid
-
-            case action of
-                BestBlock _ -> return ()
-                BlockReorg _ o n -> do
-                    $(logInfo) $ T.pack $ unwords
-                        [ "Block reorg. Orphaned blocks:"
-                        , "[", unwords $ 
-                            map (encodeBlockHashLE . nodeBlockHash) o ,"]"
-                        , "New blocks:"
-                        , "[", unwords $ 
-                            map (encodeBlockHashLE . nodeBlockHash) n ,"]"
-                        , "New height:"
-                        , show $ nodeHeaderHeight $ last n
-                        ]
-                SideBlock b -> $(logInfo) $ T.pack $ unwords
-                    [ "Side block at height"
-                    , show $ nodeHeaderHeight b, ":"
-                    , encodeBlockHashLE $ nodeBlockHash b
-                    ]
-
-            return $ Just (action, expectedTxs dmb, txToImport)
+        return True
   where
-    filterTx = ((liftM not) . existsWalletHash . fromIntegral . txHash)
+    logBestBlock :: SPVNode s m => BlockHeaderNode -> Int -> SPVHandle m ()
+    logBestBlock b c = $(logInfo) $ T.pack $ unwords
+        [ "Best block at height:"
+        , show $ nodeHeaderHeight b, ":"
+        , encodeBlockHashLE $ nodeBlockHash b
+        , "( Sent", show c, "transactions to the wallet )"
+        ]
+    logSideblock :: SPVNode s m => BlockHeaderNode -> Int -> SPVHandle m ()
+    logSideblock b c = $(logInfo) $ T.pack $ unwords
+        [ "Side block at height"
+        , show $ nodeHeaderHeight b, ":"
+        , encodeBlockHashLE $ nodeBlockHash b
+        , "( Sent", show c, "transactions to the wallet )"
+        ]
+    logReorg o n c = $(logInfo) $ T.pack $ unwords
+        [ "Block reorg. Orphaned blocks:"
+        , "[", unwords $ 
+            map (encodeBlockHashLE . nodeBlockHash) o ,"]"
+        , "New blocks:"
+        , "[", unwords $ 
+            map (encodeBlockHashLE . nodeBlockHash) n ,"]"
+        , "New height:"
+        , show $ nodeHeaderHeight $ last n
+        , "( Sent", show c, "transactions to the wallet )"
+        ]
 
 {- Wallet Requests -}
 
@@ -726,9 +674,7 @@ processRescan ts = do
                 [ "Running rescan from time:"
                 , show ts
                 ]
-            -- Clear the saved hashes that we sent to the wallet
-            clearWalletHash
-            saveWalletHash $ fromIntegral $ headerHash genesisHeader
+            rescanCleanup
 
             -- Find the new best blocks that matches the fastCatchup time
             newBestBlock <- runHeaderChain $ blockBeforeTimestamp ts
@@ -873,14 +819,8 @@ downloadBlocks remote = canDownloadBlocks remote >>= \dwn -> when dwn $ do
 
         -- Store the new list of blocks to download
         lift $ S.modify $ \s -> s{ blocksToDwn = restMap }
-
         -- Store the new blocks to download as inflght merkle blocks
-        now <- round <$> liftIO getPOSIXTime
-        merkleMap <- lift $ S.gets peerInflightMerkles
-        let newList = map (\v -> (v, now)) toDwn
-            newMap  = M.unionWith (++) merkleMap $ M.singleton remote newList
-        lift $ S.modify $ \s -> s{ peerInflightMerkles = newMap }
-
+        addInflightMerkles remote toDwn
         -- Send GetData message to receive the merkle blocks
         sendMerkleGetData remote $ map snd toDwn
 
@@ -952,4 +892,39 @@ addBlocksToDwn hs = lift $ do
     S.modify $ \s -> s{ blocksToDwn = M.unionWith (++) dwnMap newMap }
   where
     newMap = M.fromListWith (++) $ map (\(a,b) -> (a,[b])) hs
+
+addReceivedMerkle :: SPVNode s m 
+                  => BlockHeight -> DecodedMerkleBlock -> SPVHandle m ()
+addReceivedMerkle h dmb = do
+    receivedMap <- lift $ S.gets receivedMerkle
+    let newMap = M.unionWith (++) receivedMap $ M.singleton h [dmb]
+    lift $ S.modify $ \s -> s{ receivedMerkle = newMap }
+
+removeReceivedMerkle :: SPVNode s m 
+                     => BlockHeight -> DecodedMerkleBlock -> SPVHandle m ()
+removeReceivedMerkle h dmb = do
+    receivedMap <- lift $ S.gets receivedMerkle
+    let f xs   = g $ delete dmb xs
+        g res  = if null res then Nothing else Just res
+        newMap = M.update f h receivedMap
+    lift $ S.modify $ \s -> s{ receivedMerkle = newMap }
+
+addInflightMerkles :: SPVNode s m 
+                   => RemoteHost -> [(BlockHeight, BlockHash)] -> SPVHandle m ()
+addInflightMerkles remote vs = do
+    now <- round <$> liftIO getPOSIXTime
+    merkleMap <- lift $ S.gets peerInflightMerkles
+    let newList = map (\v -> (v, now)) vs
+        newMap  = M.unionWith (++) merkleMap $ M.singleton remote newList
+    lift $ S.modify $ \s -> s{ peerInflightMerkles = newMap }
+
+removeInflightMerkle :: SPVNode s m 
+                     => RemoteHost -> BlockHash -> SPVHandle m ()
+removeInflightMerkle remote bid = do
+    merkleMap <- lift $ S.gets peerInflightMerkles
+    let newMap = M.update f remote merkleMap
+    lift $ S.modify $ \s -> s{ peerInflightMerkles = newMap }
+  where
+    f xs  = g $ filter ((/= bid) . snd . fst) xs
+    g res = if null res then Nothing else Just res
 

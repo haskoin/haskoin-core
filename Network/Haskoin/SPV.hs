@@ -163,3 +163,4 @@ instance BlockHeaderStore DBHandle where
     setBestBlockHeader bhn = do
         db <- S.get
         DB.put db def bestHeaderKey $ encode' $ nodeBlockHash bhn
+

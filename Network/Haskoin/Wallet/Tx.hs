@@ -20,7 +20,7 @@ module Network.Haskoin.Wallet.Tx
 , walletBloomFilter
 , isTxInWallet
 , firstKeyTime
-, importBlocks
+, importBlock
 , getBestHeight
 , setBestHash
 , balance
@@ -634,77 +634,67 @@ isTxInWallet tid = liftM isJust $ getBy $ UniqueTx tid
 -- this.
 -- | Import filtered blocks into the wallet. This will update the confirmations
 -- of the relevant transactions.
-importBlocks :: (MonadIO m, PersistQuery b, PersistUnique b)
-             => [(BlockChainAction, [TxHash])] -> ReaderT b m ()
-importBlocks xs = do
-    hsM <- forM xs $ \(a, txs) -> do
-        -- Insert transaction/block confirmation links. We have to keep this
-        -- information even for side blocks as we need it when a reorg occurs.
-        myTxsEnt <- liftM catMaybes $ forM txs $ \tx -> getBy $ UniqueTx tx
-        let myTxs = map (dbTxHash . entityVal) myTxsEnt
-        forM_ myTxs $ \h -> insert_ $ 
-            DbConfirmation h (nodeBlockHash $ newNode a)
-        case a of
-            SideBlock _ -> return Nothing
-            BestBlock node -> do
-                forM_ myTxs $ \h -> do
+importBlock :: (MonadIO m, PersistQuery b, PersistUnique b)
+            => BlockChainAction -> [TxHash] -> ReaderT b m ()
+importBlock action expectedTxs = do
+
+    -- Insert transaction/block confirmation links. We have to keep this
+    -- information even for side blocks as we need it when a reorg occurs.
+    myTxs <- filterM ((liftM isJust) . getBy . UniqueTx) expectedTxs
+    forM_ myTxs $ \h -> 
+        insert_ $ DbConfirmation h (nodeBlockHash $ getActionNode action)
+
+    case action of
+        BestBlock node -> do
+            forM_ myTxs $ \h -> do
+                -- Mark all conflicts as dead
+                conflicts <- getConflicts h
+                forM_ conflicts $ \c -> 
+                    updateWhere [ DbTxHash ==. c ]
+                                [ DbTxConfidence =. TxDead ]
+                -- Confidence in this transaction is now building up
+                updateWhere 
+                    [ DbTxHash ==. h ]
+                    [ DbTxConfirmedBy     =. Just (nodeBlockHash node)
+                    , DbTxConfirmedHeight =. Just (nodeHeaderHeight node)
+                    , DbTxConfidence      =. TxBuilding
+                    ]
+            setBestHash (nodeHeaderHeight node) (nodeBlockHash node)
+        BlockReorg _ o n -> do
+            -- Unconfirm transactions from the old chain
+            forM_ (reverse o) $ \b -> do
+                otxs <- selectList 
+                    [ DbTxConfirmedBy ==. Just (nodeBlockHash b) ] []
+                forM_ otxs $ \(Entity oKey _) -> do
+                    update oKey [ DbTxConfirmedBy     =. Nothing
+                                , DbTxConfirmedHeight =. Nothing
+                                , DbTxConfidence      =. TxPending
+                                ]
+                -- Update conflicted transactions
+                forM_ otxs $ \(Entity _ otx) -> do
+                    conflicts <- getConflicts $ dbTxHash otx
+                    forM_ conflicts reviveTransaction
+            -- Confirm transactions in the new chain. This will also confirm
+            -- the transactions in the best block of the new chain as we
+            -- inserted it in DbConfirmations at the start of the function.
+            forM_ n $ \b -> do
+                cnfs <- selectList 
+                            [ DbConfirmationBlock ==. nodeBlockHash b ] []
+                let ntxs = map (dbConfirmationTx . entityVal) cnfs 
+                forM_ ntxs $ \h -> do
                     -- Mark all conflicts as dead
                     conflicts <- getConflicts h
                     forM_ conflicts $ \c -> 
                         updateWhere [ DbTxHash ==. c ]
                                     [ DbTxConfidence =. TxDead ]
-                    -- Confidence in this transaction is now building up
                     updateWhere 
-                        [ DbTxHash ==. h ]
-                        [ DbTxConfirmedBy     =. Just (nodeBlockHash node)
-                        , DbTxConfirmedHeight =. Just (nodeHeaderHeight node)
+                        [ DbTxHash ==. h ] 
+                        [ DbTxConfirmedBy     =. Just (nodeBlockHash b)
+                        , DbTxConfirmedHeight =. Just (nodeHeaderHeight b)
                         , DbTxConfidence      =. TxBuilding
                         ]
-                return $ Just (nodeHeaderHeight node, nodeBlockHash node)
-            BlockReorg _ o n -> do
-                -- Unconfirm transactions from the old chain
-                forM_ (reverse o) $ \b -> do
-                    otxs <- selectList 
-                        [ DbTxConfirmedBy ==. Just (nodeBlockHash b) ] []
-                    forM_ otxs $ \(Entity oKey _) -> do
-                        update oKey [ DbTxConfirmedBy     =. Nothing
-                                    , DbTxConfirmedHeight =. Nothing
-                                    , DbTxConfidence      =. TxPending
-                                    ]
-                    -- Update conflicted transactions
-                    forM_ otxs $ \(Entity _ otx) -> do
-                        conflicts <- getConflicts $ dbTxHash otx
-                        forM_ conflicts reviveTransaction
-                -- Confirm transactions in the new chain. This will also confirm
-                -- the transactions in the best block of the new chain as we
-                -- inserted it in DbConfirmations at the start of the function.
-                forM_ n $ \b -> do
-                    cnfs <- selectList 
-                                [ DbConfirmationBlock ==. nodeBlockHash b ] []
-                    let ntxs = map (dbConfirmationTx . entityVal) cnfs 
-                    forM_ ntxs $ \h -> do
-                        -- Mark all conflicts as dead
-                        conflicts <- getConflicts h
-                        forM_ conflicts $ \c -> 
-                            updateWhere [ DbTxHash ==. c ]
-                                        [ DbTxConfidence =. TxDead ]
-                        updateWhere 
-                            [ DbTxHash ==. h ] 
-                            [ DbTxConfirmedBy     =. Just (nodeBlockHash b)
-                            , DbTxConfirmedHeight =. Just (nodeHeaderHeight b)
-                            , DbTxConfidence      =. TxBuilding
-                            ]
-                return $ Just ( nodeHeaderHeight $ last n
-                              , nodeBlockHash $ last n
-                              )
-    -- Update best height
-    let hs = catMaybes hsM
-        m  = maximumBy (\a b -> fst a `compare` fst b) hs
-    unless (null hs) $ setBestHash (fst m) (snd m)
-  where
-    newNode (BestBlock node) = node
-    newNode (SideBlock node) = node
-    newNode (BlockReorg _ _ n) = last n
+            setBestHash (nodeHeaderHeight $ last n) (nodeBlockHash $ last n)
+        SideBlock _ -> return ()
 
 -- If a transaction is Dead but has no more conflicting Building transactions,
 -- we update the status to Pending

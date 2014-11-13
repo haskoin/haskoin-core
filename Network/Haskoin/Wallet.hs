@@ -60,7 +60,7 @@ module Network.Haskoin.Wallet
 , firstKeyTime
 
 -- *Block Commands
-, importBlocks
+, importBlock
 
 -- *Database Types 
 , TxConfidence(..)

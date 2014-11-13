@@ -235,37 +235,14 @@ runServer config = do
             let bb = dbConfigBestBlockHash $ entityVal $ fromJust conf
 
             -- Launch SPV node
-            withAsyncSPV hosts batch fastCatchup bb runNodeHandle $ 
-                \eChan rChan _ -> do
-                let eventPipe = sourceTBMChan eChan $$ 
-                                processNodeEvents pool rChan fp
-                withAsync eventPipe $ \_ -> do
-                    -- Send the bloom filter
-                    bloom <- flip runSqlPersistMPool pool $ walletBloomFilter fp
-                    atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
-                    -- Launch the haskoin server
-                    app <- toWaiApp $ HaskoinServer pool (Just rChan) config
-                    runApp app
-
-processNodeEvents :: ConnectionPool 
-                  -> TBMChan SPVRequest 
-                  -> Double 
-                  -> Sink SPVEvent IO ()
-processNodeEvents pool rChan fp = awaitForever $ \e -> do
-    res <- lift $ tryJust f $ flip runSqlPersistMPool pool $ case e of
-        MerkleBlockEvent xs -> void $ importBlocks xs
-        TxEvent ts          -> do
-            before <- count ([] :: [Filter (DbAddressGeneric b)])
-            forM_ ts $ \tx -> importTx tx NetworkSource
-            after <- count ([] :: [Filter (DbAddressGeneric b)])
-            -- Update the bloom filter if new addresses were generated
-            when (after > before) $ do
-                bloom <- walletBloomFilter fp
-                liftIO $ atomically $ writeTBMChan rChan $ 
-                    BloomFilterUpdate bloom
-    when (isLeft res) $ liftIO $ print $ fromLeft res
-  where
-    f (SomeException e) = Just $ show e
+            withAsyncSPV hosts batch fastCatchup bb (runNodeHandle fp pool) $ 
+                \rChan _ -> do
+                -- Send the bloom filter
+                bloom <- flip runSqlPersistMPool pool $ walletBloomFilter fp
+                atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
+                -- Launch the haskoin server
+                app <- toWaiApp $ HaskoinServer pool (Just rChan) config
+                runApp app
 
 guardVault :: Handler ()
 guardVault = do

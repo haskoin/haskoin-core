@@ -66,7 +66,7 @@ library
                        yaml                 >= 0.8  && < 0.9,
                        yesod                >= 1.4  && < 1.5,
                        yesod-static         >= 1.4  && < 1.5
-    ghc-options:       -Wall -fno-warn-orphans
+    ghc-options:       -Wall 
 
 executable hw
     main-is:           hw.hs
@@ -112,7 +112,7 @@ executable hw
                        yesod                >= 1.4  && < 1.5,
                        yesod-static         >= 1.4  && < 1.5
     hs-source-dirs:    . script
-    ghc-options:       -Wall -fno-warn-orphans
+    ghc-options:       -Wall 
 
 test-suite test-haskoin-wallet
     type:              exitcode-stdio-1.0
@@ -156,5 +156,5 @@ test-suite test-haskoin-wallet
                        test-framework-quickcheck2 >= 0.3  && < 0.4, 
                        test-framework-hunit       >= 0.3  && < 0.4 
     hs-source-dirs:    . tests
-    ghc-options:       -Wall -fno-warn-orphans
+    ghc-options:       -Wall 
 

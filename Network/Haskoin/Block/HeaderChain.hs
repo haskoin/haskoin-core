@@ -50,9 +50,9 @@ import Network.Haskoin.Util
 data BlockHeaderNode = BlockHeaderNode 
     { nodeBlockHash    :: !BlockHash
     , nodeHeader       :: !BlockHeader
-    , nodeHeaderHeight :: !Word32
+    , nodeHeaderHeight :: !BlockHeight
     , nodeChainWork    :: !Integer
-    , nodeMedianTimes  :: ![Word32]
+    , nodeMedianTimes  :: ![Timestamp]
     , nodeMinWork      :: !Word32 -- Only used for testnet
     } deriving (Show, Read, Eq)
 
@@ -75,9 +75,9 @@ instance Binary BlockHeaderNode where
 
 -- Return value of linking a new block header in the chain
 data BlockHeaderAction
-    = RejectHeader String
-    | HeaderAlreadyExists BlockHeaderNode
-    | AcceptHeader BlockHeaderNode
+    = RejectHeader !String
+    | HeaderAlreadyExists !BlockHeaderNode
+    | AcceptHeader !BlockHeaderNode
     deriving (Show, Read, Eq)
 
 class Monad m => BlockHeaderStore m where
@@ -118,7 +118,7 @@ initHeaderChain = do
 -- function ProcessBlockHeader and AcceptBlockHeader in main.cpp.
 connectBlockHeader :: BlockHeaderStore m 
                    => BlockHeader 
-                   -> Word32 
+                   -> Timestamp
                    -> m BlockHeaderAction
 connectBlockHeader bh adjustedTime = ((liftM f) . runEitherT) $ do
     unless (isValidPOW bh) $ 
@@ -236,7 +236,7 @@ nextWorkRequired lastNode bh
 -- | Computes the work required for the next block given a timestamp and the
 -- current block. The timestamp should come from the block that matched the
 -- last jump in difficulty (spaced out by 2016 blocks in prodnet).
-workFromInterval :: Word32 -> BlockHeader -> Word32
+workFromInterval :: Timestamp -> BlockHeader -> Word32
 workFromInterval ts lastB
     | newDiff > powLimit = encodeCompact powLimit
     | otherwise          = encodeCompact newDiff
@@ -266,10 +266,10 @@ blockLocator = do
         | step == 0 = return $ Just n
         | otherwise = go (step - 1) =<< getParentNode n
 
-bestBlockHeaderHeight :: BlockHeaderStore m => m Word32
+bestBlockHeaderHeight :: BlockHeaderStore m => m BlockHeight
 bestBlockHeaderHeight = liftM nodeHeaderHeight getBestBlockHeader
 
-getBlockHeaderHeight :: BlockHeaderStore m => BlockHash -> m Word32
+getBlockHeaderHeight :: BlockHeaderStore m => BlockHash -> m BlockHeight
 getBlockHeaderHeight h = liftM nodeHeaderHeight $ getBlockHeaderNode h
 
 -- | Returns True if the difficulty target (bits) of the header is valid
@@ -300,11 +300,11 @@ headerWork bh =
 {- Functions for connecting blocks -}
 
 data BlockChainAction
-    = BestBlock  { actionBestBlock :: BlockHeaderNode }
-    | SideBlock  { actionSideBlock :: BlockHeaderNode }
-    | BlockReorg { reorgSplitPoint :: BlockHeaderNode
-                 , reorgOldBlocks  :: [BlockHeaderNode]
-                 , reorgNewBlocks  :: [BlockHeaderNode]
+    = BestBlock  { actionBestBlock :: !BlockHeaderNode }
+    | SideBlock  { actionSideBlock :: !BlockHeaderNode }
+    | BlockReorg { reorgSplitPoint :: !BlockHeaderNode
+                 , reorgOldBlocks  :: ![BlockHeaderNode]
+                 , reorgNewBlocks  :: ![BlockHeaderNode]
                  }
     deriving (Read, Show, Eq)
 
@@ -351,17 +351,19 @@ findSplitNode n1 n2 = go [] [] n1 n2
 
 -- | Find all blocks between the best block and the given hash that have
 -- a timestamp greater than the given time.
-blocksToDownload :: BlockHeaderStore m => BlockHash -> Word32 -> m [BlockHash]
-blocksToDownload bestBlockHash fastCatchup = do
+blocksToDownload :: BlockHeaderStore m 
+                 => BlockHash -> m [(BlockHeight, BlockHash)]
+blocksToDownload bestBlockHash = do
     bestHead  <- getBestBlockHeader
     bestBlock <- getBlockHeaderNode bestBlockHash 
     (_,_,(_:toDwn)) <- findSplitNode bestBlock bestHead
-    let valid = filter ((>= fastCatchup) . (blockTimestamp . nodeHeader)) toDwn
-    return $ map nodeBlockHash valid
+    return $ map f toDwn
+  where
+    f n = (nodeHeaderHeight n, nodeBlockHash n)
 
 -- | Searches for the first block header with a timestamp smaller than the
 -- given time, starting from the chain head.
-blockBeforeTimestamp :: BlockHeaderStore m => Word32 -> m BlockHash
+blockBeforeTimestamp :: BlockHeaderStore m => Timestamp -> m BlockHash
 blockBeforeTimestamp t = do
     h <- getBestBlockHeader
     liftM nodeBlockHash $ go h

@@ -27,12 +27,12 @@ module Network.Haskoin.Node
 , RejectCode(..)
 , reject
 
-  -- *Messages
+  -- * Messages
 , Message(..)
 , MessageHeader(..)
 , MessageCommand(..)
 
-  -- *Bloom filters
+  -- * Bloom filters
 , BloomFlags(..)
 , BloomFilter(..)
 , FilterLoad(..)
@@ -44,9 +44,45 @@ module Network.Haskoin.Node
 , isBloomEmpty
 , isBloomFull
 
+  -- * Peer
+, runPeer
+, runCustomPeer
+, peerLogStdout
+, PeerMessage(..)
+, DecodedMerkleBlock(..)
+, RemoteHost(..)
+, NodeException(..)
+
+  -- * Peer Manager
+, ManagerSession(..)
+, PeerManager(..)
+, PeerData(..)
+, withAsyncNode
+, sendMessage
+, getPeerData
+, putPeerData
+, modifyPeerData
+, deletePeerData
+, peerExists
+, getPeerKeys
+, getPeerValues
+, getPeers
+, increasePeerHeight
+, getBestPeerHeight
+
+  -- * SPV Node
+, SPVNode(..)
+, SPVSession(..)
+, SPVRequest(..)
+, withAsyncSPV
+, processBloomFilter
+
 ) where
 
 import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Node.Bloom
+import Network.Haskoin.Node.Peer
+import Network.Haskoin.Node.PeerManager
+import Network.Haskoin.Node.SPVNode
 

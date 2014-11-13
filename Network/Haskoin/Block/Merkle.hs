@@ -1,5 +1,8 @@
 module Network.Haskoin.Block.Merkle 
 ( MerkleBlock(..)
+, MerkleRoot
+, FlagBits
+, PartialMerkleTree
 , calcTreeHeight
 , calcTreeWidth
 , buildMerkleRoot

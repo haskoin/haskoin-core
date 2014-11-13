@@ -17,6 +17,9 @@ module Network.Haskoin.Block
 
   -- * Merkle Blocks
 , MerkleBlock(..)
+, MerkleRoot
+, FlagBits
+, PartialMerkleTree
 , calcTreeHeight
 , calcTreeWidth
 , buildMerkleRoot
@@ -28,6 +31,8 @@ module Network.Haskoin.Block
 , BlockHeaderNode(..)
 , BlockHeaderStore(..)
 , BlockHeaderAction(..)
+, BlockHeight
+, Timestamp
 , genesisBlockHeaderNode
 , initHeaderChain
 , connectBlockHeader

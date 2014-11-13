@@ -12,7 +12,7 @@ module Network.Haskoin.Node.Peer
 , NodeException(..)
 ) where
 
-import Control.Applicative ((<$>), (<*>))
+import Control.Applicative ((<$>))
 import Control.Monad (void, when, unless)
 import Control.Monad.Trans (lift, liftIO, MonadIO)
 import Control.Monad.State.Class 
@@ -29,7 +29,6 @@ import Control.Monad.Logger
     ( LoggingT
     , MonadLogger
     , runStdoutLoggingT
-    , logDebug
     , logInfo
     , logError
     , logWarn
@@ -38,8 +37,6 @@ import Control.Monad.Logger
 import Data.Word (Word32)
 import Data.Typeable (Typeable)
 import Data.Maybe (isJust, fromJust, catMaybes)
-import qualified Data.Binary as B (Binary, get, put)
-import Data.Conduit.Network (ClientSettings)
 import Data.Conduit 
     ( Conduit
     , Sink
@@ -96,10 +93,6 @@ data RemoteHost = RemoteHost
     { remoteHost :: !String
     , remotePort :: !Int
     } deriving (Eq, Ord, Show, Read)
-
-instance B.Binary RemoteHost where
-    get = RemoteHost <$> B.get <*> B.get
-    put (RemoteHost h p) = B.put h >> B.put p
 
 data DecodedMerkleBlock = DecodedMerkleBlock
     { decodedMerkle :: !MerkleBlock

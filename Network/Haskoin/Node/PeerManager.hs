@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -24,66 +23,29 @@ where
 
 import System.Random (randomIO)
 
-import Control.Applicative ((<$>))
-import Control.Monad 
-    ( when
-    , unless
-    , forM
-    , forM_
-    , filterM
-    , foldM
-    , void
-    , forever
-    , replicateM
-    , liftM
-    )
+import Control.Monad (when, unless, forM_, liftM)
 import Control.Monad.Trans (MonadIO, liftIO, lift)
-import Control.Monad.Trans.Resource (MonadResource, ResourceT, runResourceT)
+import Control.Monad.Trans.Resource (MonadResource)
 import Control.Monad.Trans.Control (MonadBaseControl)
 import Control.Concurrent (forkFinally, forkIO, threadDelay)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async (Async, withAsync)
-import Control.Monad.State.Class (MonadState)
 import qualified Control.Monad.State as S (StateT, evalStateT, gets, modify)
-import Control.Monad.Logger 
-    ( LoggingT
-    , MonadLogger
-    , runStdoutLoggingT
-    , logInfo
-    , logWarn
-    , logDebug
-    , logError
-    )
-import Control.Monad.Logger 
-    ( LoggingT
-    , MonadLogger
-    , runStdoutLoggingT
-    , logInfo
-    , logWarn
-    , logDebug
-    , logError
-    )
+import Control.Monad.Logger (MonadLogger, logInfo)
 
 import qualified Data.Text as T (pack)
-import Data.Maybe (isJust, isNothing, fromJust, catMaybes)
-import Data.Word (Word32)
+import Data.Maybe (fromJust)
 import Data.Time.Clock.POSIX (getPOSIXTime)
-import Data.Default (def)
-import Data.List (nub, partition, delete, maximumBy)
-import qualified Data.ByteString as BS (empty)
 import qualified Data.Map as M 
     ( Map
     , insert
     , member
     , delete
     , lookup
-    , fromList
     , keys
     , elems
     , toList
-    , null
     , empty
-    , partition
     )
 import Data.Conduit 
     ( Sink
@@ -111,10 +73,8 @@ import Network.Socket
 
 import Network.Haskoin.Node.Peer
 import Network.Haskoin.Block
-import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Node.Message
-import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
 

@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -15,8 +14,6 @@ module Network.Haskoin.Node.SPVNode
 )
 where
 
-import System.Random (randomIO)
-
 import Control.Applicative ((<$>))
 import Control.Monad 
     ( when
@@ -25,32 +22,18 @@ import Control.Monad
     , forM_
     , filterM
     , foldM
-    , void
     , forever
-    , replicateM
     , liftM
     )
 import Control.Monad.Trans (MonadIO, liftIO, lift)
-import Control.Monad.Trans.Resource (MonadResource, ResourceT, runResourceT)
+import Control.Monad.Trans.Resource (MonadResource)
 import Control.Monad.Trans.Control (MonadBaseControl)
-import Control.Concurrent (forkFinally, forkIO, threadDelay)
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async (Async, withAsync)
-import Control.Monad.State.Class (MonadState)
 import qualified Control.Monad.State as S (StateT, evalStateT, gets, modify)
 import Control.Monad.Logger 
-    ( LoggingT
-    , MonadLogger
-    , runStdoutLoggingT
-    , logInfo
-    , logWarn
-    , logDebug
-    , logError
-    )
-import Control.Monad.Logger 
-    ( LoggingT
-    , MonadLogger
-    , runStdoutLoggingT
+    ( MonadLogger
     , logInfo
     , logWarn
     , logDebug
@@ -59,14 +42,11 @@ import Control.Monad.Logger
 
 import qualified Data.Text as T (pack)
 import Data.Maybe (isJust, isNothing, fromJust, catMaybes, fromMaybe)
-import Data.Word (Word32)
 import Data.Time.Clock.POSIX (getPOSIXTime)
-import Data.Default (def)
-import Data.List (nub, partition, delete, maximumBy, dropWhileEnd, (\\))
-import qualified Data.ByteString as BS (empty)
+import Data.List (nub, partition, delete, dropWhileEnd, (\\))
+import Data.Conduit.TMChan (TBMChan, writeTBMChan)
 import qualified Data.Map as M 
     ( Map
-    , insert
     , member
     , delete
     , lookup
@@ -76,9 +56,7 @@ import qualified Data.Map as M
     , elems
     , toList
     , toAscList
-    , null
     , empty
-    , partition
     , map
     , filter
     , adjust
@@ -86,26 +64,7 @@ import qualified Data.Map as M
     , singleton
     , unionWith
     )
-import Data.Conduit 
-    ( Sink
-    , awaitForever
-    , mapOutput
-    , ($$) 
-    )
-import Data.Conduit.Network 
-    ( runTCPClient
-    , clientSettings
-    )
-import Data.Conduit.TMChan 
-    ( TBMChan
-    , newTBMChan
-    , sourceTBMChan
-    , writeTBMChan
-    , closeTBMChan
-    , (>=<)
-    )
 
-import Network.Haskoin.Util
 import Network.Haskoin.Constants
 import Network.Haskoin.Block
 import Network.Haskoin.Crypto
@@ -182,8 +141,8 @@ instance SPVNode s m => PeerManager SPVRequest (S.StateT SPVSession m) where
     nodeRequest r = spvNodeRequest r
     peerHandshake remote ver = spvPeerHandshake remote ver
     peerDisconnect remote = spvPeerDisconnect remote
-    startPeer host port = spvStartPeer host port
-    restartPeer remote = spvRestartPeer remote
+    startPeer _ _ = return ()
+    restartPeer _ = return ()
     peerMessage remote msg = spvPeerMessage remote msg
     peerMerkleBlock remote dmb = spvPeerMerkleBlock remote dmb
 
@@ -257,12 +216,6 @@ spvInitNode = do
     lift $ S.modify $ \s -> s{ blocksToDwn = M.fromListWith (++) toDwnList }
 
 {- Peer events -}
-
-spvStartPeer :: SPVNode s m => String -> Int -> SPVHandle m ()
-spvStartPeer host port = return ()
-
-spvRestartPeer :: SPVNode s m => RemoteHost -> SPVHandle m ()
-spvRestartPeer remote = return ()
 
 spvPeerHandshake :: SPVNode s m => RemoteHost -> Version -> SPVHandle m ()
 spvPeerHandshake remote ver = do
@@ -371,10 +324,10 @@ processHeaders remote (Headers hs) = do
     -- Adjust the height of peers that sent us INV messages for these headers
     forM_ newBlocks $ \n -> do
         broadcastMap <- lift $ S.gets peerBroadcastBlocks
-        newList <- forM (M.toList broadcastMap) $ \(remote, hs) -> do
-            when (nodeBlockHash n `elem` hs) $
-                increasePeerHeight remote $ nodeHeaderHeight n
-            return (remote, filter (/= nodeBlockHash n) hs)
+        newList <- forM (M.toList broadcastMap) $ \(r, bs) -> do
+            when (nodeBlockHash n `elem` bs) $
+                increasePeerHeight r $ nodeHeaderHeight n
+            return (r, filter (/= nodeBlockHash n) bs)
         lift $ S.modify $ \s -> s{ peerBroadcastBlocks = M.fromList newList }
 
     -- Continue syncing from this node only if it made some progress.
@@ -640,8 +593,8 @@ processBloomFilter bloom = do
         $(logInfo) "Loading new bloom filter"
         lift $ S.modify $ \s -> s{ spvBloom = Just bloom }
 
-        peers <- getPeers
-        forM_ peers $ \(remote, dat) -> do
+        remotePeers <- getPeerKeys
+        forM_ remotePeers $ \remote -> do
             -- Set the new bloom filter on all peer connections
             sendMessage remote $ MFilterLoad $ FilterLoad bloom
             -- Trigger merkle block download for all peers. Merkle block

@@ -9,47 +9,31 @@ module Network.Haskoin.REST where
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad 
 import Control.Monad.Trans 
-import Control.Monad.Trans.Resource
-import Control.Monad.Trans.Control
 import Control.Monad.Logger
 import Control.Concurrent.STM.TBMChan
 import Control.Concurrent.STM
-import Control.Concurrent.MVar
-import Control.Concurrent.Async
-import Control.Exception 
-    ( SomeException(..)
-    , throwIO
-    , tryJust
-    , handle
-    )
+import Control.Exception (throwIO)
 import Control.Exception.Lifted (catch)
 
 import Data.Aeson 
-    ( Value (Object, Null)
+    ( Value
     , Result(..)
-    , object
     , ToJSON
     , toJSON
     , FromJSON
     , parseJSON
-    , withObject
     , withText
-    , (.:), (.:?), (.=)
     )
 import Data.Maybe
+import Data.Word (Word32)
 import Data.String (fromString)
-import Data.Conduit (Sink, awaitForever, ($$), ($=))
-import Data.Conduit.Network ()
-import Data.Conduit.TMChan
 import Data.Text (Text, unpack, pack)
 import Data.Text.Encoding (encodeUtf8)
+import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Default (Default, def)
-import qualified Data.Conduit.List as CL
 
 import Database.Persist.Sqlite
 import Database.Sqlite (open)
-
-import Network.Haskoin.Crypto
 
 import Yesod
     ( Yesod
@@ -63,15 +47,9 @@ import Yesod
     , runDB
     , mkYesod
     , parseRoutes
-    , defaultLayout
-    , whamlet
     , toWaiApp
     , renderRoute
-    , returnJson
-    , textField
     , intField
-    , runFormPost
-    , FormResult (FormSuccess)
     , parseJsonBody
     , iopt
     , runInputGet
@@ -81,11 +59,12 @@ import Yesod
 import Network.Wai.Handler.Warp (runSettings, defaultSettings, setHost, setPort)
 import Network.Wai.Middleware.HttpAuth (basicAuth)
 
-import Network.Haskoin.Util
 import Network.Haskoin.Constants
+import Network.Haskoin.Node
+import Network.Haskoin.Crypto
 
-import Network.Haskoin.Node.PeerManager
-import Network.Haskoin.Node.Types
+import Network.Haskoin.REST.Types
+import Network.Haskoin.SPV
 
 import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Tx
@@ -93,8 +72,6 @@ import Network.Haskoin.Wallet.Account
 import Network.Haskoin.Wallet.Address
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
-
-import Network.Haskoin.REST.Types
 
 data ServerMode
     = ServerOnline
@@ -109,10 +86,11 @@ instance ToJSON ServerMode where
         ServerVault   -> "vault"
 
 instance FromJSON ServerMode where
-    parseJSON = withText "servermode" $ \t -> return $ case t of
-        "online"  -> ServerOnline
-        "offline" -> ServerOffline
-        "vault"   -> ServerVault
+    parseJSON = withText "servermode" $ \t -> case t of
+        "online"  -> return ServerOnline
+        "offline" -> return ServerOffline
+        "vault"   -> return ServerVault
+        _         -> mzero
 
 data ServerConfig = ServerConfig
     { configBind         :: String
@@ -141,11 +119,12 @@ instance Default ServerConfig where
         , configMode         = ServerOnline
         , configUser         = "haskoin"
         , configPassword     = "haskoin"
+        , configGap          = 10
         }
 
 data HaskoinServer = HaskoinServer 
     { serverPool   :: ConnectionPool
-    , serverNode   :: Maybe (TBMChan NodeRequest)
+    , serverNode   :: Maybe (TBMChan SPVRequest)
     , serverConfig :: ServerConfig
     }
 
@@ -180,7 +159,7 @@ mkYesod "HaskoinServer" [parseRoutes|
 
 runServer :: ServerConfig -> IO ()
 runServer config = do
-    let walletFile = pack $ "wallet"
+    let walletFile = pack "wallet"
 
     pool <- runNoLoggingT $
         createSqlPool (\lf -> open walletFile >>= flip wrapConnection lf) 1
@@ -205,40 +184,31 @@ runServer config = do
             app <- toWaiApp $ HaskoinServer pool Nothing config
             runApp app
         else do
+
+            -- Find earliest key creation time
+            fstKeyTimeM <- flip runSqlPersistMPool pool firstKeyTime
+            fstKeyTime  <- case fstKeyTimeM of
+                Just t  -> return t
+                Nothing -> round <$> getPOSIXTime
+
+            -- Adjust time backwards by a week to handle clock drifts.
+            let fastCatchupI = max 0 ((toInteger fstKeyTime) - 86400 * 7)
+                fc           = fromInteger fastCatchupI :: Word32
+
+            -- Get best known blockhash
+            conf <- flip runSqlPersistMPool pool $
+                        selectFirst [] [Asc DbConfigCreated]
+            let bb = dbConfigBestBlockHash $ entityVal $ fromJust conf
+
             -- Launch SPV node
-            withAsyncNode batch $ \eChan rChan _ -> do
-            let eventPipe = sourceTBMChan eChan $$ 
-                            processNodeEvents pool rChan fp
-            withAsync eventPipe $ \_ -> do
-            bloom <- flip runSqlPersistMPool pool $ walletBloomFilter fp
-            atomically $ do
-                -- Bloom filter
-                writeTBMChan rChan $ BloomFilterUpdate bloom
-                -- Bitcoin hosts to connect to
-                forM_ hosts $ \(h,p) -> writeTBMChan rChan $ ConnectNode h p
-
-            app <- toWaiApp $ HaskoinServer pool (Just rChan) config
-            runApp app
-
-processNodeEvents :: ConnectionPool 
-                  -> TBMChan NodeRequest 
-                  -> Double 
-                  -> Sink NodeEvent IO ()
-processNodeEvents pool rChan fp = awaitForever $ \e -> do
-    res <- lift $ tryJust f $ flip runSqlPersistMPool pool $ case e of
-        MerkleBlockEvent xs -> void $ importBlocks xs
-        TxEvent ts          -> do
-            before <- count ([] :: [Filter (DbAddressGeneric b)])
-            forM_ ts $ \tx -> importTx tx NetworkSource
-            after <- count ([] :: [Filter (DbAddressGeneric b)])
-            -- Update the bloom filter if new addresses were generated
-            when (after > before) $ do
-                bloom <- walletBloomFilter fp
-                liftIO $ atomically $ writeTBMChan rChan $ 
-                    BloomFilterUpdate bloom
-    when (isLeft res) $ liftIO $ print $ fromLeft res
-  where
-    f (SomeException e) = Just $ show e
+            withAsyncSPV hosts batch fc bb (runNodeHandle fp pool) $ 
+                \rChan _ -> do
+                -- Send the bloom filter
+                bloom <- flip runSqlPersistMPool pool $ walletBloomFilter fp
+                atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
+                -- Launch the haskoin server
+                app <- toWaiApp $ HaskoinServer pool (Just rChan) config
+                runApp app
 
 guardVault :: Handler ()
 guardVault = do
@@ -253,17 +223,11 @@ whenOnline action = do
 
 updateNode :: Handler a -> Handler a
 updateNode action = do
-    fstKeyBefore <- runDB firstKeyTime
     res <- action
     whenOnline $ do
-        HaskoinServer _ rChanM config <- getYesod
-        let rChan = fromJust rChanM
-        bloom      <- runDB $ walletBloomFilter $ configBloomFP config
-        fstKeyTime <- runDB $ liftM fromJust firstKeyTime
-        liftIO $ atomically $ do
-            writeTBMChan rChan $ BloomFilterUpdate bloom
-            when (isNothing fstKeyBefore) $
-                writeTBMChan rChan $ FastCatchupTime fstKeyTime
+        HaskoinServer _ (Just rChan) config <- getYesod
+        bloom <- runDB $ walletBloomFilter $ configBloomFP config
+        liftIO $ atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
     return res
 
 handleErrors :: Handler a -> Handler a
@@ -297,7 +261,8 @@ postWalletsR = handleErrors $ do
                         Right msSeed -> return msSeed
             _ <- runDB $ newWallet name seed
             return $ toJSON $ MnemonicRes ms
-        Error err -> undefined
+        -- TODO: What happens here ?
+        Error _ -> undefined
 
 getWalletR :: Text -> Handler Value
 getWalletR wname = handleErrors $ do
@@ -330,7 +295,8 @@ postAccountsR = handleErrors $ do
             when (length (accountKeys acc) == t) $ 
                 updateNode $ runDB $ addLookAhead n c
             return acc
-        Error err -> undefined
+        -- TODO: What happens here ?
+        Error _ -> undefined
 
 getAccountR :: Text -> Handler Value
 getAccountR name = handleErrors $ toJSON <$> runDB (getAccount $ unpack name)
@@ -340,12 +306,13 @@ postAccountKeysR name = handleErrors $ do
     HaskoinServer _ _ config <- getYesod
     let c = configGap config
     parseJsonBody >>= \res -> toJSON <$> case res of
-        Success [ks] -> do
+        Success ks -> do
             acc <- runDB $ addAccountKeys (unpack name) ks
             when (length (accountKeys acc) == accountTotal acc) $ do
                 updateNode $ runDB $ addLookAhead (unpack name) c
             return acc
-        Error err -> undefined
+        -- TODO: What happens here ?
+        Error _ -> undefined
 
 getAddressesR :: Text -> Handler Value
 getAddressesR name = handleErrors $ do
@@ -354,9 +321,9 @@ getAddressesR name = handleErrors $ do
         <*> iopt intField "elemperpage"
     if isJust pageM
         then do
-            let elem | isJust elemM = fromJust elemM
-                     | otherwise    = 10
-            (as, m) <- runDB $ addressPage (unpack name) (fromJust pageM) elem
+            let e | isJust elemM = fromJust elemM
+                  | otherwise    = 10
+            (as, m) <- runDB $ addressPage (unpack name) (fromJust pageM) e
             return $ toJSON $ AddressPageRes as m
         else toJSON <$> runDB (addressList $ unpack name)
 
@@ -366,7 +333,8 @@ postAddressesR name = handleErrors $ do
         Success (AddressData label) -> updateNode $ do
             addr' <- runDB $ unlabeledAddr $ unpack name
             runDB $ setAddrLabel (unpack name) (addressIndex addr') label
-        Error err -> undefined
+        -- TODO: What happens here ?
+        Error _ -> undefined
 
 getAddressR :: Text -> Int -> Handler Value
 getAddressR name i = handleErrors $ do
@@ -379,7 +347,8 @@ putAddressR name i = handleErrors $ do
         Success (AddressData label) -> runDB $ do
             addr <- setAddrLabel (unpack name) (fromIntegral i) label
             return $ toJSON addr
-        Error err -> undefined
+        -- TODO: What happens here ?
+        Error _ -> undefined
 
 getAccTxsR :: Text -> Handler Value
 getAccTxsR name = handleErrors $ do
@@ -388,9 +357,9 @@ getAccTxsR name = handleErrors $ do
         <*> iopt intField "elemperpage"
     if isJust pageM
         then do
-            let elem | isJust elemM = fromJust elemM
-                     | otherwise    = 10
-            (as, m) <- runDB $ txPage (unpack name) (fromJust pageM) elem
+            let e | isJust elemM = fromJust elemM
+                  | otherwise    = 10
+            (as, m) <- runDB $ txPage (unpack name) (fromJust pageM) e
             return $ toJSON $ TxPageRes as m
         else toJSON <$> runDB (txList $ unpack name)
 
@@ -416,7 +385,8 @@ postAccTxsR name = handleErrors $ guardVault >>
         Success (SignSigBlob blob) -> do
             (tx, c) <- runDB $ signSigBlob (unpack name) blob
             return $ toJSON $ TxStatusRes tx c
-        Error err -> undefined
+        -- TODO: What happens here ?
+        Error _ -> undefined
 
 getAccTxR :: Text -> Text -> Handler Value
 getAccTxR name tidStr = handleErrors $ do
@@ -455,17 +425,21 @@ postNodeR = handleErrors $ guardVault >>
             whenOnline $ do
                 HaskoinServer _ rChanM _ <- getYesod
                 let rChan = fromJust rChanM
-                liftIO $ atomically $ writeTBMChan rChan $ FastCatchupTime t
+                liftIO $ atomically $ writeTBMChan rChan $ NodeRescan t
             return $ RescanRes t
         Success (Rescan Nothing) -> do
             fstKeyTimeM <- runDB firstKeyTime
-            let fstKeyTime = fromJust fstKeyTimeM       
+            let fstKeyTime   = fromJust fstKeyTimeM       
+                fastCatchupI = max 0 ((toInteger fstKeyTime) - 86400 * 7)
+                fc           = fromInteger fastCatchupI :: Word32
             when (isNothing fstKeyTimeM) $ liftIO $ throwIO $
                 WalletException "No keys have been generated in the wallet"
             whenOnline $ do
                 HaskoinServer _ rChanM _ <- getYesod
                 let rChan      = fromJust rChanM
                 liftIO $ atomically $ do
-                    writeTBMChan rChan $ FastCatchupTime fstKeyTime
+                    writeTBMChan rChan $ NodeRescan fc
             return $ RescanRes fstKeyTime
-        Error err -> undefined
+        -- TODO: What happens here ?
+        Error _ -> undefined
+

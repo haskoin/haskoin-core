@@ -80,7 +80,6 @@ import Network.Haskoin.Wallet
 import Network.Haskoin.Wallet.Types
 
 import Network.Haskoin.Script
-import Network.Haskoin.Protocol
 import Network.Haskoin.Crypto 
 import Network.Haskoin.Transaction
 import Network.Haskoin.Util
@@ -877,3 +876,4 @@ getWorkDir = do
     let dir = concat [ haskoinDir, "/", networkName ]
     createDirectoryIfMissing True dir
     return dir
+

@@ -1,34 +1,12 @@
 module Network.Haskoin.Wallet.Tests (tests) where
 
-import Control.Monad
-import Data.Maybe
-
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.Aeson
-import Data.Aeson.Types
 
-import Network.JsonRpc
-
-import Network.Haskoin.Wallet.Arbitrary
+import Network.Haskoin.Wallet.Arbitrary ()
 import Network.Haskoin.Wallet.Types
-import Network.Haskoin.REST.Types
-
-encodeWalletRequest :: (ToRequest q, ToJSON q) => q -> Int -> Value
-encodeWalletRequest wr i = toJSON $
-    Request V2 (requestMethod wr) wr (IdInt i)
-
-decodeWalletRequest :: (FromRequest q) => Value -> Maybe (Request q)
-decodeWalletRequest v =
-    parseMaybe parseRequest v >>= either (const Nothing) return
-
-encodeWalletResponse :: ToJSON r => r -> Int -> Value
-encodeWalletResponse res i = toJSON $ Response V2 res (IdInt i)
-
-decodeWalletResponse :: FromResponse r => Request q -> Value -> Maybe (Response r)
-decodeWalletResponse rq v =
-    parseMaybe (parseResponse rq) v >>= either (const Nothing) return
 
 tests :: [Test]
 tests = 

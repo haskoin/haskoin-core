@@ -2,6 +2,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {-|
   This package provides an implementation of a Bitcoin SPV node.
 -}
@@ -13,97 +14,17 @@ module Network.Haskoin.SPV
 , runNodeHandle
 ) where
 
-import System.Random (randomIO)
-
 import Control.Applicative ((<$>))
-import Control.Monad 
-    ( when
-    , unless
-    , forM
-    , forM_
-    , filterM
-    , foldM
-    , void
-    , forever
-    , replicateM
-    , liftM
-    )
-import Control.Exception 
-    ( SomeException(..)
-    , throwIO
-    , tryJust
-    , handle
-    )
+import Control.Monad (when, forM_, liftM)
+import Control.Exception (SomeException(..), tryJust)
 import Control.Monad.Trans (MonadIO, liftIO, lift)
-import Control.Monad.Trans.Resource (MonadResource, ResourceT, runResourceT)
-import Control.Monad.Trans.Control (MonadBaseControl)
-import Control.Concurrent (forkFinally, forkIO, threadDelay)
-import Control.Concurrent.STM (atomically)
-import Control.Concurrent.Async (Async, withAsync)
-import Control.Monad.State.Class (MonadState)
-import qualified Control.Monad.State as S (StateT, evalStateT, get, gets, modify)
-import Control.Monad.Logger 
-    ( LoggingT
-    , MonadLogger
-    , runStdoutLoggingT
-    , logInfo
-    , logWarn
-    , logDebug
-    , logError
-    )
-import Control.Monad.Logger 
-    ( LoggingT
-    , MonadLogger
-    , runStdoutLoggingT
-    , logInfo
-    , logWarn
-    , logDebug
-    , logError
-    )
+import Control.Monad.Trans.Resource (ResourceT, runResourceT)
+import qualified Control.Monad.State as S (StateT, evalStateT, get)
+import Control.Monad.Logger (LoggingT, runStdoutLoggingT)
 
-import qualified Data.Text as T (pack)
-import Data.Maybe (isJust, isNothing, fromJust, catMaybes)
-import Data.Word (Word32)
-import Data.Time.Clock.POSIX (getPOSIXTime)
+import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Default (def)
-import Data.List (nub, partition, delete, maximumBy)
-import qualified Data.ByteString as BS 
-    ( ByteString
-    , append
-    , reverse
-    , empty
-    )
-import qualified Data.Map as M 
-    ( Map
-    , insert
-    , member
-    , delete
-    , lookup
-    , fromList
-    , keys
-    , elems
-    , null
-    , empty
-    , partition
-    )
-import Data.Conduit 
-    ( Sink
-    , awaitForever
-    , mapOutput
-    , ($$) 
-    )
-import Data.Conduit.Network 
-    ( runTCPClient
-    , clientSettings
-    )
-import Data.Conduit.TMChan 
-    ( TBMChan
-    , newTBMChan
-    , sourceTBMChan
-    , writeTBMChan
-    , closeTBMChan
-    , (>=<)
-    )
+import qualified Data.ByteString as BS (ByteString, append, empty)
 
 import qualified Database.LevelDB.Base as DB 
     ( DB
@@ -113,13 +34,11 @@ import qualified Database.LevelDB.Base as DB
     , cacheSize
     , get
     , put
-    , write
-    , BatchOp( Put )
     , withIter
     , iterFirst
-    , iterKeys
     , delete
     )
+import Database.LevelDB.Iterator (iterKey, iterNext)
 
 import Database.Persist (Filter, count)
 import Database.Persist.Sqlite (ConnectionPool, runSqlPersistMPool)
@@ -158,10 +77,14 @@ instance SPVNode DBHandle NodeHandle where
 
     rescanCleanup = do
         db <- liftM dataHandle $ lift $ lift $ S.get
-        DB.withIter db def $ \iter -> do
-            DB.iterFirst iter
-            keys <- DB.iterKeys iter
-            forM_ keys $ DB.delete db def
+        DB.withIter db def $ \iter -> DB.iterFirst iter >> go db iter
+      where
+        go db iter = do
+            keyM <- iterKey iter
+            when (isJust keyM) $ do
+                DB.delete db def $ fromJust keyM
+                iterNext iter
+                go db iter
 
     spvImportTxs txs = do
         pool <- liftM walletPool $ lift $ lift $ S.get
@@ -184,11 +107,11 @@ instance SPVNode DBHandle NodeHandle where
         saveHash db h = liftIO $ DB.put db def (encode' h) BS.empty
         f (SomeException e) = Just $ show e
 
-    spvImportMerkleBlock mb expectedTxs = do
+    spvImportMerkleBlock mb expTxs = do
         db   <- liftM dataHandle $ lift $ lift $ S.get
         pool <- liftM walletPool $ lift $ lift $ S.get
         resE <- liftIO $ tryJust f $ flip runSqlPersistMPool pool $ 
-            importBlock mb expectedTxs
+            importBlock mb expTxs
         when (isLeft resE) $ liftIO $ print $ fromLeft resE
         saveHash db $ nodeBlockHash $ getActionNode mb
       where

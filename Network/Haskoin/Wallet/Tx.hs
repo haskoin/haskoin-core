@@ -29,7 +29,7 @@ module Network.Haskoin.Wallet.Tx
 ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (forM, forM_, unless, when, liftM, filterM)
+import Control.Monad (forM, forM_, when, liftM, filterM)
 import Control.Monad.Reader (ReaderT)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Exception (throwIO)
@@ -37,7 +37,7 @@ import Control.Exception (throwIO)
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Word (Word32, Word64)
-import Data.List ((\\), nub, maximumBy)
+import Data.List ((\\), nub)
 import Data.Maybe (catMaybes, isNothing, isJust, fromJust)
 import Data.Either (rights)
 import qualified Data.Map.Strict as M (toList, empty, lookup, insert)
@@ -420,8 +420,8 @@ buildAccTx tx inCoins outCoins time = map build $ M.toList oMap
     f g coin accMap = case M.lookup (dbCoinAccount coin) accMap of
         Just tuple -> M.insert (dbCoinAccount coin) (g tuple coin) accMap
         Nothing    -> M.insert (dbCoinAccount coin) (g ([],[]) coin) accMap
-    allRecip = rights $ map toAddr $ txOut tx
-    toAddr   = (scriptRecipient =<<) . decodeToEither . scriptOutput
+    allRecip = rights $ map toRecip $ txOut tx
+    toRecip  = (scriptRecipient =<<) . decodeToEither . scriptOutput
     sumVal   = sum . (map (coinValue . dbCoinValue))
     build (ai,(i,o)) = DbAccTx (txHash tx) recips total ai time
       where
@@ -636,11 +636,11 @@ isTxInWallet tid = liftM isJust $ getBy $ UniqueTx tid
 -- of the relevant transactions.
 importBlock :: (MonadIO m, PersistQuery b, PersistUnique b)
             => BlockChainAction -> [TxHash] -> ReaderT b m ()
-importBlock action expectedTxs = do
+importBlock action expTxs = do
 
     -- Insert transaction/block confirmation links. We have to keep this
     -- information even for side blocks as we need it when a reorg occurs.
-    myTxs <- filterM ((liftM isJust) . getBy . UniqueTx) expectedTxs
+    myTxs <- filterM ((liftM isJust) . getBy . UniqueTx) expTxs
     forM_ myTxs $ \h -> 
         insert_ $ DbConfirmation h (nodeBlockHash $ getActionNode action)
 

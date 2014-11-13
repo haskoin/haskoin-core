@@ -1,10 +1,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE EmptyDataDecls #-}
@@ -52,7 +50,6 @@ import Database.Persist.TH
 
 import Network.Haskoin.Wallet.Types 
 import Network.Haskoin.Transaction
-import Network.Haskoin.Node 
 import Network.Haskoin.Crypto 
 
 -- TODO: We only care about pubkeyhash and not pubkey. Should we do

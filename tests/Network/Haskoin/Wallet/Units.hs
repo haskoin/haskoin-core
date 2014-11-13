@@ -40,7 +40,6 @@ import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Block
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
-import Network.Haskoin.Node
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 

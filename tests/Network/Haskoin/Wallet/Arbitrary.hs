@@ -1,28 +1,12 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module Network.Haskoin.Wallet.Arbitrary where
 
 import Test.QuickCheck
 
-import Data.Maybe
-
-import Control.Monad
 import Control.Applicative 
 
-import Data.Bits (clearBit)
-import qualified Data.ByteString as BS 
-    ( ByteString
-    , pack
-    , drop
-    )
-
-import Network.Haskoin.Wallet.Types
-import Network.Haskoin.REST.Types
-
 import Network.Haskoin.Test
-
-import Network.Haskoin.Script
-import Network.Haskoin.Node
-import Network.Haskoin.Transaction
-import Network.Haskoin.Crypto
+import Network.Haskoin.Wallet.Types
 
 instance Arbitrary Wallet where
     arbitrary = do
@@ -31,7 +15,7 @@ instance Arbitrary Wallet where
         return $ Wallet str m
             
 instance Arbitrary Account where
-    arbitrary = oneof [reg, ms, read, readms]
+    arbitrary = oneof [reg, ms, rd, rdms]
       where
         reg = do
             name <- arbitrary
@@ -46,11 +30,11 @@ instance Arbitrary Account where
             ArbitraryMSParam m n <- arbitrary
             keys <- vectorOf n (arbitrary >>= \(ArbitraryXPubKey _ p) -> return p)
             return $ MultisigAccount name wallet k m n keys
-        read = do
+        rd = do
             name <- arbitrary
             ArbitraryAccPubKey _ _ key <- arbitrary
             return $ ReadAccount name key
-        readms = do
+        rdms = do
             name <- arbitrary
             ArbitraryMSParam m n <- arbitrary
             keys <- vectorOf n (arbitrary >>= \(ArbitraryXPubKey _ p) -> return p)
@@ -59,9 +43,9 @@ instance Arbitrary Account where
 instance Arbitrary PaymentAddress where
     arbitrary = do
         ArbitraryAddress addr <- arbitrary
-        label <- arbitrary
+        l <- arbitrary
         k <- arbitrary
-        return $ PaymentAddress addr label k
+        return $ PaymentAddress addr l k
 
 instance Arbitrary AccTx where
     arbitrary = do

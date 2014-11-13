@@ -80,7 +80,6 @@ import Network.Haskoin.Wallet
 import Network.Haskoin.Wallet.Types
 
 import Network.Haskoin.Script
-import Network.Haskoin.Node
 import Network.Haskoin.Crypto 
 import Network.Haskoin.Transaction
 import Network.Haskoin.Util

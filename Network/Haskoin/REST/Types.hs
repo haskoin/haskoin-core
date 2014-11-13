@@ -34,7 +34,6 @@ import Data.Aeson
 
 import Network.Haskoin.Transaction
 import Network.Haskoin.Crypto
-import Network.Haskoin.Node
 
 import Network.Haskoin.Wallet.Types
 

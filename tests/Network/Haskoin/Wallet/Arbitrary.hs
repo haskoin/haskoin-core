@@ -55,7 +55,9 @@ instance Arbitrary AccTx where
         conf <- arbitrary
         b <- arbitrary
         c <- abs <$> arbitrary
-        return $ AccTx tid addrs v conf b c
+        ArbitraryUTCTime rd <- arbitrary
+        cd <- arbitrary
+        return $ AccTx tid addrs v conf b c rd cd
 
 instance Arbitrary TxConfidence where
     arbitrary = elements [ TxOffline, TxDead, TxPending, TxBuilding ]

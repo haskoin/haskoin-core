@@ -19,11 +19,16 @@ module Network.Haskoin.Wallet.Types
 , printAccTx
 ) where
 
+import Control.Applicative ((<$>))
 import Control.Monad (mzero)
 import Control.Exception (Exception)
 
+import Data.Time (UTCTime)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import Data.Int (Int64)
 import Data.Typeable (Typeable)
+import Data.Maybe (maybeToList, isJust, fromJust)
+import Data.Word (Word32)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.ByteString.Lazy (toStrict, fromStrict)
@@ -32,8 +37,7 @@ import Data.Aeson
     , FromJSON
     , ToJSON
     , withText
-    , (.=)
-    , (.:)
+    , (.=), (.:), (.:?)
     , object
     , parseJSON
     , toJSON
@@ -294,22 +298,27 @@ printAddress (PaymentAddress a l i) = unwords $
     ] ++ if null l then [] else [concat ["(",l,")"]]
 
 data AccTx = AccTx
-    { accTxHash          :: TxHash
-    , accTxRecipients    :: [Address]
-    , accTxValue         :: Int64
-    , accTxConfidence    :: TxConfidence
-    , accIsCoinbase      :: Bool
-    , accTxConfirmations :: Int
+    { accTxHash           :: TxHash
+    , accTxRecipients     :: [Address]
+    , accTxValue          :: Int64
+    , accTxConfidence     :: TxConfidence
+    , accIsCoinbase       :: Bool
+    , accTxConfirmations  :: Int
+    , accReceivedDate     :: UTCTime
+    , accConfirmationDate :: Maybe Word32
     } deriving (Eq, Show, Read)
 
 instance ToJSON AccTx where
-    toJSON (AccTx h as v x cb c) = object
-        [ "txid"          .= h
-        , "recipients"    .= as
-        , "value"         .= v
-        , "confidence"    .= x
-        , "isCoinbase"    .= cb
-        , "confirmations" .= c
+    toJSON (AccTx h as v x cb c rd cd) = object $ concat
+        [ [ "txid"          .= h
+          , "recipients"    .= as
+          , "value"         .= v
+          , "confidence"    .= x
+          , "isCoinbase"    .= cb
+          , "confirmations" .= c
+          , "receivedDate"  .= (round (utcTimeToPOSIXSeconds rd) :: Word32)
+          ]
+        , maybeToList $ ("confirmationDate" .=) <$> cd
         ]
 
 instance FromJSON AccTx where
@@ -320,23 +329,33 @@ instance FromJSON AccTx where
         x  <- o .: "confidence"
         cb <- o .: "isCoinbase"
         c  <- o .: "confirmations"
-        return $ AccTx h as v x cb c
+        rd <- o .: "receivedDate"
+        cd <- o .:? "confirmationDate"
+        let rDate = posixSecondsToUTCTime $ realToFrac (rd :: Word32)
+        return $ AccTx h as v x cb c rDate cd
     parseJSON _ = mzero
 
 printAccTx :: AccTx -> String
-printAccTx (AccTx h r v ci cb co) = unlines $
-    [ unwords [ "Value     :", show v ]
-    , unwords [ "Recipients:", addrToBase58 $ head r ]
+printAccTx (AccTx h r v ci cb co rd cd) = unlines $ concat
+    [ [ unwords [ "Value     :", show v ]
+      , unwords [ "Recipients:", addrToBase58 $ head r ]
+      ]
+    , (map (\x -> unwords ["           ", addrToBase58 x]) $ tail r)
+    , [ unwords [ "Confidence:"
+                , printConfidence ci
+                , concat ["(",show co," confirmations)"] 
+                ]
+      , unwords [ "TxHash    :", encodeTxHashLE h ]
+      ] 
+    , if cb then [unwords ["Coinbase  :", "Yes"]] else []
+    , [ unwords [ "Received  :", show rd ] ]
+    , if isJust cd 
+        then [ unwords [ "Confirmed :"
+                       , show $ posixSecondsToUTCTime $ realToFrac $ fromJust cd 
+                       ] 
+             ] 
+        else []
     ]
-    ++
-    (map (\x -> unwords ["           ", addrToBase58 x]) $ tail r)
-    ++
-    [ unwords [ "Confidence:"
-              , printConfidence ci
-              , concat ["(",show co," confirmations)"] 
-              ]
-    , unwords [ "TxHash    :", encodeTxHashLE h ]
-    ] ++ if cb then [unwords ["Coinbase  :", "Yes"]] else []
 
 printConfidence :: TxConfidence -> String
 printConfidence c = case c of

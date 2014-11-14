@@ -131,6 +131,9 @@ DbOrphan
 DbConfirmation
     tx TxHash
     block BlockHash
+    blockTimestamp Word32
+    created UTCTime default=CURRENT_TIME
+    UniqueConfirmation tx block
 
 DbConfig
     bestHeight Word32

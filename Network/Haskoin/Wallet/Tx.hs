@@ -83,12 +83,15 @@ toAccTx :: (MonadIO m, PersistUnique b, PersistQuery b)
 toAccTx accTx = do
     (Entity _ tx) <- getTxEntity $ dbAccTxHash accTx
     conf <- getConfirmations $ dbAccTxHash accTx
-    return $ AccTx { accTxHash          = dbAccTxHash accTx
-                   , accTxRecipients    = dbAccTxRecipients accTx
-                   , accTxValue         = dbAccTxValue accTx
-                   , accTxConfidence    = dbTxConfidence tx
-                   , accIsCoinbase      = dbTxIsCoinbase tx
-                   , accTxConfirmations = fromIntegral conf
+    confDate <- getConfirmationDate $ dbAccTxHash accTx
+    return $ AccTx { accTxHash           = dbAccTxHash accTx
+                   , accTxRecipients     = dbAccTxRecipients accTx
+                   , accTxValue          = dbAccTxValue accTx
+                   , accTxConfidence     = dbTxConfidence tx
+                   , accIsCoinbase       = dbTxIsCoinbase tx
+                   , accTxConfirmations  = fromIntegral conf
+                   , accReceivedDate     = dbTxCreated tx
+                   , accConfirmationDate = confDate
                    }
 
 getConfirmations :: (MonadIO m, PersistUnique b, PersistQuery b)
@@ -98,6 +101,15 @@ getConfirmations h = do
     height <- getBestHeight
     return $ if isNothing $ dbTxConfirmedBy tx then 0 else 
         fromIntegral $ height - (fromJust $ dbTxConfirmedHeight tx) + 1
+
+getConfirmationDate :: (MonadIO m, PersistUnique b, PersistQuery b)
+                    => TxHash -> ReaderT b m (Maybe Timestamp)
+getConfirmationDate h = do
+    (Entity _ tx) <- getTxEntity h
+    if isNothing $ dbTxConfirmedBy tx then return Nothing else do
+        let bid = fromJust $ dbTxConfirmedBy tx
+        confM <- getBy $ UniqueConfirmation h bid
+        return $ dbConfirmationBlockTimestamp . entityVal <$> confM
 
 getTxEntity :: (MonadIO m, PersistUnique b, PersistQuery b)
             => TxHash -> ReaderT b m (Entity (DbTxGeneric b))
@@ -640,9 +652,11 @@ importBlock action expTxs = do
 
     -- Insert transaction/block confirmation links. We have to keep this
     -- information even for side blocks as we need it when a reorg occurs.
+    time <- liftIO getCurrentTime
+    let bid = nodeBlockHash $ getActionNode action
+        ts  = blockTimestamp $ nodeHeader $ getActionNode action
     myTxs <- filterM ((liftM isJust) . getBy . UniqueTx) expTxs
-    forM_ myTxs $ \h -> 
-        insert_ $ DbConfirmation h (nodeBlockHash $ getActionNode action)
+    forM_ myTxs $ \h -> insert_ $ DbConfirmation h bid ts time
 
     case action of
         BestBlock node -> do

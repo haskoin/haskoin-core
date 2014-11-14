@@ -3,9 +3,12 @@
 -}
 module Network.Haskoin.Test
 ( 
-  -- * Crypto Arbitrary instances
+  -- * Util Arbitrary instances
   ArbitraryByteString(..)
 , ArbitraryNotNullByteString(..)
+, ArbitraryUTCTime(..)
+
+  -- * Crypto Arbitrary instances
 , ArbitraryPoint(..)
 , ArbitraryInfPoint(..)
 , ArbitraryPrvKey(..)
@@ -110,6 +113,7 @@ module Network.Haskoin.Test
 , ReqRes(..)
 ) where
 
+import Network.Haskoin.Test.Util
 import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Test.Node
 import Network.Haskoin.Test.Message

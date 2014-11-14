@@ -26,13 +26,20 @@ module Network.Haskoin.Test.Crypto
 , ArbitraryAddrPubKey(..)
 ) where
 
-import Test.QuickCheck
+import Test.QuickCheck 
+    ( Arbitrary
+    , arbitrary
+    , choose
+    , elements
+    , frequency
+    , oneof
+    )
 
 import Control.Applicative ((<$>))
 
-import Data.Maybe
-import qualified Data.ByteString as BS (ByteString, pack, drop)
+import Data.Maybe (fromJust)
 
+import Network.Haskoin.Test.Util
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Point
 import Network.Haskoin.Crypto.ECDSA
@@ -41,26 +48,6 @@ import Network.Haskoin.Crypto.Base58
 import Network.Haskoin.Crypto.Curve
 import Network.Haskoin.Crypto.ExtendedKeys
 import Network.Haskoin.Crypto.NormalizedKeys
-
--- | Arbitrary strict ByteString
-data ArbitraryByteString = ArbitraryByteString BS.ByteString
-    deriving (Eq, Show, Read)
-
-instance Arbitrary ArbitraryByteString where
-    arbitrary = do
-        bs <- BS.pack `fmap` arbitrary
-        n <- choose (0, 2)
-        -- to give us some with non-0 offset
-        return $ ArbitraryByteString $ BS.drop n bs 
-
--- | Arbitrary strict ByteString that is not empty
-data ArbitraryNotNullByteString = ArbitraryNotNullByteString BS.ByteString
-    deriving (Eq, Show, Read)
-
-instance Arbitrary ArbitraryNotNullByteString where
-    arbitrary = do
-        bs <- BS.pack `fmap` (listOf1 arbitrary)
-        return $ ArbitraryNotNullByteString bs
 
 -- | Arbitrary Point on the secp256k1 curve
 newtype ArbitraryPoint = ArbitraryPoint Point

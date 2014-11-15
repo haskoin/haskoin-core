@@ -237,7 +237,7 @@ addTx tx source = do
         -- insert account transactions into database
         forM_ dbAccTxs insert_
         -- Update address information
-        updateAddressBalance tid
+        updateAddressBalance tid False
         -- Re-import orphans
         tryImportOrphans
         return $ Just conf
@@ -457,8 +457,8 @@ buildAccTx tx inCoins outCoins time = map build $ M.toList oMap
 -- | Update the balance and relatedTxs fields of 
 -- an address when a tx is improted
 updateAddressBalance :: (PersistQuery b, PersistUnique b, MonadIO m) 
-                     => TxHash -> ReaderT b m ()
-updateAddressBalance tid = do
+                     => TxHash -> Bool -> ReaderT b m ()
+updateAddressBalance tid forceRemove = do
     dbTx <- liftM (entityVal . fromJust) $ getBy (UniqueTx tid)
     (inCoins, outCoins) <- getTxCoins dbTx
     let addrMap = foldl f M.empty $ concat 
@@ -478,13 +478,13 @@ updateAddressBalance tid = do
                 aVal{ dbAddressBalance    = prevBal + v
                     , dbAddressRelatedTxs = prevRel ++ [tid]
                     }
-        case dbTxConfidence dbTx of
+        if forceRemove then remData else case dbTxConfidence dbTx of
             TxDead -> remData
             TxPending -> do
                 conf <- getConflicts tid
                 if null conf then addData else do
                     remData 
-                    forM_ conf updateAddressBalance
+                    forM_ conf (flip updateAddressBalance forceRemove)
             _ -> addData
   where
     f m (c, op)      = M.alter (f' c op) (dbCoinAddress c) m
@@ -520,6 +520,8 @@ removeTx tid = do
         len       = fromIntegral $ length (txOut tx)
         outpoints = map (OutPoint tid) [0 .. (len - 1)]
     if isNothing txM then return [] else do 
+        -- Remove address balances from this transaction
+        updateAddressBalance tid True
         childs <- findSpendingTxs outpoints
         -- Recursively remove children
         cids <- forM childs removeTx
@@ -738,7 +740,7 @@ importBlock action expTxs = do
                     ]
 
             -- Update balances displayed by addresses
-            forM_ myTxs $ \h -> updateAddressBalance h
+            forM_ myTxs $ \h -> updateAddressBalance h False
 
             setBestHash (nodeHeaderHeight node) (nodeBlockHash node)
         BlockReorg _ o n -> do
@@ -782,7 +784,8 @@ importBlock action expTxs = do
             setBestHash (nodeHeaderHeight $ last n) (nodeBlockHash $ last n)
 
             -- Update balances displayed by addresses
-            forM_ (L.nub $ concat $ otxs ++ ntxs) updateAddressBalance
+            forM_ (L.nub $ concat $ otxs ++ ntxs) $
+                flip updateAddressBalance False
 
         SideBlock _ -> return ()
 

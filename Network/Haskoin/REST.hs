@@ -423,6 +423,7 @@ postNodeR = handleErrors $ guardVault >>
     parseJsonBody >>= \res -> toJSON <$> case res of
         Success (Rescan (Just t)) -> do
             whenOnline $ do
+                runDB resetRescan
                 HaskoinServer _ rChanM _ <- getYesod
                 let rChan = fromJust rChanM
                 liftIO $ atomically $ writeTBMChan rChan $ NodeRescan t
@@ -435,6 +436,7 @@ postNodeR = handleErrors $ guardVault >>
             when (isNothing fstKeyTimeM) $ liftIO $ throwIO $
                 WalletException "No keys have been generated in the wallet"
             whenOnline $ do
+                runDB resetRescan
                 HaskoinServer _ rChanM _ <- getYesod
                 let rChan      = fromJust rChanM
                 liftIO $ atomically $ do

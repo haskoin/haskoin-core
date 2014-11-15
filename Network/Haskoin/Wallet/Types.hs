@@ -300,9 +300,7 @@ instance FromJSON PaymentAddress where
 
 printAddress :: PaymentAddress -> String
 printAddress (PaymentAddress a l i b hs) = unwords $ concat
-    [ [ concat [show i, ":"]
-      , addrToBase58 a
-      ] 
+    [ [ show i, ":" , addrToBase58 a ] 
     , if null l then [] else [concat ["(",l,")"]]
     , [ "Balance:", show b ]
     , [ "TxCount:", show $ length hs]

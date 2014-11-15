@@ -59,6 +59,7 @@ module Network.Haskoin.Wallet
 , walletBloomFilter
 , isTxInWallet
 , firstKeyTime
+, resetRescan
 
 -- *Block Commands
 , importBlock

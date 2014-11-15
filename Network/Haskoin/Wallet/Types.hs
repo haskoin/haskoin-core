@@ -8,6 +8,7 @@ module Network.Haskoin.Wallet.Types
 , Wallet(..)
 , Account(..)
 , PaymentAddress(..)
+, RecipientAddress(..)
 , AccTx(..)
 , TxConfidence(..)
 , TxSource(..)
@@ -297,9 +298,38 @@ printAddress (PaymentAddress a l i) = unwords $
     , addrToBase58 a
     ] ++ if null l then [] else [concat ["(",l,")"]]
 
+data RecipientAddress = RecipientAddress
+    { recipientAddress :: Address
+    , recipientLabel   :: String
+    , recipientIsLocal :: Bool
+    } deriving (Eq, Show, Read)
+
+instance ToJSON RecipientAddress where
+    toJSON (RecipientAddress a l lo) = object
+        [ "address" .= addrToBase58 a
+        , "label"   .= l
+        , "islocal" .= lo
+        ]
+
+instance FromJSON RecipientAddress where
+    parseJSON (Object o) = do
+        a  <- o .: "address"
+        l  <- o .: "label"
+        lo <- o .: "islocal"
+        let f add = return $ RecipientAddress add l lo
+        maybe mzero f $ base58ToAddr a
+    parseJSON _ = mzero
+
+printRecipientAddress :: RecipientAddress -> String
+printRecipientAddress (RecipientAddress a l lo) = unwords $ concat
+    [ ["    " ++ if lo then "<-" else "->"]
+    , [ addrToBase58 a ]
+    , if null l then [] else [concat ["(",l,")"]]
+    ] 
+
 data AccTx = AccTx
     { accTxHash           :: TxHash
-    , accTxRecipients     :: [Address]
+    , accTxRecipients     :: [RecipientAddress]
     , accTxValue          :: Int64
     , accTxConfidence     :: TxConfidence
     , accIsCoinbase       :: Bool
@@ -338,9 +368,9 @@ instance FromJSON AccTx where
 printAccTx :: AccTx -> String
 printAccTx (AccTx h r v ci cb co rd cd) = unlines $ concat
     [ [ unwords [ "Value     :", show v ]
-      , unwords [ "Recipients:", addrToBase58 $ head r ]
+      , unwords [ "Recipients:" ]
       ]
-    , (map (\x -> unwords ["           ", addrToBase58 x]) $ tail r)
+    , map printRecipientAddress r
     , [ unwords [ "Confidence:"
                 , printConfidence ci
                 , concat ["(",show co," confirmations)"] 

@@ -84,8 +84,14 @@ toAccTx accTx = do
     (Entity _ tx) <- getTxEntity $ dbAccTxHash accTx
     conf <- getConfirmations $ dbAccTxHash accTx
     confDate <- getConfirmationDate $ dbAccTxHash accTx
+    recipAddrs <- forM (dbAccTxRecipients accTx) $ \a -> do
+        addrM <- getBy $ UniqueAddress a 
+        let label = dbAddressLabel $ entityVal $ fromJust addrM
+        return $ if isJust addrM
+            then RecipientAddress a label True
+            else RecipientAddress a "" False
     return $ AccTx { accTxHash           = dbAccTxHash accTx
-                   , accTxRecipients     = dbAccTxRecipients accTx
+                   , accTxRecipients     = recipAddrs
                    , accTxValue          = dbAccTxValue accTx
                    , accTxConfidence     = dbTxConfidence tx
                    , accIsCoinbase       = dbTxIsCoinbase tx

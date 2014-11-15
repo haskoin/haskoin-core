@@ -14,6 +14,7 @@ tests =
         [ testProperty "Wallet" (metaID :: Wallet -> Bool)
         , testProperty "Account" (metaID :: Account -> Bool)
         , testProperty "PaymentAddress" (metaID :: PaymentAddress -> Bool)
+        , testProperty "RecipientAddress" (metaID :: RecipientAddress -> Bool)
         , testProperty "AccTx" (metaID :: AccTx -> Bool)
         , testProperty "TxConfidence" (metaID :: TxConfidence -> Bool)
         , testProperty "TxSource" (metaID :: TxSource -> Bool)

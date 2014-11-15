@@ -47,6 +47,13 @@ instance Arbitrary PaymentAddress where
         k <- arbitrary
         return $ PaymentAddress addr l k
 
+instance Arbitrary RecipientAddress where
+    arbitrary = do
+        ArbitraryAddress addr <- arbitrary
+        l  <- arbitrary
+        lo <- arbitrary
+        return $ RecipientAddress addr l lo
+
 instance Arbitrary AccTx where
     arbitrary = do
         tid <- arbitrary

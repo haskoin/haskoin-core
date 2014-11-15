@@ -26,6 +26,7 @@ module Network.Haskoin.Wallet
 
 -- *Address Commands
 , PaymentAddress(..)
+, RecipientAddress(..)
 , getAddress
 , addressList
 , addressCount

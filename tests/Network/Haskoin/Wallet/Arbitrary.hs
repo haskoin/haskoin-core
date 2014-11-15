@@ -45,7 +45,9 @@ instance Arbitrary PaymentAddress where
         ArbitraryAddress addr <- arbitrary
         l <- arbitrary
         k <- arbitrary
-        return $ PaymentAddress addr l k
+        b <- arbitrary
+        hs <- arbitrary
+        return $ PaymentAddress addr l k b hs
 
 instance Arbitrary RecipientAddress where
     arbitrary = do
@@ -57,7 +59,7 @@ instance Arbitrary RecipientAddress where
 instance Arbitrary AccTx where
     arbitrary = do
         tid <- arbitrary
-        addrs <- listOf1 (arbitrary >>= \(ArbitraryAddress a) -> return a)
+        addrs <- listOf1 arbitrary
         v <- arbitrary
         conf <- arbitrary
         b <- arbitrary

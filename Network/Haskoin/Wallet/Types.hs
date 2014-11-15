@@ -352,11 +352,11 @@ instance ToJSON AccTx where
           , "recipients"    .= as
           , "value"         .= v
           , "confidence"    .= x
-          , "isCoinbase"    .= cb
+          , "iscoinbase"    .= cb
           , "confirmations" .= c
-          , "receivedDate"  .= (round (utcTimeToPOSIXSeconds rd) :: Word32)
+          , "receiveddate"  .= (round (utcTimeToPOSIXSeconds rd) :: Word32)
           ]
-        , maybeToList $ ("confirmationDate" .=) <$> cd
+        , maybeToList $ ("confirmationdate" .=) <$> cd
         ]
 
 instance FromJSON AccTx where
@@ -365,10 +365,10 @@ instance FromJSON AccTx where
         as <- o .: "recipients"
         v  <- o .: "value"
         x  <- o .: "confidence"
-        cb <- o .: "isCoinbase"
+        cb <- o .: "iscoinbase"
         c  <- o .: "confirmations"
-        rd <- o .: "receivedDate"
-        cd <- o .:? "confirmationDate"
+        rd <- o .: "receiveddate"
+        cd <- o .:? "confirmationdate"
         let rDate = posixSecondsToUTCTime $ realToFrac (rd :: Word32)
         return $ AccTx h as v x cb c rDate cd
     parseJSON _ = mzero

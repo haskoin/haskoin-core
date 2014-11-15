@@ -35,7 +35,7 @@ module Network.Haskoin.Wallet.Model
 ) where
 
 import Data.Int (Int64)
-import Data.Word (Word32, Word64)
+import Data.Word (Word32)
 import Data.Time (UTCTime)
 import Database.Persist (EntityField, Unique)
 import Database.Persist.Sql ()
@@ -79,7 +79,7 @@ DbAddress
     index KeyIndex
     account DbAccountId
     internal Bool
-    balance Word64
+    balance Int64
     relatedTxs [TxHash]
     created UTCTime default=CURRENT_TIME
     UniqueAddress value

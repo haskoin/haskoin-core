@@ -29,7 +29,7 @@ import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import Data.Int (Int64)
 import Data.Typeable (Typeable)
 import Data.Maybe (maybeToList, isJust, fromJust)
-import Data.Word (Word32, Word64)
+import Data.Word (Word32)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.ByteString.Lazy (toStrict, fromStrict)
@@ -274,7 +274,7 @@ data PaymentAddress = PaymentAddress
     { paymentAddress    :: Address
     , addressLabel      :: String
     , addressIndex      :: KeyIndex
-    , addressBalance    :: Word64
+    , addressBalance    :: Int64
     , addressRelatedTxs :: [TxHash]
     } deriving (Eq, Show, Read)
 

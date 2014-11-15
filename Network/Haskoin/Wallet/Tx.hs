@@ -488,8 +488,8 @@ updateAddressBalance tid forceRemove = do
             _ -> addData
   where
     f m (c, op)      = M.alter (f' c op) (dbCoinAddress c) m
-    f' c op Nothing  = Just $ op 0 $ coinValue $ dbCoinValue c
-    f' c op (Just v) = Just $ op v $ coinValue $ dbCoinValue c
+    f' c op Nothing  = Just $ op 0 $ fromIntegral $ coinValue $ dbCoinValue c
+    f' c op (Just v) = Just $ op v $ fromIntegral $ coinValue $ dbCoinValue c
 
 -- Return the input coins and the output coins of a transaction, if they
 -- exist in the wallet.

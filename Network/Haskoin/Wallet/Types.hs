@@ -302,8 +302,8 @@ printAddress :: PaymentAddress -> String
 printAddress (PaymentAddress a l i b hs) = unwords $ concat
     [ [ show i, ":" , addrToBase58 a ] 
     , if null l then [] else [concat ["(",l,")"]]
-    , [ "Balance:", show b ]
-    , [ "TxCount:", show $ length hs]
+    , if null hs then [] else
+        [ "[", "Balance:", show b, "TxCount:", show $ length hs, "]" ]
     ]
 
 data RecipientAddress = RecipientAddress

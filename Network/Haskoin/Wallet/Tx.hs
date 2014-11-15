@@ -29,7 +29,7 @@ module Network.Haskoin.Wallet.Tx
 ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (forM, forM_, when, liftM, filterM)
+import Control.Monad (forM, forM_, when, liftM, filterM, unless)
 import Control.Monad.Reader (ReaderT)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Exception (throwIO)
@@ -37,10 +37,10 @@ import Control.Exception (throwIO)
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Word (Word32, Word64)
-import Data.List ((\\), nub)
 import Data.Maybe (catMaybes, isNothing, isJust, fromJust)
 import Data.Either (rights)
-import qualified Data.Map.Strict as M (toList, empty, lookup, insert)
+import qualified Data.List as L ((\\), nub, delete)
+import qualified Data.Map.Strict as M (toList, empty, lookup, insert, alter)
 
 import Database.Persist 
     ( PersistStore
@@ -85,7 +85,8 @@ toAccTx accTx = do
     conf <- getConfirmations $ dbAccTxHash accTx
     confDate <- getConfirmationDate $ dbAccTxHash accTx
     recipAddrs <- forM (dbAccTxRecipients accTx) $ \a -> do
-        addrM <- getBy $ UniqueAddress a 
+        -- Only get the address if it matches the account id
+        addrM <- getBy $ UniqueAddressAccount a (dbAccTxAccount accTx)
         let label = dbAddressLabel $ entityVal $ fromJust addrM
         return $ if isJust addrM
             then RecipientAddress a label True
@@ -235,6 +236,8 @@ addTx tx source = do
         let dbAccTxs = buildAccTx tx coins outCoins time
         -- insert account transactions into database
         forM_ dbAccTxs insert_
+        -- Update address information
+        updateAddressBalance tid
         -- Re-import orphans
         tryImportOrphans
         return $ Just conf
@@ -254,9 +257,9 @@ checkDoubleSpend tx source
             isDoubleSpend = any (`elem` [TxBuilding, TxPending]) spendConfs
 
         -- We can not build on top of a chain with conflicts
-        txsM <- mapM (getBy . UniqueTx) $ nub $ map outPointHash outpoints
+        txsM <- mapM (getBy . UniqueTx) $ L.nub $ map outPointHash outpoints
         xs   <- mapM (getConflicts . dbTxHash . entityVal) $ catMaybes txsM
-        conflM <- mapM (getBy . UniqueTx) $ nub $ concat xs
+        conflM <- mapM (getBy . UniqueTx) $ L.nub $ concat xs
         let confidences = map (dbTxConfidence . entityVal) $ catMaybes conflM
             hasConflict = any (`elem` [TxBuilding, TxPending]) confidences
 
@@ -274,18 +277,18 @@ updateConflicts tx coins source
 
         -- We are also in conflict with any children of a conflicted tx
         childConfls <- forM confls findChildTxs
-        let allConfls = nub $ concat $ confls : childConfls
+        let allConfls = L.nub $ concat $ confls : childConfls
         isDead <- liftM or $ mapM isTxBuilding allConfls 
 
         -- A transaction iherits the conflicts of its parent transaction
-        txsM <- mapM (getBy . UniqueTx) $ nub $ map outPointHash outpoints
+        txsM <- mapM (getBy . UniqueTx) $ L.nub $ map outPointHash outpoints
         let txs     = catMaybes txsM
             parDead = any ((== TxDead) . dbTxConfidence . entityVal) txs
         cs <- mapM (getConflicts . dbTxHash . entityVal) txs
 
         -- Insert unique conflict links
         time  <- liftIO getCurrentTime
-        forM_ (nub $ concat $ allConfls : cs) $ \h -> 
+        forM_ (L.nub $ concat $ allConfls : cs) $ \h -> 
             insert_ $ DbTxConflict tid h time
 
         -- Compute the confidence
@@ -310,14 +313,14 @@ findChildTxs tid = do
     if isNothing txM then return [] else do
         hs   <- findSpendingTxs outpoints
         rest <- forM hs findChildTxs
-        return $ nub $ concat $ hs : rest
+        return $ L.nub $ concat $ hs : rest
 
 -- Returns the transactions that spend the given outpoints
 findSpendingTxs :: (MonadIO m, PersistQuery b)
                 => [OutPoint] -> ReaderT b m [TxHash]
 findSpendingTxs outpoints = do
     res <- selectList [DbSpentCoinKey <-. outpoints] []
-    return $ nub $ map (dbSpentCoinTx . entityVal) res
+    return $ L.nub $ map (dbSpentCoinTx . entityVal) res
 
 -- Try to re-import all orphan transactions
 tryImportOrphans :: (MonadIO m, PersistQuery b, PersistUnique b)
@@ -425,7 +428,7 @@ isMyOutput out = do
             res <- getBy $ UniqueAddress recipient
             return $ entityVal <$> res
 
--- |Group input and output coins by accounts and create 
+-- | Group input and output coins by accounts and create 
 -- account-level transaction
 buildAccTx :: (Ord (BackendKey b))
            => Tx -> [DbCoinGeneric b] -> [DbCoinGeneric b] -> UTCTime 
@@ -447,9 +450,63 @@ buildAccTx tx inCoins outCoins time = map build $ M.toList oMap
         addrs = map dbCoinAddress o
         recips | null addrs = allRecip
                | total < 0 = 
-                   let xs = allRecip \\ addrs -- Remove the change
+                   let xs = allRecip L.\\ addrs -- Remove the change
                    in if null xs then allRecip else xs
                | otherwise = addrs
+
+-- | Update the balance and relatedTxs fields of 
+-- an address when a tx is improted
+updateAddressBalance :: (PersistQuery b, PersistUnique b, MonadIO m) 
+                     => TxHash -> ReaderT b m ()
+updateAddressBalance tid = do
+    dbTx <- liftM (entityVal . fromJust) $ getBy (UniqueTx tid)
+    (inCoins, outCoins) <- getTxCoins dbTx
+    let addrMap = foldl f M.empty $ concat 
+            [ zip outCoins $ repeat (+)
+            , zip inCoins $ repeat (-)
+            ]
+    forM_ (M.toList addrMap) $ \(a, v) -> do
+        -- We know the address exists
+        Entity aKey aVal <- liftM fromJust $ getBy (UniqueAddress a)
+        let prevBal = dbAddressBalance aVal
+            prevRel = dbAddressRelatedTxs aVal
+            remData = when (tid `elem` prevRel) $ replace aKey $ 
+                aVal{ dbAddressBalance    = prevBal - v
+                    , dbAddressRelatedTxs = L.delete tid prevRel
+                    }
+            addData = unless (tid `elem` prevRel) $ replace aKey $ 
+                aVal{ dbAddressBalance    = prevBal + v
+                    , dbAddressRelatedTxs = prevRel ++ [tid]
+                    }
+        case dbTxConfidence dbTx of
+            TxDead -> remData
+            TxPending -> do
+                conf <- getConflicts tid
+                if null conf then addData else do
+                    remData 
+                    forM_ conf updateAddressBalance
+            _ -> addData
+  where
+    f m (c, op)      = M.alter (f' c op) (dbCoinAddress c) m
+    f' c op Nothing  = Just $ op 0 $ coinValue $ dbCoinValue c
+    f' c op (Just v) = Just $ op v $ coinValue $ dbCoinValue c
+
+-- Return the input coins and the output coins of a transaction, if they
+-- exist in the wallet.
+getTxCoins :: (MonadIO m, PersistUnique b, PersistQuery b) 
+           => DbTxGeneric b 
+           -> ReaderT b m ([DbCoinGeneric b], [DbCoinGeneric b])
+getTxCoins dbTx = do
+    -- Find coins from transaction inputs
+    inCoinsE <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
+    let inCoins = map entityVal inCoinsE
+    -- Find coins from transaction outputs
+    outCoins <- liftM (map entityVal) $ selectList [DbCoinHash ==. tid] []
+    return (inCoins, outCoins)
+  where
+    tid = dbTxHash dbTx
+    tx = dbTxValue dbTx
+    f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
 
 -- | Remove a transaction from the database. This will remove all transaction
 -- entries for this transaction as well as any child transactions and coins
@@ -679,10 +736,14 @@ importBlock action expTxs = do
                     , DbTxConfirmedHeight =. Just (nodeHeaderHeight node)
                     , DbTxConfidence      =. TxBuilding
                     ]
+
+            -- Update balances displayed by addresses
+            forM_ myTxs $ \h -> updateAddressBalance h
+
             setBestHash (nodeHeaderHeight node) (nodeBlockHash node)
         BlockReorg _ o n -> do
             -- Unconfirm transactions from the old chain
-            forM_ (reverse o) $ \b -> do
+            otxs <- forM (reverse o) $ \b -> do
                 otxs <- selectList 
                     [ DbTxConfirmedBy ==. Just (nodeBlockHash b) ] []
                 forM_ otxs $ \(Entity oKey _) -> do
@@ -694,10 +755,13 @@ importBlock action expTxs = do
                 forM_ otxs $ \(Entity _ otx) -> do
                     conflicts <- getConflicts $ dbTxHash otx
                     forM_ conflicts reviveTransaction
+
+                return $ map (dbTxHash . entityVal) otxs
+
             -- Confirm transactions in the new chain. This will also confirm
             -- the transactions in the best block of the new chain as we
             -- inserted it in DbConfirmations at the start of the function.
-            forM_ n $ \b -> do
+            ntxs <- forM n $ \b -> do
                 cnfs <- selectList 
                             [ DbConfirmationBlock ==. nodeBlockHash b ] []
                 let ntxs = map (dbConfirmationTx . entityVal) cnfs 
@@ -713,7 +777,13 @@ importBlock action expTxs = do
                         , DbTxConfirmedHeight =. Just (nodeHeaderHeight b)
                         , DbTxConfidence      =. TxBuilding
                         ]
+                return ntxs
+
             setBestHash (nodeHeaderHeight $ last n) (nodeBlockHash $ last n)
+
+            -- Update balances displayed by addresses
+            forM_ (L.nub $ concat $ otxs ++ ntxs) updateAddressBalance
+
         SideBlock _ -> return ()
 
 -- If a transaction is Dead but has no more conflicting Building transactions,
@@ -746,7 +816,7 @@ getConflicts h = do
     bsE <- selectList [DbTxConflictSnd ==. h] []
     let as = map (dbTxConflictSnd . entityVal) asE
         bs = map (dbTxConflictFst . entityVal) bsE
-    return $ nub $ as ++ bs
+    return $ L.nub $ as ++ bs
 
 isTxDead :: (MonadIO m, PersistUnique b, PersistQuery b)
          => TxHash -> ReaderT b m Bool
@@ -770,8 +840,8 @@ isTxOffline h = do
 
 -- | Returns the balance of an account.
 balance :: (MonadIO m, PersistUnique b, PersistQuery b)
-        => AccountName -- ^ Account name
-        -> ReaderT b m Word64    -- ^ Account balance
+        => AccountName        -- ^ Account name
+        -> ReaderT b m Word64 -- ^ Account balance
 balance name = do
     coins <- spendableCoins name
     return $ sum $ map coinValue coins
@@ -779,15 +849,15 @@ balance name = do
 -- Returns coins that have not been spent. A coin spent by a dead transaction
 -- is considered unspent.
 unspentCoins :: (MonadIO m, PersistUnique b, PersistQuery b) 
-             => AccountName   -- ^ Account name
-             -> ReaderT b m [Coin]      -- ^ List of unspent coins
+             => AccountName        -- ^ Account name
+             -> ReaderT b m [Coin] -- ^ List of unspent coins
 unspentCoins name = do
     (Entity ai _) <- getAccountEntity name
     coinsE <- selectList [ DbCoinAccount ==. ai ] [Asc DbCoinCreated]
     let coins = map (dbCoinValue . entityVal) coinsE
     resM <- forM coins $ \c -> do
         spent <- selectList [DbSpentCoinKey ==. coinOutPoint c] []
-        let hs = nub $ map (dbSpentCoinTx . entityVal) spent
+        let hs = L.nub $ map (dbSpentCoinTx . entityVal) spent
         txsM <- mapM (getBy . UniqueTx) hs
         let confidences = map (dbTxConfidence . entityVal) $ catMaybes txsM
         return $ if all (== TxDead) confidences then Just c else Nothing
@@ -796,8 +866,8 @@ unspentCoins name = do
 -- Returns unspent coins that can be spent. For example, coins from 
 -- conflicting transactions cannot be spent, even if they are unspent.
 spendableCoins :: (MonadIO m, PersistUnique b, PersistQuery b) 
-               => AccountName   -- ^ Account name
-               -> ReaderT b m [Coin]      -- ^ List of coins that can be spent
+               => AccountName        -- ^ Account name
+               -> ReaderT b m [Coin] -- ^ List of coins that can be spent
 spendableCoins name = do
     coins <- unspentCoins name
     res <- forM coins $ \c -> do

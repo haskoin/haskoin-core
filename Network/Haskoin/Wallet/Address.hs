@@ -52,6 +52,8 @@ toPaymentAddr :: DbAddressGeneric b -> PaymentAddress
 toPaymentAddr x = PaymentAddress (dbAddressValue x) 
                                  (dbAddressLabel x) 
                                  (dbAddressIndex x)
+                                 (dbAddressBalance x)
+                                 (dbAddressRelatedTxs x)
 
 -- Get an address by account name and key
 getAddress :: (MonadIO m, PersistUnique b, PersistQuery b)
@@ -222,7 +224,7 @@ newAddrsGeneric name internal cnt = do
         [ Desc DbAddressIndex ]
     let nxtIdx = case lstEntM of Nothing -> 0
                                  Just (Entity _ lst) -> dbAddressIndex lst + 1
-    let build (a,i) = DbAddress a "" i ai internal time
+    let build (a,i) = DbAddress a "" i ai internal 0 [] time
         as = map build . take cnt $ f acc nxtIdx
     _ <- insertMany as
     return as

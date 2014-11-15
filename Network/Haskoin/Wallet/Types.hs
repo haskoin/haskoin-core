@@ -29,7 +29,7 @@ import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import Data.Int (Int64)
 import Data.Typeable (Typeable)
 import Data.Maybe (maybeToList, isJust, fromJust)
-import Data.Word (Word32)
+import Data.Word (Word32, Word64)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.ByteString.Lazy (toStrict, fromStrict)
@@ -271,16 +271,20 @@ printAccount a = case a of
                 (map (\x -> unwords ["        ", xPubExport x]) $ tail ks)
 
 data PaymentAddress = PaymentAddress 
-    { paymentAddress :: Address
-    , addressLabel   :: String
-    , addressIndex   :: KeyIndex
+    { paymentAddress    :: Address
+    , addressLabel      :: String
+    , addressIndex      :: KeyIndex
+    , addressBalance    :: Word64
+    , addressRelatedTxs :: [TxHash]
     } deriving (Eq, Show, Read)
 
 instance ToJSON PaymentAddress where
-    toJSON (PaymentAddress a l i) = object
+    toJSON (PaymentAddress a l i b hs) = object
         [ "address" .= addrToBase58 a
         , "label"   .= l
         , "index"   .= i
+        , "balance" .= b
+        , "relatedtxs" .= hs
         ]
 
 instance FromJSON PaymentAddress where
@@ -288,15 +292,21 @@ instance FromJSON PaymentAddress where
         a <- o .: "address"
         l <- o .: "label"
         i <- o .: "index"
-        let f add = return $ PaymentAddress add l i
+        b <- o .: "balance"
+        hs <- o .: "relatedtxs"
+        let f add = return $ PaymentAddress add l i b hs
         maybe mzero f $ base58ToAddr a
     parseJSON _ = mzero
 
 printAddress :: PaymentAddress -> String
-printAddress (PaymentAddress a l i) = unwords $
-    [ concat [show i, ":"]
-    , addrToBase58 a
-    ] ++ if null l then [] else [concat ["(",l,")"]]
+printAddress (PaymentAddress a l i b hs) = unwords $ concat
+    [ [ concat [show i, ":"]
+      , addrToBase58 a
+      ] 
+    , if null l then [] else [concat ["(",l,")"]]
+    , [ "Balance:", show b ]
+    , [ "TxCount:", show $ length hs]
+    ]
 
 data RecipientAddress = RecipientAddress
     { recipientAddress :: Address

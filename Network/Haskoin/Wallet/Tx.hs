@@ -484,7 +484,8 @@ updateAddressBalance tid forceRemove = do
                 conf <- getConflicts tid
                 if null conf then addData else do
                     remData 
-                    forM_ conf (flip updateAddressBalance forceRemove)
+                    when (tid `elem` prevRel) $
+                        forM_ conf (flip updateAddressBalance forceRemove)
             _ -> addData
   where
     f m (c, op)      = M.alter (f' c op) (dbCoinAddress c) m

@@ -354,13 +354,8 @@ printAddress (BalanceAddress (PaymentAddress a l i) fb tr ft st ct) =
         , if null l then [] else [concat ["(",l,")"]]
         , if null ft && null st && null ct then [] else
             [ "["
-            , "Final balance:", printBalance fb
-            , "RelatedTxs:", show $ (length ft) + (length st)
-            , "]" 
-            ]
-        , if null ct then [] else 
-            [ "["
-            , "ConflictTxs:", unwords $ map encodeTxHashLE ct
+            , "Balance:", printBalance fb ++ ","
+            , "TxCount:", show $ (length ft) + (length st)
             , "]" 
             ]
         ]

@@ -7,6 +7,8 @@ module Network.Haskoin.Wallet.Types
 , AccountName
 , Wallet(..)
 , Account(..)
+, Balance(..)
+, BalanceAddress(..)
 , PaymentAddress(..)
 , RecipientAddress(..)
 , AccTx(..)
@@ -29,7 +31,7 @@ import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import Data.Int (Int64)
 import Data.Typeable (Typeable)
 import Data.Maybe (maybeToList, isJust, fromJust)
-import Data.Word (Word32)
+import Data.Word (Word32, Word64)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.ByteString.Lazy (toStrict, fromStrict)
@@ -270,21 +272,70 @@ printAccount a = case a of
             (unwords [ "Keys   :", xPubExport $ head ks ]) : 
                 (map (\x -> unwords ["        ", xPubExport x]) $ tail ks)
 
+data Balance = BalanceConflict | Balance Word64
+    deriving (Eq, Show, Read)
+
+instance ToJSON Balance where
+    toJSON BalanceConflict = object [ "status"  .= String "conflict" ]
+    toJSON (Balance b)     = object [ "status"  .= String "valid" 
+                                    , "balance" .= b
+                                    ]
+
+instance FromJSON Balance where
+    parseJSON (Object o) = do
+        String str <- o .: "status"
+        case str of
+            "conflict" -> return BalanceConflict
+            "valid"    -> Balance <$> o .: "balance"
+            _          -> mzero
+    parseJSON _ = mzero
+
+printBalance :: Balance -> String
+printBalance b = case b of
+    BalanceConflict -> "Conflict"
+    Balance x       -> show x
+
+data BalanceAddress = BalanceAddress
+    { balanceAddress :: PaymentAddress
+    , finalBalance   :: Balance
+    , totalReceived  :: Balance
+    , fundingTxs     :: [TxHash]
+    , spendingTxs    :: [TxHash]
+    , conflictTxs    :: [TxHash]
+    } deriving (Eq, Show, Read)
+
+instance ToJSON BalanceAddress where
+    toJSON (BalanceAddress pa fb tr ft st ct) = object
+        [ "address"       .= pa
+        , "finalbalance"  .= fb
+        , "totalreceived" .= tr
+        , "fundingtxs"    .= ft
+        , "spendingtxs"   .= st
+        , "conflicttxs"   .= ct
+        ]
+
+instance FromJSON BalanceAddress where
+    parseJSON (Object o) = do
+        pa <- o .: "address"
+        fb <- o .: "finalbalance"
+        tr <- o .: "totalreceived"
+        ft <- o .: "fundingtxs"
+        st <- o .: "spendingtxs"
+        ct <- o .: "conflicttxs"
+        return $ BalanceAddress pa fb tr ft st ct
+    parseJSON _ = mzero
+
 data PaymentAddress = PaymentAddress 
-    { paymentAddress    :: Address
-    , addressLabel      :: String
-    , addressIndex      :: KeyIndex
-    , addressBalance    :: Int64
-    , addressRelatedTxs :: [TxHash]
+    { paymentAddress :: Address
+    , addressLabel   :: String
+    , addressIndex   :: KeyIndex
     } deriving (Eq, Show, Read)
 
 instance ToJSON PaymentAddress where
-    toJSON (PaymentAddress a l i b hs) = object
-        [ "address" .= addrToBase58 a
-        , "label"   .= l
-        , "index"   .= i
-        , "balance" .= b
-        , "relatedtxs" .= hs
+    toJSON (PaymentAddress a l i) = object
+        [ "address"       .= addrToBase58 a
+        , "label"         .= l
+        , "index"         .= i
         ]
 
 instance FromJSON PaymentAddress where
@@ -292,19 +343,27 @@ instance FromJSON PaymentAddress where
         a <- o .: "address"
         l <- o .: "label"
         i <- o .: "index"
-        b <- o .: "balance"
-        hs <- o .: "relatedtxs"
-        let f add = return $ PaymentAddress add l i b hs
+        let f add = return $ PaymentAddress add l i
         maybe mzero f $ base58ToAddr a
     parseJSON _ = mzero
 
-printAddress :: PaymentAddress -> String
-printAddress (PaymentAddress a l i b hs) = unwords $ concat
-    [ [ show i, ":" , addrToBase58 a ] 
-    , if null l then [] else [concat ["(",l,")"]]
-    , if null hs then [] else
-        [ "[", "Balance:", show b, "TxCount:", show $ length hs, "]" ]
-    ]
+printAddress :: BalanceAddress -> String
+printAddress (BalanceAddress (PaymentAddress a l i) fb tr ft st ct) = 
+    unwords $ concat
+        [ [ show i, ":" , addrToBase58 a ] 
+        , if null l then [] else [concat ["(",l,")"]]
+        , if null ft && null st && null ct then [] else
+            [ "["
+            , "Final balance:", printBalance fb
+            , "RelatedTxs:", show $ (length ft) + (length st)
+            , "]" 
+            ]
+        , if null ct then [] else 
+            [ "["
+            , "ConflictTxs:", unwords $ map encodeTxHashLE ct
+            , "]" 
+            ]
+        ]
 
 data RecipientAddress = RecipientAddress
     { recipientAddress :: Address

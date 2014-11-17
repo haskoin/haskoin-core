@@ -25,6 +25,8 @@ module Network.Haskoin.Wallet
 , isMSAccount
 
 -- *Address Commands
+, Balance(..)
+, BalanceAddress(..)
 , PaymentAddress(..)
 , RecipientAddress(..)
 , getAddress
@@ -38,6 +40,7 @@ module Network.Haskoin.Wallet
 , setAddrLabel
 , addLookAhead
 , addressPrvKey
+, toPaymentAddr
 
 -- *Coin Commands
 , balance
@@ -60,6 +63,7 @@ module Network.Haskoin.Wallet
 , isTxInWallet
 , firstKeyTime
 , resetRescan
+, getBalanceAddress
 
 -- *Block Commands
 , importBlock

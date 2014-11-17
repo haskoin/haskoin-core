@@ -96,8 +96,6 @@ initWalletDB = do
 -- Remove transaction related data from the wallet
 resetRescan :: (MonadIO m, PersistQuery b) => ReaderT b m ()
 resetRescan = do
-    -- Reset address balances
-    updateWhere [] [ DbAddressBalance =. 0, DbAddressRelatedTxs =. [] ]
     -- Delete all coins
     deleteWhere ([] :: PersistQuery b => [Filter (DbCoinGeneric b)])
     -- Delete all coins spent relations

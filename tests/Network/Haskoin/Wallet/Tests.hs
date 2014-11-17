@@ -13,7 +13,9 @@ tests =
     [ testGroup "Serialize & de-serialize wallet types to JSON"
         [ testProperty "Wallet" (metaID :: Wallet -> Bool)
         , testProperty "Account" (metaID :: Account -> Bool)
+        , testProperty "Balance" (metaID :: Balance -> Bool)
         , testProperty "PaymentAddress" (metaID :: PaymentAddress -> Bool)
+        , testProperty "BalanceAddress" (metaID :: BalanceAddress -> Bool)
         , testProperty "RecipientAddress" (metaID :: RecipientAddress -> Bool)
         , testProperty "AccTx" (metaID :: AccTx -> Bool)
         , testProperty "TxConfidence" (metaID :: TxConfidence -> Bool)

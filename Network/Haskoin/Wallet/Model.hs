@@ -79,8 +79,6 @@ DbAddress
     index KeyIndex
     account DbAccountId
     internal Bool
-    balance Int64
-    relatedTxs [TxHash]
     created UTCTime default=CURRENT_TIME
     UniqueAddress value
     UniqueAddressAccount value account

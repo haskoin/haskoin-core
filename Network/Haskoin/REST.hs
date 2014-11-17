@@ -316,16 +316,20 @@ postAccountKeysR name = handleErrors $ do
 
 getAddressesR :: Text -> Handler Value
 getAddressesR name = handleErrors $ do
-    (pageM, elemM) <- runInputGet $ (,)
+    (pageM, elemM, confM) <- runInputGet $ (,,)
         <$> iopt intField "page"
         <*> iopt intField "elemperpage"
-    if isJust pageM
+        <*> iopt intField "minconf"
+    let conf = fromMaybe 0 confM
+    runDB $ if isJust pageM
         then do
-            let e | isJust elemM = fromJust elemM
-                  | otherwise    = 10
-            (as, m) <- runDB $ addressPage (unpack name) (fromJust pageM) e
-            return $ toJSON $ AddressPageRes as m
-        else toJSON <$> runDB (addressList $ unpack name)
+            let e = fromMaybe 10 elemM
+            (pa, m) <- addressPage (unpack name) (fromJust pageM) e
+            ba <- mapM (getBalanceAddress conf) pa
+            return $ toJSON $ AddressPageRes ba m
+        else do
+            pa <- (addressList $ unpack name)
+            liftM toJSON $ mapM (getBalanceAddress conf) pa
 
 postAddressesR :: Text -> Handler Value
 postAddressesR name = handleErrors $ do

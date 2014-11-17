@@ -24,12 +24,13 @@ module Network.Haskoin.Wallet.Tx
 , getBestHeight
 , setBestHash
 , balance
+, getBalanceAddress
 , unspentCoins
 , spendableCoins
 ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (forM, forM_, when, liftM, filterM, unless)
+import Control.Monad (forM, forM_, when, liftM, filterM)
 import Control.Monad.Reader (ReaderT)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Exception (throwIO)
@@ -39,8 +40,8 @@ import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Word (Word32, Word64)
 import Data.Maybe (catMaybes, isNothing, isJust, fromJust)
 import Data.Either (rights)
-import qualified Data.List as L ((\\), nub, delete)
-import qualified Data.Map.Strict as M (toList, empty, lookup, insert, alter)
+import qualified Data.List as L ((\\), nub)
+import qualified Data.Map.Strict as M (toList, empty, lookup, insert)
 
 import Database.Persist 
     ( PersistStore
@@ -236,8 +237,6 @@ addTx tx source = do
         let dbAccTxs = buildAccTx tx coins outCoins time
         -- insert account transactions into database
         forM_ dbAccTxs insert_
-        -- Update address information
-        updateAddressBalance tid False
         -- Re-import orphans
         tryImportOrphans
         return $ Just conf
@@ -454,60 +453,68 @@ buildAccTx tx inCoins outCoins time = map build $ M.toList oMap
                    in if null xs then allRecip else xs
                | otherwise = addrs
 
--- | Update the balance and relatedTxs fields of 
--- an address when a tx is improted
-updateAddressBalance :: (PersistQuery b, PersistUnique b, MonadIO m) 
-                     => TxHash -> Bool -> ReaderT b m ()
-updateAddressBalance tid forceRemove = do
-    dbTx <- liftM (entityVal . fromJust) $ getBy (UniqueTx tid)
-    (inCoins, outCoins) <- getTxCoins dbTx
-    let addrMap = foldl f M.empty $ concat 
-            [ zip outCoins $ repeat (+)
-            , zip inCoins $ repeat (-)
-            ]
-    forM_ (M.toList addrMap) $ \(a, v) -> do
-        -- We know the address exists
-        Entity aKey aVal <- liftM fromJust $ getBy (UniqueAddress a)
-        let prevBal = dbAddressBalance aVal
-            prevRel = dbAddressRelatedTxs aVal
-            remData = when (tid `elem` prevRel) $ replace aKey $ 
-                aVal{ dbAddressBalance    = prevBal - v
-                    , dbAddressRelatedTxs = L.delete tid prevRel
-                    }
-            addData = unless (tid `elem` prevRel) $ replace aKey $ 
-                aVal{ dbAddressBalance    = prevBal + v
-                    , dbAddressRelatedTxs = prevRel ++ [tid]
-                    }
-        if forceRemove then remData else case dbTxConfidence dbTx of
-            TxDead -> remData
-            TxPending -> do
-                conf <- getConflicts tid
-                if null conf then addData else do
-                    remData 
-                    when (tid `elem` prevRel) $
-                        forM_ conf (flip updateAddressBalance forceRemove)
-            _ -> addData
-  where
-    f m (c, op)      = M.alter (f' c op) (dbCoinAddress c) m
-    f' c op Nothing  = Just $ op 0 $ fromIntegral $ coinValue $ dbCoinValue c
-    f' c op (Just v) = Just $ op v $ fromIntegral $ coinValue $ dbCoinValue c
+-- Confirmations matter for funding transactions (transactions creating coins)
+-- but not for spending transactions. This reflects the fact that we may not
+-- trust incoming transactions but we usually always trust the spending 
+-- transactions that we create.
+getBalanceAddress :: (PersistQuery b, PersistUnique b, MonadIO m) 
+                  => Word32 -> PaymentAddress -> ReaderT b m BalanceAddress
+getBalanceAddress minConf pa = do
+    -- Current best height
+    bestH <- getBestHeight
 
--- Return the input coins and the output coins of a transaction, if they
--- exist in the wallet.
-getTxCoins :: (MonadIO m, PersistUnique b, PersistQuery b) 
-           => DbTxGeneric b 
-           -> ReaderT b m ([DbCoinGeneric b], [DbCoinGeneric b])
-getTxCoins dbTx = do
-    -- Find coins from transaction inputs
-    inCoinsE <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
-    let inCoins = map entityVal inCoinsE
-    -- Find coins from transaction outputs
-    outCoins <- liftM (map entityVal) $ selectList [DbCoinHash ==. tid] []
-    return (inCoins, outCoins)
+    -- Find coins created by non-dead transactions
+    let a = paymentAddress pa
+    coinsE <- liftM (map entityVal) $ selectList [DbCoinAddress ==. a] [] 
+    coins <- filterM ((isValidConfTx bestH) . dbCoinHash) coinsE
+
+    -- Find conflicts on transactions creating the coins
+    confRes <- liftM (zip coins) $ mapM (notDeadConfls . dbCoinHash) coins
+    let fundConf = concat $ map snd confRes
+        noConf   = map fst $ filter (null . snd) confRes
+
+    -- Find spending transactions
+    spendRes <- liftM (zip coins) $ mapM getSpendTxs coins
+    let notSpend = map fst $ filter (null . snd) spendRes
+        spend    = filter (not . null . snd) spendRes
+
+    -- Find conflicts on the spending transactions
+    sConf <- mapM (\(c,s:_) -> notDeadConfls s >>= \x -> return (c,s,x)) spend
+    let spendConf = concat $ map lst3 sConf
+        allConf   = L.nub $ fundConf ++ spendConf
+
+    let tr | null fundConf = Balance $ 
+                sum $ map (coinValue . dbCoinValue) coins
+           | otherwise     = BalanceConflict
+        fb | null allConf  = Balance $ 
+                sum $ map (coinValue . dbCoinValue) notSpend
+           | otherwise     = BalanceConflict
+
+    return $ BalanceAddress
+        { balanceAddress = pa
+        , finalBalance   = fb
+        , totalReceived  = tr
+        , fundingTxs     = map dbCoinHash noConf
+        , spendingTxs    = map snd3 $ filter (null . lst3) sConf
+        , conflictTxs    = allConf
+        }
   where
-    tid = dbTxHash dbTx
-    tx = dbTxValue dbTx
-    f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
+    -- Find non-dead conflicts
+    notDeadConfls h = do
+        confls <- getConflicts h
+        res <- filterM ((liftM not) . isTxDead) confls
+        return $ if null res then [] else h:res
+    -- Tx is not dead and matches minimum confirmations
+    isValidConfTx bestHeight h = do
+        Entity _ tx <- getTxEntity h
+        let heightM = dbTxConfirmedHeight tx
+            conf | isNothing heightM = 0
+                 | otherwise = bestHeight - (fromJust heightM) + 1 
+        return $ dbTxConfidence tx /= TxDead && conf >= minConf
+    -- Find non-dead spending transactions
+    getSpendTxs c = do
+        xs <- findSpendingTxs [coinOutPoint $ dbCoinValue c]
+        filterM ((liftM not) . isTxDead) xs
 
 -- | Remove a transaction from the database. This will remove all transaction
 -- entries for this transaction as well as any child transactions and coins
@@ -521,8 +528,6 @@ removeTx tid = do
         len       = fromIntegral $ length (txOut tx)
         outpoints = map (OutPoint tid) [0 .. (len - 1)]
     if isNothing txM then return [] else do 
-        -- Remove address balances from this transaction
-        updateAddressBalance tid True
         childs <- findSpendingTxs outpoints
         -- Recursively remove children
         cids <- forM childs removeTx
@@ -739,14 +744,10 @@ importBlock action expTxs = do
                     , DbTxConfirmedHeight =. Just (nodeHeaderHeight node)
                     , DbTxConfidence      =. TxBuilding
                     ]
-
-            -- Update balances displayed by addresses
-            forM_ myTxs $ \h -> updateAddressBalance h False
-
             setBestHash (nodeHeaderHeight node) (nodeBlockHash node)
         BlockReorg _ o n -> do
             -- Unconfirm transactions from the old chain
-            otxs <- forM (reverse o) $ \b -> do
+            forM_ (reverse o) $ \b -> do
                 otxs <- selectList 
                     [ DbTxConfirmedBy ==. Just (nodeBlockHash b) ] []
                 forM_ otxs $ \(Entity oKey _) -> do
@@ -759,12 +760,10 @@ importBlock action expTxs = do
                     conflicts <- getConflicts $ dbTxHash otx
                     forM_ conflicts reviveTransaction
 
-                return $ map (dbTxHash . entityVal) otxs
-
             -- Confirm transactions in the new chain. This will also confirm
             -- the transactions in the best block of the new chain as we
             -- inserted it in DbConfirmations at the start of the function.
-            ntxs <- forM n $ \b -> do
+            forM_ n $ \b -> do
                 cnfs <- selectList 
                             [ DbConfirmationBlock ==. nodeBlockHash b ] []
                 let ntxs = map (dbConfirmationTx . entityVal) cnfs 
@@ -780,13 +779,8 @@ importBlock action expTxs = do
                         , DbTxConfirmedHeight =. Just (nodeHeaderHeight b)
                         , DbTxConfidence      =. TxBuilding
                         ]
-                return ntxs
 
             setBestHash (nodeHeaderHeight $ last n) (nodeBlockHash $ last n)
-
-            -- Update balances displayed by addresses
-            forM_ (L.nub $ concat $ otxs ++ ntxs) $
-                flip updateAddressBalance False
 
         SideBlock _ -> return ()
 

@@ -40,14 +40,26 @@ instance Arbitrary Account where
             keys <- vectorOf n (arbitrary >>= \(ArbitraryXPubKey _ p) -> return p)
             return $ ReadMSAccount name m n keys
 
+instance Arbitrary Balance where
+    arbitrary = oneof
+        [ return BalanceConflict
+        , Balance <$> arbitrary
+        ]
+
+instance Arbitrary BalanceAddress where
+    arbitrary = BalanceAddress <$> arbitrary 
+                               <*> arbitrary
+                               <*> arbitrary
+                               <*> arbitrary
+                               <*> arbitrary
+                               <*> arbitrary
+
 instance Arbitrary PaymentAddress where
     arbitrary = do
         ArbitraryAddress addr <- arbitrary
         l <- arbitrary
         k <- arbitrary
-        b <- arbitrary
-        hs <- arbitrary
-        return $ PaymentAddress addr l k b hs
+        return $ PaymentAddress addr l k
 
 instance Arbitrary RecipientAddress where
     arbitrary = do

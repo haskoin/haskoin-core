@@ -122,7 +122,7 @@ instance FromJSON NewAccount where
                 <*> (o .: "keys" >>= maybe mzero return . mapM xPubImport)
             _ -> mzero
 
-data AddressPageRes = AddressPageRes ![PaymentAddress] !Int
+data AddressPageRes = AddressPageRes ![BalanceAddress] !Int
     deriving (Eq, Show, Read)
 
 instance ToJSON AddressPageRes where

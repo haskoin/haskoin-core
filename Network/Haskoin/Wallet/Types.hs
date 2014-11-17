@@ -305,8 +305,10 @@ data BalanceAddress = BalanceAddress
     } deriving (Eq, Show, Read)
 
 instance ToJSON BalanceAddress where
-    toJSON (BalanceAddress pa fb tr ft st ct) = object
-        [ "address"       .= pa
+    toJSON (BalanceAddress (PaymentAddress a l i) fb tr ft st ct) = object
+        [ "address"       .= addrToBase58 a
+        , "label"         .= l
+        , "index"         .= i
         , "finalbalance"  .= fb
         , "totalreceived" .= tr
         , "fundingtxs"    .= ft
@@ -316,13 +318,17 @@ instance ToJSON BalanceAddress where
 
 instance FromJSON BalanceAddress where
     parseJSON (Object o) = do
-        pa <- o .: "address"
+        a <- o .: "address"
+        l <- o .: "label"
+        i <- o .: "index"
         fb <- o .: "finalbalance"
         tr <- o .: "totalreceived"
         ft <- o .: "fundingtxs"
         st <- o .: "spendingtxs"
         ct <- o .: "conflicttxs"
-        return $ BalanceAddress pa fb tr ft st ct
+        let f add = return $ 
+                BalanceAddress (PaymentAddress add l i) fb tr ft st ct
+        maybe mzero f $ base58ToAddr a
     parseJSON _ = mzero
 
 data PaymentAddress = PaymentAddress 
@@ -348,7 +354,7 @@ instance FromJSON PaymentAddress where
     parseJSON _ = mzero
 
 printAddress :: BalanceAddress -> String
-printAddress (BalanceAddress (PaymentAddress a l i) fb tr ft st ct) = 
+printAddress (BalanceAddress (PaymentAddress a l i) fb _ ft st ct) = 
     unwords $ concat
         [ [ show i, ":" , addrToBase58 a ] 
         , if null l then [] else [concat ["(",l,")"]]

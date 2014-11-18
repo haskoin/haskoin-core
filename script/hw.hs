@@ -525,8 +525,11 @@ processCommand opts args = case args of
     ["balance", name] -> do
         let url = stringToBS $ concat [ "/api/accounts/", name, "/balance" ]
         res <- sendRequest url "GET" [] Nothing opts
-        printJSONOr opts res $ \(BalanceRes b) ->
-            putStrLn $ unwords [ "Balance:", show b ]
+        printJSONOr opts res $ \(BalanceRes b cs) -> do
+            putStrLn $ unwords [ "Balance:", printBalance b ]
+            unless (null cs) $ do
+                putStrLn "Conflicts:"
+                formatStr $ unlines $ map encodeTxHashLE cs 
     ["getblob", name, tid] -> do
         let h = decodeTxHashLE tid
         when (isNothing h) $ throwIO $

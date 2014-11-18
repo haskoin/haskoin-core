@@ -320,16 +320,16 @@ getAddressesR name = handleErrors $ do
         <$> iopt intField "page"
         <*> iopt intField "elemperpage"
         <*> iopt intField "minconf"
-    let conf = fromMaybe 0 confM
+    let minConf = fromMaybe 0 confM
     runDB $ if isJust pageM
         then do
             let e = fromMaybe 10 elemM
             (pa, m) <- addressPage (unpack name) (fromJust pageM) e
-            ba <- mapM (getBalanceAddress conf) pa
+            ba <- mapM (flip addressBalance minConf) pa
             return $ toJSON $ AddressPageRes ba m
         else do
-            pa <- (addressList $ unpack name)
-            liftM toJSON $ mapM (getBalanceAddress conf) pa
+            pa <- addressList $ unpack name
+            liftM toJSON $ mapM (flip addressBalance minConf) pa
 
 postAddressesR :: Text -> Handler Value
 postAddressesR name = handleErrors $ do
@@ -371,7 +371,9 @@ postAccTxsR :: Text -> Handler Value
 postAccTxsR name = handleErrors $ guardVault >>
     parseJsonBody >>= \res -> case res of
         Success (SendCoins rs fee) -> do
-            (tid, complete) <- runDB $ sendTx (unpack name) rs fee
+            confM <- runInputGet $ iopt intField "minconf"
+            let minConf = fromMaybe 0 confM
+            (tid, complete) <- runDB $ sendTx (unpack name) minConf rs fee
             whenOnline $ when complete $ do
                 HaskoinServer _ rChanM _ <- getYesod
                 let rChan = fromJust rChanM
@@ -411,8 +413,11 @@ getTxR tidStr = handleErrors $ do
     return $ toJSON $ TxRes tx
 
 getBalanceR :: Text -> Handler Value
-getBalanceR name = handleErrors $ 
-    toJSON . BalanceRes <$> runDB (balance $ unpack name)
+getBalanceR name = handleErrors $ do
+    confM <- runInputGet $ iopt intField "minconf"
+    let minConf = fromMaybe 0 confM
+    (balance, cs) <- runDB $ accountBalance (unpack name) minConf
+    return $ toJSON $ BalanceRes balance cs
 
 getSigBlobR :: Text -> Text -> Handler Value
 getSigBlobR name tidStr = handleErrors $ do

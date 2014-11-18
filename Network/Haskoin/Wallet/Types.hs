@@ -20,6 +20,7 @@ module Network.Haskoin.Wallet.Types
 , printAccount
 , printAddress
 , printAccTx
+, printBalance
 ) where
 
 import Control.Applicative ((<$>))
@@ -305,10 +306,8 @@ data BalanceAddress = BalanceAddress
     } deriving (Eq, Show, Read)
 
 instance ToJSON BalanceAddress where
-    toJSON (BalanceAddress (PaymentAddress a l i) fb tr ft st ct) = object
-        [ "address"       .= addrToBase58 a
-        , "label"         .= l
-        , "index"         .= i
+    toJSON (BalanceAddress pa fb tr ft st ct) = object
+        [ "address"       .= pa
         , "finalbalance"  .= fb
         , "totalreceived" .= tr
         , "fundingtxs"    .= ft
@@ -318,17 +317,13 @@ instance ToJSON BalanceAddress where
 
 instance FromJSON BalanceAddress where
     parseJSON (Object o) = do
-        a <- o .: "address"
-        l <- o .: "label"
-        i <- o .: "index"
+        pa <- o .: "address"
         fb <- o .: "finalbalance"
         tr <- o .: "totalreceived"
         ft <- o .: "fundingtxs"
         st <- o .: "spendingtxs"
         ct <- o .: "conflicttxs"
-        let f add = return $ 
-                BalanceAddress (PaymentAddress add l i) fb tr ft st ct
-        maybe mzero f $ base58ToAddr a
+        return $ BalanceAddress pa fb tr ft st ct
     parseJSON _ = mzero
 
 data PaymentAddress = PaymentAddress 

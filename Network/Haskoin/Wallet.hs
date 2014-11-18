@@ -43,7 +43,9 @@ module Network.Haskoin.Wallet
 , toPaymentAddr
 
 -- *Coin Commands
-, balance
+, addressBalance
+, accountBalance
+, spendableAccountBalance
 , unspentCoins
 , spendableCoins
 
@@ -63,7 +65,6 @@ module Network.Haskoin.Wallet
 , isTxInWallet
 , firstKeyTime
 , resetRescan
-, getBalanceAddress
 
 -- *Block Commands
 , importBlock

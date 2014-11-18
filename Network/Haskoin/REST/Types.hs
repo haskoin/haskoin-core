@@ -231,15 +231,20 @@ instance FromJSON TxStatusRes where
         TxStatusRes <$> o .: "tx"
                     <*> o .: "complete"
 
-data BalanceRes = BalanceRes !Word64
+data BalanceRes = BalanceRes !Balance ![TxHash]
     deriving (Eq, Show, Read)
 
 instance ToJSON BalanceRes where
-    toJSON (BalanceRes b) = object [ "balance" .= b ]
+    toJSON (BalanceRes b hs) = object 
+        [ "balance"   .= b
+        , "conflicts" .= hs
+        ]
 
 instance FromJSON BalanceRes where
-    parseJSON = withObject "balanceres" $ \o ->
-        BalanceRes <$> o .: "balance"
+    parseJSON = withObject "balanceres" $ \o -> do
+        b  <- o .: "balance"
+        hs <- o .: "conflicts"
+        return $ BalanceRes b hs
 
 data NodeAction = Rescan !(Maybe Word32)
     deriving (Eq, Show, Read)

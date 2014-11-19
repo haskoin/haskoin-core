@@ -334,7 +334,7 @@ JSON result is returned:
 [
   {
     "address": {
-      address": "n3uypZFbRqscWNqRvR64cgoMnygDHfQajD",
+      "address": "n3uypZFbRqscWNqRvR64cgoMnygDHfQajD",
       "index": 0,
       "label": "Label 1"
     },
@@ -365,7 +365,7 @@ When requesting a page, you also get the maximum page number:
   "addresspage": [
     {
       "address": {
-        address": "msKuXqKp9MZdmR4V86YTWZewjSJMVrmZTu",
+        "address": "msKuXqKp9MZdmR4V86YTWZewjSJMVrmZTu",
         "index": 5,
         "label": "Label 2"
       },
@@ -389,13 +389,13 @@ When requesting a page, you also get the maximum page number:
 }
 ```
 
-The `finalbalance` and `totalreceived` fields are balances. 
-
 ##### Address fields
+
+The `finalbalance` and `totalreceived` fields are balances. 
 
 Balances are objects that have a "status" of "valid" or "conflict". When
 "valid", the balance will have a "balance" field with the balance value. In
-rare occasions when you have conflicting tranactions in your wallet (double
+rare occasions when you have conflicting transactions in your wallet (double
 spends, malleability attacks etc.), it is impossible to compute the balance
 reliably. In such a case, and to alert the user that something is wrong, the
 balance will be in "conflict" status until any conflicts in the wallet are

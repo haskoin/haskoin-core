@@ -7,6 +7,7 @@ import Data.Aeson
 
 import Network.Haskoin.Wallet.Arbitrary ()
 import Network.Haskoin.Wallet.Types
+import Network.Haskoin.REST.Types
 
 tests :: [Test]
 tests = 
@@ -21,6 +22,22 @@ tests =
         , testProperty "TxConfidence" (metaID :: TxConfidence -> Bool)
         , testProperty "TxSource" (metaID :: TxSource -> Bool)
         , testProperty "SigBlob" (metaID :: SigBlob -> Bool)
+        ]
+    , testGroup "Serialize & de-serialize REST types to JSON"
+        [ testProperty "NewWallet" (metaID :: NewWallet -> Bool)
+        , testProperty "MnemonicRes" (metaID :: MnemonicRes -> Bool)
+        , testProperty "NewAccount" (metaID :: NewAccount -> Bool)
+        , testProperty "AddressPageRes" (metaID :: AddressPageRes -> Bool)
+        , testProperty "TxPageRes" (metaID :: TxPageRes -> Bool)
+        , testProperty "AddressData" (metaID :: AddressData -> Bool)
+        , testProperty "TxAction" (metaID :: TxAction -> Bool)
+        , testProperty "TxHashStatusRes" (metaID :: TxHashStatusRes -> Bool)
+        , testProperty "TxRes" (metaID :: TxRes -> Bool)
+        , testProperty "TxStatusRes" (metaID :: TxStatusRes -> Bool)
+        , testProperty "BalanceRes" (metaID :: BalanceRes -> Bool)
+        , testProperty "SpendableRes" (metaID :: SpendableRes -> Bool)
+        , testProperty "NodeAction" (metaID :: NodeAction -> Bool)
+        , testProperty "RescanRes" (metaID :: RescanRes -> Bool)
         ]
     ]
 

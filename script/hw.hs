@@ -91,6 +91,7 @@ data Options = Options
     { optCount    :: Int
     , optGap      :: Int
     , optFee      :: Word64
+    , optMinConf  :: Word32
     , optJson     :: Bool
     , optYaml     :: Bool
     , optPass     :: String
@@ -114,6 +115,7 @@ defaultOptions = Options
     { optCount    = 5
     , optGap      = 10
     , optFee      = 10000
+    , optMinConf  = 0
     , optJson     = False
     , optYaml     = False
     , optPass     = ""
@@ -137,6 +139,7 @@ instance ToJSON Options where
         [ "count"          .= optCount opt
         , "gap"            .= optGap opt
         , "fee"            .= optFee opt
+        , "minconf"        .= optMinConf opt
         , "json"           .= optJson opt
         , "yaml"           .= optYaml opt
         , "passphrase"     .= optPass opt
@@ -164,6 +167,7 @@ instance FromJSON Options where
         <$> o .: "count"
         <*> o .: "gap"
         <*> o .: "fee"
+        <*> o .: "minconf"
         <*> o .: "json"
         <*> o .: "yaml"
         <*> o .: "passphrase"
@@ -188,7 +192,7 @@ instance FromJSON Options where
 
 options :: [OptDescr (Options -> IO Options)]
 options =
-    [ Option ['c'] ["conf"]
+    [ Option ['c'] ["config"]
         (ReqArg (\g opts -> return opts{ optCfg = Just g }) "FILE")
         "Configuration file"
     , Option ['n'] ["count"] (ReqArg parseCount "INT")
@@ -196,6 +200,8 @@ options =
     , Option ['f'] ["fee"] 
        (ReqArg (\f opts -> return opts{ optFee = read f }) "SATOSHI")
        "Transaction fee (default: 10000)"
+    , Option ['m'] ["minconf"] (ReqArg parseMinConf "INT")
+        "Minimum number of required confirmations"
     , Option ['j'] ["json"]
         (NoArg $ \opts -> return opts{ optJson = True })
         "Format result as JSON"
@@ -231,55 +237,62 @@ parseCount s opts
     | otherwise = error $ unwords ["Invalid count option:", s]
     where res = read s
 
+parseMinConf :: String -> Options -> IO Options
+parseMinConf m opts 
+    | res >= 0   = return opts{ optMinConf = res }
+    | otherwise = error $ unwords ["Invalid minconf option:", m]
+    where res = read m
+
 usageHeader :: String
 usageHeader = "Usage: hw [<options>] <command> [<args>]"
 
 cmdHelp :: [String]
 cmdHelp = 
     [ "Server commands:" 
-    , "  start [--detach]                   Start the haskoin daemon"
-    , "  stop                               Stop the haskoin daemon"
+    , "  start [--detach]                    Start the haskoin daemon"
+    , "  stop                                Stop the haskoin daemon"
     , ""
     , "Wallet commands:" 
-    , "  newwallet name [mnemonic]          Create a new wallet"
-    , "  getwallet name                     Display a wallet by name"
-    , "  walletlist                         List all wallets"
-    , "  rescan [timestamp]                 Rescan the wallet"
+    , "  newwallet name [mnemonic]           Create a new wallet"
+    , "  getwallet name                      Display a wallet by name"
+    , "  walletlist                          List all wallets"
+    , "  rescan [timestamp]                  Rescan the wallet"
     , ""
     , "Account commands:" 
-    , "  newacc wallet name                 Create a new account"
-    , "  newms  wallet name M N [pubkey...] Create a new multisig account"
-    , "  newread   name pubkey              Create a new read-only account"
-    , "  newreadms name [pubkey...]         Create a new read-only ms account"
-    , "  addkeys   acc  {pubkey...}         Add pubkeys to a multisig account"
-    , "  acclist                            List all accounts"
-    , "  getacc    acc                      Display an account by name"
+    , "  newacc wallet name                  Create a new account"
+    , "  newms  wallet name M N [pubkey...]  Create a new multisig account"
+    , "  newread   name pubkey               Create a new read-only account"
+    , "  newreadms name [pubkey...]          Create a new read-only ms account"
+    , "  addkeys   acc  {pubkey...}          Add pubkeys to a multisig account"
+    , "  acclist                             List all accounts"
+    , "  getacc    acc                       Display an account by name"
     , ""
     , "Address commands:" 
-    , "  new    acc labels                  Generate an address with a label"
-    , "  list   acc                         Display all addresses of an account"
-    , "  page   acc page [-c addr/page]     Display addresses by page"
-    , "  label  acc index label             Add a label to an address"
+    , "  new    acc labels                   Generate an address with a label"
+    , "  list   acc                          Display all account addresses"
+    , "  page   acc page [-c addr/page]      Display account addresses by page"
+    , "  label  acc index label              Add a label to an address"
     , ""
     , "Transaction commands:" 
-    , "  txlist    acc                      Display transactions in an account"
-    , "  txpage    acc page [-c tx/page]    Display transactions by page"
-    , "  send      acc addr amount          Send coins to an address"
-    , "  sendmany  acc {addr:amount...}     Send coins to many addresses"
-    , "  signtx    acc tx                   Sign a transaction"
-    , "  gettx     hash                     Get a raw transaction"
-    , "  balance   acc                      Display account balance"
+    , "  txlist    acc                       Display transactions in an account"
+    , "  txpage    acc page [-c tx/page]     Display transactions by page"
+    , "  send      acc addr amount [-m]      Send coins to an address"
+    , "  sendmany  acc {addr:amount...} [-m] Send coins to many addresses"
+    , "  signtx    acc tx                    Sign a transaction"
+    , "  gettx     hash                      Get a raw transaction"
+    , "  balance   acc [-m]                  Display account balance"
+    , "  spendable acc [-m]                  Display account spendable balance"
     , ""
     , "Offline tx commands:" 
-    , "  getblob   acc txhash               Get data to sign a tx offline"
-    , "  signblob  acc blob                 Sign an offline tx"
+    , "  getblob   acc txhash                Get data to sign a tx offline"
+    , "  signblob  acc blob                  Sign an offline tx"
     , ""
     , "Utility commands: "
-    , "  decodetx  tx                       Decode HEX transaction"
+    , "  decodetx  tx                        Decode HEX transaction"
     , ""
     , "Other commands: "
-    , "  version                            Display version information"
-    , "  help                               Display this help information"
+    , "  version                             Display version information"
+    , "  help                                Display this help information"
     ]
 
 warningMsg :: String
@@ -437,13 +450,15 @@ processCommand opts args = case args of
             sequence_ $ intersperse (putStrLn "-") xs
     ["list", name] -> do
         let url = stringToBS $ concat [ "/api/accounts/", name, "/addrs" ]
-        res <- sendRequest url "GET" [] Nothing opts
+            qs  = [ ("minconf", Just $ stringToBS $ show $ optMinConf opts) ]
+        res <- sendRequest url "GET" qs Nothing opts
         printJSONOr opts res $ mapM_ (putStrLn . printAddress)
     ["page", name, page] -> do
         let p   = read page :: Int
             url = stringToBS $ concat [ "/api/accounts/", name, "/addrs" ]
             qs  = [ ("page",Just $ stringToBS $ show p)
                   , ("elemperpage",Just $ stringToBS $ show $ optCount opts)
+                  , ("minconf", Just $ stringToBS $ show $ optMinConf opts)
                   ]
         res <- sendRequest url "GET" qs Nothing opts
         printJSONOr opts res $ \(AddressPageRes as m) -> do
@@ -487,7 +502,8 @@ processCommand opts args = case args of
         when (isNothing a) $ throwIO $ 
             WalletException "Could not parse address"
         let url = stringToBS $ concat [ "/api/accounts/", name, "/acctxs" ]
-            req = Just $ encode $ SendCoins [(fromJust a, v)] $ optFee opts
+            req = Just $ encode $ 
+                SendCoins [(fromJust a, v)] (optFee opts) (optMinConf opts) 
         res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxHashStatusRes h c) -> do
             putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
@@ -500,7 +516,8 @@ processCommand opts args = case args of
         when (isNothing recipients) $ throwIO $
             WalletException "Could not parse recipient list"
         let url = stringToBS $ concat [ "/api/accounts/", name, "/acctxs" ]
-            req = Just $ encode $ SendCoins (fromJust recipients) $ optFee opts
+            req = Just $ encode $ 
+                SendCoins (fromJust recipients) (optFee opts) (optMinConf opts)
         res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxHashStatusRes h c) -> do
             putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
@@ -524,12 +541,20 @@ processCommand opts args = case args of
         printJSONOr opts res $ \(TxRes tx) -> putStrLn $ bsToHex $ encode' tx
     ["balance", name] -> do
         let url = stringToBS $ concat [ "/api/accounts/", name, "/balance" ]
-        res <- sendRequest url "GET" [] Nothing opts
+            qs  = [ ("minconf", Just $ stringToBS $ show $ optMinConf opts) ]
+        res <- sendRequest url "GET" qs Nothing opts
         printJSONOr opts res $ \(BalanceRes b cs) -> do
             putStrLn $ unwords [ "Balance:", printBalance b ]
             unless (null cs) $ do
                 putStrLn "Conflicts:"
                 formatStr $ unlines $ map encodeTxHashLE cs 
+    ["spendable", name] -> do
+        let url = stringToBS $ concat 
+                [ "/api/accounts/", name, "/spendablebalance" ]
+            qs  = [ ("minconf", Just $ stringToBS $ show $ optMinConf opts) ]
+        res <- sendRequest url "GET" qs Nothing opts
+        printJSONOr opts res $ \(SpendableRes b) -> do
+            putStrLn $ unwords [ "Spendable balance:", show b ]
     ["getblob", name, tid] -> do
         let h = decodeTxHashLE tid
         when (isNothing h) $ throwIO $

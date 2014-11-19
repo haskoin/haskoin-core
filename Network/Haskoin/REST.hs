@@ -153,6 +153,7 @@ mkYesod "HaskoinServer" [parseRoutes|
 /api/accounts/#Text/acctxs/#Text         AccTxR       GET
 /api/accounts/#Text/acctxs/#Text/sigblob SigBlobR     GET
 /api/accounts/#Text/balance              BalanceR     GET
+/api/accounts/#Text/spendablebalance     SpendableR   GET
 /api/txs/#Text                           TxR          GET 
 /api/node                                NodeR        POST
 |]
@@ -370,9 +371,7 @@ getAccTxsR name = handleErrors $ do
 postAccTxsR :: Text -> Handler Value
 postAccTxsR name = handleErrors $ guardVault >>
     parseJsonBody >>= \res -> case res of
-        Success (SendCoins rs fee) -> do
-            confM <- runInputGet $ iopt intField "minconf"
-            let minConf = fromMaybe 0 confM
+        Success (SendCoins rs fee minConf) -> do
             (tid, complete) <- runDB $ sendTx (unpack name) minConf rs fee
             whenOnline $ when complete $ do
                 HaskoinServer _ rChanM _ <- getYesod
@@ -418,6 +417,13 @@ getBalanceR name = handleErrors $ do
     let minConf = fromMaybe 0 confM
     (balance, cs) <- runDB $ accountBalance (unpack name) minConf
     return $ toJSON $ BalanceRes balance cs
+
+getSpendableR :: Text -> Handler Value
+getSpendableR name = handleErrors $ do
+    confM <- runInputGet $ iopt intField "minconf"
+    let minConf = fromMaybe 0 confM
+    balance <- runDB $ spendableAccountBalance (unpack name) minConf
+    return $ toJSON $ SpendableRes balance
 
 getSigBlobR :: Text -> Text -> Handler Value
 getSigBlobR name tidStr = handleErrors $ do

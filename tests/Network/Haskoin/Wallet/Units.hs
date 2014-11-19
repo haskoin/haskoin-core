@@ -13,7 +13,7 @@ import Control.Exception (Exception, handleJust)
 import Control.Monad.Trans.Resource (ResourceT)
 import Control.Monad.Logger (NoLoggingT)
 
-import Data.Word (Word32)
+import Data.Word (Word32, Word64)
 import Data.Maybe (fromJust)
 import qualified Data.ByteString as BS 
     ( ByteString
@@ -25,6 +25,7 @@ import Database.Persist
     ( Entity(..)
     , entityVal
     , selectList
+    , getBy
     )
 import Database.Persist.Sqlite 
     ( runSqlite
@@ -167,19 +168,19 @@ tests =
         , testCase "Listing addresses of a non-existing account should fail" $
             assertException
                 (WalletException "Account default does not exist") 
-                (newWallet "main" (BS.pack [0]) >> addressPage "default" 0 1)
+                (newWallet "main" (BS.pack [0]) >> addressPage "default" 0 1 False)
                 
         ]
     , testGroup "Address tests"
         [ testCase "Displaying page -1 should fail" $
             assertException
                 (WalletException "Invalid page number: -1") 
-                (newWallet "main" (BS.pack [0]) >> addressPage "default" (-1) 1)
+                (newWallet "main" (BS.pack [0]) >> addressPage "default" (-1) 1 False)
 
         , testCase "Displaying 0 results per page should fail" $
             assertException
                 (WalletException "Invalid results per page: 0") 
-                (newWallet "main" (BS.pack [0]) >> addressPage "default" 0 0)
+                (newWallet "main" (BS.pack [0]) >> addressPage "default" 0 0 False)
 
         , testCase "Displaying a page number that is too high should fail" $
             assertException
@@ -187,7 +188,7 @@ tests =
                     _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
                     _ <- newAddrs "default" 5
-                    addressPage "default" 2 5
+                    addressPage "default" 2 5 False
 
         , testCase "Setting a label on an invalid address key should fail" $
             assertException
@@ -276,31 +277,64 @@ testImportOrphan = do
         tx1 = decode' $ fromJust $ hexToBS "010000000177c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be000000006a47304402203e79947165a72de92581a6a53afaa552593a966db52477d18e4d97b5338d9451022037696e5e6f6792b92e796bfac6eb37ad16038dbbe019b8fffc9ad5407c1bf34a01210320e6fef44dc34322ce8e5d0a20efe55ae1308c321fab6496eece4473b9f12dd6ffffffff01706f9800000000001976a914bbc24a1dbb213c82dc6bd3e008e411e7a22ba74488ac00000000" :: Tx
         tx2 = decode' $ fromJust $ hexToBS "010000000177c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be010000006b483045022100e73c4bac3519d6dc42a0410d1a2caad3b2445a2be82ed4588cb94443550e3afc022077a590e6d49f534db74a2c30e97f735d7affb0142a91d60455a53b02afaba7dd01210206ac706bccb9a4ba7c1a6f133d5f17d847875d5ff29019913224cb32f6c57fa7ffffffff01f0053101000000001976a9144d816754accc18bb7b2cef479d948be74399337788ac00000000" :: Tx
 
+    checkSpendableBalance 0 "acc1" 0
+    checkAccountBalance 0 "acc1" (Balance 0) 0
+    checkAddressBalance 0 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 0 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 0 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
+
     -- import first orphan
     importTx tx1 NetworkSource >>=
         liftIO . (assertEqual "Confidence is not Nothing" Nothing)
     liftM (map (dbOrphanHash . entityVal)) (selectList [] [])
         >>= liftIO . (assertEqual "Wrong orphans" [txHash tx1])
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 0" 0)
+
+    checkSpendableBalance 0 "acc1" 0
+    checkAccountBalance 0 "acc1" (Balance 0) 0
+    checkAddressBalance 0 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 0 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 0 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
 
     -- import second orphan
     importTx tx2 NetworkSource >>=
         liftIO . (assertEqual "Confidence is not Nothing" Nothing)
     liftM (map (dbOrphanHash . entityVal)) (selectList [] [])
         >>= liftIO . (assertEqual "Wrong orphans" [txHash tx1, txHash tx2])
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 0" 0)
+
+    checkSpendableBalance 0 "acc1" 0
+    checkAccountBalance 0 "acc1" (Balance 0) 0
+    checkAddressBalance 0 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 0 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 0 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
 
     importTx fundingTx NetworkSource >>=
         liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
     liftM (map (dbOrphanHash . entityVal)) (selectList [] [])
         >>= liftIO . (assertEqual "Orphan list should be empty" [])
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29980000" 29980000)
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash fundingTx)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
+
+    checkSpendableBalance 0 "acc1" 29980000
+    checkAccountBalance 0 "acc1" (Balance 29980000) 0
+    checkAddressBalance 0 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 0) (Balance 10000000) 1 1 0
+    checkAddressBalance 0 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 0) (Balance 20000000) 1 1 0
+    checkAddressBalance 0 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 9990000) (Balance 9990000) 1 0 0
+    checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 19990000) (Balance 19990000) 1 0 0
+
+    -- The 1-conf balance should be all 0
+    checkSpendableBalance 1 "acc1" 0
+    checkAccountBalance 1 "acc1" (Balance 0) 0
+    checkAddressBalance 1 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 1 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 1 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 1 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
 
 -- Creates fake testing blocks
 fakeNode :: Word32 -> BlockHash -> BlockHeaderNode
@@ -334,38 +368,93 @@ testOutDoubleSpend = do
         -- sendTx "acc1" [("184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF",50000)] 10000
         spend1 = decode' $ fromJust $ hexToBS "010000000177c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be000000006b483045022100ccac8d72db2fe883dabb4452dcd7d522025225c68d78c27ae2c4362de4a98726022071970ef99969631fb3ff73880fb7e44da42e0b273deca0d149f58dd64cb1d39101210320e6fef44dc34322ce8e5d0a20efe55ae1308c321fab6496eece4473b9f12dd6ffffffff0250c30000000000001976a914bbc24a1dbb213c82dc6bd3e008e411e7a22ba74488ac20ac9700000000001976a91478046f37173d0a16deb1491b8566e26f0cb4894488ac00000000" :: Tx
         spend2 = decode' $ fromJust $ hexToBS "010000000177c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be000000006b4830450221008b6a328f5403f97ac154b543f23a203a711708a2b5d2c4886f110773450723b402205ed70b0a49f797b2e989874ad26ca5cedd677e7e12d7c8844f67eebee5cd8a9601210320e6fef44dc34322ce8e5d0a20efe55ae1308c321fab6496eece4473b9f12dd6ffffffff0250c30000000000001976a9144d816754accc18bb7b2cef479d948be74399337788ac20ac9700000000001976a91478046f37173d0a16deb1491b8566e26f0cb4894488ac00000000" :: Tx
+
     -- Import funding transaction
     importTx fundingTx NetworkSource >>=
         liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
-    spendableCoins "acc1" >>= 
+    spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 2" 2) . length
+
+    checkSpendableBalance 0 "acc1" 30000000
+    checkAccountBalance 0 "acc1" (Balance 30000000) 0
+    checkAddressBalance 0 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 10000000) (Balance 10000000) 1 0 0
+    checkAddressBalance 0 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 20000000) (Balance 20000000) 1 0 0
+    checkAddressBalance 0 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
 
     -- Import first conflicting transaction
     importTx spend1 NetworkSource >>=
         liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
-    spendableCoins "acc1" >>= 
+    spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 3" 3) . length
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29990000" 29990000)
+
+    checkSpendableBalance 0 "acc1" 29990000
+    checkAccountBalance 0 "acc1" (Balance 29990000) 0
+    checkAddressBalance 0 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 0) (Balance 10000000) 1 1 0
+    checkAddressBalance 0 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 20000000) (Balance 20000000) 1 0 0
+    checkAddressBalance 0 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 50000) (Balance 50000) 1 0 0
+    checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
 
     -- Import second conflicting transaction
     importTx spend2 NetworkSource >>=
         liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
-    spendableCoins "acc1" >>= 
+    spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 1" 1) . length
-    balance "acc1" >>= 
-        liftIO . (assertEqual "Balance is not 20000000" 20000000)
+
+    checkSpendableBalance 0 "acc1" 20000000
+    checkAccountBalance 0 "acc1" BalanceConflict 2
+    checkAddressBalance 0 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" BalanceConflict (Balance 10000000) 1 0 2
+    checkAddressBalance 0 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 20000000) (Balance 20000000) 1 0 0
+    checkAddressBalance 0 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" BalanceConflict BalanceConflict 0 0 2
+    checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" BalanceConflict BalanceConflict 0 0 2
+
+    -- Check 1-conf balance
+    checkSpendableBalance 1 "acc1" 0
+    checkAccountBalance 1 "acc1" (Balance 0) 0
+    checkAddressBalance 1 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 1 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 1 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 1 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
     
-    --Import fake block
-    importBlock (BestBlock $ fakeNode 0 0x01) []
+    --Confirm funding transaction
+    importBlock (BestBlock $ fakeNode 0 0x01) [txHash fundingTx]
+
+    checkSpendableBalance 0 "acc1" 20000000
+    checkAccountBalance 0 "acc1" BalanceConflict 2
+    checkAddressBalance 0 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" BalanceConflict (Balance 10000000) 1 0 2
+    checkAddressBalance 0 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 20000000) (Balance 20000000) 1 0 0
+    checkAddressBalance 0 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" BalanceConflict BalanceConflict 0 0 2
+    checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" BalanceConflict BalanceConflict 0 0 2
+
+    checkSpendableBalance 1 "acc1" 20000000
+    checkAccountBalance 1 "acc1" BalanceConflict 2
+    checkAddressBalance 1 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" BalanceConflict (Balance 10000000) 1 0 2
+    checkAddressBalance 1 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 20000000) (Balance 20000000) 1 0 0
+    checkAddressBalance 1 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 1 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
+
+    checkSpendableBalance 2 "acc1" 0
+    checkAccountBalance 2 "acc1" (Balance 0) 0
+    checkAddressBalance 2 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 2 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 2 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 2 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
+
     importBlock (BestBlock $ fakeNode 1 0x02) [txHash spend2]
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash spend1)
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash spend2)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29990000" 29990000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" 
             [txHash fundingTx, txHash spend2, txHash spend2])
+
+    checkSpendableBalance 0 "acc1" 29990000
+    checkAccountBalance 0 "acc1" (Balance 29990000) 0
+    checkAddressBalance 0 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 0) (Balance 10000000) 1 1 0
+    checkAddressBalance 0 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 20000000) (Balance 20000000) 1 0 0
+    checkAddressBalance 0 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 50000) (Balance 50000) 1 0 0
 
     --Create a fork. Nothing should change from the tests above
     importBlock (SideBlock $ fakeNode 1 0x03) [txHash spend1]
@@ -373,10 +462,16 @@ testOutDoubleSpend = do
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash spend2)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29990000" 29990000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" 
             [txHash fundingTx, txHash spend2, txHash spend2])
+
+    checkSpendableBalance 0 "acc1" 29990000
+    checkAccountBalance 0 "acc1" (Balance 29990000) 0
+    checkAddressBalance 0 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 0) (Balance 10000000) 1 1 0
+    checkAddressBalance 0 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 20000000) (Balance 20000000) 1 0 0
+    checkAddressBalance 0 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 50000) (Balance 50000) 1 0 0
 
     -- Trigger a reorg
     let s = fakeNode 0 0x01
@@ -387,10 +482,16 @@ testOutDoubleSpend = do
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash spend2)
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29990000" 29990000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" 
             [txHash fundingTx, txHash spend1, txHash spend1])
+
+    checkSpendableBalance 0 "acc1" 29990000
+    checkAccountBalance 0 "acc1" (Balance 29990000) 0
+    checkAddressBalance 0 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 0) (Balance 10000000) 1 1 0
+    checkAddressBalance 0 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 20000000) (Balance 20000000) 1 0 0
+    checkAddressBalance 0 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 50000) (Balance 50000) 1 0 0
+    checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
 
     -- Trigger another reorg
     importBlock (SideBlock $ fakeNode 2 0x05) []
@@ -402,10 +503,40 @@ testOutDoubleSpend = do
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash spend2)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29990000" 29990000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" 
             [txHash fundingTx, txHash spend2, txHash spend2])
+
+    checkSpendableBalance 0 "acc1" 29990000
+    checkAccountBalance 0 "acc1" (Balance 29990000) 0
+    checkAddressBalance 0 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 0) (Balance 10000000) 1 1 0
+    checkAddressBalance 0 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 20000000) (Balance 20000000) 1 0 0
+    checkAddressBalance 0 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 50000) (Balance 50000) 1 0 0
+
+    -- Check 3-conf balance
+    checkSpendableBalance 3 "acc1" 29990000
+    checkAccountBalance 3 "acc1" (Balance 29990000) 0
+    checkAddressBalance 3 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 0) (Balance 10000000) 1 1 0
+    checkAddressBalance 3 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 20000000) (Balance 20000000) 1 0 0
+    checkAddressBalance 3 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 3 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 50000) (Balance 50000) 1 0 0
+
+    -- Check 4-conf balance
+    checkSpendableBalance 4 "acc1" 20000000
+    checkAccountBalance 4 "acc1" (Balance 20000000) 0
+    checkAddressBalance 4 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 0) (Balance 10000000) 1 1 0
+    checkAddressBalance 4 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 20000000) (Balance 20000000) 1 0 0
+    checkAddressBalance 4 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 4 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
+
+    -- Check 5-conf balance
+    checkSpendableBalance 5 "acc1" 0
+    checkAccountBalance 5 "acc1" (Balance 0) 0
+    checkAddressBalance 5 "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 5 "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 5 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
+    checkAddressBalance 5 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
 
 testInDoubleSpend :: App ()
 testInDoubleSpend = do
@@ -427,17 +558,18 @@ testInDoubleSpend = do
     -- Import first conflicting transaction
     importTx tx1 NetworkSource >>=
         liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
-    spendableCoins "acc1" >>= 
+    spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 1" 1) . length
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 10000000" 10000000)
+    checkAccountBalance 0 "acc1" (Balance 10000000) 0
+    checkSpendableBalance 0 "acc1" 10000000
 
     -- Import second conflicting transaction
     importTx tx2 NetworkSource >>=
         liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
-    spendableCoins "acc1" >>= 
+    spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 0" 0) . length
-    balance "acc1" >>= 
-        liftIO . (assertEqual "Balance is not 0" 0)
+    checkAccountBalance 0 "acc1" BalanceConflict 2
+    checkSpendableBalance 0 "acc1" 0
 
     --Import fake block
     importBlock (BestBlock $ fakeNode 0 0x01) []
@@ -446,9 +578,14 @@ testInDoubleSpend = do
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 20000000" 20000000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx2])
+    checkAccountBalance 0 "acc1" (Balance 20000000) 0
+    checkSpendableBalance 0 "acc1" 20000000
+    checkAccountBalance 1 "acc1" (Balance 20000000) 0
+    checkSpendableBalance 1 "acc1" 20000000
+    checkAccountBalance 2 "acc1" (Balance 0) 0
+    checkSpendableBalance 2 "acc1" 0
 
     --Create a fork. Nothing should change from the tests above
     importBlock (SideBlock $ fakeNode 1 0x03) [txHash tx1]
@@ -456,9 +593,14 @@ testInDoubleSpend = do
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 20000000" 20000000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx2])
+    checkAccountBalance 0 "acc1" (Balance 20000000) 0
+    checkSpendableBalance 0 "acc1" 20000000
+    checkAccountBalance 1 "acc1" (Balance 20000000) 0
+    checkSpendableBalance 1 "acc1" 20000000
+    checkAccountBalance 2 "acc1" (Balance 0) 0
+    checkSpendableBalance 2 "acc1" 0
 
     -- Trigger a reorg
     let s = fakeNode 0 0x01
@@ -469,9 +611,14 @@ testInDoubleSpend = do
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 10000000" 10000000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx1])
+    checkAccountBalance 0 "acc1" (Balance 10000000) 0
+    checkSpendableBalance 0 "acc1" 10000000
+    checkAccountBalance 2 "acc1" (Balance 10000000) 0
+    checkSpendableBalance 2 "acc1" 10000000
+    checkAccountBalance 3 "acc1" (Balance 0) 0
+    checkSpendableBalance 3 "acc1" 0
 
     -- Trigger another reorg
     importBlock (SideBlock $ fakeNode 2 0x05) []
@@ -483,9 +630,14 @@ testInDoubleSpend = do
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 20000000" 20000000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx2])
+    checkAccountBalance 0 "acc1" (Balance 20000000) 0
+    checkSpendableBalance 0 "acc1" 20000000
+    checkAccountBalance 3 "acc1" (Balance 20000000) 0
+    checkSpendableBalance 3 "acc1" 20000000
+    checkAccountBalance 4 "acc1" (Balance 0) 0
+    checkSpendableBalance 4 "acc1" 0
 
 -- tx1, tx2 and tx3 form a chain, and tx4 is in conflict with tx1
 testDoubleSpendChain :: App ()
@@ -512,16 +664,18 @@ testDoubleSpendChain = do
     -- Import first transaction
     importTx tx1 NetworkSource >>=
         liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
-    spendableCoins "acc1" >>= 
+    spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 1" 1) . length
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 10000000" 10000000)
+    checkAccountBalance 0 "acc1" (Balance 10000000) 0
+    checkSpendableBalance 0 "acc1" 10000000
 
     -- Now we spend our new coins
     importTx tx2 NetworkSource >>=
         liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
-    spendableCoins "acc1" >>= 
+    spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 2" 2) . length
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 9990000" 9990000)
+    checkAccountBalance 0 "acc1" (Balance 9990000) 0
+    checkSpendableBalance 0 "acc1" 9990000
 
     -- Let's confirm these two transactions
     importBlock (BestBlock $ fakeNode 0 0x01) []
@@ -530,9 +684,14 @@ testDoubleSpendChain = do
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 9990000" 9990000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx2, txHash tx2])
+    checkAccountBalance 0 "acc1" (Balance 9990000) 0
+    checkSpendableBalance 0 "acc1" 9990000
+    checkAccountBalance 1 "acc1" (Balance 9990000) 0
+    checkSpendableBalance 1 "acc1" 9990000
+    checkAccountBalance 2 "acc1" (Balance 0) 0
+    checkSpendableBalance 2 "acc1" 0
 
     -- Now let's add tx4 which is in conflict with tx1
     importTx tx4 NetworkSource >>=
@@ -543,9 +702,14 @@ testDoubleSpendChain = do
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx4)
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 9990000" 9990000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx2, txHash tx2])
+    checkAccountBalance 0 "acc1" (Balance 9990000) 0
+    checkSpendableBalance 0 "acc1" 9990000
+    checkAccountBalance 1 "acc1" (Balance 9990000) 0
+    checkSpendableBalance 1 "acc1" 9990000
+    checkAccountBalance 2 "acc1" (Balance 0) 0
+    checkSpendableBalance 2 "acc1" 0
 
     -- Now we create a fork that contains tx4. Nothing should change
     importBlock (SideBlock $ fakeNode 1 0x03) [txHash tx4]
@@ -555,9 +719,14 @@ testDoubleSpendChain = do
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx4)
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 9990000" 9990000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx2, txHash tx2])
+    checkAccountBalance 0 "acc1" (Balance 9990000) 0
+    checkSpendableBalance 0 "acc1" 9990000
+    checkAccountBalance 1 "acc1" (Balance 9990000) 0
+    checkSpendableBalance 1 "acc1" 9990000
+    checkAccountBalance 2 "acc1" (Balance 0) 0
+    checkSpendableBalance 2 "acc1" 0
 
     -- Now we trigger a reorg that validates tx4. tx1 and tx2 should be dead
     let s = fakeNode 0 0x01
@@ -570,9 +739,14 @@ testDoubleSpendChain = do
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx4)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 20000000" 20000000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx4])
+    checkAccountBalance 0 "acc1" (Balance 20000000) 0
+    checkSpendableBalance 0 "acc1" 20000000
+    checkAccountBalance 2 "acc1" (Balance 20000000) 0
+    checkSpendableBalance 2 "acc1" 20000000
+    checkAccountBalance 3 "acc1" (Balance 0) 0
+    checkSpendableBalance 3 "acc1" 0
 
     -- Now we add tx3 on top of tx2. It should be dead.
     importTx tx3 NetworkSource >>=
@@ -585,9 +759,14 @@ testDoubleSpendChain = do
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx4)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 20000000" 20000000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx4])
+    checkAccountBalance 0 "acc1" (Balance 20000000) 0
+    checkSpendableBalance 0 "acc1" 20000000
+    checkAccountBalance 2 "acc1" (Balance 20000000) 0
+    checkSpendableBalance 2 "acc1" 20000000
+    checkAccountBalance 3 "acc1" (Balance 0) 0
+    checkSpendableBalance 3 "acc1" 0
 
     -- Let's reorg back to the original chain. tx1, tx2 and tx3 should be
     -- building and tx4 should be dead.
@@ -604,9 +783,14 @@ testDoubleSpendChain = do
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxPending) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx4)
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 9980000" 9980000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx2, txHash tx3, txHash tx3])
+    checkAccountBalance 0 "acc1" (Balance 9980000) 0
+    checkSpendableBalance 0 "acc1" 9980000
+    checkAccountBalance 3 "acc1" (Balance 500000) 0
+    checkSpendableBalance 3 "acc1" 500000
+    checkAccountBalance 4 "acc1" (Balance 0) 0
+    checkSpendableBalance 4 "acc1" 0
 
 -- We have 2 coins, c1 and c2. tx1 spends from c1, tx2 spends from c1 and c2,
 -- tx3 spends from c2. So we can either have tx2 valid or tx1 and tx3 as valid.
@@ -635,24 +819,42 @@ testDoubleSpendGroup = do
     -- Import funding transaction
     importTx fundingTx NetworkSource >>=
         liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
-    spendableCoins "acc1" >>= 
+    spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 2" 2) . length
+    checkAccountBalance 0 "acc1" (Balance 30000000) 0
+    checkSpendableBalance 0 "acc1" 30000000
 
     -- Import first transaction
     importTx tx1 NetworkSource >>=
         liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
-    spendableCoins "acc1" >>= 
+    spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 2" 2) . length
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29990000" 29990000)
+    checkAccountBalance 0 "acc1" (Balance 29990000) 0
+    checkSpendableBalance 0 "acc1" 29990000
+
+    -- Confirm the funding transaction
+    importBlock (BestBlock $ fakeNode 0 0x01) [txHash fundingTx]
+    checkAccountBalance 0 "acc1" (Balance 29990000) 0
+    checkSpendableBalance 0 "acc1" 29990000
+    checkAccountBalance 1 "acc1" (Balance 20000000) 0
+    checkSpendableBalance 1 "acc1" 20000000
+    checkAccountBalance 2 "acc1" (Balance 0) 0
+    checkSpendableBalance 2 "acc1" 0
 
     -- Let's confirm the first transaction
-    importBlock (BestBlock $ fakeNode 0 0x01) []
     importBlock (BestBlock $ fakeNode 1 0x02) [txHash tx1]
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29990000" 29990000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash fundingTx, txHash tx1])
+    checkAccountBalance 0 "acc1" (Balance 29990000) 0
+    checkSpendableBalance 0 "acc1" 29990000
+    checkAccountBalance 1 "acc1" (Balance 29990000) 0
+    checkSpendableBalance 1 "acc1" 29990000
+    checkAccountBalance 2 "acc1" (Balance 20000000) 0
+    checkSpendableBalance 2 "acc1" 20000000
+    checkAccountBalance 3 "acc1" (Balance 0) 0
+    checkSpendableBalance 3 "acc1" 0
 
     -- Import second transaction
     importTx tx2 NetworkSource >>=
@@ -661,9 +863,16 @@ testDoubleSpendGroup = do
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29990000" 29990000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash fundingTx, txHash tx1])
+    checkAccountBalance 0 "acc1" (Balance 29990000) 0
+    checkSpendableBalance 0 "acc1" 29990000
+    checkAccountBalance 1 "acc1" (Balance 29990000) 0
+    checkSpendableBalance 1 "acc1" 29990000
+    checkAccountBalance 2 "acc1" (Balance 20000000) 0
+    checkSpendableBalance 2 "acc1" 20000000
+    checkAccountBalance 3 "acc1" (Balance 0) 0
+    checkSpendableBalance 3 "acc1" 0
 
     -- Import third transaction
     importTx tx3 NetworkSource >>=
@@ -674,9 +883,14 @@ testDoubleSpendGroup = do
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx3)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29980000" 29980000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx1, txHash tx3])
+    checkAccountBalance 0 "acc1" (Balance 29980000) 0
+    checkSpendableBalance 0 "acc1" 29980000
+    checkAccountBalance 1 "acc1" (Balance 9990000) 0
+    checkSpendableBalance 1 "acc1" 9990000
+    checkAccountBalance 2 "acc1" (Balance 0) 0
+    checkSpendableBalance 2 "acc1" 0
 
     -- Let's confirm tx3
     importBlock (BestBlock $ fakeNode 2 0x03) []
@@ -687,9 +901,14 @@ testDoubleSpendGroup = do
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx3)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29980000" 29980000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx1, txHash tx3])
+    checkAccountBalance 1 "acc1" (Balance 29980000) 0
+    checkSpendableBalance 1 "acc1" 29980000
+    checkAccountBalance 2 "acc1" (Balance 9990000) 0
+    checkSpendableBalance 2 "acc1" 9990000
+    checkAccountBalance 4 "acc1" (Balance 0) 0
+    checkSpendableBalance 4 "acc1" 0
 
     -- Now we unconfirm tx3. tx2 should remain dead because it it still in
     -- conflict with building tx1
@@ -704,9 +923,14 @@ testDoubleSpendGroup = do
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx3)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxPending) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29980000" 29980000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx1, txHash tx3])
+    checkAccountBalance 0 "acc1" (Balance 29980000) 0
+    checkSpendableBalance 0 "acc1" 29980000
+    checkAccountBalance 4 "acc1" (Balance 9990000) 0
+    checkSpendableBalance 4 "acc1" 9990000
+    checkAccountBalance 5 "acc1" (Balance 0) 0
+    checkSpendableBalance 5 "acc1" 0
     
     -- Now let's reorg on a new chain that makes tx2 valid. tx1 and tx3 should
     -- then be dead
@@ -730,9 +954,14 @@ testDoubleSpendGroup = do
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx3)
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
-    balance "acc1" >>= liftIO . (assertEqual "Balance is not 29990000" 29990000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx2])
+    checkAccountBalance 0 "acc1" (Balance 29990000) 0
+    checkSpendableBalance 0 "acc1" 29990000
+    checkAccountBalance 5 "acc1" (Balance 29990000) 0
+    checkSpendableBalance 5 "acc1" 29990000
+    checkAccountBalance 6 "acc1" (Balance 0) 0
+    checkSpendableBalance 6 "acc1" 0
 
 testWalletDoubleSpend :: Assertion
 testWalletDoubleSpend = do
@@ -807,26 +1036,40 @@ testWalletDoubleSpend = do
             liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
 
         -- confirm the first transaction
-        importBlock (BestBlock $ fakeNode 0 0x01) []
+        importBlock (BestBlock $ fakeNode 0 0x01) [txHash fundingTx]
         importBlock (BestBlock $ fakeNode 1 0x02) [txHash tx1]
+        checkAccountBalance 0 "acc1" (Balance 29990000) 0
+        checkSpendableBalance 0 "acc1" 29990000
+        checkAccountBalance 2 "acc1" (Balance 20000000) 0
+        checkSpendableBalance 2 "acc1" 20000000
+        checkAccountBalance 3 "acc1" (Balance 0) 0
+        checkSpendableBalance 3 "acc1" 0
 
         -- now we can import tx3
         importTx tx3 WalletSource >>=
             liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
         liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx3)
             >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxPending) 
-        balance "acc1" >>= liftIO . (assertEqual "Balance is not 29980000" 29980000)
-        liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+        liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
             >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx1, txHash tx3])
+        checkAccountBalance 0 "acc1" (Balance 29980000) 0
+        checkSpendableBalance 0 "acc1" 29980000
+        checkAccountBalance 1 "acc1" (Balance 9990000) 0
+        checkSpendableBalance 1 "acc1" 9990000
+        checkAccountBalance 2 "acc1" (Balance 0) 0
+        checkSpendableBalance 2 "acc1" 0
 
         -- and tx4
         importTx tx4 WalletSource >>=
             liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
         liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx4)
             >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxPending) 
-        balance "acc1" >>= liftIO . (assertEqual "Balance is not 29970000" 29970000)
-        liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1")
+        liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
             >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx3, txHash tx4])
+        checkAccountBalance 0 "acc1" (Balance 29970000) 0
+        checkSpendableBalance 0 "acc1" 29970000
+        checkAccountBalance 1 "acc1" (Balance 0) 0
+        checkSpendableBalance 1 "acc1" 0
 
 -- This test create a multisig account with the key of testImportMultisig2
 testImportMultisig :: App ()
@@ -848,29 +1091,32 @@ testImportMultisig = do
     _ <- importTx fundingTx NetworkSource
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash fundingTx)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
-    balance "ms1" >>= liftIO . (assertEqual "Balance is not 10000000" 10000000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "ms1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "ms1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash fundingTx])
+    checkAccountBalance 0 "ms1" (Balance 10000000) 0
+    checkSpendableBalance 0 "ms1" 10000000
 
-    (h,c) <- sendTx "ms1" [(fromJust $ base58ToAddr "37DDNVZZqU5i8XjyKyvZZv7edjCn3XrRsm", 5000000)] 10000
+    (h,c) <- sendTx "ms1" 0 [(fromJust $ base58ToAddr "37DDNVZZqU5i8XjyKyvZZv7edjCn3XrRsm", 5000000)] 10000
     liftIO $ assertEqual "Completed status is not False" False c
     liftM (dbTxConfidence . entityVal) (getTxEntity h)
         >>= liftIO . (assertEqual "Confidence is not TxOffline" TxOffline) 
-    balance "ms1" >>= liftIO . (assertEqual "Balance is not 0" 0)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "ms1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "ms1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [])
     liftM (map accTxHash) (txList "ms1") 
         >>= liftIO . (assertEqual "Wrong txhash in acc list" [txHash fundingTx, h])
+    checkAccountBalance 0 "ms1" (Balance 9990000) 0
+    checkSpendableBalance 0 "ms1" 0
 
     (h2,c2) <- signWalletTx "ms1" toImport 
     liftIO $ assertEqual "Completed status is not True" True c2
     liftM (dbTxConfidence . entityVal) (getTxEntity h2)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
-    balance "ms1" >>= liftIO . (assertEqual "Balance is not 9990000" 9990000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "ms1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "ms1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash toImport, txHash toImport])
     liftM (map accTxHash) (txList "ms1") 
         >>= liftIO . (assertEqual "Wrong txhash in acc list" [txHash fundingTx, h2])
+    checkAccountBalance 0 "ms1" (Balance 9990000) 0
+    checkSpendableBalance 0 "ms1" 9990000
 
 
 -- This test create a multisig account with the key of testImportMultisig1
@@ -890,18 +1136,43 @@ testImportMultisig2 = do
     _ <- importTx fundingTx NetworkSource
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash fundingTx)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
-    balance "ms1" >>= liftIO . (assertEqual "Balance is not 10000000" 10000000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "ms1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "ms1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash fundingTx])
     return ()
+    checkAccountBalance 0 "ms1" (Balance 10000000) 0
+    checkSpendableBalance 0 "ms1" 10000000
 
     (h,c) <- signWalletTx "ms1" toSign 
     liftIO $ assertEqual "Completed status is not True" True c
     liftM (dbTxConfidence . entityVal) (getTxEntity h)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
-    balance "ms1" >>= liftIO . (assertEqual "Balance is not 9990000" 9990000)
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "ms1")
+    liftM (map (outPointHash . coinOutPoint)) (spendableCoins "ms1" 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" [h,h])
     liftM (map accTxHash) (txList "ms1") 
         >>= liftIO . (assertEqual "Wrong txhash in acc list" [txHash fundingTx, h])
+    checkAccountBalance 0 "ms1" (Balance 9990000) 0
+    checkSpendableBalance 0 "ms1" 9990000
+
+checkAddressBalance :: Word32 -> String ->  Balance -> Balance -> Int -> Int -> Int -> App ()
+checkAddressBalance conf addrStr fb tr ft st ct = do
+    addrM <- getBy $ UniqueAddress $ fromJust $ base58ToAddr addrStr
+    let p = toPaymentAddr $ entityVal $ fromJust addrM
+    BalanceAddress _ fb' tr' ft' st' ct' <- addressBalance p conf
+
+    liftIO $ assertEqual ("Final balance is not " ++ show fb) fb fb'
+    liftIO $ assertEqual ("Total received is not " ++ show tr) tr tr'
+    liftIO $ assertEqual ("Funding txs length is not " ++ show ft) ft (length ft')
+    liftIO $ assertEqual ("Spending txs length is not " ++ show st) st (length st')
+    liftIO $ assertEqual ("Conflict txs length is not " ++ show ct) ct (length ct')
+
+checkAccountBalance :: Word32 -> String -> Balance -> Int -> App ()
+checkAccountBalance conf name b cs = do
+    (b', cs') <- accountBalance name conf
+    liftIO $ assertEqual ( "Balance is not " ++ show b) b b'
+    liftIO $ assertEqual ( "Conflict txs length is not " ++ show cs) cs (length cs')
+
+checkSpendableBalance :: Word32 -> String -> Word64 -> App ()
+checkSpendableBalance conf name b = do
+    b' <- spendableAccountBalance name conf
+    liftIO $ assertEqual ( "Spendable balance is not " ++ show b) b b'
 

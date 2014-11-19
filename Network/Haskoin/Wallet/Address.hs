@@ -17,6 +17,7 @@ module Network.Haskoin.Wallet.Address
 , addLookAhead
 , adjustLookAhead
 , addrPubKey
+, toPaymentAddr
 ) where
 
 import Control.Monad (liftM, when)
@@ -57,9 +58,10 @@ toPaymentAddr x = PaymentAddress (dbAddressValue x)
 getAddress :: (MonadIO m, PersistUnique b, PersistQuery b)
            => AccountName       -- ^ Account name
            -> KeyIndex          -- ^ Derivation index (key)
+           -> Bool              -- ^ Internal address
            -> ReaderT b m PaymentAddress  -- ^ Payment address
-getAddress accName key = 
-    liftM (toPaymentAddr . entityVal) $ getAddressEntity accName key False
+getAddress accName key internal = 
+    liftM (toPaymentAddr . entityVal) $ getAddressEntity accName key internal
 
 getAddressEntity :: (MonadIO m, PersistUnique b, PersistQuery b)
                  => AccountName -> KeyIndex -> Bool 
@@ -87,11 +89,12 @@ addrPubKey add = do
 -- | Returns all addresses for an account.
 addressList :: (MonadIO m, PersistUnique b, PersistQuery b)
             => AccountName        -- ^ Account name
+            -> Bool               -- ^ Internal address
             -> ReaderT b m [PaymentAddress] -- ^ Payment addresses
-addressList name = do
+addressList name internal = do
     (Entity ai _) <- getAccountEntity name
     addrs <- selectList [ DbAddressAccount ==. ai 
-                        , DbAddressInternal ==. False
+                        , DbAddressInternal ==. internal
                         ]
                         [ Asc DbAddressId ]
     return $ map (toPaymentAddr . entityVal) addrs
@@ -99,11 +102,12 @@ addressList name = do
 -- | Returns a count of all addresses in an account.
 addressCount :: (MonadIO m, PersistUnique b, PersistQuery b)
              => AccountName     -- ^ Account name
+             -> Bool            -- ^ Internal address
              -> ReaderT b m Int -- ^ Address count
-addressCount name = do
+addressCount name internal = do
     (Entity ai _) <- getAccountEntity name
     count [ DbAddressAccount ==. ai 
-          , DbAddressInternal ==. False
+          , DbAddressInternal ==. internal
           ]
 
 -- | Returns a page of addresses for an account. Pages are numbered starting
@@ -112,16 +116,17 @@ addressPage :: (MonadIO m, PersistUnique b, PersistQuery b)
             => AccountName            -- ^ Account name
             -> Int                    -- ^ Requested page number
             -> Int                    -- ^ Number of addresses per page
+            -> Bool                   -- ^ Internal address
             -> ReaderT b m ([PaymentAddress], Int) 
                 -- ^ (Requested page, Highest page number)
-addressPage name pageNum resPerPage 
+addressPage name pageNum resPerPage internal
     | pageNum < 0 = liftIO $ throwIO $ WalletException $ 
         unwords ["Invalid page number:", show pageNum]
     | resPerPage < 1 = liftIO $ throwIO $ WalletException $
         unwords ["Invalid results per page:",show resPerPage]
     | otherwise = do
         (Entity ai _) <- getAccountEntity name
-        addrCount <- addressCount name
+        addrCount <- addressCount name internal
         let maxPage = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
             page | pageNum == 0 = maxPage
                  | otherwise    = pageNum
@@ -129,7 +134,7 @@ addressPage name pageNum resPerPage
             unwords ["The page number", show pageNum, "is too high"]
         addrs <- selectList 
                 [ DbAddressAccount ==. ai
-                , DbAddressInternal ==. False
+                , DbAddressInternal ==. internal
                 ] 
                 [ Asc DbAddressId
                 , LimitTo resPerPage
@@ -245,7 +250,7 @@ setAddrLabel :: (MonadIO m, PersistQuery b, PersistUnique b)
              -> String           -- ^ New label
              -> ReaderT b m PaymentAddress -- ^ New address information
 setAddrLabel name key label = do
-    (Entity i add)   <- getAddressEntity name key False
+    (Entity i add) <- getAddressEntity name key False
     let new = add { dbAddressLabel = label }
     replace i new
     return $ toPaymentAddr new
@@ -257,7 +262,7 @@ addressPrvKey :: (MonadIO m, PersistQuery b, PersistUnique b)
               -> ReaderT b m PrvKey  -- ^ Private key
 addressPrvKey name key = do
     accPrv <- accountPrvKey name
-    add    <- getAddress name key 
+    add    <- getAddress name key False
     let addrPrvKey = fromJust $ extPrvKey accPrv $ addressIndex add
     return $ xPrvKey $ getAddrPrvKey addrPrvKey
 

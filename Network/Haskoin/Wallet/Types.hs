@@ -7,7 +7,10 @@ module Network.Haskoin.Wallet.Types
 , AccountName
 , Wallet(..)
 , Account(..)
+, Balance(..)
+, BalanceAddress(..)
 , PaymentAddress(..)
+, RecipientAddress(..)
 , AccTx(..)
 , TxConfidence(..)
 , TxSource(..)
@@ -17,13 +20,19 @@ module Network.Haskoin.Wallet.Types
 , printAccount
 , printAddress
 , printAccTx
+, printBalance
 ) where
 
+import Control.Applicative ((<$>))
 import Control.Monad (mzero)
 import Control.Exception (Exception)
 
+import Data.Time (UTCTime)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import Data.Int (Int64)
 import Data.Typeable (Typeable)
+import Data.Maybe (maybeToList, isJust, fromJust)
+import Data.Word (Word32, Word64)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.ByteString.Lazy (toStrict, fromStrict)
@@ -32,8 +41,7 @@ import Data.Aeson
     , FromJSON
     , ToJSON
     , withText
-    , (.=)
-    , (.:)
+    , (.=), (.:), (.:?)
     , object
     , parseJSON
     , toJSON
@@ -265,6 +273,59 @@ printAccount a = case a of
             (unwords [ "Keys   :", xPubExport $ head ks ]) : 
                 (map (\x -> unwords ["        ", xPubExport x]) $ tail ks)
 
+data Balance = BalanceConflict | Balance Word64
+    deriving (Eq, Show, Read)
+
+instance ToJSON Balance where
+    toJSON BalanceConflict = object [ "status"  .= String "conflict" ]
+    toJSON (Balance b)     = object [ "status"  .= String "valid" 
+                                    , "balance" .= b
+                                    ]
+
+instance FromJSON Balance where
+    parseJSON (Object o) = do
+        String str <- o .: "status"
+        case str of
+            "conflict" -> return BalanceConflict
+            "valid"    -> Balance <$> o .: "balance"
+            _          -> mzero
+    parseJSON _ = mzero
+
+printBalance :: Balance -> String
+printBalance b = case b of
+    BalanceConflict -> "Conflict"
+    Balance x       -> show x
+
+data BalanceAddress = BalanceAddress
+    { balanceAddress :: PaymentAddress
+    , finalBalance   :: Balance
+    , totalReceived  :: Balance
+    , fundingTxs     :: [TxHash]
+    , spendingTxs    :: [TxHash]
+    , conflictTxs    :: [TxHash]
+    } deriving (Eq, Show, Read)
+
+instance ToJSON BalanceAddress where
+    toJSON (BalanceAddress pa fb tr ft st ct) = object
+        [ "address"       .= pa
+        , "finalbalance"  .= fb
+        , "totalreceived" .= tr
+        , "fundingtxs"    .= ft
+        , "spendingtxs"   .= st
+        , "conflicttxs"   .= ct
+        ]
+
+instance FromJSON BalanceAddress where
+    parseJSON (Object o) = do
+        pa <- o .: "address"
+        fb <- o .: "finalbalance"
+        tr <- o .: "totalreceived"
+        ft <- o .: "fundingtxs"
+        st <- o .: "spendingtxs"
+        ct <- o .: "conflicttxs"
+        return $ BalanceAddress pa fb tr ft st ct
+    parseJSON _ = mzero
+
 data PaymentAddress = PaymentAddress 
     { paymentAddress :: Address
     , addressLabel   :: String
@@ -273,9 +334,9 @@ data PaymentAddress = PaymentAddress
 
 instance ToJSON PaymentAddress where
     toJSON (PaymentAddress a l i) = object
-        [ "address" .= addrToBase58 a
-        , "label"   .= l
-        , "index"   .= i
+        [ "address"       .= addrToBase58 a
+        , "label"         .= l
+        , "index"         .= i
         ]
 
 instance FromJSON PaymentAddress where
@@ -287,29 +348,70 @@ instance FromJSON PaymentAddress where
         maybe mzero f $ base58ToAddr a
     parseJSON _ = mzero
 
-printAddress :: PaymentAddress -> String
-printAddress (PaymentAddress a l i) = unwords $
-    [ concat [show i, ":"]
-    , addrToBase58 a
-    ] ++ if null l then [] else [concat ["(",l,")"]]
+printAddress :: BalanceAddress -> String
+printAddress (BalanceAddress (PaymentAddress a l i) fb _ ft st ct) = 
+    unwords $ concat
+        [ [ show i, ":" , addrToBase58 a ] 
+        , if null l then [] else [concat ["(",l,")"]]
+        , if null ft && null st && null ct then [] else
+            [ "["
+            , "Balance:", printBalance fb ++ ","
+            , "TxCount:", show $ (length ft) + (length st)
+            , "]" 
+            ]
+        ]
+
+data RecipientAddress = RecipientAddress
+    { recipientAddress :: Address
+    , recipientLabel   :: String
+    , recipientIsLocal :: Bool
+    } deriving (Eq, Show, Read)
+
+instance ToJSON RecipientAddress where
+    toJSON (RecipientAddress a l lo) = object
+        [ "address" .= addrToBase58 a
+        , "label"   .= l
+        , "islocal" .= lo
+        ]
+
+instance FromJSON RecipientAddress where
+    parseJSON (Object o) = do
+        a  <- o .: "address"
+        l  <- o .: "label"
+        lo <- o .: "islocal"
+        let f add = return $ RecipientAddress add l lo
+        maybe mzero f $ base58ToAddr a
+    parseJSON _ = mzero
+
+printRecipientAddress :: RecipientAddress -> String
+printRecipientAddress (RecipientAddress a l lo) = unwords $ concat
+    [ ["    " ++ if lo then "<-" else "->"]
+    , [ addrToBase58 a ]
+    , if null l then [] else [concat ["(",l,")"]]
+    ] 
 
 data AccTx = AccTx
-    { accTxHash          :: TxHash
-    , accTxRecipients    :: [Address]
-    , accTxValue         :: Int64
-    , accTxConfidence    :: TxConfidence
-    , accIsCoinbase      :: Bool
-    , accTxConfirmations :: Int
+    { accTxHash           :: TxHash
+    , accTxRecipients     :: [RecipientAddress]
+    , accTxValue          :: Int64
+    , accTxConfidence     :: TxConfidence
+    , accIsCoinbase       :: Bool
+    , accTxConfirmations  :: Int
+    , accReceivedDate     :: UTCTime
+    , accConfirmationDate :: Maybe Word32
     } deriving (Eq, Show, Read)
 
 instance ToJSON AccTx where
-    toJSON (AccTx h as v x cb c) = object
-        [ "txid"          .= h
-        , "recipients"    .= as
-        , "value"         .= v
-        , "confidence"    .= x
-        , "isCoinbase"    .= cb
-        , "confirmations" .= c
+    toJSON (AccTx h as v x cb c rd cd) = object $ concat
+        [ [ "txid"          .= h
+          , "recipients"    .= as
+          , "value"         .= v
+          , "confidence"    .= x
+          , "iscoinbase"    .= cb
+          , "confirmations" .= c
+          , "receiveddate"  .= (round (utcTimeToPOSIXSeconds rd) :: Word32)
+          ]
+        , maybeToList $ ("confirmationdate" .=) <$> cd
         ]
 
 instance FromJSON AccTx where
@@ -318,25 +420,35 @@ instance FromJSON AccTx where
         as <- o .: "recipients"
         v  <- o .: "value"
         x  <- o .: "confidence"
-        cb <- o .: "isCoinbase"
+        cb <- o .: "iscoinbase"
         c  <- o .: "confirmations"
-        return $ AccTx h as v x cb c
+        rd <- o .: "receiveddate"
+        cd <- o .:? "confirmationdate"
+        let rDate = posixSecondsToUTCTime $ realToFrac (rd :: Word32)
+        return $ AccTx h as v x cb c rDate cd
     parseJSON _ = mzero
 
 printAccTx :: AccTx -> String
-printAccTx (AccTx h r v ci cb co) = unlines $
-    [ unwords [ "Value     :", show v ]
-    , unwords [ "Recipients:", addrToBase58 $ head r ]
+printAccTx (AccTx h r v ci cb co rd cd) = unlines $ concat
+    [ [ unwords [ "Value     :", show v ]
+      , unwords [ "Recipients:" ]
+      ]
+    , map printRecipientAddress r
+    , [ unwords [ "Confidence:"
+                , printConfidence ci
+                , concat ["(",show co," confirmations)"] 
+                ]
+      , unwords [ "TxHash    :", encodeTxHashLE h ]
+      ] 
+    , if cb then [unwords ["Coinbase  :", "Yes"]] else []
+    , [ unwords [ "Received  :", show rd ] ]
+    , if isJust cd 
+        then [ unwords [ "Confirmed :"
+                       , show $ posixSecondsToUTCTime $ realToFrac $ fromJust cd 
+                       ] 
+             ] 
+        else []
     ]
-    ++
-    (map (\x -> unwords ["           ", addrToBase58 x]) $ tail r)
-    ++
-    [ unwords [ "Confidence:"
-              , printConfidence ci
-              , concat ["(",show co," confirmations)"] 
-              ]
-    , unwords [ "TxHash    :", encodeTxHashLE h ]
-    ] ++ if cb then [unwords ["Coinbase  :", "Yes"]] else []
 
 printConfidence :: TxConfidence -> String
 printConfidence c = case c of

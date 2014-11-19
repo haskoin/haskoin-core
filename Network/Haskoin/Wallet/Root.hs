@@ -7,6 +7,7 @@ module Network.Haskoin.Wallet.Root
 , walletList
 , newWallet
 , initWalletDB
+, resetRescan
 ) where
 
 import Control.Monad (liftM, when)
@@ -23,12 +24,16 @@ import Database.Persist
     , PersistQuery
     , PersistStore
     , Entity(..)
+    , Filter(..)
     , getBy
     , insert_
     , selectList
     , selectFirst
     , entityVal
     , SelectOpt( Asc )
+    , updateWhere
+    , deleteWhere
+    , (=.)
     )
 
 import Network.Haskoin.Crypto
@@ -87,4 +92,27 @@ initWalletDB = do
     when (isNothing prevConfig) $ do
         time <- liftIO getCurrentTime
         insert_ $ DbConfig 0 (headerHash genesisHeader) 1 time
+
+-- Remove transaction related data from the wallet
+resetRescan :: (MonadIO m, PersistQuery b) => ReaderT b m ()
+resetRescan = do
+    -- Delete all coins
+    deleteWhere ([] :: PersistQuery b => [Filter (DbCoinGeneric b)])
+    -- Delete all coins spent relations
+    deleteWhere ([] :: PersistQuery b => [Filter (DbSpentCoinGeneric b)])
+    -- Delete all conflict relations
+    deleteWhere ([] :: PersistQuery b => [Filter (DbTxConflictGeneric b)])
+    -- Delete all account transactions
+    deleteWhere ([] :: PersistQuery b => [Filter (DbAccTxGeneric b)])
+    -- Delete all transactions
+    deleteWhere ([] :: PersistQuery b => [Filter (DbTxGeneric b)])
+    -- Delete all orphan transactions
+    deleteWhere ([] :: PersistQuery b => [Filter (DbOrphanGeneric b)])
+    -- Delete all transaction confirmations
+    deleteWhere ([] :: PersistQuery b => [Filter (DbConfirmationGeneric b)])
+    -- Reset best block information
+    updateWhere [] [ DbConfigBestHeight =. 0
+                   , DbConfigBestBlockHash =. headerHash genesisHeader
+                   ]
+
 

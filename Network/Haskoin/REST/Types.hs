@@ -11,6 +11,7 @@ module Network.Haskoin.REST.Types
 , TxRes(..)
 , TxStatusRes(..)
 , BalanceRes(..)
+, SpendableRes(..)
 , NodeAction(..)
 , RescanRes(..)
 )
@@ -122,7 +123,7 @@ instance FromJSON NewAccount where
                 <*> (o .: "keys" >>= maybe mzero return . mapM xPubImport)
             _ -> mzero
 
-data AddressPageRes = AddressPageRes ![PaymentAddress] !Int
+data AddressPageRes = AddressPageRes ![BalanceAddress] !Int
     deriving (Eq, Show, Read)
 
 instance ToJSON AddressPageRes where
@@ -161,17 +162,18 @@ instance FromJSON AddressData where
         AddressData <$> o .: "label"
 
 data TxAction
-    = SendCoins ![(Address, Word64)] !Word64
+    = SendCoins ![(Address, Word64)] !Word64 !Word32
     | SignTx !Tx
     | SignSigBlob !SigBlob
     deriving (Eq, Read, Show)
 
 instance ToJSON TxAction where
     toJSON action = case action of
-        SendCoins rs f -> object
+        SendCoins rs f m -> object
             [ "type"        .= String "send"
             , "recipients"  .= rs
             , "fee"         .= f
+            , "minconf"     .= m
             ]
         SignTx tx -> object
             [ "type"        .= String "sign"
@@ -189,6 +191,7 @@ instance FromJSON TxAction where
             "send" -> SendCoins
                 <$> o .: "recipients"
                 <*> o .: "fee"
+                <*> o .: "minconf"
             "sign" -> SignTx
                 <$> o .: "tx"
             "sigblob" -> SignSigBlob
@@ -231,15 +234,30 @@ instance FromJSON TxStatusRes where
         TxStatusRes <$> o .: "tx"
                     <*> o .: "complete"
 
-data BalanceRes = BalanceRes !Word64
+data BalanceRes = BalanceRes !Balance ![TxHash]
     deriving (Eq, Show, Read)
 
 instance ToJSON BalanceRes where
-    toJSON (BalanceRes b) = object [ "balance" .= b ]
+    toJSON (BalanceRes b hs) = object 
+        [ "balance"   .= b
+        , "conflicts" .= hs
+        ]
 
 instance FromJSON BalanceRes where
-    parseJSON = withObject "balanceres" $ \o ->
-        BalanceRes <$> o .: "balance"
+    parseJSON = withObject "balanceres" $ \o -> do
+        b  <- o .: "balance"
+        hs <- o .: "conflicts"
+        return $ BalanceRes b hs
+
+data SpendableRes = SpendableRes !Word64
+    deriving (Eq, Show, Read)
+
+instance ToJSON SpendableRes where
+    toJSON (SpendableRes b) = object [ "balance" .= b ]
+
+instance FromJSON SpendableRes where
+    parseJSON = withObject "spendableres" $ \o -> 
+        SpendableRes <$> o .: "balance"
 
 data NodeAction = Rescan !(Maybe Word32)
     deriving (Eq, Show, Read)

@@ -28,6 +28,8 @@ it with `hw start`.
   Get data to sign a transaction offline
 - [/api/accounts/{name}/balance](#get-apiaccountsnamebalance) (GET)  
   Get an account balance in satoshi
+- [/api/accounts/{name}/spendablebalance](#get-apiaccountsnamespendablebalance) (GET)  
+  Get an account spendable balance in satoshi
 - [/api/txs/{txhash}](#get-apitxstxhash) (GET)  
   Get a full transaction by transaction id
 - [/api/node](#post-apinode)  (POST)  
@@ -306,12 +308,21 @@ This resource will return a list of addresses pertaining to an account.
 
 This resource accepts optional query parameters to receive paged results. If no
 paging parameters are set, the entire list is returned. Asking for page 0 will
-return the last page.  Here are some valid example queries:
+return the last page.
+
+Additionally, you can specify the minimum number of confirmations required for
+computing the address balances. If no "minconf" flag is set, the 0-confirmation
+balance will be returned. By default, the external addresses are returned. You
+can ask for internal addresses by setting the internal flag.
+
+Here are some valid example queries:
 
 ```
 GET /api/accounts/account1/addrs
 GET /api/accounts/account1/addrs?page=1
 GET /api/accounts/account1/addrs?page=2&elemperpage=50
+GET /api/accounts/account1/addrs?minconf=1
+GET /api/accounts/account1/addrs?minconf=2&internal=true
 ```
 
 #### Output
@@ -322,14 +333,26 @@ JSON result is returned:
 ```json
 [
   {
-    "address": "n3uypZFbRqscWNqRvR64cgoMnygDHfQajD",
-    "index": 0,
-    "label": "Label 1"
-  },
-  {
-    "address": "mymqB9Bk5s5KaYDRAgjznEbnLVyrajxtjm",
-    "index": 1,
-    "label": "Label 2"
+    "address": {
+      "address": "n3uypZFbRqscWNqRvR64cgoMnygDHfQajD",
+      "index": 0,
+      "label": "Label 1"
+    },
+    "finalbalance": {
+      "status": "valid",
+      "balance": 1000000
+    },
+    "totalreceived": {
+      "status": "valid",
+      "balance": 1000000
+    },
+    "fundingtxs": [
+      "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f"
+    ],
+    "spendingtxs": [
+      "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c"
+    ],
+    "conflicttxs": []
   }
 ]
 ```
@@ -341,18 +364,51 @@ When requesting a page, you also get the maximum page number:
   "maxpage": 6,
   "addresspage": [
     {
-      "address": "msKuXqKp9MZdmR4V86YTWZewjSJMVrmZTu",
-      "index": 5,
-      "label": ""
-    },
-    {
-      "address": "n1Gh9BbzV3b3MJHsMLCPrFyB4mMK9mRG4x",
-      "index": 6,
-      "label": ""
+      "address": {
+        "address": "msKuXqKp9MZdmR4V86YTWZewjSJMVrmZTu",
+        "index": 5,
+        "label": "Label 2"
+      },
+      "finalbalance": {
+        "status": "conflict"
+      },
+      "totalreceived": {
+        "status": "valid",
+        "balance": 5000000
+      },
+      "fundingtxs": [
+        "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f"
+      ],
+      "spendingtxs": [],
+      "conflicttxs": [
+        "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c",
+        "8c2ea96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bf271"
+      ]
     }
   ]
 }
 ```
+
+##### Address fields
+
+The `finalbalance` and `totalreceived` fields are balances. 
+
+Balances are objects that have a "status" of "valid" or "conflict". When
+"valid", the balance will have a "balance" field with the balance value. In
+rare occasions when you have conflicting transactions in your wallet (double
+spends, malleability attacks etc.), it is impossible to compute the balance
+reliably. In such a case, and to alert the user that something is wrong, the
+balance will be in "conflict" status until any conflicts in the wallet are
+resolved. The transactions that are in conflict will be given in the
+`conflicttxs` field.
+
+Conflicts usually resolve on their own when new blocks are solved. If you have
+a balance in conflict status, you should wait for a few extra blocks to sort
+out the conflicts.
+
+The `fundingtxs` field contains transactions that fund the given address and
+the `spendingtxs` field contains transactions that spend from the given
+address.
 
 ### POST /api/accounts/{name}/addrs
 
@@ -389,10 +445,14 @@ A JSON representation of the newly created address:
 
 #### Input
 
-You can retrieve an individual address using its derivation index (key):
+You can retrieve an individual address using its derivation index (key). You
+can additionally use the "minconf" and "internal" query strings to specify
+the minimum number of confirmations to compute the address balance and to
+get internal addresses instead of external ones.
 
 ```
 GET /api/accounts/account1/addrs/17
+GET /api/accounts/account1/addrs/25?minconf=1&internal=true
 ```
 
 #### Output
@@ -401,11 +461,30 @@ A JSON representation of the given address:
  
 ```json
 {
-  "address": "mv6hqrDt9qeHjxo3n5dMUfhScoVHVTXyEt",
-  "index": 17,
-  "label": "my label"
+  "address": {
+    "address": "mv6hqrDt9qeHjxo3n5dMUfhScoVHVTXyEt",
+    "index": 17,
+    "label": "my label"
+  },
+  "finalbalance": {
+    "status": "valid",
+    "balance": 0
+  },
+  "totalreceived": {
+    "status": "valid",
+    "balance": 5000000
+  },
+  "fundingtxs": [
+    "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f"
+  ],
+  "spendingtxs": [
+    "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c"
+  ],
+  "conflicttxs": []
 }
 ```
+
+Go [here](#address-fields) for a description of the address fields.
 
 ### PUT /api/accounts/{name}/addrs/{key}
 
@@ -471,9 +550,20 @@ following JSON result is returned:
     "isCoinbase": false,
     "confirmations": 3343,
     "recipients": [
-      "mrinhQTEfn5qepFNHcEo3zD5FpJFNi5AeW"
+      { 
+        "address": "mrinhQTEfn5qepFNHcEo3zD5FpJFNi5AeW",
+        "label": "label 3",
+        "islocal": true
+      },
+      { 
+        "address": "mkwNK8zgNtVxF8CqZCFU83qxTNcwj4cs8q",
+        "label": "label 1",
+        "islocal": true
+      }
     ],
-    "txid": "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f"
+    "txid": "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f",
+    "receiveddate": 1416005281,
+    "confirmationdate": 1416008832
   },
   {
     "value": -333000,
@@ -481,9 +571,14 @@ following JSON result is returned:
     "isCoinbase": false,
     "confirmations": 0,
     "recipients": [
-      "mkwNK8zgNtVxF8CqZCFU83qxTNcwj4cs8q"
+      { 
+        "address": "mkwNK8zgNtVxF8CqZCFU83qxTNcwj4cs8q",
+        "label": "label 1",
+        "islocal": false
+      }
     ],
-    "txid": "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c"
+    "txid": "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c",
+    "receiveddate": 1416002213
   }
 ]
 ```
@@ -500,9 +595,20 @@ When requesting a page, you also get the maximum page number:
       "isCoinbase": false,
       "confirmations": 3343,
       "recipients": [
-        "mrinhQTEfn5qepFNHcEo3zD5FpJFNi5AeW"
+        { 
+          "address": "mrinhQTEfn5qepFNHcEo3zD5FpJFNi5AeW",
+          "label": "label 3",
+          "islocal": true
+        },
+        { 
+          "address": "mkwNK8zgNtVxF8CqZCFU83qxTNcwj4cs8q",
+          "label": "label 1",
+          "islocal": true
+        }
       ],
-      "txid": "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f"
+      "txid": "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f",
+      "receiveddate": 1416005281,
+      "confirmationdate": 1416008832
     },
     {
       "value": -333000,
@@ -510,14 +616,32 @@ When requesting a page, you also get the maximum page number:
       "isCoinbase": false,
       "confirmations": 0,
       "recipients": [
-        "mkwNK8zgNtVxF8CqZCFU83qxTNcwj4cs8q"
+        { 
+          "address": "mkwNK8zgNtVxF8CqZCFU83qxTNcwj4cs8q",
+          "label": "label 1",
+          "islocal": false
+        }
       ],
-      "txid": "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c"
+      "txid": "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c",
+      "receiveddate": 1416002213
     }
   ]
 }
 
 ```
+
+##### Acctxs fields
+
+The "recipients" fields contains a list of addresses that have a "label" and
+a "islocal" field. If the "islocal" field is true, it means that the
+recipient address is a member of the addresses in this account. Otherwise it
+is an address external to this account.
+
+The "receiveddate" is the date at which the wallet received the transaction.
+This date could be after the initial broadcast date if, for example, the wallet
+was offline during the broadcast. The "confirmationdate" is the timestamp of
+the block that confirmed the transaction. This might be a more reliable way
+of knowing when the transaction was created if your wallet is often offline.
 
 ### POST /api/accounts/{name}/acctxs
 
@@ -530,8 +654,9 @@ offline transaction blob.
 
 ##### Input
 
-A JSON object with the recipient addresses, the amount in satoshi and the fee
-to pay (in satoshi/1000 bytes).
+A JSON object with the recipient addresses, the amount in satoshi, the fee
+to pay (in satoshi/1000 bytes) and the minimum number of confirmations of the
+coins that will be spent.
 
 ```json
 {
@@ -540,7 +665,8 @@ to pay (in satoshi/1000 bytes).
     [ "mrinhQTEfn5qepFNHcEo3zD5FpJFNi5AeW", 333000 ],
     [ "mkwNK8zgNtVxF8CqZCFU83qxTNcwj4cs8q", 336000 ]
   ],
-  "fee": 10000
+  "fee": 10000,
+  "minconf": 1
 }
 ```
 
@@ -656,13 +782,21 @@ Returns the requested account transaction:
   "value": -333000,
   "confidence": "pending",
   "isCoinbase": false,
-  "confirmations": 0,
+  "confirmations": 12,
   "recipients": [
-    "mkwNK8zgNtVxF8CqZCFU83qxTNcwj4cs8q"
+    { 
+      "address": "mkwNK8zgNtVxF8CqZCFU83qxTNcwj4cs8q",
+      "label": "label 1",
+      "islocal": false
+    }
   ],
-  "txid": "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c"
+  "txid": "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c",
+  "receiveddate": 1416005281,
+  "confirmationdate": 1416008832
   }
 ```
+
+Go [here](#acctxs-fields) for a description of the account transaction fields.
 
 ### GET /api/accounts/{name}/acctxs/{txhash}/sigblob
 
@@ -702,18 +836,93 @@ transaction. The data part consists of a list of the following elements:
 
 **Modes**: online, offline, vault
 
-Use this resource to request the balance of an account.
+Use this resource to request the true balance of an account.
+
+#### Input
+
+You can pass the "minconf" parameter to request the balance of all coins
+that have at least a minimum number of confirmations. By default, the 0-conf
+balance is returned, which is your unconfirmed balance.
+
+```
+GET /api/accounts/account1/balance
+GET /api/accounts/account1/balance?minconf=1
+```
 
 #### Output
 
-The spendable balance of an account. Any conflicting transactions (double
-spends, malled transactions) do not have their outputs counted towards the
-balance until the conflicts are resolved.
+The true balance of an account with the given number of minimum confirmations.
+In rare occasions when you have conflicting transactions in your wallet (double
+spends, malleability attacks etc.), it is impossible to compute the balance
+reliably. In such a case, and to alert the user that something is wrong, the
+balance will be in "conflict" status until the conflicts in the wallet are
+resolved. The transactions that are in conflict will be given in the
+"conflicts" field.
+
+Conflicts usually resolve on their own when new blocks are solved. If you have
+a balance in conflict status, you should wait for a few extra blocks to sort
+out the conflicts.
+
+Alternatively, you can use the [spendable balance](#get-apiaccountsnamespendablebalance) 
+to always return a value, but it will not be accurate in the presence of
+conflicts.
 
 ```json
-{ 
-  "balance": 3330000 
+{
+  "balance": {
+    "status": "valid",
+    "balance": 3330000 
+  },
+  "conflicts": []
 }
+```
+
+```json
+{
+  "balance": {
+    "status": "conflict"
+  },
+  "conflicts": [
+    "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c",
+    "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f"
+  ]
+}
+```
+
+### GET /api/accounts/{name}/spendablebalance
+
+**Modes**: online, offline, vault
+
+Use this resource to request the spendable balance of an account.
+
+#### Input
+
+You can pass the "minconf" parameter to request the spendable balance of all
+coins that have at least a minimum number of confirmations. By default, the
+0-conf balance is returned, which is your unconfirmed spendable balance.
+
+```
+GET /api/accounts/account1/spendablebalance
+GET /api/accounts/account1/spendablebalance?minconf=1
+```
+
+#### Output
+
+The spendable balance of an account with the given number of minimum
+confirmations. The spendable balance will ignore the coins created by
+conflicting transactions and ignore coins spent by conflicting transactions. It
+will also ignore coinbase transactions with less than 100 confirmations. In
+contrast to the [true balance](#get-apiaccountsnamebalance), the spendable
+balance will always return a value but it will be innacurate in the presence of
+conflicts. However, it represents the balance that a user can spend at any
+given point in time.
+
+If you display the spendable balance to a user, it is advisable to also 
+display the true balance as this will let the user know something is wrong
+if he is a victim of a double spend or malleability attack.
+
+```json
+{ "balance": 3330000 }
 ```
 
 ### GET /api/txs/{txhash}

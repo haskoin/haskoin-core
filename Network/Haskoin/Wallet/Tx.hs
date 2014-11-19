@@ -23,7 +23,9 @@ module Network.Haskoin.Wallet.Tx
 , importBlock
 , getBestHeight
 , setBestHash
-, balance
+, accountBalance
+, addressBalance
+, spendableAccountBalance
 , unspentCoins
 , spendableCoins
 ) where
@@ -37,9 +39,9 @@ import Control.Exception (throwIO)
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Word (Word32, Word64)
-import Data.List ((\\), nub)
 import Data.Maybe (catMaybes, isNothing, isJust, fromJust)
 import Data.Either (rights)
+import qualified Data.List as L ((\\), nub)
 import qualified Data.Map.Strict as M (toList, empty, lookup, insert)
 
 import Database.Persist 
@@ -83,12 +85,22 @@ toAccTx :: (MonadIO m, PersistUnique b, PersistQuery b)
 toAccTx accTx = do
     (Entity _ tx) <- getTxEntity $ dbAccTxHash accTx
     conf <- getConfirmations $ dbAccTxHash accTx
-    return $ AccTx { accTxHash          = dbAccTxHash accTx
-                   , accTxRecipients    = dbAccTxRecipients accTx
-                   , accTxValue         = dbAccTxValue accTx
-                   , accTxConfidence    = dbTxConfidence tx
-                   , accIsCoinbase      = dbTxIsCoinbase tx
-                   , accTxConfirmations = fromIntegral conf
+    confDate <- getConfirmationDate $ dbAccTxHash accTx
+    recipAddrs <- forM (dbAccTxRecipients accTx) $ \a -> do
+        -- Only get the address if it matches the account id
+        addrM <- getBy $ UniqueAddressAccount a (dbAccTxAccount accTx)
+        let label = dbAddressLabel $ entityVal $ fromJust addrM
+        return $ if isJust addrM
+            then RecipientAddress a label True
+            else RecipientAddress a "" False
+    return $ AccTx { accTxHash           = dbAccTxHash accTx
+                   , accTxRecipients     = recipAddrs
+                   , accTxValue          = dbAccTxValue accTx
+                   , accTxConfidence     = dbTxConfidence tx
+                   , accIsCoinbase       = dbTxIsCoinbase tx
+                   , accTxConfirmations  = fromIntegral conf
+                   , accReceivedDate     = dbTxCreated tx
+                   , accConfirmationDate = confDate
                    }
 
 getConfirmations :: (MonadIO m, PersistUnique b, PersistQuery b)
@@ -98,6 +110,15 @@ getConfirmations h = do
     height <- getBestHeight
     return $ if isNothing $ dbTxConfirmedBy tx then 0 else 
         fromIntegral $ height - (fromJust $ dbTxConfirmedHeight tx) + 1
+
+getConfirmationDate :: (MonadIO m, PersistUnique b, PersistQuery b)
+                    => TxHash -> ReaderT b m (Maybe Timestamp)
+getConfirmationDate h = do
+    (Entity _ tx) <- getTxEntity h
+    if isNothing $ dbTxConfirmedBy tx then return Nothing else do
+        let bid = fromJust $ dbTxConfirmedBy tx
+        confM <- getBy $ UniqueConfirmation h bid
+        return $ dbConfirmationBlockTimestamp . entityVal <$> confM
 
 getTxEntity :: (MonadIO m, PersistUnique b, PersistQuery b)
             => TxHash -> ReaderT b m (Entity (DbTxGeneric b))
@@ -236,9 +257,9 @@ checkDoubleSpend tx source
             isDoubleSpend = any (`elem` [TxBuilding, TxPending]) spendConfs
 
         -- We can not build on top of a chain with conflicts
-        txsM <- mapM (getBy . UniqueTx) $ nub $ map outPointHash outpoints
+        txsM <- mapM (getBy . UniqueTx) $ L.nub $ map outPointHash outpoints
         xs   <- mapM (getConflicts . dbTxHash . entityVal) $ catMaybes txsM
-        conflM <- mapM (getBy . UniqueTx) $ nub $ concat xs
+        conflM <- mapM (getBy . UniqueTx) $ L.nub $ concat xs
         let confidences = map (dbTxConfidence . entityVal) $ catMaybes conflM
             hasConflict = any (`elem` [TxBuilding, TxPending]) confidences
 
@@ -256,18 +277,18 @@ updateConflicts tx coins source
 
         -- We are also in conflict with any children of a conflicted tx
         childConfls <- forM confls findChildTxs
-        let allConfls = nub $ concat $ confls : childConfls
+        let allConfls = L.nub $ concat $ confls : childConfls
         isDead <- liftM or $ mapM isTxBuilding allConfls 
 
         -- A transaction iherits the conflicts of its parent transaction
-        txsM <- mapM (getBy . UniqueTx) $ nub $ map outPointHash outpoints
+        txsM <- mapM (getBy . UniqueTx) $ L.nub $ map outPointHash outpoints
         let txs     = catMaybes txsM
             parDead = any ((== TxDead) . dbTxConfidence . entityVal) txs
         cs <- mapM (getConflicts . dbTxHash . entityVal) txs
 
         -- Insert unique conflict links
         time  <- liftIO getCurrentTime
-        forM_ (nub $ concat $ allConfls : cs) $ \h -> 
+        forM_ (L.nub $ concat $ allConfls : cs) $ \h -> 
             insert_ $ DbTxConflict tid h time
 
         -- Compute the confidence
@@ -292,14 +313,14 @@ findChildTxs tid = do
     if isNothing txM then return [] else do
         hs   <- findSpendingTxs outpoints
         rest <- forM hs findChildTxs
-        return $ nub $ concat $ hs : rest
+        return $ L.nub $ concat $ hs : rest
 
 -- Returns the transactions that spend the given outpoints
 findSpendingTxs :: (MonadIO m, PersistQuery b)
                 => [OutPoint] -> ReaderT b m [TxHash]
 findSpendingTxs outpoints = do
     res <- selectList [DbSpentCoinKey <-. outpoints] []
-    return $ nub $ map (dbSpentCoinTx . entityVal) res
+    return $ L.nub $ map (dbSpentCoinTx . entityVal) res
 
 -- Try to re-import all orphan transactions
 tryImportOrphans :: (MonadIO m, PersistQuery b, PersistUnique b)
@@ -407,7 +428,7 @@ isMyOutput out = do
             res <- getBy $ UniqueAddress recipient
             return $ entityVal <$> res
 
--- |Group input and output coins by accounts and create 
+-- | Group input and output coins by accounts and create 
 -- account-level transaction
 buildAccTx :: (Ord (BackendKey b))
            => Tx -> [DbCoinGeneric b] -> [DbCoinGeneric b] -> UTCTime 
@@ -429,7 +450,7 @@ buildAccTx tx inCoins outCoins time = map build $ M.toList oMap
         addrs = map dbCoinAddress o
         recips | null addrs = allRecip
                | total < 0 = 
-                   let xs = allRecip \\ addrs -- Remove the change
+                   let xs = allRecip L.\\ addrs -- Remove the change
                    in if null xs then allRecip else xs
                | otherwise = addrs
 
@@ -468,12 +489,13 @@ removeTx tid = do
 -- | Create a transaction sending some coins to a list of recipient addresses.
 sendTx :: (MonadIO m, PersistUnique b, PersistQuery b)
        => AccountName         -- ^ Account name
+       -> Word32              -- ^ Minimum confirmations
        -> [(Address,Word64)]  -- ^ List of recipient addresses and amounts
        -> Word64              -- ^ Fee per 1000 bytes 
        -> ReaderT b m (TxHash, Bool) -- ^ (Payment transaction, Completed flag)
-sendTx name dests fee = do
+sendTx name minConf dests fee = do
     acc <- getAccount name
-    tx  <- buildUnsignedTx name dests fee
+    tx  <- buildUnsignedTx name minConf dests fee
     (tx',_) <- if isReadAccount acc 
         then return (tx,False)
         else do 
@@ -518,12 +540,13 @@ getSigBlob name tid = do
 -- Build an unsigned transaction given a list of recipients and a fee
 buildUnsignedTx :: (MonadIO m, PersistUnique b, PersistQuery b)
                 => AccountName        
+                -> Word32
                 -> [(Address,Word64)] 
                 -> Word64
                 -> ReaderT b m Tx
-buildUnsignedTx name dests fee = do
+buildUnsignedTx name minConf dests fee = do
     (Entity _ acc) <- getAccountEntity name
-    spendable <- spendableCoins name
+    spendable <- spendableCoins name minConf
     let msParam = ( accountRequired $ dbAccountValue acc
                   , accountTotal $ dbAccountValue acc
                   )
@@ -640,9 +663,11 @@ importBlock action expTxs = do
 
     -- Insert transaction/block confirmation links. We have to keep this
     -- information even for side blocks as we need it when a reorg occurs.
+    time <- liftIO getCurrentTime
+    let bid = nodeBlockHash $ getActionNode action
+        ts  = blockTimestamp $ nodeHeader $ getActionNode action
     myTxs <- filterM ((liftM isJust) . getBy . UniqueTx) expTxs
-    forM_ myTxs $ \h -> 
-        insert_ $ DbConfirmation h (nodeBlockHash $ getActionNode action)
+    forM_ myTxs $ \h -> insert_ $ DbConfirmation h bid ts time
 
     case action of
         BestBlock node -> do
@@ -674,6 +699,7 @@ importBlock action expTxs = do
                 forM_ otxs $ \(Entity _ otx) -> do
                     conflicts <- getConflicts $ dbTxHash otx
                     forM_ conflicts reviveTransaction
+
             -- Confirm transactions in the new chain. This will also confirm
             -- the transactions in the best block of the new chain as we
             -- inserted it in DbConfirmations at the start of the function.
@@ -693,7 +719,9 @@ importBlock action expTxs = do
                         , DbTxConfirmedHeight =. Just (nodeHeaderHeight b)
                         , DbTxConfidence      =. TxBuilding
                         ]
+
             setBestHash (nodeHeaderHeight $ last n) (nodeBlockHash $ last n)
+
         SideBlock _ -> return ()
 
 -- If a transaction is Dead but has no more conflicting Building transactions,
@@ -726,7 +754,7 @@ getConflicts h = do
     bsE <- selectList [DbTxConflictSnd ==. h] []
     let as = map (dbTxConflictSnd . entityVal) asE
         bs = map (dbTxConflictFst . entityVal) bsE
-    return $ nub $ as ++ bs
+    return $ L.nub $ as ++ bs
 
 isTxDead :: (MonadIO m, PersistUnique b, PersistQuery b)
          => TxHash -> ReaderT b m Bool
@@ -748,54 +776,163 @@ isTxOffline h = do
 
 -- Coin functions
 
--- | Returns the balance of an account.
-balance :: (MonadIO m, PersistUnique b, PersistQuery b)
-        => AccountName -- ^ Account name
-        -> ReaderT b m Word64    -- ^ Account balance
-balance name = do
-    coins <- spendableCoins name
-    return $ sum $ map coinValue coins
+-- | Returns the true balances of an address. If a balance can not be computed
+-- deterministically (due to conflicting transactions), this function will
+-- return BalanceConflict where appropriate together with a list of conflicting
+-- transactions. This functions returns a final balance, a total received
+-- balance and a list of funding, spending and conflicting transactions.
+-- Funding transactions are transactions funding this address and spending
+-- transactions are transactions spending from this address.
+addressBalance :: (PersistQuery b, PersistUnique b, MonadIO m) 
+               => PaymentAddress -> Word32 -> ReaderT b m BalanceAddress
+addressBalance pa minConf = do
+    -- Find coins related to the address
+    allCoins <- liftM (map entityVal) $ selectList [DbCoinAddress ==. a] [] 
+    (fb, tr, ft, st, ct) <- getBalanceData allCoins minConf
+    return $ BalanceAddress
+        { balanceAddress = pa
+        , finalBalance   = fb
+        , totalReceived  = tr
+        , fundingTxs     = ft
+        , spendingTxs    = st
+        , conflictTxs    = ct
+        }
+  where
+    a = paymentAddress pa
+
+-- | Returns the true balance of a wallet. If the balance can not be
+-- computed deterministically (due to conflicting transactions), this
+-- function will return BalanceConflict and a list of conflicting transactions.
+accountBalance :: (MonadIO m, PersistUnique b, PersistQuery b)
+               => AccountName                     -- ^ Account name
+               -> Word32                          -- ^ Minimum confirmations
+               -> ReaderT b m (Balance, [TxHash]) 
+                    -- ^ (Account balance, conflicts)
+accountBalance name minConf = do
+    -- Find coins related to the account
+    (Entity ai _) <- getAccountEntity name
+    allCoins <- liftM (map entityVal) $ selectList [ DbCoinAccount ==. ai ] []
+    (fb, _, _, _, ct) <- getBalanceData allCoins minConf
+    return (fb, ct)
+
+-- | Return the balance that can be spent by the wallet. We ignore conflicts
+-- and coinbase transactions with less than 100 confirmations. This value
+-- may not represent the true balance on the wallet. Use 'accountBalance'
+-- for a true representation of the balance.
+spendableAccountBalance :: (MonadIO m, PersistUnique b, PersistQuery b)
+                        => AccountName
+                        -> Word32
+                        -> ReaderT b m Word64
+spendableAccountBalance name minConf = 
+    liftM (sum . (map coinValue)) $ spendableCoins name minConf
+
+-- Compute the balance data form a list of coins
+getBalanceData :: (MonadIO m, PersistQuery b, PersistUnique b) 
+               => [DbCoinGeneric b]
+               -> Word32
+               -> ReaderT b m (Balance, Balance, [TxHash], [TxHash], [TxHash])
+getBalanceData allCoins minConf = do
+    -- Current best height
+    bestH <- getBestHeight
+
+    -- filter coins that have the minimum confirmation requirement
+    coins <- filterM ((minConfNotDead bestH minConf) . dbCoinHash) allCoins
+
+    -- Find conflicts on transactions creating the coins
+    fundRes <- liftM (zip coins) $ mapM (notDeadConfls . dbCoinHash) coins
+    let fundConf = concat $ map snd fundRes
+        noConf   = map fst $ filter (null . snd) fundRes
+
+    -- Find spending transactions
+    spendRes <- liftM (zip coins) $ mapM getSpendTxs coins
+    let notSpend = map fst $ filter (null . snd) spendRes
+        spend    = filter (not . null . snd) spendRes
+
+    -- Find conflicts on the spending transactions
+    sConf <- mapM (\(c,s:_) -> notDeadConfls s >>= \x -> return (c,s,x)) spend
+    let spendConf = concat $ map lst3 sConf
+        allConf   = L.nub $ fundConf ++ spendConf
+
+    let tr | null fundConf = Balance $ 
+                sum $ map (coinValue . dbCoinValue) coins
+           | otherwise     = BalanceConflict
+        fb | null allConf  = Balance $ 
+                sum $ map (coinValue . dbCoinValue) notSpend
+           | otherwise     = BalanceConflict
+
+    return ( fb, tr
+           , map dbCoinHash noConf
+           , map snd3 $ filter (null . lst3) sConf
+           , allConf
+           )
+  where
+    -- Find non-dead conflicts
+    notDeadConfls h = do
+        confls <- getConflicts h
+        res <- filterM ((liftM not) . isTxDead) confls
+        return $ if null res then [] else h:res
+    -- Find non-dead spending transactions
+    getSpendTxs c = do
+        xs <- findSpendingTxs [coinOutPoint $ dbCoinValue c]
+        filterM ((liftM not) . isTxDead) xs
 
 -- Returns coins that have not been spent. A coin spent by a dead transaction
--- is considered unspent.
+-- is considered unspent. Also doesn't return coins spent by conflicting
+-- transactions.
 unspentCoins :: (MonadIO m, PersistUnique b, PersistQuery b) 
-             => AccountName   -- ^ Account name
-             -> ReaderT b m [Coin]      -- ^ List of unspent coins
-unspentCoins name = do
+             => AccountName        -- ^ Account name
+             -> Word32             -- ^ Minimum confirmations
+             -> ReaderT b m [Coin] -- ^ List of unspent coins
+unspentCoins name minConf = do
+    -- Current best height
+    bestH <- getBestHeight
+
+    -- Find coins for this account
     (Entity ai _) <- getAccountEntity name
-    coinsE <- selectList [ DbCoinAccount ==. ai ] [Asc DbCoinCreated]
-    let coins = map (dbCoinValue . entityVal) coinsE
-    resM <- forM coins $ \c -> do
-        spent <- selectList [DbSpentCoinKey ==. coinOutPoint c] []
-        let hs = nub $ map (dbSpentCoinTx . entityVal) spent
-        txsM <- mapM (getBy . UniqueTx) hs
-        let confidences = map (dbTxConfidence . entityVal) $ catMaybes txsM
-        return $ if all (== TxDead) confidences then Just c else Nothing
-    return $ catMaybes resM
+    allCoins <- liftM (map entityVal) $ selectList [ DbCoinAccount ==. ai ] []
+
+    -- filter coins that have the minimum confirmation requirement
+    coins <- filterM ((minConfNotDead bestH minConf) . dbCoinHash) allCoins
+    filterM notSpent $ map dbCoinValue coins
+  where
+    notSpent c = do
+        spendTxs <- selectList [DbSpentCoinKey ==. coinOutPoint c] []
+        let spendingHs = map (dbSpentCoinTx . entityVal) spendTxs
+        liftM null $ filterM ((liftM not) . isTxDead) spendingHs
 
 -- Returns unspent coins that can be spent. For example, coins from 
 -- conflicting transactions cannot be spent, even if they are unspent.
 spendableCoins :: (MonadIO m, PersistUnique b, PersistQuery b) 
-               => AccountName   -- ^ Account name
-               -> ReaderT b m [Coin]      -- ^ List of coins that can be spent
-spendableCoins name = do
-    coins <- unspentCoins name
-    res <- forM coins $ \c -> do
+               => AccountName        -- ^ Account name
+               -> Word32             -- ^ Minimum confirmations
+               -> ReaderT b m [Coin] -- ^ List of coins that can be spent
+spendableCoins name minConf = 
+    filterM isSpendable =<< unspentCoins name minConf
+  where
+    isSpendable c = do
         let tid = outPointHash $ coinOutPoint c
         (Entity _ tx) <- getTxEntity tid
         confirmations <- getConfirmations tid
         if isCoinbaseTx (dbTxValue tx) && confirmations < 100 
-            then return Nothing 
+            then return False
             else case dbTxConfidence tx of
                 -- Building txs will only have conflicts with Dead txs
                 -- so we can spend their coins
-                TxBuilding -> return $ Just c
+                TxBuilding -> return True
                 -- Check that pending txs have no conflicts
                 TxPending  -> do
-                    conflicts <- getConflicts tid
                     -- Only allow conflicts with dead transactions
-                    res <- filterM ((liftM not) . isTxDead) conflicts
-                    return $ if null res then Just c else Nothing
-                _ -> return Nothing
-    return $ catMaybes res
+                    conflicts <- getConflicts tid
+                    liftM null $ filterM ((liftM not) . isTxDead) conflicts
+                _ -> return False
+
+-- Tx is not dead and matches minimum confirmations
+minConfNotDead :: (MonadIO m, PersistUnique b, PersistQuery b)
+               => BlockHeight -> Word32 -> TxHash -> ReaderT b m Bool
+minConfNotDead bestHeight minConf h = do
+    Entity _ tx <- getTxEntity h
+    let heightM = dbTxConfirmedHeight tx
+        conf | isNothing heightM = 0
+             | otherwise = bestHeight - (fromJust heightM) + 1 
+    return $ dbTxConfidence tx /= TxDead && conf >= minConf
 

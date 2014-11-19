@@ -50,6 +50,7 @@ import Yesod
     , toWaiApp
     , renderRoute
     , intField
+    , boolField
     , parseJsonBody
     , iopt
     , runInputGet
@@ -153,6 +154,7 @@ mkYesod "HaskoinServer" [parseRoutes|
 /api/accounts/#Text/acctxs/#Text         AccTxR       GET
 /api/accounts/#Text/acctxs/#Text/sigblob SigBlobR     GET
 /api/accounts/#Text/balance              BalanceR     GET
+/api/accounts/#Text/spendablebalance     SpendableR   GET
 /api/txs/#Text                           TxR          GET 
 /api/node                                NodeR        POST
 |]
@@ -316,16 +318,22 @@ postAccountKeysR name = handleErrors $ do
 
 getAddressesR :: Text -> Handler Value
 getAddressesR name = handleErrors $ do
-    (pageM, elemM) <- runInputGet $ (,)
+    (pageM, elemM, confM, internalM) <- runInputGet $ (,,,)
         <$> iopt intField "page"
         <*> iopt intField "elemperpage"
-    if isJust pageM
+        <*> iopt intField "minconf"
+        <*> iopt boolField "internal"
+    let minConf  = fromMaybe 0 confM
+        internal = fromMaybe False internalM
+        e        = fromMaybe 10 elemM
+    runDB $ if isJust pageM
         then do
-            let e | isJust elemM = fromJust elemM
-                  | otherwise    = 10
-            (as, m) <- runDB $ addressPage (unpack name) (fromJust pageM) e
-            return $ toJSON $ AddressPageRes as m
-        else toJSON <$> runDB (addressList $ unpack name)
+            (pa, m) <- addressPage (unpack name) (fromJust pageM) e internal
+            ba <- mapM (flip addressBalance minConf) pa
+            return $ toJSON $ AddressPageRes ba m
+        else do
+            pa <- addressList (unpack name) internal
+            liftM toJSON $ mapM (flip addressBalance minConf) pa
 
 postAddressesR :: Text -> Handler Value
 postAddressesR name = handleErrors $ do
@@ -338,8 +346,15 @@ postAddressesR name = handleErrors $ do
 
 getAddressR :: Text -> Int -> Handler Value
 getAddressR name i = handleErrors $ do
-    addr <- runDB $ getAddress (unpack name) (fromIntegral i)
-    return $ toJSON addr
+    (confM, internalM) <- runInputGet $ (,)
+        <$> iopt intField "minconf"
+        <*> iopt boolField "internal"
+    let minConf  = fromMaybe 0 confM
+        internal = fromMaybe False internalM
+    runDB $ do
+        pa <- getAddress (unpack name) (fromIntegral i) internal
+        ba <- addressBalance pa minConf
+        return $ toJSON ba
 
 putAddressR :: Text -> Int -> Handler Value
 putAddressR name i = handleErrors $ do 
@@ -366,8 +381,8 @@ getAccTxsR name = handleErrors $ do
 postAccTxsR :: Text -> Handler Value
 postAccTxsR name = handleErrors $ guardVault >>
     parseJsonBody >>= \res -> case res of
-        Success (SendCoins rs fee) -> do
-            (tid, complete) <- runDB $ sendTx (unpack name) rs fee
+        Success (SendCoins rs fee minConf) -> do
+            (tid, complete) <- runDB $ sendTx (unpack name) minConf rs fee
             whenOnline $ when complete $ do
                 HaskoinServer _ rChanM _ <- getYesod
                 let rChan = fromJust rChanM
@@ -407,8 +422,18 @@ getTxR tidStr = handleErrors $ do
     return $ toJSON $ TxRes tx
 
 getBalanceR :: Text -> Handler Value
-getBalanceR name = handleErrors $ 
-    toJSON . BalanceRes <$> runDB (balance $ unpack name)
+getBalanceR name = handleErrors $ do
+    confM <- runInputGet $ iopt intField "minconf"
+    let minConf = fromMaybe 0 confM
+    (balance, cs) <- runDB $ accountBalance (unpack name) minConf
+    return $ toJSON $ BalanceRes balance cs
+
+getSpendableR :: Text -> Handler Value
+getSpendableR name = handleErrors $ do
+    confM <- runInputGet $ iopt intField "minconf"
+    let minConf = fromMaybe 0 confM
+    balance <- runDB $ spendableAccountBalance (unpack name) minConf
+    return $ toJSON $ SpendableRes balance
 
 getSigBlobR :: Text -> Text -> Handler Value
 getSigBlobR name tidStr = handleErrors $ do
@@ -423,6 +448,7 @@ postNodeR = handleErrors $ guardVault >>
     parseJsonBody >>= \res -> toJSON <$> case res of
         Success (Rescan (Just t)) -> do
             whenOnline $ do
+                runDB resetRescan
                 HaskoinServer _ rChanM _ <- getYesod
                 let rChan = fromJust rChanM
                 liftIO $ atomically $ writeTBMChan rChan $ NodeRescan t
@@ -435,6 +461,7 @@ postNodeR = handleErrors $ guardVault >>
             when (isNothing fstKeyTimeM) $ liftIO $ throwIO $
                 WalletException "No keys have been generated in the wallet"
             whenOnline $ do
+                runDB resetRescan
                 HaskoinServer _ rChanM _ <- getYesod
                 let rChan      = fromJust rChanM
                 liftIO $ atomically $ do

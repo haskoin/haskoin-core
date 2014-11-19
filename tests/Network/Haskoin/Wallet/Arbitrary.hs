@@ -7,6 +7,7 @@ import Control.Applicative
 
 import Network.Haskoin.Test
 import Network.Haskoin.Wallet.Types
+import Network.Haskoin.REST.Types
 
 instance Arbitrary Wallet where
     arbitrary = do
@@ -40,6 +41,20 @@ instance Arbitrary Account where
             keys <- vectorOf n (arbitrary >>= \(ArbitraryXPubKey _ p) -> return p)
             return $ ReadMSAccount name m n keys
 
+instance Arbitrary Balance where
+    arbitrary = oneof
+        [ return BalanceConflict
+        , Balance <$> arbitrary
+        ]
+
+instance Arbitrary BalanceAddress where
+    arbitrary = BalanceAddress <$> arbitrary 
+                               <*> arbitrary
+                               <*> arbitrary
+                               <*> arbitrary
+                               <*> arbitrary
+                               <*> arbitrary
+
 instance Arbitrary PaymentAddress where
     arbitrary = do
         ArbitraryAddress addr <- arbitrary
@@ -47,15 +62,24 @@ instance Arbitrary PaymentAddress where
         k <- arbitrary
         return $ PaymentAddress addr l k
 
+instance Arbitrary RecipientAddress where
+    arbitrary = do
+        ArbitraryAddress addr <- arbitrary
+        l  <- arbitrary
+        lo <- arbitrary
+        return $ RecipientAddress addr l lo
+
 instance Arbitrary AccTx where
     arbitrary = do
         tid <- arbitrary
-        addrs <- listOf1 (arbitrary >>= \(ArbitraryAddress a) -> return a)
+        addrs <- listOf1 arbitrary
         v <- arbitrary
         conf <- arbitrary
         b <- arbitrary
         c <- abs <$> arbitrary
-        return $ AccTx tid addrs v conf b c
+        ArbitraryUTCTime rd <- arbitrary
+        cd <- arbitrary
+        return $ AccTx tid addrs v conf b c rd cd
 
 instance Arbitrary TxConfidence where
     arbitrary = elements [ TxOffline, TxDead, TxPending, TxBuilding ]
@@ -75,4 +99,76 @@ instance Arbitrary SigBlob where
             b <- arbitrary
             k <- arbitrary
             return (op, so, b, k)
+
+-- REST Types --
+
+instance Arbitrary NewWallet where
+    arbitrary = NewWallet <$> arbitrary <*> arbitrary <*> arbitrary
+
+instance Arbitrary MnemonicRes where
+    arbitrary = MnemonicRes <$> arbitrary
+
+instance Arbitrary NewAccount where
+    arbitrary = oneof
+        [ NewAccount <$> arbitrary <*> arbitrary
+        , NewReadAccount <$> arbitrary 
+                         <*> ((\(ArbitraryXPubKey _ x) -> x) <$> arbitrary)
+        , goms
+        , goreadms
+        ]
+      where
+        goms = do
+            wallet <- arbitrary
+            name <- arbitrary
+            ArbitraryMSParam m n <- arbitrary
+            keys <- vectorOf n $ (\(ArbitraryXPubKey _ x) -> x) <$> arbitrary
+            return $ NewMSAccount wallet name m n keys
+        goreadms = do
+            name <- arbitrary
+            ArbitraryMSParam m n <- arbitrary
+            keys <- vectorOf n $ (\(ArbitraryXPubKey _ x) -> x) <$> arbitrary
+            return $ NewReadMSAccount name m n keys
+            
+
+instance Arbitrary AddressPageRes where
+    arbitrary = AddressPageRes <$> arbitrary <*> arbitrary
+
+instance Arbitrary TxPageRes where
+    arbitrary = TxPageRes <$> arbitrary <*> arbitrary
+
+instance Arbitrary AddressData where
+    arbitrary = AddressData <$> arbitrary
+
+instance Arbitrary TxAction where
+    arbitrary = oneof
+        [ SendCoins <$> (listOf1 genaddr) <*> arbitrary <*> arbitrary
+        , SignTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
+        , SignSigBlob <$> arbitrary
+        ]
+      where
+        genaddr = (,) <$> ((\(ArbitraryAddress x) -> x) <$> arbitrary)
+                      <*> arbitrary
+
+instance Arbitrary TxHashStatusRes where
+    arbitrary = TxHashStatusRes <$> arbitrary <*> arbitrary
+
+instance Arbitrary TxRes where
+    arbitrary = TxRes <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
+
+instance Arbitrary TxStatusRes where
+    arbitrary = TxStatusRes <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
+                            <*> arbitrary
+
+instance Arbitrary BalanceRes where
+    arbitrary = BalanceRes <$> arbitrary <*> arbitrary
+
+instance Arbitrary SpendableRes where
+    arbitrary = SpendableRes <$> arbitrary
+
+instance Arbitrary NodeAction where
+    arbitrary = Rescan <$> arbitrary
+
+instance Arbitrary RescanRes where
+    arbitrary = RescanRes <$> arbitrary
+
 

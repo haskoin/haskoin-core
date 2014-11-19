@@ -81,6 +81,7 @@ DbAddress
     internal Bool
     created UTCTime default=CURRENT_TIME
     UniqueAddress value
+    UniqueAddressAccount value account
     UniqueAddressKey account index internal
 
 DbCoin 
@@ -131,6 +132,9 @@ DbOrphan
 DbConfirmation
     tx TxHash
     block BlockHash
+    blockTimestamp Word32
+    created UTCTime default=CURRENT_TIME
+    UniqueConfirmation tx block
 
 DbConfig
     bestHeight Word32

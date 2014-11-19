@@ -58,9 +58,10 @@ toPaymentAddr x = PaymentAddress (dbAddressValue x)
 getAddress :: (MonadIO m, PersistUnique b, PersistQuery b)
            => AccountName       -- ^ Account name
            -> KeyIndex          -- ^ Derivation index (key)
+           -> Bool              -- ^ Internal address
            -> ReaderT b m PaymentAddress  -- ^ Payment address
-getAddress accName key = 
-    liftM (toPaymentAddr . entityVal) $ getAddressEntity accName key False
+getAddress accName key internal = 
+    liftM (toPaymentAddr . entityVal) $ getAddressEntity accName key internal
 
 getAddressEntity :: (MonadIO m, PersistUnique b, PersistQuery b)
                  => AccountName -> KeyIndex -> Bool 
@@ -261,7 +262,7 @@ addressPrvKey :: (MonadIO m, PersistQuery b, PersistUnique b)
               -> ReaderT b m PrvKey  -- ^ Private key
 addressPrvKey name key = do
     accPrv <- accountPrvKey name
-    add    <- getAddress name key 
+    add    <- getAddress name key False
     let addrPrvKey = fromJust $ extPrvKey accPrv $ addressIndex add
     return $ xPrvKey $ getAddrPrvKey addrPrvKey
 

@@ -346,8 +346,15 @@ postAddressesR name = handleErrors $ do
 
 getAddressR :: Text -> Int -> Handler Value
 getAddressR name i = handleErrors $ do
-    addr <- runDB $ getAddress (unpack name) (fromIntegral i)
-    return $ toJSON addr
+    (confM, internalM) <- runInputGet $ (,)
+        <$> iopt intField "minconf"
+        <*> iopt boolField "internal"
+    let minConf  = fromMaybe 0 confM
+        internal = fromMaybe False internalM
+    runDB $ do
+        pa <- getAddress (unpack name) (fromIntegral i) internal
+        ba <- addressBalance pa minConf
+        return $ toJSON ba
 
 putAddressR :: Text -> Int -> Handler Value
 putAddressR name i = handleErrors $ do 

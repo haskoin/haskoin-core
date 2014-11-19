@@ -168,19 +168,19 @@ tests =
         , testCase "Listing addresses of a non-existing account should fail" $
             assertException
                 (WalletException "Account default does not exist") 
-                (newWallet "main" (BS.pack [0]) >> addressPage "default" 0 1)
+                (newWallet "main" (BS.pack [0]) >> addressPage "default" 0 1 False)
                 
         ]
     , testGroup "Address tests"
         [ testCase "Displaying page -1 should fail" $
             assertException
                 (WalletException "Invalid page number: -1") 
-                (newWallet "main" (BS.pack [0]) >> addressPage "default" (-1) 1)
+                (newWallet "main" (BS.pack [0]) >> addressPage "default" (-1) 1 False)
 
         , testCase "Displaying 0 results per page should fail" $
             assertException
                 (WalletException "Invalid results per page: 0") 
-                (newWallet "main" (BS.pack [0]) >> addressPage "default" 0 0)
+                (newWallet "main" (BS.pack [0]) >> addressPage "default" 0 0 False)
 
         , testCase "Displaying a page number that is too high should fail" $
             assertException
@@ -188,7 +188,7 @@ tests =
                     _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
                     _ <- newAddrs "default" 5
-                    addressPage "default" 2 5
+                    addressPage "default" 2 5 False
 
         , testCase "Setting a label on an invalid address key should fail" $
             assertException

@@ -25,6 +25,7 @@ import Control.Monad (unless, forM_, when, mzero, liftM2)
 import Control.Monad.Trans (liftIO, MonadIO)
 import Control.Exception (throwIO, throw)
 
+import Data.Char (toLower)
 import Data.Default (def)
 import Data.Word (Word32, Word64)
 import Data.List (intersperse)
@@ -92,6 +93,7 @@ data Options = Options
     , optGap      :: Int
     , optFee      :: Word64
     , optMinConf  :: Word32
+    , optInternal :: Bool
     , optJson     :: Bool
     , optYaml     :: Bool
     , optPass     :: String
@@ -116,6 +118,7 @@ defaultOptions = Options
     , optGap      = 10
     , optFee      = 10000
     , optMinConf  = 0
+    , optInternal = False
     , optJson     = False
     , optYaml     = False
     , optPass     = ""
@@ -140,6 +143,7 @@ instance ToJSON Options where
         , "gap"            .= optGap opt
         , "fee"            .= optFee opt
         , "minconf"        .= optMinConf opt
+        , "internal"       .= optInternal opt
         , "json"           .= optJson opt
         , "yaml"           .= optYaml opt
         , "passphrase"     .= optPass opt
@@ -168,6 +172,7 @@ instance FromJSON Options where
         <*> o .: "gap"
         <*> o .: "fee"
         <*> o .: "minconf"
+        <*> o .: "internal"
         <*> o .: "json"
         <*> o .: "yaml"
         <*> o .: "passphrase"
@@ -202,6 +207,9 @@ options =
        "Transaction fee (default: 10000)"
     , Option ['m'] ["minconf"] (ReqArg parseMinConf "INT")
         "Minimum number of required confirmations"
+    , Option ['i'] ["internal"]
+        (NoArg $ \opts -> return opts{ optInternal = True })
+        "Display internal addresses (default: False)"
     , Option ['j'] ["json"]
         (NoArg $ \opts -> return opts{ optJson = True })
         "Format result as JSON"
@@ -226,7 +234,7 @@ options =
     , Option ['l'] ["logfile"]
         (ReqArg (\l opts -> return opts{ optLog = Just l }) "FILE")
         "Log file"
-    , Option ['i'] ["pidfile"]
+    , Option ['I'] ["pidfile"]
         (ReqArg (\i opts -> return opts{ optPid = Just i }) "FILE")
         "PID file"
     ]
@@ -450,7 +458,10 @@ processCommand opts args = case args of
             sequence_ $ intersperse (putStrLn "-") xs
     ["list", name] -> do
         let url = stringToBS $ concat [ "/api/accounts/", name, "/addrs" ]
-            qs  = [ ("minconf", Just $ stringToBS $ show $ optMinConf opts) ]
+            qs  = [ ("minconf", Just $ stringToBS $ show $ optMinConf opts)
+                  , ("internal", Just $ stringToBS $ map toLower $ show $ 
+                        optInternal opts)
+                  ]
         res <- sendRequest url "GET" qs Nothing opts
         printJSONOr opts res $ mapM_ (putStrLn . printAddress)
     ["page", name, page] -> do
@@ -459,6 +470,8 @@ processCommand opts args = case args of
             qs  = [ ("page",Just $ stringToBS $ show p)
                   , ("elemperpage",Just $ stringToBS $ show $ optCount opts)
                   , ("minconf", Just $ stringToBS $ show $ optMinConf opts)
+                  , ("internal", Just $ stringToBS $ map toLower $ show $ 
+                        optInternal opts)
                   ]
         res <- sendRequest url "GET" qs Nothing opts
         printJSONOr opts res $ \(AddressPageRes as m) -> do

@@ -50,6 +50,7 @@ import Yesod
     , toWaiApp
     , renderRoute
     , intField
+    , boolField
     , parseJsonBody
     , iopt
     , runInputGet
@@ -317,19 +318,21 @@ postAccountKeysR name = handleErrors $ do
 
 getAddressesR :: Text -> Handler Value
 getAddressesR name = handleErrors $ do
-    (pageM, elemM, confM) <- runInputGet $ (,,)
+    (pageM, elemM, confM, internalM) <- runInputGet $ (,,,)
         <$> iopt intField "page"
         <*> iopt intField "elemperpage"
         <*> iopt intField "minconf"
-    let minConf = fromMaybe 0 confM
+        <*> iopt boolField "internal"
+    let minConf  = fromMaybe 0 confM
+        internal = fromMaybe False internalM
+        e        = fromMaybe 10 elemM
     runDB $ if isJust pageM
         then do
-            let e = fromMaybe 10 elemM
-            (pa, m) <- addressPage (unpack name) (fromJust pageM) e
+            (pa, m) <- addressPage (unpack name) (fromJust pageM) e internal
             ba <- mapM (flip addressBalance minConf) pa
             return $ toJSON $ AddressPageRes ba m
         else do
-            pa <- addressList $ unpack name
+            pa <- addressList (unpack name) internal
             liftM toJSON $ mapM (flip addressBalance minConf) pa
 
 postAddressesR :: Text -> Handler Value

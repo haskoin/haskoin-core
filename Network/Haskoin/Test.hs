@@ -100,6 +100,7 @@ module Network.Haskoin.Test
 , ArbitraryMSSigInput(..)
 , ArbitrarySHSigInput(..)
 , ArbitrarySigningData(..)
+, ArbitraryPartialTxs(..)
 
   -- * Block Arbitrary instances
 , ArbitraryBlock(..)

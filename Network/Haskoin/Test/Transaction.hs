@@ -18,6 +18,7 @@ module Network.Haskoin.Test.Transaction
 , ArbitraryMSSigInput(..)
 , ArbitrarySHSigInput(..)
 , ArbitrarySigningData(..)
+, ArbitraryPartialTxs(..)
 ) where
 
 import Test.QuickCheck 
@@ -26,6 +27,7 @@ import Test.QuickCheck
     , vectorOf
     , oneof
     , choose
+    , elements
     )
 
 import Control.Monad (forM)
@@ -42,6 +44,7 @@ import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Constants
+import Network.Haskoin.Util
 
 -- | Arbitrary amount of Satoshi as Word64 (Between 1 and 21e14)
 newtype ArbitrarySatoshi = ArbitrarySatoshi Word64
@@ -262,6 +265,38 @@ instance Arbitrary ArbitrarySigningData where
       where
         f (ArbitrarySigInput s ks) = (s,ks)
 
+data ArbitraryPartialTxs = ArbitraryPartialTxs [Tx] ScriptOutput Int Int
+    deriving (Eq, Show, Read)
 
+instance Arbitrary ArbitraryPartialTxs where
+    arbitrary = do
+        ArbitraryMSParam m n <- arbitrary
+        keys <- vectorOf n $ (\(ArbitraryPubKey k p) -> (k, p)) <$> arbitrary
+        nPrv <- choose (1,n)
+        perm <- choose (0, length keys - 1)
+        let pubKeys = map snd keys
+            prvKeys = take nPrv $ permutations (map fst keys) !! perm
+        tx <- arbitraryEmptyTx
+        (so, rdmM) <- arbitrarySO m $ pubKeys
+        txs <- mapM (go so rdmM tx) $ prvKeys
+        return $ ArbitraryPartialTxs txs so m n
+      where
+        go so rdmM tx prv = do
+            ArbitraryValidSigHash sh <- arbitrary
+            let sigi = SigInput so (prevOutput $ txIn tx !! 0) sh rdmM
+            return $ fst $ fromRight $ detSignTx tx [sigi] [prv]
+        arbitrarySO m pubs = do
+            let so = PayMulSig pubs m
+            elements [ (so, Nothing)
+                     , (PayScriptHash $ scriptAddr so, Just so)
+                     ]
+        arbitraryEmptyTx = do
+            v <- arbitrary
+            no <- choose (0,5)
+            outs <- vectorOf no $ (\(ArbitraryTxOut o) -> o) <$> arbitrary
+            t <- arbitrary
+            ArbitraryOutPoint op <- arbitrary
+            s <- arbitrary
+            return $ Tx v [TxIn op BS.empty s] outs t
 
 

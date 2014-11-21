@@ -8,6 +8,7 @@ module Network.Haskoin.Transaction.Builder
 , signInput
 , detSignTx
 , detSignInput
+, mergeTxInput
 , verifyStdTx
 , verifyStdInput
 , guessTxSize
@@ -18,7 +19,7 @@ module Network.Haskoin.Transaction.Builder
 ) where
 
 import Control.Applicative ((<$>),(<*>))
-import Control.Monad (mzero, foldM)
+import Control.Monad (mzero, foldM, when, unless)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Either (EitherT, left)
 import Control.DeepSeq (NFData, rnf)
@@ -329,6 +330,44 @@ buildInput tx i so rdmM sig pub = case (so, rdmM) of
         _ -> []
     out = encodeOutput so
     f (TxSignature x sh) p = verifySig (txSigHash tx out i sh) x p
+
+{- Merge multisig transactions -}
+
+mergeTxInput :: [Tx] -> Int -> ScriptOutput -> Either String (Tx, Bool)
+mergeTxInput txs i so
+    | null txs = error "Transaction list is empty"
+    | length (nub emptyTxs) /= 1 = Left "Transactions do not match"
+    | length (txIn tx) <= i = Left "Invalid input index"
+    | length txs == 1 = return (tx, verifyStdInput tx i so)
+    | otherwise = do
+        sigRes <- mapM (extractSigs . scriptInput . (!! i) . txIn) txs
+        let rdm = snd $ head sigRes
+        unless (all (== rdm) $ map snd sigRes) $ 
+            Left "Redeem scripts do not match"
+        si <- encodeInputBS <$> go (nub $ concat $ map fst sigRes) so rdm
+        let newTx = tx{ txIn = 
+                updateIndex i (txIn tx) (\ti -> ti{ scriptInput = si }) }
+        return (newTx, verifyStdInput newTx i so)
+  where
+    tx = head txs
+    go allSigs out rdmM = case out of
+        PayMulSig msPubs r -> 
+            let sigs = take r $ catMaybes $ matchTemplate allSigs msPubs $ f out
+            in return $ RegularInput $ SpendMulSig sigs
+        PayScriptHash _ -> case rdmM of
+            Just rdm -> do
+                si <- go allSigs rdm Nothing
+                return $ ScriptHashInput (getRegularInput si) rdm
+            _ -> Left "Invalid output script type"
+        _ -> Left "Invalid output script type"
+    extractSigs si = case decodeInputBS si of
+        Right (RegularInput (SpendMulSig sigs)) -> Right (sigs, Nothing)
+        Right (ScriptHashInput (SpendMulSig sigs) rdm) -> Right (sigs, Just rdm)
+        _ -> Left "Invalid script input type"
+    emptyTxs = map (\t -> t{ txIn = map clearInput $ txIn t}) txs
+    clearInput ti = ti{ scriptInput = BS.empty }
+    f out (TxSignature x sh) p = 
+        verifySig (txSigHash tx (encodeOutput out) i sh) x p
 
 {- Tx verification -}
 

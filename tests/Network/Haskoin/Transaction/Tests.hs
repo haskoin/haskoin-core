@@ -29,6 +29,7 @@ tests =
         ]
     , testGroup "Signing Transactions"
         [ testProperty "Sign and validate transactions" testDetSignTx
+        , testProperty "Merge partially signed transactions" testMergeTx
         ]
     ]
 
@@ -106,4 +107,19 @@ testDetSignTx (ArbitrarySigningData tx sigis prv) =
     (txSigC, statC) = fromRight $ detSignTx txSigP sigis [head prv]
     verData         = map (\(SigInput s o _ _) -> (s,o)) sigis
 
+testMergeTx :: ArbitraryPartialTxs -> Bool
+testMergeTx (ArbitraryPartialTxs txs so m _) = and 
+    [ isRight mergeRes
+    , if length txs >= m then complete else not complete
+    , if length txs >= m then isValid else not isValid
+    , sigCnt == min (length txs) m
+    ]
+  where
+    mergeRes = mergeTxInput txs 0 so
+    (mergedTx, complete) = fromRight mergeRes
+    isValid = verifyStdTx mergedTx [(so, prevOutput $ txIn mergedTx !! 0)]
+    sigCnt = case decodeInputBS $ scriptInput $ txIn mergedTx !! 0 of
+        Right (RegularInput (SpendMulSig sigs)) -> length sigs
+        Right (ScriptHashInput (SpendMulSig sigs) _) -> length sigs
+        _ -> error "Invalid input script type"
 

@@ -23,7 +23,7 @@ module Network.Haskoin.Transaction
 , signInput
 , detSignTx
 , detSignInput
-, mergeTxInput
+, mergeTxs
 , verifyStdTx
 , verifyStdInput
 

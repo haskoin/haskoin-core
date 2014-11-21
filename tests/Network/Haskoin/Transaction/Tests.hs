@@ -108,17 +108,25 @@ testDetSignTx (ArbitrarySigningData tx sigis prv) =
     verData         = map (\(SigInput s o _ _) -> (s,o)) sigis
 
 testMergeTx :: ArbitraryPartialTxs -> Bool
-testMergeTx (ArbitraryPartialTxs txs so m _) = and 
-    [ isRight mergeRes
-    , if length txs >= m then complete else not complete
-    , if length txs >= m then isValid else not isValid
-    , sigCnt == min (length txs) m
-    ]
+testMergeTx (ArbitraryPartialTxs txs os) = 
+    let res = and 
+              [ isRight mergeRes
+              , length (txIn mergedTx) == length os
+              , if enoughSigs then complete else not complete
+              , if enoughSigs then isValid else not isValid
+              -- Signature count == min (length txs) (sum required signatures)
+              , sum (map snd sigMap) == min (length txs) (sum (map fst sigMap))
+              ]
+    in if res then res else
+        error $ unwords [show enoughSigs, show $ sigMap, show complete, show isValid]
   where
-    mergeRes = mergeTxInput txs 0 so
+    outs = map (\(so, op, _, _) -> (so, op)) os
+    mergeRes = mergeTxs txs outs
     (mergedTx, complete) = fromRight mergeRes
-    isValid = verifyStdTx mergedTx [(so, prevOutput $ txIn mergedTx !! 0)]
-    sigCnt = case decodeInputBS $ scriptInput $ txIn mergedTx !! 0 of
+    isValid = verifyStdTx mergedTx outs
+    enoughSigs = and $ map (\(m,c) -> c >= m) sigMap
+    sigMap = map (\((_,_,m,_), inp) -> (m, sigCnt inp)) $ zip os $ txIn mergedTx
+    sigCnt inp = case decodeInputBS $ scriptInput inp of
         Right (RegularInput (SpendMulSig sigs)) -> length sigs
         Right (ScriptHashInput (SpendMulSig sigs) _) -> length sigs
         _ -> error "Invalid input script type"

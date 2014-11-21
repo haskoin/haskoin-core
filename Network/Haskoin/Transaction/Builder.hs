@@ -8,7 +8,7 @@ module Network.Haskoin.Transaction.Builder
 , signInput
 , detSignTx
 , detSignInput
-, mergeTxInput
+, mergeTxs
 , verifyStdTx
 , verifyStdInput
 , guessTxSize
@@ -19,7 +19,7 @@ module Network.Haskoin.Transaction.Builder
 ) where
 
 import Control.Applicative ((<$>),(<*>))
-import Control.Monad (mzero, foldM, when, unless)
+import Control.Monad (mzero, foldM, unless)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Either (EitherT, left)
 import Control.DeepSeq (NFData, rnf)
@@ -27,7 +27,7 @@ import Control.DeepSeq (NFData, rnf)
 import Data.Maybe (catMaybes, maybeToList, isJust, fromJust, isNothing)
 import Data.List (sortBy, find, nub)
 import Data.Word (Word64)
-import qualified Data.ByteString as BS (length, replicate, empty)
+import qualified Data.ByteString as BS (length, replicate, empty, null)
 import Data.Aeson
     ( Value (Object)
     , FromJSON
@@ -333,23 +333,33 @@ buildInput tx i so rdmM sig pub = case (so, rdmM) of
 
 {- Merge multisig transactions -}
 
-mergeTxInput :: [Tx] -> Int -> ScriptOutput -> Either String (Tx, Bool)
-mergeTxInput txs i so
+mergeTxs :: [Tx] -> [(ScriptOutput, OutPoint)] -> Either String (Tx, Bool)
+mergeTxs txs os 
     | null txs = error "Transaction list is empty"
     | length (nub emptyTxs) /= 1 = Left "Transactions do not match"
-    | length (txIn tx) <= i = Left "Invalid input index"
-    | length txs == 1 = return (tx, verifyStdInput tx i so)
+    | length txs == 1 = return (head txs, verifyStdTx (head txs) os)
     | otherwise = do
-        sigRes <- mapM (extractSigs . scriptInput . (!! i) . txIn) txs
-        let rdm = snd $ head sigRes
-        unless (all (== rdm) $ map snd sigRes) $ 
-            Left "Redeem scripts do not match"
-        si <- encodeInputBS <$> go (nub $ concat $ map fst sigRes) so rdm
-        let newTx = tx{ txIn = 
-                updateIndex i (txIn tx) (\ti -> ti{ scriptInput = si }) }
-        return (newTx, verifyStdInput newTx i so)
+        res <- foldM (mergeTxInput txs) (head emptyTxs) outs
+        return (res, verifyStdTx res os)
   where
-    tx = head txs
+    zipOp = zip (matchTemplate os (txIn $ head txs) f) [0..]
+    outs = map (\(s,i) -> (fst $ fromJust s, i)) $ filter (isJust . fst) zipOp
+    f (_,o) txin = o == prevOutput txin
+    emptyTxs = map (\tx -> foldl clearInput tx outs) txs
+    clearInput tx (_, i) = tx{ txIn = 
+        updateIndex i (txIn tx) (\ti -> ti{ scriptInput = BS.empty }) }
+
+mergeTxInput :: [Tx] -> Tx -> (ScriptOutput, Int) -> Either String Tx
+mergeTxInput txs tx (so, i) = do
+    -- Ignore transactions with empty inputs
+    let ins = map (scriptInput . (!! i) . txIn) txs
+    sigRes <- mapM extractSigs $ filter (not . BS.null) ins
+    let rdm = snd $ head sigRes
+    unless (all (== rdm) $ map snd sigRes) $ 
+        Left "Redeem scripts do not match"
+    si <- encodeInputBS <$> go (nub $ concat $ map fst sigRes) so rdm
+    return tx{ txIn = updateIndex i (txIn tx) (\ti -> ti{ scriptInput = si }) }
+  where
     go allSigs out rdmM = case out of
         PayMulSig msPubs r -> 
             let sigs = take r $ catMaybes $ matchTemplate allSigs msPubs $ f out
@@ -364,8 +374,6 @@ mergeTxInput txs i so
         Right (RegularInput (SpendMulSig sigs)) -> Right (sigs, Nothing)
         Right (ScriptHashInput (SpendMulSig sigs) rdm) -> Right (sigs, Just rdm)
         _ -> Left "Invalid script input type"
-    emptyTxs = map (\t -> t{ txIn = map clearInput $ txIn t}) txs
-    clearInput ti = ti{ scriptInput = BS.empty }
     f out (TxSignature x sh) p = 
         verifySig (txSigHash tx (encodeOutput out) i sh) x p
 

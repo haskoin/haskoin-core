@@ -265,38 +265,43 @@ instance Arbitrary ArbitrarySigningData where
       where
         f (ArbitrarySigInput s ks) = (s,ks)
 
-data ArbitraryPartialTxs = ArbitraryPartialTxs [Tx] ScriptOutput Int Int
+data ArbitraryPartialTxs = 
+    ArbitraryPartialTxs [Tx] [(ScriptOutput, OutPoint, Int, Int)]
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryPartialTxs where
     arbitrary = do
-        ArbitraryMSParam m n <- arbitrary
-        keys <- vectorOf n $ (\(ArbitraryPubKey k p) -> (k, p)) <$> arbitrary
-        nPrv <- choose (1,n)
-        perm <- choose (0, length keys - 1)
-        let pubKeys = map snd keys
-            prvKeys = take nPrv $ permutations (map fst keys) !! perm
         tx <- arbitraryEmptyTx
-        (so, rdmM) <- arbitrarySO m $ pubKeys
-        txs <- mapM (go so rdmM tx) $ prvKeys
-        return $ ArbitraryPartialTxs txs so m n
+        res <- forM (map prevOutput $ txIn tx) $ \op -> do
+            (so, rdmM, prvs, m, n) <- arbitraryData
+            txs <- mapM (singleSig so rdmM tx op) prvs
+            return (txs, (so, op, m, n))
+        return $ ArbitraryPartialTxs (concat $ map fst res) (map snd res)
       where
-        go so rdmM tx prv = do
+        singleSig so rdmM tx op prv = do
             ArbitraryValidSigHash sh <- arbitrary
-            let sigi = SigInput so (prevOutput $ txIn tx !! 0) sh rdmM
+            let sigi = SigInput so op sh rdmM
             return $ fst $ fromRight $ detSignTx tx [sigi] [prv]
-        arbitrarySO m pubs = do
-            let so = PayMulSig pubs m
-            elements [ (so, Nothing)
-                     , (PayScriptHash $ scriptAddr so, Just so)
+        arbitraryData = do
+            ArbitraryMSParam m n <- arbitrary
+            nPrv <- choose (m,n)
+            keys <- vectorOf n $ 
+                (\(ArbitraryPubKey k p) -> (k, p)) <$> arbitrary
+            perm <- choose (0, length keys - 1)
+            let pubKeys = map snd keys
+                prvKeys = take nPrv $ permutations (map fst keys) !! perm
+            let so = PayMulSig pubKeys m
+            elements [ (so, Nothing, prvKeys, m, n)
+                     , (PayScriptHash $ scriptAddr so, Just so, prvKeys, m, n)
                      ]
         arbitraryEmptyTx = do
             v <- arbitrary
-            no <- choose (0,5)
+            no <- choose (1,5)
+            ni <- choose (1,5)
             outs <- vectorOf no $ (\(ArbitraryTxOut o) -> o) <$> arbitrary
+            ops <- vectorOf ni $ (\(ArbitraryOutPoint op) -> op) <$> arbitrary
             t <- arbitrary
-            ArbitraryOutPoint op <- arbitrary
             s <- arbitrary
-            return $ Tx v [TxIn op BS.empty s] outs t
+            return $ Tx v (map (\op -> TxIn op BS.empty s) ops) outs t
 
 

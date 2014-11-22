@@ -5,6 +5,7 @@ module Network.Haskoin.Transaction.Types
 , OutPoint(..)
 , CoinbaseTx(..)
 , txHash
+, nosigTxHash
 , cbHash
 ) where
 
@@ -29,6 +30,7 @@ import Data.Binary.Put
 import qualified Data.ByteString as BS 
     ( ByteString
     , length
+    , empty
     )
 
 import Network.Haskoin.Util 
@@ -39,6 +41,12 @@ import Network.Haskoin.Node.Types
 -- | Computes the hash of a transaction.
 txHash :: Tx -> TxHash
 txHash = fromIntegral . doubleHash256 . encode' 
+
+nosigTxHash :: Tx -> TxHash
+nosigTxHash tx = 
+    txHash tx{ txIn = map clearInput $ txIn tx}
+  where
+    clearInput ti = ti{ scriptInput = BS.empty }
 
 -- | Computes the hash of a coinbase transaction.
 cbHash :: CoinbaseTx -> TxHash

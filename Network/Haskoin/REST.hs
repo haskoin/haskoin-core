@@ -31,6 +31,7 @@ import Data.Text (Text, unpack, pack)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Default (Default, def)
+import qualified Data.ByteString as BS (empty)
 
 import Database.Persist.Sqlite
 import Database.Sqlite (open)
@@ -63,6 +64,7 @@ import Network.Wai.Middleware.HttpAuth (basicAuth)
 import Network.Haskoin.Constants
 import Network.Haskoin.Node
 import Network.Haskoin.Crypto
+import Network.Haskoin.Transaction
 
 import Network.Haskoin.REST.Types
 import Network.Haskoin.SPV
@@ -155,7 +157,8 @@ mkYesod "HaskoinServer" [parseRoutes|
 /api/accounts/#Text/acctxs/#Text/sigblob SigBlobR     GET
 /api/accounts/#Text/balance              BalanceR     GET
 /api/accounts/#Text/spendablebalance     SpendableR   GET
-/api/txs/#Text                           TxR          GET 
+/api/txs                                 TxsR         PUT
+/api/txs/#Text                           TxR          GET
 /api/node                                NodeR        POST
 |]
 
@@ -382,24 +385,23 @@ postAccTxsR :: Text -> Handler Value
 postAccTxsR name = handleErrors $ guardVault >>
     parseJsonBody >>= \res -> case res of
         Success (SendCoins rs fee minConf) -> do
-            (tid, complete) <- runDB $ sendTx (unpack name) minConf rs fee
+            (tid, complete, prop) <- runDB $ sendTx (unpack name) minConf rs fee
             whenOnline $ when complete $ do
                 HaskoinServer _ rChanM _ <- getYesod
                 let rChan = fromJust rChanM
                 newTx <- runDB $ getTx tid
                 liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
-            return $ toJSON $ TxHashStatusRes tid complete
+            return $ toJSON $ TxHashStatusRes tid complete prop
         Success (SignTx tx) -> do
-            (tid, complete) <- runDB $ signWalletTx (unpack name) tx
+            (tid, complete, prop) <- runDB $ signWalletTx (unpack name) tx
             whenOnline $ when complete $ do
-                HaskoinServer _ rChanM _ <- getYesod
-                let rChan = fromJust rChanM
+                HaskoinServer _ (Just rChan) _ <- getYesod
                 newTx <- runDB $ getTx tid
                 liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
-            return $ toJSON $ TxHashStatusRes tid complete
+            return $ toJSON $ TxHashStatusRes tid complete prop
         Success (SignSigBlob blob) -> do
-            (tx, c) <- runDB $ signSigBlob (unpack name) blob
-            return $ toJSON $ TxStatusRes tx c
+            (tx, c, prop) <- runDB $ signSigBlob (unpack name) blob
+            return $ toJSON $ TxStatusRes tx c prop
         -- TODO: What happens here ?
         Error _ -> undefined
 
@@ -420,6 +422,25 @@ getTxR tidStr = handleErrors $ do
         WalletException "Could not parse txhash"
     tx <- runDB $ getTx tid
     return $ toJSON $ TxRes tx
+
+putTxsR :: Handler Value
+putTxsR = handleErrors $ guardVault >>
+    parseJsonBody >>= \res -> case res of
+        Success (ImportTx tx) -> do
+            resM <- runDB $ importTx tx UnknownSource
+            let (tid, conf) = fromJust resM
+                complete = conf == TxPending
+            when (isNothing resM) $ liftIO $ throwIO $
+                WalletException "Transaction could not be imported"
+            whenOnline $ when complete $ do
+                HaskoinServer _ (Just rChan) _ <- getYesod
+                newTx <- runDB $ getTx tid
+                liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
+            let prop = if complete then Nothing else Just tx{ txIn = 
+                    map (\ti -> ti{ scriptInput = BS.empty }) $ txIn tx }
+            return $ toJSON $ TxHashStatusRes tid complete prop
+        -- TODO: What happens here ?
+        Error _ -> undefined
 
 getBalanceR :: Text -> Handler Value
 getBalanceR name = handleErrors $ do

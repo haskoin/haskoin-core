@@ -139,7 +139,7 @@ instance Arbitrary TxPageRes where
 instance Arbitrary AddressData where
     arbitrary = AddressData <$> arbitrary
 
-instance Arbitrary TxAction where
+instance Arbitrary AccTxAction where
     arbitrary = oneof
         [ SendCoins <$> (listOf1 genaddr) <*> arbitrary <*> arbitrary
         , SignTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
@@ -149,15 +149,27 @@ instance Arbitrary TxAction where
         genaddr = (,) <$> ((\(ArbitraryAddress x) -> x) <$> arbitrary)
                       <*> arbitrary
 
+instance Arbitrary TxAction where
+    arbitrary = ImportTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
+
 instance Arbitrary TxHashStatusRes where
-    arbitrary = TxHashStatusRes <$> arbitrary <*> arbitrary
+    arbitrary = TxHashStatusRes 
+        <$> arbitrary 
+        <*> arbitrary
+        <*> oneof [ return Nothing
+                  , (Just . (\(ArbitraryTx x) -> x) <$> arbitrary) 
+                  ]
 
 instance Arbitrary TxRes where
     arbitrary = TxRes <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
 
 instance Arbitrary TxStatusRes where
-    arbitrary = TxStatusRes <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
-                            <*> arbitrary
+    arbitrary = TxStatusRes 
+        <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
+        <*> arbitrary
+        <*> oneof [ return Nothing
+                  , (Just . (\(ArbitraryTx x) -> x) <$> arbitrary) 
+                  ]
 
 instance Arbitrary BalanceRes where
     arbitrary = BalanceRes <$> arbitrary <*> arbitrary

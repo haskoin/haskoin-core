@@ -119,6 +119,7 @@ DbTx
     confirmedBy BlockHash Maybe
     confirmedHeight Word32 Maybe
     isCoinbase Bool
+    nosigHash TxHash
     created UTCTime default=CURRENT_TIME
     UniqueTx hash
 

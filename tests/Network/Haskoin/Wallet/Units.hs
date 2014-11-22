@@ -311,7 +311,8 @@ testImportOrphan = do
     checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
 
     importTx fundingTx NetworkSource >>=
-        liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
+        liftIO . (assertEqual "Confidence is not pending" 
+            (Just (txHash fundingTx, TxPending)))
     liftM (map (dbOrphanHash . entityVal)) (selectList [] [])
         >>= liftIO . (assertEqual "Orphan list should be empty" [])
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash fundingTx)
@@ -371,7 +372,8 @@ testOutDoubleSpend = do
 
     -- Import funding transaction
     importTx fundingTx NetworkSource >>=
-        liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
+        liftIO . (assertEqual "Confidence is not pending" 
+            (Just (txHash fundingTx, TxPending)))
     spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 2" 2) . length
 
@@ -384,7 +386,8 @@ testOutDoubleSpend = do
 
     -- Import first conflicting transaction
     importTx spend1 NetworkSource >>=
-        liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
+        liftIO . (assertEqual "Confidence is not pending" 
+            (Just (txHash spend1, TxPending)))
     spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 3" 3) . length
 
@@ -397,7 +400,8 @@ testOutDoubleSpend = do
 
     -- Import second conflicting transaction
     importTx spend2 NetworkSource >>=
-        liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
+        liftIO . (assertEqual "Confidence is not pending" 
+            (Just (txHash spend2, TxPending)))
     spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 1" 1) . length
 
@@ -557,7 +561,8 @@ testInDoubleSpend = do
 
     -- Import first conflicting transaction
     importTx tx1 NetworkSource >>=
-        liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
+        liftIO . (assertEqual "Confidence is not pending" 
+            (Just (txHash tx1, TxPending)))
     spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 1" 1) . length
     checkAccountBalance 0 "acc1" (Balance 10000000) 0
@@ -565,7 +570,8 @@ testInDoubleSpend = do
 
     -- Import second conflicting transaction
     importTx tx2 NetworkSource >>=
-        liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
+        liftIO . (assertEqual "Confidence is not pending" 
+            (Just (txHash tx2, TxPending)))
     spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 0" 0) . length
     checkAccountBalance 0 "acc1" BalanceConflict 2
@@ -663,7 +669,8 @@ testDoubleSpendChain = do
 
     -- Import first transaction
     importTx tx1 NetworkSource >>=
-        liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
+        liftIO . (assertEqual "Confidence is not pending" 
+            (Just (txHash tx1, TxPending)))
     spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 1" 1) . length
     checkAccountBalance 0 "acc1" (Balance 10000000) 0
@@ -671,7 +678,8 @@ testDoubleSpendChain = do
 
     -- Now we spend our new coins
     importTx tx2 NetworkSource >>=
-        liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
+        liftIO . (assertEqual "Confidence is not pending" 
+            (Just (txHash tx2, TxPending)))
     spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 2" 2) . length
     checkAccountBalance 0 "acc1" (Balance 9990000) 0
@@ -695,7 +703,8 @@ testDoubleSpendChain = do
 
     -- Now let's add tx4 which is in conflict with tx1
     importTx tx4 NetworkSource >>=
-        liftIO . (assertEqual "Confidence is not dead" (Just TxDead))
+        liftIO . (assertEqual "Confidence is not dead" 
+            (Just (txHash tx4, TxDead)))
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -750,7 +759,8 @@ testDoubleSpendChain = do
 
     -- Now we add tx3 on top of tx2. It should be dead.
     importTx tx3 NetworkSource >>=
-        liftIO . (assertEqual "Confidence is not dead" (Just TxDead))
+        liftIO . (assertEqual "Confidence is not dead" 
+            (Just (txHash tx3, TxDead)))
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -818,7 +828,8 @@ testDoubleSpendGroup = do
     
     -- Import funding transaction
     importTx fundingTx NetworkSource >>=
-        liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
+        liftIO . (assertEqual "Confidence is not pending" 
+            (Just (txHash fundingTx, TxPending)))
     spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 2" 2) . length
     checkAccountBalance 0 "acc1" (Balance 30000000) 0
@@ -826,7 +837,8 @@ testDoubleSpendGroup = do
 
     -- Import first transaction
     importTx tx1 NetworkSource >>=
-        liftIO . (assertEqual "Confidence is not pending" (Just TxPending))
+        liftIO . (assertEqual "Confidence is not pending" 
+            (Just (txHash tx1, TxPending)))
     spendableCoins "acc1" 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 2" 2) . length
     checkAccountBalance 0 "acc1" (Balance 29990000) 0
@@ -858,7 +870,8 @@ testDoubleSpendGroup = do
 
     -- Import second transaction
     importTx tx2 NetworkSource >>=
-        liftIO . (assertEqual "Confidence is not TxDead" (Just TxDead))
+        liftIO . (assertEqual "Confidence is not TxDead" 
+            (Just (txHash tx2, TxDead)))
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -876,7 +889,8 @@ testDoubleSpendGroup = do
 
     -- Import third transaction
     importTx tx3 NetworkSource >>=
-        liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+        liftIO . (assertEqual "Confidence is not TxPending" 
+            (Just (txHash tx3, TxPending)))
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -990,13 +1004,16 @@ testWalletDoubleSpend = do
         _ <- newAddrs "acc1" 5
         -- Import funding transaction
         importTx fundingTx NetworkSource >>=
-            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+            liftIO . (assertEqual "Confidence is not TxPending" 
+                (Just (txHash fundingTx, TxPending)))
         -- Import first transaction
         importTx tx1 NetworkSource >>=
-            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+            liftIO . (assertEqual "Confidence is not TxPending" 
+                (Just (txHash tx1, TxPending)))
         -- Import second transaction
         importTx tx2 NetworkSource >>=
-            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+            liftIO . (assertEqual "Confidence is not TxPending" 
+                (Just (txHash tx2, TxPending)))
         -- Importing this transaction as a wallet transaction should fail as it
         -- double spends a coin
         importTx tx3 WalletSource 
@@ -1008,13 +1025,16 @@ testWalletDoubleSpend = do
         _ <- newAddrs "acc1" 5
         -- Import funding transaction
         importTx fundingTx NetworkSource >>=
-            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+            liftIO . (assertEqual "Confidence is not TxPending" 
+                (Just (txHash fundingTx, TxPending)))
         -- Import first transaction
         importTx tx1 NetworkSource >>=
-            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+            liftIO . (assertEqual "Confidence is not TxPending" 
+                (Just (txHash tx1, TxPending)))
         -- Import second transaction
         importTx tx2 NetworkSource >>=
-            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+            liftIO . (assertEqual "Confidence is not TxPending" 
+                (Just (txHash tx2, TxPending)))
         -- Importing this transaction as a wallet transaction should fail as it
         -- builds on top of a conflicting chain
         importTx tx4 WalletSource 
@@ -1027,13 +1047,16 @@ testWalletDoubleSpend = do
         _ <- newAddrs "acc1" 5
         -- Import funding transaction
         importTx fundingTx NetworkSource >>=
-            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+            liftIO . (assertEqual "Confidence is not TxPending" 
+                (Just (txHash fundingTx, TxPending)))
         -- Import first transaction
         importTx tx1 NetworkSource >>=
-            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+            liftIO . (assertEqual "Confidence is not TxPending" 
+                (Just (txHash tx1, TxPending)))
         -- Import second transaction
         importTx tx2 NetworkSource >>=
-            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+            liftIO . (assertEqual "Confidence is not TxPending" 
+                (Just (txHash tx2, TxPending)))
 
         -- confirm the first transaction
         importBlock (BestBlock $ fakeNode 0 0x01) [txHash fundingTx]
@@ -1047,7 +1070,8 @@ testWalletDoubleSpend = do
 
         -- now we can import tx3
         importTx tx3 WalletSource >>=
-            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+            liftIO . (assertEqual "Confidence is not TxPending" 
+                (Just (txHash tx3, TxPending)))
         liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx3)
             >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxPending) 
         liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
@@ -1061,7 +1085,8 @@ testWalletDoubleSpend = do
 
         -- and tx4
         importTx tx4 WalletSource >>=
-            liftIO . (assertEqual "Confidence is not TxPending" (Just TxPending))
+            liftIO . (assertEqual "Confidence is not TxPending" 
+                (Just (txHash tx4, TxPending)))
         liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx4)
             >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxPending) 
         liftM (map (outPointHash . coinOutPoint)) (spendableCoins "acc1" 0)
@@ -1096,7 +1121,7 @@ testImportMultisig = do
     checkAccountBalance 0 "ms1" (Balance 10000000) 0
     checkSpendableBalance 0 "ms1" 10000000
 
-    (h,c) <- sendTx "ms1" 0 [(fromJust $ base58ToAddr "37DDNVZZqU5i8XjyKyvZZv7edjCn3XrRsm", 5000000)] 10000
+    (h,c,_) <- sendTx "ms1" 0 [(fromJust $ base58ToAddr "37DDNVZZqU5i8XjyKyvZZv7edjCn3XrRsm", 5000000)] 10000
     liftIO $ assertEqual "Completed status is not False" False c
     liftM (dbTxConfidence . entityVal) (getTxEntity h)
         >>= liftIO . (assertEqual "Confidence is not TxOffline" TxOffline) 
@@ -1107,7 +1132,7 @@ testImportMultisig = do
     checkAccountBalance 0 "ms1" (Balance 9990000) 0
     checkSpendableBalance 0 "ms1" 0
 
-    (h2,c2) <- signWalletTx "ms1" toImport 
+    (h2,c2,_) <- signWalletTx "ms1" toImport 
     liftIO $ assertEqual "Completed status is not True" True c2
     liftM (dbTxConfidence . entityVal) (getTxEntity h2)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
@@ -1142,7 +1167,7 @@ testImportMultisig2 = do
     checkAccountBalance 0 "ms1" (Balance 10000000) 0
     checkSpendableBalance 0 "ms1" 10000000
 
-    (h,c) <- signWalletTx "ms1" toSign 
+    (h,c,_) <- signWalletTx "ms1" toSign 
     liftIO $ assertEqual "Completed status is not True" True c
     liftM (dbTxConfidence . entityVal) (getTxEntity h)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 

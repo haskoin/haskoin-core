@@ -71,8 +71,8 @@ data WalletException = WalletException String
 instance Exception WalletException
 
 data SigBlob = SigBlob
-    { sigBlobData :: [(OutPoint, ScriptOutput, Bool, KeyIndex)]
-    , sigBlobTx     :: Tx
+    { sigBlobData :: ![(OutPoint, ScriptOutput, Bool, KeyIndex)]
+    , sigBlobTx   :: !Tx
     } deriving (Eq, Show, Read)
 
 instance ToJSON SigBlob where
@@ -131,8 +131,8 @@ instance FromJSON TxSource where
 
 -- TODO: Add NFData instances for all those types
 data Wallet = Wallet
-    { walletName      :: String
-    , walletMasterKey :: MasterKey
+    { walletName      :: !String
+    , walletMasterKey :: !MasterKey
     } deriving (Eq, Show, Read)
 
 instance ToJSON Wallet where
@@ -157,28 +157,28 @@ printWallet (Wallet n k) = unlines
 
 data Account
     = RegularAccount 
-        { accountName   :: String
-        , accountWallet :: String
-        , accountIndex  :: KeyIndex
-        , accountKey    :: AccPubKey
+        { accountName   :: !String
+        , accountWallet :: !String
+        , accountIndex  :: !KeyIndex
+        , accountKey    :: !AccPubKey
         }
     | MultisigAccount
-        { accountName     :: String
-        , accountWallet   :: String
-        , accountIndex    :: KeyIndex
-        , accountRequired :: Int
-        , accountTotal    :: Int
-        , accountKeys     :: [XPubKey]
+        { accountName     :: !String
+        , accountWallet   :: !String
+        , accountIndex    :: !KeyIndex
+        , accountRequired :: !Int
+        , accountTotal    :: !Int
+        , accountKeys     :: ![XPubKey]
         }
     | ReadAccount
-        { accountName :: String
-        , accountKey  :: AccPubKey
+        { accountName :: !String
+        , accountKey  :: !AccPubKey
         }
     | ReadMSAccount
-        { accountName     :: String
-        , accountRequired :: Int
-        , accountTotal    :: Int
-        , accountKeys     :: [XPubKey]
+        { accountName     :: !String
+        , accountRequired :: !Int
+        , accountTotal    :: !Int
+        , accountKeys     :: ![XPubKey]
         }
     deriving (Eq, Show, Read)
 
@@ -273,7 +273,7 @@ printAccount a = case a of
             (unwords [ "Keys   :", xPubExport $ head ks ]) : 
                 (map (\x -> unwords ["        ", xPubExport x]) $ tail ks)
 
-data Balance = BalanceConflict | Balance Word64
+data Balance = BalanceConflict | Balance !Word64
     deriving (Eq, Show, Read)
 
 instance ToJSON Balance where
@@ -297,12 +297,12 @@ printBalance b = case b of
     Balance x       -> show x
 
 data BalanceAddress = BalanceAddress
-    { balanceAddress :: PaymentAddress
-    , finalBalance   :: Balance
-    , totalReceived  :: Balance
-    , fundingTxs     :: [TxHash]
-    , spendingTxs    :: [TxHash]
-    , conflictTxs    :: [TxHash]
+    { balanceAddress :: !PaymentAddress
+    , finalBalance   :: !Balance
+    , totalReceived  :: !Balance
+    , fundingTxs     :: ![TxHash]
+    , spendingTxs    :: ![TxHash]
+    , conflictTxs    :: ![TxHash]
     } deriving (Eq, Show, Read)
 
 instance ToJSON BalanceAddress where
@@ -327,9 +327,9 @@ instance FromJSON BalanceAddress where
     parseJSON _ = mzero
 
 data PaymentAddress = PaymentAddress 
-    { paymentAddress :: Address
-    , addressLabel   :: String
-    , addressIndex   :: KeyIndex
+    { paymentAddress :: !Address
+    , addressLabel   :: !String
+    , addressIndex   :: !KeyIndex
     } deriving (Eq, Show, Read)
 
 instance ToJSON PaymentAddress where
@@ -362,9 +362,9 @@ printAddress (BalanceAddress (PaymentAddress a l i) fb _ ft st ct) =
         ]
 
 data RecipientAddress = RecipientAddress
-    { recipientAddress :: Address
-    , recipientLabel   :: String
-    , recipientIsLocal :: Bool
+    { recipientAddress :: !Address
+    , recipientLabel   :: !String
+    , recipientIsLocal :: !Bool
     } deriving (Eq, Show, Read)
 
 instance ToJSON RecipientAddress where
@@ -391,14 +391,14 @@ printRecipientAddress (RecipientAddress a l lo) = unwords $ concat
     ] 
 
 data AccTx = AccTx
-    { accTxHash           :: TxHash
-    , accTxRecipients     :: [RecipientAddress]
-    , accTxValue          :: Int64
-    , accTxConfidence     :: TxConfidence
-    , accIsCoinbase       :: Bool
-    , accTxConfirmations  :: Int
-    , accReceivedDate     :: UTCTime
-    , accConfirmationDate :: Maybe Word32
+    { accTxHash           :: !TxHash
+    , accTxRecipients     :: ![RecipientAddress]
+    , accTxValue          :: !Int64
+    , accTxConfidence     :: !TxConfidence
+    , accIsCoinbase       :: !Bool
+    , accTxConfirmations  :: !Int
+    , accReceivedDate     :: !UTCTime
+    , accConfirmationDate :: !(Maybe Word32)
     } deriving (Eq, Show, Read)
 
 instance ToJSON AccTx where

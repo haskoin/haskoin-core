@@ -30,7 +30,7 @@ it with `hw start`.
   Get an account balance in satoshi
 - [/api/accounts/{name}/spendablebalance](#get-apiaccountsnamespendablebalance) (GET)  
   Get an account spendable balance in satoshi
-- [/api/txs](#get-apitxs) (PUT)  
+- [/api/txs](#put-apitxs) (PUT)  
   Import transactions
 - [/api/txs/{txhash}](#get-apitxstxhash) (GET)  
   Get a full transaction by transaction id
@@ -680,7 +680,7 @@ signed), an additional proposition field will be included which is the
 original transaction with all input scripts blanked out. You can give the
 proposition to the other keys holders in a multisig account for them to sign,
 then merge all the signed propositions back into the wallet using the
-[import resource](#put-apitxs)
+[import resource](#put-apitxs).
 
 ```json
 {

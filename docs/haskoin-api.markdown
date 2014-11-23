@@ -30,6 +30,8 @@ it with `hw start`.
   Get an account balance in satoshi
 - [/api/accounts/{name}/spendablebalance](#get-apiaccountsnamespendablebalance) (GET)  
   Get an account spendable balance in satoshi
+- [/api/txs](#get-apitxs) (PUT)  
+  Import transactions
 - [/api/txs/{txhash}](#get-apitxstxhash) (GET)  
   Get a full transaction by transaction id
 - [/api/node](#post-apinode)  (POST)  
@@ -222,7 +224,7 @@ the resource [/api/accounts/{name}/keys](#post-apiaccountsnamekeys).
 "accountname": "account2",
 "required": 2,
 "total": 3,
-"keys": [ "xpub1...", ... ]
+"keys": [ "xpub1..." ]
 }
 ```
   
@@ -254,7 +256,7 @@ at a later time through the resource
 "accountname": "account2",
 "required": 2,
 "total": 3,
-"keys": [ "xpub1...", ... ]
+"keys": [ "xpub1..." ]
 }
 ```
   
@@ -291,7 +293,7 @@ using this resource.  Adding too many keys will result in a failure.
 A JSON list of extended public keys:
 
 ```json
-  [ "xpub1...", "xpub2", ... ]
+  [ "xpub1...", "xpub2..." ]
 ```
 
 #### Output
@@ -673,12 +675,18 @@ coins that will be spent.
 ##### Output
 
 The resulting transaction hash and a status indicating if the transaction is
-complete.
+complete. If the complete flag is false (the transaction is still partially
+signed), an additional proposition field will be included which is the 
+original transaction with all input scripts blanked out. You can give the
+proposition to the other keys holders in a multisig account for them to sign,
+then merge all the signed propositions back into the wallet using the
+[import resource](#put-apitxs)
 
 ```json
 {
   "txhash": "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c",
-  "complete": true
+  "complete": false,
+  "proposition": "0100000001a65337..." 
 }
 ```
 
@@ -704,12 +712,15 @@ A JSON object containing the raw transaction to sign in base16 (Hex):
 ##### Output
 
 The resulting transaction hash and a status indicating if the transaction is
-complete.
+complete. If the complete flag is false (the transaction is still partially
+signed), an additional proposition field will be included which is the original
+transaction with all input scripts blanked out.
 
 ```json
 {
   "txhash": "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f",
-  "complete": true
+  "complete": false,
+  "proposition": "0100000001a65337..." 
 }
 ```
 
@@ -758,12 +769,15 @@ is a list of the following elements:
 ##### Output
 
 The resulting transaction and a status indicating if the transaction is
-complete.
+complete. If the complete flag is false (the transaction is still partially
+signed), an addition proposition field will be included which is the original
+transaction with all the input scripts blanked out.
 
 ```json
 {
   "tx": "0100000001a65337...",
-  "complete": true
+  "complete": false,
+  "proposition": "0100000001a65337..." 
 }
 ```
 
@@ -923,6 +937,40 @@ if he is a victim of a double spend or malleability attack.
 
 ```json
 { "balance": 3330000 }
+```
+
+### PUT /api/txs
+
+**Modes**: online, offline
+
+PUT a transaction to this resource to import it into the wallet. The main
+use case for this resource is to merge partially signed multisig transactions
+with existing ones in your wallet.
+
+#### Input
+
+The transaction to import:
+
+```json
+{
+  "type": "import",
+  "tx": "0100000001a65337..." 
+}
+```
+
+#### Output
+
+The resource will return the transaction hash and a completed flag. If the
+transaction is not complete (partially signed), an additional proposition
+field will be included which contains the original transaction with all
+input script blanked out.
+
+```json
+{ 
+  "txhash": "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f",
+  "complete": false,
+  "proposition": "0100000001a65337..." 
+}
 ```
 
 ### GET /api/txs/{txhash}

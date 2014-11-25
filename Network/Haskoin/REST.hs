@@ -10,6 +10,7 @@ module Network.Haskoin.REST
   ServerMode(..)
 , ServerConfig(..)
 , runServer
+, haskoinPort
 
   -- * REST Types
 , NewWallet(..) 

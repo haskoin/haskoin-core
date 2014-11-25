@@ -98,6 +98,7 @@ data Options = Options
     , optYaml     :: Bool
     , optPass     :: String
     , optDetach   :: Bool
+    , optProvider :: String
     , optBind     :: String
     , optPort     :: Int
     , optHosts    :: [(String, Int)]
@@ -124,6 +125,7 @@ defaultOptions = Options
     , optYaml     = False
     , optPass     = ""
     , optDetach   = False
+    , optProvider = concat [ "http://localhost:", show haskoinPort ]
     , optBind     = configBind def
     , optPort     = configPort def
     , optHosts    = configBitcoinHosts def
@@ -150,6 +152,7 @@ instance ToJSON Options where
         , "yaml"           .= optYaml opt
         , "passphrase"     .= optPass opt
         , "detach"         .= optDetach opt
+        , "provider"       .= optProvider opt
         , "bind"           .= optBind opt
         , "port"           .= optPort opt
         , "bitcoin-hosts"  .= (map f $ optHosts opt)
@@ -180,6 +183,7 @@ instance FromJSON Options where
         <*> o .: "yaml"
         <*> o .: "passphrase"
         <*> o .: "detach"
+        <*> o .: "provider"
         <*> o .: "bind"
         <*> o .: "port"
         <*> (mapM f =<< o .: "bitcoin-hosts")
@@ -225,9 +229,12 @@ options =
     , Option ['d'] ["detach"]
         (NoArg $ \opts -> return opts{ optDetach = True })
         "Detach the process from the terminal"
-    , Option ['p'] ["passphrase"]
+    , Option ['x'] ["passphrase"]
         (ReqArg (\s opts -> return opts{ optPass = s }) "PASSPHRASE")
         "Optional Passphrase for mnemonic"
+    , Option ['p'] ["provider"]
+        (ReqArg (\p opts -> return opts{ optProvider = p }) "URL")
+        "URL of the API server"
     , Option ['h'] ["host"]
         (ReqArg (\h opts -> return opts{ optBind = h }) "HOST")
         "API server bind address"
@@ -689,7 +696,7 @@ sendRequest :: String              -- Path
             -> Options             -- Options
             -> IO BL.ByteString    -- Response
 sendRequest p m qs bodyM opts = withManager $ \manager -> do
-    let url = concat [ "http://", optBind opts, ":" , show $ optPort opts , p ]
+    let url = concat [ optProvider opts, p ]
     urlReq <- parseUrl url
     let req' = setQueryString qs $ urlReq
                    { method         = m

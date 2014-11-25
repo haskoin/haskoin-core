@@ -6,6 +6,7 @@ module Network.Haskoin.REST.Types
 , AddressPageRes(..)
 , TxPageRes(..)
 , AddressData(..)
+, AccTxAction(..)
 , TxAction(..)
 , TxHashStatusRes(..)
 , TxRes(..)
@@ -55,7 +56,7 @@ instance FromJSON NewWallet where
         <*> o .: "passphrase"
         <*> o .:? "mnemonic"
 
-data MnemonicRes = MnemonicRes Mnemonic
+data MnemonicRes = MnemonicRes !Mnemonic
     deriving (Eq, Read, Show)
 
 instance ToJSON MnemonicRes where
@@ -161,13 +162,13 @@ instance FromJSON AddressData where
     parseJSON = withObject "addressdata" $ \o ->
         AddressData <$> o .: "label"
 
-data TxAction
+data AccTxAction
     = SendCoins ![(Address, Word64)] !Word64 !Word32
     | SignTx !Tx
     | SignSigBlob !SigBlob
     deriving (Eq, Read, Show)
 
-instance ToJSON TxAction where
+instance ToJSON AccTxAction where
     toJSON action = case action of
         SendCoins rs f m -> object
             [ "type"        .= String "send"
@@ -184,8 +185,8 @@ instance ToJSON TxAction where
             , "sigblob"     .= blob
             ]
 
-instance FromJSON TxAction where
-    parseJSON = withObject "txaction" $ \o -> do
+instance FromJSON AccTxAction where
+    parseJSON = withObject "acctxaction" $ \o -> do
         (String t) <- o .: "type"
         case t of
             "send" -> SendCoins
@@ -198,19 +199,39 @@ instance FromJSON TxAction where
                 <$> o .: "sigblob"
             _ -> mzero
 
-data TxHashStatusRes = TxHashStatusRes !TxHash !Bool
+data TxAction = ImportTx !Tx
+    deriving (Eq, Show, Read)
+
+instance ToJSON TxAction where
+    toJSON action = case action of
+        ImportTx tx -> object 
+            [ "type" .= String "import"
+            , "tx" .= tx 
+            ]
+
+instance FromJSON TxAction where
+    parseJSON = withObject "txaction" $ \o -> do
+        (String t) <- o .: "type"
+        case t of
+            "import" -> ImportTx <$> o .: "tx"
+            _ -> mzero
+
+data TxHashStatusRes = TxHashStatusRes !TxHash !Bool !(Maybe Tx)
     deriving (Eq, Show, Read)
 
 instance ToJSON TxHashStatusRes where
-    toJSON (TxHashStatusRes h b) = object
-        [ "txhash"   .= h
-        , "complete" .= b
+    toJSON (TxHashStatusRes h b p) = object $ concat
+        [ [ "txhash"   .= h
+          , "complete" .= b
+          ]
+        , if isJust p then [ "proposition" .= (fromJust p) ] else []
         ]
 
 instance FromJSON TxHashStatusRes where
     parseJSON = withObject "txhashstatusres" $ \o ->
-        TxHashStatusRes <$> o .: "txhash"
-                        <*> o .: "complete"
+        TxHashStatusRes <$> o .:  "txhash"
+                        <*> o .:  "complete"
+                        <*> o .:? "proposition"
 
 data TxRes = TxRes !Tx deriving (Eq, Show, Read)
 
@@ -220,19 +241,22 @@ instance ToJSON TxRes where
 instance FromJSON TxRes where
     parseJSON = withObject "txres" $ \o -> TxRes <$> o .: "tx"
         
-data TxStatusRes = TxStatusRes !Tx !Bool
+data TxStatusRes = TxStatusRes !Tx !Bool !(Maybe Tx)
     deriving (Eq, Show, Read)
 
 instance ToJSON TxStatusRes where
-    toJSON (TxStatusRes tx b) = object
-        [ "tx"       .= tx
-        , "complete" .= b
+    toJSON (TxStatusRes tx b p) = object $ concat
+        [ [ "tx"       .= tx
+          , "complete" .= b
+          ]
+        , if isJust p then [ "proposition" .= (fromJust p) ] else []
         ]
 
 instance FromJSON TxStatusRes where
     parseJSON = withObject "txstatusres" $ \o ->
         TxStatusRes <$> o .: "tx"
                     <*> o .: "complete"
+                    <*> o .:? "proposition"
 
 data BalanceRes = BalanceRes !Balance ![TxHash]
     deriving (Eq, Show, Read)

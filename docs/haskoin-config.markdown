@@ -50,6 +50,18 @@ Fee to pay the network per kilobyte of transaction data.
 
 Default: 10000
 
+### minconf
+
+Minimum number of confirmations to use in various commands.
+
+Default: 0
+
+### internal
+
+Display internal addresses instead of external ones.
+
+Default: false
+
 ### bind
 
 Bind server to this network interface.  Defaults to IPv4 localhost.  For
@@ -113,3 +125,4 @@ Default: false
 Output of commands in [YAML](www.yaml.org) format.
 
 Default: false
+

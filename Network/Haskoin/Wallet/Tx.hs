@@ -43,6 +43,7 @@ import Data.Maybe (catMaybes, isNothing, isJust, fromJust)
 import Data.Either (rights)
 import qualified Data.List as L ((\\), nub)
 import qualified Data.Map.Strict as M (toList, empty, lookup, insert)
+import qualified Data.ByteString as BS (empty)
 
 import Database.Persist 
     ( PersistStore
@@ -188,7 +189,7 @@ txPage name pageNum resPerPage
 importTx :: (MonadIO m, PersistQuery b, PersistUnique b) 
          => Tx        -- ^ Transaction to import
          -> TxSource  -- ^ Where does the transaction come from
-         -> ReaderT b m (Maybe TxConfidence)
+         -> ReaderT b m (Maybe (TxHash, TxConfidence))
          -- ^ New transaction entries created
 importTx tx source = do
     txM <- getBy $ UniqueTx tid
@@ -201,8 +202,8 @@ importTx tx source = do
             if isOffline && source == NetworkSource
                 then do
                     replace tkey $ dbtx{ dbTxConfidence = TxPending }
-                    return $ Just TxPending
-                else return $ Just TxOffline
+                    return $ Just (tid, TxPending)
+                else return $ Just (tid, TxOffline)
         else do
             isOrphan <- isOrphanTx tx
             if not isOrphan then addTx tx source else do
@@ -213,37 +214,57 @@ importTx tx source = do
     tid = txHash tx
 
 addTx :: (MonadIO m, PersistQuery b, PersistUnique b) 
-      => Tx -> TxSource -> ReaderT b m (Maybe TxConfidence)
-addTx tx source = do
+      => Tx -> TxSource -> ReaderT b m (Maybe (TxHash, TxConfidence))
+addTx initTx source = do
     -- A non-network transaction can not double spend coins
-    checkDoubleSpend tx source
+    checkDoubleSpend initTx source
     -- Retrieve the coins we have from the transaction inputs
-    coinsE <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
+    coinsE <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn initTx)
     let coins = map entityVal coinsE
+    -- Merge the transaction with existing ones if possible
+    -- The new transaction could have the same txid as an existing offline
+    -- tx but we remove them anyway in the next step.
+    tx <- mergeOfflineTxs source initTx $ map dbCoinValue coins
+    -- We must remove offline transactions which spend the same coins as us
+    removeOfflineTxs $ map prevOutput $ txIn tx
     -- Import new coins 
+    let tid = txHash tx
     outCoins <- liftM catMaybes $ mapM (importCoin tid) $ zip (txOut tx) [0..]
     -- Ignore this transaction if it is not ours
     if null coins && null outCoins then return Nothing else do
         time <- liftIO getCurrentTime
-        -- We must remove offline transactions which spend the same coins as us
-        removeOfflineTxs $ map prevOutput $ txIn tx
         -- Mark all inputs of this transaction as spent
         forM_ (txIn tx) $ \(TxIn op _ _) -> insert_ $ DbSpentCoin op tid time
         -- Update conflicts with other transactions
         conf <- updateConflicts tx (map dbCoinValue coins) source 
         -- Save the transaction 
         let isCB = isCoinbaseTx tx
-        insert_ $ DbTx tid tx conf Nothing Nothing isCB time 
+        insert_ $ DbTx tid tx conf Nothing Nothing isCB (nosigTxHash tx) time 
         -- Build transactions that report on individual accounts
         let dbAccTxs = buildAccTx tx coins outCoins time
         -- insert account transactions into database
         forM_ dbAccTxs insert_
         -- Re-import orphans
         tryImportOrphans
-        return $ Just conf
+        return $ Just (tid, conf)
   where
-    tid              = txHash tx
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
+
+mergeOfflineTxs :: (MonadIO m, PersistUnique b, PersistQuery b)
+                => TxSource -> Tx -> [Coin] -> ReaderT b m Tx
+mergeOfflineTxs NetworkSource tx _ = return tx
+mergeOfflineTxs _ tx [] = return tx
+mergeOfflineTxs _ tx coins = do
+    -- Find offline transactions with the same nosigTxHash
+    res <- selectList [ DbTxConfidence ==. TxOffline
+                      , DbTxNosigHash ==. (nosigTxHash tx)
+                      ] []
+    return $ foldl f tx $ map (dbTxValue . entityVal) res
+  where
+    ops = map (\c -> (coinScript c, coinOutPoint c)) coins
+    f t1 t2 = case mergeTxs [t1, t2] ops of
+        Right (mTx, _) -> mTx
+        _              -> t1
 
 checkDoubleSpend :: (MonadIO m, PersistUnique b, PersistQuery b)
                  => Tx -> TxSource -> ReaderT b m ()
@@ -492,18 +513,19 @@ sendTx :: (MonadIO m, PersistUnique b, PersistQuery b)
        -> Word32              -- ^ Minimum confirmations
        -> [(Address,Word64)]  -- ^ List of recipient addresses and amounts
        -> Word64              -- ^ Fee per 1000 bytes 
-       -> ReaderT b m (TxHash, Bool) -- ^ (Payment transaction, Completed flag)
+       -> ReaderT b m (TxHash, Bool, Maybe Tx) 
+            -- ^ (Payment transaction, Completed flag, Proposition)
 sendTx name minConf dests fee = do
     acc <- getAccount name
     tx  <- buildUnsignedTx name minConf dests fee
-    (tx',_) <- if isReadAccount acc 
-        then return (tx,False)
-        else do 
-            dat <- buildSigBlob name tx 
-            signSigBlob name dat
-    confM <- importTx tx' WalletSource
-    let conf = fromJust confM
-    return (txHash tx', isJust confM && conf == TxPending)
+    (signedTx, _, prop) <- if isReadAccount acc 
+        then return (tx, False, Just tx)
+        else signSigBlob name =<< buildSigBlob name tx
+    confM <- importTx signedTx WalletSource
+    let (tid, conf) = fromJust confM
+    when (isNothing confM) $ liftIO $ throwIO $
+        WalletException "Transaction could not be imported in the wallet"
+    return (tid, conf == TxPending, prop)
 
 -- | Try to sign the inputs of an existing transaction using the private keys
 -- of an account. This command will return an indication if the transaction is
@@ -514,18 +536,20 @@ sendTx name minConf dests fee = do
 signWalletTx :: (MonadIO m, PersistUnique b, PersistQuery b)
              => AccountName      -- ^ Account name
              -> Tx               -- ^ Transaction to sign 
-             -> ReaderT b m (TxHash, Bool)
+             -> ReaderT b m (TxHash, Bool, Maybe Tx)
              -- ^ (Signed transaction, Completed flag)
 signWalletTx name tx = do
     acc <- getAccount name
-    (tx',_) <- if isReadAccount acc 
-        then return (tx,False)
-        else do 
-            dat <- buildSigBlob name tx 
-            signSigBlob name dat
-    confM <- importTx tx' UnknownSource
-    let conf = fromJust confM
-    return (txHash tx', isJust confM && conf == TxPending)
+    (signedTx, _, prop) <- if isReadAccount acc 
+        then return (tx, False, Just p)
+        else signSigBlob name =<< buildSigBlob name tx
+    confM <- importTx signedTx UnknownSource
+    let (tid, conf) = fromJust confM
+    when (isNothing confM) $ liftIO $ throwIO $
+        WalletException "Transaction is not relevant to this wallet"
+    return (tid, conf == TxPending, prop)
+  where
+    p = tx{ txIn = map (\ti -> ti{ scriptInput = BS.empty } ) $ txIn tx }
 
 -- | Retrieve the 'OfflineSignData' that can be used to sign a transaction from
 -- an offline wallet
@@ -592,7 +616,7 @@ buildSigBlob name tx = do
 signSigBlob :: (MonadIO m, PersistUnique b, PersistQuery b)
             => AccountName
             -> SigBlob
-            -> ReaderT b m (Tx, Bool)
+            -> ReaderT b m (Tx, Bool, Maybe Tx)
 signSigBlob name (SigBlob dat tx) = do
     acc <- getAccount name  
     when (isReadAccount acc) $ liftIO $ throwIO $
@@ -605,9 +629,13 @@ signSigBlob name (SigBlob dat tx) = do
         prvKeys = map (xPrvKey . getAddrPrvKey . fromJust . f) dat
     sigi <- mapM toSigi dat
     let resE = detSignTx tx sigi prvKeys
+        (signedTx, complete) = fromRight resE
     when (isLeft resE) $ liftIO $ throwIO $ WalletException $ fromLeft resE
-    return $ fromRight resE
+    let proposition = if complete then Nothing else Just p
+    return (signedTx, complete, proposition)
   where
+    -- Proposition is the original transaction without the signatures
+    p = tx{ txIn = map (\ti -> ti{ scriptInput = BS.empty }) $ txIn tx }
     toSigi (op, so, i,k) = do
         rdm <- getRedeemIndex name k i 
         -- TODO: Here we override the SigHash to be SigAll False all the time.

@@ -18,6 +18,7 @@ module Network.Haskoin.Test.Transaction
 , ArbitraryMSSigInput(..)
 , ArbitrarySHSigInput(..)
 , ArbitrarySigningData(..)
+, ArbitraryPartialTxs(..)
 ) where
 
 import Test.QuickCheck 
@@ -26,6 +27,7 @@ import Test.QuickCheck
     , vectorOf
     , oneof
     , choose
+    , elements
     )
 
 import Control.Monad (forM)
@@ -42,6 +44,7 @@ import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Constants
+import Network.Haskoin.Util
 
 -- | Arbitrary amount of Satoshi as Word64 (Between 1 and 21e14)
 newtype ArbitrarySatoshi = ArbitrarySatoshi Word64
@@ -262,6 +265,43 @@ instance Arbitrary ArbitrarySigningData where
       where
         f (ArbitrarySigInput s ks) = (s,ks)
 
+data ArbitraryPartialTxs = 
+    ArbitraryPartialTxs [Tx] [(ScriptOutput, OutPoint, Int, Int)]
+    deriving (Eq, Show, Read)
 
+instance Arbitrary ArbitraryPartialTxs where
+    arbitrary = do
+        tx <- arbitraryEmptyTx
+        res <- forM (map prevOutput $ txIn tx) $ \op -> do
+            (so, rdmM, prvs, m, n) <- arbitraryData
+            txs <- mapM (singleSig so rdmM tx op) prvs
+            return (txs, (so, op, m, n))
+        return $ ArbitraryPartialTxs (concat $ map fst res) (map snd res)
+      where
+        singleSig so rdmM tx op prv = do
+            ArbitraryValidSigHash sh <- arbitrary
+            let sigi = SigInput so op sh rdmM
+            return $ fst $ fromRight $ detSignTx tx [sigi] [prv]
+        arbitraryData = do
+            ArbitraryMSParam m n <- arbitrary
+            nPrv <- choose (m,n)
+            keys <- vectorOf n $ 
+                (\(ArbitraryPubKey k p) -> (k, p)) <$> arbitrary
+            perm <- choose (0, length keys - 1)
+            let pubKeys = map snd keys
+                prvKeys = take nPrv $ permutations (map fst keys) !! perm
+            let so = PayMulSig pubKeys m
+            elements [ (so, Nothing, prvKeys, m, n)
+                     , (PayScriptHash $ scriptAddr so, Just so, prvKeys, m, n)
+                     ]
+        arbitraryEmptyTx = do
+            v <- arbitrary
+            no <- choose (1,5)
+            ni <- choose (1,5)
+            outs <- vectorOf no $ (\(ArbitraryTxOut o) -> o) <$> arbitrary
+            ops <- vectorOf ni $ (\(ArbitraryOutPoint op) -> op) <$> arbitrary
+            t <- arbitrary
+            s <- arbitrary
+            return $ Tx v (map (\op -> TxIn op BS.empty s) ops) outs t
 
 

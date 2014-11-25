@@ -67,22 +67,20 @@ instance FromJSON MnemonicRes where
         MnemonicRes <$> o .: "mnemonic"
 
 data NewAccount
-    = NewAccount !WalletName !AccountName
-    | NewMSAccount !WalletName !AccountName !Int !Int ![XPubKey]
+    = NewAccount !AccountName
+    | NewMSAccount !AccountName !Int !Int ![XPubKey]
     | NewReadAccount !AccountName !XPubKey
     | NewReadMSAccount !AccountName !Int !Int ![XPubKey]
     deriving (Eq, Read, Show)
 
 instance ToJSON NewAccount where
     toJSON acc = case acc of
-        NewAccount w n -> object
+        NewAccount n -> object
             [ "type"        .= String "regular"
-            , "walletname"  .= w
             , "accountname" .= n
             ]
-        NewMSAccount w n r t ks -> object
+        NewMSAccount n r t ks -> object
             [ "type"        .= String "multisig"
-            , "walletname"  .= w
             , "accountname" .= n
             , "required"    .= r
             , "total"       .= t
@@ -104,22 +102,17 @@ instance ToJSON NewAccount where
 instance FromJSON NewAccount where
     parseJSON = withObject "newaccount" $ \o -> do
         (String t) <- o .: "type"
+        n <- o .: "accountname"
         case t of
-            "regular" -> NewAccount
-                <$> o .: "walletname"
-                <*> o .: "accountname"
-            "multisig" -> NewMSAccount
-                <$> o .: "walletname"
-                <*> o .: "accountname"
-                <*> o .: "required"
+            "regular" -> return $ NewAccount n
+            "multisig" -> NewMSAccount n
+                <$> o .: "required"
                 <*> o .: "total"
                 <*> (o .: "keys" >>= maybe mzero return . mapM xPubImport)
-            "read" -> NewReadAccount
-                <$> o .: "accountname"
-                <*> (o .: "key" >>= maybe mzero return . xPubImport)
-            "readmultisig" -> NewReadMSAccount
-                <$> o .: "accountname"
-                <*> o .: "required"
+            "read" -> NewReadAccount n
+                <$> (o .: "key" >>= maybe mzero return . xPubImport)
+            "readmultisig" -> NewReadMSAccount n
+                <$> o .: "required"
                 <*> o .: "total"
                 <*> (o .: "keys" >>= maybe mzero return . mapM xPubImport)
             _ -> mzero

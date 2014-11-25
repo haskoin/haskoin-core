@@ -19,27 +19,29 @@ instance Arbitrary Account where
     arbitrary = oneof [reg, ms, rd, rdms]
       where
         reg = do
-            name <- arbitrary
             wallet <- arbitrary
+            name <- arbitrary
             k <- arbitrary
             ArbitraryAccPubKey _ _ pub <- arbitrary
-            return $ RegularAccount name wallet k pub
+            return $ RegularAccount wallet name k pub
         ms = do
-            name <- arbitrary
             wallet <- arbitrary
+            name <- arbitrary
             k <- arbitrary
             ArbitraryMSParam m n <- arbitrary
             keys <- vectorOf n (arbitrary >>= \(ArbitraryXPubKey _ p) -> return p)
-            return $ MultisigAccount name wallet k m n keys
+            return $ MultisigAccount wallet name k m n keys
         rd = do
+            wallet <- arbitrary
             name <- arbitrary
             ArbitraryAccPubKey _ _ key <- arbitrary
-            return $ ReadAccount name key
+            return $ ReadAccount wallet name key
         rdms = do
+            wallet <- arbitrary
             name <- arbitrary
             ArbitraryMSParam m n <- arbitrary
             keys <- vectorOf n (arbitrary >>= \(ArbitraryXPubKey _ p) -> return p)
-            return $ ReadMSAccount name m n keys
+            return $ ReadMSAccount wallet name m n keys
 
 instance Arbitrary Balance where
     arbitrary = oneof
@@ -110,7 +112,7 @@ instance Arbitrary MnemonicRes where
 
 instance Arbitrary NewAccount where
     arbitrary = oneof
-        [ NewAccount <$> arbitrary <*> arbitrary
+        [ NewAccount <$> arbitrary
         , NewReadAccount <$> arbitrary 
                          <*> ((\(ArbitraryXPubKey _ x) -> x) <$> arbitrary)
         , goms
@@ -118,11 +120,10 @@ instance Arbitrary NewAccount where
         ]
       where
         goms = do
-            wallet <- arbitrary
             name <- arbitrary
             ArbitraryMSParam m n <- arbitrary
             keys <- vectorOf n $ (\(ArbitraryXPubKey _ x) -> x) <$> arbitrary
-            return $ NewMSAccount wallet name m n keys
+            return $ NewMSAccount name m n keys
         goreadms = do
             name <- arbitrary
             ArbitraryMSParam m n <- arbitrary

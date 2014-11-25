@@ -11,6 +11,7 @@ module Network.Haskoin.Wallet.Model
 , DbAccountGeneric(..)
 , DbAddressGeneric(..)
 , DbCoinGeneric(..)
+, DbCoinAccountGeneric(..)
 , DbAccTxGeneric(..)
 , DbTxGeneric(..)
 , DbTxConflictGeneric(..)
@@ -22,6 +23,7 @@ module Network.Haskoin.Wallet.Model
 , DbAccountId
 , DbAddressId
 , DbCoinId
+, DbCoinAccountId
 , DbAccTxId
 , DbTxId
 , DbTxConflictId
@@ -66,12 +68,12 @@ DbWallet
     UniqueWalletName name
 
 DbAccount 
+    wallet DbWalletId
     name String
     value Account
     gap Int
-    wallet DbWalletId Maybe
     created UTCTime default=CURRENT_TIME
-    UniqueAccName name
+    UniqueAccWalletName wallet name
 
 DbAddress 
     value Address
@@ -80,7 +82,6 @@ DbAddress
     account DbAccountId
     internal Bool
     created UTCTime default=CURRENT_TIME
-    UniqueAddress value
     UniqueAddressAccount value account
     UniqueAddressKey account index internal
 
@@ -89,9 +90,14 @@ DbCoin
     pos Int
     value Coin
     address Address 
-    account DbAccountId
     created UTCTime default=CURRENT_TIME
     CoinOutPoint hash pos
+
+DbCoinAccount
+    coin DbCoinId
+    account DbAccountId
+    created UTCTime default=CURRENT_TIME
+    UniqueCoinAccount coin account
 
 DbSpentCoin
     key OutPoint

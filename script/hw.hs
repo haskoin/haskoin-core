@@ -61,8 +61,6 @@ import qualified Data.Aeson.Encode.Pretty as JSON
     , confIndent
     )
 
-import Network.HTTP.Client (applyBasicAuth)
-
 import Network.HTTP.Conduit 
     ( RequestBody(..)
     , Request(..)
@@ -70,12 +68,13 @@ import Network.HTTP.Conduit
     , httpLbs
     , withManager
     , setQueryString
+    , parseUrl
+    , applyBasicAuth
     )
 
 import Network.HTTP.Types (Status(..))
 
 import Network.Haskoin.REST
-import Network.Haskoin.REST.Types
 
 import Network.Haskoin.Wallet
 import Network.Haskoin.Wallet.Types
@@ -89,7 +88,8 @@ import Network.Haskoin.Constants
 type Args = [String]
 
 data Options = Options
-    { optCount    :: Int
+    { optWallet   :: String
+    , optCount    :: Int
     , optGap      :: Int
     , optFee      :: Word64
     , optMinConf  :: Word32
@@ -114,7 +114,8 @@ data Options = Options
 
 defaultOptions :: Options
 defaultOptions = Options
-    { optCount    = 5
+    { optWallet   = "main"
+    , optCount    = 5
     , optGap      = 10
     , optFee      = 10000
     , optMinConf  = 0
@@ -139,7 +140,8 @@ defaultOptions = Options
 
 instance ToJSON Options where
     toJSON opt = object $
-        [ "count"          .= optCount opt
+        [ "wallet"         .= optWallet opt
+        , "count"          .= optCount opt
         , "gap"            .= optGap opt
         , "fee"            .= optFee opt
         , "minconf"        .= optMinConf opt
@@ -168,7 +170,8 @@ instance ToJSON Options where
 
 instance FromJSON Options where
     parseJSON = withObject "options" $ \o -> Options
-        <$> o .: "count"
+        <$> o .: "wallet"
+        <*> o .: "count"
         <*> o .: "gap"
         <*> o .: "fee"
         <*> o .: "minconf"
@@ -197,7 +200,10 @@ instance FromJSON Options where
 
 options :: [OptDescr (Options -> IO Options)]
 options =
-    [ Option ['c'] ["config"]
+    [ Option ['w'] ["wallet"]
+        (ReqArg (\w opts -> return opts{ optWallet = w }) "WALLET")
+        "Which wallet to use (default: main)"
+    , Option ['c'] ["config"]
         (ReqArg (\g opts -> return opts{ optCfg = Just g }) "FILE")
         "Configuration file"
     , Option ['n'] ["count"] (ReqArg parseCount "INT")
@@ -228,10 +234,10 @@ options =
     , Option ['P'] ["port"] 
         (ReqArg (\p opts -> return opts{ optPort = read p }) "PORT")
         "API server port"
-    , Option ['w'] ["workdir"]
+    , Option ['W'] ["workdir"]
         (ReqArg (\w opts -> return opts{ optDir = Just w }) "DIR")
         "Working directory"
-    , Option ['l'] ["logfile"]
+    , Option ['L'] ["logfile"]
         (ReqArg (\l opts -> return opts{ optLog = Just l }) "FILE")
         "Log file"
     , Option ['I'] ["pidfile"]
@@ -261,14 +267,14 @@ cmdHelp =
     , "  stop                                Stop the haskoin daemon"
     , ""
     , "Wallet commands:" 
-    , "  newwallet name [mnemonic]           Create a new wallet"
-    , "  getwallet name                      Display a wallet by name"
+    , "  newwallet [mnemonic] [-w name]      Create a new wallet"
+    , "  getwallet [-w name]                 Display a wallet by name"
     , "  walletlist                          List all wallets"
     , "  rescan [timestamp]                  Rescan the wallet"
     , ""
     , "Account commands:" 
-    , "  newacc wallet name                  Create a new account"
-    , "  newms  wallet name M N [pubkey...]  Create a new multisig account"
+    , "  newacc    name                      Create a new account"
+    , "  newms     name M N [pubkey...]      Create a new multisig account"
     , "  newread   name pubkey               Create a new read-only account"
     , "  newreadms name [pubkey...]          Create a new read-only ms account"
     , "  addkeys   acc  {pubkey...}          Add pubkeys to a multisig account"
@@ -393,43 +399,48 @@ processCommand opts args = case args of
         -- TODO: Should we send a message instead of killing the process ?
         killAndWait $ pidFile
         putStrLn "Haskoin daemon stopped"
-    "newwallet" : name : mnemonic -> do
-        let req = Just $ encode $ case mnemonic of
-                []  -> NewWallet name (optPass opts) Nothing
-                [m] -> NewWallet name (optPass opts) (Just m)
+    "newwallet" : mnemonic -> do
+        let url = "/wallets"
+            req = Just $ encode $ case mnemonic of
+                []  -> NewWallet (optWallet opts) (optPass opts) Nothing
+                [m] -> NewWallet (optWallet opts) (optPass opts) (Just m)
                 _   -> error invalidErr
-        res <- sendRequest "/api/wallets" "POST" [] req opts
+        res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(MnemonicRes m) -> do
             putStrLn "Write down your seed:"
             putStrLn m
-    ["getwallet", name] -> do
-        let url = stringToBS $ concat [ "/api/wallets/", name ]
+    ["getwallet"] -> do
+        let url = concat [ "/wallets/", optWallet opts ]
         res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ putStr . printWallet
     ["walletlist"] -> do
-        res <- sendRequest "/api/wallets" "GET" [] Nothing opts
+        let url = "/wallets"
+        res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ \ws -> do
             let xs = map (putStr . printWallet) ws
             sequence_ $ intersperse (putStrLn "-") xs
-    ["newacc", wname, name] -> do
-        let req = Just $ encode $ NewAccount wname name
-        res <- sendRequest "/api/accounts" "POST" [] req opts
+    ["newacc", name] -> do
+        let url = concat [ "/wallets/", optWallet opts, "/accounts" ]
+            req = Just $ encode $ NewAccount name
+        res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ putStr . printAccount
-    "newms" : wname : name : m : n : ks -> do
-        let keysM = mapM xPubImport ks
+    "newms" : name : m : n : ks -> do
+        let url   = concat [ "/wallets/", optWallet opts, "/accounts" ] 
+            keysM = mapM xPubImport ks
             m'    = read m
             n'    = read n
         when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
-        let req = Just $ encode $ NewMSAccount wname name m' n' $ fromJust keysM
-        res <- sendRequest "/api/accounts" "POST" [] req opts
+        let req = Just $ encode $ NewMSAccount name m' n' $ fromJust keysM
+        res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ putStr . printAccount
     ["newread", name, key] -> do
         let keyM = xPubImport key
         when (isNothing keyM) $ throwIO $ 
             WalletException "Could not parse key"
-        let req = Just $ encode $ NewReadAccount name $ fromJust keyM
-        res <- sendRequest "/api/accounts" "POST" [] req opts
+        let url   = concat [ "/wallets/", optWallet opts, "/accounts" ] 
+            req = Just $ encode $ NewReadAccount name $ fromJust keyM
+        res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ putStr . printAccount
     "newreadms" : name : m : n : ks -> do
         let keysM = mapM xPubImport ks
@@ -437,37 +448,45 @@ processCommand opts args = case args of
             n'    = read n
         when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
-        let req = Just $ encode $ NewReadMSAccount name m' n' $ fromJust keysM
-        res <- sendRequest "/api/accounts" "POST" [] req opts
+        let url   = concat [ "/wallets/", optWallet opts, "/accounts" ] 
+            req = Just $ encode $ NewReadMSAccount name m' n' $ fromJust keysM
+        res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ putStr . printAccount
     "addkeys" : name : ks -> do
         let keysM = mapM xPubImport ks
         when (isNothing keysM) $ throwIO $ 
             WalletException "Could not parse keys"
-        let req = encode <$> keysM
-            url = stringToBS $ concat [ "/api/accounts/", name, "/keys" ]
+        let url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name, "/keys" 
+                         ] 
+            req = encode <$> keysM
         res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ putStr . printAccount
     ["getacc", name] -> do
-        let url = stringToBS $ concat [ "/api/accounts/", name ]
+        let url = concat [ "/wallets/", optWallet opts , "/accounts/", name ] 
         res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ putStr . printAccount
     ["acclist"] -> do
-        res <- sendRequest "/api/accounts" "GET" [] Nothing opts
+        let url = concat [ "/wallets/", optWallet opts , "/accounts" ] 
+        res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ \as -> do
             let xs = map (putStr . printAccount) as
             sequence_ $ intersperse (putStrLn "-") xs
     ["list", name] -> do
-        let url = stringToBS $ concat [ "/api/accounts/", name, "/addrs" ]
+        let url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name, "/addrs" 
+                         ] 
             qs  = [ ("minconf", Just $ stringToBS $ show $ optMinConf opts)
                   , ("internal", Just $ stringToBS $ map toLower $ show $ 
                         optInternal opts)
                   ]
         res <- sendRequest url "GET" qs Nothing opts
-        printJSONOr opts res $ mapM_ (putStrLn . printAddress)
+        printJSONOr opts res $ mapM_ (putStrLn . printBalanceAddress)
     ["page", name, page] -> do
         let p   = read page :: Int
-            url = stringToBS $ concat [ "/api/accounts/", name, "/addrs" ]
+            url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name, "/addrs" 
+                         ] 
             qs  = [ ("page",Just $ stringToBS $ show p)
                   , ("elemperpage",Just $ stringToBS $ show $ optCount opts)
                   , ("minconf", Just $ stringToBS $ show $ optMinConf opts)
@@ -479,27 +498,35 @@ processCommand opts args = case args of
             -- page 0 is the last page
             let x = if p == 0 then m else p
             putStrLn $ unwords [ "Page", show x, "of", show m ]
-            forM_ as $ putStrLn . printAddress
+            forM_ as $ putStrLn . printBalanceAddress
     ["new", name, label] -> do
-        let url = stringToBS $ concat [ "/api/accounts/", name, "/addrs" ]
+        let url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name, "/addrs" 
+                         ] 
             req = Just $ encode $ AddressData label
         res <- sendRequest url "POST" [] req opts
-        printJSONOr opts res $ putStrLn . printAddress
+        printJSONOr opts res $ putStrLn . printPaymentAddress
     ["label", name, index, label] -> do
-        let url = stringToBS $ concat 
-                [ "/api/accounts/", name, "/addrs/", index ]
+        let url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name
+                         , "/addrs/", index 
+                         ] 
             req = Just $ encode $ AddressData label
         res <- sendRequest url "PUT" [] req opts
-        printJSONOr opts res $ putStrLn . printAddress
+        printJSONOr opts res $ putStrLn . printPaymentAddress
     ["txlist", name] -> do
-        let url = stringToBS $ concat [ "/api/accounts/", name, "/acctxs" ]
+        let url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name, "/acctxs"
+                         ] 
         res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ \ts -> do
             let xs = map (putStr . printAccTx) ts
             sequence_ $ intersperse (putStrLn "-") xs
     ["txpage", name, page] -> do
         let p   = read page
-            url = stringToBS $ concat [ "/api/accounts/", name, "/acctxs" ]
+            url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name, "/acctxs"
+                         ] 
             qs  = [ ("page",Just $ stringToBS $ show p)
                   , ("elemperpage",Just $ stringToBS $ show $ optCount opts)
                   ]
@@ -515,7 +542,9 @@ processCommand opts args = case args of
             v = read amount
         when (isNothing a) $ throwIO $ 
             WalletException "Could not parse address"
-        let url = stringToBS $ concat [ "/api/accounts/", name, "/acctxs" ]
+        let url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name, "/acctxs"
+                         ] 
             req = Just $ encode $ 
                 SendCoins [(fromJust a, v)] (optFee opts) (optMinConf opts) 
         res <- sendRequest url "POST" [] req opts
@@ -531,7 +560,9 @@ processCommand opts args = case args of
             recipients = mapM (f . g) xs
         when (isNothing recipients) $ throwIO $
             WalletException "Could not parse recipient list"
-        let url = stringToBS $ concat [ "/api/accounts/", name, "/acctxs" ]
+        let url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name, "/acctxs"
+                         ] 
             req = Just $ encode $ 
                 SendCoins (fromJust recipients) (optFee opts) (optMinConf opts)
         res <- sendRequest url "POST" [] req opts
@@ -544,44 +575,11 @@ processCommand opts args = case args of
         let txM = decodeToMaybe =<< hexToBS tx
         when (isNothing txM) $ throwIO $
             WalletException "Could not parse transaction"
-        let url = stringToBS $ concat [ "/api/accounts/", name, "/acctxs" ]
+        let url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name, "/acctxs"
+                         ] 
             req = Just $ encode $ SignTx $ fromJust txM
         res <- sendRequest url "POST" [] req opts
-        printJSONOr opts res $ \(TxHashStatusRes h c p) -> do
-            putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
-            putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
-            when (isJust p) $ putStrLn $ 
-                unwords [ "Proposition:", bsToHex $ encode' $ fromJust p]
-    ["balance", name] -> do
-        let url = stringToBS $ concat [ "/api/accounts/", name, "/balance" ]
-            qs  = [ ("minconf", Just $ stringToBS $ show $ optMinConf opts) ]
-        res <- sendRequest url "GET" qs Nothing opts
-        printJSONOr opts res $ \(BalanceRes b cs) -> do
-            putStrLn $ unwords [ "Balance:", printBalance b ]
-            unless (null cs) $ do
-                putStrLn "Conflicts:"
-                formatStr $ unlines $ map encodeTxHashLE cs 
-    ["spendable", name] -> do
-        let url = stringToBS $ concat 
-                [ "/api/accounts/", name, "/spendablebalance" ]
-            qs  = [ ("minconf", Just $ stringToBS $ show $ optMinConf opts) ]
-        res <- sendRequest url "GET" qs Nothing opts
-        printJSONOr opts res $ \(SpendableRes b) -> do
-            putStrLn $ unwords [ "Spendable balance:", show b ]
-    ["gettx", hash] -> do
-        let h = decodeTxHashLE hash
-        when (isNothing h) $ throwIO $
-            WalletException "Could not parse hash"
-        let url = stringToBS $ concat ["/api/txs/", encodeTxHashLE $ fromJust h]
-        res <- sendRequest url "GET" [] Nothing opts
-        printJSONOr opts res $ \(TxRes tx) -> putStrLn $ bsToHex $ encode' tx
-    ["importtx", tx] -> do
-        let txM = decodeToMaybe =<< hexToBS tx
-        when (isNothing txM) $ throwIO $
-            WalletException "Could not parse transaction"
-        let url = stringToBS $ concat [ "/api/txs" ]
-            req = Just $ encode $ ImportTx $ fromJust txM
-        res <- sendRequest url "PUT" [] req opts
         printJSONOr opts res $ \(TxHashStatusRes h c p) -> do
             putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
             putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
@@ -591,11 +589,11 @@ processCommand opts args = case args of
         let h = decodeTxHashLE tid
         when (isNothing h) $ throwIO $
             WalletException "Could not parse hash"
-        let url = stringToBS $ concat 
-                [ "/api/accounts/", name
-                , "/acctxs/", encodeTxHashLE $ fromJust h
-                , "/sigblob"
-                ]
+        let url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name
+                         , "/acctxs/", encodeTxHashLE $ fromJust h
+                         , "/sigblob"
+                         ] 
         res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ \blob ->
             putStrLn $ bsToHex $ toStrictBS $ encode (blob :: SigBlob)
@@ -603,7 +601,9 @@ processCommand opts args = case args of
         let blobM = decode . toLazyBS =<< hexToBS blob :: Maybe SigBlob
         when (isNothing blobM) $ throwIO $
             WalletException "Could not parse sig blob"
-        let url = stringToBS $ concat [ "/api/accounts/", name, "/acctxs" ]
+        let url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name, "/acctxs"
+                         ] 
             req = Just $ encode $ SignSigBlob $ fromJust blobM
         res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxStatusRes tx c p) -> do
@@ -611,10 +611,48 @@ processCommand opts args = case args of
             putStrLn $ unwords [ "Complete:", if c then "Yes" else "No" ]
             when (isJust p) $ putStrLn $ 
                 unwords [ "Proposition:", bsToHex $ encode' $ fromJust p]
+    ["balance", name] -> do
+        let url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name, "/balance"
+                         ] 
+            qs  = [ ("minconf", Just $ stringToBS $ show $ optMinConf opts) ]
+        res <- sendRequest url "GET" qs Nothing opts
+        printJSONOr opts res $ \(BalanceRes b cs) -> do
+            putStrLn $ unwords [ "Balance:", printBalance b ]
+            unless (null cs) $ do
+                putStrLn "Conflicts:"
+                formatStr $ unlines $ map encodeTxHashLE cs 
+    ["spendable", name] -> do
+        let url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name, "/spendablebalance"
+                         ] 
+            qs  = [ ("minconf", Just $ stringToBS $ show $ optMinConf opts) ]
+        res <- sendRequest url "GET" qs Nothing opts
+        printJSONOr opts res $ \(SpendableRes b) -> do
+            putStrLn $ unwords [ "Spendable balance:", show b ]
+    ["gettx", hash] -> do
+        let h = decodeTxHashLE hash
+        when (isNothing h) $ throwIO $
+            WalletException "Could not parse hash"
+        let url = concat ["/txs/", encodeTxHashLE $ fromJust h]
+        res <- sendRequest url "GET" [] Nothing opts
+        printJSONOr opts res $ \(TxRes tx) -> putStrLn $ bsToHex $ encode' tx
+    ["importtx", tx] -> do
+        let txM = decodeToMaybe =<< hexToBS tx
+        when (isNothing txM) $ throwIO $
+            WalletException "Could not parse transaction"
+        let url = "/txs"
+            req = Just $ encode $ ImportTx $ fromJust txM
+        res <- sendRequest url "PUT" [] req opts
+        printJSONOr opts res $ \(TxHashStatusRes h c p) -> do
+            putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
+            putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
+            when (isJust p) $ putStrLn $ 
+                unwords [ "Proposition:", bsToHex $ encode' $ fromJust p]
     "rescan" : rescantime -> do
         let t = read <$> listToMaybe rescantime
             req = Just $ encode $ Rescan t
-        res <- sendRequest "/api/node" "POST" [] req opts
+        res <- sendRequest "/node" "POST" [] req opts
         printJSONOr opts res $ \(RescanRes ts) ->
             putStrLn $ unwords [ "Timestamp:", show ts]
     ["decodetx", tx] -> do
@@ -644,22 +682,21 @@ instance FromJSON ErrorMsg where
         msgM <- o .:? "errors"
         return $ ErrorMsg err $ fromMaybe [] msgM
 
-sendRequest :: BS.ByteString       -- Path
+sendRequest :: String              -- Path
             -> BS.ByteString       -- Method
             -> [(BS.ByteString, Maybe BS.ByteString)] -- Query String
             -> Maybe BL.ByteString -- Body 
             -> Options             -- Options
             -> IO BL.ByteString    -- Response
 sendRequest p m qs bodyM opts = withManager $ \manager -> do
-    let req' = setQueryString qs $ def
-                { host           = stringToBS $ optBind opts
-                , port           = optPort opts
-                , path           = p
-                , method         = m
-                -- Do not throw exceptions on error status codes
-                , checkStatus    = (\_ _ _ -> Nothing) 
-                , requestHeaders = [("accept", "application/json")]
-                }
+    let url = concat [ "http://", optBind opts, ":" , show $ optPort opts , p ]
+    urlReq <- parseUrl url
+    let req' = setQueryString qs $ urlReq
+                   { method         = m
+                   -- Do not throw exceptions on error status codes
+                   , checkStatus    = (\_ _ _ -> Nothing) 
+                   , requestHeaders = [("accept", "application/json")]
+                   }
         req = applyBasicAuth (encodeUtf8 $ optUser opts)
                              (encodeUtf8 $ optPassword opts)
                              req'

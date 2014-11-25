@@ -18,7 +18,8 @@ module Network.Haskoin.Wallet.Types
 , SigBlob(..)
 , printWallet
 , printAccount
-, printAddress
+, printPaymentAddress
+, printBalanceAddress
 , printAccTx
 , printBalance
 ) where
@@ -157,25 +158,27 @@ printWallet (Wallet n k) = unlines
 
 data Account
     = RegularAccount 
-        { accountName   :: !String
-        , accountWallet :: !String
+        { accountWallet :: !String
+        , accountName   :: !String
         , accountIndex  :: !KeyIndex
         , accountKey    :: !AccPubKey
         }
     | MultisigAccount
-        { accountName     :: !String
-        , accountWallet   :: !String
+        { accountWallet   :: !String
+        , accountName     :: !String
         , accountIndex    :: !KeyIndex
         , accountRequired :: !Int
         , accountTotal    :: !Int
         , accountKeys     :: ![XPubKey]
         }
     | ReadAccount
-        { accountName :: !String
-        , accountKey  :: !AccPubKey
+        { accountWallet :: !String
+        , accountName   :: !String
+        , accountKey    :: !AccPubKey
         }
     | ReadMSAccount
-        { accountName     :: !String
+        { accountWallet   :: !String
+        , accountName     :: !String
         , accountRequired :: !Int
         , accountTotal    :: !Int
         , accountKeys     :: ![XPubKey]
@@ -183,29 +186,31 @@ data Account
     deriving (Eq, Show, Read)
 
 instance ToJSON Account where
-    toJSON (RegularAccount n w i k) = object
+    toJSON (RegularAccount w n i k) = object
         [ "type"   .= String "regular"
-        , "name"   .= n
         , "wallet" .= w
+        , "name"   .= n
         , "index"  .= i
         , "key"    .= (xPubExport $ getAccPubKey k)
         ]
-    toJSON (MultisigAccount n w i r t ks) = object
+    toJSON (MultisigAccount w n i r t ks) = object
         [ "type"     .= String "multisig"
-        , "name"     .= n
         , "wallet"   .= w
+        , "name"     .= n
         , "index"    .= i
         , "required" .= r
         , "total"    .= t
         , "keys"     .= map xPubExport ks
         ]
-    toJSON (ReadAccount n k) = object
-        [ "type" .= String "read"
-        , "name" .= n
-        , "key"  .= (xPubExport $ getAccPubKey k)
+    toJSON (ReadAccount w n k) = object
+        [ "type"   .= String "read"
+        , "wallet" .= w
+        , "name"   .= n
+        , "key"    .= (xPubExport $ getAccPubKey k)
         ]
-    toJSON (ReadMSAccount n r t ks) = object
+    toJSON (ReadMSAccount w n r t ks) = object
         [ "type"     .= String "readmultisig"
+        , "wallet"   .= w
         , "name"     .= n
         , "required" .= r
         , "total"    .= t
@@ -215,59 +220,60 @@ instance ToJSON Account where
 instance FromJSON Account where
     parseJSON (Object o) = do
         x <- o .: "type"
+        w <- o .: "wallet"
         n <- o .: "name"
         case x of
             String "regular" -> do
                 k <- o .: "key"
                 i <- o .: "index"
-                w <- o .: "wallet"
                 let keyM = loadPubAcc =<< xPubImport k
-                maybe mzero (return . (RegularAccount n w i)) keyM
+                maybe mzero (return . (RegularAccount w n i)) keyM
             String "multisig" -> do
                 i  <- o .: "index"
-                w  <- o .: "wallet"
                 r  <- o .: "required"
                 t  <- o .: "total"
                 ks <- o .: "keys"
                 let keysM = mapM xPubImport ks
-                maybe mzero (return . (MultisigAccount n w i r t)) keysM
+                maybe mzero (return . (MultisigAccount w n i r t)) keysM
             String "read" -> do
                 k  <- o .: "key"
                 let keyM       = loadPubAcc =<< xPubImport k
-                maybe mzero (return . (ReadAccount n)) keyM
+                maybe mzero (return . (ReadAccount w n)) keyM
             String "readmultisig" -> do
                 r  <- o .: "required"
                 t  <- o .: "total"
                 ks <- o .: "keys"
                 let keysM      = mapM xPubImport ks
-                maybe mzero (return . (ReadMSAccount n r t)) keysM
+                maybe mzero (return . (ReadMSAccount w n r t)) keysM
             _ -> mzero
     parseJSON _ = mzero
 
 printAccount :: Account -> String
 printAccount a = case a of
-    RegularAccount n w i k -> unlines
-        [ unwords [ "Account:", n ]
-        , unwords [ "Wallet :", w ]
+    RegularAccount w n i k -> unlines
+        [ unwords [ "Wallet :", w ]
+        , unwords [ "Account:", n ]
         , unwords [ "Type   :", "Regular" ]
         , unwords [ "Tree   :", concat [ "m/",show i,"'/" ] ]
         , unwords [ "Key    :", xPubExport $ getAccPubKey k ]
         ]
-    MultisigAccount n w i r t ks -> unlines $
-        [ unwords [ "Account:", n ]
-        , unwords [ "Wallet :", w ]
+    MultisigAccount w n i r t ks -> unlines $
+        [ unwords [ "Wallet :", w ]
+        , unwords [ "Account:", n ]
         , unwords [ "Type   :", "Multisig", show r, "of", show t ]
         , unwords [ "Tree   :", concat [ "m/",show i,"'/" ] ]
         ] ++ if null ks then [] else 
             (unwords [ "Keys   :", xPubExport $ head ks ]) : 
                 (map (\x -> unwords ["        ", xPubExport x]) $ tail ks)
-    ReadAccount n k -> unlines
-        [ unwords [ "Account:", n ]
+    ReadAccount w n k -> unlines
+        [ unwords [ "Wallet :", w ]
+        , unwords [ "Account:", n ]
         , unwords [ "Type   :", "Read-only" ]
         , unwords [ "Key    :", xPubExport $ getAccPubKey k ]
         ]
-    ReadMSAccount n r t ks -> unlines $
-        [ unwords [ "Account:", n ]
+    ReadMSAccount w n r t ks -> unlines $
+        [ unwords [ "Wallet :", w ]
+        , unwords [ "Account:", n ]
         , unwords [ "Type   :", "Read-only multisig", show r, "of", show t ]
         ] ++ if null ks then [] else 
             (unwords [ "Keys   :", xPubExport $ head ks ]) : 
@@ -326,6 +332,17 @@ instance FromJSON BalanceAddress where
         return $ BalanceAddress pa fb tr ft st ct
     parseJSON _ = mzero
 
+printBalanceAddress :: BalanceAddress -> String
+printBalanceAddress (BalanceAddress pa fb _ ft st ct) = unwords $ concat
+    [ [ printPaymentAddress pa ]
+    , if null ft && null st && null ct then [] else
+        [ "["
+        , "Balance:", printBalance fb ++ ","
+        , "TxCount:", show $ (length ft) + (length st)
+        , "]" 
+        ]
+    ]
+
 data PaymentAddress = PaymentAddress 
     { paymentAddress :: !Address
     , addressLabel   :: !String
@@ -348,17 +365,11 @@ instance FromJSON PaymentAddress where
         maybe mzero f $ base58ToAddr a
     parseJSON _ = mzero
 
-printAddress :: BalanceAddress -> String
-printAddress (BalanceAddress (PaymentAddress a l i) fb _ ft st ct) = 
+printPaymentAddress :: PaymentAddress -> String
+printPaymentAddress (PaymentAddress a l i) = 
     unwords $ concat
         [ [ show i, ":" , addrToBase58 a ] 
         , if null l then [] else [concat ["(",l,")"]]
-        , if null ft && null st && null ct then [] else
-            [ "["
-            , "Balance:", printBalance fb ++ ","
-            , "TxCount:", show $ (length ft) + (length st)
-            , "]" 
-            ]
         ]
 
 data RecipientAddress = RecipientAddress

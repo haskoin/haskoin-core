@@ -31,7 +31,6 @@ module Network.Haskoin.Wallet
 , RecipientAddress(..)
 , getAddress
 , addressList
-, addressCount
 , addressPage
 , unusedAddrs
 , unusedAddr

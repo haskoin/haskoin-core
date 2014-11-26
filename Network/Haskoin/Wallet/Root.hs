@@ -45,11 +45,13 @@ import Network.Haskoin.Wallet.Types
 
 -- | Get a wallet by name
 getWallet :: (MonadIO m, PersistStore b, PersistUnique b)
-          => String -> ReaderT b m Wallet
+          => String             -- ^ Wallet name
+          -> ReaderT b m Wallet -- ^ Wallet
 getWallet name = liftM (dbWalletValue . entityVal) $ getWalletEntity name
 
 getWalletEntity :: (MonadIO m, PersistStore b, PersistUnique b)
-                => String -> ReaderT b m (Entity (DbWalletGeneric b))
+                => String 
+                -> ReaderT b m (Entity (DbWalletGeneric b))
 getWalletEntity name = do
     entM <- getBy $ UniqueWalletName name
     case entM of
@@ -67,8 +69,8 @@ walletList =
 -- | Initialize a wallet from a secret seed. This function will fail if the
 -- wallet is already initialized.
 newWallet :: (MonadIO m, PersistQuery b, PersistUnique b)
-          => String         -- ^ Wallet name
-          -> BS.ByteString  -- ^ Secret seed
+          => String             -- ^ Wallet name
+          -> BS.ByteString      -- ^ Secret seed
           -> ReaderT b m Wallet -- ^ New wallet
 newWallet wname seed 
     | BS.null seed = liftIO $ throwIO $ 
@@ -96,6 +98,8 @@ initWalletDB = do
 -- Remove transaction related data from the wallet
 resetRescan :: (MonadIO m, PersistQuery b) => ReaderT b m ()
 resetRescan = do
+    -- Delete all coins/account relations
+    deleteWhere ([] :: PersistQuery b => [Filter (DbCoinAccountGeneric b)])
     -- Delete all coins
     deleteWhere ([] :: PersistQuery b => [Filter (DbCoinGeneric b)])
     -- Delete all coins spent relations

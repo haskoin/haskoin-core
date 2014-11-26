@@ -4,7 +4,32 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ViewPatterns          #-}
-module Network.Haskoin.REST where
+module Network.Haskoin.REST 
+( 
+  -- * REST Server
+  ServerMode(..)
+, ServerConfig(..)
+, runServer
+, haskoinPort
+
+  -- * REST Types
+, NewWallet(..) 
+, MnemonicRes(..)
+, NewAccount(..)
+, AddressPageRes(..)
+, TxPageRes(..)
+, AddressData(..)
+, AccTxAction(..)
+, TxAction(..)
+, TxHashStatusRes(..)
+, TxRes(..)
+, TxStatusRes(..)
+, BalanceRes(..)
+, SpendableRes(..)
+, NodeAction(..)
+, RescanRes(..)
+)
+where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad 
@@ -145,21 +170,21 @@ instance RenderMessage HaskoinServer FormMessage where
     renderMessage _ _ = defaultFormMessage
 
 mkYesod "HaskoinServer" [parseRoutes|
-/api/wallets                             WalletsR     GET POST
-/api/wallets/#Text                       WalletR      GET
-/api/accounts                            AccountsR    GET POST
-/api/accounts/#Text                      AccountR     GET
-/api/accounts/#Text/keys                 AccountKeysR POST
-/api/accounts/#Text/addrs                AddressesR   GET POST
-/api/accounts/#Text/addrs/#Int           AddressR     GET PUT
-/api/accounts/#Text/acctxs               AccTxsR      GET POST
-/api/accounts/#Text/acctxs/#Text         AccTxR       GET
-/api/accounts/#Text/acctxs/#Text/sigblob SigBlobR     GET
-/api/accounts/#Text/balance              BalanceR     GET
-/api/accounts/#Text/spendablebalance     SpendableR   GET
-/api/txs                                 TxsR         PUT
-/api/txs/#Text                           TxR          GET
-/api/node                                NodeR        POST
+/wallets                                           WalletsR     GET POST
+/wallets/#Text                                     WalletR      GET
+/wallets/#Text/accounts                            AccountsR    GET POST
+/wallets/#Text/accounts/#Text                      AccountR     GET
+/wallets/#Text/accounts/#Text/keys                 AccountKeysR POST
+/wallets/#Text/accounts/#Text/addrs                AddressesR   GET POST
+/wallets/#Text/accounts/#Text/addrs/#Int           AddressR     GET PUT
+/wallets/#Text/accounts/#Text/acctxs               AccTxsR      GET POST
+/wallets/#Text/accounts/#Text/acctxs/#Text         AccTxR       GET
+/wallets/#Text/accounts/#Text/acctxs/#Text/sigblob SigBlobR     GET
+/wallets/#Text/accounts/#Text/balance              BalanceR     GET
+/wallets/#Text/accounts/#Text/spendablebalance     SpendableR   GET
+/txs                                               TxsR         PUT
+/txs/#Text                                         TxR          GET
+/node                                              NodeR        POST
 |]
 
 runServer :: ServerConfig -> IO ()
@@ -242,13 +267,10 @@ handleErrors action =
     f (WalletException err) = invalidArgs [pack err]
 
 getWalletsR :: Handler Value
-getWalletsR = handleErrors $ do
-    guardVault 
-    toJSON <$> runDB walletList
+getWalletsR = handleErrors $ guardVault >> toJSON <$> runDB walletList
 
 postWalletsR :: Handler Value
-postWalletsR = handleErrors $ do
-    guardVault 
+postWalletsR = handleErrors $ guardVault >> 
     parseJsonBody >>= \res -> case res of
         Success (NewWallet name pass msM) -> do
             (ms, seed) <- case msM of
@@ -270,57 +292,63 @@ postWalletsR = handleErrors $ do
         Error _ -> undefined
 
 getWalletR :: Text -> Handler Value
-getWalletR wname = handleErrors $ do
-    guardVault 
-    toJSON <$> runDB (getWallet $ unpack wname)
+getWalletR wallet = handleErrors $ guardVault >>
+    toJSON <$> runDB (getWallet $ unpack wallet)
 
-getAccountsR :: Handler Value
-getAccountsR = handleErrors $ toJSON <$> runDB accountList
+getAccountsR :: Text -> Handler Value
+getAccountsR wallet = handleErrors $ 
+    toJSON <$> runDB (accountList $ unpack wallet)
 
-postAccountsR :: Handler Value
-postAccountsR = handleErrors $ do
+postAccountsR :: Text -> Handler Value
+postAccountsR wallet = handleErrors $ do
     HaskoinServer _ _ config <- getYesod
     let c = configGap config
     parseJsonBody >>= \res -> toJSON <$> case res of
-        Success (NewAccount w n) -> do
+        Success (NewAccount n) -> do
             acc <- runDB $ newAccount w n
-            updateNode $ runDB $ addLookAhead n c
+            updateNode $ runDB $ addLookAhead w n c
             return acc
-        Success (NewMSAccount w n r t ks) -> do
+        Success (NewMSAccount n r t ks) -> do
             acc <- runDB $ newMSAccount w n r t ks
             when (length (accountKeys acc) == t) $ 
-                updateNode $ runDB $ addLookAhead n c
+                updateNode $ runDB $ addLookAhead w n c
             return acc
         Success (NewReadAccount n k) -> do
-            acc <- runDB $ newReadAccount n k
-            updateNode $ runDB $ addLookAhead n c
+            acc <- runDB $ newReadAccount w n k
+            updateNode $ runDB $ addLookAhead w n c
             return acc
         Success (NewReadMSAccount n r t ks) -> do
-            acc <- runDB $ newReadMSAccount n r t ks
+            acc <- runDB $ newReadMSAccount w n r t ks
             when (length (accountKeys acc) == t) $ 
-                updateNode $ runDB $ addLookAhead n c
+                updateNode $ runDB $ addLookAhead w n c
             return acc
         -- TODO: What happens here ?
         Error _ -> undefined
+  where
+    w = unpack wallet
 
-getAccountR :: Text -> Handler Value
-getAccountR name = handleErrors $ toJSON <$> runDB (getAccount $ unpack name)
+getAccountR :: Text -> Text -> Handler Value
+getAccountR wallet name = handleErrors $ 
+    toJSON <$> runDB (getAccount (unpack wallet) (unpack name))
 
-postAccountKeysR :: Text -> Handler Value
-postAccountKeysR name = handleErrors $ do
+postAccountKeysR :: Text -> Text -> Handler Value
+postAccountKeysR wallet name = handleErrors $ do
     HaskoinServer _ _ config <- getYesod
     let c = configGap config
     parseJsonBody >>= \res -> toJSON <$> case res of
         Success ks -> do
-            acc <- runDB $ addAccountKeys (unpack name) ks
+            acc <- runDB $ addAccountKeys w n ks
             when (length (accountKeys acc) == accountTotal acc) $ do
-                updateNode $ runDB $ addLookAhead (unpack name) c
+                updateNode $ runDB $ addLookAhead w n c
             return acc
         -- TODO: What happens here ?
         Error _ -> undefined
+  where
+    n = unpack name
+    w = unpack wallet
 
-getAddressesR :: Text -> Handler Value
-getAddressesR name = handleErrors $ do
+getAddressesR :: Text -> Text -> Handler Value
+getAddressesR wallet name = handleErrors $ do
     (pageM, elemM, confM, internalM) <- runInputGet $ (,,,)
         <$> iopt intField "page"
         <*> iopt intField "elemperpage"
@@ -331,45 +359,53 @@ getAddressesR name = handleErrors $ do
         e        = fromMaybe 10 elemM
     runDB $ if isJust pageM
         then do
-            (pa, m) <- addressPage (unpack name) (fromJust pageM) e internal
+            (pa, m) <- addressPage w n (fromJust pageM) e internal
             ba <- mapM (flip addressBalance minConf) pa
             return $ toJSON $ AddressPageRes ba m
         else do
-            pa <- addressList (unpack name) internal
+            pa <- addressList w n internal
             liftM toJSON $ mapM (flip addressBalance minConf) pa
+  where
+    n = unpack name
+    w = unpack wallet
 
-postAddressesR :: Text -> Handler Value
-postAddressesR name = handleErrors $ do
+postAddressesR :: Text -> Text -> Handler Value
+postAddressesR wallet name = handleErrors $ do
     parseJsonBody >>= \res -> toJSON <$> case res of
         Success (AddressData label) -> updateNode $ do
-            addr' <- runDB $ unlabeledAddr $ unpack name
-            runDB $ setAddrLabel (unpack name) (addressIndex addr') label
+            addr' <- runDB $ unlabeledAddr w n
+            runDB $ setAddrLabel w n (addressIndex addr') label
         -- TODO: What happens here ?
         Error _ -> undefined
+  where
+    n = unpack name
+    w = unpack wallet
 
-getAddressR :: Text -> Int -> Handler Value
-getAddressR name i = handleErrors $ do
+getAddressR :: Text -> Text -> Int -> Handler Value
+getAddressR wallet name i = handleErrors $ do
     (confM, internalM) <- runInputGet $ (,)
         <$> iopt intField "minconf"
         <*> iopt boolField "internal"
     let minConf  = fromMaybe 0 confM
         internal = fromMaybe False internalM
     runDB $ do
-        pa <- getAddress (unpack name) (fromIntegral i) internal
+        pa <- getAddress (unpack wallet) (unpack name) (fromIntegral i) internal
         ba <- addressBalance pa minConf
         return $ toJSON ba
 
-putAddressR :: Text -> Int -> Handler Value
-putAddressR name i = handleErrors $ do 
+putAddressR :: Text -> Text -> Int -> Handler Value
+putAddressR wallet name i = handleErrors $ do 
     parseJsonBody >>= \res -> case res of
-        Success (AddressData label) -> runDB $ do
-            addr <- setAddrLabel (unpack name) (fromIntegral i) label
-            return $ toJSON addr
+        Success (AddressData label) -> runDB $ 
+            toJSON <$> setAddrLabel w n (fromIntegral i) label
         -- TODO: What happens here ?
         Error _ -> undefined
+  where
+    w = unpack wallet
+    n = unpack name
 
-getAccTxsR :: Text -> Handler Value
-getAccTxsR name = handleErrors $ do
+getAccTxsR :: Text -> Text -> Handler Value
+getAccTxsR wallet name = handleErrors $ do
     (pageM, elemM) <- runInputGet $ (,)
         <$> iopt intField "page"
         <*> iopt intField "elemperpage"
@@ -377,42 +413,80 @@ getAccTxsR name = handleErrors $ do
         then do
             let e | isJust elemM = fromJust elemM
                   | otherwise    = 10
-            (as, m) <- runDB $ txPage (unpack name) (fromJust pageM) e
+            (as, m) <- runDB $ txPage w n (fromJust pageM) e
             return $ toJSON $ TxPageRes as m
-        else toJSON <$> runDB (txList $ unpack name)
+        else toJSON <$> runDB (txList w n)
+  where
+    w = unpack wallet
+    n = unpack name
 
-postAccTxsR :: Text -> Handler Value
-postAccTxsR name = handleErrors $ guardVault >>
+postAccTxsR :: Text -> Text -> Handler Value
+postAccTxsR wallet name = handleErrors $ guardVault >>
     parseJsonBody >>= \res -> case res of
         Success (SendCoins rs fee minConf) -> do
-            (tid, complete, prop) <- runDB $ sendTx (unpack name) minConf rs fee
+            (tid, complete, p) <- runDB $ sendTx w n minConf rs fee
             whenOnline $ when complete $ do
                 HaskoinServer _ rChanM _ <- getYesod
                 let rChan = fromJust rChanM
                 newTx <- runDB $ getTx tid
                 liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
+            let prop = if complete then Nothing else Just p
             return $ toJSON $ TxHashStatusRes tid complete prop
         Success (SignTx tx) -> do
-            (tid, complete, prop) <- runDB $ signWalletTx (unpack name) tx
+            (tid, complete, p) <- runDB $ signWalletTx w n tx
             whenOnline $ when complete $ do
                 HaskoinServer _ (Just rChan) _ <- getYesod
                 newTx <- runDB $ getTx tid
                 liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
+            let prop = if complete then Nothing else Just p
             return $ toJSON $ TxHashStatusRes tid complete prop
         Success (SignSigBlob blob) -> do
-            (tx, c, prop) <- runDB $ signSigBlob (unpack name) blob
-            return $ toJSON $ TxStatusRes tx c prop
+            (tx, complete, p) <- runDB $ signSigBlob w n blob
+            let prop = if complete then Nothing else Just p
+            return $ toJSON $ TxStatusRes tx complete prop
         -- TODO: What happens here ?
         Error _ -> undefined
+  where
+    w = unpack wallet
+    n = unpack name
+    
 
-getAccTxR :: Text -> Text -> Handler Value
-getAccTxR name tidStr = handleErrors $ do
+getAccTxR :: Text -> Text -> Text -> Handler Value
+getAccTxR wallet name tidStr = handleErrors $ do
     let tidM = decodeTxHashLE $ unpack tidStr
         tid  = fromJust tidM
     unless (isJust tidM) $ liftIO $ throwIO $
         WalletException "Could not parse txhash"
-    accTx <- runDB $ getAccTx (unpack name) tid
+    accTx <- runDB $ getAccTx (unpack wallet) (unpack name) tid
     return $ toJSON accTx
+
+getSigBlobR :: Text -> Text -> Text -> Handler Value
+getSigBlobR wallet name tidStr = handleErrors $ do
+    let tidM = decodeTxHashLE $ unpack tidStr
+    unless (isJust tidM) $ liftIO $ throwIO $
+        WalletException "Could not parse txhash"
+    blob <- runDB $ getSigBlob (unpack wallet) (unpack name) $ fromJust tidM
+    return $ toJSON blob
+
+getBalanceR :: Text -> Text -> Handler Value
+getBalanceR wallet name = handleErrors $ do
+    confM <- runInputGet $ iopt intField "minconf"
+    let minConf = fromMaybe 0 confM
+    (balance, cs) <- runDB $ accountBalance w n minConf
+    return $ toJSON $ BalanceRes balance cs
+  where
+    w = unpack wallet
+    n = unpack name
+
+getSpendableR :: Text -> Text -> Handler Value
+getSpendableR wallet name = handleErrors $ do
+    confM <- runInputGet $ iopt intField "minconf"
+    let minConf = fromMaybe 0 confM
+    balance <- runDB $ spendableAccountBalance w n minConf
+    return $ toJSON $ SpendableRes balance
+  where
+    w = unpack wallet
+    n = unpack name
 
 getTxR :: Text -> Handler Value
 getTxR tidStr = handleErrors $ do
@@ -441,28 +515,6 @@ putTxsR = handleErrors $ guardVault >>
             return $ toJSON $ TxHashStatusRes tid complete prop
         -- TODO: What happens here ?
         Error _ -> undefined
-
-getBalanceR :: Text -> Handler Value
-getBalanceR name = handleErrors $ do
-    confM <- runInputGet $ iopt intField "minconf"
-    let minConf = fromMaybe 0 confM
-    (balance, cs) <- runDB $ accountBalance (unpack name) minConf
-    return $ toJSON $ BalanceRes balance cs
-
-getSpendableR :: Text -> Handler Value
-getSpendableR name = handleErrors $ do
-    confM <- runInputGet $ iopt intField "minconf"
-    let minConf = fromMaybe 0 confM
-    balance <- runDB $ spendableAccountBalance (unpack name) minConf
-    return $ toJSON $ SpendableRes balance
-
-getSigBlobR :: Text -> Text -> Handler Value
-getSigBlobR name tidStr = handleErrors $ do
-    let tidM = decodeTxHashLE $ unpack tidStr
-    unless (isJust tidM) $ liftIO $ throwIO $
-        WalletException "Could not parse txhash"
-    blob <- runDB $ getSigBlob (unpack name) $ fromJust tidM
-    return $ toJSON blob
 
 postNodeR :: Handler Value
 postNodeR = handleErrors $ guardVault >> 

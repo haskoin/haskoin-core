@@ -6,40 +6,40 @@ it with `hw start`.
 
 ## Overview
 
-- [/api/wallets](#get-apiwallets) (GET, POST)  
-  List all wallets, Create a new wallet
-- [/api/wallets/{name}](#get-apiwalletsname) (GET)  
-  Get a wallet by name
-- [/api/accounts](#get-apiaccounts) (GET, POST)  
-  List all accounts, Create a new account
-- [/api/accounts/{name}](#get-apiaccountsname) (GET)  
-  Get an account by name
-- [/api/accounts/{name}/keys](#post-apiaccountsnamekeys) (POST)  
-  Add keys to a multisig account
-- [/api/accounts/{name}/addrs](#get-apiaccountsnameaddrs) (GET, POST)  
-  List addresses, Get a new unused address
-- [/api/accounts/{name}/addrs/{key}](#get-apiaccountsnameaddrskey) (GET, PUT)  
-  Get an address by key, Update an address label
-- [/api/accounts/{name}/acctxs](#get-apiaccountsnameacctxs) (GET, POST)  
-  List txs, Send coins, Sign txs/sigblobs
-- [/api/accounts/{name}/acctxs/{txhash}](#get-apiaccountsnameacctxstxhash) (GET)  
-  Get a tx by account and transaction id
-- [/api/accounts/{name}/acctxs/{txhash}/sigblob](#get-apiaccountsnameacctxstxhashsigblob) (GET)  
-  Get data to sign a transaction offline
-- [/api/accounts/{name}/balance](#get-apiaccountsnamebalance) (GET)  
-  Get an account balance in satoshi
-- [/api/accounts/{name}/spendablebalance](#get-apiaccountsnamespendablebalance) (GET)  
-  Get an account spendable balance in satoshi
-- [/api/txs](#put-apitxs) (PUT)  
-  Import transactions
-- [/api/txs/{txhash}](#get-apitxstxhash) (GET)  
-  Get a full transaction by transaction id
-- [/api/node](#post-apinode)  (POST)  
-  Rescan the wallet from a given timestamp
+- [/wallets](#get-wallets) 
+  (GET, POST) List all wallets, Create a new wallet
+- [/wallets/{name}](#get-walletsname) 
+  (GET) Get a wallet by name
+- [/wallets/{name}/accounts](#get-walletsnameaccounts) 
+  (GET, POST) List all accounts, Create a new account
+- [/wallets/{name}/accounts/{name}](#get-walletsnameaccountsname) 
+  (GET) Get an account by name
+- [/wallets/{name}/accounts/{name}/keys](#post-walletsnameaccountsnamekeys) 
+  (POST)  Add keys to a multisig account
+- [/wallets/{name}/accounts/{name}/addrs](#get-walletsnameaccountsnameaddrs) 
+  (GET, POST) List addresses, Get a new unused address
+- [/wallets/{name}/accounts/{name}/addrs/{key}](#get-walletsnameaccountsnameaddrskey) 
+  (GET, PUT) Get an address by key, Update an address label
+- [/wallets/{name}/accounts/{name}/acctxs](#get-walletsnameaccountsnameacctxs) 
+  (GET, POST) List txs, Send coins, Sign txs/sigblobs
+- [/wallets/{name}/accounts/{name}/acctxs/{txhash}](#get-walletsnameaccountsnameacctxstxhash) 
+  (GET) Get a tx by account and transaction id
+- [/wallets/{name}/accounts/{name}/acctxs/{txhash}/sigblob](#get-walletsnameaccountsnameacctxstxhashsigblob) 
+  (GET) Get data to sign a transaction offline
+- [/wallets/{name}/accounts/{name}/balance](#get-walletsnameaccountsnamebalance) 
+  (GET) Get an account balance in satoshi
+- [/wallets/{name}/accounts/{name}/spendablebalance](#get-walletsnameaccountsnamespendablebalance) 
+  (GET) Get an account spendable balance in satoshi
+- [/txs](#put-txs) 
+  (PUT) Import transactions
+- [/txs/{txhash}](#get-txstxhash) 
+  (GET) Get a full transaction by transaction id
+- [/node](#post-node)  
+  (POST) Rescan the wallet from a given timestamp
 
 ## API Specification
 
-### GET /api/wallets
+### GET /wallets
 
 **Modes**: online, offline
 
@@ -60,7 +60,7 @@ Returns a list of all available wallets in the following format:
 ]
 ```
 
-### POST /api/wallets
+### POST /wallets
 
 **Modes**: online, offline
 
@@ -87,7 +87,7 @@ Returns the mnemonic sentence of your new wallet:
 { "mnemonic": "film pig subway ..." }
 ```
 
-### GET /api/wallets/{name}
+### GET /wallets/{name}
 
 **Modes**: online, offline
 
@@ -96,7 +96,7 @@ Returns the mnemonic sentence of your new wallet:
 A wallet resource is identified by its name. For example:
 
 ```
-/api/wallets/wallet1
+/wallets/wallet1
 ```
 
 #### Output
@@ -113,13 +113,13 @@ A JSON object representing a wallet in the following format:
 It contains both the wallet name and the extended private key (master key) for
 that wallet.
 
-### GET /api/accounts
+### GET /wallets/{name}/accounts
 
 **Modes**: online, offline, vault
 
 #### Output
 
-Returns a list of all available accounts. There are 4 types of accounts
+Returns a list of all accounts in a wallet. There are 4 types of accounts
 having each a different JSON representation:
 
 ##### Regular account
@@ -130,8 +130,8 @@ the xpub key.
 ```json
 {
 "type": "regular",
-"name": "account1",
 "wallet": "wallet1",
+"name": "account1",
 "index": 4,
 "key": "xpub..."
 }
@@ -145,8 +145,8 @@ derived from the keys.
 ```json
 {
 "type": "multisig",
-"name": "account2",
 "wallet": "wallet1",
+"name": "account2",
 "index": 5,
 "required": 2,
 "total": 3,
@@ -164,6 +164,7 @@ security is not optimal, such as on a web server.
 ```json
 {
 "type": "read",
+"wallet": "wallet1",
 "name": "account3",
 "key": "xpub..."
 }
@@ -179,6 +180,7 @@ where security is not optimal, such as on a web server.
 ```json
 {
 "type": "readmultisig",
+"wallet": "wallet1",
 "name": "account4",
 "required": 2,
 "total": 3,
@@ -186,9 +188,11 @@ where security is not optimal, such as on a web server.
 }
 ```
   
-### POST /api/accounts
+### POST /wallets/{name}/accounts
 
 **Modes**: online, offline, vault
+
+POSTing to this resource allows you to create a new account in a wallet.
 
 #### Input
 
@@ -202,7 +206,6 @@ bip32). The wallet must already exist in order to create a regular account.
 ```json
 {
 "type": "regular",
-"walletname": "wallet1",
 "accountname": "account1"
 }
 ```
@@ -215,12 +218,12 @@ The keys field corresponds to the thirdparty keys associated to this multisig
 account. Your key will be generated by the wallet and added as the first
 element on the list. So, if you are creating a m of n account, you can specify
 an additional (n-1) keys.  Thirdparty keys can be added at a later time through
-the resource [/api/accounts/{name}/keys](#post-apiaccountsnamekeys).
+the resource
+[/wallets/{name}/accounts/{name}/keys](#post-walletsnameaccountsnamekeys).
 
 ```json
 {
 "type": "multisig",
-"walletname": "wallet1",
 "accountname": "account2",
 "required": 2,
 "total": 3,
@@ -248,7 +251,7 @@ You can create a multisig read-only account to monitor payments without having
 the ability to spend coins.  The extended public keys are used to generate the
 pay-to-script-hash addresses that you would like to monitor.  Keys can be added
 at a later time through the resource
-[/api/accounts/{name}/keys](#post-apiaccountsnamekeys).
+[/wallets/{name}/accounts/{name}/keys](#post-walletsnameaccountsnamekeys).
 
 ```json
 {
@@ -262,9 +265,10 @@ at a later time through the resource
   
 #### Output
 
-A JSON representation of your new account as defined [here](#get-apiaccounts).
+A JSON representation of your new account as defined
+[here](#get-walletsnameaccounts).
 
-### GET /api/accounts/{name}
+### GET /wallets/{name}/accounts/{name}
 
 **Modes**: online, offline, vault
 
@@ -273,20 +277,20 @@ A JSON representation of your new account as defined [here](#get-apiaccounts).
 An account resource is identified by its name. For example:
 
 ```
-/api/accounts/account1
+/wallets/wallet1/accounts/account1
 ```
 
 #### Output
 
-A JSON representation of the given account as defined [here](#get-apiaccounts).
+A JSON representation of the given account as defined
+[here](#get-walletsnameaccounts).
 
-### POST /api/accounts/{name}/keys
+### POST /wallets/{name}/accounts/{name}/keys
 
 **Modes**: online, offline, vault
 
 When creating a multisignature account, you can add the keys at a later time by
-using this resource.  Adding too many keys will result in a failure.
-
+using this resource. Adding too many keys will result in a failure.
 
 #### Input
 
@@ -295,12 +299,12 @@ A JSON list of extended public keys:
 ```json
   [ "xpub1...", "xpub2..." ]
 ```
-
 #### Output
 
-A JSON representation of the given account as defined [here](#get-apiaccounts).
+A JSON representation of the given account as defined
+[here](#get-walletsnameaccounts).
 
-### GET /api/accounts/{name}/addrs
+### GET /wallets/{name}/accounts/{name}/addrs
 
 **Modes**: online, offline, vault
 
@@ -320,11 +324,11 @@ can ask for internal addresses by setting the internal flag.
 Here are some valid example queries:
 
 ```
-GET /api/accounts/account1/addrs
-GET /api/accounts/account1/addrs?page=1
-GET /api/accounts/account1/addrs?page=2&elemperpage=50
-GET /api/accounts/account1/addrs?minconf=1
-GET /api/accounts/account1/addrs?minconf=2&internal=true
+GET /wallets/wallet1/accounts/account1/addrs
+GET /wallets/wallet1/accounts/account1/addrs?page=1
+GET /wallets/wallet1/accounts/account1/addrs?page=2&elemperpage=50
+GET /wallets/wallet1/accounts/account1/addrs?minconf=1
+GET /wallets/wallet1/accounts/account1/addrs?minconf=2&internal=true
 ```
 
 #### Output
@@ -412,7 +416,7 @@ The `fundingtxs` field contains transactions that fund the given address and
 the `spendingtxs` field contains transactions that spend from the given
 address.
 
-### POST /api/accounts/{name}/addrs
+### POST /wallet/{name}/accounts/{name}/addrs
 
 **Modes**: online, offline, vault
 
@@ -441,7 +445,7 @@ A JSON representation of the newly created address:
 }
 ```
 
-### GET /api/accounts/{name}/addrs/{key}
+### GET /wallets/{name}/accounts/{name}/addrs/{key}
 
 **Modes**: online, offline, vault
 
@@ -453,8 +457,8 @@ the minimum number of confirmations to compute the address balance and to
 get internal addresses instead of external ones.
 
 ```
-GET /api/accounts/account1/addrs/17
-GET /api/accounts/account1/addrs/25?minconf=1&internal=true
+GET /wallets/wallet1/accounts/account1/addrs/17
+GET /wallets/wallet1/accounts/account1/addrs/25?minconf=1&internal=true
 ```
 
 #### Output
@@ -488,7 +492,7 @@ A JSON representation of the given address:
 
 Go [here](#address-fields) for a description of the address fields.
 
-### PUT /api/accounts/{name}/addrs/{key}
+### PUT /wallets/{name}/accounts/{name}/addrs/{key}
 
 **Modes**: online, offline, vault
 
@@ -516,7 +520,7 @@ A JSON representation of the updated address:
 }
 ```
 
-### GET /api/accounts/{name}/acctxs
+### GET /wallets/{name}/accounts/{name}/acctxs
 
 **Modes**: online, offline, vault
 
@@ -534,9 +538,9 @@ paging parameters are set, the entire list is returned. Asking for page 0 will
 return the last page.  Here are some valid example queries:
 
 ```
-GET /api/accounts/account1/acctxs
-GET /api/accounts/account1/acctxs?page=1
-GET /api/accounts/account1/acctxs?page=2&elemperpage=50
+GET /wallets/wallet1/accounts/account1/acctxs
+GET /wallets/wallet1/accounts/account1/acctxs?page=1
+GET /wallets/wallet1/accounts/account1/acctxs?page=2&elemperpage=50
 ```
 
 #### Output
@@ -645,7 +649,7 @@ was offline during the broadcast. The "confirmationdate" is the timestamp of
 the block that confirmed the transaction. This might be a more reliable way
 of knowing when the transaction was created if your wallet is often offline.
 
-### POST /api/accounts/{name}/acctxs
+### POST /wallets/{name}/accounts/{name}/acctxs
 
 **Modes**: offline, online
 
@@ -680,7 +684,7 @@ signed), an additional proposition field will be included which is the
 original transaction with all input scripts blanked out. You can give the
 proposition to the other keys holders in a multisig account for them to sign,
 then merge all the signed propositions back into the wallet using the
-[import resource](#put-apitxs).
+[import resource](#put-txs).
 
 ```json
 {
@@ -726,9 +730,9 @@ transaction with all input scripts blanked out.
 
 #### Sign offline transaction
 
-Use this resource to sign an offline sigblob that was produced from
+Use this resource to sign an offline sigblob that was produced by the
 resource GET
-[/api/accounts/{name}/acctxs/{txhash}/sigblob](#get-apiaccountsnameacctxstxhashsigblob).
+[/wallets/{name}/accounts/{name}/acctxs/{txhash}/sigblob](#get-walletsnameaccountsnameacctxstxhashsigblob).
 
 You can have an online read-only wallet produce a sigblob that you can sign
 using an offline wallet containing the private keys. The sigblob contains a
@@ -781,7 +785,7 @@ transaction with all the input scripts blanked out.
 }
 ```
 
-### GET /api/accounts/{name}/acctxs/{txhash}
+### GET /wallets/{name}/accounts/{name}/acctxs/{txhash}
 
 **Modes**: online, offline, vault
 
@@ -812,7 +816,7 @@ Returns the requested account transaction:
 
 Go [here](#acctxs-fields) for a description of the account transaction fields.
 
-### GET /api/accounts/{name}/acctxs/{txhash}/sigblob
+### GET /wallets/{name}/accounts/{name}/acctxs/{txhash}/sigblob
 
 **Modes**: online, offline, vault
 
@@ -820,7 +824,8 @@ Use this resource to compute the offline sigblob for a given transaction. A
 sigblob can be produced from any type of account (including read-only
 accounts). You can then sign the transaction included in the sigblob by using
 this resource on another account containing the private keys (ideally on an
-offline wallet): POST [/api/accounts/{name}/acctxs](#sign-offline-transaction).
+offline wallet): POST
+[/wallets/{name}/accounts/{name}/acctxs](#sign-offline-transaction).
 
 #### Output
 
@@ -846,7 +851,7 @@ transaction. The data part consists of a list of the following elements:
 }
 ```
 
-### GET /api/accounts/{name}/balance
+### GET /wallets/{name}/accounts/{name}/balance
 
 **Modes**: online, offline, vault
 
@@ -859,8 +864,8 @@ that have at least a minimum number of confirmations. By default, the 0-conf
 balance is returned, which is your unconfirmed balance.
 
 ```
-GET /api/accounts/account1/balance
-GET /api/accounts/account1/balance?minconf=1
+GET /wallets/wallet1/accounts/account1/balance
+GET /wallets/wallet1/accounts/account1/balance?minconf=1
 ```
 
 #### Output
@@ -877,9 +882,9 @@ Conflicts usually resolve on their own when new blocks are solved. If you have
 a balance in conflict status, you should wait for a few extra blocks to sort
 out the conflicts.
 
-Alternatively, you can use the [spendable balance](#get-apiaccountsnamespendablebalance) 
-to always return a value, but it will not be accurate in the presence of
-conflicts.
+Alternatively, you can use the [spendable
+balance](#get-walletsnameaccountsnamespendablebalance) to always return a
+value, but it will not be accurate in the presence of conflicts.
 
 ```json
 {
@@ -903,7 +908,7 @@ conflicts.
 }
 ```
 
-### GET /api/accounts/{name}/spendablebalance
+### GET /wallets/{name}/accounts/{name}/spendablebalance
 
 **Modes**: online, offline, vault
 
@@ -916,8 +921,8 @@ coins that have at least a minimum number of confirmations. By default, the
 0-conf balance is returned, which is your unconfirmed spendable balance.
 
 ```
-GET /api/accounts/account1/spendablebalance
-GET /api/accounts/account1/spendablebalance?minconf=1
+GET /wallets/wallet1/accounts/account1/spendablebalance
+GET /wallets/wallet1/accounts/account1/spendablebalance?minconf=1
 ```
 
 #### Output
@@ -926,10 +931,10 @@ The spendable balance of an account with the given number of minimum
 confirmations. The spendable balance will ignore the coins created by
 conflicting transactions and ignore coins spent by conflicting transactions. It
 will also ignore coinbase transactions with less than 100 confirmations. In
-contrast to the [true balance](#get-apiaccountsnamebalance), the spendable
-balance will always return a value but it will be innacurate in the presence of
-conflicts. However, it represents the balance that a user can spend at any
-given point in time.
+contrast to the [true balance](#get-walletsnameaccountsnamebalance), the
+spendable balance will always return a value but it will be innacurate in the
+presence of conflicts. However, it represents the balance that a user can spend
+at any given point in time.
 
 If you display the spendable balance to a user, it is advisable to also 
 display the true balance as this will let the user know something is wrong
@@ -939,7 +944,7 @@ if he is a victim of a double spend or malleability attack.
 { "balance": 3330000 }
 ```
 
-### PUT /api/txs
+### PUT /txs
 
 **Modes**: online, offline
 
@@ -973,7 +978,7 @@ input script blanked out.
 }
 ```
 
-### GET /api/txs/{txhash}
+### GET /txs/{txhash}
 
 **Modes**: online, offline, vault
 
@@ -990,7 +995,7 @@ The requested transaction:
 }
 ```
 
-### POST /api/node
+### POST /node
 
 **Modes**: online, offline
 

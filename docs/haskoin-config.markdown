@@ -1,14 +1,20 @@
 # Configuration File
 
 The Haskoin Wallet configuration file allows to manage the behaviour of the
-Haskoin Wallet daemon.  This file is formatted in [YAML](www.yaml.org).  The
-default location for the configuration file is:
+Haskoin Wallet daemon.  This file is formatted in [YAML](http://www.yaml.org).
+The default location for the configuration file is:
 
     $HOME/.haskoin/config.yaml
 
 
 
 ## Server Directives
+
+### detach
+
+Detach and continue running on background when running daemon.
+
+Default: false
 
 ### user
 
@@ -18,17 +24,51 @@ Username to connect to the API via HTTP basic authentication.
 
 Password to connect to the API via HTTP basic authentication.
 
+### bind
+
+Bind the RESTful API server to this network interface.  Defaults to IPv4
+localhost. For possible values look at [HostPreference](http://goo.gl/UA5dX5).
+
+Default: '127.0.0.1'
+
+### port
+
+Bind the RESTful API server to this port.
+
+Default: 18555
+
+### bitcoin-hosts
+
+List of full Bitcoin nodes to whom this client will establish connections.
+Currently Haskoin does not implement peer discovery, and you must specify to
+which nodes it should establish connections.
+
+Default:
+
+    - host: '127.0.0.1'
+      port: 18333
+
+### operation-mode
+
+There are three modes of operation: online, offline and vault. 
+
+- Online mode launches an SPV client and connects to the Bitcoin nodes set in
+  the configuration file.  
+
+- Offline mode does not attempt to connect to the Bitcoin network or keep track
+  of transactions. Most API calls are otherwise available.
+
+- Vault mode is an offline mode with restrictions on the available API calls.
+  It is meant for signing transactions in an offline environment. Functions
+  like creating new wallets or printing wallet private keys are not available.
+
+Default: online
+
 ### batch
 
 How many block should be batched together for download/import.
 
 Default: 100
-
-### detach
-
-Detach and continue running on background when running daemon.
-
-Default: false
 
 ### passphrase
 
@@ -37,12 +77,11 @@ information.
 
 Default: ''
 
-### false-positive
+### count
 
-False positive rate in bloom filter. See [BIP-37](http://goo.gl/hzXCtC) for
-more information.
+How many elements should be returned by commands who require an element count
 
-Default: 1.0e-5
+Default: 5
 
 ### fee
 
@@ -62,40 +101,12 @@ Display internal addresses instead of external ones.
 
 Default: false
 
-### bind
+### false-positive
 
-Bind server to this network interface.  Defaults to IPv4 localhost.  For
-possible values look at [HostPreference](http://goo.gl/UA5dX5).
+False positive rate in bloom filter. See [BIP-37](http://goo.gl/hzXCtC) for
+more information.
 
-Default: '127.0.0.1'
-
-### bitcoin-hosts
-
-List of full Bitcoin nodes to whom this client will establish connections.
-Currently Haskoin does not implement peer discovery, and you must specify to
-which nodes it should establish connections.
-
-Default:
-
-    - host: '127.0.0.1'
-      port: 18333
-
-### operation-mode
-
-There are three modes of operation: online, offline and vault.  Online mode 
-launches an SPV client and connects to the Bitcoin nodes set in the
-configuration file.  Offline mode does not attempt to connect
-to the Bitcoin network or keep track of transactions.  Vault mode is meant
-for a signing transactions without connecting to the Bitcoin network, but
-allowing API access.
-
-Default: online
-
-### port
-
-Port to listen to RESTful API requests from.
-
-Default: 18555
+Default: 1.0e-5
 
 ### gap
 
@@ -108,21 +119,21 @@ Default: 10
 
 ## Client Directives
 
-### count
+### provider
 
-How many elements should be returned by commands who require an element count
+URL of the RESTful haskoin API server.
 
-Default: 5
+Default: http://localhost:8555
 
 ### json
 
-Output of commands in [JSON](www.json.org) format.
+Output of commands in [JSON](http://www.json.org) format.
 
 Default: false
 
 ### yaml
 
-Output of commands in [YAML](www.yaml.org) format.
+Output of commands in [YAML](http://www.yaml.org) format.
 
 Default: false
 

@@ -267,8 +267,7 @@ updateNode action = do
     res <- action
     whenOnline $ do
         hs <- getYesod
-        let rChanM = serverNode hs
-            rChan = fromJust rChanM
+        let rChan = fromJust $ serverNode hs
             config = serverConfig hs
         bloom <- runDB $ walletBloomFilter $ configBloomFP config
         liftIO $ atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
@@ -449,8 +448,7 @@ postTxsR wallet name = handleErrors $ guardVault >>
         Success (SignTx tx) -> do
             (tid, complete, p) <- runDB $ signWalletTx w n tx
             whenOnline $ when complete $ do
-                rChanM <- fmap serverNode getYesod
-                let rChan = fromJust rChanM
+                rChan <- fmap (fromJust . serverNode) getYesod
                 newTx <- runDB $ getTx tid
                 liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
             let prop = if complete then Nothing else Just p

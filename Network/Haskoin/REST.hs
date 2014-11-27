@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-unused-matches #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE QuasiQuotes           #-}
 {-# LANGUAGE TemplateHaskell       #-}
@@ -154,7 +155,7 @@ data HaskoinServer = HaskoinServer
     { serverPool   :: ConnectionPool
     , serverNode   :: Maybe (TBMChan SPVRequest)
     , serverConfig :: ServerConfig
-    , serverStatic :: Static
+    , getStatic :: Static
     }
 
 instance Yesod HaskoinServer where
@@ -184,6 +185,7 @@ mkYesod "HaskoinServer" [parseRoutes|
 /wallets/#Text/accounts/#Text/balance              BalanceR     GET
 /wallets/#Text/accounts/#Text/spendablebalance     SpendableR   GET
 /node                                              NodeR        POST
+/static                                            StaticR Static getStatic
 |]
 
 runServer :: ServerConfig -> IO ()
@@ -215,7 +217,7 @@ runServer config = do
                 { serverPool = pool
                 , serverNode = Nothing
                 , serverConfig = config
-                , serverStatic = staticSite
+                , getStatic = staticSite
                 }
             runApp app
         else do
@@ -245,7 +247,7 @@ runServer config = do
                         { serverPool = pool
                         , serverNode = (Just rChan)
                         , serverConfig = config
-                        , serverStatic = staticSite
+                        , getStatic = staticSite
                         }
                     runApp app
 

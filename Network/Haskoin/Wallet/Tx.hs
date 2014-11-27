@@ -575,7 +575,7 @@ signWalletTx wallet name tx = do
     let (tid, conf) = fromJust confM
     when (isNothing confM) $ liftIO $ throwIO $
         WalletException "Transaction is not relevant to this wallet"
-    return (tid, conf == TxPending, prop)
+    return (tid, conf `elem` [ TxPending, TxBuilding ], prop)
   where
     p = tx{ txIn = map (\ti -> ti{ scriptInput = BS.empty } ) $ txIn tx }
 

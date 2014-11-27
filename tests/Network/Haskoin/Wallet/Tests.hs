@@ -30,7 +30,6 @@ tests =
         , testProperty "AddressPageRes" (metaID :: AddressPageRes -> Bool)
         , testProperty "TxPageRes" (metaID :: TxPageRes -> Bool)
         , testProperty "AddressData" (metaID :: AddressData -> Bool)
-        , testProperty "TxAction" (metaID :: TxAction -> Bool)
         , testProperty "AccTxAction" (metaID :: AccTxAction -> Bool)
         , testProperty "TxHashStatusRes" (metaID :: TxHashStatusRes -> Bool)
         , testProperty "TxRes" (metaID :: TxRes -> Bool)

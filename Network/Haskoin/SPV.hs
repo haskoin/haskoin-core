@@ -92,7 +92,7 @@ instance SPVNode DBHandle NodeHandle where
         fp <- liftM bloomFP $ lift $ lift $ S.get
         resE <- liftIO $ tryJust f $ flip runSqlPersistMPool pool $ do
             before <- count ([] :: [Filter (DbAddressGeneric b)])
-            forM_ txs $ \tx -> importTx tx NetworkSource
+            forM_ txs $ \tx -> importTx tx NetworkSource Nothing
             after <- count ([] :: [Filter (DbAddressGeneric b)])
             -- Update the bloom filter if new addresses were generated
             if after > before 

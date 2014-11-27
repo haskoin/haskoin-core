@@ -287,7 +287,7 @@ testImportOrphan = do
     checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
 
     -- import first orphan
-    importTx tx1 NetworkSource >>=
+    importTx tx1 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not Nothing" Nothing)
     liftM (map (dbOrphanHash . entityVal)) (selectList [] [])
         >>= liftIO . (assertEqual "Wrong orphans" [txHash tx1])
@@ -300,7 +300,7 @@ testImportOrphan = do
     checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
 
     -- import second orphan
-    importTx tx2 NetworkSource >>=
+    importTx tx2 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not Nothing" Nothing)
     liftM (map (dbOrphanHash . entityVal)) (selectList [] [])
         >>= liftIO . (assertEqual "Wrong orphans" [txHash tx1, txHash tx2])
@@ -312,7 +312,7 @@ testImportOrphan = do
     checkAddressBalance 0 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
     checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
 
-    importTx fundingTx NetworkSource >>=
+    importTx fundingTx NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (txHash fundingTx, TxPending)))
     liftM (map (dbOrphanHash . entityVal)) (selectList [] [])
@@ -375,7 +375,7 @@ testOutDoubleSpend = do
         spend2 = decode' $ fromJust $ hexToBS "010000000177c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be000000006b4830450221008b6a328f5403f97ac154b543f23a203a711708a2b5d2c4886f110773450723b402205ed70b0a49f797b2e989874ad26ca5cedd677e7e12d7c8844f67eebee5cd8a9601210320e6fef44dc34322ce8e5d0a20efe55ae1308c321fab6496eece4473b9f12dd6ffffffff0250c30000000000001976a9144d816754accc18bb7b2cef479d948be74399337788ac20ac9700000000001976a91478046f37173d0a16deb1491b8566e26f0cb4894488ac00000000" :: Tx
 
     -- Import funding transaction
-    importTx fundingTx NetworkSource >>=
+    importTx fundingTx NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (txHash fundingTx, TxPending)))
     spendableCoins ai 0 >>= 
@@ -389,7 +389,7 @@ testOutDoubleSpend = do
     checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
 
     -- Import first conflicting transaction
-    importTx spend1 NetworkSource >>=
+    importTx spend1 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (txHash spend1, TxPending)))
     spendableCoins ai 0 >>= 
@@ -403,7 +403,7 @@ testOutDoubleSpend = do
     checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
 
     -- Import second conflicting transaction
-    importTx spend2 NetworkSource >>=
+    importTx spend2 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (txHash spend2, TxPending)))
     spendableCoins ai 0 >>= 
@@ -566,7 +566,7 @@ testInDoubleSpend = do
                    ] 0
 
     -- Import first conflicting transaction
-    importTx tx1 NetworkSource >>=
+    importTx tx1 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (txHash tx1, TxPending)))
     spendableCoins ai 0 >>= 
@@ -575,7 +575,7 @@ testInDoubleSpend = do
     checkSpendableBalance 0 "test" "acc1" 10000000
 
     -- Import second conflicting transaction
-    importTx tx2 NetworkSource >>=
+    importTx tx2 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (txHash tx2, TxPending)))
     spendableCoins ai 0 >>= 
@@ -676,7 +676,7 @@ testDoubleSpendChain = do
                    ] 0
 
     -- Import first transaction
-    importTx tx1 NetworkSource >>=
+    importTx tx1 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (txHash tx1, TxPending)))
     spendableCoins ai 0 >>= 
@@ -685,7 +685,7 @@ testDoubleSpendChain = do
     checkSpendableBalance 0 "test" "acc1" 10000000
 
     -- Now we spend our new coins
-    importTx tx2 NetworkSource >>=
+    importTx tx2 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (txHash tx2, TxPending)))
     spendableCoins ai 0 >>= 
@@ -710,7 +710,7 @@ testDoubleSpendChain = do
     checkSpendableBalance 2 "test" "acc1" 0
 
     -- Now let's add tx4 which is in conflict with tx1
-    importTx tx4 NetworkSource >>=
+    importTx tx4 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not dead" 
             (Just (txHash tx4, TxDead)))
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
@@ -766,7 +766,7 @@ testDoubleSpendChain = do
     checkSpendableBalance 3 "test" "acc1" 0
 
     -- Now we add tx3 on top of tx2. It should be dead.
-    importTx tx3 NetworkSource >>=
+    importTx tx3 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not dead" 
             (Just (txHash tx3, TxDead)))
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
@@ -837,7 +837,7 @@ testDoubleSpendGroup = do
         tx3 = decode' $ fromJust $ hexToBS "010000000177c50936caaa97a7cf69b45579252d7712760285b53751cb844c74af55bd33be010000006a47304402205ebb211e7e073ab79a02af5db840d4829335e110ddffa81a26cacc91569f963802201bf901de4dc626b5ccce4f15ef22682cb210b7a22bb5817d310f0d65fbef20bc01210206ac706bccb9a4ba7c1a6f133d5f17d847875d5ff29019913224cb32f6c57fa7ffffffff01f0053101000000001976a914a1bc8c0a9a20bf4d629be585f8764a475090cae788ac00000000" :: Tx
     
     -- Import funding transaction
-    importTx fundingTx NetworkSource >>=
+    importTx fundingTx NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (txHash fundingTx, TxPending)))
     spendableCoins ai 0 >>= 
@@ -846,7 +846,7 @@ testDoubleSpendGroup = do
     checkSpendableBalance 0 "test" "acc1" 30000000
 
     -- Import first transaction
-    importTx tx1 NetworkSource >>=
+    importTx tx1 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (txHash tx1, TxPending)))
     spendableCoins ai 0 >>= 
@@ -879,7 +879,7 @@ testDoubleSpendGroup = do
     checkSpendableBalance 3 "test" "acc1" 0
 
     -- Import second transaction
-    importTx tx2 NetworkSource >>=
+    importTx tx2 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not TxDead" 
             (Just (txHash tx2, TxDead)))
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
@@ -898,7 +898,7 @@ testDoubleSpendGroup = do
     checkSpendableBalance 3 "test" "acc1" 0
 
     -- Import third transaction
-    importTx tx3 NetworkSource >>=
+    importTx tx3 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not TxPending" 
             (Just (txHash tx3, TxPending)))
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
@@ -1013,20 +1013,20 @@ testWalletDoubleSpend = do
         addLookAhead "test" "acc1" 30
         _ <- newAddrs "test" "acc1" 5
         -- Import funding transaction
-        importTx fundingTx NetworkSource >>=
+        importTx fundingTx NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
                 (Just (txHash fundingTx, TxPending)))
         -- Import first transaction
-        importTx tx1 NetworkSource >>=
+        importTx tx1 NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
                 (Just (txHash tx1, TxPending)))
         -- Import second transaction
-        importTx tx2 NetworkSource >>=
+        importTx tx2 NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
                 (Just (txHash tx2, TxPending)))
         -- Importing this transaction as a wallet transaction should fail as it
         -- double spends a coin
-        importTx tx3 WalletSource 
+        importTx tx3 WalletSource Nothing 
 
     assertException (WalletException "Can not import double-spending transaction") $ do
         _ <- newWallet "test" bs1
@@ -1034,20 +1034,20 @@ testWalletDoubleSpend = do
         addLookAhead "test" "acc1" 30
         _ <- newAddrs "test" "acc1" 5
         -- Import funding transaction
-        importTx fundingTx NetworkSource >>=
+        importTx fundingTx NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
                 (Just (txHash fundingTx, TxPending)))
         -- Import first transaction
-        importTx tx1 NetworkSource >>=
+        importTx tx1 NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
                 (Just (txHash tx1, TxPending)))
         -- Import second transaction
-        importTx tx2 NetworkSource >>=
+        importTx tx2 NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
                 (Just (txHash tx2, TxPending)))
         -- Importing this transaction as a wallet transaction should fail as it
         -- builds on top of a conflicting chain
-        importTx tx4 WalletSource 
+        importTx tx4 WalletSource Nothing 
 
     -- Now we make tx2 dead so we can import tx3 and tx4 from the wallet
     runUnit $ do
@@ -1058,15 +1058,15 @@ testWalletDoubleSpend = do
         addLookAhead "test" "acc1" 30
         _ <- newAddrs "test" "acc1" 5
         -- Import funding transaction
-        importTx fundingTx NetworkSource >>=
+        importTx fundingTx NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
                 (Just (txHash fundingTx, TxPending)))
         -- Import first transaction
-        importTx tx1 NetworkSource >>=
+        importTx tx1 NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
                 (Just (txHash tx1, TxPending)))
         -- Import second transaction
-        importTx tx2 NetworkSource >>=
+        importTx tx2 NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
                 (Just (txHash tx2, TxPending)))
 
@@ -1081,7 +1081,7 @@ testWalletDoubleSpend = do
         checkSpendableBalance 3 "test" "acc1" 0
 
         -- now we can import tx3
-        importTx tx3 WalletSource >>=
+        importTx tx3 WalletSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
                 (Just (txHash tx3, TxPending)))
         liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx3)
@@ -1096,7 +1096,7 @@ testWalletDoubleSpend = do
         checkSpendableBalance 2 "test" "acc1" 0
 
         -- and tx4
-        importTx tx4 WalletSource >>=
+        importTx tx4 WalletSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
                 (Just (txHash tx4, TxPending)))
         liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx4)
@@ -1127,7 +1127,7 @@ testImportMultisig = do
                  ] 0
         toImport = decode' $ fromJust $ hexToBS "0100000001d53c19abd25c333a0d348b10c10f1781e12ddc9fc82d95743b249b88cc50a72900000000da00483045022100ae08adb9dbb3974c95f39400f22b28b8f3920e131fe8c43b942632718c018b2902204510743685522f4e29bc0cac7938b7ece87ae4e2a93182e5bafc0e88bdf9e3c2014730440220351bafa1f3f0c82720d9f887d97c23681bfbded78119201cbed00b57e5eff73e02205da173d08be046d125cc3bbc35ce1be16652d0990f247662f7a171c49381badd014752210320e6fef44dc34322ce8e5d0a20efe55ae1308c321fab6496eece4473b9f12dd62103d9097c7e36d393672fd366f303e1c30c1421e1e72bedc73d49ae92e4ba5ed83552aeffffffff02404b4c000000000017a9143c8ea9e0b86430bed5805b86023ce11175c26ad38730244c000000000017a91473a92334bcf250c85a30fd3cb7fbebc49d822ccc8700000000" :: Tx
 
-    _ <- importTx fundingTx NetworkSource
+    _ <- importTx fundingTx NetworkSource Nothing
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash fundingTx)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
     liftM (map (outPointHash . coinOutPoint)) (spendableCoins ai 0)
@@ -1175,7 +1175,7 @@ testImportMultisig2 = do
                     base58ToAddr "38pfoRLKzxUTcCdA4PTgeVQBePLtcC28iv" 
                  ] 0
         toSign = decode' $ fromJust $ hexToBS "0100000001d53c19abd25c333a0d348b10c10f1781e12ddc9fc82d95743b249b88cc50a729000000009200483045022100ae08adb9dbb3974c95f39400f22b28b8f3920e131fe8c43b942632718c018b2902204510743685522f4e29bc0cac7938b7ece87ae4e2a93182e5bafc0e88bdf9e3c2014752210320e6fef44dc34322ce8e5d0a20efe55ae1308c321fab6496eece4473b9f12dd62103d9097c7e36d393672fd366f303e1c30c1421e1e72bedc73d49ae92e4ba5ed83552aeffffffff02404b4c000000000017a9143c8ea9e0b86430bed5805b86023ce11175c26ad38730244c000000000017a91473a92334bcf250c85a30fd3cb7fbebc49d822ccc8700000000" :: Tx
-    _ <- importTx fundingTx NetworkSource
+    _ <- importTx fundingTx NetworkSource Nothing
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash fundingTx)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
     liftM (map (outPointHash . coinOutPoint)) (spendableCoins ai 0)

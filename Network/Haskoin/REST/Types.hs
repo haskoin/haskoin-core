@@ -7,7 +7,6 @@ module Network.Haskoin.REST.Types
 , TxPageRes(..)
 , AddressData(..)
 , AccTxAction(..)
-, TxAction(..)
 , TxHashStatusRes(..)
 , TxRes(..)
 , TxStatusRes(..)
@@ -159,6 +158,7 @@ data AccTxAction
     = SendCoins ![(Address, Word64)] !Word64 !Word32
     | SignTx !Tx
     | SignSigBlob !SigBlob
+    | ImportTx !Tx
     deriving (Eq, Read, Show)
 
 instance ToJSON AccTxAction where
@@ -177,6 +177,10 @@ instance ToJSON AccTxAction where
             [ "type"        .= String "sigblob"
             , "sigblob"     .= blob
             ]
+        ImportTx tx -> object 
+            [ "type"        .= String "import"
+            , "tx"          .= tx 
+            ]
 
 instance FromJSON AccTxAction where
     parseJSON = withObject "acctxaction" $ \o -> do
@@ -186,27 +190,9 @@ instance FromJSON AccTxAction where
                 <$> o .: "recipients"
                 <*> o .: "fee"
                 <*> o .: "minconf"
-            "sign" -> SignTx
-                <$> o .: "tx"
-            "sigblob" -> SignSigBlob
-                <$> o .: "sigblob"
-            _ -> mzero
-
-data TxAction = ImportTx !Tx
-    deriving (Eq, Show, Read)
-
-instance ToJSON TxAction where
-    toJSON action = case action of
-        ImportTx tx -> object 
-            [ "type" .= String "import"
-            , "tx" .= tx 
-            ]
-
-instance FromJSON TxAction where
-    parseJSON = withObject "txaction" $ \o -> do
-        (String t) <- o .: "type"
-        case t of
-            "import" -> ImportTx <$> o .: "tx"
+            "sign"    -> SignTx <$> o .: "tx"
+            "sigblob" -> SignSigBlob <$> o .: "sigblob"
+            "import"  -> ImportTx <$> o .: "tx"
             _ -> mzero
 
 data TxHashStatusRes = TxHashStatusRes !TxHash !Bool !(Maybe Tx)

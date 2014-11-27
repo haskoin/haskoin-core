@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-unused-matches #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE TypeFamilies      #-}
@@ -162,7 +163,7 @@ unusedAddrs wallet name = do
 -- | Get first unused unlabeled address.
 unlabeledAddr :: (MonadIO m, PersistUnique b, PersistQuery b)
               => WalletName  -- ^ Account name
-              => AccountName -- ^ Account name
+              -> AccountName -- ^ Account name
               -> ReaderT b m PaymentAddress -- ^ Unlabeled unused address
 unlabeledAddr wallet name = do
     Entity wk _ <- getWalletEntity wallet
@@ -181,7 +182,7 @@ unlabeledAddr wallet name = do
 -- single address.
 unusedAddr :: (MonadIO m, PersistUnique b, PersistQuery b)
            => WalletName  -- ^ Wallet name
-           => AccountName -- ^ Account name
+           -> AccountName -- ^ Account name
            -> ReaderT b m PaymentAddress -- ^ Unused addresses
 unusedAddr wallet name = do
     Entity wk _ <- getWalletEntity wallet

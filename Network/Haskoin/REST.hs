@@ -65,9 +65,7 @@ import Yesod
     , YesodPersist(..)
     , RenderMessage
     , FormMessage
-    , Html
     , makeSessionBackend
-    , sendFile
     , renderMessage
     , defaultFormMessage
     , getYesod
@@ -156,7 +154,7 @@ data HaskoinServer = HaskoinServer
     { serverPool   :: ConnectionPool
     , serverNode   :: Maybe (TBMChan SPVRequest)
     , serverConfig :: ServerConfig
-    , getStatic    :: Static
+    , serverStatic :: Static
     }
 
 instance Yesod HaskoinServer where
@@ -188,9 +186,6 @@ mkYesod "HaskoinServer" [parseRoutes|
 /node                                              NodeR        POST
 |]
 
-getRootR :: Handler Html
-getRootR = sendFile "text/html" "html/index.html"
-
 runServer :: ServerConfig -> IO ()
 runServer config = do
     let walletFile = pack "wallet"
@@ -216,7 +211,12 @@ runServer config = do
 
     if mode `elem` [ServerOffline, ServerVault]
         then do
-            app <- toWaiApp $ HaskoinServer pool Nothing config staticSite
+            app <- toWaiApp $ HaskoinServer
+                { serverPool = pool
+                , serverNode = Nothing
+                , serverConfig = config
+                , serverStatic = staticSite
+                }
             runApp app
         else do
             -- Find earliest key creation time
@@ -241,8 +241,12 @@ runServer config = do
                     bloom <- flip runSqlPersistMPool pool $ walletBloomFilter fp
                     atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
                     -- Launch the haskoin server
-                    app <- toWaiApp $
-                        HaskoinServer pool (Just rChan) config staticSite
+                    app <- toWaiApp $ HaskoinServer
+                        { serverPool = pool
+                        , serverNode = (Just rChan)
+                        , serverConfig = config
+                        , serverStatic = staticSite
+                        }
                     runApp app
 
 guardVault :: Handler ()
@@ -460,7 +464,7 @@ postTxsR wallet name = handleErrors $ guardVault >>
             when (isNothing resM) $ liftIO $ throwIO $
                 WalletException "Transaction could not be imported"
             whenOnline $ when complete $ do
-                HaskoinServer _ (Just rChan) _ <- getYesod
+                Just rChan <- serverNode <$> getYesod
                 newTx <- runDB $ getTx tid
                 liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
             let prop = if complete then Nothing else Just tx{ txIn = 

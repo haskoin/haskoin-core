@@ -251,15 +251,15 @@ testFile groupLabel path expected = buildTest $ do
         Nothing -> return $
                     testCase groupLabel $
                     HUnit.assertFailure $ "can't read test file " ++ path
-        Just testDefs -> return $ testGroup groupLabel $ map parseTest testDefs
+        Just testDefs -> return $ testGroup groupLabel
+                                $ map parseTest
+                                $ filterPureComments testDefs
 
     where   parseTest :: [String] -> Test
-            parseTest (sig:pubKey:[])       = makeTest "" sig pubKey
-            parseTest (sig:pubKey:label:[]) = makeTest label sig pubKey
-
-            parseTest v =
-                testCase "can't parse test case" $
-                         HUnit.assertFailure $ "json element " ++ show v
+            parseTest s = case testParts s of
+                Nothing -> testCase "can't parse test case" $
+                               HUnit.assertFailure $ "json element " ++ show s
+                Just ( sig, pubKey, flags, label ) -> makeTest label sig pubKey
 
             makeTest :: String -> String -> String -> Test
             makeTest label sig pubKey =
@@ -271,15 +271,16 @@ testFile groupLabel path expected = buildTest $ do
                     (Right scriptSig, Right scriptPubKey) ->
                         runTest scriptSig scriptPubKey
 
-                where label' = "sig: [" ++ sig ++ "] " ++
-                               " pubKey: [" ++ pubKey ++ "] " ++
-                               (if null label
-                                    then ""
-                                    else " label: " ++ label)
+                where label' =  if null label
+                                    then "sig: [" ++ sig ++ "] " ++
+                                        " pubKey: [" ++ pubKey ++ "] "  
+                                    else " label: " ++ label
 
             parseError message = HUnit.assertBool
                                 ("parse error in valid script: " ++ message)
                                 (expected == False)
+
+            filterPureComments = filter ( not . null . tail )
 
             runTest scriptSig scriptPubKey =
                 HUnit.assertBool
@@ -291,6 +292,17 @@ testFile groupLabel path expected = buildTest $ do
                         Left e -> show e
                         Right _ -> " none"
 
+-- | Splits the JSON test into the different parts.  No processing,
+-- just handling the fact that comments may not be there or might have
+-- junk before it.  Output is the tuple ( sig, pubKey, flags, comment
+-- ) as strings
+testParts :: [ String ] -> Maybe ( String, String, String, String )
+testParts l = let ( x, r ) = splitAt 3 l
+                  comment = if null r then "" else last r
+              in if length x < 3
+                 then Nothing
+                 else let ( sig:pubKey:flags:[] ) = x in
+                      Just ( sig, pubKey, flags, comment )
 
 -- repl utils
 

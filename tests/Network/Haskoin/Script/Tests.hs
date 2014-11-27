@@ -31,6 +31,8 @@ import qualified Data.ByteString as BS
     , tail
     , head
     , pack
+    , empty
+    , ByteString
     )
 
 import qualified Data.ByteString.Lazy as LBS
@@ -52,6 +54,7 @@ import Data.Binary
 import qualified Data.ByteString.Lazy.Char8 as C (readFile)
 
 import Data.Int (Int64)
+import Data.Word (Word32)
 
 import Network.Haskoin.Test.Script
 import Network.Haskoin.Test.Transaction
@@ -285,7 +288,7 @@ testFile groupLabel path expected = buildTest $ do
             runTest scriptSig scriptPubKey =
                 HUnit.assertBool
                   (" eval error: " ++ errorMessage)
-                  (expected == run evalScript)
+                  (expected == scriptPairTestExec scriptSig scriptPubKey)
 
                 where run f = f scriptSig scriptPubKey rejectSignature
                       errorMessage = case run execScript of
@@ -324,6 +327,71 @@ testInvalid :: Test
 testInvalid = testFile "Canonical Valid Script Test Cases"
               "tests/data/script_invalid.json" False
 
+-- | Maximum value of sequence number
+maxSeqNum :: Word32
+maxSeqNum = 0xffffffff -- Perhaps this should be moved to constants.
+
+-- | Null output used to create CoinbaseTx
+nullOutPoint :: OutPoint
+nullOutPoint = OutPoint { 
+                 outPointHash  = 0
+               , outPointIndex = -1
+               }
+
+-- | Some of the scripts tests require transactions be built in a
+-- standard way.  This function builds the crediting transaction.
+-- Quoting the top comment of script_valid.json: "It is evaluated as
+-- if there was a crediting coinbase transaction with two 0 pushes as
+-- scriptSig, and one output of 0 satoshi and given scriptPubKey,
+-- followed by a spending transaction which spends this output as only
+-- input (and correct prevout hash), using the given scriptSig. All
+-- nLockTimes are 0, all nSequences are max."
+buildCreditTx :: BS.ByteString -> Tx
+buildCreditTx scriptPubKey = Tx { 
+                 txVersion    = 1
+               , txIn         = [ txI ]
+               , txOut        = [ txO ]
+               , txLockTime   = 0
+               }
+    where txO = TxOut {
+                       outValue = 0
+                     , scriptOutput = scriptPubKey
+                     }
+          txI = TxIn {
+                        prevOutput = nullOutPoint
+                      , scriptInput = encode' $ Script [ OP_0, OP_0 ]
+                      , txInSequence = maxSeqNum
+                      }
+
+-- | Build a spending transaction for the tests.  Takes as input the
+-- crediting transaction
+buildSpendTx :: BS.ByteString  -- ScriptSig
+             -> Tx     -- Creditting Tx
+             -> Tx
+buildSpendTx scriptSig creditTx = Tx { 
+         txVersion  = 1
+       , txIn       = [ txI ]
+       , txOut      = [ txO ]
+       , txLockTime = 0
+       }
+    where txI = TxIn { 
+               prevOutput   = OutPoint { outPointHash = txHash creditTx , outPointIndex = 0 }
+             , scriptInput  = scriptSig
+             , txInSequence = maxSeqNum
+             }
+          txO = TxOut { outValue = 0, scriptOutput = BS.empty }
+
+-- | Executes the test of a scriptSig, pubKeyScript pair, including
+-- building the required transactions and verifying the spending
+-- transaction.
+scriptPairTestExec :: Script -- scriptSig 
+                   -> Script -- pubKey
+                   -> Bool
+scriptPairTestExec scriptSig pubKey = 
+    let bsScriptSig = encode' scriptSig
+        bsPubKey = encode' pubKey
+        spendTx = buildSpendTx bsScriptSig ( buildCreditTx bsPubKey )
+    in verifySpend spendTx 0 pubKey
+
 runTests :: [Test] -> IO ()
 runTests ts = defaultMainWithArgs ts ["--hide-success"]
-

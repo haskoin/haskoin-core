@@ -52,7 +52,8 @@ library
                        time >= 1.4 && < 1.5,
                        wai-extra >= 3.0 && < 3.1,
                        warp >= 3.0 && < 3.1,
-                       yesod >= 1.4 && < 1.5
+                       yesod >= 1.4 && < 1.5,
+                       yesod-static >= 1.4 && < 1.5
     ghc-options:       -Wall 
 
 executable hw
@@ -86,7 +87,8 @@ executable hw
                        wai-extra >= 3.0  && < 3.1,
                        warp >= 3.0  && < 3.1,
                        yaml >= 0.8  && < 0.9,
-                       yesod >= 1.4  && < 1.5
+                       yesod >= 1.4  && < 1.5,
+                       yesod-static >= 1.4 && < 1.5
     hs-source-dirs:    . script
     ghc-options:       -Wall 
 

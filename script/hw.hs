@@ -36,8 +36,8 @@ import Data.Text (Text)
 import qualified Data.Text as T (pack, unpack, splitOn)
 import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Yaml as YAML (encode, encodeFile, decodeFile)
-import qualified Data.ByteString.Lazy as BL (ByteString)
-import qualified Data.ByteString as BS (ByteString)
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString as BS
 import Data.Aeson 
     ( Value (String)
     , FromJSON
@@ -986,6 +986,8 @@ getWorkDir :: IO FilePath
 getWorkDir = do
     haskoinDir <- getAppUserDataDirectory "haskoin"
     let dir = concat [ haskoinDir, "/", networkName ]
+        html = concat [ haskoinDir, "/", networkName, "/html" ]
     createDirectoryIfMissing True dir
+    createDirectoryIfMissing True html
     return dir
 

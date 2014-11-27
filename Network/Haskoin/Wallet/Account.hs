@@ -194,7 +194,7 @@ newReadMSAccount wallet name m n mskeys = do
 -- to prevent usage mistakes, adding a key from your own wallet will fail.
 addAccountKeys :: (MonadIO m, PersistUnique b, PersistQuery b)
                => WalletName  -- ^ Wallet name
-               => AccountName -- ^ Account name
+               -> AccountName -- ^ Account name
                -> [XPubKey]   -- ^ Thirdparty public keys to add
                -> ReaderT b m Account   -- ^ Returns the account information
 addAccountKeys wallet name keys 

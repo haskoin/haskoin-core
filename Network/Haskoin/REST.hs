@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-unused-matches #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE QuasiQuotes           #-}
 {-# LANGUAGE TemplateHaskell       #-}
@@ -82,6 +83,7 @@ import Yesod
     , permissionDenied
     , invalidArgs
     )
+import Yesod.Static (Static, staticDevel)
 import Network.Wai.Handler.Warp (runSettings, defaultSettings, setHost, setPort)
 import Network.Wai.Middleware.HttpAuth (basicAuth)
 
@@ -153,6 +155,7 @@ data HaskoinServer = HaskoinServer
     { serverPool   :: ConnectionPool
     , serverNode   :: Maybe (TBMChan SPVRequest)
     , serverConfig :: ServerConfig
+    , getStatic :: Static
     }
 
 instance Yesod HaskoinServer where
@@ -162,7 +165,7 @@ instance YesodPersist HaskoinServer where
     type YesodPersistBackend HaskoinServer = SqlBackend
     
     runDB action = do
-        HaskoinServer pool _ _ <- getYesod
+        pool <- fmap serverPool getYesod
         runSqlPool action pool
 
 instance RenderMessage HaskoinServer FormMessage where
@@ -182,11 +185,13 @@ mkYesod "HaskoinServer" [parseRoutes|
 /wallets/#Text/accounts/#Text/balance              BalanceR     GET
 /wallets/#Text/accounts/#Text/spendablebalance     SpendableR   GET
 /node                                              NodeR        POST
+/static                                            StaticR Static getStatic
 |]
 
 runServer :: ServerConfig -> IO ()
 runServer config = do
     let walletFile = pack "wallet"
+    staticSite <- staticDevel "html"
 
     pool <- runNoLoggingT $
         createSqlPool (\lf -> open walletFile >>= flip wrapConnection lf) 1
@@ -208,10 +213,14 @@ runServer config = do
 
     if mode `elem` [ServerOffline, ServerVault]
         then do
-            app <- toWaiApp $ HaskoinServer pool Nothing config
+            app <- toWaiApp $ HaskoinServer
+                { serverPool = pool
+                , serverNode = Nothing
+                , serverConfig = config
+                , getStatic = staticSite
+                }
             runApp app
         else do
-
             -- Find earliest key creation time
             fstKeyTimeM <- flip runSqlPersistMPool pool firstKeyTime
             fstKeyTime  <- case fstKeyTimeM of
@@ -230,29 +239,36 @@ runServer config = do
             -- Launch SPV node
             withAsyncSPV hosts batch fc bb (runNodeHandle fp pool) $ 
                 \rChan _ -> do
-                -- Send the bloom filter
-                bloom <- flip runSqlPersistMPool pool $ walletBloomFilter fp
-                atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
-                -- Launch the haskoin server
-                app <- toWaiApp $ HaskoinServer pool (Just rChan) config
-                runApp app
+                    -- Send the bloom filter
+                    bloom <- flip runSqlPersistMPool pool $ walletBloomFilter fp
+                    atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
+                    -- Launch the haskoin server
+                    app <- toWaiApp $ HaskoinServer
+                        { serverPool = pool
+                        , serverNode = (Just rChan)
+                        , serverConfig = config
+                        , getStatic = staticSite
+                        }
+                    runApp app
 
 guardVault :: Handler ()
 guardVault = do
-    HaskoinServer _ _ config <- getYesod
+    config <- fmap serverConfig getYesod
     when (configMode config == ServerVault) $ 
         permissionDenied "This operation is not supported in vault mode"
 
 whenOnline :: Handler () -> Handler ()
 whenOnline action = do
-    HaskoinServer _ _ config <- getYesod
+    config <- fmap serverConfig getYesod
     when (configMode config == ServerOnline) action
 
 updateNode :: Handler a -> Handler a
 updateNode action = do
     res <- action
     whenOnline $ do
-        HaskoinServer _ (Just rChan) config <- getYesod
+        hs <- getYesod
+        let rChan = fromJust $ serverNode hs
+            config = serverConfig hs
         bloom <- runDB $ walletBloomFilter $ configBloomFP config
         liftIO $ atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
     return res
@@ -298,7 +314,7 @@ getAccountsR wallet = handleErrors $
 
 postAccountsR :: Text -> Handler Value
 postAccountsR wallet = handleErrors $ do
-    HaskoinServer _ _ config <- getYesod
+    config <- fmap serverConfig getYesod
     let c = configGap config
     parseJsonBody >>= \res -> toJSON <$> case res of
         Success (NewAccount n) -> do
@@ -330,7 +346,7 @@ getAccountR wallet name = handleErrors $
 
 postAccountKeysR :: Text -> Text -> Handler Value
 postAccountKeysR wallet name = handleErrors $ do
-    HaskoinServer _ _ config <- getYesod
+    config <- fmap serverConfig getYesod
     let c = configGap config
     parseJsonBody >>= \res -> toJSON <$> case res of
         Success ks -> do
@@ -423,7 +439,7 @@ postTxsR wallet name = handleErrors $ guardVault >>
         Success (SendCoins rs fee minConf) -> do
             (tid, complete, p) <- runDB $ sendTx w n minConf rs fee
             whenOnline $ when complete $ do
-                HaskoinServer _ rChanM _ <- getYesod
+                rChanM <- fmap serverNode getYesod
                 let rChan = fromJust rChanM
                 newTx <- runDB $ getTx tid
                 liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
@@ -432,7 +448,7 @@ postTxsR wallet name = handleErrors $ guardVault >>
         Success (SignTx tx) -> do
             (tid, complete, p) <- runDB $ signWalletTx w n tx
             whenOnline $ when complete $ do
-                HaskoinServer _ (Just rChan) _ <- getYesod
+                rChan <- fmap (fromJust . serverNode) getYesod
                 newTx <- runDB $ getTx tid
                 liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
             let prop = if complete then Nothing else Just p
@@ -448,7 +464,7 @@ postTxsR wallet name = handleErrors $ guardVault >>
             when (isNothing resM) $ liftIO $ throwIO $
                 WalletException "Transaction could not be imported"
             whenOnline $ when complete $ do
-                HaskoinServer _ (Just rChan) _ <- getYesod
+                Just rChan <- fmap serverNode getYesod
                 newTx <- runDB $ getTx tid
                 liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
             let prop = if complete then Nothing else Just tx{ txIn = 
@@ -504,7 +520,7 @@ postNodeR = handleErrors $ guardVault >>
         Success (Rescan (Just t)) -> do
             whenOnline $ do
                 runDB resetRescan
-                HaskoinServer _ rChanM _ <- getYesod
+                rChanM <- fmap serverNode getYesod
                 let rChan = fromJust rChanM
                 liftIO $ atomically $ writeTBMChan rChan $ NodeRescan t
             return $ RescanRes t
@@ -517,7 +533,7 @@ postNodeR = handleErrors $ guardVault >>
                 WalletException "No keys have been generated in the wallet"
             whenOnline $ do
                 runDB resetRescan
-                HaskoinServer _ rChanM _ <- getYesod
+                rChanM <- fmap serverNode getYesod
                 let rChan      = fromJust rChanM
                 liftIO $ atomically $ do
                     writeTBMChan rChan $ NodeRescan fc

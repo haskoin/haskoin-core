@@ -464,7 +464,7 @@ postTxsR wallet name = handleErrors $ guardVault >>
             when (isNothing resM) $ liftIO $ throwIO $
                 WalletException "Transaction could not be imported"
             whenOnline $ when complete $ do
-                Just rChan <- serverNode <$> getYesod
+                Just rChan <- fmap serverNode getYesod
                 newTx <- runDB $ getTx tid
                 liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
             let prop = if complete then Nothing else Just tx{ txIn = 

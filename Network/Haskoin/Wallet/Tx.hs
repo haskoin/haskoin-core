@@ -211,7 +211,7 @@ importTx tx source = do
                 then do
                     replace tkey $ dbtx{ dbTxConfidence = TxPending }
                     return $ Just (tid, TxPending)
-                else return $ Just (tid, TxOffline)
+                else return $ Just (tid, dbTxConfidence dbtx)
         else do
             isOrphan <- isOrphanTx tx
             if not isOrphan then addTx tx source else do

@@ -83,23 +83,24 @@ import Network.Haskoin.Util
 
 toAccTx :: (MonadIO m, PersistUnique b, PersistQuery b)
         => DbAccTxGeneric b -> ReaderT b m AccTx
-toAccTx accTx = do
-    Entity _ tx <- getTxEntity $ dbAccTxHash accTx
-    conf <- getConfirmations $ dbAccTxHash accTx
-    confDate <- getConfirmationDate $ dbAccTxHash accTx
-    recipAddrs <- forM (dbAccTxRecipients accTx) $ \a -> do
+toAccTx aTx = do
+    Entity _ tx <- getTxEntity $ dbAccTxHash aTx
+    conf <- getConfirmations $ dbAccTxHash aTx
+    confDate <- getConfirmationDate $ dbAccTxHash aTx
+    recipAddrs <- forM (dbAccTxRecipients aTx) $ \a -> do
         -- Only get the address if it matches the account id
-        addrM <- getBy $ UniqueAddressAccount a (dbAccTxAccount accTx)
+        addrM <- getBy $ UniqueAddressAccount a (dbAccTxAccount aTx)
         let label = dbAddressLabel $ entityVal $ fromJust addrM
         return $ if isJust addrM
             then RecipientAddress a label True
             else RecipientAddress a "" False
-    return $ AccTx { accTxHash           = dbAccTxHash accTx
+    return $ AccTx { accTxHash           = dbAccTxHash aTx
                    , accTxRecipients     = recipAddrs
-                   , accTxValue          = dbAccTxValue accTx
+                   , accTxValue          = dbAccTxValue aTx
                    , accTxConfidence     = dbTxConfidence tx
                    , accIsCoinbase       = dbTxIsCoinbase tx
                    , accTxConfirmations  = fromIntegral conf
+                   , accTx               = dbTxValue tx
                    , accReceivedDate     = dbTxCreated tx
                    , accConfirmationDate = confDate
                    }
@@ -195,31 +196,55 @@ txPage wallet name pageNum resPerPage
 
 -- | Import a transaction into the wallet
 importTx :: (MonadIO m, PersistQuery b, PersistUnique b) 
-         => Tx        -- ^ Transaction to import
-         -> TxSource  -- ^ Where does the transaction come from
+         => Tx       -- ^ Transaction to import
+         -> TxSource -- ^ Where does the transaction come from
+         -> Maybe (String, String) -- ^ (Wallet, Account)
          -> ReaderT b m (Maybe (TxHash, TxConfidence))
          -- ^ New transaction entries created
-importTx tx source = do
-    txM <- getBy $ UniqueTx tid
-    let (Entity tkey dbtx) = fromJust txM
-    if isJust txM
-        then do
-            -- Change the confidence from offline to pending if we get a
-            -- transaction from the network
-            let isOffline = dbTxConfidence dbtx == TxOffline
-            if isOffline && source == NetworkSource
-                then do
-                    replace tkey $ dbtx{ dbTxConfidence = TxPending }
-                    return $ Just (tid, TxPending)
-                else return $ Just (tid, dbTxConfidence dbtx)
-        else do
-            isOrphan <- isOrphanTx tx
-            if not isOrphan then addTx tx source else do
-                time <- liftIO getCurrentTime
-                insert_ $ DbOrphan tid tx source time
-                return Nothing
+importTx tx source nameM = getBy (UniqueTx tid) >>= \txM -> case txM of
+    Just (Entity tkey dbtx) -> do
+        -- Change the confidence from offline to pending if we get a
+        -- transaction from the network
+        let isOffline = dbTxConfidence dbtx == TxOffline
+        if isOffline && source == NetworkSource
+            then do
+                replace tkey $ dbtx{ dbTxConfidence = TxPending }
+                return $ Just (tid, TxPending)
+            else do
+                when (source == UnknownSource) $ checkUnknownTx tx nameM
+                return $ Just (tid, dbTxConfidence dbtx)
+    Nothing -> do
+        when (source == UnknownSource) $ checkUnknownTx tx nameM
+        isOrphan <- isOrphanTx tx
+        if not isOrphan then addTx tx source else do
+            -- Can not store UnknownSource transactions as orphans
+            when (source == UnknownSource) $ liftIO $ throwIO $ WalletException
+                "Trying to import an untrusted orphan transaction"
+            time <- liftIO getCurrentTime
+            insert_ $ DbOrphan tid tx source time
+            return Nothing
   where
     tid = txHash tx
+
+-- Only allow importing unknown transaction if one of the inputs is in the
+-- given account.
+checkUnknownTx :: (MonadIO m, PersistQuery b, PersistUnique b) 
+               => Tx -> Maybe (String, String) -> ReaderT b m ()
+checkUnknownTx tx nameM = do
+    -- Was a wallet/account combination provided?
+    when (isNothing nameM) $ liftIO $ throwIO exc
+    let (wallet, name) = fromJust nameM
+
+    -- Is one of the transaction inputs ours ?
+    Entity wk _ <- getWalletEntity wallet
+    Entity ai _ <- getAccountEntity wk name
+    coinsE <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
+    ours   <- filterM (belongs ai) coinsE
+    when (null ours) $ liftIO $ throwIO exc
+  where
+    exc = WalletException "Trying to import an invalid untrusted transaction"
+    belongs ai (Entity ci _ ) = liftM isJust $ getBy (UniqueCoinAccount ci ai)
+    f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
 
 addTx :: (MonadIO m, PersistQuery b, PersistUnique b) 
       => Tx -> TxSource -> ReaderT b m (Maybe (TxHash, TxConfidence))
@@ -359,7 +384,7 @@ tryImportOrphans = do
     -- TODO: Can we use deleteWhere [] ?
     forM_ orphans $ delete . entityKey
     forM_ orphans $ \(Entity _ otx) -> do
-        importTx (dbOrphanValue otx) $ dbOrphanSource otx
+        importTx (dbOrphanValue otx) (dbOrphanSource otx) Nothing
 
 removeOfflineTxs :: (MonadIO m, PersistUnique b, PersistQuery b)
                  => [OutPoint] -> ReaderT b m ()
@@ -547,7 +572,7 @@ sendTx wallet name minConf dests fee = do
     (signedTx, _, prop) <- if isReadAccount $ dbAccountValue acc 
         then return (tx, False, tx)
         else signSigBlob wallet name =<< buildSigBlob ai tx
-    confM <- importTx signedTx WalletSource
+    confM <- importTx signedTx WalletSource Nothing
     let (tid, conf) = fromJust confM
     when (isNothing confM) $ liftIO $ throwIO $
         WalletException "Transaction could not be imported in the wallet"
@@ -571,7 +596,7 @@ signWalletTx wallet name tx = do
     (signedTx, _, prop) <- if isReadAccount $ dbAccountValue acc 
         then return (tx, False, p)
         else signSigBlob wallet name =<< buildSigBlob ai tx
-    confM <- importTx signedTx UnknownSource
+    confM <- importTx signedTx UnknownSource (Just (wallet, name))
     let (tid, conf) = fromJust confM
     when (isNothing confM) $ liftIO $ throwIO $
         WalletException "Transaction is not relevant to this wallet"

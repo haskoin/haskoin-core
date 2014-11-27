@@ -299,11 +299,11 @@ cmdHelp =
     , "  txpage    acc page [-c tx/page]     Display transactions by page"
     , "  send      acc addr amount [-m]      Send coins to an address"
     , "  sendmany  acc {addr:amount...} [-m] Send coins to many addresses"
-    , "  signtx    acc tx                    Sign a transaction"
+    , "  signtx    acc tx                    Sign a transaction (sign + import)"
+    , "  importtx  acc tx                    Import a transaction"
     , "  balance   acc [-m]                  Display account balance"
     , "  spendable acc [-m]                  Display account spendable balance"
-    , "  gettx     hash                      Get a raw transaction"
-    , "  importtx  tx                        Import a transaction"
+    , "  gettx     acc hash                  Get a raw transaction"
     , ""
     , "Offline tx commands:" 
     , "  getblob   acc txhash                Get data to sign a tx offline"
@@ -523,7 +523,7 @@ processCommand opts args = case args of
         printJSONOr opts res $ putStrLn . printPaymentAddress
     ["txlist", name] -> do
         let url = concat [ "/wallets/", optWallet opts
-                         , "/accounts/", name, "/acctxs"
+                         , "/accounts/", name, "/txs"
                          ] 
         res <- sendRequest url "GET" [] Nothing opts
         printJSONOr opts res $ \ts -> do
@@ -532,7 +532,7 @@ processCommand opts args = case args of
     ["txpage", name, page] -> do
         let p   = read page
             url = concat [ "/wallets/", optWallet opts
-                         , "/accounts/", name, "/acctxs"
+                         , "/accounts/", name, "/txs"
                          ] 
             qs  = [ ("page",Just $ stringToBS $ show p)
                   , ("elemperpage",Just $ stringToBS $ show $ optCount opts)
@@ -550,7 +550,7 @@ processCommand opts args = case args of
         when (isNothing a) $ throwIO $ 
             WalletException "Could not parse address"
         let url = concat [ "/wallets/", optWallet opts
-                         , "/accounts/", name, "/acctxs"
+                         , "/accounts/", name, "/txs"
                          ] 
             req = Just $ encode $ 
                 SendCoins [(fromJust a, v)] (optFee opts) (optMinConf opts) 
@@ -568,7 +568,7 @@ processCommand opts args = case args of
         when (isNothing recipients) $ throwIO $
             WalletException "Could not parse recipient list"
         let url = concat [ "/wallets/", optWallet opts
-                         , "/accounts/", name, "/acctxs"
+                         , "/accounts/", name, "/txs"
                          ] 
             req = Just $ encode $ 
                 SendCoins (fromJust recipients) (optFee opts) (optMinConf opts)
@@ -583,9 +583,23 @@ processCommand opts args = case args of
         when (isNothing txM) $ throwIO $
             WalletException "Could not parse transaction"
         let url = concat [ "/wallets/", optWallet opts
-                         , "/accounts/", name, "/acctxs"
+                         , "/accounts/", name, "/txs"
                          ] 
             req = Just $ encode $ SignTx $ fromJust txM
+        res <- sendRequest url "POST" [] req opts
+        printJSONOr opts res $ \(TxHashStatusRes h c p) -> do
+            putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
+            putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
+            when (isJust p) $ putStrLn $ 
+                unwords [ "Proposition:", bsToHex $ encode' $ fromJust p]
+    ["importtx", name, tx] -> do
+        let txM = decodeToMaybe =<< hexToBS tx
+        when (isNothing txM) $ throwIO $
+            WalletException "Could not parse transaction"
+        let url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name, "/txs"
+                         ]
+            req = Just $ encode $ ImportTx $ fromJust txM
         res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxHashStatusRes h c p) -> do
             putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
@@ -598,7 +612,7 @@ processCommand opts args = case args of
             WalletException "Could not parse hash"
         let url = concat [ "/wallets/", optWallet opts
                          , "/accounts/", name
-                         , "/acctxs/", encodeTxHashLE $ fromJust h
+                         , "/txs/", encodeTxHashLE $ fromJust h
                          , "/sigblob"
                          ] 
         res <- sendRequest url "GET" [] Nothing opts
@@ -609,7 +623,7 @@ processCommand opts args = case args of
         when (isNothing blobM) $ throwIO $
             WalletException "Could not parse sig blob"
         let url = concat [ "/wallets/", optWallet opts
-                         , "/accounts/", name, "/acctxs"
+                         , "/accounts/", name, "/txs"
                          ] 
             req = Just $ encode $ SignSigBlob $ fromJust blobM
         res <- sendRequest url "POST" [] req opts
@@ -637,25 +651,17 @@ processCommand opts args = case args of
         res <- sendRequest url "GET" qs Nothing opts
         printJSONOr opts res $ \(SpendableRes b) -> do
             putStrLn $ unwords [ "Spendable balance:", show b ]
-    ["gettx", hash] -> do
+    ["gettx", name, hash] -> do
         let h = decodeTxHashLE hash
         when (isNothing h) $ throwIO $
             WalletException "Could not parse hash"
-        let url = concat ["/txs/", encodeTxHashLE $ fromJust h]
+        let url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name
+                         , "/txs/", encodeTxHashLE $ fromJust h
+                         ]
         res <- sendRequest url "GET" [] Nothing opts
-        printJSONOr opts res $ \(TxRes tx) -> putStrLn $ bsToHex $ encode' tx
-    ["importtx", tx] -> do
-        let txM = decodeToMaybe =<< hexToBS tx
-        when (isNothing txM) $ throwIO $
-            WalletException "Could not parse transaction"
-        let url = "/txs"
-            req = Just $ encode $ ImportTx $ fromJust txM
-        res <- sendRequest url "PUT" [] req opts
-        printJSONOr opts res $ \(TxHashStatusRes h c p) -> do
-            putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
-            putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
-            when (isJust p) $ putStrLn $ 
-                unwords [ "Proposition:", bsToHex $ encode' $ fromJust p]
+        printJSONOr opts res $ \(AccTx _ _ _ _ _ _ tx _ _) -> 
+            putStrLn $ bsToHex $ encode' tx
     "rescan" : rescantime -> do
         let t = read <$> listToMaybe rescantime
             req = Just $ encode $ Rescan t

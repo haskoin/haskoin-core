@@ -20,7 +20,6 @@ module Network.Haskoin.REST
 , TxPageRes(..)
 , AddressData(..)
 , AccTxAction(..)
-, TxAction(..)
 , TxHashStatusRes(..)
 , TxRes(..)
 , TxStatusRes(..)
@@ -177,13 +176,11 @@ mkYesod "HaskoinServer" [parseRoutes|
 /wallets/#Text/accounts/#Text/keys                 AccountKeysR POST
 /wallets/#Text/accounts/#Text/addrs                AddressesR   GET POST
 /wallets/#Text/accounts/#Text/addrs/#Int           AddressR     GET PUT
-/wallets/#Text/accounts/#Text/acctxs               AccTxsR      GET POST
-/wallets/#Text/accounts/#Text/acctxs/#Text         AccTxR       GET
-/wallets/#Text/accounts/#Text/acctxs/#Text/sigblob SigBlobR     GET
+/wallets/#Text/accounts/#Text/txs                  TxsR         GET POST
+/wallets/#Text/accounts/#Text/txs/#Text            TxR          GET
+/wallets/#Text/accounts/#Text/txs/#Text/sigblob    SigBlobR     GET
 /wallets/#Text/accounts/#Text/balance              BalanceR     GET
 /wallets/#Text/accounts/#Text/spendablebalance     SpendableR   GET
-/txs                                               TxsR         PUT
-/txs/#Text                                         TxR          GET
 /node                                              NodeR        POST
 |]
 
@@ -404,8 +401,8 @@ putAddressR wallet name i = handleErrors $ do
     w = unpack wallet
     n = unpack name
 
-getAccTxsR :: Text -> Text -> Handler Value
-getAccTxsR wallet name = handleErrors $ do
+getTxsR :: Text -> Text -> Handler Value
+getTxsR wallet name = handleErrors $ do
     (pageM, elemM) <- runInputGet $ (,)
         <$> iopt intField "page"
         <*> iopt intField "elemperpage"
@@ -420,8 +417,8 @@ getAccTxsR wallet name = handleErrors $ do
     w = unpack wallet
     n = unpack name
 
-postAccTxsR :: Text -> Text -> Handler Value
-postAccTxsR wallet name = handleErrors $ guardVault >>
+postTxsR :: Text -> Text -> Handler Value
+postTxsR wallet name = handleErrors $ guardVault >>
     parseJsonBody >>= \res -> case res of
         Success (SendCoins rs fee minConf) -> do
             (tid, complete, p) <- runDB $ sendTx w n minConf rs fee
@@ -444,6 +441,19 @@ postAccTxsR wallet name = handleErrors $ guardVault >>
             (tx, complete, p) <- runDB $ signSigBlob w n blob
             let prop = if complete then Nothing else Just p
             return $ toJSON $ TxStatusRes tx complete prop
+        Success (ImportTx tx) -> do
+            resM <- runDB $ importTx tx UnknownSource (Just (w, n))
+            let (tid, conf) = fromJust resM
+                complete = conf `elem` [ TxPending, TxBuilding ]
+            when (isNothing resM) $ liftIO $ throwIO $
+                WalletException "Transaction could not be imported"
+            whenOnline $ when complete $ do
+                HaskoinServer _ (Just rChan) _ <- getYesod
+                newTx <- runDB $ getTx tid
+                liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
+            let prop = if complete then Nothing else Just tx{ txIn = 
+                    map (\ti -> ti{ scriptInput = BS.empty }) $ txIn tx }
+            return $ toJSON $ TxHashStatusRes tid complete prop
         -- TODO: What happens here ?
         Error _ -> undefined
   where
@@ -451,14 +461,14 @@ postAccTxsR wallet name = handleErrors $ guardVault >>
     n = unpack name
     
 
-getAccTxR :: Text -> Text -> Text -> Handler Value
-getAccTxR wallet name tidStr = handleErrors $ do
+getTxR :: Text -> Text -> Text -> Handler Value
+getTxR wallet name tidStr = handleErrors $ do
     let tidM = decodeTxHashLE $ unpack tidStr
         tid  = fromJust tidM
     unless (isJust tidM) $ liftIO $ throwIO $
         WalletException "Could not parse txhash"
-    accTx <- runDB $ getAccTx (unpack wallet) (unpack name) tid
-    return $ toJSON accTx
+    aTx <- runDB $ getAccTx (unpack wallet) (unpack name) tid
+    return $ toJSON aTx
 
 getSigBlobR :: Text -> Text -> Text -> Handler Value
 getSigBlobR wallet name tidStr = handleErrors $ do
@@ -487,34 +497,6 @@ getSpendableR wallet name = handleErrors $ do
   where
     w = unpack wallet
     n = unpack name
-
-getTxR :: Text -> Handler Value
-getTxR tidStr = handleErrors $ do
-    let tidM = decodeTxHashLE $ unpack tidStr
-        tid  = fromJust tidM
-    unless (isJust tidM) $ liftIO $ throwIO $
-        WalletException "Could not parse txhash"
-    tx <- runDB $ getTx tid
-    return $ toJSON $ TxRes tx
-
-putTxsR :: Handler Value
-putTxsR = handleErrors $ guardVault >>
-    parseJsonBody >>= \res -> case res of
-        Success (ImportTx tx) -> do
-            resM <- runDB $ importTx tx UnknownSource
-            let (tid, conf) = fromJust resM
-                complete = conf == TxPending
-            when (isNothing resM) $ liftIO $ throwIO $
-                WalletException "Transaction could not be imported"
-            whenOnline $ when complete $ do
-                HaskoinServer _ (Just rChan) _ <- getYesod
-                newTx <- runDB $ getTx tid
-                liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
-            let prop = if complete then Nothing else Just tx{ txIn = 
-                    map (\ti -> ti{ scriptInput = BS.empty }) $ txIn tx }
-            return $ toJSON $ TxHashStatusRes tid complete prop
-        -- TODO: What happens here ?
-        Error _ -> undefined
 
 postNodeR :: Handler Value
 postNodeR = handleErrors $ guardVault >> 

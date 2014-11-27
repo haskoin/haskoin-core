@@ -408,18 +408,20 @@ data AccTx = AccTx
     , accTxConfidence     :: !TxConfidence
     , accIsCoinbase       :: !Bool
     , accTxConfirmations  :: !Int
+    , accTx               :: !Tx
     , accReceivedDate     :: !UTCTime
     , accConfirmationDate :: !(Maybe Word32)
     } deriving (Eq, Show, Read)
 
 instance ToJSON AccTx where
-    toJSON (AccTx h as v x cb c rd cd) = object $ concat
+    toJSON (AccTx h as v x cb c tx rd cd) = object $ concat
         [ [ "txid"          .= h
           , "recipients"    .= as
           , "value"         .= v
           , "confidence"    .= x
           , "iscoinbase"    .= cb
           , "confirmations" .= c
+          , "tx"            .= tx
           , "receiveddate"  .= (round (utcTimeToPOSIXSeconds rd) :: Word32)
           ]
         , maybeToList $ ("confirmationdate" .=) <$> cd
@@ -433,14 +435,15 @@ instance FromJSON AccTx where
         x  <- o .: "confidence"
         cb <- o .: "iscoinbase"
         c  <- o .: "confirmations"
+        tx <- o .: "tx"
         rd <- o .: "receiveddate"
         cd <- o .:? "confirmationdate"
         let rDate = posixSecondsToUTCTime $ realToFrac (rd :: Word32)
-        return $ AccTx h as v x cb c rDate cd
+        return $ AccTx h as v x cb c tx rDate cd
     parseJSON _ = mzero
 
 printAccTx :: AccTx -> String
-printAccTx (AccTx h r v ci cb co rd cd) = unlines $ concat
+printAccTx (AccTx h r v ci cb co _ rd cd) = unlines $ concat
     [ [ unwords [ "Value     :", show v ]
       , unwords [ "Recipients:" ]
       ]

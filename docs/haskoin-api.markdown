@@ -20,20 +20,16 @@ it with `hw start`.
   (GET, POST) List addresses, Get a new unused address
 - [/wallets/{name}/accounts/{name}/addrs/{key}](#get-walletsnameaccountsnameaddrskey) 
   (GET, PUT) Get an address by key, Update an address label
-- [/wallets/{name}/accounts/{name}/acctxs](#get-walletsnameaccountsnameacctxs) 
-  (GET, POST) List txs, Send coins, Sign txs/sigblobs
-- [/wallets/{name}/accounts/{name}/acctxs/{txhash}](#get-walletsnameaccountsnameacctxstxhash) 
+- [/wallets/{name}/accounts/{name}/txs](#get-walletsnameaccountsnametxs) 
+  (GET, POST) List txs, Send coins, Sign txs/sigblobs abd Import txs
+- [/wallets/{name}/accounts/{name}/txs/{txhash}](#get-walletsnameaccountsnametxstxhash) 
   (GET) Get a tx by account and transaction id
-- [/wallets/{name}/accounts/{name}/acctxs/{txhash}/sigblob](#get-walletsnameaccountsnameacctxstxhashsigblob) 
+- [/wallets/{name}/accounts/{name}/txs/{txhash}/sigblob](#get-walletsnameaccountsnametxstxhashsigblob) 
   (GET) Get data to sign a transaction offline
 - [/wallets/{name}/accounts/{name}/balance](#get-walletsnameaccountsnamebalance) 
   (GET) Get an account balance in satoshi
 - [/wallets/{name}/accounts/{name}/spendablebalance](#get-walletsnameaccountsnamespendablebalance) 
   (GET) Get an account spendable balance in satoshi
-- [/txs](#put-txs) 
-  (PUT) Import transactions
-- [/txs/{txhash}](#get-txstxhash) 
-  (GET) Get a full transaction by transaction id
 - [/node](#post-node)  
   (POST) Rescan the wallet from a given timestamp
 
@@ -520,7 +516,7 @@ A JSON representation of the updated address:
 }
 ```
 
-### GET /wallets/{name}/accounts/{name}/acctxs
+### GET /wallets/{name}/accounts/{name}/txs
 
 **Modes**: online, offline, vault
 
@@ -538,9 +534,9 @@ paging parameters are set, the entire list is returned. Asking for page 0 will
 return the last page.  Here are some valid example queries:
 
 ```
-GET /wallets/wallet1/accounts/account1/acctxs
-GET /wallets/wallet1/accounts/account1/acctxs?page=1
-GET /wallets/wallet1/accounts/account1/acctxs?page=2&elemperpage=50
+GET /wallets/wallet1/accounts/account1/txs
+GET /wallets/wallet1/accounts/account1/txs?page=1
+GET /wallets/wallet1/accounts/account1/txs?page=2&elemperpage=50
 ```
 
 #### Output
@@ -568,6 +564,7 @@ following JSON result is returned:
       }
     ],
     "txid": "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f",
+    "tx": "0100000001a65337...",
     "receiveddate": 1416005281,
     "confirmationdate": 1416008832
   },
@@ -584,6 +581,7 @@ following JSON result is returned:
       }
     ],
     "txid": "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c",
+    "tx": "0100000001a65337...",
     "receiveddate": 1416002213
   }
 ]
@@ -613,6 +611,7 @@ When requesting a page, you also get the maximum page number:
         }
       ],
       "txid": "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f",
+      "tx": "0100000001a65337...",
       "receiveddate": 1416005281,
       "confirmationdate": 1416008832
     },
@@ -629,6 +628,7 @@ When requesting a page, you also get the maximum page number:
         }
       ],
       "txid": "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c",
+      "tx": "0100000001a65337...",
       "receiveddate": 1416002213
     }
   ]
@@ -636,7 +636,7 @@ When requesting a page, you also get the maximum page number:
 
 ```
 
-##### Acctxs fields
+##### Transaction fields
 
 The "recipients" fields contains a list of addresses that have a "label" and
 a "islocal" field. If the "islocal" field is true, it means that the
@@ -649,7 +649,7 @@ was offline during the broadcast. The "confirmationdate" is the timestamp of
 the block that confirmed the transaction. This might be a more reliable way
 of knowing when the transaction was created if your wallet is often offline.
 
-### POST /wallets/{name}/accounts/{name}/acctxs
+### POST /wallets/{name}/accounts/{name}/txs
 
 **Modes**: offline, online
 
@@ -684,7 +684,7 @@ signed), an additional proposition field will be included which is the
 original transaction with all input scripts blanked out. You can give the
 proposition to the other keys holders in a multisig account for them to sign,
 then merge all the signed propositions back into the wallet using the
-[import resource](#put-txs).
+[import resource](#post-walletsnameaccountsnametxs).
 
 ```json
 {
@@ -698,9 +698,8 @@ then merge all the signed propositions back into the wallet using the
 
 You can only sign a transaction with the keys of one account at a time. If a
 transactions requires keys from multiple accounts, you have to call this
-resource for every account. This resource is also the standard way of importing
-a transaction into your wallet. If a transaction is already signed, it will
-simply be imported as-is in the wallet.
+resource for every account. Signing a transaction will also import it into your
+wallet.
 
 ##### Input
 
@@ -728,11 +727,43 @@ transaction with all input scripts blanked out.
 }
 ```
 
+#### Import a transaction
+
+Import a transaction into the wallet without signing it first. The main use
+case for this resource is to merge partially signed multisig transactions with
+existing ones in your wallet.
+
+##### Input
+
+A JSON object containing the raw transaction to import in base16 (HEX):
+
+```json
+{
+  "type": "import",
+  "tx": "0100000001a65337..." 
+}
+```
+
+##### Output
+
+The resource will return the transaction hash and a completed flag. If the
+transaction is not complete (partially signed), an additional proposition
+field will be included which contains the original transaction with all
+input script blanked out.
+
+```json
+{ 
+  "txhash": "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f",
+  "complete": false,
+  "proposition": "0100000001a65337..." 
+}
+```
+
 #### Sign offline transaction
 
 Use this resource to sign an offline sigblob that was produced by the
 resource GET
-[/wallets/{name}/accounts/{name}/acctxs/{txhash}/sigblob](#get-walletsnameaccountsnameacctxstxhashsigblob).
+[/wallets/{name}/accounts/{name}/txs/{txhash}/sigblob](#get-walletsnameaccountsnametxstxhashsigblob).
 
 You can have an online read-only wallet produce a sigblob that you can sign
 using an offline wallet containing the private keys. The sigblob contains a
@@ -785,7 +816,7 @@ transaction with all the input scripts blanked out.
 }
 ```
 
-### GET /wallets/{name}/accounts/{name}/acctxs/{txhash}
+### GET /wallets/{name}/accounts/{name}/txs/{txhash}
 
 **Modes**: online, offline, vault
 
@@ -814,9 +845,9 @@ Returns the requested account transaction:
   }
 ```
 
-Go [here](#acctxs-fields) for a description of the account transaction fields.
+Go [here](#transaction-fields) for a description of the account transaction fields.
 
-### GET /wallets/{name}/accounts/{name}/acctxs/{txhash}/sigblob
+### GET /wallets/{name}/accounts/{name}/txs/{txhash}/sigblob
 
 **Modes**: online, offline, vault
 
@@ -825,7 +856,7 @@ sigblob can be produced from any type of account (including read-only
 accounts). You can then sign the transaction included in the sigblob by using
 this resource on another account containing the private keys (ideally on an
 offline wallet): POST
-[/wallets/{name}/accounts/{name}/acctxs](#sign-offline-transaction).
+[/wallets/{name}/accounts/{name}/txs](#sign-offline-transaction).
 
 #### Output
 
@@ -944,57 +975,6 @@ if he is a victim of a double spend or malleability attack.
 { "balance": 3330000 }
 ```
 
-### PUT /txs
-
-**Modes**: online, offline
-
-PUT a transaction to this resource to import it into the wallet. The main
-use case for this resource is to merge partially signed multisig transactions
-with existing ones in your wallet.
-
-#### Input
-
-The transaction to import:
-
-```json
-{
-  "type": "import",
-  "tx": "0100000001a65337..." 
-}
-```
-
-#### Output
-
-The resource will return the transaction hash and a completed flag. If the
-transaction is not complete (partially signed), an additional proposition
-field will be included which contains the original transaction with all
-input script blanked out.
-
-```json
-{ 
-  "txhash": "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f",
-  "complete": false,
-  "proposition": "0100000001a65337..." 
-}
-```
-
-### GET /txs/{txhash}
-
-**Modes**: online, offline, vault
-
-Use this resource to query a whole transaction by transaction id. Only
-transactions that exist in your wallet can be queried.
-
-#### Output
-
-The requested transaction:
-
-```json
-{ 
-  "tx": "0100000001a65337..." 
-}
-```
-
 ### POST /node
 
 **Modes**: online, offline
@@ -1026,3 +1006,4 @@ The timestamp from which the rescan will be started:
   "timestamp": 1408222895
 }
 ```
+

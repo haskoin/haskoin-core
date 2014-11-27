@@ -79,9 +79,10 @@ instance Arbitrary AccTx where
         conf <- arbitrary
         b <- arbitrary
         c <- abs <$> arbitrary
+        ArbitraryTx tx <- arbitrary
         ArbitraryUTCTime rd <- arbitrary
         cd <- arbitrary
-        return $ AccTx tid addrs v conf b c rd cd
+        return $ AccTx tid addrs v conf b c tx rd cd
 
 instance Arbitrary TxConfidence where
     arbitrary = elements [ TxOffline, TxDead, TxPending, TxBuilding ]
@@ -145,13 +146,11 @@ instance Arbitrary AccTxAction where
         [ SendCoins <$> (listOf1 genaddr) <*> arbitrary <*> arbitrary
         , SignTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
         , SignSigBlob <$> arbitrary
+        , ImportTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
         ]
       where
         genaddr = (,) <$> ((\(ArbitraryAddress x) -> x) <$> arbitrary)
                       <*> arbitrary
-
-instance Arbitrary TxAction where
-    arbitrary = ImportTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
 
 instance Arbitrary TxHashStatusRes where
     arbitrary = TxHashStatusRes 

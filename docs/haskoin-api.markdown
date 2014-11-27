@@ -6,32 +6,32 @@ it with `hw start`.
 
 ## Overview
 
-- [/wallets](#get-wallets) 
-  (GET, POST) List all wallets, Create a new wallet
-- [/wallets/{name}](#get-walletsname) 
-  (GET) Get a wallet by name
-- [/wallets/{name}/accounts](#get-walletsnameaccounts) 
-  (GET, POST) List all accounts, Create a new account
-- [/wallets/{name}/accounts/{name}](#get-walletsnameaccountsname) 
-  (GET) Get an account by name
-- [/wallets/{name}/accounts/{name}/keys](#post-walletsnameaccountsnamekeys) 
-  (POST)  Add keys to a multisig account
-- [/wallets/{name}/accounts/{name}/addrs](#get-walletsnameaccountsnameaddrs) 
-  (GET, POST) List addresses, Get a new unused address
-- [/wallets/{name}/accounts/{name}/addrs/{key}](#get-walletsnameaccountsnameaddrskey) 
-  (GET, PUT) Get an address by key, Update an address label
-- [/wallets/{name}/accounts/{name}/txs](#get-walletsnameaccountsnametxs) 
-  (GET, POST) List txs, Send coins, Sign txs/sigblobs abd Import txs
-- [/wallets/{name}/accounts/{name}/txs/{txhash}](#get-walletsnameaccountsnametxstxhash) 
-  (GET) Get a tx by account and transaction id
-- [/wallets/{name}/accounts/{name}/txs/{txhash}/sigblob](#get-walletsnameaccountsnametxstxhashsigblob) 
-  (GET) Get data to sign a transaction offline
-- [/wallets/{name}/accounts/{name}/balance](#get-walletsnameaccountsnamebalance) 
-  (GET) Get an account balance in satoshi
-- [/wallets/{name}/accounts/{name}/spendablebalance](#get-walletsnameaccountsnamespendablebalance) 
-  (GET) Get an account spendable balance in satoshi
-- [/node](#post-node)  
-  (POST) Rescan the wallet from a given timestamp
+- [/wallets](#get-wallets) (GET, POST)  
+  List all wallets, Create a new wallet
+- [/wallets/{name}](#get-walletsname) (GET)  
+  Get a wallet by name
+- [/wallets/{name}/accounts](#get-walletsnameaccounts) (GET, POST)  
+  List all accounts, Create a new account
+- [/wallets/{name}/accounts/{name}](#get-walletsnameaccountsname) (GET)  
+  Get an account by name
+- [/wallets/{name}/accounts/{name}/keys](#post-walletsnameaccountsnamekeys) (POST)  
+  Add keys to a multisig account
+- [/wallets/{name}/accounts/{name}/addrs](#get-walletsnameaccountsnameaddrs) (GET, POST)  
+  List addresses, Get a new unused address
+- [/wallets/{name}/accounts/{name}/addrs/{key}](#get-walletsnameaccountsnameaddrskey) (GET, PUT)  
+  Get an address by key, Update an address label
+- [/wallets/{name}/accounts/{name}/txs](#get-walletsnameaccountsnametxs) (GET, POST)  
+  List txs, Send coins, Sign txs/sigblobs abd Import txs
+- [/wallets/{name}/accounts/{name}/txs/{txhash}](#get-walletsnameaccountsnametxstxhash) (GET)  
+  Get a tx by account and transaction id
+- [/wallets/{name}/accounts/{name}/txs/{txhash}/sigblob](#get-walletsnameaccountsnametxstxhashsigblob) (GET)  
+  Get data to sign a transaction offline
+- [/wallets/{name}/accounts/{name}/balance](#get-walletsnameaccountsnamebalance) (GET)  
+  Get an account balance in satoshi
+- [/wallets/{name}/accounts/{name}/spendablebalance](#get-walletsnameaccountsnamespendablebalance) (GET)  
+  Get an account spendable balance in satoshi
+- [/node](#post-node) (POST)  
+  Rescan the wallet from a given timestamp
 
 ## API Specification
 
@@ -684,7 +684,7 @@ signed), an additional proposition field will be included which is the
 original transaction with all input scripts blanked out. You can give the
 proposition to the other keys holders in a multisig account for them to sign,
 then merge all the signed propositions back into the wallet using the
-[import resource](#post-walletsnameaccountsnametxs).
+[import resource](#import-a-transaction).
 
 ```json
 {

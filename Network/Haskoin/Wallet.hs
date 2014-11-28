@@ -61,6 +61,7 @@ module Network.Haskoin.Wallet
 , getSigBlob
 , signSigBlob
 , walletBloomFilter
+, getProposition
 , isTxInWallet
 , firstKeyTime
 , resetRescan

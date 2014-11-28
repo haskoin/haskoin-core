@@ -195,22 +195,19 @@ instance FromJSON AccTxAction where
             "import"  -> ImportTx <$> o .: "tx"
             _ -> mzero
 
-data TxHashStatusRes = TxHashStatusRes !TxHash !Bool !(Maybe Tx)
+data TxHashStatusRes = TxHashStatusRes !TxHash !Bool 
     deriving (Eq, Show, Read)
 
 instance ToJSON TxHashStatusRes where
-    toJSON (TxHashStatusRes h b p) = object $ concat
-        [ [ "txhash"   .= h
-          , "complete" .= b
-          ]
-        , if isJust p then [ "proposition" .= (fromJust p) ] else []
+    toJSON (TxHashStatusRes h b) = object
+        [ "txhash"   .= h
+        , "complete" .= b
         ]
-
+        
 instance FromJSON TxHashStatusRes where
     parseJSON = withObject "txhashstatusres" $ \o ->
         TxHashStatusRes <$> o .:  "txhash"
                         <*> o .:  "complete"
-                        <*> o .:? "proposition"
 
 data TxRes = TxRes !Tx deriving (Eq, Show, Read)
 
@@ -220,22 +217,20 @@ instance ToJSON TxRes where
 instance FromJSON TxRes where
     parseJSON = withObject "txres" $ \o -> TxRes <$> o .: "tx"
         
-data TxStatusRes = TxStatusRes !Tx !Bool !(Maybe Tx)
+data TxStatusRes = TxStatusRes !Tx !Bool 
     deriving (Eq, Show, Read)
 
 instance ToJSON TxStatusRes where
-    toJSON (TxStatusRes tx b p) = object $ concat
+    toJSON (TxStatusRes tx b) = object $ concat
         [ [ "tx"       .= tx
           , "complete" .= b
           ]
-        , if isJust p then [ "proposition" .= (fromJust p) ] else []
         ]
 
 instance FromJSON TxStatusRes where
     parseJSON = withObject "txstatusres" $ \o ->
         TxStatusRes <$> o .: "tx"
                     <*> o .: "complete"
-                    <*> o .:? "proposition"
 
 data BalanceRes = BalanceRes !Balance ![TxHash]
     deriving (Eq, Show, Read)

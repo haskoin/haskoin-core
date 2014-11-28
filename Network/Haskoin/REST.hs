@@ -55,7 +55,6 @@ import Data.Text (Text, unpack, pack)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Default (Default, def)
-import qualified Data.ByteString as BS (empty)
 
 import Database.Persist.Sqlite
 import Database.Sqlite (open)
@@ -88,7 +87,6 @@ import Network.Wai.Middleware.HttpAuth (basicAuth)
 import Network.Haskoin.Constants
 import Network.Haskoin.Node
 import Network.Haskoin.Crypto
-import Network.Haskoin.Transaction
 
 import Network.Haskoin.REST.Types
 import Network.Haskoin.SPV
@@ -254,7 +252,7 @@ whenOnline handler = do
     when (mode == ServerOnline) handler
 
 updateNodeFilter :: Handler ()
-updateNodeFilter = whenOnline $ do
+updateNodeFilter = do
     hs <- getYesod
     let rChan = fromJust $ serverNode hs
         config = serverConfig hs
@@ -295,24 +293,24 @@ postAccountsR wallet = requireJsonBody >>= \res -> do
         NewAccount n -> do
             acc <- runDB $ newAccount w n
             runDB $ addLookAhead w n c
-            updateNodeFilter
+            whenOnline updateNodeFilter
             return acc
         NewMSAccount n r t ks -> do
             acc <- runDB $ newMSAccount w n r t ks
             when (length (accountKeys acc) == t) $ do
                 runDB $ addLookAhead w n c
-                updateNodeFilter
+                whenOnline updateNodeFilter
             return acc
         NewReadAccount n k -> do
             acc <- runDB $ newReadAccount w n k
             runDB $ addLookAhead w n c
-            updateNodeFilter
+            whenOnline updateNodeFilter
             return acc
         NewReadMSAccount n r t ks -> do
             acc <- runDB $ newReadMSAccount w n r t ks
             when (length (accountKeys acc) == t) $ do
                 runDB $ addLookAhead w n c
-                updateNodeFilter
+                whenOnline updateNodeFilter
             return acc
   where
     w = unpack wallet
@@ -327,7 +325,7 @@ postAccountKeysR wallet name = requireJsonBody >>= \ks -> do
     when (length (accountKeys acc) == accountTotal acc) $ do
         c <- (configGap . serverConfig) <$> getYesod
         runDB $ addLookAhead w n c
-        updateNodeFilter
+        whenOnline updateNodeFilter
     return $ toJSON acc
   where
     n = unpack name
@@ -355,7 +353,7 @@ postAddressesR :: Text -> Text -> Handler Value
 postAddressesR wallet name = requireJsonBody >>= \(AddressData label) -> do
     newAddr <- runDB $ unlabeledAddr w n
     res <- runDB $ setAddrLabel w n (addressIndex newAddr) label
-    updateNodeFilter
+    whenOnline updateNodeFilter
     return $ toJSON res
   where
     n = unpack name
@@ -391,51 +389,56 @@ getTxsR wallet name = do
 postTxsR :: Text -> Text -> Handler Value
 postTxsR wallet name = requireJsonBody >>= \res -> case res of
     SendCoins rs fee minConf -> do
-        (tid, complete, p) <- runDB $ sendTx w n minConf rs fee
+        (tid, complete, genA) <- runDB $ sendTx w n minConf rs fee
         whenOnline $ when complete $ do
+            when genA updateNodeFilter
             Just rChan <- serverNode <$> getYesod
             newTx <- runDB $ getTx tid
             liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
-        let prop = if complete then Nothing else Just p
-        return $ toJSON $ TxHashStatusRes tid complete prop
+        return $ toJSON $ TxHashStatusRes tid complete
     SignTx tx -> do
-        (tid, complete, p) <- runDB $ signWalletTx w n tx
+        (tid, complete, genA) <- runDB $ signWalletTx w n tx
         whenOnline $ when complete $ do
+            when genA updateNodeFilter
             Just rChan <- serverNode <$> getYesod
             newTx <- runDB $ getTx tid
             liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
-        let prop = if complete then Nothing else Just p
-        return $ toJSON $ TxHashStatusRes tid complete prop
+        return $ toJSON $ TxHashStatusRes tid complete
     SignSigBlob blob -> do
-        (tx, complete, p) <- runDB $ signSigBlob w n blob
-        let prop = if complete then Nothing else Just p
-        return $ toJSON $ TxStatusRes tx complete prop
+        (tx, complete) <- runDB $ signSigBlob w n blob
+        return $ toJSON $ TxStatusRes tx complete
     ImportTx tx -> do
         resM <- runDB $ importTx tx UnknownSource (Just (w, n))
-        let (tid, conf) = fromJust resM
+        let (tid, conf, genA) = fromJust resM
             complete = conf `elem` [ TxPending, TxBuilding ]
         when (isNothing resM) $ liftIO $ throwIO $
             WalletException "Transaction could not be imported"
         whenOnline $ when complete $ do
+            when genA updateNodeFilter
             Just rChan <- serverNode <$> getYesod
             newTx <- runDB $ getTx tid
             liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
-        let prop = if complete then Nothing else Just tx{ txIn = 
-                map (\ti -> ti{ scriptInput = BS.empty }) $ txIn tx }
-        return $ toJSON $ TxHashStatusRes tid complete prop
+        return $ toJSON $ TxHashStatusRes tid complete
   where
     w = unpack wallet
     n = unpack name
-    
 
 getTxR :: Text -> Text -> Text -> Handler Value
 getTxR wallet name tidStr = do
+    prop <- (fromMaybe False) <$> runInputGet (iopt boolField "proposition")
     let tidM = decodeTxHashLE $ unpack tidStr
         tid  = fromJust tidM
     unless (isJust tidM) $ liftIO $ throwIO $
         WalletException "Could not parse txhash"
-    aTx <- runDB $ getAccTx (unpack wallet) (unpack name) tid
-    return $ toJSON aTx
+    aTx <- runDB $ getAccTx w n tid
+    toJSON <$> if prop
+        then do
+            p <- runDB $ getProposition w n tid
+            return aTx{ accTx = p }
+        else return aTx
+  where
+    w = unpack wallet
+    n = unpack name
 
 getSigBlobR :: Text -> Text -> Text -> Handler Value
 getSigBlobR wallet name tidStr = do

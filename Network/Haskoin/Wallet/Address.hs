@@ -282,8 +282,9 @@ addressPrvKey wallet name key = do
     let addrPrvKey = fromJust $ extPrvKey accPrv $ addressIndex add
     return $ xPrvKey $ getAddrPrvKey addrPrvKey
 
+-- Returns the number of new addresses created
 adjustLookAhead :: (MonadIO m, PersistUnique b, PersistQuery b)
-                => DbAddressGeneric b -> ReaderT b m ()
+                => DbAddressGeneric b -> ReaderT b m Int
 adjustLookAhead a = do
     acc <- liftM fromJust $ get ai
     cnt <- count [ DbAddressIndex >. dbAddressIndex a
@@ -294,6 +295,7 @@ adjustLookAhead a = do
     when (diff > 0) $ do
         _ <- newAddrsGeneric (Entity ai acc) (dbAddressInternal a) diff
         return ()
+    return $ max 0 diff
   where
     ai = dbAddressAccount a
 

@@ -156,9 +156,6 @@ instance Arbitrary TxHashStatusRes where
     arbitrary = TxHashStatusRes 
         <$> arbitrary 
         <*> arbitrary
-        <*> oneof [ return Nothing
-                  , (Just . (\(ArbitraryTx x) -> x) <$> arbitrary) 
-                  ]
 
 instance Arbitrary TxRes where
     arbitrary = TxRes <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
@@ -167,9 +164,6 @@ instance Arbitrary TxStatusRes where
     arbitrary = TxStatusRes 
         <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
         <*> arbitrary
-        <*> oneof [ return Nothing
-                  , (Just . (\(ArbitraryTx x) -> x) <$> arbitrary) 
-                  ]
 
 instance Arbitrary BalanceRes where
     arbitrary = BalanceRes <$> arbitrary <*> arbitrary

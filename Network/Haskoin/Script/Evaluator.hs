@@ -12,6 +12,7 @@ module Network.Haskoin.Script.Evaluator
   verifySpend
 , evalScript
 , SigCheck
+, Flag
 -- * Evaluation data types
 , Program
 , Stack
@@ -66,6 +67,16 @@ maxOpcodes = 200
 
 maxKeysMultisig :: Int
 maxKeysMultisig = 20
+
+data Flag = P2SH
+          | STRICTENC
+          | DERSIG
+          | LOW_S
+          | NULLDUMMY
+          | SIGPUSHONLY
+          | MINIMALDATA
+          | DISCOURAGE_UPGRADABLE_NOPS
+     deriving ( Show, Read, Eq )
 
 data EvalError =
     EvalError String
@@ -601,10 +612,10 @@ checkStack (x:_) = decodeBool x
 checkStack []  = False
 
 
-isPayToScriptHash :: [ ScriptOp ] -> Bool
-isPayToScriptHash [OP_HASH160, OP_PUSHDATA bytes OPCODE, OP_EQUAL]
-                    = BS.length bytes == 20
-isPayToScriptHash _ = False
+isPayToScriptHash :: [ ScriptOp ] -> [ Flag ]  -> Bool
+isPayToScriptHash [OP_HASH160, OP_PUSHDATA bytes OPCODE, OP_EQUAL] flgs
+                    = ( P2SH `elem` flgs ) && ( BS.length bytes == 20 )
+isPayToScriptHash _ _ = False
 
 stackToScriptOps :: StackValue -> [ ScriptOp ]
 stackToScriptOps sv = scriptOps $ decode $ BSL.pack sv
@@ -615,8 +626,9 @@ stackToScriptOps sv = scriptOps $ decode $ BSL.pack sv
 execScript :: Script -- ^ scriptSig ( redeemScript )
            -> Script -- ^ scriptPubKey
            -> SigCheck -- ^ signature verification Function
+           -> [ Flag ] -- ^ Evaluation flags
            -> Either EvalError Program
-execScript scriptSig scriptPubKey sigCheckFcn =
+execScript scriptSig scriptPubKey sigCheckFcn flags =
   let sigOps = scriptOps scriptSig
       pubKeyOps = scriptOps scriptPubKey
       emptyProgram = Program {
@@ -628,7 +640,7 @@ execScript scriptSig scriptPubKey sigCheckFcn =
       }
 
 
-      checkSig | isPayToScriptHash pubKeyOps = checkPushOnly sigOps
+      checkSig | isPayToScriptHash pubKeyOps flags = checkPushOnly sigOps
                | otherwise = return ()
 
       checkKey | BSL.length (encode scriptPubKey) > fromIntegral maxScriptSize
@@ -643,14 +655,15 @@ execScript scriptSig scriptPubKey sigCheckFcn =
 
       in do s <- evalConditionalProgram redeemEval [] emptyProgram
             p <- evalConditionalProgram pubKeyEval [] emptyProgram { stack = s }
-            if ( checkStack . runStack $ p ) &&  ( isPayToScriptHash pubKeyOps ) && ( not . null $ s )
+            if ( checkStack . runStack $ p ) && 
+               ( isPayToScriptHash pubKeyOps flags ) && ( not . null $ s )
                 then evalConditionalProgram (p2shEval s) [] emptyProgram { stack = drop 1 s,
                                                                            hashOps = stackToScriptOps $ head s }
                 else return p
 
-evalScript :: Script -> Script -> SigCheck -> Bool
-evalScript scriptSig scriptPubKey sigCheckFcn =
-              case execScript scriptSig scriptPubKey sigCheckFcn of
+evalScript :: Script -> Script -> SigCheck -> [ Flag ] -> Bool
+evalScript scriptSig scriptPubKey sigCheckFcn flags =
+              case execScript scriptSig scriptPubKey sigCheckFcn flags of
                   Left _ -> False
                   Right p -> checkStack . runStack $ p
 
@@ -669,9 +682,10 @@ verifySigWithType tx i outOps txSig pubKey =
 verifySpend :: Tx     -- ^ The spending transaction
             -> Int    -- ^ The input index
             -> Script -- ^ The output script we are spending
+            -> [ Flag ] -- ^ Evaluation flags
             -> Bool
-verifySpend tx i outscript =
+verifySpend tx i outscript flags =
   let scriptSig = decode' . scriptInput $ txIn tx !! i
       verifyFcn = verifySigWithType tx i
   in
-  evalScript scriptSig outscript verifyFcn
+  evalScript scriptSig outscript verifyFcn flags

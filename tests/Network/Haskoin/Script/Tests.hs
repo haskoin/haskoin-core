@@ -24,6 +24,7 @@ import qualified Data.Aeson as A (decode)
 import Data.Bits (setBit, testBit)
 import Text.Read (readMaybe)
 import Data.List (isPrefixOf)
+import Data.List.Split ( splitOn )
 import Data.Char (ord)
 import qualified Data.ByteString as BS
     ( singleton
@@ -201,6 +202,10 @@ parseHex' (a:b:xs) = case readHex $ [a, b] :: [(Integer, String)] of
 parseHex' [_] = Nothing
 parseHex' [] = Just []
 
+parseFlags :: String -> [ Flag ]
+parseFlags "" = []
+parseFlags s = map read . splitOn "," $ s
+
 parseScript :: String -> Either ParseError Script
 parseScript scriptString =
       do bytes <- LBS.pack <$> parseBytes scriptString
@@ -262,17 +267,17 @@ testFile groupLabel path expected = buildTest $ do
             parseTest s = case testParts s of
                 Nothing -> testCase "can't parse test case" $
                                HUnit.assertFailure $ "json element " ++ show s
-                Just ( sig, pubKey, flags, label ) -> makeTest label sig pubKey
+                Just ( sig, pubKey, flags, label ) -> makeTest label sig pubKey flags
 
-            makeTest :: String -> String -> String -> Test
-            makeTest label sig pubKey =
+            makeTest :: String -> String -> String -> String -> Test
+            makeTest label sig pubKey flags =
                 testCase label' $ case (parseScript sig, parseScript pubKey) of
                     (Left e, _) -> parseError $ "can't parse sig: " ++
                                                 show sig ++ " error: " ++ e
                     (_, Left e) -> parseError $ "can't parse key: " ++
                                                 show pubKey ++ " error: " ++ e
                     (Right scriptSig, Right scriptPubKey) ->
-                        runTest scriptSig scriptPubKey
+                        runTest scriptSig scriptPubKey ( parseFlags flags )
 
                 where label' =  if null label
                                     then "sig: [" ++ sig ++ "] " ++
@@ -285,12 +290,12 @@ testFile groupLabel path expected = buildTest $ do
 
             filterPureComments = filter ( not . null . tail )
 
-            runTest scriptSig scriptPubKey =
+            runTest scriptSig scriptPubKey scriptFlags =
                 HUnit.assertBool
                   (" eval error: " ++ errorMessage)
-                  (expected == scriptPairTestExec scriptSig scriptPubKey)
+                  (expected == scriptPairTestExec scriptSig scriptPubKey scriptFlags)
 
-                where run f = f scriptSig scriptPubKey rejectSignature
+                where run f = f scriptSig scriptPubKey rejectSignature scriptFlags
                       errorMessage = case run execScript of
                         Left e -> show e
                         Right _ -> " none"
@@ -309,12 +314,12 @@ testParts l = let ( x, r ) = splitAt 3 l
 
 -- repl utils
 
-execScriptIO :: String -> String -> IO ()
-execScriptIO sig key = case (parseScript sig, parseScript key) of
+execScriptIO :: String -> String -> String -> IO ()
+execScriptIO sig key flgs = case (parseScript sig, parseScript key) of
   (Left e, _) -> print $ "sig parse error: " ++ e
   (_, Left e) -> print $ "key parse error: " ++ e
   (Right scriptSig, Right scriptPubKey) ->
-      case execScript scriptSig scriptPubKey rejectSignature of
+      case execScript scriptSig scriptPubKey rejectSignature ( parseFlags flgs ) of
           Left e -> putStrLn $ "error " ++ show e
           Right p -> do putStrLn $ "successful execution"
                         putStrLn $ dumpStack $ runStack p
@@ -384,14 +389,15 @@ buildSpendTx scriptSig creditTx = Tx {
 -- | Executes the test of a scriptSig, pubKeyScript pair, including
 -- building the required transactions and verifying the spending
 -- transaction.
-scriptPairTestExec :: Script -- scriptSig 
-                   -> Script -- pubKey
+scriptPairTestExec :: Script    -- scriptSig 
+                   -> Script    -- pubKey
+                   -> [ Flag ] -- Evaluation flags
                    -> Bool
-scriptPairTestExec scriptSig pubKey = 
+scriptPairTestExec scriptSig pubKey flags = 
     let bsScriptSig = encode' scriptSig
         bsPubKey = encode' pubKey
         spendTx = buildSpendTx bsScriptSig ( buildCreditTx bsPubKey )
-    in verifySpend spendTx 0 pubKey
+    in verifySpend spendTx 0 pubKey flags
 
 runTests :: [Test] -> IO ()
 runTests ts = defaultMainWithArgs ts ["--hide-success"]

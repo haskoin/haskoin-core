@@ -1135,7 +1135,7 @@ testImportMultisig = do
     checkAccountBalance 0 "test" "ms1" (Balance 10000000) 0
     checkSpendableBalance 0 "test" "ms1" 10000000
 
-    (h,c,_) <- sendTx "test" "ms1" 0 
+    (h,c) <- sendTx "test" "ms1" 0 
         [(fromJust $ base58ToAddr "37DDNVZZqU5i8XjyKyvZZv7edjCn3XrRsm", 5000000)] 10000
     liftIO $ assertEqual "Completed status is not False" False c
     liftM (dbTxConfidence . entityVal) (getTxEntity h)
@@ -1147,7 +1147,7 @@ testImportMultisig = do
     checkAccountBalance 0 "test" "ms1" (Balance 9990000) 0
     checkSpendableBalance 0 "test" "ms1" 0
 
-    (h2,c2,_) <- signWalletTx "test" "ms1" toImport 
+    (h2,c2) <- signWalletTx "test" "ms1" toImport 
     liftIO $ assertEqual "Completed status is not True" True c2
     liftM (dbTxConfidence . entityVal) (getTxEntity h2)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
@@ -1184,7 +1184,7 @@ testImportMultisig2 = do
     checkAccountBalance 0 "test" "ms1" (Balance 10000000) 0
     checkSpendableBalance 0 "test" "ms1" 10000000
 
-    (h,c,_) <- signWalletTx "test" "ms1" toSign 
+    (h,c) <- signWalletTx "test" "ms1" toSign 
     liftIO $ assertEqual "Completed status is not True" True c
     liftM (dbTxConfidence . entityVal) (getTxEntity h)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 

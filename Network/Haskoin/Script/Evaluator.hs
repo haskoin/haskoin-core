@@ -563,8 +563,32 @@ eval OP_CHECKSIGVERIFY      = eval OP_CHECKSIG      >> eval OP_VERIFY
 eval OP_CHECKMULTISIGVERIFY = eval OP_CHECKMULTISIG >> eval OP_VERIFY
 
 eval op = case constValue op of
-    Just sv -> pushStack sv
+    Just sv -> minimalPushEnforcer op >> pushStack sv
     Nothing -> programError $ "unexpected op " ++ show op
+
+minimalPushEnforcer :: ScriptOp -> ProgramTransition ()
+minimalPushEnforcer op = do
+    flgs <- ask
+    if not $ MINIMALDATA `elem` flgs
+        then return ()
+        else case checkMinimalPush op of
+            True -> return ()
+            False -> programError $ "Non-minimal data: " ++ (show op)
+
+checkMinimalPush :: ScriptOp -> Bool -- Putting in a maybe monad to avoid elif chain
+checkMinimalPush ( OP_PUSHDATA payload optype ) = 
+  let l = BS.length payload
+      v = ( BS.unpack payload ) !! 0 in
+  if 
+     (BS.null payload)                     -- Check if could have used OP_0         
+     || (l == 1 && v <= 16 && v >= 1)   -- Could have used OP_{1,..,16}
+     || (l == 1 && v == 0x81)           -- Could have used OP_1NEGATE
+     || (l <= 75 && optype /= OPCODE)   -- Could have used direct push
+     || (l <= 255 && l > 75 && optype /= OPDATA1)
+     || (l > 255 && l <= 65535 && optype /= OPDATA2)
+  then False else True
+checkMinimalPush _ = True
+
 
 --------------------------------------------------------------------------------
 -- | Based on the IfStack, returns whether the script is within an

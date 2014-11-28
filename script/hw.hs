@@ -303,6 +303,7 @@ cmdHelp =
     , "  importtx  acc tx                    Import a transaction"
     , "  balance   acc [-m]                  Display account balance"
     , "  spendable acc [-m]                  Display account spendable balance"
+    , "  getprop   acc hash                  Get a transaction proposition"
     , "  gettx     acc hash                  Get a raw transaction"
     , ""
     , "Offline tx commands:" 
@@ -555,11 +556,9 @@ processCommand opts args = case args of
             req = Just $ encode $ 
                 SendCoins [(fromJust a, v)] (optFee opts) (optMinConf opts) 
         res <- sendRequest url "POST" [] req opts
-        printJSONOr opts res $ \(TxHashStatusRes h c p) -> do
+        printJSONOr opts res $ \(TxHashStatusRes h c) -> do
             putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
             putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
-            when (isJust p) $ putStrLn $ 
-                unwords [ "Proposition:", bsToHex $ encode' $ fromJust p]
     "sendmany" : name : xs -> do
         let g str   = map T.unpack $ T.splitOn ":" (T.pack str)
             f [a,v] = liftM2 (,) (base58ToAddr a) (return $ read v)
@@ -573,11 +572,9 @@ processCommand opts args = case args of
             req = Just $ encode $ 
                 SendCoins (fromJust recipients) (optFee opts) (optMinConf opts)
         res <- sendRequest url "POST" [] req opts
-        printJSONOr opts res $ \(TxHashStatusRes h c p) -> do
+        printJSONOr opts res $ \(TxHashStatusRes h c) -> do
             putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
             putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
-            when (isJust p) $ putStrLn $ 
-                unwords [ "Proposition:", bsToHex $ encode' $ fromJust p]
     ["signtx", name, tx] -> do
         let txM = decodeToMaybe =<< hexToBS tx
         when (isNothing txM) $ throwIO $
@@ -587,11 +584,9 @@ processCommand opts args = case args of
                          ] 
             req = Just $ encode $ SignTx $ fromJust txM
         res <- sendRequest url "POST" [] req opts
-        printJSONOr opts res $ \(TxHashStatusRes h c p) -> do
+        printJSONOr opts res $ \(TxHashStatusRes h c) -> do
             putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
             putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
-            when (isJust p) $ putStrLn $ 
-                unwords [ "Proposition:", bsToHex $ encode' $ fromJust p]
     ["importtx", name, tx] -> do
         let txM = decodeToMaybe =<< hexToBS tx
         when (isNothing txM) $ throwIO $
@@ -601,11 +596,9 @@ processCommand opts args = case args of
                          ]
             req = Just $ encode $ ImportTx $ fromJust txM
         res <- sendRequest url "POST" [] req opts
-        printJSONOr opts res $ \(TxHashStatusRes h c p) -> do
+        printJSONOr opts res $ \(TxHashStatusRes h c) -> do
             putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
             putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
-            when (isJust p) $ putStrLn $ 
-                unwords [ "Proposition:", bsToHex $ encode' $ fromJust p]
     ["getblob", name, tid] -> do
         let h = decodeTxHashLE tid
         when (isNothing h) $ throwIO $
@@ -627,11 +620,9 @@ processCommand opts args = case args of
                          ] 
             req = Just $ encode $ SignSigBlob $ fromJust blobM
         res <- sendRequest url "POST" [] req opts
-        printJSONOr opts res $ \(TxStatusRes tx c p) -> do
+        printJSONOr opts res $ \(TxStatusRes tx c) -> do
             putStrLn $ unwords [ "Tx      :", bsToHex $ encode' tx ]
             putStrLn $ unwords [ "Complete:", if c then "Yes" else "No" ]
-            when (isJust p) $ putStrLn $ 
-                unwords [ "Proposition:", bsToHex $ encode' $ fromJust p]
     ["balance", name] -> do
         let url = concat [ "/wallets/", optWallet opts
                          , "/accounts/", name, "/balance"
@@ -651,6 +642,18 @@ processCommand opts args = case args of
         res <- sendRequest url "GET" qs Nothing opts
         printJSONOr opts res $ \(SpendableRes b) -> do
             putStrLn $ unwords [ "Spendable balance:", show b ]
+    ["getprop", name, hash] -> do
+        let h = decodeTxHashLE hash
+        when (isNothing h) $ throwIO $
+            WalletException "Could not parse hash"
+        let url = concat [ "/wallets/", optWallet opts
+                         , "/accounts/", name
+                         , "/txs/", encodeTxHashLE $ fromJust h
+                         ]
+            qs  = [ ("proposition", Just $ stringToBS "true") ]
+        res <- sendRequest url "GET" qs Nothing opts
+        printJSONOr opts res $ \(AccTx _ _ _ _ _ _ tx _ _) -> 
+            putStrLn $ bsToHex $ encode' tx
     ["gettx", name, hash] -> do
         let h = decodeTxHashLE hash
         when (isNothing h) $ throwIO $

@@ -18,6 +18,7 @@ module Network.Haskoin.Wallet.Tx
 , getSigBlob
 , signSigBlob
 , walletBloomFilter
+, getProposition
 , isTxInWallet
 , firstKeyTime
 , importBlock
@@ -563,20 +564,20 @@ sendTx :: (MonadIO m, PersistUnique b, PersistQuery b)
        -> Word32              -- ^ Minimum confirmations
        -> [(Address,Word64)]  -- ^ List of recipient addresses and amounts
        -> Word64              -- ^ Fee per 1000 bytes 
-       -> ReaderT b m (TxHash, Bool, Tx) 
-            -- ^ (Payment transaction, Completed flag, Proposition)
+       -> ReaderT b m (TxHash, Bool) 
+            -- ^ (Payment transaction, Completed flag)
 sendTx wallet name minConf dests fee = do
     Entity wk _ <- getWalletEntity wallet
     accE@(Entity ai acc) <- getAccountEntity wk name
     tx <- buildUnsignedTx accE minConf dests fee
-    (signedTx, _, prop) <- if isReadAccount $ dbAccountValue acc 
-        then return (tx, False, tx)
+    (signedTx, _) <- if isReadAccount $ dbAccountValue acc 
+        then return (tx, False)
         else signSigBlob wallet name =<< buildSigBlob ai tx
     confM <- importTx signedTx WalletSource Nothing
     let (tid, conf) = fromJust confM
     when (isNothing confM) $ liftIO $ throwIO $
         WalletException "Transaction could not be imported in the wallet"
-    return (tid, conf == TxPending, prop)
+    return (tid, conf == TxPending)
 
 -- | Try to sign the inputs of an existing transaction using the private keys
 -- of an account. This command will return an indication if the transaction is
@@ -588,21 +589,19 @@ signWalletTx :: (MonadIO m, PersistUnique b, PersistQuery b)
              => WalletName  -- ^ Wallet name
              -> AccountName -- ^ Account name
              -> Tx          -- ^ Transaction to sign 
-             -> ReaderT b m (TxHash, Bool, Tx)
+             -> ReaderT b m (TxHash, Bool)
                 -- ^ (Signed transaction, Completed flag)
 signWalletTx wallet name tx = do
     Entity wk _ <- getWalletEntity wallet
     Entity ai acc <- getAccountEntity wk name
-    (signedTx, _, prop) <- if isReadAccount $ dbAccountValue acc 
-        then return (tx, False, p)
+    (signedTx, _) <- if isReadAccount $ dbAccountValue acc 
+        then return (tx, False)
         else signSigBlob wallet name =<< buildSigBlob ai tx
     confM <- importTx signedTx UnknownSource (Just (wallet, name))
     let (tid, conf) = fromJust confM
     when (isNothing confM) $ liftIO $ throwIO $
         WalletException "Transaction is not relevant to this wallet"
-    return (tid, conf `elem` [ TxPending, TxBuilding ], prop)
-  where
-    p = tx{ txIn = map (\ti -> ti{ scriptInput = BS.empty } ) $ txIn tx }
+    return (tid, conf `elem` [ TxPending, TxBuilding ])
 
 -- | Retrieve the 'OfflineSignData' that can be used to sign a transaction from
 -- an offline wallet
@@ -672,7 +671,7 @@ signSigBlob :: (MonadIO m, PersistUnique b, PersistQuery b)
             => WalletName
             -> AccountName
             -> SigBlob
-            -> ReaderT b m (Tx, Bool, Tx)
+            -> ReaderT b m (Tx, Bool)
 signSigBlob wallet name (SigBlob dat tx) = do
     Entity wk wE  <- getWalletEntity wallet
     Entity _ accE <- getAccountEntity wk name
@@ -689,14 +688,20 @@ signSigBlob wallet name (SigBlob dat tx) = do
         resE = detSignTx tx sigi prvKeys
         (signedTx, complete) = fromRight resE
     when (isLeft resE) $ liftIO $ throwIO $ WalletException $ fromLeft resE
-    return (signedTx, complete, p)
+    return (signedTx, complete)
   where
-    -- Proposition is the original transaction without the signatures
-    p = tx{ txIn = map (\ti -> ti{ scriptInput = BS.empty }) $ txIn tx }
     toSigi acc (op, so, i, k) = 
         -- TODO: Here we override the SigHash to be SigAll False all the time.
         -- Should we be more flexible?
         SigInput so op (SigAll False) $ getRedeemIndex acc k i 
+
+getProposition :: (MonadIO m, PersistUnique b, PersistQuery b)
+               => WalletName -> AccountName -> TxHash -> ReaderT b m Tx
+getProposition wallet name tid = do
+    tx <- liftM accTx $ getAccTx wallet name tid
+    return tx{ txIn = map f $ txIn tx }
+  where
+    f ti = ti{ scriptInput = BS.empty }
 
 -- | Produces a bloom filter containing all the addresses in this wallet. This
 -- includes internal and external addresses. The bloom filter can be set on a

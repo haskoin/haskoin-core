@@ -653,18 +653,12 @@ coins that will be spent.
 ##### Output
 
 The resulting transaction hash and a status indicating if the transaction is
-complete. If the complete flag is false (the transaction is still partially
-signed), an additional proposition field will be included which is the 
-original transaction with all input scripts blanked out. You can give the
-proposition to the other keys holders in a multisig account for them to sign,
-then merge all the signed propositions back into the wallet using the
-[import resource](#import-a-transaction).
+complete. 
 
 ```json
 {
   "txhash": "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c",
   "complete": false,
-  "proposition": "0100000001a65337..." 
 }
 ```
 
@@ -689,15 +683,12 @@ A JSON object containing the raw transaction to sign in base16 (Hex):
 ##### Output
 
 The resulting transaction hash and a status indicating if the transaction is
-complete. If the complete flag is false (the transaction is still partially
-signed), an additional proposition field will be included which is the original
-transaction with all input scripts blanked out.
+complete. 
 
 ```json
 {
   "txhash": "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f",
   "complete": false,
-  "proposition": "0100000001a65337..." 
 }
 ```
 
@@ -720,16 +711,12 @@ A JSON object containing the raw transaction to import in base16 (HEX):
 
 ##### Output
 
-The resource will return the transaction hash and a completed flag. If the
-transaction is not complete (partially signed), an additional proposition
-field will be included which contains the original transaction with all
-input script blanked out.
+The resource will return the transaction hash and a completed flag. 
 
 ```json
 { 
   "txhash": "9b3fa96547c6aa3f355e2f10ed860f4a36d8369064a7cfe4e65eecbbc03bfe8f",
   "complete": false,
-  "proposition": "0100000001a65337..." 
 }
 ```
 
@@ -778,21 +765,34 @@ is a list of the following elements:
 ##### Output
 
 The resulting transaction and a status indicating if the transaction is
-complete. If the complete flag is false (the transaction is still partially
-signed), an addition proposition field will be included which is the original
-transaction with all the input scripts blanked out.
+complete. 
 
 ```json
 {
   "tx": "0100000001a65337...",
   "complete": false,
-  "proposition": "0100000001a65337..." 
 }
 ```
 
 ### GET /wallets/{name}/accounts/{name}/txs/{txhash}
 
 You can use this resource to query individual account transactions.
+
+#### Input
+
+By default, the full transaction will be returned in the "tx" field. You 
+can instead request the transaction proposition, which is the same transaction
+with all of the input scripts blanked out. The purpose of transaction
+propositions is to allow all parties in a multisignature transaction to
+sign the proposition in parallel and then merge all the signed propositions
+back into the wallet using the [import resource](#import-a-transaction).
+
+Here are different ways you can call this resource:
+
+```
+GET /wallets/wallet1/accounts/account1/txs/txhash
+GET /wallets/wallet1/accounts/account1/txs/txhash?proposition=true
+```
 
 #### Output
 
@@ -812,6 +812,7 @@ Returns the requested account transaction:
     }
   ],
   "txid": "3a4317be696a438fca5a9705786a9d2da6eadcd1d0a6e8be34be8b41b8dff79c",
+  "tx": "0100000001a65337...",
   "receiveddate": 1416005281,
   "confirmationdate": 1416008832
   }

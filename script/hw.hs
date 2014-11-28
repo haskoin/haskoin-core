@@ -650,7 +650,7 @@ processCommand opts args = case args of
                          , "/accounts/", name
                          , "/txs/", encodeTxHashLE $ fromJust h
                          ]
-            qs  = [ ("proposition", Just $ stringToBS "true") ]
+            qs  = [ ("proposition", Just "true") ]
         res <- sendRequest url "GET" qs Nothing opts
         printJSONOr opts res $ \(AccTx _ _ _ _ _ _ tx _ _) -> 
             putStrLn $ bsToHex $ encode' tx

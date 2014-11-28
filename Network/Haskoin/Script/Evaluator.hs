@@ -444,19 +444,26 @@ incrementOpCount :: Int -> ProgramTransition ()
 incrementOpCount i | i > maxOpcodes = programError "reached opcode limit"
                    | otherwise      = modify $ \p -> p { opCount = i + 1 }
 
+nopDiscourager :: ProgramTransition ()
+nopDiscourager = do
+    flgs <- ask
+    if DISCOURAGE_UPGRADABLE_NOPS `elem` flgs
+        then programError "Discouraged OP used."
+        else return ()
+
 -- Instruction Evaluation
 eval :: ScriptOp -> ProgramTransition ()
 eval OP_NOP     = return ()
-eval OP_NOP1    = return ()
-eval OP_NOP2    = return ()
-eval OP_NOP3    = return ()
-eval OP_NOP4    = return ()
-eval OP_NOP5    = return ()
-eval OP_NOP6    = return ()
-eval OP_NOP7    = return ()
-eval OP_NOP8    = return ()
-eval OP_NOP9    = return ()
-eval OP_NOP10   = return ()
+eval OP_NOP1    = nopDiscourager >> return ()
+eval OP_NOP2    = nopDiscourager >> return ()
+eval OP_NOP3    = nopDiscourager >> return ()
+eval OP_NOP4    = nopDiscourager >> return ()
+eval OP_NOP5    = nopDiscourager >> return ()
+eval OP_NOP6    = nopDiscourager >> return ()
+eval OP_NOP7    = nopDiscourager >> return ()
+eval OP_NOP8    = nopDiscourager >> return ()
+eval OP_NOP9    = nopDiscourager >> return ()
+eval OP_NOP10   = nopDiscourager >> return ()
 
 eval OP_VERIFY = popBool >>= \case
     True  -> return ()

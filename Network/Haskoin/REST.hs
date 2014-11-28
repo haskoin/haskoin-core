@@ -252,7 +252,7 @@ whenOnline handler = do
     when (mode == ServerOnline) handler
 
 updateNodeFilter :: Handler ()
-updateNodeFilter = whenOnline $ do
+updateNodeFilter = do
     hs <- getYesod
     let rChan = fromJust $ serverNode hs
         config = serverConfig hs
@@ -293,24 +293,24 @@ postAccountsR wallet = requireJsonBody >>= \res -> do
         NewAccount n -> do
             acc <- runDB $ newAccount w n
             runDB $ addLookAhead w n c
-            updateNodeFilter
+            whenOnline updateNodeFilter
             return acc
         NewMSAccount n r t ks -> do
             acc <- runDB $ newMSAccount w n r t ks
             when (length (accountKeys acc) == t) $ do
                 runDB $ addLookAhead w n c
-                updateNodeFilter
+                whenOnline updateNodeFilter
             return acc
         NewReadAccount n k -> do
             acc <- runDB $ newReadAccount w n k
             runDB $ addLookAhead w n c
-            updateNodeFilter
+            whenOnline updateNodeFilter
             return acc
         NewReadMSAccount n r t ks -> do
             acc <- runDB $ newReadMSAccount w n r t ks
             when (length (accountKeys acc) == t) $ do
                 runDB $ addLookAhead w n c
-                updateNodeFilter
+                whenOnline updateNodeFilter
             return acc
   where
     w = unpack wallet
@@ -325,7 +325,7 @@ postAccountKeysR wallet name = requireJsonBody >>= \ks -> do
     when (length (accountKeys acc) == accountTotal acc) $ do
         c <- (configGap . serverConfig) <$> getYesod
         runDB $ addLookAhead w n c
-        updateNodeFilter
+        whenOnline updateNodeFilter
     return $ toJSON acc
   where
     n = unpack name
@@ -353,7 +353,7 @@ postAddressesR :: Text -> Text -> Handler Value
 postAddressesR wallet name = requireJsonBody >>= \(AddressData label) -> do
     newAddr <- runDB $ unlabeledAddr w n
     res <- runDB $ setAddrLabel w n (addressIndex newAddr) label
-    updateNodeFilter
+    whenOnline updateNodeFilter
     return $ toJSON res
   where
     n = unpack name
@@ -389,34 +389,35 @@ getTxsR wallet name = do
 postTxsR :: Text -> Text -> Handler Value
 postTxsR wallet name = requireJsonBody >>= \res -> case res of
     SendCoins rs fee minConf -> do
-        (tid, complete) <- runDB $ sendTx w n minConf rs fee
+        (tid, complete, genA) <- runDB $ sendTx w n minConf rs fee
         whenOnline $ when complete $ do
+            when genA updateNodeFilter
             Just rChan <- serverNode <$> getYesod
             newTx <- runDB $ getTx tid
             liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
         return $ toJSON $ TxHashStatusRes tid complete
     SignTx tx -> do
-        (tid, complete) <- runDB $ signWalletTx w n tx
+        (tid, complete, genA) <- runDB $ signWalletTx w n tx
         whenOnline $ when complete $ do
+            when genA updateNodeFilter
             Just rChan <- serverNode <$> getYesod
             newTx <- runDB $ getTx tid
             liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
-            updateNodeFilter
         return $ toJSON $ TxHashStatusRes tid complete
     SignSigBlob blob -> do
         (tx, complete) <- runDB $ signSigBlob w n blob
         return $ toJSON $ TxStatusRes tx complete
     ImportTx tx -> do
         resM <- runDB $ importTx tx UnknownSource (Just (w, n))
-        let (tid, conf) = fromJust resM
+        let (tid, conf, genA) = fromJust resM
             complete = conf `elem` [ TxPending, TxBuilding ]
         when (isNothing resM) $ liftIO $ throwIO $
             WalletException "Transaction could not be imported"
         whenOnline $ when complete $ do
+            when genA updateNodeFilter
             Just rChan <- serverNode <$> getYesod
             newTx <- runDB $ getTx tid
             liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
-            updateNodeFilter
         return $ toJSON $ TxHashStatusRes tid complete
   where
     w = unpack wallet

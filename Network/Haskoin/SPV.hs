@@ -15,14 +15,14 @@ module Network.Haskoin.SPV
 ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (when, forM_, liftM)
+import Control.Monad (when, forM_, forM, liftM)
 import Control.Exception (SomeException(..), tryJust)
 import Control.Monad.Trans (MonadIO, liftIO, lift)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import qualified Control.Monad.State as S (StateT, evalStateT, get)
 import Control.Monad.Logger (LoggingT, runStdoutLoggingT)
 
-import Data.Maybe (isJust, isNothing, fromJust)
+import Data.Maybe (isJust, isNothing, fromJust, catMaybes)
 import Data.Default (def)
 import qualified Data.ByteString as BS (ByteString, append, empty)
 
@@ -40,7 +40,6 @@ import qualified Database.LevelDB.Base as DB
     )
 import Database.LevelDB.Iterator (iterKey, iterNext)
 
-import Database.Persist (Filter, count)
 import Database.Persist.Sqlite (ConnectionPool, runSqlPersistMPool)
 
 import Network.Haskoin.Block
@@ -50,7 +49,6 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 import Network.Haskoin.Wallet.Tx
-import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 
 data DBSession = DBSession
@@ -91,11 +89,9 @@ instance SPVNode DBHandle NodeHandle where
         db <- liftM dataHandle $ lift $ lift $ S.get
         fp <- liftM bloomFP $ lift $ lift $ S.get
         resE <- liftIO $ tryJust f $ flip runSqlPersistMPool pool $ do
-            before <- count ([] :: [Filter (DbAddressGeneric b)])
-            forM_ txs $ \tx -> importTx tx NetworkSource Nothing
-            after <- count ([] :: [Filter (DbAddressGeneric b)])
+            xs <- forM txs $ \tx -> importTx tx NetworkSource Nothing
             -- Update the bloom filter if new addresses were generated
-            if after > before 
+            if or $ map lst3 $ catMaybes xs
                 then Just <$> walletBloomFilter fp
                 else return Nothing
         forM_ txs $ \tx -> (saveHash db) $ txHash tx

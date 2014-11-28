@@ -35,7 +35,6 @@ import Database.Persist.Sqlite
     )
 
 import Network.Haskoin.Wallet
-import Network.Haskoin.Wallet.Address
 import Network.Haskoin.Wallet.Account
 import Network.Haskoin.Wallet.Tx
 import Network.Haskoin.Wallet.Model
@@ -189,7 +188,7 @@ tests =
                 (WalletException "The page number 2 is too high") $ do
                     _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
-                    _ <- newAddrs "main" "default" 5
+                    _ <- addLookAhead "main" "default" 5
                     addressPage "main" "default" 2 5 False
 
         , testCase "Setting a label on an invalid address key should fail" $
@@ -197,7 +196,7 @@ tests =
                 (WalletException "The address has not been generated yet") $ do
                     _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
-                    _ <- newAddrs "main" "default" 5
+                    _ <- addLookAhead "main" "default" 5
                     setAddrLabel "main" "default" 5 "Gym membership"
 
         , testCase "Requesting the private key on an invalid address key should fail" $
@@ -205,7 +204,7 @@ tests =
                 (WalletException "The address has not been generated yet") $ do
                     _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
-                    _ <- newAddrs "main" "default" 5
+                    _ <- addLookAhead "main" "default" 5
                     addressPrvKey "main" "default" 5
         ]
     , testGroup "Transaction import tests"
@@ -264,7 +263,6 @@ testImportOrphan = do
     _ <- newWallet "test" bs1
     _ <- newAccount "test" "acc1"
     addLookAhead "test" "acc1" 30
-    _ <- newAddrs "test" "acc1" 5
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -314,7 +312,7 @@ testImportOrphan = do
 
     importTx fundingTx NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
-            (Just (txHash fundingTx, TxPending)))
+            (Just (txHash fundingTx, TxPending, True)))
     liftM (map (dbOrphanHash . entityVal)) (selectList [] [])
         >>= liftIO . (assertEqual "Orphan list should be empty" [])
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash fundingTx)
@@ -357,7 +355,6 @@ testOutDoubleSpend = do
     Entity wk _ <- getWalletEntity "test"
     Entity ai _ <- getAccountEntity wk "acc1"
     addLookAhead "test" "acc1" 30
-    _ <- newAddrs "test" "acc1" 5
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -377,7 +374,7 @@ testOutDoubleSpend = do
     -- Import funding transaction
     importTx fundingTx NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
-            (Just (txHash fundingTx, TxPending)))
+            (Just (txHash fundingTx, TxPending, True)))
     spendableCoins ai 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 2" 2) . length
 
@@ -391,7 +388,7 @@ testOutDoubleSpend = do
     -- Import first conflicting transaction
     importTx spend1 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
-            (Just (txHash spend1, TxPending)))
+            (Just (txHash spend1, TxPending, True)))
     spendableCoins ai 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 3" 3) . length
 
@@ -405,7 +402,7 @@ testOutDoubleSpend = do
     -- Import second conflicting transaction
     importTx spend2 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
-            (Just (txHash spend2, TxPending)))
+            (Just (txHash spend2, TxPending, True)))
     spendableCoins ai 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 1" 1) . length
 
@@ -553,7 +550,6 @@ testInDoubleSpend = do
     Entity wk _ <- getWalletEntity "test"
     Entity ai _ <- getAccountEntity wk "acc1"
     addLookAhead "test" "acc1" 30
-    _ <- newAddrs "test" "acc1" 5
     let tx1 = Tx 1 [ TxIn (OutPoint 5 5) (BS.pack [1]) maxBound ] 
                    [ TxOut 10000000 $
                       encodeOutputBS $ PayPKHash $ fromJust $ 
@@ -568,7 +564,7 @@ testInDoubleSpend = do
     -- Import first conflicting transaction
     importTx tx1 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
-            (Just (txHash tx1, TxPending)))
+            (Just (txHash tx1, TxPending, True)))
     spendableCoins ai 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 1" 1) . length
     checkAccountBalance 0 "test" "acc1" (Balance 10000000) 0
@@ -577,7 +573,7 @@ testInDoubleSpend = do
     -- Import second conflicting transaction
     importTx tx2 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
-            (Just (txHash tx2, TxPending)))
+            (Just (txHash tx2, TxPending, True)))
     spendableCoins ai 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 0" 0) . length
     checkAccountBalance 0 "test" "acc1" BalanceConflict 2
@@ -659,7 +655,6 @@ testDoubleSpendChain = do
     Entity wk _ <- getWalletEntity "test"
     Entity ai _ <- getAccountEntity wk "acc1"
     addLookAhead "test" "acc1" 30
-    _ <- newAddrs "test" "acc1" 5
     let tx1 = Tx 1 [ TxIn (OutPoint 4 4) (BS.pack [1]) maxBound ] 
                    [ TxOut 10000000 $
                       encodeOutputBS $ PayPKHash $ fromJust $ 
@@ -678,7 +673,7 @@ testDoubleSpendChain = do
     -- Import first transaction
     importTx tx1 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
-            (Just (txHash tx1, TxPending)))
+            (Just (txHash tx1, TxPending, True)))
     spendableCoins ai 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 1" 1) . length
     checkAccountBalance 0 "test" "acc1" (Balance 10000000) 0
@@ -687,7 +682,7 @@ testDoubleSpendChain = do
     -- Now we spend our new coins
     importTx tx2 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
-            (Just (txHash tx2, TxPending)))
+            (Just (txHash tx2, TxPending, True)))
     spendableCoins ai 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 2" 2) . length
     checkAccountBalance 0 "test" "acc1" (Balance 9990000) 0
@@ -712,7 +707,7 @@ testDoubleSpendChain = do
     -- Now let's add tx4 which is in conflict with tx1
     importTx tx4 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not dead" 
-            (Just (txHash tx4, TxDead)))
+            (Just (txHash tx4, TxDead, False)))
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -768,7 +763,7 @@ testDoubleSpendChain = do
     -- Now we add tx3 on top of tx2. It should be dead.
     importTx tx3 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not dead" 
-            (Just (txHash tx3, TxDead)))
+            (Just (txHash tx3, TxDead, True)))
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -819,7 +814,6 @@ testDoubleSpendGroup = do
     Entity wk _ <- getWalletEntity "test"
     Entity ai _ <- getAccountEntity wk "acc1"
     addLookAhead "test" "acc1" 30
-    _ <- newAddrs "test" "acc1" 5
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -839,7 +833,7 @@ testDoubleSpendGroup = do
     -- Import funding transaction
     importTx fundingTx NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
-            (Just (txHash fundingTx, TxPending)))
+            (Just (txHash fundingTx, TxPending, True)))
     spendableCoins ai 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 2" 2) . length
     checkAccountBalance 0 "test" "acc1" (Balance 30000000) 0
@@ -848,7 +842,7 @@ testDoubleSpendGroup = do
     -- Import first transaction
     importTx tx1 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not pending" 
-            (Just (txHash tx1, TxPending)))
+            (Just (txHash tx1, TxPending, True)))
     spendableCoins ai 0 >>= 
         liftIO . (assertEqual "Spendable coins is not 2" 2) . length
     checkAccountBalance 0 "test" "acc1" (Balance 29990000) 0
@@ -881,7 +875,7 @@ testDoubleSpendGroup = do
     -- Import second transaction
     importTx tx2 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not TxDead" 
-            (Just (txHash tx2, TxDead)))
+            (Just (txHash tx2, TxDead, True)))
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -900,7 +894,7 @@ testDoubleSpendGroup = do
     -- Import third transaction
     importTx tx3 NetworkSource Nothing >>=
         liftIO . (assertEqual "Confidence is not TxPending" 
-            (Just (txHash tx3, TxPending)))
+            (Just (txHash tx3, TxPending, True)))
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -1011,19 +1005,18 @@ testWalletDoubleSpend = do
         _ <- newWallet "test" bs1
         _ <- newAccount "test" "acc1"
         addLookAhead "test" "acc1" 30
-        _ <- newAddrs "test" "acc1" 5
         -- Import funding transaction
         importTx fundingTx NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
-                (Just (txHash fundingTx, TxPending)))
+                (Just (txHash fundingTx, TxPending, True)))
         -- Import first transaction
         importTx tx1 NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
-                (Just (txHash tx1, TxPending)))
+                (Just (txHash tx1, TxPending, True)))
         -- Import second transaction
         importTx tx2 NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
-                (Just (txHash tx2, TxPending)))
+                (Just (txHash tx2, TxPending, True)))
         -- Importing this transaction as a wallet transaction should fail as it
         -- double spends a coin
         importTx tx3 WalletSource Nothing 
@@ -1032,19 +1025,18 @@ testWalletDoubleSpend = do
         _ <- newWallet "test" bs1
         _ <- newAccount "test" "acc1"
         addLookAhead "test" "acc1" 30
-        _ <- newAddrs "test" "acc1" 5
         -- Import funding transaction
         importTx fundingTx NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
-                (Just (txHash fundingTx, TxPending)))
+                (Just (txHash fundingTx, TxPending, True)))
         -- Import first transaction
         importTx tx1 NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
-                (Just (txHash tx1, TxPending)))
+                (Just (txHash tx1, TxPending, True)))
         -- Import second transaction
         importTx tx2 NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
-                (Just (txHash tx2, TxPending)))
+                (Just (txHash tx2, TxPending, True)))
         -- Importing this transaction as a wallet transaction should fail as it
         -- builds on top of a conflicting chain
         importTx tx4 WalletSource Nothing 
@@ -1056,19 +1048,18 @@ testWalletDoubleSpend = do
         Entity wk _ <- getWalletEntity "test"
         Entity ai _ <- getAccountEntity wk "acc1"
         addLookAhead "test" "acc1" 30
-        _ <- newAddrs "test" "acc1" 5
         -- Import funding transaction
         importTx fundingTx NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
-                (Just (txHash fundingTx, TxPending)))
+                (Just (txHash fundingTx, TxPending, True)))
         -- Import first transaction
         importTx tx1 NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
-                (Just (txHash tx1, TxPending)))
+                (Just (txHash tx1, TxPending, True)))
         -- Import second transaction
         importTx tx2 NetworkSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
-                (Just (txHash tx2, TxPending)))
+                (Just (txHash tx2, TxPending, True)))
 
         -- confirm the first transaction
         importBlock (BestBlock $ fakeNode 0 0x01) [txHash fundingTx]
@@ -1083,7 +1074,7 @@ testWalletDoubleSpend = do
         -- now we can import tx3
         importTx tx3 WalletSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
-                (Just (txHash tx3, TxPending)))
+                (Just (txHash tx3, TxPending, True)))
         liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx3)
             >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxPending) 
         liftM (map (outPointHash . coinOutPoint)) (spendableCoins ai 0)
@@ -1098,7 +1089,7 @@ testWalletDoubleSpend = do
         -- and tx4
         importTx tx4 WalletSource Nothing >>=
             liftIO . (assertEqual "Confidence is not TxPending" 
-                (Just (txHash tx4, TxPending)))
+                (Just (txHash tx4, TxPending, False)))
         liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx4)
             >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxPending) 
         liftM (map (outPointHash . coinOutPoint)) (spendableCoins ai 0)
@@ -1118,7 +1109,6 @@ testImportMultisig = do
     Entity wk _ <- getWalletEntity "test"
     Entity ai _ <- getAccountEntity wk "ms1"
     addLookAhead "test" "ms1" 30
-    _ <- newAddrs "test" "ms1" 5
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -1135,7 +1125,7 @@ testImportMultisig = do
     checkAccountBalance 0 "test" "ms1" (Balance 10000000) 0
     checkSpendableBalance 0 "test" "ms1" 10000000
 
-    (h,c) <- sendTx "test" "ms1" 0 
+    (h,c,_) <- sendTx "test" "ms1" 0 
         [(fromJust $ base58ToAddr "37DDNVZZqU5i8XjyKyvZZv7edjCn3XrRsm", 5000000)] 10000
     liftIO $ assertEqual "Completed status is not False" False c
     liftM (dbTxConfidence . entityVal) (getTxEntity h)
@@ -1147,7 +1137,7 @@ testImportMultisig = do
     checkAccountBalance 0 "test" "ms1" (Balance 9990000) 0
     checkSpendableBalance 0 "test" "ms1" 0
 
-    (h2,c2) <- signWalletTx "test" "ms1" toImport 
+    (h2,c2,_) <- signWalletTx "test" "ms1" toImport 
     liftIO $ assertEqual "Completed status is not True" True c2
     liftM (dbTxConfidence . entityVal) (getTxEntity h2)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 
@@ -1167,7 +1157,6 @@ testImportMultisig2 = do
     Entity wk _ <- getWalletEntity "test"
     Entity ai _ <- getAccountEntity wk "ms1"
     addLookAhead "test" "ms1" 30
-    _ <- newAddrs "test" "ms1" 5
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
@@ -1184,7 +1173,7 @@ testImportMultisig2 = do
     checkAccountBalance 0 "test" "ms1" (Balance 10000000) 0
     checkSpendableBalance 0 "test" "ms1" 10000000
 
-    (h,c) <- signWalletTx "test" "ms1" toSign 
+    (h,c,_) <- signWalletTx "test" "ms1" toSign 
     liftIO $ assertEqual "Completed status is not True" True c
     liftM (dbTxConfidence . entityVal) (getTxEntity h)
         >>= liftIO . (assertEqual "Confidence is not TxPending" TxPending) 

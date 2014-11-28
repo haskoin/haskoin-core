@@ -200,8 +200,8 @@ importTx :: (MonadIO m, PersistQuery b, PersistUnique b)
          => Tx       -- ^ Transaction to import
          -> TxSource -- ^ Where does the transaction come from
          -> Maybe (String, String) -- ^ (Wallet, Account)
-         -> ReaderT b m (Maybe (TxHash, TxConfidence))
-         -- ^ New transaction entries created
+         -> ReaderT b m (Maybe (TxHash, TxConfidence, Bool))
+         -- ^ (Imported Tx, Confidence, New addresses generated)
 importTx tx source nameM = getBy (UniqueTx tid) >>= \txM -> case txM of
     Just (Entity tkey dbtx) -> do
         -- Change the confidence from offline to pending if we get a
@@ -210,10 +210,10 @@ importTx tx source nameM = getBy (UniqueTx tid) >>= \txM -> case txM of
         if isOffline && source == NetworkSource
             then do
                 replace tkey $ dbtx{ dbTxConfidence = TxPending }
-                return $ Just (tid, TxPending)
+                return $ Just (tid, TxPending, False)
             else do
                 when (source == UnknownSource) $ checkUnknownTx tx nameM
-                return $ Just (tid, dbTxConfidence dbtx)
+                return $ Just (tid, dbTxConfidence dbtx, False)
     Nothing -> do
         when (source == UnknownSource) $ checkUnknownTx tx nameM
         isOrphan <- isOrphanTx tx
@@ -248,7 +248,7 @@ checkUnknownTx tx nameM = do
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
 
 addTx :: (MonadIO m, PersistQuery b, PersistUnique b) 
-      => Tx -> TxSource -> ReaderT b m (Maybe (TxHash, TxConfidence))
+      => Tx -> TxSource -> ReaderT b m (Maybe (TxHash, TxConfidence, Bool))
 addTx initTx source = do
     -- A non-network transaction can not double spend coins
     checkDoubleSpend initTx source
@@ -263,7 +263,9 @@ addTx initTx source = do
     removeOfflineTxs $ map prevOutput $ txIn tx
     -- Import new coins 
     let tid = txHash tx
-    outCoins <- liftM catMaybes $ mapM (importCoin tid) $ zip (txOut tx) [0..]
+    outRes <- liftM catMaybes $ mapM (importCoin tid) $ zip (txOut tx) [0..]
+    let outCoins = map fst outRes
+        genA     = or $ map snd outRes
     -- Ignore this transaction if it is not ours
     if null coins && null outCoins then return Nothing else do
         time <- liftIO getCurrentTime
@@ -279,8 +281,8 @@ addTx initTx source = do
         -- insert account transactions into database
         forM_ dbAccTxs insert_
         -- Re-import orphans
-        tryImportOrphans
-        return $ Just (tid, conf)
+        genO <- tryImportOrphans
+        return $ Just (tid, conf, genA || genO)
   where
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
 
@@ -377,15 +379,17 @@ findSpendingTxs outpoints = do
     res <- selectList [DbSpentCoinKey <-. outpoints] []
     return $ L.nub $ map (dbSpentCoinTx . entityVal) res
 
--- Try to re-import all orphan transactions
+-- Try to re-import all orphan transactions. Returns True if new addresses
+-- were generated.
 tryImportOrphans :: (MonadIO m, PersistQuery b, PersistUnique b)
-                 => ReaderT b m ()
+                 => ReaderT b m Bool
 tryImportOrphans = do
     orphans <- selectList [] []
     -- TODO: Can we use deleteWhere [] ?
     forM_ orphans $ delete . entityKey
-    forM_ orphans $ \(Entity _ otx) -> do
+    resM <- forM orphans $ \(Entity _ otx) -> 
         importTx (dbOrphanValue otx) (dbOrphanSource otx) Nothing
+    return $ or $ map lst3 $ catMaybes resM
 
 removeOfflineTxs :: (MonadIO m, PersistUnique b, PersistQuery b)
                  => [OutPoint] -> ReaderT b m ()
@@ -399,11 +403,12 @@ isCoinbaseTx :: Tx -> Bool
 isCoinbaseTx (Tx _ tin _ _) =
     length tin == 1 && (outPointHash $ prevOutput $ head tin) == 0x00
 
--- Create a new coin for an output if it is ours
+-- Create a new coin for an output if it is ours. Return the coin entity and
+-- a bool indicating if new addresses have been generated.
 importCoin :: (MonadIO m, PersistQuery b, PersistUnique b)
            => TxHash 
            -> (TxOut, Int) 
-           -> ReaderT b m (Maybe (Entity (DbCoinGeneric b)))
+           -> ReaderT b m (Maybe ((Entity (DbCoinGeneric b), Bool)))
 importCoin tid (tout, i) = do
     dbAddrs <- isMyOutput tout
     let soE    = decodeOutputBS $ scriptOutput tout
@@ -419,8 +424,8 @@ importCoin tid (tout, i) = do
         -- Insert coin / account links
         forM_ (map dbAddressAccount dbAddrs) $ \ai ->
             insert_ $ DbCoinAccount ci ai time
-        adjustLookAhead $ head dbAddrs
-        return $ Just $ Entity ci dbcoin
+        cnt <- adjustLookAhead $ head dbAddrs
+        return $ Just (Entity ci dbcoin, cnt > 0)
 
 -- Builds a redeem script given an address. Only relevant for addresses
 -- linked to multisig accounts. Otherwise it returns Nothing
@@ -564,8 +569,8 @@ sendTx :: (MonadIO m, PersistUnique b, PersistQuery b)
        -> Word32              -- ^ Minimum confirmations
        -> [(Address,Word64)]  -- ^ List of recipient addresses and amounts
        -> Word64              -- ^ Fee per 1000 bytes 
-       -> ReaderT b m (TxHash, Bool) 
-            -- ^ (Payment transaction, Completed flag)
+       -> ReaderT b m (TxHash, Bool, Bool) 
+            -- ^ (Payment transaction, Completed flag, New addresses generated)
 sendTx wallet name minConf dests fee = do
     Entity wk _ <- getWalletEntity wallet
     accE@(Entity ai acc) <- getAccountEntity wk name
@@ -574,10 +579,10 @@ sendTx wallet name minConf dests fee = do
         then return (tx, False)
         else signSigBlob wallet name =<< buildSigBlob ai tx
     confM <- importTx signedTx WalletSource Nothing
-    let (tid, conf) = fromJust confM
+    let (tid, conf, genA) = fromJust confM
     when (isNothing confM) $ liftIO $ throwIO $
         WalletException "Transaction could not be imported in the wallet"
-    return (tid, conf == TxPending)
+    return (tid, conf `elem` [ TxPending, TxBuilding ], genA)
 
 -- | Try to sign the inputs of an existing transaction using the private keys
 -- of an account. This command will return an indication if the transaction is
@@ -589,8 +594,8 @@ signWalletTx :: (MonadIO m, PersistUnique b, PersistQuery b)
              => WalletName  -- ^ Wallet name
              -> AccountName -- ^ Account name
              -> Tx          -- ^ Transaction to sign 
-             -> ReaderT b m (TxHash, Bool)
-                -- ^ (Signed transaction, Completed flag)
+             -> ReaderT b m (TxHash, Bool, Bool)
+             -- ^ (Signed transaction, Completed flag, New addresses generated)
 signWalletTx wallet name tx = do
     Entity wk _ <- getWalletEntity wallet
     Entity ai acc <- getAccountEntity wk name
@@ -598,10 +603,10 @@ signWalletTx wallet name tx = do
         then return (tx, False)
         else signSigBlob wallet name =<< buildSigBlob ai tx
     confM <- importTx signedTx UnknownSource (Just (wallet, name))
-    let (tid, conf) = fromJust confM
+    let (tid, conf, genA) = fromJust confM
     when (isNothing confM) $ liftIO $ throwIO $
         WalletException "Transaction is not relevant to this wallet"
-    return (tid, conf `elem` [ TxPending, TxBuilding ])
+    return (tid, conf `elem` [ TxPending, TxBuilding ], genA)
 
 -- | Retrieve the 'OfflineSignData' that can be used to sign a transaction from
 -- an offline wallet

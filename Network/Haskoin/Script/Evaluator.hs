@@ -29,6 +29,7 @@ module Network.Haskoin.Script.Evaluator
 ) where
 
 import Control.Monad.State
+import Control.Monad.Reader
 import Control.Monad.Except
 import Control.Monad.Identity
 
@@ -77,6 +78,8 @@ data Flag = P2SH
           | MINIMALDATA
           | DISCOURAGE_UPGRADABLE_NOPS
      deriving ( Show, Read, Eq )
+
+type FlagSet = [ Flag ]
 
 data EvalError =
     EvalError String
@@ -130,17 +133,18 @@ type ProgramState = ExceptT EvalError Identity
 type IfStack = [ Bool ]
 
 -- | Monad of actions independent of conditional statements.
-type ProgramTransition = StateT Program ProgramState
+type ProgramTransition = ReaderT FlagSet ( StateT Program ProgramState )
 -- | Monad of actions which taking if statements into account.
 -- Separate state type from ProgramTransition for type safety
 type ConditionalProgramTransition a = StateT IfStack ProgramTransition a
 
-evalProgramTransition :: ProgramTransition a -> Program -> Either EvalError a
-evalProgramTransition m s = runIdentity . runExceptT $ evalStateT m s
+evalProgramTransition :: ProgramTransition a -> Program -> FlagSet -> Either EvalError a
+evalProgramTransition m s f = runIdentity . runExceptT $ evalStateT ( runReaderT m f ) s
 
 evalConditionalProgram :: ConditionalProgramTransition a -- ^ Program monad
                        -> [ Bool ]                       -- ^ Initial if state stack
                        -> Program                        -- ^ Initial computation data
+                       -> FlagSet                        -- ^ Evaluation Flags
                        -> Either EvalError a
 evalConditionalProgram m s = evalProgramTransition ( evalStateT m s )
 
@@ -653,12 +657,12 @@ execScript scriptSig scriptPubKey sigCheckFcn flags =
       p2shEval [] = lift $ programError "PayToScriptHash: no script on stack"
       p2shEval (sv:_) = evalAll (stackToScriptOps sv) >> lift get
 
-      in do s <- evalConditionalProgram redeemEval [] emptyProgram
-            p <- evalConditionalProgram pubKeyEval [] emptyProgram { stack = s }
+      in do s <- evalConditionalProgram redeemEval [] emptyProgram flags
+            p <- evalConditionalProgram pubKeyEval [] emptyProgram { stack = s } flags
             if ( checkStack . runStack $ p ) && 
                ( isPayToScriptHash pubKeyOps flags ) && ( not . null $ s )
                 then evalConditionalProgram (p2shEval s) [] emptyProgram { stack = drop 1 s,
-                                                                           hashOps = stackToScriptOps $ head s }
+                                                                           hashOps = stackToScriptOps $ head s } flags
                 else return p
 
 evalScript :: Script -> Script -> SigCheck -> [ Flag ] -> Bool

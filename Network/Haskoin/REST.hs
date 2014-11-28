@@ -31,7 +31,7 @@ module Network.Haskoin.REST
 )
 where
 
-import Control.Applicative ((<$>), (<*>))
+import Control.Applicative ((<$>))
 import Control.Monad 
 import Control.Monad.Trans 
 import Control.Monad.Logger
@@ -42,7 +42,6 @@ import Control.Exception.Lifted (catch)
 
 import Data.Aeson 
     ( Value
-    , Result(..)
     , ToJSON
     , toJSON
     , FromJSON
@@ -62,7 +61,7 @@ import Database.Persist.Sqlite
 import Database.Sqlite (open)
 
 import Yesod
-    ( Yesod
+    ( Yesod(..)
     , YesodPersist(..)
     , RenderMessage
     , FormMessage
@@ -77,10 +76,9 @@ import Yesod
     , renderRoute
     , intField
     , boolField
-    , parseJsonBody
+    , requireJsonBody
     , iopt
     , runInputGet
-    , permissionDenied
     , invalidArgs
     )
 import Yesod.Static (Static, staticDevel)
@@ -105,20 +103,17 @@ import Network.Haskoin.Wallet.Types
 data ServerMode
     = ServerOnline
     | ServerOffline
-    | ServerVault
     deriving (Eq, Show, Read)
 
 instance ToJSON ServerMode where
     toJSON m = case m of
         ServerOnline  -> "online"
         ServerOffline -> "offline"
-        ServerVault   -> "vault"
 
 instance FromJSON ServerMode where
     parseJSON = withText "servermode" $ \t -> case t of
         "online"  -> return ServerOnline
         "offline" -> return ServerOffline
-        "vault"   -> return ServerVault
         _         -> mzero
 
 data ServerConfig = ServerConfig
@@ -160,12 +155,14 @@ data HaskoinServer = HaskoinServer
 
 instance Yesod HaskoinServer where
     makeSessionBackend _ = return Nothing
+    yesodMiddleware handler = catch handler $ 
+        \(WalletException err) -> invalidArgs [pack err]
 
 instance YesodPersist HaskoinServer where
     type YesodPersistBackend HaskoinServer = SqlBackend
     
     runDB action = do
-        pool <- fmap serverPool getYesod
+        pool <- serverPool <$> getYesod
         runSqlPool action pool
 
 instance RenderMessage HaskoinServer FormMessage where
@@ -211,7 +208,7 @@ runServer config = do
         checkCreds u p = return $ u == user && p == password
         runApp = runSettings settings . basicAuth checkCreds "haskoin"
 
-    if mode `elem` [ServerOffline, ServerVault]
+    if mode == ServerOffline
         then do
             app <- toWaiApp $ HaskoinServer
                 { serverPool = pool
@@ -251,125 +248,97 @@ runServer config = do
                         }
                     runApp app
 
-guardVault :: Handler ()
-guardVault = do
-    config <- fmap serverConfig getYesod
-    when (configMode config == ServerVault) $ 
-        permissionDenied "This operation is not supported in vault mode"
-
 whenOnline :: Handler () -> Handler ()
-whenOnline action = do
-    config <- fmap serverConfig getYesod
-    when (configMode config == ServerOnline) action
+whenOnline handler = do
+    mode <- (configMode . serverConfig) <$> getYesod
+    when (mode == ServerOnline) handler
 
-updateNode :: Handler a -> Handler a
-updateNode action = do
-    res <- action
-    whenOnline $ do
-        hs <- getYesod
-        let rChan = fromJust $ serverNode hs
-            config = serverConfig hs
-        bloom <- runDB $ walletBloomFilter $ configBloomFP config
-        liftIO $ atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
-    return res
-
-handleErrors :: Handler a -> Handler a
-handleErrors action = 
-    catch action f
-  where
-    f (WalletException err) = invalidArgs [pack err]
+updateNodeFilter :: Handler ()
+updateNodeFilter = whenOnline $ do
+    hs <- getYesod
+    let rChan = fromJust $ serverNode hs
+        config = serverConfig hs
+    bloom <- runDB $ walletBloomFilter $ configBloomFP config
+    liftIO $ atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
 
 getWalletsR :: Handler Value
-getWalletsR = handleErrors $ guardVault >> toJSON <$> runDB walletList
+getWalletsR = toJSON <$> runDB walletList
 
 postWalletsR :: Handler Value
-postWalletsR = handleErrors $ guardVault >> 
-    parseJsonBody >>= \res -> case res of
-        Success (NewWallet name pass msM) -> do
-            (ms, seed) <- case msM of
-                Just ms -> case mnemonicToSeed pass ms of
-                    Left err -> liftIO $ throwIO $ WalletException err
-                    Right seed -> return (ms, seed)
-                Nothing -> do
-                    ent <- liftIO $ devURandom 16
-                    let msSeedE = do
-                        ms <- toMnemonic ent
-                        seed <- mnemonicToSeed pass ms
-                        return (ms, seed)
-                    case msSeedE of
-                        Left err -> liftIO $ throwIO $ WalletException err
-                        Right msSeed -> return msSeed
-            _ <- runDB $ newWallet name seed
-            return $ toJSON $ MnemonicRes ms
-        -- TODO: What happens here ?
-        Error _ -> undefined
+postWalletsR = requireJsonBody >>= \(NewWallet name pass msM) -> do
+    (ms, seed) <- case msM of
+        Just ms -> case mnemonicToSeed pass ms of
+            Left err -> liftIO $ throwIO $ WalletException err
+            Right seed -> return (ms, seed)
+        Nothing -> do
+            ent <- liftIO $ devURandom 16
+            let msSeedE = do
+                ms <- toMnemonic ent
+                seed <- mnemonicToSeed pass ms
+                return (ms, seed)
+            case msSeedE of
+                Left err -> liftIO $ throwIO $ WalletException err
+                Right msSeed -> return msSeed
+    _ <- runDB $ newWallet name seed
+    return $ toJSON $ MnemonicRes ms
 
 getWalletR :: Text -> Handler Value
-getWalletR wallet = handleErrors $ guardVault >>
-    toJSON <$> runDB (getWallet $ unpack wallet)
+getWalletR wallet = toJSON <$> runDB (getWallet $ unpack wallet)
 
 getAccountsR :: Text -> Handler Value
-getAccountsR wallet = handleErrors $ 
-    toJSON <$> runDB (accountList $ unpack wallet)
+getAccountsR wallet = toJSON <$> runDB (accountList $ unpack wallet)
 
 postAccountsR :: Text -> Handler Value
-postAccountsR wallet = handleErrors $ do
-    config <- fmap serverConfig getYesod
-    let c = configGap config
-    parseJsonBody >>= \res -> toJSON <$> case res of
-        Success (NewAccount n) -> do
+postAccountsR wallet = requireJsonBody >>= \res -> do
+    c <- (configGap . serverConfig) <$> getYesod
+    toJSON <$> case res of
+        NewAccount n -> do
             acc <- runDB $ newAccount w n
-            updateNode $ runDB $ addLookAhead w n c
+            runDB $ addLookAhead w n c
+            updateNodeFilter
             return acc
-        Success (NewMSAccount n r t ks) -> do
+        NewMSAccount n r t ks -> do
             acc <- runDB $ newMSAccount w n r t ks
-            when (length (accountKeys acc) == t) $ 
-                updateNode $ runDB $ addLookAhead w n c
+            when (length (accountKeys acc) == t) $ do
+                runDB $ addLookAhead w n c
+                updateNodeFilter
             return acc
-        Success (NewReadAccount n k) -> do
+        NewReadAccount n k -> do
             acc <- runDB $ newReadAccount w n k
-            updateNode $ runDB $ addLookAhead w n c
+            runDB $ addLookAhead w n c
+            updateNodeFilter
             return acc
-        Success (NewReadMSAccount n r t ks) -> do
+        NewReadMSAccount n r t ks -> do
             acc <- runDB $ newReadMSAccount w n r t ks
-            when (length (accountKeys acc) == t) $ 
-                updateNode $ runDB $ addLookAhead w n c
+            when (length (accountKeys acc) == t) $ do
+                runDB $ addLookAhead w n c
+                updateNodeFilter
             return acc
-        -- TODO: What happens here ?
-        Error _ -> undefined
   where
     w = unpack wallet
 
 getAccountR :: Text -> Text -> Handler Value
-getAccountR wallet name = handleErrors $ 
+getAccountR wallet name = 
     toJSON <$> runDB (getAccount (unpack wallet) (unpack name))
 
 postAccountKeysR :: Text -> Text -> Handler Value
-postAccountKeysR wallet name = handleErrors $ do
-    config <- fmap serverConfig getYesod
-    let c = configGap config
-    parseJsonBody >>= \res -> toJSON <$> case res of
-        Success ks -> do
-            acc <- runDB $ addAccountKeys w n ks
-            when (length (accountKeys acc) == accountTotal acc) $ do
-                updateNode $ runDB $ addLookAhead w n c
-            return acc
-        -- TODO: What happens here ?
-        Error _ -> undefined
+postAccountKeysR wallet name = requireJsonBody >>= \ks -> do
+    acc <- runDB $ addAccountKeys w n ks
+    when (length (accountKeys acc) == accountTotal acc) $ do
+        c <- (configGap . serverConfig) <$> getYesod
+        runDB $ addLookAhead w n c
+        updateNodeFilter
+    return $ toJSON acc
   where
     n = unpack name
     w = unpack wallet
 
 getAddressesR :: Text -> Text -> Handler Value
-getAddressesR wallet name = handleErrors $ do
-    (pageM, elemM, confM, internalM) <- runInputGet $ (,,,)
-        <$> iopt intField "page"
-        <*> iopt intField "elemperpage"
-        <*> iopt intField "minconf"
-        <*> iopt boolField "internal"
-    let minConf  = fromMaybe 0 confM
-        internal = fromMaybe False internalM
-        e        = fromMaybe 10 elemM
+getAddressesR wallet name = do
+    pageM    <- runInputGet (iopt intField "page")
+    e        <- (fromMaybe 10) <$> runInputGet (iopt intField "elemperpage")
+    minConf  <- (fromMaybe 0) <$> runInputGet (iopt intField "minconf")
+    internal <- (fromMaybe False) <$> runInputGet (iopt boolField "internal")
     runDB $ if isJust pageM
         then do
             (pa, m) <- addressPage w n (fromJust pageM) e internal
@@ -383,102 +352,84 @@ getAddressesR wallet name = handleErrors $ do
     w = unpack wallet
 
 postAddressesR :: Text -> Text -> Handler Value
-postAddressesR wallet name = handleErrors $ do
-    parseJsonBody >>= \res -> toJSON <$> case res of
-        Success (AddressData label) -> updateNode $ do
-            addr' <- runDB $ unlabeledAddr w n
-            runDB $ setAddrLabel w n (addressIndex addr') label
-        -- TODO: What happens here ?
-        Error _ -> undefined
+postAddressesR wallet name = requireJsonBody >>= \(AddressData label) -> do
+    newAddr <- runDB $ unlabeledAddr w n
+    res <- runDB $ setAddrLabel w n (addressIndex newAddr) label
+    updateNodeFilter
+    return $ toJSON res
   where
     n = unpack name
     w = unpack wallet
 
 getAddressR :: Text -> Text -> Int -> Handler Value
-getAddressR wallet name i = handleErrors $ do
-    (confM, internalM) <- runInputGet $ (,)
-        <$> iopt intField "minconf"
-        <*> iopt boolField "internal"
-    let minConf  = fromMaybe 0 confM
-        internal = fromMaybe False internalM
+getAddressR wallet name i = do
+    minConf  <- (fromMaybe 0) <$> runInputGet (iopt intField "minconf")
+    internal <- (fromMaybe False) <$> runInputGet (iopt boolField "internal")
     runDB $ do
         pa <- getAddress (unpack wallet) (unpack name) (fromIntegral i) internal
         ba <- addressBalance pa minConf
         return $ toJSON ba
 
 putAddressR :: Text -> Text -> Int -> Handler Value
-putAddressR wallet name i = handleErrors $ do 
-    parseJsonBody >>= \res -> case res of
-        Success (AddressData label) -> runDB $ 
-            toJSON <$> setAddrLabel w n (fromIntegral i) label
-        -- TODO: What happens here ?
-        Error _ -> undefined
+putAddressR wallet name i = requireJsonBody >>= \(AddressData label) -> 
+    toJSON <$> runDB (setAddrLabel w n (fromIntegral i) label)
   where
     w = unpack wallet
     n = unpack name
 
 getTxsR :: Text -> Text -> Handler Value
-getTxsR wallet name = handleErrors $ do
-    (pageM, elemM) <- runInputGet $ (,)
-        <$> iopt intField "page"
-        <*> iopt intField "elemperpage"
-    if isJust pageM
-        then do
-            let e | isJust elemM = fromJust elemM
-                  | otherwise    = 10
-            (as, m) <- runDB $ txPage w n (fromJust pageM) e
-            return $ toJSON $ TxPageRes as m
-        else toJSON <$> runDB (txList w n)
+getTxsR wallet name = do
+    pageM <- runInputGet (iopt intField "page")
+    e     <- (fromMaybe 10) <$> runInputGet (iopt intField "elemperpage")
+    runDB $ case pageM of
+        Just page -> (\(as, m) -> toJSON $ TxPageRes as m) <$> txPage w n page e
+        Nothing -> toJSON <$> txList w n
   where
     w = unpack wallet
     n = unpack name
 
 postTxsR :: Text -> Text -> Handler Value
-postTxsR wallet name = handleErrors $ guardVault >>
-    parseJsonBody >>= \res -> case res of
-        Success (SendCoins rs fee minConf) -> do
-            (tid, complete, p) <- runDB $ sendTx w n minConf rs fee
-            whenOnline $ when complete $ do
-                rChanM <- fmap serverNode getYesod
-                let rChan = fromJust rChanM
-                newTx <- runDB $ getTx tid
-                liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
-            let prop = if complete then Nothing else Just p
-            return $ toJSON $ TxHashStatusRes tid complete prop
-        Success (SignTx tx) -> do
-            (tid, complete, p) <- runDB $ signWalletTx w n tx
-            whenOnline $ when complete $ do
-                rChan <- fmap (fromJust . serverNode) getYesod
-                newTx <- runDB $ getTx tid
-                liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
-            let prop = if complete then Nothing else Just p
-            return $ toJSON $ TxHashStatusRes tid complete prop
-        Success (SignSigBlob blob) -> do
-            (tx, complete, p) <- runDB $ signSigBlob w n blob
-            let prop = if complete then Nothing else Just p
-            return $ toJSON $ TxStatusRes tx complete prop
-        Success (ImportTx tx) -> do
-            resM <- runDB $ importTx tx UnknownSource (Just (w, n))
-            let (tid, conf) = fromJust resM
-                complete = conf `elem` [ TxPending, TxBuilding ]
-            when (isNothing resM) $ liftIO $ throwIO $
-                WalletException "Transaction could not be imported"
-            whenOnline $ when complete $ do
-                Just rChan <- fmap serverNode getYesod
-                newTx <- runDB $ getTx tid
-                liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
-            let prop = if complete then Nothing else Just tx{ txIn = 
-                    map (\ti -> ti{ scriptInput = BS.empty }) $ txIn tx }
-            return $ toJSON $ TxHashStatusRes tid complete prop
-        -- TODO: What happens here ?
-        Error _ -> undefined
+postTxsR wallet name = requireJsonBody >>= \res -> case res of
+    SendCoins rs fee minConf -> do
+        (tid, complete, p) <- runDB $ sendTx w n minConf rs fee
+        whenOnline $ when complete $ do
+            Just rChan <- serverNode <$> getYesod
+            newTx <- runDB $ getTx tid
+            liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
+        let prop = if complete then Nothing else Just p
+        return $ toJSON $ TxHashStatusRes tid complete prop
+    SignTx tx -> do
+        (tid, complete, p) <- runDB $ signWalletTx w n tx
+        whenOnline $ when complete $ do
+            Just rChan <- serverNode <$> getYesod
+            newTx <- runDB $ getTx tid
+            liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
+        let prop = if complete then Nothing else Just p
+        return $ toJSON $ TxHashStatusRes tid complete prop
+    SignSigBlob blob -> do
+        (tx, complete, p) <- runDB $ signSigBlob w n blob
+        let prop = if complete then Nothing else Just p
+        return $ toJSON $ TxStatusRes tx complete prop
+    ImportTx tx -> do
+        resM <- runDB $ importTx tx UnknownSource (Just (w, n))
+        let (tid, conf) = fromJust resM
+            complete = conf `elem` [ TxPending, TxBuilding ]
+        when (isNothing resM) $ liftIO $ throwIO $
+            WalletException "Transaction could not be imported"
+        whenOnline $ when complete $ do
+            Just rChan <- serverNode <$> getYesod
+            newTx <- runDB $ getTx tid
+            liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
+        let prop = if complete then Nothing else Just tx{ txIn = 
+                map (\ti -> ti{ scriptInput = BS.empty }) $ txIn tx }
+        return $ toJSON $ TxHashStatusRes tid complete prop
   where
     w = unpack wallet
     n = unpack name
     
 
 getTxR :: Text -> Text -> Text -> Handler Value
-getTxR wallet name tidStr = handleErrors $ do
+getTxR wallet name tidStr = do
     let tidM = decodeTxHashLE $ unpack tidStr
         tid  = fromJust tidM
     unless (isJust tidM) $ liftIO $ throwIO $
@@ -487,7 +438,7 @@ getTxR wallet name tidStr = handleErrors $ do
     return $ toJSON aTx
 
 getSigBlobR :: Text -> Text -> Text -> Handler Value
-getSigBlobR wallet name tidStr = handleErrors $ do
+getSigBlobR wallet name tidStr = do
     let tidM = decodeTxHashLE $ unpack tidStr
     unless (isJust tidM) $ liftIO $ throwIO $
         WalletException "Could not parse txhash"
@@ -495,9 +446,8 @@ getSigBlobR wallet name tidStr = handleErrors $ do
     return $ toJSON blob
 
 getBalanceR :: Text -> Text -> Handler Value
-getBalanceR wallet name = handleErrors $ do
-    confM <- runInputGet $ iopt intField "minconf"
-    let minConf = fromMaybe 0 confM
+getBalanceR wallet name = do
+    minConf <- (fromMaybe 0) <$> runInputGet (iopt intField "minconf")
     (balance, cs) <- runDB $ accountBalance w n minConf
     return $ toJSON $ BalanceRes balance cs
   where
@@ -505,9 +455,8 @@ getBalanceR wallet name = handleErrors $ do
     n = unpack name
 
 getSpendableR :: Text -> Text -> Handler Value
-getSpendableR wallet name = handleErrors $ do
-    confM <- runInputGet $ iopt intField "minconf"
-    let minConf = fromMaybe 0 confM
+getSpendableR wallet name = do
+    minConf <- (fromMaybe 0) <$> runInputGet (iopt intField "minconf")
     balance <- runDB $ spendableAccountBalance w n minConf
     return $ toJSON $ SpendableRes balance
   where
@@ -515,29 +464,23 @@ getSpendableR wallet name = handleErrors $ do
     n = unpack name
 
 postNodeR :: Handler Value
-postNodeR = handleErrors $ guardVault >> 
-    parseJsonBody >>= \res -> toJSON <$> case res of
-        Success (Rescan (Just t)) -> do
-            whenOnline $ do
-                runDB resetRescan
-                rChanM <- fmap serverNode getYesod
-                let rChan = fromJust rChanM
-                liftIO $ atomically $ writeTBMChan rChan $ NodeRescan t
-            return $ RescanRes t
-        Success (Rescan Nothing) -> do
-            fstKeyTimeM <- runDB firstKeyTime
-            let fstKeyTime   = fromJust fstKeyTimeM       
-                fastCatchupI = max 0 ((toInteger fstKeyTime) - 86400 * 7)
-                fc           = fromInteger fastCatchupI :: Word32
-            when (isNothing fstKeyTimeM) $ liftIO $ throwIO $
-                WalletException "No keys have been generated in the wallet"
-            whenOnline $ do
-                runDB resetRescan
-                rChanM <- fmap serverNode getYesod
-                let rChan      = fromJust rChanM
-                liftIO $ atomically $ do
-                    writeTBMChan rChan $ NodeRescan fc
-            return $ RescanRes fstKeyTime
-        -- TODO: What happens here ?
-        Error _ -> undefined
+postNodeR = requireJsonBody >>= \res -> toJSON <$> case res of
+    Rescan (Just t) -> do
+        whenOnline $ do
+            Just rChan <- serverNode <$> getYesod
+            runDB resetRescan
+            liftIO $ atomically $ writeTBMChan rChan $ NodeRescan t
+        return $ RescanRes t
+    Rescan Nothing -> do
+        fstKeyTimeM <- runDB firstKeyTime
+        let fstKeyTime   = fromJust fstKeyTimeM       
+            fastCatchupI = max 0 ((toInteger fstKeyTime) - 86400 * 7)
+            fc           = fromInteger fastCatchupI :: Word32
+        when (isNothing fstKeyTimeM) $ liftIO $ throwIO $
+            WalletException "No keys have been generated in the wallet"
+        whenOnline $ do
+            Just rChan <- serverNode <$> getYesod
+            runDB resetRescan
+            liftIO $ atomically $ writeTBMChan rChan $ NodeRescan fc
+        return $ RescanRes fstKeyTime
 

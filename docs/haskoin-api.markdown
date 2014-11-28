@@ -37,8 +37,6 @@ it with `hw start`.
 
 ### GET /wallets
 
-**Modes**: online, offline
-
 #### Output
 
 Returns a list of all available wallets in the following format:
@@ -57,8 +55,6 @@ Returns a list of all available wallets in the following format:
 ```
 
 ### POST /wallets
-
-**Modes**: online, offline
 
 #### Input
 
@@ -85,8 +81,6 @@ Returns the mnemonic sentence of your new wallet:
 
 ### GET /wallets/{name}
 
-**Modes**: online, offline
-
 #### Input
 
 A wallet resource is identified by its name. For example:
@@ -110,8 +104,6 @@ It contains both the wallet name and the extended private key (master key) for
 that wallet.
 
 ### GET /wallets/{name}/accounts
-
-**Modes**: online, offline, vault
 
 #### Output
 
@@ -185,8 +177,6 @@ where security is not optimal, such as on a web server.
 ```
   
 ### POST /wallets/{name}/accounts
-
-**Modes**: online, offline, vault
 
 POSTing to this resource allows you to create a new account in a wallet.
 
@@ -266,8 +256,6 @@ A JSON representation of your new account as defined
 
 ### GET /wallets/{name}/accounts/{name}
 
-**Modes**: online, offline, vault
-
 #### Input
 
 An account resource is identified by its name. For example:
@@ -282,8 +270,6 @@ A JSON representation of the given account as defined
 [here](#get-walletsnameaccounts).
 
 ### POST /wallets/{name}/accounts/{name}/keys
-
-**Modes**: online, offline, vault
 
 When creating a multisignature account, you can add the keys at a later time by
 using this resource. Adding too many keys will result in a failure.
@@ -301,8 +287,6 @@ A JSON representation of the given account as defined
 [here](#get-walletsnameaccounts).
 
 ### GET /wallets/{name}/accounts/{name}/addrs
-
-**Modes**: online, offline, vault
 
 This resource will return a list of addresses pertaining to an account.
 
@@ -414,8 +398,6 @@ address.
 
 ### POST /wallet/{name}/accounts/{name}/addrs
 
-**Modes**: online, offline, vault
-
 You can POST a label to this resource to create a new address. It will find the
 next unused and unlabeled address in your wallet and add a label to it.
 
@@ -442,8 +424,6 @@ A JSON representation of the newly created address:
 ```
 
 ### GET /wallets/{name}/accounts/{name}/addrs/{key}
-
-**Modes**: online, offline, vault
 
 #### Input
 
@@ -490,8 +470,6 @@ Go [here](#address-fields) for a description of the address fields.
 
 ### PUT /wallets/{name}/accounts/{name}/addrs/{key}
 
-**Modes**: online, offline, vault
-
 You can PUT a label to this resource to update the label of an address.
 
 #### Input
@@ -517,8 +495,6 @@ A JSON representation of the updated address:
 ```
 
 ### GET /wallets/{name}/accounts/{name}/txs
-
-**Modes**: online, offline, vault
 
 This resource will return a list of transactions pertaining to an account.
 Account transactions summarize the results of a transaction for a given
@@ -650,8 +626,6 @@ the block that confirmed the transaction. This might be a more reliable way
 of knowing when the transaction was created if your wallet is often offline.
 
 ### POST /wallets/{name}/accounts/{name}/txs
-
-**Modes**: offline, online
 
 By POSTing to this resource, you can send coins, sign transactions or sign an
 offline transaction blob.
@@ -818,8 +792,6 @@ transaction with all the input scripts blanked out.
 
 ### GET /wallets/{name}/accounts/{name}/txs/{txhash}
 
-**Modes**: online, offline, vault
-
 You can use this resource to query individual account transactions.
 
 #### Output
@@ -848,8 +820,6 @@ Returns the requested account transaction:
 Go [here](#transaction-fields) for a description of the account transaction fields.
 
 ### GET /wallets/{name}/accounts/{name}/txs/{txhash}/sigblob
-
-**Modes**: online, offline, vault
 
 Use this resource to compute the offline sigblob for a given transaction. A
 sigblob can be produced from any type of account (including read-only
@@ -883,8 +853,6 @@ transaction. The data part consists of a list of the following elements:
 ```
 
 ### GET /wallets/{name}/accounts/{name}/balance
-
-**Modes**: online, offline, vault
 
 Use this resource to request the true balance of an account.
 
@@ -941,8 +909,6 @@ value, but it will not be accurate in the presence of conflicts.
 
 ### GET /wallets/{name}/accounts/{name}/spendablebalance
 
-**Modes**: online, offline, vault
-
 Use this resource to request the spendable balance of an account.
 
 #### Input
@@ -976,8 +942,6 @@ if he is a victim of a double spend or malleability attack.
 ```
 
 ### POST /node
-
-**Modes**: online, offline
 
 POST to this resource to call actions on the p2p node.
 

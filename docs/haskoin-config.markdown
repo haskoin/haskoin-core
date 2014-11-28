@@ -50,17 +50,13 @@ Default:
 
 ### operation-mode
 
-There are three modes of operation: online, offline and vault. 
+There are two modes of operation: online and offline.
 
 - Online mode launches an SPV client and connects to the Bitcoin nodes set in
   the configuration file.  
 
 - Offline mode does not attempt to connect to the Bitcoin network or keep track
   of transactions. Most API calls are otherwise available.
-
-- Vault mode is an offline mode with restrictions on the available API calls.
-  It is meant for signing transactions in an offline environment. Functions
-  like creating new wallets or printing wallet private keys are not available.
 
 Default: online
 

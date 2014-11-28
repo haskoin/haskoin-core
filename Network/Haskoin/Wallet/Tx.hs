@@ -235,13 +235,14 @@ checkUnknownTx tx nameM = do
     -- Was a wallet/account combination provided?
     when (isNothing nameM) $ liftIO $ throwIO exc
     let (wallet, name) = fromJust nameM
-
-    -- Is one of the transaction inputs ours ?
+    -- Check the input coins. All the coins that exist in the wallet have
+    -- to belong to this account.
     Entity wk _ <- getWalletEntity wallet
     Entity ai _ <- getAccountEntity wk name
     coinsE <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
     ours   <- filterM (belongs ai) coinsE
-    when (null ours) $ liftIO $ throwIO exc
+    -- If you try to spend a coin in the wallet that doesn't belong to you
+    when (null ours || length ours < length coinsE) $ liftIO $ throwIO exc
   where
     exc = WalletException "Trying to import an invalid untrusted transaction"
     belongs ai (Entity ci _ ) = liftM isJust $ getBy (UniqueCoinAccount ci ai)

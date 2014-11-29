@@ -24,6 +24,7 @@ import qualified Data.Aeson as A (decode)
 import Data.Bits (setBit, testBit)
 import Text.Read (readMaybe)
 import Data.List (isPrefixOf)
+import Data.List.Split ( splitOn )
 import Data.Char (ord)
 import qualified Data.ByteString as BS
     ( singleton
@@ -31,6 +32,8 @@ import qualified Data.ByteString as BS
     , tail
     , head
     , pack
+    , empty
+    , ByteString
     )
 
 import qualified Data.ByteString.Lazy as LBS
@@ -52,6 +55,7 @@ import Data.Binary
 import qualified Data.ByteString.Lazy.Char8 as C (readFile)
 
 import Data.Int (Int64)
+import Data.Word (Word32)
 
 import Network.Haskoin.Test.Script
 import Network.Haskoin.Test.Transaction
@@ -198,6 +202,10 @@ parseHex' (a:b:xs) = case readHex $ [a, b] :: [(Integer, String)] of
 parseHex' [_] = Nothing
 parseHex' [] = Just []
 
+parseFlags :: String -> [ Flag ]
+parseFlags "" = []
+parseFlags s = map read . splitOn "," $ s
+
 parseScript :: String -> Either ParseError Script
 parseScript scriptString =
       do bytes <- LBS.pack <$> parseBytes scriptString
@@ -251,55 +259,67 @@ testFile groupLabel path expected = buildTest $ do
         Nothing -> return $
                     testCase groupLabel $
                     HUnit.assertFailure $ "can't read test file " ++ path
-        Just testDefs -> return $ testGroup groupLabel $ map parseTest testDefs
+        Just testDefs -> return $ testGroup groupLabel
+                                $ map parseTest
+                                $ filterPureComments testDefs
 
     where   parseTest :: [String] -> Test
-            parseTest (sig:pubKey:[])       = makeTest "" sig pubKey
-            parseTest (sig:pubKey:label:[]) = makeTest label sig pubKey
+            parseTest s = case testParts s of
+                Nothing -> testCase "can't parse test case" $
+                               HUnit.assertFailure $ "json element " ++ show s
+                Just ( sig, pubKey, flags, label ) -> makeTest label sig pubKey flags
 
-            parseTest v =
-                testCase "can't parse test case" $
-                         HUnit.assertFailure $ "json element " ++ show v
-
-            makeTest :: String -> String -> String -> Test
-            makeTest label sig pubKey =
+            makeTest :: String -> String -> String -> String -> Test
+            makeTest label sig pubKey flags =
                 testCase label' $ case (parseScript sig, parseScript pubKey) of
                     (Left e, _) -> parseError $ "can't parse sig: " ++
                                                 show sig ++ " error: " ++ e
                     (_, Left e) -> parseError $ "can't parse key: " ++
                                                 show pubKey ++ " error: " ++ e
                     (Right scriptSig, Right scriptPubKey) ->
-                        runTest scriptSig scriptPubKey
+                        runTest scriptSig scriptPubKey ( parseFlags flags )
 
-                where label' = "sig: [" ++ sig ++ "] " ++
-                               " pubKey: [" ++ pubKey ++ "] " ++
-                               (if null label
-                                    then ""
-                                    else " label: " ++ label)
+                where label' =  if null label
+                                    then "sig: [" ++ sig ++ "] " ++
+                                        " pubKey: [" ++ pubKey ++ "] "  
+                                    else " label: " ++ label
 
             parseError message = HUnit.assertBool
                                 ("parse error in valid script: " ++ message)
                                 (expected == False)
 
-            runTest scriptSig scriptPubKey =
+            filterPureComments = filter ( not . null . tail )
+
+            runTest scriptSig scriptPubKey scriptFlags =
                 HUnit.assertBool
                   (" eval error: " ++ errorMessage)
-                  (expected == run evalScript)
+                  (expected == scriptPairTestExec scriptSig scriptPubKey scriptFlags)
 
-                where run f = f scriptSig scriptPubKey rejectSignature
+                where run f = f scriptSig scriptPubKey rejectSignature scriptFlags
                       errorMessage = case run execScript of
                         Left e -> show e
                         Right _ -> " none"
 
+-- | Splits the JSON test into the different parts.  No processing,
+-- just handling the fact that comments may not be there or might have
+-- junk before it.  Output is the tuple ( sig, pubKey, flags, comment
+-- ) as strings
+testParts :: [ String ] -> Maybe ( String, String, String, String )
+testParts l = let ( x, r ) = splitAt 3 l
+                  comment = if null r then "" else last r
+              in if length x < 3
+                 then Nothing
+                 else let ( sig:pubKey:flags:[] ) = x in
+                      Just ( sig, pubKey, flags, comment )
 
 -- repl utils
 
-execScriptIO :: String -> String -> IO ()
-execScriptIO sig key = case (parseScript sig, parseScript key) of
+execScriptIO :: String -> String -> String -> IO ()
+execScriptIO sig key flgs = case (parseScript sig, parseScript key) of
   (Left e, _) -> print $ "sig parse error: " ++ e
   (_, Left e) -> print $ "key parse error: " ++ e
   (Right scriptSig, Right scriptPubKey) ->
-      case execScript scriptSig scriptPubKey rejectSignature of
+      case execScript scriptSig scriptPubKey rejectSignature ( parseFlags flgs ) of
           Left e -> putStrLn $ "error " ++ show e
           Right p -> do putStrLn $ "successful execution"
                         putStrLn $ dumpStack $ runStack p
@@ -312,6 +332,72 @@ testInvalid :: Test
 testInvalid = testFile "Canonical Valid Script Test Cases"
               "tests/data/script_invalid.json" False
 
+-- | Maximum value of sequence number
+maxSeqNum :: Word32
+maxSeqNum = 0xffffffff -- Perhaps this should be moved to constants.
+
+-- | Null output used to create CoinbaseTx
+nullOutPoint :: OutPoint
+nullOutPoint = OutPoint { 
+                 outPointHash  = 0
+               , outPointIndex = -1
+               }
+
+-- | Some of the scripts tests require transactions be built in a
+-- standard way.  This function builds the crediting transaction.
+-- Quoting the top comment of script_valid.json: "It is evaluated as
+-- if there was a crediting coinbase transaction with two 0 pushes as
+-- scriptSig, and one output of 0 satoshi and given scriptPubKey,
+-- followed by a spending transaction which spends this output as only
+-- input (and correct prevout hash), using the given scriptSig. All
+-- nLockTimes are 0, all nSequences are max."
+buildCreditTx :: BS.ByteString -> Tx
+buildCreditTx scriptPubKey = Tx { 
+                 txVersion    = 1
+               , txIn         = [ txI ]
+               , txOut        = [ txO ]
+               , txLockTime   = 0
+               }
+    where txO = TxOut {
+                       outValue = 0
+                     , scriptOutput = scriptPubKey
+                     }
+          txI = TxIn {
+                        prevOutput = nullOutPoint
+                      , scriptInput = encode' $ Script [ OP_0, OP_0 ]
+                      , txInSequence = maxSeqNum
+                      }
+
+-- | Build a spending transaction for the tests.  Takes as input the
+-- crediting transaction
+buildSpendTx :: BS.ByteString  -- ScriptSig
+             -> Tx     -- Creditting Tx
+             -> Tx
+buildSpendTx scriptSig creditTx = Tx { 
+         txVersion  = 1
+       , txIn       = [ txI ]
+       , txOut      = [ txO ]
+       , txLockTime = 0
+       }
+    where txI = TxIn { 
+               prevOutput   = OutPoint { outPointHash = txHash creditTx , outPointIndex = 0 }
+             , scriptInput  = scriptSig
+             , txInSequence = maxSeqNum
+             }
+          txO = TxOut { outValue = 0, scriptOutput = BS.empty }
+
+-- | Executes the test of a scriptSig, pubKeyScript pair, including
+-- building the required transactions and verifying the spending
+-- transaction.
+scriptPairTestExec :: Script    -- scriptSig 
+                   -> Script    -- pubKey
+                   -> [ Flag ] -- Evaluation flags
+                   -> Bool
+scriptPairTestExec scriptSig pubKey flags = 
+    let bsScriptSig = encode' scriptSig
+        bsPubKey = encode' pubKey
+        spendTx = buildSpendTx bsScriptSig ( buildCreditTx bsPubKey )
+    in verifySpend spendTx 0 pubKey flags
+
 runTests :: [Test] -> IO ()
 runTests ts = defaultMainWithArgs ts ["--hide-success"]
-

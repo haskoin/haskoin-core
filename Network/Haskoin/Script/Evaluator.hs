@@ -553,6 +553,7 @@ eval OP_CHECKMULTISIG =
             $ programError $ "nSigs outside range: " ++ show nSigs
        sigs <- popStackN $ toInteger nSigs
 
+       nullDummyEnforcer
        void popStack -- spec bug
        checker <- sigCheck <$> get
        hOps <- preparedHashOps
@@ -617,6 +618,14 @@ checkMinimalNumRep s =
       && ( l <= 1 || ( s !! (l-2) ) .&. 0x80 == 0 )
     then False
     else True
+
+nullDummyEnforcer :: ProgramTransition ()
+nullDummyEnforcer = do
+    flgs <- ask
+    topStack <- head <$> getStack
+    if ( NULLDUMMY `elem` flgs ) && ( not . null $ topStack )
+        then programError $ "Non-null dummy stack in multi-sig"
+        else return ()
 
 --------------------------------------------------------------------------------
 -- | Based on the IfStack, returns whether the script is within an

@@ -556,12 +556,6 @@ nSequences are max.
     "STRICTENC",
     "P2PK with hybrid pubkey"
 ],
-[
-    "0x47 0x304402205745e8f846110c185ee1185c01843a108588b81463d2c34d4a3f2445529f12fe02206ee6a2657bbc4e2bb74bfc44c3a5c4f410ed6356ca68982465de6ca807c807c201",
-    "0x41 0x0679be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8 CHECKSIG NOT",
-    "",
-    "P2PK NOT with hybrid pubkey but no STRICTENC"
-],
 
 ["
 Order of CHECKMULTISIG evaluation tests, inverted by swapping the order of

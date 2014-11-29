@@ -713,6 +713,7 @@ execScript scriptSig scriptPubKey sigCheckFcn flags =
 
 
       checkSig | isPayToScriptHash pubKeyOps flags = checkPushOnly sigOps
+               | SIGPUSHONLY `elem` flags = checkPushOnly sigOps
                | otherwise = return ()
 
       checkKey | BSL.length (encode scriptPubKey) > fromIntegral maxScriptSize

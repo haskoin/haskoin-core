@@ -39,7 +39,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 
 import Data.List (intercalate)
-import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit)
+import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit, (.&.))
 import Data.Int (Int64)
 import Data.Word (Word8, Word64)
 import Data.Either ( rights )
@@ -253,7 +253,7 @@ countOp op | isConstant op     = False
            | otherwise         = True
 
 popInt :: ProgramTransition Int64
-popInt = decodeInt <$> popStack >>= \case
+popInt = minimalStackValEnforcer >> decodeInt <$> popStack >>= \case
     Nothing -> programError "popInt: data > nMaxNumSize"
     Just i -> return i
 
@@ -589,6 +589,34 @@ checkMinimalPush ( OP_PUSHDATA payload optype ) =
   then False else True
 checkMinimalPush _ = True
 
+-- | Checks the top of the stack for a minimal numeric representation
+-- if flagged to do so
+minimalStackValEnforcer :: ProgramTransition ()
+minimalStackValEnforcer = do
+    flgs <- ask
+    s <- getStack
+    let topStack = if null s then [] else head s
+    if not $ MINIMALDATA `elem` flgs || null topStack
+        then return ()
+        else case checkMinimalNumRep topStack  of
+            True -> return ()
+            False -> programError $ "Non-minimal stack value: " ++ (show topStack)
+
+-- | Checks if a stack value is the minimal numeric representation of
+-- the integer to which it decoes.  Based on CScriptNum from Bitcoin
+-- Core.
+checkMinimalNumRep :: StackValue -> Bool
+checkMinimalNumRep [] = True
+checkMinimalNumRep s =
+    let msb = last s
+        l = length s in
+    if
+         -- If the MSB except sign bit is zero, then nonMinimal
+         ( msb .&. 0x7f == 0 )
+         -- With the exception of when a new byte is forced by a filled last bit
+      && ( l <= 1 || ( s !! (l-2) ) .&. 0x80 == 0 )
+    then False
+    else True
 
 --------------------------------------------------------------------------------
 -- | Based on the IfStack, returns whether the script is within an

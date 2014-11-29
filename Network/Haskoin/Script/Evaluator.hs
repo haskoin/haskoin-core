@@ -28,7 +28,7 @@ module Network.Haskoin.Script.Evaluator
 ) where
 
 import Control.Monad.State
-import Control.Monad.Error
+import Control.Monad.Except
 import Control.Monad.Identity
 
 import Control.Applicative ((<$>), (<*>))
@@ -73,10 +73,6 @@ data EvalError =
     | StackError ScriptOp
     | DisabledOp ScriptOp
 
-instance Error EvalError where
-    noMsg = EvalError "Evaluation Error"
-    strMsg s = EvalError $ noMsg ++ " " ++ s
-
 instance Show EvalError where
     show (EvalError m) = m
     show (ProgramError m prog) = m ++ " - program: " ++ show prog
@@ -119,7 +115,7 @@ dumpStack s = dumpList $ map (bsToHex . BS.pack) s
 instance Show Program where
     show p = " stack: " ++ dumpStack (stack p)
 
-type ProgramState = ErrorT EvalError Identity
+type ProgramState = ExceptT EvalError Identity
 type IfStack = [ Bool ]
 
 -- | Monad of actions independent of conditional statements.
@@ -129,7 +125,7 @@ type ProgramTransition = StateT Program ProgramState
 type ConditionalProgramTransition a = StateT IfStack ProgramTransition a
 
 evalProgramTransition :: ProgramTransition a -> Program -> Either EvalError a
-evalProgramTransition m s = runIdentity . runErrorT $ evalStateT m s
+evalProgramTransition m s = runIdentity . runExceptT $ evalStateT m s
 
 evalConditionalProgram :: ConditionalProgramTransition a -- ^ Program monad
                        -> [ Bool ]                       -- ^ Initial if state stack

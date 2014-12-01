@@ -11,7 +11,6 @@ module Network.Haskoin.REST
   ServerMode(..)
 , ServerConfig(..)
 , runServer
-, haskoinPort
 
   -- * REST Types
 , NewWallet(..) 
@@ -126,15 +125,10 @@ data ServerConfig = ServerConfig
     , configPassword     :: Text
     } deriving (Eq, Read, Show)
 
-haskoinPort :: Int
-haskoinPort 
-    | networkName == "prodnet" = 8555
-    | otherwise                = 18555
-
 instance Default ServerConfig where
     def = ServerConfig
         { configBind         = "127.0.0.1"
-        , configPort         = haskoinPort
+        , configPort         = restPort
         , configBitcoinHosts = [("127.0.0.1", defaultPort)]
         , configBatch        = 100
         , configBloomFP      = 0.00001
@@ -143,6 +137,9 @@ instance Default ServerConfig where
         , configPassword     = "haskoin"
         , configGap          = 10
         }
+      where
+        restPort | networkName == "prodnet" = 8555
+                 | otherwise                = 18555
 
 data HaskoinServer = HaskoinServer 
     { serverPool   :: ConnectionPool

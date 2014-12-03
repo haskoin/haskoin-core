@@ -108,8 +108,8 @@ data Options = Options
     , optDir      :: Maybe FilePath
     , optLog      :: Maybe FilePath
     , optPid      :: Maybe FilePath
-    , optCfg      :: Maybe FilePath
     , optNce      :: Maybe FilePath
+    , optCfg      :: Maybe FilePath
     } deriving (Eq, Show)
 
 defaultOptions :: Options
@@ -222,11 +222,9 @@ options =
     , Option ['p'] ["provider"]
         (ReqArg (\p opts -> return opts{ optProvider = p }) "URL")
         "URL of the API server"
-    , Option ['t'] ["token"]
-        (ReqArg parseToken "STRING")
+    , Option ['t'] ["token"] (ReqArg parseToken "STRING")
         "HMAC authentication token identifier"
-    , Option ['s'] ["secret"]
-        (ReqArg parseSecret "STRING")
+    , Option ['s'] ["secret"] (ReqArg parseSecret "STRING")
         "HMAC authentication token secret"
     , Option ['d'] ["detach"]
         (NoArg $ \opts -> return opts{ optDetach = True })
@@ -255,6 +253,9 @@ options =
     , Option ['I'] ["pidfile"]
         (ReqArg (\i opts -> return opts{ optPid = Just i }) "FILE")
         "PID file"
+    , Option ['N'] ["noncefile"]
+        (ReqArg (\n opts -> return opts{ optNce = Just n }) "FILE")
+        "Nonce file"
     ]
   where
     parseToken s opts  = return opts{ optToken = Just $ stringToBS s }

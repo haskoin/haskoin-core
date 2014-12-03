@@ -101,7 +101,6 @@ data Options = Options
     , optBind     :: String
     , optPort     :: Int
     , optHosts    :: [(String, Int)]
-    , optBatch    :: Int
     , optBloomFP  :: Double
     , optMode     :: ServerMode
     , optToken    :: Maybe BS.ByteString
@@ -129,7 +128,6 @@ defaultOptions = Options
     , optBind     = configBind def
     , optPort     = configPort def
     , optHosts    = configBitcoinHosts def
-    , optBatch    = configBatch def
     , optBloomFP  = configBloomFP def
     , optMode     = configMode def
     , optToken    = Nothing
@@ -157,7 +155,6 @@ instance ToJSON Options where
         , "bind"           .= optBind opt
         , "port"           .= optPort opt
         , "bitcoin-hosts"  .= (map f $ optHosts opt)
-        , "batch"          .= optBatch opt
         , "false-positive" .= optBloomFP opt
         , "operation-mode" .= optMode opt
         ]
@@ -189,7 +186,6 @@ instance FromJSON Options where
         <*> o .: "bind"
         <*> o .: "port"
         <*> (mapM f =<< o .: "bitcoin-hosts")
-        <*> o .: "batch"
         <*> o .: "false-positive"
         <*> o .: "operation-mode"
         <*> ( (stringToBS <$>) <$> o .:? "token" )
@@ -403,7 +399,6 @@ processCommand opts args = case args of
                 , configPort         = optPort opts
                 , configAuthUrl      = optProvider opts
                 , configBitcoinHosts = optHosts opts
-                , configBatch        = optBatch opts
                 , configBloomFP      = optBloomFP opts
                 , configMode         = optMode opts
                 , configGap          = optGap opts

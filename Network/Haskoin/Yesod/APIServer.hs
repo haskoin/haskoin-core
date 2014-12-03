@@ -123,7 +123,6 @@ data ServerConfig = ServerConfig
     , configPort         :: !Int
     , configAuthUrl      :: !String
     , configBitcoinHosts :: ![(String, Int)]
-    , configBatch        :: !Int
     , configBloomFP      :: !Double
     , configMode         :: !ServerMode
     , configGap          :: !Int
@@ -137,7 +136,6 @@ instance Default ServerConfig where
         , configPort         = restPort
         , configAuthUrl      = concat [ "http://localhost:", show restPort ]
         , configBitcoinHosts = [("127.0.0.1", defaultPort)]
-        , configBatch        = 100
         , configBloomFP      = 0.00001
         , configMode         = ServerOnline
         , configToken        = Nothing
@@ -208,7 +206,6 @@ runServer config = do
     let bind     = fromString $ configBind config
         port     = configPort config
         hosts    = configBitcoinHosts config
-        batch    = configBatch config
         fp       = configBloomFP config
         mode     = configMode config 
         tokenM   = configToken config
@@ -262,7 +259,7 @@ runServer config = do
             let bb = dbConfigBestBlockHash $ entityVal $ fromJust conf
 
             -- Launch SPV node
-            withAsyncSPV hosts batch fc bb (runNodeHandle fp pool) $ 
+            withAsyncSPV hosts fc bb (runNodeHandle fp pool) $ 
                 \rChan _ -> do
                     -- Send the bloom filter
                     bloom <- flip runSqlPersistMPool pool $ walletBloomFilter fp

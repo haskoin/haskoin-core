@@ -101,9 +101,6 @@ data SPVSession = SPVSession
       -- The rescan can only be executed if no merkle block are still
       -- being downloaded.
     , pendingRescan :: !(Maybe Timestamp)
-      -- How many merkle blocks requests are batched together in a GetData
-      -- request and how many merkle blocks are sent together to the wallet.
-    , blockBatch :: !Int
       -- Do not request merkle blocks with a timestamp before the
       -- fast catchup time.
     , fastCatchup :: !Timestamp
@@ -148,13 +145,12 @@ instance SPVNode s m => PeerManager SPVRequest (S.StateT SPVSession m) where
 
 withAsyncSPV :: SPVNode s m
              => [(String, Int)] 
-             -> Int
              -> Timestamp
              -> BlockHash
              -> (m () -> IO ())
              -> (TBMChan SPVRequest -> Async () -> IO ())
              -> IO ()
-withAsyncSPV hosts batch fc bb runStack f = do
+withAsyncSPV hosts fc bb runStack f = do
     let session = SPVSession
             { spvSyncPeer = Nothing
             , spvBloom = Nothing
@@ -164,7 +160,6 @@ withAsyncSPV hosts batch fc bb runStack f = do
             , soloTxs = []
             , pendingTxBroadcast = []
             , pendingRescan = Nothing
-            , blockBatch = batch
             , fastCatchup = fc
             , peerBroadcastBlocks = M.empty
             , peerInflightMerkles = M.empty
@@ -749,12 +744,11 @@ sendGetHeaders remote full hstop = do
 downloadBlocks :: SPVNode s m => RemoteHost -> SPVHandle m ()
 downloadBlocks remote = canDownloadBlocks remote >>= \dwn -> when dwn $ do
     height <- liftM peerHeight $ getPeerData remote
-    batch  <- lift $ S.gets blockBatch
     dwnMap <- lift $ S.gets blocksToDwn
 
     -- Find blocks that this peer can download
     let xs = concat $ map (\(k,vs) -> map (\v -> (k,v)) vs) $ M.toAscList dwnMap
-        (ys, rest) = splitAt batch xs
+        (ys, rest) = splitAt 500 xs
         (toDwn, highRest) = span ((<= height) . fst) ys
         restToList = map (\(a,b) -> (a,[b])) $ rest ++ highRest
         restMap = M.fromListWith (++) restToList

@@ -28,13 +28,12 @@ import Control.Exception (throwIO, throw)
 import Data.Char (toLower)
 import Data.Default (def)
 import Data.Word (Word32, Word64)
-import Data.List (intersperse)
+import Data.List (intersperse, find, nubBy)
 import Data.Maybe (listToMaybe, fromJust, isNothing, isJust, fromMaybe)
 import qualified Data.HashMap.Strict as H (toList)
 import qualified Data.Vector as V (toList)
-import Data.Text (Text)
 import qualified Data.Text as T (pack, unpack, splitOn)
-import Data.Text.Encoding (encodeUtf8)
+import Data.Foldable (toList)
 import qualified Data.Yaml as YAML (encode, encodeFile, decodeFile)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString as BS
@@ -69,12 +68,12 @@ import Network.HTTP.Conduit
     , withManager
     , setQueryString
     , parseUrl
-    , applyBasicAuth
     )
 
 import Network.HTTP.Types (Status(..))
 
-import Network.Haskoin.REST
+import Network.Haskoin.Yesod.APIServer
+import Network.Haskoin.Yesod.TokenAuth
 
 import Network.Haskoin.Wallet
 import Network.Haskoin.Wallet.Types
@@ -105,12 +104,13 @@ data Options = Options
     , optBatch    :: Int
     , optBloomFP  :: Double
     , optMode     :: ServerMode
-    , optUser     :: Text
-    , optPassword :: Text
+    , optToken    :: Maybe BS.ByteString
+    , optSecret   :: Maybe BS.ByteString
     , optDir      :: Maybe FilePath
     , optLog      :: Maybe FilePath
     , optPid      :: Maybe FilePath
     , optCfg      :: Maybe FilePath
+    , optNce      :: Maybe FilePath
     } deriving (Eq, Show)
 
 defaultOptions :: Options
@@ -132,11 +132,12 @@ defaultOptions = Options
     , optBatch    = configBatch def
     , optBloomFP  = configBloomFP def
     , optMode     = configMode def
-    , optUser     = "haskoin"
-    , optPassword = "haskoin"
+    , optToken    = Nothing
+    , optSecret   = Nothing
     , optDir      = Nothing
     , optLog      = Nothing
     , optPid      = Nothing
+    , optNce      = Nothing
     , optCfg      = Nothing
     } 
 
@@ -159,12 +160,13 @@ instance ToJSON Options where
         , "batch"          .= optBatch opt
         , "false-positive" .= optBloomFP opt
         , "operation-mode" .= optMode opt
-        , "user"           .= optUser opt
-        , "password"       .= optPassword opt
         ]
+        ++ maybe [] (\x -> [("token" .= bsToString x)]) (optToken opt)
+        ++ maybe [] (\x -> [("secret" .= bsToString x)]) (optSecret opt)
         ++ maybe [] (\x -> [("workdir" .= x)]) (optDir opt)
         ++ maybe [] (\x -> [("logfile" .= x)]) (optLog opt)
         ++ maybe [] (\x -> [("pidfile" .= x)]) (optPid opt)
+        ++ maybe [] (\x -> [("noncefile" .= x)]) (optNce opt)
       where
         f (x,y) = object
             [ "host" .= x
@@ -190,11 +192,12 @@ instance FromJSON Options where
         <*> o .: "batch"
         <*> o .: "false-positive"
         <*> o .: "operation-mode"
-        <*> o .: "user"
-        <*> o .: "password"
+        <*> ( (stringToBS <$>) <$> o .:? "token" )
+        <*> ( (stringToBS <$>) <$> o .:? "secret" )
         <*> o .:? "workdir"
         <*> o .:? "logfile"
         <*> o .:? "pidfile"
+        <*> o .:? "noncefile"
         <*> return Nothing -- configuration file does not contain its own path
       where
         f = withObject "bitcoinhost" $ \x -> do
@@ -207,9 +210,6 @@ options =
     [ Option ['w'] ["wallet"]
         (ReqArg (\w opts -> return opts{ optWallet = w }) "WALLET")
         "Which wallet to use (default: main)"
-    , Option ['c'] ["config"]
-        (ReqArg (\g opts -> return opts{ optCfg = Just g }) "FILE")
-        "Configuration file"
     , Option ['n'] ["count"] (ReqArg parseCount "INT")
         "Count: see commands for details"
     , Option ['f'] ["fee"] 
@@ -220,27 +220,36 @@ options =
     , Option ['i'] ["internal"]
         (NoArg $ \opts -> return opts{ optInternal = True })
         "Display internal addresses (default: False)"
-    , Option ['j'] ["json"]
-        (NoArg $ \opts -> return opts{ optJson = True })
-        "Format result as JSON"
-    , Option ['y'] ["yaml"]
-        (NoArg $ \opts -> return opts{ optYaml = True })
-        "Format result as YAML"
-    , Option ['d'] ["detach"]
-        (NoArg $ \opts -> return opts{ optDetach = True })
-        "Detach the process from the terminal"
     , Option ['x'] ["passphrase"]
         (ReqArg (\s opts -> return opts{ optPass = s }) "PASSPHRASE")
         "Optional Passphrase for mnemonic"
     , Option ['p'] ["provider"]
         (ReqArg (\p opts -> return opts{ optProvider = p }) "URL")
         "URL of the API server"
-    , Option ['h'] ["host"]
+    , Option ['t'] ["token"]
+        (ReqArg parseToken "STRING")
+        "HMAC authentication token identifier"
+    , Option ['s'] ["secret"]
+        (ReqArg parseSecret "STRING")
+        "HMAC authentication token secret"
+    , Option ['d'] ["detach"]
+        (NoArg $ \opts -> return opts{ optDetach = True })
+        "Detach the process from the terminal"
+    , Option ['b'] ["bind"]
         (ReqArg (\h opts -> return opts{ optBind = h }) "HOST")
         "API server bind address"
-    , Option ['P'] ["port"] 
+    , Option ['o'] ["port"] 
         (ReqArg (\p opts -> return opts{ optPort = read p }) "PORT")
         "API server port"
+    , Option ['J'] ["json"]
+        (NoArg $ \opts -> return opts{ optJson = True })
+        "Format result as JSON"
+    , Option ['Y'] ["yaml"]
+        (NoArg $ \opts -> return opts{ optYaml = True })
+        "Format result as YAML"
+    , Option ['C'] ["config"]
+        (ReqArg (\g opts -> return opts{ optCfg = Just g }) "FILE")
+        "Configuration file"
     , Option ['W'] ["workdir"]
         (ReqArg (\w opts -> return opts{ optDir = Just w }) "DIR")
         "Working directory"
@@ -251,18 +260,19 @@ options =
         (ReqArg (\i opts -> return opts{ optPid = Just i }) "FILE")
         "PID file"
     ]
-
-parseCount :: String -> Options -> IO Options
-parseCount s opts 
-    | res > 0   = return opts{ optCount = res }
-    | otherwise = error $ unwords ["Invalid count option:", s]
-    where res = read s
-
-parseMinConf :: String -> Options -> IO Options
-parseMinConf m opts 
-    | res >= 0   = return opts{ optMinConf = res }
-    | otherwise = error $ unwords ["Invalid minconf option:", m]
-    where res = read m
+  where
+    parseToken s opts  = return opts{ optToken = Just $ stringToBS s }
+    parseSecret s opts = return opts{ optSecret = Just $ stringToBS s }
+    parseCount s opts 
+        | res > 0   = return opts{ optCount = res }
+        | otherwise = error $ unwords ["Invalid count option:", s]
+      where 
+        res = read s
+    parseMinConf m opts 
+        | res >= 0   = return opts{ optMinConf = res }
+        | otherwise = error $ unwords ["Invalid minconf option:", m]
+      where 
+        res = read m
 
 usageHeader :: String
 usageHeader = "Usage: hw [<options>] <command> [<args>]"
@@ -291,12 +301,12 @@ cmdHelp =
     , "Address commands:" 
     , "  new    acc labels                   Generate an address with a label"
     , "  list   acc                          Display all account addresses"
-    , "  page   acc page [-c addr/page]      Display account addresses by page"
+    , "  page   acc page [-n addr/page]      Display account addresses by page"
     , "  label  acc index label              Add a label to an address"
     , ""
     , "Transaction commands:" 
     , "  txlist    acc                       Display transactions in an account"
-    , "  txpage    acc page [-c tx/page]     Display transactions by page"
+    , "  txpage    acc page [-n tx/page]     Display transactions by page"
     , "  send      acc addr amount [-m]      Send coins to an address"
     , "  sendmany  acc {addr:amount...} [-m] Send coins to many addresses"
     , "  signtx    acc tx                    Sign a transaction (sign + import)"
@@ -349,7 +359,12 @@ getConfig opts = do
                 return $ concat [wd, "/config.yaml"]
         Just cfg -> return cfg
     prevConfig <- doesFileExist configFile
-    unless prevConfig $ YAML.encodeFile configFile defaultOptions
+    unless prevConfig $ do
+        token <- genToken Nothing
+        YAML.encodeFile configFile $
+            defaultOptions { optToken  = Just $ tokenIdent token
+                           , optSecret = Just $ tokenSecret token
+                           }
     configM <- YAML.decodeFile configFile
     unless (isJust configM) $ throwIO $ WalletException $ unwords
         [ "Could not parse config file:"
@@ -386,13 +401,14 @@ processCommand opts args = case args of
         let config = ServerConfig
                 { configBind         = optBind opts
                 , configPort         = optPort opts
+                , configAuthUrl      = optProvider opts
                 , configBitcoinHosts = optHosts opts
                 , configBatch        = optBatch opts
                 , configBloomFP      = optBloomFP opts
                 , configMode         = optMode opts
                 , configGap          = optGap opts
-                , configUser         = optUser opts
-                , configPassword     = optPassword opts
+                , configToken        = optToken opts
+                , configTokenSecret  = optSecret opts
                 }
         prevLog <- doesFileExist $ logFile
         -- TODO: Should we move the log file to an archive directory?
@@ -704,28 +720,93 @@ sendRequest :: String              -- Path
             -> Maybe BL.ByteString -- Body 
             -> Options             -- Options
             -> IO BL.ByteString    -- Response
-sendRequest p m qs bodyM opts = withManager $ \manager -> do
-    let url = concat [ optProvider opts, p ]
-    urlReq <- parseUrl url
-    let req' = setQueryString qs $ urlReq
-                   { method         = m
-                   -- Do not throw exceptions on error status codes
-                   , checkStatus    = (\_ _ _ -> Nothing) 
-                   , requestHeaders = [("accept", "application/json")]
-                   }
-        req = applyBasicAuth (encodeUtf8 $ optUser opts)
-                             (encodeUtf8 $ optPassword opts)
-                             req'
-    res <- flip httpLbs manager $ case bodyM of
-        Just b -> req{ requestBody = RequestBodyLBS b }
-        _      -> req
-    let b    = responseBody res
-        errM = decode b
-    when (statusCode (responseStatus res) >= 400 && isJust errM) $ do
-        let (ErrorMsg err msgs) = fromJust errM
-        if null msgs then error err else
-            error $ unwords $ (err ++ ":") : msgs
-    return b
+sendRequest p m qs bodyM opts = do
+    -- Prepare request
+    let noQsUrl = concat [ optProvider opts, p ]
+        bdy = fromMaybe BL.empty bodyM
+    
+    urlReq <- (setQueryString qs) <$> parseUrl noQsUrl
+    let url = concat [ noQsUrl, bsToString $ queryString urlReq ]
+
+    authHeaders <- liftIO $ case optToken opts of
+        Nothing -> return []
+        Just ident -> do
+            n <- getNonce opts ident
+            let secret = fromJust $ optSecret opts
+                sigE = buildTokenSig n (T.pack url) (toStrictBS bdy) secret
+            unless (isRight sigE) $ error $ fromLeft sigE
+            return [ ( "access_key", ident )
+                   , ( "access_signature", fromRight sigE )
+                   , ( "access_nonce", stringToBS $ show n )
+                   , ( "host", stringToBS $ optProvider opts )
+                   ]
+
+    let req = urlReq
+            { method = m
+            -- Do not throw exceptions on error status codes
+            , checkStatus = (\_ _ _ -> Nothing) 
+            , requestBody = RequestBodyLBS bdy
+            , requestHeaders = ("accept", "application/json") : authHeaders
+            }
+
+    -- Send request
+    res <- withManager $ \manager -> httpLbs req manager
+
+    -- Handle errors
+    when (statusCode (responseStatus res) >= 400) $ 
+        case decode $ responseBody res of
+            Just (ErrorMsg err msgs) -> error $ 
+                if null msgs 
+                    then err 
+                    else unwords $ (err ++ ":") : msgs
+            Nothing -> error $ "An error occured"
+
+    return $ responseBody res
+
+newtype Nonces = Nonces [(BS.ByteString, Int)]
+    deriving (Eq, Show, Read)
+
+instance ToJSON Nonces where
+    toJSON (Nonces xs) = toJSON $ map f xs
+      where
+        f (ident, n) = object
+            [ "token" .= bsToString ident 
+            , "nonce" .= n
+            ]
+
+instance FromJSON Nonces where
+    parseJSON = withArray "nonces" $ \v -> 
+        Nonces <$> mapM f (toList v)
+      where
+        f = withObject "nonce" $ \o -> 
+            (,) <$> (stringToBS <$> o .: "token")
+                <*> o .: "nonce"
+
+getNonces :: Options -> IO Nonces
+getNonces opts = do
+    doesFileExist nceFile >>= \fileExists -> do
+    unless fileExists $ YAML.encodeFile nceFile $ Nonces [] 
+    resM <- YAML.decodeFile nceFile
+    when (isNothing resM) $ error "Could not decode nonces file"
+    return $ fromJust resM
+  where
+    nceFile = fromMaybe "token-nonces" $ optNce opts
+
+getNonce :: Options -> BS.ByteString -> IO Int
+getNonce opts ident = do
+    Nonces xs <- getNonces opts
+    let resM = find ((== ident) . fst) xs
+    case resM of
+        Just (_,n) -> setNonce opts ident (n+1) >> return n
+        Nothing    -> setNonce opts ident 2 >> return 1
+
+setNonce :: Options -> BS.ByteString -> Int -> IO ()
+setNonce opts ident n = do
+    Nonces xs <- getNonces opts
+    YAML.encodeFile nceFile $ Nonces $ nubBy f $ (ident, n):xs
+  where
+    f a b = fst a == fst b
+    nceFile = fromMaybe "token-nonces" $ optNce opts
 
 encodeTxJSON :: Tx -> Value
 encodeTxJSON tx@(Tx v is os i) = object

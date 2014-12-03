@@ -19,6 +19,7 @@ module Network.Haskoin.Wallet.Model
 , DbConfirmationGeneric(..)
 , DbConfigGeneric(..)
 , DbSpentCoinGeneric(..)
+, DbTokenGeneric(..)
 , DbWalletId
 , DbAccountId
 , DbAddressId
@@ -31,6 +32,7 @@ module Network.Haskoin.Wallet.Model
 , DbConfirmationId
 , DbConfigId
 , DbOrphanId
+, DbTokenId
 , EntityField(..)
 , Unique(..)
 , migrateWallet
@@ -148,5 +150,13 @@ DbConfig
     bestBlockHash BlockHash
     version Int
     created UTCTime default=CURRENT_TIME
+
+DbToken
+    ident String
+    secret String
+    nonce Int
+    expires UTCTime Maybe
+    created UTCTime default=CURRENT_TIME
+    UniqueTokenIdent ident
 |]
 

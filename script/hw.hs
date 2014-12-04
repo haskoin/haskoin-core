@@ -304,7 +304,7 @@ cmdHelp =
     , "  newacc    name                      Create a new account"
     , "  newms     name M N [pubkey...]      Create a new multisig account"
     , "  newread   name pubkey               Create a new read-only account"
-    , "  newreadms name [pubkey...]          Create a new read-only ms account"
+    , "  newreadms name M N [pubkey...]      Create a new read-only ms account"
     , "  addkeys   acc  {pubkey...}          Add pubkeys to a multisig account"
     , "  acclist                             List all accounts"
     , "  getacc    acc                       Display an account by name"

@@ -622,10 +622,14 @@ checkMinimalNumRep s =
 nullDummyEnforcer :: ProgramTransition ()
 nullDummyEnforcer = do
     flgs <- ask
-    topStack <- head <$> getStack
+    topStack <- ( getStack >>= headOrError )
     if ( NULLDUMMY `elem` flgs ) && ( not . null $ topStack )
         then programError $ "Non-null dummy stack in multi-sig"
         else return ()
+    where
+        headOrError s = if null s
+          then programError "Empty stack where dummy op should be."
+          else return ( head s )
 
 --------------------------------------------------------------------------------
 -- | Based on the IfStack, returns whether the script is within an

@@ -704,7 +704,8 @@ offline transaction blob.
 
 A JSON object with the recipient addresses, the amount in satoshi, the fee
 to pay (in satoshi/1000 bytes) and the minimum number of confirmations of the
-coins that will be spent.
+coins that will be spent. If the "proposition" field is set to true, the 
+transaction will not be signed with the keys of the wallet.
 
 ```json
 {
@@ -714,7 +715,8 @@ coins that will be spent.
     [ "mkwNK8zgNtVxF8CqZCFU83qxTNcwj4cs8q", 336000 ]
   ],
   "fee": 10000,
-  "minconf": 1
+  "minconf": 1,
+  "proposition": false
 }
 ```
 
@@ -739,12 +741,15 @@ wallet.
 
 ##### Input
 
-A JSON object containing the raw transaction to sign in base16 (Hex):
+A JSON object containing the raw transaction to sign in base16 (Hex). If the
+"final" field is set to true, the transaction will only be signed if it
+would result in a complete transaction.
 
 ```json
 {
   "type": "sign",
-  "tx": "0100000001a65337..."
+  "tx": "0100000001a65337...",
+  "final": false
 }
 ```
 
@@ -813,6 +818,9 @@ is a list of the following elements:
 * True if the private key is internal. False otherwise.
 * Derivation index for the public (and private) key.
 
+If the "final" field is set to true, the transaction will only be signed if
+it would result in a complete transaction.
+
 ```json
 {
   "type": "sigblob",
@@ -826,7 +834,8 @@ is a list of the following elements:
         7
       ]
     ]
-  }
+  },
+  "final": false
 }
 ```
 

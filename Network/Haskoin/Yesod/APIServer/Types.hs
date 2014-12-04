@@ -21,7 +21,7 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Monad (mzero)
 
 import Data.Word (Word32, Word64)
-import Data.Maybe (isJust, fromJust)
+import Data.Maybe (isJust, fromJust, fromMaybe)
 import Data.Aeson 
     ( Value (..)
     , object
@@ -155,27 +155,30 @@ instance FromJSON AddressData where
         AddressData <$> o .: "label"
 
 data AccTxAction
-    = SendCoins ![(Address, Word64)] !Word64 !Word32
-    | SignTx !Tx
-    | SignSigBlob !SigBlob
+    = SendCoins ![(Address, Word64)] !Word64 !Word32 !Bool
+    | SignTx !Tx !Bool
+    | SignSigBlob !SigBlob !Bool
     | ImportTx !Tx
     deriving (Eq, Read, Show)
 
 instance ToJSON AccTxAction where
     toJSON action = case action of
-        SendCoins rs f m -> object
+        SendCoins rs f m p -> object
             [ "type"        .= String "send"
             , "recipients"  .= rs
             , "fee"         .= f
             , "minconf"     .= m
+            , "proposition" .= p
             ]
-        SignTx tx -> object
+        SignTx tx f -> object
             [ "type"        .= String "sign"
             , "tx"          .= tx
+            , "final"       .= f
             ]
-        SignSigBlob blob -> object
+        SignSigBlob blob f -> object
             [ "type"        .= String "sigblob"
             , "sigblob"     .= blob
+            , "final"       .= f
             ]
         ImportTx tx -> object 
             [ "type"        .= String "import"
@@ -190,8 +193,13 @@ instance FromJSON AccTxAction where
                 <$> o .: "recipients"
                 <*> o .: "fee"
                 <*> o .: "minconf"
-            "sign"    -> SignTx <$> o .: "tx"
-            "sigblob" -> SignSigBlob <$> o .: "sigblob"
+                <*> ((fromMaybe False) <$> o .:? "proposition")
+            "sign"    -> SignTx 
+                <$> o .: "tx"
+                <*> ((fromMaybe False) <$> o .:? "final")
+            "sigblob" -> SignSigBlob 
+                <$> o .: "sigblob"
+                <*> ((fromMaybe False) <$> o .:? "final")
             "import"  -> ImportTx <$> o .: "tx"
             _ -> mzero
 

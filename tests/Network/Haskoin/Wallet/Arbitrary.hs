@@ -143,9 +143,9 @@ instance Arbitrary AddressData where
 
 instance Arbitrary AccTxAction where
     arbitrary = oneof
-        [ SendCoins <$> (listOf1 genaddr) <*> arbitrary <*> arbitrary
-        , SignTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
-        , SignSigBlob <$> arbitrary
+        [ SendCoins <$> (listOf1 genaddr) <*> arbitrary <*> arbitrary <*> arbitrary
+        , SignTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) <*> arbitrary
+        , SignSigBlob <$> arbitrary <*> arbitrary
         , ImportTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
         ]
       where

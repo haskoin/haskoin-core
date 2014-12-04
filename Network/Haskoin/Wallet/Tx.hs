@@ -570,15 +570,16 @@ sendTx :: (MonadIO m, PersistUnique b, PersistQuery b)
        -> Word32              -- ^ Minimum confirmations
        -> [(Address,Word64)]  -- ^ List of recipient addresses and amounts
        -> Word64              -- ^ Fee per 1000 bytes 
+       -> Bool                -- ^ Proposition (No signatures)
        -> ReaderT b m (TxHash, Bool, Bool) 
             -- ^ (Payment transaction, Completed flag, New addresses generated)
-sendTx wallet name minConf dests fee = do
+sendTx wallet name minConf dests fee prop = do
     Entity wk _ <- getWalletEntity wallet
     accE@(Entity ai acc) <- getAccountEntity wk name
     tx <- buildUnsignedTx accE minConf dests fee
-    (signedTx, _) <- if isReadAccount $ dbAccountValue acc 
+    (signedTx, _) <- if prop || isReadAccount (dbAccountValue acc)
         then return (tx, False)
-        else signSigBlob wallet name =<< buildSigBlob ai tx
+        else signSigBlob wallet name False =<< buildSigBlob ai tx
     confM <- importTx signedTx WalletSource Nothing
     let (tid, conf, genA) = fromJust confM
     when (isNothing confM) $ liftIO $ throwIO $
@@ -595,14 +596,15 @@ signWalletTx :: (MonadIO m, PersistUnique b, PersistQuery b)
              => WalletName  -- ^ Wallet name
              -> AccountName -- ^ Account name
              -> Tx          -- ^ Transaction to sign 
+             -> Bool        -- ^ Only sign if the tx will be valid
              -> ReaderT b m (TxHash, Bool, Bool)
              -- ^ (Signed transaction, Completed flag, New addresses generated)
-signWalletTx wallet name tx = do
+signWalletTx wallet name tx final = do
     Entity wk _ <- getWalletEntity wallet
     Entity ai acc <- getAccountEntity wk name
     (signedTx, _) <- if isReadAccount $ dbAccountValue acc 
         then return (tx, False)
-        else signSigBlob wallet name =<< buildSigBlob ai tx
+        else signSigBlob wallet name final =<< buildSigBlob ai tx
     confM <- importTx signedTx UnknownSource (Just (wallet, name))
     let (tid, conf, genA) = fromJust confM
     when (isNothing confM) $ liftIO $ throwIO $
@@ -676,9 +678,10 @@ buildSigBlob ai tx = do
 signSigBlob :: (MonadIO m, PersistUnique b, PersistQuery b)
             => WalletName
             -> AccountName
+            -> Bool        -- ^ Only sign if the tx will be valid
             -> SigBlob
             -> ReaderT b m (Tx, Bool)
-signSigBlob wallet name (SigBlob dat tx) = do
+signSigBlob wallet name final (SigBlob dat tx) = do
     Entity wk wE  <- getWalletEntity wallet
     Entity _ accE <- getAccountEntity wk name
     let acc = dbAccountValue accE
@@ -694,6 +697,8 @@ signSigBlob wallet name (SigBlob dat tx) = do
         resE = detSignTx tx sigi prvKeys
         (signedTx, complete) = fromRight resE
     when (isLeft resE) $ liftIO $ throwIO $ WalletException $ fromLeft resE
+    when (final && not complete) $ liftIO $ throwIO $ WalletException
+        "Transaction is missing signatures. Could not sign it."
     return (signedTx, complete)
   where
     toSigi acc (op, so, i, k) = 

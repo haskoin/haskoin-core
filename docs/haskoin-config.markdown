@@ -16,13 +16,19 @@ Detach and continue running on background when running daemon.
 
 Default: false
 
-### user
+### token
 
-Username to connect to the API via HTTP basic authentication.
+API token identifier used for authenticating with the server. It should be
+encoded in base 64. If no token/secret is defined, no authentication will be
+required. A default token identifier is generated for you the first time you
+call hw using System.Emtropy.
 
-### password
+### secret
 
-Password to connect to the API via HTTP basic authentication.
+API token secret used for authenticating with the server. It should be encoded
+in base 64. If no token/secret is defined, no authentication will be used. A
+default token secret is generated for you the first time you call hw using
+System.Entropy.
 
 ### bind
 
@@ -59,12 +65,6 @@ There are two modes of operation: online and offline.
   of transactions. Most API calls are otherwise available.
 
 Default: online
-
-### batch
-
-How many block should be batched together for download/import.
-
-Default: 100
 
 ### passphrase
 
@@ -111,6 +111,18 @@ have this many unused addresses generated.
 
 Default: 10
 
+### workdir
+
+Change the default working directory
+
+### logfile
+
+Change the default name of the log file
+
+### pidfile
+
+Change the default name of the pid file
+
 
 
 ## Client Directives
@@ -132,4 +144,8 @@ Default: false
 Output of commands in [YAML](http://www.yaml.org) format.
 
 Default: false
+
+### noncefile
+
+Change the default name of the file containing the API token nonces
 

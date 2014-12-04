@@ -33,6 +33,74 @@ it with `hw start`.
 - [/node](#post-node) (POST)  
   Rescan the wallet from a given timestamp
 
+## Authentication
+
+Authentication with the server is handled by signing every HTTP request using
+an HMAC token authentication scheme. You can disable authentication by 
+removing the token and secret values for the server configuration file.
+
+Using an HMAC token authentication scheme allows for stateless authentication
+as every request contains all the necessary information to authenticate itself.
+As the full URL, request body and non-reusable nonce is signed in a request, it
+prevents both CORS and replay attacks. A 3rd trying to modify any part of the
+request body will invalidate the signature and the request altogether. HMAC
+token authentication is also safe against common cookie-based attacks (CLRF).
+
+In an HMAC token authentication scheme, the client and the server share a
+common secret which is identified by a token. The secret is shared between
+the server and the client through a secure channel, which can either be
+offline or perhaps through a secured login form.
+
+To properly authenticate with the server, the client needs to sign (with the
+shared secret) a payload produced by concatenating the nonce, the full URL
+(including any query strings used) and the request body. The signature is
+produced using HMAC-SHA256 as follows:
+
+```
+key = secret
+payload = nonce + URL + body
+signature = hmacsha256 key payload
+```
+
+Nonces must be chosen in an increasing order by the client and can never be
+reused to prevent replay attacks on the server. The server will store the
+last nonce used by an API key and will only allow a request to be executed
+if the signed nonce is greater than the stored nonce. Nonces should start with
+1 (and not 0).
+
+The token identifier, the signature and the nonce should be added to the 
+HTTP request headers as such:
+
+```
+ACCESS_KEY = base64 (token identifier)
+ACCESS_SIGNATURE = base64 (signature)
+ACCESS_NONCE = nonce
+```
+
+The HTTP `HOST` header should also be set and should correspond to the host
+part of the URL that was signed in the signature.
+
+Here is example Haskell code that produces a valid signature:
+
+```haskell
+import qualified Data.ByteString as BS 
+import qualified Data.ByteString.Base64 as B64
+import Network.Haskoin.Crypto (hmac256BS)
+import Network.Haskoin.Util (stringToBS)
+
+buildTokenSig :: Int              -- Nonce
+              -> String           -- Full URL
+              -> BS.ByteString    -- Request body
+              -> BS.ByteString    -- token secret
+              -> BS.ByteString    -- Base64 encoded Signature
+buildTokenSig nonce url body secret = 
+    B64.encode $ hmac256BS secret payload
+  where
+    payload = nonceBS `BS.append` urlBS `BS.append` body
+    nonceBS = stringToBS $ show nonce
+    urlBS   = stringToBS url
+```
+
 ## API Specification
 
 ### GET /wallets
@@ -636,7 +704,8 @@ offline transaction blob.
 
 A JSON object with the recipient addresses, the amount in satoshi, the fee
 to pay (in satoshi/1000 bytes) and the minimum number of confirmations of the
-coins that will be spent.
+coins that will be spent. If the "proposition" field is set to true, the 
+transaction will not be signed with the keys of the wallet.
 
 ```json
 {
@@ -646,7 +715,8 @@ coins that will be spent.
     [ "mkwNK8zgNtVxF8CqZCFU83qxTNcwj4cs8q", 336000 ]
   ],
   "fee": 10000,
-  "minconf": 1
+  "minconf": 1,
+  "proposition": false
 }
 ```
 
@@ -671,12 +741,15 @@ wallet.
 
 ##### Input
 
-A JSON object containing the raw transaction to sign in base16 (Hex):
+A JSON object containing the raw transaction to sign in base16 (Hex). If the
+"final" field is set to true, the transaction will only be signed if it
+would result in a complete transaction.
 
 ```json
 {
   "type": "sign",
-  "tx": "0100000001a65337..."
+  "tx": "0100000001a65337...",
+  "final": false
 }
 ```
 
@@ -745,6 +818,9 @@ is a list of the following elements:
 * True if the private key is internal. False otherwise.
 * Derivation index for the public (and private) key.
 
+If the "final" field is set to true, the transaction will only be signed if
+it would result in a complete transaction.
+
 ```json
 {
   "type": "sigblob",
@@ -758,7 +834,8 @@ is a list of the following elements:
         7
       ]
     ]
-  }
+  },
+  "final": false
 }
 ```
 

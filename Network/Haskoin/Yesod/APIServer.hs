@@ -437,24 +437,24 @@ getTxsR wallet name = requireAuth >> do
 
 postTxsR :: Text -> Text -> Handler Value
 postTxsR wallet name = requireJsonBodyAuth >>= \res -> case res of
-    SendCoins rs fee minConf -> do
-        (tid, complete, genA) <- runDB $ sendTx w n minConf rs fee
+    SendCoins rs fee minConf prop -> do
+        (tid, complete, genA) <- runDB $ sendTx w n minConf rs fee prop
         whenOnline $ when complete $ do
             when genA updateNodeFilter
             Just rChan <- serverNode <$> getYesod
             newTx <- runDB $ getTx tid
             liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
         return $ toJSON $ TxHashStatusRes tid complete
-    SignTx tx -> do
-        (tid, complete, genA) <- runDB $ signWalletTx w n tx
+    SignTx tx final -> do
+        (tid, complete, genA) <- runDB $ signWalletTx w n tx final
         whenOnline $ when complete $ do
             when genA updateNodeFilter
             Just rChan <- serverNode <$> getYesod
             newTx <- runDB $ getTx tid
             liftIO $ atomically $ do writeTBMChan rChan $ PublishTx newTx
         return $ toJSON $ TxHashStatusRes tid complete
-    SignSigBlob blob -> do
-        (tx, complete) <- runDB $ signSigBlob w n blob
+    SignSigBlob blob final -> do
+        (tx, complete) <- runDB $ signSigBlob w n final blob
         return $ toJSON $ TxStatusRes tx complete
     ImportTx tx -> do
         resM <- runDB $ importTx tx UnknownSource (Just (w, n))

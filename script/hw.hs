@@ -93,6 +93,8 @@ data Options = Options
     , optFee      :: Word64
     , optMinConf  :: Word32
     , optInternal :: Bool
+    , optProp     :: Bool
+    , optFinal    :: Bool
     , optJson     :: Bool
     , optYaml     :: Bool
     , optPass     :: String
@@ -120,6 +122,8 @@ defaultOptions = Options
     , optFee      = 10000
     , optMinConf  = 0
     , optInternal = False
+    , optProp     = False
+    , optFinal    = False
     , optJson     = False
     , optYaml     = False
     , optPass     = ""
@@ -147,6 +151,8 @@ instance ToJSON Options where
         , "fee"            .= optFee opt
         , "minconf"        .= optMinConf opt
         , "internal"       .= optInternal opt
+        , "proposition"    .= optProp opt
+        , "final"          .= optFinal opt
         , "json"           .= optJson opt
         , "yaml"           .= optYaml opt
         , "passphrase"     .= optPass opt
@@ -178,6 +184,8 @@ instance FromJSON Options where
         <*> o .: "fee"
         <*> o .: "minconf"
         <*> o .: "internal"
+        <*> o .: "proposition"
+        <*> o .: "final"
         <*> o .: "json"
         <*> o .: "yaml"
         <*> o .: "passphrase"
@@ -216,6 +224,12 @@ options =
     , Option ['i'] ["internal"]
         (NoArg $ \opts -> return opts{ optInternal = True })
         "Display internal addresses (default: False)"
+    , Option ['P'] ["proposition"]
+        (NoArg $ \opts -> return opts{ optProp = True })
+        "Do not sign txs when sending (default: False)"
+    , Option ['F'] ["final"]
+        (NoArg $ \opts -> return opts{ optFinal = True })
+        "Only sign a tx if it will be complete (default: False)"
     , Option ['x'] ["passphrase"]
         (ReqArg (\s opts -> return opts{ optPass = s }) "PASSPHRASE")
         "Optional Passphrase for mnemonic"
@@ -565,8 +579,8 @@ processCommand opts args = case args of
         let url = concat [ "/wallets/", optWallet opts
                          , "/accounts/", name, "/txs"
                          ] 
-            req = Just $ encode $ 
-                SendCoins [(fromJust a, v)] (optFee opts) (optMinConf opts) 
+            req = Just $ encode $ SendCoins [(fromJust a, v)] 
+                (optFee opts) (optMinConf opts) (optProp opts)
         res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxHashStatusRes h c) -> do
             putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
@@ -581,8 +595,8 @@ processCommand opts args = case args of
         let url = concat [ "/wallets/", optWallet opts
                          , "/accounts/", name, "/txs"
                          ] 
-            req = Just $ encode $ 
-                SendCoins (fromJust recipients) (optFee opts) (optMinConf opts)
+            req = Just $ encode $ SendCoins (fromJust recipients) 
+                (optFee opts) (optMinConf opts) (optProp opts)
         res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxHashStatusRes h c) -> do
             putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
@@ -594,7 +608,7 @@ processCommand opts args = case args of
         let url = concat [ "/wallets/", optWallet opts
                          , "/accounts/", name, "/txs"
                          ] 
-            req = Just $ encode $ SignTx $ fromJust txM
+            req = Just $ encode $ SignTx (fromJust txM) (optFinal opts)
         res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxHashStatusRes h c) -> do
             putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
@@ -630,7 +644,7 @@ processCommand opts args = case args of
         let url = concat [ "/wallets/", optWallet opts
                          , "/accounts/", name, "/txs"
                          ] 
-            req = Just $ encode $ SignSigBlob $ fromJust blobM
+            req = Just $ encode $ SignSigBlob (fromJust blobM) (optFinal opts)
         res <- sendRequest url "POST" [] req opts
         printJSONOr opts res $ \(TxStatusRes tx c) -> do
             putStrLn $ unwords [ "Tx      :", bsToHex $ encode' tx ]

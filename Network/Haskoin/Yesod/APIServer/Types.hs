@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.REST.Types 
+module Network.Haskoin.Yesod.APIServer.Types 
 ( NewWallet(..) 
 , MnemonicRes(..)
 , NewAccount(..)

@@ -5,13 +5,12 @@
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ViewPatterns          #-}
-module Network.Haskoin.REST 
+module Network.Haskoin.Yesod.APIServer
 ( 
   -- * REST Server
   ServerMode(..)
 , ServerConfig(..)
 , runServer
-, haskoinPort
 
   -- * REST Types
 , NewWallet(..) 
@@ -47,14 +46,16 @@ import Data.Aeson
     , FromJSON
     , parseJSON
     , withText
+    , encode
     )
 import Data.Maybe
 import Data.Word (Word32)
 import Data.String (fromString)
 import Data.Text (Text, unpack, pack)
-import Data.Text.Encoding (encodeUtf8)
 import Data.Time.Clock.POSIX (getPOSIXTime)
+import Data.Time (getCurrentTime)
 import Data.Default (Default, def)
+import qualified Data.ByteString as BS (ByteString, empty)
 
 import Database.Persist.Sqlite
 import Database.Sqlite (open)
@@ -75,20 +76,23 @@ import Yesod
     , renderRoute
     , intField
     , boolField
-    , requireJsonBody
     , iopt
     , runInputGet
     , invalidArgs
+    , permissionDenied
+    , defaultYesodMiddleware
+    , requireJsonBody
     )
 import Yesod.Static (Static, staticDevel)
 import Network.Wai.Handler.Warp (runSettings, defaultSettings, setHost, setPort)
-import Network.Wai.Middleware.HttpAuth (basicAuth)
 
 import Network.Haskoin.Constants
 import Network.Haskoin.Node
 import Network.Haskoin.Crypto
+import Network.Haskoin.Util
 
-import Network.Haskoin.REST.Types
+import Network.Haskoin.Yesod.TokenAuth
+import Network.Haskoin.Yesod.APIServer.Types
 import Network.Haskoin.SPV
 
 import Network.Haskoin.Wallet.Root
@@ -115,56 +119,39 @@ instance FromJSON ServerMode where
         _         -> mzero
 
 data ServerConfig = ServerConfig
-    { configBind         :: String
-    , configPort         :: Int
-    , configBitcoinHosts :: [(String, Int)]
-    , configBatch        :: Int
-    , configBloomFP      :: Double
-    , configMode         :: ServerMode
-    , configGap          :: Int
-    , configUser         :: Text
-    , configPassword     :: Text
+    { configBind         :: !String
+    , configPort         :: !Int
+    , configAuthUrl      :: !String
+    , configBitcoinHosts :: ![(String, Int)]
+    , configBloomFP      :: !Double
+    , configMode         :: !ServerMode
+    , configGap          :: !Int
+    , configToken        :: !(Maybe BS.ByteString)
+    , configTokenSecret  :: !(Maybe BS.ByteString)
     } deriving (Eq, Read, Show)
-
-haskoinPort :: Int
-haskoinPort 
-    | networkName == "prodnet" = 8555
-    | otherwise                = 18555
 
 instance Default ServerConfig where
     def = ServerConfig
         { configBind         = "127.0.0.1"
-        , configPort         = haskoinPort
+        , configPort         = restPort
+        , configAuthUrl      = concat [ "http://localhost:", show restPort ]
         , configBitcoinHosts = [("127.0.0.1", defaultPort)]
-        , configBatch        = 100
         , configBloomFP      = 0.00001
         , configMode         = ServerOnline
-        , configUser         = "haskoin"
-        , configPassword     = "haskoin"
+        , configToken        = Nothing
+        , configTokenSecret  = Nothing
         , configGap          = 10
         }
+      where
+        restPort | networkName == "prodnet" = 8555
+                 | otherwise                = 18555
 
 data HaskoinServer = HaskoinServer 
     { serverPool   :: ConnectionPool
     , serverNode   :: Maybe (TBMChan SPVRequest)
     , serverConfig :: ServerConfig
-    , getStatic :: Static
+    , getStatic    :: Static
     }
-
-instance Yesod HaskoinServer where
-    makeSessionBackend _ = return Nothing
-    yesodMiddleware handler = catch handler $ 
-        \(WalletException err) -> invalidArgs [pack err]
-
-instance YesodPersist HaskoinServer where
-    type YesodPersistBackend HaskoinServer = SqlBackend
-    
-    runDB action = do
-        pool <- serverPool <$> getYesod
-        runSqlPool action pool
-
-instance RenderMessage HaskoinServer FormMessage where
-    renderMessage _ _ = defaultFormMessage
 
 mkYesod "HaskoinServer" [parseRoutes|
 /wallets                                           WalletsR     GET POST
@@ -183,28 +170,68 @@ mkYesod "HaskoinServer" [parseRoutes|
 /static                                            StaticR Static getStatic
 |]
 
+instance Yesod HaskoinServer where
+    makeSessionBackend _ = return Nothing
+    yesodMiddleware handler = defaultYesodMiddleware $
+        catch handler $ \(WalletException err) -> invalidArgs [pack err]
+
+instance YesodTokenAuth HaskoinServer where
+    authUrl = (pack . configAuthUrl . serverConfig) <$> getYesod
+    lookupToken ident = runDB $ do
+        tokenM <- getBy $ UniqueTokenIdent $ bsToString ident
+        let f (Entity _ (DbToken i s n e c)) = 
+                Token (stringToBS i) (stringToBS s) n e c
+        return $ f <$> tokenM
+    updateToken (Token i _ n _ _) = runDB $ do
+        tokenM <- getBy $ UniqueTokenIdent $ bsToString i
+        case tokenM of
+            Just (Entity tkey tval) -> replace tkey tval{ dbTokenNonce = n }
+            Nothing -> return ()
+    expireToken _ = return ()
+
+instance YesodPersist HaskoinServer where
+    type YesodPersistBackend HaskoinServer = SqlBackend
+    runDB action = do
+        pool <- serverPool <$> getYesod
+        runSqlPool action pool
+
+instance RenderMessage HaskoinServer FormMessage where
+    renderMessage _ _ = defaultFormMessage
+
 runServer :: ServerConfig -> IO ()
 runServer config = do
     let walletFile = pack "wallet"
     staticSite <- staticDevel "html"
+
+    let bind     = fromString $ configBind config
+        port     = configPort config
+        hosts    = configBitcoinHosts config
+        fp       = configBloomFP config
+        mode     = configMode config 
+        tokenM   = configToken config
+        secretM  = configTokenSecret config
+        settings = setHost bind $ setPort port defaultSettings
+        runApp   = runSettings settings 
 
     pool <- runNoLoggingT $
         createSqlPool (\lf -> open walletFile >>= flip wrapConnection lf) 1
     flip runSqlPersistMPool pool $ do 
         _ <- runMigrationSilent migrateWallet 
         initWalletDB
-
-    let bind     = fromString $ configBind config
-        port     = configPort config
-        hosts    = configBitcoinHosts config
-        batch    = configBatch config
-        fp       = configBloomFP config
-        mode     = configMode config 
-        settings = setHost bind $ setPort port defaultSettings
-        user     = encodeUtf8 $ configUser config
-        password = encodeUtf8 $ configPassword config
-        checkCreds u p = return $ u == user && p == password
-        runApp = runSettings settings . basicAuth checkCreds "haskoin"
+        -- Create a token if it doesn't already exist in the database
+        when (isJust tokenM) $ do
+            when (isNothing secretM) $ error $ "No token secret defined"
+            let token  = fromJust tokenM
+                secret = fromJust secretM
+            resM <- getBy $ UniqueTokenIdent $ bsToString token
+            case resM of
+                Just (Entity _ res) ->
+                    unless (bsToString secret == dbTokenSecret res) $ error 
+                        "This token with a different secret already exists"
+                Nothing -> do
+                    now <- liftIO getCurrentTime
+                    insert_ $ DbToken (bsToString token) (bsToString secret) 
+                                0 Nothing now
 
     if mode == ServerOffline
         then do
@@ -232,7 +259,7 @@ runServer config = do
             let bb = dbConfigBestBlockHash $ entityVal $ fromJust conf
 
             -- Launch SPV node
-            withAsyncSPV hosts batch fc bb (runNodeHandle fp pool) $ 
+            withAsyncSPV hosts fc bb (runNodeHandle fp pool) $ 
                 \rChan _ -> do
                     -- Send the bloom filter
                     bloom <- flip runSqlPersistMPool pool $ walletBloomFilter fp
@@ -259,11 +286,31 @@ updateNodeFilter = do
     bloom <- runDB $ walletBloomFilter $ configBloomFP config
     liftIO $ atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
 
+requireJsonBodyAuth :: (FromJSON a, ToJSON a) => Handler a
+requireJsonBodyAuth = requireJsonBody >>= \x -> do
+    checkAuthorization $ toStrictBS $ encode x
+    return x
+
+requireAuth :: Handler ()
+requireAuth = checkAuthorization BS.empty
+
+checkAuthorization :: BS.ByteString -> Handler ()
+checkAuthorization body = getYesod >>= \hs -> do
+    let tokenM = configToken $ serverConfig hs
+    if isNothing tokenM
+        then return ()
+        else extractVerifyToken body >>= \tokenE -> case tokenE of
+            Left err    -> permissionDenied $ pack err
+            Right token -> 
+                if Just (tokenIdent token) == tokenM
+                    then return ()
+                    else permissionDenied "Invalid or expired token"
+
 getWalletsR :: Handler Value
-getWalletsR = toJSON <$> runDB walletList
+getWalletsR = requireAuth >> toJSON <$> runDB walletList
 
 postWalletsR :: Handler Value
-postWalletsR = requireJsonBody >>= \(NewWallet name pass msM) -> do
+postWalletsR = requireJsonBodyAuth >>= \(NewWallet name pass msM) -> do
     (ms, seed) <- case msM of
         Just ms -> case mnemonicToSeed pass ms of
             Left err -> liftIO $ throwIO $ WalletException err
@@ -281,13 +328,15 @@ postWalletsR = requireJsonBody >>= \(NewWallet name pass msM) -> do
     return $ toJSON $ MnemonicRes ms
 
 getWalletR :: Text -> Handler Value
-getWalletR wallet = toJSON <$> runDB (getWallet $ unpack wallet)
+getWalletR wallet = requireAuth >> do
+    toJSON <$> runDB (getWallet $ unpack wallet)
 
 getAccountsR :: Text -> Handler Value
-getAccountsR wallet = toJSON <$> runDB (accountList $ unpack wallet)
+getAccountsR wallet = requireAuth >> do
+    toJSON <$> runDB (accountList $ unpack wallet)
 
 postAccountsR :: Text -> Handler Value
-postAccountsR wallet = requireJsonBody >>= \res -> do
+postAccountsR wallet = requireJsonBodyAuth >>= \res -> do
     c <- (configGap . serverConfig) <$> getYesod
     toJSON <$> case res of
         NewAccount n -> do
@@ -316,11 +365,11 @@ postAccountsR wallet = requireJsonBody >>= \res -> do
     w = unpack wallet
 
 getAccountR :: Text -> Text -> Handler Value
-getAccountR wallet name = 
+getAccountR wallet name = requireAuth >> do
     toJSON <$> runDB (getAccount (unpack wallet) (unpack name))
 
 postAccountKeysR :: Text -> Text -> Handler Value
-postAccountKeysR wallet name = requireJsonBody >>= \ks -> do
+postAccountKeysR wallet name = requireJsonBodyAuth >>= \ks -> do
     acc <- runDB $ addAccountKeys w n ks
     when (length (accountKeys acc) == accountTotal acc) $ do
         c <- (configGap . serverConfig) <$> getYesod
@@ -332,7 +381,7 @@ postAccountKeysR wallet name = requireJsonBody >>= \ks -> do
     w = unpack wallet
 
 getAddressesR :: Text -> Text -> Handler Value
-getAddressesR wallet name = do
+getAddressesR wallet name = requireAuth >> do
     pageM    <- runInputGet (iopt intField "page")
     e        <- (fromMaybe 10) <$> runInputGet (iopt intField "elemperpage")
     minConf  <- (fromMaybe 0) <$> runInputGet (iopt intField "minconf")
@@ -350,7 +399,7 @@ getAddressesR wallet name = do
     w = unpack wallet
 
 postAddressesR :: Text -> Text -> Handler Value
-postAddressesR wallet name = requireJsonBody >>= \(AddressData label) -> do
+postAddressesR wallet name = requireJsonBodyAuth >>= \(AddressData label) -> do
     newAddr <- runDB $ unlabeledAddr w n
     res <- runDB $ setAddrLabel w n (addressIndex newAddr) label
     whenOnline updateNodeFilter
@@ -360,7 +409,7 @@ postAddressesR wallet name = requireJsonBody >>= \(AddressData label) -> do
     w = unpack wallet
 
 getAddressR :: Text -> Text -> Int -> Handler Value
-getAddressR wallet name i = do
+getAddressR wallet name i = requireAuth >> do
     minConf  <- (fromMaybe 0) <$> runInputGet (iopt intField "minconf")
     internal <- (fromMaybe False) <$> runInputGet (iopt boolField "internal")
     runDB $ do
@@ -369,14 +418,14 @@ getAddressR wallet name i = do
         return $ toJSON ba
 
 putAddressR :: Text -> Text -> Int -> Handler Value
-putAddressR wallet name i = requireJsonBody >>= \(AddressData label) -> 
+putAddressR wallet name i = requireJsonBodyAuth >>= \(AddressData label) -> 
     toJSON <$> runDB (setAddrLabel w n (fromIntegral i) label)
   where
     w = unpack wallet
     n = unpack name
 
 getTxsR :: Text -> Text -> Handler Value
-getTxsR wallet name = do
+getTxsR wallet name = requireAuth >> do
     pageM <- runInputGet (iopt intField "page")
     e     <- (fromMaybe 10) <$> runInputGet (iopt intField "elemperpage")
     runDB $ case pageM of
@@ -387,7 +436,7 @@ getTxsR wallet name = do
     n = unpack name
 
 postTxsR :: Text -> Text -> Handler Value
-postTxsR wallet name = requireJsonBody >>= \res -> case res of
+postTxsR wallet name = requireJsonBodyAuth >>= \res -> case res of
     SendCoins rs fee minConf -> do
         (tid, complete, genA) <- runDB $ sendTx w n minConf rs fee
         whenOnline $ when complete $ do
@@ -424,7 +473,7 @@ postTxsR wallet name = requireJsonBody >>= \res -> case res of
     n = unpack name
 
 getTxR :: Text -> Text -> Text -> Handler Value
-getTxR wallet name tidStr = do
+getTxR wallet name tidStr = requireAuth >> do
     prop <- (fromMaybe False) <$> runInputGet (iopt boolField "proposition")
     let tidM = decodeTxHashLE $ unpack tidStr
         tid  = fromJust tidM
@@ -441,7 +490,7 @@ getTxR wallet name tidStr = do
     n = unpack name
 
 getSigBlobR :: Text -> Text -> Text -> Handler Value
-getSigBlobR wallet name tidStr = do
+getSigBlobR wallet name tidStr = requireAuth >> do
     let tidM = decodeTxHashLE $ unpack tidStr
     unless (isJust tidM) $ liftIO $ throwIO $
         WalletException "Could not parse txhash"
@@ -449,7 +498,7 @@ getSigBlobR wallet name tidStr = do
     return $ toJSON blob
 
 getBalanceR :: Text -> Text -> Handler Value
-getBalanceR wallet name = do
+getBalanceR wallet name = requireAuth >> do
     minConf <- (fromMaybe 0) <$> runInputGet (iopt intField "minconf")
     (balance, cs) <- runDB $ accountBalance w n minConf
     return $ toJSON $ BalanceRes balance cs
@@ -458,7 +507,7 @@ getBalanceR wallet name = do
     n = unpack name
 
 getSpendableR :: Text -> Text -> Handler Value
-getSpendableR wallet name = do
+getSpendableR wallet name = requireAuth >> do
     minConf <- (fromMaybe 0) <$> runInputGet (iopt intField "minconf")
     balance <- runDB $ spendableAccountBalance w n minConf
     return $ toJSON $ SpendableRes balance
@@ -467,7 +516,7 @@ getSpendableR wallet name = do
     n = unpack name
 
 postNodeR :: Handler Value
-postNodeR = requireJsonBody >>= \res -> toJSON <$> case res of
+postNodeR = requireJsonBodyAuth >>= \res -> toJSON <$> case res of
     Rescan (Just t) -> do
         whenOnline $ do
             Just rChan <- serverNode <$> getYesod

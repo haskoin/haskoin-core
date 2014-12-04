@@ -7,7 +7,7 @@ import Data.Aeson
 
 import Network.Haskoin.Wallet.Arbitrary ()
 import Network.Haskoin.Wallet.Types
-import Network.Haskoin.REST.Types
+import Network.Haskoin.Yesod.APIServer.Types
 
 tests :: [Test]
 tests = 

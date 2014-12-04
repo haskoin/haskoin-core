@@ -7,7 +7,7 @@ import Control.Applicative
 
 import Network.Haskoin.Test
 import Network.Haskoin.Wallet.Types
-import Network.Haskoin.REST.Types
+import Network.Haskoin.Yesod.APIServer.Types
 
 instance Arbitrary Wallet where
     arbitrary = do

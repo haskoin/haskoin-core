@@ -51,7 +51,7 @@ import Network.Haskoin.Script.SigHash
 import Network.Haskoin.Util 
 import Network.Haskoin.Transaction.Types
 
-import Data.Binary (encode, decode)
+import Data.Binary (encode, decodeOrFail)
 
 
 maxScriptSize :: Int
@@ -690,7 +690,10 @@ isPayToScriptHash [OP_HASH160, OP_PUSHDATA bytes OPCODE, OP_EQUAL] flgs
 isPayToScriptHash _ _ = False
 
 stackToScriptOps :: StackValue -> [ ScriptOp ]
-stackToScriptOps sv = scriptOps $ decode $ BSL.pack sv
+stackToScriptOps sv = let script = decodeOrFail $ BSL.pack sv in
+  case script of
+    Left _ -> []  -- Maybe should propogate the error some how
+    Right (_,_,s) -> scriptOps s
 
 --
 -- exported functions

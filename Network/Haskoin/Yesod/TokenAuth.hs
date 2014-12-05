@@ -4,6 +4,7 @@ module Network.Haskoin.Yesod.TokenAuth
 ( Token(..)
 , YesodTokenAuth(..)
 , genToken
+, refreshToken
 , extractVerifyToken
 , buildTokenSig
 ) where
@@ -52,6 +53,22 @@ genToken expiresSec = do
     secret <- liftIO $ getEntropy 16
     let expires = (\s -> addUTCTime (fromIntegral s) now) <$> expiresSec 
     return $ Token (B64.encode ident) (B64.encode secret) 0 expires now
+
+refreshToken :: YesodTokenAuth master 
+             => Token
+             -> HandlerT master IO Token
+refreshToken token = do
+    now <- liftIO getCurrentTime
+    let prevExpires = tokenExpires token
+        newExpires  = maxTime prevExpires (Just $ addUTCTime 1800 now)
+        -- Only change the expiry date if it is after the existing one
+        updToken    = token{ tokenExpires = newExpires }
+    updateToken updToken
+    return updToken
+  where
+    maxTime _ Nothing = Nothing
+    maxTime Nothing _ = Nothing
+    maxTime (Just t1) (Just t2) = Just $ if t1 > t2 then t1 else t2
 
 -- | Extract the token from the request and return it if it is valid.
 extractVerifyToken 
@@ -115,9 +132,7 @@ processToken body = runEitherT $ do
     unless (accessSig == sig) $ left "Invalid signature"
 
     -- Update the token nonce
-    let newToken = token{ tokenNonce = accessNce }
-    lift $ updateToken newToken
-    return newToken
+    lift $ refreshToken token{ tokenNonce = accessNce }
 
 buildTokenSig :: Int -> Text -> BS.ByteString -- Nonce, URL and Body
               -> BS.ByteString                -- Base64 token secret

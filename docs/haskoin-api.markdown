@@ -1,4 +1,4 @@
-# Haskoin RESTful API
+# Haskoin API
 
 The Haskoin API is designed to help you manage your Haskoin wallet through a
 web friendly REST api. It is accessible from the haskoin daemon when you start
@@ -37,14 +37,15 @@ it with `hw start`.
 
 Authentication with the server is handled by signing every HTTP request using
 an HMAC token authentication scheme. You can disable authentication by 
-removing the token and secret values for the server configuration file.
+removing the token and secret values from the server configuration file.
 
 Using an HMAC token authentication scheme allows for stateless authentication
 as every request contains all the necessary information to authenticate itself.
 As the full URL, request body and non-reusable nonce is signed in a request, it
-prevents both CORS and replay attacks. A 3rd trying to modify any part of the
-request body will invalidate the signature and the request altogether. HMAC
-token authentication is also safe against common cookie-based attacks (CLRF).
+prevents both CORS and replay attacks. A third party trying to modify any part
+of the request body will invalidate the signature and the request altogether.
+HMAC token authentication is also safe against common cookie-based attacks
+(CLRF).
 
 In an HMAC token authentication scheme, the client and the server share a
 common secret which is identified by a token. The secret is shared between
@@ -78,9 +79,9 @@ ACCESS_NONCE = nonce
 ```
 
 The HTTP `HOST` header should also be set and should correspond to the host
-part of the URL that was signed in the signature.
+part of the signed URL.
 
-Here is example Haskell code that produces a valid signature:
+Here is a Haskell code example that produces valid signatures:
 
 ```haskell
 import qualified Data.ByteString as BS 

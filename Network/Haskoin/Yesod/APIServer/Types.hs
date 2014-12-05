@@ -107,14 +107,17 @@ instance FromJSON NewAccount where
             "multisig" -> NewMSAccount n
                 <$> o .: "required"
                 <*> o .: "total"
-                <*> (o .: "keys" >>= maybe mzero return . mapM xPubImport)
+                <*> (o .:? "keys" >>= parseKeys)
             "read" -> NewReadAccount n
                 <$> (o .: "key" >>= maybe mzero return . xPubImport)
             "readmultisig" -> NewReadMSAccount n
                 <$> o .: "required"
                 <*> o .: "total"
-                <*> (o .: "keys" >>= maybe mzero return . mapM xPubImport)
+                <*> (o .:? "keys" >>= parseKeys)
             _ -> mzero
+      where
+        parseKeys Nothing = return []
+        parseKeys (Just xs) = maybe mzero return $ mapM xPubImport xs
 
 data AddressPageRes = AddressPageRes ![BalanceAddress] !Int
     deriving (Eq, Show, Read)

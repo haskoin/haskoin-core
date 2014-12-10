@@ -7,8 +7,7 @@ module Network.Haskoin.Wallet.Database
 
 import System.Console.GetOpt 
     ( OptDescr (Option)
-    , ArgDescr (NoArg, ReqArg)
-    , ArgOrder (Permute)
+    , ArgDescr (ReqArg)
     )
 
 import Control.Applicative ((<$>), (<*>))

@@ -35,8 +35,7 @@ import Data.Typeable (Typeable)
 import Data.Maybe (maybeToList, isJust, fromJust)
 import Data.Word (Word32, Word64)
 import qualified Data.Text as T
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import Data.ByteString.Lazy (toStrict, fromStrict)
+import Data.ByteString.Lazy (toStrict)
 import Data.Aeson
     ( Value (Object, String)
     , FromJSON

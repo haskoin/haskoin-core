@@ -125,6 +125,7 @@ test-suite test-haskoin-wallet
                        mtl >= 2.2  && < 2.3,
                        persistent >= 2.1  && < 2.2,
                        persistent-template >= 2.1  && < 2.2,
+                       persistent-sqlite >= 2.1  && < 2.2,
                        resourcet >= 1.1  && < 1.2,
                        text >= 1.2  && < 1.3,
                        time >= 1.4  && < 1.5,

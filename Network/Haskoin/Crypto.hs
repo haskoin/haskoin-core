@@ -107,6 +107,8 @@ module Network.Haskoin.Crypto
 
   -- *Extended Keys
 , ChainCode
+, XKey(..)
+, DerivPath
 
   -- **Extended Private Keys
 , XPrvKey(..)
@@ -137,6 +139,10 @@ module Network.Haskoin.Crypto
 , prvSubKeys
 , pubSubKeys
 , primeSubKeys
+, parsePath
+, derivePath
+, guardPubPath
+, derivePubPath
 
   -- ***Multisig derivations
 , mulSigSubKey

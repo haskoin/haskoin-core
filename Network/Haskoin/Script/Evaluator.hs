@@ -163,10 +163,10 @@ disabled op = throwError . DisabledOp $ op
 -- | Encoding function for the stack value format of integers.  Most
 -- significant bit defines sign.
 encodeInt :: Int64 -> StackValue
-encodeInt i = prefix $ encode' (fromIntegral $ abs i) []
-    where encode' :: Word64 -> StackValue -> StackValue
-          encode' 0 bytes = bytes
-          encode' j bytes = fromIntegral j:encode' (j `shiftR` 8) bytes
+encodeInt i = prefix $ encod (fromIntegral $ abs i) []
+    where encod :: Word64 -> StackValue -> StackValue
+          encod 0 bytes = bytes
+          encod j bytes = fromIntegral j:encod (j `shiftR` 8) bytes
           prefix :: StackValue -> StackValue
           prefix [] = []
           prefix xs | testBit (last xs) 7 = prefix $ xs ++ [0]

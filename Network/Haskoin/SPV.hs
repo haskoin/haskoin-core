@@ -40,7 +40,7 @@ import qualified Database.LevelDB.Base as DB
     )
 import Database.LevelDB.Iterator (iterKey, iterNext)
 
-import Database.Persist.Sqlite (ConnectionPool, runSqlPersistMPool)
+import Database.Persist.Sql (ConnectionPool, runSqlPersistMPool)
 
 import Network.Haskoin.Block
 import Network.Haskoin.Transaction

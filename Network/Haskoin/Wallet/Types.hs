@@ -471,24 +471,22 @@ printConfidence c = case c of
     TxDead     -> "Dead"
     TxOffline  -> "Offline"
 
-persistTextErrMsg :: T.Text
-persistTextErrMsg = "Has to be a PersistText"
 persistBSErrMsg :: T.Text 
 persistBSErrMsg = "Has to be a PersistByteString" 
 
 toPersistJson :: (ToJSON a) => a -> PersistValue
-toPersistJson = PersistText . decodeUtf8 . toStrict . encode
+toPersistJson = PersistByteString . toStrict . encode
 
 fromPersistJson :: (FromJSON a) => T.Text -> PersistValue -> Either T.Text a
-fromPersistJson msg (PersistText w) = 
-    maybeToEither msg (decode . fromStrict $ encodeUtf8 w)
-fromPersistJson _ _ = Left persistTextErrMsg
+fromPersistJson msg (PersistByteString w) = 
+    maybeToEither msg (decode $ toLazyBS w)
+fromPersistJson _ _ = Left persistBSErrMsg
 
 instance PersistField Address where
-    toPersistValue = PersistText . T.pack . addrToBase58
-    fromPersistValue (PersistText a) = 
-        maybeToEither "Not a valid Address" . base58ToAddr $ T.unpack a
-    fromPersistValue _ = Left persistTextErrMsg
+    toPersistValue = PersistByteString . stringToBS . addrToBase58
+    fromPersistValue (PersistByteString a) = 
+        maybeToEither "Not a valid Address" . base58ToAddr $ bsToString a
+    fromPersistValue _ = Left persistBSErrMsg
 
 instance PersistFieldSql Address where
     sqlType _ = SqlString
@@ -501,19 +499,20 @@ instance PersistFieldSql [Address] where
     sqlType _ = SqlString
 
 instance PersistField TxHash where
-    toPersistValue = PersistText . T.pack . encodeTxHashLE
-    fromPersistValue (PersistText h) =
-        maybeToEither "Not a valid TxHash" (decodeTxHashLE $ T.unpack h)
-    fromPersistValue _ = Left persistTextErrMsg
+    toPersistValue = PersistByteString . stringToBS . encodeTxHashLE
+    fromPersistValue (PersistByteString h) =
+        maybeToEither "Not a valid TxHash" (decodeTxHashLE $ bsToString h)
+    fromPersistValue _ = Left persistBSErrMsg
 
 instance PersistFieldSql TxHash where
     sqlType _ = SqlString
 
 instance PersistField BlockHash where
-    toPersistValue = PersistText . T.pack . encodeBlockHashLE
-    fromPersistValue (PersistText h) =
-        maybeToEither "Not a valid BlockHash" (decodeBlockHashLE $ T.unpack h)
-    fromPersistValue _ = Left persistTextErrMsg
+    toPersistValue = PersistByteString . stringToBS . encodeBlockHashLE
+    fromPersistValue (PersistByteString h) = 
+        maybeToEither "Not a valid BlockHash"
+            (decodeBlockHashLE $ bsToString h)
+    fromPersistValue _ = Left persistBSErrMsg
 
 instance PersistFieldSql BlockHash where
     sqlType _ = SqlString
@@ -533,13 +532,13 @@ instance PersistFieldSql Account where
     sqlType _ = SqlString
 
 instance PersistField TxConfidence where
-    toPersistValue tc = PersistText $ decodeUtf8 $ stringToBS $ case tc of
+    toPersistValue tc = PersistByteString $ case tc of
         TxOffline  -> "offline"
         TxDead     -> "dead"
         TxPending  -> "pending"
         TxBuilding -> "building"
 
-    fromPersistValue (PersistText t) = case bsToString $ encodeUtf8 t of
+    fromPersistValue (PersistByteString t) = case t of
         "offline"  -> return TxOffline
         "dead"     -> return TxDead
         "pending"  -> return TxPending
@@ -551,12 +550,12 @@ instance PersistFieldSql TxConfidence where
     sqlType _ = SqlString
 
 instance PersistField TxSource where
-    toPersistValue ts = PersistText $ decodeUtf8 $ stringToBS $ case ts of
+    toPersistValue ts = PersistByteString $ case ts of
         NetworkSource -> "network"
         WalletSource  -> "wallet"
         UnknownSource -> "unknown"
 
-    fromPersistValue (PersistText t) = case bsToString $ encodeUtf8 t of
+    fromPersistValue (PersistByteString t) = case t of
         "network" -> return NetworkSource
         "wallet"  -> return WalletSource
         "unknown" -> return UnknownSource
@@ -574,9 +573,10 @@ instance PersistFieldSql Coin where
     sqlType _ = SqlString
 
 instance PersistField OutPoint where
-    toPersistValue = PersistText . decodeUtf8 . stringToBS . bsToHex . encode'
-    fromPersistValue (PersistText t) = maybeToEither "Not a valid OutPoint" $
-        decodeToMaybe =<< (hexToBS $ bsToString $ encodeUtf8 t)
+    toPersistValue = PersistByteString . stringToBS . bsToHex . encode'
+    fromPersistValue (PersistByteString t) = 
+        maybeToEither "Not a valid OutPoint" $
+            decodeToMaybe =<< (hexToBS $ bsToString t)
     fromPersistValue _ = Left "Not a valid OutPoint"
 
 instance PersistFieldSql OutPoint where

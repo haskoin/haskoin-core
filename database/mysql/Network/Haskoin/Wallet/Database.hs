@@ -7,14 +7,11 @@ module Network.Haskoin.Wallet.Database
 
 import System.Console.GetOpt 
     ( OptDescr (Option)
-    , ArgDescr (NoArg, ReqArg)
-    , ArgOrder (Permute)
+    , ArgDescr (ReqArg)
     )
 
-import Control.Applicative ((<$>), (<*>))
 import Control.Monad.Logger (runNoLoggingT)
 
-import Data.Text (pack)
 import Data.Default (Default, def)
 import Data.Aeson
 
@@ -22,8 +19,6 @@ import Database.Persist.MySQL
     ( ConnectInfo(..)
     , defaultConnectInfo
     , createMySQLPool
-    , runSqlPersistMPool
-    , runMigrationSilent
     )
 import Database.Persist.Sql (ConnectionPool)
 

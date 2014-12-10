@@ -14,7 +14,7 @@ import System.Console.GetOpt
     ( getOpt
     , usageInfo
     , OptDescr (Option)
-    , ArgDescr (NoArg, ReqArg)
+    , ArgDescr (NoArg, ReqArg, OptArg)
     , ArgOrder (Permute)
     )
 import qualified System.Environment as E (getArgs)
@@ -77,6 +77,7 @@ import Network.Haskoin.Yesod.TokenAuth
 
 import Network.Haskoin.Wallet
 import Network.Haskoin.Wallet.Types
+import Network.Haskoin.Wallet.Database
 
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto 
@@ -107,6 +108,7 @@ data Options = Options
     , optMode     :: ServerMode
     , optToken    :: Maybe BS.ByteString
     , optSecret   :: Maybe BS.ByteString
+    , optDB       :: OptionsDB
     , optDir      :: Maybe FilePath
     , optLog      :: Maybe FilePath
     , optPid      :: Maybe FilePath
@@ -136,6 +138,7 @@ defaultOptions = Options
     , optMode     = configMode def
     , optToken    = Nothing
     , optSecret   = Nothing
+    , optDB       = def
     , optDir      = Nothing
     , optLog      = Nothing
     , optPid      = Nothing
@@ -163,6 +166,7 @@ instance ToJSON Options where
         , "bitcoin-hosts"  .= (map f $ optHosts opt)
         , "false-positive" .= optBloomFP opt
         , "operation-mode" .= optMode opt
+        , "database"       .= optDB opt
         ]
         ++ maybe [] (\x -> [("token" .= bsToString x)]) (optToken opt)
         ++ maybe [] (\x -> [("secret" .= bsToString x)]) (optSecret opt)
@@ -198,6 +202,7 @@ instance FromJSON Options where
         <*> o .: "operation-mode"
         <*> ( (stringToBS <$>) <$> o .:? "token" )
         <*> ( (stringToBS <$>) <$> o .:? "secret" )
+        <*> o .: "database"
         <*> o .:? "workdir"
         <*> o .:? "logfile"
         <*> o .:? "pidfile"
@@ -208,6 +213,21 @@ instance FromJSON Options where
             a <- x .: "host"
             b <- x .: "port"
             return (a,b)
+
+mapOptionsDB :: OptDescr (OptionsDB -> IO OptionsDB) ->
+                OptDescr (Options -> IO Options)
+mapOptionsDB (Option xs ys arg desc) = Option xs ys (mapArg arg) desc
+  where
+    mapArg a = case a of
+        NoArg f -> NoArg (mapF f)
+        ReqArg f str -> ReqArg (mapF' f) str
+        OptArg f strM -> OptArg (mapF' f) strM
+    mapF f opts = do
+        res <- f $ optDB opts
+        return $ opts{ optDB = res }
+    mapF' f s opts = do
+        res <- f s $ optDB opts
+        return $ opts{ optDB = res }
 
 options :: [OptDescr (Options -> IO Options)]
 options =
@@ -271,6 +291,7 @@ options =
         (ReqArg (\n opts -> return opts{ optNce = Just n }) "FILE")
         "Nonce file"
     ]
+    ++ map mapOptionsDB optionsDB
   where
     parseToken s opts  = return opts{ optToken = Just $ stringToBS s }
     parseSecret s opts = return opts{ optSecret = Just $ stringToBS s }
@@ -423,10 +444,13 @@ processCommand opts args = case args of
         prevLog <- doesFileExist $ logFile
         -- TODO: Should we move the log file to an archive directory?
         when prevLog $ removeFile $ logFile
+
+        --Create database pool
+        pool <- haskoinDBPool $ optDB opts
         if optDetach opts
             then runDetached (Just $ pidFile) (ToFile $ logFile) $
-                    runServer config
-            else runServer config
+                    runServer config pool
+            else runServer config pool
         putStrLn "Haskoin daemon started"
         putStrLn $ unwords [ "Configuration file:", configFile ]
     ["stop"] -> do

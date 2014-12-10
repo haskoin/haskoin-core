@@ -63,100 +63,100 @@ share [mkPersist (sqlSettings { mpsGeneric = True })
       , mkMigrate "migrateWallet"
       ] [persistLowerCase|
 DbWallet 
-    name String
+    name String maxlen=200
     value Wallet
     accIndex KeyIndex Maybe
-    created UTCTime default=CURRENT_TIME
+    created UTCTime
     UniqueWalletName name
 
 DbAccount 
     wallet DbWalletId
-    name String
+    name String maxlen=200
     value Account
     gap Int
-    created UTCTime default=CURRENT_TIME
+    created UTCTime
     UniqueAccWalletName wallet name
 
 DbAddress 
-    value Address
+    value Address maxlen=64
     label String
     index KeyIndex
     account DbAccountId
     internal Bool
-    created UTCTime default=CURRENT_TIME
+    created UTCTime
     UniqueAddressAccount value account
     UniqueAddressKey account index internal
 
 DbCoin 
-    hash TxHash
+    hash TxHash maxlen=200
     pos Int
     value Coin
-    address Address 
-    created UTCTime default=CURRENT_TIME
+    address Address maxlen=64
+    created UTCTime
     CoinOutPoint hash pos
 
 DbCoinAccount
     coin DbCoinId
     account DbAccountId
-    created UTCTime default=CURRENT_TIME
+    created UTCTime
     UniqueCoinAccount coin account
 
 DbSpentCoin
-    key OutPoint
-    tx TxHash
-    created UTCTime default=CURRENT_TIME
+    key OutPoint maxlen=200
+    tx TxHash maxlen=200
+    created UTCTime
 
 DbTxConflict
-    fst TxHash
-    snd TxHash
-    created UTCTime default=CURRENT_TIME
+    fst TxHash maxlen=200
+    snd TxHash maxlen=200
+    created UTCTime
     UniqueConflict fst snd
 
 DbAccTx
-    hash TxHash
+    hash TxHash maxlen=200
     recipients [Address]
     value Int64
     account DbAccountId
-    created UTCTime default=CURRENT_TIME
+    created UTCTime
     UniqueAccTx hash account
 
 DbTx
-    hash TxHash
+    hash TxHash maxlen=200
     value Tx
-    confidence TxConfidence
-    confirmedBy BlockHash Maybe
+    confidence TxConfidence maxlen=16
+    confirmedBy BlockHash Maybe maxlen=200
     confirmedHeight Word32 Maybe
     isCoinbase Bool
-    nosigHash TxHash
-    created UTCTime default=CURRENT_TIME
+    nosigHash TxHash maxlen=200
+    created UTCTime
     UniqueTx hash
 
 DbOrphan
-    hash TxHash
+    hash TxHash maxlen=200
     value Tx
-    source TxSource
-    created UTCTime default=CURRENT_TIME
+    source TxSource maxlen=16
+    created UTCTime
     UniqueOrphan hash
 
 DbConfirmation
-    tx TxHash
-    block BlockHash
+    tx TxHash maxlen=200
+    block BlockHash maxlen=200
     blockTimestamp Word32
-    created UTCTime default=CURRENT_TIME
+    created UTCTime
     UniqueConfirmation tx block
 
 DbConfig
     bestHeight Word32
-    bestBlockHash BlockHash
+    bestBlockHash BlockHash maxlen=200
     version Int
-    created UTCTime default=CURRENT_TIME
+    created UTCTime
 
 DbToken
-    ident String
-    secret String
+    ident String maxlen=200
+    secret String maxlen=200
     nonce Int
     expires UTCTime Maybe
-    created UTCTime default=CURRENT_TIME
+    created UTCTime
     UniqueTokenIdent ident
 |]
 

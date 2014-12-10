@@ -33,7 +33,6 @@ where
 import Control.Applicative ((<$>))
 import Control.Monad 
 import Control.Monad.Trans 
-import Control.Monad.Logger
 import Control.Concurrent.STM.TBMChan
 import Control.Concurrent.STM
 import Control.Exception (throwIO)
@@ -57,8 +56,20 @@ import Data.Time (getCurrentTime)
 import Data.Default (Default, def)
 import qualified Data.ByteString as BS (ByteString, empty)
 
-import Database.Persist.Sqlite
-import Database.Sqlite (open)
+import Database.Persist.Sql 
+    ( ConnectionPool 
+    , SqlBackend
+    , Entity(..)
+    , SelectOpt (Asc)
+    , runMigration
+    , runSqlPersistMPool
+    , runSqlPool
+    , selectFirst
+    , entityVal
+    , getBy
+    , replace
+    , insert_
+    )
 
 import Yesod
     ( Yesod(..)
@@ -198,9 +209,8 @@ instance YesodPersist HaskoinServer where
 instance RenderMessage HaskoinServer FormMessage where
     renderMessage _ _ = defaultFormMessage
 
-runServer :: ServerConfig -> IO ()
-runServer config = do
-    let walletFile = pack "wallet"
+runServer :: ServerConfig -> ConnectionPool -> IO ()
+runServer config pool = do
     staticSite <- staticDevel "html"
 
     let bind     = fromString $ configBind config
@@ -213,10 +223,8 @@ runServer config = do
         settings = setHost bind $ setPort port defaultSettings
         runApp   = runSettings settings 
 
-    pool <- runNoLoggingT $
-        createSqlPool (\lf -> open walletFile >>= flip wrapConnection lf) 1
     flip runSqlPersistMPool pool $ do 
-        _ <- runMigrationSilent migrateWallet 
+        _ <- runMigration migrateWallet 
         initWalletDB
         -- Create a token if it doesn't already exist in the database
         when (isJust tokenM) $ do

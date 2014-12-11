@@ -108,17 +108,14 @@ testDetSignTx (ArbitrarySigningData tx sigis prv) =
     verData         = map (\(SigInput s o _ _) -> (s,o)) sigis
 
 testMergeTx :: ArbitraryPartialTxs -> Bool
-testMergeTx (ArbitraryPartialTxs txs os) = 
-    let res = and 
-              [ isRight mergeRes
-              , length (txIn mergedTx) == length os
-              , if enoughSigs then complete else not complete
-              , if enoughSigs then isValid else not isValid
-              -- Signature count == min (length txs) (sum required signatures)
-              , sum (map snd sigMap) == min (length txs) (sum (map fst sigMap))
-              ]
-    in if res then res else
-        error $ unwords [show enoughSigs, show $ sigMap, show complete, show isValid]
+testMergeTx (ArbitraryPartialTxs txs os) = and 
+    [ isRight mergeRes
+    , length (txIn mergedTx) == length os
+    , if enoughSigs then complete else not complete
+    , if enoughSigs then isValid else not isValid
+    -- Signature count == min (length txs) (sum required signatures)
+    , sum (map snd sigMap) == min (length txs) (sum (map fst sigMap))
+    ]
   where
     outs = map (\(so, op, _, _) -> (so, op)) os
     mergeRes = mergeTxs txs outs

@@ -34,7 +34,7 @@ import Control.Monad (forM)
 import Control.Applicative ((<$>),(<*>))
 
 import Data.Word (Word64)
-import Data.List (permutations, nubBy)
+import Data.List (permutations, nubBy, nub)
 import qualified Data.ByteString as BS (empty)
 
 import Network.Haskoin.Test.Crypto
@@ -302,6 +302,6 @@ instance Arbitrary ArbitraryPartialTxs where
             ops <- vectorOf ni $ (\(ArbitraryOutPoint op) -> op) <$> arbitrary
             t <- arbitrary
             s <- arbitrary
-            return $ Tx v (map (\op -> TxIn op BS.empty s) ops) outs t
+            return $ Tx v (map (\op -> TxIn op BS.empty s) (nub ops)) outs t
 
 

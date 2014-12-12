@@ -48,7 +48,7 @@ testPubPath :: [Test]
 testPubPath = do
     (path, t) <- pubPathVectors
     return $ testCase ("Path " ++ path) $
-        assertBool path (t $ parsePath path >>= guardPubPath)
+        assertBool path (t $ parsePath path >>= getNonPrime)
 
 pubPathVectors :: [(String, Maybe (DerivPath a) -> Bool)]
 pubPathVectors =
@@ -101,14 +101,14 @@ testDerivePath = do
     (key, path, final) <- derivePathVectors
     return $ testCase ("Path " ++ path) $
         assertEqual path final $
-            derivePath (fromString path :: DerivPath XPrvKey) key
+            derivePath (fromString path :: DerivPath Generic) key
 
 testDerivePubPath :: [Test]
 testDerivePubPath = do
     (key, path, final) <- derivePubPathVectors
     return $ testCase ("Path " ++ path) $
         assertEqual path final $
-            derivePubPath (fromString path :: DerivPath XPubKey) key
+            derivePubPath (fromString path :: DerivPath NonPrime) key
 
 derivePubPathVectors :: [(XPubKey, String, Maybe XPubKey)]
 derivePubPathVectors =

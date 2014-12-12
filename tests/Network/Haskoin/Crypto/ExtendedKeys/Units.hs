@@ -40,34 +40,7 @@ tests =
         [ testGroup "Private Derivations" testDerivePath
         , testGroup "Public Derivations" testDerivePubPath
         , testGroup "Path Parsing" testParsePath
-        , testGroup "Pubic Path Parsing" testPubPath
         ]
-    ]
-
-testPubPath :: [Test]
-testPubPath = do
-    (path, t) <- pubPathVectors
-    return $ testCase ("Path " ++ path) $
-        assertBool path (t $ parsePath path >>= getNonPrime)
-
-pubPathVectors :: [(String, Maybe (DerivPath a) -> Bool)]
-pubPathVectors =
-    [ ("m", isNothing)
-    , ("m/0'", isNothing)
-    , ("M/0'", isNothing)
-    , ("m/2147483648", isNothing)
-    , ("m/2147483647", isNothing)
-    , ("M/2147483648", isNothing)
-    , ("M/2147483647", isJust)
-    , ("M/-1", isNothing)
-    , ("M/-2147483648", isNothing)
-    , ("m/1/2/3/4/5/6/7/8", isNothing)
-    , ("M/1/2/3/4/5/6/7/8", isJust)
-    , ("m/1/2'/3/4'", isNothing)
-    , ("M/1/2'/3/4'", isNothing)
-    , ("meh", isNothing)
-    , ("infinity", isNothing)
-    , ("NaN", isNothing)
     ]
 
 testParsePath :: [Test]
@@ -76,7 +49,7 @@ testParsePath = do
     return $ testCase ("Path " ++ path) $
         assertBool path (t $ parsePath path)
 
-parsePathVectors :: [(String, Maybe (DerivPath a) -> Bool)]
+parsePathVectors :: [(String, Maybe DerivPath -> Bool)]
 parsePathVectors =
     [ ("m", isJust)
     , ("m/0'", isJust)
@@ -100,15 +73,13 @@ testDerivePath :: [Test]
 testDerivePath = do
     (key, path, final) <- derivePathVectors
     return $ testCase ("Path " ++ path) $
-        assertEqual path final $
-            derivePath (fromString path :: DerivPath Generic) key
+        assertEqual path final $ derivePath (fromString path) key
 
 testDerivePubPath :: [Test]
 testDerivePubPath = do
     (key, path, final) <- derivePubPathVectors
     return $ testCase ("Path " ++ path) $
-        assertEqual path final $
-            derivePubPath (fromString path :: DerivPath NonPrime) key
+        assertEqual path final $ derivePubPath (fromString path) key
 
 derivePubPathVectors :: [(XPubKey, String, Maybe XPubKey)]
 derivePubPathVectors =
@@ -132,7 +103,7 @@ derivePathVectors =
       , XKeyPrv <$> (primeSubKey xprv 8 >>= \k -> foldM prvSubKey k [30,1]) )
     , ( xprv, "M/8'/30/1"
       , (XKeyPub . deriveXPubKey) <$>
-            (primeSubKey xprv 8 >>= flip (foldM prvSubKey) [30,1]) )
+          (primeSubKey xprv 8 >>= flip (foldM prvSubKey) [30,1]) )
     , ( xprv, "m/3/20"
       , XKeyPrv <$> (foldM prvSubKey xprv [3,20]) )
     , ( xprv, "M/3/20"

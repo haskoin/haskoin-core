@@ -109,6 +109,8 @@ module Network.Haskoin.Crypto
 , ChainCode
 , XKey(..)
 , DerivPath
+, Generic
+, NonPrime
 
   -- **Extended Private Keys
 , XPrvKey(..)
@@ -141,7 +143,7 @@ module Network.Haskoin.Crypto
 , primeSubKeys
 , parsePath
 , derivePath
-, guardPubPath
+, getNonPrime
 , derivePubPath
 
   -- ***Multisig derivations

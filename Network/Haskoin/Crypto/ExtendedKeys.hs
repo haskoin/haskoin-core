@@ -1,7 +1,10 @@
+{-# LANGUAGE FlexibleInstances #-}
 module Network.Haskoin.Crypto.ExtendedKeys
 ( XPubKey(..)
 , XPrvKey(..)
+, XKey(..)
 , ChainCode
+, DerivPath
 , makeXPrvKey
 , deriveXPubKey
 , prvSubKey
@@ -9,6 +12,10 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , primeSubKey
 , prvSubKeys
 , pubSubKeys
+, parsePath
+, derivePath
+, guardPubPath
+, derivePubPath
 , primeSubKeys
 , mulSigSubKey
 , mulSigSubKeys
@@ -30,8 +37,9 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , cycleIndex'
 ) where
 
+import Control.Applicative ((<$>))
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (mzero, guard, unless, when, liftM2)
+import Control.Monad (mzero, guard, unless, when, liftM2, foldM)
 
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
 import Data.Binary (Binary, get, put)
@@ -39,7 +47,9 @@ import Data.Binary.Get (Get, getWord8, getWord32be)
 import Data.Binary.Put (Put, runPut, putWord8, putWord32be)
 import Data.Word (Word8, Word32)
 import Data.Bits (shiftR, setBit, testBit, clearBit)
-import Data.Maybe (mapMaybe)
+import Data.List.Split (splitOn)
+import Data.Maybe (mapMaybe, fromJust)
+import Data.String (IsString, fromString)
 import qualified Data.Text as T (pack, unpack)
 import qualified Data.ByteString as BS (ByteString, append)
 
@@ -97,6 +107,23 @@ instance ToJSON XPubKey where
 instance FromJSON XPubKey where
     parseJSON = withText "xpubkey" $ \t -> 
         maybe mzero return $ xPubImport (T.unpack t)
+
+-- | Any extended key.
+data XKey = XKeyPrv { xKeyPrv :: XPrvKey }
+          | XKeyPub { xKeyPub :: XPubKey }
+          deriving (Eq, Show)
+
+-- | Derivation path.
+data DerivPath a
+    = DerivPrvPrv [(Word32, Bool)]
+    | DerivPrvPub [(Word32, Bool)]
+    | DerivAnyPub [Word32]
+
+instance IsString (DerivPath XPrvKey) where
+    fromString = fromJust . parsePath
+
+instance IsString (DerivPath XPubKey) where
+    fromString s = fromJust $ parsePath s >>= guardPubPath
 
 -- | Build a BIP32 compatible extended private key from a bytestring. This will
 -- produce a root node (depth=0 and parent=0).
@@ -364,3 +391,44 @@ putPadPrvKey p = putWord8 0x00 >> putPrvKey p
 bsPadPrvKey :: PrvKey -> BS.ByteString
 bsPadPrvKey = toStrictBS . runPut . putPadPrvKey 
 
+-- | Parse derivation path string for extended key.
+-- Forms: “m/0'/2”, “M/2/3/4”.
+parsePath :: String -> Maybe (DerivPath a)
+parsePath s = case x of
+    "m" -> DerivPrvPrv <$> mapM f xs
+    "M" -> do
+        path <- mapM f xs
+        case filter snd path of
+            [] -> return $ DerivAnyPub (map fst path)
+            _  -> return $ DerivPrvPub path
+    _ -> Nothing
+  where
+    (x : xs) = splitOn "/" s
+    f y = case reads y of
+        [(n, "" )] -> flip (,) False <$> v n
+        [(n, "'")] -> flip (,) True  <$> v n
+        _ -> Nothing
+    v z = guard (z >= 0 && z < 2 ^ (31 :: Int)) >> return (fromInteger z)
+
+-- | Derive private key into private or public key using derivation path.
+derivePath :: DerivPath a -> XPrvKey -> Maybe XKey
+derivePath (DerivPrvPrv path) xprv =
+    XKeyPrv <$> derivePrvPath path xprv
+derivePath (DerivPrvPub path) xprv =
+    (XKeyPub . deriveXPubKey) <$> derivePrvPath path xprv
+derivePath (DerivAnyPub path) xprv =
+    (XKeyPub . deriveXPubKey) <$> foldM prvSubKey xprv path
+
+-- | Derive private key using derivation path components.
+derivePrvPath :: [(Word32, Bool)] -> XPrvKey -> Maybe XPrvKey
+derivePrvPath path xprv = foldM f xprv path where
+    f xp (i, p) = if p then primeSubKey xp i else prvSubKey xp i
+
+guardPubPath :: DerivPath a -> Maybe (DerivPath XPubKey)
+guardPubPath (DerivAnyPub path) = Just (DerivAnyPub path)
+guardPubPath _ = Nothing
+
+-- | Derive public key using derivation path.
+derivePubPath :: DerivPath XPubKey -> XPubKey -> Maybe XPubKey
+derivePubPath (DerivAnyPub path) xpub = foldM pubSubKey xpub path
+derivePubPath _ _ = Nothing

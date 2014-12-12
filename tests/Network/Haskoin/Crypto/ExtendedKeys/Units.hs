@@ -1,10 +1,14 @@
 module Network.Haskoin.Crypto.ExtendedKeys.Units (tests) where
 
-import Test.HUnit (Assertion, assertBool)
+import Control.Applicative ((<$>))
+import Control.Monad (foldM)
+
+import Test.HUnit (Assertion, assertBool, assertEqual)
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
-import Data.Maybe (fromJust, catMaybes)
+import Data.Maybe (isJust, isNothing, fromJust, catMaybes)
+import Data.String (fromString)
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
@@ -32,8 +36,113 @@ tests =
         , testCase "Chain m/0/2147483647'/1/2147483646'/2" $ 
             runXKeyVec (xKeyVec2 !! 5)
         ] 
+    , testGroup "BIP32 subkey derivation using string path"
+        [ testGroup "Private Derivations" testDerivePath
+        , testGroup "Public Derivations" testDerivePubPath
+        , testGroup "Path Parsing" testParsePath
+        , testGroup "Pubic Path Parsing" testPubPath
+        ]
     ]
 
+testPubPath :: [Test]
+testPubPath = do
+    (path, t) <- pubPathVectors
+    return $ testCase ("Path " ++ path) $
+        assertBool path (t $ parsePath path >>= guardPubPath)
+
+pubPathVectors :: [(String, Maybe (DerivPath a) -> Bool)]
+pubPathVectors =
+    [ ("m", isNothing)
+    , ("m/0'", isNothing)
+    , ("M/0'", isNothing)
+    , ("m/2147483648", isNothing)
+    , ("m/2147483647", isNothing)
+    , ("M/2147483648", isNothing)
+    , ("M/2147483647", isJust)
+    , ("M/-1", isNothing)
+    , ("M/-2147483648", isNothing)
+    , ("m/1/2/3/4/5/6/7/8", isNothing)
+    , ("M/1/2/3/4/5/6/7/8", isJust)
+    , ("m/1/2'/3/4'", isNothing)
+    , ("M/1/2'/3/4'", isNothing)
+    , ("meh", isNothing)
+    , ("infinity", isNothing)
+    , ("NaN", isNothing)
+    ]
+
+testParsePath :: [Test]
+testParsePath = do
+    (path, t) <- parsePathVectors
+    return $ testCase ("Path " ++ path) $
+        assertBool path (t $ parsePath path)
+
+parsePathVectors :: [(String, Maybe (DerivPath a) -> Bool)]
+parsePathVectors =
+    [ ("m", isJust)
+    , ("m/0'", isJust)
+    , ("M/0'", isJust)
+    , ("m/2147483648", isNothing)
+    , ("m/2147483647", isJust)
+    , ("M/2147483648", isNothing)
+    , ("M/2147483647", isJust)
+    , ("M/-1", isNothing)
+    , ("M/-2147483648", isNothing)
+    , ("m/1/2/3/4/5/6/7/8", isJust)
+    , ("M/1/2/3/4/5/6/7/8", isJust)
+    , ("m/1/2'/3/4'", isJust)
+    , ("M/1/2'/3/4'", isJust)
+    , ("meh", isNothing)
+    , ("infinity", isNothing)
+    , ("NaN", isNothing)
+    ]
+
+testDerivePath :: [Test]
+testDerivePath = do
+    (key, path, final) <- derivePathVectors
+    return $ testCase ("Path " ++ path) $
+        assertEqual path final $
+            derivePath (fromString path :: DerivPath XPrvKey) key
+
+testDerivePubPath :: [Test]
+testDerivePubPath = do
+    (key, path, final) <- derivePubPathVectors
+    return $ testCase ("Path " ++ path) $
+        assertEqual path final $
+            derivePubPath (fromString path :: DerivPath XPubKey) key
+
+derivePubPathVectors :: [(XPubKey, String, Maybe XPubKey)]
+derivePubPathVectors =
+    [ ( xpub, "M", Just xpub )
+    , ( xpub, "M/8", pubSubKey xpub 8 )
+    , ( xpub, "M/8/30/1", foldM pubSubKey xpub [8,30,1] )
+    ]
+  where
+    xprv = fromJust $ xPrvImport
+        "xprv9s21ZrQH143K46iDVRSyFfGfMgQjzC4BV3ZUfNbG7PHQrJjE53ofAn5gYkp6KQ\
+        \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
+    xpub = deriveXPubKey xprv
+
+derivePathVectors :: [(XPrvKey, String, Maybe XKey)]
+derivePathVectors =
+    [ ( xprv, "m", Just (XKeyPrv xprv) )
+    , ( xprv, "M", Just (XKeyPub xpub) )
+    , ( xprv, "m/8'", XKeyPrv <$> primeSubKey xprv 8 )
+    , ( xprv, "M/8'", (XKeyPub . deriveXPubKey) <$> primeSubKey xprv 8 )
+    , ( xprv, "m/8'/30/1"
+      , XKeyPrv <$> (primeSubKey xprv 8 >>= \k -> foldM prvSubKey k [30,1]) )
+    , ( xprv, "M/8'/30/1"
+      , (XKeyPub . deriveXPubKey) <$>
+            (primeSubKey xprv 8 >>= flip (foldM prvSubKey) [30,1]) )
+    , ( xprv, "m/3/20"
+      , XKeyPrv <$> (foldM prvSubKey xprv [3,20]) )
+    , ( xprv, "M/3/20"
+      , (XKeyPub . deriveXPubKey) <$> (foldM prvSubKey xprv [3,20]) )
+    ]
+  where
+    xprv = fromJust $ xPrvImport
+        "xprv9s21ZrQH143K46iDVRSyFfGfMgQjzC4BV3ZUfNbG7PHQrJjE53ofAn5gYkp6KQ\
+        \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
+    xpub = deriveXPubKey xprv
 
 runXKeyVec :: ([String],XPrvKey) -> Assertion
 runXKeyVec (v,m) = do

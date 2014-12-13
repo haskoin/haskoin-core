@@ -143,7 +143,6 @@ module Network.Haskoin.Crypto
 , primeSubKeys
 , parsePath
 , derivePath
-, getNonPrime
 , derivePubPath
 
   -- ***Multisig derivations

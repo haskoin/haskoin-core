@@ -18,7 +18,6 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , pubSubKeys
 , parsePath
 , derivePath
-, getNonPrime
 , derivePubPath
 , primeSubKeys
 , mulSigSubKey
@@ -121,16 +120,14 @@ data Generic
 data NonPrime
 
 -- | Derivation path.
-data DerivPath a where
-    DerivPrv :: [(Word32, Bool)] -> DerivPath Generic
-    DerivPub :: [(Word32, Bool)] -> DerivPath Generic
-    DerivNonPrime :: [Word32] -> DerivPath NonPrime
+data DerivPath
+    = DerivPrv [(Word32, Bool)]
+    | DerivPub [(Word32, Bool)]
+    | DerivNonPrime [Word32]
+    deriving (Show, Eq)
 
-instance IsString (DerivPath Generic) where
+instance IsString DerivPath where
     fromString = fromJust . parsePath
-
-instance IsString (DerivPath NonPrime) where
-    fromString s = fromJust $ parsePath s >>= getNonPrime
 
 -- | Build a BIP32 compatible extended private key from a bytestring. This will
 -- produce a root node (depth=0 and parent=0).
@@ -400,10 +397,12 @@ bsPadPrvKey = toStrictBS . runPut . putPadPrvKey
 
 -- | Parse derivation path string for extended key.
 -- Forms: “m/0'/2”, “M/2/3/4”.
-parsePath :: String -> Maybe (DerivPath Generic)
+parsePath :: String -> Maybe DerivPath
 parsePath s = case x of
     "m" -> DerivPrv <$> mapM f xs
-    "M" -> DerivPub <$> mapM f xs
+    "M" -> mapM f xs >>= \paths -> if null $ filter snd paths
+        then return $ DerivNonPrime $ map fst paths
+        else return $ DerivPub paths
     _ -> Nothing
   where
     (x : xs) = splitOn "/" s
@@ -414,24 +413,20 @@ parsePath s = case x of
     v z = guard (z >= 0 && z < 2 ^ (31 :: Int)) >> return (fromInteger z)
 
 -- | Derive private key into private or public key using derivation path.
-derivePath :: DerivPath Generic -> XPrvKey -> Maybe XKey
+derivePath :: DerivPath -> XPrvKey -> Maybe XKey
 derivePath (DerivPrv path) xprv =
     XKeyPrv <$> derivePrvPath path xprv
 derivePath (DerivPub path) xprv =
     (XKeyPub . deriveXPubKey) <$> derivePrvPath path xprv
+derivePath (DerivNonPrime path) xprv =
+    (XKeyPub . deriveXPubKey) <$> foldM prvSubKey xprv path
 
 -- | Derive private key using derivation path components.
 derivePrvPath :: [(Word32, Bool)] -> XPrvKey -> Maybe XPrvKey
 derivePrvPath path xprv = foldM f xprv path where
     f xp (i, p) = if p then primeSubKey xp i else prvSubKey xp i
 
--- | Obtain a DerivPath for XPubKey from a generic DerivPath.
-getNonPrime :: DerivPath Generic -> Maybe (DerivPath NonPrime)
-getNonPrime (DerivPub path) = do
-    guard $ null $ filter snd path
-    return $ DerivNonPrime $ map fst path
-getNonPrime _ = Nothing
-
 -- | Derive public key using derivation path.
-derivePubPath :: DerivPath NonPrime -> XPubKey -> Maybe XPubKey
+derivePubPath :: DerivPath -> XPubKey -> Maybe XPubKey
 derivePubPath (DerivNonPrime path) xpub = foldM pubSubKey xpub path
+derivePubPath _ _ = Nothing

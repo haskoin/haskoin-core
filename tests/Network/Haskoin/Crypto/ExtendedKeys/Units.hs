@@ -7,6 +7,8 @@ import Test.HUnit (Assertion, assertBool, assertEqual)
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
+import Data.Aeson (decode, encode)
+import qualified Data.ByteString.Lazy.Char8 as B8
 import Data.Maybe (isJust, isNothing, fromJust, catMaybes)
 import Data.String (fromString)
 
@@ -40,7 +42,37 @@ tests =
         [ testGroup "Private Derivations" testDerivePath
         , testGroup "Public Derivations" testDerivePubPath
         , testGroup "Path Parsing" testParsePath
+        , testGroup "FromJSON" testFromJsonPath
+        , testGroup "ToJSON" testToJsonPath
         ]
+    ]
+
+testFromJsonPath :: [Test]
+testFromJsonPath = do
+    path <- jsonPathVectors
+    return $ testCase ("Path " ++ path) $
+        assertEqual path [fromString path :: DerivPath]
+        (fromJust $ decode $ B8.pack $ "[\"" ++ path ++ "\"]")
+
+testToJsonPath :: [Test]
+testToJsonPath = do
+    path <- jsonPathVectors
+    return $ testCase ("Path " ++ path) $
+        assertEqual path (B8.pack $ "[\"" ++ path ++ "\"]")
+        (encode [fromString path :: DerivPath])
+
+jsonPathVectors :: [String]
+jsonPathVectors =
+    [ "m"
+    , "m/0"
+    , "m/0'"
+    , "M/0'"
+    , "m/2147483647"
+    , "M/2147483647"
+    , "m/1/2/3/4/5/6/7/8"
+    , "M/1/2/3/4/5/6/7/8"
+    , "m/1/2'/3/4'"
+    , "M/1/2'/3/4'"
     ]
 
 testParsePath :: [Test]

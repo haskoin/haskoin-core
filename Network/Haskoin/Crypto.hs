@@ -109,8 +109,6 @@ module Network.Haskoin.Crypto
 , ChainCode
 , XKey(..)
 , DerivPath
-, Generic
-, NonPrime
 
   -- **Extended Private Keys
 , XPrvKey(..)

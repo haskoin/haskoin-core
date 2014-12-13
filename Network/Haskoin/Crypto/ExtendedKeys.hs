@@ -1,14 +1,9 @@
-{-# LANGUAGE EmptyDataDecls #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
 module Network.Haskoin.Crypto.ExtendedKeys
 ( XPubKey(..)
 , XPrvKey(..)
 , XKey(..)
 , ChainCode
 , DerivPath
-, Generic
-, NonPrime
 , makeXPrvKey
 , deriveXPubKey
 , prvSubKey
@@ -50,6 +45,7 @@ import Data.Binary.Get (Get, getWord8, getWord32be)
 import Data.Binary.Put (Put, runPut, putWord8, putWord32be)
 import Data.Word (Word8, Word32)
 import Data.Bits (shiftR, setBit, testBit, clearBit)
+import Data.List (intersperse)
 import Data.List.Split (splitOn)
 import Data.Maybe (mapMaybe, fromJust)
 import Data.String (IsString, fromString)
@@ -116,9 +112,6 @@ data XKey = XKeyPrv { xKeyPrv :: XPrvKey }
           | XKeyPub { xKeyPub :: XPubKey }
           deriving (Eq, Show)
 
-data Generic
-data NonPrime
-
 -- | Derivation path.
 data DerivPath
     = DerivPrv [(Word32, Bool)]
@@ -128,6 +121,22 @@ data DerivPath
 
 instance IsString DerivPath where
     fromString = fromJust . parsePath
+
+instance FromJSON DerivPath where
+    parseJSON (String s) = maybe mzero return $ parsePath $ T.unpack s
+    parseJSON _ = mzero
+
+instance ToJSON DerivPath where
+    toJSON (DerivPrv path) = toJSON $ concat $ intersperse "/" $
+        "m" : map f path
+      where
+        f (i, p) = show i ++ if p then "'" else ""
+    toJSON (DerivPub path) = toJSON $ concat $ intersperse "/" $
+        "M" : map f path
+      where
+        f (i, p) = show i ++ if p then "'" else ""
+    toJSON (DerivNonPrime path) = toJSON $ concat $ intersperse "/" $
+        "M" : map show path
 
 -- | Build a BIP32 compatible extended private key from a bytestring. This will
 -- produce a root node (depth=0 and parent=0).

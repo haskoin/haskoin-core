@@ -153,8 +153,8 @@ runXKeyVec (v,m) = do
     assertBool "xPrvFP" $ (bsToHex $ encode' $ xPrvFP m) == v !! 1
     assertBool "xPrvAddr" $ 
         (addrToBase58 $ xPubAddr $ deriveXPubKey m) == v !! 2
-    assertBool "prvKey" $ (bsToHex $ runPut' $ putPrvKey $ xPrvKey m) == v !! 3
-    assertBool "xPrvWIF" $ xPrvWIF m == v !! 4
+    assertBool "prvKey" $ (bsToHex $ encodePrvKey $ xPrvKey m) == v !! 3
+    assertBool "xPrvWIF" $ xPrvWif m == v !! 4
     assertBool "pubKey" $ 
         (bsToHex $ encode' $ xPubKey $ deriveXPubKey m) == v !! 5
     assertBool "chain code" $ (bsToHex $ encode' $ xPrvChain m) == v !! 6

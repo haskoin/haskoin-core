@@ -30,19 +30,19 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , xPrvExport
 , xPubImport
 , xPrvImport
-, xPrvWIF
+, xPrvWif
 , cycleIndex
 , cycleIndex'
 ) where
 
 import Control.Applicative ((<$>))
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (mzero, guard, unless, when, liftM2, foldM)
+import Control.Monad (mzero, guard, unless, liftM2, foldM)
 
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get (Get, getWord8, getWord32be)
-import Data.Binary.Put (Put, runPut, putWord8, putWord32be)
+import Data.Binary.Put (Put, putWord8, putWord32be)
 import Data.Word (Word8, Word32)
 import Data.Bits (shiftR, setBit, testBit, clearBit)
 import Data.List (intersperse)
@@ -73,7 +73,7 @@ data XPrvKey = XPrvKey
     , xPrvParent :: !Word32    -- ^ Fingerprint of the parent key.
     , xPrvIndex  :: !Word32    -- ^ Key derivation index.
     , xPrvChain  :: !ChainCode -- ^ Chain code.
-    , xPrvKey    :: !PrvKey    -- ^ The private key of this extended key node.
+    , xPrvKey    :: !PrvKeyC   -- ^ The private key of this extended key node.
     } deriving (Eq, Show, Read)
 
 instance NFData XPrvKey where
@@ -93,7 +93,7 @@ data XPubKey = XPubKey
     , xPubParent :: !Word32    -- ^ Fingerprint of the parent key.
     , xPubIndex  :: !Word32    -- ^ Key derivation index.
     , xPubChain  :: !ChainCode -- ^ Chain code.
-    , xPubKey    :: !PubKey    -- ^ The public key of this extended key node.
+    , xPubKey    :: !PubKeyC   -- ^ The public key of this extended key node.
     } deriving (Eq, Show, Read)
 
 instance NFData XPubKey where
@@ -142,7 +142,7 @@ instance ToJSON DerivPath where
 -- produce a root node (depth=0 and parent=0).
 makeXPrvKey :: BS.ByteString -> Maybe XPrvKey
 makeXPrvKey bs = do
-    pk' <- makePrvKey $ fromIntegral pk
+    pk' <- makePrvKeyC $ fromIntegral pk
     return $ XPrvKey 0 0 0 c pk'
     where (pk,c) = split512 $ hmac512 (stringToBS "Bitcoin seed") bs
 
@@ -201,26 +201,24 @@ primeSubKey xkey child = guardIndex child >> do
 -- Add two private keys together. One of the keys is defined by a Word256.
 -- The functions fails on uncompressed private keys and return Nothing if the
 -- Word256 is smaller than the order of the curve N.
-addPrvKeys :: PrvKey -> Word256 -> Maybe PrvKey
+addPrvKeys :: PrvKeyC -> Word256 -> Maybe PrvKeyC
 addPrvKeys key i
-    | isPrvKeyU key = error "Add: HDW only supports compressed formats"
     | toInteger i < curveN =
         let r = (prvKeyFieldN key) + (fromIntegral i :: FieldN) 
-            in makePrvKey $ toInteger r
+            in makePrvKeyC $ toInteger r
     | otherwise = Nothing
 
 -- Add a public key to a private key defined by its Word256 value. This will
 -- transform the private key into a public key and add the respective public
 -- key points together. This function fails for uncompressed keys and returns
 -- Nothing if the private key value is >= than the order of the curve N.
-addPubKeys :: PubKey -> Word256 -> Maybe PubKey
+addPubKeys :: PubKeyC -> Word256 -> Maybe PubKeyC
 addPubKeys pub i
-    | isPubKeyU pub = error "Add: HDW only supports compressed formats"
     | toInteger i < curveN =
         let pt1 = mulPoint (fromIntegral i :: FieldN) curveG
             pt2 = addPoint (pubKeyPoint pub) pt1
             in if isInfPoint pt2 then Nothing
-                                 else Just $ PubKey pt2
+                                 else Just $ makePubKeyC pt2
     | otherwise = Nothing
 
 
@@ -338,8 +336,8 @@ xPubImport :: String -> Maybe XPubKey
 xPubImport str = decodeToMaybe =<< (decodeBase58Check $ stringToBS str)
 
 -- | Export an extended private key to WIF (Wallet Import Format).
-xPrvWIF :: XPrvKey -> String
-xPrvWIF = toWIF . xPrvKey
+xPrvWif :: XPrvKey -> String
+xPrvWif = toWif . xPrvKey
 
 instance Binary XPrvKey where
 
@@ -373,8 +371,6 @@ instance Binary XPubKey where
         idx <- getWord32be
         chn <- get 
         pub <- get 
-        when (isPubKeyU pub) $ fail $
-            "Invalid public key. Only compressed format is supported"
         return $ XPubKey dep par idx chn pub
 
     put k = do
@@ -383,26 +379,24 @@ instance Binary XPubKey where
         putWord32be $ xPubParent k
         putWord32be $ xPubIndex k
         put         $ xPubChain k
-        when (isPubKeyU (xPubKey k)) $ fail $
-            "Only compressed public keys are supported"
         put $ xPubKey k
         
 {- Utilities for extended keys -}
 
 -- De-serialize HDW-specific private key
-getPadPrvKey :: Get PrvKey
+getPadPrvKey :: Get PrvKeyC
 getPadPrvKey = do
     pad <- getWord8
     unless (pad == 0x00) $ fail $
         "Private key must be padded with 0x00"
-    getPrvKey -- Compressed version
+    prvKeyGetMonad makePrvKeyC -- Compressed version
 
 -- Serialize HDW-specific private key
-putPadPrvKey :: PrvKey -> Put 
-putPadPrvKey p = putWord8 0x00 >> putPrvKey p
+putPadPrvKey :: PrvKeyC -> Put 
+putPadPrvKey p = putWord8 0x00 >> prvKeyPutMonad p
 
-bsPadPrvKey :: PrvKey -> BS.ByteString
-bsPadPrvKey = toStrictBS . runPut . putPadPrvKey 
+bsPadPrvKey :: PrvKeyC -> BS.ByteString
+bsPadPrvKey = runPut' . putPadPrvKey 
 
 -- | Parse derivation path string for extended key.
 -- Forms: “m/0'/2”, “M/2/3/4”.
@@ -439,3 +433,4 @@ derivePrvPath path xprv = foldM f xprv path where
 derivePubPath :: DerivPath -> XPubKey -> Maybe XPubKey
 derivePubPath (DerivNonPrime path) xpub = foldM pubSubKey xpub path
 derivePubPath _ _ = Nothing
+

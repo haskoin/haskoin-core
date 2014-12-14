@@ -325,7 +325,7 @@ instance Arbitrary ArbitraryMSCOutput where
         keys <- map f <$> vectorOf n arbitrary
         return $ ArbitraryMSCOutput $ PayMulSig keys m
       where
-        f (ArbitraryPubKeyC _ key) = key
+        f (ArbitraryPubKeyC _ key) = toPubKeyG key
 
 -- | Arbitrary ScriptOutput of type PayScriptHash
 newtype ArbitrarySHOutput = ArbitrarySHOutput ScriptOutput
@@ -394,7 +394,8 @@ instance Arbitrary ArbitraryPKHashCInput where
             , arbitrary >>= \(ArbitraryDetTxSignature _ _ sig) -> return sig
             ]
         ArbitraryPubKeyC _ key <- arbitrary
-        return $ ArbitraryPKHashCInput $ RegularInput $ SpendPKHash sig key
+        return $ ArbitraryPKHashCInput $ RegularInput $ 
+            SpendPKHash sig $ toPubKeyG key
 
 -- | Arbitrary ScriptInput of type SpendMulSig
 newtype ArbitraryMSInput = ArbitraryMSInput ScriptInput

@@ -23,7 +23,7 @@ tests =
         , testProperty "makeKeyU . toKey" makeToKeyU
         ],
       testGroup "Key formats"
-        [ testProperty "fromWIF . toWIF PrvKey" fromToWIF
+        [ testProperty "fromWif . toWif PrvKey" fromToWIF
         , testProperty "constant 32-byte encoding PrvKey" binaryPrvKey
         ],
       testGroup "Key compression"
@@ -71,30 +71,36 @@ makeToKeyU i = i /= 0 ==>
 {- Key formats -}
 
 fromToWIF :: ArbitraryPrvKey -> Bool
-fromToWIF (ArbitraryPrvKey pk) = (fromWIF $ toWIF pk) == Just pk
+fromToWIF (ArbitraryPrvKey pk) = (fromWif $ toWif pk) == Just pk
 
 binaryPrvKey :: ArbitraryPrvKey -> Bool
-binaryPrvKey (ArbitraryPrvKey k) = case k of
-    PrvKey _  -> k == runGet getPrvKey  (runPut $ putPrvKey k)
-    PrvKeyU _ -> k == runGet getPrvKeyU (runPut $ putPrvKey k)
+binaryPrvKey (ArbitraryPrvKey k) =
+    (k == runGet (prvKeyGetMonad f) (runPut $ prvKeyPutMonad k)) &&
+    (Just k == decodePrvKey f (encodePrvKey k))
+  where
+    f = makePrvKeyG (prvKeyCompressed k)
 
 {- Key Compression -}
 
 testCompressed :: FieldN -> Property
 testCompressed n = n > 0 ==> 
-    not $ isPubKeyU $ derivePubKey $ fromJust $ makePrvKey $ fromIntegral n
+    (pubKeyCompressed $ derivePubKey $ fromJust $ makePrvKey $ fromIntegral n) &&
+    (pubKeyCompressed $ derivePubKey $ fromJust $ makePrvKeyG True $ fromIntegral n)
 
 testUnCompressed :: FieldN -> Property
 testUnCompressed n = n > 0 ==> 
-    isPubKeyU $ derivePubKey $ fromJust $ makePrvKeyU $ fromIntegral n
+    (not $ pubKeyCompressed $ derivePubKey $ fromJust $ makePrvKeyG False $ fromIntegral n) &&
+    (not $ pubKeyCompressed $ derivePubKey $ fromJust $ makePrvKeyU $ fromIntegral n)
 
 testPrivateCompressed :: FieldN -> Property
 testPrivateCompressed n = n > 0 ==> 
-    not $ isPrvKeyU $ fromJust $ makePrvKey $ fromIntegral n
+    (prvKeyCompressed $ fromJust $ makePrvKey $ fromIntegral n) &&
+    (prvKeyCompressed $ fromJust $ makePrvKeyC $ fromIntegral n)
 
 testPrivateUnCompressed :: FieldN -> Property
 testPrivateUnCompressed n = n > 0 ==> 
-    isPrvKeyU $ fromJust $ makePrvKeyU $ fromIntegral n
+    (not $ prvKeyCompressed $ fromJust $ makePrvKeyG False $ fromIntegral n) &&
+    (not $ prvKeyCompressed $ fromJust $ makePrvKeyU $ fromIntegral n)
 
 testDerivedPubKey :: ArbitraryPrvKey -> Bool
 testDerivedPubKey (ArbitraryPrvKey k) = isValidPubKey $ derivePubKey k

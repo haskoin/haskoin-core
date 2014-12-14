@@ -54,16 +54,16 @@ sigMsg = [ ("Very secret message " ++ (show (i :: Int)) ++ ": 11")
          ]
 
 sec1 :: PrvKey
-sec1  = fromJust $ fromWIF strSecret1
+sec1  = fromJust $ fromWif strSecret1
 
 sec2 :: PrvKey
-sec2  = fromJust $ fromWIF strSecret2
+sec2  = fromJust $ fromWif strSecret2
 
 sec1C :: PrvKey
-sec1C = fromJust $ fromWIF strSecret1C
+sec1C = fromJust $ fromWif strSecret1C
 
 sec2C :: PrvKey
-sec2C = fromJust $ fromWIF strSecret2C
+sec2C = fromJust $ fromWif strSecret2C
 
 pub1 :: PubKey
 pub1  = derivePubKey sec1
@@ -138,29 +138,28 @@ uniqueKeys = do
 
 checkPrivkey :: Assertion
 checkPrivkey = do
-    assertBool "Key 1"  $ isJust $ fromWIF strSecret1
-    assertBool "Key 2"  $ isJust $ fromWIF strSecret2
-    assertBool "Key 1C" $ isJust $ fromWIF strSecret1C
-    assertBool "Key 2C" $ isJust $ fromWIF strSecret2C
+    assertBool "Key 1"  $ isJust $ fromWif strSecret1
+    assertBool "Key 2"  $ isJust $ fromWif strSecret2
+    assertBool "Key 1C" $ isJust $ fromWif strSecret1C
+    assertBool "Key 2C" $ isJust $ fromWif strSecret2C
 
 checkInvalidKey :: Assertion
 checkInvalidKey = 
-    assertBool "Bad key" $ isNothing $ fromWIF strAddressBad
-
+    assertBool "Bad key" $ isNothing $ fromWif strAddressBad
 
 checkPrvKeyCompressed :: Assertion
 checkPrvKeyCompressed = do
-    assertBool "Key 1"  $ isPrvKeyU sec1
-    assertBool "Key 2"  $ isPrvKeyU sec2
-    assertBool "Key 1C" $ not $ isPrvKeyU sec1C
-    assertBool "Key 2C" $ not $ isPrvKeyU sec2C
+    assertBool "Key 1"  $ not $ prvKeyCompressed sec1
+    assertBool "Key 2"  $ not $ prvKeyCompressed sec2
+    assertBool "Key 1C" $ prvKeyCompressed sec1C
+    assertBool "Key 2C" $ prvKeyCompressed sec2C
 
 checkKeyCompressed :: Assertion
 checkKeyCompressed = do
-    assertBool "Key 1"  $ isPubKeyU pub1
-    assertBool "Key 2"  $ isPubKeyU pub2
-    assertBool "Key 1C" $ not $ isPubKeyU pub1C
-    assertBool "Key 2C" $ not $ isPubKeyU pub2C
+    assertBool "Key 1"  $ not $ pubKeyCompressed pub1
+    assertBool "Key 2"  $ not $ pubKeyCompressed pub2
+    assertBool "Key 1C" $ pubKeyCompressed pub1C
+    assertBool "Key 2C" $ pubKeyCompressed pub2C
 
 checkMatchingAddress :: Assertion
 checkMatchingAddress = do

@@ -75,21 +75,21 @@ newtype ArbitraryPrvKey = ArbitraryPrvKey PrvKey
 
 instance Arbitrary ArbitraryPrvKey where
     arbitrary = ArbitraryPrvKey <$> oneof 
-        [ arbitrary >>= \(ArbitraryPrvKeyC k) -> return k
-        , arbitrary >>= \(ArbitraryPrvKeyU k) -> return k
+        [ arbitrary >>= \(ArbitraryPrvKeyC k) -> return (toPrvKeyG k)
+        , arbitrary >>= \(ArbitraryPrvKeyU k) -> return (toPrvKeyG k)
         ]
 
 -- | Arbitrary compressed private key
-newtype ArbitraryPrvKeyC = ArbitraryPrvKeyC PrvKey
+newtype ArbitraryPrvKeyC = ArbitraryPrvKeyC PrvKeyC
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryPrvKeyC where
     arbitrary = do
         i <- fromInteger <$> choose (1, curveN-1)
-        return $ ArbitraryPrvKeyC $ fromJust $ makePrvKey i
+        return $ ArbitraryPrvKeyC $ fromJust $ makePrvKeyC i
         
 -- | Arbitrary uncompressed private key
-newtype ArbitraryPrvKeyU = ArbitraryPrvKeyU PrvKey
+newtype ArbitraryPrvKeyU = ArbitraryPrvKeyU PrvKeyU
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryPrvKeyU where
@@ -104,12 +104,14 @@ data ArbitraryPubKey = ArbitraryPubKey PrvKey PubKey
 
 instance Arbitrary ArbitraryPubKey where
     arbitrary = oneof
-        [ arbitrary >>= \(ArbitraryPubKeyC k p) -> return $ ArbitraryPubKey k p
-        , arbitrary >>= \(ArbitraryPubKeyU k p) -> return $ ArbitraryPubKey k p
+        [ arbitrary >>= \(ArbitraryPubKeyC k p) -> 
+            return $ ArbitraryPubKey (toPrvKeyG k) (toPubKeyG p)
+        , arbitrary >>= \(ArbitraryPubKeyU k p) -> 
+            return $ ArbitraryPubKey (toPrvKeyG k) (toPubKeyG p)
         ]
 
 -- | Arbitrary compressed public key with its corresponding private key.
-data ArbitraryPubKeyC = ArbitraryPubKeyC PrvKey PubKey
+data ArbitraryPubKeyC = ArbitraryPubKeyC PrvKeyC PubKeyC
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryPubKeyC where
@@ -118,7 +120,7 @@ instance Arbitrary ArbitraryPubKeyC where
         return $ ArbitraryPubKeyC k $ derivePubKey k
 
 -- | Arbitrary uncompressed public key with its corresponding private key.
-data ArbitraryPubKeyU = ArbitraryPubKeyU PrvKey PubKey
+data ArbitraryPubKeyU = ArbitraryPubKeyU PrvKeyU PubKeyU
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryPubKeyU where

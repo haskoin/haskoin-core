@@ -120,22 +120,22 @@ instance NFData Signature where
 -- | Safely sign a message inside the 'SecretT' monad. The 'SecretT' monad will
 -- generate a new nonce for each signature.
 signMsg :: Monad m => Word256 -> PrvKey -> SecretT m Signature
-signMsg _ (PrvKey  0) = error "signMsg: Invalid private key 0"
-signMsg _ (PrvKeyU 0) = error "signMsg: Invalid private key 0"
-signMsg h d = do
-    -- 4.1.3.1
-    (k,p) <- genKeyPair
-    case unsafeSignMsg h (prvKeyFieldN d) (k,p) of
-        (Just sig) -> return sig
-        -- If signing failed, retry with a new nonce
-        Nothing    -> signMsg h d
+signMsg h d 
+    | fromPrvKey d == 0 = error "signMsg: Invalid private key 0"
+    | otherwise = do
+        -- 4.1.3.1
+        (k,p) <- genKeyPair
+        case unsafeSignMsg h (prvKeyFieldN d) (k,p) of
+            (Just sig) -> return sig
+            -- If signing failed, retry with a new nonce
+            Nothing    -> signMsg h d
 
 -- | Sign a message using ECDSA deterministic signatures as defined by
 -- RFC 6979 <http://tools.ietf.org/html/rfc6979>
 detSignMsg :: Word256 -> PrvKey -> Signature
-detSignMsg _ (PrvKey  0) = error "detSignMsg: Invalid private key 0"
-detSignMsg _ (PrvKeyU 0) = error "detSignMsg: Invalid private key 0"
-detSignMsg h d = go $ hmacDRBGNew (runPut' $ putPrvKey d) (encode' h) BS.empty
+detSignMsg h d
+    | fromPrvKey d == 0 = error "detSignMsg: Invalid private key 0"
+    | otherwise = go $ hmacDRBGNew (encodePrvKey d) (encode' h) BS.empty
   where 
     go ws = case hmacDRBGGen ws 32 BS.empty of
         (_, Nothing)  -> error "detSignMsg: No suitable K value found"

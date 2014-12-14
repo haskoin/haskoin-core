@@ -46,6 +46,7 @@ import Data.Word (Word32)
 import Data.Maybe (mapMaybe, fromJust, isJust)
 import qualified Data.ByteString as BS (ByteString)
 
+import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.ExtendedKeys
 import Network.Haskoin.Crypto.Base58
 import Network.Haskoin.Script.Parser
@@ -281,14 +282,14 @@ intMulSigKeys a ps i = mapMaybe f $ cycleIndex i
 extMulSigAddr :: AccPubKey -> [XPubKey] -> Int -> KeyIndex -> Maybe Address
 extMulSigAddr a ps r i = do
     xs <- (map (xPubKey . getAddrPubKey)) <$> extMulSigKey a ps i
-    return $ scriptAddr $ sortMulSig $ PayMulSig xs r
+    return $ scriptAddr $ sortMulSig $ PayMulSig (map toPubKeyG xs) r
 
 -- | Computes an internal multisig address from an 'AccPubKey', a
 -- list of thirdparty multisig keys and a derivation index.
 intMulSigAddr :: AccPubKey -> [XPubKey] -> Int -> KeyIndex -> Maybe Address
 intMulSigAddr a ps r i = do
     xs <- (map (xPubKey . getAddrPubKey)) <$> intMulSigKey a ps i
-    return $ scriptAddr $ sortMulSig $ PayMulSig xs r
+    return $ scriptAddr $ sortMulSig $ PayMulSig (map toPubKeyG xs) r
 
 -- | Cyclic list of all external multisig addresses derived from
 -- an 'AccPubKey' and a list of thirdparty multisig keys. The list starts

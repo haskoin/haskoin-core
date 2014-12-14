@@ -8,24 +8,37 @@ module Network.Haskoin.Crypto
   -- *Elliptic Curve Keys
   
   -- **Public Keys
-  PubKey(..)
+  PubKey, PubKeyC, PubKeyU
+, makePubKey
+, makePubKeyG
+, makePubKeyC
+, makePubKeyU
+, toPubKeyG
+, eitherPubKey
+, maybePubKeyC
+, maybePubKeyU
 , isValidPubKey
-, isPubKeyU
 , derivePubKey
 , pubKeyAddr
 
   -- **Private Keys
-, PrvKey(..)
-, isValidPrvKey
+, PrvKey, PrvKeyC, PrvKeyU
 , makePrvKey
+, makePrvKeyG
+, makePrvKeyC
 , makePrvKeyU
+, toPrvKeyG
+, eitherPrvKey
+, maybePrvKeyC
+, maybePrvKeyU
+, isValidPrvKey
 , fromPrvKey
-, isPrvKeyU
-, putPrvKey
-, getPrvKey
-, getPrvKeyU
-, fromWIF
-, toWIF
+, encodePrvKey
+, decodePrvKey
+, prvKeyPutMonad
+, prvKeyGetMonad
+, fromWif
+, toWif
 
   -- *ECDSA
   -- **SecretT Monad
@@ -119,7 +132,7 @@ module Network.Haskoin.Crypto
 , xPrvFP
 , xPrvExport
 , xPrvImport
-, xPrvWIF
+, xPrvWif
 
   -- **Extended Public Keys
 , XPubKey(..)

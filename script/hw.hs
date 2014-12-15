@@ -1097,7 +1097,7 @@ instance FromJSON RawPrvKey where
       where
         f v = do
             str <- parseJSON v :: Parser String  
-            maybe mzero return $ fromWIF str
+            maybe mzero return $ fromWif str
 
 -- Create and return haskoin working directory
 getWorkDir :: IO FilePath

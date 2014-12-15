@@ -88,7 +88,7 @@ addrPubKey add = do
             accKey   = accountKey $ dbAccountValue acc
             f        = if internal then intPubKey else extPubKey
             pk       = fromJust $ f accKey deriv
-        return $ Just $ xPubKey $ getAddrPubKey pk
+        return $ Just $ toPubKeyG $ xPubKey $ getAddrPubKey pk
 
 -- | Returns all addresses for an account.
 addressList :: (MonadIO m, PersistUnique b, PersistQuery b)
@@ -280,7 +280,7 @@ addressPrvKey wallet name key = do
     accPrv <- accountPrvKey wallet name
     add    <- getAddress wallet name key False
     let addrPrvKey = fromJust $ extPrvKey accPrv $ addressIndex add
-    return $ xPrvKey $ getAddrPrvKey addrPrvKey
+    return $ toPrvKeyG $ xPrvKey $ getAddrPrvKey addrPrvKey
 
 -- Returns the number of new addresses created
 adjustLookAhead :: (MonadIO m, PersistUnique b, PersistQuery b)

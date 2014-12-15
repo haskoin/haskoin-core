@@ -372,9 +372,7 @@ processCommand opts args = case args of
                 , configToken        = optToken opts
                 , configTokenSecret  = optSecret opts
                 }
-        --Create database pool
-        pool <- haskoinDBPool $ optDB opts
-        maybeDetach opts $ runServer config pool
+        maybeDetach opts $ runServer config =<< haskoinDBPool (optDB opts)
     ["stop"] -> stopProcess opts
     "newwallet" : mnemonic -> do
         let url = "/wallets"

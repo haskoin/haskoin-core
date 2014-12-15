@@ -3,13 +3,7 @@
 {-# LANGUAGE TypeFamilies      #-}
 module Main where
 
-import System.Directory
-    ( removeFile
-    , createDirectoryIfMissing
-    , doesFileExist
-    , getAppUserDataDirectory
-    , setCurrentDirectory
-    )
+import System.Directory (doesFileExist)
 import System.Console.GetOpt 
     ( getOpt
     , usageInfo
@@ -18,7 +12,6 @@ import System.Console.GetOpt
     , ArgOrder (Permute)
     )
 import qualified System.Environment as E (getArgs)
-import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (unless, forM_, when, mzero, liftM2)
@@ -26,7 +19,7 @@ import Control.Monad.Trans (liftIO, MonadIO)
 import Control.Exception (throwIO, throw)
 
 import Data.Char (toLower)
-import Data.Default (def)
+import Data.Default (Default, def)
 import Data.Word (Word32, Word64)
 import Data.List (intersperse, find, nubBy)
 import Data.Maybe (listToMaybe, fromJust, isNothing, isJust, fromMaybe)
@@ -41,6 +34,7 @@ import Data.Aeson
     ( Value (String)
     , FromJSON
     , ToJSON
+    , parseJSON
     , object
     , toJSON
     , encode
@@ -50,10 +44,7 @@ import Data.Aeson
     , eitherDecode
     , (.=), (.:), (.:?)
     )
-import Data.Aeson.Types
-    ( Parser
-    , parseJSON
-    )
+import Data.Aeson.Types (Parser)
 import qualified Data.Aeson.Encode.Pretty as JSON
     ( encodePretty'
     , defConfig
@@ -78,6 +69,7 @@ import Network.Haskoin.Yesod.TokenAuth
 import Network.Haskoin.Wallet
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Database
+import Network.Haskoin.StdOptions
 
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto 
@@ -99,52 +91,43 @@ data Options = Options
     , optJson     :: Bool
     , optYaml     :: Bool
     , optPass     :: String
-    , optDetach   :: Bool
     , optProvider :: String
-    , optBind     :: String
-    , optPort     :: Int
     , optHosts    :: [(String, Int)]
     , optBloomFP  :: Double
     , optMode     :: ServerMode
     , optToken    :: Maybe BS.ByteString
     , optSecret   :: Maybe BS.ByteString
     , optDB       :: OptionsDB
-    , optDir      :: Maybe FilePath
-    , optLog      :: Maybe FilePath
-    , optPid      :: Maybe FilePath
     , optNce      :: Maybe FilePath
-    , optCfg      :: Maybe FilePath
+    , optStd      :: StdOptions
     } deriving (Eq, Show)
 
-defaultOptions :: Options
-defaultOptions = Options
-    { optWallet   = "main"
-    , optCount    = 5
-    , optGap      = 10
-    , optFee      = 10000
-    , optMinConf  = 0
-    , optInternal = False
-    , optProp     = False
-    , optFinal    = False
-    , optJson     = False
-    , optYaml     = False
-    , optPass     = ""
-    , optDetach   = False
-    , optProvider = concat [ "http://localhost:", show $ configPort def ]
-    , optBind     = configBind def
-    , optPort     = configPort def
-    , optHosts    = configBitcoinHosts def
-    , optBloomFP  = configBloomFP def
-    , optMode     = configMode def
-    , optToken    = Nothing
-    , optSecret   = Nothing
-    , optDB       = def
-    , optDir      = Nothing
-    , optLog      = Nothing
-    , optPid      = Nothing
-    , optNce      = Nothing
-    , optCfg      = Nothing
-    } 
+instance Default Options where
+    def = Options
+        { optWallet   = "main"
+        , optCount    = 5
+        , optGap      = 10
+        , optFee      = 10000
+        , optMinConf  = 0
+        , optInternal = False
+        , optProp     = False
+        , optFinal    = False
+        , optJson     = False
+        , optYaml     = False
+        , optPass     = ""
+        , optProvider = concat [ "http://localhost:", show $ configPort def ]
+        , optHosts    = configBitcoinHosts def
+        , optBloomFP  = configBloomFP def
+        , optMode     = configMode def
+        , optToken    = Nothing
+        , optSecret   = Nothing
+        , optDB       = def
+        , optNce      = Nothing
+        , optStd      = def { optPort = configPort def
+                            , optLog  = "hw.log"
+                            , optPid  = "hw.pid"
+                            }
+        } 
 
 instance ToJSON Options where
     toJSON opt = object $
@@ -159,20 +142,15 @@ instance ToJSON Options where
         , "json"           .= optJson opt
         , "yaml"           .= optYaml opt
         , "passphrase"     .= optPass opt
-        , "detach"         .= optDetach opt
         , "provider"       .= optProvider opt
-        , "bind"           .= optBind opt
-        , "port"           .= optPort opt
         , "bitcoin-hosts"  .= (map f $ optHosts opt)
         , "false-positive" .= optBloomFP opt
         , "operation-mode" .= optMode opt
         , "database"       .= optDB opt
+        , "server"         .= optStd opt
         ]
         ++ maybe [] (\x -> [("token" .= bsToString x)]) (optToken opt)
         ++ maybe [] (\x -> [("secret" .= bsToString x)]) (optSecret opt)
-        ++ maybe [] (\x -> [("workdir" .= x)]) (optDir opt)
-        ++ maybe [] (\x -> [("logfile" .= x)]) (optLog opt)
-        ++ maybe [] (\x -> [("pidfile" .= x)]) (optPid opt)
         ++ maybe [] (\x -> [("noncefile" .= x)]) (optNce opt)
       where
         f (x,y) = object
@@ -193,115 +171,95 @@ instance FromJSON Options where
         <*> o .: "json"
         <*> o .: "yaml"
         <*> o .: "passphrase"
-        <*> o .: "detach"
         <*> o .: "provider"
-        <*> o .: "bind"
-        <*> o .: "port"
         <*> (mapM f =<< o .: "bitcoin-hosts")
         <*> o .: "false-positive"
         <*> o .: "operation-mode"
         <*> ( (stringToBS <$>) <$> o .:? "token" )
         <*> ( (stringToBS <$>) <$> o .:? "secret" )
         <*> o .: "database"
-        <*> o .:? "workdir"
-        <*> o .:? "logfile"
-        <*> o .:? "pidfile"
         <*> o .:? "noncefile"
-        <*> return Nothing -- configuration file does not contain its own path
+        <*> o .: "server"
       where
         f = withObject "bitcoinhost" $ \x -> do
             a <- x .: "host"
             b <- x .: "port"
             return (a,b)
 
-mapOptionsDB :: OptDescr (OptionsDB -> IO OptionsDB) ->
-                OptDescr (Options -> IO Options)
+instance StdServer Options where
+    getStdOptions a   = optStd a
+    setStdOptions a n = a{ optStd = n }
+    serviceName _     = "hw"
+    newStdConfig a    = do
+        token <- genToken Nothing
+        return $ a { optToken  = Just $ tokenIdent token
+                   , optSecret = Just $ tokenSecret token
+                   }
+    
+mapOptionsDB :: OptDescr (OptionsDB -> OptionsDB) ->
+                OptDescr (Options -> Options)
 mapOptionsDB (Option xs ys arg desc) = Option xs ys (mapArg arg) desc
   where
     mapArg a = case a of
         NoArg f -> NoArg (mapF f)
         ReqArg f str -> ReqArg (mapF' f) str
         OptArg f strM -> OptArg (mapF' f) strM
-    mapF f opts = do
-        res <- f $ optDB opts
-        return $ opts{ optDB = res }
-    mapF' f s opts = do
-        res <- f s $ optDB opts
-        return $ opts{ optDB = res }
+    mapF f opts = opts{ optDB = f $ optDB opts }
+    mapF' f s opts = opts{ optDB = f s $ optDB opts }
 
-options :: [OptDescr (Options -> IO Options)]
+options :: [OptDescr (Options -> Options)]
 options =
     [ Option ['w'] ["wallet"]
-        (ReqArg (\w opts -> return opts{ optWallet = w }) "WALLET")
+        (ReqArg (\w opts -> opts{ optWallet = w }) "WALLET")
         "Which wallet to use (default: main)"
     , Option ['n'] ["count"] (ReqArg parseCount "INT")
         "Count: see commands for details"
     , Option ['f'] ["fee"] 
-       (ReqArg (\f opts -> return opts{ optFee = read f }) "SATOSHI")
+       (ReqArg (\f opts -> opts{ optFee = read f }) "SATOSHI")
        "Transaction fee (default: 10000)"
     , Option ['m'] ["minconf"] (ReqArg parseMinConf "INT")
         "Minimum number of required confirmations"
     , Option ['i'] ["internal"]
-        (NoArg $ \opts -> return opts{ optInternal = True })
+        (NoArg $ \opts -> opts{ optInternal = True })
         "Display internal addresses (default: False)"
     , Option ['P'] ["proposition"]
-        (NoArg $ \opts -> return opts{ optProp = True })
+        (NoArg $ \opts -> opts{ optProp = True })
         "Do not sign txs when sending (default: False)"
     , Option ['F'] ["final"]
-        (NoArg $ \opts -> return opts{ optFinal = True })
+        (NoArg $ \opts -> opts{ optFinal = True })
         "Only sign a tx if it will be complete (default: False)"
     , Option ['x'] ["passphrase"]
-        (ReqArg (\s opts -> return opts{ optPass = s }) "PASSPHRASE")
+        (ReqArg (\s opts -> opts{ optPass = s }) "PASSPHRASE")
         "Optional Passphrase for mnemonic"
-    , Option ['p'] ["provider"]
-        (ReqArg (\p opts -> return opts{ optProvider = p }) "URL")
+    , Option ['u'] ["provider"]
+        (ReqArg (\p opts -> opts{ optProvider = p }) "URL")
         "URL of the API server"
-    , Option ['t'] ["token"] (ReqArg parseToken "STRING")
+    , Option ['t'] ["token"] 
+        (ReqArg (\s opts -> opts{ optToken = Just $ stringToBS s }) "STRING")
         "HMAC authentication token identifier"
-    , Option ['s'] ["secret"] (ReqArg parseSecret "STRING")
+    , Option ['s'] ["secret"] 
+        (ReqArg (\s opts -> opts{ optSecret = Just $ stringToBS s }) "STRING")
         "HMAC authentication token secret"
-    , Option ['d'] ["detach"]
-        (NoArg $ \opts -> return opts{ optDetach = True })
-        "Detach the process from the terminal"
-    , Option ['b'] ["bind"]
-        (ReqArg (\h opts -> return opts{ optBind = h }) "HOST")
-        "API server bind address"
-    , Option ['o'] ["port"] 
-        (ReqArg (\p opts -> return opts{ optPort = read p }) "PORT")
-        "API server port"
     , Option ['J'] ["json"]
-        (NoArg $ \opts -> return opts{ optJson = True })
+        (NoArg $ \opts -> opts{ optJson = True })
         "Format result as JSON"
     , Option ['Y'] ["yaml"]
-        (NoArg $ \opts -> return opts{ optYaml = True })
+        (NoArg $ \opts -> opts{ optYaml = True })
         "Format result as YAML"
-    , Option ['C'] ["config"]
-        (ReqArg (\g opts -> return opts{ optCfg = Just g }) "FILE")
-        "Configuration file"
-    , Option ['W'] ["workdir"]
-        (ReqArg (\w opts -> return opts{ optDir = Just w }) "DIR")
-        "Working directory"
-    , Option ['L'] ["logfile"]
-        (ReqArg (\l opts -> return opts{ optLog = Just l }) "FILE")
-        "Log file"
-    , Option ['I'] ["pidfile"]
-        (ReqArg (\i opts -> return opts{ optPid = Just i }) "FILE")
-        "PID file"
     , Option ['N'] ["noncefile"]
-        (ReqArg (\n opts -> return opts{ optNce = Just n }) "FILE")
+        (ReqArg (\n opts -> opts{ optNce = Just n }) "FILE")
         "Nonce file"
     ]
     ++ map mapOptionsDB optionsDB
+    ++ srvOptions
   where
-    parseToken s opts  = return opts{ optToken = Just $ stringToBS s }
-    parseSecret s opts = return opts{ optSecret = Just $ stringToBS s }
     parseCount s opts 
-        | res > 0   = return opts{ optCount = res }
+        | res > 0   = opts{ optCount = res }
         | otherwise = error $ unwords ["Invalid count option:", s]
       where 
         res = read s
     parseMinConf m opts 
-        | res >= 0   = return opts{ optMinConf = res }
+        | res >= 0  = opts{ optMinConf = res }
         | otherwise = error $ unwords ["Invalid minconf option:", m]
       where 
         res = read m
@@ -373,36 +331,9 @@ usage = unlines $ [warningMsg, usageInfo usageHeader options] ++ cmdHelp
 main :: IO ()
 main = E.getArgs >>= \args -> case getOpt Permute options args of
     (o,xs,[]) -> do
-        opts0 <- foldl (>>=) (return defaultOptions) o
-        opts  <- foldl (>>=) (getConfig opts0) o
-        workDir <- maybe getWorkDir return $ optDir opts
-        setCurrentDirectory workDir
+        opts <- processOptions o
         processCommand opts xs
     (_,_,msgs) -> print $ unlines $ msgs ++ [usage]
-
-getConfig :: Options -> IO Options
-getConfig opts = do
-    configFile <- case optCfg opts of
-        Nothing -> case (optDir opts) of
-            Nothing -> do
-                dir <- getWorkDir
-                return $ concat [dir, "/config.yaml"]
-            Just wd -> do
-                return $ concat [wd, "/config.yaml"]
-        Just cfg -> return cfg
-    prevConfig <- doesFileExist configFile
-    unless prevConfig $ do
-        token <- genToken Nothing
-        YAML.encodeFile configFile $
-            defaultOptions { optToken  = Just $ tokenIdent token
-                           , optSecret = Just $ tokenSecret token
-                           }
-    configM <- YAML.decodeFile configFile
-    unless (isJust configM) $ throwIO $ WalletException $ unwords
-        [ "Could not parse config file:"
-        , configFile
-        ]
-    return $ fromJust configM
 
 invalidErr :: String
 invalidErr = "Invalid request"
@@ -431,8 +362,8 @@ processCommand :: Options -> Args -> IO ()
 processCommand opts args = case args of
     ["start"] -> do
         let config = ServerConfig
-                { configBind         = optBind opts
-                , configPort         = optPort opts
+                { configBind         = optBind $ optStd opts
+                , configPort         = optPort $ optStd opts
                 , configAuthUrl      = optProvider opts
                 , configBitcoinHosts = optHosts opts
                 , configBloomFP      = optBloomFP opts
@@ -441,22 +372,10 @@ processCommand opts args = case args of
                 , configToken        = optToken opts
                 , configTokenSecret  = optSecret opts
                 }
-        prevLog <- doesFileExist $ logFile
-        -- TODO: Should we move the log file to an archive directory?
-        when prevLog $ removeFile $ logFile
-
         --Create database pool
         pool <- haskoinDBPool $ optDB opts
-        if optDetach opts
-            then runDetached (Just $ pidFile) (ToFile $ logFile) $
-                    runServer config pool
-            else runServer config pool
-        putStrLn "Haskoin daemon started"
-        putStrLn $ unwords [ "Configuration file:", configFile ]
-    ["stop"] -> do
-        -- TODO: Should we send a message instead of killing the process ?
-        killAndWait $ pidFile
-        putStrLn "Haskoin daemon stopped"
+        maybeDetach opts $ runServer config pool
+    ["stop"] -> stopProcess opts
     "newwallet" : mnemonic -> do
         let url = "/wallets"
             req = Just $ encode $ case mnemonic of
@@ -734,10 +653,6 @@ processCommand opts args = case args of
     ["help"] -> formatStr usage
     ["version"] -> putStrLn haskoinUserAgent
     _ -> error invalidErr
-  where
-    pidFile     = fromMaybe "hw.pid"      $ optPid opts
-    logFile     = fromMaybe "stdout.log"  $ optLog opts
-    configFile  = fromMaybe "config.yaml" $ optCfg opts
 
 data ErrorMsg = ErrorMsg !String ![String]
     deriving (Eq, Show, Read)
@@ -1098,14 +1013,4 @@ instance FromJSON RawPrvKey where
         f v = do
             str <- parseJSON v :: Parser String  
             maybe mzero return $ fromWif str
-
--- Create and return haskoin working directory
-getWorkDir :: IO FilePath
-getWorkDir = do
-    haskoinDir <- getAppUserDataDirectory "haskoin"
-    let dir = concat [ haskoinDir, "/", networkName ]
-        html = concat [ haskoinDir, "/", networkName, "/html" ]
-    createDirectoryIfMissing True dir
-    createDirectoryIfMissing True html
-    return dir
 

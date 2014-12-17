@@ -79,7 +79,7 @@ getAddressEntity ai key internal = do
 
 addrPubKey :: (MonadIO m, PersistUnique b, PersistQuery b)
            => DbAddressGeneric b
-           -> ReaderT b m (Maybe PubKey)
+           -> ReaderT b m (Maybe PubKeyC)
 addrPubKey add = do
     acc <- liftM fromJust (get $ dbAddressAccount add)
     if isMSAccount (dbAccountValue acc) then return Nothing else do
@@ -88,7 +88,7 @@ addrPubKey add = do
             accKey   = accountKey $ dbAccountValue acc
             f        = if internal then intPubKey else extPubKey
             pk       = fromJust $ f accKey deriv
-        return $ Just $ toPubKeyG $ xPubKey $ getAddrPubKey pk
+        return $ Just $ xPubKey $ getAddrPubKey pk
 
 -- | Returns all addresses for an account.
 addressList :: (MonadIO m, PersistUnique b, PersistQuery b)
@@ -275,12 +275,12 @@ addressPrvKey :: (MonadIO m, PersistQuery b, PersistUnique b)
               => WalletName  -- ^ Account name
               -> AccountName -- ^ Account name
               -> KeyIndex    -- ^ Derivation index of the address
-              -> ReaderT b m PrvKey  -- ^ Private key
+              -> ReaderT b m PrvKeyC -- ^ Private key
 addressPrvKey wallet name key = do
     accPrv <- accountPrvKey wallet name
     add    <- getAddress wallet name key False
     let addrPrvKey = fromJust $ extPrvKey accPrv $ addressIndex add
-    return $ toPrvKeyG $ xPrvKey $ getAddrPrvKey addrPrvKey
+    return $ xPrvKey $ getAddrPrvKey addrPrvKey
 
 -- Returns the number of new addresses created
 adjustLookAhead :: (MonadIO m, PersistUnique b, PersistQuery b)

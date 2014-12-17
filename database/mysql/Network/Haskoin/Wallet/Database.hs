@@ -64,33 +64,33 @@ instance FromJSON OptionsDB where
                 }
         return $ OptionsDB config pool
 
-optionsDB :: [OptDescr (OptionsDB -> IO OptionsDB)]
+optionsDB :: [OptDescr (OptionsDB -> OptionsDB)]
 optionsDB =
     [ Option [] ["sqlpool"]
-        (ReqArg (\p opts -> return opts{ optConnPool = read p }) "INT")
+        (ReqArg (\p opts -> opts{ optConnPool = read p }) "INT")
         "MySQL connection pool size (default: 10)"
     , Option [] ["sqlhost"] 
-        (ReqArg (\s opts -> return opts{ 
+        (ReqArg (\s opts -> opts{ 
             optMySQL = (optMySQL opts) { connectHost = s } }) "HOST")
         "MySQL Host (Default: localhost)"
     , Option [] ["sqlport"] 
-        (ReqArg (\s opts -> return opts{ 
+        (ReqArg (\s opts -> opts{ 
             optMySQL = (optMySQL opts) { connectPort = read s } }) "PORT")
         "MySQL Port (Default: 3306)"
     , Option [] ["sqluser"] 
-        (ReqArg (\s opts -> return opts{ 
+        (ReqArg (\s opts -> opts{ 
             optMySQL = (optMySQL opts) { connectUser = s } }) "STRING")
         "MySQL User (Default: root)"
     , Option [] ["sqlpwd"] 
-        (ReqArg (\s opts -> return opts{ 
+        (ReqArg (\s opts -> opts{ 
             optMySQL = (optMySQL opts) { connectPassword = s } }) "STRING")
         "MySQL Password (Default: \"\")"
     , Option [] ["sqldb"] 
-        (ReqArg (\s opts -> return opts{ 
+        (ReqArg (\s opts -> opts{ 
             optMySQL = (optMySQL opts) { connectDatabase = s } }) "STRING")
         "MySQL Database (Default: test)"
     , Option [] ["sqlpath"] 
-        (ReqArg (\s opts -> return opts{ 
+        (ReqArg (\s opts -> opts{ 
             optMySQL = (optMySQL opts) { connectPath = s } }) "STRING")
         "MySQL Path"
     ]

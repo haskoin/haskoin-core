@@ -32,7 +32,7 @@ data OptionsDB = OptionsDB
 
 instance Default OptionsDB where
     def = OptionsDB 
-        { optWalletName = "wallet"
+        { optWalletName = "wallet.sqlite"
         , optConnPool   = 1
         }
 
@@ -47,13 +47,13 @@ instance FromJSON OptionsDB where
         <$> o .: "walletname"
         <*> o .: "connectionpool"
 
-optionsDB :: [OptDescr (OptionsDB -> IO OptionsDB)]
+optionsDB :: [OptDescr (OptionsDB -> OptionsDB)]
 optionsDB =
     [ Option [] ["sqlwallet"]
-        (ReqArg (\w opts -> return opts{ optWalletName = w }) "FILE")
+        (ReqArg (\w opts -> opts{ optWalletName = w }) "FILE")
         "Sqlite database filename (default: wallet)"
     , Option [] ["sqlpool"]
-        (ReqArg (\p opts -> return opts{ optConnPool = read p }) "INT")
+        (ReqArg (\p opts -> opts{ optConnPool = read p }) "INT")
         "Sqlite connection pool size (default: 1)"
     ]
 

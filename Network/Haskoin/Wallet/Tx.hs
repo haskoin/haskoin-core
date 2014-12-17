@@ -440,13 +440,13 @@ getRedeem add = do
 
 getRedeemIndex :: Account -> KeyIndex -> Bool -> Maybe RedeemScript
 getRedeemIndex acc deriv internal 
-    | isMSAccount acc = Just $ sortMulSig $ PayMulSig (map toPubKeyG pks) req
+    | isMSAccount acc = Just $ sortMulSig $ PayMulSig pks req
     | otherwise       = Nothing
   where
     key      = head $ accountKeys acc 
     msKeys   = tail $ accountKeys acc
     addrKeys = fromJust $ f (AccPubKey key) msKeys deriv
-    pks      = map (xPubKey . getAddrPubKey) addrKeys
+    pks      = map (toPubKeyG . xPubKey . getAddrPubKey) addrKeys
     req      = accountRequired acc
     f        = if internal then intMulSigKey else extMulSigKey
 
@@ -692,9 +692,9 @@ signSigBlob wallet name final (SigBlob dat tx) = do
         accKey  = fromJust $ accPrvKey master $ accountIndex acc
         f (_,_,internal,k) | internal  = intPrvKey accKey k
                            | otherwise = extPrvKey accKey k
-        prvKeys = map (xPrvKey . getAddrPrvKey . fromJust . f) dat
+        prvKeys = map (toPrvKeyG . xPrvKey . getAddrPrvKey . fromJust . f) dat
     let sigi = map (toSigi acc) dat
-        resE = detSignTx tx sigi $ map toPrvKeyG prvKeys
+        resE = detSignTx tx sigi prvKeys
         (signedTx, complete) = fromRight resE
     when (isLeft resE) $ liftIO $ throwIO $ WalletException $ fromLeft resE
     when (final && not complete) $ liftIO $ throwIO $ WalletException

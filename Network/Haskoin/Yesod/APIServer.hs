@@ -61,7 +61,7 @@ import Database.Persist.Sql
     , SqlBackend
     , Entity(..)
     , SelectOpt (Asc)
-    , runMigration
+    , runMigrationSilent
     , runSqlPersistMPool
     , runSqlPool
     , selectFirst
@@ -224,7 +224,7 @@ runServer config pool = do
         runApp   = runSettings settings 
 
     flip runSqlPersistMPool pool $ do 
-        _ <- runMigration migrateWallet 
+        _ <- runMigrationSilent migrateWallet 
         initWalletDB
         -- Create a token if it doesn't already exist in the database
         when (isJust tokenM) $ do

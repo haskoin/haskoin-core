@@ -33,9 +33,8 @@ module Network.Haskoin.Wallet
 , addressList
 , addressPage
 , unusedAddrs
-, unusedAddr
-, unlabeledAddr
-, internalAddr
+, unlabeledAddrs
+, unusedAddrsGeneric
 , setAddrLabel
 , addLookAhead
 , addressPrvKey

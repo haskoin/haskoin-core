@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveDataTypeable    #-}
 module Network.Haskoin.Yesod.TokenAuth
 ( Token(..)
+, TokenPair(..)
 , YesodTokenAuth(..)
 , genToken
 , refreshToken
@@ -11,10 +12,11 @@ module Network.Haskoin.Yesod.TokenAuth
 
 import System.Entropy (getEntropy)
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad (when, unless)
 import Control.Monad.Trans.Either (runEitherT, left)
 
+import Data.Aeson (withObject)
 import Data.Text (Text, pack, unpack, append)
 import Data.Maybe (isJust, fromJust, isNothing)
 import Data.Time (UTCTime, getCurrentTime, addUTCTime, diffUTCTime)
@@ -34,6 +36,8 @@ class Yesod master => YesodTokenAuth master where
     updateToken  :: Token -> HandlerT master IO () 
     expireToken  :: BS.ByteString -> HandlerT master IO ()
 
+data TokenPair = TokenPair !BS.ByteString !BS.ByteString
+
 data Token = Token
     { tokenIdent   :: !BS.ByteString
     , tokenSecret  :: !BS.ByteString
@@ -45,6 +49,17 @@ data Token = Token
 newtype CachedToken = CachedToken 
     { unCachedToken :: Either String Token }
     deriving Typeable
+
+instance FromJSON TokenPair where
+    parseJSON = withObject "tokenpair" $ \o -> TokenPair
+        <$> (stringToBS <$> o .: "token")
+        <*> (stringToBS <$> o .: "secret")
+
+instance ToJSON TokenPair where
+    toJSON (TokenPair token secret) = object 
+        [ "token"  .= bsToString token
+        , "secret" .= bsToString secret
+        ]
 
 genToken :: MonadIO m => Maybe Integer -> m Token
 genToken expiresSec = do

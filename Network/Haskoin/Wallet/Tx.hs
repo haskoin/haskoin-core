@@ -644,7 +644,7 @@ buildUnsignedTx accE@(Entity ai acc) minConf dests fee = do
     -- TODO: Put this value in a constant file somewhere
     -- TODO: We need a better way to identify dust transactions
     recips <- if change < 5430 then return dests else do
-        cAddr <- internalAddr accE -- internal address
+        cAddr <- liftM head $ unusedAddrsGeneric accE True -- internal address
         -- TODO: Change must be randomly placed
         return $ dests ++ [(dbAddressValue $ cAddr,change)]
     let txE = buildAddrTx (map coinOutPoint coins) $ map f recips

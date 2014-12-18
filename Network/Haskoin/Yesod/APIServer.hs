@@ -390,25 +390,38 @@ postAccountKeysR wallet name = requireJsonBodyAuth >>= \ks -> do
 
 getAddressesR :: Text -> Text -> Handler Value
 getAddressesR wallet name = requireAuth >> do
-    pageM    <- runInputGet (iopt intField "page")
-    e        <- (fromMaybe 10) <$> runInputGet (iopt intField "elemperpage")
-    minConf  <- (fromMaybe 0) <$> runInputGet (iopt intField "minconf")
-    internal <- (fromMaybe False) <$> runInputGet (iopt boolField "internal")
-    runDB $ if isJust pageM
-        then do
-            (pa, m) <- addressPage w n (fromJust pageM) e internal
+    pageM     <- runInputGet (iopt intField "page")
+    e         <- (fromMaybe 10) <$> runInputGet (iopt intField "elemperpage")
+    minConf   <- (fromMaybe 0) <$> runInputGet (iopt intField "minconf")
+    internal  <- (fromMaybe False) <$> runInputGet (iopt boolField "internal")
+    unlabeled <- (fromMaybe False) <$> runInputGet (iopt boolField "unlabeled")
+    unused    <- (fromMaybe False) <$> runInputGet (iopt boolField "unused")
+    runDB $ case (unlabeled, unused, pageM) of
+        (True, _, _) -> goUnlabeled internal minConf
+        (_, True, _) -> goUnused internal minConf
+        (_, _, Just page) -> do
+            (pa, m) <- addressPage w n page e internal
             ba <- mapM (flip addressBalance minConf) pa
             return $ toJSON $ AddressPageRes ba m
-        else do
+        (_, _, Nothing) -> do
             pa <- addressList w n internal
             liftM toJSON $ mapM (flip addressBalance minConf) pa
   where
     n = unpack name
     w = unpack wallet
+    goUnlabeled internal minConf
+        -- There are no labels on internal addrs
+        | internal = goUnused internal minConf 
+        | otherwise = do
+            pa <- unlabeledAddrs w n
+            liftM toJSON $ mapM (flip addressBalance minConf) pa
+    goUnused internal minConf = do
+        pa <- unusedAddrs w n internal
+        liftM toJSON $ mapM (flip addressBalance minConf) pa
 
 postAddressesR :: Text -> Text -> Handler Value
 postAddressesR wallet name = requireJsonBodyAuth >>= \(AddressData label) -> do
-    newAddr <- runDB $ unlabeledAddr w n
+    newAddr <- runDB $ liftM head $ unlabeledAddrs w n
     res <- runDB $ setAddrLabel w n (addressIndex newAddr) label
     whenOnline updateNodeFilter
     return $ toJSON res

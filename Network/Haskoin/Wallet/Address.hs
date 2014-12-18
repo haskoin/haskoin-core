@@ -6,9 +6,8 @@ module Network.Haskoin.Wallet.Address
 , addressList
 , addressPage
 , unusedAddrs
-, unusedAddr
-, unlabeledAddr
-, internalAddr
+, unlabeledAddrs
+, unusedAddrsGeneric
 , newAddrs
 , newAddrsGeneric
 , setAddrLabel
@@ -39,7 +38,7 @@ import Database.Persist
     , selectFirst
     , insertMany
     , entityVal
-    , (==.), (>=.), (>.)
+    , (==.), (>.)
     , SelectOpt( Asc, Desc, LimitTo, OffsetBy )
     , Key
     )
@@ -143,76 +142,43 @@ addressPage wallet name pageNum resPerPage internal
                             , DbAddressInternal ==. internal
                             ]
 
--- | Get list of unused addresses: those in the account "gap".
+-- | Get list of unused addresses: those in the account gap.
 unusedAddrs :: (MonadIO m, PersistUnique b, PersistQuery b)
             => WalletName  -- ^ Wallet name
             -> AccountName -- ^ Account name
+            -> Bool        -- ^ Internal
             -> ReaderT b m [PaymentAddress] -- ^ Unused addresses
-unusedAddrs wallet name = do
-    Entity wk _   <- getWalletEntity wallet
-    Entity ai acc <- getAccountEntity wk name
+unusedAddrs wallet name internal = do
+    Entity wk _ <- getWalletEntity wallet
+    accE        <- getAccountEntity wk name
+    liftM (map toPaymentAddr) $ unusedAddrsGeneric accE internal
+
+-- | Get unused and unlabeled addresses.
+unlabeledAddrs :: (MonadIO m, PersistUnique b, PersistQuery b)
+              => WalletName  -- ^ Account name
+              -> AccountName -- ^ Account name
+              -> ReaderT b m [PaymentAddress] 
+                -- ^ Unlabeled and unused addresses
+unlabeledAddrs wallet name = 
+    liftM f $ unusedAddrs wallet name False
+  where
+    f = dropWhile (not . null . addressLabel)
+
+-- | Get a list of unused addresses (generic version)
+unusedAddrsGeneric :: (MonadIO m, PersistUnique b, PersistQuery b)
+                    => Entity (DbAccountGeneric b)      -- ^ Account
+                    -> Bool                             -- ^ Internal
+                    -> ReaderT b m [DbAddressGeneric b] -- ^ Unused addresses
+unusedAddrsGeneric (Entity ai acc) internal = do
+    when (dbAccountGap acc <= 0) $ liftIO . throwIO $ WalletException 
+        "No addresses available: account gap is zero (or less)"
     addrs <- selectList [ DbAddressAccount ==. ai
-                        , DbAddressInternal ==. False
+                        , DbAddressInternal ==. internal
                         ]
                         [ Desc DbAddressIndex
                         , LimitTo (dbAccountGap acc)
                         ]
-    return . reverse $ map (toPaymentAddr . entityVal) addrs
-
--- | Get first unused unlabeled address.
-unlabeledAddr :: (MonadIO m, PersistUnique b, PersistQuery b)
-              => WalletName  -- ^ Account name
-              -> AccountName -- ^ Account name
-              -> ReaderT b m PaymentAddress -- ^ Unlabeled unused address
-unlabeledAddr wallet name = do
-    Entity wk _ <- getWalletEntity wallet
-    acc@(Entity ai _) <- getAccountEntity wk name
-    frst <- unusedAddrGeneric acc False
-    addrM <- selectFirst [ DbAddressAccount ==. ai
-                         , DbAddressInternal ==. False
-                         , DbAddressIndex >=. dbAddressIndex frst
-                         , DbAddressLabel ==. ""
-                         ] []
-    when (isNothing addrM) $ liftIO . throwIO $
-        WalletException "No unlabeled addresses available"
-    return . toPaymentAddr . entityVal $ fromJust addrM
-
--- | Get first unused address.  Faster than previous function to retrieve a
--- single address.
-unusedAddr :: (MonadIO m, PersistUnique b, PersistQuery b)
-           => WalletName  -- ^ Wallet name
-           -> AccountName -- ^ Account name
-           -> ReaderT b m PaymentAddress -- ^ Unused addresses
-unusedAddr wallet name = do
-    Entity wk _ <- getWalletEntity wallet
-    acc <- getAccountEntity wk name
-    liftM toPaymentAddr $ unusedAddrGeneric acc False
-
--- | Get first unused change address.
-internalAddr :: (MonadIO m, PersistUnique b, PersistQuery b)
-             => Entity (DbAccountGeneric b)      -- ^ Account 
-             -> ReaderT b m (DbAddressGeneric b) 
-                -- ^ First unused change address
-internalAddr acc = unusedAddrGeneric acc True
-
--- | Get first unused payment or change address.
-unusedAddrGeneric
-    :: (MonadIO m, PersistUnique b, PersistQuery b)
-    => Entity (DbAccountGeneric b)      -- ^ Account
-    -> Bool                             -- ^ Internal
-    -> ReaderT b m (DbAddressGeneric b) -- ^ Address
-unusedAddrGeneric (Entity ai acc) internal = do
-    when (dbAccountGap acc <= 0) $ liftIO . throwIO $
-        WalletException "No addresses available: account gap is zero (or less)"
-    addrM <- selectFirst [ DbAddressAccount ==. ai
-                         , DbAddressInternal ==. internal
-                         ]
-                         [ Desc DbAddressIndex
-                         , OffsetBy (dbAccountGap acc - 1)
-                         ]
-    when (isNothing addrM) $ liftIO . throwIO $
-        WalletException "No addresses available, although there should be"
-    return . entityVal $ fromJust addrM
+    return $ reverse $ map entityVal addrs
 
 -- | Generate new payment addresses for an account
 newAddrs :: (MonadIO m, PersistUnique b, PersistQuery b)

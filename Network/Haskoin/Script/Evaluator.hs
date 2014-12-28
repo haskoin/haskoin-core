@@ -730,17 +730,21 @@ execScript scriptSig scriptPubKey sigCheckFcn flags =
 
       redeemEval = checkSig >> evalAll sigOps >> lift (stack <$> get)
       pubKeyEval = checkKey >> evalAll pubKeyOps >> lift get
-      p2shEval [] = lift $ programError "PayToScriptHash: no script on stack"
-      p2shEval (sv:_) = evalAll (stackToScriptOps sv) >> lift get
 
       in do s <- evalProgram redeemEval [] initData flags
             p <- evalProgram pubKeyEval [] initData { stack = s } flags
             if ( not . null $ s )
                    && ( isPayToScriptHash pubKeyOps flags )
                    && ( checkStack . runStack $ p )
-              then evalProgram (p2shEval s) [] initData { stack = drop 1 s,
+              then evalProgram (evalP2SH s) [] initData { stack = drop 1 s,
                       hashOps = stackToScriptOps $ head s } flags
               else return p
+
+
+-- | Evaluates a P2SH style script from its serialization in the stack
+evalP2SH :: Stack -> Program ProgramData
+evalP2SH [] = lift $ programError "PayToScriptHash: no script on stack"
+evalP2SH (sv:_) = evalAll (stackToScriptOps sv) >> lift get
 
 evalScript :: Script -> Script -> SigCheck -> [ Flag ] -> Bool
 evalScript scriptSig scriptPubKey sigCheckFcn flags =

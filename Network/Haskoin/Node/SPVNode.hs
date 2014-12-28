@@ -8,7 +8,7 @@
 module Network.Haskoin.Node.SPVNode 
 ( SPVNode(..)
 , SPVSession(..)
-, SPVRequest(..)
+, SPVRequest( BloomFilterUpdate, PublishTx, NodeRescan )
 , withAsyncSPV
 , processBloomFilter
 )
@@ -20,7 +20,6 @@ import Control.Monad
     , unless
     , forM
     , forM_
-    , filterM
     , foldM
     , forever
     , liftM
@@ -43,7 +42,7 @@ import Control.Monad.Logger
 import qualified Data.Text as T (pack)
 import Data.Maybe (isJust, isNothing, fromJust, catMaybes, fromMaybe)
 import Data.Time.Clock.POSIX (getPOSIXTime)
-import Data.List (nub, partition, delete, dropWhileEnd, (\\))
+import Data.List (nub, partition, delete, (\\))
 import Data.Conduit.TMChan (TBMChan, writeTBMChan)
 import qualified Data.Map as M 
     ( Map
@@ -65,7 +64,6 @@ import qualified Data.Map as M
     , unionWith
     )
 
-import Network.Haskoin.Constants
 import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Transaction.Types
@@ -90,8 +88,6 @@ data SPVSession = SPVSession
     , blocksToDwn :: !(M.Map BlockHeight [BlockHash])
       -- Received merkle blocks pending to be sent to the wallet
     , receivedMerkle :: !(M.Map BlockHeight [DecodedMerkleBlock])
-      -- The best merkle block hash
-    , bestBlockHash :: !BlockHash
       -- Transactions that have not been sent in a merkle block.
       -- We stall solo transactions until the merkle blocks are synced.
     , soloTxs :: ![Tx]
@@ -127,9 +123,6 @@ class ( BlockHeaderStore s
       )
     => SPVNode s m | m -> s where
     runHeaderChain :: s a -> SPVHandle m a
-    wantTxHash :: TxHash -> SPVHandle m Bool
-    haveMerkleHash :: BlockHash -> SPVHandle m Bool
-    rescanCleanup :: SPVHandle m ()
     spvImportTxs :: [Tx] -> SPVHandle m ()
     spvImportMerkleBlock :: BlockChainAction -> [TxHash] -> SPVHandle m ()
 
@@ -146,17 +139,15 @@ instance SPVNode s m => PeerManager SPVRequest (S.StateT SPVSession m) where
 withAsyncSPV :: SPVNode s m
              => [(String, Int)] 
              -> Timestamp
-             -> BlockHash
              -> (m () -> IO ())
              -> (TBMChan SPVRequest -> Async () -> IO ())
              -> IO ()
-withAsyncSPV hosts fc bb runStack f = do
+withAsyncSPV hosts fc runStack f = do
     let session = SPVSession
             { spvSyncPeer = Nothing
             , spvBloom = Nothing
             , blocksToDwn = M.empty
             , receivedMerkle = M.empty
-            , bestBlockHash = bb
             , soloTxs = []
             , pendingTxBroadcast = []
             , pendingRescan = Nothing
@@ -193,22 +184,12 @@ spvNodeRequest req = case req of
 
 spvInitNode :: SPVNode s m => SPVHandle m ()
 spvInitNode = do
-    -- Initialize the block header database
-    runHeaderChain initHeaderChain 
-
-    -- Adjust the bestBlockHash if it is before the fastCatchup time
     fc <- lift $ S.gets fastCatchup
-    bb <- lift $ S.gets bestBlockHash
-    bestNode <- runHeaderChain $ getBlockHeaderNode bb
-    when (blockTimestamp (nodeHeader bestNode) < fc) $ do
-        bestHash <- runHeaderChain $ blockBeforeTimestamp fc
-        lift $ S.modify $ \s -> s{ bestBlockHash = bestHash }
-
+    -- Initialize the block header database
+    runHeaderChain $ initHeaderChain fc
     -- Set the block hashes that need to be downloaded
-    bestHash <- lift $ S.gets bestBlockHash
-    toDwn <- runHeaderChain $ blocksToDownload bestHash
-    let toDwnList = map (\(a,b) -> (a,[b])) toDwn
-    lift $ S.modify $ \s -> s{ blocksToDwn = M.fromListWith (++) toDwnList }
+    lift $ S.modify $ \s -> s{ blocksToDwn = M.empty }
+    addBlocksToDwn =<< runHeaderChain blocksToDownload
 
 {- Peer events -}
 
@@ -299,22 +280,10 @@ processHeaders remote (Headers hs) = do
     -- Save best work after the header import
     workAfter <- liftM nodeChainWork $ runHeaderChain getBestBlockHeader
 
-    -- Update the bestBlock for blocks before the fastCatchup time
-    fc <- lift $ S.gets fastCatchup
-    let isAfterCatchup = (>= fc) . blockTimestamp . nodeHeader
-        fcBlocks       = dropWhileEnd isAfterCatchup newBlocks
-        fcBlock        = last fcBlocks
-    unless (null fcBlocks) $ do
-        bestBlock <- lift $ S.gets bestBlockHash
-        bestNode  <- runHeaderChain $ getBlockHeaderNode bestBlock
-        -- If there are nodes >= fastCatchup in between nodes < fastCatchup,
-        -- those nodes will be downloaded and simply reported as SideBlocks.
-        when (nodeChainWork fcBlock > nodeChainWork bestNode) $
-            lift $ S.modify $ \s -> s{ bestBlockHash = nodeBlockHash fcBlock }
-
     -- Add blocks hashes to the download queue
-    let f n = (nodeHeaderHeight n, nodeBlockHash n)
-    addBlocksToDwn $ map f $ drop (length fcBlocks) newBlocks
+    let f n   = (nodeHeaderHeight n, nodeBlockHash n)
+        toDwn = filter (not . nodeHaveBlock) newBlocks
+    addBlocksToDwn $ map f toDwn
 
     -- Adjust the height of peers that sent us INV messages for these headers
     forM_ newBlocks $ \n -> do
@@ -360,9 +329,7 @@ processInv remote (Inv vs) = do
             , "]"
             , "(", show remote, ")" 
             ]
-        -- Filter transactions that the wallet wants us to download
-        txsToDwn <- filterM wantTxHash txlist
-        downloadTxs remote txsToDwn
+        downloadTxs remote txlist
 
     -- Process blocks
     unless (null blocklist) $ do
@@ -479,7 +446,6 @@ importMerkleBlocks = do
         toImport  <- liftM (concat . M.elems) $ lift $ S.gets receivedMerkle
         wasImported <- liftM or $ forM toImport importMerkleBlock
         when wasImported $ do
-
             -- Check if we are in sync
             synced <- merkleBlocksSynced
             when synced $ do
@@ -489,11 +455,10 @@ importMerkleBlocks = do
                 spvImportTxs solo
 
                 -- Log current height
-                bestBlock  <- lift $ S.gets bestBlockHash
-                bestHeight <- runHeaderChain $ getBlockHeaderHeight bestBlock
+                bestBlock <- runHeaderChain getBestBlock
                 $(logInfo) $ T.pack $ unwords
                     [ "Merkle blocks are in sync at height:"
-                    , show bestHeight
+                    , show $ nodeHeaderHeight bestBlock
                     ]
 
             -- Try to import more merkle blocks if some were imported this round
@@ -503,31 +468,8 @@ importMerkleBlocks = do
 importMerkleBlock :: SPVNode s m 
                   => DecodedMerkleBlock
                   -> SPVHandle m Bool
-importMerkleBlock dmb = do
-
-    -- Check if the previous block is before the fast catchup time
-    fc <- lift $ S.gets fastCatchup
-    let prevHash = prevBlock $ merkleHeader $ decodedMerkle dmb
-    prevNode <- runHeaderChain $ getBlockHeaderNode prevHash
-    let parentBeforeCatchup = blockTimestamp (nodeHeader prevNode) < fc
-    
-    -- Check if we sent the parent block to the wallet
-    haveParent <- if prevHash == headerHash genesisHeader 
-        then return True 
-        else haveMerkleHash prevHash
-
-    -- We must have sent the previous merkle to the user (wallet) to import
-    -- this one. Or the previous block can be before the fast catchup time.
-    if not (haveParent || parentBeforeCatchup) then return False else do
-
-        -- Import the block into the blockchain
-        oldBestHash <- lift $ S.gets bestBlockHash
-        let bid = headerHash $ merkleHeader $ decodedMerkle dmb
-        action <- runHeaderChain $ connectBlock oldBestHash bid
-
-        -- Remove the merkle block from the received merkle list
-        removeReceivedMerkle (nodeHeaderHeight $ getActionNode action) dmb
-
+importMerkleBlock dmb = runHeaderChain (connectBlock bid) >>= \aM -> case aM of
+    Just action -> do
         -- If solo transactions belong to this merkle block, we have
         -- to import them and remove them from the solo list.
         solo <- lift $ S.gets soloTxs
@@ -536,22 +478,24 @@ importMerkleBlock dmb = do
             txsToImport         = nub $ merkleTxs dmb ++ soloAdd
         lift $ S.modify $ \s -> s{ soloTxs = soloKeep }
 
-        -- Update the bestBlockHash
-        case action of
-            BestBlock b -> do
-                lift $ S.modify $ \s -> s{ bestBlockHash = bid }
-                logBestBlock b $ length txsToImport
-            BlockReorg _ o n -> do
-                lift $ S.modify $ \s -> s{ bestBlockHash = bid }
-                logReorg o n $ length txsToImport
-            SideBlock b -> logSideblock b $ length txsToImport
-
         -- Import transactions and merkle block into the wallet
         unless (null txsToImport) $ spvImportTxs txsToImport
         spvImportMerkleBlock action $ expectedTxs dmb
 
+        -- Remove the merkle block from the received merkle list
+        removeReceivedMerkle (nodeHeaderHeight $ getActionNode action) dmb
+
+        -- Some logging
+        case action of
+            BestBlock b      -> logBestBlock b $ length txsToImport
+            BlockReorg _ o n -> logReorg o n $ length txsToImport
+            SideBlock b _    -> logSideblock b $ length txsToImport
+            OldBlock b _     -> logOldBlock b
+
         return True
+    Nothing -> return False
   where
+    bid = headerHash $ merkleHeader $ decodedMerkle dmb
     logBestBlock :: SPVNode s m => BlockHeaderNode -> Int -> SPVHandle m ()
     logBestBlock b c = $(logInfo) $ T.pack $ unwords
         [ "Best block at height:"
@@ -576,6 +520,11 @@ importMerkleBlock dmb = do
         , "New height:"
         , show $ nodeHeaderHeight $ last n
         , "( Sent", show c, "transactions to the wallet )"
+        ]
+    logOldBlock :: SPVNode s m => BlockHeaderNode -> SPVHandle m ()
+    logOldBlock b = $(logError) $ T.pack $ unwords
+        [ "Got duplicate OldBlock:"
+        , encodeBlockHashLE $ nodeBlockHash b
         ]
 
 {- Wallet Requests -}
@@ -622,23 +571,16 @@ processRescan ts = do
                 [ "Running rescan from time:"
                 , show ts
                 ]
-            rescanCleanup
 
-            -- Find the new best blocks that matches the fastCatchup time
-            newBestBlock <- runHeaderChain $ blockBeforeTimestamp ts
-            -- Find the new blocks that we have to download
-            toDwn        <- runHeaderChain $ blocksToDownload newBestBlock
-            let toDwnList = map (\(a,b) -> (a,[b])) toDwn
+            -- Reset the chain and set the new blocks to download
+            lift $ S.modify $ \s -> s{ blocksToDwn = M.empty }
+            addBlocksToDwn =<< runHeaderChain (rescanHeaderChain ts)
 
             -- Don't remember old requests
-            lift $ S.modify $ \s -> 
-                s{ blocksToDwn    = M.fromListWith (++) toDwnList
-                 , pendingRescan  = Nothing
-                 , receivedMerkle = M.empty
-                 , fastCatchup    = ts
-                 , bestBlockHash  = newBestBlock
-                 }
-
+            lift $ S.modify $ \s -> s{ pendingRescan  = Nothing
+                                     , receivedMerkle = M.empty
+                                     , fastCatchup = ts
+                                     }
             -- Trigger downloads
             remotePeers <- getPeerKeys
             forM_ remotePeers downloadBlocks
@@ -807,21 +749,19 @@ blockHeadersSynced = do
 merkleBlocksSynced :: SPVNode s m => SPVHandle m Bool
 merkleBlocksSynced = do
     networkHeight <- getBestPeerHeight
-    bestBlock <- lift $ S.gets bestBlockHash
-    merkleHeight <- runHeaderChain $ getBlockHeaderHeight bestBlock
-    return $ merkleHeight >= networkHeight
+    bestBlock <- runHeaderChain getBestBlock
+    return $ (nodeHeaderHeight bestBlock) >= networkHeight
 
 -- Log a message if we are synced up with this peer
 logPeerSynced :: SPVNode s m => RemoteHost -> Version -> SPVHandle m ()
 logPeerSynced remote ver = do
-    bestBlock <- lift $ S.gets bestBlockHash
-    bestHeight <- runHeaderChain $ getBlockHeaderHeight bestBlock
-    when (bestHeight >= startHeight ver) $
+    bestBlock <- runHeaderChain getBestBlock
+    when (nodeHeaderHeight bestBlock >= startHeight ver) $
         $(logInfo) $ T.pack $ unwords
             [ "Merkle blocks are in sync with the peer. Peer height:"
             , show $ startHeight ver 
             , "Our height:"
-            , show bestHeight
+            , show $ nodeHeaderHeight bestBlock
             , "(", show remote, ")" 
             ]
 

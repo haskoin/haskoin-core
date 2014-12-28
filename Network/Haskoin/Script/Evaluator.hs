@@ -669,8 +669,8 @@ conditionalEval scrpOp = do
                     | otherwise = return ()
 
 -- | Builds a Script evaluation monad.
-evalAll :: [ ScriptOp ] -> Program ()
-evalAll ops = do mapM_ conditionalEval ops
+evalOps :: [ ScriptOp ] -> Program ()
+evalOps ops = do mapM_ conditionalEval ops
                  cond <- getCond
                  unless (null cond) (lift $ programError "ifStack not empty")
 
@@ -728,8 +728,8 @@ execScript scriptSig scriptPubKey sigCheckFcn flags =
                | otherwise = return ()
 
 
-      redeemEval = checkSig >> evalAll sigOps >> lift (stack <$> get)
-      pubKeyEval = checkKey >> evalAll pubKeyOps >> lift get
+      redeemEval = checkSig >> evalOps sigOps >> lift (stack <$> get)
+      pubKeyEval = checkKey >> evalOps pubKeyOps >> lift get
 
       in do s <- evalProgram redeemEval [] initData flags
             p <- evalProgram pubKeyEval [] initData { stack = s } flags
@@ -744,7 +744,7 @@ execScript scriptSig scriptPubKey sigCheckFcn flags =
 -- | Evaluates a P2SH style script from its serialization in the stack
 evalP2SH :: Stack -> Program ProgramData
 evalP2SH [] = lift $ programError "PayToScriptHash: no script on stack"
-evalP2SH (sv:_) = evalAll (stackToScriptOps sv) >> lift get
+evalP2SH (sv:_) = evalOps (stackToScriptOps sv) >> lift get
 
 evalScript :: Script -> Script -> SigCheck -> [ Flag ] -> Bool
 evalScript scriptSig scriptPubKey sigCheckFcn flags =

@@ -147,7 +147,6 @@ DbConfirmation
 
 DbConfig
     bestHeight Word32
-    bestBlockHash BlockHash maxlen=200
     version Int
     created UTCTime
 

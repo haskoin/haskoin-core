@@ -261,13 +261,8 @@ runServer config pool = do
             let fastCatchupI = max 0 ((toInteger fstKeyTime) - 86400 * 7)
                 fc           = fromInteger fastCatchupI :: Word32
 
-            -- Get best known blockhash
-            conf <- flip runSqlPersistMPool pool $
-                        selectFirst [] [Asc DbConfigCreated]
-            let bb = dbConfigBestBlockHash $ entityVal $ fromJust conf
-
             -- Launch SPV node
-            withAsyncSPV hosts fc bb (runNodeHandle fp pool) $ 
+            withAsyncSPV hosts fc (runNodeHandle fp pool) $ 
                 \rChan _ -> do
                     -- Send the bloom filter
                     bloom <- flip runSqlPersistMPool pool $ walletBloomFilter fp

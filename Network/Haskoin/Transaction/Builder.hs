@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 module Network.Haskoin.Transaction.Builder 
 ( Coin(..)
 , buildTx
@@ -32,6 +33,7 @@ import Data.Aeson
     ( Value (Object)
     , FromJSON
     , ToJSON
+    , withObject
     , (.=), (.:), (.:?)
     , object
     , parseJSON
@@ -54,20 +56,19 @@ data Coin =
          } deriving (Eq, Show, Read)
 
 instance ToJSON Coin where
-    toJSON (Coin v s o r) = object
-      [ "value"     .= v
-      , "script"    .= s
-      , "outpoint"  .= o
-      , "redeem"    .= r
+    toJSON Coin{..} = object
+      [ "value"     .= coinValue
+      , "script"    .= coinScript
+      , "outpoint"  .= coinOutPoint
+      , "redeem"    .= coinRedeem
       ]
 
 instance FromJSON Coin where
-    parseJSON (Object o) =
+    parseJSON = withObject "Coin" $ \o ->
         Coin <$> o .: "value"
              <*> o .: "script"
              <*> o .: "outpoint"
              <*> o .: "redeem"
-    parseJSON _ = mzero
 
 instance NFData Coin where
     rnf (Coin v s o r) = rnf v `seq` rnf s `seq` rnf o `seq` rnf r

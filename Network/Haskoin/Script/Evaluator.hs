@@ -14,7 +14,7 @@ module Network.Haskoin.Script.Evaluator
 , SigCheck
 , Flag
 -- * Evaluation data types
-, Program
+, ProgramData
 , Stack
 -- * Helper functions
 , encodeInt
@@ -83,13 +83,13 @@ type FlagSet = [ Flag ]
 
 data EvalError =
     EvalError String
-    | ProgramError String Program
+    | ProgramError String ProgramData
     | StackError ScriptOp
     | DisabledOp ScriptOp
 
 instance Show EvalError where
     show (EvalError m) = m
-    show (ProgramError m prog) = m ++ " - program: " ++ show prog
+    show (ProgramError m prog) = m ++ " - ProgramData: " ++ show prog
     show (StackError op) = show op ++ ": Stack Error"
     show (DisabledOp op) = show op ++ ": disabled"
 
@@ -103,7 +103,7 @@ type HashOps = [ScriptOp] -- the code that is verified by OP_CHECKSIG
 type SigCheck = [ScriptOp] -> TxSignature -> PubKey -> Bool
 
 -- | Data type of the evaluation state.
-data Program = Program {
+data ProgramData = ProgramData {
     stack        :: Stack,
     altStack     :: AltStack,
     hashOps      :: HashOps,
@@ -126,35 +126,35 @@ dumpScript script = dumpList $ map dumpOp script
 dumpStack :: Stack -> String
 dumpStack s = dumpList $ map (bsToHex . BS.pack) s
 
-instance Show Program where
+instance Show ProgramData where
     show p = " stack: " ++ dumpStack (stack p)
 
 type ProgramState = ExceptT EvalError Identity
 type IfStack = [ Bool ]
 
 -- | Monad of actions independent of conditional statements.
-type ProgramTransition = ReaderT FlagSet ( StateT Program ProgramState )
+type StackOperation = ReaderT FlagSet ( StateT ProgramData ProgramState )
 -- | Monad of actions which taking if statements into account.
--- Separate state type from ProgramTransition for type safety
-type ConditionalProgramTransition a = StateT IfStack ProgramTransition a
+-- Separate state type from StackOperation for type safety
+type Program a = StateT IfStack StackOperation a
 
-evalProgramTransition :: ProgramTransition a -> Program -> FlagSet -> Either EvalError a
-evalProgramTransition m s f = runIdentity . runExceptT $ evalStateT ( runReaderT m f ) s
+evalStackOperation :: StackOperation a -> ProgramData -> FlagSet -> Either EvalError a
+evalStackOperation m s f = runIdentity . runExceptT $ evalStateT ( runReaderT m f ) s
 
-evalConditionalProgram :: ConditionalProgramTransition a -- ^ Program monad
+evalProgram :: Program a                      -- ^ ProgramData monad
                        -> [ Bool ]                       -- ^ Initial if state stack
-                       -> Program                        -- ^ Initial computation data
+                       -> ProgramData                    -- ^ Initial computation data
                        -> FlagSet                        -- ^ Evaluation Flags
                        -> Either EvalError a
-evalConditionalProgram m s = evalProgramTransition ( evalStateT m s )
+evalProgram m s = evalStackOperation ( evalStateT m s )
 
 --------------------------------------------------------------------------------
 -- Error utils
 
-programError :: String -> ProgramTransition a
+programError :: String -> StackOperation a
 programError s = get >>= throwError . ProgramError s
 
-disabled :: ScriptOp -> ProgramTransition ()
+disabled :: ScriptOp -> StackOperation ()
 disabled op = throwError . DisabledOp $ op
 
 --------------------------------------------------------------------------------
@@ -252,18 +252,18 @@ countOp op | isConstant op     = False
            | op == OP_RESERVED = False
            | otherwise         = True
 
-popInt :: ProgramTransition Int64
+popInt :: StackOperation Int64
 popInt = minimalStackValEnforcer >> decodeInt <$> popStack >>= \case
     Nothing -> programError "popInt: data > nMaxNumSize"
     Just i -> return i
 
-pushInt :: Int64 -> ProgramTransition ()
+pushInt :: Int64 -> StackOperation ()
 pushInt = pushStack . encodeInt
 
-popBool :: ProgramTransition Bool
+popBool :: StackOperation Bool
 popBool = decodeBool <$> popStack
 
-pushBool :: Bool -> ProgramTransition ()
+pushBool :: Bool -> StackOperation ()
 pushBool = pushStack . encodeBool
 
 opToSv :: StackValue -> BS.ByteString
@@ -275,59 +275,59 @@ bsToSv = BS.unpack
 --------------------------------------------------------------------------------
 -- Stack Primitives
 
-getStack :: ProgramTransition Stack
+getStack :: StackOperation Stack
 getStack = stack <$> get
 
-getCond :: ConditionalProgramTransition [Bool]
+getCond :: Program [Bool]
 getCond = get
 
-popCond :: ConditionalProgramTransition Bool
+popCond :: Program Bool
 popCond = get >>= \condStack -> case condStack of
     [] -> lift $ programError "popCond: empty condStack"
     (c:cs) -> put cs >> return c
 
-pushCond :: Bool -> ConditionalProgramTransition ()
+pushCond :: Bool -> Program ()
 pushCond c = get >>= \s ->
     put (c:s)
 
-flipCond :: ConditionalProgramTransition ()
+flipCond :: Program ()
 flipCond = popCond >>= pushCond . not
 
-withStack :: ProgramTransition Stack
+withStack :: StackOperation Stack
 withStack = getStack >>= \case
     [] -> stackError
     s  -> return s
 
-putStack :: Stack -> ProgramTransition ()
+putStack :: Stack -> StackOperation ()
 putStack st = modify $ \p -> p { stack = st }
 
-prependStack :: Stack -> ProgramTransition ()
+prependStack :: Stack -> StackOperation ()
 prependStack s = getStack >>= \s' -> putStack $ s ++ s'
 
-checkPushData :: ScriptOp -> ProgramTransition ()
+checkPushData :: ScriptOp -> StackOperation ()
 checkPushData (OP_PUSHDATA v _) | BS.length v > fromIntegral maxScriptElementSize
                                   = programError "OP_PUSHDATA > maxScriptElementSize"
                                 | otherwise = return ()
 checkPushData _ = return ()
 
-checkStackSize :: ProgramTransition ()
+checkStackSize :: StackOperation ()
 checkStackSize = do n <- length <$> stack <$> get
                     m <- length <$> altStack <$> get
                     when ((n + m) > fromIntegral maxStackSize) $
                          programError "stack > maxStackSize"
 
-pushStack :: StackValue -> ProgramTransition ()
+pushStack :: StackValue -> StackOperation ()
 pushStack v = getStack >>= \s -> putStack (v:s)
 
-popStack :: ProgramTransition StackValue
+popStack :: StackOperation StackValue
 popStack = withStack >>= \(s:ss) -> putStack ss >> return s
 
-popStackN :: Integer -> ProgramTransition [StackValue]
+popStackN :: Integer -> StackOperation [StackValue]
 popStackN n | n < 0     = programError "popStackN: negative argument"
             | n == 0    = return []
             | otherwise = (:) <$> popStack <*> popStackN (n - 1)
 
-pickStack :: Bool -> Int -> ProgramTransition ()
+pickStack :: Bool -> Int -> StackOperation ()
 pickStack remove n = do
     st <- getStack
 
@@ -340,12 +340,12 @@ pickStack remove n = do
     when remove $ putStack $ take n st ++ drop (n+1) st
     pushStack v
 
-getHashOps :: ProgramTransition HashOps
+getHashOps :: StackOperation HashOps
 getHashOps = hashOps <$> get
 
 -- | Function to track the verified OPs signed by OP_CHECK(MULTI) sig.
 -- Dependent on the sequence of `OP_CODESEPARATOR`
-dropHashOpsSeparatedCode :: ProgramTransition ()
+dropHashOpsSeparatedCode :: StackOperation ()
 dropHashOpsSeparatedCode = modify $ \p ->
    let tryDrop = dropWhile ( /= OP_CODESEPARATOR ) $ hashOps p in
    case tryDrop of
@@ -357,7 +357,7 @@ dropHashOpsSeparatedCode = modify $ \p ->
 
 -- | Filters out `OP_CODESEPARATOR` from the output script used by
 -- OP_CHECK(MULTI)SIG
-preparedHashOps :: ProgramTransition HashOps
+preparedHashOps :: StackOperation HashOps
 preparedHashOps = filter ( /= OP_CODESEPARATOR ) <$> getHashOps
 
 -- | Removes any PUSHDATA that contains the signatures.  Used in
@@ -396,55 +396,55 @@ orderedSatisfy f x@(a:as) y@(b:bs) | length x > length y = False
                                    | f a b     = orderedSatisfy f as bs
                                    | otherwise = orderedSatisfy f x bs
 
-tStack1 :: (StackValue -> Stack) -> ProgramTransition ()
+tStack1 :: (StackValue -> Stack) -> StackOperation ()
 tStack1 f = f <$> popStack >>= prependStack
 
-tStack2 :: (StackValue -> StackValue -> Stack) -> ProgramTransition ()
+tStack2 :: (StackValue -> StackValue -> Stack) -> StackOperation ()
 tStack2 f = f <$> popStack <*> popStack >>= prependStack
 
-tStack3 :: (StackValue -> StackValue -> StackValue -> Stack) -> ProgramTransition ()
+tStack3 :: (StackValue -> StackValue -> StackValue -> Stack) -> StackOperation ()
 tStack3 f = f <$> popStack <*> popStack <*> popStack >>= prependStack
 
 tStack4 :: (StackValue -> StackValue -> StackValue -> StackValue -> Stack)
-            -> ProgramTransition ()
+            -> StackOperation ()
 tStack4 f = f <$> popStack <*> popStack <*> popStack <*> popStack
               >>= prependStack
 
 tStack6 :: (StackValue -> StackValue -> StackValue ->
-            StackValue -> StackValue -> StackValue -> Stack) -> ProgramTransition ()
+            StackValue -> StackValue -> StackValue -> Stack) -> StackOperation ()
 tStack6 f = f <$> popStack <*> popStack <*> popStack
               <*> popStack <*> popStack <*> popStack >>= prependStack
 
-arith1 :: (Int64 -> Int64) -> ProgramTransition ()
+arith1 :: (Int64 -> Int64) -> StackOperation ()
 arith1 f = do
     i <- popInt
     pushStack $ encodeInt (f i)
 
-arith2 :: (Int64 -> Int64 -> Int64) -> ProgramTransition ()
+arith2 :: (Int64 -> Int64 -> Int64) -> StackOperation ()
 arith2 f = do
     i <- popInt
     j <- popInt
     pushStack $ encodeInt (f i j)
 
-stackError :: ProgramTransition a
+stackError :: StackOperation a
 stackError = programError "stack error"
 
 -- AltStack Primitives
 
-pushAltStack :: StackValue -> ProgramTransition ()
+pushAltStack :: StackValue -> StackOperation ()
 pushAltStack op = modify $ \p -> p { altStack = op:altStack p }
 
-popAltStack :: ProgramTransition StackValue
+popAltStack :: StackOperation StackValue
 popAltStack = get >>= \p -> case altStack p of
     a:as -> put p { altStack = as } >> return a
     []   -> programError "popAltStack: empty stack"
 
 
-incrementOpCount :: Int -> ProgramTransition ()
+incrementOpCount :: Int -> StackOperation ()
 incrementOpCount i | i > maxOpcodes = programError "reached opcode limit"
                    | otherwise      = modify $ \p -> p { opCount = i + 1 }
 
-nopDiscourager :: ProgramTransition ()
+nopDiscourager :: StackOperation ()
 nopDiscourager = do
     flgs <- ask
     if DISCOURAGE_UPGRADABLE_NOPS `elem` flgs
@@ -452,7 +452,7 @@ nopDiscourager = do
         else return ()
 
 -- Instruction Evaluation
-eval :: ScriptOp -> ProgramTransition ()
+eval :: ScriptOp -> StackOperation ()
 eval OP_NOP     = return ()
 eval OP_NOP1    = nopDiscourager >> return ()
 eval OP_NOP2    = nopDiscourager >> return ()
@@ -567,7 +567,7 @@ eval op = case constValue op of
     Just sv -> minimalPushEnforcer op >> pushStack sv
     Nothing -> programError $ "unexpected op " ++ show op
 
-minimalPushEnforcer :: ScriptOp -> ProgramTransition ()
+minimalPushEnforcer :: ScriptOp -> StackOperation ()
 minimalPushEnforcer op = do
     flgs <- ask
     if not $ MINIMALDATA `elem` flgs
@@ -592,7 +592,7 @@ checkMinimalPush _ = True
 
 -- | Checks the top of the stack for a minimal numeric representation
 -- if flagged to do so
-minimalStackValEnforcer :: ProgramTransition ()
+minimalStackValEnforcer :: StackOperation ()
 minimalStackValEnforcer = do
     flgs <- ask
     s <- getStack
@@ -619,7 +619,7 @@ checkMinimalNumRep s =
     then False
     else True
 
-nullDummyEnforcer :: ProgramTransition ()
+nullDummyEnforcer :: StackOperation ()
 nullDummyEnforcer = do
     flgs <- ask
     topStack <- ( getStack >>= headOrError )
@@ -634,11 +634,11 @@ nullDummyEnforcer = do
 --------------------------------------------------------------------------------
 -- | Based on the IfStack, returns whether the script is within an
 -- evaluating if-branch.
-getExec :: ConditionalProgramTransition Bool
+getExec :: Program Bool
 getExec = and <$> getCond
 
--- | Converts a `ScriptOp` to a program monad.
-conditionalEval :: ScriptOp -> ConditionalProgramTransition ()
+-- | Converts a `ScriptOp` to a ProgramData monad.
+conditionalEval :: ScriptOp -> Program ()
 conditionalEval scrpOp = do
    -- lift $ checkOpEnabled scrpOp
    lift $ checkPushData scrpOp
@@ -651,7 +651,7 @@ conditionalEval scrpOp = do
    lift checkStackSize
 
    where
-     eval' :: Bool -> ScriptOp -> ConditionalProgramTransition ()
+     eval' :: Bool -> ScriptOp -> Program ()
 
      eval' True  OP_IF      = lift popStack >>= pushCond . decodeBool
      eval' True  OP_NOTIF   = lift popStack >>= pushCond . not . decodeBool
@@ -669,13 +669,13 @@ conditionalEval scrpOp = do
                     | otherwise = return ()
 
 -- | Builds a Script evaluation monad.
-evalAll :: [ ScriptOp ] -> ConditionalProgramTransition ()
-evalAll ops = do mapM_ conditionalEval ops
+evalOps :: [ ScriptOp ] -> Program ()
+evalOps ops = do mapM_ conditionalEval ops
                  cond <- getCond
                  unless (null cond) (lift $ programError "ifStack not empty")
 
 
-checkPushOnly :: [ ScriptOp ] -> ConditionalProgramTransition ()
+checkPushOnly :: [ ScriptOp ] -> Program ()
 checkPushOnly ops
       | not (all checkPushOp ops) = lift $ programError "only push ops allowed"
       | otherwise = return ()
@@ -706,11 +706,11 @@ execScript :: Script -- ^ scriptSig ( redeemScript )
            -> Script -- ^ scriptPubKey
            -> SigCheck -- ^ signature verification Function
            -> [ Flag ] -- ^ Evaluation flags
-           -> Either EvalError Program
+           -> Either EvalError ProgramData
 execScript scriptSig scriptPubKey sigCheckFcn flags =
   let sigOps = scriptOps scriptSig
       pubKeyOps = scriptOps scriptPubKey
-      emptyProgram = Program {
+      initData = ProgramData {
         stack = [],
         altStack = [],
         hashOps = pubKeyOps,
@@ -728,18 +728,23 @@ execScript scriptSig scriptPubKey sigCheckFcn flags =
                | otherwise = return ()
 
 
-      redeemEval = checkSig >> evalAll sigOps >> lift (stack <$> get)
-      pubKeyEval = checkKey >> evalAll pubKeyOps >> lift get
-      p2shEval [] = lift $ programError "PayToScriptHash: no script on stack"
-      p2shEval (sv:_) = evalAll (stackToScriptOps sv) >> lift get
+      redeemEval = checkSig >> evalOps sigOps >> lift (stack <$> get)
+      pubKeyEval = checkKey >> evalOps pubKeyOps >> lift get
 
-      in do s <- evalConditionalProgram redeemEval [] emptyProgram flags
-            p <- evalConditionalProgram pubKeyEval [] emptyProgram { stack = s } flags
-            if ( checkStack . runStack $ p ) && 
-               ( isPayToScriptHash pubKeyOps flags ) && ( not . null $ s )
-                then evalConditionalProgram (p2shEval s) [] emptyProgram { stack = drop 1 s,
-                                                                           hashOps = stackToScriptOps $ head s } flags
-                else return p
+      in do s <- evalProgram redeemEval [] initData flags
+            p <- evalProgram pubKeyEval [] initData { stack = s } flags
+            if ( not . null $ s )
+                   && ( isPayToScriptHash pubKeyOps flags )
+                   && ( checkStack . runStack $ p )
+              then evalProgram (evalP2SH s) [] initData { stack = drop 1 s,
+                      hashOps = stackToScriptOps $ head s } flags
+              else return p
+
+
+-- | Evaluates a P2SH style script from its serialization in the stack
+evalP2SH :: Stack -> Program ProgramData
+evalP2SH [] = lift $ programError "PayToScriptHash: no script on stack"
+evalP2SH (sv:_) = evalOps (stackToScriptOps sv) >> lift get
 
 evalScript :: Script -> Script -> SigCheck -> [ Flag ] -> Bool
 evalScript scriptSig scriptPubKey sigCheckFcn flags =
@@ -747,7 +752,7 @@ evalScript scriptSig scriptPubKey sigCheckFcn flags =
                   Left _ -> False
                   Right p -> checkStack . runStack $ p
 
-runStack :: Program -> Stack
+runStack :: ProgramData -> Stack
 runStack = stack
 
 -- | A wrapper around 'verifySig' which handles grabbing the hash type

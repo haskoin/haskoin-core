@@ -4,11 +4,13 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Network.Haskoin.Node.SPVNode 
 ( SPVNode(..)
 , SPVSession(..)
 , SPVRequest( BloomFilterUpdate, PublishTx, NodeRescan )
+, SPVData(..)
 , withAsyncSPV
 , processBloomFilter
 )
@@ -24,7 +26,7 @@ import Control.Monad
     , forever
     , liftM
     )
-import Control.Monad.Trans (MonadIO, liftIO, lift)
+import Control.Monad.Trans (MonadTrans, MonadIO, liftIO, lift)
 import Control.Monad.Trans.Resource (MonadResource)
 import Control.Monad.Trans.Control (MonadBaseControl)
 import Control.Concurrent (threadDelay)
@@ -113,20 +115,19 @@ data SPVSession = SPVSession
     , peerInflightTxs :: !(M.Map RemoteHost [(TxHash, Timestamp)])
     }
 
-type SPVHandle m = S.StateT ManagerSession (S.StateT SPVSession m)
+data SPVData t = SPVData
+    { spvSession :: SPVSession
+    , spvData    :: t
+    }
 
-class ( BlockHeaderStore s 
-      , MonadIO m
-      , MonadLogger m
-      , MonadResource m
-      , MonadBaseControl IO m
-      )
-    => SPVNode s m | m -> s where
-    runHeaderChain :: s a -> SPVHandle m a
-    spvImportTxs :: [Tx] -> SPVHandle m ()
-    spvImportMerkleBlock :: BlockChainAction -> [TxHash] -> SPVHandle m ()
+type SPVHandle t = MngrHandle (SPVData t)
 
-instance SPVNode s m => PeerManager SPVRequest (S.StateT SPVSession m) where
+class BlockHeaderStore s => SPVNode s t | t -> s where
+    runHeaderChain :: s a -> SPVHandle t a
+    spvImportTxs :: [Tx] -> SPVHandle t ()
+    spvImportMerkleBlock :: BlockChainAction -> [TxHash] -> SPVHandle t ()
+
+instance SPVNode s t => PeerManager SPVRequest (SPVData t) where
     initNode = spvInitNode
     nodeRequest r = spvNodeRequest r
     peerHandshake remote ver = spvPeerHandshake remote ver
@@ -136,13 +137,13 @@ instance SPVNode s m => PeerManager SPVRequest (S.StateT SPVSession m) where
     peerMessage remote msg = spvPeerMessage remote msg
     peerMerkleBlock remote dmb = spvPeerMerkleBlock remote dmb
 
-withAsyncSPV :: SPVNode s m
+withAsyncSPV :: SPVNode s t
              => [(String, Int)] 
              -> Timestamp
-             -> (m () -> IO ())
+             -> t
              -> (TBMChan SPVRequest -> Async () -> IO ())
              -> IO ()
-withAsyncSPV hosts fc runStack f = do
+withAsyncSPV hosts fc t f = do
     let session = SPVSession
             { spvSyncPeer = Nothing
             , spvBloom = Nothing
@@ -156,10 +157,9 @@ withAsyncSPV hosts fc runStack f = do
             , peerInflightMerkles = M.empty
             , peerInflightTxs = M.empty
             }
-        g = runStack . (flip S.evalStateT session)
 
     -- Launch PeerManager main loop
-    withAsyncNode hosts g $ \rChan a -> 
+    withAsyncNode hosts (SPVData session t) $ \rChan a -> 
         -- Launch heartbeat thread to monitor stalled requests
         withAsync (heartbeat rChan) $ \_ -> f rChan a
 
@@ -168,44 +168,44 @@ heartbeat rChan = forever $ do
     threadDelay $ 1000000 * 120 -- Sleep for 2 minutes
     atomically $ writeTBMChan rChan Heartbeat
 
-spvPeerMessage :: SPVNode s m => RemoteHost -> Message -> SPVHandle m ()
+spvPeerMessage :: SPVNode s t => RemoteHost -> Message -> SPVHandle t ()
 spvPeerMessage remote msg = case msg of
     MHeaders headers -> processHeaders remote headers
     MInv inv -> processInv remote inv
     MTx tx -> processTx remote tx
     _ -> return ()
 
-spvNodeRequest :: SPVNode s m => SPVRequest -> SPVHandle m ()
+spvNodeRequest :: SPVNode s t => SPVRequest -> SPVHandle t ()
 spvNodeRequest req = case req of
     BloomFilterUpdate bf -> processBloomFilter bf
     PublishTx tx -> publishTx tx
     NodeRescan ts -> processRescan ts
     Heartbeat -> heartbeatMonitor
 
-spvInitNode :: SPVNode s m => SPVHandle m ()
+spvInitNode :: SPVNode s t => SPVHandle t ()
 spvInitNode = do
-    fc <- lift $ S.gets fastCatchup
+    fc <- spvGets fastCatchup
     -- Initialize the block header database
     runHeaderChain $ initHeaderChain fc
     -- Set the block hashes that need to be downloaded
-    lift $ S.modify $ \s -> s{ blocksToDwn = M.empty }
+    spvModify $ \s -> s{ blocksToDwn = M.empty }
     addBlocksToDwn =<< runHeaderChain blocksToDownload
 
 {- Peer events -}
 
-spvPeerHandshake :: SPVNode s m => RemoteHost -> Version -> SPVHandle m ()
+spvPeerHandshake :: SPVNode s t => RemoteHost -> Version -> SPVHandle t ()
 spvPeerHandshake remote ver = do
     -- Send a bloom filter if we have one
-    bloomM <- lift $ S.gets spvBloom
+    bloomM <- spvGets spvBloom
     let filterLoad = MFilterLoad $ FilterLoad $ fromJust bloomM
     when (isJust bloomM) $ sendMessage remote filterLoad
 
     -- Send wallet transactions that are pending a network broadcast
     -- TODO: Is it enough just to broadcast to 1 peer ?
     -- TODO: Should we send an INV message first ?
-    pendingTxs <- lift $ S.gets pendingTxBroadcast
+    pendingTxs <- spvGets pendingTxBroadcast
     forM_ pendingTxs $ \tx -> sendMessage remote $ MTx tx
-    lift $ S.modify $ \s -> s{ pendingTxBroadcast = [] }
+    spvModify $ \s -> s{ pendingTxBroadcast = [] }
 
     -- Send a GetHeaders regardless if there is already a peerSync. This peer
     -- could still be faster and become the new peerSync.
@@ -216,13 +216,13 @@ spvPeerHandshake remote ver = do
 
     logPeerSynced remote ver
 
-spvPeerDisconnect :: SPVNode s m => RemoteHost -> SPVHandle m ()
+spvPeerDisconnect :: SPVNode s t => RemoteHost -> SPVHandle t ()
 spvPeerDisconnect remote = do
     remotePeers <- liftM (delete remote) getPeerKeys
 
-    peerBlockMap <- lift $ S.gets peerBroadcastBlocks
-    peerMerkleMap <- lift $ S.gets peerInflightMerkles
-    peerTxMap <- lift $ S.gets peerInflightTxs
+    peerBlockMap <- spvGets peerBroadcastBlocks
+    peerMerkleMap <- spvGets peerInflightMerkles
+    peerTxMap <- spvGets peerInflightTxs
 
     -- Inflight merkle blocks are sent back to the download queue
     let toDwn = map fst $ fromMaybe [] $ M.lookup remote peerMerkleMap
@@ -239,22 +239,22 @@ spvPeerDisconnect remote = do
         forM_ remotePeers downloadBlocks
 
     -- Remove any state related to this remote peer
-    lift $ S.modify $ \s -> 
+    spvModify $ \s -> 
         s{ peerBroadcastBlocks = M.delete remote peerBlockMap
          , peerInflightMerkles = M.delete remote peerMerkleMap
          , peerInflightTxs     = M.delete remote peerTxMap
          }
 
     -- Find a new block header synchronizing peer
-    syn <- lift $ S.gets spvSyncPeer
+    syn <- spvGets spvSyncPeer
     when (syn == Just remote) $ do
         $(logInfo) "Finding a new peer to synchronize the block headers"
-        lift $ S.modify $ \s -> s{ spvSyncPeer = Nothing }
+        spvModify $ \s -> s{ spvSyncPeer = Nothing }
         forM_ remotePeers $ \r -> sendGetHeaders r True 0x00
 
 {- Network events -}
 
-processHeaders :: SPVNode s m => RemoteHost -> Headers -> SPVHandle m ()
+processHeaders :: SPVNode s t => RemoteHost -> Headers -> SPVHandle t ()
 processHeaders remote (Headers hs) = do
     adjustedTime <- liftM round $ liftIO getPOSIXTime
     -- Save best work before the header import
@@ -287,12 +287,12 @@ processHeaders remote (Headers hs) = do
 
     -- Adjust the height of peers that sent us INV messages for these headers
     forM_ newBlocks $ \n -> do
-        broadcastMap <- lift $ S.gets peerBroadcastBlocks
+        broadcastMap <- spvGets peerBroadcastBlocks
         newList <- forM (M.toList broadcastMap) $ \(r, bs) -> do
             when (nodeBlockHash n `elem` bs) $
                 increasePeerHeight r $ nodeHeaderHeight n
             return (r, filter (/= nodeBlockHash n) bs)
-        lift $ S.modify $ \s -> s{ peerBroadcastBlocks = M.fromList newList }
+        spvModify $ \s -> s{ peerBroadcastBlocks = M.fromList newList }
 
     -- Continue syncing from this node only if it made some progress.
     -- Otherwise, another peer is probably faster/ahead already.
@@ -302,7 +302,7 @@ processHeaders remote (Headers hs) = do
 
         -- Update the sync peer 
         isSynced <- blockHeadersSynced
-        lift $ S.modify $ \s -> 
+        spvModify $ \s -> 
             s{ spvSyncPeer = if isSynced then Nothing else Just remote }
 
         $(logInfo) $ T.pack $ unwords
@@ -317,7 +317,7 @@ processHeaders remote (Headers hs) = do
     remotePeers <- getPeerKeys
     forM_ remotePeers downloadBlocks
 
-processInv :: SPVNode s m => RemoteHost -> Inv -> SPVHandle m ()
+processInv :: SPVNode s t => RemoteHost -> Inv -> SPVHandle t ()
 processInv remote (Inv vs) = do
 
     -- Process transactions
@@ -365,7 +365,7 @@ processInv remote (Inv vs) = do
         filter ((== InvBlock) . invType) vs
 
 -- These are solo transactions not linked to a merkle block (yet)
-processTx :: SPVNode s m => RemoteHost -> Tx -> SPVHandle m ()
+processTx :: SPVNode s t => RemoteHost -> Tx -> SPVHandle t ()
 processTx remote tx = do
     -- Only send to wallet if we are in sync
     synced <- merkleBlocksSynced
@@ -383,20 +383,20 @@ processTx remote tx = do
                 , encodeTxHashLE txhash 
                 , "We are not synced. Buffering it."
                 ]
-            lift $ S.modify $ \s -> s{ soloTxs = nub $ tx : soloTxs s } 
+            spvModify $ \s -> s{ soloTxs = nub $ tx : soloTxs s } 
 
     -- Remove the inflight transaction from all remote inflight lists
-    txMap <- lift $ S.gets peerInflightTxs
+    txMap <- spvGets peerInflightTxs
     let newMap = M.map (filter ((/= txhash) . fst)) txMap
-    lift $ S.modify $ \s -> s{ peerInflightTxs = newMap }
+    spvModify $ \s -> s{ peerInflightTxs = newMap }
 
     -- Trigger merkle block downloads
     importMerkleBlocks 
   where
     txhash = txHash tx
 
-spvPeerMerkleBlock :: SPVNode s m 
-                   => RemoteHost -> DecodedMerkleBlock -> SPVHandle m ()
+spvPeerMerkleBlock :: SPVNode s t 
+                   => RemoteHost -> DecodedMerkleBlock -> SPVHandle t ()
 spvPeerMerkleBlock remote dmb = do
     -- Ignore unsolicited merkle blocks
     existsNode <- runHeaderChain $ existsBlockHeaderNode bid
@@ -414,7 +414,7 @@ spvPeerMerkleBlock remote dmb = do
             ]
 
         -- When a rescan is pending, don't store the merkle blocks
-        rescan <- lift $ S.gets pendingRescan
+        rescan <- spvGets pendingRescan
         when (isNothing rescan && isValid) $ do
             -- Insert the merkle block into the received list
             addReceivedMerkle (nodeHeaderHeight node) dmb
@@ -423,8 +423,7 @@ spvPeerMerkleBlock remote dmb = do
             downloadBlocks remote
 
         -- Try to launch the rescan if one is pending
-        hasMoreInflight <- liftM (M.member remote) $ 
-            lift $ S.gets peerInflightMerkles
+        hasMoreInflight <- liftM (M.member remote) $ spvGets peerInflightMerkles
         when (isJust rescan && not hasMoreInflight) $ 
             processRescan $ fromJust rescan
   where
@@ -432,26 +431,26 @@ spvPeerMerkleBlock remote dmb = do
 
 -- This function will make sure that the merkle blocks are imported in-order
 -- as they may be received out-of-order from the network (concurrent download)
-importMerkleBlocks :: SPVNode s m => SPVHandle m ()
+importMerkleBlocks :: SPVNode s t => SPVHandle t ()
 importMerkleBlocks = do
     -- Find all inflight transactions
-    inflightTxs <- liftM (concat . M.elems) $ lift $ S.gets peerInflightTxs
+    inflightTxs <- liftM (concat . M.elems) $ spvGets peerInflightTxs
     -- If we are pending a rescan, do not import anything
-    rescan  <- lift $ S.gets pendingRescan
+    rescan  <- spvGets pendingRescan
     -- We stall merkle block imports when transactions are inflight. This
     -- is to prevent this race condition where tx1 would miss it's
     -- confirmation:
     -- INV tx1 -> GetData tx1 -> MerkleBlock (all tx except tx1) -> Tx1
     when (null inflightTxs && isNothing rescan) $ do
-        toImport  <- liftM (concat . M.elems) $ lift $ S.gets receivedMerkle
+        toImport  <- liftM (concat . M.elems) $ spvGets receivedMerkle
         wasImported <- liftM or $ forM toImport importMerkleBlock
         when wasImported $ do
             -- Check if we are in sync
             synced <- merkleBlocksSynced
             when synced $ do
                 -- If we are synced, send solo transactions to the wallet
-                solo <- lift $ S.gets soloTxs
-                lift $ S.modify $ \s -> s{ soloTxs = [] }
+                solo <- spvGets soloTxs
+                spvModify $ \s -> s{ soloTxs = [] }
                 spvImportTxs solo
 
                 -- Log current height
@@ -465,18 +464,16 @@ importMerkleBlocks = do
             importMerkleBlocks
 
 -- Import a single merkle block if its parent has already been imported
-importMerkleBlock :: SPVNode s m 
-                  => DecodedMerkleBlock
-                  -> SPVHandle m Bool
+importMerkleBlock :: SPVNode s t => DecodedMerkleBlock -> SPVHandle t Bool
 importMerkleBlock dmb = runHeaderChain (connectBlock bid) >>= \aM -> case aM of
     Just action -> do
         -- If solo transactions belong to this merkle block, we have
         -- to import them and remove them from the solo list.
-        solo <- lift $ S.gets soloTxs
+        solo <- spvGets soloTxs
         let isInMerkle x        = txHash x `elem` expectedTxs dmb
             (soloAdd, soloKeep) = partition isInMerkle solo
             txsToImport         = nub $ merkleTxs dmb ++ soloAdd
-        lift $ S.modify $ \s -> s{ soloTxs = soloKeep }
+        spvModify $ \s -> s{ soloTxs = soloKeep }
 
         -- Import transactions and merkle block into the wallet
         unless (null txsToImport) $ spvImportTxs txsToImport
@@ -496,14 +493,14 @@ importMerkleBlock dmb = runHeaderChain (connectBlock bid) >>= \aM -> case aM of
     Nothing -> return False
   where
     bid = headerHash $ merkleHeader $ decodedMerkle dmb
-    logBestBlock :: SPVNode s m => BlockHeaderNode -> Int -> SPVHandle m ()
+    logBestBlock :: SPVNode s t => BlockHeaderNode -> Int -> SPVHandle t ()
     logBestBlock b c = $(logInfo) $ T.pack $ unwords
         [ "Best block at height:"
         , show $ nodeHeaderHeight b, ":"
         , encodeBlockHashLE $ nodeBlockHash b
         , "( Sent", show c, "transactions to the wallet )"
         ]
-    logSideblock :: SPVNode s m => BlockHeaderNode -> Int -> SPVHandle m ()
+    logSideblock :: SPVNode s t => BlockHeaderNode -> Int -> SPVHandle t ()
     logSideblock b c = $(logInfo) $ T.pack $ unwords
         [ "Side block at height"
         , show $ nodeHeaderHeight b, ":"
@@ -521,7 +518,7 @@ importMerkleBlock dmb = runHeaderChain (connectBlock bid) >>= \aM -> case aM of
         , show $ nodeHeaderHeight $ last n
         , "( Sent", show c, "transactions to the wallet )"
         ]
-    logOldBlock :: SPVNode s m => BlockHeaderNode -> SPVHandle m ()
+    logOldBlock :: SPVNode s t => BlockHeaderNode -> SPVHandle t ()
     logOldBlock b = $(logError) $ T.pack $ unwords
         [ "Got duplicate OldBlock:"
         , encodeBlockHashLE $ nodeBlockHash b
@@ -529,13 +526,13 @@ importMerkleBlock dmb = runHeaderChain (connectBlock bid) >>= \aM -> case aM of
 
 {- Wallet Requests -}
 
-processBloomFilter :: SPVNode s m => BloomFilter -> SPVHandle m ()
+processBloomFilter :: SPVNode s t => BloomFilter -> SPVHandle t ()
 processBloomFilter bloom = do
-    prevBloom <- lift $ S.gets spvBloom
+    prevBloom <- spvGets spvBloom
     -- Load the new bloom filter if it is not empty
     when (prevBloom /= Just bloom && (not $ isBloomEmpty bloom)) $ do
         $(logInfo) "Loading new bloom filter"
-        lift $ S.modify $ \s -> s{ spvBloom = Just bloom }
+        spvModify $ \s -> s{ spvBloom = Just bloom }
 
         remotePeers <- getPeerKeys
         forM_ remotePeers $ \remote -> do
@@ -545,7 +542,7 @@ processBloomFilter bloom = do
             -- downloads are paused if no bloom filter is loaded.
             downloadBlocks remote
 
-publishTx :: SPVNode s m => Tx -> SPVHandle m ()
+publishTx :: SPVNode s t => Tx -> SPVHandle t ()
 publishTx tx = do
     $(logInfo) $ T.pack $ unwords
         [ "Broadcasting transaction to the network:"
@@ -558,12 +555,12 @@ publishTx tx = do
 
     -- If no peers are connected, we save the transaction and send it later.
     let txSent = or $ map (peerCompleteHandshake . snd) peers
-    unless txSent $ lift $ S.modify $ 
+    unless txSent $ spvModify $ 
         \s -> s{pendingTxBroadcast = tx : pendingTxBroadcast s}
 
-processRescan :: SPVNode s m => Timestamp -> SPVHandle m ()
+processRescan :: SPVNode s t => Timestamp -> SPVHandle t ()
 processRescan ts = do
-    pending <- liftM (concat . M.elems) $ lift $ S.gets peerInflightMerkles
+    pending <- liftM (concat . M.elems) $ spvGets peerInflightMerkles
     -- Can't process a rescan while merkle blocks are still inflight
     if (null pending)
         then do
@@ -573,11 +570,11 @@ processRescan ts = do
                 ]
 
             -- Reset the chain and set the new blocks to download
-            lift $ S.modify $ \s -> s{ blocksToDwn = M.empty }
+            spvModify $ \s -> s{ blocksToDwn = M.empty }
             addBlocksToDwn =<< runHeaderChain (rescanHeaderChain ts)
 
             -- Don't remember old requests
-            lift $ S.modify $ \s -> s{ pendingRescan  = Nothing
+            spvModify $ \s -> s{ pendingRescan  = Nothing
                                      , receivedMerkle = M.empty
                                      , fastCatchup = ts
                                      }
@@ -587,9 +584,9 @@ processRescan ts = do
         else do
             $(logInfo) $ T.pack $ unwords
                 [ "Rescan: waiting for pending merkle blocks to download" ]
-            lift $ S.modify $ \s -> s{ pendingRescan = Just ts }
+            spvModify $ \s -> s{ pendingRescan = Just ts }
 
-heartbeatMonitor :: SPVNode s m => SPVHandle m ()
+heartbeatMonitor :: SPVNode s t => SPVHandle t ()
 heartbeatMonitor = do
     $(logDebug) "Monitoring heartbeat"
 
@@ -598,7 +595,7 @@ heartbeatMonitor = do
     let isStalled t = t + 120 < now -- Stalled for over 2 minutes
 
     -- Check stalled merkle blocks
-    merkleMap <- lift $ S.gets peerInflightMerkles
+    merkleMap <- spvGets peerInflightMerkles
     -- M.Map RemoteHost ([(BlockHash, Timestamp)],[BlockHash, Timestamp])
     let stalledMerkleMap = M.map (partition (isStalled . snd)) merkleMap
         stalledMerkles   = map fst $ concat $ 
@@ -614,7 +611,7 @@ heartbeatMonitor = do
             , "]"
             ]
         -- Save the new inflight merkle map
-        lift $ S.modify $ \s -> 
+        spvModify $ \s -> 
             s{ peerInflightMerkles = M.map snd stalledMerkleMap }
         -- Add stalled merkle blocks to the downloade queue
         addBlocksToDwn stalledMerkles
@@ -623,7 +620,7 @@ heartbeatMonitor = do
         forM_ reorderedPeers downloadBlocks
 
     -- Check stalled transactions
-    txMap <- lift $ S.gets peerInflightTxs
+    txMap <- spvGets peerInflightTxs
     -- M.Map RemoteHost ([(TxHash, Timestamp)], [(TxHash, Timestamp)])
     let stalledTxMap = M.map (partition (isStalled . snd)) txMap
         stalledTxs   = M.filter (not . null) $ M.map fst stalledTxMap
@@ -640,20 +637,20 @@ heartbeatMonitor = do
         downloadTxs remote txsToDwn
 
 -- Add transaction hashes to the inflight map and send a GetData message
-downloadTxs :: SPVNode s m => RemoteHost -> [TxHash] -> SPVHandle m ()
+downloadTxs :: SPVNode s t => RemoteHost -> [TxHash] -> SPVHandle t ()
 downloadTxs remote hs 
     | null hs = return ()
     | otherwise = do
         -- Get current time
         now <- round <$> liftIO getPOSIXTime
-        inflightMap <- lift $ S.gets peerInflightTxs
+        inflightMap <- spvGets peerInflightTxs
         -- Remove existing inflight values for the peer
         let f = not . (`elem` hs) . fst
             filteredMap = M.adjust (filter f) remote inflightMap
         -- Add transactions to the inflight map
             newMap = M.singleton remote $ map (\h -> (h,now)) hs
             newInflightMap = M.unionWith (++) filteredMap newMap
-        lift $ S.modify $ \s -> s{ peerInflightTxs = newInflightMap }
+        spvModify $ \s -> s{ peerInflightTxs = newInflightMap }
         -- Send GetData message for those transactions
         let vs = map (InvVector InvTx . fromIntegral) hs
         sendMessage remote $ MGetData $ GetData vs
@@ -661,8 +658,8 @@ downloadTxs remote hs
 {- Utilities -}
 
 -- Send out a GetHeaders request for a given peer
-sendGetHeaders :: SPVNode s m 
-               => RemoteHost -> Bool -> BlockHash -> SPVHandle m ()
+sendGetHeaders :: SPVNode s t 
+               => RemoteHost -> Bool -> BlockHash -> SPVHandle t ()
 sendGetHeaders remote full hstop = do
     handshake <- liftM peerCompleteHandshake $ getPeerData remote
     -- Only peers that have finished the connection handshake
@@ -683,10 +680,10 @@ sendGetHeaders remote full hstop = do
 
 -- Look at the block download queue and request a peer to download more blocks
 -- if the peer is connected, idling and meets the block height requirements.
-downloadBlocks :: SPVNode s m => RemoteHost -> SPVHandle m ()
+downloadBlocks :: SPVNode s t => RemoteHost -> SPVHandle t ()
 downloadBlocks remote = canDownloadBlocks remote >>= \dwn -> when dwn $ do
     height <- liftM peerHeight $ getPeerData remote
-    dwnMap <- lift $ S.gets blocksToDwn
+    dwnMap <- spvGets blocksToDwn
 
     -- Find blocks that this peer can download
     let xs = concat $ map (\(k,vs) -> map (\v -> (k,v)) vs) $ M.toAscList dwnMap
@@ -707,7 +704,7 @@ downloadBlocks remote = canDownloadBlocks remote >>= \dwn -> when dwn $ do
             ]
 
         -- Store the new list of blocks to download
-        lift $ S.modify $ \s -> s{ blocksToDwn = restMap }
+        spvModify $ \s -> s{ blocksToDwn = restMap }
         -- Store the new blocks to download as inflght merkle blocks
         addInflightMerkles remote toDwn
         -- Send GetData message to receive the merkle blocks
@@ -716,20 +713,20 @@ downloadBlocks remote = canDownloadBlocks remote >>= \dwn -> when dwn $ do
 -- Only download blocks from peers that have completed the handshake
 -- and are idling. Do not allow downloads if a rescan is pending or
 -- if no bloom filter was provided yet from the wallet.
-canDownloadBlocks :: SPVNode s m => RemoteHost -> SPVHandle m Bool
+canDownloadBlocks :: SPVNode s t => RemoteHost -> SPVHandle t Bool
 canDownloadBlocks remote = do
     peerData   <- getPeerData remote
-    reqM       <- liftM (M.lookup remote) $ lift $ S.gets peerInflightMerkles
-    bloom      <- lift $ S.gets spvBloom
-    syncPeer   <- lift $ S.gets spvSyncPeer
-    rescan     <- lift $ S.gets pendingRescan
+    reqM       <- liftM (M.lookup remote) $ spvGets peerInflightMerkles
+    bloom      <- spvGets spvBloom
+    syncPeer   <- spvGets spvSyncPeer
+    rescan     <- spvGets pendingRescan
     return $ (syncPeer /= Just remote)
           && (isJust bloom)
           && (peerCompleteHandshake peerData)
           && (isNothing reqM || reqM == Just [])
           && (isNothing rescan)
 
-sendMerkleGetData :: SPVNode s m => RemoteHost -> [BlockHash] -> SPVHandle m ()
+sendMerkleGetData :: SPVNode s t => RemoteHost -> [BlockHash] -> SPVHandle t ()
 sendMerkleGetData remote hs = do
     sendMessage remote $ MGetData $ GetData $ 
         map ((InvVector InvMerkleBlock) . fromIntegral) hs
@@ -739,21 +736,21 @@ sendMerkleGetData remote hs = do
     sendMessage remote $ MPing $ Ping 0
 
 -- Header height = network height
-blockHeadersSynced :: SPVNode s m => SPVHandle m Bool
+blockHeadersSynced :: SPVNode s t => SPVHandle t Bool
 blockHeadersSynced = do
     networkHeight <- getBestPeerHeight
     headerHeight <- runHeaderChain bestBlockHeaderHeight
     return $ headerHeight >= networkHeight
 
 -- Merkle block height = network height
-merkleBlocksSynced :: SPVNode s m => SPVHandle m Bool
+merkleBlocksSynced :: SPVNode s t => SPVHandle t Bool
 merkleBlocksSynced = do
     networkHeight <- getBestPeerHeight
     bestBlock <- runHeaderChain getBestBlock
     return $ (nodeHeaderHeight bestBlock) >= networkHeight
 
 -- Log a message if we are synced up with this peer
-logPeerSynced :: SPVNode s m => RemoteHost -> Version -> SPVHandle m ()
+logPeerSynced :: SPVNode s t => RemoteHost -> Version -> SPVHandle t ()
 logPeerSynced remote ver = do
     bestBlock <- runHeaderChain getBestBlock
     when (nodeHeaderHeight bestBlock >= startHeight ver) $
@@ -765,53 +762,59 @@ logPeerSynced remote ver = do
             , "(", show remote, ")" 
             ]
 
-addBroadcastBlocks :: SPVNode s m => RemoteHost -> [BlockHash] -> SPVHandle m ()
-addBroadcastBlocks remote hs = lift $ do
-    prevMap <- S.gets peerBroadcastBlocks
-    S.modify $ \s -> s{ peerBroadcastBlocks = M.unionWith (++) prevMap sMap }
+addBroadcastBlocks :: SPVNode s t => RemoteHost -> [BlockHash] -> SPVHandle t ()
+addBroadcastBlocks remote hs = do
+    prevMap <- spvGets peerBroadcastBlocks
+    spvModify $ \s -> s{ peerBroadcastBlocks = M.unionWith (++) prevMap sMap }
   where
     sMap = M.singleton remote hs
 
-addBlocksToDwn :: SPVNode s m 
-               => [(BlockHeight, BlockHash)] -> SPVHandle m ()
-addBlocksToDwn hs = lift $ do
-    dwnMap <- S.gets blocksToDwn
-    S.modify $ \s -> s{ blocksToDwn = M.unionWith (++) dwnMap newMap }
+addBlocksToDwn :: SPVNode s t 
+               => [(BlockHeight, BlockHash)] -> SPVHandle t ()
+addBlocksToDwn hs = do
+    dwnMap <- spvGets blocksToDwn
+    spvModify $ \s -> s{ blocksToDwn = M.unionWith (++) dwnMap newMap }
   where
     newMap = M.fromListWith (++) $ map (\(a,b) -> (a,[b])) hs
 
-addReceivedMerkle :: SPVNode s m 
-                  => BlockHeight -> DecodedMerkleBlock -> SPVHandle m ()
+addReceivedMerkle :: SPVNode s t 
+                  => BlockHeight -> DecodedMerkleBlock -> SPVHandle t ()
 addReceivedMerkle h dmb = do
-    receivedMap <- lift $ S.gets receivedMerkle
+    receivedMap <- spvGets receivedMerkle
     let newMap = M.unionWith (++) receivedMap $ M.singleton h [dmb]
-    lift $ S.modify $ \s -> s{ receivedMerkle = newMap }
+    spvModify $ \s -> s{ receivedMerkle = newMap }
 
-removeReceivedMerkle :: SPVNode s m 
-                     => BlockHeight -> DecodedMerkleBlock -> SPVHandle m ()
+removeReceivedMerkle :: SPVNode s t 
+                     => BlockHeight -> DecodedMerkleBlock -> SPVHandle t ()
 removeReceivedMerkle h dmb = do
-    receivedMap <- lift $ S.gets receivedMerkle
+    receivedMap <- spvGets receivedMerkle
     let f xs   = g $ delete dmb xs
         g res  = if null res then Nothing else Just res
         newMap = M.update f h receivedMap
-    lift $ S.modify $ \s -> s{ receivedMerkle = newMap }
+    spvModify $ \s -> s{ receivedMerkle = newMap }
 
-addInflightMerkles :: SPVNode s m 
-                   => RemoteHost -> [(BlockHeight, BlockHash)] -> SPVHandle m ()
+addInflightMerkles :: SPVNode s t 
+                   => RemoteHost -> [(BlockHeight, BlockHash)] -> SPVHandle t ()
 addInflightMerkles remote vs = do
     now <- round <$> liftIO getPOSIXTime
-    merkleMap <- lift $ S.gets peerInflightMerkles
+    merkleMap <- spvGets peerInflightMerkles
     let newList = map (\v -> (v, now)) vs
         newMap  = M.unionWith (++) merkleMap $ M.singleton remote newList
-    lift $ S.modify $ \s -> s{ peerInflightMerkles = newMap }
+    spvModify $ \s -> s{ peerInflightMerkles = newMap }
 
-removeInflightMerkle :: SPVNode s m 
-                     => RemoteHost -> BlockHash -> SPVHandle m ()
+removeInflightMerkle :: SPVNode s t 
+                     => RemoteHost -> BlockHash -> SPVHandle t ()
 removeInflightMerkle remote bid = do
-    merkleMap <- lift $ S.gets peerInflightMerkles
+    merkleMap <- spvGets peerInflightMerkles
     let newMap = M.update f remote merkleMap
-    lift $ S.modify $ \s -> s{ peerInflightMerkles = newMap }
+    spvModify $ \s -> s{ peerInflightMerkles = newMap }
   where
     f xs  = g $ filter ((/= bid) . snd . fst) xs
     g res = if null res then Nothing else Just res
+
+spvGets :: SPVNode s t => (SPVSession -> a) -> SPVHandle t a
+spvGets f = f <$> S.gets spvSession
+
+spvModify :: SPVNode s t => (SPVSession -> SPVSession) -> SPVHandle t ()
+spvModify f = S.modify $ \s -> s{ spvSession = f $ spvSession s }
 

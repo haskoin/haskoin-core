@@ -141,12 +141,15 @@ genesisBlockHeaderNode = BlockHeaderNode
 -- | Initialize the block header chain by inserting the genesis block if
 -- it doesn't already exist.
 initHeaderChain :: BlockHeaderStore m => Timestamp -> m ()
-initHeaderChain fc = do
+initHeaderChain ts = do
     existsGen <- existsBlockHeaderNode $ headerHash genesisHeader
     unless existsGen $ do
         putBlockHeaderNode genesisBlockHeaderNode
         setBestBlockHeader genesisBlockHeaderNode
         setBestBlock genesisBlockHeaderNode
+        -- Adjust time backwards by a week to handle clock drifts.
+        let fastCatchupI = max 0 ((toInteger ts) - 86400 * 7)
+            fc           = fromInteger fastCatchupI 
         setFastCatchup fc
         setFastCatchupHeight $ if fc == 0 then Just 0 else Nothing
 

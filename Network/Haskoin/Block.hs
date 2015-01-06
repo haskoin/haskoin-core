@@ -35,6 +35,7 @@ module Network.Haskoin.Block
 , Timestamp
 , genesisBlockHeaderNode
 , initHeaderChain
+, rescanHeaderChain
 , connectBlockHeader
 , blockLocator
 , bestBlockHeaderHeight
@@ -51,7 +52,8 @@ module Network.Haskoin.Block
 , getActionNode
 , connectBlock
 , blocksToDownload
-, blockBeforeTimestamp
+, LevelDBChain
+, runLevelDBChain
 
   -- * Checkpoints
 , checkpointMap

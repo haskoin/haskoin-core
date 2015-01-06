@@ -1,9 +1,13 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Network.Haskoin.Block.HeaderChain 
 ( BlockHeaderNode(..)
 , BlockHeaderStore(..)
 , BlockHeaderAction(..)
 , genesisBlockHeaderNode
 , initHeaderChain
+, rescanHeaderChain
 , connectBlockHeader
 , blockLocator
 , bestBlockHeaderHeight
@@ -20,7 +24,8 @@ module Network.Haskoin.Block.HeaderChain
 , getActionNode
 , connectBlock
 , blocksToDownload
-, blockBeforeTimestamp
+, LevelDBChain
+, runLevelDBChain
 )
 where
 
@@ -28,15 +33,33 @@ import Control.Applicative ((<$>), (<*>))
 import Control.Monad (foldM, when, unless, liftM)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Either (left, runEitherT)
+import qualified Control.Monad.State as S (StateT, evalStateT, get)
 
 import Data.Word (Word32)
 import Data.Bits (shiftL)
-import Data.Maybe (fromJust, isNothing)
+import Data.Maybe (fromJust, isNothing, isJust)
 import Data.List (sort, nub)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get (getWord32le)
 import Data.Binary.Put (putWord32le)
-import qualified Data.ByteString as BS (reverse)
+import Data.Default (def)
+import qualified Data.Conduit as C (Source, awaitForever, yield, ($=), ($$))
+import qualified Data.Conduit.List as CL (consume)
+import qualified Data.ByteString as BS (ByteString, reverse, append)
+
+import qualified Database.LevelDB.Base as DB 
+    ( DB
+    , ReadOptions(..)
+    , get
+    , put
+    , iterFirst
+    , iterNext
+    , iterValue
+    , createIter
+    , releaseIter
+    , createSnapshot
+    , releaseSnapshot
+    )
 
 import Network.Haskoin.Block.Types
 import Network.Haskoin.Block.Checkpoints
@@ -54,6 +77,7 @@ data BlockHeaderNode = BlockHeaderNode
     , nodeChainWork    :: !Integer
     , nodeMedianTimes  :: ![Timestamp]
     , nodeMinWork      :: !Word32 -- Only used for testnet
+    , nodeHaveBlock    :: !Bool -- Did we receive the full block/merkle block?
     } deriving (Show, Read, Eq)
 
 instance Binary BlockHeaderNode where
@@ -64,14 +88,16 @@ instance Binary BlockHeaderNode where
                           <*> get
                           <*> get
                           <*> get
+                          <*> get
 
-    put (BlockHeaderNode i b h w t m) = do
+    put (BlockHeaderNode i b h w t m f) = do
         put i 
         put b 
         putWord32le h 
         put w 
         put t 
         put m
+        put f
 
 -- Return value of linking a new block header in the chain
 data BlockHeaderAction
@@ -84,8 +110,15 @@ class Monad m => BlockHeaderStore m where
     getBlockHeaderNode    :: BlockHash -> m BlockHeaderNode
     putBlockHeaderNode    :: BlockHeaderNode -> m ()
     existsBlockHeaderNode :: BlockHash -> m Bool
+    sourceBlockHeader     :: C.Source m BlockHeaderNode
     getBestBlockHeader    :: m BlockHeaderNode
     setBestBlockHeader    :: BlockHeaderNode -> m ()
+    getBestBlock          :: m BlockHeaderNode
+    setBestBlock          :: BlockHeaderNode -> m ()
+    setFastCatchup        :: Timestamp -> m ()
+    getFastCatchup        :: m Timestamp
+    setFastCatchupHeight  :: Maybe BlockHeight -> m ()
+    getFastCatchupHeight  :: m (Maybe BlockHeight)
 
 -- | Number of blocks on average between difficulty cycles (2016 blocks)
 diffInterval :: Word32
@@ -100,18 +133,54 @@ genesisBlockHeaderNode = BlockHeaderNode
     , nodeChainWork    = headerWork genesisHeader
     , nodeMedianTimes  = [blockTimestamp genesisHeader]
     , nodeMinWork      = blockBits genesisHeader
+    , nodeHaveBlock    = True -- We always have the genesis block
     }
 
 -- TODO: If dwnStart is not equal to the one in the database, issue a warning
 -- or an error.
 -- | Initialize the block header chain by inserting the genesis block if
 -- it doesn't already exist.
-initHeaderChain :: BlockHeaderStore m => m ()
-initHeaderChain = do
-    existsGen <- existsBlockHeaderNode $ nodeBlockHash genesisBlockHeaderNode
+initHeaderChain :: BlockHeaderStore m => Timestamp -> m ()
+initHeaderChain ts = do
+    existsGen <- existsBlockHeaderNode $ headerHash genesisHeader
     unless existsGen $ do
         putBlockHeaderNode genesisBlockHeaderNode
         setBestBlockHeader genesisBlockHeaderNode
+        setBestBlock genesisBlockHeaderNode
+        -- Adjust time backwards by a week to handle clock drifts.
+        let fastCatchupI = max 0 ((toInteger ts) - 86400 * 7)
+            fc           = fromInteger fastCatchupI 
+        setFastCatchup fc
+        setFastCatchupHeight $ if fc == 0 then Just 0 else Nothing
+
+rescanHeaderChain :: BlockHeaderStore m 
+                  => Timestamp -> m [(BlockHeight, BlockHash)]
+rescanHeaderChain fc = do
+    setFastCatchup fc
+    -- Find and set the fast catchup height
+    fcBlockM <- findFCBlock =<< getBestBlockHeader
+    let fcHeightM = nodeHeaderHeight <$> fcBlockM
+    setFastCatchupHeight fcHeightM
+    -- Update the haveBlock flags
+    toDwn <- sourceBlockHeader C.$= (updateHaveBlock fcHeightM) C.$$ CL.consume
+    return $ map f toDwn
+  where
+    f n = (nodeHeaderHeight n, nodeBlockHash n)
+    updateHaveBlock hM = C.awaitForever $ \n -> do
+        let haveBlock = case hM of
+                Just h  -> nodeHeaderHeight n < h
+                Nothing -> True
+        lift $ putBlockHeaderNode n{ nodeHaveBlock = haveBlock }
+        unless haveBlock $ C.yield n
+    -- We need to find the first block >= fc but the parent < fc
+    findFCBlock n 
+        | isGenesis n = setBestBlock n >> return (Just n)
+        | blockTimestamp (nodeHeader n) >= fc = getParentNode n >>= \p -> do
+            if blockTimestamp (nodeHeader p) < fc
+                then setBestBlock p >> return (Just n)
+                else findFCBlock p
+        | otherwise = setBestBlock n >> return Nothing
+    isGenesis n = nodeBlockHash n == nodeBlockHash genesisBlockHeaderNode
 
 -- TODO: Add DOS return values
 -- | Connect a block header to this block header chain. Corresponds to bitcoind
@@ -163,9 +232,28 @@ storeBlockHeader :: BlockHeaderStore m
                  -> BlockHeader 
                  -> m BlockHeaderAction
 storeBlockHeader prevNode bh = do
+    -- Compute the fast catchup height if possible
+    fc <- getFastCatchup
+    fcHeightM <- getFastCatchupHeight
+    haveBlock <- if isJust fcHeightM
+        then return $ newHeight < (fromJust fcHeightM)
+        else if blockTimestamp bh < fc
+            then return True
+            else do
+                -- From this point on, we use newHeight as the fast catchup
+                setFastCatchupHeight $ Just newHeight
+                return False
+
+    -- Store the new node
+    let newNode = buildNewNode haveBlock
     putBlockHeaderNode newNode
+
+    -- Update the best block header and best block
     currentHead <- getBestBlockHeader
-    when (newWork > nodeChainWork currentHead) $ setBestBlockHeader newNode
+    when (newWork > nodeChainWork currentHead) $ do
+        setBestBlockHeader newNode
+        when (nodeHaveBlock newNode) $ setBestBlock newNode
+
     return $ AcceptHeader newNode
   where
     bid       = headerHash bh
@@ -180,13 +268,15 @@ storeBlockHeader prevNode bh = do
     minWork | not allowMinDifficultyBlocks = 0
             | isDiffChange || isNotLimit   = blockBits bh
             | otherwise                    = nodeMinWork prevNode
-    newNode = BlockHeaderNode { nodeBlockHash    = bid
-                              , nodeHeader       = bh
-                              , nodeHeaderHeight = newHeight
-                              , nodeChainWork    = newWork
-                              , nodeMedianTimes  = newMedian
-                              , nodeMinWork      = minWork
-                              }
+    buildNewNode haveBlock = BlockHeaderNode 
+        { nodeBlockHash    = bid
+        , nodeHeader       = bh
+        , nodeHeaderHeight = newHeight
+        , nodeChainWork    = newWork
+        , nodeMedianTimes  = newMedian
+        , nodeMinWork      = minWork
+        , nodeHaveBlock    = haveBlock
+        }
 
 -- | Get the last checkpoint that we have seen
 lastSeenCheckpoint :: BlockHeaderStore m => m (Maybe (Int, BlockHash))
@@ -300,39 +390,51 @@ headerWork bh =
 {- Functions for connecting blocks -}
 
 data BlockChainAction
-    = BestBlock  { actionBestBlock :: !BlockHeaderNode }
-    | SideBlock  { actionSideBlock :: !BlockHeaderNode }
-    | BlockReorg { reorgSplitPoint :: !BlockHeaderNode
-                 , reorgOldBlocks  :: ![BlockHeaderNode]
-                 , reorgNewBlocks  :: ![BlockHeaderNode]
-                 }
+    = BestBlock       { actionBestBlock :: !BlockHeaderNode }
+    | SideBlock       { actionSideBlock :: !BlockHeaderNode 
+                      , sideBlockDist   :: !Int
+                      }
+    | BlockReorg      { reorgSplitPoint :: !BlockHeaderNode
+                      , reorgOldBlocks  :: ![BlockHeaderNode]
+                      , reorgNewBlocks  :: ![BlockHeaderNode]
+                      }
+    | OldBlock        { oldBlock     :: !BlockHeaderNode 
+                      , distFromBest :: !Int
+                      }
     deriving (Read, Show, Eq)
 
 getActionNode :: BlockChainAction -> BlockHeaderNode
 getActionNode a = case a of
     BestBlock n -> n
-    SideBlock n -> n
+    SideBlock n _ -> n
     BlockReorg _ _ ns -> last ns
+    OldBlock n _ -> n
 
 -- | Connect a block to the blockchain. Blocks need to be imported in the order
 -- of the parent links (oldest to newest).
 connectBlock :: BlockHeaderStore m 
              => BlockHash
-             -> BlockHash
-             -> m BlockChainAction
-connectBlock prevBestHash newBlockHash = do
-    prevBest <- getBlockHeaderNode prevBestHash
-    newNode  <- getBlockHeaderNode newBlockHash
-    if prevBlock (nodeHeader newNode) == nodeBlockHash prevBest
-        -- We connect to the best chain
-        then return $ BestBlock newNode
-        else if nodeChainWork newNode > nodeChainWork prevBest
-                 then handleNewBestChain prevBest newNode 
-                 else return $ SideBlock newNode
+             -> m (Maybe BlockChainAction)
+connectBlock h = do
+    newNode <- liftM (\n -> n{ nodeHaveBlock = True }) $ getBlockHeaderNode h
+    parNode <- getParentNode newNode
+    if nodeHaveBlock parNode 
+        then do
+            putBlockHeaderNode newNode -- save the nodeHaveBlock = True
+            bestNode <- getBestBlock
+            if nodeBlockHash parNode == nodeBlockHash bestNode
+                then do
+                    setBestBlock newNode
+                    return $ Just $ BestBlock newNode
+                else go =<< findSplitNode bestNode newNode
+        else return Nothing
   where
-    handleNewBestChain oldChainHead newChainHead = do
-        (s,o,n) <- findSplitNode oldChainHead newChainHead
-        return $ BlockReorg s o n
+    go (s,o,n) 
+        | length n == 1 = return $ Just $ OldBlock (last n) (length o - 1)
+        | nodeChainWork (last n) > nodeChainWork (last o) = do
+            setBestBlock $ last n
+            return $ Just $ BlockReorg s o n
+        | otherwise = return $ Just $ SideBlock (last n) (length n - 1)
 
 -- | Find the split point between two nodes. It also returns the two partial
 -- chains leading from the split point to the respective nodes.
@@ -349,26 +451,86 @@ findSplitNode n1 n2 = go [] [] n1 n2
             par <- getParentNode y
             go xs (y:ys) x par
 
--- | Find all blocks between the best block and the given hash that have
--- a timestamp greater than the given time.
+-- | Find all blocks that need to be downloaded
 blocksToDownload :: BlockHeaderStore m 
-                 => BlockHash -> m [(BlockHeight, BlockHash)]
-blocksToDownload bestBlockHash = do
-    bestHead  <- getBestBlockHeader
-    bestBlock <- getBlockHeaderNode bestBlockHash 
-    (_,_,(_:toDwn)) <- findSplitNode bestBlock bestHead
+                 => m [(BlockHeight, BlockHash)]
+blocksToDownload = do
+    toDwn <- go [] =<< getBestBlockHeader
     return $ map f toDwn
   where
     f n = (nodeHeaderHeight n, nodeBlockHash n)
+    go acc n | nodeHaveBlock n = return acc
+             | otherwise = go (n:acc) =<< getParentNode n
 
--- | Searches for the first block header with a timestamp smaller than the
--- given time, starting from the chain head.
-blockBeforeTimestamp :: BlockHeaderStore m => Timestamp -> m BlockHash
-blockBeforeTimestamp t = do
-    h <- getBestBlockHeader
-    liftM nodeBlockHash $ go h
-  where
-    go n | blockTimestamp (nodeHeader n) < t = return n
-         | prevBlock (nodeHeader n) == 0 = return n
-         | otherwise = go =<< getParentNode n
+{- LevelDB Instance of a HeaderChain -}
+
+-- | Default LevelDB implementation of a HeaderChain
+type LevelDBChain = S.StateT DB.DB IO
+
+runLevelDBChain :: DB.DB -> LevelDBChain a -> IO a
+runLevelDBChain db m = S.evalStateT m db
+
+setLevelDBKey :: Binary a => BS.ByteString -> a -> LevelDBChain ()
+setLevelDBKey key val = do
+    db <- S.get
+    DB.put db def key $ encode' val
+
+setLevelDBKey' :: BS.ByteString -> BlockHeaderNode -> LevelDBChain ()
+setLevelDBKey' key val = do
+    db <- S.get
+    DB.put db def key (indexKey $ nodeBlockHash val)
+
+getLevelDBKey :: Binary a => BS.ByteString -> LevelDBChain a
+getLevelDBKey key = do
+    db <- S.get
+    res <- DB.get db def key
+    when (isNothing res) $ error "getLevelDBKey: Key does not exist"
+    return $ fromJust $ decodeToMaybe =<< res
+
+getLevelDBKey' :: Binary a => BS.ByteString -> LevelDBChain a
+getLevelDBKey' key = do
+    db <- S.get
+    res <- DB.get db def key
+    when (isNothing res) $ error "getLevelDBKey': Key does not exist"
+    getLevelDBKey $ fromJust res
+
+existsLevelDBKey :: BS.ByteString -> LevelDBChain Bool
+existsLevelDBKey key = do
+    db <- S.get
+    res <- DB.get db def key
+    return $ isJust res
+
+indexKey :: BlockHash -> BS.ByteString
+indexKey h = "index_" `BS.append` encode' h
+
+instance BlockHeaderStore LevelDBChain where
+
+    getBlockHeaderNode h    = getLevelDBKey $ indexKey h
+    putBlockHeaderNode v    = setLevelDBKey (indexKey $ nodeBlockHash v) v
+    existsBlockHeaderNode h = existsLevelDBKey $ indexKey h
+    getBestBlockHeader      = getLevelDBKey' "bestblockheader"
+    setBestBlockHeader v    = setLevelDBKey' "bestblockheader" v
+    getBestBlock            = getLevelDBKey' "bestblock"
+    setBestBlock v          = setLevelDBKey' "bestblock" v
+    getFastCatchup          = getLevelDBKey "fastcatchup"
+    setFastCatchup v        = setLevelDBKey "fastcatchup" v
+    getFastCatchupHeight    = getLevelDBKey "fastcatchupheight"
+    setFastCatchupHeight v  = setLevelDBKey "fastcatchupheight" v
+
+    sourceBlockHeader = do
+        db <- lift S.get
+        snap <- lift $ DB.createSnapshot db
+        it <- lift $ DB.createIter db def{ DB.useSnapshot = Just snap }
+        lift $ DB.iterFirst it
+        go it
+        lift $ DB.releaseIter it
+        lift $ DB.releaseSnapshot db snap
+      where
+        go it = do
+            valM <- lift $ DB.iterValue it
+            when (isJust valM) $ do
+                let nodeM = decodeToMaybe $ fromJust valM
+                when (isJust nodeM) $ C.yield $ fromJust nodeM
+                lift $ DB.iterNext it 
+                go it
 

@@ -73,7 +73,8 @@ module Network.Haskoin.Node
   -- * SPV Node
 , SPVNode(..)
 , SPVSession(..)
-, SPVRequest(..)
+, SPVRequest( BloomFilterUpdate, PublishTx, NodeRescan )
+, SPVData(..)
 , withAsyncSPV
 , processBloomFilter
 

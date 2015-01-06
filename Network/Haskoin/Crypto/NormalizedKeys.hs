@@ -39,9 +39,10 @@ module Network.Haskoin.Crypto.NormalizedKeys
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM2, guard)
+import Control.Monad (liftM2, guard, mzero, (<=<))
 import Control.Applicative ((<$>))
 
+import Data.Aeson (FromJSON, ToJSON, parseJSON, toJSON)
 import Data.Word (Word32)
 import Data.Maybe (mapMaybe, fromJust, isJust)
 import qualified Data.ByteString as BS (ByteString)
@@ -62,6 +63,12 @@ newtype MasterKey = MasterKey { masterKey :: XPrvKey }
 instance NFData MasterKey where
     rnf (MasterKey m) = rnf m
 
+instance ToJSON MasterKey where
+    toJSON = toJSON . masterKey
+
+instance FromJSON MasterKey where
+    parseJSON = maybe mzero return . loadMasterKey <=< parseJSON
+
 -- | Data type representing a private account key. Account keys are generated
 -- from a 'MasterKey' through prime derivation. This guarantees that the
 -- 'MasterKey' will not be compromised if the account key is compromised. 
@@ -71,6 +78,12 @@ newtype AccPrvKey = AccPrvKey { getAccPrvKey :: XPrvKey }
 
 instance NFData AccPrvKey where
     rnf (AccPrvKey k) = rnf k
+
+instance ToJSON AccPrvKey where
+    toJSON = toJSON . getAccPrvKey
+
+instance FromJSON AccPrvKey where
+    parseJSON = maybe mzero return . loadPrvAcc <=< parseJSON
 
 -- | Data type representing a public account key. It is computed through
 -- derivation from an 'AccPrvKey'. It can not be derived from the 'MasterKey'
@@ -82,6 +95,12 @@ newtype AccPubKey = AccPubKey { getAccPubKey :: XPubKey }
 
 instance NFData AccPubKey where
     rnf (AccPubKey k) = rnf k
+
+instance ToJSON AccPubKey where
+    toJSON = toJSON . getAccPubKey
+
+instance FromJSON AccPubKey where
+    parseJSON = maybe mzero return . loadPubAcc <=< parseJSON
 
 -- | Data type representing a private address key. Private address keys are
 -- generated through a non-prime derivation from an 'AccPrvKey'. Non-prime
@@ -97,6 +116,12 @@ newtype AddrPrvKey = AddrPrvKey { getAddrPrvKey :: XPrvKey }
 instance NFData AddrPrvKey where
     rnf (AddrPrvKey k) = rnf k
 
+instance ToJSON AddrPrvKey where
+    toJSON = toJSON . getAddrPrvKey
+
+instance FromJSON AddrPrvKey where
+    parseJSON = fmap AddrPrvKey . parseJSON
+
 -- | Data type representing a public address key. They are generated through
 -- non-prime derivation from an 'AccPubKey'. This is a useful feature for
 -- read-only wallets. They are represented as M\/i'\/0\/j in BIP32 notation
@@ -107,6 +132,12 @@ newtype AddrPubKey = AddrPubKey { getAddrPubKey :: XPubKey }
 
 instance NFData AddrPubKey where
     rnf (AddrPubKey k) = rnf k
+
+instance ToJSON AddrPubKey where
+    toJSON = toJSON . getAddrPubKey
+
+instance FromJSON AddrPubKey where
+    parseJSON = fmap AddrPubKey . parseJSON
 
 -- | Create a 'MasterKey' from a seed.
 makeMasterKey :: BS.ByteString -> Maybe MasterKey

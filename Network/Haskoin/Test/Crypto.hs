@@ -19,6 +19,7 @@ module Network.Haskoin.Test.Crypto
 , ArbitraryDetSignature(..)
 , ArbitraryXPrvKey(..)
 , ArbitraryXPubKey(..)
+, ArbitraryDerivPath(..)
 , ArbitraryMasterKey(..)
 , ArbitraryAccPrvKey(..)
 , ArbitraryAccPubKey(..)
@@ -206,6 +207,16 @@ instance Arbitrary ArbitraryXPubKey where
     arbitrary = do
         ArbitraryXPrvKey k <- arbitrary
         return $ ArbitraryXPubKey k $ deriveXPubKey k
+
+data ArbitraryDerivPath = ArbitraryDerivPath DerivPath
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryDerivPath where
+    arbitrary = ArbitraryDerivPath <$> oneof 
+        [ DerivPrv <$> arbitrary
+        , DerivPub <$> arbitrary
+        , DerivNonPrime <$> arbitrary
+        ]
 
 -- | Arbitrary master key
 data ArbitraryMasterKey = ArbitraryMasterKey MasterKey

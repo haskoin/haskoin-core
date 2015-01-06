@@ -10,7 +10,7 @@ module Network.Haskoin.Transaction.Types
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM2, replicateM, forM_, unless)
+import Control.Monad (liftM2, replicateM, forM_, unless, mzero, (<=<))
 import Control.Applicative ((<$>),(<*>))
 
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
@@ -86,8 +86,8 @@ instance Binary Tx where
         putWord32le l
 
 instance FromJSON Tx where
-    parseJSON = withText "transaction" $ \t -> either fail return $
-        maybeToEither "tx not hex" (hexToBS $ T.unpack t) >>= decodeToEither
+    parseJSON = withText "Tx" $ 
+        maybe mzero return . (decodeToMaybe <=< hexToBS) . T.unpack
 
 instance ToJSON Tx where
     toJSON = String . T.pack . bsToHex . encode'
@@ -220,9 +220,8 @@ instance NFData OutPoint where
     rnf (OutPoint h i) = rnf h `seq` rnf i
 
 instance FromJSON OutPoint where
-    parseJSON = withText "outpoint" $ \t -> either fail return $
-        maybeToEither "outpoint not hex" 
-          (hexToBS $ T.unpack t) >>= decodeToEither
+    parseJSON = withText "OutPoint" $ 
+        maybe mzero return . (decodeToMaybe <=< hexToBS) .  T.unpack
 
 instance ToJSON OutPoint where
     toJSON = String . T.pack . bsToHex . encode'

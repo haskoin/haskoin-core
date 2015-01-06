@@ -72,7 +72,7 @@ import Data.Aeson
     , withText
     )
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (unless, guard)
+import Control.Monad (unless, guard, mzero, (<=<))
 import Control.Applicative ((<$>))
 import Data.Ratio (numerator, denominator)
 import qualified Data.ByteString as BS (head, length, reverse)
@@ -346,18 +346,22 @@ instance ToJSON (BigWord Mod256Tx) where
     toJSON = String . T.pack . encodeTxHashLE
 
 instance FromJSON (BigWord Mod256Tx) where
-    parseJSON = withText "TxHash not a string: " $ \a -> do
-        let s = T.unpack a
-        maybe (fail $ "Not a TxHash: " ++ s) return $ decodeTxHashLE s
+    parseJSON = withText "TxHash" $ 
+        maybe mzero return . decodeTxHashLE . T.unpack
+
+instance ToJSON (BigWord Mod256Block) where
+    toJSON = String . T.pack . encodeBlockHashLE
+
+instance FromJSON (BigWord Mod256Block) where
+    parseJSON = withText "BlockHash" $ 
+        maybe mzero return . decodeBlockHashLE . T.unpack
 
 instance ToJSON (BigWord Mod256) where
     toJSON = String . T.pack . bsToHex . encode'
 
 instance FromJSON (BigWord Mod256) where
-    parseJSON = withText "Word256 not a string: " $ \a -> do
-        let s = T.unpack a
-        maybe (fail $ "Not a Word256: " ++ s) return $ 
-            hexToBS s >>= decodeToMaybe
+    parseJSON = withText "Word256" $
+        maybe mzero return . (decodeToMaybe <=< hexToBS) . T.unpack
 
 instance BigWordMod n => Arbitrary (BigWord n) where
     arbitrary = arbitrarySizedBoundedIntegral

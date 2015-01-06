@@ -11,7 +11,7 @@ module Network.Haskoin.Crypto.Base58
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (guard)
+import Control.Monad (guard, mzero)
 import Control.Applicative ((<$>),(<*>))
 
 import Data.Char (ord, chr)
@@ -111,9 +111,8 @@ instance NFData Address where
     rnf (ScriptAddress h) = rnf h
 
 instance FromJSON Address where
-    parseJSON = withText "address" $ \a -> do
-        let s = T.unpack a
-        maybe (fail $ "Not a Bitcoin address: " ++ s) return $ base58ToAddr s
+    parseJSON = withText "Address" $ 
+        maybe mzero return . base58ToAddr . T.unpack
 
 instance ToJSON Address where
     toJSON = String . T.pack . addrToBase58

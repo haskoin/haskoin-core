@@ -3,7 +3,7 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , XPrvKey(..)
 , XKey(..)
 , ChainCode
-, DerivPath
+, DerivPath(..)
 , makeXPrvKey
 , deriveXPubKey
 , prvSubKey
@@ -84,8 +84,7 @@ instance ToJSON XPrvKey where
     toJSON = String . T.pack . xPrvExport
 
 instance FromJSON XPrvKey where
-    parseJSON = withText "xprvkey" $ \t -> 
-        maybe mzero return $ xPrvImport (T.unpack t)
+    parseJSON = withText "xprvkey" $ maybe mzero return . xPrvImport . T.unpack
 
 -- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
@@ -104,8 +103,7 @@ instance ToJSON XPubKey where
     toJSON = String . T.pack . xPubExport
 
 instance FromJSON XPubKey where
-    parseJSON = withText "xpubkey" $ \t -> 
-        maybe mzero return $ xPubImport (T.unpack t)
+    parseJSON = withText "xpubkey" $ maybe mzero return . xPubImport . T.unpack
 
 -- | Any extended key.
 data XKey = XKeyPrv { xKeyPrv :: XPrvKey }
@@ -117,26 +115,22 @@ data DerivPath
     = DerivPrv [(Word32, Bool)]
     | DerivPub [(Word32, Bool)]
     | DerivNonPrime [Word32]
-    deriving (Show, Eq)
+    deriving (Eq, Show, Read)
 
 instance IsString DerivPath where
     fromString = fromJust . parsePath
 
 instance FromJSON DerivPath where
-    parseJSON (String s) = maybe mzero return $ parsePath $ T.unpack s
-    parseJSON _ = mzero
+    parseJSON = withText "DerivPath" $ maybe mzero return . parsePath . T.unpack
 
 instance ToJSON DerivPath where
-    toJSON (DerivPrv path) = toJSON $ concat $ intersperse "/" $
-        "m" : map f path
+    toJSON dp = case dp of
+        DerivPrv path      -> g $ "m" : map f path
+        DerivPub path      -> g $ "M" : map f path
+        DerivNonPrime path -> g $ "M" : map show path
       where
         f (i, p) = show i ++ if p then "'" else ""
-    toJSON (DerivPub path) = toJSON $ concat $ intersperse "/" $
-        "M" : map f path
-      where
-        f (i, p) = show i ++ if p then "'" else ""
-    toJSON (DerivNonPrime path) = toJSON $ concat $ intersperse "/" $
-        "M" : map show path
+        g        = String . T.pack . concat . intersperse "/"
 
 -- | Build a BIP32 compatible extended private key from a bytestring. This will
 -- produce a root node (depth=0 and parent=0).

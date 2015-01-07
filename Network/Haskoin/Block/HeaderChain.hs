@@ -155,7 +155,7 @@ initHeaderChain ts = do
 
 rescanHeaderChain :: BlockHeaderStore m 
                   => Timestamp -> m [(BlockHeight, BlockHash)]
-rescanHeaderChain fc = do
+rescanHeaderChain ts = do
     setFastCatchup fc
     -- Find and set the fast catchup height
     fcBlockM <- findFCBlock =<< getBestBlockHeader
@@ -165,6 +165,9 @@ rescanHeaderChain fc = do
     toDwn <- sourceBlockHeader C.$= (updateHaveBlock fcHeightM) C.$$ CL.consume
     return $ map f toDwn
   where
+    -- Adjust time backwards by a week to handle clock drifts.
+    fastCatchupI = max 0 ((toInteger ts) - 86400 * 7)
+    fc = fromInteger fastCatchupI 
     f n = (nodeHeaderHeight n, nodeBlockHash n)
     updateHaveBlock hM = C.awaitForever $ \n -> do
         let haveBlock = case hM of

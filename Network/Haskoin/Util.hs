@@ -48,15 +48,12 @@ module Network.Haskoin.Util
 
 ) where
 
-import Numeric (readHex)
-import Control.Applicative ((<$>))
 import Control.Monad (guard)
 import Control.Monad.Trans.Either (EitherT, hoistEither)
 
 import Data.Word (Word8)
 import Data.Bits ((.|.), shiftL, shiftR)
 import Data.List (unfoldr)
-import Data.List.Split (chunksOf)
 import Data.Binary.Put (Put, runPut)
 import Data.Binary 
     ( Binary
@@ -82,11 +79,9 @@ import qualified Data.ByteString as BS
     , concat
     , pack, unpack
     , null
+    , empty
     )
-import qualified Data.ByteString.Builder as BSB
-    ( toLazyByteString
-    , byteStringHex
-    )
+import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as C
     ( pack
     , unpack
@@ -128,20 +123,14 @@ integerToBS i
 
 -- | Encode a bytestring to a base16 (HEX) representation
 bsToHex :: BS.ByteString -> String
-bsToHex = bsToString . toStrictBS . BSB.toLazyByteString . BSB.byteStringHex
+bsToHex = bsToString . B16.encode
 
 -- | Decode a base16 (HEX) string from a bytestring. This function can fail
 -- if the string contains invalid HEX characters
 hexToBS :: String -> Maybe BS.ByteString
-hexToBS xs = BS.pack <$> mapM hexWord (chunksOf 2 xs)
+hexToBS xs = guard (bad == BS.empty) >> return x
   where
-    hexWord x = do
-        guard $ length x == 2
-        let hs = readHex x
-        guard $ not $ null hs
-        let [(w, s)] = hs
-        guard $ null s
-        return w
+    (x, bad) = B16.decode $ stringToBS xs
 
 -- Data.Binary helpers
 

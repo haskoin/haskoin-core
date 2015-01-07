@@ -114,7 +114,6 @@ data XKey = XKeyPrv { xKeyPrv :: XPrvKey }
 data DerivPath
     = DerivPrv [(Word32, Bool)]
     | DerivPub [(Word32, Bool)]
-    | DerivNonPrime [Word32]
     deriving (Eq, Show, Read)
 
 instance IsString DerivPath where
@@ -127,7 +126,6 @@ instance ToJSON DerivPath where
     toJSON dp = case dp of
         DerivPrv path      -> g $ "m" : map f path
         DerivPub path      -> g $ "M" : map f path
-        DerivNonPrime path -> g $ "M" : map show path
       where
         f (i, p) = show i ++ if p then "'" else ""
         g        = String . T.pack . concat . intersperse "/"
@@ -397,9 +395,7 @@ bsPadPrvKey = runPut' . putPadPrvKey
 parsePath :: String -> Maybe DerivPath
 parsePath s = case x of
     "m" -> DerivPrv <$> mapM f xs
-    "M" -> mapM f xs >>= \paths -> if null $ filter snd paths
-        then return $ DerivNonPrime $ map fst paths
-        else return $ DerivPub paths
+    "M" -> DerivPub <$> mapM f xs
     _ -> Nothing
   where
     (x : xs) = splitOn "/" s
@@ -415,8 +411,6 @@ derivePath (DerivPrv path) xprv =
     XKeyPrv <$> derivePrvPath path xprv
 derivePath (DerivPub path) xprv =
     (XKeyPub . deriveXPubKey) <$> derivePrvPath path xprv
-derivePath (DerivNonPrime path) xprv =
-    (XKeyPub . deriveXPubKey) <$> foldM prvSubKey xprv path
 
 -- | Derive private key using derivation path components.
 derivePrvPath :: [(Word32, Bool)] -> XPrvKey -> Maybe XPrvKey
@@ -425,6 +419,8 @@ derivePrvPath path xprv = foldM f xprv path where
 
 -- | Derive public key using derivation path.
 derivePubPath :: DerivPath -> XPubKey -> Maybe XPubKey
-derivePubPath (DerivNonPrime path) xpub = foldM pubSubKey xpub path
+derivePubPath (DerivPub path) xpub = do
+    guard $ null $ filter snd path
+    foldM pubSubKey xpub $ map fst path
 derivePubPath _ _ = Nothing
 

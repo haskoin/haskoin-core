@@ -215,7 +215,6 @@ instance Arbitrary ArbitraryDerivPath where
     arbitrary = ArbitraryDerivPath <$> oneof 
         [ DerivPrv <$> arbitrary
         , DerivPub <$> arbitrary
-        , DerivNonPrime <$> arbitrary
         ]
 
 -- | Arbitrary master key

@@ -575,9 +575,9 @@ processRescan ts = do
 
             -- Don't remember old requests
             spvModify $ \s -> s{ pendingRescan  = Nothing
-                                     , receivedMerkle = M.empty
-                                     , fastCatchup = ts
-                                     }
+                               , receivedMerkle = M.empty
+                               , fastCatchup    = ts
+                               }
             -- Trigger downloads
             remotePeers <- getPeerKeys
             forM_ remotePeers downloadBlocks

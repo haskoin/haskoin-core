@@ -1,8 +1,37 @@
-module Network.Haskoin.Wallet.Client.Commands where
+module Network.Haskoin.Wallet.Client.Commands 
+( cmdStart
+, cmdStop
+, cmdNewWallet
+, cmdGetWallet
+, cmdGetWallets
+, cmdNewAcc
+, cmdNewMS
+, cmdNewRead
+, cmdNewReadMS
+, cmdAddKeys
+, cmdGetAcc
+, cmdAccList
+, cmdList
+, cmdPage
+, cmdNew
+, cmdLabel
+, cmdTxList
+, cmdTxPage
+, cmdSend
+, cmdSendMany
+, cmdSignTx
+, cmdImportTx
+, cmdGetOffline
+, cmdSignOffline
+, cmdBalance
+, cmdSpendable
+, cmdGetProp
+, cmdGetTx
+, cmdRescan
+, cmdDecodeTx
+)
+where
 
-import System.Process (callCommand)
-import System.Posix.Env (getEnv)
-import System.Posix.Directory (createDirectory, changeWorkingDirectory)
 import System.Posix.Files 
     ( fileExist
     , setFileMode
@@ -12,7 +41,6 @@ import System.Posix.Files
     , groupModes
     , otherModes
     )
-import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 import System.ZMQ4.Monadic
 
 import Control.Applicative ((<$>))
@@ -31,8 +59,6 @@ import qualified Data.Aeson.Encode.Pretty as JSON
 import qualified Data.Yaml as YAML (encode, encodeFile, decodeFile)
 import qualified Data.Text as T (pack, unpack, splitOn)
 
-import Yesod.Default.Config2 (loadAppSettings, useEnv)
-
 import Network.Haskoin.Constants
 import Network.Haskoin.Crypto
 import Network.Haskoin.Transaction
@@ -47,26 +73,16 @@ type Handler = S.StateT ClientConfig IO
 
 -- hw start [config] [--detach]
 cmdStart :: [String] -> Handler ()
-cmdStart srvCfgLs = do
-    srvCfg <- getConfig $ listToMaybe srvCfgLs
-    setWorkDir srvCfg
-    maybeDetach srvCfg $ runSPVServer srvCfg
+cmdStart configLs = do
+    detach <- S.gets clientDetach
+    liftIO $ runSPVServer (listToMaybe configLs) detach
     liftIO $ putStrLn "Process started"
-  where
-    maybeDetach srvCfg action = do
-        let pid = Just $ spvPidFile srvCfg
-            log = ToFile $ spvLogFile srvCfg
-        detach <- S.gets clientDetach
-        liftIO $ if detach then runDetached pid log action else action
 
 -- hw stop [config] 
 cmdStop :: [String] -> Handler ()
-cmdStop srvCfgLs = do
-    srvCfg <- getConfig $ listToMaybe srvCfgLs
-    setWorkDir srvCfg
-    -- TODO: Should we send a message instead of killing the process ?
-    liftIO $ killAndWait $ spvPidFile srvCfg
-    liftIO $ putStrLn "Process stopped"
+cmdStop configLs = liftIO $ do
+    stopSPVServer $ listToMaybe configLs
+    putStrLn "Process stopped"
 
 cmdNewWallet :: [String] -> Handler ()
 cmdNewWallet mnemonicLs = do
@@ -356,41 +372,6 @@ sendZmq req handle = do
 
 formatStr :: String -> IO ()
 formatStr str = forM_ (lines str) putStrLn
-
-chdirHome :: Handler ()
-chdirHome = 
-    liftIO $ changeWorkingDirectory . (fromMaybe err) =<< getEnv "HOME"
-  where
-    err = "No HOME environment variable"
-
--- Get the server configuration from the following sources:
--- * File provided at the command line
--- * File specified in the configuration file at compile time
--- * Default configuration values specified at compile time
-getConfig :: Maybe FilePath -> Handler SPVConfig
-getConfig srvCfgM = do
-    chdirHome
-    validLocs <- liftIO $ filterM fileExist locs
-    let files = maybeToList srvCfgM ++ validLocs
-    liftIO $ loadAppSettings files [configSettingsYmlValue] useEnv
-  where
-    defCfgFile = spvConfigFile compileTimeSPVConfig
-    -- Look for the config file in . and work-dir/network
-    locs = [ defCfgFile
-           , concat [ spvWorkDir compileTimeSPVConfig
-                    , "/", networkName
-                    , "/", defCfgFile
-                    ]
-           ]
-
--- Create and change current working directory
-setWorkDir :: SPVConfig -> Handler ()
-setWorkDir config = liftIO $ do
-    let workDir = concat [ spvWorkDir config, "/", networkName ]
-    setFileCreationMask $ otherModes `unionFileModes` groupModes
-    callCommand $ unwords [ "mkdir -p", workDir ]
-    setFileMode workDir ownerModes
-    changeWorkingDirectory workDir
 
 encodeTxJSON :: Tx -> Value
 encodeTxJSON tx@(Tx v is os i) = object

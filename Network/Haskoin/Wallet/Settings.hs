@@ -12,20 +12,27 @@ module Network.Haskoin.Wallet.Settings
 ) where
 
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (when, forM_, forM, liftM, mzero, forever)
-import Control.Exception (SomeException(..), tryJust, throw)
+import Control.Monad (forM, mzero)
+import Control.Exception (throw)
 
-import Data.Aeson
 import Data.FileEmbed (embedFile)
 import Data.Yaml (decodeEither')
 import Data.Monoid (mempty)
 import Data.Word (Word32, Word64)
-import qualified Data.ByteString as BS (ByteString, append, empty)
+import qualified Data.ByteString as BS (ByteString)
 import qualified Data.Text as T (Text)
+import Data.Aeson 
+    ( Value(..)
+    , FromJSON
+    , Result(..)
+    , parseJSON
+    , fromJSON
+    , withObject
+    , (.:)
+    )
 
-import Yesod.Default.Config2 (applyEnvValue, configSettingsYml)
+import Yesod.Default.Config2 (applyEnvValue)
 
-import Network.Haskoin.Constants
 import Network.Haskoin.Wallet.Database
 
 data SPVMode = SPVOnline | SPVOffline

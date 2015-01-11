@@ -4,7 +4,7 @@ module Network.Haskoin.Wallet.Server
 ) where
 
 import System.Process (callCommand)
-import System.Posix.Directory (createDirectory, changeWorkingDirectory)
+import System.Posix.Directory (changeWorkingDirectory)
 import System.Posix.Files 
     ( fileExist
     , setFileMode
@@ -17,37 +17,19 @@ import System.Posix.Files
 import System.Posix.Env (getEnv)
 import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 
-import Control.Applicative ((<$>), (<*>))
-import Control.Monad (when, forM_, forM, liftM, mzero, forever, filterM)
-import Control.Exception 
-    (SomeException(..), ErrorCall(..), tryJust, throw, catch)
-import Control.Monad.Trans (MonadIO, liftIO, lift)
-import Control.Monad.Trans.Resource (ResourceT, runResourceT)
-import Control.Concurrent.STM.TBMChan
-import Control.Concurrent.STM
-import Control.Monad.Logger (LoggingT, runStdoutLoggingT, runNoLoggingT)
-import qualified Control.Monad.State as S (StateT, evalStateT, get, gets)
+import Control.Applicative ((<$>))
+import Control.Monad (when, forM, forever, filterM)
+import Control.Exception (SomeException(..),  tryJust, catch)
+import Control.Concurrent.STM.TBMChan (writeTBMChan)
+import Control.Concurrent.STM (atomically)
+import qualified Control.Monad.State as S (gets)
 
 import Yesod.Default.Config2 (loadAppSettings, useEnv)
 
-import Data.Monoid (mempty)
-import Data.Default (def)
-import Data.Word (Word16)
-import Data.Aeson
-import Data.List (stripPrefix)
-import Data.FileEmbed (embedFile)
-import Data.Yaml (decodeEither')
 import Data.Time.Clock.POSIX (getPOSIXTime)
-import Data.Maybe 
-    ( isJust
-    , isNothing
-    , fromJust
-    , catMaybes
-    , fromMaybe
-    , maybeToList
-    )
+import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe, maybeToList)
 import qualified Data.Text as T(pack)
-import qualified Data.ByteString as BS (ByteString, append, empty)
+import Data.Aeson (Value, toJSON, decode, encode)
 
 import Database.Persist.Sql 
     ( ConnectionPool
@@ -61,13 +43,10 @@ import qualified Database.LevelDB.Base as DB
     , defaultOptions 
     )
 import System.ZMQ4.Monadic
-import Yesod.Default.Config2 (applyEnvValue, configSettingsYml)
 
 import Network.Haskoin.Constants
 import Network.Haskoin.Block
-import Network.Haskoin.Transaction
 import Network.Haskoin.Node
-import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 import Network.Haskoin.Wallet.Root
@@ -122,10 +101,10 @@ runSPVServer configM detach = do
 
 maybeDetach :: SPVConfig -> Bool -> IO () -> IO ()
 maybeDetach config det action =
-    if det then runDetached pid log action else action
+    if det then runDetached pidFile logFile action else action
   where
-    pid = Just $ spvPidFile config
-    log = ToFile $ spvLogFile config
+    pidFile = Just $ spvPidFile config
+    logFile = ToFile $ spvLogFile config
 
 stopSPVServer :: Maybe FilePath -> IO ()
 stopSPVServer configM = do
@@ -161,7 +140,7 @@ getSPVConfig configM = do
 setWorkDir :: SPVConfig -> IO ()
 setWorkDir config = do
     let workDir = concat [ spvWorkDir config, "/", networkName ]
-    setFileCreationMask $ otherModes `unionFileModes` groupModes
+    _ <- setFileCreationMask $ otherModes `unionFileModes` groupModes
     callCommand $ unwords [ "mkdir -p", workDir ]
     setFileMode workDir ownerModes
     changeWorkingDirectory workDir

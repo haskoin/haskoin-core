@@ -1,7 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE TypeFamilies      #-}
 module Network.Haskoin.Wallet.Tx
 ( AccTx(..)
 , getTx

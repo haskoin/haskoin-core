@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE TypeFamilies      #-}
 module Network.Haskoin.Wallet.Root 
 ( getWalletEntity
 , getWallet

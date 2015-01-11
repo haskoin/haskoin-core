@@ -1,6 +1,3 @@
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Network.Haskoin.Wallet.Types
 ( -- Wallet Types
@@ -51,8 +48,7 @@ import Control.Applicative ((<$>))
 import Control.Monad (mzero)
 import Control.Exception (Exception)
 
-import Data.Time (UTCTime)
-import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Int (Int64)
 import Data.Typeable (Typeable)
 import Data.Maybe (maybeToList, isJust, fromJust)
@@ -68,10 +64,9 @@ import Data.Aeson.Types
     )
 import Data.Aeson.TH (deriveJSON)
 import Data.Aeson
-    ( Value (Object, String)
+    ( Value (..)
     , FromJSON
     , ToJSON
-    , withText
     , withObject
     , (.=), (.:), (.:?)
     , object

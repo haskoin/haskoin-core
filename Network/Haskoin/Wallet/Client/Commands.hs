@@ -32,34 +32,33 @@ module Network.Haskoin.Wallet.Client.Commands
 )
 where
 
-import System.Posix.Files 
-    ( fileExist
-    , setFileMode
-    , setFileCreationMask
-    , unionFileModes
-    , ownerModes
-    , groupModes
-    , otherModes
-    )
 import System.ZMQ4.Monadic
 
 import Control.Applicative ((<$>))
-import Control.Monad (forM_, when, filterM, liftM2, unless)
-import Control.Monad.Trans (liftIO)
+import Control.Monad (forM_, when, liftM2, unless)
 import qualified Control.Monad.State as S (StateT, gets)
 
-import Data.Maybe (maybeToList, listToMaybe, isNothing, fromJust, fromMaybe)
-import Data.Aeson 
+import Data.Maybe (listToMaybe, isNothing, fromJust, fromMaybe)
 import Data.List (intersperse)
+import qualified Data.Yaml as YAML (encode)
+import qualified Data.Text as T (pack, unpack, splitOn)
 import qualified Data.Aeson.Encode.Pretty as JSON
     ( Config(..)
     , encodePretty'
     , defConfig
     )
-import qualified Data.Yaml as YAML (encode, encodeFile, decodeFile)
-import qualified Data.Text as T (pack, unpack, splitOn)
+import Data.Aeson 
+    ( Value(..)
+    , FromJSON
+    , ToJSON
+    , toJSON
+    , object
+    , encode
+    , decode
+    , eitherDecode
+    , (.=)
+    )
 
-import Network.Haskoin.Constants
 import Network.Haskoin.Crypto
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
@@ -340,12 +339,12 @@ cmdDecodeTx txStr = do
     when (isNothing txM) $ error "Could not parse transaction"
     format <- S.gets clientFormat
     liftIO $ formatStr $ bsToString $ case format of
-        OutputJSON -> toStrictBS json
+        OutputJSON -> toStrictBS jsn
         _          -> YAML.encode val
   where
-    txM  = decodeToMaybe =<< hexToBS txStr
-    val  = encodeTxJSON $ fromJust txM
-    json = JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } val
+    txM = decodeToMaybe =<< hexToBS txStr
+    val = encodeTxJSON $ fromJust txM
+    jsn = JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } val
 
 {- Helpers -}
 

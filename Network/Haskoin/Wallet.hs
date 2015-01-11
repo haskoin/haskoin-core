@@ -102,6 +102,7 @@ module Network.Haskoin.Wallet
 
 -- *Server
 , runSPVServer
+, stopSPVServer
 , SPVMode(..)
 , SPVConfig(..)
 

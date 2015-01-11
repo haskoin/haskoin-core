@@ -6,16 +6,14 @@ import System.Console.GetOpt
     ( getOpt
     , usageInfo
     , OptDescr (Option)
-    , ArgDescr (NoArg, ReqArg, OptArg)
+    , ArgDescr (NoArg, ReqArg)
     , ArgOrder (Permute)
     )
 
-import Control.Applicative ((<$>))
 import Control.Monad (forM_, filterM)
 import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.State as S (evalStateT)
 
-import Data.Maybe (listToMaybe)
 import Data.FileEmbed (embedFile)
 import qualified Data.Text as T (pack, unpack)
 

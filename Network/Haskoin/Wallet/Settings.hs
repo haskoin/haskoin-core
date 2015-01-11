@@ -23,10 +23,10 @@ import Data.Word (Word32, Word64)
 import qualified Data.ByteString as BS (ByteString, append, empty)
 import qualified Data.Text as T (Text)
 
-import Database.Persist.Sqlite (SqliteConf(..))
 import Yesod.Default.Config2 (applyEnvValue, configSettingsYml)
 
 import Network.Haskoin.Constants
+import Network.Haskoin.Wallet.Database
 
 data SPVMode = SPVOnline | SPVOffline
     deriving (Eq, Show, Read)
@@ -50,8 +50,8 @@ data SPVConfig = SPVConfig
     -- ^ Fee (Satoshi/1000 bytes) to pay
     , spvMinConf      :: !Word32
     -- ^ Minimum number of confirmations when spending coins
-    , spvDatabase     :: !SqliteConf
-    -- ^ Sqlite database configuration
+    , spvDatabase     :: !DatabaseConfType
+    -- ^ Database configuration
     , spvWorkDir      :: !FilePath
     -- ^ App working directory
     , spvLogFile      :: !FilePath
@@ -89,7 +89,7 @@ instance FromJSON SPVConfig where
 
 -- | Raw bytes at compile time of @config/settings.yml@
 configSettingsYmlBS :: BS.ByteString
-configSettingsYmlBS = $(embedFile "config/settings.yml")
+configSettingsYmlBS = $(embedFile settingsFile)
 
 -- | @config/settings.yml@, parsed to a @Value@.
 configSettingsYmlValue :: Value

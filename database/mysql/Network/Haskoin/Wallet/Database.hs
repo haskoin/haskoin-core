@@ -1,20 +1,21 @@
-module Network.Haskoin.Wallet.Database
-( getDatabasePool
-) where
+module Network.Haskoin.Wallet.Database where
 
 import Control.Monad.Logger (runNoLoggingT)
 
 import Database.Persist.MySQL
     ( ConnectInfo(..)
+    , MySQLConf(..)
     , defaultConnectInfo
     , createMySQLPool
     )
 import Database.Persist.Sql (ConnectionPool)
 
-import Network.Haskoin.Wallet.Settings
+type DatabaseConfType = MySQLConf
 
-getDatabasePool :: SPVConfig -> IO ConnectionPool
-getDatabasePool cfg = runNoLoggingT $ createMySQLPool 
-    (myConnInfo $ spvDatabase cfg)
-    (myPoolSize $ spvDatabase cfg)
+settingsFile :: String
+settingsFile = "config/settings.mysql.yml"
+
+getDatabasePool :: DatabaseConfType -> IO ConnectionPool
+getDatabasePool conf = runNoLoggingT $ 
+    createMySQLPool (myConnInfo conf) (myPoolSize conf)
 

@@ -1,0 +1,22 @@
+zeromq-bind: "_env:ZEROMQ_BIND:ipc:///tmp/hw-spv"
+server-mode: "_env:SERVER_MODE:online"
+bloom-false-positive: "_env:BLOOM_FALSE_POSITIVE:0.00001"
+address-gap: "_env:ADDRESS_GAP:10"
+sign-finalize-only: "_env:FINALIZE:false"
+sign-new-transactions: "_env:SIGN_NEW_TXS:true"
+fee-per-1000-bytes: "_env:FEE:10000"
+spend-minimum-confirmations: "_env:SPEND_MINCONF:1"
+database:
+  user:     "_env:MYSQL_USER:root"
+  password: "_env:MYSQL_PASSWORD:"
+  host:     "_env:MYSQL_HOST:localhost"
+  port:     "_env:MYSQL_PORT:5432"
+  database: "_env:MYSQL_DATABASE:haskoin_wallet"
+  poolsize: "_env:MYSQL_POOLSIZE:10"
+bitcoin-full-nodes: 
+  - host: "127.0.0.1"
+    port: 18333
+work-dir: "_env:HW_HOME:/home/octofu/.hw"
+log-file: "_env:HW_LOGFILE:hw.log"
+pid-file: "_env:HW_PIDFILE:hw.pid"
+config-file: "_env:HW_SERVERCFG:server.yml"

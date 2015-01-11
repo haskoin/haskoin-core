@@ -56,7 +56,7 @@ runSPVServer :: SPVConfig -> IO ()
 runSPVServer config = do
 
     -- Get database pool
-    pool <- getDatabasePool config
+    pool <- getDatabasePool $ spvDatabase config
     
     -- Initialize wallet database
     flip runSqlPersistMPool pool $ do 

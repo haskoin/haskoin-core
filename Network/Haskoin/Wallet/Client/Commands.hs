@@ -1,6 +1,7 @@
 module Network.Haskoin.Wallet.Client.Commands where
 
 import System.Process (callCommand)
+import System.Posix.Env (getEnv)
 import System.Posix.Directory (createDirectory, changeWorkingDirectory)
 import System.Posix.Files 
     ( fileExist
@@ -356,12 +357,19 @@ sendZmq req handle = do
 formatStr :: String -> IO ()
 formatStr str = forM_ (lines str) putStrLn
 
+chdirHome :: Handler ()
+chdirHome = 
+    liftIO $ changeWorkingDirectory . (fromMaybe err) =<< getEnv "HOME"
+  where
+    err = "No HOME environment variable"
+
 -- Get the server configuration from the following sources:
 -- * File provided at the command line
 -- * File specified in the configuration file at compile time
 -- * Default configuration values specified at compile time
 getConfig :: Maybe FilePath -> Handler SPVConfig
 getConfig srvCfgM = do
+    chdirHome
     validLocs <- liftIO $ filterM fileExist locs
     let files = maybeToList srvCfgM ++ validLocs
     liftIO $ loadAppSettings files [configSettingsYmlValue] useEnv

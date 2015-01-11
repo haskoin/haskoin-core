@@ -10,7 +10,6 @@ module Network.Haskoin.SPV
 ( 
   -- * SPV Node running on LevelDB
   NodeHandle
-, DBHandle
 , runNodeHandle
 ) where
 
@@ -53,40 +52,24 @@ import Network.Haskoin.Wallet.Types
 
 data DBSession = DBSession
     { chainHandle :: DB.DB
-    , dataHandle  :: DB.DB
     , walletPool  :: ConnectionPool
     , bloomFP     :: Double
     }
 
 type NodeHandle = S.StateT DBSession (LoggingT (ResourceT IO))
 
-instance SPVNode DBHandle NodeHandle where
+instance SPVNode LevelDBChain NodeHandle where
     runHeaderChain s = do
         db <- liftM chainHandle $ lift $ lift $ S.get
-        liftIO $ S.evalStateT s db
-
-    wantTxHash h = do
-        db <- liftM dataHandle $ lift $ lift $ S.get
-        liftM isNothing $ liftIO $ DB.get db def $ encode' h
-
-    haveMerkleHash h = do
-        db <- liftM dataHandle $ lift $ lift $ S.get
-        liftM isJust $ liftIO $ DB.get db def $ encode' h
-
-    rescanCleanup = do
-        db <- liftM dataHandle $ lift $ lift $ S.get
-        DB.withIter db def $ \iter -> DB.iterFirst iter >> go db iter
+        resE <- liftIO $ tryJust f $ runLevelDBChain db s
+        case resE of
+            Left err -> liftIO (print err) >> undefined
+            Right res -> return res
       where
-        go db iter = do
-            keyM <- iterKey iter
-            when (isJust keyM) $ do
-                DB.delete db def $ fromJust keyM
-                iterNext iter
-                go db iter
+        f (SomeException e) = Just $ show e
 
     spvImportTxs txs = do
         pool <- liftM walletPool $ lift $ lift $ S.get
-        db <- liftM dataHandle $ lift $ lift $ S.get
         fp <- liftM bloomFP $ lift $ lift $ S.get
         resE <- liftIO $ tryJust f $ flip runSqlPersistMPool pool $ do
             xs <- forM txs $ \tx -> importTx tx NetworkSource Nothing
@@ -94,69 +77,26 @@ instance SPVNode DBHandle NodeHandle where
             if or $ map lst3 $ catMaybes xs
                 then Just <$> walletBloomFilter fp
                 else return Nothing
-        forM_ txs $ \tx -> (saveHash db) $ txHash tx
         case resE of
             Left err -> liftIO $ print err
             Right bloomM -> when (isJust bloomM) $ 
                 processBloomFilter $ fromJust bloomM
       where
-        saveHash db h = liftIO $ DB.put db def (encode' h) BS.empty
         f (SomeException e) = Just $ show e
 
     spvImportMerkleBlock mb expTxs = do
-        db   <- liftM dataHandle $ lift $ lift $ S.get
         pool <- liftM walletPool $ lift $ lift $ S.get
         resE <- liftIO $ tryJust f $ flip runSqlPersistMPool pool $ 
             importBlock mb expTxs
         when (isLeft resE) $ liftIO $ print $ fromLeft resE
-        saveHash db $ nodeBlockHash $ getActionNode mb
       where
-        saveHash db h = liftIO $ DB.put db def (encode' h) BS.empty
         f (SomeException e) = Just $ show e
 
 runNodeHandle :: Double -> ConnectionPool -> NodeHandle a -> IO a
 runNodeHandle fp pool m = do
-    h1 <- DB.open "headerchain"
+    db <- DB.open "headerchain"
         DB.defaultOptions{ DB.createIfMissing = True
                          , DB.cacheSize       = 2048
                          }
-    h2 <- DB.open "hashdata"
-        DB.defaultOptions{ DB.createIfMissing = True
-                         , DB.cacheSize       = 2048
-                         }
-    runResourceT $ runStdoutLoggingT $ S.evalStateT m $ DBSession h1 h2 pool fp
-
-type DBHandle = S.StateT DB.DB IO
-
-indexKey :: BlockHash -> BS.ByteString
-indexKey h = "index_" `BS.append` encode' h
-
-bestHeaderKey :: BS.ByteString
-bestHeaderKey = "bestheader"
-
-instance BlockHeaderStore DBHandle where
-
-    getBlockHeaderNode h = do
-        db  <- S.get
-        res <- DB.get db def $ indexKey h
-        when (isNothing res) $ error "getBlockHeaderNode: Key does not exist"
-        return $ fromJust $ decodeToMaybe =<< res
-        
-    putBlockHeaderNode bhn = do
-        db <- S.get
-        DB.put db def (indexKey $ nodeBlockHash bhn) $ encode' bhn
-
-    existsBlockHeaderNode h = do
-        db <- S.get
-        res <- DB.get db def $ indexKey h
-        return $ isJust res
-        
-    getBestBlockHeader = do
-        db  <- S.get
-        key <- (decodeToMaybe =<<) <$> DB.get db def bestHeaderKey
-        getBlockHeaderNode $ fromJust key
-
-    setBestBlockHeader bhn = do
-        db <- S.get
-        DB.put db def bestHeaderKey $ encode' $ nodeBlockHash bhn
+    runResourceT $ runStdoutLoggingT $ S.evalStateT m $ DBSession db pool fp
 

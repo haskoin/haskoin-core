@@ -23,7 +23,7 @@ module Network.Haskoin.Wallet.Tx
 , firstKeyTime
 , importBlock
 , getBestHeight
-, setBestHash
+, setBestHeight
 , accountBalance
 , addressBalance
 , spendableAccountBalance
@@ -32,7 +32,7 @@ module Network.Haskoin.Wallet.Tx
 ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (forM, forM_, when, liftM, filterM)
+import Control.Monad (forM, forM_, when, liftM, filterM, unless)
 import Control.Monad.Reader (ReaderT)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Exception (throwIO)
@@ -767,7 +767,8 @@ importBlock action expTxs = do
     let bid = nodeBlockHash $ getActionNode action
         ts  = blockTimestamp $ nodeHeader $ getActionNode action
     myTxs <- filterM ((liftM isJust) . getBy . UniqueTx) expTxs
-    forM_ myTxs $ \h -> insert_ $ DbConfirmation h bid ts time
+    unless (isOldBlock action) $ 
+        forM_ myTxs $ \h -> insert_ $ DbConfirmation h bid ts time
 
     case action of
         BestBlock node -> do
@@ -784,7 +785,7 @@ importBlock action expTxs = do
                     , DbTxConfirmedHeight =. Just (nodeHeaderHeight node)
                     , DbTxConfidence      =. TxBuilding
                     ]
-            setBestHash (nodeHeaderHeight node) (nodeBlockHash node)
+            setBestHeight $ nodeHeaderHeight node
         BlockReorg _ o n -> do
             -- Unconfirm transactions from the old chain
             forM_ (reverse o) $ \b -> do
@@ -820,9 +821,13 @@ importBlock action expTxs = do
                         , DbTxConfidence      =. TxBuilding
                         ]
 
-            setBestHash (nodeHeaderHeight $ last n) (nodeBlockHash $ last n)
+            setBestHeight $ nodeHeaderHeight $ last n
 
-        SideBlock _ -> return ()
+        SideBlock _ _ -> return ()
+        OldBlock _ _  -> return ()
+  where
+    isOldBlock (OldBlock _ _) = True
+    isOldBlock _              = False
 
 -- If a transaction is Dead but has no more conflicting Building transactions,
 -- we update the status to Pending
@@ -842,11 +847,9 @@ getBestHeight = do
         WalletException "getBestHeight: Database not initialized"
     return $ dbConfigBestHeight $ entityVal $ fromJust cnf
 
-setBestHash :: (MonadIO m, PersistQuery b) 
-            => Word32 -> BlockHash -> ReaderT b m ()
-setBestHash i h = updateWhere [] [ DbConfigBestHeight    =. i
-                                 , DbConfigBestBlockHash =. h
-                                 ]
+setBestHeight :: (MonadIO m, PersistQuery b) 
+              => Word32 -> ReaderT b m ()
+setBestHeight i = updateWhere [] [ DbConfigBestHeight =. i ]
 
 getConflicts :: (MonadIO m, PersistQuery b) => TxHash -> ReaderT b m [TxHash]
 getConflicts h = do

@@ -19,7 +19,6 @@ module Network.Haskoin.Wallet.Model
 , DbConfirmationGeneric(..)
 , DbConfigGeneric(..)
 , DbSpentCoinGeneric(..)
-, DbTokenGeneric(..)
 , DbWalletId
 , DbAccountId
 , DbAddressId
@@ -32,7 +31,6 @@ module Network.Haskoin.Wallet.Model
 , DbConfirmationId
 , DbConfigId
 , DbOrphanId
-, DbTokenId
 , EntityField(..)
 , Unique(..)
 , migrateWallet
@@ -41,6 +39,7 @@ module Network.Haskoin.Wallet.Model
 import Data.Int (Int64)
 import Data.Word (Word32)
 import Data.Time (UTCTime)
+import Data.Text (Text)
 import Database.Persist (EntityField, Unique)
 import Database.Persist.Sql ()
 import Database.Persist.TH
@@ -56,14 +55,11 @@ import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Transaction
 import Network.Haskoin.Crypto 
 
--- TODO: We only care about pubkeyhash and not pubkey. Should we do
--- something about it?
-
-share [mkPersist (sqlSettings { mpsGeneric = True })
+share [ mkPersist (sqlSettings { mpsGeneric = True })
       , mkMigrate "migrateWallet"
       ] [persistLowerCase|
 DbWallet 
-    name String maxlen=200
+    name Text maxlen=200
     value Wallet
     accIndex KeyIndex Maybe
     created UTCTime
@@ -71,7 +67,7 @@ DbWallet
 
 DbAccount 
     wallet DbWalletId
-    name String maxlen=200
+    name Text maxlen=200
     value Account
     gap Int
     created UTCTime
@@ -79,7 +75,7 @@ DbAccount
 
 DbAddress 
     value Address maxlen=64
-    label String
+    label Text
     index KeyIndex
     account DbAccountId
     internal Bool
@@ -149,13 +145,5 @@ DbConfig
     bestHeight Word32
     version Int
     created UTCTime
-
-DbToken
-    ident String maxlen=200
-    secret String maxlen=200
-    nonce Int
-    expires UTCTime Maybe
-    created UTCTime
-    UniqueTokenIdent ident
 |]
 

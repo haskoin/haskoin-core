@@ -8,17 +8,21 @@ module Network.Haskoin.Wallet
 ( 
 -- *Wallet Commands
   Wallet(..)
+, WalletName
 , initWalletDB
 , newWallet
+, getWallet
 , walletList
+, WalletException(..)
 
 -- *Account Commands
 , Account(..)
 , AccountName
 , getAccount
 , newAccount
-, newMSAccount
-, newReadAccount
+, newAccountMultisig
+, newAccountRead
+, newAccountReadMultisig
 , addAccountKeys
 , accountList
 , accountPrvKey
@@ -27,7 +31,7 @@ module Network.Haskoin.Wallet
 -- *Address Commands
 , Balance(..)
 , BalanceAddress(..)
-, PaymentAddress(..)
+, LabeledAddress(..)
 , RecipientAddress(..)
 , getAddress
 , addressList
@@ -40,7 +44,7 @@ module Network.Haskoin.Wallet
 , addressPrvKey
 , toPaymentAddr
 
--- *Coin Commands
+-- *Balance Commands
 , addressBalance
 , accountBalance
 , spendableAccountBalance
@@ -49,16 +53,18 @@ module Network.Haskoin.Wallet
 
 -- *Tx Commands
 , AccTx(..) 
+, TxConfidence(..)
+, TxSource(..)
 , getTx
 , getAccTx
 , txList
 , txPage
 , importTx
 , removeTx
-, sendTx
+, createTx
 , signWalletTx
-, getSigBlob
-, signSigBlob
+, getOfflineTxData
+, signOfflineTxData
 , walletBloomFilter
 , getProposition
 , isTxInWallet
@@ -68,10 +74,36 @@ module Network.Haskoin.Wallet
 -- *Block Commands
 , importBlock
 
--- *Database Types 
-, TxConfidence(..)
-, TxSource(..)
-, WalletException(..)
+-- *Request Types
+, WalletRequest(..)
+, PagedResult(..)
+, NewWallet(..)
+, NewAccount(..)
+, AccTxAction(..)
+, AddressData(..)
+, NodeAction(..)
+
+-- *Response Types
+, WalletResponse(..)
+, MnemonicRes(..)
+, AddressPageRes(..)
+, TxPageRes(..)
+, TxHashStatusRes(..)
+, TxStatusRes(..)
+, TxRes(..)
+, BalanceRes(..)
+, SpendableRes(..)
+, RescanRes(..)
+
+-- *Client
+, clientMain
+, OutputFormat(..)
+, ClientConfig(..)
+
+-- *Server
+, runSPVServer
+, SPVMode(..)
+, SPVConfig(..)
 
 ) where
 
@@ -80,4 +112,8 @@ import Network.Haskoin.Wallet.Account
 import Network.Haskoin.Wallet.Address
 import Network.Haskoin.Wallet.Tx
 import Network.Haskoin.Wallet.Types
+
+import Network.Haskoin.Wallet.Client
+import Network.Haskoin.Wallet.Server
+import Network.Haskoin.Wallet.Settings
 

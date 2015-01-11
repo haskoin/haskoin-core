@@ -1,66 +1,16 @@
-{-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Wallet.Database 
-( OptionsDB(..)
-, haskoinDBPool
-, optionsDB
+module Network.Haskoin.Wallet.Database
+( getDatabasePool
 ) where
 
-import System.Console.GetOpt 
-    ( OptDescr (Option)
-    , ArgDescr (ReqArg)
-    )
-
-import Control.Applicative ((<$>), (<*>))
 import Control.Monad.Logger (runNoLoggingT)
 
-import Data.Text (pack)
-import Data.Default (Default, def)
-import Data.Aeson
+import Database.Persist.Sql (ConnectionPool)
+import Database.Persist.Sqlite (SqliteConf(..), createSqlitePool)
 
-import Database.Sqlite (open)
-import Database.Persist.Sqlite 
-    ( ConnectionPool
-    , wrapConnection
-    , createSqlPool
-    )
+import Network.Haskoin.Wallet.Settings
 
-data OptionsDB = OptionsDB
-    { optWalletName :: String
-    , optConnPool   :: Int
-    }
-  deriving (Eq, Show)
-
-instance Default OptionsDB where
-    def = OptionsDB 
-        { optWalletName = "wallet.sqlite"
-        , optConnPool   = 1
-        }
-
-instance ToJSON OptionsDB where
-    toJSON opt = object 
-        [ "walletname"     .= optWalletName opt 
-        , "connectionpool" .= optConnPool opt
-        ]
-
-instance FromJSON OptionsDB where
-    parseJSON = withObject "optionsdb" $ \o -> OptionsDB
-        <$> o .: "walletname"
-        <*> o .: "connectionpool"
-
-optionsDB :: [OptDescr (OptionsDB -> OptionsDB)]
-optionsDB =
-    [ Option [] ["sqlwallet"]
-        (ReqArg (\w opts -> opts{ optWalletName = w }) "FILE")
-        "Sqlite database filename (default: wallet)"
-    , Option [] ["sqlpool"]
-        (ReqArg (\p opts -> opts{ optConnPool = read p }) "INT")
-        "Sqlite connection pool size (default: 1)"
-    ]
-
-haskoinDBPool :: OptionsDB -> IO ConnectionPool
-haskoinDBPool opts = runNoLoggingT $ 
-    createSqlPool (\lf -> open name >>= flip wrapConnection lf) size
-  where
-    name = pack $ optWalletName opts
-    size = optConnPool opts
+getDatabasePool :: SPVConfig -> IO ConnectionPool
+getDatabasePool cfg = runNoLoggingT $ createSqlitePool
+    (sqlDatabase $ spvDatabase cfg)
+    (sqlPoolSize $ spvDatabase cfg)
 

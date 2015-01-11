@@ -6,9 +6,9 @@ module Network.Haskoin.Wallet.Account
 , getAccountEntity
 , getWalletEntity
 , newAccount
-, newMSAccount
-, newReadAccount
-, newReadMSAccount
+, newAccountMultisig
+, newAccountRead
+, newAccountReadMultisig
 , addAccountKeys
 , accountList
 , accountPrvKey
@@ -24,6 +24,7 @@ import Control.Monad.Trans (MonadIO, liftIO)
 import Data.List (nub)
 import Data.Maybe (fromJust, isJust, isNothing, catMaybes)
 import Data.Time (getCurrentTime)
+import qualified Data.Text as T (unpack)
 
 import Database.Persist
     ( PersistUnique
@@ -63,7 +64,7 @@ getAccountEntity wk name = do
     case entM of
         Just ent -> return ent
         Nothing   -> liftIO $ throwIO $ WalletException $ 
-            unwords ["Account", name, "does not exist" ]
+            unwords [ "Account", T.unpack name, "does not exist" ]
 
 -- | Returns a list of all accounts in the wallet.
 accountList :: (MonadIO m, PersistQuery b, PersistUnique b)
@@ -78,21 +79,23 @@ accountList wallet = do
 -- their name and they must be unique. After creating a new account, you may
 -- want to call 'setLookAhead'.
 newAccount :: (MonadIO m, PersistUnique b, PersistQuery b) 
-           => String              -- ^ Wallet name 
-           -> String              -- ^ Account name
+           => WalletName          -- ^ Wallet name 
+           -> AccountName         -- ^ Account name
            -> ReaderT b m Account -- ^ Returns the new account information
 newAccount wallet name = do
     -- Check duplicates
     Entity wk w <- getWalletEntity wallet
     prevAcc <- getBy $ UniqueAccWalletName wk name
     when (isJust prevAcc) $ liftIO $ throwIO $ WalletException $
-        unwords [ "Account", name, "already exists in wallet", wallet ]
+        unwords [ "Account", T.unpack name
+                , "already exists in wallet", T.unpack wallet 
+                ]
 
     -- Insert new account
     time <- liftIO getCurrentTime
     let deriv = maybe 0 (+1) $ dbWalletAccIndex w
-        (k,i) = head $ accPubKeys (walletMasterKey $ dbWalletValue w) deriv
-        acc   = RegularAccount wallet name i k
+        (k,i) = head $ accPubKeys (walletMaster $ dbWalletValue w) deriv
+        acc   = AccountRegular wallet name i k
     insert_ $ DbAccount wk name acc 0 time
 
     -- Update account index in the wallet
@@ -108,19 +111,22 @@ newAccount wallet name = do
 -- In order to prevent usage mistakes, you can not create a multisignature 
 -- account with other keys from your own wallet. Once the account is set up
 -- with all the keys, you may want to call 'setLookAhead'.
-newMSAccount :: (MonadIO m, PersistUnique b, PersistQuery b)
-             => String       -- ^ Wallet name
-             -> String       -- ^ Account name
-             -> Int          -- ^ Required number of keys (m in m of n)
-             -> Int          -- ^ Total number of keys (n in m of n)
-             -> [XPubKey]    -- ^ Thirdparty public keys
-             -> ReaderT b m Account -- ^ Returns the new account information
-newMSAccount wallet name m n mskeys = do
+newAccountMultisig 
+    :: (MonadIO m, PersistUnique b, PersistQuery b)
+    => WalletName   -- ^ Wallet name
+    -> AccountName  -- ^ Account name
+    -> Int          -- ^ Required number of keys (m in m of n)
+    -> Int          -- ^ Total number of keys (n in m of n)
+    -> [XPubKey]    -- ^ Thirdparty public keys
+    -> ReaderT b m Account -- ^ Returns the new account information
+newAccountMultisig wallet name m n mskeys = do
     -- Check duplicates
     Entity wk w <- getWalletEntity wallet
     prevAcc <- getBy $ UniqueAccWalletName wk name
     when (isJust prevAcc) $ liftIO $ throwIO $ WalletException $
-        unwords [ "Account", name, "already exists in wallet", wallet ]
+        unwords [ "Account", T.unpack name
+                , "already exists in wallet", T.unpack wallet 
+                ]
 
     -- Insert new account
     let keys = nub mskeys
@@ -131,8 +137,8 @@ newMSAccount wallet name m n mskeys = do
         WalletException "Too many keys"
     checkOwnKeys wk keys
     let deriv = maybe 0 (+1) $ dbWalletAccIndex w
-        (k,i) = head $ accPubKeys (walletMasterKey $ dbWalletValue w) deriv
-        acc   = MultisigAccount wallet name i m n $ getAccPubKey k:keys
+        (k,i) = head $ accPubKeys (walletMaster $ dbWalletValue w) deriv
+        acc   = AccountMultisig wallet name i m n $ getAccPubKey k:keys
     insert_ $ DbAccount wk name acc 0 time
 
     -- Update account index in the wallet
@@ -140,17 +146,19 @@ newMSAccount wallet name m n mskeys = do
     return acc
 
 -- | Create a new read-only account.
-newReadAccount :: (MonadIO m, PersistUnique b, PersistQuery b)
+newAccountRead :: (MonadIO m, PersistUnique b, PersistQuery b)
                => WalletName  -- ^ Wallet name
                -> AccountName -- ^ Account name
                -> XPubKey     -- ^ Read-only key
                -> ReaderT b m Account -- ^ New account
-newReadAccount wallet name key = do
+newAccountRead wallet name key = do
     -- Check duplicates
     Entity wk _ <- getWalletEntity wallet
     prevAcc <- getBy $ UniqueAccWalletName wk name
     when (isJust prevAcc) $ liftIO $ throwIO $ WalletException $
-        unwords [ "Account", name, "already exists in wallet", wallet ]
+        unwords [ "Account", T.unpack name
+                , "already exists in wallet", T.unpack wallet 
+                ]
 
     -- Insert new account
     checkOwnKeys wk [key]
@@ -159,23 +167,24 @@ newReadAccount wallet name key = do
     when (isNothing accKeyM) $ liftIO $ throwIO $ WalletException $
         "Invalid account key provided"
     time <- liftIO getCurrentTime
-    let acc = ReadAccount wallet name $ fromJust accKeyM
+    let acc = AccountRead wallet name $ fromJust accKeyM
     insert_ $ DbAccount wk name acc 0 time
     return acc
 
-newReadMSAccount :: (MonadIO m, PersistUnique b, PersistQuery b)
-                 => WalletName   -- ^ Wallet name
-                 -> AccountName  -- ^ Account name
-                 -> Int          -- ^ Required number of keys (m in m of n)
-                 -> Int          -- ^ Total number of keys (n in m of n)
-                 -> [XPubKey]    -- ^ Keys
-                 -> ReaderT b m Account -- ^ Returns the new account information
-newReadMSAccount wallet name m n mskeys = do
+newAccountReadMultisig 
+    :: (MonadIO m, PersistUnique b, PersistQuery b)
+    => WalletName   -- ^ Wallet name
+    -> AccountName  -- ^ Account name
+    -> Int          -- ^ Required number of keys (m in m of n)
+    -> Int          -- ^ Total number of keys (n in m of n)
+    -> [XPubKey]    -- ^ Keys
+    -> ReaderT b m Account -- ^ Returns the new account information
+newAccountReadMultisig wallet name m n mskeys = do
     -- Check duplicates
     Entity wk _ <- getWalletEntity wallet
     prevAcc <- getBy $ UniqueAccWalletName wk name
     when (isJust prevAcc) $ liftIO $ throwIO $ WalletException $
-        unwords [ "Account", name, "already exists" ]
+        unwords [ "Account", T.unpack name, "already exists" ]
 
     -- Insert new account
     let keys = nub mskeys
@@ -185,7 +194,7 @@ newReadMSAccount wallet name m n mskeys = do
     unless (length keys <= n) $ liftIO $ throwIO $
         WalletException "Too many keys"
     checkOwnKeys wk keys
-    let acc   = ReadMSAccount wallet name m n keys
+    let acc   = AccountReadMultisig wallet name m n keys
     insert_ $ DbAccount wk name acc 0 time
     return acc
 
@@ -245,7 +254,7 @@ accountPrvKey :: (MonadIO m, PersistUnique b, PersistQuery b)
 accountPrvKey wallet name = do
     Entity wk w <- getWalletEntity wallet
     Entity _ a  <- getAccountEntity wk name
-    let master = walletMasterKey (dbWalletValue w)
+    let master = walletMaster (dbWalletValue w)
         deriv  = accountIndex (dbAccountValue a)
     return $ fromJust $ accPrvKey master deriv
 
@@ -253,13 +262,13 @@ accountPrvKey wallet name = do
 
 isMSAccount :: Account -> Bool
 isMSAccount acc = case acc of
-    MultisigAccount _ _ _ _ _ _ -> True
-    ReadMSAccount _ _ _ _ _     -> True
-    _                           -> False
+    AccountMultisig _ _ _ _ _ _   -> True
+    AccountReadMultisig _ _ _ _ _ -> True
+    _                             -> False
 
 isReadAccount :: Account -> Bool
 isReadAccount acc = case acc of
-    ReadAccount _ _ _       -> True
-    ReadMSAccount _ _ _ _ _ -> True
-    _                       -> False
+    AccountRead _ _ _             -> True
+    AccountReadMultisig _ _ _ _ _ -> True
+    _                             -> False
 

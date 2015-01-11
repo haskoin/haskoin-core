@@ -17,6 +17,7 @@ import Control.Monad.Trans (MonadIO, liftIO)
 
 import Data.Maybe (fromJust, isJust, isNothing)
 import Data.Time (getCurrentTime)
+import qualified Data.Text as T (unpack)
 import qualified Data.ByteString as BS
 
 import Database.Persist
@@ -43,19 +44,19 @@ import Network.Haskoin.Wallet.Types
 
 -- | Get a wallet by name
 getWallet :: (MonadIO m, PersistStore b, PersistUnique b)
-          => String             -- ^ Wallet name
+          => WalletName         -- ^ Wallet name
           -> ReaderT b m Wallet -- ^ Wallet
 getWallet name = liftM (dbWalletValue . entityVal) $ getWalletEntity name
 
 getWalletEntity :: (MonadIO m, PersistStore b, PersistUnique b)
-                => String 
+                => WalletName 
                 -> ReaderT b m (Entity (DbWalletGeneric b))
 getWalletEntity name = do
     entM <- getBy $ UniqueWalletName name
     case entM of
         Just ent -> return ent
         Nothing  -> liftIO $ throwIO $ WalletException $ 
-            unwords ["Wallet", name, "does not exist"]
+            unwords ["Wallet", T.unpack name, "does not exist"]
 
 -- | Get a list of all the wallets
 walletList :: (MonadIO m, PersistQuery b) => ReaderT b m [Wallet]
@@ -67,7 +68,7 @@ walletList =
 -- | Initialize a wallet from a secret seed. This function will fail if the
 -- wallet is already initialized.
 newWallet :: (MonadIO m, PersistQuery b, PersistUnique b)
-          => String             -- ^ Wallet name
+          => WalletName         -- ^ Wallet name
           -> BS.ByteString      -- ^ Secret seed
           -> ReaderT b m Wallet -- ^ New wallet
 newWallet wname seed 
@@ -76,7 +77,7 @@ newWallet wname seed
     | otherwise = do
         prevWallet <- getBy $ UniqueWalletName wname
         when (isJust prevWallet) $ liftIO $ throwIO $ WalletException $
-            unwords [ "Wallet", wname, "already exists" ]
+            unwords [ "Wallet", T.unpack wname, "already exists" ]
         time <- liftIO getCurrentTime
         let master = makeMasterKey seed
             wallet = Wallet wname $ fromJust master

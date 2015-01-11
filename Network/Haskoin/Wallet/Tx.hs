@@ -13,10 +13,10 @@ module Network.Haskoin.Wallet.Tx
 , txPage
 , importTx
 , removeTx
-, sendTx
+, createTx
 , signWalletTx
-, getSigBlob
-, signSigBlob
+, getOfflineTxData
+, signOfflineTxData
 , walletBloomFilter
 , getProposition
 , isTxInWallet
@@ -95,16 +95,18 @@ toAccTx aTx = do
         return $ if isJust addrM
             then RecipientAddress a label True
             else RecipientAddress a "" False
-    return $ AccTx { accTxHash           = dbAccTxHash aTx
-                   , accTxRecipients     = recipAddrs
-                   , accTxValue          = dbAccTxValue aTx
-                   , accTxConfidence     = dbTxConfidence tx
-                   , accIsCoinbase       = dbTxIsCoinbase tx
-                   , accTxConfirmations  = fromIntegral conf
-                   , accTx               = dbTxValue tx
-                   , accReceivedDate     = dbTxCreated tx
-                   , accConfirmationDate = confDate
+    return $ AccTx { accTxTxId             = dbAccTxHash aTx
+                   , accTxRecipients       = recipAddrs
+                   , accTxValue            = dbAccTxValue aTx
+                   , accTxConfidence       = dbTxConfidence tx
+                   , accTxIsCoinbase       = dbTxIsCoinbase tx
+                   , accTxConfirmations    = fromIntegral conf
+                   , accTxTx               = dbTxValue tx
+                   , accTxReceivedDate     = f $ dbTxCreated tx
+                   , accTxConfirmationDate = confDate
                    }
+  where
+    f = round . utcTimeToPOSIXSeconds
 
 getConfirmations :: (MonadIO m, PersistUnique b, PersistQuery b)
                  => TxHash -> ReaderT b m Int
@@ -199,7 +201,7 @@ txPage wallet name pageNum resPerPage
 importTx :: (MonadIO m, PersistQuery b, PersistUnique b) 
          => Tx       -- ^ Transaction to import
          -> TxSource -- ^ Where does the transaction come from
-         -> Maybe (String, String) -- ^ (Wallet, Account)
+         -> Maybe (WalletName, AccountName) -- ^ (Wallet, Account)
          -> ReaderT b m (Maybe (TxHash, TxConfidence, Bool))
          -- ^ (Imported Tx, Confidence, New addresses generated)
 importTx tx source nameM = getBy (UniqueTx tid) >>= \txM -> case txM of
@@ -207,19 +209,19 @@ importTx tx source nameM = getBy (UniqueTx tid) >>= \txM -> case txM of
         -- Change the confidence from offline to pending if we get a
         -- transaction from the network
         let isOffline = dbTxConfidence dbtx == TxOffline
-        if isOffline && source == NetworkSource
+        if isOffline && source == SourceNetwork
             then do
                 replace tkey $ dbtx{ dbTxConfidence = TxPending }
                 return $ Just (tid, TxPending, False)
             else do
-                when (source == UnknownSource) $ checkUnknownTx tx nameM
+                when (source == SourceUnknown) $ checkUnknownTx tx nameM
                 return $ Just (tid, dbTxConfidence dbtx, False)
     Nothing -> do
-        when (source == UnknownSource) $ checkUnknownTx tx nameM
+        when (source == SourceUnknown) $ checkUnknownTx tx nameM
         isOrphan <- isOrphanTx tx
         if not isOrphan then addTx tx source else do
             -- Can not store UnknownSource transactions as orphans
-            when (source == UnknownSource) $ liftIO $ throwIO $ WalletException
+            when (source == SourceUnknown) $ liftIO $ throwIO $ WalletException
                 "Trying to import an untrusted orphan transaction"
             time <- liftIO getCurrentTime
             insert_ $ DbOrphan tid tx source time
@@ -230,7 +232,7 @@ importTx tx source nameM = getBy (UniqueTx tid) >>= \txM -> case txM of
 -- Only allow importing unknown transaction if one of the inputs is in the
 -- given account.
 checkUnknownTx :: (MonadIO m, PersistQuery b, PersistUnique b) 
-               => Tx -> Maybe (String, String) -> ReaderT b m ()
+               => Tx -> Maybe (WalletName, AccountName) -> ReaderT b m ()
 checkUnknownTx tx nameM = do
     -- Was a wallet/account combination provided?
     when (isNothing nameM) $ liftIO $ throwIO exc
@@ -289,7 +291,7 @@ addTx initTx source = do
 
 mergeOfflineTxs :: (MonadIO m, PersistUnique b, PersistQuery b)
                 => TxSource -> Tx -> [Coin] -> ReaderT b m Tx
-mergeOfflineTxs NetworkSource tx _ = return tx
+mergeOfflineTxs SourceNetwork tx _ = return tx
 mergeOfflineTxs _ tx [] = return tx
 mergeOfflineTxs _ tx coins = do
     -- Find offline transactions with the same nosigTxHash
@@ -307,7 +309,7 @@ checkDoubleSpend :: (MonadIO m, PersistUnique b, PersistQuery b)
                  => Tx -> TxSource -> ReaderT b m ()
 checkDoubleSpend tx source
     -- We only allow double spends that come from the network
-    | source == NetworkSource = return ()
+    | source == SourceNetwork = return ()
     | otherwise = do
         -- We can not spend the same coins as someone else
         spendM <- mapM (getBy . UniqueTx) =<< findSpendingTxs outpoints
@@ -329,7 +331,7 @@ checkDoubleSpend tx source
 updateConflicts :: (MonadIO m, PersistUnique b, PersistQuery b)
                 => Tx -> [Coin] -> TxSource -> ReaderT b m TxConfidence
 updateConflicts tx coins source 
-    | source == NetworkSource = do
+    | source == SourceNetwork = do
         -- Find conflicts with transactions that spend the same coins
         confls <- liftM (filter (/= tid)) $ findSpendingTxs outpoints
 
@@ -564,23 +566,23 @@ removeTx tid = do
         return $ tid:(concat cids)
 
 -- | Create a transaction sending some coins to a list of recipient addresses.
-sendTx :: (MonadIO m, PersistUnique b, PersistQuery b)
-       => WalletName          -- ^ Wallet name
-       -> AccountName         -- ^ Account name
-       -> Word32              -- ^ Minimum confirmations
-       -> [(Address,Word64)]  -- ^ List of recipient addresses and amounts
-       -> Word64              -- ^ Fee per 1000 bytes 
-       -> Bool                -- ^ Proposition (No signatures)
-       -> ReaderT b m (TxHash, Bool, Bool) 
+createTx :: (MonadIO m, PersistUnique b, PersistQuery b)
+         => WalletName          -- ^ Wallet name
+         -> AccountName         -- ^ Account name
+         -> Word32              -- ^ Minimum confirmations
+         -> [(Address,Word64)]  -- ^ List of recipient addresses and amounts
+         -> Word64              -- ^ Fee per 1000 bytes 
+         -> Bool                -- ^ Should the transaction be signed
+         -> ReaderT b m (TxHash, Bool, Bool) 
             -- ^ (Payment transaction, Completed flag, New addresses generated)
-sendTx wallet name minConf dests fee prop = do
+createTx wallet name minConf dests fee sign = do
     Entity wk _ <- getWalletEntity wallet
     accE@(Entity ai acc) <- getAccountEntity wk name
     tx <- buildUnsignedTx accE minConf dests fee
-    (signedTx, _) <- if prop || isReadAccount (dbAccountValue acc)
+    (signedTx, _) <- if not sign || isReadAccount (dbAccountValue acc)
         then return (tx, False)
-        else signSigBlob wallet name False =<< buildSigBlob ai tx
-    confM <- importTx signedTx WalletSource Nothing
+        else signOfflineTxData wallet name False =<< buildOfflineTxData ai tx
+    confM <- importTx signedTx SourceWallet Nothing
     let (tid, conf, genA) = fromJust confM
     when (isNothing confM) $ liftIO $ throwIO $
         WalletException "Transaction could not be imported in the wallet"
@@ -604,8 +606,8 @@ signWalletTx wallet name tx final = do
     Entity ai acc <- getAccountEntity wk name
     (signedTx, _) <- if isReadAccount $ dbAccountValue acc 
         then return (tx, False)
-        else signSigBlob wallet name final =<< buildSigBlob ai tx
-    confM <- importTx signedTx UnknownSource (Just (wallet, name))
+        else signOfflineTxData wallet name final =<< buildOfflineTxData ai tx
+    confM <- importTx signedTx SourceUnknown (Just (wallet, name))
     let (tid, conf, genA) = fromJust confM
     when (isNothing confM) $ liftIO $ throwIO $
         WalletException "Transaction is not relevant to this wallet"
@@ -613,16 +615,16 @@ signWalletTx wallet name tx final = do
 
 -- | Retrieve the 'OfflineSignData' that can be used to sign a transaction from
 -- an offline wallet
-getSigBlob :: (MonadIO m, PersistUnique b, PersistQuery b)
-           => WalletName
-           -> AccountName
-           -> TxHash
-           -> ReaderT b m SigBlob
-getSigBlob wallet name tid = do
+getOfflineTxData :: (MonadIO m, PersistUnique b, PersistQuery b)
+                 => WalletName
+                 -> AccountName
+                 -> TxHash
+                 -> ReaderT b m OfflineTxData
+getOfflineTxData wallet name tid = do
     Entity wk _ <- getWalletEntity wallet
     Entity ai _ <- getAccountEntity wk name
     tx <- getTx tid
-    buildSigBlob ai tx 
+    buildOfflineTxData ai tx 
 
 -- Build an unsigned transaction given a list of recipients and a fee
 buildUnsignedTx :: (MonadIO m, PersistUnique b, PersistQuery b)
@@ -654,16 +656,16 @@ buildUnsignedTx accE@(Entity ai acc) minConf dests fee = do
     tot     = sum $ map snd dests
     f (a,v) = (addrToBase58 a,v)
     
-buildSigBlob :: (MonadIO m, PersistUnique b, PersistQuery b)
-             => Key (DbAccountGeneric b)
-             -> Tx
-             -> ReaderT b m SigBlob
-buildSigBlob ai tx = do
+buildOfflineTxData :: (MonadIO m, PersistUnique b, PersistQuery b)
+                   => Key (DbAccountGeneric b)
+                   -> Tx
+                   -> ReaderT b m OfflineTxData
+buildOfflineTxData ai tx = do
     coins <- liftM catMaybes (mapM (getBy . f) $ map prevOutput $ txIn tx)
     -- Filter coins for this account only
     accCoinsDB <- filterM belongs coins
     dat <- mapM toDat $ map entityVal accCoinsDB 
-    return $ SigBlob dat tx
+    return $ OfflineTxData dat tx
   where
     f (OutPoint h i) = CoinOutPoint h (fromIntegral i)
     belongs (Entity ci _) = liftM isJust $ getBy (UniqueCoinAccount ci ai)
@@ -675,20 +677,20 @@ buildSigBlob ai tx = do
                , dbAddressIndex $ entityVal a
                )
 
-signSigBlob :: (MonadIO m, PersistUnique b, PersistQuery b)
-            => WalletName
-            -> AccountName
-            -> Bool        -- ^ Only sign if the tx will be valid
-            -> SigBlob
-            -> ReaderT b m (Tx, Bool)
-signSigBlob wallet name final (SigBlob dat tx) = do
+signOfflineTxData :: (MonadIO m, PersistUnique b, PersistQuery b)
+                  => WalletName
+                  -> AccountName
+                  -> Bool        -- ^ Only sign if the tx will be valid
+                  -> OfflineTxData
+                  -> ReaderT b m (Tx, Bool)
+signOfflineTxData wallet name final (OfflineTxData dat tx) = do
     Entity wk wE  <- getWalletEntity wallet
     Entity _ accE <- getAccountEntity wk name
     let acc = dbAccountValue accE
         w   = dbWalletValue wE
     when (isReadAccount acc) $ liftIO $ throwIO $
         WalletException "This operation is not supported on read-only accounts"
-    let master  = walletMasterKey w
+    let master  = walletMaster w
         accKey  = fromJust $ accPrvKey master $ accountIndex acc
         f (_,_,internal,k) | internal  = intPrvKey accKey k
                            | otherwise = extPrvKey accKey k
@@ -709,7 +711,7 @@ signSigBlob wallet name final (SigBlob dat tx) = do
 getProposition :: (MonadIO m, PersistUnique b, PersistQuery b)
                => WalletName -> AccountName -> TxHash -> ReaderT b m Tx
 getProposition wallet name tid = do
-    tx <- liftM accTx $ getAccTx wallet name tid
+    tx <- liftM accTxTx $ getAccTx wallet name tid
     return tx{ txIn = map f $ txIn tx }
   where
     f ti = ti{ scriptInput = BS.empty }
@@ -887,23 +889,20 @@ isTxOffline h = do
 -- Funding transactions are transactions funding this address and spending
 -- transactions are transactions spending from this address.
 addressBalance :: (PersistQuery b, PersistUnique b, MonadIO m) 
-               => PaymentAddress -- ^ Payment Address
+               => LabeledAddress -- ^ Address
                -> Word32         -- ^ Minimum confirmations
                -> ReaderT b m BalanceAddress -- ^ Address balance
-addressBalance pa minConf = do
+addressBalance baAddress minConf = do
     -- Find coins related to the address
-    allCoins <- liftM (map entityVal) $ selectList [DbCoinAddress ==. a] [] 
-    (fb, tr, ft, st, ct) <- getBalanceData allCoins minConf
-    return $ BalanceAddress
-        { balanceAddress = pa
-        , finalBalance   = fb
-        , totalReceived  = tr
-        , fundingTxs     = ft
-        , spendingTxs    = st
-        , conflictTxs    = ct
-        }
-  where
-    a = paymentAddress pa
+    allCoins <- liftM (map entityVal) $ 
+        selectList [DbCoinAddress ==. (laAddress baAddress)] [] 
+    getBalanceData allCoins minConf >>= 
+        \( baFinalBalance
+         , baTotalReceived
+         , baFundingTxs
+         , baSpendingTxs
+         , baConflictTxs 
+         ) -> return $ BalanceAddress {..}
 
 -- | Returns the true balance of a wallet. If the balance can not be
 -- computed deterministically (due to conflicting transactions), this

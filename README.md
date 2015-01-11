@@ -1,4 +1,8 @@
-# haskoin-wallet
+# Haskoin Wallet
+
+Implementation of a Bitcoin SPV Wallet with BIP32 and multisig support.
+
+## Features
 
 This package provides a SPV (simple payment verification) wallet implementation.
 It features BIP32 key management, deterministic signatures (RFC-6979) and first
@@ -10,14 +14,10 @@ which is also provided in this package.
 
 http://hackage.haskell.org/package/haskoin-wallet
 
-## ZeroMQ API Documentation
-
-https://github.com/haskoin/haskoin-wallet/blob/master/docs/haskoin-api.md
-
 ## Installing
 
-To compile Haskoin, it is necessary to install GHC, the ‘cabal’ command, and
-development libraries from LevelDB and Snappy.
+To compile haskoin-wallet, it is necessary to install GHC, the ‘cabal’ command,
+and development libraries from LevelDB and Snappy.
 
 ```sh
 # Debian/Ubuntu installation
@@ -40,4 +40,5 @@ cabal install haskoin-wallet
 
 Commits are done through GitHub pull requests.
 
-We do a lot of our technical discussions in the IRC channel #haskoin on chat.freenode.net.
+We do a lot of our technical discussions in the IRC channel #haskoin on
+chat.freenode.net.

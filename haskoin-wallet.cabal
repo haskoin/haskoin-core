@@ -84,7 +84,9 @@ library
                  , yaml                          >= 0.8       && < 0.9
                  , yesod                         >= 1.4       && < 1.5
                  , zeromq4-haskell               >= 0.6       && < 0.7
+
     ghc-options: -Wall 
+
   if flag(mysql)
     build-depends: persistent-mysql >= 2.1 && < 2.2
     hs-source-dirs: . database/mysql

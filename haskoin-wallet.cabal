@@ -1,12 +1,13 @@
 name:                  haskoin-wallet
 version:               0.2.0
 synopsis:              
-    Implementation of a Bitcoin hierarchical deterministric wallet (BIP32).
+    Implementation of a Bitcoin SPV Wallet with BIP32 and multisig support.
 description:         
-    This package provides a command lines application called hw (haskoin
-    wallet). It is a lightweight bitcoin wallet featuring BIP32 key management,
-    deterministic signatures (RFC-6979) and first order support for
-    multisignature transactions. 
+    This package provides a SPV (simple payment verification) wallet
+    implementation. It features BIP32 key management, deterministic signatures
+    (RFC-6979) and first order support for multi-signature transactions. You
+    can communicate with the wallet process through a ZeroMQ API or through a
+    command-line tool called "hw" which is also provided in this package. 
 homepage:              http://github.com/haskoin/haskoin-wallet
 bug-reports:           http://github.com/haskoin/haskoin-wallet/issues
 license:               PublicDomain
@@ -113,7 +114,7 @@ test-suite test-haskoin-wallet
     build-depends: aeson                         >= 0.8       && < 0.9
                  , base                          >= 4.6       && < 5
                  , bytestring                    >= 0.10      && < 0.11
-                 , haskoin                       >= 0.1       && < 0.2 
+                 , haskoin                       >= 0.2       && < 0.3 
                  , haskoin-wallet
                  , monad-logger                  >= 0.3       && < 0.4
                  , mtl                           >= 2.2       && < 2.3

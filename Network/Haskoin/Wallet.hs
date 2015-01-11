@@ -55,6 +55,7 @@ module Network.Haskoin.Wallet
 , AccTx(..) 
 , TxConfidence(..)
 , TxSource(..)
+, OfflineTxData(..)
 , getTx
 , getAccTx
 , txList

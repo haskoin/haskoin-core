@@ -1,13 +1,21 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Network.Haskoin.Wallet.Arbitrary where
 
-import Test.QuickCheck
+import Test.QuickCheck 
+    ( Arbitrary
+    , arbitrary
+    , oneof
+    , vectorOf
+    , listOf1
+    , elements
+    )
 
-import Control.Applicative 
+import Control.Applicative ((<$>), (<*>))
 
 import Network.Haskoin.Test
-import Network.Haskoin.Wallet.Types
-import Network.Haskoin.Yesod.APIServer.Types
+import Network.Haskoin.Wallet
+
+{- Wallet types -}
 
 instance Arbitrary Wallet where
     arbitrary = do
@@ -23,25 +31,25 @@ instance Arbitrary Account where
             name <- arbitrary
             k <- arbitrary
             ArbitraryAccPubKey _ _ pub <- arbitrary
-            return $ RegularAccount wallet name k pub
+            return $ AccountRegular wallet name k pub
         ms = do
             wallet <- arbitrary
             name <- arbitrary
             k <- arbitrary
             ArbitraryMSParam m n <- arbitrary
             keys <- vectorOf n (arbitrary >>= \(ArbitraryXPubKey _ p) -> return p)
-            return $ MultisigAccount wallet name k m n keys
+            return $ AccountMultisig wallet name k m n keys
         rd = do
             wallet <- arbitrary
             name <- arbitrary
             ArbitraryAccPubKey _ _ key <- arbitrary
-            return $ ReadAccount wallet name key
+            return $ AccountRead wallet name key
         rdms = do
             wallet <- arbitrary
             name <- arbitrary
             ArbitraryMSParam m n <- arbitrary
             keys <- vectorOf n (arbitrary >>= \(ArbitraryXPubKey _ p) -> return p)
-            return $ ReadMSAccount wallet name m n keys
+            return $ AccountReadMultisig wallet name m n keys
 
 instance Arbitrary Balance where
     arbitrary = oneof
@@ -50,51 +58,43 @@ instance Arbitrary Balance where
         ]
 
 instance Arbitrary BalanceAddress where
-    arbitrary = BalanceAddress <$> arbitrary 
-                               <*> arbitrary
-                               <*> arbitrary
-                               <*> arbitrary
-                               <*> arbitrary
-                               <*> arbitrary
+    arbitrary = BalanceAddress <$> arbitrary <*> arbitrary <*> arbitrary
+                               <*> arbitrary <*> arbitrary <*> arbitrary
 
-instance Arbitrary PaymentAddress where
+instance Arbitrary LabeledAddress where
     arbitrary = do
         ArbitraryAddress addr <- arbitrary
-        l <- arbitrary
-        k <- arbitrary
-        return $ PaymentAddress addr l k
+        LabeledAddress addr <$> arbitrary <*> arbitrary
 
 instance Arbitrary RecipientAddress where
     arbitrary = do
         ArbitraryAddress addr <- arbitrary
-        l  <- arbitrary
-        lo <- arbitrary
-        return $ RecipientAddress addr l lo
+        RecipientAddress addr <$> arbitrary <*> arbitrary
 
 instance Arbitrary AccTx where
     arbitrary = do
-        tid <- arbitrary
-        addrs <- listOf1 arbitrary
-        v <- arbitrary
-        conf <- arbitrary
-        b <- arbitrary
-        c <- abs <$> arbitrary
-        ArbitraryTx tx <- arbitrary
-        ArbitraryUTCTime rd <- arbitrary
-        cd <- arbitrary
-        return $ AccTx tid addrs v conf b c tx rd cd
+        accTxTxId             <- arbitrary
+        accTxRecipients       <- listOf1 arbitrary
+        accTxValue            <- arbitrary
+        accTxConfidence       <- arbitrary
+        accTxIsCoinbase       <- arbitrary
+        accTxConfirmations    <- abs <$> arbitrary
+        ArbitraryTx accTxTx   <- arbitrary
+        accTxReceivedDate     <- arbitrary
+        accTxConfirmationDate <- arbitrary
+        return AccTx{..}
 
 instance Arbitrary TxConfidence where
     arbitrary = elements [ TxOffline, TxDead, TxPending, TxBuilding ]
 
 instance Arbitrary TxSource where
-    arbitrary = elements [ NetworkSource, WalletSource, UnknownSource ]
+    arbitrary = elements [ SourceNetwork, SourceWallet, SourceUnknown ]
 
-instance Arbitrary SigBlob where
+instance Arbitrary OfflineTxData where
     arbitrary = do
         dat <- listOf1 genDat
         ArbitraryTx tx <- arbitrary
-        return $ SigBlob dat tx
+        return $ OfflineTxData dat tx
       where
         genDat = do
             ArbitraryOutPoint op <- arbitrary
@@ -103,18 +103,18 @@ instance Arbitrary SigBlob where
             k <- arbitrary
             return (op, so, b, k)
 
--- REST Types --
+{- Request types -}
+
+instance Arbitrary PagedResult where
+    arbitrary = PagedResult <$> arbitrary <*> arbitrary
 
 instance Arbitrary NewWallet where
     arbitrary = NewWallet <$> arbitrary <*> arbitrary <*> arbitrary
 
-instance Arbitrary MnemonicRes where
-    arbitrary = MnemonicRes <$> arbitrary
-
 instance Arbitrary NewAccount where
     arbitrary = oneof
-        [ NewAccount <$> arbitrary
-        , NewReadAccount <$> arbitrary 
+        [ NewAccountRegular <$> arbitrary
+        , NewAccountRead <$> arbitrary 
                          <*> ((\(ArbitraryXPubKey _ x) -> x) <$> arbitrary)
         , goms
         , goreadms
@@ -124,13 +124,35 @@ instance Arbitrary NewAccount where
             name <- arbitrary
             ArbitraryMSParam m n <- arbitrary
             keys <- vectorOf n $ (\(ArbitraryXPubKey _ x) -> x) <$> arbitrary
-            return $ NewMSAccount name m n keys
+            return $ NewAccountMultisig name m n keys
         goreadms = do
             name <- arbitrary
             ArbitraryMSParam m n <- arbitrary
             keys <- vectorOf n $ (\(ArbitraryXPubKey _ x) -> x) <$> arbitrary
-            return $ NewReadMSAccount name m n keys
+            return $ NewAccountReadMultisig name m n keys
             
+
+instance Arbitrary AddressData where
+    arbitrary = AddressData <$> arbitrary
+
+instance Arbitrary AccTxAction where
+    arbitrary = oneof
+        [ CreateTx <$> (listOf1 genaddr) 
+        , SignTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
+        , SignOfflineTxData <$> arbitrary 
+        , ImportTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
+        ]
+      where
+        genaddr = (,) <$> ((\(ArbitraryAddress x) -> x) <$> arbitrary)
+                      <*> arbitrary
+
+instance Arbitrary NodeAction where
+    arbitrary = Rescan <$> arbitrary
+
+{- Response types -}
+
+instance Arbitrary MnemonicRes where
+    arbitrary = MnemonicRes <$> arbitrary
 
 instance Arbitrary AddressPageRes where
     arbitrary = AddressPageRes <$> arbitrary <*> arbitrary
@@ -138,41 +160,24 @@ instance Arbitrary AddressPageRes where
 instance Arbitrary TxPageRes where
     arbitrary = TxPageRes <$> arbitrary <*> arbitrary
 
-instance Arbitrary AddressData where
-    arbitrary = AddressData <$> arbitrary
-
-instance Arbitrary AccTxAction where
-    arbitrary = oneof
-        [ SendCoins <$> (listOf1 genaddr) <*> arbitrary <*> arbitrary <*> arbitrary
-        , SignTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) <*> arbitrary
-        , SignSigBlob <$> arbitrary <*> arbitrary
-        , ImportTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
-        ]
-      where
-        genaddr = (,) <$> ((\(ArbitraryAddress x) -> x) <$> arbitrary)
-                      <*> arbitrary
-
 instance Arbitrary TxHashStatusRes where
     arbitrary = TxHashStatusRes 
         <$> arbitrary 
         <*> arbitrary
-
-instance Arbitrary TxRes where
-    arbitrary = TxRes <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
 
 instance Arbitrary TxStatusRes where
     arbitrary = TxStatusRes 
         <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
         <*> arbitrary
 
+instance Arbitrary TxRes where
+    arbitrary = TxRes <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
+
 instance Arbitrary BalanceRes where
     arbitrary = BalanceRes <$> arbitrary <*> arbitrary
 
 instance Arbitrary SpendableRes where
     arbitrary = SpendableRes <$> arbitrary
-
-instance Arbitrary NodeAction where
-    arbitrary = Rescan <$> arbitrary
 
 instance Arbitrary RescanRes where
     arbitrary = RescanRes <$> arbitrary

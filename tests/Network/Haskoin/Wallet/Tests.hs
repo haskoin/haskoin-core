@@ -3,11 +3,10 @@ module Network.Haskoin.Wallet.Tests (tests) where
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Data.Aeson
+import Data.Aeson (FromJSON, ToJSON, encode, decode)
 
 import Network.Haskoin.Wallet.Arbitrary ()
-import Network.Haskoin.Wallet.Types
-import Network.Haskoin.Yesod.APIServer.Types
+import Network.Haskoin.Wallet
 
 tests :: [Test]
 tests = 
@@ -15,28 +14,31 @@ tests =
         [ testProperty "Wallet" (metaID :: Wallet -> Bool)
         , testProperty "Account" (metaID :: Account -> Bool)
         , testProperty "Balance" (metaID :: Balance -> Bool)
-        , testProperty "PaymentAddress" (metaID :: PaymentAddress -> Bool)
+        , testProperty "LabeledAddress" (metaID :: LabeledAddress -> Bool)
         , testProperty "BalanceAddress" (metaID :: BalanceAddress -> Bool)
         , testProperty "RecipientAddress" (metaID :: RecipientAddress -> Bool)
         , testProperty "AccTx" (metaID :: AccTx -> Bool)
         , testProperty "TxConfidence" (metaID :: TxConfidence -> Bool)
         , testProperty "TxSource" (metaID :: TxSource -> Bool)
-        , testProperty "SigBlob" (metaID :: SigBlob -> Bool)
+        , testProperty "OfflineTxData" (metaID :: OfflineTxData -> Bool)
         ]
-    , testGroup "Serialize & de-serialize REST types to JSON"
-        [ testProperty "NewWallet" (metaID :: NewWallet -> Bool)
-        , testProperty "MnemonicRes" (metaID :: MnemonicRes -> Bool)
+    , testGroup "Serialize & de-serialize request types to JSON"
+        [ testProperty "PagedResult" (metaID :: PagedResult -> Bool)
+        , testProperty "NewWallet" (metaID :: NewWallet -> Bool)
         , testProperty "NewAccount" (metaID :: NewAccount -> Bool)
+        , testProperty "AccTxAction" (metaID :: AccTxAction -> Bool)
+        , testProperty "AddressData" (metaID :: AddressData -> Bool)
+        , testProperty "NodeAction" (metaID :: NodeAction -> Bool)
+        ]
+    , testGroup "Serialize & de-serialize response types to JSON"
+        [ testProperty "MnemonicRes" (metaID :: MnemonicRes -> Bool)
         , testProperty "AddressPageRes" (metaID :: AddressPageRes -> Bool)
         , testProperty "TxPageRes" (metaID :: TxPageRes -> Bool)
-        , testProperty "AddressData" (metaID :: AddressData -> Bool)
-        , testProperty "AccTxAction" (metaID :: AccTxAction -> Bool)
         , testProperty "TxHashStatusRes" (metaID :: TxHashStatusRes -> Bool)
-        , testProperty "TxRes" (metaID :: TxRes -> Bool)
         , testProperty "TxStatusRes" (metaID :: TxStatusRes -> Bool)
+        , testProperty "TxRes" (metaID :: TxRes -> Bool)
         , testProperty "BalanceRes" (metaID :: BalanceRes -> Bool)
         , testProperty "SpendableRes" (metaID :: SpendableRes -> Bool)
-        , testProperty "NodeAction" (metaID :: NodeAction -> Bool)
         , testProperty "RescanRes" (metaID :: RescanRes -> Bool)
         ]
     ]

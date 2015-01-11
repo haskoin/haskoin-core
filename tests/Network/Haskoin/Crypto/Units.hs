@@ -7,16 +7,13 @@ import Test.Framework.Providers.HUnit (testCase)
 import Control.Monad (replicateM_)
 import Control.Monad.Trans (liftIO)
 
-import Data.Maybe
-import Data.Binary
-import qualified Data.ByteString as BS
+import Data.Maybe (fromJust, isJust, isNothing)
+import Data.Binary (put)
+import qualified Data.ByteString as BS (pack)
 
-import Network.Haskoin.Crypto.Keys
-import Network.Haskoin.Crypto.BigWord
-import Network.Haskoin.Crypto.ECDSA
-import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Crypto.Base58
+import Network.Haskoin.Crypto
 import Network.Haskoin.Util
+import Network.Haskoin.Internals (PrvKeyI(..), PubKeyI(..), Signature(..))
 
 -- Unit tests copied from bitcoind implementation
 -- https://github.com/bitcoin/bitcoin/blob/master/src/test/key_tests.cpp

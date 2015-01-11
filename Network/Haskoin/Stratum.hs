@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 module Network.Haskoin.Stratum
 ( -- * Stratum JSON-RPC Message Types
   StratumRequest(..)

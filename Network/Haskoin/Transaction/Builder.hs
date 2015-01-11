@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 module Network.Haskoin.Transaction.Builder 
 ( Coin(..)
 , buildTx

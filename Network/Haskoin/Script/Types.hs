@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
 module Network.Haskoin.Script.Types
 ( ScriptOp(..)
 , Script(..)

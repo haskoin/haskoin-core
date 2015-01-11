@@ -7,8 +7,9 @@ import Test.Framework.Providers.HUnit (testCase)
 import Data.Maybe (fromJust)
 import Data.Word (Word32)
 
-import Network.Haskoin.Crypto.Hash
+import Network.Haskoin.Crypto
 import Network.Haskoin.Util
+import Network.Haskoin.Internals (hmacDRBGNew, hmacDRBGGen, hmacDRBGRsd)
 
 -- Test vectors from NIST
 -- http://csrc.nist.gov/groups/STM/cavp/documents/drbg/drbgtestvectors.zip

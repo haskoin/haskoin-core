@@ -5,9 +5,7 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.Aeson (FromJSON, ToJSON, decode, encode)
 
-import Network.Haskoin.Test.Crypto
-import Network.Haskoin.Test.Script
-import Network.Haskoin.Test.Transaction
+import Network.Haskoin.Test
 import Network.Haskoin.Crypto
 
 tests :: [Test]

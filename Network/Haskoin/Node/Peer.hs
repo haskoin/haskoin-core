@@ -1,7 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 module Network.Haskoin.Node.Peer 
 ( runPeer
 , runCustomPeer

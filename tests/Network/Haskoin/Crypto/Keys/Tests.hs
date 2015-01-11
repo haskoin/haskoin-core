@@ -9,11 +9,10 @@ import Data.Binary.Get (runGet)
 import Data.Binary.Put (runPut)
 import qualified Data.ByteString as BS (length, index)
 
-import Network.Haskoin.Test.Crypto
-
-import Network.Haskoin.Crypto.Keys
-import Network.Haskoin.Crypto.BigWord
+import Network.Haskoin.Test
+import Network.Haskoin.Crypto
 import Network.Haskoin.Util
+import Network.Haskoin.Internals (PubKeyI(..), PrvKeyI(..))
 
 tests :: [Test]
 tests = 

@@ -7,18 +7,17 @@ import Test.Framework.Providers.HUnit (testCase)
 import Data.Maybe (fromJust)
 
 import Network.Haskoin.Crypto
-import Network.Haskoin.Node.Bloom
+import Network.Haskoin.Node
 import Network.Haskoin.Util
 
 tests :: [Test]
 tests =
-    [ 
-      -- Test cases come from bitcoind /src/test/bloom_tests.cpp
+    [ -- Test cases come from bitcoind /src/test/bloom_tests.cpp
       testGroup "Bloom Filters"
-      [ testCase "Bloom Filter Vector 1" bloomFilter1
-      , testCase "Bloom Filter Vector 2" bloomFilter2
-      , testCase "Bloom Filter Vector 3" bloomFilter3
-      ]
+        [ testCase "Bloom Filter Vector 1" bloomFilter1
+        , testCase "Bloom Filter Vector 2" bloomFilter2
+        , testCase "Bloom Filter Vector 3" bloomFilter3
+        ]
     ]
 
 bloomFilter1 :: Assertion

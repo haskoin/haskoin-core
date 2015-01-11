@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Mnemonic.Units (tests) where
 
 import Test.HUnit (assertEqual)
@@ -6,8 +5,10 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Maybe (fromJust)
-import Network.Haskoin.Crypto.Mnemonic
-import Network.Haskoin.Util (hexToBS, bsToHex, fromRight)
+
+import Network.Haskoin.Crypto
+import Network.Haskoin.Util 
+import Network.Haskoin.Internals (fromMnemonic)
 
 tests :: [Test]
 tests =

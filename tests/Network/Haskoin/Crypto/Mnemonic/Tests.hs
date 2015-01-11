@@ -8,13 +8,18 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 import Data.Bits ((.&.), shiftR)
 import Data.Binary (Binary)
 import Data.Word (Word32)
-import qualified Data.ByteString as BS
+import qualified Data.ByteString as BS 
+    ( ByteString
+    , empty
+    , append
+    , length
+    , last
+    )
 
-import Network.Haskoin.Test.Crypto
-
-import Network.Haskoin.Crypto.Mnemonic
-import Network.Haskoin.Crypto.BigWord
-import Network.Haskoin.Util (encode', fromRight)
+import Network.Haskoin.Test
+import Network.Haskoin.Crypto
+import Network.Haskoin.Util 
+import Network.Haskoin.Internals (fromMnemonic, getBits)
 
 
 tests :: [Test]

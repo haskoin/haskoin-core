@@ -1,8 +1,4 @@
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE FunctionalDependencies #-}
 module Network.Haskoin.Node.PeerManager 
 ( ManagerSession(..)
 , PeerManager(..)
@@ -27,12 +23,11 @@ import System.Random (randomIO)
 
 import Control.Monad (when, unless, forM_, liftM)
 import Control.Monad.Trans (MonadTrans, MonadIO, liftIO, lift)
-import Control.Monad.Trans.Resource (ResourceT, runResourceT, MonadResource)
-import Control.Monad.Trans.Control (MonadBaseControl)
+import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import Control.Concurrent (forkFinally, forkIO, threadDelay)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async (Async, withAsync)
-import Control.Monad.Logger (LoggingT, runStdoutLoggingT, MonadLogger, logInfo)
+import Control.Monad.Logger (LoggingT, runStdoutLoggingT, logInfo)
 import qualified Control.Monad.State as S (StateT, evalStateT, gets, modify)
 
 import qualified Data.Text as T (pack)
@@ -142,7 +137,7 @@ withAsyncNode hosts a f = do
         mSource = mapOutput MergedMngrRequest (sourceTBMChan mChan)
 
     -- Launch node
-    flip withAsync (\a -> f rChan a) $ runMngrHandle a session $ do
+    flip withAsync (\ac -> f rChan ac) $ runMngrHandle a session $ do
         -- Run user init hook
         initNode
         -- Merge 3 channels into 1

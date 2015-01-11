@@ -6,15 +6,12 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 import Data.Word (Word64)
 import qualified Data.ByteString as BS (length)
 
-import Network.Haskoin.Test.Transaction
-import Network.Haskoin.Test.Script
-import Network.Haskoin.Test.Crypto
-
-import Network.Haskoin.Transaction.Builder
-import Network.Haskoin.Transaction.Types
+import Network.Haskoin.Test
+import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
+import Network.Haskoin.Internals (getFee, getMSFee)
 
 tests :: [Test]
 tests = 

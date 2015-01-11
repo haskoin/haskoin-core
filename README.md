@@ -4,14 +4,26 @@ Haskoin is an implementation of the Bitcoin protocol in Haskell.
 
 ## Features
 
-- Protocol message types (de-)serialization
-- Bitcoin script interpreter
-- Cryptographic ECDSA and hashing primitives
-- Hierarchical Deterministic Wallet support (BIP32)
-- Pay-to-script-hash (P2SH, BIP16) support
-- Regular and multi-signature (BIP11) transaction support
+Haskoin is a package implementing the Bitcoin protocol specifications. It
+is written in pure Haskell and the library is implemented mostly with pure
+functions (no IO monad). It provides the following features:
+
+- ECDSA cryptographic primitives (secp256k1)
+- Hashing functions (sha-256, ripemd-160)
+- Base58 encoding
+- BIP32 extended key derivations
+- BIP39 mnemonic key
+- Script parsing and evaluation
+- Building and signing of standard transactions (regular, multisig, p2sh)
+- Deterministic signing (rfc-6979)
+- Network protocol type parsing
+- Headerchain implementation (Blockchain with headers only)
+- Bloom filters and partial merkle tree library
+- Headers-first SPV node implementation (network-only, no wallet)
 - JSON-RPC/Stratum client library
-- Mnemonic keys (BIP39)
+
+A wallet implementation using the SPV node library is available in the
+haskoin-wallet package.
 
 ## Documentation
 
@@ -36,10 +48,3 @@ Commits are done through GitHub pull requests.
 
 We do a lot of our technical discussions in the IRC channel #haskoin on
 chat.freenode.net.
-
-Code guidelines:
-
-- 80 columns.
-- 4 space indentation. No tabs.
-- Follow the general style of the code, whenever it makes sense.
-- Purity and type-safety are important.

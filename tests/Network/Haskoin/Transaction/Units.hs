@@ -9,8 +9,7 @@ import Data.Maybe (fromJust)
 import Data.Binary.Get (getWord32le)
 import qualified Data.ByteString as BS (reverse)
 
-import Network.Haskoin.Transaction.Builder
-import Network.Haskoin.Transaction.Types
+import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util

@@ -3,8 +3,7 @@ module Network.Haskoin.Crypto.Hash.Tests (tests) where
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Crypto.BigWord
+import Network.Haskoin.Crypto
 
 tests :: [Test]
 tests = 

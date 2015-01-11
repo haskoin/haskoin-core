@@ -1,5 +1,3 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE EmptyDataDecls #-}
 module Network.Haskoin.Crypto.BigWord
 (
 -- Useful type aliases

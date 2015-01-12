@@ -423,8 +423,8 @@ importCoin tid (tout, i) = do
         -- Insert coin / account links
         forM_ (map dbAddressAccount dbAddrs) $ \ai ->
             insert_ $ DbCoinAccount ci ai time
-        cnt <- adjustLookAhead $ head dbAddrs
-        return $ Just (Entity ci dbcoin, cnt > 0)
+        cnts <- forM dbAddrs adjustLookAhead
+        return $ Just (Entity ci dbcoin, any (> 0) cnts)
 
 -- Builds a redeem script given an address. Only relevant for addresses
 -- linked to multisig accounts. Otherwise it returns Nothing

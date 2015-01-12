@@ -21,7 +21,7 @@ it with `hw start`.
 - [/wallets/{name}/accounts/{name}/addrs/{key}](#get-walletsnameaccountsnameaddrskey) (GET, PUT)  
   Get an address by key, Update an address label
 - [/wallets/{name}/accounts/{name}/txs](#get-walletsnameaccountsnametxs) (GET, POST)  
-  List txs, Send coins, Sign txs/sigblobs abd Import txs
+  List txs, Send coins, Sign txs/sigblobs and Import txs
 - [/wallets/{name}/accounts/{name}/txs/{txhash}](#get-walletsnameaccountsnametxstxhash) (GET)  
   Get a tx by account and transaction id
 - [/wallets/{name}/accounts/{name}/txs/{txhash}/sigblob](#get-walletsnameaccountsnametxstxhashsigblob) (GET)  

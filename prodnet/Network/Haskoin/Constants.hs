@@ -59,7 +59,7 @@ maxSatoshi = 2100000000000000
 
 -- | User agent of this haskoin package
 haskoinUserAgent :: String
-haskoinUserAgent = "/haskoin:0.1.0.2/"
+haskoinUserAgent = "/haskoin:0.2.0/"
 
 -- | Default port
 defaultPort :: Int

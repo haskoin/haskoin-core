@@ -3,7 +3,7 @@ module Network.Haskoin.Wallet.Server
 , stopSPVServer
 ) where
 
-import System.Process (callCommand)
+import System.Directory (createDirectoryIfMissing)
 import System.Posix.Directory (changeWorkingDirectory)
 import System.Posix.Files 
     ( fileExist
@@ -141,7 +141,7 @@ setWorkDir :: SPVConfig -> IO ()
 setWorkDir config = do
     let workDir = concat [ spvWorkDir config, "/", networkName ]
     _ <- setFileCreationMask $ otherModes `unionFileModes` groupModes
-    callCommand $ unwords [ "mkdir -p", workDir ]
+    createDirectoryIfMissing True workDir
     setFileMode workDir ownerModes
     changeWorkingDirectory workDir
 

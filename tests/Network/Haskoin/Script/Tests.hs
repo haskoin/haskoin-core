@@ -10,22 +10,23 @@ import Test.QuickCheck.Property (Property, (==>))
 import Test.Framework (Test, testGroup, buildTest)
 import Test.Framework.Providers.HUnit (testCase)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
-
 import Test.Framework.Runners.Console (defaultMainWithArgs)
-
-import qualified Test.HUnit as HUnit
+import qualified Test.HUnit as HUnit (assertFailure, assertBool)
 
 import Control.Applicative ((<$>))
 import Control.Monad (when)
 
-import Numeric (readHex)
-
-import qualified Data.Aeson as A (decode)
 import Data.Bits (setBit, testBit)
-import Text.Read (readMaybe)
 import Data.List (isPrefixOf)
 import Data.List.Split ( splitOn )
 import Data.Char (ord)
+import Data.Maybe (catMaybes, isNothing)
+import Data.Int (Int64)
+import Data.Word (Word8, Word32)
+import Data.Binary (encode, decode, decodeOrFail)
+import qualified Data.Aeson as A (decode)
+import qualified Data.ByteString.Lazy as LBS (pack, unpack)
+import qualified Data.ByteString.Lazy.Char8 as C (readFile)
 import qualified Data.ByteString as BS
     ( singleton
     , length
@@ -36,35 +37,24 @@ import qualified Data.ByteString as BS
     , ByteString
     )
 
-import qualified Data.ByteString.Lazy as LBS
-    ( pack
-    , unpack
-    )
+import Numeric (readHex)
+import Text.Read (readMaybe)
 
-import Data.Maybe
-    ( catMaybes
-    , isNothing
-    )
-
-import Data.Binary
-    ( Word8
-    , encode
-    , decode
-    , decodeOrFail)
-
-import qualified Data.ByteString.Lazy.Char8 as C (readFile)
-
-import Data.Int (Int64)
-import Data.Word (Word32)
-
-import Network.Haskoin.Test.Script
-import Network.Haskoin.Test.Transaction
-
-import Network.Haskoin.Transaction.Types
+import Network.Haskoin.Test
+import Network.Haskoin.Transaction
 import Network.Haskoin.Script
-import Network.Haskoin.Script.Evaluator
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
+import Network.Haskoin.Internals 
+    ( Flag
+    , runStack
+    , dumpStack
+    , decodeInt
+    , encodeInt
+    , decodeBool
+    , encodeBool
+    , execScript
+    )
 
 tests :: [Test]
 tests = 
@@ -401,3 +391,4 @@ scriptPairTestExec scriptSig pubKey flags =
 
 runTests :: [Test] -> IO ()
 runTests ts = defaultMainWithArgs ts ["--hide-success"]
+

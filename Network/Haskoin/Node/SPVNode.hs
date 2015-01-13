@@ -1,10 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Network.Haskoin.Node.SPVNode 
 ( SPVNode(..)
@@ -17,29 +11,13 @@ module Network.Haskoin.Node.SPVNode
 where
 
 import Control.Applicative ((<$>))
-import Control.Monad 
-    ( when
-    , unless
-    , forM
-    , forM_
-    , foldM
-    , forever
-    , liftM
-    )
-import Control.Monad.Trans (MonadTrans, MonadIO, liftIO, lift)
-import Control.Monad.Trans.Resource (MonadResource)
-import Control.Monad.Trans.Control (MonadBaseControl)
+import Control.Monad ( when, unless, forM, forM_, foldM, forever, liftM)
+import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async (Async, withAsync)
-import qualified Control.Monad.State as S (StateT, evalStateT, gets, modify)
-import Control.Monad.Logger 
-    ( MonadLogger
-    , logInfo
-    , logWarn
-    , logDebug
-    , logError
-    )
+import qualified Control.Monad.State as S (gets, modify)
+import Control.Monad.Logger (logInfo, logWarn, logDebug, logError)
 
 import qualified Data.Text as T (pack)
 import Data.Maybe (isJust, isNothing, fromJust, catMaybes, fromMaybe)
@@ -47,23 +25,9 @@ import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.List (nub, partition, delete, (\\))
 import Data.Conduit.TMChan (TBMChan, writeTBMChan)
 import qualified Data.Map as M 
-    ( Map
-    , member
-    , delete
-    , lookup
-    , fromList
-    , fromListWith
-    , keys
-    , elems
-    , toList
-    , toAscList
-    , empty
-    , map
-    , filter
-    , adjust
-    , update
-    , singleton
-    , unionWith
+    ( Map, member, delete, lookup, fromList, fromListWith
+    , keys, elems, toList, toAscList, empty, map, filter
+    , adjust, update, singleton, unionWith
     )
 
 import Network.Haskoin.Block

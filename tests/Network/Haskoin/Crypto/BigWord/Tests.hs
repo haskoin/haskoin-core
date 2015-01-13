@@ -1,10 +1,12 @@
-{-# LANGUAGE EmptyDataDecls #-}
 module Network.Haskoin.Crypto.BigWord.Tests (tests) where
 
 import Test.QuickCheck.Property (Property, (==>))
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
+import Data.Int (Int32)
+import Data.Word (Word8, Word32)
+import qualified Data.ByteString as BS (length, index)
 import Data.Bits 
     ( isSigned
     , bit
@@ -15,14 +17,16 @@ import Data.Bits
     , (.&.), (.|.)
     , xor, complement
     )
-import Data.Int (Int32)
-import Data.Word (Word8, Word32)
-import qualified Data.ByteString as BS (length, index)
 
-import Network.Haskoin.Crypto.BigWord
-import Network.Haskoin.Crypto.NumberTheory
-import Network.Haskoin.Crypto.Curve
+import Network.Haskoin.Crypto
 import Network.Haskoin.Util
+import Network.Haskoin.Internals 
+    ( BigWordMod(..)
+    , BigWord(..)
+    , mulInverse
+    , quadraticResidue
+    , curveP
+    )
 
 tests :: [Test]
 tests = 

@@ -6,10 +6,20 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.Maybe (fromJust)
 
-import Network.Haskoin.Test.Crypto
-
-import Network.Haskoin.Crypto.Point
-import Network.Haskoin.Crypto.BigWord
+import Network.Haskoin.Test
+import Network.Haskoin.Crypto
+import Network.Haskoin.Internals
+    ( Point(..)
+    , getAffine
+    , addPoint
+    , mulPoint
+    , shamirsTrick
+    , makeInfPoint
+    , makePoint
+    , validatePoint
+    , isInfPoint
+    , doublePoint
+    )
 
 tests :: [Test]
 tests = 

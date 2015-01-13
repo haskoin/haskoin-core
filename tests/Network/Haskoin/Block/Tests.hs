@@ -6,7 +6,7 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.Maybe (fromJust)
 
-import Network.Haskoin.Block.Merkle
+import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 

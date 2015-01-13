@@ -6,8 +6,8 @@ import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Maybe (fromJust)
 
-import Network.Haskoin.Crypto.BigWord
-import Network.Haskoin.Block.Merkle
+import Network.Haskoin.Crypto
+import Network.Haskoin.Block
 
 tests :: [Test]
 tests =

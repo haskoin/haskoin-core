@@ -6,13 +6,7 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.Binary (Binary)
 
-import Network.Haskoin.Test.Crypto
-import Network.Haskoin.Test.Node
-import Network.Haskoin.Test.Message
-import Network.Haskoin.Test.Script
-import Network.Haskoin.Test.Transaction
-import Network.Haskoin.Test.Block
-
+import Network.Haskoin.Test
 import Network.Haskoin.Util
 import Network.Haskoin.Crypto
 

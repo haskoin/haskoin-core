@@ -8,7 +8,7 @@ import Data.Maybe (fromJust, catMaybes)
 import Data.Foldable (toList)
 import qualified Data.Sequence as Seq (update, fromList)
 
-import Network.Haskoin.Test.Crypto
+import Network.Haskoin.Test
 import Network.Haskoin.Util 
 
 tests :: [Test]

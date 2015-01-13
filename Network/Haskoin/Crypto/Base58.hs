@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Network.Haskoin.Crypto.Base58
 ( Address(..)
 , addrToBase58

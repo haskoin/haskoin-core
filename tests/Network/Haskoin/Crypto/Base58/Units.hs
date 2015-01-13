@@ -4,9 +4,9 @@ import Test.HUnit (Assertion, assertBool)
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
-import qualified Data.ByteString as BS
+import qualified Data.ByteString as BS (ByteString, append, pack, empty)
 
-import Network.Haskoin.Crypto.Base58
+import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 tests :: [Test]

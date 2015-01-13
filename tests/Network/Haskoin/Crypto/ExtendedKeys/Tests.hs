@@ -10,8 +10,7 @@ import Data.Word (Word32)
 import Data.Bits ((.&.))
 import Data.Maybe (fromJust)
 
-import Network.Haskoin.Test.Crypto
-
+import Network.Haskoin.Test
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 

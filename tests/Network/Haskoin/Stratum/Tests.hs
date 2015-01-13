@@ -1,12 +1,25 @@
 module Network.Haskoin.Stratum.Tests (tests) where
 
-import Data.Aeson
-import Data.Aeson.Types
-import Test.Framework
-import Test.Framework.Providers.QuickCheck2
-import Network.JsonRpc
+import Data.Aeson (ToJSON, toJSON)
+import Data.Aeson.Types (parseMaybe)
+import Test.Framework (Test, testGroup)
+import Test.Framework.Providers.QuickCheck2 (testProperty)
+
+import Network.JsonRpc 
+    ( Request(..)
+    , ToRequest
+    , FromRequest
+    , FromResponse
+    , Notif
+    , ToNotif
+    , FromNotif
+    , parseRequest
+    , parseResponse
+    , parseNotif
+    )
+
 import Network.Haskoin.Stratum
-import Network.Haskoin.Test.Stratum
+import Network.Haskoin.Test
 
 tests :: [Test]
 tests =

@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
 module Network.Haskoin.Block.HeaderChain 
 ( BlockHeaderNode(..)
 , BlockHeaderStore(..)

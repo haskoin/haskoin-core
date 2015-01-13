@@ -4,15 +4,12 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.Bits (testBit)
-import qualified Data.ByteString as BS
+import qualified Data.ByteString as BS (index, length)
 
-import Network.Haskoin.Test.Crypto
-
-import Network.Haskoin.Crypto.ECDSA
-import Network.Haskoin.Crypto.BigWord
-import Network.Haskoin.Crypto.Keys
-import Network.Haskoin.Crypto.Curve
+import Network.Haskoin.Test
+import Network.Haskoin.Crypto
 import Network.Haskoin.Util
+import Network.Haskoin.Internals (Signature(..), BigWord(..), curveN)
 
 tests :: [Test]
 tests = 

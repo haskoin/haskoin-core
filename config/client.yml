@@ -4,6 +4,8 @@ balance-minimum-confirmations: "_env:HW_MINCONF:0"
 display-internal-addresses: "_env:HW_INTERNAL:false"
 mnemonic-passphrase: "_env:HW_PASSPHRASE:"
 display-format: "_env:HW_FORMAT:normal"
-zeromq-socket: "_env:HW_SOCKET:ipc:///tmp/hw-spv"
 detach-server: "_env:HW_DETACH:false"
+# Either absolute path or relative to the server work-dir/network path.
+zeromq-socket: "_env:HW_SOCKET:ipc://hw-spv"
+# Either absolute path or relative to the server work-dir/network path.
 config-file: "_env:HW_CLIENTCFG:client.yml"

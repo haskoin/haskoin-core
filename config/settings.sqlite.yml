@@ -1,5 +1,6 @@
-# ZeroMQ socket on which to listen to.
-zeromq-bind: "_env:ZEROMQ_BIND:ipc:///tmp/hw-spv"
+# ZeroMQ socket on which to listen to. Either absolute path or relative to
+# work-dir/network
+zeromq-bind: "_env:ZEROMQ_BIND:ipc://hw-spv"
 # Server mode. Can be either online or offline. In offline mode, the SPV
 # daemon does not start and only the local wallet is available to query.
 server-mode: "_env:SERVER_MODE:online"

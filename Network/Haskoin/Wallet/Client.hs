@@ -1,6 +1,8 @@
 module Network.Haskoin.Wallet.Client (clientMain) where
 
 import System.Posix.Files (fileExist)
+import System.Posix.Env (getEnv)
+import System.Posix.Directory (changeWorkingDirectory)
 import qualified System.Environment as E (getArgs)
 import System.Console.GetOpt 
     ( getOpt
@@ -15,6 +17,7 @@ import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.State as S (evalStateT)
 
 import Data.FileEmbed (embedFile)
+import Data.Maybe (fromMaybe)
 import qualified Data.Text as T (pack, unpack)
 
 import Yesod.Default.Config2 (loadAppSettings, useEnv)
@@ -90,11 +93,13 @@ options =
 
 getClientConfig :: [(ClientConfig -> ClientConfig)] -> IO ClientConfig
 getClientConfig fs = do
+    changeWorkingDirectory . (fromMaybe err) =<< getEnv "HOME"
     validLocs   <- liftIO $ filterM fileExist locs
     cfgDefaults <- loadAppSettings validLocs [configClientYmlValue] useEnv
     -- Override default config with command-line options
     return $ foldl (flip ($)) cfgDefaults fs
   where
+    err = "No HOME environment variable"
     cfgFile = clientConfig compileTimeClientConfig
     -- Look for the config file in . and work-dir/network
     locs = [ cfgFile
@@ -108,6 +113,10 @@ clientMain :: IO ()
 clientMain = E.getArgs >>= \args -> case getOpt Permute options args of
     (fs, commands, []) -> do
         cfg <- getClientConfig fs
+        changeWorkingDirectory $ 
+            concat [ spvWorkDir compileTimeSPVConfig
+                   , "/", networkName
+                   ]
         dispatchCommand cfg commands
         return ()
     (_, _, msgs) -> forM_ (msgs ++ usage) putStrLn

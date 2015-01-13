@@ -32,10 +32,18 @@ module Network.Haskoin.Wallet.Client.Commands
 )
 where
 
-import System.ZMQ4.Monadic
+import System.ZMQ4.Monadic 
+    ( Req(..)
+    , runZMQ
+    , socket
+    , send
+    , receive
+    , connect
+    )
 
 import Control.Applicative ((<$>))
 import Control.Monad (forM_, when, liftM2, unless)
+import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.State as S (StateT, gets)
 
 import Data.Maybe (listToMaybe, isNothing, fromJust, fromMaybe)

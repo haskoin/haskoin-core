@@ -38,7 +38,7 @@ import Test.QuickCheck
 
 import Control.Applicative ((<$>))
 
-import Data.Bits ((.&.), shiftR)
+import Data.Bits (clearBit, testBit)
 import Data.Maybe (fromJust)
 import Data.Word (Word32)
 
@@ -227,8 +227,8 @@ instance Arbitrary ArbitraryDerivPath where
 instance Arbitrary ArbitraryDeriv where
     arbitrary = do
         w <- arbitrary
-        let i = w .&. 0x7fffffff
-            b = (w `shiftR` 31) == 1
+        let i = w `clearBit` 31
+            b = w `testBit` 31
         return $ ArbitraryDeriv (i, b)
 
 -- | Arbitrary master key

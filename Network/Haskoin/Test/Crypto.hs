@@ -38,7 +38,9 @@ import Test.QuickCheck
 
 import Control.Applicative ((<$>))
 
+import Data.Bits (clearBit, testBit)
 import Data.Maybe (fromJust)
+import Data.Word (Word32)
 
 import Network.Haskoin.Test.Util
 import Network.Haskoin.Crypto.BigWord
@@ -211,12 +213,23 @@ instance Arbitrary ArbitraryXPubKey where
 data ArbitraryDerivPath = ArbitraryDerivPath DerivPath
     deriving (Eq, Show, Read)
 
+data ArbitraryDeriv = ArbitraryDeriv (Word32, Bool)
+    deriving (Eq, Show, Read)
+
 instance Arbitrary ArbitraryDerivPath where
-    arbitrary = ArbitraryDerivPath <$> oneof 
-        [ DerivPrv <$> arbitrary
-        , DerivPub <$> arbitrary
-        , DerivNonPrime <$> arbitrary
-        ]
+    arbitrary = do
+        path <- map (\(ArbitraryDeriv x) -> x) <$> arbitrary
+        ArbitraryDerivPath <$> elements 
+            [ DerivPrv path
+            , DerivPub path
+            ]
+
+instance Arbitrary ArbitraryDeriv where
+    arbitrary = do
+        w <- arbitrary
+        let i = w `clearBit` 31
+            b = w `testBit` 31
+        return $ ArbitraryDeriv (i, b)
 
 -- | Arbitrary master key
 data ArbitraryMasterKey = ArbitraryMasterKey MasterKey

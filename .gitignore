@@ -6,3 +6,5 @@
 *.ps
 *.prof
 dist
+.cabal-sandbox
+cabal.sandbox.config

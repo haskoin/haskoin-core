@@ -1,12 +1,13 @@
 name:                  haskoin-wallet
-version:               0.0.1
+version:               0.2.0
 synopsis:              
-    Implementation of a Bitcoin hierarchical deterministric wallet (BIP32).
+    Implementation of a Bitcoin SPV Wallet with BIP32 and multisig support.
 description:         
-    This package provides a command lines application called hw (haskoin
-    wallet). It is a lightweight bitcoin wallet featuring BIP32 key management,
-    deterministic signatures (RFC-6979) and first order support for
-    multisignature transactions. A library API for hw is also exposed.
+    This package provides a SPV (simple payment verification) wallet
+    implementation. It features BIP32 key management, deterministic signatures
+    (RFC-6979) and first order support for multi-signature transactions. You
+    can communicate with the wallet process through a ZeroMQ API or through a
+    command-line tool called "hw" which is also provided in this package. 
 homepage:              http://github.com/haskoin/haskoin-wallet
 bug-reports:           http://github.com/haskoin/haskoin-wallet/issues
 license:               PublicDomain
@@ -27,117 +28,108 @@ Flag mysql
     Description: Use MySQL instead of Sqlite
     Default:     False
 
+Flag library-only
+    Description:   Do not build the executables
+    Default:       False
+
 library
-    exposed-modules:   Network.Haskoin.Wallet,
-                       Network.Haskoin.Wallet.Model,
-                       Network.Haskoin.SPV,
-                       Network.Haskoin.Yesod.APIServer,
-                       Network.Haskoin.Yesod.TokenAuth,
-                       Network.Haskoin.StdOptions
-    other-modules:     Network.Haskoin.Wallet.Account,
-                       Network.Haskoin.Wallet.Root,
-                       Network.Haskoin.Wallet.Address,
-                       Network.Haskoin.Wallet.Tx,
-                       Network.Haskoin.Wallet.Types,
-                       Network.Haskoin.Yesod.APIServer.Types
-    build-depends:     aeson >= 0.8 && < 0.9,
-                       base >= 4.6 && < 5, 
-                       base64-bytestring >= 1.0 && < 1.1,
-                       bytestring >= 0.10.4 && < 0.11, 
-                       containers >= 0.5 && < 0.6,
-                       daemons >= 0.2  && < 0.3,
-                       data-default >= 0.5 && < 0.6,
-                       directory >= 1.2  && < 1.3,
-                       either >= 4.3 && < 4.4,
-                       entropy >= 0.3 && < 0.4,
-                       haskoin >= 0.1 && < 0.2, 
-                       leveldb-haskell >= 0.6 && < 0.7,
-                       lifted-base >= 0.2 && < 0.3,
-                       monad-logger >= 0.3 && < 0.4,
-                       mtl >= 2.2 && < 2.3,
-                       persistent >= 2.1 && < 2.2,
-                       persistent-template >= 2.1 && < 2.2,
-                       resourcet >= 1.1 && < 1.2,
-                       stm >= 2.4 && < 2.5,
-                       stm-chans >= 3.0 && < 3.1,
-                       text >= 1.2 && < 1.3,
-                       time >= 1.4 && < 1.5,
-                       wai >= 3.0 && < 3.1,
-                       wai-extra >= 3.0 && < 3.1,
-                       warp >= 3.0 && < 3.1,
-                       yaml >= 0.8  && < 0.9,
-                       yesod >= 1.4 && < 1.5,
-                       yesod-static >= 1.4 && < 1.5
-    ghc-options:       -Wall 
+    exposed-modules: Network.Haskoin.Wallet
+                     Network.Haskoin.Wallet.Model
+                     Network.Haskoin.Wallet.Client
+                     Network.Haskoin.Wallet.Server
+                     Network.Haskoin.Wallet.Settings
+                     Network.Haskoin.Wallet.Internals
+
+    other-modules: Network.Haskoin.Wallet.Server.Handler
+                   Network.Haskoin.Wallet.Root
+                   Network.Haskoin.Wallet.Account
+                   Network.Haskoin.Wallet.Address
+                   Network.Haskoin.Wallet.Tx
+                   Network.Haskoin.Wallet.Types
+                   Network.Haskoin.Wallet.Types.DeriveJSON
+                   Network.Haskoin.Wallet.Client.Commands
+                   Network.Haskoin.Wallet.Database
+
+    extensions: TemplateHaskell
+                QuasiQuotes
+                OverloadedStrings
+                MultiParamTypeClasses
+                TypeFamilies
+                GADTs
+                FlexibleContexts
+                FlexibleInstances
+                EmptyDataDecls
+                DeriveDataTypeable
+                RecordWildCards
+
+    build-depends: aeson                         >= 0.8       && < 0.9
+                 , aeson-pretty                  >= 0.7       && < 0.8
+                 , base                          >= 4.6       && < 5
+                 , bytestring                    >= 0.10      && < 0.11
+                 , containers                    >= 0.5       && < 0.6
+                 , daemons                       >= 0.2       && < 0.3
+                 , file-embed                    >= 0.0       && < 0.1
+                 , haskoin                       >= 0.2       && < 0.3 
+                 , leveldb-haskell               >= 0.6       && < 0.7
+                 , monad-logger                  >= 0.3       && < 0.4
+                 , mtl                           >= 2.2       && < 2.3
+                 , persistent                    >= 2.1       && < 2.2
+                 , persistent-template           >= 2.1       && < 2.2
+                 , process                       >= 1.2       && < 1.3
+                 , unix                          >= 2.7       && < 2.8
+                 , stm                           >= 2.4       && < 2.5
+                 , stm-chans                     >= 3.0       && < 3.1
+                 , text                          >= 1.2       && < 1.3
+                 , time                          >= 1.4       && < 1.5
+                 , yaml                          >= 0.8       && < 0.9
+                 , yesod                         >= 1.4       && < 1.5
+                 , zeromq4-haskell               >= 0.6       && < 0.7
+
+    ghc-options: -Wall 
+
+  if flag(mysql)
+    build-depends: persistent-mysql >= 2.1 && < 2.2
+    hs-source-dirs: . database/mysql
+  else
+    build-depends: persistent-sqlite >= 2.1 && < 2.2
+    hs-source-dirs: . database/sqlite
 
 executable hw
-    main-is:           hw.hs
-    build-depends:     aeson >= 0.8  && < 0.9,
-                       aeson-pretty >= 0.7  && < 0.8,
-                       base >= 4.6  && < 5, 
-                       base64-bytestring >= 1.0 && < 1.1,
-                       bytestring >= 0.10.4 && < 0.11, 
-                       containers >= 0.5  && < 0.6,
-                       daemons >= 0.2  && < 0.3,
-                       data-default >= 0.5  && < 0.6,
-                       directory >= 1.2  && < 1.3,
-                       either >= 4.3 && < 4.4,
-                       entropy >= 0.3 && < 0.4,
-                       haskoin >= 0.1  && < 0.2, 
-                       http-types >= 0.8  && < 0.9,
-                       http-client >= 0.4  && < 0.5,
-                       http-conduit >= 2.1  && < 2.2,
-                       leveldb-haskell >= 0.6  && < 0.7,
-                       lifted-base >= 0.2  && < 0.3,
-                       monad-logger >= 0.3  && < 0.4,
-                       mtl >= 2.2  && < 2.3,
-                       persistent >= 2.1  && < 2.2,
-                       persistent-template >= 2.1  && < 2.2,
-                       resourcet >= 1.1  && < 1.2,
-                       stm >= 2.4  && < 2.5,
-                       stm-chans >= 3.0  && < 3.1,
-                       text >= 1.2  && < 1.3,
-                       time >= 1.4  && < 1.5,
-                       unordered-containers >= 0.2  && < 0.3,
-                       vector >= 0.10 && < 0.11,
-                       wai >= 3.0 && < 3.1,
-                       wai-extra >= 3.0  && < 3.1,
-                       warp >= 3.0  && < 3.1,
-                       yaml >= 0.8  && < 0.9,
-                       yesod >= 1.4  && < 1.5,
-                       yesod-static >= 1.4 && < 1.5
-    ghc-options:       -Wall 
-  if flag(mysql)
-    build-depends:     persistent-mysql >= 2.1  && < 2.2
-    hs-source-dirs:    . script database/mysql
-  else
-    build-depends:     persistent-sqlite >= 2.1  && < 2.2
-    hs-source-dirs:    . script database/sqlite
+    if flag(library-only)
+        Buildable: False
+    main-is: Main.hs
+    build-depends: base, haskoin-wallet
+    hs-source-dirs: app
+    ghc-options: -Wall 
 
 test-suite test-haskoin-wallet
-    type:              exitcode-stdio-1.0
-    main-is:           Main.hs
-    other-modules:     Network.Haskoin.Wallet.Units,
-                       Network.Haskoin.Wallet.Tests,
-                       Network.Haskoin.Wallet.Arbitrary
-    build-depends:     aeson >= 0.8 && < 0.9,
-                       base >= 4.6  && < 5, 
-                       bytestring >= 0.10.4 && < 0.11, 
-                       containers >= 0.5  && < 0.6,
-                       haskoin >= 0.1  && < 0.2, 
-                       monad-logger >= 0.3  && < 0.4,
-                       mtl >= 2.2  && < 2.3,
-                       persistent >= 2.1  && < 2.2,
-                       persistent-template >= 2.1  && < 2.2,
-                       persistent-sqlite >= 2.1  && < 2.2,
-                       resourcet >= 1.1  && < 1.2,
-                       text >= 1.2  && < 1.3,
-                       time >= 1.4  && < 1.5,
-                       HUnit >= 1.2  && < 1.3,
-                       QuickCheck >= 2.7  && < 2.8, 
-                       test-framework >= 0.8  && < 0.9, 
-                       test-framework-quickcheck2 >= 0.3  && < 0.4, 
-                       test-framework-hunit >= 0.3  && < 0.4 
-    hs-source-dirs:    . tests
-    ghc-options:       -Wall 
+    type: exitcode-stdio-1.0
+    main-is: Main.hs
+
+    other-modules: Network.Haskoin.Wallet.Units
+                 , Network.Haskoin.Wallet.Tests
+                 , Network.Haskoin.Wallet.Arbitrary
+
+    extensions: RecordWildCards
+                OverloadedStrings
+
+    build-depends: aeson                         >= 0.8       && < 0.9
+                 , base                          >= 4.6       && < 5
+                 , bytestring                    >= 0.10      && < 0.11
+                 , haskoin                       >= 0.2       && < 0.3 
+                 , haskoin-wallet
+                 , monad-logger                  >= 0.3       && < 0.4
+                 , mtl                           >= 2.2       && < 2.3
+                 , persistent                    >= 2.1       && < 2.2
+                 , persistent-sqlite             >= 2.1       && < 2.2
+                 , resourcet                     >= 1.1       && < 1.2
+                 , text                          >= 1.2       && < 1.3
+                 , HUnit                         >= 1.2       && < 1.3
+                 , QuickCheck                    >= 2.7       && < 2.8 
+                 , test-framework                >= 0.8       && < 0.9 
+                 , test-framework-quickcheck2    >= 0.3       && < 0.4 
+                 , test-framework-hunit          >= 0.3       && < 0.4 
+
+    hs-source-dirs: tests
+    ghc-options: -Wall 
 

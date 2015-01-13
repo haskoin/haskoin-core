@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE TypeFamilies      #-}
 module Network.Haskoin.Wallet.Address 
 ( getAddress
 , addressList
@@ -25,6 +22,7 @@ import Control.Monad.Trans (MonadIO, liftIO)
 
 import Data.Maybe (fromJust, isNothing)
 import Data.Time (getCurrentTime)
+import qualified Data.Text as T (Text, null)
 
 import Database.Persist
     ( PersistUnique
@@ -48,8 +46,8 @@ import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Account
 
-toPaymentAddr :: DbAddressGeneric b -> PaymentAddress
-toPaymentAddr x = PaymentAddress (dbAddressValue x) 
+toPaymentAddr :: DbAddressGeneric b -> LabeledAddress
+toPaymentAddr x = LabeledAddress (dbAddressValue x) 
                                  (dbAddressLabel x) 
                                  (dbAddressIndex x)
 
@@ -59,7 +57,7 @@ getAddress :: (MonadIO m, PersistUnique b, PersistQuery b)
            -> AccountName -- ^ Account name
            -> KeyIndex    -- ^ Derivation index (key)
            -> Bool        -- ^ Internal address
-           -> ReaderT b m PaymentAddress  -- ^ Payment address
+           -> ReaderT b m LabeledAddress  -- ^ Payment address
 getAddress wallet name key internal = do
     Entity wk _ <- getWalletEntity wallet
     Entity ai _ <- getAccountEntity wk name
@@ -94,7 +92,7 @@ addressList :: (MonadIO m, PersistUnique b, PersistQuery b)
             => WalletName  -- ^ Wallet name
             -> AccountName -- ^ Account name
             -> Bool        -- ^ Internal address
-            -> ReaderT b m [PaymentAddress] -- ^ Payment addresses
+            -> ReaderT b m [LabeledAddress] -- ^ Payment addresses
 addressList wallet name internal = do
     Entity wk _ <- getWalletEntity wallet
     Entity ai _ <- getAccountEntity wk name
@@ -112,7 +110,7 @@ addressPage :: (MonadIO m, PersistUnique b, PersistQuery b)
             -> Int         -- ^ Requested page number
             -> Int         -- ^ Number of addresses per page
             -> Bool        -- ^ Internal address
-            -> ReaderT b m ([PaymentAddress], Int) 
+            -> ReaderT b m ([LabeledAddress], Int) 
                 -- ^ (Requested page, Highest page number)
 addressPage wallet name pageNum resPerPage internal
     | pageNum < 0 = liftIO $ throwIO $ WalletException $ 
@@ -147,7 +145,7 @@ unusedAddrs :: (MonadIO m, PersistUnique b, PersistQuery b)
             => WalletName  -- ^ Wallet name
             -> AccountName -- ^ Account name
             -> Bool        -- ^ Internal
-            -> ReaderT b m [PaymentAddress] -- ^ Unused addresses
+            -> ReaderT b m [LabeledAddress] -- ^ Unused addresses
 unusedAddrs wallet name internal = do
     Entity wk _ <- getWalletEntity wallet
     accE        <- getAccountEntity wk name
@@ -157,12 +155,12 @@ unusedAddrs wallet name internal = do
 unlabeledAddrs :: (MonadIO m, PersistUnique b, PersistQuery b)
               => WalletName  -- ^ Account name
               -> AccountName -- ^ Account name
-              -> ReaderT b m [PaymentAddress] 
+              -> ReaderT b m [LabeledAddress] 
                 -- ^ Unlabeled and unused addresses
 unlabeledAddrs wallet name = 
     liftM f $ unusedAddrs wallet name False
   where
-    f = dropWhile (not . null . addressLabel)
+    f = dropWhile (not . T.null . laLabel)
 
 -- | Get a list of unused addresses (generic version)
 unusedAddrsGeneric :: (MonadIO m, PersistUnique b, PersistQuery b)
@@ -185,7 +183,7 @@ newAddrs :: (MonadIO m, PersistUnique b, PersistQuery b)
          => WalletName  -- ^ Wallet name
          -> AccountName -- ^ Account name
          -> Int         -- ^ Count
-         -> ReaderT b m [PaymentAddress]  -- ^ Newly generated addresses
+         -> ReaderT b m [LabeledAddress]  -- ^ Newly generated addresses
 newAddrs wallet name cnt = do
     Entity wk _ <- getWalletEntity wallet
     acc <- getAccountEntity wk name
@@ -226,8 +224,8 @@ setAddrLabel :: (MonadIO m, PersistQuery b, PersistUnique b)
              => WalletName  -- ^ Wallet name
              -> AccountName -- ^ Account name
              -> KeyIndex    -- ^ Derivation index of the address
-             -> String      -- ^ New label
-             -> ReaderT b m PaymentAddress -- ^ New address information
+             -> T.Text      -- ^ New label
+             -> ReaderT b m LabeledAddress -- ^ New address information
 setAddrLabel wallet name key label = do
     Entity wk _ <- getWalletEntity wallet
     Entity ai _ <- getAccountEntity wk name
@@ -245,7 +243,7 @@ addressPrvKey :: (MonadIO m, PersistQuery b, PersistUnique b)
 addressPrvKey wallet name key = do
     accPrv <- accountPrvKey wallet name
     add    <- getAddress wallet name key False
-    let addrPrvKey = fromJust $ extPrvKey accPrv $ addressIndex add
+    let addrPrvKey = fromJust $ extPrvKey accPrv $ laIndex add
     return $ xPrvKey $ getAddrPrvKey addrPrvKey
 
 -- Returns the number of new addresses created

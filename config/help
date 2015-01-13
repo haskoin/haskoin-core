@@ -1,0 +1,47 @@
+Server commands:
+  start [config] [--detach]           Start the haskoin daemon
+  stop  [config]                      Stop the haskoin daemon
+
+Wallet commands:
+  newwallet  [mnemonic] [-w name]     Create a new wallet
+  getwallet  [-w name]                Display a wallet by name
+  walletlist                          List all wallets
+  rescan     [timestamp]              Rescan the wallet
+
+Account commands:
+  newacc    name                      Create a new account
+  newms     name M N [pubkey...]      Create a new multisig account
+  newread   name pubkey               Create a new read-only account
+  newreadms name M N [pubkey...]      Create a new read-only ms account
+  addkeys   acc  {pubkey...}          Add pubkeys to a multisig account
+  acclist                             List all accounts
+  getacc    acc                       Display an account by name
+
+Address commands: 
+  new   acc label                     Generate an address with a label
+  list  acc                           Display all account addresses
+  page  acc [page] [-n addr/page]     Display account addresses by page
+  label acc index label               Add a label to an address
+
+Transaction commands:
+  txlist    acc                       Display transactions in an account
+  txpage    acc page [-n tx/page]     Display transactions by page
+  send      acc addr amount           Send coins to an address
+  sendmany  acc {addr:amount...}      Send coins to many addresses
+  signtx    acc tx                    Sign a transaction (sign + import)
+  importtx  acc tx                    Import a transaction
+  balance   acc [--minconf]           Display account balance
+  spendable acc [--minconf]           Display account spendable balance
+  getprop   acc hash                  Get a transaction proposition
+  gettx     acc hash                  Get a raw transaction
+
+Offline tx commands:
+  getoffline  acc txhash              Get data to sign a tx offline
+  signoffline acc offtxdata           Sign an offline tx
+
+Utility commands:
+  decodetx  tx                        Decode HEX transaction
+
+Other commands:
+  version                             Display version information
+  help                                Display this help information

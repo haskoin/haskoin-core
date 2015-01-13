@@ -1,0 +1,41 @@
+# ZeroMQ socket on which to listen to. Either absolute path or relative to
+# work-dir/network
+zeromq-bind: "_env:ZEROMQ_BIND:ipc://hw-spv"
+# Server mode. Can be either online or offline. In offline mode, the SPV
+# daemon does not start and only the local wallet is available to query.
+server-mode: "_env:SERVER_MODE:online"
+
+# False positive rate for the bloom filters. 
+bloom-false-positive: "_env:BLOOM_FALSE_POSITIVE:0.00001"
+# How many addresses you want to pre-generate for each account.
+address-gap: "_env:ADDRESS_GAP:10"
+# When set to true, this instance will only sign transactions if they result
+# in fully signed transactions.
+sign-finalize-only: "_env:FINALIZE:false"
+# When set to false, this instance will not automatically sign new transactions
+# that it creates.
+sign-new-transactions: "_env:SIGN_NEW_TXS:true"
+# Default fee to pay (in satoshi) for every 1000 bytes.
+fee-per-1000-bytes: "_env:FEE:10000"
+# Minimum number of confirmations required to spend a coin.
+spend-minimum-confirmations: "_env:SPEND_MINCONF:1"
+
+# Sqlite3 database connection information
+database:
+  database: "_env:SQLITE_DATABASE:hw-wallet.sqlite3"
+  poolsize: "_env:SQLITE_POOLSIZE:10"
+
+# List of trusted bitcoin full-nodes to connect to.
+bitcoin-full-nodes: 
+  - host: "127.0.0.1"
+    port: 18333
+
+# Haskoin working directory. Either absolute path or relative to $HOME
+work-dir: "_env:HW_HOME:.hw"
+# Log file name. Either absolute path or relative to work-dir/network
+log-file: "_env:HW_LOGFILE:hw.log"
+# PID file name. Either absolute path or relative to work-dir/network
+pid-file: "_env:HW_PIDFILE:hw.pid"
+# Compile time configuration value. Either absolute path or relative to
+# work-dir/network. This value can not be set at runtime.
+config-file: "_env:HW_SERVERCFG:server.yml"

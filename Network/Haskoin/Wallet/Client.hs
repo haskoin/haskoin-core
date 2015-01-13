@@ -12,7 +12,7 @@ import System.Console.GetOpt
     , ArgOrder (Permute)
     )
 
-import Control.Monad (forM_, filterM)
+import Control.Monad (when, forM_, filterM)
 import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.State as S (evalStateT)
 
@@ -113,13 +113,15 @@ clientMain :: IO ()
 clientMain = E.getArgs >>= \args -> case getOpt Permute options args of
     (fs, commands, []) -> do
         cfg <- getClientConfig fs
-        changeWorkingDirectory $ 
-            concat [ spvWorkDir compileTimeSPVConfig
-                   , "/", networkName
-                   ]
+        exists <- fileExist workDir
+        when exists $ changeWorkingDirectory workDir
         dispatchCommand cfg commands
         return ()
     (_, _, msgs) -> forM_ (msgs ++ usage) putStrLn
+  where
+    workDir = concat [ spvWorkDir compileTimeSPVConfig
+                     , "/", networkName
+                     ]
 
 dispatchCommand :: ClientConfig -> [String] -> IO ()
 dispatchCommand cfg args = flip S.evalStateT cfg $ case args of

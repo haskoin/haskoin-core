@@ -23,7 +23,7 @@ spend-minimum-confirmations: "_env:SPEND_MINCONF:1"
 # Sqlite3 database connection information
 database:
   database: "_env:SQLITE_DATABASE:hw-wallet.sqlite3"
-  poolsize: "_env:SQLITE_POOLSIZE:10"
+  poolsize: "_env:SQLITE_POOLSIZE:1"
 
 # List of trusted bitcoin full-nodes to connect to.
 bitcoin-full-nodes: 

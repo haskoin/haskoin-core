@@ -20,12 +20,12 @@ Account commands:
 Address commands: 
   new   acc label                     Generate an address with a label
   list  acc                           Display all account addresses
-  page  acc [page] [-n addr/page]     Display account addresses by page
+  page  acc [page] [-c addr/page]     Display account addresses by page
   label acc index label               Add a label to an address
 
 Transaction commands:
   txlist    acc                       Display transactions in an account
-  txpage    acc page [-n tx/page]     Display transactions by page
+  txpage    acc page [-c tx/page]     Display transactions by page
   send      acc addr amount           Send coins to an address
   sendmany  acc {addr:amount...}      Send coins to many addresses
   signtx    acc tx                    Sign a transaction (sign + import)

@@ -9,10 +9,16 @@ import Data.Maybe (fromJust)
 import Data.Binary.Get (getWord32le)
 import qualified Data.ByteString as BS (reverse)
 
+import Network.Haskoin.Network
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
+
+type Net = Prodnet
+
+net :: Net
+net = undefined
 
 tests :: [Test]
 tests =
@@ -59,7 +65,7 @@ mapPKHashVec (v,i) = testCase name $ runPKHashVec v
 runPKHashVec :: ([(String,Word32)],[(String,Word64)],String) -> Assertion
 runPKHashVec (xs,ys,res) = 
     assertBool "Build PKHash Tx" $ (bsToHex $ encode' tx) == res
-    where tx = fromRight $ buildAddrTx (map f xs) ys
+    where tx = fromRight $ buildAddrTx net (map f xs) ys
           f (tid,ix) = OutPoint (fromJust $ decodeTxHashLE tid) ix
 
 

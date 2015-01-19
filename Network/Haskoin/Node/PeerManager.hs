@@ -22,7 +22,7 @@ where
 import System.Random (randomIO)
 
 import Control.Monad (when, unless, forM_, liftM)
-import Control.Monad.Trans (MonadTrans, MonadIO, liftIO, lift)
+import Control.Monad.Trans (MonadIO, liftIO, lift)
 import Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import Control.Concurrent (forkFinally, forkIO, threadDelay)
 import Control.Concurrent.STM (atomically)
@@ -73,55 +73,56 @@ import Network.Haskoin.Block
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Node.Message
 import Network.Haskoin.Util
-import Network.Haskoin.Constants
+import Network.Haskoin.Network
 
-type MngrHandle a = 
-    S.StateT a (S.StateT ManagerSession (LoggingT (ResourceT IO)))
+type MngrHandle a b = 
+    S.StateT b (S.StateT (ManagerSession a) (LoggingT (ResourceT IO)))
 
-runMngrHandle :: a -> ManagerSession -> MngrHandle a () -> IO ()
+runMngrHandle :: b -> ManagerSession a -> MngrHandle a b () -> IO ()
 runMngrHandle a s m = 
     runResourceT $ runStdoutLoggingT $ S.evalStateT (S.evalStateT m a) s
 
-class PeerManager r a | a -> r where
-    initNode :: MngrHandle a ()
-    nodeRequest :: r -> MngrHandle a ()
-    peerHandshake :: RemoteHost -> Version -> MngrHandle a ()
-    peerDisconnect :: RemoteHost -> MngrHandle a ()
-    startPeer :: String -> Int -> MngrHandle a ()
-    restartPeer :: RemoteHost -> MngrHandle a ()
-    peerMessage :: RemoteHost -> Message -> MngrHandle a ()
-    peerMerkleBlock :: RemoteHost -> DecodedMerkleBlock -> MngrHandle a ()
+class PeerManager a r b | b -> r where
+    initNode :: MngrHandle a b ()
+    nodeRequest :: r -> MngrHandle a b ()
+    peerHandshake :: RemoteHost -> Version -> MngrHandle a b ()
+    peerDisconnect :: RemoteHost -> MngrHandle a b ()
+    startPeer :: String -> Int -> MngrHandle a b ()
+    restartPeer :: RemoteHost -> MngrHandle a b ()
+    peerMessage :: RemoteHost -> (Message a) -> MngrHandle a b ()
+    peerMerkleBlock :: RemoteHost -> DecodedMerkleBlock -> MngrHandle a b ()
 
-data ManagerSession = ManagerSession
+data ManagerSession a = ManagerSession
     { mngrVersion  :: !Version
     , mngrChan     :: !(TBMChan ManagerRequest)
-    , mngrPeerChan :: !(TBMChan PeerMessage)
-    , peerMap      :: !(M.Map RemoteHost PeerData)
+    , mngrPeerChan :: !(TBMChan (PeerMessage a))
+    , peerMap      :: !(M.Map RemoteHost (PeerData a))
     } 
 
 -- Data stored about a peer in the Manager
-data PeerData = PeerData
+data PeerData a = PeerData
     { peerCompleteHandshake :: !Bool
     , peerHeight            :: !BlockHeight
-    , peerMsgChan           :: !(TBMChan Message)
+    , peerMsgChan           :: !(TBMChan (Message a))
     , peerReconnectTimer    :: !Int
     }
 
-data MergedRequest r
-    = MergedPeerMessage !PeerMessage
+data MergedRequest a r
+    = MergedPeerMessage !(PeerMessage a)
     | MergedNodeRequest !r
     | MergedMngrRequest !ManagerRequest
 
 data ManagerRequest 
     = RestartPeer !RemoteHost
 
-withAsyncNode :: (PeerManager r a)
-              => [(String, Int)]
-              -> a
+withAsyncNode :: forall a r b. (Network a, PeerManager a r b)
+              => a
+              -> [(String, Int)]
+              -> b
               -> (TBMChan r -> Async () -> IO ())
               -> IO ()
-withAsyncNode hosts a f = do
-    vers  <- buildVersion
+withAsyncNode net hosts a f = do
+    vers  <- buildVersion net
     pChan <- liftIO $ atomically $ newTBMChan 10000
     rChan <- liftIO $ atomically $ newTBMChan 10000
     mChan <- liftIO $ atomically $ newTBMChan 10000
@@ -145,18 +146,20 @@ withAsyncNode hosts a f = do
         -- Start peers
         forM_ hosts $ \(host,port) -> processStartPeer host port
         -- Process messages
-        mergedSource $$ managerSink
+        mergedSource $$
+            (managerSink :: Sink (MergedRequest a r) (MngrHandle a b) ())
 
-buildVersion :: MonadIO m => m Version
-buildVersion = do
+buildVersion :: (Network a, MonadIO m) => a -> m Version
+buildVersion net = do
     -- TODO: Get our correct IP here
     let add      = NetworkAddress 1 $ SockAddrInet (PortNum 0) 0
-        ua       = VarString $ stringToBS haskoinUserAgent
+        ua       = VarString $ stringToBS (haskoinUserAgent net)
     time <- liftIO getPOSIXTime
     rdmn <- liftIO randomIO -- nonce
     return $ Version 70001 1 (floor time) add add rdmn ua 0 False
 
-managerSink :: PeerManager r a => Sink (MergedRequest r) (MngrHandle a) ()
+managerSink :: (Network a, PeerManager a r b)
+            => Sink (MergedRequest a r) (MngrHandle a b) ()
 managerSink = awaitForever $ \req -> lift $ case req of
     MergedPeerMessage pm -> case pm of
         PeerHandshake remote v -> processPeerHandshake remote v
@@ -167,7 +170,8 @@ managerSink = awaitForever $ \req -> lift $ case req of
     MergedMngrRequest mr -> case mr of
         RestartPeer r -> processRestartPeer r
 
-processStartPeer :: PeerManager r a => String -> Int -> MngrHandle a ()
+processStartPeer :: (Network a, PeerManager a r b)
+                 => String -> Int -> MngrHandle a b ()
 processStartPeer host port = peerExists remote >>= \exists -> unless exists $ do
     $(logInfo) $ T.pack $ unwords
         [ "Starting peer"
@@ -191,7 +195,8 @@ processStartPeer host port = peerExists remote >>= \exists -> unless exists $ do
   where
     remote = RemoteHost host port
 
-processRestartPeer :: PeerManager r a => RemoteHost -> MngrHandle a ()
+processRestartPeer :: (Network a, PeerManager a r b)
+                   => RemoteHost -> MngrHandle a b ()
 processRestartPeer remote = do
     $(logInfo) $ T.pack $ unwords
         [ "Restarting peer"
@@ -208,7 +213,8 @@ processRestartPeer remote = do
     restartPeer remote -- Run user hook
     startPeerThread remote
 
-startPeerThread :: PeerManager r a => RemoteHost -> MngrHandle a ()
+startPeerThread :: (Network a, PeerManager a r b)
+                => RemoteHost -> MngrHandle a b ()
 startPeerThread remote = do
     mpChan <- lift $ S.gets mngrPeerChan
     pChan <- liftM peerMsgChan $ getPeerData remote
@@ -221,7 +227,7 @@ startPeerThread remote = do
   where
     cs = clientSettings (remotePort remote) (stringToBS $ remoteHost remote) 
 
-processPeerDisconnect :: PeerManager r a => RemoteHost -> MngrHandle a ()
+processPeerDisconnect :: PeerManager a r b => RemoteHost -> MngrHandle a b ()
 processPeerDisconnect remote = do
     dat <- getPeerData remote
     let reconnect = peerReconnectTimer dat
@@ -251,8 +257,8 @@ processPeerDisconnect remote = do
         atomically $ writeTBMChan mChan $ RestartPeer remote
     return ()
 
-processPeerHandshake :: PeerManager r a 
-                     => RemoteHost -> Version -> MngrHandle a ()
+processPeerHandshake :: PeerManager a r b 
+                     => RemoteHost -> Version -> MngrHandle a b ()
 processPeerHandshake remote remoteVer = do
     $(logInfo) $ T.pack $ unwords
         [ "Peer handshake complete"
@@ -265,53 +271,55 @@ processPeerHandshake remote remoteVer = do
          }
     peerHandshake remote remoteVer -- Run user hook
 
-sendMessage :: PeerManager r a => RemoteHost -> Message -> MngrHandle a ()
+sendMessage :: PeerManager a r b
+            => RemoteHost -> Message a -> MngrHandle a b ()
 sendMessage remote msg = do
     dat <- getPeerData remote
     when (peerCompleteHandshake dat) $ do
         -- The message is discarded if the channel is closed.
         liftIO . atomically $ writeTBMChan (peerMsgChan dat) msg
 
-getPeerData :: PeerManager r a => RemoteHost -> MngrHandle a PeerData
+getPeerData :: PeerManager a r b => RemoteHost -> MngrHandle a b (PeerData a)
 getPeerData remote = do
     m <- lift $ S.gets peerMap 
     -- TODO: can fromJust fail in some cases?
     return $ fromJust $ M.lookup remote m
 
-putPeerData :: PeerManager r a => RemoteHost -> PeerData -> MngrHandle a ()
+putPeerData :: PeerManager a r b
+            => RemoteHost -> PeerData a -> MngrHandle a b ()
 putPeerData remote d = 
     lift $ S.modify $ \s -> s{ peerMap = M.insert remote d (peerMap s) }
 
-modifyPeerData :: PeerManager r a 
+modifyPeerData :: PeerManager a r b 
                => RemoteHost 
-               -> (PeerData -> PeerData) 
-               -> MngrHandle a ()
+               -> (PeerData a -> PeerData a) 
+               -> MngrHandle a b ()
 modifyPeerData remote f = do
     d <- getPeerData remote
     putPeerData remote $ f d
 
-deletePeerData :: PeerManager r a => RemoteHost -> MngrHandle a ()
+deletePeerData :: PeerManager a r b => RemoteHost -> MngrHandle a b ()
 deletePeerData remote = 
     lift $ S.modify $ \s -> s{ peerMap = M.delete remote $ peerMap s }
 
-peerExists :: PeerManager r a => RemoteHost -> MngrHandle a Bool
+peerExists :: PeerManager a r b => RemoteHost -> MngrHandle a b Bool
 peerExists remote = do
     m <- lift $ S.gets peerMap
     return $ M.member remote m
 
-getPeerKeys :: PeerManager r a => MngrHandle a [RemoteHost]
+getPeerKeys :: PeerManager a r b => MngrHandle a b [RemoteHost]
 getPeerKeys = liftM M.keys $ lift $ S.gets peerMap
 
-getPeerValues :: PeerManager r a => MngrHandle a [PeerData]
+getPeerValues :: PeerManager a r b => MngrHandle a b [PeerData a]
 getPeerValues = liftM M.elems $ lift $ S.gets peerMap
 
-getPeers :: PeerManager r a => MngrHandle a [(RemoteHost, PeerData)]
+getPeers :: PeerManager a r b => MngrHandle a b [(RemoteHost, PeerData a)]
 getPeers = liftM M.toList $ lift $ S.gets peerMap
 
 -- Increase the height of a peer to the given height if it is greater than
 -- the existing one.
-increasePeerHeight :: PeerManager r a 
-                   => RemoteHost -> BlockHeight -> MngrHandle a ()
+increasePeerHeight :: PeerManager a r b 
+                   => RemoteHost -> BlockHeight -> MngrHandle a b ()
 increasePeerHeight remote h = do
     dat <- getPeerData remote
     when (h > peerHeight dat) $ do
@@ -322,7 +330,7 @@ increasePeerHeight remote h = do
             , "(", show remote, ")" 
             ]
 
-getBestPeerHeight :: PeerManager r a => MngrHandle a BlockHeight
+getBestPeerHeight :: PeerManager a r b => MngrHandle a b BlockHeight
 getBestPeerHeight = do
     peerValues <- getPeerValues
     return $ maximum $ 0 : map peerHeight peerValues

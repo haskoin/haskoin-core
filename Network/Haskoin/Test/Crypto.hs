@@ -132,29 +132,29 @@ instance Arbitrary ArbitraryPubKeyU where
         return $ ArbitraryPubKeyU k $ derivePubKey k
 
 -- | Arbitrary address (can be a pubkey or script hash address)
-newtype ArbitraryAddress = ArbitraryAddress Address
+newtype ArbitraryAddress a = ArbitraryAddress (Address a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryAddress where
+instance Arbitrary (ArbitraryAddress a) where
     arbitrary = ArbitraryAddress <$> oneof
         [ arbitrary >>= \(ArbitraryPubKeyAddress a) -> return a
         , arbitrary >>= \(ArbitraryScriptAddress a) -> return a
         ]
 
 -- | Arbitrary public key hash address
-newtype ArbitraryPubKeyAddress = ArbitraryPubKeyAddress Address
+newtype ArbitraryPubKeyAddress a = ArbitraryPubKeyAddress (Address a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryPubKeyAddress where
+instance Arbitrary (ArbitraryPubKeyAddress a) where
     arbitrary = do
         i <- arbitrary
         return $ ArbitraryPubKeyAddress $ PubKeyAddress i
 
 -- | Arbitrary script hash address
-newtype ArbitraryScriptAddress = ArbitraryScriptAddress Address
+newtype ArbitraryScriptAddress a = ArbitraryScriptAddress (Address a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryScriptAddress where
+instance Arbitrary (ArbitraryScriptAddress a) where
     arbitrary = do
         i <- arbitrary
         return $ ArbitraryScriptAddress $ ScriptAddress i
@@ -189,10 +189,10 @@ instance Arbitrary ArbitraryDetSignature where
         return $ ArbitraryDetSignature msg prv $ detSignMsg msg prv
 
 -- | Arbitrary extended private key.
-data ArbitraryXPrvKey = ArbitraryXPrvKey XPrvKey 
+data ArbitraryXPrvKey a = ArbitraryXPrvKey (XPrvKey a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryXPrvKey where
+instance Arbitrary (ArbitraryXPrvKey a) where
     arbitrary = do
         d <- arbitrary
         p <- arbitrary
@@ -202,10 +202,10 @@ instance Arbitrary ArbitraryXPrvKey where
         return $ ArbitraryXPrvKey $ XPrvKey d p i c k
 
 -- | Arbitrary extended public key with its corresponding private key.
-data ArbitraryXPubKey = ArbitraryXPubKey XPrvKey XPubKey 
+data ArbitraryXPubKey a = ArbitraryXPubKey (XPrvKey a) (XPubKey a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryXPubKey where
+instance Arbitrary (ArbitraryXPubKey a) where
     arbitrary = do
         ArbitraryXPrvKey k <- arbitrary
         return $ ArbitraryXPubKey k $ deriveXPubKey k
@@ -232,10 +232,10 @@ instance Arbitrary ArbitraryDeriv where
         return $ ArbitraryDeriv (i, b)
 
 -- | Arbitrary master key
-data ArbitraryMasterKey = ArbitraryMasterKey MasterKey
+data ArbitraryMasterKey a = ArbitraryMasterKey (MasterKey a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryMasterKey where
+instance Arbitrary (ArbitraryMasterKey a) where
     arbitrary = do
         ArbitraryByteString bs <- arbitrary
         case makeMasterKey bs of
@@ -243,10 +243,10 @@ instance Arbitrary ArbitraryMasterKey where
             Nothing -> arbitrary
 
 -- | Arbitrary private account key with its corresponding master key.
-data ArbitraryAccPrvKey = ArbitraryAccPrvKey MasterKey AccPrvKey
+data ArbitraryAccPrvKey a = ArbitraryAccPrvKey (MasterKey a) (AccPrvKey a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryAccPrvKey where
+instance Arbitrary (ArbitraryAccPrvKey a) where
     arbitrary = do
         ArbitraryMasterKey m <- arbitrary
         i <- choose (0,0x7fffffff)
@@ -256,11 +256,11 @@ instance Arbitrary ArbitraryAccPrvKey where
 
 -- | Arbitrary public account key with its corresponding master key
 -- and private account key.
-data ArbitraryAccPubKey = 
-    ArbitraryAccPubKey MasterKey AccPrvKey AccPubKey
+data ArbitraryAccPubKey a = 
+    ArbitraryAccPubKey (MasterKey a) (AccPrvKey a) (AccPubKey a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryAccPubKey where
+instance Arbitrary (ArbitraryAccPubKey a) where
     arbitrary = do
         ArbitraryAccPrvKey m k <- arbitrary
         let p = AccPubKey $ deriveXPubKey $ getAccPrvKey k
@@ -268,10 +268,11 @@ instance Arbitrary ArbitraryAccPubKey where
 
 -- | Arbitrary private address key with its corresponding master key and
 -- private account key.
-data ArbitraryAddrPrvKey = ArbitraryAddrPrvKey MasterKey AccPrvKey AddrPrvKey
+data ArbitraryAddrPrvKey a =
+    ArbitraryAddrPrvKey (MasterKey a) (AccPrvKey a) (AddrPrvKey a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryAddrPrvKey where
+instance Arbitrary (ArbitraryAddrPrvKey a) where
     arbitrary = do
         ArbitraryAccPrvKey m k <- arbitrary
         i <- choose (0,0x7fffffff)
@@ -282,11 +283,12 @@ instance Arbitrary ArbitraryAddrPrvKey where
 
 -- | Arbitrary public address key with its corresponding master key,
 -- private account key and private address key.
-data ArbitraryAddrPubKey = 
-    ArbitraryAddrPubKey MasterKey AccPrvKey AddrPrvKey AddrPubKey
+data ArbitraryAddrPubKey a = 
+    ArbitraryAddrPubKey (MasterKey a)  (AccPrvKey a)
+                        (AddrPrvKey a) (AddrPubKey a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryAddrPubKey where
+instance Arbitrary (ArbitraryAddrPubKey a) where
     arbitrary = do
         ArbitraryAddrPrvKey m k a <- arbitrary
         let p = AddrPubKey $ deriveXPubKey $ getAddrPrvKey a

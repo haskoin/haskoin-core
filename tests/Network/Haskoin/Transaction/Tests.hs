@@ -6,12 +6,18 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 import Data.Word (Word64)
 import qualified Data.ByteString as BS (length)
 
+import Network.Haskoin.Network
 import Network.Haskoin.Test
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Internals (getFee, getMSFee)
+
+type Net = Prodnet
+
+net :: Net
+net = undefined
 
 tests :: [Test]
 tests = 
@@ -37,15 +43,15 @@ decEncTxid h = decodeTxHashLE (encodeTxHashLE h) == Just h
 
 {- Building Transactions -}
 
-testBuildAddrTx :: ArbitraryAddress -> ArbitrarySatoshi -> Bool
+testBuildAddrTx :: ArbitraryAddress Net -> ArbitrarySatoshi Net -> Bool
 testBuildAddrTx (ArbitraryAddress a) (ArbitrarySatoshi v) = case a of
     x@(PubKeyAddress _) -> Right (PayPKHash x) == out
     x@(ScriptAddress _) -> Right (PayScriptHash x) == out
   where 
-    tx  = buildAddrTx [] [(addrToBase58 a,v)]
+    tx  = buildAddrTx net [] [(addrToBase58 a,v)]
     out = decodeOutputBS $ scriptOutput $ txOut (fromRight tx) !! 0
 
-testGuessSize :: ArbitraryAddrOnlyTx -> Bool
+testGuessSize :: ArbitraryAddrOnlyTx Net -> Bool
 testGuessSize (ArbitraryAddrOnlyTx tx) =
     -- We compute an upper bound but it should be close enough to the real size
     -- We give 2 bytes of slack on every signature (1 on r and 1 on s)
@@ -64,7 +70,7 @@ testGuessSize (ArbitraryAddrOnlyTx tx) =
     pkout    = length $ filter isPayPKHash out
     msout    = length $ filter isPayScriptHash out
 
-testChooseCoins :: Word64 -> Word64 -> [ArbitraryCoin] -> Bool
+testChooseCoins :: Word64 -> Word64 -> [ArbitraryCoin Net] -> Bool
 testChooseCoins target kbfee acoins = case chooseCoins target kbfee xs of
     Right (chosen,change) ->
         let outSum = sum $ map coinValue chosen
@@ -78,7 +84,7 @@ testChooseCoins target kbfee acoins = case chooseCoins target kbfee xs of
     s  = sum $ map coinValue xs
 
 testChooseMSCoins :: Word64 -> Word64 
-                  -> ArbitraryMSParam -> [ArbitraryCoin] -> Bool
+                  -> ArbitraryMSParam -> [ArbitraryCoin Net] -> Bool
 testChooseMSCoins target kbfee (ArbitraryMSParam m n) acoins = 
     case chooseMSCoins target kbfee (m,n) xs of
         Right (chosen,change) ->
@@ -94,7 +100,7 @@ testChooseMSCoins target kbfee (ArbitraryMSParam m n) acoins =
 
 {- Signing Transactions -}
 
-testDetSignTx :: ArbitrarySigningData -> Bool
+testDetSignTx :: ArbitrarySigningData Net -> Bool
 testDetSignTx (ArbitrarySigningData tx sigis prv) = 
     (not $ verifyStdTx tx verData)
         && (not statP) && (not $ verifyStdTx txSigP verData)
@@ -104,7 +110,7 @@ testDetSignTx (ArbitrarySigningData tx sigis prv) =
     (txSigC, statC) = fromRight $ detSignTx txSigP sigis [head prv]
     verData         = map (\(SigInput s o _ _) -> (s,o)) sigis
 
-testMergeTx :: ArbitraryPartialTxs -> Bool
+testMergeTx :: ArbitraryPartialTxs Net -> Bool
 testMergeTx (ArbitraryPartialTxs txs os) = and 
     [ isRight mergeRes
     , length (txIn mergedTx) == length os

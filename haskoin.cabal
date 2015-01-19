@@ -1,5 +1,5 @@
 name:                  haskoin
-version:               0.2.0
+version:               0.3.0
 synopsis:              
     Implementation of the Bitcoin protocol.
 description:
@@ -33,9 +33,7 @@ maintainer:            plaprade+hackage@gmail.com
 category:              Bitcoin, Finance, Network
 build-type:            Simple
 cabal-version:         >= 1.9.2
-extra-source-files:    tests/data/*.json,
-                       testnet/Network/Haskoin/Constants.hs,
-                       prodnet/Network/Haskoin/Constants.hs
+extra-source-files:    tests/data/*.json
 
 source-repository head
     type:     git
@@ -53,7 +51,7 @@ library
                      Network.Haskoin.Script
                      Network.Haskoin.Transaction
                      Network.Haskoin.Block
-                     Network.Haskoin.Constants
+                     Network.Haskoin.Network
                      Network.Haskoin.Test
                      Network.Haskoin.Internals
 
@@ -102,6 +100,7 @@ library
                 KindSignatures
                 FunctionalDependencies
                 RecordWildCards
+                ScopedTypeVariables
 
     build-depends: aeson                    >= 0.7          && < 0.9
                  , async                    >= 2.0          && < 2.1
@@ -135,16 +134,12 @@ library
 
     ghc-options:       -Wall 
 
-  if flag(testnet)
-    hs-source-dirs: . testnet
-  else
-    hs-source-dirs: . prodnet
-
 test-suite test-haskoin
     type:              exitcode-stdio-1.0
     main-is:           Main.hs
 
     extensions: EmptyDataDecls
+                ScopedTypeVariables
 
     other-modules: Network.Haskoin.Util.Tests
                    Network.Haskoin.Crypto.BigWord.Tests

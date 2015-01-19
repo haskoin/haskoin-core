@@ -5,7 +5,7 @@
 module Network.Haskoin.Internals
 ( module Network.Haskoin.Util
 , module Network.Haskoin.Stratum
-, module Network.Haskoin.Constants
+, module Network.Haskoin.Network
 , module Network.Haskoin.Crypto.NumberTheory 
 , module Network.Haskoin.Crypto.Curve 
 , module Network.Haskoin.Crypto.Hash 
@@ -45,7 +45,6 @@ module Network.Haskoin.Internals
 
 import Network.Haskoin.Util
 import Network.Haskoin.Stratum
-import Network.Haskoin.Constants
 import Network.Haskoin.Crypto.NumberTheory 
 import Network.Haskoin.Crypto.Curve 
 import Network.Haskoin.Crypto.Hash 
@@ -57,6 +56,7 @@ import Network.Haskoin.Crypto.ExtendedKeys
 import Network.Haskoin.Crypto.NormalizedKeys
 import Network.Haskoin.Crypto.ECDSA
 import Network.Haskoin.Crypto.Mnemonic
+import Network.Haskoin.Network
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.Bloom

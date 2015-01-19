@@ -21,6 +21,7 @@ import Data.Word (Word, Word64)
 import Network.JsonRpc
 
 import Network.Haskoin.Crypto
+import Network.Haskoin.Network
 import Network.Haskoin.Transaction.Types
 
 --
@@ -28,25 +29,25 @@ import Network.Haskoin.Transaction.Types
 --
 
 -- | Stratum Request data. To be placed inside JSON request.
-data StratumRequest
+data StratumRequest a
     = StratumReqVersion { stratumReqClientVer     :: !Text
                         , stratumReqProtoVer      :: !Text
                         }
-    | StratumReqHistory { stratumReqAddr          :: !Address
+    | StratumReqHistory { stratumReqAddr          :: !(Address a)
                         }
-    | StratumReqBalance { stratumReqAddr          :: !Address
+    | StratumReqBalance { stratumReqAddr          :: !(Address a)
                         }
-    | StratumReqUnspent { stratumReqAddr          :: !Address
+    | StratumReqUnspent { stratumReqAddr          :: !(Address a)
                         }
     | StratumReqTx      { stratumReqTxid          :: !TxHash
                         }
     | StratumBcastTx    { stratumReqTx            :: !Tx
                         }
-    | StratumSubAddr    { stratumReqAddr          :: !Address
+    | StratumSubAddr    { stratumReqAddr          :: !(Address a)
                         }
     deriving (Eq, Show)
 
-instance NFData StratumRequest where
+instance NFData (StratumRequest a) where
     rnf (StratumReqVersion c p) = rnf c `seq` rnf p
     rnf (StratumReqHistory   a) = rnf a
     rnf (StratumReqBalance   a) = rnf a
@@ -55,7 +56,7 @@ instance NFData StratumRequest where
     rnf (StratumBcastTx      t) = rnf t
     rnf (StratumSubAddr      a) = rnf a
 
-instance ToJSON StratumRequest where
+instance Network a => ToJSON (StratumRequest a) where
     toJSON (StratumReqVersion c p) = toJSON (c, p)
     toJSON (StratumReqHistory   a) = toJSON [a]
     toJSON (StratumReqBalance   a) = toJSON [a]
@@ -64,7 +65,7 @@ instance ToJSON StratumRequest where
     toJSON (StratumBcastTx      t) = toJSON [t]
     toJSON (StratumSubAddr      a) = toJSON [a]
 
-instance ToRequest StratumRequest where
+instance ToRequest (StratumRequest a) where
     requestMethod (StratumReqVersion _ _) = "server.version"
     requestMethod (StratumReqHistory   _) = "blockchain.address.get_history"
     requestMethod (StratumReqBalance   _) = "blockchain.address.get_balance"
@@ -73,7 +74,7 @@ instance ToRequest StratumRequest where
     requestMethod (StratumBcastTx      _) = "blockchain.transaction.broadcast"
     requestMethod (StratumSubAddr      _) = "blockchain.address.subscribe"
 
-instance FromRequest StratumRequest where
+instance Network a => FromRequest (StratumRequest a) where
     paramsParser "server.version" = Just $ \x ->
         fmap (\(c, p) -> StratumReqVersion c p) $ parseJSON x
 
@@ -101,22 +102,22 @@ instance FromRequest StratumRequest where
 -- Stratum Notifications
 --
 
-data StratumNotif
-    = StratumNotifAddr  { stratumNotifAddr        :: !Address
+data StratumNotif a
+    = StratumNotifAddr  { stratumNotifAddr        :: !(Address a)
                         , stratumNotifAddrStatus  :: !Word256
                         }
     deriving (Eq, Show)
 
-instance NFData StratumNotif where
+instance NFData (StratumNotif a) where
     rnf (StratumNotifAddr  a t) = rnf a `seq` rnf t
 
-instance ToJSON StratumNotif where
+instance Network a => ToJSON (StratumNotif a) where
     toJSON (StratumNotifAddr  a t) = toJSON (a, t)
 
-instance ToNotif StratumNotif where
+instance ToNotif (StratumNotif a) where
     notifMethod (StratumNotifAddr  _ _) = "blockchain.address.subscribe"
 
-instance FromNotif StratumNotif where
+instance Network a => FromNotif (StratumNotif a) where
     notifParamsParser "blockchain.address.subscribe" = Just $ \x ->
         fmap (\(a, s) -> StratumNotifAddr a s) $ parseJSON x
 
@@ -127,7 +128,7 @@ instance FromNotif StratumNotif where
 --
 
 -- | Stratum Response Result data.
-data StratumResult
+data StratumResult a
     = StratumSrvVersion     { stratumSrvVersion     :: !String
                             }
     | StratumAddrHistory    { stratumAddrHist       :: ![StratumTxInfo]
@@ -145,7 +146,7 @@ data StratumResult
                             }
     deriving (Eq, Show)
 
-instance NFData StratumResult where
+instance NFData (StratumResult a) where
     rnf (StratumSrvVersion    s) = rnf s
     rnf (StratumAddrHistory  ts) = rnf ts
     rnf (StratumAddrBalance c u) = rnf c `seq` rnf u
@@ -154,7 +155,7 @@ instance NFData StratumResult where
     rnf (StratumTx            t) = rnf t
     rnf (StratumBcastId       i) = rnf i
 
-instance ToJSON StratumResult where
+instance ToJSON (StratumResult a) where
     toJSON (StratumSrvVersion    v) = toJSON v
     toJSON (StratumAddrHistory  ts) = toJSON ts
     toJSON (StratumAddrBalance c u) = object
@@ -164,7 +165,7 @@ instance ToJSON StratumResult where
     toJSON (StratumTx            t) = toJSON t
     toJSON (StratumBcastId       i) = toJSON i
 
-instance FromResponse StratumResult where
+instance FromResponse (StratumResult a) where
     parseResult "server.version" =
         fmap StratumSrvVersion . parseJSON
     parseResult "blockchain.address.get_history" =

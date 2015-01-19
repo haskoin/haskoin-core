@@ -26,7 +26,7 @@ import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Block.Types
 import Network.Haskoin.Util
-import Network.Haskoin.Constants
+import Network.Haskoin.Network
 import Network.Haskoin.Node.Types
 
 type MerkleRoot        = Word256
@@ -172,15 +172,17 @@ traverseAndExtract height pos ntx flags hashes
 -- | Extracts the matching hashes from a partial merkle tree. This will return
 -- the list of transaction hashes that have been included (set to True) in
 -- a call to 'buildPartialMerkle'.
-extractMatches :: FlagBits -- ^ Flag bits (produced by buildPartialMerkle).
+extractMatches :: Network a
+               => a -- ^ Network
+               -> FlagBits -- ^ Flag bits (produced by buildPartialMerkle).
                -> PartialMerkleTree -- ^ Partial merkle tree.
                -> Int -- ^ Number of transaction at height 0 (leaf nodes).
                -> Either String (MerkleRoot, [TxHash])
                -- ^ Merkle root and the list of matching transaction hashes.
-extractMatches flags hashes ntx
+extractMatches net flags hashes ntx
     | ntx == 0 = Left $
         "extractMatches: number of transactions can not be 0"
-    | ntx > maxBlockSize `div` 60 = Left $
+    | ntx > (maxBlockSize net) `div` 60 = Left $
         "extractMatches: number of transactions excessively high"
     | length hashes > ntx = Left $
         "extractMatches: More hashes provided than the number of transactions"

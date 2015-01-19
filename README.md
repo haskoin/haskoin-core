@@ -37,9 +37,6 @@ through the cabal package manager:
 ```sh
 # Compile for prodnet 
 cabal install haskoin
-
-# Compile for testnet
-cabal install haskoin --flags=testnet
 ```
 
 ## Contributing

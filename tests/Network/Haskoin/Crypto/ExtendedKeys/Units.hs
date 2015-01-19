@@ -12,8 +12,11 @@ import qualified Data.ByteString.Lazy.Char8 as B8
 import Data.Maybe (isJust, isNothing, fromJust, catMaybes)
 import Data.String (fromString)
 
+import Network.Haskoin.Network
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
+
+type Net = Prodnet
 
 tests :: [Test]
 tests =
@@ -113,7 +116,7 @@ testDerivePubPath = do
     return $ testCase ("Path " ++ path) $
         assertEqual path final $ derivePubPath (fromString path) key
 
-derivePubPathVectors :: [(XPubKey, String, Maybe XPubKey)]
+derivePubPathVectors :: [(XPubKey Net, String, Maybe (XPubKey Net))]
 derivePubPathVectors =
     [ ( xpub, "M", Just xpub )
     , ( xpub, "M/8", pubSubKey xpub 8 )
@@ -125,7 +128,7 @@ derivePubPathVectors =
         \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
     xpub = deriveXPubKey xprv
 
-derivePathVectors :: [(XPrvKey, String, Maybe XKey)]
+derivePathVectors :: [(XPrvKey Net, String, Maybe (XKey Net))]
 derivePathVectors =
     [ ( xprv, "m", Just (XKeyPrv xprv) )
     , ( xprv, "M", Just (XKeyPub xpub) )
@@ -147,7 +150,7 @@ derivePathVectors =
         \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
     xpub = deriveXPubKey xprv
 
-runXKeyVec :: ([String],XPrvKey) -> Assertion
+runXKeyVec :: ([String],XPrvKey Net) -> Assertion
 runXKeyVec (v,m) = do
     assertBool "xPrvID" $ (bsToHex $ encode' $ xPrvID m) == v !! 0
     assertBool "xPrvFP" $ (bsToHex $ encode' $ xPrvFP m) == v !! 1
@@ -166,7 +169,7 @@ runXKeyVec (v,m) = do
 -- BIP 0032 Test Vectors
 -- https://en.bitcoin.it/wiki/BIP_0032_TestVectors
 
-xKeyVec :: [([String],XPrvKey)]
+xKeyVec :: [([String],XPrvKey Net)]
 xKeyVec = zip xKeyResVec $ catMaybes $ foldl f [m] der
     where f acc d = acc ++ [d =<< last acc]
           m   = makeXPrvKey $ fromJust $ hexToBS m0
@@ -177,7 +180,7 @@ xKeyVec = zip xKeyResVec $ catMaybes $ foldl f [m] der
                 , flip prvSubKey 1000000000
                 ]
 
-xKeyVec2 :: [([String],XPrvKey)]
+xKeyVec2 :: [([String],XPrvKey Net)]
 xKeyVec2 = zip xKeyResVec2 $ catMaybes $ foldl f [m] der
     where f acc d = acc ++ [d =<< last acc]
           m   = makeXPrvKey $ fromJust $ hexToBS m1

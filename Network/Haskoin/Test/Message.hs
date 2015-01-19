@@ -8,12 +8,14 @@ module Network.Haskoin.Test.Message
 
 import Test.QuickCheck
     ( Arbitrary
+    , Gen
     , arbitrary
     , oneof
     )
 
 import Control.Applicative ((<$>))
 
+import Network.Haskoin.Network
 import Network.Haskoin.Test.Node
 import Network.Haskoin.Test.Transaction
 import Network.Haskoin.Test.Block
@@ -33,10 +35,10 @@ instance Arbitrary ArbitraryMessageHeader where
         return $ MessageHeader m mc p c
 
 -- | Arbitrary Message
-newtype ArbitraryMessage = ArbitraryMessage Message
+newtype ArbitraryMessage a = ArbitraryMessage (Message a)
     deriving (Eq, Show)
 
-instance Arbitrary ArbitraryMessage where
+instance forall a. Network a => Arbitrary (ArbitraryMessage a) where
     arbitrary = ArbitraryMessage <$> oneof
         [ arbitrary >>= \(ArbitraryVersion x) -> return $ MVersion x
         , return MVerAck
@@ -46,8 +48,10 @@ instance Arbitrary ArbitraryMessage where
         , arbitrary >>= \(ArbitraryNotFound x) -> return $ MNotFound x
         , arbitrary >>= \(ArbitraryGetBlocks x) -> return $ MGetBlocks x
         , arbitrary >>= \(ArbitraryGetHeaders x) -> return $ MGetHeaders x
-        , arbitrary >>= \(ArbitraryTx x) -> return $ MTx x
-        , arbitrary >>= \(ArbitraryBlock x) -> return $ MBlock x
+        , (arbitrary :: Gen (ArbitraryTx a)) >>=
+            \(ArbitraryTx x) -> return $ MTx x
+        , (arbitrary :: Gen (ArbitraryBlock a)) >>=
+            \(ArbitraryBlock x) -> return $ MBlock x
         , arbitrary >>= \(ArbitraryMerkleBlock x) -> return $ MMerkleBlock x
         , arbitrary >>= \(ArbitraryHeaders x) -> return $ MHeaders x
         , return MGetAddr

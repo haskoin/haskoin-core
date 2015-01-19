@@ -6,9 +6,12 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.Binary (Binary)
 
+import Network.Haskoin.Network
 import Network.Haskoin.Test
 import Network.Haskoin.Util
 import Network.Haskoin.Crypto
+
+type Net = Prodnet
 
 tests :: [Test]
 tests = 
@@ -27,8 +30,10 @@ tests =
         , testProperty "Deterministic Signature" $ 
             \(ArbitraryDetSignature _ _ x) -> metaBinary x
         , testProperty "PubKey" $ \(ArbitraryPubKey _ x) -> metaBinary x
-        , testProperty "XPrvKey" $ \(ArbitraryXPrvKey x) -> metaBinary x
-        , testProperty "XPubKey" $ \(ArbitraryXPubKey _ x) -> metaBinary x
+        , testProperty "XPrvKey" $
+            \(ArbitraryXPrvKey x :: ArbitraryXPrvKey Net) -> metaBinary x
+        , testProperty "XPubKey" $
+            \(ArbitraryXPubKey _ x :: ArbitraryXPubKey Net) -> metaBinary x
         ]
     , testGroup "Binary encoding and decoding of protocol types"
         [ testProperty "VarInt" $ \(ArbitraryVarInt x) -> metaBinary x
@@ -47,7 +52,8 @@ tests =
         , testProperty "Pong" $ \(ArbitraryPong x) -> metaBinary x
         , testProperty "MessageCommand" $ \(ArbitraryMessageCommand x) -> metaBinary x
         , testProperty "MessageHeader" $ \(ArbitraryMessageHeader x) -> metaBinary x
-        , testProperty "Message" $ \(ArbitraryMessage x) -> metaBinary x
+        , testProperty "Message" $
+            \(ArbitraryMessage x :: ArbitraryMessage Net) -> metaBinary x
         ]
     , testGroup "Binary encoding and decoding of script types"
         [ testProperty "ScriptOp" $ \(ArbitraryScriptOp x) -> metaBinary x
@@ -56,13 +62,17 @@ tests =
         ]
     , testGroup "Binary encoding and decoding of transaction types"
         [ testProperty "TxIn" $ \(ArbitraryTxIn x) -> metaBinary x
-        , testProperty "TxOut" $ \(ArbitraryTxOut x) -> metaBinary x
+        , testProperty "TxOut" $
+            \(ArbitraryTxOut x :: ArbitraryTxOut Net) -> metaBinary x
         , testProperty "OutPoint" $ \(ArbitraryOutPoint x) -> metaBinary x
-        , testProperty "Tx" $ \(ArbitraryTx x) -> metaBinary x
-        , testProperty "CoinbaseTx" $ \(ArbitraryCoinbaseTx x) -> metaBinary x
+        , testProperty "Tx" $
+            \(ArbitraryTx x :: ArbitraryTx Net) -> metaBinary x
+        , testProperty "CoinbaseTx" $
+            \(ArbitraryCoinbaseTx x :: ArbitraryCoinbaseTx Net) -> metaBinary x
         ]
     , testGroup "Binary encoding and decoding of block types"
-        [ testProperty "Block" $ \(ArbitraryBlock x) -> metaBinary x
+        [ testProperty "Block" $
+            \(ArbitraryBlock x :: ArbitraryBlock Net) -> metaBinary x
         , testProperty "BlockHeader" $ \(ArbitraryBlockHeader x) -> metaBinary x
         , testProperty "GetBlocks" $ \(ArbitraryGetBlocks x) -> metaBinary x
         , testProperty "GetHeaders" $ \(ArbitraryGetHeaders x) -> metaBinary x

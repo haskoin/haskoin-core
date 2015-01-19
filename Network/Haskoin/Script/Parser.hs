@@ -57,56 +57,56 @@ import Network.Haskoin.Script.SigHash
 -- | Data type describing standard transaction output scripts. Output scripts
 -- provide the conditions that must be fulfilled for someone to spend the
 -- output coins. 
-data ScriptOutput = 
+data ScriptOutput a = 
       -- | Pay to a public key.
       PayPK         { getOutputPubKey   :: !PubKey }
       -- | Pay to a public key hash.
-    | PayPKHash     { getOutputAddress  :: !Address }
+    | PayPKHash     { getOutputAddress  :: !(Address a) }
       -- | Pay to multiple public keys.
     | PayMulSig     { getOutputMulSigKeys     :: ![PubKey]
                     , getOutputMulSigRequired :: !Int
                     }
       -- | Pay to a script hash.
-    | PayScriptHash { getOutputAddress  :: !Address }
+    | PayScriptHash { getOutputAddress  :: !(Address a) }
     deriving (Eq, Show, Read)
 
-instance FromJSON ScriptOutput where
+instance FromJSON (ScriptOutput a) where
     parseJSON = withText "scriptoutput" $ \t -> either fail return $
         maybeToEither "scriptoutput not hex" 
           (hexToBS $ T.unpack t) >>= decodeOutputBS
 
-instance ToJSON ScriptOutput where
+instance ToJSON (ScriptOutput a) where
     toJSON = String . T.pack . bsToHex . encodeOutputBS
 
-instance NFData ScriptOutput where
+instance NFData (ScriptOutput a) where
     rnf (PayPK k) = rnf k
     rnf (PayPKHash a) = rnf a
     rnf (PayMulSig k r) = rnf k `seq` rnf r
     rnf (PayScriptHash a) = rnf a
 
 -- | Returns True if the script is a pay to public key output.
-isPayPK :: ScriptOutput -> Bool
+isPayPK :: ScriptOutput a -> Bool
 isPayPK (PayPK _) = True
 isPayPK _ = False
 
 -- | Returns True if the script is a pay to public key hash output.
-isPayPKHash :: ScriptOutput -> Bool
+isPayPKHash :: ScriptOutput a -> Bool
 isPayPKHash (PayPKHash _) = True
 isPayPKHash _ = False
 
 -- | Returns True if the script is a pay to multiple public keys output.
-isPayMulSig :: ScriptOutput -> Bool
+isPayMulSig :: ScriptOutput a -> Bool
 isPayMulSig (PayMulSig _ _) = True
 isPayMulSig _ = False
 
 -- | Returns true if the script is a pay to script hash output.
-isPayScriptHash :: ScriptOutput -> Bool
+isPayScriptHash :: ScriptOutput a -> Bool
 isPayScriptHash (PayScriptHash _) = True
 isPayScriptHash _ = False
 
 -- | Computes a script address from a script output. This address can be used
 -- in a pay to script hash output.
-scriptAddr :: ScriptOutput -> Address
+scriptAddr :: ScriptOutput a -> Address a
 scriptAddr = ScriptAddress . hash160 . hash256BS . encodeOutputBS
 
 -- | Sorts the public keys of a multisignature output in ascending order by
@@ -114,7 +114,7 @@ scriptAddr = ScriptAddress . hash160 . hash256BS . encodeOutputBS
 -- multisignature account management as participants in a multisignature wallet
 -- will blindly agree on an ordering of the public keys without having to
 -- communicate. 
-sortMulSig :: ScriptOutput -> ScriptOutput
+sortMulSig :: ScriptOutput a -> ScriptOutput a
 sortMulSig out = case out of
     PayMulSig keys r -> PayMulSig (sortBy f keys) r
     _ -> error "Can only call orderMulSig on PayMulSig scripts"
@@ -123,7 +123,7 @@ sortMulSig out = case out of
 
 -- | Computes a 'Script' from a 'ScriptOutput'. The 'Script' is a list of 
 -- 'ScriptOp' can can be used to build a 'Tx'.
-encodeOutput :: ScriptOutput -> Script
+encodeOutput :: ScriptOutput a -> Script
 encodeOutput s = Script $ case s of
     -- Pay to PubKey
     (PayPK k) -> [opPushData $ encode' k, OP_CHECKSIG]
@@ -151,12 +151,12 @@ encodeOutput s = Script $ case s of
             error "encodeOutput: PubKeyAddress is invalid in PayScriptHash"
 
 -- | Similar to 'encodeOutput' but encodes to a ByteString
-encodeOutputBS :: ScriptOutput -> BS.ByteString
+encodeOutputBS :: ScriptOutput a -> BS.ByteString
 encodeOutputBS = encode' . encodeOutput
 
 -- | Tries to decode a 'ScriptOutput' from a 'Script'. This can fail if the
 -- script is not recognized as any of the standard output types.
-decodeOutput :: Script -> Either String ScriptOutput
+decodeOutput :: Script -> Either String (ScriptOutput a)
 decodeOutput s = case scriptOps s of
     -- Pay to PubKey
     [OP_PUSHDATA bs _, OP_CHECKSIG] -> PayPK <$> decodeToEither bs
@@ -170,11 +170,11 @@ decodeOutput s = case scriptOps s of
     _ -> matchPayMulSig s
 
 -- | Similar to 'decodeOutput' but decodes from a ByteString
-decodeOutputBS :: BS.ByteString -> Either String ScriptOutput
+decodeOutputBS :: BS.ByteString -> Either String (ScriptOutput a)
 decodeOutputBS = (decodeOutput =<<) . decodeToEither
 
 -- Match [ OP_N, PubKey1, ..., PubKeyM, OP_M, OP_CHECKMULTISIG ]
-matchPayMulSig :: Script -> Either String ScriptOutput
+matchPayMulSig :: Script -> Either String (ScriptOutput a)
 matchPayMulSig (Script ops) = case splitAt (length ops - 2) ops of
     (m:xs,[n,OP_CHECKMULTISIG]) -> do
         (intM,intN) <- liftM2 (,) (scriptOpToInt m) (scriptOpToInt n)
@@ -207,7 +207,7 @@ scriptOpToInt s
 -- | Computes the recipient address of a script. This function fails if the
 -- script could not be decoded as a pay to public key hash or pay to script
 -- hash. 
-scriptRecipient :: Script -> Either String Address
+scriptRecipient :: Script -> Either String (Address a)
 scriptRecipient s = case decodeOutput s of
     Right (PayPKHash a)     -> return a
     Right (PayScriptHash a) -> return a
@@ -217,7 +217,7 @@ scriptRecipient s = case decodeOutput s of
 -- | Computes the sender address of a script. This function fails if the
 -- script could not be decoded as a spend public key hash or script hash
 -- input. 
-scriptSender :: Script -> Either String Address
+scriptSender :: Script -> Either String (Address a)
 scriptSender s = case decodeInput s of
     Right (RegularInput (SpendPKHash _ key)) -> return $ pubKeyAddr key
     Right (ScriptHashInput _ rdm)            -> return $ scriptAddr rdm
@@ -244,34 +244,34 @@ instance NFData SimpleInput where
     rnf (SpendMulSig k) = rnf k 
 
 -- | Returns True if the input script is spending a public key.
-isSpendPK :: ScriptInput -> Bool
+isSpendPK :: ScriptInput a -> Bool
 isSpendPK (RegularInput (SpendPK _)) = True
 isSpendPK _ = False
 
 -- | Returns True if the input script is spending a public key hash.
-isSpendPKHash :: ScriptInput -> Bool
+isSpendPKHash :: ScriptInput a -> Bool
 isSpendPKHash (RegularInput (SpendPKHash _ _)) = True
 isSpendPKHash _ = False
 
 -- | Returns True if the input script is spending a multisignature output.
-isSpendMulSig :: ScriptInput -> Bool
+isSpendMulSig :: ScriptInput a -> Bool
 isSpendMulSig (RegularInput (SpendMulSig _)) = True
 isSpendMulSig _ = False
 
-isScriptHashInput :: ScriptInput -> Bool
+isScriptHashInput :: ScriptInput a -> Bool
 isScriptHashInput (ScriptHashInput _ _) = True
 isScriptHashInput _ = False
 
 type RedeemScript = ScriptOutput
 
-data ScriptInput
+data ScriptInput a
     = RegularInput    { getRegularInput     :: SimpleInput }
     | ScriptHashInput { getScriptHashInput  :: SimpleInput
-                      , getScriptHashRedeem :: RedeemScript
+                      , getScriptHashRedeem :: RedeemScript a
                       }
     deriving (Eq, Show, Read)
 
-instance NFData ScriptInput where
+instance NFData (ScriptInput a) where
     rnf (RegularInput i) = rnf i
     rnf (ScriptHashInput i o) = rnf i `seq` rnf o
 
@@ -303,19 +303,19 @@ decodeSimpleInput (Script ops) = maybeToEither errMsg $
     f _ _ = Nothing
     errMsg = "decodeInput: Could not decode script input"
 
-encodeInput :: ScriptInput -> Script
+encodeInput :: ScriptInput a -> Script
 encodeInput s = case s of
     RegularInput ri -> encodeSimpleInput ri
     ScriptHashInput i o -> Script $
         (scriptOps $ encodeSimpleInput i) ++ [opPushData $ encodeOutputBS o]
 
 -- | Similar to 'encodeInput' but encodes to a ByteString
-encodeInputBS :: ScriptInput -> BS.ByteString
+encodeInputBS :: ScriptInput a -> BS.ByteString
 encodeInputBS = encode' . encodeInput
 
 -- | Decodes a 'ScriptInput' from a 'Script'. This function fails if the 
 -- script can not be parsed as a standard script input.
-decodeInput :: Script -> Either String ScriptInput
+decodeInput :: Script -> Either String (ScriptInput a)
 decodeInput s@(Script ops) = maybeToEither errMsg $
     matchSimpleInput <|> matchPayScriptHash
   where
@@ -329,6 +329,6 @@ decodeInput s@(Script ops) = maybeToEither errMsg $
     errMsg = "decodeInput: Could not decode script input"
         
 -- | Similar to 'decodeInput' but decodes from a ByteString
-decodeInputBS :: BS.ByteString -> Either String ScriptInput
+decodeInputBS :: BS.ByteString -> Either String (ScriptInput a)
 decodeInputBS = (decodeInput =<<) . decodeToEither 
 

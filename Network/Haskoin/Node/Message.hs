@@ -32,7 +32,7 @@ import Network.Haskoin.Block.Types
 import Network.Haskoin.Block.Merkle
 import Network.Haskoin.Crypto.Hash 
 import Network.Haskoin.Node.Bloom
-import Network.Haskoin.Constants
+import Network.Haskoin.Network
 import Network.Haskoin.Util 
 
 -- | Data type representing the header of a 'Message'. All messages sent between
@@ -74,7 +74,7 @@ instance Binary MessageHeader where
 -- serialized with message headers. Serializing a 'Message' value will
 -- include the 'MessageHeader' with the correct checksum value automatically.
 -- No need to add the 'MessageHeader' separately.
-data Message 
+data Message a
     = MVersion !Version 
     | MVerAck 
     | MAddr !Addr 
@@ -97,12 +97,12 @@ data Message
     | MReject !Reject
     deriving (Eq, Show)
 
-instance Binary Message where
+instance forall a. Network a => Binary (Message a) where
 
     get = do
         (MessageHeader mgc cmd len chk) <- get
         bs <- lookAhead $ getByteString $ fromIntegral len
-        unless (mgc == networkMagic)
+        unless (mgc == networkMagic net)
             (fail $ "get: Invalid network magic bytes: " ++ (show mgc))
         unless (chksum32 bs == chk) 
             (fail $ "get: Invalid message checksum: " ++ (show chk))
@@ -131,6 +131,8 @@ instance Binary Message where
                 MCVerAck      -> return MVerAck
                 MCFilterClear -> return MFilterClear
                 _             -> fail $ "get: Invalid command " ++ (show cmd)
+      where
+        net = undefined :: a
 
     put msg = do
         let (cmd, payload) = case msg of
@@ -156,6 +158,7 @@ instance Binary Message where
                 MReject m      -> (MCReject, encode' m)
             chk = chksum32 payload
             len = fromIntegral $ BS.length payload
-            header = MessageHeader networkMagic cmd len chk
+            header = MessageHeader (networkMagic net) cmd len chk
         putByteString $ (encode' header) `BS.append` payload
-        
+      where
+        net = undefined :: a

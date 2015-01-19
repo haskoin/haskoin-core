@@ -9,10 +9,14 @@ import Data.Binary.Get (runGet)
 import Data.Binary.Put (runPut)
 import qualified Data.ByteString as BS (length, index)
 
+import Network.Haskoin.Network
 import Network.Haskoin.Test
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Internals (PubKeyI(..), PrvKeyI(..))
+
+net :: Prodnet
+net = undefined
 
 tests :: [Test]
 tests = 
@@ -70,7 +74,7 @@ makeToKeyU i = i /= 0 ==>
 {- Key formats -}
 
 fromToWIF :: ArbitraryPrvKey -> Bool
-fromToWIF (ArbitraryPrvKey pk) = (fromWif $ toWif pk) == Just pk
+fromToWIF (ArbitraryPrvKey pk) = (fromWif net $ toWif net pk) == Just pk
 
 binaryPrvKey :: ArbitraryPrvKey -> Bool
 binaryPrvKey (ArbitraryPrvKey k) =

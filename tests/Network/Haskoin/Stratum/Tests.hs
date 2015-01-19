@@ -18,18 +18,22 @@ import Network.JsonRpc
     , parseNotif
     )
 
+import Network.Haskoin.Network
 import Network.Haskoin.Stratum
 import Network.Haskoin.Test
+
+type Net = Prodnet
 
 tests :: [Test]
 tests =
     [ testGroup "Stratum JSON-RPC"
         [ testProperty "Encode/decode requests"
-            (reqDecode :: Request StratumRequest -> Bool)
+            (reqDecode :: Request (StratumRequest Net) -> Bool)
         , testProperty "Encode/decode notifications"
-            (notifDecode :: Notif StratumNotif -> Bool)
+            (notifDecode :: Notif (StratumNotif Net) -> Bool)
         , testProperty "Encode/decode responses"
-            (resDecode :: ReqRes StratumRequest StratumResult -> Bool)
+            (resDecode
+                :: ReqRes (StratumRequest Net) (StratumResult Net) -> Bool)
         ]
     ]
 

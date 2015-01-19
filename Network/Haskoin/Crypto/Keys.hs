@@ -54,7 +54,7 @@ import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Point 
 import Network.Haskoin.Crypto.Base58 
 import Network.Haskoin.Crypto.Hash 
-import Network.Haskoin.Constants
+import Network.Haskoin.Network
 import Network.Haskoin.Util 
 
 -- | G parameter of the EC curve expressed as a Point
@@ -182,7 +182,7 @@ instance Binary (PubKeyI Uncompressed) where
         Just (x, y) -> putWord8 4 >> put x >> put y
 
 -- | Computes an Address value from a public key
-pubKeyAddr :: Binary (PubKeyI c) => PubKeyI c -> Address
+pubKeyAddr :: Binary (PubKeyI c) => PubKeyI c -> Address a
 pubKeyAddr = PubKeyAddress . hash160 . hash256BS . encode'
 
 {- Private Keys -}
@@ -278,11 +278,11 @@ prvKeyPutMonad k
 -- if the input string does not decode correctly as a base 58 string or if 
 -- the checksum fails.
 -- <http://en.bitcoin.it/wiki/Wallet_import_format>
-fromWif :: String -> Maybe PrvKey
-fromWif str = do
+fromWif :: Network a => a -> String -> Maybe PrvKey
+fromWif net str = do
     bs <- decodeBase58Check $ stringToBS str
     -- Check that this is a private key
-    guard (BS.head bs == secretPrefix)  
+    guard (BS.head bs == (secretPrefix net))  
     case BS.length bs of
         33 -> do               -- Uncompressed format
             let i = bsToInteger (BS.tail bs)
@@ -294,8 +294,8 @@ fromWif str = do
         _  -> Nothing          -- Bad length
 
 -- | Encodes a private key into WIF format
-toWif :: PrvKeyI c -> String
-toWif k = bsToString $ encodeBase58Check $ BS.cons secretPrefix enc
+toWif :: Network a => a -> PrvKeyI c -> String
+toWif net k = bsToString $ encodeBase58Check $ BS.cons (secretPrefix net) enc
   where 
     enc | prvKeyCompressed k = BS.snoc bs 0x01
         | otherwise          = bs

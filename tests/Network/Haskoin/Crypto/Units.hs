@@ -11,9 +11,15 @@ import Data.Maybe (fromJust, isJust, isNothing)
 import Data.Binary (put)
 import qualified Data.ByteString as BS (pack)
 
+import Network.Haskoin.Network
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Internals (PrvKeyI(..), PubKeyI(..), Signature(..))
+
+type Net = Prodnet
+
+net :: Net
+net = undefined
 
 -- Unit tests copied from bitcoind implementation
 -- https://github.com/bitcoin/bitcoin/blob/master/src/test/key_tests.cpp
@@ -51,16 +57,16 @@ sigMsg = [ ("Very secret message " ++ (show (i :: Int)) ++ ": 11")
          ]
 
 sec1 :: PrvKey
-sec1  = fromJust $ fromWif strSecret1
+sec1  = fromJust $ fromWif net strSecret1
 
 sec2 :: PrvKey
-sec2  = fromJust $ fromWif strSecret2
+sec2  = fromJust $ fromWif net strSecret2
 
 sec1C :: PrvKey
-sec1C = fromJust $ fromWif strSecret1C
+sec1C = fromJust $ fromWif net strSecret1C
 
 sec2C :: PrvKey
-sec2C = fromJust $ fromWif strSecret2C
+sec2C = fromJust $ fromWif net strSecret2C
 
 pub1 :: PubKey
 pub1  = derivePubKey sec1
@@ -135,14 +141,14 @@ uniqueKeys = do
 
 checkPrivkey :: Assertion
 checkPrivkey = do
-    assertBool "Key 1"  $ isJust $ fromWif strSecret1
-    assertBool "Key 2"  $ isJust $ fromWif strSecret2
-    assertBool "Key 1C" $ isJust $ fromWif strSecret1C
-    assertBool "Key 2C" $ isJust $ fromWif strSecret2C
+    assertBool "Key 1"  $ isJust $ fromWif net strSecret1
+    assertBool "Key 2"  $ isJust $ fromWif net strSecret2
+    assertBool "Key 1C" $ isJust $ fromWif net strSecret1C
+    assertBool "Key 2C" $ isJust $ fromWif net strSecret2C
 
 checkInvalidKey :: Assertion
 checkInvalidKey = 
-    assertBool "Bad key" $ isNothing $ fromWif strAddressBad
+    assertBool "Bad key" $ isNothing $ fromWif net strAddressBad
 
 checkPrvKeyCompressed :: Assertion
 checkPrvKeyCompressed = do
@@ -160,10 +166,14 @@ checkKeyCompressed = do
 
 checkMatchingAddress :: Assertion
 checkMatchingAddress = do
-    assertBool "Key 1"  $ addr1  == (addrToBase58 $ pubKeyAddr pub1)
-    assertBool "Key 2"  $ addr2  == (addrToBase58 $ pubKeyAddr pub2)
-    assertBool "Key 1C" $ addr1C == (addrToBase58 $ pubKeyAddr pub1C)
-    assertBool "Key 2C" $ addr2C == (addrToBase58 $ pubKeyAddr pub2C)
+    assertBool "Key 1"  $ addr1  ==
+        (addrToBase58 $ (pubKeyAddr pub1 :: Address Net))
+    assertBool "Key 2"  $ addr2  ==
+        (addrToBase58 $ (pubKeyAddr pub2 :: Address Net))
+    assertBool "Key 1C" $ addr1C ==
+        (addrToBase58 $ (pubKeyAddr pub1C :: Address Net))
+    assertBool "Key 2C" $ addr2C ==
+        (addrToBase58 $ (pubKeyAddr pub2C :: Address Net))
     
 checkSignatures :: Word256 -> Assertion
 checkSignatures h = do

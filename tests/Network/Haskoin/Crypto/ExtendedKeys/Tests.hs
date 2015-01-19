@@ -10,9 +10,12 @@ import Data.Word (Word32)
 import Data.Bits ((.&.))
 import Data.Maybe (fromJust)
 
+import Network.Haskoin.Network
 import Network.Haskoin.Test
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
+
+type Net = Prodnet
 
 tests :: [Test]
 tests = 
@@ -30,33 +33,33 @@ tests =
 
 {- HDW Extended Keys -}
 
-subkeyTest :: ArbitraryXPrvKey -> Word32 -> Bool
+subkeyTest :: ArbitraryXPrvKey Net -> Word32 -> Bool
 subkeyTest (ArbitraryXPrvKey k) i = fromJust $ liftM2 (==) 
     (deriveXPubKey <$> prvSubKey k i') (pubSubKey (deriveXPubKey k) i')
   where 
     i' = fromIntegral $ i .&. 0x7fffffff -- make it a public derivation
 
-b58PrvKey :: ArbitraryXPrvKey -> Bool
+b58PrvKey :: ArbitraryXPrvKey Net -> Bool
 b58PrvKey (ArbitraryXPrvKey k) = (xPrvImport $ xPrvExport k) == Just k
 
-b58PubKey :: ArbitraryXPubKey -> Bool
+b58PubKey :: ArbitraryXPubKey Net -> Bool
 b58PubKey (ArbitraryXPubKey _ k) = (xPubImport $ xPubExport k) == Just k
 
 {- HDW Normalized Keys -}
 
-decEncMaster :: ArbitraryMasterKey -> Bool
+decEncMaster :: ArbitraryMasterKey Net -> Bool
 decEncMaster (ArbitraryMasterKey k) = 
     (loadMasterKey $ decode' bs) == Just k
   where 
     bs = encode' $ masterKey k
 
-decEncPrvAcc :: ArbitraryAccPrvKey -> Bool
+decEncPrvAcc :: ArbitraryAccPrvKey Net -> Bool
 decEncPrvAcc (ArbitraryAccPrvKey _ k) = 
     (loadPrvAcc $ decode' bs) == Just k
   where 
     bs = encode' $ getAccPrvKey k
 
-decEncPubAcc :: ArbitraryAccPubKey -> Bool
+decEncPubAcc :: ArbitraryAccPubKey Net -> Bool
 decEncPubAcc (ArbitraryAccPubKey _ _ k) = 
     (loadPubAcc $ decode' bs) == Just k
   where 

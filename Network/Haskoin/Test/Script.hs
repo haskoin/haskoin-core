@@ -262,10 +262,10 @@ instance Arbitrary ArbitraryMSParam where
         return $ ArbitraryMSParam m n
 
 -- | Arbitrary ScriptOutput (Can by any valid type)
-newtype ArbitraryScriptOutput = ArbitraryScriptOutput ScriptOutput
+newtype ArbitraryScriptOutput a = ArbitraryScriptOutput (ScriptOutput a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryScriptOutput where
+instance Arbitrary (ArbitraryScriptOutput a) where
     arbitrary = ArbitraryScriptOutput <$> oneof 
         [ arbitrary >>= \(ArbitraryPKOutput o) -> return o
         , arbitrary >>= \(ArbitraryPKHashOutput o) -> return o
@@ -275,10 +275,10 @@ instance Arbitrary ArbitraryScriptOutput where
 
 -- | Arbitrary ScriptOutput of type PayPK, PayPKHash or PayMS
 -- (Not PayScriptHash)
-newtype ArbitrarySimpleOutput = ArbitrarySimpleOutput ScriptOutput
+newtype ArbitrarySimpleOutput a = ArbitrarySimpleOutput (ScriptOutput a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitrarySimpleOutput where
+instance Arbitrary (ArbitrarySimpleOutput a) where
     arbitrary = ArbitrarySimpleOutput <$> oneof 
         [ arbitrary >>= \(ArbitraryPKOutput o) -> return o
         , arbitrary >>= \(ArbitraryPKHashOutput o) -> return o
@@ -286,28 +286,28 @@ instance Arbitrary ArbitrarySimpleOutput where
         ]
 
 -- | Arbitrary ScriptOutput of type PayPK
-newtype ArbitraryPKOutput = ArbitraryPKOutput ScriptOutput
+newtype ArbitraryPKOutput a = ArbitraryPKOutput (ScriptOutput a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryPKOutput where
+instance Arbitrary (ArbitraryPKOutput a) where
     arbitrary = do
         ArbitraryPubKey _ key <- arbitrary
         return $ ArbitraryPKOutput $ PayPK key
 
 -- | Arbitrary ScriptOutput of type PayPKHash
-newtype ArbitraryPKHashOutput = ArbitraryPKHashOutput ScriptOutput
+newtype ArbitraryPKHashOutput a = ArbitraryPKHashOutput (ScriptOutput a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryPKHashOutput where
+instance Arbitrary (ArbitraryPKHashOutput a) where
     arbitrary = do
         ArbitraryPubKeyAddress a <- arbitrary
         return $ ArbitraryPKHashOutput $ PayPKHash a
 
 -- | Arbitrary ScriptOutput of type PayMS
-newtype ArbitraryMSOutput = ArbitraryMSOutput ScriptOutput
+newtype ArbitraryMSOutput a = ArbitraryMSOutput (ScriptOutput a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryMSOutput where
+instance Arbitrary (ArbitraryMSOutput a) where
     arbitrary = do
         ArbitraryMSParam m n <- arbitrary
         keys <- map f <$> vectorOf n arbitrary
@@ -316,10 +316,10 @@ instance Arbitrary ArbitraryMSOutput where
         f (ArbitraryPubKey _ key) = key
 
 -- | Arbitrary ScriptOutput of type PayMS containing only compressed keys
-newtype ArbitraryMSCOutput = ArbitraryMSCOutput ScriptOutput
+newtype ArbitraryMSCOutput a = ArbitraryMSCOutput (ScriptOutput a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryMSCOutput where
+instance Arbitrary (ArbitraryMSCOutput a) where
     arbitrary = do
         ArbitraryMSParam m n <- arbitrary
         keys <- map f <$> vectorOf n arbitrary
@@ -328,19 +328,19 @@ instance Arbitrary ArbitraryMSCOutput where
         f (ArbitraryPubKeyC _ key) = toPubKeyG key
 
 -- | Arbitrary ScriptOutput of type PayScriptHash
-newtype ArbitrarySHOutput = ArbitrarySHOutput ScriptOutput
+newtype ArbitrarySHOutput a = ArbitrarySHOutput (ScriptOutput a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitrarySHOutput where
+instance Arbitrary (ArbitrarySHOutput a) where
     arbitrary = do
         ArbitraryScriptAddress a <- arbitrary
         return $ ArbitrarySHOutput $ PayScriptHash a
 
 -- | Arbitrary ScriptInput 
-newtype ArbitraryScriptInput = ArbitraryScriptInput ScriptInput
+newtype ArbitraryScriptInput a = ArbitraryScriptInput (ScriptInput a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryScriptInput where
+instance Arbitrary (ArbitraryScriptInput a) where
     arbitrary = ArbitraryScriptInput <$> oneof
         [ arbitrary >>= \(ArbitraryPKInput i) -> return i
         , arbitrary >>= \(ArbitraryPKHashInput i) -> return i
@@ -350,10 +350,10 @@ instance Arbitrary ArbitraryScriptInput where
 
 -- | Arbitrary ScriptInput of type SpendPK, SpendPKHash or SpendMulSig
 -- (not ScriptHashInput)
-newtype ArbitrarySimpleInput = ArbitrarySimpleInput ScriptInput
+newtype ArbitrarySimpleInput a = ArbitrarySimpleInput (ScriptInput a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitrarySimpleInput where
+instance Arbitrary (ArbitrarySimpleInput a) where
     arbitrary = ArbitrarySimpleInput <$> oneof
         [ arbitrary >>= \(ArbitraryPKInput i) -> return i
         , arbitrary >>= \(ArbitraryPKHashInput i) -> return i
@@ -361,20 +361,20 @@ instance Arbitrary ArbitrarySimpleInput where
         ]
 
 -- | Arbitrary ScriptInput of type SpendPK
-newtype ArbitraryPKInput = ArbitraryPKInput ScriptInput
+newtype ArbitraryPKInput a = ArbitraryPKInput (ScriptInput a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryPKInput where
+instance Arbitrary (ArbitraryPKInput a) where
     arbitrary = ArbitraryPKInput . RegularInput . SpendPK <$> oneof 
         [ arbitrary >>= \(ArbitraryTxSignature _ _ _ sig) -> return sig
         , arbitrary >>= \(ArbitraryDetTxSignature _ _ sig) -> return sig
         ]
 
 -- | Arbitrary ScriptInput of type SpendPK
-newtype ArbitraryPKHashInput = ArbitraryPKHashInput ScriptInput
+newtype ArbitraryPKHashInput a = ArbitraryPKHashInput (ScriptInput a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryPKHashInput where
+instance Arbitrary (ArbitraryPKHashInput a) where
     arbitrary = do
         sig <- oneof
             [ arbitrary >>= \(ArbitraryTxSignature _ _ _ sig) -> return sig
@@ -384,10 +384,10 @@ instance Arbitrary ArbitraryPKHashInput where
         return $ ArbitraryPKHashInput $ RegularInput $ SpendPKHash sig key
 
 -- | Arbitrary ScriptInput of type SpendPK with a compressed public key
-newtype ArbitraryPKHashCInput = ArbitraryPKHashCInput ScriptInput
+newtype ArbitraryPKHashCInput a = ArbitraryPKHashCInput (ScriptInput a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryPKHashCInput where
+instance Arbitrary (ArbitraryPKHashCInput a) where
     arbitrary = do
         sig <- oneof
             [ arbitrary >>= \(ArbitraryTxSignature _ _ _ sig) -> return sig
@@ -398,10 +398,10 @@ instance Arbitrary ArbitraryPKHashCInput where
             SpendPKHash sig $ toPubKeyG key
 
 -- | Arbitrary ScriptInput of type SpendMulSig
-newtype ArbitraryMSInput = ArbitraryMSInput ScriptInput
+newtype ArbitraryMSInput a = ArbitraryMSInput (ScriptInput a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryMSInput where
+instance Arbitrary (ArbitraryMSInput a) where
     arbitrary = do
         ArbitraryMSParam m _ <- arbitrary
         sigs <- vectorOf m f
@@ -413,10 +413,10 @@ instance Arbitrary ArbitraryMSInput where
             ]
 
 -- | Arbitrary ScriptInput of type ScriptHashInput
-newtype ArbitrarySHInput = ArbitrarySHInput ScriptInput
+newtype ArbitrarySHInput a = ArbitrarySHInput (ScriptInput a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitrarySHInput where
+instance Arbitrary (ArbitrarySHInput a) where
     arbitrary = do
         ArbitrarySimpleInput i <- arbitrary
         ArbitrarySimpleOutput o <- arbitrary
@@ -425,14 +425,15 @@ instance Arbitrary ArbitrarySHInput where
 -- | Arbitrary ScriptInput of type ScriptHashInput containing a RedeemScript
 -- of type PayMulSig and an input of type SpendMulSig. Only compressed keys
 -- are used.
-newtype ArbitraryMulSigSHCInput = ArbitraryMulSigSHCInput ScriptInput
+newtype ArbitraryMulSigSHCInput a = ArbitraryMulSigSHCInput (ScriptInput a)
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryMulSigSHCInput where
+instance Arbitrary (ArbitraryMulSigSHCInput a) where
     arbitrary = do
         ArbitraryMSCOutput rdm@(PayMulSig _ m) <- arbitrary
         sigs <- vectorOf m f
-        return $ ArbitraryMulSigSHCInput $ ScriptHashInput (SpendMulSig sigs) rdm
+        return $ ArbitraryMulSigSHCInput
+               $ ScriptHashInput (SpendMulSig sigs) rdm
       where
         f = oneof
             [ arbitrary >>= \(ArbitraryTxSignature _ _ _ sig) -> return sig

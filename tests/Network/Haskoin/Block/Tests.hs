@@ -6,9 +6,15 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.Maybe (fromJust)
 
+import Network.Haskoin.Network
 import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
+
+type Net = Prodnet
+
+net :: Net
+net = undefined
 
 tests :: [Test]
 tests = 
@@ -43,6 +49,6 @@ buildExtractTree txs = not (null txs) ==>
     r == (buildMerkleRoot hashes) && m == (map fst $ filter snd txs)
   where
     (f,h)  = buildPartialMerkle txs
-    (r,m)  = fromRight $ extractMatches f h (length txs)
+    (r,m)  = fromRight $ extractMatches net f h (length txs)
     hashes = map fst txs
 

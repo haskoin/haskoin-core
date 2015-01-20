@@ -40,20 +40,21 @@ import Data.Aeson
 
 import Network.Haskoin.Util
 import Network.Haskoin.Crypto
+import Network.Haskoin.Network
 import Network.Haskoin.Node
 import Network.Haskoin.Script
 import Network.Haskoin.Transaction.Types
 
 -- | A Coin is an output of a transaction that can be spent by another
 -- transaction. 
-data Coin = 
-    Coin { coinValue    :: !Word64               -- ^ Value in satoshi
-         , coinScript   :: !ScriptOutput         -- ^ Output script
-         , coinOutPoint :: !OutPoint             -- ^ Previous outpoint
-         , coinRedeem   :: !(Maybe RedeemScript) -- ^ Redeem script
+data Coin a = 
+    Coin { coinValue    :: !Word64                   -- ^ Value in satoshi
+         , coinScript   :: !(ScriptOutput a)         -- ^ Output script
+         , coinOutPoint :: !OutPoint                 -- ^ Previous outpoint
+         , coinRedeem   :: !(Maybe (RedeemScript a)) -- ^ Redeem script
          } deriving (Eq, Show, Read)
 
-instance ToJSON Coin where
+instance ToJSON (Coin a) where
     toJSON Coin{..} = object
       [ "value"     .= coinValue
       , "script"    .= coinScript
@@ -61,23 +62,23 @@ instance ToJSON Coin where
       , "redeem"    .= coinRedeem
       ]
 
-instance FromJSON Coin where
+instance FromJSON (Coin a) where
     parseJSON = withObject "Coin" $ \o ->
         Coin <$> o .: "value"
              <*> o .: "script"
              <*> o .: "outpoint"
              <*> o .: "redeem"
 
-instance NFData Coin where
+instance NFData (Coin a) where
     rnf (Coin v s o r) = rnf v `seq` rnf s `seq` rnf o `seq` rnf r
 
 -- | Coin selection algorithm for normal (non-multisig) transactions. This
 -- function returns the selected coins together with the amount of change to
 -- send back to yourself, taking the fee into account.
-chooseCoins :: Word64 -- ^ Target price to pay.
-            -> Word64 -- ^ Fee price per 1000 bytes.
-            -> [Coin] -- ^ List of coins to choose from.
-            -> Either String ([Coin],Word64) 
+chooseCoins :: Word64   -- ^ Target price to pay.
+            -> Word64   -- ^ Fee price per 1000 bytes.
+            -> [Coin a] -- ^ List of coins to choose from.
+            -> Either String ([Coin a],Word64) 
                -- ^ Coin selection result and change amount.
 chooseCoins target kbfee xs 
     | target > 0 = maybeToEither err $ greedyAdd target (getFee kbfee) xs
@@ -91,8 +92,8 @@ chooseCoins target kbfee xs
 chooseMSCoins :: Word64    -- ^ Target price to pay.
               -> Word64    -- ^ Fee price per 1000 bytes.
               -> (Int,Int) -- ^ Multisig parameters m of n (m,n).
-              -> [Coin]    -- ^ List of coins to choose from.
-              -> Either String ([Coin],Word64) 
+              -> [Coin a]  -- ^ List of coins to choose from.
+              -> Either String ([Coin a],Word64) 
                  -- ^ Coin selection result and change amount.
 chooseMSCoins target kbfee ms xs 
     | target > 0 = maybeToEither err $ greedyAdd target (getMSFee kbfee ms) xs
@@ -100,7 +101,7 @@ chooseMSCoins target kbfee ms xs
     where err = "chooseMSCoins: No solution found"
 
 -- Select coins greedily by starting from an empty solution
-greedyAdd :: Word64 -> (Int -> Word64) -> [Coin] -> Maybe ([Coin],Word64)
+greedyAdd :: Word64 -> (Int -> Word64) -> [Coin a] -> Maybe ([Coin a],Word64)
 greedyAdd target fee xs = go [] 0 [] 0 $ sortBy desc xs
     where desc a b = compare (coinValue b) (coinValue a)
           goal c = target + fee c
@@ -157,16 +158,17 @@ guessMSSize (m,n) = 40 + (BS.length $ encode' $ VarInt $ fromIntegral scp) + scp
 
 -- | Build a transaction by providing a list of outpoints as inputs
 -- and a list of recipients addresses and amounts as outputs. 
-buildAddrTx :: [OutPoint] -> [(String,Word64)] -> Either String Tx
-buildAddrTx xs ys = buildTx xs =<< mapM f ys
+buildAddrTx :: forall a. Network a
+            => a -> [OutPoint] -> [(String,Word64)] -> Either String Tx
+buildAddrTx _ xs ys = buildTx xs =<< mapM f ys
     where f (s,v) = case base58ToAddr s of
-            Just a@(PubKeyAddress _) -> return (PayPKHash a,v)
-            Just a@(ScriptAddress _) -> return (PayScriptHash a,v)
+            Just a@(PubKeyAddress _ :: Address a) -> return (PayPKHash a,v)
+            Just a@(ScriptAddress _ :: Address a) -> return (PayScriptHash a,v)
             _ -> Left $ "buildAddrTx: Invalid address " ++ s
 
 -- | Build a transaction by providing a list of outpoints as inputs
 -- and a list of 'ScriptOutput' and amounts as outputs.
-buildTx :: [OutPoint] -> [(ScriptOutput,Word64)] -> Either String Tx
+buildTx :: [OutPoint] -> [(ScriptOutput a,Word64)] -> Either String Tx
 buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
     where fi outPoint = TxIn outPoint BS.empty maxBound
           fo (o,v) | v <= 2100000000000000 = return $ TxOut v $ encodeOutputBS o
@@ -176,24 +178,24 @@ buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
 -- To sign an input, the previous output script, outpoint and sighash are
 -- required. When signing a pay to script hash output, an additional redeem
 -- script is required.
-data SigInput = SigInput 
-    { sigDataOut    :: !ScriptOutput -- ^ Output script to spend. 
-    , sigDataOP     :: !OutPoint     -- ^ Spending tranasction OutPoint
-    , sigDataSH     :: !SigHash      -- ^ Signature type.
-    , sigDataRedeem :: !(Maybe RedeemScript) -- ^ Redeem script
+data SigInput a = SigInput 
+    { sigDataOut    :: !(ScriptOutput a)     -- ^ Output script to spend. 
+    , sigDataOP     :: !OutPoint             -- ^ Spending tranasction OutPoint
+    , sigDataSH     :: !SigHash              -- ^ Signature type.
+    , sigDataRedeem :: !(Maybe (RedeemScript a)) -- ^ Redeem script
     } deriving (Eq, Read, Show) 
 
-instance NFData SigInput where
+instance NFData (SigInput a) where
     rnf (SigInput o p h b) = rnf o `seq` rnf p `seq` rnf h `seq` rnf b
 
-instance ToJSON SigInput where
+instance ToJSON (SigInput a) where
     toJSON (SigInput so op sh rdm) = object $
         [ "pkscript" .= so
         , "outpoint" .= op
         , "sighash"  .= sh
         ] ++ if isNothing rdm then [] else [ "redeem" .= fromJust rdm ]
 
-instance FromJSON SigInput where
+instance FromJSON (SigInput a) where
     parseJSON (Object o) = do
         so  <- o .: "pkscript"
         op  <- o .: "outpoint"
@@ -209,7 +211,7 @@ instance FromJSON SigInput where
 -- non-standard. 
 signTx :: Monad m 
        => Tx                        -- ^ Transaction to sign
-       -> [SigInput]                -- ^ SigInput signing parameters
+       -> [SigInput a]              -- ^ SigInput signing parameters
        -> [PrvKey]                  -- ^ List of private keys to use for signing
        -> EitherT String (SecretT m) (Tx, Bool) 
           -- ^ (Signed transaction, Status)
@@ -229,7 +231,7 @@ signTx otx@(Tx _ ti _ _) sigis allKeys
 -- | Sign a single input in a transaction within the 'SecretT' monad. This 
 -- function will return a completion status only for that input. If false, 
 -- that input is either non-standard or not fully signed.
-signInput :: Monad m => Tx -> Int -> SigInput -> PrvKey 
+signInput :: Monad m => Tx -> Int -> SigInput a -> PrvKey 
           -> EitherT String (SecretT m) (Tx, Bool)
 signInput tx i (SigInput so _ sh rdmM) key = do
     sig <- flip TxSignature sh <$> lift (signMsg msg key)
@@ -246,7 +248,7 @@ signInput tx i (SigInput so _ sh rdmM) key = do
 -- defined in RFC-6979. This function returns a transaction completion status.
 -- If false, some of the inputs are not fully signed or are non-standard.
 detSignTx :: Tx              -- ^ Transaction to sign
-          -> [SigInput]      -- ^ SigInput signing parameters
+          -> [SigInput a]    -- ^ SigInput signing parameters
           -> [PrvKey]        -- ^ List of private keys to use for signing
           -> Either String (Tx, Bool) 
             -- ^ (Signed transaction, Status)
@@ -266,7 +268,7 @@ detSignTx otx@(Tx _ ti _ _) sigis allKeys
 -- | Sign a single input in a transaction deterministically (RFC-6979). This
 -- function will return a completion status only for that input. If false, 
 -- that input is either non-standard or not fully signed.
-detSignInput :: Tx -> Int -> SigInput -> PrvKey -> Either String (Tx, Bool)
+detSignInput :: Tx -> Int -> SigInput a -> PrvKey -> Either String (Tx, Bool)
 detSignInput tx i (SigInput so _ sh rdmM) key = do
     let sig = TxSignature (detSignMsg msg key) sh
     si <- buildInput tx i so rdmM sig $ derivePubKey key
@@ -280,7 +282,7 @@ detSignInput tx i (SigInput so _ sh rdmM) key = do
 -- Order the SigInput with respect to the transaction inputs. This allow the
 -- users to provide the SigInput in any order. Users can also provide only a
 -- partial set of SigInputs.
-findSigInput :: [SigInput] -> [TxIn] -> [(SigInput, Int)]
+findSigInput :: [SigInput a] -> [TxIn] -> [(SigInput a, Int)]
 findSigInput si ti = 
     catMaybes $ map g $ zip (matchTemplate si ti f) [0..]
   where 
@@ -290,7 +292,7 @@ findSigInput si ti =
 
 -- Find from the list of private keys which one is required to sign the 
 -- provided ScriptOutput. 
-sigKeys :: ScriptOutput -> (Maybe RedeemScript) -> [PrvKey] 
+sigKeys :: ScriptOutput a -> (Maybe (RedeemScript a)) -> [PrvKey] 
         -> Either String [PrvKey]
 sigKeys so rdmM keys = do
     case (so, rdmM) of
@@ -307,8 +309,8 @@ sigKeys so rdmM keys = do
     zipKeys = zip keys (map derivePubKey keys)
 
 -- Construct an input, given a signature and a public key
-buildInput :: Tx -> Int -> ScriptOutput -> (Maybe RedeemScript) 
-           -> TxSignature -> PubKey -> Either String ScriptInput
+buildInput :: Tx -> Int -> ScriptOutput a -> (Maybe (RedeemScript a)) 
+           -> TxSignature -> PubKey -> Either String (ScriptInput a)
 buildInput tx i so rdmM sig pub = case (so, rdmM) of
     (PayPK _, Nothing) -> 
         return $ RegularInput $ SpendPK sig
@@ -332,7 +334,7 @@ buildInput tx i so rdmM sig pub = case (so, rdmM) of
 
 {- Merge multisig transactions -}
 
-mergeTxs :: [Tx] -> [(ScriptOutput, OutPoint)] -> Either String (Tx, Bool)
+mergeTxs :: [Tx] -> [(ScriptOutput a, OutPoint)] -> Either String (Tx, Bool)
 mergeTxs txs os 
     | null txs = error "Transaction list is empty"
     | length (nub emptyTxs) /= 1 = Left "Transactions do not match"
@@ -348,7 +350,7 @@ mergeTxs txs os
     clearInput tx (_, i) = tx{ txIn = 
         updateIndex i (txIn tx) (\ti -> ti{ scriptInput = BS.empty }) }
 
-mergeTxInput :: [Tx] -> Tx -> (ScriptOutput, Int) -> Either String Tx
+mergeTxInput :: [Tx] -> Tx -> (ScriptOutput a, Int) -> Either String Tx
 mergeTxInput txs tx (so, i) = do
     -- Ignore transactions with empty inputs
     let ins = map (scriptInput . (!! i) . txIn) txs
@@ -379,7 +381,7 @@ mergeTxInput txs tx (so, i) = do
 {- Tx verification -}
 
 -- | Verify if a transaction is valid and all of its inputs are standard.
-verifyStdTx :: Tx -> [(ScriptOutput, OutPoint)] -> Bool
+verifyStdTx :: Tx -> [(ScriptOutput a, OutPoint)] -> Bool
 verifyStdTx tx xs = 
     all go $ zip (matchTemplate xs (txIn tx) f) [0..]
   where
@@ -388,7 +390,7 @@ verifyStdTx tx xs =
     go _                = False
 
 -- | Verify if a transaction input is valid and standard.
-verifyStdInput :: Tx -> Int -> ScriptOutput -> Bool
+verifyStdInput :: Tx -> Int -> ScriptOutput a -> Bool
 verifyStdInput tx i so' = 
     go (scriptInput $ txIn tx !! i) so'
   where

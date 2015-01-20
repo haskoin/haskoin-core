@@ -61,7 +61,7 @@ import qualified Database.LevelDB.Base as DB
 import Network.Haskoin.Block.Types
 import Network.Haskoin.Block.Checkpoints
 import Network.Haskoin.Crypto
-import Network.Haskoin.Constants
+import Network.Haskoin.Network
 import Network.Haskoin.Util
 
 -- | Data type representing a BlockHeader node in the header chain. It
@@ -118,18 +118,18 @@ class Monad m => BlockHeaderStore m where
     getFastCatchupHeight  :: m (Maybe BlockHeight)
 
 -- | Number of blocks on average between difficulty cycles (2016 blocks)
-diffInterval :: Word32
-diffInterval = targetTimespan `div` targetSpacing
+diffInterval :: Network a => a -> Word32
+diffInterval net = targetTimespan net `div` targetSpacing net
 
 -- | Genesis BlockHeaderNode
-genesisBlockHeaderNode :: BlockHeaderNode
-genesisBlockHeaderNode = BlockHeaderNode
-    { nodeBlockHash    = headerHash genesisHeader
-    , nodeHeader       = genesisHeader
+genesisBlockHeaderNode :: Network a => a -> BlockHeaderNode
+genesisBlockHeaderNode net = BlockHeaderNode
+    { nodeBlockHash    = headerHash (genesisHeader net)
+    , nodeHeader       = genesisHeader net
     , nodeHeaderHeight = 0
-    , nodeChainWork    = headerWork genesisHeader
-    , nodeMedianTimes  = [blockTimestamp genesisHeader]
-    , nodeMinWork      = blockBits genesisHeader
+    , nodeChainWork    = headerWork (genesisHeader net)
+    , nodeMedianTimes  = [blockTimestamp (genesisHeader net)]
+    , nodeMinWork      = blockBits (genesisHeader net)
     , nodeHaveBlock    = True -- We always have the genesis block
     }
 
@@ -137,22 +137,22 @@ genesisBlockHeaderNode = BlockHeaderNode
 -- or an error.
 -- | Initialize the block header chain by inserting the genesis block if
 -- it doesn't already exist.
-initHeaderChain :: BlockHeaderStore m => Timestamp -> m ()
-initHeaderChain ts = do
-    existsGen <- existsBlockHeaderNode $ headerHash genesisHeader
+initHeaderChain :: (Network a, BlockHeaderStore m) => a -> Timestamp -> m ()
+initHeaderChain net ts = do
+    existsGen <- existsBlockHeaderNode $ headerHash (genesisHeader net)
     unless existsGen $ do
-        putBlockHeaderNode genesisBlockHeaderNode
-        setBestBlockHeader genesisBlockHeaderNode
-        setBestBlock genesisBlockHeaderNode
+        putBlockHeaderNode (genesisBlockHeaderNode net)
+        setBestBlockHeader (genesisBlockHeaderNode net)
+        setBestBlock (genesisBlockHeaderNode net)
         -- Adjust time backwards by a week to handle clock drifts.
         let fastCatchupI = max 0 ((toInteger ts) - 86400 * 7)
             fc           = fromInteger fastCatchupI 
         setFastCatchup fc
         setFastCatchupHeight $ if fc == 0 then Just 0 else Nothing
 
-rescanHeaderChain :: BlockHeaderStore m 
-                  => Timestamp -> m [(BlockHeight, BlockHash)]
-rescanHeaderChain ts = do
+rescanHeaderChain :: (Network a, BlockHeaderStore m)
+                  => a -> Timestamp -> m [(BlockHeight, BlockHash)]
+rescanHeaderChain net ts = do
     setFastCatchup fc
     -- Find and set the fast catchup height
     fcBlockM <- findFCBlock =<< getBestBlockHeader
@@ -180,17 +180,18 @@ rescanHeaderChain ts = do
                 then setBestBlock p >> return (Just n)
                 else findFCBlock p
         | otherwise = setBestBlock n >> return Nothing
-    isGenesis n = nodeBlockHash n == nodeBlockHash genesisBlockHeaderNode
+    isGenesis n = nodeBlockHash n == nodeBlockHash (genesisBlockHeaderNode net)
 
 -- TODO: Add DOS return values
 -- | Connect a block header to this block header chain. Corresponds to bitcoind
 -- function ProcessBlockHeader and AcceptBlockHeader in main.cpp.
-connectBlockHeader :: BlockHeaderStore m 
-                   => BlockHeader 
+connectBlockHeader :: (Network a, BlockHeaderStore m)
+                   => a
+                   -> BlockHeader 
                    -> Timestamp
                    -> m BlockHeaderAction
-connectBlockHeader bh adjustedTime = ((liftM f) . runEitherT) $ do
-    unless (isValidPOW bh) $ 
+connectBlockHeader net bh adjustedTime = ((liftM f) . runEitherT) $ do
+    unless (isValidPOW net bh) $ 
         left $ RejectHeader "Invalid proof of work"
     unless (blockTimestamp bh <= adjustedTime + 2 * 60 * 60) $
         left $ RejectHeader "Invalid header timestamp"
@@ -201,37 +202,38 @@ connectBlockHeader bh adjustedTime = ((liftM f) . runEitherT) $ do
     prevExists <- lift $ existsBlockHeaderNode $ prevBlock bh
     unless prevExists $ left $ RejectHeader "Previous block not found"
     prevNode <- lift $ getBlockHeaderNode $ prevBlock bh
-    nextWork <- lift $ nextWorkRequired prevNode bh
+    nextWork <- lift $ nextWorkRequired net prevNode bh
     unless (blockBits bh == nextWork) $
         left $ RejectHeader "Incorrect work transition (bits)"
     let sortedMedians = sort $ nodeMedianTimes prevNode
         medianTime    = sortedMedians !! (length sortedMedians `div` 2)
     when (blockTimestamp bh <= medianTime) $
         left $ RejectHeader "Block timestamp is too early"
-    chkPointM <- lift lastSeenCheckpoint
+    chkPointM <- lift (lastSeenCheckpoint net)
     let chkPoint  = fromJust chkPointM
         newHeight = nodeHeaderHeight prevNode + 1
     unless (isNothing chkPointM || (fromIntegral newHeight) > fst chkPoint) $
         left $ RejectHeader "Rewriting pre-checkpoint chain"
-    unless (verifyCheckpoint (fromIntegral newHeight) bid) $
+    unless (verifyCheckpoint net (fromIntegral newHeight) bid) $
         left $ RejectHeader "Rejected by checkpoint lock-in"
     -- All block of height 227836 or more use version 2 in prodnet
     -- TODO: Find out the value here for testnet
-    when (  networkName == "prodnet" 
+    when (  networkName net == "prodnet" 
          && blockVersion bh == 1 
          && nodeHeaderHeight prevNode + 1 >= 227836) $
         left $ RejectHeader "Rejected version=1 block"
-    lift $ storeBlockHeader prevNode bh 
+    lift $ storeBlockHeader net prevNode bh 
   where
     f (Right x) = x
     f (Left  x) = x
     bid = headerHash bh
 
-storeBlockHeader :: BlockHeaderStore m 
-                 => BlockHeaderNode 
+storeBlockHeader :: (Network a, BlockHeaderStore m)
+                 => a
+                 -> BlockHeaderNode 
                  -> BlockHeader 
                  -> m BlockHeaderAction
-storeBlockHeader prevNode bh = do
+storeBlockHeader net prevNode bh = do
     -- Compute the fast catchup height if possible
     fc <- getFastCatchup
     fcHeightM <- getFastCatchupHeight
@@ -263,9 +265,9 @@ storeBlockHeader prevNode bh = do
         | length (nodeMedianTimes prevNode) == 11 =
             tail (nodeMedianTimes prevNode) ++ [blockTimestamp bh]
         | otherwise = (nodeMedianTimes prevNode) ++ [blockTimestamp bh]
-    isDiffChange = newHeight `mod` diffInterval == 0
-    isNotLimit   = blockBits bh /= encodeCompact powLimit
-    minWork | not allowMinDifficultyBlocks = 0
+    isDiffChange = newHeight `mod` diffInterval net == 0
+    isNotLimit   = blockBits bh /= encodeCompact (powLimit net)
+    minWork | not (allowMinDifficultyBlocks net) = 0
             | isDiffChange || isNotLimit   = blockBits bh
             | otherwise                    = nodeMinWork prevNode
     buildNewNode haveBlock = BlockHeaderNode 
@@ -279,9 +281,10 @@ storeBlockHeader prevNode bh = do
         }
 
 -- | Get the last checkpoint that we have seen
-lastSeenCheckpoint :: BlockHeaderStore m => m (Maybe (Int, BlockHash))
-lastSeenCheckpoint = 
-    foldM f Nothing $ reverse checkpointList
+lastSeenCheckpoint :: (Network a, BlockHeaderStore m)
+                   => a -> m (Maybe (Int, BlockHash))
+lastSeenCheckpoint net =
+    foldM f Nothing $ reverse (checkpointList net)
   where
     f res@(Just _) _  = return res
     f Nothing (i,chk) = do
@@ -300,54 +303,56 @@ getParentNode node
 -- | Returns the work required for a BlockHeader given the previous
 -- BlockHeaderNode. This function coresponds to bitcoind function
 -- GetNextWorkRequired in main.cpp.
-nextWorkRequired :: BlockHeaderStore m 
-                 => BlockHeaderNode -> BlockHeader -> m Word32
-nextWorkRequired lastNode bh
+nextWorkRequired :: (Network a, BlockHeaderStore m)
+                 => a -> BlockHeaderNode -> BlockHeader -> m Word32
+nextWorkRequired net lastNode bh
     -- Genesis block
-    | prevBlock (nodeHeader lastNode) == 0 = return $ encodeCompact powLimit
+    | prevBlock (nodeHeader lastNode) == 0 =
+        return $ encodeCompact (powLimit net)
     -- Only change the difficulty once per interval
-    | (nodeHeaderHeight lastNode + 1) `mod` diffInterval /= 0 = return $
-        if allowMinDifficultyBlocks 
+    | (nodeHeaderHeight lastNode + 1) `mod` (diffInterval net) /= 0 = return $
+        if (allowMinDifficultyBlocks net)
             then minPOW 
             else blockBits $ nodeHeader lastNode
     | otherwise = do
         -- TODO: Can this break if there are not enough blocks in the chain?
         firstNode <- foldM (\x f -> f x) lastNode fs
         let lastTs = blockTimestamp $ nodeHeader firstNode
-        return $ workFromInterval lastTs (nodeHeader lastNode)
+        return $ workFromInterval net lastTs (nodeHeader lastNode)
   where
-    fs    = replicate (fromIntegral diffInterval - 1) getParentNode
-    delta = targetSpacing * 2
+    fs    = replicate (fromIntegral (diffInterval net) - 1) getParentNode
+    delta = (targetSpacing net) * 2
     minPOW
         | blockTimestamp bh > (blockTimestamp $ nodeHeader lastNode) + delta =
-            encodeCompact powLimit
+            encodeCompact (powLimit net)
         | otherwise = nodeMinWork lastNode
 
 -- | Computes the work required for the next block given a timestamp and the
 -- current block. The timestamp should come from the block that matched the
 -- last jump in difficulty (spaced out by 2016 blocks in prodnet).
-workFromInterval :: Timestamp -> BlockHeader -> Word32
-workFromInterval ts lastB
-    | newDiff > powLimit = encodeCompact powLimit
-    | otherwise          = encodeCompact newDiff
+workFromInterval :: Network a => a -> Timestamp -> BlockHeader -> Word32
+workFromInterval net ts lastB
+    | newDiff > (powLimit net) = encodeCompact (powLimit net)
+    | otherwise                = encodeCompact newDiff
   where
     t = fromIntegral $ (blockTimestamp lastB) - ts
     actualTime 
-        | t < targetTimespan `div` 4 = targetTimespan `div` 4
-        | t > targetTimespan * 4     = targetTimespan * 4
+        | t < tts `div` 4 = tts `div` 4
+        | t > tts * 4     = tts * 4
         | otherwise                  = t
     lastDiff = decodeCompact $ blockBits lastB
-    newDiff = lastDiff * (toInteger actualTime) `div` (toInteger targetTimespan)
+    newDiff = lastDiff * (toInteger actualTime) `div` (toInteger tts)
+    tts = targetTimespan net
 
 -- | Returns a BlockLocator object.
-blockLocator :: BlockHeaderStore m => m BlockLocator
-blockLocator = do
+blockLocator :: (Network a, BlockHeaderStore m) => a -> m BlockLocator
+blockLocator net = do
     h  <- getBestBlockHeader
     let xs = [go ((2 :: Int)^x) | x <- ([0..] :: [Int])]
     ns <- f [h] $ replicate 10 (go (1 :: Int)) ++ xs
     return $ reverse $ nub $ genid : map nodeBlockHash ns
   where
-    genid = headerHash genesisHeader
+    genid = headerHash (genesisHeader net)
     f acc gs = (head gs) (head acc) >>= \resM -> case resM of
         Just res -> f (res:acc) (tail gs)
         Nothing  -> return acc
@@ -366,9 +371,9 @@ getBlockHeaderHeight h = liftM nodeHeaderHeight $ getBlockHeaderNode h
 -- and the proof of work of the header matches the advertised difficulty target.
 -- This function corresponds to the function CheckProofOfWork from bitcoind
 -- in main.cpp
-isValidPOW :: BlockHeader -> Bool
-isValidPOW bh
-    | target <= 0 || target > powLimit = False
+isValidPOW :: Network a => a -> BlockHeader -> Bool
+isValidPOW net bh
+    | target <= 0 || target > (powLimit net) = False
     | otherwise = headerPOW bh <= fromIntegral target
   where
     target = decodeCompact $ blockBits bh

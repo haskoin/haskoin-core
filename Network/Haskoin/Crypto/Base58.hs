@@ -32,7 +32,7 @@ import qualified Data.Text as T
 
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Constants
+import Network.Haskoin.Network
 import Network.Haskoin.Util 
 
 b58Data :: BS.ByteString
@@ -97,37 +97,40 @@ decodeBase58Check bs = do
     return res
 
 -- |Data type representing a Bitcoin address
-data Address 
+data Address a
     -- | Public Key Hash Address
     = PubKeyAddress { getAddrHash :: Word160 }
     -- | Script Hash Address
     | ScriptAddress { getAddrHash :: Word160 }
        deriving (Eq, Ord, Show, Read)
 
-instance NFData Address where
+instance NFData (Address a) where
     rnf (PubKeyAddress h) = rnf h
     rnf (ScriptAddress h) = rnf h
 
-instance FromJSON Address where
+instance Network a => FromJSON (Address a) where
     parseJSON = withText "Address" $ 
         maybe mzero return . base58ToAddr . T.unpack
 
-instance ToJSON Address where
+instance Network a => ToJSON (Address a) where
     toJSON = String . T.pack . addrToBase58
 
 -- | Transforms an Address into a base58 encoded String
-addrToBase58 :: Address -> String
+addrToBase58 :: forall a. Network a => Address a -> String
 addrToBase58 addr = bsToString $ encodeBase58Check $ case addr of
-    PubKeyAddress i -> BS.cons addrPrefix $ encode' i
-    ScriptAddress i -> BS.cons scriptPrefix $ encode' i
+    PubKeyAddress i -> BS.cons (addrPrefix net) $ encode' i
+    ScriptAddress i -> BS.cons (scriptPrefix net) $ encode' i
+  where
+    net = undefined :: a
 
 -- | Decodes an Address from a base58 encoded String. This function can fail
 -- if the String is not properly encoded as base58 or the checksum fails.
-base58ToAddr :: String -> Maybe Address
+base58ToAddr :: forall a. Network a => String -> Maybe (Address a)
 base58ToAddr str = do
     val <- decodeBase58Check $ stringToBS str
-    let f | BS.head val == addrPrefix   = Just PubKeyAddress
-          | BS.head val == scriptPrefix = Just ScriptAddress
+    let f | BS.head val == addrPrefix net   = Just PubKeyAddress
+          | BS.head val == scriptPrefix net = Just ScriptAddress
           | otherwise = Nothing
     f <*> decodeToMaybe (BS.tail val)
-
+  where
+    net = undefined :: a

@@ -12,6 +12,7 @@ module Network.Haskoin.Test.Block
 
 import Test.QuickCheck 
     ( Arbitrary
+    , Gen
     , arbitrary
     , choose
     , vectorOf
@@ -21,28 +22,30 @@ import Test.QuickCheck
 import Control.Applicative ((<$>), (<*>))
 
 import Network.Haskoin.Test.Transaction
+import Network.Haskoin.Network
 import Network.Haskoin.Test.Node
 
 import Network.Haskoin.Block.Types
 import Network.Haskoin.Block.Merkle
 
 -- | Arbitrary Block
-newtype ArbitraryBlock = ArbitraryBlock Block
+newtype ArbitraryBlock a = ArbitraryBlock Block
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryBlock where
+instance forall a. Network a => Arbitrary (ArbitraryBlock a) where
     arbitrary = do
-        ArbitraryBlockHeader h <- arbitrary
-        ArbitraryCoinbaseTx cb <- arbitrary
+        ArbitraryBlockHeader h <- arbitrary :: Gen (ArbitraryBlockHeader a)
+        ArbitraryCoinbaseTx cb <- arbitrary :: Gen (ArbitraryCoinbaseTx a)
         c <- choose (0,10)
-        txs <- map (\(ArbitraryTx x) -> x) <$> vectorOf c arbitrary
+        txs <- map (\(ArbitraryTx x) -> x) <$>
+            vectorOf c (arbitrary :: Gen (ArbitraryTx a))
         return $ ArbitraryBlock $ Block h cb txs
 
 -- | Arbitrary BlockHeader
-newtype ArbitraryBlockHeader = ArbitraryBlockHeader BlockHeader
+newtype ArbitraryBlockHeader a = ArbitraryBlockHeader BlockHeader
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryBlockHeader where
+instance Arbitrary (ArbitraryBlockHeader a) where
     arbitrary = do
         h <- BlockHeader <$> arbitrary <*> arbitrary <*> arbitrary
                          <*> arbitrary <*> arbitrary <*> arbitrary

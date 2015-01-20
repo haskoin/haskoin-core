@@ -7,12 +7,18 @@ import Data.Aeson
 import Data.Aeson.Types
 import qualified Data.ByteString.Char8 as B8
 import Data.Maybe
+
+import Network.Haskoin.Network
 import Network.Haskoin.Stratum
 import Network.Haskoin.Util
+
 import Network.JsonRpc
+
 import Test.Framework
 import Test.Framework.Providers.HUnit
 import qualified Test.HUnit as HUnit
+
+type Net = Prodnet
 
 tests :: [Test]
 tests =
@@ -56,7 +62,8 @@ testSingle label f file = buildTest $ do
   where
     fl = ("Failed to decode: " ++)
 
-testPair :: String -> (Maybe (Request StratumRequest) -> Maybe Value -> Bool)
+testPair :: String
+         -> (Maybe (Request (StratumRequest Net)) -> Maybe Value -> Bool)
          -> String -> String -> Test
 testPair label f rF vF = buildTest $ do
     rs <- liftM lines $ readFile rF
@@ -68,7 +75,7 @@ testPair label f rF vF = buildTest $ do
             l = label ++ " " ++ show count
         return $ testCase l $ HUnit.assertBool (fl vS) t
   where
-    p :: String -> Maybe (Request StratumRequest)
+    p :: String -> Maybe (Request (StratumRequest Net))
     p s = fromRight <$> (parseMaybe parseRequest =<< decodeStrict' (B8.pack s))
     fl = ("Failed to decode: " ++)
 
@@ -80,7 +87,7 @@ isRequest vM = case vM of
         Success (Right _) -> True
         Success _ -> False
   where
-    f :: Value -> Result (Either ErrorObj (Request StratumRequest))
+    f :: Value -> Result (Either ErrorObj (Request (StratumRequest Net)))
     f v = parse parseRequest v
 
 isNotif :: Maybe Value -> Bool
@@ -91,24 +98,24 @@ isNotif vM = case vM of
         Success (Right _) -> True
         Success _ -> False
   where
-    f :: Value -> Result (Either ErrorObj (Notif StratumNotif))
+    f :: Value -> Result (Either ErrorObj (Notif (StratumNotif Net)))
     f v = parse parseNotif v
 
-isResponse :: Maybe (Request StratumRequest) -> Maybe Value -> Bool
+isResponse :: Maybe (Request (StratumRequest Net)) -> Maybe Value -> Bool
 isResponse rM vM = fromMaybe False $ do
     r <- rM
     v <- vM
-    let resR :: Result (Either ErrorObj (Response StratumResult))
+    let resR :: Result (Either ErrorObj (Response (StratumResult Net)))
         resR = parse (parseResponse r) v
     return $ case resR of
         Success (Right _) -> True
         _ -> False
 
-isError :: Maybe (Request StratumRequest) -> Maybe Value -> Bool
+isError :: Maybe (Request (StratumRequest Net)) -> Maybe Value -> Bool
 isError rM vM = fromMaybe False $ do
     r <- rM
     v <- vM
-    let resR :: Result (Either ErrorObj (Response StratumResult))
+    let resR :: Result (Either ErrorObj (Response (StratumResult Net)))
         resR = parse (parseResponse r) v
     return $ case resR of
         Success (Left _) -> True

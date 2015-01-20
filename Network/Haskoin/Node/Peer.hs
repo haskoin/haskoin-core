@@ -55,6 +55,7 @@ import qualified Data.Text as T (pack)
 import qualified Data.Conduit.Binary as CB (take)
 import qualified Data.ByteString as BS (ByteString, null, empty, append)
 
+import Network.Haskoin.Network
 import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Crypto
@@ -66,13 +67,10 @@ import Network.Haskoin.Util
 minProtocolVersion :: Word32 
 minProtocolVersion = 60001
 
-maxHeaders :: Int
-maxHeaders = 2000
-
-data PeerSession = PeerSession
+data PeerSession a = PeerSession
     { remoteSettings :: !RemoteHost
-    , peerChan       :: !(TBMChan Message)
-    , mngrChan       :: !(TBMChan PeerMessage)
+    , peerChan       :: !(TBMChan (Message a))
+    , mngrChan       :: !(TBMChan (PeerMessage a))
     , peerVersion    :: !(Maybe Version)
     -- Aggregate all the transaction of a merkle block before sending
     -- them up to the manager
@@ -80,11 +78,11 @@ data PeerSession = PeerSession
     } 
 
 -- Data sent from peers to the central manager queue
-data PeerMessage
+data PeerMessage a
     = PeerHandshake !RemoteHost !Version
     | PeerDisconnect !RemoteHost
     | PeerMerkleBlock !RemoteHost !DecodedMerkleBlock
-    | PeerMessage !RemoteHost !Message   
+    | PeerMessage !RemoteHost !(Message a)
 
 data RemoteHost = RemoteHost
     { remoteHost :: !String
@@ -104,19 +102,21 @@ data NodeException
 
 instance Exception NodeException
 
-runPeer :: TBMChan Message 
-        -> TBMChan PeerMessage 
+runPeer :: Network a
+        => TBMChan (Message a)
+        -> TBMChan (PeerMessage a)
         -> RemoteHost 
         -> AppData -> IO ()
 runPeer pChan mChan remote ad = 
     runCustomPeer pChan mChan remote peerLogStdout ad
 
-runCustomPeer :: (MonadIO m, MonadLogger m, MonadState PeerSession m)
-              => TBMChan Message 
-              -> TBMChan PeerMessage 
-              -> RemoteHost 
-              -> (PeerSession -> m () -> IO ())
-              -> AppData -> IO ()
+runCustomPeer
+    :: (Network a, MonadIO m, MonadLogger m, MonadState (PeerSession a) m)
+    => TBMChan (Message a)
+    -> TBMChan (PeerMessage a)
+    -> RemoteHost 
+    -> (PeerSession a -> m () -> IO ())
+    -> AppData -> IO ()
 runCustomPeer pChan mChan remote f ad = 
     void $ withAsync peerEncode $ \_ -> f session $ 
         (appSource ad) $= decodeMessage $$ processMessage
@@ -130,12 +130,15 @@ runCustomPeer pChan mChan remote f ad =
         , inflightMerkle = Nothing
         }
 
-peerLogStdout :: PeerSession -> S.StateT PeerSession (LoggingT IO) () -> IO () 
+peerLogStdout :: PeerSession a
+              -> S.StateT (PeerSession a) (LoggingT IO) ()
+              -> IO () 
 peerLogStdout session m = runStdoutLoggingT $ S.evalStateT m session
 
 -- Process incomming messages from the remote peer
-processMessage :: (MonadLogger m, MonadIO m, MonadState PeerSession m) 
-               => Sink Message m ()
+processMessage
+    :: (Network a, MonadLogger m, MonadIO m, MonadState (PeerSession a) m) 
+    => Sink (Message a) m ()
 processMessage = awaitForever $ \msg -> lift $ do
     remote <- gets remoteSettings
     merkleM <- gets inflightMerkle
@@ -154,7 +157,7 @@ processMessage = awaitForever $ \msg -> lift $ do
     isTx (MTx _) = True
     isTx _       = False
 
-processVersion :: (MonadLogger m, MonadIO m, MonadState PeerSession m) 
+processVersion :: (MonadLogger m, MonadIO m, MonadState (PeerSession a) m) 
                => Version -> m ()
 processVersion remoteVer = go =<< get
   where
@@ -190,8 +193,9 @@ processVersion remoteVer = go =<< get
 processVerAck :: MonadLogger m => m ()
 processVerAck = $(logInfo) "Version ACK received"
 
-processMerkleBlock :: (MonadIO m, MonadState PeerSession m) 
-                   => MerkleBlock -> m ()
+processMerkleBlock
+    :: forall a m. (MonadIO m, Network a, MonadState (PeerSession a) m) 
+    => MerkleBlock -> m ()
 processMerkleBlock mb@(MerkleBlock _ ntx hs fs)
     -- TODO: Handle this error better
     | isLeft matchesE = error $ fromLeft matchesE
@@ -200,15 +204,16 @@ processMerkleBlock mb@(MerkleBlock _ ntx hs fs)
         sendManager $ PeerMerkleBlock remote dmb
     | otherwise       = modify $ \s -> s{ inflightMerkle = Just dmb }
   where
-    matchesE      = extractMatches fs hs $ fromIntegral ntx
+    matchesE      = extractMatches net fs hs $ fromIntegral ntx
     (root, match) = fromRight matchesE
     dmb           = DecodedMerkleBlock { decodedMerkle = mb
                                        , decodedRoot   = root
                                        , expectedTxs   = match
                                        , merkleTxs     = []
                                        }
+    net = undefined :: a
 
-processTx :: (MonadIO m, MonadState PeerSession m) => Tx -> m ()
+processTx :: (MonadIO m, MonadState (PeerSession a) m) => Tx -> m ()
 processTx tx = do
     remote <- gets remoteSettings
     merkleM <- gets inflightMerkle
@@ -225,7 +230,7 @@ processTx tx = do
                     sendManager $ PeerMessage remote $ MTx tx
         else sendManager $ PeerMessage remote $ MTx tx
 
-endMerkleBlock :: (MonadIO m, MonadState PeerSession m) 
+endMerkleBlock :: (MonadIO m, MonadState (PeerSession a) m) 
                => DecodedMerkleBlock -> m ()
 endMerkleBlock dmb@(DecodedMerkleBlock _ _ match txs) = do
     remote <- gets remoteSettings
@@ -236,17 +241,18 @@ endMerkleBlock dmb@(DecodedMerkleBlock _ _ match txs) = do
     orderedTxs = catMaybes $ matchTemplate txs match f
     f a b      = txHash a == b
 
-sendMessage :: (MonadIO m, MonadState PeerSession m) => Message -> m ()
+sendMessage :: (MonadIO m, MonadState (PeerSession a) m) => Message a -> m ()
 sendMessage msg = do
     chan <- gets peerChan
     liftIO . atomically $ writeTBMChan chan msg
 
-sendManager :: (MonadIO m, MonadState PeerSession m) => PeerMessage -> m ()
+sendManager :: (MonadIO m, MonadState (PeerSession a) m) => PeerMessage a -> m ()
 sendManager req = do
     chan <- gets mngrChan
     liftIO . atomically $ writeTBMChan chan req
 
-decodeMessage :: MonadLogger m => Conduit BS.ByteString m Message
+decodeMessage :: (Network a, MonadLogger m)
+              => Conduit BS.ByteString m (Message a)
 decodeMessage = do
     -- Message header is always 24 bytes
     headerBytes <- toStrictBS <$> CB.take 24
@@ -254,7 +260,7 @@ decodeMessage = do
     unless (BS.null headerBytes) $ do
         -- Introspection required to know the length of the payload
         let headerE = decodeToEither headerBytes
-            (MessageHeader _ cmd len _) = fromRight headerE
+            (MessageHeader _ _ len _) = fromRight headerE
 
         when (isLeft headerE) $ do
             $(logError) $ T.pack $ unwords
@@ -284,6 +290,6 @@ decodeMessage = do
         yield res
         decodeMessage
 
-encodeMessage :: MonadIO m => Conduit Message m BS.ByteString
+encodeMessage :: (Network a, MonadIO m) => Conduit (Message a) m BS.ByteString
 encodeMessage = awaitForever $ yield . encode'
 

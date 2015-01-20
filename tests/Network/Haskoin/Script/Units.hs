@@ -6,9 +6,12 @@ import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Maybe (fromJust)
 
+import Network.Haskoin.Network
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
+
+type Net = Prodnet
 
 tests :: [Test]
 tests =
@@ -63,7 +66,7 @@ runMulSigVector (a,ops) =
     assertBool "    >  MultiSig Vector" $ a == b
   where 
     s = decode' $ fromJust $ hexToBS ops
-    b = addrToBase58 $ scriptAddr $ fromRight $ decodeOutput s
+    b = addrToBase58 $ (scriptAddr $ fromRight $ decodeOutput s :: Address Net)
     
 testSigDecode :: String -> Assertion
 testSigDecode str =

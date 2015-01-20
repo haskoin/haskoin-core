@@ -40,6 +40,7 @@ import qualified Data.ByteString as BS
 import Numeric (readHex)
 import Text.Read (readMaybe)
 
+import Network.Haskoin.Network
 import Network.Haskoin.Test
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
@@ -55,6 +56,8 @@ import Network.Haskoin.Internals
     , encodeBool
     , execScript
     )
+
+type Net = Prodnet
 
 tests :: [Test]
 tests = 
@@ -99,15 +102,15 @@ testScriptOpInt :: ArbitraryIntScriptOp -> Bool
 testScriptOpInt (ArbitraryIntScriptOp i) = 
     (intToScriptOp <$> scriptOpToInt i) == Right i
 
-testScriptOutput :: ArbitraryScriptOutput -> Bool
+testScriptOutput :: ArbitraryScriptOutput Net -> Bool
 testScriptOutput (ArbitraryScriptOutput so) = 
     decodeOutput (encodeOutput so) == Right so
 
-testScriptInput :: ArbitraryScriptInput -> Bool
+testScriptInput :: ArbitraryScriptInput Net -> Bool
 testScriptInput (ArbitraryScriptInput si) = 
     decodeInput (encodeInput si) == Right si
 
-testSortMulSig :: ArbitraryMSOutput -> Bool
+testSortMulSig :: ArbitraryMSOutput Net -> Bool
 testSortMulSig (ArbitraryMSOutput out) = 
     snd $ foldl f (head pubs,True) $ tail pubs
   where 
@@ -154,7 +157,7 @@ binTxSigCanonical ts@(TxSignature _ sh)
     | isSigUnknown sh = isLeft $ decodeCanonicalSig $ encodeSig ts
     | otherwise = (fromRight $ decodeCanonicalSig $ encodeSig ts) == ts
 
-testSigHashOne :: ArbitraryTx -> ArbitraryScript -> Bool -> Property
+testSigHashOne :: ArbitraryTx Net -> ArbitraryScript -> Bool -> Property
 testSigHashOne (ArbitraryTx tx) (ArbitraryScript s) acp = not (null $ txIn tx) ==> 
     if length (txIn tx) > length (txOut tx) 
         then res == (setBit 0 248)

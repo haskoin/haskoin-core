@@ -6,9 +6,15 @@ import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Maybe (fromJust)
 
+import Network.Haskoin.Network
 import Network.Haskoin.Crypto
 import Network.Haskoin.Node
 import Network.Haskoin.Util
+
+type Net = Prodnet
+
+net :: Net
+net = undefined
 
 tests :: [Test]
 tests =
@@ -65,7 +71,8 @@ bloomFilter3 = do
     f0 = bloomCreate 2 0.001 0 BloomUpdateAll
     f1 = bloomInsert f0 $ encode' p
     f2 = bloomInsert f1 $ encode' $ getAddrHash $ pubKeyAddr p
-    k = fromJust $ fromWif "5Kg1gnAjaLfKiwhhPpGS3QfRg2m6awQvaj98JCZBZQ5SuS2F15C"
+    k = fromJust $
+        fromWif net "5Kg1gnAjaLfKiwhhPpGS3QfRg2m6awQvaj98JCZBZQ5SuS2F15C"
     p = derivePubKey k
     bs = fromJust $ hexToBS "038fc16b080000000000000001"
 

@@ -16,6 +16,7 @@ import qualified Data.Text as T
 
 import Network.JsonRpc
 
+import Network.Haskoin.Network
 import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Test.Transaction
 
@@ -102,7 +103,7 @@ instance Arbitrary StratumCoin where
         let t = StratumTxInfo h i
         StratumCoin o t <$> arbitrary
 
-instance Arbitrary StratumRequest where
+instance forall a. Network a => Arbitrary (StratumRequest a) where
     arbitrary = oneof 
         [ StratumReqVersion <$> arbitrary <*> arbitrary
         , StratumReqHistory <$> aAddr
@@ -114,26 +115,30 @@ instance Arbitrary StratumRequest where
         ]
       where
         aAddr = arbitrary >>= \(ArbitraryAddress a) -> return a
-        aTx   = arbitrary >>= \(ArbitraryTx tx) -> return tx
+        aTx   = (arbitrary :: Gen (ArbitraryTx a)) >>=
+            \(ArbitraryTx tx) -> return tx
 
-instance Arbitrary StratumNotif where
+instance Arbitrary (StratumNotif a) where
     arbitrary = 
         StratumNotifAddr <$> aAddr <*> arbitrary
       where
         aAddr = arbitrary >>= \(ArbitraryAddress a) -> return a
 
-instance Arbitrary StratumResult where
+instance forall a. Network a => Arbitrary (StratumResult a) where
     arbitrary = oneof 
         [ StratumSrvVersion  <$> arbitrary
         , StratumAddrHistory <$> arbitrary
         , StratumAddrBalance <$> arbitrary <*> arbitrary
         , StratumAddrUnspent <$> arbitrary
         , StratumAddrStatus  <$> arbitrary
-        , StratumTx          <$> (arbitrary >>= \(ArbitraryTx tx) -> return tx)
+        , StratumTx          <$> ((arbitrary :: Gen (ArbitraryTx a)) >>=
+            \(ArbitraryTx tx) -> return tx)
         , StratumBcastId     <$> arbitrary 
         ]
 
-instance Arbitrary (ReqRes StratumRequest StratumResult) where
+instance forall a. Network a
+    => Arbitrary (ReqRes (StratumRequest a) (StratumResult a))
+  where
     arbitrary = do
         (q, s) <- oneof
             [ (,) <$> (StratumReqVersion  <$> arbitrary <*> arbitrary)
@@ -153,6 +158,8 @@ instance Arbitrary (ReqRes StratumRequest StratumResult) where
         ver <- arbitrary
         return $ ReqRes (Request ver (requestMethod q) q i) (Response ver s i)
       where
-        aAddr = arbitrary >>= \(ArbitraryAddress a) -> return a
-        aTx   = arbitrary >>= \(ArbitraryTx tx) -> return tx
+        aAddr = (arbitrary :: Gen (ArbitraryAddress a)) >>=
+            \(ArbitraryAddress a) -> return a
+        aTx   = (arbitrary :: Gen (ArbitraryTx a)) >>=
+            \(ArbitraryTx tx) -> return tx
 

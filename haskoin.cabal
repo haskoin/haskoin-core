@@ -39,10 +39,6 @@ source-repository head
     type:     git
     location: git://github.com/haskoin/haskoin.git
 
-Flag Testnet
-    Description: Compile the library against Testnet instead of Prodnet
-    Default:     False
-
 library
     exposed-modules: Network.Haskoin.Util
                      Network.Haskoin.Stratum

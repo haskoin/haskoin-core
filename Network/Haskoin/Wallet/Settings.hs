@@ -28,7 +28,7 @@ import Data.Aeson
     , parseJSON
     , fromJSON
     , withObject
-    , (.:)
+    , (.:), (.:?)
     )
 
 import Yesod.Default.Config2 (applyEnvValue)
@@ -124,7 +124,7 @@ data ClientConfig = ClientConfig
     -- ^ Minimum number of confirmations for displaying balances
     , clientInternal :: !Bool
     -- ^ Return internal instead of external addresses
-    , clientPass     :: !T.Text
+    , clientPass     :: !(Maybe T.Text)
     -- ^ Passphrase to use when creating new wallets (bip39 mnemonic)
     , clientFormat   :: !OutputFormat
     -- ^ How to format the command-line results
@@ -143,7 +143,7 @@ instance FromJSON ClientConfig where
         clientMinConf  <- o .: "balance-minimum-confirmations"
         clientInternal <- o .: "display-internal-addresses"
         clientFormat   <- f =<< o .: "display-format"
-        clientPass     <- o .: "mnemonic-passphrase"
+        clientPass     <- o .:? "mnemonic-passphrase"
         clientSocket   <- o .: "zeromq-socket"          
         clientDetach   <- o .: "detach-server"
         clientConfig   <- o .: "config-file"

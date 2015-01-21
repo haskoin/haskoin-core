@@ -235,7 +235,7 @@ $(deriveJSON (dropFieldLabel 0) ''PagedResult)
 
 data NewWallet = NewWallet 
     { newWalletWalletName :: !WalletName 
-    , newWalletPassphrase :: !T.Text 
+    , newWalletPassphrase :: !(Maybe T.Text)
     , newWalletMnemonic   :: !(Maybe T.Text)
     } deriving (Eq, Read, Show)
 

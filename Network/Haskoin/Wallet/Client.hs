@@ -69,7 +69,7 @@ options =
                 , ")"
                 ]
     , Option ['p'] ["passphrase"]
-        (ReqArg (\s cfg -> cfg{ clientPass = T.pack s }) "PASSPHRASE")
+        (ReqArg (\s cfg -> cfg{ clientPass = Just $ T.pack s }) "PASSPHRASE")
         "Optional mnemonic passphrase when creating wallets"
     , Option ['j'] ["json"]
         (NoArg $ \cfg -> cfg{ clientFormat = OutputJSON })

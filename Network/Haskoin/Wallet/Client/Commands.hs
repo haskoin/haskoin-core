@@ -236,11 +236,14 @@ cmdSend :: String -> String -> String -> Handler ()
 cmdSend name addrStr amntStr = do
     when (isNothing addrM) $ error "Could not parse address"
     w <- S.gets clientWallet
+    fee <- S.gets clientFee
+    minconf <- S.gets clientMinConf
+    sign <- S.gets clientSignNewTx
+    let action = CreateTx [(fromJust addrM, amnt)] fee minconf sign
     sendZmq (PostTxsR w (T.pack name) action) $ \(TxHashStatusRes h c) -> do
         putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
         putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
   where
-    action = CreateTx [(fromJust addrM, amnt)]
     addrM = base58ToAddr addrStr
     amnt  = read amntStr
 
@@ -248,11 +251,14 @@ cmdSendMany :: String -> [String] -> Handler ()
 cmdSendMany name xs = do
     when (isNothing rcpsM) $ error "Could not parse recipient list"
     w <- S.gets clientWallet
+    fee <- S.gets clientFee
+    minconf <- S.gets clientMinConf
+    sign <- S.gets clientSignNewTx
+    let action = CreateTx (fromJust rcpsM) fee minconf sign
     sendZmq (PostTxsR w (T.pack name) action) $ \(TxHashStatusRes h c) -> do
         putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
         putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
   where
-    action  = CreateTx (fromJust rcpsM)
     g str   = map T.unpack $ T.splitOn ":" (T.pack str)
     f [a,v] = liftM2 (,) (base58ToAddr a) (return $ read v)
     f _     = Nothing

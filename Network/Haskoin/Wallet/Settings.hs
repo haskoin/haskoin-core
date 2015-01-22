@@ -51,12 +51,6 @@ data SPVConfig = SPVConfig
     -- ^ Number of gap addresses per account.
     , spvFinalize     :: !Bool
     -- ^ Only sign a tx if the result is complete (we are the last signer)
-    , spvSignNewTxs   :: !Bool
-    -- ^ Sign newly created transactions
-    , spvFee          :: !Word64
-    -- ^ Fee (Satoshi/1000 bytes) to pay
-    , spvMinConf      :: !Word32
-    -- ^ Minimum number of confirmations when spending coins
     , spvDatabase     :: !DatabaseConfType
     -- ^ Database configuration
     , spvWorkDir      :: !FilePath
@@ -76,9 +70,6 @@ instance FromJSON SPVConfig where
         spvBloomFP      <- o .: "bloom-false-positive" 
         spvGap          <- o .: "address-gap"          
         spvFinalize     <- o .: "sign-finalize-only"
-        spvSignNewTxs   <- o .: "sign-new-transactions"
-        spvFee          <- o .: "fee-per-1000-bytes"
-        spvMinConf      <- o .: "spend-minimum-confirmations"
         spvBitcoinNodes <- g =<< o .: "bitcoin-full-nodes"
         spvDatabase     <- o .: "database" 
         spvWorkDir      <- o .: "work-dir"
@@ -116,37 +107,43 @@ data OutputFormat
     | OutputYAML
 
 data ClientConfig = ClientConfig
-    { clientWallet   :: !T.Text
+    { clientWallet    :: !T.Text
     -- ^ Wallet to use in commands
-    , clientCount    :: !Int
+    , clientCount     :: !Int
     -- ^ Number of elements to return
-    , clientMinConf  :: !Word32
-    -- ^ Minimum number of confirmations for displaying balances
-    , clientInternal :: !Bool
+    , clientMinConf   :: !Word32
+    -- ^ Minimum number of confirmations 
+    , clientSignNewTx :: !Bool
+    -- ^ Sign new transactions
+    , clientFee       :: !Word64
+    -- ^ Fee to pay per 1000 bytes when creating new transactions
+    , clientInternal  :: !Bool
     -- ^ Return internal instead of external addresses
-    , clientPass     :: !(Maybe T.Text)
+    , clientPass      :: !(Maybe T.Text)
     -- ^ Passphrase to use when creating new wallets (bip39 mnemonic)
-    , clientFormat   :: !OutputFormat
+    , clientFormat    :: !OutputFormat
     -- ^ How to format the command-line results
-    , clientSocket   :: !String
+    , clientSocket    :: !String
     -- ^ ZeroMQ socket to connect to (location of the server)
-    , clientDetach   :: !Bool
+    , clientDetach    :: !Bool
     -- ^ Should
-    , clientConfig   :: !FilePath
+    , clientConfig    :: !FilePath
     -- ^ Location of the runtime configuration file
     } 
 
 instance FromJSON ClientConfig where
     parseJSON = withObject "ClientConfig" $ \o -> do
-        clientWallet   <- o .: "wallet-name"
-        clientCount    <- o .: "output-size"
-        clientMinConf  <- o .: "balance-minimum-confirmations"
-        clientInternal <- o .: "display-internal-addresses"
-        clientFormat   <- f =<< o .: "display-format"
-        clientPass     <- o .:? "mnemonic-passphrase"
-        clientSocket   <- o .: "zeromq-socket"          
-        clientDetach   <- o .: "detach-server"
-        clientConfig   <- o .: "config-file"
+        clientWallet    <- o .: "wallet-name"
+        clientCount     <- o .: "output-size"
+        clientMinConf   <- o .: "minimum-confirmations"
+        clientSignNewTx <- o .: "sign-new-transactions"
+        clientFee       <- o .: "transaction-fee:"
+        clientInternal  <- o .: "display-internal-addresses"
+        clientFormat    <- f =<< o .: "display-format"
+        clientPass      <- o .:? "mnemonic-passphrase"
+        clientSocket    <- o .: "zeromq-socket"          
+        clientDetach    <- o .: "detach-server"
+        clientConfig    <- o .: "config-file"
         return ClientConfig {..}
       where
         f format = case format of

@@ -167,11 +167,7 @@ getTxsR wallet name pageM = runDB $ case pageM of
 
 postTxsR :: WalletName -> AccountName -> AccTxAction -> Handler Value
 postTxsR wallet name action = case action of
-    CreateTx rs -> do
-        -- Use the minconf and fee from the server configuration
-        minconf <- spvMinConf    <$> S.gets handlerConfig
-        fee     <- spvFee        <$> S.gets handlerConfig
-        sign    <- spvSignNewTxs <$> S.gets handlerConfig
+    CreateTx rs fee minconf sign -> do
         (tid, complete, genA) <- runDB $ 
             createTx wallet name minconf rs fee sign
         whenOnline $ when complete $ do

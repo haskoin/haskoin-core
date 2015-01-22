@@ -62,6 +62,18 @@ options =
                 , show $ clientMinConf compileTimeClientConfig
                 , ")"
                 ]
+    , Option ['f'] ["fee"] 
+        (ReqArg (\s cfg -> cfg{ clientFee = read s }) "INT") $
+        unwords [ "Fee per 1000 bytes for new transactions ( default:"
+                , show $ clientFee compileTimeClientConfig
+                , ")"
+                ]
+    , Option ['S'] ["nosig"]
+        (NoArg $ \cfg -> cfg{ clientSignNewTx = False }) $
+        unwords [ "Do not sign new transactions ( default:"
+                , show $ not $ clientSignNewTx compileTimeClientConfig
+                , ")"
+                ]
     , Option ['i'] ["internal"]
         (NoArg $ \cfg -> cfg{ clientInternal = True }) $
         unwords [ "Display internal addresses ( default:"

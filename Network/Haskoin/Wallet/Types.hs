@@ -266,7 +266,11 @@ $(deriveJSON (dropSumLabels 10 10 "type" ) ''NewAccount)
 
 data AccTxAction
     = CreateTx 
-        { accTxActionRecipients :: ![(Address, Word64)] }
+        { accTxActionRecipients :: ![(Address, Word64)] 
+        , accTxActionFee        :: !Word64
+        , accTxActionMinConf    :: !Word32
+        , accTxActionSign       :: !Bool
+        }
     | SignTx 
         { accTxActionTx :: !Tx }
     | SignOfflineTxData

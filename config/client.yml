@@ -1,11 +1,40 @@
+# Default wallet name
 wallet-name: "_env:HW_WALLET:main"
+
+# Default output size for commands such as page sizes.
 output-size: "_env:HW_COUNT:10"
-balance-minimum-confirmations: "_env:HW_MINCONF:0"
+
+# Display internal addresses instead of external ones
 display-internal-addresses: "_env:HW_INTERNAL:false"
-mnemonic-passphrase: "_env:HW_PASSPHRASE:"
+
+# Should the new transaction be signed by the wallet.
+sign-new-transactions: "_env:SIGN_NEW_TXS:true"
+
+# Default fee to pay (in satoshi) for every 1000 bytes.
+transaction-fee: "_env:FEE:10000"
+
+# Minimum number of confirmations for spending coins and displaying balances.
+minimum-confirmations: "_env:MINCONF:1"
+
+# When set to true, only sign transactions if they result in fully signed
+# transactions.
+sign-finalize-only: "_env:FINALIZE:false"
+
+# Passphrase to protect mnemonics
+# mnemonic-passphrase: "_env:HW_PASSPHRASE:"
+
+# How command-line output should be displayed. Supported values are:
+# normal, json or yaml.
 display-format: "_env:HW_FORMAT:normal"
+
+# Detach the SPV server from the terminal when launched
 detach-server: "_env:HW_DETACH:false"
+
+# ZeroMQ socket to communicate with the server.
 # Either absolute path or relative to the server work-dir/network path.
 zeromq-socket: "_env:HW_SOCKET:ipc://hw-spv"
-# Either absolute path or relative to the server work-dir/network path.
+
+# Location of a runtime client configuration. Either absolute path or relative
+# to the server work-dir/network path. This value can not be set at runtime.
 config-file: "_env:HW_CLIENTCFG:client.yml"
+

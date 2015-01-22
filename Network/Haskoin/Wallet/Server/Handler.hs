@@ -10,7 +10,7 @@ import qualified Control.Monad.State as S (StateT, evalStateT, gets)
 
 import Data.Aeson (Value(..), toJSON)
 import Data.Word (Word32)
-import Data.Maybe (fromJust, isNothing)
+import Data.Maybe (fromJust, isNothing, fromMaybe)
 import qualified Data.Text as T (unpack)
 
 import Database.Persist.Sql (SqlPersistT, ConnectionPool, runSqlPool)
@@ -56,22 +56,24 @@ getWalletR :: WalletName -> Handler Value
 getWalletR w = toJSON <$> runDB (getWallet w)
 
 postWalletsR :: NewWallet -> Handler Value
-postWalletsR (NewWallet name pass msM) = do
+postWalletsR (NewWallet name passM msM) = do
     (ms, seed) <- case msM of
-        Just ms -> case mnemonicToSeed (T.unpack pass) (T.unpack ms) of
+        Just ms -> case mnemonicToSeed pass (T.unpack ms) of
             Left err -> liftIO $ throwIO $ WalletException err
             Right seed -> return (T.unpack ms, seed)
         Nothing -> do
             ent <- liftIO $ devURandom 16
             let msSeedE = do
                 ms <- toMnemonic ent
-                seed <- mnemonicToSeed (T.unpack pass) ms
+                seed <- mnemonicToSeed pass ms
                 return (ms, seed)
             case msSeedE of
                 Left err -> liftIO $ throwIO $ WalletException err
                 Right msSeed -> return msSeed
     _ <- runDB $ newWallet name seed
     return $ toJSON $ MnemonicRes ms
+  where
+    pass = T.unpack $ fromMaybe "" $ passM
 
 getAccountsR :: WalletName -> Handler Value
 getAccountsR wallet = toJSON <$> runDB (accountList wallet)
@@ -165,26 +167,20 @@ getTxsR wallet name pageM = runDB $ case pageM of
 
 postTxsR :: WalletName -> AccountName -> AccTxAction -> Handler Value
 postTxsR wallet name action = case action of
-    CreateTx rs -> do
-        -- Use the minconf and fee from the server configuration
-        minconf <- spvMinConf    <$> S.gets handlerConfig
-        fee     <- spvFee        <$> S.gets handlerConfig
-        sign    <- spvSignNewTxs <$> S.gets handlerConfig
+    CreateTx rs fee minconf sign -> do
         (tid, complete, genA) <- runDB $ 
             createTx wallet name minconf rs fee sign
         whenOnline $ when complete $ do
             when genA updateNodeFilter
             sendSPV . PublishTx =<< runDB (getTx tid)
         return $ toJSON $ TxHashStatusRes tid complete
-    SignTx tx -> do
-        finalize <- spvFinalize <$> S.gets handlerConfig
+    SignTx tx finalize -> do
         (tid, complete, genA) <- runDB $ signWalletTx wallet name tx finalize
         whenOnline $ when complete $ do
             when genA updateNodeFilter
             sendSPV . PublishTx =<< runDB (getTx tid)
         return $ toJSON $ TxHashStatusRes tid complete
-    SignOfflineTxData otd -> do
-        finalize <- spvFinalize <$> S.gets handlerConfig
+    SignOfflineTxData otd finalize -> do
         (tx, complete) <- runDB $ signOfflineTxData wallet name finalize otd
         return $ toJSON $ TxStatusRes tx complete
     ImportTx tx -> do

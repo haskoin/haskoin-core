@@ -235,7 +235,7 @@ $(deriveJSON (dropFieldLabel 0) ''PagedResult)
 
 data NewWallet = NewWallet 
     { newWalletWalletName :: !WalletName 
-    , newWalletPassphrase :: !T.Text 
+    , newWalletPassphrase :: !(Maybe T.Text)
     , newWalletMnemonic   :: !(Maybe T.Text)
     } deriving (Eq, Read, Show)
 
@@ -266,11 +266,19 @@ $(deriveJSON (dropSumLabels 10 10 "type" ) ''NewAccount)
 
 data AccTxAction
     = CreateTx 
-        { accTxActionRecipients :: ![(Address, Word64)] }
+        { accTxActionRecipients :: ![(Address, Word64)] 
+        , accTxActionFee        :: !Word64
+        , accTxActionMinConf    :: !Word32
+        , accTxActionSign       :: !Bool
+        }
     | SignTx 
-        { accTxActionTx :: !Tx }
+        { accTxActionTx       :: !Tx 
+        , accTxActionFinalize :: !Bool
+        }
     | SignOfflineTxData
-        { accTxActionOfflineTxData :: !OfflineTxData }
+        { accTxActionOfflineTxData :: !OfflineTxData 
+        , accTxActionFinalize      :: !Bool
+        }
     | ImportTx 
         { accTxActionTx :: !Tx }
     deriving (Eq, Read, Show)

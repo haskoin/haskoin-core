@@ -62,14 +62,32 @@ options =
                 , show $ clientMinConf compileTimeClientConfig
                 , ")"
                 ]
+    , Option ['f'] ["fee"] 
+        (ReqArg (\s cfg -> cfg{ clientFee = read s }) "INT") $
+        unwords [ "Fee per 1000 bytes for new transactions ( default:"
+                , show $ clientFee compileTimeClientConfig
+                , ")"
+                ]
+    , Option ['S'] ["nosig"]
+        (NoArg $ \cfg -> cfg{ clientSignNewTx = False }) $
+        unwords [ "Do not sign new transactions ( default:"
+                , show $ not $ clientSignNewTx compileTimeClientConfig
+                , ")"
+                ]
     , Option ['i'] ["internal"]
         (NoArg $ \cfg -> cfg{ clientInternal = True }) $
         unwords [ "Display internal addresses ( default:"
                 , show $ clientInternal compileTimeClientConfig
                 , ")"
                 ]
+    , Option ['z'] ["finalize"]
+        (NoArg $ \cfg -> cfg{ clientFinalize = True }) $
+        unwords [ "Only sign if the tx will be complete ( default:"
+                , show $ clientFinalize compileTimeClientConfig
+                , ")"
+                ]
     , Option ['p'] ["passphrase"]
-        (ReqArg (\s cfg -> cfg{ clientPass = T.pack s }) "PASSPHRASE")
+        (ReqArg (\s cfg -> cfg{ clientPass = Just $ T.pack s }) "PASSPHRASE")
         "Optional mnemonic passphrase when creating wallets"
     , Option ['j'] ["json"]
         (NoArg $ \cfg -> cfg{ clientFormat = OutputJSON })

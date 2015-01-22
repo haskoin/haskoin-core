@@ -136,7 +136,7 @@ instance FromJSON ClientConfig where
         clientCount     <- o .: "output-size"
         clientMinConf   <- o .: "minimum-confirmations"
         clientSignNewTx <- o .: "sign-new-transactions"
-        clientFee       <- o .: "transaction-fee:"
+        clientFee       <- o .: "transaction-fee"
         clientInternal  <- o .: "display-internal-addresses"
         clientFinalize  <- o .: "sign-finalize-only"
         clientFormat    <- f =<< o .: "display-format"

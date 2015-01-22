@@ -9,16 +9,6 @@ server-mode: "_env:SERVER_MODE:online"
 bloom-false-positive: "_env:BLOOM_FALSE_POSITIVE:0.00001"
 # How many addresses you want to pre-generate for each account.
 address-gap: "_env:ADDRESS_GAP:10"
-# When set to true, this instance will only sign transactions if they result
-# in fully signed transactions.
-sign-finalize-only: "_env:FINALIZE:false"
-# When set to false, this instance will not automatically sign new transactions
-# that it creates.
-sign-new-transactions: "_env:SIGN_NEW_TXS:true"
-# Default fee to pay (in satoshi) for every 1000 bytes.
-fee-per-1000-bytes: "_env:FEE:10000"
-# Minimum number of confirmations required to spend a coin.
-spend-minimum-confirmations: "_env:SPEND_MINCONF:1"
 
 # Sqlite3 database connection information
 database:
@@ -39,3 +29,4 @@ pid-file: "_env:HW_PIDFILE:hw.pid"
 # Compile time configuration value. Either absolute path or relative to
 # work-dir/network. This value can not be set at runtime.
 config-file: "_env:HW_SERVERCFG:server.yml"
+

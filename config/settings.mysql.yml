@@ -9,9 +9,6 @@ server-mode: "_env:SERVER_MODE:online"
 bloom-false-positive: "_env:BLOOM_FALSE_POSITIVE:0.00001"
 # How many addresses you want to pre-generate for each account.
 address-gap: "_env:ADDRESS_GAP:10"
-# When set to true, this instance will only sign transactions if they result
-# in fully signed transactions.
-sign-finalize-only: "_env:FINALIZE:false"
 
 # MySQL database connection information
 database:

@@ -272,9 +272,13 @@ data AccTxAction
         , accTxActionSign       :: !Bool
         }
     | SignTx 
-        { accTxActionTx :: !Tx }
+        { accTxActionTx       :: !Tx 
+        , accTxActionFinalize :: !Bool
+        }
     | SignOfflineTxData
-        { accTxActionOfflineTxData :: !OfflineTxData }
+        { accTxActionOfflineTxData :: !OfflineTxData 
+        , accTxActionFinalize      :: !Bool
+        }
     | ImportTx 
         { accTxActionTx :: !Tx }
     deriving (Eq, Read, Show)

@@ -16,6 +16,10 @@ transaction-fee: "_env:FEE:10000"
 # Minimum number of confirmations for spending coins and displaying balances.
 minimum-confirmations: "_env:MINCONF:1"
 
+# When set to true, only sign transactions if they result in fully signed
+# transactions.
+sign-finalize-only: "_env:FINALIZE:false"
+
 # Passphrase to protect mnemonics
 # mnemonic-passphrase: "_env:HW_PASSPHRASE:"
 

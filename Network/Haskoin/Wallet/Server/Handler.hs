@@ -174,15 +174,13 @@ postTxsR wallet name action = case action of
             when genA updateNodeFilter
             sendSPV . PublishTx =<< runDB (getTx tid)
         return $ toJSON $ TxHashStatusRes tid complete
-    SignTx tx -> do
-        finalize <- spvFinalize <$> S.gets handlerConfig
+    SignTx tx finalize -> do
         (tid, complete, genA) <- runDB $ signWalletTx wallet name tx finalize
         whenOnline $ when complete $ do
             when genA updateNodeFilter
             sendSPV . PublishTx =<< runDB (getTx tid)
         return $ toJSON $ TxHashStatusRes tid complete
-    SignOfflineTxData otd -> do
-        finalize <- spvFinalize <$> S.gets handlerConfig
+    SignOfflineTxData otd finalize -> do
         (tx, complete) <- runDB $ signOfflineTxData wallet name finalize otd
         return $ toJSON $ TxStatusRes tx complete
     ImportTx tx -> do

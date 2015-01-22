@@ -80,6 +80,12 @@ options =
                 , show $ clientInternal compileTimeClientConfig
                 , ")"
                 ]
+    , Option ['z'] ["finalize"]
+        (NoArg $ \cfg -> cfg{ clientFinalize = True }) $
+        unwords [ "Only sign if the tx will be complete ( default:"
+                , show $ clientFinalize compileTimeClientConfig
+                , ")"
+                ]
     , Option ['p'] ["passphrase"]
         (ReqArg (\s cfg -> cfg{ clientPass = Just $ T.pack s }) "PASSPHRASE")
         "Optional mnemonic passphrase when creating wallets"

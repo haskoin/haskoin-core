@@ -49,8 +49,6 @@ data SPVConfig = SPVConfig
     -- ^ False positive rate for the bloom filter.
     , spvGap          :: !Int
     -- ^ Number of gap addresses per account.
-    , spvFinalize     :: !Bool
-    -- ^ Only sign a tx if the result is complete (we are the last signer)
     , spvDatabase     :: !DatabaseConfType
     -- ^ Database configuration
     , spvWorkDir      :: !FilePath
@@ -69,7 +67,6 @@ instance FromJSON SPVConfig where
         spvMode         <- f =<< o .: "server-mode"
         spvBloomFP      <- o .: "bloom-false-positive" 
         spvGap          <- o .: "address-gap"          
-        spvFinalize     <- o .: "sign-finalize-only"
         spvBitcoinNodes <- g =<< o .: "bitcoin-full-nodes"
         spvDatabase     <- o .: "database" 
         spvWorkDir      <- o .: "work-dir"
@@ -119,6 +116,8 @@ data ClientConfig = ClientConfig
     -- ^ Fee to pay per 1000 bytes when creating new transactions
     , clientInternal  :: !Bool
     -- ^ Return internal instead of external addresses
+    , clientFinalize  :: !Bool
+    -- ^ Only sign a tx if the result is complete (we are the last signer)
     , clientPass      :: !(Maybe T.Text)
     -- ^ Passphrase to use when creating new wallets (bip39 mnemonic)
     , clientFormat    :: !OutputFormat
@@ -139,6 +138,7 @@ instance FromJSON ClientConfig where
         clientSignNewTx <- o .: "sign-new-transactions"
         clientFee       <- o .: "transaction-fee:"
         clientInternal  <- o .: "display-internal-addresses"
+        clientFinalize  <- o .: "sign-finalize-only"
         clientFormat    <- f =<< o .: "display-format"
         clientPass      <- o .:? "mnemonic-passphrase"
         clientSocket    <- o .: "zeromq-socket"          

@@ -46,6 +46,7 @@ import Data.Bits
     , shift, shiftL, shiftR
     , bit, testBit, bitSize
     , popCount, isSigned
+    , rotate
     )
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get 
@@ -177,6 +178,10 @@ instance BigWordMod n => Bits (BigWord n) where
     bit n = fromInteger $ bit n
     popCount (BigWord i) = popCount i
     isSigned _ = False
+    rotate x i = shift x i' .|. shift x (i' - bitSize x)
+      where
+        i' = i `mod` bitSize x
+    
 
 instance BigWordMod n => Bounded (BigWord n) where
     minBound = fromInteger 0

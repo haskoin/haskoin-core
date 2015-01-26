@@ -138,8 +138,11 @@ instance Arbitrary AddressData where
 instance Arbitrary AccTxAction where
     arbitrary = oneof
         [ CreateTx <$> (listOf1 genaddr) 
-        , SignTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
-        , SignOfflineTxData <$> arbitrary 
+                   <*> arbitrary 
+                   <*> arbitrary 
+                   <*> arbitrary
+        , SignTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) <*> arbitrary
+        , SignOfflineTxData <$> arbitrary <*> arbitrary
         , ImportTx <$> ((\(ArbitraryTx x) -> x) <$> arbitrary) 
         ]
       where

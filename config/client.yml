@@ -38,3 +38,5 @@ zeromq-socket: "_env:HW_SOCKET:ipc://hw-spv"
 # to the server work-dir/network path. This value can not be set at runtime.
 config-file: "_env:HW_CLIENTCFG:client.yml"
 
+# Use-Testnet
+use-testnet: "_env:HW_TESTNET:false"

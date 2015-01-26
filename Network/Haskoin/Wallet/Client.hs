@@ -149,15 +149,9 @@ getClientConfig fs = do
       else [ joinPath [getWorkDir home, networkName, cfgFile]
            , joinPath [getWorkDir home, cfgFile] ]
 
-setNetwork :: [(ClientConfig -> ClientConfig)] -> IO ()
-setNetwork fs = when (useTestnet cfg) $ writeIORef networkRef testnet3
-  where
-    cfg = foldl (flip ($)) compileTimeClientConfig fs
-
 clientMain :: IO ()
 clientMain = E.getArgs >>= \args -> case getOpt Permute options args of
     (fs, commands, []) -> do
-        setNetwork fs
         cfg <- getClientConfig fs
         home <- fromMaybe err <$> getEnv "HOME"
         exists <- fileExist $ workDir home

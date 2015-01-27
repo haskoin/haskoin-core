@@ -17,7 +17,6 @@ import Control.Monad (when, forM_, filterM)
 import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.State as S (evalStateT)
 
-import Data.IORef (writeIORef)
 import Data.FileEmbed (embedFile)
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as T (pack, unpack)
@@ -124,7 +123,7 @@ getClientConfig fs = do
     defCfg1 <- loadAppSettings validCfgFiles1 [configClientYmlValue] useEnv
     let cfg1 = foldl (flip ($)) defCfg1 fs
     -- Set network
-    when (useTestnet cfg1) $ writeIORef networkRef testnet3
+    when (useTestnet cfg1) $ switchToTestnet3
     -- Load configuration
     let cfgFiles2 = getCfgFiles2 home
     validCfgFiles2 <- liftIO $ filterM fileExist cfgFiles2

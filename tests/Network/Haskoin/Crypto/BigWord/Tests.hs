@@ -14,6 +14,7 @@ import Data.Bits
     , shift
     , bitSize
     , popCount
+    , rotate
     , (.&.), (.|.)
     , xor, complement
     )
@@ -55,6 +56,7 @@ tests =
         , testProperty "BigWord Bit" ringBit
         , testProperty "BigWord PopCount" ringPopCount
         , testProperty "BigWord IsSigned" ringIsSigned
+        , testProperty "BigWord Rotation" ringRotate
         ]
     , testGroup "BigWord Bounded"
         [ testProperty "BigWord minBound" ringMinBound
@@ -206,6 +208,12 @@ ringIsSigned i = ring == model
   where 
     model = isSigned ((fromInteger i) :: Word32)
     ring  = isSigned ((fromInteger i) :: Test32)
+
+ringRotate :: (Integer, Int) -> Bool
+ringRotate (i, n) = getBigWordInteger ring == fromIntegral model
+  where
+    model = rotate ((fromInteger i) :: Word32) n
+    ring  = rotate ((fromInteger i) :: Test32) n
 
 {- BigWord Bounded -}
 

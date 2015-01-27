@@ -1,110 +1,147 @@
+{-# OPTIONS_GHC -fno-cse -fno-full-laziness #-}
 {-|
   Network specific constants
 -}
-module Network.Haskoin.Constants where
+module Network.Haskoin.Constants
+( -- ** Data
+  Network(..)
+  -- ** Functions
+, switchToTestnet3
+, setNetwork
+, getNetwork
+  -- ** Network parameters
+, networkName
+, addrPrefix
+, scriptPrefix
+, secretPrefix
+, extPubKeyPrefix
+, extSecretPrefix
+, networkMagic
+, genesisHeader
+, maxBlockSize
+, maxSatoshi
+, haskoinUserAgent
+, defaultPort
+, allowMinDifficultyBlocks
+, powLimit
+, targetTimespan
+, targetSpacing
+, checkpoints
+) where
 
 import Data.Bits (shiftR)
-import Data.IORef (IORef, newIORef, readIORef)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Word (Word8, Word32, Word64)
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Block.Types
 import System.IO.Unsafe (unsafePerformIO)
 
 data Network = Network
-    { getNetworkName :: String
-    , getAddrPrefix :: Word8
-    , getScriptPrefix :: Word8
-    , getSecretPrefix :: Word8
-    , getExtPubKeyPrefix :: Word32
-    , getExtSecretPrefix :: Word32
-    , getNetworkMagic :: Word32
-    , getGenesisHeader :: BlockHeader
-    , getMaxBlockSize :: Int
-    , getMaxSatoshi :: Word64
-    , getHaskoinUserAgent :: String
-    , getDefaultPort :: Int
-    , getAllowMinDifficultyBlocks :: Bool
-    , getPowLimit :: Integer
-    , getTargetTimespan :: Word32
-    , getTargetSpacing :: Word32
-    , getCheckpoints :: [(Int, BlockHash)]
-    }
+    { getNetworkName                :: !String
+    , getAddrPrefix                 :: !Word8
+    , getScriptPrefix               :: !Word8
+    , getSecretPrefix               :: !Word8
+    , getExtPubKeyPrefix            :: !Word32
+    , getExtSecretPrefix            :: !Word32
+    , getNetworkMagic               :: !Word32
+    , getGenesisHeader              :: !BlockHeader
+    , getMaxBlockSize               :: !Int
+    , getMaxSatoshi                 :: !Word64
+    , getHaskoinUserAgent           :: !String
+    , getDefaultPort                :: !Int
+    , getAllowMinDifficultyBlocks   :: !Bool
+    , getPowLimit                   :: !Integer
+    , getTargetTimespan             :: !Word32
+    , getTargetSpacing              :: !Word32
+    , getCheckpoints                :: ![(Int, BlockHash)]
+    } deriving (Eq, Show, Read)
 
--- | Only use this to change network constants at start of program
+-- | Switch to Testnet3.  Do at start of program.
+switchToTestnet3 :: IO ()
+switchToTestnet3 = setNetwork testnet3
+
+-- | Change network constants manually.  If switching to Testnet3, use
+-- switchToTestnet3 instead.
+setNetwork :: Network -> IO ()
+setNetwork n = writeIORef networkRef n
+
+{-# NOINLINE networkRef #-}
+-- | Use this if you want to change constants to something other than Testnet3.
 networkRef :: IORef Network
 networkRef = unsafePerformIO $ newIORef prodnet
 
--- | Read current network parameters
-network :: Network
-network = unsafePerformIO $ readIORef networkRef
+{-# NOINLINE getNetwork #-}
+-- | Read current network constants record
+getNetwork :: Network
+getNetwork = unsafePerformIO $ readIORef networkRef
 
 -- | Name of the bitcoin network
 networkName :: String
-networkName = getNetworkName network
+networkName = getNetworkName getNetwork
 
 -- | Prefix for base58 PubKey hash address
 addrPrefix :: Word8
-addrPrefix = getAddrPrefix network
+addrPrefix = getAddrPrefix getNetwork
 
 -- | Prefix for base58 script hash address
 scriptPrefix :: Word8
-scriptPrefix = getScriptPrefix network
+scriptPrefix = getScriptPrefix getNetwork
 
 -- | Prefix for private key WIF format
 secretPrefix :: Word8
-secretPrefix = getSecretPrefix network
+secretPrefix = getSecretPrefix getNetwork
 
 -- | Prefix for extended public keys (BIP32)
 extPubKeyPrefix :: Word32
-extPubKeyPrefix = getExtPubKeyPrefix network
+extPubKeyPrefix = getExtPubKeyPrefix getNetwork
 
 -- | Prefix for extended private keys (BIP32)
 extSecretPrefix :: Word32
-extSecretPrefix = getExtSecretPrefix network
+extSecretPrefix = getExtSecretPrefix getNetwork
 
 -- | Network magic bytes
 networkMagic :: Word32
-networkMagic = getNetworkMagic network
+networkMagic = getNetworkMagic getNetwork
 
 -- | Genesis block header information
 genesisHeader :: BlockHeader
-genesisHeader = getGenesisHeader network
+genesisHeader = getGenesisHeader getNetwork
 
 -- | Maximum size of a block in bytes
 maxBlockSize :: Int
-maxBlockSize = getMaxBlockSize network
+maxBlockSize = getMaxBlockSize getNetwork
 
 -- | Maximum number of satoshi
 maxSatoshi :: Word64
-maxSatoshi = getMaxSatoshi network
+maxSatoshi = getMaxSatoshi getNetwork
 
 -- | User agent string
 haskoinUserAgent :: String
-haskoinUserAgent = getHaskoinUserAgent network
+haskoinUserAgent = getHaskoinUserAgent getNetwork
 
 -- | Default port
 defaultPort :: Int
-defaultPort = getDefaultPort network
+defaultPort = getDefaultPort getNetwork
 
 -- | Allow relaxed difficulty transition rules
 allowMinDifficultyBlocks :: Bool
-allowMinDifficultyBlocks = getAllowMinDifficultyBlocks network
+allowMinDifficultyBlocks = getAllowMinDifficultyBlocks getNetwork
 
 -- | Lower bound for the proof of work difficulty
 powLimit :: Integer
-powLimit = getPowLimit network
+powLimit = getPowLimit getNetwork
 
 -- | Time between difficulty cycles (2 weeks on average)
 targetTimespan :: Word32
-targetTimespan = getTargetTimespan network
+targetTimespan = getTargetTimespan getNetwork
 
 -- | Time between blocks (10 minutes per block)
 targetSpacing :: Word32
-targetSpacing = getTargetSpacing network
+targetSpacing = getTargetSpacing getNetwork
 
 -- | Checkpoints to enfore
 checkpoints :: [(Int, BlockHash)]
-checkpoints = getCheckpoints network
+checkpoints = getCheckpoints getNetwork
 
 prodnet :: Network
 prodnet = Network

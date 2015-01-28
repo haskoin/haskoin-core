@@ -29,22 +29,41 @@ haskoin-wallet package.
 
 http://hackage.haskell.org/package/haskoin
 
-## Installing from Cabal
+## Installation
 
-You can install the latest stable version of the haskoin package automatically
-through the cabal package manager:
+### Dependencies
+
+You'll need Haskell Platform 2013 or 2014, pkg-config, as well as development
+libraries for LevelDB, Snappy, and zlib.  On Debian/Ubuntu, use following
+commands:
 
 ```sh
-# Compile for prodnet 
-cabal install haskoin
+sudo apt-get install git haskell-platform libleveldb-dev \
+    libzmq3-dev libsnappy-dev pkg-config
+```
 
-# Compile for testnet
-cabal install haskoin --flags=testnet
+### Git
+
+Install from Git for the latest development snapshot.
+
+```sh
+git clone https://github.com/haskoin/haskoin.git
+cd haskoin
+cabal install
+```
+
+### Cabal
+
+Use cabal-install to get the latest stable version from Hackage.  On
+Debian/Ubuntu operating system:
+
+```sh
+cabal install haskoin
 ```
 
 ## Contributing
 
-Commits are done through GitHub pull requests.
+Contribute via GitHub pull requests.
 
 We do a lot of our technical discussions in the IRC channel #haskoin on
 chat.freenode.net.

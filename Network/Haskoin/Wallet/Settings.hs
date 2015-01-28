@@ -128,6 +128,8 @@ data ClientConfig = ClientConfig
     -- ^ Should
     , clientConfig    :: !FilePath
     -- ^ Location of the runtime configuration file
+    , useTestnet     :: !Bool
+    -- ^ Use Testnet3 network
     } 
 
 instance FromJSON ClientConfig where
@@ -144,6 +146,7 @@ instance FromJSON ClientConfig where
         clientSocket    <- o .: "zeromq-socket"          
         clientDetach    <- o .: "detach-server"
         clientConfig    <- o .: "config-file"
+        useTestnet     <- o .: "use-testnet"
         return ClientConfig {..}
       where
         f format = case format of

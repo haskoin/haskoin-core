@@ -12,6 +12,7 @@ import System.Console.GetOpt
     , ArgOrder (Permute)
     )
 
+import Control.Applicative ((<$>))
 import Control.Monad (when, forM_, filterM)
 import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.State as S (evalStateT)
@@ -26,6 +27,8 @@ import Network.Haskoin.Util
 import Network.Haskoin.Constants
 import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Client.Commands
+
+import System.FilePath.Posix (isAbsolute, joinPath)
 
 usageHeader :: String
 usageHeader = "Usage: hw [<options>] <command> [<args>]"
@@ -107,39 +110,61 @@ options =
                 , show $ clientDetach compileTimeClientConfig
                 , ")"
                 ]
+    , Option ['t'] ["testnet"]
+        (NoArg $ \cfg -> cfg{ useTestnet = True }) $ "Use Testnet3 network"
     ]
 
 getClientConfig :: [(ClientConfig -> ClientConfig)] -> IO ClientConfig
 getClientConfig fs = do
-    changeWorkingDirectory . (fromMaybe err) =<< getEnv "HOME"
-    validLocs   <- liftIO $ filterM fileExist locs
-    cfgDefaults <- loadAppSettings validLocs [configClientYmlValue] useEnv
+    home <- fromMaybe err <$> getEnv "HOME"
+    let cfgFiles1 = getCfgFiles1 home
+    -- Determine network
+    validCfgFiles1 <- liftIO $ filterM fileExist cfgFiles1
+    defCfg1 <- loadAppSettings validCfgFiles1 [configClientYmlValue] useEnv
+    let cfg1 = foldl (flip ($)) defCfg1 fs
+    -- Set network
+    when (useTestnet cfg1) $ switchToTestnet3
+    -- Load configuration
+    let cfgFiles2 = getCfgFiles2 home
+    validCfgFiles2 <- liftIO $ filterM fileExist cfgFiles2
+    defCfg2 <- loadAppSettings validCfgFiles2 [configClientYmlValue] useEnv
     -- Override default config with command-line options
-    return $ foldl (flip ($)) cfgDefaults fs
+    return $ foldl (flip ($)) defCfg2 fs
   where
     err = "No HOME environment variable"
     cfgFile = clientConfig compileTimeClientConfig
-    -- Look for the config file in . and work-dir/network
-    locs = [ cfgFile
-           , concat [ spvWorkDir compileTimeSPVConfig
-                    , "/", networkName
-                    , "/", cfgFile
-                    ]
-           ]
+    spvDir = spvWorkDir compileTimeSPVConfig
+    getWorkDir home =
+      if   isAbsolute spvDir
+      then spvDir
+      else joinPath [home, spvDir]
+    getCfgFiles1 home =
+      if   isAbsolute cfgFile
+      then [ cfgFile ]
+      else [ joinPath [getWorkDir home, cfgFile] ]
+    getCfgFiles2 home =
+      if   isAbsolute cfgFile
+      then [ cfgFile ]
+      else [ joinPath [getWorkDir home, networkName, cfgFile]
+           , joinPath [getWorkDir home, cfgFile] ]
 
 clientMain :: IO ()
 clientMain = E.getArgs >>= \args -> case getOpt Permute options args of
     (fs, commands, []) -> do
         cfg <- getClientConfig fs
-        exists <- fileExist workDir
-        when exists $ changeWorkingDirectory workDir
+        home <- fromMaybe err <$> getEnv "HOME"
+        exists <- fileExist $ workDir home
+        when exists $ changeWorkingDirectory $ workDir home
         dispatchCommand cfg commands
         return ()
     (_, _, msgs) -> forM_ (msgs ++ usage) putStrLn
   where
-    workDir = concat [ spvWorkDir compileTimeSPVConfig
-                     , "/", networkName
-                     ]
+    err = "No HOME environment variable"
+    dir = spvWorkDir compileTimeSPVConfig
+    workDir home =
+      if   isAbsolute dir
+      then dir
+      else joinPath [home, dir, networkName]
 
 dispatchCommand :: ClientConfig -> [String] -> IO ()
 dispatchCommand cfg args = flip S.evalStateT cfg $ case args of

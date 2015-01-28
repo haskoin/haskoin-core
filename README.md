@@ -1,14 +1,14 @@
 # Haskoin Wallet
 
-Implementation of a Bitcoin SPV Wallet with BIP32 and multisig support.
+Implementation of a Bitcoin HD (BIP32) multisig SPV Wallet in Haskell.
 
 ## Features
 
-This package provides a SPV (simple payment verification) wallet implementation.
-It features BIP32 key management, deterministic signatures (RFC-6979) and first
-order support for multi-signature transactions. You can communicate with the
-wallet process through a ZeroMQ API or through a command-line tool called "hw"
-which is also provided in this package. 
+This package provides a Haskell SPV (simple payment verification) wallet
+implementation.  It features BIP32 hierarchical-deterministic key management,
+deterministic signatures (RFC-6979) and first order support for multi-signature
+transactions. You can communicate with the wallet process using JSON
+serialization over ØMQ socket or the supplied “hw” tool.
 
 ## Library Documentation
 
@@ -16,25 +16,34 @@ http://hackage.haskell.org/package/haskoin-wallet
 
 ## Installing
 
-To compile haskoin-wallet, it is necessary to install GHC, the ‘cabal’ command,
-and development libraries from LevelDB and Snappy. You will also need the
-ZeroMQ development libraries.
+### Dependencies
+
+To compile haskoin-wallet, install GHC, cabal-install, and development
+libraries for LevelDB, Snappy, ØMQ, and optionally MySQL.  On Debian/Ubuntu
+systems, these commands should suffice:
 
 ```sh
-# Debian/Ubuntu installation
-sudo apt-get update
-sudo apt-get install cabal-install libleveldb-dev libsnappy-dev zlib1g-dev
-sudo apt-get install libzmq3-dev
+sudo apt-get install haskell-platform libleveldb-dev libsnappy-dev \
+    zlib1g-dev libzmq3-dev
 ```
+
+### Git
+
+Install from Git to get the latest development code:
+
+```sh
+git clone https://github.com/haskoin/haskoin-wallet
+cd haskoin-wallet
+cabal install
+```
+
+### Hackage
 
 You can install the latest stable version of the haskoin-wallet package
 automatically through the cabal package manager:
 
 ```sh
-# Update cabal package list
 cabal update
-
-# Install
 cabal install haskoin-wallet
 ```
 

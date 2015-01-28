@@ -42,7 +42,7 @@ import Crypto.MAC.HMAC (hmac)
 
 import Data.Word (Word16, Word32)
 import Data.Byteable (toBytes)
-import Data.Binary (Binary, get)
+import Data.Binary (get)
 import Data.Binary.Get (getWord32le)
 import Data.Bits 
     ( shiftL

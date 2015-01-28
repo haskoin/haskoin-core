@@ -58,6 +58,7 @@ Use cabal-install to get the latest stable version from Hackage.  On
 Debian/Ubuntu operating system:
 
 ```sh
+cabal update
 cabal install haskoin
 ```
 

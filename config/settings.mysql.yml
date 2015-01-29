@@ -21,8 +21,8 @@ database:
 
 # List of trusted bitcoin full-nodes to connect to.
 bitcoin-full-nodes: 
-  - host: "127.0.0.1"
-    port: 18333
+  - host: "_env:BITCOIN_NODE:127.0.0.1"
+    port: "_env:BITCOIN_PORT:18333"
 
 # Haskoin working directory. Either absolute path or relative to $HOME
 work-dir: "_env:HW_HOME:.hw"

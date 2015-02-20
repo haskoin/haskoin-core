@@ -22,7 +22,7 @@ module Network.Haskoin.Internals
 , module Network.Haskoin.Node.Bloom
 , module Network.Haskoin.Node.Peer
 , module Network.Haskoin.Node.PeerManager
-, module Network.Haskoin.Node.SPVNode
+, module Network.Haskoin.Node.SpvBlockChain
 , module Network.Haskoin.Script.Types 
 , module Network.Haskoin.Script.Parser 
 , module Network.Haskoin.Script.SigHash
@@ -62,7 +62,7 @@ import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.Bloom
 import Network.Haskoin.Node.Peer
 import Network.Haskoin.Node.PeerManager
-import Network.Haskoin.Node.SPVNode
+import Network.Haskoin.Node.SpvBlockChain
 import Network.Haskoin.Script.Types 
 import Network.Haskoin.Script.Parser 
 import Network.Haskoin.Script.SigHash

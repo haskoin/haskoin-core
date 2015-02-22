@@ -48,6 +48,9 @@ module Network.Haskoin.Block
 , blockLocator
 , getNodeWindow
 
+  -- * HeaderTree LevelDB implementation
+, runHeaderTreeLevelDB
+
   -- * Checkpoints
 , checkpointMap
 , checkpointList

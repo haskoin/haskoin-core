@@ -479,14 +479,41 @@ headerWork bh =
 
 {- Default LevelDB implementation -}
 
+indexKey :: BlockHash -> BS.ByteString
+indexKey bid = "index_" `BS.append` encode' bid
+
+getLevelDBNode :: (MonadIO m, MonadState L.DB m) 
+               => BlockHash -> m (Maybe BlockHeaderNode)
+getLevelDBNode bid = do
+    db <- get
+    resM <- L.get db def $ indexKey bid
+    return $ decodeToMaybe =<< resM
+
+putLevelDBNode :: (MonadIO m, MonadState L.DB m) => BlockHeaderNode -> m ()
+putLevelDBNode node = do
+    db <- get
+    L.put db def (indexKey $ nodeBlockHash node) $ encode' node
+
 -- TODO: Finish this
 runHeaderTreeLevelDB :: (MonadIO m, MonadState L.DB m) => HeaderTreeT m a -> m a
 runHeaderTreeLevelDB ht = runFreeT ht >>= \f -> case f of
     Free (GetBlockHeaderNode bid next) -> do
-        let key = "index_" `BS.append` (encode' bid)
-        db   <- get
-        resM <- L.get db def key
-        runHeaderTreeLevelDB $ next $ decodeToMaybe =<< resM
-    _ -> undefined
-
+        nodeM <- getLevelDBNode bid
+        runHeaderTreeLevelDB $ next nodeM
+    Free (PutBlockHeaderNode node next) -> do
+        putLevelDBNode node
+        runHeaderTreeLevelDB next
+    Free (GetBestBlockHeader next) -> do
+        db <- get
+        bidM <- L.get db def "bestblockheader"
+        case decodeToMaybe =<< bidM of
+            Just bid -> do
+                node <- liftM fromJust $ getLevelDBNode bid
+                runHeaderTreeLevelDB $ next node
+            Nothing  -> error 
+                "GetBestBlockHeader: Best block header does not exist"
+    Free (SetBestBlockHeader node next) -> do
+        db <- get
+        L.put db def "bestblockheader" $ encode' $ nodeBlockHash node
+        runHeaderTreeLevelDB next
 

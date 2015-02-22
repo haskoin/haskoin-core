@@ -44,39 +44,18 @@ module Network.Haskoin.Node
 , isBloomEmpty
 , isBloomFull
 
---   -- * Peer
--- , runPeer
--- , runCustomPeer
--- , peerLogStdout
--- , PeerMessage(..)
--- , DecodedMerkleBlock(..)
--- , RemoteHost(..)
--- , NodeException(..)
--- 
---   -- * Peer Manager
--- , ManagerSession(..)
--- , PeerManager(..)
--- , PeerData(..)
--- , withAsyncNode
--- , sendMessage
--- , getPeerData
--- , putPeerData
--- , modifyPeerData
--- , deletePeerData
--- , peerExists
--- , getPeerKeys
--- , getPeerValues
--- , getPeers
--- , increasePeerHeight
--- , getBestPeerHeight
--- 
---   -- * SPV Node
--- , SPVNode(..)
--- , SPVSession(..)
--- , SPVRequest( BloomFilterUpdate, PublishTx, NodeRescan )
--- , SPVData(..)
--- , withAsyncSPV
--- , processBloomFilter
+   -- * Peer
+, newPeerSession
+, startPeer
+, NodeException(..)
+ 
+   -- * Peer Manager
+, withPeerManager  
+, RemoteHost(..)
+
+   -- * SPV Node
+, withSpvBlockChain
+, DecodedMerkleBlock(..)
 
 ) where
 

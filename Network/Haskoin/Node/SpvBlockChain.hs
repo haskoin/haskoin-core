@@ -17,7 +17,6 @@ import Control.Monad.Trans.Control
     , control
     , liftBaseDiscard
     )
-import qualified Control.Monad.State as S (gets, modify)
 
 import qualified Data.Text as T (pack)
 import Data.Maybe (isJust, isNothing, fromJust, catMaybes, fromMaybe)
@@ -39,14 +38,14 @@ import Data.Conduit.TMChan
 import Data.Unique (hashUnique)
 import qualified Data.Map as M 
     ( Map, member, delete, lookup, fromList, fromListWith
-    , keys, elems, toList, toAscList, empty, map, filter
-    , adjust, update, singleton, insertWith
+    , keys, elems, toList, toAscList, empty, map, filter, size
+    , adjust, update, singleton, insertWith, insert, assocs
     )
 
 import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Transaction.Types
-import Network.Haskoin.Node.Bloom
+import Network.Haskoin.Constants
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.PeerManager
@@ -58,25 +57,27 @@ type SpvHandle m = StateT SpvSession (HeaderTreeT m)
 data SpvSession = SpvSession
     { -- Peer manager message channel
       mngrChan :: !(TBMChan ManagerMessage)
-      -- Wallet message channel
-    , wletChan :: !(TBMChan WalletMessage)
-      -- This flag is set if the wallet triggered a rescan.
-      -- The rescan can only be executed if no merkle block are still
-      -- being downloaded.
-    , pendingRescan :: !(Maybe Timestamp)
-      -- Do not request merkle blocks with a timestamp before the
-      -- fast catchup time.
-    , fastCatchup :: !Timestamp
+      -- Mempool message channel
+    , mempChan :: !(TBMChan MempoolMessage)
       -- Block hashes that a peer advertised to us but we haven't linked them
       -- yet to our chain. We use this list to update the peer height once
       -- those blocks are linked.
     , peerTickles :: !(M.Map BlockHash [PeerId])
+      -- Continue downloading blocks from this point on. The merkle download
+      -- process will be paused as long as this value is Nothing.
+    , windowEnd :: !(Maybe BlockHash)
+      -- Do not request merkle blocks with a timestamp before the
+      -- fast catchup time.
+    , fastCatchup :: !(Maybe Timestamp)
+      -- Generate Ids for identifying merkle block jobs. When a rescan is
+      -- triggered and jobs are still in the window, there is a possibility
+      -- to have duplicate identical jobs at the peer manager level. We want
+      -- to distinguish between them.
+    , dwnId :: !DwnId
       -- Merkle block window. Every element in the window corresponds to a
       -- merkle block download job. Completed jobs in the window are sent
-      -- to the wallet in order.
-    , merkleWindow :: ![(BlockChainAction, [DecodedMerkleBlock])]
-      -- Continue downloading blocks from this point on
-    , merkleDownload :: !BlockHash
+      -- to the mempool in order.
+    , merkleWindow :: !(M.Map DwnId (BlockChainAction, [DecodedMerkleBlock]))
     }
 
 data LocatorType
@@ -87,19 +88,17 @@ data LocatorType
 -- | Start the SpvBlockChain. This function will spin up a new thread and
 -- return the BlockChain message channel to communicate with it.
 withSpvBlockChain :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
-                  => Timestamp
-                  -> BlockHash
-                  -> TBMChan WalletMessage
-                  -> (TBMChan BlockChainMessage -> m ())
-                  -> HeaderTreeT m ()
-withSpvBlockChain fastCatchup merkleDownload wletChan f = do
+    => TBMChan MempoolMessage
+    -> (TBMChan BlockChainMessage -> TBMChan ManagerMessage -> m ())
+    -> HeaderTreeT m ()
+withSpvBlockChain mempChan f = do
     bkchChan <- liftIO $ atomically $ newTBMChan 10000
-    withPeerManager bkchChan wletChan $ \mngrChan -> do
-        let spvSyncPeer    = Nothing
-            receivedMerkle = M.empty
-            pendingRescan  = Nothing
-            peerTickles    = M.empty
-            merkleWindow   = []
+    withPeerManager bkchChan mempChan $ \mngrChan -> do
+        let peerTickles    = M.empty
+            windowEnd      = Nothing
+            fastCatchup    = Nothing
+            dwnId          = 0
+            merkleWindow   = M.empty
             session        = SpvSession{..}
             -- Run the main blockchain message processing loop
             run = sourceTBMChan bkchChan $$ processBlockChainMessage
@@ -107,15 +106,21 @@ withSpvBlockChain fastCatchup merkleDownload wletChan f = do
         -- Initialize Header Tree
         initHeaderTree
 
+        -- Trigger the header download
+        flip evalStateT session $ do
+            height <- runDB bestBlockHeaderHeight
+            headerSync (AnyPeer height) FullLocator Nothing
+
         withAsync (evalStateT run session) $ \a -> 
-            link a >> lift (f bkchChan)
+            link a >> lift (f bkchChan mngrChan)
 
 processBlockChainMessage :: (MonadLogger m, MonadIO m) 
                          => Sink BlockChainMessage (SpvHandle m) ()
 processBlockChainMessage = awaitForever $ \req -> lift $ case req of
     BlockTickle pid bid      -> processBlockTickle pid bid
     IncHeaders pid bhs       -> processBlockHeaders pid bhs
-    IncMerkleBlocks pid dmbs -> processMerkleBlocks pid dmbs
+    IncMerkleBlocks did dmbs -> processMerkleBlocks did dmbs
+    StartDownload   valE     -> processStartDownload valE
     _ -> return () -- Ignore block invs (except tickles) and full blocks
 
 processBlockTickle :: (MonadLogger m, MonadIO m) 
@@ -141,6 +146,14 @@ processBlockTickle pid bid = do
 
 processBlockHeaders :: (MonadLogger m, MonadIO m) 
                     => PeerId -> [BlockHeader] -> SpvHandle m ()
+
+processBlockHeaders pid [] = do
+    -- TODO: Should we check the tickles to continue the header download ?
+    $(logInfo) 
+        "Received empty block headers. Header sync with this peer is complete."
+    -- Try to download more merkle blocks
+    continueMerkleDownload
+
 processBlockHeaders pid bhs = do
     now <- liftM round $ liftIO getPOSIXTime
     -- Connect block headers and commit them
@@ -165,7 +178,7 @@ processBlockHeaders pid bhs = do
                 -- TODO: Schedule high priority AnyPeer on good scoring peers
                 headerSync (AnyPeer height) PartialLocator Nothing
                 -- Try to download more merkle blocks
-                downloadMerkles
+                continueMerkleDownload
 
 -- | Request a header download job for the given peer resource
 headerSync :: (MonadLogger m, MonadIO m)
@@ -185,63 +198,98 @@ headerSync resource locType hStopM = do
     sendManager $ PublishJob (JobHeaderSync loc hStopM) resource 2
 
 processMerkleBlocks :: (MonadLogger m, MonadIO m)
-                    => PeerId -> [DecodedMerkleBlock] -> SpvHandle m ()
-processMerkleBlocks pid dmbs = do
+                    => DwnId -> [DecodedMerkleBlock] -> SpvHandle m ()
+processMerkleBlocks did [] = do
+    $(logError) "Got a completed merkle job with an empty merkle list"
+    modify $ \s -> s{ merkleWindow = M.delete did $ merkleWindow s }
+    continueMerkleDownload
+processMerkleBlocks did dmbs = do
     win <- gets merkleWindow
-    -- Find which job in the window these merkles belong to
-    let (ls, match) = break f win
-    case match of
-        (action, []):rs -> do
+    -- Find this specific job in the window
+    case M.lookup did win of
+        Just (action, []) -> do
             -- Add the merkles to the window
-            let newWin = ls ++ [(action, dmbs)] ++ rs
-            modify $ \s -> s{ merkleWindow = newWin }
-            -- Try to send merkle blocks to the wallet
+            modify $ \s -> s{ merkleWindow = M.insert did (action, dmbs) win }
+            -- Try to send merkle blocks to the mempool
             dispatchMerkles
-        [] -> return () -- This shouldn't happen
-  where
-    bid = headerHash $ merkleHeader $ decodedMerkle $ head dmbs
-    f   = (== bid) . nodeBlockHash . head . actionNewNodes . fst
+        -- This can happen if we had pending jobs when issuing a rescan. We
+        -- simply ignore jobs from before the rescan.
+        _ -> return ()
 
+-- | Look for completed jobs at the start of the window and send them to the 
+-- mempool.
 dispatchMerkles :: (MonadLogger m, MonadIO m) => SpvHandle m ()
 dispatchMerkles = do
     win <- gets merkleWindow
-    case win of
-        -- If the first batch in the window is ready, send it to the wallet
-        ((action, dmbs@(d:ds)):rest) -> do
-            sendWallet $ MerkleBlockEvent action dmbs
-            modify $ \s -> s{ merkleWindow = rest }
+    case M.assocs win of
+        -- If the first batch in the window is ready, send it to the mempool
+        ((did, (action, dmbs@(d:ds))):_) -> do
+            sendMempool $ MempoolMerkle action dmbs
+            modify $ \s -> s{ merkleWindow = M.delete did win }
             dispatchMerkles
         -- Try to download more merkles if there is space in the window
-        _ -> downloadMerkles
+        _ -> continueMerkleDownload
 
 -- | If space is available in the merkle block download window, request
 -- more merkle block download jobs and add them to the window.
-downloadMerkles :: (MonadLogger m, MonadIO m) => SpvHandle m ()
-downloadMerkles = gets merkleWindow >>= \win -> when (length win < 10) $ do
-    dwn <- gets merkleDownload
-    -- Get a batch of blocks to download
-    -- TODO: Add this value to a configuration (100)
-    actionM <- runDB $ getNodeWindow dwn 100
-    case actionM of
-        -- Nothing to download
-        Nothing -> return ()
-        -- A batch of merkle blocks is available for download
-        Just action -> do
-            -- Update the merklDownload pointer
-            let nodes = actionNewNodes action
-            modify $ \s -> s{ merkleDownload = nodeBlockHash $ last nodes }
-            -- Check if the batch is after the fast catchup time
-            fc <- gets fastCatchup
-            when (any (>= fc) $ map (blockTimestamp . nodeHeader) nodes) $ do
-                let job    = JobDwnMerkles $ map nodeBlockHash nodes
-                    height = nodeHeaderHeight $ last nodes
-                -- Publish the job with low priority 10
-                sendManager $ PublishJob job (AnyPeer height) 10
-                -- Extend the window
-                modify $ \s -> s{ merkleWindow = win ++ [(action, [])] }
-            -- Recurse with the merkleDownload pointer updated
-            downloadMerkles
+continueMerkleDownload :: (MonadLogger m, MonadIO m) => SpvHandle m ()
+continueMerkleDownload = do
+    dwnM <- gets windowEnd
+    win  <- gets merkleWindow
+    -- Download merkle blocks if the wallet asked us to start and if there
+    -- is space left in the window
+    when (isJust dwnM && M.size win < 10) $ do
+        let dwn = fromJust dwnM
+        -- Get a batch of blocks to download
+        -- TODO: Add this value to a configuration (100)
+        actionM <- runDB $ getNodeWindow dwn 100
+        case actionM of
+            -- Nothing to download
+            Nothing -> return ()
+            -- A batch of merkle blocks is available for download
+            Just action -> do
+                -- Update the windowEnd pointer
+                let nodes  = actionNewNodes action
+                    winEnd = Just $ nodeBlockHash $ last nodes
+                modify $ \s -> s{ windowEnd = winEnd }
+                fcM <- gets fastCatchup 
+                let fc = fromJust fcM
+                    ts = map (blockTimestamp . nodeHeader) nodes
+                -- Check if the batch is after the fast catchup time
+                when (isNothing fcM || any (>= fc) ts) $ do
+                    did <- nextId
+                    let job    = JobDwnMerkles did $ map nodeBlockHash nodes
+                        height = nodeHeaderHeight $ last nodes
+                    -- Publish the job with low priority 10
+                    sendManager $ PublishJob job (AnyPeer height) 10
+                    -- Extend the window
+                    modify $ \s -> 
+                        s{ merkleWindow = M.insert did (action, []) win 
+                         -- We reached the fast catchup. Set to Nothing.
+                         , fastCatchup  = Nothing
+                         }
+                -- Recurse with the windowEnd pointer updated
+                continueMerkleDownload
 
+processStartDownload :: (MonadLogger m, MonadIO m) 
+                     => Either Timestamp BlockHash -> SpvHandle m ()
+processStartDownload valE = do
+    $(logInfo) $ T.pack $ unwords
+        [ "Initiating merkle block download from:" , show valE ]
+    let (fc, we) = case valE of
+            -- Set a fast catchup time and search from the genesis
+            Left ts -> (Just ts, Just $ headerHash genesisHeader)
+            -- No fast catchup time. Just download from the given block.
+            Right h -> (Nothing, Just h)
+    modify $ \s -> 
+        s{ fastCatchup = fc
+         , windowEnd = we
+         -- Empty the window to ignore any old pending jobs
+         , merkleWindow = M.empty
+         }
+    -- Trigger merkle block downloads
+    continueMerkleDownload
+    
 {- Helpers -}
 
 -- Add a BlockHash to the PeerId tickle map
@@ -265,14 +313,21 @@ adjustPeerHeight node = do
 -- Send a message to the PeerManager
 sendManager :: MonadIO m => ManagerMessage -> SpvHandle m ()
 sendManager msg = do
-    mChan <- gets mngrChan
-    liftIO . atomically $ writeTBMChan mChan msg
+    chan <- gets mngrChan
+    liftIO . atomically $ writeTBMChan chan msg
 
--- Send a message to the Wallet
-sendWallet :: MonadIO m => WalletMessage -> SpvHandle m ()
-sendWallet msg = do
-    wChan <- gets wletChan
-    liftIO . atomically $ writeTBMChan wChan msg
+-- Send a message to the mempool
+sendMempool :: MonadIO m => MempoolMessage -> SpvHandle m ()
+sendMempool msg = do
+    chan <- gets mempChan
+    liftIO . atomically $ writeTBMChan chan msg
+
+-- Simple counter from 0
+nextId :: Monad m => SpvHandle m DwnId
+nextId = do
+    id <- gets dwnId
+    modify $ \s -> s{ dwnId = id + 1 } 
+    return id
 
 runDB :: Monad m => HeaderTreeT m a -> SpvHandle m a
 runDB = lift

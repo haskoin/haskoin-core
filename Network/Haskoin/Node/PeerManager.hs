@@ -75,7 +75,7 @@ data PeerType
 data ManagerSession = ManagerSession
     { mngrChan      :: !(TBMChan ManagerMessage)
     , bkchChan      :: !(TBMChan BlockChainMessage)
-    , waltChan      :: !(TBMChan WalletMessage)
+    , mempChan      :: !(TBMChan MempoolMessage)
     , peerMap       :: !(M.Map PeerId PeerData)
     , remoteMap     :: !(M.Map RemoteHost RemoteData)
     , mngrBloom     :: !(Maybe BloomFilter)
@@ -107,10 +107,10 @@ data RemoteData = RemoteData
 -- return the PeerManager message channel to communicate with it.
 withPeerManager :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
                 => TBMChan BlockChainMessage
-                => TBMChan WalletMessage
+                => TBMChan MempoolMessage
                 -> (TBMChan ManagerMessage -> m ())
                 -> m ()
-withPeerManager bkchChan waltChan f = do
+withPeerManager bkchChan mempChan f = do
     mngrChan <- liftIO $ atomically $ newTBMChan 10000
     let peerMap       = M.empty
         remoteMap     = M.empty
@@ -186,8 +186,8 @@ connectToRemoteHost remote@(RemoteHost host port) = do
         -- Start the peer
         mChan   <- gets mngrChan
         bChan   <- gets bkchChan
-        wChan   <- gets waltChan
-        session <- liftIO $ newPeerSession mChan bChan wChan
+        oChan   <- gets mempChan
+        session <- liftIO $ newPeerSession mChan bChan oChan
 
         -- Save the state of the peer
         let pid = peerId session

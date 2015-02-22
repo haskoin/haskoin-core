@@ -89,7 +89,7 @@ data PeerSession = PeerSession
     , msgsChan       :: !(TBMChan Message)
     , peerChan       :: !(TBMChan PeerMessage)
     , bkchChan       :: !(TBMChan BlockChainMessage)
-    , wletChan       :: !(TBMChan WalletMessage)
+    , mempChan       :: !(TBMChan MempoolMessage)
     , peerVersion    :: !(Maybe Version)
     -- Current Job that the peer is working on
     , currentJob     :: !(Maybe Job)
@@ -111,9 +111,9 @@ instance Exception NodeException
 -- channel.
 newPeerSession :: TBMChan ManagerMessage 
                -> TBMChan BlockChainMessage
-               -> TBMChan WalletMessage
+               -> TBMChan MempoolMessage
                -> IO PeerSession
-newPeerSession mngrChan bkchChan wletChan = do 
+newPeerSession mngrChan bkchChan mempChan = do 
     -- Generate a new Peer unique ID
     peerId   <- newUnique
     -- Initialize the main Peer message channel
@@ -205,15 +205,19 @@ processJob = gets currentJob >>= \jobM -> case jobPayload <$> jobM of
         if null bids then jobDone else do
             let vs = map (InvVector InvBlock . fromIntegral) bids
             sendMessage $ MGetData $ GetData vs
-    Just (JobDwnMerkles bids) -> do
-        if null bids then jobDone else do
-            order <- gets merkleOrder
-            -- Update the order if it is empty only. Otherwise, a retry is
-            -- triggered and we want to save the complete order before the
-            -- retry.
-            when (null order) $ modify $ \s -> s{ merkleOrder = bids }
-            let vs = map (InvVector InvMerkleBlock . fromIntegral) bids
-            sendMessage $ MGetData $ GetData vs
+    Just (JobDwnMerkles did bids) -> do
+        if null bids 
+            then do
+                sendBlockChain $ IncMerkleBlocks did []
+                jobDone 
+            else do
+                order <- gets merkleOrder
+                -- Update the order if it is empty only. Otherwise, a retry is
+                -- triggered and we want to save the complete order before the
+                -- retry.
+                when (null order) $ modify $ \s -> s{ merkleOrder = bids }
+                let vs = map (InvVector InvMerkleBlock . fromIntegral) bids
+                sendMessage $ MGetData $ GetData vs
     Nothing -> $(logError) "processJob: No job currently assigned."
 
 jobDone :: MonadIO m => StateT PeerSession m ()
@@ -271,7 +275,7 @@ processInvMessage (Inv vs)
         sendBlockChain $ BlockTickle pid $ head blocklist
     | otherwise = do
         pid <- gets peerId
-        unless (null txlist) $ sendWallet $ TxInv pid txlist
+        unless (null txlist) $ sendMempool $ MempoolTxInv pid txlist
         unless (null blocklist) $ sendBlockChain $ BlockInv pid blocklist
   where
     txlist = map (fromIntegral . invHash) $ 
@@ -319,15 +323,16 @@ processVerAck :: MonadLogger m => m ()
 processVerAck = $(logInfo) "Version ACK received"
 
 -- | Process a MerkleBlock sent from the remote host
-processMerkleBlock :: MonadIO m => MerkleBlock -> StateT PeerSession m ()
+processMerkleBlock :: (MonadLogger m, MonadIO m) 
+                   => MerkleBlock -> StateT PeerSession m ()
 processMerkleBlock decodedMerkle@(MerkleBlock bh ntx hs fs) = do
     pid <- gets peerId
     -- Check that we are expecting this merkle bock. Otherwise, the remote
     -- peer is misbehaving by sending us unsolicited junk.
     gets currentJob >>= \jobM -> case jobM of
-        Just job@(Job _ _ _ (JobDwnMerkles bids)) ->
+        Just job@(Job _ _ _ (JobDwnMerkles _ bids)) ->
             if bid `elem` bids
-                then go pid
+                then go pid 
                 else sendManager $ PeerMisbehaving pid minorDoS
                     "Peer sent us an unsolicited merkle block"
         _ -> sendManager $ PeerMisbehaving pid minorDoS
@@ -359,8 +364,8 @@ processTx tx = do
                     s{ inflightMerkle = Just dmb{ merkleTxs = tx : txs } }
                 else do
                     endMerkleBlock dmb
-                    sendWallet $ TxEvent tx
-        Nothing -> sendWallet $ TxEvent tx
+                    sendMempool $ MempoolTx tx
+        Nothing -> sendMempool $ MempoolTx tx
 
     -- Check if the transaction is part of a Job
     currJobM <- gets currentJob
@@ -405,17 +410,16 @@ endMerkleBlock dmb@(DecodedMerkleBlock mb _ match txs) = do
     modify $ \s -> s{ inflightMerkle = Nothing }
     -- Get the current job and delete the block hash from the job
     gets currentJob >>= \jobM -> case jobM of
-        Just job@(Job _ _ _ (JobDwnMerkles bids)) ->
+        Just job@(Job _ _ _ (JobDwnMerkles did bids)) ->
             case delete bid bids of
                 -- We are done with this merkle job
                 [] -> do
-                    pid <- gets peerId
                     order <- gets merkleOrder
                     -- Reorder the buffer to match the order of the job
                     let g (a,_) b = a == b
                         orderedBuff = catMaybes $ matchTemplate buffer order g
                     -- Reverse the buffer due to how we built it
-                    sendBlockChain $ IncMerkleBlocks pid $ map snd orderedBuff
+                    sendBlockChain $ IncMerkleBlocks did $ map snd orderedBuff
                     modify $ \s -> s{ merkleBuffer = [] 
                                     , merkleOrder  = []
                                     }
@@ -423,7 +427,7 @@ endMerkleBlock dmb@(DecodedMerkleBlock mb _ match txs) = do
                 -- We have more merkles to download in this job
                 bids' -> 
                     -- Save the new job and merkle buffer
-                    let newJob = job{ jobPayload = JobDwnMerkles bids' }
+                    let newJob = job{ jobPayload = JobDwnMerkles did bids' }
                     in  modify $ \s -> s{ currentJob   = Just newJob 
                                         , merkleBuffer = buffer
                                         }
@@ -497,9 +501,9 @@ sendBlockChain msg = do
     chan <- gets bkchChan
     liftIO . atomically $ writeTBMChan chan msg
 
-sendWallet :: MonadIO m => WalletMessage -> StateT PeerSession m ()
-sendWallet msg = do
-    chan <- gets wletChan
+sendMempool :: MonadIO m => MempoolMessage -> StateT PeerSession m ()
+sendMempool msg = do
+    chan <- gets mempChan
     liftIO . atomically $ writeTBMChan chan msg
 
 closePeer :: MonadIO m => StateT PeerSession m ()

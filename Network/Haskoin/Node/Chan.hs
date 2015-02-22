@@ -2,13 +2,16 @@ module Network.Haskoin.Node.Chan
 ( PeerMessage(..)
 , ManagerMessage(..)
 , BlockChainMessage(..)
+, MempoolMessage(..)
 , WalletMessage(..)
+, WalletRequest(..)
 , PeerId
 , PeerJob(..)
 , JobResource(..)
 , JobPriority
 , Job(..)
 , JobId
+, DwnId
 , RemoteHost(..) 
 , DecodedMerkleBlock(..)
 , Behavior(..)
@@ -30,6 +33,7 @@ import Network.Haskoin.Crypto
 type PeerId = Unique
 type JobPriority = Int
 type JobId = Unique
+type DwnId = Integer
 
 data Job = Job
     { jobId       :: !JobId
@@ -67,7 +71,7 @@ data PeerJob
     | JobHeaderSync !BlockLocator !(Maybe BlockHash)
     | JobDwnTxs ![TxHash]
     | JobDwnBlocks ![BlockHash]
-    | JobDwnMerkles ![BlockHash]
+    | JobDwnMerkles !DwnId ![BlockHash]
 
 -- | Messages handled by a Peer actor
 data PeerMessage
@@ -83,7 +87,7 @@ data ManagerMessage
       -- Public messages
     = AddRemoteHosts ![RemoteHost]
     | SetBloomFilter !BloomFilter
-    | PublishJob !PeerJob !JobResource !JobPriority
+    | PublishJob !PeerJob !JobResource !JobPriority 
     | PeerHeight !PeerId !BlockHeight
       -- Messages from Peers
     | PeerConnected !PeerId !Version
@@ -100,13 +104,27 @@ data BlockChainMessage
     | BlockInv !PeerId ![BlockHash]
     | IncHeaders PeerId ![BlockHeader]
     | IncBlock !Block
-    | IncMerkleBlocks !PeerId ![DecodedMerkleBlock]
+    | IncMerkleBlocks !DwnId ![DecodedMerkleBlock]
+    | StartDownload !(Either Timestamp BlockHash)
 
+-- | Messages handled by the Mempool actor
+data MempoolMessage
+    = MempoolTxInv !PeerId ![TxHash]
+    | MempoolTx !Tx
+    | MempoolBlock !BlockChainAction !Block
+    | MempoolMerkle !BlockChainAction ![DecodedMerkleBlock]
+    | MempoolSynced
+
+-- | Node events sent to the wallet
 data WalletMessage
-    = TxEvent !Tx
-    | BlockEvent !BlockChainAction !Block
-    | MerkleBlockEvent !BlockChainAction ![DecodedMerkleBlock]
-    | TxInv !PeerId ![TxHash]
+    = WalletTx !Tx
+    | WalletBlock !BlockChainAction !Block
+    | WalletMerkle !BlockChainAction ![DecodedMerkleBlock]
+
+-- | Requests from the wallet to the node
+data WalletRequest
+    = WalletBloomFilter !BloomFilter
+    | WalletStartDownload !(Either Timestamp BlockHash)
 
 -- | Describes the behavior of a remote peer
 data Behavior

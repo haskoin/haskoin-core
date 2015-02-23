@@ -124,7 +124,9 @@ data WalletMessage
 -- | Requests from the wallet to the node
 data WalletRequest
     = WalletBloomFilter !BloomFilter
+    | WalletPublishTx !Tx
     | WalletStartDownload !(Either Timestamp BlockHash)
+    | WalletConnectPeers ![RemoteHost]
 
 -- | Describes the behavior of a remote peer
 data Behavior

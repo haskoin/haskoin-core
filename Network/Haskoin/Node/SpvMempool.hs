@@ -65,6 +65,12 @@ withSpvNode f = do
             liftIO $ atomically $ writeTBMChan mngrChan $ SetBloomFilter bloom
         WalletStartDownload valE ->
             liftIO $ atomically $ writeTBMChan bkchChan $ StartDownload valE
+        WalletConnectPeers peers ->
+            liftIO $ atomically $ writeTBMChan mngrChan $ AddRemoteHosts peers
+        WalletPublishTx tx ->
+            -- Publish a job with priority 1 on all peers
+            liftIO $ atomically $ writeTBMChan mngrChan $ 
+                PublishJob (JobSendTx tx) (AllPeers1 0) 1
 
 {- Mempool Actor -}
 

@@ -482,38 +482,32 @@ headerWork bh =
 indexKey :: BlockHash -> BS.ByteString
 indexKey bid = "index_" `BS.append` encode' bid
 
-getLevelDBNode :: (MonadIO m, MonadState L.DB m) 
-               => BlockHash -> m (Maybe BlockHeaderNode)
-getLevelDBNode bid = do
-    db <- get
+getLevelDBNode :: MonadIO m => L.DB -> BlockHash -> m (Maybe BlockHeaderNode)
+getLevelDBNode db bid = do
     resM <- L.get db def $ indexKey bid
     return $ decodeToMaybe =<< resM
 
-putLevelDBNode :: (MonadIO m, MonadState L.DB m) => BlockHeaderNode -> m ()
-putLevelDBNode node = do
-    db <- get
+putLevelDBNode :: MonadIO m => L.DB -> BlockHeaderNode -> m ()
+putLevelDBNode db node = do
     L.put db def (indexKey $ nodeBlockHash node) $ encode' node
 
--- TODO: Finish this
-runHeaderTreeLevelDB :: (MonadIO m, MonadState L.DB m) => HeaderTreeT m a -> m a
-runHeaderTreeLevelDB ht = runFreeT ht >>= \f -> case f of
+runHeaderTreeLevelDB :: MonadIO m => L.DB -> HeaderTreeT m a -> m a
+runHeaderTreeLevelDB db ht = runFreeT ht >>= \f -> case f of
     Free (GetBlockHeaderNode bid next) -> do
-        nodeM <- getLevelDBNode bid
-        runHeaderTreeLevelDB $ next nodeM
+        nodeM <- getLevelDBNode db bid
+        runHeaderTreeLevelDB db $ next nodeM
     Free (PutBlockHeaderNode node next) -> do
-        putLevelDBNode node
-        runHeaderTreeLevelDB next
+        putLevelDBNode db node
+        runHeaderTreeLevelDB db next
     Free (GetBestBlockHeader next) -> do
-        db <- get
         bidM <- L.get db def "bestblockheader"
         case decodeToMaybe =<< bidM of
             Just bid -> do
-                node <- liftM fromJust $ getLevelDBNode bid
-                runHeaderTreeLevelDB $ next node
+                node <- liftM fromJust $ getLevelDBNode db bid
+                runHeaderTreeLevelDB db $ next node
             Nothing  -> error 
                 "GetBestBlockHeader: Best block header does not exist"
     Free (SetBestBlockHeader node next) -> do
-        db <- get
         L.put db def "bestblockheader" $ encode' $ nodeBlockHash node
-        runHeaderTreeLevelDB next
+        runHeaderTreeLevelDB db next
 

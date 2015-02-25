@@ -29,7 +29,6 @@ module Network.Haskoin.Block
 
   -- * HeaderTree
 , HeaderTree
-, HeaderTreeT
 , BlockHeaderNode(..)
 , BlockChainAction(..)
 , actionNewNodes
@@ -47,9 +46,6 @@ module Network.Haskoin.Block
 , commitAction
 , blockLocator
 , getNodeWindow
-
-  -- * HeaderTree LevelDB implementation
-, runHeaderTreeLevelDB
 
   -- * Checkpoints
 , checkpointMap

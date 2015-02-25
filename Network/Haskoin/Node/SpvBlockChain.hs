@@ -52,8 +52,6 @@ import Network.Haskoin.Node.PeerManager
 import Network.Haskoin.Node.Peer
 import Network.Haskoin.Node.Chan
 
-type SpvHandle m = StateT SpvSession (HeaderTreeT m)
-
 data SpvSession = SpvSession
     { -- Peer manager message channel
       mngrChan :: !(TBMChan ManagerMessage)
@@ -87,10 +85,11 @@ data LocatorType
 
 -- | Start the SpvBlockChain. This function will spin up a new thread and
 -- return the BlockChain message channel to communicate with it.
-withSpvBlockChain :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+withSpvBlockChain 
+    :: (HeaderTree m, MonadLogger m, MonadIO m, MonadBaseControl IO m)
     => TBMChan MempoolMessage
     -> (TBMChan BlockChainMessage -> TBMChan ManagerMessage -> m ())
-    -> HeaderTreeT m ()
+    -> m ()
 withSpvBlockChain mempChan f = do
     bkchChan <- liftIO $ atomically $ newTBMChan 10000
     withPeerManager bkchChan mempChan $ \mngrChan -> do
@@ -101,21 +100,20 @@ withSpvBlockChain mempChan f = do
             merkleWindow   = M.empty
             session        = SpvSession{..}
             -- Run the main blockchain message processing loop
-            run = sourceTBMChan bkchChan $$ processBlockChainMessage
-
-        -- Initialize Header Tree
-        initHeaderTree
-
-        -- Trigger the header download
-        flip evalStateT session $ do
-            height <- runDB bestBlockHeaderHeight
-            headerSync (AnyPeer height) FullLocator Nothing
+            run = do
+                -- Initialize Header Tree
+                runDB initHeaderTree
+                -- Trigger the header download
+                height <- runDB bestBlockHeaderHeight
+                headerSync (AnyPeer height) FullLocator Nothing
+                -- Process messages
+                sourceTBMChan bkchChan $$ processBlockChainMessage
 
         withAsync (evalStateT run session) $ \a -> 
-            link a >> lift (f bkchChan mngrChan)
+            link a >> f bkchChan mngrChan
 
-processBlockChainMessage :: (MonadLogger m, MonadIO m) 
-                         => Sink BlockChainMessage (SpvHandle m) ()
+processBlockChainMessage :: (HeaderTree m, MonadLogger m, MonadIO m) 
+                         => Sink BlockChainMessage (StateT SpvSession m) ()
 processBlockChainMessage = awaitForever $ \req -> lift $ case req of
     BlockTickle pid bid      -> processBlockTickle pid bid
     IncHeaders pid bhs       -> processBlockHeaders pid bhs
@@ -123,8 +121,8 @@ processBlockChainMessage = awaitForever $ \req -> lift $ case req of
     StartDownload   valE     -> processStartDownload valE
     _ -> return () -- Ignore block invs (except tickles) and full blocks
 
-processBlockTickle :: (MonadLogger m, MonadIO m) 
-                   => PeerId -> BlockHash -> SpvHandle m ()
+processBlockTickle :: (HeaderTree m, MonadLogger m, MonadIO m) 
+                   => PeerId -> BlockHash -> StateT SpvSession m ()
 processBlockTickle pid bid = do
     $(logInfo) $ T.pack $ unwords
         [ "Got block tickle"
@@ -144,8 +142,8 @@ processBlockTickle pid bid = do
             --Request headers so we can connect this block
             headerSync (ThisPeer pid) FullLocator $ Just bid
 
-processBlockHeaders :: (MonadLogger m, MonadIO m) 
-                    => PeerId -> [BlockHeader] -> SpvHandle m ()
+processBlockHeaders :: (HeaderTree m, MonadLogger m, MonadIO m) 
+                    => PeerId -> [BlockHeader] -> StateT SpvSession m ()
 
 processBlockHeaders pid [] = do
     -- TODO: Should we check the tickles to continue the header download ?
@@ -181,9 +179,9 @@ processBlockHeaders pid bhs = do
                 continueMerkleDownload
 
 -- | Request a header download job for the given peer resource
-headerSync :: (MonadLogger m, MonadIO m)
+headerSync :: (HeaderTree m, MonadLogger m, MonadIO m)
            => JobResource -> LocatorType -> Maybe BlockHash
-           -> SpvHandle m ()
+           -> StateT SpvSession m ()
 headerSync resource locType hStopM = do
     $(logInfo) $ T.pack $ unwords 
         [ "Requesting more BlockHeaders"
@@ -197,8 +195,8 @@ headerSync resource locType hStopM = do
     -- give priority to BloomFilters (0) and Tx broadcasts (1)
     sendManager $ PublishJob (JobHeaderSync loc hStopM) resource 2
 
-processMerkleBlocks :: (MonadLogger m, MonadIO m)
-                    => DwnId -> [DecodedMerkleBlock] -> SpvHandle m ()
+processMerkleBlocks :: (HeaderTree m, MonadLogger m, MonadIO m)
+                    => DwnId -> [DecodedMerkleBlock] -> StateT SpvSession m ()
 processMerkleBlocks did [] = do
     $(logError) "Got a completed merkle job with an empty merkle list"
     modify $ \s -> s{ merkleWindow = M.delete did $ merkleWindow s }
@@ -218,7 +216,8 @@ processMerkleBlocks did dmbs = do
 
 -- | Look for completed jobs at the start of the window and send them to the 
 -- mempool.
-dispatchMerkles :: (MonadLogger m, MonadIO m) => SpvHandle m ()
+dispatchMerkles :: (HeaderTree m, MonadLogger m, MonadIO m) 
+                => StateT SpvSession m ()
 dispatchMerkles = do
     win <- gets merkleWindow
     case M.assocs win of
@@ -232,7 +231,8 @@ dispatchMerkles = do
 
 -- | If space is available in the merkle block download window, request
 -- more merkle block download jobs and add them to the window.
-continueMerkleDownload :: (MonadLogger m, MonadIO m) => SpvHandle m ()
+continueMerkleDownload :: (HeaderTree m, MonadLogger m, MonadIO m) 
+                       => StateT SpvSession m ()
 continueMerkleDownload = do
     dwnM <- gets windowEnd
     win  <- gets merkleWindow
@@ -271,8 +271,8 @@ continueMerkleDownload = do
                 -- Recurse with the windowEnd pointer updated
                 continueMerkleDownload
 
-processStartDownload :: (MonadLogger m, MonadIO m) 
-                     => Either Timestamp BlockHash -> SpvHandle m ()
+processStartDownload :: (HeaderTree m, MonadLogger m, MonadIO m) 
+                     => Either Timestamp BlockHash -> StateT SpvSession m ()
 processStartDownload valE = do
     $(logInfo) $ T.pack $ unwords
         [ "Initiating merkle block download from:" , show valE ]
@@ -293,12 +293,12 @@ processStartDownload valE = do
 {- Helpers -}
 
 -- Add a BlockHash to the PeerId tickle map
-addPeerTickle :: Monad m => PeerId -> BlockHash -> SpvHandle m ()
+addPeerTickle :: Monad m => PeerId -> BlockHash -> StateT SpvSession m ()
 addPeerTickle pid bid = modify $ \s ->
     s{ peerTickles = M.insertWith (++) bid [pid] $ peerTickles s }
 
 -- Adjust height of peers that sent us a tickle for these blocks
-adjustPeerHeight :: MonadIO m => BlockHeaderNode -> SpvHandle m ()
+adjustPeerHeight :: MonadIO m => BlockHeaderNode -> StateT SpvSession m ()
 adjustPeerHeight node = do
     pidsM <- liftM (M.lookup bid) $ gets peerTickles
     case pidsM of
@@ -311,24 +311,23 @@ adjustPeerHeight node = do
     h   = nodeHeaderHeight node
 
 -- Send a message to the PeerManager
-sendManager :: MonadIO m => ManagerMessage -> SpvHandle m ()
+sendManager :: MonadIO m => ManagerMessage -> StateT SpvSession m ()
 sendManager msg = do
     chan <- gets mngrChan
     liftIO . atomically $ writeTBMChan chan msg
 
 -- Send a message to the mempool
-sendMempool :: MonadIO m => MempoolMessage -> SpvHandle m ()
+sendMempool :: MonadIO m => MempoolMessage -> StateT SpvSession m ()
 sendMempool msg = do
     chan <- gets mempChan
     liftIO . atomically $ writeTBMChan chan msg
 
 -- Simple counter from 0
-nextId :: Monad m => SpvHandle m DwnId
+nextId :: Monad m => StateT SpvSession m DwnId
 nextId = do
     id <- gets dwnId
     modify $ \s -> s{ dwnId = id + 1 } 
     return id
 
-runDB :: Monad m => HeaderTreeT m a -> SpvHandle m a
+runDB :: HeaderTree m => m a -> StateT SpvSession m a
 runDB = lift
-

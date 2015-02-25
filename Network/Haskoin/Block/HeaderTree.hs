@@ -1,13 +1,11 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Network.Haskoin.Block.HeaderTree where
 
-import Control.Applicative ((<$>), (<*>))
 import Control.Monad (foldM, when, unless, liftM, (<=<), forM)
 import Control.Monad.Trans (lift, liftIO, MonadIO)
 import Control.Monad.Trans.Either (EitherT, left, runEitherT)
-import Control.Monad.State (MonadState, StateT, evalStateT, get)
+import Control.Monad.State (MonadState(..), StateT, evalStateT, get)
 import Control.Monad.Logger (MonadLogger(..))
-import Control.Monad.Trans.Free (FreeF(..), Free, FreeT(..), liftF, runFreeT)
 import Control.Monad.Base (MonadBase(..), liftBaseDefault)
 import Control.Monad.Trans.Control
     ( MonadTransControl(..)
@@ -48,52 +46,11 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Constants
 import Network.Haskoin.Util
 
-data HeaderTreeF a
-    = GetBlockHeaderNode BlockHash ( Maybe BlockHeaderNode -> a )
-    | PutBlockHeaderNode BlockHeaderNode a
-    | GetBestBlockHeader ( BlockHeaderNode -> a )
-    | SetBestBlockHeader BlockHeaderNode a
-    deriving Functor
-
--- | HeaderTree Free monad transformer
-type HeaderTreeT m = FreeT HeaderTreeF m
-
--- | HeaderTree Free monad
-type HeaderTree = Free HeaderTreeF
-
--- MonadLogger instance for HeaderTreeT
-instance MonadLogger m => MonadLogger (HeaderTreeT m) where
-    monadLoggerLog a b c d = lift $ monadLoggerLog a b c d
-
-instance MonadBase b m => MonadBase b (HeaderTreeT m) where
-    liftBase = liftBaseDefault
-
--- MonadBaseControl instance for HeaderTreeT
-instance MonadBaseControl b m => MonadBaseControl b (HeaderTreeT m) where
-    newtype StM (HeaderTreeT m) a = 
-        StMHeaderTreeT (StM m (FreeF HeaderTreeF a (HeaderTreeT m a)))
-
-    liftBaseWith f = 
-        FreeT $ liftM Pure $
-            liftBaseWith $ \runInBase -> 
-                f $ \ht -> liftM StMHeaderTreeT $ runInBase $ runFreeT ht
-
-    restoreM (StMHeaderTreeT m) = FreeT . restoreM $ m
-    {-# INLINE liftBaseWith #-}
-    {-# INLINE restoreM #-}
-
-getBlockHeaderNode :: Monad m 
-                   => BlockHash -> HeaderTreeT m (Maybe BlockHeaderNode)
-getBlockHeaderNode bh = liftF $ GetBlockHeaderNode bh id
-
-putBlockHeaderNode :: Monad m => BlockHeaderNode -> HeaderTreeT m ()
-putBlockHeaderNode bhn = liftF $ PutBlockHeaderNode bhn ()
-
-getBestBlockHeader :: Monad m => HeaderTreeT m BlockHeaderNode
-getBestBlockHeader = liftF $ GetBestBlockHeader id
-
-setBestBlockHeader :: Monad m => BlockHeaderNode -> HeaderTreeT m ()
-setBestBlockHeader bhn = liftF $ SetBestBlockHeader bhn ()
+class Monad m => HeaderTree m where
+    getBlockHeaderNode :: BlockHash -> m (Maybe BlockHeaderNode)
+    putBlockHeaderNode :: BlockHeaderNode -> m ()
+    getBestBlockHeader :: m BlockHeaderNode
+    setBestBlockHeader :: BlockHeaderNode -> m ()
 
 -- | Data type representing a BlockHeader node in the header chain. It
 -- contains additional data such as the chain work and chain height for this
@@ -162,7 +119,7 @@ genesisNode = BlockHeaderNode
 
 -- | Initialize the block header chain by inserting the genesis block if
 -- it doesn't already exist.
-initHeaderTree :: Monad m => HeaderTreeT m ()
+initHeaderTree :: HeaderTree m => m ()
 initHeaderTree = do
     genM <- getBlockHeaderNode $ nodeBlockHash genesisNode
     when (isNothing genM) $ do
@@ -173,11 +130,11 @@ initHeaderTree = do
 -- them individually. The work check will only be done once for the whole
 -- chain. The list of BlockHeaders have to form a valid chain, linked by their
 -- parents.
-connectHeaders :: Monad m
+connectHeaders :: HeaderTree m
                => [BlockHeader]
                -> Timestamp
                -> Bool
-               -> HeaderTreeT m (Either String BlockChainAction)
+               -> m (Either String BlockChainAction)
 connectHeaders bhs adjustedTime commit
     | null bhs = return $ Left "Invalid empty BlockHeaders in connectHeaders"
     | validChain bhs = runEitherT $ do
@@ -194,17 +151,17 @@ connectHeaders bhs adjustedTime commit
 
 -- | Connect a block header to this block header chain. Corresponds to bitcoind
 -- function ProcessBlockHeader and AcceptBlockHeader in main.cpp.
-connectHeader :: Monad m 
+connectHeader :: HeaderTree m 
               => BlockHeader
               -> Timestamp
               -> Bool
-              -> HeaderTreeT m (Either String BlockChainAction)
+              -> m (Either String BlockChainAction)
 connectHeader bh adjustedTime commit = runEitherT $ do
     parNode <- verifyBlockHeader bh adjustedTime
     lift $ evalNewChain commit =<< storeBlockHeader bh parNode
 
-evalNewChain :: Monad m 
-             => Bool -> BlockHeaderNode -> HeaderTreeT m BlockChainAction
+evalNewChain :: HeaderTree m 
+             => Bool -> BlockHeaderNode -> m BlockChainAction
 evalNewChain commit newNode = do
     currentHead <- getBestBlockHeader
     action <- go =<< findSplitNode currentHead newNode
@@ -218,7 +175,7 @@ evalNewChain commit newNode = do
         | otherwise = return $ SideChain new
 
 -- | Update the best block header of the action in the header tree
-commitAction :: Monad m => BlockChainAction -> HeaderTreeT m ()
+commitAction :: HeaderTree m => BlockChainAction -> m ()
 commitAction action = do
     currentHead <- getBestBlockHeader
     let newNodes = actionNewNodes action
@@ -235,10 +192,10 @@ commitAction action = do
     updateChilds _ = return ()
     
 -- TODO: Add DOS return values
-verifyBlockHeader :: Monad m 
+verifyBlockHeader :: HeaderTree m 
                   => BlockHeader 
                   -> Timestamp
-                  -> EitherT String (HeaderTreeT m) BlockHeaderNode
+                  -> EitherT String m BlockHeaderNode
 verifyBlockHeader bh adjustedTime  = do
     unless (isValidPOW bh) $ left "Invalid proof of work"
 
@@ -277,10 +234,10 @@ verifyBlockHeader bh adjustedTime  = do
     bid = headerHash bh
 
 -- Build a new block header and store it
-storeBlockHeader :: Monad m 
+storeBlockHeader :: HeaderTree m 
                  => BlockHeader 
                  -> BlockHeaderNode
-                 -> HeaderTreeT m BlockHeaderNode
+                 -> m BlockHeaderNode
 storeBlockHeader bh parNode = do
     let nodeBlockHash    = bid
         nodeHeader       = bh
@@ -310,11 +267,11 @@ storeBlockHeader bh parNode = do
 -- orphaned chain, we backtrack and return the window in the main chain.
 -- The result is returned in a BlockChainAction to know if we had to 
 -- backtrack into the main chain or not.
-getNodeWindow :: Monad m 
-              => BlockHash -> Int -> HeaderTreeT m (Maybe BlockChainAction)
+getNodeWindow :: HeaderTree m 
+              => BlockHash -> Int -> m (Maybe BlockChainAction)
 getNodeWindow bh cnt = getBlockHeaderNode bh >>= \nodeM -> case nodeM of
-    Just node -> go [] cnt node
-    Nothing -> return Nothing
+        Just node -> go [] cnt node
+        Nothing -> return Nothing
   where
     go [] 0 _  = return Nothing
     go acc 0 _ = return $ Just $ BestChain $ reverse acc
@@ -339,28 +296,24 @@ getNodeWindow bh cnt = getBlockHeaderNode bh >>= \nodeM -> case nodeM of
 
 -- | Find the split point between two nodes. It also returns the two partial
 -- chains leading from the split point to the respective nodes.
-findSplitNode :: Monad m
+findSplitNode :: HeaderTree m
               => BlockHeaderNode 
               -> BlockHeaderNode
-              -> HeaderTreeT m ( BlockHeaderNode
-                               , [BlockHeaderNode]
-                               , [BlockHeaderNode]
-                               )
+              -> m (BlockHeaderNode, [BlockHeaderNode], [BlockHeaderNode])
 findSplitNode n1 n2 = 
     go [] [] n1 n2
   where
     go xs ys x y
         | nodeBlockHash x == nodeBlockHash y = return (x, xs, ys)
         | nodeHeaderHeight x > nodeHeaderHeight y = do
-            par <- fromJust <$> getParentNode x
+            par <- liftM fromJust $ getParentNode x
             go (x:xs) ys par y
         | otherwise = do
-            par <- fromJust <$> getParentNode y
+            par <- liftM fromJust $ getParentNode y
             go xs (y:ys) x par
 
 -- | Finds the parent of a BlockHeaderNode
-getParentNode :: Monad m 
-              => BlockHeaderNode -> HeaderTreeT m (Maybe BlockHeaderNode)
+getParentNode :: HeaderTree m => BlockHeaderNode -> m (Maybe BlockHeaderNode)
 getParentNode node
     | p == 0    = return Nothing
     | otherwise = getBlockHeaderNode p
@@ -370,27 +323,25 @@ getParentNode node
 -- | Finds the child of a BlockHeaderNode if it exists. If a node has
 -- multiple childs, this function will always return the child on the
 -- main branch.
-getChildNode :: Monad m 
-             => BlockHeaderNode -> HeaderTreeT m (Maybe BlockHeaderNode)
+getChildNode :: HeaderTree m => BlockHeaderNode -> m (Maybe BlockHeaderNode)
 getChildNode node = case nodeChild node of
     Just child -> getBlockHeaderNode child
     Nothing    -> return Nothing
 
 -- | Get the last checkpoint that we have seen
-lastSeenCheckpoint :: Monad m => HeaderTreeT m (Maybe (Int, BlockHash))
+lastSeenCheckpoint :: HeaderTree m => m (Maybe (Int, BlockHash))
 lastSeenCheckpoint = 
     go $ reverse checkpointList
   where
     go ((i, chk):xs) = do
-        existsChk <- isJust <$> getBlockHeaderNode chk
+        existsChk <- liftM isJust $ getBlockHeaderNode chk
         if existsChk then return $ Just (i, chk) else go xs
     go [] = return Nothing
 
 -- | Returns the work required for a BlockHeader given the previous
 -- BlockHeaderNode. This function coresponds to bitcoind function
 -- GetNextWorkRequired in main.cpp.
-nextWorkRequired :: Monad m 
-                 => BlockHeaderNode -> BlockHeader -> HeaderTreeT m Word32
+nextWorkRequired :: HeaderTree m => BlockHeaderNode -> BlockHeader -> m Word32
 nextWorkRequired lastNode bh
     -- Genesis block
     | prevBlock (nodeHeader lastNode) == 0 = return $ encodeCompact powLimit
@@ -406,7 +357,7 @@ nextWorkRequired lastNode bh
         return $ workFromInterval lastTs (nodeHeader lastNode)
   where
     len   = fromIntegral diffInterval - 1
-    fs    = replicate len (fmap fromJust . getParentNode)
+    fs    = replicate len (liftM fromJust . getParentNode)
     delta = targetSpacing * 2
     minPOW
         | blockTimestamp bh > (blockTimestamp $ nodeHeader lastNode) + delta =
@@ -430,7 +381,7 @@ workFromInterval ts lastB
     newDiff = lastDiff * (toInteger actualTime) `div` (toInteger targetTimespan)
 
 -- | Returns a BlockLocator object.
-blockLocator :: Monad m => HeaderTreeT m BlockLocator
+blockLocator :: HeaderTree m => m BlockLocator
 blockLocator = do
     h  <- getBestBlockHeader
     let xs = [go ((2 :: Int)^x) | x <- ([0..] :: [Int])]
@@ -445,11 +396,10 @@ blockLocator = do
         Just par -> if step == 0 then return (Just n) else go (step - 1) par
         Nothing  -> return Nothing
 
-bestBlockHeaderHeight :: Monad m => HeaderTreeT m BlockHeight
+bestBlockHeaderHeight :: HeaderTree m => m BlockHeight
 bestBlockHeaderHeight = liftM nodeHeaderHeight getBestBlockHeader
 
-getBlockHeaderHeight :: Monad m 
-                     => BlockHash -> HeaderTreeT m (Maybe BlockHeight)
+getBlockHeaderHeight :: HeaderTree m => BlockHash -> m (Maybe BlockHeight)
 getBlockHeaderHeight = return . fmap nodeHeaderHeight <=< getBlockHeaderNode
 
 -- | Returns True if the difficulty target (bits) of the header is valid
@@ -479,35 +429,32 @@ headerWork bh =
 
 {- Default LevelDB implementation -}
 
-indexKey :: BlockHash -> BS.ByteString
-indexKey bid = "index_" `BS.append` encode' bid
+blockHashKey :: BlockHash -> BS.ByteString
+blockHashKey bid = encode' bid
 
-getLevelDBNode :: MonadIO m => L.DB -> BlockHash -> m (Maybe BlockHeaderNode)
-getLevelDBNode db bid = do
-    resM <- L.get db def $ indexKey bid
+bestBlockKey :: BS.ByteString
+bestBlockKey = "bestblockheader"
+
+getLevelDBNode :: MonadIO m
+               => BS.ByteString -> StateT L.DB m (Maybe BlockHeaderNode)
+getLevelDBNode key = do
+    db <- get
+    resM <- liftIO $ L.get db def key
     return $ decodeToMaybe =<< resM
 
-putLevelDBNode :: MonadIO m => L.DB -> BlockHeaderNode -> m ()
-putLevelDBNode db node = do
-    L.put db def (indexKey $ nodeBlockHash node) $ encode' node
-
-runHeaderTreeLevelDB :: MonadIO m => L.DB -> HeaderTreeT m a -> m a
-runHeaderTreeLevelDB db ht = runFreeT ht >>= \f -> case f of
-    Free (GetBlockHeaderNode bid next) -> do
-        nodeM <- getLevelDBNode db bid
-        runHeaderTreeLevelDB db $ next nodeM
-    Free (PutBlockHeaderNode node next) -> do
-        putLevelDBNode db node
-        runHeaderTreeLevelDB db next
-    Free (GetBestBlockHeader next) -> do
-        bidM <- L.get db def "bestblockheader"
-        case decodeToMaybe =<< bidM of
-            Just bid -> do
-                node <- liftM fromJust $ getLevelDBNode db bid
-                runHeaderTreeLevelDB db $ next node
+instance MonadIO m => HeaderTree (StateT L.DB m) where
+    getBlockHeaderNode = getLevelDBNode . blockHashKey
+    putBlockHeaderNode node = do
+        db <- get
+        liftIO $ L.put db def (blockHashKey $ nodeBlockHash node) $ encode' node
+    getBestBlockHeader = do
+        db <- get
+        keyM <- liftIO $ L.get db def bestBlockKey
+        case keyM of
+            Just key -> liftM fromJust $ getLevelDBNode key
             Nothing  -> error 
                 "GetBestBlockHeader: Best block header does not exist"
-    Free (SetBestBlockHeader node next) -> do
-        L.put db def "bestblockheader" $ encode' $ nodeBlockHash node
-        runHeaderTreeLevelDB db next
+    setBestBlockHeader node = do
+        db <- get
+        liftIO $ L.put db def bestBlockKey $ blockHashKey $ nodeBlockHash node
 

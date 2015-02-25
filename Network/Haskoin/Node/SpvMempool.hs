@@ -1,6 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Network.Haskoin.Node.SpvMempool
 ( withSpvNode
+, withSpvMempool
 ) where
 
 import Control.Applicative ((<$>))
@@ -49,9 +50,9 @@ import Network.Haskoin.Node.SpvBlockChain
 
 -- | Start an SPV node. This function will return a channel for receiving
 -- node events and a channel for sending requests to the node.
-withSpvNode :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
-            => (TBMChan WalletMessage -> TBMChan WalletRequest -> m ())
-            -> HeaderTreeT m ()
+withSpvNode :: (HeaderTree m, MonadLogger m, MonadIO m, MonadBaseControl IO m)
+            => (TBMChan WalletMessage -> TBMChan NodeRequest -> m ())
+            -> m ()
 withSpvNode f = do
     wletChan <- liftIO $ atomically $ newTBMChan 10000
     reqChan  <- liftIO $ atomically $ newTBMChan 10000
@@ -61,13 +62,13 @@ withSpvNode f = do
         withAsync run $ \a -> link a >> f wletChan reqChan
   where
     go bkchChan mngrChan = awaitForever $ \req -> case req of
-        WalletBloomFilter bloom -> 
+        NodeBloomFilter bloom -> 
             liftIO $ atomically $ writeTBMChan mngrChan $ SetBloomFilter bloom
-        WalletStartDownload valE ->
+        NodeStartDownload valE ->
             liftIO $ atomically $ writeTBMChan bkchChan $ StartDownload valE
-        WalletConnectPeers peers ->
+        NodeConnectPeers peers ->
             liftIO $ atomically $ writeTBMChan mngrChan $ AddRemoteHosts peers
-        WalletPublishTx tx ->
+        NodePublishTx tx ->
             -- Publish a job with priority 1 on all peers
             liftIO $ atomically $ writeTBMChan mngrChan $ 
                 PublishJob (JobSendTx tx) (AllPeers1 0) 1
@@ -100,10 +101,11 @@ data MempoolSession = MempoolSession
 -- the chain is synced up before sending them to the wallet. It will also
 -- suspend merkle block delivery while there are inflight transaction downloads.
 -- This is to prevent race conditions where the wallet could miss confirmations.
-withSpvMempool :: (MonadLogger m, MonadIO m, MonadBaseControl IO m) 
-               => TBMChan WalletMessage
-               -> (TBMChan BlockChainMessage -> TBMChan ManagerMessage -> m ())
-               -> HeaderTreeT m ()
+withSpvMempool 
+    :: (HeaderTree m, MonadLogger m, MonadIO m, MonadBaseControl IO m) 
+    => TBMChan WalletMessage
+    -> (TBMChan BlockChainMessage -> TBMChan ManagerMessage -> m ())
+    -> m ()
 withSpvMempool wletChan f = do
     mempChan <- liftIO $ atomically $ newTBMChan 10000
     withSpvBlockChain mempChan $ \bkchChan mngrChan -> do

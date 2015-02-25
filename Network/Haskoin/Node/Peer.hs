@@ -29,6 +29,7 @@ import Control.Monad.Logger
     , logInfo
     , logError
     , logWarn
+    , logDebug
     )
 
 import Data.Word (Word32)
@@ -133,11 +134,11 @@ newPeerSession mngrChan bkchChan mempChan = do
 startPeer :: (MonadLogger m, MonadIO m, MonadBaseControl IO m) 
           => PeerSession -> AppData -> m ()
 startPeer session ad = do
-        -- Spin up thread for sending messages to the remote host
-    let runSendMsg = (appSource ad) $$ decodeMessage 
-        chan       = msgsChan session
         -- Spin up thread for receiving messages from the remote host
-        runRecvMsg = (sourceTBMChan chan) $= encodeMessage $$ (appSink ad)
+    let runRecvMsg = (appSource ad) $$ decodeMessage 
+        chan       = msgsChan session
+        -- Spin up thread for sending messages to the remote host
+        runSendMsg = (sourceTBMChan chan) $= encodeMessage $$ (appSink ad)
 
     -- The PeerSession state is copied into the child threads but ignored by
     -- the parent thread.
@@ -173,6 +174,9 @@ processPeerMessage = await >>= \m -> case m of
             processJob
         processPeerMessage
     Just RetryJob -> do
+        pid <- gets peerId
+        $(logDebug) $ T.pack $ unwords
+            [ "Peer", show $ hashUnique pid , "is retrying his job" ]
         lift processJob
         processPeerMessage
     Just (MsgFromRemote msg) -> do
@@ -239,7 +243,6 @@ processRemoteMessage msg = checkInitVersion >>= \valid -> when valid $ do
     -- transaction, we know that we are done processing the merkle block.
     merkleM <- gets inflightMerkle
     when (isJust merkleM && isNotTx msg) $ endMerkleBlock $ fromJust merkleM
-    pid <- gets peerId
     -- Dispatch the message to the right actor for handling
     case msg of
         MVersion v            -> processVersion v
@@ -378,7 +381,8 @@ processTx tx = do
   where
     tid = txHash tx
 
-processHeaders :: MonadIO m => Headers -> StateT PeerSession m ()
+processHeaders :: (MonadLogger m, MonadIO m) 
+               => Headers -> StateT PeerSession m ()
 processHeaders (Headers hs) = do
     pid <- gets peerId
     sendBlockChain $ IncHeaders pid $ map fst hs

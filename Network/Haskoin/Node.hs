@@ -53,9 +53,15 @@ module Network.Haskoin.Node
 , withPeerManager  
 , RemoteHost(..)
 
-   -- * SPV Node
+   -- * SPV Blockchain
 , withSpvBlockChain
 , DecodedMerkleBlock(..)
+
+   -- * SPV Mempool & Node
+, withSpvMempool
+, withSpvNode
+, WalletMessage(..)
+, NodeRequest(..)
 
 ) where
 
@@ -66,4 +72,5 @@ import Network.Haskoin.Node.Chan
 import Network.Haskoin.Node.Peer
 import Network.Haskoin.Node.PeerManager
 import Network.Haskoin.Node.SpvBlockChain
+import Network.Haskoin.Node.SpvMempool
 

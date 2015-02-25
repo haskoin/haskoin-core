@@ -4,9 +4,10 @@ module Network.Haskoin.Node.Chan
 , BlockChainMessage(..)
 , MempoolMessage(..)
 , WalletMessage(..)
-, WalletRequest(..)
+, NodeRequest(..)
 , PeerId
 , PeerJob(..)
+, showJob
 , JobResource(..)
 , JobPriority
 , Job(..)
@@ -73,6 +74,15 @@ data PeerJob
     | JobDwnBlocks ![BlockHash]
     | JobDwnMerkles !DwnId ![BlockHash]
 
+showJob :: PeerJob -> String
+showJob pJob = case pJob of
+    JobSendBloomFilter _ -> "JobSendBloomFilter"
+    JobSendTx _          -> "JobSendTx"
+    JobHeaderSync _ _    -> "JobHeaderSync"
+    JobDwnTxs _          -> "JobDwnTxs"
+    JobDwnBlocks _       -> "JobDwnBlocks"
+    JobDwnMerkles _ _    -> "JobDwnMerkles"
+
 -- | Messages handled by a Peer actor
 data PeerMessage
       -- Public Messages
@@ -122,11 +132,11 @@ data WalletMessage
     | WalletMerkle !BlockChainAction ![DecodedMerkleBlock]
 
 -- | Requests from the wallet to the node
-data WalletRequest
-    = WalletBloomFilter !BloomFilter
-    | WalletPublishTx !Tx
-    | WalletStartDownload !(Either Timestamp BlockHash)
-    | WalletConnectPeers ![RemoteHost]
+data NodeRequest
+    = NodeBloomFilter !BloomFilter
+    | NodePublishTx !Tx
+    | NodeStartDownload !(Either Timestamp BlockHash)
+    | NodeConnectPeers ![RemoteHost]
 
 -- | Describes the behavior of a remote peer
 data Behavior

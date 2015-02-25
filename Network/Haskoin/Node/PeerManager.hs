@@ -155,9 +155,7 @@ addRemoteHosts remotes = do
 
     forM_ newRemotes $ \remote -> do
         $(logInfo) $ T.pack $ unwords
-            [ "Adding remote peer"
-            , "(", show remote, ")"
-            ]
+            [ "Adding remote peer" , "(", show remote, ")" ]
 
         -- Add new RemoteData
         putRemoteData remote $ RemoteData GoodBehavior 1
@@ -179,9 +177,7 @@ connectToRemoteHost remote@(RemoteHost host port) = do
     when (M.null peers && not banned) $ do
 
         $(logInfo) $ T.pack $ unwords
-            [ "Connecting to remote peer" 
-            , "(", show remote, ")" 
-            ] 
+            [ "Connecting to remote peer" , "(", show remote, ")" ] 
 
         -- Start the peer
         mChan   <- gets mngrChan
@@ -222,9 +218,7 @@ processPeerConnected :: (MonadLogger m, MonadIO m)
 processPeerConnected pid remoteVer = do
     remote <- liftM peerRemote $ getPeerData pid
     $(logInfo) $ T.pack $ unwords
-        [ "Peer handshake complete"
-        , "(", show remote, ")" 
-        ]
+        [ "Peer handshake complete", "(", show remote, ")" ]
 
     oldState <- liftM peerState $ getPeerData pid
     when (oldState == PeerStateNew) $ do
@@ -391,7 +385,7 @@ processHeartbeat = do
 
 {- Job scheduling -}
 
-publishJob :: MonadIO m 
+publishJob :: (MonadLogger m, MonadIO m)
            => PeerJob -> JobResource -> JobPriority 
            -> StateT ManagerSession m ()
 publishJob pJob res pri = do
@@ -401,7 +395,7 @@ publishJob pJob res pri = do
     scheduleJobs
             
 -- Assign jobs to peers based on priority and resource assignment 
-scheduleJobs :: MonadIO m => StateT ManagerSession m ()
+scheduleJobs :: (MonadLogger m, MonadIO m) => StateT ManagerSession m ()
 scheduleJobs = 
     go . f =<< gets jobQueue
   where
@@ -417,7 +411,7 @@ scheduleJobs =
     g = M.fromAscListWith (++) . map (\(pri, job) -> (pri, [job]))
 
 -- Schedule one job according to its resource assignment if possible
-scheduleJob :: MonadIO m => Job -> StateT ManagerSession m Bool
+scheduleJob :: (MonadLogger m, MonadIO m) => Job -> StateT ManagerSession m Bool
 scheduleJob job@(Job jid _ res _) = case res of
     -- The job can only be scheduled on a specific peer
     ThisPeer pid -> do
@@ -460,15 +454,26 @@ scheduleJob job@(Job jid _ res _) = case res of
     isNotNew dat = peerState dat /= PeerStateNew
     isReady dat = peerState dat == PeerStateReady
     goodHeight height dat = peerHeight dat >= height
-    addJob pid = modifyPeerData pid $ \s -> s{ peerJobs = peerJobs s ++ [job] }
+    addJob pid = do
+        $(logDebug) $ T.pack $ unwords
+            [ "Adding job", show $ hashUnique jid
+            , "to peer queue", show $ hashUnique pid 
+            , "(",showJob $ jobPayload job ,")"
+            ]
+        modifyPeerData pid $ \s -> s{ peerJobs = peerJobs s ++ [job] }
 
 -- If a peer is in ready state, send it the next job in its queue
-stepPeer :: MonadIO m => PeerId -> StateT ManagerSession m ()
+stepPeer :: (MonadLogger m, MonadIO m) => PeerId -> StateT ManagerSession m ()
 stepPeer pid = do
     dat <- getPeerData pid
     when (peerState dat == PeerStateReady) $ do
         case peerJobs dat of
             (job:_) -> do
+                $(logDebug) $ T.pack $ unwords
+                    [ "Running job", show $ hashUnique $ jobId job
+                    , "on peer", show $ hashUnique pid 
+                    , "(",showJob $ jobPayload job ,")"
+                    ]
                 -- Deadline of 2 minutes to complete the job
                 deadline <- liftM (addUTCTime 120) $ liftIO getCurrentTime
                 modifyPeerData pid $ \s -> 
@@ -483,6 +488,10 @@ stepPeer pid = do
 peerJobDone :: (MonadLogger m, MonadIO m) 
             => PeerId -> JobId -> StateT ManagerSession m ()
 peerJobDone pid jid = do
+    $(logDebug) $ T.pack $ unwords
+        [ "Peer", show $ hashUnique pid 
+        , "finished job", show $ hashUnique jid
+        ]
     queue <- liftM peerJobs $ getPeerData pid
     newQueue <- case queue of
         (Job jid' _ _ _:qs) -> do

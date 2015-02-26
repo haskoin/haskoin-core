@@ -121,7 +121,12 @@ runSPVServer configM detach = do
                     -- If we have a best block, use it to download merkles
                     then return $ Right best
                     -- Otherwise, give the node a fast catchup time
-                    else Left <$> getFastCatchup pool
+                    else do
+                        fstKeyTimeM <- runSqlPersistMPool firstKeyTime pool
+                        Left . adjustFCTime <$> case fstKeyTimeM of
+                            Just ts  -> return ts
+                            -- If we have no keys, use the current time
+                            Nothing -> round <$> getPOSIXTime
 
                     -- Bloom filter false positive rate
                 let fp    = spvBloomFP config 
@@ -153,16 +158,6 @@ runSPVServer configM detach = do
                         link a
                         -- Run the zeromq server listening to user requests
                         runWalletApp $ HandlerSession config pool $ Just rChan
-
-getFastCatchup :: ConnectionPool -> IO Timestamp
-getFastCatchup pool = do
-    fstKeyTimeM <- runSqlPersistMPool firstKeyTime pool
-    ts <- case fstKeyTimeM of
-        Just ts  -> return ts
-        -- If we have no keys, use the current time
-        Nothing -> round <$> getPOSIXTime
-    -- Adjust time backwards by a week to handle clock drifts.
-    return $ fromInteger $ max 0 $ (toInteger ts) - 86400 * 7
 
 processEvents :: (MonadLogger m, MonadIO m)
               => TBMChan NodeRequest 

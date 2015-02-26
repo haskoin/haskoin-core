@@ -18,6 +18,7 @@ import Database.Persist.Sql (SqlPersistT, ConnectionPool, runSqlPool)
 import Network.Haskoin.Crypto
 import Network.Haskoin.Node
 import Network.Haskoin.Transaction
+import Network.Haskoin.Block
 import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Account
@@ -329,7 +330,7 @@ postNodeR action = liftM toJSON $ case action of
         fstKeyTimeM <- runDB firstKeyTime
         when (isNothing fstKeyTimeM) $ liftIO $ throwIO $
             WalletException "No keys have been generated in the wallet"
-        let fstKeyTime = fromJust fstKeyTimeM       
+        let fstKeyTime = adjustFCTime $ fromJust fstKeyTimeM       
         $(logInfo) $ T.unwords 
             [ "[ZeroMQ] Rescan", "( Timestamp:", T.pack $ show fstKeyTime, " )" ]
         whenOnline $ do
@@ -348,4 +349,7 @@ updateNodeFilter :: MonadIO m => Handler m ()
 updateNodeFilter = do
     bloomFP <- liftM spvBloomFP $ S.gets handlerConfig
     sendSPV . NodeBloomFilter =<< runDB (walletBloomFilter bloomFP)
+
+adjustFCTime :: Timestamp -> Timestamp
+adjustFCTime ts = fromInteger $ max 0 $ (toInteger ts) - 86400 * 7
 

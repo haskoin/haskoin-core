@@ -35,7 +35,7 @@ import Data.Conduit.TMChan
     , newTBMChan
     , sourceTBMChan
     )
-import Data.Unique (hashUnique)
+import Data.Unique (newUnique, hashUnique)
 import qualified Data.Map as M 
     ( Map, member, delete, lookup, fromList, fromListWith
     , keys, elems, toList, toAscList, empty, map, filter, size
@@ -61,17 +61,15 @@ data SpvSession = SpvSession
       -- yet to our chain. We use this list to update the peer height once
       -- those blocks are linked.
     , peerTickles :: !(M.Map BlockHash [PeerId])
+      -- This value will be True if the wallet has set us a non-empty 
+      -- bloom filter.
+    , validBloom :: !Bool
       -- Continue downloading blocks from this point on. The merkle download
       -- process will be paused as long as this value is Nothing.
     , windowEnd :: !(Maybe BlockHash)
       -- Do not request merkle blocks with a timestamp before the
       -- fast catchup time.
     , fastCatchup :: !(Maybe Timestamp)
-      -- Generate Ids for identifying merkle block jobs. When a rescan is
-      -- triggered and jobs are still in the window, there is a possibility
-      -- to have duplicate identical jobs at the peer manager level. We want
-      -- to distinguish between them.
-    , dwnId :: !DwnId
       -- Merkle block window. Every element in the window corresponds to a
       -- merkle block download job. Completed jobs in the window are sent
       -- to the mempool in order.
@@ -96,8 +94,8 @@ withSpvBlockChain mempChan f = do
         let peerTickles    = M.empty
             windowEnd      = Nothing
             fastCatchup    = Nothing
-            dwnId          = 0
             merkleWindow   = M.empty
+            validBloom     = False
             session        = SpvSession{..}
             -- Run the main blockchain message processing loop
             run = do
@@ -119,6 +117,7 @@ processBlockChainMessage = awaitForever $ \req -> lift $ case req of
     IncHeaders pid bhs       -> processBlockHeaders pid bhs
     IncMerkleBlocks did dmbs -> processMerkleBlocks did dmbs
     StartDownload   valE     -> processStartDownload valE
+    ValidBloom               -> processValidBloom
     _ -> return () -- Ignore block invs (except tickles) and full blocks
 
 processBlockTickle :: (HeaderTree m, MonadLogger m, MonadIO m) 
@@ -234,18 +233,19 @@ dispatchMerkles = do
 continueMerkleDownload :: (HeaderTree m, MonadLogger m, MonadIO m) 
                        => StateT SpvSession m ()
 continueMerkleDownload = do
-    dwnM <- gets windowEnd
-    win  <- gets merkleWindow
+    dwnM   <- gets windowEnd
+    win    <- gets merkleWindow
+    vBloom <- gets validBloom
     -- Download merkle blocks if the wallet asked us to start and if there
-    -- is space left in the window
-    when (isJust dwnM && M.size win < 10) $ do
+    -- is space left in the window and the bloom filter is valid.
+    when (vBloom && isJust dwnM && M.size win < 10) $ do
         let dwn = fromJust dwnM
         -- Get a batch of blocks to download
         -- TODO: Add this value to a configuration (100)
         actionM <- runDB $ getNodeWindow dwn 100
         case actionM of
             -- Nothing to download
-            Nothing -> return ()
+            Nothing -> $(logInfo) "No merkle blocks to download."
             -- A batch of merkle blocks is available for download
             Just action -> do
                 -- Update the windowEnd pointer
@@ -257,7 +257,8 @@ continueMerkleDownload = do
                     ts = map (blockTimestamp . nodeHeader) nodes
                 -- Check if the batch is after the fast catchup time
                 when (isNothing fcM || any (>= fc) ts) $ do
-                    did <- nextId
+                    $(logInfo) "Downloading more merkle blocks ..."
+                    did <- liftIO newUnique
                     let job    = JobDwnMerkles did $ map nodeBlockHash nodes
                         height = nodeHeaderHeight $ last nodes
                     -- Publish the job with low priority 10
@@ -289,13 +290,20 @@ processStartDownload valE = do
          }
     -- Trigger merkle block downloads
     continueMerkleDownload
+
+processValidBloom :: (HeaderTree m, MonadLogger m, MonadIO m) 
+                     => StateT SpvSession m ()
+processValidBloom = do
+    $(logInfo) "Got a valid merkle bloom"
+    modify $ \s -> s{ validBloom = True }
+    continueMerkleDownload
     
 {- Helpers -}
 
 -- Add a BlockHash to the PeerId tickle map
 addPeerTickle :: Monad m => PeerId -> BlockHash -> StateT SpvSession m ()
 addPeerTickle pid bid = modify $ \s ->
-    s{ peerTickles = M.insertWith (++) bid [pid] $ peerTickles s }
+    s{ peerTickles = M.insertWith (flip (++)) bid [pid] $ peerTickles s }
 
 -- Adjust height of peers that sent us a tickle for these blocks
 adjustPeerHeight :: MonadIO m => BlockHeaderNode -> StateT SpvSession m ()
@@ -321,13 +329,6 @@ sendMempool :: MonadIO m => MempoolMessage -> StateT SpvSession m ()
 sendMempool msg = do
     chan <- gets mempChan
     liftIO . atomically $ writeTBMChan chan msg
-
--- Simple counter from 0
-nextId :: Monad m => StateT SpvSession m DwnId
-nextId = do
-    id <- gets dwnId
-    modify $ \s -> s{ dwnId = id + 1 } 
-    return id
 
 runDB :: HeaderTree m => m a -> StateT SpvSession m a
 runDB = lift

@@ -183,7 +183,7 @@ processTx tx = do
 
 -- | Import merkle blocks into the wallet if there are no infligh transactions.
 -- Buffer the transaction otherwise.
-processMerkle :: MonadIO m 
+processMerkle :: (MonadIO m, MonadLogger m)
               => BlockChainAction 
               -> [DecodedMerkleBlock] 
               -> StateT MempoolSession m ()
@@ -196,6 +196,22 @@ processMerkle action dmbs = gets inflightTxs >>= \inflight -> if null inflight
         modify $ \s -> s{ txBuffer = txs' }
         -- Send the merkles to the wallet
         sendWallet $ WalletMerkle action dmbs'
+        -- Some logging
+        case action of
+            BestChain nodes -> $(logInfo) $ T.pack $ unwords
+                [ "Best merkle chain height:"
+                , show $ nodeHeaderHeight $ last nodes, ":"
+                , encodeBlockHashLE $ nodeBlockHash $ last nodes
+                ]
+            ChainReorg s o n -> $(logInfo) $ T.pack $ unwords
+                [ "Merkle chain reorg. Orphaned blocks:"
+                , "[", unwords $ map (encodeBlockHashLE . nodeBlockHash) o ,"]"
+                , "New blocks:"
+                , "[", unwords $ map (encodeBlockHashLE . nodeBlockHash) n ,"]"
+                , "New height:"
+                , show $ nodeHeaderHeight $ last n
+                ]
+            SideChain _ -> $(logWarn) "Got a merkle side chain."
     -- We stall merkle block imports when transactions are inflight. This
     -- is to prevent this race condition where tx1 would miss it's
     -- confirmation:

@@ -34,7 +34,7 @@ import Network.Haskoin.Crypto
 type PeerId = Unique
 type JobPriority = Int
 type JobId = Unique
-type DwnId = Integer
+type DwnId = Unique
 
 data Job = Job
     { jobId       :: !JobId
@@ -116,6 +116,7 @@ data BlockChainMessage
     | IncBlock !Block
     | IncMerkleBlocks !DwnId ![DecodedMerkleBlock]
     | StartDownload !(Either Timestamp BlockHash)
+    | ValidBloom
 
 -- | Messages handled by the Mempool actor
 data MempoolMessage

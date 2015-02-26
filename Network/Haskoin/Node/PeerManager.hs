@@ -254,7 +254,7 @@ processPeerClosed pid = do
     forM_ jobs $ \job@(Job jid pri res _) -> case res of
         -- Reschedule AnyPeer jobs
         AnyPeer _ -> modify $ \s -> 
-            s{ jobQueue = M.insertWith (++) pri [job] $ jobQueue s }
+            s{ jobQueue = M.insertWith (flip (++)) pri [job] $ jobQueue s }
         -- AllPeers1 jobs need to be rescheduled if all peers that were 
         -- working on it failed.
         AllPeers1 _ -> do
@@ -265,7 +265,8 @@ processPeerClosed pid = do
                     -- Only 1 peer was working on this job (us). We have to
                     -- reschedule it.
                     then modify $ \s -> 
-                        s{ jobQueue = M.insertWith (++) pri [job] $ jobQueue s 
+                        s{ jobQueue = 
+                            M.insertWith (flip (++)) pri [job] $ jobQueue s 
                          , broadcastJobs = M.delete jid $ broadcastJobs s
                          }
                     -- If more than one peer is working on this job, we reduce
@@ -369,6 +370,7 @@ processSetBloomFilter bloom =
             $(logInfo) "New bloom filter saved. Broadcasting to connected peers."
             modify $ \s -> s{ mngrBloom = Just bloom }
             publishJob (JobSendBloomFilter bloom) (AllPeers 0) 0
+            sendBlockChain ValidBloom
 
 processHeartbeat :: (MonadLogger m, MonadIO m) => StateT ManagerSession m ()
 processHeartbeat = do
@@ -391,7 +393,12 @@ publishJob :: (MonadLogger m, MonadIO m)
 publishJob pJob res pri = do
     jid <- liftIO newUnique
     let job = Job jid pri res pJob
-    modify $ \s -> s{ jobQueue = M.insertWith (++) pri [job] $ jobQueue s }
+    $(logDebug) $ T.pack $ unwords
+        [ "Publishing job", show $ hashUnique jid
+        , "(",showJob $ jobPayload job ,")"
+        ]
+    modify $ \s -> 
+        s{ jobQueue = M.insertWith (flip (++)) pri [job] $ jobQueue s }
     scheduleJobs
             
 -- Assign jobs to peers based on priority and resource assignment 
@@ -408,7 +415,7 @@ scheduleJobs =
     -- Turn the map into a list
     f = concat . map (\(pri, jobs) -> map (\j -> (pri, j)) jobs) . M.toAscList
     -- Turn the list back into a map
-    g = M.fromAscListWith (++) . map (\(pri, job) -> (pri, [job]))
+    g = M.fromAscListWith (flip (++)) . map (\(pri, job) -> (pri, [job]))
 
 -- Schedule one job according to its resource assignment if possible
 scheduleJob :: (MonadLogger m, MonadIO m) => Job -> StateT ManagerSession m Bool
@@ -454,13 +461,7 @@ scheduleJob job@(Job jid _ res _) = case res of
     isNotNew dat = peerState dat /= PeerStateNew
     isReady dat = peerState dat == PeerStateReady
     goodHeight height dat = peerHeight dat >= height
-    addJob pid = do
-        $(logDebug) $ T.pack $ unwords
-            [ "Adding job", show $ hashUnique jid
-            , "to peer queue", show $ hashUnique pid 
-            , "(",showJob $ jobPayload job ,")"
-            ]
-        modifyPeerData pid $ \s -> s{ peerJobs = peerJobs s ++ [job] }
+    addJob pid = modifyPeerData pid $ \s -> s{ peerJobs = peerJobs s ++ [job] }
 
 -- If a peer is in ready state, send it the next job in its queue
 stepPeer :: (MonadLogger m, MonadIO m) => PeerId -> StateT ManagerSession m ()

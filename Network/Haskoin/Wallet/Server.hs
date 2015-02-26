@@ -16,13 +16,31 @@ import System.Posix.Files
     )
 import System.Posix.Env (getEnv)
 import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
+import System.ZMQ4
 
 import Control.Applicative ((<$>))
-import Control.Monad (when, forM, forever, filterM)
+import Control.Monad (when, forM, forM_, forever, filterM, liftM)
+import Control.Monad.Trans (MonadIO, lift, liftIO)
 import Control.Exception (SomeException(..),  tryJust, catch)
 import Control.Concurrent.STM.TBMChan (writeTBMChan)
 import Control.Concurrent.STM (atomically)
-import qualified Control.Monad.State as S (gets)
+import Control.Concurrent.Async.Lifted (Async, withAsync, link)
+import Control.Monad.Trans.Control 
+    ( MonadBaseControl
+    , control
+    , liftBaseOp
+    , liftBaseWith
+    )
+import Control.Monad.Logger 
+    ( MonadLogger
+    , LoggingT
+    , runStdoutLoggingT
+    , logInfo
+    , logWarn
+    , logDebug
+    , logError
+    )
+import Control.Monad.State (evalStateT)
 
 import Yesod.Default.Config2 (loadAppSettings, useEnv)
 
@@ -42,7 +60,18 @@ import qualified Database.LevelDB.Base as DB
     , open
     , defaultOptions 
     )
-import System.ZMQ4.Monadic
+import Data.Conduit 
+    ( Sink
+    , awaitForever
+    , mapOutput
+    , ($$) 
+    )
+import Data.Conduit.TMChan 
+    ( TBMChan
+    , writeTBMChan
+    , newTBMChan
+    , sourceTBMChan
+    )
 
 import Network.Haskoin.Constants
 import Network.Haskoin.Block
@@ -56,6 +85,9 @@ import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Server.Handler
 import Network.Haskoin.Wallet.Database
+
+runLogging :: MonadIO m => LoggingT m a -> m a 
+runLogging = runStdoutLoggingT
 
 runSPVServer :: Maybe FilePath -> Bool -> IO ()
 runSPVServer configM detach = do
@@ -73,31 +105,96 @@ runSPVServer configM detach = do
         flip runSqlPersistMPool pool $ do 
             _ <- runMigration migrateWallet 
             initWalletDB
-
+        
         if spvMode config == SPVOffline
-            then runWalletApp $ HandlerSession config pool Nothing
+            then runLogging $ runWalletApp $ HandlerSession config pool Nothing
             else do
-                -- Find earliest key creation time
-                fstKeyTimeM <- flip runSqlPersistMPool pool firstKeyTime
-                fstKeyTime  <- case fstKeyTimeM of
-                    Just t  -> return t
-                    Nothing -> round <$> getPOSIXTime
-
                 -- Create leveldb handle
-                db <- DB.open "headerchain"
+                db <- DB.open "headertree"
                     DB.defaultOptions{ DB.createIfMissing = True
                                      , DB.cacheSize       = 2048
                                      }
-                -- Launch SPV node
-                let fp    = spvBloomFP config
-                    nodes = spvBitcoinNodes config
-                    session = NodeSession db pool fp
 
-                withAsyncSPV nodes fstKeyTime session $ \rChan _ -> do
-                    -- Send the bloom filter
-                    bloom <- flip runSqlPersistMPool pool $ walletBloomFilter fp
-                    atomically $ writeTBMChan rChan $ BloomFilterUpdate bloom
-                    runWalletApp $ HandlerSession config pool $ Just rChan
+                -- Get our best block or compute a fast catchup time otherwise
+                (best, height) <- runSqlPersistMPool getBestBlock pool
+                dwnE <- if height > 0
+                    -- If we have a best block, use it to download merkles
+                    then return $ Right best
+                    -- Otherwise, give the node a fast catchup time
+                    else Left <$> getFastCatchup pool
+
+                    -- Bloom filter false positive rate
+                let fp    = spvBloomFP config 
+                    -- Bitcoin nodes to connect to
+                    nodes = spvBitcoinNodes config 
+                    -- Run the SPV monad stack
+                    runNode = runLogging . (flip evalStateT db)
+
+                -- Compute our bloom filter
+                bloom <- runSqlPersistMPool (walletBloomFilter fp) pool
+
+                -- Launch SPV node
+                runNode $ withSpvNode $ \eChan rChan -> do
+                    -- Send our bloom filter
+                    liftIO . atomically $ writeTBMChan rChan $
+                        NodeBloomFilter bloom
+                    -- Connect to remote nodes
+                    liftIO . atomically $ writeTBMChan rChan $
+                        NodeConnectPeers $ map (\(h,p) -> RemoteHost h p) nodes
+                    -- Start the merkle block download process
+                    liftIO . atomically $ writeTBMChan rChan $
+                        NodeStartDownload dwnE
+
+                    -- Listen to SPV events and update the wallet database
+                    let runEvents =  sourceTBMChan eChan 
+                                  $$ processEvents rChan db pool fp
+
+                    withAsync runEvents $ \a -> do
+                        link a
+                        -- Run the zeromq server listening to user requests
+                        runWalletApp $ HandlerSession config pool $ Just rChan
+
+getFastCatchup :: ConnectionPool -> IO Timestamp
+getFastCatchup pool = do
+    fstKeyTimeM <- runSqlPersistMPool firstKeyTime pool
+    ts <- case fstKeyTimeM of
+        Just ts  -> return ts
+        -- If we have no keys, use the current time
+        Nothing -> round <$> getPOSIXTime
+    -- Adjust time backwards by a week to handle clock drifts.
+    return $ fromInteger $ max 0 $ (toInteger ts) - 86400 * 7
+
+processEvents :: (MonadLogger m, MonadIO m)
+              => TBMChan NodeRequest 
+              -> DB.DB -> ConnectionPool -> Double -> Sink WalletMessage m ()
+processEvents rChan db pool fp = awaitForever $ \req -> lift $ case req of
+    WalletTx tx -> goTxs [tx]
+    WalletMerkle action dmbs -> do
+        -- Import all transactions into the wallet
+        goTxs $ concat (map merkleTxs dmbs)
+        -- Import the merkle blocks into the wallet
+        resE <- liftIO $ tryJust f $ flip runSqlPersistMPool pool $ 
+            importBlocks action $ map expectedTxs dmbs
+        when (isLeft resE) $ $(logError) $ T.pack $ unwords
+            [ "processEvents: An error occured:", fromLeft resE ]
+    _ -> return () -- Ignore full blocks
+  where
+    goTxs txs = do
+        resE <- liftIO $ tryJust f $ flip runSqlPersistMPool pool $ do
+            xs <- forM txs $ \tx -> importTx tx SourceNetwork Nothing
+            -- Update the bloom filter if new addresses were generated
+            -- TODO: If all gap addresses have been used up, we need to
+            -- issue a rescan.
+            if or $ map lst3 $ catMaybes xs
+                then Just <$> walletBloomFilter fp
+                else return Nothing
+        case resE of
+            Left err -> $(logError) $ T.pack $ unwords
+                [ "processEvents: An error occured:", err ]
+            Right (Just bloom) -> liftIO . atomically $ writeTBMChan rChan $ 
+                    NodeBloomFilter bloom
+            _ -> return ()
+    f (SomeException e) = Just $ show e
 
 maybeDetach :: SPVConfig -> Bool -> IO () -> IO ()
 maybeDetach config det action =
@@ -145,24 +242,26 @@ setWorkDir config = do
     setFileMode workDir ownerModes
     changeWorkingDirectory workDir
 
-runWalletApp :: HandlerSession -> IO ()
-runWalletApp session = runZMQ $ do
-    sock <- socket Rep
-    bind sock $ spvBind $ handlerConfig session
-    forever $ do
-        bs  <- receive sock
-        res <- case decode $ toLazyBS bs of
-            Just r  -> liftIO $ catchErrors $ 
-                runHandler session $ dispatchRequest r
-            Nothing -> return $ ResponseError "Could not decode request"
-        send sock [] $ toStrictBS $ encode res
+-- Run the main ZeroMQ loop
+runWalletApp :: (MonadIO m, MonadLogger m, MonadBaseControl IO m) 
+             => HandlerSession -> m ()
+runWalletApp session = liftBaseOp withContext $ \ctx -> 
+    liftBaseOp (withSocket ctx Rep) $ \sock -> do
+        liftIO $ bind sock $ spvBind $ handlerConfig session
+        forever $ do
+            bs  <- liftIO $ receive sock
+            res <- catchErrors $ case decode $ toLazyBS bs of
+                Just r  -> runHandler session $ dispatchRequest r
+                Nothing -> return $ ResponseError "Could not decode request"
+            liftIO $ send sock [] $ toStrictBS $ encode res
   where
     -- TODO: Catch ErrorCall and SomeException
-    catchErrors m = catch m $ 
-        \(WalletException err) -> return $ ResponseError $ T.pack err
+    catchErrors m = control $ \runInIO -> catch (runInIO m) $ 
+        \(WalletException err) -> runInIO $ return $ ResponseError $ T.pack err
 
-dispatchRequest :: WalletRequest -> Handler (WalletResponse Value)
-dispatchRequest req = ResponseValid . toJSON <$> case req of
+dispatchRequest :: (MonadLogger m, MonadIO m) 
+                => WalletRequest -> Handler m (WalletResponse Value)
+dispatchRequest req = liftM (ResponseValid . toJSON) $ case req of
     GetWalletsR                      -> getWalletsR
     GetWalletR w                     -> getWalletR w
     PostWalletsR nw                  -> postWalletsR nw
@@ -181,44 +280,4 @@ dispatchRequest req = ResponseValid . toJSON <$> case req of
     GetBalanceR w n mc               -> getBalanceR w n mc
     GetSpendableR w n mc             -> getSpendableR w n mc
     PostNodeR na                     -> postNodeR na
-
-data NodeSession = NodeSession
-    { chainHandle :: DB.DB
-    , walletPool  :: ConnectionPool
-    , bloomFP     :: Double
-    }
-
-instance SPVNode LevelDBChain NodeSession where
-    runHeaderChain s = do
-        db <- chainHandle <$> S.gets spvData
-        resE <- liftIO $ tryJust f $ runLevelDBChain db s
-        case resE of
-            Left err -> liftIO (print err) >> undefined
-            Right res -> return res
-      where
-        f (SomeException e) = Just $ show e
-
-    spvImportTxs txs = do
-        pool <- walletPool <$> S.gets spvData
-        fp <- bloomFP <$> S.gets spvData
-        resE <- liftIO $ tryJust f $ flip runSqlPersistMPool pool $ do
-            xs <- forM txs $ \tx -> importTx tx SourceNetwork Nothing
-            -- Update the bloom filter if new addresses were generated
-            if or $ map lst3 $ catMaybes xs
-                then Just <$> walletBloomFilter fp
-                else return Nothing
-        case resE of
-            Left err -> liftIO $ print err
-            Right bloomM -> when (isJust bloomM) $ 
-                processBloomFilter $ fromJust bloomM
-      where
-        f (SomeException e) = Just $ show e
-
-    spvImportMerkleBlock mb expTxs = do
-        pool <- walletPool <$> S.gets spvData
-        resE <- liftIO $ tryJust f $ flip runSqlPersistMPool pool $ 
-            importBlock mb expTxs
-        when (isLeft resE) $ liftIO $ print $ fromLeft resE
-      where
-        f (SomeException e) = Just $ show e
 

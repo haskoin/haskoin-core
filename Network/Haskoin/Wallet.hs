@@ -73,7 +73,7 @@ module Network.Haskoin.Wallet
 , resetRescan
 
 -- *Block Commands
-, importBlock
+, importBlocks
 
 -- *Request Types
 , WalletRequest(..)

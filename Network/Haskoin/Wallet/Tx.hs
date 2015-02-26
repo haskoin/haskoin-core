@@ -17,9 +17,9 @@ module Network.Haskoin.Wallet.Tx
 , getProposition
 , isTxInWallet
 , firstKeyTime
-, importBlock
-, getBestHeight
-, setBestHeight
+, importBlocks
+, getBestBlock
+, setBestBlock
 , accountBalance
 , addressBalance
 , spendableAccountBalance
@@ -83,7 +83,6 @@ toAccTx :: (MonadIO m, PersistUnique b, PersistQuery b)
 toAccTx aTx = do
     Entity _ tx <- getTxEntity $ dbAccTxHash aTx
     conf <- getConfirmations $ dbAccTxHash aTx
-    confDate <- getConfirmationDate $ dbAccTxHash aTx
     recipAddrs <- forM (dbAccTxRecipients aTx) $ \a -> do
         -- Only get the address if it matches the account id
         addrM <- getBy $ UniqueAddressAccount a (dbAccTxAccount aTx)
@@ -99,27 +98,21 @@ toAccTx aTx = do
                    , accTxConfirmations    = fromIntegral conf
                    , accTxTx               = dbTxValue tx
                    , accTxReceivedDate     = f $ dbTxCreated tx
-                   , accTxConfirmationDate = confDate
+                   , accTxConfirmationDate = dbTxConfirmedDate tx
                    }
   where
     f = round . utcTimeToPOSIXSeconds
 
+-- | Returns the number of confirmations for a transaction. Returns 0 if the
+-- transaction is not confirmed.
 getConfirmations :: (MonadIO m, PersistUnique b, PersistQuery b)
                  => TxHash -> ReaderT b m Int
 getConfirmations h = do
     Entity _ tx <- getTxEntity h
-    height <- getBestHeight
-    return $ if isNothing $ dbTxConfirmedBy tx then 0 else 
-        fromIntegral $ height - (fromJust $ dbTxConfirmedHeight tx) + 1
-
-getConfirmationDate :: (MonadIO m, PersistUnique b, PersistQuery b)
-                    => TxHash -> ReaderT b m (Maybe Timestamp)
-getConfirmationDate h = do
-    Entity _ tx <- getTxEntity h
-    if isNothing $ dbTxConfirmedBy tx then return Nothing else do
-        let bid = fromJust $ dbTxConfirmedBy tx
-        confM <- getBy $ UniqueConfirmation h bid
-        return $ dbConfirmationBlockTimestamp . entityVal <$> confM
+    (_, height) <- getBestBlock
+    return $ case dbTxConfirmedHeight tx of
+        Just txHeight -> fromIntegral $ height - txHeight + 1
+        _ -> 0
 
 -- | Fetch a full transaction by transaction id.
 getTx :: (MonadIO m, PersistQuery b, PersistUnique b)
@@ -273,8 +266,8 @@ addTx initTx source = do
         -- Update conflicts with other transactions
         conf <- updateConflicts tx (map dbCoinValue coins) source 
         -- Save the transaction 
-        let isCB = isCoinbaseTx tx
-        insert_ $ DbTx tid tx conf Nothing Nothing isCB (nosigTxHash tx) time 
+        insert_ $ DbTx tid tx conf Nothing Nothing Nothing 
+                       (isCoinbaseTx tx) (nosigTxHash tx) time 
         -- Build transactions that report on individual accounts
         dbAccTxs <- buildAccTx tx coinsE outCoins time
         -- insert account transactions into database
@@ -555,8 +548,6 @@ removeTx tid = do
         deleteWhere [ DbTxHash ==. tid ]
         -- Delete from orphan pool
         deleteWhere [ DbOrphanHash ==. tid ]
-        -- Delete from confirmation table
-        deleteWhere [ DbConfirmationTx ==. tid ]
         -- Unspend input coins that were previously spent by this transaction
         deleteWhere [ DbSpentCoinTx ==. tid ]
         return $ tid:(concat cids)
@@ -755,77 +746,55 @@ isTxInWallet tid = liftM isJust $ getBy $ UniqueTx tid
 -- this.
 -- | Import filtered blocks into the wallet. This will update the confirmations
 -- of the relevant transactions.
-importBlock :: (MonadIO m, PersistQuery b, PersistUnique b)
-            => BlockChainAction -> [TxHash] -> ReaderT b m ()
-importBlock action expTxs = do
+importBlocks :: (MonadIO m, PersistQuery b, PersistUnique b)
+             => BlockChainAction -> [[TxHash]] -> ReaderT b m ()
+importBlocks action expTxsLs = do
+    now <- liftIO getCurrentTime
 
-    -- Insert transaction/block confirmation links. We have to keep this
-    -- information even for side blocks as we need it when a reorg occurs.
-    time <- liftIO getCurrentTime
-    let bid = nodeBlockHash $ getActionNode action
-        ts  = blockTimestamp $ nodeHeader $ getActionNode action
-    myTxs <- filterM ((liftM isJust) . getBy . UniqueTx) expTxs
-    unless (isOldBlock action) $ 
-        forM_ myTxs $ \h -> insert_ $ DbConfirmation h bid ts time
-
+    -- Unconfirm transactions from the old chain if we have a reorg
     case action of
-        BestBlock node -> do
-            forM_ myTxs $ \h -> do
-                -- Mark all conflicts as dead
-                conflicts <- getConflicts h
-                forM_ conflicts $ \c -> 
-                    updateWhere [ DbTxHash ==. c ]
-                                [ DbTxConfidence =. TxDead ]
-                -- Confidence in this transaction is now building up
-                updateWhere 
-                    [ DbTxHash ==. h ]
-                    [ DbTxConfirmedBy     =. Just (nodeBlockHash node)
-                    , DbTxConfirmedHeight =. Just (nodeHeaderHeight node)
-                    , DbTxConfidence      =. TxBuilding
-                    ]
-            setBestHeight $ nodeHeaderHeight node
-        BlockReorg _ o n -> do
-            -- Unconfirm transactions from the old chain
-            forM_ (reverse o) $ \b -> do
+        ChainReorg _ os _ -> do
+            forM_ (reverse os) $ \node -> do
                 otxs <- selectList 
-                    [ DbTxConfirmedBy ==. Just (nodeBlockHash b) ] []
+                    [ DbTxConfirmedBy ==. Just (nodeBlockHash node) ] []
                 forM_ otxs $ \(Entity oKey _) -> do
                     update oKey [ DbTxConfirmedBy     =. Nothing
                                 , DbTxConfirmedHeight =. Nothing
+                                , DbTxConfirmedDate   =. Nothing
                                 , DbTxConfidence      =. TxPending
                                 ]
-                -- Update conflicted transactions
+                -- Revive conflicted transactions
                 forM_ otxs $ \(Entity _ otx) -> do
                     conflicts <- getConflicts $ dbTxHash otx
                     forM_ conflicts reviveTransaction
+        _ -> return ()
 
-            -- Confirm transactions in the new chain. This will also confirm
-            -- the transactions in the best block of the new chain as we
-            -- inserted it in DbConfirmations at the start of the function.
-            forM_ n $ \b -> do
-                cnfs <- selectList 
-                            [ DbConfirmationBlock ==. nodeBlockHash b ] []
-                let ntxs = map (dbConfirmationTx . entityVal) cnfs 
-                forM_ ntxs $ \h -> do
-                    -- Mark all conflicts as dead
-                    conflicts <- getConflicts h
-                    forM_ conflicts $ \c -> 
-                        updateWhere [ DbTxHash ==. c ]
-                                    [ DbTxConfidence =. TxDead ]
-                    updateWhere 
-                        [ DbTxHash ==. h ] 
-                        [ DbTxConfirmedBy     =. Just (nodeBlockHash b)
-                        , DbTxConfirmedHeight =. Just (nodeHeaderHeight b)
-                        , DbTxConfidence      =. TxBuilding
-                        ]
+    -- Loop over all the blocks in the new best chain
+    forM_ (zip (actionNewNodes action) expTxsLs) $ \(node, expTxs) -> do
 
-            setBestHeight $ nodeHeaderHeight $ last n
+        let bid = nodeBlockHash node
+            ts  = blockTimestamp $ nodeHeader node
+        myTxs <- filterM ((liftM isJust) . getBy . UniqueTx) expTxs
 
-        SideBlock _ _ -> return ()
-        OldBlock _ _  -> return ()
-  where
-    isOldBlock (OldBlock _ _) = True
-    isOldBlock _              = False
+        forM_ myTxs $ \h -> do
+            -- Mark all conflicts as dead
+            conflicts <- getConflicts h
+            forM_ conflicts $ \c -> 
+                updateWhere [ DbTxHash ==. c ]
+                            [ DbTxConfidence =. TxDead ]
+
+            -- Confidence in this transaction is now building up
+            updateWhere 
+                [ DbTxHash ==. h ]
+                [ DbTxConfirmedBy     =. Just (nodeBlockHash node)
+                , DbTxConfirmedHeight =. Just (nodeHeaderHeight node)
+                , DbTxConfirmedDate   =. Just (blockTimestamp $ nodeHeader node)
+                , DbTxConfidence      =. TxBuilding
+                ]
+
+    -- Update the best height
+    let best = last $ actionNewNodes action
+    setBestBlock (nodeBlockHash best) (nodeHeaderHeight best)
 
 -- If a transaction is Dead but has no more conflicting Building transactions,
 -- we update the status to Pending
@@ -838,16 +807,20 @@ reviveTransaction tid = do
         res <- filterM isTxBuilding conflicts
         when (null res) $ update tKey [ DbTxConfidence =. TxPending ]
 
-getBestHeight :: (MonadIO m, PersistQuery b) => ReaderT b m Word32
-getBestHeight = do
-    cnf <- selectFirst [] []
-    when (isNothing cnf) $ liftIO $ throwIO $
-        WalletException "getBestHeight: Database not initialized"
-    return $ dbConfigBestHeight $ entityVal $ fromJust cnf
+getBestBlock :: (MonadIO m, PersistQuery b) => ReaderT b m (BlockHash, Word32)
+getBestBlock = do
+    cnfM <- selectFirst [] []
+    case cnfM of
+        Nothing -> liftIO $ throwIO $
+            WalletException "getBestBlock: Database not initialized"
+        Just (Entity _ cnf) -> 
+            return (dbConfigBestBlock cnf, dbConfigBestHeight cnf)
 
-setBestHeight :: (MonadIO m, PersistQuery b) 
-              => Word32 -> ReaderT b m ()
-setBestHeight i = updateWhere [] [ DbConfigBestHeight =. i ]
+setBestBlock :: (MonadIO m, PersistQuery b) 
+             => BlockHash -> Word32 -> ReaderT b m ()
+setBestBlock bid i = updateWhere [] [ DbConfigBestBlock  =. bid
+                                    , DbConfigBestHeight =. i 
+                                    ]
 
 getConflicts :: (MonadIO m, PersistQuery b) => TxHash -> ReaderT b m [TxHash]
 getConflicts h = do
@@ -939,7 +912,7 @@ getBalanceData :: (MonadIO m, PersistQuery b, PersistUnique b)
                -> ReaderT b m (Balance, Balance, [TxHash], [TxHash], [TxHash])
 getBalanceData allCoins minConf = do
     -- Current best height
-    bestH <- getBestHeight
+    (_, bestH) <- getBestBlock
 
     -- filter coins that have the minimum confirmation requirement
     coins <- filterM ((minConfNotDead bestH minConf) . dbCoinHash) allCoins
@@ -991,7 +964,7 @@ unspentCoins :: (MonadIO m, PersistUnique b, PersistQuery b)
              -> ReaderT b m [Coin]       -- ^ List of unspent coins
 unspentCoins ai minConf = do
     -- Current best height
-    bestH <- getBestHeight
+    (_, bestH) <- getBestBlock
 
     -- Find coins for this account
     ais <- selectList [ DbCoinAccountAccount ==. ai ] []

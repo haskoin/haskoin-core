@@ -35,6 +35,8 @@ import Database.Persist
     )
 
 import Network.Haskoin.Crypto
+import Network.Haskoin.Block
+import Network.Haskoin.Constants
 
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
@@ -89,7 +91,7 @@ initWalletDB = do
     prevConfig <- selectFirst [] [Asc DbConfigCreated]
     when (isNothing prevConfig) $ do
         time <- liftIO getCurrentTime
-        insert_ $ DbConfig 0 1 time
+        insert_ $ DbConfig 0 (headerHash genesisHeader) 1 time
 
 -- Remove transaction related data from the wallet
 resetRescan :: (MonadIO m, PersistQuery b) => ReaderT b m ()
@@ -108,8 +110,6 @@ resetRescan = do
     deleteWhere ([] :: PersistQuery b => [Filter (DbTxGeneric b)])
     -- Delete all orphan transactions
     deleteWhere ([] :: PersistQuery b => [Filter (DbOrphanGeneric b)])
-    -- Delete all transaction confirmations
-    deleteWhere ([] :: PersistQuery b => [Filter (DbConfirmationGeneric b)])
     -- Reset best block information
     updateWhere [] [ DbConfigBestHeight =. 0 ]
 

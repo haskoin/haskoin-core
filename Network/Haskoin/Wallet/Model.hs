@@ -8,7 +8,6 @@ module Network.Haskoin.Wallet.Model
 , DbTxGeneric(..)
 , DbTxConflictGeneric(..)
 , DbOrphanGeneric(..)
-, DbConfirmationGeneric(..)
 , DbConfigGeneric(..)
 , DbSpentCoinGeneric(..)
 , DbWalletId
@@ -20,7 +19,6 @@ module Network.Haskoin.Wallet.Model
 , DbTxId
 , DbTxConflictId
 , DbSpentCoinId
-, DbConfirmationId
 , DbConfigId
 , DbOrphanId
 , EntityField(..)
@@ -45,6 +43,7 @@ import Database.Persist.TH
 
 import Network.Haskoin.Wallet.Types 
 import Network.Haskoin.Transaction
+import Network.Haskoin.Block
 import Network.Haskoin.Crypto 
 
 share [ mkPersist sqlSettings{ mpsGeneric = True }

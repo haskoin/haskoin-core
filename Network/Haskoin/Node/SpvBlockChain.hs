@@ -18,7 +18,7 @@ import Control.Monad.Trans.Control
     , liftBaseDiscard
     )
 
-import qualified Data.Text as T (pack)
+import qualified Data.Text as T (Text, pack)
 import Data.Maybe (isJust, isNothing, fromJust, catMaybes, fromMaybe)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.List (nub, partition, delete, (\\))
@@ -107,7 +107,8 @@ withSpvBlockChain mempChan f = do
                 -- Process messages
                 sourceTBMChan bkchChan $$ processBlockChainMessage
 
-        withAsync (evalStateT run session) $ \a -> 
+        withAsync (evalStateT run session) $ \a -> do
+            $(logDebug) $ format "SPV Blockchain thread started"
             link a >> f bkchChan mngrChan
 
 processBlockChainMessage :: (HeaderTree m, MonadLogger m, MonadIO m) 
@@ -123,18 +124,22 @@ processBlockChainMessage = awaitForever $ \req -> lift $ case req of
 processBlockTickle :: (HeaderTree m, MonadLogger m, MonadIO m) 
                    => PeerId -> BlockHash -> StateT SpvSession m ()
 processBlockTickle pid bid = do
-    $(logInfo) $ T.pack $ unwords
-        [ "Got block tickle"
-        , encodeBlockHashLE bid
-        , "(", "Peer", show $ hashUnique pid, ")"
+    $(logInfo) $ format $ unwords
+        [ "Received block tickle", encodeBlockHashLE bid
+        , "from peer", show $ hashUnique pid
         ]
     
     nodeM <- runDB $ getBlockHeaderNode bid
     case nodeM of
         Just node -> do
+            $(logDebug) $ format "We already have this block hash."
             -- Update the height of the peer who sent us this tickle
             sendManager $ PeerHeight pid $ nodeHeaderHeight node
         Nothing -> do
+            $(logDebug) $ format $ unwords
+                [ "Saving peer id and block tickle hash to update the"
+                , "peer height when we can connect the tickle"
+                ]
             -- Save the PeerId/BlockHash so we can update the PeerId height
             -- when we can connect the block.
             addPeerTickle pid bid
@@ -146,12 +151,16 @@ processBlockHeaders :: (HeaderTree m, MonadLogger m, MonadIO m)
 
 processBlockHeaders pid [] = do
     -- TODO: Should we check the tickles to continue the header download ?
-    $(logInfo) 
-        "Received empty block headers. Header sync with this peer is complete."
+    $(logInfo) $ format $ unwords 
+        [ "Received empty headers from peer", show $ hashUnique pid ]
     -- Try to download more merkle blocks
     continueMerkleDownload
 
 processBlockHeaders pid bhs = do
+    $(logDebug) $ format $ unwords
+        [ "Received", show $ length bhs, "headers" 
+        , "from peer", show $ hashUnique pid
+        ]
     now <- liftM round $ liftIO getPOSIXTime
     -- Connect block headers and commit them
     actionE <- runDB $ connectHeaders bhs now True
@@ -159,13 +168,19 @@ processBlockHeaders pid bhs = do
         Left err -> sendManager $ PeerMisbehaving pid severeDoS err
         Right action -> case action of
             -- Ignore SideChain/duplicate headers
-            SideChain _ -> return () 
+            SideChain _ -> $(logDebug) $ format $ unwords
+                [ "Ignoring side chain headers from peer"
+                , show $ hashUnique pid
+                ]
             -- Headers extend our current best head
             _ -> do
                 let nodes  = actionNewNodes action
                     height = nodeHeaderHeight $ last nodes
-                $(logInfo) $ T.pack $ unwords 
-                    [ "Best header height:", show height ]
+                $(logInfo) $ format $ unwords 
+                    [ "Headers from peer", show $ hashUnique pid
+                    , "connected successfully."
+                    , "New best header height:", show height
+                    ]
                 -- Adjust height of peers that sent us a tickle for
                 -- these blocks
                 forM_ nodes adjustPeerHeight
@@ -182,10 +197,8 @@ headerSync :: (HeaderTree m, MonadLogger m, MonadIO m)
            => JobResource -> LocatorType -> Maybe BlockHash
            -> StateT SpvSession m ()
 headerSync resource locType hStopM = do
-    $(logInfo) $ T.pack $ unwords 
-        [ "Requesting more BlockHeaders"
-        , "[", show locType, "]"
-        ]
+    $(logInfo) $ format $ unwords 
+        [ "Requesting more headers with block locator type", show locType ]
     -- Build the block locator object
     loc <- runDB $ case locType of
         FullLocator    -> blockLocator 
@@ -197,21 +210,30 @@ headerSync resource locType hStopM = do
 processMerkleBlocks :: (HeaderTree m, MonadLogger m, MonadIO m)
                     => DwnId -> [DecodedMerkleBlock] -> StateT SpvSession m ()
 processMerkleBlocks did [] = do
-    $(logError) "Got a completed merkle job with an empty merkle list"
+    $(logError) $ format $ "Got a completed merkle job with an empty merkle list"
     modify $ \s -> s{ merkleWindow = M.delete did $ merkleWindow s }
     continueMerkleDownload
 processMerkleBlocks did dmbs = do
+    $(logDebug) $ format $ unwords
+        [ "Received merkle batch id", show $ hashUnique did
+        , "containing", show $ length dmbs, "merkle blocks."
+        ]
     win <- gets merkleWindow
     -- Find this specific job in the window
     case M.lookup did win of
         Just (action, []) -> do
+            $(logDebug) $ format $ unwords
+                [ "Saving merkle batch id", show $ hashUnique did
+                , "in merkle block window."
+                ]
             -- Add the merkles to the window
             modify $ \s -> s{ merkleWindow = M.insert did (action, dmbs) win }
             -- Try to send merkle blocks to the mempool
             dispatchMerkles
         -- This can happen if we had pending jobs when issuing a rescan. We
         -- simply ignore jobs from before the rescan.
-        _ -> return ()
+        _ -> $(logDebug) $ format $ unwords
+            [ "Ignoring merkle batch id", show $ hashUnique did ] 
 
 -- | Look for completed jobs at the start of the window and send them to the 
 -- mempool.
@@ -222,6 +244,10 @@ dispatchMerkles = do
     case M.assocs win of
         -- If the first batch in the window is ready, send it to the mempool
         ((did, (action, dmbs@(d:ds))):_) -> do
+            $(logDebug) $ format $ unwords
+                [ "Dispatching merkle batch id", show $ hashUnique did
+                , "to the mempool."
+                ]
             sendMempool $ MempoolMerkle action dmbs
             modify $ \s -> s{ merkleWindow = M.delete did win }
             dispatchMerkles
@@ -245,7 +271,8 @@ continueMerkleDownload = do
         actionM <- runDB $ getNodeWindow dwn 100
         case actionM of
             -- Nothing to download
-            Nothing -> $(logInfo) "No merkle blocks to download."
+            Nothing -> $(logDebug) $ format 
+                "No more merkle blocks available to download."
             -- A batch of merkle blocks is available for download
             Just action -> do
                 -- Update the windowEnd pointer
@@ -256,32 +283,48 @@ continueMerkleDownload = do
                 let fc = fromJust fcM
                     ts = map (blockTimestamp . nodeHeader) nodes
                 -- Check if the batch is after the fast catchup time
-                when (isNothing fcM || any (>= fc) ts) $ do
-                    $(logInfo) "Downloading more merkle blocks ..."
-                    did <- liftIO newUnique
-                    let job    = JobDwnMerkles did $ map nodeBlockHash nodes
-                        height = nodeHeaderHeight $ last nodes
-                    -- Publish the job with low priority 10
-                    sendManager $ PublishJob job (AnyPeer height) 10
-                    -- Extend the window
-                    modify $ \s -> 
-                        s{ merkleWindow = M.insert did (action, []) win 
-                         -- We reached the fast catchup. Set to Nothing.
-                         , fastCatchup  = Nothing
-                         }
+                if isNothing fcM || any (>= fc) ts
+                    then do
+                        did <- liftIO newUnique
+                        let job    = JobDwnMerkles did $ map nodeBlockHash nodes
+                            height = nodeHeaderHeight $ last nodes
+                        $(logDebug) $ format $ unwords
+                            [ "Requesting download of merkle batch id"
+                            , show $ hashUnique did
+                            , "of length", show $ length nodes
+                            , "up to height", show height
+                            ]
+                        -- Publish the job with low priority 10
+                        sendManager $ PublishJob job (AnyPeer height) 10
+                        -- Extend the window
+                        modify $ \s -> 
+                            s{ merkleWindow = M.insert did (action, []) win 
+                            -- We reached the fast catchup. Set to Nothing.
+                            , fastCatchup  = Nothing
+                            }
+                    else $(logDebug) $ format $ unwords
+                        [ "Merkle block batch is before the fast catchup time."
+                        , "Not downloading it."
+                        ]
                 -- Recurse with the windowEnd pointer updated
                 continueMerkleDownload
 
 processStartDownload :: (HeaderTree m, MonadLogger m, MonadIO m) 
                      => Either Timestamp BlockHash -> StateT SpvSession m ()
 processStartDownload valE = do
-    $(logInfo) $ T.pack $ unwords
-        [ "Initiating merkle block download from:" , show valE ]
-    let (fc, we) = case valE of
-            -- Set a fast catchup time and search from the genesis
-            Left ts -> (Just ts, Just $ headerHash genesisHeader)
-            -- No fast catchup time. Just download from the given block.
-            Right h -> (Nothing, Just h)
+    (fc, we) <- case valE of
+        -- Set a fast catchup time and search from the genesis
+        Left ts -> do
+            $(logInfo) $ format $ unwords
+                [ "Requesting merkle block download from timestamp", show ts ]
+            return (Just ts, Just $ headerHash genesisHeader)
+        -- No fast catchup time. Just download from the given block.
+        Right h -> do
+            $(logInfo) $ format $ unwords
+                [ "Requesting merkle block download from block"
+                , encodeBlockHashLE h
+                ]
+            return (Nothing, Just h)
     modify $ \s -> 
         s{ fastCatchup = fc
          , windowEnd = we
@@ -294,9 +337,14 @@ processStartDownload valE = do
 processValidBloom :: (HeaderTree m, MonadLogger m, MonadIO m) 
                      => StateT SpvSession m ()
 processValidBloom = do
-    $(logInfo) "Got a valid merkle bloom"
-    modify $ \s -> s{ validBloom = True }
-    continueMerkleDownload
+    valid <- gets validBloom
+    unless valid $ do
+        $(logDebug) $ format $ unwords
+            [ "Received a valid bloom filter."
+            , "Attempting to start the merkle block download."
+            ]
+        modify $ \s -> s{ validBloom = True }
+        continueMerkleDownload
     
 {- Helpers -}
 
@@ -332,3 +380,7 @@ sendMempool msg = do
 
 runDB :: HeaderTree m => m a -> StateT SpvSession m a
 runDB = lift
+
+format :: String -> T.Text
+format str = T.pack $ unwords [ "[Blockchain]", str ]
+

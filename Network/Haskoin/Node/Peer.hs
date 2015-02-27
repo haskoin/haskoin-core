@@ -300,7 +300,8 @@ processInvMessage (Inv vs)
     -- Single blockhash INV is a tickle
     | null txlist && length blocklist == 1 = do
         pid <- gets peerId
-        $(logDebug) $ format pid "Received block tickle"
+        $(logDebug) $ format pid $ unwords
+            [ "Received block tickle", encodeBlockHashLE $ head blocklist ]
         sendBlockChain $ BlockTickle pid $ head blocklist
     | otherwise = do
         pid <- gets peerId
@@ -365,7 +366,8 @@ processMerkleBlock :: (MonadLogger m, MonadIO m)
                    => MerkleBlock -> StateT PeerSession m ()
 processMerkleBlock decodedMerkle@(MerkleBlock bh ntx hs fs) = do
     pid <- gets peerId
-    $(logDebug) $ format pid $ "Received a merkle block."
+    $(logDebug) $ format pid $ unwords
+        [ "Received merkle block", encodeBlockHashLE bid ]
     -- Check that we are expecting this merkle bock. Otherwise, the remote
     -- peer is misbehaving by sending us unsolicited junk.
     gets currentJob >>= \jobM -> case jobM of
@@ -386,7 +388,12 @@ processMerkleBlock decodedMerkle@(MerkleBlock bh ntx hs fs) = do
                      dmb       = DecodedMerkleBlock{..}
                  in if null expectedTxs
                      then endMerkleBlock dmb
-                     else modify $ \s -> s{ inflightMerkle = Just dmb }
+                     else do
+                        $(logDebug) $ format pid $ unwords
+                            [ "Setting inflight merkle block"
+                            , encodeBlockHashLE bid
+                            ]
+                        modify $ \s -> s{ inflightMerkle = Just dmb }
             else sendManager $ PeerMisbehaving pid severeDoS
                 "Received a merkle block with an invalid merkle root."
 
@@ -394,16 +401,22 @@ processMerkleBlock decodedMerkle@(MerkleBlock bh ntx hs fs) = do
 processTx :: (MonadLogger m, MonadIO m) => Tx -> StateT PeerSession m ()
 processTx tx = do
     pid <- gets peerId
-    $(logDebug) $ format pid $ "Received a tx"
     -- If the transaction is part of a merkle block, buffer it. We will send
     -- everything to the manager together.
     merkleM <- gets inflightMerkle
     case merkleM of
         Just dmb@(DecodedMerkleBlock _ _ match txs) ->
             if tid `elem` match
-                then modify $ \s -> 
-                    s{ inflightMerkle = Just dmb{ merkleTxs = tx : txs } }
+                then do
+                    $(logDebug) $ format pid $ unwords
+                        [ "Received merkle block transaction"
+                        , encodeTxHashLE tid 
+                        ]
+                    modify $ \s -> 
+                        s{ inflightMerkle = Just dmb{ merkleTxs = tx : txs } }
                 else do
+                    $(logDebug) $ format pid $ unwords
+                        [ "Received transaction" , encodeTxHashLE tid ]
                     endMerkleBlock dmb
                     sendMempool $ MempoolTx tx
         Nothing -> sendMempool $ MempoolTx tx
@@ -414,7 +427,7 @@ processTx tx = do
         Just job@(Job _ _ _ (JobDwnTxs tids)) -> case delete tid tids of
             []    -> jobDone
             tids' -> modify $ \s -> 
-                s{ currentJob = Just $ job{ jobPayload = JobDwnTxs tids' } }
+                s{ currentJob = Just job{ jobPayload = JobDwnTxs tids' } }
         _ -> return ()
   where
     tid = txHash tx
@@ -423,7 +436,8 @@ processHeaders :: (MonadLogger m, MonadIO m)
                => Headers -> StateT PeerSession m ()
 processHeaders (Headers hs) = do
     pid <- gets peerId
-    $(logDebug) $ format pid $ "Received headers"
+    $(logDebug) $ format pid $ unwords
+        [ "Received", show $ length hs, "headers" ]
     sendBlockChain $ IncHeaders pid $ map fst hs
     currJobM <- gets currentJob
     case jobPayload <$> currJobM of
@@ -433,7 +447,8 @@ processHeaders (Headers hs) = do
 processBlock :: (MonadLogger m, MonadIO m) => Block -> StateT PeerSession m ()
 processBlock block = do
     pid <- gets peerId
-    $(logDebug) $ format pid $ "Received a block"
+    $(logDebug) $ format pid $ unwords
+        [ "Received block", encodeBlockHashLE bid ]
     sendBlockChain $ IncBlock block
     -- Check if the block is part of a job
     gets currentJob >>= \jobM -> case jobM of
@@ -451,7 +466,10 @@ endMerkleBlock :: (MonadLogger m, MonadIO m)
                => DecodedMerkleBlock -> StateT PeerSession m ()
 endMerkleBlock dmb@(DecodedMerkleBlock mb _ match txs) = do
     pid <- gets peerId
-    $(logDebug) $ format pid $ "Wrapping up current inflight merkle block."
+    $(logDebug) $ format pid $ unwords
+        [ "Merkle block", encodeBlockHashLE bid
+        , "containing", show $ length txs, "txs is complete."
+        ]
     -- Add the merkle block to the buffer
     buffer <- liftM ((bid, orderedDmb) :) $ gets merkleBuffer
     -- Clear the inflight merkle 
@@ -473,12 +491,16 @@ endMerkleBlock dmb@(DecodedMerkleBlock mb _ match txs) = do
                                     }
                     jobDone
                 -- We have more merkles to download in this job
-                bids' -> 
+                bids' -> do
+                    $(logDebug) $ format pid $ unwords
+                        [ "Expecting", show $ length bids'
+                        , "more merkle blocks."
+                        ]
                     -- Save the new job and merkle buffer
                     let newJob = job{ jobPayload = JobDwnMerkles did bids' }
-                    in  modify $ \s -> s{ currentJob   = Just newJob 
-                                        , merkleBuffer = buffer
-                                        }
+                    modify $ \s -> s{ currentJob   = Just newJob 
+                                    , merkleBuffer = buffer
+                                    }
         _ -> return ()
   where
     bid = headerHash $ merkleHeader mb
@@ -511,7 +533,7 @@ decodeMessage = do
                     ]
             Right (MessageHeader _ cmd len _) -> do
                 $(logDebug) $ format pid $ unwords
-                    [ "Received message type", show cmd ]
+                    [ "Received message header of type", show cmd ]
                 payloadBytes <- toStrictBS <$> (CB.take $ fromIntegral len)
                 case decodeToEither $ headerBytes `BS.append` payloadBytes of
                     Left err -> lift $ sendManager $

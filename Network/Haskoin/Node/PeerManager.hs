@@ -174,8 +174,8 @@ connectToRemoteHost remote@(RemoteHost host port) = do
     peers <- M.filter ((== remote) . peerRemote) <$> gets peerMap
     -- Check if the remote host is banned
     banned <- isRemoteBanned remote
-    when banned $ $(logDebug) $ format $ unwords
-        [ "Can't connect to banned host", showRemoteHost remote]
+    when banned $ $(logWarn) $ format $ unwords
+        [ "Won't connect to banned host", showRemoteHost remote]
     -- Only spin up a new peer if there is not already an active peer and if
     -- the remote host is not banned.
     when (M.null peers && not banned) $ do
@@ -253,7 +253,7 @@ processPeerClosed :: (MonadLogger m, MonadIO m)
                   => PeerId -> StateT ManagerSession m ()
 processPeerClosed pid = existsPeerData pid >>= \exists -> when exists $ do
     remote <- liftM peerRemote $ getPeerData pid
-    $(logDebug) $ format $ unwords
+    $(logWarn) $ format $ unwords
         [ "Peer", show $ hashUnique pid, "closed"
         , "(", showRemoteHost remote, ")."
         , "Rescheduling pending jobs in the peer queue."
@@ -293,7 +293,7 @@ processPeerClosed pid = existsPeerData pid >>= \exists -> when exists $ do
                     -- the counter of active peers as we just died.
                     else do
                         $(logDebug) $ format $ unwords
-                            [ "Reducing active peers for AllPeers1 job"
+                            [ "Reducing number of active peers for AllPeers1 job"
                             , show $ hashUnique jid 
                             ]
                         modify $ \s -> 
@@ -355,7 +355,7 @@ peerMisbehaving pid f msg = existsPeerData pid >>= \exists -> when exists $ do
     modifyRemoteData remote $ \s -> s{ remoteBehavior = newBehavior }
 
     $(logWarn) $ format $ unlines
-        [ "Misbehaving remote host"
+        [ "Misbehaving peer"
         , unwords [ "  Host:", showRemoteHost remote ]
         , unwords [ "  Severity:", show newBehavior ]
         , unwords [ "  Reason:", msg ]
@@ -372,7 +372,7 @@ peerMisbehaving pid f msg = existsPeerData pid >>= \exists -> when exists $ do
 processPeerHeight :: MonadLogger m
                   => PeerId -> BlockHeight -> StateT ManagerSession m ()
 processPeerHeight pid h = existsPeerData pid >>= \exists -> when exists $ do
-    $(logDebug) $ format $ unwords
+    $(logInfo) $ format $ unwords
         [ "Adjusting height of peer", show $ hashUnique pid, "to", show h ]
     dat <- getPeerData pid
     when (h > peerHeight dat) $ modifyPeerData pid $ \s -> s{ peerHeight = h }
@@ -388,8 +388,7 @@ processSetBloomFilter bloom =
         | isBloomEmpty bloom =
             $(logWarn) $ format "Trying to load an empty bloom filter"
         | otherwise = do
-            $(logInfo) $ format 
-                "Got a new valid bloom filter. Broadcasting it to all peers."
+            $(logInfo) $ format "Sending new bloom filter to all peers."
             modify $ \s -> s{ mngrBloom = Just bloom }
             publishJob (JobSendBloomFilter bloom) (AllPeers 0) 0
             -- We notify the blockchain so it can start the merkle download

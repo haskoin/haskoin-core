@@ -19,7 +19,7 @@ import Control.Concurrent.Async.Lifted (Async, withAsync, link)
 import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug, logError)
 import Control.Monad.State (StateT, evalStateT, gets, modify)
 
-import qualified Data.Text as T (pack)
+import qualified Data.Text as T (Text, pack)
 import Data.Maybe (fromMaybe, fromJust, isJust)
 import Data.Time.Clock (UTCTime, getCurrentTime, addUTCTime)
 import Data.Unique (Unique, newUnique, hashUnique)
@@ -125,8 +125,10 @@ withPeerManager bkchChan mempChan f = do
             liftIO $ threadDelay $ 1000000 * 300 -- Sleep for 5 minutes
             sendManager Heartbeat
 
-    withAsync (evalStateT run session) $ \a1 -> 
-        withAsync (evalStateT heartbeat session) $ \a2 ->
+    withAsync (evalStateT run session) $ \a1 -> do
+        $(logDebug) $ format "Peer manager thread started"
+        withAsync (evalStateT heartbeat session) $ \a2 -> do
+            $(logDebug) $ format "Heartbeat thread started"
             link a1 >> link a2 >> f mngrChan
 
 -- | Main message dispatch function for the PeerManager
@@ -154,8 +156,8 @@ addRemoteHosts remotes = do
     newRemotes <- filterM (fmap not . existsRemote) remotes 
 
     forM_ newRemotes $ \remote -> do
-        $(logInfo) $ T.pack $ unwords
-            [ "Adding remote peer" , "(", show remote, ")" ]
+        $(logDebug) $ format $ unwords
+            [ "Adding remote host", showRemoteHost remote ]
 
         -- Add new RemoteData
         putRemoteData remote $ RemoteData GoodBehavior 1
@@ -172,18 +174,17 @@ connectToRemoteHost remote@(RemoteHost host port) = do
     peers <- M.filter ((== remote) . peerRemote) <$> gets peerMap
     -- Check if the remote host is banned
     banned <- isRemoteBanned remote
+    when banned $ $(logDebug) $ format $ unwords
+        [ "Can't connect to banned host", showRemoteHost remote]
     -- Only spin up a new peer if there is not already an active peer and if
     -- the remote host is not banned.
     when (M.null peers && not banned) $ do
-
-        $(logInfo) $ T.pack $ unwords
-            [ "Connecting to remote peer" , "(", show remote, ")" ] 
 
         -- Start the peer
         mChan   <- gets mngrChan
         bChan   <- gets bkchChan
         oChan   <- gets mempChan
-        session <- liftIO $ newPeerSession mChan bChan oChan
+        session <- newPeerSession mChan bChan oChan
 
         -- Save the state of the peer
         let pid = peerId session
@@ -204,6 +205,11 @@ connectToRemoteHost remote@(RemoteHost host port) = do
                 closeTBMChan $ peerChan session
                 writeTBMChan mChan $ PeerClosed pid
 
+        $(logInfo) $ format $ unwords
+            [ "Connecting to remote host", showRemoteHost remote
+            , "( Peer", show $ hashUnique pid, ")"
+            ] 
+
         -- Spin up the new Peer thread
         _ <- lift $ liftBaseDiscard (flip forkFinally cleanup) $
             runGeneralTCPClient cs $ startPeer session
@@ -215,13 +221,15 @@ connectToRemoteHost remote@(RemoteHost host port) = do
 -- height of the remote peers blockchain.
 processPeerConnected :: (MonadLogger m, MonadIO m)
                      => PeerId -> Version -> StateT ManagerSession m ()
-processPeerConnected pid remoteVer = do
-    remote <- liftM peerRemote $ getPeerData pid
-    $(logInfo) $ T.pack $ unwords
-        [ "Peer handshake complete", "(", show remote, ")" ]
-
+processPeerConnected pid remoteVer = existsPeerData pid >>= \e -> when e $ do
+    remote   <- liftM peerRemote $ getPeerData pid
     oldState <- liftM peerState $ getPeerData pid
     when (oldState == PeerStateNew) $ do
+        $(logDebug) $ format $ unwords 
+            [ "Peer", show $ hashUnique pid, "handshake complete"
+            , "(", showRemoteHost remote, ")."
+            , "Updating peer state to ready."
+            ]
         -- Update the state to connected and save the remote peers height
         modifyPeerData pid $ \d -> 
             d{ peerState  = PeerStateReady
@@ -233,12 +241,7 @@ processPeerConnected pid remoteVer = do
         -- Send the bloom filter if one is available
         bloomM <- gets mngrBloom
         case bloomM of
-            Just bloom -> do
-                $(logInfo) $ T.pack $ unwords
-                    [ "Sending bloom filter to remote peer"
-                    , "(", show remote, ")" 
-                    ]
-                publishJob (JobSendBloomFilter bloom) (ThisPeer pid) 0
+            Just bloom -> publishJob (JobSendBloomFilter bloom) (ThisPeer pid) 0
             -- Run job scheduling as we have a new Ready peer that could take
             -- up some work.
             _ -> scheduleJobs
@@ -248,13 +251,24 @@ processPeerConnected pid remoteVer = do
 -- host after a timeout (exponential backoff).
 processPeerClosed :: (MonadLogger m, MonadIO m) 
                   => PeerId -> StateT ManagerSession m ()
-processPeerClosed pid = do
+processPeerClosed pid = existsPeerData pid >>= \exists -> when exists $ do
+    remote <- liftM peerRemote $ getPeerData pid
+    $(logDebug) $ format $ unwords
+        [ "Peer", show $ hashUnique pid, "closed"
+        , "(", showRemoteHost remote, ")."
+        , "Rescheduling pending jobs in the peer queue."
+        ]
     -- Find jobs that need to be rescheduled
     jobs <- liftM peerJobs $ getPeerData pid
     forM_ jobs $ \job@(Job jid pri res _) -> case res of
         -- Reschedule AnyPeer jobs
-        AnyPeer _ -> modify $ \s -> 
-            s{ jobQueue = M.insertWith (flip (++)) pri [job] $ jobQueue s }
+        AnyPeer _ -> do
+            $(logDebug) $ format $ unwords
+                [ "Rescheduling AnyPeer job", show $ hashUnique jid 
+                , "previously in peer queue", show $ hashUnique pid
+                ]
+            modify $ \s -> 
+                s{ jobQueue = M.insertWith (flip (++)) pri [job] $ jobQueue s }
         -- AllPeers1 jobs need to be rescheduled if all peers that were 
         -- working on it failed.
         AllPeers1 _ -> do
@@ -264,24 +278,34 @@ processPeerClosed pid = do
                 Just n -> if n <= 1
                     -- Only 1 peer was working on this job (us). We have to
                     -- reschedule it.
-                    then modify $ \s -> 
-                        s{ jobQueue = 
-                            M.insertWith (flip (++)) pri [job] $ jobQueue s 
-                         , broadcastJobs = M.delete jid $ broadcastJobs s
-                         }
+                    then do
+                        $(logDebug) $ format $ unwords
+                            [ "Rescheduling AllPeers1 job"
+                            , show $ hashUnique jid 
+                            , "previously in peer queue", show $ hashUnique pid
+                            ]
+                        modify $ \s ->
+                            s{ jobQueue = 
+                                M.insertWith (flip (++)) pri [job] $ jobQueue s 
+                            , broadcastJobs = M.delete jid $ broadcastJobs s
+                            }
                     -- If more than one peer is working on this job, we reduce
                     -- the counter of active peers as we just died.
-                    else modify $ \s ->
-                        let m = M.adjust (subtract 1) jid $ broadcastJobs s 
-                        in  s{ broadcastJobs = m }
+                    else do
+                        $(logDebug) $ format $ unwords
+                            [ "Reducing active peers for AllPeers1 job"
+                            , show $ hashUnique jid 
+                            ]
+                        modify $ \s -> 
+                            let m = M.adjust (subtract 1) jid $ broadcastJobs s 
+                            in  s{ broadcastJobs = m }
                 -- If we get Nothing, then the job was succesfully completed
                 -- by another peer. No rescheduling is required.
                 Nothing -> return ()
         -- Other resource types do not need to be rescheduled
         _ -> return ()
 
-    -- Save the remote host before deleting the peer
-    remote <- liftM peerRemote $ getPeerData pid
+    -- Remote data associated with this peer
     deletePeerData pid
     -- Reschedule jobs after we have deleted the data of this peer so it
     -- doesn't get assigned any work.
@@ -289,6 +313,11 @@ processPeerClosed pid = do
 
     -- Schedule a reconnection to the remote if it is not banned
     banned <- isRemoteBanned remote
+    when banned $
+        $(logDebug) $ format $ unwords
+            [ "Remote host", showRemoteHost remote
+            , "is banned. Not scheduling a reconnection."
+            ]
     unless banned $ do
         dat <- getRemoteData remote
 
@@ -297,11 +326,9 @@ processPeerClosed pid = do
             -- Increase the reconnection time (exponential backoff)
             reconnect = min maxDelay $ (2 * remoteReconnectTimer dat)
 
-        $(logInfo) $ T.pack $ unwords
-            [ "Remote peer disconnected. Reconnecting in"
-            , show reconnect
-            , "seconds"
-            , "(", show remote, ")" 
+        $(logInfo) $ format $ unwords
+            [ "Reconnecting to remote host", showRemoteHost remote
+            , "in", show reconnect, "seconds."
             ]
 
         -- Save the new reconnection time
@@ -320,41 +347,35 @@ peerMisbehaving :: (MonadLogger m, MonadIO m)
                 -> BehaviorUpdate 
                 -> String
                 -> StateT ManagerSession m ()
-peerMisbehaving pid f msg = do
+peerMisbehaving pid f msg = existsPeerData pid >>= \exists -> when exists $ do
     remote <- liftM peerRemote $ getPeerData pid
     -- Compute the new behavior
     newBehavior <- liftM (f . remoteBehavior) $ getRemoteData remote
     -- Save the new behavior
     modifyRemoteData remote $ \s -> s{ remoteBehavior = newBehavior }
 
-    $(logWarn) $ T.pack $ unwords
-        [ "Remote peer is misbehaving:"
-        , show newBehavior
-        , "Reason:", msg
-        , "(", show remote, ")"
+    $(logWarn) $ format $ unlines
+        [ "Misbehaving remote host"
+        , unwords [ "  Host:", showRemoteHost remote ]
+        , unwords [ "  Severity:", show newBehavior ]
+        , unwords [ "  Reason:", msg ]
         ]
 
     when (newBehavior == Banned) $ do
+        $(logWarn) $ format $ unwords
+            [ "Peer", show $ hashUnique pid, "is being banned and closed." ] 
         -- Send a message to the peer to shutdown
         sendPeer pid ClosePeer
-        $(logWarn) $ T.pack $ unwords
-            [ "Remote peer is being banned for misbehavior"
-            , "(", show remote, ")"
-            ] 
 
 -- Increase the height of a peer to the given height if it is greater than
 -- the existing one.
 processPeerHeight :: MonadLogger m
                   => PeerId -> BlockHeight -> StateT ManagerSession m ()
-processPeerHeight pid h = do
+processPeerHeight pid h = existsPeerData pid >>= \exists -> when exists $ do
+    $(logDebug) $ format $ unwords
+        [ "Adjusting height of peer", show $ hashUnique pid, "to", show h ]
     dat <- getPeerData pid
-    when (h > peerHeight dat) $ do
-        modifyPeerData pid $ \s -> s{ peerHeight = h }
-        $(logInfo) $ T.pack $ unwords
-            [ "Adjusting peer height to"
-            , show h
-            , "(", show $ peerRemote dat, ")" 
-            ]
+    when (h > peerHeight dat) $ modifyPeerData pid $ \s -> s{ peerHeight = h }
     
 processSetBloomFilter :: (MonadLogger m, MonadIO m)
                       => BloomFilter -> StateT ManagerSession m ()
@@ -363,23 +384,28 @@ processSetBloomFilter bloom =
   where
     go prevBloomM
         | prevBloomM == Just bloom = 
-            $(logWarn) "Trying to load an identical bloom filter"
+            $(logWarn) $ format "Trying to load an identical bloom filter"
         | isBloomEmpty bloom =
-            $(logWarn) "Trying to load an empty bloom filter"
+            $(logWarn) $ format "Trying to load an empty bloom filter"
         | otherwise = do
-            $(logInfo) "New bloom filter saved. Broadcasting to connected peers."
+            $(logInfo) $ format 
+                "Got a new valid bloom filter. Broadcasting it to all peers."
             modify $ \s -> s{ mngrBloom = Just bloom }
             publishJob (JobSendBloomFilter bloom) (AllPeers 0) 0
+            -- We notify the blockchain so it can start the merkle download
+            -- if it was paused waiting for a valid bloom.
             sendBlockChain ValidBloom
 
 processHeartbeat :: (MonadLogger m, MonadIO m) => StateT ManagerSession m ()
 processHeartbeat = do
-    $(logDebug) "Monitoring heartbeat"
+    $(logDebug) $ format "Monitoring heartbeat"
     now <- liftIO getCurrentTime
     peers <- liftM (M.filter $ f now) $ gets peerMap
     forM_ (M.keys peers) $ \pid -> do
         peerMisbehaving pid minorDoS "Peer did not complete his job on time"
         sendPeer pid RetryJob
+    -- Schedule jobs if it hanged for any reasons
+    scheduleJobs
   where
     f now dat = case peerJobDeadline dat of
         Just deadline -> now > deadline
@@ -393,9 +419,9 @@ publishJob :: (MonadLogger m, MonadIO m)
 publishJob pJob res pri = do
     jid <- liftIO newUnique
     let job = Job jid pri res pJob
-    $(logDebug) $ T.pack $ unwords
+    $(logDebug) $ format $ unwords
         [ "Publishing job", show $ hashUnique jid
-        , "(",showJob $ jobPayload job ,")"
+        , "of type", showJob $ jobPayload job
         ]
     modify $ \s -> 
         s{ jobQueue = M.insertWith (flip (++)) pri [job] $ jobQueue s }
@@ -422,7 +448,10 @@ scheduleJob :: (MonadLogger m, MonadIO m) => Job -> StateT ManagerSession m Bool
 scheduleJob job@(Job jid _ res _) = case res of
     -- The job can only be scheduled on a specific peer
     ThisPeer pid -> do
-        addJob pid >> stepPeer pid
+        exists <- existsPeerData pid
+        when exists $ addJob pid >> stepPeer pid
+        -- We return True even if the peer does not exist as we do not want
+        -- this job to sit in the main queue.
         return True
     -- The job can be scheduled on any available peer that meets the height
     -- requirements
@@ -433,7 +462,12 @@ scheduleJob job@(Job jid _ res _) = case res of
             (pid:_) -> do
                 addJob pid >> stepPeer pid 
                 return True
-            [] -> return False
+            [] -> do
+                $(logDebug) $ format $ unwords
+                    [ "Could not schedule AnyPeer job", show $ hashUnique jid
+                    , "because no peers available at height", show height
+                    ]
+                return False
     -- The job is scheduled on all peers that meet the height requirements.
     -- If no peers are available, that's ok.
     AllPeers height -> do
@@ -448,7 +482,12 @@ scheduleJob job@(Job jid _ res _) = case res of
         let f dat = goodHeight height dat && isNotNew dat
         peers <- liftM (M.filter f) $ gets peerMap
         if M.null peers
-            then return False
+            then do
+                $(logDebug) $ format $ unwords
+                    [ "Could not schedule AnyPeers1 job", show $ hashUnique jid
+                    , "because no peers available at height", show height
+                    ]
+                return False
             else do
                 forM_ (M.keys peers) $ \pid -> addJob pid >> stepPeer pid
                 -- Add the number of peers that got this job in the broadcast
@@ -470,10 +509,10 @@ stepPeer pid = do
     when (peerState dat == PeerStateReady) $ do
         case peerJobs dat of
             (job:_) -> do
-                $(logDebug) $ T.pack $ unwords
-                    [ "Running job", show $ hashUnique $ jobId job
-                    , "on peer", show $ hashUnique pid 
-                    , "(",showJob $ jobPayload job ,")"
+                $(logDebug) $ format $ unwords
+                    [ "Sending job", show $ hashUnique $ jobId job
+                    , "to peer", show $ hashUnique pid
+                    , "( Type:", showJob $ jobPayload job, ")"
                     ]
                 -- Deadline of 2 minutes to complete the job
                 deadline <- liftM (addUTCTime 120) $ liftIO getCurrentTime
@@ -488,19 +527,19 @@ stepPeer pid = do
 -- try to start a new job if one is available.
 peerJobDone :: (MonadLogger m, MonadIO m) 
             => PeerId -> JobId -> StateT ManagerSession m ()
-peerJobDone pid jid = do
-    $(logDebug) $ T.pack $ unwords
-        [ "Peer", show $ hashUnique pid 
-        , "finished job", show $ hashUnique jid
+peerJobDone pid jid = existsPeerData pid >>= \exists -> when exists $ do
+    $(logDebug) $ format $ unwords
+        [ "Peer", show $ hashUnique pid, "finished his job." 
+        , "Updating peer queue and state."
         ]
     queue <- liftM peerJobs $ getPeerData pid
     newQueue <- case queue of
         (Job jid' _ _ _:qs) -> do
             when (jid /= jid') $
-                $(logError) "Scheduling error. Removing wrong JobId."
+                $(logError) $ format "Scheduling error. Removing wrong JobId."
             return qs
         [] -> do
-            $(logError) "Scheduling error. No jobs to remove."
+            $(logError) $ format "Scheduling error. No jobs to remove."
             return []
 
     -- Set the peer state to ready and update the peers job queue
@@ -587,4 +626,7 @@ deleteRemoteData remote =
 isRemoteBanned :: Monad m => RemoteHost -> StateT ManagerSession m Bool
 isRemoteBanned remote = 
     liftM ((== Banned) . remoteBehavior) $ getRemoteData remote
+
+format :: String -> T.Text
+format str = T.pack $ unwords [ "[PeerManager]", str ]
 

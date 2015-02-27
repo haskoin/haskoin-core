@@ -21,7 +21,7 @@ import Control.Monad.State.Class
 import Control.Monad.State (StateT, evalStateT, gets, modify)
 import Control.Exception (Exception, throwIO, throw)
 import Control.Concurrent.STM (atomically)
-import Control.Concurrent.Async.Lifted (withAsync, link)
+import Control.Concurrent.Async.Lifted (async, wait, link, waitAnyCatchCancel)
 import Control.Monad.Logger 
     ( LoggingT
     , MonadLogger
@@ -58,7 +58,7 @@ import Data.Conduit.Network
     , appSource
     )
 import Data.Unique (Unique, newUnique, hashUnique)
-import qualified Data.Text as T (pack)
+import qualified Data.Text as T (Text, pack)
 import qualified Data.Conduit.Binary as CB (take)
 import qualified Data.ByteString as BS (ByteString, null, empty, append)
 
@@ -110,17 +110,19 @@ instance Exception NodeException
 
 -- | Create the session data for a new Peer given a Peer type and a manager
 -- channel.
-newPeerSession :: TBMChan ManagerMessage 
+newPeerSession :: (MonadIO m, MonadLogger m)
+               => TBMChan ManagerMessage 
                -> TBMChan BlockChainMessage
                -> TBMChan MempoolMessage
-               -> IO PeerSession
+               -> m PeerSession
 newPeerSession mngrChan bkchChan mempChan = do 
     -- Generate a new Peer unique ID
-    peerId   <- newUnique
+    peerId   <- liftIO newUnique
     -- Initialize the main Peer message channel
-    peerChan <- atomically $ newTBMChan 10000
+    peerChan <- liftIO $ atomically $ newTBMChan 10000
     -- Initialize the channel to send messages to the remote host
-    msgsChan <- atomically $ newTBMChan 10000
+    msgsChan <- liftIO $ atomically $ newTBMChan 10000
+    $(logDebug) $ format peerId "Creating a new peer session"
     return $ PeerSession{..}
   where
     peerVersion     = Nothing
@@ -134,22 +136,29 @@ newPeerSession mngrChan bkchChan mempChan = do
 startPeer :: (MonadLogger m, MonadIO m, MonadBaseControl IO m) 
           => PeerSession -> AppData -> m ()
 startPeer session ad = do
-        -- Spin up thread for receiving messages from the remote host
-    let runRecvMsg = (appSource ad) $$ decodeMessage 
-        chan       = msgsChan session
-        -- Spin up thread for sending messages to the remote host
-        runSendMsg = (sourceTBMChan chan) $= encodeMessage $$ (appSink ad)
-
-    -- The PeerSession state is copied into the child threads but ignored by
-    -- the parent thread.
-    flip evalStateT session $
-        withAsync runSendMsg $ \a1 -> 
-            withAsync runRecvMsg $ \a2 -> do
-                link a1 >> link a2
-                vers <- buildVersion
-                sendMessage $ MVersion vers
-                -- Main peer message processing loop
-                (sourceTBMChan $ peerChan session) $$ processPeerMessage
+    -- Spin up thread for receiving messages from the remote host
+    a1 <- async $ f $ (appSource ad) $$ decodeMessage 
+    $(logDebug) $ format pid "Message receiving thread started"
+    -- Spin up thread for sending messages to the remote host
+    let chan = msgsChan session
+    a2 <- async $ f $ (sourceTBMChan chan) $= encodeMessage $$ (appSink ad)
+    $(logDebug) $ format pid "Message sending thread started"
+    -- Main peer message processing loop
+    a3 <- async $ f $ do
+        vers <- buildVersion
+        sendMessage $ MVersion vers
+        (sourceTBMChan $ peerChan session) $$ processPeerMessage
+    $(logDebug) $ format pid "Peer thread started"
+    -- Wait for threads
+    (_, resE) <- waitAnyCatchCancel [a1, a2, a3]
+    -- Some logging
+    case resE of
+        Left e -> $(logError) $ format pid $ unwords
+            [ "Peer thread stopped with exception:", show e ]
+        _ -> $(logDebug) $ format pid "Peer thread stopped"
+  where
+    pid = peerId session
+    f = flip evalStateT session
 
 -- | Build our Version message
 buildVersion :: MonadIO m => m Version
@@ -164,72 +173,82 @@ buildVersion = do
 -- | Main Peer message dispatch function
 processPeerMessage :: (MonadLogger m, MonadIO m)
                    => Sink PeerMessage (StateT PeerSession m) ()
-processPeerMessage = await >>= \m -> case m of
-    Just (AssignJob job) -> do
-        lift $ do
-            currJobM <- gets currentJob
-            when (isJust currJobM) $ do
-                $(logError) $ "Scheduling error. Peer received work while busy."
-            modify $ \s -> s{ currentJob = Just job }
-            processJob
-        processPeerMessage
-    Just RetryJob -> do
-        pid <- gets peerId
-        $(logDebug) $ T.pack $ unwords
-            [ "Peer", show $ hashUnique pid , "is retrying his job" ]
-        lift processJob
-        processPeerMessage
-    Just (MsgFromRemote msg) -> do
-        lift $ processRemoteMessage msg 
-        processPeerMessage
-    Just (ClosePeer) -> lift $ do
-        pid <- gets peerId
-        $(logInfo) $ T.pack $ unwords 
-            [ "Peer", show $ hashUnique pid, "closing" ]
-    Nothing -> return ()
+processPeerMessage = await >>= \m -> do
+    pid <- gets peerId
+    case m of
+        Just (AssignJob job) -> do
+            lift $ do
+                currJobM <- gets currentJob
+                when (isJust currJobM) $ $(logError) $ format pid 
+                    "Scheduling error. Peer received a job while busy."
+                modify $ \s -> s{ currentJob = Just job }
+                processJob
+            processPeerMessage
+        Just RetryJob -> do
+            $(logDebug) $ format pid "Retrying current active job"
+            lift processJob
+            processPeerMessage
+        Just (MsgFromRemote msg) -> do
+            lift $ processRemoteMessage msg 
+            processPeerMessage
+        Just (ClosePeer) -> 
+            $(logDebug) $ format pid "Received a shutdown request"
+        Nothing -> return ()
 
 processJob :: (MonadLogger m, MonadIO m) => StateT PeerSession m ()
-processJob = gets currentJob >>= \jobM -> case jobPayload <$> jobM of 
-    Just (JobSendBloomFilter bloom) -> do
-        sendMessage $ MFilterLoad $ FilterLoad bloom
-        jobDone
-    -- TODO: Warning if the transaction is considered dust
-    -- TODO: Handle rebroadcasting if the transaction is not confirmed
-    -- TODO: Should we send the transaction through an INV message first?
-    Just (JobSendTx tx) -> do
-        sendMessage $ MTx tx
-        jobDone
-    Just (JobHeaderSync loc hstopM) -> 
-        sendMessage $ MGetHeaders $ GetHeaders 0x01 loc $ fromMaybe 0 hstopM
-    Just (JobDwnTxs tids) -> do
-        if null tids then jobDone else do
-            let vs = map (InvVector InvTx . fromIntegral) tids
-            sendMessage $ MGetData $ GetData vs
-    Just (JobDwnBlocks bids) -> do
-        if null bids then jobDone else do
-            let vs = map (InvVector InvBlock . fromIntegral) bids
-            sendMessage $ MGetData $ GetData vs
-    Just (JobDwnMerkles did bids) -> do
-        if null bids 
-            then do
-                sendBlockChain $ IncMerkleBlocks did []
-                jobDone 
-            else do
-                order <- gets merkleOrder
-                -- Update the order if it is empty only. Otherwise, a retry is
-                -- triggered and we want to save the complete order before the
-                -- retry.
-                when (null order) $ modify $ \s -> s{ merkleOrder = bids }
-                let vs = map (InvVector InvMerkleBlock . fromIntegral) bids
+processJob = do
+    pid <- gets peerId
+    gets currentJob >>= \jobM -> case jobPayload <$> jobM of 
+        Just (JobSendBloomFilter bloom) -> do
+            $(logDebug) $ format pid "Processing SendBloomFilter job"
+            sendMessage $ MFilterLoad $ FilterLoad bloom
+            jobDone
+        -- TODO: Warning if the transaction is considered dust
+        -- TODO: Handle rebroadcasting if the transaction is not confirmed
+        -- TODO: Should we send the transaction through an INV message first?
+        Just (JobSendTx tx) -> do
+            $(logDebug) $ format pid "Processing SendTx job"
+            sendMessage $ MTx tx
+            jobDone
+        Just (JobHeaderSync loc hstopM) -> do
+            $(logDebug) $ format pid "Processing HeaderSync job"
+            sendMessage $ MGetHeaders $ GetHeaders 0x01 loc $ fromMaybe 0 hstopM
+        Just (JobDwnTxs tids) -> do
+            if null tids then jobDone else do
+                $(logDebug) $ format pid "Processing DwnTxs job"
+                let vs = map (InvVector InvTx . fromIntegral) tids
                 sendMessage $ MGetData $ GetData vs
-    Nothing -> $(logError) "processJob: No job currently assigned."
+        Just (JobDwnBlocks bids) -> do
+            if null bids then jobDone else do
+                $(logDebug) $ format pid "Processing DwnBlocks job"
+                let vs = map (InvVector InvBlock . fromIntegral) bids
+                sendMessage $ MGetData $ GetData vs
+        Just (JobDwnMerkles did bids) -> do
+            $(logDebug) $ format pid "Processing DwnMerkles job"
+            if null bids 
+                then do
+                    sendBlockChain $ IncMerkleBlocks did []
+                    jobDone 
+                else do
+                    order <- gets merkleOrder
+                    -- Update the order if it is empty only. Otherwise, a retry
+                    -- is triggered and we want to save the complete order
+                    -- before the retry.
+                    when (null order) $ modify $ \s -> s{ merkleOrder = bids }
+                    let vs = map (InvVector InvMerkleBlock . fromIntegral) bids
+                    sendMessage $ MGetData $ GetData vs
+        Nothing -> $(logError) $ format pid "No job available to process"
 
-jobDone :: MonadIO m => StateT PeerSession m ()
+jobDone :: (MonadLogger m, MonadIO m) => StateT PeerSession m ()
 jobDone = do
     jobM <- gets currentJob
     case jobM of
-        Just (Job jid _ _ _) -> do
+        Just (Job jid _ _ pJob) -> do
             pid <- gets peerId
+            $(logDebug) $ format pid $ unwords
+                [ "Finished job", show $ hashUnique jid 
+                , "of type", showJob pJob
+                ]
             sendManager $ PeerJobDone pid jid
             modify $ \s -> s{ currentJob = Nothing }
         _ -> return ()
@@ -244,6 +263,7 @@ processRemoteMessage msg = checkInitVersion >>= \valid -> when valid $ do
     merkleM <- gets inflightMerkle
     when (isJust merkleM && isNotTx msg) $ endMerkleBlock $ fromJust merkleM
     -- Dispatch the message to the right actor for handling
+    pid <- gets peerId
     case msg of
         MVersion v            -> processVersion v
         MVerAck               -> processVerAck 
@@ -252,8 +272,13 @@ processRemoteMessage msg = checkInitVersion >>= \valid -> when valid $ do
         MHeaders hs           -> processHeaders hs
         MBlock b              -> processBlock b 
         MInv inv              -> processInvMessage inv
-        MPing (Ping n)        -> sendMessage $ MPong $ Pong n
-        _                     -> return () -- Ignore other messages for now
+        MPing (Ping n) -> do
+            $(logDebug) $ format pid $ unwords
+                [ "Sending pong in reply to ping with nonce", show n ]
+            sendMessage $ MPong $ Pong n
+        _ -> do
+            $(logDebug) $ format pid "Ignoring this message"
+            
   where
     isNotTx (MTx _) = False
     isNotTx _       = True
@@ -275,11 +300,16 @@ processInvMessage (Inv vs)
     -- Single blockhash INV is a tickle
     | null txlist && length blocklist == 1 = do
         pid <- gets peerId
+        $(logDebug) $ format pid "Received block tickle"
         sendBlockChain $ BlockTickle pid $ head blocklist
     | otherwise = do
         pid <- gets peerId
-        unless (null txlist) $ sendMempool $ MempoolTxInv pid txlist
-        unless (null blocklist) $ sendBlockChain $ BlockInv pid blocklist
+        unless (null txlist) $ do
+            $(logDebug) $ format pid "Received tx INV"
+            sendMempool $ MempoolTxInv pid txlist
+        unless (null blocklist) $ do
+            $(logDebug) $ format pid "Received block INV"
+            sendBlockChain $ BlockInv pid blocklist
   where
     txlist = map (fromIntegral . invHash) $ 
         filter ((== InvTx) . invType) vs
@@ -299,37 +329,43 @@ processVersion remoteVer = go =<< get
             sendManager $ PeerMisbehaving pid minorDoS
                 "Remote peer sent a duplicate version message"
         | version remoteVer < minProtocolVersion = do
-            $(logError) $ T.pack $ unwords 
+            pid <- gets peerId
+            $(logWarn) $ format pid $ unwords 
                 [ "Connected to a peer speaking protocol version"
                 , show $ version $ fromJust $ peerVersion session
-                , "but need" 
+                , "but we require at least" 
                 , show $ minProtocolVersion
                 ]
             closePeer
         | otherwise = do
-            $(logInfo) $ T.pack $ unwords
-                [ "Connected to", show $ addrSend remoteVer
-                , ": Version =",  show $ version remoteVer 
-                , ", subVer =",   show $ userAgent remoteVer 
-                , ", services =", show $ services remoteVer 
-                , ", time =",     show $ timestamp remoteVer 
-                , ", blocks =",   show $ startHeight remoteVer
+            pid <- gets peerId
+            $(logInfo) $ format pid $ unlines
+                [ unwords [ "Connected to remote host"
+                          , show $ naAddress $ addrSend remoteVer 
+                          ]
+                , unwords [ "  version  :", show $ version remoteVer ]
+                , unwords [ "  subVer   :", show $ userAgent remoteVer ] 
+                , unwords [ "  services :", show $ services remoteVer ]
+                , unwords [ "  time     :", show $ timestamp remoteVer ]
+                , unwords [ "  blocks   :", show $ startHeight remoteVer ]
                 ]
             modify $ \s -> s{ peerVersion = Just remoteVer }
             sendMessage MVerAck
             -- Notify the manager that the handshake was succesfull
-            pid <- gets peerId
             sendManager $ PeerConnected pid remoteVer
 
 -- | Process a VerAck message sent from the remote host
-processVerAck :: MonadLogger m => m ()
-processVerAck = $(logInfo) "Version ACK received"
+processVerAck :: MonadLogger m => StateT PeerSession m ()
+processVerAck = do
+    pid <- gets peerId
+    $(logInfo) $ format pid "Received a version ack."
 
 -- | Process a MerkleBlock sent from the remote host
 processMerkleBlock :: (MonadLogger m, MonadIO m) 
                    => MerkleBlock -> StateT PeerSession m ()
 processMerkleBlock decodedMerkle@(MerkleBlock bh ntx hs fs) = do
     pid <- gets peerId
+    $(logDebug) $ format pid $ "Received a merkle block."
     -- Check that we are expecting this merkle bock. Otherwise, the remote
     -- peer is misbehaving by sending us unsolicited junk.
     gets currentJob >>= \jobM -> case jobM of
@@ -355,8 +391,10 @@ processMerkleBlock decodedMerkle@(MerkleBlock bh ntx hs fs) = do
                 "Received a merkle block with an invalid merkle root."
 
 -- | Process a transaction sent from the remote host
-processTx :: MonadIO m => Tx -> StateT PeerSession m ()
+processTx :: (MonadLogger m, MonadIO m) => Tx -> StateT PeerSession m ()
 processTx tx = do
+    pid <- gets peerId
+    $(logDebug) $ format pid $ "Received a tx"
     -- If the transaction is part of a merkle block, buffer it. We will send
     -- everything to the manager together.
     merkleM <- gets inflightMerkle
@@ -385,14 +423,17 @@ processHeaders :: (MonadLogger m, MonadIO m)
                => Headers -> StateT PeerSession m ()
 processHeaders (Headers hs) = do
     pid <- gets peerId
+    $(logDebug) $ format pid $ "Received headers"
     sendBlockChain $ IncHeaders pid $ map fst hs
     currJobM <- gets currentJob
     case jobPayload <$> currJobM of
         Just (JobHeaderSync _ _) -> jobDone
         _ -> return ()
 
-processBlock :: MonadIO m => Block -> StateT PeerSession m ()
+processBlock :: (MonadLogger m, MonadIO m) => Block -> StateT PeerSession m ()
 processBlock block = do
+    pid <- gets peerId
+    $(logDebug) $ format pid $ "Received a block"
     sendBlockChain $ IncBlock block
     -- Check if the block is part of a job
     gets currentJob >>= \jobM -> case jobM of
@@ -406,8 +447,11 @@ processBlock block = do
 
 -- | When the download of transactions related to a merkle block is finished,
 -- this function is called to buffer the merkle block and clean up the data.
-endMerkleBlock :: MonadIO m => DecodedMerkleBlock -> StateT PeerSession m ()
+endMerkleBlock :: (MonadLogger m, MonadIO m) 
+               => DecodedMerkleBlock -> StateT PeerSession m ()
 endMerkleBlock dmb@(DecodedMerkleBlock mb _ match txs) = do
+    pid <- gets peerId
+    $(logDebug) $ format pid $ "Wrapping up current inflight merkle block."
     -- Add the merkle block to the buffer
     buffer <- liftM ((bid, orderedDmb) :) $ gets merkleBuffer
     -- Clear the inflight merkle 
@@ -448,10 +492,12 @@ endMerkleBlock dmb@(DecodedMerkleBlock mb _ match txs) = do
 -- will also notify the PeerManager about a misbehaving remote host.
 decodeMessage :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
               => Sink BS.ByteString (StateT PeerSession m) ()
-decodeMessage = forever $ do
+decodeMessage = do
     pid <- lift $ gets peerId
     -- Message header is always 24 bytes
     headerBytes <- toStrictBS <$> CB.take 24
+    -- If headerBytes is empty, the conduit has disconnected and we need to
+    -- exit (not recurse). Otherwise, we go into an infinite loop here.
     unless (BS.null headerBytes) $ do
         -- Introspection required to know the length of the payload
         let headerE = decodeToEither headerBytes
@@ -464,6 +510,8 @@ decodeMessage = forever $ do
                     , bsToHex headerBytes
                     ]
             Right (MessageHeader _ cmd len _) -> do
+                $(logDebug) $ format pid $ unwords
+                    [ "Received message type", show cmd ]
                 payloadBytes <- toStrictBS <$> (CB.take $ fromIntegral len)
                 case decodeToEither $ headerBytes `BS.append` payloadBytes of
                     Left err -> lift $ sendManager $
@@ -473,6 +521,7 @@ decodeMessage = forever $ do
                         pChan <- lift $ gets peerChan
                         liftIO . atomically $ 
                             writeTBMChan pChan $ MsgFromRemote res
+        decodeMessage
 
 -- | Encode message that are being sent to the remote host.
 encodeMessage :: Monad m => Conduit Message (StateT PeerSession m) BS.ByteString
@@ -515,4 +564,7 @@ closePeer = do
     chan <- gets peerChan
     -- Push the ClosePeer message to the top of the channel
     liftIO . atomically $ unGetTBMChan chan ClosePeer
+
+format :: PeerId -> String -> T.Text
+format pid str = T.pack $ concat [ "[Peer", show $ hashUnique pid, "] ", str ]
 

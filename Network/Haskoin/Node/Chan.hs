@@ -14,6 +14,7 @@ module Network.Haskoin.Node.Chan
 , JobId
 , DwnId
 , RemoteHost(..) 
+, showRemoteHost
 , DecodedMerkleBlock(..)
 , Behavior(..)
 , BehaviorUpdate
@@ -47,7 +48,10 @@ data RemoteHost = RemoteHost
     { remoteHost :: !String
     , remotePort :: !Int
     } 
-    deriving (Eq, Ord, Show, Read)
+    deriving (Eq, Ord)
+
+showRemoteHost :: RemoteHost -> String
+showRemoteHost (RemoteHost h p) = concat [ h, ":", show p ]
 
 data DecodedMerkleBlock = DecodedMerkleBlock
     { decodedMerkle :: !MerkleBlock

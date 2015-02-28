@@ -138,11 +138,11 @@ connectHeaders :: HeaderTree m
 connectHeaders bhs adjustedTime commit
     | null bhs = return $ Left "Invalid empty BlockHeaders in connectHeaders"
     | validChain bhs = runEitherT $ do
-        newNode <- liftM last $ forM bhs $ \bh -> do
+        newNodes <- forM bhs $ \bh -> do
             parNode <- verifyBlockHeader bh adjustedTime
             lift $ storeBlockHeader bh parNode
         -- Best header will only be updated if we have no errors
-        lift $ evalNewChain commit newNode 
+        lift $ evalNewChain commit $ last newNodes
     | otherwise = return $ Left "BlockHeaders do not form a valid chain."
   where
     validChain (a:b:xs) =  prevBlock b == headerHash a && validChain (b:xs)
@@ -170,7 +170,8 @@ evalNewChain commit newNode = do
   where
     go (split, old, new)
         | length old == 0 && length new >= 1 = return $ BestChain new
-        | nodeChainWork (last new) > nodeChainWork (last old) = 
+        | length old > 0 && length new > 0 && 
+          nodeChainWork (last new) > nodeChainWork (last old) = 
             return $ ChainReorg split old new
         | otherwise = return $ SideChain new
 
@@ -180,7 +181,8 @@ commitAction action = do
     currentHead <- getBestBlockHeader
     let newNodes = actionNewNodes action
         newNode  = last newNodes
-    when (nodeChainWork newNode > nodeChainWork currentHead) $ do
+        newBest  = nodeChainWork newNode > nodeChainWork currentHead
+    when ( not (null newNodes) && newBest ) $ do
         -- Update the child links starting from the current head
         updateChilds (currentHead:newNodes)
         -- Update the best block header

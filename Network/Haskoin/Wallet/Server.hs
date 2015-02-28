@@ -140,12 +140,12 @@ runSPVServer configM detach = do
 
                 -- Launch SPV node
                 runNode $ withSpvNode $ \eChan rChan -> do
-                    -- Send our bloom filter
-                    liftIO . atomically $ writeTBMChan rChan $
-                        NodeBloomFilter bloom
                     -- Connect to remote nodes
                     liftIO . atomically $ writeTBMChan rChan $
                         NodeConnectPeers $ map (\(h,p) -> RemoteHost h p) nodes
+                    -- Send our bloom filter
+                    liftIO . atomically $ writeTBMChan rChan $
+                        NodeBloomFilter bloom
                     -- Start the merkle block download process
                     liftIO . atomically $ writeTBMChan rChan $
                         NodeStartDownload dwnE

@@ -19,10 +19,11 @@ import Control.Monad.Trans.Control
     , liftBaseDiscard
     )
 
-import qualified Data.Text as T (pack)
+import qualified Data.Text as T (Text, pack)
 import Data.Maybe (isJust, isNothing, fromJust, catMaybes, fromMaybe)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.List (nub, partition, delete, (\\))
+import Data.Unique (hashUnique)
 import Data.Conduit.TMChan (TBMChan, writeTBMChan)
 import Data.Conduit 
     ( Sink
@@ -58,20 +59,29 @@ withSpvNode f = do
     reqChan  <- liftIO $ atomically $ newTBMChan 10000
     withSpvMempool wletChan $ \bkchChan mngrChan -> do
         -- Listen for and process wallet requests
-        let run = sourceTBMChan reqChan $$ (go bkchChan mngrChan)
+        let run = do
+            $(logDebug) $ formatWallet "SPV user request thread started"
+            sourceTBMChan reqChan $$ (go bkchChan mngrChan)
         withAsync run $ \a -> link a >> f wletChan reqChan
   where
     go bkchChan mngrChan = awaitForever $ \req -> case req of
-        NodeBloomFilter bloom -> 
+        NodeBloomFilter bloom -> do
+            $(logDebug) $ formatWallet "Setting a new bloom filter"
             liftIO $ atomically $ writeTBMChan mngrChan $ SetBloomFilter bloom
-        NodeStartDownload valE ->
+        NodeStartDownload valE -> do
+            $(logDebug) $ formatWallet "Requesting a merkle block download"
             liftIO $ atomically $ writeTBMChan bkchChan $ StartDownload valE
-        NodeConnectPeers peers ->
+        NodeConnectPeers peers -> do
+            $(logDebug) $ formatWallet "Advertising new peers to connect to"
             liftIO $ atomically $ writeTBMChan mngrChan $ AddRemoteHosts peers
-        NodePublishTx tx ->
+        NodePublishTx tx -> do
+            $(logDebug) $ formatWallet "Publishing a transaction to broadcast"
             -- Publish a job with priority 1 on all peers
             liftIO $ atomically $ writeTBMChan mngrChan $ 
                 PublishJob (JobSendTx tx) (AllPeers1 0) 1
+
+formatWallet :: String -> T.Text
+formatWallet str = T.pack $ unwords [ "[Wallet Request]", str ]
 
 {- Mempool Actor -}
 
@@ -115,7 +125,9 @@ withSpvMempool wletChan f = do
             merkleBuffer = []
             session      = MempoolSession{..}
             -- Run the main mempool message processing loop
-            run = sourceTBMChan mempChan $$ processMempoolMessage
+            run = do
+                $(logDebug) $ format "SPV mempool thread started"
+                sourceTBMChan mempChan $$ processMempoolMessage
 
         withAsync (evalStateT run session) $ \a ->
             link a >> f bkchChan mngrChan
@@ -136,13 +148,22 @@ processTxInv :: (MonadLogger m, MonadIO m)
              => PeerId -> [TxHash] -> StateT MempoolSession m ()
 processTxInv _ [] = return () -- Ignore empty INVs
 processTxInv pid tids = do
-    $(logInfo) $ T.pack $ unwords
-        [ "Got tx inv" , "[", unwords $ map encodeTxHashLE tids, "]" ]
+    $(logDebug) $ format $ unlines $
+        unwords [ "Received transaction INV from peer"
+                , show $ hashUnique pid
+                ]
+        : map (("  " ++) . encodeTxHashLE) tids 
+
     inflight <- gets inflightTxs
     soloTxs  <- liftM (map txHash) $ gets txBuffer
     let f h   = not (h `elem` inflight) && not (h `elem` soloTxs)
         toDwn = filter f tids
     unless (null toDwn) $ do
+        $(logDebug) $ format $ unwords
+            [ "Requesting", show $ length toDwn
+            , "transaction downloads from peer"
+            , show $ hashUnique pid
+            ]
         -- Save inflight downloads
         modify $ \s -> s{ inflightTxs = inflight ++ toDwn }
         -- Publish the transaction download job with average priority
@@ -158,16 +179,16 @@ processTx tx = do
     if synced
         -- We are synced. We send solo transactions to the wallet
         then do
-            $(logInfo) $ T.pack $ unwords 
-                [ "Got solo tx", encodeTxHashLE tid
-                , "Sending to the wallet."
+            $(logInfo) $ format $ concat 
+                [ "Received solo tx ", encodeTxHashLE tid
+                , ". Sending it to the wallet."
                 ]
             sendWallet $ WalletTx tx
         -- We are not synced. We buffer transactions until we are synced.
         else do
-            $(logInfo) $ T.pack $ unwords 
-                [ "Got solo tx", encodeTxHashLE tid
-                , "We are not synced. Buffering it."
+            $(logInfo) $ format $ concat 
+                [ "Received solo tx ", encodeTxHashLE tid
+                , ". Buffering it as we are not synced."
                 ]
             modify $ \s -> s{ txBuffer = txBuffer s ++ [tx] }
 
@@ -192,26 +213,38 @@ processMerkle action dmbs = gets inflightTxs >>= \inflight -> if null inflight
     then do
         -- Check if we have solo transactions that belong to these merkle blocks
         txs <- gets txBuffer
-        let (txs', dmbs') = merge [] txs dmbs
-        modify $ \s -> s{ txBuffer = txs' }
+        let (newTxs, newDmbs) = merge [] txs dmbs
+        modify $ \s -> s{ txBuffer = newTxs }
+
+        $(logDebug) $ format $ unwords
+            [ "Sending", show $ length newDmbs, "merkle blocks and"
+            , show $ length $ concat $ map merkleTxs newDmbs
+            , "transactions to the wallet."
+            ]
+            
         -- Send the merkles to the wallet
-        sendWallet $ WalletMerkle action dmbs'
+        sendWallet $ WalletMerkle action newDmbs
         -- Some logging
         case action of
-            BestChain nodes -> $(logInfo) $ T.pack $ unwords
-                [ "Best merkle chain height:"
-                , show $ nodeHeaderHeight $ last nodes, ":"
-                , encodeBlockHashLE $ nodeBlockHash $ last nodes
+            BestChain nodes -> $(logInfo) $ format $ unwords
+                [ "Best merkle chain height"
+                , show $ nodeHeaderHeight $ last nodes
+                , "(", encodeBlockHashLE $ nodeBlockHash $ last nodes, ")"
                 ]
-            ChainReorg s o n -> $(logInfo) $ T.pack $ unwords
-                [ "Merkle chain reorg. Orphaned blocks:"
-                , "[", unwords $ map (encodeBlockHashLE . nodeBlockHash) o ,"]"
-                , "New blocks:"
-                , "[", unwords $ map (encodeBlockHashLE . nodeBlockHash) n ,"]"
-                , "New height:"
-                , show $ nodeHeaderHeight $ last n
-                ]
-            SideChain _ -> $(logWarn) "Got a merkle side chain."
+            ChainReorg s o n -> $(logInfo) $ format $ unlines $
+                  [ "Merkle chain reorg."
+                  , "Orphaned blocks:" 
+                  ]
+                ++ map (("  " ++) . encodeBlockHashLE . nodeBlockHash) o
+                ++ [ "New blocks:" ]
+                ++ map (("  " ++) . encodeBlockHashLE . nodeBlockHash) n
+                ++ [ unwords [ "Best merkle chain height"
+                             , show $ nodeHeaderHeight $ last n
+                             ]
+                   ]
+            SideChain n -> $(logWarn) $ format $ unlines $
+                "Received a merkle side chain:"
+                : map (("  " ++) . encodeBlockHashLE . nodeBlockHash) n
     -- We stall merkle block imports when transactions are inflight. This
     -- is to prevent this race condition where tx1 would miss it's
     -- confirmation:
@@ -219,20 +252,29 @@ processMerkle action dmbs = gets inflightTxs >>= \inflight -> if null inflight
     -- This problem arises because bitcoin-core adds txs to a "known inventory"
     -- when it advertises a tx to us in an INV. Those known inventory txs are
     -- no sent in merkle blocks afterwards.
-    else modify $ \s -> s{ merkleBuffer = merkleBuffer s ++ [(action, dmbs)] }
+    else do
+        $(logDebug) $ format $ unwords
+            [ "Received a merkle block while transactions are inflight."
+            , "Buffering it."
+            ]
+        modify $ \s -> s{ merkleBuffer = merkleBuffer s ++ [(action, dmbs)] }
   where
     merge acc txs [] = (txs, reverse acc)
-    merge acc txs (dmb:dmbs) = do
-        let (xs, rs) = partition ((`elem` expectedTxs dmb) . txHash) txs
-            dmb' = dmb{ merkleTxs = nub $ merkleTxs dmb ++ xs }
-        merge (dmb':acc) rs dmbs
+    merge acc txs (d:ds) = do
+        let (xs, rs) = partition ((`elem` expectedTxs d) . txHash) txs
+            d' = d{ merkleTxs = nub $ merkleTxs d ++ xs }
+        merge (d':acc) rs ds
 
 -- When the node is synced, the blockchain notifies us. We can then safely send
 -- solo transactions to the wallet.
-processSynced :: MonadIO m => StateT MempoolSession m ()
+processSynced :: (MonadLogger m, MonadIO m) => StateT MempoolSession m ()
 processSynced = do
     txs <- gets txBuffer
-    forM_ txs $ sendWallet . WalletTx
+    $(logInfo) $ format "Merkle blocks are in sync with the block headers."
+    unless (null txs) $ do
+        $(logInfo) $ format $ unwords
+            [ "Sending", show $ length txs, "txs to the wallet." ]
+        forM_ txs $ sendWallet . WalletTx
     modify $ \s -> s{ nodeSynced = True 
                     , txBuffer   = []
                     }
@@ -250,4 +292,7 @@ sendWallet :: MonadIO m => WalletMessage -> StateT MempoolSession m ()
 sendWallet msg = do
     chan <- gets wletChan
     liftIO . atomically $ writeTBMChan chan msg
+
+format :: String -> T.Text
+format str = T.pack $ unwords [ "[Mempool]", str ]
 

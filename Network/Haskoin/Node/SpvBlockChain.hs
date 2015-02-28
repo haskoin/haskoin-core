@@ -37,7 +37,7 @@ import Data.Conduit.TMChan
     )
 import Data.Unique (newUnique, hashUnique)
 import qualified Data.Map as M 
-    ( Map, member, delete, lookup, fromList, fromListWith
+    ( Map, member, delete, lookup, fromList, fromListWith, null
     , keys, elems, toList, toAscList, empty, map, filter, size
     , adjust, update, singleton, insertWith, insert, assocs
     )
@@ -99,6 +99,7 @@ withSpvBlockChain mempChan f = do
             session        = SpvSession{..}
             -- Run the main blockchain message processing loop
             run = do
+                $(logDebug) $ format "SPV Blockchain thread started"
                 -- Initialize Header Tree
                 runDB initHeaderTree
                 -- Trigger the header download
@@ -108,7 +109,6 @@ withSpvBlockChain mempChan f = do
                 sourceTBMChan bkchChan $$ processBlockChainMessage
 
         withAsync (evalStateT run session) $ \a -> do
-            $(logDebug) $ format "SPV Blockchain thread started"
             link a >> f bkchChan mngrChan
 
 processBlockChainMessage :: (HeaderTree m, MonadLogger m, MonadIO m) 
@@ -155,6 +155,7 @@ processBlockHeaders pid [] = do
         [ "Received empty headers from peer", show $ hashUnique pid ]
     -- Try to download more merkle blocks
     continueMerkleDownload
+    checkSynced
 
 processBlockHeaders pid bhs = do
     $(logDebug) $ format $ unwords
@@ -252,7 +253,24 @@ dispatchMerkles = do
             modify $ \s -> s{ merkleWindow = M.delete did win }
             dispatchMerkles
         -- Try to download more merkles if there is space in the window
-        _ -> continueMerkleDownload
+        _ -> do
+            continueMerkleDownload
+            checkSynced
+
+-- Check if merkle blocks are in sync with block headers.
+checkSynced :: (HeaderTree m, MonadLogger m, MonadIO m)
+            => StateT SpvSession m ()
+checkSynced = do
+    newWin   <- gets merkleWindow
+    bestHead <- liftM nodeBlockHash $ runDB getBestBlockHeader
+    winEnd   <- gets windowEnd
+    -- If the window is empty after dispatching some merkles and trying
+    -- to download some more, then the merkles have catched up with
+    -- the headers.
+    when (M.null newWin && winEnd == Just bestHead) $ do
+        $(logDebug) $ format $ 
+            "Merkle blocks are in sync with the block headers."
+        sendMempool MempoolSynced
 
 -- | If space is available in the merkle block download window, request
 -- more merkle block download jobs and add them to the window.

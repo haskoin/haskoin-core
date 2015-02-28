@@ -120,15 +120,19 @@ withPeerManager bkchChan mempChan f = do
         session       = ManagerSession{..}
 
         -- Run the peer manager main processing loop
-        run = sourceTBMChan mngrChan $$ processManagerMessage
-        heartbeat = forever $ do
-            liftIO $ threadDelay $ 1000000 * 300 -- Sleep for 5 minutes
-            sendManager Heartbeat
+        run = do
+            $(logDebug) $ format "Peer manager thread started"
+            sourceTBMChan mngrChan $$ processManagerMessage
+
+        -- Monitoring hearbeat
+        heartbeat = do
+            $(logDebug) $ format "Heartbeat thread started"
+            forever $ do
+                liftIO $ threadDelay $ 1000000 * 300 -- Sleep for 5 minutes
+                sendManager Heartbeat
 
     withAsync (evalStateT run session) $ \a1 -> do
-        $(logDebug) $ format "Peer manager thread started"
         withAsync (evalStateT heartbeat session) $ \a2 -> do
-            $(logDebug) $ format "Heartbeat thread started"
             link a1 >> link a2 >> f mngrChan
 
 -- | Main message dispatch function for the PeerManager

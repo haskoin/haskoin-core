@@ -39,7 +39,7 @@ import Data.Unique (newUnique, hashUnique)
 import qualified Data.Map as M 
     ( Map, member, delete, lookup, fromList, fromListWith, null
     , keys, elems, toList, toAscList, empty, map, filter, size
-    , adjust, update, singleton, insertWith, insert, assocs
+    , adjust, update, singleton, insertWith, insert, assocs, partition
     )
 
 import Network.Haskoin.Block
@@ -60,9 +60,9 @@ data SpvSession = SpvSession
       -- Peer that is currently syncing the headers
     , syncPeer :: !(Maybe PeerId)
       -- Block hashes that a peer advertised to us but we haven't linked them
-      -- yet to our chain. We use this list to update the peer height once
-      -- those blocks are linked.
-    , peerTickles :: !(M.Map BlockHash [PeerId])
+      -- yet to our chain. We use this map to update the peer height once
+      -- those blocks are linked. Only the last tickle of any peer is stored.
+    , peerTickles :: !(M.Map PeerId BlockHash)
       -- This value will be True if the wallet has set us a non-empty 
       -- bloom filter.
     , validBloom :: !Bool
@@ -149,7 +149,7 @@ processBlockTickle pid bid = do
             -- Save the PeerId/BlockHash so we can update the PeerId height
             -- when we can connect the block.
             -- TODO: We could have a DoS leak here
-            addPeerTickle pid bid
+            setPeerTickle pid bid
             -- Only request headers if no header sync is in progress
             peerM <- gets syncPeer
             when (isNothing peerM) $ do
@@ -176,7 +176,7 @@ processBlockHeaders pid [] = do
         tickles <- gets peerTickles
         case M.assocs tickles of
             -- We have a tickle in the buffer. Let's try to sync it.
-            ((bid, (p:_)):_) -> do
+            ((p,bid):_) -> do
                 $(logDebug) $ format $ 
                     "Syncing more headers from the tickle buffer."
                 headerSync (ThisPeer p) FullLocator $ Just bid
@@ -210,9 +210,6 @@ processBlockHeaders pid bhs = do
                     -- This peer is not the sync peer anymore.
                     $(logInfo) $ format $ "We have no more header syncing peer."
                     modify $ \s -> s{ syncPeer = Nothing }
-                    -- Try to continue syncing from a good peer
-                    height <- runDB bestBlockHeaderHeight
-                    headerSync (AnyPeer height) PartialLocator Nothing
                 -- Headers extend our current best head
                 _ -> do
                     let nodes  = actionNewNodes action
@@ -410,25 +407,26 @@ processValidBloom = do
 {- Helpers -}
 
 -- Add a BlockHash to the PeerId tickle map
-addPeerTickle :: Monad m => PeerId -> BlockHash -> StateT SpvSession m ()
-addPeerTickle pid bid = modify $ \s ->
-    s{ peerTickles = M.insertWith (flip (++)) bid [pid] $ peerTickles s }
+setPeerTickle :: Monad m => PeerId -> BlockHash -> StateT SpvSession m ()
+setPeerTickle pid bid = modify $ \s ->
+    s{ peerTickles = M.insert pid bid $ peerTickles s }
 
 -- Adjust height of peers that sent us a tickle for these blocks
 adjustPeerHeight :: (MonadLogger m, MonadIO m) 
                  => BlockHeaderNode -> StateT SpvSession m ()
 adjustPeerHeight node = do
-    pidsM <- liftM (M.lookup bid) $ gets peerTickles
-    case pidsM of
-        Just pids -> do
-            $(logDebug) $ format $ unwords
-                [ "Removing buffered block hash tickle", encodeBlockHashLE bid ]
-            forM_ (fromJust pidsM) $ \pid -> sendManager $ PeerHeight pid h
-            modify $ \s -> s{ peerTickles = M.delete bid $ peerTickles s }
-        Nothing -> return ()
+    -- Find peers that have this block as a tickle
+    (m, r) <- liftM (M.partition (== bid)) $ gets peerTickles 
+    forM_ (M.keys m) $ \pid -> do
+        $(logDebug) $ format $ unwords
+            [ "Removing buffered tickle from peer", show $ hashUnique pid ]
+        -- Update the height of the peer
+        sendManager $ PeerHeight pid height
+    -- Update the peer tickles
+    modify $ \s -> s{ peerTickles = r }
   where
-    bid = nodeBlockHash node
-    h   = nodeHeaderHeight node
+    bid    = nodeBlockHash node
+    height = nodeHeaderHeight node
 
 -- Send a message to the PeerManager
 sendManager :: MonadIO m => ManagerMessage -> StateT SpvSession m ()

@@ -100,7 +100,7 @@ data PeerMessage
 data ManagerMessage
       -- Public messages
     = AddRemoteHosts ![RemoteHost]
-    | SetBloomFilter !BloomFilter
+    | MngrBloomFilter !BloomFilter
     | PublishJob !PeerJob !JobResource !JobPriority 
     | PeerHeight !PeerId !BlockHeight
       -- Messages from Peers
@@ -110,7 +110,7 @@ data ManagerMessage
     | PeerJobDone !PeerId !JobId
       -- Internal Messages
     | ConnectToRemote !RemoteHost
-    | Heartbeat
+    | MngrHeartbeat
 
 -- | Messages handled by the Blockchain actor
 data BlockChainMessage
@@ -120,7 +120,8 @@ data BlockChainMessage
     | IncBlock !Block
     | IncMerkleBlocks !DwnId ![DecodedMerkleBlock]
     | StartDownload !(Either Timestamp BlockHash)
-    | ValidBloom
+    | SetBloomFilter !BloomFilter
+    | BkchHeartbeat
 
 -- | Messages handled by the Mempool actor
 data MempoolMessage

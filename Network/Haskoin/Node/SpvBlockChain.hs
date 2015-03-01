@@ -21,6 +21,7 @@ import Control.Monad.Trans.Control
 import qualified Data.Text as T (Text, pack)
 import Data.Maybe (isJust, isNothing, fromJust, catMaybes, fromMaybe)
 import Data.Time.Clock.POSIX (getPOSIXTime)
+import Data.Time.Clock (UTCTime, getCurrentTime, addUTCTime)
 import Data.List (nub, partition, delete, (\\))
 import Data.List.Split (chunksOf)
 import Data.Conduit 
@@ -46,6 +47,7 @@ import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Constants
+import Network.Haskoin.Node.Bloom
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.PeerManager
@@ -59,11 +61,13 @@ data SpvSession = SpvSession
     , mempChan :: !(TBMChan MempoolMessage)
       -- Peer that is currently syncing the headers
     , syncPeer :: !(Maybe PeerId)
+      -- Timeout to detect a stalled header sync
+    , syncTimeout :: !UTCTime
       -- Block hashes that a peer advertised to us but we haven't linked them
       -- yet to our chain. We use this map to update the peer height once
       -- those blocks are linked. Only the last tickle of any peer is stored.
     , peerTickles :: !(M.Map PeerId BlockHash)
-      -- This value will be True if the wallet has set us a non-empty 
+      -- This value will be True if the wallet has sent us a non-empty 
       -- bloom filter.
     , validBloom :: !Bool
       -- Continue downloading blocks from this point on. The merkle download
@@ -93,13 +97,16 @@ withSpvBlockChain
 withSpvBlockChain mempChan f = do
     bkchChan <- liftIO $ atomically $ newTBMChan 10000
     withPeerManager bkchChan mempChan $ \mngrChan -> do
+        now <- liftIO getCurrentTime
         let syncPeer     = Nothing
+            syncTimeout  = now -- dummy value
             peerTickles  = M.empty
             windowEnd    = Nothing
             fastCatchup  = Nothing
             merkleWindow = M.empty
             validBloom   = False
             session      = SpvSession{..}
+
             -- Run the main blockchain message processing loop
             run = do
                 $(logDebug) $ format "SPV Blockchain thread started"
@@ -111,8 +118,16 @@ withSpvBlockChain mempChan f = do
                 -- Process messages
                 sourceTBMChan bkchChan $$ processBlockChainMessage
 
-        withAsync (evalStateT run session) $ \a -> do
-            link a >> f bkchChan mngrChan
+            -- Monitoring hearbeat
+            heartbeat = do
+                $(logDebug) $ format "Blockchain heartbeat thread started"
+                forever $ do
+                    liftIO $ threadDelay $ 1000000 * 120 -- Sleep for 2 minutes
+                    liftIO . atomically $ writeTBMChan bkchChan BkchHeartbeat
+
+        withAsync (evalStateT run session) $ \a1 -> do
+            withAsync (evalStateT heartbeat session) $ \a2 -> do
+                link a1 >> link a2 >> f bkchChan mngrChan
 
 processBlockChainMessage :: (HeaderTree m, MonadLogger m, MonadIO m) 
                          => Sink BlockChainMessage (StateT SpvSession m) ()
@@ -120,8 +135,9 @@ processBlockChainMessage = awaitForever $ \req -> lift $ case req of
     BlockTickle pid bid      -> processBlockTickle pid bid
     IncHeaders pid bhs       -> processBlockHeaders pid bhs
     IncMerkleBlocks did dmbs -> processMerkleBlocks did dmbs
-    StartDownload   valE     -> processStartDownload valE
-    ValidBloom               -> processValidBloom
+    StartDownload valE       -> processStartDownload valE
+    SetBloomFilter bloom     -> processBloomFilter bloom
+    BkchHeartbeat            -> processHeartbeat
     _ -> return () -- Ignore block invs (except tickles) and full blocks
 
 -- | Handle block tickles from a peer. A peer can only send us one tickle
@@ -151,11 +167,7 @@ processBlockTickle pid bid = do
             -- TODO: We could have a DoS leak here
             setPeerTickle pid bid
             -- Only request headers if no header sync is in progress
-            peerM <- gets syncPeer
-            when (isNothing peerM) $ do
-                $(logInfo) $ format $ unwords
-                    [ "The header sync peer is now", show $ hashUnique pid ]
-                modify $ \s -> s{ syncPeer = Just pid }
+            gets syncPeer >>= \peerM -> when (isNothing peerM) $ do
                 --Request headers so we can connect this block
                 headerSync (ThisPeer pid) FullLocator $ Just bid
 
@@ -163,9 +175,8 @@ processBlockHeaders :: (HeaderTree m, MonadLogger m, MonadIO m)
                     => PeerId -> [BlockHeader] -> StateT SpvSession m ()
 
 processBlockHeaders pid [] = do
-    peerM <- gets syncPeer
     -- Only the sync peer is allowed to process headers
-    when (isNothing peerM || peerM == Just pid) $ do
+    gets syncPeer >>= \pM -> when (isNothing pM || pM == Just pid) $ do
         -- TODO: Should we check the tickles to continue the header download ?
         $(logInfo) $ format $ unwords 
             [ "Received empty headers from peer", show $ hashUnique pid ]
@@ -188,9 +199,8 @@ processBlockHeaders pid [] = do
                 checkSynced
 
 processBlockHeaders pid bhs = do
-    peerM <- gets syncPeer
     -- Only the sync peer is allowed to process headers
-    when (isNothing peerM || peerM == Just pid) $ do
+    gets syncPeer >>= \pM -> when (isNothing pM || pM == Just pid) $ do
         $(logDebug) $ format $ unwords
             [ "Received", show $ length bhs, "headers" 
             , "from peer", show $ hashUnique pid
@@ -224,10 +234,6 @@ processBlockHeaders pid bhs = do
                     forM_ nodes adjustPeerHeight
                     -- Adjust height of the node that sent us these headers
                     sendManager $ PeerHeight pid height
-                    -- This peer is the sync peer
-                    $(logInfo) $ format $ unwords
-                        [ "The header sync peer is now", show $ hashUnique pid ]
-                    modify $ \s -> s{ syncPeer = Just pid }
                     -- Continue syncing headers from the same peer
                     headerSync (ThisPeer pid) PartialLocator Nothing
                     -- Try to download more merkle blocks
@@ -247,6 +253,19 @@ headerSync resource locType hStopM = do
     -- Send a job that can only run on the given PeerId. Priority = 2 to
     -- give priority to BloomFilters (0) and Tx broadcasts (1)
     sendManager $ PublishJob (JobHeaderSync loc hStopM) resource 2
+    -- When setting a peer sync, there is the risk of the peer disappearing
+    -- which would stall the header download. We give the sync peer a deadline.
+    case resource of
+        ThisPeer pid -> do
+            -- This peer is the sync peer
+            $(logDebug) $ format $ unwords
+                [ "The header sync peer is ", show $ hashUnique pid ]
+            -- 2 minutes to complete this job
+            timeout <- liftM (addUTCTime 120) $ liftIO getCurrentTime
+            modify $ \s -> s{ syncPeer    = Just pid 
+                            , syncTimeout = timeout
+                            }
+        _ -> return ()
 
 processMerkleBlocks :: (HeaderTree m, MonadLogger m, MonadIO m)
                     => DwnId -> [DecodedMerkleBlock] -> StateT SpvSession m ()
@@ -392,17 +411,45 @@ processStartDownload valE = do
     -- Trigger merkle block downloads
     continueMerkleDownload
 
-processValidBloom :: (HeaderTree m, MonadLogger m, MonadIO m) 
-                     => StateT SpvSession m ()
-processValidBloom = do
-    valid <- gets validBloom
-    unless valid $ do
-        $(logDebug) $ format $ unwords
-            [ "Received a valid bloom filter."
-            , "Attempting to start the merkle block download."
-            ]
-        modify $ \s -> s{ validBloom = True }
-        continueMerkleDownload
+processBloomFilter :: (HeaderTree m, MonadLogger m, MonadIO m)
+                   => BloomFilter -> StateT SpvSession m ()
+processBloomFilter bloom 
+    | isBloomEmpty bloom =
+        $(logWarn) $ format "Trying to load an empty bloom filter"
+    | otherwise = do
+        $(logDebug) $ format "Received a new bloom filter."
+        -- Send the bloom filter to the manager
+        sendManager $ MngrBloomFilter bloom
+        valid <- gets validBloom
+        unless valid $ do
+            modify $ \s -> s{ validBloom = True }
+            $(logDebug) $ format 
+                "Attempting to start the merkle block download."
+            -- Merkle block download can only start when we get a first
+            -- valid bloom filter.
+            continueMerkleDownload
+
+processHeartbeat :: (HeaderTree m, MonadLogger m, MonadIO m) 
+                 => StateT SpvSession m ()
+processHeartbeat = do
+    $(logDebug) $ format "Sync peer monitoring heartbeat"
+    gets syncPeer >>= \peerM -> case peerM of
+        Just pid -> do
+            now <- liftIO getCurrentTime
+            deadline <- gets syncTimeout
+            when (now > deadline) $ do
+                $(logWarn) $ format $ unwords
+                    [ "Sync peer", show $ hashUnique pid
+                    , "is stalling the header download."
+                    ]
+                modify $ \s -> s{ syncPeer = Nothing }
+                height <- runDB bestBlockHeaderHeight
+                -- Issue a new header sync with any peer at the right height
+                headerSync (AnyPeer height) FullLocator Nothing
+        _ -> return ()
+    -- Try to continue the merkle download in case it stalled. This should
+    -- not happen.
+    continueMerkleDownload
     
 {- Helpers -}
 

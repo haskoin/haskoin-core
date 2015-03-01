@@ -126,10 +126,10 @@ withPeerManager bkchChan mempChan f = do
 
         -- Monitoring hearbeat
         heartbeat = do
-            $(logDebug) $ format "Heartbeat thread started"
+            $(logDebug) $ format "Manager heartbeat thread started"
             forever $ do
-                liftIO $ threadDelay $ 1000000 * 300 -- Sleep for 5 minutes
-                sendManager Heartbeat
+                liftIO $ threadDelay $ 1000000 * 120 -- Sleep for 2 minutes
+                sendManager MngrHeartbeat
 
     withAsync (evalStateT run session) $ \a1 -> do
         withAsync (evalStateT heartbeat session) $ \a2 -> do
@@ -140,7 +140,7 @@ processManagerMessage :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
                       => Sink ManagerMessage (StateT ManagerSession m) ()
 processManagerMessage = awaitForever $ \req -> lift $ case req of
     AddRemoteHosts remotes    -> addRemoteHosts remotes
-    SetBloomFilter bloom      -> processSetBloomFilter bloom
+    MngrBloomFilter bloom     -> processBloomFilter bloom
     PublishJob job res pri    -> publishJob job res pri
     PeerHeight pid h          -> processPeerHeight pid h
     PeerConnected pid ver     -> processPeerConnected pid ver
@@ -148,7 +148,7 @@ processManagerMessage = awaitForever $ \req -> lift $ case req of
     PeerMisbehaving pid f msg -> peerMisbehaving pid f msg
     PeerJobDone pid jid       -> peerJobDone pid jid
     ConnectToRemote remote    -> connectToRemoteHost remote
-    Heartbeat                 -> processHeartbeat
+    MngrHeartbeat             -> processHeartbeat
 
 -- | Let the PeerManager know about new remote peers to connect to. The
 -- PeerManager will add them to its session data and try to connect to
@@ -376,14 +376,15 @@ peerMisbehaving pid f msg = existsPeerData pid >>= \exists -> when exists $ do
 processPeerHeight :: MonadLogger m
                   => PeerId -> BlockHeight -> StateT ManagerSession m ()
 processPeerHeight pid h = existsPeerData pid >>= \exists -> when exists $ do
-    $(logInfo) $ format $ unwords
-        [ "Adjusting height of peer", show $ hashUnique pid, "to", show h ]
     dat <- getPeerData pid
-    when (h > peerHeight dat) $ modifyPeerData pid $ \s -> s{ peerHeight = h }
+    when (h > peerHeight dat) $ do
+        $(logInfo) $ format $ unwords
+            [ "Adjusting height of peer", show $ hashUnique pid, "to", show h ]
+        modifyPeerData pid $ \s -> s{ peerHeight = h }
     
-processSetBloomFilter :: (MonadLogger m, MonadIO m)
-                      => BloomFilter -> StateT ManagerSession m ()
-processSetBloomFilter bloom = 
+processBloomFilter :: (MonadLogger m, MonadIO m)
+                   => BloomFilter -> StateT ManagerSession m ()
+processBloomFilter bloom = 
     go =<< gets mngrBloom
   where
     go prevBloomM
@@ -393,15 +394,14 @@ processSetBloomFilter bloom =
             $(logWarn) $ format "Trying to load an empty bloom filter"
         | otherwise = do
             $(logInfo) $ format "Sending new bloom filter to all peers."
+            -- Save the new bloom filter so that we can send it to new
+            -- peers when they connect.
             modify $ \s -> s{ mngrBloom = Just bloom }
             publishJob (JobSendBloomFilter bloom) (AllPeers 0) 0
-            -- We notify the blockchain so it can start the merkle download
-            -- if it was paused waiting for a valid bloom.
-            sendBlockChain ValidBloom
 
 processHeartbeat :: (MonadLogger m, MonadIO m) => StateT ManagerSession m ()
 processHeartbeat = do
-    $(logDebug) $ format "Monitoring heartbeat"
+    $(logDebug) $ format "Job monitoring heartbeat"
     now <- liftIO getCurrentTime
     peers <- liftM (M.filter $ f now) $ gets peerMap
     forM_ (M.keys peers) $ \pid -> do

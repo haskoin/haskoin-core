@@ -67,7 +67,7 @@ withSpvNode f = do
     go bkchChan mngrChan = awaitForever $ \req -> case req of
         NodeBloomFilter bloom -> do
             $(logDebug) $ formatWallet "Setting a new bloom filter"
-            liftIO $ atomically $ writeTBMChan mngrChan $ SetBloomFilter bloom
+            liftIO $ atomically $ writeTBMChan bkchChan $ SetBloomFilter bloom
         NodeStartDownload valE -> do
             $(logDebug) $ formatWallet "Requesting a merkle block download"
             liftIO $ atomically $ writeTBMChan bkchChan $ StartDownload valE

@@ -60,7 +60,7 @@ data SpvSession = SpvSession
       -- Mempool message channel
     , mempChan :: !(TBMChan MempoolMessage)
       -- Peer that is currently syncing the headers
-    , syncPeer :: !(Maybe PeerId)
+    , syncResource :: !(Maybe JobResource)
       -- Timeout to detect a stalled header sync
     , syncTimeout :: !UTCTime
       -- Block hashes that a peer advertised to us but we haven't linked them
@@ -98,7 +98,7 @@ withSpvBlockChain mempChan f = do
     bkchChan <- liftIO $ atomically $ newTBMChan 10000
     withPeerManager bkchChan mempChan $ \mngrChan -> do
         now <- liftIO getCurrentTime
-        let syncPeer     = Nothing
+        let syncResource = Nothing
             syncTimeout  = now -- dummy value
             peerTickles  = M.empty
             windowEnd    = Nothing
@@ -166,106 +166,109 @@ processBlockTickle pid bid = do
             -- when we can connect the block.
             -- TODO: We could have a DoS leak here
             setPeerTickle pid bid
-            -- Only request headers if no header sync is in progress
-            gets syncPeer >>= \peerM -> when (isNothing peerM) $ do
-                --Request headers so we can connect this block
-                headerSync (ThisPeer pid) FullLocator $ Just bid
+            --Request headers so we can connect this block
+            headerSync (ThisPeer pid) FullLocator $ Just bid
 
 processBlockHeaders :: (HeaderTree m, MonadLogger m, MonadIO m) 
                     => PeerId -> [BlockHeader] -> StateT SpvSession m ()
 
-processBlockHeaders pid [] = do
-    -- Only the sync peer is allowed to process headers
-    gets syncPeer >>= \pM -> when (isNothing pM || pM == Just pid) $ do
-        -- TODO: Should we check the tickles to continue the header download ?
-        $(logInfo) $ format $ unwords 
-            [ "Received empty headers from peer", show $ hashUnique pid ]
-        -- There is no more sync peer
-        $(logInfo) $ format $ "We have no more header syncing peer."
-        modify $ \s -> s{ syncPeer = Nothing }
-        -- Try to sync more headers from remaining tickles
-        tickles <- gets peerTickles
-        case M.assocs tickles of
-            -- We have a tickle in the buffer. Let's try to sync it.
-            ((p,bid):_) -> do
-                $(logDebug) $ format $ 
-                    "Syncing more headers from the tickle buffer."
-                headerSync (ThisPeer p) FullLocator $ Just bid
+processBlockHeaders pid [] = canProcessHeaders pid >>= \valid -> when valid $ do
+    -- TODO: Should we check the tickles to continue the header download ?
+    $(logInfo) $ format $ unwords 
+        [ "Received empty headers from peer", show $ hashUnique pid ]
+    -- Try to sync more headers from remaining tickles
+    tickles <- gets peerTickles
+    case M.assocs tickles of
+        -- We have a tickle in the buffer. Let's try to sync it.
+        ((p,bid):_) -> do
+            $(logDebug) $ format $ 
+                "Syncing more headers from the tickle buffer."
+            headerSync (ThisPeer p) FullLocator $ Just bid
+            -- Try to download more merkle blocks
+            continueMerkleDownload
+        _ -> do
+            continueMerkleDownload
+            -- Check if merkle downloads have reached the headers
+            checkSynced
+
+processBlockHeaders pid hs = canProcessHeaders pid >>= \valid -> when valid $ do
+    $(logDebug) $ format $ unwords
+        [ "Received", show $ length hs, "headers" 
+        , "from peer", show $ hashUnique pid
+        ]
+    now <- liftM round $ liftIO getPOSIXTime
+    -- Connect block headers and commit them
+    actionE <- runDB $ connectHeaders hs now True
+    case actionE of
+        Left err -> sendManager $ PeerMisbehaving pid severeDoS err
+        Right action -> case action of
+            -- Ignore SideChain/duplicate headers
+            SideChain _ -> do
+                $(logDebug) $ format $ unwords
+                    [ "Ignoring side chain headers from peer"
+                    , show $ hashUnique pid
+                    ]
+                -- A peer should not send us side chain headers under
+                -- normal circumstances. 
+                sendManager $ PeerMisbehaving pid moderateDoS 
+                    "Peer sent us side chain headers"
+                height <- runDB bestBlockHeaderHeight
+                -- Don't continue from this peer. Try another peer.
+                headerSync (AnyPeer height) FullLocator Nothing
+            -- Headers extend our current best head
+            _ -> do
+                let nodes  = actionNewNodes action
+                    height = nodeHeaderHeight $ last nodes
+                $(logInfo) $ format $ unwords 
+                    [ "Headers from peer", show $ hashUnique pid
+                    , "connected successfully."
+                    , "New best header height:", show height
+                    ]
+                -- Adjust height of peers that sent us a tickle for
+                -- these blocks
+                forM_ nodes adjustPeerHeight
+                -- Adjust height of the node that sent us these headers
+                sendManager $ PeerHeight pid height
+                -- Continue syncing headers from the same peer
+                headerSync (ThisPeer pid) PartialLocator Nothing
                 -- Try to download more merkle blocks
                 continueMerkleDownload
-            _ -> do
-                continueMerkleDownload
-                -- Check if merkle downloads have reached the headers
-                checkSynced
 
-processBlockHeaders pid bhs = do
-    -- Only the sync peer is allowed to process headers
-    gets syncPeer >>= \pM -> when (isNothing pM || pM == Just pid) $ do
-        $(logDebug) $ format $ unwords
-            [ "Received", show $ length bhs, "headers" 
-            , "from peer", show $ hashUnique pid
-            ]
-        now <- liftM round $ liftIO getPOSIXTime
-        -- Connect block headers and commit them
-        actionE <- runDB $ connectHeaders bhs now True
-        case actionE of
-            Left err -> sendManager $ PeerMisbehaving pid severeDoS err
-            Right action -> case action of
-                -- Ignore SideChain/duplicate headers
-                SideChain _ -> do
-                    $(logDebug) $ format $ unwords
-                        [ "Ignoring side chain headers from peer"
-                        , show $ hashUnique pid
-                        ]
-                    -- This peer is not the sync peer anymore.
-                    $(logInfo) $ format $ "We have no more header syncing peer."
-                    modify $ \s -> s{ syncPeer = Nothing }
-                -- Headers extend our current best head
-                _ -> do
-                    let nodes  = actionNewNodes action
-                        height = nodeHeaderHeight $ last nodes
-                    $(logInfo) $ format $ unwords 
-                        [ "Headers from peer", show $ hashUnique pid
-                        , "connected successfully."
-                        , "New best header height:", show height
-                        ]
-                    -- Adjust height of peers that sent us a tickle for
-                    -- these blocks
-                    forM_ nodes adjustPeerHeight
-                    -- Adjust height of the node that sent us these headers
-                    sendManager $ PeerHeight pid height
-                    -- Continue syncing headers from the same peer
-                    headerSync (ThisPeer pid) PartialLocator Nothing
-                    -- Try to download more merkle blocks
-                    continueMerkleDownload
+-- If the resource is a specific peer, only allow that peer to connect more
+-- headers. If that peer stalls, we will detect it with the monitoring.
+canProcessHeaders :: MonadLogger m => PeerId -> StateT SpvSession m Bool
+canProcessHeaders pid = do
+    valid <- liftM f $ gets syncResource
+    -- If the peer is allowed to process the headers, we reset the resource
+    -- so that a new header sync can happen.
+    when valid $ modify $ \s -> s{ syncResource = Nothing }
+    return valid
+  where
+    f (Just (ThisPeer pid')) = pid == pid'
+    f _ = True
 
 -- | Request a header download job for the given peer resource
 headerSync :: (HeaderTree m, MonadLogger m, MonadIO m)
            => JobResource -> LocatorType -> Maybe BlockHash
            -> StateT SpvSession m ()
 headerSync resource locType hStopM = do
-    $(logInfo) $ format $ unwords 
-        [ "Requesting more headers with block locator type", show locType ]
-    -- Build the block locator object
-    loc <- runDB $ case locType of
-        FullLocator    -> blockLocator 
-        PartialLocator -> liftM ((:[]) . nodeBlockHash) getBestBlockHeader
-    -- Send a job that can only run on the given PeerId. Priority = 2 to
-    -- give priority to BloomFilters (0) and Tx broadcasts (1)
-    sendManager $ PublishJob (JobHeaderSync loc hStopM) resource 2
-    -- When setting a peer sync, there is the risk of the peer disappearing
-    -- which would stall the header download. We give the sync peer a deadline.
-    case resource of
-        ThisPeer pid -> do
-            -- This peer is the sync peer
-            $(logDebug) $ format $ unwords
-                [ "The header sync peer is ", show $ hashUnique pid ]
-            -- 2 minutes to complete this job
-            timeout <- liftM (addUTCTime 120) $ liftIO getCurrentTime
-            modify $ \s -> s{ syncPeer    = Just pid 
-                            , syncTimeout = timeout
-                            }
-        _ -> return ()
+    -- Only download more headers if a header request is not already sent
+    gets syncResource >>= \resM -> when (isNothing resM) $ do
+        $(logInfo) $ format $ unwords 
+            [ "Requesting more headers with block locator type", show locType ]
+        -- Save the deadline for this job (2 minutes). If we don't get a
+        -- response within the given time, we continue the header download.
+        deadline <- liftM (addUTCTime 120) $ liftIO getCurrentTime
+        modify $ \s -> s{ syncResource = Just resource
+                        , syncTimeout  = deadline
+                        }
+        -- Build the block locator object
+        loc <- runDB $ case locType of
+            FullLocator    -> blockLocator 
+            PartialLocator -> liftM ((:[]) . nodeBlockHash) getBestBlockHeader
+        -- Send a job that can only run on the given PeerId. Priority = 2 to
+        -- give priority to BloomFilters (0) and Tx broadcasts (1)
+        sendManager $ PublishJob (JobHeaderSync loc hStopM) resource 2
 
 processMerkleBlocks :: (HeaderTree m, MonadLogger m, MonadIO m)
                     => DwnId -> [DecodedMerkleBlock] -> StateT SpvSession m ()
@@ -432,9 +435,9 @@ processBloomFilter bloom
 processHeartbeat :: (HeaderTree m, MonadLogger m, MonadIO m) 
                  => StateT SpvSession m ()
 processHeartbeat = do
-    $(logDebug) $ format "Sync peer monitoring heartbeat"
-    gets syncPeer >>= \peerM -> case peerM of
-        Just pid -> do
+    $(logDebug) $ format "Sync resource monitoring heartbeat"
+    gets syncResource >>= \resM -> case resM of
+        Just (ThisPeer pid) -> do
             now <- liftIO getCurrentTime
             deadline <- gets syncTimeout
             when (now > deadline) $ do
@@ -442,7 +445,7 @@ processHeartbeat = do
                     [ "Sync peer", show $ hashUnique pid
                     , "is stalling the header download."
                     ]
-                modify $ \s -> s{ syncPeer = Nothing }
+                modify $ \s -> s{ syncResource = Nothing }
                 height <- runDB bestBlockHeaderHeight
                 -- Issue a new header sync with any peer at the right height
                 headerSync (AnyPeer height) FullLocator Nothing

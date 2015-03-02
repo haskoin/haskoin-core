@@ -44,7 +44,7 @@ import System.ZMQ4.Monadic
 import Control.Applicative ((<$>))
 import Control.Monad (forM_, when, liftM2, unless)
 import Control.Monad.Trans (liftIO)
-import qualified Control.Monad.State as S (StateT, gets)
+import qualified Control.Monad.Reader as R (ReaderT, ask, asks)
 
 import Data.Maybe (listToMaybe, isNothing, fromJust, fromMaybe)
 import Data.List (intersperse)
@@ -76,25 +76,25 @@ import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Server
 
-type Handler = S.StateT ClientConfig IO
+type Handler = R.ReaderT Config IO
 
 -- hw start [config] [--detach]
-cmdStart :: [String] -> Handler ()
-cmdStart configLs = do
-    detach <- S.gets clientDetach
-    liftIO $ runSPVServer (listToMaybe configLs) detach
+cmdStart :: Handler ()
+cmdStart = do
+    cfg <- R.ask
+    liftIO $ runSPVServer cfg
     liftIO $ putStrLn "Process started"
 
 -- hw stop [config] 
-cmdStop :: [String] -> Handler ()
-cmdStop configLs = liftIO $ do
-    stopSPVServer $ listToMaybe configLs
+cmdStop :: Handler ()
+cmdStop = R.ask >>= \cfg -> liftIO $ do
+    stopSPVServer cfg
     putStrLn "Process stopped"
 
 cmdNewWallet :: [String] -> Handler ()
 cmdNewWallet mnemonicLs = do
-    newWalletWalletName <- S.gets clientWallet
-    newWalletPassphrase <- S.gets clientPass
+    newWalletWalletName <- R.asks configWallet
+    newWalletPassphrase <- R.asks configPass
     sendZmq (PostWalletsR NewWallet{..}) $ \(MnemonicRes m) -> do
         putStrLn "Write down your seed:"
         putStrLn m
@@ -103,7 +103,7 @@ cmdNewWallet mnemonicLs = do
 
 cmdGetWallet :: Handler ()
 cmdGetWallet = do
-    w <- S.gets clientWallet
+    w <- R.asks configWallet
     sendZmq (GetWalletR w) $ putStr . printWallet
 
 cmdGetWallets :: Handler ()
@@ -113,7 +113,7 @@ cmdGetWallets = sendZmq GetWalletsR $ \ws -> do
 
 cmdNewAcc :: String -> Handler ()
 cmdNewAcc name = do
-    w <- S.gets clientWallet
+    w <- R.asks configWallet
     sendZmq (PostAccountsR w newAcc) $ putStr . printAccount
   where
     newAcc = NewAccountRegular $ T.pack name
@@ -121,7 +121,7 @@ cmdNewAcc name = do
 cmdNewMS :: String -> String -> String -> [String] -> Handler ()
 cmdNewMS name mStr nStr ks = do
     when (isNothing keysM) $ error "Could not parse key(s)"
-    w <- S.gets clientWallet
+    w <- R.asks configWallet
     sendZmq (PostAccountsR w newAcc) $ putStr . printAccount
   where
     m      = read mStr
@@ -132,7 +132,7 @@ cmdNewMS name mStr nStr ks = do
 cmdNewRead :: String -> String -> Handler ()
 cmdNewRead name key = do
     when (isNothing keyM) $ error "Could not parse key"
-    w <- S.gets clientWallet
+    w <- R.asks configWallet
     sendZmq (PostAccountsR w newAcc) $ putStr . printAccount
   where
     newAcc = NewAccountRead (T.pack name) $ fromJust keyM
@@ -141,7 +141,7 @@ cmdNewRead name key = do
 cmdNewReadMS :: String -> String -> String -> [String] -> Handler ()
 cmdNewReadMS name mStr nStr ks = do
     when (isNothing keysM) $ error "Could not parse key(s)"
-    w <- S.gets clientWallet
+    w <- R.asks configWallet
     sendZmq (PostAccountsR w newAcc) $ putStr . printAccount
   where
     m      = read mStr
@@ -152,7 +152,7 @@ cmdNewReadMS name mStr nStr ks = do
 cmdAddKeys :: String -> [String] -> Handler ()
 cmdAddKeys name ks = do
     when (isNothing keysM) $ error "Could not parse key(s)"
-    w <- S.gets clientWallet
+    w <- R.asks configWallet
     sendZmq (PostAccountKeysR w (T.pack name) keys) $ putStr . printAccount
   where
     keysM  = mapM xPubImport ks
@@ -160,30 +160,30 @@ cmdAddKeys name ks = do
 
 cmdGetAcc :: String -> Handler ()
 cmdGetAcc name = do
-    w <- S.gets clientWallet
+    w <- R.asks configWallet
     sendZmq (GetAccountR w $ T.pack name) $ putStr . printAccount
 
 cmdAccList :: Handler ()
 cmdAccList = do
-    w <- S.gets clientWallet
+    w <- R.asks configWallet
     sendZmq (GetAccountsR w) $ \as -> do
         let xs = map (putStr . printAccount) as
         sequence_ $ intersperse (putStrLn "-") xs
 
 cmdList :: String -> Handler ()
 cmdList name = do
-    w <- S.gets clientWallet
-    m <- S.gets clientMinConf
-    i <- S.gets clientInternal
+    w <- R.asks configWallet
+    m <- R.asks configMinConf
+    i <- R.asks configInternal
     sendZmq (GetAddressesR w (T.pack name) Nothing m i False False) $
         mapM_ (putStrLn . printBalanceAddress)
 
 cmdPage :: String -> [String] -> Handler ()
 cmdPage name pageLs = do
-    w <- S.gets clientWallet
-    m <- S.gets clientMinConf
-    i <- S.gets clientInternal
-    c <- S.gets clientCount
+    w <- R.asks configWallet
+    m <- R.asks configMinConf
+    i <- R.asks configInternal
+    c <- R.asks configCount
     let pagedRes = Just $ PagedResult page c
     sendZmq (GetAddressesR w (T.pack name) pagedRes m i False False) $
         \(AddressPageRes as maxPage) -> do
@@ -196,7 +196,7 @@ cmdPage name pageLs = do
 
 cmdNew :: String -> String -> Handler ()
 cmdNew name label = do
-    w <- S.gets clientWallet
+    w <- R.asks configWallet
     sendZmq (PostAddressesR w (T.pack name) addrData) $
         putStrLn . printLabeledAddress
   where
@@ -204,7 +204,7 @@ cmdNew name label = do
 
 cmdLabel :: String -> String -> String -> Handler ()
 cmdLabel name iStr label = do
-    w <- S.gets clientWallet
+    w <- R.asks configWallet
     sendZmq (PutAddressR w (T.pack name) i addrData) $
         putStrLn . printLabeledAddress
   where
@@ -213,15 +213,15 @@ cmdLabel name iStr label = do
 
 cmdTxList :: String -> Handler ()
 cmdTxList name = do
-    w <- S.gets clientWallet
+    w <- R.asks configWallet
     sendZmq (GetTxsR w (T.pack name) Nothing) $ \ts -> do
         let xs = map (putStr . printAccTx) ts
         sequence_ $ intersperse (putStrLn "-") xs
 
 cmdTxPage :: String -> [String] -> Handler ()
 cmdTxPage name pageLs = do
-    w <- S.gets clientWallet
-    c <- S.gets clientCount
+    w <- R.asks configWallet
+    c <- R.asks configCount
     let pagedRes = Just $ PagedResult page c
     sendZmq (GetTxsR w (T.pack name) pagedRes) $ \(TxPageRes ts maxPage) -> do
         -- page 0 is the last page
@@ -235,10 +235,10 @@ cmdTxPage name pageLs = do
 cmdSend :: String -> String -> String -> Handler ()
 cmdSend name addrStr amntStr = do
     when (isNothing addrM) $ error "Could not parse address"
-    w <- S.gets clientWallet
-    fee <- S.gets clientFee
-    minconf <- S.gets clientMinConf
-    sign <- S.gets clientSignNewTx
+    w <- R.asks configWallet
+    fee <- R.asks configFee
+    minconf <- R.asks configMinConf
+    sign <- R.asks configSignNewTx
     let action = CreateTx [(fromJust addrM, amnt)] fee minconf sign
     sendZmq (PostTxsR w (T.pack name) action) $ \(TxHashStatusRes h c) -> do
         putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
@@ -250,10 +250,10 @@ cmdSend name addrStr amntStr = do
 cmdSendMany :: String -> [String] -> Handler ()
 cmdSendMany name xs = do
     when (isNothing rcpsM) $ error "Could not parse recipient list"
-    w <- S.gets clientWallet
-    fee <- S.gets clientFee
-    minconf <- S.gets clientMinConf
-    sign <- S.gets clientSignNewTx
+    w <- R.asks configWallet
+    fee <- R.asks configFee
+    minconf <- R.asks configMinConf
+    sign <- R.asks configSignNewTx
     let action = CreateTx (fromJust rcpsM) fee minconf sign
     sendZmq (PostTxsR w (T.pack name) action) $ \(TxHashStatusRes h c) -> do
         putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
@@ -267,8 +267,8 @@ cmdSendMany name xs = do
 cmdSignTx :: String -> String -> Handler ()
 cmdSignTx name txStr = do
     when (isNothing txM) $ error "Could not parse transaction"
-    w <- S.gets clientWallet
-    finalize <- S.gets clientFinalize
+    w <- R.asks configWallet
+    finalize <- R.asks configFinalize
     let action = SignTx (fromJust txM) finalize
     sendZmq (PostTxsR w (T.pack name) action) $ \(TxHashStatusRes h c) -> do
         putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
@@ -279,7 +279,7 @@ cmdSignTx name txStr = do
 cmdImportTx :: String -> String -> Handler ()
 cmdImportTx name txStr = do
     when (isNothing txM) $ error "Could not parse transaction"
-    w <- S.gets clientWallet
+    w <- R.asks configWallet
     sendZmq (PostTxsR w (T.pack name) action) $ \(TxHashStatusRes h c) -> do
         putStrLn $ unwords [ "TxHash  :", encodeTxHashLE h]
         putStrLn $ unwords [ "Complete:", if c then "Yes" else "No"]
@@ -290,7 +290,7 @@ cmdImportTx name txStr = do
 cmdGetOffline :: String -> String -> Handler ()
 cmdGetOffline name tidStr = do
     when (isNothing tidM) $ error "Could not parse txid"
-    w <- S.gets clientWallet
+    w <- R.asks configWallet
     sendZmq (GetOfflineTxDataR w (T.pack name) $ fromJust tidM) $ 
         \otd -> putStrLn $ bsToHex $ toStrictBS $ encode (otd :: OfflineTxData)
   where
@@ -299,8 +299,8 @@ cmdGetOffline name tidStr = do
 cmdSignOffline :: String -> String -> Handler ()
 cmdSignOffline name otdStr = do
     when (isNothing otdM) $ error "Could not decode offline tx data"
-    w <- S.gets clientWallet
-    finalize <- S.gets clientFinalize
+    w <- R.asks configWallet
+    finalize <- R.asks configFinalize
     let action = SignOfflineTxData (fromJust otdM) finalize
     sendZmq (PostTxsR w (T.pack name) action) $ \(TxStatusRes tx c) -> do
         putStrLn $ unwords [ "Tx      :", bsToHex $ encode' tx ]
@@ -310,8 +310,8 @@ cmdSignOffline name otdStr = do
 
 cmdBalance :: String -> Handler ()
 cmdBalance name = do
-    w <- S.gets clientWallet
-    m <- S.gets clientMinConf
+    w <- R.asks configWallet
+    m <- R.asks configMinConf
     sendZmq (GetBalanceR w (T.pack name) m) $ \(BalanceRes b cs) -> do
         putStrLn $ unwords [ "Balance:", printBalance b ]
         unless (null cs) $ do
@@ -320,15 +320,15 @@ cmdBalance name = do
 
 cmdSpendable :: String -> Handler ()
 cmdSpendable name = do
-    w <- S.gets clientWallet
-    m <- S.gets clientMinConf
+    w <- R.asks configWallet
+    m <- R.asks configMinConf
     sendZmq (GetSpendableR w (T.pack name) m) $ \(SpendableRes b) -> do
         putStrLn $ unwords [ "Spendable balance:", show b ]
 
 cmdGetProp :: String -> String -> Handler ()
 cmdGetProp name tidStr = do
     when (isNothing tidM) $ error "Could not parse txid"
-    w <- S.gets clientWallet
+    w <- R.asks configWallet
     sendZmq (GetTxR w (T.pack name) (fromJust tidM) True) $ \AccTx{..} ->
         putStrLn $ bsToHex $ encode' accTxTx
   where
@@ -337,7 +337,7 @@ cmdGetProp name tidStr = do
 cmdGetTx :: String -> String -> Handler ()
 cmdGetTx name tidStr = do
     when (isNothing tidM) $ error "Could not parse txid"
-    w <- S.gets clientWallet
+    w <- R.asks configWallet
     sendZmq (GetTxR w (T.pack name) (fromJust tidM) False) $ \AccTx{..} ->
         putStrLn $ bsToHex $ encode' accTxTx
   where
@@ -353,7 +353,7 @@ cmdRescan timeLs = do
 cmdDecodeTx :: String -> Handler ()
 cmdDecodeTx txStr = do
     when (isNothing txM) $ error "Could not parse transaction"
-    format <- S.gets clientFormat
+    format <- R.asks configFormat
     liftIO $ formatStr $ bsToString $ case format of
         OutputJSON -> toStrictBS jsn
         _          -> YAML.encode val
@@ -367,7 +367,7 @@ cmdDecodeTx txStr = do
 sendZmq :: (FromJSON a, ToJSON a) 
         => WalletRequest -> (a -> IO ()) -> Handler ()
 sendZmq req handle = do
-    sockName <- S.gets clientSocket
+    sockName <- R.asks configConnect
     resE <- liftIO $ runZMQ $ do
         sock <- socket Req
         connect sock sockName
@@ -375,7 +375,7 @@ sendZmq req handle = do
         eitherDecode . toLazyBS <$> receive sock
     case resE of
         Right (ResponseError err) -> error $ T.unpack err
-        Right (ResponseValid a)   -> formatOutput a =<< S.gets clientFormat
+        Right (ResponseValid a)   -> formatOutput a =<< R.asks configFormat
         Left err                  -> error err
   where
     formatOutput a format = liftIO $ case format of

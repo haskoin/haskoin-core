@@ -3,19 +3,8 @@ module Network.Haskoin.Wallet.Server
 , stopSPVServer
 ) where
 
-import System.Directory (createDirectoryIfMissing)
-import System.Posix.Directory (changeWorkingDirectory)
 import System.Posix.Env (getEnv)
 import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
-import System.Posix.Files 
-    ( fileExist
-    , setFileMode
-    , setFileCreationMask
-    , unionFileModes
-    , ownerModes
-    , groupModes
-    , otherModes
-    )
 import System.ZMQ4
 
 import Control.Applicative ((<$>))
@@ -69,25 +58,20 @@ import Network.Haskoin.Wallet.Database
 runLogging :: MonadIO m => LoggingT m a -> m a 
 runLogging = runStdoutLoggingT
 
-runSPVServer :: Maybe FilePath -> Bool -> IO ()
-runSPVServer configM detach = do
-    -- Get configuration file
-    config <- getSPVConfig configM
-    -- Change current working directory
-    setWorkDir config
-
+runSPVServer :: Config -> IO ()
+runSPVServer cfg = do
     -- Start server process
-    maybeDetach config detach $ do
+    maybeDetach cfg $ do
         -- Get database pool
-        pool <- getDatabasePool $ spvDatabase config
+        pool <- getDatabasePool $ configDatabase cfg
         
         -- Initialize wallet database
         flip runSqlPersistMPool pool $ do 
             _ <- runMigration migrateWallet 
             initWalletDB
-        
-        if spvMode config == SPVOffline
-            then runLogging $ runWalletApp $ HandlerSession config pool Nothing
+
+        if configMode cfg == SPVOffline
+            then runLogging $ runWalletApp $ HandlerSession cfg pool Nothing
             else do
                 -- Create leveldb handle
                 db <- DB.open "headertree"
@@ -109,9 +93,9 @@ runSPVServer configM detach = do
                             Nothing -> round <$> getPOSIXTime
 
                     -- Bloom filter false positive rate
-                let fp    = spvBloomFP config 
+                let fp    = configBloomFP cfg 
                     -- Bitcoin nodes to connect to
-                    nodes = spvBitcoinNodes config 
+                    nodes = configBTCNodes cfg 
                     -- Run the SPV monad stack
                     runNode = runLogging . (flip evalStateT db)
 
@@ -137,7 +121,7 @@ runSPVServer configM detach = do
                     withAsync runEvents $ \a -> do
                         link a
                         -- Run the zeromq server listening to user requests
-                        runWalletApp $ HandlerSession config pool $ Just rChan
+                        runWalletApp $ HandlerSession cfg pool $ Just rChan
 
 processEvents :: (MonadLogger m, MonadIO m)
               => TBMChan NodeRequest 
@@ -171,58 +155,24 @@ processEvents rChan db pool fp = awaitForever $ \req -> lift $ case req of
             _ -> return ()
     f (SomeException e) = Just $ show e
 
-maybeDetach :: SPVConfig -> Bool -> IO () -> IO ()
-maybeDetach config det action =
-    if det then runDetached pidFile logFile action else action
+maybeDetach :: Config -> IO () -> IO ()
+maybeDetach cfg action =
+    if configDetach cfg then runDetached pidFile logFile action else action
   where
-    pidFile = Just $ spvPidFile config
-    logFile = ToFile $ spvLogFile config
+    pidFile = Just $ configPidFile cfg
+    logFile = ToFile $ configLogFile cfg
 
-stopSPVServer :: Maybe FilePath -> IO ()
-stopSPVServer configM = do
-    -- Get configuration file
-    config <- getSPVConfig configM
-    -- Change current working directory
-    setWorkDir config
+stopSPVServer :: Config -> IO ()
+stopSPVServer cfg = do
     -- TODO: Should we send a message instead of killing the process ?
-    killAndWait $ spvPidFile config
-
--- Get the server configuration from the following sources:
--- * File provided at the command line
--- * File specified in the configuration file at compile time
--- * Default configuration values specified at compile time
-getSPVConfig :: Maybe FilePath -> IO SPVConfig
-getSPVConfig configM = do
-    changeWorkingDirectory . (fromMaybe err) =<< getEnv "HOME"
-    validLocs <- liftIO $ filterM fileExist locs
-    let files = maybeToList configM ++ validLocs
-    loadAppSettings files [configSettingsYmlValue] useEnv
-  where
-    err = "No HOME environment variable"
-    defCfgFile = spvConfigFile compileTimeSPVConfig
-    -- Look for the config file in . and work-dir/network
-    locs = [ defCfgFile
-           , concat [ spvWorkDir compileTimeSPVConfig
-                    , "/", networkName
-                    , "/", defCfgFile
-                    ]
-           ]
-
--- Create and change current working directory
-setWorkDir :: SPVConfig -> IO ()
-setWorkDir config = do
-    let workDir = concat [ spvWorkDir config, "/", networkName ]
-    _ <- setFileCreationMask $ otherModes `unionFileModes` groupModes
-    createDirectoryIfMissing True workDir
-    setFileMode workDir ownerModes
-    changeWorkingDirectory workDir
+    killAndWait $ configPidFile cfg
 
 -- Run the main ZeroMQ loop
 runWalletApp :: (MonadIO m, MonadLogger m, MonadBaseControl IO m) 
              => HandlerSession -> m ()
 runWalletApp session = liftBaseOp withContext $ \ctx -> 
     liftBaseOp (withSocket ctx Rep) $ \sock -> do
-        liftIO $ bind sock $ spvBind $ handlerConfig session
+        liftIO $ bind sock $ configBind $ handlerConfig session
         forever $ do
             bs  <- liftIO $ receive sock
             res <- catchErrors $ case decode $ toLazyBS bs of

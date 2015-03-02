@@ -99,13 +99,12 @@ module Network.Haskoin.Wallet
 -- *Client
 , clientMain
 , OutputFormat(..)
-, ClientConfig(..)
+, Config(..)
 
 -- *Server
 , runSPVServer
 , stopSPVServer
 , SPVMode(..)
-, SPVConfig(..)
 
 ) where
 

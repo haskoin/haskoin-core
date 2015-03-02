@@ -1,6 +1,6 @@
 Server commands:
-  start [config] [--detach]           Start the haskoin daemon
-  stop  [config]                      Stop the haskoin daemon
+  start [--detach]                    Start the haskoin daemon
+  stop                                Stop the haskoin daemon
 
 Wallet commands:
   newwallet  [mnemonic] [-w name]     Create a new wallet

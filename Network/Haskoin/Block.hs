@@ -28,14 +28,12 @@ module Network.Haskoin.Block
 , extractMatches
 
   -- * HeaderTree
-, HeaderTree
+, BlockHeight
+, Timestamp
+, HeaderTree(..)
 , BlockHeaderNode(..)
 , BlockChainAction(..)
 , actionNewNodes
-, BlockHeight
-, Timestamp
-, getBlockHeaderNode
-, getBestBlockHeader
 , bestBlockHeaderHeight
 , getBlockHeaderHeight
 , genesisNode

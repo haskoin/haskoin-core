@@ -1,18 +1,24 @@
-{-# LANGUAGE UndecidableInstances #-}
-module Network.Haskoin.Block.HeaderTree where
+module Network.Haskoin.Block.HeaderTree 
+( HeaderTree(..)
+, BlockHeaderNode(..)
+, BlockChainAction(..)
+, initHeaderTree
+, connectHeader
+, connectHeaders
+, commitAction
+, actionNewNodes
+, blockLocator
+, getNodeWindow
+, bestBlockHeaderHeight
+, getBlockHeaderHeight
+, genesisNode
+, getParentNode
+) where
 
 import Control.Monad (foldM, when, unless, liftM, (<=<), forM)
 import Control.Monad.Trans (lift, liftIO, MonadIO)
 import Control.Monad.Trans.Either (EitherT, left, runEitherT)
-import Control.Monad.State (MonadState(..), StateT, evalStateT, get)
-import Control.Monad.Logger (MonadLogger(..))
-import Control.Monad.Base (MonadBase(..), liftBaseDefault)
-import Control.Monad.Trans.Control
-    ( MonadTransControl(..)
-    , MonadBaseControl(..)
-    , defaultLiftWith
-    , defaultLiftBaseWith
-    )
+import Control.Monad.State (MonadState(..), StateT, get)
 
 import Data.Word (Word32)
 import Data.Bits (shiftL)
@@ -22,23 +28,9 @@ import Data.Binary.Get (getWord32le)
 import Data.Binary.Put (putWord32le)
 import Data.Default (def)
 import qualified Data.Binary as B (Binary, get, put)
-import qualified Data.Conduit as C (Source, awaitForever, yield, ($=), ($$))
-import qualified Data.Conduit.List as CL (consume)
-import qualified Data.ByteString as BS (ByteString, reverse, append)
+import qualified Data.ByteString as BS (ByteString, reverse)
 
-import qualified Database.LevelDB.Base as L
-    ( DB
-    , ReadOptions(..)
-    , get
-    , put
-    , iterFirst
-    , iterNext
-    , iterValue
-    , createIter
-    , releaseIter
-    , createSnapshot
-    , releaseSnapshot
-    )
+import qualified Database.LevelDB.Base as L (DB, get, put)
 
 import Network.Haskoin.Block.Types
 import Network.Haskoin.Block.Checkpoints
@@ -146,7 +138,7 @@ connectHeaders bhs adjustedTime commit
     | otherwise = return $ Left "BlockHeaders do not form a valid chain."
   where
     validChain (a:b:xs) =  prevBlock b == headerHash a && validChain (b:xs)
-    validChain (a:[]) = True
+    validChain (_:[]) = True
     validChain _ = False
 
 -- | Connect a block header to this block header chain. Corresponds to bitcoind

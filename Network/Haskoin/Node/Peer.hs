@@ -3,48 +3,29 @@ module Network.Haskoin.Node.Peer
 ( startPeer
 , newPeerSession
 , PeerSession(peerId, peerChan, msgsChan)
-, NodeException(..)
 ) where
 
 import System.Random (randomIO)
 
 import Control.Applicative ((<$>))
-import Control.Monad (void, when, unless, forever, liftM)
+import Control.Monad (when, unless, liftM)
 import Control.Monad.Trans (lift, liftIO, MonadIO)
-import Control.Monad.Trans.Control (MonadBaseControl, control)
-import Control.Monad.State.Class 
-    ( MonadState
-    , get
-    , gets
-    , modify
-    )
-import Control.Monad.State (StateT, evalStateT, gets, modify)
-import Control.Exception (Exception, throwIO, throw)
+import Control.Monad.Trans.Control (MonadBaseControl)
+import Control.Monad.State (StateT, evalStateT, get, gets, modify)
 import Control.Concurrent.STM (atomically)
-import Control.Concurrent.Async.Lifted (async, wait, link, waitAnyCatchCancel)
+import Control.Concurrent.Async.Lifted (async, waitAnyCatchCancel)
 import Control.Monad.Logger 
-    ( LoggingT
-    , MonadLogger
-    , runStdoutLoggingT
-    , logInfo
-    , logError
-    , logWarn
-    , logDebug
+    ( MonadLogger
+    , logInfo, logError, logWarn, logDebug
     )
 
 import Data.Word (Word32)
 import Data.List (delete)
-import Data.Typeable (Typeable)
-import Data.Maybe (isJust, isNothing, fromJust, catMaybes, fromMaybe)
+import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe)
 import Data.Time.Clock.POSIX (getPOSIXTime)
-import Data.Conduit 
-    ( Conduit
-    , Sink
-    , yield
-    , awaitForever
-    , await
-    , ($$), ($=)
-    )
+import Data.Conduit (Conduit, Sink, yield, awaitForever, await, ($$), ($=))
+import Data.Conduit.Network (AppData, appSink, appSource)
+import Data.Unique (newUnique, hashUnique)
 import Data.Conduit.TMChan 
     ( TBMChan
     , newTBMChan
@@ -52,15 +33,9 @@ import Data.Conduit.TMChan
     , writeTBMChan
     , unGetTBMChan
     )
-import Data.Conduit.Network 
-    ( AppData
-    , appSink
-    , appSource
-    )
-import Data.Unique (Unique, newUnique, hashUnique)
 import qualified Data.Text as T (Text, pack)
 import qualified Data.Conduit.Binary as CB (take)
-import qualified Data.ByteString as BS (ByteString, null, empty, append)
+import qualified Data.ByteString as BS (ByteString, null, append)
 
 import Network.Socket
     ( SockAddr (SockAddrInet)
@@ -102,11 +77,6 @@ data PeerSession = PeerSession
     -- Save the order in which we must send the merkle blocks to the blockchain
     , merkleOrder    :: ![BlockHash]
     } 
-
-data NodeException = NodeException !String
-    deriving (Eq, Read, Show, Typeable)
-
-instance Exception NodeException
 
 -- | Create the session data for a new Peer given a Peer type and a manager
 -- channel.
@@ -371,7 +341,7 @@ processMerkleBlock decodedMerkle@(MerkleBlock bh ntx hs fs) = do
     -- Check that we are expecting this merkle bock. Otherwise, the remote
     -- peer is misbehaving by sending us unsolicited junk.
     gets currentJob >>= \jobM -> case jobM of
-        Just job@(Job _ _ _ (JobDwnMerkles _ bids)) ->
+        Just (Job _ _ _ (JobDwnMerkles _ bids)) ->
             if bid `elem` bids
                 then go pid 
                 else sendManager $ PeerMisbehaving pid minorDoS

@@ -3,62 +3,36 @@ module Network.Haskoin.Node.PeerManager
 ( withPeerManager
 ) where
 
-import Control.Applicative ((<$>), (<*>))
+import Control.Applicative ((<$>))
 import Control.Monad (when, unless, forM_, liftM, filterM, forever)
 import Control.Monad.Trans (MonadTrans, MonadIO, liftIO, lift)
-import Control.Monad.Trans.Resource (ResourceT, runResourceT)
-import Control.Monad.Trans.Control 
-    ( MonadBaseControl
-    , StM
-    , control
-    , liftBaseDiscard
-    )
+import Control.Monad.Trans.Control (MonadBaseControl, liftBaseDiscard)
 import Control.Concurrent (forkFinally, forkIO, threadDelay)
 import Control.Concurrent.STM (atomically)
-import Control.Concurrent.Async.Lifted (Async, withAsync, link)
+import Control.Concurrent.Async.Lifted (withAsync, link)
 import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug, logError)
 import Control.Monad.State (StateT, evalStateT, gets, modify)
 
-import qualified Data.Text as T (Text, pack)
-import Data.Maybe (fromMaybe, fromJust, isJust)
-import Data.Time.Clock (UTCTime, getCurrentTime, addUTCTime)
-import Data.Unique (Unique, newUnique, hashUnique)
 import Data.List (sort)
-import qualified Data.Map as M 
-    ( Map
-    , insert, delete, lookup, (!)
-    , member, keys, elems, adjust
-    , toList, empty, size
-    , filter, insertWith, null
-    , fromAscListWith, toAscList
-    )
-import Data.Conduit 
-    ( Sink
-    , awaitForever
-    , mapOutput
-    , ($$) 
-    )
-import Data.Conduit.Network 
-    ( runGeneralTCPClient
-    , clientSettings
-    )
+import Data.Text (Text, pack)
+import Data.Unique (newUnique, hashUnique)
+import Data.Time.Clock (UTCTime, getCurrentTime, addUTCTime)
+import Data.Conduit (Sink, awaitForever, ($$))
+import Data.Conduit.Network (runGeneralTCPClient, clientSettings)
 import Data.Conduit.TMChan 
-    ( TBMChan
-    , newTBMChan
-    , sourceTBMChan
-    , writeTBMChan
-    , unGetTBMChan
-    , closeTBMChan
-    , (>=<)
+    ( TBMChan, newTBMChan
+    , sourceTBMChan, writeTBMChan, closeTBMChan
+    )
+import qualified Data.Map as M 
+    ( Map, insert, delete, lookup, (!)
+    , member, keys, elems, adjust
+    , empty, size, filter, insertWith
+    , null, fromAscListWith, toAscList
     )
 
 import Network.Haskoin.Util
-import Network.Haskoin.Constants
-import Network.Haskoin.Crypto
 import Network.Haskoin.Block
-import Network.Haskoin.Transaction
 import Network.Haskoin.Node.Types
-import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.Bloom
 import Network.Haskoin.Node.Chan
 import Network.Haskoin.Node.Peer
@@ -649,6 +623,6 @@ isRemoteBanned :: Monad m => RemoteHost -> StateT ManagerSession m Bool
 isRemoteBanned remote = 
     liftM ((== Banned) . remoteBehavior) $ getRemoteData remote
 
-format :: String -> T.Text
-format str = T.pack $ unwords [ "[PeerManager]", str ]
+format :: String -> Text
+format str = pack $ unwords [ "[PeerManager]", str ]
 

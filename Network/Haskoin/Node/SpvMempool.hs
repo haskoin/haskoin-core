@@ -4,44 +4,20 @@ module Network.Haskoin.Node.SpvMempool
 , withSpvMempool
 ) where
 
-import Control.Applicative ((<$>))
-import Control.Monad ( when, unless, forM, forM_, foldM, forever, liftM)
+import Control.Monad ( unless, forM_, liftM)
 import Control.Monad.Trans (MonadIO, liftIO, lift)
-import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (atomically)
-import Control.Concurrent.Async.Lifted (Async, withAsync, link)
+import Control.Concurrent.Async.Lifted (withAsync, link)
 import Control.Monad.State (StateT, evalStateT, gets, modify)
-import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug, logError)
-import Control.Monad.Trans.Control 
-    ( MonadBaseControl
-    , StM
-    , control
-    , liftBaseDiscard
-    )
+import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug)
+import Control.Monad.Trans.Control (MonadBaseControl)
 
-import qualified Data.Text as T (Text, pack)
-import Data.Maybe (isJust, isNothing, fromJust, catMaybes, fromMaybe)
-import Data.Time.Clock.POSIX (getPOSIXTime)
-import Data.List (nub, partition, delete, (\\))
+import Data.Text (Text, pack)
+import Data.List (nub, partition, delete)
 import Data.Unique (hashUnique)
 import Data.Conduit.TMChan (TBMChan, writeTBMChan)
-import Data.Conduit 
-    ( Sink
-    , awaitForever
-    , mapOutput
-    , ($$) 
-    )
-import Data.Conduit.TMChan 
-    ( TBMChan
-    , writeTBMChan
-    , newTBMChan
-    , sourceTBMChan
-    )
-import qualified Data.Map as M 
-    ( Map, member, delete, lookup, fromList, fromListWith
-    , keys, elems, toList, toAscList, empty, map, filter
-    , adjust, update, singleton, unionWith
-    )
+import Data.Conduit (Sink, awaitForever, ($$))
+import Data.Conduit.TMChan (newTBMChan, sourceTBMChan)
 
 import Network.Haskoin.Block
 import Network.Haskoin.Crypto
@@ -80,8 +56,8 @@ withSpvNode f = do
             liftIO $ atomically $ writeTBMChan mngrChan $ 
                 PublishJob (JobSendTx tx) (AllPeers1 0) 1
 
-formatWallet :: String -> T.Text
-formatWallet str = T.pack $ unwords [ "[Wallet Request]", str ]
+formatWallet :: String -> Text
+formatWallet str = pack $ unwords [ "[Wallet Request]", str ]
 
 {- Mempool Actor -}
 
@@ -293,6 +269,6 @@ sendWallet msg = do
     chan <- gets wletChan
     liftIO . atomically $ writeTBMChan chan msg
 
-format :: String -> T.Text
-format str = T.pack $ unwords [ "[Mempool]", str ]
+format :: String -> Text
+format str = pack $ unwords [ "[Mempool]", str ]
 

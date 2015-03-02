@@ -3,55 +3,32 @@ module Network.Haskoin.Node.SpvBlockChain
 ( withSpvBlockChain
 ) where
 
-import Control.Applicative ((<$>))
-import Control.Monad ( when, unless, forM, forM_, foldM, forever, liftM)
+import Control.Monad ( when, unless, forM_, forever, liftM)
 import Control.Monad.Trans (MonadIO, liftIO, lift)
 import Control.Monad.State (StateT, evalStateT, gets, modify)
 import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug, logError)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (atomically)
-import Control.Concurrent.Async.Lifted (Async, withAsync, link)
-import Control.Monad.Trans.Control 
-    ( MonadBaseControl
-    , StM
-    , control
-    , liftBaseDiscard
-    )
+import Control.Concurrent.Async.Lifted (withAsync, link)
+import Control.Monad.Trans.Control (MonadBaseControl)
 
-import qualified Data.Text as T (Text, pack)
-import Data.Maybe (isJust, isNothing, fromJust, catMaybes, fromMaybe)
+import Data.Text (Text, pack)
+import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Time.Clock (UTCTime, getCurrentTime, addUTCTime)
-import Data.List (nub, partition, delete, (\\))
-import Data.List.Split (chunksOf)
-import Data.Conduit 
-    ( Sink
-    , awaitForever
-    , mapOutput
-    , ($$) 
-    )
-import Data.Conduit.TMChan 
-    ( TBMChan
-    , writeTBMChan
-    , newTBMChan
-    , sourceTBMChan
-    )
 import Data.Unique (newUnique, hashUnique)
+import Data.Conduit (Sink, awaitForever, ($$))
+import Data.Conduit.TMChan (TBMChan, writeTBMChan, newTBMChan, sourceTBMChan)
 import qualified Data.Map as M 
-    ( Map, member, delete, lookup, fromList, fromListWith, null
-    , keys, elems, toList, toAscList, empty, map, filter, size
-    , adjust, update, singleton, insertWith, insert, assocs, partition
+    ( Map, delete, lookup, null, keys
+    , empty, size, insert, assocs, partition
     )
 
 import Network.Haskoin.Block
 import Network.Haskoin.Crypto
-import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Constants
 import Network.Haskoin.Node.Bloom
-import Network.Haskoin.Node.Types
-import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.PeerManager
-import Network.Haskoin.Node.Peer
 import Network.Haskoin.Node.Chan
 
 data SpvSession = SpvSession
@@ -508,6 +485,6 @@ sendMempool msg = do
 runDB :: HeaderTree m => m a -> StateT SpvSession m a
 runDB = lift
 
-format :: String -> T.Text
-format str = T.pack $ unwords [ "[Blockchain]", str ]
+format :: String -> Text
+format str = pack $ unwords [ "[Blockchain]", str ]
 

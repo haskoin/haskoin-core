@@ -47,7 +47,6 @@ module Network.Haskoin.Node
    -- * Peer
 , newPeerSession
 , startPeer
-, NodeException(..)
  
    -- * Peer Manager
 , withPeerManager  
@@ -58,8 +57,8 @@ module Network.Haskoin.Node
 , DecodedMerkleBlock(..)
 
    -- * SPV Mempool & Node
-, withSpvMempool
 , withSpvNode
+, withSpvMempool
 , WalletMessage(..)
 , NodeRequest(..)
 

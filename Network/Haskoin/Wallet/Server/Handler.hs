@@ -5,7 +5,7 @@ import Control.Exception (throwIO)
 import Control.Monad.Trans (liftIO, MonadIO)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TBMChan (TBMChan, writeTBMChan)
-import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug, logError)
+import Control.Monad.Logger (MonadLogger, logInfo)
 import qualified Control.Monad.State as S (StateT, evalStateT, gets)
 
 import Data.Aeson (Value(..), toJSON)

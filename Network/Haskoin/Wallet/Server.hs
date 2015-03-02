@@ -5,6 +5,8 @@ module Network.Haskoin.Wallet.Server
 
 import System.Directory (createDirectoryIfMissing)
 import System.Posix.Directory (changeWorkingDirectory)
+import System.Posix.Env (getEnv)
+import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 import System.Posix.Files 
     ( fileExist
     , setFileMode
@@ -14,41 +16,32 @@ import System.Posix.Files
     , groupModes
     , otherModes
     )
-import System.Posix.Env (getEnv)
-import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 import System.ZMQ4
 
 import Control.Applicative ((<$>))
-import Control.Monad (when, forM, forM_, forever, filterM, liftM)
+import Control.Monad (when, forM, forever, filterM, liftM)
 import Control.Monad.Trans (MonadIO, lift, liftIO)
 import Control.Exception (SomeException(..),  tryJust, catch)
 import Control.Concurrent.STM.TBMChan (writeTBMChan)
 import Control.Concurrent.STM (atomically)
-import Control.Concurrent.Async.Lifted (Async, withAsync, link)
-import Control.Monad.Trans.Control 
-    ( MonadBaseControl
-    , control
-    , liftBaseOp
-    , liftBaseWith
-    )
+import Control.Concurrent.Async.Lifted (withAsync, link)
+import Control.Monad.State (evalStateT)
+import Control.Monad.Trans.Control (MonadBaseControl, control, liftBaseOp)
 import Control.Monad.Logger 
     ( MonadLogger
     , LoggingT
     , runStdoutLoggingT
-    , logInfo
-    , logWarn
-    , logDebug
     , logError
     )
-import Control.Monad.State (evalStateT)
+
+import Data.Text (pack)
+import Data.Time.Clock.POSIX (getPOSIXTime)
+import Data.Maybe (catMaybes, fromMaybe, maybeToList)
+import Data.Aeson (Value, toJSON, decode, encode)
+import Data.Conduit (Sink, awaitForever, ($$))
+import Data.Conduit.TMChan (TBMChan, sourceTBMChan)
 
 import Yesod.Default.Config2 (loadAppSettings, useEnv)
-
-import Data.Time.Clock.POSIX (getPOSIXTime)
-import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe, maybeToList)
-import qualified Data.Text as T(pack)
-import Data.Aeson (Value, toJSON, decode, encode)
-
 import Database.Persist.Sql 
     ( ConnectionPool
     , runSqlPersistMPool
@@ -60,21 +53,8 @@ import qualified Database.LevelDB.Base as DB
     , open
     , defaultOptions 
     )
-import Data.Conduit 
-    ( Sink
-    , awaitForever
-    , mapOutput
-    , ($$) 
-    )
-import Data.Conduit.TMChan 
-    ( TBMChan
-    , writeTBMChan
-    , newTBMChan
-    , sourceTBMChan
-    )
 
 import Network.Haskoin.Constants
-import Network.Haskoin.Block
 import Network.Haskoin.Node
 import Network.Haskoin.Util
 
@@ -170,7 +150,7 @@ processEvents rChan db pool fp = awaitForever $ \req -> lift $ case req of
         -- Import the merkle blocks into the wallet
         resE <- liftIO $ tryJust f $ flip runSqlPersistMPool pool $ 
             importBlocks action $ map expectedTxs dmbs
-        when (isLeft resE) $ $(logError) $ T.pack $ unwords
+        when (isLeft resE) $ $(logError) $ pack $ unwords
             [ "processEvents: An error occured:", fromLeft resE ]
     _ -> return () -- Ignore full blocks
   where
@@ -184,7 +164,7 @@ processEvents rChan db pool fp = awaitForever $ \req -> lift $ case req of
                 then Just <$> walletBloomFilter fp
                 else return Nothing
         case resE of
-            Left err -> $(logError) $ T.pack $ unwords
+            Left err -> $(logError) $ pack $ unwords
                 [ "processEvents: An error occured:", err ]
             Right (Just bloom) -> liftIO . atomically $ writeTBMChan rChan $ 
                     NodeBloomFilter bloom
@@ -252,7 +232,7 @@ runWalletApp session = liftBaseOp withContext $ \ctx ->
   where
     -- TODO: Catch ErrorCall and SomeException
     catchErrors m = control $ \runInIO -> catch (runInIO m) $ 
-        \(WalletException err) -> runInIO $ return $ ResponseError $ T.pack err
+        \(WalletException err) -> runInIO $ return $ ResponseError $ pack err
 
 dispatchRequest :: (MonadLogger m, MonadIO m) 
                 => WalletRequest -> Handler m (WalletResponse Value)

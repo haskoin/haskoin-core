@@ -28,7 +28,7 @@ module Network.Haskoin.Wallet.Tx
 ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad (forM, forM_, when, liftM, filterM, unless)
+import Control.Monad (forM, forM_, when, liftM, filterM)
 import Control.Monad.Reader (ReaderT)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Exception (throwIO)
@@ -749,8 +749,6 @@ isTxInWallet tid = liftM isJust $ getBy $ UniqueTx tid
 importBlocks :: (MonadIO m, PersistQuery b, PersistUnique b)
              => BlockChainAction -> [[TxHash]] -> ReaderT b m ()
 importBlocks action expTxsLs = do
-    now <- liftIO getCurrentTime
-
     -- Unconfirm transactions from the old chain if we have a reorg
     case action of
         ChainReorg _ os _ -> do
@@ -772,8 +770,6 @@ importBlocks action expTxsLs = do
     -- Loop over all the blocks in the new best chain
     forM_ (zip (actionNewNodes action) expTxsLs) $ \(node, expTxs) -> do
 
-        let bid = nodeBlockHash node
-            ts  = blockTimestamp $ nodeHeader node
         myTxs <- filterM ((liftM isJust) . getBy . UniqueTx) expTxs
 
         forM_ myTxs $ \h -> do

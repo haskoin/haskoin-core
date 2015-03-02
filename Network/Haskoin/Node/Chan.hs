@@ -121,6 +121,7 @@ data BlockChainMessage
     | IncMerkleBlocks !DwnId ![DecodedMerkleBlock]
     | StartDownload !(Either Timestamp BlockHash)
     | SetBloomFilter !BloomFilter
+    | NetworkHeight !BlockHeight
     | BkchHeartbeat
 
 -- | Messages handled by the Mempool actor

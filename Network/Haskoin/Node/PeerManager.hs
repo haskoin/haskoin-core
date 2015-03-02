@@ -23,6 +23,7 @@ import qualified Data.Text as T (Text, pack)
 import Data.Maybe (fromMaybe, fromJust, isJust)
 import Data.Time.Clock (UTCTime, getCurrentTime, addUTCTime)
 import Data.Unique (Unique, newUnique, hashUnique)
+import Data.List (sort)
 import qualified Data.Map as M 
     ( Map
     , insert, delete, lookup, (!)
@@ -85,6 +86,17 @@ data ManagerSession = ManagerSession
     -- needs to be reschedule after a peer crashes.
     , broadcastJobs :: !(M.Map JobId Int) 
     } 
+
+computeNetworkHeight :: (MonadLogger m, MonadIO m) => StateT ManagerSession m ()
+computeNetworkHeight = do
+    -- Get all peer heights in ascending order
+    sortedHeights <- liftM (sort . (map peerHeight) . M.elems) $ gets peerMap
+    unless (null sortedHeights) $ do
+        -- Not a true median as we don't compute a mean on an even list.
+        -- A mean wouldn't have any useful value as a network height.
+        let median = sortedHeights !! (length sortedHeights `div` 2) 
+        -- send the result to the blockchain
+        sendBlockChain $ NetworkHeight median
 
 -- Data stored about a peer in the Manager
 data PeerData = PeerData
@@ -242,6 +254,9 @@ processPeerConnected pid remoteVer = existsPeerData pid >>= \e -> when e $ do
         -- Reset the remote reconnection timer (exponential backoff)
         modifyRemoteData remote $ \r -> r{ remoteReconnectTimer = 1 }
 
+        -- Compute the new network height
+        computeNetworkHeight
+
         -- Send the bloom filter if one is available
         bloomM <- gets mngrBloom
         case bloomM of
@@ -311,9 +326,13 @@ processPeerClosed pid = existsPeerData pid >>= \exists -> when exists $ do
 
     -- Remote data associated with this peer
     deletePeerData pid
+
     -- Reschedule jobs after we have deleted the data of this peer so it
     -- doesn't get assigned any work.
     scheduleJobs
+
+    -- Compute the new network height
+    computeNetworkHeight
 
     -- Schedule a reconnection to the remote if it is not banned
     banned <- isRemoteBanned remote

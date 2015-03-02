@@ -588,5 +588,5 @@ closePeer = do
     liftIO . atomically $ unGetTBMChan chan ClosePeer
 
 format :: PeerId -> String -> T.Text
-format pid str = T.pack $ concat [ "[Peer", show $ hashUnique pid, "] ", str ]
+format pid str = T.pack $ concat [ "[Peer ", show $ hashUnique pid, "] ", str ]
 

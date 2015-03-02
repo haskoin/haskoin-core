@@ -80,6 +80,8 @@ data SpvSession = SpvSession
       -- merkle block download job. Completed jobs in the window are sent
       -- to the mempool in order.
     , merkleWindow :: !(M.Map DwnId (BlockChainAction, [DecodedMerkleBlock]))
+      -- Estimated height of the best chain on the bitcoin network
+    , networkHeight :: !BlockHeight
     }
 
 data LocatorType
@@ -98,14 +100,15 @@ withSpvBlockChain mempChan f = do
     bkchChan <- liftIO $ atomically $ newTBMChan 10000
     withPeerManager bkchChan mempChan $ \mngrChan -> do
         now <- liftIO getCurrentTime
-        let syncResource = Nothing
-            syncTimeout  = now -- dummy value
-            peerTickles  = M.empty
-            windowEnd    = Nothing
-            fastCatchup  = Nothing
-            merkleWindow = M.empty
-            validBloom   = False
-            session      = SpvSession{..}
+        let syncResource  = Nothing
+            syncTimeout   = now -- dummy value
+            peerTickles   = M.empty
+            windowEnd     = Nothing
+            fastCatchup   = Nothing
+            merkleWindow  = M.empty
+            validBloom    = False
+            networkHeight = 0
+            session       = SpvSession{..}
 
             -- Run the main blockchain message processing loop
             run = do
@@ -137,6 +140,7 @@ processBlockChainMessage = awaitForever $ \req -> lift $ case req of
     IncMerkleBlocks did dmbs -> processMerkleBlocks did dmbs
     StartDownload valE       -> processStartDownload valE
     SetBloomFilter bloom     -> processBloomFilter bloom
+    NetworkHeight h          -> processNetworkHeight h
     BkchHeartbeat            -> processHeartbeat
     _ -> return () -- Ignore block invs (except tickles) and full blocks
 
@@ -319,29 +323,14 @@ dispatchMerkles = do
             continueMerkleDownload
             checkSynced
 
--- Check if merkle blocks are in sync with block headers.
-checkSynced :: (HeaderTree m, MonadLogger m, MonadIO m)
-            => StateT SpvSession m ()
-checkSynced = do
-    newWin   <- gets merkleWindow
-    bestHead <- liftM nodeBlockHash $ runDB getBestBlockHeader
-    winEnd   <- gets windowEnd
-    -- If the window is empty after dispatching some merkles and trying
-    -- to download some more, then the merkles have catched up with
-    -- the headers.
-    when (M.null newWin && winEnd == Just bestHead) $ do
-        $(logDebug) $ format $ 
-            "Merkle blocks are in sync with the block headers."
-        sendMempool MempoolSynced
-
 -- | If space is available in the merkle block download window, request
 -- more merkle block download jobs and add them to the window.
 continueMerkleDownload :: (HeaderTree m, MonadLogger m, MonadIO m) 
                        => StateT SpvSession m ()
 continueMerkleDownload = do
-    dwnM   <- gets windowEnd
-    win    <- gets merkleWindow
-    vBloom <- gets validBloom
+    dwnM      <- gets windowEnd
+    win       <- gets merkleWindow
+    vBloom    <- gets validBloom
     -- Download merkle blocks if the wallet asked us to start and if there
     -- is space left in the window and the bloom filter is valid.
     when (vBloom && isJust dwnM && M.size win < 10) $ do
@@ -431,6 +420,32 @@ processBloomFilter bloom
             -- Merkle block download can only start when we get a first
             -- valid bloom filter.
             continueMerkleDownload
+
+processNetworkHeight :: MonadLogger m => BlockHeight -> StateT SpvSession m ()
+processNetworkHeight height = do
+    $(logDebug) $ format $ unwords
+        [ "Network best chain height:", show height ]
+    modify $ \s -> s{ networkHeight = height }
+
+-- Check if merkle blocks are in sync with block headers.
+checkSynced :: (HeaderTree m, MonadLogger m, MonadIO m)
+            => StateT SpvSession m ()
+checkSynced = do
+    newWin    <- gets merkleWindow
+    winEnd    <- gets windowEnd
+    netHeight <- gets networkHeight
+    bestNode  <- runDB getBestBlockHeader
+        -- We have reached at least the height of the network which must be
+        -- greater than 0.
+    let netSynced = netHeight > 0 && nodeHeaderHeight bestNode >= netHeight
+        -- If the window is empty after dispatching some merkles and trying
+        -- to download some more, then the merkles have catched up with
+        -- the headers.
+        merkleSynced = M.null newWin && winEnd == Just (nodeBlockHash bestNode)
+    when (netSynced && merkleSynced) $ do
+        $(logDebug) $ format $ 
+            "Merkle blocks are synchronized with the network."
+        sendMempool MempoolSynced
 
 processHeartbeat :: (HeaderTree m, MonadLogger m, MonadIO m) 
                  => StateT SpvSession m ()

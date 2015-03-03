@@ -20,9 +20,11 @@ module Network.Haskoin.Internals
 , module Network.Haskoin.Node.Types
 , module Network.Haskoin.Node.Message
 , module Network.Haskoin.Node.Bloom
+, module Network.Haskoin.Node.Chan
 , module Network.Haskoin.Node.Peer
 , module Network.Haskoin.Node.PeerManager
-, module Network.Haskoin.Node.SPVNode
+, module Network.Haskoin.Node.SpvBlockChain
+, module Network.Haskoin.Node.SpvMempool
 , module Network.Haskoin.Script.Types 
 , module Network.Haskoin.Script.Parser 
 , module Network.Haskoin.Script.SigHash
@@ -31,7 +33,7 @@ module Network.Haskoin.Internals
 , module Network.Haskoin.Transaction.Builder
 , module Network.Haskoin.Block.Types
 , module Network.Haskoin.Block.Merkle
-, module Network.Haskoin.Block.HeaderChain
+, module Network.Haskoin.Block.HeaderTree
 , module Network.Haskoin.Block.Checkpoints
 , module Network.Haskoin.Test.Util
 , module Network.Haskoin.Test.Crypto
@@ -60,9 +62,11 @@ import Network.Haskoin.Crypto.Mnemonic
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.Bloom
+import Network.Haskoin.Node.Chan
 import Network.Haskoin.Node.Peer
 import Network.Haskoin.Node.PeerManager
-import Network.Haskoin.Node.SPVNode
+import Network.Haskoin.Node.SpvBlockChain
+import Network.Haskoin.Node.SpvMempool
 import Network.Haskoin.Script.Types 
 import Network.Haskoin.Script.Parser 
 import Network.Haskoin.Script.SigHash
@@ -71,7 +75,7 @@ import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Transaction.Builder
 import Network.Haskoin.Block.Types
 import Network.Haskoin.Block.Merkle
-import Network.Haskoin.Block.HeaderChain
+import Network.Haskoin.Block.HeaderTree
 import Network.Haskoin.Block.Checkpoints
 import Network.Haskoin.Test.Util
 import Network.Haskoin.Test.Crypto

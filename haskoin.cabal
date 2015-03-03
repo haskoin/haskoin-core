@@ -65,9 +65,11 @@ library
                    Network.Haskoin.Node.Types
                    Network.Haskoin.Node.Message
                    Network.Haskoin.Node.Bloom
+                   Network.Haskoin.Node.Chan
                    Network.Haskoin.Node.Peer
                    Network.Haskoin.Node.PeerManager
-                   Network.Haskoin.Node.SPVNode
+                   Network.Haskoin.Node.SpvBlockChain
+                   Network.Haskoin.Node.SpvMempool
                    Network.Haskoin.Script.Types 
                    Network.Haskoin.Script.Parser 
                    Network.Haskoin.Script.SigHash
@@ -76,7 +78,7 @@ library
                    Network.Haskoin.Transaction.Builder
                    Network.Haskoin.Block.Types
                    Network.Haskoin.Block.Merkle
-                   Network.Haskoin.Block.HeaderChain
+                   Network.Haskoin.Block.HeaderTree
                    Network.Haskoin.Block.Checkpoints
                    Network.Haskoin.Test.Util
                    Network.Haskoin.Test.Crypto
@@ -96,9 +98,10 @@ library
                 KindSignatures
                 FunctionalDependencies
                 RecordWildCards
+                DeriveFunctor
+                TypeFamilies
 
     build-depends: aeson                    >= 0.7          && < 0.9
-                 , async                    >= 2.0          && < 2.1
                  , base                     >= 4.6          && < 5 
                  , binary                   >= 0.7          && < 0.8 
                  , byteable                 >= 0.1          && < 0.2
@@ -113,6 +116,7 @@ library
                  , either                   >= 4.3          && < 4.4
                  , json-rpc                 >= 0.2.0.1      && < 0.3
                  , leveldb-haskell          >= 0.6          && < 0.7
+                 , lifted-async             >= 0.6          && < 0.7
                  , monad-control            >= 0.3          && < 1.1
                  , monad-logger             >= 0.3          && < 0.4
                  , mtl                      >= 2.1          && < 2.3 
@@ -120,7 +124,6 @@ library
                  , pbkdf                    >= 1.1          && < 1.2
                  , QuickCheck               >= 2.6          && < 2.8
                  , random                   >= 1.0          && < 1.2
-                 , resourcet                >= 1.1          && < 1.2
                  , split                    >= 0.2          && < 0.3
                  , stm                      >= 2.4          && < 2.5
                  , stm-conduit              >= 2.5          && < 2.6

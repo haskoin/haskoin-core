@@ -44,46 +44,32 @@ module Network.Haskoin.Node
 , isBloomEmpty
 , isBloomFull
 
-  -- * Peer
-, runPeer
-, runCustomPeer
-, peerLogStdout
-, PeerMessage(..)
-, DecodedMerkleBlock(..)
+   -- * Peer
+, newPeerSession
+, startPeer
+ 
+   -- * Peer Manager
+, withPeerManager  
 , RemoteHost(..)
-, NodeException(..)
 
-  -- * Peer Manager
-, ManagerSession(..)
-, PeerManager(..)
-, PeerData(..)
-, withAsyncNode
-, sendMessage
-, getPeerData
-, putPeerData
-, modifyPeerData
-, deletePeerData
-, peerExists
-, getPeerKeys
-, getPeerValues
-, getPeers
-, increasePeerHeight
-, getBestPeerHeight
+   -- * SPV Blockchain
+, withSpvBlockChain
+, DecodedMerkleBlock(..)
 
-  -- * SPV Node
-, SPVNode(..)
-, SPVSession(..)
-, SPVRequest( BloomFilterUpdate, PublishTx, NodeRescan )
-, SPVData(..)
-, withAsyncSPV
-, processBloomFilter
+   -- * SPV Mempool & Node
+, withSpvNode
+, withSpvMempool
+, WalletMessage(..)
+, NodeRequest(..)
 
 ) where
 
 import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Node.Bloom
+import Network.Haskoin.Node.Chan
 import Network.Haskoin.Node.Peer
 import Network.Haskoin.Node.PeerManager
-import Network.Haskoin.Node.SPVNode
+import Network.Haskoin.Node.SpvBlockChain
+import Network.Haskoin.Node.SpvMempool
 

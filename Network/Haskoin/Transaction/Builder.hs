@@ -40,7 +40,7 @@ import Data.Aeson
 
 import Network.Haskoin.Util
 import Network.Haskoin.Crypto
-import Network.Haskoin.Node
+import Network.Haskoin.Node.Types
 import Network.Haskoin.Script
 import Network.Haskoin.Transaction.Types
 

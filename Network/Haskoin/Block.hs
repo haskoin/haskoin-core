@@ -27,33 +27,23 @@ module Network.Haskoin.Block
 , buildPartialMerkle
 , extractMatches
 
-  -- * HeaderChain
-, BlockHeaderNode(..)
-, BlockHeaderStore(..)
-, BlockHeaderAction(..)
+  -- * HeaderTree
 , BlockHeight
 , Timestamp
-, genesisBlockHeaderNode
-, initHeaderChain
-, rescanHeaderChain
-, connectBlockHeader
-, blockLocator
+, HeaderTree(..)
+, BlockHeaderNode(..)
+, BlockChainAction(..)
+, actionNewNodes
 , bestBlockHeaderHeight
 , getBlockHeaderHeight
-, lastSeenCheckpoint
-, findSplitNode
+, genesisNode
 , getParentNode
-, nextWorkRequired
-, workFromInterval
-, isValidPOW
-, headerPOW
-, headerWork
-, BlockChainAction(..)
-, getActionNode
-, connectBlock
-, blocksToDownload
-, LevelDBChain
-, runLevelDBChain
+, initHeaderTree
+, connectHeader
+, connectHeaders
+, commitAction
+, blockLocator
+, getNodeWindow
 
   -- * Checkpoints
 , checkpointMap
@@ -64,6 +54,6 @@ module Network.Haskoin.Block
 
 import Network.Haskoin.Block.Types
 import Network.Haskoin.Block.Merkle
-import Network.Haskoin.Block.HeaderChain
+import Network.Haskoin.Block.HeaderTree
 import Network.Haskoin.Block.Checkpoints
 

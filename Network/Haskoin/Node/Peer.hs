@@ -337,18 +337,23 @@ processMerkleBlock :: (MonadLogger m, MonadIO m)
                    => MerkleBlock -> StateT PeerSession m ()
 processMerkleBlock decodedMerkle@(MerkleBlock bh ntx hs fs) = do
     pid <- gets peerId
-    $(logDebug) $ format pid $ unwords
-        [ "Received merkle block", encodeBlockHashLE bid ]
     -- Check that we are expecting this merkle bock. Otherwise, the remote
     -- peer is misbehaving by sending us unsolicited junk.
     gets currentJob >>= \jobM -> case jobM of
         Just (Job _ _ _ (JobDwnMerkles _ bids)) ->
             if bid `elem` bids
-                then go pid 
-                else sendManager $ PeerMisbehaving pid minorDoS
-                    "Peer sent us an unsolicited merkle block"
-        _ -> sendManager $ PeerMisbehaving pid minorDoS
-            "Peer sent us an unsolicited merkle block"
+                then do
+                    $(logDebug) $ format pid $ unwords
+                        [ "Received merkle block", encodeBlockHashLE bid ]
+                    go pid 
+                else $(logDebug) $ format pid $ unwords
+                    [ "Received an unsolicited merkle block"
+                    , encodeBlockHashLE bid
+                    ]
+        _ -> $(logDebug) $ format pid $ unwords
+            [ "Received an unsolicited merkle block"
+            , encodeBlockHashLE bid
+            ]
   where
     bid = headerHash bh
     go pid = case extractMatches fs hs (fromIntegral ntx) of

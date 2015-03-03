@@ -76,7 +76,7 @@ library
                  , leveldb-haskell               >= 0.6       && < 0.7
                  , lifted-async                  >= 0.6       && < 0.7
                  , monad-logger                  >= 0.3       && < 0.4
-                 , monad-control                 >= 0.3       && < 0.4
+                 , monad-control                 >= 0.3       && < 1.1
                  , mtl                           >= 2.1       && < 2.3
                  , persistent                    >= 2.1       && < 2.2
                  , persistent-template           >= 2.1       && < 2.2

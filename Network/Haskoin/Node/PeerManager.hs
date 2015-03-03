@@ -93,7 +93,7 @@ data RemoteData = RemoteData
 -- return the PeerManager message channel to communicate with it.
 withPeerManager :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
                 => TBMChan BlockChainMessage
-                => TBMChan MempoolMessage
+                -> TBMChan MempoolMessage
                 -> (TBMChan ManagerMessage -> m ())
                 -> m ()
 withPeerManager bkchChan mempChan f = do

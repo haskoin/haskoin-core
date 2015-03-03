@@ -189,13 +189,6 @@ processBlockHeaders pid hs = canProcessHeaders pid >>= \valid -> when valid $ do
                     [ "Ignoring side chain headers from peer"
                     , show $ hashUnique pid
                     ]
-                -- A peer should not send us side chain headers under
-                -- normal circumstances. 
-                sendManager $ PeerMisbehaving pid moderateDoS 
-                    "Peer sent us side chain headers"
-                height <- runDB bestBlockHeaderHeight
-                -- Don't continue from this peer. Try another peer.
-                headerSync (AnyPeer height) FullLocator Nothing
             -- Headers extend our current best head
             _ -> do
                 let nodes  = actionNewNodes action

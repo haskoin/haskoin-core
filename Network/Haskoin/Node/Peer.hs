@@ -107,14 +107,16 @@ startPeer :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
           => PeerSession -> AppData -> m ()
 startPeer session ad = do
     -- Spin up thread for receiving messages from the remote host
-    a1 <- async $ f $ (appSource ad) $$ decodeMessage 
+    a1 <- async $ flip evalStateT session $ 
+        (appSource ad) $$ decodeMessage 
     $(logDebug) $ format pid "Message receiving thread started"
     -- Spin up thread for sending messages to the remote host
     let chan = msgsChan session
-    a2 <- async $ f $ (sourceTBMChan chan) $= encodeMessage $$ (appSink ad)
+    a2 <- async $ flip evalStateT session $ 
+        (sourceTBMChan chan) $= encodeMessage $$ (appSink ad)
     $(logDebug) $ format pid "Message sending thread started"
     -- Main peer message processing loop
-    a3 <- async $ f $ do
+    a3 <- async $ flip evalStateT session $ do
         vers <- buildVersion
         sendMessage $ MVersion vers
         (sourceTBMChan $ peerChan session) $$ processPeerMessage
@@ -125,10 +127,9 @@ startPeer session ad = do
     case resE of
         Left e -> $(logError) $ format pid $ unwords
             [ "Peer thread stopped with exception:", show e ]
-        _ -> $(logDebug) $ format pid "Peer thread stopped"
+        Right () -> $(logDebug) $ format pid "Peer thread stopped"
   where
     pid = peerId session
-    f = flip evalStateT session
 
 -- | Build our Version message
 buildVersion :: MonadIO m => m Version

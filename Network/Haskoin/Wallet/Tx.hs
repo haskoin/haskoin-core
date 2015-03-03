@@ -748,7 +748,7 @@ isTxInWallet tid = liftM isJust $ getBy $ UniqueTx tid
 -- of the relevant transactions.
 importBlocks :: (MonadIO m, PersistQuery b, PersistUnique b)
              => BlockChainAction -> [[TxHash]] -> ReaderT b m ()
-importBlocks action expTxsLs = do
+importBlocks action expTxsLs = when (validAction action) $ do 
     -- Unconfirm transactions from the old chain if we have a reorg
     case action of
         ChainReorg _ os _ -> do
@@ -791,6 +791,9 @@ importBlocks action expTxsLs = do
     -- Update the best height
     let best = last $ actionNewNodes action
     setBestBlock (nodeBlockHash best) (nodeHeaderHeight best)
+  where
+    validAction (SideChain _) = False
+    validAction _             = True
 
 -- If a transaction is Dead but has no more conflicting Building transactions,
 -- we update the status to Pending

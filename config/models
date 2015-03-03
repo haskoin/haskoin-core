@@ -62,6 +62,7 @@ DbTx
     confidence TxConfidence maxlen=16
     confirmedBy BlockHash Maybe maxlen=200
     confirmedHeight Word32 Maybe
+    confirmedDate Timestamp Maybe
     isCoinbase Bool
     nosigHash TxHash maxlen=200
     created UTCTime
@@ -74,14 +75,8 @@ DbOrphan
     created UTCTime
     UniqueOrphan hash
 
-DbConfirmation
-    tx TxHash maxlen=200
-    block BlockHash maxlen=200
-    blockTimestamp Word32
-    created UTCTime
-    UniqueConfirmation tx block
-
 DbConfig
     bestHeight Word32
+    bestBlock BlockHash
     version Int
     created UTCTime

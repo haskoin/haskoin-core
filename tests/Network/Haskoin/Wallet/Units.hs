@@ -339,9 +339,9 @@ fakeNode i h = BlockHeaderNode
     , nodeHeader = BlockHeader 1 0 0 0 0 0
     , nodeHeaderHeight = i
     , nodeChainWork = 0
+    , nodeChild = Nothing
     , nodeMedianTimes = []
     , nodeMinWork = 0
-    , nodeHaveBlock = False
     }
 
 testOutDoubleSpend :: App ()
@@ -418,7 +418,7 @@ testOutDoubleSpend = do
     checkAddressBalance 1 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
     
     --Confirm funding transaction
-    importBlock (BestBlock $ fakeNode 0 0x01) [txHash fundingTx]
+    importBlocks (BestChain [fakeNode 0 0x01]) [[txHash fundingTx]]
 
     checkSpendableBalance 0 "test" "acc1" 20000000
     checkAccountBalance 0 "test" "acc1" BalanceConflict 2
@@ -441,9 +441,9 @@ testOutDoubleSpend = do
     checkAddressBalance 2 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
     checkAddressBalance 2 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
 
-    importBlock (BestBlock $ fakeNode 1 0x02) [txHash spend2]
+    importBlocks (BestChain [fakeNode 1 0x02]) [[txHash spend2]]
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash spend1)
-        >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
+        >>= liftIO . (assertEqual "Confidence is not TxDead (1)" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash spend2)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (map (outPointHash . coinOutPoint)) (spendableCoins ai 0)
@@ -457,10 +457,10 @@ testOutDoubleSpend = do
     checkAddressBalance 0 "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ" (Balance 0) (Balance 0) 0 0 0
     checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 50000) (Balance 50000) 1 0 0
 
-    --Create a fork. Nothing should change from the tests above
-    importBlock (SideBlock (fakeNode 1 0x03) 1) [txHash spend1]
+    --Import a side chain. Nothing should change from the tests above
+    importBlocks (SideChain [fakeNode 1 0x03]) [[txHash spend1]]
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash spend1)
-        >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
+        >>= liftIO . (assertEqual "Confidence is not TxDead (2)" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash spend2)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (map (outPointHash . coinOutPoint)) (spendableCoins ai 0)
@@ -476,13 +476,13 @@ testOutDoubleSpend = do
 
     -- Trigger a reorg
     let s = fakeNode 0 0x01
-        o = [fakeNode 0 0x01, fakeNode 1 0x02]
-        n = [fakeNode 0 0x01, fakeNode 1 0x03, fakeNode 2 0x04] 
-    importBlock (BlockReorg s o n) []
+        o = [fakeNode 1 0x02]
+        n = [fakeNode 1 0x03, fakeNode 2 0x04] 
+    importBlocks (ChainReorg s o n) [[txHash spend1], []]
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash spend1)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash spend2)
-        >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
+        >>= liftIO . (assertEqual "Confidence is not TxDead (3)" TxDead) 
     liftM (map (outPointHash . coinOutPoint)) (spendableCoins ai 0)
         >>= liftIO . (assertEqual "Wrong txhash in coins" 
             [txHash fundingTx, txHash spend1, txHash spend1])
@@ -495,13 +495,12 @@ testOutDoubleSpend = do
     checkAddressBalance 0 "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF" (Balance 0) (Balance 0) 0 0 0
 
     -- Trigger another reorg
-    importBlock (SideBlock (fakeNode 2 0x05) 2) []
     let s' = fakeNode 0 0x01
-        o' = [fakeNode 0 0x01, fakeNode 1 0x03, fakeNode 2 0x04]
-        n' = [fakeNode 0 0x01, fakeNode 1 0x02, fakeNode 2 0x05, fakeNode 3 0x06] 
-    importBlock (BlockReorg s' o' n') []
+        o' = [fakeNode 1 0x03, fakeNode 2 0x04]
+        n' = [fakeNode 1 0x02, fakeNode 2 0x05, fakeNode 3 0x06] 
+    importBlocks (ChainReorg s' o' n') [[txHash spend2], [], []]
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash spend1)
-        >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
+        >>= liftIO . (assertEqual "Confidence is not TxDead (4)" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash spend2)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (map (outPointHash . coinOutPoint)) (spendableCoins ai 0)
@@ -576,23 +575,8 @@ testInDoubleSpend = do
     checkSpendableBalance 0 "test" "acc1" 0
 
     --Import fake block
-    importBlock (BestBlock $ fakeNode 0 0x01) []
-    importBlock (BestBlock $ fakeNode 1 0x02) [txHash tx2]
-    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
-        >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
-    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
-        >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins ai 0)
-        >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx2])
-    checkAccountBalance 0 "test" "acc1" (Balance 20000000) 0
-    checkSpendableBalance 0 "test" "acc1" 20000000
-    checkAccountBalance 1 "test" "acc1" (Balance 20000000) 0
-    checkSpendableBalance 1 "test" "acc1" 20000000
-    checkAccountBalance 2 "test" "acc1" (Balance 0) 0
-    checkSpendableBalance 2 "test" "acc1" 0
-
-    --Create a fork. Nothing should change from the tests above
-    importBlock (SideBlock (fakeNode 1 0x03) 1) [txHash tx1]
+    importBlocks (BestChain [fakeNode 0 0x01, fakeNode 1 0x02]) 
+                 [[], [txHash tx2]]
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -608,9 +592,9 @@ testInDoubleSpend = do
 
     -- Trigger a reorg
     let s = fakeNode 0 0x01
-        o = [fakeNode 0 0x01, fakeNode 1 0x02]
-        n = [fakeNode 0 0x01, fakeNode 1 0x03, fakeNode 2 0x04] 
-    importBlock (BlockReorg s o n) []
+        o = [fakeNode 1 0x02]
+        n = [fakeNode 1 0x03, fakeNode 2 0x04] 
+    importBlocks (ChainReorg s o n) [[txHash tx1], []]
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -625,11 +609,10 @@ testInDoubleSpend = do
     checkSpendableBalance 3 "test" "acc1" 0
 
     -- Trigger another reorg
-    importBlock (SideBlock (fakeNode 2 0x05) 2) []
     let s' = fakeNode 0 0x01
-        o' = [fakeNode 0 0x01, fakeNode 1 0x03, fakeNode 2 0x04]
-        n' = [fakeNode 0 0x01, fakeNode 1 0x02, fakeNode 2 0x05, fakeNode 3 0x06] 
-    importBlock (BlockReorg s' o' n') []
+        o' = [fakeNode 1 0x03, fakeNode 2 0x04]
+        n' = [fakeNode 1 0x02, fakeNode 2 0x05, fakeNode 3 0x06] 
+    importBlocks (ChainReorg s' o' n') [[txHash tx2], [], []]
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -685,8 +668,8 @@ testDoubleSpendChain = do
     checkSpendableBalance 0 "test" "acc1" 9990000
 
     -- Let's confirm these two transactions
-    importBlock (BestBlock $ fakeNode 0 0x01) []
-    importBlock (BestBlock $ fakeNode 1 0x02) [txHash tx1, txHash tx2]
+    importBlocks (BestChain [fakeNode 0 0x01, fakeNode 1 0x02 ]) 
+                [[], [txHash tx1, txHash tx2]]
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -719,28 +702,11 @@ testDoubleSpendChain = do
     checkAccountBalance 2 "test" "acc1" (Balance 0) 0
     checkSpendableBalance 2 "test" "acc1" 0
 
-    -- Now we create a fork that contains tx4. Nothing should change
-    importBlock (SideBlock (fakeNode 1 0x03) 1) [txHash tx4]
-    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
-        >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
-    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
-        >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
-    liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx4)
-        >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
-    liftM (map (outPointHash . coinOutPoint)) (spendableCoins ai 0)
-        >>= liftIO . (assertEqual "Wrong txhash in coins" [txHash tx2, txHash tx2])
-    checkAccountBalance 0 "test" "acc1" (Balance 9990000) 0
-    checkSpendableBalance 0 "test" "acc1" 9990000
-    checkAccountBalance 1 "test" "acc1" (Balance 9990000) 0
-    checkSpendableBalance 1 "test" "acc1" 9990000
-    checkAccountBalance 2 "test" "acc1" (Balance 0) 0
-    checkSpendableBalance 2 "test" "acc1" 0
-
     -- Now we trigger a reorg that validates tx4. tx1 and tx2 should be dead
     let s = fakeNode 0 0x01
-        o = [fakeNode 0 0x01, fakeNode 1 0x02]
-        n = [fakeNode 0 0x01, fakeNode 1 0x03, fakeNode 2 0x04] 
-    importBlock (BlockReorg s o n) []
+        o = [fakeNode 1 0x02]
+        n = [fakeNode 1 0x03, fakeNode 2 0x04] 
+    importBlocks (ChainReorg s o n) [[txHash tx4], []]
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -779,11 +745,10 @@ testDoubleSpendChain = do
 
     -- Let's reorg back to the original chain. tx1, tx2 and tx3 should be
     -- building and tx4 should be dead.
-    importBlock (SideBlock (fakeNode 2 0x05) 2) []
     let s' = fakeNode 0 0x01
-        o' = [fakeNode 0 0x01, fakeNode 1 0x03, fakeNode 2 0x04]
-        n' = [fakeNode 0 0x01, fakeNode 1 0x02, fakeNode 2 0x05, fakeNode 3 0x06] 
-    importBlock (BlockReorg s' o' n') []
+        o' = [fakeNode 1 0x03, fakeNode 2 0x04]
+        n' = [fakeNode 1 0x02, fakeNode 2 0x05, fakeNode 3 0x06] 
+    importBlocks (ChainReorg s' o' n') [[txHash tx1, txHash tx2], [], []]
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -845,7 +810,7 @@ testDoubleSpendGroup = do
     checkSpendableBalance 0 "test" "acc1" 29990000
 
     -- Confirm the funding transaction
-    importBlock (BestBlock $ fakeNode 0 0x01) [txHash fundingTx]
+    importBlocks (BestChain [fakeNode 0 0x01]) [[txHash fundingTx]]
     checkAccountBalance 0 "test" "acc1" (Balance 29990000) 0
     checkSpendableBalance 0 "test" "acc1" 29990000
     checkAccountBalance 1 "test" "acc1" (Balance 20000000) 0
@@ -854,7 +819,7 @@ testDoubleSpendGroup = do
     checkSpendableBalance 2 "test" "acc1" 0
 
     -- Let's confirm the first transaction
-    importBlock (BestBlock $ fakeNode 1 0x02) [txHash tx1]
+    importBlocks (BestChain [fakeNode 1 0x02]) [[txHash tx1]]
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (map (outPointHash . coinOutPoint)) (spendableCoins ai 0)
@@ -907,8 +872,7 @@ testDoubleSpendGroup = do
     checkSpendableBalance 2 "test" "acc1" 0
 
     -- Let's confirm tx3
-    importBlock (BestBlock $ fakeNode 2 0x03) []
-    importBlock (BestBlock $ fakeNode 3 0x04) [txHash tx3]
+    importBlocks (BestChain [fakeNode 2 0x03, fakeNode 3 0x04]) [[], [txHash tx3]]
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -926,11 +890,10 @@ testDoubleSpendGroup = do
 
     -- Now we unconfirm tx3. tx2 should remain dead because it it still in
     -- conflict with building tx1
-    importBlock (SideBlock (fakeNode 3 0x05) 1) []
     let s = fakeNode 2 0x03
-        o = [fakeNode 2 0x03, fakeNode 3 0x04]
-        n = [fakeNode 2 0x03, fakeNode 3 0x05, fakeNode 4 0x06] 
-    importBlock (BlockReorg s o n) []
+        o = [fakeNode 3 0x04]
+        n = [fakeNode 3 0x05, fakeNode 4 0x06] 
+    importBlocks (ChainReorg s o n) []
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxBuilding" TxBuilding) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -948,20 +911,19 @@ testDoubleSpendGroup = do
     
     -- Now let's reorg on a new chain that makes tx2 valid. tx1 and tx3 should
     -- then be dead
-    importBlock (SideBlock (fakeNode 1 0x07) 1) [txHash tx2]
-    importBlock (SideBlock (fakeNode 2 0x08) 2) []
-    importBlock (SideBlock (fakeNode 3 0x09) 3) []
-    importBlock (SideBlock (fakeNode 4 0x0a) 4) []
     let s' = fakeNode 0 0x01
-        o' = [ fakeNode 0 0x01, fakeNode 1 0x02
-             , fakeNode 2 0x03, fakeNode 3 0x05
+        o' = [ fakeNode 1 0x02
+             , fakeNode 2 0x03
+             , fakeNode 3 0x05
              , fakeNode 4 0x06
              ]
-        n' = [ fakeNode 0 0x01, fakeNode 1 0x07
-             , fakeNode 2 0x08, fakeNode 3 0x09
-             , fakeNode 4 0x0a, fakeNode 5 0x0b
+        n' = [ fakeNode 1 0x07
+             , fakeNode 2 0x08
+             , fakeNode 3 0x09
+             , fakeNode 4 0x0a
+             , fakeNode 5 0x0b
              ] 
-    importBlock (BlockReorg s' o' n') []
+    importBlocks (ChainReorg s' o' n') [[txHash tx2], [], [], [], []]
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx1)
         >>= liftIO . (assertEqual "Confidence is not TxDead" TxDead) 
     liftM (dbTxConfidence . entityVal) (getTxEntity $ txHash tx2)
@@ -1058,8 +1020,8 @@ testWalletDoubleSpend = do
                 (Just (txHash tx2, TxPending, True)))
 
         -- confirm the first transaction
-        importBlock (BestBlock $ fakeNode 0 0x01) [txHash fundingTx]
-        importBlock (BestBlock $ fakeNode 1 0x02) [txHash tx1]
+        importBlocks (BestChain [fakeNode 0 0x01, fakeNode 1 0x02]) 
+                     [[txHash fundingTx], [txHash tx1]]
         checkAccountBalance 0 "test" "acc1" (Balance 29990000) 0
         checkSpendableBalance 0 "test" "acc1" 29990000
         checkAccountBalance 2 "test" "acc1" (Balance 20000000) 0

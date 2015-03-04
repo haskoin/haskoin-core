@@ -14,7 +14,7 @@ import Control.Exception (SomeException(..),  tryJust, catch)
 import Control.Concurrent.STM.TBMChan (writeTBMChan)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async.Lifted (withAsync, link)
-import Control.Monad.State (evalStateT)
+import Control.Monad.State (StateT, evalStateT, get, modify)
 import Control.Monad.Trans.Control (MonadBaseControl, control, liftBaseOp)
 import Control.Monad.Logger 
     ( MonadLogger
@@ -25,7 +25,7 @@ import Control.Monad.Logger
 
 import Data.Text (pack)
 import Data.Time.Clock.POSIX (getPOSIXTime)
-import Data.Maybe (catMaybes, fromMaybe, maybeToList)
+import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe, maybeToList)
 import Data.Aeson (Value, toJSON, decode, encode)
 import Data.Conduit (Sink, awaitForever, ($$))
 import Data.Conduit.TMChan (TBMChan, sourceTBMChan)
@@ -46,6 +46,8 @@ import qualified Database.LevelDB.Base as DB
 import Network.Haskoin.Constants
 import Network.Haskoin.Node
 import Network.Haskoin.Util
+import Network.Haskoin.Crypto
+import Network.Haskoin.Block
 
 import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Tx
@@ -115,8 +117,10 @@ runSPVServer cfg = do
                         NodeStartDownload dwnE
 
                     -- Listen to SPV events and update the wallet database
-                    let runEvents =  sourceTBMChan eChan 
-                                  $$ processEvents rChan db pool fp
+                    let runEvents =  
+                            flip evalStateT [] $
+                                sourceTBMChan eChan $$ 
+                                processEvents rChan db pool fp
 
                     withAsync runEvents $ \a -> do
                         link a
@@ -124,13 +128,25 @@ runSPVServer cfg = do
                         runWalletApp $ HandlerSession cfg pool $ Just rChan
 
 processEvents :: (MonadLogger m, MonadIO m)
-              => TBMChan NodeRequest 
-              -> DB.DB -> ConnectionPool -> Double -> Sink WalletMessage m ()
+              => TBMChan NodeRequest -> DB.DB -> ConnectionPool -> Double
+              -> Sink WalletMessage (StateT [(BlockHash, Int)] m) ()
 processEvents rChan db pool fp = awaitForever $ \req -> lift $ case req of
-    WalletTx tx -> goTxs [tx]
+    WalletTx tx -> goTxs [tx] >> return ()
     WalletMerkle action dmbs -> do
         -- Import all transactions into the wallet
-        goTxs $ concat (map merkleTxs dmbs)
+        cnt <- goTxs $ concat (map merkleTxs dmbs)
+        let bh = nodeBlockHash $ head $ actionNewNodes action
+        modify $ \s -> take 10 $ (bh, cnt):s
+        win <- get
+        -- Did we bust the gap ?
+        when (sum (map snd win) >= 10) $ do
+            -- Rescan from the oldest block in the window
+            let rescanBh = fst $ last win
+            -- Request a rescan as we busted the gap
+            liftIO . atomically $ writeTBMChan rChan $ 
+                NodeStartDownload $ Right rescanBh
+            -- Reset the window
+            modify $ \s -> []
         -- Import the merkle blocks into the wallet
         resE <- liftIO $ tryJust f $ flip runSqlPersistMPool pool $ 
             importBlocks action $ map expectedTxs dmbs
@@ -141,19 +157,22 @@ processEvents rChan db pool fp = awaitForever $ \req -> lift $ case req of
     goTxs txs = do
         resE <- liftIO $ tryJust f $ flip runSqlPersistMPool pool $ do
             xs <- forM txs $ \tx -> importTx tx SourceNetwork Nothing
-            -- Update the bloom filter if new addresses were generated
-            -- TODO: If all gap addresses have been used up, we need to
-            -- issue a rescan.
-            let gapCnt = sum $ map lst3 $ catMaybes xs
-            if gapCnt > 0
-                then Just <$> walletBloomFilter fp
-                else return Nothing
+            let cnt = sum $ map lst3 $ catMaybes xs
+            if cnt > 0
+                then do
+                    -- Update the bloom filter if new addresses were generated
+                    bloom <- walletBloomFilter fp
+                    return (cnt, Just bloom)
+                else return (cnt, Nothing)
         case resE of
-            Left err -> $(logError) $ pack $ unwords
-                [ "processEvents: An error occured:", err ]
-            Right (Just bloom) -> liftIO . atomically $ writeTBMChan rChan $ 
-                    NodeBloomFilter bloom
-            _ -> return ()
+            Left err -> do
+                $(logError) $ pack $ unwords 
+                    [ "processEvents: An error occured:", err ]
+                return 0
+            Right (cnt, Just bloom) -> do
+                liftIO . atomically $ writeTBMChan rChan $ NodeBloomFilter bloom
+                return cnt
+            _ -> return 0
     f (SomeException e) = Just $ show e
 
 maybeDetach :: Config -> IO () -> IO ()

@@ -29,7 +29,7 @@ import Network.Haskoin.Wallet.Root
 type Handler m = S.StateT HandlerSession m
 
 data HandlerSession = HandlerSession
-    { handlerConfig :: Config
+    { handlerConfig :: SPVConfig
     , handlerPool   :: ConnectionPool
     , handlerChan   :: Maybe (TBMChan NodeRequest)
     }
@@ -94,8 +94,8 @@ postAccountsR :: (MonadLogger m, MonadIO m)
 postAccountsR wallet newAcc = do
     $(logInfo) $ T.unwords 
         [ "[ZeroMQ] PostAccounts", wallet, newAccountAccountName newAcc ]
-    gap <- configGap `liftM` S.gets handlerConfig
-    toJSON `liftM` case newAcc of
+    gap <- liftM spvGap $ S.gets handlerConfig
+    liftM toJSON $ case newAcc of
         NewAccountRegular name -> do
             acc <- runDB $ newAccount wallet name
             runDB $ addLookAhead wallet name gap
@@ -131,7 +131,7 @@ postAccountKeysR wallet name keys = do
     $(logInfo) $ T.unwords [ "[ZeroMQ] PostAccountKeys", wallet, name ]
     acc <- runDB $ addAccountKeys wallet name keys
     when (length (accountKeys acc) == accountTotal acc) $ do
-        gap <- configGap `liftM` S.gets handlerConfig
+        gap <- liftM spvGap $ S.gets handlerConfig
         runDB $ addLookAhead wallet name gap
         whenOnline updateNodeFilter
     return $ toJSON acc
@@ -342,13 +342,14 @@ postNodeR action = liftM toJSON $ case action of
 
 whenOnline :: Monad m => Handler m () -> Handler m ()
 whenOnline handler = do
-    mode <- configMode `liftM` S.gets handlerConfig
+    mode <- liftM spvMode $ S.gets handlerConfig
     when (mode == SPVOnline) handler
 
 updateNodeFilter :: MonadIO m => Handler m ()
 updateNodeFilter = do
-    bloomFP <- configBloomFP `liftM` S.gets handlerConfig
+    bloomFP <- liftM spvBloomFP $ S.gets handlerConfig
     sendSPV . NodeBloomFilter =<< runDB (walletBloomFilter bloomFP)
 
 adjustFCTime :: Timestamp -> Timestamp
 adjustFCTime ts = fromInteger $ max 0 $ (toInteger ts) - 86400 * 7
+

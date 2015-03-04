@@ -7,8 +7,8 @@ import Database.Persist.Sql (ConnectionPool)
 
 type DatabaseConfType = MySQLConf
 
-settingsFile :: String
-settingsFile = "config/settings.mysql.yml"
+databaseEngine :: String
+databaseEngine = "mysql"
 
 getDatabasePool :: DatabaseConfType -> IO ConnectionPool
 getDatabasePool conf = runNoLoggingT $ 

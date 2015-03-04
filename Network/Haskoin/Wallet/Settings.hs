@@ -64,7 +64,7 @@ data Config = Config
     , configDetach      :: !Bool
     -- ^ Detach server when launched from command-line
     , configFile        :: !FilePath
-    -- ^ Client configuration file
+    -- ^ Configuration file
     , configTestnet     :: !Bool
     -- ^ Use Testnet3 network
     , configDir         :: !FilePath

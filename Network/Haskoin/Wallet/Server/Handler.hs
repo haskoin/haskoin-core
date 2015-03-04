@@ -236,7 +236,7 @@ postTxsR wallet name action = case action of
         $(logInfo) $ T.unwords 
             [ "[ZeroMQ] CreateTx", wallet, name, T.pack $ encodeTxHashLE tid ]
         whenOnline $ when complete $ do
-            when genA updateNodeFilter
+            when (genA > 0) updateNodeFilter
             sendSPV . NodePublishTx =<< runDB (getTx tid)
         return $ toJSON $ TxHashStatusRes tid complete
     SignTx tx finalize -> do
@@ -246,7 +246,7 @@ postTxsR wallet name action = case action of
             , "( Complete:", T.pack $ show complete, ")"
             ]
         whenOnline $ when complete $ do
-            when genA updateNodeFilter
+            when (genA > 0) updateNodeFilter
             sendSPV . NodePublishTx =<< runDB (getTx tid)
         return $ toJSON $ TxHashStatusRes tid complete
     SignOfflineTxData otd finalize -> do
@@ -268,7 +268,7 @@ postTxsR wallet name action = case action of
             , "( Complete:", T.pack $ show complete, ")"
             ]
         whenOnline $ when complete $ do
-            when genA updateNodeFilter
+            when (genA > 0) updateNodeFilter
             sendSPV . NodePublishTx =<< runDB (getTx tid)
         return $ toJSON $ TxHashStatusRes tid complete
 

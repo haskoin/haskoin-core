@@ -144,7 +144,8 @@ processEvents rChan db pool fp = awaitForever $ \req -> lift $ case req of
             -- Update the bloom filter if new addresses were generated
             -- TODO: If all gap addresses have been used up, we need to
             -- issue a rescan.
-            if or $ map lst3 $ catMaybes xs
+            let gapCnt = sum $ map lst3 $ catMaybes xs
+            if gapCnt > 0
                 then Just <$> walletBloomFilter fp
                 else return Nothing
         case resE of

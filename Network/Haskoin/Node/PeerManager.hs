@@ -28,10 +28,12 @@ import qualified Data.Map as M
     , member, keys, elems, adjust
     , empty, size, filter, insertWith
     , null, fromAscListWith, toAscList
+    , mapMaybe
     )
 
 import Network.Haskoin.Util
 import Network.Haskoin.Block
+import Network.Haskoin.Crypto
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Node.Bloom
 import Network.Haskoin.Node.Chan
@@ -60,17 +62,6 @@ data ManagerSession = ManagerSession
     -- needs to be reschedule after a peer crashes.
     , broadcastJobs :: !(M.Map JobId Int) 
     } 
-
-computeNetworkHeight :: (MonadLogger m, MonadIO m) => StateT ManagerSession m ()
-computeNetworkHeight = do
-    -- Get all peer heights in ascending order
-    sortedHeights <- liftM (sort . (map peerHeight) . M.elems) $ gets peerMap
-    unless (null sortedHeights) $ do
-        -- Not a true median as we don't compute a mean on an even list.
-        -- A mean wouldn't have any useful value as a network height.
-        let median = sortedHeights !! (length sortedHeights `div` 2) 
-        -- send the result to the blockchain
-        sendBlockChain $ NetworkHeight median
 
 -- Data stored about a peer in the Manager
 data PeerData = PeerData
@@ -129,6 +120,7 @@ processManagerMessage = awaitForever $ \req -> lift $ case req of
     MngrBloomFilter bloom     -> processBloomFilter bloom
     PublishJob job res pri    -> publishJob job res pri
     PeerHeight pid h          -> processPeerHeight pid h
+    MngrStartDownload valE    -> processStartDownload valE
     PeerConnected pid ver     -> processPeerConnected pid ver
     PeerClosed pid            -> processPeerClosed pid
     PeerMisbehaving pid f msg -> peerMisbehaving pid f msg
@@ -374,7 +366,18 @@ processPeerHeight pid h = existsPeerData pid >>= \exists -> when exists $ do
         $(logInfo) $ format $ unwords
             [ "Adjusting height of peer", show $ hashUnique pid, "to", show h ]
         modifyPeerData pid $ \s -> s{ peerHeight = h }
-    
+
+computeNetworkHeight :: (MonadLogger m, MonadIO m) => StateT ManagerSession m ()
+computeNetworkHeight = do
+    -- Get all peer heights in ascending order
+    sortedHeights <- liftM (sort . (map peerHeight) . M.elems) $ gets peerMap
+    unless (null sortedHeights) $ do
+        -- Not a true median as we don't compute a mean on an even list.
+        -- A mean wouldn't have any useful value as a network height.
+        let median = sortedHeights !! (length sortedHeights `div` 2) 
+        -- send the result to the blockchain
+        sendBlockChain $ NetworkHeight median
+
 processBloomFilter :: (MonadLogger m, MonadIO m)
                    => BloomFilter -> StateT ManagerSession m ()
 processBloomFilter bloom = 
@@ -391,6 +394,22 @@ processBloomFilter bloom =
             -- peers when they connect.
             modify $ \s -> s{ mngrBloom = Just bloom }
             publishJob (JobSendBloomFilter bloom) (AllPeers 0) 0
+
+-- Remove all pending jobs of type JobDwnMerkle
+processStartDownload :: MonadLogger m
+                     => Either Timestamp BlockHash -> StateT ManagerSession m ()
+processStartDownload _ = do
+    $(logDebug) $ format $ unwords
+        [ "(Re)starting a new merkle block download."
+        , "Removing old merkle download jobs."
+        ]
+    modify $ \s -> s{ jobQueue = M.mapMaybe f (jobQueue s) }
+  where
+    f xs = let res = filter notDwnMerkle xs
+           in if null res then Nothing else Just res 
+    notDwnMerkle j = case j of
+        Job _ _ _ (JobDwnMerkles _ _) -> False
+        _                             -> True
 
 processHeartbeat :: (MonadLogger m, MonadIO m) => StateT ManagerSession m ()
 processHeartbeat = do
@@ -588,13 +607,6 @@ modifyPeerData pid f = do
 
 deletePeerData :: Monad m => PeerId -> StateT ManagerSession m ()
 deletePeerData pid = modify $ \s -> s{ peerMap = M.delete pid $ peerMap s }
-
-findPeersAtHeight :: Monad m => BlockHeight -> StateT ManagerSession m [PeerId]
-findPeersAtHeight h = do
-    peers <- liftM (M.filter f) $ gets peerMap 
-    return $ M.keys peers
-  where
-    f dat = peerHeight dat >= h
 
 existsRemote :: Monad m => RemoteHost -> StateT ManagerSession m Bool
 existsRemote remote = liftM (M.member remote) $ gets remoteMap

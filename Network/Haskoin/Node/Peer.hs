@@ -208,6 +208,10 @@ processJob = do
                     when (null order) $ modify $ \s -> s{ merkleOrder = bids }
                     let vs = map (InvVector InvMerkleBlock . fromIntegral) bids
                     sendMessage $ MGetData $ GetData vs
+                    -- Send a ping to have a recognizable end message for
+                    -- the last merkle block download.
+                    -- TODO: Compute a random nonce for the ping
+                    sendMessage $ MPing $ Ping 0
         Nothing -> $(logError) $ format pid "No job available to process"
 
 jobDone :: (MonadLogger m, MonadIO m) => StateT PeerSession m ()

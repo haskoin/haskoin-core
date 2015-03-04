@@ -103,6 +103,7 @@ data ManagerMessage
     | MngrBloomFilter !BloomFilter
     | PublishJob !PeerJob !JobResource !JobPriority 
     | PeerHeight !PeerId !BlockHeight
+    | MngrStartDownload !(Either Timestamp BlockHash)
       -- Messages from Peers
     | PeerConnected !PeerId !Version
     | PeerClosed !PeerId 
@@ -130,6 +131,7 @@ data MempoolMessage
     | MempoolTx !Tx
     | MempoolBlock !BlockChainAction !Block
     | MempoolMerkle !BlockChainAction ![DecodedMerkleBlock]
+    | MempoolStartDownload !(Either Timestamp BlockHash)
     | MempoolSynced
 
 -- | Node events sent to the wallet

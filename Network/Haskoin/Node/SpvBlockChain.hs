@@ -355,12 +355,12 @@ processStartDownload valE = do
         -- Set a fast catchup time and search from the genesis
         Left ts -> do
             $(logInfo) $ format $ unwords
-                [ "Requesting merkle block download from timestamp", show ts ]
+                [ "(Re)starting merkle block download from timestamp", show ts ]
             return (Just ts, Just $ headerHash genesisHeader)
         -- No fast catchup time. Just download from the given block.
         Right h -> do
             $(logInfo) $ format $ unwords
-                [ "Requesting merkle block download from block"
+                [ "(Re)starting merkle block download from block"
                 , encodeBlockHashLE h
                 ]
             return (Nothing, Just h)
@@ -370,6 +370,10 @@ processStartDownload valE = do
          -- Empty the window to ignore any old pending jobs
          , merkleWindow = M.empty
          }
+    -- Notify the peer manager
+    sendManager $ MngrStartDownload valE
+    -- Notify the mempool
+    sendMempool $ MempoolStartDownload valE
     -- Trigger merkle block downloads
     continueMerkleDownload
 

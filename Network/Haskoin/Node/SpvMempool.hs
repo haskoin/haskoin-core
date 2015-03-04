@@ -33,14 +33,14 @@ withSpvNode :: (HeaderTree m, MonadLogger m, MonadIO m, MonadBaseControl IO m)
 withSpvNode f = do
     wletChan <- liftIO $ atomically $ newTBMChan 10000
     reqChan  <- liftIO $ atomically $ newTBMChan 10000
-    withSpvMempool wletChan $ \bkchChan mngrChan -> do
+    withSpvMempool wletChan $ \mempChan bkchChan mngrChan -> do
         -- Listen for and process wallet requests
         let run = do
             $(logDebug) $ formatWallet "SPV user request thread started"
-            sourceTBMChan reqChan $$ (go bkchChan mngrChan)
+            sourceTBMChan reqChan $$ (go mempChan bkchChan mngrChan)
         withAsync run $ \a -> link a >> f wletChan reqChan
   where
-    go bkchChan mngrChan = awaitForever $ \req -> case req of
+    go mempChan bkchChan mngrChan = awaitForever $ \req -> case req of
         NodeBloomFilter bloom -> do
             $(logDebug) $ formatWallet "Setting a new bloom filter"
             liftIO $ atomically $ writeTBMChan bkchChan $ SetBloomFilter bloom
@@ -90,7 +90,11 @@ data MempoolSession = MempoolSession
 withSpvMempool 
     :: (HeaderTree m, MonadLogger m, MonadIO m, MonadBaseControl IO m) 
     => TBMChan WalletMessage
-    -> (TBMChan BlockChainMessage -> TBMChan ManagerMessage -> m ())
+    -> (    TBMChan MempoolMessage 
+         -> TBMChan BlockChainMessage 
+         -> TBMChan ManagerMessage 
+         -> m ()
+       )
     -> m ()
 withSpvMempool wletChan f = do
     mempChan <- liftIO $ atomically $ newTBMChan 10000
@@ -106,7 +110,7 @@ withSpvMempool wletChan f = do
                 sourceTBMChan mempChan $$ processMempoolMessage
 
         withAsync (evalStateT run session) $ \a ->
-            link a >> f bkchChan mngrChan
+            link a >> f mempChan bkchChan mngrChan
 
 processMempoolMessage :: (MonadLogger m, MonadIO m) 
                       => Sink MempoolMessage (StateT MempoolSession m) ()
@@ -115,7 +119,7 @@ processMempoolMessage = awaitForever $ \req -> lift $ case req of
     MempoolTx tx              -> processTx tx
     MempoolMerkle action dmbs -> processMerkle action dmbs
     MempoolSynced             -> processSynced
-    
+    MempoolStartDownload valE -> processStartDownload valE 
     _ -> return () -- Ignore Blocks
 
 -- | Decide if we want to download a transaction or not. We store inflight
@@ -253,6 +257,17 @@ processSynced = do
         forM_ txs $ sendWallet . WalletTx
     modify $ \s -> s{ nodeSynced = True 
                     , txBuffer   = []
+                    }
+
+processStartDownload :: (MonadLogger m, MonadIO m) 
+                     => Either Timestamp BlockHash -> StateT MempoolSession m ()
+processStartDownload _ = do
+    $(logDebug) $ format $ unwords
+        [ "(Re)starting a new merkle block download."
+        , "Cleaning up the merkle buffer."
+        ]
+    modify $ \s -> s{ nodeSynced   = False
+                    , merkleBuffer = []
                     }
 
 {- Helpers -}

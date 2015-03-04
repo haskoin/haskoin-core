@@ -7,6 +7,9 @@ import Database.Persist.Sql (ConnectionPool)
 
 type DatabaseConfType = MySQLConf
 
+databaseEngine :: String
+databaseEngine = "mysql"
+
 getDatabasePool :: DatabaseConfType -> IO ConnectionPool
 getDatabasePool conf = runNoLoggingT $ 
     createMySQLPool (myConnInfo conf) (myPoolSize conf)

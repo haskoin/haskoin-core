@@ -108,7 +108,7 @@ instance FromJSON Config where
         configMode      <- h =<< o .: "server-mode"
         configBloomFP   <- o .: "bloom-false-positive" 
         configGap       <- o .: "address-gap"          
-        configDatabase  <- o .: "database" 
+        configDatabase  <- i =<< o .: "database" 
         configLogFile   <- o .: "log-file"
         configPidFile   <- o .: "pid-file"
         return Config {..}
@@ -124,6 +124,7 @@ instance FromJSON Config where
             String "online"  -> return SPVOnline
             String "offline" -> return SPVOffline
             _ -> mzero
+        i = withObject "database" $ \v -> v .: databaseEngine
 
 -- | Raw bytes at compile time of @config/config.yml@
 configBS :: BS.ByteString

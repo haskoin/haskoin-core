@@ -12,24 +12,18 @@ bloom-false-positive: "_env:BLOOM_FALSE_POSITIVE:0.00001"
 # How many addresses you want to pre-generate for each account.
 address-gap: "_env:ADDRESS_GAP:10"
 
-# Sqlite3 database connection information, and some optional MySQL-only vars.
+# Database connection information.
 database:
-  database: "_env:DATABASE:hw-wallet.sqlite3"
-  poolsize: "_env:POOLSIZE:1"
-  user:     "_env:MYSQL_USER:root"
-  password: "_env:MYSQL_PASSWORD:"
-  host:     "_env:MYSQL_HOST:localhost"
-  port:     "_env:MYSQL_PORT:5432"
-
-### MySQL database connection information.
-# database:
-#   user:     "root"
-#   password: ""
-#   host:     "localhost"
-#   port:     "5432"
-#   database: "haskoin_wallet"
-#   poolsize: 10
-
+    sqlite:
+        database: "_env:SQLITE_DATABASE:hw-wallet.sqlite3"
+        poolsize: "_env:SQLITE_POOLSIZE:1"
+    mysql:
+        database: "_env:MYSQL_DATABASE:haskoin_wallet"
+        poolsize: "_env:MYSQL_POOLSIZE:10"
+        user:     "_env:MYSQL_USER:root"
+        password: "_env:MYSQL_PASSWORD:"
+        host:     "_env:MYSQL_HOST:localhost"
+        port:     "_env:MYSQL_PORT:5432"
 
 ### List of trusted bitcoin full-nodes to connect to.
 # bitcoin-full-nodes: 

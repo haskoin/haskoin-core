@@ -23,7 +23,7 @@ import System.Console.GetOpt
     )
 
 import Control.Applicative ((<$>))
-import Control.Monad (when, forM_)
+import Control.Monad (when, forM_, filterM)
 import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.Reader as R (runReaderT)
 
@@ -105,6 +105,14 @@ options =
     , Option ['t'] ["testnet"]
         (NoArg $ \cfg -> cfg { configTestnet = True }) $
         "Use Testnet3 network"
+    , Option ['g'] ["config"]
+        (ReqArg (\s cfg -> cfg { configFile = s }) "FILE") $
+        "Configuration file (default: "
+            ++ configFile hardConfig ++ ")"
+    , Option ['k'] ["workdir"]
+        (ReqArg (\s cfg -> cfg { configDir = s }) "DIR") $
+        "Working directory (default: "
+            ++ configDir hardConfig ++ ")"
     ]
 
 -- Create and change current working directory
@@ -118,25 +126,23 @@ setWorkDir cfg = do
 
 getConfig :: [(Config -> Config)] -> IO Config
 getConfig fs = do
-    home <- fromMaybe (error "HOME environment not set") <$> getEnv "HOME"
-    conf <- loadAppSettings [] [configValue] useEnv
-    let cfgFile = confFile conf home
-    confFileExists <- fileExist cfgFile
-    if confFileExists
-      then do
-        cfg <- loadAppSettings [cfgFile] [configValue] useEnv
-        let cfg' = foldr ($) cfg fs
-        return cfg' { configDir = workDir cfg' home }
-      else do
-        let cfg = foldr ($) conf fs
-        return cfg { configDir = workDir cfg home }
+    homeM <- getEnv "HOME"
+    cfg1 <- flip (foldr ($)) fs
+            <$> loadAppSettings [] [configValue] useEnv
+    cfgFiles <- filterM fileExist $ confFiles cfg1 homeM
+    cfg <- flip (foldr ($)) fs
+            <$> loadAppSettings cfgFiles [configValue] useEnv
+    return cfg { configDir = workDir cfg homeM }
   where
-    confFile conf home
-        | isAbsolute (configFile conf) = configFile conf
-        | otherwise = workDir conf home </> configFile conf
-    workDir conf home
+    confFiles conf Nothing =
+        [ configFile conf, configDir conf </> configFile conf ]
+    confFiles conf homeM@(Just home)
+        | isAbsolute (configFile conf) = [ configFile conf ]
+        | otherwise = [ workDir conf homeM </> configFile conf ]
+    workDir conf (Just home)
         | isAbsolute (configDir conf) = configDir conf
         | otherwise = home </> configDir conf
+    workDir conf Nothing = configDir conf
 
 clientMain :: IO ()
 clientMain = E.getArgs >>= \args -> case getOpt Permute options args of

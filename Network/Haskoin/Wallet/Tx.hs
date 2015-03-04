@@ -43,7 +43,8 @@ import qualified Data.Map.Strict as M (toList, empty, lookup, insert)
 import qualified Data.ByteString as BS (empty)
 
 import Database.Persist 
-    ( PersistUnique
+    ( PersistStore
+    , PersistUnique
     , PersistQuery
     , Entity(..)
     , entityVal

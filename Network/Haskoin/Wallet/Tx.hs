@@ -60,7 +60,7 @@ import Database.Persist
     , replace
     , count
     , delete
-    , (=.), (==.), (<-.)
+    , (=.), (==.)
     , SelectOpt( Asc, LimitTo, OffsetBy )
     , Key
     )
@@ -192,28 +192,23 @@ importTx :: (MonadIO m, PersistQuery b, PersistUnique b)
          -> Maybe (WalletName, AccountName) -- ^ (Wallet, Account)
          -> ReaderT b m (Maybe (TxHash, TxConfidence, Int))
          -- ^ (Imported Tx, Confidence, New addresses generated)
-importTx tx source nameM = getBy (UniqueTx tid) >>= \txM -> case txM of
-    Just (Entity tkey dbtx) -> do
-        -- Change the confidence from offline to pending if we get a
-        -- transaction from the network
-        let isOffline = dbTxConfidence dbtx == TxOffline
-        if isOffline && source == SourceNetwork
-            then do
-                replace tkey $ dbtx{ dbTxConfidence = TxPending }
-                return $ Just (tid, TxPending, 0)
-            else do
-                when (source == SourceUnknown) $ checkUnknownTx tx nameM
-                return $ Just (tid, dbTxConfidence dbtx, 0)
-    Nothing -> do
-        when (source == SourceUnknown) $ checkUnknownTx tx nameM
-        isOrphan <- isOrphanTx tx
-        if not isOrphan then addTx tx source else do
+importTx tx source nameM = do
+    -- Remove the transaction non-recursively if it already exists
+    getBy (UniqueTx tid) >>= \txM -> 
+        when (isJust txM) $ removeTx tid False >> return ()
+    isOrphanTx tx >>= \orphan -> if orphan
+        -- We have a transaction for which we do not have the parent(s). We
+        -- want to import transactions in-order (parents first).
+        then do
             -- Can not store UnknownSource transactions as orphans
             when (source == SourceUnknown) $ liftIO $ throwIO $ WalletException
                 "Trying to import an untrusted orphan transaction"
             time <- liftIO getCurrentTime
             insert_ $ DbOrphan tid tx source time
             return Nothing
+        else do
+            when (source == SourceUnknown) $ checkUnknownTx tx nameM
+            addTx tx source
   where
     tid = txHash tx
 
@@ -367,8 +362,8 @@ findChildTxs tid = do
 findSpendingTxs :: (MonadIO m, PersistQuery b)
                 => [OutPoint] -> ReaderT b m [TxHash]
 findSpendingTxs outpoints = do
-    res <- selectList [DbSpentCoinKey <-. outpoints] []
-    return $ L.nub $ map (dbSpentCoinTx . entityVal) res
+    res <- forM outpoints $ \out -> selectList [DbSpentCoinKey ==. out] []
+    return $ L.nub $ map (dbSpentCoinTx . entityVal) $ concat res
 
 -- Try to re-import all orphan transactions. Returns True if new addresses
 -- were generated.
@@ -388,7 +383,7 @@ removeOfflineTxs outpoints = do
     hs  <- findSpendingTxs outpoints
     txs <- liftM catMaybes $ mapM (getBy . UniqueTx) hs
     let offline = filter ((== TxOffline) . dbTxConfidence . entityVal) txs
-    forM_ offline $ removeTx . dbTxHash . entityVal
+    forM_ offline $ (flip removeTx True) . dbTxHash . entityVal
 
 isCoinbaseTx :: Tx -> Bool
 isCoinbaseTx (Tx _ tin _ _) =
@@ -522,16 +517,20 @@ buildAccTx tx inCoins outCoins time = do
 -- deriving from it.
 removeTx :: (MonadIO m, PersistUnique b, PersistQuery b)
          => TxHash      -- ^ Transaction hash to remove
+         -> Bool        -- ^ Recursively remove child transactions
          -> ReaderT b m [TxHash]  -- ^ List of removed transaction hashes
-removeTx tid = do
+removeTx tid recursive = do
     txM <- getBy $ UniqueTx tid
     let tx        = dbTxValue $ entityVal $ fromJust txM
         len       = fromIntegral $ length (txOut tx)
         outpoints = map (OutPoint tid) [0 .. (len - 1)]
     if isNothing txM then return [] else do 
-        childs <- findSpendingTxs outpoints
-        -- Recursively remove children
-        cids <- forM childs removeTx
+        cids <- if recursive
+            then do
+                -- Recursively remove children
+                childs <- findSpendingTxs outpoints
+                liftM concat $ forM childs (flip removeTx recursive)
+            else return []
         -- Find the coins we are going to delete
         cis <- liftM (map entityKey) $ selectList [ DbCoinHash ==. tid ] []
         -- Delete Coin/Account links
@@ -549,7 +548,7 @@ removeTx tid = do
         deleteWhere [ DbOrphanHash ==. tid ]
         -- Unspend input coins that were previously spent by this transaction
         deleteWhere [ DbSpentCoinTx ==. tid ]
-        return $ tid:(concat cids)
+        return $ tid:cids
 
 -- | Create a transaction sending some coins to a list of recipient addresses.
 createTx :: (MonadIO m, PersistUnique b, PersistQuery b)

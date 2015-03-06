@@ -11,6 +11,7 @@ import Control.Applicative ((<$>))
 import Control.Monad (when, forM, forever, filterM, liftM)
 import Control.Monad.Trans (MonadIO, lift, liftIO)
 import Control.Exception (SomeException(..),  tryJust, catch)
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM.TBMChan (writeTBMChan)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async.Lifted (withAsync, link)
@@ -51,6 +52,7 @@ import Network.Haskoin.Block
 
 import Network.Haskoin.Wallet.Root
 import Network.Haskoin.Wallet.Tx
+import Network.Haskoin.Wallet.Address
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Settings
@@ -138,8 +140,9 @@ processEvents rChan db pool fp = awaitForever $ \req -> lift $ case req of
         let bh = nodeBlockHash $ head $ actionNewNodes action
         modify $ \s -> take 10 $ (bh, cnt):s
         win <- get
+        let bust = sum (map snd win) >= 10
         -- Did we bust the gap ?
-        when (sum (map snd win) >= 10) $ do
+        when bust $ do
             -- Rescan from the oldest block in the window
             let rescanBh = fst $ last win
             -- Request a rescan as we busted the gap

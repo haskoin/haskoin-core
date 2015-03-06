@@ -111,6 +111,7 @@ resetRescan = do
     -- Delete all orphan transactions
     deleteWhere ([] :: PersistQuery b => [Filter (DbOrphanGeneric b)])
     -- Reset best block information
-    updateWhere [] [ DbConfigBestHeight =. 0 ]
-
+    updateWhere [] [ DbConfigBestHeight =. 0 
+                   , DbConfigBestBlock =. headerHash genesisHeader
+                   ]
 

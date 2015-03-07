@@ -13,7 +13,7 @@ import Control.Concurrent.Async.Lifted (withAsync, link)
 import Control.Monad.Trans.Control (MonadBaseControl)
 
 import Data.Text (Text, pack)
-import Data.Maybe (isJust, isNothing, fromJust)
+import Data.Maybe (isJust, isNothing, fromJust, fromMaybe)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Time.Clock (UTCTime, getCurrentTime, addUTCTime)
 import Data.Unique (newUnique, hashUnique)
@@ -321,12 +321,12 @@ continueMerkleDownload = do
                 fcM <- gets fastCatchup 
                 let fc = fromJust fcM
                     ts = map (blockTimestamp . nodeHeader) nodes
+                    height = nodeHeaderHeight $ last nodes
                 -- Check if the batch is after the fast catchup time
                 if isNothing fcM || any (>= fc) ts
                     then do
                         did <- liftIO newUnique
                         let job    = JobDwnMerkles did $ map nodeBlockHash nodes
-                            height = nodeHeaderHeight $ last nodes
                         $(logDebug) $ format $ unwords
                             [ "Requesting download of merkle batch id"
                             , show $ hashUnique did
@@ -342,8 +342,9 @@ continueMerkleDownload = do
                             , fastCatchup  = Nothing
                             }
                     else $(logDebug) $ format $ unwords
-                        [ "Merkle block batch is before the fast catchup time."
-                        , "Not downloading it."
+                        [ "Not downloading pre-catchup merkle block of length"
+                        , show $ length nodes
+                        , "up to height", show height
                         ]
                 -- Recurse with the windowEnd pointer updated
                 continueMerkleDownload
@@ -351,31 +352,47 @@ continueMerkleDownload = do
 processStartDownload :: (HeaderTree m, MonadLogger m, MonadIO m) 
                      => Either Timestamp BlockHash -> StateT SpvSession m ()
 processStartDownload valE = do
-    (fc, we) <- case valE of
+    resM <- case valE of
         -- Set a fast catchup time and search from the genesis
         Left ts -> do
             $(logInfo) $ format $ unwords
                 [ "(Re)starting merkle block download from timestamp", show ts ]
-            return (Just ts, Just $ headerHash genesisHeader)
+            return $ Just (Just ts, Just $ headerHash genesisHeader)
         -- No fast catchup time. Just download from the given block.
         Right h -> do
-            $(logInfo) $ format $ unwords
-                [ "(Re)starting merkle block download from block"
-                , encodeBlockHashLE h
-                ]
-            return (Nothing, Just h)
-    modify $ \s -> 
-        s{ fastCatchup = fc
-         , windowEnd = we
-         -- Empty the window to ignore any old pending jobs
-         , merkleWindow = M.empty
-         }
-    -- Notify the peer manager
-    sendManager $ MngrStartDownload valE
-    -- Notify the mempool
-    sendMempool $ MempoolStartDownload valE
-    -- Trigger merkle block downloads
-    continueMerkleDownload
+            nodeM <- runDB $ getBlockHeaderNode h
+            case nodeM of
+                Just node -> do
+                    parM <- runDB $ getParentNode node
+                    let parH = fmap nodeBlockHash parM
+                        par  = fromMaybe (headerHash genesisHeader) parH
+                    $(logInfo) $ format $ unwords
+                        [ "(Re)starting merkle block download from block"
+                        , encodeBlockHashLE par
+                        ]
+                    return $ Just (Nothing, Just par)
+                _ -> do
+                    $(logError) $ format $ unwords
+                        [ "Cannot start download. Unknown block hash"
+                        , encodeBlockHashLE h
+                        ]
+                    return Nothing
+
+    case resM of
+        Just (fc, we) -> do
+            modify $ \s -> 
+                s{ fastCatchup = fc
+                , windowEnd = we
+                -- Empty the window to ignore any old pending jobs
+                , merkleWindow = M.empty
+                }
+            -- Notify the peer manager
+            sendManager $ MngrStartDownload valE
+            -- Notify the mempool
+            sendMempool $ MempoolStartDownload valE
+            -- Trigger merkle block downloads
+            continueMerkleDownload
+        _ -> return ()
 
 processBloomFilter :: (HeaderTree m, MonadLogger m, MonadIO m)
                    => BloomFilter -> StateT SpvSession m ()

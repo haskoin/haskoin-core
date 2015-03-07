@@ -57,6 +57,7 @@ import Database.Persist
     , update
     , insert_
     , insert
+    , insertUnique
     , replace
     , count
     , delete
@@ -204,7 +205,7 @@ importTx tx source nameM = do
             when (source == SourceUnknown) $ liftIO $ throwIO $ WalletException
                 "Trying to import an untrusted orphan transaction"
             time <- liftIO getCurrentTime
-            insert_ $ DbOrphan tid tx source time
+            _ <- insertUnique $ DbOrphan tid tx source time
             return Nothing
         else do
             when (source == SourceUnknown) $ checkUnknownTx tx nameM
@@ -408,7 +409,7 @@ importCoin tid (tout, i) = do
             dbcoin = DbCoin tid i coin add time
         ci <- insert dbcoin
         -- Insert coin / account links
-        forM_ (map dbAddressAccount dbAddrs) $ \ai ->
+        forM_ (L.nub $ map dbAddressAccount dbAddrs) $ \ai ->
             insert_ $ DbCoinAccount ci ai time
         cnts <- forM dbAddrs adjustLookAhead
         return $ Just (Entity ci dbcoin, sum cnts)

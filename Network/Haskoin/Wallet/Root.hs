@@ -37,6 +37,7 @@ import Database.Persist
 import Network.Haskoin.Crypto
 import Network.Haskoin.Block
 import Network.Haskoin.Constants
+import Network.Haskoin.Node
 
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
@@ -86,12 +87,15 @@ newWallet wname seed
         insert_ $ DbWallet wname wallet Nothing time
         return wallet
 
-initWalletDB :: (MonadIO m, PersistQuery b) => ReaderT b m ()
-initWalletDB = do
+initWalletDB :: (MonadIO m, PersistQuery b) => Double -> ReaderT b m ()
+initWalletDB fpRate = do
     prevConfig <- selectFirst [] [Asc DbConfigCreated]
     when (isNothing prevConfig) $ do
         time <- liftIO getCurrentTime
-        insert_ $ DbConfig 0 (headerHash genesisHeader) 1 time
+        -- Create an initial bloom filter
+        -- TODO: Compute a random nonce 
+        let bloom = bloomCreate 1000 fpRate 0 BloomUpdateNone
+        insert_ $ DbConfig 0 (headerHash genesisHeader) bloom 0 fpRate 1 time
 
 -- Remove transaction related data from the wallet
 resetRescan :: (MonadIO m, PersistQuery b) => ReaderT b m ()

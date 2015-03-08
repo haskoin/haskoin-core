@@ -73,7 +73,7 @@ runSPVServer cfg = do
         -- Initialize wallet database
         flip runSqlPersistMPool pool $ do 
             _ <- runMigration migrateWallet 
-            initWalletDB
+            initWalletDB $ configBloomFP cfg
 
         if configMode cfg == SPVOffline
             then runLogging $ runWalletApp $ HandlerSession cfg pool Nothing
@@ -97,15 +97,13 @@ runSPVServer cfg = do
                             -- If we have no keys, use the current time
                             Nothing -> round <$> getPOSIXTime
 
-                    -- Bloom filter false positive rate
-                let fp    = configBloomFP cfg 
                     -- Bitcoin nodes to connect to
-                    nodes = configBTCNodes cfg 
+                let nodes = configBTCNodes cfg 
                     -- Run the SPV monad stack
                     runNode = runLogging . (flip evalStateT db)
 
                 -- Compute our bloom filter
-                bloom <- runSqlPersistMPool (walletBloomFilter fp) pool
+                bloom <- liftM fst3 $ runSqlPersistMPool getBloomFilter pool
 
                 -- Launch SPV node
                 runNode $ withSpvNode $ \eChan rChan -> do
@@ -121,7 +119,7 @@ runSPVServer cfg = do
 
                     -- Listen to SPV events and update the wallet database
                     let runEvents = sourceTBMChan eChan $$ 
-                                    processEvents rChan db pool fp
+                                    processEvents rChan db pool
 
                     withAsync runEvents $ \a -> do
                         link a
@@ -129,9 +127,9 @@ runSPVServer cfg = do
                         runWalletApp $ HandlerSession cfg pool $ Just rChan
 
 processEvents :: (MonadLogger m, MonadIO m)
-              => TBMChan NodeRequest -> DB.DB -> ConnectionPool -> Double
+              => TBMChan NodeRequest -> DB.DB -> ConnectionPool
               -> Sink WalletMessage m ()
-processEvents rChan db pool fp = awaitForever $ \req -> lift $ case req of
+processEvents rChan db pool = awaitForever $ \req -> lift $ case req of
     WalletTx tx -> goTxs [tx] >> return ()
     WalletMerkle action dmbs -> do
         -- Save the old best block before importing
@@ -177,7 +175,7 @@ processEvents rChan db pool fp = awaitForever $ \req -> lift $ case req of
             let cnt = sum $ map lst3 $ catMaybes xs
             if cnt == 0 then return Nothing else do
                 -- Update the bloom filter if new addresses were generated
-                bloom <- walletBloomFilter fp
+                bloom <- liftM fst3 getBloomFilter
                 return $ Just (cnt, bloom)
         case resE of
             Left err -> do

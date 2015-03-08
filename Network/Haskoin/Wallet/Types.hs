@@ -88,6 +88,7 @@ import Network.Haskoin.Wallet.Types.DeriveJSON
 import Network.Haskoin.Crypto
 import Network.Haskoin.Script
 import Network.Haskoin.Transaction
+import Network.Haskoin.Node
 import Network.Haskoin.Util
 
 type WalletName  = T.Text
@@ -627,5 +628,15 @@ instance PersistField Tx where
     fromPersistValue _ = Left "Has to be a PersistByteString"
 
 instance PersistFieldSql Tx where
+    sqlType _ = SqlBlob
+
+instance PersistField BloomFilter where
+    toPersistValue = PersistByteString . encode'
+    fromPersistValue (PersistByteString bs) = case decodeToEither bs of
+        Right bloom -> Right bloom
+        Left str -> Left $ T.pack str
+    fromPersistValue _ = Left "Has to be a PersistByteString"
+
+instance PersistFieldSql BloomFilter where
     sqlType _ = SqlBlob
 

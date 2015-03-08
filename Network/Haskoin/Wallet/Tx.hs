@@ -13,7 +13,6 @@ module Network.Haskoin.Wallet.Tx
 , signWalletTx
 , getOfflineTxData
 , signOfflineTxData
-, walletBloomFilter
 , getProposition
 , isTxInWallet
 , firstKeyTime
@@ -66,17 +65,17 @@ import Database.Persist
     , Key
     )
 
-import Network.Haskoin.Wallet.Account
-import Network.Haskoin.Wallet.Address
-import Network.Haskoin.Wallet.Model
-import Network.Haskoin.Wallet.Types
-
 import Network.Haskoin.Block
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Node
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
+
+import Network.Haskoin.Wallet.Account
+import Network.Haskoin.Wallet.Address
+import Network.Haskoin.Wallet.Model
+import Network.Haskoin.Wallet.Types
 
 toAccTx :: (MonadIO m, PersistUnique b, PersistQuery b)
         => DbAccTxGeneric b -> ReaderT b m AccTx
@@ -414,28 +413,6 @@ importCoin tid (tout, i) = do
         cnts <- forM dbAddrs adjustLookAhead
         return $ Just (Entity ci dbcoin, sum cnts)
 
--- Builds a redeem script given an address. Only relevant for addresses
--- linked to multisig accounts. Otherwise it returns Nothing
-getRedeem :: (MonadIO m, PersistUnique b, PersistQuery b)
-          => DbAddressGeneric b -> ReaderT b m (Maybe RedeemScript)
-getRedeem add = do
-    acc <- liftM fromJust (get $ dbAddressAccount add)
-    let deriv    = dbAddressIndex add
-        internal = dbAddressInternal add
-    return $ getRedeemIndex (dbAccountValue acc) deriv internal
-
-getRedeemIndex :: Account -> KeyIndex -> Bool -> Maybe RedeemScript
-getRedeemIndex acc deriv internal 
-    | isMSAccount acc = Just $ sortMulSig $ PayMulSig pks req
-    | otherwise       = Nothing
-  where
-    key      = head $ accountKeys acc 
-    msKeys   = tail $ accountKeys acc
-    addrKeys = fromJust $ f (AccPubKey key) msKeys deriv
-    pks      = map (toPubKeyG . xPubKey . getAddrPubKey) addrKeys
-    req      = accountRequired acc
-    f        = if internal then intMulSigKey else extMulSigKey
-
 -- Returns True if the transaction has an input that belongs to the wallet
 -- but we don't have a coin for it yet. We are missing a parent transaction.
 isOrphanTx :: (MonadIO m, PersistUnique b, PersistQuery b)
@@ -701,31 +678,6 @@ getProposition wallet name tid = do
     return tx{ txIn = map f $ txIn tx }
   where
     f ti = ti{ scriptInput = BS.empty }
-
--- | Produces a bloom filter containing all the addresses in this wallet. This
--- includes internal and external addresses. The bloom filter can be set on a
--- peer connection to filter the transactions received by that peer.
-walletBloomFilter :: (MonadIO m, PersistUnique b, PersistQuery b) 
-                  => Double
-                  -> ReaderT b m BloomFilter
-walletBloomFilter fpRate = do
-    addrs <- selectList [] []
-    rdms  <- liftM catMaybes $ forM addrs (getRedeem . entityVal)
-    pks   <- liftM catMaybes $ forM addrs (addrPubKey . entityVal)
-    -- TODO: Choose a random nonce for the bloom filter
-    let len     = length addrs + length rdms + length pks
-        -- Create bloom filter
-        bloom   = bloomCreate len fpRate 0 BloomUpdateNone
-        -- Add the Hash160 of the addresses
-        f b a   = bloomInsert b $ encode' $ getAddrHash a
-        bloom1  = foldl f bloom $ map (dbAddressValue . entityVal) addrs
-        -- Add the redeem scripts
-        g b r   = bloomInsert b $ encodeOutputBS r
-        bloom2  = foldl g bloom1 rdms
-        -- Add the public keys
-        h b p   = bloomInsert b $ encode' p
-        bloom3  = foldl h bloom2 pks
-    return bloom3
 
 -- | Return the creation time (POSIX seconds) of the first key in the wallet.
 -- This is used to ignore full/filtered blocks prior to this time.

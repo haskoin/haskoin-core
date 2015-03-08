@@ -8,7 +8,7 @@ import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 import System.ZMQ4
 
 import Control.Applicative ((<$>))
-import Control.Monad (when, forM, forever, filterM, liftM)
+import Control.Monad (when, unless, forM, forever, filterM, liftM)
 import Control.Monad.Trans (MonadIO, lift, liftIO)
 import Control.Exception (SomeException(..),  tryJust, catch)
 import Control.Concurrent (threadDelay)
@@ -22,6 +22,7 @@ import Control.Monad.Logger
     , LoggingT
     , runStdoutLoggingT
     , logError
+    , logDebug
     )
 
 import Data.Text (pack)
@@ -119,10 +120,8 @@ runSPVServer cfg = do
                         NodeStartDownload dwnE
 
                     -- Listen to SPV events and update the wallet database
-                    let runEvents =  
-                            flip evalStateT [] $
-                                sourceTBMChan eChan $$ 
-                                processEvents rChan db pool fp
+                    let runEvents = sourceTBMChan eChan $$ 
+                                    processEvents rChan db pool fp
 
                     withAsync runEvents $ \a -> do
                         link a
@@ -131,48 +130,61 @@ runSPVServer cfg = do
 
 processEvents :: (MonadLogger m, MonadIO m)
               => TBMChan NodeRequest -> DB.DB -> ConnectionPool -> Double
-              -> Sink WalletMessage (StateT [(BlockHash, Int)] m) ()
+              -> Sink WalletMessage m ()
 processEvents rChan db pool fp = awaitForever $ \req -> lift $ case req of
     WalletTx tx -> goTxs [tx] >> return ()
     WalletMerkle action dmbs -> do
+        -- Save the old best block before importing
+        oldBestE <- liftIO $ tryJust f $ runSqlPersistMPool getBestBlock pool
+        oldBest <- case oldBestE of
+            Right (ob, _) -> return ob
+            Left err -> do
+                $(logError) $ pack $ unwords
+                    [ "processEvents: An error occured:", err ]
+                return $ headerHash genesisHeader
+
         -- Import all transactions into the wallet
-        cnt <- goTxs $ concat (map merkleTxs dmbs)
-        let bh = nodeBlockHash $ head $ actionNewNodes action
-        modify $ \s -> take 10 $ (bh, cnt):s
-        win <- get
-        let bust = sum (map snd win) >= 10
-        -- Did we bust the gap ?
-        when bust $ do
-            -- Rescan from the oldest block in the window
-            let rescanBh = fst $ last win
-            -- Request a rescan as we busted the gap
-            liftIO . atomically $ writeTBMChan rChan $ 
-                NodeStartDownload $ Right rescanBh
-            -- Reset the window
-            modify $ \s -> []
+        let txs = concat $ map merkleTxs dmbs
+        cnt <- goTxs txs
+
         -- Import the merkle blocks into the wallet
         resE <- liftIO $ tryJust f $ flip runSqlPersistMPool pool $ 
             importBlocks action $ map expectedTxs dmbs
         when (isLeft resE) $ $(logError) $ pack $ unwords
             [ "processEvents: An error occured:", fromLeft resE ]
+
+        -- If we received at least 1 transaction, the node will block the
+        -- merkle block download and wait for us to continue the download.
+        unless (null txs) $ do
+            when (cnt >= 10) $ $(logDebug) 
+                "More than 10 new addresses generated. Rescanning the batch."
+                     -- If we had too many new addreses, we need to rescan this
+                     -- batch
+            let bh | cnt >= 10 = oldBest
+                     -- Otherwise, simply continue the merkle download from
+                     -- the new best block
+                   | otherwise = nodeBlockHash $ last $ actionNewNodes action
+            -- Send a message to the node to continue the download from the
+            -- requested block hash
+            liftIO . atomically $ writeTBMChan rChan $ 
+                NodeStartDownload $ Right bh
+
     _ -> return () -- Ignore full blocks
   where
     goTxs txs = do
         resE <- liftIO $ tryJust f $ flip runSqlPersistMPool pool $ do
             xs <- forM txs $ \tx -> importTx tx SourceNetwork Nothing
             let cnt = sum $ map lst3 $ catMaybes xs
-            if cnt > 0
-                then do
-                    -- Update the bloom filter if new addresses were generated
-                    bloom <- walletBloomFilter fp
-                    return (cnt, Just bloom)
-                else return (cnt, Nothing)
+            if cnt == 0 then return Nothing else do
+                -- Update the bloom filter if new addresses were generated
+                bloom <- walletBloomFilter fp
+                return $ Just (cnt, bloom)
         case resE of
             Left err -> do
                 $(logError) $ pack $ unwords 
                     [ "processEvents: An error occured:", err ]
                 return 0
-            Right (cnt, Just bloom) -> do
+            Right (Just (cnt, bloom)) -> do
                 liftIO . atomically $ writeTBMChan rChan $ NodeBloomFilter bloom
                 return cnt
             _ -> return 0

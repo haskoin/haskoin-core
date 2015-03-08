@@ -5,6 +5,7 @@ module Network.Haskoin.Wallet.Root
 , newWallet
 , initWalletDB
 , resetRescan
+, filterLen
 ) where
 
 import Control.Monad (liftM, when)
@@ -94,7 +95,7 @@ initWalletDB fpRate = do
         time <- liftIO getCurrentTime
         -- Create an initial bloom filter
         -- TODO: Compute a random nonce 
-        let bloom = bloomCreate 1000 fpRate 0 BloomUpdateNone
+        let bloom = bloomCreate (filterLen 0) fpRate 0 BloomUpdateNone
         insert_ $ DbConfig 0 (headerHash genesisHeader) bloom 0 fpRate 1 time
 
 -- Remove transaction related data from the wallet
@@ -118,4 +119,10 @@ resetRescan = do
     updateWhere [] [ DbConfigBestHeight =. 0 
                    , DbConfigBestBlock =. headerHash genesisHeader
                    ]
+
+-- Compute the size of a filter given a number of elements. Scale
+-- the filter length by powers of 2.
+filterLen :: Int -> Int
+filterLen x = 
+    round $ 2 ** (fromIntegral $ ceiling $ log (fromIntegral x) / log 2)
 

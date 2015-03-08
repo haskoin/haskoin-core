@@ -53,6 +53,7 @@ import Network.Haskoin.Util
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Account
+import Network.Haskoin.Wallet.Root
 
 toPaymentAddr :: DbAddressGeneric b -> LabeledAddress
 toPaymentAddr x = LabeledAddress (dbAddressValue x) 
@@ -285,11 +286,9 @@ incrementFilter addrs = do
     pks  <- liftM catMaybes $ forM addrs addrPubKey
     (bloom, elems, _) <- getBloomFilter
     let newElems = elems + length addrs + length rdms + length pks
-    if f newElems > f elems 
+    if filterLen newElems > filterLen elems 
         then computeNewFilter
         else setBloomFilter (addToFilter bloom addrs rdms pks) newElems
-  where
-    f x = 1000*((x `div` 1000) + 1)
 
 -- | Generate a new bloom filter from the data in the database
 computeNewFilter :: (MonadIO m, PersistUnique b, PersistQuery b) 
@@ -302,11 +301,9 @@ computeNewFilter = do
     let len    = length addrs + length rdms + length pks
         -- Generate bloom filters of length multiple of 1000
         -- TODO: Choose a random nonce for the bloom filter
-        bloom1 = bloomCreate (f len) fpRate 0 BloomUpdateNone
+        bloom1 = bloomCreate (filterLen len) fpRate 0 BloomUpdateNone
         bloom  = addToFilter bloom1 addrs rdms pks
     setBloomFilter bloom len
-  where
-    f x = 1000*((x `div` 1000) + 1)
 
 -- | Add elements to a bloom filter
 addToFilter :: BloomFilter 

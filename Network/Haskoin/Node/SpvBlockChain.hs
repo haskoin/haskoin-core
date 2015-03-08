@@ -148,7 +148,7 @@ processBlockTickle pid bid = do
             -- TODO: We could have a DoS leak here
             setPeerTickle pid bid
             --Request headers so we can connect this block
-            headerSync (ThisPeer pid) FullLocator $ Just bid
+            headerSync (ThisPeer pid) PartialLocator $ Just bid
 
 processBlockHeaders :: (HeaderTree m, MonadLogger m, MonadIO m) 
                     => PeerId -> [BlockHeader] -> StateT SpvSession m ()
@@ -164,7 +164,7 @@ processBlockHeaders pid [] = canProcessHeaders pid >>= \valid -> when valid $ do
         ((p,bid):_) -> do
             $(logDebug) $ format $ 
                 "Syncing more headers from the tickle buffer."
-            headerSync (ThisPeer p) FullLocator $ Just bid
+            headerSync (ThisPeer p) PartialLocator $ Just bid
             -- Try to download more merkle blocks
             continueMerkleDownload
         _ -> do
@@ -310,7 +310,7 @@ continueMerkleDownload = do
         let dwn = fromJust dwnM
         -- Get a batch of blocks to download
         -- TODO: Add this value to a configuration (10)
-        actionM <- runDB $ getNodeWindow dwn 1
+        actionM <- runDB $ getNodeWindow dwn 10
         case actionM of
             -- Nothing to download
             Nothing -> $(logDebug) $ format 

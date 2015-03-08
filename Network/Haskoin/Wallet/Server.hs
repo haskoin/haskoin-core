@@ -156,8 +156,8 @@ processEvents rChan db pool = awaitForever $ \req -> lift $ case req of
         unless (null txs) $ do
             when (cnt >= 10) $ $(logDebug) 
                 "More than 10 new addresses generated. Rescanning the batch."
-                     -- If we had too many new addreses, we need to rescan this
-                     -- batch
+                -- If we use addresses in the hidden gap, we must rescan
+                -- this batch.
             let bh | cnt >= 10 = oldBest
                      -- Otherwise, simply continue the merkle download from
                      -- the new best block

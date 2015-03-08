@@ -69,18 +69,23 @@ getAddress :: (MonadIO m, PersistUnique b, PersistQuery b)
            -> ReaderT b m LabeledAddress  -- ^ Payment address
 getAddress wallet name key internal = do
     Entity wk _ <- getWalletEntity wallet
-    Entity ai _ <- getAccountEntity wk name
-    liftM (toPaymentAddr . entityVal) $ getAddressEntity ai key internal
+    aEnt <- getAccountEntity wk name
+    liftM (toPaymentAddr . entityVal) $ getAddressEntity aEnt key internal
 
 getAddressEntity :: (MonadIO m, PersistUnique b, PersistQuery b)
-                 => Key (DbAccountGeneric b)
+                 => Entity (DbAccountGeneric b)
                  -> KeyIndex 
                  -> Bool 
                  -> ReaderT b m (Entity (DbAddressGeneric b))
-getAddressEntity ai key internal = do
+getAddressEntity (Entity ai av) key internal = do
+    addrCnt <- count [ DbAddressAccount ==. ai 
+                     , DbAddressInternal ==. internal
+                     ]
     entM <- getBy $ UniqueAddressKey ai key internal
     when (isNothing entM) $ liftIO $ 
         throwIO $ WalletException "The address has not been generated yet"
+    when ((fromIntegral key) + 1 > addrCnt - dbAccountGap av) $ liftIO $
+        throwIO $ WalletException "The address is in the hidden gap"
     return $ fromJust entM
 
 -- | Returns all addresses for an account.
@@ -91,11 +96,16 @@ addressList :: (MonadIO m, PersistUnique b, PersistQuery b)
             -> ReaderT b m [LabeledAddress] -- ^ Payment addresses
 addressList wallet name internal = do
     Entity wk _ <- getWalletEntity wallet
-    Entity ai _ <- getAccountEntity wk name
+    Entity ai av <- getAccountEntity wk name
+    addrCnt <- count [ DbAddressAccount ==. ai 
+                     , DbAddressInternal ==. internal
+                     ]
     addrs <- selectList [ DbAddressAccount ==. ai 
                         , DbAddressInternal ==. internal
                         ]
-                        [ Asc DbAddressId ]
+                        [ Asc DbAddressId 
+                        , LimitTo $ addrCnt - dbAccountGap av
+                        ]
     return $ map (toPaymentAddr . entityVal) addrs
 
 -- | Returns a page of addresses for an account. Pages are numbered starting
@@ -114,21 +124,23 @@ addressPage wallet name pageNum resPerPage internal
     | resPerPage < 1 = liftIO $ throwIO $ WalletException $
         unwords ["Invalid results per page:",show resPerPage]
     | otherwise = do
-        Entity wk _ <- getWalletEntity wallet
-        Entity ai _ <- getAccountEntity wk name
-        addrCount   <- addressCount ai
-        let maxPage = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
+        Entity wk _  <- getWalletEntity wallet
+        Entity ai av <- getAccountEntity wk name
+        totCount     <- addressCount ai
+        let addrCount = totCount - dbAccountGap av
+            maxPage = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
             page | pageNum == 0 = maxPage
                  | otherwise    = pageNum
+            offset = (page - 1) * resPerPage
         when (page > maxPage) $ liftIO $ throwIO $ WalletException $ 
-            unwords ["The page number", show pageNum, "is too high"]
+            unwords [ "The page number", show pageNum, "is too high" ]
         addrs <- selectList 
                 [ DbAddressAccount ==. ai
                 , DbAddressInternal ==. internal
                 ] 
                 [ Asc DbAddressId
-                , LimitTo resPerPage
-                , OffsetBy $ (page - 1) * resPerPage
+                , LimitTo $ min resPerPage (addrCount - offset)
+                , OffsetBy offset
                 ]
         return $ ((map (toPaymentAddr . entityVal) addrs), maxPage)
   where
@@ -170,7 +182,8 @@ unusedAddrsGeneric (Entity ai acc) internal = do
                         , DbAddressInternal ==. internal
                         ]
                         [ Desc DbAddressIndex
-                        , LimitTo (dbAccountGap acc)
+                        , OffsetBy $ dbAccountGap acc
+                        , LimitTo $ dbAccountGap acc
                         ]
     return $ reverse $ map entityVal addrs
 
@@ -226,8 +239,8 @@ setAddrLabel :: (MonadIO m, PersistQuery b, PersistUnique b)
              -> ReaderT b m LabeledAddress -- ^ New address information
 setAddrLabel wallet name key label = do
     Entity wk _ <- getWalletEntity wallet
-    Entity ai _ <- getAccountEntity wk name
-    (Entity i add) <- getAddressEntity ai key False
+    aEnt <- getAccountEntity wk name
+    (Entity i add) <- getAddressEntity aEnt key False
     let new = add { dbAddressLabel = label }
     replace i new
     return $ toPaymentAddr new
@@ -253,7 +266,7 @@ adjustLookAhead a = do
                  , DbAddressAccount ==. ai
                  , DbAddressInternal ==. dbAddressInternal a
                  ]
-    let diff = dbAccountGap acc - cnt
+    let diff = (2 * dbAccountGap acc) - cnt
     when (diff > 0) $ do
         _ <- newAddrsGeneric (Entity ai acc) (dbAddressInternal a) diff
         return ()
@@ -271,8 +284,8 @@ addLookAhead :: (MonadIO m, PersistUnique b, PersistQuery b)
 addLookAhead wallet name cnt = do
     Entity wk _ <- getWalletEntity wallet
     accE@(Entity ai acc) <- getAccountEntity wk name
-    _ <- newAddrsGeneric accE True  cnt
-    _ <- newAddrsGeneric accE False cnt
+    _ <- newAddrsGeneric accE True  $ cnt * 2
+    _ <- newAddrsGeneric accE False $ cnt * 2
     replace ai acc { dbAccountGap = dbAccountGap acc + cnt }
     return ()
 

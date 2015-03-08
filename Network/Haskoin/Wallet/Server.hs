@@ -101,6 +101,8 @@ runSPVServer cfg = do
                 let nodes = configBTCNodes cfg 
                     -- Run the SPV monad stack
                     runNode = runLogging . (flip evalStateT db)
+                    -- Default gap
+                    gap = configGap cfg
 
                 -- Compute our bloom filter
                 bloom <- liftM fst3 $ runSqlPersistMPool getBloomFilter pool
@@ -119,7 +121,7 @@ runSPVServer cfg = do
 
                     -- Listen to SPV events and update the wallet database
                     let runEvents = sourceTBMChan eChan $$ 
-                                    processEvents rChan db pool
+                                    processEvents rChan db pool gap
 
                     withAsync runEvents $ \a -> do
                         link a
@@ -127,9 +129,9 @@ runSPVServer cfg = do
                         runWalletApp $ HandlerSession cfg pool $ Just rChan
 
 processEvents :: (MonadLogger m, MonadIO m)
-              => TBMChan NodeRequest -> DB.DB -> ConnectionPool
+              => TBMChan NodeRequest -> DB.DB -> ConnectionPool -> Int
               -> Sink WalletMessage m ()
-processEvents rChan db pool = awaitForever $ \req -> lift $ case req of
+processEvents rChan db pool gap = awaitForever $ \req -> lift $ case req of
     WalletTx tx -> goTxs [tx] >> return ()
     WalletMerkle action dmbs -> do
         -- Save the old best block before importing
@@ -154,11 +156,11 @@ processEvents rChan db pool = awaitForever $ \req -> lift $ case req of
         -- If we received at least 1 transaction, the node will block the
         -- merkle block download and wait for us to continue the download.
         unless (null txs) $ do
-            when (cnt >= 10) $ $(logDebug) 
-                "More than 10 new addresses generated. Rescanning the batch."
+            when (cnt > gap) $ $(logDebug)
+                "More than gap new addresses generated. Rescanning the batch."
                 -- If we use addresses in the hidden gap, we must rescan
                 -- this batch.
-            let bh | cnt >= 10 = oldBest
+            let bh | cnt > gap = oldBest
                      -- Otherwise, simply continue the merkle download from
                      -- the new best block
                    | otherwise = nodeBlockHash $ last $ actionNewNodes action

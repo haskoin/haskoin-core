@@ -83,3 +83,7 @@ use-testnet: "_env:USE_TESTNET:false"
 
 # Haskoin working directory. Either absolute path or relative to user’s home.
 work-dir: "_env:WORK_DIR:.hw"
+
+# Log level. Valid values are debug, info, warn and error.
+log-level: "_env:LOG_LEVEL:info"
+

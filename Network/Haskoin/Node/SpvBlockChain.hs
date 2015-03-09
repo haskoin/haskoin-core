@@ -13,16 +13,13 @@ import Control.Concurrent.Async.Lifted (withAsync, link)
 import Control.Monad.Trans.Control (MonadBaseControl)
 
 import Data.Text (Text, pack)
-import Data.Maybe (isJust, isNothing, fromJust, fromMaybe)
+import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Time.Clock (UTCTime, getCurrentTime, addUTCTime)
 import Data.Unique (newUnique, hashUnique)
 import Data.Conduit (Sink, awaitForever, ($$))
 import Data.Conduit.TMChan (TBMChan, writeTBMChan, newTBMChan, sourceTBMChan)
-import qualified Data.Map as M 
-    ( Map, delete, lookup, null, keys
-    , empty, size, insert, assocs, partition
-    )
+import qualified Data.Map as M (Map, keys , empty, insert, assocs, partition)
 
 import Network.Haskoin.Block
 import Network.Haskoin.Crypto

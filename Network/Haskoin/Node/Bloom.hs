@@ -114,7 +114,7 @@ instance Binary BloomFilter where
         put flags
 
 -- | Set a new bloom filter on the peer connection.
-newtype FilterLoad = FilterLoad { getBloomFilter :: BloomFilter }
+newtype FilterLoad = FilterLoad { filterLoadBloomFilter :: BloomFilter }
     deriving (Eq, Show, Read)
 
 instance NFData FilterLoad where

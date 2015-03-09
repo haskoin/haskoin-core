@@ -17,8 +17,9 @@ import Control.Monad.State (evalStateT)
 import Control.Monad.Trans.Control (MonadBaseControl, control, liftBaseOp)
 import Control.Monad.Logger 
     ( MonadLogger
-    , LoggingT
     , runStdoutLoggingT
+    , LogLevel(..)
+    , LoggingT(..)
     , logError
     , logDebug
     )
@@ -56,8 +57,10 @@ import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Server.Handler
 import Network.Haskoin.Wallet.Database
 
-runLogging :: MonadIO m => LoggingT m a -> m a 
-runLogging = runStdoutLoggingT
+-- Filter logs by their log level
+filterLevel :: (LogLevel -> Bool) -> LoggingT m a -> LoggingT m a
+filterLevel p (LoggingT f) = LoggingT $ \logger ->
+    f $ \loc src level msg -> when (p level) $ logger loc src level msg
 
 runSPVServer :: Config -> IO ()
 runSPVServer cfg = do
@@ -70,6 +73,9 @@ runSPVServer cfg = do
         flip runSqlPersistMPool pool $ do 
             _ <- runMigration migrateWallet 
             initWalletDB $ configBloomFP cfg
+
+        let logFilter level = level >= configLogLevel cfg
+            runLogging = runStdoutLoggingT . filterLevel logFilter
 
         if configMode cfg == SPVOffline
             then runLogging $ runWalletApp $ HandlerSession cfg pool Nothing

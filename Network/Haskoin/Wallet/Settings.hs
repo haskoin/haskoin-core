@@ -10,6 +10,7 @@ module Network.Haskoin.Wallet.Settings
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (forM, mzero)
 import Control.Exception (throw)
+import Control.Monad.Logger (LogLevel(..))
 
 import Data.FileEmbed (embedFile)
 import Data.Yaml (decodeEither')
@@ -85,6 +86,7 @@ data Config = Config
     -- ^ Log file
     , configPidFile     :: !FilePath
     -- ^ PID File
+    , configLogLevel    :: !LogLevel
     } 
 
 instance FromJSON Config where
@@ -111,6 +113,7 @@ instance FromJSON Config where
         configDatabase  <- i =<< o .: "database" 
         configLogFile   <- o .: "log-file"
         configPidFile   <- o .: "pid-file"
+        configLogLevel  <- j =<< o .: "log-level"
         return Config {..}
       where
         f format = case format of
@@ -125,6 +128,12 @@ instance FromJSON Config where
             String "offline" -> return SPVOffline
             _ -> mzero
         i = withObject "database" $ \v -> v .: databaseEngine
+        j level = case level of
+            String "debug" -> return LevelDebug
+            String "info"  -> return LevelInfo
+            String "warn"  -> return LevelWarn
+            String "error" -> return LevelError
+            _              -> mzero
 
 -- | Raw bytes at compile time of @config/config.yml@
 configBS :: BS.ByteString

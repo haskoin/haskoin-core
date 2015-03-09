@@ -28,7 +28,6 @@ import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.Reader as R (runReaderT)
 
 import Data.FileEmbed (embedFile)
-import Data.Maybe (fromMaybe)
 import qualified Data.Text as T (pack, unpack)
 
 import Yesod.Default.Config2 (loadAppSettings, useEnv)
@@ -136,7 +135,7 @@ getConfig fs = do
   where
     confFiles conf Nothing =
         [ configFile conf, configDir conf </> configFile conf ]
-    confFiles conf homeM@(Just home)
+    confFiles conf homeM@(Just _)
         | isAbsolute (configFile conf) = [ configFile conf ]
         | otherwise = [ workDir conf homeM </> configFile conf ]
     workDir conf (Just home)

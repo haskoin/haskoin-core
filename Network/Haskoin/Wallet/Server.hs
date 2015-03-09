@@ -3,19 +3,17 @@ module Network.Haskoin.Wallet.Server
 , stopSPVServer
 ) where
 
-import System.Posix.Env (getEnv)
 import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 import System.ZMQ4
 
 import Control.Applicative ((<$>))
-import Control.Monad (when, unless, forM, forever, filterM, liftM)
+import Control.Monad (when, unless, forM, forever, liftM)
 import Control.Monad.Trans (MonadIO, lift, liftIO)
 import Control.Exception (SomeException(..),  tryJust, catch)
-import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM.TBMChan (writeTBMChan)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async.Lifted (withAsync, link)
-import Control.Monad.State (StateT, evalStateT, get, modify)
+import Control.Monad.State (evalStateT)
 import Control.Monad.Trans.Control (MonadBaseControl, control, liftBaseOp)
 import Control.Monad.Logger 
     ( MonadLogger
@@ -27,12 +25,11 @@ import Control.Monad.Logger
 
 import Data.Text (pack)
 import Data.Time.Clock.POSIX (getPOSIXTime)
-import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe, maybeToList)
+import Data.Maybe (catMaybes)
 import Data.Aeson (Value, toJSON, decode, encode)
 import Data.Conduit (Sink, awaitForever, ($$))
 import Data.Conduit.TMChan (TBMChan, sourceTBMChan)
 
-import Yesod.Default.Config2 (loadAppSettings, useEnv)
 import Database.Persist.Sql 
     ( ConnectionPool
     , runSqlPersistMPool
@@ -48,7 +45,6 @@ import qualified Database.LevelDB.Base as DB
 import Network.Haskoin.Constants
 import Network.Haskoin.Node
 import Network.Haskoin.Util
-import Network.Haskoin.Crypto
 import Network.Haskoin.Block
 
 import Network.Haskoin.Wallet.Root

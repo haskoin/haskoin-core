@@ -123,6 +123,8 @@ resetRescan = do
 -- Compute the size of a filter given a number of elements. Scale
 -- the filter length by powers of 2.
 filterLen :: Int -> Int
-filterLen x = 
-    round $ 2 ** (fromIntegral $ ceiling $ log (fromIntegral x) / log 2)
+filterLen = round . pow2 . ceiling . log2
+  where
+    pow2 x = (2 :: Double) ** (fromInteger x)
+    log2 x = log (fromIntegral x) / log (2 :: Double)
 

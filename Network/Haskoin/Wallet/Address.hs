@@ -42,7 +42,6 @@ import Database.Persist
     , entityVal
     , (=.), (==.), (>.)
     , SelectOpt( Asc, Desc, LimitTo, OffsetBy )
-    , Key
     )
 
 import Network.Haskoin.Node

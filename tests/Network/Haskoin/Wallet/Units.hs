@@ -186,13 +186,29 @@ tests =
                     _ <- addLookAhead "main" "default" 5
                     addressPage "main" "default" 2 5 False
 
+        , testCase "Setting a label on a hidden address key should fail" $
+            assertException
+                (WalletException "The address is in the hidden gap") $ do
+                    _ <- newWallet "main" $ BS.pack [0] 
+                    _ <- newAccount "main" "default"
+                    _ <- addLookAhead "main" "default" 5
+                    setAddrLabel "main" "default" 5 "Gym membership"
+
         , testCase "Setting a label on an invalid address key should fail" $
             assertException
                 (WalletException "The address has not been generated yet") $ do
                     _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
                     _ <- addLookAhead "main" "default" 5
-                    setAddrLabel "main" "default" 5 "Gym membership"
+                    setAddrLabel "main" "default" 10 "Gym membership"
+
+        , testCase "Requesting the private key on a hidden address key should fail" $
+            assertException
+                (WalletException "The address is in the hidden gap") $ do
+                    _ <- newWallet "main" $ BS.pack [0] 
+                    _ <- newAccount "main" "default"
+                    _ <- addLookAhead "main" "default" 5
+                    addressPrvKey "main" "default" 9
 
         , testCase "Requesting the private key on an invalid address key should fail" $
             assertException
@@ -200,7 +216,7 @@ tests =
                     _ <- newWallet "main" $ BS.pack [0] 
                     _ <- newAccount "main" "default"
                     _ <- addLookAhead "main" "default" 5
-                    addressPrvKey "main" "default" 5
+                    addressPrvKey "main" "default" 10
         ]
     , testGroup "Transaction import tests"
         [ testCase "Importing orphan tx" $ runUnit testImportOrphan
@@ -230,7 +246,7 @@ runUnit :: App a -> Assertion
 runUnit action = do
     _ <- runSqlite ":memory:" $ do
         _ <- runMigrationSilent migrateWallet 
-        initWalletDB
+        initWalletDB 0.0001
         action
     return ()
 

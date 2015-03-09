@@ -57,7 +57,6 @@ import Database.Persist
     , insert_
     , insert
     , insertUnique
-    , replace
     , count
     , delete
     , (=.), (==.)
@@ -68,7 +67,6 @@ import Database.Persist
 import Network.Haskoin.Block
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
-import Network.Haskoin.Node
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 

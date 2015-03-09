@@ -19,6 +19,8 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Node
 import Network.Haskoin.Transaction
 import Network.Haskoin.Block
+import Network.Haskoin.Util
+
 import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Account
@@ -236,7 +238,7 @@ postTxsR wallet name action = case action of
         $(logInfo) $ T.unwords 
             [ "[ZeroMQ] CreateTx", wallet, name, T.pack $ encodeTxHashLE tid ]
         whenOnline $ when complete $ do
-            when genA updateNodeFilter
+            when (genA > 0) updateNodeFilter
             sendSPV . NodePublishTx =<< runDB (getTx tid)
         return $ toJSON $ TxHashStatusRes tid complete
     SignTx tx finalize -> do
@@ -246,7 +248,7 @@ postTxsR wallet name action = case action of
             , "( Complete:", T.pack $ show complete, ")"
             ]
         whenOnline $ when complete $ do
-            when genA updateNodeFilter
+            when (genA > 0) updateNodeFilter
             sendSPV . NodePublishTx =<< runDB (getTx tid)
         return $ toJSON $ TxHashStatusRes tid complete
     SignOfflineTxData otd finalize -> do
@@ -268,7 +270,7 @@ postTxsR wallet name action = case action of
             , "( Complete:", T.pack $ show complete, ")"
             ]
         whenOnline $ when complete $ do
-            when genA updateNodeFilter
+            when (genA > 0) updateNodeFilter
             sendSPV . NodePublishTx =<< runDB (getTx tid)
         return $ toJSON $ TxHashStatusRes tid complete
 
@@ -346,9 +348,8 @@ whenOnline handler = do
     when (mode == SPVOnline) handler
 
 updateNodeFilter :: MonadIO m => Handler m ()
-updateNodeFilter = do
-    bloomFP <- configBloomFP `liftM` S.gets handlerConfig
-    sendSPV . NodeBloomFilter =<< runDB (walletBloomFilter bloomFP)
+updateNodeFilter = sendSPV . NodeBloomFilter . fst3 =<< runDB getBloomFilter
 
 adjustFCTime :: Timestamp -> Timestamp
 adjustFCTime ts = fromInteger $ max 0 $ (toInteger ts) - 86400 * 7
+

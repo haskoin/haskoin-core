@@ -11,16 +11,19 @@ module Network.Haskoin.Wallet.Address
 , addressPrvKey
 , addLookAhead
 , adjustLookAhead
-, addrPubKey
 , toPaymentAddr
+, getBloomFilter
+, getRedeem
+, getRedeemIndex
+, addrPubKey
 ) where
 
-import Control.Monad (liftM, when)
+import Control.Monad (liftM, when, forM)
 import Control.Monad.Reader (ReaderT)
 import Control.Exception (throwIO)
 import Control.Monad.Trans (MonadIO, liftIO)
 
-import Data.Maybe (fromJust, isNothing)
+import Data.Maybe (fromJust, isNothing, catMaybes)
 import Data.Time (getCurrentTime)
 import qualified Data.Text as T (Text, null)
 
@@ -35,16 +38,21 @@ import Database.Persist
     , selectList
     , selectFirst
     , insertMany
+    , updateWhere
     , entityVal
-    , (==.), (>.)
+    , (=.), (==.), (>.)
     , SelectOpt( Asc, Desc, LimitTo, OffsetBy )
-    , Key
     )
 
+import Network.Haskoin.Node
+import Network.Haskoin.Script
 import Network.Haskoin.Crypto
+import Network.Haskoin.Util
+
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Account
+import Network.Haskoin.Wallet.Root
 
 toPaymentAddr :: DbAddressGeneric b -> LabeledAddress
 toPaymentAddr x = LabeledAddress (dbAddressValue x) 
@@ -60,32 +68,24 @@ getAddress :: (MonadIO m, PersistUnique b, PersistQuery b)
            -> ReaderT b m LabeledAddress  -- ^ Payment address
 getAddress wallet name key internal = do
     Entity wk _ <- getWalletEntity wallet
-    Entity ai _ <- getAccountEntity wk name
-    liftM (toPaymentAddr . entityVal) $ getAddressEntity ai key internal
+    aEnt <- getAccountEntity wk name
+    liftM (toPaymentAddr . entityVal) $ getAddressEntity aEnt key internal
 
 getAddressEntity :: (MonadIO m, PersistUnique b, PersistQuery b)
-                 => Key (DbAccountGeneric b)
+                 => Entity (DbAccountGeneric b)
                  -> KeyIndex 
                  -> Bool 
                  -> ReaderT b m (Entity (DbAddressGeneric b))
-getAddressEntity ai key internal = do
+getAddressEntity (Entity ai av) key internal = do
+    addrCnt <- count [ DbAddressAccount ==. ai 
+                     , DbAddressInternal ==. internal
+                     ]
     entM <- getBy $ UniqueAddressKey ai key internal
     when (isNothing entM) $ liftIO $ 
         throwIO $ WalletException "The address has not been generated yet"
+    when ((fromIntegral key) + 1 > addrCnt - dbAccountGap av) $ liftIO $
+        throwIO $ WalletException "The address is in the hidden gap"
     return $ fromJust entM
-
-addrPubKey :: (MonadIO m, PersistUnique b, PersistQuery b)
-           => DbAddressGeneric b
-           -> ReaderT b m (Maybe PubKeyC)
-addrPubKey add = do
-    acc <- liftM fromJust (get $ dbAddressAccount add)
-    if isMSAccount (dbAccountValue acc) then return Nothing else do
-        let deriv    = dbAddressIndex add
-            internal = dbAddressInternal add
-            accKey   = accountKey $ dbAccountValue acc
-            f        = if internal then intPubKey else extPubKey
-            pk       = fromJust $ f accKey deriv
-        return $ Just $ xPubKey $ getAddrPubKey pk
 
 -- | Returns all addresses for an account.
 addressList :: (MonadIO m, PersistUnique b, PersistQuery b)
@@ -95,11 +95,16 @@ addressList :: (MonadIO m, PersistUnique b, PersistQuery b)
             -> ReaderT b m [LabeledAddress] -- ^ Payment addresses
 addressList wallet name internal = do
     Entity wk _ <- getWalletEntity wallet
-    Entity ai _ <- getAccountEntity wk name
+    Entity ai av <- getAccountEntity wk name
+    addrCnt <- count [ DbAddressAccount ==. ai 
+                     , DbAddressInternal ==. internal
+                     ]
     addrs <- selectList [ DbAddressAccount ==. ai 
                         , DbAddressInternal ==. internal
                         ]
-                        [ Asc DbAddressId ]
+                        [ Asc DbAddressId 
+                        , LimitTo $ addrCnt - dbAccountGap av
+                        ]
     return $ map (toPaymentAddr . entityVal) addrs
 
 -- | Returns a page of addresses for an account. Pages are numbered starting
@@ -118,21 +123,23 @@ addressPage wallet name pageNum resPerPage internal
     | resPerPage < 1 = liftIO $ throwIO $ WalletException $
         unwords ["Invalid results per page:",show resPerPage]
     | otherwise = do
-        Entity wk _ <- getWalletEntity wallet
-        Entity ai _ <- getAccountEntity wk name
-        addrCount   <- addressCount ai
-        let maxPage = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
+        Entity wk _  <- getWalletEntity wallet
+        Entity ai av <- getAccountEntity wk name
+        totCount     <- addressCount ai
+        let addrCount = totCount - dbAccountGap av
+            maxPage = max 1 $ (addrCount + resPerPage - 1) `div` resPerPage
             page | pageNum == 0 = maxPage
                  | otherwise    = pageNum
+            offset = (page - 1) * resPerPage
         when (page > maxPage) $ liftIO $ throwIO $ WalletException $ 
-            unwords ["The page number", show pageNum, "is too high"]
+            unwords [ "The page number", show pageNum, "is too high" ]
         addrs <- selectList 
                 [ DbAddressAccount ==. ai
                 , DbAddressInternal ==. internal
                 ] 
                 [ Asc DbAddressId
-                , LimitTo resPerPage
-                , OffsetBy $ (page - 1) * resPerPage
+                , LimitTo $ min resPerPage (addrCount - offset)
+                , OffsetBy offset
                 ]
         return $ ((map (toPaymentAddr . entityVal) addrs), maxPage)
   where
@@ -174,7 +181,8 @@ unusedAddrsGeneric (Entity ai acc) internal = do
                         , DbAddressInternal ==. internal
                         ]
                         [ Desc DbAddressIndex
-                        , LimitTo (dbAccountGap acc)
+                        , OffsetBy $ dbAccountGap acc
+                        , LimitTo $ dbAccountGap acc
                         ]
     return $ reverse $ map entityVal addrs
 
@@ -206,6 +214,8 @@ newAddrsGeneric (Entity ai acc) internal cnt = do
     let build (a,i) = DbAddress a "" i ai internal time
         as = map build . take cnt $ f nxtIdx
     _ <- insertMany as
+    -- Add the new addresses to the bloom filter
+    incrementFilter as
     return as
   where 
     f idx | isMSAccount $ dbAccountValue acc = 
@@ -228,8 +238,8 @@ setAddrLabel :: (MonadIO m, PersistQuery b, PersistUnique b)
              -> ReaderT b m LabeledAddress -- ^ New address information
 setAddrLabel wallet name key label = do
     Entity wk _ <- getWalletEntity wallet
-    Entity ai _ <- getAccountEntity wk name
-    (Entity i add) <- getAddressEntity ai key False
+    aEnt <- getAccountEntity wk name
+    (Entity i add) <- getAddressEntity aEnt key False
     let new = add { dbAddressLabel = label }
     replace i new
     return $ toPaymentAddr new
@@ -255,7 +265,7 @@ adjustLookAhead a = do
                  , DbAddressAccount ==. ai
                  , DbAddressInternal ==. dbAddressInternal a
                  ]
-    let diff = dbAccountGap acc - cnt
+    let diff = (2 * dbAccountGap acc) - cnt
     when (diff > 0) $ do
         _ <- newAddrsGeneric (Entity ai acc) (dbAddressInternal a) diff
         return ()
@@ -273,8 +283,115 @@ addLookAhead :: (MonadIO m, PersistUnique b, PersistQuery b)
 addLookAhead wallet name cnt = do
     Entity wk _ <- getWalletEntity wallet
     accE@(Entity ai acc) <- getAccountEntity wk name
-    _ <- newAddrsGeneric accE True  cnt
-    _ <- newAddrsGeneric accE False cnt
+    _ <- newAddrsGeneric accE True  $ cnt * 2
+    _ <- newAddrsGeneric accE False $ cnt * 2
     replace ai acc { dbAccountGap = dbAccountGap acc + cnt }
     return ()
+
+{- Bloom filters -}
+
+-- | Add the given addresses to the bloom filter 
+incrementFilter :: (MonadIO m, PersistUnique b, PersistQuery b)
+                => [DbAddressGeneric b] -> ReaderT b m ()
+incrementFilter addrs = do
+    rdms <- liftM catMaybes $ forM addrs getRedeem
+    pks  <- liftM catMaybes $ forM addrs addrPubKey
+    (bloom, elems, _) <- getBloomFilter
+    let newElems = elems + length addrs + length rdms + length pks
+    if filterLen newElems > filterLen elems 
+        then computeNewFilter
+        else setBloomFilter (addToFilter bloom addrs rdms pks) newElems
+
+-- | Generate a new bloom filter from the data in the database
+computeNewFilter :: (MonadIO m, PersistUnique b, PersistQuery b) 
+                 => ReaderT b m ()
+computeNewFilter = do
+    (_, _, fpRate) <- getBloomFilter
+    addrs <- liftM (map entityVal) $ selectList [] []
+    rdms  <- liftM catMaybes $ forM addrs getRedeem
+    pks   <- liftM catMaybes $ forM addrs addrPubKey
+    let len    = length addrs + length rdms + length pks
+        -- Generate bloom filters of length multiple of 1000
+        -- TODO: Choose a random nonce for the bloom filter
+        bloom1 = bloomCreate (filterLen len) fpRate 0 BloomUpdateNone
+        bloom  = addToFilter bloom1 addrs rdms pks
+    setBloomFilter bloom len
+
+-- | Add elements to a bloom filter
+addToFilter :: BloomFilter 
+            -> [DbAddressGeneric b] 
+            -> [RedeemScript] 
+            -> [PubKeyC]
+            ->  BloomFilter
+addToFilter bloom addrs rdms pks = 
+    bloom3
+  where
+    -- Add the Hash160 of the addresses
+    f b a  = bloomInsert b $ encode' $ getAddrHash a
+    bloom1 = foldl f bloom $ map dbAddressValue addrs
+    -- Add the redeem scripts
+    g b r  = bloomInsert b $ encodeOutputBS r
+    bloom2 = foldl g bloom1 rdms
+    -- Add the public keys
+    h b p  = bloomInsert b $ encode' p
+    bloom3 = foldl h bloom2 pks
+
+-- | Produces a bloom filter containing all the addresses in this wallet. This
+-- includes internal and external addresses. The bloom filter can be set on a
+-- peer connection to filter the transactions received by that peer.
+getBloomFilter :: (MonadIO m, PersistQuery b) 
+               => ReaderT b m (BloomFilter, Int, Double)
+getBloomFilter = do
+    cnfM <- selectFirst [] []
+    case cnfM of
+        Nothing -> liftIO $ throwIO $
+            WalletException "getBloomFilter: Database not initialized"
+        Just (Entity _ cnf) -> 
+            return ( dbConfigBloomFilter cnf
+                   , dbConfigBloomElems cnf
+                   , dbConfigBloomFp cnf
+                   )
+
+-- | Save a bloom filter and the number of elements it contains
+setBloomFilter :: (MonadIO m, PersistQuery b)
+               => BloomFilter -> Int -> ReaderT b m ()
+setBloomFilter bloom elems = 
+    updateWhere [] [ DbConfigBloomFilter =. bloom
+                   , DbConfigBloomElems  =. elems
+                   ]
+
+-- Builds a redeem script given an address. Only relevant for addresses
+-- linked to multisig accounts. Otherwise it returns Nothing
+getRedeem :: (MonadIO m, PersistUnique b, PersistQuery b)
+          => DbAddressGeneric b -> ReaderT b m (Maybe RedeemScript)
+getRedeem add = do
+    acc <- liftM fromJust (get $ dbAddressAccount add)
+    let deriv    = dbAddressIndex add
+        internal = dbAddressInternal add
+    return $ getRedeemIndex (dbAccountValue acc) deriv internal
+
+getRedeemIndex :: Account -> KeyIndex -> Bool -> Maybe RedeemScript
+getRedeemIndex acc deriv internal 
+    | isMSAccount acc = Just $ sortMulSig $ PayMulSig pks req
+    | otherwise       = Nothing
+  where
+    key      = head $ accountKeys acc 
+    msKeys   = tail $ accountKeys acc
+    addrKeys = fromJust $ f (AccPubKey key) msKeys deriv
+    pks      = map (toPubKeyG . xPubKey . getAddrPubKey) addrKeys
+    req      = accountRequired acc
+    f        = if internal then intMulSigKey else extMulSigKey
+
+addrPubKey :: (MonadIO m, PersistUnique b, PersistQuery b)
+           => DbAddressGeneric b
+           -> ReaderT b m (Maybe PubKeyC)
+addrPubKey add = do
+    acc <- liftM fromJust (get $ dbAddressAccount add)
+    if isMSAccount (dbAccountValue acc) then return Nothing else do
+        let deriv    = dbAddressIndex add
+            internal = dbAddressInternal add
+            accKey   = accountKey $ dbAccountValue acc
+            f        = if internal then intPubKey else extPubKey
+            pk       = fromJust $ f accKey deriv
+        return $ Just $ xPubKey $ getAddrPubKey pk
 

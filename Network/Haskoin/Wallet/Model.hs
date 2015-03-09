@@ -45,6 +45,7 @@ import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Transaction
 import Network.Haskoin.Block
 import Network.Haskoin.Crypto 
+import Network.Haskoin.Node
 
 share [ mkPersist sqlSettings{ mpsGeneric = True }
       , mkMigrate "migrateWallet"

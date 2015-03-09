@@ -78,5 +78,8 @@ DbOrphan
 DbConfig
     bestHeight Word32
     bestBlock BlockHash
+    bloomFilter BloomFilter
+    bloomElems Int
+    bloomFp Double
     version Int
     created UTCTime

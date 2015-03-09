@@ -43,6 +43,7 @@ module Network.Haskoin.Wallet
 , addLookAhead
 , addressPrvKey
 , toPaymentAddr
+, getBloomFilter
 
 -- *Balance Commands
 , addressBalance
@@ -66,7 +67,6 @@ module Network.Haskoin.Wallet
 , signWalletTx
 , getOfflineTxData
 , signOfflineTxData
-, walletBloomFilter
 , getProposition
 , isTxInWallet
 , firstKeyTime

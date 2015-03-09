@@ -5,6 +5,7 @@ module Network.Haskoin.Wallet.Root
 , newWallet
 , initWalletDB
 , resetRescan
+, filterLen
 ) where
 
 import Control.Monad (liftM, when)
@@ -37,6 +38,7 @@ import Database.Persist
 import Network.Haskoin.Crypto
 import Network.Haskoin.Block
 import Network.Haskoin.Constants
+import Network.Haskoin.Node
 
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
@@ -86,12 +88,15 @@ newWallet wname seed
         insert_ $ DbWallet wname wallet Nothing time
         return wallet
 
-initWalletDB :: (MonadIO m, PersistQuery b) => ReaderT b m ()
-initWalletDB = do
+initWalletDB :: (MonadIO m, PersistQuery b) => Double -> ReaderT b m ()
+initWalletDB fpRate = do
     prevConfig <- selectFirst [] [Asc DbConfigCreated]
     when (isNothing prevConfig) $ do
         time <- liftIO getCurrentTime
-        insert_ $ DbConfig 0 (headerHash genesisHeader) 1 time
+        -- Create an initial bloom filter
+        -- TODO: Compute a random nonce 
+        let bloom = bloomCreate (filterLen 0) fpRate 0 BloomUpdateNone
+        insert_ $ DbConfig 0 (headerHash genesisHeader) bloom 0 fpRate 1 time
 
 -- Remove transaction related data from the wallet
 resetRescan :: (MonadIO m, PersistQuery b) => ReaderT b m ()
@@ -111,6 +116,15 @@ resetRescan = do
     -- Delete all orphan transactions
     deleteWhere ([] :: PersistQuery b => [Filter (DbOrphanGeneric b)])
     -- Reset best block information
-    updateWhere [] [ DbConfigBestHeight =. 0 ]
+    updateWhere [] [ DbConfigBestHeight =. 0 
+                   , DbConfigBestBlock =. headerHash genesisHeader
+                   ]
 
+-- Compute the size of a filter given a number of elements. Scale
+-- the filter length by powers of 2.
+filterLen :: Int -> Int
+filterLen = round . pow2 . ceiling . log2
+  where
+    pow2 x = (2 :: Double) ** (fromInteger x)
+    log2 x = log (fromIntegral x) / log (2 :: Double)
 

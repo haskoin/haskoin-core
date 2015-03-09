@@ -153,7 +153,7 @@ processBlockHeaders :: (HeaderTree m, MonadLogger m, MonadIO m)
 processBlockHeaders pid [] = canProcessHeaders pid >>= \valid -> when valid $ do
     -- TODO: Should we check the tickles to continue the header download ?
     $(logInfo) $ format $ unwords 
-        [ "Received empty headers from peer", show $ hashUnique pid ]
+        [ "Finished downloading headers from peer", show $ hashUnique pid ]
     -- Try to sync more headers from remaining tickles
     tickles <- gets peerTickles
     case M.assocs tickles of
@@ -225,7 +225,7 @@ headerSync :: (HeaderTree m, MonadLogger m, MonadIO m)
 headerSync resource locType hStopM = do
     -- Only download more headers if a header request is not already sent
     gets syncResource >>= \resM -> when (isNothing resM) $ do
-        $(logInfo) $ format $ unwords 
+        $(logDebug) $ format $ unwords 
             [ "Requesting more headers with block locator type", show locType ]
         -- Save the deadline for this job (2 minutes). If we don't get a
         -- response within the given time, we continue the header download.
@@ -357,15 +357,15 @@ processStartDownload valE = do
         -- Set a fast catchup time and search from the genesis
         Left ts -> do
             $(logInfo) $ format $ unwords
-                [ "(Re)starting merkle block download from timestamp", show ts ]
+                [ "Rescanning merkle blocks from timestamp", show ts ]
             return $ Just (Just ts, Just $ headerHash genesisHeader)
         -- No fast catchup time. Just download from the given block.
         Right h -> do
             nodeM <- runDB $ getBlockHeaderNode h
             case nodeM of
                 Just node -> do
-                    $(logInfo) $ format $ unwords
-                        [ "(Re)starting merkle block download from block"
+                    $(logDebug) $ format $ unwords
+                        [ "Continuing merkle block download from block"
                         , encodeBlockHashLE h
                         ]
                     return $ Just (Nothing, Just h)

@@ -187,7 +187,7 @@ connectToRemoteHost remote@(RemoteHost host port) = do
                 closeTBMChan $ peerChan session
                 writeTBMChan mChan $ PeerClosed pid
 
-        $(logInfo) $ format $ unwords
+        $(logDebug) $ format $ unwords
             [ "Connecting to remote host", showRemoteHost remote
             , "( Peer", show $ hashUnique pid, ")"
             ] 

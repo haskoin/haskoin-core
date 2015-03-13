@@ -247,12 +247,20 @@ headerSync resource locType hStopM = do
 processMerkleBlocks :: (HeaderTree m, MonadLogger m, MonadIO m)
                     => DwnId -> [DecodedMerkleBlock] -> StateT SpvSession m ()
 
-processMerkleBlocks did [] = do
-    $(logError) $ format $ "Got a completed merkle job with an empty merkle list"
-    modify $ \s -> s{ merkleId = Nothing }
-    -- We continue the merkle download because we didn't have any transactions
-    continueMerkleDownload
-    checkSynced
+processMerkleBlocks did [] = gets merkleId >>= \mid -> case mid of
+    Just (expId, _) -> if did == expId
+        then do
+            $(logError) $ format $ 
+                "Got a completed merkle job with an empty merkle list"
+            modify $ \s -> s{ merkleId = Nothing }
+            -- We continue the merkle download because we didn't have any
+            -- transactions
+            continueMerkleDownload
+            checkSynced
+        else $(logDebug) $ format $ unwords
+            [ "Ignoring merkle batch id", show $ hashUnique did ] 
+    _ -> $(logDebug) $ format $ unwords
+        [ "Ignoring empty merkle batch id", show $ hashUnique did ] 
 
 processMerkleBlocks did dmbs = gets merkleId >>= \mid -> case mid of
     Just (expId, action) -> if did == expId
@@ -361,14 +369,15 @@ processStartDownload valE = do
             return $ Just (Just ts, Just $ headerHash genesisHeader)
         -- No fast catchup time. Just download from the given block.
         Right h -> do
-            nodeM <- runDB $ getBlockHeaderNode h
-            case nodeM of
-                Just node -> do
+            runDB (getBlockHeaderNode h) >>= \nodeM -> case nodeM of
+                -- The block hash exists
+                Just _ -> do
                     $(logDebug) $ format $ unwords
                         [ "Continuing merkle block download from block"
                         , encodeBlockHashLE h
                         ]
                     return $ Just (Nothing, Just h)
+                -- Unknown block hash
                 _ -> do
                     $(logError) $ format $ unwords
                         [ "Cannot start download. Unknown block hash"

@@ -25,11 +25,6 @@ module Network.Haskoin.Test
 , ArbitraryXPrvKey(..)
 , ArbitraryXPubKey(..)
 , ArbitraryDerivPath(..)
-, ArbitraryMasterKey(..)
-, ArbitraryAccPrvKey(..)
-, ArbitraryAccPubKey(..)
-, ArbitraryAddrPrvKey(..)
-, ArbitraryAddrPubKey(..)
 
   -- * Node Arbitrary instances
 , ArbitraryVarInt(..)

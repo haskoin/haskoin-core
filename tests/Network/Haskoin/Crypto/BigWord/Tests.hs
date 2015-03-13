@@ -12,7 +12,7 @@ import Data.Bits
     , bit
     , testBit
     , shift
-    , bitSize
+    , bitSizeMaybe
     , popCount
     , rotate
     , (.&.), (.|.)
@@ -182,8 +182,8 @@ ringShift i j = getBigWordInteger ring == fromIntegral model
 ringBitsize :: Integer -> Bool
 ringBitsize i = ring == model
   where 
-    model = bitSize ((fromInteger i) :: Word32) 
-    ring  = bitSize ((fromInteger i) :: Test32) 
+    model = bitSizeMaybe ((fromInteger i) :: Word32) 
+    ring  = bitSizeMaybe ((fromInteger i) :: Test32) 
 
 ringTestbit :: Integer -> Word8 -> Bool
 ringTestbit i j = ring == model

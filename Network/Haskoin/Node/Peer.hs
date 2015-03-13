@@ -56,9 +56,6 @@ import Network.Haskoin.Node.Chan
 minProtocolVersion :: Word32 
 minProtocolVersion = 60001
 
-maxHeaders :: Int
-maxHeaders = 2000
-
 data PeerSession = PeerSession
     { peerId         :: !PeerId
     , mngrChan       :: !(TBMChan ManagerMessage)

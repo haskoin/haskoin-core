@@ -1,16 +1,13 @@
 module Network.Haskoin.Crypto.ExtendedKeys.Units (tests) where
 
-import Control.Applicative ((<$>))
-import Control.Monad (foldM)
-
 import Test.HUnit (Assertion, assertBool, assertEqual)
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Aeson (decode, encode)
-import qualified Data.ByteString.Lazy.Char8 as B8
-import Data.Maybe (isJust, isNothing, fromJust, catMaybes)
+import Data.Maybe (isJust, isNothing, fromJust)
 import Data.String (fromString)
+import qualified Data.ByteString.Lazy.Char8 as B8
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
@@ -111,13 +108,13 @@ testDerivePubPath :: [Test]
 testDerivePubPath = do
     (key, path, final) <- derivePubPathVectors
     return $ testCase ("Path " ++ path) $
-        assertEqual path final $ derivePubPath (fromString path) key
+        assertEqual path (Just final) $ derivePubPath (fromString path) key
 
-derivePubPathVectors :: [(XPubKey, String, Maybe XPubKey)]
+derivePubPathVectors :: [(XPubKey, String, XPubKey)]
 derivePubPathVectors =
-    [ ( xpub, "M", Just xpub )
+    [ ( xpub, "M", xpub )
     , ( xpub, "M/8", pubSubKey xpub 8 )
-    , ( xpub, "M/8/30/1", foldM pubSubKey xpub [8,30,1] )
+    , ( xpub, "M/8/30/1", foldl pubSubKey xpub [8,30,1] )
     ]
   where
     xprv = fromJust $ xPrvImport
@@ -125,21 +122,24 @@ derivePubPathVectors =
         \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
     xpub = deriveXPubKey xprv
 
-derivePathVectors :: [(XPrvKey, String, Maybe XKey)]
+derivePathVectors :: [(XPrvKey, String, XKey)]
 derivePathVectors =
-    [ ( xprv, "m", Just (XKeyPrv xprv) )
-    , ( xprv, "M", Just (XKeyPub xpub) )
-    , ( xprv, "m/8'", XKeyPrv <$> primeSubKey xprv 8 )
-    , ( xprv, "M/8'", (XKeyPub . deriveXPubKey) <$> primeSubKey xprv 8 )
+    [ ( xprv, "m", XKeyPrv xprv )
+    , ( xprv, "M", XKeyPub xpub )
+    , ( xprv, "m/8'", XKeyPrv $ primeSubKey xprv 8 )
+    , ( xprv, "M/8'", XKeyPub $ deriveXPubKey $ primeSubKey xprv 8 )
     , ( xprv, "m/8'/30/1"
-      , XKeyPrv <$> (primeSubKey xprv 8 >>= \k -> foldM prvSubKey k [30,1]) )
+      , XKeyPrv $ foldl prvSubKey (primeSubKey xprv 8) [30,1]
+      )
     , ( xprv, "M/8'/30/1"
-      , (XKeyPub . deriveXPubKey) <$>
-          (primeSubKey xprv 8 >>= flip (foldM prvSubKey) [30,1]) )
+      , XKeyPub $ deriveXPubKey $ foldl prvSubKey (primeSubKey xprv 8) [30,1]
+      )
     , ( xprv, "m/3/20"
-      , XKeyPrv <$> (foldM prvSubKey xprv [3,20]) )
+      , XKeyPrv $ foldl prvSubKey xprv [3,20]
+      )
     , ( xprv, "M/3/20"
-      , (XKeyPub . deriveXPubKey) <$> (foldM prvSubKey xprv [3,20]) )
+      , XKeyPub $ deriveXPubKey $ foldl prvSubKey xprv [3,20]
+      )
     ]
   where
     xprv = fromJust $ xPrvImport
@@ -166,9 +166,9 @@ runXKeyVec (v,m) = do
 -- BIP 0032 Test Vectors
 -- https://en.bitcoin.it/wiki/BIP_0032_TestVectors
 
-xKeyVec :: [([String],XPrvKey)]
-xKeyVec = zip xKeyResVec $ catMaybes $ foldl f [m] der
-    where f acc d = acc ++ [d =<< last acc]
+xKeyVec :: [([String], XPrvKey)]
+xKeyVec = zip xKeyResVec $ foldl f [m] der
+    where f acc d = acc ++ [d $ last acc]
           m   = makeXPrvKey $ fromJust $ hexToBS m0
           der = [ flip primeSubKey 0
                 , flip prvSubKey 1
@@ -178,8 +178,8 @@ xKeyVec = zip xKeyResVec $ catMaybes $ foldl f [m] der
                 ]
 
 xKeyVec2 :: [([String],XPrvKey)]
-xKeyVec2 = zip xKeyResVec2 $ catMaybes $ foldl f [m] der
-    where f acc d = acc ++ [d =<< last acc]
+xKeyVec2 = zip xKeyResVec2 $ foldl f [m] der
+    where f acc d = acc ++ [d $ last acc]
           m   = makeXPrvKey $ fromJust $ hexToBS m1
           der = [ flip prvSubKey 0
                 , flip primeSubKey 2147483647

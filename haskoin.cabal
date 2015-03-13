@@ -59,7 +59,6 @@ library
                    Network.Haskoin.Crypto.Base58
                    Network.Haskoin.Crypto.Keys
                    Network.Haskoin.Crypto.ExtendedKeys
-                   Network.Haskoin.Crypto.NormalizedKeys
                    Network.Haskoin.Crypto.ECDSA
                    Network.Haskoin.Crypto.Mnemonic
                    Network.Haskoin.Node.Types

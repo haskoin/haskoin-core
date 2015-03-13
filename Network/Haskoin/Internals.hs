@@ -14,7 +14,6 @@ module Network.Haskoin.Internals
 , module Network.Haskoin.Crypto.Base58
 , module Network.Haskoin.Crypto.Keys
 , module Network.Haskoin.Crypto.ExtendedKeys
-, module Network.Haskoin.Crypto.NormalizedKeys
 , module Network.Haskoin.Crypto.ECDSA
 , module Network.Haskoin.Crypto.Mnemonic
 , module Network.Haskoin.Node.Types
@@ -56,7 +55,6 @@ import Network.Haskoin.Crypto.Point
 import Network.Haskoin.Crypto.Base58
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.ExtendedKeys
-import Network.Haskoin.Crypto.NormalizedKeys
 import Network.Haskoin.Crypto.ECDSA
 import Network.Haskoin.Crypto.Mnemonic
 import Network.Haskoin.Node.Types

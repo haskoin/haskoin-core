@@ -125,7 +125,7 @@ module Network.Haskoin.Crypto
   -- **Extended Private Keys
 , XPrvKey(..)
 , makeXPrvKey
-, xPrvIsPrime
+, xPrvIsHard
 , xPrvChild
 , xPrvID
 , xPrvFP
@@ -136,7 +136,7 @@ module Network.Haskoin.Crypto
   -- **Extended Public Keys
 , XPubKey(..)
 , deriveXPubKey
-, xPubIsPrime
+, xPubIsHard
 , xPubChild
 , xPubID
 , xPubFP
@@ -147,10 +147,10 @@ module Network.Haskoin.Crypto
   -- **Child key derivations
 , prvSubKey
 , pubSubKey
-, primeSubKey
+, hardSubKey
 , prvSubKeys
 , pubSubKeys
-, primeSubKeys
+, hardSubKeys
 
   -- ** Address derivations
 , deriveAddr

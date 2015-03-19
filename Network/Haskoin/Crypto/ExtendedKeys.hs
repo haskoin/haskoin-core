@@ -8,9 +8,9 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , deriveXPubKey
 , prvSubKey
 , pubSubKey
-, primeSubKey
-, xPrvIsPrime
-, xPubIsPrime
+, hardSubKey
+, xPrvIsHard
+, xPubIsHard
 , xPrvChild
 , xPubChild
 , xPubID
@@ -26,7 +26,7 @@ module Network.Haskoin.Crypto.ExtendedKeys
   -- Helpers
 , prvSubKeys
 , pubSubKeys
-, primeSubKeys
+, hardSubKeys
 , deriveAddr
 , deriveAddrs
 , deriveMSAddr
@@ -145,14 +145,14 @@ makeXPrvKey bs =
 deriveXPubKey :: XPrvKey -> XPubKey
 deriveXPubKey (XPrvKey d p i c k) = XPubKey d p i c (derivePubKey k)
 
--- | Compute a private, non-prime child key derivation. A private non-prime
--- derivation will allow the equivalent extended public key to derive the
--- public key for this child. Given a parent key /m/ and a derivation index /i/,
--- this function will compute m\/i\/. 
+-- | Compute a private, soft child key derivation. A private soft derivation
+-- will allow the equivalent extended public key to derive the public key for
+-- this child. Given a parent key /m/ and a derivation index /i/, this function
+-- will compute m\/i\/. 
 --
--- Non-prime derivations allow for more flexibility such as read-only wallets.
--- However, care must be taken not the leak both the parent extended public
--- key and one of the extended child private keys as this would compromise the
+-- Soft derivations allow for more flexibility such as read-only wallets.
+-- However, care must be taken not the leak both the parent extended public key
+-- and one of the extended child private keys as this would compromise the
 -- extended parent private key.
 prvSubKey :: XPrvKey  -- ^ Extended parent private key
           -> KeyIndex -- ^ Child derivation index
@@ -167,7 +167,7 @@ prvSubKey xkey child
     (a,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
     k     = addPrvKeys (xPrvKey xkey) a
 
--- | Compute a public, non-prime child key derivation. Given a parent key /M/
+-- | Compute a public, soft child key derivation. Given a parent key /M/
 -- and a derivation index /i/, this function will compute M\/i\/. 
 pubSubKey :: XPubKey  -- ^ Extended Parent public key
           -> KeyIndex -- ^ Child derivation index
@@ -181,16 +181,16 @@ pubSubKey xKey child
     (a,c) = split512 $ hmac512 (encode' $ xPubChain xKey) msg
     pK    = addPubKeys (xPubKey xKey) a
 
--- | Compute a prime child key derivation. Prime derivations can only be
--- computed for private keys. Prime derivations do not allow the parent 
--- public key to derive the child public keys. However, they are safer as
--- a breach of the parent public key and child private keys does not lead
--- to a breach of the parent private key. Given a parent key /m/ and a
--- derivation index /i/, this function will compute m\/i'\/.
-primeSubKey :: XPrvKey  -- ^ Extended Parent private key
+-- | Compute a hard child key derivation. Hard derivations can only be computed
+-- for private keys. Hard derivations do not allow the parent public key to
+-- derive the child public keys. However, they are safer as a breach of the
+-- parent public key and child private keys does not lead to a breach of the
+-- parent private key. Given a parent key /m/ and a derivation index /i/, this
+-- function will compute m\/i'\/.
+hardSubKey :: XPrvKey  -- ^ Extended Parent private key
             -> KeyIndex -- ^ Child derivation index
             -> XPrvKey  -- ^ Extended child private key
-primeSubKey xkey child
+hardSubKey xkey child
     | child >= 0 && child < 0x80000000 =
         XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) i c k
     | otherwise = error "Invalid child derivation index"
@@ -225,22 +225,22 @@ addPubKeys pub i
     pt2 = addPoint (pubKeyPoint pub) pt1
     err = throw $ DerivationException "Invalid derivation"
 
--- | Returns True if the extended private key was derived through a prime
+-- | Returns True if the extended private key was derived through a hard
 -- derivation.
-xPrvIsPrime :: XPrvKey -> Bool
-xPrvIsPrime k = testBit (xPrvIndex k) 31
+xPrvIsHard :: XPrvKey -> Bool
+xPrvIsHard k = testBit (xPrvIndex k) 31
 
--- | Returns True if the extended public key was derived through a prime
+-- | Returns True if the extended public key was derived through a hard
 -- derivation.
-xPubIsPrime :: XPubKey -> Bool
-xPubIsPrime k = testBit (xPubIndex k) 31
+xPubIsHard :: XPubKey -> Bool
+xPubIsHard k = testBit (xPubIndex k) 31
 
--- | Returns the derivation index of this extended private key without the
--- prime bit set.
+-- | Returns the derivation index of this extended private key without the hard
+-- bit set.
 xPrvChild :: XPrvKey -> KeyIndex
 xPrvChild k = clearBit (xPrvIndex k) 31
 
--- | Returns the derivation index of this extended public key without the prime
+-- | Returns the derivation index of this extended public key without the hard
 -- bit set.
 xPubChild :: XPubKey -> KeyIndex
 xPubChild k = clearBit (xPubIndex k) 31
@@ -331,34 +331,34 @@ instance Binary XPubKey where
 
 {- Derivation helpers -}
 
--- | Cyclic list of all private non-prime child key derivations of a parent key
+-- | Cyclic list of all private soft child key derivations of a parent key
 -- starting from an offset index.
 prvSubKeys :: XPrvKey -> KeyIndex -> [(XPrvKey, KeyIndex)]
 prvSubKeys k = map (\i -> (prvSubKey k i, i)) . cycleIndex
 
--- | Cyclic list of all public non-prime child key derivations of a parent key
+-- | Cyclic list of all public soft child key derivations of a parent key
 -- starting from an offset index.
 pubSubKeys :: XPubKey -> KeyIndex -> [(XPubKey, KeyIndex)]
 pubSubKeys k = map (\i -> (pubSubKey k i, i)) . cycleIndex
 
--- | Cyclic list of all prime child key derivations of a parent key starting
+-- | Cyclic list of all hard child key derivations of a parent key starting
 -- from an offset index.
-primeSubKeys :: XPrvKey -> KeyIndex -> [(XPrvKey, KeyIndex)]
-primeSubKeys k = map (\i -> (primeSubKey k i, i)) . cycleIndex
+hardSubKeys :: XPrvKey -> KeyIndex -> [(XPrvKey, KeyIndex)]
+hardSubKeys k = map (\i -> (hardSubKey k i, i)) . cycleIndex
 
 -- | Derive an address from a public key and an index. The derivation type
--- is a public, non-prime derivation.
+-- is a public, soft derivation.
 deriveAddr :: XPubKey -> KeyIndex -> Address
 deriveAddr k = xPubAddr . pubSubKey k
 
 -- | Cyclic list of all addresses derived from a public key starting from an
--- offset index. The derivation types are public, non-prime derivations.
+-- offset index. The derivation types are public, soft derivations.
 deriveAddrs :: XPubKey -> KeyIndex -> [(Address, KeyIndex)]
 deriveAddrs k = map (\i -> (deriveAddr k i, i)) . cycleIndex
 
 -- | Derive a multisig address from a list of public keys, the number of
 -- required signatures (m) and a derivation index. The derivation type is a
--- public, non-prime derivation.
+-- public, soft derivation.
 deriveMSAddr :: [XPubKey] -> Int -> KeyIndex -> Address
 deriveMSAddr keys m i = 
     scriptAddr $ sortMulSig $ PayMulSig (map (toPubKeyG . xPubKey) k) m
@@ -367,7 +367,7 @@ deriveMSAddr keys m i =
 
 -- | Cyclic list of all multisig addresses derived from a list of public keys,
 -- a number of required signatures (m) and starting from an offset index. The
--- derivation type is a public, non-prime derivation.
+-- derivation type is a public, soft derivation.
 deriveMSAddrs :: [XPubKey] -> Int -> KeyIndex -> [(Address, KeyIndex)]
 deriveMSAddrs keys m = map (\i -> (deriveMSAddr keys m i, i)) . cycleIndex
 
@@ -517,7 +517,7 @@ derivePath path key =
     -- Build the full derivation function starting from the end
     go :: (XPrvKey -> XPrvKey) -> DerivPathI t -> (XPrvKey -> XPrvKey)
     go f p = case p of
-        next :| i -> go (f . flip primeSubKey i) next
+        next :| i -> go (f . flip hardSubKey i) next
         next :/ i -> go (f . flip prvSubKey i) next 
         _         -> f
 
@@ -545,7 +545,7 @@ derivePathE path key =
        -> DerivPathI t 
        -> (XPrvKey -> Either XPubKey XPrvKey) 
     go f p = case p of
-        next :| i -> go (f . flip primeSubKey i) next
+        next :| i -> go (f . flip hardSubKey i) next
         next :/ i -> go (f . flip prvSubKey i) next 
         -- Derive a public key as the last function
         DerivPub  -> Left . deriveXPubKey . f

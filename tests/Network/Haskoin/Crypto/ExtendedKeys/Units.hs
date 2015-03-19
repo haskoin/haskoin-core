@@ -138,13 +138,13 @@ derivePrvPathVectors :: [(XPrvKey, String, XPrvKey)]
 derivePrvPathVectors =
     [ ( xprv, "m", xprv )
     , ( xprv, "M", xprv )
-    , ( xprv, "m/8'", primeSubKey xprv 8 )
-    , ( xprv, "M/8'", primeSubKey xprv 8 )
+    , ( xprv, "m/8'", hardSubKey xprv 8 )
+    , ( xprv, "M/8'", hardSubKey xprv 8 )
     , ( xprv, "m/8'/30/1"
-      , foldl prvSubKey (primeSubKey xprv 8) [30,1]
+      , foldl prvSubKey (hardSubKey xprv 8) [30,1]
       )
     , ( xprv, "M/8'/30/1"
-      , foldl prvSubKey (primeSubKey xprv 8) [30,1]
+      , foldl prvSubKey (hardSubKey xprv 8) [30,1]
       )
     , ( xprv, "m/3/20"
       , foldl prvSubKey xprv [3,20]
@@ -162,13 +162,13 @@ derivePathVectors :: [(XPrvKey, String, Either XPubKey XPrvKey)]
 derivePathVectors =
     [ ( xprv, "m", Right xprv )
     , ( xprv, "M", Left xpub )
-    , ( xprv, "m/8'", Right $ primeSubKey xprv 8 )
-    , ( xprv, "M/8'", Left $ deriveXPubKey $ primeSubKey xprv 8 )
+    , ( xprv, "m/8'", Right $ hardSubKey xprv 8 )
+    , ( xprv, "M/8'", Left $ deriveXPubKey $ hardSubKey xprv 8 )
     , ( xprv, "m/8'/30/1"
-      , Right $ foldl prvSubKey (primeSubKey xprv 8) [30,1]
+      , Right $ foldl prvSubKey (hardSubKey xprv 8) [30,1]
       )
     , ( xprv, "M/8'/30/1"
-      , Left $ deriveXPubKey $ foldl prvSubKey (primeSubKey xprv 8) [30,1]
+      , Left $ deriveXPubKey $ foldl prvSubKey (hardSubKey xprv 8) [30,1]
       )
     , ( xprv, "m/3/20"
       , Right $ foldl prvSubKey xprv [3,20]
@@ -206,9 +206,9 @@ xKeyVec :: [([String], XPrvKey)]
 xKeyVec = zip xKeyResVec $ foldl f [m] der
     where f acc d = acc ++ [d $ last acc]
           m   = makeXPrvKey $ fromJust $ hexToBS m0
-          der = [ flip primeSubKey 0
+          der = [ flip hardSubKey 0
                 , flip prvSubKey 1
-                , flip primeSubKey 2
+                , flip hardSubKey 2
                 , flip prvSubKey 2
                 , flip prvSubKey 1000000000
                 ]
@@ -218,9 +218,9 @@ xKeyVec2 = zip xKeyResVec2 $ foldl f [m] der
     where f acc d = acc ++ [d $ last acc]
           m   = makeXPrvKey $ fromJust $ hexToBS m1
           der = [ flip prvSubKey 0
-                , flip primeSubKey 2147483647
+                , flip hardSubKey 2147483647
                 , flip prvSubKey 1
-                , flip primeSubKey 2147483646
+                , flip hardSubKey 2147483646
                 , flip prvSubKey 2
                 ]
 

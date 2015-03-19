@@ -99,6 +99,7 @@ library
                 RecordWildCards
                 DeriveFunctor
                 TypeFamilies
+                GADTs
 
     build-depends: aeson                    >= 0.7          && < 0.9
                  , base                     >= 4.6          && < 5 

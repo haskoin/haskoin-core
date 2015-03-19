@@ -19,21 +19,25 @@ module Network.Haskoin.Test.Crypto
 , ArbitraryDetSignature(..)
 , ArbitraryXPrvKey(..)
 , ArbitraryXPubKey(..)
+, ArbitraryHardPath(..)
+, ArbitrarySoftPath(..)
 , ArbitraryDerivPath(..)
 ) where
 
 import Test.QuickCheck 
     ( Arbitrary
+    , Gen
     , arbitrary
     , choose
     , elements
     , frequency
     , oneof
+    , listOf
     )
 
 import Control.Applicative ((<$>))
 
-import Data.Bits (clearBit, testBit)
+import Data.Bits (clearBit)
 import Data.Maybe (fromJust)
 import Data.Word (Word32)
 
@@ -204,24 +208,43 @@ instance Arbitrary ArbitraryXPubKey where
         ArbitraryXPrvKey k <- arbitrary
         return $ ArbitraryXPubKey k $ deriveXPubKey k
 
-data ArbitraryDerivPath = ArbitraryDerivPath DerivPath
-    deriving (Eq, Show, Read)
+{- Custom derivations -}
 
-data ArbitraryDeriv = ArbitraryDeriv (Word32, Bool)
-    deriving (Eq, Show, Read)
+genIndex :: Gen Word32
+genIndex = (`clearBit` 31) <$> arbitrary
+
+data ArbitraryHardPath = ArbitraryHardPath HardPath
+    deriving (Show, Eq)
+
+instance Arbitrary ArbitraryHardPath where
+    arbitrary = 
+        ArbitraryHardPath <$> (go =<< listOf genIndex)
+      where
+        go []     = elements [ Deriv, DerivPrv, DerivPub ]
+        go (i:is) = (:| i) <$> go is 
+
+data ArbitrarySoftPath = ArbitrarySoftPath SoftPath
+    deriving (Show, Eq)
+
+instance Arbitrary ArbitrarySoftPath where
+    arbitrary = 
+        ArbitrarySoftPath <$> (go =<< listOf genIndex)
+      where
+        go []     = elements [ Deriv, DerivPrv, DerivPub ]
+        go (i:is) = (:/ i) <$> go is 
+
+data ArbitraryDerivPath = ArbitraryDerivPath DerivPath
+    deriving (Show, Eq)
 
 instance Arbitrary ArbitraryDerivPath where
     arbitrary = do
-        path <- map (\(ArbitraryDeriv x) -> x) <$> arbitrary
-        ArbitraryDerivPath <$> elements 
-            [ DerivPrv path
-            , DerivPub path
-            ]
-
-instance Arbitrary ArbitraryDeriv where
-    arbitrary = do
-        w <- arbitrary
-        let i = w `clearBit` 31
-            b = w `testBit` 31
-        return $ ArbitraryDeriv (i, b)
+        xs  <- listOf genIndex
+        ys  <- listOf genIndex
+        return . ArbitraryDerivPath . goSoft ys =<< goHard xs
+      where
+        goSoft [] h     = h
+        goSoft (i:is) h = (goSoft is h) :/ i
+        goHard :: HardOrMixed t => [Word32] -> Gen (DerivPathI t)
+        goHard (i:is) = (:| i) <$> goHard is 
+        goHard []     = elements [ Deriv, DerivPrv, DerivPub ]
 

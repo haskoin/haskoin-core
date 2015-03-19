@@ -121,8 +121,6 @@ module Network.Haskoin.Crypto
   -- *Extended Keys
 , KeyIndex
 , ChainCode
-, XKey(..)
-, DerivPath(..)
 
   -- **Extended Private Keys
 , XPrvKey(..)
@@ -161,9 +159,18 @@ module Network.Haskoin.Crypto
 , deriveMSAddrs
 
   -- ** Custom path derivations
+, DerivPathI((:|), (:/), Deriv, DerivPrv, DerivPub)
+, DerivPath
+, HardPath
+, SoftPath
 , parsePath
+, parseHard
+, parseSoft
+, toHard
+, toSoft
 , derivePath
 , derivePubPath
+, derivePathE
 
 ) where
 

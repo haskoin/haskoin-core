@@ -1,7 +1,6 @@
 module Network.Haskoin.Crypto.ExtendedKeys
 ( XPubKey(..)
 , XPrvKey(..)
-, XKey(..)
 , ChainCode
 , KeyIndex
 , DerivationException(..)
@@ -34,15 +33,25 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , deriveMSAddrs
 , cycleIndex
   -- Custom derivations
-, DerivPath(..)
+, DerivPathI(..)
+, HardOrMixed
+, MixedOrSoft
+, DerivPath
+, HardPath
+, SoftPath
 , parsePath
+, parseHard
+, parseSoft
+, toHard
+, toSoft
 , derivePath
 , derivePubPath
+, derivePathE
 ) where
 
 import Control.Applicative ((<$>))
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (mzero, guard, unless)
+import Control.Monad (mzero, guard, unless, (<=<))
 import Control.Exception (Exception, throw)
 
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
@@ -51,12 +60,11 @@ import Data.Binary.Get (Get, getWord8, getWord32be)
 import Data.Binary.Put (Put, putWord8, putWord32be)
 import Data.Word (Word8, Word32)
 import Data.Bits (shiftR, setBit, testBit, clearBit)
-import Data.List (intersperse)
 import Data.List.Split (splitOn)
 import Data.Maybe (fromMaybe)
 import Data.String (IsString, fromString)
 import Data.Typeable (Typeable)
-import qualified Data.Text as T (pack, unpack)
+import Data.Text (pack, unpack)
 import qualified Data.ByteString as BS (ByteString, append)
 
 import Network.Haskoin.Util
@@ -97,10 +105,10 @@ instance NFData XPrvKey where
         rnf d `seq` rnf p `seq` rnf i `seq` rnf c `seq` rnf k
 
 instance ToJSON XPrvKey where
-    toJSON = String . T.pack . xPrvExport
+    toJSON = String . pack . xPrvExport
 
 instance FromJSON XPrvKey where
-    parseJSON = withText "xprvkey" $ maybe mzero return . xPrvImport . T.unpack
+    parseJSON = withText "xprvkey" $ maybe mzero return . xPrvImport . unpack
 
 -- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
@@ -116,10 +124,10 @@ instance NFData XPubKey where
         rnf d `seq` rnf p `seq` rnf i `seq` rnf c `seq` rnf k
 
 instance ToJSON XPubKey where
-    toJSON = String . T.pack . xPubExport
+    toJSON = String . pack . xPubExport
 
 instance FromJSON XPubKey where
-    parseJSON = withText "xpubkey" $ maybe mzero return . xPubImport . T.unpack
+    parseJSON = withText "xpubkey" $ maybe mzero return . xPubImport . unpack
 
 -- | Build a BIP32 compatible extended private key from a bytestring. This will
 -- produce a root node (depth=0 and parent=0).
@@ -371,67 +379,177 @@ cycleIndex i
 
 {- Custom derivations -}
 
--- | Any extended key.
-data XKey = XKeyPrv { xKeyPrv :: XPrvKey }
-          | XKeyPub { xKeyPub :: XPubKey }
-          deriving (Eq, Show)
+data Hard
+data Mixed
+data Soft
 
--- | Derivation path.
-data DerivPath
-    = DerivPrv [(KeyIndex, Bool)]
-    | DerivPub [(KeyIndex, Bool)]
-    deriving (Eq, Show, Read)
+type HardPath = DerivPathI Hard
+type DerivPath = DerivPathI Mixed
+type SoftPath = DerivPathI Soft
+
+class HardOrMixed a 
+instance HardOrMixed Hard
+instance HardOrMixed Mixed
+
+class MixedOrSoft a 
+instance MixedOrSoft Mixed
+instance MixedOrSoft Soft
+
+data DerivPathI t where
+    (:|) :: HardOrMixed t => !HardPath -> !KeyIndex -> DerivPathI t
+    (:/) :: MixedOrSoft t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
+    Deriv :: DerivPathI t
+    DerivPrv :: DerivPathI t
+    DerivPub :: DerivPathI t
+
+instance Show (DerivPathI t) where
+    show (next :| i) = unwords [ show next, ":|", show i ]
+    show (next :/ i) = unwords [ show next, ":/", show i ]
+    show Deriv = "Deriv"
+    show DerivPrv = "DerivPrv"
+    show DerivPub = "DerivPub"
+
+instance Eq (DerivPathI t) where
+    (nextA :| iA) == (nextB :| iB) = iA == iB && nextA == nextB
+    (nextA :/ iA) == (nextB :/ iB) = iA == iB && nextA == nextB
+    Deriv         == Deriv         = True
+    DerivPrv      == DerivPrv      = True
+    DerivPub      == DerivPub      = True
+    _             == _             = False
 
 instance IsString DerivPath where
-    fromString = fromMaybe (error "Invalid derivation path") . parsePath
+    fromString str = case parsePath str of
+        Just p -> p
+        _ -> error "Invalid derivation path"
+
+instance IsString HardPath where
+    fromString str = case parseHard str of
+        Just p -> p
+        _ -> error "Invalid hard derivation path"
+
+instance IsString SoftPath where
+    fromString str = case parseSoft str of
+        Just p -> p
+        _ -> error "Invalid soft derivation path"
 
 instance FromJSON DerivPath where
-    parseJSON = withText "DerivPath" $ maybe mzero return . parsePath . T.unpack
+    parseJSON = withText "DerivPath" $ \str -> case parsePath $ unpack str of
+        Just p -> return p
+        _      -> mzero
 
-instance ToJSON DerivPath where
-    toJSON dp = case dp of
-        DerivPrv path      -> g $ "m" : map f path
-        DerivPub path      -> g $ "M" : map f path
+instance FromJSON HardPath where
+    parseJSON = withText "HardPath" $ \str -> case parseHard $ unpack str of
+        Just p -> return p
+        _      -> mzero
+
+instance FromJSON SoftPath where
+    parseJSON = withText "SoftPath" $ \str -> case parseSoft $ unpack str of
+        Just p -> return p
+        _      -> mzero
+
+instance ToJSON (DerivPathI t) where
+    toJSON = String . pack . go 
       where
-        f (i, p) = show i ++ if p then "'" else ""
-        g        = String . T.pack . concat . intersperse "/"
-
+        go :: DerivPathI t -> String
+        go p = case p of
+            next :| i -> concat [ go next, "/", show i, "'" ]
+            next :/ i -> concat [ go next, "/", show i ]
+            Deriv     -> ""
+            DerivPrv  -> "m"
+            DerivPub  -> "M"
 
 -- | Parse derivation path string for extended key.
 -- Forms: “m/0'/2”, “M/2/3/4”.
 parsePath :: String -> Maybe DerivPath
-parsePath s = case x of
-    "m" -> DerivPrv <$> mapM f xs
-    "M" -> DerivPub <$> mapM f xs
-    _ -> Nothing
+parsePath str = do
+    ds <- reverse <$> mapM f xs
+    let (s,h) = break fst ds
+    -- No soft derivations in the hard branch
+    guard $ null $ filter (not . fst) h
+    hPath <- pHard $ map snd h
+    pSoft hPath $ map snd s
   where
-    (x : xs) = splitOn "/" s
-    f y = case reads y of
-        [(n, "" )] -> flip (,) False <$> v n
-        [(n, "'")] -> flip (,) True  <$> v n
+    (x:xs) = splitOn "/" str
+    f deriv = case reads deriv of
+        [(i, "" )] -> (,) False <$> g i
+        [(i, "'")] -> (,) True <$> g i
         _ -> Nothing
-    v z = guard (z >= 0 && z < 2 ^ (31 :: Int)) >> return (fromInteger z)
+    g i = guard (i >=0 && i < 0x80000000) >> return i
+    pSoft h (i:is) = (:/ i) <$> pSoft h is
+    pSoft h [] = return h
+    pHard :: HardOrMixed t => [KeyIndex] -> Maybe (DerivPathI t)
+    pHard (i:is) = (:| i) <$> pHard is
+    pHard [] = pEnd
+    pEnd :: Maybe (DerivPathI t)
+    pEnd = case x of
+        ""  -> Just Deriv
+        "m" -> Just DerivPrv
+        "M" -> Just DerivPub
+        _   -> Nothing
 
--- | Derive private key into private or public key using derivation path.
-derivePath :: DerivPath -> XPrvKey -> XKey
-derivePath (DerivPrv path) xprv =
-    XKeyPrv $ derivePrvPath path xprv
-derivePath (DerivPub path) xprv =
-    XKeyPub $ deriveXPubKey $ derivePrvPath path xprv
+parseHard :: String -> Maybe HardPath
+parseHard = toHard <=< parsePath
 
--- | Derive private key using derivation path components.
-derivePrvPath :: [(KeyIndex, Bool)] -> XPrvKey -> XPrvKey
-derivePrvPath path xprv = 
-    foldl f xprv path 
+parseSoft :: String -> Maybe SoftPath
+parseSoft = toSoft <=< parsePath
+
+toHard :: DerivPath -> Maybe HardPath
+toHard p = case p of
+    _ :/ _    -> Nothing
+    next :| i -> Just $ next :| i
+    Deriv     -> Just Deriv
+    DerivPrv  -> Just DerivPrv
+    DerivPub  -> Just DerivPub
+
+toSoft :: DerivPath -> Maybe SoftPath
+toSoft p = case p of
+    _ :| _    -> Nothing
+    next :/ i -> (:/ i) <$> toSoft next
+    Deriv     -> Just Deriv
+    DerivPrv  -> Just DerivPrv
+    DerivPub  -> Just DerivPub
+
+-- | Derive a private key from a derivation path
+derivePath :: DerivPathI t -> XPrvKey -> XPrvKey
+derivePath path key = 
+    go id path $ key
   where
-    f xkey (i, p) = if p then primeSubKey xkey i else prvSubKey xkey i
+    -- Build the full derivation function starting from the end
+    go :: (XPrvKey -> XPrvKey) -> DerivPathI t -> (XPrvKey -> XPrvKey)
+    go f p = case p of
+        next :| i -> go (f . flip primeSubKey i) next
+        next :/ i -> go (f . flip prvSubKey i) next 
+        _         -> f
 
--- | Derive public key using derivation path.
-derivePubPath :: DerivPath -> XPubKey -> Maybe XPubKey
-derivePubPath (DerivPub path) xpub = do
-    guard $ null $ filter snd path
-    return $ foldl pubSubKey xpub $ map fst path
-derivePubPath _ _ = Nothing
+-- | Derive a public key from a soft derivation path
+derivePubPath :: SoftPath -> XPubKey -> XPubKey
+derivePubPath path key = 
+    go id path $ key
+  where
+    -- Build the full derivation function starting from the end
+    go f p = case p of
+        next :/ i -> go (f . flip pubSubKey i) next 
+        _         -> f
+
+-- | Derive a key from a derivation path and return either a private or public
+-- key depending on the initial derivation constructor. If you parsed a string
+-- as m/ you will get a private key and if you parsed a string as M/ you will
+-- get a public key. If you used the neutral derivation constructor `Deriv`, a
+-- private key will be returned. 
+derivePathE :: DerivPathI t -> XPrvKey -> Either XPubKey XPrvKey
+derivePathE path key = 
+    go id path $ key
+  where
+    -- Build the full derivation function starting from the end
+    go :: (XPrvKey -> XPrvKey) 
+       -> DerivPathI t 
+       -> (XPrvKey -> Either XPubKey XPrvKey) 
+    go f p = case p of
+        next :| i -> go (f . flip primeSubKey i) next
+        next :/ i -> go (f . flip prvSubKey i) next 
+        -- Derive a public key as the last function
+        DerivPub  -> Left . deriveXPubKey . f
+        _         -> Right . f
 
 {- Utilities for extended keys -}
 

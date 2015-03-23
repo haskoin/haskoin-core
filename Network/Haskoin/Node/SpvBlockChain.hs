@@ -145,7 +145,7 @@ processBlockTickle pid bid = do
             -- TODO: We could have a DoS leak here
             setPeerTickle pid bid
             --Request headers so we can connect this block
-            headerSync (ThisPeer pid) PartialLocator $ Just bid
+            headerSync (ThisPeer pid) FullLocator $ Just bid
 
 processBlockHeaders :: (HeaderTree m, MonadLogger m, MonadIO m) 
                     => PeerId -> [BlockHeader] -> StateT SpvSession m ()

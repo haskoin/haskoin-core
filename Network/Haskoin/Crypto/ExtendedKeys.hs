@@ -47,6 +47,10 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , derivePath
 , derivePubPath
 , derivePathE
+, derivePathAddr
+, derivePathAddrs
+, derivePathMSAddr
+, derivePathMSAddrs
 ) where
 
 import Control.Applicative ((<$>))
@@ -550,6 +554,29 @@ derivePathE path key =
         -- Derive a public key as the last function
         DerivPub  -> Left . deriveXPubKey . f
         _         -> Right . f
+
+-- | Derive an address from a given parent path.
+derivePathAddr :: XPubKey -> SoftPath -> KeyIndex -> Address
+derivePathAddr key path i = deriveAddr (derivePubPath path key) i
+
+-- | Cyclic list of all addresses derived from a given parent path and starting
+-- from the given offset index.
+derivePathAddrs :: XPubKey -> SoftPath -> KeyIndex -> [(Address, KeyIndex)]
+derivePathAddrs key path i = deriveAddrs (derivePubPath path key) i
+
+-- | Derive a multisig address from a given parent path. The number of required
+-- signatures (m in m of n) is also needed.
+derivePathMSAddr :: [XPubKey] -> SoftPath -> Int -> KeyIndex -> Address
+derivePathMSAddr keys path m i = 
+    deriveMSAddr (map (derivePubPath path) keys) m i
+
+-- | Cyclic list of all multisig addresses derived from a given parent path and
+-- starting from the given offset index. The number of required signatures
+-- (m in m of n) is also needed.
+derivePathMSAddrs :: [XPubKey] -> SoftPath -> Int -> KeyIndex 
+                  -> [(Address, KeyIndex)]
+derivePathMSAddrs keys path m i = 
+    deriveMSAddrs (map (derivePubPath path) keys) m i
 
 {- Utilities for extended keys -}
 

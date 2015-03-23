@@ -172,6 +172,12 @@ module Network.Haskoin.Crypto
 , derivePubPath
 , derivePathE
 
+  -- * Custom path address derivations
+, derivePathAddr
+, derivePathAddrs
+, derivePathMSAddr
+, derivePathMSAddrs
+
 ) where
 
 import Network.Haskoin.Crypto.ECDSA

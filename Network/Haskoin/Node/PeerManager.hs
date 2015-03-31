@@ -1,11 +1,12 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Network.Haskoin.Node.PeerManager 
 ( withPeerManager
+, PeerType(..)
 ) where
 
 import Control.Applicative ((<$>))
 import Control.Monad (when, unless, forM_, liftM, filterM, forever)
-import Control.Monad.Trans (MonadTrans, MonadIO, liftIO, lift)
+import Control.Monad.Trans (MonadIO, liftIO, lift)
 import Control.Monad.Trans.Control (MonadBaseControl, liftBaseDiscard)
 import Control.Concurrent (forkFinally, forkIO, threadDelay)
 import Control.Concurrent.STM (atomically)
@@ -626,10 +627,6 @@ modifyRemoteData :: Monad m
 modifyRemoteData remote f = do
     d <- getRemoteData remote
     putRemoteData remote $ f d
-
-deleteRemoteData :: Monad m => RemoteHost -> StateT ManagerSession m ()
-deleteRemoteData remote = 
-    modify $ \s -> s{ remoteMap = M.delete remote $ remoteMap s }
 
 isRemoteBanned :: Monad m => RemoteHost -> StateT ManagerSession m Bool
 isRemoteBanned remote = 

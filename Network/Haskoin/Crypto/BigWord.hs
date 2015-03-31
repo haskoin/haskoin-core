@@ -39,15 +39,11 @@ import Test.QuickCheck
     , arbitrarySizedBoundedIntegral
     )
 
-import Data.Bits 
-    ( Bits
-    , (.&.), (.|.), xor
-    , complement
-    , shift, shiftL, shiftR
-    , bit, testBit, bitSize
-    , popCount, isSigned
-    , rotate
-    )
+import Control.Monad (unless, guard, mzero, (<=<))
+import Control.Applicative ((<$>))
+import Control.DeepSeq (NFData, rnf)
+
+import Data.Bits (Bits(..), FiniteBits(..))
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get 
     ( getWord64be
@@ -70,9 +66,6 @@ import Data.Aeson
     , toJSON
     , withText
     )
-import Control.DeepSeq (NFData, rnf)
-import Control.Monad (unless, guard, mzero, (<=<))
-import Control.Applicative ((<$>))
 import Data.Ratio (numerator, denominator)
 import qualified Data.ByteString as BS (head, length, reverse)
 import qualified Data.Text as T (pack, unpack)
@@ -172,16 +165,19 @@ instance BigWordMod n => Bits (BigWord n) where
     (BigWord i1) .|. (BigWord i2) = fromInteger $ i1 .|. i2
     (BigWord i1) `xor` (BigWord i2) = fromInteger $ i1 `xor` i2
     complement (BigWord i) = fromInteger $ complement i
-    shift (BigWord i) j = fromInteger $ shift i j
+    bitSizeMaybe = Just . rBitSize
     bitSize = rBitSize
+    shift (BigWord i) j = fromInteger $ shift i j
     testBit (BigWord i) = testBit i
     bit n = fromInteger $ bit n
     popCount (BigWord i) = popCount i
     isSigned _ = False
-    rotate x i = shift x i' .|. shift x (i' - bitSize x)
+    rotate x i = shift x i' .|. shift x (i' - rBitSize x)
       where
-        i' = i `mod` bitSize x
-    
+        i' = i `mod` rBitSize x
+
+instance BigWordMod n => FiniteBits (BigWord n) where
+    finiteBitSize = rBitSize
 
 instance BigWordMod n => Bounded (BigWord n) where
     minBound = fromInteger 0

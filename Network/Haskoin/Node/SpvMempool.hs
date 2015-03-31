@@ -33,14 +33,14 @@ withSpvNode :: (HeaderTree m, MonadLogger m, MonadIO m, MonadBaseControl IO m)
 withSpvNode f = do
     wletChan <- liftIO $ atomically $ newTBMChan 10000
     reqChan  <- liftIO $ atomically $ newTBMChan 10000
-    withSpvMempool wletChan $ \mempChan bkchChan mngrChan -> do
+    withSpvMempool wletChan $ \_ bkchChan mngrChan -> do
         -- Listen for and process wallet requests
         let run = do
             $(logDebug) $ formatWallet "SPV user request thread started"
-            sourceTBMChan reqChan $$ (go mempChan bkchChan mngrChan)
+            sourceTBMChan reqChan $$ (go bkchChan mngrChan)
         withAsync run $ \a -> link a >> f wletChan reqChan
   where
-    go mempChan bkchChan mngrChan = awaitForever $ \req -> case req of
+    go bkchChan mngrChan = awaitForever $ \req -> case req of
         NodeBloomFilter bloom -> do
             $(logDebug) $ formatWallet "Setting a new bloom filter"
             liftIO $ atomically $ writeTBMChan bkchChan $ SetBloomFilter bloom
@@ -211,7 +211,7 @@ processMerkle action dmbs = gets inflightTxs >>= \inflight -> if null inflight
                 , show $ nodeHeaderHeight $ last nodes
                 , "(", encodeBlockHashLE $ nodeBlockHash $ last nodes, ")"
                 ]
-            ChainReorg s o n -> $(logInfo) $ format $ unlines $
+            ChainReorg _ o n -> $(logInfo) $ format $ unlines $
                   [ "Merkle chain reorg."
                   , "Orphaned blocks:" 
                   ]

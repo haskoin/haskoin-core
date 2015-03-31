@@ -1,16 +1,13 @@
 module Network.Haskoin.Crypto.ExtendedKeys.Units (tests) where
 
-import Control.Applicative ((<$>))
-import Control.Monad (foldM)
-
 import Test.HUnit (Assertion, assertBool, assertEqual)
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Aeson (decode, encode)
-import qualified Data.ByteString.Lazy.Char8 as B8
-import Data.Maybe (isJust, isNothing, fromJust, catMaybes)
+import Data.Maybe (isJust, isNothing, fromJust)
 import Data.String (fromString)
+import qualified Data.ByteString.Lazy.Char8 as B8
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
@@ -39,8 +36,9 @@ tests =
             runXKeyVec (xKeyVec2 !! 5)
         ] 
     , testGroup "BIP32 subkey derivation using string path"
-        [ testGroup "Private Derivations" testDerivePath
+        [ testGroup "Either Derivations" testDerivePathE
         , testGroup "Public Derivations" testDerivePubPath
+        , testGroup "Private Derivations" testDerivePrvPath
         , testGroup "Path Parsing" testParsePath
         , testGroup "FromJSON" testFromJsonPath
         , testGroup "ToJSON" testToJsonPath
@@ -51,15 +49,15 @@ testFromJsonPath :: [Test]
 testFromJsonPath = do
     path <- jsonPathVectors
     return $ testCase ("Path " ++ path) $
-        assertEqual path [fromString path :: DerivPath]
-        (fromJust $ decode $ B8.pack $ "[\"" ++ path ++ "\"]")
+        assertEqual path (Just [fromString path :: DerivPath])
+            (decode $ B8.pack $ "[\"" ++ path ++ "\"]")
 
 testToJsonPath :: [Test]
 testToJsonPath = do
     path <- jsonPathVectors
     return $ testCase ("Path " ++ path) $
         assertEqual path (B8.pack $ "[\"" ++ path ++ "\"]")
-        (encode [fromString path :: DerivPath])
+            (encode [fromString path :: DerivPath])
 
 jsonPathVectors :: [String]
 jsonPathVectors =
@@ -71,8 +69,8 @@ jsonPathVectors =
     , "M/2147483647"
     , "m/1/2/3/4/5/6/7/8"
     , "M/1/2/3/4/5/6/7/8"
-    , "m/1/2'/3/4'"
-    , "M/1/2'/3/4'"
+    , "m/1'/2'/3/4"
+    , "M/1'/2'/3/4"
     ]
 
 testParsePath :: [Test]
@@ -94,30 +92,41 @@ parsePathVectors =
     , ("M/-2147483648", isNothing)
     , ("m/1/2/3/4/5/6/7/8", isJust)
     , ("M/1/2/3/4/5/6/7/8", isJust)
-    , ("m/1/2'/3/4'", isJust)
-    , ("M/1/2'/3/4'", isJust)
+    , ("m/1'/2'/3/4", isJust)
+    , ("M/1'/2'/3/4", isJust)
+    , ("m/1/2'/3/4'", isNothing)
+    , ("M/1/2'/3/4'", isNothing)
     , ("meh", isNothing)
     , ("infinity", isNothing)
     , ("NaN", isNothing)
     ]
 
-testDerivePath :: [Test]
-testDerivePath = do
+testDerivePathE :: [Test]
+testDerivePathE = do
     (key, path, final) <- derivePathVectors
     return $ testCase ("Path " ++ path) $
-        assertEqual path final $ derivePath (fromString path) key
+        assertEqual path final $ 
+            derivePathE (fromString path :: DerivPath) key
 
 testDerivePubPath :: [Test]
 testDerivePubPath = do
     (key, path, final) <- derivePubPathVectors
     return $ testCase ("Path " ++ path) $
-        assertEqual path final $ derivePubPath (fromString path) key
+        assertEqual path final $ 
+            derivePubPath (fromString path :: SoftPath) key
 
-derivePubPathVectors :: [(XPubKey, String, Maybe XPubKey)]
+testDerivePrvPath :: [Test]
+testDerivePrvPath = do
+    (key, path, final) <- derivePrvPathVectors
+    return $ testCase ("Path " ++ path) $
+        assertEqual path final $ 
+            derivePath (fromString path :: DerivPath) key
+
+derivePubPathVectors :: [(XPubKey, String, XPubKey)]
 derivePubPathVectors =
-    [ ( xpub, "M", Just xpub )
+    [ ( xpub, "M", xpub )
     , ( xpub, "M/8", pubSubKey xpub 8 )
-    , ( xpub, "M/8/30/1", foldM pubSubKey xpub [8,30,1] )
+    , ( xpub, "M/8/30/1", foldl pubSubKey xpub [8,30,1] )
     ]
   where
     xprv = fromJust $ xPrvImport
@@ -125,21 +134,48 @@ derivePubPathVectors =
         \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
     xpub = deriveXPubKey xprv
 
-derivePathVectors :: [(XPrvKey, String, Maybe XKey)]
-derivePathVectors =
-    [ ( xprv, "m", Just (XKeyPrv xprv) )
-    , ( xprv, "M", Just (XKeyPub xpub) )
-    , ( xprv, "m/8'", XKeyPrv <$> primeSubKey xprv 8 )
-    , ( xprv, "M/8'", (XKeyPub . deriveXPubKey) <$> primeSubKey xprv 8 )
+derivePrvPathVectors :: [(XPrvKey, String, XPrvKey)]
+derivePrvPathVectors =
+    [ ( xprv, "m", xprv )
+    , ( xprv, "M", xprv )
+    , ( xprv, "m/8'", hardSubKey xprv 8 )
+    , ( xprv, "M/8'", hardSubKey xprv 8 )
     , ( xprv, "m/8'/30/1"
-      , XKeyPrv <$> (primeSubKey xprv 8 >>= \k -> foldM prvSubKey k [30,1]) )
+      , foldl prvSubKey (hardSubKey xprv 8) [30,1]
+      )
     , ( xprv, "M/8'/30/1"
-      , (XKeyPub . deriveXPubKey) <$>
-          (primeSubKey xprv 8 >>= flip (foldM prvSubKey) [30,1]) )
+      , foldl prvSubKey (hardSubKey xprv 8) [30,1]
+      )
     , ( xprv, "m/3/20"
-      , XKeyPrv <$> (foldM prvSubKey xprv [3,20]) )
+      , foldl prvSubKey xprv [3,20]
+      )
     , ( xprv, "M/3/20"
-      , (XKeyPub . deriveXPubKey) <$> (foldM prvSubKey xprv [3,20]) )
+      , foldl prvSubKey xprv [3,20]
+      )
+    ]
+  where
+    xprv = fromJust $ xPrvImport
+        "xprv9s21ZrQH143K46iDVRSyFfGfMgQjzC4BV3ZUfNbG7PHQrJjE53ofAn5gYkp6KQ\
+        \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
+
+derivePathVectors :: [(XPrvKey, String, Either XPubKey XPrvKey)]
+derivePathVectors =
+    [ ( xprv, "m", Right xprv )
+    , ( xprv, "M", Left xpub )
+    , ( xprv, "m/8'", Right $ hardSubKey xprv 8 )
+    , ( xprv, "M/8'", Left $ deriveXPubKey $ hardSubKey xprv 8 )
+    , ( xprv, "m/8'/30/1"
+      , Right $ foldl prvSubKey (hardSubKey xprv 8) [30,1]
+      )
+    , ( xprv, "M/8'/30/1"
+      , Left $ deriveXPubKey $ foldl prvSubKey (hardSubKey xprv 8) [30,1]
+      )
+    , ( xprv, "m/3/20"
+      , Right $ foldl prvSubKey xprv [3,20]
+      )
+    , ( xprv, "M/3/20"
+      , Left $ deriveXPubKey $ foldl prvSubKey xprv [3,20]
+      )
     ]
   where
     xprv = fromJust $ xPrvImport
@@ -166,25 +202,25 @@ runXKeyVec (v,m) = do
 -- BIP 0032 Test Vectors
 -- https://en.bitcoin.it/wiki/BIP_0032_TestVectors
 
-xKeyVec :: [([String],XPrvKey)]
-xKeyVec = zip xKeyResVec $ catMaybes $ foldl f [m] der
-    where f acc d = acc ++ [d =<< last acc]
+xKeyVec :: [([String], XPrvKey)]
+xKeyVec = zip xKeyResVec $ foldl f [m] der
+    where f acc d = acc ++ [d $ last acc]
           m   = makeXPrvKey $ fromJust $ hexToBS m0
-          der = [ flip primeSubKey 0
+          der = [ flip hardSubKey 0
                 , flip prvSubKey 1
-                , flip primeSubKey 2
+                , flip hardSubKey 2
                 , flip prvSubKey 2
                 , flip prvSubKey 1000000000
                 ]
 
 xKeyVec2 :: [([String],XPrvKey)]
-xKeyVec2 = zip xKeyResVec2 $ catMaybes $ foldl f [m] der
-    where f acc d = acc ++ [d =<< last acc]
+xKeyVec2 = zip xKeyResVec2 $ foldl f [m] der
+    where f acc d = acc ++ [d $ last acc]
           m   = makeXPrvKey $ fromJust $ hexToBS m1
           der = [ flip prvSubKey 0
-                , flip primeSubKey 2147483647
+                , flip hardSubKey 2147483647
                 , flip prvSubKey 1
-                , flip primeSubKey 2147483646
+                , flip hardSubKey 2147483646
                 , flip prvSubKey 2
                 ]
 

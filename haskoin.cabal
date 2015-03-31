@@ -59,7 +59,6 @@ library
                    Network.Haskoin.Crypto.Base58
                    Network.Haskoin.Crypto.Keys
                    Network.Haskoin.Crypto.ExtendedKeys
-                   Network.Haskoin.Crypto.NormalizedKeys
                    Network.Haskoin.Crypto.ECDSA
                    Network.Haskoin.Crypto.Mnemonic
                    Network.Haskoin.Node.Types
@@ -100,6 +99,7 @@ library
                 RecordWildCards
                 DeriveFunctor
                 TypeFamilies
+                GADTs
 
     build-depends: aeson                    >= 0.7          && < 0.9
                  , base                     >= 4.6          && < 5 

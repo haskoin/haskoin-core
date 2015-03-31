@@ -119,14 +119,13 @@ module Network.Haskoin.Crypto
 , mnemonicToSeed
 
   -- *Extended Keys
+, KeyIndex
 , ChainCode
-, XKey(..)
-, DerivPath
 
   -- **Extended Private Keys
 , XPrvKey(..)
 , makeXPrvKey
-, xPrvIsPrime
+, xPrvIsHard
 , xPrvChild
 , xPrvID
 , xPrvFP
@@ -137,7 +136,7 @@ module Network.Haskoin.Crypto
   -- **Extended Public Keys
 , XPubKey(..)
 , deriveXPubKey
-, xPubIsPrime
+, xPubIsHard
 , xPubChild
 , xPubID
 , xPubFP
@@ -148,74 +147,36 @@ module Network.Haskoin.Crypto
   -- **Child key derivations
 , prvSubKey
 , pubSubKey
-, primeSubKey
+, hardSubKey
 , prvSubKeys
 , pubSubKeys
-, primeSubKeys
+, hardSubKeys
+
+  -- ** Address derivations
+, deriveAddr
+, deriveAddrs
+, deriveMSAddr
+, deriveMSAddrs
+
+  -- ** Custom path derivations
+, DerivPathI((:|), (:/), Deriv, DerivPrv, DerivPub)
+, DerivPath
+, HardPath
+, SoftPath
 , parsePath
+, parseHard
+, parseSoft
+, toHard
+, toSoft
 , derivePath
 , derivePubPath
+, derivePathE
 
-  -- ***Multisig derivations
-, mulSigSubKey
-, mulSigSubKeys
-
-  -- *Derivation tree interoperability
-
-  -- | To improve BIP32 wallet interoperability, a standard derivation tree
-  -- is used. All accounts are generated through prime derivations from the
-  -- master key. This ensures that the master key is not compromised if
-  -- an account is compromised. Every account will generate receiving
-  -- addresses from the non-prime subtree index 0 and internal change
-  -- addresses from the non-prime subtree index 1. MasterKey, AccountKey
-  -- and AddressKey types are defined to conform to the wallet interoperability
-  -- format.
-
-, KeyIndex
-
-  -- **Master keys
-, MasterKey(..)
-, makeMasterKey
-, loadMasterKey
-
-  -- **Account keys
-, AccPrvKey(..)
-, AccPubKey(..)
-, loadPrvAcc
-, loadPubAcc
-, accPrvKey
-, accPubKey
-, accPrvKeys
-, accPubKeys
-
-  -- **Address keys
-, AddrPrvKey(..)
-, AddrPubKey(..)
-, toAddr
-, extPrvKey
-, extPubKey
-, intPrvKey
-, intPubKey
-, extPrvKeys
-, extPubKeys
-, intPrvKeys
-, intPubKeys
-, extAddr
-, intAddr
-, extAddrs
-, intAddrs
-, extAddrs'
-, intAddrs'
-
-  -- ***Multisig address keys
-, extMulSigKey
-, intMulSigKey
-, extMulSigKeys
-, intMulSigKeys
-, extMulSigAddr
-, intMulSigAddr
-, extMulSigAddrs
-, intMulSigAddrs
+  -- * Custom path address derivations
+, derivePathAddr
+, derivePathAddrs
+, derivePathMSAddr
+, derivePathMSAddrs
 
 ) where
 
@@ -226,5 +187,4 @@ import Network.Haskoin.Crypto.Base58
 import Network.Haskoin.Crypto.Mnemonic
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.ExtendedKeys
-import Network.Haskoin.Crypto.NormalizedKeys
 

@@ -19,26 +19,25 @@ module Network.Haskoin.Test.Crypto
 , ArbitraryDetSignature(..)
 , ArbitraryXPrvKey(..)
 , ArbitraryXPubKey(..)
+, ArbitraryHardPath(..)
+, ArbitrarySoftPath(..)
 , ArbitraryDerivPath(..)
-, ArbitraryMasterKey(..)
-, ArbitraryAccPrvKey(..)
-, ArbitraryAccPubKey(..)
-, ArbitraryAddrPrvKey(..)
-, ArbitraryAddrPubKey(..)
 ) where
 
 import Test.QuickCheck 
     ( Arbitrary
+    , Gen
     , arbitrary
     , choose
     , elements
     , frequency
     , oneof
+    , listOf
     )
 
 import Control.Applicative ((<$>))
 
-import Data.Bits (clearBit, testBit)
+import Data.Bits (clearBit)
 import Data.Maybe (fromJust)
 import Data.Word (Word32)
 
@@ -50,7 +49,6 @@ import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Base58
 import Network.Haskoin.Crypto.Curve
 import Network.Haskoin.Crypto.ExtendedKeys
-import Network.Haskoin.Crypto.NormalizedKeys
 
 -- | Arbitrary Point on the secp256k1 curve
 newtype ArbitraryPoint = ArbitraryPoint Point
@@ -210,85 +208,43 @@ instance Arbitrary ArbitraryXPubKey where
         ArbitraryXPrvKey k <- arbitrary
         return $ ArbitraryXPubKey k $ deriveXPubKey k
 
-data ArbitraryDerivPath = ArbitraryDerivPath DerivPath
-    deriving (Eq, Show, Read)
+{- Custom derivations -}
 
-data ArbitraryDeriv = ArbitraryDeriv (Word32, Bool)
-    deriving (Eq, Show, Read)
+genIndex :: Gen Word32
+genIndex = (`clearBit` 31) <$> arbitrary
+
+data ArbitraryHardPath = ArbitraryHardPath HardPath
+    deriving (Show, Eq)
+
+instance Arbitrary ArbitraryHardPath where
+    arbitrary = 
+        ArbitraryHardPath <$> (go =<< listOf genIndex)
+      where
+        go []     = elements [ Deriv, DerivPrv, DerivPub ]
+        go (i:is) = (:| i) <$> go is 
+
+data ArbitrarySoftPath = ArbitrarySoftPath SoftPath
+    deriving (Show, Eq)
+
+instance Arbitrary ArbitrarySoftPath where
+    arbitrary = 
+        ArbitrarySoftPath <$> (go =<< listOf genIndex)
+      where
+        go []     = elements [ Deriv, DerivPrv, DerivPub ]
+        go (i:is) = (:/ i) <$> go is 
+
+data ArbitraryDerivPath = ArbitraryDerivPath DerivPath
+    deriving (Show, Eq)
 
 instance Arbitrary ArbitraryDerivPath where
     arbitrary = do
-        path <- map (\(ArbitraryDeriv x) -> x) <$> arbitrary
-        ArbitraryDerivPath <$> elements 
-            [ DerivPrv path
-            , DerivPub path
-            ]
-
-instance Arbitrary ArbitraryDeriv where
-    arbitrary = do
-        w <- arbitrary
-        let i = w `clearBit` 31
-            b = w `testBit` 31
-        return $ ArbitraryDeriv (i, b)
-
--- | Arbitrary master key
-data ArbitraryMasterKey = ArbitraryMasterKey MasterKey
-    deriving (Eq, Show, Read)
-
-instance Arbitrary ArbitraryMasterKey where
-    arbitrary = do
-        ArbitraryByteString bs <- arbitrary
-        case makeMasterKey bs of
-            Just k  -> return $ ArbitraryMasterKey k
-            Nothing -> arbitrary
-
--- | Arbitrary private account key with its corresponding master key.
-data ArbitraryAccPrvKey = ArbitraryAccPrvKey MasterKey AccPrvKey
-    deriving (Eq, Show, Read)
-
-instance Arbitrary ArbitraryAccPrvKey where
-    arbitrary = do
-        ArbitraryMasterKey m <- arbitrary
-        i <- choose (0,0x7fffffff)
-        case accPrvKey m i of
-            Just k -> return $ ArbitraryAccPrvKey m k
-            Nothing -> arbitrary
-
--- | Arbitrary public account key with its corresponding master key
--- and private account key.
-data ArbitraryAccPubKey = 
-    ArbitraryAccPubKey MasterKey AccPrvKey AccPubKey
-    deriving (Eq, Show, Read)
-
-instance Arbitrary ArbitraryAccPubKey where
-    arbitrary = do
-        ArbitraryAccPrvKey m k <- arbitrary
-        let p = AccPubKey $ deriveXPubKey $ getAccPrvKey k
-        return $ ArbitraryAccPubKey m k p
-
--- | Arbitrary private address key with its corresponding master key and
--- private account key.
-data ArbitraryAddrPrvKey = ArbitraryAddrPrvKey MasterKey AccPrvKey AddrPrvKey
-    deriving (Eq, Show, Read)
-
-instance Arbitrary ArbitraryAddrPrvKey where
-    arbitrary = do
-        ArbitraryAccPrvKey m k <- arbitrary
-        i <- choose (0,0x7fffffff)
-        f <- elements [extPrvKey, intPrvKey]
-        case f k i of
-            Just a  -> return $ ArbitraryAddrPrvKey m k a
-            Nothing -> arbitrary
-
--- | Arbitrary public address key with its corresponding master key,
--- private account key and private address key.
-data ArbitraryAddrPubKey = 
-    ArbitraryAddrPubKey MasterKey AccPrvKey AddrPrvKey AddrPubKey
-    deriving (Eq, Show, Read)
-
-instance Arbitrary ArbitraryAddrPubKey where
-    arbitrary = do
-        ArbitraryAddrPrvKey m k a <- arbitrary
-        let p = AddrPubKey $ deriveXPubKey $ getAddrPrvKey a
-        return $ ArbitraryAddrPubKey m k a p
+        xs  <- listOf genIndex
+        ys  <- listOf genIndex
+        return . ArbitraryDerivPath . goSoft ys =<< goHard xs
+      where
+        goSoft [] h     = h
+        goSoft (i:is) h = (goSoft is h) :/ i
+        goHard :: HardOrMixed t => [Word32] -> Gen (DerivPathI t)
+        goHard (i:is) = (:| i) <$> goHard is 
+        goHard []     = elements [ Deriv, DerivPrv, DerivPub ]
 

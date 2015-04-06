@@ -44,6 +44,7 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , parseSoft
 , toHard
 , toSoft
+, toMixed
 , derivePath
 , derivePubPath
 , derivePathE
@@ -352,28 +353,39 @@ hardSubKeys k = map (\i -> (hardSubKey k i, i)) . cycleIndex
 
 -- | Derive an address from a public key and an index. The derivation type
 -- is a public, soft derivation.
-deriveAddr :: XPubKey -> KeyIndex -> Address
-deriveAddr k = xPubAddr . pubSubKey k
+deriveAddr :: XPubKey -> KeyIndex -> (Address, PubKeyC)
+deriveAddr k i = 
+    (xPubAddr key, xPubKey key) 
+  where
+    key = pubSubKey k i
 
 -- | Cyclic list of all addresses derived from a public key starting from an
 -- offset index. The derivation types are public, soft derivations.
-deriveAddrs :: XPubKey -> KeyIndex -> [(Address, KeyIndex)]
-deriveAddrs k = map (\i -> (deriveAddr k i, i)) . cycleIndex
+deriveAddrs :: XPubKey -> KeyIndex -> [(Address, PubKeyC, KeyIndex)]
+deriveAddrs k = 
+    map f . cycleIndex
+  where
+    f i = let (a, key) = deriveAddr k i in (a, key, i)
 
 -- | Derive a multisig address from a list of public keys, the number of
 -- required signatures (m) and a derivation index. The derivation type is a
 -- public, soft derivation.
-deriveMSAddr :: [XPubKey] -> Int -> KeyIndex -> Address
+deriveMSAddr :: [XPubKey] -> Int -> KeyIndex -> (Address, RedeemScript)
 deriveMSAddr keys m i = 
-    scriptAddr $ sortMulSig $ PayMulSig (map (toPubKeyG . xPubKey) k) m
+    (scriptAddr rdm, rdm)
   where
-    k = map (flip pubSubKey i) keys
+    rdm = sortMulSig $ PayMulSig k m
+    k   = map (toPubKeyG . xPubKey . flip pubSubKey i) keys
 
 -- | Cyclic list of all multisig addresses derived from a list of public keys,
 -- a number of required signatures (m) and starting from an offset index. The
 -- derivation type is a public, soft derivation.
-deriveMSAddrs :: [XPubKey] -> Int -> KeyIndex -> [(Address, KeyIndex)]
-deriveMSAddrs keys m = map (\i -> (deriveMSAddr keys m i, i)) . cycleIndex
+deriveMSAddrs :: [XPubKey] -> Int -> KeyIndex 
+              -> [(Address, RedeemScript, KeyIndex)]
+deriveMSAddrs keys m = 
+    map f . cycleIndex
+  where
+    f i = let (a, rdm) = deriveMSAddr keys m i in (a, rdm, i)
 
 cycleIndex :: KeyIndex -> [KeyIndex]
 cycleIndex i
@@ -513,6 +525,14 @@ toSoft p = case p of
     DerivPrv  -> Just DerivPrv
     DerivPub  -> Just DerivPub
 
+toMixed :: DerivPathI t -> DerivPath
+toMixed p = case p of
+    next :/ i -> (toMixed next) :/ i
+    next :| i -> next :| i
+    Deriv     -> Deriv
+    DerivPrv  -> DerivPrv
+    DerivPub  -> DerivPub
+
 -- | Derive a private key from a derivation path
 derivePath :: DerivPathI t -> XPrvKey -> XPrvKey
 derivePath path key = 
@@ -556,17 +576,19 @@ derivePathE path key =
         _         -> Right . f
 
 -- | Derive an address from a given parent path.
-derivePathAddr :: XPubKey -> SoftPath -> KeyIndex -> Address
+derivePathAddr :: XPubKey -> SoftPath -> KeyIndex -> (Address, PubKeyC)
 derivePathAddr key path i = deriveAddr (derivePubPath path key) i
 
 -- | Cyclic list of all addresses derived from a given parent path and starting
 -- from the given offset index.
-derivePathAddrs :: XPubKey -> SoftPath -> KeyIndex -> [(Address, KeyIndex)]
+derivePathAddrs :: XPubKey -> SoftPath -> KeyIndex 
+                -> [(Address, PubKeyC, KeyIndex)]
 derivePathAddrs key path i = deriveAddrs (derivePubPath path key) i
 
 -- | Derive a multisig address from a given parent path. The number of required
 -- signatures (m in m of n) is also needed.
-derivePathMSAddr :: [XPubKey] -> SoftPath -> Int -> KeyIndex -> Address
+derivePathMSAddr :: [XPubKey] -> SoftPath -> Int -> KeyIndex 
+                 -> (Address, RedeemScript)
 derivePathMSAddr keys path m i = 
     deriveMSAddr (map (derivePubPath path) keys) m i
 
@@ -574,7 +596,7 @@ derivePathMSAddr keys path m i =
 -- starting from the given offset index. The number of required signatures
 -- (m in m of n) is also needed.
 derivePathMSAddrs :: [XPubKey] -> SoftPath -> Int -> KeyIndex 
-                  -> [(Address, KeyIndex)]
+                  -> [(Address, RedeemScript, KeyIndex)]
 derivePathMSAddrs keys path m i = 
     deriveMSAddrs (map (derivePubPath path) keys) m i
 

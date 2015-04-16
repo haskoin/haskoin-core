@@ -7,6 +7,9 @@ module Network.Haskoin.Block.HeaderTree
 , connectHeaders
 , commitAction
 , actionNewNodes
+, isBestChain
+, isChainReorg
+, isSideChain
 , blockLocator
 , getNodeWindow
 , bestBlockHeaderHeight
@@ -92,6 +95,21 @@ actionNewNodes action = case action of
     BestChain ns -> ns
     ChainReorg _ _ ns -> ns
     SideChain ns -> ns
+
+-- | Returns True if the action is a best chain
+isBestChain :: BlockChainAction -> Bool
+isBestChain (BestChain _) = True
+isBestChain _             = False
+
+-- | Returns True if the action is a chain reorg
+isChainReorg :: BlockChainAction -> Bool
+isChainReorg (ChainReorg _ _ _) = True
+isChainReorg _                  = False
+
+-- | Returns True if the action is a side chain
+isSideChain :: BlockChainAction -> Bool
+isSideChain (SideChain _) = True
+isSideChain _             = False
 
 -- | Number of blocks on average between difficulty cycles (2016 blocks)
 diffInterval :: Word32

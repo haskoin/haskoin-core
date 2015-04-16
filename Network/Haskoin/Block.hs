@@ -34,6 +34,9 @@ module Network.Haskoin.Block
 , BlockHeaderNode(..)
 , BlockChainAction(..)
 , actionNewNodes
+, isBestChain
+, isChainReorg
+, isSideChain
 , bestBlockHeaderHeight
 , getBlockHeaderHeight
 , genesisNode

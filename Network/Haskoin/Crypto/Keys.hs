@@ -86,25 +86,25 @@ instance NFData (PubKeyI c) where
     rnf (PubKeyI p c) = rnf p `seq` rnf c
 
 instance ToJSON (PubKeyI Generic) where
-    toJSON = String . pack . bsToString . encode'
+    toJSON = String . pack . bsToHex . encode'
 
 instance FromJSON (PubKeyI Generic) where
     parseJSON = withText "PubKey" $ 
-        maybe mzero return . decodeToMaybe . stringToBS . unpack
+        maybe mzero return . (decodeToMaybe =<<) . hexToBS . unpack
 
 instance ToJSON (PubKeyI Compressed) where
-    toJSON = String . pack . bsToString . encode'
+    toJSON = String . pack . bsToHex . encode'
 
 instance FromJSON (PubKeyI Compressed) where
     parseJSON = withText "PubKeyC" $ 
-        maybe mzero return . decodeToMaybe . stringToBS . unpack
+        maybe mzero return . (decodeToMaybe =<<) . hexToBS . unpack
 
 instance ToJSON (PubKeyI Uncompressed) where
     toJSON = String . pack . bsToString . encode'
 
 instance FromJSON (PubKeyI Uncompressed) where
     parseJSON = withText "PubKeyU" $ 
-        maybe mzero return . decodeToMaybe . stringToBS . unpack
+        maybe mzero return . (decodeToMaybe =<<) . hexToBS . unpack
 
 -- Constructors for public keys
 makePubKey :: Point -> PubKey

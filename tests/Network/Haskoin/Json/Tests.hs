@@ -21,6 +21,9 @@ tests =
         , testProperty "Word256" (metaID :: Word256 -> Bool)
         , testProperty "SigHash" $ \(ArbitrarySigHash x) -> metaID x
         , testProperty "SigInput" $ \(ArbitrarySigInput x _) -> metaID x
+        , testProperty "PubKey" $ \(ArbitraryPubKey _ x) -> metaID x
+        , testProperty "PubKeyC" $ \(ArbitraryPubKeyC _ x) -> metaID x
+        , testProperty "PubKeyU" $ \(ArbitraryPubKeyU _ x) -> metaID x
         , testProperty "XPrvKey" $ \(ArbitraryXPrvKey x) -> metaID x
         , testProperty "XPubKey" $ \(ArbitraryXPubKey _ x) -> metaID x
         , testProperty "DerivPath" $ \(ArbitraryDerivPath x) -> metaID x

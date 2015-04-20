@@ -34,13 +34,15 @@ module Network.Haskoin.Crypto.Keys
 ) where
 
 import Control.Applicative ((<$>), (<*>), (<|>))
-import Control.Monad (when, unless, guard)
+import Control.Monad (when, unless, guard, mzero)
 import Control.DeepSeq (NFData, rnf)
 
+import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
 import Data.Maybe (isJust, fromJust, fromMaybe)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get (Get, getWord8)
 import Data.Binary.Put (Put, putWord8)
+import Data.Text (pack, unpack)
 import qualified Data.ByteString as BS 
     ( ByteString
     , head, tail
@@ -82,6 +84,27 @@ data PubKeyI c = PubKeyI
 
 instance NFData (PubKeyI c) where
     rnf (PubKeyI p c) = rnf p `seq` rnf c
+
+instance ToJSON (PubKeyI Generic) where
+    toJSON = String . pack . bsToHex . encode'
+
+instance FromJSON (PubKeyI Generic) where
+    parseJSON = withText "PubKey" $ 
+        maybe mzero return . (decodeToMaybe =<<) . hexToBS . unpack
+
+instance ToJSON (PubKeyI Compressed) where
+    toJSON = String . pack . bsToHex . encode'
+
+instance FromJSON (PubKeyI Compressed) where
+    parseJSON = withText "PubKeyC" $ 
+        maybe mzero return . (decodeToMaybe =<<) . hexToBS . unpack
+
+instance ToJSON (PubKeyI Uncompressed) where
+    toJSON = String . pack . bsToString . encode'
+
+instance FromJSON (PubKeyI Uncompressed) where
+    parseJSON = withText "PubKeyU" $ 
+        maybe mzero return . (decodeToMaybe =<<) . hexToBS . unpack
 
 -- Constructors for public keys
 makePubKey :: Point -> PubKey

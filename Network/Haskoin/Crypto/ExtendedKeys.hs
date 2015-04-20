@@ -510,7 +510,7 @@ parseHard = toHard <=< parsePath
 parseSoft :: String -> Maybe SoftPath
 parseSoft = toSoft <=< parsePath
 
-toHard :: DerivPath -> Maybe HardPath
+toHard :: DerivPathI t -> Maybe HardPath
 toHard p = case p of
     _ :/ _    -> Nothing
     next :| i -> Just $ next :| i
@@ -518,7 +518,7 @@ toHard p = case p of
     DerivPrv  -> Just DerivPrv
     DerivPub  -> Just DerivPub
 
-toSoft :: DerivPath -> Maybe SoftPath
+toSoft :: DerivPathI t -> Maybe SoftPath
 toSoft p = case p of
     _ :| _    -> Nothing
     next :/ i -> (:/ i) <$> toSoft next

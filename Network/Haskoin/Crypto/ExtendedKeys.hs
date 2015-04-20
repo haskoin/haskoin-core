@@ -45,6 +45,7 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , toHard
 , toSoft
 , toMixed
+, appendPath
 , derivePath
 , derivePubPath
 , derivePathE
@@ -532,6 +533,16 @@ toMixed p = case p of
     Deriv     -> Deriv
     DerivPrv  -> DerivPrv
     DerivPub  -> DerivPub
+
+appendPath :: DerivPath -> DerivPath -> DerivPath
+appendPath p1 p2 = 
+    go id p2 $ p1
+  where
+    go f p = case p of
+        next :/ i -> go (f . (:/ i)) next
+        next :| i -> go (f . (:| i) . fromMaybe err . toHard) $ toMixed next
+        _ -> f
+    err = error "Error while appending paths"
 
 -- | Derive a private key from a derivation path
 derivePath :: DerivPathI t -> XPrvKey -> XPrvKey

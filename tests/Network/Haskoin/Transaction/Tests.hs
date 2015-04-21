@@ -64,33 +64,31 @@ testGuessSize (ArbitraryAddrOnlyTx tx) =
     pkout    = length $ filter isPayPKHash out
     msout    = length $ filter isPayScriptHash out
 
-testChooseCoins :: Word64 -> Word64 -> [ArbitraryCoin] -> Bool
-testChooseCoins target kbfee acoins = case chooseCoins target kbfee xs of
-    Right (chosen,change) ->
+testChooseCoins :: Word64 -> Word64 -> [ArbitrarySatoshi] -> Bool
+testChooseCoins target kbfee coins = case chooseCoins target kbfee coins of
+    Right (chosen, change) ->
         let outSum = sum $ map coinValue chosen
             fee    = getFee kbfee (length chosen) 
         in outSum == target + change + fee
     Left _ -> 
-        let fee = getFee kbfee (length xs) 
+        let fee = getFee kbfee (length coins) 
         in target == 0 || s < target || s < target + fee
   where 
-    xs = map (\(ArbitraryCoin x) -> x) acoins
-    s  = sum $ map coinValue xs
+    s  = sum $ map coinValue coins
 
 testChooseMSCoins :: Word64 -> Word64 
-                  -> ArbitraryMSParam -> [ArbitraryCoin] -> Bool
-testChooseMSCoins target kbfee (ArbitraryMSParam m n) acoins = 
-    case chooseMSCoins target kbfee (m,n) xs of
+                  -> ArbitraryMSParam -> [ArbitrarySatoshi] -> Bool
+testChooseMSCoins target kbfee (ArbitraryMSParam m n) coins = 
+    case chooseMSCoins target kbfee (m,n) coins of
         Right (chosen,change) ->
             let outSum = sum $ map coinValue chosen
                 fee    = getMSFee kbfee (m,n) (length chosen) 
             in outSum == target + change + fee
         Left _ -> 
-            let fee = getMSFee kbfee (m,n) (length xs) 
+            let fee = getMSFee kbfee (m,n) (length coins) 
             in target == 0 || s < target + fee
   where 
-    xs = map (\(ArbitraryCoin x) -> x) acoins
-    s  = sum $ map coinValue xs
+    s  = sum $ map coinValue coins
 
 {- Signing Transactions -}
 

@@ -91,7 +91,6 @@ module Network.Haskoin.Test
 , ArbitraryAddrOnlyTx(..)
 , ArbitraryAddrOnlyTxIn(..)
 , ArbitraryAddrOnlyTxOut(..)
-, ArbitraryCoin(..)
 , ArbitrarySigInput(..)
 , ArbitraryPKSigInput(..)
 , ArbitraryPKHashSigInput(..)

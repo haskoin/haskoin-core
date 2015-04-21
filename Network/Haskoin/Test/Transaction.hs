@@ -11,7 +11,6 @@ module Network.Haskoin.Test.Transaction
 , ArbitraryAddrOnlyTx(..)
 , ArbitraryAddrOnlyTxIn(..)
 , ArbitraryAddrOnlyTxOut(..)
-, ArbitraryCoin(..)
 , ArbitrarySigInput(..)
 , ArbitraryPKSigInput(..)
 , ArbitraryPKHashSigInput(..)
@@ -52,6 +51,9 @@ newtype ArbitrarySatoshi = ArbitrarySatoshi Word64
 
 instance Arbitrary ArbitrarySatoshi where
     arbitrary = ArbitrarySatoshi <$> choose (1, maxSatoshi)
+
+instance Coin ArbitrarySatoshi where
+    coinValue (ArbitrarySatoshi v) = v
 
 -- | Arbitrary OutPoint
 newtype ArbitraryOutPoint = ArbitraryOutPoint OutPoint
@@ -157,21 +159,6 @@ instance Arbitrary ArbitraryAddrOnlyTxOut where
             ]
         return $ ArbitraryAddrOnlyTxOut $ TxOut v $ encodeOutputBS out
 
--- | Arbitrary Coin
-newtype ArbitraryCoin = ArbitraryCoin Coin
-    deriving (Eq, Show, Read)
-
-instance Arbitrary ArbitraryCoin where
-    arbitrary = do
-        ArbitrarySatoshi v <- arbitrary
-        ArbitraryScriptOutput out <- arbitrary
-        ArbitraryOutPoint op <- arbitrary
-        rdm <- oneof 
-            [ arbitrary >>= \(ArbitrarySimpleOutput r) -> return $ Just r
-            , return Nothing
-            ]
-        return $ ArbitraryCoin $ Coin v out op rdm
-            
 -- | Arbitrary SigInput with the corresponding private keys used
 -- to generate the ScriptOutput or RedeemScript
 data ArbitrarySigInput = ArbitrarySigInput SigInput [PrvKey]

@@ -11,8 +11,7 @@ import Network.Haskoin.Crypto
 tests :: [Test]
 tests = 
     [ testGroup "Serialize & de-serialize haskoin types to JSON"
-        [ testProperty "Coin" $ \(ArbitraryCoin x) -> metaID x
-        , testProperty "ScriptOutput" $ \(ArbitraryScriptOutput x) -> metaID x
+        [ testProperty "ScriptOutput" $ \(ArbitraryScriptOutput x) -> metaID x
         , testProperty "OutPoint" $ \(ArbitraryOutPoint x) -> metaID x
         , testProperty "Address" $ \(ArbitraryAddress x) -> metaID x
         , testProperty "Tx" $ \(ArbitraryTx x) -> metaID x

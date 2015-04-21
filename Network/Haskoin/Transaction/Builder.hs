@@ -17,7 +17,7 @@ module Network.Haskoin.Transaction.Builder
 , getMSFee
 ) where
 
-import Control.Applicative ((<$>),(<*>))
+import Control.Applicative ((<$>))
 import Control.Monad (mzero, foldM, unless)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Either (EitherT, left)
@@ -31,7 +31,6 @@ import Data.Aeson
     ( Value (Object)
     , FromJSON
     , ToJSON
-    , withObject
     , (.=), (.:), (.:?)
     , object
     , parseJSON
@@ -44,83 +43,72 @@ import Network.Haskoin.Node.Types
 import Network.Haskoin.Script
 import Network.Haskoin.Transaction.Types
 
--- | A Coin is an output of a transaction that can be spent by another
--- transaction. 
-data Coin = 
-    Coin { coinValue    :: !Word64               -- ^ Value in satoshi
-         , coinScript   :: !ScriptOutput         -- ^ Output script
-         , coinOutPoint :: !OutPoint             -- ^ Previous outpoint
-         , coinRedeem   :: !(Maybe RedeemScript) -- ^ Redeem script
-         } deriving (Eq, Show, Read)
-
-instance ToJSON Coin where
-    toJSON Coin{..} = object
-      [ "value"     .= coinValue
-      , "script"    .= coinScript
-      , "outpoint"  .= coinOutPoint
-      , "redeem"    .= coinRedeem
-      ]
-
-instance FromJSON Coin where
-    parseJSON = withObject "Coin" $ \o ->
-        Coin <$> o .: "value"
-             <*> o .: "script"
-             <*> o .: "outpoint"
-             <*> o .: "redeem"
-
-instance NFData Coin where
-    rnf (Coin v s o r) = rnf v `seq` rnf s `seq` rnf o `seq` rnf r
+-- | Any type can be used as a Coin if it can provide a value in Satoshi.
+-- The value is used in coin selection algorithms.
+class Coin c where
+    coinValue :: c -> Word64
 
 -- | Coin selection algorithm for normal (non-multisig) transactions. This
 -- function returns the selected coins together with the amount of change to
 -- send back to yourself, taking the fee into account.
-chooseCoins :: Word64 -- ^ Target price to pay.
+chooseCoins :: Coin c 
+            => Word64 -- ^ Target price to pay.
             -> Word64 -- ^ Fee price per 1000 bytes.
-            -> [Coin] -- ^ List of coins to choose from.
-            -> Either String ([Coin],Word64) 
+            -> [c]    -- ^ List of coins to choose from.
+            -> Either String ([c], Word64) 
                -- ^ Coin selection result and change amount.
 chooseCoins target kbfee xs 
     | target > 0 = maybeToEither err $ greedyAdd target (getFee kbfee) xs
     | otherwise  = Left "chooseCoins: Target must be > 0"
-    where err = "chooseCoins: No solution found"
+  where 
+    err = "chooseCoins: No solution found"
 
 -- | Coin selection algorithm for multisignature transactions. This function
 -- returns the selected coins together with the amount of change to send back
 -- to yourself, taking the fee into account. This function assumes all the 
 -- coins are script hash outputs that send funds to a multisignature address.
-chooseMSCoins :: Word64    -- ^ Target price to pay.
-              -> Word64    -- ^ Fee price per 1000 bytes.
-              -> (Int,Int) -- ^ Multisig parameters m of n (m,n).
-              -> [Coin]    -- ^ List of coins to choose from.
-              -> Either String ([Coin],Word64) 
+chooseMSCoins :: Coin c
+              => Word64     -- ^ Target price to pay.
+              -> Word64     -- ^ Fee price per 1000 bytes.
+              -> (Int, Int) -- ^ Multisig parameters m of n (m,n).
+              -> [c]        -- ^ List of coins to choose from.
+              -> Either String ([c], Word64) 
                  -- ^ Coin selection result and change amount.
 chooseMSCoins target kbfee ms xs 
     | target > 0 = maybeToEither err $ greedyAdd target (getMSFee kbfee ms) xs
     | otherwise  = Left "chooseMSCoins: Target must be > 0"
-    where err = "chooseMSCoins: No solution found"
+  where 
+    err = "chooseMSCoins: No solution found"
 
 -- Select coins greedily by starting from an empty solution
-greedyAdd :: Word64 -> (Int -> Word64) -> [Coin] -> Maybe ([Coin],Word64)
-greedyAdd target fee xs = go [] 0 [] 0 $ sortBy desc xs
-    where desc a b = compare (coinValue b) (coinValue a)
-          goal c = target + fee c
-          go _ _ [] _ []    = Nothing
-          go _ _ ps pTot [] = return (ps,pTot - (goal $ length ps))
-          go acc aTot ps pTot (y:ys)
-            | val + aTot >= (goal $ length acc + 1) =
-                if aTot + val - target < pTot - target
-                    then go [] 0 (y:acc) (aTot + val) ys
-                    else return (ps,pTot - (goal $ length ps))
-            | otherwise = go (y:acc) (aTot + val) ps pTot ys
-            where val = coinValue y
+greedyAdd :: Coin c 
+          => Word64 -> (Int -> Word64) -> [c] -> Maybe ([c], Word64)
+greedyAdd target fee xs = 
+    go [] 0 [] 0 $ sortBy desc xs
+  where 
+    desc a b = compare (coinValue b) (coinValue a)
+    goal c = target + fee c
+    go _ _ [] _ []    = Nothing
+    go _ _ ps pTot [] = return (ps,pTot - (goal $ length ps))
+    go acc aTot ps pTot (y:ys)
+      | val + aTot >= (goal $ length acc + 1) =
+          if aTot + val - target < pTot - target
+              then go [] 0 (y:acc) (aTot + val) ys
+              else return (ps,pTot - (goal $ length ps))
+      | otherwise = go (y:acc) (aTot + val) ps pTot ys
+      where val = coinValue y
 
 getFee :: Word64 -> Int -> Word64
-getFee kbfee count = kbfee*((len + 999) `div` 1000)
-    where len = fromIntegral $ guessTxSize count [] 2 0
+getFee kbfee count = 
+    kbfee*((len + 999) `div` 1000)
+  where 
+    len = fromIntegral $ guessTxSize count [] 2 0
 
 getMSFee :: Word64 -> (Int,Int) -> Int -> Word64
-getMSFee kbfee ms count = kbfee*((len + 999) `div` 1000)
-    where len = fromIntegral $ guessTxSize 0 (replicate count ms) 2 0
+getMSFee kbfee ms count = 
+    kbfee*((len + 999) `div` 1000)
+  where 
+    len = fromIntegral $ guessTxSize 0 (replicate count ms) 2 0
 
 -- | Computes an upper bound on the size of a transaction based on some known
 -- properties of the transaction.
@@ -131,46 +119,52 @@ guessTxSize :: Int         -- ^ Number of regular transaction inputs.
             -> Int         -- ^ Number of pay to public key hash outputs.
             -> Int         -- ^ Number of pay to script hash outputs.
             -> Int         -- ^ Upper bound on the transaction size.
-guessTxSize pki msi pkout msout = 8 + inpLen + inp + outLen + out
-    where inpLen = BS.length $ encode' $ 
-            VarInt $ fromIntegral $ (length msi) + pki
-          outLen = BS.length $ encode' $ 
-            VarInt $ fromIntegral $ pkout + msout
-          inp    = pki*148 + (sum $ map guessMSSize msi)
-                   -- (20: hash160) + (5: opcodes) + 
-                   -- (1: script len) + (8: Word64)
-          out    = pkout*34 + 
-                   -- (20: hash160) + (3: opcodes) + 
-                   -- (1: script len) + (8: Word64)
-                   msout*32
+guessTxSize pki msi pkout msout = 
+    8 + inpLen + inp + outLen + out
+  where 
+    inpLen = BS.length $ encode' $ VarInt $ fromIntegral $ (length msi) + pki
+    outLen = BS.length $ encode' $ VarInt $ fromIntegral $ pkout + msout
+    inp    = pki*148 + (sum $ map guessMSSize msi)
+             -- (20: hash160) + (5: opcodes) + 
+             -- (1: script len) + (8: Word64)
+    out    = pkout*34 + 
+             -- (20: hash160) + (3: opcodes) + 
+             -- (1: script len) + (8: Word64)
+             msout*32
 
 -- Size of a multisig pay2sh input
 guessMSSize :: (Int,Int) -> Int
-          -- OutPoint (36) + Sequence (4) + Script
-guessMSSize (m,n) = 40 + (BS.length $ encode' $ VarInt $ fromIntegral scp) + scp
-          -- OP_M + n*PubKey + OP_N + OP_CHECKMULTISIG
-    where rdm = BS.length $ encode' $ opPushData $ BS.replicate (n*34 + 3) 0
-          -- Redeem + m*sig + OP_0
-          scp = rdm + m*73 + 1 
+guessMSSize (m,n) = 
+    -- OutPoint (36) + Sequence (4) + Script
+    40 + (BS.length $ encode' $ VarInt $ fromIntegral scp) + scp
+  where 
+    -- OP_M + n*PubKey + OP_N + OP_CHECKMULTISIG
+    rdm = BS.length $ encode' $ opPushData $ BS.replicate (n*34 + 3) 0
+    -- Redeem + m*sig + OP_0
+    scp = rdm + m*73 + 1 
 
 {- Build a new Tx -}
 
 -- | Build a transaction by providing a list of outpoints as inputs
 -- and a list of recipients addresses and amounts as outputs. 
 buildAddrTx :: [OutPoint] -> [(String,Word64)] -> Either String Tx
-buildAddrTx xs ys = buildTx xs =<< mapM f ys
-    where f (s,v) = case base58ToAddr s of
-            Just a@(PubKeyAddress _) -> return (PayPKHash a,v)
-            Just a@(ScriptAddress _) -> return (PayScriptHash a,v)
-            _ -> Left $ "buildAddrTx: Invalid address " ++ s
+buildAddrTx xs ys = 
+    buildTx xs =<< mapM f ys
+  where 
+    f (s,v) = case base58ToAddr s of
+        Just a@(PubKeyAddress _) -> return (PayPKHash a,v)
+        Just a@(ScriptAddress _) -> return (PayScriptHash a,v)
+        _ -> Left $ "buildAddrTx: Invalid address " ++ s
 
 -- | Build a transaction by providing a list of outpoints as inputs
 -- and a list of 'ScriptOutput' and amounts as outputs.
 buildTx :: [OutPoint] -> [(ScriptOutput,Word64)] -> Either String Tx
-buildTx xs ys = mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
-    where fi outPoint = TxIn outPoint BS.empty maxBound
-          fo (o,v) | v <= 2100000000000000 = return $ TxOut v $ encodeOutputBS o
-                   | otherwise = Left $ "buildTx: Invalid amount " ++ (show v)
+buildTx xs ys = 
+    mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
+  where 
+    fi outPoint = TxIn outPoint BS.empty maxBound
+    fo (o,v) | v <= 2100000000000000 = return $ TxOut v $ encodeOutputBS o
+             | otherwise = Left $ "buildTx: Invalid amount " ++ (show v)
 
 -- | Data type used to specify the signing parameters of a transaction input.
 -- To sign an input, the previous output script, outpoint and sighash are

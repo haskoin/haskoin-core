@@ -100,7 +100,7 @@ instance FromJSON (PubKeyI Compressed) where
         maybe mzero return . (decodeToMaybe =<<) . hexToBS . unpack
 
 instance ToJSON (PubKeyI Uncompressed) where
-    toJSON = String . pack . bsToString . encode'
+    toJSON = String . pack . bsToHex . encode'
 
 instance FromJSON (PubKeyI Uncompressed) where
     parseJSON = withText "PubKeyU" $ 

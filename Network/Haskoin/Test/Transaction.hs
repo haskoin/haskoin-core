@@ -268,7 +268,7 @@ instance Arbitrary ArbitraryPartialTxs where
         singleSig so rdmM tx op prv = do
             ArbitraryValidSigHash sh <- arbitrary
             let sigi = SigInput so op sh rdmM
-            return $ fst $ fromRight $ detSignTx tx [sigi] [prv]
+            return $ fromRight $ detSignTx tx [sigi] [prv]
         arbitraryData = do
             ArbitraryMSParam m n <- arbitrary
             nPrv <- choose (m,n)

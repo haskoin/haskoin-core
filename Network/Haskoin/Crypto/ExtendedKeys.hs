@@ -45,6 +45,7 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , toHard
 , toSoft
 , toMixed
+, (++/), (++|)
 , derivePath
 , derivePubPath
 , derivePathE
@@ -509,7 +510,7 @@ parseHard = toHard <=< parsePath
 parseSoft :: String -> Maybe SoftPath
 parseSoft = toSoft <=< parsePath
 
-toHard :: DerivPath -> Maybe HardPath
+toHard :: DerivPathI t -> Maybe HardPath
 toHard p = case p of
     _ :/ _    -> Nothing
     next :| i -> Just $ next :| i
@@ -517,7 +518,7 @@ toHard p = case p of
     DerivPrv  -> Just DerivPrv
     DerivPub  -> Just DerivPub
 
-toSoft :: DerivPath -> Maybe SoftPath
+toSoft :: DerivPathI t -> Maybe SoftPath
 toSoft p = case p of
     _ :| _    -> Nothing
     next :/ i -> (:/ i) <$> toSoft next
@@ -532,6 +533,31 @@ toMixed p = case p of
     Deriv     -> Deriv
     DerivPrv  -> DerivPrv
     DerivPub  -> DerivPub
+
+-- | Append a SoftPath to any derivation path. It is always type-safe to
+-- append a SoftPath to any derivation path. The result will be a mixed 
+-- derivation path.
+(++/) :: DerivPathI t -> SoftPath -> DerivPath
+(++/) p1 p2 = 
+    go id p2 $ toMixed p1
+  where
+    go f p = case p of
+        next :/ i -> go (f . (:/ i)) next 
+        _ -> f
+
+-- | Append any type of derivation to a HardPath. It is always type-safe to
+-- append any type of path to a HardPath. The result will be a mixed derivation
+-- path.
+(++|) :: HardPath -> DerivPathI t -> DerivPath
+(++|) p1 p2 = 
+    go id (toMixed p2) $ toMixed p1
+  where
+    go :: (DerivPath -> DerivPath) -> DerivPath -> (DerivPath -> DerivPath)
+    go f p = case p of
+        next :/ i -> go (f . (:/ i)) next
+        next :| i -> go (f . (:| i) . fromMaybe err . toHard) $ toMixed next
+        _ -> f
+    err = error "Error while appending paths"
 
 -- | Derive a private key from a derivation path
 derivePath :: DerivPathI t -> XPrvKey -> XPrvKey

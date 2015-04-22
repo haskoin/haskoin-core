@@ -169,6 +169,7 @@ module Network.Haskoin.Crypto
 , toHard
 , toSoft
 , toMixed
+, (++/), (++|)
 , derivePath
 , derivePubPath
 , derivePathE

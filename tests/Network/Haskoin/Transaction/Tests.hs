@@ -95,18 +95,17 @@ testChooseMSCoins target kbfee (ArbitraryMSParam m n) coins =
 testDetSignTx :: ArbitrarySigningData -> Bool
 testDetSignTx (ArbitrarySigningData tx sigis prv) = 
     (not $ verifyStdTx tx verData)
-        && (not statP) && (not $ verifyStdTx txSigP verData)
-        && statC && verifyStdTx txSigC verData
+        && (not $ verifyStdTx txSigP verData)
+        && verifyStdTx txSigC verData
   where
-    (txSigP, statP) = fromRight $ detSignTx tx sigis (tail prv)
-    (txSigC, statC) = fromRight $ detSignTx txSigP sigis [head prv]
-    verData         = map (\(SigInput s o _ _) -> (s,o)) sigis
+    txSigP  = fromRight $ detSignTx tx sigis (tail prv)
+    txSigC  = fromRight $ detSignTx txSigP sigis [head prv]
+    verData = map (\(SigInput s o _ _) -> (s,o)) sigis
 
 testMergeTx :: ArbitraryPartialTxs -> Bool
 testMergeTx (ArbitraryPartialTxs txs os) = and 
     [ isRight mergeRes
     , length (txIn mergedTx) == length os
-    , if enoughSigs then complete else not complete
     , if enoughSigs then isValid else not isValid
     -- Signature count == min (length txs) (sum required signatures)
     , sum (map snd sigMap) == min (length txs) (sum (map fst sigMap))
@@ -114,7 +113,7 @@ testMergeTx (ArbitraryPartialTxs txs os) = and
   where
     outs = map (\(so, op, _, _) -> (so, op)) os
     mergeRes = mergeTxs txs outs
-    (mergedTx, complete) = fromRight mergeRes
+    mergedTx = fromRight mergeRes
     isValid = verifyStdTx mergedTx outs
     enoughSigs = and $ map (\(m,c) -> c >= m) sigMap
     sigMap = map (\((_,_,m,_), inp) -> (m, sigCnt inp)) $ zip os $ txIn mergedTx

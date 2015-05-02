@@ -20,7 +20,6 @@ functions (no IO monad). It provides the following features:
 - Headerchain implementation (Blockchain with headers only)
 - Bloom filters and partial merkle tree library
 - Headers-first SPV node implementation (network-only, no wallet)
-- JSON-RPC/Stratum client library
 
 A wallet implementation using the SPV node library is available in the
 haskoin-wallet package.

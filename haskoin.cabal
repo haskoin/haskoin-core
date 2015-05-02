@@ -19,7 +19,6 @@ description:
     * Headerchain implementation (Blockchain with headers only)
     * Bloom filters and partial merkle tree library
     * Headers-first SPV node implementation (network-only, no wallet)
-    * JSON-RPC/Stratum client library
     .
     A wallet implementation using the SPV node library is available in the
     haskoin-wallet package.
@@ -41,7 +40,6 @@ source-repository head
 
 library
     exposed-modules: Network.Haskoin.Util
-                     Network.Haskoin.Stratum
                      Network.Haskoin.Crypto
                      Network.Haskoin.Node
                      Network.Haskoin.Script
@@ -86,7 +84,6 @@ library
                    Network.Haskoin.Test.Script
                    Network.Haskoin.Test.Transaction
                    Network.Haskoin.Test.Block
-                   Network.Haskoin.Test.Stratum
 
     extensions: EmptyDataDecls
                 OverloadedStrings
@@ -114,7 +111,6 @@ library
                  , deepseq                  >= 1.3          && < 1.4
                  , data-default             >= 0.5          && < 0.6
                  , either                   >= 4.3          && < 4.4
-                 , json-rpc                 >= 0.2.0.1      && < 0.3
                  , leveldb-haskell          >= 0.6          && < 0.7
                  , lifted-async             >= 0.2          && < 0.7
                  , monad-control            >= 0.3          && < 1.1
@@ -159,8 +155,6 @@ test-suite test-haskoin
                    Network.Haskoin.Transaction.Units
                    Network.Haskoin.Block.Tests
                    Network.Haskoin.Block.Units
-                   Network.Haskoin.Stratum.Tests
-                   Network.Haskoin.Stratum.Units
                    Network.Haskoin.Json.Tests
                    Network.Haskoin.Binary.Tests
 
@@ -170,7 +164,6 @@ test-suite test-haskoin
                  , bytestring                     >= 0.10       && < 0.11 
                  , containers                     >= 0.5        && < 0.6
                  , haskoin
-                 , json-rpc                       >= 0.2.0.1    && < 0.3
                  , mtl                            >= 2.1        && < 2.3 
                  , split                          >= 0.2        && < 0.3
                  , HUnit                          >= 1.2        && < 1.3

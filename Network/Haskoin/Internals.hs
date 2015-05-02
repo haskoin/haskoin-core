@@ -4,7 +4,6 @@
 -}
 module Network.Haskoin.Internals
 ( module Network.Haskoin.Util
-, module Network.Haskoin.Stratum
 , module Network.Haskoin.Constants
 , module Network.Haskoin.Crypto.NumberTheory 
 , module Network.Haskoin.Crypto.Curve 
@@ -41,11 +40,9 @@ module Network.Haskoin.Internals
 , module Network.Haskoin.Test.Script
 , module Network.Haskoin.Test.Transaction
 , module Network.Haskoin.Test.Block
-, module Network.Haskoin.Test.Stratum
 ) where
 
 import Network.Haskoin.Util
-import Network.Haskoin.Stratum
 import Network.Haskoin.Constants
 import Network.Haskoin.Crypto.NumberTheory 
 import Network.Haskoin.Crypto.Curve 
@@ -82,5 +79,4 @@ import Network.Haskoin.Test.Message
 import Network.Haskoin.Test.Script
 import Network.Haskoin.Test.Transaction
 import Network.Haskoin.Test.Block
-import Network.Haskoin.Test.Stratum
 

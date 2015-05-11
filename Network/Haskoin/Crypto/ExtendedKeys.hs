@@ -419,13 +419,6 @@ data DerivPathI t where
     DerivPrv :: DerivPathI t
     DerivPub :: DerivPathI t
 
-instance Show (DerivPathI t) where
-    show (next :| i) = unwords [ show next, ":|", show i ]
-    show (next :/ i) = unwords [ show next, ":/", show i ]
-    show Deriv = "Deriv"
-    show DerivPrv = "DerivPrv"
-    show DerivPub = "DerivPub"
-
 instance Eq (DerivPathI t) where
     (nextA :| iA) == (nextB :| iB) = iA == iB && nextA == nextB
     (nextA :/ iA) == (nextB :/ iB) = iA == iB && nextA == nextB
@@ -434,20 +427,37 @@ instance Eq (DerivPathI t) where
     DerivPub      == DerivPub      = True
     _             == _             = False
 
+instance Show (DerivPathI t) where
+    show p = case p of
+        next :| i -> concat [ show next, "/", show i, "'" ]
+        next :/ i -> concat [ show next, "/", show i ]
+        Deriv     -> ""
+        DerivPrv  -> "m"
+        DerivPub  -> "M"
+
+instance Read DerivPath where
+    readsPrec _ str = case parsePath str of
+        Just p -> [(p, "")]
+        _      -> []
+
+instance Read HardPath where
+    readsPrec _ str = case parseHard str of
+        Just p -> [(p, "")]
+        _      -> []
+
+instance Read SoftPath where
+    readsPrec _ str = case parseSoft str of
+        Just p -> [(p, "")]
+        _      -> []
+
 instance IsString DerivPath where
-    fromString str = case parsePath str of
-        Just p -> p
-        _ -> error "Invalid derivation path"
+    fromString = read
 
 instance IsString HardPath where
-    fromString str = case parseHard str of
-        Just p -> p
-        _ -> error "Invalid hard derivation path"
+    fromString = read
 
 instance IsString SoftPath where
-    fromString str = case parseSoft str of
-        Just p -> p
-        _ -> error "Invalid soft derivation path"
+    fromString = read
 
 instance FromJSON DerivPath where
     parseJSON = withText "DerivPath" $ \str -> case parsePath $ unpack str of
@@ -465,15 +475,7 @@ instance FromJSON SoftPath where
         _      -> mzero
 
 instance ToJSON (DerivPathI t) where
-    toJSON = String . pack . go 
-      where
-        go :: DerivPathI t -> String
-        go p = case p of
-            next :| i -> concat [ go next, "/", show i, "'" ]
-            next :/ i -> concat [ go next, "/", show i ]
-            Deriv     -> ""
-            DerivPrv  -> "m"
-            DerivPub  -> "M"
+    toJSON = String . pack . show
 
 -- | Parse derivation path string for extended key.
 -- Forms: “m/0'/2”, “M/2/3/4”.

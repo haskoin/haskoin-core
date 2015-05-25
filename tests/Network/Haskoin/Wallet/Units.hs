@@ -44,8 +44,8 @@ type App = SqlPersistT (NoLoggingT (ResourceT IO))
 
 tests :: [Test]
 tests =
-    [ testGroup "Wallet creation tests"
-        [ testCase "Calling newWallet with an empty seed should fail" $
+    [ testGroup "KeyRing creation"
+        [ testCase "Calling newKeyRing with an empty seed should fail" $
             assertException
                 (WalletException "The seed is empty") 
                 (newWallet "main" BS.empty)

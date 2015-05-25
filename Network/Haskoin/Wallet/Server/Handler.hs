@@ -21,7 +21,7 @@ import qualified Data.Conduit.List as CL (consume)
 
 import Database.Persist 
     ( Entity(..), Filter
-    , entityVal, getBy, selectFirst, deleteWhere
+    , entityVal, getBy, selectFirst, deleteWhere, updateWhere, (=.)
     , SelectOpt(Asc)
     )
 import Database.Persist.Sql (SqlPersistT, ConnectionPool, runSqlPool)
@@ -419,6 +419,11 @@ postNodeR action = do
             deleteWhere ([] :: [Filter KeyRingCoin])
             deleteWhere ([] :: [Filter KeyRingTx])
             deleteWhere ([] :: [Filter KeyRingBalance])
+            updateWhere [] [ KeyRingAddrInBalance         =. 0
+                           , KeyRingAddrOutBalance        =. 0
+                           , KeyRingAddrInOfflineBalance  =. 0
+                           , KeyRingAddrOutOfflineBalance =. 0
+                           ]
             setBestBlock (headerHash genesisHeader) 0
         sendSPV $ NodeStartDownload $ Left t
     return $ toJSON $ RescanRes t

@@ -1,61 +1,64 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Network.Haskoin.Wallet.Types
-( -- Wallet Types
-  WalletName
+( KeyRingName
 , AccountName
-, Wallet(..)
-, Account(..)
-, Balance(..)
-, BalanceAddress(..)
-, LabeledAddress(..)
-, RecipientAddress(..)
-, AccTx(..)
-, TxConfidence(..)
-, TxSource(..)
-, WalletException(..)
-, OfflineTxData(..)
+
+-- JSON Types
+, JsonKeyRing(..)
+, JsonAccount(..)
+, JsonAddr(..)
+, JsonCoin(..)
+, JsonTx(..)
 
 -- Request Types
 , WalletRequest(..)
-, PagedResult(..)
-, NewWallet(..)
+, PageRequest(..)
+, validPageRequest
+, BalanceType(..)
+, NewKeyRing(..)
 , NewAccount(..)
-, AccTxAction(..)
-, AddressData(..)
+, SetAccountGap(..)
+, OfflineTxData(..)
+, CoinSignData(..)
+, TxAction(..)
+, AddressLabel(..)
 , NodeAction(..)
+, AccountType(..)
+, AddressType(..)
+, addrTypeIndex
+, TxType(..)
+, TxConfidence(..)
+, CoinStatus(..)
 
 -- Response Types
 , WalletResponse(..)
 , MnemonicRes(..)
-, AddressPageRes(..)
-, TxPageRes(..)
-, TxHashStatusRes(..)
-, TxStatusRes(..)
+, TxHashConfidenceRes(..)
+, TxConfidenceRes(..)
+, TxCompleteRes(..)
+, PageRes(..)
+, RescanRes(..)
 , TxRes(..)
 , BalanceRes(..)
-, SpendableRes(..)
-, RescanRes(..)
 
-, printWallet
-, printAccount
-, printLabeledAddress
-, printBalanceAddress
-, printAccTx
-, printBalance
+-- Helper Types
+, WalletException(..)
 ) where
 
 import Control.Applicative ((<$>))
 import Control.Monad (mzero)
 import Control.Exception (Exception)
 
+import Text.Read (readMaybe)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Int (Int64)
+import Data.Time (UTCTime)
 import Data.Typeable (Typeable)
 import Data.Maybe (maybeToList, isJust, fromJust)
 import Data.Char (toLower)
 import Data.Word (Word32, Word64)
 import Data.ByteString.Lazy (toStrict)
-import qualified Data.Text as T (Text, pack, unpack)
+import Data.Text (Text, pack, unpack)
 import Data.Aeson.Types 
     ( Options(..)
     , SumEncoding(..)
@@ -84,68 +87,37 @@ import Database.Persist.Class
 import Database.Persist.Types (PersistValue(..))
 import Database.Persist.Sql (PersistFieldSql, SqlType(..), sqlType)
 
-import Network.Haskoin.Wallet.Types.DeriveJSON
+import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Script
 import Network.Haskoin.Transaction
 import Network.Haskoin.Node
 import Network.Haskoin.Util
 
-type WalletName  = T.Text
-type AccountName = T.Text
+import Network.Haskoin.Wallet.Types.DeriveJSON
 
-data WalletException = WalletException String
-    deriving (Eq, Read, Show, Typeable)
-
-instance Exception WalletException
-
-{- Wallet Types -}
+type KeyRingName = Text
+type AccountName = Text
 
 -- TODO: Add NFData instances for all those types
-data Wallet = Wallet
-    { walletName   :: !T.Text
-    , walletMaster :: !MasterKey
-    } deriving (Eq, Show, Read)
 
-$(deriveJSON (dropFieldLabel 6) ''Wallet)
+{- Request Types -}
 
-data Account
-    = AccountRegular
-        { accountWallet :: !T.Text
-        , accountName   :: !T.Text
-        , accountIndex  :: !KeyIndex
-        , accountKey    :: !AccPubKey
-        }
-    | AccountMultisig
-        { accountWallet   :: !T.Text
-        , accountName     :: !T.Text
-        , accountIndex    :: !KeyIndex
-        , accountRequired :: !Int
-        , accountTotal    :: !Int
-        , accountKeys     :: ![XPubKey]
-        }
-    | AccountRead
-        { accountWallet :: !T.Text
-        , accountName   :: !T.Text
-        , accountKey    :: !AccPubKey
-        }
-    | AccountReadMultisig
-        { accountWallet   :: !T.Text
-        , accountName     :: !T.Text
-        , accountRequired :: !Int
-        , accountTotal    :: !Int
-        , accountKeys     :: ![XPubKey]
-        }
+data TxType
+    = TxIncoming
+    | TxOutgoing
+    | TxSelf
     deriving (Eq, Show, Read)
 
-$(deriveJSON (dropSumLabels 7 7 "type") ''Account)
+$(deriveJSON (dropSumLabels 2 0 "") ''TxType)
 
-data OfflineTxData = OfflineTxData
-    { offlineData :: ![(OutPoint, ScriptOutput, Bool, KeyIndex)]
-    , offlineTx   :: !Tx
-    } deriving (Eq, Read, Show)
+data CoinStatus
+    = CoinUnspent
+    | CoinLocked
+    | CoinSpent
+    deriving (Eq, Show, Read)
 
-$(deriveJSON (dropFieldLabel 7) ''OfflineTxData)
+$(deriveJSON (dropSumLabels 4 0 "") ''CoinStatus)
 
 data TxConfidence
     = TxOffline
@@ -156,140 +128,96 @@ data TxConfidence
 
 $(deriveJSON (dropFieldLabel 2) ''TxConfidence)
 
-data TxSource
-    = SourceNetwork
-    | SourceWallet
-    | SourceUnknown
+data BalanceType
+    = BalanceOffline
+    | BalancePending
+    | BalanceHeight Word32
+    deriving (Eq, Show, Read)
+ 
+data NewKeyRing = NewKeyRing
+    { newKeyRingKeyRingName :: !KeyRingName
+    , newKeyRingPassphrase  :: !(Maybe Text)
+    , newKeyRingMnemonic    :: !(Maybe Text)
+    } deriving (Eq, Read, Show)
+
+$(deriveJSON (dropFieldLabel 10) ''NewKeyRing)
+
+data AccountType
+    = AccountRegular
+    | AccountMultisig
+    | AccountRead
+    | AccountReadMultisig
     deriving (Eq, Show, Read)
 
-$(deriveJSON (dropFieldLabel 6) ''TxSource)
+$(deriveJSON (dropSumLabels 7 0 "") ''AccountType)
 
-data Balance = BalanceConflict | Balance !Word64
+data NewAccount = NewAccount
+    { newAccountAccountName  :: !AccountName
+    , newAccountType         :: !AccountType
+    , newAccountKeys         :: ![XPubKey]
+    , newAccountRequiredSigs :: !(Maybe Int)
+    , newAccountTotalKeys    :: !(Maybe Int)
+    }
     deriving (Eq, Show, Read)
 
--- TODO: Remove the balance JSON instance with aeson 0.9
-instance ToJSON Balance where
-    toJSON BalanceConflict = object [ "status"  .= String "conflict" ]
-    toJSON (Balance b)     = object [ "status"  .= String "valid" 
-                                    , "balance" .= b
-                                    ]
+$(deriveJSON (dropFieldLabel 10) ''NewAccount)
 
-instance FromJSON Balance where
-    parseJSON = withObject "Balance" $ \o -> do
-        String str <- o .: "status"
-        case str of
-            "conflict" -> return BalanceConflict
-            "valid"    -> Balance <$> o .: "balance"
-            _          -> mzero
+data SetAccountGap = SetAccountGap { getAccountGap :: !Int }
+    deriving (Eq, Show, Read)
 
-data LabeledAddress = LabeledAddress 
-    { laAddress :: !Address
-    , laLabel   :: !T.Text
-    , laIndex   :: !KeyIndex
-    } deriving (Eq, Show, Read)
+$(deriveJSON (dropFieldLabel 10) ''SetAccountGap)
 
-$(deriveJSON (dropFieldLabel 2) ''LabeledAddress)
-
-data BalanceAddress = BalanceAddress
-    { baAddress        :: !LabeledAddress
-    , baFinalBalance   :: !Balance
-    , baTotalReceived  :: !Balance
-    , baFundingTxs     :: ![TxHash]
-    , baSpendingTxs    :: ![TxHash]
-    , baConflictTxs    :: ![TxHash]
-    } deriving (Eq, Show, Read)
-
-$(deriveJSON (dropFieldLabel 2) ''BalanceAddress)
-
-data RecipientAddress = RecipientAddress
-    { recipientAddress :: !Address
-    , recipientLabel   :: !T.Text
-    , recipientIsLocal :: !Bool
-    } deriving (Eq, Show, Read)
-
-$(deriveJSON (dropFieldLabel 9) ''RecipientAddress)
-
-data AccTx = AccTx
-    { accTxTxId             :: !TxHash
-    , accTxRecipients       :: ![RecipientAddress]
-    , accTxValue            :: !Int64
-    , accTxConfidence       :: !TxConfidence
-    , accTxIsCoinbase       :: !Bool
-    , accTxConfirmations    :: !Int
-    , accTxTx               :: !Tx
-    , accTxReceivedDate     :: !Word32
-    , accTxConfirmationDate :: !(Maybe Word32)
-    } deriving (Eq, Show, Read)
-
-$(deriveJSON (dropFieldLabel 5) ''AccTx)
-
-{- Helper Types -}
-
-data PagedResult = PagedResult 
+data PageRequest = PageRequest
     { pageNum     :: !Int
-    , elemPerPage :: !Int
-    } deriving (Eq, Read, Show)
+    , pageLen     :: !Int
+    , pageReverse :: !Bool
+    }
+    deriving (Eq, Show, Read)
 
-$(deriveJSON (dropFieldLabel 0) ''PagedResult)
+$(deriveJSON (dropFieldLabel 0) ''PageRequest)
 
-{- Request Types -}
+validPageRequest :: PageRequest -> Bool
+validPageRequest PageRequest{..} = pageNum >= 1 && pageLen >= 1
 
-data NewWallet = NewWallet 
-    { newWalletWalletName :: !WalletName 
-    , newWalletPassphrase :: !(Maybe T.Text)
-    , newWalletMnemonic   :: !(Maybe T.Text)
-    } deriving (Eq, Read, Show)
+data CoinSignData = CoinSignData 
+    { coinSignOutPoint     :: !OutPoint 
+    , coinSignScriptOutput :: !ScriptOutput
+    , coinSignDeriv        :: !SoftPath
+    }
+    deriving (Eq, Show)
 
-$(deriveJSON (dropFieldLabel 9) ''NewWallet)
+$(deriveJSON (dropFieldLabel 8) ''CoinSignData)
 
-data NewAccount
-    = NewAccountRegular 
-        { newAccountAccountName :: !AccountName }
-    | NewAccountMultisig 
-        { newAccountAccountName :: !AccountName 
-        , newAccountRequired    :: !Int 
-        , newAccountTotal       :: !Int 
-        , newAccountKeys        :: ![XPubKey]
-        }
-    | NewAccountRead 
-        { newAccountAccountName :: !AccountName 
-        , newAccountKey         :: !XPubKey
-        }
-    | NewAccountReadMultisig 
-        { newAccountAccountName :: !AccountName 
-        , newAccountRequired    :: !Int 
-        , newAccountTotal       :: !Int 
-        , newAccountKeys        :: ![XPubKey]
-        }
-    deriving (Eq, Read, Show)
+data OfflineTxData = OfflineTxData
+    { offlineTxDataTx       :: !Tx
+    , offlineTxDataCoinData :: ![CoinSignData]
+    }
 
-$(deriveJSON (dropSumLabels 10 10 "type" ) ''NewAccount)
+$(deriveJSON (dropFieldLabel 13) ''OfflineTxData)
 
-data AccTxAction
+data TxAction
     = CreateTx 
         { accTxActionRecipients :: ![(Address, Word64)] 
         , accTxActionFee        :: !Word64
         , accTxActionMinConf    :: !Word32
         , accTxActionSign       :: !Bool
         }
-    | SignTx 
-        { accTxActionTx       :: !Tx 
-        , accTxActionFinalize :: !Bool
-        }
-    | SignOfflineTxData
-        { accTxActionOfflineTxData :: !OfflineTxData 
-        , accTxActionFinalize      :: !Bool
-        }
     | ImportTx 
-        { accTxActionTx :: !Tx }
-    deriving (Eq, Read, Show)
+        { accTxActionTx   :: !Tx 
+        , accTxActionSign :: !Bool
+        }
+    | SignOfflineTx
+        { accTxActionTx           :: !Tx
+        , accTxActionCoinSignData :: ![CoinSignData]
+        }
+    deriving (Eq, Show)
 
-$(deriveJSON (dropSumLabels 0 11 "type" ) ''AccTxAction)
+$(deriveJSON (dropSumLabels 0 11 "type" ) ''TxAction)
 
-data AddressData = AddressData { addressDataLabel :: !T.Text }
+data AddressLabel = AddressLabel { addressLabelLabel :: !Text }
     deriving (Eq, Show, Read)
 
-$(deriveJSON (dropFieldLabel 11) ''AddressData)
+$(deriveJSON (dropFieldLabel 12) ''AddressLabel)
 
 data NodeAction = Rescan { nodeActionTimestamp :: !(Maybe Word32) }
     deriving (Eq, Show, Read)
@@ -306,25 +234,36 @@ instance FromJSON NodeAction where
             "rescan" -> Rescan <$> o .:? "timestamp"
             _ -> mzero
 
+data AddressType
+    = AddressInternal
+    | AddressExternal
+    deriving (Eq, Show, Read)
+
+$(deriveJSON (dropSumLabels 7 0 "") ''AddressType)
+
+addrTypeIndex :: AddressType -> KeyIndex
+addrTypeIndex AddressExternal = 0
+addrTypeIndex AddressInternal = 1
+
 data WalletRequest
-    = GetWalletsR 
-    | GetWalletR !WalletName
-    | PostWalletsR !NewWallet
-    | GetAccountsR !WalletName
-    | PostAccountsR !WalletName !NewAccount
-    | GetAccountR !WalletName !AccountName
-    | PostAccountKeysR !WalletName !AccountName ![XPubKey]
-    | GetAddressesR !WalletName !AccountName 
-        !(Maybe PagedResult) !Word32 !Bool !Bool !Bool
-    | PostAddressesR !WalletName !AccountName !AddressData
-    | GetAddressR !WalletName !AccountName !KeyIndex !Word32 !Bool
-    | PutAddressR !WalletName !AccountName !KeyIndex !AddressData
-    | GetTxsR !WalletName !AccountName !(Maybe PagedResult)
-    | PostTxsR !WalletName !AccountName !AccTxAction
-    | GetTxR !WalletName !AccountName !TxHash !Bool
-    | GetOfflineTxDataR !WalletName !AccountName !TxHash
-    | GetBalanceR !WalletName !AccountName !Word32
-    | GetSpendableR !WalletName !AccountName !Word32
+    = GetKeyRingsR
+    | GetKeyRingR !KeyRingName
+    | PostKeyRingsR !NewKeyRing
+    | GetAccountsR !KeyRingName
+    | PostAccountsR !KeyRingName !NewAccount
+    | GetAccountR !KeyRingName !AccountName
+    | PostAccountKeysR !KeyRingName !AccountName ![XPubKey]
+    | PostAccountGapR !KeyRingName !AccountName !SetAccountGap
+    | GetAddressesR !KeyRingName !AccountName !AddressType !PageRequest
+    | GetAddressesUnusedR !KeyRingName !AccountName !AddressType
+    | GetAddressR !KeyRingName !AccountName !KeyIndex !AddressType
+    | PutAddressR !KeyRingName !AccountName !KeyIndex !AddressType !AddressLabel
+    | GetTxsR !KeyRingName !AccountName !PageRequest
+    | PostTxsR !KeyRingName !AccountName !TxAction
+    | GetTxR !KeyRingName !AccountName !TxHash
+    | GetOfflineTxR !KeyRingName !AccountName !TxHash
+    | GetBalanceR !KeyRingName !AccountName !Word32
+    | GetOfflineBalanceR !KeyRingName !AccountName
     | PostNodeR !NodeAction
 
 -- TODO: Set omitEmptyContents on aeson-0.9
@@ -339,7 +278,106 @@ $(deriveJSON
     ''WalletRequest
  )
 
+{- JSON Types -}
 
+data JsonKeyRing = JsonKeyRing
+    { jsonKeyRingName    :: !Text
+    , jsonKeyRingMaster  :: !XPrvKey
+    , jsonKeyRingCreated :: !UTCTime
+    }
+    deriving (Eq, Show, Read)
+
+$(deriveJSON (dropFieldLabel 11) ''JsonKeyRing)
+
+data JsonAccount = JsonAccount
+    { jsonAccountName         :: !Text 
+    , jsonAccountKeyRingName  :: !Text 
+    , jsonAccountType         :: !AccountType 
+    , jsonAccountDerivation   :: !(Maybe HardPath)
+    , jsonAccountKeys         :: ![XPubKey]
+    , jsonAccountRequiredSigs :: !(Maybe Int) 
+    , jsonAccountTotalKeys    :: !(Maybe Int)
+    , jsonAccountGap          :: !Int
+    , jsonAccountCreated      :: !UTCTime
+    }
+    deriving (Eq, Show, Read)
+
+$(deriveJSON (dropFieldLabel 11) ''JsonAccount)
+
+data JsonAddr = JsonAddr
+    { jsonAddrKeyRingName       :: !Text 
+    , jsonAddrAccountName       :: !Text
+    , jsonAddrAddress           :: !Address
+    , jsonAddrIndex             :: !KeyIndex
+    , jsonAddrType              :: !AddressType
+    , jsonAddrLabel             :: !Text
+    , jsonAddrRootDerivation    :: !(Maybe DerivPath)
+    , jsonAddrDerivation        :: !SoftPath
+    , jsonAddrRedeem            :: !(Maybe ScriptOutput)
+    , jsonAddrKey               :: !(Maybe PubKeyC)
+    , jsonAddrInBalance         :: !Word64
+    , jsonAddrOutBalance        :: !Word64
+    , jsonAddrInOfflineBalance  :: !Word64
+    , jsonAddrOutOfflineBalance :: !Word64
+    , jsonAddrCreated           :: !UTCTime
+    }
+    deriving (Eq, Show, Read)
+
+$(deriveJSON (dropFieldLabel 8) ''JsonAddr)
+
+data JsonCoin = JsonCoin
+    { jsonCoinKeyRingName     :: !Text
+    , jsonCoinAccountName     :: !Text
+    , jsonCoinHash            :: !TxHash
+    , jsonCoinPos             :: !Word32
+    , jsonCoinValue           :: !Word64
+    , jsonCoinScript          :: !ScriptOutput
+    , jsonCoinRedeem          :: !(Maybe ScriptOutput)
+    , jsonCoinRootDerivation  :: !(Maybe DerivPath)
+    , jsonCoinDerivation      :: !SoftPath
+    , jsonCoinKey             :: !(Maybe PubKeyC)
+    , jsonCoinAddress         :: !Address
+    , jsonCoinAddressType     :: !AddressType
+    , jsonCoinStatus          :: !CoinStatus 
+    , jsonCoinSpentBy         :: !(Maybe TxHash)
+    , jsonCoinIsCoinbase      :: !Bool
+    , jsonCoinConfidence      :: !TxConfidence
+    , jsonCoinConfirmations   :: !Int
+    , jsonCoinConfirmedBy     :: !(Maybe BlockHash)
+    , jsonCoinConfirmedHeight :: !(Maybe Word32)
+    , jsonCoinConfirmedDate   :: !(Maybe Timestamp)
+    , jsonCoinCreated         :: !UTCTime
+    }
+    deriving (Eq, Show, Read)
+
+$(deriveJSON (dropFieldLabel 8) ''JsonCoin)
+
+data JsonTx = JsonTx
+    { jsonTxKeyRingName     :: !Text 
+    , jsonTxAccountName     :: !Text 
+    , jsonTxHash            :: !TxHash 
+    , jsonTxNosigHash       :: !TxHash 
+    , jsonTxType            :: !TxType 
+    , jsonTxInValue         :: !Word64
+    , jsonTxOutValue        :: !Word64
+    , jsonTxValue           :: !Int64
+    , jsonTxFrom            :: ![Address]
+    , jsonTxTo              :: ![Address]
+    , jsonTxChange          :: ![Address]
+    , jsonTxTx              :: !Tx
+    , jsonTxIsCoinbase      :: !Bool
+    , jsonTxConfidence      :: !TxConfidence 
+    , jsonTxConfirmations   :: !Int
+    , jsonTxConfirmedBy     :: !(Maybe BlockHash)
+    , jsonTxConfirmedHeight :: !(Maybe Word32)
+    , jsonTxConfirmedDate   :: !(Maybe Timestamp)
+    , jsonTxCreated         :: !UTCTime
+    } 
+    deriving (Eq, Show, Read)
+
+$(deriveJSON (dropFieldLabel 6) ''JsonTx)
+
+ 
 {- Response Types -}
 
 data MnemonicRes = MnemonicRes { resMnemonic :: !Mnemonic }
@@ -347,50 +385,43 @@ data MnemonicRes = MnemonicRes { resMnemonic :: !Mnemonic }
 
 $(deriveJSON (dropFieldLabel 3) ''MnemonicRes)
 
-data AddressPageRes = AddressPageRes 
-    { addressPageAddressPage :: ![BalanceAddress] 
-    , addressPageMaxPage     :: !Int
+data TxHashConfidenceRes = TxHashConfidenceRes 
+    { txHashConfidenceTxHash   :: !TxHash 
+    , txHashConfidenceComplete :: !TxConfidence
     } deriving (Eq, Show, Read)
 
-$(deriveJSON (dropFieldLabel 11) ''AddressPageRes)
+$(deriveJSON (dropFieldLabel 16) ''TxHashConfidenceRes)
 
-data TxPageRes = TxPageRes 
-    { txPageTxPage  :: ![AccTx] 
-    , txPageMaxPage :: !Int
+data TxConfidenceRes = TxConfidenceRes 
+    { txConfidenceTx       :: !Tx 
+    , txConfidenceComplete :: !TxConfidence
     } deriving (Eq, Show, Read)
 
-$(deriveJSON (dropFieldLabel 6) ''TxPageRes)
+$(deriveJSON (dropFieldLabel 12) ''TxConfidenceRes)
 
-data TxHashStatusRes = TxHashStatusRes 
-    { txHashStatusTxHash   :: !TxHash 
-    , txHashStatusComplete :: !Bool 
+data TxCompleteRes = TxCompleteRes
+    { txCompleteTx       :: !Tx 
+    , txCompleteComplete :: !Bool
     } deriving (Eq, Show, Read)
 
-$(deriveJSON (dropFieldLabel 12) ''TxHashStatusRes)
+$(deriveJSON (dropFieldLabel 10) ''TxCompleteRes)
 
-data TxStatusRes = TxStatusRes 
-    { txStatusTx       :: !Tx 
-    , txStatusComplete :: !Bool 
-    } deriving (Eq, Show, Read)
+data PageRes a = PageRes
+    { addrPageAddresses :: ![a]
+    , addrPageMaxPage   :: !Int
+    }
 
-$(deriveJSON (dropFieldLabel 8) ''TxStatusRes)
+$(deriveJSON (dropFieldLabel 8) ''PageRes)
 
 data TxRes = TxRes { resTx :: !Tx } 
     deriving (Eq, Show, Read)
 
 $(deriveJSON (dropFieldLabel 3) ''TxRes)
 
-data BalanceRes = BalanceRes 
-    { balanceBalance   :: !Balance 
-    , balanceConflicts :: ![TxHash]
-    } deriving (Eq, Show, Read)
-
-$(deriveJSON (dropFieldLabel 7) ''BalanceRes)
-
-data SpendableRes = SpendableRes { spendableBalance :: !Word64 }
+data BalanceRes = BalanceRes { balanceBalance :: !Word64 } 
     deriving (Eq, Show, Read)
 
-$(deriveJSON (dropFieldLabel 9) ''SpendableRes)
+$(deriveJSON (dropFieldLabel 7) ''BalanceRes)
 
 data RescanRes = RescanRes { rescanTimestamp :: !Word32 }
     deriving (Eq, Show, Read)
@@ -398,245 +429,234 @@ data RescanRes = RescanRes { rescanTimestamp :: !Word32 }
 $(deriveJSON (dropFieldLabel 6) ''RescanRes)
 
 data WalletResponse a
-    = ResponseError { responseError  :: !T.Text }
+    = ResponseError { responseError  :: !Text }
     | ResponseValid { responseResult :: !a  }
     deriving (Eq, Show)
 
 $(deriveJSON (dropSumLabels 8 8 "status" ) ''WalletResponse)
 
-{- Utilities -}
+{- Helper Types -}
 
-printWallet :: Wallet -> String
-printWallet Wallet{..} = unlines
-    [ unwords [ "Wallet    :", T.unpack walletName ]
-    , unwords [ "Master key:", xPrvExport $ masterKey walletMaster ]
-    ]
+data WalletException = WalletException String
+    deriving (Eq, Read, Show, Typeable)
 
-printAccount :: Account -> String
-printAccount a = case a of
-    AccountRegular{..} -> unlines
-        [ unwords [ "Wallet :", T.unpack accountWallet ]
-        , unwords [ "Account:", T.unpack accountName ]
-        , unwords [ "Type   :", "Regular" ]
-        , unwords [ "Tree   :", concat [ "m/",show accountIndex,"'/" ] ]
-        , unwords [ "Key    :", xPubExport $ getAccPubKey accountKey ]
-        ]
-    AccountMultisig{..} -> unlines $
-        [ unwords [ "Wallet :", T.unpack accountWallet ]
-        , unwords [ "Account:", T.unpack accountName ]
-        , unwords [ "Type   :", "Multisig"
-                  , show accountRequired, "of", show accountTotal 
-                  ]
-        , unwords [ "Tree   :", concat [ "m/",show accountIndex,"'/" ] ]
-        ] ++ if null accountKeys then [] else 
-        ( unwords [ "Keys   :", xPubExport $ head accountKeys ] ) : 
-        ( map (\x -> 
-          unwords [ "        ", xPubExport x]) $ tail accountKeys )
-    AccountRead{..} -> unlines
-        [ unwords [ "Wallet :", T.unpack accountWallet ]
-        , unwords [ "Account:", T.unpack accountName ]
-        , unwords [ "Type   :", "Read-only" ]
-        , unwords [ "Key    :", xPubExport $ getAccPubKey accountKey ]
-        ]
-    AccountReadMultisig{..} -> unlines $
-        [ unwords [ "Wallet :", T.unpack accountWallet ]
-        , unwords [ "Account:", T.unpack accountName ]
-        , unwords [ "Type   :", "Read-only Multisig"
-                  , show accountRequired, "of", show accountTotal 
-                  ]
-        ] ++ if null accountKeys then [] else 
-        ( unwords [ "Keys   :", xPubExport $ head accountKeys ] ) : 
-        ( map (\x -> 
-          unwords [ "        ", xPubExport x]) $ tail accountKeys )
-
-printBalance :: Balance -> String
-printBalance b = case b of
-    BalanceConflict -> "Conflict"
-    Balance x       -> show x
-
-printBalanceAddress :: BalanceAddress -> String
-printBalanceAddress BalanceAddress{..} = unwords $
-    ( printLabeledAddress baAddress ) : 
-        if null baFundingTxs && null baSpendingTxs && null baConflictTxs 
-           then [] 
-           else [ "["
-                , "Balance:", printBalance baFinalBalance ++ ","
-                , "TxCount:", show $ (length baFundingTxs) 
-                                   + (length baSpendingTxs)
-                , "]" 
-                ]
-
-printLabeledAddress :: LabeledAddress -> String
-printLabeledAddress LabeledAddress{..} = unwords $
-    [ show laIndex, ":" , addrToBase58 laAddress ]
-    ++ if null (T.unpack laLabel)
-          then [] else [ concat [ "(", T.unpack laLabel ,")" ] ]
-
-printRecipientAddress :: RecipientAddress -> String
-printRecipientAddress RecipientAddress{..} = unwords $
-    ( "    " ++ if recipientIsLocal then "<-" else "->" )
-    : ( addrToBase58 recipientAddress )
-    : if null (T.unpack recipientLabel)
-         then [] 
-         else [ concat [ "(", T.unpack recipientLabel ,")" ] ]
-    
-
-printAccTx :: AccTx -> String
-printAccTx AccTx{..} = unlines $ 
-    [ unwords [ "Value     :", show accTxValue ]
-    , unwords [ "Recipients:" ]
-    ] 
-    ++ ( map printRecipientAddress accTxRecipients )
-    ++ [ unwords [ "Confidence:"
-                 , printConfidence accTxConfidence
-                 , concat [ "(",show accTxConfirmations," confirmations)" ] 
-                 ]
-       , unwords [ "TxHash    :", encodeTxHashLE accTxTxId ]
-       ] 
-    ++ if accTxIsCoinbase then [ unwords [ "Coinbase  :", "Yes" ] ] else [] 
-    ++ [ unwords [ "Received  :", show $ f accTxReceivedDate ] ] 
-    ++ if isJust accTxConfirmationDate 
-          then [ unwords [ "Confirmed :" 
-                         , show $ f $ fromJust accTxConfirmationDate 
-                         ] 
-               ] 
-          else []
-  where
-    f = posixSecondsToUTCTime . realToFrac 
-    
-printConfidence :: TxConfidence -> String
-printConfidence c = case c of
-    TxBuilding -> "Building"
-    TxPending  -> "Pending"
-    TxDead     -> "Dead"
-    TxOffline  -> "Offline"
+instance Exception WalletException
 
 {- Persistent Instances -}
 
-toPersistJson :: (ToJSON a) => a -> PersistValue
-toPersistJson = PersistByteString . toStrict . encode
+instance PersistField XPrvKey where
+    toPersistValue = PersistText . pack . xPrvExport
+    fromPersistValue (PersistText t) = 
+        maybeToEither "Invalid Persistent XPrvKey" $ xPrvImport $ unpack t
+    fromPersistValue _ = Left "Invalid Persistent XPrvKey"
 
-fromPersistJson :: (FromJSON a) => T.Text -> PersistValue -> Either T.Text a
-fromPersistJson msg pb = case pb of
-    PersistByteString w -> maybeToEither msg (decode $ toLazyBS w)
-    _ -> Left "Hash to be a PersistByteString"
+instance PersistFieldSql XPrvKey where
+    sqlType _ = SqlString
+
+instance PersistField XPubKey where
+    toPersistValue = PersistText . pack . xPubExport
+    fromPersistValue (PersistText t) = 
+        maybeToEither "Invalid Persistent XPubKey" $ xPubImport $ unpack t
+    fromPersistValue _ = Left "Invalid Persistent XPubKey"
+
+instance PersistFieldSql XPubKey where
+    sqlType _ = SqlString
+
+instance PersistField DerivPath where
+    toPersistValue = PersistText . pack . show
+    fromPersistValue (PersistText t) = 
+        maybeToEither "Invalid Persistent DerivPath" $ parsePath $ unpack t
+    fromPersistValue _ = Left "Invalid Persistent DerivPath"
+
+instance PersistFieldSql DerivPath where
+    sqlType _ = SqlString
+
+instance PersistField HardPath where
+    toPersistValue = PersistText . pack . show
+    fromPersistValue (PersistText t) = 
+        maybeToEither "Invalid Persistent HardPath" $ parseHard $ unpack t
+    fromPersistValue _ = Left "Invalid Persistent HardPath"
+
+instance PersistFieldSql HardPath where
+    sqlType _ = SqlString
+
+instance PersistField SoftPath where
+    toPersistValue = PersistText . pack . show
+    fromPersistValue (PersistText t) = 
+        maybeToEither "Invalid Persistent SoftPath" $ parseSoft $ unpack t
+    fromPersistValue _ = Left "Invalid Persistent SoftPath"
+
+instance PersistFieldSql SoftPath where
+    sqlType _ = SqlString
+
+instance PersistField AccountType where
+    toPersistValue ts = PersistText $ case ts of
+        AccountRegular      -> "regular"
+        AccountMultisig     -> "multisig"
+        AccountRead         -> "read"
+        AccountReadMultisig -> "readmultisig"
+
+    fromPersistValue (PersistText t) = case t of
+        "regular"      -> return AccountRegular
+        "multisig"     -> return AccountMultisig
+        "read"         -> return AccountRead
+        "readmultisig" -> return AccountReadMultisig
+        _ -> Left "Invalid Persistent AccountType"
+
+    fromPersistValue _ = Left "Invalid Persistent AccountType"
+
+instance PersistFieldSql AccountType where
+    sqlType _ = SqlString
+
+instance PersistField AddressType where
+    toPersistValue ts = PersistText $ case ts of
+        AddressInternal -> "internal"
+        AddressExternal -> "external"
+
+    fromPersistValue (PersistText t) = case t of
+        "internal" -> return AddressInternal
+        "external" -> return AddressExternal
+        _ -> Left "Invalid Persistent AddressType"
+
+    fromPersistValue _ = Left "Invalid Persistent AddressType"
+
+instance PersistFieldSql AddressType where
+    sqlType _ = SqlString
+
+instance PersistField TxType where
+    toPersistValue ts = PersistText $ case ts of
+        TxIncoming -> "incoming"
+        TxOutgoing -> "outgoing"
+        TxSelf     -> "self"
+
+    fromPersistValue (PersistText t) = case t of
+        "incoming" -> return TxIncoming
+        "outgoing" -> return TxOutgoing
+        "self"     -> return TxSelf
+        _ -> Left "Invalid Persistent TxType"
+
+    fromPersistValue _ = Left "Invalid Persistent TxType"
+
+instance PersistFieldSql TxType where
+    sqlType _ = SqlString
 
 instance PersistField Address where
-    toPersistValue = PersistByteString . stringToBS . addrToBase58
-    fromPersistValue (PersistByteString a) =
-        maybeToEither "Not a valid Address" . base58ToAddr $ bsToString a
-    fromPersistValue _ = Left "Has to be a PersistByteString"
+    toPersistValue = PersistText . pack . addrToBase58
+    fromPersistValue (PersistText a) =
+        maybeToEither "Invalid Persistent Address" . base58ToAddr $ unpack a
+    fromPersistValue _ = Left "Invalid Persistent Address"
 
 instance PersistFieldSql Address where
     sqlType _ = SqlString
 
-instance PersistField [Address] where
-    toPersistValue = toPersistJson
-    fromPersistValue = fromPersistJson "Not a valid Address list"
+instance PersistField BloomFilter where
+    toPersistValue = PersistByteString . encode'
+    fromPersistValue (PersistByteString bs) = 
+        maybeToEither "Invalid Persistent BloomFilter" $ decodeToMaybe bs
+    fromPersistValue _ = Left "Invalid Persistent BloomFilter"
 
-instance PersistFieldSql [Address] where
+instance PersistFieldSql BloomFilter where
+    sqlType _ = SqlBlob
+
+instance PersistField BlockHash where
+    toPersistValue = PersistByteString . stringToBS . encodeBlockHashLE
+    fromPersistValue (PersistByteString h) =
+        maybeToEither "Invalid Persistent BlockHash" $
+            decodeBlockHashLE $ bsToString h
+    fromPersistValue _ = Left "Invalid Persistent BlockHash"
+
+instance PersistFieldSql BlockHash where
     sqlType _ = SqlString
 
 instance PersistField TxHash where
     toPersistValue = PersistByteString . stringToBS . encodeTxHashLE
     fromPersistValue (PersistByteString h) =
-        maybeToEither "Not a valid TxHash" (decodeTxHashLE $ bsToString h)
-    fromPersistValue _ = Left "Has to be a PersistByteString"
+        maybeToEither "Invalid Persistent TxHash" $ 
+            decodeTxHashLE $ bsToString h
+    fromPersistValue _ = Left "Invalid Persistent TxHash"
 
 instance PersistFieldSql TxHash where
     sqlType _ = SqlString
 
-instance PersistField BlockHash where
-    toPersistValue = PersistByteString . stringToBS . encodeBlockHashLE
-    fromPersistValue (PersistByteString h) =
-        maybeToEither "Not a valid BlockHash" (decodeBlockHashLE $ bsToString h)
-    fromPersistValue _ = Left "Has to be a PersistByteString"
+instance PersistField CoinStatus where
+    toPersistValue ts = PersistText $ case ts of
+        CoinUnspent -> "unspent"
+        CoinLocked  -> "locked"
+        CoinSpent   -> "spent"
 
-instance PersistFieldSql BlockHash where
-    sqlType _ = SqlString
+    fromPersistValue (PersistText t) = case t of
+        "unspent" -> return CoinUnspent
+        "locked"  -> return CoinLocked
+        "spent"   -> return CoinSpent
+        _         -> Left "Invalid Persistent CoinStatus"
+    fromPersistValue _ = Left "Invalid Persistent CoinStatus"
 
-instance PersistField Wallet where
-    toPersistValue = toPersistJson
-    fromPersistValue = fromPersistJson "Not a valid Wallet"
-
-instance PersistFieldSql Wallet where
-    sqlType _ = SqlString
-
-instance PersistField Account where
-    toPersistValue = toPersistJson
-    fromPersistValue = fromPersistJson "Not a valid Account"
-
-instance PersistFieldSql Account where
+instance PersistFieldSql CoinStatus where
     sqlType _ = SqlString
 
 instance PersistField TxConfidence where
-    toPersistValue tc = PersistByteString $ case tc of
+    toPersistValue tc = PersistText $ case tc of
         TxOffline  -> "offline"
         TxDead     -> "dead"
         TxPending  -> "pending"
         TxBuilding -> "building"
 
-    fromPersistValue (PersistByteString t) = case t of
+    fromPersistValue (PersistText t) = case t of
         "offline"  -> return TxOffline
         "dead"     -> return TxDead
         "pending"  -> return TxPending
         "building" -> return TxBuilding
-        _ -> Left "Not a valid TxConfidence"
-    fromPersistValue _ = Left "Not a valid TxConfidence"
+        _ -> Left "Invalid Persistent TxConfidence"
+    fromPersistValue _ = Left "Invalid Persistent TxConfidence"
         
 instance PersistFieldSql TxConfidence where
     sqlType _ = SqlString
 
-instance PersistField TxSource where
-    toPersistValue ts = PersistByteString $ case ts of
-        SourceNetwork -> "network"
-        SourceWallet  -> "wallet"
-        SourceUnknown -> "unknown"
+instance PersistField BalanceType where
+    toPersistValue bt = PersistText $ case bt of
+        BalanceOffline  -> "offline"
+        BalancePending  -> "pending"
+        BalanceHeight h -> pack $ show h
 
-    fromPersistValue (PersistByteString t) = case t of
-        "network" -> return SourceNetwork
-        "wallet"  -> return SourceWallet
-        "unknown" -> return SourceUnknown
-        _ -> Left "Not a valid TxSource"
-    fromPersistValue _ = Left "Not a valid TxSource"
+    fromPersistValue (PersistText t) = case t of
+        "offline"  -> return BalanceOffline
+        "pending"  -> return BalancePending
+        h -> maybe err (return . BalanceHeight) $ readMaybe $ unpack h
+      where
+        err = Left "Invalid Persistent BalanceType"
 
-instance PersistFieldSql TxSource where
-    sqlType _ = SqlString
-
-instance PersistField Coin where
-    toPersistValue = toPersistJson
-    fromPersistValue = fromPersistJson "Not a valid Coin"
-
-instance PersistFieldSql Coin where
-    sqlType _ = SqlString
-
-instance PersistField OutPoint where
-    toPersistValue = PersistByteString . stringToBS . bsToHex . encode'
-    fromPersistValue (PersistByteString t) =
-        maybeToEither "Not a valid OutPoint" $
-            decodeToMaybe =<< (hexToBS $ bsToString t)
-    fromPersistValue _ = Left "Not a valid OutPoint"
-
-instance PersistFieldSql OutPoint where
+    fromPersistValue _ = Left "Invalid Persistent BalanceType"
+        
+instance PersistFieldSql BalanceType where
     sqlType _ = SqlString
 
 instance PersistField Tx where
     toPersistValue = PersistByteString . encode'
-    fromPersistValue (PersistByteString bs) = case decodeToEither bs of
-        Right tx -> Right tx
-        Left str -> Left $ T.pack str
-    fromPersistValue _ = Left "Has to be a PersistByteString"
+    fromPersistValue (PersistByteString bs) = 
+        maybeToEither "Invalid Persistent Tx" $ decodeToMaybe bs
+    fromPersistValue _ = Left "Invalid Persistent Tx"
 
 instance PersistFieldSql Tx where
     sqlType _ = SqlBlob
 
-instance PersistField BloomFilter where
-    toPersistValue = PersistByteString . encode'
-    fromPersistValue (PersistByteString bs) = case decodeToEither bs of
-        Right bloom -> Right bloom
-        Left str -> Left $ T.pack str
-    fromPersistValue _ = Left "Has to be a PersistByteString"
+instance PersistField PubKeyC where
+    toPersistValue = PersistByteString . stringToBS . bsToHex . encode'
+    fromPersistValue (PersistByteString t) =
+        maybeToEither "Invalid Persistent PubKeyC" $
+            decodeToMaybe =<< (hexToBS $ bsToString t)
+    fromPersistValue _ = Left "Invalid Persistent PubKeyC"
 
-instance PersistFieldSql BloomFilter where
-    sqlType _ = SqlBlob
+instance PersistFieldSql PubKeyC where
+    sqlType _ = SqlString
+
+instance PersistField ScriptOutput where
+    toPersistValue = 
+        PersistByteString . stringToBS . bsToHex . encodeOutputBS
+    fromPersistValue (PersistByteString t) =
+        maybeToEither "Invalid Persistent ScriptOutput" $
+            (eitherToMaybe . decodeOutputBS) =<< (hexToBS $ bsToString t)
+    fromPersistValue _ = Left "Invalid Persistent ScriptOutput"
+
+instance PersistFieldSql ScriptOutput where
+    sqlType _ = SqlString
 

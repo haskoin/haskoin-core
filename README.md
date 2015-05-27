@@ -18,26 +18,32 @@ http://hackage.haskell.org/package/haskoin-wallet
 
 ### Dependencies
 
-To compile haskoin-wallet, install GHC, cabal-install, and development
-libraries for LevelDB, Snappy, ØMQ, and optionally MySQL.  On Debian/Ubuntu
-systems, these commands should suffice:
+To compile haskoin-wallet, install [haskoin](https://github.com/haskoin/haskoin) first.
+Then get development libraries for LevelDB, Snappy, zlib and ØMQ.
+On Debian/Ubuntu systems, use these command:
 
 ```sh
-sudo apt-get install haskell-platform libleveldb-dev libsnappy-dev \
+sudo apt-get install wget git libleveldb-dev libsnappy-dev \
     zlib1g-dev libzmq3-dev
 ```
 
-### Git
+Follow instructions below to install via Git or Hackage. Executabe
+should end up in `~/.cabal/bin/hw`. You may want to add `~/.cabal/bin`
+to your `PATH` or copy the file to `/usr/local/bin/hw`.
+
+### Instructions for Git development version
 
 Install from Git to get the latest development code:
 
 ```sh
 git clone https://github.com/haskoin/haskoin-wallet
 cd haskoin-wallet
+wget https://www.stackage.org/snapshot/lts-1.0/cabal.config
+cabal update
 cabal install
 ```
 
-### Hackage
+### Instructions for Hackage
 
 You can install the latest stable version of the haskoin-wallet package
 automatically through the cabal package manager:

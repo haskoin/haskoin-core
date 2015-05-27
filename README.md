@@ -44,7 +44,7 @@ sudo apt-get install git wget libleveldb-dev \
 
 You may install for Git or Hackage.
 
-### Instructions for development version in Git
+### Instructions for Git development version
 
 Install from Git:
 

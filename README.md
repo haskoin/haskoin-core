@@ -32,22 +32,26 @@ http://hackage.haskell.org/package/haskoin
 
 ### Dependencies
 
-You'll need Haskell Platform 2013 or 2014, pkg-config, as well as development
-libraries for LevelDB, Snappy, and zlib.  On Debian/Ubuntu, use following
-commands:
+Get Haskell from [Stackage](http://stackage.org/).
+
+Get pkg-config, wget and development libraries for LevelDB,
+Snappy, and zlib. On Debian/Ubuntu, use following command:
 
 ```sh
-sudo apt-get install git haskell-platform libleveldb-dev \
+sudo apt-get install git wget libleveldb-dev \
     libzmq3-dev libsnappy-dev pkg-config
 ```
 
 ### Git
 
-Install from Git for the latest development snapshot.
+Install from Git:
 
 ```sh
 git clone https://github.com/haskoin/haskoin.git
 cd haskoin
+git checkout 21d3f7d
+wget https://www.stackage.org/snapshot/lts-1.0/cabal.config
+cabal update
 cabal install
 ```
 

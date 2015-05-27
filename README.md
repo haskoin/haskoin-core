@@ -38,7 +38,6 @@ Install from Git to get the latest development code:
 ```sh
 git clone https://github.com/haskoin/haskoin-wallet
 cd haskoin-wallet
-wget https://www.stackage.org/snapshot/lts-1.0/cabal.config
 cabal update
 cabal install
 ```

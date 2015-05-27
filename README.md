@@ -42,7 +42,9 @@ sudo apt-get install git wget libleveldb-dev \
     libzmq3-dev libsnappy-dev pkg-config
 ```
 
-### Git
+You may install for Git or Hackage.
+
+### Instructions for development version in Git
 
 Install from Git:
 
@@ -55,7 +57,7 @@ cabal update
 cabal install
 ```
 
-### Cabal
+### Instructions for Hackage
 
 Use cabal-install to get the latest stable version from Hackage.  On
 Debian/Ubuntu operating system:

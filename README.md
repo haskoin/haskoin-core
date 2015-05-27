@@ -39,7 +39,7 @@ Snappy, and zlib. On Debian/Ubuntu, use following command:
 
 ```sh
 sudo apt-get install git wget libleveldb-dev \
-    libzmq3-dev libsnappy-dev pkg-config
+    libzmq3-dev libsnappy-dev pkg-config zlib1g-dev
 ```
 
 You may install for Git or Hackage.
@@ -53,8 +53,12 @@ git clone https://github.com/haskoin/haskoin.git
 cd haskoin
 git checkout 21d3f7d
 cabal update
-cabal install
+cabal install --force-reinstalls
 ```
+
+*Note: `--force-reinstalls` needed because of newer QuickCheck version
+after having installed `alex` and `happy` according to Stackage
+instructions.
 
 ### Instructions for Hackage
 

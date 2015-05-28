@@ -18,7 +18,7 @@ import Data.Text (unpack)
 import qualified Data.ByteString as BS (empty)
 import qualified Data.Map.Strict as M 
     ( Map, toList, empty, lookup, insert, map
-    , unionWith, fromListWith
+    , unionWith, fromListWith, filter
     )
 
 import Database.Persist.Sql (SqlPersistT)
@@ -53,19 +53,20 @@ txPage keyRingName accountName page@PageRequest{..}
     | validPageRequest page = do
         Entity ai acc <- getAccount keyRingName accountName
         cnt <- count [ KeyRingTxAccount ==. ai ]
-        let maxPage = ceiling (toRational cnt / toRational pageLen)
-        when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
-            unwords [ "Invalid page number", show pageNum ]
-        res <- selectList [ KeyRingTxAccount ==. ai ]
-                          [ if pageReverse 
-                                then Asc KeyRingTxId 
-                                else Desc KeyRingTxId
-                          , LimitTo pageLen
-                          , OffsetBy $ (pageNum - 1) * pageLen
-                          ]
-        let f | pageReverse = id
-              | otherwise   = reverse
-        return (f $ map entityVal res, maxPage)
+        if cnt == 0 then return ([], 1) else do
+            let maxPage = ceiling (toRational cnt / toRational pageLen)
+            when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
+                unwords [ "Invalid page number", show pageNum ]
+            res <- selectList [ KeyRingTxAccount ==. ai ]
+                              [ if pageReverse 
+                                      then Asc KeyRingTxId 
+                                      else Desc KeyRingTxId
+                              , LimitTo pageLen
+                              , OffsetBy $ (pageNum - 1) * pageLen
+                              ]
+            let f | pageReverse = id
+                  | otherwise   = reverse
+            return (f $ map entityVal res, maxPage)
     | otherwise = liftIO . throwIO $ WalletException $
         unwords [ "Invalid page request:", show page ]
 
@@ -331,7 +332,7 @@ importNetTx tx = do
         -- The transaction changed status from non-dead to dead. Kill it.
         when (prevConfM /= Just TxDead && confidence == TxDead) $ killTx txid
         -- Return the network confidence of this transaction
-        return $ Just (confidence, M.fromListWith (+) xs)
+        return $ Just (confidence, M.filter (> 0) $ M.fromListWith (+) xs)
   where
     txid = txHash tx
     -- Prepare the initial state of the new coins. Use the confirmation
@@ -944,14 +945,13 @@ updateAddrBalances inCoins outCoins balType rem = do
     -- Update the inflow balances of addresses
     forM_ (M.toList inVals) $ \(addr, val) -> updateWhere 
         [ KeyRingAddrAddress ==. addr ]
-        [ inBal `inOp` val ]
+        [ inBal `op` val ]
     -- Update the outflow balances of addresses
     forM_ (M.toList outVals) $ \(addr, val) -> updateWhere
         [ KeyRingAddrAddress ==. addr ]
-        [ outBal `outOp` val ]
+        [ outBal `op` val ]
   where
-    inOp  = if rem then (-=.) else (+=.)
-    outOp = if rem then (+=.) else (-=.)
+    op = if rem then (-=.) else (+=.)
     inBal = case balType of
         BalanceOffline -> KeyRingAddrInOfflineBalance
         _              -> KeyRingAddrInBalance

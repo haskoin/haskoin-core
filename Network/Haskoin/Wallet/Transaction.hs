@@ -89,80 +89,21 @@ getTx txid = do
 -- Otherwise, the transaction will be imported into the local account as an
 -- offline transaction.
 importTx :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
-         => KeyRingName -- ^ KeyRing name
-         -> AccountName -- ^ Account name
-         -> Tx          -- ^ Transaction to import
-         -> Bool        -- ^ Sign the transaction if True
+         => Tx               -- ^ Transaction to import
+         -> KeyRingAccountId -- ^ Account ID
          -> SqlPersistT m (TxHash, TxConfidence) 
-            -- ^ Confidence of the transaction
-importTx keyRingName accountName tx sign = do
-    Entity _ keyRing     <- getKeyRing keyRingName
-    accE@(Entity ai acc) <- getAccount keyRingName accountName
-    -- Find the coins of this transaction that belong to the given account
-    inCoins <- getAccInCoins ai tx
-    let signedTx | sign      = signOfflineTx keyRing acc tx $ map toDat inCoins
-                 | otherwise = tx
-    importTxEntity accE signedTx inCoins
-  where
-    toDat (Entity _ KeyRingCoin{..}) = 
-        CoinSignData (OutPoint keyRingCoinHash keyRingCoinPos)
-                     keyRingCoinScript
-                     keyRingCoinDerivation
+            -- ^ Transaction hash (after possible merges)
+importTx tx ai = importTx' tx ai =<< getAccInCoins ai tx
 
-importTxEntity :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
-               => Entity KeyRingAccount -> Tx -> [Entity KeyRingCoin] 
-               -> SqlPersistT m (TxHash, TxConfidence)
-importTxEntity accE@(Entity _ acc) tx inCoins 
-    -- If we know about all the inputs, if the transaction is valid and we can
-    -- spend all the inputs, then we import the transaction as a network
-    -- transaction.
-    | validIn = do
-        confidenceM <- importNetTx tx
-        case confidenceM of
-            -- Return the confidence of the signed transaction
-            Just (confidence, _) -> return (txHash tx, confidence)
-            _ -> liftIO . throwIO $ WalletException 
-                "Error while importing the transaction"
-    -- Otherwise, we only import the transaction locally into the given
-    -- account. This will not impact other accounts in the keyring or
-    -- wallet.
-    | otherwise = do
-            txid <- importLocalTx accE tx inCoins
-            return (txid, TxOffline)
-  where
-    validTx = verifyStdTx tx $ map toDat inCoins
-    validIn = length inCoins == length (txIn tx)
-           && all (canSpendCoin $ txHash tx) (map entityVal inCoins)
-           && validTx
-    toDat (Entity _ KeyRingCoin{..}) =
-        ( keyRingCoinScript
-        , OutPoint keyRingCoinHash keyRingCoinPos
-        )
-
--- | Import an offline transaction into a specific account. Offline transactions
--- are imported either manually or from the wallet when building a partially
--- signed multisignature transaction. Offline transactions are only imported
--- into one specific account. They will not affect the input or output coins
--- of other accounts, including read-only accounts that may watch the same
--- addresses as this account.
---
--- We allow transactions to be imported manually by this function (unlike
--- `importNetTx` which imports only transactions coming from the network). This
--- means that it is possible to import completely crafted and invalid
--- transactions into the wallet. It is thus important to limit the scope of
--- those transactions to only the specific account in which it was imported.
---
--- This function will not broadcast these transactions to the network as we
--- have no idea if they are valid or not. Transactions are broadcast from the
--- transaction creation function and only if the transaction is complete. 
-importLocalTx :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
-              => Entity KeyRingAccount 
-              -> Tx 
-              -> [Entity KeyRingCoin] 
-              -> SqlPersistT m TxHash
-importLocalTx (Entity ai acc) origTx coins = do
+importTx' :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
+          => Tx                   -- ^ Transaction to import
+          -> KeyRingAccountId     -- ^ Account ID
+          -> [Entity KeyRingCoin] -- ^ Input coins
+          -> SqlPersistT m (TxHash, TxConfidence) 
+             -- ^ Transaction hash (after possible merges)
+importTx' origTx ai origInCoins = do
     -- Merge the transaction with any previously existing transactions
-    tx <- mergeNoSigHashTxs ai origTx $ map entityVal coins
+    tx <- mergeNoSigHashTxs ai origTx $ map entityVal origInCoins
     let origTxid = txHash origTx
         txid     = txHash tx
 
@@ -190,20 +131,80 @@ importLocalTx (Entity ai acc) origTx coins = do
                     ]
                     [ KeyRingCoinSpentBy =. Just txid ]
 
-    -- Get all the new coins to be created by this transaction
-    (outCoins, outAddrs) <- getAccOutCoins ai tx
     -- Find the updated input coins spent by this transaction
     entInCoins <- if origTxid == txid 
                     -- Save ourselves some work if the txid did not change
-                    then return coins 
+                    then return origInCoins 
                     -- Otherwise, fetch the new inputs coins again
                     else getAccInCoins ai tx
     let inCoins = map entityVal entInCoins
+        dat     = catMaybes $ map toDat inCoins
+        validTx = verifyStdTx tx dat
+        validIn = length inCoins == length (txIn tx)
+               && all (canSpendCoin txid) inCoins
+    if validIn && validTx 
+        then importNetTx tx >>= \resM -> case resM of
+                Just (confidence, _) -> return (txid, confidence)
+                _ -> liftIO . throwIO $ WalletException 
+                    "Error while importing the transaction"
+        else importLocalTx tx ai entInCoins
+  where
+    toDat KeyRingCoin{..} = case keyRingCoinScript of
+        Just s -> Just (s, OutPoint keyRingCoinHash keyRingCoinPos)
+        _ -> Nothing
 
+-- Offline transactions are usually multisignature transactions requiring
+-- additional signatures. This function will merge the signatures of
+-- the same offline transactions together into one single transaction.
+mergeNoSigHashTxs :: MonadIO m 
+                  => KeyRingAccountId -> Tx -> [KeyRingCoin] -> SqlPersistT m Tx
+mergeNoSigHashTxs ai tx inCoins = do
+    prevM <- getBy $ UniqueAccNoSig ai $ nosigTxHash tx
+    case prevM of
+        Just (Entity _ prev) -> return $ 
+            case keyRingTxConfidence prev of
+                TxOffline -> either (const tx) id $ 
+                                mergeTxs [tx, keyRingTxTx prev] outpoints 
+                _ -> tx
+        -- Nothing to merge. Return the original transaction.
+        _ -> return tx
+  where
+    buildOutpoint coin = OutPoint (keyRingCoinHash coin) (keyRingCoinPos coin)
+    f c = case keyRingCoinScript c of
+        Just s -> Just (s, buildOutpoint c)
+        _ -> Nothing
+    outpoints = catMaybes $ map f inCoins
+
+-- | Import an offline transaction into a specific account. Offline transactions
+-- are imported either manually or from the wallet when building a partially
+-- signed multisignature transaction. Offline transactions are only imported
+-- into one specific account. They will not affect the input or output coins
+-- of other accounts, including read-only accounts that may watch the same
+-- addresses as this account.
+--
+-- We allow transactions to be imported manually by this function (unlike
+-- `importNetTx` which imports only transactions coming from the network). This
+-- means that it is possible to import completely crafted and invalid
+-- transactions into the wallet. It is thus important to limit the scope of
+-- those transactions to only the specific account in which it was imported.
+--
+-- This function will not broadcast these transactions to the network as we
+-- have no idea if they are valid or not. Transactions are broadcast from the
+-- transaction creation function and only if the transaction is complete. 
+importLocalTx :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
+              => Tx 
+              -> KeyRingAccountId
+              -> [Entity KeyRingCoin] 
+              -> SqlPersistT m (TxHash, TxConfidence)
+importLocalTx tx ai entInCoins = do
+    -- Get all the new coins to be created by this transaction
+    (outCoins, outAddrs) <- getAccOutCoins ai tx
+    let inCoins = map entityVal entInCoins
+        txid    = txHash tx
     -- Only continue if the transaction is relevant to the account
     if null inCoins && null outCoins 
         then liftIO . throwIO $ WalletException $ unwords
-            [ "importLocalTx: The transaction", encodeTxHashLE $ txHash origTx
+            [ "importLocalTx: The transaction", encodeTxHashLE txid
             , "has no input or output coins which are relevant to this account."
             ]
         else do
@@ -217,18 +218,40 @@ importLocalTx (Entity ai acc) origTx coins = do
                 -- to be spent by this function unlike importNetTx.
                 then if all (canSpendOfflineCoin txid) inCoins 
                     then do
-                        -- Insert new coins into the database. If the coins
-                        -- already exist, we simply ignore them.
-                        let f c = liftM (c <$) $ insertUnique c
-                        newOutCoins <- liftM catMaybes $ mapM f outCoins 
+                        -- Insert new coins into the database. 
+                        newOutCoins <- liftM catMaybes $ forM outCoins $ \coin -> 
+                            insertBy coin >>= \resE -> case resE of
+                                Left (Entity ci prev) -> do
+                                    -- The existing coin could be an external
+                                    -- coin. Replace everything except the
+                                    -- status and the spentBy tx.
+                                    replace ci coin
+                                        { keyRingCoinStatus  = 
+                                            keyRingCoinStatus prev
+                                        , keyRingCoinSpentBy = 
+                                            keyRingCoinSpentBy prev
+                                        }
+                                    -- If the previous coin was an external
+                                    -- coin, we want to use the new coin in the
+                                    -- balance computations.
+                                    if keyRingCoinConfidence prev == TxExternal
+                                        then return $ Just coin
+                                        else return Nothing
+                                Right _ -> return $ Just coin
                         -- use the addresses (refill the gap addresses)
                         forM_ outAddrs useAddress
-                        -- Create all the transaction records for this account
+                        -- Create all the transaction records for this account.
                         buildAccTxs tx prevM TxOffline inCoins outCoins
                         -- Lock the input coins
                         spendInputs txid CoinLocked entInCoins
+                        -- Lock the inputs which are external to the wallet
+                        spendExternalInputs tx CoinLocked inCoins outCoins
                         -- Update Account balances
-                        let isUnspent c  = keyRingCoinStatus c == CoinUnspent
+                        let isUnspent c = 
+                                   ( keyRingCoinStatus c == CoinUnspent )
+                                || (  keyRingCoinStatus c == CoinLocked
+                                   && keyRingCoinSpentBy c /= Just txid
+                                   )
                             unspent      = filter isUnspent inCoins
                         updateBalancesWith 
                             (+) unspent newOutCoins BalanceOffline
@@ -237,32 +260,13 @@ importLocalTx (Entity ai acc) origTx coins = do
                             unspent newOutCoins BalanceOffline False
                         -- Return the txid which might be different from the 
                         -- original one.
-                        return txid
-                    else liftIO . throwIO $ WalletException $ unwords
-                        [ "importLocalTx: The transaction", encodeTxHashLE txid
-                        , "can not be imported as it"
-                        , "double spends existing coins."
-                        ]
+                        return (txid, TxOffline)
+                    else liftIO . throwIO $ WalletException 
+                        "importLocalTx: can not double spend coins"
                 else liftIO . throwIO $ WalletException $ unwords
-                    [ "importLocalTx: The transaction", encodeTxHashLE txid
-                    , "already exists and is not offline."
+                    [ "importLocalTx: The transaction already exists"
+                    , "and is not offline"
                     ]
-
--- Offline transactions are usually multisignature transactions requiring
--- additional signatures. This function will merge the signatures of
--- the same offline transactions together into one single transaction.
-mergeNoSigHashTxs :: MonadIO m 
-                  => KeyRingAccountId -> Tx -> [KeyRingCoin] -> SqlPersistT m Tx
-mergeNoSigHashTxs ai tx coins = do
-    prevM <- getBy $ UniqueAccNoSig ai $ nosigTxHash tx
-    case prevM of
-        Just (Entity _ prev) -> return $ 
-            either (const tx) id $ mergeTxs [tx, keyRingTxTx prev] outpoints 
-        -- Nothing to merge. Return the original transaction.
-        _ -> return tx
-  where
-    buildOutpoint coin = OutPoint (keyRingCoinHash coin) (keyRingCoinPos coin)
-    outpoints = map (\c -> (keyRingCoinScript c, buildOutpoint c)) coins
 
 -- | Import a transaction from the network into the wallet. This function
 -- assumes transactions are imported in-order (parents first). It also assumes
@@ -276,9 +280,12 @@ mergeNoSigHashTxs ai tx coins = do
 -- Transactions can only be revived if they make it into the main chain. 
 --
 -- This function returns the network confidence of the imported transaction.
-importNetTx :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
-            => Tx -- Network transaction to import
-            -> SqlPersistT m (Maybe (TxConfidence, M.Map KeyRingAccountId Int))
+importNetTx 
+    :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
+    => Tx -- Network transaction to import
+    -> SqlPersistT m (Maybe (TxConfidence, M.Map KeyRingAccountId Int))
+       -- ^ For each account implicated, the tx confidence and the number of
+       -- new addresses generated.
 importNetTx tx = do
     -- Find all the coins spent by this transaction
     entInCoins <- getInCoins tx
@@ -286,7 +293,7 @@ importNetTx tx = do
     -- Get all the new coins to be created by this transaction
     (initOutCoins, outAddrs) <- getOutCoins tx
     -- Only continue if the transaction is relevant to the wallet
-    if null inCoins && null initOutCoins then return Nothing else do
+    if null entInCoins && null initOutCoins then return Nothing else do
         -- Check if the transaction already exists
         prevM <- liftM (fmap entityVal) $ 
             selectFirst [ KeyRingTxHash ==. txid ] []
@@ -294,8 +301,8 @@ importNetTx tx = do
         let prevConfM = keyRingTxConfidence <$> prevM
             -- Compute the new confidence
             confidence 
-                  -- If all the coins can be spent
-                | all (canSpendCoin txid) inCoins = 
+                -- If all the coins can be spent
+                | all (canSpendCoin txid) inCoins =
                     -- Use the previous confidence if it is building.
                     if prevConfM == Just TxBuilding 
                         then TxBuilding 
@@ -303,23 +310,33 @@ importNetTx tx = do
                 | otherwise = TxDead
             -- Update the confidence values of our coins
             outCoins = map (f prevM confidence) initOutCoins
-        -- Insert new coins into the database. If the coins already exist, we
-        -- update the confidence.
+        -- Insert new coins into the database. 
         newOutCoins <- liftM catMaybes $ forM outCoins $ \coin -> 
             insertBy coin >>= \resE -> case resE of
-                Left (Entity ci _) -> do
-                    update ci [ KeyRingCoinConfidence =. confidence ]
-                    return Nothing
+                Left (Entity ci prev) -> do
+                    -- The existing coin could be an external coin. Replace 
+                    -- everything except the status and the spentBy tx.
+                    replace ci coin
+                        { keyRingCoinStatus  = keyRingCoinStatus prev
+                        , keyRingCoinSpentBy = keyRingCoinSpentBy prev
+                        }
+                    -- If the previous coin was an external coin, we want to
+                    -- use the new coin in the balance computations.
+                    if keyRingCoinConfidence prev == TxExternal
+                        then return $ Just coin
+                        else return Nothing
                 Right _ -> return $ Just coin
-             
         -- Use up the addresses of our new coins (replenish gap addresses)
-        xs <- forM outAddrs useAddress
-        -- Create all the transaction records for each account
+        newAddrCnt <- forM outAddrs useAddress
+        -- Create the transaction record for this account
         buildAccTxs tx prevM confidence inCoins outCoins
-        -- Spend the input coins and update balances if the transaction is not
-        -- dead
+        -- Spend the input coins and update balances if the transaction is
+        -- not dead
         when (confidence /= TxDead) $ do
-            spendInputs txid CoinSpent entInCoins
+            -- Spend our inputs
+            spendInputs txid CoinSpent entInCoins 
+            -- Create coins for non-wallet inputs to detect double spends
+            spendExternalInputs tx CoinSpent inCoins outCoins
             -- Update account balances
             let isUnspent c  = keyRingCoinStatus c == CoinUnspent
                 unspent      = filter isUnspent inCoins
@@ -331,8 +348,12 @@ importNetTx tx = do
 
         -- The transaction changed status from non-dead to dead. Kill it.
         when (prevConfM /= Just TxDead && confidence == TxDead) $ killTx txid
-        -- Return the network confidence of this transaction
-        return $ Just (confidence, M.filter (> 0) $ M.fromListWith (+) xs)
+
+        -- Return the confidence and number of new addresses generated in each
+        -- account
+        return $ Just ( confidence
+                      , M.filter (> 0) $ M.fromListWith (+) newAddrCnt
+                      )
   where
     txid = txHash tx
     -- Prepare the initial state of the new coins. Use the confirmation
@@ -343,6 +364,28 @@ importNetTx tx = do
         , keyRingCoinConfirmedHeight = keyRingTxConfirmedHeight =<< prevM
         , keyRingCoinConfirmedDate   = keyRingTxConfirmedDate =<< prevM
         }
+
+signKeyRingTx :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
+              => TxHash -> KeyRing -> Entity KeyRingAccount 
+              -> SqlPersistT m (TxHash, TxConfidence)
+signKeyRingTx txid keyRing (Entity ai acc) = do
+    getBy (UniqueAccTx ai txid) >>= \resM -> case resM of
+        Just (Entity _ KeyRingTx{..}) -> do
+            unless (keyRingTxConfidence == TxOffline) $
+                liftIO . throwIO $ WalletException 
+                    "Can only sign offline transactions"
+            entInCoins <- getAccInCoins ai keyRingTxTx
+            let dat = catMaybes $ map toDat entInCoins
+                tx  = signOfflineTx keyRing acc keyRingTxTx dat
+            importTx' tx ai entInCoins
+        _ -> liftIO . throwIO $ WalletException $ unwords
+            [ "Invalid txid", encodeTxHashLE txid ]
+  where
+    toDat (Entity _ KeyRingCoin{..}) = 
+        case (keyRingCoinScript, keyRingCoinDerivation) of
+            (Just s, Just d) -> Just $ 
+                CoinSignData (OutPoint keyRingCoinHash keyRingCoinPos) s d
+            _ -> Nothing
 
 -- | Returns true if the given coin can be spent. A coin can be spent if it is
 -- not dead and it isn't already spent by a transaction other than the given
@@ -367,9 +410,8 @@ canSpendOfflineCoin :: TxHash -> KeyRingCoin -> Bool
 canSpendOfflineCoin hash coin =
     -- The coin is not dead and
     keyRingCoinConfidence coin /= TxDead &&
-    -- The coin is not already spent (or already spent by us)
-    ( keyRingCoinStatus coin /= CoinSpent || 
-      keyRingCoinSpentBy coin == Just hash )
+    -- The coin is not already spent (offline transactions only lock coins)
+    keyRingCoinStatus coin /= CoinSpent
 
 -- Find all input coins of a transaction that belong to any account.
 getInCoins :: MonadIO m => Tx -> SqlPersistT m [Entity KeyRingCoin]
@@ -450,13 +492,13 @@ buildCoin txid (out, pos) so isCoinbase keyRingCoinCreated KeyRingAddr{..} =
     keyRingCoinHash            = txid
     keyRingCoinPos             = pos
     keyRingCoinValue           = outValue out
-    keyRingCoinScript          = so
+    keyRingCoinScript          = Just so
     keyRingCoinRedeem          = keyRingAddrRedeem
     keyRingCoinRootDerivation  = keyRingAddrRootDerivation
-    keyRingCoinDerivation      = keyRingAddrDerivation
+    keyRingCoinDerivation      = Just keyRingAddrDerivation
     keyRingCoinKey             = keyRingAddrKey
-    keyRingCoinAddress         = keyRingAddrAddress
-    keyRingCoinAddressType     = keyRingAddrType
+    keyRingCoinAddress         = Just keyRingAddrAddress
+    keyRingCoinAddressType     = Just keyRingAddrType
     keyRingCoinIsCoinbase      = isCoinbase
     keyRingCoinConfidence      = TxOffline
     keyRingCoinConfirmedBy     = Nothing
@@ -465,28 +507,87 @@ buildCoin txid (out, pos) so isCoinbase keyRingCoinCreated KeyRingAddr{..} =
     keyRingCoinStatus          = CoinUnspent
     keyRingCoinSpentBy         = Nothing
 
--- | Spend the given coins. If a coin is double spent, we return the status
--- CoinDead. Otherwise, we return CoinUnspent. Spending a CoinDead coin will
--- also return a CoinDead status because a transaction spending the coins of
--- another dead transaction should also be dead. The returned coin status will
--- be used as the status of the new output coins.
-spendInputs :: MonadIO m => TxHash -> CoinStatus -> [Entity KeyRingCoin] 
+-- | Spend the given input coins. We also create dummy coins for the inputs
+-- in a transaction that do not belong to us. This is to be able to detect
+-- double spends when reorgs occur. 
+spendInputs :: MonadIO m 
+            => TxHash -> CoinStatus -> [Entity KeyRingCoin]
             -> SqlPersistT m ()
-spendInputs hash status coinsE = do
-    -- This transaction takes precedence over any offline transactions
-    -- that are spending the same coins as us. 
-    forM_ locked killTx
-    -- Change the status of all coins 
-    forM_ keys $ \ci -> update ci [ KeyRingCoinStatus  =. status
-                                  , KeyRingCoinSpentBy =. Just hash
-                                  ]
+spendInputs txid status entInCoins = do
+    -- Loop over each account involved and kill offline transactions that are
+    -- locking the coins.
+    forM_ (M.toList $ groupAccountCoins (map entityVal entInCoins) []) $ 
+        \(ai, (inCoins, _)) -> do
+            let lockingTxs = nub $ catMaybes $ 
+                    map keyRingCoinSpentBy $ filter isLocked inCoins
+            -- Only kill offline transactions locally in individual accounts
+            forM_ lockingTxs $ killAccTx ai
+
+    -- Change the status of the input coins
+    forM_ (map entityKey entInCoins) $ \ci -> 
+        update ci [ KeyRingCoinStatus  =. status
+                  , KeyRingCoinSpentBy =. Just txid
+                  ]
   where
-    coins  = map entityVal coinsE
-    keys   = map entityKey coinsE
-    locked = nub $ catMaybes $ map keyRingCoinSpentBy $ filter isLocked coins
     isLocked coin =
         keyRingCoinStatus coin == CoinLocked && 
-        keyRingCoinSpentBy coin /= Just hash
+        keyRingCoinSpentBy coin /= Just txid
+
+spendExternalInputs :: MonadIO m 
+                    => Tx -> CoinStatus -> [KeyRingCoin] -> [KeyRingCoin]
+                    -> SqlPersistT m ()
+spendExternalInputs tx status allInCoins allOutCoins = do
+    now <- liftIO getCurrentTime
+    forM_ grouped $ \(ai, (inCoins, outCoins)) -> do
+        let 
+            coinOps = map (\KeyRingCoin{..} -> 
+                            OutPoint keyRingCoinHash keyRingCoinPos) inCoins
+            -- Filter inputs that are not in this account (unknown inputs)
+            ops = filter (not . (`elem` coinOps)) $ map prevOutput $ txIn tx
+        unless (null ops) $ do
+            -- Insert all unknown transaction inputs to detect double
+            -- spends on reorgs.
+            forM_ ops $ \(OutPoint hash pos) -> do
+                let KeyRingCoin _ k a _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ = 
+                        case (inCoins, outCoins) of
+                            (c:_, _) -> c
+                            (_, c:_) -> c
+                            -- Should not happen in theory
+                            _ -> throw $ WalletException $ 
+                                "spendExternalInputs: No coins available"
+                    keyRingCoinKeyRingName     = k
+                    keyRingCoinAccountName     = a
+                    keyRingCoinAccount         = ai
+                    keyRingCoinHash            = hash
+                    keyRingCoinPos             = pos
+                    keyRingCoinValue           = 0
+                    keyRingCoinScript          = Nothing
+                    keyRingCoinRedeem          = Nothing
+                    keyRingCoinRootDerivation  = Nothing
+                    keyRingCoinDerivation      = Nothing
+                    keyRingCoinKey             = Nothing
+                    keyRingCoinAddress         = Nothing
+                    keyRingCoinAddressType     = Nothing
+                    keyRingCoinIsCoinbase      = False
+                    -- This coin comes from an external (non-wallet)
+                    -- transaction
+                    keyRingCoinConfidence      = TxExternal 
+                    keyRingCoinConfirmedBy     = Nothing
+                    keyRingCoinConfirmedHeight = Nothing
+                    keyRingCoinConfirmedDate   = Nothing
+                    keyRingCoinStatus          = status
+                    keyRingCoinSpentBy         = Just txid
+                    keyRingCoinCreated         = now
+
+                insertBy KeyRingCoin{..} >>= \resE -> case resE of
+                    Left (Entity ci _) -> 
+                        update ci [ KeyRingCoinStatus  =. status
+                                    , KeyRingCoinSpentBy =. Just txid 
+                                    ]
+                    Right _ -> return ()
+  where
+    txid    = txHash tx
+    grouped = M.toList $ groupAccountCoins allInCoins allOutCoins
 
 buildAccTxs :: MonadIO m 
             => Tx -> Maybe KeyRingTx -> TxConfidence 
@@ -500,17 +601,17 @@ buildAccTxs tx prevM confidence inCoins outCoins = do
         -- information with the newly computed values. Also make sure that the
         -- confidence is set to the new value (it could have changed to TxDead).
         insertBy atx >>= \resE -> case resE of
-            Right _ -> return () -- Nothing to do
             -- Update the existing record
-            Left (Entity ti prev) -> replace ti 
-                prev{ keyRingTxType       = keyRingTxType atx
-                    , keyRingTxInValue    = keyRingTxInValue atx
-                    , keyRingTxOutValue   = keyRingTxOutValue atx
-                    , keyRingTxFrom       = keyRingTxFrom atx
-                    , keyRingTxTo         = keyRingTxTo atx
-                    , keyRingTxChange     = keyRingTxChange atx
-                    , keyRingTxConfidence = confidence
-                    }
+            Left (Entity ti prev) -> update ti
+                [ KeyRingTxType       =. keyRingTxType atx
+                , KeyRingTxInValue    =. keyRingTxInValue atx
+                , KeyRingTxOutValue   =. keyRingTxOutValue atx
+                , KeyRingTxFrom       =. keyRingTxFrom atx
+                , KeyRingTxTo         =. keyRingTxTo atx
+                , KeyRingTxChange     =. keyRingTxChange atx
+                , KeyRingTxConfidence =. confidence
+                ]
+            Right _ -> return () -- Nothing to do
   where
     grouped = M.toList $ groupAccountCoins inCoins outCoins
 
@@ -557,18 +658,18 @@ buildAccTx tx prevM confidence keyRingTxAccount inCoins outCoins now =
     allOutAddrs = rights $ 
         map ((scriptRecipient =<<) . decodeToEither . scriptOutput) $ txOut tx
     keyRingTxFrom = case keyRingTxType of
-        TxSelf     -> map keyRingCoinAddress inCoins
+        TxSelf     -> catMaybes $ map keyRingCoinAddress inCoins
         TxIncoming -> allInAddrs
-        TxOutgoing -> map keyRingCoinAddress inCoins
+        TxOutgoing -> catMaybes $ map keyRingCoinAddress inCoins
     keyRingTxTo = case keyRingTxType of
-        TxSelf     -> map keyRingCoinAddress outCoins
-        TxIncoming -> map keyRingCoinAddress outCoins
+        TxSelf     -> catMaybes $ map keyRingCoinAddress outCoins
+        TxIncoming -> catMaybes $ map keyRingCoinAddress outCoins
         -- For outgoing transactions, we want to display all the outgoing
         -- addresses except for change addresses (which are displayed in their
         -- own section).
         TxOutgoing -> allOutAddrs \\ keyRingTxChange
     keyRingTxChange = case keyRingTxType of
-        TxOutgoing -> map keyRingCoinAddress outCoins
+        TxOutgoing -> catMaybes $ map keyRingCoinAddress outCoins
         _ -> []
     keyRingTxTx         = tx
     keyRingTxIsCoinbase = isCoinbaseTx tx
@@ -593,7 +694,7 @@ groupAccountCoins inCoins outCoins = do
     M.unionWith g inMap outMap
   where
     -- Build a map from accounts -> (inCoins, outCoins)
-    f coin = (keyRingCoinAccount coin, [coin])
+    f coin  = (keyRingCoinAccount coin, [coin])
     g (is, _) (_, os) = (is, os)
     inMap  = M.map (\is -> (is, [])) $ M.fromListWith (++) $ map f inCoins
     outMap = M.map (\os -> ([], os)) $ M.fromListWith (++) $ map f outCoins
@@ -602,24 +703,29 @@ groupAccountCoins inCoins outCoins = do
 -- coins, its output coins will be marked as dead and any child transactions
 -- will also be set to TxDead status.
 killTx :: MonadIO m => TxHash -> SqlPersistT m ()
-killTx hash = do
+killTx txid = do
     -- Find all input coins spent by this transaction
     inCoins <- liftM (map entityVal) $
-        selectList [ KeyRingCoinSpentBy ==. Just hash ] []
+        selectList [ KeyRingCoinSpentBy ==. Just txid ] []
     -- Find all output coins
     outCoins <- liftM (map entityVal) $ 
-        selectList [ KeyRingCoinHash ==. hash ] []
+        selectList [ KeyRingCoinHash ==. txid ] []
     -- This transaction doesn't spend any coins anymore.
-    updateWhere [ KeyRingCoinSpentBy ==. Just hash ] 
+    updateWhere [ KeyRingCoinSpentBy ==. Just txid ] 
                 [ KeyRingCoinSpentBy =. Nothing
                 , KeyRingCoinStatus  =. CoinUnspent
                 ]
     -- Update the output coin statuses to TxDead
-    updateWhere [ KeyRingCoinHash ==. hash ]
+    updateWhere [ KeyRingCoinHash ==. txid ]
                 [ KeyRingCoinConfidence =. TxDead ]
     -- Update all the transaction statuses to TxDead
-    updateWhere [ KeyRingTxHash ==. hash ] 
+    updateWhere [ KeyRingTxHash ==. txid ] 
                 [ KeyRingTxConfidence =. TxDead ]
+    -- Recursively kill child transactions. We must update balance in the
+    -- reverse order in which the transactions have been created. So we must
+    -- recurse here before updating the balances.
+    let childs = nub $ catMaybes $ map keyRingCoinSpentBy outCoins
+    forM_ childs killTx
     -- Update account balances
     let f coin       = keyRingCoinConfidence coin /= TxDead
         liveOutCoins = filter f outCoins
@@ -628,10 +734,53 @@ killTx hash = do
     -- Update address balances
     updateAddrBalances inCoins liveOutCoins BalanceOffline True
     updateAddrBalances inCoins liveOutCoins BalancePending True
-    -- Recursively kill child transactions
-    let childs = nub $ catMaybes $ map keyRingCoinSpentBy outCoins
-    forM_ childs killTx
 
+-- | Similar to killTx but limits the scope to one account only.
+killAccTx :: MonadIO m => KeyRingAccountId -> TxHash -> SqlPersistT m ()
+killAccTx ai txid = do
+    -- Find all input coins spent by this transaction
+    entInCoins <- selectList [ KeyRingCoinSpentBy ==. Just txid 
+                             , KeyRingCoinAccount ==. ai
+                             ] []
+    -- Find all output coins
+    entOutCoins <- selectList [ KeyRingCoinHash    ==. txid 
+                              , KeyRingCoinAccount ==. ai
+                              ] []
+    let outCoins = map entityVal entOutCoins
+    -- This transaction doesn't spend any coins anymore.
+    updateWhere [ KeyRingCoinSpentBy ==. Just txid 
+                , KeyRingCoinAccount ==. ai
+                ] 
+                [ KeyRingCoinSpentBy =. Nothing
+                , KeyRingCoinStatus  =. CoinUnspent
+                ]
+    -- Update the output coin statuses to TxDead
+    updateWhere [ KeyRingCoinHash    ==. txid 
+                , KeyRingCoinAccount ==. ai
+                ]
+                [ KeyRingCoinConfidence =. TxDead ]
+    -- Update all the transaction statuses to TxDead
+    updateWhere [ KeyRingTxHash    ==. txid 
+                , KeyRingTxAccount ==. ai
+                ] 
+                [ KeyRingTxConfidence =. TxDead ]
+
+    -- Recursively kill child transactions. We must update balance in the
+    -- reverse order in which the transactions have been created. So we must
+    -- recurse here before updating the balances.
+    let childs = nub $ catMaybes $ map keyRingCoinSpentBy outCoins
+    forM_ childs $ killAccTx ai
+
+    -- Update account balances
+    let f coin       = keyRingCoinConfidence coin /= TxDead
+        liveOutCoins = filter f outCoins
+        inCoins      = map entityVal entInCoins
+    updateBalancesWith (-) inCoins liveOutCoins BalanceOffline
+    updateBalancesWith (-) inCoins liveOutCoins BalancePending
+    -- Update address balances
+    updateAddrBalances inCoins liveOutCoins BalanceOffline True
+    updateAddrBalances inCoins liveOutCoins BalancePending True
+    
 {- Confirmations -}
 
 importMerkles :: MonadIO m
@@ -723,7 +872,7 @@ getBestBlock = do
             , "Wallet database is probably not initialized"
             ]
 
--- Revive a a dead transaction. All transactions that are in conflict with this
+-- Revive a dead transaction. All transactions that are in conflict with this
 -- one will be killed.
 reviveTx :: MonadIO m => Tx -> SqlPersistT m ()
 reviveTx tx = do
@@ -731,7 +880,7 @@ reviveTx tx = do
     entInCoins <- getInCoins tx
     let inCoins = map entityVal entInCoins
         -- Find all the transactions spending these coins
-    let hs = catMaybes $ map keyRingCoinSpentBy  inCoins
+    let hs = catMaybes $ map keyRingCoinSpentBy inCoins
         -- Find all the transactions to kill
         toKill = delete txid $ nub hs
     -- Kill the conflicting transactions
@@ -774,19 +923,21 @@ createTx keyRingName accountName minConf dests fee sign = do
     Entity _ keyRing <- getKeyRing keyRingName
     accE@(Entity ai acc) <- getAccount keyRingName accountName
     -- Build an unsigned transaction from the given recipient values and fee
-    (unsignedTx, inCoins) <- buildUnsignedTx accE minConf dests fee
+    (unsignedTx, entInCoins) <- buildUnsignedTx accE minConf dests fee
     -- Sign our new transaction if signing was requested
-    let tx | sign = signOfflineTx keyRing acc unsignedTx $ map toDat inCoins
+    let tx | sign = signOfflineTx keyRing acc unsignedTx $ 
+                        catMaybes $ map toDat entInCoins
            | otherwise = unsignedTx
     -- Import the transaction in the wallet either as a network transaction if
     -- it is complete, or as an offline transaction otherwise.
-    importTxEntity accE tx inCoins
+    importTx' tx ai entInCoins
   where
     -- Map KeyRingCoin to CoinSignData which is required for signing
     toDat (Entity _ KeyRingCoin{..}) = 
-        CoinSignData (OutPoint keyRingCoinHash keyRingCoinPos)
-                     keyRingCoinScript
-                     keyRingCoinDerivation
+        case (keyRingCoinScript, keyRingCoinDerivation) of
+            (Just s, Just d) -> Just $ 
+                CoinSignData (OutPoint keyRingCoinHash keyRingCoinPos) s d
+            _ -> Nothing
 
 -- Build an unsigned transaction given a list of recipients and a fee. Returns
 -- the unsigned transaction together with the input coins that have been
@@ -915,8 +1066,8 @@ updateBalancesWith :: MonadIO m
                    => (Integer -> Integer -> Integer)
                    -> [KeyRingCoin] -> [KeyRingCoin] -> BalanceType 
                    -> SqlPersistT m ()
-updateBalancesWith op inCoins outCoins balType = do
-    forM_ grouped $ \(ai, (is, os)) -> do
+updateBalancesWith op allInCoins allOutCoins balType = do
+    forM_ grouped $ \(ai, (inCoins, outCoins)) -> do
         -- Find the previous balance. We compute the new balance as a delta
         -- from the previous balance.
         prevBalM <- getBy $ UniqueBalance ai balType
@@ -931,7 +1082,7 @@ updateBalancesWith op inCoins outCoins balType = do
             Left (Entity bi _) -> replace bi bal
             _ -> return ()
   where
-    grouped = M.toList $ groupAccountCoins inCoins outCoins
+    grouped = M.toList $ groupAccountCoins allInCoins allOutCoins
 
 -- Update the offline or pending balances of addresses given new input and
 -- output coins. To remove the effects of coins on addresses (for example when
@@ -958,10 +1109,12 @@ updateAddrBalances inCoins outCoins balType rem = do
     outBal = case balType of
         BalanceOffline -> KeyRingAddrOutOfflineBalance
         _              -> KeyRingAddrOutBalance
-    f KeyRingCoin{..} = (keyRingCoinAddress, keyRingCoinValue)
+    f KeyRingCoin{..} = case keyRingCoinAddress of
+        Just a -> Just (a, keyRingCoinValue)
+        _ -> Nothing
     -- Group addresses to reduce the number of database updates
-    outVals = M.fromListWith (+) $ map f inCoins
-    inVals  = M.fromListWith (+) $ map f outCoins
+    outVals = M.fromListWith (+) $ catMaybes $ map f inCoins
+    inVals  = M.fromListWith (+) $ catMaybes $ map f outCoins
 
 -- Compute the non-offline balance at a given height from the pending balance.
 -- All current pending transactions are removed from the pending balance to

@@ -14,7 +14,7 @@ import qualified Control.Monad.State as S (StateT, evalStateT, gets)
 
 import Data.Aeson (Value(..), toJSON)
 import Data.Word (Word32)
-import Data.Maybe (fromJust, isNothing, fromMaybe)
+import Data.Maybe (fromJust, isNothing, fromMaybe, catMaybes)
 import Data.Text (Text, pack, unpack)
 import Data.Conduit (($$))
 import qualified Data.Conduit.List as CL (consume)
@@ -300,18 +300,40 @@ postTxsR keyRingName name action = case action of
             when (confidence == TxPending) $ 
                 sendSPV . NodePublishTx =<< runDB (getTx tid)
         return $ toJSON $ TxHashConfidenceRes tid confidence
-    ImportTx tx sign -> do
+    ImportTx tx -> do
         $(logInfo) $ format $ unlines
             [ "PostTxsR ImportTx"
             , "  KeyRing name: " ++ unpack keyRingName
             , "  Account name: " ++ unpack name
             , "  Txid        : " ++ encodeTxHashLE (txHash tx)
-            , "  Sign        : " ++ show sign
             ]
         (txid, confidence, before) <- runDB $ do
             -- Get the number of elements before signing the transaction
             (_, before, _)  <- getBloomFilter
-            (txid, confidence) <- importTx keyRingName name tx sign
+            Entity ai _ <- getAccount keyRingName name
+            (txid, confidence) <- importTx tx ai
+            return (txid, confidence, before)
+        whenOnline $ do
+            (_, after, _) <- runDB getBloomFilter
+            -- Publish the new bloom filter to our peers only if it changed
+            when (after > before) updateNodeFilter
+            -- Publish the transaction to the network only wen it is complete
+            when (confidence == TxPending) $ 
+                sendSPV . NodePublishTx =<< runDB (getTx txid)
+        return $ toJSON $ TxHashConfidenceRes txid confidence
+    SignTx initTxid -> do
+        $(logInfo) $ format $ unlines
+            [ "PostTxsR SignTx"
+            , "  KeyRing name: " ++ unpack keyRingName
+            , "  Account name: " ++ unpack name
+            , "  Txid        : " ++ encodeTxHashLE initTxid
+            ]
+        (txid, confidence, before) <- runDB $ do
+            -- Get the number of elements before signing the transaction
+            (_, before, _)  <- getBloomFilter
+            Entity _ keyRing <- getKeyRing keyRingName
+            accE <- getAccount keyRingName name
+            (txid, confidence) <- signKeyRingTx initTxid keyRing accE
             return (txid, confidence, before)
         whenOnline $ do
             (_, after, _) <- runDB getBloomFilter
@@ -368,12 +390,13 @@ getOfflineTxR keyRingName accountName txid = do
         Entity ai _ <- getAccount keyRingName accountName
         tx          <- getTx txid
         inCoins     <- getAccInCoins ai tx
-        return $ toJSON $ OfflineTxData tx $ map toDat inCoins
+        return $ toJSON $ OfflineTxData tx $ catMaybes $ map toDat inCoins
   where
     toDat (Entity _ KeyRingCoin{..}) = 
-        CoinSignData (OutPoint keyRingCoinHash keyRingCoinPos)
-                     keyRingCoinScript
-                     keyRingCoinDerivation
+        case (keyRingCoinScript, keyRingCoinDerivation) of
+            (Just s, Just d) -> Just $
+                CoinSignData (OutPoint keyRingCoinHash keyRingCoinPos) s d
+            _ -> Nothing
 
 getBalanceR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
             => KeyRingName -> AccountName -> Word32 -> Handler m Value

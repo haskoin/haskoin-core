@@ -26,7 +26,8 @@ Transaction commands:
   txs       acc [page] [-c pagesize] [-r] Display transactions by page
   send      acc addr amount [-S]          Send coins to an address
   sendmany  acc {addr:amount...} [-S]     Send coins to many addresses
-  import    acc tx [-S]                   Import a transaction
+  import    acc tx                        Import a transaction (does not sign)
+  sign      acc txid                      Sign one of your offline transactions
   balance   acc [--minconf]               Display balance (without offline txs)
   offbal    acc                           Display balance (with offline txs)
   gettx     acc txid                      Get a transaction by txid

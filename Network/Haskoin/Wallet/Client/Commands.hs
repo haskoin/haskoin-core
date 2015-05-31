@@ -19,6 +19,7 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdSend
 , cmdSendMany
 , cmdImport
+, cmdSign
 , cmdBalance
 , cmdOfflineBalance
 , cmdGetTx
@@ -260,8 +261,7 @@ cmdImport :: String -> String -> Handler ()
 cmdImport name txStr = case txM of
     Just tx -> do
         k <- R.asks configKeyRing
-        sign <- R.asks configSignTx
-        let action = ImportTx tx sign
+        let action = ImportTx tx 
         sendZmq (PostTxsR k (pack name) action) $ 
             \(TxHashConfidenceRes h c) -> do
                 putStrLn $ unwords [ "TxHash    :", encodeTxHashLE h ]
@@ -269,6 +269,19 @@ cmdImport name txStr = case txM of
     _ -> error "Could not parse transaction"
   where
     txM = decodeToMaybe =<< hexToBS txStr
+
+cmdSign :: String -> String -> Handler ()
+cmdSign name txidStr = case txidM of
+    Just txid -> do
+        k <- R.asks configKeyRing
+        let action = SignTx txid
+        sendZmq (PostTxsR k (pack name) action) $ 
+            \(TxHashConfidenceRes h c) -> do
+                putStrLn $ unwords [ "TxHash    :", encodeTxHashLE h ]
+                putStrLn $ unwords [ "Confidence:", printConfidence c ]
+    _ -> error "Could not parse txid"
+  where
+    txidM = decodeTxHashLE txidStr
 
 cmdGetOffline :: String -> String -> Handler ()
 cmdGetOffline name tidStr = case tidM of

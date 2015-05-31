@@ -66,7 +66,7 @@ newKeyRing keyRingName seed
         insertUnique keyRing >>= \resM -> case resM of
             Just _ -> return keyRing
             _ -> liftIO . throwIO $ WalletException $ unwords
-                [ "KeyRing", unpack keyRingName, "already exists." ]
+                [ "KeyRing", unpack keyRingName, "already exists" ]
 
 -- | Stream all KeyRings 
 keyRingSource :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
@@ -123,8 +123,8 @@ newAccountMultisig
     -> Int                          -- ^ Total keys (n in m of n)
     -> SqlPersistT m KeyRingAccount -- ^ New multisig account
 newAccountMultisig keyRingName keyRingAccountName keys m n = do
-    unless (validMultisigParams m n) $ liftIO . throwIO $ WalletException 
-        "Invalid multisig parameters m of n"
+    unless (validMultisigParams m n) $ liftIO . throwIO $ 
+        WalletException "Invalid multisig parameters"
     Entity keyRingAccountKeyRing (KeyRing _ master _) <- getKeyRing keyRingName
     deriv <- nextAccountDeriv keyRingAccountKeyRing
     let keyRingAccountKeys         = [deriveXPubKey $ derivePath deriv master]
@@ -195,7 +195,7 @@ saveAccount acc = insertUnique acc >>= \resM -> case resM of
     Just _ -> return acc 
     -- The account already exists
     _ -> liftIO . throwIO $ WalletException $ unwords
-        [ "Account", unpack $ keyRingAccountName acc, "already exists." ]
+        [ "Account", unpack $ keyRingAccountName acc, "already exists" ]
 
 -- | Add new thirdparty keys to a multisignature account. This function can
 -- fail if the multisignature account already has all required keys. 
@@ -206,7 +206,7 @@ addAccountKeys :: MonadIO m
                -> SqlPersistT m KeyRingAccount -- ^ Account information
 addAccountKeys keyRingName accName keys 
     | null keys = liftIO . throwIO $ 
-        WalletException "No keys have been provided."
+        WalletException "No keys have been provided"
     | otherwise = do
         Entity ki _ <- getKeyRing keyRingName
         f =<< getBy (UniqueAccount ki accName)
@@ -248,7 +248,7 @@ getAccount keyRingName accName = do
     case accM of
         Just accEnt -> return accEnt
         _ -> liftIO . throwIO $ WalletException $ unwords
-            [ "Account", unpack accName, "does not exist." ]
+            [ "Account", unpack accName, "does not exist" ]
 
 {- Addresses -}
 
@@ -270,10 +270,10 @@ getAddress keyRingName accName i addrType = do
                              ]
             when ((fromIntegral i) + 1 > addrCnt - keyRingAccountGap acc) $ 
                 liftIO . throwIO $ WalletException $ unwords
-                    [ "Address index", show i, "is in the hidden gap." ]
+                    [ "Address index", show i, "is in the hidden gap" ]
             return addrEnt
         _ -> liftIO . throwIO $ WalletException $ unwords
-            [ "Address index", show i, "does not exist." ]
+            [ "Address index", show i, "does not exist" ]
 
 -- | Stream all addresses in the wallet, including hidden gap addresses. This
 -- is useful for building a bloom filter.
@@ -309,28 +309,28 @@ addressPage keyRingName accountName addrType page@PageRequest{..}
         addrCnt <- count [ KeyRingAddrAccount ==. ai
                          , KeyRingAddrType    ==. addrType
                          ]
-        let maxIndex = fromIntegral (addrCnt - (keyRingAccountGap acc))
-            maxPage  = ceiling (toRational maxIndex / toRational pageLen)
-        when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
-            unwords [ "Invalid page number", show pageNum ]
-        res <- selectList [ KeyRingAddrAccount ==. ai
-                          , KeyRingAddrType ==. addrType
-                          , KeyRingAddrIndex <. maxIndex
-                          ]
-                          [ if pageReverse 
-                                then Asc KeyRingAddrId 
-                                else Desc KeyRingAddrId
-                          , LimitTo pageLen
-                          , OffsetBy $ (pageNum - 1) * pageLen
-                          ]
-        let f | pageReverse = id
-              | otherwise   = reverse
-        return (f $ map entityVal res, maxPage)
+        if addrCnt == 0 then return ([], 1) else do
+            let maxIndex = fromIntegral (addrCnt - (keyRingAccountGap acc))
+                maxPage  = ceiling (toRational maxIndex / toRational pageLen)
+            when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
+                unwords [ "Invalid page number", show pageNum ]
+            res <- selectList [ KeyRingAddrAccount ==. ai
+                              , KeyRingAddrType ==. addrType
+                              , KeyRingAddrIndex <. maxIndex
+                              ]
+                              [ if pageReverse 
+                                      then Asc KeyRingAddrId 
+                                      else Desc KeyRingAddrId
+                              , LimitTo pageLen
+                              , OffsetBy $ (pageNum - 1) * pageLen
+                              ]
+            let f | pageReverse = id
+                  | otherwise   = reverse
+            return (f $ map entityVal res, maxPage)
     | otherwise = liftIO . throwIO $ WalletException $
-        unwords [ "Invalid page request"
-                , "( Page", show pageNum
-                , ", Page size", show pageLen, ")"
-                ]
+        concat [ "Invalid page request"
+               , " (Page: ", show pageNum, ", Page size: ", show pageLen, ")"
+               ]
 
 -- | Get a list of all unused addresses.
 addressUnused :: MonadIO m 
@@ -495,8 +495,7 @@ setAccountGap keyRingName accountName gap = do
     let diff = gap - keyRingAccountGap acc
     if diff < 0
         then liftIO . throwIO $ WalletException $ unwords
-            [ "Can not decrease the value of the address gap for account"
-            , unpack accountName, "from"
+            [ "Can not decrease the gap from"
             , show $ keyRingAccountGap acc, "to", show gap
             ]
         else do

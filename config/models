@@ -41,19 +41,19 @@ KeyRingAddr
     deriving Show
 
 KeyRingCoin
-    account KeyRingAccountId
+    account KeyRingAccountId 
     keyRingName Text maxlen=200
     accountName Text maxlen=200
     hash TxHash maxlen=200
     pos Word32
     value Word64
-    script ScriptOutput
+    script ScriptOutput Maybe
     redeem ScriptOutput Maybe
     rootDerivation DerivPath Maybe
-    derivation SoftPath
+    derivation SoftPath Maybe
     key PubKeyC Maybe
-    address Address maxlen=64
-    addressType AddressType maxlen=16
+    address Address Maybe maxlen=64
+    addressType AddressType Maybe maxlen=16
     status CoinStatus maxlen=16
     spentBy TxHash Maybe maxlen=200
     isCoinbase Bool

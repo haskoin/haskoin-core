@@ -175,6 +175,7 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "send"        : [name, add, amnt]      -> cmdSend name add amnt
     "sendmany"    : name : xs              -> cmdSendMany name xs
     "import"      : [name, tx]             -> cmdImport name tx
+    "sign"        : [name, txid]           -> cmdSign name txid
     "gettx"       : [name, txid]           -> cmdGetTx name txid
     "getoffline"  : [name, txid]           -> cmdGetOffline name txid
     "signoffline" : [name, tx, dat]        -> cmdSignOffline name tx dat

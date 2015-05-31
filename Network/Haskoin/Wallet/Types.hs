@@ -124,6 +124,7 @@ data TxConfidence
     | TxDead 
     | TxPending
     | TxBuilding
+    | TxExternal -- Used for input coins of transactions outside the wallet
     deriving (Eq, Show, Read)
 
 $(deriveJSON (dropFieldLabel 2) ''TxConfidence)
@@ -203,9 +204,9 @@ data TxAction
         , accTxActionSign       :: !Bool
         }
     | ImportTx 
-        { accTxActionTx   :: !Tx 
-        , accTxActionSign :: !Bool
-        }
+        { accTxActionTx :: !Tx }
+    | SignTx 
+        { accTxActionHash :: !TxHash }
     | SignOfflineTx
         { accTxActionTx           :: !Tx
         , accTxActionCoinSignData :: ![CoinSignData]
@@ -331,13 +332,13 @@ data JsonCoin = JsonCoin
     , jsonCoinHash            :: !TxHash
     , jsonCoinPos             :: !Word32
     , jsonCoinValue           :: !Word64
-    , jsonCoinScript          :: !ScriptOutput
+    , jsonCoinScript          :: !(Maybe ScriptOutput)
     , jsonCoinRedeem          :: !(Maybe ScriptOutput)
     , jsonCoinRootDerivation  :: !(Maybe DerivPath)
-    , jsonCoinDerivation      :: !SoftPath
+    , jsonCoinDerivation      :: !(Maybe SoftPath)
     , jsonCoinKey             :: !(Maybe PubKeyC)
-    , jsonCoinAddress         :: !Address
-    , jsonCoinAddressType     :: !AddressType
+    , jsonCoinAddress         :: !(Maybe Address)
+    , jsonCoinAddressType     :: !(Maybe AddressType)
     , jsonCoinStatus          :: !CoinStatus 
     , jsonCoinSpentBy         :: !(Maybe TxHash)
     , jsonCoinIsCoinbase      :: !Bool
@@ -600,12 +601,14 @@ instance PersistField TxConfidence where
         TxDead     -> "dead"
         TxPending  -> "pending"
         TxBuilding -> "building"
+        TxExternal -> "external"
 
     fromPersistValue (PersistText t) = case t of
         "offline"  -> return TxOffline
         "dead"     -> return TxDead
         "pending"  -> return TxPending
         "building" -> return TxBuilding
+        "external" -> return TxExternal
         _ -> Left "Invalid Persistent TxConfidence"
     fromPersistValue _ = Left "Invalid Persistent TxConfidence"
         

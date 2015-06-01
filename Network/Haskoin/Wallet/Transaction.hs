@@ -919,23 +919,28 @@ reviveTx tx = do
     forM_ toKill killTx
     -- Spend the inputs of this transaction
     spendInputs txid CoinSpent entInCoins
-    -- Update account balances
     outCoins <- liftM (map entityVal) $ 
-        selectList [ KeyRingCoinHash ==. txid ] []
-    updateBalancesWith (+) inCoins outCoins BalanceOffline
-    updateBalancesWith (+) inCoins outCoins BalancePending
-    -- Update address balances
-    updateAddrBalances inCoins outCoins BalanceOffline False 
-    updateAddrBalances inCoins outCoins BalancePending False
-    -- We do not update the output coins and transactions because this function
-    -- is called only by importMerkles and the transactions and coins are
-    -- updated to TxBuilding there. So we avoid unnecessary work.
+        selectList [ KeyRingCoinHash       ==. txid 
+                   , KeyRingCoinConfidence ==. TxDead
+                   ] []
     -- Update the output coins of this transaction
-    -- updateWhere [ KeyRingCoinHash ==. txid ]
-    --             [ KeyRingCoinConfidence ==. TxPending ]
-    -- -- Update the transactions
-    -- updateWhere [ KeyRingTxHash ==. txid ]
-    --             [ KeyRingTxConfidence ==. TxPending ]
+    unless (null outCoins) $ do
+        updateWhere [ KeyRingCoinHash       ==. txid 
+                    , KeyRingCoinConfidence ==. TxDead
+                    ]
+                    [ KeyRingCoinConfidence =. TxPending ]
+        -- Update the transactions
+        updateWhere [ KeyRingTxHash       ==. txid 
+                    , KeyRingTxConfidence ==. TxDead
+                    ]
+                    [ KeyRingTxConfidence =. TxPending ]
+    -- Update account balances
+    let inNotMine = filter (\c -> keyRingCoinSpentBy c /= Just txid) inCoins
+    updateBalancesWith (+) inNotMine outCoins BalanceOffline
+    updateBalancesWith (+) inNotMine outCoins BalancePending
+    -- Update address balances
+    updateAddrBalances inNotMine outCoins BalanceOffline False 
+    updateAddrBalances inNotMine outCoins BalancePending False
   where
     txid = txHash tx
 

@@ -103,36 +103,38 @@ importTx' :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
              -- ^ Transaction hash (after possible merges)
 importTx' origTx ai origInCoins = do
     -- Merge the transaction with any previously existing transactions
-    tx <- mergeNoSigHashTxs ai origTx $ map entityVal origInCoins
-    let origTxid = txHash origTx
-        txid     = txHash tx
+    mergeResM <- mergeNoSigHashTxs ai origTx $ map entityVal origInCoins
+    let (tx, oldTxid) = case mergeResM of
+                            Just mergeRes -> mergeRes
+                            _ -> (origTx, txHash origTx)
+        txid = txHash tx
 
     -- If the transaction was merged into a new transaction,
     -- update the old hashes to the new ones. This allows us to
     -- keep the spending information of our coins. It is thus possible
     -- to spend partially signed multisignature transactions (as offline
     -- transactions) even before all signatures have arrived. 
-    when (origTxid /= txid) $ do
+    when (oldTxid /= txid) $ do
         -- Update the output coins
         updateWhere [ KeyRingCoinAccount ==. ai 
-                    , KeyRingCoinHash    ==. origTxid
+                    , KeyRingCoinHash    ==. oldTxid
                     ]
                     [ KeyRingCoinHash =. txid ]
         -- Update the transactions
         updateWhere [ KeyRingTxAccount ==. ai 
-                    , KeyRingTxHash    ==. origTxid
+                    , KeyRingTxHash    ==. oldTxid
                     ]
                     [ KeyRingTxHash  =. txid 
                     , KeyRingTxTx    =. tx
                     ]
         -- Update any coins that this transaction spent
         updateWhere [ KeyRingCoinAccount ==. ai
-                    , KeyRingCoinSpentBy ==. Just origTxid
+                    , KeyRingCoinSpentBy ==. Just oldTxid
                     ]
                     [ KeyRingCoinSpentBy =. Just txid ]
 
     -- Find the updated input coins spent by this transaction
-    entInCoins <- if origTxid == txid 
+    entInCoins <- if oldTxid == txid 
                     -- Save ourselves some work if the txid did not change
                     then return origInCoins 
                     -- Otherwise, fetch the new inputs coins again
@@ -157,17 +159,18 @@ importTx' origTx ai origInCoins = do
 -- additional signatures. This function will merge the signatures of
 -- the same offline transactions together into one single transaction.
 mergeNoSigHashTxs :: MonadIO m 
-                  => KeyRingAccountId -> Tx -> [KeyRingCoin] -> SqlPersistT m Tx
+                  => KeyRingAccountId -> Tx -> [KeyRingCoin] 
+                  -> SqlPersistT m (Maybe (Tx, TxHash))
 mergeNoSigHashTxs ai tx inCoins = do
     prevM <- getBy $ UniqueAccNoSig ai $ nosigTxHash tx
-    case prevM of
-        Just (Entity _ prev) -> return $ 
-            case keyRingTxConfidence prev of
-                TxOffline -> either (const tx) id $ 
-                                mergeTxs [tx, keyRingTxTx prev] outpoints 
-                _ -> tx
+    return $ case prevM of
+        Just (Entity _ prev) -> case keyRingTxConfidence prev of
+            TxOffline -> case mergeTxs [tx, keyRingTxTx prev] outpoints of
+                Right merged -> Just (merged, keyRingTxHash prev)
+                _            -> Nothing
+            _ -> Nothing
         -- Nothing to merge. Return the original transaction.
-        _ -> return tx
+        _ -> Nothing
   where
     buildOutpoint coin = OutPoint (keyRingCoinHash coin) (keyRingCoinPos coin)
     f c = case keyRingCoinScript c of
@@ -338,13 +341,19 @@ importNetTx tx = do
             -- Create coins for non-wallet inputs to detect double spends
             spendExternalInputs tx CoinSpent inCoins outCoins
             -- Update account balances
-            let isUnspent c  = keyRingCoinStatus c == CoinUnspent
-                unspent      = filter isUnspent inCoins
-            updateBalancesWith (+) unspent newOutCoins BalanceOffline
-            updateBalancesWith (+) unspent newOutCoins BalancePending
+            let isUnspent c = keyRingCoinStatus c /= CoinSpent
+                unspent     = filter isUnspent inCoins
+            if prevConfM == Just TxOffline
+                then updateBalancesWith (+) unspent outCoins BalancePending
+                else do 
+                    updateBalancesWith (+) unspent newOutCoins BalancePending
+                    updateBalancesWith (+) unspent newOutCoins BalanceOffline
             -- Update address balances
-            updateAddrBalances unspent newOutCoins BalanceOffline False
-            updateAddrBalances unspent newOutCoins BalancePending False
+            if prevConfM == Just TxOffline
+                then updateAddrBalances unspent outCoins BalancePending False
+                else do
+                    updateAddrBalances unspent newOutCoins BalancePending False
+                    updateAddrBalances unspent newOutCoins BalanceOffline False
 
         -- The transaction changed status from non-dead to dead. Kill it.
         when (prevConfM /= Just TxDead && confidence == TxDead) $ killTx txid

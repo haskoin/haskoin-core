@@ -11,7 +11,7 @@ import Control.Exception (throwIO, throw)
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Word (Word32, Word64)
-import Data.Maybe (fromMaybe, catMaybes, isNothing, isJust, fromJust, maybe)
+import Data.Maybe (fromMaybe, catMaybes, isNothing, isJust, maybe)
 import Data.Either (rights)
 import Data.List ((\\), nub, delete)
 import Data.Text (unpack)
@@ -221,6 +221,10 @@ importLocalTx tx ai entInCoins = do
                 -- to be spent by this function unlike importNetTx.
                 then if all (canSpendOfflineCoin txid) inCoins 
                     then do
+                        -- Lock the input coins
+                        spendInputs txid CoinLocked entInCoins
+                        -- Lock the inputs which are external to the wallet
+                        spendExternalInputs tx CoinLocked inCoins outCoins
                         -- Insert new coins into the database. 
                         newOutCoins <- liftM catMaybes $ forM outCoins $ \coin -> 
                             insertBy coin >>= \resE -> case resE of
@@ -241,14 +245,10 @@ importLocalTx tx ai entInCoins = do
                                         then return $ Just coin
                                         else return Nothing
                                 Right _ -> return $ Just coin
-                        -- use the addresses (refill the gap addresses)
-                        forM_ outAddrs useAddress
                         -- Create all the transaction records for this account.
                         buildAccTxs tx prevM TxOffline inCoins outCoins
-                        -- Lock the input coins
-                        spendInputs txid CoinLocked entInCoins
-                        -- Lock the inputs which are external to the wallet
-                        spendExternalInputs tx CoinLocked inCoins outCoins
+                        -- use the addresses (refill the gap addresses)
+                        forM_ outAddrs useAddress
                         -- Update Account balances
                         let isUnspent c = 
                                    ( keyRingCoinStatus c == CoinUnspent )
@@ -297,6 +297,23 @@ importNetTx tx = do
     (initOutCoins, outAddrs) <- getOutCoins tx
     -- Only continue if the transaction is relevant to the wallet
     if null entInCoins && null initOutCoins then return Nothing else do
+        -- Check if we have transactions that need to be merged. This can
+        -- happen if someone has an offline transaction and the full
+        -- transaction comes in from the network. We need to update the old
+        -- offline transaction hash to the new hash.
+        toMerge <- selectList [ KeyRingTxNosigHash ==. nosigTxHash tx ] []
+        forM_ (nub $ map (keyRingTxHash . entityVal) toMerge) $ \oldTxid -> do
+            -- Update the output coins
+            updateWhere [ KeyRingCoinHash ==. oldTxid ]
+                        [ KeyRingCoinHash =. txid ]
+            -- Update the transactions
+            updateWhere [ KeyRingTxHash ==. oldTxid ]
+                        [ KeyRingTxHash =. txid 
+                        , KeyRingTxTx   =. tx
+                        ]
+            -- Update any coins that this transaction spent
+            updateWhere [ KeyRingCoinSpentBy ==. Just oldTxid ]
+                        [ KeyRingCoinSpentBy =. Just txid ]
         -- Check if the transaction already exists
         prevM <- liftM (fmap entityVal) $ 
             selectFirst [ KeyRingTxHash ==. txid ] []
@@ -313,6 +330,13 @@ importNetTx tx = do
                 | otherwise = TxDead
             -- Update the confidence values of our coins
             outCoins = map (f prevM confidence) initOutCoins
+        -- Spend the input coins. We have to do this before creating new
+        -- coins / txs in the database to make sure to kill old txs first.
+        when (confidence /= TxDead) $ do
+            -- Spend our inputs
+            spendInputs txid CoinSpent entInCoins 
+            -- Create coins for non-wallet inputs to detect double spends
+            spendExternalInputs tx CoinSpent inCoins outCoins
         -- Insert new coins into the database. 
         newOutCoins <- liftM catMaybes $ forM outCoins $ \coin -> 
             insertBy coin >>= \resE -> case resE of
@@ -333,13 +357,8 @@ importNetTx tx = do
         newAddrCnt <- forM outAddrs useAddress
         -- Create the transaction record for this account
         buildAccTxs tx prevM confidence inCoins outCoins
-        -- Spend the input coins and update balances if the transaction is
-        -- not dead
+        -- Update balances if the transaction is not dead
         when (confidence /= TxDead) $ do
-            -- Spend our inputs
-            spendInputs txid CoinSpent entInCoins 
-            -- Create coins for non-wallet inputs to detect double spends
-            spendExternalInputs tx CoinSpent inCoins outCoins
             -- Update account balances
             let isUnspent c = keyRingCoinStatus c /= CoinSpent
                 unspent     = filter isUnspent inCoins
@@ -736,13 +755,15 @@ killTx txid = do
     let childs = nub $ catMaybes $ map keyRingCoinSpentBy outCoins
     forM_ childs killTx
     -- Update account balances
-    let f coin       = keyRingCoinConfidence coin /= TxDead
-        liveOutCoins = filter f outCoins
+    let liveOutCoins = filter (\c -> keyRingCoinConfidence c /= TxDead) outCoins
+        inSpent      = filter (\c -> keyRingCoinStatus c == CoinSpent) inCoins
+        outNotOffline = 
+            filter (\c -> keyRingCoinConfidence c /= TxOffline) liveOutCoins
     updateBalancesWith (-) inCoins liveOutCoins BalanceOffline
-    updateBalancesWith (-) inCoins liveOutCoins BalancePending
+    updateBalancesWith (-) inSpent outNotOffline BalancePending
     -- Update address balances
     updateAddrBalances inCoins liveOutCoins BalanceOffline True
-    updateAddrBalances inCoins liveOutCoins BalancePending True
+    updateAddrBalances inSpent outNotOffline BalancePending True
 
 -- | Similar to killTx but limits the scope to one account only.
 killAccTx :: MonadIO m => KeyRingAccountId -> TxHash -> SqlPersistT m ()
@@ -756,6 +777,7 @@ killAccTx ai txid = do
                               , KeyRingCoinAccount ==. ai
                               ] []
     let outCoins = map entityVal entOutCoins
+        inCoins  = map entityVal entInCoins
     -- This transaction doesn't spend any coins anymore.
     updateWhere [ KeyRingCoinSpentBy ==. Just txid 
                 , KeyRingCoinAccount ==. ai
@@ -781,14 +803,15 @@ killAccTx ai txid = do
     forM_ childs $ killAccTx ai
 
     -- Update account balances
-    let f coin       = keyRingCoinConfidence coin /= TxDead
-        liveOutCoins = filter f outCoins
-        inCoins      = map entityVal entInCoins
+    let liveOutCoins = filter (\c -> keyRingCoinConfidence c /= TxDead) outCoins
+        inSpent      = filter (\c -> keyRingCoinStatus c == CoinSpent) inCoins
+        outNotOffline = 
+            filter (\c -> keyRingCoinConfidence c /= TxOffline) liveOutCoins
     updateBalancesWith (-) inCoins liveOutCoins BalanceOffline
-    updateBalancesWith (-) inCoins liveOutCoins BalancePending
+    updateBalancesWith (-) inSpent outNotOffline BalancePending
     -- Update address balances
     updateAddrBalances inCoins liveOutCoins BalanceOffline True
-    updateAddrBalances inCoins liveOutCoins BalancePending True
+    updateAddrBalances inSpent outNotOffline BalancePending True
     
 {- Confirmations -}
 

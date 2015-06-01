@@ -576,6 +576,7 @@ printConfidence c = case c of
     TxPending  -> "Pending"
     TxDead     -> "Dead"
     TxOffline  -> "Offline"
+    TxExternal -> "external"
 
 printTxType :: TxType -> String
 printTxType t = case t of

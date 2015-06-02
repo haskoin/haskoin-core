@@ -116,8 +116,10 @@ getAccountsR keyRingName = do
     res <- runDB $ accountSource keyRingName $$ CL.consume
     return $ toJSON $ map toJsonAccount res
 
-postAccountsR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
-              => KeyRingName -> NewAccount -> Handler m Value
+postAccountsR
+    :: ( MonadResource m, MonadThrow m, MonadLogger m
+       , MonadBaseControl IO m, MonadIO m )
+    => KeyRingName -> NewAccount -> Handler m Value
 postAccountsR keyRingName acc@NewAccount{..} = do
     $(logInfo) $ format $ unlines 
         [ "PostAccountsR"
@@ -162,8 +164,10 @@ getAccountR keyRingName name = do
     res <- runDB $ getAccount keyRingName name
     return $ toJSON $ toJsonAccount $ entityVal res
 
-postAccountKeysR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
-                 => KeyRingName -> AccountName -> [XPubKey] -> Handler m Value
+postAccountKeysR
+    :: ( MonadResource m, MonadThrow m, MonadLogger m
+       , MonadBaseControl IO m, MonadIO m )
+    => KeyRingName -> AccountName -> [XPubKey] -> Handler m Value
 postAccountKeysR keyRingName name keys = do
     $(logInfo) $ format $ unlines 
         [ "PostAccountKeysR"

@@ -50,14 +50,12 @@ import Control.Monad (mzero)
 import Control.Exception (Exception)
 
 import Text.Read (readMaybe)
-import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Int (Int64)
 import Data.Time (UTCTime)
 import Data.Typeable (Typeable)
-import Data.Maybe (maybeToList, isJust, fromJust)
+import Data.Maybe (maybeToList)
 import Data.Char (toLower)
 import Data.Word (Word32, Word64)
-import Data.ByteString.Lazy (toStrict)
 import Data.Text (Text, pack, unpack)
 import Data.Aeson.Types 
     ( Options(..)
@@ -75,8 +73,6 @@ import Data.Aeson
     , object
     , parseJSON
     , toJSON
-    , encode
-    , decode
     )
 
 import Database.Persist.Class
@@ -225,8 +221,7 @@ data NodeAction = Rescan { nodeActionTimestamp :: !(Maybe Word32) }
 
 instance ToJSON NodeAction where
     toJSON (Rescan tM) = object $
-        [ "type" .= String "rescan" ] ++ 
-        ( ("timestamp" .=) <$> maybeToList tM )
+        ("type" .= String "rescan") : (("timestamp" .=) <$> maybeToList tM)
 
 instance FromJSON NodeAction where
     parseJSON = withObject "NodeAction" $ \o -> do
@@ -646,7 +641,7 @@ instance PersistField PubKeyC where
     toPersistValue = PersistByteString . stringToBS . bsToHex . encode'
     fromPersistValue (PersistByteString t) =
         maybeToEither "Invalid Persistent PubKeyC" $
-            decodeToMaybe =<< (hexToBS $ bsToString t)
+            decodeToMaybe =<< hexToBS (bsToString t)
     fromPersistValue _ = Left "Invalid Persistent PubKeyC"
 
 instance PersistFieldSql PubKeyC where
@@ -657,7 +652,7 @@ instance PersistField ScriptOutput where
         PersistByteString . stringToBS . bsToHex . encodeOutputBS
     fromPersistValue (PersistByteString t) =
         maybeToEither "Invalid Persistent ScriptOutput" $
-            (eitherToMaybe . decodeOutputBS) =<< (hexToBS $ bsToString t)
+            (eitherToMaybe . decodeOutputBS) =<< hexToBS (bsToString t)
     fromPersistValue _ = Left "Invalid Persistent ScriptOutput"
 
 instance PersistFieldSql ScriptOutput where

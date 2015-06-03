@@ -51,7 +51,8 @@ txPage keyRingName accountName page@PageRequest{..}
         Entity ai _ <- getAccount keyRingName accountName
         cnt <- count [ KeyRingTxAccount ==. ai ]
         if cnt == 0 then return ([], 1) else do
-            let maxPage = ceiling (toRational cnt / toRational pageLen)
+            let (d, m)  = cnt `divMod` pageLen
+                maxPage = d + min 1 m
             when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
                 unwords [ "Invalid page number", show pageNum ]
             res <- selectList [ KeyRingTxAccount ==. ai ]

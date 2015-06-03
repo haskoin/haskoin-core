@@ -153,25 +153,25 @@ tests =
                         PageRequest 5 3 False
 
         , testCase "Decreasing the address gap should fail" $
-            assertException (WalletException "Can not decrease the gap from 9 to 8") $ do
+            assertException (WalletException "Can not decrease the gap from 15 to 14") $ do
                 newKeyRing "main" $ BS.pack [0] 
                 newAccount "main" "default"
-                setAccountGap "main" "default" 9
-                setAccountGap "main" "default" 8
+                setAccountGap "main" "default" 15
+                setAccountGap "main" "default" 14
 
         , testCase "Setting a label on a hidden address key should fail" $
-            assertException (WalletException "Address index 5 is in the hidden gap") $ do
+            assertException (WalletException "Address index 10 is in the hidden gap") $ do
                 newKeyRing "main" $ BS.pack [0] 
                 newAccount "main" "default"
-                setAccountGap "main" "default" 5
-                setAddrLabel "main" "default" 5 AddressExternal "Gym membership"
+                setAccountGap "main" "default" 10
+                setAddrLabel "main" "default" 10 AddressExternal "Gym membership"
 
         , testCase "Setting a label on an invalid address key should fail" $
-            assertException (WalletException "Address index 10 does not exist") $ do
+            assertException (WalletException "Address index 20 does not exist") $ do
                 newKeyRing "main" $ BS.pack [0] 
                 newAccount "main" "default"
-                setAccountGap "main" "default" 5
-                setAddrLabel "main" "default" 10 AddressExternal "Gym membership"
+                setAccountGap "main" "default" 10
+                setAddrLabel "main" "default" 20 AddressExternal "Gym membership"
 
         , testCase "Requesting an address prvkey on a read-only account should fail" $
             assertException
@@ -179,7 +179,7 @@ tests =
                     newKeyRing "main" $ BS.pack [0] 
                     newAccountRead "main" "default" $
                         deriveXPubKey $ makeXPrvKey $ BS.pack [1]
-                    setAccountGap "main" "default" 5
+                    setAccountGap "main" "default" 10
                     addressPrvKey "main" "default" 2 AddressExternal
         ]
     , testGroup "Wallet tests"
@@ -216,14 +216,6 @@ bs1 = fromRight $ mnemonicToSeed pass $ unwords
     , "birth", "online", "various"
     , "renew", "alert", "crunch" 
     , "middle", "absurd", "health"
-    ]
-
-bs2 :: BS.ByteString
-bs2 = fromRight $ mnemonicToSeed pass $ unwords
-    [ "couple", "wrong", "toss"
-    , "light", "trust", "abandon"
-    , "define", "copy", "radar"
-    , "power", "useful", "simple"
     ]
 
 pass :: String

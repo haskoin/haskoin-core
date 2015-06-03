@@ -317,13 +317,14 @@ addressPage keyRingName accountName addrType page@PageRequest{..}
                          , KeyRingAddrType    ==. addrType
                          ]
         if addrCnt == 0 then return ([], 1) else do
-            let maxIndex = fromIntegral (addrCnt - keyRingAccountGap acc)
-                maxPage  = ceiling (toRational maxIndex / toRational pageLen)
+            let maxIndex = addrCnt - keyRingAccountGap acc
+                (d, m)   = maxIndex `divMod` pageLen
+                maxPage  = d + min 1 m
             when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
                 unwords [ "Invalid page number", show pageNum ]
             res <- selectList [ KeyRingAddrAccount ==. ai
                               , KeyRingAddrType ==. addrType
-                              , KeyRingAddrIndex <. maxIndex
+                              , KeyRingAddrIndex <. fromIntegral maxIndex
                               ]
                               [ if pageReverse 
                                       then Asc KeyRingAddrId 

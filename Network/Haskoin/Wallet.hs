@@ -54,10 +54,67 @@ module Network.Haskoin.Wallet
 , TxRes(..)
 , BalanceRes(..)
 
+-- *Database KeyRings
+, initWallet
+, newKeyRing
+, keyRingSource
+, getKeyRing
+
+-- *Database Accounts
+, accountSource
+, newAccount
+, newAccountMultisig
+, newAccountRead
+, newAccountReadMultisig
+, addAccountKeys
+, getAccount
+, isMultisigAccount
+, isReadAccount
+
+-- *Database Addresses
+, getAddress
+, addressSourceAll
+, addressSource
+, addressPage
+, addressUnused
+, setAddrLabel
+, addressPrvKey
+, useAddress
+, setAccountGap
+, firstAddrTime
+, getPathRedeem
+, getPathPubKey
+
+-- *Database Bloom Filter
+, getBloomFilter
+
+-- *Database transactions
+, txPage
+, getTx 
+, importTx
+, importNetTx
+, signKeyRingTx
+, createTx
+, signOfflineTx
+, getOfflineTxData
+
+-- *Database blocks
+, importMerkles
+, getBestBlock
+
+-- *Database coins and balances
+, spendableCoins
+, accountBalance
+, offlineBalance
+
+-- *Rescan
+, resetRescan
 ) where
 
 import Network.Haskoin.Wallet.Client
 import Network.Haskoin.Wallet.Server
 import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Types
+import Network.Haskoin.Wallet.KeyRing
+import Network.Haskoin.Wallet.Transaction
 

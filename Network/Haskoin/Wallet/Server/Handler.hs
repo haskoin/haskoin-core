@@ -1,6 +1,6 @@
 module Network.Haskoin.Wallet.Server.Handler where
 
-import Control.Monad (when, liftM, liftM2)
+import Control.Monad (when, liftM)
 import Control.Exception (throwIO, throw)
 import Control.Monad.Trans (liftIO, MonadIO, lift)
 import Control.Concurrent.STM (atomically)
@@ -14,16 +14,12 @@ import qualified Control.Monad.State as S (StateT, evalStateT, gets)
 
 import Data.Aeson (Value(..), toJSON)
 import Data.Word (Word32)
-import Data.Maybe (fromJust, isNothing, fromMaybe, catMaybes)
+import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack, unpack)
 import Data.Conduit (($$))
 import qualified Data.Conduit.List as CL (consume)
 
-import Database.Persist 
-    ( Entity(..), Filter
-    , entityVal, getBy, selectFirst, deleteWhere, updateWhere, (=.)
-    , SelectOpt(Asc)
-    )
+import Database.Persist (Entity(..), entityVal, getBy)
 import Database.Persist.Sql (SqlPersistT, ConnectionPool, runSqlPool)
 
 import Network.Haskoin.Crypto
@@ -31,7 +27,6 @@ import Network.Haskoin.Node
 import Network.Haskoin.Transaction
 import Network.Haskoin.Block
 import Network.Haskoin.Util
-import Network.Haskoin.Constants
 
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.KeyRing
@@ -120,7 +115,7 @@ postAccountsR
     :: ( MonadResource m, MonadThrow m, MonadLogger m
        , MonadBaseControl IO m, MonadIO m )
     => KeyRingName -> NewAccount -> Handler m Value
-postAccountsR keyRingName acc@NewAccount{..} = do
+postAccountsR keyRingName NewAccount{..} = do
     $(logInfo) $ format $ unlines 
         [ "PostAccountsR"
         , "  KeyRing name: " ++ unpack keyRingName
@@ -175,7 +170,9 @@ postAccountKeysR keyRingName name keys = do
         , "  Account name: " ++ unpack name 
         , "  Key count   : " ++ show (length keys)
         ]
-    res <- runDB $ addAccountKeys keyRingName name keys
+    res <- runDB $ do
+        accE <- getAccount keyRingName name
+        addAccountKeys accE keys
     return $ toJSON $ toJsonAccount res
 
 postAccountGapR :: ( MonadLogger m
@@ -194,7 +191,9 @@ postAccountGapR keyRingName name (SetAccountGap gap) = do
         , "  Account name: " ++ unpack name 
         , "  New gap size: " ++ show gap
         ]
-    acc <- runDB $ setAccountGap keyRingName name gap
+    acc <- runDB $ do
+        accE <- getAccount keyRingName name
+        setAccountGap accE gap
     whenOnline updateNodeFilter
     return $ toJSON $ toJsonAccount acc
 
@@ -337,7 +336,7 @@ postTxsR keyRingName name action = case action of
             (_, before, _)  <- getBloomFilter
             Entity _ keyRing <- getKeyRing keyRingName
             accE <- getAccount keyRingName name
-            (txid, confidence) <- signKeyRingTx initTxid keyRing accE
+            (txid, confidence) <- signKeyRingTx keyRing accE initTxid
             return (txid, confidence, before)
         whenOnline $ do
             (_, after, _) <- runDB getBloomFilter
@@ -381,7 +380,13 @@ getTxR keyRingName accountName txid = do
             _ -> liftIO . throwIO $ WalletException $ unwords
                 [ "Transaction", encodeTxHashLE txid, "does not exist." ]
 
-getOfflineTxR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m) 
+getOfflineTxR :: ( MonadLogger m
+                 , MonadIO m
+                 , MonadBaseControl IO m
+                 , MonadBase IO m
+                 , MonadThrow m
+                 , MonadResource m
+                 ) 
               => KeyRingName -> AccountName -> TxHash -> Handler m Value
 getOfflineTxR keyRingName accountName txid = do
     $(logInfo) $ format $ unlines
@@ -390,17 +395,10 @@ getOfflineTxR keyRingName accountName txid = do
         , "  Account name: " ++ unpack accountName
         , "  Txid        : " ++ encodeTxHashLE txid
         ]
-    runDB $ do
+    (dat, _) <- runDB $ do
         Entity ai _ <- getAccount keyRingName accountName
-        tx          <- getTx txid
-        inCoins     <- getAccInCoins ai tx
-        return $ toJSON $ OfflineTxData tx $ catMaybes $ map toDat inCoins
-  where
-    toDat (Entity _ KeyRingCoin{..}) = 
-        case (keyRingCoinScript, keyRingCoinDerivation) of
-            (Just s, Just d) -> Just $
-                CoinSignData (OutPoint keyRingCoinHash keyRingCoinPos) s d
-            _ -> Nothing
+        getOfflineTxData ai txid
+    return $ toJSON dat
 
 getBalanceR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
             => KeyRingName -> AccountName -> Word32 -> Handler m Value
@@ -442,16 +440,7 @@ postNodeR action = do
         , "  Timestamp: " ++ show t
         ]
     whenOnline $ do
-        runDB $ do
-            deleteWhere ([] :: [Filter KeyRingCoin])
-            deleteWhere ([] :: [Filter KeyRingTx])
-            deleteWhere ([] :: [Filter KeyRingBalance])
-            updateWhere [] [ KeyRingAddrInBalance         =. 0
-                           , KeyRingAddrOutBalance        =. 0
-                           , KeyRingAddrInOfflineBalance  =. 0
-                           , KeyRingAddrOutOfflineBalance =. 0
-                           ]
-            setBestBlock (headerHash genesisHeader) 0
+        runDB resetRescan
         sendSPV $ NodeStartDownload $ Left t
     return $ toJSON $ RescanRes t
   where

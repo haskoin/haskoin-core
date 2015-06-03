@@ -94,15 +94,17 @@ tests =
             assertException
                 (WalletException "No keys have been provided") $ do
                     newKeyRing "main" $ BS.pack [0]
-                    addAccountKeys "main" "default" []
+                    newAccount "main" "default" 
+                    accE <- getAccount "main" "default"
+                    addAccountKeys accE []
 
         , testCase "Calling addAccountKeys on a non-multisig account should fail" $
             assertException
                 (WalletException "Account default is not a multisig account") $ do
                     newKeyRing "main" $ BS.pack [0]
                     newAccount "main" "default" 
-                    addAccountKeys "main" "default"
-                        [ deriveXPubKey $ makeXPrvKey (BS.pack [1]) ]
+                    accE <- getAccount "main" "default"
+                    addAccountKeys accE [ deriveXPubKey $ makeXPrvKey (BS.pack [1]) ]
 
         , testCase "Adding keys to a complete multisig account should fail" $
             assertException
@@ -112,8 +114,8 @@ tests =
                         [ deriveXPubKey $ makeXPrvKey (BS.pack [1])
                         , deriveXPubKey $ makeXPrvKey (BS.pack [2])
                         ] 2 3
-                    addAccountKeys "main" "ms" 
-                        [ deriveXPubKey $ makeXPrvKey (BS.pack [3]) ]
+                    accE <- getAccount "main" "ms"
+                    addAccountKeys accE [ deriveXPubKey $ makeXPrvKey (BS.pack [3]) ]
 
         , testCase "Getting a non-existing account should fail" $
             assertException
@@ -148,7 +150,8 @@ tests =
                 (WalletException "Invalid page number 5") $ do
                     newKeyRing "main" $ BS.pack [0] 
                     newAccount "main" "default"
-                    setAccountGap "main" "default" 10
+                    accE <- getAccount "main" "default"
+                    setAccountGap accE 10
                     addressPage "main" "default" AddressExternal $
                         PageRequest 5 3 False
 
@@ -156,21 +159,24 @@ tests =
             assertException (WalletException "Can not decrease the gap from 15 to 14") $ do
                 newKeyRing "main" $ BS.pack [0] 
                 newAccount "main" "default"
-                setAccountGap "main" "default" 15
-                setAccountGap "main" "default" 14
+                Entity ai acc <- getAccount "main" "default"
+                acc2 <- setAccountGap (Entity ai acc) 15
+                setAccountGap (Entity ai acc2) 14
 
         , testCase "Setting a label on a hidden address key should fail" $
             assertException (WalletException "Address index 10 is in the hidden gap") $ do
                 newKeyRing "main" $ BS.pack [0] 
                 newAccount "main" "default"
-                setAccountGap "main" "default" 10
+                accE <- getAccount "main" "default"
+                setAccountGap accE 10
                 setAddrLabel "main" "default" 10 AddressExternal "Gym membership"
 
         , testCase "Setting a label on an invalid address key should fail" $
             assertException (WalletException "Address index 20 does not exist") $ do
                 newKeyRing "main" $ BS.pack [0] 
                 newAccount "main" "default"
-                setAccountGap "main" "default" 10
+                accE <- getAccount "main" "default"
+                setAccountGap accE 10
                 setAddrLabel "main" "default" 20 AddressExternal "Gym membership"
 
         , testCase "Requesting an address prvkey on a read-only account should fail" $
@@ -179,7 +185,8 @@ tests =
                     newKeyRing "main" $ BS.pack [0] 
                     newAccountRead "main" "default" $
                         deriveXPubKey $ makeXPrvKey $ BS.pack [1]
-                    setAccountGap "main" "default" 10
+                    accE <- getAccount "main" "default"
+                    setAccountGap accE 10
                     addressPrvKey "main" "default" 2 AddressExternal
         ]
     , testGroup "Wallet tests"
@@ -245,7 +252,6 @@ testDerivations :: App ()
 testDerivations = do
     newKeyRing "test" bs1
     newAccount "test" "acc1"
-    setAccountGap "test" "acc1" 10
 
     addressUnused "test" "acc1" AddressExternal 
         >>= liftIO . assertEqual "Generated external addresses do not match"
@@ -281,7 +287,6 @@ testBalances :: App ()
 testBalances = do
     newKeyRing "test" bs1
     newAccount "test" "acc1"
-    setAccountGap "test" "acc1" 10
     Entity ai _ <- getAccount "test" "acc1"
     let fundingTx = fakeTx 
             [ (1, 0) ] 
@@ -561,7 +566,6 @@ testConflictBalances = do
     newKeyRing "test" bs1
     newAccount "test" "acc1"
     Entity ai _ <- getAccount "test" "acc1"
-    setAccountGap "test" "acc1" 10
     let tx1 = fakeTx
             [ (4, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ] 
@@ -772,7 +776,6 @@ testOffline = do
     newKeyRing "test" bs1
     newAccount "test" "acc1"
     Entity ai _ <- getAccount "test" "acc1"
-    setAccountGap "test" "acc1" 10
     let tx1 = fakeTx
             [ (4, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ] 
@@ -947,7 +950,6 @@ testKillOffline = do
     newKeyRing "test" bs1
     newAccount "test" "acc1"
     Entity ai _ <- getAccount "test" "acc1"
-    setAccountGap "test" "acc1" 10
     let tx1 = fakeTx
             [ (4, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ] 
@@ -1133,7 +1135,6 @@ testOfflineExceptions = do
         newKeyRing "test" bs1
         newAccount "test" "acc1"
         Entity ai _ <- getAccount "test" "acc1"
-        setAccountGap "test" "acc1" 10
         importNetTx tx1 >>=
             liftIO . (assertEqual "Confidence is not pending")
                 (Just (TxPending, M.fromList [(ai, 1)]))
@@ -1143,7 +1144,6 @@ testOfflineExceptions = do
         newKeyRing "test" bs1
         newAccount "test" "acc1"
         Entity ai _ <- getAccount "test" "acc1"
-        setAccountGap "test" "acc1" 10
         importNetTx tx4 >>=
             liftIO . (assertEqual "Confidence is not pending")
                 (Just (TxPending, M.fromList [(ai, 1)]))
@@ -1159,7 +1159,6 @@ testOfflineExceptions = do
         newKeyRing "test" bs1
         newAccount "test" "acc1"
         Entity ai _ <- getAccount "test" "acc1"
-        setAccountGap "test" "acc1" 10
         importNetTx tx1 >>=
             liftIO . (assertEqual "Confidence is not pending")
                 (Just (TxPending, M.fromList [(ai, 1)]))
@@ -1175,8 +1174,6 @@ testImportMultisig = do
     newAccountMultisig 
         "test" "ms2" 
         [fromJust $ xPubImport "xpub69iinth3CTrfh5efv7baTWwk9hHi4zqcQEsNFgVwEJvdaZVEPytZzmNxjYTnF5F5x2CamLXvmD1T4RhpsuaXSFPo2MnLN5VqWqrWb82U7ED"] 2 2
-    setAccountGap "test" "ms1" 10
-    setAccountGap "test" "ms2" 10
     Entity _ keyRing <- getKeyRing "test"
     accE1@(Entity ai1 acc1) <- getAccount "test" "ms1"
     accE2@(Entity ai2 acc2) <- getAccount "test" "ms2"
@@ -1223,7 +1220,7 @@ testImportMultisig = do
     offlineBalance ai2   >>= liftIO . (assertEqual "Balance is not 9990000") 9990000
 
     -- Sign the transaction in ms2
-    (h3,c3) <- signKeyRingTx h2 keyRing accE2
+    (h3,c3) <- signKeyRingTx keyRing accE2 h2
     tx3 <- liftM (entityVal . fromJust) $ getBy $ UniqueAccTx ai2 h3
     liftIO $ assertEqual "Confidence is not pending" TxPending c3
     liftIO $ assertEqual "Confidence is not pending" TxPending $ keyRingTxConfidence tx3
@@ -1264,7 +1261,6 @@ testKillTx = do
     newKeyRing "test" bs1
     newAccount "test" "acc1"
     Entity ai _ <- getAccount "test" "acc1"
-    setAccountGap "test" "acc1" 10
     let tx1 = fakeTx
             [ (4, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ] 

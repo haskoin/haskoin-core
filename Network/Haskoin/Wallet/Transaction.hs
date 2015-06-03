@@ -1,4 +1,30 @@
-module Network.Haskoin.Wallet.Transaction where
+module Network.Haskoin.Wallet.Transaction 
+( 
+-- *Database transactions
+  txPage
+, getTx 
+, importTx
+, importNetTx
+, signKeyRingTx
+, createTx
+, signOfflineTx
+, getOfflineTxData
+, killTx
+, killAccTx
+, reviveTx
+
+-- *Database blocks
+, importMerkles
+, getBestBlock
+
+-- *Database coins and balances
+, spendableCoins
+, accountBalance
+, offlineBalance
+
+-- *Rescan
+, resetRescan
+) where
 
 import Control.Applicative ((<$>))
 import Control.Monad (forM, forM_, when, liftM, unless)
@@ -21,7 +47,7 @@ import qualified Data.Map.Strict as M
 
 import Database.Persist.Sql (SqlPersistT)
 import Database.Persist 
-    ( Entity(..)
+    ( Entity(..), Filter
     , entityVal, entityKey, getBy, replace, deleteWhere
     , selectList, selectFirst, updateWhere, insertBy
     , update , count, (=.), (==.), (<-.), (<=.), (!=.), (-=.), (+=.)
@@ -33,6 +59,7 @@ import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
+import Network.Haskoin.Constants
 
 import Network.Haskoin.Wallet.KeyRing
 import Network.Haskoin.Wallet.Model
@@ -392,24 +419,33 @@ importNetTx tx = do
         }
 
 signKeyRingTx :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
-              => TxHash -> KeyRing -> Entity KeyRingAccount 
+              => KeyRing -> Entity KeyRingAccount -> TxHash
               -> SqlPersistT m (TxHash, TxConfidence)
-signKeyRingTx txid keyRing (Entity ai acc) =
-    getBy (UniqueAccTx ai txid) >>= \resM -> case resM of
+signKeyRingTx keyRing (Entity ai acc) txid = do
+    (OfflineTxData tx dat, entInCoins) <- getOfflineTxData ai txid
+    let signedTx = signOfflineTx keyRing acc tx dat
+    importTx' signedTx ai entInCoins
+
+getOfflineTxData :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
+                 => KeyRingAccountId -> TxHash 
+                 -> SqlPersistT m (OfflineTxData, [Entity KeyRingCoin])
+getOfflineTxData ai txid = do
+    txM <- getBy $ UniqueAccTx ai txid
+    case txM of
         Just (Entity _ KeyRingTx{..}) -> do
-            unless (keyRingTxConfidence == TxOffline) $
-                liftIO . throwIO $ WalletException 
-                    "Can only sign offline transactions"
+            unless (keyRingTxConfidence == TxOffline) $ liftIO . throwIO $ 
+                WalletException "Can only sign offline transactions."
             entInCoins <- getAccInCoins ai keyRingTxTx
-            let dat = mapMaybe toDat entInCoins
-                tx  = signOfflineTx keyRing acc keyRingTxTx dat
-            importTx' tx ai entInCoins
+            return 
+                ( OfflineTxData keyRingTxTx $ catMaybes $ map toDat entInCoins
+                , entInCoins
+                )
         _ -> liftIO . throwIO $ WalletException $ unwords
             [ "Invalid txid", encodeTxHashLE txid ]
   where
     toDat (Entity _ KeyRingCoin{..}) = 
         case (keyRingCoinScript, keyRingCoinDerivation) of
-            (Just s, Just d) -> Just $ 
+            (Just s, Just d) -> Just $
                 CoinSignData (OutPoint keyRingCoinHash keyRingCoinPos) s d
             _ -> Nothing
 
@@ -1217,4 +1253,16 @@ offlineBalance :: MonadIO m => KeyRingAccountId -> SqlPersistT m Word64
 offlineBalance ai = do
     balM <- getBy $ UniqueBalance ai BalanceOffline
     return $ maybe 0 (keyRingBalanceValue . entityVal) balM
+
+resetRescan :: MonadIO m => SqlPersistT m ()
+resetRescan = do
+    deleteWhere ([] :: [Filter KeyRingCoin])
+    deleteWhere ([] :: [Filter KeyRingTx])
+    deleteWhere ([] :: [Filter KeyRingBalance])
+    updateWhere [] [ KeyRingAddrInBalance         =. 0
+                   , KeyRingAddrOutBalance        =. 0
+                   , KeyRingAddrInOfflineBalance  =. 0
+                   , KeyRingAddrOutOfflineBalance =. 0
+                   ]
+    setBestBlock (headerHash genesisHeader) 0
 

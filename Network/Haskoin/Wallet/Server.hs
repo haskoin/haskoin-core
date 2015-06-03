@@ -7,7 +7,7 @@ import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 import System.ZMQ4
 
 import Control.Applicative ((<$>))
-import Control.Monad (when, unless, forM, forM_, forever, liftM)
+import Control.Monad (when, unless, forM, forever, liftM)
 import Control.Monad.Trans (MonadIO, lift, liftIO)
 import Control.Exception (SomeException(..),  tryJust, catch)
 import Control.Concurrent.STM.TBMChan (writeTBMChan)
@@ -41,12 +41,7 @@ import Database.Persist.Sql
     , runSqlPersistMPool
     , runMigration
     )
-import qualified Database.LevelDB.Base as DB 
-    ( DB
-    , Options(..)
-    , open
-    , defaultOptions 
-    )
+import qualified Database.LevelDB.Base as DB (Options(..), open, defaultOptions)
 
 import Network.Haskoin.Constants
 import Network.Haskoin.Node
@@ -126,7 +121,7 @@ runSPVServer cfg = do
 
                     -- Listen to SPV events and update the wallet database
                     let runEvents = sourceTBMChan eChan $$ 
-                                    processEvents rChan db pool
+                                    processEvents rChan pool
 
                     withAsync runEvents $ \a -> do
                         link a
@@ -134,9 +129,9 @@ runSPVServer cfg = do
                         runWalletApp $ HandlerSession cfg pool $ Just rChan
 
 processEvents :: (MonadLogger m, MonadIO m)
-              => TBMChan NodeRequest -> DB.DB -> ConnectionPool
+              => TBMChan NodeRequest -> ConnectionPool
               -> Sink WalletMessage m ()
-processEvents rChan db pool = awaitForever $ \req -> lift $ case req of
+processEvents rChan pool = awaitForever $ \req -> lift $ case req of
     WalletTx tx -> processTxs [tx] >> return ()
     WalletMerkle action dmbs -> do
         -- Save the old best block before importing

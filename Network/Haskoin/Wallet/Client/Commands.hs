@@ -40,7 +40,7 @@ import System.ZMQ4.Monadic
     )
 
 import Control.Applicative ((<$>))
-import Control.Monad (forM_, when, liftM2, unless)
+import Control.Monad (forM_, when, liftM2)
 import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.Reader as R (ReaderT, ask, asks)
 
@@ -70,7 +70,6 @@ import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Util
 
-import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Server
@@ -302,8 +301,8 @@ cmdSignOffline name txStr datStr = case (txM, datM) of
     (Just tx, Just dat) -> do
         k <- R.asks configKeyRing
         let action = SignOfflineTx tx dat
-        sendZmq (PostTxsR k (pack name) action) $ \(TxCompleteRes tx c) -> do
-            putStrLn $ unwords [ "Tx      :", bsToHex $ encode' tx ]
+        sendZmq (PostTxsR k (pack name) action) $ \(TxCompleteRes tx' c) -> do
+            putStrLn $ unwords [ "Tx      :", bsToHex $ encode' tx' ]
             putStrLn $ unwords [ "Complete:", if c then "Yes" else "No" ]
     _ -> error "Could not decode input data"
   where

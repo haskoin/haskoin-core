@@ -5,7 +5,7 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
 import Control.Monad (liftM, guard)
-import Control.Monad.Trans (liftIO, MonadIO)
+import Control.Monad.Trans (liftIO)
 import Control.Exception (Exception, handleJust)
 import Control.Monad.Trans.Resource (ResourceT)
 import Control.Monad.Logger (NoLoggingT)
@@ -13,21 +13,13 @@ import Control.Monad.Logger (NoLoggingT)
 import Data.Word (Word32, Word64)
 import Data.Maybe (fromJust)
 import qualified Data.Map.Strict as M (fromList, empty)
-import qualified Data.Text as T (Text)
 import qualified Data.ByteString as BS 
     ( ByteString
     , empty
     , pack
     )
 
-import Database.Persist 
-    ( Entity(..)
-    , entityVal
-    , selectList
-    , selectFirst
-    , getBy
-    , (==.)
-    )
+import Database.Persist (Entity(..), entityVal, getBy)
 import Database.Persist.Sqlite 
     ( runSqlite
     , runMigrationSilent
@@ -47,7 +39,7 @@ type App = SqlPersistT (NoLoggingT (ResourceT IO))
 tests :: [Test]
 tests =
     [ testGroup "KeyRing creation"
-        [ testCase "Calling newKeyRing with an empty seed should fail" $
+        [ testCase "Calling _ <- newKeyRing with an empty seed should fail" $
             assertException
                 (WalletException "The seed is empty") 
                 (newKeyRing "main" BS.empty)
@@ -55,35 +47,35 @@ tests =
         , testCase "Creating two KeyRings with the same name should fail" $
             assertException
                 (WalletException "KeyRing main already exists") $ do
-                    newKeyRing "main" $ BS.pack [0]
+                    _ <- newKeyRing "main" $ BS.pack [0]
                     newKeyRing "main" $ BS.pack [1]
         ]
     , testGroup "Account tests"
         [ testCase "Creating two accounts with the same name should fail" $
             assertException (WalletException "Account acc already exists") $ do
-                newKeyRing "main" $ BS.pack [1]
-                newAccount "main" "acc" 
+                _ <- newKeyRing "main" $ BS.pack [1]
+                _ <- newAccount "main" "acc" 
                 newAccount "main" "acc" 
 
         , testCase "Invalid multisig parameters (0 of 1)" $
             assertException (WalletException "Invalid multisig parameters") $ do
-                newKeyRing "main" $ BS.pack [0]
+                _ <- newKeyRing "main" $ BS.pack [0]
                 newAccountMultisig "main" "ms" [] 0 1 
 
         , testCase "Invalid multisig parameters (2 of 1)" $
             assertException (WalletException "Invalid multisig parameters") $ do
-                newKeyRing "main" $ BS.pack [0] 
+                _ <- newKeyRing "main" $ BS.pack [0] 
                 newAccountMultisig "main" "ms" [] 2 1
 
         , testCase "Invalid multisig parameters (15 of 16)" $
             assertException (WalletException "Invalid multisig parameters") $ do
-                newKeyRing "main" $ BS.pack [0]
+                _ <- newKeyRing "main" $ BS.pack [0]
                 newAccountMultisig "main" "ms" [] 15 16
 
         , testCase "To many multisig keys (2 keys for 1 of 2)" $
             assertException
                 (WalletException "Adding too many keys to account ms") $ do
-                    newKeyRing "main" $ BS.pack [0]
+                    _ <- newKeyRing "main" $ BS.pack [0]
                     newAccountMultisig 
                         "main" "ms" 
                         [ deriveXPubKey $ makeXPrvKey (BS.pack [1])
@@ -93,24 +85,24 @@ tests =
         , testCase "Calling addAccountKeys with an empty key list should fail" $
             assertException
                 (WalletException "No keys have been provided") $ do
-                    newKeyRing "main" $ BS.pack [0]
-                    newAccount "main" "default" 
+                    _ <- newKeyRing "main" $ BS.pack [0]
+                    _ <- newAccount "main" "default" 
                     accE <- getAccount "main" "default"
                     addAccountKeys accE []
 
         , testCase "Calling addAccountKeys on a non-multisig account should fail" $
             assertException
                 (WalletException "Account default is not a multisig account") $ do
-                    newKeyRing "main" $ BS.pack [0]
-                    newAccount "main" "default" 
+                    _ <- newKeyRing "main" $ BS.pack [0]
+                    _ <- newAccount "main" "default" 
                     accE <- getAccount "main" "default"
                     addAccountKeys accE [ deriveXPubKey $ makeXPrvKey (BS.pack [1]) ]
 
         , testCase "Adding keys to a complete multisig account should fail" $
             assertException
                 (WalletException "Adding too many keys to account ms") $ do
-                    newKeyRing "main" $ BS.pack [0]
-                    newAccountMultisig "main" "ms"
+                    _ <- newKeyRing "main" $ BS.pack [0]
+                    _ <- newAccountMultisig "main" "ms"
                         [ deriveXPubKey $ makeXPrvKey (BS.pack [1])
                         , deriveXPubKey $ makeXPrvKey (BS.pack [2])
                         ] 2 3
@@ -120,12 +112,12 @@ tests =
         , testCase "Getting a non-existing account should fail" $
             assertException
                 (WalletException "Account default does not exist") $ do
-                    newKeyRing "main" $ BS.pack [0] 
+                    _ <- newKeyRing "main" $ BS.pack [0] 
                     getAccount "main" "default"
 
         , testCase "Listing addresses of a non-existing account should fail" $
             assertException (WalletException "Account default does not exist") $ do
-                newKeyRing "main" $ BS.pack [0] 
+                _ <- newKeyRing "main" $ BS.pack [0] 
                 addressPage "main" "default" AddressExternal $ 
                     PageRequest 1 1 False
                 
@@ -134,59 +126,59 @@ tests =
         [ testCase "Displaying page 0 should fail" $
             assertException 
                 (WalletException "Invalid page request (Page: 0, Page size: 1)" ) $ do 
-                    newKeyRing "main" $ BS.pack [0]
+                    _ <- newKeyRing "main" $ BS.pack [0]
                     addressPage "main" "default" AddressExternal $
                         PageRequest 0 1 False
 
         , testCase "Displaying 0 results per page should fail" $
             assertException
                 (WalletException "Invalid page request (Page: 1, Page size: 0)" ) $ do 
-                    newKeyRing "main" $ BS.pack [0]
+                    _ <- newKeyRing "main" $ BS.pack [0]
                     addressPage "main" "default" AddressExternal $
                         PageRequest 1 0 False
 
         , testCase "Displaying a page number that is too high should fail" $
             assertException 
                 (WalletException "Invalid page number 5") $ do
-                    newKeyRing "main" $ BS.pack [0] 
-                    newAccount "main" "default"
+                    _ <- newKeyRing "main" $ BS.pack [0] 
+                    _ <- newAccount "main" "default"
                     accE <- getAccount "main" "default"
-                    setAccountGap accE 10
+                    _ <- setAccountGap accE 10
                     addressPage "main" "default" AddressExternal $
                         PageRequest 5 3 False
 
         , testCase "Decreasing the address gap should fail" $
             assertException (WalletException "Can not decrease the gap from 15 to 14") $ do
-                newKeyRing "main" $ BS.pack [0] 
-                newAccount "main" "default"
+                _ <- newKeyRing "main" $ BS.pack [0] 
+                _ <- newAccount "main" "default"
                 Entity ai acc <- getAccount "main" "default"
                 acc2 <- setAccountGap (Entity ai acc) 15
                 setAccountGap (Entity ai acc2) 14
 
         , testCase "Setting a label on a hidden address key should fail" $
             assertException (WalletException "Address index 10 is in the hidden gap") $ do
-                newKeyRing "main" $ BS.pack [0] 
-                newAccount "main" "default"
+                _ <- newKeyRing "main" $ BS.pack [0] 
+                _ <- newAccount "main" "default"
                 accE <- getAccount "main" "default"
-                setAccountGap accE 10
+                _ <- setAccountGap accE 10
                 setAddrLabel "main" "default" 10 AddressExternal "Gym membership"
 
         , testCase "Setting a label on an invalid address key should fail" $
             assertException (WalletException "Address index 20 does not exist") $ do
-                newKeyRing "main" $ BS.pack [0] 
-                newAccount "main" "default"
+                _ <- newKeyRing "main" $ BS.pack [0] 
+                _ <- newAccount "main" "default"
                 accE <- getAccount "main" "default"
-                setAccountGap accE 10
+                _ <- setAccountGap accE 10
                 setAddrLabel "main" "default" 20 AddressExternal "Gym membership"
 
         , testCase "Requesting an address prvkey on a read-only account should fail" $
             assertException
                 (WalletException "Can not get private keys from read-only account default") $ do
-                    newKeyRing "main" $ BS.pack [0] 
-                    newAccountRead "main" "default" $
+                    _ <- newKeyRing "main" $ BS.pack [0] 
+                    _ <- newAccountRead "main" "default" $
                         deriveXPubKey $ makeXPrvKey $ BS.pack [1]
                     accE <- getAccount "main" "default"
-                    setAccountGap accE 10
+                    _ <- setAccountGap accE 10
                     addressPrvKey "main" "default" 2 AddressExternal
         ]
     , testGroup "Wallet tests"
@@ -250,8 +242,8 @@ fakeTx xs ys =
 
 testDerivations :: App ()
 testDerivations = do
-    newKeyRing "test" bs1
-    newAccount "test" "acc1"
+    _ <- newKeyRing "test" bs1
+    _ <- newAccount "test" "acc1"
 
     addressUnused "test" "acc1" AddressExternal 
         >>= liftIO . assertEqual "Generated external addresses do not match"
@@ -285,8 +277,8 @@ testDerivations = do
 -- -- tx3 spends from c2. So we can either have tx2 valid or tx1 and tx3 as valid.
 testBalances :: App ()
 testBalances = do
-    newKeyRing "test" bs1
-    newAccount "test" "acc1"
+    _ <- newKeyRing "test" bs1
+    _ <- newAccount "test" "acc1"
     Entity ai _ <- getAccount "test" "acc1"
     let fundingTx = fakeTx 
             [ (1, 0) ] 
@@ -524,10 +516,10 @@ testBalances = do
             . keyRingAddrOutBalance . entityVal
 
     -- Reorg back onto tx1
-    let s = fakeNode 1 0x01
-        o = [fakeNode 2 0x03, fakeNode 3 0x04] 
-        n = [fakeNode 2 0x02, fakeNode 3 0x05, fakeNode 4 0x06]
-    importMerkles (ChainReorg s o n) [[txHash tx1], [], []]
+    let s2 = fakeNode 1 0x01
+        o2 = [fakeNode 2 0x03, fakeNode 3 0x04] 
+        n2 = [fakeNode 2 0x02, fakeNode 3 0x05, fakeNode 4 0x06]
+    importMerkles (ChainReorg s2 o2 n2) [[txHash tx1], [], []]
 
     accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 0") 0
     accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 0") 0
@@ -563,8 +555,8 @@ testBalances = do
 -- tx1, tx2 and tx3 form a chain, and tx4 is in conflict with tx1
 testConflictBalances :: App ()
 testConflictBalances = do
-    newKeyRing "test" bs1
-    newAccount "test" "acc1"
+    _ <- newKeyRing "test" bs1
+    _ <- newAccount "test" "acc1"
     Entity ai _ <- getAccount "test" "acc1"
     let tx1 = fakeTx
             [ (4, 4) ]
@@ -724,10 +716,10 @@ testConflictBalances = do
             . keyRingAddrOutBalance . entityVal
 
     -- Reorg back to tx1, tx2 and tx3
-    let s = fakeNode 0 0x00
-        o = [fakeNode 1 0x03, fakeNode 2 0x04, fakeNode 3 0x05] 
-        n = [fakeNode 1 0x01, fakeNode 2 0x02, fakeNode 3 0x06, fakeNode 4 0x07]
-    importMerkles (ChainReorg s o n) [[txHash tx1], [txHash tx2], [], []]
+    let s2 = fakeNode 0 0x00
+        o2 = [fakeNode 1 0x03, fakeNode 2 0x04, fakeNode 3 0x05] 
+        n2 = [fakeNode 1 0x01, fakeNode 2 0x02, fakeNode 3 0x06, fakeNode 4 0x07]
+    importMerkles (ChainReorg s2 o2 n2) [[txHash tx1], [txHash tx2], [], []]
 
     getBy (UniqueAccTx ai $ txHash tx1) >>=
         liftIO . (assertEqual "tx1 confidence is not building") (Just TxBuilding)
@@ -773,8 +765,8 @@ testConflictBalances = do
 
 testOffline :: App ()
 testOffline = do
-    newKeyRing "test" bs1
-    newAccount "test" "acc1"
+    _ <- newKeyRing "test" bs1
+    _ <- newAccount "test" "acc1"
     Entity ai _ <- getAccount "test" "acc1"
     let tx1 = fakeTx
             [ (4, 4) ]
@@ -947,8 +939,8 @@ testOffline = do
 
 testKillOffline :: App ()
 testKillOffline = do
-    newKeyRing "test" bs1
-    newAccount "test" "acc1"
+    _ <- newKeyRing "test" bs1
+    _ <- newAccount "test" "acc1"
     Entity ai _ <- getAccount "test" "acc1"
     let tx1 = fakeTx
             [ (4, 4) ]
@@ -1132,8 +1124,8 @@ testOfflineExceptions = do
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 20000000) ] 
 
     assertException (WalletException "importLocalTx: can not double spend coins") $ do
-        newKeyRing "test" bs1
-        newAccount "test" "acc1"
+        _ <- newKeyRing "test" bs1
+        _ <- newAccount "test" "acc1"
         Entity ai _ <- getAccount "test" "acc1"
         importNetTx tx1 >>=
             liftIO . (assertEqual "Confidence is not pending")
@@ -1141,8 +1133,8 @@ testOfflineExceptions = do
         importTx tx4 ai
 
     assertException (WalletException "importLocalTx: can not double spend coins") $ do
-        newKeyRing "test" bs1
-        newAccount "test" "acc1"
+        _ <- newKeyRing "test" bs1
+        _ <- newAccount "test" "acc1"
         Entity ai _ <- getAccount "test" "acc1"
         importNetTx tx4 >>=
             liftIO . (assertEqual "Confidence is not pending")
@@ -1156,8 +1148,8 @@ testOfflineExceptions = do
         importTx tx3 ai
 
     assertException (WalletException "importLocalTx: The transaction already exists and is not offline") $ do
-        newKeyRing "test" bs1
-        newAccount "test" "acc1"
+        _ <- newKeyRing "test" bs1
+        _ <- newAccount "test" "acc1"
         Entity ai _ <- getAccount "test" "acc1"
         importNetTx tx1 >>=
             liftIO . (assertEqual "Confidence is not pending")
@@ -1167,16 +1159,16 @@ testOfflineExceptions = do
 -- This test create a multisig account with the key of testImportMultisig2
 testImportMultisig :: App ()
 testImportMultisig = do
-    newKeyRing "test" bs1
-    newAccountMultisig 
+    _ <- newKeyRing "test" bs1
+    _ <- newAccountMultisig 
         "test" "ms1"
         [fromJust $ xPubImport "xpub69iinth3CTrfkmijzhQXi3kwhGQjba31fncrBgA9vM9T9tv69qSwp525yDVYmX2BTAdeuYSZqkcWhkrqD5Xbsz5YHJZL6CzYGL2WACorpdS"] 2 2
-    newAccountMultisig 
+    _ <- newAccountMultisig 
         "test" "ms2" 
         [fromJust $ xPubImport "xpub69iinth3CTrfh5efv7baTWwk9hHi4zqcQEsNFgVwEJvdaZVEPytZzmNxjYTnF5F5x2CamLXvmD1T4RhpsuaXSFPo2MnLN5VqWqrWb82U7ED"] 2 2
     Entity _ keyRing <- getKeyRing "test"
-    accE1@(Entity ai1 acc1) <- getAccount "test" "ms1"
-    accE2@(Entity ai2 acc2) <- getAccount "test" "ms2"
+    Entity ai1 _ <- getAccount "test" "ms1"
+    accE2@(Entity ai2 _) <- getAccount "test" "ms2"
 
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
@@ -1206,7 +1198,7 @@ testImportMultisig = do
     -- Import the empty transaction in ms2
     (h2,c2) <- importTx (keyRingTxTx tx1) ai2
     -- This second import should be idempotent
-    importTx (keyRingTxTx tx1) ai2
+    _ <- importTx (keyRingTxTx tx1) ai2
     tx2 <- liftM (entityVal . fromJust) $ getBy $ UniqueAccTx ai2 h2
     liftIO $ assertEqual "Txid do not match" h h2
     liftIO $ assertEqual "Confidence is not offline" TxOffline c2
@@ -1258,8 +1250,8 @@ testImportMultisig = do
 
 testKillTx :: App ()
 testKillTx = do
-    newKeyRing "test" bs1
-    newAccount "test" "acc1"
+    _ <- newKeyRing "test" bs1
+    _ <- newAccount "test" "acc1"
     Entity ai _ <- getAccount "test" "acc1"
     let tx1 = fakeTx
             [ (4, 4) ]

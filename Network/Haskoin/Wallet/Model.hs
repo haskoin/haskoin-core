@@ -13,7 +13,7 @@ module Network.Haskoin.Wallet.Model
 , KeyRingBalance(..)
 , KeyRingBalanceId
 , KeyRingTx(..)
-, KeyRingTxId(..)
+, KeyRingTxId
 , EntityField(..)
 , Unique(..)
 , migrateWallet
@@ -31,8 +31,6 @@ import Data.Int (Int64)
 import Data.Word (Word32, Word64)
 import Data.Time (UTCTime)
 import Data.Text (Text)
-import Data.Aeson (Value, ToJSON(..), object, (.=))
-import Data.Aeson.TH (deriveJSON)
 
 import Database.Persist (Entity(..), EntityField, Unique)
 import Database.Persist.Quasi (lowerCaseSettings)
@@ -41,12 +39,10 @@ import Database.Persist.TH
     , mkPersist
     , sqlSettings
     , mkMigrate
-    , mpsGeneric
     , persistFileWith
     )
 
 import Network.Haskoin.Wallet.Types 
-import Network.Haskoin.Wallet.Types.DeriveJSON
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Block
@@ -134,7 +130,7 @@ toJsonCoin currentHeight KeyRingCoin{..} =
     jsonCoinCreated         = keyRingCoinCreated
     jsonCoinConfirmations   = maybe 0 (f . fromIntegral) jsonCoinConfirmedHeight
     f confirmedHeight = 
-        max 0 $ (fromIntegral currentHeight) - confirmedHeight + 1
+        max 0 $ fromIntegral currentHeight - confirmedHeight + 1
 
 toJsonTx :: BlockHeight -> KeyRingTx -> JsonTx
 toJsonTx currentHeight KeyRingTx{..} =
@@ -160,5 +156,5 @@ toJsonTx currentHeight KeyRingTx{..} =
     jsonTxCreated         = keyRingTxCreated
     jsonTxConfirmations   = maybe 0 (f . fromIntegral) jsonTxConfirmedHeight
     f confirmedHeight = 
-        max 0 $ (fromIntegral currentHeight) - confirmedHeight + 1
+        max 0 $ fromIntegral currentHeight - confirmedHeight + 1
 

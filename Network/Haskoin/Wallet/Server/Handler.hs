@@ -285,7 +285,8 @@ postTxsR keyRingName name action = case action of
             [ "PostTxsR CreateTx"
             , "  KeyRing name: " ++ unpack keyRingName
             , "  Account name: " ++ unpack name
-            , "  Recipients  : " ++ show rs
+            , "  Recipients  : " ++ show 
+                (map (\(r,v) -> (addrToBase58 r, v)) rs)
             , "  Fee         : " ++ show fee
             , "  Minconf     : " ++ show minconf
             , "  Sign        : " ++ show sign

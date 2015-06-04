@@ -306,9 +306,9 @@ testBalances = do
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (TxPending, M.empty)))
 
-    spendableCoins ai 0 >>= 
+    spendableCoins ai 0 [] >>= 
         liftIO . (assertEqual "0-conf spendable coins is not 2" 2) . length
-    spendableCoins ai 1 >>= 
+    spendableCoins ai 1 [] >>= 
         liftIO . (assertEqual "1-conf spendable coins is not 0" 0) . length
 
     accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 30000000") 30000000
@@ -1187,7 +1187,7 @@ testImportMultisig = do
     tx1 <- liftM (entityVal . fromJust) $ getBy $ UniqueAccTx ai1 h
     liftIO $ assertEqual "Confidence is not offline" TxOffline c
     liftIO $ assertEqual "Confidence is not offline" TxOffline $ keyRingTxConfidence tx1
-    liftM (map (keyRingCoinHash . entityVal)) (spendableCoins ai1 0)
+    liftM (map (keyRingCoinHash . entityVal)) (spendableCoins ai1 0 [])
         >>= liftIO . (assertEqual "Wrong txhash in coins" [])
     liftM (map keyRingTxHash . fst) (txPage "test" "ms1" $ PageRequest 1 10 False) 
         >>= liftIO . (assertEqual "Wrong txhash in tx list" [txHash fundingTx, h])
@@ -1203,7 +1203,7 @@ testImportMultisig = do
     liftIO $ assertEqual "Txid do not match" h h2
     liftIO $ assertEqual "Confidence is not offline" TxOffline c2
     liftIO $ assertEqual "Confidence is not offline" TxOffline $ keyRingTxConfidence tx2
-    liftM (map (keyRingCoinHash . entityVal)) (spendableCoins ai2 0)
+    liftM (map (keyRingCoinHash . entityVal)) (spendableCoins ai2 0 [])
         >>= liftIO . (assertEqual "Wrong txhash in coins" [])
     liftM (map keyRingTxHash . fst) (txPage "test" "ms2" $ PageRequest 1 10 False) 
         >>= liftIO . (assertEqual "Wrong txhash in tx list" [txHash fundingTx, h2])
@@ -1216,7 +1216,7 @@ testImportMultisig = do
     tx3 <- liftM (entityVal . fromJust) $ getBy $ UniqueAccTx ai2 h3
     liftIO $ assertEqual "Confidence is not pending" TxPending c3
     liftIO $ assertEqual "Confidence is not pending" TxPending $ keyRingTxConfidence tx3
-    liftM (map (keyRingCoinHash . entityVal)) (spendableCoins ai2 0)
+    liftM (map (keyRingCoinHash . entityVal)) (spendableCoins ai2 0 [])
         >>= liftIO . (assertEqual "Wrong txhash in coins" [h3, h3])
     liftM (map keyRingTxHash . fst) (txPage "test" "ms2" $ PageRequest 1 10 False) 
         >>= liftIO . (assertEqual "Wrong txhash in tx list" [txHash fundingTx, h3])
@@ -1226,7 +1226,7 @@ testImportMultisig = do
 
     tx4 <- liftM (entityVal . fromJust) $ getBy $ UniqueAccTx ai1 h3
     liftIO $ assertEqual "Confidence is not pending" TxPending $ keyRingTxConfidence tx4
-    liftM (map (keyRingCoinHash . entityVal)) (spendableCoins ai1 0)
+    liftM (map (keyRingCoinHash . entityVal)) (spendableCoins ai1 0 [])
         >>= liftIO . (assertEqual "Wrong txhash in coins" [h3, h3])
     liftM (map keyRingTxHash . fst) (txPage "test" "ms1" $ PageRequest 1 10 False) 
         >>= liftIO . (assertEqual "Wrong txhash in tx list" [txHash fundingTx, h3])
@@ -1240,7 +1240,7 @@ testImportMultisig = do
     tx5 <- liftM (entityVal . fromJust) $ getBy $ UniqueAccTx ai1 h5
     liftIO $ assertEqual "Confidence is not pending" TxPending c5
     liftIO $ assertEqual "Confidence is not pending" TxPending $ keyRingTxConfidence tx5
-    liftM (map (keyRingCoinHash . entityVal)) (spendableCoins ai1 0)
+    liftM (map (keyRingCoinHash . entityVal)) (spendableCoins ai1 0 [])
         >>= liftIO . (assertEqual "Wrong txhash in coins" [h5, h5])
     liftM (map keyRingTxHash . fst) (txPage "test" "ms1" $ PageRequest 1 10 False) 
         >>= liftIO . (assertEqual "Wrong txhash in tx list" [txHash fundingTx, h5])

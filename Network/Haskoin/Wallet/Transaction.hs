@@ -19,6 +19,7 @@ module Network.Haskoin.Wallet.Transaction
 
 -- *Database coins and balances
 , spendableCoins
+, spendableCoinsSource
 , accountBalance
 , offlineBalance
 
@@ -28,7 +29,7 @@ module Network.Haskoin.Wallet.Transaction
 
 import Control.Applicative ((<$>))
 import Control.Monad (forM, forM_, when, liftM, unless)
-import Control.Monad.Trans (MonadIO, liftIO)
+import Control.Monad.Trans (MonadIO, liftIO, lift)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Trans.Resource (MonadResource)
@@ -36,10 +37,12 @@ import Control.Exception (throwIO, throw)
 
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Word (Word32, Word64)
-import Data.Maybe (catMaybes, mapMaybe, isNothing, isJust)
+import Data.Maybe (catMaybes, mapMaybe, isNothing)
 import Data.Either (rights)
 import Data.List ((\\), nub, delete)
 import Data.Text (unpack)
+import Data.Conduit (Source, mapOutputMaybe, ($$))
+import qualified Data.Conduit.List as CL (consume)
 import qualified Data.Map.Strict as M 
     ( Map, toList, map
     , unionWith, fromListWith, filter
@@ -48,7 +51,7 @@ import qualified Data.Map.Strict as M
 import Database.Persist.Sql (SqlPersistT)
 import Database.Persist 
     ( Entity(..), Filter
-    , entityVal, entityKey, getBy, replace, deleteWhere
+    , entityVal, entityKey, getBy, replace, deleteWhere, selectSource
     , selectList, selectFirst, updateWhere, insertBy
     , update , count, (=.), (==.), (<-.), (<=.), (!=.), (-=.), (+=.)
     , SelectOpt( Asc, Desc, LimitTo, OffsetBy ), Key
@@ -1020,16 +1023,19 @@ buildUnsignedTx :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
                 -> Word64
                 -> SqlPersistT m (Tx, [Entity KeyRingCoin])
 buildUnsignedTx (Entity ai acc@KeyRingAccount{..}) minConf dests fee = do
-    -- Find the spendable coins in the given account with the required number
-    -- of minimum confirmations.
-    spendable <- spendableCoins ai minConf
     let p = case (keyRingAccountRequiredSigs, keyRingAccountTotalKeys) of
                 (Just m, Just n) -> (m, n)
                 _ -> throw . WalletException $ "Invalid multisig parameters"
-        f | isMultisigAccount acc = chooseMSCoins tot fee p
-          | otherwise             = chooseCoins tot fee
-        -- Find a selection of spendable coins that matches our target value
-        (selected, change) = either (throw . WalletException) id $ f spendable
+        sink | isMultisigAccount acc = chooseMSCoinsSink tot fee p True
+             | otherwise             = chooseCoinsSink tot fee True
+        -- TODO: Add more policies like confirmations or coin age
+        -- Sort coins by their values in descending order
+        policy = [Desc KeyRingCoinValue]
+    -- Find the spendable coins in the given account with the required number
+    -- of minimum confirmations.
+    selectRes <- spendableCoinsSource ai minConf policy $$ sink
+    -- Find a selection of spendable coins that matches our target value
+    let (selected, change) = either (throw . WalletException) id selectRes
 
     -- If the change amount is not dust, we need to add a change address to
     -- our list of recipients.
@@ -1095,12 +1101,22 @@ signOfflineTx keyRing acc tx coinSignData
 -- Returns unspent coins that can be spent in an account that have a minimum
 -- number of confirmations. Coinbase coins can only be spent after 100
 -- confirmations.
-spendableCoins :: MonadIO m
+spendableCoins :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
                => Key KeyRingAccount                 -- ^ Account key
                -> Word32                             -- ^ Minimum confirmations
+               -> [SelectOpt KeyRingCoin]            -- ^ Special orderings
                -> SqlPersistT m [Entity KeyRingCoin] -- ^ Spendable coins
-spendableCoins ai minConf = do
-    (_, height) <- getBestBlock 
+spendableCoins ai minConf order = 
+    spendableCoinsSource ai minConf order $$ CL.consume
+
+spendableCoinsSource
+    :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
+    => Key KeyRingAccount      -- ^ Account key
+    -> Word32                  -- ^ Minimum confirmations
+    -> [SelectOpt KeyRingCoin] -- ^ Special orderings
+    -> Source (SqlPersistT m) (Entity KeyRingCoin) -- ^ Spendable coins
+spendableCoinsSource ai minConf order = do
+    (_, height) <- lift getBestBlock 
     let filterConfirmations
             -- No minimum confirmations. No confirmation filtering.
             | minConf == 0 = []
@@ -1112,21 +1128,21 @@ spendableCoins ai minConf = do
                 [ KeyRingCoinConfirmedHeight !=. Nothing 
                 , KeyRingCoinConfirmedHeight <=. Just (height - minConf + 1)
                 ]
-    res <- flip selectList [] $
+    mapOutputMaybe (checkCoinbase height) $ flip selectSource order $
             [ KeyRingCoinAccount ==. ai
             , KeyRingCoinStatus ==. CoinUnspent
             -- We can not spent offline or dead coins
             , KeyRingCoinConfidence <-. [ TxPending, TxBuilding ]
             ] ++ filterConfirmations
-    return $ filter (checkCoinbase height) res
   where
-    checkCoinbase height (Entity _ KeyRingCoin{..})
-        | keyRingCoinIsCoinbase = 
-            isJust keyRingCoinConfirmedHeight &&
-            -- Coinbase transactions require 100 confirmations, so they have
-            -- to be confirmed at block "height - 100 + 1" or less.
-            keyRingCoinConfirmedHeight <= Just (height - 99)
-        | otherwise = True
+    checkCoinbase height coin@(Entity _ KeyRingCoin{..})
+        -- Coinbase transactions require 100 confirmations, so they have
+        -- to be confirmed at block "height - 100 + 1" or less.
+        | keyRingCoinIsCoinbase &&
+          ( isNothing keyRingCoinConfirmedHeight ||
+            keyRingCoinConfirmedHeight > Just (height - 99)
+          ) = Nothing
+        | otherwise = Just coin
 
 {- Balances -}
 

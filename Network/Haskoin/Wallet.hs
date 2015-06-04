@@ -104,6 +104,7 @@ module Network.Haskoin.Wallet
 
 -- *Database coins and balances
 , spendableCoins
+, spendableCoinsSource
 , accountBalance
 , offlineBalance
 

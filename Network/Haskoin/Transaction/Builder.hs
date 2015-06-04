@@ -12,7 +12,9 @@ module Network.Haskoin.Transaction.Builder
 , verifyStdInput
 , guessTxSize
 , chooseCoins
+, chooseCoinsSink
 , chooseMSCoins
+, chooseMSCoinsSink
 , getFee
 , getMSFee
 ) where
@@ -21,11 +23,14 @@ import Control.Applicative ((<$>))
 import Control.Monad (mzero, foldM, unless)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Either (EitherT, left)
+import Control.Monad.Identity (runIdentity)
 import Control.DeepSeq (NFData, rnf)
 
 import Data.Maybe (catMaybes, maybeToList, isJust, fromJust, isNothing)
-import Data.List (sortBy, find, nub)
+import Data.List (find, nub)
 import Data.Word (Word64)
+import Data.Conduit (Sink, await, ($$))
+import Data.Conduit.List (sourceList)
 import qualified Data.ByteString as BS (length, replicate, empty, null)
 import Data.Aeson
     ( Value (Object)
@@ -54,12 +59,27 @@ class Coin c where
 chooseCoins :: Coin c 
             => Word64 -- ^ Target price to pay.
             -> Word64 -- ^ Fee price per 1000 bytes.
-            -> [c]    -- ^ List of coins to choose from.
-            -> Either String ([c], Word64) 
+            -> Bool   -- ^ Try to find better solution when one is found
+            -> [c]    -- ^ List of ordered coins to choose from.
+            -> Either String ([c], Word64)
                -- ^ Coin selection result and change amount.
-chooseCoins target kbfee xs 
-    | target > 0 = maybeToEither err $ greedyAdd target (getFee kbfee) xs
-    | otherwise  = Left "chooseCoins: Target must be > 0"
+chooseCoins target kbfee continue coins =
+    runIdentity $ sourceList coins $$ chooseCoinsSink target kbfee continue
+
+-- | Coin selection algorithm for normal (non-multisig) transactions. This
+-- function returns the selected coins together with the amount of change to
+-- send back to yourself, taking the fee into account. This version uses a
+-- Sink if you need conduit-based coin selection.
+chooseCoinsSink :: (Monad m, Coin c)
+                => Word64 -- ^ Target price to pay.
+                -> Word64 -- ^ Fee price per 1000 bytes.
+                -> Bool   -- ^ Try to find better solution when one is found
+                -> Sink c m (Either String ([c], Word64))
+                   -- ^ Coin selection result and change amount.
+chooseCoinsSink target kbfee continue
+    | target > 0 = 
+        maybeToEither err <$> greedyAddSink target (getFee kbfee) continue
+    | otherwise = return $ Left "chooseCoins: Target must be > 0"
   where 
     err = "chooseCoins: No solution found"
 
@@ -71,32 +91,78 @@ chooseMSCoins :: Coin c
               => Word64     -- ^ Target price to pay.
               -> Word64     -- ^ Fee price per 1000 bytes.
               -> (Int, Int) -- ^ Multisig parameters m of n (m,n).
-              -> [c]        -- ^ List of coins to choose from.
-              -> Either String ([c], Word64) 
+              -> Bool -- ^ Try to find better solution when one is found
+              -> [c]
+              -> Either String ([c], Word64)
                  -- ^ Coin selection result and change amount.
-chooseMSCoins target kbfee ms xs 
-    | target > 0 = maybeToEither err $ greedyAdd target (getMSFee kbfee ms) xs
-    | otherwise  = Left "chooseMSCoins: Target must be > 0"
+chooseMSCoins target kbfee ms continue coins =
+    runIdentity $ sourceList coins $$ chooseMSCoinsSink target kbfee ms continue
+
+-- | Coin selection algorithm for multisignature transactions. This function
+-- returns the selected coins together with the amount of change to send back
+-- to yourself, taking the fee into account. This function assumes all the 
+-- coins are script hash outputs that send funds to a multisignature address.
+-- This version uses a Sink if you need conduit-based coin selection.
+chooseMSCoinsSink :: (Monad m, Coin c)
+                  => Word64     -- ^ Target price to pay.
+                  -> Word64     -- ^ Fee price per 1000 bytes.
+                  -> (Int, Int) -- ^ Multisig parameters m of n (m,n).
+                  -> Bool -- ^ Try to find better solution when one is found
+                  -> Sink c m (Either String ([c], Word64))
+                     -- ^ Coin selection result and change amount.
+chooseMSCoinsSink target kbfee ms continue
+    | target > 0 = 
+        maybeToEither err <$> greedyAddSink target (getMSFee kbfee ms) continue
+    | otherwise = return $ Left "chooseMSCoins: Target must be > 0"
   where 
     err = "chooseMSCoins: No solution found"
 
--- Select coins greedily by starting from an empty solution
-greedyAdd :: Coin c 
-          => Word64 -> (Int -> Word64) -> [c] -> Maybe ([c], Word64)
-greedyAdd target fee xs = 
-    go [] 0 [] 0 $ sortBy desc xs
-  where 
-    desc a b = compare (coinValue b) (coinValue a)
+-- Select coins greedily by starting from an empty solution. If the continue
+-- value is set to True, the algorithm will try to find a better solution in
+-- the stream once a solution is found. If the next solution found is not
+-- strictly better than the previously found solution, the algorithm stops and
+-- returns the previous solution. If the continue value is set to False, the
+-- algorithm will return the first solution it finds in the stream.
+greedyAddSink :: (Monad m, Coin c) 
+              => Word64          -- ^ Target to reach
+              -> (Int -> Word64) -- ^ Coin count to fee function
+              -> Bool            -- ^ Try to find better solutions
+              -> Sink c m (Maybe ([c], Word64)) -- (Selected coins, change)
+greedyAddSink target fee continue = 
+    go [] 0 [] 0
+  where
+    -- The goal is the value we must reach (including the fee) for a certain
+    -- amount of selected coins.
     goal c = target + fee c
-    go _ _ [] _ []    = Nothing
-    go _ _ ps pTot [] = return (ps,pTot - (goal $ length ps))
-    go acc aTot ps pTot (y:ys)
-      | val + aTot >= (goal $ length acc + 1) =
-          if aTot + val - target < pTot - target
-              then go [] 0 (y:acc) (aTot + val) ys
-              else return (ps,pTot - (goal $ length ps))
-      | otherwise = go (y:acc) (aTot + val) ps pTot ys
-      where val = coinValue y
+    go acc aTot ps pTot = await >>= \coinM -> case coinM of
+        -- A coin is available in the stream
+        Just coin -> do
+            let val = coinValue coin
+            -- We have reached the goal using this coin
+            if val + aTot >= (goal $ length acc + 1)
+                -- If we want to continue searching for better solutions
+                then if continue
+                    -- This solution is the first one or
+                    -- This solution is better than the previous one
+                    then if pTot == 0 || val + aTot < pTot
+                        -- Continue searching for better solutions in the stream
+                        then go [] 0 (coin:acc) (val + aTot)
+                        -- Otherwise, we stop here and return the previous
+                        -- solution
+                        else return $ Just (ps, pTot - (goal $ length ps))
+                    -- Otherwise, return this solution
+                    else return $ 
+                        Just (coin:acc, val + aTot - (goal $ length acc + 1))
+                -- We have not yet reached the goal. Add the coin to the
+                -- accumulator
+                else go (coin:acc) (val + aTot) ps pTot
+        -- We reached the end of the stream
+        Nothing -> 
+            return $ if null ps 
+                -- If no solution was found, return Nothing
+                then Nothing 
+                -- If we have a solution, return it
+                else Just (ps, pTot - (goal $ length ps))
 
 getFee :: Word64 -> Int -> Word64
 getFee kbfee count = 
@@ -104,7 +170,7 @@ getFee kbfee count =
   where 
     len = fromIntegral $ guessTxSize count [] 2 0
 
-getMSFee :: Word64 -> (Int,Int) -> Int -> Word64
+getMSFee :: Word64 -> (Int, Int) -> Int -> Word64
 getMSFee kbfee ms count = 
     kbfee*((len + 999) `div` 1000)
   where 

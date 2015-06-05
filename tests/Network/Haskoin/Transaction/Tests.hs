@@ -65,7 +65,7 @@ testGuessSize (ArbitraryAddrOnlyTx tx) =
     msout    = length $ filter isPayScriptHash out
 
 testChooseCoins :: Word64 -> Word64 -> [ArbitrarySatoshi] -> Bool
-testChooseCoins target kbfee coins = case chooseCoins target kbfee coins of
+testChooseCoins target kbfee coins = case chooseCoins target kbfee True coins of
     Right (chosen, change) ->
         let outSum = sum $ map coinValue chosen
             fee    = getFee kbfee (length chosen) 
@@ -79,7 +79,7 @@ testChooseCoins target kbfee coins = case chooseCoins target kbfee coins of
 testChooseMSCoins :: Word64 -> Word64 
                   -> ArbitraryMSParam -> [ArbitrarySatoshi] -> Bool
 testChooseMSCoins target kbfee (ArbitraryMSParam m n) coins = 
-    case chooseMSCoins target kbfee (m,n) coins of
+    case chooseMSCoins target kbfee (m,n) True coins of
         Right (chosen,change) ->
             let outSum = sum $ map coinValue chosen
                 fee    = getMSFee kbfee (m,n) (length chosen) 

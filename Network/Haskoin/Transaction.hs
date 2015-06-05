@@ -31,7 +31,9 @@ module Network.Haskoin.Transaction
   -- *Coin selection
 , Coin(..)
 , chooseCoins
+, chooseCoinsSink
 , chooseMSCoins
+, chooseMSCoinsSink
 , guessTxSize
 
 ) where

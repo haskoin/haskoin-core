@@ -273,8 +273,8 @@ testDerivations = do
             , "1K14RjZ3he6erLHFNrPWwvmxm4nbr1MEYC"
             ] . map (addrToBase58 . keyRingAddrAddress)
 
--- -- We have 2 coins, c1 and c2. tx1 spends from c1, tx2 spends from c1 and c2,
--- -- tx3 spends from c2. So we can either have tx2 valid or tx1 and tx3 as valid.
+-- We have 2 coins, c1 and c2. tx1 spends from c1, tx2 spends from c1 and c2,
+-- tx3 spends from c2. So we can either have tx2 valid or tx1 and tx3 as valid.
 testBalances :: App ()
 testBalances = do
     _ <- newKeyRing "test" bs1

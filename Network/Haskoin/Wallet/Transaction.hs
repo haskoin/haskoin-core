@@ -1406,11 +1406,16 @@ resetRescan :: MonadIO m => SqlPersistT m ()
 resetRescan = do
     deleteWhere ([] :: [Filter KeyRingCoin])
     deleteWhere ([] :: [Filter KeyRingTx])
+    deleteWhere ([] :: [Filter KeyRingAddrTx])
     deleteWhere ([] :: [Filter KeyRingBalance])
-    updateWhere [] [ KeyRingAddrInBalance         =. 0
-                   , KeyRingAddrOutBalance        =. 0
-                   , KeyRingAddrInOfflineBalance  =. 0
-                   , KeyRingAddrOutOfflineBalance =. 0
+    updateWhere [] [ KeyRingAddrInBalance          =. 0
+                   , KeyRingAddrOutBalance         =. 0
+                   , KeyRingAddrInOfflineBalance   =. 0
+                   , KeyRingAddrOutOfflineBalance  =. 0
+                   , KeyRingAddrFundingTxs         =. 0
+                   , KeyRingAddrSpendingTxs        =. 0
+                   , KeyRingAddrFundingOfflineTxs  =. 0
+                   , KeyRingAddrSpendingOfflineTxs =. 0
                    ]
     setBestBlock (headerHash genesisHeader) 0
 

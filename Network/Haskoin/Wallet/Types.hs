@@ -9,6 +9,7 @@ module Network.Haskoin.Wallet.Types
 , JsonAddr(..)
 , JsonCoin(..)
 , JsonTx(..)
+, JsonAddrTx(..)
 
 -- Request Types
 , WalletRequest(..)
@@ -255,6 +256,7 @@ data WalletRequest
     | GetAddressR !KeyRingName !AccountName !KeyIndex !AddressType
     | PutAddressR !KeyRingName !AccountName !KeyIndex !AddressType !AddressLabel
     | GetTxsR !KeyRingName !AccountName !PageRequest
+    | GetAddrTxsR !KeyRingName !AccountName !KeyIndex !AddressType !PageRequest
     | PostTxsR !KeyRingName !AccountName !TxAction
     | GetTxR !KeyRingName !AccountName !TxHash
     | GetOfflineTxR !KeyRingName !AccountName !TxHash
@@ -301,21 +303,25 @@ data JsonAccount = JsonAccount
 $(deriveJSON (dropFieldLabel 11) ''JsonAccount)
 
 data JsonAddr = JsonAddr
-    { jsonAddrKeyRingName       :: !Text 
-    , jsonAddrAccountName       :: !Text
-    , jsonAddrAddress           :: !Address
-    , jsonAddrIndex             :: !KeyIndex
-    , jsonAddrType              :: !AddressType
-    , jsonAddrLabel             :: !Text
-    , jsonAddrRootDerivation    :: !(Maybe DerivPath)
-    , jsonAddrDerivation        :: !SoftPath
-    , jsonAddrRedeem            :: !(Maybe ScriptOutput)
-    , jsonAddrKey               :: !(Maybe PubKeyC)
-    , jsonAddrInBalance         :: !Word64
-    , jsonAddrOutBalance        :: !Word64
-    , jsonAddrInOfflineBalance  :: !Word64
-    , jsonAddrOutOfflineBalance :: !Word64
-    , jsonAddrCreated           :: !UTCTime
+    { jsonAddrKeyRingName        :: !Text 
+    , jsonAddrAccountName        :: !Text
+    , jsonAddrAddress            :: !Address
+    , jsonAddrIndex              :: !KeyIndex
+    , jsonAddrType               :: !AddressType
+    , jsonAddrLabel              :: !Text
+    , jsonAddrRootDerivation     :: !(Maybe DerivPath)
+    , jsonAddrDerivation         :: !SoftPath
+    , jsonAddrRedeem             :: !(Maybe ScriptOutput)
+    , jsonAddrKey                :: !(Maybe PubKeyC)
+    , jsonAddrInBalance          :: !Word64
+    , jsonAddrOutBalance         :: !Word64
+    , jsonAddrInOfflineBalance   :: !Word64
+    , jsonAddrOutOfflineBalance  :: !Word64
+    , jsonAddrFundingTxs         :: !Int
+    , jsonAddrSpendingTxs        :: !Int
+    , jsonAddrFundingOfflineTxs  :: !Int
+    , jsonAddrSpendingOfflineTxs :: !Int
+    , jsonAddrCreated            :: !UTCTime
     }
     deriving (Eq, Show, Read)
 
@@ -373,6 +379,33 @@ data JsonTx = JsonTx
 
 $(deriveJSON (dropFieldLabel 6) ''JsonTx)
 
+data JsonAddrTx = JsonAddrTx
+    { jsonAddrTxAddressIndex    :: !KeyIndex
+    , jsonAddrTxAddressType     :: !AddressType
+    , jsonAddrTxAddress         :: !Address
+    , jsonAddrTxKeyRingName     :: !Text 
+    , jsonAddrTxAccountName     :: !Text 
+    , jsonAddrTxHash            :: !TxHash 
+    , jsonAddrTxNosigHash       :: !TxHash 
+    , jsonAddrTxTxType          :: !TxType 
+    , jsonAddrTxInValue         :: !Word64
+    , jsonAddrTxOutValue        :: !Word64
+    , jsonAddrTxValue           :: !Int64
+    , jsonAddrTxFrom            :: ![Address]
+    , jsonAddrTxTo              :: ![Address]
+    , jsonAddrTxChange          :: ![Address]
+    , jsonAddrTxTx              :: !Tx
+    , jsonAddrTxIsCoinbase      :: !Bool
+    , jsonAddrTxConfidence      :: !TxConfidence 
+    , jsonAddrTxConfirmations   :: !Int
+    , jsonAddrTxConfirmedBy     :: !(Maybe BlockHash)
+    , jsonAddrTxConfirmedHeight :: !(Maybe Word32)
+    , jsonAddrTxConfirmedDate   :: !(Maybe Timestamp)
+    , jsonAddrTxCreated         :: !UTCTime
+    } 
+    deriving (Eq, Show, Read)
+
+$(deriveJSON (dropFieldLabel 10) ''JsonAddrTx)
  
 {- Response Types -}
 

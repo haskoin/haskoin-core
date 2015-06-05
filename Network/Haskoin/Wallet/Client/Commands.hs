@@ -16,6 +16,7 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdUnused
 , cmdLabel
 , cmdTxs
+, cmdAddrTxs
 , cmdSend
 , cmdSendMany
 , cmdImport
@@ -219,6 +220,21 @@ cmdTxs name pageLs = do
         sequence_ $ intersperse (putStrLn "-") xs
   where
     page = fromMaybe 1 (read <$> listToMaybe pageLs)
+
+cmdAddrTxs :: String -> String -> [String] -> Handler ()
+cmdAddrTxs name i pageLs = do
+    k <- R.asks configKeyRing
+    c <- R.asks configCount
+    r <- R.asks configReversePaging
+    t <- R.asks configAddrType
+    let pageReq = PageRequest page c r
+    sendZmq (GetAddrTxsR k (pack name) index t pageReq) $ \(PageRes ts m) -> do
+        putStrLn $ unwords [ "Page", show page, "of", show m ]
+        let xs = map (putStr . printAddrTx) ts
+        sequence_ $ intersperse (putStrLn "-") xs
+  where
+    page  = fromMaybe 1 (read <$> listToMaybe pageLs)
+    index = read i
 
 cmdSend :: String -> String -> String -> Handler ()
 cmdSend name addrStr amntStr = case addrM of
@@ -550,6 +566,14 @@ printAddress JsonAddr{..} = unwords $
            then [] 
            else [ "[Received: " ++ show jsonAddrInOfflineBalance ++ "]" ]
        )
+    ++ ( if jsonAddrFundingOfflineTxs == 0 
+           then [] 
+           else [ "[Funding Txs: " ++ show jsonAddrFundingOfflineTxs ++ "]" ]
+       )
+    ++ ( if jsonAddrSpendingOfflineTxs == 0 
+           then [] 
+           else [ "[Spending Txs: " ++ show jsonAddrSpendingOfflineTxs ++ "]" ]
+       )
 
 printTx :: JsonTx -> String
 printTx JsonTx{..} = unlines $
@@ -565,6 +589,25 @@ printTx JsonTx{..} = unlines $
         ++ printConfidence jsonTxConfidence
         ++ if jsonTxConfidence == TxOffline then "" else
             " (Confirmations: " ++ show jsonTxConfirmations ++ ")"
+    ] 
+  where
+    printAddrList xs = concat (intersperse ", " $ map addrToBase58 xs)
+
+printAddrTx :: JsonAddrTx -> String
+printAddrTx JsonAddrTx{..} = unlines $
+    [ "Value        : " ++ printTxType jsonAddrTxTxType 
+                        ++ " " ++ show jsonAddrTxValue ] 
+    ++ ( if jsonAddrTxTxType == TxIncoming
+           then [ "Sender(s)    : " ++ printAddrList jsonAddrTxFrom ]
+           else []
+       ) 
+    ++
+    [
+      "Recipient(s) : " ++ printAddrList jsonAddrTxTo
+    , "Confidence   : " 
+        ++ printConfidence jsonAddrTxConfidence
+        ++ if jsonAddrTxConfidence == TxOffline then "" else
+            " (Confirmations: " ++ show jsonAddrTxConfirmations ++ ")"
     ] 
   where
     printAddrList xs = concat (intersperse ", " $ map addrToBase58 xs)

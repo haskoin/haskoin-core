@@ -465,6 +465,10 @@ createAddrs (Entity keyRingAddrAccount acc) keyRingAddrType n
                     keyRingAddrOutBalance = 0
                     keyRingAddrInOfflineBalance = 0
                     keyRingAddrOutOfflineBalance = 0
+                    keyRingAddrFundingTxs = 0
+                    keyRingAddrSpendingTxs = 0
+                    keyRingAddrFundingOfflineTxs = 0
+                    keyRingAddrSpendingOfflineTxs = 0
                 in  KeyRingAddr{..}
             res = map build $ take n $ deriveFrom nextI
 

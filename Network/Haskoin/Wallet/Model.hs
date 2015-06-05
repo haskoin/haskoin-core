@@ -14,6 +14,8 @@ module Network.Haskoin.Wallet.Model
 , KeyRingBalanceId
 , KeyRingTx(..)
 , KeyRingTxId
+, KeyRingAddrTx(..)
+, KeyRingAddrTxId
 , EntityField(..)
 , Unique(..)
 , migrateWallet
@@ -24,6 +26,7 @@ module Network.Haskoin.Wallet.Model
 , toJsonAddr
 , toJsonCoin
 , toJsonTx
+, toJsonAddrTx
 
 ) where
 
@@ -88,21 +91,25 @@ toJsonAddr :: KeyRingAddr -> JsonAddr
 toJsonAddr KeyRingAddr{..} =
     JsonAddr{..}
   where
-    jsonAddrKeyRingName       = keyRingAddrKeyRingName
-    jsonAddrAccountName       = keyRingAddrAccountName
-    jsonAddrAddress           = keyRingAddrAddress
-    jsonAddrIndex             = keyRingAddrIndex
-    jsonAddrType              = keyRingAddrType
-    jsonAddrLabel             = keyRingAddrLabel
-    jsonAddrRootDerivation    = keyRingAddrRootDerivation
-    jsonAddrDerivation        = keyRingAddrDerivation
-    jsonAddrRedeem            = keyRingAddrRedeem
-    jsonAddrKey               = keyRingAddrKey
-    jsonAddrInBalance         = keyRingAddrInBalance
-    jsonAddrOutBalance        = keyRingAddrOutBalance
-    jsonAddrInOfflineBalance  = keyRingAddrInOfflineBalance
-    jsonAddrOutOfflineBalance = keyRingAddrOutOfflineBalance
-    jsonAddrCreated           = keyRingAddrCreated
+    jsonAddrKeyRingName        = keyRingAddrKeyRingName
+    jsonAddrAccountName        = keyRingAddrAccountName
+    jsonAddrAddress            = keyRingAddrAddress
+    jsonAddrIndex              = keyRingAddrIndex
+    jsonAddrType               = keyRingAddrType
+    jsonAddrLabel              = keyRingAddrLabel
+    jsonAddrRootDerivation     = keyRingAddrRootDerivation
+    jsonAddrDerivation         = keyRingAddrDerivation
+    jsonAddrRedeem             = keyRingAddrRedeem
+    jsonAddrKey                = keyRingAddrKey
+    jsonAddrInBalance          = keyRingAddrInBalance
+    jsonAddrOutBalance         = keyRingAddrOutBalance
+    jsonAddrInOfflineBalance   = keyRingAddrInOfflineBalance
+    jsonAddrOutOfflineBalance  = keyRingAddrOutOfflineBalance
+    jsonAddrFundingTxs         = keyRingAddrFundingTxs
+    jsonAddrSpendingTxs        = keyRingAddrSpendingTxs
+    jsonAddrFundingOfflineTxs  = keyRingAddrFundingOfflineTxs
+    jsonAddrSpendingOfflineTxs = keyRingAddrSpendingOfflineTxs
+    jsonAddrCreated            = keyRingAddrCreated
 
 toJsonCoin :: BlockHeight -> KeyRingCoin -> JsonCoin
 toJsonCoin currentHeight KeyRingCoin{..} =
@@ -155,6 +162,36 @@ toJsonTx currentHeight KeyRingTx{..} =
     jsonTxConfirmedDate   = keyRingTxConfirmedDate
     jsonTxCreated         = keyRingTxCreated
     jsonTxConfirmations   = maybe 0 (f . fromIntegral) jsonTxConfirmedHeight
+    f confirmedHeight = 
+        max 0 $ fromIntegral currentHeight - confirmedHeight + 1
+
+toJsonAddrTx :: BlockHeight -> KeyRingAddrTx -> JsonAddrTx
+toJsonAddrTx currentHeight KeyRingAddrTx{..} =
+    JsonAddrTx{..}
+  where
+    jsonAddrTxAddressIndex    = keyRingAddrTxAddressIndex
+    jsonAddrTxAddressType     = keyRingAddrTxAddressType
+    jsonAddrTxAddress         = keyRingAddrTxAddress
+    jsonAddrTxKeyRingName     = keyRingAddrTxKeyRingName
+    jsonAddrTxAccountName     = keyRingAddrTxAccountName
+    jsonAddrTxHash            = keyRingAddrTxHash
+    jsonAddrTxNosigHash       = keyRingAddrTxNosigHash
+    jsonAddrTxTxType          = keyRingAddrTxTxType
+    jsonAddrTxInValue         = keyRingAddrTxInValue
+    jsonAddrTxOutValue        = keyRingAddrTxOutValue
+    jsonAddrTxValue           = keyRingAddrTxValue
+    jsonAddrTxFrom            = keyRingAddrTxFrom
+    jsonAddrTxTo              = keyRingAddrTxTo
+    jsonAddrTxChange          = keyRingAddrTxChange
+    jsonAddrTxTx              = keyRingAddrTxTx
+    jsonAddrTxIsCoinbase      = keyRingAddrTxIsCoinbase
+    jsonAddrTxConfidence      = keyRingAddrTxConfidence
+    jsonAddrTxConfirmedBy     = keyRingAddrTxConfirmedBy
+    jsonAddrTxConfirmedHeight = keyRingAddrTxConfirmedHeight
+    jsonAddrTxConfirmedDate   = keyRingAddrTxConfirmedDate
+    jsonAddrTxCreated         = keyRingAddrTxCreated
+    jsonAddrTxConfirmations = 
+        maybe 0 (f . fromIntegral) jsonAddrTxConfirmedHeight
     f confirmedHeight = 
         max 0 $ fromIntegral currentHeight - confirmedHeight + 1
 

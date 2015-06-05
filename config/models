@@ -35,6 +35,10 @@ KeyRingAddr
     outBalance Word64
     inOfflineBalance Word64
     outOfflineBalance Word64
+    fundingTxs Int
+    spendingTxs Int
+    fundingOfflineTxs Int
+    spendingOfflineTxs Int
     created UTCTime
     UniqueAddr account address
     UniqueAddrIndex account index type
@@ -54,6 +58,7 @@ KeyRingCoin
     key PubKeyC Maybe
     address Address Maybe maxlen=64
     addressType AddressType Maybe maxlen=16
+    addressIndex KeyIndex Maybe
     status CoinStatus maxlen=16
     spentBy TxHash Maybe maxlen=200
     isCoinbase Bool
@@ -94,6 +99,33 @@ KeyRingTx
     created UTCTime
     UniqueAccTx account hash
     UniqueAccNoSig account nosigHash
+    deriving Show
+
+KeyRingAddrTx
+    account KeyRingAccountId
+    addressType AddressType maxlen=16
+    addressIndex KeyIndex 
+    address Address maxlen=64
+    keyRingName Text maxlen=200
+    accountName Text maxlen=200
+    hash TxHash maxlen=200
+    nosigHash TxHash maxlen=200
+    txType TxType maxlen=16
+    inValue Word64
+    outValue Word64
+    value Int64
+    from [Address]
+    to [Address]
+    change [Address]
+    tx Tx
+    isCoinbase Bool
+    confidence TxConfidence maxlen=16
+    confirmedBy BlockHash Maybe maxlen=200
+    confirmedHeight Word32 Maybe
+    confirmedDate Timestamp Maybe
+    created UTCTime
+    UniqueAddrTx account addressIndex addressType hash
+    UniqueAddrNoSig account addressIndex addressType nosigHash
     deriving Show
 
 KeyRingConfig

@@ -2,6 +2,7 @@ module Network.Haskoin.Wallet.Transaction
 ( 
 -- *Database transactions
   txPage
+, addrTxPage
 , getTx 
 , importTx
 , importNetTx
@@ -98,6 +99,42 @@ txPage keyRingName accountName page@PageRequest{..}
     | otherwise = liftIO . throwIO $ WalletException $
         unwords [ "Invalid page request:", show page ]
 
+-- | Get address transactions by page
+addrTxPage :: MonadIO m
+           => KeyRingName -- ^ KeyRing name
+           -> AccountName -- ^ Account name
+           -> KeyIndex    -- ^ Address index
+           -> AddressType -- ^ Address type
+           -> PageRequest -- ^ Page request
+           -> SqlPersistT m ([KeyRingAddrTx], Int) -- ^ Page result
+addrTxPage keyRingName accountName index addrType page@PageRequest{..}
+    | validPageRequest page = do
+        Entity ai _ <- getAccount keyRingName accountName
+        cnt <- count [ KeyRingAddrTxAccount      ==. ai 
+                     , KeyRingAddrTxAddressIndex ==. index
+                     , KeyRingAddrTxAddressType  ==. addrType
+                     ]
+        if cnt == 0 then return ([], 1) else do
+            let (d, m)  = cnt `divMod` pageLen
+                maxPage = d + min 1 m
+            when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
+                unwords [ "Invalid page number", show pageNum ]
+            res <- selectList [ KeyRingAddrTxAccount      ==. ai 
+                              , KeyRingAddrTxAddressIndex ==. index
+                              , KeyRingAddrTxAddressType  ==. addrType
+                              ]
+                              [ if pageReverse 
+                                      then Asc KeyRingAddrTxId 
+                                      else Desc KeyRingAddrTxId
+                              , LimitTo pageLen
+                              , OffsetBy $ (pageNum - 1) * pageLen
+                              ]
+            let f | pageReverse = id
+                  | otherwise   = reverse
+            return (f $ map entityVal res, maxPage)
+    | otherwise = liftIO . throwIO $ WalletException $
+        unwords [ "Invalid page request:", show page ]
+
 -- Helper function to get a transaction from the wallet database. The function
 -- will look across all accounts and return the first available transaction. If
 -- the transaction does not exist, this function will throw a wallet exception.
@@ -148,12 +185,19 @@ importTx' origTx ai origInCoins = do
                     , KeyRingCoinHash    ==. oldTxid
                     ]
                     [ KeyRingCoinHash =. txid ]
-        -- Update the transactions
+        -- Update the account transactions
         updateWhere [ KeyRingTxAccount ==. ai 
                     , KeyRingTxHash    ==. oldTxid
                     ]
                     [ KeyRingTxHash  =. txid 
                     , KeyRingTxTx    =. tx
+                    ]
+        -- Update the address transactions
+        updateWhere [ KeyRingAddrTxAccount ==. ai 
+                    , KeyRingAddrTxHash    ==. oldTxid
+                    ]
+                    [ KeyRingAddrTxHash  =. txid 
+                    , KeyRingAddrTxTx    =. tx
                     ]
         -- Update any coins that this transaction spent
         updateWhere [ KeyRingCoinAccount ==. ai
@@ -279,11 +323,11 @@ importLocalTx tx ai entInCoins = do
                         forM_ outAddrs useAddress
                         -- Update Account balances
                         let isUnspent c = 
-                                   ( keyRingCoinStatus c == CoinUnspent )
-                                || (  keyRingCoinStatus c == CoinLocked
-                                   && keyRingCoinSpentBy c /= Just txid
-                                   )
-                            unspent      = filter isUnspent inCoins
+                                ( keyRingCoinStatus c == CoinUnspent ) || 
+                                ( keyRingCoinStatus c == CoinLocked && 
+                                  keyRingCoinSpentBy c /= Just txid
+                                )
+                            unspent = filter isUnspent inCoins
                         updateBalancesWith 
                             (+) unspent newOutCoins BalanceOffline
                         -- Update address balances
@@ -334,10 +378,15 @@ importNetTx tx = do
             -- Update the output coins
             updateWhere [ KeyRingCoinHash ==. oldTxid ]
                         [ KeyRingCoinHash =. txid ]
-            -- Update the transactions
+            -- Update the account transactions
             updateWhere [ KeyRingTxHash ==. oldTxid ]
                         [ KeyRingTxHash =. txid 
                         , KeyRingTxTx   =. tx
+                        ]
+            -- Update the address transactions
+            updateWhere [ KeyRingAddrTxHash ==. oldTxid ]
+                        [ KeyRingAddrTxHash =. txid 
+                        , KeyRingAddrTxTx   =. tx
                         ]
             -- Update any coins that this transaction spent
             updateWhere [ KeyRingCoinSpentBy ==. Just oldTxid ]
@@ -564,6 +613,7 @@ buildCoin txid (out, pos) so isCoinbase keyRingCoinCreated KeyRingAddr{..} =
     keyRingCoinKey             = keyRingAddrKey
     keyRingCoinAddress         = Just keyRingAddrAddress
     keyRingCoinAddressType     = Just keyRingAddrType
+    keyRingCoinAddressIndex    = Just keyRingAddrIndex
     keyRingCoinIsCoinbase      = isCoinbase
     keyRingCoinConfidence      = TxOffline
     keyRingCoinConfirmedBy     = Nothing
@@ -613,7 +663,7 @@ spendExternalInputs tx status allInCoins allOutCoins = do
             -- Insert all unknown transaction inputs to detect double
             -- spends on reorgs.
             forM_ ops $ \(OutPoint hash pos) -> do
-                let KeyRingCoin _ k a _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ = 
+                let KeyRingCoin _ k a _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ = 
                         case (inCoins, outCoins) of
                             (c:_, _) -> c
                             (_, c:_) -> c
@@ -633,6 +683,7 @@ spendExternalInputs tx status allInCoins allOutCoins = do
                     keyRingCoinKey             = Nothing
                     keyRingCoinAddress         = Nothing
                     keyRingCoinAddressType     = Nothing
+                    keyRingCoinAddressIndex    = Nothing
                     keyRingCoinIsCoinbase      = False
                     -- This coin comes from an external (non-wallet)
                     -- transaction
@@ -660,6 +711,7 @@ buildAccTxs :: MonadIO m
             -> SqlPersistT m ()
 buildAccTxs tx prevM confidence inCoins outCoins = do
     now <- liftIO getCurrentTime
+    -- Group the coins by account
     forM_ grouped $ \(ai, (is, os)) -> do
         let atx = buildAccTx tx prevM confidence ai is os now
         -- Insert the new transaction. If it already exists, update the
@@ -671,12 +723,30 @@ buildAccTxs tx prevM confidence inCoins outCoins = do
                 [ KeyRingTxType       =. keyRingTxType atx
                 , KeyRingTxInValue    =. keyRingTxInValue atx
                 , KeyRingTxOutValue   =. keyRingTxOutValue atx
+                , KeyRingTxValue      =. keyRingTxValue atx
                 , KeyRingTxFrom       =. keyRingTxFrom atx
                 , KeyRingTxTo         =. keyRingTxTo atx
                 , KeyRingTxChange     =. keyRingTxChange atx
                 , KeyRingTxConfidence =. confidence
                 ]
             Right _ -> return () -- Nothing to do
+        -- Group the coins by address
+        let addrGrouped = M.toList $ groupAddressCoins is os
+        forM_ addrGrouped $ \(addr, (addrIs, addrOs)) -> do
+            let addrTx = buildKeyRingAddrTx atx addr addrIs addrOs
+            insertBy addrTx >>= \resE -> case resE of
+                -- Update the existing record
+                Left (Entity ti _) -> update ti
+                    [ KeyRingAddrTxTxType     =. keyRingAddrTxTxType addrTx
+                    , KeyRingAddrTxInValue    =. keyRingAddrTxInValue addrTx
+                    , KeyRingAddrTxOutValue   =. keyRingAddrTxOutValue addrTx
+                    , KeyRingAddrTxValue      =. keyRingAddrTxValue addrTx
+                    , KeyRingAddrTxFrom       =. keyRingAddrTxFrom addrTx
+                    , KeyRingAddrTxTo         =. keyRingAddrTxTo addrTx
+                    , KeyRingAddrTxChange     =. keyRingAddrTxChange addrTx
+                    , KeyRingAddrTxConfidence =. confidence
+                    ]
+                Right _ -> return () -- Nothing to do
   where
     grouped = M.toList $ groupAccountCoins inCoins outCoins
 
@@ -693,10 +763,10 @@ buildAccTx tx prevM confidence keyRingTxAccount inCoins outCoins now =
   where
     keyRingTxKeyRingName = case inCoins ++ outCoins of
         c:_ -> keyRingCoinKeyRingName c
-        _   -> ""
+        _   -> undefined -- Should not happen
     keyRingTxAccountName = case inCoins ++ outCoins of
         c:_ -> keyRingCoinAccountName c
-        _   -> ""
+        _   -> undefined -- Should not happen
     keyRingTxHash = txHash tx
     -- This is a hash of the transaction excluding signatures. This allows us
     -- to track the evolution of offline transactions as we add more signatures
@@ -752,6 +822,41 @@ buildAccTx tx prevM confidence keyRingTxAccount inCoins outCoins now =
         _ -> Nothing
     keyRingTxCreated = now
 
+buildKeyRingAddrTx :: KeyRingTx -> Address -> [KeyRingCoin] -> [KeyRingCoin] 
+                  -> KeyRingAddrTx
+buildKeyRingAddrTx KeyRingTx{..} addr inCoins outCoins =
+    KeyRingAddrTx{..}
+  where
+    keyRingAddrTxAccount         = keyRingTxAccount
+    keyRingAddrTxAddressIndex = 
+        case mapMaybe keyRingCoinAddressIndex $ inCoins ++ outCoins of
+            (i:_) -> i
+            _     -> undefined -- Should not happen
+    keyRingAddrTxAddressType = 
+        case mapMaybe keyRingCoinAddressType $ inCoins ++ outCoins of
+            (t:_) -> t
+            _     -> undefined -- Should not happen
+    keyRingAddrTxAddress         = addr
+    keyRingAddrTxKeyRingName     = keyRingTxKeyRingName
+    keyRingAddrTxAccountName     = keyRingTxAccountName
+    keyRingAddrTxHash            = keyRingTxHash
+    keyRingAddrTxNosigHash       = keyRingTxNosigHash
+    keyRingAddrTxTxType          = keyRingTxType
+    keyRingAddrTxInValue         = sum $ map keyRingCoinValue outCoins
+    keyRingAddrTxOutValue        = sum $ map keyRingCoinValue inCoins
+    keyRingAddrTxValue           = fromIntegral keyRingAddrTxInValue - 
+                                   fromIntegral keyRingAddrTxOutValue
+    keyRingAddrTxFrom            = keyRingTxFrom
+    keyRingAddrTxTo              = keyRingTxTo
+    keyRingAddrTxChange          = keyRingTxChange
+    keyRingAddrTxTx              = keyRingTxTx
+    keyRingAddrTxIsCoinbase      = keyRingTxIsCoinbase
+    keyRingAddrTxConfidence      = keyRingTxConfidence
+    keyRingAddrTxConfirmedBy     = keyRingTxConfirmedBy
+    keyRingAddrTxConfirmedHeight = keyRingTxConfirmedHeight
+    keyRingAddrTxConfirmedDate   = keyRingTxConfirmedDate
+    keyRingAddrTxCreated         = keyRingTxCreated
+
 -- Group all the input and outputs coins from the same account together.
 groupAccountCoins :: [KeyRingCoin] -> [KeyRingCoin] 
                   -> M.Map KeyRingAccountId ([KeyRingCoin], [KeyRingCoin])
@@ -763,6 +868,22 @@ groupAccountCoins inCoins outCoins =
     g (is, _) (_, os) = (is, os)
     inMap  = M.map (\is -> (is, [])) $ M.fromListWith (++) $ map f inCoins
     outMap = M.map (\os -> ([], os)) $ M.fromListWith (++) $ map f outCoins
+
+-- Group all the input and outputs coins from the same account together.
+groupAddressCoins :: [KeyRingCoin] -> [KeyRingCoin] 
+                  -> M.Map Address ([KeyRingCoin], [KeyRingCoin])
+groupAddressCoins inCoins outCoins =
+    M.unionWith g inMap outMap
+  where
+    -- Build a map from address -> (inCoins, outCoins)
+    f coin = case keyRingCoinAddress coin of
+        Just addr -> Just (addr, [coin])
+        _ -> Nothing
+    g (is, _) (_, os) = (is, os)
+    inMap  = M.map (\is -> (is, [])) $ 
+                M.fromListWith (++) $ mapMaybe f inCoins
+    outMap = M.map (\os -> ([], os)) $ 
+                M.fromListWith (++) $ mapMaybe f outCoins
 
 -- | Set a transaction to TxDead status. That transaction will not spend any
 -- coins, its output coins will be marked as dead and any child transactions
@@ -1175,7 +1296,7 @@ updateBalancesWith op allInCoins allOutCoins balType =
 -- output coins. To remove the effects of coins on addresses (for example when
 -- a transaction is killed), call this function with rem = True. Only offline
 -- and pending balances are available for addresses. No n-conf addresses are
--- stored.
+-- stored. This function should be called for 1 transaction only.
 updateAddrBalances :: MonadIO m 
                    => [KeyRingCoin] -> [KeyRingCoin] -> BalanceType -> Bool
                    -> SqlPersistT m ()
@@ -1183,19 +1304,30 @@ updateAddrBalances inCoins outCoins balType r = do
     -- Update the inflow balances of addresses
     forM_ (M.toList inVals) $ \(addr, val) -> updateWhere 
         [ KeyRingAddrAddress ==. addr ]
-        [ inBal `op` val ]
+        [ (if r then (-=.) else (+=.)) inBal val
+        , (if r then (-=.) else (+=.)) fundTxs 1 
+        ]
     -- Update the outflow balances of addresses
     forM_ (M.toList outVals) $ \(addr, val) -> updateWhere
         [ KeyRingAddrAddress ==. addr ]
-        [ outBal `op` val ]
+        [ (if r then (-=.) else (+=.)) outBal val
+        , (if r then (-=.) else (+=.)) spendTxs 1 
+        ]
   where
-    op = if r then (-=.) else (+=.)
-    inBal = case balType of
-        BalanceOffline -> KeyRingAddrInOfflineBalance
-        _              -> KeyRingAddrInBalance
-    outBal = case balType of
-        BalanceOffline -> KeyRingAddrOutOfflineBalance
-        _              -> KeyRingAddrOutBalance
+    (inBal, fundTxs) = case balType of
+        BalanceOffline -> ( KeyRingAddrInOfflineBalance
+                          , KeyRingAddrFundingOfflineTxs
+                          )
+        _              -> ( KeyRingAddrInBalance
+                          , KeyRingAddrFundingTxs
+                          )
+    (outBal, spendTxs) = case balType of
+        BalanceOffline -> ( KeyRingAddrOutOfflineBalance
+                          , KeyRingAddrSpendingOfflineTxs
+                          )
+        _              -> ( KeyRingAddrOutBalance
+                          , KeyRingAddrSpendingTxs
+                          )
     f KeyRingCoin{..} = case keyRingCoinAddress of
         Just a -> Just (a, keyRingCoinValue)
         _ -> Nothing

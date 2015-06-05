@@ -271,6 +271,26 @@ getTxsR keyRingName name page = do
         (txs, m) <- txPage keyRingName name page
         return $ PageRes (map (toJsonTx height) txs) m
 
+getAddrTxsR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
+            => KeyRingName -> AccountName 
+            -> KeyIndex -> AddressType -> PageRequest 
+            -> Handler m Value
+getAddrTxsR keyRingName name index addrType page = do
+    $(logInfo) $ format $ unlines
+        [ "GetAddrTxsR"
+        , "  KeyRing name : " ++ unpack keyRingName
+        , "  Account name : " ++ unpack name
+        , "  Address index: " ++ show index
+        , "  Address type : " ++ show addrType
+        , "  Page number  : " ++ show (pageNum page)
+        , "  Page size    : " ++ show (pageLen page)
+        , "  Page reverse : " ++ show (pageReverse page)
+        ]
+    liftM toJSON $ runDB $ do
+        (_, height) <- getBestBlock
+        (txs, m) <- addrTxPage keyRingName name index addrType page
+        return $ PageRes (map (toJsonAddrTx height) txs) m
+
 postTxsR :: ( MonadLogger m
             , MonadBaseControl IO m
             , MonadBase IO m

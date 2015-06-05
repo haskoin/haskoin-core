@@ -21,6 +21,7 @@ Address commands:
   list   acc [page] [-c pagesize] [-r]    Display addresses by page
   unused acc                              Display unused addresses
   label  acc index label                  Set the label of an address
+  addrtxs acc index [page] [-c pagesize]  Display txs related to an address
 
 Transaction commands:
   txs       acc [page] [-c pagesize] [-r] Display transactions by page

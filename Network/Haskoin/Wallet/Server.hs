@@ -261,6 +261,7 @@ dispatchRequest req = liftM (ResponseValid . toJSON) $ case req of
     GetAddressR r n i t              -> getAddressR r n i t
     PutAddressR r n i t l            -> putAddressR r n i t l
     GetTxsR r n p                    -> getTxsR r n p
+    GetAddrTxsR r n i t p            -> getAddrTxsR r n i t p
     PostTxsR r n a                   -> postTxsR r n a
     GetTxR r n h                     -> getTxR r n h
     GetOfflineTxR r n h              -> getOfflineTxR r n h

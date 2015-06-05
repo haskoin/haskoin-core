@@ -22,6 +22,7 @@ module Network.Haskoin.Wallet
 , JsonAddr(..)
 , JsonCoin(..)
 , JsonTx(..)
+, JsonAddrTx(..)
 
 -- *API Request Types
 , WalletRequest(..)
@@ -90,6 +91,7 @@ module Network.Haskoin.Wallet
 
 -- *Database transactions
 , txPage
+, addrTxPage
 , getTx 
 , importTx
 , importNetTx

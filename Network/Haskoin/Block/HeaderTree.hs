@@ -189,14 +189,14 @@ evalNewChain commit newNode = do
 commitAction :: HeaderTree m => BlockChainAction -> m ()
 commitAction action = do
     currentHead <- getBestBlockHeader
-    let newNodes = actionNewNodes action
-        newNode  = last newNodes
-        newBest  = nodeChainWork newNode > nodeChainWork currentHead
-    when ( not (null newNodes) && newBest ) $ do
-        -- Update the child links starting from the current head
-        updateChilds (currentHead:newNodes)
-        -- Update the best block header
-        setBestBlockHeader newNode
+    case action of
+        BestChain nodes -> unless (null nodes) $ do
+            updateChilds $ currentHead:nodes
+            setBestBlockHeader $ last nodes
+        ChainReorg s os ns -> unless (null ns) $ do
+            updateChilds $ s:ns
+            setBestBlockHeader $ last ns
+        SideChain _ -> return ()
   where
     updateChilds (a:b:xs) = do
         putBlockHeaderNode a{ nodeChild = Just $ nodeBlockHash b }

@@ -188,11 +188,23 @@ processJob = do
                 sendMessage $ MGetData $ GetData vs
         Just (JobDwnBlocks bids) -> do
             if null bids then jobDone else do
-                $(logDebug) $ format pid "Processing DwnBlocks job"
+                $(logDebug) $ format pid $ unwords $
+                    "Processing DwnBlocks job" : case bids of
+                        (s:_:_) -> [ "Start:", encodeBlockHashLE s
+                                   , "End:"  , encodeBlockHashLE $ last bids
+                                   ]
+                        (s:_)   -> [ "Hash:", encodeBlockHashLE s ]
+                        _       -> []
                 let vs = map (InvVector InvBlock . fromIntegral) bids
                 sendMessage $ MGetData $ GetData vs
         Just (JobDwnMerkles did bids) -> do
-            $(logDebug) $ format pid "Processing DwnMerkles job"
+            $(logDebug) $ format pid $ unwords $
+                "Processing DwnMerkles job" : case bids of
+                    (s:_:_) -> [ "Start:", encodeBlockHashLE s
+                               , "End:"  , encodeBlockHashLE $ last bids
+                               ]
+                    (s:_)   -> [ "Hash:", encodeBlockHashLE s ]
+                    _       -> []
             if null bids 
                 then do
                     sendBlockChain $ IncMerkleBlocks did []
@@ -244,6 +256,7 @@ processRemoteMessage msg = checkInitVersion >>= \valid -> when valid $ do
         MHeaders hs           -> processHeaders hs
         MBlock b              -> processBlock b 
         MInv inv              -> processInvMessage inv
+        MNotFound nf          -> processNotFound nf
         MPing (Ping n) -> do
             $(logDebug) $ format pid $ unwords
                 [ "Sending pong in reply to ping with nonce", show n ]
@@ -288,6 +301,30 @@ processInvMessage (Inv vs)
         filter ((== InvTx) . invType) vs
     blocklist = map (fromIntegral . invHash) $ 
         filter ((== InvBlock) . invType) vs
+
+processNotFound :: (MonadLogger m, MonadIO m) 
+                => NotFound -> StateT PeerSession m ()
+processNotFound (NotFound vs) = do 
+    pid <- gets peerId
+    unless (null txlist) $ do
+        $(logDebug) $ format pid $ unwords $
+            [ "Peer does not have the following txs:" ] ++
+            (map encodeTxHashLE txlist)
+    unless (null blocklist) $ do
+        $(logDebug) $ format pid $ unwords $
+            [ "Peer does not have the following blocks:" ] ++
+            (map encodeBlockHashLE blocklist)
+    unless (null merklelist) $ do
+        $(logDebug) $ format pid $ unwords $
+            [ "Peer does not have the following merkle blocks:" ] ++
+            (map encodeBlockHashLE merklelist)
+  where
+    txlist = map (fromIntegral . invHash) $ 
+        filter ((== InvTx) . invType) vs
+    blocklist = map (fromIntegral . invHash) $ 
+        filter ((== InvBlock) . invType) vs
+    merklelist = map (fromIntegral . invHash) $ 
+        filter ((== InvMerkleBlock) . invType) vs
 
 -- | Process a Version message sent from the remote host
 processVersion :: (MonadLogger m, MonadIO m) 

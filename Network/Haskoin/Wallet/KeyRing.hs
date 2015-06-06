@@ -16,6 +16,7 @@ module Network.Haskoin.Wallet.KeyRing
 , getAccount
 , isMultisigAccount
 , isReadAccount
+, completeMultisig
 
 -- *Database Addresses
 , getAddress
@@ -193,9 +194,9 @@ newAccountMultisig keyRingName accountName keys m n = do
     acc <- if null keys 
         then return $ entityVal accE
         else addAccountKeys accE keys
-    if incompleteMultisig acc
-        then return acc
-        else setAccountGap (Entity ai acc) 10
+    if completeMultisig acc
+        then setAccountGap (Entity ai acc) 10
+        else return acc
 
 -- | Create a new read-only account.
 newAccountRead :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
@@ -228,9 +229,9 @@ newAccountReadMultisig keyRingName accountName keys m n = do
     acc <- if null keys 
         then return $ entityVal accE
         else addAccountKeys accE keys
-    if incompleteMultisig acc
-        then return acc
-        else setAccountGap (Entity ai acc) 10
+    if completeMultisig acc
+        then setAccountGap (Entity ai acc) 10
+        else return acc
 
 -- | Add new thirdparty keys to a multisignature account. This function can
 -- fail if the multisignature account already has all required keys. 
@@ -261,9 +262,9 @@ addAccountKeys (Entity ai acc) keys
     | otherwise = do
         acc' <- updateGet ai
             [ KeyRingAccountKeys =. (keyRingAccountKeys acc ++ keys) ]
-        if incompleteMultisig acc'
-            then return acc'
-            else setAccountGap (Entity ai acc') 10
+        if completeMultisig acc'
+            then setAccountGap (Entity ai acc') 10
+            else return acc'
 
 -- | Compute the next derivation path for a new account
 nextAccountDeriv :: MonadIO m => KeyRingId -> SqlPersistT m HardPath
@@ -432,7 +433,7 @@ createAddrs :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
 createAddrs (Entity keyRingAddrAccount acc) keyRingAddrType n 
     | n < 0 = liftIO . throwIO $ WalletException $ 
         unwords [ "Invalid negative value", show n ]
-    | isMultisigAccount acc && incompleteMultisig acc =
+    | isMultisigAccount acc && not (completeMultisig acc) =
         liftIO . throwIO $ WalletException $ unwords
             [ "Keys are still missing from the incomplete multisig account"
             , unpack $ keyRingAccountName acc
@@ -690,7 +691,7 @@ isReadAccount acc = case keyRingAccountType acc of
     AccountReadMultisig -> True
     _                   -> False
 
-incompleteMultisig :: KeyRingAccount -> Bool
-incompleteMultisig acc = isJust (keyRingAccountTotalKeys acc) &&
-    Just (length $ keyRingAccountKeys acc) < keyRingAccountTotalKeys acc
+completeMultisig :: KeyRingAccount -> Bool
+completeMultisig acc = isJust (keyRingAccountTotalKeys acc) &&
+    Just (length $ keyRingAccountKeys acc) >= keyRingAccountTotalKeys acc
 

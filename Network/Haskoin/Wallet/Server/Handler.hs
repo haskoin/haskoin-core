@@ -122,7 +122,7 @@ postAccountsR keyRingName NewAccount{..} = do
         , "  Account type: " ++ show newAccountType
         , "  Account name: " ++ unpack newAccountAccountName 
         ]
-    res <- case newAccountType of
+    acc <- case newAccountType of
         AccountRegular -> runDB $ newAccount keyRingName newAccountAccountName
         AccountMultisig -> do
             let m = fromMaybe err newAccountRequiredSigs
@@ -141,7 +141,11 @@ postAccountsR keyRingName NewAccount{..} = do
             runDB $ newAccountReadMultisig keyRingName 
                                            newAccountAccountName 
                                            newAccountKeys m n
-    return $ toJSON $ toJsonAccount res
+    whenOnline $
+        if isMultisigAccount acc
+            then when (completeMultisig acc) updateNodeFilter
+            else updateNodeFilter
+    return $ toJSON $ toJsonAccount acc
   where
     err = throw $ WalletException $ unwords
         [ "Could not create account", unpack newAccountAccountName
@@ -170,10 +174,11 @@ postAccountKeysR keyRingName name keys = do
         , "  Account name: " ++ unpack name 
         , "  Key count   : " ++ show (length keys)
         ]
-    res <- runDB $ do
+    ms <- runDB $ do
         accE <- getAccount keyRingName name
         addAccountKeys accE keys
-    return $ toJSON $ toJsonAccount res
+    when (completeMultisig ms) $ whenOnline updateNodeFilter
+    return $ toJSON $ toJsonAccount ms
 
 postAccountGapR :: ( MonadLogger m
                    , MonadBaseControl IO m

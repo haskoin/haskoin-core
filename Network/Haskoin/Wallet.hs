@@ -71,6 +71,7 @@ module Network.Haskoin.Wallet
 , getAccount
 , isMultisigAccount
 , isReadAccount
+, completeMultisig
 
 -- *Database Addresses
 , getAddress

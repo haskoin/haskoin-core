@@ -191,17 +191,17 @@ commitAction action = do
     currentHead <- getBestBlockHeader
     case action of
         BestChain nodes -> unless (null nodes) $ do
-            updateChilds $ currentHead:nodes
+            updateChildren $ currentHead:nodes
             setBestBlockHeader $ last nodes
         ChainReorg s os ns -> unless (null ns) $ do
-            updateChilds $ s:ns
+            updateChildren $ s:ns
             setBestBlockHeader $ last ns
         SideChain _ -> return ()
   where
-    updateChilds (a:b:xs) = do
+    updateChildren (a:b:xs) = do
         putBlockHeaderNode a{ nodeChild = Just $ nodeBlockHash b }
-        updateChilds (b:xs)
-    updateChilds _ = return ()
+        updateChildren (b:xs)
+    updateChildren _ = return ()
     
 -- TODO: Add DOS return values
 verifyBlockHeader :: HeaderTree m 
@@ -333,7 +333,7 @@ getParentNode node
     p = prevBlock $ nodeHeader node
 
 -- | Finds the child of a BlockHeaderNode if it exists. If a node has
--- multiple childs, this function will always return the child on the
+-- multiple children, this function will always return the child on the
 -- main branch.
 getChildNode :: HeaderTree m => BlockHeaderNode -> m (Maybe BlockHeaderNode)
 getChildNode node = case nodeChild node of

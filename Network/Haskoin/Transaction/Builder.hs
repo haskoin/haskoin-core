@@ -26,7 +26,8 @@ import Control.Monad.Trans.Either (EitherT, left)
 import Control.Monad.Identity (runIdentity)
 import Control.DeepSeq (NFData, rnf)
 
-import Data.Maybe (catMaybes, maybeToList, isJust, fromJust, isNothing)
+import Data.Maybe
+    (mapMaybe, catMaybes, maybeToList, isJust, fromJust, isNothing)
 import Data.List (find, nub)
 import Data.Word (Word64)
 import Data.Conduit (Sink, await, ($$))
@@ -55,64 +56,72 @@ class Coin c where
 
 -- | Coin selection algorithm for normal (non-multisig) transactions. This
 -- function returns the selected coins together with the amount of change to
--- send back to yourself, taking the fee into account.
+-- send back to yourself, taking the fee into account, and the total fees.
 chooseCoins :: Coin c 
-            => Word64 -- ^ Target price to pay.
-            -> Word64 -- ^ Fee price per 1000 bytes.
+            => Word64 -- ^ Target price to pay
+            -> Word64 -- ^ Fee price per 1000 bytes
+            -> Bool   -- ^ Recipient pays fee
             -> Bool   -- ^ Try to find better solution when one is found
-            -> [c]    -- ^ List of ordered coins to choose from.
-            -> Either String ([c], Word64)
-               -- ^ Coin selection result and change amount.
-chooseCoins target kbfee continue coins =
-    runIdentity $ sourceList coins $$ chooseCoinsSink target kbfee continue
+            -> [c]    -- ^ List of ordered coins to choose from
+            -> Either String ([c], Word64, Word64)
+               -- ^ Coin selection result and change amount
+chooseCoins target kbfee rcptFee continue coins =
+    runIdentity $ sourceList coins $$
+        chooseCoinsSink target kbfee rcptFee continue
 
 -- | Coin selection algorithm for normal (non-multisig) transactions. This
--- function returns the selected coins together with the amount of change to
--- send back to yourself, taking the fee into account. This version uses a
--- Sink if you need conduit-based coin selection.
+-- function returns the selected coins together with the amount of change
+-- to send back to yourself, taking the fee into account, and total fees.
+-- This version uses a Sink if you need conduit-based coin selection.
 chooseCoinsSink :: (Monad m, Coin c)
-                => Word64 -- ^ Target price to pay.
-                -> Word64 -- ^ Fee price per 1000 bytes.
+                => Word64 -- ^ Target price to pay
+                -> Word64 -- ^ Fee price per 1000 bytes
+                -> Bool   -- ^ Recipient pays fee
                 -> Bool   -- ^ Try to find better solution when one is found
-                -> Sink c m (Either String ([c], Word64))
-                   -- ^ Coin selection result and change amount.
-chooseCoinsSink target kbfee continue
-    | target > 0 = 
-        maybeToEither err <$> greedyAddSink target (getFee kbfee) continue
+                -> Sink c m (Either String ([c], Word64, Word64))
+                   -- ^ Coin selection result, change amount, fee amount.
+chooseCoinsSink target kbfee rcptFee continue
+    | target > 0 = maybeToEither err <$>
+        greedyAddSink target (getFee kbfee) rcptFee continue
     | otherwise = return $ Left "chooseCoins: Target must be > 0"
   where 
     err = "chooseCoins: No solution found"
 
--- | Coin selection algorithm for multisignature transactions. This function
--- returns the selected coins together with the amount of change to send back
--- to yourself, taking the fee into account. This function assumes all the 
--- coins are script hash outputs that send funds to a multisignature address.
+-- | Coin selection algorithm for multisignature transactions. This
+-- function returns the selected coins together with the amount of change
+-- to send back to yourself, taking the fee into account, and total fees.
+-- This function assumes all the coins are script hash outputs that send
+-- funds to a multisignature address.
 chooseMSCoins :: Coin c
-              => Word64     -- ^ Target price to pay.
-              -> Word64     -- ^ Fee price per 1000 bytes.
-              -> (Int, Int) -- ^ Multisig parameters m of n (m,n).
+              => Word64     -- ^ Target price to pay
+              -> Word64     -- ^ Fee price per 1000 bytes
+              -> Bool       -- ^ Recipient pays fee
+              -> (Int, Int) -- ^ Multisig parameters m of n (m,n)
               -> Bool -- ^ Try to find better solution when one is found
               -> [c]
-              -> Either String ([c], Word64)
-                 -- ^ Coin selection result and change amount.
-chooseMSCoins target kbfee ms continue coins =
-    runIdentity $ sourceList coins $$ chooseMSCoinsSink target kbfee ms continue
+              -> Either String ([c], Word64, Word64)
+                 -- ^ Coin selection result, change amount, fee amount.
+chooseMSCoins target kbfee rcptFee ms continue coins =
+    runIdentity $ sourceList coins $$
+        chooseMSCoinsSink target kbfee rcptFee ms continue
 
--- | Coin selection algorithm for multisignature transactions. This function
--- returns the selected coins together with the amount of change to send back
--- to yourself, taking the fee into account. This function assumes all the 
--- coins are script hash outputs that send funds to a multisignature address.
--- This version uses a Sink if you need conduit-based coin selection.
+-- | Coin selection algorithm for multisignature transactions. This
+-- function returns the selected coins together with the amount of change
+-- to send back to yourself, taking the fee into account, and total fees.
+-- This function assumes all the coins are script hash outputs that send
+-- funds to a multisignature address.  This version uses a Sink if you need
+-- conduit-based coin selection.
 chooseMSCoinsSink :: (Monad m, Coin c)
-                  => Word64     -- ^ Target price to pay.
-                  -> Word64     -- ^ Fee price per 1000 bytes.
-                  -> (Int, Int) -- ^ Multisig parameters m of n (m,n).
+                  => Word64     -- ^ Target price to pay
+                  -> Word64     -- ^ Fee price per 1000 bytes
+                  -> Bool       -- ^ Recipient pays fee
+                  -> (Int, Int) -- ^ Multisig parameters m of n (m,n)
                   -> Bool -- ^ Try to find better solution when one is found
-                  -> Sink c m (Either String ([c], Word64))
-                     -- ^ Coin selection result and change amount.
-chooseMSCoinsSink target kbfee ms continue
-    | target > 0 = 
-        maybeToEither err <$> greedyAddSink target (getMSFee kbfee ms) continue
+                  -> Sink c m (Either String ([c], Word64, Word64))
+                     -- ^ Coin selection result, change amount, fee amount
+chooseMSCoinsSink target kbfee rcptFee ms continue
+    | target > 0 = maybeToEither err <$>
+        greedyAddSink target (getMSFee kbfee ms) rcptFee continue
     | otherwise = return $ Left "chooseMSCoins: Target must be > 0"
   where 
     err = "chooseMSCoins: No solution found"
@@ -126,20 +135,22 @@ chooseMSCoinsSink target kbfee ms continue
 greedyAddSink :: (Monad m, Coin c) 
               => Word64          -- ^ Target to reach
               -> (Int -> Word64) -- ^ Coin count to fee function
+              -> Bool            -- ^ Recipient pays fee
               -> Bool            -- ^ Try to find better solutions
-              -> Sink c m (Maybe ([c], Word64)) -- (Selected coins, change)
-greedyAddSink target fee continue = 
+              -> Sink c m (Maybe ([c], Word64, Word64))
+              -- ^ (Selected coins, change, fees)
+greedyAddSink target fee rcptFee continue = 
     go [] 0 [] 0
   where
     -- The goal is the value we must reach (including the fee) for a certain
     -- amount of selected coins.
-    goal c = target + fee c
+    goal c = if rcptFee then target else target + fee c
     go acc aTot ps pTot = await >>= \coinM -> case coinM of
         -- A coin is available in the stream
         Just coin -> do
             let val = coinValue coin
             -- We have reached the goal using this coin
-            if val + aTot >= (goal $ length acc + 1)
+            if val + aTot >= goal (length acc + 1)
                 -- If we want to continue searching for better solutions
                 then if continue
                     -- This solution is the first one or
@@ -149,10 +160,13 @@ greedyAddSink target fee continue =
                         then go [] 0 (coin:acc) (val + aTot)
                         -- Otherwise, we stop here and return the previous
                         -- solution
-                        else return $ Just (ps, pTot - (goal $ length ps))
+                        else return $
+                            Just (ps, pTot - goal (length ps), fee (length ps))
                     -- Otherwise, return this solution
-                    else return $ 
-                        Just (coin:acc, val + aTot - (goal $ length acc + 1))
+                    else return $ Just ( coin:acc
+                                       , val + aTot - goal (length acc + 1)
+                                       , fee (length acc + 1)
+                                       )
                 -- We have not yet reached the goal. Add the coin to the
                 -- accumulator
                 else go (coin:acc) (val + aTot) ps pTot
@@ -162,7 +176,7 @@ greedyAddSink target fee continue =
                 -- If no solution was found, return Nothing
                 then Nothing 
                 -- If we have a solution, return it
-                else Just (ps, pTot - (goal $ length ps))
+                else Just (ps, pTot - goal (length ps), fee (length ps))
 
 getFee :: Word64 -> Int -> Word64
 getFee kbfee count = 
@@ -188,9 +202,9 @@ guessTxSize :: Int         -- ^ Number of regular transaction inputs.
 guessTxSize pki msi pkout msout = 
     8 + inpLen + inp + outLen + out
   where 
-    inpLen = BS.length $ encode' $ VarInt $ fromIntegral $ (length msi) + pki
+    inpLen = BS.length $ encode' $ VarInt $ fromIntegral $ length msi + pki
     outLen = BS.length $ encode' $ VarInt $ fromIntegral $ pkout + msout
-    inp    = pki*148 + (sum $ map guessMSSize msi)
+    inp    = pki*148 + sum (map guessMSSize msi)
              -- (20: hash160) + (5: opcodes) + 
              -- (1: script len) + (8: Word64)
     out    = pkout*34 + 
@@ -202,7 +216,7 @@ guessTxSize pki msi pkout msout =
 guessMSSize :: (Int,Int) -> Int
 guessMSSize (m,n) = 
     -- OutPoint (36) + Sequence (4) + Script
-    40 + (BS.length $ encode' $ VarInt $ fromIntegral scp) + scp
+    40 + BS.length (encode' $ VarInt $ fromIntegral scp) + scp
   where 
     -- OP_M + n*PubKey + OP_N + OP_CHECKMULTISIG
     rdm = BS.length $ encode' $ opPushData $ BS.replicate (n*34 + 3) 0
@@ -230,7 +244,7 @@ buildTx xs ys =
   where 
     fi outPoint = TxIn outPoint BS.empty maxBound
     fo (o,v) | v <= 2100000000000000 = return $ TxOut v $ encodeOutputBS o
-             | otherwise = Left $ "buildTx: Invalid amount " ++ (show v)
+             | otherwise = Left $ "buildTx: Invalid amount " ++ show v
 
 -- | Data type used to specify the signing parameters of a transaction input.
 -- To sign an input, the previous output script, outpoint and sighash are
@@ -321,7 +335,7 @@ detSignInput tx i (SigInput so _ sh rdmM) key = do
 -- partial set of SigInputs.
 findSigInput :: [SigInput] -> [TxIn] -> [(SigInput, Int)]
 findSigInput si ti = 
-    catMaybes $ map g $ zip (matchTemplate si ti f) [0..]
+    mapMaybe g $ zip (matchTemplate si ti f) [0..]
   where 
     f s txin = sigDataOP s == prevOutput txin
     g (Just s, i)  = Just (s,i)
@@ -329,24 +343,23 @@ findSigInput si ti =
 
 -- Find from the list of private keys which one is required to sign the 
 -- provided ScriptOutput. 
-sigKeys :: ScriptOutput -> (Maybe RedeemScript) -> [PrvKey] 
+sigKeys :: ScriptOutput -> Maybe RedeemScript -> [PrvKey] 
         -> Either String [PrvKey]
-sigKeys so rdmM keys = do
-    case (so, rdmM) of
-        (PayPK p, Nothing) -> return $ 
-            map fst $ maybeToList $ find ((== p) . snd) zipKeys
-        (PayPKHash a, Nothing) -> return $ 
-            map fst $ maybeToList $ find ((== a) . pubKeyAddr . snd) zipKeys
-        (PayMulSig ps r, Nothing) -> return $ 
-            map fst $ take r $ filter ((`elem` ps) . snd) zipKeys
-        (PayScriptHash _, Just rdm) ->
-            sigKeys rdm Nothing keys
-        _ -> Left "sigKeys: Could not decode output script" 
+sigKeys so rdmM keys = case (so, rdmM) of
+    (PayPK p, Nothing) -> return $ 
+        map fst $ maybeToList $ find ((== p) . snd) zipKeys
+    (PayPKHash a, Nothing) -> return $ 
+        map fst $ maybeToList $ find ((== a) . pubKeyAddr . snd) zipKeys
+    (PayMulSig ps r, Nothing) -> return $ 
+        map fst $ take r $ filter ((`elem` ps) . snd) zipKeys
+    (PayScriptHash _, Just rdm) ->
+        sigKeys rdm Nothing keys
+    _ -> Left "sigKeys: Could not decode output script" 
   where
     zipKeys = zip keys (map derivePubKey keys)
 
 -- Construct an input, given a signature and a public key
-buildInput :: Tx -> Int -> ScriptOutput -> (Maybe RedeemScript) 
+buildInput :: Tx -> Int -> ScriptOutput -> Maybe RedeemScript
            -> TxSignature -> PubKey -> Either String ScriptInput
 buildInput tx i so rdmM sig pub = case (so, rdmM) of
     (PayPK _, Nothing) -> 
@@ -367,7 +380,7 @@ buildInput tx i so rdmM sig pub = case (so, rdmM) of
         Right (RegularInput    (SpendMulSig xs))   -> xs
         _ -> []
     out = encodeOutput so
-    f (TxSignature x sh) p = verifySig (txSigHash tx out i sh) x p
+    f (TxSignature x sh) = verifySig (txSigHash tx out i sh) x
 
 {- Merge multisig transactions -}
 
@@ -393,7 +406,7 @@ mergeTxInput txs tx (so, i) = do
     let rdm = snd $ head sigRes
     unless (all (== rdm) $ map snd sigRes) $ 
         Left "Redeem scripts do not match"
-    si <- encodeInputBS <$> go (nub $ concat $ map fst sigRes) so rdm
+    si <- encodeInputBS <$> go (nub $ concatMap fst sigRes) so rdm
     return tx{ txIn = updateIndex i (txIn tx) (\ti -> ti{ scriptInput = si }) }
   where
     go allSigs out rdmM = case out of
@@ -410,8 +423,8 @@ mergeTxInput txs tx (so, i) = do
         Right (RegularInput (SpendMulSig sigs)) -> Right (sigs, Nothing)
         Right (ScriptHashInput (SpendMulSig sigs) rdm) -> Right (sigs, Just rdm)
         _ -> Left "Invalid script input type"
-    f out (TxSignature x sh) p = 
-        verifySig (txSigHash tx (encodeOutput out) i sh) x p
+    f out (TxSignature x sh) = 
+        verifySig (txSigHash tx (encodeOutput out) i sh) x
 
 {- Tx verification -}
 
@@ -426,8 +439,8 @@ verifyStdTx tx xs =
 
 -- | Verify if a transaction input is valid and standard.
 verifyStdInput :: Tx -> Int -> ScriptOutput -> Bool
-verifyStdInput tx i so' = 
-    go (scriptInput $ txIn tx !! i) so'
+verifyStdInput tx i =
+    go (scriptInput $ txIn tx !! i)
   where
     go inp so = case decodeInputBS inp of
         Right (RegularInput (SpendPK (TxSignature sig sh))) -> 

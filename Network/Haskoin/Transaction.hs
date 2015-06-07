@@ -35,6 +35,8 @@ module Network.Haskoin.Transaction
 , chooseMSCoins
 , chooseMSCoinsSink
 , guessTxSize
+, getFee
+, getMSFee
 
 ) where
 

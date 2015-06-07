@@ -57,59 +57,62 @@ usage = warningMsg : usageInfo usageHeader options : cmdHelp
 
 options :: [OptDescr (Config -> Config)]
 options =
-    [ Option ['k'] ["keyring"]
+    [ Option "k" ["keyring"]
         (ReqArg (\s cfg -> cfg { configKeyRing = T.pack s }) "KEYRING") $
         "Which keyring to use (default: "
             ++ T.unpack (configKeyRing hardConfig) ++ ")"
-    , Option ['c'] ["count"] 
+    , Option "c" ["count"] 
         (ReqArg (\s cfg -> cfg { configCount = read s }) "INT") $
         "Set the output size of some commands (default: "
             ++ show (configCount hardConfig) ++ ")"
-    , Option ['m'] ["minconf"] 
+    , Option "m" ["minconf"] 
         (ReqArg (\s cfg -> cfg { configMinConf = read s }) "INT") $
         "Required minimum confirmations for balances (default: "
             ++ show (configMinConf hardConfig) ++ ")"
-    , Option ['f'] ["fee"] 
+    , Option "f" ["fee"] 
         (ReqArg (\s cfg -> cfg { configFee = read s }) "INT") $
         "Fee per 1000 bytes for new transactions (default: "
             ++ show (configFee hardConfig) ++ ")"
-    , Option ['S'] ["nosig"]
+    , Option "R" ["rcptfee"]
+        (NoArg $ \cfg -> cfg { configRcptFee = True }) $
+        "Recipient pays fee (first if multiple) (default: "
+            ++ show (configRcptFee hardConfig) ++ ")"
+    , Option "S" ["nosig"]
         (NoArg $ \cfg -> cfg { configSignTx = False }) $
         "Do not sign transactions (default: "
             ++ show (not $ configSignTx hardConfig) ++ ")"
-    , Option ['i'] ["internal"]
+    , Option "i" ["internal"]
         (NoArg $ \cfg -> cfg { configAddrType = AddressInternal }) $
         "Display internal addresses (default: "
             ++ show (configAddrType hardConfig == AddressInternal) ++ ")"
-    , Option ['r'] ["revpage"]
+    , Option "r" ["revpage"]
         (NoArg $ \cfg -> cfg { configReversePaging = True }) $
         "Use reverse paging (default: "
             ++ show (configReversePaging hardConfig) ++ ")"
-    , Option ['p'] ["passphrase"]
+    , Option "p" ["passphrase"]
         (ReqArg (\s cfg -> cfg { configPass = Just $ T.pack s }) "PASSPHRASE")
         "Optional mnemonic passphrase when creating wallets"
-    , Option ['j'] ["json"]
+    , Option "j" ["json"]
         (NoArg $ \cfg -> cfg { configFormat = OutputJSON })
         "Format result as JSON"
-    , Option ['y'] ["yaml"]
+    , Option "y" ["yaml"]
         (NoArg $ \cfg -> cfg { configFormat = OutputYAML })
         "Format result as YAML"
-    , Option ['s'] ["socket"]
+    , Option "s" ["socket"]
         (ReqArg (\s cfg -> cfg { configConnect = s }) "URI") $
         "ZeroMQ socket of the server (default: "
             ++ configConnect hardConfig ++ ")"
-    , Option ['d'] ["detach"]
+    , Option "d" ["detach"]
         (NoArg $ \cfg -> cfg { configDetach = True }) $
         "Detach the server process (default: "
             ++ show (configDetach hardConfig) ++ ")"
-    , Option ['t'] ["testnet"]
-        (NoArg $ \cfg -> cfg { configTestnet = True }) $
-        "Use Testnet3 network"
-    , Option ['g'] ["config"]
+    , Option "t" ["testnet"]
+        (NoArg $ \cfg -> cfg { configTestnet = True }) "Use Testnet3 network"
+    , Option "g" ["config"]
         (ReqArg (\s cfg -> cfg { configFile = s }) "FILE") $
         "Configuration file (default: "
             ++ configFile hardConfig ++ ")"
-    , Option ['w'] ["workdir"]
+    , Option "w" ["workdir"]
         (ReqArg (\s cfg -> cfg { configDir = s }) "DIR") $
         "Working directory (default: "
             ++ configDir hardConfig ++ ")"
@@ -124,7 +127,7 @@ setWorkDir cfg = do
     setFileMode workDir ownerModes
     changeWorkingDirectory workDir
 
-getConfig :: [(Config -> Config)] -> IO Config
+getConfig :: [Config -> Config] -> IO Config
 getConfig fs = do
     homeM <- getEnv "HOME"
     cfg1 <- flip (foldr ($)) fs
@@ -155,19 +158,19 @@ clientMain = E.getArgs >>= \args -> case getOpt Permute options args of
 
 dispatchCommand :: Config -> [String] -> IO ()
 dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
-    "start"       : []                     -> cmdStart
-    "stop"        : []                     -> cmdStop
+    ["start"]                              -> cmdStart
+    ["stop"]                               -> cmdStop
     "newkeyring"  : mnemonic               -> cmdNewKeyRing mnemonic
-    "keyring"     : []                     -> cmdKeyRing
-    "keyrings"    : []                     -> cmdKeyRings
+    ["keyring"]                            -> cmdKeyRing
+    ["keyrings"]                           -> cmdKeyRings
     "newacc"      : [name]                 -> cmdNewAcc name
-    "newms"       : name : m : n : ks      -> cmdNewMS name m n ks
+    "newms"       : name : m : n : ks      -> cmdNewMS False name m n ks
     "newread"     : [name, key]            -> cmdNewRead name key
-    "newreadms"   : name : m : n : ks      -> cmdNewReadMS name m n ks
+    "newreadms"   : name : m : n : ks      -> cmdNewMS True name m n ks
     "addkeys"     : name : ks              -> cmdAddKeys name ks
     "setgap"      : [name, gap]            -> cmdSetGap name gap
     "account"     : [name]                 -> cmdAccount name
-    "accounts"    : []                     -> cmdAccounts
+    ["accounts"]                           -> cmdAccounts
     "list"        : name : page            -> cmdList name page
     "unused"      : [name]                 -> cmdUnused name
     "label"       : [name, index, label]   -> cmdLabel name index label
@@ -184,8 +187,8 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "offbal"      : [name]                 -> cmdOfflineBalance name
     "rescan"      : rescantime             -> cmdRescan rescantime
     "decodetx"    : [tx]                   -> cmdDecodeTx tx
-    "help"        : []                     -> liftIO $ forM_ usage putStrLn
-    "version"     : []                     -> liftIO $ putStrLn haskoinUserAgent
+    ["help"]                               -> liftIO $ forM_ usage putStrLn
+    ["version"]                            -> liftIO $ putStrLn haskoinUserAgent
     []                                     -> liftIO $ forM_ usage putStrLn
-    _ -> liftIO $ forM_ ("Invalid command" : usage) $ putStrLn
+    _ -> liftIO $ forM_ ("Invalid command" : usage) putStrLn
 

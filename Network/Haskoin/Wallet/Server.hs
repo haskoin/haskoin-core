@@ -7,7 +7,7 @@ import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 import System.ZMQ4
 
 import Control.Applicative ((<$>))
-import Control.Monad (when, unless, forM, forever, liftM)
+import Control.Monad (when, void, unless, forM, forever, liftM)
 import Control.Monad.Trans (MonadIO, lift, liftIO)
 import Control.Exception (SomeException(..),  tryJust, catch)
 import Control.Concurrent.STM.TBMChan (writeTBMChan)
@@ -62,7 +62,7 @@ filterLevel p (LoggingT f) = LoggingT $ \logger ->
     f $ \loc src level msg -> when (p level) $ logger loc src level msg
 
 runSPVServer :: Config -> IO ()
-runSPVServer cfg = do
+runSPVServer cfg =
     -- Start server process
     maybeDetach cfg $ do
         -- Get database pool
@@ -102,7 +102,7 @@ runSPVServer cfg = do
                     -- Bitcoin nodes to connect to
                 let nodes = configBTCNodes cfg 
                     -- Run the SPV monad stack
-                    runNode = run . (flip evalStateT db)
+                    runNode = run . (`evalStateT` db)
 
                 -- Compute our bloom filter
                 bloom <- liftM fst3 $ runSqlPersistMPool getBloomFilter pool
@@ -111,7 +111,7 @@ runSPVServer cfg = do
                 runNode $ withSpvNode $ \eChan rChan -> do
                     -- Connect to remote nodes
                     liftIO . atomically $ writeTBMChan rChan $
-                        NodeConnectPeers $ map (\(h,p) -> RemoteHost h p) nodes
+                        NodeConnectPeers $ map (uncurry RemoteHost) nodes
                     -- Send our bloom filter
                     liftIO . atomically $ writeTBMChan rChan $
                         NodeBloomFilter bloom
@@ -128,11 +128,11 @@ runSPVServer cfg = do
                         -- Run the zeromq server listening to user requests
                         runWalletApp $ HandlerSession cfg pool $ Just rChan
 
-processEvents :: (MonadLogger m, MonadIO m)
+processEvents :: (MonadLogger m, MonadIO m, Functor m)
               => TBMChan NodeRequest -> ConnectionPool
               -> Sink WalletMessage m ()
 processEvents rChan pool = awaitForever $ \req -> lift $ case req of
-    WalletTx tx -> processTxs [tx] >> return ()
+    WalletTx tx -> void (processTxs [tx])
     WalletMerkle action dmbs -> do
         -- Save the old best block before importing
         oldBestE <- liftIO $ tryJust f $ runSqlPersistMPool getBestBlock pool
@@ -144,7 +144,7 @@ processEvents rChan pool = awaitForever $ \req -> lift $ case req of
                 return $ headerHash genesisHeader
 
         -- Import all transactions into the wallet
-        let txs = concat $ map merkleTxs dmbs
+        let txs = concatMap merkleTxs dmbs
         xs <- processTxs txs
 
         -- Import the merkle blocks into the wallet
@@ -201,7 +201,7 @@ processEvents rChan pool = awaitForever $ \req -> lift $ case req of
             Left err -> do
                 $(logError) $ pack $ unwords 
                     [ "processEvents: An error occured:", err ]
-                return $ M.empty
+                return M.empty
     f (SomeException e) = Just $ show e
 
 maybeDetach :: Config -> IO () -> IO ()
@@ -212,7 +212,7 @@ maybeDetach cfg action =
     logFile = ToFile $ configLogFile cfg
 
 stopSPVServer :: Config -> IO ()
-stopSPVServer cfg = do
+stopSPVServer cfg =
     -- TODO: Should we send a message instead of killing the process ?
     killAndWait $ configPidFile cfg
 

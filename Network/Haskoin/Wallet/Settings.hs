@@ -53,6 +53,8 @@ data Config = Config
     -- ^ Sign transactions
     , configFee           :: !Word64
     -- ^ Fee to pay per 1000 bytes when creating new transactions
+    , configRcptFee       :: !Bool
+    -- ^ Recipient pays fee (dangerous, no config file setting)
     , configAddrType      :: !AddressType
     -- ^ Return internal instead of external addresses
     , configReversePaging :: !Bool
@@ -90,6 +92,7 @@ data Config = Config
 
 instance FromJSON Config where
     parseJSON = withObject "Config" $ \o -> do
+        let configRcptFee    = False
         configKeyRing        <- o .: "keyring-name"
         configCount          <- o .: "output-size"
         configMinConf        <- o .: "minimum-confirmations"

@@ -1183,7 +1183,7 @@ testImportMultisig = do
 
     -- Create a transaction which has 0 signatures in ms1
     (h,c) <- createTx "test" "ms1" 0 
-        [(fromJust $ base58ToAddr "3C9fz8kDwX2rV25YeWC7YcDNHtTreAV52m", 5000000)] 10000 True
+        [(fromJust $ base58ToAddr "3C9fz8kDwX2rV25YeWC7YcDNHtTreAV52m", 5000000)] 10000 False True
     tx1 <- liftM (entityVal . fromJust) $ getBy $ UniqueAccTx ai1 h
     liftIO $ assertEqual "Confidence is not offline" TxOffline c
     liftIO $ assertEqual "Confidence is not offline" TxOffline $ keyRingTxConfidence tx1

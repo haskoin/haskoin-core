@@ -29,6 +29,7 @@ module Network.Haskoin.Wallet.Transaction
 ) where
 
 import Control.Applicative ((<$>))
+import Control.Arrow (second)
 import Control.Monad (forM, forM_, when, liftM, unless)
 import Control.Monad.Trans (MonadIO, liftIO, lift)
 import Control.Monad.Base (MonadBase)
@@ -489,7 +490,7 @@ getOfflineTxData ai txid = do
                 WalletException "Can only sign offline transactions."
             entInCoins <- getAccInCoins ai keyRingTxTx
             return 
-                ( OfflineTxData keyRingTxTx $ catMaybes $ map toDat entInCoins
+                ( OfflineTxData keyRingTxTx $ mapMaybe toDat entInCoins
                 , entInCoins
                 )
         _ -> liftIO . throwIO $ WalletException $ unwords
@@ -1111,14 +1112,15 @@ createTx :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
          -> Word32              -- ^ Minimum confirmations
          -> [(Address,Word64)]  -- ^ List of recipient addresses and amounts
          -> Word64              -- ^ Fee per 1000 bytes 
+         -> Bool                -- ^ Should fee be paid by recipient
          -> Bool                -- ^ Should the transaction be signed
          -> SqlPersistT m (TxHash, TxConfidence) 
             -- ^ (New transaction hash, Completed flag)
-createTx keyRingName accountName minConf dests fee sign = do
+createTx keyRingName accountName minConf dests fee rcptFee sign = do
     Entity _ keyRing <- getKeyRing keyRingName
     accE@(Entity ai acc) <- getAccount keyRingName accountName
     -- Build an unsigned transaction from the given recipient values and fee
-    (unsignedTx, entInCoins) <- buildUnsignedTx accE minConf dests fee
+    (unsignedTx, entInCoins) <- buildUnsignedTx accE minConf dests fee rcptFee
     -- Sign our new transaction if signing was requested
     let tx | sign = signOfflineTx keyRing acc unsignedTx $ 
                         mapMaybe toDat entInCoins
@@ -1142,13 +1144,16 @@ buildUnsignedTx :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
                 -> Word32
                 -> [(Address,Word64)] 
                 -> Word64
+                -> Bool
                 -> SqlPersistT m (Tx, [Entity KeyRingCoin])
-buildUnsignedTx (Entity ai acc@KeyRingAccount{..}) minConf dests fee = do
+buildUnsignedTx
+    (Entity ai acc@KeyRingAccount{..}) minConf dests fee rcptFee = do
     let p = case (keyRingAccountRequiredSigs, keyRingAccountTotalKeys) of
                 (Just m, Just n) -> (m, n)
                 _ -> throw . WalletException $ "Invalid multisig parameters"
-        sink | isMultisigAccount acc = chooseMSCoinsSink tot fee p True
-             | otherwise             = chooseCoinsSink tot fee True
+        fee' = if rcptFee then 0 else fee
+        sink | isMultisigAccount acc = chooseMSCoinsSink tot fee' p True
+             | otherwise             = chooseCoinsSink   tot fee'   True
         -- TODO: Add more policies like confirmations or coin age
         -- Sort coins by their values in descending order
         policy = [Desc KeyRingCoinValue]
@@ -1156,14 +1161,25 @@ buildUnsignedTx (Entity ai acc@KeyRingAccount{..}) minConf dests fee = do
     -- of minimum confirmations.
     selectRes <- spendableCoinsSource ai minConf policy $$ sink
     -- Find a selection of spendable coins that matches our target value
-    let (selected, change) = either (throw . WalletException) id selectRes
+    let (selected, change) =
+            either (throw . WalletException) id selectRes
+        totFee | isMultisigAccount acc = getMSFee fee p (length selected)
+               | otherwise             = getFee   fee   (length selected)
+
+    -- Subtract fees from first destination if rcptFee
+        dests' = if rcptFee
+            then second (flip (-) totFee) (head dests) : tail dests
+            else dests
+    when (snd (head dests') <= 0) $ throw $
+        WalletException "Transaction fees too high" 
 
     -- If the change amount is not dust, we need to add a change address to
     -- our list of recipients.
     -- TODO: Put the dust value in a constant somewhere. We also need a more
     -- general way of detecting dust such as our transactions are not
     -- rejected by full nodes.
-    allDests <- if change < 5430 then return dests else addChangeAddr change
+    allDests <- if change < 5430 then return dests'
+                                 else addChangeAddr change dests'
     case buildAddrTx (map toOutPoint selected) $ map toBase58 allDests of
         Right tx -> return (tx, selected)
         Left err -> liftIO . throwIO $ WalletException err
@@ -1171,7 +1187,7 @@ buildUnsignedTx (Entity ai acc@KeyRingAccount{..}) minConf dests fee = do
     tot = sum $ map snd dests
     toBase58 (a, v) = (addrToBase58 a, v)
     toOutPoint (Entity _ c) = OutPoint (keyRingCoinHash c) (keyRingCoinPos c)
-    addChangeAddr change = do
+    addChangeAddr change dests' = do
         unused <- addressUnused keyRingAccountKeyRingName 
                                 keyRingAccountName 
                                 AddressInternal
@@ -1180,7 +1196,7 @@ buildUnsignedTx (Entity ai acc@KeyRingAccount{..}) minConf dests fee = do
                 -- Use the address to prevent reusing it again
                 _ <- useAddress a 
                 -- TODO: Randomize the change position
-                return $ (keyRingAddrAddress a, change) : dests
+                return $ (keyRingAddrAddress a, change) : dests'
             _ -> liftIO . throwIO $ 
                 WalletException "No change addresses available"
 

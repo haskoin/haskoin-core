@@ -7,7 +7,6 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdNewAcc
 , cmdNewMS
 , cmdNewRead
-, cmdNewReadMS
 , cmdAddKeys
 , cmdSetGap
 , cmdAccount
@@ -46,7 +45,7 @@ import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.Reader as R (ReaderT, ask, asks)
 
 import Data.Maybe (listToMaybe, isNothing, fromJust, fromMaybe)
-import Data.List (intersperse)
+import Data.List (intersperse, intercalate)
 import Data.Text (pack, unpack, splitOn)
 import qualified Data.Yaml as YAML (encode)
 import qualified Data.Aeson.Encode.Pretty as JSON
@@ -98,7 +97,7 @@ cmdNewKeyRing mnemonicLs = do
         putStrLn "Write down your seed:"
         putStrLn m
   where
-    newKeyRingMnemonic = pack <$> (listToMaybe mnemonicLs)
+    newKeyRingMnemonic = pack <$> listToMaybe mnemonicLs
 
 cmdKeyRing :: Handler ()
 cmdKeyRing = do
@@ -117,14 +116,16 @@ cmdNewAcc name = do
   where
     newAcc = NewAccount (pack name) AccountRegular [] Nothing Nothing
 
-cmdNewMS :: String -> String -> String -> [String] -> Handler ()
-cmdNewMS name mStr nStr ks = case keysM of
+-- First argument: is account read-only?
+cmdNewMS :: Bool -> String -> String -> String -> [String] -> Handler ()
+cmdNewMS r name mStr nStr ks = case keysM of
     Just keys -> do
         k <- R.asks configKeyRing
-        let newAcc = NewAccount (pack name) AccountMultisig keys m n
+        let newAcc = NewAccount (pack name) t keys m n
         sendZmq (PostAccountsR k newAcc) $ putStr . printAccount
     _ -> error "Could not parse key(s)"
   where
+    t     = if r then AccountReadMultisig else AccountMultisig
     m     = Just $ read mStr
     n     = Just $ read nStr
     keysM = mapM xPubImport ks
@@ -138,18 +139,6 @@ cmdNewRead name keyStr = case keyM of
     _ -> error "Could not parse key"
   where
     keyM = xPubImport keyStr
-
-cmdNewReadMS :: String -> String -> String -> [String] -> Handler ()
-cmdNewReadMS name mStr nStr ks = case keysM of
-    Just keys -> do
-        k <- R.asks configKeyRing
-        let newAcc = NewAccount (pack name) AccountReadMultisig keys m n 
-        sendZmq (PostAccountsR k newAcc) $ putStr . printAccount
-    _ -> error "Could not parse key(s)"
-  where
-    m     = Just $ read mStr
-    n     = Just $ read nStr
-    keysM = mapM xPubImport ks
 
 cmdAddKeys :: String -> [String] -> Handler ()
 cmdAddKeys name ks = case keysM of
@@ -179,18 +168,28 @@ cmdAccounts = do
         let xs = map (putStr . printAccount) as
         sequence_ $ intersperse (putStrLn "-") xs
 
+pagedAction :: (FromJSON a, ToJSON a)
+            => [String]
+            -> (PageRequest -> WalletRequest)
+            -> ([a] -> IO ())
+            -> Handler ()
+pagedAction pageLs requestBuilder action = do
+    c <- R.asks configCount
+    r <- R.asks configReversePaging
+    let pageReq = PageRequest page c r
+    sendZmq (requestBuilder pageReq) $ \(PageRes a m) -> do
+        putStrLn $ unwords [ "Page", show page, "of", show m ]
+        action a
+  where
+    page = fromMaybe 1 (read <$> listToMaybe pageLs)
+
+
 cmdList :: String -> [String] -> Handler ()
 cmdList name pageLs = do
     k <- R.asks configKeyRing
     t <- R.asks configAddrType
-    c <- R.asks configCount
-    r <- R.asks configReversePaging
-    let pageReq = PageRequest page c r
-    sendZmq (GetAddressesR k (pack name) t pageReq) $ \(PageRes as m) -> do
-        putStrLn $ unwords [ "Page", show page, "of", show m ]
-        forM_ as $ putStrLn . printAddress
-  where
-    page = fromMaybe 1 (read <$> listToMaybe pageLs)
+    let f = GetAddressesR k (pack name) t
+    pagedAction pageLs f $ \as -> forM_ as (putStrLn . printAddress)
 
 cmdUnused :: String -> Handler ()
 cmdUnused name = do
@@ -211,25 +210,15 @@ cmdLabel name iStr label = do
 cmdTxs :: String -> [String] -> Handler ()
 cmdTxs name pageLs = do
     k <- R.asks configKeyRing
-    c <- R.asks configCount
-    r <- R.asks configReversePaging
-    let pageReq = PageRequest page c r
-    sendZmq (GetTxsR k (pack name) pageReq) $ \(PageRes ts m) -> do
-        putStrLn $ unwords [ "Page", show page, "of", show m ]
+    pagedAction pageLs (GetTxsR k (pack name)) $ \ts -> do
         let xs = map (putStr . printTx) ts
         sequence_ $ intersperse (putStrLn "-") xs
-  where
-    page = fromMaybe 1 (read <$> listToMaybe pageLs)
 
 cmdAddrTxs :: String -> String -> [String] -> Handler ()
 cmdAddrTxs name i pageLs = do
     k <- R.asks configKeyRing
-    c <- R.asks configCount
-    r <- R.asks configReversePaging
     t <- R.asks configAddrType
-    let pageReq = PageRequest page c r
-    sendZmq (GetAddrTxsR k (pack name) index t pageReq) $ \(PageRes ts m) -> do
-        putStrLn $ unwords [ "Page", show page, "of", show m ]
+    pagedAction pageLs (GetAddrTxsR k (pack name) index t) $ \ts -> do
         let xs = map (putStr . printAddrTx) ts
         sequence_ $ intersperse (putStrLn "-") xs
   where
@@ -237,35 +226,22 @@ cmdAddrTxs name i pageLs = do
     index = read i
 
 cmdSend :: String -> String -> String -> Handler ()
-cmdSend name addrStr amntStr = case addrM of
-    Just addr -> do
-        k       <- R.asks configKeyRing
-        fee     <- R.asks configFee
-        minconf <- R.asks configMinConf
-        sign    <- R.asks configSignTx
-        let action = CreateTx [(addr, amnt)] fee minconf sign
-        sendZmq (PostTxsR k (pack name) action) $ 
-            \(TxHashConfidenceRes h c) -> do
-                putStrLn $ unwords [ "TxHash    :", encodeTxHashLE h ]
-                putStrLn $ unwords [ "Confidence:", printConfidence c ]
-    _ -> error "Could not parse address"
-  where
-    addrM = base58ToAddr addrStr
-    amnt  = read amntStr
+cmdSend name addrStr amntStr = cmdSendMany name [addrStr ++ ":" ++ amntStr]
 
 cmdSendMany :: String -> [String] -> Handler ()
 cmdSendMany name xs = case rcpsM of
     Just rcps -> do
         k       <- R.asks configKeyRing
         fee     <- R.asks configFee
+        rcptFee <- R.asks configRcptFee
         minconf <- R.asks configMinConf
         sign    <- R.asks configSignTx
-        let action = CreateTx rcps fee minconf sign
+        let action = CreateTx rcps fee rcptFee minconf sign
         sendZmq (PostTxsR k (pack name) action) $ 
             \(TxHashConfidenceRes h c) -> do
                 putStrLn $ unwords [ "TxHash    :", encodeTxHashLE h ]
                 putStrLn $ unwords [ "Confidence:", printConfidence c ]
-    _ -> error "Could not parse recipient list"
+    _ -> error "Could not parse recipient information"
   where
     g str   = map unpack $ splitOn ":" (pack str)
     f [a,v] = liftM2 (,) (base58ToAddr a) (return $ read v)
@@ -329,13 +305,13 @@ cmdBalance :: String -> Handler ()
 cmdBalance name = do
     k <- R.asks configKeyRing
     m <- R.asks configMinConf
-    sendZmq (GetBalanceR k (pack name) m) $ \(BalanceRes b) -> do
+    sendZmq (GetBalanceR k (pack name) m) $ \(BalanceRes b) ->
         putStrLn $ unwords [ "Balance:", show b ]
 
 cmdOfflineBalance :: String -> Handler ()
 cmdOfflineBalance name = do
     k <- R.asks configKeyRing
-    sendZmq (GetOfflineBalanceR k $ pack name) $ \(BalanceRes b) -> do
+    sendZmq (GetOfflineBalanceR k $ pack name) $ \(BalanceRes b) ->
         putStrLn $ unwords [ "Offline Balance:", show b ]
 
 cmdGetTx :: String -> String -> Handler ()
@@ -351,7 +327,7 @@ cmdGetTx name tidStr = case tidM of
     tidM = decodeTxHashLE tidStr
 
 cmdRescan :: [String] -> Handler ()
-cmdRescan timeLs = do
+cmdRescan timeLs =
     sendZmq (PostNodeR $ Rescan timeM) $ \(RescanRes ts) ->
         putStrLn $ unwords [ "Timestamp:", show ts]
   where
@@ -399,25 +375,23 @@ encodeTxJSON :: Tx -> Value
 encodeTxJSON tx@(Tx v is os i) = object
     [ "txid"     .= encodeTxHashLE (txHash tx)
     , "version"  .= v
-    , "inputs"   .= map input (zip is [0..])
-    , "outputs"  .= map output (zip os [0..])
+    , "inputs"   .= zipWith input is [0..]
+    , "outputs"  .= zipWith output os [0..]
     , "locktime" .= i
     ]
   where 
-    input (x,j) = object 
+    input x j = object 
       [pack ("input " ++ show (j :: Int)) .= encodeTxInJSON x]
-    output (x,j) = object 
+    output x j = object 
       [pack ("output " ++ show (j :: Int)) .= encodeTxOutJSON x]
 
 encodeTxInJSON :: TxIn -> Value
-encodeTxInJSON (TxIn o s i) = object $ concat 
-    [ [ "outpoint"   .= encodeOutPointJSON o
-      , "sequence"   .= i
-      , "raw-script" .= bsToHex s
-      , "script"     .= encodeScriptJSON sp
-      ] 
-      , decoded
-    ]
+encodeTxInJSON (TxIn o s i) = object $
+    [ "outpoint"   .= encodeOutPointJSON o
+    , "sequence"   .= i
+    , "raw-script" .= bsToHex s
+    , "script"     .= encodeScriptJSON sp
+    ] ++ decoded
   where 
     sp = fromMaybe (Script []) $ decodeToMaybe s
     decoded = either (const []) f $ decodeInputBS s
@@ -537,7 +511,7 @@ printAccount JsonAccount{..} = unlines $
     ] ++ maybe [] (\d -> ["Deriv  : " ++ show d]) jsonAccountDerivation 
       ++ if null jsonAccountKeys then [] else 
         ( "Keys   : " ++ xPubExport (head jsonAccountKeys) ) : 
-        ( map (\x -> "         " ++ xPubExport x) $ tail jsonAccountKeys )
+        map (\x -> "         " ++ xPubExport x) (tail jsonAccountKeys)
   where
     showType = case jsonAccountType of
         AccountRegular -> "Regular"
@@ -578,10 +552,8 @@ printAddress JsonAddr{..} = unwords $
 printTx :: JsonTx -> String
 printTx JsonTx{..} = unlines $
     [ "Value        : " ++ printTxType jsonTxType ++ " " ++ show jsonTxValue ] 
-    ++ ( if jsonTxType == TxIncoming
-           then [ "Sender(s)    : " ++ printAddrList jsonTxFrom ]
-           else []
-       ) 
+    ++
+    [ "Sender(s)    : " ++ printAddrList jsonTxFrom | jsonTxType == TxIncoming ]
     ++
     [
       "Recipient(s) : " ++ printAddrList jsonTxTo
@@ -591,16 +563,16 @@ printTx JsonTx{..} = unlines $
             " (Confirmations: " ++ show jsonTxConfirmations ++ ")"
     ] 
   where
-    printAddrList xs = concat (intersperse ", " $ map addrToBase58 xs)
+    printAddrList xs = intercalate ", " (map addrToBase58 xs)
 
 printAddrTx :: JsonAddrTx -> String
 printAddrTx JsonAddrTx{..} = unlines $
     [ "Value        : " ++ printTxType jsonAddrTxTxType 
                         ++ " " ++ show jsonAddrTxValue ] 
-    ++ ( if jsonAddrTxTxType == TxIncoming
-           then [ "Sender(s)    : " ++ printAddrList jsonAddrTxFrom ]
-           else []
-       ) 
+    ++
+    [ "Sender(s)    : " ++ printAddrList jsonAddrTxFrom
+    | jsonAddrTxTxType == TxIncoming
+    ]
     ++
     [
       "Recipient(s) : " ++ printAddrList jsonAddrTxTo
@@ -610,7 +582,7 @@ printAddrTx JsonAddrTx{..} = unlines $
             " (Confirmations: " ++ show jsonAddrTxConfirmations ++ ")"
     ] 
   where
-    printAddrList xs = concat (intersperse ", " $ map addrToBase58 xs)
+    printAddrList xs = intercalate ", " (map addrToBase58 xs)
 
 printConfidence :: TxConfidence -> String
 printConfidence c = case c of

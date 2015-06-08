@@ -1,5 +1,6 @@
 module Network.Haskoin.Wallet.Server.Handler where
 
+import Control.Arrow (first)
 import Control.Monad (when, liftM)
 import Control.Exception (throwIO, throw)
 import Control.Monad.Trans (liftIO, MonadIO, lift)
@@ -43,7 +44,7 @@ data HandlerSession = HandlerSession
     }
 
 runHandler :: Monad m => HandlerSession -> Handler m a -> m a
-runHandler session x = S.evalStateT x session
+runHandler = flip S.evalStateT
 
 runDB :: MonadBaseControl IO m => SqlPersistT m a -> Handler m a
 runDB action = do
@@ -96,7 +97,7 @@ postKeyRingsR (NewKeyRing name passM msM) = do
     _ <- runDB $ newKeyRing name seed
     return $ toJSON $ MnemonicRes ms
   where
-    pass = unpack $ fromMaybe "" $ passM
+    pass = unpack $ fromMaybe "" passM
 
 getAccountsR :: ( MonadLogger m
                 , MonadIO m
@@ -305,30 +306,25 @@ postTxsR :: ( MonadLogger m
             )
          => KeyRingName -> AccountName -> TxAction -> Handler m Value
 postTxsR keyRingName name action = case action of
-    CreateTx rs fee minconf sign -> do
+    CreateTx rs fee rcptFee minconf sign -> do
         $(logInfo) $ format $ unlines
             [ "PostTxsR CreateTx"
             , "  KeyRing name: " ++ unpack keyRingName
             , "  Account name: " ++ unpack name
-            , "  Recipients  : " ++ show 
-                (map (\(r,v) -> (addrToBase58 r, v)) rs)
+            , "  Recipients  : " ++ show (map (first addrToBase58) rs)
             , "  Fee         : " ++ show fee
+            , "  Rcpt. Fee   : " ++ show rcptFee
             , "  Minconf     : " ++ show minconf
             , "  Sign        : " ++ show sign
             ]
-        (tid, confidence, before) <- runDB $ do
+        (txid, confidence, before) <- runDB $ do
             -- Get the number of elements before creating the new transaction
             (_, before, _)  <- getBloomFilter
-            (tid, confidence) <- createTx keyRingName name minconf rs fee sign
-            return (tid, confidence, before)
-        whenOnline $ do
-            (_, after, _) <- runDB getBloomFilter
-            -- Publish the new bloom filter to our peers only if it changed
-            when (after > before) updateNodeFilter
-            -- Publish the transaction to the network only when it is complete
-            when (confidence == TxPending) $ 
-                sendSPV . NodePublishTx =<< runDB (getTx tid)
-        return $ toJSON $ TxHashConfidenceRes tid confidence
+            (txid, confidence) <- createTx
+                keyRingName name minconf rs fee rcptFee sign
+            return (txid, confidence, before)
+        onlineAction before confidence txid
+        return $ toJSON $ TxHashConfidenceRes txid confidence
     ImportTx tx -> do
         $(logInfo) $ format $ unlines
             [ "PostTxsR ImportTx"
@@ -342,13 +338,7 @@ postTxsR keyRingName name action = case action of
             Entity ai _ <- getAccount keyRingName name
             (txid, confidence) <- importTx tx ai
             return (txid, confidence, before)
-        whenOnline $ do
-            (_, after, _) <- runDB getBloomFilter
-            -- Publish the new bloom filter to our peers only if it changed
-            when (after > before) updateNodeFilter
-            -- Publish the transaction to the network only wen it is complete
-            when (confidence == TxPending) $ 
-                sendSPV . NodePublishTx =<< runDB (getTx txid)
+        onlineAction before confidence txid
         return $ toJSON $ TxHashConfidenceRes txid confidence
     SignTx initTxid -> do
         $(logInfo) $ format $ unlines
@@ -364,13 +354,7 @@ postTxsR keyRingName name action = case action of
             accE <- getAccount keyRingName name
             (txid, confidence) <- signKeyRingTx keyRing accE initTxid
             return (txid, confidence, before)
-        whenOnline $ do
-            (_, after, _) <- runDB getBloomFilter
-            -- Publish the new bloom filter to our peers only if it changed
-            when (after > before) updateNodeFilter
-            -- Publish the transaction to the network only wen it is complete
-            when (confidence == TxPending) $ 
-                sendSPV . NodePublishTx =<< runDB (getTx txid)
+        onlineAction before confidence txid
         return $ toJSON $ TxHashConfidenceRes txid confidence
     SignOfflineTx tx signData -> do
         $(logInfo) $ format $ unlines
@@ -386,6 +370,14 @@ postTxsR keyRingName name action = case action of
         let toDat CoinSignData{..} = (coinSignScriptOutput, coinSignOutPoint)
             complete = verifyStdTx signedTx $ map toDat signData
         return $ toJSON $ TxCompleteRes signedTx complete
+  where
+    onlineAction before confidence txid = whenOnline $ do
+        (_, after, _) <- runDB getBloomFilter
+        -- Publish the new bloom filter to our peers only if it changed
+        when (after > before) updateNodeFilter
+        -- Publish the transaction to the network only wen it is complete
+        when (confidence == TxPending) $ 
+            sendSPV . NodePublishTx =<< runDB (getTx txid)
 
 getTxR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
        => KeyRingName -> AccountName -> TxHash -> Handler m Value
@@ -484,8 +476,8 @@ updateNodeFilter :: (MonadBaseControl IO m, MonadIO m) => Handler m ()
 updateNodeFilter = sendSPV . NodeBloomFilter . fst3 =<< runDB getBloomFilter
 
 adjustFCTime :: Timestamp -> Timestamp
-adjustFCTime ts = fromInteger $ max 0 $ (toInteger ts) - 86400 * 7
+adjustFCTime ts = fromInteger $ max 0 $ toInteger ts - 86400 * 7
 
 format :: String -> Text
-format str = pack $ concat [ "[ZeroMQ] ", str ]
+format str = pack $ "[ZeroMQ] " ++ str
 

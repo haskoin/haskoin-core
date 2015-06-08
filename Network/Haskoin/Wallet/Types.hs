@@ -70,7 +70,7 @@ import Data.Aeson
     , FromJSON
     , ToJSON
     , withObject
-    , (.=), (.:), (.:?)
+    , (.=), (.:), (.:?), (.!=)
     , object
     , parseJSON
     , toJSON
@@ -197,6 +197,7 @@ data TxAction
     = CreateTx 
         { accTxActionRecipients :: ![(Address, Word64)] 
         , accTxActionFee        :: !Word64
+        , accTxActionRcptFee    :: !Bool
         , accTxActionMinConf    :: !Word32
         , accTxActionSign       :: !Bool
         }
@@ -210,7 +211,50 @@ data TxAction
         }
     deriving (Eq, Show)
 
-$(deriveJSON (dropSumLabels 0 11 "type" ) ''TxAction)
+instance ToJSON TxAction where
+    toJSON (CreateTx recipients fee rcptFee minConf sign) = object $
+        [ "type" .= ("createtx" :: Text)
+        , "recipients" .= recipients
+        , "fee"  .= fee
+        , "minconf" .= minConf
+        , "sign" .= sign
+        ] ++ [ "rcptfee" .= True | rcptFee ]
+    toJSON (ImportTx tx) = object
+        [ "type" .= ("importtx" :: Text)
+        , "tx" .= tx
+        ]
+    toJSON (SignTx txid) = object
+        [ "type" .= ("signtx" :: Text)
+        , "hash" .= txid
+        ]
+    toJSON (SignOfflineTx tx signData) = object
+        [ "type" .= ("signofflinetx" :: Text)
+        , "tx" .= tx
+        , "coinsigndata" .= signData
+        ]
+
+instance FromJSON TxAction where
+    parseJSON = withObject "TxAction" $ \o -> do
+        t <- o .: "type"
+        case (t :: Text) of
+            "createtx" -> do
+                recipients <- o .: "recipients"
+                fee <- o .: "fee"
+                minConf <- o .: "minconf"
+                sign <- o .: "sign"
+                rcptFee <- o .:? "rcptfee" .!= False
+                return (CreateTx recipients fee rcptFee minConf sign)
+            "importtx" -> do
+                tx <- o .: "tx"
+                return (ImportTx tx)
+            "signtx" -> do
+                txid <- o .: "hash"
+                return (SignTx txid)
+            "signofflinetx" -> do
+                tx <- o .: "tx"
+                signData <- o .: "coinsigndata"
+                return (SignOfflineTx tx signData)
+            _ -> mzero
 
 data AddressLabel = AddressLabel { addressLabelLabel :: !Text }
     deriving (Eq, Show, Read)

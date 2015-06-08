@@ -459,7 +459,7 @@ postNodeR action = do
         ]
     whenOnline $ do
         runDB resetRescan
-        sendSPV $ NodeStartDownload $ Left t
+        sendSPV $ NodeStartMerkleDownload $ Left t
     return $ toJSON $ RescanRes t
   where
     err = liftIO . throwIO $ WalletException

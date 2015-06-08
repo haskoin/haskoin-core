@@ -108,7 +108,7 @@ runSPVServer cfg =
                 bloom <- liftM fst3 $ runSqlPersistMPool getBloomFilter pool
 
                 -- Launch SPV node
-                runNode $ withSpvNode $ \eChan rChan -> do
+                runNode $ withNode $ \eChan rChan -> do
                     -- Connect to remote nodes
                     liftIO . atomically $ writeTBMChan rChan $
                         NodeConnectPeers $ map (uncurry RemoteHost) nodes
@@ -117,7 +117,7 @@ runSPVServer cfg =
                         NodeBloomFilter bloom
                     -- Start the merkle block download process
                     liftIO . atomically $ writeTBMChan rChan $
-                        NodeStartDownload dwnE
+                        NodeStartMerkleDownload dwnE
 
                     -- Listen to SPV events and update the wallet database
                     let runEvents = sourceTBMChan eChan $$ 
@@ -133,7 +133,7 @@ processEvents :: (MonadLogger m, MonadIO m, Functor m)
               -> Sink WalletMessage m ()
 processEvents rChan pool = awaitForever $ \req -> lift $ case req of
     WalletTx tx -> void (processTxs [tx])
-    WalletMerkle action dmbs -> do
+    WalletMerkles action dmbs -> do
         -- Save the old best block before importing
         oldBestE <- liftIO $ tryJust f $ runSqlPersistMPool getBestBlock pool
         oldBest <- case oldBestE of
@@ -178,7 +178,7 @@ processEvents rChan pool = awaitForever $ \req -> lift $ case req of
                     -- Send a message to the node to continue the download from
                     -- the requested block hash
                     liftIO . atomically $ writeTBMChan rChan $ 
-                        NodeStartDownload $ Right bh
+                        NodeStartMerkleDownload $ Right bh
                 Left err -> $(logError) $ pack $ unwords
                     [ "processEvents: An error occured:", err]
 

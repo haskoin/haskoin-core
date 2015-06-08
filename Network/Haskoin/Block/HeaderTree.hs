@@ -193,7 +193,7 @@ commitAction action = do
         BestChain nodes -> unless (null nodes) $ do
             updateChildren $ currentHead:nodes
             setBestBlockHeader $ last nodes
-        ChainReorg s os ns -> unless (null ns) $ do
+        ChainReorg s _ ns -> unless (null ns) $ do
             updateChildren $ s:ns
             setBestBlockHeader $ last ns
         SideChain _ -> return ()

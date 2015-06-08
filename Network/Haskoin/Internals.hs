@@ -21,8 +21,8 @@ module Network.Haskoin.Internals
 , module Network.Haskoin.Node.Chan
 , module Network.Haskoin.Node.Peer
 , module Network.Haskoin.Node.PeerManager
-, module Network.Haskoin.Node.SpvBlockChain
-, module Network.Haskoin.Node.SpvMempool
+, module Network.Haskoin.Node.BlockChain
+, module Network.Haskoin.Node.Mempool
 , module Network.Haskoin.Script.Types 
 , module Network.Haskoin.Script.Parser 
 , module Network.Haskoin.Script.SigHash
@@ -60,8 +60,8 @@ import Network.Haskoin.Node.Bloom
 import Network.Haskoin.Node.Chan
 import Network.Haskoin.Node.Peer
 import Network.Haskoin.Node.PeerManager
-import Network.Haskoin.Node.SpvBlockChain
-import Network.Haskoin.Node.SpvMempool
+import Network.Haskoin.Node.BlockChain
+import Network.Haskoin.Node.Mempool
 import Network.Haskoin.Script.Types 
 import Network.Haskoin.Script.Parser 
 import Network.Haskoin.Script.SigHash

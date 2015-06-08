@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
-module Network.Haskoin.Node.SpvMempool
-( withSpvNode
-, withSpvMempool
+module Network.Haskoin.Node.Mempool
+( withNode
+, withMempool
 ) where
 
 import Control.Monad ( unless, forM_, liftM)
@@ -23,20 +23,20 @@ import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Transaction
 import Network.Haskoin.Node.Chan
-import Network.Haskoin.Node.SpvBlockChain
+import Network.Haskoin.Node.BlockChain
 
--- | Start an SPV node. This function will return a channel for receiving
+-- | Start an bitcoin node. This function will return a channel for receiving
 -- node events and a channel for sending requests to the node.
-withSpvNode :: (HeaderTree m, MonadLogger m, MonadIO m, MonadBaseControl IO m)
-            => (TBMChan WalletMessage -> TBMChan NodeRequest -> m ())
-            -> m ()
-withSpvNode f = do
+withNode :: (HeaderTree m, MonadLogger m, MonadIO m, MonadBaseControl IO m)
+         => (TBMChan WalletMessage -> TBMChan NodeRequest -> m ())
+         -> m ()
+withNode f = do
     wletChan <- liftIO $ atomically $ newTBMChan 10000
     reqChan  <- liftIO $ atomically $ newTBMChan 10000
-    withSpvMempool wletChan $ \_ bkchChan mngrChan -> do
+    withMempool wletChan $ \_ bkchChan mngrChan -> do
         -- Listen for and process wallet requests
         let run = do
-            $(logDebug) $ formatWallet "SPV user request thread started"
+            $(logDebug) $ formatWallet "User request thread started"
             sourceTBMChan reqChan $$ (go bkchChan mngrChan)
         withAsync run $ \a -> link a >> f wletChan reqChan
   where
@@ -44,9 +44,14 @@ withSpvNode f = do
         NodeBloomFilter bloom -> do
             $(logDebug) $ formatWallet "Setting a new bloom filter"
             liftIO $ atomically $ writeTBMChan bkchChan $ SetBloomFilter bloom
-        NodeStartDownload valE -> do
+        NodeStartMerkleDownload valE -> do
             $(logDebug) $ formatWallet "Requesting a merkle block download"
-            liftIO $ atomically $ writeTBMChan bkchChan $ StartDownload valE
+            liftIO $ atomically $ 
+                writeTBMChan bkchChan $ StartMerkleDownload valE
+        NodeStartBlockDownload valE -> do
+            $(logDebug) $ formatWallet "Requesting a block download"
+            liftIO $ atomically $ 
+                writeTBMChan bkchChan $ StartBlockDownload valE
         NodeConnectPeers peers -> do
             $(logDebug) $ formatWallet "Advertising new peers to connect to"
             liftIO $ atomically $ writeTBMChan mngrChan $ AddRemoteHosts peers
@@ -69,8 +74,8 @@ data MempoolSession = MempoolSession
       -- Flag that tells us if the node is synced or not. As long as the node
       -- is not synced, we hold solo transactions in a bufer.
     , nodeSynced :: !Bool
-      -- Transactions that have not been sent in a merkle block.
-      -- We stall solo transactions until the merkle blocks are synced.
+      -- Transactions that have not been sent in a block or merkle block.
+      -- We stall solo transactions until the node is synced.
     , txBuffer :: ![Tx]
       -- Inflight transaction requests for each peer. We are waiting for
       -- the GetData response. We stall merkle blocks if there are pending
@@ -82,12 +87,12 @@ data MempoolSession = MempoolSession
     , merkleBuffer :: ![(BlockChainAction, [DecodedMerkleBlock])]
     }
 
--- | Start the SPV mempool. The job of this actor is to request tx downloads
+-- | Start the mempool. The job of this actor is to request tx downloads
 -- when receiving tx invs. It also has to buffer solo transactions until
 -- the chain is synced up before sending them to the wallet. It will also
 -- suspend merkle block delivery while there are inflight transaction downloads.
 -- This is to prevent race conditions where the wallet could miss confirmations.
-withSpvMempool 
+withMempool 
     :: (HeaderTree m, MonadLogger m, MonadIO m, MonadBaseControl IO m) 
     => TBMChan WalletMessage
     -> (    TBMChan MempoolMessage 
@@ -96,9 +101,9 @@ withSpvMempool
          -> m ()
        )
     -> m ()
-withSpvMempool wletChan f = do
+withMempool wletChan f = do
     mempChan <- liftIO $ atomically $ newTBMChan 10000
-    withSpvBlockChain mempChan $ \bkchChan mngrChan -> do
+    withBlockChain mempChan $ \bkchChan mngrChan -> do
         let nodeSynced   = False
             txBuffer     = []
             inflightTxs  = []
@@ -106,7 +111,7 @@ withSpvMempool wletChan f = do
             session      = MempoolSession{..}
             -- Run the main mempool message processing loop
             run = do
-                $(logDebug) $ format "SPV mempool thread started"
+                $(logDebug) $ format "Mempool thread started"
                 sourceTBMChan mempChan $$ processMempoolMessage
 
         withAsync (evalStateT run session) $ \a ->
@@ -115,12 +120,12 @@ withSpvMempool wletChan f = do
 processMempoolMessage :: (MonadLogger m, MonadIO m) 
                       => Sink MempoolMessage (StateT MempoolSession m) ()
 processMempoolMessage = awaitForever $ \req -> lift $ case req of
-    MempoolTxInv pid tids     -> processTxInv pid tids
-    MempoolTx tx              -> processTx tx
-    MempoolMerkle action dmbs -> processMerkle action dmbs
-    MempoolSynced             -> processSynced
-    MempoolStartDownload valE -> processStartDownload valE 
-    _ -> return () -- Ignore Blocks
+    MempoolTxInv pid tids       -> processTxInv pid tids
+    MempoolTx tx                -> processTx tx
+    MempoolMerkles action dmbs  -> processMerkles action dmbs
+    MempoolBlocks action blocks -> processBlocks action blocks
+    MempoolSynced               -> processSynced
+    MempoolStartDownload valE   -> processStartDownload valE 
 
 -- | Decide if we want to download a transaction or not. We store inflight
 -- transactions.
@@ -178,17 +183,17 @@ processTx tx = do
     -- Try to import pending merkles
     merkles <- gets merkleBuffer
     modify $ \s -> s{ merkleBuffer = [] }
-    forM_ merkles $ \(action, dmbs) -> processMerkle action dmbs
+    forM_ merkles $ \(action, dmbs) -> processMerkles action dmbs
   where
     tid = txHash tx
 
 -- | Import merkle blocks into the wallet if there are no infligh transactions.
 -- Buffer the transaction otherwise.
-processMerkle :: (MonadIO m, MonadLogger m)
-              => BlockChainAction 
-              -> [DecodedMerkleBlock] 
-              -> StateT MempoolSession m ()
-processMerkle action dmbs = gets inflightTxs >>= \inflight -> if null inflight
+processMerkles :: (MonadIO m, MonadLogger m)
+               => BlockChainAction 
+               -> [DecodedMerkleBlock] 
+               -> StateT MempoolSession m ()
+processMerkles action dmbs = gets inflightTxs >>= \inflight -> if null inflight
     -- No infligh transactions. We can send the merkles to the wallet
     then do
         -- Check if we have solo transactions that belong to these merkle blocks
@@ -203,28 +208,9 @@ processMerkle action dmbs = gets inflightTxs >>= \inflight -> if null inflight
             ]
             
         -- Send the merkles to the wallet
-        sendWallet $ WalletMerkle action newDmbs
+        sendWallet $ WalletMerkles action newDmbs
         -- Some logging
-        case action of
-            BestChain nodes -> $(logInfo) $ format $ unwords
-                [ "Best merkle chain height"
-                , show $ nodeHeaderHeight $ last nodes
-                , "(", encodeBlockHashLE $ nodeBlockHash $ last nodes, ")"
-                ]
-            ChainReorg _ o n -> $(logInfo) $ format $ unlines $
-                  [ "Merkle chain reorg."
-                  , "Orphaned blocks:" 
-                  ]
-                ++ map (("  " ++) . encodeBlockHashLE . nodeBlockHash) o
-                ++ [ "New blocks:" ]
-                ++ map (("  " ++) . encodeBlockHashLE . nodeBlockHash) n
-                ++ [ unwords [ "Best merkle chain height"
-                             , show $ nodeHeaderHeight $ last n
-                             ]
-                   ]
-            SideChain n -> $(logWarn) $ format $ unlines $
-                "Received a merkle side chain:"
-                : map (("  " ++) . encodeBlockHashLE . nodeBlockHash) n
+        logBlockChainAction action
     -- We stall merkle block imports when transactions are inflight. This
     -- is to prevent this race condition where tx1 would miss it's
     -- confirmation:
@@ -240,17 +226,54 @@ processMerkle action dmbs = gets inflightTxs >>= \inflight -> if null inflight
         modify $ \s -> s{ merkleBuffer = merkleBuffer s ++ [(action, dmbs)] }
   where
     merge acc txs [] = (txs, reverse acc)
-    merge acc txs (d:ds) = do
+    merge acc txs (d:ds) = 
         let (xs, rs) = partition ((`elem` expectedTxs d) . txHash) txs
-            d' = d{ merkleTxs = nub $ merkleTxs d ++ xs }
-        merge (d':acc) rs ds
+            d'       = d{ merkleTxs = nub $ merkleTxs d ++ xs }
+        in  merge (d':acc) rs ds
+
+-- | Import merkle blocks into the wallet if there are no infligh transactions.
+-- Buffer the transaction otherwise.
+processBlocks :: (MonadIO m, MonadLogger m)
+              => BlockChainAction 
+              -> [Block] 
+              -> StateT MempoolSession m ()
+processBlocks action blocks = do
+    $(logDebug) $ format $ unwords
+        [ "Sending", show $ length blocks, "blocks to the wallet." ]
+    -- Send the merkles to the wallet
+    sendWallet $ WalletBlocks action blocks
+    -- some logging
+    logBlockChainAction action
+
+logBlockChainAction :: (MonadIO m, MonadLogger m)
+                   => BlockChainAction -> StateT MempoolSession m ()
+logBlockChainAction action = case action of
+    BestChain nodes -> $(logInfo) $ format $ unwords
+        [ "Best chain height"
+        , show $ nodeHeaderHeight $ last nodes
+        , "(", encodeBlockHashLE $ nodeBlockHash $ last nodes, ")"
+        ]
+    ChainReorg _ o n -> $(logInfo) $ format $ unlines $
+           [ "Chain reorg."
+           , "Orphaned blocks:" 
+           ]
+        ++ map (("  " ++) . encodeBlockHashLE . nodeBlockHash) o
+        ++ [ "New blocks:" ]
+        ++ map (("  " ++) . encodeBlockHashLE . nodeBlockHash) n
+        ++ [ unwords [ "Best merkle chain height"
+                     , show $ nodeHeaderHeight $ last n
+                     ]
+           ]
+    SideChain n -> $(logWarn) $ format $ unlines $
+        "Side chain:" : 
+        map (("  " ++) . encodeBlockHashLE . nodeBlockHash) n
 
 -- When the node is synced, the blockchain notifies us. We can then safely send
 -- solo transactions to the wallet.
 processSynced :: (MonadLogger m, MonadIO m) => StateT MempoolSession m ()
 processSynced = do
     txs <- gets txBuffer
-    $(logInfo) $ format "Merkle blocks are in sync with the block headers."
+    $(logInfo) $ format "Blocks are in sync with the block headers."
     unless (null txs) $ do
         $(logInfo) $ format $ unwords
             [ "Sending", show $ length txs, "txs to the wallet." ]

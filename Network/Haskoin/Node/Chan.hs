@@ -12,7 +12,8 @@ module Network.Haskoin.Node.Chan
 , JobPriority
 , Job(..)
 , JobId
-, DwnId
+, DwnMerkleId
+, DwnBlockId
 , RemoteHost(..) 
 , showRemoteHost
 , DecodedMerkleBlock(..)
@@ -35,7 +36,8 @@ import Network.Haskoin.Crypto
 type PeerId = Unique
 type JobPriority = Int
 type JobId = Unique
-type DwnId = Unique
+type DwnMerkleId = Unique
+type DwnBlockId = Unique
 
 data Job = Job
     { jobId       :: !JobId
@@ -75,8 +77,8 @@ data PeerJob
     | JobSendTx !Tx
     | JobHeaderSync !BlockLocator !(Maybe BlockHash)
     | JobDwnTxs ![TxHash]
-    | JobDwnBlocks ![BlockHash]
-    | JobDwnMerkles !DwnId ![BlockHash]
+    | JobDwnBlocks !DwnBlockId ![BlockHash]
+    | JobDwnMerkles !DwnMerkleId ![BlockHash]
 
 showJob :: PeerJob -> String
 showJob pJob = case pJob of
@@ -84,7 +86,7 @@ showJob pJob = case pJob of
     JobSendTx _          -> "JobSendTx"
     JobHeaderSync _ _    -> "JobHeaderSync"
     JobDwnTxs _          -> "JobDwnTxs"
-    JobDwnBlocks _       -> "JobDwnBlocks"
+    JobDwnBlocks _ _     -> "JobDwnBlocks"
     JobDwnMerkles _ _    -> "JobDwnMerkles"
 
 -- | Messages handled by a Peer actor
@@ -118,9 +120,10 @@ data BlockChainMessage
     = BlockTickle !PeerId !BlockHash
     | BlockInv !PeerId ![BlockHash]
     | IncHeaders PeerId ![BlockHeader]
-    | IncBlock !Block
-    | IncMerkleBlocks !DwnId ![DecodedMerkleBlock]
-    | StartDownload !(Either Timestamp BlockHash)
+    | IncBlocks !DwnBlockId ![Block]
+    | IncMerkleBlocks !DwnMerkleId ![DecodedMerkleBlock]
+    | StartMerkleDownload !(Either Timestamp BlockHash)
+    | StartBlockDownload !(Either Timestamp BlockHash)
     | SetBloomFilter !BloomFilter
     | NetworkHeight !BlockHeight
     | BkchHeartbeat
@@ -129,22 +132,23 @@ data BlockChainMessage
 data MempoolMessage
     = MempoolTxInv !PeerId ![TxHash]
     | MempoolTx !Tx
-    | MempoolBlock !BlockChainAction !Block
-    | MempoolMerkle !BlockChainAction ![DecodedMerkleBlock]
+    | MempoolMerkles !BlockChainAction ![DecodedMerkleBlock]
+    | MempoolBlocks !BlockChainAction ![Block]
     | MempoolStartDownload !(Either Timestamp BlockHash)
     | MempoolSynced
 
 -- | Node events sent to the wallet
 data WalletMessage
     = WalletTx !Tx
-    | WalletBlock !BlockChainAction !Block
-    | WalletMerkle !BlockChainAction ![DecodedMerkleBlock]
+    | WalletBlocks !BlockChainAction ![Block]
+    | WalletMerkles !BlockChainAction ![DecodedMerkleBlock]
 
 -- | Requests from the wallet to the node
 data NodeRequest
     = NodeBloomFilter !BloomFilter
     | NodePublishTx !Tx
-    | NodeStartDownload !(Either Timestamp BlockHash)
+    | NodeStartMerkleDownload !(Either Timestamp BlockHash)
+    | NodeStartBlockDownload !(Either Timestamp BlockHash)
     | NodeConnectPeers ![RemoteHost]
 
 -- | Describes the behavior of a remote peer

@@ -65,8 +65,8 @@ library
                    Network.Haskoin.Node.Chan
                    Network.Haskoin.Node.Peer
                    Network.Haskoin.Node.PeerManager
-                   Network.Haskoin.Node.SpvBlockChain
-                   Network.Haskoin.Node.SpvMempool
+                   Network.Haskoin.Node.BlockChain
+                   Network.Haskoin.Node.Mempool
                    Network.Haskoin.Script.Types 
                    Network.Haskoin.Script.Parser 
                    Network.Haskoin.Script.SigHash

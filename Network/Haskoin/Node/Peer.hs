@@ -71,8 +71,10 @@ data PeerSession = PeerSession
     , inflightMerkle :: !(Maybe DecodedMerkleBlock)
     -- Buffer merkle blocks of a job and send them when the job is done
     , merkleBuffer   :: ![(BlockHash, DecodedMerkleBlock)]
-    -- Save the order in which we must send the merkle blocks to the blockchain
-    , merkleOrder    :: ![BlockHash]
+    -- Buffer blocks of a job and send them when the job is done
+    , blockBuffer    :: ![(BlockHash, Block)]
+    -- Save the order in which we must send the blocks to the blockchain
+    , blockOrder     :: ![BlockHash]
     } 
 
 -- | Create the session data for a new Peer given a Peer type and a manager
@@ -90,12 +92,13 @@ newPeerSession mngrChan bkchChan mempChan = do
     -- Initialize the channel to send messages to the remote host
     msgsChan <- liftIO $ atomically $ newTBMChan 10000
     $(logDebug) $ format peerId "Creating a new peer session"
-    return $ PeerSession{..}
+    return PeerSession{..}
   where
     peerVersion     = Nothing
     inflightMerkle  = Nothing
     merkleBuffer    = []
-    merkleOrder     = []
+    blockBuffer     = []
+    blockOrder      = []
     currentJob      = Nothing
 
 -- | Start a new Peer application. This function is meant to be used with
@@ -149,7 +152,9 @@ processPeerMessage = await >>= \m -> do
                 currJobM <- gets currentJob
                 when (isJust currJobM) $ $(logError) $ format pid 
                     "Scheduling error. Peer received a job while busy."
-                modify $ \s -> s{ currentJob = Just job }
+                modify $ \s -> s{ currentJob = Just job 
+                                , blockOrder = [] -- Make sure this is empty
+                                }
                 processJob
             processPeerMessage
         Just RetryJob -> do
@@ -186,17 +191,26 @@ processJob = do
                 $(logDebug) $ format pid "Processing DwnTxs job"
                 let vs = map (InvVector InvTx . fromIntegral) tids
                 sendMessage $ MGetData $ GetData vs
-        Just (JobDwnBlocks bids) -> do
-            if null bids then jobDone else do
-                $(logDebug) $ format pid $ unwords $
-                    "Processing DwnBlocks job" : case bids of
-                        (s:_:_) -> [ "Start:", encodeBlockHashLE s
-                                   , "End:"  , encodeBlockHashLE $ last bids
-                                   ]
-                        (s:_)   -> [ "Hash:", encodeBlockHashLE s ]
-                        _       -> []
-                let vs = map (InvVector InvBlock . fromIntegral) bids
-                sendMessage $ MGetData $ GetData vs
+        Just (JobDwnBlocks did bids) -> do
+            $(logDebug) $ format pid $ unwords $
+                "Processing DwnBlocks job" : case bids of
+                    (s:_:_) -> [ "Start:", encodeBlockHashLE s
+                               , "End:"  , encodeBlockHashLE $ last bids
+                               ]
+                    (s:_)   -> [ "Hash:", encodeBlockHashLE s ]
+                    _       -> []
+            if null bids 
+                then do 
+                    sendBlockChain $ IncBlocks did []
+                    jobDone 
+                else do
+                    order <- gets blockOrder
+                    -- Update the order if it is empty only. Otherwise, a retry
+                    -- is triggered and we want to save the complete order
+                    -- before the retry.
+                    when (null order) $ modify $ \s -> s{ blockOrder = bids }
+                    let vs = map (InvVector InvBlock . fromIntegral) bids
+                    sendMessage $ MGetData $ GetData vs
         Just (JobDwnMerkles did bids) -> do
             $(logDebug) $ format pid $ unwords $
                 "Processing DwnMerkles job" : case bids of
@@ -210,11 +224,11 @@ processJob = do
                     sendBlockChain $ IncMerkleBlocks did []
                     jobDone 
                 else do
-                    order <- gets merkleOrder
+                    order <- gets blockOrder
                     -- Update the order if it is empty only. Otherwise, a retry
                     -- is triggered and we want to save the complete order
                     -- before the retry.
-                    when (null order) $ modify $ \s -> s{ merkleOrder = bids }
+                    when (null order) $ modify $ \s -> s{ blockOrder = bids }
                     let vs = map (InvVector InvMerkleBlock . fromIntegral) bids
                     sendMessage $ MGetData $ GetData vs
                     -- Send a ping to have a recognizable end message for
@@ -234,7 +248,9 @@ jobDone = do
                 , "of type", showJob pJob
                 ]
             sendManager $ PeerJobDone pid jid
-            modify $ \s -> s{ currentJob = Nothing }
+            modify $ \s -> s{ currentJob = Nothing 
+                            , blockOrder = [] -- Make sure this is empty
+                            }
         _ -> return ()
 
 -- | Process incomming messages from the remote peer
@@ -370,13 +386,66 @@ processVerAck = do
     pid <- gets peerId
     $(logInfo) $ format pid "Received a version ack."
 
+processBlock :: (MonadLogger m, MonadIO m) => Block -> StateT PeerSession m ()
+processBlock block = do
+    pid <- gets peerId
+    -- Check that we are expecting this block. Otherwise, the remote peer is
+    -- misbehaving and sending us unsolicited blocks.
+    gets currentJob >>= \jobM -> case jobM of
+        Just job@(Job _ _ _ (JobDwnBlocks did bids)) ->
+            if bid `elem` bids
+                then do
+                    $(logDebug) $ format pid $ unwords
+                        [ "Received block", encodeBlockHashLE bid ]
+                    -- Add the block to the buffer
+                    buffer <- liftM ((bid, block) :) $ gets blockBuffer
+                    case delete bid bids of
+                        -- We are done with this block job
+                        [] -> do
+                            order <- gets blockOrder
+                            -- Reorder the buffer to match the order of the job
+                            let g (a,_) b = a == b
+                                orderedBuff = catMaybes $ 
+                                    matchTemplate buffer order g
+                            -- This should not happen in normal operation.
+                            when (length orderedBuff /= length buffer) $
+                                $(logError) $ format pid $ 
+                                    "Block buffer of different length"
+                            -- Send the blocks to the blockchain
+                            sendBlockChain $ IncBlocks did $ map snd orderedBuff
+                            modify $ \s -> s{ blockBuffer = [] 
+                                            , blockOrder  = []
+                                            }
+                            jobDone
+                        bids' -> do
+                            $(logDebug) $ format pid $ unwords
+                                [ "Expecting", show $ length bids'
+                                , "more blocks."
+                                ]
+                            -- Save the new job and block buffer
+                            let newJob = 
+                                    job{ jobPayload = JobDwnBlocks did bids' }
+                            modify $ \s -> s{ currentJob  = Just newJob 
+                                            , blockBuffer = buffer
+                                            }
+                else $(logDebug) $ format pid $ unwords
+                    [ "Received an unsolicited block"
+                    , encodeBlockHashLE bid
+                    ]
+        _ -> $(logDebug) $ format pid $ unwords
+            [ "Received an unsolicited block"
+            , encodeBlockHashLE bid
+            ]
+  where
+    bid = headerHash $ blockHeader block
+
 -- | Process a MerkleBlock sent from the remote host
 processMerkleBlock :: (MonadLogger m, MonadIO m) 
                    => MerkleBlock -> StateT PeerSession m ()
 processMerkleBlock decodedMerkle@(MerkleBlock bh ntx hs fs) = do
     pid <- gets peerId
     -- Check that we are expecting this merkle bock. Otherwise, the remote
-    -- peer is misbehaving by sending us unsolicited junk.
+    -- peer is misbehaving by sending us unsolicited merkle blocks.
     gets currentJob >>= \jobM -> case jobM of
         Just (Job _ _ _ (JobDwnMerkles _ bids)) ->
             if bid `elem` bids
@@ -458,22 +527,6 @@ processHeaders (Headers hs) = do
         Just (JobHeaderSync _ _) -> jobDone
         _ -> return ()
 
-processBlock :: (MonadLogger m, MonadIO m) => Block -> StateT PeerSession m ()
-processBlock block = do
-    pid <- gets peerId
-    $(logDebug) $ format pid $ unwords
-        [ "Received block", encodeBlockHashLE bid ]
-    sendBlockChain $ IncBlock block
-    -- Check if the block is part of a job
-    gets currentJob >>= \jobM -> case jobM of
-        Just job@(Job _ _ _(JobDwnBlocks hs)) -> case delete bid hs of
-            []  -> jobDone
-            hs' -> modify $ \s -> 
-                s{ currentJob = Just $ job{ jobPayload = JobDwnBlocks hs' } }
-        _ -> return ()
-  where
-    bid = headerHash $ blockHeader block
-
 -- | When the download of transactions related to a merkle block is finished,
 -- this function is called to buffer the merkle block and clean up the data.
 endMerkleBlock :: (MonadLogger m, MonadIO m) 
@@ -494,14 +547,18 @@ endMerkleBlock dmb@(DecodedMerkleBlock mb _ match txs) = do
             case delete bid bids of
                 -- We are done with this merkle job
                 [] -> do
-                    order <- gets merkleOrder
+                    order <- gets blockOrder
                     -- Reorder the buffer to match the order of the job
                     let g (a,_) b = a == b
                         orderedBuff = catMaybes $ matchTemplate buffer order g
-                    -- Reverse the buffer due to how we built it
+                    -- This should not happen in normal operation.
+                    when (length orderedBuff /= length buffer) $
+                        $(logError) $ format pid $
+                            "Block buffer of different length"
+                    -- Send the merkles to the blockchain
                     sendBlockChain $ IncMerkleBlocks did $ map snd orderedBuff
                     modify $ \s -> s{ merkleBuffer = [] 
-                                    , merkleOrder  = []
+                                    , blockOrder   = []
                                     }
                     jobDone
                 -- We have more merkles to download in this job

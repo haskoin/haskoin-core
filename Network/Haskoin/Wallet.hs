@@ -6,98 +6,8 @@
 -}
 module Network.Haskoin.Wallet
 ( 
--- *Wallet Commands
-  Wallet(..)
-, WalletName
-, initWalletDB
-, newWallet
-, getWallet
-, walletList
-, WalletException(..)
-
--- *Account Commands
-, Account(..)
-, AccountName
-, getAccount
-, newAccount
-, newAccountMultisig
-, newAccountRead
-, newAccountReadMultisig
-, addAccountKeys
-, accountList
-, accountPrvKey
-, isMSAccount
-
--- *Address Commands
-, Balance(..)
-, BalanceAddress(..)
-, LabeledAddress(..)
-, RecipientAddress(..)
-, getAddress
-, addressList
-, addressPage
-, unusedAddrs
-, unlabeledAddrs
-, unusedAddrsGeneric
-, setAddrLabel
-, addLookAhead
-, addressPrvKey
-, toPaymentAddr
-, getBloomFilter
-
--- *Balance Commands
-, addressBalance
-, accountBalance
-, spendableAccountBalance
-, unspentCoins
-, spendableCoins
-
--- *Tx Commands
-, AccTx(..) 
-, TxConfidence(..)
-, TxSource(..)
-, OfflineTxData(..)
-, getTx
-, getAccTx
-, txList
-, txPage
-, importTx
-, removeTx
-, createTx
-, signWalletTx
-, getOfflineTxData
-, signOfflineTxData
-, getProposition
-, isTxInWallet
-, firstKeyTime
-, resetRescan
-
--- *Block Commands
-, importBlocks
-
--- *Request Types
-, WalletRequest(..)
-, PagedResult(..)
-, NewWallet(..)
-, NewAccount(..)
-, AccTxAction(..)
-, AddressData(..)
-, NodeAction(..)
-
--- *Response Types
-, WalletResponse(..)
-, MnemonicRes(..)
-, AddressPageRes(..)
-, TxPageRes(..)
-, TxHashStatusRes(..)
-, TxStatusRes(..)
-, TxRes(..)
-, BalanceRes(..)
-, SpendableRes(..)
-, RescanRes(..)
-
 -- *Client
-, clientMain
+  clientMain
 , OutputFormat(..)
 , Config(..)
 
@@ -106,15 +16,109 @@ module Network.Haskoin.Wallet
 , stopSPVServer
 , SPVMode(..)
 
-) where
+-- *API JSON Types
+, JsonKeyRing(..)
+, JsonAccount(..)
+, JsonAddr(..)
+, JsonCoin(..)
+, JsonTx(..)
+, JsonAddrTx(..)
 
-import Network.Haskoin.Wallet.Root
-import Network.Haskoin.Wallet.Account
-import Network.Haskoin.Wallet.Address
-import Network.Haskoin.Wallet.Tx
-import Network.Haskoin.Wallet.Types
+-- *API Request Types
+, WalletRequest(..)
+, PageRequest(..)
+, validPageRequest
+, BalanceType(..)
+, NewKeyRing(..)
+, NewAccount(..)
+, SetAccountGap(..)
+, OfflineTxData(..)
+, CoinSignData(..)
+, TxAction(..)
+, AddressLabel(..)
+, NodeAction(..)
+, AccountType(..)
+, AddressType(..)
+, addrTypeIndex
+, TxType(..)
+, TxConfidence(..)
+, CoinStatus(..)
+
+-- *API Response Types
+, WalletResponse(..)
+, MnemonicRes(..)
+, TxHashConfidenceRes(..)
+, TxConfidenceRes(..)
+, TxCompleteRes(..)
+, PageRes(..)
+, RescanRes(..)
+, TxRes(..)
+, BalanceRes(..)
+
+-- *Database KeyRings
+, initWallet
+, newKeyRing
+, keyRingSource
+, getKeyRing
+
+-- *Database Accounts
+, accountSource
+, newAccount
+, newAccountMultisig
+, newAccountRead
+, newAccountReadMultisig
+, addAccountKeys
+, getAccount
+, isMultisigAccount
+, isReadAccount
+, completeMultisig
+
+-- *Database Addresses
+, getAddress
+, addressSourceAll
+, addressSource
+, addressPage
+, addressUnused
+, setAddrLabel
+, addressPrvKey
+, useAddress
+, setAccountGap
+, firstAddrTime
+, getPathRedeem
+, getPathPubKey
+
+-- *Database Bloom Filter
+, getBloomFilter
+
+-- *Database transactions
+, txPage
+, addrTxPage
+, getTx 
+, importTx
+, importNetTx
+, signKeyRingTx
+, createTx
+, signOfflineTx
+, getOfflineTxData
+
+-- *Database blocks
+, importMerkles
+, getBestBlock
+
+-- *Database coins and balances
+, spendableCoins
+, spendableCoinsSource
+, accountBalance
+, offlineBalance
+
+-- *Rescan
+, resetRescan
+) where
 
 import Network.Haskoin.Wallet.Client
 import Network.Haskoin.Wallet.Server
 import Network.Haskoin.Wallet.Settings
+import Network.Haskoin.Wallet.Types
+import Network.Haskoin.Wallet.KeyRing
+import Network.Haskoin.Wallet.Transaction
 

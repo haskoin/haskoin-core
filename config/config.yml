@@ -9,9 +9,6 @@ server-mode: "_env:SERVER_MODE:online"
 # False positive rate for the bloom filters. 
 bloom-false-positive: "_env:BLOOM_FALSE_POSITIVE:0.00001"
 
-# How many addresses you want to pre-generate for each account.
-address-gap: "_env:ADDRESS_GAP:10"
-
 # Database connection information.
 database:
     sqlite:
@@ -42,27 +39,26 @@ pid-file: "_env:PID_FILE:hw.pid"
 # work-dir. Can only be set as environment variable.
 config-file: "_env:CONFIG_FILE:config.yml"
 
-# Default wallet name
-wallet-name: "_env:WALLET_NAME:main"
+# Default keyring name
+keyring-name: "_env:KEYRING_NAME:main"
 
 # Default output size for commands such as page sizes.
 output-size: "_env:OUTPUT_SIZE:10"
 
-# Display internal addresses instead of external ones
-display-internal-addresses: "_env:DISPLAY_INTERNAL_ADDRESSES:false"
+# Type of addresses to display. Example: external, internal
+address-type: "_env:ADDRESS_TYPE:external"
 
-# Should the new transaction be signed by the wallet.
-sign-new-transactions: "_env:SIGN_NEW_TRANSACTIONS:true"
+# Use reverse paging for diplaying addresses and txs when set to True.
+reverse-paging: "_env:REVERSE_PAGING:false"
+
+# Sign new and imported transactions.
+sign-transactions: "_env:SIGN_TRANSACTIONS:true"
 
 # Default fee to pay (in satoshi) for every 1000 bytes.
 transaction-fee: "_env:TRANSACTION_FEE:10000"
 
 # Minimum number of confirmations for spending coins and displaying balances.
-minimum-confirmations: "_env:MINIMUM_CONFIRMATIONS:1"
-
-# When set to true, only sign transactions if they result in fully signed
-# transactions.
-sign-last-only: "_env:SIGN_LAST:false"
+minimum-confirmations: "_env:MINIMUM_CONFIRMATIONS:0"
 
 ### Passphrase to protect mnemonics
 # mnemonic-passphrase: "_env:HW_PASSPHRASE:"

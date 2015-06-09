@@ -32,6 +32,7 @@ import Yesod.Default.Config2 (applyEnvValue)
 
 import Network.Haskoin.Constants
 import Network.Haskoin.Wallet.Database
+import Network.Haskoin.Wallet.Types
 
 data SPVMode = SPVOnline | SPVOffline
     deriving (Eq, Show, Read)
@@ -42,78 +43,78 @@ data OutputFormat
     | OutputYAML
 
 data Config = Config
-    { configWallet      :: !T.Text
-    -- ^ Wallet to use in commands
-    , configCount       :: !Int
-    -- ^ Number of elements to return
-    , configMinConf     :: !Word32
+    { configKeyRing       :: !T.Text
+    -- ^ Keyring to use in commands
+    , configCount         :: !Int
+    -- ^ Output size of commands
+    , configMinConf       :: !Word32
     -- ^ Minimum number of confirmations 
-    , configSignNewTx   :: !Bool
-    -- ^ Sign new transactions
-    , configFee         :: !Word64
+    , configSignTx        :: !Bool
+    -- ^ Sign transactions
+    , configFee           :: !Word64
     -- ^ Fee to pay per 1000 bytes when creating new transactions
-    , configInternal    :: !Bool
+    , configRcptFee       :: !Bool
+    -- ^ Recipient pays fee (dangerous, no config file setting)
+    , configAddrType      :: !AddressType
     -- ^ Return internal instead of external addresses
-    , configFinalize    :: !Bool
-    -- ^ Only sign a tx if the result is complete (we are the last signer)
-    , configPass        :: !(Maybe T.Text)
-    -- ^ Passphrase to use when creating new wallets (bip39 mnemonic)
-    , configFormat      :: !OutputFormat
+    , configReversePaging :: !Bool
+    -- ^ Use reverse paging for displaying addresses and transactions
+    , configPass          :: !(Maybe T.Text)
+    -- ^ Passphrase to use when creating new keyrings (bip39 mnemonic)
+    , configFormat        :: !OutputFormat
     -- ^ How to format the command-line results
-    , configConnect     :: !String
+    , configConnect       :: !String
     -- ^ ZeroMQ socket to connect to (location of the server)
-    , configDetach      :: !Bool
+    , configDetach        :: !Bool
     -- ^ Detach server when launched from command-line
-    , configFile        :: !FilePath
+    , configFile          :: !FilePath
     -- ^ Configuration file
-    , configTestnet     :: !Bool
+    , configTestnet       :: !Bool
     -- ^ Use Testnet3 network
-    , configDir         :: !FilePath
+    , configDir           :: !FilePath
     -- ^ Working directory
-    , configBind        :: !String
+    , configBind          :: !String
     -- ^ Bind address for the zeromq socket
-    , configBTCNodes    :: ![(String, Int)]
+    , configBTCNodes      :: ![(String, Int)]
     -- ^ Trusted Bitcoin full nodes to connect to
-    , configMode        :: !SPVMode
+    , configMode          :: !SPVMode
     -- ^ Operation mode of the SPV node.
-    , configBloomFP     :: !Double
+    , configBloomFP       :: !Double
     -- ^ False positive rate for the bloom filter.
-    , configGap         :: !Int
-    -- ^ Number of gap addresses per account.
-    , configDatabase    :: !DatabaseConfType
+    , configDatabase      :: !DatabaseConfType
     -- ^ Database configuration
-    , configLogFile     :: !FilePath
+    , configLogFile       :: !FilePath
     -- ^ Log file
-    , configPidFile     :: !FilePath
+    , configPidFile       :: !FilePath
     -- ^ PID File
-    , configLogLevel    :: !LogLevel
+    , configLogLevel      :: !LogLevel
     } 
 
 instance FromJSON Config where
     parseJSON = withObject "Config" $ \o -> do
-        configWallet    <- o .: "wallet-name"
-        configCount     <- o .: "output-size"
-        configMinConf   <- o .: "minimum-confirmations"
-        configSignNewTx <- o .: "sign-new-transactions"
-        configFee       <- o .: "transaction-fee"
-        configInternal  <- o .: "display-internal-addresses"
-        configFinalize  <- o .: "sign-last-only"
-        configPass      <- o .:? "mnemonic-passphrase"
-        configFormat    <- f =<< o .: "display-format"
-        configConnect   <- o .: "connect-uri"          
-        configDetach    <- o .: "detach-server"
-        configFile      <- o .: "config-file"
-        configTestnet   <- o .: "use-testnet"
-        configDir       <- o .: "work-dir"
-        configBind      <- o .: "bind-socket"          
-        configBTCNodes  <- g =<< o .: "bitcoin-full-nodes"
-        configMode      <- h =<< o .: "server-mode"
-        configBloomFP   <- o .: "bloom-false-positive" 
-        configGap       <- o .: "address-gap"          
-        configDatabase  <- i =<< o .: "database" 
-        configLogFile   <- o .: "log-file"
-        configPidFile   <- o .: "pid-file"
-        configLogLevel  <- j =<< o .: "log-level"
+        let configRcptFee    = False
+        configKeyRing        <- o .: "keyring-name"
+        configCount          <- o .: "output-size"
+        configMinConf        <- o .: "minimum-confirmations"
+        configSignTx         <- o .: "sign-transactions"
+        configFee            <- o .: "transaction-fee"
+        configAddrType       <- k =<< o .: "address-type"
+        configReversePaging  <- o .: "reverse-paging"
+        configPass           <- o .:? "mnemonic-passphrase"
+        configFormat         <- f =<< o .: "display-format"
+        configConnect        <- o .: "connect-uri"          
+        configDetach         <- o .: "detach-server"
+        configFile           <- o .: "config-file"
+        configTestnet        <- o .: "use-testnet"
+        configDir            <- o .: "work-dir"
+        configBind           <- o .: "bind-socket"          
+        configBTCNodes       <- g =<< o .: "bitcoin-full-nodes"
+        configMode           <- h =<< o .: "server-mode"
+        configBloomFP        <- o .: "bloom-false-positive" 
+        configDatabase       <- i =<< o .: "database" 
+        configLogFile        <- o .: "log-file"
+        configPidFile        <- o .: "pid-file"
+        configLogLevel       <- j =<< o .: "log-level"
         return Config {..}
       where
         f format = case format of
@@ -134,6 +135,10 @@ instance FromJSON Config where
             String "warn"  -> return LevelWarn
             String "error" -> return LevelError
             _              -> mzero
+        k addrtype = case addrtype of
+            String "internal" -> return AddressInternal
+            String "external" -> return AddressExternal
+            _                 -> mzero
 
 -- | Raw bytes at compile time of @config/config.yml@
 configBS :: BS.ByteString

@@ -1,6 +1,6 @@
 KeyRing 
     name Text maxlen=200
-    master XPrvKey
+    master XPrvKey maxlen=200
     created UTCTime
     UniqueKeyRing name
     deriving Show
@@ -10,7 +10,7 @@ KeyRingAccount
     name Text maxlen=200
     keyRingName Text maxlen=200
     type AccountType maxlen=16
-    derivation HardPath Maybe
+    derivation HardPath Maybe maxlen=200
     keys [XPubKey]
     requiredSigs Int Maybe
     totalKeys Int Maybe
@@ -27,10 +27,10 @@ KeyRingAddr
     index KeyIndex
     type AddressType maxlen=16
     label Text
-    rootDerivation DerivPath Maybe
-    derivation SoftPath
+    rootDerivation DerivPath Maybe maxlen=200
+    derivation SoftPath maxlen=200
     redeem ScriptOutput Maybe
-    key PubKeyC Maybe
+    key PubKeyC Maybe maxlen=200
     inBalance Word64
     outBalance Word64
     inOfflineBalance Word64

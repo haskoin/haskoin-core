@@ -155,8 +155,6 @@ newAccountG accountName keyRingE accountType derivation keys m n = do
         Nothing -> liftIO . throwIO $ WalletException $ unwords
             [ "Account", unpack $ keyRingAccountName acc, "already exists" ]
 
-
-
 -- | Create a new account in the given KeyRing. Accounts within the same
 -- KeyRing must have unique names. To start using your account, you can
 -- call the function 'setLookAhead' to create a new address gap.

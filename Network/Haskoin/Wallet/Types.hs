@@ -57,7 +57,8 @@ import Data.Typeable (Typeable)
 import Data.Maybe (maybeToList)
 import Data.Char (toLower)
 import Data.Word (Word32, Word64)
-import Data.Text (Text, pack, unpack)
+import Data.Text (Text)
+import qualified Data.ByteString.Char8 as C (pack, unpack)
 import Data.Aeson.Types 
     ( Options(..)
     , SumEncoding(..)
@@ -518,58 +519,58 @@ instance Exception WalletException
 {- Persistent Instances -}
 
 instance PersistField XPrvKey where
-    toPersistValue = PersistText . pack . xPrvExport
-    fromPersistValue (PersistText t) = 
-        maybeToEither "Invalid Persistent XPrvKey" $ xPrvImport $ unpack t
+    toPersistValue = PersistByteString . C.pack . xPrvExport
+    fromPersistValue (PersistByteString bs) = 
+        maybeToEither "Invalid Persistent XPrvKey" $ xPrvImport $ C.unpack bs
     fromPersistValue _ = Left "Invalid Persistent XPrvKey"
 
 instance PersistFieldSql XPrvKey where
     sqlType _ = SqlString
 
 instance PersistField XPubKey where
-    toPersistValue = PersistText . pack . xPubExport
-    fromPersistValue (PersistText t) = 
-        maybeToEither "Invalid Persistent XPubKey" $ xPubImport $ unpack t
+    toPersistValue = PersistByteString . C.pack . xPubExport
+    fromPersistValue (PersistByteString bs) = 
+        maybeToEither "Invalid Persistent XPubKey" $ xPubImport $ C.unpack bs
     fromPersistValue _ = Left "Invalid Persistent XPubKey"
 
 instance PersistFieldSql XPubKey where
     sqlType _ = SqlString
 
 instance PersistField DerivPath where
-    toPersistValue = PersistText . pack . show
-    fromPersistValue (PersistText t) = 
-        maybeToEither "Invalid Persistent DerivPath" $ parsePath $ unpack t
+    toPersistValue = PersistByteString . C.pack . show
+    fromPersistValue (PersistByteString bs) = 
+        maybeToEither "Invalid Persistent DerivPath" $ parsePath $ C.unpack bs
     fromPersistValue _ = Left "Invalid Persistent DerivPath"
 
 instance PersistFieldSql DerivPath where
     sqlType _ = SqlString
 
 instance PersistField HardPath where
-    toPersistValue = PersistText . pack . show
-    fromPersistValue (PersistText t) = 
-        maybeToEither "Invalid Persistent HardPath" $ parseHard $ unpack t
+    toPersistValue = PersistByteString . C.pack . show
+    fromPersistValue (PersistByteString bs) = 
+        maybeToEither "Invalid Persistent HardPath" $ parseHard $ C.unpack bs
     fromPersistValue _ = Left "Invalid Persistent HardPath"
 
 instance PersistFieldSql HardPath where
     sqlType _ = SqlString
 
 instance PersistField SoftPath where
-    toPersistValue = PersistText . pack . show
-    fromPersistValue (PersistText t) = 
-        maybeToEither "Invalid Persistent SoftPath" $ parseSoft $ unpack t
+    toPersistValue = PersistByteString . C.pack . show
+    fromPersistValue (PersistByteString bs) = 
+        maybeToEither "Invalid Persistent SoftPath" $ parseSoft $ C.unpack bs
     fromPersistValue _ = Left "Invalid Persistent SoftPath"
 
 instance PersistFieldSql SoftPath where
     sqlType _ = SqlString
 
 instance PersistField AccountType where
-    toPersistValue ts = PersistText $ case ts of
+    toPersistValue ts = PersistByteString $ case ts of
         AccountRegular      -> "regular"
         AccountMultisig     -> "multisig"
         AccountRead         -> "read"
         AccountReadMultisig -> "readmultisig"
 
-    fromPersistValue (PersistText t) = case t of
+    fromPersistValue (PersistByteString t) = case t of
         "regular"      -> return AccountRegular
         "multisig"     -> return AccountMultisig
         "read"         -> return AccountRead
@@ -582,11 +583,11 @@ instance PersistFieldSql AccountType where
     sqlType _ = SqlString
 
 instance PersistField AddressType where
-    toPersistValue ts = PersistText $ case ts of
+    toPersistValue ts = PersistByteString $ case ts of
         AddressInternal -> "internal"
         AddressExternal -> "external"
 
-    fromPersistValue (PersistText t) = case t of
+    fromPersistValue (PersistByteString t) = case t of
         "internal" -> return AddressInternal
         "external" -> return AddressExternal
         _ -> Left "Invalid Persistent AddressType"
@@ -597,12 +598,12 @@ instance PersistFieldSql AddressType where
     sqlType _ = SqlString
 
 instance PersistField TxType where
-    toPersistValue ts = PersistText $ case ts of
+    toPersistValue ts = PersistByteString $ case ts of
         TxIncoming -> "incoming"
         TxOutgoing -> "outgoing"
         TxSelf     -> "self"
 
-    fromPersistValue (PersistText t) = case t of
+    fromPersistValue (PersistByteString t) = case t of
         "incoming" -> return TxIncoming
         "outgoing" -> return TxOutgoing
         "self"     -> return TxSelf
@@ -614,9 +615,9 @@ instance PersistFieldSql TxType where
     sqlType _ = SqlString
 
 instance PersistField Address where
-    toPersistValue = PersistText . pack . addrToBase58
-    fromPersistValue (PersistText a) =
-        maybeToEither "Invalid Persistent Address" . base58ToAddr $ unpack a
+    toPersistValue = PersistByteString . C.pack . addrToBase58
+    fromPersistValue (PersistByteString a) =
+        maybeToEither "Invalid Persistent Address" . base58ToAddr $ C.unpack a
     fromPersistValue _ = Left "Invalid Persistent Address"
 
 instance PersistFieldSql Address where
@@ -652,12 +653,12 @@ instance PersistFieldSql TxHash where
     sqlType _ = SqlString
 
 instance PersistField CoinStatus where
-    toPersistValue ts = PersistText $ case ts of
+    toPersistValue ts = PersistByteString $ case ts of
         CoinUnspent -> "unspent"
         CoinLocked  -> "locked"
         CoinSpent   -> "spent"
 
-    fromPersistValue (PersistText t) = case t of
+    fromPersistValue (PersistByteString t) = case t of
         "unspent" -> return CoinUnspent
         "locked"  -> return CoinLocked
         "spent"   -> return CoinSpent
@@ -668,14 +669,14 @@ instance PersistFieldSql CoinStatus where
     sqlType _ = SqlString
 
 instance PersistField TxConfidence where
-    toPersistValue tc = PersistText $ case tc of
+    toPersistValue tc = PersistByteString $ case tc of
         TxOffline  -> "offline"
         TxDead     -> "dead"
         TxPending  -> "pending"
         TxBuilding -> "building"
         TxExternal -> "external"
 
-    fromPersistValue (PersistText t) = case t of
+    fromPersistValue (PersistByteString t) = case t of
         "offline"  -> return TxOffline
         "dead"     -> return TxDead
         "pending"  -> return TxPending
@@ -688,15 +689,15 @@ instance PersistFieldSql TxConfidence where
     sqlType _ = SqlString
 
 instance PersistField BalanceType where
-    toPersistValue bt = PersistText $ case bt of
+    toPersistValue bt = PersistByteString $ case bt of
         BalanceOffline  -> "offline"
         BalancePending  -> "pending"
-        BalanceHeight h -> pack $ show h
+        BalanceHeight h -> C.pack $ show h
 
-    fromPersistValue (PersistText t) = case t of
+    fromPersistValue (PersistByteString t) = case t of
         "offline"  -> return BalanceOffline
         "pending"  -> return BalancePending
-        h -> maybe err (return . BalanceHeight) $ readMaybe $ unpack h
+        h -> maybe err (return . BalanceHeight) $ readMaybe $ C.unpack h
       where
         err = Left "Invalid Persistent BalanceType"
 

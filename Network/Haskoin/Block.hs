@@ -46,6 +46,7 @@ module Network.Haskoin.Block
 , connectHeaders
 , commitAction
 , blockLocator
+, partialLocator
 , getNodeWindow
 
   -- * Checkpoints

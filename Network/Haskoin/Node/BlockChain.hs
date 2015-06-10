@@ -68,6 +68,7 @@ data SpvSession = SpvSession
 data LocatorType
     = FullLocator
     | PartialLocator
+    | LastLocator
     deriving (Eq, Read, Show)
 
 -- | Start the SpvBlockChain. This function will spin up a new thread and
@@ -100,6 +101,8 @@ withBlockChain mempChan f = do
                 runDB initHeaderTree
                 -- Trigger the header download
                 height <- runDB bestBlockHeaderHeight
+                $(logInfo) $ format 
+                    "Running a full block locator. This can take some time."
                 headerSync (AnyPeer height) FullLocator Nothing
                 -- Process messages
                 sourceTBMChan bkchChan $$ processBlockChainMessage
@@ -155,7 +158,7 @@ processBlockTickle pid bid = do
             -- TODO: We could have a DoS leak here
             setPeerTickle pid bid
             --Request headers so we can connect this block
-            headerSync (ThisPeer pid) FullLocator $ Just bid
+            headerSync (ThisPeer pid) PartialLocator $ Just bid
 
 processBlockHeaders :: (HeaderTree m, MonadLogger m, MonadIO m) 
                     => PeerId -> [BlockHeader] -> StateT SpvSession m ()
@@ -199,7 +202,7 @@ processBlockHeaders pid hs = canProcessHeaders pid >>= \valid -> when valid $ do
                 -- Adjust height of the node that sent us these headers
                 sendManager $ PeerHeight pid height
                 -- Continue syncing headers from the same peer
-                headerSync (ThisPeer pid) PartialLocator Nothing
+                headerSync (ThisPeer pid) LastLocator Nothing
                 -- Try to download more blocks
                 continueDownload
 
@@ -234,7 +237,8 @@ headerSync resource locType hStopM = do
         -- Build the block locator object
         loc <- runDB $ case locType of
             FullLocator    -> blockLocator 
-            PartialLocator -> liftM ((:[]) . nodeBlockHash) getBestBlockHeader
+            PartialLocator -> partialLocator 20
+            LastLocator    -> liftM ((:[]) . nodeBlockHash) getBestBlockHeader
         -- Send a job that can only run on the given PeerId. Priority = 2 to
         -- give priority to BloomFilters (0) and Tx broadcasts (1)
         sendManager $ PublishJob (JobHeaderSync loc hStopM) resource 2
@@ -591,7 +595,7 @@ processHeartbeat = do
                 modify $ \s -> s{ syncResource = Nothing }
                 height <- runDB bestBlockHeaderHeight
                 -- Issue a new header sync with any peer at the right height
-                headerSync (AnyPeer height) FullLocator Nothing
+                headerSync (AnyPeer height) PartialLocator Nothing
         _ -> return ()
     -- Continue the merkle block download in case it gets stuck
     continueDownload

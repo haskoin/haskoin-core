@@ -11,6 +11,7 @@ module Network.Haskoin.Block.HeaderTree
 , isChainReorg
 , isSideChain
 , blockLocator
+, partialLocator
 , getNodeWindow
 , bestBlockHeaderHeight
 , getBlockHeaderHeight
@@ -407,6 +408,19 @@ blockLocator = do
     go step n = getParentNode n >>= \parM -> case parM of
         Just par -> if step == 0 then return (Just n) else go (step - 1) par
         Nothing  -> return Nothing
+
+-- | Returns a partial BlockLocator object.
+partialLocator :: HeaderTree m => Int -> m BlockLocator
+partialLocator i 
+    | i < 1 = error "Locator length must be greater than 0"
+    | otherwise = do
+        h <- getBestBlockHeader
+        liftM (map nodeBlockHash . reverse) $ go [] i h
+  where
+    go acc 1 node = return $ node:acc
+    go acc step node = getParentNode node >>= \parM -> case parM of
+        Just par -> go (node:acc) (step - 1) par
+        Nothing  -> return $ node:acc
 
 bestBlockHeaderHeight :: HeaderTree m => m BlockHeight
 bestBlockHeaderHeight = liftM nodeHeaderHeight getBestBlockHeader

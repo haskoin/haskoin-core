@@ -51,7 +51,7 @@ Install from Git:
 ```sh
 git clone https://github.com/haskoin/haskoin.git
 cd haskoin
-git checkout 21d3f7d
+wget https://www.stackage.org/lts-1.0/cabal.config
 cabal update
 cabal install --force-reinstalls
 ```

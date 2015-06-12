@@ -1,16 +1,18 @@
 module Network.Haskoin.Wallet.Server.Handler where
 
+import Control.Applicative ((<$>),(<*>))
 import Control.Arrow (first)
 import Control.Monad (when, liftM)
-import Control.Exception (throwIO, throw)
+import Control.Exception (SomeException(..), throwIO, throw, tryJust)
 import Control.Monad.Trans (liftIO, MonadIO, lift)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TBMChan (TBMChan, writeTBMChan)
-import Control.Monad.Logger (MonadLogger, logInfo)
+import Control.Monad.Logger (MonadLogger, logInfo, logError)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Trans.Resource (MonadResource)
-import Control.Monad.Trans.Control (MonadBaseControl)
+import Control.Monad.Trans.Control (MonadBaseControl, liftBaseOp_, liftBaseWith, restoreM)
+import qualified Control.Concurrent.MSem as Sem (MSem, with)
 import qualified Control.Monad.State as S (StateT, evalStateT, gets)
 
 import Data.Aeson (Value(..), toJSON)
@@ -21,7 +23,13 @@ import Data.Conduit (($$))
 import qualified Data.Conduit.List as CL (consume)
 
 import Database.Persist (Entity(..), entityVal, getBy)
-import Database.Persist.Sql (SqlPersistT, ConnectionPool, runSqlPool)
+import Database.Persist.Sql 
+    ( SqlPersistT
+    , SqlPersistM
+    , ConnectionPool
+    , runSqlPool
+    , runSqlPersistMPool
+    )
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Node
@@ -41,6 +49,7 @@ data HandlerSession = HandlerSession
     { handlerConfig :: Config
     , handlerPool   :: ConnectionPool
     , handlerChan   :: Maybe (TBMChan NodeRequest)
+    , handlerSem    :: Sem.MSem Int
     }
 
 runHandler :: Monad m => HandlerSession -> Handler m a -> m a
@@ -48,8 +57,25 @@ runHandler = flip S.evalStateT
 
 runDB :: MonadBaseControl IO m => SqlPersistT m a -> Handler m a
 runDB action = do
+    sem  <- S.gets handlerSem
     pool <- S.gets handlerPool
-    lift $ runSqlPool action pool
+    lift $ runDBPool sem pool action
+
+runDBPool :: MonadBaseControl IO m
+          => Sem.MSem Int -> ConnectionPool -> SqlPersistT m a -> m a
+runDBPool sem pool action = liftBaseOp_ (Sem.with sem) $ runSqlPool action pool
+
+tryDBPool :: (MonadIO m, MonadLogger m)
+          => Sem.MSem Int -> ConnectionPool -> SqlPersistM a -> m (Maybe a)
+tryDBPool sem pool action = do
+    resE <- liftIO $ Sem.with sem $ tryJust f $ runSqlPersistMPool action pool
+    case resE of
+        Right res -> return $ Just res
+        Left err -> do
+            $(logError) $ pack $ unwords [ "A database error occured:", err]
+            return Nothing
+  where
+    f (SomeException e) = Just $ show e
 
 sendSPV :: MonadIO m => NodeRequest -> Handler m ()
 sendSPV request = do

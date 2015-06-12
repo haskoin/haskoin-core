@@ -995,6 +995,13 @@ importMerkles action expTxsLs = unless (isSideChain action) $ do
                         , KeyRingTxConfirmedHeight =. Nothing
                         , KeyRingTxConfirmedDate   =. Nothing
                         ]
+            -- Unconfirm address transactions
+            updateWhere [ KeyRingAddrTxConfirmedBy ==. Just (nodeBlockHash node) ]
+                        [ KeyRingAddrTxConfidence      =. TxPending
+                        , KeyRingAddrTxConfirmedBy     =. Nothing
+                        , KeyRingAddrTxConfirmedHeight =. Nothing
+                        , KeyRingAddrTxConfirmedDate   =. Nothing
+                        ]
             -- Delete balances
             let balType = BalanceHeight $ nodeHeaderHeight node
             deleteWhere [ KeyRingBalanceType ==. balType ]
@@ -1033,6 +1040,14 @@ importMerkles action expTxsLs = unless (isSideChain action) $ do
                                 , KeyRingTxConfirmedBy     =. Just bid
                                 , KeyRingTxConfirmedHeight =. Just h
                                 , KeyRingTxConfirmedDate   =. Just ts
+                                ]
+
+                    -- Update the address transactions
+                    updateWhere [ KeyRingAddrTxHash ==. hash ]
+                                [ KeyRingAddrTxConfidence      =. TxBuilding
+                                , KeyRingAddrTxConfirmedBy     =. Just bid
+                                , KeyRingAddrTxConfirmedHeight =. Just h
+                                , KeyRingAddrTxConfirmedDate   =. Just ts
                                 ]
                 _ -> return ()
             return $ (keyRingTxTx . entityVal) <$> prevM

@@ -80,6 +80,7 @@ library
                  , persistent                    >= 2.1       && < 2.2
                  , persistent-template           >= 2.1       && < 2.2
                  , resourcet                     >= 1.1       && < 1.2
+                 , SafeSemaphore                 >= 0.10      && < 0.11
                  , stm                           >= 2.4       && < 2.5
                  , stm-chans                     >= 3.0       && < 3.1
                  , stm-conduit                   >= 2.5       && < 2.6

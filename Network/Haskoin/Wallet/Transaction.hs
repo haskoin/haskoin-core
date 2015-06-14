@@ -13,6 +13,7 @@ module Network.Haskoin.Wallet.Transaction
 , killTx
 , killAccTx
 , reviveTx
+, getPendingTxs
 
 -- *Database blocks
 , importMerkles
@@ -501,6 +502,16 @@ getOfflineTxData ai txid = do
             (Just s, Just d) -> Just $
                 CoinSignData (OutPoint keyRingCoinHash keyRingCoinPos) s d
             _ -> Nothing
+
+getPendingTxs :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+              => SqlPersistT m [Tx]
+getPendingTxs = do
+    txEs <- selectList
+         [ KeyRingTxConfirmedBy ==. Nothing
+         , KeyRingTxConfidence ==. TxPending
+         ]
+         []
+    return $ map (keyRingTxTx . entityVal) txEs
 
 -- | Returns true if the given coin can be spent. A coin can be spent if it is
 -- not dead and it isn't already spent by a transaction other than the given

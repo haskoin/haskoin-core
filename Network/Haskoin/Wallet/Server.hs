@@ -145,11 +145,11 @@ processEvents :: (MonadLogger m, MonadIO m, Functor m)
               -> Sink WalletMessage m ()
 processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
     WalletTx tx -> void (processTxs [tx])
-    WalletGetTx pid txid -> do
+    WalletGetTx txid -> do
         txM <- tryDBPool sem pool $ getTx txid
         case txM of
             Just tx -> liftIO $ atomically $ writeTBMChan rChan $
-                NodePeerSendTx pid tx
+                NodeSendTx tx
             Nothing -> $(logDebug) $ pack $ unwords
                 [ "Could not find transaction", encodeTxHashLE txid ]
     WalletMerkles action dmbs -> do

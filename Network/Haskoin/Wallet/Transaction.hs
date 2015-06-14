@@ -1194,12 +1194,12 @@ buildUnsignedTx
 
     -- Subtract fees from first destination if rcptFee
         value = snd $ head dests
-    dests' <- if rcptFee
-        then do
-            when (value <= totFee + 5430) $ throw $ WalletException
-                "First recipient cannot cover transaction fees"
-            return $ second (const $ value - totFee) (head dests) : tail dests
-        else return $ dests
+    -- First output must not be dust after deducting fees
+    when (rcptFee && value < totFee + 5430) $ throw $ WalletException
+        "First recipient cannot cover transaction fees"
+    let dests' = if rcptFee
+            then second (const $ value - totFee) (head dests) : tail dests
+            else dests
 
     -- If the change amount is not dust, we need to add a change address to
     -- our list of recipients.

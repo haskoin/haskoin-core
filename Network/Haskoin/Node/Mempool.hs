@@ -4,7 +4,8 @@ module Network.Haskoin.Node.Mempool
 , withMempool
 ) where
 
-import Control.Monad ( unless, forM_, liftM)
+import Control.Applicative (Applicative, (<$>))
+import Control.Monad (unless, forM_, liftM)
 import Control.Monad.Trans (MonadIO, liftIO, lift)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async.Lifted (withAsync, link)
@@ -12,6 +13,8 @@ import Control.Monad.State (StateT, evalStateT, gets, modify)
 import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug)
 import Control.Monad.Trans.Control (MonadBaseControl)
 
+import Data.HashMap.Strict (HashMap, lookupDefault, insertWith)
+import qualified Data.HashMap.Strict as H
 import Data.Text (Text, pack)
 import Data.List (nub, partition, delete)
 import Data.Unique (hashUnique)
@@ -33,14 +36,14 @@ withNode :: (HeaderTree m, MonadLogger m, MonadIO m, MonadBaseControl IO m)
 withNode f = do
     wletChan <- liftIO $ atomically $ newTBMChan 10000
     reqChan  <- liftIO $ atomically $ newTBMChan 10000
-    withMempool wletChan $ \_ bkchChan mngrChan -> do
+    withMempool wletChan $ \mempChan bkchChan mngrChan -> do
         -- Listen for and process wallet requests
         let run = do
             $(logDebug) $ formatWallet "User request thread started"
-            sourceTBMChan reqChan $$ (go bkchChan mngrChan)
+            sourceTBMChan reqChan $$ (go mempChan bkchChan mngrChan)
         withAsync run $ \a -> link a >> f wletChan reqChan
   where
-    go bkchChan mngrChan = awaitForever $ \req -> case req of
+    go mempChan bkchChan mngrChan = awaitForever $ \req -> case req of
         NodeBloomFilter bloom -> do
             $(logDebug) $ formatWallet "Setting a new bloom filter"
             liftIO $ atomically $ writeTBMChan bkchChan $ SetBloomFilter bloom
@@ -55,11 +58,10 @@ withNode f = do
         NodeConnectPeers peers -> do
             $(logDebug) $ formatWallet "Advertising new peers to connect to"
             liftIO $ atomically $ writeTBMChan mngrChan $ AddRemoteHosts peers
-        NodePeerSendTx pid tx -> do
+        NodeSendTx tx -> do
             $(logDebug) $ formatWallet $ unwords
                 [ "Sending transaction", encodeTxHashLE (txHash tx) ]
-            liftIO $ atomically $ writeTBMChan mngrChan $
-                PublishJob (JobSendTx tx) (ThisPeer pid) 1
+            liftIO $ atomically $ writeTBMChan mempChan $ MempoolSendTx tx
         NodePublishTx txid -> do
             $(logDebug) $ formatWallet "Publishing a transaction to broadcast"
             -- Publish a job with priority 1 on all peers
@@ -90,6 +92,9 @@ data MempoolSession = MempoolSession
       -- inflight. This is to prevent a race condition where a transaction
       -- could miss his confirmation.
     , merkleBuffer :: ![(BlockChainAction, [DecodedMerkleBlock])]
+      -- Map of transactions to peer ids to respond to GetData requests
+      -- from peers.
+    , txPeerMap :: !(HashMap TxHash [PeerId])
     }
 
 -- | Start the mempool. The job of this actor is to request tx downloads
@@ -113,6 +118,7 @@ withMempool wletChan f = do
             txBuffer     = []
             inflightTxs  = []
             merkleBuffer = []
+            txPeerMap    = H.empty
             session      = MempoolSession{..}
             -- Run the main mempool message processing loop
             run = do
@@ -122,12 +128,13 @@ withMempool wletChan f = do
         withAsync (evalStateT run session) $ \a ->
             link a >> f mempChan bkchChan mngrChan
 
-processMempoolMessage :: (MonadLogger m, MonadIO m) 
+processMempoolMessage :: (Applicative m, MonadLogger m, MonadIO m) 
                       => Sink MempoolMessage (StateT MempoolSession m) ()
 processMempoolMessage = awaitForever $ \req -> lift $ case req of
     MempoolTxInv pid tids       -> processTxInv pid tids
     MempoolTx tx                -> processTx tx
     MempoolGetTx pid tid        -> processGetTx pid tid
+    MempoolSendTx tid           -> processSendTx tid
     MempoolMerkles action dmbs  -> processMerkles action dmbs
     MempoolBlocks action blocks -> processBlocks action blocks
     MempoolSynced               -> processSynced
@@ -167,7 +174,21 @@ processGetTx :: (MonadIO m, MonadLogger m)
 processGetTx pid tid = do
     $(logDebug) $ format $ unwords
         [ "Requesting transaction", encodeTxHashLE tid, "from wallet." ]
-    sendWallet $ WalletGetTx pid tid
+    modify $
+        \s -> s{ txPeerMap = insertWith (flip (++)) tid [pid] (txPeerMap s) }
+    sendWallet $ WalletGetTx tid
+
+processSendTx :: (Applicative m, MonadIO m, MonadLogger m)
+              => Tx
+              -> StateT MempoolSession m ()
+processSendTx tx = do
+    $(logDebug) $ format $ unwords
+        [ "Sending transaction", encodeTxHashLE (txHash tx), "from wallet." ]
+    peers <- lookupDefault [] (txHash tx) <$> gets txPeerMap
+    forM_ peers $ \pid -> sendManager $
+        PublishJob (JobSendTx tx) (ThisPeer pid) 1
+    modify $
+        \s -> s{ txPeerMap = H.delete (txHash tx) (txPeerMap s) }
 
 -- | Send transactions to the wallet only if we are synced. This is to prevent
 -- a problem where a transaction that belongs to the wallet in the future

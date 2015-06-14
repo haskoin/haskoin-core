@@ -66,6 +66,7 @@ import Data.Aeson
     , toJSON
     , withText
     )
+import Data.Hashable (Hashable, hashWithSalt, hash)
 import Data.Ratio (numerator, denominator)
 import qualified Data.ByteString as BS (head, length, reverse)
 import qualified Data.Text as T (pack, unpack)
@@ -227,6 +228,16 @@ instance Fractional (BigWord ModP) where
 instance Fractional (BigWord ModN) where
     recip = inverseN
     fromRational r = fromInteger (numerator r) / fromInteger (denominator r)
+
+{- Hashable instances -}
+
+instance Hashable (BigWord Mod256Tx) where
+    hashWithSalt i x = hashWithSalt i (fromIntegral x :: Integer)
+    hash = fromIntegral
+
+instance Hashable (BigWord Mod256Block) where
+    hashWithSalt i x = hashWithSalt i (fromIntegral x :: Integer)
+    hash = fromIntegral
 
 {- Binary instances for serialization / deserialization -}
 

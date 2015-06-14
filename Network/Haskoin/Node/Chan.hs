@@ -134,6 +134,7 @@ data BlockChainMessage
 data MempoolMessage
     = MempoolTxInv !PeerId ![TxHash]
     | MempoolTx !Tx
+    | MempoolSendTx !Tx
     | MempoolGetTx !PeerId !TxHash
     | MempoolMerkles !BlockChainAction ![DecodedMerkleBlock]
     | MempoolBlocks !BlockChainAction ![Block]
@@ -145,13 +146,13 @@ data WalletMessage
     = WalletTx !Tx
     | WalletBlocks !BlockChainAction ![Block]
     | WalletMerkles !BlockChainAction ![DecodedMerkleBlock]
-    | WalletGetTx !PeerId !TxHash
+    | WalletGetTx !TxHash
     | WalletSynced
 
 -- | Requests from the wallet to the node
 data NodeRequest
     = NodeBloomFilter !BloomFilter
-    | NodePeerSendTx !PeerId !Tx
+    | NodeSendTx !Tx
     | NodePublishTx !TxHash
     | NodeStartMerkleDownload !(Either Timestamp BlockHash)
     | NodeStartBlockDownload !(Either Timestamp BlockHash)

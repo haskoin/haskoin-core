@@ -445,7 +445,7 @@ publishJob pJob res pri = do
             
 -- Assign jobs to peers based on priority and resource assignment 
 scheduleJobs :: (MonadLogger m, MonadIO m) => StateT ManagerSession m ()
-scheduleJobs = do
+scheduleJobs =
     go . f =<< gets jobQueue
   where
     go queue@((_,job):qs) = do

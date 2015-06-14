@@ -445,7 +445,7 @@ publishJob pJob res pri = do
             
 -- Assign jobs to peers based on priority and resource assignment 
 scheduleJobs :: (MonadLogger m, MonadIO m) => StateT ManagerSession m ()
-scheduleJobs = 
+scheduleJobs = do
     go . f =<< gets jobQueue
   where
     go queue@((_,job):qs) = do
@@ -455,7 +455,7 @@ scheduleJobs =
             else modify $ \s -> s{ jobQueue = g queue }
     go [] = modify $ \s -> s{ jobQueue = M.empty }
     -- Turn the map into a list
-    f = concat . map (\(pri, jobs) -> map (\j -> (pri, j)) jobs) . M.toAscList
+    f = concatMap (\(pri, jobs) -> map (\j -> (pri, j)) jobs) . M.toAscList
     -- Turn the list back into a map
     g = M.fromAscListWith (flip (++)) . map (\(pri, job) -> (pri, [job]))
 

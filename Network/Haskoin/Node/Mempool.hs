@@ -55,11 +55,16 @@ withNode f = do
         NodeConnectPeers peers -> do
             $(logDebug) $ formatWallet "Advertising new peers to connect to"
             liftIO $ atomically $ writeTBMChan mngrChan $ AddRemoteHosts peers
-        NodePublishTx tx -> do
+        NodePeerSendTx pid tx -> do
+            $(logDebug) $ formatWallet $ unwords
+                [ "Sending transaction", encodeTxHashLE (txHash tx) ]
+            liftIO $ atomically $ writeTBMChan mngrChan $
+                PublishJob (JobSendTx tx) (ThisPeer pid) 1
+        NodePublishTx txid -> do
             $(logDebug) $ formatWallet "Publishing a transaction to broadcast"
             -- Publish a job with priority 1 on all peers
             liftIO $ atomically $ writeTBMChan mngrChan $ 
-                PublishJob (JobSendTx tx) (AllPeers1 0) 1
+                PublishJob (JobSendTxInv txid) (AllPeers1 0) 1
 
 formatWallet :: String -> Text
 formatWallet str = pack $ unwords [ "[Wallet Request]", str ]
@@ -122,6 +127,7 @@ processMempoolMessage :: (MonadLogger m, MonadIO m)
 processMempoolMessage = awaitForever $ \req -> lift $ case req of
     MempoolTxInv pid tids       -> processTxInv pid tids
     MempoolTx tx                -> processTx tx
+    MempoolGetTx pid tid        -> processGetTx pid tid
     MempoolMerkles action dmbs  -> processMerkles action dmbs
     MempoolBlocks action blocks -> processBlocks action blocks
     MempoolSynced               -> processSynced
@@ -153,6 +159,15 @@ processTxInv pid tids = do
         modify $ \s -> s{ inflightTxs = inflight ++ toDwn }
         -- Publish the transaction download job with average priority
         sendManager $ PublishJob (JobDwnTxs toDwn) (ThisPeer pid) 5
+
+processGetTx :: (MonadIO m, MonadLogger m)
+             => PeerId
+             -> TxHash
+             -> StateT MempoolSession m ()
+processGetTx pid tid = do
+    $(logDebug) $ format $ unwords
+        [ "Requesting transaction", encodeTxHashLE tid, "from wallet." ]
+    sendWallet $ WalletGetTx pid tid
 
 -- | Send transactions to the wallet only if we are synced. This is to prevent
 -- a problem where a transaction that belongs to the wallet in the future
@@ -281,6 +296,7 @@ processSynced = do
     modify $ \s -> s{ nodeSynced = True 
                     , txBuffer   = []
                     }
+    sendWallet $ WalletSynced
 
 processStartDownload :: (MonadLogger m, MonadIO m) 
                      => Either Timestamp BlockHash -> StateT MempoolSession m ()

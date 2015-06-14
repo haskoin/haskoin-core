@@ -74,6 +74,7 @@ data JobResource
 
 data PeerJob
     = JobSendBloomFilter !BloomFilter
+    | JobSendTxInv !TxHash
     | JobSendTx !Tx
     | JobHeaderSync !BlockLocator !(Maybe BlockHash)
     | JobDwnTxs ![TxHash]
@@ -84,6 +85,7 @@ showJob :: PeerJob -> String
 showJob pJob = case pJob of
     JobSendBloomFilter _ -> "JobSendBloomFilter"
     JobSendTx _          -> "JobSendTx"
+    JobSendTxInv _       -> "JobSendTxInv"
     JobHeaderSync _ _    -> "JobHeaderSync"
     JobDwnTxs _          -> "JobDwnTxs"
     JobDwnBlocks _ _     -> "JobDwnBlocks"
@@ -132,6 +134,7 @@ data BlockChainMessage
 data MempoolMessage
     = MempoolTxInv !PeerId ![TxHash]
     | MempoolTx !Tx
+    | MempoolGetTx !PeerId !TxHash
     | MempoolMerkles !BlockChainAction ![DecodedMerkleBlock]
     | MempoolBlocks !BlockChainAction ![Block]
     | MempoolStartDownload !(Either Timestamp BlockHash)
@@ -142,11 +145,14 @@ data WalletMessage
     = WalletTx !Tx
     | WalletBlocks !BlockChainAction ![Block]
     | WalletMerkles !BlockChainAction ![DecodedMerkleBlock]
+    | WalletGetTx !PeerId !TxHash
+    | WalletSynced
 
 -- | Requests from the wallet to the node
 data NodeRequest
     = NodeBloomFilter !BloomFilter
-    | NodePublishTx !Tx
+    | NodePeerSendTx !PeerId !Tx
+    | NodePublishTx !TxHash
     | NodeStartMerkleDownload !(Either Timestamp BlockHash)
     | NodeStartBlockDownload !(Either Timestamp BlockHash)
     | NodeConnectPeers ![RemoteHost]

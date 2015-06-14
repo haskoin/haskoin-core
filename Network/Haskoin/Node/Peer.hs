@@ -183,9 +183,10 @@ processJob = do
             $(logDebug) $ format pid "Processing SendTx job"
             sendMessage $ MTx tx
             jobDone
-        Just (JobSendTxInv txid) -> do
+        Just (JobSendTxInv txids) -> do
             $(logDebug) $ format pid "Processing SendTxInv job"
-            sendMessage $ MInv $ Inv [InvVector InvTx $ fromIntegral txid]
+            sendMessage $ MInv $ Inv $
+                map (InvVector InvTx . fromIntegral) txids
             jobDone
         Just (JobHeaderSync loc hstopM) -> do
             $(logDebug) $ format pid "Processing HeaderSync job"

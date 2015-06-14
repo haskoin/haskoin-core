@@ -4,7 +4,6 @@ module Network.Haskoin.Node.Mempool
 , withMempool
 ) where
 
-import Control.Applicative (Applicative, (<$>))
 import Control.Monad (unless, forM_, liftM)
 import Control.Monad.Trans (MonadIO, liftIO, lift)
 import Control.Concurrent.STM (atomically)
@@ -62,11 +61,11 @@ withNode f = do
             $(logDebug) $ formatWallet $ unwords
                 [ "Sending transaction", encodeTxHashLE (txHash tx) ]
             liftIO $ atomically $ writeTBMChan mempChan $ MempoolSendTx tx
-        NodePublishTx txid -> do
+        NodePublishTxs txids -> do
             $(logDebug) $ formatWallet "Publishing a transaction to broadcast"
             -- Publish a job with priority 1 on all peers
             liftIO $ atomically $ writeTBMChan mngrChan $ 
-                PublishJob (JobSendTxInv txid) (AllPeers1 0) 1
+                PublishJob (JobSendTxInv txids) (AllPeers1 0) 1
 
 formatWallet :: String -> Text
 formatWallet str = pack $ unwords [ "[Wallet Request]", str ]
@@ -128,7 +127,7 @@ withMempool wletChan f = do
         withAsync (evalStateT run session) $ \a ->
             link a >> f mempChan bkchChan mngrChan
 
-processMempoolMessage :: (Applicative m, MonadLogger m, MonadIO m) 
+processMempoolMessage :: (MonadLogger m, MonadIO m) 
                       => Sink MempoolMessage (StateT MempoolSession m) ()
 processMempoolMessage = awaitForever $ \req -> lift $ case req of
     MempoolTxInv pid tids       -> processTxInv pid tids
@@ -178,13 +177,13 @@ processGetTx pid tid = do
         \s -> s{ txPeerMap = insertWith (flip (++)) tid [pid] (txPeerMap s) }
     sendWallet $ WalletGetTx tid
 
-processSendTx :: (Applicative m, MonadIO m, MonadLogger m)
+processSendTx :: (MonadIO m, MonadLogger m)
               => Tx
               -> StateT MempoolSession m ()
 processSendTx tx = do
     $(logDebug) $ format $ unwords
         [ "Sending transaction", encodeTxHashLE (txHash tx), "from wallet." ]
-    peers <- findWithDefault [] (txHash tx) <$> gets txPeerMap
+    peers <- findWithDefault [] (txHash tx) `liftM` gets txPeerMap
     forM_ peers $ \pid -> sendManager $
         PublishJob (JobSendTx tx) (ThisPeer pid) 1
     modify $

@@ -74,7 +74,7 @@ data JobResource
 
 data PeerJob
     = JobSendBloomFilter !BloomFilter
-    | JobSendTxInv !TxHash
+    | JobSendTxInv ![TxHash]
     | JobSendTx !Tx
     | JobHeaderSync !BlockLocator !(Maybe BlockHash)
     | JobDwnTxs ![TxHash]
@@ -153,7 +153,7 @@ data WalletMessage
 data NodeRequest
     = NodeBloomFilter !BloomFilter
     | NodeSendTx !Tx
-    | NodePublishTx !TxHash
+    | NodePublishTxs ![TxHash]
     | NodeStartMerkleDownload !(Either Timestamp BlockHash)
     | NodeStartBlockDownload !(Either Timestamp BlockHash)
     | NodeConnectPeers ![RemoteHost]

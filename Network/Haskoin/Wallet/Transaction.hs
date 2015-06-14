@@ -504,13 +504,13 @@ getOfflineTxData ai txid = do
             _ -> Nothing
 
 getPendingTxs :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
-              => SqlPersistT m [Tx]
-getPendingTxs = do
+              => Int -> SqlPersistT m [Tx]
+getPendingTxs i = do
     txEs <- selectList
          [ KeyRingTxConfirmedBy ==. Nothing
          , KeyRingTxConfidence ==. TxPending
          ]
-         []
+         [LimitTo i]
     return $ map (keyRingTxTx . entityVal) txEs
 
 -- | Returns true if the given coin can be spent. A coin can be spent if it is

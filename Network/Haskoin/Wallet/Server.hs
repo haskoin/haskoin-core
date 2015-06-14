@@ -184,7 +184,7 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
             liftIO . atomically $ 
                 writeTBMChan rChan $ NodeStartMerkleDownload $ Right bh
     WalletSynced -> do
-        txsM <- tryDBPool sem pool getPendingTxs
+        txsM <- tryDBPool sem pool $ getPendingTxs 100
         case txsM of
             Just txs -> liftIO $ atomically $ writeTBMChan rChan $
                 NodePublishTxs $ map txHash txs

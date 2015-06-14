@@ -13,8 +13,8 @@ import Control.Monad.State (StateT, evalStateT, gets, modify)
 import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug)
 import Control.Monad.Trans.Control (MonadBaseControl)
 
-import Data.HashMap.Strict (HashMap, lookupDefault, insertWith)
-import qualified Data.HashMap.Strict as H
+import Data.Map.Strict (Map, findWithDefault, insertWith)
+import qualified Data.Map.Strict as M
 import Data.Text (Text, pack)
 import Data.List (nub, partition, delete)
 import Data.Unique (hashUnique)
@@ -94,7 +94,7 @@ data MempoolSession = MempoolSession
     , merkleBuffer :: ![(BlockChainAction, [DecodedMerkleBlock])]
       -- Map of transactions to peer ids to respond to GetData requests
       -- from peers.
-    , txPeerMap :: !(HashMap TxHash [PeerId])
+    , txPeerMap :: !(Map TxHash [PeerId])
     }
 
 -- | Start the mempool. The job of this actor is to request tx downloads
@@ -118,7 +118,7 @@ withMempool wletChan f = do
             txBuffer     = []
             inflightTxs  = []
             merkleBuffer = []
-            txPeerMap    = H.empty
+            txPeerMap    = M.empty
             session      = MempoolSession{..}
             -- Run the main mempool message processing loop
             run = do
@@ -184,11 +184,11 @@ processSendTx :: (Applicative m, MonadIO m, MonadLogger m)
 processSendTx tx = do
     $(logDebug) $ format $ unwords
         [ "Sending transaction", encodeTxHashLE (txHash tx), "from wallet." ]
-    peers <- lookupDefault [] (txHash tx) <$> gets txPeerMap
+    peers <- findWithDefault [] (txHash tx) <$> gets txPeerMap
     forM_ peers $ \pid -> sendManager $
         PublishJob (JobSendTx tx) (ThisPeer pid) 1
     modify $
-        \s -> s{ txPeerMap = H.delete (txHash tx) (txPeerMap s) }
+        \s -> s{ txPeerMap = M.delete (txHash tx) (txPeerMap s) }
 
 -- | Send transactions to the wallet only if we are synced. This is to prevent
 -- a problem where a transaction that belongs to the wallet in the future

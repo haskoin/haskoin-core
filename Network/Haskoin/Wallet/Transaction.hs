@@ -507,10 +507,8 @@ getPendingTxs :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
               => Int -> SqlPersistT m [Tx]
 getPendingTxs i = do
     txEs <- selectList
-         [ KeyRingTxConfirmedBy ==. Nothing
-         , KeyRingTxConfidence ==. TxPending
-         ]
-         [LimitTo i]
+         [ KeyRingTxConfidence ==. TxPending ]
+         [ LimitTo i ]
     return $ map (keyRingTxTx . entityVal) txEs
 
 -- | Returns true if the given coin can be spent. A coin can be spent if it is

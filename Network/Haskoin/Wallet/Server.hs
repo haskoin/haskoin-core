@@ -186,8 +186,8 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
     WalletSynced -> do
         txsM <- tryDBPool sem pool getPendingTxs
         case txsM of
-            Just txs -> forM_ txs $ liftIO . atomically
-                . writeTBMChan rChan . NodePublishTx . txHash
+            Just txs -> liftIO $ atomically $ writeTBMChan rChan $
+                NodePublishTxs $ map txHash txs
             Nothing -> do
                 $(logDebug) $ pack $ "Failed to retrieve pending transactions"
                 return ()

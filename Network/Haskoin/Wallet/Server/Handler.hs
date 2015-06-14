@@ -402,7 +402,7 @@ postTxsR keyRingName name action = case action of
         when (after > before) updateNodeFilter
         -- Publish the transaction to the network only wen it is complete
         when (confidence == TxPending) $ 
-            sendSPV $ NodePublishTx txid
+            sendSPV $ NodePublishTxs [txid]
 
 getTxR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
        => KeyRingName -> AccountName -> TxHash -> Handler m Value

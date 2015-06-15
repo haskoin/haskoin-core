@@ -95,7 +95,6 @@ module Network.Haskoin.Crypto
 , hmac256BS
 , split512
 , join512
-, murmurHash3
 
   -- *Number representations
 , decodeCompact

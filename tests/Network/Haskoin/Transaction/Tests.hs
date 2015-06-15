@@ -11,7 +11,6 @@ import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
-import Network.Haskoin.Internals (getFee, getMSFee)
 
 tests :: [Test]
 tests = 

@@ -116,6 +116,7 @@ library
                  , monad-control            >= 0.3          && < 1.1
                  , monad-logger             >= 0.3          && < 0.4
                  , mtl                      >= 2.1          && < 2.3 
+                 , murmur3                  >= 1.0          && < 1.1
                  , network                  >= 2.4          && < 2.7
                  , pbkdf                    >= 1.1          && < 1.2
                  , QuickCheck               >= 2.6          && < 2.8

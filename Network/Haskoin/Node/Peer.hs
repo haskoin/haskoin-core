@@ -183,6 +183,11 @@ processJob = do
             $(logDebug) $ format pid "Processing SendTx job"
             sendMessage $ MTx tx
             jobDone
+        Just (JobSendTxInv txids) -> do
+            $(logDebug) $ format pid "Processing SendTxInv job"
+            sendMessage $ MInv $ Inv $
+                map (InvVector InvTx . fromIntegral) txids
+            jobDone
         Just (JobHeaderSync loc hstopM) -> do
             $(logDebug) $ format pid "Processing HeaderSync job"
             sendMessage $ MGetHeaders $ GetHeaders 0x01 loc $ fromMaybe 0 hstopM
@@ -272,6 +277,7 @@ processRemoteMessage msg = checkInitVersion >>= \valid -> when valid $ do
         MHeaders hs           -> processHeaders hs
         MBlock b              -> processBlock b 
         MInv inv              -> processInvMessage inv
+        MGetData gd           -> processGetData pid gd
         MNotFound nf          -> processNotFound nf
         MPing (Ping n) -> do
             $(logDebug) $ format pid $ unwords
@@ -317,6 +323,13 @@ processInvMessage (Inv vs)
         filter ((== InvTx) . invType) vs
     blocklist = map (fromIntegral . invHash) $ 
         filter ((== InvBlock) . invType) vs
+
+processGetData :: (MonadLogger m, MonadIO m)
+               => PeerId -> GetData -> StateT PeerSession m ()
+processGetData pid (GetData inv) = do
+    $(logDebug) $ format pid "Received GetData message"
+    mapM_ (sendMempool . MempoolGetTx pid . fromIntegral . invHash) $
+        filter ((== InvTx) . invType) inv
 
 processNotFound :: (MonadLogger m, MonadIO m) 
                 => NotFound -> StateT PeerSession m ()

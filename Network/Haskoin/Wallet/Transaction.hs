@@ -13,6 +13,7 @@ module Network.Haskoin.Wallet.Transaction
 , killTx
 , killAccTx
 , reviveTx
+, getPendingTxs
 
 -- *Database blocks
 , importMerkles
@@ -501,6 +502,14 @@ getOfflineTxData ai txid = do
             (Just s, Just d) -> Just $
                 CoinSignData (OutPoint keyRingCoinHash keyRingCoinPos) s d
             _ -> Nothing
+
+getPendingTxs :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+              => Int -> SqlPersistT m [Tx]
+getPendingTxs i = do
+    txEs <- selectList
+         [ KeyRingTxConfidence ==. TxPending ]
+         [ LimitTo i ]
+    return $ map (keyRingTxTx . entityVal) txEs
 
 -- | Returns true if the given coin can be spent. A coin can be spent if it is
 -- not dead and it isn't already spent by a transaction other than the given
@@ -1182,11 +1191,13 @@ buildUnsignedTx
                | otherwise             = getFee   fee   (length selected)
 
     -- Subtract fees from first destination if rcptFee
-        dests' = if rcptFee
-            then second (flip (-) totFee) (head dests) : tail dests
+        value = snd $ head dests
+    -- First output must not be dust after deducting fees
+    when (rcptFee && value < totFee + 5430) $ throw $ WalletException
+        "First recipient cannot cover transaction fees"
+    let dests' = if rcptFee
+            then second (const $ value - totFee) (head dests) : tail dests
             else dests
-    when (snd (head dests') <= 0) $ throw $
-        WalletException "Transaction fees too high" 
 
     -- If the change amount is not dust, we need to add a change address to
     -- our list of recipients.

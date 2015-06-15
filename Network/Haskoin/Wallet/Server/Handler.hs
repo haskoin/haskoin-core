@@ -1,6 +1,5 @@
 module Network.Haskoin.Wallet.Server.Handler where
 
-import Control.Applicative ((<$>),(<*>))
 import Control.Arrow (first)
 import Control.Monad (when, liftM)
 import Control.Exception (SomeException(..), throwIO, throw, tryJust)
@@ -11,7 +10,7 @@ import Control.Monad.Logger (MonadLogger, logInfo, logError)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Trans.Resource (MonadResource)
-import Control.Monad.Trans.Control (MonadBaseControl, liftBaseOp_, liftBaseWith, restoreM)
+import Control.Monad.Trans.Control (MonadBaseControl, liftBaseOp_)
 import qualified Control.Concurrent.MSem as Sem (MSem, with)
 import qualified Control.Monad.State as S (StateT, evalStateT, gets)
 
@@ -403,7 +402,7 @@ postTxsR keyRingName name action = case action of
         when (after > before) updateNodeFilter
         -- Publish the transaction to the network only wen it is complete
         when (confidence == TxPending) $ 
-            sendSPV . NodePublishTx =<< runDB (getTx txid)
+            sendSPV $ NodePublishTxs [txid]
 
 getTxR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
        => KeyRingName -> AccountName -> TxHash -> Handler m Value

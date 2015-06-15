@@ -7,7 +7,7 @@ import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 import System.ZMQ4
 
 import Control.Applicative ((<$>))
-import Control.Monad (when, void, unless, forM, forever, liftM, join)
+import Control.Monad (when, void, unless, forM, forM_, forever, liftM, join)
 import Control.Monad.Trans (MonadIO, lift, liftIO)
 import Control.Concurrent.STM.TBMChan (writeTBMChan)
 import Control.Concurrent.STM (atomically)
@@ -41,10 +41,12 @@ import Database.Persist (get)
 import Database.Persist.Sql (ConnectionPool, runMigration)
 import qualified Database.LevelDB.Base as DB (Options(..), open, defaultOptions)
 
+import Network.Haskoin.Crypto
 import Network.Haskoin.Constants
 import Network.Haskoin.Node
 import Network.Haskoin.Util
 import Network.Haskoin.Block
+import Network.Haskoin.Transaction
 
 import Network.Haskoin.Wallet.KeyRing
 import Network.Haskoin.Wallet.Transaction
@@ -143,6 +145,13 @@ processEvents :: (MonadLogger m, MonadIO m, Functor m)
               -> Sink WalletMessage m ()
 processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
     WalletTx tx -> void (processTxs [tx])
+    WalletGetTx txid -> do
+        txM <- tryDBPool sem pool $ getTx txid
+        case txM of
+            Just tx -> liftIO $ atomically $ writeTBMChan rChan $
+                NodeSendTx tx
+            Nothing -> $(logDebug) $ pack $ unwords
+                [ "Could not find transaction", encodeTxHashLE txid ]
     WalletMerkles action dmbs -> do
         -- Save the old best block before importing
         oldBestM <- tryDBPool sem pool getBestBlock
@@ -174,6 +183,14 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
             -- the requested block hash
             liftIO . atomically $ 
                 writeTBMChan rChan $ NodeStartMerkleDownload $ Right bh
+    WalletSynced -> do
+        txsM <- tryDBPool sem pool $ getPendingTxs 100
+        case txsM of
+            Just txs -> liftIO $ atomically $ writeTBMChan rChan $
+                NodePublishTxs $ map txHash txs
+            Nothing -> do
+                $(logDebug) $ pack $ "Failed to retrieve pending transactions"
+                return ()
     -- Ignore full blocks
     _ -> return ()
   where

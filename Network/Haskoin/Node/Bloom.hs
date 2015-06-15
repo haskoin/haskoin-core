@@ -17,6 +17,7 @@ import Control.Applicative ((<$>),(<*>))
 
 import Data.Word
 import Data.Bits
+import Data.Hash.Murmur (murmur3)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get 
     ( getWord8
@@ -32,7 +33,6 @@ import qualified Data.Foldable as F
 import qualified Data.Sequence as S
 import qualified Data.ByteString as BS
 
-import Network.Haskoin.Crypto.Hash 
 import Network.Haskoin.Node.Types
 
 -- 20,000 items with fp rate < 0.1% or 10,000 items and <0.0001%
@@ -164,7 +164,7 @@ bloomCreate numElem fpRate tweak flags =
 
 bloomHash :: BloomFilter -> Word32 -> BS.ByteString -> Word32
 bloomHash bfilter hashNum bs =
-    murmurHash3 seed bs `mod` (fromIntegral (S.length (bloomData bfilter)) * 8)
+    murmur3 seed bs `mod` (fromIntegral (S.length (bloomData bfilter)) * 8)
   where
     seed = hashNum * 0xfba4c795 + (bloomTweak bfilter)
 

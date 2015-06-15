@@ -5,7 +5,6 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Maybe (fromJust)
-import Data.Word (Word32)
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
@@ -25,8 +24,6 @@ tests =
     , testGroup "HMAC DRBG Suite 6 (Reseed)" [mapDRBGRsd r2]
     , testGroup "HMAC DRBG Suite 7 (Reseed)" [mapDRBGRsd r3] 
     , testGroup "HMAC DRBG Suite 8 (Reseed)" [mapDRBGRsd r4] 
-    , testGroup "Murmur Hash 3" 
-        (map mapMurmurVector $ zip murmurVectors [0..])
     , testGroup "Compact number representation"
         [ testCase "Compact number representations" testCompact ]
     ]
@@ -57,36 +54,6 @@ testDRBGRsd (s,i) = do
     assertBool name $ fromJust r == (v !! 7)
     where v = map (fromJust . hexToBS) s
           name = "    > HMAC DRBG Vector " ++ (show i)
-
-mapMurmurVector :: ((Word32,Word32,String),Int) -> Test.Framework.Test
-mapMurmurVector (_,i) =
-    testCase ("MurmurHash3 Vector " ++ (show i)) func
-  where
-    func = testMurmurVector $ murmurVectors !! i
-
-testMurmurVector :: (Word32,Word32,String) -> Assertion
-testMurmurVector (expected,seed,str) =
-    assertBool "    > MurmurHash3 " $ hash == expected
-  where
-    hash = murmurHash3 seed (fromJust $ hexToBS str)
-
-murmurVectors :: [(Word32,Word32,String)]
-murmurVectors =
-    [ (0x00000000, 0x00000000, "")
-    , (0x6a396f08, 0xFBA4C795, "")
-    , (0x81f16f39, 0xffffffff, "")
-    , (0x514e28b7, 0x00000000, "00")
-    , (0xea3f0b17, 0xFBA4C795, "00")
-    , (0xfd6cf10d, 0x00000000, "ff")
-    , (0x16c6b7ab, 0x00000000, "0011")
-    , (0x8eb51c3d, 0x00000000, "001122")
-    , (0xb4471bf8, 0x00000000, "00112233")
-    , (0xe2301fa8, 0x00000000, "0011223344")
-    , (0xfc2e4a15, 0x00000000, "001122334455")
-    , (0xb074502c, 0x00000000, "00112233445566")
-    , (0x8034d2a0, 0x00000000, "0011223344556677")
-    , (0xb4698def, 0x00000000, "001122334455667788")
-    ]
 
 testCompact :: Assertion
 testCompact = do

@@ -174,8 +174,10 @@ processGetTx pid tid = do
     $(logDebug) $ format $ unwords
         [ "Requesting transaction", encodeTxHashLE tid, "from wallet." ]
     modify $
-        \s -> s{ txPeerMap = insertWith (flip (++)) tid [pid] (txPeerMap s) }
+        \s -> s{ txPeerMap = insertWith addPid tid [pid] (txPeerMap s) }
     sendWallet $ WalletGetTx tid
+  where
+    addPid p = nub . (p ++)
 
 processSendTx :: (MonadIO m, MonadLogger m)
               => Tx

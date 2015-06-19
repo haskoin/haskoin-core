@@ -183,6 +183,10 @@ processJob = do
             $(logDebug) $ format pid "Processing SendTx job"
             sendMessage $ MTx tx
             jobDone
+        Just JobMempool -> do
+            $(logDebug) $ format pid "Synchronizing mempool"
+            sendMessage $ MMempool
+            jobDone
         Just (JobSendTxInv txids) -> do
             $(logDebug) $ format pid "Processing SendTxInv job"
             sendMessage $ MInv $ Inv $

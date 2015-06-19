@@ -80,6 +80,7 @@ data PeerJob
     | JobDwnTxs ![TxHash]
     | JobDwnBlocks !DwnBlockId ![BlockHash]
     | JobDwnMerkles !DwnMerkleId ![BlockHash]
+    | JobMempool
 
 showJob :: PeerJob -> String
 showJob pJob = case pJob of

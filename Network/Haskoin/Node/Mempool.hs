@@ -113,12 +113,12 @@ withMempool
 withMempool wletChan f = do
     mempChan <- liftIO $ atomically $ newTBMChan 10000
     withBlockChain mempChan $ \bkchChan mngrChan -> do
-        let nodeSynced   = False
-            txBuffer     = []
-            inflightTxs  = []
-            merkleBuffer = []
-            txPeerMap    = M.empty
-            session      = MempoolSession{..}
+        let nodeSynced    = False
+            txBuffer      = []
+            inflightTxs   = []
+            merkleBuffer  = []
+            txPeerMap     = M.empty
+            session       = MempoolSession{..}
             -- Run the main mempool message processing loop
             run = do
                 $(logDebug) $ format "Mempool thread started"
@@ -310,6 +310,7 @@ logBlockChainAction action = case action of
 processSynced :: (MonadLogger m, MonadIO m) => StateT MempoolSession m ()
 processSynced = do
     txs <- gets txBuffer
+    synced <- gets nodeSynced
     $(logInfo) $ format "Blocks are in sync with the block headers."
     unless (null txs) $ do
         $(logInfo) $ format $ unwords
@@ -318,6 +319,7 @@ processSynced = do
     modify $ \s -> s{ nodeSynced = True 
                     , txBuffer   = []
                     }
+    unless synced $ sendManager $ PublishJob JobMempool (AllPeers1 0) 5
     sendWallet $ WalletSynced
 
 processStartDownload :: (MonadLogger m, MonadIO m) 

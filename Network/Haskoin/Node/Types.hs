@@ -504,6 +504,7 @@ data MessageCommand
     | MCPing 
     | MCPong 
     | MCAlert
+    | MCMempool
     | MCReject
     deriving (Eq, Show, Read)
 
@@ -541,6 +542,7 @@ stringToCommand str = case str of
     "ping"        -> Just MCPing
     "pong"        -> Just MCPong
     "alert"       -> Just MCAlert
+    "mempool"     -> Just MCMempool
     "reject"      -> Just MCReject
     _             -> Nothing
 
@@ -565,6 +567,7 @@ commandToString mc = case mc of
     MCPing        -> "ping"
     MCPong        -> "pong"
     MCAlert       -> "alert"
+    MCMempool     -> "mempool"
     MCReject      -> "reject"
 
 packCommand :: String -> BS.ByteString

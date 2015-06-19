@@ -188,9 +188,8 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
         case txsM of
             Just txs -> liftIO $ atomically $ writeTBMChan rChan $
                 NodePublishTxs $ map txHash txs
-            Nothing -> do
+            Nothing ->
                 $(logDebug) $ pack $ "Failed to retrieve pending transactions"
-                return ()
     -- Ignore full blocks
     _ -> return ()
   where

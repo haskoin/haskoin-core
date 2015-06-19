@@ -94,6 +94,7 @@ data Message
     | MPing !Ping 
     | MPong !Pong 
     | MAlert !Alert
+    | MMempool
     | MReject !Reject
     deriving (Eq, Show)
 
@@ -130,6 +131,7 @@ instance Binary Message where
                 MCGetAddr     -> return MGetAddr 
                 MCVerAck      -> return MVerAck
                 MCFilterClear -> return MFilterClear
+                MCMempool     -> return MMempool
                 _             -> fail $ "get: Invalid command " ++ (show cmd)
 
     put msg = do
@@ -153,6 +155,7 @@ instance Binary Message where
                 MPing m        -> (MCPing, encode' m)
                 MPong m        -> (MCPong, encode' m)
                 MAlert m       -> (MCAlert, encode' m)
+                MMempool       -> (MCMempool, BS.empty)
                 MReject m      -> (MCReject, encode' m)
             chk = chksum32 payload
             len = fromIntegral $ BS.length payload

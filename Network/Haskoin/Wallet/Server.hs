@@ -275,7 +275,7 @@ dispatchRequest :: ( MonadLogger m
                    , MonadIO m
                    ) 
                 => WalletRequest -> Handler m (WalletResponse Value)
-dispatchRequest req = liftM (ResponseValid . toJSON) $ case req of
+dispatchRequest req = liftM ResponseValid $ case req of
     GetKeyRingsR                     -> getKeyRingsR
     GetKeyRingR r                    -> getKeyRingR r
     PostKeyRingsR r                  -> postKeyRingsR r

@@ -45,7 +45,7 @@ data OutputFormat
 data Config = Config
     { configKeyRing       :: !T.Text
     -- ^ Keyring to use in commands
-    , configCount         :: !Int
+    , configCount         :: !Word32
     -- ^ Output size of commands
     , configMinConf       :: !Word32
     -- ^ Minimum number of confirmations 

@@ -8,6 +8,18 @@ import Control.Applicative ((<$>))
 import Network.Haskoin.Test
 import Network.Haskoin.Wallet
 
+instance Arbitrary AccountType where
+    arbitrary = oneof
+        [ return AccountRegular
+        , do
+            ArbitraryMSParam m n <- arbitrary
+            return $ AccountMultisig m n
+        , return AccountRead
+        , do
+            ArbitraryMSParam m n <- arbitrary
+            return $ AccountReadMultisig m n
+        ]
+
 instance Arbitrary NodeAction where
     arbitrary = Rescan <$> arbitrary
 

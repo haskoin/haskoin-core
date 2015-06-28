@@ -9,21 +9,20 @@ module Network.Haskoin.Wallet.KeyRing
 -- *Database Accounts
 , accountSource
 , newAccount
-, newAccountMultisig
-, newAccountRead
-, newAccountReadMultisig
 , addAccountKeys
 , getAccount
 , isMultisigAccount
 , isReadAccount
-, completeMultisig
+, isCompleteAccount
 
 -- *Database Addresses
 , getAddress
 , addressSourceAll
 , addressSource
 , addressPage
-, addressUnused
+, unusedAddresses
+, firstUnusedAddress
+, addressCount
 , setAddrLabel
 , addressPrvKey
 , useAddress
@@ -34,6 +33,10 @@ module Network.Haskoin.Wallet.KeyRing
 
 -- *Database Bloom Filter
 , getBloomFilter
+
+-- * Helpers
+, joinAccount
+, joinAddress
 ) where
 
 import Control.Applicative ((<$>))
@@ -45,21 +48,30 @@ import Control.Monad.Trans.Resource (MonadResource)
 import Control.Exception (throwIO, throw)
 
 import Data.Text (Text, unpack)
-import Data.Maybe (fromMaybe, mapMaybe, isNothing, isJust)
+import Data.Maybe (mapMaybe)
 import Data.Time.Clock (getCurrentTime)
 import Data.Conduit (Source, mapOutput, await, ($$))
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
+import Data.List (nub)
+import Data.Word (Word32)
 import qualified Data.ByteString as BS (ByteString, null)
 
-import Database.Persist
-    ( Filter
-    , Entity(..), SelectOpt( Asc, Desc, OffsetBy, LimitTo ), entityVal
-    , getBy, insertUnique, updateGet, replace, count, get
-    , insertMany_, selectFirst, selectList, insert_
-    , selectSource, updateWhere
-    , (=.), (==.), (<.), (>.)
+import qualified Database.Persist as P
+    ( Filter, SelectOpt( Asc )
+    , selectFirst, updateWhere, selectSource, count, update
+    , (=.), (==.)
     )
-import Database.Persist.Sql (SqlPersistT)
+import Database.Esqueleto 
+    ( Value(..), SqlExpr
+    , InnerJoin(..), on
+    , select, from, where_, val, sub_select, countRows
+    , orderBy, limit, asc, desc, offset, selectSource
+    , max_, not_, coalesceDefault, isNothing
+    , (^.), (==.), (&&.), (<=.), (>.), (-.)
+    -- Reexports from Database.Persist
+    , SqlPersistT, Entity(..)
+    , getBy, insertUnique, insertMany_, insert_
+    )
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Block
@@ -75,217 +87,181 @@ import Network.Haskoin.Wallet.Model
 
 initWallet :: MonadIO m => Double -> SqlPersistT m ()
 initWallet fpRate = do
-    prevConfig <- selectFirst [] [Asc KeyRingConfigCreated]
-    when (isNothing prevConfig) $ do
-        time <- liftIO getCurrentTime
-        -- Create an initial bloom filter
-        -- TODO: Compute a random nonce 
-        let bloom = bloomCreate (filterLen 0) fpRate 0 BloomUpdateNone
-        insert_ $ 
-            KeyRingConfig 0 (headerHash genesisHeader) bloom 0 fpRate 1 time
+    prevConfigM <- P.selectFirst [] [P.Asc KeyRingConfigCreated]
+    case prevConfigM of
+        Just _ -> return ()
+        Nothing -> do
+            time <- liftIO getCurrentTime
+            -- Create an initial bloom filter
+            -- TODO: Compute a random nonce 
+            let bloom = bloomCreate (filterLen 0) fpRate 0 BloomUpdateNone
+            insert_ $ 
+                KeyRingConfig 0 (headerHash genesisHeader) bloom 0 fpRate 1 time
 
 {- KeyRing -}
 
 -- | Create a new KeyRing from a seed
 newKeyRing :: MonadIO m => KeyRingName -> BS.ByteString -> SqlPersistT m KeyRing
-newKeyRing keyRingName seed
+newKeyRing name seed
     | BS.null seed = liftIO . throwIO $ WalletException "The seed is empty"
     | otherwise = do
-        keyRingCreated <- liftIO getCurrentTime
-        let keyRingMaster   = makeXPrvKey seed
-            keyRing         = KeyRing{..}
+        now <- liftIO getCurrentTime
+        let keyRing = KeyRing
+                    { keyRingName    = name
+                    , keyRingMaster  = makeXPrvKey seed
+                    , keyRingCreated = now
+                    }
         insertUnique keyRing >>= \resM -> case resM of
             Just _ -> return keyRing
             _ -> liftIO . throwIO $ WalletException $ unwords
-                [ "KeyRing", unpack keyRingName, "already exists" ]
+                [ "KeyRing", unpack name, "already exists" ]
 
 -- | Stream all KeyRings 
 keyRingSource :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
               => Source (SqlPersistT m) KeyRing
-keyRingSource = mapOutput entityVal $ selectSource [] []
+keyRingSource = mapOutput entityVal $ P.selectSource [] []
 
 -- Helper functions to get a KeyRing if it exists, or throw an exception
 -- otherwise.
 getKeyRing :: MonadIO m => KeyRingName -> SqlPersistT m (Entity KeyRing)
-getKeyRing keyRingName = do
-    resM <- getBy $ UniqueKeyRing keyRingName
-    case resM of
-        Just keyRingEnt -> return keyRingEnt
-        _ -> liftIO . throwIO $ WalletException $ unwords
-            [ "KeyRing", unpack keyRingName, "does not exist." ]
+getKeyRing name = getBy (UniqueKeyRing name) >>= \resM -> case resM of
+    Just keyRingEnt -> return keyRingEnt
+    _ -> liftIO . throwIO $ WalletException $ unwords
+        [ "KeyRing", unpack name, "does not exist." ]
 
 {- Account -}
 
 -- | Stream all accounts in a keyring
 accountSource :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
-              => KeyRingName -> Source (SqlPersistT m) KeyRingAccount
-accountSource keyRingName = do
-    Entity ki _  <- lift $ getKeyRing keyRingName
-    mapOutput entityVal $ selectSource [ KeyRingAccountKeyRing ==. ki ] []
+              => KeyRingName -> Source (SqlPersistT m) (KeyRing, KeyRingAccount)
+accountSource name = 
+    mapOutput f $ selectSource $ from $ \(k `InnerJoin` a) -> do
+        on $ k ^. KeyRingId ==. a ^. KeyRingAccountKeyRing
+        where_ $ k ^. KeyRingName ==. val name
+        return (k, a)
+  where
+    f (Entity _ k, Entity _ a) = (k, a)
 
--- | Generic account creation helper.
-newAccountG :: MonadIO m
-            => Text -- ^ Account name
-            -> Entity KeyRing
-            -> AccountType
-            -> Maybe HardPath
-            -> [XPubKey]
-            -> Maybe Int -- ^ Required signatures (multisig)
-            -> Maybe Int -- ^ Total keys (multisig)
-            -> SqlPersistT m (Entity KeyRingAccount)
-newAccountG accountName keyRingE accountType derivation keys m n = do
-    t <- liftIO getCurrentTime
-    let Entity keyRingI keyRing = keyRingE
-        acc = KeyRingAccount
-            { keyRingAccountName            = accountName
-            , keyRingAccountKeyRingName     = keyRingName keyRing
-            , keyRingAccountType            = accountType
-            , keyRingAccountDerivation      = derivation
-            , keyRingAccountKeys            = keys
-            , keyRingAccountRequiredSigs    = m
-            , keyRingAccountTotalKeys       = n
-            , keyRingAccountGap             = 0
-            , keyRingAccountCreated         = t
-            , keyRingAccountKeyRing         = keyRingI
+-- | Create a new account
+newAccount :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
+           => KeyRingName
+           -> AccountName 
+           -> AccountType
+           -> [XPubKey]
+           -> SqlPersistT m (KeyRing, Entity KeyRingAccount)
+newAccount keyRingName accountName accountType extraKeys = do
+    unless (validAccountType accountType) $ 
+        liftIO . throwIO $ WalletException "Invalid account type"
+
+    Entity ki keyRing <- getKeyRing keyRingName
+
+    -- Get the next account derivation
+    derivM <- if accountTypeRead accountType then return Nothing else
+        liftM Just $ nextAccountDeriv ki
+
+    -- Derive the next account key
+    let f d  = [ deriveXPubKey (derivePath d $ keyRingMaster keyRing) ] 
+        keys = (maybe [] f derivM) ++ extraKeys
+        
+    -- Build the account
+    now <- liftIO getCurrentTime
+    let acc = KeyRingAccount
+            { keyRingAccountKeyRing      = ki
+            , keyRingAccountName         = accountName
+            , keyRingAccountType         = accountType
+            , keyRingAccountDerivation   = derivM
+            , keyRingAccountKeys         = keys
+            , keyRingAccountGap          = 0
+            , keyRingAccountCreated      = now
             }
-    insertUnique acc >>= \resM -> case resM of
+
+    -- Check if all the keys are valid
+    unless (isValidAccKeys acc) $ 
+        liftIO . throwIO $ WalletException "Invalid keys"
+
+    -- Insert our account in the database
+    let canSetGap = isCompleteAccount acc
+        newAcc    = acc{ keyRingAccountGap = if canSetGap then 10 else 0 }
+
+    insertUnique newAcc >>= \resM -> case resM of
         -- The account got created. 
-        Just ai -> return $ Entity ai acc
+        Just ai -> do
+            let accE = Entity ai newAcc
+            -- If we can set the gap, create the gap addresses
+            when canSetGap $ do
+                createAddrs accE AddressExternal 20
+                createAddrs accE AddressInternal 20
+            return (keyRing, accE)
         -- The account already exists
         Nothing -> liftIO . throwIO $ WalletException $ unwords
-            [ "Account", unpack $ keyRingAccountName acc, "already exists" ]
-
--- | Create a new account in the given KeyRing. Accounts within the same
--- KeyRing must have unique names. To start using your account, you can
--- call the function 'setLookAhead' to create a new address gap.
-newAccount :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
-           => KeyRingName                  -- ^ KeyRing name
-           -> AccountName                  -- ^ New account name
-           -> SqlPersistT m KeyRingAccount -- ^ New regular account
-newAccount keyRingName accountName = do
-    keyRingE@(Entity keyRingI keyRing) <- getKeyRing keyRingName
-    deriv <- nextAccountDeriv keyRingI
-    let keys = [deriveXPubKey $ derivePath deriv (keyRingMaster keyRing)]
-    accE <- newAccountG
-        accountName keyRingE AccountRegular (Just deriv) keys Nothing Nothing
-    setAccountGap accE 10
-
--- | Create a new multisignature account. You can add the keys with the
--- function `addAccountKeys`.
-newAccountMultisig 
-    :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
-    => KeyRingName                  -- ^ KeyRing name
-    -> AccountName                  -- ^ New account name
-    -> [XPubKey]                    -- ^ Keys
-    -> Int                          -- ^ Required signatures (m in m of n)
-    -> Int                          -- ^ Total keys (n in m of n)
-    -> SqlPersistT m KeyRingAccount -- ^ New multisig account
-newAccountMultisig keyRingName accountName keys m n = do
-    unless (validMultisigParams m n) $ liftIO . throwIO $ 
-        WalletException "Invalid multisig parameters"
-    keyRingE@(Entity keyRingI keyRing) <- getKeyRing keyRingName
-    deriv <- nextAccountDeriv keyRingI
-    let ks = [deriveXPubKey $ derivePath deriv (keyRingMaster keyRing)]
-    accE@(Entity ai _) <- newAccountG
-        accountName keyRingE AccountMultisig (Just deriv) ks (Just m) (Just n)
-    -- Add keys if some are provided
-    acc <- if null keys 
-        then return $ entityVal accE
-        else addAccountKeys accE keys
-    if completeMultisig acc
-        then setAccountGap (Entity ai acc) 10
-        else return acc
-
--- | Create a new read-only account.
-newAccountRead :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
-               => KeyRingName                  -- ^ KeyRing name
-               -> AccountName                  -- ^ New account name
-               -> XPubKey                      -- ^ Read-only key
-               -> SqlPersistT m KeyRingAccount -- ^ New regular account
-newAccountRead keyRingName accountName key = do
-    keyRingE <- getKeyRing keyRingName
-    accE <- newAccountG
-        accountName keyRingE AccountRead Nothing [key] Nothing Nothing
-    setAccountGap accE 10
-
--- | Create a new read-only multisignature account. You can add the keys with
--- the function `addAccountKeys`
-newAccountReadMultisig 
-    :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
-    => KeyRingName                  -- ^ KeyRing name
-    -> AccountName                  -- ^ New account name
-    -> [XPubKey]                    -- ^ Keys
-    -> Int                          -- ^ Required signatures (m in m of n)
-    -> Int                          -- ^ Total keys (n in m of n)
-    -> SqlPersistT m KeyRingAccount -- ^ New multisig account
-newAccountReadMultisig keyRingName accountName keys m n = do
-    unless (validMultisigParams m n) $ liftIO . throwIO $ WalletException 
-        "Invalid multisig parameters m of n"
-    keyRingE <- getKeyRing keyRingName
-    accE@(Entity ai _) <- newAccountG
-        accountName keyRingE AccountReadMultisig Nothing [] (Just m) (Just n)
-    acc <- if null keys 
-        then return $ entityVal accE
-        else addAccountKeys accE keys
-    if completeMultisig acc
-        then setAccountGap (Entity ai acc) 10
-        else return acc
+            [ "Account", unpack accountName, "already exists" ]
 
 -- | Add new thirdparty keys to a multisignature account. This function can
 -- fail if the multisignature account already has all required keys. 
 addAccountKeys :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
-               => Entity KeyRingAccount        -- ^ Account Entity
-               -> [XPubKey]                    -- ^ Thirdparty public keys to add
+               => Entity KeyRingAccount -- ^ Account Entity
+               -> [XPubKey]             -- ^ Thirdparty public keys to add
                -> SqlPersistT m KeyRingAccount -- ^ Account information
 addAccountKeys (Entity ai acc) keys 
-    | null keys = liftIO . throwIO $ 
-        WalletException "No keys have been provided"
-    | not $ isMultisigAccount acc 
-        = liftIO . throwIO $ WalletException $ unwords
-            [ "Account", unpack $ keyRingAccountName acc
-            , "is not a multisig account" 
-            ]
-    | any (`elem` keyRingAccountKeys acc) keys 
-        = liftIO . throwIO $ WalletException $ unwords 
-            [ "Adding duplicate keys to account"
-            , unpack $ keyRingAccountName acc
-            ]
-    | length (keyRingAccountKeys acc ++ keys) > 
-        fromMaybe 0 (keyRingAccountTotalKeys acc) 
-        = liftIO . throwIO $ WalletException $ unwords 
-            [ "Adding too many keys to account"
-            , unpack $ keyRingAccountName acc 
-            ]
-    -- Add the new keys at the end of the list.
+    -- We can only add keys on incomplete accounts
+    | isCompleteAccount acc = liftIO . throwIO $
+        WalletException "The account is already complete"
+    | null keys || (not $ isValidAccKeys accKeys) = liftIO . throwIO $
+        WalletException "Invalid keys"
     | otherwise = do
-        acc' <- updateGet ai
-            [ KeyRingAccountKeys =. (keyRingAccountKeys acc ++ keys) ]
-        if completeMultisig acc'
-            then setAccountGap (Entity ai acc') 10
-            else return acc'
+        let canSetGap = isCompleteAccount accKeys
+            updGap = if canSetGap then [ KeyRingAccountGap P.=. 10 ] else []
+            newAcc = accKeys{ keyRingAccountGap = if canSetGap then 10 else 0 }
+        -- Update the account with the keys and the new gap if it is complete
+        P.update ai $ (KeyRingAccountKeys P.=. newKeys) : updGap
+        -- If we can set the gap, create the gap addresses
+        when canSetGap $ do
+            let accE = Entity ai newAcc
+            createAddrs accE AddressExternal 20
+            createAddrs accE AddressInternal 20
+        return newAcc
+  where
+    newKeys = keyRingAccountKeys acc ++ keys
+    accKeys = acc{ keyRingAccountKeys = newKeys }
+
+isValidAccKeys :: KeyRingAccount -> Bool
+isValidAccKeys KeyRingAccount{..} = case keyRingAccountType of
+    AccountRegular _        -> length keyRingAccountKeys == 1
+    -- read-only accounts can have 0 keys. Otherwise 1 key is required.
+    AccountMultisig r _ n   -> goMultisig n (if r then 0 else 1)
+  where
+    goMultisig n minLen = 
+        length keyRingAccountKeys == length (nub keyRingAccountKeys) &&
+        length keyRingAccountKeys <= n &&
+        length keyRingAccountKeys >= minLen
 
 -- | Compute the next derivation path for a new account
 nextAccountDeriv :: MonadIO m => KeyRingId -> SqlPersistT m HardPath
 nextAccountDeriv ki = do
-    lastM <- selectFirst [ KeyRingAccountKeyRing ==. ki ] 
-                         [ Desc KeyRingAccountId ]
-    let next = maybe (Deriv :| 0) f $ 
-            (keyRingAccountDerivation . entityVal) =<< lastM
-        f (prev :| i) = prev :| (i + 1)
-        f _ = undefined
-    return next
+    lastRes <- select $ from $ \a -> do
+        where_ (   a ^. KeyRingAccountKeyRing ==. val ki 
+               &&. not_ (isNothing (a ^. KeyRingAccountDerivation))
+               )
+        orderBy [ desc (a ^. KeyRingAccountId) ]
+        limit 1
+        return $ a ^. KeyRingAccountDerivation
+    return $ case lastRes of
+        (Value (Just (prev :| i)):_) -> prev :| (i + 1)
+        _ -> Deriv :| 0
 
 -- Helper functions to get an Account if it exists, or throw an exception
 -- otherwise.
 getAccount :: MonadIO m => KeyRingName -> AccountName 
-           -> SqlPersistT m (Entity KeyRingAccount)
-getAccount keyRingName accName = do
-    Entity ki _ <- getKeyRing keyRingName
-    accM <- getBy $ UniqueAccount ki accName
-    case accM of
-        Just accEnt -> return accEnt
+           -> SqlPersistT m (KeyRing, Entity KeyRingAccount)
+getAccount keyRingName accountName = do
+    as <- select $ from $ \(k, a) -> do
+        where_ $ joinAccount k a keyRingName accountName   
+        limit 1
+        return (k, a)
+    case as of
+        ((Entity _ k, accEnt):_) -> return (k, accEnt)
         _ -> liftIO . throwIO $ WalletException $ unwords
-            [ "Account", unpack accName, "does not exist" ]
+            [ "Account", unpack accountName, "does not exist" ]
 
 {- Addresses -}
 
@@ -296,110 +272,143 @@ getAddress :: MonadIO m
            -> AccountName                        -- ^ Account name
            -> KeyIndex                           -- ^ Derivation index (key)
            -> AddressType                        -- ^ Address type
-           -> SqlPersistT m (Entity KeyRingAddr) -- ^ Address
-getAddress keyRingName accName i addrType = do
-    Entity ai acc <- getAccount keyRingName accName
-    resM <- getBy $ UniqueAddrIndex ai i addrType
-    case resM of
-        Just addrEnt -> do
-            addrCnt <- count [ KeyRingAddrAccount ==. ai 
-                             , KeyRingAddrType    ==. addrType
-                             ]
-            when (fromIntegral i + 1 > addrCnt - keyRingAccountGap acc) $ 
-                liftIO . throwIO $ WalletException $ unwords
-                    [ "Address index", show i, "is in the hidden gap" ]
-            return addrEnt
+           -> SqlPersistT m (KeyRing, KeyRingAccount, Entity KeyRingAddr) 
+                -- ^ Address
+getAddress keyRingName accountName i addrType = do
+    res <- select $ from $ \(k, a, x) -> do
+        where_ (   joinAccount k a keyRingName accountName
+               &&. joinAddress a x addrType
+               &&. x ^. KeyRingAddrIndex ==. val i
+               )
+        limit 1
+        return (k, a, x)
+    case res of
+        ((Entity _ k, Entity _ a, addrE):_) -> return (k, a, addrE)
         _ -> liftIO . throwIO $ WalletException $ unwords
-            [ "Address index", show i, "does not exist" ]
+            [ "Invalid address index", show i ]
 
 -- | Stream all addresses in the wallet, including hidden gap addresses. This
 -- is useful for building a bloom filter.
 addressSourceAll :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
                  => Source (SqlPersistT m) KeyRingAddr
-addressSourceAll = mapOutput entityVal $ selectSource [] []
+addressSourceAll = mapOutput entityVal $ P.selectSource [] []
 
 -- | Stream all addresses in one account. Hidden gap addresses are not included.
 addressSource :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
-              => KeyRingName -> AccountName -> AddressType 
+              => KeyRingName
+              -> AccountName
+              -> AddressType 
               -> Source (SqlPersistT m) KeyRingAddr
-addressSource keyRingName accName addrType = do
-    Entity ai acc <- lift $ getAccount keyRingName accName
-    addrCnt <- lift $ count [ KeyRingAddrAccount ==. ai 
-                            , KeyRingAddrType    ==. addrType
-                            ]
-    mapOutput entityVal $ selectSource 
-        [ KeyRingAddrAccount ==. ai 
-        , KeyRingAddrType ==. addrType
-        , KeyRingAddrIndex <. fromIntegral (addrCnt - keyRingAccountGap acc)
-        ] []
+addressSource keyRingName accountName addrType = do
+    mapOutput entityVal $ 
+        selectSource $ from $ \(k, a, x) -> do
+            where_ (   joinAccount k a keyRingName accountName
+                   &&. joinAddress a x addrType
+                   )
+            return x
 
 -- | Get addresses by pages. 
 addressPage :: MonadIO m 
-            => KeyRingName -- ^ KeyRing name
-            -> AccountName -- ^ Account name
-            -> AddressType -- ^ Address type 
-            -> PageRequest -- ^ Page request
-            -> SqlPersistT m ([KeyRingAddr], Int) -- ^ Page result
+            => KeyRingName                           -- ^ KeyRing name
+            -> AccountName                           -- ^ Account name
+            -> AddressType                           -- ^ Address type 
+            -> PageRequest                           -- ^ Page request
+            -> SqlPersistT m ([(KeyRing, KeyRingAccount, KeyRingAddr)], Word32) 
+                -- ^ Page result
 addressPage keyRingName accountName addrType page@PageRequest{..}
     | validPageRequest page = do
-        Entity ai acc <- getAccount keyRingName accountName
-        addrCnt <- count [ KeyRingAddrAccount ==. ai
-                         , KeyRingAddrType    ==. addrType
-                         ]
-        if addrCnt == 0 then return ([], 1) else do
-            let maxIndex = addrCnt - keyRingAccountGap acc
-                (d, m)   = maxIndex `divMod` pageLen
-                maxPage  = d + min 1 m
-            when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
-                unwords [ "Invalid page number", show pageNum ]
-            res <- selectList [ KeyRingAddrAccount ==. ai
-                              , KeyRingAddrType ==. addrType
-                              , KeyRingAddrIndex <. fromIntegral maxIndex
-                              ]
-                              [ if pageReverse 
-                                      then Asc KeyRingAddrId 
-                                      else Desc KeyRingAddrId
-                              , LimitTo pageLen
-                              , OffsetBy $ (pageNum - 1) * pageLen
-                              ]
-            let f | pageReverse = id
-                  | otherwise   = reverse
-            return (f $ map entityVal res, maxPage)
+        res <- select $ from $ \(k, a, x) -> do
+            where_ (   joinAccount k a keyRingName accountName
+                   &&. joinAddress a x addrType 
+                   )
+            let order = if pageReverse then asc else desc
+            orderBy [ order (x ^. KeyRingAddrIndex) ]
+            limit $ fromIntegral pageLen
+            offset $ fromIntegral $ (pageNum - 1) * pageLen
+            return (k, a, x, subSelectAddrMaxIndex a addrType)
+
+        let cnt = case res of
+                ((_,_,_,Value maxIndex):_) -> maxIndex
+                _ -> 0
+            (d, m)  = cnt `divMod` pageLen
+            maxPage = d + min 1 m
+
+        when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
+            unwords [ "Invalid page number", show pageNum ]
+
+        let f | pageReverse = id
+              | otherwise   = reverse
+            g (Entity _ k, Entity _ a, Entity _ x, _) = (k, a, x)
+        return (f $ map g res, maxPage)
     | otherwise = liftIO . throwIO $ WalletException $
         concat [ "Invalid page request"
                , " (Page: ", show pageNum, ", Page size: ", show pageLen, ")"
                ]
 
+-- | Get a count of all the addresses in an account
+addressCount :: MonadIO m 
+             => KeyRingName          -- ^ KeyRing name
+             -> AccountName          -- ^ Account name
+             -> AddressType          -- ^ Address type 
+             -> SqlPersistT m Word32 -- ^ Address Count
+addressCount keyRingName accountName addrType = do
+    res <- select $ from $ \(k, a, x) -> do
+        let gap = a ^. KeyRingAccountGap
+        where_ (   joinAccount k a keyRingName accountName
+               &&. joinAddress a x addrType
+               )
+        return $ coalesceDefault [max_ (x ^. KeyRingAddrIndex)] (val 0) -. gap
+    return $ case res of
+        (Value c:_) -> max 0 c
+        _ -> 0
+
 -- | Get a list of all unused addresses.
-addressUnused :: MonadIO m 
-              => KeyRingName -> AccountName -> AddressType
-              -> SqlPersistT m [KeyRingAddr]
-addressUnused keyRingName accountName addrType = do
-    Entity ai acc <- getAccount keyRingName accountName
-    when (keyRingAccountGap acc <= 0) $ liftIO . throwIO $ WalletException $
-        unwords [ "Account", unpack accountName, "has no unused addresses" ]
-    res <- selectList [ KeyRingAddrAccount ==. ai
-                      , KeyRingAddrType ==. addrType
-                      ]
-                      [ Desc KeyRingAddrId
-                      , LimitTo $ keyRingAccountGap acc
-                      , OffsetBy $ keyRingAccountGap acc
-                      ]
-    return $ reverse $ map entityVal res
+unusedAddresses :: MonadIO m 
+                => KeyRingName
+                -> AccountName
+                -> AddressType
+                -> SqlPersistT m [(KeyRing, KeyRingAccount, KeyRingAddr)]
+unusedAddresses keyRingName accountName addrType = do
+    res <- select $ from $ \(k, a, x) -> do
+        let maxI = subSelectAddrMaxIndex a addrType
+            gap  = a ^. KeyRingAccountGap
+        where_ (   joinAccount k a keyRingName accountName
+               &&. joinAddress a x addrType
+               &&. x ^. KeyRingAddrIndex >. maxI -. gap
+               )
+        return (k, a, x)
+    return $ map (\(Entity _ k, Entity _ a, Entity _ x) -> (k, a, x)) res
+
+-- | Given an account entity, return the first unused address in the accounts
+-- address gap. 
+firstUnusedAddress :: MonadIO m
+                   => Entity KeyRingAccount
+                   -> AddressType
+                   -> SqlPersistT m KeyRingAddr
+firstUnusedAddress (Entity ai acc) addrType = do
+    res <- select $ from $ \x -> do
+        where_ (   x ^. KeyRingAddrAccount ==. val ai
+               &&. x ^. KeyRingAddrType    ==. val addrType
+               )
+        orderBy [ desc $ x ^. KeyRingAddrIndex ]
+        limit 1
+        offset $ max 0 $ (fromIntegral $ keyRingAccountGap acc * 2) - 1
+        return x
+    case res of
+        (Entity _ a:_) -> return a
+        _ -> liftIO . throwIO $ WalletException "No unused addresses available"
 
 -- | Add a label to an address.
 setAddrLabel :: MonadIO m
-             => KeyRingName               -- ^ KeyRing name
-             -> AccountName               -- ^ Account name
-             -> KeyIndex                  -- ^ Derivation index
-             -> AddressType               -- ^ Address type
-             -> Text                      -- ^ New label
-             -> SqlPersistT m KeyRingAddr -- ^ New Address
+             => KeyRingName           -- ^ KeyRing name
+             -> AccountName           -- ^ Account name
+             -> KeyIndex              -- ^ Derivation index
+             -> AddressType           -- ^ Address type
+             -> Text                  -- ^ New label
+             -> SqlPersistT m ()      -- ^ New Address
 setAddrLabel keyRingName accountName i addrType label = do
-    Entity k addr <- getAddress keyRingName accountName i addrType
-    let newAddr = addr{ keyRingAddrLabel = label }
-    replace k newAddr
-    return newAddr
+    (_, _, Entity addrI _) <- getAddress keyRingName accountName i addrType
+    P.update addrI [ KeyRingAddrLabel P.=. label ]
 
 -- | Returns the private key of an address.
 addressPrvKey :: MonadIO m
@@ -409,14 +418,16 @@ addressPrvKey :: MonadIO m
               -> AddressType           -- ^ Address type
               -> SqlPersistT m PrvKeyC -- ^ Private key
 addressPrvKey keyRingName accountName i addrType = do
-    Entity _ (KeyRing _ master _) <- getKeyRing keyRingName
-    Entity _ addr <- getAddress keyRingName accountName i addrType
-    case keyRingAddrRootDerivation addr of
-        Just deriv -> return $ xPrvKey $ derivePath deriv master
-        _ -> liftIO . throwIO $ WalletException $ unwords
-            [ "Can not get private keys from read-only account"
-            , unpack accountName
-            ]
+    res <- select $ from $ \(k, a, x) -> do
+        where_ (   joinAccount k a keyRingName accountName
+               &&. joinAddress a x addrType
+               &&. x ^. KeyRingAddrIndex ==. val i
+               )
+        return (k ^. KeyRingMaster, x ^. KeyRingAddrFullDerivation)
+    case res of
+        ((Value master, Value (Just deriv)):_) -> 
+            return $ xPrvKey $ derivePath deriv master
+        _ -> liftIO . throwIO $ WalletException "Invalid address"
 
 -- | Create new addresses in an account and increment the internal bloom filter.
 -- This is a low-level function that simply creates the desired amount of new
@@ -426,134 +437,121 @@ addressPrvKey keyRingName accountName i addrType = do
 createAddrs :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
             => Entity KeyRingAccount
             -> AddressType 
-            -> Int       
-            -> SqlPersistT m [KeyRingAddr]
-createAddrs (Entity keyRingAddrAccount acc) keyRingAddrType n 
-    | n < 0 = liftIO . throwIO $ WalletException $ 
-        unwords [ "Invalid negative value", show n ]
-    | isMultisigAccount acc && not (completeMultisig acc) =
+            -> Word32       
+            -> SqlPersistT m ()
+createAddrs (Entity ai acc) addrType n 
+    | n <= 0 = liftIO . throwIO $ WalletException $ 
+        unwords [ "Invalid value", show n ]
+    | not (isCompleteAccount acc) =
         liftIO . throwIO $ WalletException $ unwords
-            [ "Keys are still missing from the incomplete multisig account"
+            [ "Keys are still missing from the incomplete account"
             , unpack $ keyRingAccountName acc
             ]
-    | n == 0 = return []
     | otherwise = do
-        keyRingAddrCreated <- liftIO getCurrentTime
-        lastM <- selectFirst [ KeyRingAddrAccount ==. keyRingAddrAccount
-                             , KeyRingAddrType    ==. keyRingAddrType
-                             ] 
-                             [ Desc KeyRingAddrId ]
-
-            -- Find the next derivation index from the last address
-        let nextI = maybe 0 (+1) $ keyRingAddrIndex . entityVal <$> lastM
-            keyRingAddrLabel = ""
-            -- Build the new addresses
-            build (keyRingAddrAddress, keyM, rdmM, keyRingAddrIndex) = 
-                    -- Full derivation from the root
-                let f x = toMixed x :/ branchType :/ keyRingAddrIndex
-                    keyRingAddrRootDerivation = 
-                        f <$> keyRingAccountDerivation acc
-                    -- Partial derivation under the account derivation
-                    keyRingAddrDerivation = 
-                        Deriv :/ branchType :/ keyRingAddrIndex
-                    keyRingAddrKey = keyM
-                    keyRingAddrRedeem = rdmM
-                    keyRingAddrKeyRingName = keyRingAccountKeyRingName acc
-                    keyRingAddrAccountName = keyRingAccountName acc
-                    keyRingAddrInBalance = 0
-                    keyRingAddrOutBalance = 0
-                    keyRingAddrInOfflineBalance = 0
-                    keyRingAddrOutOfflineBalance = 0
-                    keyRingAddrFundingTxs = 0
-                    keyRingAddrSpendingTxs = 0
-                    keyRingAddrFundingOfflineTxs = 0
-                    keyRingAddrSpendingOfflineTxs = 0
-                in  KeyRingAddr{..}
-            res = map build $ take n $ deriveFrom nextI
+        now <- liftIO getCurrentTime
+        -- Find the next derivation index from the last address
+        lastRes <- select $ from $ \x -> do
+            where_ (   x ^. KeyRingAddrAccount ==. val ai
+                   &&. x ^. KeyRingAddrType    ==. val addrType
+                   )
+            return $ max_ (x ^. KeyRingAddrIndex)
+        let nextI = case lastRes of
+                (Value (Just lastI):_) -> lastI + 1
+                _ -> 0
+            build (addr, keyM, rdmM, i) = KeyRingAddr
+                { keyRingAddrAccount = ai
+                , keyRingAddrAddress = addr
+                , keyRingAddrIndex   = i
+                , keyRingAddrType    = addrType
+                , keyRingAddrLabel   = ""
+                -- Full derivation from the master key
+                , keyRingAddrFullDerivation = 
+                    let f d = toMixed d :/ branchType :/ i
+                    in  f <$> keyRingAccountDerivation acc
+                -- Partial derivation under the account derivation
+                , keyRingAddrDerivation = Deriv :/ branchType :/ i
+                , keyRingAddrRedeem     = rdmM
+                , keyRingAddrKey        = keyM
+                , keyRingAddrCreated    = now
+                }
+            res = map build $ take (fromIntegral n) $ deriveFrom nextI
 
         -- Save the addresses and increment the bloom filter
         insertMany_ res
         incrementFilter res
-        return res
   where 
     -- Branch type (external = 0, internal = 1)
-    branchType = addrTypeIndex keyRingAddrType
-    m = flip fromMaybe (keyRingAccountRequiredSigs acc) $ 
-            throw $ WalletException $ unwords
-                [ "createAddrs: No required sigs in multisig account"
-                , unpack $ keyRingAccountName acc
-                ]
-    deriveFrom 
-        | isMultisigAccount acc = 
+    branchType = addrTypeIndex addrType
+    deriveFrom = case keyRingAccountType acc of
+        AccountMultisig _ m _ ->
             let f (a, r, i) = (a, Nothing, Just r, i)
-                deriv       = Deriv :/ branchType
+                deriv  = Deriv :/ branchType
             in  map f . derivePathMSAddrs (keyRingAccountKeys acc) deriv m
-        | otherwise = case keyRingAccountKeys acc of
+        AccountRegular _ -> case keyRingAccountKeys acc of
+            (key:_) -> let f (a, k, i) = (a, Just k, Nothing, i)
+                       in  map f . derivePathAddrs key (Deriv :/ branchType)
             [] -> throw $ WalletException $ unwords
                 [ "createAddrs: No key available in regular account"
                 , unpack $ keyRingAccountName acc 
                 ]
-            (key:_) -> 
-                let f (a, k, i) = (a, Just k, Nothing, i)
-                in  map f . derivePathAddrs key (Deriv :/ branchType)
 
 -- | Use an address and make sure we have enough gap addresses after it.
 -- Returns the number of new gap addresses created.
 useAddress :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
-           => KeyRingAddr -> SqlPersistT m (KeyRingAccountId, Int)
+           => KeyRingAddr -> SqlPersistT m (KeyRingAccountId, Word32)
 useAddress KeyRingAddr{..} = do
-    accM <- get keyRingAddrAccount
-    case accM of
-        Just acc -> do
-            cnt <- count [ KeyRingAddrIndex >. keyRingAddrIndex
-                         , KeyRingAddrAccount ==. keyRingAddrAccount
-                         , KeyRingAddrType ==. keyRingAddrType
-                         ]
-            let diff = (2 * keyRingAccountGap acc) - cnt
-            when (diff > 0) $ do
-                let accE = Entity keyRingAddrAccount acc
-                _ <- createAddrs accE keyRingAddrType diff
-                return ()
-            return (keyRingAddrAccount, max 0 diff)
-        _ -> liftIO . throwIO $ WalletException $ unwords
-            [ "Invalid foreign account key in address"
-            , addrToBase58 keyRingAddrAddress
-            ]
+    res <- select $ from $ \(a `InnerJoin` x) -> do
+        on $ x ^. KeyRingAddrAccount ==. a ^. KeyRingAccountId
+        where_ (   a ^. KeyRingAccountId ==. val keyRingAddrAccount
+               &&. x ^. KeyRingAddrType  ==. val keyRingAddrType
+               &&. x ^. KeyRingAddrIndex >.  val keyRingAddrIndex
+               )
+        return (countRows, a)
+    case res of
+        ((Value cnt, accE@(Entity _ acc)):_) -> do
+            let gap     = fromIntegral (keyRingAccountGap acc) :: Int
+                missing = 2*gap - cnt 
+            when (missing > 0) $ 
+                createAddrs accE keyRingAddrType $ fromIntegral missing
+            return (keyRingAddrAccount, fromIntegral $ max 0 missing)
+        _ -> return (keyRingAddrAccount, 0) -- Should not happen
 
 -- | Set the address gap of an account to a new value. This will create new
 -- internal and external addresses as required. The gap can only be increased,
 -- not decreased in size.
 setAccountGap :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
               => Entity KeyRingAccount -- ^ Account Entity
-              -> Int                   -- ^ New gap value
-              -> SqlPersistT m KeyRingAccount 
+              -> Word32                -- ^ New gap value
+              -> SqlPersistT m ()
 setAccountGap accE@(Entity ai acc) gap
-    | diff < 0 = liftIO . throwIO $ WalletException $ unwords
-        [ "Can not decrease the gap from"
-        , show $ keyRingAccountGap acc, "to", show gap
-        ]
+    | not (isCompleteAccount acc) =
+        liftIO . throwIO $ WalletException $ unwords
+            [ "Keys are still missing from the incomplete account"
+            , unpack $ keyRingAccountName acc
+            ]
+    | missing <= 0 = liftIO . throwIO $ WalletException
+        "The gap of an account can only be increased"
     | otherwise = do
-        when (diff > 0) $ do
-            _ <- createAddrs accE AddressExternal $ diff*2
-            _ <- createAddrs accE AddressInternal $ diff*2
-            replace ai newAcc
-        return newAcc
+        createAddrs accE AddressExternal $ missing*2
+        createAddrs accE AddressInternal $ missing*2
+        P.update ai [ KeyRingAccountGap P.=. gap ]
   where
-    diff   = gap - keyRingAccountGap acc
-    newAcc = acc{ keyRingAccountGap = gap }
+    missing = fromInteger $ toInteger gap - toInteger (keyRingAccountGap acc)
 
 -- Return the creation time of the first address in the wallet.
 firstAddrTime :: MonadIO m => SqlPersistT m (Maybe Timestamp)
 firstAddrTime = do
-    fstKeyTimeM <- selectFirst [] [Asc KeyRingAddrId]
-    return $ (toPOSIX . keyRingAddrCreated . entityVal) <$> fstKeyTimeM
+    res <- select $ from $ \x -> do
+        orderBy [ asc (x ^. KeyRingAddrId) ]
+        limit 1
+        return $ x ^. KeyRingAddrCreated
+    return $ case res of
+        (Value d:_) -> Just $ toPOSIX d
+        _ -> Nothing
   where
     toPOSIX = fromInteger . round . utcTimeToPOSIXSeconds
 
 {- Bloom filters -}
-
--- TODO: Revwrite adding addresses to bloom filters using the conduits
--- instead of selectList.
 
 -- | Add the given addresses to the bloom filter. If the number of elements
 -- becomes too large, a new bloom filter is computed from scratch.
@@ -575,7 +573,7 @@ computeNewFilter = do
     -- Create a new empty bloom filter
     -- TODO: Choose a random nonce for the bloom filter
     -- TODO: Check global bloom filter length limits
-    elems <- liftM (*2) $ count ([] :: [Filter KeyRingAddr])
+    elems <- liftM (*2) $ P.count ([] :: [P.Filter KeyRingAddr])
     let newBloom = bloomCreate (filterLen elems) fpRate 0 BloomUpdateNone
     bloom <- addressSourceAll $$ bloomSink newBloom
     setBloomFilter bloom elems
@@ -614,48 +612,41 @@ addToFilter bloom addrs =
 -- peer connection to filter the transactions received by that peer.
 getBloomFilter :: MonadIO m => SqlPersistT m (BloomFilter, Int, Double)
 getBloomFilter = do
-    cnfM <- selectFirst [] []
-    case cnfM of
-        Just (Entity _ KeyRingConfig{..}) -> 
-            return ( keyRingConfigBloomFilter
-                   , keyRingConfigBloomElems
-                   , keyRingConfigBloomFp
-                   )
-        Nothing -> liftIO . throwIO $
+    res <- select $ from $ \c -> do
+        limit 1
+        return ( c ^. KeyRingConfigBloomFilter
+               , c ^. KeyRingConfigBloomElems
+               , c ^. KeyRingConfigBloomFp
+               )
+    case res of
+        ((Value b, Value n, Value fp):_) -> return (b, n, fp)
+        _ -> liftIO . throwIO $
             WalletException "getBloomFilter: Database not initialized"
 
 -- | Save a bloom filter and the number of elements it contains
 setBloomFilter :: MonadIO m => BloomFilter -> Int -> SqlPersistT m ()
 setBloomFilter bloom elems = 
-    updateWhere [] [ KeyRingConfigBloomFilter =. bloom
-                   , KeyRingConfigBloomElems  =. elems
-                   ]
+    P.updateWhere [] [ KeyRingConfigBloomFilter P.=. bloom
+                     , KeyRingConfigBloomElems  P.=. elems
+                     ]
 
 -- Helper function to compute the redeem script of a given derivation path
 -- for a given multisig account.
 getPathRedeem :: KeyRingAccount -> SoftPath -> RedeemScript
-getPathRedeem acc@KeyRingAccount{..} deriv 
-    | not $ isMultisigAccount acc = throw $ WalletException $ 
-        unwords [ "getPathRedeem: Account", unpack keyRingAccountName
-                , "is not a multisig account" 
-                ]
-    | length keyRingAccountKeys < n = throw $ WalletException $ 
-        unwords [ "getPathRedeem: Incomplete multisig account"
-                , unpack keyRingAccountName 
-                ]
-    | otherwise = sortMulSig $ PayMulSig pubKeys m
+getPathRedeem acc@KeyRingAccount{..} deriv = case keyRingAccountType of
+    AccountMultisig _ m _ -> if isCompleteAccount acc
+        then sortMulSig $ PayMulSig pubKeys m
+        else throw $ WalletException $ unwords 
+            [ "getPathRedeem: Incomplete multisig account"
+            , unpack keyRingAccountName 
+            ]
+    _ -> throw $ WalletException $ unwords 
+        [ "getPathRedeem: Account", unpack keyRingAccountName
+        , "is not a multisig account" 
+        ]
   where
-    pubKeys = map (toPubKeyG . xPubKey . derivePubPath deriv) keyRingAccountKeys
-    m = flip fromMaybe keyRingAccountRequiredSigs $ 
-        throw $ WalletException $ unwords
-            [ "getPathRedeem: No required sigs in multisig account"
-            , unpack keyRingAccountName
-            ]
-    n = flip fromMaybe keyRingAccountTotalKeys $ 
-        throw $ WalletException $ unwords
-            [ "getPathRedeem: No total keys in multisig account"
-            , unpack keyRingAccountName
-            ]
+    f       = toPubKeyG . xPubKey . derivePubPath deriv
+    pubKeys = map f keyRingAccountKeys
 
 -- Helper function to compute the public key of a given derivation path for
 -- a given non-multisig account.
@@ -666,30 +657,67 @@ getPathPubKey acc@KeyRingAccount{..} deriv
                 , "is not a regular non-multisig account" 
                 ]
     | otherwise = case keyRingAccountKeys of
-        [] -> throw $ WalletException $ unwords
+        (key:_) -> xPubKey $ derivePubPath deriv key
+        _ -> throw $ WalletException $ unwords
             [ "getPathPubKey: No keys are available in account"
             , unpack keyRingAccountName 
             ]
-        (key:_) -> xPubKey $ derivePubPath deriv key
 
 {- Helpers -}
+
+subSelectAddrMaxIndex :: SqlExpr (Entity KeyRingAccount)
+                      -> AddressType
+                      -> SqlExpr (Value KeyIndex)
+subSelectAddrMaxIndex a addrType =
+    sub_select $ from $ \x -> do
+        where_ (   x ^. KeyRingAddrAccount ==. a ^. KeyRingAccountId
+               &&. x ^. KeyRingAddrType    ==. val addrType
+               )
+        return $ coalesceDefault [max_ (x ^. KeyRingAddrIndex)] (val 0) -. gap
+  where
+    gap = a ^. KeyRingAccountGap
+
+joinAddress :: SqlExpr (Entity KeyRingAccount)
+            -> SqlExpr (Entity KeyRingAddr)
+            -> AddressType
+            -> SqlExpr (Value Bool)
+joinAddress a x addrType = 
+    (   x ^. KeyRingAddrAccount ==. a ^. KeyRingAccountId
+    &&. x ^. KeyRingAddrType    ==. val addrType
+    &&. x ^. KeyRingAddrIndex   <=. subSelectAddrMaxIndex a addrType
+    )
+
+joinAccount :: SqlExpr (Entity KeyRing) 
+            -> SqlExpr (Entity KeyRingAccount)
+            -> KeyRingName
+            -> AccountName
+            -> SqlExpr (Value Bool)
+joinAccount k a keyRingName accountName =
+    (   k ^. KeyRingId          ==. a ^. KeyRingAccountKeyRing
+    &&. k ^. KeyRingName        ==. val keyRingName
+    &&. a ^. KeyRingAccountName ==. val accountName
+    )
 
 validMultisigParams :: Int -> Int -> Bool
 validMultisigParams m n = n >= 1 && n <= 15 && m >= 1 && m <= n
 
+validAccountType :: AccountType -> Bool
+validAccountType t = case t of
+    AccountRegular _      -> True
+    AccountMultisig _ m n -> validMultisigParams m n
+
 isMultisigAccount :: KeyRingAccount -> Bool
 isMultisigAccount acc = case keyRingAccountType acc of
-    AccountMultisig     -> True
-    AccountReadMultisig -> True
-    _                   -> False
+    AccountRegular _      -> False
+    AccountMultisig _ _ _ -> True
 
 isReadAccount :: KeyRingAccount -> Bool
 isReadAccount acc = case keyRingAccountType acc of
-    AccountRead         -> True
-    AccountReadMultisig -> True
-    _                   -> False
+    AccountRegular r      -> r
+    AccountMultisig r _ _ -> r
 
-completeMultisig :: KeyRingAccount -> Bool
-completeMultisig acc = isJust (keyRingAccountTotalKeys acc) &&
-    Just (length $ keyRingAccountKeys acc) >= keyRingAccountTotalKeys acc
+isCompleteAccount :: KeyRingAccount -> Bool
+isCompleteAccount acc = case keyRingAccountType acc of
+    AccountRegular _      -> length (keyRingAccountKeys acc) == 1
+    AccountMultisig _ _ n -> length (keyRingAccountKeys acc) == n
 

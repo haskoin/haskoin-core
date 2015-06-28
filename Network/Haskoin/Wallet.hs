@@ -28,7 +28,6 @@ module Network.Haskoin.Wallet
 , WalletRequest(..)
 , PageRequest(..)
 , validPageRequest
-, BalanceType(..)
 , NewKeyRing(..)
 , NewAccount(..)
 , SetAccountGap(..)
@@ -42,7 +41,8 @@ module Network.Haskoin.Wallet
 , addrTypeIndex
 , TxType(..)
 , TxConfidence(..)
-, CoinStatus(..)
+, AddressInfo(..)
+, AddressBalance(..)
 
 -- *API Response Types
 , WalletResponse(..)
@@ -64,21 +64,20 @@ module Network.Haskoin.Wallet
 -- *Database Accounts
 , accountSource
 , newAccount
-, newAccountMultisig
-, newAccountRead
-, newAccountReadMultisig
 , addAccountKeys
 , getAccount
 , isMultisigAccount
 , isReadAccount
-, completeMultisig
+, isCompleteAccount
 
 -- *Database Addresses
 , getAddress
 , addressSourceAll
 , addressSource
 , addressPage
-, addressUnused
+, unusedAddresses
+, firstUnusedAddress
+, addressCount
 , setAddrLabel
 , addressPrvKey
 , useAddress
@@ -109,7 +108,6 @@ module Network.Haskoin.Wallet
 , spendableCoins
 , spendableCoinsSource
 , accountBalance
-, offlineBalance
 
 -- *Rescan
 , resetRescan

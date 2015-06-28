@@ -44,7 +44,7 @@ import Control.Monad (forM_, when, liftM2)
 import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.Reader as R (ReaderT, ask, asks)
 
-import Data.Maybe (listToMaybe, isNothing, fromJust, fromMaybe)
+import Data.Maybe (listToMaybe, isNothing, fromJust, fromMaybe, isJust)
 import Data.List (intersperse, intercalate)
 import Data.Text (pack, unpack, splitOn)
 import qualified Data.Yaml as YAML (encode)
@@ -114,27 +114,26 @@ cmdNewAcc name = do
     k <- R.asks configKeyRing
     sendZmq (PostAccountsR k newAcc) $ putStr . printAccount
   where
-    newAcc = NewAccount (pack name) AccountRegular [] Nothing Nothing
+    newAcc = NewAccount (pack name) (AccountRegular False) []
 
 -- First argument: is account read-only?
 cmdNewMS :: Bool -> String -> String -> String -> [String] -> Handler ()
 cmdNewMS r name mStr nStr ks = case keysM of
     Just keys -> do
         k <- R.asks configKeyRing
-        let newAcc = NewAccount (pack name) t keys m n
+        let newAcc = NewAccount (pack name) (AccountMultisig r m n) keys
         sendZmq (PostAccountsR k newAcc) $ putStr . printAccount
     _ -> error "Could not parse key(s)"
   where
-    t     = if r then AccountReadMultisig else AccountMultisig
-    m     = Just $ read mStr
-    n     = Just $ read nStr
+    m     = read mStr
+    n     = read nStr
     keysM = mapM xPubImport ks
 
 cmdNewRead :: String -> String -> Handler ()
 cmdNewRead name keyStr = case keyM of
     Just key -> do
         k <- R.asks configKeyRing
-        let newAcc = NewAccount (pack name) AccountRead [key] Nothing Nothing
+        let newAcc = NewAccount (pack name) (AccountRegular True) [key]
         sendZmq (PostAccountsR k newAcc) $ putStr . printAccount
     _ -> error "Could not parse key"
   where
@@ -357,9 +356,10 @@ sendZmq req handle = do
         send sock [] (toStrictBS $ encode req)
         eitherDecode . toLazyBS <$> receive sock
     case resE of
-        Right (ResponseError err) -> error $ unpack err
-        Right (ResponseValid a)   -> formatOutput a =<< R.asks configFormat
-        Left err                  -> error err
+        Right (ResponseValid (Just a)) -> formatOutput a =<< R.asks configFormat
+        Right (ResponseValid Nothing)  -> return ()
+        Right (ResponseError err)      -> error $ unpack err
+        Left err                       -> error err
   where
     formatOutput a format = liftIO $ case format of
         OutputJSON   -> formatStr $ bsToString $ toStrictBS $
@@ -497,92 +497,85 @@ encodeSigHashJSON sh = case sh of
 {- Print utilities -}
  
 printKeyRing :: JsonKeyRing -> String
-printKeyRing JsonKeyRing{..} = unlines
-    [ "KeyRing    : " ++ unpack jsonKeyRingName
-    , "Master key : " ++ xPrvExport jsonKeyRingMaster
+printKeyRing JsonKeyRing{..} = unlines $
+    [ "KeyRing    : " ++ unpack jsonKeyRingName ]
+    ++
+    [ "Master key : " ++ xPrvExport (fromJust jsonKeyRingMaster) 
+    | isJust jsonKeyRingMaster
     ]
 
 printAccount :: JsonAccount -> String
 printAccount JsonAccount{..} = unlines $
     [ "Account: " ++ unpack jsonAccountName
-    , "Keyring: " ++ unpack jsonAccountKeyRingName
     , "Type   : " ++ showType
     , "Gap    : " ++ show jsonAccountGap
-    ] ++ maybe [] (\d -> ["Deriv  : " ++ show d]) jsonAccountDerivation 
-      ++ if null jsonAccountKeys then [] else 
-        ( "Keys   : " ++ xPubExport (head jsonAccountKeys) ) : 
-        map (\x -> "         " ++ xPubExport x) (tail jsonAccountKeys)
+    ] 
+    ++
+    [ "Deriv  : " ++ show (fromJust jsonAccountDerivation) 
+    | isJust jsonAccountDerivation
+    ]
+    ++
+    [ "Keys   : " ++ unlines
+        ( [] ++ map (\x -> "         " ++ xPubExport x) jsonAccountKeys )
+    | not (null jsonAccountKeys)
+    ]
   where
     showType = case jsonAccountType of
-        AccountRegular -> "Regular"
-        AccountMultisig -> unwords
-            [ "Multisig"
-            , show $ fromJust jsonAccountRequiredSigs
-            , "of"
-            , show $ fromJust jsonAccountTotalKeys
-            ]
-        AccountRead -> "Read-only"
-        AccountReadMultisig -> unwords
-            [ "Read-only Multisig"
-            , show $ fromJust jsonAccountRequiredSigs
-            , "of"
-            , show $ fromJust jsonAccountTotalKeys
+        AccountRegular r -> if r then "Read-Only" else "Regular"
+        AccountMultisig r m n -> unwords
+            [ if r then "Read-Only Multisig" else "Multisig"
+            , show m, "of", show n
             ]
 
 printAddress :: JsonAddr -> String
 printAddress JsonAddr{..} = unwords $
     [ show jsonAddrIndex, ":", addrToBase58 jsonAddrAddress ]
-    ++ ( if null (unpack jsonAddrLabel) 
-           then [] 
-           else [ "(" ++ unpack jsonAddrLabel ++ ")" ]
-       )
-    ++ ( if jsonAddrInOfflineBalance == 0 
-           then [] 
-           else [ "[Received: " ++ show jsonAddrInOfflineBalance ++ "]" ]
-       )
-    ++ ( if jsonAddrFundingOfflineTxs == 0 
-           then [] 
-           else [ "[Funding Txs: " ++ show jsonAddrFundingOfflineTxs ++ "]" ]
-       )
-    ++ ( if jsonAddrSpendingOfflineTxs == 0 
-           then [] 
-           else [ "[Spending Txs: " ++ show jsonAddrSpendingOfflineTxs ++ "]" ]
-       )
+    ++ 
+    [ "(" ++ unpack jsonAddrLabel ++ ")" | not (null $ unpack jsonAddrLabel) ]
+    ++ concat 
+    ( [ [ "[Received: "     ++ show (addrBalanceInBalance bal)   ++ "]"
+        , "[Funding Txs: "  ++ show (addrBalanceFundingTxs bal)  ++ "]"
+        , "[Spending Txs: " ++ show (addrBalanceSpendingTxs bal) ++ "]"
+        ] 
+        | isJust jsonAddrOfflineBalance
+      ]
+    )
+  where
+    bal = fromJust jsonAddrOfflineBalance
 
 printTx :: JsonTx -> String
-printTx JsonTx{..} = unlines $
-    [ "Value        : " ++ printTxType jsonTxType ++ " " ++ show jsonTxValue ] 
+printTx tx@JsonTx{..} = unlines $
+    [ "Value      : " ++ printTxType jsonTxType ++ " " ++ show jsonTxValue ] 
     ++
-    [ "Sender(s)    : " ++ printAddrList jsonTxFrom | jsonTxType == TxIncoming ]
+    [ "Inputs     : " ++ printAddrInfos jsonTxInputs 
+    | not (null jsonTxInputs) 
+    ]
     ++
-    [
-      "Recipient(s) : " ++ printAddrList jsonTxTo
-    , "Confidence   : " 
-        ++ printConfidence jsonTxConfidence
-        ++ if jsonTxConfidence == TxOffline then "" else
-            " (Confirmations: " ++ show jsonTxConfirmations ++ ")"
-    ] 
+    [ "Outputs    : " ++ printAddrInfos jsonTxOutputs 
+    | not (null jsonTxOutputs) 
+    ]
+    ++
+    [ "Change     : " ++ printAddrInfos jsonTxChange
+    | not (null jsonTxChange) 
+    ]
+    ++
+    [ "Confidence : " ++ printTxConfidence tx ] 
   where
-    printAddrList xs = intercalate ", " (map addrToBase58 xs)
+    printAddrInfos xs = unlines $ map f xs
+    f (AddressInfo addr valM local) = unwords $
+        [ if local then "   <-" else "     "
+        , addrToBase58 addr 
+        ] ++ [ show $ fromJust valM | isJust valM ]
 
 printAddrTx :: JsonAddrTx -> String
 printAddrTx JsonAddrTx{..} = unlines $
-    [ "Value        : " ++ printTxType jsonAddrTxTxType 
-                        ++ " " ++ show jsonAddrTxValue ] 
-    ++
-    [ "Sender(s)    : " ++ printAddrList jsonAddrTxFrom
-    | jsonAddrTxTxType == TxIncoming
-    ]
-    ++
-    [
-      "Recipient(s) : " ++ printAddrList jsonAddrTxTo
-    , "Confidence   : " 
-        ++ printConfidence jsonAddrTxConfidence
-        ++ if jsonAddrTxConfidence == TxOffline then "" else
-            " (Confirmations: " ++ show jsonAddrTxConfirmations ++ ")"
+    [ "Value        : " 
+        ++ printAddrTxType jsonAddrTxType ++ " " 
+        ++ show jsonAddrTxValue 
+    ] ++
+    [ "Confidence   : " ++ printTxConfidence (fromJust jsonAddrTxTx)
+    | isJust jsonAddrTxTx
     ] 
-  where
-    printAddrList xs = intercalate ", " (map addrToBase58 xs)
 
 printConfidence :: TxConfidence -> String
 printConfidence c = case c of
@@ -590,11 +583,27 @@ printConfidence c = case c of
     TxPending  -> "Pending"
     TxDead     -> "Dead"
     TxOffline  -> "Offline"
-    TxExternal -> "external"
+
+printTxConfidence :: JsonTx -> String
+printTxConfidence JsonTx{..} = case jsonTxConfidence of
+    TxBuilding -> "Building" ++ confirmations
+    TxPending  -> "Pending" ++ confirmations
+    TxDead     -> "Dead" ++ confirmations
+    TxOffline  -> "Offline"
+  where
+    confirmations = case jsonTxConfirmations of
+        Just conf -> " (Confirmations: " ++ show conf ++ ")"
+        _         -> ""
 
 printTxType :: TxType -> String
 printTxType t = case t of
     TxIncoming -> "Incoming"
     TxOutgoing -> "Outgoing"
     TxSelf     -> "Self"
+
+printAddrTxType :: AddrTxType -> String
+printAddrTxType t = case t of
+    AddrTxIncoming -> "Incoming"
+    AddrTxOutgoing -> "Outgoing"
+    AddrTxChange   -> "Change"
     

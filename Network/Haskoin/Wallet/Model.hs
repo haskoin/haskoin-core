@@ -10,8 +10,8 @@ module Network.Haskoin.Wallet.Model
 , KeyRingConfigId
 , KeyRingCoin(..)
 , KeyRingCoinId
-, KeyRingBalance(..)
-, KeyRingBalanceId
+, KeyRingSpentCoin(..)
+, KeyRingSpentCoinId
 , KeyRingTx(..)
 , KeyRingTxId
 , KeyRingAddrTx(..)
@@ -30,7 +30,6 @@ module Network.Haskoin.Wallet.Model
 
 ) where
 
-import Data.Int (Int64)
 import Data.Word (Word32, Word64)
 import Data.Time (UTCTime)
 import Data.Text (Text)
@@ -57,141 +56,107 @@ share [ mkPersist sqlSettings
       ]
     $(persistFileWith lowerCaseSettings "config/models")
 
-{- JSON instances for database types -}
-
-instance Coin (Entity KeyRingCoin) where
-    coinValue (Entity _ coin) = keyRingCoinValue coin
-
 {- JSON Types -}
 
 toJsonKeyRing :: KeyRing -> JsonKeyRing
-toJsonKeyRing KeyRing{..} =
-    JsonKeyRing{..}
-  where
-    jsonKeyRingName    = keyRingName
-    jsonKeyRingMaster  = keyRingMaster
-    jsonKeyRingCreated = keyRingCreated
+toJsonKeyRing keyRing = JsonKeyRing
+    { jsonKeyRingName    = keyRingName keyRing
+    , jsonKeyRingMaster  = Nothing -- We don't send the master key in JSON
+    , jsonKeyRingCreated = keyRingCreated keyRing
+    }
 
-toJsonAccount :: KeyRingAccount -> JsonAccount
-toJsonAccount KeyRingAccount{..} =
-    JsonAccount{..}
-  where
-    jsonAccountName         = keyRingAccountName
-    jsonAccountKeyRingName  = keyRingAccountKeyRingName
-    jsonAccountType         = keyRingAccountType
-    jsonAccountDerivation   = keyRingAccountDerivation
-    jsonAccountKeys         = keyRingAccountKeys
-    jsonAccountRequiredSigs = keyRingAccountRequiredSigs
-    jsonAccountTotalKeys    = keyRingAccountTotalKeys
-    jsonAccountGap          = keyRingAccountGap
-    jsonAccountCreated      = keyRingAccountCreated
+toJsonAccount :: (Maybe JsonKeyRing) -> KeyRingAccount -> JsonAccount
+toJsonAccount keyRingM acc = JsonAccount
+    { jsonAccountName         = keyRingAccountName acc
+    , jsonAccountType         = keyRingAccountType acc
+    , jsonAccountDerivation   = keyRingAccountDerivation acc
+    , jsonAccountKeys         = keyRingAccountKeys acc
+    , jsonAccountGap          = keyRingAccountGap acc
+    , jsonAccountCreated      = keyRingAccountCreated acc
+    , jsonAccountKeyRing      = keyRingM
+    }
 
--- TODO: Add the address balance (Maybe Word64)
-toJsonAddr :: KeyRingAddr -> JsonAddr
-toJsonAddr KeyRingAddr{..} =
-    JsonAddr{..}
-  where
-    jsonAddrKeyRingName        = keyRingAddrKeyRingName
-    jsonAddrAccountName        = keyRingAddrAccountName
-    jsonAddrAddress            = keyRingAddrAddress
-    jsonAddrIndex              = keyRingAddrIndex
-    jsonAddrType               = keyRingAddrType
-    jsonAddrLabel              = keyRingAddrLabel
-    jsonAddrRootDerivation     = keyRingAddrRootDerivation
-    jsonAddrDerivation         = keyRingAddrDerivation
-    jsonAddrRedeem             = keyRingAddrRedeem
-    jsonAddrKey                = keyRingAddrKey
-    jsonAddrInBalance          = keyRingAddrInBalance
-    jsonAddrOutBalance         = keyRingAddrOutBalance
-    jsonAddrInOfflineBalance   = keyRingAddrInOfflineBalance
-    jsonAddrOutOfflineBalance  = keyRingAddrOutOfflineBalance
-    jsonAddrFundingTxs         = keyRingAddrFundingTxs
-    jsonAddrSpendingTxs        = keyRingAddrSpendingTxs
-    jsonAddrFundingOfflineTxs  = keyRingAddrFundingOfflineTxs
-    jsonAddrSpendingOfflineTxs = keyRingAddrSpendingOfflineTxs
-    jsonAddrCreated            = keyRingAddrCreated
+toJsonAddr :: (Maybe JsonAccount)    -- ^ The addresses account
+           -> (Maybe AddressBalance) -- ^ The addresses balance
+           -> (Maybe AddressBalance) -- ^ The addresses offline balance
+           -> KeyRingAddr   
+           -> JsonAddr
+toJsonAddr accM balM offBalM addr = JsonAddr
+    { jsonAddrAddress        = keyRingAddrAddress addr
+    , jsonAddrIndex          = keyRingAddrIndex addr
+    , jsonAddrType           = keyRingAddrType addr
+    , jsonAddrLabel          = keyRingAddrLabel addr
+    , jsonAddrFullDerivation = keyRingAddrFullDerivation addr
+    , jsonAddrDerivation     = keyRingAddrDerivation addr
+    , jsonAddrRedeem         = keyRingAddrRedeem addr
+    , jsonAddrKey            = keyRingAddrKey addr
+    , jsonAddrCreated        = keyRingAddrCreated addr
+    , jsonAddrAccount        = accM
+    , jsonAddrBalance        = balM
+    , jsonAddrOfflineBalance = offBalM
+    }
 
-toJsonCoin :: BlockHeight -> KeyRingCoin -> JsonCoin
-toJsonCoin currentHeight KeyRingCoin{..} =
-    JsonCoin{..}
+toJsonTx :: (Maybe JsonAccount) -- ^ The transactions account
+         -> (Maybe BlockHeight) -- ^ The current best block height
+         -> KeyRingTx 
+         -> JsonTx
+toJsonTx accM currentHeightM tx = JsonTx
+    { jsonTxHash            = keyRingTxHash tx
+    , jsonTxNosigHash       = keyRingTxNosigHash tx
+    , jsonTxType            = keyRingTxType tx
+    , jsonTxInValue         = keyRingTxInValue tx
+    , jsonTxOutValue        = keyRingTxOutValue tx
+    , jsonTxValue           = (fromIntegral $ keyRingTxInValue tx) -
+                              (fromIntegral $ keyRingTxOutValue tx)
+    , jsonTxInputs          = keyRingTxInputs tx
+    , jsonTxOutputs         = keyRingTxOutputs tx
+    , jsonTxChange          = keyRingTxChange tx
+    , jsonTxTx              = keyRingTxTx tx
+    , jsonTxIsCoinbase      = keyRingTxIsCoinbase tx
+    , jsonTxConfidence      = keyRingTxConfidence tx
+    , jsonTxConfirmedBy     = keyRingTxConfirmedBy tx
+    , jsonTxConfirmedHeight = keyRingTxConfirmedHeight tx
+    , jsonTxConfirmedDate   = keyRingTxConfirmedDate tx
+    , jsonTxCreated         = keyRingTxCreated tx
+    , jsonTxConfirmations   = f =<< keyRingTxConfirmedHeight tx
+    , jsonTxAccount         = accM
+    }
   where
-    jsonCoinKeyRingName     = keyRingCoinKeyRingName
-    jsonCoinAccountName     = keyRingCoinAccountName
-    jsonCoinHash            = keyRingCoinHash
-    jsonCoinPos             = keyRingCoinPos
-    jsonCoinValue           = keyRingCoinValue
-    jsonCoinScript          = keyRingCoinScript
-    jsonCoinRedeem          = keyRingCoinRedeem
-    jsonCoinRootDerivation  = keyRingCoinRootDerivation
-    jsonCoinDerivation      = keyRingCoinDerivation
-    jsonCoinKey             = keyRingCoinKey
-    jsonCoinAddress         = keyRingCoinAddress
-    jsonCoinAddressType     = keyRingCoinAddressType
-    jsonCoinStatus          = keyRingCoinStatus
-    jsonCoinSpentBy         = keyRingCoinSpentBy
-    jsonCoinIsCoinbase      = keyRingCoinIsCoinbase
-    jsonCoinConfidence      = keyRingCoinConfidence
-    jsonCoinConfirmedBy     = keyRingCoinConfirmedBy
-    jsonCoinConfirmedHeight = keyRingCoinConfirmedHeight
-    jsonCoinConfirmedDate   = keyRingCoinConfirmedDate
-    jsonCoinCreated         = keyRingCoinCreated
-    jsonCoinConfirmations   = maybe 0 (f . fromIntegral) jsonCoinConfirmedHeight
-    f confirmedHeight = 
-        max 0 $ fromIntegral currentHeight - confirmedHeight + 1
+    f confirmedHeight = case currentHeightM of
+        Just h -> return $ fromInteger $
+            max 0 $ (toInteger h) - (toInteger $ confirmedHeight + 1)
+        _ -> Nothing
 
-toJsonTx :: BlockHeight -> KeyRingTx -> JsonTx
-toJsonTx currentHeight KeyRingTx{..} =
-    JsonTx{..}
-  where
-    jsonTxKeyRingName     = keyRingTxKeyRingName
-    jsonTxAccountName     = keyRingTxAccountName
-    jsonTxHash            = keyRingTxHash
-    jsonTxNosigHash       = keyRingTxNosigHash
-    jsonTxType            = keyRingTxType
-    jsonTxInValue         = keyRingTxInValue
-    jsonTxOutValue        = keyRingTxOutValue
-    jsonTxValue           = keyRingTxValue
-    jsonTxFrom            = keyRingTxFrom
-    jsonTxTo              = keyRingTxTo
-    jsonTxChange          = keyRingTxChange
-    jsonTxTx              = keyRingTxTx
-    jsonTxIsCoinbase      = keyRingTxIsCoinbase
-    jsonTxConfidence      = keyRingTxConfidence
-    jsonTxConfirmedBy     = keyRingTxConfirmedBy
-    jsonTxConfirmedHeight = keyRingTxConfirmedHeight
-    jsonTxConfirmedDate   = keyRingTxConfirmedDate
-    jsonTxCreated         = keyRingTxCreated
-    jsonTxConfirmations   = maybe 0 (f . fromIntegral) jsonTxConfirmedHeight
-    f confirmedHeight = 
-        max 0 $ fromIntegral currentHeight - confirmedHeight + 1
+toJsonCoin :: (Maybe JsonTx)   -- ^ The coins transaction
+           -> (Maybe JsonAddr) -- ^ The coins address
+           -> (Maybe JsonTx)   -- ^ The coins spending transaction
+           -> KeyRingCoin 
+           -> JsonCoin
+toJsonCoin txM addrM spendM coin = JsonCoin
+    { jsonCoinPos        = keyRingCoinPos coin
+    , jsonCoinValue      = keyRingCoinValue coin
+    , jsonCoinScript     = keyRingCoinScript coin
+    , jsonCoinCreated    = keyRingCoinCreated coin
+    -- Optional tx
+    , jsonCoinTx         = txM
+    -- Optional address
+    , jsonCoinAddress    = addrM
+    -- Optional spending tx
+    , jsonCoinSpendingTx = spendM
+    }
 
-toJsonAddrTx :: BlockHeight -> KeyRingAddrTx -> JsonAddrTx
-toJsonAddrTx currentHeight KeyRingAddrTx{..} =
-    JsonAddrTx{..}
-  where
-    jsonAddrTxAddressIndex    = keyRingAddrTxAddressIndex
-    jsonAddrTxAddressType     = keyRingAddrTxAddressType
-    jsonAddrTxAddress         = keyRingAddrTxAddress
-    jsonAddrTxKeyRingName     = keyRingAddrTxKeyRingName
-    jsonAddrTxAccountName     = keyRingAddrTxAccountName
-    jsonAddrTxHash            = keyRingAddrTxHash
-    jsonAddrTxNosigHash       = keyRingAddrTxNosigHash
-    jsonAddrTxTxType          = keyRingAddrTxTxType
-    jsonAddrTxInValue         = keyRingAddrTxInValue
-    jsonAddrTxOutValue        = keyRingAddrTxOutValue
-    jsonAddrTxValue           = keyRingAddrTxValue
-    jsonAddrTxFrom            = keyRingAddrTxFrom
-    jsonAddrTxTo              = keyRingAddrTxTo
-    jsonAddrTxChange          = keyRingAddrTxChange
-    jsonAddrTxTx              = keyRingAddrTxTx
-    jsonAddrTxIsCoinbase      = keyRingAddrTxIsCoinbase
-    jsonAddrTxConfidence      = keyRingAddrTxConfidence
-    jsonAddrTxConfirmedBy     = keyRingAddrTxConfirmedBy
-    jsonAddrTxConfirmedHeight = keyRingAddrTxConfirmedHeight
-    jsonAddrTxConfirmedDate   = keyRingAddrTxConfirmedDate
-    jsonAddrTxCreated         = keyRingAddrTxCreated
-    jsonAddrTxConfirmations = 
-        maybe 0 (f . fromIntegral) jsonAddrTxConfirmedHeight
-    f confirmedHeight = 
-        max 0 $ fromIntegral currentHeight - confirmedHeight + 1
+toJsonAddrTx :: (Maybe JsonAddr) -- ^ The related address
+             -> (Maybe JsonTx)   -- ^ The related tx
+             -> KeyRingAddrTx 
+             -> JsonAddrTx
+toJsonAddrTx addrM txM addrTx = JsonAddrTx
+    { jsonAddrTxType     = keyRingAddrTxType addrTx
+    , jsonAddrTxInValue  = keyRingAddrTxInValue addrTx
+    , jsonAddrTxOutValue = keyRingAddrTxOutValue addrTx
+    , jsonAddrTxValue    = (fromIntegral $ keyRingAddrTxInValue addrTx) -
+                           (fromIntegral $ keyRingAddrTxOutValue addrTx)
+    , jsonAddrTxCreated  = keyRingAddrTxCreated addrTx
+    , jsonAddrTxAddress  = addrM
+    , jsonAddrTxTx       = txM
+    }
 

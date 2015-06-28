@@ -11,8 +11,9 @@ import Network.Haskoin.Wallet
 tests :: [Test]
 tests = 
     [ testGroup "Serialize & de-serialize types to JSON"
-        [ testProperty "NodeAction" (metaID :: NodeAction -> Bool)
+        [ testProperty "AccountType" (metaID :: AccountType -> Bool)
         , testProperty "TxAction" (metaID :: TxAction -> Bool)
+        , testProperty "NodeAction" (metaID :: NodeAction -> Bool)
         ]
     ]
 

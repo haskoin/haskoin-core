@@ -515,11 +515,11 @@ printAccount JsonAccount{..} = unlines $
     | isJust jsonAccountDerivation
     ]
     ++
-    [ "Keys   : " ++ unlines
-        ( [] ++ map (\x -> "         " ++ xPubExport x) jsonAccountKeys )
-    | not (null jsonAccountKeys)
-    ]
+    concat ( [ printKeys | not (null jsonAccountKeys) ] )
   where
+    printKeys =
+        ("Keys   : " ++ xPubExport (head jsonAccountKeys)) :
+        map (("         " ++) . xPubExport) (tail jsonAccountKeys)
     showType = case jsonAccountType of
         AccountRegular r -> if r then "Read-Only" else "Regular"
         AccountMultisig r m n -> unwords
@@ -547,25 +547,31 @@ printTx :: JsonTx -> String
 printTx tx@JsonTx{..} = unlines $
     [ "Value      : " ++ printTxType jsonTxType ++ " " ++ show jsonTxValue ] 
     ++
-    [ "Inputs     : " ++ printAddrInfos jsonTxInputs 
-    | not (null jsonTxInputs) 
-    ]
-    ++
-    [ "Outputs    : " ++ printAddrInfos jsonTxOutputs 
-    | not (null jsonTxOutputs) 
-    ]
-    ++
-    [ "Change     : " ++ printAddrInfos jsonTxChange
-    | not (null jsonTxChange) 
-    ]
-    ++
     [ "Confidence : " ++ printTxConfidence tx ] 
+    ++ concat 
+    ( [ printAddrInfos "Inputs     : " jsonTxInputs 
+      | not (null jsonTxInputs) 
+      ]
+    )
+    ++ concat
+    ( [ printAddrInfos "Outputs    : " jsonTxOutputs 
+      | not (null jsonTxOutputs) 
+      ]
+    )
+    ++ concat
+    ( [ printAddrInfos "Change     : " jsonTxChange
+      | not (null jsonTxChange) 
+      ]
+    )
   where
-    printAddrInfos xs = unlines $ map f xs
+    printAddrInfos header xs = 
+        (header ++ f (head xs)) : 
+        map (("             " ++) . f) (tail xs)
     f (AddressInfo addr valM local) = unwords $
-        [ if local then "   <-" else "     "
-        , addrToBase58 addr 
-        ] ++ [ show $ fromJust valM | isJust valM ]
+        addrToBase58 addr :
+        [ show (fromJust valM) | isJust valM ]
+        ++ 
+        [ if local then "<-" else "" ]
 
 printAddrTx :: JsonAddrTx -> String
 printAddrTx JsonAddrTx{..} = unlines $

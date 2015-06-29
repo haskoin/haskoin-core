@@ -28,6 +28,7 @@ KeyRingAddr
     key PubKeyC Maybe maxlen=200
     created UTCTime
     UniqueAddr account address
+    UniqueAddrRev address account
     UniqueAddrIndex account type index
     deriving Show
 
@@ -49,7 +50,9 @@ KeyRingTx
     confirmedDate Timestamp Maybe
     created UTCTime
     UniqueAccTx account hash
+    UniqueAccTxRev hash account
     UniqueAccNoSig account nosigHash
+    UniqueAccNoSigRev nosigHash account
     deriving Show
 
 KeyRingCoin
@@ -60,6 +63,7 @@ KeyRingCoin
     script ScriptOutput
     created UTCTime
     UniqueCoin accTx pos
+    UniqueCoinRev pos accTx
     deriving Show
 
 KeyRingSpentCoin
@@ -68,6 +72,7 @@ KeyRingSpentCoin
     pos Word32
     created UTCTime
     UniqueSpentCoins accTx hash pos
+    UniqueSpentCoinsRev hash pos accTx
     deriving Show
 
 KeyRingAddrTx

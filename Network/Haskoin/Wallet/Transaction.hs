@@ -425,7 +425,7 @@ getInCoins :: MonadIO m
            -> SqlPersistT m [InCoinData]
 getInCoins tx aiM = do
     res <- select $ from $ \(t `InnerJoin` c `InnerJoin` x) -> do
-        on $ x ^. KeyRingAddrId ==. c ^. KeyRingCoinAddr
+        on $ x ^. KeyRingAddrId    ==. c ^. KeyRingCoinAddr
         on $ c ^. KeyRingCoinAccTx ==. t ^. KeyRingTxId
         where_ $ case aiM of
             Just ai -> 
@@ -627,8 +627,9 @@ buildAccTx tx confidence ai inCoins outCoins now = KeyRingTx
     , keyRingTxInValue   = inVal
     , keyRingTxOutValue  = outVal
     , keyRingTxInputs = 
-        let f i = (== i) . keyRingCoinPos . entityVal . fst3
-            toInfo (a,i) = case find (f i) inCoins of
+        let f h i (Entity _ c, t, _) = 
+                keyRingTxHash t == h && keyRingCoinPos c == i
+            toInfo (a, OutPoint h i) = case find (f h i) inCoins of
                 Just (Entity _ c,_,_) -> 
                     AddressInfo a (Just $ keyRingCoinValue c) True
                 _ -> AddressInfo a Nothing False
@@ -669,10 +670,10 @@ buildAccTx tx confidence ai inCoins outCoins now = KeyRingTx
         | otherwise       = TxOutgoing
     -- List of all the decodable input addresses in the transaction
     allInAddrs = 
-        let f (inp, i) = do
+        let f inp = do
                 addr <- scriptSender =<< decodeToEither (scriptInput inp)
-                return (addr, i)
-        in  rights $ map f $ zip (txIn tx) [0..]
+                return (addr, prevOutput inp)
+        in  rights $ map f $ txIn tx
     -- List of all the decodable output addresses in the transaction
     allOutAddrs = 
         let f (op, i) = do
@@ -710,10 +711,9 @@ buildKeyRingAddrTx aid tid txType inCoins outCoins now = KeyRingAddrTx
         let cs = map lst3 inCoins ++ map (entityVal . outCoinDataAddr) outCoins
             isInternal = any ((AddressInternal ==) . keyRingAddrType) cs
         in  isInternal && txType /= TxIncoming
-    addrTxType | change          = AddrTxChange
-               | inVal == outVal = AddrTxChange
-               | inVal > outVal  = AddrTxIncoming
-               | otherwise       = AddrTxOutgoing
+    addrTxType | outVal > inVal = AddrTxOutgoing
+               | change         = AddrTxChange
+               | otherwise      = AddrTxIncoming
 
 -- Group all the input and outputs coins from the same account together.
 groupCoinsByAccount 
@@ -1100,7 +1100,8 @@ accountBalance keyRingName accountName minconf offline = error "Not implemented"
 resetRescan :: MonadIO m => SqlPersistT m ()
 resetRescan = do
     P.deleteWhere ([] :: [P.Filter KeyRingCoin])
-    P.deleteWhere ([] :: [P.Filter KeyRingTx])
     P.deleteWhere ([] :: [P.Filter KeyRingAddrTx])
+    P.deleteWhere ([] :: [P.Filter KeyRingSpentCoin])
+    P.deleteWhere ([] :: [P.Filter KeyRingTx])
     setBestBlock (headerHash genesisHeader) 0
 

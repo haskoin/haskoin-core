@@ -487,8 +487,8 @@ data TxCompleteRes = TxCompleteRes
 $(deriveJSON (dropFieldLabel 10) ''TxCompleteRes)
 
 data PageRes a = PageRes
-    { addrPageAddresses :: ![a]
-    , addrPageMaxPage   :: !Word32
+    { addrPagePage    :: ![a]
+    , addrPageMaxPage :: !Word32
     }
 
 $(deriveJSON (dropFieldLabel 8) ''PageRes)

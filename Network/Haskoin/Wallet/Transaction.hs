@@ -41,6 +41,7 @@ import Data.Word (Word32, Word64)
 import Data.Maybe (catMaybes, mapMaybe, isNothing, isJust, fromMaybe)
 import Data.Either (rights)
 import Data.List ((\\), nub, nubBy, delete, find)
+import Data.List.Split (splitEvery)
 import Data.Text (unpack)
 import Data.Conduit (Source, mapOutput, ($$))
 import qualified Data.Conduit.List as CL (consume)
@@ -52,11 +53,12 @@ import qualified Data.Map.Strict as M
 import qualified Database.Persist as P
     ( Filter, SelectOpt( Asc, Desc, OffsetBy, LimitTo )
     , selectFirst, updateWhere, selectSource, count, update
-    , deleteWhere, insertBy, insertMany_, selectList
+    , deleteWhere, insertBy, insertMany_, selectList, PersistEntity
+    , PersistEntityBackend
     , (=.), (==.), (<.), (>.), (<-.)
     )
 import Database.Esqueleto 
-    ( Value(..), Esqueleto, SqlQuery, SqlExpr, SqlBackend
+    ( Value(..), Esqueleto, SqlQuery, SqlExpr, SqlBackend, SqlEntity
     , InnerJoin(..), LeftOuterJoin(..), OrderBy, update
     , select, from, where_, val, valList, sub_select, countRows, count
     , orderBy, limit, asc, desc, set, offset, selectSource, updateCount
@@ -67,7 +69,8 @@ import Database.Esqueleto
     , SqlPersistT, Entity(..)
     , getBy, insertUnique, updateGet, replace, get, insertMany_, insert_
     )
-import qualified Database.Esqueleto as E (isNothing)
+import qualified Database.Esqueleto as E (isNothing, delete)
+import Database.Esqueleto.Internal.Sql (SqlSelect)
 
 import Network.Haskoin.Block
 import Network.Haskoin.Transaction
@@ -79,6 +82,7 @@ import Network.Haskoin.Constants
 import Network.Haskoin.Wallet.KeyRing
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
+import Network.Haskoin.Wallet.Database
 
 -- Input coin type with transaction and address information
 type InCoinData = (Entity KeyRingCoin, KeyRingTx, KeyRingAddr)
@@ -245,12 +249,13 @@ importTx' origTx ai origInCoins = do
     -- to spend partially signed multisignature transactions (as offline
     -- transactions) even before all signatures have arrived. 
     inCoins <- if origTxid == txid then return origInCoins else do
-        P.updateWhere [ KeyRingTxAccount P.==. ai 
-                      , KeyRingTxHash    P.==. origTxid
-                      ]
-                      [ KeyRingTxHash P.=. txid 
-                      , KeyRingTxTx   P.=. tx
-                      ]
+        update $ \t -> do
+            set t [ KeyRingTxHash =. val txid 
+                  , KeyRingTxTx   =. val tx
+                  ]
+            where_ (   t ^. KeyRingTxAccount ==. val ai 
+                   &&. t ^. KeyRingTxHash    ==. val origTxid
+                   )
         let f (c, t, x) = if keyRingTxHash t == origTxid
                 then (c, t{ keyRingTxHash = txid, keyRingTxTx = tx }, x)
                 else (c, t, x)
@@ -483,8 +488,8 @@ getNewCoins :: MonadIO m
             -> SqlPersistT m [OutCoinData]
 getNewCoins tx aiM = do
     -- Find all the addresses which are in the transaction outputs
-    addrs <- select $ from $ \x -> do
-        let cond = x ^. KeyRingAddrAddress `in_` valList uniqueAddrs
+    addrs <- splitSelect uniqueAddrs $ \as -> from $ \x -> do
+        let cond = x ^. KeyRingAddrAddress `in_` valList as
         where_ $ case aiM of
             Just ai -> cond &&. x ^. KeyRingAddrAccount ==. val ai
             _       -> cond
@@ -750,31 +755,34 @@ killTxIds :: MonadIO m => [KeyRingTxId] -> SqlPersistT m ()
 killTxIds txIds = do
     -- Find all the transactions spending the coins of these transactions
     -- (Find all the child transactions)
-    childs <- select $ from $ \(t `InnerJoin` c `LeftOuterJoin` s) -> do
-        on (   s ?. KeyRingSpentCoinHash ==. just (t ^. KeyRingTxHash)
-           &&. s ?. KeyRingSpentCoinPos  ==. just (c ^. KeyRingCoinPos)
-           )
-        on $ t ^. KeyRingTxId ==. c ^. KeyRingCoinAccTx
-        where_ (   t ^. KeyRingTxId `in_` valList txIds
-               &&. not_ (E.isNothing $ s ?. KeyRingSpentCoinId)
+    childs <- splitSelect txIds $ \ts -> 
+        from $ \(t `InnerJoin` c `LeftOuterJoin` s) -> do
+            on (   s ?. KeyRingSpentCoinHash ==. just (t ^. KeyRingTxHash)
+               &&. s ?. KeyRingSpentCoinPos  ==. just (c ^. KeyRingCoinPos)
                )
-        return $ s ?. KeyRingSpentCoinAccTx
+            on $ t ^. KeyRingTxId ==. c ^. KeyRingCoinAccTx
+            where_ (   t ^. KeyRingTxId `in_` valList ts
+                   &&. not_ (E.isNothing $ s ?. KeyRingSpentCoinId)
+                   )
+            return $ s ?. KeyRingSpentCoinAccTx
 
     -- Recursively kill all the child transactions.
     unless (null childs) $ killTxIds $ nub $ mapMaybe unValue childs
 
     -- Kill these transactions
-    P.updateWhere [ KeyRingTxId P.<-. txIds ] 
-                  [ KeyRingTxConfidence P.=. TxDead ]
+    splitUpdate txIds $ \ts -> \t -> do
+        set t [ KeyRingTxConfidence =. val TxDead ]
+        where_ $ t ^. KeyRingTxId `in_` valList ts
 
     -- This transaction doesn't spend any coins
-    P.deleteWhere [ KeyRingSpentCoinAccTx P.<-. txIds ]
+    splitDelete txIds $ \ts -> from $ \s -> 
+        where_ $ s ^. KeyRingSpentCoinAccTx `in_` valList ts
 
 -- Kill transactions and their child transactions by hashes.
 killTxs :: MonadIO m => [TxHash] -> SqlPersistT m ()
 killTxs txHashes = do
-    res <- select $ from $ \t -> do
-        where_ $ t ^. KeyRingTxHash `in_` valList txHashes
+    res <- splitSelect txHashes $ \hs -> from $ \t -> do
+        where_ $ t ^. KeyRingTxHash `in_` valList hs
         return $ t ^. KeyRingTxId
     killTxIds $ map unValue res
 
@@ -787,17 +795,18 @@ importMerkles action expTxsLs = unless (isSideChain action) $ do
         ChainReorg _ os _ -> 
             -- Unconfirm transactions from the old chain.
             let hs = map (\node -> Just $ nodeBlockHash node) os
-            in  P.updateWhere [ KeyRingTxConfirmedBy P.<-. hs ]
-                              [ KeyRingTxConfidence      P.=. TxPending
-                              , KeyRingTxConfirmedBy     P.=. Nothing
-                              , KeyRingTxConfirmedHeight P.=. Nothing
-                              , KeyRingTxConfirmedDate   P.=. Nothing
-                              ]
+            in  splitUpdate hs $ \h -> \t -> do
+                    set t [ KeyRingTxConfidence      =. val TxPending
+                          , KeyRingTxConfirmedBy     =. val Nothing
+                          , KeyRingTxConfirmedHeight =. val Nothing
+                          , KeyRingTxConfirmedDate   =. val Nothing
+                          ]
+                    where_ $ t ^. KeyRingTxConfirmedBy `in_` valList h
         _ -> return ()
 
     -- Find all the dead transactions which need to be revived
-    deadTxs <- select $ from $ \t -> do
-        where_ (   t ^. KeyRingTxHash `in_` valList (concat expTxsLs)
+    deadTxs <- splitSelect (concat expTxsLs) $ \ts -> from $ \t -> do
+        where_ (   t ^. KeyRingTxHash `in_` valList ts
                &&. t ^. KeyRingTxConfidence ==. val TxDead
                )
         return $ t ^. KeyRingTxTx
@@ -806,13 +815,18 @@ importMerkles action expTxsLs = unless (isSideChain action) $ do
     forM_ deadTxs $ reviveTx . unValue
 
     -- Confirm the transactions
-    forM_ (zip (actionNewNodes action) expTxsLs) $ \(node, hs) -> P.updateWhere 
-        [ KeyRingTxHash P.<-. hs ]
-        [ KeyRingTxConfidence      P.=. TxBuilding
-        , KeyRingTxConfirmedBy     P.=. Just (nodeBlockHash node)
-        , KeyRingTxConfirmedHeight P.=. Just (nodeHeaderHeight node)
-        , KeyRingTxConfirmedDate   P.=. Just (blockTimestamp $ nodeHeader node)
-        ]
+    forM_ (zip (actionNewNodes action) expTxsLs) $ \(node, hs) -> 
+        splitUpdate hs $ \h -> \t -> do
+            set t [ KeyRingTxConfidence =. 
+                        val TxBuilding
+                  , KeyRingTxConfirmedBy =. 
+                        val (Just (nodeBlockHash node))
+                  , KeyRingTxConfirmedHeight =. 
+                        val (Just (nodeHeaderHeight node))
+                  , KeyRingTxConfirmedDate =. 
+                        val (Just (blockTimestamp $ nodeHeader node))
+                  ]
+            where_ $ t ^. KeyRingTxHash `in_` valList h
 
     -- Update the best height in the wallet (used to compute the number
     -- of confirmations of transactions)
@@ -822,9 +836,9 @@ importMerkles action expTxsLs = unless (isSideChain action) $ do
 
 -- Helper function to set the best block and best block height in the DB.
 setBestBlock :: MonadIO m => BlockHash -> Word32 -> SqlPersistT m ()
-setBestBlock bid i = P.updateWhere [] [ KeyRingConfigBlock  P.=. bid
-                                      , KeyRingConfigHeight P.=. i 
-                                      ]
+setBestBlock bid i = update $ \t -> set t [ KeyRingConfigBlock  =. val bid
+                                          , KeyRingConfigHeight =. val i
+                                          ]
 
 -- Helper function to get the best block and best block height from the DB
 getBestBlock :: MonadIO m => SqlPersistT m (BlockHash, Word32)
@@ -856,12 +870,13 @@ reviveTx tx = do
     forM_ (map unValue ids) $ flip spendInputs tx
 
     -- Update the transactions
-    P.updateWhere [ KeyRingTxId P.<-. (map unValue ids) ]
-                  [ KeyRingTxConfidence      P.=. TxPending 
-                  , KeyRingTxConfirmedBy     P.=. Nothing
-                  , KeyRingTxConfirmedHeight P.=. Nothing
-                  , KeyRingTxConfirmedDate   P.=. Nothing
-                  ]
+    splitUpdate (map unValue ids) $ \is -> \t -> do
+        set t [ KeyRingTxConfidence      =. val TxPending 
+              , KeyRingTxConfirmedBy     =. val Nothing
+              , KeyRingTxConfirmedHeight =. val Nothing
+              , KeyRingTxConfirmedDate   =. val Nothing
+              ]
+        where_ $ t ^. KeyRingTxId `in_` valList is
 
 {- Transaction creation and signing (local wallet functions) -}
 
@@ -1104,4 +1119,33 @@ resetRescan = do
     P.deleteWhere ([] :: [P.Filter KeyRingSpentCoin])
     P.deleteWhere ([] :: [P.Filter KeyRingTx])
     setBestBlock (headerHash genesisHeader) 0
+
+{- Helpers -}
+
+splitSelect :: (SqlSelect a r, MonadIO m) 
+            => [t]
+            -> ([t] -> SqlQuery a) 
+            -> SqlPersistT m [r] 
+splitSelect ts queryF = 
+    liftM concat $ forM vals $ select . queryF
+  where
+    vals = splitEvery paramLimit ts
+
+splitUpdate :: ( MonadIO m
+               , P.PersistEntity val
+               , P.PersistEntityBackend val ~ SqlBackend
+               )
+            => [t]
+            -> ([t] -> SqlExpr (Entity val) -> SqlQuery ())
+            -> SqlPersistT m ()
+splitUpdate ts updateF =
+    forM_ vals $ update . updateF
+  where
+    vals = splitEvery paramLimit ts
+
+splitDelete :: MonadIO m => [t] -> ([t] -> SqlQuery ()) -> SqlPersistT m ()
+splitDelete ts deleteF =
+    forM_ vals $ E.delete . deleteF
+  where
+    vals = splitEvery paramLimit ts
 

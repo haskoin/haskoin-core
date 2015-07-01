@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 module Network.Haskoin.Wallet.Server
 ( runSPVServer
 , stopSPVServer
@@ -13,7 +14,7 @@ import Control.Concurrent.STM.TBMChan (writeTBMChan)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async.Lifted (withAsync, link)
 import Control.Monad.State (evalStateT)
-import Control.Monad.Trans.Control (MonadBaseControl, control, liftBaseOp)
+import Control.Monad.Trans.Control (StM, MonadBaseControl, control, liftBaseOp)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Trans.Resource (MonadResource, runResourceT)
@@ -29,6 +30,7 @@ import Control.Monad.Logger
     , logDebug
     )
 
+import Data.ByteString (ByteString)
 import Data.Text (pack)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Maybe (catMaybes, fromMaybe)
@@ -229,7 +231,9 @@ stopSPVServer cfg =
 -- Run the main ZeroMQ loop
 -- TODO: Support concurrent requests using DEALER socket when we can do
 -- concurrent MySQL requests.
-runWalletApp :: ( MonadIO m
+runWalletApp :: forall m.
+                ( Monad m
+                , MonadIO m
                 , MonadLogger m
                 , MonadBaseControl IO m
                 , MonadBase IO m
@@ -237,23 +241,30 @@ runWalletApp :: ( MonadIO m
                 , MonadResource m
                 ) 
              => HandlerSession -> m ()
-runWalletApp session = liftBaseOp withContext $ \ctx -> 
-    liftBaseOp (withSocket ctx Rep) $ \sock -> do
+runWalletApp session = liftBaseOp withContext f
+  where
+    f :: Context -> m ()
+    f ctx = liftBaseOp (withSocket ctx Rep) g
+    g :: Socket Rep -> m ()
+    g sock = do
         liftIO $ bind sock $ configBind $ handlerConfig session
         forever $ do
             bs  <- liftIO $ receive sock
-            res <- catchErrors $ case decode $ toLazyBS bs of
-                Just r  -> runHandler session $ dispatchRequest r
-                Nothing -> return $ ResponseError "Could not decode request"
+            res <- catchErrors $ h bs
             liftIO $ send sock [] $ toStrictBS $ encode res
-  where
+    h :: ByteString -> m (WalletResponse Value)
+    h bs = case decode $ toLazyBS bs of
+        Just r  -> runHandler session $ dispatchRequest r
+        Nothing -> return $ ResponseError "Could not decode request"
+    catchErrors :: m (WalletResponse Value) -> m (WalletResponse Value)
     catchErrors m = control $ \runInIO -> E.catches (runInIO m) 
-        [ E.Handler (\(WalletException err) -> runInIO $ 
-            return $ ResponseError $ pack err)
+        [ E.Handler (\(WalletException err) -> runInIO $
+            (return $ ResponseError $ pack err :: m (WalletResponse Value)))
         , E.Handler (\(E.ErrorCall err) -> runInIO $ 
-            return $ ResponseError $ pack err)
+            (return $ ResponseError $ pack err :: m (WalletResponse Value)))
         , E.Handler (\(E.SomeException exc) -> runInIO $ 
-            return $ ResponseError $ pack $ show exc)
+            (return $ ResponseError $ pack $ show exc
+                :: m (WalletResponse Value)))
         ]
 
 dispatchRequest :: ( MonadLogger m

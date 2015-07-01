@@ -1,0 +1,11 @@
+flags: {}
+packages:
+- '.'
+- deps/haskoin
+extra-deps:
+- SafeSemaphore-0.10.1
+- daemons-0.2.1
+- leveldb-haskell-0.6.3
+- murmur3-1.0.0
+- pbkdf-1.1.1.1
+resolver: lts-2.15

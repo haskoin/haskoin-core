@@ -429,18 +429,18 @@ getInCoins :: MonadIO m
            -> Maybe KeyRingAccountId
            -> SqlPersistT m [InCoinData]
 getInCoins tx aiM = do
-    res <- select $ from $ \(t `InnerJoin` c `InnerJoin` x) -> do
+    res <- splitSelect ops $ \os -> from $ \(t `InnerJoin` c `InnerJoin` x) -> do
         on $ x ^. KeyRingAddrId    ==. c ^. KeyRingCoinAddr
         on $ c ^. KeyRingCoinAccTx ==. t ^. KeyRingTxId
         where_ $ case aiM of
             Just ai -> 
-                t ^. KeyRingTxAccount ==. val ai &&. limitOutPoints t c ops
-            _ -> limitOutPoints t c ops
+                t ^. KeyRingTxAccount ==. val ai &&. limitOutPoints t c os
+            _ -> limitOutPoints t c os
         return $ (c, t, x)
     return $ map (\(c, t, x) -> (c, entityVal t, entityVal x)) res
   where
     ops = map prevOutput $ txIn tx
-    limitOutPoints t c ops = fromMaybe (val False) $ foldl (f t c) Nothing ops
+    limitOutPoints t c os = fromMaybe (val False) $ foldl (f t c) Nothing os
     f t c accM (OutPoint h i) = 
         let b =   t ^. KeyRingTxHash  ==. val h
               &&. c ^. KeyRingCoinPos ==. val i

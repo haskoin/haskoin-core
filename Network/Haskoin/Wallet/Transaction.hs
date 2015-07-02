@@ -59,7 +59,7 @@ import qualified Database.Persist as P
     )
 import Database.Esqueleto 
     ( Value(..), Esqueleto, SqlQuery, SqlExpr, SqlBackend, SqlEntity
-    , InnerJoin(..), LeftOuterJoin(..), OrderBy, update
+    , InnerJoin(..), LeftOuterJoin(..), OrderBy, update, sum_
     , select, from, where_, val, valList, sub_select, countRows, count
     , orderBy, limit, asc, desc, set, offset, selectSource, updateCount
     , subList_select, in_, unValue, max_, not_, coalesceDefault, just, on
@@ -109,9 +109,11 @@ txPage :: MonadIO m
           -- ^ Page result
 txPage keyRingName accountName page@PageRequest{..}
     | validPageRequest page = do
-        res <- select $ from $ \(k, a, t) -> do
-            where_ (   joinAccount k a keyRingName accountName
-                   &&. t ^. KeyRingTxAccount ==. a ^. KeyRingAccountId
+        res <- select $ from $ \(k `InnerJoin` a `InnerJoin` t) -> do
+            on $ t ^. KeyRingTxAccount      ==. a ^. KeyRingAccountId
+            on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
+            where_ (   k ^. KeyRingName        ==. val keyRingName
+                   &&. a ^. KeyRingAccountName ==. val accountName
                    )
             let order = if pageReverse then asc else desc
             orderBy [ order (t ^. KeyRingTxId) ]
@@ -161,12 +163,17 @@ addrTxPage :: MonadIO m
               -- ^ Page result
 addrTxPage keyRingName accountName addrType index page@PageRequest{..}
     | validPageRequest page = do
-        res <- select $ from $ \(k, a, x, xt, t) -> do
-            where_ (   joinAccount k a keyRingName accountName
-                   &&. joinAddress a x addrType
-                   &&. x  ^. KeyRingAddrIndex  ==. val index
-                   &&. xt ^. KeyRingAddrTxAddr ==. x  ^. KeyRingAddrId
-                   &&. t  ^. KeyRingTxId       ==. xt ^. KeyRingAddrTxAccTx
+        res <- select $ from $ 
+            \(k `InnerJoin` a `InnerJoin` x `InnerJoin` xt `InnerJoin` t) -> do
+            on $ t ^. KeyRingTxId           ==. xt ^. KeyRingAddrTxAccTx
+            on $ xt ^. KeyRingAddrTxAddr    ==. x ^. KeyRingAddrId
+            on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
+            on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
+            where_ (   k ^. KeyRingName        ==. val keyRingName
+                   &&. a ^. KeyRingAccountName ==. val accountName
+                   &&. x ^. KeyRingAddrType    ==. val addrType
+                   &&. x ^. KeyRingAddrIndex   ==. val index
+                   &&. x ^. KeyRingAddrIndex   <=. subSelectMaxAddr a addrType
                    )
             let order = if pageReverse then asc else desc
             orderBy [ order (xt ^. KeyRingAddrTxId) ]
@@ -1078,37 +1085,73 @@ spendableCoinsSource ai minConf orderPolicy = mapOutput f $ selectSource $
                    &&. t ^. KeyRingTxConfidence 
                        `in_` valList [ TxPending, TxBuilding ]
                    -- Coinbase transactions require 100 confirmations
-                   &&. ( (not_ $ t ^. KeyRingTxIsCoinbase) ||. limitConf 100 )
+                   &&. (   (not_ $ t ^. KeyRingTxIsCoinbase) 
+                       ||. limitConfirmations t 100 
+                       )
                     -- We only want unspent coins
                    &&. E.isNothing (s ?. KeyRingSpentCoinId)
                    )
-            selectHeight = sub_select $ from $ \o -> do
-                limit 1
-                return $ o ^. KeyRingConfigHeight
-            -- If the current height is 200 and a coin was confirmed at height
-            -- 198, then it has 3 confirmations. So, if we require 3
-            -- confirmations, we want coins with a confirmed height of 198 or
-            -- less (200 - 3 + 1).
-            limitConf conf = 
-                (   (not_ $ E.isNothing $ t ^. KeyRingTxConfirmedHeight)
-                &&. t ^. KeyRingTxConfirmedHeight 
-                        <=. just (selectHeight -. (val $ conf + 1))
-                )
-        where_ $ if minConf == 0 then cond else cond &&. limitConf minConf
+        where_ $ if minConf == 0 
+            then cond 
+            else cond &&. limitConfirmations t minConf
         orderBy (orderPolicy c t)
         return (c, t, x)
   where
     f (c, t, x) = (c, entityVal t, entityVal x)
 
+-- If the current height is 200 and a coin was confirmed at height 198, then it
+-- has 3 confirmations. So, if we require 3 confirmations, we want coins with a
+-- confirmed height of 198 or less (200 - 3 + 1).
+limitConfirmations :: SqlExpr (Entity KeyRingTx)
+                   -> Word32
+                   -> SqlExpr (Value Bool)
+limitConfirmations t i =
+    (   (not_ $ E.isNothing $ t ^. KeyRingTxConfirmedHeight)
+    &&. t ^. KeyRingTxConfirmedHeight <=. just (selectHeight -. (val $ i + 1))
+    )
+  where
+    selectHeight = sub_select $ from $ \co -> do
+        limit 1
+        return $ co ^. KeyRingConfigHeight
+
 {- Balances -}
 
 accountBalance :: MonadIO m 
-               => KeyRingName 
-               -> AccountName 
+               => KeyRingAccountId
                -> Word32
                -> Bool 
                -> SqlPersistT m Word64
-accountBalance keyRingName accountName minconf offline = error "Not implemented"
+accountBalance ai minconf offline = do
+    res <- select $ from $ 
+        \(t `InnerJoin` c `LeftOuterJoin` s `LeftOuterJoin` st) -> do
+        on $ st ?. KeyRingTxId ==. s ?. KeyRingSpentCoinAccTx
+        on (   s ?. KeyRingSpentCoinHash ==. just (t ^. KeyRingTxHash)
+           &&. s ?. KeyRingSpentCoinPos  ==. just (c ^. KeyRingCoinPos)
+           )
+        on $ c ^. KeyRingCoinAccTx ==. t ^. KeyRingTxId
+        let conf = (   t ^. KeyRingTxAccount ==. val ai
+                   &&. t ^. KeyRingTxConfidence `in_` valList validConfidence
+                   )
+            -- Coinbase transactions require 100 confirmations
+            limitCoinbase = (   (not_ $ t ^. KeyRingTxIsCoinbase) 
+                            ||. limitConfirmations t 100 
+                            )
+            unspent = E.isNothing ( s ?. KeyRingSpentCoinId )
+            limitUnspent = if offline then unspent else
+                unspent ||. st ?. KeyRingTxConfidence ==. just (val TxOffline)
+        where_ (   limitUnspent
+               &&. if minconf == 0 then conf else 
+                       (   conf 
+                       &&. limitConfirmations t minconf
+                       &&. limitCoinbase
+                       )
+               )
+        return $ sum_ (c ^. KeyRingCoinValue)
+    case res of
+        ((Value (Just s)):_) -> return $ floor (s :: Double)
+        _ -> return 0
+  where
+    validConfidence = TxPending : TxBuilding : [ TxOffline | offline ]
 
 {- Rescans -}
 

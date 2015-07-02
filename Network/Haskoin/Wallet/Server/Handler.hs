@@ -289,7 +289,7 @@ putAddressR keyRingName name i addrType (AddressLabel label) = do
         , "  Index       : " ++ show i
         , "  Label       : " ++ unpack label
         ]
-    res <- runDB $ setAddrLabel keyRingName name i addrType label
+    runDB $ setAddrLabel keyRingName name i addrType label
     return Nothing
 
 getTxsR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
@@ -428,10 +428,12 @@ getTxR keyRingName accountName txid = do
         ]
     runDB $ do
         (_, height) <- getBestBlock
-        res <- select $ from $ \(k, a, t) -> do
-            where_ (   joinAccount k a keyRingName accountName 
-                   &&. t ^. KeyRingTxAccount ==. a ^. KeyRingAccountId
-                   &&. t ^. KeyRingTxHash    ==. val txid
+        res <- select $ from $ \(k `InnerJoin` a `InnerJoin` t) -> do
+            on $ t ^. KeyRingTxAccount      ==. a ^. KeyRingAccountId
+            on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
+            where_ (   k ^. KeyRingName        ==. val keyRingName
+                   &&. a ^. KeyRingAccountName ==. val accountName
+                   &&. t ^. KeyRingTxHash      ==. val txid
                    )
             return (k, a, t)
         case res of
@@ -471,7 +473,9 @@ getBalanceR keyRingName name minconf = do
         , "  Account name: " ++ unpack name
         , "  Minconf     : " ++ show minconf
         ]
-    balance <- runDB $ accountBalance keyRingName name minconf False
+    balance <- runDB $ do
+        (_, Entity ai _) <- getAccount keyRingName name
+        accountBalance ai minconf False
     return $ Just $ toJSON $ BalanceRes balance
 
 getOfflineBalanceR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
@@ -482,7 +486,9 @@ getOfflineBalanceR keyRingName name = do
         , "  KeyRing name: " ++ unpack keyRingName
         , "  Account name: " ++ unpack name
         ]
-    balance <- runDB $ accountBalance keyRingName name 0 True
+    balance <- runDB $ do
+        (_, Entity ai _) <- getAccount keyRingName name
+        accountBalance ai 0 True
     return $ Just $ toJSON $ BalanceRes balance
 
 postNodeR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)

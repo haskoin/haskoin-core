@@ -13,8 +13,8 @@ import Control.Monad.Trans (MonadIO, lift, liftIO)
 import Control.Concurrent.STM.TBMChan (writeTBMChan)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async.Lifted (withAsync, link)
-import Control.Monad.State (evalStateT)
 import Control.Monad.Trans.Control (StM, MonadBaseControl, control, liftBaseOp)
+import Control.Monad.State (StateT, evalStateT, gets, modify)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Trans.Resource (MonadResource, runResourceT)
@@ -57,6 +57,10 @@ import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Server.Handler
 import Network.Haskoin.Wallet.Database
+
+data EventSession = EventSession
+    { eventBatchSize :: !Int }
+    deriving (Eq, Show, Read)
 
 -- Filter logs by their log level
 filterLevel :: (LogLevel -> Bool) -> LoggingT m a -> LoggingT m a
@@ -134,17 +138,22 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
                     NodeStartMerkleDownload dwnE
 
                 -- Listen to SPV events and update the wallet database
+                let eventSession = EventSession { eventBatchSize = 500 }
+                -- Set the batch size to 500
+                liftIO . atomically $ writeTBMChan rChan $
+                    NodeBatchSize $ eventBatchSize eventSession
+
                 let runEvents = sourceTBMChan eChan $$ 
                                 processEvents rChan sem pool
 
-                withAsync runEvents $ \a -> do
+                withAsync (evalStateT runEvents eventSession) $ \a -> do
                     link a
                     -- Run the zeromq server listening to user requests
                     runWalletApp $ HandlerSession cfg pool (Just rChan) sem
 
 processEvents :: (MonadLogger m, MonadIO m, Functor m)
               => TBMChan NodeRequest -> Sem.MSem Int -> ConnectionPool
-              -> Sink WalletMessage m ()
+              -> Sink WalletMessage (StateT EventSession m) ()
 processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
     WalletTx tx -> void (processTxs [tx])
     WalletGetTx txid -> do
@@ -177,10 +186,19 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
                    -- Otherwise, simply continue the merkle download
                    -- from the new best block
                    | otherwise = nodeBlockHash $ last $ actionNewNodes action
-            when rescan $ $(logDebug) $ pack $ unwords
-                [ "Generated addresses beyond the account gap."
-                , "Rescanning this batch."
-                ]
+            when rescan $ do
+                $(logDebug) $ pack $
+                    "Generated addresses beyond the account gap." ++
+                    "Rescanning this batch."
+                bSize <- gets eventBatchSize
+                let newBSize = bSize `div` 2
+                when (newBSize > 0) $ do
+                    $(logDebug) $ pack $ unwords
+                        [ "Reducing batch size to", show newBSize ]
+                    liftIO . atomically $ writeTBMChan rChan $ 
+                        NodeBatchSize newBSize
+                    modify $ \s -> s{ eventBatchSize = newBSize }
+                
             -- Send a message to the node to continue the download from
             -- the requested block hash
             liftIO . atomically $ 

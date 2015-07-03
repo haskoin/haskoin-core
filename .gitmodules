@@ -1,3 +1,0 @@
-[submodule "haskoin"]
-	path = deps/haskoin
-	url = https://github.com/haskoin/haskoin.git

@@ -37,10 +37,7 @@ import qualified Data.Text as T (Text, pack)
 import qualified Data.Conduit.Binary as CB (take)
 import qualified Data.ByteString as BS (ByteString, null, append)
 
-import Network.Socket
-    ( SockAddr (SockAddrInet)
-    , PortNumber (PortNum)
-    )
+import Network.Socket (SockAddr (SockAddrInet))
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Block
@@ -135,7 +132,7 @@ startPeer session ad = do
 buildVersion :: MonadIO m => m Version
 buildVersion = do
     -- TODO: Get our correct IP here
-    let add = NetworkAddress 1 $ SockAddrInet (PortNum 0) 0
+    let add = NetworkAddress 1 $ SockAddrInet 0 0
         ua  = VarString $ stringToBS haskoinUserAgent
     time <- liftIO getPOSIXTime
     rdmn <- liftIO randomIO -- nonce

@@ -91,6 +91,7 @@ showJob pJob = case pJob of
     JobDwnTxs _          -> "JobDwnTxs"
     JobDwnBlocks _ _     -> "JobDwnBlocks"
     JobDwnMerkles _ _    -> "JobDwnMerkles"
+    JobMempool           -> "JobMempool"
 
 -- | Messages handled by a Peer actor
 data PeerMessage
@@ -129,6 +130,7 @@ data BlockChainMessage
     | StartBlockDownload !(Either Timestamp BlockHash)
     | SetBloomFilter !BloomFilter
     | NetworkHeight !BlockHeight
+    | SetBatchSize !Int
     | BkchHeartbeat
 
 -- | Messages handled by the Mempool actor
@@ -158,6 +160,7 @@ data NodeRequest
     | NodeStartMerkleDownload !(Either Timestamp BlockHash)
     | NodeStartBlockDownload !(Either Timestamp BlockHash)
     | NodeConnectPeers ![RemoteHost]
+    | NodeBatchSize !Int
 
 -- | Describes the behavior of a remote peer
 data Behavior

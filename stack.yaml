@@ -1,7 +1,9 @@
 flags: {}
 packages:
 - '.'
-- deps/haskoin
+- location:
+    git: https://github.com/haskoin/haskoin.git
+    commit: 872f264ff0416941795fb6219c29b29bcf1479b7
 extra-deps:
 - SafeSemaphore-0.10.1
 - daemons-0.2.1

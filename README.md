@@ -49,6 +49,3 @@ instead.
 ## Contributing
 
 Contribute via GitHub pull requests.
-
-We do a lot of our technical discussions in the IRC channel #haskoin on
-chat.freenode.net.

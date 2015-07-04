@@ -27,6 +27,7 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdSignOffline
 , cmdRescan
 , cmdDecodeTx
+, cmdVersion
 )
 where
 
@@ -69,10 +70,12 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Util
+import Network.Haskoin.Constants
 
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Server
+import Network.Haskoin.Wallet.Database
 
 type Handler = R.ReaderT Config IO
 
@@ -343,6 +346,12 @@ cmdDecodeTx txStr = do
     txM = decodeToMaybe =<< hexToBS txStr
     val = encodeTxJSON $ fromJust txM
     jsn = JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } val
+
+cmdVersion :: Handler ()
+cmdVersion = liftIO $ do
+    putStrLn $ unwords [ "network   :", networkName ]
+    putStrLn $ unwords [ "user-agent:", haskoinUserAgent ]
+    putStrLn $ unwords [ "database  :", unpack databaseEngine ]
 
 {- Helpers -}
 

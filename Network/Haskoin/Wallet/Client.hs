@@ -187,8 +187,8 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "offbal"      : [name]                 -> cmdOfflineBalance name
     "rescan"      : rescantime             -> cmdRescan rescantime
     "decodetx"    : [tx]                   -> cmdDecodeTx tx
+    ["version"]                            -> cmdVersion
     ["help"]                               -> liftIO $ forM_ usage putStrLn
-    ["version"]                            -> liftIO $ putStrLn haskoinUserAgent
     []                                     -> liftIO $ forM_ usage putStrLn
     _ -> liftIO $ forM_ ("Invalid command" : usage) putStrLn
 

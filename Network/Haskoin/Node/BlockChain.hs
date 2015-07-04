@@ -329,6 +329,8 @@ processMerkleBlocks did dmbs = gets merkleId >>= \mid -> case mid of
             modify $ \s -> s{ merkleId = Nothing }
             -- Try to send the merkle block to the mempool
             sendMempool $ MempoolMerkles action dmbs
+            -- Check if we are synced before setting windowEnd=Nothing
+            checkSynced
             -- Continue the merkle download only if no transactions
             -- are in the batch. Otherwise, we wait for the wallets 
             -- instructions. The wallet might want to set a new bloom filter.
@@ -348,7 +350,6 @@ processMerkleBlocks did dmbs = gets merkleId >>= \mid -> case mid of
                         , "instructions from the wallet."
                         ]
                     modify $ \s -> s{ windowEnd = Nothing }
-            checkSynced
         else $(logDebug) $ format $ unwords
             [ "Ignoring merkle batch id", show $ hashUnique did ] 
     -- This can happen if we had pending jobs when issuing a rescan. We

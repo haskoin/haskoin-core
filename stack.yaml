@@ -3,7 +3,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/haskoin/haskoin.git
-    commit: 872f264ff0416941795fb6219c29b29bcf1479b7
+    commit: 5520ded9af4810064b41f5bf4403516d676a0924
 extra-deps:
 - SafeSemaphore-0.10.1
 - daemons-0.2.1

@@ -53,10 +53,7 @@ import qualified Data.ByteString as BS
     , length
     , takeWhile
     )
-import Network.Socket
-    ( SockAddr (SockAddrInet, SockAddrInet6)
-    , PortNumber (PortNum)
-    )
+import Network.Socket (SockAddr (SockAddrInet, SockAddrInet6))
 
 import Network.Haskoin.Util 
 import Network.Haskoin.Crypto.BigWord
@@ -222,27 +219,27 @@ instance Binary NetworkAddress where
               then do
                 d <- getWord32host
                 p <- getWord16be
-                return $ SockAddrInet (PortNum p) d
+                return $ SockAddrInet (fromIntegral p) d
               else do
                 d <- getWord32be
                 p <- getWord16be
-                return $ SockAddrInet6 (PortNum p) 0 (a,b,c,d) 0
+                return $ SockAddrInet6 (fromIntegral p) 0 (a,b,c,d) 0
 
-    put (NetworkAddress s (SockAddrInet6 (PortNum p) _ (a,b,c,d) _)) = do
+    put (NetworkAddress s (SockAddrInet6 p _ (a,b,c,d) _)) = do
         putWord64le s
         putWord32be a
         putWord32be b
         putWord32be c
         putWord32be d
-        putWord16be p
+        putWord16be (fromIntegral p)
 
-    put (NetworkAddress s (SockAddrInet (PortNum p) a)) = do
+    put (NetworkAddress s (SockAddrInet p a)) = do
         putWord64le s
         putWord32be 0x00000000
         putWord32be 0x00000000
         putWord32be 0x0000ffff
         putWord32host a
-        putWord16be p
+        putWord16be (fromIntegral p)
 
     put _ = error "NetworkAddress can onle be IPv4 or IPv6"
 

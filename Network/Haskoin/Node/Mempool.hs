@@ -66,6 +66,10 @@ withNode f = do
             -- Publish a job with priority 1 on all peers
             liftIO $ atomically $ writeTBMChan mngrChan $ 
                 PublishJob (JobSendTxInv txids) (AllPeers1 0) 1
+        NodeBatchSize i -> do
+            $(logDebug) $ formatWallet $ unwords
+                [ "Setting the node batch size to", show i]
+            liftIO $ atomically $ writeTBMChan bkchChan $ SetBatchSize i
 
 formatWallet :: String -> Text
 formatWallet str = pack $ unwords [ "[Wallet Request]", str ]
@@ -329,9 +333,7 @@ processStartDownload _ = do
         [ "(Re)starting a new merkle block download."
         , "Cleaning up the merkle buffer."
         ]
-    modify $ \s -> s{ nodeSynced   = False
-                    , merkleBuffer = []
-                    }
+    modify $ \s -> s{ nodeSynced = False, merkleBuffer = [] }
 
 {- Helpers -}
 

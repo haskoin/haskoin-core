@@ -156,10 +156,14 @@ bloomCreate :: Int          -- ^ Number of elements
 bloomCreate numElem fpRate tweak flags =
     BloomFilter (S.replicate bloomSize 0) numHashF tweak flags
   where
+    -- Bloom filter size in bytes
     bloomSize = truncate $ (min a b) / 8
+    -- Suggested size in bits
     a         = -1 / ln2Squared * (fromIntegral numElem) * log fpRate
+    -- Maximum size in bits
     b         = fromIntegral $ maxBloomSize * 8
     numHashF  = truncate $ min c (fromIntegral maxHashFuncs)
+    -- Suggested number of hash functions
     c         = (fromIntegral bloomSize) * 8 / (fromIntegral numElem) * ln2
 
 bloomHash :: BloomFilter -> Word32 -> BS.ByteString -> Word32

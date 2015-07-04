@@ -36,9 +36,9 @@ import Test.QuickCheck
 
 import Control.Applicative ((<$>))
 
-import Data.Word (Word32)
+import Data.Word (Word16, Word32)
 
-import Network.Socket (PortNumber(..), SockAddr(..))
+import Network.Socket (SockAddr(..))
 
 import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Node
@@ -73,8 +73,8 @@ instance Arbitrary ArbitraryNetworkAddress where
                 b <- arbitrary
                 c <- arbitrary
                 d <- arbitrary
-                return $ SockAddrInet6 (PortNum p) 0 (a,b,c,d) 0
-            , return $ SockAddrInet (PortNum p) a
+                return $ SockAddrInet6 (fromIntegral p) 0 (a,b,c,d) 0
+            , return $ SockAddrInet (fromIntegral (p :: Word16)) a
             ]
 
 -- | Arbitrary NetworkAddressTime

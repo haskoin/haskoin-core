@@ -53,6 +53,8 @@ data SpvSession = SpvSession
       -- Do not request merkle blocks with a timestamp before the
       -- fast catchup time.
     , fastCatchup :: !(Maybe Timestamp)
+      -- Size of the block/merkle batches
+    , batchSize :: !Int
       -- True if we are downloading merkles. False for full blocks.
     , downloadMerkles :: !Bool
       -- Merkle download batch which we are currently waiting for
@@ -92,6 +94,7 @@ withBlockChain mempChan f = do
             blockWindow     = M.empty
             validBloom      = False
             networkHeight   = 0
+            batchSize       = 500
             session         = SpvSession{..}
 
             -- Run the main blockchain message processing loop
@@ -129,6 +132,7 @@ processBlockChainMessage = awaitForever $ \req -> lift $ case req of
     StartBlockDownload valE  -> processStartBlockDownload valE
     SetBloomFilter bloom     -> processBloomFilter bloom
     NetworkHeight h          -> processNetworkHeight h
+    SetBatchSize i           -> processSetBatchSize i
     BkchHeartbeat            -> processHeartbeat
     _ -> return () -- Ignore block invs (except tickles) and full blocks
 
@@ -251,7 +255,8 @@ processBlocks :: (HeaderTree m, MonadLogger m, MonadIO m)
 processBlocks did [] = do
     $(logError) $ format $ "Got a completed block job with an empty block list"
     modify $ \s -> s{ blockWindow = M.delete did $ blockWindow s }
-    continueBlockDownload
+    continueDownload
+    checkSynced
 processBlocks did blocks = do
     $(logDebug) $ format $ unwords
         [ "Received block batch id", show $ hashUnique did
@@ -288,7 +293,7 @@ processBlocks did blocks = do
                 dispatchBlocks
             -- Try to download more blocks if there is space in the window
             _ -> do
-                continueBlockDownload
+                continueDownload
                 checkSynced
 
 -- | When we get a merkle block, check if we are awaiting this specific
@@ -305,7 +310,7 @@ processMerkleBlocks did [] = gets merkleId >>= \mid -> case mid of
             modify $ \s -> s{ merkleId = Nothing }
             -- We continue the merkle download because we didn't have any
             -- transactions
-            continueMerkleDownload
+            continueDownload
             checkSynced
         else $(logDebug) $ format $ unwords
             [ "Ignoring merkle batch id", show $ hashUnique did ] 
@@ -333,7 +338,7 @@ processMerkleBlocks did dmbs = gets merkleId >>= \mid -> case mid of
                         [ "No transactions in the merkle batch."
                         , "Continuing merkle block download"
                         ]
-                    continueMerkleDownload
+                    continueDownload
                 -- Set the windowEnd to False to block the merkle download.
                 -- Only the wallet can continue it.
                 else do
@@ -356,80 +361,24 @@ continueDownload :: (HeaderTree m, MonadLogger m, MonadIO m)
                  => StateT SpvSession m ()
 continueDownload = do
     merkles <- gets downloadMerkles
-    if merkles then continueMerkleDownload else continueBlockDownload
-
--- | If we are not already downloading a merkle batch, request a new merkle
--- batch download job.
-continueMerkleDownload :: (HeaderTree m, MonadLogger m, MonadIO m) 
-                       => StateT SpvSession m ()
-continueMerkleDownload = do
-    dwnM   <- gets windowEnd
-    mid    <- gets merkleId
+    dwnM    <- gets windowEnd
+    win     <- gets blockWindow
+    mid     <- gets merkleId
     -- Merkle block downloads require a valid bloom filter
-    vBloom <- gets validBloom
-    -- Download merkle blocks if the wallet asked us to start, if we are
-    -- not already downloading a merkle batch and we got a valid bloom filter.
-    when (vBloom && isJust dwnM && isNothing mid) $ do
-        let dwn = fromJust dwnM
-        -- Get a batch of blocks to download
-        -- TODO: Add this value to a configuration (10)
-        actionM <- runDB $ getNodeWindow dwn 10
-        case actionM of
-            -- Nothing to download
-            Nothing -> $(logDebug) $ format 
-                "No more block headers available to download."
-            -- A batch of merkle blocks is available for download
-            Just action -> do
-                -- Update the windowEnd pointer
-                let nodes  = actionNewNodes action
-                    winEnd = Just $ nodeBlockHash $ last nodes
-                modify $ \s -> s{ windowEnd = winEnd }
-                fcM <- gets fastCatchup 
-                let fc = fromJust fcM
-                    ts = map (blockTimestamp . nodeHeader) nodes
-                    height = nodeHeaderHeight $ last nodes
-                -- Check if the batch is after the fast catchup time
-                if isNothing fcM || any (>= fc) ts
-                    then do
-                        did <- liftIO newUnique
-                        let job = JobDwnMerkles did $ map nodeBlockHash nodes
-                        $(logDebug) $ format $ unwords
-                            [ "Requesting download of merkle batch id"
-                            , show $ hashUnique did
-                            , "of length", show $ length nodes
-                            , "up to height", show height
-                            ]
-                        -- Publish the job with low priority 10
-                        sendManager $ PublishJob job (AnyPeer height) 10
-                        -- Extend the window
-                        modify $ \s -> 
-                            s{ merkleId   = Just (did, action)
-                            -- We reached the fast catchup. Set to Nothing.
-                            , fastCatchup = Nothing
-                            }
-                    else do
-                        $(logDebug) $ format $ unwords
-                            [ "Not downloading pre-catchup merkle block of"
-                            , "length", show $ length nodes
-                            , "up to height", show height
-                            ]
-                        -- Recurse with the windowEnd pointer updated
-                        continueMerkleDownload
+    vBloom  <- gets validBloom
+        -- Download merkle blocks if the wallet asked us to start, if we are
+        -- not already downloading a merkle batch and we got a valid bloom
+        -- filter.
+    let startMerkles = merkles && vBloom && isJust dwnM && isNothing mid
+        -- Download blocks if the wallet asked us to start and if there is
+        -- space left in the window.
+        startBlocks  = not merkles && isJust dwnM && M.size win < 10
 
--- | If space is available in the block block download window, request
--- more block download jobs and add them to the window.
-continueBlockDownload :: (HeaderTree m, MonadLogger m, MonadIO m) 
-                      => StateT SpvSession m ()
-continueBlockDownload = do
-    dwnM      <- gets windowEnd
-    win       <- gets blockWindow
-    -- Download merkle blocks if the wallet asked us to start and if there
-    -- is space left in the window and the bloom filter is valid.
-    when (isJust dwnM && M.size win < 10) $ do
+    when (startMerkles || startBlocks) $ do
         let dwn = fromJust dwnM
         -- Get a batch of blocks to download
-        -- TODO: Add this value to a configuration (100)
-        actionM <- runDB $ getNodeWindow dwn 100
+        bSize <- gets batchSize
+        actionM <- runDB $ getNodeWindow dwn bSize
         case actionM of
             -- Nothing to download
             Nothing -> $(logDebug) $ format 
@@ -448,29 +397,31 @@ continueBlockDownload = do
                 if isNothing fcM || any (>= fc) ts
                     then do
                         did <- liftIO newUnique
-                        let job = JobDwnBlocks did $ map nodeBlockHash nodes
                         $(logDebug) $ format $ unwords
                             [ "Requesting download of block batch id"
                             , show $ hashUnique did
                             , "of length", show $ length nodes
                             , "up to height", show height
                             ]
+                        let job | merkles = JobDwnMerkles did $ 
+                                    map nodeBlockHash nodes
+                                | otherwise = JobDwnBlocks did $ 
+                                    map nodeBlockHash nodes
                         -- Publish the job with low priority 10
                         sendManager $ PublishJob job (AnyPeer height) 10
-                        -- Extend the window
-                        modify $ \s -> 
-                            s{ blockWindow = M.insert did (action, []) win 
-                            -- We reached the fast catchup. Set to Nothing.
-                            , fastCatchup  = Nothing
-                            }
+                        -- We reached the fast catchup. Set to Nothing.
+                        modify $ \s -> s{ fastCatchup = Nothing }
+                        -- Extend the window or save the merkle block
+                        modify $ \s -> if merkles 
+                            then s{ merkleId   = Just (did, action) }
+                            else s{ blockWindow = M.insert did (action, []) win }
                     else $(logDebug) $ format $ unwords
-                        [ "Not downloading pre-catchup merkle block of length"
+                        [ "Not downloading pre-catchup block of length"
                         , show $ length nodes
                         , "up to height", show height
                         ]
-                -- Recurse with the windowEnd pointer updated until we reach
-                -- the stop condition (we fill up the window)
-                continueBlockDownload
+                -- Recurse until we meet the stop condition
+                continueDownload
 
 processStartMerkleDownload 
     :: (HeaderTree m, MonadLogger m, MonadIO m) 
@@ -553,6 +504,15 @@ processNetworkHeight height = do
     $(logDebug) $ format $ unwords
         [ "Network best chain height:", show height ]
     modify $ \s -> s{ networkHeight = height }
+
+processSetBatchSize :: MonadLogger m => Int -> StateT SpvSession m ()
+processSetBatchSize i 
+    | i < 1 || i > 500 = $(logError) $ format $ unwords
+        [ "Invalid batch size:", show i ]
+    | otherwise = do
+        $(logDebug) $ format $ unwords
+            [ "Setting batch size to:", show i ]
+        modify $ \s -> s{ batchSize = i }
 
 -- Check if merkle blocks are in sync with block headers.
 checkSynced :: (HeaderTree m, MonadLogger m, MonadIO m)

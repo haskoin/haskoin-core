@@ -186,18 +186,18 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
                    -- Otherwise, simply continue the merkle download
                    -- from the new best block
                    | otherwise = nodeBlockHash $ last $ actionNewNodes action
-            when rescan $ do
-                $(logDebug) $ pack $
-                    "Generated addresses beyond the account gap." ++
-                    "Rescanning this batch."
-                bSize <- gets eventBatchSize
-                let newBSize = bSize `div` 2
-                when (newBSize > 0) $ do
-                    $(logDebug) $ pack $ unwords
-                        [ "Reducing batch size to", show newBSize ]
-                    liftIO . atomically $ writeTBMChan rChan $ 
-                        NodeBatchSize newBSize
-                    modify $ \s -> s{ eventBatchSize = newBSize }
+
+            bSize <- gets eventBatchSize
+            let newBSize | rescan    = max 1 $ bSize `div` 2
+                         | otherwise = min 500 $ bSize + (max 1 $ bSize `div` 20)
+            when (newBSize /= bSize) $ do
+                $(logDebug) $ pack $ unwords
+                    [ "Changing block batch size from"
+                    , show bSize, "to", show newBSize 
+                    ]
+                liftIO . atomically $ writeTBMChan rChan $ 
+                    NodeBatchSize newBSize
+                modify $ \s -> s{ eventBatchSize = newBSize }
                 
             -- Send a message to the node to continue the download from
             -- the requested block hash

@@ -39,6 +39,3 @@ Executable `hw` will be installed in `~/.local/bin`.
 ## Contributing
 
 Commits are done through GitHub pull requests.
-
-We do a lot of our technical discussions in the IRC channel #haskoin on
-chat.freenode.net.

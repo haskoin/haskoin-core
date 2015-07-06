@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Network.Haskoin.Node.Peer 
 ( startPeer
 , newPeerSession
@@ -13,7 +14,9 @@ import Control.Monad.Trans (lift, liftIO, MonadIO)
 import Control.Monad.Trans.Control (MonadBaseControl)
 import Control.Monad.State (StateT, evalStateT, get, gets, modify)
 import Control.Concurrent.STM (atomically)
-import Control.Concurrent.Async.Lifted (async, waitAnyCatchCancel)
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.MVar (MVar, newMVar, takeMVar, tryPutMVar)
+import Control.Concurrent.Async.Lifted (async, race, waitAnyCatchCancel)
 import Control.Monad.Logger 
     ( MonadLogger
     , logInfo, logError, logWarn, logDebug
@@ -100,26 +103,28 @@ newPeerSession mngrChan bkchChan mempChan = do
 
 -- | Start a new Peer application. This function is meant to be used with
 -- runTCPClient or runTCPServer.
-startPeer :: (MonadLogger m, MonadIO m, MonadBaseControl IO m) 
+startPeer :: forall m. (MonadLogger m, MonadIO m, MonadBaseControl IO m) 
           => PeerSession -> AppData -> m ()
 startPeer session ad = do
+    mv <- liftIO $ newMVar ()
     -- Spin up thread for receiving messages from the remote host
-    a1 <- async $ flip evalStateT session $ 
-        (appSource ad) $$ decodeMessage 
+    a1 <- async $ flip evalStateT session $ (appSource ad) $$ decodeMessage mv
     $(logDebug) $ format pid "Message receiving thread started"
     -- Spin up thread for sending messages to the remote host
-    let chan = msgsChan session
+    let mc = msgsChan session
     a2 <- async $ flip evalStateT session $ 
-        (sourceTBMChan chan) $= encodeMessage $$ (appSink ad)
+        (sourceTBMChan mc) $= encodeMessage $$ (appSink ad)
     $(logDebug) $ format pid "Message sending thread started"
     -- Main peer message processing loop
     a3 <- async $ flip evalStateT session $ do
         vers <- buildVersion
         sendMessage $ MVersion vers
         (sourceTBMChan $ peerChan session) $$ processPeerMessage
+    -- Keepalive loop
+    a4 <- async $ timeout mv mc
     $(logDebug) $ format pid "Peer thread started"
     -- Wait for threads
-    (_, resE) <- waitAnyCatchCancel [a1, a2, a3]
+    (_, resE) <- waitAnyCatchCancel [a1, a2, a3, a4]
     -- Some logging
     case resE of
         Left e -> $(logError) $ format pid $ unwords
@@ -127,6 +132,19 @@ startPeer session ad = do
         Right () -> $(logDebug) $ format pid "Peer thread stopped"
   where
     pid = peerId session
+    timeout :: MVar () -> TBMChan Message -> m ()
+    timeout m c = do
+        r <- race (liftIO delay) (liftIO $ takeMVar m)
+        case r of
+            Left _ -> error "Peer timeout" 
+            Right _ -> timeout m c
+      where
+        delay = do
+            -- TODO: Possibly use better timeouts
+            threadDelay $ 60 * 1000000
+            -- TODO: Compute random nonce for ping
+            atomically $ writeTBMChan c $ MPing $ Ping 1
+            threadDelay $ 15 * 1000000
 
 -- | Build our Version message
 buildVersion :: MonadIO m => m Version
@@ -598,8 +616,8 @@ endMerkleBlock dmb@(DecodedMerkleBlock mb _ match txs) = do
 -- message queue for processing. If we receive invalid messages, this function
 -- will also notify the PeerManager about a misbehaving remote host.
 decodeMessage :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
-              => Sink BS.ByteString (StateT PeerSession m) ()
-decodeMessage = do
+              => MVar () -> Sink BS.ByteString (StateT PeerSession m) ()
+decodeMessage mv = do
     pid <- lift $ gets peerId
     -- Message header is always 24 bytes
     headerBytes <- toStrictBS <$> CB.take 24
@@ -617,6 +635,7 @@ decodeMessage = do
                     , bsToHex headerBytes
                     ]
             Right (MessageHeader _ cmd len _) -> do
+                _ <- liftIO $ tryPutMVar mv ()
                 $(logDebug) $ format pid $ unwords
                     [ "Received message header of type", show cmd ]
                 payloadBytes <- toStrictBS <$> (CB.take $ fromIntegral len)
@@ -628,7 +647,7 @@ decodeMessage = do
                         pChan <- lift $ gets peerChan
                         liftIO . atomically $ 
                             writeTBMChan pChan $ MsgFromRemote res
-        decodeMessage
+        decodeMessage mv
 
 -- | Encode message that are being sent to the remote host.
 encodeMessage :: Monad m => Conduit Message (StateT PeerSession m) BS.ByteString

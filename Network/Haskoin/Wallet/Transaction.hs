@@ -1117,19 +1117,23 @@ limitConfirmations t i =
 {- Balances -}
 
 accountBalance :: MonadIO m 
-               => KeyRingAccountId
+               => KeyRingName
+               -> AccountName
                -> Word32
                -> Bool 
                -> SqlPersistT m Word64
-accountBalance ai minconf offline = do
-    res <- select $ from $ 
-        \(t `InnerJoin` c `LeftOuterJoin` s `LeftOuterJoin` st) -> do
+accountBalance keyRingName accountName minconf offline = do
+    res <- select $ from $ \(k `InnerJoin` a `InnerJoin` t `InnerJoin` c 
+                               `LeftOuterJoin` s `LeftOuterJoin` st) -> do
         on $ st ?. KeyRingTxId ==. s ?. KeyRingSpentCoinAccTx
         on (   s ?. KeyRingSpentCoinHash ==. just (t ^. KeyRingTxHash)
            &&. s ?. KeyRingSpentCoinPos  ==. just (c ^. KeyRingCoinPos)
            )
-        on $ c ^. KeyRingCoinAccTx ==. t ^. KeyRingTxId
-        let conf = (   t ^. KeyRingTxAccount ==. val ai
+        on $ c ^. KeyRingCoinAccTx      ==. t ^. KeyRingTxId
+        on $ t ^. KeyRingTxAccount      ==. a ^. KeyRingAccountId
+        on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
+        let conf = (   k ^. KeyRingName        ==. val keyRingName
+                   &&. a ^. KeyRingAccountName ==. val accountName
                    &&. t ^. KeyRingTxConfidence `in_` valList validConfidence
                    )
             -- Coinbase transactions require 100 confirmations
@@ -1137,8 +1141,11 @@ accountBalance ai minconf offline = do
                             ||. limitConfirmations t 100 
                             )
             unspent = E.isNothing ( s ?. KeyRingSpentCoinId )
-            limitUnspent = if offline then unspent else
-                unspent ||. st ?. KeyRingTxConfidence ==. just (val TxOffline)
+            spentOffline = st ?. KeyRingTxConfidence ==. just (val TxOffline)
+            -- For non-offline balances, we have to take into account the
+            -- coins which are spent by offline transactions.
+            limitUnspent | offline   = unspent
+                         | otherwise = unspent ||. spentOffline
         where_ (   limitUnspent
                &&. if minconf == 0 then conf else 
                        (   conf 

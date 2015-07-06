@@ -339,7 +339,7 @@ data WalletRequest
     | PostTxsR !KeyRingName !AccountName !TxAction
     | GetTxR !KeyRingName !AccountName !TxHash
     | GetOfflineTxR !KeyRingName !AccountName !TxHash
-    | GetBalanceR !KeyRingName !AccountName !Word32
+    | GetBalanceR !KeyRingName !AccountName !Word32 !Bool
     | GetOfflineBalanceR !KeyRingName !AccountName
     | PostNodeR !NodeAction
 

@@ -307,7 +307,8 @@ cmdBalance :: String -> Handler ()
 cmdBalance name = do
     k <- R.asks configKeyRing
     m <- R.asks configMinConf
-    sendZmq (GetBalanceR k (pack name) m) $ \(BalanceRes b) ->
+    o <- R.asks configOffline
+    sendZmq (GetBalanceR k (pack name) m o) $ \(BalanceRes b) ->
         putStrLn $ unwords [ "Balance:", show b ]
 
 cmdOfflineBalance :: String -> Handler ()

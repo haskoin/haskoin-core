@@ -465,30 +465,17 @@ getOfflineTxR keyRingName accountName txid = do
     return $ Just $ toJSON dat
 
 getBalanceR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
-            => KeyRingName -> AccountName -> Word32 -> Handler m (Maybe Value)
-getBalanceR keyRingName name minconf = do
+            => KeyRingName -> AccountName -> Word32 -> Bool 
+            -> Handler m (Maybe Value)
+getBalanceR keyRingName name minconf offline = do
     $(logInfo) $ format $ unlines
         [ "GetBalanceR"
         , "  KeyRing name: " ++ unpack keyRingName
         , "  Account name: " ++ unpack name
         , "  Minconf     : " ++ show minconf
+        , "  Offline     : " ++ show offline
         ]
-    balance <- runDB $ do
-        (_, Entity ai _) <- getAccount keyRingName name
-        accountBalance ai minconf False
-    return $ Just $ toJSON $ BalanceRes balance
-
-getOfflineBalanceR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
-                   => KeyRingName -> AccountName -> Handler m (Maybe Value)
-getOfflineBalanceR keyRingName name = do
-    $(logInfo) $ format $ unlines
-        [ "GetOfflineBalanceR"
-        , "  KeyRing name: " ++ unpack keyRingName
-        , "  Account name: " ++ unpack name
-        ]
-    balance <- runDB $ do
-        (_, Entity ai _) <- getAccount keyRingName name
-        accountBalance ai 0 True
+    balance <- runDB $ accountBalance keyRingName name minconf offline
     return $ Just $ toJSON $ BalanceRes balance
 
 postNodeR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)

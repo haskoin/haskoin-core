@@ -490,12 +490,12 @@ getSpendingTxs :: MonadIO m
 getSpendingTxs tx aiM 
     | null txInputs = return []
     | otherwise =  do
-        select $ from $ \(s `InnerJoin` t) -> do
+        splitSelect txInputs $ \ins -> from $ \(s `InnerJoin` t) -> do
             on $ s ^. KeyRingSpentCoinSpendingTx ==. t ^. KeyRingTxId
                         -- Filter out the given transaction
             let cond = (   t ^. KeyRingTxHash !=. val txid
                         -- Limit to only the input coins of the given tx
-                       &&. limitSpent s
+                       &&. limitSpent s ins
                        )
             where_ $ case aiM of
                 Just ai -> cond &&. s ^. KeyRingSpentCoinAccount ==. val ai
@@ -503,7 +503,7 @@ getSpendingTxs tx aiM
             return t
   where
     txid = txHash tx
-    limitSpent s = fromMaybe (val False) $ foldl (f s) Nothing txInputs
+    limitSpent s ins = fromMaybe (val False) $ foldl (f s) Nothing ins
     txInputs = map prevOutput $ txIn tx
     f s accM (OutPoint h i) = 
         let b =   s ^. KeyRingSpentCoinHash ==. val h 

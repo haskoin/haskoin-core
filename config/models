@@ -56,23 +56,30 @@ KeyRingTx
     deriving Show
 
 KeyRingCoin
-    accTx KeyRingTxId
+    account KeyRingAccountId
+    hash TxHash maxlen=200
     pos Word32
+    tx KeyRingTxId
     addr KeyRingAddrId
     value Word64
     script ScriptOutput
     created UTCTime
-    UniqueCoin accTx pos
-    UniqueCoinRev pos accTx
+    UniqueCoin account hash pos
+    UniqueCoinRev hash pos account
+    UniqueCoinTx tx pos
+    UniqueCoinTxRev pos tx
     deriving Show
 
 KeyRingSpentCoin
-    accTx KeyRingTxId
+    account KeyRingAccountId
     hash TxHash maxlen=200
     pos Word32
+    spendingTx KeyRingTxId
     created UTCTime
-    UniqueSpentCoins accTx hash pos
-    UniqueSpentCoinsRev hash pos accTx
+    UniqueSpentCoins account hash pos
+    UniqueSpentCoinsRev hash pos account
+    UniqueSpentTx spendingTx hash pos
+    UniqueSpentTxRev hash pos spendingTx
     deriving Show
 
 KeyRingAddrTx
@@ -83,6 +90,7 @@ KeyRingAddrTx
     outValue Word64
     created UTCTime
     UniqueAddrTx addr accTx
+    UniqueAddrTxRev accTx addr
     deriving Show
 
 KeyRingConfig

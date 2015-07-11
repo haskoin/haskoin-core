@@ -108,6 +108,7 @@ module Network.Haskoin.Wallet
 , spendableCoins
 , spendableCoinsSource
 , accountBalance
+, addressBalances
 
 -- *Rescan
 , resetRescan

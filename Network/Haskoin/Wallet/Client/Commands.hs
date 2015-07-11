@@ -21,7 +21,6 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdImport
 , cmdSign
 , cmdBalance
-, cmdOfflineBalance
 , cmdGetTx
 , cmdGetOffline
 , cmdSignOffline
@@ -190,7 +189,9 @@ cmdList :: String -> [String] -> Handler ()
 cmdList name pageLs = do
     k <- R.asks configKeyRing
     t <- R.asks configAddrType
-    let f = GetAddressesR k (pack name) t
+    m <- R.asks configMinConf
+    o <- R.asks configOffline
+    let f = GetAddressesR k (pack name) t m o
     pagedAction pageLs f $ \as -> forM_ as (putStrLn . printAddress)
 
 cmdUnused :: String -> Handler ()
@@ -310,12 +311,6 @@ cmdBalance name = do
     o <- R.asks configOffline
     sendZmq (GetBalanceR k (pack name) m o) $ \(BalanceRes b) ->
         putStrLn $ unwords [ "Balance:", show b ]
-
-cmdOfflineBalance :: String -> Handler ()
-cmdOfflineBalance name = do
-    k <- R.asks configKeyRing
-    sendZmq (GetOfflineBalanceR k $ pack name) $ \(BalanceRes b) ->
-        putStrLn $ unwords [ "Offline Balance:", show b ]
 
 cmdGetTx :: String -> String -> Handler ()
 cmdGetTx name tidStr = case tidM of
@@ -543,15 +538,15 @@ printAddress JsonAddr{..} = unwords $
     ++ 
     [ "(" ++ unpack jsonAddrLabel ++ ")" | not (null $ unpack jsonAddrLabel) ]
     ++ concat 
-    ( [ [ "[Received: "     ++ show (addrBalanceInBalance bal)   ++ "]"
-        , "[Funding Txs: "  ++ show (addrBalanceFundingTxs bal)  ++ "]"
-        , "[Spending Txs: " ++ show (addrBalanceSpendingTxs bal) ++ "]"
+    ( [ [ "[Received: " ++ show (addrBalanceInBalance bal)   ++ "]"
+        , "[Coins: "  ++ show (addrBalanceCoins bal)  ++ "]"
+        , "[Spent Coins: " ++ show (addrBalanceSpentCoins bal) ++ "]"
         ] 
-        | isJust jsonAddrOfflineBalance
+        | isJust jsonAddrBalance && addrBalanceCoins bal > 0
       ]
     )
   where
-    bal = fromJust jsonAddrOfflineBalance
+    bal = fromJust jsonAddrBalance
 
 printTx :: JsonTx -> String
 printTx tx@JsonTx{..} = unlines $

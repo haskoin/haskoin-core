@@ -78,10 +78,9 @@ toJsonAccount keyRingM acc = JsonAccount
 
 toJsonAddr :: (Maybe JsonAccount)    -- ^ The addresses account
            -> (Maybe AddressBalance) -- ^ The addresses balance
-           -> (Maybe AddressBalance) -- ^ The addresses offline balance
            -> KeyRingAddr   
            -> JsonAddr
-toJsonAddr accM balM offBalM addr = JsonAddr
+toJsonAddr accM balM addr = JsonAddr
     { jsonAddrAddress        = keyRingAddrAddress addr
     , jsonAddrIndex          = keyRingAddrIndex addr
     , jsonAddrType           = keyRingAddrType addr
@@ -93,7 +92,6 @@ toJsonAddr accM balM offBalM addr = JsonAddr
     , jsonAddrCreated        = keyRingAddrCreated addr
     , jsonAddrAccount        = accM
     , jsonAddrBalance        = balM
-    , jsonAddrOfflineBalance = offBalM
     }
 
 toJsonTx :: (Maybe JsonAccount) -- ^ The transactions account
@@ -124,7 +122,7 @@ toJsonTx accM currentHeightM tx = JsonTx
   where
     f confirmedHeight = case currentHeightM of
         Just h -> return $ fromInteger $
-            max 0 $ (toInteger h) - (toInteger $ confirmedHeight + 1)
+            max 0 $ (toInteger h) - (toInteger confirmedHeight) + 1
         _ -> Nothing
 
 toJsonCoin :: (Maybe JsonTx)   -- ^ The coins transaction

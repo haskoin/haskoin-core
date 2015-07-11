@@ -175,9 +175,11 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
         -- Import the merkle blocks into the wallet
         _ <- tryDBPool sem pool $ importMerkles action $ map expectedTxs dmbs
 
+        bSize <- gets eventBatchSize
+        let incBSize = min 500 $ bSize + (max 1 $ bSize `div` 20)
         -- If we received at least 1 transaction, the node will block the
         -- merkle block download and wait for us to continue the download.
-        unless (null txs) $ do
+        newBSize <- if null txs then return incBSize else do
             -- Do we have to rescan the current batch ?
             rescan <- shouldRescan $ M.toList newAddrsMap
                     -- If we use addresses in the hidden gap, we must
@@ -187,22 +189,21 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
                    -- from the new best block
                    | otherwise = nodeBlockHash $ last $ actionNewNodes action
 
-            bSize <- gets eventBatchSize
-            let newBSize | rescan    = max 1 $ bSize `div` 2
-                         | otherwise = min 500 $ bSize + (max 1 $ bSize `div` 20)
-            when (newBSize /= bSize) $ do
-                $(logDebug) $ pack $ unwords
-                    [ "Changing block batch size from"
-                    , show bSize, "to", show newBSize 
-                    ]
-                liftIO . atomically $ writeTBMChan rChan $ 
-                    NodeBatchSize newBSize
-                modify $ \s -> s{ eventBatchSize = newBSize }
-                
             -- Send a message to the node to continue the download from
             -- the requested block hash
             liftIO . atomically $ 
                 writeTBMChan rChan $ NodeStartMerkleDownload $ Right bh
+            return $ if rescan then max 1 $ bSize `div` 2 else incBSize
+
+        when (newBSize /= bSize) $ do
+            $(logDebug) $ pack $ unwords
+                [ "Changing block batch size from"
+                , show bSize, "to", show newBSize 
+                ]
+            liftIO . atomically $ writeTBMChan rChan $ 
+                NodeBatchSize newBSize
+            modify $ \s -> s{ eventBatchSize = newBSize }
+
     WalletSynced -> do
         txsM <- tryDBPool sem pool $ getPendingTxs 100
         case txsM of
@@ -302,9 +303,9 @@ dispatchRequest req = liftM ResponseValid $ case req of
     GetAccountR r n                  -> getAccountR r n
     PostAccountKeysR r n ks          -> postAccountKeysR r n ks
     PostAccountGapR r n g            -> postAccountGapR r n g
-    GetAddressesR r n t p            -> getAddressesR r n t p
+    GetAddressesR r n t m o p        -> getAddressesR r n t m o p
     GetAddressesUnusedR r n t        -> getAddressesUnusedR r n t
-    GetAddressR r n i t              -> getAddressR r n i t
+    GetAddressR r n i t m o          -> getAddressR r n i t m o
     PutAddressR r n i t l            -> putAddressR r n i t l
     GetTxsR r n p                    -> getTxsR r n p
     GetAddrTxsR r n i t p            -> getAddrTxsR r n i t p

@@ -20,6 +20,7 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack, unpack)
 import Data.Conduit (($$))
 import qualified Data.Conduit.List as CL (consume)
+import qualified Data.Map.Strict as M (intersectionWith, fromList, elems)
 
 import qualified Database.Persist as P
     ( Filter, SelectOpt( Asc, Desc, OffsetBy, LimitTo )
@@ -229,9 +230,14 @@ postAccountGapR keyRingName name (SetAccountGap gap) = do
     return Nothing
 
 getAddressesR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m) 
-              => KeyRingName -> AccountName -> AddressType -> PageRequest 
+              => KeyRingName 
+              -> AccountName 
+              -> AddressType 
+              -> Word32
+              -> Bool
+              -> PageRequest 
               -> Handler m (Maybe Value)
-getAddressesR keyRingName name addrType page = do
+getAddressesR keyRingName name addrType minConf offline page = do
     $(logInfo) $ format $ unlines 
         [ "GetAddressesR" 
         , "  KeyRing name: " ++ unpack keyRingName
@@ -240,9 +246,26 @@ getAddressesR keyRingName name addrType page = do
         , "  Page number : " ++ show (pageNum page)
         , "  Page size   : " ++ show (pageLen page)
         , "  Page reverse: " ++ show (pageReverse page)
+        , "  MinConf     : " ++ show minConf
+        , "  Offline     : " ++ show offline
         ]
-    (res, maxPage) <- runDB $ addressPage keyRingName name addrType page
-    return $ Just $ toJSON $ PageRes (map buildJsonAddr res) maxPage
+    (page, maxPage) <- runDB $ do
+        (res, maxPage) <- addressPage keyRingName name addrType page
+        case res of
+            [] -> return ([], 1)
+            _ -> do
+                let is = map (keyRingAddrIndex . lst3) res
+                    (iMin, iMax) = (minimum is, maximum is)
+                bs <- addressBalances 
+                    keyRingName name iMin iMax addrType minConf offline
+                let addrBals = map buildJsonAddr $ M.elems $ joinAddrs res bs
+                return (addrBals, maxPage)
+    return $ Just $ toJSON $ PageRes page maxPage
+  where
+    joinAddrs addrs bals =
+        let f addr@(_,_,x) = (keyRingAddrIndex x, addr)
+            g (k, a, x) b = (k, a, x, Just b)
+        in  M.intersectionWith g (M.fromList $ map f addrs) (M.fromList bals)
 
 getAddressesUnusedR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
                     => KeyRingName -> AccountName -> AddressType 
@@ -255,12 +278,15 @@ getAddressesUnusedR keyRingName name addrType = do
         , "  Address type: " ++ show addrType
         ]
     res <- runDB $ unusedAddresses keyRingName name addrType
-    return $ Just $ toJSON $ map buildJsonAddr res
+    return $ Just $ toJSON $ map (buildJsonAddr . f) res
+  where
+    f (k, a, x) = (k, a, x, Nothing)
 
 getAddressR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m) 
             => KeyRingName -> AccountName -> KeyIndex -> AddressType
+            -> Word32 -> Bool
             -> Handler m (Maybe Value)
-getAddressR keyRingName name i addrType = do
+getAddressR keyRingName name i addrType minConf offline = do
     $(logInfo) $ format $ unlines
         [ "GetAddressR"
         , "  KeyRing name: " ++ unpack keyRingName
@@ -268,12 +294,18 @@ getAddressR keyRingName name i addrType = do
         , "  Index       : " ++ show i
         , "  Address type: " ++ show addrType
         ]
-    (k, a, Entity _ x) <- runDB $ getAddress keyRingName name i addrType
-    return $ Just $ toJSON $ buildJsonAddr (k, a, x)
+    (k, a, Entity _ x, bM) <- runDB $ do
+        (k, a, x) <- getAddress keyRingName name i addrType
+        bs <- addressBalances keyRingName name i i addrType minConf offline
+        return $ case bs of
+            ((_,b):_) -> (k, a, x, Just b)
+            _         -> (k, a, x, Nothing)
+    return $ Just $ toJSON $ buildJsonAddr (k, a, x, bM)
 
-buildJsonAddr :: (KeyRing, KeyRingAccount, KeyRingAddr) -> JsonAddr
-buildJsonAddr (k, a, x) =
-    toJsonAddr (Just accJson) Nothing Nothing x
+buildJsonAddr :: (KeyRing, KeyRingAccount, KeyRingAddr, Maybe AddressBalance) 
+              -> JsonAddr
+buildJsonAddr (k, a, x, bM) =
+    toJsonAddr (Just accJson) bM x
   where
     accJson = toJsonAccount (Just $ toJsonKeyRing k) a
 
@@ -334,7 +366,7 @@ getAddrTxsR keyRingName name index addrType page = do
   where
     buildJson height (k, a, x, xt, t) =
         let accJson  = toJsonAccount (Just $ toJsonKeyRing k) a
-            addrJson = toJsonAddr (Just accJson) Nothing Nothing x
+            addrJson = toJsonAddr (Just accJson) Nothing x
             txJson   = toJsonTx (Just accJson) (Just height) t
         in  toJsonAddrTx (Just addrJson) (Just txJson) xt
 

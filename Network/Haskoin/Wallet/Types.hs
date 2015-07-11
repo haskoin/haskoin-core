@@ -139,8 +139,8 @@ $(deriveJSON (dropFieldLabel 11) ''AddressInfo)
 data AddressBalance = AddressBalance
     { addrBalanceInBalance   :: !Word64
     , addrBalanceOutBalance  :: !Word64
-    , addrBalanceFundingTxs  :: !Int
-    , addrBalanceSpendingTxs :: !Int
+    , addrBalanceCoins       :: !Int
+    , addrBalanceSpentCoins  :: !Int
     }
     deriving (Eq, Show, Read)
 
@@ -330,9 +330,11 @@ data WalletRequest
     | GetAccountR !KeyRingName !AccountName
     | PostAccountKeysR !KeyRingName !AccountName ![XPubKey]
     | PostAccountGapR !KeyRingName !AccountName !SetAccountGap
-    | GetAddressesR !KeyRingName !AccountName !AddressType !PageRequest
+    | GetAddressesR !KeyRingName !AccountName 
+        !AddressType !Word32 !Bool !PageRequest
     | GetAddressesUnusedR !KeyRingName !AccountName !AddressType
     | GetAddressR !KeyRingName !AccountName !KeyIndex !AddressType
+        !Word32 !Bool
     | PutAddressR !KeyRingName !AccountName !KeyIndex !AddressType !AddressLabel
     | GetTxsR !KeyRingName !AccountName !PageRequest
     | GetAddrTxsR !KeyRingName !AccountName !KeyIndex !AddressType !PageRequest
@@ -340,7 +342,6 @@ data WalletRequest
     | GetTxR !KeyRingName !AccountName !TxHash
     | GetOfflineTxR !KeyRingName !AccountName !TxHash
     | GetBalanceR !KeyRingName !AccountName !Word32 !Bool
-    | GetOfflineBalanceR !KeyRingName !AccountName
     | PostNodeR !NodeAction
 
 -- TODO: Set omitEmptyContents on aeson-0.9
@@ -394,8 +395,6 @@ data JsonAddr = JsonAddr
     , jsonAddrAccount        :: !(Maybe JsonAccount)
     -- Optional Balance
     , jsonAddrBalance        :: !(Maybe AddressBalance)
-    -- Optional Offline Balance
-    , jsonAddrOfflineBalance :: !(Maybe AddressBalance)
     }
     deriving (Eq, Show, Read)
 

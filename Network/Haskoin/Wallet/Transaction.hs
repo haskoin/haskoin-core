@@ -39,12 +39,13 @@ import Control.Exception (throwIO, throw)
 
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Word (Word32, Word64)
-import Data.Maybe (catMaybes, mapMaybe, isNothing, isJust, fromMaybe)
 import Data.Either (rights)
 import Data.List ((\\), nub, nubBy, delete, find)
 import Data.List.Split (splitEvery)
 import Data.Text (unpack)
 import Data.Conduit (Source, mapOutput, ($$))
+import Data.Maybe 
+    (catMaybes, mapMaybe, isNothing, isJust, fromMaybe, listToMaybe)
 import qualified Data.Conduit.List as CL (consume)
 import qualified Data.Map.Strict as M 
     ( Map, toList, map, lookup
@@ -111,6 +112,21 @@ txPage :: MonadIO m
           -- ^ Page result
 txPage keyRingName accountName page@PageRequest{..}
     | validPageRequest page = do
+        cntRes <- select $ from $ \(k `InnerJoin` a `InnerJoin` t) -> do
+            on $ t ^. KeyRingTxAccount      ==. a ^. KeyRingAccountId
+            on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
+            where_ (   k ^. KeyRingName        ==. val keyRingName
+                   &&. a ^. KeyRingAccountName ==. val accountName
+                   )
+            return countRows
+
+        let cnt     = maybe 0 unValue $ listToMaybe cntRes
+            (d, m)  = cnt `divMod` pageLen
+            maxPage = d + min 1 m
+
+        when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
+            unwords [ "Invalid page number", show pageNum ]
+
         res <- select $ from $ \(k `InnerJoin` a `InnerJoin` t) -> do
             on $ t ^. KeyRingTxAccount      ==. a ^. KeyRingAccountId
             on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
@@ -122,24 +138,11 @@ txPage keyRingName accountName page@PageRequest{..}
             limit $ fromIntegral pageLen
             offset $ fromIntegral $ (pageNum - 1) * pageLen
 
-            let txCount = sub_select $ from $ \t2 -> do
-                    where_ $ t2 ^. KeyRingTxAccount ==. a ^. KeyRingAccountId
-                    return countRows
-
-            return (k, a, t, txCount)
-
-        let cnt = case res of
-                ((_,_,_,Value txCount):_) -> txCount
-                _ -> 0
-            (d, m)  = cnt `divMod` pageLen
-            maxPage = d + min 1 m
-
-        when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
-            unwords [ "Invalid page number", show pageNum ]
+            return (k, a, t)
 
         let f | pageReverse = id
               | otherwise   = reverse
-            g (Entity _ k, Entity _ a, Entity _ t, _) = (k, a, t)
+            g (Entity _ k, Entity _ a, Entity _ t) = (k, a, t)
         return (f $ map g res, maxPage)
     | otherwise = liftIO . throwIO $ WalletException $
         concat [ "Invalid page request"
@@ -165,6 +168,26 @@ addrTxPage :: MonadIO m
               -- ^ Page result
 addrTxPage keyRingName accountName addrType index page@PageRequest{..}
     | validPageRequest page = do
+        cntRes <- select $ from $ 
+            \(k `InnerJoin` a `InnerJoin` x `InnerJoin` xt) -> do
+            on $ xt ^. KeyRingAddrTxAddr    ==. x ^. KeyRingAddrId
+            on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
+            on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
+            where_ (   k ^. KeyRingName        ==. val keyRingName
+                   &&. a ^. KeyRingAccountName ==. val accountName
+                   &&. x ^. KeyRingAddrType    ==. val addrType
+                   &&. x ^. KeyRingAddrIndex   ==. val index
+                   &&. x ^. KeyRingAddrIndex   <=. subSelectMaxAddr a addrType
+                   )
+            return countRows
+
+        let cnt     = maybe 0 unValue $ listToMaybe cntRes
+            (d, m)  = cnt `divMod` pageLen
+            maxPage = d + min 1 m
+
+        when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
+            unwords [ "Invalid page number", show pageNum ]
+
         res <- select $ from $ 
             \(k `InnerJoin` a `InnerJoin` x `InnerJoin` xt `InnerJoin` t) -> do
             on $ t ^. KeyRingTxId           ==. xt ^. KeyRingAddrTxAccTx
@@ -182,24 +205,12 @@ addrTxPage keyRingName accountName addrType index page@PageRequest{..}
             limit $ fromIntegral pageLen
             offset $ fromIntegral $ (pageNum - 1) * pageLen
 
-            let txCount = sub_select $ from $ \xt2 -> do
-                    where_ $ xt2 ^. KeyRingAddrTxAddr ==. x ^. KeyRingAddrId
-                    return countRows
+            return (k, a, x, xt, t)
 
-            return (k, a, x, xt, t, txCount)
-
-        let cnt = case res of
-                ((_,_,_,_,_,Value txCount):_) -> txCount
-                _ -> 0
-            (d, m)  = cnt `divMod` pageLen
-            maxPage = d + min 1 m
-
-        when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
-            unwords [ "Invalid page number", show pageNum ]
 
         let f | pageReverse = id
               | otherwise   = reverse
-            g (Entity _ k, Entity _ a, Entity _ x, Entity _ xt, Entity _ t, _) = 
+            g (Entity _ k, Entity _ a, Entity _ x, Entity _ xt, Entity _ t) = 
                 (k, a, x, xt, t)
         return (f $ map g res, maxPage)
     | otherwise = liftIO . throwIO $ WalletException $
@@ -1157,7 +1168,7 @@ accountBalance :: MonadIO m
                -> SqlPersistT m Word64
 accountBalance keyRingName accountName minconf offline = do
     res <- select $ from $ \(k `InnerJoin` a `InnerJoin` c `InnerJoin` t
-                               `LeftOuterJoin` (s `InnerJoin` st)) -> do
+                               `LeftOuterJoin` s `LeftOuterJoin` st) -> do
         on $ st ?. KeyRingTxId ==. s ?. KeyRingSpentCoinSpendingTx
         on (   s ?. KeyRingSpentCoinAccount ==. just (c ^. KeyRingCoinAccount)
            &&. s ?. KeyRingSpentCoinHash    ==. just (c ^. KeyRingCoinHash) 
@@ -1197,7 +1208,7 @@ addressBalances :: MonadIO m
 addressBalances keyRingName accountName iMin iMax addrType minconf offline = do
     res <- select $ from $ 
         \(k `InnerJoin` a `InnerJoin` x `LeftOuterJoin` 
-          (c `InnerJoin` t `LeftOuterJoin` (s `InnerJoin` st))) -> do
+          c `LeftOuterJoin` t `LeftOuterJoin` s `LeftOuterJoin` st) -> do
         let joinCond = st ?. KeyRingTxId ==. s ?. KeyRingSpentCoinSpendingTx
         -- Do not join the spending information for offline transactions if we
         -- request the online balances. This will count the coin as unspent.
@@ -1227,7 +1238,7 @@ addressBalances keyRingName accountName iMin iMax addrType minconf offline = do
                     then cond 
                     else cond &&. limitConfirmations (Left t) minconf
         groupBy $ x ^. KeyRingAddrIndex
-        let unspent = E.isNothing ( s ?. KeyRingSpentCoinId )
+        let unspent = E.isNothing ( st ?. KeyRingTxId )
         return ( x ^. KeyRingAddrIndex -- Address index
                , sum_ $ c ?. KeyRingCoinValue -- In value
                , sum_ $ case_ 
@@ -1235,7 +1246,7 @@ addressBalances keyRingName accountName iMin iMax addrType minconf offline = do
                      then_ (val (Just 0)) 
                    ] (else_ $ c ?. KeyRingCoinValue) -- Out value
                , count $ c ?. KeyRingCoinId -- New coins
-               , count $ s ?. KeyRingSpentCoinId  -- Spent coins
+               , count $ st ?. KeyRingTxId  -- Spent coins
                )
     return $ map f res
   where

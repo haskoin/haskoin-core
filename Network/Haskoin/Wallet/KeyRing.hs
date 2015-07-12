@@ -47,7 +47,7 @@ import Control.Monad.Trans.Resource (MonadResource)
 import Control.Exception (throwIO, throw)
 
 import Data.Text (Text, unpack)
-import Data.Maybe (mapMaybe)
+import Data.Maybe (mapMaybe, listToMaybe)
 import Data.Time.Clock (getCurrentTime)
 import Data.Conduit (Source, mapOutput, await, ($$))
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
@@ -63,10 +63,10 @@ import qualified Database.Persist as P
 import Database.Esqueleto 
     ( Value(..), SqlExpr
     , InnerJoin(..), on
-    , select, from, where_, val, sub_select, countRows
+    , select, from, where_, val, sub_select, countRows, unValue
     , orderBy, limit, asc, desc, offset, selectSource
     , max_, not_, coalesceDefault, isNothing
-    , (^.), (==.), (&&.), (<=.), (>.), (-.)
+    , (^.), (==.), (&&.), (<=.), (>.), (-.), (<.)
     -- Reexports from Database.Persist
     , SqlPersistT, Entity(..)
     , getBy, insertUnique, insertMany_, insert_
@@ -326,32 +326,40 @@ addressPage :: MonadIO m
                 -- ^ Page result
 addressPage keyRingName accountName addrType page@PageRequest{..}
     | validPageRequest page = do
-        res <- select $ from $ \(k `InnerJoin` a `InnerJoin` x) -> do
+        cntRes <- select $ from $ \(k `InnerJoin` a `InnerJoin` x) -> do
             on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
             on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
             where_ (   k ^. KeyRingName        ==. val keyRingName
                    &&. a ^. KeyRingAccountName ==. val accountName
                    &&. x ^. KeyRingAddrType    ==. val addrType
-                   &&. x ^. KeyRingAddrIndex   <=. subSelectMaxAddr a addrType
                    )
-            let order = if pageReverse then asc else desc
-            orderBy [ order (x ^. KeyRingAddrIndex) ]
-            limit $ fromIntegral pageLen
-            offset $ fromIntegral $ (pageNum - 1) * pageLen
-            return (k, a, x, subSelectMaxAddr a addrType)
+            return countRows
 
-        let cnt = case res of
-                ((_,_,_,Value maxIndex):_) -> maxIndex
-                _ -> 0
+        let cnt     = maybe 0 unValue $ listToMaybe cntRes
             (d, m)  = cnt `divMod` pageLen
             maxPage = d + min 1 m
 
         when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
             unwords [ "Invalid page number", show pageNum ]
 
+        res <- select $ from $ \(k `InnerJoin` a `InnerJoin` x) -> do
+            on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
+            on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
+            let gap = a ^. KeyRingAccountGap
+            where_ (   k ^. KeyRingName        ==. val keyRingName
+                   &&. a ^. KeyRingAccountName ==. val accountName
+                   &&. x ^. KeyRingAddrType    ==. val addrType
+                   &&. x ^. KeyRingAddrIndex   <.  (val cnt) -. gap
+                   )
+            let order = if pageReverse then asc else desc
+            orderBy [ order (x ^. KeyRingAddrIndex) ]
+            limit $ fromIntegral pageLen
+            offset $ fromIntegral $ (pageNum - 1) * pageLen
+            return (k, a, x)
+
         let f | pageReverse = id
               | otherwise   = reverse
-            g (Entity _ k, Entity _ a, Entity _ x, _) = (k, a, x)
+            g (Entity _ k, Entity _ a, Entity _ x) = (k, a, x)
         return (f $ map g res, maxPage)
     | otherwise = liftIO . throwIO $ WalletException $
         concat [ "Invalid page request"

@@ -593,19 +593,19 @@ instance PersistFieldSql AccountType where
     sqlType _ = SqlString
 
 instance PersistField AddressType where
-    toPersistValue ts = PersistByteString $ case ts of
-        AddressInternal -> "internal"
-        AddressExternal -> "external"
+    toPersistValue ts = PersistInt64 $ case ts of
+        AddressExternal -> 0
+        AddressInternal -> 1
 
-    fromPersistValue (PersistByteString t) = case t of
-        "internal" -> return AddressInternal
-        "external" -> return AddressExternal
+    fromPersistValue (PersistInt64 t) = case t of
+        0 -> return AddressExternal
+        1 -> return AddressInternal
         _ -> Left "Invalid Persistent AddressType"
 
     fromPersistValue _ = Left "Invalid Persistent AddressType"
 
 instance PersistFieldSql AddressType where
-    sqlType _ = SqlString
+    sqlType _ = SqlInt64
 
 instance PersistField TxType where
     toPersistValue ts = PersistByteString $ case ts of

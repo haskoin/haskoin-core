@@ -5,7 +5,7 @@ module Network.Haskoin.Node.BlockChain
 
 import Control.Monad ( when, unless, forM_, forever, liftM)
 import Control.Monad.Trans (MonadIO, liftIO, lift)
-import Control.Monad.State (StateT, evalStateT, gets, modify)
+import Control.Monad.State (StateT, evalStateT, get, gets, modify)
 import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug, logError)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (atomically)
@@ -21,7 +21,7 @@ import Data.Conduit (Sink, awaitForever, ($$))
 import Data.Conduit.TMChan (TBMChan, writeTBMChan, newTBMChan, sourceTBMChan)
 import qualified Data.Map as M 
     ( Map, keys , empty, insert, lookup
-    , assocs, partition, size, null, delete
+    , assocs, partition, size, null, delete, elems
     )
 
 import Network.Haskoin.Block
@@ -134,6 +134,7 @@ processBlockChainMessage = awaitForever $ \req -> lift $ case req of
     NetworkHeight h          -> processNetworkHeight h
     SetBatchSize i           -> processSetBatchSize i
     BkchHeartbeat            -> processHeartbeat
+    BkchStatus               -> processBkchStatus
     _ -> return () -- Ignore block invs (except tickles) and full blocks
 
 -- | Handle block tickles from a peer. A peer can only send us one tickle
@@ -560,6 +561,30 @@ processHeartbeat = do
         _ -> return ()
     -- Continue the merkle block download in case it gets stuck
     continueDownload
+
+processBkchStatus :: (HeaderTree m, MonadLogger m, MonadIO m) 
+                   => StateT SpvSession m ()
+processBkchStatus = do
+    SpvSession{..} <- get
+    $(logInfo) $ format $ unlines
+        [ ""
+        , "Sync Resource     : " ++ 
+              (maybe "Nothing" showJobResource syncResource)
+        , "Sync Timeout      : " ++ show syncTimeout
+        , "Peer Tickles      : " ++ (show $ M.size peerTickles)
+        , "Valid Bloom       : " ++ show validBloom
+        , "Window End        : " ++ 
+              maybe "Nothing" encodeBlockHashLE windowEnd
+        , "Fast catchup      : " ++ maybe "Nothing" show fastCatchup
+        , "Download Merkles  : " ++ show downloadMerkles
+        , "Merkle ID         : " ++ 
+              maybe "Nothing" (show . hashUnique . fst) merkleId
+        , "Block Window      : " ++ (show $ M.size blockWindow)
+        , "Block Window Elems: " ++ 
+             (show $ length $ concat $ map snd $ M.elems blockWindow)
+        , "Network Height    : " ++ show networkHeight
+        ]
+
     
 {- Helpers -}
 

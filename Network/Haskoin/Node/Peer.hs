@@ -259,6 +259,7 @@ processJob = do
                     -- the last merkle block download.
                     -- TODO: Compute a random nonce for the ping
                     sendMessage $ MPing $ Ping 0
+        Just JobStatus -> processJobStatus
         Nothing -> $(logError) $ format pid "No job available to process"
 
 jobDone :: (MonadLogger m, MonadIO m) => StateT PeerSession m ()
@@ -652,6 +653,19 @@ decodeMessage mv = do
 -- | Encode message that are being sent to the remote host.
 encodeMessage :: Monad m => Conduit Message (StateT PeerSession m) BS.ByteString
 encodeMessage = awaitForever $ yield . encode'
+
+processJobStatus :: (MonadLogger m, MonadIO m) => StateT PeerSession m ()
+processJobStatus = do
+    PeerSession{..} <- get
+    $(logInfo) $ format peerId $ unlines 
+        [ ""
+        , "Peer Version : " ++ maybe "Nothing" show peerVersion
+        , "Current Job  : " ++ maybe "Nothing" (showJob . jobPayload) currentJob
+        , "Merkle Buffer: " ++ (show $ length merkleBuffer)
+        , "Block Buffer : " ++ (show $ length blockBuffer)
+        , "Block Order  : " ++ (show $ length blockOrder)
+        ]
+    jobDone
 
 {- Helpers -}
 

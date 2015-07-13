@@ -12,12 +12,13 @@ import Control.Concurrent (forkFinally, forkIO, threadDelay)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async.Lifted (withAsync, link)
 import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug, logError)
-import Control.Monad.State (StateT, evalStateT, gets, modify)
+import Control.Monad.State (StateT, evalStateT, get, gets, modify)
 
 import Data.List (sort)
 import Data.Text (Text, pack)
 import Data.Unique (newUnique, hashUnique)
 import Data.Time.Clock (UTCTime, getCurrentTime, addUTCTime)
+import qualified Data.Sequence as S (length)
 import Data.Conduit (Sink, awaitForever, ($$))
 import Data.Conduit.Network (runGeneralTCPClient, clientSettings)
 import Data.Conduit.TMChan 
@@ -128,6 +129,7 @@ processManagerMessage = awaitForever $ \req -> lift $ case req of
     PeerJobDone pid jid       -> peerJobDone pid jid
     ConnectToRemote remote    -> connectToRemoteHost remote
     MngrHeartbeat             -> processHeartbeat
+    MngrStatus                -> processMngrStatus
 
 -- | Let the PeerManager know about new remote peers to connect to. The
 -- PeerManager will add them to its session data and try to connect to
@@ -571,6 +573,19 @@ peerJobDone pid jid = existsPeerData pid >>= \exists -> when exists $ do
 
     stepPeer pid
     scheduleJobs
+
+processMngrStatus :: (MonadLogger m, MonadIO m) => StateT ManagerSession m ()
+processMngrStatus = do
+    publishJob JobStatus (AllPeers 0) 10
+    ManagerSession{..} <- get
+    $(logInfo) $ format $ unlines
+        [ ""
+        , "Peer Map      : " ++ (show $ M.size peerMap)
+        , "Remote Map    : " ++ (show $ M.size remoteMap)
+        , "Bloom Filter  : " ++ (show $ (S.length . bloomData) <$> mngrBloom)
+        , "Job Queue     : " ++ (show $ length $ concat $ M.elems jobQueue)
+        , "Broadcast Jobs: " ++ (show $ M.size broadcastJobs)
+        ]
 
 {- Helpers -}
 

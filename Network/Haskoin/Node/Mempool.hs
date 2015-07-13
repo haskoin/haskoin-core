@@ -8,7 +8,7 @@ import Control.Monad (unless, forM_, liftM)
 import Control.Monad.Trans (MonadIO, liftIO, lift)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async.Lifted (withAsync, link)
-import Control.Monad.State (StateT, evalStateT, gets, modify)
+import Control.Monad.State (StateT, evalStateT, get, gets, modify)
 import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug)
 import Control.Monad.Trans.Control (MonadBaseControl)
 
@@ -70,6 +70,11 @@ withNode f = do
             $(logDebug) $ formatWallet $ unwords
                 [ "Setting the node batch size to", show i]
             liftIO $ atomically $ writeTBMChan bkchChan $ SetBatchSize i
+        NodeStatus -> do
+            $(logDebug) $ formatWallet "Requesting node status"
+            liftIO $ atomically $ writeTBMChan mempChan MempoolStatus
+            liftIO $ atomically $ writeTBMChan bkchChan BkchStatus
+            liftIO $ atomically $ writeTBMChan mngrChan MngrStatus
 
 formatWallet :: String -> Text
 formatWallet str = pack $ unwords [ "[Wallet Request]", str ]
@@ -142,6 +147,7 @@ processMempoolMessage = awaitForever $ \req -> lift $ case req of
     MempoolBlocks action blocks -> processBlocks action blocks
     MempoolSynced               -> processSynced
     MempoolStartDownload valE   -> processStartDownload valE 
+    MempoolStatus               -> processMempoolStatus
 
 -- | Decide if we want to download a transaction or not. We store inflight
 -- transactions.
@@ -334,6 +340,18 @@ processStartDownload _ = do
         , "Cleaning up the merkle buffer."
         ]
     modify $ \s -> s{ nodeSynced = False, merkleBuffer = [] }
+
+processMempoolStatus :: (MonadLogger m, MonadIO m) => StateT MempoolSession m ()
+processMempoolStatus = do
+    MempoolSession{..} <- get
+    $(logInfo) $ format $ unlines
+        [ ""
+        , "Node Synced   : " ++ show nodeSynced
+        , "Tx Buffer     : " ++ (show $ length txBuffer)
+        , "Inflight Txs  : " ++ (show $ length inflightTxs)
+        , "Merkle Buffer : " ++ (show $ length merkleBuffer)
+        , "TxPeer Map    : " ++ (show $ length $ concat $ M.elems txPeerMap)
+        ]
 
 {- Helpers -}
 

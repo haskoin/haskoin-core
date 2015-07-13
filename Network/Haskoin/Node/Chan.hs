@@ -9,6 +9,7 @@ module Network.Haskoin.Node.Chan
 , PeerJob(..)
 , showJob
 , JobResource(..)
+, showJobResource
 , JobPriority
 , Job(..)
 , JobId
@@ -24,7 +25,7 @@ module Network.Haskoin.Node.Chan
 , severeDoS
 ) where
 
-import Data.Unique (Unique)
+import Data.Unique (Unique, hashUnique)
 
 import Network.Haskoin.Node.Bloom
 import Network.Haskoin.Node.Message
@@ -72,6 +73,13 @@ data JobResource
       -- Assign work to all peers but at least 1 peer.
     | AllPeers1 !BlockHeight 
 
+showJobResource :: JobResource -> String
+showJobResource r = case r of
+    ThisPeer p  -> unwords [ "ThisPeer", show $ hashUnique p]
+    AnyPeer h   -> unwords [ "AnyPeers", show h ]
+    AllPeers h  -> unwords [ "AnyPeers", show h ]
+    AllPeers1 h -> unwords [ "AnyPeers", show h ]
+
 data PeerJob
     = JobSendBloomFilter !BloomFilter
     | JobSendTxInv ![TxHash]
@@ -81,6 +89,7 @@ data PeerJob
     | JobDwnBlocks !DwnBlockId ![BlockHash]
     | JobDwnMerkles !DwnMerkleId ![BlockHash]
     | JobMempool
+    | JobStatus
 
 showJob :: PeerJob -> String
 showJob pJob = case pJob of
@@ -92,6 +101,7 @@ showJob pJob = case pJob of
     JobDwnBlocks _ _     -> "JobDwnBlocks"
     JobDwnMerkles _ _    -> "JobDwnMerkles"
     JobMempool           -> "JobMempool"
+    JobStatus            -> "JobStatus"
 
 -- | Messages handled by a Peer actor
 data PeerMessage
@@ -118,6 +128,7 @@ data ManagerMessage
       -- Internal Messages
     | ConnectToRemote !RemoteHost
     | MngrHeartbeat
+    | MngrStatus
 
 -- | Messages handled by the Blockchain actor
 data BlockChainMessage
@@ -132,6 +143,7 @@ data BlockChainMessage
     | NetworkHeight !BlockHeight
     | SetBatchSize !Int
     | BkchHeartbeat
+    | BkchStatus
 
 -- | Messages handled by the Mempool actor
 data MempoolMessage
@@ -143,6 +155,7 @@ data MempoolMessage
     | MempoolBlocks !BlockChainAction ![Block]
     | MempoolStartDownload !(Either Timestamp BlockHash)
     | MempoolSynced
+    | MempoolStatus
 
 -- | Node events sent to the wallet
 data WalletMessage
@@ -161,6 +174,7 @@ data NodeRequest
     | NodeStartBlockDownload !(Either Timestamp BlockHash)
     | NodeConnectPeers ![RemoteHost]
     | NodeBatchSize !Int
+    | NodeStatus
 
 -- | Describes the behavior of a remote peer
 data Behavior

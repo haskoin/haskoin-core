@@ -333,7 +333,8 @@ addressPage keyRingName accountName addrType page@PageRequest{..}
                    &&. a ^. KeyRingAccountName ==. val accountName
                    &&. x ^. KeyRingAddrType    ==. val addrType
                    )
-            return countRows
+            let gap = a ^. KeyRingAccountGap
+            return $ countRows -. gap
 
         let cnt     = maybe 0 unValue $ listToMaybe cntRes
             (d, m)  = cnt `divMod` pageLen
@@ -345,11 +346,10 @@ addressPage keyRingName accountName addrType page@PageRequest{..}
         res <- select $ from $ \(k `InnerJoin` a `InnerJoin` x) -> do
             on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
             on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
-            let gap = a ^. KeyRingAccountGap
             where_ (   k ^. KeyRingName        ==. val keyRingName
                    &&. a ^. KeyRingAccountName ==. val accountName
                    &&. x ^. KeyRingAddrType    ==. val addrType
-                   &&. x ^. KeyRingAddrIndex   <.  (val cnt) -. gap
+                   &&. x ^. KeyRingAddrIndex   <.  val cnt
                    )
             let order = if pageReverse then asc else desc
             orderBy [ order (x ^. KeyRingAddrIndex) ]

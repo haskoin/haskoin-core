@@ -252,7 +252,7 @@ getAddressesR keyRingName name addrType minConf offline page = do
     (page, maxPage) <- runDB $ do
         (res, maxPage) <- addressPage keyRingName name addrType page
         case res of
-            [] -> return ([], 1)
+            [] -> return ([], maxPage)
             _ -> do
                 let is = map (keyRingAddrIndex . lst3) res
                     (iMin, iMax) = (minimum is, maximum is)

@@ -190,6 +190,7 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "balance"     : [name]                 -> cmdBalance name
     "rescan"      : rescantime             -> cmdRescan rescantime
     "decodetx"    : [tx]                   -> cmdDecodeTx tx
+    ["status"]                             -> cmdStatus
     ["version"]                            -> cmdVersion
     ["help"]                               -> liftIO $ forM_ usage putStrLn
     []                                     -> liftIO $ forM_ usage putStrLn

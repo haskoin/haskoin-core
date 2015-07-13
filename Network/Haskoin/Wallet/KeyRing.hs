@@ -564,11 +564,11 @@ setAccountGap accE@(Entity ai acc) gap
     | missing <= 0 = liftIO . throwIO $ WalletException
         "The gap of an account can only be increased"
     | otherwise = do
-        createAddrs accE AddressExternal $ missing*2
-        createAddrs accE AddressInternal $ missing*2
+        createAddrs accE AddressExternal $ fromInteger $ missing*2
+        createAddrs accE AddressInternal $ fromInteger $ missing*2
         P.update ai [ KeyRingAccountGap P.=. gap ]
   where
-    missing = fromInteger $ toInteger gap - toInteger (keyRingAccountGap acc)
+    missing = toInteger gap - toInteger (keyRingAccountGap acc)
 
 -- Return the creation time of the first address in the wallet.
 firstAddrTime :: MonadIO m => SqlPersistT m (Maybe Timestamp)

@@ -1,6 +1,7 @@
 Server commands:
   start [--detach]                        Start the haskoin daemon
   stop                                    Stop the haskoin daemon
+  status                                  Display node runtime information
 
 KeyRing commands:
   newkeyring  [mnemonic] [-k name]        Create a new keyring

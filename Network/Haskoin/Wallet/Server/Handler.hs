@@ -512,20 +512,22 @@ getBalanceR keyRingName name minconf offline = do
 
 postNodeR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
           => NodeAction -> Handler m (Maybe Value)
-postNodeR action = do
-    t <- case action of
-        Rescan (Just t) -> return $ adjustFCTime t
-        Rescan Nothing  -> do
-            timeM <- runDB firstAddrTime
-            maybe err (return . adjustFCTime) timeM
-    $(logInfo) $ format $ unlines
-        [ "NodeR Rescan"
-        , "  Timestamp: " ++ show t
-        ]
-    whenOnline $ do
-        runDB resetRescan
-        sendSPV $ NodeStartMerkleDownload $ Left t
-    return $ Just $ toJSON $ RescanRes t
+postNodeR action = case action of
+    NodeActionRescan tM -> do
+        t <- case tM of
+            Just t  -> return $ adjustFCTime t
+            Nothing -> do
+                timeM <- runDB firstAddrTime
+                maybe err (return . adjustFCTime) timeM
+        $(logInfo) $ format $ unlines
+            [ "NodeR Rescan"
+            , "  Timestamp: " ++ show t
+            ]
+        whenOnline $ do
+            runDB resetRescan
+            sendSPV $ NodeStartMerkleDownload $ Left t
+        return $ Just $ toJSON $ RescanRes t
+    NodeActionStatus -> sendSPV NodeStatus >> return Nothing
   where
     err = liftIO . throwIO $ WalletException
         "No keys have been generated in the wallet"

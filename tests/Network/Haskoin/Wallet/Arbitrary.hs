@@ -21,7 +21,9 @@ instance Arbitrary AccountType where
         ]
 
 instance Arbitrary NodeAction where
-    arbitrary = Rescan <$> arbitrary
+    arbitrary = oneof [ NodeActionRescan <$> arbitrary
+                      , NodeActionStatus
+                      ]
 
 instance Arbitrary TxAction where
     arbitrary = oneof

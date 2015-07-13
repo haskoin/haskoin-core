@@ -296,18 +296,23 @@ data AddressLabel = AddressLabel { addressLabelLabel :: !Text }
 
 $(deriveJSON (dropFieldLabel 12) ''AddressLabel)
 
-data NodeAction = Rescan { nodeActionTimestamp :: !(Maybe Word32) }
+data NodeAction 
+    = NodeActionRescan { nodeActionTimestamp :: !(Maybe Word32) }
+    | NodeActionStatus
     deriving (Eq, Show, Read)
 
 instance ToJSON NodeAction where
-    toJSON (Rescan tM) = object $
-        ("type" .= String "rescan") : (("timestamp" .=) <$> maybeToList tM)
+    toJSON na = case na of
+        NodeActionRescan tM -> object $
+            ("type" .= String "rescan") : (("timestamp" .=) <$> maybeToList tM)
+        NodeActionStatus -> object [ "type" .= String "status" ]
 
 instance FromJSON NodeAction where
     parseJSON = withObject "NodeAction" $ \o -> do
         String t <- o .: "type"
         case t of
-            "rescan" -> Rescan <$> o .:? "timestamp"
+            "rescan" -> NodeActionRescan <$> o .:? "timestamp"
+            "status" -> return NodeActionStatus
             _ -> mzero
 
 data AddressType

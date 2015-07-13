@@ -27,6 +27,7 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdRescan
 , cmdDecodeTx
 , cmdVersion
+, cmdStatus
 )
 where
 
@@ -326,7 +327,7 @@ cmdGetTx name tidStr = case tidM of
 
 cmdRescan :: [String] -> Handler ()
 cmdRescan timeLs =
-    sendZmq (PostNodeR $ Rescan timeM) $ \(RescanRes ts) ->
+    sendZmq (PostNodeR $ NodeActionRescan timeM) $ \(RescanRes ts) ->
         putStrLn $ unwords [ "Timestamp:", show ts]
   where
     timeM = read <$> listToMaybe timeLs
@@ -348,6 +349,9 @@ cmdVersion = liftIO $ do
     putStrLn $ unwords [ "network   :", networkName ]
     putStrLn $ unwords [ "user-agent:", haskoinUserAgent ]
     putStrLn $ unwords [ "database  :", unpack databaseEngine ]
+
+cmdStatus :: Handler ()
+cmdStatus = sendZmq (PostNodeR NodeActionStatus) $ \Null -> return ()
 
 {- Helpers -}
 

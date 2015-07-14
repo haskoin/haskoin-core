@@ -153,6 +153,7 @@ processBlockTickle pid bid = do
             $(logDebug) $ format "We already have this block hash."
             -- Update the height of the peer who sent us this tickle
             sendManager $ PeerHeight pid $ nodeHeaderHeight node
+            adjustNetworkHeight $ nodeHeaderHeight node
         Nothing -> do
             $(logDebug) $ format $ unwords
                 [ "Buffering block hash tickle to update peer height when"
@@ -206,6 +207,7 @@ processBlockHeaders pid hs = canProcessHeaders pid >>= \valid -> when valid $ do
                 forM_ nodes adjustPeerHeight
                 -- Adjust height of the node that sent us these headers
                 sendManager $ PeerHeight pid height
+                adjustNetworkHeight height
                 -- Continue syncing headers from the same peer
                 headerSync (ThisPeer pid) LastLocator Nothing
                 -- Try to download more blocks
@@ -609,6 +611,17 @@ adjustPeerHeight node = do
   where
     bid    = nodeBlockHash node
     height = nodeHeaderHeight node
+
+adjustNetworkHeight :: (MonadLogger m, MonadIO m) 
+                    => BlockHeight -> StateT SpvSession m ()
+adjustNetworkHeight newHeight = do
+    oldHeight <- gets networkHeight
+    when (newHeight > oldHeight) $ do
+        $(logDebug) $ format $ unwords
+            [ "Increasing network height from"
+            , show oldHeight, "to", show newHeight 
+            ]
+        modify $ \s -> s{ networkHeight = newHeight }
 
 -- Send a message to the PeerManager
 sendManager :: MonadIO m => ManagerMessage -> StateT SpvSession m ()

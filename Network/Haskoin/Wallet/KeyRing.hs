@@ -35,7 +35,7 @@ module Network.Haskoin.Wallet.KeyRing
 , getBloomFilter
 
 -- * Helpers
-, subSelectMaxAddr
+, subSelectAddrCount
 ) where
 
 import Control.Applicative ((<$>))
@@ -65,8 +65,8 @@ import Database.Esqueleto
     , InnerJoin(..), on
     , select, from, where_, val, sub_select, countRows, unValue
     , orderBy, limit, asc, desc, offset, selectSource
-    , max_, not_, coalesceDefault, isNothing
-    , (^.), (==.), (&&.), (<=.), (>.), (-.), (<.)
+    , max_, not_, coalesceDefault, isNothing, case_, when_, then_, else_
+    , (^.), (==.), (&&.), (<=.), (>=.), (>.), (-.), (<.)
     -- Reexports from Database.Persist
     , SqlPersistT, Entity(..)
     , getBy, insertUnique, insertMany_, insert_
@@ -283,7 +283,7 @@ getAddress keyRingName accountName index addrType = do
                &&. a ^. KeyRingAccountName ==. val accountName
                &&. x ^. KeyRingAddrType    ==. val addrType
                &&. x ^. KeyRingAddrIndex   ==. val index
-               &&. x ^. KeyRingAddrIndex   <=. subSelectMaxAddr a addrType
+               &&. x ^. KeyRingAddrIndex   <.  subSelectAddrCount a addrType
                )
         limit 1
         return (k, a, x)
@@ -312,7 +312,7 @@ addressSource keyRingName accountName addrType = do
             where_ (   k ^. KeyRingName        ==. val keyRingName
                    &&. a ^. KeyRingAccountName ==. val accountName
                    &&. x ^. KeyRingAddrType    ==. val addrType
-                   &&. x ^. KeyRingAddrIndex   <=. subSelectMaxAddr a addrType
+                   &&. x ^. KeyRingAddrIndex   <.  subSelectAddrCount a addrType
                    )
             return x
 
@@ -326,41 +326,34 @@ addressPage :: MonadIO m
                 -- ^ Page result
 addressPage keyRingName accountName addrType page@PageRequest{..}
     | validPageRequest page = do
-        cntRes <- select $ from $ \(k `InnerJoin` a `InnerJoin` x) -> do
-            on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
-            on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
-            where_ (   k ^. KeyRingName        ==. val keyRingName
-                   &&. a ^. KeyRingAccountName ==. val accountName
-                   &&. x ^. KeyRingAddrType    ==. val addrType
-                   )
-            let gap = a ^. KeyRingAccountGap
-            return $ countRows -. gap
+        cnt <- addressCount keyRingName accountName addrType
 
-        let cnt     = maybe 0 unValue $ listToMaybe cntRes
-            (d, m)  = cnt `divMod` pageLen
-            maxPage = d + min 1 m
+        let (d, m)  = cnt `divMod` pageLen
+            maxPage = max 1 $ d + min 1 m
 
         when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
             unwords [ "Invalid page number", show pageNum ]
 
-        res <- select $ from $ \(k `InnerJoin` a `InnerJoin` x) -> do
-            on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
-            on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
-            where_ (   k ^. KeyRingName        ==. val keyRingName
-                   &&. a ^. KeyRingAccountName ==. val accountName
-                   &&. x ^. KeyRingAddrType    ==. val addrType
-                   &&. x ^. KeyRingAddrIndex   <.  val cnt
-                   )
-            let order = if pageReverse then asc else desc
-            orderBy [ order (x ^. KeyRingAddrIndex) ]
-            limit $ fromIntegral pageLen
-            offset $ fromIntegral $ (pageNum - 1) * pageLen
-            return (k, a, x)
+        if cnt == 0 then return ([], maxPage) else do
+            res <- select $ from $ \(k `InnerJoin` a `InnerJoin` x) -> do
+                on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
+                on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
+                where_ (   k ^. KeyRingName        ==. val keyRingName
+                       &&. a ^. KeyRingAccountName ==. val accountName
+                       &&. x ^. KeyRingAddrType    ==. val addrType
+                       &&. x ^. KeyRingAddrIndex   <.  val cnt
+                       )
+                let order = if pageReverse then asc else desc
+                orderBy [ order (x ^. KeyRingAddrIndex) ]
+                limit $ fromIntegral pageLen
+                offset $ fromIntegral $ (pageNum - 1) * pageLen
+                return (k, a, x)
 
-        let f | pageReverse = id
-              | otherwise   = reverse
-            g (Entity _ k, Entity _ a, Entity _ x) = (k, a, x)
-        return (f $ map g res, maxPage)
+            let f | pageReverse = id
+                  | otherwise   = reverse
+                g (Entity _ k, Entity _ a, Entity _ x) = (k, a, x)
+            return (f $ map g res, maxPage)
+
     | otherwise = liftIO . throwIO $ WalletException $
         concat [ "Invalid page request"
                , " (Page: ", show pageNum, ", Page size: ", show pageLen, ")"
@@ -379,12 +372,14 @@ addressCount keyRingName accountName addrType = do
         where_ (   k ^. KeyRingName        ==. val keyRingName
                &&. a ^. KeyRingAccountName ==. val accountName
                &&. x ^. KeyRingAddrType    ==. val addrType
-               &&. x ^. KeyRingAddrIndex   <=. subSelectMaxAddr a addrType
                )
-        return (max_ (x ^. KeyRingAddrIndex), a ^. KeyRingAccountGap)
-    return $ case res of
-        ((Value (Just i), Value g):_) -> if i < g then 0 else i - g
-        _ -> 0
+        let gap = a ^. KeyRingAccountGap
+        return $ case_
+            [ when_ (countRows >. gap)
+              then_ (countRows -. gap)
+            ] (else_ $ val 0)
+
+    return $ maybe 0 unValue $ listToMaybe res
 
 -- | Get a list of all unused addresses.
 unusedAddresses :: MonadIO m 
@@ -396,13 +391,13 @@ unusedAddresses keyRingName accountName addrType = do
     res <- select $ from $ \(k `InnerJoin` a `InnerJoin` x) -> do
         on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
         on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
-        let maxI = subSelectMaxAddr a addrType
+        let addrCnt = subSelectAddrCount a addrType
             gap  = a ^. KeyRingAccountGap
-        where_ (   k ^. KeyRingName        ==. val keyRingName
-               &&. a ^. KeyRingAccountName ==. val accountName
-               &&. x ^. KeyRingAddrType    ==. val addrType
-               &&. x ^. KeyRingAddrIndex   <=. maxI
-               &&. x ^. KeyRingAddrIndex   >. maxI -. gap
+        where_ (   k ^. KeyRingName        ==.  val keyRingName
+               &&. a ^. KeyRingAccountName ==.  val accountName
+               &&. x ^. KeyRingAddrType    ==.  val addrType
+               &&. x ^. KeyRingAddrIndex   <.   addrCnt
+               &&. x ^. KeyRingAddrIndex   >=.  addrCnt -. gap
                )
         return (k, a, x)
     return $ map (\(Entity _ k, Entity _ a, Entity _ x) -> (k, a, x)) res
@@ -453,7 +448,7 @@ addressPrvKey keyRingName accountName index addrType = do
                &&. a ^. KeyRingAccountName ==. val accountName
                &&. x ^. KeyRingAddrType    ==. val addrType
                &&. x ^. KeyRingAddrIndex   ==. val index
-               &&. x ^. KeyRingAddrIndex   <=. subSelectMaxAddr a addrType
+               &&. x ^. KeyRingAddrIndex   <.  subSelectAddrCount a addrType
                )
         return (k ^. KeyRingMaster, x ^. KeyRingAddrFullDerivation)
     case res of
@@ -697,17 +692,19 @@ getPathPubKey acc@KeyRingAccount{..} deriv
 
 {- Helpers -}
 
-subSelectMaxAddr :: SqlExpr (Entity KeyRingAccount)
-                 -> AddressType
-                 -> SqlExpr (Value KeyIndex)
-subSelectMaxAddr a addrType =
+subSelectAddrCount :: SqlExpr (Entity KeyRingAccount)
+                   -> AddressType
+                   -> SqlExpr (Value KeyIndex)
+subSelectAddrCount a addrType =
     sub_select $ from $ \x -> do
         where_ (   x ^. KeyRingAddrAccount ==. a ^. KeyRingAccountId
                &&. x ^. KeyRingAddrType    ==. val addrType
                )
-        return $ coalesceDefault [max_ (x ^. KeyRingAddrIndex)] (val 0) -. gap
-  where
-    gap = a ^. KeyRingAccountGap
+        let gap = a ^. KeyRingAccountGap
+        return $ case_
+            [ when_ (countRows >. gap)
+              then_ (countRows -. gap)
+            ] (else_ $ val 0)
 
 validMultisigParams :: Int -> Int -> Bool
 validMultisigParams m n = n >= 1 && n <= 15 && m >= 1 && m <= n

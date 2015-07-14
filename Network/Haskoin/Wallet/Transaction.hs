@@ -122,7 +122,7 @@ txPage keyRingName accountName page@PageRequest{..}
 
         let cnt     = maybe 0 unValue $ listToMaybe cntRes
             (d, m)  = cnt `divMod` pageLen
-            maxPage = d + min 1 m
+            maxPage = max 1 $ d + min 1 m
 
         when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
             unwords [ "Invalid page number", show pageNum ]
@@ -177,13 +177,13 @@ addrTxPage keyRingName accountName addrType index page@PageRequest{..}
                    &&. a ^. KeyRingAccountName ==. val accountName
                    &&. x ^. KeyRingAddrType    ==. val addrType
                    &&. x ^. KeyRingAddrIndex   ==. val index
-                   &&. x ^. KeyRingAddrIndex   <=. subSelectMaxAddr a addrType
+                   &&. x ^. KeyRingAddrIndex   <.  subSelectAddrCount a addrType
                    )
             return countRows
 
         let cnt     = maybe 0 unValue $ listToMaybe cntRes
             (d, m)  = cnt `divMod` pageLen
-            maxPage = d + min 1 m
+            maxPage = max 1 $ d + min 1 m
 
         when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
             unwords [ "Invalid page number", show pageNum ]
@@ -198,7 +198,7 @@ addrTxPage keyRingName accountName addrType index page@PageRequest{..}
                    &&. a ^. KeyRingAccountName ==. val accountName
                    &&. x ^. KeyRingAddrType    ==. val addrType
                    &&. x ^. KeyRingAddrIndex   ==. val index
-                   &&. x ^. KeyRingAddrIndex   <=. subSelectMaxAddr a addrType
+                   &&. x ^. KeyRingAddrIndex   <.  subSelectAddrCount a addrType
                    )
             let order = if pageReverse then asc else desc
             orderBy [ order (xt ^. KeyRingAddrTxId) ]
@@ -1231,7 +1231,7 @@ addressBalances keyRingName accountName iMin iMax addrType minconf offline = do
             cond = (   k ^. KeyRingName        ==. val keyRingName
                    &&. a ^. KeyRingAccountName ==. val accountName
                    &&. limitIndex
-                   &&. x ^. KeyRingAddrIndex   <=. subSelectMaxAddr a addrType
+                   &&. x ^. KeyRingAddrIndex   <.  subSelectAddrCount a addrType
                    &&. x ^. KeyRingAddrType    ==. val addrType
                    )
         where_ $ if minconf == 0 

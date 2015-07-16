@@ -376,7 +376,7 @@ importOfflineTx tx ai inCoins spendingTxs = do
         canSpendCoins inCoins spendingTxs True
     sameKey e1 e2 = entityKey e1 == entityKey e2
     err  = liftIO . throwIO $ WalletException 
-        "importLocalTx: Could not import local transaction"
+        "Could not import offline transaction"
 
 -- | Import a transaction from the network into the wallet. This function
 -- assumes transactions are imported in-order (parents first). It also assumes
@@ -1092,21 +1092,46 @@ spendableCoins
     :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
     => KeyRingAccountId                   -- ^ Account key
     -> Word32                             -- ^ Minimum confirmations
-    -> (SqlExpr (Entity KeyRingCoin) -> SqlExpr (Entity KeyRingTx) -> [SqlExpr OrderBy]) 
+    -> (    SqlExpr (Entity KeyRingCoin) 
+         -> SqlExpr (Entity KeyRingTx) 
+         -> [SqlExpr OrderBy]
+       ) 
         -- ^ Coin ordering policy
     -> SqlPersistT m [InCoinData]       -- ^ Spendable coins
 spendableCoins ai minConf orderPolicy = 
-    spendableCoinsSource ai minConf orderPolicy $$ CL.consume
+    liftM (map f) $ select $ spendableCoinsFrom ai minConf orderPolicy
+  where
+    f (c, t, x) = (c, entityVal t, entityVal x)
 
 spendableCoinsSource
     :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
     => KeyRingAccountId -- ^ Account key
     -> Word32           -- ^ Minimum confirmations
-    -> (SqlExpr (Entity KeyRingCoin) -> SqlExpr (Entity KeyRingTx) -> [SqlExpr OrderBy]) 
+    -> (    SqlExpr (Entity KeyRingCoin) 
+         -> SqlExpr (Entity KeyRingTx) 
+         -> [SqlExpr OrderBy]
+       ) 
         -- ^ Coin ordering policy
     -> Source (SqlPersistT m) InCoinData
         -- ^ Spendable coins
-spendableCoinsSource ai minConf orderPolicy = mapOutput f $ selectSource $ 
+spendableCoinsSource ai minConf orderPolicy = 
+    mapOutput f $ selectSource $ spendableCoinsFrom ai minConf orderPolicy
+  where
+    f (c, t, x) = (c, entityVal t, entityVal x)
+
+spendableCoinsFrom 
+    :: KeyRingAccountId                   -- ^ Account key
+    -> Word32                             -- ^ Minimum confirmations
+    -> (    SqlExpr (Entity KeyRingCoin) 
+         -> SqlExpr (Entity KeyRingTx) 
+         -> [SqlExpr OrderBy]
+       ) 
+        -- ^ Coin ordering policy
+    -> SqlQuery ( SqlExpr (Entity KeyRingCoin)
+                , SqlExpr (Entity KeyRingTx)
+                , SqlExpr (Entity KeyRingAddr)
+                )
+spendableCoinsFrom ai minConf orderPolicy =
     from $ \(c `InnerJoin` t `InnerJoin` x `LeftOuterJoin` s) -> do
         -- Joins have to be set in reverse order !
         -- Left outer join on spent coins
@@ -1126,8 +1151,6 @@ spendableCoinsSource ai minConf orderPolicy = mapOutput f $ selectSource $
                )
         orderBy (orderPolicy c t)
         return (c, t, x)
-  where
-    f (c, t, x) = (c, entityVal t, entityVal x)
 
 -- If the current height is 200 and a coin was confirmed at height 198, then it
 -- has 3 confirmations. So, if we require 3 confirmations, we want coins with a
@@ -1207,6 +1230,7 @@ addressBalances :: MonadIO m
                 -> SqlPersistT m [(KeyIndex, AddressBalance)]
 addressBalances keyRingName accountName iMin iMax addrType minconf offline = do
     res <- select $ from $ 
+        -- We keep our joins flat to improve performance in SQLite.
         \(k `InnerJoin` a `InnerJoin` x `LeftOuterJoin` 
           c `LeftOuterJoin` t `LeftOuterJoin` s `LeftOuterJoin` st) -> do
         let joinCond = st ?. KeyRingTxId ==. s ?. KeyRingSpentCoinSpendingTx
@@ -1219,7 +1243,12 @@ addressBalances keyRingName accountName iMin iMax addrType minconf offline = do
            &&. s ?. KeyRingSpentCoinHash    ==. c ?. KeyRingCoinHash
            &&. s ?. KeyRingSpentCoinPos     ==. c ?. KeyRingCoinPos
            )
-        on $ t ?. KeyRingTxId           ==. c ?. KeyRingCoinTx
+        let txJoin = (   t ?. KeyRingTxId           ==. c ?. KeyRingCoinTx
+                     &&. t ?. KeyRingTxConfidence `in_` valList validConfidence
+                     )
+        on $ if minconf == 0
+                then txJoin
+                else txJoin &&. limitConfirmations (Left t) minconf
         on $ c ?. KeyRingCoinAddr       ==. just (x ^. KeyRingAddrId)
         on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
         on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
@@ -1228,29 +1257,35 @@ addressBalances keyRingName accountName iMin iMax addrType minconf offline = do
                 | otherwise = (   x ^. KeyRingAddrIndex >=. val iMin
                               &&. x ^. KeyRingAddrIndex <=. val iMax
                               )
-            cond = (   k ^. KeyRingName        ==. val keyRingName
-                   &&. a ^. KeyRingAccountName ==. val accountName
-                   &&. limitIndex
-                   &&. x ^. KeyRingAddrIndex   <.  subSelectAddrCount a addrType
-                   &&. x ^. KeyRingAddrType    ==. val addrType
-                   )
-        where_ $ if minconf == 0 
-                    then cond 
-                    else cond &&. limitConfirmations (Left t) minconf
+
+        where_ (   k ^. KeyRingName        ==. val keyRingName
+               &&. a ^. KeyRingAccountName ==. val accountName
+               &&. limitIndex
+               &&. x ^. KeyRingAddrIndex   <.  subSelectAddrCount a addrType
+               &&. x ^. KeyRingAddrType    ==. val addrType
+               )
         groupBy $ x ^. KeyRingAddrIndex
-        let unspent = E.isNothing ( st ?. KeyRingTxId )
+        let unspent   = E.isNothing $ st ?. KeyRingTxId
+            invalidTx = E.isNothing $ t ?. KeyRingTxId
         return ( x ^. KeyRingAddrIndex -- Address index
-               , sum_ $ c ?. KeyRingCoinValue -- In value
                , sum_ $ case_ 
-                   [ when_ unspent
+                   [ when_ invalidTx
                      then_ (val (Just 0)) 
                    ] (else_ $ c ?. KeyRingCoinValue) -- Out value
-               , count $ c ?. KeyRingCoinId -- New coins
-               , count $ st ?. KeyRingTxId  -- Spent coins
+               , sum_ $ case_ 
+                   [ when_ (unspent ||. invalidTx)
+                     then_ (val (Just 0)) 
+                   ] (else_ $ c ?. KeyRingCoinValue) -- Out value
+               , count $ t ?. KeyRingTxId -- New coins
+               , count $ case_
+                   [ when_ invalidTx
+                     then_ (val Nothing)
+                   ] (else_ $ st ?. KeyRingTxId) -- Spent coins
                )
     return $ map f res
   where
-    validConfidence = TxPending : TxBuilding : [ TxOffline | offline ]
+    validConfidence = Just TxPending : Just TxBuilding : 
+                        [ Just TxOffline | offline ]
     f (Value i, Value inM, Value outM, Value newC, Value spentC) = 
         let b = AddressBalance 
                     { addrBalanceInBalance  = 

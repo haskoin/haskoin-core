@@ -54,60 +54,59 @@ tests =
         [ testCase "Creating two accounts with the same name should fail" $
             assertException (WalletException "Account acc already exists") $ do
                 _ <- newKeyRing "main" $ BS.pack [1]
-                _ <- newAccount "main" "acc" 
-                newAccount "main" "acc" 
+                _ <- newAccount "main" "acc" (AccountRegular False) []
+                newAccount "main" "acc" (AccountRegular False) []
 
         , testCase "Invalid multisig parameters (0 of 1)" $
-            assertException (WalletException "Invalid multisig parameters") $ do
+            assertException (WalletException "Invalid account type") $ do
                 _ <- newKeyRing "main" $ BS.pack [0]
-                newAccountMultisig "main" "ms" [] 0 1 
+                newAccount "main" "ms" (AccountMultisig False 0 1) []
 
         , testCase "Invalid multisig parameters (2 of 1)" $
-            assertException (WalletException "Invalid multisig parameters") $ do
+            assertException (WalletException "Invalid account type") $ do
                 _ <- newKeyRing "main" $ BS.pack [0] 
-                newAccountMultisig "main" "ms" [] 2 1
+                newAccount "main" "ms" (AccountMultisig False 2 1) []
 
         , testCase "Invalid multisig parameters (15 of 16)" $
-            assertException (WalletException "Invalid multisig parameters") $ do
+            assertException (WalletException "Invalid account type") $ do
                 _ <- newKeyRing "main" $ BS.pack [0]
-                newAccountMultisig "main" "ms" [] 15 16
+                newAccount "main" "ms" (AccountMultisig False 15 16) []
 
         , testCase "To many multisig keys (2 keys for 1 of 2)" $
             assertException
-                (WalletException "Adding too many keys to account ms") $ do
+                (WalletException "Invalid account keys") $ do
                     _ <- newKeyRing "main" $ BS.pack [0]
-                    newAccountMultisig 
-                        "main" "ms" 
+                    newAccount "main" "ms" (AccountMultisig False 1 2)
                         [ deriveXPubKey $ makeXPrvKey (BS.pack [1])
                         , deriveXPubKey $ makeXPrvKey (BS.pack [2])
-                        ] 1 2
+                        ] 
 
         , testCase "Calling addAccountKeys with an empty key list should fail" $
             assertException
-                (WalletException "No keys have been provided") $ do
+                (WalletException "Invalid account keys") $ do
                     _ <- newKeyRing "main" $ BS.pack [0]
-                    _ <- newAccount "main" "default" 
-                    accE <- getAccount "main" "default"
+                    _ <- newAccount "main" "default" (AccountRegular True) []
+                    (_, accE) <- getAccount "main" "default"
                     addAccountKeys accE []
 
         , testCase "Calling addAccountKeys on a non-multisig account should fail" $
             assertException
-                (WalletException "Account default is not a multisig account") $ do
+                (WalletException "The account is already complete") $ do
                     _ <- newKeyRing "main" $ BS.pack [0]
-                    _ <- newAccount "main" "default" 
-                    accE <- getAccount "main" "default"
+                    _ <- newAccount "main" "default" (AccountRegular False) []
+                    (_, accE) <- getAccount "main" "default"
                     addAccountKeys accE [ deriveXPubKey $ makeXPrvKey (BS.pack [1]) ]
 
         , testCase "Adding keys to a complete multisig account should fail" $
             assertException
-                (WalletException "Adding too many keys to account ms") $ do
+                (WalletException "The account is already complete") $ do
                     _ <- newKeyRing "main" $ BS.pack [0]
-                    _ <- newAccountMultisig "main" "ms"
+                    _ <- newAccount "main" "ms" (AccountMultisig False 2 3)
                         [ deriveXPubKey $ makeXPrvKey (BS.pack [1])
                         , deriveXPubKey $ makeXPrvKey (BS.pack [2])
-                        ] 2 3
-                    accE <- getAccount "main" "ms"
-                    addAccountKeys accE [ deriveXPubKey $ makeXPrvKey (BS.pack [3]) ]
+                        ] 
+                    (_, accE) <- getAccount "main" "ms"
+                    addAccountKeys accE [deriveXPubKey $ makeXPrvKey (BS.pack [3])]
 
         , testCase "Getting a non-existing account should fail" $
             assertException
@@ -115,12 +114,6 @@ tests =
                     _ <- newKeyRing "main" $ BS.pack [0] 
                     getAccount "main" "default"
 
-        , testCase "Listing addresses of a non-existing account should fail" $
-            assertException (WalletException "Account default does not exist") $ do
-                _ <- newKeyRing "main" $ BS.pack [0] 
-                addressPage "main" "default" AddressExternal $ 
-                    PageRequest 1 1 False
-                
         ]
     , testGroup "Address tests"
         [ testCase "Displaying page 0 should fail" $
@@ -141,44 +134,37 @@ tests =
             assertException 
                 (WalletException "Invalid page number 5") $ do
                     _ <- newKeyRing "main" $ BS.pack [0] 
-                    _ <- newAccount "main" "default"
-                    accE <- getAccount "main" "default"
-                    _ <- setAccountGap accE 10
+                    _ <- newAccount "main" "default" (AccountRegular False) []
                     addressPage "main" "default" AddressExternal $
                         PageRequest 5 3 False
 
         , testCase "Decreasing the address gap should fail" $
-            assertException (WalletException "Can not decrease the gap from 15 to 14") $ do
+            assertException (WalletException "The gap of an account can only be increased") $ do
                 _ <- newKeyRing "main" $ BS.pack [0] 
-                _ <- newAccount "main" "default"
-                Entity ai acc <- getAccount "main" "default"
-                acc2 <- setAccountGap (Entity ai acc) 15
-                setAccountGap (Entity ai acc2) 14
+                _ <- newAccount "main" "default" (AccountRegular False) []
+                (_, acc1E) <- getAccount "main" "default"
+                setAccountGap acc1E 15
+                (_, acc2E) <- getAccount "main" "default"
+                setAccountGap acc2E 14
 
         , testCase "Setting a label on a hidden address key should fail" $
-            assertException (WalletException "Address index 10 is in the hidden gap") $ do
+            assertException (WalletException "Invalid address index 10") $ do
                 _ <- newKeyRing "main" $ BS.pack [0] 
-                _ <- newAccount "main" "default"
-                accE <- getAccount "main" "default"
-                _ <- setAccountGap accE 10
+                _ <- newAccount "main" "default" (AccountRegular False) []
                 setAddrLabel "main" "default" 10 AddressExternal "Gym membership"
 
         , testCase "Setting a label on an invalid address key should fail" $
-            assertException (WalletException "Address index 20 does not exist") $ do
+            assertException (WalletException "Invalid address index 20") $ do
                 _ <- newKeyRing "main" $ BS.pack [0] 
-                _ <- newAccount "main" "default"
-                accE <- getAccount "main" "default"
-                _ <- setAccountGap accE 10
+                _ <- newAccount "main" "default" (AccountRegular False) []
                 setAddrLabel "main" "default" 20 AddressExternal "Gym membership"
 
         , testCase "Requesting an address prvkey on a read-only account should fail" $
             assertException
-                (WalletException "Can not get private keys from read-only account default") $ do
+                (WalletException "Invalid address") $ do
                     _ <- newKeyRing "main" $ BS.pack [0] 
-                    _ <- newAccountRead "main" "default" $
-                        deriveXPubKey $ makeXPrvKey $ BS.pack [1]
-                    accE <- getAccount "main" "default"
-                    _ <- setAccountGap accE 10
+                    _ <- newAccount "main" "default" (AccountRegular True)
+                        [deriveXPubKey $ makeXPrvKey $ BS.pack [1]]
                     addressPrvKey "main" "default" 2 AddressExternal
         ]
     , testGroup "Wallet tests"
@@ -243,9 +229,9 @@ fakeTx xs ys =
 testDerivations :: App ()
 testDerivations = do
     _ <- newKeyRing "test" bs1
-    _ <- newAccount "test" "acc1"
+    _ <- newAccount "test" "acc1" (AccountRegular False) []
 
-    addressUnused "test" "acc1" AddressExternal 
+    unusedAddresses "test" "acc1" AddressExternal 
         >>= liftIO . assertEqual "Generated external addresses do not match"
             [ "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR"
             , "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r"
@@ -257,9 +243,9 @@ testDerivations = do
             , "1FFCS3SzGduAv2MBM9Ak9tALT5snVySST"
             , "18VNX8vQre2hGneuCrXtXwB5D1NVTBUB46"
             , "17mE4ZUaWETvjyLXbTcgoyqTc3A1f7eWVs"
-            ] . map (addrToBase58 . keyRingAddrAddress)
+            ] . map (addrToBase58 . keyRingAddrAddress . lst3)
 
-    addressUnused "test" "acc1" AddressInternal
+    unusedAddresses "test" "acc1" AddressInternal
         >>= liftIO . assertEqual "Generated internal addresses do not match"
             [ "1BwbQ8Wp7YUfaYeiQPgXu6br5e4ogKjuKd"
             , "16wQCfrqW5QegVe5pXpczHaxDmqTAn4ieM"
@@ -271,15 +257,13 @@ testDerivations = do
             , "1MUcLFqrYhkSHjYcQdfZJRwnkEi9xWaGZU"
             , "12vgEgi8ExgCo7EBPG1kxwJGR5FCXmZpoB"
             , "1K14RjZ3he6erLHFNrPWwvmxm4nbr1MEYC"
-            ] . map (addrToBase58 . keyRingAddrAddress)
+            ] . map (addrToBase58 . keyRingAddrAddress . lst3)
 
--- We have 2 coins, c1 and c2. tx1 spends from c1, tx2 spends from c1 and c2,
--- tx3 spends from c2. So we can either have tx2 valid or tx1 and tx3 as valid.
 testBalances :: App ()
 testBalances = do
     _ <- newKeyRing "test" bs1
-    _ <- newAccount "test" "acc1"
-    Entity ai _ <- getAccount "test" "acc1"
+    _ <- newAccount "test" "acc1" (AccountRegular False) []
+    (_, Entity ai _) <- getAccount "test" "acc1"
     let fundingTx = fakeTx 
             [ (1, 0) ] 
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) 
@@ -292,11 +276,12 @@ testBalances = do
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 30000000) ] -- external
         tx2 = fakeTx
             [ (txHash fundingTx, 0) ]
-            [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 5000000) 
-            , ("1BwbQ8Wp7YUfaYeiQPgXu6br5e4ogKjuKd", 5000000)
-            ] -- external
+            [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 5000000) -- external
+            , ("1BwbQ8Wp7YUfaYeiQPgXu6br5e4ogKjuKd", 5000000) -- change
+            ] 
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
     -- Import funding transaction twice. This operation should be idempotent
     importNetTx fundingTx >>=
@@ -306,52 +291,56 @@ testBalances = do
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (TxPending, M.empty)))
 
-    spendableCoins ai 0 [] >>= 
+    spendableCoins ai 0 (const . const []) >>= 
         liftIO . (assertEqual "0-conf spendable coins is not 2" 2) . length
-    spendableCoins ai 1 [] >>= 
+    spendableCoins ai 1 (const . const []) >>= 
         liftIO . (assertEqual "1-conf spendable coins is not 0" 0) . length
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 30000000") 30000000
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 30000000") 30000000
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 0, 1, 0)") 
+            [(0, AddressBalance 10000000 0 1 0)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 1 balance is not (20000000, 0, 1, 0)") 
+            [(1, AddressBalance 20000000 0 1 0)]
 
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 inbalance is not 20000000") 20000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 1 False >>=
+        liftIO . (assertEqual "Address 0 1-conf balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 1 False >>=
+        liftIO . (assertEqual "Address 1 1-conf balance is not (0, 0, 0, 0)") 
+            [(1, AddressBalance 0 0 0 0)]
 
     importNetTx tx1 >>=
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (TxPending, M.empty)))
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 0") 0
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 1 balance is not (20000000, 20000000, 1, 1)") 
+            [(1, AddressBalance 20000000 20000000 1 1)]
 
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 inbalance is not 20000000") 20000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 1 False >>=
+        liftIO . (assertEqual "Address 0 1-conf balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 outbalance is not 20000000") 20000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 1 False >>=
+        liftIO . (assertEqual "Address 1 1-conf balance is not (0, 0, 0, 0)") 
+            [(1, AddressBalance 0 0 0 0)]
 
     -- We re-import tx1. This operation has to be idempotent with respect to
     -- balances.
@@ -359,24 +348,26 @@ testBalances = do
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (TxPending, M.empty)))
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 0") 0
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 1 balance is not (20000000, 20000000, 1, 1)") 
+            [(1, AddressBalance 20000000 20000000 1 1)]
 
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 inbalance is not 20000000") 20000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 1 False >>=
+        liftIO . (assertEqual "Address 0 1-conf balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 outbalance is not 20000000") 20000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 1 False >>=
+        liftIO . (assertEqual "Address 1 1-conf balance is not (0, 0, 0, 0)") 
+            [(1, AddressBalance 0 0 0 0)]
 
     -- Importing tx2 twice. This operation has to be idempotent.
     importNetTx tx2 >>=
@@ -386,55 +377,72 @@ testBalances = do
         liftIO . (assertEqual "Confidence is not dead" 
             (Just (TxDead, M.empty)))
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 0") 0
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutBalance . entityVal
-
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 inbalance is not 20000000") 20000000
-            . keyRingAddrInBalance . entityVal
-
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 outbalance is not 20000000") 20000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 1 balance is not (20000000, 20000000, 1, 1)") 
+            [(1, AddressBalance 20000000 20000000 1 1)]
 
     -- Confirm the funding transaction at height 1
     importMerkles ((BestChain [fakeNode 1 0x01])) [[txHash fundingTx]]
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 0") 0
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 30000000") 30000000
-    accountBalance ai 2 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 2 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 1 balance is not (20000000, 20000000, 1, 1)") 
+            [(1, AddressBalance 20000000 20000000 1 1)]
 
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 inbalance is not 20000000") 20000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 1 False >>=
+        liftIO . (assertEqual "Address 0 1-conf balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 outbalance is not 20000000") 20000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 1 False >>=
+        liftIO . (assertEqual "Address 1 1-conf balance is not (20000000, 20000000, 1, 1)") 
+            [(1, AddressBalance 20000000 20000000 1 1)]
 
     -- Confirm tx1 at height 2
     importMerkles ((BestChain [fakeNode 2 0x02])) [[txHash tx1]]
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 0") 0
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 0") 0
-    accountBalance ai 2 >>= liftIO . (assertEqual "Balance is not 30000000") 30000000
-    accountBalance ai 3 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>=
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 2 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 3 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+
+    addressBalances "test" "acc1" 0 0 AddressExternal 2 False >>=
+        liftIO . (assertEqual "Address 0 2-conf balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
+
+    addressBalances "test" "acc1" 1 1 AddressExternal 2 False >>=
+        liftIO . (assertEqual "Address 1 2-conf balance is not (20000000, 20000000, 1, 1)") 
+            [(1, AddressBalance 20000000 20000000 1 1)]
+
+    addressBalances "test" "acc1" 0 0 AddressExternal 3 False >>=
+        liftIO . (assertEqual "Address 0 3-conf balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
+
+    addressBalances "test" "acc1" 1 1 AddressExternal 3 False >>=
+        liftIO . (assertEqual "Address 1 3-conf balance is not (0, 0, 0, 0)") 
+            [(1, AddressBalance 0 0 0 0)]
 
     -- Reorg on tx2
     let s = fakeNode 1 0x01
@@ -450,70 +458,88 @@ testBalances = do
         liftIO . (assertEqual "Confidence is not building" TxBuilding)
             . keyRingTxConfidence . entityVal . fromJust
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 25000000") 25000000
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 25000000") 25000000
-    accountBalance ai 2 >>= liftIO . (assertEqual "Balance is not 30000000") 30000000
-    accountBalance ai 3 >>= liftIO . (assertEqual "Balance is not 30000000") 30000000
-    accountBalance ai 4 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 25000000") 25000000
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 25000000") 25000000
+    accountBalance "test" "acc1" 2 False >>= 
+        liftIO . (assertEqual "Balance is not 20000000") 20000000
+    accountBalance "test" "acc1" 3 False >>= 
+        liftIO . (assertEqual "Balance is not 20000000") 20000000
+    accountBalance "test" "acc1" 4 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 1 balance is not (20000000, 0, 1, 0)") 
+            [(1, AddressBalance 20000000 0 1 0)]
 
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 inbalance is not 20000000") 20000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 3 False >>=
+        liftIO . (assertEqual "Address 0 3-conf balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 3 False >>=
+        liftIO . (assertEqual "Address 1 3-conf balance is not (20000000, 0, 1, 0)") 
+            [(1, AddressBalance 20000000 0 1 0)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 5000000") 5000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (5000000, 0, 1, 0)") 
+            [(0, AddressBalance 5000000 0 1 0)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 1 False >>=
+        liftIO . (assertEqual "Address 0 1-conf balance is not (5000000, 0, 1, 0)") 
+            [(0, AddressBalance 5000000 0 1 0)]
+
+    addressBalances "test" "acc1" 0 0 AddressInternal 2 False >>=
+        liftIO . (assertEqual "Address 0 2-conf balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
     -- Reimporting tx2 should be idempotent and return TxBuilding
     importNetTx tx2 >>=
         liftIO . (assertEqual "Confidence is not building" 
             (Just (TxBuilding, M.empty)))
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 25000000") 25000000
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 25000000") 25000000
-    accountBalance ai 2 >>= liftIO . (assertEqual "Balance is not 30000000") 30000000
-    accountBalance ai 3 >>= liftIO . (assertEqual "Balance is not 30000000") 30000000
-    accountBalance ai 4 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 25000000") 25000000
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 25000000") 25000000
+    accountBalance "test" "acc1" 2 False >>= 
+        liftIO . (assertEqual "Balance is not 20000000") 20000000
+    accountBalance "test" "acc1" 3 False >>= 
+        liftIO . (assertEqual "Balance is not 20000000") 20000000
+    accountBalance "test" "acc1" 4 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 1 balance is not (20000000, 0, 1, 0)") 
+            [(1, AddressBalance 20000000 0 1 0)]
 
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 inbalance is not 20000000") 20000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 3 False >>=
+        liftIO . (assertEqual "Address 0 3-conf balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 3 False >>=
+        liftIO . (assertEqual "Address 1 3-conf balance is not (20000000, 0, 1, 0)") 
+            [(1, AddressBalance 20000000 0 1 0)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 5000000") 5000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (5000000, 0, 1, 0)") 
+            [(0, AddressBalance 5000000 0 1 0)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 1 False >>=
+        liftIO . (assertEqual "Address 0 1-conf balance is not (5000000, 0, 1, 0)") 
+            [(0, AddressBalance 5000000 0 1 0)]
+
+    addressBalances "test" "acc1" 0 0 AddressInternal 2 False >>=
+        liftIO . (assertEqual "Address 0 2-conf balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
     -- Reorg back onto tx1
     let s2 = fakeNode 1 0x01
@@ -521,43 +547,53 @@ testBalances = do
         n2 = [fakeNode 2 0x02, fakeNode 3 0x05, fakeNode 4 0x06]
     importMerkles (ChainReorg s2 o2 n2) [[txHash tx1], [], []]
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 0") 0
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 0") 0
-    accountBalance ai 2 >>= liftIO . (assertEqual "Balance is not 0") 0
-    accountBalance ai 3 >>= liftIO . (assertEqual "Balance is not 0") 0
-    accountBalance ai 4 >>= liftIO . (assertEqual "Balance is not 30000000") 30000000
-    accountBalance ai 5 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 2 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 3 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 4 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 5 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 1 balance is not (20000000, 20000000, 1, 1)") 
+            [(1, AddressBalance 20000000 20000000 1 1)]
+            
+    addressBalances "test" "acc1" 0 0 AddressExternal 4 False >>=
+        liftIO . (assertEqual "Address 0 2-conf balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 inbalance is not 20000000") 20000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 4 False >>=
+        liftIO . (assertEqual "Address 1 2-conf balance is not (20000000, 20000000, 1, 1)") 
+            [(1, AddressBalance 20000000 20000000 1 1)]
 
-    getAddress "test" "acc1" 1 AddressExternal >>=
-        liftIO . (assertEqual "Address 1 outbalance is not 20000000") 20000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 5 False >>=
+        liftIO . (assertEqual "Address 0 4-conf balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 0") 0
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 1 1 AddressExternal 5 False >>=
+        liftIO . (assertEqual "Address 1 4-conf balance is not (0, 0, 0, 0)") 
+            [(1, AddressBalance 0 0 0 0)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
 -- tx1, tx2 and tx3 form a chain, and tx4 is in conflict with tx1
 testConflictBalances :: App ()
 testConflictBalances = do
     _ <- newKeyRing "test" bs1
-    _ <- newAccount "test" "acc1"
-    Entity ai _ <- getAccount "test" "acc1"
+    _ <- newAccount "test" "acc1" (AccountRegular False) []
+    (_, Entity ai _) <- getAccount "test" "acc1"
     let tx1 = fakeTx
             [ (4, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ] 
@@ -578,103 +614,140 @@ testConflictBalances = do
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (TxPending, M.fromList [(ai, 1)])))
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-    offlineBalance ai   >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 10000000") 10000000
+    accountBalance "test" "acc1" 0 True  >>= 
+        liftIO . (assertEqual "Balance is not 10000000") 10000000
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 0, 1, 0)") 
+            [(0, AddressBalance 10000000 0 1 0)]
 
     -- Import second transaction
     importNetTx tx2 >>=
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (TxPending, M.fromList [(ai, 1)])))
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 4000000") 4000000
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 4000000") 4000000
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 4000000") 4000000
-            . keyRingAddrInBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (4000000, 0, 1, 0)") 
+            [(0, AddressBalance 4000000 0 1 0)]
 
     -- Let's confirm these two transactions
     importMerkles 
         (BestChain [fakeNode 1 0x01, fakeNode 2 0x02 ]) 
         [[txHash tx1], [txHash tx2]]
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 4000000") 4000000
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 4000000") 4000000
-    accountBalance ai 2 >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-    accountBalance ai 3 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 4000000") 4000000
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 4000000") 4000000
+    accountBalance "test" "acc1" 2 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 3 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+
+    addressBalances "test" "acc1" 0 0 AddressExternal 1 False >>=
+        liftIO . (assertEqual "Address 0 1-conf balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
+
+    addressBalances "test" "acc1" 0 0 AddressInternal 1 False >>=
+        liftIO . (assertEqual "Address 0 1-conf balance is not (4000000, 0, 1, 0)") 
+            [(0, AddressBalance 4000000 0 1 0)]
+
+    addressBalances "test" "acc1" 0 0 AddressExternal 2 False >>=
+        liftIO . (assertEqual "Address 0 2-conf balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
+
+    addressBalances "test" "acc1" 0 0 AddressInternal 2 False >>=
+        liftIO . (assertEqual "Address 0 2-conf balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
     -- Import third transaction
     importNetTx tx3 >>=
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (TxPending, M.empty)))
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 0") 0
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 4000000") 4000000
-    accountBalance ai 2 >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-    accountBalance ai 3 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 2 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 3 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (4000000, 4000000, 1, 1)") 
+            [(0, AddressBalance 4000000 4000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 4000000") 4000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 1 False >>=
+        liftIO . (assertEqual "Address 0 1-conf balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 4000000") 4000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 1 False >>=
+        liftIO . (assertEqual "Address 0 1-conf balance is not (4000000, 4000000, 1, 1)") 
+            [(0, AddressBalance 4000000 4000000 1 1)]
+
+    addressBalances "test" "acc1" 0 0 AddressExternal 2 False >>=
+        liftIO . (assertEqual "Address 0 2-conf balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
+
+    addressBalances "test" "acc1" 0 0 AddressInternal 2 False >>=
+        liftIO . (assertEqual "Address 0 2-conf balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
     -- Now let's add tx4 which is in conflict with tx1
     importNetTx tx4 >>=
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (TxDead, M.empty)))
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 0") 0
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 4000000") 4000000
-    accountBalance ai 2 >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-    accountBalance ai 3 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 2 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 3 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (4000000, 4000000, 1, 1)") 
+            [(0, AddressBalance 4000000 4000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 4000000") 4000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 1 False >>=
+        liftIO . (assertEqual "Address 0 1-conf balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 4000000") 4000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 1 False >>=
+        liftIO . (assertEqual "Address 0 1-conf balance is not (4000000, 4000000, 1, 1)") 
+            [(0, AddressBalance 4000000 4000000 1 1)]
+
+    addressBalances "test" "acc1" 0 0 AddressExternal 2 False >>=
+        liftIO . (assertEqual "Address 0 2-conf balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
+
+    addressBalances "test" "acc1" 0 0 AddressInternal 2 False >>=
+        liftIO . (assertEqual "Address 0 2-conf balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
     -- Now we trigger a reorg that validates tx4. tx1, tx2 and tx3 should be dead
     let s = fakeNode 0 0x00
@@ -694,26 +767,30 @@ testConflictBalances = do
         liftIO . (assertEqual "tx3 confidence is not dead") (Just TxDead)
             . fmap (keyRingTxConfidence . entityVal)
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 20000000") 20000000
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 20000000") 20000000
-    accountBalance ai 2 >>= liftIO . (assertEqual "Balance is not 20000000") 20000000
-    accountBalance ai 3 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 20000000") 20000000
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 20000000") 20000000
+    accountBalance "test" "acc1" 2 False >>= 
+        liftIO . (assertEqual "Balance is not 20000000") 20000000
+    accountBalance "test" "acc1" 3 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 20000000") 20000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (20000000, 0, 1, 0)") 
+            [(0, AddressBalance 20000000 0 1 0)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 0") 0
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 2 False >>=
+        liftIO . (assertEqual "Address 0 2-conf balance is not (20000000, 0, 1, 0)") 
+            [(0, AddressBalance 20000000 0 1 0)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 3 False >>=
+        liftIO . (assertEqual "Address 0 2-conf balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
     -- Reorg back to tx1, tx2 and tx3
     let s2 = fakeNode 0 0x00
@@ -740,34 +817,52 @@ testConflictBalances = do
         liftIO . (assertEqual "tx4 confidence is not dead") (Just TxDead)
             . fmap (keyRingTxConfidence . entityVal)
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 4000000") 4000000
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 4000000") 4000000
-    accountBalance ai 2 >>= liftIO . (assertEqual "Balance is not 4000000") 4000000
-    accountBalance ai 3 >>= liftIO . (assertEqual "Balance is not 4000000") 4000000
-    accountBalance ai 4 >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-    accountBalance ai 5 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 4000000") 4000000
+    accountBalance "test" "acc1" 1 False >>=
+        liftIO . (assertEqual "Balance is not 4000000") 4000000
+    accountBalance "test" "acc1" 2 False >>= 
+        liftIO . (assertEqual "Balance is not 4000000") 4000000
+    accountBalance "test" "acc1" 3 False >>= 
+        liftIO . (assertEqual "Balance is not 4000000") 4000000
+    accountBalance "test" "acc1" 4 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 5 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (4000000, 0, 1, 0)") 
+            [(0, AddressBalance 4000000 0 1 0)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 4000000") 4000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 3 False >>=
+        liftIO . (assertEqual "Address 0 3-conf balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 3 False >>=
+        liftIO . (assertEqual "Address 0 3-conf balance is not (4000000, 0, 1, 0)") 
+            [(0, AddressBalance 4000000 0 1 0)]
+
+    addressBalances "test" "acc1" 0 0 AddressExternal 4 False >>=
+        liftIO . (assertEqual "Address 0 4-conf balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
+
+    addressBalances "test" "acc1" 0 0 AddressInternal 4 False >>=
+        liftIO . (assertEqual "Address 0 4-conf balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
+
+    addressBalances "test" "acc1" 0 0 AddressExternal 5 False >>=
+        liftIO . (assertEqual "Address 0 5-conf balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
 testOffline :: App ()
 testOffline = do
     _ <- newKeyRing "test" bs1
-    _ <- newAccount "test" "acc1"
-    Entity ai _ <- getAccount "test" "acc1"
+    _ <- newAccount "test" "acc1" (AccountRegular False) []
+    (_, Entity ai _) <- getAccount "test" "acc1"
     let tx1 = fakeTx
             [ (4, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ] 
@@ -788,96 +883,72 @@ testOffline = do
         liftIO . (assertEqual "Confidence is not offline")
             (txHash tx1, TxOffline)
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 0") 0
-    offlineBalance ai   >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 True  >>= 
+        liftIO . (assertEqual "Balance is not 10000000") 10000000
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 0") 0
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 offline inbalance is not 10000000") 10000000
-            . keyRingAddrInOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 offline outbalance is not 0") 0
-            . keyRingAddrOutOfflineBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 0, 1, 0)") 
+            [(0, AddressBalance 10000000 0 1 0)]
 
     -- Reimporting a transaction should me idempotent
     importTx tx1 ai >>=
         liftIO . (assertEqual "Confidence is not offline")
             (txHash tx1, TxOffline)
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 0") 0
-    offlineBalance ai   >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 True  >>= 
+        liftIO . (assertEqual "Balance is not 10000000") 10000000
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 0") 0
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 offline inbalance is not 10000000") 10000000
-            . keyRingAddrInOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 offline outbalance is not 0") 0
-            . keyRingAddrOutOfflineBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 0, 1, 0)") 
+            [(0, AddressBalance 10000000 0 1 0)]
 
     -- Import tx2
     importTx tx2 ai >>=
         liftIO . (assertEqual "Confidence is not offline")
             (txHash tx2, TxOffline)
 
-    offlineBalance ai >>= liftIO . (assertEqual "Balance is not 4000000") 4000000
+    accountBalance "test" "acc1" 0 True >>= 
+        liftIO . (assertEqual "Balance is not 4000000") 4000000
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 offline inbalance is not 10000000") 10000000
-            . keyRingAddrInOfflineBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 offline outbalance is not 10000000") 10000000
-            . keyRingAddrOutOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 offline inbalance is not 4000000") 4000000
-            . keyRingAddrInOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 offline outbalance is not 0") 0
-            . keyRingAddrOutOfflineBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (4000000, 0, 1, 0)") 
+            [(0, AddressBalance 4000000 0 1 0)]
 
     -- Import tx3
     importTx tx3 ai >>=
         liftIO . (assertEqual "Confidence is not offline")
             (txHash tx3, TxOffline)
 
-    offlineBalance ai >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 True >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 offline inbalance is not 10000000") 10000000
-            . keyRingAddrInOfflineBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 offline outbalance is not 10000000") 10000000
-            . keyRingAddrOutOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 offline inbalance is not 4000000") 4000000
-            . keyRingAddrInOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 offline outbalance is not 4000000") 4000000
-            . keyRingAddrOutOfflineBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (4000000, 4000000, 1, 1)") 
+            [(0, AddressBalance 4000000 4000000 1 1)]
 
     -- Import tx4
     importTx tx4 ai >>=
@@ -896,52 +967,38 @@ testOffline = do
         liftIO . (assertEqual "tx3 confidence is not dead") (Just TxDead)
             . fmap (keyRingTxConfidence . entityVal)
 
-    offlineBalance ai >>= liftIO . (assertEqual "Balance is not 20000000") 20000000
+    accountBalance "test" "acc1" 0 True >>= 
+        liftIO . (assertEqual "Balance is not 20000000") 20000000
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 offline inbalance is not 20000000") 20000000
-            . keyRingAddrInOfflineBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (20000000, 0, 1, 0)") 
+            [(0, AddressBalance 20000000 0 1 0)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 offline outbalance is not 0") 0
-            . keyRingAddrOutOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 offline inbalance is not 0") 0
-            . keyRingAddrInOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 offline outbalance is not 0") 0
-            . keyRingAddrOutOfflineBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
     -- importTx should be idempotent
     importTx tx4 ai >>=
         liftIO . (assertEqual "Confidence is not offline")
             (txHash tx4, TxOffline)
 
-    offlineBalance ai >>= liftIO . (assertEqual "Balance is not 20000000") 20000000
+    accountBalance "test" "acc1" 0 True >>= 
+        liftIO . (assertEqual "Balance is not 20000000") 20000000
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 offline inbalance is not 20000000") 20000000
-            . keyRingAddrInOfflineBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (20000000, 0, 1, 0)") 
+            [(0, AddressBalance 20000000 0 1 0)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 offline outbalance is not 0") 0
-            . keyRingAddrOutOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 offline inbalance is not 0") 0
-            . keyRingAddrInOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 offline outbalance is not 0") 0
-            . keyRingAddrOutOfflineBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
 testKillOffline :: App ()
 testKillOffline = do
     _ <- newKeyRing "test" bs1
-    _ <- newAccount "test" "acc1"
-    Entity ai _ <- getAccount "test" "acc1"
+    _ <- newAccount "test" "acc1" (AccountRegular False) []
+    (_, Entity ai _) <- getAccount "test" "acc1"
     let tx1 = fakeTx
             [ (4, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ] 
@@ -965,97 +1022,76 @@ testKillOffline = do
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (TxPending, M.fromList [(ai, 1)])))
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-    offlineBalance ai   >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-    accountBalance ai 1 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 10000000") 10000000
+    accountBalance "test" "acc1" 0 True >>= 
+        liftIO . (assertEqual "Balance is not 10000000") 10000000
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 0, 1, 0)") 
+        [(0, AddressBalance 10000000 0 1 0)]
 
     -- Import tx2 as offline
     importTx tx2 ai >>=
         liftIO . (assertEqual "Confidence is not offline")
             (txHash tx2, TxOffline)
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-    offlineBalance ai   >>= liftIO . (assertEqual "Balance is not 4000000") 4000000
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 10000000") 10000000
+    accountBalance "test" "acc1" 0 True >>= 
+        liftIO . (assertEqual "Offline balance is not 4000000") 4000000
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "1-conf Balance is not 0") 0
+    accountBalance "test" "acc1" 1 True >>= 
+        liftIO . (assertEqual "1-conf Offline balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 0, 1, 0)") 
+            [(0, AddressBalance 10000000 0 1 0)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 0") 0
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 4000000") 4000000
-            . keyRingAddrInOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutOfflineBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (4000000, 0, 1, 0)") 
+            [(0, AddressBalance 4000000 0 1 0)]
 
     -- Import tx3 as offline
     importTx tx3 ai >>=
         liftIO . (assertEqual "Confidence is not offline")
             (txHash tx3, TxOffline)
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-    offlineBalance ai   >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 10000000") 10000000
+    accountBalance "test" "acc1" 0 True >>= 
+        liftIO . (assertEqual "Offline balance is not 0") 0
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "1-conf Balance is not 0") 0
+    accountBalance "test" "acc1" 1 True >>= 
+        liftIO . (assertEqual "1-conf Offline balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 0, 1, 0)") 
+            [(0, AddressBalance 10000000 0 1 0)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 0") 0
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 4000000") 4000000
-            . keyRingAddrInOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 4000000") 4000000
-            . keyRingAddrOutOfflineBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (4000000, 4000000, 1, 1)") 
+            [(0, AddressBalance 4000000 4000000 1 1)]
 
     -- Import tx4 as a network transaction. It should override tx2 and tx3.
     importNetTx tx4 >>=
@@ -1070,41 +1106,30 @@ testKillOffline = do
         liftIO . (assertEqual "Confidence is not dead" TxDead)
             . keyRingTxConfidence . entityVal . fromJust
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 8000000") 8000000
-    offlineBalance ai   >>= liftIO . (assertEqual "Offline balance is not 8000000") 8000000
+    accountBalance "test" "acc1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 8000000") 8000000
+    accountBalance "test" "acc1" 0 True >>= 
+        liftIO . (assertEqual "Offline balance is not 8000000") 8000000
+    accountBalance "test" "acc1" 1 False >>= 
+        liftIO . (assertEqual "1-conf Balance is not 0") 0
+    accountBalance "test" "acc1" 1 True >>= 
+        liftIO . (assertEqual "1-conf Offline balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 15000000") 15000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (15000000, 10000000, 2, 1)") 
+            [(0, AddressBalance 15000000 10000000 2 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 False >>=
+        liftIO . (assertEqual "Address 0 balance is not (3000000, 0, 1, 0)") 
+            [(0, AddressBalance 3000000 0 1 0)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 3000000") 3000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (15000000, 10000000, 2 1)") 
+            [(0, AddressBalance 15000000 10000000 2 1)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 15000000") 15000000
-            . keyRingAddrInOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 3000000") 3000000
-            . keyRingAddrInOfflineBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutOfflineBalance . entityVal
-
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (3000000, 0, 1, 0)") 
+            [(0, AddressBalance 3000000 0 1 0)]
 
 testOfflineExceptions :: Assertion
 testOfflineExceptions = do
@@ -1123,19 +1148,19 @@ testOfflineExceptions = do
             [ (4, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 20000000) ] 
 
-    assertException (WalletException "importLocalTx: can not double spend coins") $ do
+    assertException (WalletException "Could not import offline transaction") $ do
         _ <- newKeyRing "test" bs1
-        _ <- newAccount "test" "acc1"
-        Entity ai _ <- getAccount "test" "acc1"
+        _ <- newAccount "test" "acc1" (AccountRegular False) []
+        (_, Entity ai _) <- getAccount "test" "acc1"
         importNetTx tx1 >>=
             liftIO . (assertEqual "Confidence is not pending")
                 (Just (TxPending, M.fromList [(ai, 1)]))
         importTx tx4 ai
 
-    assertException (WalletException "importLocalTx: can not double spend coins") $ do
+    assertException (WalletException "Could not import offline transaction") $ do
         _ <- newKeyRing "test" bs1
-        _ <- newAccount "test" "acc1"
-        Entity ai _ <- getAccount "test" "acc1"
+        _ <- newAccount "test" "acc1" (AccountRegular False) []
+        (_, Entity ai _) <- getAccount "test" "acc1"
         importNetTx tx4 >>=
             liftIO . (assertEqual "Confidence is not pending")
                 (Just (TxPending, M.fromList [(ai, 1)]))
@@ -1147,10 +1172,10 @@ testOfflineExceptions = do
                 (Just (TxDead, M.fromList [(ai, 1)]))
         importTx tx3 ai
 
-    assertException (WalletException "importLocalTx: The transaction already exists and is not offline") $ do
+    assertException (WalletException "Could not import offline transaction") $ do
         _ <- newKeyRing "test" bs1
-        _ <- newAccount "test" "acc1"
-        Entity ai _ <- getAccount "test" "acc1"
+        _ <- newAccount "test" "acc1" (AccountRegular False) []
+        (_, Entity ai _) <- getAccount "test" "acc1"
         importNetTx tx1 >>=
             liftIO . (assertEqual "Confidence is not pending")
                 (Just (TxPending, M.fromList [(ai, 1)]))
@@ -1160,15 +1185,13 @@ testOfflineExceptions = do
 testImportMultisig :: App ()
 testImportMultisig = do
     _ <- newKeyRing "test" bs1
-    _ <- newAccountMultisig 
-        "test" "ms1"
-        [fromJust $ xPubImport "xpub69iinth3CTrfkmijzhQXi3kwhGQjba31fncrBgA9vM9T9tv69qSwp525yDVYmX2BTAdeuYSZqkcWhkrqD5Xbsz5YHJZL6CzYGL2WACorpdS"] 2 2
-    _ <- newAccountMultisig 
-        "test" "ms2" 
-        [fromJust $ xPubImport "xpub69iinth3CTrfh5efv7baTWwk9hHi4zqcQEsNFgVwEJvdaZVEPytZzmNxjYTnF5F5x2CamLXvmD1T4RhpsuaXSFPo2MnLN5VqWqrWb82U7ED"] 2 2
+    _ <- newAccount "test" "ms1" (AccountMultisig False 2 2)
+        [fromJust $ xPubImport "xpub69iinth3CTrfkmijzhQXi3kwhGQjba31fncrBgA9vM9T9tv69qSwp525yDVYmX2BTAdeuYSZqkcWhkrqD5Xbsz5YHJZL6CzYGL2WACorpdS"]
+    _ <- newAccount "test" "ms2" (AccountMultisig False 2 2)
+        [fromJust $ xPubImport "xpub69iinth3CTrfh5efv7baTWwk9hHi4zqcQEsNFgVwEJvdaZVEPytZzmNxjYTnF5F5x2CamLXvmD1T4RhpsuaXSFPo2MnLN5VqWqrWb82U7ED"]
     Entity _ keyRing <- getKeyRing "test"
-    Entity ai1 _ <- getAccount "test" "ms1"
-    accE2@(Entity ai2 _) <- getAccount "test" "ms2"
+    (_, Entity ai1 _) <- getAccount "test" "ms1"
+    (_, accE2@(Entity ai2 _)) <- getAccount "test" "ms2"
 
     let fundingTx = 
             Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
@@ -1187,13 +1210,18 @@ testImportMultisig = do
     tx1 <- liftM (entityVal . fromJust) $ getBy $ UniqueAccTx ai1 h
     liftIO $ assertEqual "Confidence is not offline" TxOffline c
     liftIO $ assertEqual "Confidence is not offline" TxOffline $ keyRingTxConfidence tx1
-    liftM (map (keyRingCoinHash . entityVal)) (spendableCoins ai1 0 [])
+    spendableCoins ai1 0 (const . const [])
         >>= liftIO . (assertEqual "Wrong txhash in coins" [])
-    liftM (map keyRingTxHash . fst) (txPage "test" "ms1" $ PageRequest 1 10 False) 
+            . map (keyRingCoinHash . entityVal . fst3)
+    txPage "test" "ms1" (PageRequest 1 10 False) 
         >>= liftIO . (assertEqual "Wrong txhash in tx list" [txHash fundingTx, h])
-    accountBalance ai1 0 >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-    accountBalance ai1 1 >>= liftIO . (assertEqual "Balance is not 0") 0
-    offlineBalance ai1   >>= liftIO . (assertEqual "Balance is not 9990000") 9990000
+            . (map (keyRingTxHash . lst3)) . fst
+    accountBalance "test" "ms1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 10000000") 10000000
+    accountBalance "test" "ms1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "ms1" 0 True >>= 
+        liftIO . (assertEqual "Offline balance is not 9990000") 9990000
 
     -- Import the empty transaction in ms2
     (h2,c2) <- importTx (keyRingTxTx tx1) ai2
@@ -1203,36 +1231,51 @@ testImportMultisig = do
     liftIO $ assertEqual "Txid do not match" h h2
     liftIO $ assertEqual "Confidence is not offline" TxOffline c2
     liftIO $ assertEqual "Confidence is not offline" TxOffline $ keyRingTxConfidence tx2
-    liftM (map (keyRingCoinHash . entityVal)) (spendableCoins ai2 0 [])
+    spendableCoins ai2 0 (const . const [])
         >>= liftIO . (assertEqual "Wrong txhash in coins" [])
-    liftM (map keyRingTxHash . fst) (txPage "test" "ms2" $ PageRequest 1 10 False) 
+            . map (keyRingCoinHash . entityVal . fst3)
+    txPage "test" "ms2" (PageRequest 1 10 False) 
         >>= liftIO . (assertEqual "Wrong txhash in tx list" [txHash fundingTx, h2])
-    accountBalance ai2 0 >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-    accountBalance ai2 1 >>= liftIO . (assertEqual "Balance is not 0") 0
-    offlineBalance ai2   >>= liftIO . (assertEqual "Balance is not 9990000") 9990000
+            . (map (keyRingTxHash . lst3)) . fst
+    accountBalance "test" "ms2" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 10000000") 10000000
+    accountBalance "test" "ms2" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "ms2" 0 True >>= 
+        liftIO . (assertEqual "Balance is not 9990000") 9990000
 
     -- Sign the transaction in ms2
     (h3,c3) <- signKeyRingTx keyRing accE2 h2
     tx3 <- liftM (entityVal . fromJust) $ getBy $ UniqueAccTx ai2 h3
     liftIO $ assertEqual "Confidence is not pending" TxPending c3
     liftIO $ assertEqual "Confidence is not pending" TxPending $ keyRingTxConfidence tx3
-    liftM (map (keyRingCoinHash . entityVal)) (spendableCoins ai2 0 [])
+    spendableCoins ai2 0 (const . const [])
         >>= liftIO . (assertEqual "Wrong txhash in coins" [h3, h3])
-    liftM (map keyRingTxHash . fst) (txPage "test" "ms2" $ PageRequest 1 10 False) 
+            . map (keyRingCoinHash . entityVal . fst3)
+    txPage "test" "ms2" (PageRequest 1 10 False) 
         >>= liftIO . (assertEqual "Wrong txhash in tx list" [txHash fundingTx, h3])
-    accountBalance ai2 0 >>= liftIO . (assertEqual "Balance is not 9990000") 9990000
-    accountBalance ai2 1 >>= liftIO . (assertEqual "Balance is not 0") 0
-    offlineBalance ai2   >>= liftIO . (assertEqual "Balance is not 9990000") 9990000
+            . (map (keyRingTxHash . lst3)) . fst
+    accountBalance "test" "ms2" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 9990000") 9990000
+    accountBalance "test" "ms2" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "ms2" 0 True  >>= 
+        liftIO . (assertEqual "Balance is not 9990000") 9990000
 
     tx4 <- liftM (entityVal . fromJust) $ getBy $ UniqueAccTx ai1 h3
     liftIO $ assertEqual "Confidence is not pending" TxPending $ keyRingTxConfidence tx4
-    liftM (map (keyRingCoinHash . entityVal)) (spendableCoins ai1 0 [])
+    spendableCoins ai1 0 (const . const [])
         >>= liftIO . (assertEqual "Wrong txhash in coins" [h3, h3])
-    liftM (map keyRingTxHash . fst) (txPage "test" "ms1" $ PageRequest 1 10 False) 
+            . map (keyRingCoinHash . entityVal . fst3)
+    txPage "test" "ms1" (PageRequest 1 10 False)
         >>= liftIO . (assertEqual "Wrong txhash in tx list" [txHash fundingTx, h3])
-    accountBalance ai1 0 >>= liftIO . (assertEqual "Balance is not 9990000") 9990000
-    accountBalance ai1 1 >>= liftIO . (assertEqual "Balance is not 0") 0
-    offlineBalance ai1   >>= liftIO . (assertEqual "Balance is not 9990000") 9990000
+            . (map (keyRingTxHash . lst3)) . fst
+    accountBalance "test" "ms1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 9990000") 9990000
+    accountBalance "test" "ms1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "ms1" 0 True  >>= 
+        liftIO . (assertEqual "Balance is not 9990000") 9990000
 
     -- Importing the transaction should have no effect as it was globally
     -- imported already in the previous step.
@@ -1240,19 +1283,24 @@ testImportMultisig = do
     tx5 <- liftM (entityVal . fromJust) $ getBy $ UniqueAccTx ai1 h5
     liftIO $ assertEqual "Confidence is not pending" TxPending c5
     liftIO $ assertEqual "Confidence is not pending" TxPending $ keyRingTxConfidence tx5
-    liftM (map (keyRingCoinHash . entityVal)) (spendableCoins ai1 0 [])
+    spendableCoins ai1 0 (const . const [])
         >>= liftIO . (assertEqual "Wrong txhash in coins" [h5, h5])
-    liftM (map keyRingTxHash . fst) (txPage "test" "ms1" $ PageRequest 1 10 False) 
+            . map (keyRingCoinHash . entityVal . fst3)
+    txPage "test" "ms1" (PageRequest 1 10 False)
         >>= liftIO . (assertEqual "Wrong txhash in tx list" [txHash fundingTx, h5])
-    accountBalance ai1 0 >>= liftIO . (assertEqual "Balance is not 9990000") 9990000
-    accountBalance ai1 1 >>= liftIO . (assertEqual "Balance is not 0") 0
-    offlineBalance ai1   >>= liftIO . (assertEqual "Balance is not 9990000") 9990000
+            . (map (keyRingTxHash . lst3)) . fst
+    accountBalance "test" "ms1" 0 False >>= 
+        liftIO . (assertEqual "Balance is not 9990000") 9990000
+    accountBalance "test" "ms1" 1 False >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "ms1" 0 True  >>= 
+        liftIO . (assertEqual "Balance is not 9990000") 9990000
 
 testKillTx :: App ()
 testKillTx = do
     _ <- newKeyRing "test" bs1
-    _ <- newAccount "test" "acc1"
-    Entity ai _ <- getAccount "test" "acc1"
+    _ <- newAccount "test" "acc1" (AccountRegular False) []
+    (_, Entity ai _) <- getAccount "test" "acc1"
     let tx1 = fakeTx
             [ (4, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ] 
@@ -1275,126 +1323,81 @@ testKillTx = do
         liftIO . (assertEqual "Confidence is not pending" 
             (Just (TxPending, M.empty)))
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance "test" "acc1" 0 True >>= 
+        liftIO . (assertEqual "Balance is not 0") 0
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (4000000, 4000000, 1, 1)") 
+            [(0, AddressBalance 4000000 4000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 4000000") 4000000
-            . keyRingAddrInBalance . entityVal
+    killTxs [txHash tx2]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 4000000") 4000000
-            . keyRingAddrOutBalance . entityVal
+    accountBalance "test" "acc1" 0 True >>= 
+        liftIO . (assertEqual "Balance is not 10000000") 10000000
 
-    killTx $ txHash tx2
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 0, 1, 0)") 
+            [(0, AddressBalance 10000000 0 1 0)]
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 0") 0
-            . keyRingAddrInBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
     -- Killing a transaction should be idempotent
-    killTx $ txHash tx2
+    killTxs [txHash tx2]
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
+    accountBalance "test" "acc1" 0 True >>= 
+        liftIO . (assertEqual "Balance is not 10000000") 10000000
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 0, 1, 0)") 
+            [(0, AddressBalance 10000000 0 1 0)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 0") 0
-            . keyRingAddrInBalance . entityVal
+    killTxs [txHash tx3]
 
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    accountBalance "test" "acc1" 0 True >>= 
+        liftIO . (assertEqual "Balance is not 10000000") 10000000
 
-    -- Killing a transaction should be idempotent
-    killAccTx ai $ txHash tx2
-    killAccTx ai $ txHash tx3
-    killTx $ txHash tx3
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 0, 1, 0)") 
+            [(0, AddressBalance 10000000 0 1 0)]
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 10000000") 10000000
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 0") 0
-            . keyRingAddrInBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (0, 0, 0, 0)") 
+            [(0, AddressBalance 0 0 0 0)]
 
     reviveTx tx2
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 4000000") 4000000
+    accountBalance "test" "acc1" 0 True >>= 
+        liftIO . (assertEqual "Balance is not 4000000") 4000000
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 4000000") 4000000
-            . keyRingAddrInBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (4000000, 0, 1, 0)") 
+            [(0, AddressBalance 4000000 0 1 0)]
 
     -- Reviving a transaction should be idempotent
     reviveTx tx2
 
-    accountBalance ai 0 >>= liftIO . (assertEqual "Balance is not 4000000") 4000000
+    accountBalance "test" "acc1" 0 True >>= 
+        liftIO . (assertEqual "Balance is not 4000000") 4000000
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 10000000") 10000000
-            . keyRingAddrInBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)") 
+            [(0, AddressBalance 10000000 10000000 1 1)]
 
-    getAddress "test" "acc1" 0 AddressExternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 10000000") 10000000
-            . keyRingAddrOutBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 inbalance is not 4000000") 4000000
-            . keyRingAddrInBalance . entityVal
-
-    getAddress "test" "acc1" 0 AddressInternal >>=
-        liftIO . (assertEqual "Address 0 outbalance is not 0") 0
-            . keyRingAddrOutBalance . entityVal
+    addressBalances "test" "acc1" 0 0 AddressInternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (4000000, 0, 1, 0)") 
+            [(0, AddressBalance 4000000 0 1 0)]
 

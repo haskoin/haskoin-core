@@ -10,19 +10,16 @@ import Network.Haskoin.Wallet
 
 instance Arbitrary AccountType where
     arbitrary = oneof
-        [ return AccountRegular
+        [ AccountRegular <$> arbitrary
         , do
             ArbitraryMSParam m n <- arbitrary
-            return $ AccountMultisig m n
-        , return AccountRead
-        , do
-            ArbitraryMSParam m n <- arbitrary
-            return $ AccountReadMultisig m n
+            r <- arbitrary
+            return $ AccountMultisig r m n
         ]
 
 instance Arbitrary NodeAction where
     arbitrary = oneof [ NodeActionRescan <$> arbitrary
-                      , NodeActionStatus
+                      , return NodeActionStatus
                       ]
 
 instance Arbitrary TxAction where
@@ -49,3 +46,4 @@ instance Arbitrary TxAction where
                 return signData
             return (SignOfflineTx tx sd)
         ]
+

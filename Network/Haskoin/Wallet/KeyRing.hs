@@ -176,7 +176,7 @@ newAccount keyRingName accountName accountType extraKeys = do
 
     -- Check if all the keys are valid
     unless (isValidAccKeys acc) $ 
-        liftIO . throwIO $ WalletException "Invalid keys"
+        liftIO . throwIO $ WalletException "Invalid account keys"
 
     -- Insert our account in the database
     let canSetGap = isCompleteAccount acc
@@ -206,7 +206,7 @@ addAccountKeys (Entity ai acc) keys
     | isCompleteAccount acc = liftIO . throwIO $
         WalletException "The account is already complete"
     | null keys || (not $ isValidAccKeys accKeys) = liftIO . throwIO $
-        WalletException "Invalid keys"
+        WalletException "Invalid account keys"
     | otherwise = do
         let canSetGap = isCompleteAccount accKeys
             updGap = if canSetGap then [ KeyRingAccountGap P.=. 10 ] else []
@@ -467,7 +467,7 @@ createAddrs :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
             -> Word32       
             -> SqlPersistT m ()
 createAddrs (Entity ai acc) addrType n 
-    | n <= 0 = liftIO . throwIO $ WalletException $ 
+    | n == 0 = liftIO . throwIO $ WalletException $ 
         unwords [ "Invalid value", show n ]
     | not (isCompleteAccount acc) =
         liftIO . throwIO $ WalletException $ unwords

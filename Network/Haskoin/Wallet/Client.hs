@@ -185,9 +185,9 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "import"      : [name, tx]             -> cmdImport name tx
     "sign"        : [name, txid]           -> cmdSign name txid
     "gettx"       : [name, txid]           -> cmdGetTx name txid
+    "balance"     : [name]                 -> cmdBalance name
     "getoffline"  : [name, txid]           -> cmdGetOffline name txid
     "signoffline" : [name, tx, dat]        -> cmdSignOffline name tx dat
-    "balance"     : [name]                 -> cmdBalance name
     "rescan"      : rescantime             -> cmdRescan rescantime
     "decodetx"    : [tx]                   -> cmdDecodeTx tx
     ["status"]                             -> cmdStatus

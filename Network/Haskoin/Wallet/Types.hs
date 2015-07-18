@@ -10,6 +10,8 @@ module Network.Haskoin.Wallet.Types
 , JsonCoin(..)
 , JsonTx(..)
 , JsonAddrTx(..)
+, JsonWithKeyRing(..)
+, JsonWithAccount(..)
 
 -- Request Types
 , WalletRequest(..)
@@ -34,14 +36,9 @@ module Network.Haskoin.Wallet.Types
 
 -- Response Types
 , WalletResponse(..)
-, MnemonicRes(..)
-, TxHashConfidenceRes(..)
-, TxConfidenceRes(..)
 , TxCompleteRes(..)
 , PageRes(..)
 , RescanRes(..)
-, TxRes(..)
-, BalanceRes(..)
 
 -- Helper Types
 , WalletException(..)
@@ -232,22 +229,18 @@ data TxAction
     = CreateTx 
         { accTxActionRecipients :: ![(Address, Word64)] 
         , accTxActionFee        :: !Word64
-        , accTxActionRcptFee    :: !Bool
         , accTxActionMinConf    :: !Word32
+        , accTxActionRcptFee    :: !Bool
         , accTxActionSign       :: !Bool
         }
     | ImportTx 
         { accTxActionTx :: !Tx }
     | SignTx 
         { accTxActionHash :: !TxHash }
-    | SignOfflineTx
-        { accTxActionTx           :: !Tx
-        , accTxActionCoinSignData :: ![CoinSignData]
-        }
     deriving (Eq, Show)
 
 instance ToJSON TxAction where
-    toJSON (CreateTx recipients fee rcptFee minConf sign) = object $
+    toJSON (CreateTx recipients fee minConf rcptFee sign) = object $
         [ "type" .= ("createtx" :: Text)
         , "recipients" .= recipients
         , "fee"  .= fee
@@ -262,11 +255,6 @@ instance ToJSON TxAction where
         [ "type" .= ("signtx" :: Text)
         , "hash" .= txid
         ]
-    toJSON (SignOfflineTx tx signData) = object
-        [ "type" .= ("signofflinetx" :: Text)
-        , "tx" .= tx
-        , "coinsigndata" .= signData
-        ]
 
 instance FromJSON TxAction where
     parseJSON = withObject "TxAction" $ \o -> do
@@ -278,17 +266,13 @@ instance FromJSON TxAction where
                 minConf <- o .: "minconf"
                 sign <- o .: "sign"
                 rcptFee <- o .:? "rcptfee" .!= False
-                return (CreateTx recipients fee rcptFee minConf sign)
+                return (CreateTx recipients fee minConf rcptFee sign)
             "importtx" -> do
                 tx <- o .: "tx"
                 return (ImportTx tx)
             "signtx" -> do
                 txid <- o .: "hash"
                 return (SignTx txid)
-            "signofflinetx" -> do
-                tx <- o .: "tx"
-                signData <- o .: "coinsigndata"
-                return (SignOfflineTx tx signData)
             _ -> mzero
 
 data AddressLabel = AddressLabel { addressLabelLabel :: !Text }
@@ -346,6 +330,7 @@ data WalletRequest
     | PostTxsR !KeyRingName !AccountName !TxAction
     | GetTxR !KeyRingName !AccountName !TxHash
     | GetOfflineTxR !KeyRingName !AccountName !TxHash
+    | PostOfflineTxR !KeyRingName !AccountName !Tx ![CoinSignData]
     | GetBalanceR !KeyRingName !AccountName !Word32 !Bool
     | PostNodeR !NodeAction
 
@@ -364,13 +349,21 @@ $(deriveJSON
 {- JSON Types -}
 
 data JsonKeyRing = JsonKeyRing
-    { jsonKeyRingName    :: !Text
-    , jsonKeyRingMaster  :: !(Maybe XPrvKey) -- We might not send the master key
-    , jsonKeyRingCreated :: !UTCTime
+    { jsonKeyRingName     :: !Text
+    , jsonKeyRingMaster   :: !(Maybe XPrvKey) 
+    , jsonKeyRingMnemonic :: !(Maybe Mnemonic) 
+    , jsonKeyRingCreated  :: !UTCTime
     }
     deriving (Eq, Show, Read)
 
 $(deriveJSON (dropFieldLabel 11) ''JsonKeyRing)
+
+data JsonWithKeyRing a = JsonWithKeyRing
+    { withKeyRingKeyRing :: !JsonKeyRing
+    , withKeyRingData    :: !a
+    }
+
+$(deriveJSON (dropFieldLabel 11) ''JsonWithKeyRing)
 
 data JsonAccount = JsonAccount
     { jsonAccountName       :: !Text 
@@ -379,12 +372,18 @@ data JsonAccount = JsonAccount
     , jsonAccountKeys       :: ![XPubKey]
     , jsonAccountGap        :: !Word32
     , jsonAccountCreated    :: !UTCTime
-    -- Optional KeyRing
-    , jsonAccountKeyRing    :: !(Maybe JsonKeyRing)
     }
     deriving (Eq, Show, Read)
 
 $(deriveJSON (dropFieldLabel 11) ''JsonAccount)
+
+data JsonWithAccount a = JsonWithAccount
+    { withAccountKeyRing :: !JsonKeyRing
+    , withAccountAccount :: !JsonAccount
+    , withAccountData    :: !a
+    }
+
+$(deriveJSON (dropFieldLabel 11) ''JsonWithAccount)
 
 data JsonAddr = JsonAddr
     { jsonAddrAddress        :: !Address
@@ -396,8 +395,6 @@ data JsonAddr = JsonAddr
     , jsonAddrRedeem         :: !(Maybe ScriptOutput)
     , jsonAddrKey            :: !(Maybe PubKeyC)
     , jsonAddrCreated        :: !UTCTime
-    -- Optional Account
-    , jsonAddrAccount        :: !(Maybe JsonAccount)
     -- Optional Balance
     , jsonAddrBalance        :: !(Maybe AddressBalance)
     }
@@ -424,15 +421,14 @@ data JsonTx = JsonTx
     , jsonTxCreated         :: !UTCTime
     -- Optional confirmation
     , jsonTxConfirmations   :: !(Maybe Word32)
-    -- Optional Account
-    , jsonTxAccount         :: !(Maybe JsonAccount)
     } 
     deriving (Eq, Show, Read)
 
 $(deriveJSON (dropFieldLabel 6) ''JsonTx)
 
 data JsonCoin = JsonCoin
-    { jsonCoinPos        :: !Word32
+    { jsonCoinHash       :: !TxHash
+    , jsonCoinPos        :: !Word32
     , jsonCoinValue      :: !Word64
     , jsonCoinScript     :: !ScriptOutput
     , jsonCoinCreated    :: !UTCTime
@@ -464,25 +460,6 @@ $(deriveJSON (dropFieldLabel 10) ''JsonAddrTx)
  
 {- Response Types -}
 
-data MnemonicRes = MnemonicRes { resMnemonic :: !Mnemonic }
-    deriving (Eq, Read, Show)
-
-$(deriveJSON (dropFieldLabel 3) ''MnemonicRes)
-
-data TxHashConfidenceRes = TxHashConfidenceRes 
-    { txHashConfidenceTxHash   :: !TxHash 
-    , txHashConfidenceComplete :: !TxConfidence
-    } deriving (Eq, Show, Read)
-
-$(deriveJSON (dropFieldLabel 16) ''TxHashConfidenceRes)
-
-data TxConfidenceRes = TxConfidenceRes 
-    { txConfidenceTx       :: !Tx 
-    , txConfidenceComplete :: !TxConfidence
-    } deriving (Eq, Show, Read)
-
-$(deriveJSON (dropFieldLabel 12) ''TxConfidenceRes)
-
 data TxCompleteRes = TxCompleteRes
     { txCompleteTx       :: !Tx 
     , txCompleteComplete :: !Bool
@@ -491,21 +468,11 @@ data TxCompleteRes = TxCompleteRes
 $(deriveJSON (dropFieldLabel 10) ''TxCompleteRes)
 
 data PageRes a = PageRes
-    { addrPagePage    :: ![a]
-    , addrPageMaxPage :: !Word32
+    { pageResPage    :: ![a]
+    , pageResMaxPage :: !Word32
     }
 
-$(deriveJSON (dropFieldLabel 8) ''PageRes)
-
-data TxRes = TxRes { resTx :: !Tx } 
-    deriving (Eq, Show, Read)
-
-$(deriveJSON (dropFieldLabel 3) ''TxRes)
-
-data BalanceRes = BalanceRes { balanceBalance :: !Word64 } 
-    deriving (Eq, Show, Read)
-
-$(deriveJSON (dropFieldLabel 7) ''BalanceRes)
+$(deriveJSON (dropFieldLabel 7) ''PageRes)
 
 data RescanRes = RescanRes { rescanTimestamp :: !Word32 }
     deriving (Eq, Show, Read)

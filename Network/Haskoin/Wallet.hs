@@ -23,6 +23,8 @@ module Network.Haskoin.Wallet
 , JsonCoin(..)
 , JsonTx(..)
 , JsonAddrTx(..)
+, JsonWithKeyRing(..)
+, JsonWithAccount(..)
 
 -- *API Request Types
 , WalletRequest(..)
@@ -46,22 +48,19 @@ module Network.Haskoin.Wallet
 
 -- *API Response Types
 , WalletResponse(..)
-, MnemonicRes(..)
-, TxHashConfidenceRes(..)
-, TxConfidenceRes(..)
 , TxCompleteRes(..)
 , PageRes(..)
 , RescanRes(..)
-, TxRes(..)
-, BalanceRes(..)
 
 -- *Database KeyRings
 , initWallet
 , newKeyRing
+, keyRings
 , keyRingSource
 , getKeyRing
 
 -- *Database Accounts
+, accounts
 , accountSource
 , newAccount
 , addAccountKeys
@@ -76,7 +75,6 @@ module Network.Haskoin.Wallet
 , addressSource
 , addressPage
 , unusedAddresses
-, firstUnusedAddress
 , addressCount
 , setAddrLabel
 , addressPrvKey
@@ -91,8 +89,8 @@ module Network.Haskoin.Wallet
 
 -- *Database transactions
 , txPage
-, addrTxPage
 , getTx 
+, getAccountTx
 , importTx
 , importNetTx
 , signKeyRingTx

@@ -37,7 +37,8 @@ import Data.Maybe (catMaybes, fromMaybe)
 import Data.Aeson (Value, toJSON, decode, encode)
 import Data.Conduit (Sink, awaitForever, ($$))
 import Data.Conduit.TMChan (TBMChan, sourceTBMChan)
-import qualified Data.Map.Strict as M (unionsWith, null, toList, empty)
+import qualified Data.Map.Strict as M 
+    (unionsWith, null, toList, empty, fromListWith, assocs)
 
 import Database.Persist (get)
 import Database.Persist.Sql (ConnectionPool, runMigration)
@@ -170,7 +171,7 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
 
         -- Import all transactions into the wallet
         let txs = concatMap merkleTxs dmbs
-        newAddrsMap <- processTxs txs
+        newAddrs <- processTxs txs
 
         -- Import the merkle blocks into the wallet
         _ <- tryDBPool sem pool $ importMerkles action $ map expectedTxs dmbs
@@ -181,7 +182,7 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
         -- merkle block download and wait for us to continue the download.
         newBSize <- if null txs then return incBSize else do
             -- Do we have to rescan the current batch ?
-            rescan <- shouldRescan $ M.toList newAddrsMap
+            rescan <- shouldRescan $ groupByAcc newAddrs
                     -- If we use addresses in the hidden gap, we must
                     -- rescan this batch.
             let bh | rescan = oldBest
@@ -214,7 +215,7 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
     -- Ignore full blocks
     _ -> return ()
   where
-    shouldRescan accs = case accs of
+    shouldRescan newAddrs = case newAddrs of
         ((ai, cnt):rest) -> do
             accM <- liftM join $ tryDBPool sem pool $ get ai
             -- For every account, check if we busted the gap.
@@ -222,18 +223,22 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
                 then return True
                 else shouldRescan rest
         _ -> return False
+    groupByAcc addrs =
+        let xs = map (\a -> (keyRingAddrAccount a, 1)) addrs
+        in  M.assocs $ M.fromListWith (+) xs
     processTxs txs = do
         -- Import all the transactions into the wallet as network transactions
-        resM <- liftM catMaybes $ forM txs $ tryDBPool sem pool . importNetTx
-        let newAddrsMap = M.unionsWith (+) $ map snd $ catMaybes resM
+        res <- liftM catMaybes $ forM txs $ tryDBPool sem pool . importNetTx
+        let newAddrs = any (not . null . snd) res
         -- Send the bloom filter to peers when new addresses were created
-        unless (M.null newAddrsMap) $ do
+        when newAddrs $ do
             bloomM <- tryDBPool sem pool $ getBloomFilter
             case bloomM of
                 Just (bloom, _, _) -> liftIO . atomically $ 
                     writeTBMChan rChan $ NodeBloomFilter bloom
                 _ -> return ()
-        return newAddrsMap
+        -- Return a list of all the new addresses
+        return $ concat $ map snd res
 
 maybeDetach :: Config -> IO () -> IO ()
 maybeDetach cfg action =
@@ -312,6 +317,7 @@ dispatchRequest req = liftM ResponseValid $ case req of
     PostTxsR r n a                   -> postTxsR r n a
     GetTxR r n h                     -> getTxR r n h
     GetOfflineTxR r n h              -> getOfflineTxR r n h
+    PostOfflineTxR r n t cs          -> postOfflineTxR r n t cs
     GetBalanceR r n mc o             -> getBalanceR r n mc o
     PostNodeR na                     -> postNodeR na
 

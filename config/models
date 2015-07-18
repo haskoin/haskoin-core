@@ -82,17 +82,6 @@ KeyRingSpentCoin
     UniqueSpentTxRev hash pos spendingTx
     deriving Show
 
-KeyRingAddrTx
-    addr KeyRingAddrId
-    accTx KeyRingTxId
-    type AddrTxType maxlen=16
-    inValue Word64
-    outValue Word64
-    created UTCTime
-    UniqueAddrTx addr accTx
-    UniqueAddrTxRev accTx addr
-    deriving Show
-
 KeyRingConfig
     height Word32
     block BlockHash

@@ -3,10 +3,12 @@ module Network.Haskoin.Wallet.KeyRing
 -- *Database KeyRings
   initWallet
 , newKeyRing
+, keyRings
 , keyRingSource
 , getKeyRing
 
 -- *Database Accounts
+, accounts
 , accountSource
 , newAccount
 , addAccountKeys
@@ -21,7 +23,6 @@ module Network.Haskoin.Wallet.KeyRing
 , addressSource
 , addressPage
 , unusedAddresses
-, firstUnusedAddress
 , addressCount
 , setAddrLabel
 , addressPrvKey
@@ -57,13 +58,13 @@ import qualified Data.ByteString as BS (ByteString, null)
 
 import qualified Database.Persist as P
     ( Filter, SelectOpt( Asc )
-    , selectFirst, updateWhere, selectSource, count, update
+    , updateWhere, update
     , (=.), (==.)
     )
 import Database.Esqueleto 
-    ( Value(..), SqlExpr
+    ( Value(..), SqlExpr, SqlQuery
     , InnerJoin(..), on
-    , select, from, where_, val, sub_select, countRows, unValue
+    , select, from, where_, val, sub_select, countRows, count, unValue
     , orderBy, limit, asc, desc, offset, selectSource
     , max_, not_, coalesceDefault, isNothing, case_, when_, then_, else_
     , (^.), (==.), (&&.), (<=.), (>=.), (>.), (-.), (<.)
@@ -86,16 +87,24 @@ import Network.Haskoin.Wallet.Model
 
 initWallet :: MonadIO m => Double -> SqlPersistT m ()
 initWallet fpRate = do
-    prevConfigM <- P.selectFirst [] [P.Asc KeyRingConfigCreated]
-    case prevConfigM of
-        Just _ -> return ()
-        Nothing -> do
+    prevConfigRes <- select $ from $ \c -> return $ count $ c ^. KeyRingConfigId
+    let cnt = maybe 0 unValue $ listToMaybe prevConfigRes
+    if cnt == (0 :: Int)
+        then do
             time <- liftIO getCurrentTime
             -- Create an initial bloom filter
             -- TODO: Compute a random nonce 
             let bloom = bloomCreate (filterLen 0) fpRate 0 BloomUpdateNone
-            insert_ $ 
-                KeyRingConfig 0 (headerHash genesisHeader) bloom 0 fpRate 1 time
+            insert_ $ KeyRingConfig 
+                { keyRingConfigHeight      = 0 
+                , keyRingConfigBlock       = headerHash genesisHeader
+                , keyRingConfigBloomFilter = bloom 
+                , keyRingConfigBloomElems  = 0 
+                , keyRingConfigBloomFp     = fpRate 
+                , keyRingConfigVersion     = 1 
+                , keyRingConfigCreated     = time
+                }
+        else return () -- Nothing to do
 
 {- KeyRing -}
 
@@ -115,10 +124,14 @@ newKeyRing name seed
             _ -> liftIO . throwIO $ WalletException $ unwords
                 [ "KeyRing", unpack name, "already exists" ]
 
+keyRings :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
+         => SqlPersistT m [KeyRing]
+keyRings = liftM (map entityVal) $ select $ from return
+
 -- | Stream all KeyRings 
 keyRingSource :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
               => Source (SqlPersistT m) KeyRing
-keyRingSource = mapOutput entityVal $ P.selectSource [] []
+keyRingSource = mapOutput entityVal $ selectSource $ from return
 
 -- Helper functions to get a KeyRing if it exists, or throw an exception
 -- otherwise.
@@ -130,29 +143,32 @@ getKeyRing name = getBy (UniqueKeyRing name) >>= \resM -> case resM of
 
 {- Account -}
 
+-- | Fetch all the accounts in a keyring
+accounts :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
+         => KeyRingId -> SqlPersistT m [KeyRingAccount]
+accounts ki = liftM (map entityVal) $ select $ accountsFrom ki
+
 -- | Stream all accounts in a keyring
 accountSource :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
-              => KeyRingName -> Source (SqlPersistT m) (KeyRing, KeyRingAccount)
-accountSource name = 
-    mapOutput f $ selectSource $ from $ \(k `InnerJoin` a) -> do
-        on $ k ^. KeyRingId ==. a ^. KeyRingAccountKeyRing
-        where_ $ k ^. KeyRingName ==. val name
-        return (k, a)
-  where
-    f (Entity _ k, Entity _ a) = (k, a)
+              => KeyRingId -> Source (SqlPersistT m) KeyRingAccount
+accountSource ki = mapOutput entityVal $ selectSource $ accountsFrom ki
+
+accountsFrom :: KeyRingId -> SqlQuery (SqlExpr (Entity KeyRingAccount))
+accountsFrom ki = 
+    from $ \a -> do
+        where_ $ a ^. KeyRingAccountKeyRing ==. val ki
+        return a
 
 -- | Create a new account
 newAccount :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
-           => KeyRingName
+           => Entity KeyRing
            -> AccountName 
            -> AccountType
            -> [XPubKey]
-           -> SqlPersistT m (KeyRing, Entity KeyRingAccount)
-newAccount keyRingName accountName accountType extraKeys = do
+           -> SqlPersistT m (Entity KeyRingAccount)
+newAccount (Entity ki keyRing) accountName accountType extraKeys = do
     unless (validAccountType accountType) $ 
         liftIO . throwIO $ WalletException "Invalid account type"
-
-    Entity ki keyRing <- getKeyRing keyRingName
 
     -- Get the next account derivation
     derivM <- if accountTypeRead accountType then return Nothing else
@@ -188,9 +204,10 @@ newAccount keyRingName accountName accountType extraKeys = do
             let accE = Entity ai newAcc
             -- If we can set the gap, create the gap addresses
             when canSetGap $ do
-                createAddrs accE AddressExternal 20
-                createAddrs accE AddressInternal 20
-            return (keyRing, accE)
+                _ <- createAddrs accE AddressExternal 20
+                _ <- createAddrs accE AddressInternal 20
+                return ()
+            return accE
         -- The account already exists
         Nothing -> liftIO . throwIO $ WalletException $ unwords
             [ "Account", unpack accountName, "already exists" ]
@@ -216,8 +233,9 @@ addAccountKeys (Entity ai acc) keys
         -- If we can set the gap, create the gap addresses
         when canSetGap $ do
             let accE = Entity ai newAcc
-            createAddrs accE AddressExternal 20
-            createAddrs accE AddressInternal 20
+            _ <- createAddrs accE AddressExternal 20
+            _ <- createAddrs accE AddressInternal 20
+            return ()
         return newAcc
   where
     newKeys = keyRingAccountKeys acc ++ keys
@@ -269,26 +287,21 @@ getAccount keyRingName accountName = do
 -- | Get an address if it exists, or throw an exception otherwise. Fetching
 -- addresses in the hidden gap will also throw an exception.
 getAddress :: MonadIO m
-           => KeyRingName                        -- ^ KeyRing name
-           -> AccountName                        -- ^ Account name
+           => Entity KeyRingAccount              -- ^ Account Entity
            -> KeyIndex                           -- ^ Derivation index (key)
            -> AddressType                        -- ^ Address type
-           -> SqlPersistT m (KeyRing, KeyRingAccount, Entity KeyRingAddr) 
-                -- ^ Address
-getAddress keyRingName accountName index addrType = do
-    res <- select $ from $ \(k `InnerJoin` a `InnerJoin` x) -> do
-        on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
-        on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
-        where_ (   k ^. KeyRingName        ==. val keyRingName
-               &&. a ^. KeyRingAccountName ==. val accountName
+           -> SqlPersistT m (Entity KeyRingAddr) -- ^ Address
+getAddress accE@(Entity ai _) index addrType = do
+    res <- select $ from $ \x -> do
+        where_ (   x ^. KeyRingAddrAccount ==. val ai
                &&. x ^. KeyRingAddrType    ==. val addrType
                &&. x ^. KeyRingAddrIndex   ==. val index
-               &&. x ^. KeyRingAddrIndex   <.  subSelectAddrCount a addrType
+               &&. x ^. KeyRingAddrIndex   <.  subSelectAddrCount accE addrType
                )
         limit 1
-        return (k, a, x)
+        return x
     case res of
-        ((Entity _ k, Entity _ a, addrE):_) -> return (k, a, addrE)
+        (addrE:_) -> return addrE
         _ -> liftIO . throwIO $ WalletException $ unwords
             [ "Invalid address index", show index ]
 
@@ -296,37 +309,31 @@ getAddress keyRingName accountName index addrType = do
 -- is useful for building a bloom filter.
 addressSourceAll :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
                  => Source (SqlPersistT m) KeyRingAddr
-addressSourceAll = mapOutput entityVal $ P.selectSource [] []
+addressSourceAll = mapOutput entityVal $ selectSource $ from return
 
 -- | Stream all addresses in one account. Hidden gap addresses are not included.
 addressSource :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
-              => KeyRingName
-              -> AccountName
-              -> AddressType 
-              -> Source (SqlPersistT m) KeyRingAddr
-addressSource keyRingName accountName addrType = do
-    mapOutput entityVal $ 
-        selectSource $ from $ \(k `InnerJoin` a `InnerJoin` x) -> do
-            on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
-            on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
-            where_ (   k ^. KeyRingName        ==. val keyRingName
-                   &&. a ^. KeyRingAccountName ==. val accountName
-                   &&. x ^. KeyRingAddrType    ==. val addrType
-                   &&. x ^. KeyRingAddrIndex   <.  subSelectAddrCount a addrType
-                   )
-            return x
+              => Entity KeyRingAccount -- ^ Account Entity
+              -> AddressType           -- ^ Address Type
+              -> Source (SqlPersistT m) KeyRingAddr -- ^ Source of addresses
+addressSource accE@(Entity ai _) addrType = mapOutput entityVal $ 
+    selectSource $ from $ \x -> do
+        where_ (   x ^. KeyRingAddrAccount ==. val ai
+               &&. x ^. KeyRingAddrType    ==. val addrType
+               &&. x ^. KeyRingAddrIndex   <.  subSelectAddrCount accE addrType
+               )
+        return x
 
 -- | Get addresses by pages. 
 addressPage :: MonadIO m 
-            => KeyRingName                           -- ^ KeyRing name
-            -> AccountName                           -- ^ Account name
-            -> AddressType                           -- ^ Address type 
-            -> PageRequest                           -- ^ Page request
-            -> SqlPersistT m ([(KeyRing, KeyRingAccount, KeyRingAddr)], Word32) 
+            => Entity KeyRingAccount -- ^ Account Entity
+            -> AddressType           -- ^ Address type 
+            -> PageRequest           -- ^ Page request
+            -> SqlPersistT m ([KeyRingAddr], Word32) 
                 -- ^ Page result
-addressPage keyRingName accountName addrType page@PageRequest{..}
+addressPage accE@(Entity ai _) addrType page@PageRequest{..}
     | validPageRequest page = do
-        cnt <- addressCount keyRingName accountName addrType
+        cnt <- addressCount accE addrType
 
         let (d, m)  = cnt `divMod` pageLen
             maxPage = max 1 $ d + min 1 m
@@ -335,11 +342,8 @@ addressPage keyRingName accountName addrType page@PageRequest{..}
             unwords [ "Invalid page number", show pageNum ]
 
         if cnt == 0 then return ([], maxPage) else do
-            res <- select $ from $ \(k `InnerJoin` a `InnerJoin` x) -> do
-                on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
-                on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
-                where_ (   k ^. KeyRingName        ==. val keyRingName
-                       &&. a ^. KeyRingAccountName ==. val accountName
+            res <- liftM (map entityVal) $ select $ from $ \x -> do
+                where_ (   x ^. KeyRingAddrAccount ==. val ai
                        &&. x ^. KeyRingAddrType    ==. val addrType
                        &&. x ^. KeyRingAddrIndex   <.  val cnt
                        )
@@ -347,12 +351,10 @@ addressPage keyRingName accountName addrType page@PageRequest{..}
                 orderBy [ order (x ^. KeyRingAddrIndex) ]
                 limit $ fromIntegral pageLen
                 offset $ fromIntegral $ (pageNum - 1) * pageLen
-                return (k, a, x)
+                return x
 
-            let f | pageReverse = id
-                  | otherwise   = reverse
-                g (Entity _ k, Entity _ a, Entity _ x) = (k, a, x)
-            return (f $ map g res, maxPage)
+            let f = if pageReverse then id else reverse
+            return (f res, maxPage)
 
     | otherwise = liftIO . throwIO $ WalletException $
         concat [ "Invalid page request"
@@ -361,99 +363,65 @@ addressPage keyRingName accountName addrType page@PageRequest{..}
 
 -- | Get a count of all the addresses in an account
 addressCount :: MonadIO m 
-             => KeyRingName          -- ^ KeyRing name
-             -> AccountName          -- ^ Account name
-             -> AddressType          -- ^ Address type 
-             -> SqlPersistT m Word32 -- ^ Address Count
-addressCount keyRingName accountName addrType = do
-    res <- select $ from $ \(k `InnerJoin` a `InnerJoin` x) -> do
-        on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
-        on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
-        where_ (   k ^. KeyRingName        ==. val keyRingName
-               &&. a ^. KeyRingAccountName ==. val accountName
-               &&. x ^. KeyRingAddrType    ==. val addrType
-               )
-        let gap = a ^. KeyRingAccountGap
-        return $ case_
-            [ when_ (countRows >. gap)
-              then_ (countRows -. gap)
-            ] (else_ $ val 0)
-
-    return $ maybe 0 unValue $ listToMaybe res
-
--- | Get a list of all unused addresses.
-unusedAddresses :: MonadIO m 
-                => KeyRingName
-                -> AccountName
-                -> AddressType
-                -> SqlPersistT m [(KeyRing, KeyRingAccount, KeyRingAddr)]
-unusedAddresses keyRingName accountName addrType = do
-    res <- select $ from $ \(k `InnerJoin` a `InnerJoin` x) -> do
-        on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
-        on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
-        let addrCnt = subSelectAddrCount a addrType
-            gap  = a ^. KeyRingAccountGap
-        where_ (   k ^. KeyRingName        ==.  val keyRingName
-               &&. a ^. KeyRingAccountName ==.  val accountName
-               &&. x ^. KeyRingAddrType    ==.  val addrType
-               &&. x ^. KeyRingAddrIndex   <.   addrCnt
-               &&. x ^. KeyRingAddrIndex   >=.  addrCnt -. gap
-               )
-        return (k, a, x)
-    return $ map (\(Entity _ k, Entity _ a, Entity _ x) -> (k, a, x)) res
-
--- | Given an account entity, return the first unused address in the accounts
--- address gap. 
-firstUnusedAddress :: MonadIO m
-                   => Entity KeyRingAccount
-                   -> AddressType
-                   -> SqlPersistT m KeyRingAddr
-firstUnusedAddress (Entity ai acc) addrType = do
+             => Entity KeyRingAccount -- ^ Account Entity
+             -> AddressType           -- ^ Address type 
+             -> SqlPersistT m Word32  -- ^ Address Count
+addressCount (Entity ai acc) addrType = do
     res <- select $ from $ \x -> do
         where_ (   x ^. KeyRingAddrAccount ==. val ai
                &&. x ^. KeyRingAddrType    ==. val addrType
                )
+        return countRows
+    let cnt = maybe 0 unValue $ listToMaybe res
+    return $ if cnt > keyRingAccountGap acc
+        then cnt - keyRingAccountGap acc
+        else 0
+
+-- | Get a list of all unused addresses.
+unusedAddresses :: MonadIO m 
+                => Entity KeyRingAccount -- ^ Account ID
+                -> AddressType           -- ^ Address type
+                -> SqlPersistT m [KeyRingAddr] -- ^ Unused addresses
+unusedAddresses (Entity ai acc) addrType = do
+    liftM (reverse . map entityVal) $ select $ from $ \x -> do
+        where_ (   x ^. KeyRingAddrAccount ==. val ai
+               &&. x ^. KeyRingAddrType    ==. val addrType
+               )
         orderBy [ desc $ x ^. KeyRingAddrIndex ]
-        limit 1
-        offset $ max 0 $ (fromIntegral $ keyRingAccountGap acc * 2) - 1
+        limit $ fromIntegral $ keyRingAccountGap acc
+        offset $ fromIntegral $ keyRingAccountGap acc
         return x
-    case res of
-        (Entity _ a:_) -> return a
-        _ -> liftIO . throwIO $ WalletException "No unused addresses available"
 
 -- | Add a label to an address.
 setAddrLabel :: MonadIO m
-             => KeyRingName           -- ^ KeyRing name
-             -> AccountName           -- ^ Account name
+             => Entity KeyRingAccount -- ^ Account ID
              -> KeyIndex              -- ^ Derivation index
              -> AddressType           -- ^ Address type
              -> Text                  -- ^ New label
-             -> SqlPersistT m ()      -- ^ New Address
-setAddrLabel keyRingName accountName i addrType label = do
-    (_, _, Entity addrI _) <- getAddress keyRingName accountName i addrType
+             -> SqlPersistT m KeyRingAddr
+setAddrLabel accE i addrType label = do
+    Entity addrI addr <- getAddress accE i addrType
     P.update addrI [ KeyRingAddrLabel P.=. label ]
+    return $ addr{ keyRingAddrLabel = label }
 
 -- | Returns the private key of an address.
 addressPrvKey :: MonadIO m
-              => KeyRingName           -- ^ KeyRing name
-              -> AccountName           -- ^ Account name
+              => KeyRing               -- ^ KeyRing
+              -> Entity KeyRingAccount -- ^ Account Entity
               -> KeyIndex              -- ^ Derivation index of the address
               -> AddressType           -- ^ Address type
               -> SqlPersistT m PrvKeyC -- ^ Private key
-addressPrvKey keyRingName accountName index addrType = do
-    res <- select $ from $ \(k `InnerJoin` a `InnerJoin` x) -> do
-        on $ x ^. KeyRingAddrAccount    ==. a ^. KeyRingAccountId
-        on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
-        where_ (   k ^. KeyRingName        ==. val keyRingName
-               &&. a ^. KeyRingAccountName ==. val accountName
+addressPrvKey keyRing accE@(Entity ai acc) index addrType = do
+    res <- select $ from $ \x -> do
+        where_ (   x ^. KeyRingAddrAccount ==. val ai
                &&. x ^. KeyRingAddrType    ==. val addrType
                &&. x ^. KeyRingAddrIndex   ==. val index
-               &&. x ^. KeyRingAddrIndex   <.  subSelectAddrCount a addrType
+               &&. x ^. KeyRingAddrIndex   <.  subSelectAddrCount accE addrType
                )
-        return (k ^. KeyRingMaster, x ^. KeyRingAddrFullDerivation)
+        return (x ^. KeyRingAddrFullDerivation)
     case res of
-        ((Value master, Value (Just deriv)):_) -> 
-            return $ xPrvKey $ derivePath deriv master
+        (Value (Just deriv):_) -> 
+            return $ xPrvKey $ derivePath deriv $ keyRingMaster keyRing
         _ -> liftIO . throwIO $ WalletException "Invalid address"
 
 -- | Create new addresses in an account and increment the internal bloom filter.
@@ -465,7 +433,7 @@ createAddrs :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
             => Entity KeyRingAccount
             -> AddressType 
             -> Word32       
-            -> SqlPersistT m ()
+            -> SqlPersistT m [KeyRingAddr]
 createAddrs (Entity ai acc) addrType n 
     | n == 0 = liftIO . throwIO $ WalletException $ 
         unwords [ "Invalid value", show n ]
@@ -506,6 +474,7 @@ createAddrs (Entity ai acc) addrType n
         -- Save the addresses and increment the bloom filter
         insertMany_ res
         incrementFilter res
+        return res
   where 
     -- Branch type (external = 0, internal = 1)
     branchType = addrTypeIndex addrType
@@ -523,9 +492,9 @@ createAddrs (Entity ai acc) addrType n
                 ]
 
 -- | Use an address and make sure we have enough gap addresses after it.
--- Returns the number of new gap addresses created.
+-- Returns the new addresses that have been created.
 useAddress :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
-           => KeyRingAddr -> SqlPersistT m (KeyRingAccountId, Word32)
+           => KeyRingAddr -> SqlPersistT m [KeyRingAddr]
 useAddress KeyRingAddr{..} = do
     res <- select $ from $ \(a `InnerJoin` x) -> do
         on $ x ^. KeyRingAddrAccount ==. a ^. KeyRingAccountId
@@ -538,10 +507,10 @@ useAddress KeyRingAddr{..} = do
         ((Value cnt, accE@(Entity _ acc)):_) -> do
             let gap     = fromIntegral (keyRingAccountGap acc) :: Int
                 missing = 2*gap - cnt 
-            when (missing > 0) $ 
-                createAddrs accE keyRingAddrType $ fromIntegral missing
-            return (keyRingAddrAccount, fromIntegral $ max 0 missing)
-        _ -> return (keyRingAddrAccount, 0) -- Should not happen
+            if missing > 0
+                then createAddrs accE keyRingAddrType $ fromIntegral missing
+                else return []
+        _ -> return [] -- Should not happen
 
 -- | Set the address gap of an account to a new value. This will create new
 -- internal and external addresses as required. The gap can only be increased,
@@ -549,7 +518,7 @@ useAddress KeyRingAddr{..} = do
 setAccountGap :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
               => Entity KeyRingAccount -- ^ Account Entity
               -> Word32                -- ^ New gap value
-              -> SqlPersistT m ()
+              -> SqlPersistT m KeyRingAccount
 setAccountGap accE@(Entity ai acc) gap
     | not (isCompleteAccount acc) =
         liftIO . throwIO $ WalletException $ unwords
@@ -562,6 +531,7 @@ setAccountGap accE@(Entity ai acc) gap
         createAddrs accE AddressExternal $ fromInteger $ missing*2
         createAddrs accE AddressInternal $ fromInteger $ missing*2
         P.update ai [ KeyRingAccountGap P.=. gap ]
+        return $ acc{ keyRingAccountGap = gap }
   where
     missing = toInteger gap - toInteger (keyRingAccountGap acc)
 
@@ -600,8 +570,9 @@ computeNewFilter = do
     -- Create a new empty bloom filter
     -- TODO: Choose a random nonce for the bloom filter
     -- TODO: Check global bloom filter length limits
-    elems <- liftM (*2) $ P.count ([] :: [P.Filter KeyRingAddr])
-    let newBloom = bloomCreate (filterLen elems) fpRate 0 BloomUpdateNone
+    cntRes <- select $ from $ \x -> return $ count $ x ^. KeyRingAddrId
+    let elems = maybe 0 unValue $ listToMaybe cntRes
+        newBloom = bloomCreate (filterLen elems) fpRate 0 BloomUpdateNone
     bloom <- addressSourceAll $$ bloomSink newBloom
     setBloomFilter bloom elems
   where
@@ -692,15 +663,15 @@ getPathPubKey acc@KeyRingAccount{..} deriv
 
 {- Helpers -}
 
-subSelectAddrCount :: SqlExpr (Entity KeyRingAccount)
+subSelectAddrCount :: Entity KeyRingAccount
                    -> AddressType
                    -> SqlExpr (Value KeyIndex)
-subSelectAddrCount a addrType =
+subSelectAddrCount (Entity ai acc) addrType =
     sub_select $ from $ \x -> do
-        where_ (   x ^. KeyRingAddrAccount ==. a ^. KeyRingAccountId
+        where_ (   x ^. KeyRingAddrAccount ==. val ai
                &&. x ^. KeyRingAddrType    ==. val addrType
                )
-        let gap = a ^. KeyRingAccountGap
+        let gap = val $ keyRingAccountGap acc
         return $ case_
             [ when_ (countRows >. gap)
               then_ (countRows -. gap)

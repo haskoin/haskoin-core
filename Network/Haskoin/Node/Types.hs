@@ -20,7 +20,7 @@ module Network.Haskoin.Node.Types
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (replicateM, liftM2, forM_)
+import Control.Monad (replicateM, liftM2, forM_, unless)
 import Control.Applicative ((<$>),(<*>))
 
 import Data.Word (Word32, Word64)
@@ -52,6 +52,8 @@ import qualified Data.ByteString as BS
     ( ByteString
     , length
     , takeWhile
+    , empty
+    , null
     )
 import Network.Socket (SockAddr (SockAddrInet, SockAddrInet6))
 
@@ -300,12 +302,14 @@ instance Binary Pong where
 -- | The reject message is sent when messages are rejected by a peer.
 data Reject =
     Reject { 
-            -- | Type of message rejected
+             -- | Type of message rejected
              rejectMessage :: !MessageCommand
              -- | Code related to the rejected message
            , rejectCode    :: !RejectCode
              -- | Text version of rejected reason
            , rejectReason  :: !VarString
+             -- | Optional extra data provided by some errors
+           , rejectData    :: !BS.ByteString
            } deriving (Eq, Show, Read)
 
 
@@ -348,21 +352,26 @@ instance Binary RejectCode where
 
 -- | Convenience function to build a Reject message
 reject :: MessageCommand -> RejectCode -> String -> Reject
-reject cmd code reason = Reject cmd code (VarString $ stringToBS reason)
+reject cmd code reason = 
+    Reject cmd code (VarString $ stringToBS reason) BS.empty
 
 instance Binary Reject where
 
     get = get >>= \(VarString bs) -> case stringToCommand $ bsToString bs of
-        Just cmd -> Reject cmd <$> get <*> get
-        _        -> fail $ unwords $
+        Just cmd -> Reject cmd <$> get <*> get <*> maybeData 
+        _ -> fail $ unwords 
             [ "Reason get: Invalid message command"
             , bsToString bs
             ]
+      where
+        maybeData = isEmpty >>= \done -> 
+            if done then return BS.empty else getByteString 32
 
-    put (Reject cmd code reason) = do
+    put (Reject cmd code reason dat) = do
         put $ VarString $ stringToBS $ commandToString cmd
         put code
         put reason
+        unless (BS.null dat) $ putByteString dat
 
 -- | Data type representing a variable length integer. The 'VarInt' type
 -- usually precedes an array or a string that can vary in length. 

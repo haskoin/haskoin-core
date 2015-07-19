@@ -73,8 +73,8 @@ toJsonAccount acc = JsonAccount
     , jsonAccountCreated      = keyRingAccountCreated acc
     }
 
-toJsonAddr :: KeyRingAddr            -- ^ The address
-           -> (Maybe AddressBalance) -- ^ The addresses balance
+toJsonAddr :: KeyRingAddr         -- ^ The address
+           -> (Maybe BalanceInfo) -- ^ The addresses balance
            -> JsonAddr
 toJsonAddr addr balM = JsonAddr
     { jsonAddrAddress        = keyRingAddrAddress addr

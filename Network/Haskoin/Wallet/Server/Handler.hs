@@ -333,7 +333,7 @@ getAddressR keyRingName name i addrType minConf offline = do
 
     (keyRing, acc, addr, balM) <- runDB $ do
         (keyRing, accE@(Entity _ acc)) <- getAccount keyRingName name
-        addrE <- getAddress accE i addrType
+        addrE <- getAddress accE addrType i
         bals <- addressBalances accE i i addrType minConf offline
         return $ case bals of
             ((_,bal):_) -> (keyRing, acc, entityVal addrE, Just bal)
@@ -381,8 +381,8 @@ getTxsR keyRingName name page = do
         ]
 
     (keyRing, acc, res, maxPage, height) <- runDB $ do
-        (_, height) <- getBestBlock
         (keyRing, Entity ai acc) <- getAccount keyRingName name
+        (_, height) <- getBestBlock
         (res, maxPage) <- txPage ai page
         return (keyRing, acc, res, maxPage, height)
 
@@ -408,8 +408,20 @@ getAddrTxsR keyRingName name index addrType page = do
         , "  Page size    : " ++ show (pageLen page)
         , "  Page reverse : " ++ show (pageReverse page)
         ]
-    -- TODO: This is not implemented
-    return Nothing
+
+    (keyRing, acc, res, maxPage, height) <- runDB $ do
+        (keyRing, accE@(Entity _ acc)) <- getAccount keyRingName name
+        (_, height) <- getBestBlock
+        (res, maxPage) <- addrTxPage accE addrType index page
+        return (keyRing, acc, res, maxPage, height)
+
+    return $ Just $ toJSON $ JsonWithAccount
+        { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
+        , withAccountAccount = toJsonAccount acc
+        , withAccountData    = PageRes (map (f height) res) maxPage
+        }
+  where
+    f height (tx, bal) = AddrTx (toJsonTx tx (Just height)) bal
 
 postTxsR :: ( MonadLogger m, MonadBaseControl IO m, MonadBase IO m
             , MonadIO m, MonadThrow m, MonadResource m

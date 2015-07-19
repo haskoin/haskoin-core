@@ -22,7 +22,6 @@ module Network.Haskoin.Wallet
 , JsonAddr(..)
 , JsonCoin(..)
 , JsonTx(..)
-, JsonAddrTx(..)
 , JsonWithKeyRing(..)
 , JsonWithAccount(..)
 
@@ -44,11 +43,12 @@ module Network.Haskoin.Wallet
 , TxType(..)
 , TxConfidence(..)
 , AddressInfo(..)
-, AddressBalance(..)
+, BalanceInfo(..)
 
 -- *API Response Types
 , WalletResponse(..)
 , TxCompleteRes(..)
+, AddrTx(..)
 , PageRes(..)
 , RescanRes(..)
 
@@ -89,6 +89,7 @@ module Network.Haskoin.Wallet
 
 -- *Database transactions
 , txPage
+, addrTxPage
 , getTx 
 , getAccountTx
 , importTx

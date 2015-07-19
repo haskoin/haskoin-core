@@ -2,6 +2,7 @@ module Network.Haskoin.Wallet.Transaction
 ( 
 -- *Database transactions
   txPage
+, addrTxPage
 , getTx 
 , getAccountTx
 , importTx
@@ -65,7 +66,7 @@ import Database.Esqueleto
     , select, from, where_, val, valList, sub_select, countRows, count
     , orderBy, limit, asc, desc, set, offset, selectSource, updateCount
     , subList_select, in_, unValue, max_, not_, coalesceDefault, just, on
-    , case_, when_, then_, else_
+    , case_, when_, then_, else_, distinct
     , (^.), (=.), (==.), (&&.), (||.), (<.)
     , (<=.), (>.), (>=.), (-.), (*.), (?.), (!=.)
     -- Reexports from Database.Persist
@@ -132,6 +133,94 @@ txPage ai page@PageRequest{..}
 
         let f = if pageReverse then id else reverse
         return (f res, maxPage)
+    | otherwise = liftIO . throwIO $ WalletException $
+        concat [ "Invalid page request"
+               , " (Page: ", show pageNum, ", Page size: ", show pageLen, ")"
+               ]
+
+addrTxPage :: MonadIO m
+           => Entity KeyRingAccount -- ^ Account entity
+           -> AddressType           -- ^ Address Type
+           -> KeyIndex              -- ^ Address index
+           -> PageRequest           -- ^ Page request
+           -> SqlPersistT m ([(KeyRingTx, BalanceInfo)], Word32)
+addrTxPage accE@(Entity ai _) addrType index page@PageRequest{..}
+    | validPageRequest page = do
+        Entity addrI _ <- getAddress accE addrType index
+
+        let joinSpentCoin c2 s =
+                (   c2 ?. KeyRingCoinAccount ==. s ?. KeyRingSpentCoinAccount
+                &&. c2 ?. KeyRingCoinHash    ==. s ?. KeyRingSpentCoinHash
+                &&. c2 ?. KeyRingCoinPos     ==. s ?. KeyRingSpentCoinPos
+                &&. c2 ?. KeyRingCoinAddr    ==. just (val addrI)
+                )
+            joinSpent s t = 
+                s ?. KeyRingSpentCoinSpendingTx ==. just (t ^. KeyRingTxId)
+            joinCoin c t = 
+                (   c ?. KeyRingCoinTx   ==. just (t ^. KeyRingTxId)
+                &&. c ?. KeyRingCoinAddr ==. just (val addrI)
+                )
+
+        -- Find all the tids
+        tids <- liftM (map unValue) $ select $ distinct $ from $ 
+                \(t `LeftOuterJoin` c `LeftOuterJoin` 
+                  s `LeftOuterJoin` c2) -> do
+            on $ joinSpentCoin c2 s
+            on $ joinSpent s t
+            on $ joinCoin c t
+            where_ (   t ^. KeyRingTxAccount ==. val ai
+                   &&. (   not_ (E.isNothing (c  ?. KeyRingCoinId))
+                       ||. not_ (E.isNothing (c2 ?. KeyRingCoinId))
+                       )
+                   )
+            orderBy [ asc (t ^. KeyRingTxId) ]
+            return $ t ^. KeyRingTxId
+
+        let cnt     = fromIntegral $ length tids
+            (d, m)  = cnt `divMod` pageLen
+            maxPage = max 1 $ d + min 1 m
+
+        when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
+            unwords [ "Invalid page number", show pageNum ]
+
+        let fOrd = if pageReverse then reverse else id
+            toDrop = fromIntegral $ (pageNum - 1) * pageLen
+            -- We call fOrd twice to reverse the page back to ASC
+            tidPage = 
+                fOrd $ take (fromIntegral pageLen) $ drop toDrop $ fOrd tids
+
+        -- Use a sliptSelect query here with the exact tids to speed up the
+        -- query.
+        res <- splitSelect tidPage $ \tid -> 
+            from $ \(t `LeftOuterJoin` c `LeftOuterJoin` 
+                     s `LeftOuterJoin` c2) -> do
+            on $ joinSpentCoin c2 s
+            on $ joinSpent s t
+            on $ joinCoin c t
+            where_ $ t ^. KeyRingTxId `in_` (valList tid)
+            groupBy $ t ^. KeyRingTxId
+            orderBy [ asc (t ^. KeyRingTxId) ]
+            return ( t 
+                     -- Incoming value
+                   , coalesceDefault [sum_ (c  ?. KeyRingCoinValue)] (val 0)
+                     -- Outgoing value
+                   , coalesceDefault [sum_ (c2 ?. KeyRingCoinValue)] (val 0)
+                     -- Number of new coins created
+                   , count $ c ?. KeyRingCoinId
+                     -- Number of coins spent
+                   , count $ c2 ?. KeyRingCoinId
+                   )
+
+        let f (t, Value inVal, Value outVal, Value newCount, Value spentCount) = 
+                ( entityVal t
+                , BalanceInfo 
+                    { balanceInfoInBalance  = floor (inVal :: Double) 
+                    , balanceInfoOutBalance = floor (outVal :: Double) 
+                    , balanceInfoCoins      = newCount 
+                    , balanceInfoSpentCoins = spentCount
+                    }
+                )
+        return (map f res, maxPage)
     | otherwise = liftIO . throwIO $ WalletException $
         concat [ "Invalid page request"
                , " (Page: ", show pageNum, ", Page size: ", show pageLen, ")"
@@ -1109,7 +1198,7 @@ addressBalances :: MonadIO m
                 -> AddressType
                 -> Word32
                 -> Bool
-                -> SqlPersistT m [(KeyIndex, AddressBalance)]
+                -> SqlPersistT m [(KeyIndex, BalanceInfo)]
 addressBalances accE@(Entity ai _) iMin iMax addrType minconf offline = do
         -- We keep our joins flat to improve performance in SQLite.
     res <- select $ from $ \(x `LeftOuterJoin` c `LeftOuterJoin` 
@@ -1164,13 +1253,13 @@ addressBalances accE@(Entity ai _) iMin iMax addrType minconf offline = do
     validConfidence = Just TxPending : Just TxBuilding : 
                         [ Just TxOffline | offline ]
     f (Value i, Value inM, Value outM, Value newC, Value spentC) = 
-        let b = AddressBalance 
-                    { addrBalanceInBalance  = 
+        let b = BalanceInfo 
+                    { balanceInfoInBalance  = 
                         floor $ fromMaybe (0 :: Double) inM
-                    , addrBalanceOutBalance = 
+                    , balanceInfoOutBalance = 
                         floor $ fromMaybe (0 :: Double) outM
-                    , addrBalanceCoins      = newC
-                    , addrBalanceSpentCoins = spentC
+                    , balanceInfoCoins      = newC
+                    , balanceInfoSpentCoins = spentC
                     }
         in (i, b)
     f _ = throw $ WalletException "Could not compute the balance"

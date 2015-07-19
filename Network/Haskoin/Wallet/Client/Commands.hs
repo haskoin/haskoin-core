@@ -228,7 +228,7 @@ cmdAddrTxs name i pageLs = do
     k <- R.asks configKeyRing
     t <- R.asks configAddrType
     pagedAction pageLs (GetAddrTxsR k (pack name) index t) $ \ts -> do
-        let xs = map (putStr . printTx) ts
+        let xs = map (putStr . printAddrTx) ts
         sequence_ $ intersperse (putStrLn "-") xs
   where
     page  = fromMaybe 1 (read <$> listToMaybe pageLs)
@@ -544,11 +544,11 @@ printAddress JsonAddr{..} = unwords $
     ++ 
     [ "(" ++ unpack jsonAddrLabel ++ ")" | not (null $ unpack jsonAddrLabel) ]
     ++ concat 
-    ( [ [ "[Received: " ++ show (addrBalanceInBalance bal)   ++ "]"
-        , "[Coins: "  ++ show (addrBalanceCoins bal)  ++ "]"
-        , "[Spent Coins: " ++ show (addrBalanceSpentCoins bal) ++ "]"
+    ( [ [ "[Received: " ++ show (balanceInfoInBalance bal)   ++ "]"
+        , "[Coins: "  ++ show (balanceInfoCoins bal)  ++ "]"
+        , "[Spent Coins: " ++ show (balanceInfoSpentCoins bal) ++ "]"
         ] 
-        | isJust jsonAddrBalance && addrBalanceCoins bal > 0
+        | isJust jsonAddrBalance && balanceInfoCoins bal > 0
       ]
     )
   where
@@ -584,15 +584,20 @@ printTx tx@JsonTx{..} = unlines $
         ++ 
         [ if local then "<-" else "" ]
 
-printAddrTx :: JsonAddrTx -> String
-printAddrTx JsonAddrTx{..} = unlines $
-    [ "Value        : " 
-        ++ printAddrTxType jsonAddrTxType ++ " " 
-        ++ show jsonAddrTxValue 
-    ] ++
-    [ "Confidence   : " ++ printTxConfidence (fromJust jsonAddrTxTx)
-    | isJust jsonAddrTxTx
-    ] 
+printAddrTx :: AddrTx -> String
+printAddrTx (AddrTx tx BalanceInfo{..}) = unlines $
+    concat (
+    [ [ "Incoming value: " ++ show balanceInfoInBalance 
+      , "Incoming coins: " ++ show balanceInfoCoins
+      ]
+      | balanceInfoInBalance > 0 
+    ] ) ++ concat (
+    [ [ "Outgoing value: " ++ show balanceInfoOutBalance 
+      , "Spent coins   : " ++ show balanceInfoSpentCoins
+      ]
+      | balanceInfoOutBalance > 0 
+    ] ) ++
+    [ "Confidence   : " ++ printTxConfidence tx ] 
 
 printTxConfidence :: JsonTx -> String
 printTxConfidence JsonTx{..} = case jsonTxConfidence of

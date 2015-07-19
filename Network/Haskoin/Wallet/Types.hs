@@ -9,7 +9,6 @@ module Network.Haskoin.Wallet.Types
 , JsonAddr(..)
 , JsonCoin(..)
 , JsonTx(..)
-, JsonAddrTx(..)
 , JsonWithKeyRing(..)
 , JsonWithAccount(..)
 
@@ -32,11 +31,12 @@ module Network.Haskoin.Wallet.Types
 , AddrTxType(..)
 , TxConfidence(..)
 , AddressInfo(..)
-, AddressBalance(..)
+, BalanceInfo(..)
 
 -- Response Types
 , WalletResponse(..)
 , TxCompleteRes(..)
+, AddrTx(..)
 , PageRes(..)
 , RescanRes(..)
 
@@ -133,15 +133,15 @@ data AddressInfo = AddressInfo
 
 $(deriveJSON (dropFieldLabel 11) ''AddressInfo)
 
-data AddressBalance = AddressBalance
-    { addrBalanceInBalance   :: !Word64
-    , addrBalanceOutBalance  :: !Word64
-    , addrBalanceCoins       :: !Int
-    , addrBalanceSpentCoins  :: !Int
+data BalanceInfo = BalanceInfo
+    { balanceInfoInBalance   :: !Word64
+    , balanceInfoOutBalance  :: !Word64
+    , balanceInfoCoins       :: !Int
+    , balanceInfoSpentCoins  :: !Int
     }
     deriving (Eq, Show, Read)
 
-$(deriveJSON (dropFieldLabel 11) ''AddressBalance)
+$(deriveJSON (dropFieldLabel 11) ''BalanceInfo)
 
 data NewKeyRing = NewKeyRing
     { newKeyRingKeyRingName :: !KeyRingName
@@ -396,7 +396,7 @@ data JsonAddr = JsonAddr
     , jsonAddrKey            :: !(Maybe PubKeyC)
     , jsonAddrCreated        :: !UTCTime
     -- Optional Balance
-    , jsonAddrBalance        :: !(Maybe AddressBalance)
+    , jsonAddrBalance        :: !(Maybe BalanceInfo)
     }
     deriving (Eq, Show, Read)
 
@@ -443,22 +443,14 @@ data JsonCoin = JsonCoin
 
 $(deriveJSON (dropFieldLabel 8) ''JsonCoin)
 
-data JsonAddrTx = JsonAddrTx
-    { jsonAddrTxType     :: !AddrTxType
-    , jsonAddrTxInValue  :: !Word64
-    , jsonAddrTxOutValue :: !Word64
-    , jsonAddrTxValue    :: !Int64
-    , jsonAddrTxCreated  :: !UTCTime
-    -- Optional Address
-    , jsonAddrTxAddress  :: !(Maybe JsonAddr)
-    -- Optional Tx
-    , jsonAddrTxTx       :: !(Maybe JsonTx)
-    } 
-    deriving (Eq, Show, Read)
-
-$(deriveJSON (dropFieldLabel 10) ''JsonAddrTx)
- 
 {- Response Types -}
+
+data AddrTx = AddrTx
+    { addrTxTx      :: !JsonTx
+    , addrTxBalance :: !BalanceInfo
+    }
+
+$(deriveJSON (dropFieldLabel 6) ''AddrTx)
 
 data TxCompleteRes = TxCompleteRes
     { txCompleteTx       :: !Tx 

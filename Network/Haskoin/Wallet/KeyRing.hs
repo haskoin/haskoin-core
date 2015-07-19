@@ -66,7 +66,7 @@ import Database.Esqueleto
     , InnerJoin(..), on
     , select, from, where_, val, sub_select, countRows, count, unValue
     , orderBy, limit, asc, desc, offset, selectSource
-    , max_, not_, coalesceDefault, isNothing, case_, when_, then_, else_
+    , max_, not_, isNothing, case_, when_, then_, else_
     , (^.), (==.), (&&.), (<=.), (>=.), (>.), (-.), (<.)
     -- Reexports from Database.Persist
     , SqlPersistT, Entity(..)
@@ -288,10 +288,10 @@ getAccount keyRingName accountName = do
 -- addresses in the hidden gap will also throw an exception.
 getAddress :: MonadIO m
            => Entity KeyRingAccount              -- ^ Account Entity
-           -> KeyIndex                           -- ^ Derivation index (key)
            -> AddressType                        -- ^ Address type
+           -> KeyIndex                           -- ^ Derivation index (key)
            -> SqlPersistT m (Entity KeyRingAddr) -- ^ Address
-getAddress accE@(Entity ai _) index addrType = do
+getAddress accE@(Entity ai _) addrType index = do
     res <- select $ from $ \x -> do
         where_ (   x ^. KeyRingAddrAccount ==. val ai
                &&. x ^. KeyRingAddrType    ==. val addrType
@@ -353,6 +353,7 @@ addressPage accE@(Entity ai _) addrType page@PageRequest{..}
                 offset $ fromIntegral $ (pageNum - 1) * pageLen
                 return x
 
+            -- Flip the order back to ASC if we had it DEC
             let f = if pageReverse then id else reverse
             return (f res, maxPage)
 
@@ -400,7 +401,7 @@ setAddrLabel :: MonadIO m
              -> Text                  -- ^ New label
              -> SqlPersistT m KeyRingAddr
 setAddrLabel accE i addrType label = do
-    Entity addrI addr <- getAddress accE i addrType
+    Entity addrI addr <- getAddress accE addrType i
     P.update addrI [ KeyRingAddrLabel P.=. label ]
     return $ addr{ keyRingAddrLabel = label }
 

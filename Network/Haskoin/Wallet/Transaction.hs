@@ -140,14 +140,11 @@ txPage ai page@PageRequest{..}
 
 addrTxPage :: MonadIO m
            => Entity KeyRingAccount -- ^ Account entity
-           -> AddressType           -- ^ Address Type
-           -> KeyIndex              -- ^ Address index
+           -> KeyRingAddrId         -- ^ Address Id
            -> PageRequest           -- ^ Page request
            -> SqlPersistT m ([(KeyRingTx, BalanceInfo)], Word32)
-addrTxPage accE@(Entity ai _) addrType index page@PageRequest{..}
+addrTxPage (Entity ai _) addrI page@PageRequest{..}
     | validPageRequest page = do
-        Entity addrI _ <- getAddress accE addrType index
-
         let joinSpentCoin c2 s =
                 (   c2 ?. KeyRingCoinAccount ==. s ?. KeyRingSpentCoinAccount
                 &&. c2 ?. KeyRingCoinHash    ==. s ?. KeyRingSpentCoinHash

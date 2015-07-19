@@ -409,16 +409,18 @@ getAddrTxsR keyRingName name index addrType page = do
         , "  Page reverse : " ++ show (pageReverse page)
         ]
 
-    (keyRing, acc, res, maxPage, height) <- runDB $ do
+    (keyRing, acc, res, maxPage, height, addr) <- runDB $ do
         (keyRing, accE@(Entity _ acc)) <- getAccount keyRingName name
+        Entity addrI addr <- getAddress accE addrType index
         (_, height) <- getBestBlock
-        (res, maxPage) <- addrTxPage accE addrType index page
-        return (keyRing, acc, res, maxPage, height)
+        (res, maxPage) <- addrTxPage accE addrI page
+        return (keyRing, acc, res, maxPage, height, addr)
 
-    return $ Just $ toJSON $ JsonWithAccount
-        { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withAccountAccount = toJsonAccount acc
-        , withAccountData    = PageRes (map (f height) res) maxPage
+    return $ Just $ toJSON $ JsonWithAddr
+        { withAddrKeyRing = toJsonKeyRing keyRing Nothing Nothing
+        , withAddrAccount = toJsonAccount acc
+        , withAddrAddress = toJsonAddr addr Nothing
+        , withAddrData    = PageRes (map (f height) res) maxPage
         }
   where
     f height (tx, bal) = AddrTx (toJsonTx tx (Just height)) bal

@@ -227,7 +227,11 @@ cmdAddrTxs :: String -> String -> [String] -> Handler ()
 cmdAddrTxs name i pageLs = do
     k <- R.asks configKeyRing
     t <- R.asks configAddrType
-    pagedAction pageLs (GetAddrTxsR k (pack name) index t) $ \ts -> do
+    c <- R.asks configCount
+    r <- R.asks configReversePaging
+    let req = GetAddrTxsR k (pack name) index t $ PageRequest page c r
+    sendZmq req $ \(JsonWithAddr _ _ _ (PageRes ts m)) -> do
+        putStrLn $ unwords [ "Page", show page, "of", show m ]
         let xs = map (putStr . printAddrTx) ts
         sequence_ $ intersperse (putStrLn "-") xs
   where

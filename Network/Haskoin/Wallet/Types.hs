@@ -11,6 +11,7 @@ module Network.Haskoin.Wallet.Types
 , JsonTx(..)
 , JsonWithKeyRing(..)
 , JsonWithAccount(..)
+, JsonWithAddr(..)
 
 -- Request Types
 , WalletRequest(..)
@@ -401,6 +402,15 @@ data JsonAddr = JsonAddr
     deriving (Eq, Show, Read)
 
 $(deriveJSON (dropFieldLabel 8) ''JsonAddr)
+
+data JsonWithAddr a = JsonWithAddr
+    { withAddrKeyRing :: !JsonKeyRing
+    , withAddrAccount :: !JsonAccount
+    , withAddrAddress :: !JsonAddr
+    , withAddrData    :: !a
+    }
+
+$(deriveJSON (dropFieldLabel 8) ''JsonWithAddr)
 
 data JsonTx = JsonTx
     { jsonTxHash            :: !TxHash 

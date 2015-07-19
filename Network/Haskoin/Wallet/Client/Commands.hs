@@ -601,7 +601,7 @@ printAddrTx (AddrTx tx BalanceInfo{..}) = unlines $
       ]
       | balanceInfoOutBalance > 0 
     ] ) ++
-    [ "Confidence   : " ++ printTxConfidence tx ] 
+    [ "Confidence      : " ++ printTxConfidence tx ] 
 
 printTxConfidence :: JsonTx -> String
 printTxConfidence JsonTx{..} = case jsonTxConfidence of

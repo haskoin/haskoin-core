@@ -24,7 +24,7 @@ import Control.Monad.Logger
 
 import Data.Word (Word32)
 import Data.List (delete)
-import Data.Maybe (isJust, fromJust, catMaybes, fromMaybe)
+import Data.Maybe (isJust, isNothing, fromJust, fromMaybe)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Conduit (Conduit, Sink, yield, awaitForever, await, ($$), ($=))
 import Data.Conduit.Network (AppData, appSink, appSource)
@@ -57,24 +57,21 @@ minProtocolVersion :: Word32
 minProtocolVersion = 60001
 
 data PeerSession = PeerSession
-    { peerId         :: !PeerId
-    , mngrChan       :: !(TBMChan ManagerMessage)
-    , msgsChan       :: !(TBMChan Message)
-    , peerChan       :: !(TBMChan PeerMessage)
-    , bkchChan       :: !(TBMChan BlockChainMessage)
-    , mempChan       :: !(TBMChan MempoolMessage)
-    , peerVersion    :: !(Maybe Version)
+    { peerId          :: !PeerId
+    , mngrChan        :: !(TBMChan ManagerMessage)
+    , msgsChan        :: !(TBMChan Message)
+    , peerChan        :: !(TBMChan PeerMessage)
+    , bkchChan        :: !(TBMChan BlockChainMessage)
+    , mempChan        :: !(TBMChan MempoolMessage)
+    , peerVersion     :: !(Maybe Version)
     -- Current Job that the peer is working on
-    , currentJob     :: !(Maybe Job)
-    -- Aggregate all the transaction of a merkle block before sending
-    -- them up to the manager
-    , inflightMerkle :: !(Maybe DecodedMerkleBlock)
-    -- Buffer merkle blocks of a job and send them when the job is done
-    , merkleBuffer   :: ![(BlockHash, DecodedMerkleBlock)]
+    , currentJob      :: !(Maybe Job)
+    -- True if a merkle block is currently inflight
+    , inflightMerkle  :: !(Maybe BlockHash)
+    -- Buffer the txs of a merkle block and send them when the job is done
+    , merkleTxsBuffer :: ![MerkleTxs]
     -- Buffer blocks of a job and send them when the job is done
-    , blockBuffer    :: ![(BlockHash, Block)]
-    -- Save the order in which we must send the blocks to the blockchain
-    , blockOrder     :: ![BlockHash]
+    , blockBuffer     :: ![(BlockHash, Block)]
     } 
 
 -- | Create the session data for a new Peer given a Peer type and a manager
@@ -88,18 +85,17 @@ newPeerSession mngrChan bkchChan mempChan = do
     -- Generate a new Peer unique ID
     peerId   <- liftIO newUnique
     -- Initialize the main Peer message channel
-    peerChan <- liftIO $ atomically $ newTBMChan 10000
+    peerChan <- liftIO $ atomically $ newTBMChan 10
     -- Initialize the channel to send messages to the remote host
-    msgsChan <- liftIO $ atomically $ newTBMChan 10000
+    msgsChan <- liftIO $ atomically $ newTBMChan 10
     $(logDebug) $ format peerId "Creating a new peer session"
     return PeerSession{..}
   where
     peerVersion     = Nothing
-    inflightMerkle  = Nothing
-    merkleBuffer    = []
-    blockBuffer     = []
-    blockOrder      = []
     currentJob      = Nothing
+    inflightMerkle  = Nothing
+    merkleTxsBuffer = []
+    blockBuffer     = []
 
 -- | Start a new Peer application. This function is meant to be used with
 -- runTCPClient or runTCPServer.
@@ -167,9 +163,7 @@ processPeerMessage = await >>= \m -> do
                 currJobM <- gets currentJob
                 when (isJust currJobM) $ $(logError) $ format pid 
                     "Scheduling error. Peer received a job while busy."
-                modify $ \s -> s{ currentJob = Just job 
-                                , blockOrder = [] -- Make sure this is empty
-                                }
+                modify $ \s -> s{ currentJob = Just job }
                 processJob
             processPeerMessage
         Just RetryJob -> do
@@ -200,7 +194,7 @@ processJob = do
             jobDone
         Just JobMempool -> do
             $(logDebug) $ format pid "Synchronizing mempool"
-            sendMessage $ MMempool
+            sendMessage MMempool
             jobDone
         Just (JobSendTxInv txids) -> do
             $(logDebug) $ format pid "Processing SendTxInv job"
@@ -228,11 +222,6 @@ processJob = do
                     sendBlockChain $ IncBlocks did []
                     jobDone 
                 else do
-                    order <- gets blockOrder
-                    -- Update the order if it is empty only. Otherwise, a retry
-                    -- is triggered and we want to save the complete order
-                    -- before the retry.
-                    when (null order) $ modify $ \s -> s{ blockOrder = bids }
                     let vs = map (InvVector InvBlock . fromIntegral) bids
                     sendMessage $ MGetData $ GetData vs
         Just (JobDwnMerkles did bids) -> do
@@ -245,14 +234,9 @@ processJob = do
                     _       -> []
             if null bids 
                 then do
-                    sendBlockChain $ IncMerkleBlocks did []
+                    sendBlockChain $ IncMerkleBatch did []
                     jobDone 
                 else do
-                    order <- gets blockOrder
-                    -- Update the order if it is empty only. Otherwise, a retry
-                    -- is triggered and we want to save the complete order
-                    -- before the retry.
-                    when (null order) $ modify $ \s -> s{ blockOrder = bids }
                     let vs = map (InvVector InvMerkleBlock . fromIntegral) bids
                     sendMessage $ MGetData $ GetData vs
                     -- Send a ping to have a recognizable end message for
@@ -273,9 +257,7 @@ jobDone = do
                 , "of type", showJob pJob
                 ]
             sendManager $ PeerJobDone pid jid
-            modify $ \s -> s{ currentJob = Nothing 
-                            , blockOrder = [] -- Make sure this is empty
-                            }
+            modify $ \s -> s{ currentJob = Nothing }
         _ -> return ()
 
 -- | Process incomming messages from the remote peer
@@ -286,7 +268,7 @@ processRemoteMessage msg = checkInitVersion >>= \valid -> when valid $ do
     -- that merkle block. As soon as we get a different message than a
     -- transaction, we know that we are done processing the merkle block.
     merkleM <- gets inflightMerkle
-    when (isJust merkleM && isNotTx msg) $ endMerkleBlock $ fromJust merkleM
+    when (isJust merkleM && isNotTx msg) endMerkleBlock
     -- Dispatch the message to the right actor for handling
     pid <- gets peerId
     case msg of
@@ -435,20 +417,9 @@ processBlock block = do
                     case delete bid bids of
                         -- We are done with this block job
                         [] -> do
-                            order <- gets blockOrder
-                            -- Reorder the buffer to match the order of the job
-                            let g (a,_) b = a == b
-                                orderedBuff = catMaybes $ 
-                                    matchTemplate buffer order g
-                            -- This should not happen in normal operation.
-                            when (length orderedBuff /= length buffer) $
-                                $(logError) $ format pid $ 
-                                    "Block buffer of different length"
                             -- Send the blocks to the blockchain
-                            sendBlockChain $ IncBlocks did $ map snd orderedBuff
-                            modify $ \s -> s{ blockBuffer = [] 
-                                            , blockOrder  = []
-                                            }
+                            sendBlockChain $ IncBlocks did $ map snd buffer
+                            modify $ \s -> s{ blockBuffer = [] }
                             jobDone
                         bids' -> do
                             $(logDebug) $ format pid $ unwords
@@ -475,76 +446,65 @@ processBlock block = do
 -- | Process a MerkleBlock sent from the remote host
 processMerkleBlock :: (MonadLogger m, MonadIO m) 
                    => MerkleBlock -> StateT PeerSession m ()
-processMerkleBlock decodedMerkle@(MerkleBlock bh ntx hs fs) = do
+processMerkleBlock (MerkleBlock bh ntx hs fs) = do
     pid <- gets peerId
-    -- Check that we are expecting this merkle bock. Otherwise, the remote
-    -- peer is misbehaving by sending us unsolicited merkle blocks.
-    gets currentJob >>= \jobM -> case jobM of
-        Just (Job _ _ _ (JobDwnMerkles _ bids)) ->
-            if bid `elem` bids
-                then do
-                    $(logDebug) $ format pid $ unwords
-                        [ "Received merkle block", encodeBlockHashLE bid ]
-                    go pid 
-                else $(logDebug) $ format pid $ unwords
-                    [ "Received an unsolicited merkle block"
-                    , encodeBlockHashLE bid
-                    ]
-        _ -> $(logDebug) $ format pid $ unwords
-            [ "Received an unsolicited merkle block"
-            , encodeBlockHashLE bid
-            ]
-  where
-    bid = headerHash bh
-    go pid = case extractMatches fs hs (fromIntegral ntx) of
+    case extractMatches fs hs (fromIntegral ntx) of
         Left err -> sendManager $ PeerMisbehaving pid severeDoS $ unwords 
             [ "Received an invalid merkle block:", err ]
         Right (decodedRoot, expectedTxs) -> if decodedRoot == merkleRoot bh
-            then let merkleTxs = []
-                     dmb       = DecodedMerkleBlock{..}
-                 in if null expectedTxs
-                     then endMerkleBlock dmb
-                     else do
-                        $(logDebug) $ format pid $ unwords
-                            [ "Setting inflight merkle block"
-                            , encodeBlockHashLE bid
-                            ]
-                        modify $ \s -> s{ inflightMerkle = Just dmb }
+            then do
+                $(logDebug) $ format pid $ unwords
+                    [ "Received merkle block", encodeBlockHashLE bid ]
+                -- We set the inflight merkle block here to accumulate all the
+                -- related transactins. We actually check if we were awaiting
+                -- this merkle block only when endMerkleBlock is called.
+                modify $ \s -> 
+                    s{ merkleTxsBuffer = expectedTxs:(merkleTxsBuffer s)
+                     , inflightMerkle  = Just bid
+                     }
+                when (null expectedTxs) endMerkleBlock
             else sendManager $ PeerMisbehaving pid severeDoS
                 "Received a merkle block with an invalid merkle root."
+  where
+    bid = headerHash bh
 
 -- | Process a transaction sent from the remote host
 processTx :: (MonadLogger m, MonadIO m) => Tx -> StateT PeerSession m ()
 processTx tx = do
     pid <- gets peerId
-    -- If the transaction is part of a merkle block, buffer it. We will send
-    -- everything to the manager together.
+    mTxsLs <- gets merkleTxsBuffer
     merkleM <- gets inflightMerkle
-    case merkleM of
-        Just dmb@(DecodedMerkleBlock _ _ match txs) ->
-            if tid `elem` match
-                then do
-                    $(logDebug) $ format pid $ unwords
-                        [ "Received merkle block transaction"
-                        , encodeTxHashLE tid 
-                        ]
-                    modify $ \s -> 
-                        s{ inflightMerkle = Just dmb{ merkleTxs = tx : txs } }
-                else do
-                    $(logDebug) $ format pid $ unwords
-                        [ "Received transaction" , encodeTxHashLE tid ]
-                    endMerkleBlock dmb
-                    sendMempool $ MempoolTx tx
-        Nothing -> sendMempool $ MempoolTx tx
+
+    -- Is the transaction related to a merkle block ?
+    fromMerkle <- if isNothing merkleM then return False else case mTxsLs of
+        (mTxs:_) -> if tid `elem` mTxs
+            then do
+                $(logDebug) $ format pid $ unwords
+                    [ "Received merkle block transaction"
+                    , encodeTxHashLE tid 
+                    ]
+                return True
+            else do
+                $(logDebug) $ format pid $ unwords
+                    [ "Received transaction" , encodeTxHashLE tid ]
+                -- End the inflight merkle block if we received a transaction
+                -- which does not belong to it.
+                endMerkleBlock
+                return False
+        _ -> return False
 
     -- Check if the transaction is part of a Job
     currJobM <- gets currentJob
     case currJobM of
         Just job@(Job _ _ _ (JobDwnTxs tids)) -> case delete tid tids of
-            []    -> jobDone
-            tids' -> modify $ \s -> 
-                s{ currentJob = Just job{ jobPayload = JobDwnTxs tids' } }
+            []   -> jobDone
+            rest -> modify $ \s -> 
+                s{ currentJob = Just job{ jobPayload = JobDwnTxs rest } }
         _ -> return ()
+
+    -- We always send the transactions to the mempool, if they are part of a
+    -- merkle block or not
+    sendMempool $ MempoolTx tx fromMerkle
   where
     tid = txHash tx
 
@@ -562,56 +522,68 @@ processHeaders (Headers hs) = do
 
 -- | When the download of transactions related to a merkle block is finished,
 -- this function is called to buffer the merkle block and clean up the data.
-endMerkleBlock :: (MonadLogger m, MonadIO m) 
-               => DecodedMerkleBlock -> StateT PeerSession m ()
-endMerkleBlock dmb@(DecodedMerkleBlock mb _ match txs) = do
+endMerkleBlock :: (MonadLogger m, MonadIO m) => StateT PeerSession m ()
+endMerkleBlock = do
     pid <- gets peerId
-    $(logDebug) $ format pid $ unwords
-        [ "Merkle block", encodeBlockHashLE bid
-        , "containing", show $ length txs, "txs is complete."
-        ]
-    -- Add the merkle block to the buffer
-    buffer <- liftM ((bid, orderedDmb) :) $ gets merkleBuffer
-    -- Clear the inflight merkle 
-    modify $ \s -> s{ inflightMerkle = Nothing }
+    merkleM <- gets inflightMerkle
     -- Get the current job and delete the block hash from the job
     gets currentJob >>= \jobM -> case jobM of
-        Just job@(Job _ _ _ (JobDwnMerkles did bids)) ->
-            case delete bid bids of
-                -- We are done with this merkle job
-                [] -> do
-                    order <- gets blockOrder
-                    -- Reorder the buffer to match the order of the job
-                    let g (a,_) b = a == b
-                        orderedBuff = catMaybes $ matchTemplate buffer order g
-                    -- This should not happen in normal operation.
-                    when (length orderedBuff /= length buffer) $
-                        $(logError) $ format pid $
-                            "Block buffer of different length"
-                    -- Send the merkles to the blockchain
-                    sendBlockChain $ IncMerkleBlocks did $ map snd orderedBuff
-                    modify $ \s -> s{ merkleBuffer = [] 
-                                    , blockOrder   = []
-                                    }
-                    jobDone
-                -- We have more merkles to download in this job
-                bids' -> do
-                    $(logDebug) $ format pid $ unwords
-                        [ "Expecting", show $ length bids'
-                        , "more merkle blocks."
+        Just job@(Job _ _ _ (JobDwnMerkles did bids)) -> case bids of
+            (bid:rest) -> case merkleM of
+                Just mbid -> if mbid == bid
+                    -- The inflight merkle block matches the head of the 
+                    -- current job. Process it.
+                    then go did job bid rest
+                    -- This is probably caused by the peer reordering requests
+                    else sendManager $ PeerMisbehaving pid moderateDoS $ unwords
+                        [ "Trying to end merkle block", encodeBlockHashLE mbid
+                        , "but we expected", encodeBlockHashLE bid 
                         ]
-                    -- Save the new job and merkle buffer
-                    let newJob = job{ jobPayload = JobDwnMerkles did bids' }
-                    modify $ \s -> s{ currentJob   = Just newJob 
-                                    , merkleBuffer = buffer
-                                    }
-        _ -> return ()
+                _ -> $(logWarn) $ format pid
+                    "Trying to end a non-existing merkle block"
+            [] -> do
+                -- This should not happen in theory. If it does, we just
+                -- complete the current job to unblock the peer.
+                $(logError) $ format pid
+                    "There are no more merkle blocks to end in the current job"
+                modify $ \s -> s{ merkleTxsBuffer = []
+                                , inflightMerkle  = Nothing
+                                }
+                jobDone
+        _ -> do
+            $(logWarn) $ format pid
+                "Trying to end a merkle block but the current job is invalid"
+            modify $ \s -> s{ merkleTxsBuffer = []
+                            , inflightMerkle  = Nothing
+                            }
   where
-    bid = headerHash $ merkleHeader mb
-    -- Keep the same transaction order as in the merkle block
-    orderedTxs = catMaybes $ matchTemplate txs match f
-    f a b      = txHash a == b
-    orderedDmb = dmb{ merkleTxs = orderedTxs }
+    go did job bid rest = do
+        pid <- gets peerId
+        $(logDebug) $ format pid $ unwords
+            [ "Merkle block", encodeBlockHashLE bid, "complete" ]
+        case rest of
+            -- We are done with this merkle job
+            [] -> do
+                -- We have to reverse the buffer as we have been
+                -- prepending new values to it.
+                buff <- liftM reverse $ gets merkleTxsBuffer
+                -- Send the merkles to the blockchain
+                sendBlockChain $ IncMerkleBatch did buff
+                modify $ \s -> s{ merkleTxsBuffer = [] 
+                                , inflightMerkle  = Nothing
+                                }
+                jobDone
+            -- We have more merkles to download in this job
+            _ -> do
+                $(logDebug) $ format pid $ unwords
+                    [ "Expecting", show $ length rest
+                    , "more merkle blocks."
+                    ]
+                -- Save the new job
+                let newJob = job{ jobPayload = JobDwnMerkles did rest }
+                modify $ \s -> s{ currentJob     = Just newJob 
+                                , inflightMerkle = Nothing
+                                }
 
 -- | Decode messages sent from the remote host and send them to the peers main
 -- message queue for processing. If we receive invalid messages, this function
@@ -659,11 +631,11 @@ processJobStatus = do
     PeerSession{..} <- get
     $(logInfo) $ format peerId $ unlines 
         [ ""
-        , "Peer Version : " ++ maybe "Nothing" show peerVersion
-        , "Current Job  : " ++ maybe "Nothing" (showJob . jobPayload) currentJob
-        , "Merkle Buffer: " ++ (show $ length merkleBuffer)
-        , "Block Buffer : " ++ (show $ length blockBuffer)
-        , "Block Order  : " ++ (show $ length blockOrder)
+        , "Peer Version     : " ++ maybe "Nothing" show peerVersion
+        , "Current Job      : " ++ 
+            maybe "Nothing" (showJob . jobPayload) currentJob
+        , "Merkle Txs Buffer: " ++ (show $ length merkleTxsBuffer)
+        , "Block Buffer     : " ++ (show $ length blockBuffer)
         ]
     jobDone
 

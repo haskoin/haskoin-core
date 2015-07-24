@@ -54,7 +54,7 @@ module Network.Haskoin.Node
 
    -- * Blockchain
 , withBlockChain
-, DecodedMerkleBlock(..)
+, MerkleTxs
 
    -- * Mempool & Node
 , withNode

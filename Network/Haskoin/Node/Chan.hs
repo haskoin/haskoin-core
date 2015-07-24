@@ -17,7 +17,7 @@ module Network.Haskoin.Node.Chan
 , DwnBlockId
 , RemoteHost(..) 
 , showRemoteHost
-, DecodedMerkleBlock(..)
+, MerkleTxs
 , Behavior(..)
 , BehaviorUpdate
 , minorDoS
@@ -56,12 +56,7 @@ data RemoteHost = RemoteHost
 showRemoteHost :: RemoteHost -> String
 showRemoteHost (RemoteHost h p) = concat [ h, ":", show p ]
 
-data DecodedMerkleBlock = DecodedMerkleBlock
-    { decodedMerkle :: !MerkleBlock
-    , decodedRoot   :: !MerkleRoot
-    , expectedTxs   :: ![TxHash]
-    , merkleTxs     :: ![Tx]
-    } deriving (Eq, Read, Show)
+type MerkleTxs = [TxHash]
 
 data JobResource
       -- Assign work to this specific peer only
@@ -136,7 +131,7 @@ data BlockChainMessage
     | BlockInv !PeerId ![BlockHash]
     | IncHeaders PeerId ![BlockHeader]
     | IncBlocks !DwnBlockId ![Block]
-    | IncMerkleBlocks !DwnMerkleId ![DecodedMerkleBlock]
+    | IncMerkleBatch !DwnMerkleId ![MerkleTxs]
     | StartMerkleDownload !(Either Timestamp BlockHash)
     | StartBlockDownload !(Either Timestamp BlockHash)
     | SetBloomFilter !BloomFilter
@@ -148,10 +143,10 @@ data BlockChainMessage
 -- | Messages handled by the Mempool actor
 data MempoolMessage
     = MempoolTxInv !PeerId ![TxHash]
-    | MempoolTx !Tx
+    | MempoolTx !Tx !Bool
     | MempoolSendTx !Tx
     | MempoolGetTx !PeerId !TxHash
-    | MempoolMerkles !BlockChainAction ![DecodedMerkleBlock]
+    | MempoolMerkles !BlockChainAction ![MerkleTxs]
     | MempoolBlocks !BlockChainAction ![Block]
     | MempoolStartDownload !(Either Timestamp BlockHash)
     | MempoolSynced
@@ -159,9 +154,9 @@ data MempoolMessage
 
 -- | Node events sent to the wallet
 data WalletMessage
-    = WalletTx !Tx
+    = WalletTx !Tx !Bool
     | WalletBlocks !BlockChainAction ![Block]
-    | WalletMerkles !BlockChainAction ![DecodedMerkleBlock]
+    | WalletMerkles !BlockChainAction ![MerkleTxs]
     | WalletGetTx !TxHash
     | WalletSynced
 

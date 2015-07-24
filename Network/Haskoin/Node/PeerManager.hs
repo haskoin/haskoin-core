@@ -90,7 +90,7 @@ withPeerManager :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
                 -> (TBMChan ManagerMessage -> m ())
                 -> m ()
 withPeerManager bkchChan mempChan f = do
-    mngrChan <- liftIO $ atomically $ newTBMChan 10000
+    mngrChan <- liftIO $ atomically $ newTBMChan 10
     let peerMap       = M.empty
         remoteMap     = M.empty
         mngrBloom     = Nothing

@@ -37,8 +37,9 @@ import Data.Maybe (catMaybes, fromMaybe)
 import Data.Aeson (Value, toJSON, decode, encode)
 import Data.Conduit (Sink, awaitForever, ($$))
 import Data.Conduit.TMChan (TBMChan, sourceTBMChan)
+import Data.Word (Word32)
 import qualified Data.Map.Strict as M 
-    (unionsWith, null, toList, empty, fromListWith, assocs)
+    (Map, unionWith, null, toList, empty, fromListWith, assocs)
 
 import Database.Persist (get)
 import Database.Persist.Sql (ConnectionPool, runMigration)
@@ -60,7 +61,9 @@ import Network.Haskoin.Wallet.Server.Handler
 import Network.Haskoin.Wallet.Database
 
 data EventSession = EventSession
-    { eventBatchSize :: !Int }
+    { eventBatchSize :: !Int 
+    , eventNewAddrs  :: !(M.Map KeyRingAccountId Word32)
+    }
     deriving (Eq, Show, Read)
 
 -- Filter logs by their log level
@@ -99,12 +102,6 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
         -- In this mode, we launch the client ZMQ API and we sync the
         -- wallet database with an SPV node.
         SPVOnline -> do
-            -- Create leveldb handle
-            db <- DB.open "headertree"
-                DB.defaultOptions{ DB.createIfMissing = True
-                                 , DB.cacheSize       = 2048
-                                 }
-
             -- Get our best block or compute a fast catchup time otherwise
             (best, height) <- runDBPool sem pool getBestBlock
             dwnE <- if height > 0
@@ -120,14 +117,19 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
 
                 -- Bitcoin nodes to connect to
             let nodes = configBTCNodes cfg 
-                -- Run the SPV monad stack
-                runNode = run . (`evalStateT` db)
+                -- LevelDB options
+                fp = "headertree"
+                opts = DB.defaultOptions
+                    { DB.createIfMissing = True
+                    , DB.cacheSize       = 2048
+                    , DB.writeBufferSize = 4096
+                    }
 
             -- Compute our bloom filter
             bloom <- liftM fst3 $ runDBPool sem pool getBloomFilter
 
             -- Launch SPV node
-            runNode $ withNode $ \eChan rChan -> do
+            run $ withNode fp opts $ \eChan rChan -> do
                 -- Connect to remote nodes
                 liftIO . atomically $ writeTBMChan rChan $
                     NodeConnectPeers $ map (uncurry RemoteHost) nodes
@@ -139,7 +141,9 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
                     NodeStartMerkleDownload dwnE
 
                 -- Listen to SPV events and update the wallet database
-                let eventSession = EventSession { eventBatchSize = 500 }
+                let eventSession = EventSession { eventBatchSize = 500 
+                                                , eventNewAddrs  = M.empty
+                                                }
                 -- Set the batch size to 500
                 liftIO . atomically $ writeTBMChan rChan $
                     NodeBatchSize $ eventBatchSize eventSession
@@ -156,7 +160,24 @@ processEvents :: (MonadLogger m, MonadIO m, Functor m)
               => TBMChan NodeRequest -> Sem.MSem Int -> ConnectionPool
               -> Sink WalletMessage (StateT EventSession m) ()
 processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
-    WalletTx tx -> void (processTxs [tx])
+    WalletTx tx fromMerkle -> do
+        -- Import all the transactions into the wallet as network transactions
+        resM <- tryDBPool sem pool $ importNetTx tx
+        let (_, newAddrs) = fromMaybe ([],[]) resM
+        unless (null newAddrs) $ if fromMerkle
+            -- Save that we got new addresses in the current merkle block
+            then do
+                oldMap <- gets eventNewAddrs
+                let newMap = M.unionWith (+) oldMap $ groupByAcc newAddrs
+                modify $ \s -> s{ eventNewAddrs = newMap }
+            -- Send the bloom filter to peers when new addresses were created.
+            else do
+                bloomM <- tryDBPool sem pool getBloomFilter
+                case bloomM of
+                    Just (bloom, _, _) -> liftIO . atomically $ 
+                        writeTBMChan rChan $ NodeBloomFilter bloom
+                    _ -> return ()
+
     WalletGetTx txid -> do
         txM <- tryDBPool sem pool $ getTx txid
         case txM of
@@ -164,46 +185,58 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
                 NodeSendTx tx
             Nothing -> $(logDebug) $ pack $ unwords
                 [ "Could not find transaction", encodeTxHashLE txid ]
-    WalletMerkles action dmbs -> do
+
+    WalletMerkles action mTxs -> do
         -- Save the old best block before importing
         oldBestM <- tryDBPool sem pool getBestBlock
         let oldBest = maybe (headerHash genesisHeader) fst oldBestM
 
-        -- Import all transactions into the wallet
-        let txs = concatMap merkleTxs dmbs
-        newAddrs <- processTxs txs
-
         -- Import the merkle blocks into the wallet
-        _ <- tryDBPool sem pool $ importMerkles action $ map expectedTxs dmbs
+        _ <- tryDBPool sem pool $ importMerkles action mTxs
+
+        -- Get the transaction state during tx import
+        newAddrs <- gets eventNewAddrs
+
+        -- Do we have to rescan the current batch ?
+        rescan <- shouldRescan $ M.assocs newAddrs
+                -- If we use addresses in the hidden gap, we must rescan this
+                -- batch. oldBest could be equal to the genesis block which
+                -- would trigger a download from height 0. That is fine.
+        let bh | rescan = oldBest
+               -- Otherwise, simply continue the merkle download from the new
+               -- best block
+               | otherwise = nodeBlockHash $ last $ actionNewNodes action
+
+        -- Send a new bloom filter to our peers if new addresses were generated
+        unless (M.null newAddrs) $ do
+            bloomM <- tryDBPool sem pool getBloomFilter
+            case bloomM of
+                Just (bloom, _, _) -> liftIO . atomically $ 
+                    writeTBMChan rChan $ NodeBloomFilter bloom
+                _ -> return ()
+
+        -- Reset the merkle block state
+        modify $ \s -> s{ eventNewAddrs = M.empty }
 
         bSize <- gets eventBatchSize
-        let incBSize = min 500 $ bSize + (max 1 $ bSize `div` 20)
-        -- If we received at least 1 transaction, the node will block the
-        -- merkle block download and wait for us to continue the download.
-        newBSize <- if null txs then return incBSize else do
-            -- Do we have to rescan the current batch ?
-            rescan <- shouldRescan $ groupByAcc newAddrs
-                    -- If we use addresses in the hidden gap, we must
-                    -- rescan this batch.
-            let bh | rescan = oldBest
-                   -- Otherwise, simply continue the merkle download
-                   -- from the new best block
-                   | otherwise = nodeBlockHash $ last $ actionNewNodes action
-
-            -- Send a message to the node to continue the download from
-            -- the requested block hash
-            liftIO . atomically $ 
-                writeTBMChan rChan $ NodeStartMerkleDownload $ Right bh
-            return $ if rescan then max 1 $ bSize `div` 2 else incBSize
-
+        let newBSize | rescan    = max 1 $ bSize `div` 2
+                     | otherwise = min 500 $ bSize + (max 1 $ bSize `div` 20)
+                
         when (newBSize /= bSize) $ do
             $(logDebug) $ pack $ unwords
                 [ "Changing block batch size from"
                 , show bSize, "to", show newBSize 
                 ]
-            liftIO . atomically $ writeTBMChan rChan $ 
-                NodeBatchSize newBSize
+            liftIO . atomically $ writeTBMChan rChan $ NodeBatchSize newBSize
             modify $ \s -> s{ eventBatchSize = newBSize }
+
+        -- If we have expected txs in the merkle batch, the node will stop
+        -- the download and wait for our instructions
+        let dwnStopped = any (not . null) mTxs
+        -- Continue the download for the given block if the download is stopped
+        -- or we need to rescan.
+        when (dwnStopped || rescan) $ liftIO . atomically $ 
+            writeTBMChan rChan $ NodeStartMerkleDownload $ Right bh
 
     WalletSynced -> do
         txsM <- tryDBPool sem pool $ getPendingTxs 100
@@ -211,7 +244,7 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
             Just txs -> liftIO $ atomically $ writeTBMChan rChan $
                 NodePublishTxs $ map txHash txs
             Nothing ->
-                $(logDebug) $ pack $ "Failed to retrieve pending transactions"
+                $(logDebug) $ pack "Failed to retrieve pending transactions"
     -- Ignore full blocks
     _ -> return ()
   where
@@ -225,20 +258,7 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
         _ -> return False
     groupByAcc addrs =
         let xs = map (\a -> (keyRingAddrAccount a, 1)) addrs
-        in  M.assocs $ M.fromListWith (+) xs
-    processTxs txs = do
-        -- Import all the transactions into the wallet as network transactions
-        res <- liftM catMaybes $ forM txs $ tryDBPool sem pool . importNetTx
-        let newAddrs = any (not . null . snd) res
-        -- Send the bloom filter to peers when new addresses were created
-        when newAddrs $ do
-            bloomM <- tryDBPool sem pool $ getBloomFilter
-            case bloomM of
-                Just (bloom, _, _) -> liftIO . atomically $ 
-                    writeTBMChan rChan $ NodeBloomFilter bloom
-                _ -> return ()
-        -- Return a list of all the new addresses
-        return $ concat $ map snd res
+        in  M.fromListWith (+) xs
 
 maybeDetach :: Config -> IO () -> IO ()
 maybeDetach cfg action =

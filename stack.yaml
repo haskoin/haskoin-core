@@ -3,7 +3,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/plaprade/haskoin.git
-    commit: 22125f3bae4af661f28729b6e01291785db763db
+    commit: 36bf5d269635ea57332be52b42028485973268a1
 extra-deps:
 - SafeSemaphore-0.10.1
 - daemons-0.2.1

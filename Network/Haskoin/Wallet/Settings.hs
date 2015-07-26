@@ -2,9 +2,6 @@ module Network.Haskoin.Wallet.Settings
 ( SPVMode(..)
 , OutputFormat(..)
 , Config(..)
-, configBS
-, configValue
-, hardConfig 
 ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -12,10 +9,13 @@ import Control.Monad (forM, mzero)
 import Control.Exception (throw)
 import Control.Monad.Logger (LogLevel(..))
 
+import Data.Default (Default, def)
 import Data.FileEmbed (embedFile)
 import Data.Yaml (decodeEither')
-import Data.Monoid (mempty)
 import Data.Word (Word32, Word64)
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as HashMap
+import qualified Data.Traversable as V (mapM)
 import qualified Data.ByteString as BS (ByteString)
 import qualified Data.Text as T (Text)
 import Data.Aeson 
@@ -24,11 +24,10 @@ import Data.Aeson
     , Result(..)
     , parseJSON
     , fromJSON
+    , withArray
     , withObject
     , (.:), (.:?), (.!=)
     )
-
-import Yesod.Default.Config2 (applyEnvValue)
 
 import Network.Haskoin.Constants
 import Network.Haskoin.Wallet.Database
@@ -77,13 +76,13 @@ data Config = Config
     -- ^ Working directory
     , configBind          :: !String
     -- ^ Bind address for the zeromq socket
-    , configBTCNodes      :: ![(String, Int)]
+    , configBTCNodes      :: !(HashMap T.Text [(String, Int)])
     -- ^ Trusted Bitcoin full nodes to connect to
     , configMode          :: !SPVMode
     -- ^ Operation mode of the SPV node.
     , configBloomFP       :: !Double
     -- ^ False positive rate for the bloom filter.
-    , configDatabase      :: !DatabaseConfType
+    , configDatabase      :: !(HashMap T.Text DatabaseConfType)
     -- ^ Database configuration
     , configLogFile       :: !FilePath
     -- ^ Log file
@@ -92,69 +91,83 @@ data Config = Config
     , configLogLevel      :: !LogLevel
     } 
 
-instance FromJSON Config where
-    parseJSON = withObject "Config" $ \o -> do
-        let configRcptFee    = False
-        configKeyRing        <- o .: "keyring-name"
-        configCount          <- o .: "output-size"
-        configMinConf        <- o .: "minimum-confirmations"
-        configSignTx         <- o .: "sign-transactions"
-        configFee            <- o .: "transaction-fee"
-        configAddrType       <- k =<< o .: "address-type"
-        configOffline        <- o .: "offline"
-        configReversePaging  <- o .: "reverse-paging"
-        configPass           <- o .:? "mnemonic-passphrase"
-        configFormat         <- f =<< o .: "display-format"
-        configConnect        <- o .: "connect-uri"          
-        configDetach         <- o .: "detach-server"
-        configFile           <- o .: "config-file"
-        configTestnet        <- o .: "use-testnet"
-        configDir            <- o .: "work-dir"
-        configBind           <- o .: "bind-socket"          
-        configBTCNodes       <- g =<< o .: "bitcoin-full-nodes"
-        configMode           <- h =<< o .: "server-mode"
-        configBloomFP        <- o .: "bloom-false-positive" 
-        configDatabase       <- i =<< o .: "database" 
-        configLogFile        <- o .: "log-file"
-        configPidFile        <- o .: "pid-file"
-        configLogLevel       <- j =<< o .: "log-level"
-        return Config {..}
-      where
-        f format = case format of
-            String "normal" -> return OutputNormal
-            String "json"   -> return OutputJSON
-            String "yaml"   -> return OutputYAML
-            _ -> mzero
-        g vs = forM vs $ withObject "bitcoinnode" $ \o ->
-            (,) <$> (o .: "host") <*> (o .:? "port" .!= defaultPort)
-        h mode = case mode of
-            String "online"  -> return SPVOnline
-            String "offline" -> return SPVOffline
-            _ -> mzero
-        i = withObject "database" $ \v -> v .: databaseEngine
-        j level = case level of
-            String "debug" -> return LevelDebug
-            String "info"  -> return LevelInfo
-            String "warn"  -> return LevelWarn
-            String "error" -> return LevelError
-            _              -> mzero
-        k addrtype = case addrtype of
-            String "internal" -> return AddressInternal
-            String "external" -> return AddressExternal
-            _                 -> mzero
-
--- | Raw bytes at compile time of @config/config.yml@
 configBS :: BS.ByteString
 configBS = $(embedFile "config/config.yml")
 
--- | @config/config.yml@, parsed to a @Value@.
-configValue :: Value
-configValue = either throw id $ decodeEither' configBS
+instance Default Config where
+    def = either throw id $ decodeEither' configBS
 
--- | A version of @Config@ parsed at compile time from
--- @config/config.yml@.
-hardConfig :: Config
-hardConfig = case fromJSON $ applyEnvValue False mempty configValue of
-    Error e -> error e
-    Success settings -> settings
-
+instance FromJSON Config where
+    parseJSON = withObject "Config" $ \o -> do
+        let configRcptFee    = False
+            configFile       = "config.yml"
+            configPass       = Nothing
+        configKeyRing        <- o .:? "keyring-name"
+                                  .!= configKeyRing def
+        configCount          <- o .:? "output-size"
+                                  .!= configCount def
+        configMinConf        <- o .:? "minimum-confirmations"
+                                  .!= configMinConf def
+        configSignTx         <- o .:? "sign-transactions"
+                                  .!= configSignTx def
+        configFee            <- o .:? "transaction-fee"
+                                  .!= configFee def
+        configAddrType <- k =<< o .:? "address-type"
+        configOffline        <- o .:? "offline"
+                                  .!= configOffline def
+        configReversePaging  <- o .:? "reverse-paging"
+                                  .!= configReversePaging def
+        configFormat   <- f =<< o .:? "display-format"
+        configConnect        <- o .:? "connect-uri"          
+                                  .!= configConnect def
+        configDetach         <- o .:? "detach-server"
+                                  .!= configDetach def
+        configTestnet        <- o .:? "use-testnet"
+                                  .!= configTestnet def
+        configDir            <- o .:? "work-dir"
+                                  .!= configDir def
+        configBind           <- o .:? "bind-socket"          
+                                  .!= configBind def
+        configBTCNodes <- g =<< o .:? "bitcoin-full-nodes"
+        configMode     <- h =<< o .:? "server-mode"
+        configBloomFP        <- o .:? "bloom-false-positive" 
+                                  .!= configBloomFP def
+        configDatabase <- i =<< o .:? "database" 
+        configLogFile        <- o .:? "log-file"
+                                  .!= configLogFile def
+        configPidFile        <- o .:? "pid-file"
+                                  .!= configPidFile def
+        configLogLevel <- j =<< o .:? "log-level"
+        return Config {..}
+      where
+        f format = case format of
+            Just (String "normal") -> return OutputNormal
+            Just (String "json")   -> return OutputJSON
+            Just (String "yaml")   -> return OutputYAML
+            Just _                 -> mzero
+            Nothing                -> return $ configFormat def
+        g (Just x) = flip (withObject "btcnodesobj") x $ V.mapM $ \a -> do
+            ls <- parseJSON a
+            forM ls $ withObject "bitcoinnode" $ \o ->
+                (,) <$> (o .: "host") <*> (o .: "port")
+        g Nothing = return $ configBTCNodes def
+        h mode = case mode of
+            Just (String "online")  -> return SPVOnline
+            Just (String "offline") -> return SPVOffline
+            Just _                  -> mzero
+            Nothing                 -> return $ configMode def
+        i (Just x) = flip (withObject "databases") x $ V.mapM .
+            withObject "database" $ \v -> v .: databaseEngine
+        i Nothing = return $ configDatabase def
+        j level = case level of
+            Just (String "debug") -> return LevelDebug
+            Just (String "info")  -> return LevelInfo
+            Just (String "warn")  -> return LevelWarn
+            Just (String "error") -> return LevelError
+            Just _                -> mzero
+            Nothing               -> return $ configLogLevel def
+        k addrtype = case addrtype of
+            Just (String "internal") -> return AddressInternal
+            Just (String "external") -> return AddressExternal
+            Just _                   -> mzero
+            Nothing                  -> return $ configAddrType def

@@ -32,6 +32,7 @@ import Control.Monad.Logger
     , filterLogger
     )
 
+import Data.HashMap.Strict ((!))
 import Data.ByteString (ByteString)
 import Data.Text (pack)
 import Data.Time.Clock.POSIX (getPOSIXTime)
@@ -78,7 +79,7 @@ initDatabase cfg = do
     -- Create a semaphore with 1 resource
     sem <- Sem.new 1
     -- Create a database pool
-    pool <- getDatabasePool $ configDatabase cfg
+    pool <- getDatabasePool $ configDatabase cfg ! pack networkName
     -- Initialize wallet database
     runDBPool sem pool $ do
         _ <- runMigration migrateWallet 
@@ -118,7 +119,7 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
                         Nothing -> round <$> getPOSIXTime
 
                 -- Bitcoin nodes to connect to
-            let nodes = configBTCNodes cfg 
+            let nodes = configBTCNodes cfg ! pack networkName
                 -- LevelDB options
                 fp = "headertree"
                 opts = DB.defaultOptions
@@ -222,7 +223,7 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
 
         bSize <- gets eventBatchSize
         let newBSize | rescan    = max 1 $ bSize `div` 2
-                     | otherwise = min 500 $ bSize + (max 1 $ bSize `div` 20)
+                     | otherwise = min 500 $ bSize + max 1 (bSize `div` 20)
                 
         when (newBSize /= bSize) $ do
             $(logDebug) $ pack $ unwords
@@ -304,11 +305,11 @@ runWalletApp session = liftBaseOp withContext f
         Nothing -> return $ ResponseError "Could not decode request"
     catchErrors :: m (WalletResponse Value) -> m (WalletResponse Value)
     catchErrors m = control $ \runInIO -> E.catches (runInIO m) 
-        [ E.Handler (\(WalletException err) -> runInIO $
+        [ E.Handler (\(WalletException err) -> runInIO
             (return $ ResponseError $ pack err :: m (WalletResponse Value)))
-        , E.Handler (\(E.ErrorCall err) -> runInIO $ 
+        , E.Handler (\(E.ErrorCall err) -> runInIO
             (return $ ResponseError $ pack err :: m (WalletResponse Value)))
-        , E.Handler (\(E.SomeException exc) -> runInIO $ 
+        , E.Handler (\(E.SomeException exc) -> runInIO
             (return $ ResponseError $ pack $ show exc
                 :: m (WalletResponse Value)))
         ]

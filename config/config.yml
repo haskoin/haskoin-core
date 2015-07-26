@@ -1,88 +1,117 @@
 # ZeroMQ socket on which to listen to. Either absolute path or relative to
 # work-dir/network.
-bind-socket: "_env:BIND_SOCKET:ipc://hw.sock"
+bind-socket: ipc://hw.sock
 
 # Server mode. Can be either online or offline. In offline mode, the SPV
 # daemon does not start and only the local wallet is available to query.
-server-mode: "_env:SERVER_MODE:online"
+server-mode: online
 
 # False positive rate for the bloom filters. 
-bloom-false-positive: "_env:BLOOM_FALSE_POSITIVE:0.00001"
+bloom-false-positive: 0.00001
 
 # Database connection information.
 database:
-    sqlite:
-        database: "_env:SQLITE_DATABASE:hw-wallet.sqlite3"
-        poolsize: "_env:SQLITE_POOLSIZE:1"
-    mysql:
-        database: "_env:MYSQL_DATABASE:haskoin_wallet"
-        poolsize: "_env:MYSQL_POOLSIZE:10"
-        user:     "_env:MYSQL_USER:root"
-        password: "_env:MYSQL_PASSWORD:"
-        host:     "_env:MYSQL_HOST:localhost"
-        port:     "_env:MYSQL_PORT:5432"
+    testnet:
+        sqlite:
+            database: hw-wallet.sqlite3
+            poolsize: 1
+        mysql:
+            database: haskoin_wallet_testnet
+            poolsize: 1
+            user:     root
+            password: ""
+            host:     localhost
+            port:     5432
+    prodnet:
+        sqlite:
+            database: hw-wallet.sqlite3
+            poolsize: 1
+        mysql:
+            database: haskoin_wallet
+            poolsize: 1
+            user:     root
+            password: ""
+            host:     localhost
+            port:     5432
 
-### List of trusted bitcoin full-nodes to connect to.
-# bitcoin-full-nodes: 
-#   - host: "bitcoin.example.org"
-#     port: 8333
+# List of trusted bitcoin full-nodes to connect to.
 bitcoin-full-nodes: 
-  - host: "_env:BITCOIN_FULL_NODE:127.0.0.1"
+    testnet:
+        - host: testnet-seed.alexykot.me
+          port: 18333
+        - host: testnet-seed.bitcoin.petertodd.org
+          port: 18333
+        - host: testnet-seed.bluematt.me
+          port: 18333
+        - host: testnet-seed.bitcoin.schildbach.de
+          port: 18333
+    prodnet:
+        - host: seed.bitcoin.sipa.be
+          port: 8333
+        - host: dnsseed.bluematt.me
+          port: 8333
+        - host: dnsseed.bitcoin.dashjr.org
+          port: 8333
+        - host: seed.bitcoinstats.com
+          port: 8333
+        - host: bitseed.xf2.org
+          port: 8333
+        - host: seed.bitcoin.jonasschnelli.ch
+          port: 8333
+      
 
 # Log file name. Either absolute path or relative to work-dir/network
-log-file: "_env:LOG_FILE:hw.log"
+log-file: hw.log
 
 # PID file name. Either absolute path or relative to work-dir/network.
-pid-file: "_env:PID_FILE:hw.pid"
+pid-file: hw.pid
 
 # Compile time configuration value. Either absolute path or relative to
 # work-dir. Can only be set as environment variable.
-config-file: "_env:CONFIG_FILE:config.yml"
+config-file: config.yml
 
 # Default keyring name
-keyring-name: "_env:KEYRING_NAME:main"
+keyring-name: main
 
 # Default output size for commands such as page sizes.
-output-size: "_env:OUTPUT_SIZE:10"
+output-size: 10
 
 # Type of addresses to display. Example: external, internal
-address-type: "_env:ADDRESS_TYPE:external"
+address-type: external
 
 # Use reverse paging for diplaying addresses and txs when set to True.
-reverse-paging: "_env:REVERSE_PAGING:false"
+reverse-paging: false
 
 # Sign new and imported transactions.
-sign-transactions: "_env:SIGN_TRANSACTIONS:true"
+sign-transactions: true
 
 # Default fee to pay (in satoshi) for every 1000 bytes.
-transaction-fee: "_env:TRANSACTION_FEE:10000"
+transaction-fee: 10000
 
 # Minimum number of confirmations for spending coins and displaying balances.
-minimum-confirmations: "_env:MINIMUM_CONFIRMATIONS:0"
+minimum-confirmations: 0
 
 # Display the balance including offline transactions
-offline: "_env:OFFLINE:false"
-
-### Passphrase to protect mnemonics
-# mnemonic-passphrase: "_env:HW_PASSPHRASE:"
+offline: false
 
 # How command-line output should be displayed. Supported values are:
 # normal, json or yaml.
-display-format: "_env:DISPLAY_FORMAT:normal"
+display-format: normal
 
 # Detach the SPV server from the terminal when launched
-detach-server: "_env:DETACH_SERVER:false"
+detach-server: false
 
 # ZeroMQ socket to communicate with the server.
 # Either absolute path or relative to the server work-dir/network path.
-connect-uri: "_env:CONNECT_URI:ipc://hw.sock"
+connect-uri: ipc://hw.sock
 
 # Use Testnet3
-use-testnet: "_env:USE_TESTNET:false"
+use-testnet: false
 
 # Haskoin working directory. Either absolute path or relative to user’s home.
-work-dir: "_env:WORK_DIR:.hw"
+# Defaults to an appropriate OS-specific value.
+work-dir: ""
 
 # Log level. Valid values are debug, info, warn and error.
-log-level: "_env:LOG_LEVEL:info"
+log-level: info
 

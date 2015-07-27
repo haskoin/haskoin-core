@@ -3,11 +3,12 @@ packages:
 - '.'
 - location:
     git: https://github.com/haskoin/haskoin.git
-    commit: 5520ded9af4810064b41f5bf4403516d676a0924
+    commit: d3f6dd13258202575874abadb0abcba7fd7d8c98
 extra-deps:
 - SafeSemaphore-0.10.1
 - daemons-0.2.1
 - leveldb-haskell-0.6.3
 - murmur3-1.0.0
 - pbkdf-1.1.1.1
+- esqueleto-2.2.7
 resolver: lts-2.15

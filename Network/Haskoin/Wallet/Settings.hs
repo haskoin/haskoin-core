@@ -45,7 +45,7 @@ data OutputFormat
 data Config = Config
     { configKeyRing       :: !T.Text
     -- ^ Keyring to use in commands
-    , configCount         :: !Int
+    , configCount         :: !Word32
     -- ^ Output size of commands
     , configMinConf       :: !Word32
     -- ^ Minimum number of confirmations 
@@ -57,6 +57,8 @@ data Config = Config
     -- ^ Recipient pays fee (dangerous, no config file setting)
     , configAddrType      :: !AddressType
     -- ^ Return internal instead of external addresses
+    , configOffline       :: !Bool
+    -- ^ Display the balance including offline transactions
     , configReversePaging :: !Bool
     -- ^ Use reverse paging for displaying addresses and transactions
     , configPass          :: !(Maybe T.Text)
@@ -99,6 +101,7 @@ instance FromJSON Config where
         configSignTx         <- o .: "sign-transactions"
         configFee            <- o .: "transaction-fee"
         configAddrType       <- k =<< o .: "address-type"
+        configOffline        <- o .: "offline"
         configReversePaging  <- o .: "reverse-paging"
         configPass           <- o .:? "mnemonic-passphrase"
         configFormat         <- f =<< o .: "display-format"

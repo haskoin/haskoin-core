@@ -16,3 +16,6 @@ getDatabasePool :: DatabaseConfType -> IO ConnectionPool
 getDatabasePool conf = runNoLoggingT $ 
     createSqlitePool (sqlDatabase conf) (sqlPoolSize conf)
 
+paramLimit :: Int
+paramLimit = 20
+

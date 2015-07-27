@@ -1,6 +1,7 @@
 Server commands:
   start [--detach]                        Start the haskoin daemon
   stop                                    Stop the haskoin daemon
+  status                                  Display node runtime information
 
 KeyRing commands:
   newkeyring  [mnemonic] [-k name]        Create a new keyring
@@ -29,8 +30,7 @@ Transaction commands:
   sendmany  acc {addr:amount...} [-S]     Send coins to many addresses
   import    acc tx                        Import a transaction (does not sign)
   sign      acc txid                      Sign one of your offline transactions
-  balance   acc [--minconf]               Display balance (without offline txs)
-  offbal    acc                           Display balance (with offline txs)
+  balance   acc [--minconf] [--offline]   Display account balance
   gettx     acc txid                      Get a transaction by txid
 
 Offline tx signing commands:

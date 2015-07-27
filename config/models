@@ -8,88 +8,40 @@ KeyRing
 KeyRingAccount
     keyRing KeyRingId
     name Text maxlen=200
-    keyRingName Text maxlen=200
-    type AccountType maxlen=16
+    type AccountType maxlen=64
     derivation HardPath Maybe maxlen=200
     keys [XPubKey]
-    requiredSigs Int Maybe
-    totalKeys Int Maybe
-    gap Int
+    gap Word32
     created UTCTime
     UniqueAccount keyRing name
     deriving Show
 
 KeyRingAddr
     account KeyRingAccountId
-    keyRingName Text maxlen=200
-    accountName Text maxlen=200
     address Address maxlen=64
     index KeyIndex
     type AddressType maxlen=16
     label Text
-    rootDerivation DerivPath Maybe maxlen=200
+    fullDerivation DerivPath Maybe maxlen=200
     derivation SoftPath maxlen=200
     redeem ScriptOutput Maybe
     key PubKeyC Maybe maxlen=200
-    inBalance Word64
-    outBalance Word64
-    inOfflineBalance Word64
-    outOfflineBalance Word64
-    fundingTxs Int
-    spendingTxs Int
-    fundingOfflineTxs Int
-    spendingOfflineTxs Int
     created UTCTime
     UniqueAddr account address
-    UniqueAddrIndex account index type
-    deriving Show
-
-KeyRingCoin
-    account KeyRingAccountId 
-    keyRingName Text maxlen=200
-    accountName Text maxlen=200
-    hash TxHash maxlen=200
-    pos Word32
-    value Word64
-    script ScriptOutput Maybe
-    redeem ScriptOutput Maybe
-    rootDerivation DerivPath Maybe
-    derivation SoftPath Maybe
-    key PubKeyC Maybe
-    address Address Maybe maxlen=64
-    addressType AddressType Maybe maxlen=16
-    addressIndex KeyIndex Maybe
-    status CoinStatus maxlen=16
-    spentBy TxHash Maybe maxlen=200
-    isCoinbase Bool
-    confidence TxConfidence maxlen=16
-    confirmedBy BlockHash Maybe maxlen=200
-    confirmedHeight Word32 Maybe
-    confirmedDate Timestamp Maybe
-    created UTCTime
-    UniqueCoin account hash pos
-    deriving Show
-
-KeyRingBalance
-    account KeyRingAccountId
-    type BalanceType maxlen=16
-    value Word64
-    UniqueBalance account type
+    UniqueAddrRev address account
+    UniqueAddrIndex account type index
     deriving Show
 
 KeyRingTx
     account KeyRingAccountId
-    keyRingName Text maxlen=200
-    accountName Text maxlen=200
     hash TxHash maxlen=200
     nosigHash TxHash maxlen=200
     type TxType maxlen=16
     inValue Word64
     outValue Word64
-    value Int64
-    from [Address]
-    to [Address]
-    change [Address]
+    inputs [AddressInfo]
+    outputs [AddressInfo]
+    change [AddressInfo]
     tx Tx
     isCoinbase Bool
     confidence TxConfidence maxlen=16
@@ -98,34 +50,36 @@ KeyRingTx
     confirmedDate Timestamp Maybe
     created UTCTime
     UniqueAccTx account hash
+    UniqueAccTxRev hash account
     UniqueAccNoSig account nosigHash
+    UniqueAccNoSigRev nosigHash account
     deriving Show
 
-KeyRingAddrTx
+KeyRingCoin
     account KeyRingAccountId
-    addressType AddressType maxlen=16
-    addressIndex KeyIndex 
-    address Address maxlen=64
-    keyRingName Text maxlen=200
-    accountName Text maxlen=200
     hash TxHash maxlen=200
-    nosigHash TxHash maxlen=200
-    txType TxType maxlen=16
-    inValue Word64
-    outValue Word64
-    value Int64
-    from [Address]
-    to [Address]
-    change [Address]
-    tx Tx
-    isCoinbase Bool
-    confidence TxConfidence maxlen=16
-    confirmedBy BlockHash Maybe maxlen=200
-    confirmedHeight Word32 Maybe
-    confirmedDate Timestamp Maybe
+    pos Word32
+    tx KeyRingTxId
+    addr KeyRingAddrId
+    value Word64
+    script ScriptOutput
     created UTCTime
-    UniqueAddrTx account addressIndex addressType hash
-    UniqueAddrNoSig account addressIndex addressType nosigHash
+    UniqueCoin account hash pos
+    UniqueCoinRev hash pos account
+    UniqueCoinTx tx pos
+    UniqueCoinTxRev pos tx
+    deriving Show
+
+KeyRingSpentCoin
+    account KeyRingAccountId
+    hash TxHash maxlen=200
+    pos Word32
+    spendingTx KeyRingTxId
+    created UTCTime
+    UniqueSpentCoins account hash pos
+    UniqueSpentCoinsRev hash pos account
+    UniqueSpentTx spendingTx hash pos
+    UniqueSpentTxRev hash pos spendingTx
     deriving Show
 
 KeyRingConfig

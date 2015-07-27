@@ -5,6 +5,7 @@
 *.hp
 *.ps
 *.prof
+hreaded
 dist
 tmp
 yesod-devel

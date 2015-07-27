@@ -22,13 +22,14 @@ module Network.Haskoin.Wallet
 , JsonAddr(..)
 , JsonCoin(..)
 , JsonTx(..)
-, JsonAddrTx(..)
+, JsonWithKeyRing(..)
+, JsonWithAccount(..)
+, JsonWithAddr(..)
 
 -- *API Request Types
 , WalletRequest(..)
 , PageRequest(..)
 , validPageRequest
-, BalanceType(..)
 , NewKeyRing(..)
 , NewAccount(..)
 , SetAccountGap(..)
@@ -42,43 +43,40 @@ module Network.Haskoin.Wallet
 , addrTypeIndex
 , TxType(..)
 , TxConfidence(..)
-, CoinStatus(..)
+, AddressInfo(..)
+, BalanceInfo(..)
 
 -- *API Response Types
 , WalletResponse(..)
-, MnemonicRes(..)
-, TxHashConfidenceRes(..)
-, TxConfidenceRes(..)
 , TxCompleteRes(..)
+, AddrTx(..)
 , PageRes(..)
 , RescanRes(..)
-, TxRes(..)
-, BalanceRes(..)
 
 -- *Database KeyRings
 , initWallet
 , newKeyRing
+, keyRings
 , keyRingSource
 , getKeyRing
 
 -- *Database Accounts
+, accounts
 , accountSource
 , newAccount
-, newAccountMultisig
-, newAccountRead
-, newAccountReadMultisig
 , addAccountKeys
 , getAccount
 , isMultisigAccount
 , isReadAccount
-, completeMultisig
+, isCompleteAccount
 
 -- *Database Addresses
 , getAddress
 , addressSourceAll
 , addressSource
 , addressPage
-, addressUnused
+, unusedAddresses
+, addressCount
 , setAddrLabel
 , addressPrvKey
 , useAddress
@@ -94,6 +92,7 @@ module Network.Haskoin.Wallet
 , txPage
 , addrTxPage
 , getTx 
+, getAccountTx
 , importTx
 , importNetTx
 , signKeyRingTx
@@ -109,7 +108,7 @@ module Network.Haskoin.Wallet
 , spendableCoins
 , spendableCoinsSource
 , accountBalance
-, offlineBalance
+, addressBalances
 
 -- *Rescan
 , resetRescan

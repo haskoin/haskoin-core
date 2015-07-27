@@ -85,6 +85,10 @@ options =
         (NoArg $ \cfg -> cfg { configAddrType = AddressInternal }) $
         "Display internal addresses (default: "
             ++ show (configAddrType hardConfig == AddressInternal) ++ ")"
+    , Option "o" ["offline"]
+        (NoArg $ \cfg -> cfg { configOffline = True }) $
+        "Display offline balance (default: "
+            ++ show (configOffline hardConfig) ++ ")"
     , Option "r" ["revpage"]
         (NoArg $ \cfg -> cfg { configReversePaging = True }) $
         "Use reverse paging (default: "
@@ -181,14 +185,14 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "import"      : [name, tx]             -> cmdImport name tx
     "sign"        : [name, txid]           -> cmdSign name txid
     "gettx"       : [name, txid]           -> cmdGetTx name txid
+    "balance"     : [name]                 -> cmdBalance name
     "getoffline"  : [name, txid]           -> cmdGetOffline name txid
     "signoffline" : [name, tx, dat]        -> cmdSignOffline name tx dat
-    "balance"     : [name]                 -> cmdBalance name
-    "offbal"      : [name]                 -> cmdOfflineBalance name
     "rescan"      : rescantime             -> cmdRescan rescantime
     "decodetx"    : [tx]                   -> cmdDecodeTx tx
+    ["status"]                             -> cmdStatus
+    ["version"]                            -> cmdVersion
     ["help"]                               -> liftIO $ forM_ usage putStrLn
-    ["version"]                            -> liftIO $ putStrLn haskoinUserAgent
     []                                     -> liftIO $ forM_ usage putStrLn
     _ -> liftIO $ forM_ ("Invalid command" : usage) putStrLn
 

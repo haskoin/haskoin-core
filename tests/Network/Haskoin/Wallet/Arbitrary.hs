@@ -8,8 +8,19 @@ import Control.Applicative ((<$>))
 import Network.Haskoin.Test
 import Network.Haskoin.Wallet
 
+instance Arbitrary AccountType where
+    arbitrary = oneof
+        [ AccountRegular <$> arbitrary
+        , do
+            ArbitraryMSParam m n <- arbitrary
+            r <- arbitrary
+            return $ AccountMultisig r m n
+        ]
+
 instance Arbitrary NodeAction where
-    arbitrary = Rescan <$> arbitrary
+    arbitrary = oneof [ NodeActionRescan <$> arbitrary
+                      , return NodeActionStatus
+                      ]
 
 instance Arbitrary TxAction where
     arbitrary = oneof
@@ -35,3 +46,4 @@ instance Arbitrary TxAction where
                 return signData
             return (SignOfflineTx tx sd)
         ]
+

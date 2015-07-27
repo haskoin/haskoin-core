@@ -13,11 +13,12 @@ import Control.Monad.Trans (MonadIO, lift, liftIO)
 import Control.Concurrent.STM.TBMChan (writeTBMChan)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async.Lifted (withAsync, link)
-import Control.Monad.State (evalStateT)
 import Control.Monad.Trans.Control (StM, MonadBaseControl, control, liftBaseOp)
+import Control.Monad.State (StateT, evalStateT, gets)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Trans.Resource (MonadResource, runResourceT)
+import Control.DeepSeq (NFData(..), ($!!))
 import qualified Control.Exception as E 
     (SomeException(..), ErrorCall(..), Handler(..), catches)
 import qualified Control.Concurrent.MSem as Sem (MSem, new)
@@ -28,6 +29,7 @@ import Control.Monad.Logger
     , LoggingT(..)
     , logError
     , logDebug
+    , filterLogger
     )
 
 import Data.ByteString (ByteString)
@@ -37,7 +39,9 @@ import Data.Maybe (catMaybes, fromMaybe)
 import Data.Aeson (Value, toJSON, decode, encode)
 import Data.Conduit (Sink, awaitForever, ($$))
 import Data.Conduit.TMChan (TBMChan, sourceTBMChan)
-import qualified Data.Map.Strict as M (unionsWith, null, toList, empty)
+import Data.Word (Word32)
+import qualified Data.Map.Strict as M 
+    (Map, unionWith, null, toList, empty, fromListWith, assocs, elems)
 
 import Database.Persist (get)
 import Database.Persist.Sql (ConnectionPool, runMigration)
@@ -58,10 +62,16 @@ import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Server.Handler
 import Network.Haskoin.Wallet.Database
 
--- Filter logs by their log level
-filterLevel :: (LogLevel -> Bool) -> LoggingT m a -> LoggingT m a
-filterLevel p (LoggingT f) = LoggingT $ \logger ->
-    f $ \loc src level msg -> when (p level) $ logger loc src level msg
+data EventSession = EventSession
+    { eventBatchSize :: !Int 
+    , eventNewAddrs  :: !(M.Map KeyRingAccountId Word32)
+    }
+    deriving (Eq, Show, Read)
+
+instance NFData EventSession where
+    rnf EventSession{..} =
+        rnf eventBatchSize `seq`
+        rnf (M.elems eventNewAddrs)
 
 initDatabase :: Config -> IO (Sem.MSem Int, ConnectionPool)
 initDatabase cfg = do
@@ -82,8 +92,8 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
     (sem, pool) <- initDatabase cfg
 
     -- Setup logging monads
-    let logFilter level = level >= configLogLevel cfg
-        runLogging = runStdoutLoggingT . filterLevel logFilter
+    let logFilter _ level = level >= configLogLevel cfg
+        runLogging = runStdoutLoggingT . filterLogger logFilter
         run = runResourceT . runLogging
 
     -- Check the operation mode of the server.
@@ -94,12 +104,6 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
         -- In this mode, we launch the client ZMQ API and we sync the
         -- wallet database with an SPV node.
         SPVOnline -> do
-            -- Create leveldb handle
-            db <- DB.open "headertree"
-                DB.defaultOptions{ DB.createIfMissing = True
-                                 , DB.cacheSize       = 2048
-                                 }
-
             -- Get our best block or compute a fast catchup time otherwise
             (best, height) <- runDBPool sem pool getBestBlock
             dwnE <- if height > 0
@@ -115,14 +119,19 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
 
                 -- Bitcoin nodes to connect to
             let nodes = configBTCNodes cfg 
-                -- Run the SPV monad stack
-                runNode = run . (`evalStateT` db)
+                -- LevelDB options
+                fp = "headertree"
+                opts = DB.defaultOptions
+                    { DB.createIfMissing = True
+                    , DB.cacheSize       = 2048
+                    , DB.writeBufferSize = 4096
+                    }
 
             -- Compute our bloom filter
             bloom <- liftM fst3 $ runDBPool sem pool getBloomFilter
 
             -- Launch SPV node
-            runNode $ withNode $ \eChan rChan -> do
+            run $ withNode fp opts $ \eChan rChan -> do
                 -- Connect to remote nodes
                 liftIO . atomically $ writeTBMChan rChan $
                     NodeConnectPeers $ map (uncurry RemoteHost) nodes
@@ -134,19 +143,43 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
                     NodeStartMerkleDownload dwnE
 
                 -- Listen to SPV events and update the wallet database
+                let eventSession = EventSession { eventBatchSize = 500 
+                                                , eventNewAddrs  = M.empty
+                                                }
+                -- Set the batch size to 500
+                liftIO . atomically $ writeTBMChan rChan $
+                    NodeBatchSize $ eventBatchSize eventSession
+
                 let runEvents = sourceTBMChan eChan $$ 
                                 processEvents rChan sem pool
 
-                withAsync runEvents $ \a -> do
+                withAsync (evalStateT runEvents eventSession) $ \a -> do
                     link a
                     -- Run the zeromq server listening to user requests
                     runWalletApp $ HandlerSession cfg pool (Just rChan) sem
 
-processEvents :: (MonadLogger m, MonadIO m, Functor m)
+processEvents :: (MonadLogger m, MonadIO m)
               => TBMChan NodeRequest -> Sem.MSem Int -> ConnectionPool
-              -> Sink WalletMessage m ()
+              -> Sink WalletMessage (StateT EventSession m) ()
 processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
-    WalletTx tx -> void (processTxs [tx])
+    WalletTx tx fromMerkle -> do
+        -- Import all the transactions into the wallet as network transactions
+        resM <- tryDBPool sem pool $ importNetTx tx
+        let (_, newAddrs) = fromMaybe ([],[]) resM
+        unless (null newAddrs) $ if fromMerkle
+            -- Save that we got new addresses in the current merkle block
+            then do
+                oldMap <- gets eventNewAddrs
+                let newMap = M.unionWith (+) oldMap $ groupByAcc newAddrs
+                modify' $ \s -> s{ eventNewAddrs = newMap }
+            -- Send the bloom filter to peers when new addresses were created.
+            else do
+                bloomM <- tryDBPool sem pool getBloomFilter
+                case bloomM of
+                    Just (bloom, _, _) -> liftIO . atomically $ 
+                        writeTBMChan rChan $ NodeBloomFilter bloom
+                    _ -> return ()
+
     WalletGetTx txid -> do
         txM <- tryDBPool sem pool $ getTx txid
         case txM of
@@ -154,48 +187,70 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
                 NodeSendTx tx
             Nothing -> $(logDebug) $ pack $ unwords
                 [ "Could not find transaction", encodeTxHashLE txid ]
-    WalletMerkles action dmbs -> do
+
+    WalletMerkles action mTxs -> do
         -- Save the old best block before importing
         oldBestM <- tryDBPool sem pool getBestBlock
         let oldBest = maybe (headerHash genesisHeader) fst oldBestM
 
-        -- Import all transactions into the wallet
-        let txs = concatMap merkleTxs dmbs
-        newAddrsMap <- processTxs txs
-
         -- Import the merkle blocks into the wallet
-        _ <- tryDBPool sem pool $ importMerkles action $ map expectedTxs dmbs
+        _ <- tryDBPool sem pool $ importMerkles action mTxs
 
-        -- If we received at least 1 transaction, the node will block the
-        -- merkle block download and wait for us to continue the download.
-        unless (null txs) $ do
-            -- Do we have to rescan the current batch ?
-            rescan <- shouldRescan $ M.toList newAddrsMap
-                    -- If we use addresses in the hidden gap, we must
-                    -- rescan this batch.
-            let bh | rescan = oldBest
-                   -- Otherwise, simply continue the merkle download
-                   -- from the new best block
-                   | otherwise = nodeBlockHash $ last $ actionNewNodes action
-            when rescan $ $(logDebug) $ pack $ unwords
-                [ "Generated addresses beyond the account gap."
-                , "Rescanning this batch."
+        -- Get the transaction state during tx import
+        newAddrs <- gets eventNewAddrs
+
+        -- Do we have to rescan the current batch ?
+        rescan <- shouldRescan $ M.assocs newAddrs
+                -- If we use addresses in the hidden gap, we must rescan this
+                -- batch. oldBest could be equal to the genesis block which
+                -- would trigger a download from height 0. That is fine.
+        let bh | rescan = oldBest
+               -- Otherwise, simply continue the merkle download from the new
+               -- best block
+               | otherwise = nodeBlockHash $ last $ actionNewNodes action
+
+        -- Send a new bloom filter to our peers if new addresses were generated
+        unless (M.null newAddrs) $ do
+            bloomM <- tryDBPool sem pool getBloomFilter
+            case bloomM of
+                Just (bloom, _, _) -> liftIO . atomically $ 
+                    writeTBMChan rChan $ NodeBloomFilter bloom
+                _ -> return ()
+
+        -- Reset the merkle block state
+        modify' $ \s -> s{ eventNewAddrs = M.empty }
+
+        bSize <- gets eventBatchSize
+        let newBSize | rescan    = max 1 $ bSize `div` 2
+                     | otherwise = min 500 $ bSize + (max 1 $ bSize `div` 20)
+                
+        when (newBSize /= bSize) $ do
+            $(logDebug) $ pack $ unwords
+                [ "Changing block batch size from"
+                , show bSize, "to", show newBSize 
                 ]
-            -- Send a message to the node to continue the download from
-            -- the requested block hash
-            liftIO . atomically $ 
-                writeTBMChan rChan $ NodeStartMerkleDownload $ Right bh
+            liftIO . atomically $ writeTBMChan rChan $ NodeBatchSize newBSize
+            modify' $ \s -> s{ eventBatchSize = newBSize }
+
+        -- If we have expected txs in the merkle batch, the node will stop
+        -- the download and wait for our instructions
+        let dwnStopped = any (not . null) mTxs
+        -- Continue the download for the given block if the download is stopped
+        -- or we need to rescan.
+        when (dwnStopped || rescan) $ liftIO . atomically $ 
+            writeTBMChan rChan $ NodeStartMerkleDownload $ Right bh
+
     WalletSynced -> do
         txsM <- tryDBPool sem pool $ getPendingTxs 100
         case txsM of
             Just txs -> liftIO $ atomically $ writeTBMChan rChan $
                 NodePublishTxs $ map txHash txs
             Nothing ->
-                $(logDebug) $ pack $ "Failed to retrieve pending transactions"
+                $(logDebug) $ pack "Failed to retrieve pending transactions"
     -- Ignore full blocks
     _ -> return ()
   where
-    shouldRescan accs = case accs of
+    shouldRescan newAddrs = case newAddrs of
         ((ai, cnt):rest) -> do
             accM <- liftM join $ tryDBPool sem pool $ get ai
             -- For every account, check if we busted the gap.
@@ -203,18 +258,9 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
                 then return True
                 else shouldRescan rest
         _ -> return False
-    processTxs txs = do
-        -- Import all the transactions into the wallet as network transactions
-        resM <- liftM catMaybes $ forM txs $ tryDBPool sem pool . importNetTx
-        let newAddrsMap = M.unionsWith (+) $ map snd $ catMaybes resM
-        -- Send the bloom filter to peers when new addresses were created
-        unless (M.null newAddrsMap) $ do
-            bloomM <- tryDBPool sem pool $ getBloomFilter
-            case bloomM of
-                Just (bloom, _, _) -> liftIO . atomically $ 
-                    writeTBMChan rChan $ NodeBloomFilter bloom
-                _ -> return ()
-        return newAddrsMap
+    groupByAcc addrs =
+        let xs = map (\a -> (keyRingAddrAccount a, 1)) addrs
+        in  M.fromListWith (+) xs
 
 maybeDetach :: Config -> IO () -> IO ()
 maybeDetach cfg action =
@@ -275,7 +321,7 @@ dispatchRequest :: ( MonadLogger m
                    , MonadIO m
                    ) 
                 => WalletRequest -> Handler m (WalletResponse Value)
-dispatchRequest req = liftM (ResponseValid . toJSON) $ case req of
+dispatchRequest req = liftM ResponseValid $ case req of
     GetKeyRingsR                     -> getKeyRingsR
     GetKeyRingR r                    -> getKeyRingR r
     PostKeyRingsR r                  -> postKeyRingsR r
@@ -284,16 +330,16 @@ dispatchRequest req = liftM (ResponseValid . toJSON) $ case req of
     GetAccountR r n                  -> getAccountR r n
     PostAccountKeysR r n ks          -> postAccountKeysR r n ks
     PostAccountGapR r n g            -> postAccountGapR r n g
-    GetAddressesR r n t p            -> getAddressesR r n t p
+    GetAddressesR r n t m o p        -> getAddressesR r n t m o p
     GetAddressesUnusedR r n t        -> getAddressesUnusedR r n t
-    GetAddressR r n i t              -> getAddressR r n i t
+    GetAddressR r n i t m o          -> getAddressR r n i t m o
     PutAddressR r n i t l            -> putAddressR r n i t l
     GetTxsR r n p                    -> getTxsR r n p
     GetAddrTxsR r n i t p            -> getAddrTxsR r n i t p
     PostTxsR r n a                   -> postTxsR r n a
     GetTxR r n h                     -> getTxR r n h
     GetOfflineTxR r n h              -> getOfflineTxR r n h
-    GetBalanceR r n mc               -> getBalanceR r n mc
-    GetOfflineBalanceR r n           -> getOfflineBalanceR r n
+    PostOfflineTxR r n t cs          -> postOfflineTxR r n t cs
+    GetBalanceR r n mc o             -> getBalanceR r n mc o
     PostNodeR na                     -> postNodeR na
 

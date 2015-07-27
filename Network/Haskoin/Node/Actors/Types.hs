@@ -1,14 +1,16 @@
-module Network.Haskoin.Node.Chan
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+module Network.Haskoin.Node.Actors.Types
 ( PeerMessage(..)
 , ManagerMessage(..)
 , BlockChainMessage(..)
-, MempoolMessage(..)
+, TxManagerMessage(..)
 , WalletMessage(..)
 , NodeRequest(..)
 , PeerId
 , PeerJob(..)
 , showJob
 , JobResource(..)
+, showJobResource
 , JobPriority
 , Job(..)
 , JobId
@@ -16,7 +18,7 @@ module Network.Haskoin.Node.Chan
 , DwnBlockId
 , RemoteHost(..) 
 , showRemoteHost
-, DecodedMerkleBlock(..)
+, MerkleTxs
 , Behavior(..)
 , BehaviorUpdate
 , minorDoS
@@ -24,7 +26,8 @@ module Network.Haskoin.Node.Chan
 , severeDoS
 ) where
 
-import Data.Unique (Unique)
+import Data.Unique (Unique, hashUnique)
+import Control.DeepSeq (NFData(..))
 
 import Network.Haskoin.Node.Bloom
 import Network.Haskoin.Node.Message
@@ -39,6 +42,9 @@ type JobId = Unique
 type DwnMerkleId = Unique
 type DwnBlockId = Unique
 
+instance NFData Unique where
+    rnf u = u `seq` ()
+
 data Job = Job
     { jobId       :: !JobId
     , jobPriority :: !JobPriority
@@ -46,21 +52,28 @@ data Job = Job
     , jobPayload  :: !PeerJob
     }
 
+instance NFData Job where
+    rnf Job{..} = 
+        rnf jobId `seq` 
+        rnf jobPriority `seq`
+        rnf jobResource `seq`
+        rnf jobPayload
+
 data RemoteHost = RemoteHost
     { remoteHost :: !String
     , remotePort :: !Int
     } 
     deriving (Eq, Ord)
 
+instance NFData RemoteHost where
+    rnf RemoteHost{..} = 
+        rnf remoteHost `seq` 
+        rnf remotePort
+
 showRemoteHost :: RemoteHost -> String
 showRemoteHost (RemoteHost h p) = concat [ h, ":", show p ]
 
-data DecodedMerkleBlock = DecodedMerkleBlock
-    { decodedMerkle :: !MerkleBlock
-    , decodedRoot   :: !MerkleRoot
-    , expectedTxs   :: ![TxHash]
-    , merkleTxs     :: ![Tx]
-    } deriving (Eq, Read, Show)
+type MerkleTxs = [TxHash]
 
 data JobResource
       -- Assign work to this specific peer only
@@ -72,6 +85,20 @@ data JobResource
       -- Assign work to all peers but at least 1 peer.
     | AllPeers1 !BlockHeight 
 
+instance NFData JobResource where
+    rnf jr = case jr of
+        ThisPeer pid -> rnf pid
+        AnyPeer h    -> rnf h
+        AllPeers h   -> rnf h
+        AllPeers1 h  -> rnf h
+
+showJobResource :: JobResource -> String
+showJobResource r = case r of
+    ThisPeer p  -> unwords [ "ThisPeer", show $ hashUnique p]
+    AnyPeer h   -> unwords [ "AnyPeers", show h ]
+    AllPeers h  -> unwords [ "AnyPeers", show h ]
+    AllPeers1 h -> unwords [ "AnyPeers", show h ]
+
 data PeerJob
     = JobSendBloomFilter !BloomFilter
     | JobSendTxInv ![TxHash]
@@ -81,6 +108,19 @@ data PeerJob
     | JobDwnBlocks !DwnBlockId ![BlockHash]
     | JobDwnMerkles !DwnMerkleId ![BlockHash]
     | JobMempool
+    | JobStatus
+
+instance NFData PeerJob where
+    rnf pj = case pj of
+        JobSendBloomFilter bf -> rnf bf
+        JobSendTxInv hs -> rnf hs
+        JobSendTx tx -> rnf tx
+        JobHeaderSync bl bM -> rnf bl `seq` rnf bM
+        JobDwnTxs hs -> rnf hs
+        JobDwnBlocks did bs -> rnf did `seq` rnf bs
+        JobDwnMerkles did bs -> rnf did `seq` rnf bs
+        JobMempool -> ()
+        JobStatus -> ()
 
 showJob :: PeerJob -> String
 showJob pJob = case pJob of
@@ -92,6 +132,7 @@ showJob pJob = case pJob of
     JobDwnBlocks _ _     -> "JobDwnBlocks"
     JobDwnMerkles _ _    -> "JobDwnMerkles"
     JobMempool           -> "JobMempool"
+    JobStatus            -> "JobStatus"
 
 -- | Messages handled by a Peer actor
 data PeerMessage
@@ -118,6 +159,7 @@ data ManagerMessage
       -- Internal Messages
     | ConnectToRemote !RemoteHost
     | MngrHeartbeat
+    | MngrStatus
 
 -- | Messages handled by the Blockchain actor
 data BlockChainMessage
@@ -125,30 +167,32 @@ data BlockChainMessage
     | BlockInv !PeerId ![BlockHash]
     | IncHeaders PeerId ![BlockHeader]
     | IncBlocks !DwnBlockId ![Block]
-    | IncMerkleBlocks !DwnMerkleId ![DecodedMerkleBlock]
+    | IncMerkleBatch !DwnMerkleId ![MerkleTxs]
     | StartMerkleDownload !(Either Timestamp BlockHash)
     | StartBlockDownload !(Either Timestamp BlockHash)
     | SetBloomFilter !BloomFilter
     | NetworkHeight !BlockHeight
     | SetBatchSize !Int
     | BkchHeartbeat
+    | BkchStatus
 
--- | Messages handled by the Mempool actor
-data MempoolMessage
-    = MempoolTxInv !PeerId ![TxHash]
-    | MempoolTx !Tx
-    | MempoolSendTx !Tx
-    | MempoolGetTx !PeerId !TxHash
-    | MempoolMerkles !BlockChainAction ![DecodedMerkleBlock]
-    | MempoolBlocks !BlockChainAction ![Block]
-    | MempoolStartDownload !(Either Timestamp BlockHash)
-    | MempoolSynced
+-- | Messages handled by the TxManager actor
+data TxManagerMessage
+    = TxManagerTxInv !PeerId ![TxHash]
+    | TxManagerTx !Tx !Bool
+    | TxManagerSendTx !Tx
+    | TxManagerGetTx !PeerId !TxHash
+    | TxManagerMerkles !BlockChainAction ![MerkleTxs]
+    | TxManagerBlocks !BlockChainAction ![Block]
+    | TxManagerStartDownload !(Either Timestamp BlockHash)
+    | TxManagerSynced
+    | TxManagerStatus
 
 -- | Node events sent to the wallet
 data WalletMessage
-    = WalletTx !Tx
+    = WalletTx !Tx !Bool
     | WalletBlocks !BlockChainAction ![Block]
-    | WalletMerkles !BlockChainAction ![DecodedMerkleBlock]
+    | WalletMerkles !BlockChainAction ![MerkleTxs]
     | WalletGetTx !TxHash
     | WalletSynced
 
@@ -161,6 +205,7 @@ data NodeRequest
     | NodeStartBlockDownload !(Either Timestamp BlockHash)
     | NodeConnectPeers ![RemoteHost]
     | NodeBatchSize !Int
+    | NodeStatus
 
 -- | Describes the behavior of a remote peer
 data Behavior
@@ -168,6 +213,8 @@ data Behavior
     | Misbehaving !Int
     | Banned
     deriving (Eq, Show, Read)
+
+instance NFData Behavior
 
 type BehaviorUpdate = Behavior -> Behavior
 

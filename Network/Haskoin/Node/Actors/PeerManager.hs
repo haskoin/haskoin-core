@@ -1,5 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
-module Network.Haskoin.Node.PeerManager 
+module Network.Haskoin.Node.Actors.PeerManager 
 ( withPeerManager
 , PeerType(..)
 ) where
@@ -12,12 +12,14 @@ import Control.Concurrent (forkFinally, forkIO, threadDelay)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async.Lifted (withAsync, link)
 import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug, logError)
-import Control.Monad.State (StateT, evalStateT, gets, modify)
+import Control.Monad.State (StateT, evalStateT, get, gets)
+import Control.DeepSeq (NFData(..))
 
 import Data.List (sort)
 import Data.Text (Text, pack)
 import Data.Unique (newUnique, hashUnique)
 import Data.Time.Clock (UTCTime, getCurrentTime, addUTCTime)
+import qualified Data.Sequence as S (length)
 import Data.Conduit (Sink, awaitForever, ($$))
 import Data.Conduit.Network (runGeneralTCPClient, clientSettings)
 import Data.Conduit.TMChan 
@@ -37,8 +39,8 @@ import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Node.Bloom
-import Network.Haskoin.Node.Chan
-import Network.Haskoin.Node.Peer
+import Network.Haskoin.Node.Actors.Types
+import Network.Haskoin.Node.Actors.Peer
 
 data PeerState
     = PeerStateNew    -- Connection/Handshake in progress
@@ -46,14 +48,18 @@ data PeerState
     | PeerStateBusy   -- Busy working
     deriving (Eq, Read, Show)
 
+instance NFData PeerState
+
 data PeerType
     = PeerIncoming
     | PeerOutgoing
 
+instance NFData PeerType
+
 data ManagerSession = ManagerSession
     { mngrChan      :: !(TBMChan ManagerMessage)
     , bkchChan      :: !(TBMChan BlockChainMessage)
-    , mempChan      :: !(TBMChan MempoolMessage)
+    , txmgChan      :: !(TBMChan TxManagerMessage)
     , peerMap       :: !(M.Map PeerId PeerData)
     , remoteMap     :: !(M.Map RemoteHost RemoteData)
     , mngrBloom     :: !(Maybe BloomFilter)
@@ -63,6 +69,14 @@ data ManagerSession = ManagerSession
     -- needs to be reschedule after a peer crashes.
     , broadcastJobs :: !(M.Map JobId Int) 
     } 
+
+instance NFData ManagerSession where
+    rnf ManagerSession{..} =
+        rnf peerMap `seq`
+        rnf remoteMap `seq`
+        rnf mngrBloom `seq`
+        rnf jobQueue `seq`
+        rnf broadcastJobs
 
 -- Data stored about a peer in the Manager
 data PeerData = PeerData
@@ -75,21 +89,35 @@ data PeerData = PeerData
     , peerJobDeadline :: !(Maybe UTCTime)
     }
 
+instance NFData PeerData where
+    rnf PeerData{..} = 
+        rnf peerState `seq` 
+        rnf peerType `seq`
+        rnf peerHeight `seq`
+        rnf peerRemote `seq`
+        rnf peerJobs `seq`
+        rnf peerJobDeadline
+
 -- Data stored about a remote host in the Manager
 data RemoteData = RemoteData
     { remoteBehavior       :: !Behavior
     , remoteReconnectTimer :: !Int
     }
 
+instance NFData RemoteData where
+    rnf RemoteData{..} = 
+        rnf remoteBehavior `seq` 
+        rnf remoteReconnectTimer
+
 -- | Start the PeerManager. This function will spin up a new thread and
 -- return the PeerManager message channel to communicate with it.
 withPeerManager :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
                 => TBMChan BlockChainMessage
-                -> TBMChan MempoolMessage
+                -> TBMChan TxManagerMessage
                 -> (TBMChan ManagerMessage -> m ())
                 -> m ()
-withPeerManager bkchChan mempChan f = do
-    mngrChan <- liftIO $ atomically $ newTBMChan 10000
+withPeerManager bkchChan txmgChan f = do
+    mngrChan <- liftIO $ atomically $ newTBMChan 10
     let peerMap       = M.empty
         remoteMap     = M.empty
         mngrBloom     = Nothing
@@ -128,6 +156,7 @@ processManagerMessage = awaitForever $ \req -> lift $ case req of
     PeerJobDone pid jid       -> peerJobDone pid jid
     ConnectToRemote remote    -> connectToRemoteHost remote
     MngrHeartbeat             -> processHeartbeat
+    MngrStatus                -> processMngrStatus
 
 -- | Let the PeerManager know about new remote peers to connect to. The
 -- PeerManager will add them to its session data and try to connect to
@@ -166,7 +195,7 @@ connectToRemoteHost remote@(RemoteHost host port) = do
         -- Start the peer
         mChan   <- gets mngrChan
         bChan   <- gets bkchChan
-        oChan   <- gets mempChan
+        oChan   <- gets txmgChan
         session <- newPeerSession mChan bChan oChan
 
         -- Save the state of the peer
@@ -180,7 +209,7 @@ connectToRemoteHost remote@(RemoteHost host port) = do
                                 , peerJobDeadline = Nothing
                                 }
 
-        modify $ \s -> s{ peerMap = M.insert pid peerData (peerMap s) }
+        modify' $ \s -> s{ peerMap = M.insert pid peerData (peerMap s) }
         
         let cs        = clientSettings port $ stringToBS host
             cleanup _ = atomically $ do
@@ -253,7 +282,7 @@ processPeerClosed pid = existsPeerData pid >>= \exists -> when exists $ do
                 [ "Rescheduling AnyPeer job", show $ hashUnique jid 
                 , "previously in peer queue", show $ hashUnique pid
                 ]
-            modify $ \s -> 
+            modify' $ \s -> 
                 s{ jobQueue = M.insertWith (flip (++)) pri [job] $ jobQueue s }
         -- AllPeers1 jobs need to be rescheduled if all peers that were 
         -- working on it failed.
@@ -270,11 +299,11 @@ processPeerClosed pid = existsPeerData pid >>= \exists -> when exists $ do
                             , show $ hashUnique jid 
                             , "previously in peer queue", show $ hashUnique pid
                             ]
-                        modify $ \s ->
+                        modify' $ \s ->
                             s{ jobQueue = 
-                                M.insertWith (flip (++)) pri [job] $ jobQueue s 
-                            , broadcastJobs = M.delete jid $ broadcastJobs s
-                            }
+                                 M.insertWith (flip (++)) pri [job] $ jobQueue s 
+                             , broadcastJobs = M.delete jid $ broadcastJobs s
+                             }
                     -- If more than one peer is working on this job, we reduce
                     -- the counter of active peers as we just died.
                     else do
@@ -282,7 +311,7 @@ processPeerClosed pid = existsPeerData pid >>= \exists -> when exists $ do
                             [ "Reducing number of active peers for AllPeers1 job"
                             , show $ hashUnique jid 
                             ]
-                        modify $ \s -> 
+                        modify' $ \s -> 
                             let m = M.adjust (subtract 1) jid $ broadcastJobs s 
                             in  s{ broadcastJobs = m }
                 -- If we get Nothing, then the job was succesfully completed
@@ -393,7 +422,7 @@ processBloomFilter bloom =
             $(logInfo) $ format "Sending new bloom filter to all peers."
             -- Save the new bloom filter so that we can send it to new
             -- peers when they connect.
-            modify $ \s -> s{ mngrBloom = Just bloom }
+            modify' $ \s -> s{ mngrBloom = Just bloom }
             publishJob (JobSendBloomFilter bloom) (AllPeers 0) 0
 
 -- Remove all pending jobs of type JobDwnMerkle
@@ -404,7 +433,7 @@ processStartDownload _ = do
         [ "(Re)starting a new merkle block download."
         , "Removing old merkle download jobs."
         ]
-    modify $ \s -> s{ jobQueue = M.mapMaybe f (jobQueue s) }
+    modify' $ \s -> s{ jobQueue = M.mapMaybe f (jobQueue s) }
   where
     f xs = let res = filter notDwnMerkle xs
            in if null res then Nothing else Just res 
@@ -439,7 +468,7 @@ publishJob pJob res pri = do
         [ "Publishing job", show $ hashUnique jid
         , "of type", showJob $ jobPayload job
         ]
-    modify $ \s -> 
+    modify' $ \s -> 
         s{ jobQueue = M.insertWith (flip (++)) pri [job] $ jobQueue s }
     scheduleJobs
             
@@ -452,8 +481,8 @@ scheduleJobs =
         success <- scheduleJob job
         if success 
             then go qs
-            else modify $ \s -> s{ jobQueue = g queue }
-    go [] = modify $ \s -> s{ jobQueue = M.empty }
+            else modify' $ \s -> s{ jobQueue = g queue }
+    go [] = modify' $ \s -> s{ jobQueue = M.empty }
     -- Turn the map into a list
     f = concatMap (\(pri, jobs) -> map (\j -> (pri, j)) jobs) . M.toAscList
     -- Turn the list back into a map
@@ -508,7 +537,7 @@ scheduleJob job@(Job jid _ res _) = case res of
                 forM_ (M.keys peers) $ \pid -> addJob pid >> stepPeer pid
                 -- Add the number of peers that got this job in the broadcast
                 -- map. This will be used in case a peer crashes.
-                modify $ \s -> 
+                modify' $ \s -> 
                     let newMap = M.insert jid (M.size peers) $ broadcastJobs s
                     in  s{ broadcastJobs = newMap }
                 return True
@@ -567,10 +596,23 @@ peerJobDone pid jid = existsPeerData pid >>= \exists -> when exists $ do
 
     -- Remove the job form the broadcastJobs map as at least 1 peer completed
     -- that job.
-    modify $ \s -> s{ broadcastJobs = M.delete jid $ broadcastJobs s }
+    modify' $ \s -> s{ broadcastJobs = M.delete jid $ broadcastJobs s }
 
     stepPeer pid
     scheduleJobs
+
+processMngrStatus :: (MonadLogger m, MonadIO m) => StateT ManagerSession m ()
+processMngrStatus = do
+    publishJob JobStatus (AllPeers 0) 10
+    ManagerSession{..} <- get
+    $(logInfo) $ format $ unlines
+        [ ""
+        , "Peer Map      : " ++ (show $ M.size peerMap)
+        , "Remote Map    : " ++ (show $ M.size remoteMap)
+        , "Bloom Filter  : " ++ (show $ (S.length . bloomData) <$> mngrBloom)
+        , "Job Queue     : " ++ (show $ length $ concat $ M.elems jobQueue)
+        , "Broadcast Jobs: " ++ (show $ M.size broadcastJobs)
+        ]
 
 {- Helpers -}
 
@@ -596,7 +638,7 @@ getPeerData :: Monad m => PeerId -> StateT ManagerSession m PeerData
 getPeerData pid = liftM (M.! pid) $ gets peerMap
 
 putPeerData :: Monad m => PeerId -> PeerData -> StateT ManagerSession m ()
-putPeerData pid d = modify $ \s -> s{ peerMap = M.insert pid d (peerMap s) }
+putPeerData pid d = modify' $ \s -> s{ peerMap = M.insert pid d (peerMap s) }
 
 modifyPeerData :: Monad m 
                => PeerId 
@@ -604,10 +646,10 @@ modifyPeerData :: Monad m
                -> StateT ManagerSession m ()
 modifyPeerData pid f = do
     d <- getPeerData pid
-    putPeerData pid $ f d
+    putPeerData pid $! f d
 
 deletePeerData :: Monad m => PeerId -> StateT ManagerSession m ()
-deletePeerData pid = modify $ \s -> s{ peerMap = M.delete pid $ peerMap s }
+deletePeerData pid = modify' $ \s -> s{ peerMap = M.delete pid $ peerMap s }
 
 existsRemote :: Monad m => RemoteHost -> StateT ManagerSession m Bool
 existsRemote remote = liftM (M.member remote) $ gets remoteMap
@@ -617,7 +659,7 @@ getRemoteData remote = liftM (M.! remote) $ gets remoteMap
 
 putRemoteData :: Monad m 
               => RemoteHost -> RemoteData -> StateT ManagerSession m ()
-putRemoteData remote d = modify $ 
+putRemoteData remote d = modify' $ 
     \s -> s{ remoteMap = M.insert remote d (remoteMap s) }
 
 modifyRemoteData :: Monad m 
@@ -626,7 +668,7 @@ modifyRemoteData :: Monad m
                  -> StateT ManagerSession m ()
 modifyRemoteData remote f = do
     d <- getRemoteData remote
-    putRemoteData remote $ f d
+    putRemoteData remote $! f d
 
 isRemoteBanned :: Monad m => RemoteHost -> StateT ManagerSession m Bool
 isRemoteBanned remote = 

@@ -19,20 +19,21 @@ module Network.Haskoin.Block.HeaderTree
 , getParentNode
 ) where
 
-import Control.Monad (foldM, when, unless, liftM, (<=<), forM)
+import Control.Monad (foldM, when, unless, liftM, (<=<), forM, forM_)
 import Control.Monad.Trans (lift, liftIO, MonadIO)
 import Control.Monad.Trans.Either (EitherT, left, runEitherT)
 import Control.Monad.State (MonadState(..), StateT, get)
+import Control.DeepSeq (NFData(..))
 
 import Data.Word (Word32)
 import Data.Bits (shiftL)
-import Data.Maybe (fromJust, isNothing, isJust)
-import Data.List (sort, nub)
+import Data.Maybe (fromJust, isNothing, isJust, catMaybes)
+import Data.List (sort)
 import Data.Binary.Get (getWord32le)
 import Data.Binary.Put (putWord32le)
 import Data.Default (def)
 import qualified Data.Binary as B (Binary, get, put)
-import qualified Data.ByteString as BS (ByteString, reverse)
+import qualified Data.ByteString as BS (ByteString, reverse, append)
 
 import qualified Database.LevelDB.Base as L (DB, get, put)
 
@@ -43,10 +44,14 @@ import Network.Haskoin.Constants
 import Network.Haskoin.Util
 
 class Monad m => HeaderTree m where
-    getBlockHeaderNode :: BlockHash -> m (Maybe BlockHeaderNode)
-    putBlockHeaderNode :: BlockHeaderNode -> m ()
-    getBestBlockHeader :: m BlockHeaderNode
-    setBestBlockHeader :: BlockHeaderNode -> m ()
+    getBlockHeaderNode     :: BlockHash -> m (Maybe BlockHeaderNode)
+    putBlockHeaderNode     :: BlockHeaderNode -> m ()
+    -- The height is only updated when the node is part of the main chain.
+    -- Side chains are not indexed by their height.
+    putBlockHeaderHeight   :: BlockHeaderNode -> m ()
+    getBlockHeaderByHeight :: BlockHeight -> m (Maybe BlockHeaderNode)
+    getBestBlockHeader     :: m BlockHeaderNode
+    setBestBlockHeader     :: BlockHeaderNode -> m ()
 
 -- | Data type representing a BlockHeader node in the header chain. It
 -- contains additional data such as the chain work and chain height for this
@@ -60,6 +65,16 @@ data BlockHeaderNode = BlockHeaderNode
     , nodeMedianTimes  :: ![Timestamp]
     , nodeMinWork      :: !Word32 -- Only used for testnet
     } deriving (Show, Read, Eq)
+
+instance NFData BlockHeaderNode where
+    rnf BlockHeaderNode{..} =
+        rnf nodeBlockHash `seq`
+        rnf nodeHeader `seq`
+        rnf nodeHeaderHeight `seq`
+        rnf nodeChainWork `seq`
+        rnf nodeChild `seq`
+        rnf nodeMedianTimes `seq`
+        rnf nodeMinWork
 
 instance B.Binary BlockHeaderNode where
 
@@ -90,6 +105,12 @@ data BlockChainAction
                  }
     | SideChain  { actionSideBlock :: ![BlockHeaderNode] }
     deriving (Read, Show, Eq)
+
+instance NFData BlockChainAction where
+    rnf bca = case bca of
+        BestChain ns -> rnf ns
+        ChainReorg s os ns -> rnf s `seq` rnf os `seq` rnf ns
+        SideChain ns -> rnf ns
 
 actionNewNodes :: BlockChainAction -> [BlockHeaderNode]
 actionNewNodes action = case action of
@@ -193,9 +214,11 @@ commitAction action = do
     case action of
         BestChain nodes -> unless (null nodes) $ do
             updateChildren $ currentHead:nodes
+            forM_ nodes putBlockHeaderHeight
             setBestBlockHeader $ last nodes
         ChainReorg s _ ns -> unless (null ns) $ do
             updateChildren $ s:ns
+            forM_ ns putBlockHeaderHeight
             setBestBlockHeader $ last ns
         SideChain _ -> return ()
   where
@@ -393,21 +416,15 @@ workFromInterval ts lastB
     lastDiff = decodeCompact $ blockBits lastB
     newDiff = lastDiff * (toInteger actualTime) `div` (toInteger targetTimespan)
 
--- | Returns a BlockLocator object.
+-- | Returns a BlockLocator object (newest block first, genesis at the end)
 blockLocator :: HeaderTree m => m BlockLocator
 blockLocator = do
-    h  <- getBestBlockHeader
-    let xs = [go ((2 :: Int)^x) | x <- ([0..] :: [Int])]
-    ns <- f [h] $ replicate 10 (go (1 :: Int)) ++ xs
-    return $ reverse $ nub $ genid : map nodeBlockHash ns
-  where
-    genid = headerHash genesisHeader
-    f acc gs = (head gs) (head acc) >>= \resM -> case resM of
-        Just res -> f (res:acc) (tail gs)
-        Nothing  -> return acc
-    go step n = getParentNode n >>= \parM -> case parM of
-        Just par -> if step == 0 then return (Just n) else go (step - 1) par
-        Nothing  -> return Nothing
+    h <- liftM fromIntegral $ bestBlockHeaderHeight
+    -- Take only indices > 0 to avoid the genesis block
+    let is = takeWhile (> (0 :: Int)) $ 
+            [h,(h-1)..(h-9)] ++ [(h-10) - 2^x | x <- [(0 :: Int)..]]
+    ns <- liftM catMaybes $ forM (map fromIntegral is) getBlockHeaderByHeight
+    return $ (map nodeBlockHash ns) ++ [headerHash genesisHeader]
 
 -- | Returns a partial BlockLocator object.
 partialLocator :: HeaderTree m => Int -> m BlockLocator
@@ -456,11 +473,15 @@ headerWork bh =
 {- Default LevelDB implementation -}
 
 blockHashKey :: BlockHash -> BS.ByteString
-blockHashKey bid = encode' bid
+blockHashKey bid = "b_" `BS.append` (encode' bid)
 
 bestBlockKey :: BS.ByteString
-bestBlockKey = "bestblockheader"
+bestBlockKey = "bestblockheader_"
 
+heightKey :: BlockHeight -> BS.ByteString
+heightKey h = "h_" `BS.append` (encode' h)
+
+-- Get a node which is directly referenced by the key
 getLevelDBNode :: MonadIO m
                => BS.ByteString -> StateT L.DB m (Maybe BlockHeaderNode)
 getLevelDBNode key = do
@@ -468,11 +489,24 @@ getLevelDBNode key = do
     resM <- liftIO $ L.get db def key
     return $ decodeToMaybe =<< resM
 
+-- Get a node that has 1 level of indirection
+getLevelDBNode' :: MonadIO m
+                => BS.ByteString -> StateT L.DB m (Maybe BlockHeaderNode)
+getLevelDBNode' key = do
+    db <- get
+    resM <- liftIO $ L.get db def key
+    maybe (return Nothing) getLevelDBNode resM
+
 instance MonadIO m => HeaderTree (StateT L.DB m) where
     getBlockHeaderNode = getLevelDBNode . blockHashKey
     putBlockHeaderNode node = do
         db <- get
         liftIO $ L.put db def (blockHashKey $ nodeBlockHash node) $ encode' node
+    getBlockHeaderByHeight = getLevelDBNode' . heightKey
+    putBlockHeaderHeight node = do
+        db <- get 
+        let val = blockHashKey $ nodeBlockHash node
+        liftIO $ L.put db def (heightKey $ nodeHeaderHeight node) val
     getBestBlockHeader = do
         db <- get
         keyM <- liftIO $ L.get db def bestBlockKey

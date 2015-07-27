@@ -32,11 +32,13 @@ import Test.QuickCheck
     , listOf1
     , oneof
     , choose
+    , vectorOf
     )
 
 import Control.Applicative ((<$>))
 
 import Data.Word (Word16, Word32)
+import qualified Data.ByteString as BS (pack, empty)
 
 import Network.Socket (SockAddr(..))
 
@@ -161,7 +163,10 @@ instance Arbitrary ArbitraryReject where
         ArbitraryMessageCommand m <- arbitrary
         ArbitraryRejectCode c <- arbitrary
         ArbitraryVarString s <- arbitrary
-        return $ ArbitraryReject $ Reject m c s
+        d <- oneof [ return BS.empty
+                   , BS.pack <$> vectorOf 32 arbitrary
+                   ]
+        return $ ArbitraryReject $ Reject m c s d
 
 -- | Arbitrary RejectCode
 newtype ArbitraryRejectCode = ArbitraryRejectCode RejectCode

@@ -62,11 +62,12 @@ library
                    Network.Haskoin.Node.Types
                    Network.Haskoin.Node.Message
                    Network.Haskoin.Node.Bloom
-                   Network.Haskoin.Node.Chan
-                   Network.Haskoin.Node.Peer
-                   Network.Haskoin.Node.PeerManager
-                   Network.Haskoin.Node.BlockChain
-                   Network.Haskoin.Node.Mempool
+                   Network.Haskoin.Node.Actors
+                   Network.Haskoin.Node.Actors.Types
+                   Network.Haskoin.Node.Actors.Peer
+                   Network.Haskoin.Node.Actors.PeerManager
+                   Network.Haskoin.Node.Actors.BlockChain
+                   Network.Haskoin.Node.Actors.TxManager
                    Network.Haskoin.Script.Types 
                    Network.Haskoin.Script.Parser 
                    Network.Haskoin.Script.SigHash
@@ -111,6 +112,7 @@ library
                  , deepseq                  >= 1.3          && < 1.4
                  , data-default             >= 0.5          && < 0.6
                  , either                   >= 4.3          && < 4.4
+                 , exceptions               >= 0.8          && < 0.9
                  , leveldb-haskell          >= 0.6          && < 0.7
                  , lifted-async             >= 0.2          && < 0.8
                  , monad-control            >= 1.0          && < 1.1

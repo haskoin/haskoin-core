@@ -37,6 +37,7 @@ import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Trans.Resource (MonadResource)
 import Control.Exception (throwIO, throw)
+import Control.DeepSeq (NFData(..))
 
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Word (Word32, Word64)
@@ -102,6 +103,13 @@ data OutCoinData = OutCoinData
     , outCoinDataValue  :: !Word64
     , outCoinDataScript :: !ScriptOutput
     }
+
+instance NFData OutCoinData where
+    rnf OutCoinData{..} =
+        rnf outCoinDataAddr `seq`
+        rnf outCoinDataPos `seq`
+        rnf outCoinDataValue `seq`
+        rnf outCoinDataScript
 
 {- List transaction -}
 
@@ -498,13 +506,10 @@ getInCoins tx aiM = do
     return $ map (\(c, t, x) -> (c, entityVal t, entityVal x)) res
   where
     ops = map prevOutput $ txIn tx
-    limitOutPoints c os = fromMaybe (val False) $ foldl (f c) Nothing os
-    f c accM (OutPoint h i) = 
-        let b =   c ^. KeyRingCoinHash ==. val h
-              &&. c ^. KeyRingCoinPos  ==. val i
-        in  Just $ case accM of
-                Nothing  -> b
-                Just acc -> acc ||. b
+    limitOutPoints c os = join2 $ map (f c) os
+    f c (OutPoint h i) =
+        c ^. KeyRingCoinHash ==. val h &&.
+        c ^. KeyRingCoinPos  ==. val i
 
 -- Find all the transactions that are spending the same coins as the given
 -- transaction. You can optionally provide an account to limit the returned
@@ -515,7 +520,7 @@ getSpendingTxs :: MonadIO m
                -> SqlPersistT m [Entity KeyRingTx]
 getSpendingTxs tx aiM 
     | null txInputs = return []
-    | otherwise =  do
+    | otherwise = 
         splitSelect txInputs $ \ins -> from $ \(s `InnerJoin` t) -> do
             on $ s ^. KeyRingSpentCoinSpendingTx ==. t ^. KeyRingTxId
                         -- Filter out the given transaction
@@ -529,14 +534,19 @@ getSpendingTxs tx aiM
             return t
   where
     txid = txHash tx
-    limitSpent s ins = fromMaybe (val False) $ foldl (f s) Nothing ins
     txInputs = map prevOutput $ txIn tx
-    f s accM (OutPoint h i) = 
-        let b =   s ^. KeyRingSpentCoinHash ==. val h 
-              &&. s ^. KeyRingSpentCoinPos  ==. val i
-        in  Just $ case accM of
-                Nothing  -> b
-                Just acc -> acc ||. b
+    limitSpent s ins = join2 $ map (f s) ins
+    f s (OutPoint h i) =
+        s ^. KeyRingSpentCoinHash ==. val h &&. 
+        s ^. KeyRingSpentCoinPos  ==. val i
+
+-- Join AND expressions with OR conditions in a binary way
+join2 :: [SqlExpr (Value Bool)] -> SqlExpr (Value Bool)
+join2 xs = case xs of
+    [] -> val False
+    (x:[]) -> x
+    _ -> let (ls,rs) = splitAt (length xs `div` 2) xs
+         in  join2 ls ||. join2 rs
 
 -- Returns all the new coins that need to be created from a transaction.
 -- Also returns the addresses associted with those coins.

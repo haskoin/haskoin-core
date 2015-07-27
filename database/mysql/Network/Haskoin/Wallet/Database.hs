@@ -17,5 +17,5 @@ getDatabasePool conf = runNoLoggingT $
     createMySQLPool (myConnInfo conf) (myPoolSize conf)
 
 paramLimit :: Int
-paramLimit = 5
+paramLimit = 20
 

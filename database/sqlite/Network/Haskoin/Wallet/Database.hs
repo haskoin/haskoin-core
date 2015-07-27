@@ -17,5 +17,5 @@ getDatabasePool conf = runNoLoggingT $
     createSqlitePool (sqlDatabase conf) (sqlPoolSize conf)
 
 paramLimit :: Int
-paramLimit = 50
+paramLimit = 20
 

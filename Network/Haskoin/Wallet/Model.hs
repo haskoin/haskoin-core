@@ -27,6 +27,8 @@ module Network.Haskoin.Wallet.Model
 
 ) where
 
+import Control.DeepSeq (NFData(..))
+
 import Data.Word (Word32, Word64)
 import Data.Time (UTCTime)
 import Data.Text (Text)
@@ -52,6 +54,86 @@ share [ mkPersist sqlSettings
       , mkMigrate "migrateWallet"
       ]
     $(persistFileWith lowerCaseSettings "config/models")
+
+instance NFData e => NFData (Entity e) where
+    rnf (Entity k e) = k `seq` rnf e
+
+instance NFData KeyRing where
+    rnf KeyRing{..} =
+        rnf keyRingName `seq`
+        rnf keyRingMaster `seq`
+        rnf keyRingCreated
+
+instance NFData KeyRingAccount where
+    rnf KeyRingAccount{..} =
+        keyRingAccountKeyRing `seq`
+        rnf keyRingAccountName `seq`
+        rnf keyRingAccountType `seq`
+        rnf keyRingAccountDerivation `seq`
+        rnf keyRingAccountKeys `seq`
+        rnf keyRingAccountGap `seq`
+        rnf keyRingAccountCreated
+
+instance NFData KeyRingAddr where
+    rnf KeyRingAddr{..} =
+        keyRingAddrAccount `seq`
+        rnf keyRingAddrAddress `seq`
+        rnf keyRingAddrIndex `seq`
+        rnf keyRingAddrType `seq`
+        rnf keyRingAddrLabel `seq`
+        rnf keyRingAddrFullDerivation `seq`
+        rnf keyRingAddrDerivation `seq`
+        rnf keyRingAddrRedeem `seq`
+        rnf keyRingAddrKey `seq`
+        rnf keyRingAddrCreated
+
+instance NFData KeyRingTx where
+    rnf KeyRingTx{..} =
+        keyRingTxAccount `seq`
+        rnf keyRingTxHash `seq`
+        rnf keyRingTxNosigHash `seq`
+        rnf keyRingTxType `seq`
+        rnf keyRingTxInValue `seq`
+        rnf keyRingTxOutValue `seq`
+        rnf keyRingTxInputs `seq`
+        rnf keyRingTxOutputs `seq`
+        rnf keyRingTxChange `seq`
+        rnf keyRingTxTx `seq`
+        rnf keyRingTxIsCoinbase `seq`
+        rnf keyRingTxConfidence `seq`
+        rnf keyRingTxConfirmedBy `seq`
+        rnf keyRingTxConfirmedHeight `seq`
+        rnf keyRingTxConfirmedDate `seq`
+        rnf keyRingTxCreated
+
+instance NFData KeyRingCoin where
+    rnf KeyRingCoin{..} =
+        keyRingCoinAccount `seq`
+        rnf keyRingCoinHash `seq`
+        rnf keyRingCoinPos `seq`
+        keyRingCoinTx `seq`
+        keyRingCoinAddr `seq`
+        rnf keyRingCoinValue `seq`
+        rnf keyRingCoinScript `seq`
+        rnf keyRingCoinCreated
+
+instance NFData KeyRingSpentCoin where
+    rnf KeyRingSpentCoin{..} =
+        keyRingSpentCoinAccount `seq`
+        rnf keyRingSpentCoinHash `seq`
+        rnf keyRingSpentCoinPos `seq`
+        keyRingSpentCoinSpendingTx `seq`
+        rnf keyRingSpentCoinCreated
+
+instance NFData KeyRingConfig where
+    rnf KeyRingConfig{..} =
+        rnf keyRingConfigHeight `seq`
+        rnf keyRingConfigBlock `seq`
+        rnf keyRingConfigBloomFilter `seq`
+        rnf keyRingConfigBloomElems `seq`
+        rnf keyRingConfigBloomFp `seq`
+        rnf keyRingConfigVersion `seq`
+        rnf keyRingConfigCreated
 
 {- JSON Types -}
 

@@ -14,10 +14,11 @@ import Control.Concurrent.STM.TBMChan (writeTBMChan)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async.Lifted (withAsync, link)
 import Control.Monad.Trans.Control (StM, MonadBaseControl, control, liftBaseOp)
-import Control.Monad.State (StateT, evalStateT, gets, modify)
+import Control.Monad.State (StateT, evalStateT, gets)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Trans.Resource (MonadResource, runResourceT)
+import Control.DeepSeq (NFData(..), ($!!))
 import qualified Control.Exception as E 
     (SomeException(..), ErrorCall(..), Handler(..), catches)
 import qualified Control.Concurrent.MSem as Sem (MSem, new)
@@ -28,6 +29,7 @@ import Control.Monad.Logger
     , LoggingT(..)
     , logError
     , logDebug
+    , filterLogger
     )
 
 import Data.ByteString (ByteString)
@@ -39,7 +41,7 @@ import Data.Conduit (Sink, awaitForever, ($$))
 import Data.Conduit.TMChan (TBMChan, sourceTBMChan)
 import Data.Word (Word32)
 import qualified Data.Map.Strict as M 
-    (Map, unionWith, null, toList, empty, fromListWith, assocs)
+    (Map, unionWith, null, toList, empty, fromListWith, assocs, elems)
 
 import Database.Persist (get)
 import Database.Persist.Sql (ConnectionPool, runMigration)
@@ -66,10 +68,10 @@ data EventSession = EventSession
     }
     deriving (Eq, Show, Read)
 
--- Filter logs by their log level
-filterLevel :: (LogLevel -> Bool) -> LoggingT m a -> LoggingT m a
-filterLevel p (LoggingT f) = LoggingT $ \logger ->
-    f $ \loc src level msg -> when (p level) $ logger loc src level msg
+instance NFData EventSession where
+    rnf EventSession{..} =
+        rnf eventBatchSize `seq`
+        rnf (M.elems eventNewAddrs)
 
 initDatabase :: Config -> IO (Sem.MSem Int, ConnectionPool)
 initDatabase cfg = do
@@ -90,8 +92,8 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
     (sem, pool) <- initDatabase cfg
 
     -- Setup logging monads
-    let logFilter level = level >= configLogLevel cfg
-        runLogging = runStdoutLoggingT . filterLevel logFilter
+    let logFilter _ level = level >= configLogLevel cfg
+        runLogging = runStdoutLoggingT . filterLogger logFilter
         run = runResourceT . runLogging
 
     -- Check the operation mode of the server.
@@ -156,7 +158,7 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
                     -- Run the zeromq server listening to user requests
                     runWalletApp $ HandlerSession cfg pool (Just rChan) sem
 
-processEvents :: (MonadLogger m, MonadIO m, Functor m)
+processEvents :: (MonadLogger m, MonadIO m)
               => TBMChan NodeRequest -> Sem.MSem Int -> ConnectionPool
               -> Sink WalletMessage (StateT EventSession m) ()
 processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
@@ -169,7 +171,7 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
             then do
                 oldMap <- gets eventNewAddrs
                 let newMap = M.unionWith (+) oldMap $ groupByAcc newAddrs
-                modify $ \s -> s{ eventNewAddrs = newMap }
+                modify' $ \s -> s{ eventNewAddrs = newMap }
             -- Send the bloom filter to peers when new addresses were created.
             else do
                 bloomM <- tryDBPool sem pool getBloomFilter
@@ -216,7 +218,7 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
                 _ -> return ()
 
         -- Reset the merkle block state
-        modify $ \s -> s{ eventNewAddrs = M.empty }
+        modify' $ \s -> s{ eventNewAddrs = M.empty }
 
         bSize <- gets eventBatchSize
         let newBSize | rescan    = max 1 $ bSize `div` 2
@@ -228,7 +230,7 @@ processEvents rChan sem pool = awaitForever $ \req -> lift $ case req of
                 , show bSize, "to", show newBSize 
                 ]
             liftIO . atomically $ writeTBMChan rChan $ NodeBatchSize newBSize
-            modify $ \s -> s{ eventBatchSize = newBSize }
+            modify' $ \s -> s{ eventBatchSize = newBSize }
 
         -- If we have expected txs in the merkle batch, the node will stop
         -- the download and wait for our instructions

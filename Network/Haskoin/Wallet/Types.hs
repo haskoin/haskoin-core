@@ -48,6 +48,7 @@ module Network.Haskoin.Wallet.Types
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad (mzero)
 import Control.Exception (Exception)
+import Control.DeepSeq (NFData(..))
 
 import Text.Read (readMaybe)
 import Data.Int (Int64)
@@ -106,6 +107,8 @@ data TxType
     | TxSelf
     deriving (Eq, Show, Read)
 
+instance NFData TxType
+
 $(deriveJSON (dropSumLabels 2 0 "") ''TxType)
 
 data AddrTxType
@@ -113,6 +116,8 @@ data AddrTxType
     | AddrTxOutgoing
     | AddrTxChange
     deriving (Eq, Show, Read)
+
+instance NFData AddrTxType
 
 $(deriveJSON (dropSumLabels 6 0 "") ''AddrTxType)
 
@@ -122,6 +127,8 @@ data TxConfidence
     | TxPending
     | TxBuilding
     deriving (Eq, Show, Read)
+
+instance NFData TxConfidence
 
 $(deriveJSON (dropFieldLabel 2) ''TxConfidence)
 
@@ -134,6 +141,12 @@ data AddressInfo = AddressInfo
 
 $(deriveJSON (dropFieldLabel 11) ''AddressInfo)
 
+instance NFData AddressInfo where
+    rnf AddressInfo{..} =
+        rnf addressInfoAddress `seq`
+        rnf addressInfoValue `seq`
+        rnf addressInfoIsLocal
+
 data BalanceInfo = BalanceInfo
     { balanceInfoInBalance   :: !Word64
     , balanceInfoOutBalance  :: !Word64
@@ -143,6 +156,13 @@ data BalanceInfo = BalanceInfo
     deriving (Eq, Show, Read)
 
 $(deriveJSON (dropFieldLabel 11) ''BalanceInfo)
+
+instance NFData BalanceInfo where
+    rnf BalanceInfo{..} =
+        rnf balanceInfoInBalance `seq`
+        rnf balanceInfoOutBalance `seq`
+        rnf balanceInfoCoins `seq`
+        rnf balanceInfoSpentCoins
 
 data NewKeyRing = NewKeyRing
     { newKeyRingKeyRingName :: !KeyRingName
@@ -161,6 +181,11 @@ data AccountType
         , accountTypeTotalKeys    :: !Int
         }
     deriving (Eq, Show, Read)
+
+instance NFData AccountType where
+    rnf t = case t of
+        AccountRegular r -> rnf r
+        AccountMultisig r m n -> rnf r `seq` rnf m `seq` rnf n
 
 instance ToJSON AccountType where
     toJSON accType = case accType of
@@ -306,6 +331,8 @@ data AddressType
     deriving (Eq, Show, Read)
 
 $(deriveJSON (dropSumLabels 7 0 "") ''AddressType)
+
+instance NFData AddressType
 
 addrTypeIndex :: AddressType -> KeyIndex
 addrTypeIndex AddressExternal = 0

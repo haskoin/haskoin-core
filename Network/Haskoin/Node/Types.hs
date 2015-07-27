@@ -208,6 +208,9 @@ data NetworkAddress =
                    , naAddress  :: !SockAddr
                    } deriving (Eq, Show)
 
+instance NFData NetworkAddress where
+    rnf NetworkAddress{..} = rnf naServices `seq` naAddress `seq` ()
+
 instance Binary NetworkAddress where
 
     get = NetworkAddress <$> getWord64le
@@ -448,6 +451,18 @@ data Version =
               -- BIP37 for more details.
             , relay       :: !Bool
             } deriving (Eq, Show)
+
+instance NFData Version where
+    rnf Version{..} = 
+        rnf version `seq`
+        rnf services `seq`
+        rnf timestamp `seq`
+        rnf addrRecv `seq`
+        rnf addrSend `seq`
+        rnf verNonce `seq`
+        rnf userAgent `seq`
+        rnf startHeight `seq`
+        rnf relay
 
 instance Binary Version where
 

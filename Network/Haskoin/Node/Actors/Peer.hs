@@ -1,6 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Network.Haskoin.Node.Peer 
+module Network.Haskoin.Node.Actors.Peer 
 ( startPeer
 , newPeerSession
 , PeerSession(peerId, peerChan, msgsChan)
@@ -12,11 +12,12 @@ import Control.Applicative ((<$>))
 import Control.Monad (when, unless, liftM)
 import Control.Monad.Trans (lift, liftIO, MonadIO)
 import Control.Monad.Trans.Control (MonadBaseControl)
-import Control.Monad.State (StateT, evalStateT, get, gets, modify)
+import Control.Monad.State (StateT, evalStateT, get, gets)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar (MVar, newMVar, takeMVar, tryPutMVar)
 import Control.Concurrent.Async.Lifted (async, race, waitAnyCatchCancel)
+import Control.DeepSeq (NFData(..))
 import Control.Monad.Logger 
     ( MonadLogger
     , logInfo, logError, logWarn, logDebug
@@ -50,7 +51,7 @@ import Network.Haskoin.Constants
 import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Node.Bloom
-import Network.Haskoin.Node.Chan
+import Network.Haskoin.Node.Actors.Types
 
 -- TODO: Move constants elsewhere ?
 minProtocolVersion :: Word32 
@@ -73,6 +74,15 @@ data PeerSession = PeerSession
     -- Buffer blocks of a job and send them when the job is done
     , blockBuffer     :: ![(BlockHash, Block)]
     } 
+
+instance NFData PeerSession where
+    rnf PeerSession{..} = 
+        rnf peerId `seq` 
+        rnf peerVersion `seq`
+        rnf currentJob `seq`
+        rnf inflightMerkle `seq`
+        rnf merkleTxsBuffer `seq`
+        rnf blockBuffer
 
 -- | Create the session data for a new Peer given a Peer type and a manager
 -- channel.
@@ -163,7 +173,7 @@ processPeerMessage = await >>= \m -> do
                 currJobM <- gets currentJob
                 when (isJust currJobM) $ $(logError) $ format pid 
                     "Scheduling error. Peer received a job while busy."
-                modify $ \s -> s{ currentJob = Just job }
+                modify' $ \s -> s{ currentJob = Just job }
                 processJob
             processPeerMessage
         Just RetryJob -> do
@@ -257,7 +267,7 @@ jobDone = do
                 , "of type", showJob pJob
                 ]
             sendManager $ PeerJobDone pid jid
-            modify $ \s -> s{ currentJob = Nothing }
+            modify' $ \s -> s{ currentJob = Nothing }
         _ -> return ()
 
 -- | Process incomming messages from the remote peer
@@ -390,7 +400,7 @@ processVersion remoteVer = go =<< get
                 , unwords [ "  time     :", show $ timestamp remoteVer ]
                 , unwords [ "  blocks   :", show $ startHeight remoteVer ]
                 ]
-            modify $ \s -> s{ peerVersion = Just remoteVer }
+            modify' $ \s -> s{ peerVersion = Just remoteVer }
             sendMessage MVerAck
             -- Notify the manager that the handshake was succesfull
             sendManager $ PeerConnected pid remoteVer
@@ -419,7 +429,7 @@ processBlock block = do
                         [] -> do
                             -- Send the blocks to the blockchain
                             sendBlockChain $ IncBlocks did $ map snd buffer
-                            modify $ \s -> s{ blockBuffer = [] }
+                            modify' $ \s -> s{ blockBuffer = [] }
                             jobDone
                         bids' -> do
                             $(logDebug) $ format pid $ unwords
@@ -429,9 +439,9 @@ processBlock block = do
                             -- Save the new job and block buffer
                             let newJob = 
                                     job{ jobPayload = JobDwnBlocks did bids' }
-                            modify $ \s -> s{ currentJob  = Just newJob 
-                                            , blockBuffer = buffer
-                                            }
+                            modify' $ \s -> s{ currentJob  = Just newJob 
+                                             , blockBuffer = buffer
+                                             }
                 else $(logDebug) $ format pid $ unwords
                     [ "Received an unsolicited block"
                     , encodeBlockHashLE bid
@@ -458,9 +468,9 @@ processMerkleBlock (MerkleBlock bh ntx hs fs) = do
                 -- We set the inflight merkle block here to accumulate all the
                 -- related transactins. We actually check if we were awaiting
                 -- this merkle block only when endMerkleBlock is called.
-                modify $ \s -> 
+                modify' $ \s -> 
                     s{ merkleTxsBuffer = expectedTxs:(merkleTxsBuffer s)
-                     , inflightMerkle  = Just bid
+                     , inflightMerkle = Just bid
                      }
                 when (null expectedTxs) endMerkleBlock
             else sendManager $ PeerMisbehaving pid severeDoS
@@ -498,7 +508,7 @@ processTx tx = do
     case currJobM of
         Just job@(Job _ _ _ (JobDwnTxs tids)) -> case delete tid tids of
             []   -> jobDone
-            rest -> modify $ \s -> 
+            rest -> modify' $ \s -> 
                 s{ currentJob = Just job{ jobPayload = JobDwnTxs rest } }
         _ -> return ()
 
@@ -546,16 +556,16 @@ endMerkleBlock = do
                 -- complete the current job to unblock the peer.
                 $(logError) $ format pid
                     "There are no more merkle blocks to end in the current job"
-                modify $ \s -> s{ merkleTxsBuffer = []
-                                , inflightMerkle  = Nothing
-                                }
+                modify' $ \s -> s{ merkleTxsBuffer = []
+                                 , inflightMerkle  = Nothing
+                                 }
                 jobDone
         _ -> do
             $(logWarn) $ format pid
                 "Trying to end a merkle block but the current job is invalid"
-            modify $ \s -> s{ merkleTxsBuffer = []
-                            , inflightMerkle  = Nothing
-                            }
+            modify' $ \s -> s{ merkleTxsBuffer = []
+                             , inflightMerkle  = Nothing
+                             }
   where
     go did job bid rest = do
         pid <- gets peerId
@@ -569,9 +579,9 @@ endMerkleBlock = do
                 buff <- liftM reverse $ gets merkleTxsBuffer
                 -- Send the merkles to the blockchain
                 sendBlockChain $ IncMerkleBatch did buff
-                modify $ \s -> s{ merkleTxsBuffer = [] 
-                                , inflightMerkle  = Nothing
-                                }
+                modify' $ \s -> s{ merkleTxsBuffer = [] 
+                                 , inflightMerkle  = Nothing
+                                 }
                 jobDone
             -- We have more merkles to download in this job
             _ -> do
@@ -581,9 +591,9 @@ endMerkleBlock = do
                     ]
                 -- Save the new job
                 let newJob = job{ jobPayload = JobDwnMerkles did rest }
-                modify $ \s -> s{ currentJob     = Just newJob 
-                                , inflightMerkle = Nothing
-                                }
+                modify' $ \s -> s{ currentJob     = Just newJob 
+                                 , inflightMerkle = Nothing
+                                 }
 
 -- | Decode messages sent from the remote host and send them to the peers main
 -- message queue for processing. If we receive invalid messages, this function

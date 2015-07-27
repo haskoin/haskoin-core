@@ -23,6 +23,7 @@ import Control.Monad (foldM, when, unless, liftM, (<=<), forM, forM_)
 import Control.Monad.Trans (lift, liftIO, MonadIO)
 import Control.Monad.Trans.Either (EitherT, left, runEitherT)
 import Control.Monad.State (MonadState(..), StateT, get)
+import Control.DeepSeq (NFData(..))
 
 import Data.Word (Word32)
 import Data.Bits (shiftL)
@@ -65,6 +66,16 @@ data BlockHeaderNode = BlockHeaderNode
     , nodeMinWork      :: !Word32 -- Only used for testnet
     } deriving (Show, Read, Eq)
 
+instance NFData BlockHeaderNode where
+    rnf BlockHeaderNode{..} =
+        rnf nodeBlockHash `seq`
+        rnf nodeHeader `seq`
+        rnf nodeHeaderHeight `seq`
+        rnf nodeChainWork `seq`
+        rnf nodeChild `seq`
+        rnf nodeMedianTimes `seq`
+        rnf nodeMinWork
+
 instance B.Binary BlockHeaderNode where
 
     get = do
@@ -94,6 +105,12 @@ data BlockChainAction
                  }
     | SideChain  { actionSideBlock :: ![BlockHeaderNode] }
     deriving (Read, Show, Eq)
+
+instance NFData BlockChainAction where
+    rnf bca = case bca of
+        BestChain ns -> rnf ns
+        ChainReorg s os ns -> rnf s `seq` rnf os `seq` rnf ns
+        SideChain ns -> rnf ns
 
 actionNewNodes :: BlockChainAction -> [BlockHeaderNode]
 actionNewNodes action = case action of

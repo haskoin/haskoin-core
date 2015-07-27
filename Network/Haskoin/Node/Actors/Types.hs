@@ -1,4 +1,5 @@
-module Network.Haskoin.Node.Chan
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+module Network.Haskoin.Node.Actors.Types
 ( PeerMessage(..)
 , ManagerMessage(..)
 , BlockChainMessage(..)
@@ -26,6 +27,7 @@ module Network.Haskoin.Node.Chan
 ) where
 
 import Data.Unique (Unique, hashUnique)
+import Control.DeepSeq (NFData(..))
 
 import Network.Haskoin.Node.Bloom
 import Network.Haskoin.Node.Message
@@ -40,6 +42,9 @@ type JobId = Unique
 type DwnMerkleId = Unique
 type DwnBlockId = Unique
 
+instance NFData Unique where
+    rnf u = u `seq` ()
+
 data Job = Job
     { jobId       :: !JobId
     , jobPriority :: !JobPriority
@@ -47,11 +52,23 @@ data Job = Job
     , jobPayload  :: !PeerJob
     }
 
+instance NFData Job where
+    rnf Job{..} = 
+        rnf jobId `seq` 
+        rnf jobPriority `seq`
+        rnf jobResource `seq`
+        rnf jobPayload
+
 data RemoteHost = RemoteHost
     { remoteHost :: !String
     , remotePort :: !Int
     } 
     deriving (Eq, Ord)
+
+instance NFData RemoteHost where
+    rnf RemoteHost{..} = 
+        rnf remoteHost `seq` 
+        rnf remotePort
 
 showRemoteHost :: RemoteHost -> String
 showRemoteHost (RemoteHost h p) = concat [ h, ":", show p ]
@@ -67,6 +84,13 @@ data JobResource
     | AllPeers !BlockHeight 
       -- Assign work to all peers but at least 1 peer.
     | AllPeers1 !BlockHeight 
+
+instance NFData JobResource where
+    rnf jr = case jr of
+        ThisPeer pid -> rnf pid
+        AnyPeer h    -> rnf h
+        AllPeers h   -> rnf h
+        AllPeers1 h  -> rnf h
 
 showJobResource :: JobResource -> String
 showJobResource r = case r of
@@ -85,6 +109,18 @@ data PeerJob
     | JobDwnMerkles !DwnMerkleId ![BlockHash]
     | JobMempool
     | JobStatus
+
+instance NFData PeerJob where
+    rnf pj = case pj of
+        JobSendBloomFilter bf -> rnf bf
+        JobSendTxInv hs -> rnf hs
+        JobSendTx tx -> rnf tx
+        JobHeaderSync bl bM -> rnf bl `seq` rnf bM
+        JobDwnTxs hs -> rnf hs
+        JobDwnBlocks did bs -> rnf did `seq` rnf bs
+        JobDwnMerkles did bs -> rnf did `seq` rnf bs
+        JobMempool -> ()
+        JobStatus -> ()
 
 showJob :: PeerJob -> String
 showJob pJob = case pJob of
@@ -177,6 +213,8 @@ data Behavior
     | Misbehaving !Int
     | Banned
     deriving (Eq, Show, Read)
+
+instance NFData Behavior
 
 type BehaviorUpdate = Behavior -> Behavior
 

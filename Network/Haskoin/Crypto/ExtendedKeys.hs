@@ -419,6 +419,14 @@ data DerivPathI t where
     DerivPrv :: DerivPathI t
     DerivPub :: DerivPathI t
 
+instance NFData (DerivPathI t) where
+    rnf p = case p of
+        next :| i -> rnf i `seq` rnf next
+        next :/ i -> rnf i `seq` rnf next
+        Deriv     -> ()
+        DerivPrv  -> ()
+        DerivPub  -> ()
+
 instance Eq (DerivPathI t) where
     (nextA :| iA) == (nextB :| iB) = iA == iB && nextA == nextB
     (nextA :/ iA) == (nextB :/ iB) = iA == iB && nextA == nextB

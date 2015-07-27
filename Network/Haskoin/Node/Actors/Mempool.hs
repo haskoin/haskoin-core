@@ -1,5 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
-module Network.Haskoin.Node.Mempool
+module Network.Haskoin.Node.Actors.Mempool
 ( withNode
 , withMempool
 ) where
@@ -8,27 +8,29 @@ import Control.Monad (when, unless, forM_, liftM)
 import Control.Monad.Trans (MonadIO, liftIO, lift)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async.Lifted (withAsync, link)
-import Control.Monad.State (StateT, evalStateT, get, gets, modify)
+import Control.Monad.State (StateT, evalStateT, get, gets)
 import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug)
 import Control.Monad.Trans.Control (MonadBaseControl)
 import Control.Monad.Catch (MonadMask)
+import Control.DeepSeq (NFData(..))
 
 import Data.Map.Strict (Map, findWithDefault, insertWith)
-import qualified Data.Map.Strict as M
 import Data.Text (Text, pack)
 import Data.List (nub, partition, delete)
 import Data.Unique (hashUnique)
 import Data.Conduit.TMChan (TBMChan, writeTBMChan)
 import Data.Conduit (Sink, awaitForever, ($$))
 import Data.Conduit.TMChan (newTBMChan, sourceTBMChan)
+import qualified Data.Map.Strict as M (empty, delete, elems)
 
 import qualified Database.LevelDB.Base as L (Options(..))
 
+import Network.Haskoin.Util
 import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Transaction
-import Network.Haskoin.Node.Chan
-import Network.Haskoin.Node.BlockChain
+import Network.Haskoin.Node.Actors.Types
+import Network.Haskoin.Node.Actors.BlockChain
 
 -- | Start an bitcoin node. This function will return a channel for receiving
 -- node events and a channel for sending requests to the node.
@@ -110,6 +112,14 @@ data MempoolSession = MempoolSession
     , txPeerMap :: !(Map TxHash [PeerId])
     }
 
+instance NFData MempoolSession where
+    rnf MempoolSession{..} =
+        rnf nodeSynced `seq`
+        rnf txBuffer `seq`
+        rnf inflightTxs `seq`
+        rnf merkleBuffer `seq`
+        rnf txPeerMap
+
 -- | Start the mempool. The job of this actor is to request tx downloads
 -- when receiving tx invs. It also has to buffer solo transactions until
 -- the chain is synced up before sending them to the wallet. It will also
@@ -179,7 +189,7 @@ processTxInv pid tids = do
             , show $ hashUnique pid
             ]
         -- Save inflight downloads
-        modify $ \s -> s{ inflightTxs = inflight ++ toDwn }
+        modify' $ \s -> s{ inflightTxs = inflight ++ toDwn }
         -- Publish the transaction download job with average priority
         sendManager $ PublishJob (JobDwnTxs toDwn) (ThisPeer pid) 5
 
@@ -190,8 +200,7 @@ processGetTx :: (MonadIO m, MonadLogger m)
 processGetTx pid tid = do
     $(logDebug) $ format $ unwords
         [ "Requesting transaction", encodeTxHashLE tid, "from wallet." ]
-    modify $
-        \s -> s{ txPeerMap = insertWith addPid tid [pid] (txPeerMap s) }
+    modify' $ \s -> s{ txPeerMap = insertWith addPid tid [pid] (txPeerMap s) }
     sendWallet $ WalletGetTx tid
   where
     addPid p = nub . (p ++)
@@ -205,8 +214,7 @@ processSendTx tx = do
     peers <- findWithDefault [] (txHash tx) `liftM` gets txPeerMap
     forM_ peers $ \pid -> sendManager $
         PublishJob (JobSendTx tx) (ThisPeer pid) 1
-    modify $
-        \s -> s{ txPeerMap = M.delete (txHash tx) (txPeerMap s) }
+    modify' $ \s -> s{ txPeerMap = M.delete (txHash tx) (txPeerMap s) }
 
 -- | Send transactions to the wallet only if we are synced. This is to prevent
 -- a problem where a transaction that belongs to the wallet in the future
@@ -232,14 +240,14 @@ processTx tx fromMerkle = do
                 [ "Received solo tx ", encodeTxHashLE tid
                 , ". Buffering it as we are not synced."
                 ]
-            modify $ \s -> s{ txBuffer = txBuffer s ++ [tx] }
+            modify' $ \s -> s{ txBuffer = txBuffer s ++ [tx] }
 
     -- Remove this transaction from the inflight list
-    modify $ \s -> s{ inflightTxs = delete tid $ inflightTxs s }
+    modify' $ \s -> s{ inflightTxs = delete tid $ inflightTxs s }
 
     -- Try to import pending merkles
     merkles <- gets merkleBuffer
-    modify $ \s -> s{ merkleBuffer = [] }
+    modify' $ \s -> s{ merkleBuffer = [] }
     forM_ merkles $ \(action, mTxs) -> processMerkles action mTxs
   where
     tid = txHash tx
@@ -264,7 +272,7 @@ processMerkles action mTxs = gets inflightTxs >>= \inflight -> if null inflight
                 ]
             -- Send those transactions to the wallet
             forM_ toSend $ sendWallet . (flip WalletTx True)
-            modify $ \s -> s{ txBuffer = rest }
+            modify' $ \s -> s{ txBuffer = rest }
 
         -- There is 1 list of [TxHash] per merkle block
         $(logDebug) $ format $ unwords
@@ -286,7 +294,7 @@ processMerkles action mTxs = gets inflightTxs >>= \inflight -> if null inflight
             [ "Received a merkle block while transactions are inflight."
             , "Buffering it."
             ]
-        modify $ \s -> s{ merkleBuffer = merkleBuffer s ++ [(action, mTxs)] }
+        modify' $ \s -> s{ merkleBuffer = merkleBuffer s ++ [(action, mTxs)] }
 
 -- | Import merkle blocks into the wallet if there are no infligh transactions.
 -- Buffer the transaction otherwise.
@@ -336,9 +344,9 @@ processSynced = do
         $(logInfo) $ format $ unwords
             [ "Sending", show $ length txs, "txs to the wallet." ]
         forM_ txs $ sendWallet . (flip WalletTx False)
-    modify $ \s -> s{ nodeSynced = True 
-                    , txBuffer   = []
-                    }
+    modify' $ \s -> s{ nodeSynced = True 
+                     , txBuffer   = []
+                     }
     unless synced $ sendManager $ PublishJob JobMempool (AllPeers1 0) 5
     sendWallet WalletSynced
 
@@ -349,7 +357,7 @@ processStartDownload _ = do
         [ "(Re)starting a new merkle block download."
         , "Cleaning up the merkle buffer."
         ]
-    modify $ \s -> s{ merkleBuffer = [] }
+    modify' $ \s -> s{ merkleBuffer = [] }
 
 processMempoolStatus :: (MonadLogger m, MonadIO m) => StateT MempoolSession m ()
 processMempoolStatus = do

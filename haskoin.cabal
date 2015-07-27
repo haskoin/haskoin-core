@@ -62,11 +62,11 @@ library
                    Network.Haskoin.Node.Types
                    Network.Haskoin.Node.Message
                    Network.Haskoin.Node.Bloom
-                   Network.Haskoin.Node.Chan
-                   Network.Haskoin.Node.Peer
-                   Network.Haskoin.Node.PeerManager
-                   Network.Haskoin.Node.BlockChain
-                   Network.Haskoin.Node.Mempool
+                   Network.Haskoin.Node.Actors.Types
+                   Network.Haskoin.Node.Actors.Peer
+                   Network.Haskoin.Node.Actors.PeerManager
+                   Network.Haskoin.Node.Actors.BlockChain
+                   Network.Haskoin.Node.Actors.Mempool
                    Network.Haskoin.Script.Types 
                    Network.Haskoin.Script.Parser 
                    Network.Haskoin.Script.SigHash

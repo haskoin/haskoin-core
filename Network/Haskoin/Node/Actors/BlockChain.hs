@@ -1,17 +1,18 @@
 {-# LANGUAGE TemplateHaskell #-}
-module Network.Haskoin.Node.BlockChain
+module Network.Haskoin.Node.Actors.BlockChain
 ( withBlockChain
 ) where
 
 import Control.Monad ( when, unless, forM_, forever, liftM)
 import Control.Monad.Trans (MonadIO, liftIO, lift)
-import Control.Monad.State (StateT, evalStateT, get, gets, modify)
+import Control.Monad.State (StateT, evalStateT, get, gets)
 import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug, logError)
 import Control.Monad.Catch (MonadMask)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.Async.Lifted (withAsync, link)
 import Control.Monad.Trans.Control (MonadBaseControl)
+import Control.DeepSeq (NFData(..))
 
 import Data.Text (Text, pack)
 import Data.Maybe (isJust, isNothing, fromJust)
@@ -30,9 +31,10 @@ import qualified Database.LevelDB.Base as L (DB, Options(..), withDB)
 import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Constants
+import Network.Haskoin.Util
 import Network.Haskoin.Node.Bloom
-import Network.Haskoin.Node.PeerManager
-import Network.Haskoin.Node.Chan
+import Network.Haskoin.Node.Actors.PeerManager
+import Network.Haskoin.Node.Actors.Types
 
 data BkchSession = BkchSession
     { -- Peer manager message channel
@@ -73,6 +75,22 @@ data BkchSession = BkchSession
       -- LevelDB Options
     , levelDBOptions :: !L.Options
     }
+
+instance NFData BkchSession where
+    rnf BkchSession{..} =
+        rnf syncResource `seq`
+        rnf syncTimeout `seq`
+        rnf peerTickles `seq`
+        rnf validBloom `seq`
+        rnf windowEnd `seq`
+        rnf fastCatchup `seq`
+        rnf batchSize `seq`
+        rnf downloadMerkles `seq`
+        rnf merkleId `seq`
+        rnf blockWindow `seq`
+        rnf networkHeight `seq`
+        rnf levelDBFilePath `seq`
+        levelDBOptions `seq` ()
 
 data LocatorType
     = FullLocator
@@ -228,7 +246,7 @@ canProcessHeaders pid = do
     valid <- liftM f $ gets syncResource
     -- If the peer is allowed to process the headers, we reset the resource
     -- so that a new header sync can happen.
-    when valid $ modify $ \s -> s{ syncResource = Nothing }
+    when valid $ modify' $ \s -> s{ syncResource = Nothing }
     return valid
   where
     f (Just (ThisPeer pid')) = pid == pid'
@@ -246,9 +264,9 @@ headerSync resource locType hStopM = do
         -- Save the deadline for this job (2 minutes). If we don't get a
         -- response within the given time, we continue the header download.
         deadline <- liftM (addUTCTime 120) $ liftIO getCurrentTime
-        modify $ \s -> s{ syncResource = Just resource
-                        , syncTimeout  = deadline
-                        }
+        modify' $ \s -> s{ syncResource = Just resource
+                         , syncTimeout  = deadline
+                         }
         -- Build the block locator object
         loc <- runDB $ case locType of
             FullLocator    -> blockLocator 
@@ -264,7 +282,7 @@ processBlocks :: (MonadLogger m, MonadIO m, MonadMask m)
               => DwnBlockId -> [Block] -> StateT BkchSession m ()
 processBlocks did [] = do
     $(logError) $ format $ "Got a completed block job with an empty block list"
-    modify $ \s -> s{ blockWindow = M.delete did $ blockWindow s }
+    modify' $ \s -> s{ blockWindow = M.delete did $ blockWindow s }
     continueDownload
     checkSynced
 processBlocks did blocks = do
@@ -281,7 +299,7 @@ processBlocks did blocks = do
                 , "in block window."
                 ]
             -- Add the blocks to the window
-            modify $ \s -> s{ blockWindow = M.insert did (action, blocks) win }
+            modify' $ \s -> s{ blockWindow = M.insert did (action, blocks) win }
             -- Try to send blocks to the mempool
             dispatchBlocks 
         -- This can happen if we had pending jobs when issuing a rescan. We
@@ -299,7 +317,7 @@ processBlocks did blocks = do
                     , "to the mempool."
                     ]
                 sendMempool $ MempoolBlocks action doneBlocks
-                modify $ \s -> s{ blockWindow = M.delete doneId win }
+                modify' $ \s -> s{ blockWindow = M.delete doneId win }
                 dispatchBlocks
             -- Try to download more blocks if there is space in the window
             _ -> do
@@ -318,7 +336,7 @@ processMerkleBatch did [] = gets merkleId >>= \mid -> case mid of
         then do
             $(logError) $ format $ 
                 "Got a completed merkle job with an empty merkle list"
-            modify $ \s -> s{ merkleId = Nothing }
+            modify' $ \s -> s{ merkleId = Nothing }
             -- We continue the merkle download because we didn't have any
             -- transactions
             continueDownload
@@ -337,7 +355,7 @@ processMerkleBatch did mTxs = gets merkleId >>= \mid -> case mid of
                 , "Dispatching it to the mempool"
                 ]
             -- Clear the inflight merkle
-            modify $ \s -> s{ merkleId = Nothing }
+            modify' $ \s -> s{ merkleId = Nothing }
             -- Try to send the merkle block to the mempool
             sendMempool $ MempoolMerkles action mTxs
             -- Check if we are synced before setting windowEnd=Nothing
@@ -360,7 +378,7 @@ processMerkleBatch did mTxs = gets merkleId >>= \mid -> case mid of
                         , "Blocking merkle block download and awaiting"
                         , "instructions from the wallet."
                         ]
-                    modify $ \s -> s{ windowEnd = Nothing }
+                    modify' $ \s -> s{ windowEnd = Nothing }
         else $(logDebug) $ format $ unwords
             [ "Ignoring merkle batch id", show $ hashUnique did ] 
     -- This can happen if we had pending jobs when issuing a rescan. We
@@ -400,7 +418,7 @@ continueDownload = do
                 -- Update the windowEnd pointer
                 let nodes  = actionNewNodes action
                     winEnd = Just $ nodeBlockHash $ last nodes
-                modify $ \s -> s{ windowEnd = winEnd }
+                modify' $ \s -> s{ windowEnd = winEnd }
                 fcM <- gets fastCatchup 
                 let fc = fromJust fcM
                     ts = map (blockTimestamp . nodeHeader) nodes
@@ -422,9 +440,9 @@ continueDownload = do
                         -- Publish the job with low priority 10
                         sendManager $ PublishJob job (AnyPeer height) 10
                         -- We reached the fast catchup. Set to Nothing.
-                        modify $ \s -> s{ fastCatchup = Nothing }
+                        modify' $ \s -> s{ fastCatchup = Nothing }
                         -- Extend the window or save the merkle block
-                        modify $ \s -> if merkles 
+                        modify' $ \s -> if merkles 
                             then s{ merkleId   = Just (did, action) }
                             else s{ blockWindow = M.insert did (action, []) win }
                     else $(logDebug) $ format $ unwords
@@ -476,7 +494,7 @@ processStartDownloadG valE merkle = do
 
     case resM of
         Just (fc, we) -> do
-            modify $ \s -> 
+            modify' $ \s -> 
                 s{ fastCatchup     = fc
                  , windowEnd       = we
                  -- Empty the window to ignore any old pending jobs
@@ -504,7 +522,7 @@ processBloomFilter bloom
         sendManager $ MngrBloomFilter bloom
         valid <- gets validBloom
         unless valid $ do
-            modify $ \s -> s{ validBloom = True }
+            modify' $ \s -> s{ validBloom = True }
             $(logDebug) $ format 
                 "Attempting to start the block download."
             -- We got a valid bloom filter form the wallet. We can try to
@@ -515,7 +533,7 @@ processNetworkHeight :: MonadLogger m => BlockHeight -> StateT BkchSession m ()
 processNetworkHeight height = do
     $(logDebug) $ format $ unwords
         [ "Network best chain height:", show height ]
-    modify $ \s -> s{ networkHeight = height }
+    modify' $ \s -> s{ networkHeight = height }
 
 processSetBatchSize :: MonadLogger m => Int -> StateT BkchSession m ()
 processSetBatchSize i 
@@ -524,7 +542,7 @@ processSetBatchSize i
     | otherwise = do
         $(logDebug) $ format $ unwords
             [ "Setting batch size to:", show i ]
-        modify $ \s -> s{ batchSize = i }
+        modify' $ \s -> s{ batchSize = i }
 
 -- Check if merkle blocks are in sync with block headers.
 checkSynced :: (MonadLogger m, MonadIO m, MonadMask m)
@@ -564,7 +582,7 @@ processHeartbeat = do
                     [ "Sync peer", show $ hashUnique pid
                     , "is stalling the header download."
                     ]
-                modify $ \s -> s{ syncResource = Nothing }
+                modify' $ \s -> s{ syncResource = Nothing }
                 height <- runDB bestBlockHeaderHeight
                 -- Issue a new header sync with any peer at the right height
                 headerSync (AnyPeer height) PartialLocator Nothing
@@ -600,7 +618,7 @@ processBkchStatus = do
 
 -- Add a BlockHash to the PeerId tickle map
 setPeerTickle :: Monad m => PeerId -> BlockHash -> StateT BkchSession m ()
-setPeerTickle pid bid = modify $ \s ->
+setPeerTickle pid bid = modify' $ \s ->
     s{ peerTickles = M.insert pid bid $ peerTickles s }
 
 -- Adjust height of peers that sent us a tickle for these blocks
@@ -615,7 +633,7 @@ adjustPeerHeight node = do
         -- Update the height of the peer
         sendManager $ PeerHeight pid height
     -- Update the peer tickles
-    modify $ \s -> s{ peerTickles = r }
+    modify' $ \s -> s{ peerTickles = r }
   where
     bid    = nodeBlockHash node
     height = nodeHeaderHeight node
@@ -629,7 +647,7 @@ adjustNetworkHeight newHeight = do
             [ "Increasing network height from"
             , show oldHeight, "to", show newHeight 
             ]
-        modify $ \s -> s{ networkHeight = newHeight }
+        modify' $ \s -> s{ networkHeight = newHeight }
 
 -- Send a message to the PeerManager
 sendManager :: MonadIO m => ManagerMessage -> StateT BkchSession m ()

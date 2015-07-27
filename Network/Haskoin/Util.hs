@@ -41,15 +41,19 @@ module Network.Haskoin.Util
 , updateIndex
 , matchTemplate
 
-  -- Triples
+  -- * Triples
 , fst3
 , snd3
 , lst3
+
+  -- * MonadState
+, modify'
 
 ) where
 
 import Control.Monad (guard)
 import Control.Monad.Trans.Either (EitherT, hoistEither)
+import Control.Monad.State (MonadState, get, put)
 
 import Data.Word (Word8)
 import Data.Bits ((.|.), shiftL, shiftR)
@@ -296,4 +300,8 @@ snd3 (_,b,_) = b
 -- | Returns the last value of a triple.
 lst3 :: (a,b,c) -> c
 lst3 (_,_,c) = c
+
+-- Strict evaluation of the new state
+modify' :: MonadState s m => (s -> s) -> m ()
+modify' f = get >>= \x -> put $! f x
 

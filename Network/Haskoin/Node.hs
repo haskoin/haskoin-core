@@ -67,9 +67,9 @@ module Network.Haskoin.Node
 import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Node.Bloom
-import Network.Haskoin.Node.Chan
-import Network.Haskoin.Node.Peer
-import Network.Haskoin.Node.PeerManager
-import Network.Haskoin.Node.BlockChain
-import Network.Haskoin.Node.Mempool
+import Network.Haskoin.Node.Actors.Types
+import Network.Haskoin.Node.Actors.Peer
+import Network.Haskoin.Node.Actors.PeerManager
+import Network.Haskoin.Node.Actors.BlockChain
+import Network.Haskoin.Node.Actors.Mempool
 

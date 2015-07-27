@@ -1,8 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
-module Network.Haskoin.Node.Actors.Mempool
-( withNode
-, withMempool
-) where
+module Network.Haskoin.Node.Actors.TxManager (withTxManager) where
 
 import Control.Monad (when, unless, forM_, liftM)
 import Control.Monad.Trans (MonadIO, liftIO, lift)
@@ -14,14 +11,14 @@ import Control.Monad.Trans.Control (MonadBaseControl)
 import Control.Monad.Catch (MonadMask)
 import Control.DeepSeq (NFData(..))
 
-import Data.Map.Strict (Map, findWithDefault, insertWith)
 import Data.Text (Text, pack)
 import Data.List (nub, partition, delete)
 import Data.Unique (hashUnique)
 import Data.Conduit.TMChan (TBMChan, writeTBMChan)
 import Data.Conduit (Sink, awaitForever, ($$))
 import Data.Conduit.TMChan (newTBMChan, sourceTBMChan)
-import qualified Data.Map.Strict as M (empty, delete, elems)
+import qualified Data.Map.Strict as M 
+    (Map, empty, delete, elems, findWithDefault, insertWith)
 
 import qualified Database.LevelDB.Base as L (Options(..))
 
@@ -32,63 +29,9 @@ import Network.Haskoin.Transaction
 import Network.Haskoin.Node.Actors.Types
 import Network.Haskoin.Node.Actors.BlockChain
 
--- | Start an bitcoin node. This function will return a channel for receiving
--- node events and a channel for sending requests to the node.
-withNode :: (MonadLogger m, MonadIO m, MonadBaseControl IO m, MonadMask m)
-         => FilePath
-         -> L.Options
-         -> (TBMChan WalletMessage -> TBMChan NodeRequest -> m ())
-         -> m ()
-withNode fp opts f = do
-    wletChan <- liftIO $ atomically $ newTBMChan 10
-    reqChan  <- liftIO $ atomically $ newTBMChan 10
-    withMempool fp opts wletChan $ \mempChan bkchChan mngrChan -> do
-        -- Listen for and process wallet requests
-        let run = do
-            $(logDebug) $ formatWallet "User request thread started"
-            sourceTBMChan reqChan $$ (go mempChan bkchChan mngrChan)
-        withAsync run $ \a -> link a >> f wletChan reqChan
-  where
-    go mempChan bkchChan mngrChan = awaitForever $ \req -> case req of
-        NodeBloomFilter bloom -> do
-            $(logDebug) $ formatWallet "Setting a new bloom filter"
-            liftIO $ atomically $ writeTBMChan bkchChan $ SetBloomFilter bloom
-        NodeStartMerkleDownload valE -> do
-            $(logDebug) $ formatWallet "Requesting a merkle block download"
-            liftIO $ atomically $ 
-                writeTBMChan bkchChan $ StartMerkleDownload valE
-        NodeStartBlockDownload valE -> do
-            $(logDebug) $ formatWallet "Requesting a block download"
-            liftIO $ atomically $ 
-                writeTBMChan bkchChan $ StartBlockDownload valE
-        NodeConnectPeers peers -> do
-            $(logDebug) $ formatWallet "Advertising new peers to connect to"
-            liftIO $ atomically $ writeTBMChan mngrChan $ AddRemoteHosts peers
-        NodeSendTx tx -> do
-            $(logDebug) $ formatWallet $ unwords
-                [ "Sending transaction", encodeTxHashLE (txHash tx) ]
-            liftIO $ atomically $ writeTBMChan mempChan $ MempoolSendTx tx
-        NodePublishTxs txids -> do
-            $(logDebug) $ formatWallet "Publishing a transaction to broadcast"
-            -- Publish a job with priority 1 on all peers
-            liftIO $ atomically $ writeTBMChan mngrChan $ 
-                PublishJob (JobSendTxInv txids) (AllPeers1 0) 1
-        NodeBatchSize i -> do
-            $(logDebug) $ formatWallet $ unwords
-                [ "Setting the node batch size to", show i]
-            liftIO $ atomically $ writeTBMChan bkchChan $ SetBatchSize i
-        NodeStatus -> do
-            $(logDebug) $ formatWallet "Requesting node status"
-            liftIO $ atomically $ writeTBMChan mempChan MempoolStatus
-            liftIO $ atomically $ writeTBMChan bkchChan BkchStatus
-            liftIO $ atomically $ writeTBMChan mngrChan MngrStatus
+{- TxManager Actor -}
 
-formatWallet :: String -> Text
-formatWallet str = pack $ unwords [ "[Wallet Request]", str ]
-
-{- Mempool Actor -}
-
-data MempoolSession = MempoolSession
+data TxManagerSession = TxManagerSession
     { -- Blockchain message channel
       mngrChan :: !(TBMChan ManagerMessage)
       -- Blockchain message channel
@@ -109,67 +52,67 @@ data MempoolSession = MempoolSession
     , merkleBuffer :: ![(BlockChainAction, [MerkleTxs])]
       -- Map of transactions to peer ids to respond to GetData requests
       -- from peers.
-    , txPeerMap :: !(Map TxHash [PeerId])
+    , txPeerMap :: !(M.Map TxHash [PeerId])
     }
 
-instance NFData MempoolSession where
-    rnf MempoolSession{..} =
+instance NFData TxManagerSession where
+    rnf TxManagerSession{..} =
         rnf nodeSynced `seq`
         rnf txBuffer `seq`
         rnf inflightTxs `seq`
         rnf merkleBuffer `seq`
         rnf txPeerMap
 
--- | Start the mempool. The job of this actor is to request tx downloads
--- when receiving tx invs. It also has to buffer solo transactions until
--- the chain is synced up before sending them to the wallet. It will also
--- suspend merkle block delivery while there are inflight transaction downloads.
--- This is to prevent race conditions where the wallet could miss confirmations.
-withMempool 
+-- | Start the tx manager. The job of this actor is to request tx downloads
+-- when receiving tx invs. It also has to buffer solo transactions until the
+-- chain is synced up before sending them to the wallet. It will also suspend
+-- merkle block delivery while there are inflight transaction downloads. This
+-- is to prevent race conditions where the wallet could miss confirmations.
+withTxManager 
     :: (MonadLogger m, MonadIO m, MonadBaseControl IO m, MonadMask m) 
     => FilePath
     -> L.Options
     -> TBMChan WalletMessage
-    -> (    TBMChan MempoolMessage 
+    -> (    TBMChan TxManagerMessage 
          -> TBMChan BlockChainMessage 
          -> TBMChan ManagerMessage 
          -> m ()
        )
     -> m ()
-withMempool fp opts wletChan f = do
-    mempChan <- liftIO $ atomically $ newTBMChan 10
-    withBlockChain fp opts mempChan $ \bkchChan mngrChan -> do
+withTxManager fp opts wletChan f = do
+    txmgChan <- liftIO $ atomically $ newTBMChan 10
+    withBlockChain fp opts txmgChan $ \bkchChan mngrChan -> do
         let nodeSynced    = False
             txBuffer      = []
             inflightTxs   = []
             merkleBuffer  = []
             txPeerMap     = M.empty
-            session       = MempoolSession{..}
-            -- Run the main mempool message processing loop
+            session       = TxManagerSession{..}
+            -- Run the main txmanager message processing loop
             run = do
-                $(logDebug) $ format "Mempool thread started"
-                sourceTBMChan mempChan $$ processMempoolMessage
+                $(logDebug) $ format "TxManager thread started"
+                sourceTBMChan txmgChan $$ processTxManagerMessage
 
         withAsync (evalStateT run session) $ \a ->
-            link a >> f mempChan bkchChan mngrChan
+            link a >> f txmgChan bkchChan mngrChan
 
-processMempoolMessage :: (MonadLogger m, MonadIO m) 
-                      => Sink MempoolMessage (StateT MempoolSession m) ()
-processMempoolMessage = awaitForever $ \req -> lift $ case req of
-    MempoolTxInv pid tids       -> processTxInv pid tids
-    MempoolTx tx fromMerkle     -> processTx tx fromMerkle
-    MempoolGetTx pid tid        -> processGetTx pid tid
-    MempoolSendTx tid           -> processSendTx tid
-    MempoolMerkles action txs   -> processMerkles action txs
-    MempoolBlocks action blocks -> processBlocks action blocks
-    MempoolSynced               -> processSynced
-    MempoolStartDownload valE   -> processStartDownload valE 
-    MempoolStatus               -> processMempoolStatus
+processTxManagerMessage :: (MonadLogger m, MonadIO m) 
+                      => Sink TxManagerMessage (StateT TxManagerSession m) ()
+processTxManagerMessage = awaitForever $ \req -> lift $ case req of
+    TxManagerTxInv pid tids       -> processTxInv pid tids
+    TxManagerTx tx fromMerkle     -> processTx tx fromMerkle
+    TxManagerGetTx pid tid        -> processGetTx pid tid
+    TxManagerSendTx tid           -> processSendTx tid
+    TxManagerMerkles action txs   -> processMerkles action txs
+    TxManagerBlocks action blocks -> processBlocks action blocks
+    TxManagerSynced               -> processSynced
+    TxManagerStartDownload valE   -> processStartDownload valE 
+    TxManagerStatus               -> processTxManagerStatus
 
 -- | Decide if we want to download a transaction or not. We store inflight
 -- transactions.
 processTxInv :: (MonadLogger m, MonadIO m) 
-             => PeerId -> [TxHash] -> StateT MempoolSession m ()
+             => PeerId -> [TxHash] -> StateT TxManagerSession m ()
 processTxInv _ [] = return () -- Ignore empty INVs
 processTxInv pid tids = do
     $(logDebug) $ format $ unlines $
@@ -196,22 +139,22 @@ processTxInv pid tids = do
 processGetTx :: (MonadIO m, MonadLogger m)
              => PeerId
              -> TxHash
-             -> StateT MempoolSession m ()
+             -> StateT TxManagerSession m ()
 processGetTx pid tid = do
     $(logDebug) $ format $ unwords
         [ "Requesting transaction", encodeTxHashLE tid, "from wallet." ]
-    modify' $ \s -> s{ txPeerMap = insertWith addPid tid [pid] (txPeerMap s) }
+    modify' $ \s -> s{ txPeerMap = M.insertWith addPid tid [pid] (txPeerMap s) }
     sendWallet $ WalletGetTx tid
   where
     addPid p = nub . (p ++)
 
 processSendTx :: (MonadIO m, MonadLogger m)
               => Tx
-              -> StateT MempoolSession m ()
+              -> StateT TxManagerSession m ()
 processSendTx tx = do
     $(logDebug) $ format $ unwords
         [ "Sending transaction", encodeTxHashLE (txHash tx), "from wallet." ]
-    peers <- findWithDefault [] (txHash tx) `liftM` gets txPeerMap
+    peers <- M.findWithDefault [] (txHash tx) `liftM` gets txPeerMap
     forM_ peers $ \pid -> sendManager $
         PublishJob (JobSendTx tx) (ThisPeer pid) 1
     modify' $ \s -> s{ txPeerMap = M.delete (txHash tx) (txPeerMap s) }
@@ -223,7 +166,7 @@ processSendTx tx = do
 processTx :: (MonadLogger m, MonadIO m) 
           => Tx 
           -> Bool 
-          -> StateT MempoolSession m ()
+          -> StateT TxManagerSession m ()
 processTx tx fromMerkle = do
     synced <- gets nodeSynced 
     when (synced && not fromMerkle) $ $(logInfo) $ format $ concat 
@@ -257,7 +200,7 @@ processTx tx fromMerkle = do
 processMerkles :: (MonadIO m, MonadLogger m)
                => BlockChainAction 
                -> [MerkleTxs] 
-               -> StateT MempoolSession m ()
+               -> StateT TxManagerSession m ()
 processMerkles action mTxs = gets inflightTxs >>= \inflight -> if null inflight
     -- No infligh transactions. We can send the merkles to the wallet
     then do
@@ -301,7 +244,7 @@ processMerkles action mTxs = gets inflightTxs >>= \inflight -> if null inflight
 processBlocks :: (MonadIO m, MonadLogger m)
               => BlockChainAction 
               -> [Block] 
-              -> StateT MempoolSession m ()
+              -> StateT TxManagerSession m ()
 processBlocks action blocks = do
     $(logDebug) $ format $ unwords
         [ "Sending", show $ length blocks, "blocks to the wallet." ]
@@ -311,7 +254,7 @@ processBlocks action blocks = do
     logBlockChainAction action
 
 logBlockChainAction :: (MonadIO m, MonadLogger m)
-                   => BlockChainAction -> StateT MempoolSession m ()
+                   => BlockChainAction -> StateT TxManagerSession m ()
 logBlockChainAction action = case action of
     BestChain nodes -> $(logInfo) $ format $ unwords
         [ "Best chain height"
@@ -335,7 +278,7 @@ logBlockChainAction action = case action of
 
 -- When the node is synced, the blockchain notifies us. We can then safely send
 -- solo transactions to the wallet.
-processSynced :: (MonadLogger m, MonadIO m) => StateT MempoolSession m ()
+processSynced :: (MonadLogger m, MonadIO m) => StateT TxManagerSession m ()
 processSynced = do
     txs <- gets txBuffer
     synced <- gets nodeSynced
@@ -351,7 +294,8 @@ processSynced = do
     sendWallet WalletSynced
 
 processStartDownload :: (MonadLogger m, MonadIO m) 
-                     => Either Timestamp BlockHash -> StateT MempoolSession m ()
+                     => Either Timestamp BlockHash 
+                     -> StateT TxManagerSession m ()
 processStartDownload _ = do
     $(logDebug) $ format $ unwords
         [ "(Re)starting a new merkle block download."
@@ -359,9 +303,10 @@ processStartDownload _ = do
         ]
     modify' $ \s -> s{ merkleBuffer = [] }
 
-processMempoolStatus :: (MonadLogger m, MonadIO m) => StateT MempoolSession m ()
-processMempoolStatus = do
-    MempoolSession{..} <- get
+processTxManagerStatus :: (MonadLogger m, MonadIO m) 
+                       => StateT TxManagerSession m ()
+processTxManagerStatus = do
+    TxManagerSession{..} <- get
     $(logInfo) $ format $ unlines
         [ ""
         , "Node Synced   : " ++ show nodeSynced
@@ -374,17 +319,17 @@ processMempoolStatus = do
 {- Helpers -}
 
 -- Send a message to the PeerManager
-sendManager :: MonadIO m => ManagerMessage -> StateT MempoolSession m ()
+sendManager :: MonadIO m => ManagerMessage -> StateT TxManagerSession m ()
 sendManager msg = do
     chan <- gets mngrChan
     liftIO . atomically $ writeTBMChan chan msg
 
 -- Send a message to the PeerManager
-sendWallet :: MonadIO m => WalletMessage -> StateT MempoolSession m ()
+sendWallet :: MonadIO m => WalletMessage -> StateT TxManagerSession m ()
 sendWallet msg = do
     chan <- gets wletChan
     liftIO . atomically $ writeTBMChan chan msg
 
 format :: String -> Text
-format str = pack $ unwords [ "[Mempool]", str ]
+format str = pack $ unwords [ "[TxManager]", str ]
 

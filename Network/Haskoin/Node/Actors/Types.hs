@@ -3,7 +3,7 @@ module Network.Haskoin.Node.Actors.Types
 ( PeerMessage(..)
 , ManagerMessage(..)
 , BlockChainMessage(..)
-, MempoolMessage(..)
+, TxManagerMessage(..)
 , WalletMessage(..)
 , NodeRequest(..)
 , PeerId
@@ -176,17 +176,17 @@ data BlockChainMessage
     | BkchHeartbeat
     | BkchStatus
 
--- | Messages handled by the Mempool actor
-data MempoolMessage
-    = MempoolTxInv !PeerId ![TxHash]
-    | MempoolTx !Tx !Bool
-    | MempoolSendTx !Tx
-    | MempoolGetTx !PeerId !TxHash
-    | MempoolMerkles !BlockChainAction ![MerkleTxs]
-    | MempoolBlocks !BlockChainAction ![Block]
-    | MempoolStartDownload !(Either Timestamp BlockHash)
-    | MempoolSynced
-    | MempoolStatus
+-- | Messages handled by the TxManager actor
+data TxManagerMessage
+    = TxManagerTxInv !PeerId ![TxHash]
+    | TxManagerTx !Tx !Bool
+    | TxManagerSendTx !Tx
+    | TxManagerGetTx !PeerId !TxHash
+    | TxManagerMerkles !BlockChainAction ![MerkleTxs]
+    | TxManagerBlocks !BlockChainAction ![Block]
+    | TxManagerStartDownload !(Either Timestamp BlockHash)
+    | TxManagerSynced
+    | TxManagerStatus
 
 -- | Node events sent to the wallet
 data WalletMessage

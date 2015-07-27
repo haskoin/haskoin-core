@@ -39,8 +39,8 @@ import Network.Haskoin.Node.Actors.Types
 data BkchSession = BkchSession
     { -- Peer manager message channel
       mngrChan :: !(TBMChan ManagerMessage)
-      -- Mempool message channel
-    , mempChan :: !(TBMChan MempoolMessage)
+      -- TxManager message channel
+    , txmgChan :: !(TBMChan TxManagerMessage)
       -- Peer that is currently syncing the headers
     , syncResource :: !(Maybe JobResource)
       -- Timeout to detect a stalled header sync
@@ -65,8 +65,8 @@ data BkchSession = BkchSession
       -- Merkle download batch which we are currently waiting for
     , merkleId :: !(Maybe (DwnMerkleId, BlockChainAction))
       -- Block window. Every element in the window corresponds to a block
-      -- download job. Completed jobs in the window are sent to the mempool in
-      -- order.
+      -- download job. Completed jobs in the window are sent to the txmanager
+      -- in order.
     , blockWindow :: !(M.Map DwnBlockId (BlockChainAction, [Block]))
       -- Estimated height of the best chain on the bitcoin network
     , networkHeight :: !BlockHeight
@@ -103,12 +103,12 @@ withBlockChain
     :: (MonadLogger m, MonadIO m, MonadBaseControl IO m, MonadMask m)
     => FilePath
     -> L.Options
-    -> TBMChan MempoolMessage
+    -> TBMChan TxManagerMessage
     -> (TBMChan BlockChainMessage -> TBMChan ManagerMessage -> m ())
     -> m ()
-withBlockChain levelDBFilePath levelDBOptions mempChan f = do
+withBlockChain levelDBFilePath levelDBOptions txmgChan f = do
     bkchChan <- liftIO $ atomically $ newTBMChan 10
-    withPeerManager bkchChan mempChan $ \mngrChan -> do
+    withPeerManager bkchChan txmgChan $ \mngrChan -> do
         now <- liftIO getCurrentTime
         let syncResource    = Nothing
             syncTimeout     = now -- dummy value
@@ -276,7 +276,7 @@ headerSync resource locType hStopM = do
         sendManager $ PublishJob (JobHeaderSync loc hStopM) resource 2
 
 -- | When we get a block, check if we are awaiting this specific
--- batch ID and dispatch it to the mempool. If we had no transactions, 
+-- batch ID and dispatch it to the txmanager. If we had no transactions, 
 -- continue the merkle download.
 processBlocks :: (MonadLogger m, MonadIO m, MonadMask m)
               => DwnBlockId -> [Block] -> StateT BkchSession m ()
@@ -300,7 +300,7 @@ processBlocks did blocks = do
                 ]
             -- Add the blocks to the window
             modify' $ \s -> s{ blockWindow = M.insert did (action, blocks) win }
-            -- Try to send blocks to the mempool
+            -- Try to send blocks to the txmanager
             dispatchBlocks 
         -- This can happen if we had pending jobs when issuing a rescan. We
         -- simply ignore jobs from before the rescan.
@@ -310,13 +310,14 @@ processBlocks did blocks = do
     dispatchBlocks = do
         win <- gets blockWindow
         case M.assocs win of
-            -- If the first batch in the window is ready, send it to the mempool
+            -- If the first batch in the window is ready, send it to the
+            -- txmanager
             ((doneId, (action, doneBlocks@(_:_))):_) -> do
                 $(logDebug) $ format $ unwords
                     [ "Dispatching block batch id", show $ hashUnique doneId
-                    , "to the mempool."
+                    , "to the txmanager."
                     ]
-                sendMempool $ MempoolBlocks action doneBlocks
+                sendTxManager $ TxManagerBlocks action doneBlocks
                 modify' $ \s -> s{ blockWindow = M.delete doneId win }
                 dispatchBlocks
             -- Try to download more blocks if there is space in the window
@@ -325,7 +326,7 @@ processBlocks did blocks = do
                 checkSynced
 
 -- | When we get a merkle block, check if we are awaiting this specific
--- batch ID and dispatch it to the mempool. If we had no transactions, 
+-- batch ID and dispatch it to the txmanager. If we had no transactions, 
 -- continue the merkle download.
 processMerkleBatch :: (MonadLogger m, MonadIO m, MonadMask m)
                    => DwnMerkleId 
@@ -352,12 +353,12 @@ processMerkleBatch did mTxs = gets merkleId >>= \mid -> case mid of
             $(logDebug) $ format $ unwords
                 [ "Received merkle batch id", show $ hashUnique did
                 , "containing", show $ length mTxs, "merkle blocks."
-                , "Dispatching it to the mempool"
+                , "Dispatching it to the txmanager"
                 ]
             -- Clear the inflight merkle
             modify' $ \s -> s{ merkleId = Nothing }
-            -- Try to send the merkle block to the mempool
-            sendMempool $ MempoolMerkles action mTxs
+            -- Try to send the merkle block to the txmanager
+            sendTxManager $ TxManagerMerkles action mTxs
             -- Check if we are synced before setting windowEnd=Nothing
             checkSynced
             -- Continue the merkle download only if no transactions
@@ -505,8 +506,8 @@ processStartDownloadG valE merkle = do
                  }
             -- Notify the peer manager
             sendManager $ MngrStartDownload valE
-            -- Notify the mempool
-            sendMempool $ MempoolStartDownload valE
+            -- Notify the txmanager
+            sendTxManager $ TxManagerStartDownload valE
             -- Trigger merkle block downloads
             continueDownload
         _ -> return ()
@@ -567,7 +568,7 @@ checkSynced = do
             winEnd == Just (nodeBlockHash bestNode)
     when (netSynced && (merkleSynced || blockSynced)) $ do
         $(logDebug) $ format "Blocks are synchronized with the network."
-        sendMempool MempoolSynced
+        sendTxManager TxManagerSynced
 
 processHeartbeat :: (MonadLogger m, MonadIO m, MonadMask m) 
                  => StateT BkchSession m ()
@@ -655,10 +656,10 @@ sendManager msg = do
     chan <- gets mngrChan
     liftIO . atomically $ writeTBMChan chan msg
 
--- Send a message to the mempool
-sendMempool :: MonadIO m => MempoolMessage -> StateT BkchSession m ()
-sendMempool msg = do
-    chan <- gets mempChan
+-- Send a message to the txmanager
+sendTxManager :: MonadIO m => TxManagerMessage -> StateT BkchSession m ()
+sendTxManager msg = do
+    chan <- gets txmgChan
     liftIO . atomically $ writeTBMChan chan msg
 
 runDB :: (MonadMask m, MonadIO m) => StateT L.DB m a -> StateT BkchSession m a

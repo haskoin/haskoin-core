@@ -63,7 +63,7 @@ data PeerSession = PeerSession
     , msgsChan        :: !(TBMChan Message)
     , peerChan        :: !(TBMChan PeerMessage)
     , bkchChan        :: !(TBMChan BlockChainMessage)
-    , mempChan        :: !(TBMChan MempoolMessage)
+    , txmgChan        :: !(TBMChan TxManagerMessage)
     , peerVersion     :: !(Maybe Version)
     -- Current Job that the peer is working on
     , currentJob      :: !(Maybe Job)
@@ -89,9 +89,9 @@ instance NFData PeerSession where
 newPeerSession :: (MonadIO m, MonadLogger m)
                => TBMChan ManagerMessage 
                -> TBMChan BlockChainMessage
-               -> TBMChan MempoolMessage
+               -> TBMChan TxManagerMessage
                -> m PeerSession
-newPeerSession mngrChan bkchChan mempChan = do 
+newPeerSession mngrChan bkchChan txmgChan = do 
     -- Generate a new Peer unique ID
     peerId   <- liftIO newUnique
     -- Initialize the main Peer message channel
@@ -326,7 +326,7 @@ processInvMessage (Inv vs)
         pid <- gets peerId
         unless (null txlist) $ do
             $(logDebug) $ format pid "Received tx INV"
-            sendMempool $ MempoolTxInv pid txlist
+            sendTxManager $ TxManagerTxInv pid txlist
         unless (null blocklist) $ do
             $(logDebug) $ format pid "Received block INV"
             sendBlockChain $ BlockInv pid blocklist
@@ -340,7 +340,7 @@ processGetData :: (MonadLogger m, MonadIO m)
                => PeerId -> GetData -> StateT PeerSession m ()
 processGetData pid (GetData inv) = do
     $(logDebug) $ format pid "Received GetData message"
-    mapM_ (sendMempool . MempoolGetTx pid . fromIntegral . invHash) $
+    mapM_ (sendTxManager . TxManagerGetTx pid . fromIntegral . invHash) $
         filter ((== InvTx) . invType) inv
 
 processNotFound :: (MonadLogger m, MonadIO m) 
@@ -512,9 +512,9 @@ processTx tx = do
                 s{ currentJob = Just job{ jobPayload = JobDwnTxs rest } }
         _ -> return ()
 
-    -- We always send the transactions to the mempool, if they are part of a
+    -- We always send the transactions to the txmanager, if they are part of a
     -- merkle block or not
-    sendMempool $ MempoolTx tx fromMerkle
+    sendTxManager $ TxManagerTx tx fromMerkle
   where
     tid = txHash tx
 
@@ -676,9 +676,9 @@ sendBlockChain msg = do
     chan <- gets bkchChan
     liftIO . atomically $ writeTBMChan chan msg
 
-sendMempool :: MonadIO m => MempoolMessage -> StateT PeerSession m ()
-sendMempool msg = do
-    chan <- gets mempChan
+sendTxManager :: MonadIO m => TxManagerMessage -> StateT PeerSession m ()
+sendTxManager msg = do
+    chan <- gets txmgChan
     liftIO . atomically $ writeTBMChan chan msg
 
 closePeer :: MonadIO m => StateT PeerSession m ()

@@ -59,7 +59,7 @@ instance NFData PeerType
 data ManagerSession = ManagerSession
     { mngrChan      :: !(TBMChan ManagerMessage)
     , bkchChan      :: !(TBMChan BlockChainMessage)
-    , mempChan      :: !(TBMChan MempoolMessage)
+    , txmgChan      :: !(TBMChan TxManagerMessage)
     , peerMap       :: !(M.Map PeerId PeerData)
     , remoteMap     :: !(M.Map RemoteHost RemoteData)
     , mngrBloom     :: !(Maybe BloomFilter)
@@ -113,10 +113,10 @@ instance NFData RemoteData where
 -- return the PeerManager message channel to communicate with it.
 withPeerManager :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
                 => TBMChan BlockChainMessage
-                -> TBMChan MempoolMessage
+                -> TBMChan TxManagerMessage
                 -> (TBMChan ManagerMessage -> m ())
                 -> m ()
-withPeerManager bkchChan mempChan f = do
+withPeerManager bkchChan txmgChan f = do
     mngrChan <- liftIO $ atomically $ newTBMChan 10
     let peerMap       = M.empty
         remoteMap     = M.empty
@@ -195,7 +195,7 @@ connectToRemoteHost remote@(RemoteHost host port) = do
         -- Start the peer
         mChan   <- gets mngrChan
         bChan   <- gets bkchChan
-        oChan   <- gets mempChan
+        oChan   <- gets txmgChan
         session <- newPeerSession mChan bChan oChan
 
         -- Save the state of the peer

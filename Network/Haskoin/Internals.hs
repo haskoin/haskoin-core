@@ -22,7 +22,7 @@ module Network.Haskoin.Internals
 , module Network.Haskoin.Node.Actors.Peer
 , module Network.Haskoin.Node.Actors.PeerManager
 , module Network.Haskoin.Node.Actors.BlockChain
-, module Network.Haskoin.Node.Actors.Mempool
+, module Network.Haskoin.Node.Actors.TxManager
 , module Network.Haskoin.Script.Types 
 , module Network.Haskoin.Script.Parser 
 , module Network.Haskoin.Script.SigHash
@@ -61,7 +61,7 @@ import Network.Haskoin.Node.Actors.Types
 import Network.Haskoin.Node.Actors.Peer
 import Network.Haskoin.Node.Actors.PeerManager
 import Network.Haskoin.Node.Actors.BlockChain
-import Network.Haskoin.Node.Actors.Mempool
+import Network.Haskoin.Node.Actors.TxManager
 import Network.Haskoin.Script.Types 
 import Network.Haskoin.Script.Parser 
 import Network.Haskoin.Script.SigHash

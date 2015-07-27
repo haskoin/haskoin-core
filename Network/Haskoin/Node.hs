@@ -44,32 +44,29 @@ module Network.Haskoin.Node
 , isBloomEmpty
 , isBloomFull
 
-   -- * Peer
-, newPeerSession
-, startPeer
- 
-   -- * Peer Manager
-, withPeerManager  
-, RemoteHost(..)
-
-   -- * Blockchain
-, withBlockChain
-, MerkleTxs
-
-   -- * Mempool & Node
+   -- * Node
 , withNode
-, withMempool
 , WalletMessage(..)
 , NodeRequest(..)
+
+   -- * Node Actors
+, RemoteHost(..)
+, MerkleTxs
+, withTxManager
+, withBlockChain
+, withPeerManager  
+, newPeerSession
+, startPeer
 
 ) where
 
 import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Node.Bloom
+import Network.Haskoin.Node.Actors
 import Network.Haskoin.Node.Actors.Types
 import Network.Haskoin.Node.Actors.Peer
 import Network.Haskoin.Node.Actors.PeerManager
 import Network.Haskoin.Node.Actors.BlockChain
-import Network.Haskoin.Node.Actors.Mempool
+import Network.Haskoin.Node.Actors.TxManager
 

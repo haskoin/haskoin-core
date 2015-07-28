@@ -1,0 +1,97 @@
+name:                  haskoin-node
+version:               0.2.0
+synopsis:              
+    Implementation of a Bitoin node.
+description:
+    Implementation of a Bitcoin node.
+homepage:              http://github.com/haskoin/haskoin-node
+bug-reports:           http://github.com/haskoin/haskoin-node/issues
+stability:             stable
+license:               PublicDomain
+license-file:          UNLICENSE
+author:                Philippe Laprade, Jean-Pierre Rupp
+maintainer:            plaprade+hackage@gmail.com
+category:              Bitcoin, Finance, Network
+build-type:            Simple
+cabal-version:         >= 1.9.2
+
+source-repository head
+    type:     git
+    location: git://github.com/haskoin/haskoin-node.git
+
+library
+    exposed-modules: Network.Haskoin.Node.Actors
+                     Network.Haskoin.Node.Actors.Internals
+
+    other-modules: Network.Haskoin.Node.Actors.Types
+                   Network.Haskoin.Node.Actors.Peer
+                   Network.Haskoin.Node.Actors.PeerManager
+                   Network.Haskoin.Node.Actors.BlockChain
+                   Network.Haskoin.Node.Actors.TxManager
+
+    extensions: EmptyDataDecls
+                OverloadedStrings
+                FlexibleInstances
+                FlexibleContexts
+                DeriveDataTypeable
+                MultiParamTypeClasses
+                KindSignatures
+                FunctionalDependencies
+                RecordWildCards
+                DeriveFunctor
+                TypeFamilies
+                GADTs
+
+    build-depends: aeson                    >= 0.7          && < 0.9
+                 , base                     >= 4.6          && < 5 
+                 , binary                   >= 0.7          && < 0.8 
+                 , byteable                 >= 0.1          && < 0.2
+                 , bytestring               >= 0.10         && < 0.11 
+                 , base16-bytestring        >= 0.1          && < 0.2
+                 , conduit                  >= 1.2          && < 1.3
+                 , conduit-extra            >= 1.1          && < 1.2
+                 , containers               >= 0.5          && < 0.6
+                 , deepseq                  >= 1.3          && < 1.4
+                 , exceptions               >= 0.8          && < 0.9
+                 , haskoin                  >= 0.2          && < 0.3
+                 , leveldb-haskell          >= 0.6          && < 0.7
+                 , lifted-async             >= 0.2          && < 0.8
+                 , monad-control            >= 1.0          && < 1.1
+                 , monad-logger             >= 0.3          && < 0.4
+                 , mtl                      >= 2.1          && < 2.3 
+                 , network                  >= 2.4          && < 2.7
+                 , random                   >= 1.0          && < 1.2
+                 , split                    >= 0.2          && < 0.3
+                 , stm                      >= 2.4          && < 2.5
+                 , stm-conduit              >= 2.5          && < 2.6
+                 , text                     >= 0.11         && < 1.3
+                 , time                     >= 1.4          && < 1.6
+
+    ghc-options:       -Wall 
+
+test-suite test-haskoin-node
+    type:              exitcode-stdio-1.0
+    main-is:           Main.hs
+
+    extensions: EmptyDataDecls
+
+    other-modules: Network.Haskoin.Node.Actors.Tests
+                   Network.Haskoin.Node.Actors.Units
+
+    build-depends: aeson                          >= 0.7        && < 0.9
+                 , base                           >= 4.6        && < 5 
+                 , binary                         >= 0.7        && < 0.8 
+                 , bytestring                     >= 0.10       && < 0.11 
+                 , containers                     >= 0.5        && < 0.6
+                 , haskoin-node
+                 , mtl                            >= 2.1        && < 2.3 
+                 , split                          >= 0.2        && < 0.3
+                 , HUnit                          >= 1.2        && < 1.3
+                 , QuickCheck                     >= 2.6        && < 2.8
+                 , test-framework                 >= 0.8        && < 0.9 
+                 , test-framework-quickcheck2     >= 0.3        && < 0.4 
+                 , test-framework-hunit           >= 0.3        && < 0.4 
+
+    ghc-options: -Wall 
+    hs-source-dirs: tests
+

@@ -8,11 +8,11 @@ This package provides a Haskell SPV (simple payment verification) wallet
 implementation.  It features BIP32 hierarchical-deterministic key management,
 deterministic signatures (RFC-6979) and first order support for multi-signature
 transactions. You can communicate with the wallet process using JSON
-serialization over ØMQ socket or the supplied “hw” tool.
+serialization over ØMQ socket or the supplied `hw` tool.
 
 ## Library Documentation
 
-http://hackage.haskell.org/package/haskoin-wallet
+[Hackage documentation](http://hackage.haskell.org/package/haskoin-wallet)
 
 ## Installing
 

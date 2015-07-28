@@ -12,8 +12,8 @@ import System.Posix.Files
     , otherModes
     , fileExist
     )
-import System.Posix.Env (getEnv)
-import qualified System.Environment as E (getArgs)
+import System.Environment (getArgs, getEnv, lookupEnv)
+import System.Info (os)
 import System.Console.GetOpt 
     ( getOpt
     , usageInfo
@@ -27,10 +27,10 @@ import Control.Monad (when, forM_, filterM)
 import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.Reader as R (runReaderT)
 
+import Data.Default (def)
 import Data.FileEmbed (embedFile)
 import qualified Data.Text as T (pack, unpack)
-
-import Yesod.Default.Config2 (loadAppSettings, useEnv)
+import Data.Yaml (decodeFileEither)
 
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
@@ -60,39 +60,39 @@ options =
     [ Option "k" ["keyring"]
         (ReqArg (\s cfg -> cfg { configKeyRing = T.pack s }) "KEYRING") $
         "Which keyring to use (default: "
-            ++ T.unpack (configKeyRing hardConfig) ++ ")"
+            ++ T.unpack (configKeyRing def) ++ ")"
     , Option "c" ["count"] 
         (ReqArg (\s cfg -> cfg { configCount = read s }) "INT") $
         "Set the output size of some commands (default: "
-            ++ show (configCount hardConfig) ++ ")"
+            ++ show (configCount def) ++ ")"
     , Option "m" ["minconf"] 
         (ReqArg (\s cfg -> cfg { configMinConf = read s }) "INT") $
         "Required minimum confirmations for balances (default: "
-            ++ show (configMinConf hardConfig) ++ ")"
+            ++ show (configMinConf def) ++ ")"
     , Option "f" ["fee"] 
         (ReqArg (\s cfg -> cfg { configFee = read s }) "INT") $
         "Fee per 1000 bytes for new transactions (default: "
-            ++ show (configFee hardConfig) ++ ")"
+            ++ show (configFee def) ++ ")"
     , Option "R" ["rcptfee"]
         (NoArg $ \cfg -> cfg { configRcptFee = True }) $
         "Recipient pays fee (first if multiple) (default: "
-            ++ show (configRcptFee hardConfig) ++ ")"
+            ++ show (configRcptFee def) ++ ")"
     , Option "S" ["nosig"]
         (NoArg $ \cfg -> cfg { configSignTx = False }) $
         "Do not sign transactions (default: "
-            ++ show (not $ configSignTx hardConfig) ++ ")"
+            ++ show (not $ configSignTx def) ++ ")"
     , Option "i" ["internal"]
         (NoArg $ \cfg -> cfg { configAddrType = AddressInternal }) $
         "Display internal addresses (default: "
-            ++ show (configAddrType hardConfig == AddressInternal) ++ ")"
+            ++ show (configAddrType def == AddressInternal) ++ ")"
     , Option "o" ["offline"]
         (NoArg $ \cfg -> cfg { configOffline = True }) $
         "Display offline balance (default: "
-            ++ show (configOffline hardConfig) ++ ")"
+            ++ show (configOffline def) ++ ")"
     , Option "r" ["revpage"]
         (NoArg $ \cfg -> cfg { configReversePaging = True }) $
         "Use reverse paging (default: "
-            ++ show (configReversePaging hardConfig) ++ ")"
+            ++ show (configReversePaging def) ++ ")"
     , Option "p" ["passphrase"]
         (ReqArg (\s cfg -> cfg { configPass = Just $ T.pack s }) "PASSPHRASE")
         "Optional mnemonic passphrase when creating wallets"
@@ -105,21 +105,21 @@ options =
     , Option "s" ["socket"]
         (ReqArg (\s cfg -> cfg { configConnect = s }) "URI") $
         "ZeroMQ socket of the server (default: "
-            ++ configConnect hardConfig ++ ")"
+            ++ configConnect def ++ ")"
     , Option "d" ["detach"]
         (NoArg $ \cfg -> cfg { configDetach = True }) $
         "Detach the server process (default: "
-            ++ show (configDetach hardConfig) ++ ")"
+            ++ show (configDetach def) ++ ")"
     , Option "t" ["testnet"]
         (NoArg $ \cfg -> cfg { configTestnet = True }) "Use Testnet3 network"
     , Option "g" ["config"]
         (ReqArg (\s cfg -> cfg { configFile = s }) "FILE") $
         "Configuration file (default: "
-            ++ configFile hardConfig ++ ")"
+            ++ configFile def ++ ")"
     , Option "w" ["workdir"]
         (ReqArg (\s cfg -> cfg { configDir = s }) "DIR") $
         "Working directory (default: "
-            ++ configDir hardConfig ++ ")"
+            ++ configDir def ++ ")"
     ]
 
 -- Create and change current working directory
@@ -131,28 +131,38 @@ setWorkDir cfg = do
     setFileMode workDir ownerModes
     changeWorkingDirectory workDir
 
+-- Build application configuration
 getConfig :: [Config -> Config] -> IO Config
 getConfig fs = do
-    homeM <- getEnv "HOME"
-    cfg1 <- flip (foldr ($)) fs
-            <$> loadAppSettings [] [configValue] useEnv
-    cfgFiles <- filterM fileExist $ confFiles cfg1 homeM
-    cfg <- flip (foldr ($)) fs
-            <$> loadAppSettings cfgFiles [configValue] useEnv
-    return cfg { configDir = workDir cfg homeM }
+    -- Create initial configuration from defaults and command-line arguments
+    let initCfg = foldr ($) def fs
+
+    -- If working directory set in initial configuration, use it
+    dir <- case configDir initCfg of "" -> appDir
+                                     d  -> return d
+
+    -- Make configuration file relative to working directory
+    let cfgFile = if isAbsolute (configFile initCfg)
+                     then configFile initCfg
+                     else dir </> configFile initCfg
+    
+    -- Get configuration from file, if it exists
+    e <- fileExist cfgFile
+    if e then do
+            cfgE <- decodeFileEither cfgFile
+            case cfgE of
+                Left e -> error $ show e
+                -- Override settings from file using command-line
+                Right cfg -> return $ fixConfigDir (foldr ($) cfg fs) dir
+         else return $ fixConfigDir initCfg dir
   where
-    confFiles conf Nothing =
-        [ configFile conf, configDir conf </> configFile conf ]
-    confFiles conf homeM@(Just _)
-        | isAbsolute (configFile conf) = [ configFile conf ]
-        | otherwise = [ workDir conf homeM </> configFile conf ]
-    workDir conf (Just home)
-        | isAbsolute (configDir conf) = configDir conf
-        | otherwise = home </> configDir conf
-    workDir conf Nothing = configDir conf
+    -- If working directory not set, use default
+    fixConfigDir cfg dir = case configDir cfg of "" -> cfg{ configDir = dir }
+                                                 _  -> cfg
+
 
 clientMain :: IO ()
-clientMain = E.getArgs >>= \args -> case getOpt Permute options args of
+clientMain = getArgs >>= \args -> case getOpt Permute options args of
     (fs, commands, []) -> do
         cfg <- getConfig fs
         when (configTestnet cfg) switchToTestnet3
@@ -196,3 +206,33 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     []                                     -> liftIO $ forM_ usage putStrLn
     _ -> liftIO $ forM_ ("Invalid command" : usage) putStrLn
 
+
+appDir :: IO FilePath
+appDir = case os of "mingw"   -> windows
+                    "mingw32" -> windows
+                    "mingw64" -> windows
+                    "darwin"  -> osx
+                    "linux"   -> unix
+                    _         -> unix
+  where
+    windows = do
+        localAppData <- lookupEnv "LOCALAPPDATA"
+        dirM <- case localAppData of
+            Nothing -> lookupEnv "APPDATA"
+            Just l -> return $ Just l
+        case dirM of
+            Just d -> return $ d </> "Haskoin Wallet"
+            Nothing -> return "."
+    osx = do
+        homeM <- lookupEnv "HOME"
+        case homeM of
+            Just home -> return $ home </> "Library"
+                                       </> "Application Support"
+                                       </> "Haskoin Wallet"
+            Nothing -> return "."
+    unix = do
+        homeM <- lookupEnv "HOME"
+        case homeM of
+            Just home -> return $ home </> ".hw"
+            Nothing -> return "."
+        

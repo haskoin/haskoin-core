@@ -18,11 +18,6 @@ module Network.Haskoin.Internals
 , module Network.Haskoin.Node.Types
 , module Network.Haskoin.Node.Message
 , module Network.Haskoin.Node.Bloom
-, module Network.Haskoin.Node.Actors.Types
-, module Network.Haskoin.Node.Actors.Peer
-, module Network.Haskoin.Node.Actors.PeerManager
-, module Network.Haskoin.Node.Actors.BlockChain
-, module Network.Haskoin.Node.Actors.TxManager
 , module Network.Haskoin.Script.Types 
 , module Network.Haskoin.Script.Parser 
 , module Network.Haskoin.Script.SigHash
@@ -57,11 +52,6 @@ import Network.Haskoin.Crypto.Mnemonic
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.Bloom
-import Network.Haskoin.Node.Actors.Types
-import Network.Haskoin.Node.Actors.Peer
-import Network.Haskoin.Node.Actors.PeerManager
-import Network.Haskoin.Node.Actors.BlockChain
-import Network.Haskoin.Node.Actors.TxManager
 import Network.Haskoin.Script.Types 
 import Network.Haskoin.Script.Parser 
 import Network.Haskoin.Script.SigHash

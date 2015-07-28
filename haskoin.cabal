@@ -18,10 +18,10 @@ description:
     * Network protocol type parsing
     * Headerchain implementation (Blockchain with headers only)
     * Bloom filters and partial merkle tree library
-    * Headers-first SPV node implementation (network-only, no wallet)
     .
-    A wallet implementation using the SPV node library is available in the
-    haskoin-wallet package.
+    A node implementation is available in haskoin-node and a wallet
+    implementation is available in the haskoin-wallet package.
+
 homepage:              http://github.com/haskoin/haskoin
 bug-reports:           http://github.com/haskoin/haskoin/issues
 stability:             stable
@@ -62,12 +62,6 @@ library
                    Network.Haskoin.Node.Types
                    Network.Haskoin.Node.Message
                    Network.Haskoin.Node.Bloom
-                   Network.Haskoin.Node.Actors
-                   Network.Haskoin.Node.Actors.Types
-                   Network.Haskoin.Node.Actors.Peer
-                   Network.Haskoin.Node.Actors.PeerManager
-                   Network.Haskoin.Node.Actors.BlockChain
-                   Network.Haskoin.Node.Actors.TxManager
                    Network.Haskoin.Script.Types 
                    Network.Haskoin.Script.Parser 
                    Network.Haskoin.Script.SigHash

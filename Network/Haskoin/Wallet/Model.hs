@@ -49,6 +49,7 @@ import Network.Haskoin.Script
 import Network.Haskoin.Block
 import Network.Haskoin.Crypto 
 import Network.Haskoin.Node
+import Network.Haskoin.Node.HeaderTree
 
 share [ mkPersist sqlSettings
       , mkMigrate "migrateWallet"

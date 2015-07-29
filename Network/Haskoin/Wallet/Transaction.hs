@@ -84,6 +84,8 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
 import Network.Haskoin.Node
+import Network.Haskoin.Node.Actors
+import Network.Haskoin.Node.HeaderTree
 
 import Network.Haskoin.Wallet.KeyRing
 import Network.Haskoin.Wallet.Model
@@ -807,7 +809,9 @@ killTxs txHashes = do
 {- Confirmations -}
 
 importMerkles :: MonadIO m
-              => BlockChainAction -> [MerkleTxs] -> SqlPersistT m ()
+              => BlockChainAction 
+              -> [MerkleTxs] 
+              -> SqlPersistT m ()
 importMerkles action expTxsLs = unless (isSideChain action) $ do
     case action of
         ChainReorg _ os _ -> 

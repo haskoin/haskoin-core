@@ -50,10 +50,12 @@ import Database.Persist.Sql
     )
 
 import Network.Haskoin.Crypto
-import Network.Haskoin.Node
 import Network.Haskoin.Transaction
 import Network.Haskoin.Block
 import Network.Haskoin.Util
+import Network.Haskoin.Node
+import Network.Haskoin.Node.Actors
+import Network.Haskoin.Node.HeaderTree
 
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.KeyRing

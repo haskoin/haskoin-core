@@ -50,10 +50,12 @@ import qualified Database.LevelDB.Base as DB (Options(..), open, defaultOptions)
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Constants
-import Network.Haskoin.Node
 import Network.Haskoin.Util
 import Network.Haskoin.Block
 import Network.Haskoin.Transaction
+import Network.Haskoin.Node
+import Network.Haskoin.Node.Actors
+import Network.Haskoin.Node.HeaderTree
 
 import Network.Haskoin.Wallet.KeyRing
 import Network.Haskoin.Wallet.Transaction

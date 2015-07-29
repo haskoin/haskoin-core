@@ -46,7 +46,7 @@ KeyRingTx
     isCoinbase Bool
     confidence TxConfidence maxlen=16
     confirmedBy BlockHash Maybe maxlen=200
-    confirmedHeight Word32 Maybe
+    confirmedHeight BlockHeight Maybe
     confirmedDate Timestamp Maybe
     created UTCTime
     UniqueAccTx account hash
@@ -83,7 +83,7 @@ KeyRingSpentCoin
     deriving Show
 
 KeyRingConfig
-    height Word32
+    height BlockHeight
     block BlockHash
     bloomFilter BloomFilter
     bloomElems Int

@@ -79,6 +79,7 @@ import Network.Haskoin.Script
 import Network.Haskoin.Node
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
+import Network.Haskoin.Node.HeaderTree
 
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Model

@@ -454,7 +454,7 @@ data JsonTx = JsonTx
     , jsonTxConfidence      :: !TxConfidence 
     , jsonTxConfirmedBy     :: !(Maybe BlockHash)
     , jsonTxConfirmedHeight :: !(Maybe Word32)
-    , jsonTxConfirmedDate   :: !(Maybe Timestamp)
+    , jsonTxConfirmedDate   :: !(Maybe Word32)
     , jsonTxCreated         :: !UTCTime
     -- Optional confirmation
     , jsonTxConfirmations   :: !(Maybe Word32)

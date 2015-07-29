@@ -32,7 +32,7 @@ import Control.Monad.Logger
     , filterLogger
     )
 
-import Data.HashMap.Strict ((!))
+import qualified Data.HashMap.Strict as H (lookup)
 import Data.ByteString (ByteString)
 import Data.Text (pack)
 import Data.Time.Clock.POSIX (getPOSIXTime)
@@ -79,7 +79,10 @@ initDatabase cfg = do
     -- Create a semaphore with 1 resource
     sem <- Sem.new 1
     -- Create a database pool
-    pool <- getDatabasePool $ configDatabase cfg ! pack networkName
+    let dbCfg = fromMaybe
+            (error $ "DB config settings for " ++ networkName ++ " not found")
+            (pack networkName `H.lookup` configDatabase cfg)
+    pool <- getDatabasePool dbCfg
     -- Initialize wallet database
     runDBPool sem pool $ do
         _ <- runMigration migrateWallet 
@@ -119,7 +122,9 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
                         Nothing -> round <$> getPOSIXTime
 
                 -- Bitcoin nodes to connect to
-            let nodes = configBTCNodes cfg ! pack networkName
+            let nodes = fromMaybe
+                    (error $ "BTC nodes for " ++ networkName ++ " not found")
+                    (pack networkName `H.lookup` configBTCNodes cfg)
                 -- LevelDB options
                 fp = "headertree"
                 opts = DB.defaultOptions

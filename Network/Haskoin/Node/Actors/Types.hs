@@ -33,6 +33,7 @@ import Network.Haskoin.Node
 import Network.Haskoin.Block
 import Network.Haskoin.Transaction
 import Network.Haskoin.Crypto
+import Network.Haskoin.Node.HeaderTree
 
 type PeerId = Unique
 type JobPriority = Int

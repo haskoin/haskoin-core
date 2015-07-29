@@ -3,7 +3,20 @@ version:               0.2.0
 synopsis:              
     Implementation of a Bitoin node.
 description:
-    Implementation of a Bitcoin node.
+    Haskoin-node provides an implementation of the Bitcoin network protocol
+    that allows you to synchronize headers (with SPV validation) and download
+    merkle blocks and full blocks. This package can be used to implement
+    wallets or other Bitcoin components that require talking to the Bitcoin
+    network. It provides the following features:
+    .
+    * Implementation of the Bitcoin network protocol
+    * Headertree implementation with SPV verification
+    * Headers-first synchronization
+    * Merkle block download from peers with bloom filters
+    * Full block download from peers
+    .
+    A wallet implementation using this package is available in haskoin-wallet.
+
 homepage:              http://github.com/haskoin/haskoin-node
 bug-reports:           http://github.com/haskoin/haskoin-node/issues
 stability:             stable
@@ -21,7 +34,8 @@ source-repository head
 
 library
     exposed-modules: Network.Haskoin.Node.Actors
-                     Network.Haskoin.Node.Actors.Internals
+                     Network.Haskoin.Node.HeaderTree
+                     Network.Haskoin.Node.Checkpoints
 
     other-modules: Network.Haskoin.Node.Actors.Types
                    Network.Haskoin.Node.Actors.Peer
@@ -51,7 +65,9 @@ library
                  , conduit                  >= 1.2          && < 1.3
                  , conduit-extra            >= 1.1          && < 1.2
                  , containers               >= 0.5          && < 0.6
+                 , data-default             >= 0.5          && < 0.6
                  , deepseq                  >= 1.3          && < 1.4
+                 , either                   >= 4.3          && < 4.4
                  , exceptions               >= 0.8          && < 0.9
                  , haskoin                  >= 0.2          && < 0.3
                  , leveldb-haskell          >= 0.6          && < 0.7

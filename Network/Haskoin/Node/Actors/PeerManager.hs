@@ -38,6 +38,7 @@ import Network.Haskoin.Util
 import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Node
+import Network.Haskoin.Node.HeaderTree
 import Network.Haskoin.Node.Actors.Types
 import Network.Haskoin.Node.Actors.Peer
 

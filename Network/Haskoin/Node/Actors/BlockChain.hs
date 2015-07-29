@@ -33,6 +33,7 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Constants
 import Network.Haskoin.Util
 import Network.Haskoin.Node
+import Network.Haskoin.Node.HeaderTree
 import Network.Haskoin.Node.Actors.PeerManager
 import Network.Haskoin.Node.Actors.Types
 

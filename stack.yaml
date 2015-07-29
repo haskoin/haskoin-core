@@ -3,7 +3,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/plaprade/haskoin.git
-    commit: 46aa1697fc8f27db3fa739ca5df1a4d2e6e92c32
+    commit: 8ac65e53e7a9f31ad74ecd24805b17e21434d25a
 extra-deps:
 - leveldb-haskell-0.6.3
 - murmur3-1.0.0

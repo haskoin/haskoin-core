@@ -26,18 +26,6 @@ haskoin-wallet package.
 
 http://hackage.haskell.org/package/haskoin
 
-## Dependencies
-
-* pkg-config
-* Snappy
-* zlib
-
-On Debian/Ubuntu, use following command:
-
-```sh
-sudo apt-get install git libsnappy-dev pkg-config zlib1g-dev
-```
-
 You may be interested in getting the [Haskoin Wallet](https://github.com/haskoin/haskoin-wallet)
 instead.
 

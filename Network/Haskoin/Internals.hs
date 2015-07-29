@@ -26,8 +26,6 @@ module Network.Haskoin.Internals
 , module Network.Haskoin.Transaction.Builder
 , module Network.Haskoin.Block.Types
 , module Network.Haskoin.Block.Merkle
-, module Network.Haskoin.Block.HeaderTree
-, module Network.Haskoin.Block.Checkpoints
 , module Network.Haskoin.Test.Util
 , module Network.Haskoin.Test.Crypto
 , module Network.Haskoin.Test.Node
@@ -60,8 +58,6 @@ import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Transaction.Builder
 import Network.Haskoin.Block.Types
 import Network.Haskoin.Block.Merkle
-import Network.Haskoin.Block.HeaderTree
-import Network.Haskoin.Block.Checkpoints
 import Network.Haskoin.Test.Util
 import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Test.Node

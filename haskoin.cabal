@@ -16,7 +16,6 @@ description:
     * Building and signing of standard transactions (regular, multisig, p2sh)
     * Deterministic signing (rfc-6979)
     * Network protocol type parsing
-    * Headerchain implementation (Blockchain with headers only)
     * Bloom filters and partial merkle tree library
     .
     A node implementation is available in haskoin-node and a wallet
@@ -70,8 +69,6 @@ library
                    Network.Haskoin.Transaction.Builder
                    Network.Haskoin.Block.Types
                    Network.Haskoin.Block.Merkle
-                   Network.Haskoin.Block.HeaderTree
-                   Network.Haskoin.Block.Checkpoints
                    Network.Haskoin.Test.Util
                    Network.Haskoin.Test.Crypto
                    Network.Haskoin.Test.Node
@@ -84,13 +81,8 @@ library
                 OverloadedStrings
                 FlexibleInstances
                 FlexibleContexts
-                DeriveDataTypeable
-                MultiParamTypeClasses
-                KindSignatures
-                FunctionalDependencies
                 RecordWildCards
-                DeriveFunctor
-                TypeFamilies
+                DeriveDataTypeable
                 GADTs
 
     build-depends: aeson                    >= 0.7          && < 0.9
@@ -100,26 +92,16 @@ library
                  , bytestring               >= 0.10         && < 0.11 
                  , base16-bytestring        >= 0.1          && < 0.2
                  , conduit                  >= 1.2          && < 1.3
-                 , conduit-extra            >= 1.1          && < 1.2
                  , containers               >= 0.5          && < 0.6
                  , cryptohash               >= 0.11         && < 0.12
                  , deepseq                  >= 1.3          && < 1.4
-                 , data-default             >= 0.5          && < 0.6
                  , either                   >= 4.3          && < 4.4
-                 , exceptions               >= 0.8          && < 0.9
-                 , leveldb-haskell          >= 0.6          && < 0.7
-                 , lifted-async             >= 0.2          && < 0.8
-                 , monad-control            >= 1.0          && < 1.1
-                 , monad-logger             >= 0.3          && < 0.4
                  , mtl                      >= 2.1          && < 2.3 
                  , murmur3                  >= 1.0          && < 1.1
-                 , network                  >= 2.4          && < 2.7
+                 , network                  >= 2.6          && < 2.7
                  , pbkdf                    >= 1.1          && < 1.2
                  , QuickCheck               >= 2.6          && < 2.8
-                 , random                   >= 1.0          && < 1.2
                  , split                    >= 0.2          && < 0.3
-                 , stm                      >= 2.4          && < 2.5
-                 , stm-conduit              >= 2.5          && < 2.6
                  , text                     >= 0.11         && < 1.3
                  , time                     >= 1.4          && < 1.6
 

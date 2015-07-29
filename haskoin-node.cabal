@@ -43,25 +43,14 @@ library
                    Network.Haskoin.Node.Actors.BlockChain
                    Network.Haskoin.Node.Actors.TxManager
 
-    extensions: EmptyDataDecls
-                OverloadedStrings
+    extensions: OverloadedStrings
                 FlexibleInstances
                 FlexibleContexts
-                DeriveDataTypeable
-                MultiParamTypeClasses
-                KindSignatures
-                FunctionalDependencies
                 RecordWildCards
-                DeriveFunctor
-                TypeFamilies
-                GADTs
 
-    build-depends: aeson                    >= 0.7          && < 0.9
-                 , base                     >= 4.6          && < 5 
+    build-depends: base                     >= 4.6          && < 5 
                  , binary                   >= 0.7          && < 0.8 
-                 , byteable                 >= 0.1          && < 0.2
                  , bytestring               >= 0.10         && < 0.11 
-                 , base16-bytestring        >= 0.1          && < 0.2
                  , conduit                  >= 1.2          && < 1.3
                  , conduit-extra            >= 1.1          && < 1.2
                  , containers               >= 0.5          && < 0.6
@@ -77,7 +66,6 @@ library
                  , mtl                      >= 2.1          && < 2.3 
                  , network                  >= 2.4          && < 2.7
                  , random                   >= 1.0          && < 1.2
-                 , split                    >= 0.2          && < 0.3
                  , stm                      >= 2.4          && < 2.5
                  , stm-conduit              >= 2.5          && < 2.6
                  , text                     >= 0.11         && < 1.3
@@ -94,14 +82,8 @@ test-suite test-haskoin-node
     other-modules: Network.Haskoin.Node.Actors.Tests
                    Network.Haskoin.Node.Actors.Units
 
-    build-depends: aeson                          >= 0.7        && < 0.9
-                 , base                           >= 4.6        && < 5 
-                 , binary                         >= 0.7        && < 0.8 
-                 , bytestring                     >= 0.10       && < 0.11 
-                 , containers                     >= 0.5        && < 0.6
+    build-depends: base                           >= 4.6        && < 5 
                  , haskoin-node
-                 , mtl                            >= 2.1        && < 2.3 
-                 , split                          >= 0.2        && < 0.3
                  , HUnit                          >= 1.2        && < 1.3
                  , QuickCheck                     >= 2.6        && < 2.8
                  , test-framework                 >= 0.8        && < 0.9 

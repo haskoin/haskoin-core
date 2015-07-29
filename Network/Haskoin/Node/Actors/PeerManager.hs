@@ -35,7 +35,6 @@ import qualified Data.Map as M
     )
 
 import Network.Haskoin.Util
-import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Node
 import Network.Haskoin.Node.HeaderTree

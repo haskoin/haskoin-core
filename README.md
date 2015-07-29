@@ -24,16 +24,12 @@ http://hackage.haskell.org/package/haskoin-node
 
 ## Dependencies
 
-* pkg-config
 * LevelDB
-* Snappy
-* zlib
 
 On Debian/Ubuntu, use following command:
 
 ```sh
-sudo apt-get install git wget libleveldb-dev \
-    libzmq3-dev libsnappy-dev pkg-config zlib1g-dev
+sudo apt-get install libleveldb-dev
 ```
 
 You may be interested in getting the [Haskoin Wallet](https://github.com/haskoin/haskoin-wallet)

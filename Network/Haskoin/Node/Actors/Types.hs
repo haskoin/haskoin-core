@@ -28,6 +28,7 @@ module Network.Haskoin.Node.Actors.Types
 
 import Data.Unique (Unique, hashUnique)
 import Control.DeepSeq (NFData(..))
+import GHC.Generics (Generic)
 
 import Network.Haskoin.Node.Bloom
 import Network.Haskoin.Node.Message
@@ -41,9 +42,6 @@ type JobPriority = Int
 type JobId = Unique
 type DwnMerkleId = Unique
 type DwnBlockId = Unique
-
-instance NFData Unique where
-    rnf u = u `seq` ()
 
 data Job = Job
     { jobId       :: !JobId
@@ -212,7 +210,7 @@ data Behavior
     = GoodBehavior
     | Misbehaving !Int
     | Banned
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show, Read, Generic)
 
 instance NFData Behavior
 

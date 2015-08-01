@@ -96,6 +96,7 @@ library
                 FunctionalDependencies
                 RecordWildCards
                 DeriveFunctor
+                DeriveGeneric
                 TypeFamilies
                 GADTs
 
@@ -109,7 +110,7 @@ library
                  , conduit-extra            >= 1.1          && < 1.2
                  , containers               >= 0.5          && < 0.6
                  , cryptohash               >= 0.11         && < 0.12
-                 , deepseq                  >= 1.3          && < 1.4
+                 , deepseq                  >= 1.4          && < 1.5
                  , data-default             >= 0.5          && < 0.6
                  , either                   >= 4.3          && < 4.4
                  , exceptions               >= 0.8          && < 0.9

@@ -32,6 +32,7 @@ import Data.Binary.Put
 import qualified Data.Foldable as F
 import qualified Data.Sequence as S
 import qualified Data.ByteString as BS
+import GHC.Generics (Generic)
 
 import Network.Haskoin.Node.Types
 
@@ -59,7 +60,7 @@ data BloomFlags
     | BloomUpdateP2PubKeyOnly 
     -- ^ Only auto-update on outputs that are pay-to-pubkey or pay-to-multisig.
     -- This is the default setting.
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show, Read, Generic)
 
 instance NFData BloomFlags
 

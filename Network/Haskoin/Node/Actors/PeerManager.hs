@@ -33,6 +33,7 @@ import qualified Data.Map as M
     , null, fromAscListWith, toAscList
     , mapMaybe
     )
+import GHC.Generics (Generic)
 
 import Network.Haskoin.Util
 import Network.Haskoin.Block
@@ -46,13 +47,14 @@ data PeerState
     = PeerStateNew    -- Connection/Handshake in progress
     | PeerStateReady  -- Ready to receive work
     | PeerStateBusy   -- Busy working
-    deriving (Eq, Read, Show)
+    deriving (Eq, Read, Show, Generic)
 
 instance NFData PeerState
 
 data PeerType
     = PeerIncoming
     | PeerOutgoing
+    deriving (Eq, Read, Show, Generic)
 
 instance NFData PeerType
 

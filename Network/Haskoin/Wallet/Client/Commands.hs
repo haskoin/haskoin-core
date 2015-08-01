@@ -619,10 +619,3 @@ printTxType t = case t of
     TxIncoming -> "Incoming"
     TxOutgoing -> "Outgoing"
     TxSelf     -> "Self"
-
-printAddrTxType :: AddrTxType -> String
-printAddrTxType t = case t of
-    AddrTxIncoming -> "Incoming"
-    AddrTxOutgoing -> "Outgoing"
-    AddrTxChange   -> "Change"
-    

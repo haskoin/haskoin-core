@@ -25,7 +25,7 @@ KeyRingAddr
     fullDerivation DerivPath Maybe maxlen=200
     derivation SoftPath maxlen=200
     redeem ScriptOutput Maybe
-    key PubKeyC Maybe maxlen=200
+    key PubKeyC Maybe maxlen=66
     created UTCTime
     UniqueAddr account address
     UniqueAddrRev address account
@@ -34,8 +34,8 @@ KeyRingAddr
 
 KeyRingTx
     account KeyRingAccountId
-    hash TxHash maxlen=200
-    nosigHash TxHash maxlen=200
+    hash TxHash maxlen=64
+    nosigHash TxHash maxlen=64
     type TxType maxlen=16
     inValue Word64
     outValue Word64
@@ -45,7 +45,7 @@ KeyRingTx
     tx Tx
     isCoinbase Bool
     confidence TxConfidence maxlen=16
-    confirmedBy BlockHash Maybe maxlen=200
+    confirmedBy BlockHash Maybe maxlen=64
     confirmedHeight BlockHeight Maybe
     confirmedDate Timestamp Maybe
     created UTCTime
@@ -57,7 +57,7 @@ KeyRingTx
 
 KeyRingCoin
     account KeyRingAccountId
-    hash TxHash maxlen=200
+    hash TxHash maxlen=64
     pos Word32
     tx KeyRingTxId
     addr KeyRingAddrId
@@ -72,7 +72,7 @@ KeyRingCoin
 
 KeyRingSpentCoin
     account KeyRingAccountId
-    hash TxHash maxlen=200
+    hash TxHash maxlen=64
     pos Word32
     spendingTx KeyRingTxId
     created UTCTime
@@ -84,7 +84,7 @@ KeyRingSpentCoin
 
 KeyRingConfig
     height BlockHeight
-    block BlockHash
+    block BlockHash maxlen=64
     bloomFilter BloomFilter
     bloomElems Int
     bloomFp Double

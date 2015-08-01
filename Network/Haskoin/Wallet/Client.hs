@@ -117,9 +117,8 @@ options =
         "Configuration file (default: "
             ++ configFile def ++ ")"
     , Option "w" ["workdir"]
-        (ReqArg (\s cfg -> cfg { configDir = s }) "DIR") $
-        "Working directory (default: "
-            ++ configDir def ++ ")"
+        (ReqArg (\s cfg -> cfg { configDir = s }) "DIR")
+        "Working directory (OS-specific default)"
     ]
 
 -- Create and change current working directory

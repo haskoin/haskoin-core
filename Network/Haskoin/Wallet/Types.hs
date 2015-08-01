@@ -29,7 +29,6 @@ module Network.Haskoin.Wallet.Types
 , AddressType(..)
 , addrTypeIndex
 , TxType(..)
-, AddrTxType(..)
 , TxConfidence(..)
 , AddressInfo(..)
 , BalanceInfo(..)
@@ -54,11 +53,15 @@ import Text.Read (readMaybe)
 import Data.Int (Int64)
 import Data.Time (UTCTime)
 import Data.Typeable (Typeable)
-import Data.Maybe (maybeToList, isJust, fromJust)
+import Data.Maybe (maybeToList, isJust, fromJust, fromMaybe)
 import Data.Char (toLower)
 import Data.Word (Word32, Word64)
 import Data.Text (Text)
+import Data.List (intercalate)
+import Data.List.Split (splitOn)
+import qualified Data.Text as T
 import qualified Data.ByteString.Char8 as C (pack, unpack)
+import qualified Data.ByteString.Lazy as L
 import Data.Aeson.Types 
     ( Options(..)
     , SumEncoding(..)
@@ -70,6 +73,8 @@ import Data.Aeson
     ( Value (..)
     , FromJSON
     , ToJSON
+    , encode
+    , decodeStrict'
     , withObject
     , (.=), (.:), (.:?), (.!=)
     , object
@@ -110,16 +115,6 @@ data TxType
 instance NFData TxType
 
 $(deriveJSON (dropSumLabels 2 0 "") ''TxType)
-
-data AddrTxType
-    = AddrTxIncoming
-    | AddrTxOutgoing
-    | AddrTxChange
-    deriving (Eq, Show, Read)
-
-instance NFData AddrTxType
-
-$(deriveJSON (dropSumLabels 6 0 "") ''AddrTxType)
 
 data TxConfidence
     = TxOffline
@@ -533,13 +528,13 @@ instance PersistField XPrvKey where
 instance PersistFieldSql XPrvKey where
     sqlType _ = SqlString
 
-instance PersistField XPubKey where
-    toPersistValue = PersistByteString . C.pack . xPubExport
-    fromPersistValue (PersistByteString bs) = 
-        maybeToEither "Invalid Persistent XPubKey" $ xPubImport $ C.unpack bs
+instance PersistField [XPubKey] where
+    toPersistValue = PersistByteString . L.toStrict . encode
+    fromPersistValue (PersistByteString bs) =
+        maybeToEither "Invalid Persistent XPubKey" $ decodeStrict' bs
     fromPersistValue _ = Left "Invalid Persistent XPubKey"
 
-instance PersistFieldSql XPubKey where
+instance PersistFieldSql [XPubKey] where
     sqlType _ = SqlString
 
 instance PersistField DerivPath where
@@ -570,24 +565,9 @@ instance PersistFieldSql SoftPath where
     sqlType _ = SqlString
 
 instance PersistField AccountType where
-    toPersistValue ts = PersistByteString $ case ts of
-        AccountRegular r -> C.pack $ unwords $ 
-            "regular" : [ "read-only" | r ]
-        AccountMultisig r m n -> C.pack $ unwords $ 
-            "multisig" : show m : "of" : show n : [ "read-only" | r ]
-
-    fromPersistValue (PersistByteString t) = case words $ C.unpack t of
-        ("regular" : r) -> maybeToEither err $ 
-            AccountRegular <$> checkRead r
-        ("multisig" : m : "of" : n : r) -> maybeToEither err $
-            AccountMultisig <$> checkRead r <*> readMaybe m <*> readMaybe n
-        _ -> Left err
-      where
-        checkRead [ "read-only" ] = return True
-        checkRead [] = return False
-        checkRead _  = Nothing
-        err = "Invalid Persistent AccountType"
-
+    toPersistValue = PersistByteString . L.toStrict . encode
+    fromPersistValue (PersistByteString bs) =
+        maybeToEither "Invalid Persistent AccountType" $ decodeStrict' bs
     fromPersistValue _ = Left "Invalid Persistent AccountType"
 
 instance PersistFieldSql AccountType where
@@ -614,7 +594,7 @@ instance PersistField TxType where
         TxOutgoing -> "outgoing"
         TxSelf     -> "self"
 
-    fromPersistValue (PersistByteString t) = case t of
+    fromPersistValue (PersistByteString bs) = case bs of
         "incoming" -> return TxIncoming
         "outgoing" -> return TxOutgoing
         "self"     -> return TxSelf
@@ -625,23 +605,6 @@ instance PersistField TxType where
 instance PersistFieldSql TxType where
     sqlType _ = SqlString
 
-instance PersistField AddrTxType where
-    toPersistValue ts = PersistByteString $ case ts of
-        AddrTxIncoming -> "incoming"
-        AddrTxOutgoing -> "outgoing"
-        AddrTxChange   -> "change"
-
-    fromPersistValue (PersistByteString t) = case t of
-        "incoming" -> return AddrTxIncoming
-        "outgoing" -> return AddrTxOutgoing
-        "change"   -> return AddrTxChange
-        _ -> Left "Invalid Persistent AddrTxType"
-
-    fromPersistValue _ = Left "Invalid Persistent AddrTxType"
-
-instance PersistFieldSql AddrTxType where
-    sqlType _ = SqlString
-
 instance PersistField Address where
     toPersistValue = PersistByteString . C.pack . addrToBase58
     fromPersistValue (PersistByteString a) =
@@ -649,17 +612,6 @@ instance PersistField Address where
     fromPersistValue _ = Left "Invalid Persistent Address"
 
 instance PersistFieldSql Address where
-    sqlType _ = SqlString
-
--- TODO: Change the AddressInfo instance ?
-instance PersistField AddressInfo where
-    toPersistValue val = PersistByteString $ C.pack $ show val
-
-    fromPersistValue (PersistByteString bs) = 
-        maybeToEither "Invalid Persistent AddressInfo" $ readMaybe (C.unpack bs)
-    fromPersistValue _ = Left "Invalid Persistent Address"
-
-instance PersistFieldSql AddressInfo where
     sqlType _ = SqlString
 
 instance PersistField BloomFilter where
@@ -672,20 +624,20 @@ instance PersistFieldSql BloomFilter where
     sqlType _ = SqlBlob
 
 instance PersistField BlockHash where
-    toPersistValue = PersistByteString . stringToBS . encodeBlockHashLE
+    toPersistValue = PersistByteString . C.pack . encodeBlockHashLE
     fromPersistValue (PersistByteString h) =
-        maybeToEither "Invalid Persistent BlockHash" $
-            decodeBlockHashLE $ bsToString h
+        maybeToEither "Could not decode BlockHash" $
+            decodeBlockHashLE $ C.unpack h
     fromPersistValue _ = Left "Invalid Persistent BlockHash"
 
 instance PersistFieldSql BlockHash where
     sqlType _ = SqlString
 
 instance PersistField TxHash where
-    toPersistValue = PersistByteString . stringToBS . encodeTxHashLE
+    toPersistValue = PersistByteString . C.pack . encodeTxHashLE
     fromPersistValue (PersistByteString h) =
         maybeToEither "Invalid Persistent TxHash" $ 
-            decodeTxHashLE $ bsToString h
+            decodeTxHashLE $ C.unpack h
     fromPersistValue _ = Left "Invalid Persistent TxHash"
 
 instance PersistFieldSql TxHash where
@@ -698,7 +650,7 @@ instance PersistField TxConfidence where
         TxPending  -> "pending"
         TxBuilding -> "building"
 
-    fromPersistValue (PersistByteString t) = case t of
+    fromPersistValue (PersistByteString bs) = case bs of
         "offline"  -> return TxOffline
         "dead"     -> return TxDead
         "pending"  -> return TxPending
@@ -719,23 +671,31 @@ instance PersistFieldSql Tx where
     sqlType _ = SqlBlob
 
 instance PersistField PubKeyC where
-    toPersistValue = PersistByteString . stringToBS . bsToHex . encode'
-    fromPersistValue (PersistByteString t) =
+    toPersistValue = PersistByteString . C.pack . bsToHex . encode'
+    fromPersistValue (PersistByteString bs) =
         maybeToEither "Invalid Persistent PubKeyC" $
-            decodeToMaybe =<< hexToBS (bsToString t)
+            decodeToMaybe =<< hexToBS (C.unpack bs)
     fromPersistValue _ = Left "Invalid Persistent PubKeyC"
 
 instance PersistFieldSql PubKeyC where
     sqlType _ = SqlString
 
 instance PersistField ScriptOutput where
-    toPersistValue = 
-        PersistByteString . stringToBS . bsToHex . encodeOutputBS
-    fromPersistValue (PersistByteString t) =
+    toPersistValue = PersistByteString . encodeOutputBS
+    fromPersistValue (PersistByteString bs) =
         maybeToEither "Invalid Persistent ScriptOutput" $
-            (eitherToMaybe . decodeOutputBS) =<< hexToBS (bsToString t)
+            eitherToMaybe $ decodeOutputBS bs
     fromPersistValue _ = Left "Invalid Persistent ScriptOutput"
 
 instance PersistFieldSql ScriptOutput where
+    sqlType _ = SqlBlob
+
+instance PersistField [AddressInfo] where
+    toPersistValue = PersistByteString . L.toStrict . encode
+    fromPersistValue (PersistByteString bs) =
+        maybeToEither "Invalid Persistent AddressInfo" $ decodeStrict' bs
+    fromPersistValue _ = Left "Invalid Persistent AddressInfo"
+
+instance PersistFieldSql [AddressInfo] where
     sqlType _ = SqlString
 

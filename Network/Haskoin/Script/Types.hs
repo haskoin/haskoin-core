@@ -29,6 +29,7 @@ import qualified Data.ByteString as BS
     ( ByteString
     , length
     )
+import GHC.Generics (Generic)
 
 -- | Data type representing a transaction script. Scripts are defined as lists
 -- of script operators 'ScriptOp'. Scripts are used to:
@@ -72,7 +73,7 @@ data PushDataType
       -- | The next four bytes contains the number of bytes to be pushed onto
       -- the stack
     | OPDATA4
-    deriving (Show, Read, Eq)
+    deriving (Show, Read, Eq, Generic)
 
 instance NFData PushDataType
 

@@ -55,6 +55,7 @@ import qualified Data.ByteString as BS
     , empty
     , null
     )
+import GHC.Generics (Generic)
 import Network.Socket (SockAddr (SockAddrInet, SockAddrInet6))
 
 import Network.Haskoin.Util 
@@ -92,7 +93,7 @@ data Alert =
             alertPayload   :: !VarString
           -- | ECDSA signature of the payload
           , alertSignature :: !VarString
-          } deriving (Eq, Show, Read)
+          } deriving (Eq, Show, Read, Generic)
 
 instance NFData Alert where
     rnf (Alert p s) = rnf p `seq` rnf s
@@ -156,7 +157,7 @@ data InvType
     | InvTx    -- ^ InvVector hash is related to a transaction 
     | InvBlock -- ^ InvVector hash is related to a block
     | InvMerkleBlock -- ^ InvVector has is related to a merkle block
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show, Read, Generic)
 
 instance NFData InvType
 
@@ -527,7 +528,7 @@ data MessageCommand
     | MCAlert
     | MCMempool
     | MCReject
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show, Read, Generic)
 
 instance NFData MessageCommand
 

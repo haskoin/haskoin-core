@@ -158,7 +158,7 @@ data InvType
     | InvMerkleBlock -- ^ InvVector has is related to a merkle block
     deriving (Eq, Show, Read)
 
-instance NFData InvType
+instance NFData InvType where rnf x = seq x ()
 
 instance Binary InvType where
 
@@ -529,7 +529,7 @@ data MessageCommand
     | MCReject
     deriving (Eq, Show, Read)
 
-instance NFData MessageCommand
+instance NFData MessageCommand where rnf x = seq x ()
 
 instance Binary MessageCommand where
     

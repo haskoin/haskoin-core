@@ -74,7 +74,7 @@ data PushDataType
     | OPDATA4
     deriving (Show, Read, Eq)
 
-instance NFData PushDataType
+instance NFData PushDataType where rnf x = seq x ()
 
 -- | Data type representing all of the operators allowed inside a 'Script'.
 data ScriptOp

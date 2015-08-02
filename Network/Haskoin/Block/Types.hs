@@ -6,8 +6,6 @@ module Network.Haskoin.Block.Types
 , GetHeaders(..)
 , BlockHeaderCount
 , Headers(..)
-, BlockHeight
-, Timestamp
 , headerHash
 ) where
 
@@ -25,9 +23,6 @@ import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Transaction.Types
-
-type BlockHeight = Word32
-type Timestamp = Word32
 
 -- | Data type describing a block in the bitcoin protocol. Blocks are sent in
 -- response to 'GetData' messages that are requesting information from a

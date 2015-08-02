@@ -44,29 +44,9 @@ module Network.Haskoin.Node
 , isBloomEmpty
 , isBloomFull
 
-   -- * Node
-, withNode
-, WalletMessage(..)
-, NodeRequest(..)
-
-   -- * Node Actors
-, RemoteHost(..)
-, MerkleTxs
-, withTxManager
-, withBlockChain
-, withPeerManager  
-, newPeerSession
-, startPeer
-
 ) where
 
 import Network.Haskoin.Node.Message
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Node.Bloom
-import Network.Haskoin.Node.Actors
-import Network.Haskoin.Node.Actors.Types
-import Network.Haskoin.Node.Actors.Peer
-import Network.Haskoin.Node.Actors.PeerManager
-import Network.Haskoin.Node.Actors.BlockChain
-import Network.Haskoin.Node.Actors.TxManager
 

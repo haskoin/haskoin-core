@@ -61,7 +61,7 @@ data BloomFlags
     -- This is the default setting.
     deriving (Eq, Show, Read)
 
-instance NFData BloomFlags
+instance NFData BloomFlags where rnf x = seq x ()
 
 instance Binary BloomFlags where
     get = go =<< getWord8

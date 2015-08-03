@@ -93,11 +93,6 @@ instance NFData BkchSession where
         rnf levelDBFilePath `seq`
         levelDBOptions `seq` ()
 
-data LocatorType
-    = FullLocator
-    | PartialLocator
-    deriving (Eq, Read, Show)
-
 -- | Start the SpvBlockChain. This function will spin up a new thread and
 -- return the BlockChain message channel to communicate with it.
 withBlockChain 
@@ -132,7 +127,7 @@ withBlockChain levelDBFilePath levelDBOptions txmgChan f = do
                 -- Trigger the header download
                 height <- runDB bestBlockHeaderHeight
                 $(logDebug) $ format "Running an initial full block locator."
-                headerSync (AnyPeer height) FullLocator Nothing
+                headerSync (AnyPeer height) Nothing
                 -- Process messages
                 sourceTBMChan bkchChan $$ processBlockChainMessage
 
@@ -190,7 +185,7 @@ processBlockTickle pid bid = do
             -- TODO: We could have a DoS leak here
             setPeerTickle pid bid
             --Request headers so we can connect this block
-            headerSync (ThisPeer pid) PartialLocator $ Just bid
+            headerSync (ThisPeer pid) $ Just bid
 
 processBlockHeaders :: (MonadLogger m, MonadIO m, MonadMask m) 
                     => PeerId -> [BlockHeader] -> StateT BkchSession m ()
@@ -235,7 +230,7 @@ processBlockHeaders pid hs = canProcessHeaders pid >>= \valid -> when valid $ do
                 sendManager $ PeerHeight pid height
                 adjustNetworkHeight height
                 -- Continue syncing headers from the same peer
-                headerSync (ThisPeer pid) PartialLocator Nothing
+                headerSync (ThisPeer pid) Nothing
                 -- Try to download more blocks
                 continueDownload
 
@@ -255,13 +250,12 @@ canProcessHeaders pid = do
 
 -- | Request a header download job for the given peer resource
 headerSync :: (MonadLogger m, MonadIO m, MonadMask m)
-           => JobResource -> LocatorType -> Maybe BlockHash
-           -> StateT BkchSession m ()
-headerSync resource locType hStopM = do
+           => JobResource -> Maybe BlockHash -> StateT BkchSession m ()
+headerSync resource hStopM = do
     -- Only download more headers if a header request is not already sent
     gets syncResource >>= \resM -> when (isNothing resM) $ do
-        $(logDebug) $ format $ unwords 
-            [ "Requesting more headers with block locator type", show locType ]
+        $(logDebug) $ format 
+            "Requesting more headers with block locator type"
         -- Save the deadline for this job (2 minutes). If we don't get a
         -- response within the given time, we continue the header download.
         deadline <- liftM (addUTCTime 120) $ liftIO getCurrentTime
@@ -269,9 +263,7 @@ headerSync resource locType hStopM = do
                          , syncTimeout  = deadline
                          }
         -- Build the block locator object
-        loc <- runDB $ case locType of
-            FullLocator    -> blockLocator 
-            PartialLocator -> partialLocator 3
+        loc <- runDB blockLocator 
         -- Send a job that can only run on the given PeerId. Priority = 2 to
         -- give priority to BloomFilters (0) and Tx broadcasts (1)
         sendManager $ PublishJob (JobHeaderSync loc hStopM) resource 2
@@ -587,7 +579,7 @@ processHeartbeat = do
                 modify' $ \s -> s{ syncResource = Nothing }
                 height <- runDB bestBlockHeaderHeight
                 -- Issue a new header sync with any peer at the right height
-                headerSync (AnyPeer height) PartialLocator Nothing
+                headerSync (AnyPeer height) Nothing
         _ -> return ()
     -- Continue the merkle block download in case it gets stuck
     continueDownload

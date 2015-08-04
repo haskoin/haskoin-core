@@ -78,6 +78,7 @@ library
                  , haskoin-node                  >= 0.2       && < 0.3
                  , leveldb-haskell               >= 0.6       && < 0.7
                  , lifted-async                  >= 0.2       && < 0.8
+                 , lifted-base                   >= 0.2       && < 0.3
                  , monad-logger                  >= 0.3.13    && < 0.4
                  , monad-control                 >= 1.0       && < 1.1
                  , mtl                           >= 2.1       && < 2.3

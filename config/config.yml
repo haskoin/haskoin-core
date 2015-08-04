@@ -115,3 +115,6 @@ work-dir: ""
 # Log level. Valid values are debug, info, warn and error.
 log-level: info
 
+# Print verbose
+verbose: false
+

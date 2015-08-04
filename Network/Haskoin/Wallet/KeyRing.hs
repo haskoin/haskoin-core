@@ -27,6 +27,7 @@ module Network.Haskoin.Wallet.KeyRing
 , setAddrLabel
 , addressPrvKey
 , useAddress
+, generateAddrs
 , setAccountGap
 , firstAddrTime
 , getPathRedeem
@@ -65,7 +66,7 @@ import Database.Esqueleto
     ( Value(..), SqlExpr, SqlQuery
     , InnerJoin(..), on
     , select, from, where_, val, sub_select, countRows, count, unValue
-    , orderBy, limit, asc, desc, offset, selectSource
+    , orderBy, limit, asc, desc, offset, selectSource, get
     , max_, not_, isNothing, case_, when_, then_, else_
     , (^.), (==.), (&&.), (<=.), (>=.), (>.), (-.), (<.)
     -- Reexports from Database.Persist
@@ -493,25 +494,42 @@ createAddrs (Entity ai acc) addrType n
                 , unpack $ keyRingAccountName acc 
                 ]
 
+-- | Generate all the addresses up to a certain index
+generateAddrs :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
+              => Entity KeyRingAccount
+              -> AddressType 
+              -> KeyIndex
+              -> SqlPersistT m Int
+generateAddrs accE@(Entity ai acc) addrType genIndex = do
+    cnt <- addressCount accE addrType
+    let toGen = (fromIntegral genIndex) - (fromIntegral cnt) + 1
+    if toGen > 0
+        then do
+            createAddrs accE addrType $ fromIntegral toGen
+            return toGen
+        else return 0
+
 -- | Use an address and make sure we have enough gap addresses after it.
 -- Returns the new addresses that have been created.
 useAddress :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m) 
            => KeyRingAddr -> SqlPersistT m [KeyRingAddr]
 useAddress KeyRingAddr{..} = do
-    res <- select $ from $ \(a `InnerJoin` x) -> do
-        on $ x ^. KeyRingAddrAccount ==. a ^. KeyRingAccountId
-        where_ (   a ^. KeyRingAccountId ==. val keyRingAddrAccount
+    res <- select $ from $ \x -> do
+        where_ (   x ^. KeyRingAddrAccount ==. val keyRingAddrAccount
                &&. x ^. KeyRingAddrType  ==. val keyRingAddrType
                &&. x ^. KeyRingAddrIndex >.  val keyRingAddrIndex
                )
-        return (countRows, a)
+        return countRows
     case res of
-        ((Value cnt, accE@(Entity _ acc)):_) -> do
-            let gap     = fromIntegral (keyRingAccountGap acc) :: Int
-                missing = 2*gap - cnt 
-            if missing > 0
-                then createAddrs accE keyRingAddrType $ fromIntegral missing
-                else return []
+        ((Value cnt):_) -> get keyRingAddrAccount >>= \accM -> case accM of
+            Just acc -> do
+                let accE    = Entity keyRingAddrAccount acc
+                    gap     = fromIntegral (keyRingAccountGap acc) :: Int
+                    missing = 2*gap - cnt 
+                if missing > 0
+                    then createAddrs accE keyRingAddrType $ fromIntegral missing
+                    else return []
+            _ -> return [] -- Should not happen
         _ -> return [] -- Should not happen
 
 -- | Set the address gap of an account to a new value. This will create new

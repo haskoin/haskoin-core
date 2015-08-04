@@ -27,6 +27,12 @@ module Network.Haskoin.Wallet.Transaction
 
 -- *Rescan
 , resetRescan
+
+-- *Helpers
+, splitSelect
+, splitUpdate
+, splitDelete
+, join2
 ) where
 
 import Control.Applicative ((<$>))
@@ -84,7 +90,7 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
 import Network.Haskoin.Node
-import Network.Haskoin.Node.Actors
+import Network.Haskoin.Node.STM
 import Network.Haskoin.Node.HeaderTree
 
 import Network.Haskoin.Wallet.KeyRing
@@ -237,16 +243,15 @@ addrTxPage (Entity ai _) addrI page@PageRequest{..}
 -- Helper function to get a transaction from the wallet database. The function
 -- will look across all accounts and return the first available transaction. If
 -- the transaction does not exist, this function will throw a wallet exception.
-getTx :: MonadIO m => TxHash -> SqlPersistT m Tx
+getTx :: MonadIO m => TxHash -> SqlPersistT m (Maybe Tx)
 getTx txid = do
     res <- select $ from $ \t -> do
         where_ $ t ^. KeyRingTxHash ==. val txid
         limit 1
         return $ t ^. KeyRingTxTx
     case res of
-        ((Value tx):_) -> return tx
-        _ -> liftIO . throwIO $ WalletException $ unwords
-            [ "Transaction does not exist:", encodeTxHashLE txid ]
+        ((Value tx):_) -> return $ Just tx
+        _ -> return Nothing
 
 getAccountTx :: MonadIO m 
              => KeyRingAccountId -> TxHash -> SqlPersistT m KeyRingTx
@@ -264,12 +269,12 @@ getAccountTx ai txid = do
 -- Helper function to get all the pending transactions from the database. It is
 -- used to re-broadcast pending transactions in the wallet that have not been
 -- included into blocks yet.
-getPendingTxs :: MonadIO m => Int -> SqlPersistT m [Tx]
+getPendingTxs :: MonadIO m => Int -> SqlPersistT m [TxHash]
 getPendingTxs i = 
     liftM (map unValue) $ select $ from $ \t -> do
         where_ $ t ^. KeyRingTxConfidence ==. val TxPending
         limit $ fromIntegral i
-        return $ t ^. KeyRingTxTx
+        return $ t ^. KeyRingTxHash
 
 {- Transaction Import -}
 
@@ -542,14 +547,6 @@ getSpendingTxs tx aiM
         s ^. KeyRingSpentCoinHash ==. val h &&. 
         s ^. KeyRingSpentCoinPos  ==. val i
 
--- Join AND expressions with OR conditions in a binary way
-join2 :: [SqlExpr (Value Bool)] -> SqlExpr (Value Bool)
-join2 xs = case xs of
-    [] -> val False
-    (x:[]) -> x
-    _ -> let (ls,rs) = splitAt (length xs `div` 2) xs
-         in  join2 ls ||. join2 rs
-
 -- Returns all the new coins that need to be created from a transaction.
 -- Also returns the addresses associted with those coins.
 getNewCoins :: MonadIO m 
@@ -786,9 +783,6 @@ killTxIds txIds = do
         where_ $ t ^. KeyRingTxId `in_` valList ts
         return $ s ^. KeyRingSpentCoinSpendingTx
 
-    -- Recursively kill all the child transactions.
-    unless (null childs) $ killTxIds $ nub $ map unValue childs
-
     -- Kill these transactions
     splitUpdate txIds $ \ts -> \t -> do
         set t [ KeyRingTxConfidence =. val TxDead ]
@@ -797,6 +791,10 @@ killTxIds txIds = do
     -- This transaction doesn't spend any coins
     splitDelete txIds $ \ts -> from $ \s -> 
         where_ $ s ^. KeyRingSpentCoinSpendingTx `in_` valList ts
+
+    -- Recursively kill all the child transactions.
+    -- (Recurse at the end in case there are closed loops)
+    unless (null childs) $ killTxIds $ nub $ map unValue childs
 
 -- Kill transactions and their child transactions by hashes.
 killTxs :: MonadIO m => [TxHash] -> SqlPersistT m ()
@@ -812,49 +810,49 @@ importMerkles :: MonadIO m
               => BlockChainAction 
               -> [MerkleTxs] 
               -> SqlPersistT m ()
-importMerkles action expTxsLs = unless (isSideChain action) $ do
-    case action of
-        ChainReorg _ os _ -> 
-            -- Unconfirm transactions from the old chain.
-            let hs = map (\node -> Just $ nodeBlockHash node) os
-            in  splitUpdate hs $ \h -> \t -> do
-                    set t [ KeyRingTxConfidence      =. val TxPending
-                          , KeyRingTxConfirmedBy     =. val Nothing
-                          , KeyRingTxConfirmedHeight =. val Nothing
-                          , KeyRingTxConfirmedDate   =. val Nothing
-                          ]
-                    where_ $ t ^. KeyRingTxConfirmedBy `in_` valList h
-        _ -> return ()
+importMerkles action expTxsLs = 
+    when (isBestChain action || isChainReorg action) $ do
+        case action of
+            ChainReorg _ os _ -> 
+                -- Unconfirm transactions from the old chain.
+                let hs = map (\node -> Just $ nodeBlockHash node) os
+                in  splitUpdate hs $ \h -> \t -> do
+                        set t [ KeyRingTxConfidence      =. val TxPending
+                            , KeyRingTxConfirmedBy     =. val Nothing
+                            , KeyRingTxConfirmedHeight =. val Nothing
+                            , KeyRingTxConfirmedDate   =. val Nothing
+                            ]
+                        where_ $ t ^. KeyRingTxConfirmedBy `in_` valList h
+            _ -> return ()
 
-    -- Find all the dead transactions which need to be revived
-    deadTxs <- splitSelect (concat expTxsLs) $ \ts -> from $ \t -> do
-        where_ (   t ^. KeyRingTxHash `in_` valList ts
-               &&. t ^. KeyRingTxConfidence ==. val TxDead
-               )
-        return $ t ^. KeyRingTxTx
+        -- Find all the dead transactions which need to be revived
+        deadTxs <- splitSelect (concat expTxsLs) $ \ts -> from $ \t -> do
+            where_ (   t ^. KeyRingTxHash `in_` valList ts
+                &&. t ^. KeyRingTxConfidence ==. val TxDead
+                )
+            return $ t ^. KeyRingTxTx
 
-    -- Revive dead transactions (in no particular order)
-    forM_ deadTxs $ reviveTx . unValue
+        -- Revive dead transactions (in no particular order)
+        forM_ deadTxs $ reviveTx . unValue
 
-    -- Confirm the transactions
-    forM_ (zip (actionNewNodes action) expTxsLs) $ \(node, hs) -> 
-        splitUpdate hs $ \h -> \t -> do
-            set t [ KeyRingTxConfidence =. 
-                        val TxBuilding
-                  , KeyRingTxConfirmedBy =. 
-                        val (Just (nodeBlockHash node))
-                  , KeyRingTxConfirmedHeight =. 
-                        val (Just (nodeHeaderHeight node))
-                  , KeyRingTxConfirmedDate =. 
-                        val (Just (blockTimestamp $ nodeHeader node))
-                  ]
-            where_ $ t ^. KeyRingTxHash `in_` valList h
+        -- Confirm the transactions
+        forM_ (zip (actionNodes action) expTxsLs) $ \(node, hs) -> 
+            splitUpdate hs $ \h -> \t -> do
+                set t [ KeyRingTxConfidence =. val TxBuilding
+                      , KeyRingTxConfirmedBy =. val (Just (nodeBlockHash node))
+                      , KeyRingTxConfirmedHeight =. 
+                          val (Just (nodeHeaderHeight node))
+                      , KeyRingTxConfirmedDate =. 
+                          val (Just (blockTimestamp $ nodeHeader node))
+                      ]
+                where_ $ t ^. KeyRingTxHash `in_` valList h
 
-    -- Update the best height in the wallet (used to compute the number
-    -- of confirmations of transactions)
-    case reverse $ actionNewNodes action of
-        (best:_) -> setBestBlock (nodeBlockHash best) (nodeHeaderHeight best)
-        _ -> return ()
+        -- Update the best height in the wallet (used to compute the number
+        -- of confirmations of transactions)
+        case reverse $ actionNodes action of
+            (best:_) -> 
+                setBestBlock (nodeBlockHash best) (nodeHeaderHeight best)
+            _ -> return ()
 
 -- Helper function to set the best block and best block height in the DB.
 setBestBlock :: MonadIO m => BlockHash -> Word32 -> SqlPersistT m ()
@@ -1286,6 +1284,14 @@ resetRescan = do
     setBestBlock (headerHash genesisHeader) 0
 
 {- Helpers -}
+
+-- Join AND expressions with OR conditions in a binary way
+join2 :: [SqlExpr (Value Bool)] -> SqlExpr (Value Bool)
+join2 xs = case xs of
+    [] -> val False
+    (x:[]) -> x
+    _ -> let (ls,rs) = splitAt (length xs `div` 2) xs
+         in  join2 ls ||. join2 rs
 
 splitSelect :: (SqlSelect a r, MonadIO m) 
             => [t]

@@ -89,6 +89,9 @@ data Config = Config
     , configPidFile       :: !FilePath
     -- ^ PID File
     , configLogLevel      :: !LogLevel
+    -- ^ Log level
+    , configVerbose       :: !Bool
+    -- ^ Verbose
     } 
 
 configBS :: BS.ByteString
@@ -138,6 +141,8 @@ instance FromJSON Config where
         configPidFile        <- o .:? "pid-file"
                                   .!= configPidFile def
         configLogLevel <- j =<< o .:? "log-level"
+        configVerbose        <- o .:? "verbose"
+                                  .!= configVerbose def
         return Config {..}
       where
         f format = case format of
@@ -171,3 +176,4 @@ instance FromJSON Config where
             Just (String "external") -> return AddressExternal
             Just _                   -> mzero
             Nothing                  -> return $ configAddrType def
+

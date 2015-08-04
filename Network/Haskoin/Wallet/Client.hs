@@ -58,67 +58,60 @@ usage = warningMsg : usageInfo usageHeader options : cmdHelp
 options :: [OptDescr (Config -> Config)]
 options =
     [ Option "k" ["keyring"]
-        (ReqArg (\s cfg -> cfg { configKeyRing = T.pack s }) "KEYRING") $
-        "Which keyring to use (default: "
-            ++ T.unpack (configKeyRing def) ++ ")"
+        (ReqArg (\s cfg -> cfg { configKeyRing = T.pack s }) "NAME") $
+        "Default: " ++ T.unpack (configKeyRing def)
     , Option "c" ["count"] 
         (ReqArg (\s cfg -> cfg { configCount = read s }) "INT") $
-        "Set the output size of some commands (default: "
-            ++ show (configCount def) ++ ")"
+        "Items per page. Default: " ++ show (configCount def)
     , Option "m" ["minconf"] 
         (ReqArg (\s cfg -> cfg { configMinConf = read s }) "INT") $
-        "Required minimum confirmations for balances (default: "
-            ++ show (configMinConf def) ++ ")"
+        "Minimum confirmations. Default: "
+            ++ show (configMinConf def)
     , Option "f" ["fee"] 
         (ReqArg (\s cfg -> cfg { configFee = read s }) "INT") $
-        "Fee per 1000 bytes for new transactions (default: "
-            ++ show (configFee def) ++ ")"
+        "Fee per kilobyte. Default: " ++ show (configFee def)
     , Option "R" ["rcptfee"]
         (NoArg $ \cfg -> cfg { configRcptFee = True }) $
-        "Recipient pays fee (first if multiple) (default: "
-            ++ show (configRcptFee def) ++ ")"
+        "Recipient pays fee. Default: " ++ show (configRcptFee def)
     , Option "S" ["nosig"]
         (NoArg $ \cfg -> cfg { configSignTx = False }) $
-        "Do not sign transactions (default: "
-            ++ show (not $ configSignTx def) ++ ")"
+        "Do not sign. Default: " ++ show (not $ configSignTx def)
     , Option "i" ["internal"]
         (NoArg $ \cfg -> cfg { configAddrType = AddressInternal }) $
-        "Display internal addresses (default: "
-            ++ show (configAddrType def == AddressInternal) ++ ")"
+        "Internal addresses. Default: "
+            ++ show (configAddrType def == AddressInternal)
     , Option "o" ["offline"]
         (NoArg $ \cfg -> cfg { configOffline = True }) $
-        "Display offline balance (default: "
-            ++ show (configOffline def) ++ ")"
+        "Offline balance. Default: " ++ show (configOffline def)
     , Option "r" ["revpage"]
         (NoArg $ \cfg -> cfg { configReversePaging = True }) $
-        "Use reverse paging (default: "
-            ++ show (configReversePaging def) ++ ")"
-    , Option "p" ["passphrase"]
-        (ReqArg (\s cfg -> cfg { configPass = Just $ T.pack s }) "PASSPHRASE")
-        "Optional mnemonic passphrase when creating wallets"
+        "Reverse paging. Default: "
+            ++ show (configReversePaging def)
+    , Option "p" ["pass"]
+        (ReqArg (\s cfg -> cfg { configPass = Just $ T.pack s }) "PASS")
+        "Mnemonic passphrase"
     , Option "j" ["json"]
         (NoArg $ \cfg -> cfg { configFormat = OutputJSON })
-        "Format result as JSON"
+        "Output JSON"
     , Option "y" ["yaml"]
         (NoArg $ \cfg -> cfg { configFormat = OutputYAML })
-        "Format result as YAML"
+        "Output YAML"
     , Option "s" ["socket"]
         (ReqArg (\s cfg -> cfg { configConnect = s }) "URI") $
-        "ZeroMQ socket of the server (default: "
-            ++ configConnect def ++ ")"
+        "Server socket. Default: " ++ configConnect def
     , Option "d" ["detach"]
         (NoArg $ \cfg -> cfg { configDetach = True }) $
-        "Detach the server process (default: "
-            ++ show (configDetach def) ++ ")"
+        "Detach server. Default: " ++ show (configDetach def)
     , Option "t" ["testnet"]
-        (NoArg $ \cfg -> cfg { configTestnet = True }) "Use Testnet3 network"
+        (NoArg $ \cfg -> cfg { configTestnet = True }) "Testnet3 network"
     , Option "g" ["config"]
         (ReqArg (\s cfg -> cfg { configFile = s }) "FILE") $
-        "Configuration file (default: "
-            ++ configFile def ++ ")"
+        "Config file. Default: " ++ configFile def
     , Option "w" ["workdir"]
         (ReqArg (\s cfg -> cfg { configDir = s }) "DIR")
-        "Working directory (OS-specific default)"
+        "Working directory. OS-dependent default"
+    , Option "v" ["verbose"]
+        (NoArg $ \cfg -> cfg { configVerbose = True }) "Verbose output"
     ]
 
 -- Create and change current working directory
@@ -189,6 +182,7 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "label"       : [name, index, label]   -> cmdLabel name index label
     "txs"         : name : page            -> cmdTxs name page
     "addrtxs"     : name : index : page    -> cmdAddrTxs name index page
+    "genaddrs"    : [name, i]              -> cmdGenAddrs name i
     "send"        : [name, add, amnt]      -> cmdSend name add amnt
     "sendmany"    : name : xs              -> cmdSendMany name xs
     "import"      : [name, tx]             -> cmdImport name tx

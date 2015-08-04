@@ -54,8 +54,10 @@ import Network.Haskoin.Transaction
 import Network.Haskoin.Block
 import Network.Haskoin.Util
 import Network.Haskoin.Node
-import Network.Haskoin.Node.Actors
+import Network.Haskoin.Node.STM
 import Network.Haskoin.Node.HeaderTree
+import Network.Haskoin.Node.BlockChain
+import Network.Haskoin.Node.Peer
 
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.KeyRing
@@ -66,10 +68,10 @@ import Network.Haskoin.Wallet.Types
 type Handler m = S.StateT HandlerSession m
 
 data HandlerSession = HandlerSession
-    { handlerConfig :: Config
-    , handlerPool   :: ConnectionPool
-    , handlerChan   :: Maybe (TBMChan NodeRequest)
-    , handlerSem    :: Sem.MSem Int
+    { handlerConfig    :: !Config
+    , handlerPool      :: !ConnectionPool
+    , handlerNodeState :: !(Maybe SharedNodeState)
+    , handlerSem       :: !(Sem.MSem Int)
     }
 
 runHandler :: Monad m => HandlerSession -> Handler m a -> m a
@@ -97,12 +99,12 @@ tryDBPool sem pool action = do
   where
     f (SomeException e) = Just $ show e
 
-sendSPV :: MonadIO m => NodeRequest -> Handler m ()
-sendSPV request = do
-    chanM <- S.gets handlerChan 
-    case chanM of
-        Just chan -> liftIO $ atomically $ writeTBMChan chan request
-        Nothing   -> return ()
+runNode :: MonadIO m => NodeT m a -> Handler m a
+runNode action = do
+    nodeStateM <- S.gets handlerNodeState
+    case nodeStateM of
+        Just nodeState -> lift $ runNodeT nodeState action
+        _ -> error "runNode: No node state available"
 
 {- Server Handlers -}
 
@@ -347,8 +349,11 @@ getAddressR keyRingName name i addrType minConf offline = do
         }
 
 putAddressR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
-            => KeyRingName -> AccountName 
-            -> KeyIndex -> AddressType -> AddressLabel
+            => KeyRingName 
+            -> AccountName 
+            -> KeyIndex 
+            -> AddressType 
+            -> AddressLabel
             -> Handler m (Maybe Value)
 putAddressR keyRingName name i addrType (AddressLabel label) = do
     $(logInfo) $ format $ unlines
@@ -368,6 +373,37 @@ putAddressR keyRingName name i addrType (AddressLabel label) = do
         { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
         , withAccountAccount = toJsonAccount acc
         , withAccountData    = toJsonAddr newAddr Nothing
+        }
+
+postAddressesR :: ( MonadLogger m
+                  , MonadBaseControl IO m
+                  , MonadIO m
+                  , MonadThrow m
+                  , MonadBase IO m
+                  , MonadResource m
+                  )
+               => KeyRingName 
+               -> AccountName 
+               -> KeyIndex 
+               -> AddressType 
+               -> Handler m (Maybe Value)
+postAddressesR keyRingName name i addrType = do
+    $(logInfo) $ format $ unlines
+        [ "PostAddressesR"
+        , "  KeyRing name: " ++ unpack keyRingName
+        , "  Account name: " ++ unpack name
+        , "  Index       : " ++ show i
+        ]
+
+    (keyRing, acc, cnt) <- runDB $ do
+        (keyRing, accE@(Entity _ acc)) <- getAccount keyRingName name
+        cnt <- generateAddrs accE addrType i
+        return (keyRing, acc, cnt)
+
+    return $ Just $ toJSON $ JsonWithAccount
+        { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
+        , withAccountAccount = toJsonAccount acc
+        , withAccountData    = cnt
         }
 
 getTxsR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
@@ -477,9 +513,11 @@ postTxsR keyRingName name action = do
                     _ -> liftIO . throwIO $ WalletException
                         "Could not import the transaction"
     whenOnline $ do
+        -- Update the bloom filter
         unless (null newAddrs) updateNodeFilter
+        -- If the transaction is pending, broadcast it to the network
         when (keyRingTxConfidence txRes == TxPending) $ 
-            sendSPV $ NodePublishTxs [keyRingTxHash txRes]
+            runNode $ broadcastTxs [keyRingTxHash txRes]
     return $ Just $ toJSON $ JsonWithAccount
         { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
         , withAccountAccount = toJsonAccount acc
@@ -579,9 +617,11 @@ postNodeR action = case action of
             ]
         whenOnline $ do
             runDB resetRescan
-            sendSPV $ NodeStartMerkleDownload $ Left t
+            runNode $ atomicallyNodeT $ rescanTs t
         return $ Just $ toJSON $ RescanRes t
-    NodeActionStatus -> sendSPV NodeStatus >> return Nothing
+    NodeActionStatus -> do
+        status <- runNode $ atomicallyNodeT nodeStatus
+        return $ Just $ toJSON status
   where
     err = liftIO . throwIO $ WalletException
         "No keys have been generated in the wallet"
@@ -593,8 +633,12 @@ whenOnline handler = do
     mode <- configMode `liftM` S.gets handlerConfig
     when (mode == SPVOnline) handler
 
-updateNodeFilter :: (MonadBaseControl IO m, MonadIO m) => Handler m ()
-updateNodeFilter = sendSPV . NodeBloomFilter . fst3 =<< runDB getBloomFilter
+updateNodeFilter :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) 
+                 => Handler m ()
+updateNodeFilter = do
+    $(logInfo) $ format "Sending a new bloom filter"
+    (bloom, _, _) <- runDB getBloomFilter 
+    runNode $ atomicallyNodeT $ sendBloomFilter bloom
 
 adjustFCTime :: Timestamp -> Timestamp
 adjustFCTime ts = fromInteger $ max 0 $ toInteger ts - 86400 * 7

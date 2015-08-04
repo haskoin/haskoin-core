@@ -14,7 +14,6 @@ module Network.Haskoin.Wallet.Internals
 , module Network.Haskoin.Wallet.Settings
 , module Network.Haskoin.Wallet.Database
 , module Network.Haskoin.Wallet.Types
-, module Network.Haskoin.Wallet.Types.DeriveJSON
 , module Network.Haskoin.Wallet.Model
 ) where
 
@@ -28,6 +27,5 @@ import Network.Haskoin.Wallet.Server.Handler
 import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Database
 import Network.Haskoin.Wallet.Types
-import Network.Haskoin.Wallet.Types.DeriveJSON
 import Network.Haskoin.Wallet.Model
 

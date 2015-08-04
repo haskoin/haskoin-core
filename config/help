@@ -1,7 +1,7 @@
 Server commands:
   start [--detach]                        Start the haskoin daemon
   stop                                    Stop the haskoin daemon
-  status                                  Display node runtime information
+  status [--verbose]                      Display node runtime information
 
 KeyRing commands:
   newkeyring  [mnemonic] [-k name]        Create a new keyring
@@ -23,6 +23,7 @@ Address commands:
   unused acc                              Display unused addresses
   label  acc index label                  Set the label of an address
   addrtxs acc index [page] [-c pagesize]  Display txs related to an address
+  genaddrs acc index [--internal]         Generate addresses up to this index
 
 Transaction commands:
   txs       acc [page] [-c pagesize] [-r] Display transactions by page

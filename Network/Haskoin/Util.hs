@@ -49,6 +49,10 @@ module Network.Haskoin.Util
   -- * MonadState
 , modify'
 
+  -- * JSON Utilities
+, dropFieldLabel
+, dropSumLabels
+
 ) where
 
 import Control.Monad (guard)
@@ -58,38 +62,18 @@ import Control.Monad.State (MonadState, get, put)
 import Data.Word (Word8)
 import Data.Bits ((.|.), shiftL, shiftR)
 import Data.List (unfoldr)
+import Data.Char (toLower)
 import Data.Binary.Put (Put, runPut)
-import Data.Binary 
-    ( Binary
-    , encode
-    , decode
-    , decodeOrFail
-    )
-import Data.Binary.Get
-    ( Get
-    , runGetOrFail
-    , getByteString
-    , ByteOffset
-    , runGet
-    )
+import Data.Binary (Binary, encode, decode, decodeOrFail)
+import Data.Binary.Get (Get, runGetOrFail, getByteString, ByteOffset, runGet)
+import Data.Aeson.Types 
+    (Options(..), SumEncoding(..), defaultOptions, defaultTaggedObject)
 
-import qualified Data.ByteString.Lazy as BL 
-    ( ByteString
-    , toChunks
-    , fromChunks
-    )
-import qualified Data.ByteString as BS 
-    ( ByteString
-    , concat
-    , pack, unpack
-    , null
-    , empty
-    )
+import qualified Data.ByteString.Lazy as BL (ByteString, toChunks, fromChunks)
 import qualified Data.ByteString.Base16 as B16
-import qualified Data.ByteString.Char8 as C
-    ( pack
-    , unpack
-    )
+import qualified Data.ByteString.Char8 as C (pack, unpack)
+import qualified Data.ByteString as BS 
+    (ByteString, concat, pack, unpack, null, empty)
 
 -- ByteString helpers
 
@@ -301,7 +285,19 @@ snd3 (_,b,_) = b
 lst3 :: (a,b,c) -> c
 lst3 (_,_,c) = c
 
--- Strict evaluation of the new state
+-- | Strict evaluation of the new state
 modify' :: MonadState s m => (s -> s) -> m ()
 modify' f = get >>= \x -> put $! f x
+
+dropFieldLabel :: Int -> Options
+dropFieldLabel n = defaultOptions
+    { fieldLabelModifier = map toLower . drop n
+    , omitNothingFields  = True
+    } 
+
+dropSumLabels :: Int -> Int -> String -> Options
+dropSumLabels c f tag = (dropFieldLabel f)
+    { constructorTagModifier = map toLower . drop c
+    , sumEncoding = defaultTaggedObject { tagFieldName = tag }
+    } 
 

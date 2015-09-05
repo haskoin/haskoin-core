@@ -3,9 +3,10 @@ packages:
 - '.'
 - location:
     git: https://github.com/haskoin/haskoin.git
-    commit: f15dc42720ddc6c928c15dd34fac01f5548fe872
+    commit: b71bcfa4701e129b69776e6951fe0bb7c8b26ea3
+    valid-wanted: true
 extra-deps:
 - leveldb-haskell-0.6.3
 - murmur3-1.0.0
 - pbkdf-1.1.1.1
-resolver: lts-2.15
+resolver: lts-3.4

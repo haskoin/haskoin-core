@@ -3,7 +3,6 @@ module Network.Haskoin.Node.BlockChain where
 
 import System.Random (randomIO)
 
-import Control.Applicative ((<$>))
 import Control.Monad (void, liftM, when, unless, forever, forM, forM_)
 import Control.Monad.Trans (MonadIO, lift, liftIO)
 import Control.Monad.Trans.Control (MonadBaseControl, liftBaseOp_)
@@ -23,7 +22,7 @@ import Control.Concurrent.STM
 
 import Data.List (nub)
 import Data.Text (pack)
-import Data.Maybe (fromMaybe, isJust, listToMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Unique (hashUnique)
 import Data.Conduit (Source, yield)
@@ -553,7 +552,7 @@ peerHeaderSync pid ph prevM = do
             Just (KnownChain ns) -> do
                 $(logDebug) $ formatPid pid ph "Building a KnownChain locator"
                 runHeaderTree $ blockLocatorHeight $ nodeHeaderHeight $ last ns
-            Just action@(SideChain ns) -> do
+            Just action@(SideChain _) -> do
                 $(logDebug) $ formatPid pid ph "Building a SideChain locator"
                 runHeaderTree $ blockLocatorSide action
             _ -> do

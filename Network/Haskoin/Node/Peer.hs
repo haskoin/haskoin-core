@@ -3,7 +3,6 @@ module Network.Haskoin.Node.Peer where
 
 import System.Random (randomIO)
 
-import Control.Applicative ((<$>))
 import Control.Monad (liftM, when, unless, join, forM_, forever)
 import Control.Monad.Trans (MonadIO, lift, liftIO)
 import Control.Monad.Trans.Control (MonadBaseControl)

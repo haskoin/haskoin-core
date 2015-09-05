@@ -30,10 +30,8 @@ module Network.Haskoin.Script.Evaluator
 
 import Control.Monad.State
 import Control.Monad.Reader
-import Control.Monad.Error -- Change for Control.Monad.Except in new mtl
+import Control.Monad.Except
 import Control.Monad.Identity
-
-import Control.Applicative ((<$>), (<*>))
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
@@ -87,11 +85,6 @@ data EvalError =
     | StackError ScriptOp
     | DisabledOp ScriptOp
 
--- Remove this instance if on new mtl
-instance Error EvalError where
-    noMsg = EvalError "Evaluation Error"
-    strMsg s = EvalError $ noMsg ++ " " ++ s
-
 instance Show EvalError where
     show (EvalError m) = m
     show (ProgramError m prog) = m ++ " - ProgramData: " ++ show prog
@@ -134,8 +127,7 @@ dumpStack s = dumpList $ map (bsToHex . BS.pack) s
 instance Show ProgramData where
     show p = " stack: " ++ dumpStack (stack p)
 
--- type ProgramState = ExceptT EvalError Identity
-type ProgramState = ErrorT EvalError Identity
+type ProgramState = ExceptT EvalError Identity
 type IfStack = [ Bool ]
 
 -- | Monad of actions independent of conditional statements.
@@ -145,13 +137,13 @@ type StackOperation = ReaderT FlagSet ( StateT ProgramData ProgramState )
 type Program a = StateT IfStack StackOperation a
 
 evalStackOperation :: StackOperation a -> ProgramData -> FlagSet -> Either EvalError a
-evalStackOperation m s f = runIdentity . runErrorT $ evalStateT ( runReaderT m f ) s
+evalStackOperation m s f = runIdentity . runExceptT $ evalStateT ( runReaderT m f ) s
 
 evalProgram :: Program a                      -- ^ ProgramData monad
-                       -> [ Bool ]                       -- ^ Initial if state stack
-                       -> ProgramData                    -- ^ Initial computation data
-                       -> FlagSet                        -- ^ Evaluation Flags
-                       -> Either EvalError a
+            -> [ Bool ]                       -- ^ Initial if state stack
+            -> ProgramData                    -- ^ Initial computation data
+            -> FlagSet                        -- ^ Evaluation Flags
+            -> Either EvalError a
 evalProgram m s = evalStackOperation ( evalStateT m s )
 
 --------------------------------------------------------------------------------

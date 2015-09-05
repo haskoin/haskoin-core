@@ -35,8 +35,6 @@ import Test.QuickCheck
     , listOf
     )
 
-import Control.Applicative ((<$>))
-
 import Data.Bits (clearBit)
 import Data.Maybe (fromJust)
 import Data.Word (Word32)

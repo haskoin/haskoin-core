@@ -29,7 +29,7 @@ module Network.Haskoin.Script.Parser
 
 import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM2, guard)
-import Control.Applicative ((<$>), (<|>))
+import Control.Applicative ((<|>))
 
 import Data.List (sortBy)
 import Data.Foldable (foldrM)

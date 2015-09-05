@@ -19,7 +19,6 @@ module Network.Haskoin.Transaction.Builder
 , getMSFee
 ) where
 
-import Control.Applicative ((<$>))
 import Control.Monad (mzero, foldM, unless)
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Either (EitherT, left)

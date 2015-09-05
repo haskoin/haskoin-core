@@ -37,8 +37,6 @@ import Test.QuickCheck
     , elements
     )
 
-import Control.Applicative ((<$>))
-
 import Data.Bits (testBit)
 
 import Network.Haskoin.Test.Crypto

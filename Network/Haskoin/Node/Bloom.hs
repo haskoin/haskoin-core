@@ -13,7 +13,6 @@ module Network.Haskoin.Node.Bloom
 
 import Control.Monad (replicateM, forM_)
 import Control.DeepSeq (NFData, rnf)
-import Control.Applicative ((<$>),(<*>))
 
 import Data.Word
 import Data.Bits

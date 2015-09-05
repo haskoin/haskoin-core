@@ -55,7 +55,6 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , derivePathMSAddrs
 ) where
 
-import Control.Applicative ((<$>))
 import Control.DeepSeq (NFData, rnf)
 import Control.Monad (mzero, guard, unless, (<=<))
 import Control.Exception (Exception, throw)

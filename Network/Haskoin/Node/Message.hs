@@ -5,7 +5,6 @@ module Network.Haskoin.Node.Message
 
 import Control.DeepSeq (NFData, rnf)
 import Control.Monad (unless)
-import Control.Applicative ((<$>),(<*>))
 
 import Data.Word (Word32)
 import Data.Binary (Binary, get, put)

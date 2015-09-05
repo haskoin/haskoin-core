@@ -40,7 +40,6 @@ import Test.QuickCheck
     )
 
 import Control.Monad (unless, guard, mzero, (<=<))
-import Control.Applicative ((<$>))
 import Control.DeepSeq (NFData, rnf)
 
 import Data.Bits (Bits(..), FiniteBits(..))

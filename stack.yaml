@@ -4,4 +4,4 @@ packages:
 extra-deps:
 - murmur3-1.0.0
 - pbkdf-1.1.1.1
-resolver: lts-2.15
+resolver: lts-3.4

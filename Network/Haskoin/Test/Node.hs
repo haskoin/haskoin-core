@@ -35,8 +35,6 @@ import Test.QuickCheck
     , vectorOf
     )
 
-import Control.Applicative ((<$>))
-
 import Data.Word (Word16, Word32)
 import qualified Data.ByteString as BS (pack, empty)
 

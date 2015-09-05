@@ -14,7 +14,6 @@ module Network.Haskoin.Crypto.Point
 ) where
 
 import Data.Bits (shiftR)
-import Control.Applicative ((<$>))
 import Control.DeepSeq (NFData, rnf)
 
 import Network.Haskoin.Crypto.Curve

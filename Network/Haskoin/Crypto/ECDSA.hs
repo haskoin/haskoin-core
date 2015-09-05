@@ -18,7 +18,6 @@ import System.IO
 import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM, guard, unless)
 import Control.Monad.Trans (lift)
-import Control.Applicative ((<*>), (<$>))
 import qualified Control.Monad.State as S
     ( StateT
     , evalStateT

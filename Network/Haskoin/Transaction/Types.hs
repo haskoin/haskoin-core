@@ -11,7 +11,6 @@ module Network.Haskoin.Transaction.Types
 
 import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM2, replicateM, forM_, unless, mzero, (<=<))
-import Control.Applicative ((<$>),(<*>))
 
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
 import Data.Word (Word32, Word64)

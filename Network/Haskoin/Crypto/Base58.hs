@@ -10,7 +10,6 @@ module Network.Haskoin.Crypto.Base58
 
 import Control.DeepSeq (NFData, rnf)
 import Control.Monad (guard, mzero)
-import Control.Applicative ((<$>),(<*>))
 
 import Data.Char (ord, chr)
 import Data.Word (Word8)

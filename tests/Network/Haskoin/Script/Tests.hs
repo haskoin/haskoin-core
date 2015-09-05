@@ -13,7 +13,6 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 import Test.Framework.Runners.Console (defaultMainWithArgs)
 import qualified Test.HUnit as HUnit (assertFailure, assertBool)
 
-import Control.Applicative ((<$>))
 import Control.Monad (when)
 
 import Data.Bits (setBit, testBit)

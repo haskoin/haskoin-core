@@ -18,8 +18,6 @@ import Test.QuickCheck
     , listOf1
     )
 
-import Control.Applicative ((<$>), (<*>))
-
 import Network.Haskoin.Test.Transaction
 import Network.Haskoin.Test.Node
 

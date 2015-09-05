@@ -33,7 +33,7 @@ module Network.Haskoin.Crypto.Keys
 , curveG
 ) where
 
-import Control.Applicative ((<$>), (<*>), (<|>))
+import Control.Applicative ((<|>))
 import Control.Monad (when, unless, guard, mzero)
 import Control.DeepSeq (NFData, rnf)
 

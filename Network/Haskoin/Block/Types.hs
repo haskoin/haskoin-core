@@ -11,7 +11,6 @@ module Network.Haskoin.Block.Types
 
 import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM2, replicateM, forM_)
-import Control.Applicative ((<$>),(<*>))
 
 import Data.Word (Word32)
 import Data.Binary (Binary, get, put)

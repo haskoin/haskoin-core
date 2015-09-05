@@ -12,8 +12,6 @@ import Test.QuickCheck
     , oneof
     )
 
-import Control.Applicative ((<$>))
-
 import Network.Haskoin.Test.Node
 import Network.Haskoin.Test.Transaction
 import Network.Haskoin.Test.Block

@@ -30,7 +30,6 @@ import Test.QuickCheck
     )
 
 import Control.Monad (forM)
-import Control.Applicative ((<$>),(<*>))
 
 import Data.Word (Word64)
 import Data.List (permutations, nubBy, nub)

@@ -8,7 +8,6 @@ module Network.Haskoin.Script.Types
 
 import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM2, unless, forM_)
-import Control.Applicative ((<$>))
 
 import Data.Word (Word8)
 import Data.Binary (Binary, get, put)

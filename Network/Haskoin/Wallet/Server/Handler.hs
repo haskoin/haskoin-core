@@ -2,10 +2,8 @@ module Network.Haskoin.Wallet.Server.Handler where
 
 import Control.Arrow (first)
 import Control.Monad (when, unless, liftM)
-import Control.Exception (SomeException(..), throwIO, throw, tryJust)
+import Control.Exception (SomeException(..), throwIO, tryJust)
 import Control.Monad.Trans (liftIO, MonadIO, lift)
-import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TBMChan (TBMChan, writeTBMChan)
 import Control.Monad.Logger (MonadLogger, logInfo, logError)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
@@ -18,29 +16,9 @@ import Data.Aeson (Value(..), toJSON)
 import Data.Word (Word32)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack, unpack)
-import Data.Conduit (($$))
-import qualified Data.Conduit.List as CL (consume)
 import qualified Data.Map.Strict as M (intersectionWith, fromList, elems)
 
-import qualified Database.Persist as P
-    ( Filter, SelectOpt( Asc, Desc, OffsetBy, LimitTo )
-    , selectFirst, updateWhere, selectSource, count, update
-    , deleteWhere, insertBy, insertMany_
-    , (=.), (==.), (<.), (>.), (<-.)
-    )
-import Database.Esqueleto
-    ( Esqueleto, SqlQuery, SqlExpr, SqlBackend
-    , InnerJoin(..), LeftOuterJoin(..), OrderBy, update
-    , select, from, where_, val, valList, sub_select, countRows, count
-    , orderBy, limit, asc, desc, set, offset, selectSource, updateCount
-    , subList_select, in_, unValue, max_, not_, coalesceDefault, just, on
-    , (^.), (=.), (==.), (&&.), (||.), (<.)
-    , (<=.), (>.), (>=.), (-.), (*.), (?.), (!=.)
-    -- Reexports from Database.Persist
-    , SqlPersistT, Entity(..)
-    , getBy, insertUnique, updateGet, replace, get, insertMany_, insert_
-    )
-import qualified Database.Esqueleto as E (isNothing, Value(..))
+import Database.Esqueleto (SqlPersistT, Entity(..))
 
 import Database.Persist.Sql
     ( SqlPersistM
@@ -51,9 +29,6 @@ import Database.Persist.Sql
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Transaction
-import Network.Haskoin.Block
-import Network.Haskoin.Util
-import Network.Haskoin.Node
 import Network.Haskoin.Node.STM
 import Network.Haskoin.Node.HeaderTree
 import Network.Haskoin.Node.BlockChain
@@ -179,7 +154,7 @@ postAccountsR keyRingName NewAccount{..} = do
         , "  Account name: " ++ unpack newAccountAccountName
         ]
     (keyRing, Entity _ newAcc) <- runDB $ do
-        keyRingE@(Entity ki keyRing) <- getKeyRing keyRingName
+        keyRingE@(Entity _ keyRing) <- getKeyRing keyRingName
         newAcc <- newAccount
             keyRingE newAccountAccountName newAccountType newAccountKeys
         return (keyRing, newAcc)
@@ -277,7 +252,7 @@ getAddressesR keyRingName name addrType minConf offline page = do
         ]
 
     (keyRing, acc, res, bals, maxPage) <- runDB $ do
-        (keyRing, accE@(Entity ai acc)) <- getAccount keyRingName name
+        (keyRing, accE@(Entity _ acc)) <- getAccount keyRingName name
         (res, maxPage) <- addressPage accE addrType page
         case res of
             [] -> return (keyRing, acc, res, [], maxPage)

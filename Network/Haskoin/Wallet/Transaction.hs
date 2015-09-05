@@ -35,50 +35,43 @@ module Network.Haskoin.Wallet.Transaction
 , join2
 ) where
 
-import Control.Applicative ((<$>))
 import Control.Arrow (second)
 import Control.Monad (forM, forM_, when, liftM, unless)
-import Control.Monad.Trans (MonadIO, liftIO, lift)
+import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Trans.Resource (MonadResource)
 import Control.Exception (throwIO, throw)
-import Control.DeepSeq (NFData(..))
 
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Word (Word32, Word64)
 import Data.Either (rights)
-import Data.List ((\\), nub, nubBy, delete, find)
-import Data.List.Split (splitEvery)
+import Data.List ((\\), nub, nubBy, find)
+import Data.List.Split (chunksOf)
 import Data.Text (unpack)
 import Data.Conduit (Source, mapOutput, ($$))
-import Data.Maybe
-    (catMaybes, mapMaybe, isNothing, isJust, fromMaybe, listToMaybe)
-import qualified Data.Conduit.List as CL (consume)
+import Data.Maybe (isNothing, isJust, fromMaybe, listToMaybe)
 import qualified Data.Map.Strict as M
-    ( Map, toList, map, lookup
-    , unionWith, fromListWith, filter
-    )
+    ( Map, toList, map, unionWith, fromListWith )
 
 import qualified Database.Persist as P
-    ( Filter, SelectOpt( Asc, Desc, OffsetBy, LimitTo )
-    , selectFirst, updateWhere, selectSource, count, update
-    , deleteWhere, insertBy, insertMany_, selectList, PersistEntity
+    ( Filter
+    , selectFirst
+    , deleteWhere, insertBy, insertMany_, PersistEntity
     , PersistEntityBackend
-    , (=.), (==.), (<.), (>.), (<-.)
     )
 import Database.Esqueleto
-    ( Value(..), Esqueleto, SqlQuery, SqlExpr, SqlBackend, SqlEntity
+    ( Value(..), SqlQuery, SqlExpr, SqlBackend
     , InnerJoin(..), LeftOuterJoin(..), OrderBy, update, sum_, groupBy
     , select, from, where_, val, valList, sub_select, countRows, count
-    , orderBy, limit, asc, desc, set, offset, selectSource, updateCount
-    , subList_select, in_, unValue, max_, not_, coalesceDefault, just, on
+    , orderBy, limit, asc, desc, set, offset, selectSource
+    , in_, unValue, not_, coalesceDefault, just, on
     , case_, when_, then_, else_, distinct
     , (^.), (=.), (==.), (&&.), (||.), (<.)
-    , (<=.), (>.), (>=.), (-.), (*.), (?.), (!=.)
+    , (<=.), (>=.), (-.), (?.), (!=.)
     -- Reexports from Database.Persist
     , SqlPersistT, Entity(..)
-    , getBy, insertUnique, updateGet, replace, get, insertMany_, insert_
+    , getBy, replace
     )
 import qualified Database.Esqueleto as E (isNothing, delete)
 import Database.Esqueleto.Internal.Sql (SqlSelect)
@@ -89,7 +82,6 @@ import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
-import Network.Haskoin.Node
 import Network.Haskoin.Node.STM
 import Network.Haskoin.Node.HeaderTree
 
@@ -99,10 +91,10 @@ import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Database
 
 -- Input coin type with transaction and address information
-type InCoinData = (Entity KeyRingCoin, KeyRingTx, KeyRingAddr)
+data InCoinData = InCoinData !(Entity KeyRingCoin) !KeyRingTx !KeyRingAddr
 
 instance Coin InCoinData where
-    coinValue (Entity _ c, _, _) = keyRingCoinValue c
+    coinValue (InCoinData (Entity _ c) _ _) = keyRingCoinValue c
 
 -- Output coin type with address information
 data OutCoinData = OutCoinData
@@ -111,13 +103,6 @@ data OutCoinData = OutCoinData
     , outCoinDataValue  :: !Word64
     , outCoinDataScript :: !ScriptOutput
     }
-
-instance NFData OutCoinData where
-    rnf OutCoinData{..} =
-        rnf outCoinDataAddr `seq`
-        rnf outCoinDataPos `seq`
-        rnf outCoinDataValue `seq`
-        rnf outCoinDataScript
 
 {- List transaction -}
 
@@ -323,9 +308,9 @@ importTx' origTx ai origInCoins = do
             where_ (   t ^. KeyRingCoinAccount ==. val ai
                    &&. t ^. KeyRingCoinHash    ==. val origTxid
                    )
-        let f (c, t, x) = if keyRingTxHash t == origTxid
-                then (c, t{ keyRingTxHash = txid, keyRingTxTx = tx }, x)
-                else (c, t, x)
+        let f (InCoinData c t x) = if keyRingTxHash t == origTxid
+                then InCoinData c t{ keyRingTxHash = txid, keyRingTxTx = tx } x
+                else InCoinData c t x
         return $ map f origInCoins
 
     spendingTxs <- getSpendingTxs tx (Just ai)
@@ -337,7 +322,7 @@ importTx' origTx ai origInCoins = do
         then importNetTx tx
         else importOfflineTx tx ai inCoins spendingTxs
   where
-    toVerDat (Entity _ c, t, _) =
+    toVerDat (InCoinData (Entity _ c) t _) =
         (keyRingCoinScript c, OutPoint (keyRingTxHash t) (keyRingCoinPos c))
 
 -- Offline transactions are usually multisignature transactions requiring
@@ -359,7 +344,7 @@ mergeNoSigHashTxs ai tx inCoins = do
         _ -> Nothing
   where
     buildOutpoint c t = OutPoint (keyRingTxHash t) (keyRingCoinPos c)
-    f (Entity _ c, t, _) = (keyRingCoinScript c, buildOutpoint c t)
+    f (InCoinData (Entity _ c) t _) = (keyRingCoinScript c, buildOutpoint c t)
     outPoints = map f inCoins
 
 -- | Import an offline transaction into a specific account. Offline transactions
@@ -488,7 +473,7 @@ canSpendCoins inCoins spendingTxs offline =
     all validSpend spendingTxs
   where
     -- We can only spend pending and building coins
-    validCoin (_,t,_)
+    validCoin (InCoinData _ t _)
         | offline   = keyRingTxConfidence t /= TxDead
         | otherwise = keyRingTxConfidence t `elem` [TxPending, TxBuilding]
     -- All transactions spending the same coins as us should be offline
@@ -510,7 +495,7 @@ getInCoins tx aiM = do
                 c ^. KeyRingCoinAccount ==. val ai &&. limitOutPoints c os
             _ -> limitOutPoints c os
         return $ (c, t, x)
-    return $ map (\(c, t, x) -> (c, entityVal t, entityVal x)) res
+    return $ map (\(c, t, x) -> InCoinData c (entityVal t) (entityVal x)) res
   where
     ops = map prevOutput $ txIn tx
     limitOutPoints c os = join2 $ map (f c) os
@@ -661,12 +646,12 @@ buildAccTxs tx confidence inCoins outCoins = do
         -- Return the new transaction record
         return newAtx
   where
-    toCoin ai accTxId now (OutCoinData addrEnt pos val so) = KeyRingCoin
+    toCoin ai accTxId now (OutCoinData addrEnt pos vl so) = KeyRingCoin
         { keyRingCoinAccount = ai
         , keyRingCoinHash    = txHash tx
         , keyRingCoinPos     = pos
         , keyRingCoinTx      = accTxId
-        , keyRingCoinValue   = val
+        , keyRingCoinValue   = vl
         , keyRingCoinScript  = so
         , keyRingCoinAddr    = entityKey addrEnt
         , keyRingCoinCreated = now
@@ -695,10 +680,10 @@ buildAccTx tx confidence ai inCoins outCoins now = KeyRingTx
     , keyRingTxInValue   = inVal
     , keyRingTxOutValue  = outVal
     , keyRingTxInputs =
-        let f h i (Entity _ c, t, _) =
+        let f h i (InCoinData (Entity _ c) t _) =
                 keyRingTxHash t == h && keyRingCoinPos c == i
             toInfo (a, OutPoint h i) = case find (f h i) inCoins of
-                Just (Entity _ c,_,_) ->
+                Just (InCoinData (Entity _ c) _ _) ->
                     AddressInfo a (Just $ keyRingCoinValue c) True
                 _ -> AddressInfo a Nothing False
         in  map toInfo allInAddrs
@@ -721,7 +706,7 @@ buildAccTx tx confidence ai inCoins outCoins now = KeyRingTx
     -- The value going into the account is the sum of the output coins
     inVal  = sum $ map outCoinDataValue outCoins
     -- The value going out of the account is the sum on the input coins
-    outVal = sum $ map (keyRingCoinValue . entityVal . fst3) inCoins
+    outVal = sum $ map coinValue inCoins
     allMyCoins = length inCoins  == length (txIn tx) &&
                  length outCoins == length (txOut tx)
     txType
@@ -765,7 +750,7 @@ groupCoinsByAccount inCoins outCoins =
     M.unionWith merge inMap outMap
   where
     -- Build a map from accounts -> (inCoins, outCoins)
-    f coin@(_,t,_) = (keyRingTxAccount t  , [coin])
+    f coin@(InCoinData _ t _) = (keyRingTxAccount t, [coin])
     g coin = (keyRingAddrAccount $ entityVal $  outCoinDataAddr coin, [coin])
     merge (is, _) (_, os) = (is, os)
     inMap  = M.map (\is -> (is, [])) $ M.fromListWith (++) $ map f inCoins
@@ -927,7 +912,7 @@ createTx keyRing accE@(Entity ai acc) dests fee minConf rcptFee sign = do
             "Error while importing the new transaction"
 
 toCoinSignData :: InCoinData -> CoinSignData
-toCoinSignData (Entity _ c, t, x) =
+toCoinSignData (InCoinData (Entity _ c) t x) =
     CoinSignData (OutPoint (keyRingTxHash t) (keyRingCoinPos c))
                  (keyRingCoinScript c)
                  (keyRingAddrDerivation x)
@@ -996,14 +981,14 @@ buildUnsignedTx accE@(Entity ai acc) origDests origFee minConf rcptFee = do
   where
     tot = sum $ map snd origDests
     toBase58 (a, v) = (addrToBase58 a, v)
-    toOutPoint ((Entity _ c), t, _) =
+    toOutPoint (InCoinData (Entity _ c) t _) =
         OutPoint (keyRingTxHash t) (keyRingCoinPos c)
     addChangeAddr change dests = do
         as <- unusedAddresses accE AddressInternal
         case as of
             (a:_) -> do
                 -- Use the address to prevent reusing it again
-                useAddress a
+                _ <- useAddress a
                 -- TODO: Randomize the change position
                 return $ (keyRingAddrAddress a, change) : dests
             _ -> liftIO . throwIO $ WalletException
@@ -1087,7 +1072,7 @@ spendableCoins
 spendableCoins ai minConf orderPolicy =
     liftM (map f) $ select $ spendableCoinsFrom ai minConf orderPolicy
   where
-    f (c, t, x) = (c, entityVal t, entityVal x)
+    f (c, t, x) = InCoinData c (entityVal t) (entityVal x)
 
 spendableCoinsSource
     :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
@@ -1103,7 +1088,7 @@ spendableCoinsSource
 spendableCoinsSource ai minConf orderPolicy =
     mapOutput f $ selectSource $ spendableCoinsFrom ai minConf orderPolicy
   where
-    f (c, t, x) = (c, entityVal t, entityVal x)
+    f (c, t, x) = InCoinData c (entityVal t) (entityVal x)
 
 spendableCoinsFrom
     :: KeyRingAccountId                   -- ^ Account key
@@ -1272,7 +1257,6 @@ addressBalances accE@(Entity ai _) iMin iMax addrType minconf offline = do
                     , balanceInfoSpentCoins = spentC
                     }
         in (i, b)
-    f _ = throw $ WalletException "Could not compute the balance"
 
 {- Rescans -}
 
@@ -1300,7 +1284,7 @@ splitSelect :: (SqlSelect a r, MonadIO m)
 splitSelect ts queryF =
     liftM concat $ forM vals $ select . queryF
   where
-    vals = splitEvery paramLimit ts
+    vals = chunksOf paramLimit ts
 
 splitUpdate :: ( MonadIO m
                , P.PersistEntity val
@@ -1312,11 +1296,11 @@ splitUpdate :: ( MonadIO m
 splitUpdate ts updateF =
     forM_ vals $ update . updateF
   where
-    vals = splitEvery paramLimit ts
+    vals = chunksOf paramLimit ts
 
 splitDelete :: MonadIO m => [t] -> ([t] -> SqlQuery ()) -> SqlPersistT m ()
 splitDelete ts deleteF =
     forM_ vals $ E.delete . deleteF
   where
-    vals = splitEvery paramLimit ts
+    vals = chunksOf paramLimit ts
 

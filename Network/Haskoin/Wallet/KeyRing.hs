@@ -40,9 +40,8 @@ module Network.Haskoin.Wallet.KeyRing
 , subSelectAddrCount
 ) where
 
-import Control.Applicative ((<$>))
 import Control.Monad (unless, when, liftM)
-import Control.Monad.Trans (MonadIO, liftIO, lift)
+import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Trans.Resource (MonadResource)
@@ -57,18 +56,14 @@ import Data.List (nub)
 import Data.Word (Word32)
 import qualified Data.ByteString as BS (ByteString, null)
 
-import qualified Database.Persist as P
-    ( Filter, SelectOpt( Asc )
-    , updateWhere, update
-    , (=.), (==.)
-    )
+import qualified Database.Persist as P (updateWhere, update , (=.))
 import Database.Esqueleto
     ( Value(..), SqlExpr, SqlQuery
     , InnerJoin(..), on
     , select, from, where_, val, sub_select, countRows, count, unValue
     , orderBy, limit, asc, desc, offset, selectSource, get
     , max_, not_, isNothing, case_, when_, then_, else_
-    , (^.), (==.), (&&.), (<=.), (>=.), (>.), (-.), (<.)
+    , (^.), (==.), (&&.), (>.), (-.), (<.)
     -- Reexports from Database.Persist
     , SqlPersistT, Entity(..)
     , getBy, insertUnique, insertMany_, insert_
@@ -414,7 +409,7 @@ addressPrvKey :: MonadIO m
               -> KeyIndex              -- ^ Derivation index of the address
               -> AddressType           -- ^ Address type
               -> SqlPersistT m PrvKeyC -- ^ Private key
-addressPrvKey keyRing accE@(Entity ai acc) index addrType = do
+addressPrvKey keyRing accE@(Entity ai _) index addrType = do
     res <- select $ from $ \x -> do
         where_ (   x ^. KeyRingAddrAccount ==. val ai
                &&. x ^. KeyRingAddrType    ==. val addrType
@@ -500,12 +495,12 @@ generateAddrs :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
               -> AddressType
               -> KeyIndex
               -> SqlPersistT m Int
-generateAddrs accE@(Entity ai acc) addrType genIndex = do
+generateAddrs accE@(Entity _ _) addrType genIndex = do
     cnt <- addressCount accE addrType
     let toGen = (fromIntegral genIndex) - (fromIntegral cnt) + 1
     if toGen > 0
         then do
-            createAddrs accE addrType $ fromIntegral toGen
+            _ <- createAddrs accE addrType $ fromIntegral toGen
             return toGen
         else return 0
 
@@ -548,8 +543,8 @@ setAccountGap accE@(Entity ai acc) gap
     | missing <= 0 = liftIO . throwIO $ WalletException
         "The gap of an account can only be increased"
     | otherwise = do
-        createAddrs accE AddressExternal $ fromInteger $ missing*2
-        createAddrs accE AddressInternal $ fromInteger $ missing*2
+        _ <- createAddrs accE AddressExternal $ fromInteger $ missing*2
+        _ <- createAddrs accE AddressInternal $ fromInteger $ missing*2
         P.update ai [ KeyRingAccountGap P.=. gap ]
         return $ acc{ keyRingAccountGap = gap }
   where

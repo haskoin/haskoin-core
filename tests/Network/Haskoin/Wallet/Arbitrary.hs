@@ -1,9 +1,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Network.Haskoin.Wallet.Arbitrary where
 
-import Test.QuickCheck (Arbitrary, arbitrary, oneof, listOf)
-
-import Control.Applicative ((<$>))
+import Test.QuickCheck (Arbitrary, arbitrary, oneof)
 
 import Network.Haskoin.Test
 import Network.Haskoin.Wallet
@@ -36,14 +34,5 @@ instance Arbitrary TxAction where
             ArbitraryTx tx <- arbitrary
             return (ImportTx tx)
         , SignTx <$> arbitrary
-        , do
-            ArbitraryTx tx <- arbitrary
-            sd <- listOf $ do
-                ArbitraryOutPoint outPoint <- arbitrary
-                ArbitraryScriptOutput scriptOutput <- arbitrary
-                ArbitrarySoftPath deriv <- arbitrary
-                let signData = CoinSignData outPoint scriptOutput deriv
-                return signData
-            return (SignOfflineTx tx sd)
         ]
 

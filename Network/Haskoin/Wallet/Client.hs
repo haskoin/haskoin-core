@@ -12,7 +12,7 @@ import System.Posix.Files
     , otherModes
     , fileExist
     )
-import System.Environment (getArgs, getEnv, lookupEnv)
+import System.Environment (getArgs, lookupEnv)
 import System.Info (os)
 import System.Console.GetOpt
     ( getOpt
@@ -22,8 +22,7 @@ import System.Console.GetOpt
     , ArgOrder (Permute)
     )
 
-import Control.Applicative ((<$>))
-import Control.Monad (when, forM_, filterM)
+import Control.Monad (when, forM_)
 import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.Reader as R (runReaderT)
 
@@ -143,7 +142,7 @@ getConfig fs = do
     if e then do
             cfgE <- decodeFileEither cfgFile
             case cfgE of
-                Left e -> error $ show e
+                Left x -> error $ show x
                 -- Override settings from file using command-line
                 Right cfg -> return $ fixConfigDir (foldr ($) cfg fs) dir
          else return $ fixConfigDir initCfg dir

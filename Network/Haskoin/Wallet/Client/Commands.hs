@@ -41,16 +41,14 @@ import System.ZMQ4.Monadic
     , connect
     )
 
-import Control.Applicative ((<$>))
 import Control.Monad (forM_, when, liftM2)
 import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.Reader as R (ReaderT, ask, asks)
 
 import Data.Maybe (listToMaybe, isNothing, fromJust, fromMaybe, isJust)
-import Data.List (intersperse, intercalate)
+import Data.List (intersperse)
 import Data.Text (pack, unpack, splitOn)
 import Data.Word (Word64)
-import Data.Time.Clock (NominalDiffTime)
 import qualified Data.Yaml as YAML (encode)
 import qualified Data.Aeson.Encode.Pretty as JSON
     ( Config(..)
@@ -207,7 +205,7 @@ cmdUnused name = do
     k <- R.asks configKeyRing
     t <- R.asks configAddrType
     sendZmq (GetAddressesUnusedR k (pack name) t) $
-        \(JsonWithAccount _ _ as) -> forM_ as $ putStrLn . printAddress
+        \(JsonWithAccount _ _ as) -> forM_ (as :: [JsonAddr]) $ putStrLn . printAddress
 
 cmdLabel :: String -> String -> String -> Handler ()
 cmdLabel name iStr label = do
@@ -278,7 +276,7 @@ cmdImport name txStr = case txM of
         k <- R.asks configKeyRing
         let action = ImportTx tx
         sendZmq (PostTxsR k (pack name) action) $
-            \(JsonWithAccount _ _ tx) -> putStr $ printTx tx
+            \(JsonWithAccount _ _ t) -> putStr $ printTx t
     _ -> error "Could not parse transaction"
   where
     txM = decodeToMaybe =<< hexToBS txStr

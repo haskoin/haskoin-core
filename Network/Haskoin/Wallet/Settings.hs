@@ -4,7 +4,6 @@ module Network.Haskoin.Wallet.Settings
 , Config(..)
 ) where
 
-import Control.Applicative ((<$>), (<*>))
 import Control.Monad (forM, mzero)
 import Control.Exception (throw)
 import Control.Monad.Logger (LogLevel(..))
@@ -14,22 +13,17 @@ import Data.FileEmbed (embedFile)
 import Data.Yaml (decodeEither')
 import Data.Word (Word32, Word64)
 import Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Traversable as V (mapM)
 import qualified Data.ByteString as BS (ByteString)
 import qualified Data.Text as T (Text)
 import Data.Aeson
     ( Value(..)
     , FromJSON
-    , Result(..)
     , parseJSON
-    , fromJSON
-    , withArray
     , withObject
     , (.:), (.:?), (.!=)
     )
 
-import Network.Haskoin.Constants
 import Network.Haskoin.Wallet.Database
 import Network.Haskoin.Wallet.Types
 

@@ -33,7 +33,7 @@ import Data.Word (Word32, Word64)
 import Data.Time (UTCTime)
 import Data.Text (Text)
 
-import Database.Persist (Entity(..), EntityField, Unique)
+import Database.Persist (EntityField, Unique)
 import Database.Persist.Quasi (lowerCaseSettings)
 import Database.Persist.TH
     ( share
@@ -46,7 +46,6 @@ import Database.Persist.TH
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
-import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Node
 import Network.Haskoin.Node.HeaderTree
@@ -55,9 +54,6 @@ share [ mkPersist sqlSettings
       , mkMigrate "migrateWallet"
       ]
     $(persistFileWith lowerCaseSettings "config/models")
-
-instance NFData e => NFData (Entity e) where
-    rnf (Entity k e) = k `seq` rnf e
 
 instance NFData KeyRing where
     rnf KeyRing{..} =

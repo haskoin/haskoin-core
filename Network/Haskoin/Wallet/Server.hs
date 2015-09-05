@@ -6,37 +6,25 @@ module Network.Haskoin.Wallet.Server
 
 import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 import System.ZMQ4
-    ( Rep(..), Socket, bind, receive, send
+    ( Rep(..), bind, receive, send
     ,  withContext, withSocket
     )
 
-import Control.Applicative ((<$>))
-import Control.Monad (when, void, unless, forM, forM_, forever, liftM, join)
+import Control.Monad (when, unless, forever, liftM)
 import Control.Monad.Trans (MonadIO, lift, liftIO)
-import Control.Monad.Trans.Control
-    ( StM, MonadBaseControl, control
-    , liftBaseOp, liftBaseOp_, liftBaseWith, restoreM
-    , liftBaseOpDiscard
-    )
-import Control.Monad.State (StateT, evalStateT, gets)
+import Control.Monad.Trans.Control (MonadBaseControl, liftBaseOpDiscard)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Trans.Resource (MonadResource, runResourceT)
-import Control.DeepSeq (NFData(..), ($!!))
-import Control.Concurrent.STM.TBMChan (writeTBMChan)
-import Control.Concurrent.STM (TVar, atomically, retry, readTVar, newTVarIO)
-import Control.Concurrent.Async.Lifted
-    (async, link, mapConcurrently, cancel, waitAnyCancel)
-import Control.Exception.Lifted
-    (SomeException(..), ErrorCall(..), catches, finally)
+import Control.DeepSeq (NFData(..))
+import Control.Concurrent.STM (retry)
+import Control.Concurrent.Async.Lifted (async, waitAnyCancel)
+import Control.Exception.Lifted (SomeException(..), ErrorCall(..), catches)
 import qualified Control.Exception.Lifted as E (Handler(..))
 import qualified Control.Concurrent.MSem as Sem (MSem, new)
 import Control.Monad.Logger
     ( MonadLogger
     , runStdoutLoggingT
-    , LogLevel(..)
-    , LoggingT(..)
-    , logError
     , logDebug
     , logWarn
     , logInfo
@@ -44,41 +32,24 @@ import Control.Monad.Logger
     )
 
 import qualified Data.HashMap.Strict as H (lookup)
-import Data.ByteString (ByteString)
 import Data.Text (pack)
-import Data.Time.Clock.POSIX (getPOSIXTime)
-import Data.Maybe (catMaybes, fromMaybe, fromJust)
-import Data.Aeson (Value, toJSON, decode, encode)
-import Data.Conduit (Sink, await, awaitForever, ($$))
-import Data.Conduit.TMChan (TBMChan, sourceTBMChan)
+import Data.Maybe (fromMaybe)
+import Data.Aeson (Value, decode, encode)
+import Data.Conduit (await, awaitForever, ($$))
 import Data.Word (Word32)
 import qualified Data.Map.Strict as M
-    (Map, unionWith, null, toList, empty, fromListWith, assocs, elems)
+    (Map, unionWith, null, empty, fromListWith, assocs, elems)
 
-import Database.Persist (get)
 import Database.Persist.Sql (ConnectionPool, runMigration)
-import qualified Database.LevelDB.Base as DB (Options(..), open, defaultOptions)
+import qualified Database.LevelDB.Base as DB (Options(..), defaultOptions)
 
-import Database.Esqueleto
-    ( Esqueleto, SqlQuery, SqlExpr, SqlBackend, SqlEntity
-    , InnerJoin(..), LeftOuterJoin(..), OrderBy, update, sum_, groupBy
-    , select, from, where_, val, valList, sub_select, countRows, count
-    , orderBy, limit, asc, desc, set, offset, selectSource, updateCount
-    , subList_select, in_, unValue, max_, not_, coalesceDefault, just, on
-    , case_, when_, then_, else_, distinct
-    , (^.), (=.), (==.), (&&.), (||.), (<.)
-    , (<=.), (>.), (>=.), (-.), (*.), (?.), (!=.)
-    -- Reexports from Database.Persist
-    , SqlPersistT, Entity(..)
-    , getBy, insertUnique, updateGet, replace, get, insertMany_, insert_
-    )
+import Database.Esqueleto (from, where_, val , (^.), (==.), (&&.), (<=.))
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Constants
 import Network.Haskoin.Util
 import Network.Haskoin.Block
 import Network.Haskoin.Transaction
-import Network.Haskoin.Node
 import Network.Haskoin.Node.Peer
 import Network.Haskoin.Node.BlockChain
 import Network.Haskoin.Node.STM
@@ -136,7 +107,7 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
                 -- Run the ZMQ API server
                 , runWalletApp $ HandlerSession cfg pool (Just nodeState) sem
                 ]
-            waitAnyCancel as
+            _ <- waitAnyCancel as
             return ()
   where
     -- Setup logging monads
@@ -220,7 +191,7 @@ merkleSync
     -> NodeT m ()
 merkleSync sem pool bSize = do
     -- Get our best block
-    (best, merkleHeight) <- runDBPool sem pool getBestBlock
+    best <- fst <$> runDBPool sem pool getBestBlock
     $(logDebug) "Starting merkle batch download"
     -- Wait for a new block or a rescan
     (action, source) <- merkleDownload best bSize
@@ -325,6 +296,9 @@ merkleSync sem pool bSize = do
             ]
         SideChain n -> $(logWarn) $ pack $ unlines $
             "Side chain:" :
+            map (("  " ++) . encodeBlockHashLE . nodeBlockHash) n
+        KnownChain n -> $(logWarn) $ pack $ unlines $
+            "Known chain:" :
             map (("  " ++) . encodeBlockHashLE . nodeBlockHash) n
 
 maybeDetach :: Config -> IO () -> IO ()

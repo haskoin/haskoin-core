@@ -44,22 +44,17 @@ module Network.Haskoin.Wallet.Types
 , WalletException(..)
 ) where
 
-import Control.Applicative ((<$>), (<*>))
 import Control.Monad (mzero)
 import Control.Exception (Exception)
 import Control.DeepSeq (NFData(..))
 
-import Text.Read (readMaybe)
 import Data.Int (Int64)
 import Data.Time (UTCTime)
 import Data.Typeable (Typeable)
-import Data.Maybe (maybeToList, isJust, fromJust, fromMaybe)
+import Data.Maybe (maybeToList)
 import Data.Char (toLower)
 import Data.Word (Word32, Word64)
 import Data.Text (Text)
-import Data.List (intercalate)
-import Data.List.Split (splitOn)
-import qualified Data.Text as T
 import qualified Data.ByteString.Char8 as C (pack, unpack)
 import qualified Data.ByteString.Lazy as L
 import Data.Aeson.Types
@@ -80,7 +75,6 @@ import Database.Persist.Class (PersistField, toPersistValue, fromPersistValue)
 import Database.Persist.Types (PersistValue(..))
 import Database.Persist.Sql (PersistFieldSql, SqlType(..), sqlType)
 
-import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Script
 import Network.Haskoin.Transaction
@@ -100,7 +94,8 @@ data TxType
     | TxSelf
     deriving (Eq, Show, Read)
 
-instance NFData TxType
+instance NFData TxType where
+    rnf x = x `seq` ()
 
 $(deriveJSON (dropSumLabels 2 0 "") ''TxType)
 
@@ -111,7 +106,8 @@ data TxConfidence
     | TxBuilding
     deriving (Eq, Show, Read)
 
-instance NFData TxConfidence
+instance NFData TxConfidence where
+    rnf x = x `seq` ()
 
 $(deriveJSON (dropFieldLabel 2) ''TxConfidence)
 
@@ -315,7 +311,8 @@ data AddressType
 
 $(deriveJSON (dropSumLabels 7 0 "") ''AddressType)
 
-instance NFData AddressType
+instance NFData AddressType where
+    rnf x = x `seq` ()
 
 addrTypeIndex :: AddressType -> KeyIndex
 addrTypeIndex AddressExternal = 0

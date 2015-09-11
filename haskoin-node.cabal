@@ -81,8 +81,8 @@ test-suite test-haskoin-node
 
     extensions: EmptyDataDecls
 
-    other-modules: Network.Haskoin.Node.Actors.Tests
-                   Network.Haskoin.Node.Actors.Units
+    other-modules: Network.Haskoin.Node.Tests
+                   Network.Haskoin.Node.Units
 
     build-depends: base                           >= 4.8        && < 5
                  , haskoin-node

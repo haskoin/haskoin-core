@@ -1,4 +1,4 @@
-module Network.Haskoin.Node.Actors.Units (tests) where
+module Network.Haskoin.Node.Units (tests) where
 
 -- import Test.HUnit (Assertion, assertBool)
 import Test.Framework (Test, testGroup)

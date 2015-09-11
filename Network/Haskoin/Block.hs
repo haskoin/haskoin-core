@@ -2,7 +2,7 @@
   This package provides block and block-related types.
 -}
 module Network.Haskoin.Block
-( 
+(
   -- * Blocks
   Block(..)
 , BlockLocator

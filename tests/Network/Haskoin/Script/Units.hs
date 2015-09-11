@@ -12,59 +12,59 @@ import Network.Haskoin.Util
 
 tests :: [Test]
 tests =
-    [ testGroup "Canonical signatures" 
+    [ testGroup "Canonical signatures"
         (map canonicalVectorsMap $ zip canonicalVectors [0..])
-    , testGroup "Non canonical sigatures" 
+    , testGroup "Non canonical sigatures"
         (map notCanonicalVectorsMap $ zip notCanonicalVectors [0..])
-    , testGroup "Multi Signatures" 
+    , testGroup "Multi Signatures"
         (map mapMulSigVector $ zip mulSigVectors [0..])
     , testGroup "Signature decoding"
         (map sigDecodeMap $ zip scriptSigSignatures [0..])
     ]
 
 canonicalVectorsMap :: (String,Int) -> Test.Framework.Test
-canonicalVectorsMap (_,i) = 
+canonicalVectorsMap (_,i) =
     testCase ("Canonical Sig " ++ (show i)) func
-  where 
+  where
     func = testCanonicalSig $ canonicalVectors !! i
 
 notCanonicalVectorsMap :: (String,Int) -> Test.Framework.Test
-notCanonicalVectorsMap (_,i) = 
+notCanonicalVectorsMap (_,i) =
     testCase ("Not canonical Sig " ++ (show i)) func
-  where 
+  where
     func = testNotCanonicalSig $ notCanonicalVectors !! i
-    
-sigDecodeMap :: ( String, Int ) -> Test.Framework.Test    
+
+sigDecodeMap :: ( String, Int ) -> Test.Framework.Test
 sigDecodeMap (_,i) =
     testCase ( "Signature " ++ ( show i ) ) func
   where
     func = testSigDecode $ scriptSigSignatures !! i
 
 testCanonicalSig :: String -> Assertion
-testCanonicalSig str = 
+testCanonicalSig str =
     assertBool "    > Canonical Sig" $ isRight $ decodeCanonicalSig bs
-  where 
+  where
     bs = fromJust $ hexToBS str
 
 testNotCanonicalSig :: String -> Assertion
-testNotCanonicalSig str = 
+testNotCanonicalSig str =
     assertBool "    > Not canonical sig" $ isLeft $ decodeCanonicalSig bs
-  where 
+  where
     bs = fromJust $ hexToBS str
 
 mapMulSigVector :: ((String,String),Int) -> Test.Framework.Test
-mapMulSigVector (v,i) = 
+mapMulSigVector (v,i) =
     testCase name $ runMulSigVector v
-  where 
+  where
     name = "MultiSignature vector " ++ (show i)
 
 runMulSigVector :: (String,String) -> Assertion
-runMulSigVector (a,ops) = 
+runMulSigVector (a,ops) =
     assertBool "    >  MultiSig Vector" $ a == b
-  where 
+  where
     s = decode' $ fromJust $ hexToBS ops
     b = addrToBase58 $ scriptAddr $ fromRight $ decodeOutput s
-    
+
 testSigDecode :: String -> Assertion
 testSigDecode str =
   let bs = fromJust $ hexToBS str
@@ -109,7 +109,7 @@ mulSigVectors :: [(String,String)]
 mulSigVectors =
     [ ( "3QJmV3qfvL9SuYo34YihAf3sRCW3qSinyC"
       , "52410491bba2510912a5bd37da1fb5b1673010e43d2c6d812c514e91bfa9f2eb129e1c183329db55bd868e209aac2fbc02cb33d98fe74bf23f0c235d6126b1d8334f864104865c40293a680cb9c020e7b1e106d8c1916d3cef99aa431a56d253e69256dac09ef122b1a986818a7cb624532f062c1d1f8722084861c5c3291ccffef4ec687441048d2455d2403e08708fc1f556002f1b6cd83f992d085097f9974ab08a28838f07896fbab08f39495e15fa6fad6edbfb1e754e35fa1c7844c41f322a1863d4621353ae"
-      ) 
+      )
     ]
 
 scriptSigSignatures :: [ String ]

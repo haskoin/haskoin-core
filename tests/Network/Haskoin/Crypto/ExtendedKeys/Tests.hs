@@ -10,7 +10,7 @@ import Network.Haskoin.Test
 import Network.Haskoin.Crypto
 
 tests :: [Test]
-tests = 
+tests =
     [ testGroup "HDW Extended Keys"
         [ testProperty "prvSubKey(k,c)*G = pubSubKey(k*G,c)" subkeyTest
         , testProperty "fromB58 . toB58 prvKey" b58PrvKey
@@ -21,9 +21,9 @@ tests =
 {- HDW Extended Keys -}
 
 subkeyTest :: ArbitraryXPrvKey -> Word32 -> Bool
-subkeyTest (ArbitraryXPrvKey k) i = 
+subkeyTest (ArbitraryXPrvKey k) i =
     (deriveXPubKey $ prvSubKey k i') == (pubSubKey (deriveXPubKey k) i')
-  where 
+  where
     i' = fromIntegral $ i .&. 0x7fffffff -- make it a public derivation
 
 b58PrvKey :: ArbitraryXPrvKey -> Bool

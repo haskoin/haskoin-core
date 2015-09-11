@@ -34,7 +34,7 @@ import Control.Applicative ((<$>), (<|>))
 import Data.List (sortBy)
 import Data.Foldable (foldrM)
 import qualified Data.Text as T
-import qualified Data.ByteString as BS 
+import qualified Data.ByteString as BS
     ( ByteString
     , head
     , singleton
@@ -56,8 +56,8 @@ import Network.Haskoin.Script.SigHash
 
 -- | Data type describing standard transaction output scripts. Output scripts
 -- provide the conditions that must be fulfilled for someone to spend the
--- output coins. 
-data ScriptOutput = 
+-- output coins.
+data ScriptOutput =
       -- | Pay to a public key.
       PayPK         { getOutputPubKey   :: !PubKey }
       -- | Pay to a public key hash.
@@ -72,7 +72,7 @@ data ScriptOutput =
 
 instance FromJSON ScriptOutput where
     parseJSON = withText "scriptoutput" $ \t -> either fail return $
-        maybeToEither "scriptoutput not hex" 
+        maybeToEither "scriptoutput not hex"
           (hexToBS $ T.unpack t) >>= decodeOutputBS
 
 instance ToJSON ScriptOutput where
@@ -113,15 +113,15 @@ scriptAddr = ScriptAddress . hash160 . hash256BS . encodeOutputBS
 -- comparing their serialized representations. This feature allows for easier
 -- multisignature account management as participants in a multisignature wallet
 -- will blindly agree on an ordering of the public keys without having to
--- communicate. 
+-- communicate.
 sortMulSig :: ScriptOutput -> ScriptOutput
 sortMulSig out = case out of
     PayMulSig keys r -> PayMulSig (sortBy f keys) r
     _ -> error "Can only call orderMulSig on PayMulSig scripts"
-  where 
+  where
     f a b = encode' a `compare` encode' b
 
--- | Computes a 'Script' from a 'ScriptOutput'. The 'Script' is a list of 
+-- | Computes a 'Script' from a 'ScriptOutput'. The 'Script' is a list of
 -- 'ScriptOp' can can be used to build a 'Tx'.
 encodeOutput :: ScriptOutput -> Script
 encodeOutput s = Script $ case s of
@@ -130,9 +130,9 @@ encodeOutput s = Script $ case s of
     -- Pay to PubKey Hash Address
     (PayPKHash a) -> case a of
         (PubKeyAddress h) -> [ OP_DUP, OP_HASH160, opPushData $ encode' h
-                             , OP_EQUALVERIFY, OP_CHECKSIG 
-                             ] 
-        (ScriptAddress _) -> 
+                             , OP_EQUALVERIFY, OP_CHECKSIG
+                             ]
+        (ScriptAddress _) ->
             error "encodeOutput: ScriptAddress is invalid in PayPKHash"
     -- Pay to MultiSig Keys
     (PayMulSig ps r)
@@ -147,7 +147,7 @@ encodeOutput s = Script $ case s of
         (ScriptAddress h) -> [ OP_HASH160
                              , opPushData $ encode' h, OP_EQUAL
                              ]
-        (PubKeyAddress _) -> 
+        (PubKeyAddress _) ->
             error "encodeOutput: PubKeyAddress is invalid in PayScriptHash"
 
 -- | Similar to 'encodeOutput' but encodes to a ByteString
@@ -161,10 +161,10 @@ decodeOutput s = case scriptOps s of
     -- Pay to PubKey
     [OP_PUSHDATA bs _, OP_CHECKSIG] -> PayPK <$> decodeToEither bs
     -- Pay to PubKey Hash
-    [OP_DUP, OP_HASH160, OP_PUSHDATA bs _, OP_EQUALVERIFY, OP_CHECKSIG] -> 
+    [OP_DUP, OP_HASH160, OP_PUSHDATA bs _, OP_EQUALVERIFY, OP_CHECKSIG] ->
         (PayPKHash . PubKeyAddress) <$> decodeToEither bs
     -- Pay to Script Hash
-    [OP_HASH160, OP_PUSHDATA bs _, OP_EQUAL] -> 
+    [OP_HASH160, OP_PUSHDATA bs _, OP_EQUAL] ->
         (PayScriptHash . ScriptAddress) <$> decodeToEither bs
     -- Pay to MultiSig Keys
     _ -> matchPayMulSig s
@@ -178,11 +178,11 @@ matchPayMulSig :: Script -> Either String ScriptOutput
 matchPayMulSig (Script ops) = case splitAt (length ops - 2) ops of
     (m:xs,[n,OP_CHECKMULTISIG]) -> do
         (intM,intN) <- liftM2 (,) (scriptOpToInt m) (scriptOpToInt n)
-        if intM <= intN && length xs == intN 
+        if intM <= intN && length xs == intN
             then liftM2 PayMulSig (go xs) (return intM)
             else Left "matchPayMulSig: Invalid M or N parameters"
     _ -> Left "matchPayMulSig: script did not match output template"
-  where 
+  where
     go (OP_PUSHDATA bs _:xs) = liftM2 (:) (decodeToEither bs) (go xs)
     go [] = return []
     go  _ = Left "matchPayMulSig: invalid multisig opcode"
@@ -192,21 +192,21 @@ intToScriptOp :: Int -> ScriptOp
 intToScriptOp i
     | i `elem` [1..16] = op
     |        otherwise = error $ "intToScriptOp: Invalid integer " ++ (show i)
-  where 
+  where
     op = decode' $ BS.singleton $ fromIntegral $ i + 0x50
 
 -- | Decode 'ScriptOp' [OP_1 .. OP_16] to integers [1 .. 16]. This functions
 -- fails for other values of 'ScriptOp'
 scriptOpToInt :: ScriptOp -> Either String Int
-scriptOpToInt s 
+scriptOpToInt s
     | res `elem` [1..16] = return res
     | otherwise          = Left $ "scriptOpToInt: invalid opcode " ++ (show s)
-  where 
+  where
     res = (fromIntegral $ BS.head $ encode' s) - 0x50
 
 -- | Computes the recipient address of a script. This function fails if the
 -- script could not be decoded as a pay to public key hash or pay to script
--- hash. 
+-- hash.
 scriptRecipient :: Script -> Either String Address
 scriptRecipient s = case decodeOutput s of
     Right (PayPKHash a)     -> return a
@@ -216,7 +216,7 @@ scriptRecipient s = case decodeOutput s of
 
 -- | Computes the sender address of a script. This function fails if the
 -- script could not be decoded as a spend public key hash or script hash
--- input. 
+-- input.
 scriptSender :: Script -> Either String Address
 scriptSender s = case decodeInput s of
     Right (RegularInput (SpendPKHash _ key)) -> return $ pubKeyAddr key
@@ -226,12 +226,12 @@ scriptSender s = case decodeInput s of
 
 -- | Data type describing standard transaction input scripts. Input scripts
 -- provide the signing data required to unlock the coins of the output they are
--- trying to spend. 
+-- trying to spend.
 data SimpleInput
       -- | Spend the coins of a PayPK output.
     = SpendPK     { getInputSig :: !TxSignature }
       -- | Spend the coins of a PayPKHash output.
-    | SpendPKHash { getInputSig :: !TxSignature 
+    | SpendPKHash { getInputSig :: !TxSignature
                   , getInputKey :: !PubKey
                   }
       -- | Spend the coins of a PayMulSig output.
@@ -241,7 +241,7 @@ data SimpleInput
 instance NFData SimpleInput where
     rnf (SpendPK i) = rnf i
     rnf (SpendPKHash i k) = rnf i `seq` rnf k
-    rnf (SpendMulSig k) = rnf k 
+    rnf (SpendMulSig k) = rnf k
 
 -- | Returns True if the input script is spending a public key.
 isSpendPK :: ScriptInput -> Bool
@@ -275,7 +275,7 @@ instance NFData ScriptInput where
     rnf (RegularInput i) = rnf i
     rnf (ScriptHashInput i o) = rnf i `seq` rnf o
 
--- | Computes a 'Script' from a 'SimpleInput'. The 'Script' is a list of 
+-- | Computes a 'Script' from a 'SimpleInput'. The 'Script' is a list of
 -- 'ScriptOp' that can be used to build a 'Tx'.
 encodeSimpleInput :: SimpleInput -> Script
 encodeSimpleInput s = Script $ case s of
@@ -298,7 +298,7 @@ decodeSimpleInput (Script ops) = maybeToEither errMsg $
         guard $ isPushOp x
         SpendMulSig <$> foldrM f [] xs
     matchMulSig _ = Nothing
-    f (OP_PUSHDATA bs _) acc = 
+    f (OP_PUSHDATA bs _) acc =
         liftM2 (:) (eitherToMaybe $ decodeSig bs) (Just acc)
     f _ _ = Nothing
     errMsg = "decodeInput: Could not decode script input"
@@ -313,7 +313,7 @@ encodeInput s = case s of
 encodeInputBS :: ScriptInput -> BS.ByteString
 encodeInputBS = encode' . encodeInput
 
--- | Decodes a 'ScriptInput' from a 'Script'. This function fails if the 
+-- | Decodes a 'ScriptInput' from a 'Script'. This function fails if the
 -- script can not be parsed as a standard script input.
 decodeInput :: Script -> Either String ScriptInput
 decodeInput s@(Script ops) = maybeToEither errMsg $
@@ -327,8 +327,8 @@ decodeInput s@(Script ops) = maybeToEither errMsg $
             return $ ScriptHashInput inp rdm
         _ -> Nothing
     errMsg = "decodeInput: Could not decode script input"
-        
+
 -- | Similar to 'decodeInput' but decodes from a ByteString
 decodeInputBS :: BS.ByteString -> Either String ScriptInput
-decodeInputBS = (decodeInput =<<) . decodeToEither 
+decodeInputBS = (decodeInput =<<) . decodeToEither
 

@@ -20,10 +20,10 @@ tests =
     , testGroup "HMAC DRBG Suite 2" [mapDRBG t2]
     , testGroup "HMAC DRBG Suite 3" [mapDRBG t3]
     , testGroup "HMAC DRBG Suite 4" [mapDRBG t4]
-    , testGroup "HMAC DRBG Suite 5 (Reseed)" [mapDRBGRsd r1] 
+    , testGroup "HMAC DRBG Suite 5 (Reseed)" [mapDRBGRsd r1]
     , testGroup "HMAC DRBG Suite 6 (Reseed)" [mapDRBGRsd r2]
-    , testGroup "HMAC DRBG Suite 7 (Reseed)" [mapDRBGRsd r3] 
-    , testGroup "HMAC DRBG Suite 8 (Reseed)" [mapDRBGRsd r4] 
+    , testGroup "HMAC DRBG Suite 7 (Reseed)" [mapDRBGRsd r3]
+    , testGroup "HMAC DRBG Suite 8 (Reseed)" [mapDRBGRsd r4]
     , testGroup "Compact number representation"
         [ testCase "Compact number representations" testCompact ]
     ]
@@ -64,7 +64,7 @@ testCompact = do
     assertBool "Vector 5" $ (encodeCompact (-0x40de000000)) == 0x05c0de00
     assertBool "Vector 6" $ (decodeCompact 0x05c0de00)      == (-0x40de000000)
 
-{- 
+{-
     [SHA-256]
     [PredictionResistance = False]
     [EntropyInputLen = 256]
@@ -75,7 +75,7 @@ testCompact = do
 -}
 
 t1 :: [TestVector]
-t1 = 
+t1 =
     [
     -- COUNT = 0
     [ "ca851911349384bffe89de1cbdc46e6831e44d34a4fb935ee285dd14b71a7488"
@@ -210,7 +210,7 @@ t1 =
 -}
 
 t2 :: [TestVector]
-t2 = 
+t2 =
     [
     -- COUNT = 0
     [ "d3cc4d1acf3dde0c4bd2290d262337042dc632948223d3a2eaab87da44295fbd"
@@ -345,7 +345,7 @@ t2 =
 -}
 
 t3 :: [TestVector]
-t3 = 
+t3 =
     [
     -- COUNT = 0
     [ "5cacc68165a2e2ee20812f35ec73a79dbf30fd475476ac0c44fc6174cdac2b55"
@@ -480,7 +480,7 @@ t3 =
 -}
 
 t4 :: [TestVector]
-t4 = 
+t4 =
     [
     -- COUNT = 0
     [ "5d3286bc53a258a53ba781e2c4dcd79a790e43bbe0e89fb3eed39086be34174b"
@@ -617,7 +617,7 @@ t4 =
 -}
 
 r1 :: [TestVector]
-r1 = 
+r1 =
     [
     -- COUNT = 0
     [ "06032cd5eed33f39265f49ecb142c511da9aff2af71203bffaf34a9ca5bd9c0d"
@@ -782,7 +782,7 @@ r1 =
 -}
 
 r2 :: [TestVector]
-r2 = 
+r2 =
     [
     -- COUNT = 0
     [ "05ac9fc4c62a02e3f90840da5616218c6de5743d66b8e0fbf833759c5928b53d"

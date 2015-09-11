@@ -14,27 +14,27 @@ import Network.Haskoin.Util
 
 tests :: [Test]
 tests =
-    [ testGroup "BIP32 derivation vector 1" 
+    [ testGroup "BIP32 derivation vector 1"
         [ testCase "Chain m" $ runXKeyVec (xKeyVec !! 0)
         , testCase "Chain m/0'" $ runXKeyVec (xKeyVec !! 1)
         , testCase "Chain m/0'/1" $ runXKeyVec (xKeyVec !! 2)
         , testCase "Chain m/0'/1/2'" $ runXKeyVec (xKeyVec !! 3)
         , testCase "Chain m/0'/1/2'/2" $ runXKeyVec (xKeyVec !! 4)
-        , testCase "Chain m/0'/1/2'/2/1000000000" $ 
+        , testCase "Chain m/0'/1/2'/2/1000000000" $
             runXKeyVec (xKeyVec !! 5)
-        ] 
-    , testGroup "BIP32 subkey derivation vector 2" 
+        ]
+    , testGroup "BIP32 subkey derivation vector 2"
         [ testCase "Chain m" $ runXKeyVec (xKeyVec2 !! 0)
         , testCase "Chain m/0" $ runXKeyVec (xKeyVec2 !! 1)
-        , testCase "Chain m/0/2147483647'" $ 
+        , testCase "Chain m/0/2147483647'" $
             runXKeyVec (xKeyVec2 !! 2)
-        , testCase "Chain m/0/2147483647'/1" $ 
+        , testCase "Chain m/0/2147483647'/1" $
             runXKeyVec (xKeyVec2 !! 3)
-        , testCase "Chain m/0/2147483647'/1/2147483646'" $ 
+        , testCase "Chain m/0/2147483647'/1/2147483646'" $
             runXKeyVec (xKeyVec2 !! 4)
-        , testCase "Chain m/0/2147483647'/1/2147483646'/2" $ 
+        , testCase "Chain m/0/2147483647'/1/2147483646'/2" $
             runXKeyVec (xKeyVec2 !! 5)
-        ] 
+        ]
     , testGroup "BIP32 subkey derivation using string path"
         [ testGroup "Either Derivations" testDerivePathE
         , testGroup "Public Derivations" testDerivePubPath
@@ -105,21 +105,21 @@ testDerivePathE :: [Test]
 testDerivePathE = do
     (key, path, final) <- derivePathVectors
     return $ testCase ("Path " ++ path) $
-        assertEqual path final $ 
+        assertEqual path final $
             derivePathE (fromString path :: DerivPath) key
 
 testDerivePubPath :: [Test]
 testDerivePubPath = do
     (key, path, final) <- derivePubPathVectors
     return $ testCase ("Path " ++ path) $
-        assertEqual path final $ 
+        assertEqual path final $
             derivePubPath (fromString path :: SoftPath) key
 
 testDerivePrvPath :: [Test]
 testDerivePrvPath = do
     (key, path, final) <- derivePrvPathVectors
     return $ testCase ("Path " ++ path) $
-        assertEqual path final $ 
+        assertEqual path final $
             derivePath (fromString path :: DerivPath) key
 
 derivePubPathVectors :: [(XPubKey, String, XPubKey)]
@@ -187,11 +187,11 @@ runXKeyVec :: ([String],XPrvKey) -> Assertion
 runXKeyVec (v,m) = do
     assertBool "xPrvID" $ (bsToHex $ encode' $ xPrvID m) == v !! 0
     assertBool "xPrvFP" $ (bsToHex $ encode' $ xPrvFP m) == v !! 1
-    assertBool "xPrvAddr" $ 
+    assertBool "xPrvAddr" $
         (addrToBase58 $ xPubAddr $ deriveXPubKey m) == v !! 2
     assertBool "prvKey" $ (bsToHex $ encodePrvKey $ xPrvKey m) == v !! 3
     assertBool "xPrvWIF" $ xPrvWif m == v !! 4
-    assertBool "pubKey" $ 
+    assertBool "pubKey" $
         (bsToHex $ encode' $ xPubKey $ deriveXPubKey m) == v !! 5
     assertBool "chain code" $ (bsToHex $ encode' $ xPrvChain m) == v !! 6
     assertBool "Hex PubKey" $ (bsToHex $ encode' $ deriveXPubKey m) == v !! 7

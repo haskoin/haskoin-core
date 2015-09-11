@@ -4,9 +4,9 @@
   hashing functions; as well as mnemonic keys from BIP-0039.
 -}
 module Network.Haskoin.Crypto
-( 
+(
   -- *Elliptic Curve Keys
-  
+
   -- **Public Keys
   PubKey, PubKeyC, PubKeyU
 , makePubKey

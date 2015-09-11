@@ -14,7 +14,7 @@ module Network.Haskoin.Crypto.BigWord
 , BigWord(..)
 , BigWordMod(..)
 , Mod512
-, Mod256 
+, Mod256
 , Mod256Tx
 , Mod256Block
 , Mod160
@@ -45,14 +45,14 @@ import Control.DeepSeq (NFData, rnf)
 
 import Data.Bits (Bits(..), FiniteBits(..))
 import Data.Binary (Binary, get, put)
-import Data.Binary.Get 
+import Data.Binary.Get
     ( getWord64be
     , getWord32be
     , getWord8
     , getByteString
     , Get
     )
-import Data.Binary.Put 
+import Data.Binary.Put
     ( putWord64be
     , putWord32be
     , putWord8
@@ -70,9 +70,9 @@ import Data.Ratio (numerator, denominator)
 import qualified Data.ByteString as BS (head, length, reverse)
 import qualified Data.Text as T (pack, unpack)
 
-import Network.Haskoin.Crypto.Curve 
-import Network.Haskoin.Crypto.NumberTheory 
-import Network.Haskoin.Util 
+import Network.Haskoin.Crypto.Curve
+import Network.Haskoin.Crypto.NumberTheory
+import Network.Haskoin.Util
 
 -- | Type representing a transaction hash.
 type TxHash  = BigWord Mod256Tx
@@ -92,11 +92,11 @@ type Word160 = BigWord Mod160
 type Word128 = BigWord Mod128
 -- | Data type representing an Integer modulo coordinate field order P.
 type FieldP  = BigWord ModP
--- | Data type representing an Integer modulo curve order N. 
+-- | Data type representing an Integer modulo curve order N.
 type FieldN  = BigWord ModN
 
 data Mod512
-data Mod256 
+data Mod256
 data Mod256Tx
 data Mod256Block
 data Mod160
@@ -116,7 +116,7 @@ inverseP (BigWord i) = fromInteger $ mulInverse i curveP
 inverseN :: FieldN -> FieldN
 inverseN (BigWord i) = fromInteger $ mulInverse i curveN
 
-class BigWordMod a where 
+class BigWordMod a where
     rFromInteger :: Integer -> BigWord a
     rBitSize     :: BigWord a -> Int
 
@@ -182,7 +182,7 @@ instance BigWordMod n => FiniteBits (BigWord n) where
 instance BigWordMod n => Bounded (BigWord n) where
     minBound = fromInteger 0
     maxBound = fromInteger (-1)
-    
+
 instance BigWordMod n => Real (BigWord n) where
     toRational (BigWord i) = toRational i
 
@@ -190,14 +190,14 @@ instance BigWordMod n => Enum (BigWord n) where
     succ r@(BigWord i)
         | r == maxBound = error "BigWord: tried to take succ of maxBound"
         | otherwise = fromInteger $ succ i
-    pred r@(BigWord i) 
+    pred r@(BigWord i)
         | r == minBound = error "BigWord: tried to take pred of minBound"
         | otherwise = fromInteger $ pred i
     toEnum i
-        | toInteger i >= toInteger (minFrom r) && 
+        | toInteger i >= toInteger (minFrom r) &&
           toInteger i <= toInteger (maxFrom r) = r
         | otherwise = error "BigWord: toEnum is outside of bounds"
-      where 
+      where
         r = fromInteger $ toEnum i
         minFrom :: BigWordMod a => BigWord a -> BigWord a
         minFrom _ = minBound
@@ -211,10 +211,10 @@ instance BigWordMod n => Integral (BigWord n) where
     (BigWord i1) `div` (BigWord i2) = fromInteger $ i1 `div` i2
     (BigWord i1) `mod` (BigWord i2) = fromInteger $ i1 `mod` i2
     (BigWord i1) `quotRem` (BigWord i2) = (fromInteger a, fromInteger b)
-      where 
+      where
         (a,b) = i1 `quotRem` i2
     (BigWord i1) `divMod` (BigWord i2) = (fromInteger a, fromInteger b)
-      where 
+      where
         (a,b) = i1 `divMod` i2
     toInteger (BigWord i) = i
 
@@ -313,7 +313,7 @@ instance Binary (BigWord ModN) where
             "Bad DER identifier byte " ++ (show t) ++ ". Expecting 0x02" )
         l <- getWord8
         i <- bsToInteger <$> getByteString (fromIntegral l)
-        unless (isIntegerValidKey i) $ fail $ 
+        unless (isIntegerValidKey i) $ fail $
             "Invalid fieldN element: " ++ (show i)
         return $ fromInteger i
 
@@ -322,7 +322,7 @@ instance Binary (BigWord ModN) where
         putWord8 0x02 -- Integer type
         let b = integerToBS i
             l = fromIntegral $ BS.length b
-        if BS.head b >= 0x80 
+        if BS.head b >= 0x80
             then do
                 putWord8 (l + 1)
                 putWord8 0x00
@@ -340,19 +340,19 @@ instance Binary (BigWord ModP) where
 
     -- Section 2.3.7 http://www.secg.org/download/aid-780/sec1-v2.pdf
     put r = put (fromIntegral r :: Word256)
-      
+
 instance ToJSON (BigWord Mod256Tx) where
     toJSON = String . T.pack . encodeTxHashLE
 
 instance FromJSON (BigWord Mod256Tx) where
-    parseJSON = withText "TxHash" $ 
+    parseJSON = withText "TxHash" $
         maybe mzero return . decodeTxHashLE . T.unpack
 
 instance ToJSON (BigWord Mod256Block) where
     toJSON = String . T.pack . encodeBlockHashLE
 
 instance FromJSON (BigWord Mod256Block) where
-    parseJSON = withText "BlockHash" $ 
+    parseJSON = withText "BlockHash" $
         maybe mzero return . decodeBlockHashLE . T.unpack
 
 instance ToJSON (BigWord Mod256) where
@@ -369,7 +369,7 @@ instance BigWordMod n => Arbitrary (BigWord n) where
 -- http://en.wikipedia.org/wiki/Quadratic_residue
 quadraticResidue :: FieldP -> [FieldP]
 quadraticResidue x = guard (y^(2 :: Int) == x) >> [y, (-y)]
-  where 
+  where
     q = (curveP + 1) `div` 4
     y = x^q
 
@@ -380,9 +380,9 @@ isIntegerValidKey i = i > 0 && i < curveN
 -- displaying transaction ids. Internally, these ids are handled as big endian
 -- but are transformed to little endian when displaying them.
 encodeTxHashLE :: TxHash -> String
-encodeTxHashLE = bsToHex . BS.reverse .  encode' 
+encodeTxHashLE = bsToHex . BS.reverse .  encode'
 
--- | Decodes a little endian 'TxHash' in HEX format. 
+-- | Decodes a little endian 'TxHash' in HEX format.
 decodeTxHashLE :: String -> Maybe TxHash
 decodeTxHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS
 
@@ -390,9 +390,9 @@ decodeTxHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS
 -- for displaying Block hash ids. Internally, these ids are handled as big
 -- endian but are transformed to little endian when displaying them.
 encodeBlockHashLE :: BlockHash -> String
-encodeBlockHashLE = bsToHex . BS.reverse .  encode' 
+encodeBlockHashLE = bsToHex . BS.reverse .  encode'
 
--- | Decodes a little endian 'BlockHash' in HEX format. 
+-- | Decodes a little endian 'BlockHash' in HEX format.
 decodeBlockHashLE :: String -> Maybe BlockHash
 decodeBlockHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS
 

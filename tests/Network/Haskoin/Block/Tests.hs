@@ -11,7 +11,7 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 tests :: [Test]
-tests = 
+tests =
     [ testGroup "Block tests"
         [ testProperty "decode . encode BlockHash id" decEncBlockHashid ]
     , testGroup "Merkle Trees"

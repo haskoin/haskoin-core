@@ -11,19 +11,19 @@ import Network.Haskoin.Block
 
 tests :: [Test]
 tests =
-    [ testGroup "Merkle Roots" 
+    [ testGroup "Merkle Roots"
         (map mapMerkleVectors $ zip merkleVectors [0..])
     ]
 
 mapMerkleVectors :: ((String,[String]),Int) -> Test.Framework.Test
-mapMerkleVectors (v,i) = 
+mapMerkleVectors (v,i) =
     testCase name $ runMerkleVector v
   where
     name = "MerkleRoot vector " ++ (show i)
 
 runMerkleVector :: (String,[String]) -> Assertion
 runMerkleVector (r,hs) = do
-    assertBool "    >  Merkle Vector" $ 
+    assertBool "    >  Merkle Vector" $
         buildMerkleRoot (map f hs) == fromIntegral (f r)
   where
     f = fromJust . decodeTxHashLE

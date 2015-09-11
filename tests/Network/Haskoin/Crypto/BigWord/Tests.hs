@@ -7,7 +7,7 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 import Data.Int (Int32)
 import Data.Word (Word8, Word32)
 import qualified Data.ByteString as BS (length, index)
-import Data.Bits 
+import Data.Bits
     ( isSigned
     , bit
     , testBit
@@ -21,7 +21,7 @@ import Data.Bits
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
-import Network.Haskoin.Internals 
+import Network.Haskoin.Internals
     ( BigWordMod(..)
     , BigWord(..)
     , mulInverse
@@ -30,8 +30,8 @@ import Network.Haskoin.Internals
     )
 
 tests :: [Test]
-tests = 
-    [ testGroup "Number Theory" 
+tests =
+    [ testGroup "Number Theory"
         [ testProperty "a * inv(a) = 1 (mod p)" inverseMod
         , testProperty "a * inv(a) = 1 (mod p) in FieldP" inverseModP
         , testProperty "a * inv(a) = 1 (mod n) in FieldN" inverseModN
@@ -95,7 +95,7 @@ instance BigWordMod Mod32 where
 
 inverseMod :: Integer -> Property
 inverseMod i = p > 0 ==> (p * (mulInverse p curveP)) `mod` curveP == 1
-  where 
+  where
     p = abs i
 
 inverseModP :: FieldP -> Property
@@ -106,44 +106,44 @@ inverseModN r = r > 0 ==> r/r == 1
 
 sqrtP :: FieldP -> Bool
 sqrtP x = (a == x && b == (-x)) || (a == (-x) && b == x)
-  where 
+  where
     (a:b:_) = quadraticResidue (x^(2 :: Int))
 
 {- BigWord Numeric -}
 
 ringFromInteger :: Integer -> Bool
 ringFromInteger i = getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = fromInteger i :: Word32
     ring  = fromInteger i :: Test32
 
 ringAddition :: Integer -> Integer -> Bool
 ringAddition i1 i2 = getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = (fromInteger i1) + (fromInteger i2) :: Word32
     ring  = (fromInteger i1) + (fromInteger i2) :: Test32
 
 ringMult :: Integer -> Integer -> Bool
 ringMult i1 i2 = getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = (fromInteger i1) * (fromInteger i2) :: Word32
     ring  = (fromInteger i1) * (fromInteger i2) :: Test32
 
 ringNegate :: Integer -> Bool
 ringNegate i = getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = negate (fromInteger i) :: Word32
     ring  = negate (fromInteger i) :: Test32
 
 ringAbs :: Integer -> Bool
 ringAbs i = getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = abs (fromInteger i) :: Word32
     ring  = abs (fromInteger i) :: Test32
 
 ringSignum :: Integer -> Bool
 ringSignum i = getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = signum (fromInteger i) :: Word32
     ring  = signum (fromInteger i) :: Test32
 
@@ -151,61 +151,61 @@ ringSignum i = getBigWordInteger ring == fromIntegral model
 
 ringAnd :: Integer -> Integer -> Bool
 ringAnd i1 i2 = getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = (fromInteger i1) .&. (fromInteger i2) :: Word32
     ring  = (fromInteger i1) .&. (fromInteger i2) :: Test32
 
 ringOr :: Integer -> Integer -> Bool
 ringOr i1 i2 = getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = (fromInteger i1) .|. (fromInteger i2) :: Word32
     ring  = (fromInteger i1) .|. (fromInteger i2) :: Test32
-          
+
 ringXor :: Integer -> Integer -> Bool
 ringXor i1 i2 = getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = (fromInteger i1) `xor` (fromInteger i2) :: Word32
     ring  = (fromInteger i1) `xor` (fromInteger i2) :: Test32
 
 ringComplement :: Integer -> Bool
 ringComplement i = getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = complement (fromInteger i) :: Word32
     ring  = complement (fromInteger i) :: Test32
 
 ringShift :: Integer -> Word8 -> Bool
 ringShift i j = getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = shift (fromInteger i) (fromIntegral j) :: Word32
     ring  = shift (fromInteger i) (fromIntegral j) :: Test32
 
 ringBitsize :: Integer -> Bool
 ringBitsize i = ring == model
-  where 
-    model = bitSizeMaybe ((fromInteger i) :: Word32) 
-    ring  = bitSizeMaybe ((fromInteger i) :: Test32) 
+  where
+    model = bitSizeMaybe ((fromInteger i) :: Word32)
+    ring  = bitSizeMaybe ((fromInteger i) :: Test32)
 
 ringTestbit :: Integer -> Word8 -> Bool
 ringTestbit i j = ring == model
-  where 
+  where
     model = testBit ((fromInteger i) :: Word32) (fromIntegral j)
     ring  = testBit ((fromInteger i) :: Test32) (fromIntegral j)
 
 ringBit :: Word8 -> Bool
 ringBit i = getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = bit (fromIntegral i) :: Word32
     ring  = bit (fromIntegral i) :: Test32
 
 ringPopCount :: Integer -> Bool
 ringPopCount i = ring == model
-  where 
+  where
     model = popCount ((fromInteger i) :: Word32)
     ring  = popCount ((fromInteger i) :: Test32)
 
 ringIsSigned :: Integer -> Bool
 ringIsSigned i = ring == model
-  where 
+  where
     model = isSigned ((fromInteger i) :: Word32)
     ring  = isSigned ((fromInteger i) :: Test32)
 
@@ -226,30 +226,30 @@ ringMaxBound = (maxBound :: Test32) + 1 == (minBound :: Test32)
 {- BigWord Enum -}
 
 ringSucc :: Integer -> Property
-ringSucc i = (fromIntegral i) /= maxB ==> 
+ringSucc i = (fromIntegral i) /= maxB ==>
     getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = succ (fromInteger i) :: Word32
     ring  = succ (fromInteger i) :: Test32
     maxB   = maxBound :: Word32
 
 ringPred :: Integer -> Property
-ringPred i = (fromIntegral i) /= minB ==> 
+ringPred i = (fromIntegral i) /= minB ==>
     getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = pred (fromInteger i) :: Word32
     ring  = pred (fromInteger i) :: Test32
     minB   = minBound :: Word32
 
 ringToEnum :: Int32 -> Property
 ringToEnum w = w >= 0 ==> getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = toEnum (fromIntegral w) :: Word32
     ring  = toEnum (fromIntegral w) :: Test32
 
 ringFromEnum :: Int32 -> Property
 ringFromEnum i = i >= 0 ==> model == ring
-  where 
+  where
     model = fromEnum (fromIntegral i :: Word32)
     ring  = fromEnum (fromIntegral i :: Test32)
 
@@ -257,41 +257,41 @@ ringFromEnum i = i >= 0 ==> model == ring
 
 ringQuot :: Integer -> Integer -> Property
 ringQuot i1 i2 = i2 /= 0 ==> getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = (fromInteger i1) `quot` (fromInteger i2) :: Word32
     ring  = (fromInteger i1) `quot` (fromInteger i2) :: Test32
 
 ringRem :: Integer -> Integer -> Property
 ringRem i1 i2 = i2 /= 0 ==> getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = (fromInteger i1) `rem` (fromInteger i2) :: Word32
     ring  = (fromInteger i1) `rem` (fromInteger i2) :: Test32
 
 ringDiv :: Integer -> Integer -> Property
 ringDiv i1 i2 = i2 /= 0 ==> getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = (fromInteger i1) `div` (fromInteger i2) :: Word32
     ring  = (fromInteger i1) `div` (fromInteger i2) :: Test32
 
 ringMod :: Integer -> Integer -> Property
 ringMod i1 i2 = i2 /= 0 ==> getBigWordInteger ring == fromIntegral model
-  where 
+  where
     model = (fromInteger i1) `mod` (fromInteger i2) :: Word32
     ring  = (fromInteger i1) `mod` (fromInteger i2) :: Test32
 
 ringQuotRem :: Integer -> Integer -> Property
-ringQuotRem i1 i2 = i2 /= 0 ==> 
-    (getBigWordInteger r1 == fromIntegral m1) && 
+ringQuotRem i1 i2 = i2 /= 0 ==>
+    (getBigWordInteger r1 == fromIntegral m1) &&
     (getBigWordInteger r2 == fromIntegral m2)
-  where 
+  where
     (m1,m2) = (fromInteger i1) `quotRem` (fromInteger i2) :: (Word32, Word32)
     (r1,r2) = (fromInteger i1) `quotRem` (fromInteger i2) :: (Test32, Test32)
 
 ringDivMod :: Integer -> Integer -> Property
-ringDivMod i1 i2 = i2 /= 0 ==> 
-    (getBigWordInteger r1 == fromIntegral m1) && 
+ringDivMod i1 i2 = i2 /= 0 ==>
+    (getBigWordInteger r1 == fromIntegral m1) &&
     (getBigWordInteger r2 == fromIntegral m2)
-  where 
+  where
     (m1,m2) = (fromInteger i1) `divMod` (fromInteger i2) :: (Word32, Word32)
     (r1,r2) = (fromInteger i1) `divMod` (fromInteger i2) :: (Test32, Test32)
 
@@ -310,7 +310,7 @@ putModNSize r = r > 0 ==>
     && l == fromIntegral (b + 2) -- Advertised length matches
     && c < 0x80     -- High byte is never 1
     )
-  where 
+  where
     bs = encode' r
     a  = BS.index bs 0
     b  = BS.index bs 1

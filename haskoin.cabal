@@ -1,6 +1,6 @@
 name:                  haskoin
 version:               0.2.0
-synopsis:              
+synopsis:
     Implementation of the Bitcoin protocol.
 description:
     Haskoin is a package implementing the Bitcoin protocol specifications. It
@@ -48,9 +48,9 @@ library
                      Network.Haskoin.Test
                      Network.Haskoin.Internals
 
-    other-modules: Network.Haskoin.Crypto.NumberTheory 
-                   Network.Haskoin.Crypto.Curve 
-                   Network.Haskoin.Crypto.Hash 
+    other-modules: Network.Haskoin.Crypto.NumberTheory
+                   Network.Haskoin.Crypto.Curve
+                   Network.Haskoin.Crypto.Hash
                    Network.Haskoin.Crypto.BigWord
                    Network.Haskoin.Crypto.Point
                    Network.Haskoin.Crypto.Base58
@@ -61,8 +61,8 @@ library
                    Network.Haskoin.Node.Types
                    Network.Haskoin.Node.Message
                    Network.Haskoin.Node.Bloom
-                   Network.Haskoin.Script.Types 
-                   Network.Haskoin.Script.Parser 
+                   Network.Haskoin.Script.Types
+                   Network.Haskoin.Script.Parser
                    Network.Haskoin.Script.SigHash
                    Network.Haskoin.Script.Evaluator
                    Network.Haskoin.Transaction.Types
@@ -86,17 +86,17 @@ library
                 GADTs
 
     build-depends: aeson                    >= 0.7          && < 0.9
-                 , base                     >= 4.6          && < 5 
-                 , binary                   >= 0.7          && < 0.8 
+                 , base                     >= 4.6          && < 5
+                 , binary                   >= 0.7          && < 0.8
                  , byteable                 >= 0.1          && < 0.2
-                 , bytestring               >= 0.10         && < 0.11 
+                 , bytestring               >= 0.10         && < 0.11
                  , base16-bytestring        >= 0.1          && < 0.2
                  , conduit                  >= 1.2          && < 1.3
                  , containers               >= 0.5          && < 0.6
                  , cryptohash               >= 0.11         && < 0.12
                  , deepseq                  >= 1.3          && < 1.5
                  , either                   >= 4.3          && < 4.5
-                 , mtl                      >= 2.1          && < 2.3 
+                 , mtl                      >= 2.1          && < 2.3
                  , murmur3                  >= 1.0          && < 1.1
                  , network                  >= 2.6          && < 2.7
                  , pbkdf                    >= 1.1          && < 1.2
@@ -105,7 +105,7 @@ library
                  , text                     >= 0.11         && < 1.3
                  , time                     >= 1.4          && < 1.6
 
-    ghc-options:       -Wall 
+    ghc-options:       -Wall
 
 test-suite test-haskoin
     type:              exitcode-stdio-1.0
@@ -138,19 +138,19 @@ test-suite test-haskoin
                    Network.Haskoin.Binary.Tests
 
     build-depends: aeson                          >= 0.7        && < 0.9
-                 , base                           >= 4.6        && < 5 
-                 , binary                         >= 0.7        && < 0.8 
-                 , bytestring                     >= 0.10       && < 0.11 
+                 , base                           >= 4.6        && < 5
+                 , binary                         >= 0.7        && < 0.8
+                 , bytestring                     >= 0.10       && < 0.11
                  , containers                     >= 0.5        && < 0.6
                  , haskoin
-                 , mtl                            >= 2.1        && < 2.3 
+                 , mtl                            >= 2.1        && < 2.3
                  , split                          >= 0.2        && < 0.3
                  , HUnit                          >= 1.2        && < 1.3
                  , QuickCheck                     >= 2.6        && < 2.8
-                 , test-framework                 >= 0.8        && < 0.9 
-                 , test-framework-quickcheck2     >= 0.3        && < 0.4 
-                 , test-framework-hunit           >= 0.3        && < 0.4 
+                 , test-framework                 >= 0.8        && < 0.9
+                 , test-framework-quickcheck2     >= 0.3        && < 0.4
+                 , test-framework-hunit           >= 0.3        && < 0.4
 
-    ghc-options: -Wall 
+    ghc-options: -Wall
     hs-source-dirs: tests
 

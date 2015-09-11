@@ -23,7 +23,7 @@ import Data.Aeson
     , ToJSON
     , parseJSON
     , toJSON
-    , withText 
+    , withText
     )
 
 import qualified Data.ByteString as BS
@@ -33,7 +33,7 @@ import qualified Data.Text as T
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Constants
-import Network.Haskoin.Util 
+import Network.Haskoin.Util
 
 b58Data :: BS.ByteString
 b58Data = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -45,25 +45,25 @@ b58' :: Word8 -> Maybe Word8
 b58' w = fromIntegral <$> BS.elemIndex w b58Data
 
 encodeBase58I :: Integer -> BS.ByteString
-encodeBase58I i = 
+encodeBase58I i =
     fromString $ showIntAtBase (58 :: Integer) f (fromIntegral i) ""
   where
     f = chr . fromIntegral . b58 . fromIntegral
 
 decodeBase58I :: BS.ByteString -> Maybe Integer
-decodeBase58I s = case go of 
+decodeBase58I s = case go of
     Just (r,[]) -> Just r
     _           -> Nothing
   where
     c = b58' . fromIntegral . ord
-    p = isJust . c 
+    p = isJust . c
     f = fromIntegral . fromJust . c
     go = listToMaybe $ readInt 58 p f (B8.unpack s)
 
 -- | Encode a bytestring to a base 58 representation.
 encodeBase58 :: BS.ByteString -> BS.ByteString
 encodeBase58 bs = BS.append l r
-  where 
+  where
     (z,b) = BS.span (== 0) bs
     l = BS.map b58 z -- preserve leading 0's
     r | BS.null b = BS.empty
@@ -73,7 +73,7 @@ encodeBase58 bs = BS.append l r
 -- contains invalid base 58 characters such as 0,O,l,I
 decodeBase58 :: BS.ByteString -> Maybe BS.ByteString
 decodeBase58 bs = r >>= return . (BS.append prefix)
-  where 
+  where
     (z,b)  = BS.span (== (b58 0)) bs
     prefix = BS.map (fromJust . b58') z -- preserve leading 1's
     r | BS.null b = Just BS.empty
@@ -83,7 +83,7 @@ decodeBase58 bs = r >>= return . (BS.append prefix)
 -- the checksum to a base 58 representation.
 encodeBase58Check :: BS.ByteString -> BS.ByteString
 encodeBase58Check bs = encodeBase58 $ BS.append bs chk
-  where 
+  where
     chk = encode' $ chksum32 bs
 
 -- | Decode a base 58 encoded bytestring that contains a checksum. This
@@ -97,7 +97,7 @@ decodeBase58Check bs = do
     return res
 
 -- |Data type representing a Bitcoin address
-data Address 
+data Address
     -- | Public Key Hash Address
     = PubKeyAddress { getAddrHash :: Word160 }
     -- | Script Hash Address
@@ -109,7 +109,7 @@ instance NFData Address where
     rnf (ScriptAddress h) = rnf h
 
 instance FromJSON Address where
-    parseJSON = withText "Address" $ 
+    parseJSON = withText "Address" $
         maybe mzero return . base58ToAddr . T.unpack
 
 instance ToJSON Address where

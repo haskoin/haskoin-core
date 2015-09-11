@@ -1,5 +1,5 @@
-module Network.Haskoin.Transaction.Types 
-( Tx(..) 
+module Network.Haskoin.Transaction.Types
+( Tx(..)
 , TxIn(..)
 , TxOut(..)
 , OutPoint(..)
@@ -17,44 +17,44 @@ import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
 import Data.Word (Word32, Word64)
 import qualified Data.Text as T
 import Data.Binary (Binary, get, put)
-import Data.Binary.Get 
+import Data.Binary.Get
     ( getWord32le
     , getWord64le
     , getByteString
     )
-import Data.Binary.Put 
+import Data.Binary.Put
     ( putWord32le
     , putWord64le
     , putByteString
     )
-import qualified Data.ByteString as BS 
+import qualified Data.ByteString as BS
     ( ByteString
     , length
     , empty
     )
 
-import Network.Haskoin.Util 
+import Network.Haskoin.Util
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Node.Types
 
 -- | Computes the hash of a transaction.
 txHash :: Tx -> TxHash
-txHash = fromIntegral . doubleHash256 . encode' 
+txHash = fromIntegral . doubleHash256 . encode'
 
 nosigTxHash :: Tx -> TxHash
-nosigTxHash tx = 
+nosigTxHash tx =
     txHash tx{ txIn = map clearInput $ txIn tx}
   where
     clearInput ti = ti{ scriptInput = BS.empty }
 
 -- | Computes the hash of a coinbase transaction.
 cbHash :: CoinbaseTx -> TxHash
-cbHash = fromIntegral . doubleHash256 . encode' 
+cbHash = fromIntegral . doubleHash256 . encode'
 
 -- | Data type representing a bitcoin transaction
-data Tx = 
-    Tx { 
+data Tx =
+    Tx {
          -- | Transaction data format version
          txVersion  :: !Word32
          -- | List of transaction inputs
@@ -74,7 +74,7 @@ instance Binary Tx where
              <*> (replicateList =<< get)
              <*> (replicateList =<< get)
              <*> getWord32le
-      where 
+      where
         replicateList (VarInt c) = replicateM (fromIntegral c) get
 
     put (Tx v is os l) = do
@@ -86,7 +86,7 @@ instance Binary Tx where
         putWord32le l
 
 instance FromJSON Tx where
-    parseJSON = withText "Tx" $ 
+    parseJSON = withText "Tx" $
         maybe mzero return . (decodeToMaybe <=< hexToBS) . T.unpack
 
 instance ToJSON Tx where
@@ -100,8 +100,8 @@ instance ToJSON Tx where
 -- in a Coinbase transaction which can be chosen by the miner of a block. This
 -- data also typically contains some randomness which is used, together with
 -- the nonce, to find a partial hash collision on the block's hash.
-data CoinbaseTx = 
-    CoinbaseTx { 
+data CoinbaseTx =
+    CoinbaseTx {
                  -- | Transaction data format version.
                  cbVersion    :: !Word32
                  -- | Previous outpoint. This is ignored for
@@ -116,7 +116,7 @@ data CoinbaseTx =
                , cbInSequence :: !Word32
                  -- | List of transaction outputs.
                , cbOut        :: ![TxOut]
-                 -- | The block number of timestamp at which this 
+                 -- | The block number of timestamp at which this
                  -- transaction is locked.
                , cbLockTime   :: !Word32
                } deriving (Eq, Show, Read)
@@ -145,15 +145,15 @@ instance Binary CoinbaseTx where
         put $ VarInt 1
         put op
         put $ VarInt $ fromIntegral $ BS.length cb
-        putByteString cb 
+        putByteString cb
         putWord32le sq
         put $ VarInt $ fromIntegral $ length os
         forM_ os put
         putWord32le lt
 
 -- | Data type representing a transaction input.
-data TxIn = 
-    TxIn { 
+data TxIn =
+    TxIn {
            -- | Reference the previous transaction output (hash + position)
            prevOutput   :: !OutPoint
            -- | Script providing the requirements of the previous transaction
@@ -170,20 +170,20 @@ instance NFData TxIn where
 
 instance Binary TxIn where
 
-    get = 
+    get =
         TxIn <$> get <*> (readBS =<< get) <*> getWord32le
       where
         readBS (VarInt len) = getByteString $ fromIntegral len
 
     put (TxIn o s q) = do
-        put o 
+        put o
         put $ VarInt $ fromIntegral $ BS.length s
         putByteString s
         putWord32le q
 
 -- | Data type representing a transaction output.
-data TxOut = 
-    TxOut { 
+data TxOut =
+    TxOut {
             -- | Transaction output value.
             outValue     :: !Word64
             -- | Script specifying the conditions to spend this output.
@@ -201,14 +201,14 @@ instance Binary TxOut where
         TxOut val <$> (getByteString $ fromIntegral len)
 
     put (TxOut o s) = do
-        putWord64le o 
+        putWord64le o
         put $ VarInt $ fromIntegral $ BS.length s
         putByteString s
 
 -- | The OutPoint is used inside a transaction input to reference the previous
 -- transaction output that it is spending.
-data OutPoint = 
-    OutPoint { 
+data OutPoint =
+    OutPoint {
                -- | The hash of the referenced transaction.
                outPointHash  :: !TxHash
                -- | The position of the specific output in the transaction.
@@ -220,7 +220,7 @@ instance NFData OutPoint where
     rnf (OutPoint h i) = rnf h `seq` rnf i
 
 instance FromJSON OutPoint where
-    parseJSON = withText "OutPoint" $ 
+    parseJSON = withText "OutPoint" $
         maybe mzero return . (decodeToMaybe <=< hexToBS) .  T.unpack
 
 instance ToJSON OutPoint where

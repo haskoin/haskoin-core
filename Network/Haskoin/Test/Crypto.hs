@@ -1,4 +1,4 @@
-{-| 
+{-|
   Arbitrary types for Network.Haskoin.Crypto
 -}
 module Network.Haskoin.Test.Crypto
@@ -24,7 +24,7 @@ module Network.Haskoin.Test.Crypto
 , ArbitraryDerivPath(..)
 ) where
 
-import Test.QuickCheck 
+import Test.QuickCheck
     ( Arbitrary
     , Gen
     , arbitrary
@@ -59,13 +59,13 @@ instance Arbitrary ArbitraryPoint where
         x <- fromInteger <$> choose (1, toInteger (maxBound :: FieldN))
         return $ ArbitraryPoint $ mulPoint x curveG
 
--- | Arbitrary Point on the secp256k1 curve with 10% chance 
+-- | Arbitrary Point on the secp256k1 curve with 10% chance
 -- of being the point at infinity
 newtype ArbitraryInfPoint = ArbitraryInfPoint Point
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryInfPoint where
-    arbitrary = ArbitraryInfPoint <$> frequency 
+    arbitrary = ArbitraryInfPoint <$> frequency
         [ (1, return makeInfPoint)
         , (9, arbitrary >>= \(ArbitraryPoint p) -> return p)
         ]
@@ -75,7 +75,7 @@ newtype ArbitraryPrvKey = ArbitraryPrvKey PrvKey
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryPrvKey where
-    arbitrary = ArbitraryPrvKey <$> oneof 
+    arbitrary = ArbitraryPrvKey <$> oneof
         [ arbitrary >>= \(ArbitraryPrvKeyC k) -> return (toPrvKeyG k)
         , arbitrary >>= \(ArbitraryPrvKeyU k) -> return (toPrvKeyG k)
         ]
@@ -88,7 +88,7 @@ instance Arbitrary ArbitraryPrvKeyC where
     arbitrary = do
         i <- fromInteger <$> choose (1, curveN-1)
         return $ ArbitraryPrvKeyC $ fromJust $ makePrvKeyC i
-        
+
 -- | Arbitrary uncompressed private key
 newtype ArbitraryPrvKeyU = ArbitraryPrvKeyU PrvKeyU
     deriving (Eq, Show, Read)
@@ -105,9 +105,9 @@ data ArbitraryPubKey = ArbitraryPubKey PrvKey PubKey
 
 instance Arbitrary ArbitraryPubKey where
     arbitrary = oneof
-        [ arbitrary >>= \(ArbitraryPubKeyC k p) -> 
+        [ arbitrary >>= \(ArbitraryPubKeyC k p) ->
             return $ ArbitraryPubKey (toPrvKeyG k) (toPubKeyG p)
-        , arbitrary >>= \(ArbitraryPubKeyU k p) -> 
+        , arbitrary >>= \(ArbitraryPubKeyU k p) ->
             return $ ArbitraryPubKey (toPrvKeyG k) (toPubKeyG p)
         ]
 
@@ -187,7 +187,7 @@ instance Arbitrary ArbitraryDetSignature where
         return $ ArbitraryDetSignature msg prv $ detSignMsg msg prv
 
 -- | Arbitrary extended private key.
-data ArbitraryXPrvKey = ArbitraryXPrvKey XPrvKey 
+data ArbitraryXPrvKey = ArbitraryXPrvKey XPrvKey
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryXPrvKey where
@@ -200,7 +200,7 @@ instance Arbitrary ArbitraryXPrvKey where
         return $ ArbitraryXPrvKey $ XPrvKey d p i c k
 
 -- | Arbitrary extended public key with its corresponding private key.
-data ArbitraryXPubKey = ArbitraryXPubKey XPrvKey XPubKey 
+data ArbitraryXPubKey = ArbitraryXPubKey XPrvKey XPubKey
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryXPubKey where
@@ -217,21 +217,21 @@ data ArbitraryHardPath = ArbitraryHardPath HardPath
     deriving (Show, Eq)
 
 instance Arbitrary ArbitraryHardPath where
-    arbitrary = 
+    arbitrary =
         ArbitraryHardPath <$> (go =<< listOf genIndex)
       where
         go []     = elements [ Deriv, DerivPrv, DerivPub ]
-        go (i:is) = (:| i) <$> go is 
+        go (i:is) = (:| i) <$> go is
 
 data ArbitrarySoftPath = ArbitrarySoftPath SoftPath
     deriving (Show, Eq)
 
 instance Arbitrary ArbitrarySoftPath where
-    arbitrary = 
+    arbitrary =
         ArbitrarySoftPath <$> (go =<< listOf genIndex)
       where
         go []     = elements [ Deriv, DerivPrv, DerivPub ]
-        go (i:is) = (:/ i) <$> go is 
+        go (i:is) = (:/ i) <$> go is
 
 data ArbitraryDerivPath = ArbitraryDerivPath DerivPath
     deriving (Show, Eq)
@@ -245,6 +245,6 @@ instance Arbitrary ArbitraryDerivPath where
         goSoft [] h     = h
         goSoft (i:is) h = (goSoft is h) :/ i
         goHard :: HardOrMixed t => [Word32] -> Gen (DerivPathI t)
-        goHard (i:is) = (:| i) <$> goHard is 
+        goHard (i:is) = (:| i) <$> goHard is
         goHard []     = elements [ Deriv, DerivPrv, DerivPub ]
 

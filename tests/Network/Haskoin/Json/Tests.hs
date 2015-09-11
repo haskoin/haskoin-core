@@ -9,7 +9,7 @@ import Network.Haskoin.Test
 import Network.Haskoin.Crypto
 
 tests :: [Test]
-tests = 
+tests =
     [ testGroup "Serialize & de-serialize haskoin types to JSON"
         [ testProperty "ScriptOutput" $ \(ArbitraryScriptOutput x) -> metaID x
         , testProperty "OutPoint" $ \(ArbitraryOutPoint x) -> metaID x

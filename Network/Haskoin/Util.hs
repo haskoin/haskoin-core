@@ -1,9 +1,9 @@
 {-|
-  This module defines various utility functions used across the 
+  This module defines various utility functions used across the
   Network.Haskoin modules.
 -}
 module Network.Haskoin.Util
-( 
+(
   -- * ByteString helpers
   toStrictBS
 , toLazyBS
@@ -66,13 +66,13 @@ import Data.Char (toLower)
 import Data.Binary.Put (Put, runPut)
 import Data.Binary (Binary, encode, decode, decodeOrFail)
 import Data.Binary.Get (Get, runGetOrFail, getByteString, ByteOffset, runGet)
-import Data.Aeson.Types 
+import Data.Aeson.Types
     (Options(..), SumEncoding(..), defaultOptions, defaultTaggedObject)
 
 import qualified Data.ByteString.Lazy as BL (ByteString, toChunks, fromChunks)
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as C (pack, unpack)
-import qualified Data.ByteString as BS 
+import qualified Data.ByteString as BS
     (ByteString, concat, pack, unpack, null, empty)
 
 -- ByteString helpers
@@ -96,16 +96,16 @@ bsToString = C.unpack
 -- | Decode a big endian Integer from a bytestring
 bsToInteger :: BS.ByteString -> Integer
 bsToInteger = (foldr f 0) . reverse . BS.unpack
-  where 
+  where
     f w n = (toInteger w) .|. shiftL n 8
 
 -- | Encode an Integer to a bytestring as big endian
 integerToBS :: Integer -> BS.ByteString
 integerToBS 0 = BS.pack [0]
-integerToBS i 
+integerToBS i
     | i > 0     = BS.pack $ reverse $ unfoldr f i
     | otherwise = error "integerToBS not defined for negative values"
-  where 
+  where
     f 0 = Nothing
     f x = Just $ (fromInteger x :: Word8, x `shiftR` 8)
 
@@ -139,9 +139,9 @@ runPut' :: Put -> BS.ByteString
 runPut' = toStrictBS . runPut
 
 -- | Strict version of @Data.Binary.decodeOrFail@
-decodeOrFail' :: 
-    Binary a => 
-    BS.ByteString -> 
+decodeOrFail' ::
+    Binary a =>
+    BS.ByteString ->
     Either (BS.ByteString, ByteOffset, String) (BS.ByteString, ByteOffset, a)
 decodeOrFail' bs = case decodeOrFail $ toLazyBS bs of
     Left  (lbs,o,err) -> Left  (toStrictBS lbs,o,err)
@@ -157,25 +157,25 @@ runGetOrFail' m bs = case runGetOrFail m $ toLazyBS bs of
 
 -- | Try to decode a Data.Binary value. If decoding succeeds, apply the function
 -- to the result. Otherwise, return the default value.
-fromDecode :: Binary a 
+fromDecode :: Binary a
            => BS.ByteString -- ^ The bytestring to decode
-           -> b             -- ^ Default value to return when decoding fails 
-           -> (a -> b)      -- ^ Function to apply when decoding succeeds 
+           -> b             -- ^ Default value to return when decoding fails
+           -> (a -> b)      -- ^ Function to apply when decoding succeeds
            -> b             -- ^ Final result
 fromDecode bs def f = either (const def) (f . lst) $ decodeOrFail' bs
-  where 
+  where
     lst (_,_,c) = c
 
 -- | Try to run a Data.Binary.Get monad. If decoding succeeds, apply a function
 -- to the result. Otherwise, return the default value.
-fromRunGet :: Binary a 
+fromRunGet :: Binary a
            => Get a         -- ^ The Get monad to run
            -> BS.ByteString -- ^ The bytestring to decode
-           -> b             -- ^ Default value to return when decoding fails 
-           -> (a -> b)      -- ^ Function to apply when decoding succeeds 
+           -> b             -- ^ Default value to return when decoding fails
+           -> (a -> b)      -- ^ Function to apply when decoding succeeds
            -> b             -- ^ Final result
 fromRunGet m bs def f = either (const def) (f . lst) $ runGetOrFail' m bs
-  where 
+  where
     lst (_,_,c) = c
 
 -- | Decode a Data.Binary value into the Either monad. A Right value is returned
@@ -253,10 +253,10 @@ updateIndex :: Int      -- ^ The index of the element to change
             -> [a]      -- ^ The list of elements
             -> (a -> a) -- ^ The function to apply
             -> [a]      -- ^ The result with one element changed
-updateIndex i xs f 
+updateIndex i xs f
     | i < 0 || i >= length xs = xs
     | otherwise = l ++ (f h : r)
-  where 
+  where
     (l,h:r) = splitAt i xs
 
 -- | Use the list [b] as a template and try to match the elements of [a]
@@ -264,7 +264,7 @@ updateIndex i xs f
 -- [a], or Nothing. Output list has same size as [b] and contains results in
 -- same order. Elements of [a] can only appear once.
 matchTemplate :: [a]              -- ^ The input list
-              -> [b]              -- ^ The list to serve as a template 
+              -> [b]              -- ^ The list to serve as a template
               -> (a -> b -> Bool) -- ^ The comparison function
               -> [Maybe a]        -- ^ Results of the template matching
 matchTemplate [] bs _ = replicate (length bs) Nothing
@@ -293,11 +293,11 @@ dropFieldLabel :: Int -> Options
 dropFieldLabel n = defaultOptions
     { fieldLabelModifier = map toLower . drop n
     , omitNothingFields  = True
-    } 
+    }
 
 dropSumLabels :: Int -> Int -> String -> Options
 dropSumLabels c f tag = (dropFieldLabel f)
     { constructorTagModifier = map toLower . drop c
     , sumEncoding = defaultTaggedObject { tagFieldName = tag }
-    } 
+    }
 

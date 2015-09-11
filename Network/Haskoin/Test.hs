@@ -2,7 +2,7 @@
   This package provides test types for Network.Haskoin
 -}
 module Network.Haskoin.Test
-( 
+(
   -- * Util Arbitrary instances
   ArbitraryByteString(..)
 , ArbitraryNotNullByteString(..)
@@ -86,7 +86,7 @@ module Network.Haskoin.Test
 , ArbitraryTx(..)
 , ArbitraryTxIn(..)
 , ArbitraryTxOut(..)
-, ArbitraryOutPoint(..) 
+, ArbitraryOutPoint(..)
 , ArbitraryCoinbaseTx(..)
 , ArbitraryAddrOnlyTx(..)
 , ArbitraryAddrOnlyTxIn(..)

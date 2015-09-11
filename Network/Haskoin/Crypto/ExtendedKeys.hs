@@ -96,7 +96,7 @@ type ChainCode = Word256
 type KeyIndex = Word32
 
 -- | Data type representing an extended BIP32 private key. An extended key
--- is a node in a tree of key derivations. It has a depth in the tree, a 
+-- is a node in a tree of key derivations. It has a depth in the tree, a
 -- parent node and an index to differentiate it from other siblings.
 data XPrvKey = XPrvKey
     { xPrvDepth  :: !Word8     -- ^ Depth in the tree of key derivations.
@@ -138,9 +138,9 @@ instance FromJSON XPubKey where
 -- | Build a BIP32 compatible extended private key from a bytestring. This will
 -- produce a root node (depth=0 and parent=0).
 makeXPrvKey :: BS.ByteString -> XPrvKey
-makeXPrvKey bs = 
+makeXPrvKey bs =
     XPrvKey 0 0 0 c pk
-  where 
+  where
     (p,c) = split512 $ hmac512 "Bitcoin seed" bs
     pk    = fromMaybe err $ makePrvKeyC $ fromIntegral p
     err   = throw $ DerivationException "Invalid seed"
@@ -154,7 +154,7 @@ deriveXPubKey (XPrvKey d p i c k) = XPubKey d p i c (derivePubKey k)
 -- | Compute a private, soft child key derivation. A private soft derivation
 -- will allow the equivalent extended public key to derive the public key for
 -- this child. Given a parent key /m/ and a derivation index /i/, this function
--- will compute m\/i\/. 
+-- will compute m\/i\/.
 --
 -- Soft derivations allow for more flexibility such as read-only wallets.
 -- However, care must be taken not the leak both the parent extended public key
@@ -162,27 +162,27 @@ deriveXPubKey (XPrvKey d p i c k) = XPubKey d p i c (derivePubKey k)
 -- extended parent private key.
 prvSubKey :: XPrvKey  -- ^ Extended parent private key
           -> KeyIndex -- ^ Child derivation index
-          -> XPrvKey  -- ^ Extended child private key 
-prvSubKey xkey child 
-    | child >= 0 && child < 0x80000000 = 
+          -> XPrvKey  -- ^ Extended child private key
+prvSubKey xkey child
+    | child >= 0 && child < 0x80000000 =
         XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) child c k
     | otherwise = error "Invalid child derivation index"
-  where 
+  where
     pK    = xPubKey $ deriveXPubKey xkey
     msg   = BS.append (encode' pK) (encode' child)
     (a,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
     k     = addPrvKeys (xPrvKey xkey) a
 
 -- | Compute a public, soft child key derivation. Given a parent key /M/
--- and a derivation index /i/, this function will compute M\/i\/. 
+-- and a derivation index /i/, this function will compute M\/i\/.
 pubSubKey :: XPubKey  -- ^ Extended Parent public key
           -> KeyIndex -- ^ Child derivation index
           -> XPubKey  -- ^ Extended child public key
-pubSubKey xKey child 
+pubSubKey xKey child
     | child >= 0 && child < 0x80000000 =
         XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK
     | otherwise = error "Invalid child derivation index"
-  where 
+  where
     msg   = BS.append (encode' $ xPubKey xKey) (encode' child)
     (a,c) = split512 $ hmac512 (encode' $ xPubChain xKey) msg
     pK    = addPubKeys (xPubKey xKey) a
@@ -200,7 +200,7 @@ hardSubKey xkey child
     | child >= 0 && child < 0x80000000 =
         XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) i c k
     | otherwise = error "Invalid child derivation index"
-  where 
+  where
     i     = setBit child 31
     msg   = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode' i)
     (a,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
@@ -214,7 +214,7 @@ addPrvKeys key i
     | toInteger i < curveN = fromMaybe err $ makePrvKeyC $ toInteger r
     | otherwise = err
   where
-    r   = (prvKeyFieldN key) + (fromIntegral i :: FieldN) 
+    r   = (prvKeyFieldN key) + (fromIntegral i :: FieldN)
     err = throw $ DerivationException "Invalid derivation"
 
 -- Add a public key to a private key defined by its Word256 value. This will
@@ -257,7 +257,7 @@ xPrvID = xPubID . deriveXPubKey
 
 -- | Computes the key identifier of an extended public key.
 xPubID :: XPubKey -> Word160
-xPubID = hash160 . hash256BS . encode' . xPubKey 
+xPubID = hash160 . hash256BS . encode' . xPubKey
 
 -- | Computes the key fingerprint of an extended private key.
 xPrvFP :: XPrvKey -> Word32
@@ -273,7 +273,7 @@ xPubAddr = pubKeyAddr . xPubKey
 
 -- | Exports an extended private key to the BIP32 key export format (base 58).
 xPrvExport :: XPrvKey -> String
-xPrvExport = bsToString . encodeBase58Check . encode' 
+xPrvExport = bsToString . encodeBase58Check . encode'
 
 -- | Exports an extended public key to the BIP32 key export format (base 58).
 xPubExport :: XPubKey -> String
@@ -302,7 +302,7 @@ instance Binary XPrvKey where
         dep <- getWord8
         par <- getWord32be
         idx <- getWord32be
-        chn <- get 
+        chn <- get
         prv <- getPadPrvKey
         return $ XPrvKey dep par idx chn prv
 
@@ -323,8 +323,8 @@ instance Binary XPubKey where
         dep <- getWord8
         par <- getWord32be
         idx <- getWord32be
-        chn <- get 
-        pub <- get 
+        chn <- get
+        pub <- get
         return $ XPubKey dep par idx chn pub
 
     put k = do
@@ -355,15 +355,15 @@ hardSubKeys k = map (\i -> (hardSubKey k i, i)) . cycleIndex
 -- | Derive an address from a public key and an index. The derivation type
 -- is a public, soft derivation.
 deriveAddr :: XPubKey -> KeyIndex -> (Address, PubKeyC)
-deriveAddr k i = 
-    (xPubAddr key, xPubKey key) 
+deriveAddr k i =
+    (xPubAddr key, xPubKey key)
   where
     key = pubSubKey k i
 
 -- | Cyclic list of all addresses derived from a public key starting from an
 -- offset index. The derivation types are public, soft derivations.
 deriveAddrs :: XPubKey -> KeyIndex -> [(Address, PubKeyC, KeyIndex)]
-deriveAddrs k = 
+deriveAddrs k =
     map f . cycleIndex
   where
     f i = let (a, key) = deriveAddr k i in (a, key, i)
@@ -372,7 +372,7 @@ deriveAddrs k =
 -- required signatures (m) and a derivation index. The derivation type is a
 -- public, soft derivation.
 deriveMSAddr :: [XPubKey] -> Int -> KeyIndex -> (Address, RedeemScript)
-deriveMSAddr keys m i = 
+deriveMSAddr keys m i =
     (scriptAddr rdm, rdm)
   where
     rdm = sortMulSig $ PayMulSig k m
@@ -381,9 +381,9 @@ deriveMSAddr keys m i =
 -- | Cyclic list of all multisig addresses derived from a list of public keys,
 -- a number of required signatures (m) and starting from an offset index. The
 -- derivation type is a public, soft derivation.
-deriveMSAddrs :: [XPubKey] -> Int -> KeyIndex 
+deriveMSAddrs :: [XPubKey] -> Int -> KeyIndex
               -> [(Address, RedeemScript, KeyIndex)]
-deriveMSAddrs keys m = 
+deriveMSAddrs keys m =
     map f . cycleIndex
   where
     f i = let (a, rdm) = deriveMSAddr keys m i in (a, rdm, i)
@@ -404,11 +404,11 @@ type HardPath = DerivPathI Hard
 type DerivPath = DerivPathI Mixed
 type SoftPath = DerivPathI Soft
 
-class HardOrMixed a 
+class HardOrMixed a
 instance HardOrMixed Hard
 instance HardOrMixed Mixed
 
-class MixedOrSoft a 
+class MixedOrSoft a
 instance MixedOrSoft Mixed
 instance MixedOrSoft Soft
 
@@ -545,21 +545,21 @@ toMixed p = case p of
     DerivPub  -> DerivPub
 
 -- | Append a SoftPath to any derivation path. It is always type-safe to
--- append a SoftPath to any derivation path. The result will be a mixed 
+-- append a SoftPath to any derivation path. The result will be a mixed
 -- derivation path.
 (++/) :: DerivPathI t -> SoftPath -> DerivPath
-(++/) p1 p2 = 
+(++/) p1 p2 =
     go id p2 $ toMixed p1
   where
     go f p = case p of
-        next :/ i -> go (f . (:/ i)) next 
+        next :/ i -> go (f . (:/ i)) next
         _ -> f
 
 -- | Append any type of derivation to a HardPath. It is always type-safe to
 -- append any type of path to a HardPath. The result will be a mixed derivation
 -- path.
 (++|) :: HardPath -> DerivPathI t -> DerivPath
-(++|) p1 p2 = 
+(++|) p1 p2 =
     go id (toMixed p2) $ toMixed p1
   where
     go :: (DerivPath -> DerivPath) -> DerivPath -> (DerivPath -> DerivPath)
@@ -571,42 +571,42 @@ toMixed p = case p of
 
 -- | Derive a private key from a derivation path
 derivePath :: DerivPathI t -> XPrvKey -> XPrvKey
-derivePath path key = 
+derivePath path key =
     go id path $ key
   where
     -- Build the full derivation function starting from the end
     go :: (XPrvKey -> XPrvKey) -> DerivPathI t -> (XPrvKey -> XPrvKey)
     go f p = case p of
         next :| i -> go (f . flip hardSubKey i) next
-        next :/ i -> go (f . flip prvSubKey i) next 
+        next :/ i -> go (f . flip prvSubKey i) next
         _         -> f
 
 -- | Derive a public key from a soft derivation path
 derivePubPath :: SoftPath -> XPubKey -> XPubKey
-derivePubPath path key = 
+derivePubPath path key =
     go id path $ key
   where
     -- Build the full derivation function starting from the end
     go f p = case p of
-        next :/ i -> go (f . flip pubSubKey i) next 
+        next :/ i -> go (f . flip pubSubKey i) next
         _         -> f
 
 -- | Derive a key from a derivation path and return either a private or public
 -- key depending on the initial derivation constructor. If you parsed a string
 -- as m/ you will get a private key and if you parsed a string as M/ you will
 -- get a public key. If you used the neutral derivation constructor `Deriv`, a
--- private key will be returned. 
+-- private key will be returned.
 derivePathE :: DerivPathI t -> XPrvKey -> Either XPubKey XPrvKey
-derivePathE path key = 
+derivePathE path key =
     go id path $ key
   where
     -- Build the full derivation function starting from the end
-    go :: (XPrvKey -> XPrvKey) 
-       -> DerivPathI t 
-       -> (XPrvKey -> Either XPubKey XPrvKey) 
+    go :: (XPrvKey -> XPrvKey)
+       -> DerivPathI t
+       -> (XPrvKey -> Either XPubKey XPrvKey)
     go f p = case p of
         next :| i -> go (f . flip hardSubKey i) next
-        next :/ i -> go (f . flip prvSubKey i) next 
+        next :/ i -> go (f . flip prvSubKey i) next
         -- Derive a public key as the last function
         DerivPub  -> Left . deriveXPubKey . f
         _         -> Right . f
@@ -617,23 +617,23 @@ derivePathAddr key path i = deriveAddr (derivePubPath path key) i
 
 -- | Cyclic list of all addresses derived from a given parent path and starting
 -- from the given offset index.
-derivePathAddrs :: XPubKey -> SoftPath -> KeyIndex 
+derivePathAddrs :: XPubKey -> SoftPath -> KeyIndex
                 -> [(Address, PubKeyC, KeyIndex)]
 derivePathAddrs key path i = deriveAddrs (derivePubPath path key) i
 
 -- | Derive a multisig address from a given parent path. The number of required
 -- signatures (m in m of n) is also needed.
-derivePathMSAddr :: [XPubKey] -> SoftPath -> Int -> KeyIndex 
+derivePathMSAddr :: [XPubKey] -> SoftPath -> Int -> KeyIndex
                  -> (Address, RedeemScript)
-derivePathMSAddr keys path m i = 
+derivePathMSAddr keys path m i =
     deriveMSAddr (map (derivePubPath path) keys) m i
 
 -- | Cyclic list of all multisig addresses derived from a given parent path and
 -- starting from the given offset index. The number of required signatures
 -- (m in m of n) is also needed.
-derivePathMSAddrs :: [XPubKey] -> SoftPath -> Int -> KeyIndex 
+derivePathMSAddrs :: [XPubKey] -> SoftPath -> Int -> KeyIndex
                   -> [(Address, RedeemScript, KeyIndex)]
-derivePathMSAddrs keys path m i = 
+derivePathMSAddrs keys path m i =
     deriveMSAddrs (map (derivePubPath path) keys) m i
 
 {- Utilities for extended keys -}
@@ -647,9 +647,9 @@ getPadPrvKey = do
     prvKeyGetMonad makePrvKeyC -- Compressed version
 
 -- Serialize HDW-specific private key
-putPadPrvKey :: PrvKeyC -> Put 
+putPadPrvKey :: PrvKeyC -> Put
 putPadPrvKey p = putWord8 0x00 >> prvKeyPutMonad p
 
 bsPadPrvKey :: PrvKeyC -> BS.ByteString
-bsPadPrvKey = runPut' . putPadPrvKey 
+bsPadPrvKey = runPut' . putPadPrvKey
 

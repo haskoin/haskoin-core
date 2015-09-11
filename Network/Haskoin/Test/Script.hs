@@ -1,4 +1,4 @@
-{-| 
+{-|
   Arbitrary types for Network.Haskoin.Script
 -}
 module Network.Haskoin.Test.Script
@@ -28,7 +28,7 @@ module Network.Haskoin.Test.Script
 , ArbitraryMulSigSHCInput(..)
 ) where
 
-import Test.QuickCheck 
+import Test.QuickCheck
     ( Arbitrary
     , arbitrary
     , oneof
@@ -59,11 +59,11 @@ instance Arbitrary ArbitraryScript where
 -- | Arbitrary ScriptOp (push operations have random data)
 newtype ArbitraryScriptOp = ArbitraryScriptOp ScriptOp
     deriving (Eq, Show, Read)
-    
+
 instance Arbitrary ArbitraryScriptOp where
-    arbitrary = ArbitraryScriptOp <$> oneof 
+    arbitrary = ArbitraryScriptOp <$> oneof
         [ -- Pushing Data
-         arbitrary >>= \(ArbitraryNotNullByteString bs) -> 
+         arbitrary >>= \(ArbitraryNotNullByteString bs) ->
             return $ opPushData bs
         ,return OP_0
         ,return OP_1NEGATE
@@ -75,11 +75,11 @@ instance Arbitrary ArbitraryScriptOp where
 
         -- Flow control
         ,return OP_NOP
-        ,return OP_VER        
+        ,return OP_VER
         ,return OP_IF
         ,return OP_NOTIF
-        ,return OP_VERIF      
-        ,return OP_VERNOTIF   
+        ,return OP_VERIF
+        ,return OP_VERNOTIF
         ,return OP_ELSE
         ,return OP_ENDIF
         ,return OP_VERIFY
@@ -165,8 +165,8 @@ instance Arbitrary ArbitraryScriptOp where
         ,return OP_CHECKMULTISIGVERIFY
 
         -- Expansion
-        ,return OP_NOP1, return OP_NOP2 
-        ,return OP_NOP3, return OP_NOP4 
+        ,return OP_NOP1, return OP_NOP2
+        ,return OP_NOP3, return OP_NOP4
         ,return OP_NOP5, return OP_NOP6
         ,return OP_NOP7, return OP_NOP8
         ,return OP_NOP9, return OP_NOP10
@@ -182,7 +182,7 @@ newtype ArbitraryIntScriptOp = ArbitraryIntScriptOp ScriptOp
     deriving (Eq, Show)
 
 instance Arbitrary ArbitraryIntScriptOp where
-    arbitrary = ArbitraryIntScriptOp <$> elements 
+    arbitrary = ArbitraryIntScriptOp <$> elements
         [ OP_1,  OP_2,  OP_3,  OP_4
         , OP_5,  OP_6,  OP_7,  OP_8
         , OP_9,  OP_10, OP_11, OP_12
@@ -194,7 +194,7 @@ newtype ArbitraryPushDataType = ArbitraryPushDataType PushDataType
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryPushDataType where
-    arbitrary = ArbitraryPushDataType <$> elements 
+    arbitrary = ArbitraryPushDataType <$> elements
         [ OPCODE, OPDATA1, OPDATA2, OPDATA4 ]
 
 -- | Arbitrary SigHash (including invalid/unknown sighash codes)
@@ -202,7 +202,7 @@ newtype ArbitrarySigHash = ArbitrarySigHash SigHash
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitrarySigHash where
-    arbitrary = ArbitrarySigHash <$> oneof 
+    arbitrary = ArbitrarySigHash <$> oneof
         [ SigAll    <$> arbitrary
         , SigNone   <$> arbitrary
         , SigSingle <$> arbitrary
@@ -228,7 +228,7 @@ instance Arbitrary ArbitraryValidSigHash where
 -- | Arbitrary message hash, private key, nonce and corresponding TxSignature.
 -- The signature is generated with a random message, random private key and
 -- a random nonce.
-data ArbitraryTxSignature = 
+data ArbitraryTxSignature =
     ArbitraryTxSignature Word256 PrvKey FieldN TxSignature
     deriving (Eq, Show, Read)
 
@@ -241,7 +241,7 @@ instance Arbitrary ArbitraryTxSignature where
 -- | Arbitrary message hash, private key and corresponding TxSignature. The
 -- signature is generated deterministically using a random message and a
 -- random private key.
-data ArbitraryDetTxSignature = 
+data ArbitraryDetTxSignature =
     ArbitraryDetTxSignature Word256 PrvKey TxSignature
     deriving (Eq, Show, Read)
 
@@ -266,7 +266,7 @@ newtype ArbitraryScriptOutput = ArbitraryScriptOutput ScriptOutput
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryScriptOutput where
-    arbitrary = ArbitraryScriptOutput <$> oneof 
+    arbitrary = ArbitraryScriptOutput <$> oneof
         [ arbitrary >>= \(ArbitraryPKOutput o) -> return o
         , arbitrary >>= \(ArbitraryPKHashOutput o) -> return o
         , arbitrary >>= \(ArbitraryMSOutput o) -> return o
@@ -279,7 +279,7 @@ newtype ArbitrarySimpleOutput = ArbitrarySimpleOutput ScriptOutput
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitrarySimpleOutput where
-    arbitrary = ArbitrarySimpleOutput <$> oneof 
+    arbitrary = ArbitrarySimpleOutput <$> oneof
         [ arbitrary >>= \(ArbitraryPKOutput o) -> return o
         , arbitrary >>= \(ArbitraryPKHashOutput o) -> return o
         , arbitrary >>= \(ArbitraryMSOutput o) -> return o
@@ -336,7 +336,7 @@ instance Arbitrary ArbitrarySHOutput where
         ArbitraryScriptAddress a <- arbitrary
         return $ ArbitrarySHOutput $ PayScriptHash a
 
--- | Arbitrary ScriptInput 
+-- | Arbitrary ScriptInput
 newtype ArbitraryScriptInput = ArbitraryScriptInput ScriptInput
     deriving (Eq, Show, Read)
 
@@ -365,7 +365,7 @@ newtype ArbitraryPKInput = ArbitraryPKInput ScriptInput
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryPKInput where
-    arbitrary = ArbitraryPKInput . RegularInput . SpendPK <$> oneof 
+    arbitrary = ArbitraryPKInput . RegularInput . SpendPK <$> oneof
         [ arbitrary >>= \(ArbitraryTxSignature _ _ _ sig) -> return sig
         , arbitrary >>= \(ArbitraryDetTxSignature _ _ sig) -> return sig
         ]
@@ -394,7 +394,7 @@ instance Arbitrary ArbitraryPKHashCInput where
             , arbitrary >>= \(ArbitraryDetTxSignature _ _ sig) -> return sig
             ]
         ArbitraryPubKeyC _ key <- arbitrary
-        return $ ArbitraryPKHashCInput $ RegularInput $ 
+        return $ ArbitraryPKHashCInput $ RegularInput $
             SpendPKHash sig $ toPubKeyG key
 
 -- | Arbitrary ScriptInput of type SpendMulSig

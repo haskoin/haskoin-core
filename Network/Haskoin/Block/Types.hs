@@ -1,8 +1,8 @@
-module Network.Haskoin.Block.Types 
+module Network.Haskoin.Block.Types
 ( Block(..)
-, BlockHeader(..) 
+, BlockHeader(..)
 , BlockLocator
-, GetBlocks(..) 
+, GetBlocks(..)
 , GetHeaders(..)
 , BlockHeaderCount
 , Headers(..)
@@ -18,7 +18,7 @@ import Data.Binary (Binary, get, put)
 import Data.Binary.Get (getWord32le)
 import Data.Binary.Put (putWord32le)
 
-import Network.Haskoin.Util 
+import Network.Haskoin.Util
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Node.Types
@@ -27,7 +27,7 @@ import Network.Haskoin.Transaction.Types
 -- | Data type describing a block in the bitcoin protocol. Blocks are sent in
 -- response to 'GetData' messages that are requesting information from a
 -- block hash.
-data Block = 
+data Block =
     Block {
             -- | Header information for this block.
             blockHeader     :: !BlockHeader
@@ -63,9 +63,9 @@ headerHash = fromIntegral . doubleHash256 . encode'
 -- defined as the hash of this data structure. The block mining process
 -- involves finding a partial hash collision by varying the nonce in the
 -- 'BlockHeader' and/or additional randomness in the 'CoinbaseTx' of this
--- 'Block'. Variations in the 'CoinbaseTx' will result in different merkle 
+-- 'Block'. Variations in the 'CoinbaseTx' will result in different merkle
 -- roots in the 'BlockHeader'.
-data BlockHeader = 
+data BlockHeader =
     BlockHeader {
                   -- | Block version information, based on the version of the
                   -- software creating this block.
@@ -105,7 +105,7 @@ instance Binary BlockHeader where
         put         m
         putWord32le bt
         putWord32le bb
-        putWord32le n 
+        putWord32le n
 
 type BlockLocator = [BlockHash]
 
@@ -114,10 +114,10 @@ type BlockLocator = [BlockHash]
 -- 'BlockLocator' object. The 'BlockLocator' is a sparse list of block hashes
 -- from the caller node with the purpose of informing the receiving node
 -- about the state of the caller's blockchain. The receiver node will detect
--- a wrong branch in the caller's main chain and send the caller appropriate 
+-- a wrong branch in the caller's main chain and send the caller appropriate
 -- 'Blocks'. The response to a 'GetBlocks' message is an 'Inv' message
--- containing the list of block hashes pertaining to the request. 
-data GetBlocks = 
+-- containing the list of block hashes pertaining to the request.
+data GetBlocks =
     GetBlocks {
                 -- | The protocol version
                 getBlocksVersion  :: !Word32
@@ -138,7 +138,7 @@ instance Binary GetBlocks where
     get = GetBlocks <$> getWord32le
                     <*> (repList =<< get)
                     <*> get
-      where 
+      where
         repList (VarInt c) = replicateM (fromIntegral c) get
 
     put (GetBlocks v xs h) = do
@@ -152,7 +152,7 @@ instance Binary GetBlocks where
 -- containing a list of block headers pertaining to the request. A maximum of
 -- 2000 block headers can be returned. 'GetHeaders' is used by thin (SPV)
 -- clients to exclude block contents when synchronizing the blockchain.
-data GetHeaders = 
+data GetHeaders =
     GetHeaders {
                  -- | The protocol version
                  getHeadersVersion  :: !Word32
@@ -173,7 +173,7 @@ instance Binary GetHeaders where
     get = GetHeaders <$> getWord32le
                      <*> (repList =<< get)
                      <*> get
-      where 
+      where
         repList (VarInt c) = replicateM (fromIntegral c) get
 
     put (GetHeaders v xs h) = do
@@ -187,11 +187,11 @@ type BlockHeaderCount = (BlockHeader, VarInt)
 
 -- | The 'Headers' type is used to return a list of block headers in
 -- response to a 'GetHeaders' message.
-data Headers = 
-    Headers { 
+data Headers =
+    Headers {
               -- | List of block headers with respective transaction counts
-              headersList :: ![BlockHeaderCount] 
-            } 
+              headersList :: ![BlockHeaderCount]
+            }
     deriving (Eq, Show, Read)
 
 instance NFData Headers where
@@ -200,7 +200,7 @@ instance NFData Headers where
 instance Binary Headers where
 
     get = Headers <$> (repList =<< get)
-      where 
+      where
         repList (VarInt c) = replicateM (fromIntegral c) action
         action = liftM2 (,) get get
 

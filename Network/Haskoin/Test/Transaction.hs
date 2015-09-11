@@ -1,4 +1,4 @@
-{-| 
+{-|
   Arbitrary types for Network.Haskoin.Transaction
 -}
 module Network.Haskoin.Test.Transaction
@@ -6,7 +6,7 @@ module Network.Haskoin.Test.Transaction
 , ArbitraryTx(..)
 , ArbitraryTxIn(..)
 , ArbitraryTxOut(..)
-, ArbitraryOutPoint(..) 
+, ArbitraryOutPoint(..)
 , ArbitraryCoinbaseTx(..)
 , ArbitraryAddrOnlyTx(..)
 , ArbitraryAddrOnlyTxIn(..)
@@ -20,7 +20,7 @@ module Network.Haskoin.Test.Transaction
 , ArbitraryPartialTxs(..)
 ) where
 
-import Test.QuickCheck 
+import Test.QuickCheck
     ( Arbitrary
     , arbitrary
     , vectorOf
@@ -78,7 +78,7 @@ newtype ArbitraryTxIn = ArbitraryTxIn TxIn
 
 instance Arbitrary ArbitraryTxIn where
     arbitrary = do
-        ArbitraryOutPoint o <- arbitrary 
+        ArbitraryOutPoint o <- arbitrary
         ArbitraryScriptInput inp <- arbitrary
         s <- arbitrary
         return $ ArbitraryTxIn $ TxIn o (encodeInputBS inp) s
@@ -124,9 +124,9 @@ instance Arbitrary ArbitraryAddrOnlyTx where
         v <- arbitrary
         ni <- choose (0,5)
         no <- choose (0,5)
-        inps <- vectorOf ni $ 
+        inps <- vectorOf ni $
             arbitrary >>= \(ArbitraryAddrOnlyTxIn i) -> return i
-        outs <- vectorOf no $ 
+        outs <- vectorOf no $
             arbitrary >>= \(ArbitraryAddrOnlyTxOut o) -> return o
         t <- arbitrary
         return $ ArbitraryAddrOnlyTx $ Tx v inps outs t
@@ -138,7 +138,7 @@ newtype ArbitraryAddrOnlyTxIn = ArbitraryAddrOnlyTxIn TxIn
 
 instance Arbitrary ArbitraryAddrOnlyTxIn where
     arbitrary = do
-        ArbitraryOutPoint o <- arbitrary 
+        ArbitraryOutPoint o <- arbitrary
         inp <- oneof
             [ arbitrary >>= \(ArbitraryPKHashCInput i) -> return i
             , arbitrary >>= \(ArbitraryMulSigSHCInput i) -> return i
@@ -219,7 +219,7 @@ data ArbitrarySHSigInput = ArbitrarySHSigInput SigInput [PrvKey]
 
 instance Arbitrary ArbitrarySHSigInput where
     arbitrary = do
-        (rdm, ks, op, sh) <- oneof 
+        (rdm, ks, op, sh) <- oneof
             [ a <$> arbitrary, b <$> arbitrary, c <$> arbitrary ]
         let out = PayScriptHash $ scriptAddr rdm
         return $ ArbitrarySHSigInput (SigInput out op sh $ Just rdm) ks
@@ -238,12 +238,12 @@ instance Arbitrary ArbitrarySigningData where
         v <- arbitrary
         ni <- choose (1,5)
         no <- choose (1,5)
-        sigis <- map f <$> vectorOf ni arbitrary 
+        sigis <- map f <$> vectorOf ni arbitrary
         let uSigis = nubBy (\(a,_) (b,_) -> sigDataOP a == sigDataOP b) sigis
         inps <- forM uSigis $ \(s,_) -> do
             sq <- arbitrary
             return $ TxIn (sigDataOP s) BS.empty sq
-        outs <- map (\(ArbitraryTxOut o) -> o) <$> vectorOf no arbitrary 
+        outs <- map (\(ArbitraryTxOut o) -> o) <$> vectorOf no arbitrary
         l <- arbitrary
         perm <- choose (0, length inps - 1)
         let tx   = Tx v (permutations inps !! perm) outs l
@@ -252,7 +252,7 @@ instance Arbitrary ArbitrarySigningData where
       where
         f (ArbitrarySigInput s ks) = (s,ks)
 
-data ArbitraryPartialTxs = 
+data ArbitraryPartialTxs =
     ArbitraryPartialTxs [Tx] [(ScriptOutput, OutPoint, Int, Int)]
     deriving (Eq, Show, Read)
 
@@ -272,7 +272,7 @@ instance Arbitrary ArbitraryPartialTxs where
         arbitraryData = do
             ArbitraryMSParam m n <- arbitrary
             nPrv <- choose (m,n)
-            keys <- vectorOf n $ 
+            keys <- vectorOf n $
                 (\(ArbitraryPubKey k p) -> (k, p)) <$> arbitrary
             perm <- choose (0, length keys - 1)
             let pubKeys = map snd keys

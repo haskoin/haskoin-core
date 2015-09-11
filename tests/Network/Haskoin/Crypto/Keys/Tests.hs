@@ -15,7 +15,7 @@ import Network.Haskoin.Util
 import Network.Haskoin.Internals (PubKeyI(..), PrvKeyI(..))
 
 tests :: [Test]
-tests = 
+tests =
     [ testGroup "PubKey Binary"
         [ testProperty "is public key canonical" isCanonicalPubKey
         , testProperty "makeKey . toKey" makeToKey
@@ -52,19 +52,19 @@ isCanonicalPubKey (ArbitraryPubKey _ p) = not $
     (BS.index bs 0 `elem` [2,3] && BS.length bs /= 33) ||
     -- Non-canonical public key: compressed nor uncompressed
     (not $ BS.index bs 0 `elem` [2,3,4])
-  where 
+  where
     bs = encode' p
 
 makeToKey :: FieldN -> Property
-makeToKey i = i /= 0 ==> 
+makeToKey i = i /= 0 ==>
     (fromPrvKey $ makeKey (fromIntegral i)) == (fromIntegral i)
-  where 
+  where
     makeKey = fromJust . makePrvKey
 
 makeToKeyU :: FieldN -> Property
-makeToKeyU i = i /= 0 ==> 
+makeToKeyU i = i /= 0 ==>
     (fromPrvKey $ makeKey (fromIntegral i)) == (fromIntegral i)
-  where 
+  where
     makeKey = fromJust . makePrvKeyU
 
 {- Key formats -}
@@ -82,22 +82,22 @@ binaryPrvKey (ArbitraryPrvKey k) =
 {- Key Compression -}
 
 testCompressed :: FieldN -> Property
-testCompressed n = n > 0 ==> 
+testCompressed n = n > 0 ==>
     (pubKeyCompressed $ derivePubKey $ fromJust $ makePrvKey $ fromIntegral n) &&
     (pubKeyCompressed $ derivePubKey $ fromJust $ makePrvKeyG True $ fromIntegral n)
 
 testUnCompressed :: FieldN -> Property
-testUnCompressed n = n > 0 ==> 
+testUnCompressed n = n > 0 ==>
     (not $ pubKeyCompressed $ derivePubKey $ fromJust $ makePrvKeyG False $ fromIntegral n) &&
     (not $ pubKeyCompressed $ derivePubKey $ fromJust $ makePrvKeyU $ fromIntegral n)
 
 testPrivateCompressed :: FieldN -> Property
-testPrivateCompressed n = n > 0 ==> 
+testPrivateCompressed n = n > 0 ==>
     (prvKeyCompressed $ fromJust $ makePrvKey $ fromIntegral n) &&
     (prvKeyCompressed $ fromJust $ makePrvKeyC $ fromIntegral n)
 
 testPrivateUnCompressed :: FieldN -> Property
-testPrivateUnCompressed n = n > 0 ==> 
+testPrivateUnCompressed n = n > 0 ==>
     (not $ prvKeyCompressed $ fromJust $ makePrvKeyG False $ fromIntegral n) &&
     (not $ prvKeyCompressed $ fromJust $ makePrvKeyU $ fromIntegral n)
 
@@ -110,6 +110,6 @@ deriveFromInt i = maybe True (isValidPubKey . derivePubKey) $ makePrvKey i
 {- Key properties -}
 
 validKeys :: ArbitraryPubKey -> Bool
-validKeys (ArbitraryPubKey prv pub) = 
+validKeys (ArbitraryPubKey prv pub) =
     isValidPubKey pub && isValidPrvKey (fromPrvKey prv)
 

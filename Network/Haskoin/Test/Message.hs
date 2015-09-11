@@ -1,4 +1,4 @@
-{-| 
+{-|
   Arbitrary types for Network.Haskoin.Node.Message
 -}
 module Network.Haskoin.Test.Message

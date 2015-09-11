@@ -43,7 +43,7 @@ import Data.Binary (Binary, get, put)
 import Data.Binary.Get (Get, getWord8)
 import Data.Binary.Put (Put, putWord8)
 import Data.Text (pack, unpack)
-import qualified Data.ByteString as BS 
+import qualified Data.ByteString as BS
     ( ByteString
     , head, tail
     , last, init
@@ -51,17 +51,17 @@ import qualified Data.ByteString as BS
     , length
     )
 
-import Network.Haskoin.Crypto.Curve 
-import Network.Haskoin.Crypto.BigWord 
-import Network.Haskoin.Crypto.Point 
-import Network.Haskoin.Crypto.Base58 
-import Network.Haskoin.Crypto.Hash 
+import Network.Haskoin.Crypto.Curve
+import Network.Haskoin.Crypto.BigWord
+import Network.Haskoin.Crypto.Point
+import Network.Haskoin.Crypto.Base58
+import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Constants
-import Network.Haskoin.Util 
+import Network.Haskoin.Util
 
 -- | G parameter of the EC curve expressed as a Point
 curveG :: Point
-curveG = fromJust $ makePoint (fromInteger $ fst pairG) 
+curveG = fromJust $ makePoint (fromInteger $ fst pairG)
                               (fromInteger $ snd pairG)
 
 data Generic
@@ -77,8 +77,8 @@ type PubKeyC = PubKeyI Compressed
 type PubKeyU = PubKeyI Uncompressed
 
 -- Internal type for public keys
-data PubKeyI c = PubKeyI 
-    { pubKeyPoint      :: !Point 
+data PubKeyI c = PubKeyI
+    { pubKeyPoint      :: !Point
     , pubKeyCompressed :: !Bool
     } deriving (Eq, Read, Show)
 
@@ -89,21 +89,21 @@ instance ToJSON (PubKeyI Generic) where
     toJSON = String . pack . bsToHex . encode'
 
 instance FromJSON (PubKeyI Generic) where
-    parseJSON = withText "PubKey" $ 
+    parseJSON = withText "PubKey" $
         maybe mzero return . (decodeToMaybe =<<) . hexToBS . unpack
 
 instance ToJSON (PubKeyI Compressed) where
     toJSON = String . pack . bsToHex . encode'
 
 instance FromJSON (PubKeyI Compressed) where
-    parseJSON = withText "PubKeyC" $ 
+    parseJSON = withText "PubKeyC" $
         maybe mzero return . (decodeToMaybe =<<) . hexToBS . unpack
 
 instance ToJSON (PubKeyI Uncompressed) where
     toJSON = String . pack . bsToHex . encode'
 
 instance FromJSON (PubKeyI Uncompressed) where
-    parseJSON = withText "PubKeyU" $ 
+    parseJSON = withText "PubKeyU" $
         maybe mzero return . (decodeToMaybe =<<) . hexToBS . unpack
 
 -- Constructors for public keys
@@ -168,7 +168,7 @@ instance Binary (PubKeyI Compressed) where
         -- 2.3.4.2 Compressed format
         -- 2 means pY is even, 3 means pY is odd
         unless (y `elem` [2,3]) $ fail "Get: Invalid public key encoding"
-        -- 2.1 
+        -- 2.1
         x <- get :: Get FieldP
         -- 2.4.1 (deriving yP)
         let a  = x ^ (3 :: Integer) + (curveA * x) + curveB
@@ -213,7 +213,7 @@ pubKeyAddr = PubKeyAddress . hash160 . hash256BS . encode'
 -- | Elliptic curve private key type. Two constructors are provided for creating
 -- compressed or uncompressed private keys. Compression information is stored
 -- in private key WIF formats and needs to be preserved to generate the correct
--- addresses from the corresponding public key. 
+-- addresses from the corresponding public key.
 
 -- Internal private key type
 data PrvKeyI c = PrvKeyI
@@ -298,28 +298,28 @@ prvKeyPutMonad k
     | otherwise           = put (fromIntegral (prvKeyFieldN k) :: Word256)
 
 -- | Decodes a private key from a WIF encoded String. This function can fail
--- if the input string does not decode correctly as a base 58 string or if 
+-- if the input string does not decode correctly as a base 58 string or if
 -- the checksum fails.
 -- <http://en.bitcoin.it/wiki/Wallet_import_format>
 fromWif :: String -> Maybe PrvKey
 fromWif str = do
     bs <- decodeBase58Check $ stringToBS str
     -- Check that this is a private key
-    guard (BS.head bs == secretPrefix)  
+    guard (BS.head bs == secretPrefix)
     case BS.length bs of
         33 -> do               -- Uncompressed format
             let i = bsToInteger (BS.tail bs)
             makePrvKeyG False i
         34 -> do               -- Compressed format
-            guard (BS.last bs == 0x01) 
+            guard (BS.last bs == 0x01)
             let i = bsToInteger $ BS.tail $ BS.init bs
-            makePrvKeyG True i 
+            makePrvKeyG True i
         _  -> Nothing          -- Bad length
 
 -- | Encodes a private key into WIF format
 toWif :: PrvKeyI c -> String
 toWif k = bsToString $ encodeBase58Check $ BS.cons secretPrefix enc
-  where 
+  where
     enc | prvKeyCompressed k = BS.snoc bs 0x01
         | otherwise          = bs
     bs = encodePrvKey k

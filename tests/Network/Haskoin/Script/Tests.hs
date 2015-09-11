@@ -1,4 +1,4 @@
-module Network.Haskoin.Script.Tests 
+module Network.Haskoin.Script.Tests
 ( tests
 , execScriptIO
 , testValid
@@ -45,7 +45,7 @@ import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
-import Network.Haskoin.Internals 
+import Network.Haskoin.Internals
     ( Flag
     , runStack
     , dumpStack
@@ -57,7 +57,7 @@ import Network.Haskoin.Internals
     )
 
 tests :: [Test]
-tests = 
+tests =
     [ testGroup "Script Parser"
         [ testProperty "decode . encode OP_1 .. OP_16" testScriptOpInt
         , testProperty "decode . encode ScriptOutput" testScriptOutput
@@ -96,21 +96,21 @@ tests =
 {- Script Parser -}
 
 testScriptOpInt :: ArbitraryIntScriptOp -> Bool
-testScriptOpInt (ArbitraryIntScriptOp i) = 
+testScriptOpInt (ArbitraryIntScriptOp i) =
     (intToScriptOp <$> scriptOpToInt i) == Right i
 
 testScriptOutput :: ArbitraryScriptOutput -> Bool
-testScriptOutput (ArbitraryScriptOutput so) = 
+testScriptOutput (ArbitraryScriptOutput so) =
     decodeOutput (encodeOutput so) == Right so
 
 testScriptInput :: ArbitraryScriptInput -> Bool
-testScriptInput (ArbitraryScriptInput si) = 
+testScriptInput (ArbitraryScriptInput si) =
     decodeInput (encodeInput si) == Right si
 
 testSortMulSig :: ArbitraryMSOutput -> Bool
-testSortMulSig (ArbitraryMSOutput out) = 
+testSortMulSig (ArbitraryMSOutput out) =
     snd $ foldl f (head pubs,True) $ tail pubs
-  where 
+  where
     pubs = getOutputMulSigKeys $ sortMulSig out
     f (a,t) b | t && encode' a <= encode' b = (b,True)
               | otherwise                   = (b,False)
@@ -120,9 +120,9 @@ testSortMulSig (ArbitraryMSOutput out) =
 testCanonicalSig :: TxSignature -> Bool
 testCanonicalSig ts@(TxSignature _ sh)
     | isSigUnknown sh = isLeft $ decodeCanonicalSig bs
-    | otherwise       = isRight (decodeCanonicalSig bs) && 
+    | otherwise       = isRight (decodeCanonicalSig bs) &&
                         isCanonicalHalfOrder (txSignature ts)
-  where 
+  where
     bs = encodeSig ts
 
 binSigHashByte :: Word8 -> Bool
@@ -135,28 +135,28 @@ binSigHashByte w
     | w == 0x83 = res == SigSingle True
     | testBit w 7 = res == SigUnknown True w
     | otherwise = res == SigUnknown False w
-  where 
+  where
     res = decode' $ BS.singleton w
 
 testEncodeSH32 :: ArbitrarySigHash -> Bool
-testEncodeSH32 (ArbitrarySigHash sh) = 
-    BS.length bs == 4 && 
-    BS.head bs == (BS.head $ encode' sh) && 
+testEncodeSH32 (ArbitrarySigHash sh) =
+    BS.length bs == 4 &&
+    BS.head bs == (BS.head $ encode' sh) &&
     BS.tail bs == BS.pack [0,0,0]
-  where 
+  where
     bs = encodeSigHash32 sh
 
 binTxSig :: TxSignature -> Bool
 binTxSig ts = decodeSig (encodeSig ts) == Right ts
 
 binTxSigCanonical :: TxSignature -> Bool
-binTxSigCanonical ts@(TxSignature _ sh) 
+binTxSigCanonical ts@(TxSignature _ sh)
     | isSigUnknown sh = isLeft $ decodeCanonicalSig $ encodeSig ts
     | otherwise = (fromRight $ decodeCanonicalSig $ encodeSig ts) == ts
 
 testSigHashOne :: ArbitraryTx -> ArbitraryScript -> Bool -> Property
-testSigHashOne (ArbitraryTx tx) (ArbitraryScript s) acp = not (null $ txIn tx) ==> 
-    if length (txIn tx) > length (txOut tx) 
+testSigHashOne (ArbitraryTx tx) (ArbitraryScript s) acp = not (null $ txIn tx) ==>
+    if length (txIn tx) > length (txOut tx)
         then res == (setBit 0 248)
         else res /= (setBit 0 248)
     where res = txSigHash tx s (length (txIn tx) - 1) (SigSingle acp)
@@ -164,11 +164,11 @@ testSigHashOne (ArbitraryTx tx) (ArbitraryScript s) acp = not (null $ txIn tx) =
 {- Script Evaluation Primitives -}
 
 testEncodeInt :: Int64 -> Bool
-testEncodeInt i 
+testEncodeInt i
     | i >  0x7fffffff = isNothing i'
     | i < -0x7fffffff = isNothing i'
     | otherwise       = i' == Just i
-  where 
+  where
     i' = decodeInt $ encodeInt i
 
 testEncodeBool :: Bool -> Bool
@@ -271,7 +271,7 @@ testFile groupLabel path expected = buildTest $ do
 
                 where label' =  if null label
                                     then "sig: [" ++ sig ++ "] " ++
-                                        " pubKey: [" ++ pubKey ++ "] "  
+                                        " pubKey: [" ++ pubKey ++ "] "
                                     else " label: " ++ label
 
             parseError message = HUnit.assertBool
@@ -328,7 +328,7 @@ maxSeqNum = 0xffffffff -- Perhaps this should be moved to constants.
 
 -- | Null output used to create CoinbaseTx
 nullOutPoint :: OutPoint
-nullOutPoint = OutPoint { 
+nullOutPoint = OutPoint {
                  outPointHash  = 0
                , outPointIndex = -1
                }
@@ -342,7 +342,7 @@ nullOutPoint = OutPoint {
 -- input (and correct prevout hash), using the given scriptSig. All
 -- nLockTimes are 0, all nSequences are max."
 buildCreditTx :: BS.ByteString -> Tx
-buildCreditTx scriptPubKey = Tx { 
+buildCreditTx scriptPubKey = Tx {
                  txVersion    = 1
                , txIn         = [ txI ]
                , txOut        = [ txO ]
@@ -363,13 +363,13 @@ buildCreditTx scriptPubKey = Tx {
 buildSpendTx :: BS.ByteString  -- ScriptSig
              -> Tx     -- Creditting Tx
              -> Tx
-buildSpendTx scriptSig creditTx = Tx { 
+buildSpendTx scriptSig creditTx = Tx {
          txVersion  = 1
        , txIn       = [ txI ]
        , txOut      = [ txO ]
        , txLockTime = 0
        }
-    where txI = TxIn { 
+    where txI = TxIn {
                prevOutput   = OutPoint { outPointHash = txHash creditTx , outPointIndex = 0 }
              , scriptInput  = scriptSig
              , txInSequence = maxSeqNum
@@ -379,11 +379,11 @@ buildSpendTx scriptSig creditTx = Tx {
 -- | Executes the test of a scriptSig, pubKeyScript pair, including
 -- building the required transactions and verifying the spending
 -- transaction.
-scriptPairTestExec :: Script    -- scriptSig 
+scriptPairTestExec :: Script    -- scriptSig
                    -> Script    -- pubKey
                    -> [ Flag ] -- Evaluation flags
                    -> Bool
-scriptPairTestExec scriptSig pubKey flags = 
+scriptPairTestExec scriptSig pubKey flags =
     let bsScriptSig = encode' scriptSig
         bsPubKey = encode' pubKey
         spendTx = buildSpendTx bsScriptSig ( buildCreditTx bsPubKey )

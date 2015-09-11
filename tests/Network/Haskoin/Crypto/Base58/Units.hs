@@ -11,12 +11,12 @@ import Network.Haskoin.Util
 
 tests :: [Test]
 tests =
-    [ testGroup "Test base58 encodings" 
+    [ testGroup "Test base58 encodings"
         ( map mapBase58Vec $ zip vectors [0..] )
     ]
 
 mapBase58Vec :: ((BS.ByteString, String, String), Int) -> Test.Framework.Test
-mapBase58Vec (v,i) = 
+mapBase58Vec (v,i) =
     testCase (unwords [ "Test base58 vector", show i ]) $ runVector v
 
 runVector :: (BS.ByteString, String, String) -> Assertion
@@ -30,7 +30,7 @@ runVector (bs, e, chk) = do
     b58Chk = encodeBase58Check bs
 
 vectors :: [(BS.ByteString, String, String)]
-vectors = 
+vectors =
     [ ( BS.empty, "", "3QJmnh" )
     , ( BS.pack [0], "1", "1Wh4bh" )
     , ( BS.pack [0,0,0,0], "1111", "11114bdQda" )

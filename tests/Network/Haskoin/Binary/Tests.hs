@@ -11,7 +11,7 @@ import Network.Haskoin.Util
 import Network.Haskoin.Crypto
 
 tests :: [Test]
-tests = 
+tests =
     [ testGroup "Binary encoding and decoding of utility types"
         [ testProperty "ByteString" $ \(ArbitraryByteString x) -> metaBinary x ]
     , testGroup "Binary encoding and decoding of bigword types"
@@ -24,7 +24,7 @@ tests =
         ]
     , testGroup "Binary encoding and decoding of crypto types"
         [ testProperty "Signature" $ \(ArbitrarySignature _ _ _ x) -> metaBinary x
-        , testProperty "Deterministic Signature" $ 
+        , testProperty "Deterministic Signature" $
             \(ArbitraryDetSignature _ _ x) -> metaBinary x
         , testProperty "PubKey" $ \(ArbitraryPubKey _ x) -> metaBinary x
         , testProperty "XPrvKey" $ \(ArbitraryXPrvKey x) -> metaBinary x

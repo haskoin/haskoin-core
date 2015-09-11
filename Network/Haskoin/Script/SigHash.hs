@@ -21,7 +21,7 @@ import Data.Maybe (fromMaybe)
 import Data.Binary (Binary, get, put, getWord8, putWord8)
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
 import qualified Data.Text as T
-import qualified Data.ByteString as BS 
+import qualified Data.ByteString as BS
     ( ByteString
     , index
     , length
@@ -50,21 +50,21 @@ import Network.Haskoin.Util
 -- If the anyoneCanPay flag is True, then only the current input is signed.
 -- Otherwise, all of the inputs of a transaction are signed. The default value
 -- for anyoneCanPay is False.
-data SigHash 
+data SigHash
     -- | Sign all of the outputs of a transaction (This is the default value).
     -- Changing any of the outputs of the transaction will invalidate the
     -- signature.
-    = SigAll     { anyoneCanPay :: !Bool }   
+    = SigAll     { anyoneCanPay :: !Bool }
     -- | Sign none of the outputs of a transaction. This allows anyone to
     -- change any of the outputs of the transaction.
-    | SigNone    { anyoneCanPay :: !Bool }     
+    | SigNone    { anyoneCanPay :: !Bool }
     -- | Sign only the output corresponding the the current transaction input.
     -- You care about your own output in the transaction but you don't
     -- care about any of the other outputs.
-    | SigSingle  { anyoneCanPay :: !Bool }   
+    | SigSingle  { anyoneCanPay :: !Bool }
     -- | Unrecognized sighash types will decode to SigUnknown.
     | SigUnknown { anyoneCanPay :: !Bool
-                 , getSigCode   :: !Word8 
+                 , getSigCode   :: !Word8
                  }
     deriving (Eq, Show, Read)
 
@@ -118,7 +118,7 @@ instance ToJSON SigHash where
     toJSON = String . T.pack . bsToHex . encode'
 
 instance FromJSON SigHash where
-    parseJSON = withText "sighash" $ 
+    parseJSON = withText "sighash" $
         maybe mzero return . (decodeToMaybe <=< hexToBS) . T.unpack
 
 -- | Encodes a 'SigHash' to a 32 bit-long bytestring.
@@ -145,7 +145,7 @@ buildInputs txins out i sh
     | anyoneCanPay sh   = (txins !! i) { scriptInput = encode' out } : []
     | isSigAll sh || isSigUnknown sh = single
     | otherwise         = map noSeq $ zip single [0..]
-  where 
+  where
     empty  = map (\ti -> ti{ scriptInput = BS.empty }) txins
     single = updateIndex i empty $ \ti -> ti{ scriptInput = encode' out }
     noSeq (ti,j) = if i == j then ti else ti{ txInSequence = 0 }
@@ -157,14 +157,14 @@ buildOutputs txos i sh
     | isSigNone sh = return []
     | i >= length txos = Nothing
     | otherwise = return $ buffer ++ [txos !! i]
-  where 
+  where
     buffer = replicate i $ TxOut (-1) BS.empty
 
 -- | Data type representing a 'Signature' together with a 'SigHash'. The
 -- 'SigHash' is serialized as one byte at the end of a regular ECDSA
 -- 'Signature'. All signatures in transaction inputs are of type 'TxSignature'.
-data TxSignature = TxSignature 
-    { txSignature :: !Signature 
+data TxSignature = TxSignature
+    { txSignature :: !Signature
     , sigHashType :: !SigHash
     } deriving (Eq, Show, Read)
 
@@ -188,18 +188,18 @@ decodeCanonicalSig :: BS.ByteString -> Either String TxSignature
 decodeCanonicalSig bs
     | len < 9 = Left "Non-canonical signature: too short"
     | len > 73 = Left "Non-canonical signature: too long"
-    | hashtype < 1 || hashtype > 3 = 
+    | hashtype < 1 || hashtype > 3 =
         Left" Non-canonical signature: unknown hashtype byte"
     | BS.index bs 0 /= 0x30 = Left "Non-canonical signature: wrong type"
-    | BS.index bs 1 /= len - 3 = 
+    | BS.index bs 1 /= len - 3 =
         Left "Non-canonical signature: wrong length marker"
     | 5 + rlen >= len = Left "Non-canonical signature: S length misplaced"
-    | rlen + slen + 7 /= len = 
+    | rlen + slen + 7 /= len =
         Left "Non-canonical signature: R+S length mismatch"
-    | BS.index bs 2 /= 0x02 = 
+    | BS.index bs 2 /= 0x02 =
         Left "Non-canonical signature: R value type mismatch"
     | rlen == 0 = Left "Non-canonical signature: R length is zero"
-    | testBit (BS.index bs 4) 7 = 
+    | testBit (BS.index bs 4) 7 =
         Left "Non-canonical signature: R value negative"
     | rlen > 1 && BS.index bs 4 == 0 && not (testBit (BS.index bs 5) 7) =
         Left "Non-canonical signature: R value excessively padded"
@@ -208,11 +208,11 @@ decodeCanonicalSig bs
     | slen == 0 = Left "Non-canonical signature: S length is zero"
     | testBit (BS.index bs (fromIntegral rlen+6)) 7 =
         Left "Non-canonical signature: S value negative"
-    | slen > 1 && BS.index bs (fromIntegral rlen+6) == 0 
+    | slen > 1 && BS.index bs (fromIntegral rlen+6) == 0
         && not (testBit (BS.index bs (fromIntegral rlen+7)) 7) =
         Left "Non-canonical signature: S value excessively padded"
     | otherwise = decodeSig bs
-  where 
+  where
     len = fromIntegral $ BS.length bs
     rlen = BS.index bs 3
     slen = BS.index bs (fromIntegral rlen + 5)

@@ -1,4 +1,4 @@
-{-| 
+{-|
   Arbitrary types for Network.Haskoin.Node
 -}
 module Network.Haskoin.Test.Node
@@ -25,7 +25,7 @@ module Network.Haskoin.Test.Node
 , ArbitraryMessageCommand(..)
 ) where
 
-import Test.QuickCheck 
+import Test.QuickCheck
     ( Arbitrary
     , arbitrary
     , elements
@@ -70,7 +70,7 @@ instance Arbitrary ArbitraryNetworkAddress where
         s <- arbitrary
         a <- arbitrary
         p <- arbitrary
-        ArbitraryNetworkAddress . (NetworkAddress s) <$> oneof 
+        ArbitraryNetworkAddress . (NetworkAddress s) <$> oneof
             [ do
                 b <- arbitrary
                 c <- arbitrary
@@ -80,7 +80,7 @@ instance Arbitrary ArbitraryNetworkAddress where
             ]
 
 -- | Arbitrary NetworkAddressTime
-newtype ArbitraryNetworkAddressTime 
+newtype ArbitraryNetworkAddressTime
     = ArbitraryNetworkAddressTime (Word32, NetworkAddress)
 
 instance Arbitrary ArbitraryNetworkAddressTime where
@@ -94,7 +94,7 @@ newtype ArbitraryInvType = ArbitraryInvType InvType
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryInvType where
-    arbitrary = ArbitraryInvType <$> elements 
+    arbitrary = ArbitraryInvType <$> elements
         [InvError, InvTx, InvBlock, InvMerkleBlock]
 
 -- | Arbitrary InvVector
@@ -113,9 +113,9 @@ newtype ArbitraryInv = ArbitraryInv Inv
 
 instance Arbitrary ArbitraryInv where
     arbitrary = do
-        vs <- listOf1 arbitrary    
+        vs <- listOf1 arbitrary
         return $ ArbitraryInv $ Inv $ map (\(ArbitraryInvVector v) -> v) vs
-    
+
 -- | Arbitrary Version
 newtype ArbitraryVersion = ArbitraryVersion Version
     deriving (Eq, Show)
@@ -140,7 +140,7 @@ newtype ArbitraryAddr = ArbitraryAddr Addr
 instance Arbitrary ArbitraryAddr where
     arbitrary = do
        vs <- listOf1 arbitrary
-       return $ ArbitraryAddr $ Addr $ 
+       return $ ArbitraryAddr $ Addr $
            map (\(ArbitraryNetworkAddressTime x) -> x) vs
 
 -- | Arbitrary alert with random payload and signature. Signature is not
@@ -173,7 +173,7 @@ newtype ArbitraryRejectCode = ArbitraryRejectCode RejectCode
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryRejectCode where
-    arbitrary = ArbitraryRejectCode <$> elements 
+    arbitrary = ArbitraryRejectCode <$> elements
         [ RejectMalformed
         , RejectInvalid
         , RejectInvalid
@@ -191,7 +191,7 @@ newtype ArbitraryGetData = ArbitraryGetData GetData
 instance Arbitrary ArbitraryGetData where
     arbitrary = do
         vs <- listOf1 arbitrary
-        return $ ArbitraryGetData $ GetData $ 
+        return $ ArbitraryGetData $ GetData $
             map (\(ArbitraryInvVector x) -> x) vs
 
 -- | Arbitrary NotFound
@@ -201,7 +201,7 @@ newtype ArbitraryNotFound = ArbitraryNotFound NotFound
 instance Arbitrary ArbitraryNotFound where
     arbitrary = do
         vs <- listOf1 arbitrary
-        return $ ArbitraryNotFound $ NotFound $ 
+        return $ ArbitraryNotFound $ NotFound $
             map (\(ArbitraryInvVector x) -> x) vs
 
 -- | Arbitrary Ping
@@ -223,7 +223,7 @@ data ArbitraryBloomFlags = ArbitraryBloomFlags BloomFlags
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryBloomFlags where
-    arbitrary = ArbitraryBloomFlags <$> elements 
+    arbitrary = ArbitraryBloomFlags <$> elements
         [ BloomUpdateNone
         , BloomUpdateAll
         , BloomUpdateP2PubKeyOnly
@@ -266,7 +266,7 @@ newtype ArbitraryMessageCommand = ArbitraryMessageCommand MessageCommand
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryMessageCommand where
-    arbitrary = ArbitraryMessageCommand <$> elements 
+    arbitrary = ArbitraryMessageCommand <$> elements
         [ MCVersion
         , MCVerAck
         , MCAddr

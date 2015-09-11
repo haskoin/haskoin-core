@@ -22,7 +22,7 @@ import Network.Haskoin.Internals
     )
 
 tests :: [Test]
-tests = 
+tests =
     [ testGroup "Elliptic curve point arithmetic"
         [ testProperty "P is on the curve" checkOnCurve
         , testProperty "P1 + P2 is on the curve" addOnCurve
@@ -48,7 +48,7 @@ checkOnCurve :: ArbitraryPoint -> Bool
 checkOnCurve (ArbitraryPoint p) = validatePoint p
 
 addOnCurve :: ArbitraryPoint -> ArbitraryPoint -> Bool
-addOnCurve (ArbitraryPoint p1) (ArbitraryPoint p2) = 
+addOnCurve (ArbitraryPoint p1) (ArbitraryPoint p2) =
     case addPoint p1 p2 of
         InfPoint -> True
         p        -> validatePoint p
@@ -59,9 +59,9 @@ mulOnCurve (ArbitraryPoint p1) n = case mulPoint n p1 of
     p        -> validatePoint p
 
 fromToAffine :: ArbitraryPoint -> Property
-fromToAffine (ArbitraryPoint p) = not (isInfPoint p) ==> 
+fromToAffine (ArbitraryPoint p) = not (isInfPoint p) ==>
     (makePoint x y) == Just p
-  where 
+  where
     (x,y) = fromJust $ getAffine p
 
 addInfPoint :: ArbitraryInfPoint -> Bool
@@ -71,7 +71,7 @@ addInfPoint' :: ArbitraryInfPoint -> Bool
 addInfPoint' (ArbitraryInfPoint p) = addPoint makeInfPoint p == p
 
 addCommutative :: ArbitraryInfPoint -> ArbitraryInfPoint -> Bool
-addCommutative (ArbitraryInfPoint p1) (ArbitraryInfPoint p2) = 
+addCommutative (ArbitraryInfPoint p1) (ArbitraryInfPoint p2) =
     addPoint p1 p2 == addPoint p2 p1
 
 addAssoc :: ArbitraryInfPoint -> ArbitraryInfPoint -> ArbitraryInfPoint -> Bool
@@ -90,21 +90,21 @@ doubleMulPoint :: ArbitraryInfPoint -> Bool
 doubleMulPoint (ArbitraryInfPoint p) = doublePoint p == mulPoint 2 p
 
 mulPointInduction :: FieldN -> ArbitraryInfPoint -> Property
-mulPointInduction i (ArbitraryInfPoint p) = i > 2 ==> 
+mulPointInduction i (ArbitraryInfPoint p) = i > 2 ==>
     mulPoint i p == addPoint p (mulPoint (i-1) p)
 
 mulDistributivity :: FieldN -> FieldN -> ArbitraryInfPoint -> Bool
-mulDistributivity a b (ArbitraryInfPoint p) = 
+mulDistributivity a b (ArbitraryInfPoint p) =
     (addPoint (mulPoint a p) (mulPoint b p)) == mulPoint (a + b) p
 
-testShamirsTrick :: FieldN -> ArbitraryInfPoint 
-                 -> FieldN -> ArbitraryInfPoint 
+testShamirsTrick :: FieldN -> ArbitraryInfPoint
+                 -> FieldN -> ArbitraryInfPoint
                  -> Bool
-testShamirsTrick n1 (ArbitraryInfPoint p1) n2 (ArbitraryInfPoint p2) = 
+testShamirsTrick n1 (ArbitraryInfPoint p1) n2 (ArbitraryInfPoint p2) =
     shamirRes == normalRes
-  where 
+  where
     shamirRes = shamirsTrick n1 p1 n2 p2
-    normalRes = addPoint (mulPoint n1 p1) (mulPoint n2 p2)  
+    normalRes = addPoint (mulPoint n1 p1) (mulPoint n2 p2)
 
 testPointEqual :: ArbitraryInfPoint -> ArbitraryInfPoint -> Bool
 testPointEqual (ArbitraryInfPoint p1) (ArbitraryInfPoint p2) = case (p1,p2) of
@@ -112,7 +112,7 @@ testPointEqual (ArbitraryInfPoint p1) (ArbitraryInfPoint p2) = case (p1,p2) of
     (_, InfPoint)        -> p1 /= p2
     (InfPoint, _)        -> p1 /= p2
     _                    -> go
-  where 
+  where
     go | x1 == x2 && y1 == y2 = p1 == p2
        | otherwise            = p1 /= p2
     (x1,y1) = fromJust $ getAffine p1

@@ -6,8 +6,8 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 import Network.Haskoin.Crypto
 
 tests :: [Test]
-tests = 
-    [ testGroup "Hash tests" 
+tests =
+    [ testGroup "Hash tests"
         [ testProperty "join512( split512(h) ) == h" joinSplit512
         , testProperty "decodeCompact . encodeCompact i == i" decEncCompact
         ]
@@ -19,7 +19,7 @@ joinSplit512 h = (join512 $ split512 h) == h
 -- After encoding and decoding, we may loose precision so the new result is >=
 -- to the old one.
 decEncCompact :: Integer -> Bool
-decEncCompact i 
+decEncCompact i
     -- Integer completely fits inside the mantisse
     | (abs i) <= 0x007fffff = (decodeCompact $ encodeCompact i) == i
     -- Otherwise precision will be lost and the decoded result will

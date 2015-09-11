@@ -1,4 +1,4 @@
-module Network.Haskoin.Node.Bloom 
+module Network.Haskoin.Node.Bloom
 ( BloomFlags(..)
 , BloomFilter(..)
 , FilterLoad(..)
@@ -19,12 +19,12 @@ import Data.Word
 import Data.Bits
 import Data.Hash.Murmur (murmur3)
 import Data.Binary (Binary, get, put)
-import Data.Binary.Get 
+import Data.Binary.Get
     ( getWord8
     , getWord32le
     , getByteString
     )
-import Data.Binary.Put 
+import Data.Binary.Put
     ( putWord8
     , putWord32le
     , putByteString
@@ -52,11 +52,11 @@ bitMask :: [Word8]
 bitMask = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]
 
 -- | The bloom flags are used to tell the remote peer how to auto-update
--- the provided bloom filter. 
+-- the provided bloom filter.
 data BloomFlags
     = BloomUpdateNone         -- ^ Never update
     | BloomUpdateAll          -- ^ Auto-update on all outputs
-    | BloomUpdateP2PubKeyOnly 
+    | BloomUpdateP2PubKeyOnly
     -- ^ Only auto-update on outputs that are pay-to-pubkey or pay-to-multisig.
     -- This is the default setting.
     deriving (Eq, Show, Read)
@@ -75,7 +75,7 @@ instance Binary BloomFlags where
         BloomUpdateNone         -> 0
         BloomUpdateAll          -> 1
         BloomUpdateP2PubKeyOnly -> 2
-            
+
 -- | A bloom filter is a probabilistic data structure that SPV clients send to
 -- other peers to filter the set of transactions received from them. Bloom
 -- filters are probabilistic and have a false positive rate. Some transactions
@@ -104,7 +104,7 @@ instance Binary BloomFilter where
                       <*> getWord32le <*> getWord32le
                       <*> get
       where
-        readDat (VarInt len) = replicateM (fromIntegral len) getWord8   
+        readDat (VarInt len) = replicateM (fromIntegral len) getWord8
 
     put (BloomFilter dat hashFuncs tweak flags) = do
         put $ VarInt $ fromIntegral $ S.length dat
@@ -144,10 +144,10 @@ instance Binary FilterAdd where
 
 
 -- | Build a bloom filter that will provide the given false positive rate when
--- the given number of elements have been inserted. 
+-- the given number of elements have been inserted.
 bloomCreate :: Int          -- ^ Number of elements
             -> Double       -- ^ False positive rate
-            -> Word32       
+            -> Word32
              -- ^ A random nonce (tweak) for the hash function. It should be
              -- a random number but the secureness of the random value is not
              -- of geat consequence.
@@ -177,7 +177,7 @@ bloomHash bfilter hashNum bs =
 bloomInsert :: BloomFilter    -- ^ Original bloom filter
             -> BS.ByteString  -- ^ New data to insert
             -> BloomFilter    -- ^ Bloom filter containing the new data
-bloomInsert bfilter bs 
+bloomInsert bfilter bs
     | isBloomFull bfilter = bfilter
     | otherwise = bfilter { bloomData = newData }
   where
@@ -188,8 +188,8 @@ bloomInsert bfilter bs
 
 -- | Tests if some arbitrary data matches the filter. This can be either because
 -- the data was inserted into the filter or because it is a false positive.
-bloomContains :: BloomFilter    -- ^ Bloom filter 
-              -> BS.ByteString  
+bloomContains :: BloomFilter    -- ^ Bloom filter
+              -> BS.ByteString
               -- ^ Data that will be checked against the given bloom filter
               -> Bool
               -- ^ Returns True if the data matches the filter

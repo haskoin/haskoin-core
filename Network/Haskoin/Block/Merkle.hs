@@ -1,4 +1,4 @@
-module Network.Haskoin.Block.Merkle 
+module Network.Haskoin.Block.Merkle
 ( MerkleBlock(..)
 , MerkleRoot
 , FlagBits
@@ -20,7 +20,7 @@ import Data.Word (Word8, Word32)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get (getWord8, getWord32le)
 import Data.Binary.Put (putWord8, putWord32le)
-import qualified Data.ByteString as BS 
+import qualified Data.ByteString as BS
 
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.BigWord
@@ -33,7 +33,7 @@ type MerkleRoot        = Word256
 type FlagBits          = [Bool]
 type PartialMerkleTree = [Word256]
 
-data MerkleBlock = 
+data MerkleBlock =
     MerkleBlock {
                 -- | Header information for this merkle block.
                   merkleHeader :: !BlockHeader
@@ -73,7 +73,7 @@ instance Binary MerkleBlock where
         forM_ ws putWord8
 
 decodeMerkleFlags :: [Word8] -> [Bool]
-decodeMerkleFlags ws = 
+decodeMerkleFlags ws =
     [ b | p <- [0..(length ws)*8-1]
     , b <- [testBit (ws !! (p `div` 8)) (p `mod` 8)]
     ]
@@ -114,22 +114,22 @@ calcHash height pos txs
     | otherwise = hash2 left right
   where
     left = calcHash (height-1) (pos*2) txs
-    right | pos*2+1 < calcTreeWidth (length txs) (height-1) = 
+    right | pos*2+1 < calcTreeWidth (length txs) (height-1) =
                 calcHash (height-1) (pos*2+1) txs
           | otherwise = left
 
 -- | Build a partial merkle tree.
-buildPartialMerkle 
-    :: [(TxHash,Bool)] 
+buildPartialMerkle
+    :: [(TxHash,Bool)]
     -- ^ List of transactions hashes forming the leaves of the merkle tree
-    -- and a bool indicating if that transaction should be included in the 
+    -- and a bool indicating if that transaction should be included in the
     -- partial merkle tree.
-    -> (FlagBits, PartialMerkleTree) 
-    -- ^ Flag bits (used to parse the partial merkle tree) and the 
+    -> (FlagBits, PartialMerkleTree)
+    -- ^ Flag bits (used to parse the partial merkle tree) and the
     -- partial merkle tree.
 buildPartialMerkle hs = traverseAndBuild (calcTreeHeight $ length hs) 0 hs
 
-traverseAndBuild :: Int -> Int -> [(TxHash,Bool)] 
+traverseAndBuild :: Int -> Int -> [(TxHash,Bool)]
                  -> (FlagBits, PartialMerkleTree)
 traverseAndBuild height pos txs
     | height < 0 || pos < 0 = error "traverseAndBuild: Invalid parameters"
@@ -151,21 +151,21 @@ traverseAndExtract height pos ntx flags hashes
     | length flags == 0        = Nothing
     | height == 0 || not match = leafResult
     | isNothing leftM          = Nothing
-    | (pos*2+1) >= calcTreeWidth ntx (height-1) = 
+    | (pos*2+1) >= calcTreeWidth ntx (height-1) =
         Just (hash2 lh lh, lm, lcf+1, lch)
     | isNothing rightM         = Nothing
-    | otherwise = 
+    | otherwise =
         Just (hash2 lh rh, lm ++ rm, lcf+rcf+1, lch+rch)
   where
     leafResult
         | null hashes = Nothing
-        | otherwise = Just 
+        | otherwise = Just
             (h,if height == 0 && match then [fromIntegral h] else [],1,1)
     (match:fs) = flags
     (h:_)     = hashes
     leftM  = traverseAndExtract (height-1) (pos*2) ntx fs hashes
     (lh,lm,lcf,lch) = fromJust leftM
-    rightM = traverseAndExtract (height-1) (pos*2+1) ntx 
+    rightM = traverseAndExtract (height-1) (pos*2+1) ntx
                 (drop lcf fs) (drop lch hashes)
     (rh,rm,rcf,rch) = fromJust rightM
 
@@ -200,7 +200,7 @@ extractMatches flags hashes ntx
 splitIn :: Int -> [a] -> [[a]]
 splitIn _ [] = []
 splitIn c xs = take c xs : (splitIn c $ drop c xs)
- 
+
 boolsToWord8 :: [Bool] -> Word8
 boolsToWord8 [] = 0
 boolsToWord8 xs = foldl setBit 0 (map snd $ filter fst $ zip xs [0..7])

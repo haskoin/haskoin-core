@@ -30,10 +30,10 @@ strSecret1C = "Kwr371tjA9u2rFSMZjTNun2PXXP3WPZu2afRHTcta6KxEUdm1vEw"
 strSecret2C :: String
 strSecret2C = "L3Hq7a8FEQwJkW1M2GNKDW28546Vp5miewcCzSqUD9kCAXrJdS3g"
 
-addr1 :: String 
+addr1 :: String
 addr1  = "1QFqqMUD55ZV3PJEJZtaKCsQmjLT6JkjvJ"
 
-addr2 :: String 
+addr2 :: String
 addr2  = "1F5y5E5FMc5YzdJtB9hLaUe43GDxEKXENJ"
 
 addr1C :: String
@@ -46,7 +46,7 @@ strAddressBad :: String
 strAddressBad = "1HV9Lc3sNHZxwj4Zk6fB38tEmBryq2cBiF"
 
 sigMsg :: [String]
-sigMsg = [ ("Very secret message " ++ (show (i :: Int)) ++ ": 11") 
+sigMsg = [ ("Very secret message " ++ (show (i :: Int)) ++ ": 11")
          | i <- [0..15]
          ]
 
@@ -79,15 +79,15 @@ tests =
     [ testGroup "ECDSA PRNG unit tests"
         [ testCase "signMsg produces unique sigantures" uniqueSigs
         , testCase "genPrvKey produces unique keys" uniqueKeys
-        ] 
+        ]
     , testGroup "bitcoind /src/test/key_tests.cpp" $
         [ testCase "Decode Valid WIF" checkPrivkey
         , testCase "Decode Invalid WIF" checkInvalidKey
         , testCase "Check private key compression" checkPrvKeyCompressed
         , testCase "Check public key compression" checkKeyCompressed
         , testCase "Check matching address" checkMatchingAddress
-        ] ++ 
-        ( map (\x -> (testCase ("Check sig: " ++ (show x)) 
+        ] ++
+        ( map (\x -> (testCase ("Check sig: " ++ (show x))
                 (checkSignatures $ doubleHash256 $ stringToBS x))) sigMsg )
     , testGroup "Trezor RFC 6979 Test Vectors"
         [ testCase "RFC 6979 Test Vector 1" (testDetSigning $ detVec !! 0)
@@ -102,7 +102,7 @@ tests =
         , testCase "RFC 6979 Test Vector 10" (testDetSigning $ detVec !! 9)
         , testCase "RFC 6979 Test Vector 11" (testDetSigning $ detVec !! 10)
         , testCase "RFC 6979 Test Vector 12" (testDetSigning $ detVec !! 11)
-        ] 
+        ]
     ]
 
 {- ECDSA PRNG unit tests -}
@@ -117,7 +117,7 @@ uniqueSigs = do
         replicateM_ 20 $ signMsg msg prv
         (Signature e f) <- signMsg msg prv
         return $ ((a,b),(c,d),(e,f))
-    assertBool "DiffSig" $ 
+    assertBool "DiffSig" $
         r1 /= r2 && r1 /= r3 && r2 /= r3 &&
         s1 /= s2 && s1 /= s3 && s2 /= s3
 
@@ -141,7 +141,7 @@ checkPrivkey = do
     assertBool "Key 2C" $ isJust $ fromWif strSecret2C
 
 checkInvalidKey :: Assertion
-checkInvalidKey = 
+checkInvalidKey =
     assertBool "Bad key" $ isNothing $ fromWif strAddressBad
 
 checkPrvKeyCompressed :: Assertion
@@ -164,7 +164,7 @@ checkMatchingAddress = do
     assertBool "Key 2"  $ addr2  == (addrToBase58 $ pubKeyAddr pub2)
     assertBool "Key 1C" $ addr1C == (addrToBase58 $ pubKeyAddr pub1C)
     assertBool "Key 2C" $ addr2C == (addrToBase58 $ pubKeyAddr pub2C)
-    
+
 checkSignatures :: Word256 -> Assertion
 checkSignatures h = do
     (sign1, sign2, sign1C, sign2C) <- liftIO $ withSource devURandom $ do
@@ -195,8 +195,8 @@ checkSignatures h = do
 -- github.com/trezor/python-ecdsa/blob/master/ecdsa/test_pyecdsa.py
 
 detVec :: [(Integer,String,String)]
-detVec = 
-    [ 
+detVec =
+    [
       ( 0x1
       , "Satoshi Nakamoto"
       , "934b1ea10a4b3c1757e2b0c017d0b6143ce3c9a7e6a4a49860d7a6ab210ee3d82442ce9d2b916064108014783e923ec36b49743e2ffa1c4496f01a512aafd9e5"
@@ -254,7 +254,7 @@ testDetSigning (prv,msg,str) = do
     where sig@(Signature r s) = detSignMsg msg' prv'
           msg' = hash256 $ stringToBS msg
           prv' = fromJust $ makePrvKey prv
-          res = runPut' $ put (fromIntegral r :: Word256) >> 
+          res = runPut' $ put (fromIntegral r :: Word256) >>
                           put (fromIntegral s :: Word256)
 
 

@@ -4,7 +4,7 @@ module Network.Haskoin.Test.Util
 , ArbitraryUTCTime(..)
 ) where
 
-import Test.QuickCheck 
+import Test.QuickCheck
     ( Arbitrary
     , Gen
     , arbitrary
@@ -26,7 +26,7 @@ instance Arbitrary ArbitraryByteString where
         bs <- BS.pack `fmap` arbitrary
         n <- choose (0, 2)
         -- to give us some with non-0 offset
-        return $ ArbitraryByteString $ BS.drop n bs 
+        return $ ArbitraryByteString $ BS.drop n bs
 
 -- | Arbitrary strict ByteString that is not empty
 data ArbitraryNotNullByteString = ArbitraryNotNullByteString BS.ByteString

@@ -12,39 +12,39 @@ import Network.Haskoin.Util
 import Network.Haskoin.Internals (Signature(..), BigWord(..), curveN)
 
 tests :: [Test]
-tests = 
+tests =
     [ testGroup "ECDSA signatures"
         [ testProperty "Verify signature" testVerifySig
         , testProperty "verify deterministic signature" testVerifyDetSig
-        , testProperty "S component <= order/2" $ 
+        , testProperty "S component <= order/2" $
             \(ArbitrarySignature _ _ _ sig) -> halfOrderSig sig
         , testProperty "S component <= order/2 (deterministic)" $
             \(ArbitraryDetSignature _ _ sig) -> halfOrderSig sig
         ],
       testGroup "ECDSA Binary"
-        [ testProperty "Encoded signature is canonical" $ 
-            \(ArbitrarySignature _ _ _ sig) -> testIsCanonical sig 
-        , testProperty "Encoded deterministic signature is canonical" $ 
-            \(ArbitraryDetSignature _ _ sig) -> testIsCanonical sig 
+        [ testProperty "Encoded signature is canonical" $
+            \(ArbitrarySignature _ _ _ sig) -> testIsCanonical sig
+        , testProperty "Encoded deterministic signature is canonical" $
+            \(ArbitraryDetSignature _ _ sig) -> testIsCanonical sig
         ]
     ]
 
 {- ECDSA Signatures -}
 
 testVerifySig :: ArbitrarySignature -> Bool
-testVerifySig (ArbitrarySignature msg key _ sig) = 
+testVerifySig (ArbitrarySignature msg key _ sig) =
     verifySig msg sig pubkey
   where
     pubkey = derivePubKey key
 
 testVerifyDetSig :: ArbitraryDetSignature -> Bool
-testVerifyDetSig (ArbitraryDetSignature msg key sig) = 
+testVerifyDetSig (ArbitraryDetSignature msg key sig) =
     verifySig msg sig pubkey
   where
     pubkey = derivePubKey key
 
 halfOrderSig :: Signature -> Bool
-halfOrderSig sig@(Signature _ (BigWord s)) = 
+halfOrderSig sig@(Signature _ (BigWord s)) =
     s <= (curveN `div` 2) && isCanonicalHalfOrder sig
 
 {- ECDSA Binary -}
@@ -62,7 +62,7 @@ testIsCanonical sig = not $
     -- Non-canonical signature: wrong length marker
     (BS.index s 1 /= len - 2) ||
     -- Non-canonical signature: S length misplaced
-    (5 + rlen >= len) || 
+    (5 + rlen >= len) ||
     -- Non-canonical signature: R+S length mismatch
     (rlen + slen + 6 /= len) ||
     -- Non-canonical signature: R value type mismatch
@@ -72,8 +72,8 @@ testIsCanonical sig = not $
     -- Non-canonical signature: R value negative
     (testBit (BS.index s 4) 7) ||
     -- Non-canonical signature: R value excessively padded
-    (  rlen > 1 
-    && BS.index s 4 == 0 
+    (  rlen > 1
+    && BS.index s 4 == 0
     && not (testBit (BS.index s 5) 7)
     ) ||
     -- Non-canonical signature: S value type mismatch
@@ -84,10 +84,10 @@ testIsCanonical sig = not $
     (testBit (BS.index s (fromIntegral rlen+6)) 7) ||
     -- Non-canonical signature: S value excessively padded
     (  slen > 1
-    && BS.index s (fromIntegral rlen+6) == 0 
+    && BS.index s (fromIntegral rlen+6) == 0
     && not (testBit (BS.index s (fromIntegral rlen+7)) 7)
-    ) 
-  where 
+    )
+  where
     s = encode' sig
     len = fromIntegral $ BS.length s
     rlen = BS.index s 3

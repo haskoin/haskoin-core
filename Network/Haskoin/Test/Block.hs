@@ -1,4 +1,4 @@
-{-| 
+{-|
   Arbitrary types for Network.Haskoin.Block
 -}
 module Network.Haskoin.Test.Block
@@ -10,7 +10,7 @@ module Network.Haskoin.Test.Block
 , ArbitraryMerkleBlock(..)
 ) where
 
-import Test.QuickCheck 
+import Test.QuickCheck
     ( Arbitrary
     , arbitrary
     , choose
@@ -46,8 +46,8 @@ instance Arbitrary ArbitraryBlockHeader where
     arbitrary = do
         h <- BlockHeader <$> arbitrary <*> arbitrary <*> arbitrary
                          <*> arbitrary <*> arbitrary <*> arbitrary
-        return $ ArbitraryBlockHeader h   
-                    
+        return $ ArbitraryBlockHeader h
+
 -- | Arbitrary GetBlocks
 newtype ArbitraryGetBlocks = ArbitraryGetBlocks GetBlocks
     deriving (Eq, Show, Read)
@@ -77,7 +77,7 @@ instance Arbitrary ArbitraryHeaders where
             ArbitraryVarInt v <- arbitrary
             return (h,v)
         return $ Headers xs
-                    
+
 -- | Arbitrary MerkleBlock
 newtype ArbitraryMerkleBlock = ArbitraryMerkleBlock MerkleBlock
     deriving (Eq, Show, Read)

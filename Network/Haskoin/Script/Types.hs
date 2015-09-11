@@ -12,14 +12,14 @@ import Control.Applicative ((<$>))
 
 import Data.Word (Word8)
 import Data.Binary (Binary, get, put)
-import Data.Binary.Get 
+import Data.Binary.Get
     ( isEmpty
     , getWord8
     , getWord16le
     , getWord32le
     , getByteString
     )
-import Data.Binary.Put 
+import Data.Binary.Put
     ( putWord8
     , putWord16le
     , putWord32le
@@ -36,10 +36,10 @@ import qualified Data.ByteString as BS
 -- * Define the spending conditions in the output of a transaction
 --
 -- * Provide the spending signatures in the input of a transaction
-data Script = 
-    Script { 
+data Script =
+    Script {
              -- | List of script operators defining this script
-             scriptOps :: ![ScriptOp] 
+             scriptOps :: ![ScriptOp]
            }
     deriving (Eq, Show, Read)
 
@@ -47,25 +47,25 @@ instance NFData Script where
     rnf (Script o) = rnf o
 
 instance Binary Script where
-    get = 
+    get =
         Script <$> getScriptOps
       where
         getScriptOps = do
             empty <- isEmpty
-            if empty 
-                then return [] 
+            if empty
+                then return []
                 else liftM2 (:) get getScriptOps
 
     put (Script ops) = forM_ ops put
 
 -- | Data type representing the type of an OP_PUSHDATA opcode.
 data PushDataType
-    = 
+    =
       -- | The next opcode bytes is data to be pushed onto the stack
-      OPCODE 
+      OPCODE
       -- | The next byte contains the number of bytes to be pushed onto
       -- the stack
-    | OPDATA1 
+    | OPDATA1
       -- | The next two bytes contains the number of bytes to be pushed onto
       -- the stack
     | OPDATA2
@@ -200,9 +200,9 @@ instance NFData ScriptOp where
 
 instance Binary ScriptOp where
 
-    get = go =<< (fromIntegral <$> getWord8) 
-      where 
-        go op 
+    get = go =<< (fromIntegral <$> getWord8)
+      where
+        go op
             | op == 0x00 = return $ OP_0
             | op <= 0x4b = do
                 payload <- getByteString (fromIntegral op)
@@ -353,21 +353,21 @@ instance Binary ScriptOp where
             let len = BS.length payload
             case optype of
                 OPCODE -> do
-                    unless (len <= 0x4b) $ fail 
+                    unless (len <= 0x4b) $ fail
                         "OP_PUSHDATA OPCODE: Payload size too big"
                     putWord8 $ fromIntegral len
                 OPDATA1 -> do
-                    unless (len <= 0xff) $ fail 
+                    unless (len <= 0xff) $ fail
                         "OP_PUSHDATA OPDATA1: Payload size too big"
                     putWord8 0x4c
                     putWord8 $ fromIntegral len
                 OPDATA2 -> do
-                    unless (len <= 0xffff) $ fail 
+                    unless (len <= 0xffff) $ fail
                         "OP_PUSHDATA OPDATA2: Payload size too big"
                     putWord8 0x4d
                     putWord16le $ fromIntegral len
                 OPDATA4 -> do
-                    unless (len <= 0x7fffffff) $ fail 
+                    unless (len <= 0x7fffffff) $ fail
                         "OP_PUSHDATA OPDATA4: Payload size too big"
                     putWord8 0x4e
                     putWord32le $ fromIntegral len
@@ -527,7 +527,7 @@ isPushOp op = case op of
     OP_14           -> True
     OP_15           -> True
     OP_16           -> True
-    _               -> False       
+    _               -> False
 
 -- | Optimally encode data using one of the 4 types of data pushing opcodes
 opPushData :: BS.ByteString -> ScriptOp

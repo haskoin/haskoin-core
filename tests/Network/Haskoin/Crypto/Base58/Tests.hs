@@ -7,7 +7,7 @@ import Network.Haskoin.Test
 import Network.Haskoin.Crypto
 
 tests :: [Test]
-tests = 
+tests =
     [ testGroup "Address and Base58"
         [ testProperty "decode58( encode58(i) ) = i" decodeEncode58
         , testProperty "decode58Chk( encode58Chk(i) ) = i" decodeEncode58Check
@@ -16,11 +16,11 @@ tests =
     ]
 
 decodeEncode58 :: ArbitraryByteString -> Bool
-decodeEncode58 (ArbitraryByteString bs) = 
+decodeEncode58 (ArbitraryByteString bs) =
     decodeBase58 (encodeBase58 bs) == Just bs
 
 decodeEncode58Check :: ArbitraryByteString -> Bool
-decodeEncode58Check (ArbitraryByteString bs) = 
+decodeEncode58Check (ArbitraryByteString bs) =
     decodeBase58Check (encodeBase58Check bs) == Just bs
 
 decEncAddr :: ArbitraryAddress -> Bool

@@ -1,10 +1,10 @@
-module Network.Haskoin.Node.Types 
+module Network.Haskoin.Node.Types
 ( Addr(..)
-, NetworkAddressTime 
+, NetworkAddressTime
 , Alert(..)
 , GetData(..)
 , Inv(..)
-, InvVector(..) 
+, InvVector(..)
 , InvType(..)
 , NetworkAddress(..)
 , NotFound(..)
@@ -25,7 +25,7 @@ import Control.Applicative ((<$>),(<*>))
 
 import Data.Word (Word32, Word64)
 import Data.Binary (Binary, get, put)
-import Data.Binary.Get 
+import Data.Binary.Get
     ( Get
     , getWord8
     , getWord16le
@@ -37,7 +37,7 @@ import Data.Binary.Get
     , getByteString
     , isEmpty
     )
-import Data.Binary.Put 
+import Data.Binary.Put
     ( Put
     , putWord8
     , putWord16le
@@ -48,7 +48,7 @@ import Data.Binary.Put
     , putWord64le
     , putByteString
     )
-import qualified Data.ByteString as BS 
+import qualified Data.ByteString as BS
     ( ByteString
     , length
     , takeWhile
@@ -57,7 +57,7 @@ import qualified Data.ByteString as BS
     )
 import Network.Socket (SockAddr (SockAddrInet, SockAddrInet6))
 
-import Network.Haskoin.Util 
+import Network.Haskoin.Util
 import Network.Haskoin.Crypto.BigWord
 
 -- | Network address with a timestamp
@@ -65,19 +65,19 @@ type NetworkAddressTime = (Word32, NetworkAddress)
 
 -- | Provides information on known nodes in the bitcoin network. An 'Addr'
 -- type is sent inside a 'Message' as a response to a 'GetAddr' message.
-data Addr = 
-    Addr { 
+data Addr =
+    Addr {
            -- List of addresses of other nodes on the network with timestamps.
-           addrList :: ![NetworkAddressTime] 
-         } 
+           addrList :: ![NetworkAddressTime]
+         }
     deriving (Eq, Show)
 
 instance Binary Addr where
 
     get = Addr <$> (repList =<< get)
-      where 
+      where
         repList (VarInt c) = replicateM (fromIntegral c) action
-        action             = liftM2 (,) getWord32le get 
+        action             = liftM2 (,) getWord32le get
 
     put (Addr xs) = do
         put $ VarInt $ fromIntegral $ length xs
@@ -86,9 +86,9 @@ instance Binary Addr where
 -- | Data type describing signed messages that can be sent between bitcoin
 -- nodes to display important notifications to end users about the health of
 -- the network.
-data Alert = 
+data Alert =
     Alert {
-          -- | Alert payload. 
+          -- | Alert payload.
             alertPayload   :: !VarString
           -- | ECDSA signature of the payload
           , alertSignature :: !VarString
@@ -108,11 +108,11 @@ instance Binary Alert where
 -- wille be either a 'Block' or a 'Tx' message depending on the type of the
 -- object referenced by the hash. Usually, 'GetData' messages are sent after a
 -- node receives an 'Inv' message to obtain information on unknown object
--- hashes. 
-data GetData = 
+-- hashes.
+data GetData =
     GetData {
-              -- | List of object hashes 
-              getDataList :: ![InvVector] 
+              -- | List of object hashes
+              getDataList :: ![InvVector]
             } deriving (Eq, Show, Read)
 
 instance NFData GetData where
@@ -121,7 +121,7 @@ instance NFData GetData where
 instance Binary GetData where
 
     get = GetData <$> (repList =<< get)
-      where 
+      where
         repList (VarInt c) = replicateM (fromIntegral c) get
 
     put (GetData xs) = do
@@ -131,10 +131,10 @@ instance Binary GetData where
 -- | 'Inv' messages are used by nodes to advertise their knowledge of new
 -- objects by publishing a list of hashes. 'Inv' messages can be sent
 -- unsolicited or in response to a 'GetBlocks' message.
-data Inv = 
-    Inv { 
+data Inv =
+    Inv {
         -- | Inventory vectors
-          invList :: ![InvVector] 
+          invList :: ![InvVector]
         } deriving (Eq, Show, Read)
 
 instance NFData Inv where
@@ -143,17 +143,17 @@ instance NFData Inv where
 instance Binary Inv where
 
     get = Inv <$> (repList =<< get)
-      where 
+      where
         repList (VarInt c) = replicateM (fromIntegral c) get
 
     put (Inv xs) = do
         put $ VarInt $ fromIntegral $ length xs
         forM_ xs put
 
--- | Data type identifying the type of an inventory vector. 
-data InvType 
+-- | Data type identifying the type of an inventory vector.
+data InvType
     = InvError -- ^ Error. Data containing this type can be ignored.
-    | InvTx    -- ^ InvVector hash is related to a transaction 
+    | InvTx    -- ^ InvVector hash is related to a transaction
     | InvBlock -- ^ InvVector hash is related to a block
     | InvMerkleBlock -- ^ InvVector has is related to a merkle block
     deriving (Eq, Show, Read)
@@ -163,7 +163,7 @@ instance NFData InvType where rnf x = seq x ()
 instance Binary InvType where
 
     get = go =<< getWord32le
-      where 
+      where
         go x = case x of
             0 -> return InvError
             1 -> return InvTx
@@ -178,9 +178,9 @@ instance Binary InvType where
                 InvMerkleBlock -> 3
 
 -- | Invectory vectors represent hashes identifying objects such as a 'Block'
--- or a 'Tx'. They are sent inside messages to notify other peers about 
+-- or a 'Tx'. They are sent inside messages to notify other peers about
 -- new data or data they have requested.
-data InvVector = 
+data InvVector =
     InvVector {
                 -- | Type of the object referenced by this inventory vector
                 invType :: !InvType
@@ -200,7 +200,7 @@ instance Binary InvVector where
 -- <http://en.wikipedia.org/wiki/IPv6#IPv4-mapped_IPv6_addresses>. Sometimes,
 -- timestamps are sent together with the 'NetworkAddress' such as in the 'Addr'
 -- data type.
-data NetworkAddress = 
+data NetworkAddress =
     NetworkAddress {
                    -- | Bitmask of services available for this address
                      naServices :: !Word64
@@ -252,10 +252,10 @@ instance Binary NetworkAddress where
 -- whe one of the requested objects could not be retrieved. This could happen,
 -- for example, if a tranasaction was requested and was not available in the
 -- memory pool of the receiving node.
-data NotFound = 
+data NotFound =
     NotFound {
              -- | Inventory vectors related to this request
-               notFoundList :: ![InvVector] 
+               notFoundList :: ![InvVector]
              } deriving (Eq, Show, Read)
 
 instance NFData NotFound where
@@ -264,7 +264,7 @@ instance NFData NotFound where
 instance Binary NotFound where
 
     get = NotFound <$> (repList =<< get)
-      where 
+      where
         repList (VarInt c) = replicateM (fromIntegral c) get
 
     put (NotFound xs) = do
@@ -273,22 +273,22 @@ instance Binary NotFound where
 
 -- | A Ping message is sent to bitcoin peers to check if a TCP\/IP connection
 -- is still valid.
-newtype Ping = 
-    Ping { 
+newtype Ping =
+    Ping {
            -- | A random nonce used to identify the recipient of the ping
-           -- request once a Pong response is received.  
-           pingNonce :: Word64 
+           -- request once a Pong response is received.
+           pingNonce :: Word64
          } deriving (Eq, Show, Read)
 
 instance NFData Ping where
     rnf (Ping n) = rnf n
 
 -- | A Pong message is sent as a response to a ping message.
-newtype Pong = 
-    Pong { 
+newtype Pong =
+    Pong {
            -- | When responding to a Ping request, the nonce from the Ping
            -- is copied in the Pong response.
-           pongNonce :: Word64 
+           pongNonce :: Word64
          } deriving (Eq, Show, Read)
 
 instance NFData Pong where
@@ -304,7 +304,7 @@ instance Binary Pong where
 
 -- | The reject message is sent when messages are rejected by a peer.
 data Reject =
-    Reject { 
+    Reject {
              -- | Type of message rejected
              rejectMessage :: !MessageCommand
              -- | Code related to the rejected message
@@ -316,7 +316,7 @@ data Reject =
            } deriving (Eq, Show, Read)
 
 
-data RejectCode 
+data RejectCode
     = RejectMalformed
     | RejectInvalid
     | RejectObsolete
@@ -355,19 +355,19 @@ instance Binary RejectCode where
 
 -- | Convenience function to build a Reject message
 reject :: MessageCommand -> RejectCode -> String -> Reject
-reject cmd code reason = 
+reject cmd code reason =
     Reject cmd code (VarString $ stringToBS reason) BS.empty
 
 instance Binary Reject where
 
     get = get >>= \(VarString bs) -> case stringToCommand $ bsToString bs of
-        Just cmd -> Reject cmd <$> get <*> get <*> maybeData 
-        _ -> fail $ unwords 
+        Just cmd -> Reject cmd <$> get <*> get <*> maybeData
+        _ -> fail $ unwords
             [ "Reason get: Invalid message command"
             , bsToString bs
             ]
       where
-        maybeData = isEmpty >>= \done -> 
+        maybeData = isEmpty >>= \done ->
             if done then return BS.empty else getByteString 32
 
     put (Reject cmd code reason dat) = do
@@ -377,7 +377,7 @@ instance Binary Reject where
         unless (BS.null dat) $ putByteString dat
 
 -- | Data type representing a variable length integer. The 'VarInt' type
--- usually precedes an array or a string that can vary in length. 
+-- usually precedes an array or a string that can vary in length.
 newtype VarInt = VarInt { getVarInt :: Word64 }
     deriving (Eq, Show, Read)
 
@@ -387,14 +387,14 @@ instance NFData VarInt where
 instance Binary VarInt where
 
     get = VarInt <$> ( getWord8 >>= go )
-      where 
+      where
         go 0xff = getWord64le
         go 0xfe = fromIntegral <$> getWord32le
         go 0xfd = fromIntegral <$> getWord16le
         go x    = fromIntegral <$> return x
 
     put (VarInt x)
-        | x < 0xfd = 
+        | x < 0xfd =
             putWord8 $ fromIntegral x
         | x <= 0xffff = do
             putWord8 0xfd
@@ -417,7 +417,7 @@ instance NFData VarString where
 instance Binary VarString where
 
     get = VarString <$> (readBS =<< get)
-      where 
+      where
         readBS (VarInt len) = getByteString (fromIntegral len)
 
     put (VarString bs) = do
@@ -427,7 +427,7 @@ instance Binary VarString where
 -- | When a bitcoin node creates an outgoing connection to another node,
 -- the first message it will send is a 'Version' message. The other node
 -- will similarly respond with it's own 'Version' message.
-data Version = 
+data Version =
     Version {
               -- | Protocol version being used by the node.
               version     :: !Word32
@@ -453,7 +453,7 @@ data Version =
             } deriving (Eq, Show)
 
 instance NFData Version where
-    rnf Version{..} = 
+    rnf Version{..} =
         rnf version `seq`
         rnf services `seq`
         rnf timestamp `seq`
@@ -475,7 +475,7 @@ instance Binary Version where
                   <*> get
                   <*> getWord32le
                   <*> (go =<< isEmpty)
-      where 
+      where
         go True  = return True
         go False = getBool
 
@@ -492,38 +492,38 @@ instance Binary Version where
 
 getBool :: Get Bool
 getBool = go =<< getWord8
-  where 
+  where
     go 0 = return False
     go _ = return True
 
-putBool :: Bool -> Put 
+putBool :: Bool -> Put
 putBool True  = putWord8 1
 putBool False = putWord8 0
 
 -- | A 'MessageCommand' is included in a 'MessageHeader' in order to identify
--- the type of message present in the payload. This allows the message 
+-- the type of message present in the payload. This allows the message
 -- de-serialization code to know how to decode a particular message payload.
 -- Every valid 'Message' constructor has a corresponding 'MessageCommand'
 -- constructor.
-data MessageCommand 
-    = MCVersion 
-    | MCVerAck 
-    | MCAddr 
-    | MCInv 
-    | MCGetData 
-    | MCNotFound 
-    | MCGetBlocks 
-    | MCGetHeaders 
-    | MCTx 
-    | MCBlock 
+data MessageCommand
+    = MCVersion
+    | MCVerAck
+    | MCAddr
+    | MCInv
+    | MCGetData
+    | MCNotFound
+    | MCGetBlocks
+    | MCGetHeaders
+    | MCTx
+    | MCBlock
     | MCMerkleBlock
-    | MCHeaders 
-    | MCGetAddr 
+    | MCHeaders
+    | MCGetAddr
     | MCFilterLoad
     | MCFilterAdd
     | MCFilterClear
-    | MCPing 
-    | MCPong 
+    | MCPing
+    | MCPong
     | MCAlert
     | MCMempool
     | MCReject
@@ -532,9 +532,9 @@ data MessageCommand
 instance NFData MessageCommand where rnf x = seq x ()
 
 instance Binary MessageCommand where
-    
+
     get = go =<< getByteString 12
-      where 
+      where
         go bs = case stringToCommand $ unpackCommand bs of
             Just cmd -> return cmd
             Nothing  -> fail "get MessageCommand : Invalid command"

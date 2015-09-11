@@ -7,7 +7,7 @@ import Test.Framework.Providers.HUnit (testCase)
 import Data.Maybe (fromJust)
 
 import Network.Haskoin.Crypto
-import Network.Haskoin.Util 
+import Network.Haskoin.Util
 import Network.Haskoin.Internals (fromMnemonic)
 
 tests :: [Test]

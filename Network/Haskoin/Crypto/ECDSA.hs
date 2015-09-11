@@ -30,24 +30,24 @@ import Data.Binary (Binary, get, put)
 import Data.Binary.Put (putWord8, putByteString)
 import Data.Binary.Get (getWord8)
 
-import qualified Data.ByteString as BS 
+import qualified Data.ByteString as BS
     ( ByteString
     , length
     , hGet
     , empty
     )
-  
-import Network.Haskoin.Util 
+
+import Network.Haskoin.Util
 import Network.Haskoin.Constants
-import Network.Haskoin.Crypto.Hash 
-import Network.Haskoin.Crypto.Keys 
-import Network.Haskoin.Crypto.Point 
-import Network.Haskoin.Crypto.BigWord 
+import Network.Haskoin.Crypto.Hash
+import Network.Haskoin.Crypto.Keys
+import Network.Haskoin.Crypto.Point
+import Network.Haskoin.Crypto.BigWord
 
 -- | Internal state of the 'SecretT' monad
 type SecretState m = (WorkingState, (Int -> m BS.ByteString))
 
--- | StateT monad stack tracking the internal state of HMAC DRBG 
+-- | StateT monad stack tracking the internal state of HMAC DRBG
 -- pseudo random number generator using SHA-256. The 'SecretT' monad is
 -- run with the 'withSource' function by providing it a source of entropy.
 type SecretT m = S.StateT (SecretState m) m
@@ -94,22 +94,22 @@ nextSecret = do
 -- | Produce a new 'PrvKey' randomly from the 'SecretT' monad.
 genPrvKey :: Monad m => SecretT m PrvKey
 genPrvKey = liftM (fromJust . makePrvKey . toInteger) nextSecret
-        
+
 -- Section 3.2.1 http://www.secg.org/download/aid-780/sec1-v2.pdf
 -- Produce a new private/public key pair from the 'SecretT' monad.
 genKeyPair :: Monad m => SecretT m (FieldN, Point)
 genKeyPair = do
-    -- 3.2.1.1 
+    -- 3.2.1.1
     d <- nextSecret
     -- 3.2.1.2
     let q = mulPoint d curveG
     -- 3.2.1.3
     return (d,q)
 
--- | Data type representing an ECDSA signature. 
-data Signature = 
-    Signature { sigR :: !FieldN 
-              , sigS :: !FieldN 
+-- | Data type representing an ECDSA signature.
+data Signature =
+    Signature { sigR :: !FieldN
+              , sigS :: !FieldN
               }
     deriving (Read, Show, Eq)
 
@@ -120,7 +120,7 @@ instance NFData Signature where
 -- | Safely sign a message inside the 'SecretT' monad. The 'SecretT' monad will
 -- generate a new nonce for each signature.
 signMsg :: Monad m => Word256 -> PrvKey -> SecretT m Signature
-signMsg h d 
+signMsg h d
     | fromPrvKey d == 0 = error "signMsg: Invalid private key 0"
     | otherwise = do
         -- 4.1.3.1
@@ -136,17 +136,17 @@ detSignMsg :: Word256 -> PrvKey -> Signature
 detSignMsg h d
     | fromPrvKey d == 0 = error "detSignMsg: Invalid private key 0"
     | otherwise = go $ hmacDRBGNew (encodePrvKey d) (encode' h) BS.empty
-  where 
+  where
     go ws = case hmacDRBGGen ws 32 BS.empty of
         (_, Nothing)  -> error "detSignMsg: No suitable K value found"
-        (ws', Just k) -> 
+        (ws', Just k) ->
             let kI   = bsToInteger k
                 p    = mulPoint (fromInteger kI) curveG
                 sigM = unsafeSignMsg h (prvKeyFieldN d) (fromInteger kI,p)
                 in if isIntegerValidKey kI
                        then fromMaybe (go ws') sigM
                        else go ws'
-          
+
 -- Signs a message by providing the nonce
 -- Re-using the same nonce twice will expose the private keys
 -- Use signMsg within the SecretT monad or detSignMsg instead
@@ -180,7 +180,7 @@ verifySig h (Signature r s) q = case getAffine p of
     Nothing      -> False
     -- 4.1.4.7 / 4.1.4.8
     (Just (x,_)) -> (fromIntegral x :: FieldN) == r
-  where 
+  where
     -- 4.1.4.2 / 4.1.4.3
     e  = (fromIntegral h :: FieldN)
     -- 4.1.4.4
@@ -199,7 +199,7 @@ instance Binary Signature where
     get = do
         t <- getWord8
         -- 0x30 is DER sequence type
-        unless (t == 0x30) (fail $ 
+        unless (t == 0x30) (fail $
             "Bad DER identifier byte " ++ (show t) ++ ". Expecting 0x30")
         l <- getWord8
         -- Length = (33 + 1 identifier byte + 1 length byte) * 2

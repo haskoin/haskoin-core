@@ -8,7 +8,7 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 import Data.Bits ((.&.), shiftR)
 import Data.Binary (Binary)
 import Data.Word (Word32)
-import qualified Data.ByteString as BS 
+import qualified Data.ByteString as BS
     ( ByteString
     , empty
     , append
@@ -18,12 +18,12 @@ import qualified Data.ByteString as BS
 
 import Network.Haskoin.Test
 import Network.Haskoin.Crypto
-import Network.Haskoin.Util 
+import Network.Haskoin.Util
 import Network.Haskoin.Internals (fromMnemonic, getBits)
 
 
 tests :: [Test]
-tests = 
+tests =
     [ testGroup "Encode mnemonic"
         [ testProperty "128-bit entropy -> 12 words" toMnemonic128
         , testProperty "160-bit entropy -> 18 words" toMnemonic160

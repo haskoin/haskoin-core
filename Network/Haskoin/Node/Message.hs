@@ -1,6 +1,6 @@
-module Network.Haskoin.Node.Message 
-( Message(..) 
-, MessageHeader(..) 
+module Network.Haskoin.Node.Message
+( Message(..)
+, MessageHeader(..)
 ) where
 
 import Control.DeepSeq (NFData, rnf)
@@ -9,19 +9,19 @@ import Control.Applicative ((<$>),(<*>))
 
 import Data.Word (Word32)
 import Data.Binary (Binary, get, put)
-import Data.Binary.Get 
+import Data.Binary.Get
     ( lookAhead
     , getByteString
     , getWord32le
     , getWord32be
     )
-import Data.Binary.Put 
+import Data.Binary.Put
     ( putByteString
     , putWord32le
     , putWord32be
     )
-import qualified Data.ByteString as BS 
-    ( length 
+import qualified Data.ByteString as BS
+    ( length
     , append
     , empty
     )
@@ -30,16 +30,16 @@ import Network.Haskoin.Node.Types
 import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Block.Types
 import Network.Haskoin.Block.Merkle
-import Network.Haskoin.Crypto.Hash 
+import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Node.Bloom
 import Network.Haskoin.Constants
-import Network.Haskoin.Util 
+import Network.Haskoin.Util
 
 -- | Data type representing the header of a 'Message'. All messages sent between
 -- nodes contain a message header.
-data MessageHeader = 
+data MessageHeader =
     MessageHeader {
-                  -- | Network magic bytes. It is used to differentiate 
+                  -- | Network magic bytes. It is used to differentiate
                   -- messages meant for different bitcoin networks, such as
                   -- prodnet and testnet.
                     headMagic       :: !Word32
@@ -48,7 +48,7 @@ data MessageHeader =
                   , headCmd         :: !MessageCommand
                   -- | Byte length of the payload.
                   , headPayloadSize :: !Word32
-                  -- | Checksum of the payload. 
+                  -- | Checksum of the payload.
                   , headChecksum    :: !CheckSum32
                   } deriving (Eq, Show, Read)
 
@@ -74,25 +74,25 @@ instance Binary MessageHeader where
 -- serialized with message headers. Serializing a 'Message' value will
 -- include the 'MessageHeader' with the correct checksum value automatically.
 -- No need to add the 'MessageHeader' separately.
-data Message 
-    = MVersion !Version 
-    | MVerAck 
-    | MAddr !Addr 
-    | MInv !Inv 
-    | MGetData !GetData 
-    | MNotFound !NotFound 
-    | MGetBlocks !GetBlocks 
-    | MGetHeaders !GetHeaders 
-    | MTx !Tx 
-    | MBlock !Block 
-    | MMerkleBlock !MerkleBlock 
-    | MHeaders !Headers 
-    | MGetAddr 
+data Message
+    = MVersion !Version
+    | MVerAck
+    | MAddr !Addr
+    | MInv !Inv
+    | MGetData !GetData
+    | MNotFound !NotFound
+    | MGetBlocks !GetBlocks
+    | MGetHeaders !GetHeaders
+    | MTx !Tx
+    | MBlock !Block
+    | MMerkleBlock !MerkleBlock
+    | MHeaders !Headers
+    | MGetAddr
     | MFilterLoad !FilterLoad
     | MFilterAdd !FilterAdd
     | MFilterClear
-    | MPing !Ping 
-    | MPong !Pong 
+    | MPing !Ping
+    | MPong !Pong
     | MAlert !Alert
     | MMempool
     | MReject !Reject
@@ -105,9 +105,9 @@ instance Binary Message where
         bs <- lookAhead $ getByteString $ fromIntegral len
         unless (mgc == networkMagic)
             (fail $ "get: Invalid network magic bytes: " ++ (show mgc))
-        unless (chksum32 bs == chk) 
+        unless (chksum32 bs == chk)
             (fail $ "get: Invalid message checksum: " ++ (show chk))
-        if len > 0 
+        if len > 0
             then isolate (fromIntegral len) $ case cmd of
                 MCVersion     -> MVersion <$> get
                 MCAddr        -> MAddr <$> get
@@ -128,7 +128,7 @@ instance Binary Message where
                 MCReject      -> MReject <$> get
                 _             -> fail $ "get: Invalid command " ++ (show cmd)
             else case cmd of
-                MCGetAddr     -> return MGetAddr 
+                MCGetAddr     -> return MGetAddr
                 MCVerAck      -> return MVerAck
                 MCFilterClear -> return MFilterClear
                 MCMempool     -> return MMempool
@@ -161,4 +161,4 @@ instance Binary Message where
             len = fromIntegral $ BS.length payload
             header = MessageHeader networkMagic cmd len chk
         putByteString $ (encode' header) `BS.append` payload
-        
+

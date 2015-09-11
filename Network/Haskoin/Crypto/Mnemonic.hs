@@ -41,9 +41,9 @@ type Checksum = ByteString
 -- Output a mnemonic sentence.
 toMnemonic :: Entropy -> Either String Mnemonic
 toMnemonic ent = do
-    when (remainder /= 0) $ 
+    when (remainder /= 0) $
         Left "toMnemonic: entropy must be multiples of 4 bytes"
-    when (cs_len > 16) $ 
+    when (cs_len > 16) $
         Left "toMnemonic: maximum entropy is 64 bytes (512 bits)"
     when (isJust $ find (not . isAscii) ms) $
         Left "fromMnemonic: non-ASCII characters not supported"
@@ -61,15 +61,15 @@ fromMnemonic :: Mnemonic -> Either String Entropy
 fromMnemonic ms = do
     when (isJust $ find (not . isAscii) ms) $
         Left "fromMnemonic: non-ASCII characters not supported"
-    when (word_count > 48) $ 
+    when (word_count > 48) $
         Left $ "fromMnemonic: too many words: " ++ show word_count
-    when (word_count `mod` 3 /= 0) $ 
+    when (word_count `mod` 3 /= 0) $
         Left $ "fromMnemonic: wrong number of words: " ++ show word_count
     ms_bs <- indicesToBS =<< getIndices ms_words
     let (ms_ent, ms_cs) = BS.splitAt (ent_len * 4) ms_bs
         ms_cs_num = numCS cs_len ms_cs
         ent_cs_num = numCS cs_len $ calcCS cs_len ms_ent
-    when (ent_cs_num /= ms_cs_num) $ 
+    when (ent_cs_num /= ms_cs_num) $
         Left $ "fromMnemonic: checksum failed: " ++ sh ent_cs_num ms_cs_num
     return ms_ent
   where

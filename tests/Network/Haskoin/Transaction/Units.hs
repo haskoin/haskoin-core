@@ -16,23 +16,23 @@ import Network.Haskoin.Util
 
 tests :: [Test]
 tests =
-    [ testGroup "Computing TxID from Tx" 
+    [ testGroup "Computing TxID from Tx"
         ( map mapTxIDVec $ zip txIDVec [0..] )
-    , testGroup "Build PKHash Transaction (generated from bitcoind)" 
+    , testGroup "Build PKHash Transaction (generated from bitcoind)"
         ( map mapPKHashVec $ zip pkHashVec [0..] )
-    , testGroup "Verify transaction (bitcoind /test/data/tx_valid.json)" 
+    , testGroup "Verify transaction (bitcoind /test/data/tx_valid.json)"
         ( map mapVerifyVec $ zip verifyVec [0..] )
     ]
 
 mapTxIDVec :: ((String,String),Int) -> Test.Framework.Test
 mapTxIDVec (v,i) = testCase name $ runTxIDVec v
-  where 
+  where
     name = "Compute TxID " ++ (show i)
 
 runTxIDVec :: (String,String) -> Assertion
-runTxIDVec (tid,tx) = assertBool "TxID" $ 
+runTxIDVec (tid,tx) = assertBool "TxID" $
     (encodeTxHashLE $ txHash txBS) == tid
-  where 
+  where
     txBS = decode' $ fromJust $ hexToBS tx
 
 txIDVec :: [(String,String)]
@@ -57,25 +57,25 @@ mapPKHashVec (v,i) = testCase name $ runPKHashVec v
     where name = "Build PKHash Tx " ++ (show i)
 
 runPKHashVec :: ([(String,Word32)],[(String,Word64)],String) -> Assertion
-runPKHashVec (xs,ys,res) = 
+runPKHashVec (xs,ys,res) =
     assertBool "Build PKHash Tx" $ (bsToHex $ encode' tx) == res
     where tx = fromRight $ buildAddrTx (map f xs) ys
           f (tid,ix) = OutPoint (fromJust $ decodeTxHashLE tid) ix
 
 
-mapVerifyVec :: (([(String,String,String)],String),Int) 
+mapVerifyVec :: (([(String,String,String)],String),Int)
              -> Test.Framework.Test
 mapVerifyVec (v,i) = testCase name $ runVerifyVec v i
     where name = "Verify Tx " ++ (show i)
 
 runVerifyVec :: ([(String,String,String)],String) -> Int -> Assertion
-runVerifyVec (is,bsTx) i = 
+runVerifyVec (is,bsTx) i =
     assertBool name $ verifyStdTx tx $ map f is
     where name = "    > Verify transaction " ++ (show i)
           tx  = decode' (fromJust $ hexToBS bsTx)
-          f (o1,o2,bsScript) = 
+          f (o1,o2,bsScript) =
               let s  = fromRight $ decodeOutputBS $ fromJust $ hexToBS bsScript
-                  op = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS o1) 
+                  op = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS o1)
                                  (runGet' getWord32le $ fromJust $ hexToBS o2)
                   in (s,op)
 
@@ -114,10 +114,10 @@ pkHashVec =
 -- github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_valid.json
 
 verifyVec :: [([(String,String,String)],String)]
-verifyVec = 
+verifyVec =
     [
       -- It is of particular interest because it contains an invalidly-encoded signature which OpenSSL accepts
-      ( [ 
+      ( [
           ( "60a20bd93aa49ab4b28d514ec10b06e1829ce6818ec06cd3aabd013ebcdc4bb1"
           , "00000000"
           , "514104cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef58bbfbfaff7d8a473e7e2e6d317b87bafe8bde97e3cf8f065dec022b51d11fcdd0d348ac4410461cbdcc5409fb4b4d42b51d33381354d80e550078cb532a34bfa2fcfdeb7d76519aecc62770f5b0e4ef8551946d8a540911abe3e7854a26f39f58b25c15342af52ae"
@@ -158,7 +158,7 @@ verifyVec =
       )
       -- It results in signing the constant 1, instead of something generated based on the transaction,
       -- when the input doing the signing has an index greater than the maximum output index
-    , ( [ 
+    , ( [
           ( "0000000000000000000000000000000000000000000000000000000000000100"
           , "00000000"
           , "76a914e52b482f2faa8ecbf0db344f93c84ac908557f3388ac"

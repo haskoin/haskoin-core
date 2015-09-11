@@ -7,7 +7,7 @@ EvalScript and <https://en.bitcoin.it/wiki/Script>
 
 -}
 module Network.Haskoin.Script.Evaluator
-( 
+(
 -- * Script evaluation
   verifySpend
 , evalScript
@@ -48,7 +48,7 @@ import Data.Maybe ( mapMaybe, isJust )
 import Network.Haskoin.Crypto
 import Network.Haskoin.Script.Types
 import Network.Haskoin.Script.SigHash
-import Network.Haskoin.Util 
+import Network.Haskoin.Util
 import Network.Haskoin.Transaction.Types
 
 import Data.Binary (encode, decodeOrFail)
@@ -583,11 +583,11 @@ minimalPushEnforcer op = do
             False -> programError $ "Non-minimal data: " ++ (show op)
 
 checkMinimalPush :: ScriptOp -> Bool -- Putting in a maybe monad to avoid elif chain
-checkMinimalPush ( OP_PUSHDATA payload optype ) = 
+checkMinimalPush ( OP_PUSHDATA payload optype ) =
   let l = BS.length payload
       v = ( BS.unpack payload ) !! 0 in
-  if 
-     (BS.null payload)                     -- Check if could have used OP_0         
+  if
+     (BS.null payload)                     -- Check if could have used OP_0
      || (l == 1 && v <= 16 && v >= 1)   -- Could have used OP_{1,..,16}
      || (l == 1 && v == 0x81)           -- Could have used OP_1NEGATE
      || (l <= 75 && optype /= OPCODE)   -- Could have used direct push

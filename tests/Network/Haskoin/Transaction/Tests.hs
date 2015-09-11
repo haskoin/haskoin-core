@@ -13,9 +13,9 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 tests :: [Test]
-tests = 
+tests =
     [ testGroup "Transaction tests"
-        [ testProperty "decode . encode Txid" decEncTxid 
+        [ testProperty "decode . encode Txid" decEncTxid
         ]
     , testGroup "Building Transactions"
         [ testProperty "building address tx" testBuildAddrTx
@@ -40,7 +40,7 @@ testBuildAddrTx :: ArbitraryAddress -> ArbitrarySatoshi -> Bool
 testBuildAddrTx (ArbitraryAddress a) (ArbitrarySatoshi v) = case a of
     x@(PubKeyAddress _) -> Right (PayPKHash x) == out
     x@(ScriptAddress _) -> Right (PayScriptHash x) == out
-  where 
+  where
     tx  = buildAddrTx [] [(addrToBase58 a,v)]
     out = decodeOutputBS $ scriptOutput $ txOut (fromRight tx) !! 0
 
@@ -49,7 +49,7 @@ testGuessSize (ArbitraryAddrOnlyTx tx) =
     -- We compute an upper bound but it should be close enough to the real size
     -- We give 2 bytes of slack on every signature (1 on r and 1 on s)
     guess >= len && guess <= len + 2*delta
-  where 
+  where
     delta    = pki + (sum $ map fst msi)
     guess    = guessTxSize pki msi pkout msout
     len      = BS.length $ encode' tx
@@ -67,32 +67,32 @@ testChooseCoins :: Word64 -> Word64 -> [ArbitrarySatoshi] -> Bool
 testChooseCoins target kbfee coins = case chooseCoins target kbfee True coins of
     Right (chosen, change) ->
         let outSum = sum $ map coinValue chosen
-            fee    = getFee kbfee (length chosen) 
+            fee    = getFee kbfee (length chosen)
         in outSum == target + change + fee
-    Left _ -> 
-        let fee = getFee kbfee (length coins) 
+    Left _ ->
+        let fee = getFee kbfee (length coins)
         in target == 0 || s < target || s < target + fee
-  where 
+  where
     s  = sum $ map coinValue coins
 
-testChooseMSCoins :: Word64 -> Word64 
+testChooseMSCoins :: Word64 -> Word64
                   -> ArbitraryMSParam -> [ArbitrarySatoshi] -> Bool
-testChooseMSCoins target kbfee (ArbitraryMSParam m n) coins = 
+testChooseMSCoins target kbfee (ArbitraryMSParam m n) coins =
     case chooseMSCoins target kbfee (m,n) True coins of
         Right (chosen,change) ->
             let outSum = sum $ map coinValue chosen
-                fee    = getMSFee kbfee (m,n) (length chosen) 
+                fee    = getMSFee kbfee (m,n) (length chosen)
             in outSum == target + change + fee
-        Left _ -> 
-            let fee = getMSFee kbfee (m,n) (length coins) 
+        Left _ ->
+            let fee = getMSFee kbfee (m,n) (length coins)
             in target == 0 || s < target + fee
-  where 
+  where
     s  = sum $ map coinValue coins
 
 {- Signing Transactions -}
 
 testDetSignTx :: ArbitrarySigningData -> Bool
-testDetSignTx (ArbitrarySigningData tx sigis prv) = 
+testDetSignTx (ArbitrarySigningData tx sigis prv) =
     (not $ verifyStdTx tx verData)
         && (not $ verifyStdTx txSigP verData)
         && verifyStdTx txSigC verData
@@ -102,7 +102,7 @@ testDetSignTx (ArbitrarySigningData tx sigis prv) =
     verData = map (\(SigInput s o _ _) -> (s,o)) sigis
 
 testMergeTx :: ArbitraryPartialTxs -> Bool
-testMergeTx (ArbitraryPartialTxs txs os) = and 
+testMergeTx (ArbitraryPartialTxs txs os) = and
     [ isRight mergeRes
     , length (txIn mergedTx) == length os
     , if enoughSigs then isValid else not isValid

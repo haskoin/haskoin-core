@@ -5,7 +5,7 @@
   here: <http://en.bitcoin.it/wiki/Protocol_specification>
 -}
 module Network.Haskoin.Node
-( 
+(
   -- * Requesting data
   GetData(..)
 , Inv(..)

@@ -488,7 +488,7 @@ peerHeaderSyncLimit pid ph initLimit
     | otherwise = go initLimit Nothing
   where
     go limit prevM = peerHeaderSync pid ph prevM >>= \actionM -> case actionM of
-        Just action -> 
+        Just action ->
             -- If we received a side chain or a known chain, we want to
             -- continue szncing from this peer even if the limit has been
             -- reached.
@@ -496,7 +496,7 @@ peerHeaderSyncLimit pid ph initLimit
                 then go (limit - 1) actionM
                 -- We got a Just, so we can continue the download from
                 -- this peer
-                else return True 
+                else return True
         _ -> return False
 
 -- Sync all the headers from a given peer
@@ -562,7 +562,7 @@ peerHeaderSync pid ph prevM = do
 
         $(logDebug) $ formatPid pid ph $ unwords
             [ "Requesting headers with block locator of size"
-            , show $ length loc 
+            , show $ length loc
             , "Start block:", encodeBlockHashLE $ head loc
             , "End block:", encodeBlockHashLE $ last loc
             ]
@@ -594,7 +594,7 @@ peerHeaderSync pid ph prevM = do
         return Nothing
     processHeaders (Headers hs) = do
         $(logDebug) $ formatPid pid ph $ unwords
-            [ "Received", show $ length hs, "headers." 
+            [ "Received", show $ length hs, "headers."
             , "Start blocks:", encodeBlockHashLE $ headerHash $ fst $ head hs
             , "End blocks:", encodeBlockHashLE $ headerHash $ fst $ last hs
             ]
@@ -612,7 +612,7 @@ peerHeaderSync pid ph prevM = do
                 nodes -> do
                     $(logInfo) $ formatPid pid ph $ unwords
                         [ "Received", show $ length nodes
-                        , "nodes in the action" 
+                        , "nodes in the action"
                         ]
                     let height = nodeHeaderHeight $ last nodes
                     case action of

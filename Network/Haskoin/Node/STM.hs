@@ -11,11 +11,11 @@ import Control.Concurrent (ThreadId)
 import Control.Concurrent.STM.Lock (Lock)
 import Control.DeepSeq (NFData(..))
 import qualified Control.Concurrent.STM.Lock as Lock (new)
-import Control.Concurrent.STM.TBMChan 
+import Control.Concurrent.STM.TBMChan
     (TBMChan, closeTBMChan, newTBMChan)
 import Control.Exception.Lifted
     (SomeException, Exception, fromException, throw, catch)
-import Control.Concurrent.STM 
+import Control.Concurrent.STM
     ( STM, TMVar, TVar, atomically, orElse
     , readTVar, writeTVar, newTVarIO, modifyTVar', newTVar
     , tryPutTMVar, takeTMVar, newEmptyTMVarIO, isEmptyTMVar, putTMVar
@@ -50,9 +50,9 @@ type PeerHostScore = Word32
 instance Show PeerId where
     show = show . hashUnique
 
-getNodeState :: (MonadIO m, MonadLogger m) 
-             => FilePath 
-             -> L.Options 
+getNodeState :: (MonadIO m, MonadLogger m)
+             => FilePath
+             -> L.Options
              -> m SharedNodeState
 getNodeState levelDBFilePath levelDBOptions = do
     -- Initialize the HeaderTree
@@ -74,9 +74,9 @@ getNodeState levelDBFilePath levelDBOptions = do
         sharedLevelDBLock   <- atomically Lock.new
         sharedBloomFilter   <- newTVarIO Nothing
         -- Find our best node in the HeaderTree
-        sharedBestHeader    <- newTVarIO =<< L.withDB 
-                                                levelDBFilePath 
-                                                levelDBOptions 
+        sharedBestHeader    <- newTVarIO =<< L.withDB
+                                                levelDBFilePath
+                                                levelDBOptions
                                                 (runReaderT getBestBlockHeader)
         sharedBestBlock     <- newTVarIO $ headerHash genesisHeader
         return SharedNodeState{..}
@@ -85,9 +85,9 @@ runNodeT :: Monad m => SharedNodeState -> NodeT m a -> m a
 runNodeT state action = runReaderT action state
 
 withNodeT :: (MonadIO m, MonadLogger m)
-          => FilePath 
-          -> L.Options 
-          -> NodeT m a 
+          => FilePath
+          -> L.Options
+          -> NodeT m a
           -> m a
 withNodeT fp opts action = flip runNodeT action =<< getNodeState fp opts
 
@@ -175,8 +175,8 @@ data PeerSession = PeerSession
 
 instance NFData PeerSession where
     rnf PeerSession{..} =
-        rnf peerSessionConnected `seq` 
-        rnf peerSessionVersion `seq` 
+        rnf peerSessionConnected `seq`
+        rnf peerSessionVersion `seq`
         rnf peerSessionHeight `seq`
         peerSessionChan `seq`
         rnf peerSessionHost `seq`
@@ -187,7 +187,7 @@ instance NFData PeerSession where
 data PeerHost = PeerHost
     { peerHost :: !String
     , peerPort :: !Int
-    } 
+    }
     deriving (Eq, Ord)
 
 $(deriveJSON (dropFieldLabel 4) ''PeerHost)
@@ -196,8 +196,8 @@ peerHostString :: PeerHost -> String
 peerHostString PeerHost{..} = concat [ peerHost, ":", show peerPort ]
 
 instance NFData PeerHost where
-    rnf PeerHost{..} = 
-        rnf peerHost `seq` 
+    rnf PeerHost{..} =
+        rnf peerHost `seq`
         rnf peerPort
 
 {- Node Status -}
@@ -271,10 +271,10 @@ newPeerSession pid sess = do
             sessTVar <- lift $ newTVar sess
             let newMap = M.insert pid sessTVar peerMap
             lift $ writeTVar peerMapTVar $! newMap
-    
+
 modifyPeerSession :: PeerId -> (PeerSession -> PeerSession) -> NodeT STM ()
 modifyPeerSession pid f = do
-    peerMap <- readTVarS sharedPeerMap 
+    peerMap <- readTVarS sharedPeerMap
     case M.lookup pid peerMap of
         Just sessTVar -> lift $ modifyTVar' sessTVar f
         _ -> return ()
@@ -295,7 +295,7 @@ removePeerSession pid = do
     lift $ writeTVar peerMapTVar $! newMap
     return sessM
 
-getHostSession :: PeerHost 
+getHostSession :: PeerHost
                -> NodeT STM (Maybe PeerHostSession)
 getHostSession ph = do
     hostMap <- readTVarS sharedHostMap
@@ -303,7 +303,7 @@ getHostSession ph = do
         Just hostSessionTVar -> liftM Just $ readTVar hostSessionTVar
         _ -> return Nothing
 
-modifyHostSession :: PeerHost 
+modifyHostSession :: PeerHost
                   -> (PeerHostSession -> PeerHostSession)
                   -> NodeT STM ()
 modifyHostSession ph f = do
@@ -394,7 +394,7 @@ instance Exception NodeException
 isNodeException :: SomeException -> Bool
 isNodeException se = isJust (fromException se :: Maybe NodeException)
 
-catchAny :: MonadBaseControl IO m 
+catchAny :: MonadBaseControl IO m
          => m a -> (SomeException -> m a) -> m a
 catchAny = catch
 

@@ -204,7 +204,7 @@ connectHeader bh adjustedTime commit = runEitherT $ do
     lift $ evalNewChain commit . (: []) =<< storeBlockHeader bh parNode
 
 evalNewChain :: HeaderTree m
-             => Bool 
+             => Bool
              -> [BlockHeaderNode]
              -> m BlockChainAction
 evalNewChain commit newNodes = do
@@ -215,7 +215,7 @@ evalNewChain commit newNodes = do
   where
     go (split, old, new)
         | null old && not (null new) = return $ BestChain new
-        | not (null old) && not (null new) = 
+        | not (null old) && not (null new) =
             return $ if nodeChainWork (last new) > nodeChainWork (last old)
                   then ChainReorg split old new
                   else SideChain $ split : new
@@ -475,7 +475,7 @@ blockLocatorHeight height = do
     ns <- liftM catMaybes $ forM (map fromIntegral is) getBlockHeaderByHeight
     return $ map nodeBlockHash ns ++ [headerHash genesisHeader]
   where
-    h = fromIntegral height 
+    h = fromIntegral height
 
 -- | Build a block locator starting from a side chain. We do not have access
 -- to the height index for the portion of the side chain so we build the

@@ -13,11 +13,11 @@ import Control.Monad.State (StateT, evalStateT, get, put)
 import Control.Concurrent (threadDelay, killThread, myThreadId)
 import qualified Control.Concurrent.STM.Lock as Lock (with)
 import Control.Exception.Lifted (fromException, finally, throwIO, throw)
-import Control.Concurrent.STM.TBMChan 
+import Control.Concurrent.STM.TBMChan
     ( TBMChan, writeTBMChan, closeTBMChan, newTBMChan )
-import Control.Concurrent.Async.Lifted 
+import Control.Concurrent.Async.Lifted
     ( race, withAsync, waitAnyCancel, link, waitCatch )
-import Control.Concurrent.STM 
+import Control.Concurrent.STM
     ( STM, atomically, readTVar, modifyTVar', swapTVar, retry, newTVarIO )
 
 import Data.List (nub, sort, sortBy)
@@ -33,9 +33,9 @@ import qualified Data.Conduit.Binary as CB (take)
 import qualified Data.ByteString.Char8 as C (pack)
 import qualified Data.ByteString as BS (ByteString, null, append)
 import qualified Data.ByteString.Lazy as BL (toStrict)
-import qualified Data.Map as M 
+import qualified Data.Map as M
     ( keys , lookup, assocs, elems, fromList, unionWith )
-import Data.Conduit.Network 
+import Data.Conduit.Network
     ( runGeneralTCPClient, appSink, appSource, clientSettings )
 
 import qualified Database.LevelDB.Base as L (DB, withDB)
@@ -52,24 +52,24 @@ import Network.Haskoin.Constants
 import Network.Haskoin.Util
 
 -- TODO: Move constants elsewhere ?
-minProtocolVersion :: Word32 
+minProtocolVersion :: Word32
 minProtocolVersion = 70001
 
 -- Start a reconnecting peer that will idle once the connection is established
--- and the handshake is performed. 
-startIdlePeer :: (MonadIO m, MonadLogger m, MonadBaseControl IO m) 
-              => PeerHost 
+-- and the handshake is performed.
+startIdlePeer :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
+              => PeerHost
               -> NodeT m ()
 startIdlePeer ph@PeerHost{..} = withPeerReconnect ph (const $ return ())
-        
+
 -- Start a peer that will try to reconnect when the connection is closed. This
 -- function takes a callback that will be called with the PeerId every time
 -- a new connection is establishes with the peer host. With reconnect using
 -- an exponential backoff. This function blocks until the peer cannot reconnect
 -- (either the peer is banned or we already have a peer connected to the
 -- given peer host).
-withPeerReconnect :: (MonadIO m, MonadLogger m, MonadBaseControl IO m) 
-                  => PeerHost 
+withPeerReconnect :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
+                  => PeerHost
                   -> (PeerId -> NodeT m ())
                   -> NodeT m ()
 withPeerReconnect ph@PeerHost{..} f = do
@@ -116,7 +116,7 @@ withPeerReconnect ph@PeerHost{..} f = do
 -- Start a peer with with the given peer host/peer id and initiate the
 -- network protocol handshake. This function will block until the peer
 -- connection is closed or an exception is raised.
-startPeer :: (MonadIO m, MonadLogger m, MonadBaseControl IO m) 
+startPeer :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
           => PeerId
           -> PeerHost
           -> NodeT m ()
@@ -169,19 +169,19 @@ startPeer pid ph@PeerHost{..} action = do
             sendMsg = (sourceTBMChan chan) $= encodeMessage $$ (appSink ad)
 
         withAsync (evalStateT recvMsg Nothing) $ \a1 -> link a1 >> do
-            $(logDebug) $ formatPid pid ph 
+            $(logDebug) $ formatPid pid ph
                 "Receiving message thread started..."
             withAsync sendMsg $ \a2 -> link a2 >> do
-                $(logDebug) $ formatPid pid ph 
+                $(logDebug) $ formatPid pid ph
                     "Sending message thread started..."
                 -- Perform the peer handshake before we continue
                 peerHandshake pid ph chan
                 -- Send the bloom filter if we have one
-                $(logDebug) $ formatPid pid ph 
+                $(logDebug) $ formatPid pid ph
                     "Sending the bloom filter if we have one"
                 atomicallyNodeT $ do
                     readTVarS sharedBloomFilter >>= \bloomM -> case bloomM of
-                        Just bloom -> 
+                        Just bloom ->
                             sendMessage pid $ MFilterLoad $ FilterLoad bloom
                         _ -> return ()
                 withAsync (peerPing pid ph) $ \a3 -> link a3 >> do
@@ -211,8 +211,8 @@ startPeer pid ph@PeerHost{..} action = do
 
 -- Return True if the PeerHost is banned
 isPeerHostBanned :: PeerHost -> NodeT STM Bool
-isPeerHostBanned ph = do 
-    hostMap <- readTVarS sharedHostMap  
+isPeerHostBanned ph = do
+    hostMap <- readTVarS sharedHostMap
     case M.lookup ph hostMap of
         Just sessTVar -> do
             sess <- lift $ readTVar sessTVar
@@ -229,7 +229,7 @@ isPeerHostConnected ph = do
 -- | Decode messages sent from the remote host and send them to the peers main
 -- message queue for processing. If we receive invalid messages, this function
 -- will also notify the PeerManager about a misbehaving remote host.
-decodeMessage 
+decodeMessage
     :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
     => PeerId
     -> PeerHost
@@ -251,14 +251,14 @@ decodeMessage pid ph = do
                     [ "Received message header of type", show cmd ]
                 payloadBytes <- BL.toStrict <$> (CB.take $ fromIntegral len)
                 case decodeToEither $ headerBytes `BS.append` payloadBytes of
-                    Left err -> lift . lift $ misbehaving pid ph moderateDoS $ 
+                    Left err -> lift . lift $ misbehaving pid ph moderateDoS $
                         unwords [ "Could not decode message payload:", err ]
                     Right msg -> lift $ processMessage pid ph msg
         decodeMessage pid ph
 
 -- Handle a message from a peer
 processMessage :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
-               => PeerId 
+               => PeerId
                -> PeerHost
                -> Message
                -> StateT (Maybe (MerkleBlock, MerkleTxs)) (NodeT m) ()
@@ -269,19 +269,19 @@ processMessage pid ph msg = checkMerkleEnd >> case msg of
             oldVerM <- liftM peerSessionVersion $ getPeerSession pid
             case oldVerM of
                 Just _ -> do
-                    _ <- trySendMessage pid $ MReject $ reject 
+                    _ <- trySendMessage pid $ MReject $ reject
                         MCVersion RejectDuplicate "Duplicate version message"
-                    return $ 
+                    return $
                         misbehaving pid ph minorDoS "Duplicate version message"
                 Nothing -> do
-                    modifyPeerSession pid $ \s -> 
+                    modifyPeerSession pid $ \s ->
                         s{ peerSessionVersion = Just v }
                     return $ return ()
         $(logDebug) $ formatPid pid ph "Done processing MVersion message"
     MPing (Ping nonce) -> lift $ do
         $(logDebug) $ formatPid pid ph "Processing MPing message"
         -- Just reply to the Ping with a Pong message
-        _ <- atomicallyNodeT $ trySendMessage pid $ MPong $ Pong nonce 
+        _ <- atomicallyNodeT $ trySendMessage pid $ MPong $ Pong nonce
         return ()
     MPong (Pong nonce) -> lift $ do
         $(logDebug) $ formatPid pid ph "Processing MPong message"
@@ -302,7 +302,7 @@ processMessage pid ph msg = checkMerkleEnd >> case msg of
             txids  = nub $ map (fromIntegral . invHash) txlist
         $(logDebug) $ formatPid pid ph $ unlines $
             "Received GetData request for transactions"
-            : map (("  " ++) . encodeTxHashLE) txids 
+            : map (("  " ++) . encodeTxHashLE) txids
         -- Add the txids to the GetData request map
         mapTVar <- asks sharedTxGetData
         liftIO . atomically $ modifyTVar' mapTVar $ \datMap ->
@@ -317,12 +317,12 @@ processMessage pid ph msg = checkMerkleEnd >> case msg of
                 then do
                     $(logDebug) $ formatPid pid ph $ unwords
                         [ "Received merkle tx", encodeTxHashLE $ txHash tx ]
-                    liftIO . atomically $ 
+                    liftIO . atomically $
                         writeTBMChan peerSessionMerkleChan $ Right tx
                 else do
                     $(logDebug) $ formatPid pid ph $ unwords
                         [ "Received tx broadcast (ending a merkle block)"
-                        , encodeTxHashLE $ txHash tx 
+                        , encodeTxHashLE $ txHash tx
                         ]
                     endMerkle
                     liftIO . atomically $ writeTBMChan txChan (pid, ph, tx)
@@ -333,25 +333,25 @@ processMessage pid ph msg = checkMerkleEnd >> case msg of
     MMerkleBlock mb@(MerkleBlock mHead ntx hs fs) -> do
         $(logDebug) $ formatPid pid ph "Processing MMerkleBlock message"
         case extractMatches fs hs (fromIntegral ntx) of
-            Left err -> lift $ misbehaving pid ph severeDoS $ unwords 
+            Left err -> lift $ misbehaving pid ph severeDoS $ unwords
                 [ "Received an invalid merkle block:", err ]
-            Right (decodedRoot, mTxs) -> 
+            Right (decodedRoot, mTxs) ->
                 -- Make sure that the merkle roots match
                 if decodedRoot == merkleRoot mHead
                     then do
-                        $(logDebug) $ formatPid pid ph $ unwords 
+                        $(logDebug) $ formatPid pid ph $ unwords
                             [ "Received valid merkle block"
-                            , encodeBlockHashLE $ headerHash mHead 
+                            , encodeBlockHashLE $ headerHash mHead
                             ]
                         if null mTxs
                             -- Deliver the merkle block
                             then lift . atomicallyNodeT $ do
                                 PeerSession{..} <- getPeerSession pid
-                                lift $ writeTBMChan peerSessionMerkleChan $ 
+                                lift $ writeTBMChan peerSessionMerkleChan $
                                     Left (mb, [])
                             -- Buffer the merkle block until we received all txs
                             else put $! Just (mb, mTxs)
-                    else lift $ misbehaving pid ph severeDoS 
+                    else lift $ misbehaving pid ph severeDoS
                         "Received a merkle block with an invalid merkle root"
     _ -> return () -- Ignore other requests
   where
@@ -381,7 +381,7 @@ processInvMessage pid ph (Inv vs) = case tickleM of
         unless (null txlist) $ do
             forM_ txlist $ \tid -> $(logDebug) $ formatPid pid ph $ unwords
                 [ "Received transaction INV", encodeTxHashLE tid ]
-            -- We simply request the transactions. 
+            -- We simply request the transactions.
             -- TODO: Should we do something more elaborate here?
             atomicallyNodeT $ sendMessage pid $ MGetData $ GetData $
                 map (InvVector InvTx . fromIntegral) txlist
@@ -390,17 +390,17 @@ processInvMessage pid ph (Inv vs) = case tickleM of
                 "Received block INV"
                 : map (("  " ++) . encodeBlockHashLE) blocklist
             -- We ignore block INVs as we do headers-first sync
-            return () 
+            return ()
   where
     -- Single blockhash INV is a tickle
     tickleM = case blocklist of
         (h:[]) -> if null txlist then (Just h) else Nothing
         _ -> Nothing
     txlist :: [TxHash]
-    txlist = map (fromIntegral . invHash) $ 
+    txlist = map (fromIntegral . invHash) $
         filter ((== InvTx) . invType) vs
     blocklist :: [BlockHash]
-    blocklist = map (fromIntegral . invHash) $ 
+    blocklist = map (fromIntegral . invHash) $
         filter ((== InvBlock) . invType) vs
 
 -- | Encode message that are being sent to the remote host.
@@ -413,7 +413,7 @@ peerPing :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
          -> PeerHost
          -> NodeT m ()
 peerPing pid ph = forever $ do
-    $(logDebug) $ formatPid pid ph 
+    $(logDebug) $ formatPid pid ph
         "Waiting until the peer is available for sending pings..."
     atomicallyNodeT $ waitPeerAvailable pid
 
@@ -440,7 +440,7 @@ peerPing pid ph = forever $ do
                 modifyPeerSession pid $ \s -> s{ peerSessionScore = Just score }
                 return (diff, score)
             $(logDebug) $ formatPid pid ph $ unwords
-                [ "Got response to ping", show nonce 
+                [ "Got response to ping", show nonce
                 , "with time", show diff, "and score", show score
                 ]
         _ -> return ()
@@ -461,7 +461,7 @@ peerPing pid ph = forever $ do
             ]
         disconnectPeer pid ph
 
-peerHandshake :: (MonadIO m, MonadLogger m, MonadBaseControl IO m) 
+peerHandshake :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
               => PeerId
               -> PeerHost
               -> TBMChan Message
@@ -475,27 +475,27 @@ peerHandshake pid ph chan = do
     peerVer <- atomicallyNodeT $ waitPeerVersion pid
     $(logInfo) $ formatPid pid ph $ unlines
         [ unwords [ "Connected to peer host"
-                  , show $ naAddress $ addrSend peerVer 
+                  , show $ naAddress $ addrSend peerVer
                   ]
         , unwords [ "  version  :", show $ version peerVer ]
-        , unwords [ "  subVer   :", show $ userAgent peerVer ] 
+        , unwords [ "  subVer   :", show $ userAgent peerVer ]
         , unwords [ "  services :", show $ services peerVer ]
         , unwords [ "  time     :", show $ timestamp peerVer ]
         , unwords [ "  blocks   :", show $ startHeight peerVer ]
         ]
     -- Check the protocol version
     if version peerVer < minProtocolVersion
-        then misbehaving pid ph severeDoS $ unwords 
+        then misbehaving pid ph severeDoS $ unwords
             [ "Connected to a peer speaking protocol version"
             , show $ version peerVer
-            , "but we require at least" 
+            , "but we require at least"
             , show $ minProtocolVersion
             ]
         else do
             atomicallyNodeT $ do
                 -- Save the peers height and update the network height
                 modifyPeerSession pid $ \s ->
-                    s{ peerSessionHeight    = startHeight peerVer 
+                    s{ peerSessionHeight    = startHeight peerVer
                     , peerSessionConnected = True
                     }
                 updateNetworkHeight
@@ -513,14 +513,14 @@ peerHandshake pid ph chan = do
         time <- liftM floor $ liftIO getPOSIXTime
         rdmn <- liftIO randomIO -- nonce
         h    <- runHeaderTree bestBlockHeaderHeight
-        return $ Version { version     = 70001 
-                         , services    = 1 
+        return $ Version { version     = 70001
+                         , services    = 1
                          , timestamp   = time
-                         , addrRecv    = add 
-                         , addrSend    = add 
-                         , verNonce    = rdmn 
-                         , userAgent   = ua 
-                         , startHeight = h 
+                         , addrRecv    = add
+                         , addrSend    = add
+                         , verNonce    = rdmn
+                         , userAgent   = ua
+                         , startHeight = h
                          , relay       = False
                          }
 
@@ -534,8 +534,8 @@ waitPeerVersion pid = do
 
 -- Delete the session of a peer and send a kill signal to the peers thread.
 -- Unless the peer is banned, the peer will try to reconnect.
-disconnectPeer :: (MonadIO m, MonadLogger m) 
-               => PeerId 
+disconnectPeer :: (MonadIO m, MonadLogger m)
+               => PeerId
                -> PeerHost
                -> NodeT m ()
 disconnectPeer pid ph = do
@@ -597,21 +597,21 @@ getPeersAtNetHeight = do
     getPeersAtHeight (== height)
 
 -- Find the best peer at the given height
-getPeersAtHeight :: (BlockHeight -> Bool) 
+getPeersAtHeight :: (BlockHeight -> Bool)
                  -> NodeT STM [(PeerId, PeerSession)]
 getPeersAtHeight cmpHeight = do
     peers <- liftM (filter f) getPeers
     -- Choose the peer with the best score
     return $ sortBy s peers
   where
-    f (_, p) = 
+    f (_, p) =
         peerSessionConnected p &&       -- Only connected peers
         isJust (peerSessionScore p) &&  -- Only peers with scores
         cmpHeight (peerSessionHeight p) -- Only peers at the required height
     s (_,a) (_,b) = peerSessionScore a `compare` peerSessionScore b
 
 -- Send a message to a peer only if it is connected. It returns True on
--- success. 
+-- success.
 trySendMessage :: PeerId -> Message -> NodeT STM Bool
 trySendMessage pid msg = do
     sessM <- tryGetPeerSession pid
@@ -626,7 +626,7 @@ trySendMessage pid msg = do
 -- success. Throws an exception if the peer does not exist or is not connected.
 sendMessage :: PeerId -> Message -> NodeT STM ()
 sendMessage pid msg = do
-    PeerSession{..} <- getPeerSession pid 
+    PeerSession{..} <- getPeerSession pid
     if peerSessionConnected
         then lift $ writeTBMChan peerSessionChan msg
         else throw $ NodeExceptionPeerNotConnected pid
@@ -640,15 +640,15 @@ sendMessageAll msg = do
 getNetworkHeight :: NodeT STM BlockHeight
 getNetworkHeight = readTVarS sharedNetworkHeight
 
-misbehaving :: (MonadIO m, MonadLogger m) 
-            => PeerId 
+misbehaving :: (MonadIO m, MonadLogger m)
+            => PeerId
             -> PeerHost
-            -> (PeerHostScore -> PeerHostScore) 
+            -> (PeerHostScore -> PeerHostScore)
             -> String
             -> NodeT m ()
 misbehaving pid ph f msg = do
     sessM <- atomicallyNodeT $ do
-        modifyHostSession ph $ \s -> 
+        modifyHostSession ph $ \s ->
             s{ peerHostSessionScore =  f $! peerHostSessionScore s }
         getHostSession ph
     case sessM of
@@ -658,7 +658,7 @@ misbehaving pid ph f msg = do
                 , unwords [ "  Score:", show peerHostSessionScore ]
                 , unwords [ "  Reason:", msg ]
                 ]
-            when (isHostScoreBanned peerHostSessionScore) $ 
+            when (isHostScoreBanned peerHostSessionScore) $
                 disconnectPeer pid ph
         _ -> return ()
 
@@ -688,8 +688,8 @@ raceTimeout sec cleanup action = do
         Left _ -> liftM Left cleanup
 
 formatPid :: PeerId -> PeerHost -> String -> Text
-formatPid pid ph str = pack $ concat 
+formatPid pid ph str = pack $ concat
     [ "[Peer ", show $ hashUnique pid
-    , " | ", peerHostString ph, "] ", str 
+    , " | ", peerHostString ph, "] ", str
     ]
 

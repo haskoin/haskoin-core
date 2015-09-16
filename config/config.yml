@@ -6,7 +6,7 @@ bind-socket: ipc://hw.sock
 # daemon does not start and only the local wallet is available to query.
 server-mode: online
 
-# False positive rate for the bloom filters. 
+# False positive rate for the bloom filters.
 bloom-false-positive: 0.00001
 
 # Database connection information.
@@ -35,7 +35,7 @@ database:
             port:     5432
 
 # List of trusted bitcoin full-nodes to connect to.
-bitcoin-full-nodes: 
+bitcoin-full-nodes:
     testnet:
         - host: testnet-seed.alexykot.me
           port: 18333
@@ -58,7 +58,7 @@ bitcoin-full-nodes:
           port: 8333
         - host: seed.bitcoin.jonasschnelli.ch
           port: 8333
-      
+
 
 # Log file name. Either absolute path or relative to work-dir/network
 log-file: hw.log

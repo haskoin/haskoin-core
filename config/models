@@ -1,4 +1,4 @@
-KeyRing 
+KeyRing
     name Text maxlen=200
     master XPrvKey maxlen=200
     created UTCTime

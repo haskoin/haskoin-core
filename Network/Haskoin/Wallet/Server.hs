@@ -5,7 +5,7 @@ module Network.Haskoin.Wallet.Server
 ) where
 
 import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
-import System.ZMQ4 
+import System.ZMQ4
     ( Rep(..), Socket, bind, receive, send
     ,  withContext, withSocket
     )
@@ -13,7 +13,7 @@ import System.ZMQ4
 import Control.Applicative ((<$>))
 import Control.Monad (when, void, unless, forM, forM_, forever, liftM, join)
 import Control.Monad.Trans (MonadIO, lift, liftIO)
-import Control.Monad.Trans.Control 
+import Control.Monad.Trans.Control
     ( StM, MonadBaseControl, control
     , liftBaseOp, liftBaseOp_, liftBaseWith, restoreM
     , liftBaseOpDiscard
@@ -25,13 +25,13 @@ import Control.Monad.Trans.Resource (MonadResource, runResourceT)
 import Control.DeepSeq (NFData(..), ($!!))
 import Control.Concurrent.STM.TBMChan (writeTBMChan)
 import Control.Concurrent.STM (TVar, atomically, retry, readTVar, newTVarIO)
-import Control.Concurrent.Async.Lifted 
+import Control.Concurrent.Async.Lifted
     (async, link, mapConcurrently, cancel, waitAnyCancel)
 import Control.Exception.Lifted
     (SomeException(..), ErrorCall(..), catches, finally)
 import qualified Control.Exception.Lifted as E (Handler(..))
 import qualified Control.Concurrent.MSem as Sem (MSem, new)
-import Control.Monad.Logger 
+import Control.Monad.Logger
     ( MonadLogger
     , runStdoutLoggingT
     , LogLevel(..)
@@ -52,14 +52,14 @@ import Data.Aeson (Value, toJSON, decode, encode)
 import Data.Conduit (Sink, await, awaitForever, ($$))
 import Data.Conduit.TMChan (TBMChan, sourceTBMChan)
 import Data.Word (Word32)
-import qualified Data.Map.Strict as M 
+import qualified Data.Map.Strict as M
     (Map, unionWith, null, toList, empty, fromListWith, assocs, elems)
 
 import Database.Persist (get)
 import Database.Persist.Sql (ConnectionPool, runMigration)
 import qualified Database.LevelDB.Base as DB (Options(..), open, defaultOptions)
 
-import Database.Esqueleto 
+import Database.Esqueleto
     ( Esqueleto, SqlQuery, SqlExpr, SqlBackend, SqlEntity
     , InnerJoin(..), LeftOuterJoin(..), OrderBy, update, sum_, groupBy
     , select, from, where_, val, valList, sub_select, countRows, count
@@ -93,7 +93,7 @@ import Network.Haskoin.Wallet.Server.Handler
 import Network.Haskoin.Wallet.Database
 
 data EventSession = EventSession
-    { eventBatchSize :: !Int 
+    { eventBatchSize :: !Int
     , eventNewAddrs  :: !(M.Map KeyRingAccountId Word32)
     }
     deriving (Eq, Show, Read)
@@ -118,7 +118,7 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
             -- Initialize the node state
             nodeState <- getNodeState fp opts
             -- Spin up the node threads
-            as <- mapM async 
+            as <- mapM async
                 -- Start the SPV node
                 [ runNodeT nodeState $ do
                     -- Get our bloom filter
@@ -165,10 +165,10 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
             (_, h) <- getBestBlock
             if h == 0 then firstAddrTime else return Nothing
         maybe (return ()) (atomicallyNodeT . rescanTs) fcM
-            
+
         -- Start the merkle sync
-        merkleSync sem pool 500 
-    -- Run a thread that will re-broadcast pending transactions 
+        merkleSync sem pool 500
+    -- Run a thread that will re-broadcast pending transactions
     broadcastPendingTxs nodeState sem pool = runNodeT nodeState $ forever $ do
         -- Wait until we are synced
         atomicallyNodeT $ do
@@ -185,7 +185,7 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
         unless (null newAddrs) $ do
             $(logInfo) $ pack $ unwords
                 [ "Generated", show $ length newAddrs
-                , "new addresses while importing the tx." 
+                , "new addresses while importing the tx."
                 , "Updating the bloom filter"
                 ]
             (bloom, _, _) <- runDBPool sem pool getBloomFilter
@@ -202,12 +202,12 @@ initDatabase cfg = do
     pool <- getDatabasePool dbCfg
     -- Initialize wallet database
     runDBPool sem pool $ do
-        _ <- runMigration migrateWallet 
+        _ <- runMigration migrateWallet
         initWallet $ configBloomFP cfg
     -- Return the semaphrone and the connection pool
     return (sem, pool)
 
-merkleSync 
+merkleSync
     :: ( MonadLogger m
        , MonadIO m
        , MonadBaseControl IO m
@@ -219,7 +219,7 @@ merkleSync
     -> Int
     -> NodeT m ()
 merkleSync sem pool bSize = do
-    -- Get our best block 
+    -- Get our best block
     (best, merkleHeight) <- runDBPool sem pool getBestBlock
     $(logDebug) "Starting merkle batch download"
     -- Wait for a new block or a rescan
@@ -234,7 +234,7 @@ merkleSync sem pool bSize = do
     unless (M.null aMap) $ do
         $(logInfo) $ pack $ unwords
             [ "Generated", show $ sum $ M.elems aMap
-            , "new addresses while importing the merkle block." 
+            , "new addresses while importing the merkle block."
             , "Sending our bloom filter."
             ]
         (bloom, _, _) <- runDBPool sem pool getBloomFilter
@@ -252,7 +252,7 @@ merkleSync sem pool bSize = do
         [ "Changing block batch size from", show bSize, "to", show newBSize ]
 
     -- Did we receive all the merkles that we asked for ?
-    let missing = (headerHash <$> lastMerkleM) /= 
+    let missing = (headerHash <$> lastMerkleM) /=
                   Just (nodeBlockHash $ last $ actionNodes action)
 
     when missing $ $(logWarn) $ pack $ unwords
@@ -268,9 +268,9 @@ merkleSync sem pool bSize = do
         $(logDebug) "Done importing merkles into the wallet"
         logBlockChainAction action
 
-    merkleSync sem pool newBSize 
+    merkleSync sem pool newBSize
   where
-    go lastMerkleM mTxsAcc aMap = await >>= \resM -> case resM of 
+    go lastMerkleM mTxsAcc aMap = await >>= \resM -> case resM of
         Just (Right tx) -> do
             $(logDebug) $ pack $ unwords
                 [ "Importing merkle tx", encodeTxHashLE $ txHash tx ]
@@ -285,7 +285,7 @@ merkleSync sem pool bSize = do
         Just (Left ((MerkleBlock mHead _ _ _), mTxs)) -> do
             $(logDebug) $ pack $ unwords
                 [ "Buffering merkle block"
-                , encodeBlockHashLE $ headerHash mHead 
+                , encodeBlockHashLE $ headerHash mHead
                 ]
             go (Just mHead) (mTxs:mTxsAcc) aMap
         -- Done processing this batch. Reverse mTxsAcc as we have been
@@ -297,9 +297,9 @@ merkleSync sem pool bSize = do
     shouldRescan aMap = do
         -- Try to find an account whos gap is smaller than the number of new
         -- addresses generated in that account.
-        res <- runDBPool sem pool $ splitSelect (M.assocs aMap) $ \ks -> 
+        res <- runDBPool sem pool $ splitSelect (M.assocs aMap) $ \ks ->
             from $ \a -> do
-                let andCond (ai, cnt) = 
+                let andCond (ai, cnt) =
                         a ^. KeyRingAccountId ==. val ai &&.
                         a ^. KeyRingAccountGap <=. val cnt
                 where_ $ join2 $ map andCond ks
@@ -314,7 +314,7 @@ merkleSync sem pool bSize = do
             ]
         ChainReorg _ o n -> $(logInfo) $ pack $ unlines $
             [ "Chain reorg."
-            , "Orphaned blocks:" 
+            , "Orphaned blocks:"
             ]
             ++ map (("  " ++) . encodeBlockHashLE . nodeBlockHash) o
             ++ [ "New blocks:" ]
@@ -324,9 +324,9 @@ merkleSync sem pool bSize = do
                         ]
             ]
         SideChain n -> $(logWarn) $ pack $ unlines $
-            "Side chain:" : 
+            "Side chain:" :
             map (("  " ++) . encodeBlockHashLE . nodeBlockHash) n
-        
+
 maybeDetach :: Config -> IO () -> IO ()
 maybeDetach cfg action =
     if configDetach cfg then runDetached pidFile logFile action else action
@@ -348,26 +348,26 @@ runWalletApp :: ( MonadIO m
                 , MonadBase IO m
                 , MonadThrow m
                 , MonadResource m
-                ) 
+                )
              => HandlerSession -> m ()
-runWalletApp session = 
+runWalletApp session =
     liftBaseOpDiscard withContext $ \ctx ->
         liftBaseOpDiscard (withSocket ctx Rep) $ \sock -> do
             liftIO $ bind sock $ configBind $ handlerConfig session
             forever $ do
                 bs  <- liftIO $ receive sock
                 res <- case decode $ toLazyBS bs of
-                    Just r  -> catchErrors $ 
+                    Just r  -> catchErrors $
                         runHandler session $ dispatchRequest r
                     Nothing -> return $ ResponseError "Could not decode request"
                 liftIO $ send sock [] $ toStrictBS $ encode res
   where
     catchErrors m = catches m
-        [ E.Handler $ \(WalletException err) -> 
+        [ E.Handler $ \(WalletException err) ->
             return $ ResponseError $ pack err
-        , E.Handler $ \(ErrorCall err) -> 
+        , E.Handler $ \(ErrorCall err) ->
             return $ ResponseError $ pack err
-        , E.Handler $ \(SomeException exc) -> 
+        , E.Handler $ \(SomeException exc) ->
             return $ ResponseError $ pack $ show exc
         ]
 
@@ -377,7 +377,7 @@ dispatchRequest :: ( MonadLogger m
                    , MonadThrow m
                    , MonadResource m
                    , MonadIO m
-                   ) 
+                   )
                 => WalletRequest -> Handler m (WalletResponse Value)
 dispatchRequest req = liftM ResponseValid $ case req of
     GetKeyRingsR                     -> getKeyRingsR

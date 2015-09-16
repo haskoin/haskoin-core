@@ -1,4 +1,4 @@
-module Network.Haskoin.Wallet.Model 
+module Network.Haskoin.Wallet.Model
 ( -- Database types
   KeyRing(..)
 , KeyRingId
@@ -35,7 +35,7 @@ import Data.Text (Text)
 
 import Database.Persist (Entity(..), EntityField, Unique)
 import Database.Persist.Quasi (lowerCaseSettings)
-import Database.Persist.TH 
+import Database.Persist.TH
     ( share
     , mkPersist
     , sqlSettings
@@ -43,11 +43,11 @@ import Database.Persist.TH
     , persistFileWith
     )
 
-import Network.Haskoin.Wallet.Types 
+import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Block
-import Network.Haskoin.Crypto 
+import Network.Haskoin.Crypto
 import Network.Haskoin.Node
 import Network.Haskoin.Node.HeaderTree
 

@@ -13,7 +13,7 @@ databaseEngine :: Text
 databaseEngine = "mysql"
 
 getDatabasePool :: DatabaseConfType -> IO ConnectionPool
-getDatabasePool conf = runNoLoggingT $ 
+getDatabasePool conf = runNoLoggingT $
     createMySQLPool (myConnInfo conf) (myPoolSize conf)
 
 paramLimit :: Int

@@ -9,7 +9,7 @@ import Network.Haskoin.Wallet.Arbitrary ()
 import Network.Haskoin.Wallet
 
 tests :: [Test]
-tests = 
+tests =
     [ testGroup "Serialize & de-serialize types to JSON"
         [ testProperty "AccountType" (metaID :: AccountType -> Bool)
         , testProperty "TxAction" (metaID :: TxAction -> Bool)

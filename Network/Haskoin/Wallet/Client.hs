@@ -3,7 +3,7 @@ module Network.Haskoin.Wallet.Client (clientMain) where
 import System.FilePath ((</>))
 import System.Directory (createDirectoryIfMissing)
 import System.Posix.Directory (changeWorkingDirectory)
-import System.Posix.Files 
+import System.Posix.Files
     ( setFileMode
     , setFileCreationMask
     , unionFileModes
@@ -14,7 +14,7 @@ import System.Posix.Files
     )
 import System.Environment (getArgs, getEnv, lookupEnv)
 import System.Info (os)
-import System.Console.GetOpt 
+import System.Console.GetOpt
     ( getOpt
     , usageInfo
     , OptDescr (Option)
@@ -47,7 +47,7 @@ cmdHelp :: [String]
 cmdHelp = lines $ bsToString $ $(embedFile "config/help")
 
 warningMsg :: String
-warningMsg = unwords 
+warningMsg = unwords
     [ "!!!", "This software is experimental."
     , "Use only small amounts of Bitcoins.", "!!!"
     ]
@@ -60,14 +60,14 @@ options =
     [ Option "k" ["keyring"]
         (ReqArg (\s cfg -> cfg { configKeyRing = T.pack s }) "NAME") $
         "Default: " ++ T.unpack (configKeyRing def)
-    , Option "c" ["count"] 
+    , Option "c" ["count"]
         (ReqArg (\s cfg -> cfg { configCount = read s }) "INT") $
         "Items per page. Default: " ++ show (configCount def)
-    , Option "m" ["minconf"] 
+    , Option "m" ["minconf"]
         (ReqArg (\s cfg -> cfg { configMinConf = read s }) "INT") $
         "Minimum confirmations. Default: "
             ++ show (configMinConf def)
-    , Option "f" ["fee"] 
+    , Option "f" ["fee"]
         (ReqArg (\s cfg -> cfg { configFee = read s }) "INT") $
         "Fee per kilobyte. Default: " ++ show (configFee def)
     , Option "R" ["rcptfee"]
@@ -137,7 +137,7 @@ getConfig fs = do
     let cfgFile = if isAbsolute (configFile initCfg)
                      then configFile initCfg
                      else dir </> configFile initCfg
-    
+
     -- Get configuration from file, if it exists
     e <- fileExist cfgFile
     if e then do
@@ -228,4 +228,4 @@ appDir = case os of "mingw"   -> windows
         case homeM of
             Just home -> return $ home </> ".hw"
             Nothing -> return "."
-        
+

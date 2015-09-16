@@ -1,4 +1,4 @@
-module Network.Haskoin.Wallet.Settings 
+module Network.Haskoin.Wallet.Settings
 ( SPVMode(..)
 , OutputFormat(..)
 , Config(..)
@@ -18,7 +18,7 @@ import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Traversable as V (mapM)
 import qualified Data.ByteString as BS (ByteString)
 import qualified Data.Text as T (Text)
-import Data.Aeson 
+import Data.Aeson
     ( Value(..)
     , FromJSON
     , Result(..)
@@ -47,7 +47,7 @@ data Config = Config
     , configCount         :: !Word32
     -- ^ Output size of commands
     , configMinConf       :: !Word32
-    -- ^ Minimum number of confirmations 
+    -- ^ Minimum number of confirmations
     , configSignTx        :: !Bool
     -- ^ Sign transactions
     , configFee           :: !Word64
@@ -92,7 +92,7 @@ data Config = Config
     -- ^ Log level
     , configVerbose       :: !Bool
     -- ^ Verbose
-    } 
+    }
 
 configBS :: BS.ByteString
 configBS = $(embedFile "config/config.yml")
@@ -121,7 +121,7 @@ instance FromJSON Config where
         configReversePaging  <- o .:? "reverse-paging"
                                   .!= configReversePaging def
         configFormat   <- f =<< o .:? "display-format"
-        configConnect        <- o .:? "connect-uri"          
+        configConnect        <- o .:? "connect-uri"
                                   .!= configConnect def
         configDetach         <- o .:? "detach-server"
                                   .!= configDetach def
@@ -129,13 +129,13 @@ instance FromJSON Config where
                                   .!= configTestnet def
         configDir            <- o .:? "work-dir"
                                   .!= configDir def
-        configBind           <- o .:? "bind-socket"          
+        configBind           <- o .:? "bind-socket"
                                   .!= configBind def
         configBTCNodes <- g =<< o .:? "bitcoin-full-nodes"
         configMode     <- h =<< o .:? "server-mode"
-        configBloomFP        <- o .:? "bloom-false-positive" 
+        configBloomFP        <- o .:? "bloom-false-positive"
                                   .!= configBloomFP def
-        configDatabase <- i =<< o .:? "database" 
+        configDatabase <- i =<< o .:? "database"
         configLogFile        <- o .:? "log-file"
                                   .!= configLogFile def
         configPidFile        <- o .:? "pid-file"

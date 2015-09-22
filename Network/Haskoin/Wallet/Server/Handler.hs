@@ -375,6 +375,9 @@ postAddressesR keyRingName name i addrType = do
         cnt <- generateAddrs accE addrType i
         return (keyRing, acc, cnt)
 
+    -- Update the bloom filter
+    whenOnline updateNodeFilter
+
     return $ Just $ toJSON $ JsonWithAccount
         { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
         , withAccountAccount = toJsonAccount acc

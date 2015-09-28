@@ -39,7 +39,7 @@ import Test.QuickCheck
     , arbitrarySizedBoundedIntegral
     )
 
-import Control.Monad (unless, guard, mzero, (<=<))
+import Control.Monad (when, unless, guard, mzero, (<=<))
 import Control.DeepSeq (NFData, rnf)
 
 import Data.Bits (Bits(..), FiniteBits(..))
@@ -311,6 +311,8 @@ instance Binary (BigWord ModN) where
         unless (t == 0x02) (fail $
             "Bad DER identifier byte " ++ (show t) ++ ". Expecting 0x02" )
         l <- getWord8
+        when (l == 0) $ fail "Indeterminate form unsupported"
+        unless (l < 0x80) $ fail "Multi-octect length not supported"
         i <- bsToInteger <$> getByteString (fromIntegral l)
         unless (isIntegerValidKey i) $ fail $
             "Invalid fieldN element: " ++ (show i)
@@ -320,14 +322,12 @@ instance Binary (BigWord ModN) where
     put (BigWord i) = do
         putWord8 0x02 -- Integer type
         let b = integerToBS i
-            l = fromIntegral $ BS.length b
-        if BS.head b >= 0x80
-            then do
-                putWord8 (l + 1)
-                putWord8 0x00
-            else do
-                putWord8 l
+            l = if BS.head b >= 0x80 then BS.length b + 1 else BS.length b
+        when (l >= 0x80) $ fail "Integer too big"
+        putWord8 $ fromIntegral l
+        when (BS.head b >= 0x80) $ putWord8 0x00
         putByteString b
+
 
 instance Binary (BigWord ModP) where
 

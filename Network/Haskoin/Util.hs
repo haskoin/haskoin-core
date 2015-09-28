@@ -61,7 +61,6 @@ import Control.Monad.State (MonadState, get, put)
 
 import Data.Word (Word8)
 import Data.Bits ((.|.), shiftL, shiftR)
-import Data.List (unfoldr)
 import Data.Char (toLower)
 import Data.Binary.Put (Put, runPut)
 import Data.Binary (Binary, encode, decode, decodeOrFail)
@@ -73,7 +72,7 @@ import qualified Data.ByteString.Lazy as BL (ByteString, toChunks, fromChunks)
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as C (pack, unpack)
 import qualified Data.ByteString as BS
-    (ByteString, concat, pack, unpack, null, empty)
+    (ByteString, concat, pack, null, empty, foldr', reverse, unfoldr)
 
 -- ByteString helpers
 
@@ -95,7 +94,7 @@ bsToString = C.unpack
 
 -- | Decode a big endian Integer from a bytestring
 bsToInteger :: BS.ByteString -> Integer
-bsToInteger = (foldr f 0) . reverse . BS.unpack
+bsToInteger = BS.foldr' f 0 . BS.reverse
   where
     f w n = (toInteger w) .|. shiftL n 8
 
@@ -103,7 +102,7 @@ bsToInteger = (foldr f 0) . reverse . BS.unpack
 integerToBS :: Integer -> BS.ByteString
 integerToBS 0 = BS.pack [0]
 integerToBS i
-    | i > 0     = BS.pack $ reverse $ unfoldr f i
+    | i > 0     = BS.reverse $ BS.unfoldr f i
     | otherwise = error "integerToBS not defined for negative values"
   where
     f 0 = Nothing

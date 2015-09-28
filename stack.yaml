@@ -4,11 +4,11 @@ packages:
 - location:
     git: https://github.com/haskoin/haskoin.git
     commit: b71bcfa4701e129b69776e6951fe0bb7c8b26ea3
-    extra-dep: true
+  extra-dep: true
 - location:
     git: https://github.com/haskoin/haskoin-node.git
-    commit: edc1dba4226b16c8e53d1a1e64e4f47ac5faff8d
-    extra-dep: true
+    commit: bf5fa569ed2f66acd5bff346fa4cd796bdcecfcd
+  extra-dep: true
 extra-deps:
 - daemons-0.2.1
 - leveldb-haskell-0.6.3

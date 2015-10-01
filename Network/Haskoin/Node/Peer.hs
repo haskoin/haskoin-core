@@ -56,28 +56,29 @@ minProtocolVersion = 70001
 
 -- Start a reconnecting peer that will idle once the connection is established
 -- and the handshake is performed.
-startIdlePeer :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
-              => PeerHost
-              -> NodeT m ()
-startIdlePeer ph@PeerHost{..} = withPeerReconnect ph (const $ return ())
+startPeer :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
+          => PeerHost
+          -> NodeT m ()
+startPeer ph@PeerHost{..} = do
+    -- Create a new unique ID for this peer
+    pid <- liftIO newUnique
+    -- Start the peer with the given PID
+    startPeerPid pid ph
 
--- Start a peer that will try to reconnect when the connection is closed. This
--- function takes a callback that will be called with the PeerId every time
--- a new connection is establishes with the peer host. With reconnect using
--- an exponential backoff. This function blocks until the peer cannot reconnect
--- (either the peer is banned or we already have a peer connected to the
--- given peer host).
-withPeerReconnect :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
-                  => PeerHost
-                  -> (PeerId -> NodeT m ())
-                  -> NodeT m ()
-withPeerReconnect ph@PeerHost{..} f = do
+-- Start a peer that will try to reconnect when the connection is closed. The
+-- reconnections are performed using an expoential backoff time. This function
+-- blocks until the peer cannot reconnect (either the peer is banned or we
+-- already have a peer connected to the given peer host).
+startReconnectPeer :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
+                   => PeerHost
+                   -> NodeT m ()
+startReconnectPeer ph@PeerHost{..} = do
     -- Create a new unique ID for this peer
     pid <- liftIO newUnique
     -- Wait if there is a reconnection timeout
     maybeWaitReconnect pid
     -- Launch the peer
-    withAsync (startPeer pid ph $ f pid) $ \a -> do
+    withAsync (startPeerPid pid ph) $ \a -> do
         resE <- liftIO $ waitCatch a
         reconnect <- case resE of
             Left se -> do
@@ -91,7 +92,7 @@ withPeerReconnect ph@PeerHost{..} f = do
                 $(logDebug) $ formatPid pid ph "Peer thread stopped"
                 return True
         -- Try to reconnect
-        when reconnect $ withPeerReconnect ph f
+        when reconnect $ startReconnectPeer ph
   where
     maybeWaitReconnect pid = do
         reconnect <- atomicallyNodeT $ do
@@ -115,12 +116,11 @@ withPeerReconnect ph@PeerHost{..} f = do
 -- Start a peer with with the given peer host/peer id and initiate the
 -- network protocol handshake. This function will block until the peer
 -- connection is closed or an exception is raised.
-startPeer :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
-          => PeerId
-          -> PeerHost
-          -> NodeT m ()
-          -> NodeT m ()
-startPeer pid ph@PeerHost{..} action = do
+startPeerPid :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
+             => PeerId
+             -> PeerHost
+             -> NodeT m ()
+startPeerPid pid ph@PeerHost{..} = do
     -- Check if the peer host is banned
     banned <- atomicallyNodeT $ isPeerHostBanned ph
     when banned $ do
@@ -174,20 +174,27 @@ startPeer pid ph@PeerHost{..} action = do
                 $(logDebug) $ formatPid pid ph
                     "Sending message thread started..."
                 -- Perform the peer handshake before we continue
-                peerHandshake pid ph chan
-                -- Send the bloom filter if we have one
-                $(logDebug) $ formatPid pid ph
-                    "Sending the bloom filter if we have one"
-                atomicallyNodeT $ do
-                    readTVarS sharedBloomFilter >>= \bloomM -> case bloomM of
-                        Just bloom ->
-                            sendMessage pid $ MFilterLoad $ FilterLoad bloom
-                        _ -> return ()
-                withAsync (peerPing pid ph) $ \a3 -> link a3 >> do
-                    $(logDebug) $ formatPid pid ph "Ping thread started"
-                    action -- Run the user supplied function
-                    _ <- liftIO $ waitAnyCancel [a1, a2, a3]
-                    return ()
+                -- Timeout after 2 minutes
+                resE <- raceTimeout 120 (disconnectPeer pid ph)
+                                        (peerHandshake pid ph chan)
+                case resE of
+                    Left _ -> $(logError) $ formatPid pid ph
+                        "Peer timed out during the connection handshake"
+                    _ -> do
+                        -- Send the bloom filter if we have one
+                        $(logDebug) $ formatPid pid ph
+                            "Sending the bloom filter if we have one"
+                        atomicallyNodeT $ do
+                            bloomM <- readTVarS sharedBloomFilter
+                            case bloomM of
+                                Just bloom ->
+                                    sendMessage pid $
+                                        MFilterLoad $ FilterLoad bloom
+                                _ -> return ()
+                        withAsync (peerPing pid ph) $ \a3 -> link a3 >> do
+                            $(logDebug) $ formatPid pid ph "Ping thread started"
+                            _ <- liftIO $ waitAnyCancel [a1, a2, a3]
+                            return ()
 
     cleanupPeer = do
         $(logWarn) $ formatPid pid ph "Peer is closing. Running cleanup..."
@@ -676,9 +683,9 @@ raceTimeout :: (MonadIO m, MonadBaseControl IO m)
             => Int
                -- ^ Timeout value in seconds
             -> m a
-               -- ^ Action to run until the time runs out
-            -> m b
                -- ^ Action to run if the main action times out
+            -> m b
+               -- ^ Action to run until the time runs out
             -> m (Either a b)
 raceTimeout sec cleanup action = do
     resE <- race (liftIO $ threadDelay (sec * 1000000)) action

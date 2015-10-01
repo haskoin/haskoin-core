@@ -43,12 +43,12 @@ startSPVNode :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
              -> BloomFilter
              -> NodeT m ()
 startSPVNode hosts bloom = do
+    $(logDebug) "Setting our bloom filter in the node"
+    atomicallyNodeT $ sendBloomFilter bloom
     $(logDebug) $ pack $ unwords
         [ "Starting SPV node with", show $ length hosts, "hosts" ]
-    withAsync (void $ mapConcurrently startIdlePeer hosts) $ \a1 -> do
+    withAsync (void $ mapConcurrently startReconnectPeer hosts) $ \a1 -> do
         link a1
-        $(logDebug) "Setting our bloom filter in the node"
-        atomicallyNodeT $ sendBloomFilter bloom
         $(logInfo) "Starting the initial header sync"
         headerSync
         $(logInfo) "Initial header sync complete"
@@ -131,6 +131,8 @@ merkleDownload
                , Source (NodeT m) (Either (MerkleBlock, MerkleTxs) Tx)
                )
 merkleDownload bh batchSize = do
+    -- Store the best block received from the wallet for information only.
+    -- This will be displayed in `hw status`
     atomicallyNodeT $ writeTVarS sharedBestBlock bh
     merkleCheckSync
     rescanTMVar <- asks sharedRescan
@@ -313,6 +315,7 @@ tryMerkleDwnBlock bh batchSize = do
         pidM <- readTVarS sharedHeaderPeer
         allPeers <- getPeersAtHeight (>= height)
         let f (pid,_) = Just pid /= pidM
+            -- Filter out the peer syncing headers (if there is one)
             peers = filter f allPeers
         case listToMaybe peers of
             Just res@(pid,_) -> do
@@ -349,11 +352,15 @@ peerMerkleDownload pid ph action = do
     checkOrder _ [] = lift . atomicallyNodeT $
         writeTVarS sharedMerklePeer Nothing
     checkOrder chan (bid:bids) = do
-        resM <- liftIO . atomically $ readTBMChan chan
+        -- Read the channel or disconnect the peer after waiting for 2 minutes
+        resM <- lift $ raceTimeout 120
+                    (disconnectPeer pid ph)
+                    (liftIO . atomically $ readTBMChan chan)
         case resM of
             -- Forward transactions
-            Just res@(Right _) -> yield res >> checkOrder chan (bid:bids)
-            Just res@(Left (MerkleBlock mHead _ _ _, _)) -> do
+            Right (Just res@(Right _)) ->
+                yield res >> checkOrder chan (bid:bids)
+            Right (Just res@(Left (MerkleBlock mHead _ _ _, _))) -> do
                 let mBid = headerHash mHead
                 $(logDebug) $ formatPid pid ph $ unwords
                     [ "Processing merkle block", encodeBlockHashLE mBid ]
@@ -574,8 +581,8 @@ peerHeaderSync pid ph prevM = do
 
         -- Wait 120 seconds for a response or time out
         continueE <- raceTimeout 120
-                     (misbehaving pid ph minorDoS "HeaderSync Timeout")
-                     waitHeaders
+                        (disconnectPeer pid ph)
+                        waitHeaders
 
         -- Return True if we can continue syncing from this peer
         return $ either (const Nothing) id continueE
@@ -609,7 +616,7 @@ peerHeaderSync pid ph prevM = do
                         [ "Received an empty blockchain action:", show action ]
                     return Nothing
                 nodes -> do
-                    $(logInfo) $ formatPid pid ph $ unwords
+                    $(logDebug) $ formatPid pid ph $ unwords
                         [ "Received", show $ length nodes
                         , "nodes in the action"
                         ]

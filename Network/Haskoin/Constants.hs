@@ -30,6 +30,7 @@ module Network.Haskoin.Constants
 ) where
 
 import Data.Bits (shiftR)
+import Data.ByteString (ByteString)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Word (Word8, Word32, Word64)
 import Network.Haskoin.Crypto.BigWord
@@ -47,7 +48,7 @@ data Network = Network
     , getGenesisHeader              :: !BlockHeader
     , getMaxBlockSize               :: !Int
     , getMaxSatoshi                 :: !Word64
-    , getHaskoinUserAgent           :: !String
+    , getHaskoinUserAgent           :: !ByteString
     , getDefaultPort                :: !Int
     , getAllowMinDifficultyBlocks   :: !Bool
     , getPowLimit                   :: !Integer
@@ -116,7 +117,7 @@ maxSatoshi :: Word64
 maxSatoshi = getMaxSatoshi getNetwork
 
 -- | User agent string
-haskoinUserAgent :: String
+haskoinUserAgent :: ByteString
 haskoinUserAgent = getHaskoinUserAgent getNetwork
 
 -- | Default port

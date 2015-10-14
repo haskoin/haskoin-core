@@ -33,12 +33,12 @@ import Control.Applicative ((<|>))
 
 import Data.List (sortBy)
 import Data.Foldable (foldrM)
-import qualified Data.Text as T
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-    ( ByteString
-    , head
+    ( head
     , singleton
     )
+import Data.String.Conversions (cs)
 import Data.Aeson
     ( Value (String)
     , FromJSON
@@ -72,11 +72,11 @@ data ScriptOutput =
 
 instance FromJSON ScriptOutput where
     parseJSON = withText "scriptoutput" $ \t -> either fail return $
-        maybeToEither "scriptoutput not hex"
-          (hexToBS $ T.unpack t) >>= decodeOutputBS
+        maybeToEither "scriptoutput not hex" (decodeHex $ cs t) >>=
+        decodeOutputBS
 
 instance ToJSON ScriptOutput where
-    toJSON = String . T.pack . bsToHex . encodeOutputBS
+    toJSON = String . cs . encodeHex . encodeOutputBS
 
 instance NFData ScriptOutput where
     rnf (PayPK k) = rnf k
@@ -151,7 +151,7 @@ encodeOutput s = Script $ case s of
             error "encodeOutput: PubKeyAddress is invalid in PayScriptHash"
 
 -- | Similar to 'encodeOutput' but encodes to a ByteString
-encodeOutputBS :: ScriptOutput -> BS.ByteString
+encodeOutputBS :: ScriptOutput -> ByteString
 encodeOutputBS = encode' . encodeOutput
 
 -- | Tries to decode a 'ScriptOutput' from a 'Script'. This can fail if the
@@ -170,7 +170,7 @@ decodeOutput s = case scriptOps s of
     _ -> matchPayMulSig s
 
 -- | Similar to 'decodeOutput' but decodes from a ByteString
-decodeOutputBS :: BS.ByteString -> Either String ScriptOutput
+decodeOutputBS :: ByteString -> Either String ScriptOutput
 decodeOutputBS = (decodeOutput =<<) . decodeToEither
 
 -- Match [ OP_N, PubKey1, ..., PubKeyM, OP_M, OP_CHECKMULTISIG ]
@@ -310,7 +310,7 @@ encodeInput s = case s of
         (scriptOps $ encodeSimpleInput i) ++ [opPushData $ encodeOutputBS o]
 
 -- | Similar to 'encodeInput' but encodes to a ByteString
-encodeInputBS :: ScriptInput -> BS.ByteString
+encodeInputBS :: ScriptInput -> ByteString
 encodeInputBS = encode' . encodeInput
 
 -- | Decodes a 'ScriptInput' from a 'Script'. This function fails if the
@@ -329,6 +329,6 @@ decodeInput s@(Script ops) = maybeToEither errMsg $
     errMsg = "decodeInput: Could not decode script input"
 
 -- | Similar to 'decodeInput' but decodes from a ByteString
-decodeInputBS :: BS.ByteString -> Either String ScriptInput
+decodeInputBS :: ByteString -> Either String ScriptInput
 decodeInputBS = (decodeInput =<<) . decodeToEither
 

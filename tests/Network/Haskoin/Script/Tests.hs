@@ -26,6 +26,7 @@ import Data.Binary (encode, decode, decodeOrFail)
 import qualified Data.Aeson as A (decode)
 import qualified Data.ByteString.Lazy as LBS (pack, unpack)
 import qualified Data.ByteString.Lazy.Char8 as C (readFile)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
     ( singleton
     , length
@@ -33,8 +34,8 @@ import qualified Data.ByteString as BS
     , head
     , pack
     , empty
-    , ByteString
     )
+import qualified Data.ByteString.Char8 as C (putStrLn)
 
 import Numeric (readHex)
 import Text.Read (readMaybe)
@@ -293,7 +294,7 @@ testFile groupLabel path expected = buildTest $ do
 -- just handling the fact that comments may not be there or might have
 -- junk before it.  Output is the tuple ( sig, pubKey, flags, comment
 -- ) as strings
-testParts :: [ String ] -> Maybe ( String, String, String, String )
+testParts :: [String] -> Maybe (String, String, String, String)
 testParts l = let ( x, r ) = splitAt 3 l
                   comment = if null r then "" else last r
               in if length x < 3
@@ -311,7 +312,7 @@ execScriptIO sig key flgs = case (parseScript sig, parseScript key) of
       case execScript scriptSig scriptPubKey rejectSignature ( parseFlags flgs ) of
           Left e -> putStrLn $ "error " ++ show e
           Right p -> do putStrLn $ "successful execution"
-                        putStrLn $ dumpStack $ runStack p
+                        C.putStrLn $ dumpStack $ runStack p
 
 testValid :: Test
 testValid = testFile "Canonical Valid Script Test Cases"
@@ -340,7 +341,7 @@ nullOutPoint = OutPoint {
 -- followed by a spending transaction which spends this output as only
 -- input (and correct prevout hash), using the given scriptSig. All
 -- nLockTimes are 0, all nSequences are max."
-buildCreditTx :: BS.ByteString -> Tx
+buildCreditTx :: ByteString -> Tx
 buildCreditTx scriptPubKey = Tx {
                  txVersion    = 1
                , txIn         = [ txI ]
@@ -359,7 +360,7 @@ buildCreditTx scriptPubKey = Tx {
 
 -- | Build a spending transaction for the tests.  Takes as input the
 -- crediting transaction
-buildSpendTx :: BS.ByteString  -- ScriptSig
+buildSpendTx :: ByteString  -- ScriptSig
              -> Tx     -- Creditting Tx
              -> Tx
 buildSpendTx scriptSig creditTx = Tx {

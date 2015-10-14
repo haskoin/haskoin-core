@@ -20,10 +20,9 @@ import Data.Bits (testBit, clearBit, setBit)
 import Data.Maybe (fromMaybe)
 import Data.Binary (Binary, get, put, getWord8, putWord8)
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
-import qualified Data.Text as T
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-    ( ByteString
-    , index
+    ( index
     , length
     , last
     , append
@@ -31,6 +30,7 @@ import qualified Data.ByteString as BS
     , splitAt
     , empty
     )
+import Data.String.Conversions (cs)
 
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
@@ -115,14 +115,14 @@ instance Binary SigHash where
         SigUnknown _ w -> w
 
 instance ToJSON SigHash where
-    toJSON = String . T.pack . bsToHex . encode'
+    toJSON = String . cs . encodeHex . encode'
 
 instance FromJSON SigHash where
     parseJSON = withText "sighash" $
-        maybe mzero return . (decodeToMaybe <=< hexToBS) . T.unpack
+        maybe mzero return . (decodeToMaybe <=< decodeHex) . cs
 
 -- | Encodes a 'SigHash' to a 32 bit-long bytestring.
-encodeSigHash32 :: SigHash -> BS.ByteString
+encodeSigHash32 :: SigHash -> ByteString
 encodeSigHash32 sh = encode' sh `BS.append` BS.pack [0,0,0]
 
 -- | Computes the hash that will be used for signing a transaction.
@@ -172,11 +172,11 @@ instance NFData TxSignature where
     rnf (TxSignature s h) = rnf s `seq` rnf h
 
 -- | Serialize a 'TxSignature' to a ByteString.
-encodeSig :: TxSignature -> BS.ByteString
+encodeSig :: TxSignature -> ByteString
 encodeSig (TxSignature sig sh) = runPut' $ put sig >> put sh
 
 -- | Decode a 'TxSignature' from a ByteString.
-decodeSig :: BS.ByteString -> Either String TxSignature
+decodeSig :: ByteString -> Either String TxSignature
 decodeSig bs = do
     let (h,l) = BS.splitAt (BS.length bs - 1) bs
     liftM2 TxSignature (decodeToEither h) (decodeToEither l)
@@ -184,7 +184,7 @@ decodeSig bs = do
 -- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
 -- | Decode a 'TxSignature' from a ByteString. This function will check if
 -- the signature is canonical and fail if it is not.
-decodeCanonicalSig :: BS.ByteString -> Either String TxSignature
+decodeCanonicalSig :: ByteString -> Either String TxSignature
 decodeCanonicalSig bs
     | len < 9 = Left "Non-canonical signature: too short"
     | len > 73 = Left "Non-canonical signature: too long"

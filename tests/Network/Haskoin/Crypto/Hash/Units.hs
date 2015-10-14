@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Hash.Units (tests) where
 
 import Test.HUnit (assertBool, Assertion)
@@ -5,6 +6,7 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Maybe (fromJust)
+import Data.ByteString (ByteString)
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
@@ -28,7 +30,7 @@ tests =
         [ testCase "Compact number representations" testCompact ]
     ]
 
-type TestVector = [String]
+type TestVector = [ByteString]
 
 mapDRBG :: [TestVector] -> Test.Framework.Test
 mapDRBG vs = testCase "HMAC DRBG Vectors" $ mapM_ testDRBG $ zip vs [0..]
@@ -36,23 +38,23 @@ mapDRBG vs = testCase "HMAC DRBG Vectors" $ mapM_ testDRBG $ zip vs [0..]
 mapDRBGRsd :: [TestVector] -> Test.Framework.Test
 mapDRBGRsd vs = testCase "HMAC DRBG Vectors" $ mapM_ testDRBGRsd $ zip vs [0..]
 
-testDRBG :: (TestVector,Int) -> Assertion
+testDRBG :: (TestVector, Int) -> Assertion
 testDRBG (s,i) = do
     let w1     = hmacDRBGNew (v !! 0) (v !! 1) (v !! 2)
         (w2,_) = hmacDRBGGen w1 128 (v !! 3)
         (_,r)  = hmacDRBGGen w2 128 (v !! 4)
     assertBool name $ fromJust r == (v !! 5)
-    where v = map (fromJust . hexToBS) s
+    where v = map (fromJust . decodeHex) s
           name = "    > HMAC DRBG Vector " ++ (show i)
 
-testDRBGRsd :: (TestVector,Int) -> Assertion
+testDRBGRsd :: (TestVector, Int) -> Assertion
 testDRBGRsd (s,i) = do
     let w1 = hmacDRBGNew (v !! 0) (v !! 1) (v !! 2)
         w2 = hmacDRBGRsd w1 (v !! 3) (v !! 4)
         (w3,_) = hmacDRBGGen w2 128 (v !! 5)
         (_,r)  = hmacDRBGGen w3 128 (v !! 6)
     assertBool name $ fromJust r == (v !! 7)
-    where v = map (fromJust . hexToBS) s
+    where v = map (fromJust . decodeHex) s
           name = "    > HMAC DRBG Vector " ++ (show i)
 
 testCompact :: Assertion

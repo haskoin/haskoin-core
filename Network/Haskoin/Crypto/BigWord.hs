@@ -66,8 +66,9 @@ import Data.Aeson
     , withText
     )
 import Data.Ratio (numerator, denominator)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS (head, length, reverse)
-import qualified Data.Text as T (pack, unpack)
+import Data.String.Conversions (cs)
 
 import Network.Haskoin.Crypto.Curve
 import Network.Haskoin.Crypto.NumberTheory
@@ -341,25 +342,25 @@ instance Binary (BigWord ModP) where
     put r = put (fromIntegral r :: Word256)
 
 instance ToJSON (BigWord Mod256Tx) where
-    toJSON = String . T.pack . encodeTxHashLE
+    toJSON = String . cs . encodeTxHashLE
 
 instance FromJSON (BigWord Mod256Tx) where
     parseJSON = withText "TxHash" $
-        maybe mzero return . decodeTxHashLE . T.unpack
+        maybe mzero return . decodeTxHashLE . cs
 
 instance ToJSON (BigWord Mod256Block) where
-    toJSON = String . T.pack . encodeBlockHashLE
+    toJSON = String . cs . encodeBlockHashLE
 
 instance FromJSON (BigWord Mod256Block) where
     parseJSON = withText "BlockHash" $
-        maybe mzero return . decodeBlockHashLE . T.unpack
+        maybe mzero return . decodeBlockHashLE . cs
 
 instance ToJSON (BigWord Mod256) where
-    toJSON = String . T.pack . bsToHex . encode'
+    toJSON = String . cs . encodeHex . encode'
 
 instance FromJSON (BigWord Mod256) where
     parseJSON = withText "Word256" $
-        maybe mzero return . (decodeToMaybe <=< hexToBS) . T.unpack
+        maybe mzero return . (decodeToMaybe <=< decodeHex) . cs
 
 instance BigWordMod n => Arbitrary (BigWord n) where
     arbitrary = arbitrarySizedBoundedIntegral
@@ -378,20 +379,20 @@ isIntegerValidKey i = i > 0 && i < curveN
 -- | Encodes a 'TxHash' as little endian in HEX format. This is mostly used for
 -- displaying transaction ids. Internally, these ids are handled as big endian
 -- but are transformed to little endian when displaying them.
-encodeTxHashLE :: TxHash -> String
-encodeTxHashLE = bsToHex . BS.reverse .  encode'
+encodeTxHashLE :: TxHash -> ByteString
+encodeTxHashLE = encodeHex . BS.reverse . encode'
 
 -- | Decodes a little endian 'TxHash' in HEX format.
-decodeTxHashLE :: String -> Maybe TxHash
-decodeTxHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS
+decodeTxHashLE :: ByteString -> Maybe TxHash
+decodeTxHashLE = (decodeToMaybe . BS.reverse =<<) . decodeHex
 
 -- | Encodes a 'BlockHash' as little endian in HEX format. This is mostly used
 -- for displaying Block hash ids. Internally, these ids are handled as big
 -- endian but are transformed to little endian when displaying them.
-encodeBlockHashLE :: BlockHash -> String
-encodeBlockHashLE = bsToHex . BS.reverse .  encode'
+encodeBlockHashLE :: BlockHash -> ByteString
+encodeBlockHashLE = encodeHex . BS.reverse .  encode'
 
 -- | Decodes a little endian 'BlockHash' in HEX format.
-decodeBlockHashLE :: String -> Maybe BlockHash
-decodeBlockHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS
+decodeBlockHashLE :: ByteString -> Maybe BlockHash
+decodeBlockHashLE = (decodeToMaybe . BS.reverse =<<) . decodeHex
 

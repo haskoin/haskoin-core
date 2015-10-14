@@ -1,13 +1,14 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Base58.Units (tests) where
 
 import Test.HUnit (Assertion, assertBool)
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
-import qualified Data.ByteString as BS (ByteString, append, pack, empty)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS (append, pack, empty)
 
 import Network.Haskoin.Crypto
-import Network.Haskoin.Util
 
 tests :: [Test]
 tests =
@@ -15,21 +16,21 @@ tests =
         ( map mapBase58Vec $ zip vectors [0..] )
     ]
 
-mapBase58Vec :: ((BS.ByteString, String, String), Int) -> Test.Framework.Test
-mapBase58Vec (v,i) =
+mapBase58Vec :: ((ByteString, ByteString, ByteString), Int) -> Test.Framework.Test
+mapBase58Vec (v, i) =
     testCase (unwords [ "Test base58 vector", show i ]) $ runVector v
 
-runVector :: (BS.ByteString, String, String) -> Assertion
+runVector :: (ByteString, ByteString, ByteString) -> Assertion
 runVector (bs, e, chk) = do
-    assertBool "encodeBase58" $ e == bsToString b58
-    assertBool "encodeBase58Check" $ chk == bsToString b58Chk
+    assertBool "encodeBase58" $ e == b58
+    assertBool "encodeBase58Check" $ chk == b58Chk
     assertBool "decodeBase58" $ Just bs == decodeBase58 b58
     assertBool "decodeBase58Check" $ Just bs == decodeBase58Check b58Chk
   where
     b58    = encodeBase58 bs
     b58Chk = encodeBase58Check bs
 
-vectors :: [(BS.ByteString, String, String)]
+vectors :: [(ByteString, ByteString, ByteString)]
 vectors =
     [ ( BS.empty, "", "3QJmnh" )
     , ( BS.pack [0], "1", "1Wh4bh" )

@@ -39,6 +39,7 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , DerivPath
 , HardPath
 , SoftPath
+, pathToStr
 , parsePath
 , parseHard
 , parseSoft
@@ -59,6 +60,7 @@ import Control.DeepSeq (NFData, rnf)
 import Control.Monad (mzero, guard, unless, (<=<))
 import Control.Exception (Exception, throw)
 
+import Data.Maybe (fromJust)
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get (Get, getWord8, getWord32be)
@@ -68,9 +70,13 @@ import Data.Bits (shiftR, setBit, testBit, clearBit)
 import Data.List.Split (splitOn)
 import Data.Maybe (fromMaybe)
 import Data.String (IsString, fromString)
+import Data.String.Conversions (cs)
 import Data.Typeable (Typeable)
-import Data.Text (pack, unpack)
-import qualified Data.ByteString as BS (ByteString, append)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS (append)
+
+import Text.Read (readPrec, parens, lexP, pfail)
+import qualified Text.Read as Read (Lexeme(String))
 
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
@@ -103,17 +109,31 @@ data XPrvKey = XPrvKey
     , xPrvIndex  :: !KeyIndex  -- ^ Key derivation index.
     , xPrvChain  :: !ChainCode -- ^ Chain code.
     , xPrvKey    :: !PrvKeyC   -- ^ The private key of this extended key node.
-    } deriving (Eq, Show, Read)
+    } deriving (Eq)
+
+-- TODO: Test
+instance Show XPrvKey where
+    show = show . xPrvExport
+
+-- TODO: Test
+instance Read XPrvKey where
+    readPrec = parens $ do
+        Read.String str <- lexP
+        maybe pfail return $ xPrvImport $ cs str
+
+-- TODO: Test
+instance IsString XPrvKey where
+    fromString = fromJust . xPrvImport . cs
 
 instance NFData XPrvKey where
     rnf (XPrvKey d p i c k) =
         rnf d `seq` rnf p `seq` rnf i `seq` rnf c `seq` rnf k
 
 instance ToJSON XPrvKey where
-    toJSON = String . pack . xPrvExport
+    toJSON = String . cs . xPrvExport
 
 instance FromJSON XPrvKey where
-    parseJSON = withText "xprvkey" $ maybe mzero return . xPrvImport . unpack
+    parseJSON = withText "xprvkey" $ maybe mzero return . xPrvImport . cs
 
 -- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
@@ -122,21 +142,35 @@ data XPubKey = XPubKey
     , xPubIndex  :: !KeyIndex  -- ^ Key derivation index.
     , xPubChain  :: !ChainCode -- ^ Chain code.
     , xPubKey    :: !PubKeyC   -- ^ The public key of this extended key node.
-    } deriving (Eq, Show, Read)
+    } deriving (Eq)
+
+-- TODO: Test
+instance Show XPubKey where
+    show = show . xPubExport
+
+-- TODO: Test
+instance Read XPubKey where
+    readPrec = parens $ do
+        Read.String str <- lexP
+        maybe pfail return $ xPubImport $ cs str
+
+-- TODO: Test
+instance IsString XPubKey where
+    fromString = fromJust . xPubImport . cs
 
 instance NFData XPubKey where
     rnf (XPubKey d p i c k) =
         rnf d `seq` rnf p `seq` rnf i `seq` rnf c `seq` rnf k
 
 instance ToJSON XPubKey where
-    toJSON = String . pack . xPubExport
+    toJSON = String . cs . xPubExport
 
 instance FromJSON XPubKey where
-    parseJSON = withText "xpubkey" $ maybe mzero return . xPubImport . unpack
+    parseJSON = withText "xpubkey" $ maybe mzero return . xPubImport . cs
 
 -- | Build a BIP32 compatible extended private key from a bytestring. This will
 -- produce a root node (depth=0 and parent=0).
-makeXPrvKey :: BS.ByteString -> XPrvKey
+makeXPrvKey :: ByteString -> XPrvKey
 makeXPrvKey bs =
     XPrvKey 0 0 0 c pk
   where
@@ -271,25 +305,25 @@ xPubAddr :: XPubKey -> Address
 xPubAddr = pubKeyAddr . xPubKey
 
 -- | Exports an extended private key to the BIP32 key export format (base 58).
-xPrvExport :: XPrvKey -> String
-xPrvExport = bsToString . encodeBase58Check . encode'
+xPrvExport :: XPrvKey -> ByteString
+xPrvExport = encodeBase58Check . encode'
 
 -- | Exports an extended public key to the BIP32 key export format (base 58).
-xPubExport :: XPubKey -> String
-xPubExport = bsToString . encodeBase58Check . encode'
+xPubExport :: XPubKey -> ByteString
+xPubExport = encodeBase58Check . encode'
 
 -- | Decodes a BIP32 encoded extended private key. This function will fail if
 -- invalid base 58 characters are detected or if the checksum fails.
-xPrvImport :: String -> Maybe XPrvKey
-xPrvImport str = decodeToMaybe =<< (decodeBase58Check $ stringToBS str)
+xPrvImport :: ByteString -> Maybe XPrvKey
+xPrvImport = decodeToMaybe <=< decodeBase58Check
 
 -- | Decodes a BIP32 encoded extended public key. This function will fail if
 -- invalid base 58 characters are detected or if the checksum fails.
-xPubImport :: String -> Maybe XPubKey
-xPubImport str = decodeToMaybe =<< (decodeBase58Check $ stringToBS str)
+xPubImport :: ByteString -> Maybe XPubKey
+xPubImport = decodeToMaybe <=< decodeBase58Check
 
 -- | Export an extended private key to WIF (Wallet Import Format).
-xPrvWif :: XPrvKey -> String
+xPrvWif :: XPrvKey -> ByteString
 xPrvWif = toWif . xPrvKey
 
 instance Binary XPrvKey where
@@ -434,55 +468,67 @@ instance Eq (DerivPathI t) where
     DerivPub      == DerivPub      = True
     _             == _             = False
 
-instance Show (DerivPathI t) where
-    show p = case p of
-        next :| i -> concat [ show next, "/", show i, "'" ]
-        next :/ i -> concat [ show next, "/", show i ]
+-- TODO: Test
+pathToStr :: DerivPathI t -> String
+pathToStr p =
+    case p of
+        next :| i -> concat [ pathToStr next, "/", show i, "'" ]
+        next :/ i -> concat [ pathToStr next, "/", show i ]
         Deriv     -> ""
         DerivPrv  -> "m"
         DerivPub  -> "M"
 
+-- TODO: Test
+instance Show (DerivPathI t) where
+    show p = show $ pathToStr p
+
+-- TODO: Test
 instance Read DerivPath where
-    readsPrec _ str = case parsePath str of
-        Just p -> [(p, "")]
-        _      -> []
+    readPrec = parens $ do
+        Read.String str <- lexP
+        maybe pfail return $ parsePath str
 
+-- TODO: Test
 instance Read HardPath where
-    readsPrec _ str = case parseHard str of
-        Just p -> [(p, "")]
-        _      -> []
+    readPrec = parens $ do
+        Read.String str <- lexP
+        maybe pfail return $ parseHard str
 
+-- TODO: Test
 instance Read SoftPath where
-    readsPrec _ str = case parseSoft str of
-        Just p -> [(p, "")]
-        _      -> []
+    readPrec = parens $ do
+        Read.String str <- lexP
+        maybe pfail return $ parseSoft str
 
+-- TODO: Test
 instance IsString DerivPath where
-    fromString = read
+    fromString = fromJust . parsePath
 
+-- TODO: Test
 instance IsString HardPath where
-    fromString = read
+    fromString = fromJust . parseHard
 
+-- TODO: Test
 instance IsString SoftPath where
-    fromString = read
+    fromString = fromJust . parseSoft
 
 instance FromJSON DerivPath where
-    parseJSON = withText "DerivPath" $ \str -> case parsePath $ unpack str of
+    parseJSON = withText "DerivPath" $ \str -> case parsePath $ cs str of
         Just p -> return p
         _      -> mzero
 
 instance FromJSON HardPath where
-    parseJSON = withText "HardPath" $ \str -> case parseHard $ unpack str of
+    parseJSON = withText "HardPath" $ \str -> case parseHard $ cs str of
         Just p -> return p
         _      -> mzero
 
 instance FromJSON SoftPath where
-    parseJSON = withText "SoftPath" $ \str -> case parseSoft $ unpack str of
+    parseJSON = withText "SoftPath" $ \str -> case parseSoft $ cs str of
         Just p -> return p
         _      -> mzero
 
 instance ToJSON (DerivPathI t) where
-    toJSON = String . pack . show
+    toJSON = String . cs . pathToStr
 
 -- | Parse derivation path string for extended key.
 -- Forms: “m/0'/2”, “M/2/3/4”.
@@ -649,6 +695,6 @@ getPadPrvKey = do
 putPadPrvKey :: PrvKeyC -> Put
 putPadPrvKey p = putWord8 0x00 >> prvKeyPutMonad p
 
-bsPadPrvKey :: PrvKeyC -> BS.ByteString
+bsPadPrvKey :: PrvKeyC -> ByteString
 bsPadPrvKey = runPut' . putPadPrvKey
 

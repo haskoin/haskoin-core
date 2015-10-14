@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Transaction.Units (tests) where
 
 import Test.HUnit (Assertion, assertBool)
@@ -7,6 +8,7 @@ import Test.Framework.Providers.HUnit (testCase)
 import Data.Word (Word32, Word64)
 import Data.Maybe (fromJust)
 import Data.Binary.Get (getWord32le)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS (reverse)
 
 import Network.Haskoin.Transaction
@@ -24,18 +26,18 @@ tests =
         ( map mapVerifyVec $ zip verifyVec [0..] )
     ]
 
-mapTxIDVec :: ((String,String),Int) -> Test.Framework.Test
+mapTxIDVec :: ((ByteString, ByteString), Int) -> Test.Framework.Test
 mapTxIDVec (v,i) = testCase name $ runTxIDVec v
   where
     name = "Compute TxID " ++ (show i)
 
-runTxIDVec :: (String,String) -> Assertion
+runTxIDVec :: (ByteString, ByteString) -> Assertion
 runTxIDVec (tid,tx) = assertBool "TxID" $
     (encodeTxHashLE $ txHash txBS) == tid
   where
-    txBS = decode' $ fromJust $ hexToBS tx
+    txBS = decode' $ fromJust $ decodeHex tx
 
-txIDVec :: [(String,String)]
+txIDVec :: [(ByteString, ByteString)]
 txIDVec =
     [ ( "23b397edccd3740a74adb603c9756370fafcde9bcc4483eb271ecad09a94dd63"
       , "0100000001b14bdcbc3e01bdaad36cc08e81e69c82e1060bc14e518db2b49aa43ad90ba26000000000490047304402203f16c6f40162ab686621ef3000b04e75418a0c0cb2d8aebeac894ae360ac1e780220ddc15ecdfc3507ac48e1681a33eb60996631bf6bf5bc0a0682c4db743ce7ca2b01ffffffff0140420f00000000001976a914660d4ef3a743e3e696ad990364e555c271ad504b88ac00000000"
@@ -51,37 +53,39 @@ txIDVec =
       )
     ]
 
-mapPKHashVec :: (([(String,Word32)],[(String,Word64)],String),Int)
+mapPKHashVec :: (([(ByteString, Word32)], [(ByteString, Word64)], ByteString), Int)
             -> Test.Framework.Test
-mapPKHashVec (v,i) = testCase name $ runPKHashVec v
+mapPKHashVec (v, i) = testCase name $ runPKHashVec v
     where name = "Build PKHash Tx " ++ (show i)
 
-runPKHashVec :: ([(String,Word32)],[(String,Word64)],String) -> Assertion
-runPKHashVec (xs,ys,res) =
-    assertBool "Build PKHash Tx" $ (bsToHex $ encode' tx) == res
+runPKHashVec :: ([(ByteString, Word32)], [(ByteString, Word64)], ByteString) -> Assertion
+runPKHashVec (xs, ys, res) =
+    assertBool "Build PKHash Tx" $ (encodeHex $ encode' tx) == res
     where tx = fromRight $ buildAddrTx (map f xs) ys
           f (tid,ix) = OutPoint (fromJust $ decodeTxHashLE tid) ix
 
 
-mapVerifyVec :: (([(String,String,String)],String),Int)
+mapVerifyVec :: (([(ByteString, ByteString, ByteString)], ByteString), Int)
              -> Test.Framework.Test
-mapVerifyVec (v,i) = testCase name $ runVerifyVec v i
+mapVerifyVec (v, i) = testCase name $ runVerifyVec v i
     where name = "Verify Tx " ++ (show i)
 
-runVerifyVec :: ([(String,String,String)],String) -> Int -> Assertion
-runVerifyVec (is,bsTx) i =
+runVerifyVec :: ([(ByteString, ByteString, ByteString)], ByteString) -> Int -> Assertion
+runVerifyVec (is, bsTx) i =
     assertBool name $ verifyStdTx tx $ map f is
-    where name = "    > Verify transaction " ++ (show i)
-          tx  = decode' (fromJust $ hexToBS bsTx)
-          f (o1,o2,bsScript) =
-              let s  = fromRight $ decodeOutputBS $ fromJust $ hexToBS bsScript
-                  op = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS o1)
-                                 (runGet' getWord32le $ fromJust $ hexToBS o2)
-                  in (s,op)
+  where
+    name = "    > Verify transaction " ++ (show i)
+    tx  = decode' (fromJust $ decodeHex bsTx)
+    f (o1, o2, bsScript) =
+        let s = fromRight $ decodeOutputBS $ fromJust $ decodeHex $ bsScript
+            op = OutPoint
+                (decode' $ BS.reverse $ fromJust $ decodeHex o1)
+                (runGet' getWord32le $ fromJust $ decodeHex o2)
+        in (s, op)
 
 -- These test vectors have been generated from bitcoind raw transaction api
 
-pkHashVec :: [([(String,Word32)],[(String,Word64)],String)]
+pkHashVec :: [([(ByteString, Word32)], [(ByteString, Word64)], ByteString)]
 pkHashVec =
     [
       ( [("eb29eba154166f6541ebcc9cbdf5088756e026af051f123bcfb526df594549db",14)]
@@ -113,7 +117,7 @@ pkHashVec =
 {- Test vectors from bitcoind -}
 -- github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_valid.json
 
-verifyVec :: [([(String,String,String)],String)]
+verifyVec :: [([(ByteString, ByteString, ByteString)], ByteString)]
 verifyVec =
     [
       -- It is of particular interest because it contains an invalidly-encoded signature which OpenSSL accepts

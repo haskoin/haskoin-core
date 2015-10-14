@@ -47,16 +47,18 @@ import Data.Binary.Put
     , putWord64le
     , putByteString
     )
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-    ( ByteString
-    , length
+    ( length
     , takeWhile
     , empty
     , null
+    , take
     )
+import Data.ByteString.Char8 as C (replicate)
+import Data.String.Conversions (cs)
 import Network.Socket (SockAddr (SockAddrInet, SockAddrInet6))
 
-import Network.Haskoin.Util
 import Network.Haskoin.Crypto.BigWord
 
 -- | Network address with a timestamp
@@ -311,7 +313,7 @@ data Reject =
              -- | Text version of rejected reason
            , rejectReason  :: !VarString
              -- | Optional extra data provided by some errors
-           , rejectData    :: !BS.ByteString
+           , rejectData    :: !ByteString
            } deriving (Eq, Show, Read)
 
 
@@ -353,24 +355,22 @@ instance Binary RejectCode where
         RejectCheckpoint      -> 0x43
 
 -- | Convenience function to build a Reject message
-reject :: MessageCommand -> RejectCode -> String -> Reject
+reject :: MessageCommand -> RejectCode -> ByteString -> Reject
 reject cmd code reason =
-    Reject cmd code (VarString $ stringToBS reason) BS.empty
+    Reject cmd code (VarString reason) BS.empty
 
 instance Binary Reject where
 
-    get = get >>= \(VarString bs) -> case stringToCommand $ bsToString bs of
+    get = get >>= \(VarString bs) -> case stringToCommand bs of
         Just cmd -> Reject cmd <$> get <*> get <*> maybeData
         _ -> fail $ unwords
-            [ "Reason get: Invalid message command"
-            , bsToString bs
-            ]
+            ["Reason get: Invalid message command" ,cs bs]
       where
         maybeData = isEmpty >>= \done ->
             if done then return BS.empty else getByteString 32
 
     put (Reject cmd code reason dat) = do
-        put $ VarString $ stringToBS $ commandToString cmd
+        put $ VarString $ commandToString cmd
         put code
         put reason
         unless (BS.null dat) $ putByteString dat
@@ -407,7 +407,7 @@ instance Binary VarInt where
 
 -- | Data type for variable length strings. Variable length strings are
 -- serialized as a 'VarInt' followed by a bytestring.
-newtype VarString = VarString { getVarString :: BS.ByteString }
+newtype VarString = VarString { getVarString :: ByteString }
     deriving (Eq, Show, Read)
 
 instance NFData VarString where
@@ -541,7 +541,7 @@ instance Binary MessageCommand where
     put mc = putByteString $ packCommand $ commandToString mc
 
 
-stringToCommand :: String -> Maybe MessageCommand
+stringToCommand :: ByteString -> Maybe MessageCommand
 stringToCommand str = case str of
     "version"     -> Just MCVersion
     "verack"      -> Just MCVerAck
@@ -566,7 +566,7 @@ stringToCommand str = case str of
     "reject"      -> Just MCReject
     _             -> Nothing
 
-commandToString :: MessageCommand -> String
+commandToString :: MessageCommand -> ByteString
 commandToString mc = case mc of
     MCVersion     -> "version"
     MCVerAck      -> "verack"
@@ -590,9 +590,10 @@ commandToString mc = case mc of
     MCMempool     -> "mempool"
     MCReject      -> "reject"
 
-packCommand :: String -> BS.ByteString
-packCommand s = stringToBS $ take 12 $ s ++ repeat '\NUL'
+packCommand :: ByteString -> ByteString
+packCommand s = BS.take 12 $
+    s `mappend` C.replicate 12 '\NUL'
 
-unpackCommand :: BS.ByteString -> String
-unpackCommand bs = bsToString $ BS.takeWhile (/= 0) bs
+unpackCommand :: ByteString -> ByteString
+unpackCommand bs = BS.takeWhile (/= 0) bs
 

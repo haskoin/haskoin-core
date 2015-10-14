@@ -30,7 +30,9 @@ import Data.List (find, nub)
 import Data.Word (Word64)
 import Data.Conduit (Sink, await, ($$))
 import Data.Conduit.List (sourceList)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS (length, replicate, empty, null)
+import Data.String.Conversions (cs)
 import Data.Aeson
     ( Value (Object)
     , FromJSON
@@ -212,24 +214,26 @@ guessMSSize (m,n) =
 
 -- | Build a transaction by providing a list of outpoints as inputs
 -- and a list of recipients addresses and amounts as outputs.
-buildAddrTx :: [OutPoint] -> [(String,Word64)] -> Either String Tx
+buildAddrTx :: [OutPoint] -> [(ByteString, Word64)] -> Either String Tx
 buildAddrTx xs ys =
     buildTx xs =<< mapM f ys
   where
-    f (s,v) = case base58ToAddr s of
+    f (s, v) = case base58ToAddr s of
         Just a@(PubKeyAddress _) -> return (PayPKHash a,v)
         Just a@(ScriptAddress _) -> return (PayScriptHash a,v)
-        _ -> Left $ "buildAddrTx: Invalid address " ++ s
+        _ -> Left $ "buildAddrTx: Invalid address " ++ cs s
 
 -- | Build a transaction by providing a list of outpoints as inputs
 -- and a list of 'ScriptOutput' and amounts as outputs.
-buildTx :: [OutPoint] -> [(ScriptOutput,Word64)] -> Either String Tx
+buildTx :: [OutPoint] -> [(ScriptOutput, Word64)] -> Either String Tx
 buildTx xs ys =
     mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
   where
     fi outPoint = TxIn outPoint BS.empty maxBound
-    fo (o,v) | v <= 2100000000000000 = return $ TxOut v $ encodeOutputBS o
-             | otherwise = Left $ "buildTx: Invalid amount " ++ (show v)
+    fo (o, v)
+        | v <= 2100000000000000 = return $ TxOut v $ encodeOutputBS o
+        | otherwise =
+            Left $ "buildTx: Invalid amount " ++ show v
 
 -- | Data type used to specify the signing parameters of a transaction input.
 -- To sign an input, the previous output script, outpoint and sighash are

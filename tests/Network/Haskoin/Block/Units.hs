@@ -1,4 +1,7 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Block.Units (tests) where
+
+import Data.ByteString (ByteString)
 
 import Test.HUnit (Assertion, assertBool)
 import Test.Framework (Test, testGroup)
@@ -15,20 +18,20 @@ tests =
         (map mapMerkleVectors $ zip merkleVectors [0..])
     ]
 
-mapMerkleVectors :: ((String,[String]),Int) -> Test.Framework.Test
-mapMerkleVectors (v,i) =
+mapMerkleVectors :: ((ByteString, [ByteString]), Int) -> Test.Framework.Test
+mapMerkleVectors (v, i) =
     testCase name $ runMerkleVector v
   where
     name = "MerkleRoot vector " ++ (show i)
 
-runMerkleVector :: (String,[String]) -> Assertion
-runMerkleVector (r,hs) = do
+runMerkleVector :: (ByteString, [ByteString]) -> Assertion
+runMerkleVector (r, hs) = do
     assertBool "    >  Merkle Vector" $
         buildMerkleRoot (map f hs) == fromIntegral (f r)
   where
     f = fromJust . decodeTxHashLE
 
-merkleVectors :: [(String,[String])]
+merkleVectors :: [(ByteString, [ByteString])]
 merkleVectors =
       -- Block 000000000000cd7e8cf6510303dde76121a1a791c15dba0be4be7022b07cf9e1
     [ ( "fb6698ac95b754256c5e71b4fbe07638cb6ca83ee67f44e181b91727f09f4b1f"

@@ -7,7 +7,7 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/haskoin/haskoin-node.git
-    commit: bf5fa569ed2f66acd5bff346fa4cd796bdcecfcd
+    commit: 4d3a32012eb550784a29618108e045452006acbf
   extra-dep: true
 extra-deps:
 - daemons-0.2.1

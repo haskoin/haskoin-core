@@ -16,7 +16,7 @@ tests =
     [ testGroup "Utility functions"
         [ testProperty "toStrict . toLazy bytestring" fromToLazy
         , testProperty "bsToInteger . integerToBS Integer" getPutInteger
-        , testProperty "stringToBS . bsToString bytestring" fromToString
+        , testProperty "bsToString . stringToBS bytestring" fromToString
         , testProperty "decodeOrFail' . encode' bytestring" decEncFailBS
         , testProperty "fromHex . toHex bytestring" fromToHex
         , testProperty "fromDecode" testFromDecode
@@ -33,8 +33,8 @@ tests =
 fromToLazy :: ArbitraryByteString -> Bool
 fromToLazy (ArbitraryByteString bs) = (toStrictBS $ toLazyBS bs) == bs
 
-fromToString :: ArbitraryByteString  -> Bool
-fromToString (ArbitraryByteString bs) = (stringToBS $ bsToString bs) == bs
+fromToString :: String -> Bool
+fromToString str = (bsToString $ stringToBS str) == str
 
 decEncFailBS :: ArbitraryByteString -> Bool
 decEncFailBS (ArbitraryByteString bs) = case (decodeOrFail' $ encode' bs) of

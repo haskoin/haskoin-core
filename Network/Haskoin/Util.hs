@@ -69,31 +69,34 @@ import Data.Binary.Get (Get, runGetOrFail, getByteString, ByteOffset, runGet)
 import Data.Aeson.Types
     (Options(..), SumEncoding(..), defaultOptions, defaultTaggedObject)
 
-import qualified Data.ByteString.Lazy as BL (ByteString, toChunks, fromChunks)
+import qualified Data.ByteString.Lazy as BL (ByteString, toStrict, fromStrict)
 import qualified Data.ByteString.Base16 as B16
-import qualified Data.ByteString.Char8 as C (pack, unpack)
 import qualified Data.ByteString as BS
-    (ByteString, concat, pack, unpack, null, empty)
+    (ByteString, pack, unpack, null, empty)
+
+import qualified Data.Text as T
+import Data.Text.Encoding (encodeUtf8, decodeUtf8With)
+import Data.Text.Encoding.Error (lenientDecode)
 
 -- ByteString helpers
 
 -- | Transforms a lazy bytestring into a strict bytestring
 toStrictBS :: BL.ByteString -> BS.ByteString
-toStrictBS = BS.concat . BL.toChunks
+toStrictBS = BL.toStrict
 
 -- | Transforms a strict bytestring into a lazy bytestring
 toLazyBS :: BS.ByteString -> BL.ByteString
-toLazyBS bs = BL.fromChunks [bs]
+toLazyBS = BL.fromStrict
 
--- | Transforms a string into a strict bytestring
+-- | Encode `String` as UTF-8 `ByteString`
 stringToBS :: String -> BS.ByteString
-stringToBS = C.pack
+stringToBS = encodeUtf8 . T.pack
 
--- | Transform a strict bytestring to a string
+-- | Decode UTF-8 `ByteString`
 bsToString :: BS.ByteString -> String
-bsToString = C.unpack
+bsToString = T.unpack . decodeUtf8With lenientDecode
 
--- | Decode a big endian Integer from a bytestring
+-- | Decode a big endian Integer from a bytestring.
 bsToInteger :: BS.ByteString -> Integer
 bsToInteger = (foldr f 0) . reverse . BS.unpack
   where

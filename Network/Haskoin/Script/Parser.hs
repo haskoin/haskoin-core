@@ -33,7 +33,7 @@ import Control.Applicative ((<|>))
 
 import Data.List (sortBy)
 import Data.Foldable (foldrM)
-import qualified Data.Text as T
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import qualified Data.ByteString as BS
     ( ByteString
     , head
@@ -73,10 +73,10 @@ data ScriptOutput =
 instance FromJSON ScriptOutput where
     parseJSON = withText "scriptoutput" $ \t -> either fail return $
         maybeToEither "scriptoutput not hex"
-          (hexToBS $ T.unpack t) >>= decodeOutputBS
+          (hexToBS $ encodeUtf8 t) >>= decodeOutputBS
 
 instance ToJSON ScriptOutput where
-    toJSON = String . T.pack . bsToHex . encodeOutputBS
+    toJSON = String . decodeUtf8 . bsToHex . encodeOutputBS
 
 instance NFData ScriptOutput where
     rnf (PayPK k) = rnf k

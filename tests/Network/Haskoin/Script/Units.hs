@@ -44,13 +44,13 @@ testCanonicalSig :: String -> Assertion
 testCanonicalSig str =
     assertBool "    > Canonical Sig" $ isRight $ decodeCanonicalSig bs
   where
-    bs = fromJust $ hexToBS str
+    bs = fromJust $ hexToBS $ stringToBS str
 
 testNotCanonicalSig :: String -> Assertion
 testNotCanonicalSig str =
     assertBool "    > Not canonical sig" $ isLeft $ decodeCanonicalSig bs
   where
-    bs = fromJust $ hexToBS str
+    bs = fromJust $ hexToBS $ stringToBS str
 
 mapMulSigVector :: ((String,String),Int) -> Test.Framework.Test
 mapMulSigVector (v,i) =
@@ -62,12 +62,12 @@ runMulSigVector :: (String,String) -> Assertion
 runMulSigVector (a,ops) =
     assertBool "    >  MultiSig Vector" $ a == b
   where
-    s = decode' $ fromJust $ hexToBS ops
+    s = decode' $ fromJust $ hexToBS $ stringToBS ops
     b = addrToBase58 $ scriptAddr $ fromRight $ decodeOutput s
 
 testSigDecode :: String -> Assertion
 testSigDecode str =
-  let bs = fromJust $ hexToBS str
+  let bs = fromJust $ hexToBS $ stringToBS str
       eitherSig = decodeSig bs
   in
   assertBool ( unwords [ "Decode failed:", fromLeft eitherSig ] ) $ isRight eitherSig

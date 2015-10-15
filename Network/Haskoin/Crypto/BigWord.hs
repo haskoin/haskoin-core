@@ -67,7 +67,9 @@ import Data.Aeson
     )
 import Data.Ratio (numerator, denominator)
 import qualified Data.ByteString as BS (head, length, reverse)
+import qualified Data.ByteString.Char8 as C (unpack)
 import qualified Data.Text as T (pack, unpack)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 
 import Network.Haskoin.Crypto.Curve
 import Network.Haskoin.Crypto.NumberTheory
@@ -355,11 +357,11 @@ instance FromJSON (BigWord Mod256Block) where
         maybe mzero return . decodeBlockHashLE . T.unpack
 
 instance ToJSON (BigWord Mod256) where
-    toJSON = String . T.pack . bsToHex . encode'
+    toJSON = String . decodeUtf8 . bsToHex . encode'
 
 instance FromJSON (BigWord Mod256) where
     parseJSON = withText "Word256" $
-        maybe mzero return . (decodeToMaybe <=< hexToBS) . T.unpack
+        maybe mzero return . (decodeToMaybe <=< hexToBS) . encodeUtf8
 
 instance BigWordMod n => Arbitrary (BigWord n) where
     arbitrary = arbitrarySizedBoundedIntegral
@@ -379,19 +381,19 @@ isIntegerValidKey i = i > 0 && i < curveN
 -- displaying transaction ids. Internally, these ids are handled as big endian
 -- but are transformed to little endian when displaying them.
 encodeTxHashLE :: TxHash -> String
-encodeTxHashLE = bsToHex . BS.reverse .  encode'
+encodeTxHashLE = bsToString . bsToHex . BS.reverse . encode'
 
 -- | Decodes a little endian 'TxHash' in HEX format.
 decodeTxHashLE :: String -> Maybe TxHash
-decodeTxHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS
+decodeTxHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS . stringToBS
 
 -- | Encodes a 'BlockHash' as little endian in HEX format. This is mostly used
 -- for displaying Block hash ids. Internally, these ids are handled as big
 -- endian but are transformed to little endian when displaying them.
 encodeBlockHashLE :: BlockHash -> String
-encodeBlockHashLE = bsToHex . BS.reverse .  encode'
+encodeBlockHashLE = bsToString . bsToHex . BS.reverse .  encode'
 
 -- | Decodes a little endian 'BlockHash' in HEX format.
 decodeBlockHashLE :: String -> Maybe BlockHash
-decodeBlockHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS
+decodeBlockHashLE = (decodeToMaybe . BS.reverse =<<) . hexToBS . stringToBS
 

@@ -33,7 +33,7 @@ runTxIDVec :: (String,String) -> Assertion
 runTxIDVec (tid,tx) = assertBool "TxID" $
     (encodeTxHashLE $ txHash txBS) == tid
   where
-    txBS = decode' $ fromJust $ hexToBS tx
+    txBS = decode' $ fromJust $ hexToBS $ stringToBS tx
 
 txIDVec :: [(String,String)]
 txIDVec =
@@ -58,7 +58,7 @@ mapPKHashVec (v,i) = testCase name $ runPKHashVec v
 
 runPKHashVec :: ([(String,Word32)],[(String,Word64)],String) -> Assertion
 runPKHashVec (xs,ys,res) =
-    assertBool "Build PKHash Tx" $ (bsToHex $ encode' tx) == res
+    assertBool "Build PKHash Tx" $ (bsToString $ bsToHex $ encode' tx) == res
     where tx = fromRight $ buildAddrTx (map f xs) ys
           f (tid,ix) = OutPoint (fromJust $ decodeTxHashLE tid) ix
 
@@ -71,13 +71,16 @@ mapVerifyVec (v,i) = testCase name $ runVerifyVec v i
 runVerifyVec :: ([(String,String,String)],String) -> Int -> Assertion
 runVerifyVec (is,bsTx) i =
     assertBool name $ verifyStdTx tx $ map f is
-    where name = "    > Verify transaction " ++ (show i)
-          tx  = decode' (fromJust $ hexToBS bsTx)
-          f (o1,o2,bsScript) =
-              let s  = fromRight $ decodeOutputBS $ fromJust $ hexToBS bsScript
-                  op = OutPoint (decode' $ BS.reverse $ fromJust $ hexToBS o1)
-                                 (runGet' getWord32le $ fromJust $ hexToBS o2)
-                  in (s,op)
+  where
+    name = "    > Verify transaction " ++ (show i)
+    tx  = decode' (fromJust $ hexToBS $ stringToBS bsTx)
+    f (o1, o2, bsScript) =
+        let s = fromRight $ decodeOutputBS $ fromJust $ hexToBS $
+                stringToBS bsScript
+            op = OutPoint
+                (decode' $ BS.reverse $ fromJust $ hexToBS $ stringToBS o1)
+                (runGet' getWord32le $ fromJust $ hexToBS $ stringToBS o2)
+        in (s, op)
 
 -- These test vectors have been generated from bitcoind raw transaction api
 

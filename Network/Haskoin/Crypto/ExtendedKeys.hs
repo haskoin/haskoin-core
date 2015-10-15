@@ -71,6 +71,7 @@ import Data.String (IsString, fromString)
 import Data.Typeable (Typeable)
 import Data.Text (pack, unpack)
 import qualified Data.ByteString as BS (ByteString, append)
+import qualified Data.ByteString.Char8 as C (unpack)
 
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
@@ -272,7 +273,7 @@ xPubAddr = pubKeyAddr . xPubKey
 
 -- | Exports an extended private key to the BIP32 key export format (base 58).
 xPrvExport :: XPrvKey -> String
-xPrvExport = bsToString . encodeBase58Check . encode'
+xPrvExport = C.unpack . encodeBase58Check . encode'
 
 -- | Exports an extended public key to the BIP32 key export format (base 58).
 xPubExport :: XPubKey -> String

@@ -22,21 +22,21 @@ toMnemonicTest = map f $ zip ents mss
   where
     f (e, m) = g e . assertEqual "" m . h $ e
     g = testCase
-    h = fromRight . toMnemonic . fromJust . hexToBS
+    h = fromRight . toMnemonic . fromJust . hexToBS . stringToBS
 
 fromMnemonicTest :: [Test]
 fromMnemonicTest = map f $ zip ents mss
   where
     f (e, m) = g e . assertEqual "" e . h $ m
     g = testCase
-    h = bsToHex . fromRight . fromMnemonic
+    h = bsToString . bsToHex . fromRight . fromMnemonic
 
 mnemonicToSeedTest :: [Test]
 mnemonicToSeedTest = map f $ zip mss seeds
   where
     f (m, s) = g s . assertEqual "" s . h $ m
     g = testCase . (++ "...") . take 50
-    h = bsToHex . fromRight . mnemonicToSeed "TREZOR"
+    h = bsToString . bsToHex . fromRight . mnemonicToSeed "TREZOR"
 
 
 ents :: [String]

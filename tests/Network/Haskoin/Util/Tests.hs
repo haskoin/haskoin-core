@@ -14,8 +14,7 @@ import Network.Haskoin.Util
 tests :: [Test]
 tests =
     [ testGroup "Utility functions"
-        [ testProperty "toStrict . toLazy bytestring" fromToLazy
-        , testProperty "bsToInteger . integerToBS Integer" getPutInteger
+        [ testProperty "bsToInteger . integerToBS Integer" getPutInteger
         , testProperty "bsToString . stringToBS bytestring" fromToString
         , testProperty "decodeOrFail' . encode' bytestring" decEncFailBS
         , testProperty "fromHex . toHex bytestring" fromToHex
@@ -29,9 +28,6 @@ tests =
     ]
 
 {- Various utilities -}
-
-fromToLazy :: ArbitraryByteString -> Bool
-fromToLazy (ArbitraryByteString bs) = (toStrictBS $ toLazyBS bs) == bs
 
 fromToString :: String -> Bool
 fromToString str = (bsToString $ stringToBS str) == str

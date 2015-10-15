@@ -54,7 +54,6 @@ import qualified Data.ByteString as BS
     , empty
     , null
     )
-import qualified Data.ByteString.Char8 as C (pack)
 import Network.Socket (SockAddr (SockAddrInet, SockAddrInet6))
 
 import Network.Haskoin.Util

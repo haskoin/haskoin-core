@@ -79,11 +79,11 @@ import Data.Text.Encoding.Error (lenientDecode)
 
 -- ByteString helpers
 
--- | Decode `ByteString` as UTF-8
+-- | Decode 'ByteString' as UTF-8
 bsToString :: ByteString -> String
 bsToString = T.unpack . decodeUtf8With lenientDecode
 
--- | Encode String as UTF-8 `ByteString`
+-- | Encode String as UTF-8 'ByteString'
 stringToBS :: String -> ByteString
 stringToBS = encodeUtf8 . T.pack
 
@@ -106,30 +106,30 @@ integerToBS i
 bsToHex :: ByteString -> ByteString
 bsToHex = B16.encode
 
--- | Decode a base16 (HEX) string from a bytestring. This function can fail
+-- | Decode a base16 (HEX) string from a 'ByteString'. This function can fail
 -- if the string contains invalid HEX characters
 hexToBS :: ByteString -> Maybe ByteString
 hexToBS xs = let (x, b) = B16.decode xs in guard (b == BS.empty) >> return x
 
 -- Data.Binary helpers
 
--- | Strict version of @Data.Binary.encode@
+-- | Strict version of 'Data.Binary.encode'
 encode' :: Binary a => a -> ByteString
 encode' = BL.toStrict . encode
 
--- | Strict version of @Data.Binary.decode@
+-- | Strict version of 'Data.Binary.decode'
 decode' :: Binary a => ByteString -> a
 decode' = decode . BL.fromStrict
 
--- | Strict version of @Data.Binary.runGet@
+-- | Strict version of 'Data.Binary.runGet'
 runGet' :: Binary a => Get a -> ByteString -> a
 runGet' m = (runGet m) . BL.fromStrict
 
--- | Strict version of @Data.Binary.runPut@
+-- | Strict version of 'Data.Binary.runPut'
 runPut' :: Put -> ByteString
 runPut' = BL.toStrict . runPut
 
--- | Strict version of @Data.Binary.decodeOrFail@
+-- | Strict version of 'Data.Binary.decodeOrFail'
 decodeOrFail' ::
     Binary a =>
     ByteString ->
@@ -138,7 +138,7 @@ decodeOrFail' bs = case decodeOrFail $ BL.fromStrict bs of
     Left  (lbs, o, err) -> Left  (BL.toStrict lbs, o, err)
     Right (lbs, o, res) -> Right (BL.toStrict lbs, o, res)
 
--- | Strict version of @Data.Binary.runGetOrFail@
+-- | Strict version of 'Data.Binary.runGetOrFail'
 runGetOrFail' ::
     Binary a => Get a -> ByteString ->
     Either (ByteString, ByteOffset, String) (ByteString, ByteOffset, a)
@@ -146,8 +146,8 @@ runGetOrFail' m bs = case runGetOrFail m $ BL.fromStrict bs of
     Left  (lbs, o, err) -> Left  (BL.toStrict lbs, o, err)
     Right (lbs, o, res) -> Right (BL.toStrict lbs, o, res)
 
--- | Try to decode a Data.Binary value. If decoding succeeds, apply the function
--- to the result. Otherwise, return the default value.
+-- | Try to decode a 'Data.Binary' value. If decoding succeeds, apply the
+-- function to the result. Otherwise, return the default value.
 fromDecode :: Binary a
            => ByteString    -- ^ The bytestring to decode
            -> b             -- ^ Default value to return when decoding fails
@@ -157,8 +157,8 @@ fromDecode bs def f = either (const def) (f . lst) $ decodeOrFail' bs
   where
     lst (_,_,c) = c
 
--- | Try to run a Data.Binary.Get monad. If decoding succeeds, apply a function
--- to the result. Otherwise, return the default value.
+-- | Try to run a 'Data.Binary.Get' monad. If decoding succeeds, apply a
+-- function to the result. Otherwise, return the default value.
 fromRunGet :: Binary a
            => Get a         -- ^ The Get monad to run
            -> ByteString    -- ^ The bytestring to decode
@@ -169,23 +169,22 @@ fromRunGet m bs def f = either (const def) (f . lst) $ runGetOrFail' m bs
   where
     lst (_,_,c) = c
 
--- | Decode a Data.Binary value into the Either monad. A Right value is returned
--- with the result upon success. Otherwise a Left value with the error message
--- is returned.
+-- | Decode a 'Data.Binary' value. A 'Right' value is returned with the result
+-- upon success. Otherwise a 'Left' value with the error message is returned.
 decodeToEither :: Binary a => ByteString -> Either String a
 decodeToEither bs = case decodeOrFail' bs of
     Left  (_,_,err) -> Left err
     Right (_,_,res) -> Right res
 
--- | Decode a Data.Binary value into the Maybe monad. A Just value is returned
--- with the result upon success. Otherwise, Nothing is returned.
+-- | Decode a 'Data.Binary' value. A 'Just' value is returned with the result
+-- upon success. Otherwise, 'Nothing' is returned.
 decodeToMaybe :: Binary a => ByteString -> Maybe a
 decodeToMaybe bs = fromDecode bs Nothing Just
 
--- | Isolate a Data.Binary.Get monad for the next @Int@ bytes. Only the next
--- @Int@ bytes of the input bytestring will be available for the Get monad to
--- consume. This function will fail if the Get monad fails or some of the input
--- is not consumed.
+-- | Isolate a 'Data.Binary.Get' monad for the next 'Int' bytes. Only the next
+-- 'Int' bytes of the input 'ByteString' will be available for the 'Get' monad
+-- to consume. This function will fail if the Get monad fails or some of the
+-- input is not consumed.
 isolate :: Binary a => Int -> Get a -> Get a
 isolate i g = do
     bs <- getByteString i
@@ -195,51 +194,52 @@ isolate i g = do
             | BS.null unconsumed -> return res
             | otherwise          -> fail "Isolate: unconsumed input"
 
--- Maybe and Eithre monad helpers
+-- Maybe and Either monad helpers
 
--- | Returns True if the Either value is Right
+-- | Returns 'True' if the 'Either' value is 'Right'
 isRight :: Either a b -> Bool
 isRight (Right _) = True
 isRight _         = False
 
--- | Returns True if the Either value is Left
+-- | Returns 'True' if the 'Either' value is 'Left'
 isLeft :: Either a b -> Bool
 isLeft = not . isRight
 
--- | Extract the Right value from an Either value. Fails if the value is Left
+-- | Extract the 'Right' value from an 'Either' value. Fails if the value is
+-- 'Left'
 fromRight :: Either a b -> b
 fromRight (Right b) = b
 fromRight _ = error "Either.fromRight: Left"
 
--- | Extract the Left value from an Either value. Fails if the value is Right
+-- | Extract the 'Left' value from an 'Either' value. Fails if the value is 'Right'
 fromLeft :: Either a b -> a
 fromLeft (Left a) = a
 fromLeft _ = error "Either.fromLeft: Right"
 
--- | Transforms an Either value into a Maybe value. Right is mapped to Just
--- and Left is mapped to Nothing. The value inside Left is lost.
+-- | Transforms an 'Either' value into a 'Maybe' value. 'Right' is mapped to 'Just'
+-- and 'Left' is mapped to 'Nothing'. The value inside 'Left' is lost.
 eitherToMaybe :: Either a b -> Maybe b
 eitherToMaybe (Right b) = Just b
 eitherToMaybe _ = Nothing
 
--- | Transforms a Maybe value into an Either value. Just is mapped to Right and
--- Nothing is mapped to Left. You also pass in an error value in case Left is
--- returned.
+-- | Transforms a 'Maybe' value into an 'Either' value. 'Just' is mapped to
+-- 'Right' and 'Nothing' is mapped to 'Left'. You also pass in an error value
+-- in case 'Left' is returned.
 maybeToEither :: b -> Maybe a -> Either b a
 maybeToEither err m = maybe (Left err) Right m
 
--- | Lift a Either computation into the EitherT monad
+-- | Lift a 'Either' computation into the 'EitherT' monad
 liftEither :: Monad m => Either b a -> EitherT b m a
 liftEither = hoistEither
 
--- | Lift a Maybe computation into the EitherT monad
+-- | Lift a 'Maybe' computation into the 'EitherT' monad
 liftMaybe :: Monad m => b -> Maybe a -> EitherT b m a
 liftMaybe err = liftEither . (maybeToEither err)
 
 -- Various helpers
 
--- | Applies a function to only one element of a list defined by it's index.
--- If the index is out of the bounds of the list, the original list is returned.
+-- | Applies a function to only one element of a list defined by its index.  If
+-- the index is out of the bounds of the list, the original list is returned.
 updateIndex :: Int      -- ^ The index of the element to change
             -> [a]      -- ^ The list of elements
             -> (a -> a) -- ^ The function to apply
@@ -250,10 +250,10 @@ updateIndex i xs f
   where
     (l,h:r) = splitAt i xs
 
--- | Use the list [b] as a template and try to match the elements of [a]
--- against it. For each element of [b] return the (first) matching element of
--- [a], or Nothing. Output list has same size as [b] and contains results in
--- same order. Elements of [a] can only appear once.
+-- | Use the list @[b]@ as a template and try to match the elements of @[a]@
+-- against it. For each element of @[b]@ return the (first) matching element of
+-- @[a]@, or 'Nothing'. Output list has same size as @[b]@ and contains results
+-- in same order. Elements of @[a]@ can only appear once.
 matchTemplate :: [a]              -- ^ The input list
               -> [b]              -- ^ The list to serve as a template
               -> (a -> b -> Bool) -- ^ The comparison function

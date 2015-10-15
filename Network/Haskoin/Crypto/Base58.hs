@@ -27,7 +27,6 @@ import Data.Aeson
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as C
 import qualified Data.Text as T
 import Data.Text.Encoding (encodeUtf8)
 
@@ -59,7 +58,7 @@ decodeBase58I s = case go of
     c = b58' . fromIntegral . ord
     p = isJust . c
     f = fromIntegral . fromJust . c
-    go = listToMaybe $ readInt 58 p f (C.unpack s)
+    go = listToMaybe $ readInt 58 p f (bsToString s)
 
 -- | Encode a bytestring to a base 58 representation.
 encodeBase58 :: ByteString -> ByteString
@@ -118,7 +117,7 @@ instance ToJSON Address where
 
 -- | Transforms an Address into a base58 encoded String
 addrToBase58 :: Address -> String
-addrToBase58 addr = C.unpack $ encodeBase58Check $ case addr of
+addrToBase58 addr = bsToString $ encodeBase58Check $ case addr of
     PubKeyAddress i -> BS.cons addrPrefix $ encode' i
     ScriptAddress i -> BS.cons scriptPrefix $ encode' i
 

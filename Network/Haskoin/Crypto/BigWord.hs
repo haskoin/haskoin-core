@@ -67,7 +67,6 @@ import Data.Aeson
     )
 import Data.Ratio (numerator, denominator)
 import qualified Data.ByteString as BS (head, length, reverse)
-import qualified Data.ByteString.Char8 as C (unpack)
 import qualified Data.Text as T (pack, unpack)
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 

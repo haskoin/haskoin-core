@@ -219,6 +219,7 @@ xKeyTestVec2 = makeXKeyTestVec seed2 der2
 makeXKeyTestVec :: String -> [ String ] -> [XPrvKey]
 makeXKeyTestVec seed der = scanl f m der
     where f acc d = derivePath (fromString d :: DerivPath) acc
+          m   = makeXPrvKey $ fromJust $ hexToBS seed
 
 seed1 :: String
 seed1 = "000102030405060708090a0b0c0d0e0f"

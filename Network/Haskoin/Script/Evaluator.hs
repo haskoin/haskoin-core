@@ -33,15 +33,16 @@ import Control.Monad.Reader
 import Control.Monad.Except
 import Control.Monad.Identity
 
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
+import Data.String.Conversions (cs)
 
-import Data.List (intercalate)
 import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit, (.&.))
 import Data.Int (Int64)
 import Data.Word (Word8, Word64)
-import Data.Either ( rights )
-import Data.Maybe ( mapMaybe, isJust )
+import Data.Either (rights)
+import Data.Maybe (mapMaybe, isJust)
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Script.Types
@@ -109,26 +110,26 @@ data ProgramData = ProgramData {
     opCount      :: Int
 }
 
-dumpOp :: ScriptOp -> String
-dumpOp (OP_PUSHDATA payload optype) =
-  "OP_PUSHDATA(" ++ show optype ++ ")" ++
-  " 0x" ++ bsToHex payload
-dumpOp op = show op
+dumpOp :: ScriptOp -> ByteString
+dumpOp (OP_PUSHDATA payload optype) = mconcat
+  [ "OP_PUSHDATA(", cs (show optype), ")", " 0x", encodeHex payload ]
+dumpOp op = cs $ show op
 
-dumpList :: [String] -> String
-dumpList xs = "[" ++ intercalate "," xs ++ "]"
+dumpList :: [ByteString] -> ByteString
+dumpList xs = mconcat [ "[", BS.intercalate "," xs, "]" ]
 
-dumpScript :: [ScriptOp] -> String
+dumpScript :: [ScriptOp] -> ByteString
 dumpScript script = dumpList $ map dumpOp script
 
-dumpStack :: Stack -> String
-dumpStack s = dumpList $ map (bsToHex . BS.pack) s
+dumpStack :: Stack -> ByteString
+dumpStack s = dumpList $ map (encodeHex . BS.pack) s
 
+-- TODO: Test
 instance Show ProgramData where
-    show p = " stack: " ++ dumpStack (stack p)
+    show p = "stack: " ++ (cs $ dumpStack $ stack p)
 
 type ProgramState = ExceptT EvalError Identity
-type IfStack = [ Bool ]
+type IfStack = [Bool]
 
 -- | Monad of actions independent of conditional statements.
 type StackOperation = ReaderT FlagSet ( StateT ProgramData ProgramState )
@@ -282,7 +283,7 @@ getCond = get
 popCond :: Program Bool
 popCond = get >>= \condStack -> case condStack of
     [] -> lift $ programError "popCond: empty condStack"
-    (c:cs) -> put cs >> return c
+    (x:xs) -> put xs >> return x
 
 pushCond :: Bool -> Program ()
 pushCond c = get >>= \s ->

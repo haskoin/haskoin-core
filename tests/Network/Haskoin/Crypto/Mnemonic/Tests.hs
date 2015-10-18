@@ -15,6 +15,7 @@ import qualified Data.ByteString as BS
     , length
     , last
     )
+import qualified Data.ByteString.Char8 as C (words)
 
 import Network.Haskoin.Test
 import Network.Haskoin.Crypto
@@ -62,25 +63,25 @@ toMnemonic128 :: Word128 -> Bool
 toMnemonic128 x = l == 12
   where
     bs = encode' x
-    l = length . words . fromRight $ toMnemonic bs
+    l = length . C.words . fromRight $ toMnemonic bs
 
 toMnemonic160 :: Word160 -> Bool
 toMnemonic160 x = l == 15
   where
     bs = encode' x
-    l = length . words . fromRight $ toMnemonic bs
+    l = length . C.words . fromRight $ toMnemonic bs
 
 toMnemonic256 :: Word256 -> Bool
 toMnemonic256 x = l == 24
   where
     bs = encode' x
-    l = length . words . fromRight $ toMnemonic bs
+    l = length . C.words . fromRight $ toMnemonic bs
 
 toMnemonic512 :: Word512 -> Bool
 toMnemonic512 x = l == 48
   where
     bs = encode' x
-    l = length . words . fromRight $ toMnemonic bs
+    l = length . C.words . fromRight $ toMnemonic bs
 
 toMnemonicVar :: [Word32] -> Property
 toMnemonicVar ls = not (length ls > 8) ==> l == wc
@@ -89,7 +90,7 @@ toMnemonicVar ls = not (length ls > 8) ==> l == wc
     bl = BS.length bs
     cb = bl `div` 4
     wc = (cb + bl * 8) `div` 11
-    l = length . words . fromRight $ toMnemonic bs
+    l = length . C.words . fromRight $ toMnemonic bs
 
 {- Encode/Decode -}
 

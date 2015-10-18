@@ -11,11 +11,8 @@ module Network.Haskoin.Crypto.Base58
 import Control.DeepSeq (NFData, rnf)
 import Control.Monad (guard, mzero)
 
-import Data.Char (ord, chr)
-import Data.Word (Word8)
 import Data.Maybe (fromJust, isJust, listToMaybe)
 import Numeric (showIntAtBase, readInt)
-import Data.String (fromString)
 import Data.Aeson
     ( Value (String)
     , FromJSON
@@ -25,83 +22,96 @@ import Data.Aeson
     , withText
     )
 
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as B8
-import qualified Data.Text as T
+import qualified Data.ByteString.Char8 as C
+import Data.String (IsString, fromString)
+import Data.String.Conversions (cs)
+
+import Text.Read (readPrec, parens, lexP, pfail)
+import qualified Text.Read as Read (Lexeme(String))
 
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Constants
 import Network.Haskoin.Util
 
-b58Data :: BS.ByteString
+b58Data :: ByteString
 b58Data = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
-b58 :: Word8 -> Word8
-b58 i = BS.index b58Data (fromIntegral i)
+b58 :: Int -> Char
+b58 = C.index b58Data
 
-b58' :: Word8 -> Maybe Word8
-b58' w = fromIntegral <$> BS.elemIndex w b58Data
+b58' :: Char -> Maybe Int
+b58' = flip C.elemIndex b58Data
 
-encodeBase58I :: Integer -> BS.ByteString
-encodeBase58I i =
-    fromString $ showIntAtBase (58 :: Integer) f (fromIntegral i) ""
-  where
-    f = chr . fromIntegral . b58 . fromIntegral
+encodeBase58I :: Integer -> ByteString
+encodeBase58I i = cs $ showIntAtBase 58 b58 i ""
 
-decodeBase58I :: BS.ByteString -> Maybe Integer
+decodeBase58I :: ByteString -> Maybe Integer
 decodeBase58I s = case go of
     Just (r,[]) -> Just r
     _           -> Nothing
   where
-    c = b58' . fromIntegral . ord
-    p = isJust . c
-    f = fromIntegral . fromJust . c
-    go = listToMaybe $ readInt 58 p f (B8.unpack s)
+    p = isJust . b58'
+    f = fromJust . b58'
+    go = listToMaybe $ readInt 58 p f (cs s)
 
--- | Encode a bytestring to a base 58 representation.
-encodeBase58 :: BS.ByteString -> BS.ByteString
-encodeBase58 bs = BS.append l r
+-- | Encode a 'ByteString' to a base 58 representation.
+encodeBase58 :: ByteString -> ByteString
+encodeBase58 bs = l `mappend` r
   where
-    (z,b) = BS.span (== 0) bs
-    l = BS.map b58 z -- preserve leading 0's
+    (z, b) = BS.span (== 0) bs
+    l = BS.replicate (BS.length z) (BS.index b58Data 0) -- preserve leading 0's
     r | BS.null b = BS.empty
       | otherwise = encodeBase58I $ bsToInteger b
 
--- | Decode a base 58 encoded bytestring. This can fail if the input bytestring
--- contains invalid base 58 characters such as 0,O,l,I
-decodeBase58 :: BS.ByteString -> Maybe BS.ByteString
-decodeBase58 bs = r >>= return . (BS.append prefix)
+-- | Decode a base58-encoded 'ByteString'. This can fail if the input
+-- 'ByteString' contains invalid base58 characters such as 0, O, l, I.
+decodeBase58 :: ByteString -> Maybe ByteString
+decodeBase58 t = r >>= return . (BS.append prefix)
   where
-    (z,b)  = BS.span (== (b58 0)) bs
-    prefix = BS.map (fromJust . b58') z -- preserve leading 1's
+    (z, b)  = BS.span (== BS.index b58Data 0) t
+    prefix = BS.replicate (BS.length z) 0 -- preserve leading 1's
     r | BS.null b = Just BS.empty
       | otherwise = integerToBS <$> decodeBase58I b
 
--- | Computes a checksum for the input bytestring and encodes the input and
--- the checksum to a base 58 representation.
-encodeBase58Check :: BS.ByteString -> BS.ByteString
-encodeBase58Check bs = encodeBase58 $ BS.append bs chk
-  where
-    chk = encode' $ chksum32 bs
+-- | Computes a checksum for the input 'ByteString' and encodes the input and
+-- the checksum to a base58 representation.
+encodeBase58Check :: ByteString -> ByteString
+encodeBase58Check bs = encodeBase58 $ BS.append bs (encode' $ chksum32 bs)
 
--- | Decode a base 58 encoded bytestring that contains a checksum. This
--- function returns Nothing if the input bytestring contains invalid base 58
--- characters or if the checksum fails.
-decodeBase58Check :: BS.ByteString -> Maybe BS.ByteString
+-- | Decode a base58-encoded string that contains a checksum. This function
+-- returns 'Nothing' if the input string contains invalid base58 characters or
+-- if the checksum fails.
+decodeBase58Check :: ByteString -> Maybe ByteString
 decodeBase58Check bs = do
     rs <- decodeBase58 bs
-    let (res,chk) = BS.splitAt ((BS.length rs) - 4) rs
+    let (res, chk) = BS.splitAt (BS.length rs - 4) rs
     guard $ chk == (encode' $ chksum32 res)
     return res
 
--- |Data type representing a Bitcoin address
+-- | Data type representing a Bitcoin address
 data Address
     -- | Public Key Hash Address
     = PubKeyAddress { getAddrHash :: Word160 }
     -- | Script Hash Address
     | ScriptAddress { getAddrHash :: Word160 }
-       deriving (Eq, Ord, Show, Read)
+       deriving (Eq, Ord)
+
+-- TODO: Test
+instance Show Address where
+    show = show . addrToBase58
+
+-- TODO: Test
+instance Read Address where
+    readPrec = parens $ do
+        Read.String str <- lexP
+        maybe pfail return $ base58ToAddr $ cs str
+
+-- TODO: Test
+instance IsString Address where
+    fromString = fromJust . base58ToAddr . cs
 
 instance NFData Address where
     rnf (PubKeyAddress h) = rnf h
@@ -109,22 +119,22 @@ instance NFData Address where
 
 instance FromJSON Address where
     parseJSON = withText "Address" $
-        maybe mzero return . base58ToAddr . T.unpack
+        maybe mzero return . base58ToAddr . cs
 
 instance ToJSON Address where
-    toJSON = String . T.pack . addrToBase58
+    toJSON = String . cs . addrToBase58
 
 -- | Transforms an Address into a base58 encoded String
-addrToBase58 :: Address -> String
-addrToBase58 addr = bsToString $ encodeBase58Check $ case addr of
+addrToBase58 :: Address -> ByteString
+addrToBase58 addr = encodeBase58Check $ case addr of
     PubKeyAddress i -> BS.cons addrPrefix $ encode' i
     ScriptAddress i -> BS.cons scriptPrefix $ encode' i
 
 -- | Decodes an Address from a base58 encoded String. This function can fail
 -- if the String is not properly encoded as base58 or the checksum fails.
-base58ToAddr :: String -> Maybe Address
+base58ToAddr :: ByteString -> Maybe Address
 base58ToAddr str = do
-    val <- decodeBase58Check $ stringToBS str
+    val <- decodeBase58Check str
     let f | BS.head val == addrPrefix   = Just PubKeyAddress
           | BS.head val == scriptPrefix = Just ScriptAddress
           | otherwise = Nothing

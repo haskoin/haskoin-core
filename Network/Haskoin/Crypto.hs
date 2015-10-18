@@ -162,6 +162,7 @@ module Network.Haskoin.Crypto
 , DerivPath
 , HardPath
 , SoftPath
+, pathToStr
 , parsePath
 , parseHard
 , parseSoft

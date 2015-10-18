@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Units (tests) where
 
 import Test.HUnit (Assertion, assertBool)
@@ -9,7 +10,9 @@ import Control.Monad.Trans (liftIO)
 
 import Data.Maybe (fromJust, isJust, isNothing)
 import Data.Binary (put)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS (pack)
+import qualified Data.ByteString.Char8 as C (pack)
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
@@ -18,37 +21,38 @@ import Network.Haskoin.Internals (PrvKeyI(..), PubKeyI(..), Signature(..))
 -- Unit tests copied from bitcoind implementation
 -- https://github.com/bitcoin/bitcoin/blob/master/src/test/key_tests.cpp
 
-strSecret1 :: String
+strSecret1 :: ByteString
 strSecret1  = "5HxWvvfubhXpYYpS3tJkw6fq9jE9j18THftkZjHHfmFiWtmAbrj"
 
-strSecret2 :: String
+strSecret2 :: ByteString
 strSecret2  = "5KC4ejrDjv152FGwP386VD1i2NYc5KkfSMyv1nGy1VGDxGHqVY3"
 
-strSecret1C :: String
+strSecret1C :: ByteString
 strSecret1C = "Kwr371tjA9u2rFSMZjTNun2PXXP3WPZu2afRHTcta6KxEUdm1vEw"
 
-strSecret2C :: String
+strSecret2C :: ByteString
 strSecret2C = "L3Hq7a8FEQwJkW1M2GNKDW28546Vp5miewcCzSqUD9kCAXrJdS3g"
 
-addr1 :: String
+addr1 :: ByteString
 addr1  = "1QFqqMUD55ZV3PJEJZtaKCsQmjLT6JkjvJ"
 
-addr2 :: String
+addr2 :: ByteString
 addr2  = "1F5y5E5FMc5YzdJtB9hLaUe43GDxEKXENJ"
 
-addr1C :: String
+addr1C :: ByteString
 addr1C = "1NoJrossxPBKfCHuJXT4HadJrXRE9Fxiqs"
 
-addr2C :: String
+addr2C :: ByteString
 addr2C = "1CRj2HyM1CXWzHAXLQtiGLyggNT9WQqsDs"
 
-strAddressBad :: String
+strAddressBad :: ByteString
 strAddressBad = "1HV9Lc3sNHZxwj4Zk6fB38tEmBryq2cBiF"
 
-sigMsg :: [String]
-sigMsg = [ ("Very secret message " ++ (show (i :: Int)) ++ ": 11")
-         | i <- [0..15]
-         ]
+sigMsg :: [ByteString]
+sigMsg =
+    [ mconcat ["Very secret message ", (C.pack $ show (i :: Int)), ": 11"]
+    | i <- [0..15]
+    ]
 
 sec1 :: PrvKey
 sec1  = fromJust $ fromWif strSecret1
@@ -88,7 +92,7 @@ tests =
         , testCase "Check matching address" checkMatchingAddress
         ] ++
         ( map (\x -> (testCase ("Check sig: " ++ (show x))
-                (checkSignatures $ doubleHash256 $ stringToBS x))) sigMsg )
+                (checkSignatures $ doubleHash256 x))) sigMsg )
     , testGroup "Trezor RFC 6979 Test Vectors"
         [ testCase "RFC 6979 Test Vector 1" (testDetSigning $ detVec !! 0)
         , testCase "RFC 6979 Test Vector 2" (testDetSigning $ detVec !! 1)
@@ -194,7 +198,7 @@ checkSignatures h = do
 {- Trezor RFC 6979 Test Vectors -}
 -- github.com/trezor/python-ecdsa/blob/master/ecdsa/test_pyecdsa.py
 
-detVec :: [(Integer,String,String)]
+detVec :: [(Integer, ByteString, ByteString)]
 detVec =
     [
       ( 0x1
@@ -247,12 +251,12 @@ detVec =
       )
     ]
 
-testDetSigning :: (Integer, String, String) -> Assertion
-testDetSigning (prv,msg,str) = do
-    assertBool "RFC 6979 Vector" $ res == (fromJust $ hexToBS str)
+testDetSigning :: (Integer, ByteString, ByteString) -> Assertion
+testDetSigning (prv, msg, str) = do
+    assertBool "RFC 6979 Vector" $ res == (fromJust $ decodeHex str)
     assertBool "Valid sig" $ verifySig msg' sig (derivePubKey prv')
     where sig@(Signature r s) = detSignMsg msg' prv'
-          msg' = hash256 $ stringToBS msg
+          msg' = hash256 msg
           prv' = fromJust $ makePrvKey prv
           res = runPut' $ put (fromIntegral r :: Word256) >>
                           put (fromIntegral s :: Word256)

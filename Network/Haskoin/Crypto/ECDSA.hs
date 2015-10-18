@@ -16,7 +16,7 @@ module Network.Haskoin.Crypto.ECDSA
 import System.IO
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM, guard, unless)
+import Control.Monad (liftM, guard, when, unless)
 import Control.Monad.Trans (lift)
 import qualified Control.Monad.State as S
     ( StateT
@@ -57,7 +57,7 @@ withSource :: Monad m => (Int -> m BS.ByteString) -> SecretT m a -> m a
 withSource f m = do
     seed  <- f 32 -- Read 256 bits from the random source
     nonce <- f 16 -- Read 128 bits from the random source
-    let ws = hmacDRBGNew seed nonce (stringToBS haskoinUserAgent)
+    let ws = hmacDRBGNew seed nonce haskoinUserAgent
     S.evalStateT m (ws,f)
 
 -- | \/dev\/urandom entropy source. This is only available on machines
@@ -76,7 +76,7 @@ devRandom i = withBinaryFile "/dev/random" ReadMode $ flip BS.hGet i
 nextSecret :: Monad m => SecretT m FieldN
 nextSecret = do
     (ws,f) <- S.get
-    let (ws',randM) = hmacDRBGGen ws 32 (stringToBS haskoinUserAgent)
+    let (ws',randM) = hmacDRBGGen ws 32 haskoinUserAgent
     case randM of
         (Just rand) -> do
             S.put (ws',f)
@@ -86,7 +86,7 @@ nextSecret = do
                 else nextSecret
         Nothing -> do
             seed <- lift $ f 32 -- Read 256 bits to re-seed the PRNG
-            let ws0 = hmacDRBGRsd ws' seed (stringToBS haskoinUserAgent)
+            let ws0 = hmacDRBGRsd ws' seed haskoinUserAgent
             S.put (ws0,f)
             nextSecret
 
@@ -201,6 +201,8 @@ instance Binary Signature where
         unless (t == 0x30) (fail $
             "Bad DER identifier byte " ++ (show t) ++ ". Expecting 0x30")
         l <- getWord8
+        when (l == 0) $ fail "Indeterminate form unsupported"
+        unless (l < 0x80) $ fail "Multi-octect length not supported"
         -- Length = (33 + 1 identifier byte + 1 length byte) * 2
         isolate (fromIntegral l) $ do
             Signature <$> get <*> get
@@ -210,7 +212,9 @@ instance Binary Signature where
     put (Signature r s) = do
         putWord8 0x30
         let c = runPut' $ put r >> put s
-        putWord8 (fromIntegral $ BS.length c)
+            l = BS.length c
+        when (l >= 0x80) $ fail "DER data too long"
+        putWord8 $ fromIntegral l
         putByteString c
 
 

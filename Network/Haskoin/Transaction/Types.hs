@@ -14,7 +14,6 @@ import Control.Monad (liftM2, replicateM, forM_, unless, mzero, (<=<))
 
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
 import Data.Word (Word32, Word64)
-import qualified Data.Text as T
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get
     ( getWord32le
@@ -31,7 +30,7 @@ import qualified Data.ByteString as BS
     , length
     , empty
     )
-
+import Data.String.Conversions (cs)
 import Network.Haskoin.Util
 import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
@@ -86,10 +85,10 @@ instance Binary Tx where
 
 instance FromJSON Tx where
     parseJSON = withText "Tx" $
-        maybe mzero return . (decodeToMaybe <=< hexToBS) . T.unpack
+        maybe mzero return . (decodeToMaybe <=< decodeHex) . cs
 
 instance ToJSON Tx where
-    toJSON = String . T.pack . bsToHex . encode'
+    toJSON = String . cs . encodeHex . encode'
 
 -- | Data type representing the coinbase transaction of a 'Block'. Coinbase
 -- transactions are special types of transactions which are created by miners
@@ -220,10 +219,10 @@ instance NFData OutPoint where
 
 instance FromJSON OutPoint where
     parseJSON = withText "OutPoint" $
-        maybe mzero return . (decodeToMaybe <=< hexToBS) .  T.unpack
+        maybe mzero return . (decodeToMaybe <=< decodeHex) . cs
 
 instance ToJSON OutPoint where
-    toJSON = String . T.pack . bsToHex . encode'
+    toJSON = String . cs . encodeHex . encode'
 
 instance Binary OutPoint where
     get = do

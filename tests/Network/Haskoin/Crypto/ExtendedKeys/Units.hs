@@ -207,6 +207,7 @@ runXKeyVec (v,m) = do
 xKeyVec1 :: [([String], XPrvKey)]
 xKeyVec1 = zip xKeyResVec1 xKeyTestVec1
 
+xKeyTestVec1 :: [XPrvKey]
 xKeyTestVec1 =  foldl f [m] der
     where f acc d = acc ++ [d $ last acc]
           m   = makeXPrvKey $ fromJust $ hexToBS m0
@@ -220,6 +221,7 @@ xKeyTestVec1 =  foldl f [m] der
 xKeyVec2 :: [([String],XPrvKey)]
 xKeyVec2 = zip xKeyResVec2 xKeyTestVec2
 
+xKeyTestVec2 :: [XPrvKey]
 xKeyTestVec2 = foldl f [m] der
     where f acc d = acc ++ [d $ last acc]
           m   = makeXPrvKey $ fromJust $ hexToBS m1

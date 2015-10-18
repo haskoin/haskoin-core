@@ -216,20 +216,19 @@ xKeyVec2 = zip xKeyResVec2 xKeyTestVec2
 xKeyTestVec2 :: [XPrvKey]
 xKeyTestVec2 = makeXKeyTestVec seed2 der2
 
-makeXKeyTestVec :: String -> [ (XPrvKey -> XPrvKey) ] -> [XPrvKey]
-makeXKeyTestVec seed der = foldl f [m] der
-    where f acc d = acc ++ [d $ last acc]
-          m   = makeXPrvKey $ fromJust $ hexToBS seed
+makeXKeyTestVec :: String -> [ String ] -> [XPrvKey]
+makeXKeyTestVec seed der = scanl f m der
+    where f acc d = derivePath (fromString d :: DerivPath) acc
 
 seed1 :: String
 seed1 = "000102030405060708090a0b0c0d0e0f"
 
-der1 :: [XPrvKey -> XPrvKey]
-der1 =  [ derivePath (fromString "m/0'" :: DerivPath)
-        , derivePath (fromString "m/1" :: DerivPath)
-        , derivePath (fromString "m/2'" :: DerivPath)
-        , derivePath (fromString "m/2" :: DerivPath)
-        , derivePath (fromString "m/1000000000" :: DerivPath)
+der1 :: [String]
+der1 =  [ "m/0'"
+        , "m/1"
+        , "m/2'"
+        , "m/2"
+        , "m/1000000000"
         ]
 
 xKeyResVec1 :: [[String]]
@@ -318,12 +317,12 @@ xKeyResVec1 =
 seed2 :: String
 seed2 = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
 
-der2 :: [XPrvKey -> XPrvKey]
-der2 =  [ derivePath (fromString "m/0" :: DerivPath)
-        , derivePath (fromString "m/2147483647'" :: DerivPath)
-        , derivePath (fromString "m/1" :: DerivPath)
-        , derivePath (fromString "m/2147483646'" :: DerivPath)
-        , derivePath (fromString "m/2" :: DerivPath)
+der2 :: [String]
+der2 =  [ "m/0"
+        , "m/2147483647'"
+        , "m/1"
+        , "m/2147483646'"
+        , "m/2"
         ]
 
 xKeyResVec2 :: [[String]]

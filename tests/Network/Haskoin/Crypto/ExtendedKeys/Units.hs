@@ -86,6 +86,8 @@ parsePathVectors =
     , ("M/0'", isJust)
     , ("m/2147483648", isNothing)
     , ("m/2147483647", isJust)
+    , ("m/0'/1/2'", isJust) -- from official test vector 1, fails
+    , ("m/0/2147483647'", isJust) -- from official test vector 2, fails
     , ("M/2147483648", isNothing)
     , ("M/2147483647", isJust)
     , ("M/-1", isNothing)
@@ -94,8 +96,8 @@ parsePathVectors =
     , ("M/1/2/3/4/5/6/7/8", isJust)
     , ("m/1'/2'/3/4", isJust)
     , ("M/1'/2'/3/4", isJust)
-    , ("m/1/2'/3/4'", isNothing)
-    , ("M/1/2'/3/4'", isNothing)
+    , ("m/1/2'/3/4'", isNothing) -- shouldn't this be isJust?
+    , ("M/1/2'/3/4'", isNothing) -- shoudn't this be isJust?
     , ("meh", isNothing)
     , ("infinity", isNothing)
     , ("NaN", isNothing)
@@ -217,19 +219,19 @@ xKeyTestVec2 :: [XPrvKey]
 xKeyTestVec2 = makeXKeyTestVec seed2 der2
 
 makeXKeyTestVec :: String -> [ String ] -> [XPrvKey]
-makeXKeyTestVec seed der = scanl f m der
-    where f acc d = derivePath (fromString d :: DerivPath) acc
-          m   = makeXPrvKey $ fromJust $ hexToBS seed
+makeXKeyTestVec seed paths = map ( \path -> derivePath (fromString path :: DerivPath) m ) paths
+    where m = makeXPrvKey $ fromJust $ hexToBS seed
 
 seed1 :: String
 seed1 = "000102030405060708090a0b0c0d0e0f"
 
 der1 :: [String]
-der1 =  [ "m/0'"
-        , "m/1"
-        , "m/2'"
-        , "m/2"
-        , "m/1000000000"
+der1 =  [ "m"
+        , "m/0'"
+        , "m/0'/1"
+        , "m/0'/1/2'"
+        , "m/0'/1/2'/2"
+        , "m/0'/1/2'/2/1000000000"
         ]
 
 xKeyResVec1 :: [[String]]
@@ -319,11 +321,12 @@ seed2 :: String
 seed2 = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
 
 der2 :: [String]
-der2 =  [ "m/0"
-        , "m/2147483647'"
-        , "m/1"
-        , "m/2147483646'"
-        , "m/2"
+der2 =  [ "m"
+        , "m/0"
+        , "m/0/2147483647'"
+        , "m/0/2147483647'/1"
+        , "m/0/2147483647'/1/2147483646'"
+        , "m/0/2147483647'/1/2147483646'/2"
         ]
 
 xKeyResVec2 :: [[String]]

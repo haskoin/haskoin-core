@@ -42,7 +42,7 @@ import Data.Maybe (isJust, fromJust, fromMaybe)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get (Get, getWord8)
 import Data.Binary.Put (Put, putWord8)
-import Data.Text (pack, unpack)
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import qualified Data.ByteString as BS
     ( ByteString
     , head, tail
@@ -86,25 +86,25 @@ instance NFData (PubKeyI c) where
     rnf (PubKeyI p c) = rnf p `seq` rnf c
 
 instance ToJSON (PubKeyI Generic) where
-    toJSON = String . pack . bsToHex . encode'
+    toJSON = String . decodeUtf8 . bsToHex . encode'
 
 instance FromJSON (PubKeyI Generic) where
     parseJSON = withText "PubKey" $
-        maybe mzero return . (decodeToMaybe =<<) . hexToBS . unpack
+        maybe mzero return . (decodeToMaybe =<<) . hexToBS . encodeUtf8
 
 instance ToJSON (PubKeyI Compressed) where
-    toJSON = String . pack . bsToHex . encode'
+    toJSON = String . decodeUtf8 . bsToHex . encode'
 
 instance FromJSON (PubKeyI Compressed) where
     parseJSON = withText "PubKeyC" $
-        maybe mzero return . (decodeToMaybe =<<) . hexToBS . unpack
+        maybe mzero return . (decodeToMaybe =<<) . hexToBS . encodeUtf8
 
 instance ToJSON (PubKeyI Uncompressed) where
-    toJSON = String . pack . bsToHex . encode'
+    toJSON = String . decodeUtf8 . bsToHex . encode'
 
 instance FromJSON (PubKeyI Uncompressed) where
     parseJSON = withText "PubKeyU" $
-        maybe mzero return . (decodeToMaybe =<<) . hexToBS . unpack
+        maybe mzero return . (decodeToMaybe =<<) . hexToBS . encodeUtf8
 
 -- Constructors for public keys
 makePubKey :: Point -> PubKey
@@ -303,7 +303,7 @@ prvKeyPutMonad k
 -- <http://en.bitcoin.it/wiki/Wallet_import_format>
 fromWif :: String -> Maybe PrvKey
 fromWif str = do
-    bs <- decodeBase58Check $ stringToBS str
+    bs <- decodeBase58Check $ stringToBS $ str
     -- Check that this is a private key
     guard (BS.head bs == secretPrefix)
     case BS.length bs of

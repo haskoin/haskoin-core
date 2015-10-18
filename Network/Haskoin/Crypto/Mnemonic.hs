@@ -25,11 +25,10 @@ import Crypto.PBKDF.ByteString (sha512PBKDF2)
 import Data.Bits ((.&.), shiftL, shiftR)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as B8
 import Data.Char (isAscii)
 import Data.List
 import Data.Maybe
-import Network.Haskoin.Util (bsToInteger, integerToBS)
+import Network.Haskoin.Util (bsToInteger, integerToBS, stringToBS)
 
 type Entropy = ByteString
 type Mnemonic = String
@@ -93,7 +92,8 @@ numCS len = shiftCS . bsToInteger
 -- get a seed from a mnemonic sentence.  Warning: Does not perform NFKD
 -- normalization.
 anyToSeed :: Passphrase -> Mnemonic -> Seed
-anyToSeed pf ms = sha512PBKDF2 (B8.pack ms) (B8.pack $ "mnemonic" ++ pf) 2048 64
+anyToSeed pf ms =
+    sha512PBKDF2 (stringToBS ms) (stringToBS $ "mnemonic" ++ pf) 2048 64
 
 -- | Get a 512-bit seed from a mnemonic sentence.  Will calculate checksum.
 -- Passphrase can be used to protect the mnemonic.  Use an empty string as

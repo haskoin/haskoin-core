@@ -20,7 +20,7 @@ import Data.Bits (testBit, clearBit, setBit)
 import Data.Maybe (fromMaybe)
 import Data.Binary (Binary, get, put, getWord8, putWord8)
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
-import qualified Data.Text as T
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import qualified Data.ByteString as BS
     ( ByteString
     , index
@@ -115,11 +115,11 @@ instance Binary SigHash where
         SigUnknown _ w -> w
 
 instance ToJSON SigHash where
-    toJSON = String . T.pack . bsToHex . encode'
+    toJSON = String . decodeUtf8 . bsToHex . encode'
 
 instance FromJSON SigHash where
     parseJSON = withText "sighash" $
-        maybe mzero return . (decodeToMaybe <=< hexToBS) . T.unpack
+        maybe mzero return . (decodeToMaybe <=< hexToBS) . encodeUtf8
 
 -- | Encodes a 'SigHash' to a 32 bit-long bytestring.
 encodeSigHash32 :: SigHash -> BS.ByteString

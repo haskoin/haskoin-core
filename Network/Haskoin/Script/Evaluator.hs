@@ -112,7 +112,7 @@ data ProgramData = ProgramData {
 dumpOp :: ScriptOp -> String
 dumpOp (OP_PUSHDATA payload optype) =
   "OP_PUSHDATA(" ++ show optype ++ ")" ++
-  " 0x" ++ bsToHex payload
+  " 0x" ++ bsToString (bsToHex payload)
 dumpOp op = show op
 
 dumpList :: [String] -> String
@@ -122,7 +122,7 @@ dumpScript :: [ScriptOp] -> String
 dumpScript script = dumpList $ map dumpOp script
 
 dumpStack :: Stack -> String
-dumpStack s = dumpList $ map (bsToHex . BS.pack) s
+dumpStack s = dumpList $ map (bsToString . bsToHex . BS.pack) s
 
 instance Show ProgramData where
     show p = " stack: " ++ dumpStack (stack p)

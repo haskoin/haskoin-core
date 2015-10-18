@@ -42,7 +42,7 @@ testDRBG (s,i) = do
         (w2,_) = hmacDRBGGen w1 128 (v !! 3)
         (_,r)  = hmacDRBGGen w2 128 (v !! 4)
     assertBool name $ fromJust r == (v !! 5)
-    where v = map (fromJust . hexToBS) s
+    where v = map (fromJust . hexToBS . stringToBS) s
           name = "    > HMAC DRBG Vector " ++ (show i)
 
 testDRBGRsd :: (TestVector,Int) -> Assertion
@@ -52,7 +52,7 @@ testDRBGRsd (s,i) = do
         (w3,_) = hmacDRBGGen w2 128 (v !! 5)
         (_,r)  = hmacDRBGGen w3 128 (v !! 6)
     assertBool name $ fromJust r == (v !! 7)
-    where v = map (fromJust . hexToBS) s
+    where v = map (fromJust . hexToBS . stringToBS) s
           name = "    > HMAC DRBG Vector " ++ (show i)
 
 testCompact :: Assertion

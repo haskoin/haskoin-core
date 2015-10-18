@@ -249,7 +249,7 @@ detVec =
 
 testDetSigning :: (Integer, String, String) -> Assertion
 testDetSigning (prv,msg,str) = do
-    assertBool "RFC 6979 Vector" $ res == (fromJust $ hexToBS str)
+    assertBool "RFC 6979 Vector" $ res == (fromJust $ hexToBS $ stringToBS str)
     assertBool "Valid sig" $ verifySig msg' sig (derivePubKey prv')
     where sig@(Signature r s) = detSignMsg msg' prv'
           msg' = hash256 $ stringToBS msg

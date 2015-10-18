@@ -185,17 +185,20 @@ derivePathVectors =
 
 runXKeyVec :: ([String],XPrvKey) -> Assertion
 runXKeyVec (v,m) = do
-    assertBool "xPrvID" $ (bsToHex $ encode' $ xPrvID m) == v !! 0
-    assertBool "xPrvFP" $ (bsToHex $ encode' $ xPrvFP m) == v !! 1
+    assertBool "xPrvID" $ (bsToString $ bsToHex $ encode' $ xPrvID m) == v !! 0
+    assertBool "xPrvFP" $ (bsToString $ bsToHex $ encode' $ xPrvFP m) == v !! 1
     assertBool "xPrvAddr" $
         (addrToBase58 $ xPubAddr $ deriveXPubKey m) == v !! 2
-    assertBool "prvKey" $ (bsToHex $ encodePrvKey $ xPrvKey m) == v !! 3
+    assertBool "prvKey" $
+        (bsToString $ bsToHex $ encodePrvKey $ xPrvKey m) == v !! 3
     assertBool "xPrvWIF" $ xPrvWif m == v !! 4
     assertBool "pubKey" $
-        (bsToHex $ encode' $ xPubKey $ deriveXPubKey m) == v !! 5
-    assertBool "chain code" $ (bsToHex $ encode' $ xPrvChain m) == v !! 6
-    assertBool "Hex PubKey" $ (bsToHex $ encode' $ deriveXPubKey m) == v !! 7
-    assertBool "Hex PrvKey" $ (bsToHex $ encode' m) == v !! 8
+        (bsToString $ bsToHex $ encode' $ xPubKey $ deriveXPubKey m) == v !! 5
+    assertBool "chain code" $
+        (bsToString $ bsToHex $ encode' $ xPrvChain m) == v !! 6
+    assertBool "Hex PubKey" $
+        (bsToString $ bsToHex $ encode' $ deriveXPubKey m) == v !! 7
+    assertBool "Hex PrvKey" $ (bsToString $ bsToHex $ encode' m) == v !! 8
     assertBool "Base58 PubKey" $ (xPubExport $ deriveXPubKey m) == v !! 9
     assertBool "Base58 PrvKey" $ xPrvExport m == v !! 10
 
@@ -205,7 +208,7 @@ runXKeyVec (v,m) = do
 xKeyVec :: [([String], XPrvKey)]
 xKeyVec = zip xKeyResVec $ foldl f [m] der
     where f acc d = acc ++ [d $ last acc]
-          m   = makeXPrvKey $ fromJust $ hexToBS m0
+          m   = makeXPrvKey $ fromJust $ hexToBS $ stringToBS m0
           der = [ flip hardSubKey 0
                 , flip prvSubKey 1
                 , flip hardSubKey 2
@@ -216,7 +219,7 @@ xKeyVec = zip xKeyResVec $ foldl f [m] der
 xKeyVec2 :: [([String],XPrvKey)]
 xKeyVec2 = zip xKeyResVec2 $ foldl f [m] der
     where f acc d = acc ++ [d $ last acc]
-          m   = makeXPrvKey $ fromJust $ hexToBS m1
+          m   = makeXPrvKey $ fromJust $ hexToBS $ stringToBS m1
           der = [ flip prvSubKey 0
                 , flip hardSubKey 2147483647
                 , flip prvSubKey 1

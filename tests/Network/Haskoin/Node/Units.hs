@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Node.Units (tests) where
 
 import Test.HUnit (Assertion, assertBool)

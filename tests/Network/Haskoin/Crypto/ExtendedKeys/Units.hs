@@ -208,32 +208,29 @@ xKeyVec1 :: [([String], XPrvKey)]
 xKeyVec1 = zip xKeyResVec1 xKeyTestVec1
 
 xKeyTestVec1 :: [XPrvKey]
-xKeyTestVec1 =  foldl f [m] der
-    where f acc d = acc ++ [d $ last acc]
-          m   = makeXPrvKey $ fromJust $ hexToBS seed1
-          der = [ flip hardSubKey 0
-                , flip prvSubKey 1
-                , flip hardSubKey 2
-                , flip prvSubKey 2
-                , flip prvSubKey 1000000000
-                ]
+xKeyTestVec1 =  makeXKeyTestVec seed1 der1
 
 xKeyVec2 :: [([String],XPrvKey)]
 xKeyVec2 = zip xKeyResVec2 xKeyTestVec2
 
 xKeyTestVec2 :: [XPrvKey]
-xKeyTestVec2 = foldl f [m] der
+xKeyTestVec2 = makeXKeyTestVec seed2 der2
+
+makeXKeyTestVec :: String -> [ (XPrvKey -> XPrvKey) ] -> [XPrvKey]
+makeXKeyTestVec seed der = foldl f [m] der
     where f acc d = acc ++ [d $ last acc]
-          m   = makeXPrvKey $ fromJust $ hexToBS seed2
-          der = [ flip prvSubKey 0
-                , flip hardSubKey 2147483647
-                , flip prvSubKey 1
-                , flip hardSubKey 2147483646
-                , flip prvSubKey 2
-                ]
+          m   = makeXPrvKey $ fromJust $ hexToBS seed
 
 seed1 :: String
 seed1 = "000102030405060708090a0b0c0d0e0f"
+
+der1 :: [XPrvKey -> XPrvKey]
+der1 = [ flip hardSubKey 0
+                , flip prvSubKey 1
+                , flip hardSubKey 2
+                , flip prvSubKey 2
+                , flip prvSubKey 1000000000
+                ]
 
 xKeyResVec1 :: [[String]]
 xKeyResVec1 =
@@ -320,6 +317,14 @@ xKeyResVec1 =
 
 seed2 :: String
 seed2 = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
+
+der2 :: [XPrvKey -> XPrvKey]
+der2 = [ flip prvSubKey 0
+                , flip hardSubKey 2147483647
+                , flip prvSubKey 1
+                , flip hardSubKey 2147483646
+                , flip prvSubKey 2
+                ]
 
 xKeyResVec2 :: [[String]]
 xKeyResVec2 =

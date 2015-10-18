@@ -15,13 +15,13 @@ import Network.Haskoin.Util
 tests :: [Test]
 tests =
     [ testGroup "BIP32 derivation vector 1"
-        [ testCase "Chain m" $ runXKeyVec (xKeyVec !! 0)
-        , testCase "Chain m/0'" $ runXKeyVec (xKeyVec !! 1)
-        , testCase "Chain m/0'/1" $ runXKeyVec (xKeyVec !! 2)
-        , testCase "Chain m/0'/1/2'" $ runXKeyVec (xKeyVec !! 3)
-        , testCase "Chain m/0'/1/2'/2" $ runXKeyVec (xKeyVec !! 4)
+        [ testCase "Chain m" $ runXKeyVec (xKeyVec1 !! 0)
+        , testCase "Chain m/0'" $ runXKeyVec (xKeyVec1 !! 1)
+        , testCase "Chain m/0'/1" $ runXKeyVec (xKeyVec1 !! 2)
+        , testCase "Chain m/0'/1/2'" $ runXKeyVec (xKeyVec1 !! 3)
+        , testCase "Chain m/0'/1/2'/2" $ runXKeyVec (xKeyVec1 !! 4)
         , testCase "Chain m/0'/1/2'/2/1000000000" $
-            runXKeyVec (xKeyVec !! 5)
+            runXKeyVec (xKeyVec1 !! 5)
         ]
     , testGroup "BIP32 subkey derivation vector 2"
         [ testCase "Chain m" $ runXKeyVec (xKeyVec2 !! 0)
@@ -201,9 +201,11 @@ runXKeyVec (v,m) = do
 
 -- BIP 0032 Test Vectors
 -- https://en.bitcoin.it/wiki/BIP_0032_TestVectors
+-- https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki
 
-xKeyVec :: [([String], XPrvKey)]
-xKeyVec = zip xKeyResVec $ foldl f [m] der
+
+xKeyVec1 :: [([String], XPrvKey)]
+xKeyVec1 = zip xKeyResVec1 $ foldl f [m] der
     where f acc d = acc ++ [d $ last acc]
           m   = makeXPrvKey $ fromJust $ hexToBS m0
           der = [ flip hardSubKey 0
@@ -227,8 +229,8 @@ xKeyVec2 = zip xKeyResVec2 $ foldl f [m] der
 m0 :: String
 m0 = "000102030405060708090a0b0c0d0e0f"
 
-xKeyResVec :: [[String]]
-xKeyResVec =
+xKeyResVec1 :: [[String]]
+xKeyResVec1 =
     [
       -- m
       [ "3442193e1bb70916e914552172cd4e2dbc9df811"

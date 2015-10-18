@@ -225,12 +225,12 @@ seed1 :: String
 seed1 = "000102030405060708090a0b0c0d0e0f"
 
 der1 :: [XPrvKey -> XPrvKey]
-der1 = [ flip hardSubKey 0
-                , flip prvSubKey 1
-                , flip hardSubKey 2
-                , flip prvSubKey 2
-                , flip prvSubKey 1000000000
-                ]
+der1 =  [ derivePath (fromString "m/0'" :: DerivPath)
+        , derivePath (fromString "m/1" :: DerivPath)
+        , derivePath (fromString "m/2'" :: DerivPath)
+        , derivePath (fromString "m/2" :: DerivPath)
+        , derivePath (fromString "m/1000000000" :: DerivPath)
+        ]
 
 xKeyResVec1 :: [[String]]
 xKeyResVec1 =
@@ -319,12 +319,12 @@ seed2 :: String
 seed2 = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
 
 der2 :: [XPrvKey -> XPrvKey]
-der2 = [ flip prvSubKey 0
-                , flip hardSubKey 2147483647
-                , flip prvSubKey 1
-                , flip hardSubKey 2147483646
-                , flip prvSubKey 2
-                ]
+der2 =  [ derivePath (fromString "m/0" :: DerivPath)
+        , derivePath (fromString "m/2147483647'" :: DerivPath)
+        , derivePath (fromString "m/1" :: DerivPath)
+        , derivePath (fromString "m/2147483646'" :: DerivPath)
+        , derivePath (fromString "m/2" :: DerivPath)
+        ]
 
 xKeyResVec2 :: [[String]]
 xKeyResVec2 =

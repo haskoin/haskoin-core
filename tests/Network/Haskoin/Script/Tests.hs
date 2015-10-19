@@ -15,11 +15,11 @@ import qualified Test.HUnit as HUnit (assertFailure, assertBool)
 
 import Control.Monad (when)
 
-import Data.Bits (setBit, testBit)
+import Data.Bits (testBit)
 import Data.List (isPrefixOf)
 import Data.List.Split ( splitOn )
 import Data.Char (ord)
-import Data.Maybe (catMaybes, isNothing)
+import Data.Maybe (catMaybes, fromJust, isNothing)
 import Data.Int (Int64)
 import Data.Word (Word8, Word32)
 import Data.Binary (encode, decode, decodeOrFail)
@@ -33,6 +33,8 @@ import qualified Data.ByteString as BS
     , tail
     , head
     , pack
+    , cons
+    , replicate
     , empty
     )
 import qualified Data.ByteString.Char8 as C (putStrLn)
@@ -66,19 +68,13 @@ tests =
         ]
     , testGroup "Script SigHash"
         [ testProperty "canonical signatures" $
-            \(ArbitraryTxSignature _ _ _ sig) -> testCanonicalSig sig
-        , testProperty "canonical deterministic signatures" $
-            \(ArbitraryDetTxSignature _ _ sig) -> testCanonicalSig sig
+            \(ArbitraryTxSignature _ _ sig) -> testCanonicalSig sig
         , testProperty "decode SigHash from Word8" binSigHashByte
         , testProperty "encodeSigHash32 is 4 bytes long" testEncodeSH32
         , testProperty "decode . encode TxSignature" $
-            \(ArbitraryTxSignature _ _ _ sig) -> binTxSig sig
-        , testProperty "decode . encode deterministic TxSignature" $
-            \(ArbitraryDetTxSignature _ _ sig) -> binTxSig sig
+            \(ArbitraryTxSignature _ _ sig) -> binTxSig sig
         , testProperty "decodeCanonical . encode TxSignature" $
-            \(ArbitraryTxSignature _ _ _ sig) -> binTxSigCanonical sig
-        , testProperty "decodeCanonical . encode deterministic TxSignature" $
-            \(ArbitraryDetTxSignature _ _ sig) -> binTxSigCanonical sig
+            \(ArbitraryTxSignature _ _ sig) -> binTxSigCanonical sig
         , testProperty "Testing txSigHash with SigSingle" testSigHashOne
         ]
     , testGroup "Integer Types"
@@ -120,8 +116,8 @@ testSortMulSig (ArbitraryMSOutput out) =
 testCanonicalSig :: TxSignature -> Bool
 testCanonicalSig ts@(TxSignature _ sh)
     | isSigUnknown sh = isLeft $ decodeCanonicalSig bs
-    | otherwise       = isRight (decodeCanonicalSig bs) &&
-                        isCanonicalHalfOrder (txSignature ts)
+    | otherwise =
+        isRight (decodeCanonicalSig bs) && isCanonicalHalfOrder (txSignature ts)
   where
     bs = encodeSig ts
 
@@ -157,9 +153,11 @@ binTxSigCanonical ts@(TxSignature _ sh)
 testSigHashOne :: ArbitraryTx -> ArbitraryScript -> Bool -> Property
 testSigHashOne (ArbitraryTx tx) (ArbitraryScript s) acp = not (null $ txIn tx) ==>
     if length (txIn tx) > length (txOut tx)
-        then res == (setBit 0 248)
-        else res /= (setBit 0 248)
-    where res = txSigHash tx s (length (txIn tx) - 1) (SigSingle acp)
+        then res == one
+        else res /= one
+  where
+    res = txSigHash tx s (length (txIn tx) - 1) (SigSingle acp)
+    one = fromJust $ bsToHash256 $ 0x01 `BS.cons` BS.replicate 31 0x00
 
 {- Script Evaluation Primitives -}
 
@@ -328,10 +326,11 @@ maxSeqNum = 0xffffffff -- Perhaps this should be moved to constants.
 
 -- | Null output used to create CoinbaseTx
 nullOutPoint :: OutPoint
-nullOutPoint = OutPoint {
-                 outPointHash  = 0
-               , outPointIndex = -1
-               }
+nullOutPoint =
+    OutPoint
+        { outPointHash  = TxHash $ fromJust $ bsToHash256 $ BS.replicate 32 0x00
+        , outPointIndex = -1
+        }
 
 -- | Some of the scripts tests require transactions be built in a
 -- standard way.  This function builds the crediting transaction.

@@ -27,6 +27,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as C (unwords, words)
 import Data.String.Conversions (cs)
 import qualified Data.ByteString as BS
+import qualified Data.Map.Strict as M
 import Data.List
 import Data.Maybe
 import Data.Vector ((!), Vector)
@@ -52,7 +53,7 @@ toMnemonic ent = do
     (cs_len, remainder) = BS.length ent `quotRem` 4
     c = calcCS cs_len ent
     indices = bsToIndices $ ent `BS.append` c
-    ms = C.unwords $ map (wl !) indices
+    ms = C.unwords $ map (wl!) indices
 
 -- | Revert 'toMnemonic'. Do not use this to generate seeds. Instead use
 -- 'mnemonicToSeed'. This outputs the original entropy used to generate a
@@ -122,14 +123,14 @@ getIndices ws
     | null n = return $ catMaybes i
     | otherwise = Left $ "getIndices: words not found: " ++ cs w
   where
-    i = map (`V.elemIndex` wl) ws
+    i = map (`M.lookup` wl') ws
     n = elemIndices Nothing i
     w = C.unwords $ map (ws!!) n
 
 indicesToBS :: [Int] -> Either String ByteString
 indicesToBS is = do
     when lrg $ Left "indicesToBS: index larger or equal than 2048"
-    return . pad . integerToBS $ (foldl' f 0 is) `shiftL` shift_width
+    return . pad . integerToBS $ foldl' f 0 is `shiftL` shift_width
   where
     lrg = not . isNothing $ find (>= 2048) is
     (q, r) = (length is * 11) `quotRem` 8
@@ -144,6 +145,9 @@ bsToIndices bs = reverse . go q $ bsToInteger bs `shiftR` r
     (q, r) = (BS.length bs * 8) `quotRem` 11
     go 0 _ = []
     go n i = (fromIntegral $ i `mod` 2048) : go (n - 1) (i `shiftR` 11)
+
+wl' :: M.Map ByteString Int
+wl' = V.ifoldr' (\i w m -> M.insert w i m) M.empty wl
 
 -- | Standard English dictionary from BIP-39 specification.
 wl :: Vector ByteString

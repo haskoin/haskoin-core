@@ -9,10 +9,9 @@ module Network.Haskoin.Crypto.Keys
 , eitherPubKey
 , maybePubKeyC
 , maybePubKeyU
-, isValidPubKey
 , derivePubKey
 , pubKeyAddr
-, PrvKeyI(prvKeyCompressed, prvKeyFieldN)
+, PrvKeyI(prvKeyCompressed, prvKeySecKey)
 , PrvKey, PrvKeyC, PrvKeyU
 , makePrvKey
 , makePrvKeyG
@@ -22,51 +21,42 @@ module Network.Haskoin.Crypto.Keys
 , eitherPrvKey
 , maybePrvKeyC
 , maybePrvKeyU
-, isValidPrvKey
-, fromPrvKey
 , encodePrvKey
 , decodePrvKey
 , prvKeyPutMonad
 , prvKeyGetMonad
 , fromWif
 , toWif
-, curveG
 ) where
 
 import Control.Applicative ((<|>))
-import Control.Monad ((<=<), when, unless, guard, mzero)
+import Control.Monad ((<=<), guard, mzero)
 import Control.DeepSeq (NFData, rnf)
 
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
-import Data.Maybe (isJust, fromJust, fromMaybe)
+import Data.Maybe (fromMaybe)
 import Data.Binary (Binary, get, put)
-import Data.Binary.Get (Get, getWord8)
-import Data.Binary.Put (Put, putWord8)
+import Data.Binary.Get (Get, getByteString)
+import Data.Binary.Put (Put, putByteString)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
     ( head, tail
     , last, init
     , cons, snoc
-    , length
+    , length, elem, pack
     )
 import Data.String (IsString, fromString)
 import Data.String.Conversions (cs)
 
-import Text.Read (readPrec, parens, lexP, pfail)
-import qualified Text.Read as Read (Lexeme(String))
+import qualified Crypto.Secp256k1 as EC
 
-import Network.Haskoin.Crypto.Curve
-import Network.Haskoin.Crypto.BigWord
-import Network.Haskoin.Crypto.Point
+import Text.Read (readPrec, parens, lexP, pfail)
+import qualified Text.Read as Read (Lexeme(Ident, String))
+
 import Network.Haskoin.Crypto.Base58
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Constants
 import Network.Haskoin.Util
-
--- | G parameter of the EC curve expressed as a Point
-curveG :: Point
-curveG = fromJust $ makePoint (fromInteger $ fst pairG)
-                              (fromInteger $ snd pairG)
 
 data Generic
 data Compressed
@@ -82,46 +72,53 @@ type PubKeyU = PubKeyI Uncompressed
 
 -- Internal type for public keys
 data PubKeyI c = PubKeyI
-    { pubKeyPoint      :: !Point
+    { pubKeyPoint      :: !EC.PubKey
     , pubKeyCompressed :: !Bool
     } deriving (Eq)
 
 -- TODO: Test
 instance Show PubKey where
-    show = show . encodeHex . encode'
+    showsPrec d k = showParen (d > 10) $
+        showString "PubKey " . shows (encodeHex $ encode' k)
 
 -- TODO: Test
 instance Show PubKeyC where
-    show = show . encodeHex . encode'
+    showsPrec d k = showParen (d > 10) $
+        showString "PubKeyC " . shows (encodeHex $ encode' k)
 
 -- TODO: Test
 instance Show PubKeyU where
-    show = show . encodeHex . encode'
+    showsPrec d k = showParen (d > 10) $
+        showString "PubKeyU " . shows (encodeHex $ encode' k)
 
 -- TODO: Test
 instance Read PubKey where
     readPrec = parens $ do
+        Read.Ident "PubKey" <- lexP
         Read.String str <- lexP
         maybe pfail return $ decodeToMaybe <=< decodeHex $ cs str
 
 -- TODO: Test
 instance Read PubKeyC where
     readPrec = parens $ do
+        Read.Ident "PubKeyC" <- lexP
         Read.String str <- lexP
         maybe pfail return $ decodeToMaybe <=< decodeHex $ cs str
 
 -- TODO: Test
 instance Read PubKeyU where
     readPrec = parens $ do
+        Read.Ident "PubKeyU" <- lexP
         Read.String str <- lexP
         maybe pfail return $ decodeToMaybe <=< decodeHex $ cs str
 
 -- TODO: Test
 instance IsString PubKey where
-    fromString str = fromJust $ decodeToMaybe <=< decodeHex $ cs str
+    fromString str = fromMaybe e $ decodeToMaybe <=< decodeHex $ cs str where
+        e = error "Could not decode public key"
 
 instance NFData (PubKeyI c) where
-    rnf (PubKeyI p c) = rnf p `seq` rnf c
+    rnf (PubKeyI p c) = p `seq` rnf c
 
 instance ToJSON PubKey where
     toJSON = String . cs . encodeHex . encode'
@@ -145,16 +142,16 @@ instance FromJSON PubKeyU where
         maybe mzero return . (decodeToMaybe =<<) . decodeHex . cs
 
 -- Constructors for public keys
-makePubKey :: Point -> PubKey
+makePubKey :: EC.PubKey -> PubKey
 makePubKey p = PubKeyI p True
 
-makePubKeyG :: Bool -> Point -> PubKey
+makePubKeyG :: Bool -> EC.PubKey -> PubKey
 makePubKeyG c p = PubKeyI p c
 
-makePubKeyC :: Point -> PubKeyC
+makePubKeyC :: EC.PubKey -> PubKeyC
 makePubKeyC p = PubKeyI p True
 
-makePubKeyU :: Point -> PubKeyU
+makePubKeyU :: EC.PubKey -> PubKeyU
 makePubKeyU p = PubKeyI p False
 
 toPubKeyG :: PubKeyI c -> PubKey
@@ -175,19 +172,13 @@ maybePubKeyU pk
     | not (pubKeyCompressed pk) = Just $ makePubKeyU $ pubKeyPoint pk
     | otherwise                 = Nothing
 
--- | Returns 'True' if the public key is valid. This will check if the public
--- key point lies on the curve.
-isValidPubKey :: PubKeyI c -> Bool
-isValidPubKey = validatePoint . pubKeyPoint
-
 -- | Derives a public key from a private key. This function will preserve
 -- information on key compression ('PrvKey' becomes 'PubKey' and 'PrvKeyU'
 -- becomes 'PubKeyU')
 derivePubKey :: PrvKeyI c -> PubKeyI c
-derivePubKey (PrvKeyI d c) = PubKeyI (mulPoint d curveG) c
+derivePubKey (PrvKeyI d c) = PubKeyI (EC.derivePubKey d) c
 
 instance Binary PubKey where
-
     get = (toPubKeyG <$> getC) <|> (toPubKeyG <$> getU)
       where
         getC = get :: Get (PubKeyI Compressed)
@@ -198,53 +189,24 @@ instance Binary PubKey where
         Right k -> put k
 
 instance Binary PubKeyC where
+    get = do
+        bs <- getByteString 33
+        guard $ BS.head bs `BS.elem` BS.pack [0x02, 0x03]
+        maybe mzero return $ makePubKeyC <$> EC.importPubKey bs
 
-    -- <http://www.secg.org/download/aid-780/sec1-v2.pdf Section 2.3.4>
-    get = getWord8 >>= \y -> do
-        -- skip 2.3.4.1 and fail. 'InfPoint' is an invalid public key
-        when (y == 0) $ fail "InfPoint is not a valid public key"
-        -- 2.3.4.2 Compressed format
-        -- 2 means pY is even, 3 means pY is odd
-        unless (y `elem` [2,3]) $ fail "Get: Invalid public key encoding"
-        -- 2.1
-        x <- get :: Get FieldP
-        -- 2.4.1 (deriving yP)
-        let a  = x ^ (3 :: Integer) + (curveA * x) + curveB
-            ys = filter ((== (even y)) . even) (quadraticResidue a)
-        -- We found no square root (mod p)
-        when (null ys) (fail $ "No ECC point for x = " ++ (show x))
-        let p = makePoint x (head ys)
-        -- Additionally, check that the point is on the curve
-        unless (isJust p) (fail "Get: Point not on the curve")
-        return $ makePubKeyC $ fromJust p
-
-    -- <http://www.secg.org/download/aid-780/sec1-v2.pdf Section 2.3.3>
-    put pk = case getAffine (pubKeyPoint pk) of
-        -- 2.3.3.1
-        Nothing     -> error "Put: Invalid public key"
-        Just (x, y) -> putWord8 (if even y then 2 else 3) >> put x
+    put pk = putByteString $ EC.exportPubKey True $ pubKeyPoint pk
 
 instance Binary PubKeyU where
+    get = do
+        bs <- getByteString 65
+        guard $ BS.head bs == 0x04
+        maybe mzero return $ makePubKeyU <$> EC.importPubKey bs
 
-    -- <http://www.secg.org/download/aid-780/sec1-v2.pdf Section 2.3.4>
-    get = getWord8 >>= \y -> do
-        -- skip 2.3.4.1 and fail. InfPoint is an invalid public key
-        when (y == 0) $ fail "InfPoint is not a valid public key"
-        -- 2.3.4.3 Uncompressed format
-        unless (y == 4) $ fail "Get: Invalid public key encoding"
-        p <- makePoint <$> get <*> get
-        unless (isJust p) (fail "Get: Point not on the curve")
-        return $ makePubKeyU $ fromJust $ p
-
-    -- <http://www.secg.org/download/aid-780/sec1-v2.pdf Section 2.3.3>
-    put pk = case getAffine (pubKeyPoint pk) of
-        -- 2.3.3.1
-        Nothing     -> error "Put: Invalid public key"
-        Just (x, y) -> putWord8 4 >> put x >> put y
+    put pk = putByteString $ EC.exportPubKey False $ pubKeyPoint pk
 
 -- | Computes an 'Address' from a public key
 pubKeyAddr :: Binary (PubKeyI c) => PubKeyI c -> Address
-pubKeyAddr = PubKeyAddress . hash160 . hash256BS . encode'
+pubKeyAddr = PubKeyAddress . hash160 . getHash256 . hash256 . encode'
 
 {- Private Keys -}
 
@@ -255,26 +217,39 @@ pubKeyAddr = PubKeyAddress . hash160 . hash256BS . encode'
 
 -- Internal private key type
 data PrvKeyI c = PrvKeyI
-    { prvKeyFieldN     :: !FieldN
+    { prvKeySecKey     :: !EC.SecKey
     , prvKeyCompressed :: !Bool
     } deriving (Eq)
 
 instance NFData (PrvKeyI c) where
-    rnf (PrvKeyI d c) = rnf d `seq` rnf c
+    rnf (PrvKeyI s b) = s `seq` b `seq` ()
 
 -- TODO: Test
-instance Show (PrvKeyI c) where
-    show = show . toWif
+instance Show PrvKey where
+    showsPrec d k = showParen (d > 10) $
+        showString "PrvKey " . shows (toWif k)
+
+-- TODO: Test
+instance Show PrvKeyC where
+    showsPrec d k = showParen (d > 10) $
+        showString "PrvKeyC " . shows (toWif k)
+
+-- TODO: Test
+instance Show PrvKeyU where
+    showsPrec d k = showParen (d > 10) $
+        showString "PrvKeyU " . shows (toWif k)
 
 -- TODO: Test
 instance Read PrvKey where
     readPrec = parens $ do
+        Read.Ident "PrvKey" <- lexP
         Read.String str <- lexP
         maybe pfail return $ fromWif $ cs str
 
 -- TODO: Test
 instance Read PrvKeyC where
     readPrec = parens $ do
+        Read.Ident "PrvKeyC" <- lexP
         Read.String str <- lexP
         key <- maybe pfail return $ fromWif $ cs str
         case eitherPrvKey key of
@@ -284,6 +259,7 @@ instance Read PrvKeyC where
 -- TODO: Test
 instance Read PrvKeyU where
     readPrec = parens $ do
+        Read.Ident "PrvKeyU" <- lexP
         Read.String str <- lexP
         key <- maybe pfail return $ fromWif $ cs str
         case eitherPrvKey key of
@@ -292,7 +268,8 @@ instance Read PrvKeyU where
 
 -- TODO: Test
 instance IsString PrvKey where
-    fromString str = fromJust $ fromWif $ cs str
+    fromString str = fromMaybe e $ fromWif $ cs str where
+        e = error "Could not decode WIF"
 
 -- TODO: Test
 instance IsString PrvKeyC where
@@ -301,7 +278,8 @@ instance IsString PrvKeyC where
             Left _  -> undefined
             Right k -> k
       where
-        key = fromJust $ fromWif $ cs str
+        key = fromMaybe e $ fromWif $ cs str
+        e = error "Could not decode WIF"
 
 -- TODO: Test
 instance IsString PrvKeyU where
@@ -310,28 +288,27 @@ instance IsString PrvKeyU where
             Left k  -> k
             Right _ -> undefined
       where
-        key = fromJust $ fromWif $ cs str
+        key = fromMaybe e $ fromWif $ cs str
+        e = error "Could not decode WIF"
 
 type PrvKey = PrvKeyI Generic
 type PrvKeyC = PrvKeyI Compressed
 type PrvKeyU = PrvKeyI Uncompressed
 
-makePrvKeyI :: Integer -> Bool -> Maybe (PrvKeyI c)
-makePrvKeyI d c
-    | isValidPrvKey d = Just $ PrvKeyI (fromInteger d) c
-    | otherwise       = Nothing
+makePrvKeyI :: Bool -> EC.SecKey -> PrvKeyI c
+makePrvKeyI c d = PrvKeyI d c
 
-makePrvKey :: Integer -> Maybe PrvKey
-makePrvKey d = makePrvKeyI d True
+makePrvKey :: EC.SecKey -> PrvKey
+makePrvKey d = makePrvKeyI True d
 
-makePrvKeyG :: Bool -> Integer -> Maybe PrvKey
-makePrvKeyG c d = makePrvKeyI d c
+makePrvKeyG :: Bool -> EC.SecKey -> PrvKey
+makePrvKeyG = makePrvKeyI
 
-makePrvKeyC :: Integer -> Maybe PrvKeyC
-makePrvKeyC d = makePrvKeyI d True
+makePrvKeyC :: EC.SecKey -> PrvKeyC
+makePrvKeyC d = makePrvKeyI True d
 
-makePrvKeyU :: Integer -> Maybe PrvKeyU
-makePrvKeyU d = makePrvKeyI d False
+makePrvKeyU :: EC.SecKey -> PrvKeyU
+makePrvKeyU d = makePrvKeyI False d
 
 toPrvKeyG :: PrvKeyI c -> PrvKey
 toPrvKeyG (PrvKeyI d c) = PrvKeyI d c
@@ -351,39 +328,23 @@ maybePrvKeyU (PrvKeyI d compressed)
     | not compressed = Just $ PrvKeyI d compressed
     | otherwise      = Nothing
 
--- | Returns 'True' if the private key is valid. This will check if the integer
--- value representing the private key is greater than 0 and smaller than the
--- curve order N.
-isValidPrvKey :: Integer -> Bool
-isValidPrvKey = isIntegerValidKey
-
--- | Returns the 'Integer' value of a private key
-fromPrvKey :: PrvKeyI c -> Integer
-fromPrvKey = fromIntegral . prvKeyFieldN
-
--- | Serialize a private key into the a 32 byte big endian 'ByteString'. This
--- is useful when a constant length serialization format for private keys is
--- required
+-- | Serialize private key as 32-byte big-endian 'ByteString'
 encodePrvKey :: PrvKeyI c -> ByteString
-encodePrvKey = runPut' . prvKeyPutMonad
+encodePrvKey (PrvKeyI d _) = EC.getSecKey d
 
--- | Deserializes an uncompressed private key from the 'Data.Binary.Get' monad
--- as a 32 byte big endian 'ByteString'
-decodePrvKey :: (Integer -> Maybe (PrvKeyI c)) -> ByteString
-             -> Maybe (PrvKeyI c)
-decodePrvKey f bs = f . fromIntegral =<< (decodeToMaybe bs :: Maybe Word256)
+-- | Deserialize private key as 32-byte big-endian 'ByteString'
+decodePrvKey :: (EC.SecKey -> PrvKeyI c) -> ByteString -> Maybe (PrvKeyI c)
+decodePrvKey f bs = f <$> EC.secKey bs
 
-prvKeyGetMonad :: (Integer -> Maybe (PrvKeyI c)) -> Get (PrvKeyI c)
+prvKeyGetMonad :: (EC.SecKey -> PrvKeyI c) -> Get (PrvKeyI c)
 prvKeyGetMonad f = do
-    i <- get :: Get Word256
-    fromMaybe err $ return <$> f (fromIntegral i)
+    bs <- getByteString 32
+    fromMaybe err $ return <$> f <$> EC.secKey bs
   where
-    err = fail "Get: Invalid private key encoding"
+    err = fail "Get: Invalid private key"
 
 prvKeyPutMonad :: PrvKeyI c -> Put
-prvKeyPutMonad k
-    | prvKeyFieldN k == 0 = error "Put: 0 is an invalid private key"
-    | otherwise           = put (fromIntegral (prvKeyFieldN k) :: Word256)
+prvKeyPutMonad (PrvKeyI k _) = putByteString $ EC.getSecKey k
 
 -- | Decodes a private key from a WIF encoded 'ByteString'. This function can
 -- fail if the input string does not decode correctly as a base 58 string or if
@@ -396,19 +357,13 @@ fromWif wif = do
     guard (BS.head bs == secretPrefix)
     case BS.length bs of
         33 -> do               -- Uncompressed format
-            let i = bsToInteger (BS.tail bs)
-            makePrvKeyG False i
+            makePrvKeyG False <$> EC.secKey (BS.tail bs)
         34 -> do               -- Compressed format
-            guard (BS.last bs == 0x01)
-            let i = bsToInteger $ BS.tail $ BS.init bs
-            makePrvKeyG True i
+            guard $ BS.last bs == 0x01
+            makePrvKeyG True <$> EC.secKey (BS.tail $ BS.init bs)
         _  -> Nothing          -- Bad length
 
 -- | Encodes a private key into WIF format
 toWif :: PrvKeyI c -> ByteString
-toWif k = encodeBase58Check $ BS.cons secretPrefix enc
-  where
-    enc | prvKeyCompressed k = BS.snoc bs 0x01
-        | otherwise          = bs
-    bs = encodePrvKey k
-
+toWif (PrvKeyI k c) = encodeBase58Check $ BS.cons secretPrefix $
+    if c then EC.getSecKey k `BS.snoc` 0x01 else EC.getSecKey k

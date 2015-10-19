@@ -8,7 +8,7 @@ import Test.Framework.Providers.HUnit (testCase)
 import Data.Maybe (fromJust)
 import Data.ByteString (ByteString)
 
-import Network.Haskoin.Crypto
+import Network.Haskoin.Block
 import Network.Haskoin.Util
 import Network.Haskoin.Internals (hmacDRBGNew, hmacDRBGGen, hmacDRBGRsd)
 

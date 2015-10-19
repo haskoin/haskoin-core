@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs #-}
 module Network.Haskoin.Crypto.ExtendedKeys
 ( XPubKey(..)
 , XPrvKey(..)
@@ -60,23 +61,24 @@ import Control.DeepSeq (NFData, rnf)
 import Control.Monad (mzero, guard, unless, (<=<))
 import Control.Exception (Exception, throw)
 
-import Data.Maybe (fromJust)
+import qualified Crypto.Secp256k1 as EC
+
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get (Get, getWord8, getWord32be)
 import Data.Binary.Put (Put, putWord8, putWord32be)
 import Data.Word (Word8, Word32)
-import Data.Bits (shiftR, setBit, testBit, clearBit)
+import Data.Bits (setBit, testBit, clearBit)
 import Data.List.Split (splitOn)
 import Data.Maybe (fromMaybe)
 import Data.String (IsString, fromString)
 import Data.String.Conversions (cs)
 import Data.Typeable (Typeable)
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS (append)
+import qualified Data.ByteString as BS (append, take)
 
 import Text.Read (readPrec, parens, lexP, pfail)
-import qualified Text.Read as Read (Lexeme(String))
+import qualified Text.Read as Read (Lexeme(Ident, String))
 
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
@@ -84,9 +86,6 @@ import Network.Haskoin.Script.Parser
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.Base58
-import Network.Haskoin.Crypto.BigWord
-import Network.Haskoin.Crypto.Curve
-import Network.Haskoin.Crypto.Point
 
 {- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
 
@@ -97,7 +96,7 @@ data DerivationException = DerivationException String
 
 instance Exception DerivationException
 
-type ChainCode = Word256
+type ChainCode = Hash256
 type KeyIndex = Word32
 
 -- | Data type representing an extended BIP32 private key. An extended key
@@ -113,17 +112,20 @@ data XPrvKey = XPrvKey
 
 -- TODO: Test
 instance Show XPrvKey where
-    show = show . xPrvExport
+    showsPrec d k = showParen (d > 10) $
+        showString "XPrvKey " . shows (xPrvExport k)
 
 -- TODO: Test
 instance Read XPrvKey where
     readPrec = parens $ do
+        Read.Ident "XPrvKey" <- lexP
         Read.String str <- lexP
         maybe pfail return $ xPrvImport $ cs str
 
 -- TODO: Test
 instance IsString XPrvKey where
-    fromString = fromJust . xPrvImport . cs
+    fromString = fromMaybe e . xPrvImport . cs where
+        e = error "Could not decode extended private key"
 
 instance NFData XPrvKey where
     rnf (XPrvKey d p i c k) =
@@ -146,17 +148,20 @@ data XPubKey = XPubKey
 
 -- TODO: Test
 instance Show XPubKey where
-    show = show . xPubExport
+    showsPrec d k = showParen (d > 10) $
+        showString "XPubKey " . shows (xPubExport k)
 
 -- TODO: Test
 instance Read XPubKey where
     readPrec = parens $ do
+        Read.Ident "XPubKey" <- lexP
         Read.String str <- lexP
         maybe pfail return $ xPubImport $ cs str
 
 -- TODO: Test
 instance IsString XPubKey where
-    fromString = fromJust . xPubImport . cs
+    fromString = fromMaybe e . xPubImport . cs where
+        e = error "Could not import extended public key"
 
 instance NFData XPubKey where
     rnf (XPubKey d p i c k) =
@@ -172,10 +177,10 @@ instance FromJSON XPubKey where
 -- produce a root node (depth=0 and parent=0).
 makeXPrvKey :: ByteString -> XPrvKey
 makeXPrvKey bs =
-    XPrvKey 0 0 0 c pk
+    XPrvKey 0 0 0 c k
   where
-    (p,c) = split512 $ hmac512 "Bitcoin seed" bs
-    pk    = fromMaybe err $ makePrvKeyC $ fromIntegral p
+    (p, c) = split512 $ hmac512 "Bitcoin seed" bs
+    k     = fromMaybe err $ makePrvKeyC <$> EC.secKey (getHash256 p)
     err   = throw $ DerivationException "Invalid seed"
 
 -- | Derive an extended public key from an extended private key. This function
@@ -201,10 +206,13 @@ prvSubKey xkey child
         XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) child c k
     | otherwise = error "Invalid child derivation index"
   where
-    pK    = xPubKey $ deriveXPubKey xkey
-    msg   = BS.append (encode' pK) (encode' child)
-    (a,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
-    k     = addPrvKeys (xPrvKey xkey) a
+    pK     = xPubKey $ deriveXPubKey xkey
+    msg    = BS.append (encode' pK) (encode' child)
+    (a, c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
+    sa     = fromMaybe err1 $ makePrvKeyC <$> EC.secKey (getHash256 a)
+    k      = fromMaybe err2 $ addPrvKeys (xPrvKey xkey) sa
+    err1   = throw $ DerivationException "Cannot add private keys"
+    err2   = throw $ DerivationException "Invalid private key"
 
 -- | Compute a public, soft child key derivation. Given a parent key /M/
 -- and a derivation index /i/, this function will compute M\/i\/.
@@ -216,9 +224,12 @@ pubSubKey xKey child
         XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK
     | otherwise = error "Invalid child derivation index"
   where
-    msg   = BS.append (encode' $ xPubKey xKey) (encode' child)
-    (a,c) = split512 $ hmac512 (encode' $ xPubChain xKey) msg
-    pK    = addPubKeys (xPubKey xKey) a
+    msg    = BS.append (encode' $ xPubKey xKey) (encode' child)
+    (a, c) = split512 $ hmac512 (encode' $ xPubChain xKey) msg
+    sa     = fromMaybe err1 $ makePrvKeyC <$> EC.secKey (getHash256 a)
+    pK     = fromMaybe err2 $ addPubKeys (xPubKey xKey) sa
+    err1   = throw $ DerivationException "Invalid private key"
+    err2   = throw $ DerivationException "Cannot add public keys"
 
 -- | Compute a hard child key derivation. Hard derivations can only be computed
 -- for private keys. Hard derivations do not allow the parent public key to
@@ -234,35 +245,27 @@ hardSubKey xkey child
         XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) i c k
     | otherwise = error "Invalid child derivation index"
   where
-    i     = setBit child 31
-    msg   = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode' i)
-    (a,c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
-    k     = addPrvKeys (xPrvKey xkey) a
+    i      = setBit child 31
+    msg    = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode' i)
+    (a, c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
+    sa     = fromMaybe err1 $ makePrvKeyC <$> EC.secKey (getHash256 a)
+    k      = fromMaybe err2 $ addPrvKeys (xPrvKey xkey) sa
+    err1   = throw $ DerivationException "Invalid private key"
+    err2   = throw $ DerivationException "Cannot add private keys"
 
--- Add two private keys together. One of the keys is defined by a Word256. The
--- functions can only be called on compressed private keys and throws an
--- exception if the Word256 is smaller than the order of the curve N.
-addPrvKeys :: PrvKeyC -> Word256 -> PrvKeyC
-addPrvKeys key i
-    | toInteger i < curveN = fromMaybe err $ makePrvKeyC $ toInteger r
-    | otherwise = err
-  where
-    r   = (prvKeyFieldN key) + (fromIntegral i :: FieldN)
-    err = throw $ DerivationException "Invalid derivation"
+-- Add two compressed private keys together.
+addPrvKeys :: PrvKeyC -> PrvKeyC -> Maybe PrvKeyC
+addPrvKeys key1 key2 = makePrvKeyC <$> EC.tweakAddSecKey key tweak where
+    key = prvKeySecKey key1
+    tweak = fromMaybe e $ EC.tweak $ EC.getSecKey $ prvKeySecKey key2
+    e = error "Could not convert private key to tweak"
 
--- Add a public key to a private key defined by its Word256 value. This will
--- transform the private key into a public key and add the respective public
--- key points together. This function only works for compressed keys and throws
--- an exception if the private key value is >= than the order of the curve N.
-addPubKeys :: PubKeyC -> Word256 -> PubKeyC
-addPubKeys pub i
-    | toInteger i < curveN =
-        if isInfPoint pt2 then err else makePubKeyC pt2
-    | otherwise = err
-  where
-    pt1 = mulPoint (fromIntegral i :: FieldN) curveG
-    pt2 = addPoint (pubKeyPoint pub) pt1
-    err = throw $ DerivationException "Invalid derivation"
+-- Add a public key to a private key.
+addPubKeys :: PubKeyC -> PrvKeyC -> Maybe PubKeyC
+addPubKeys pub key = makePubKeyC <$> EC.tweakAddPubKey point tweak where
+    point = pubKeyPoint pub
+    tweak = fromMaybe e $ EC.tweak $ EC.getSecKey $ prvKeySecKey key
+    e = error "Could not convert private key to tweak"
 
 -- | Returns True if the extended private key was derived through a hard
 -- derivation.
@@ -285,20 +288,20 @@ xPubChild :: XPubKey -> KeyIndex
 xPubChild k = clearBit (xPubIndex k) 31
 
 -- | Computes the key identifier of an extended private key.
-xPrvID :: XPrvKey -> Word160
+xPrvID :: XPrvKey -> Hash160
 xPrvID = xPubID . deriveXPubKey
 
 -- | Computes the key identifier of an extended public key.
-xPubID :: XPubKey -> Word160
-xPubID = hash160 . hash256BS . encode' . xPubKey
+xPubID :: XPubKey -> Hash160
+xPubID = hash160 . getHash256 . hash256 . encode' . xPubKey
 
 -- | Computes the key fingerprint of an extended private key.
 xPrvFP :: XPrvKey -> Word32
-xPrvFP = fromIntegral . (`shiftR` 128) . xPrvID
+xPrvFP = decode' . BS.take 4 . getHash160 . xPrvID
 
 -- | Computes the key fingerprint of an extended public key.
 xPubFP :: XPubKey -> Word32
-xPubFP = fromIntegral . (`shiftR` 128) . xPubID
+xPubFP = decode' . BS.take 4 . getHash160 . xPubID
 
 -- | Computer the 'Address' of an extended public key.
 xPubAddr :: XPubKey -> Address
@@ -479,38 +482,55 @@ pathToStr p =
         DerivPub  -> "M"
 
 -- TODO: Test
-instance Show (DerivPathI t) where
-    show p = show $ pathToStr p
+instance Show DerivPath where
+    showsPrec d p = showParen (d > 10) $
+        showString "DerivPath " . shows (pathToStr p)
+
+-- TODO: Test
+instance Show HardPath where
+    showsPrec d p = showParen (d > 10) $
+        showString "HardPath " . shows (pathToStr p)
+
+-- TODO: Test
+instance Show SoftPath where
+    showsPrec d p = showParen (d > 10) $
+        showString "SoftPath " . shows (pathToStr p)
 
 -- TODO: Test
 instance Read DerivPath where
     readPrec = parens $ do
+        Read.Ident "DerivPath" <- lexP
         Read.String str <- lexP
         maybe pfail return $ parsePath str
 
 -- TODO: Test
 instance Read HardPath where
     readPrec = parens $ do
+        Read.Ident "HardPath" <- lexP
         Read.String str <- lexP
         maybe pfail return $ parseHard str
 
 -- TODO: Test
 instance Read SoftPath where
     readPrec = parens $ do
+        Read.Ident "SoftPath" <- lexP
         Read.String str <- lexP
         maybe pfail return $ parseSoft str
 
 -- TODO: Test
 instance IsString DerivPath where
-    fromString = fromJust . parsePath
+    fromString = fromMaybe e . parsePath where
+        e = error "Could not parse derivation path"
 
 -- TODO: Test
 instance IsString HardPath where
-    fromString = fromJust . parseHard
+    fromString = fromMaybe e . parseHard where
+        e = error "Could not parse hard derivation path"
 
 -- TODO: Test
 instance IsString SoftPath where
-    fromString = fromJust . parseSoft
+    fromString = fromMaybe e . parseSoft where
+        e = error "Could not parse soft derivation path"
 
 instance FromJSON DerivPath where
     parseJSON = withText "DerivPath" $ \str -> case parsePath $ cs str of

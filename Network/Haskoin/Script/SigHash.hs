@@ -16,13 +16,16 @@ import Control.DeepSeq (NFData, rnf)
 import Control.Monad (liftM2, mzero, (<=<))
 
 import Data.Word (Word8)
-import Data.Bits (testBit, clearBit, setBit)
+import Data.Bits (testBit, clearBit)
 import Data.Maybe (fromMaybe)
 import Data.Binary (Binary, get, put, getWord8, putWord8)
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-    ( index
+    ( init
+    , singleton
+    , cons
+    , replicate
     , length
     , last
     , append
@@ -32,7 +35,6 @@ import qualified Data.ByteString as BS
     )
 import Data.String.Conversions (cs)
 
-import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.ECDSA
 import Network.Haskoin.Script.Types
@@ -130,14 +132,17 @@ txSigHash :: Tx      -- ^ Transaction to sign.
           -> Script  -- ^ Output script that is being spent.
           -> Int     -- ^ Index of the input that is being signed.
           -> SigHash -- ^ What parts of the transaction should be signed.
-          -> Word256 -- ^ Result hash to be signed.
+          -> Hash256 -- ^ Result hash to be signed.
 txSigHash tx out i sh = do
     let newIn = buildInputs (txIn tx) out i sh
     -- When SigSingle and input index > outputs, then sign integer 1
-    fromMaybe (setBit 0 248) $ do
+    fromMaybe one $ do
         newOut <- buildOutputs (txOut tx) i sh
         let newTx = tx{ txIn = newIn, txOut = newOut }
         return $ doubleHash256 $ encode' newTx `BS.append` encodeSigHash32 sh
+  where
+    one = fromMaybe e $ bsToHash256 $ 0x01 `BS.cons` BS.replicate 31 0x00
+    e = error "Could not read default sighash into 32-byte hash"
 
 -- Builds transaction inputs for computing SigHashes
 buildInputs :: [TxIn] -> Script -> Int -> SigHash -> [TxIn]
@@ -178,43 +183,18 @@ encodeSig (TxSignature sig sh) = runPut' $ put sig >> put sh
 -- | Decode a 'TxSignature' from a ByteString.
 decodeSig :: ByteString -> Either String TxSignature
 decodeSig bs = do
-    let (h,l) = BS.splitAt (BS.length bs - 1) bs
+    let (h, l) = BS.splitAt (BS.length bs - 1) bs
     liftM2 TxSignature (decodeToEither h) (decodeToEither l)
 
--- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
--- | Decode a 'TxSignature' from a ByteString. This function will check if
--- the signature is canonical and fail if it is not.
 decodeCanonicalSig :: ByteString -> Either String TxSignature
 decodeCanonicalSig bs
-    | len < 9 = Left "Non-canonical signature: too short"
-    | len > 73 = Left "Non-canonical signature: too long"
     | hashtype < 1 || hashtype > 3 =
-        Left" Non-canonical signature: unknown hashtype byte"
-    | BS.index bs 0 /= 0x30 = Left "Non-canonical signature: wrong type"
-    | BS.index bs 1 /= len - 3 =
-        Left "Non-canonical signature: wrong length marker"
-    | 5 + rlen >= len = Left "Non-canonical signature: S length misplaced"
-    | rlen + slen + 7 /= len =
-        Left "Non-canonical signature: R+S length mismatch"
-    | BS.index bs 2 /= 0x02 =
-        Left "Non-canonical signature: R value type mismatch"
-    | rlen == 0 = Left "Non-canonical signature: R length is zero"
-    | testBit (BS.index bs 4) 7 =
-        Left "Non-canonical signature: R value negative"
-    | rlen > 1 && BS.index bs 4 == 0 && not (testBit (BS.index bs 5) 7) =
-        Left "Non-canonical signature: R value excessively padded"
-    | BS.index bs (fromIntegral rlen+4) /= 0x02 =
-        Left "Non-canonical signature: S value type mismatch"
-    | slen == 0 = Left "Non-canonical signature: S length is zero"
-    | testBit (BS.index bs (fromIntegral rlen+6)) 7 =
-        Left "Non-canonical signature: S value negative"
-    | slen > 1 && BS.index bs (fromIntegral rlen+6) == 0
-        && not (testBit (BS.index bs (fromIntegral rlen+7)) 7) =
-        Left "Non-canonical signature: S value excessively padded"
-    | otherwise = decodeSig bs
+        Left "Non-canonical signature: unknown hashtype byte"
+    | otherwise =
+        case decodeStrictSig $ BS.init bs of
+            Just sig ->
+                TxSignature sig <$> decodeToEither (BS.singleton $ BS.last bs)
+            Nothing  ->
+                Left "Non-canonical signature: could not parse signature"
   where
-    len = fromIntegral $ BS.length bs
-    rlen = BS.index bs 3
-    slen = BS.index bs (fromIntegral rlen + 5)
     hashtype = clearBit (BS.last bs) 7
-

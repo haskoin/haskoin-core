@@ -17,7 +17,6 @@ module Network.Haskoin.Crypto
 , eitherPubKey
 , maybePubKeyC
 , maybePubKeyU
-, isValidPubKey
 , derivePubKey
 , pubKeyAddr
 
@@ -31,8 +30,6 @@ module Network.Haskoin.Crypto
 , eitherPrvKey
 , maybePrvKeyC
 , maybePrvKeyU
-, isValidPrvKey
-, fromPrvKey
 , encodePrvKey
 , decodePrvKey
 , prvKeyPutMonad
@@ -42,63 +39,45 @@ module Network.Haskoin.Crypto
 
   -- *ECDSA
   -- **SecretT Monad
-  -- | The SecretT monad is a monadic wrapper around  HMAC DRBG (deterministic
-  -- random byte generator) using SHA-256. The specification is defined in
+  -- | The 'SecretT' monad is a monadic wrapper around  HMAC DRBG
+  -- (deterministic random byte generator) using SHA-256. The specification is
+  -- defined in
   -- <http://csrc.nist.gov/publications/nistpubs/800-90A/SP800-90A.pdf>. The
-  -- SecretT monad is used to generate random private keys and random nonces
-  -- for ECDSA signatures.
+  -- 'SecretT' monad is used to generate random private keys.
 , SecretT
 , withSource
-, devURandom
-, devRandom
+, getEntropy
 , genPrvKey
 
   -- **Signatures
   -- | Elliptic curve cryptography standards are defined in
-  -- <http://www.secg.org/download/aid-780/sec1-v2.pdf>
+  -- <http://www.secg.org/sec1-v2.pdf>
 , Signature
 , signMsg
-, detSignMsg
 , verifySig
 , isCanonicalHalfOrder
-
-  -- * Big words
-, Word512
-, Word256
-, Word160
-, Word128
-, FieldN
-, FieldP
+, decodeDerSig
+, decodeStrictSig
 
   -- *Hash functions
-, TxHash
-, BlockHash
-, CheckSum32
-, encodeTxHashLE
-, decodeTxHashLE
-, encodeBlockHashLE
-, decodeBlockHashLE
+, CheckSum32(getCheckSum32)
+, Hash512(getHash512)
+, Hash256(getHash256)
+, Hash160(getHash160)
+, bsToCheckSum32
+, bsToHash512
+, bsToHash256
+, bsToHash160
+, checkSum32
 , hash512
-, hash512BS
 , hash256
-, hash256BS
-, hashSha1
-, hashSha1BS
 , hash160
-, hash160BS
+, sha1
 , doubleHash256
-, doubleHash256BS
-, chksum32
 , hmac512
-, hmac512BS
 , hmac256
-, hmac256BS
 , split512
 , join512
-
-  -- *Number representations
-, decodeCompact
-, encodeCompact
 
   -- *Base58 and Addresses
 , Address(..)
@@ -187,6 +166,5 @@ import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.Base58
 import Network.Haskoin.Crypto.Mnemonic
-import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.ExtendedKeys
 

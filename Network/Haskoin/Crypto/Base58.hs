@@ -11,7 +11,7 @@ module Network.Haskoin.Crypto.Base58
 import Control.DeepSeq (NFData, rnf)
 import Control.Monad (guard, mzero)
 
-import Data.Maybe (fromJust, isJust, listToMaybe)
+import Data.Maybe (fromMaybe, isJust, listToMaybe)
 import Numeric (showIntAtBase, readInt)
 import Data.Aeson
     ( Value (String)
@@ -29,9 +29,8 @@ import Data.String (IsString, fromString)
 import Data.String.Conversions (cs)
 
 import Text.Read (readPrec, parens, lexP, pfail)
-import qualified Text.Read as Read (Lexeme(String))
+import qualified Text.Read as Read (Lexeme(Ident, String))
 
-import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Constants
 import Network.Haskoin.Util
@@ -54,8 +53,9 @@ decodeBase58I s = case go of
     _           -> Nothing
   where
     p = isJust . b58'
-    f = fromJust . b58'
+    f = fromMaybe e . b58'
     go = listToMaybe $ readInt 58 p f (cs s)
+    e = error "Could not decode base58"
 
 -- | Encode a 'ByteString' to a base 58 representation.
 encodeBase58 :: ByteString -> ByteString
@@ -69,7 +69,7 @@ encodeBase58 bs = l `mappend` r
 -- | Decode a base58-encoded 'ByteString'. This can fail if the input
 -- 'ByteString' contains invalid base58 characters such as 0, O, l, I.
 decodeBase58 :: ByteString -> Maybe ByteString
-decodeBase58 t = r >>= return . (BS.append prefix)
+decodeBase58 t = BS.append prefix <$> r
   where
     (z, b)  = BS.span (== BS.index b58Data 0) t
     prefix = BS.replicate (BS.length z) 0 -- preserve leading 1's
@@ -79,7 +79,7 @@ decodeBase58 t = r >>= return . (BS.append prefix)
 -- | Computes a checksum for the input 'ByteString' and encodes the input and
 -- the checksum to a base58 representation.
 encodeBase58Check :: ByteString -> ByteString
-encodeBase58Check bs = encodeBase58 $ BS.append bs (encode' $ chksum32 bs)
+encodeBase58Check bs = encodeBase58 $ BS.append bs (encode' $ checkSum32 bs)
 
 -- | Decode a base58-encoded string that contains a checksum. This function
 -- returns 'Nothing' if the input string contains invalid base58 characters or
@@ -88,30 +88,33 @@ decodeBase58Check :: ByteString -> Maybe ByteString
 decodeBase58Check bs = do
     rs <- decodeBase58 bs
     let (res, chk) = BS.splitAt (BS.length rs - 4) rs
-    guard $ chk == (encode' $ chksum32 res)
+    guard $ chk == encode' (checkSum32 res)
     return res
 
 -- | Data type representing a Bitcoin address
 data Address
     -- | Public Key Hash Address
-    = PubKeyAddress { getAddrHash :: Word160 }
+    = PubKeyAddress { getAddrHash :: !Hash160 }
     -- | Script Hash Address
-    | ScriptAddress { getAddrHash :: Word160 }
+    | ScriptAddress { getAddrHash :: !Hash160 }
        deriving (Eq, Ord)
 
 -- TODO: Test
 instance Show Address where
-    show = show . addrToBase58
+    showsPrec d a = showParen (d > 10) $
+        showString "Address " . shows (addrToBase58 a)
 
 -- TODO: Test
 instance Read Address where
     readPrec = parens $ do
+        Read.Ident "Address" <- lexP
         Read.String str <- lexP
         maybe pfail return $ base58ToAddr $ cs str
 
 -- TODO: Test
 instance IsString Address where
-    fromString = fromJust . base58ToAddr . cs
+    fromString = fromMaybe e . base58ToAddr . cs where
+        e = error "Could not decode bitcoin address"
 
 instance NFData Address where
     rnf (PubKeyAddress h) = rnf h
@@ -127,16 +130,17 @@ instance ToJSON Address where
 -- | Transforms an Address into a base58 encoded String
 addrToBase58 :: Address -> ByteString
 addrToBase58 addr = encodeBase58Check $ case addr of
-    PubKeyAddress i -> BS.cons addrPrefix $ encode' i
-    ScriptAddress i -> BS.cons scriptPrefix $ encode' i
+    PubKeyAddress h -> BS.cons addrPrefix   $ getHash160 h
+    ScriptAddress h -> BS.cons scriptPrefix $ getHash160 h
 
 -- | Decodes an Address from a base58 encoded String. This function can fail
 -- if the String is not properly encoded as base58 or the checksum fails.
 base58ToAddr :: ByteString -> Maybe Address
 base58ToAddr str = do
     val <- decodeBase58Check str
+    guard $ BS.length val == 21
     let f | BS.head val == addrPrefix   = Just PubKeyAddress
           | BS.head val == scriptPrefix = Just ScriptAddress
           | otherwise = Nothing
-    f <*> decodeToMaybe (BS.tail val)
+    f <*> bsToHash160 (BS.tail val)
 

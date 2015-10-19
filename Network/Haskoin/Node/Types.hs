@@ -59,7 +59,7 @@ import Data.ByteString.Char8 as C (replicate)
 import Data.String.Conversions (cs)
 import Network.Socket (SockAddr (SockAddrInet, SockAddrInet6))
 
-import Network.Haskoin.Crypto.BigWord
+import Network.Haskoin.Crypto.Hash
 
 -- | Network address with a timestamp
 type NetworkAddressTime = (Word32, NetworkAddress)
@@ -82,7 +82,7 @@ instance Binary Addr where
 
     put (Addr xs) = do
         put $ VarInt $ fromIntegral $ length xs
-        forM_ xs $ \(a,b) -> (putWord32le a) >> (put b)
+        forM_ xs $ \(a,b) -> putWord32le a >> put b
 
 -- | Data type describing signed messages that can be sent between bitcoin
 -- nodes to display important notifications to end users about the health of
@@ -186,7 +186,7 @@ data InvVector =
                 -- | Type of the object referenced by this inventory vector
                 invType :: !InvType
                 -- | Hash of the object referenced by this inventory vector
-              , invHash :: !Word256
+              , invHash :: !Hash256
               } deriving (Eq, Show, Read)
 
 instance NFData InvVector where
@@ -595,5 +595,5 @@ packCommand s = BS.take 12 $
     s `mappend` C.replicate 12 '\NUL'
 
 unpackCommand :: ByteString -> ByteString
-unpackCommand bs = BS.takeWhile (/= 0) bs
+unpackCommand = BS.takeWhile (/= 0)
 

@@ -10,7 +10,10 @@ module Network.Haskoin.Transaction
 , TxOut(..)
 , OutPoint(..)
 , CoinbaseTx(..)
+, TxHash(..)
 , txHash
+, hexToTxHash
+, txHashToHex
 , nosigTxHash
 , cbHash
 
@@ -22,8 +25,6 @@ module Network.Haskoin.Transaction
 , SigInput(..)
 , signTx
 , signInput
-, detSignTx
-, detSignInput
 , mergeTxs
 , verifyStdTx
 , verifyStdInput

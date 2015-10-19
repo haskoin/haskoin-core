@@ -5,8 +5,6 @@ module Network.Haskoin.Transaction.Builder
 , SigInput(..)
 , signTx
 , signInput
-, detSignTx
-, detSignInput
 , mergeTxs
 , verifyStdTx
 , verifyStdInput
@@ -19,13 +17,12 @@ module Network.Haskoin.Transaction.Builder
 , getMSFee
 ) where
 
+import Control.Arrow (first)
 import Control.Monad (mzero, foldM, unless)
-import Control.Monad.Trans (lift)
-import Control.Monad.Trans.Either (EitherT, left)
 import Control.Monad.Identity (runIdentity)
 import Control.DeepSeq (NFData, rnf)
 
-import Data.Maybe (catMaybes, maybeToList, isJust, fromJust, isNothing)
+import Data.Maybe (catMaybes, maybeToList, isJust, fromJust, fromMaybe)
 import Data.List (find, nub)
 import Data.Word (Word64)
 import Data.Conduit (Sink, await, ($$))
@@ -254,7 +251,7 @@ instance ToJSON SigInput where
         [ "pkscript" .= so
         , "outpoint" .= op
         , "sighash"  .= sh
-        ] ++ if isNothing rdm then [] else [ "redeem" .= fromJust rdm ]
+        ] ++ [ "redeem" .= r | r <- maybeToList rdm ]
 
 instance FromJSON SigInput where
     parseJSON (Object o) = do
@@ -265,59 +262,30 @@ instance FromJSON SigInput where
         return $ SigInput so op sh rdm
     parseJSON _ = mzero
 
--- | Sign a transaction by providing the 'SigInput' signing parameters and a
--- list of private keys. The signature is computed within the 'SecretT' monad
--- to generate the random signing nonce.
-signTx :: Monad m
-       => Tx                        -- ^ Transaction to sign
-       -> [SigInput]                -- ^ SigInput signing parameters
-       -> [PrvKey]                  -- ^ List of private keys to use for signing
-       -> EitherT String (SecretT m) Tx -- ^ Signed transaction
-signTx otx@(Tx _ ti _ _) sigis allKeys
-    | null ti   = left "signTx: Transaction has no inputs"
-    | otherwise = foldM go otx $ findSigInput sigis ti
-  where
-    go tx (sigi@(SigInput so _ _ rdmM), i) = do
-        keys <- liftEither $ sigKeys so rdmM allKeys
-        foldM (\t k -> signInput t i sigi k) tx keys
-
--- | Sign a single input in a transaction within the 'SecretT' monad.
-signInput :: Monad m => Tx -> Int -> SigInput -> PrvKey
-          -> EitherT String (SecretT m) Tx
-signInput tx i (SigInput so _ sh rdmM) key = do
-    sig <- flip TxSignature sh <$> lift (signMsg msg key)
-    si  <- liftEither $ buildInput tx i so rdmM sig $ derivePubKey key
-    return tx{ txIn = updateIndex i (txIn tx) (f si) }
-  where
-    f si x = x{ scriptInput = encodeInputBS si }
-    msg | isJust rdmM = txSigHash tx (encodeOutput $ fromJust rdmM) i sh
-        | otherwise   = txSigHash tx (encodeOutput so) i sh
-
 -- | Sign a transaction by providing the 'SigInput' signing paramters and
 -- a list of private keys. The signature is computed deterministically as
 -- defined in RFC-6979.
-detSignTx :: Tx               -- ^ Transaction to sign
+signTx :: Tx               -- ^ Transaction to sign
           -> [SigInput]       -- ^ SigInput signing parameters
           -> [PrvKey]         -- ^ List of private keys to use for signing
           -> Either String Tx -- ^ Signed transaction
-detSignTx otx@(Tx _ ti _ _) sigis allKeys
+signTx otx@(Tx _ ti _ _) sigis allKeys
     | null ti   = Left "signTx: Transaction has no inputs"
     | otherwise = foldM go otx $ findSigInput sigis ti
   where
     go tx (sigi@(SigInput so _ _ rdmM), i) = do
         keys <- sigKeys so rdmM allKeys
-        foldM (\t k -> detSignInput t i sigi k) tx keys
+        foldM (\t k -> signInput t i sigi k) tx keys
 
 -- | Sign a single input in a transaction deterministically (RFC-6979).
-detSignInput :: Tx -> Int -> SigInput -> PrvKey -> Either String Tx
-detSignInput tx i (SigInput so _ sh rdmM) key = do
-    let sig = TxSignature (detSignMsg msg key) sh
+signInput :: Tx -> Int -> SigInput -> PrvKey -> Either String Tx
+signInput tx i (SigInput so _ sh rdmM) key = do
+    let sig = TxSignature (signMsg msg key) sh
     si <- buildInput tx i so rdmM sig $ derivePubKey key
     return tx{ txIn = updateIndex i (txIn tx) (f si) }
   where
     f si x = x{ scriptInput = encodeInputBS si }
-    msg | isJust rdmM = txSigHash tx (encodeOutput $ fromJust rdmM) i sh
-        | otherwise   = txSigHash tx (encodeOutput so) i sh
+    msg = txSigHash tx (encodeOutput $ fromMaybe so rdmM) i sh
 
 -- Order the SigInput with respect to the transaction inputs. This allow the
 -- users to provide the SigInput in any order. Users can also provide only a
@@ -382,7 +350,7 @@ mergeTxs txs os
     | otherwise = foldM (mergeTxInput txs) (head emptyTxs) outs
   where
     zipOp = zip (matchTemplate os (txIn $ head txs) f) [0..]
-    outs = map (\(s,i) -> (fst $ fromJust s, i)) $ filter (isJust . fst) zipOp
+    outs = map (first $ fst . fromJust) $ filter (isJust . fst) zipOp
     f (_,o) txin = o == prevOutput txin
     emptyTxs = map (\tx -> foldl clearInput tx outs) txs
     clearInput tx (_, i) = tx{ txIn =

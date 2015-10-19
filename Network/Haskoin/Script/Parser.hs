@@ -107,7 +107,7 @@ isPayScriptHash _ = False
 -- | Computes a script address from a script output. This address can be used
 -- in a pay to script hash output.
 scriptAddr :: ScriptOutput -> Address
-scriptAddr = ScriptAddress . hash160 . hash256BS . encodeOutputBS
+scriptAddr = ScriptAddress . hash160 . getHash256 . hash256 . encodeOutputBS
 
 -- | Sorts the public keys of a multisignature output in ascending order by
 -- comparing their serialized representations. This feature allows for easier

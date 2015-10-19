@@ -13,7 +13,6 @@ import qualified Data.ByteString as BS (reverse)
 
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
-import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
 tests :: [Test]
@@ -33,7 +32,7 @@ mapTxIDVec (v,i) = testCase name $ runTxIDVec v
 
 runTxIDVec :: (ByteString, ByteString) -> Assertion
 runTxIDVec (tid,tx) = assertBool "TxID" $
-    (encodeTxHashLE $ txHash txBS) == tid
+    (txHashToHex $ txHash txBS) == tid
   where
     txBS = decode' $ fromJust $ decodeHex tx
 
@@ -62,7 +61,7 @@ runPKHashVec :: ([(ByteString, Word32)], [(ByteString, Word64)], ByteString) -> 
 runPKHashVec (xs, ys, res) =
     assertBool "Build PKHash Tx" $ (encodeHex $ encode' tx) == res
     where tx = fromRight $ buildAddrTx (map f xs) ys
-          f (tid,ix) = OutPoint (fromJust $ decodeTxHashLE tid) ix
+          f (tid,ix) = OutPoint (fromJust $ hexToTxHash tid) ix
 
 
 mapVerifyVec :: (([(ByteString, ByteString, ByteString)], ByteString), Int)

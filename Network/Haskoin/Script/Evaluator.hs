@@ -527,19 +527,22 @@ eval OP_MAX     = max <$> popInt <*> popInt >>= pushInt
 eval OP_WITHIN  = within <$> popInt <*> popInt <*> popInt >>= pushBool
                   where within y x a = (x <= a) && (a < y)
 
-eval OP_RIPEMD160 = tStack1 $ return . bsToSv . hash160BS . opToSv
-eval OP_SHA1 = tStack1 $ return . bsToSv . hashSha1BS . opToSv
+eval OP_RIPEMD160 = tStack1 $ return . bsToSv . getHash160 . hash160 . opToSv
+eval OP_SHA1 = tStack1 $ return . bsToSv . getHash160 . sha1 . opToSv
 
-eval OP_SHA256 = tStack1 $ return . bsToSv . hash256BS . opToSv
-eval OP_HASH160 = tStack1 $ return . bsToSv . hash160BS . hash256BS . opToSv
-eval OP_HASH256 = tStack1 $ return . bsToSv . doubleHash256BS  . opToSv
+eval OP_SHA256 = tStack1 $ return . bsToSv . getHash256 . hash256 . opToSv
+eval OP_HASH160 = tStack1 $
+    return . bsToSv . getHash160 . hash160 . getHash256 . hash256 . opToSv
+eval OP_HASH256 = tStack1 $
+    return . bsToSv . getHash256 . doubleHash256  . opToSv
 eval OP_CODESEPARATOR = dropHashOpsSeparatedCode
 eval OP_CHECKSIG = do
-  pubKey <- popStack
-  sig <- popStack
-  checker <- sigCheck <$> get
-  hOps <- preparedHashOps
-  pushBool $ checkMultiSig checker [ pubKey ] [ sig ] hOps -- Reuse checkMultiSig code
+    pubKey <- popStack
+    sig <- popStack
+    checker <- sigCheck <$> get
+    hOps <- preparedHashOps
+    -- Reuse checkMultiSig code
+    pushBool $ checkMultiSig checker [ pubKey ] [ sig ] hOps
 
 eval OP_CHECKMULTISIG =
     do nPubKeys <- fromIntegral <$> popInt

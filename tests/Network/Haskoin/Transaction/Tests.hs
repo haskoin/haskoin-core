@@ -31,8 +31,8 @@ tests =
 
 {- Transaction Tests -}
 
-decEncTxid :: TxHash -> Bool
-decEncTxid h = decodeTxHashLE (encodeTxHashLE h) == Just h
+decEncTxid :: ArbitraryTxHash -> Bool
+decEncTxid (ArbitraryTxHash h) = hexToTxHash (txHashToHex h) == Just h
 
 {- Building Transactions -}
 
@@ -97,8 +97,8 @@ testDetSignTx (ArbitrarySigningData tx sigis prv) =
         && (not $ verifyStdTx txSigP verData)
         && verifyStdTx txSigC verData
   where
-    txSigP  = fromRight $ detSignTx tx sigis (tail prv)
-    txSigC  = fromRight $ detSignTx txSigP sigis [head prv]
+    txSigP  = fromRight $ signTx tx sigis (tail prv)
+    txSigC  = fromRight $ signTx txSigP sigis [head prv]
     verData = map (\(SigInput s o _ _) -> (s,o)) sigis
 
 testMergeTx :: ArbitraryPartialTxs -> Bool

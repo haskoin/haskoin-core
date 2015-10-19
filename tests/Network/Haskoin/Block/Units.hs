@@ -9,8 +9,8 @@ import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Maybe (fromJust)
 
-import Network.Haskoin.Crypto
 import Network.Haskoin.Block
+import Network.Haskoin.Transaction
 
 tests :: [Test]
 tests =
@@ -27,9 +27,9 @@ mapMerkleVectors (v, i) =
 runMerkleVector :: (ByteString, [ByteString]) -> Assertion
 runMerkleVector (r, hs) = do
     assertBool "    >  Merkle Vector" $
-        buildMerkleRoot (map f hs) == fromIntegral (f r)
+        buildMerkleRoot (map f hs) == getTxHash (f r)
   where
-    f = fromJust . decodeTxHashLE
+    f = fromJust . hexToTxHash
 
 merkleVectors :: [(ByteString, [ByteString])]
 merkleVectors =

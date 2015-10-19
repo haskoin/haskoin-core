@@ -4,6 +4,7 @@
 module Network.Haskoin.Test.Block
 ( ArbitraryBlock(..)
 , ArbitraryBlockHeader(..)
+, ArbitraryBlockHash(..)
 , ArbitraryGetBlocks(..)
 , ArbitraryGetHeaders(..)
 , ArbitraryHeaders(..)
@@ -18,6 +19,7 @@ import Test.QuickCheck
     , listOf1
     )
 
+import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Test.Transaction
 import Network.Haskoin.Test.Node
 
@@ -42,9 +44,19 @@ newtype ArbitraryBlockHeader = ArbitraryBlockHeader BlockHeader
 
 instance Arbitrary ArbitraryBlockHeader where
     arbitrary = do
-        h <- BlockHeader <$> arbitrary <*> arbitrary <*> arbitrary
+        ArbitraryBlockHash h1 <- arbitrary
+        ArbitraryHash256 h2 <- arbitrary
+        h <- BlockHeader <$> arbitrary <*> return h1 <*> return h2
                          <*> arbitrary <*> arbitrary <*> arbitrary
         return $ ArbitraryBlockHeader h
+
+newtype ArbitraryBlockHash = ArbitraryBlockHash BlockHash
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryBlockHash where
+    arbitrary = do
+        ArbitraryHash256 h <- arbitrary
+        return $ ArbitraryBlockHash $ BlockHash h
 
 -- | Arbitrary GetBlocks
 newtype ArbitraryGetBlocks = ArbitraryGetBlocks GetBlocks
@@ -52,7 +64,10 @@ newtype ArbitraryGetBlocks = ArbitraryGetBlocks GetBlocks
 
 instance Arbitrary ArbitraryGetBlocks where
     arbitrary = do
-        b <- GetBlocks <$> arbitrary <*> (listOf1 arbitrary) <*> arbitrary
+        hs <- listOf1 arbitrary
+        let hs' = map (\(ArbitraryBlockHash h) -> h) hs
+        ArbitraryBlockHash h <- arbitrary
+        b <- GetBlocks <$> arbitrary <*> return hs' <*> return h
         return $ ArbitraryGetBlocks b
 
 -- | Arbitrary GetHeaders
@@ -61,7 +76,10 @@ newtype ArbitraryGetHeaders = ArbitraryGetHeaders GetHeaders
 
 instance Arbitrary ArbitraryGetHeaders where
     arbitrary = do
-        h <- GetHeaders <$> arbitrary <*> (listOf1 arbitrary) <*> arbitrary
+        hs <- listOf1 arbitrary
+        let hs' = map (\(ArbitraryBlockHash h) -> h) hs
+        ArbitraryBlockHash h' <- arbitrary
+        h <- GetHeaders <$> arbitrary <*> return hs' <*> return h'
         return $ ArbitraryGetHeaders h
 
 -- | Arbitrary Headers
@@ -84,9 +102,10 @@ instance Arbitrary ArbitraryMerkleBlock where
     arbitrary = ArbitraryMerkleBlock <$> do
         ArbitraryBlockHeader bh <- arbitrary
         ntx <- arbitrary
-        hashes <- arbitrary
+        hashes <- listOf1 arbitrary
+        let hashes' = map (\(ArbitraryHash256 h) -> h) hashes
         c <- choose (1,10)
         flags <- vectorOf (c*8) arbitrary
-        return $ MerkleBlock bh ntx hashes flags
+        return $ MerkleBlock bh ntx hashes' flags
 
 

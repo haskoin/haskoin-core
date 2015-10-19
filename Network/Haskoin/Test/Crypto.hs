@@ -2,10 +2,11 @@
   Arbitrary types for Network.Haskoin.Crypto
 -}
 module Network.Haskoin.Test.Crypto
-( ArbitraryByteString(..)
+( ArbitraryHash256(..)
+, ArbitraryHash160(..)
+, ArbitraryCheckSum32(..)
+, ArbitraryByteString(..)
 , ArbitraryNotNullByteString(..)
-, ArbitraryPoint(..)
-, ArbitraryInfPoint(..)
 , ArbitraryPrvKey(..)
 , ArbitraryPrvKeyC(..)
 , ArbitraryPrvKeyU(..)
@@ -16,7 +17,6 @@ module Network.Haskoin.Test.Crypto
 , ArbitraryPubKeyAddress(..)
 , ArbitraryScriptAddress(..)
 , ArbitrarySignature(..)
-, ArbitraryDetSignature(..)
 , ArbitraryXPrvKey(..)
 , ArbitraryXPubKey(..)
 , ArbitraryHardPath(..)
@@ -28,45 +28,52 @@ import Test.QuickCheck
     ( Arbitrary
     , Gen
     , arbitrary
-    , choose
     , elements
-    , frequency
     , oneof
+    , vectorOf
     , listOf
     )
 
+import Crypto.Secp256k1 ()
+
 import Data.Bits (clearBit)
-import Data.Maybe (fromJust)
+import qualified Data.ByteString as BS (pack)
+import Data.Maybe (fromMaybe)
 import Data.Word (Word32)
 
 import Network.Haskoin.Test.Util
-import Network.Haskoin.Crypto.BigWord
-import Network.Haskoin.Crypto.Point
 import Network.Haskoin.Crypto.ECDSA
+import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Base58
-import Network.Haskoin.Crypto.Curve
 import Network.Haskoin.Crypto.ExtendedKeys
 
--- | Arbitrary Point on the secp256k1 curve
-newtype ArbitraryPoint = ArbitraryPoint Point
+newtype ArbitraryHash160 = ArbitraryHash160 Hash160
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryPoint where
-    arbitrary = do
-        x <- fromInteger <$> choose (1, toInteger (maxBound :: FieldN))
-        return $ ArbitraryPoint $ mulPoint x curveG
+instance Arbitrary ArbitraryHash160 where
+    arbitrary = (ArbitraryHash160 . fromMaybe e . bsToHash160 . BS.pack) <$>
+        vectorOf 20 arbitrary
+      where
+        e = error "Could not read arbitrary 20-byte hash"
 
--- | Arbitrary Point on the secp256k1 curve with 10% chance
--- of being the point at infinity
-newtype ArbitraryInfPoint = ArbitraryInfPoint Point
+newtype ArbitraryHash256 = ArbitraryHash256 Hash256
     deriving (Eq, Show, Read)
 
-instance Arbitrary ArbitraryInfPoint where
-    arbitrary = ArbitraryInfPoint <$> frequency
-        [ (1, return makeInfPoint)
-        , (9, arbitrary >>= \(ArbitraryPoint p) -> return p)
-        ]
+instance Arbitrary ArbitraryHash256 where
+    arbitrary = (ArbitraryHash256 . fromMaybe e . bsToHash256 . BS.pack) <$>
+        vectorOf 32 arbitrary
+      where
+        e = error "Could not read arbitrary 32-byte hash"
+
+newtype ArbitraryCheckSum32 = ArbitraryCheckSum32 CheckSum32
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryCheckSum32 where
+    arbitrary = (ArbitraryCheckSum32 . fromMaybe e . bsToCheckSum32 . BS.pack) <$>
+        vectorOf 4 arbitrary
+      where
+        e = error "Could not read arbitrary checksum"
 
 -- | Arbitrary private key (can be both compressed or uncompressed)
 newtype ArbitraryPrvKey = ArbitraryPrvKey PrvKey
@@ -84,8 +91,8 @@ newtype ArbitraryPrvKeyC = ArbitraryPrvKeyC PrvKeyC
 
 instance Arbitrary ArbitraryPrvKeyC where
     arbitrary = do
-        i <- fromInteger <$> choose (1, curveN-1)
-        return $ ArbitraryPrvKeyC $ fromJust $ makePrvKeyC i
+        i <- arbitrary
+        return $ ArbitraryPrvKeyC $ makePrvKeyC i
 
 -- | Arbitrary uncompressed private key
 newtype ArbitraryPrvKeyU = ArbitraryPrvKeyU PrvKeyU
@@ -93,8 +100,8 @@ newtype ArbitraryPrvKeyU = ArbitraryPrvKeyU PrvKeyU
 
 instance Arbitrary ArbitraryPrvKeyU where
     arbitrary = do
-        i <- fromInteger <$> choose (1, curveN-1)
-        return $ ArbitraryPrvKeyU $ fromJust $ makePrvKeyU i
+        i <- arbitrary
+        return $ ArbitraryPrvKeyU $ makePrvKeyU i
 
 -- | Arbitrary public key (can be both compressed or uncompressed) with its
 -- corresponding private key.
@@ -143,7 +150,7 @@ newtype ArbitraryPubKeyAddress = ArbitraryPubKeyAddress Address
 
 instance Arbitrary ArbitraryPubKeyAddress where
     arbitrary = do
-        i <- arbitrary
+        ArbitraryHash160 i <- arbitrary
         return $ ArbitraryPubKeyAddress $ PubKeyAddress i
 
 -- | Arbitrary script hash address
@@ -152,37 +159,21 @@ newtype ArbitraryScriptAddress = ArbitraryScriptAddress Address
 
 instance Arbitrary ArbitraryScriptAddress where
     arbitrary = do
-        i <- arbitrary
+        ArbitraryHash160 i <- arbitrary
         return $ ArbitraryScriptAddress $ ScriptAddress i
 
 -- | Arbitrary message hash, private key, nonce and corresponding signature.
 -- The signature is generated with a random message, random private key and a
 -- random nonce.
-data ArbitrarySignature = ArbitrarySignature Word256 PrvKey FieldN Signature
+data ArbitrarySignature = ArbitrarySignature Hash256 PrvKey Signature
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitrarySignature where
     arbitrary = do
-        msg  <- arbitrary
-        ArbitraryPrvKey prv   <- arbitrary
-        ArbitraryPrvKey nonce <- arbitrary
-        let k   = prvKeyFieldN nonce
-            p   = pubKeyPoint $ derivePubKey nonce
-        case unsafeSignMsg msg (prvKeyFieldN prv) (k,p) of
-            (Just sig) -> return $ ArbitrarySignature msg prv k sig
-            Nothing    -> arbitrary
-
--- | Arbitrary message hash, private key and corresponding signature. The
--- signature is generated deterministically using a random message and random
--- private key.
-data ArbitraryDetSignature = ArbitraryDetSignature Word256 PrvKey Signature
-    deriving (Eq, Show, Read)
-
-instance Arbitrary ArbitraryDetSignature where
-    arbitrary = do
-        msg  <- arbitrary
-        ArbitraryPrvKey prv   <- arbitrary
-        return $ ArbitraryDetSignature msg prv $ detSignMsg msg prv
+        ArbitraryHash256 msg <- arbitrary
+        ArbitraryPrvKey key <- arbitrary
+        let sig = signMsg msg key
+        return $ ArbitrarySignature msg key sig
 
 -- | Arbitrary extended private key.
 data ArbitraryXPrvKey = ArbitraryXPrvKey XPrvKey
@@ -193,7 +184,7 @@ instance Arbitrary ArbitraryXPrvKey where
         d <- arbitrary
         p <- arbitrary
         i <- arbitrary
-        c <- arbitrary
+        ArbitraryHash256 c <- arbitrary
         ArbitraryPrvKeyC k <- arbitrary
         return $ ArbitraryXPrvKey $ XPrvKey d p i c k
 

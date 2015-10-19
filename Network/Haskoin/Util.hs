@@ -128,7 +128,7 @@ decodeOrFail' bs = case decodeOrFail $ BL.fromStrict bs of
 
 -- | Strict version of 'Data.Binary.runGetOrFail'
 runGetOrFail' ::
-    Binary a => Get a -> ByteString ->
+    Get a -> ByteString ->
     Either (ByteString, ByteOffset, String) (ByteString, ByteOffset, a)
 runGetOrFail' m bs = case runGetOrFail m $ BL.fromStrict bs of
     Left  (lbs, o, err) -> Left  (BL.toStrict lbs, o, err)

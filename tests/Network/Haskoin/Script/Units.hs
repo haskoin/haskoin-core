@@ -16,7 +16,7 @@ tests :: [Test]
 tests =
     [ testGroup "Canonical signatures"
         (map canonicalVectorsMap $ zip canonicalVectors [0..])
-    , testGroup "Non canonical sigatures"
+    , testGroup "Non-canonical signatures"
         (map notCanonicalVectorsMap $ zip notCanonicalVectors [0..])
     , testGroup "Multi Signatures"
         (map mapMulSigVector $ zip mulSigVectors [0..])

@@ -218,7 +218,7 @@ instance Arbitrary ArbitraryHardPath where
     arbitrary =
         ArbitraryHardPath <$> (go =<< listOf genIndex)
       where
-        go []     = elements [ Deriv, DerivPrv, DerivPub ]
+        go []     = genStartPath
         go (i:is) = (:| i) <$> go is
 
 data ArbitrarySoftPath = ArbitrarySoftPath SoftPath
@@ -228,7 +228,7 @@ instance Arbitrary ArbitrarySoftPath where
     arbitrary =
         ArbitrarySoftPath <$> (go =<< listOf genIndex)
       where
-        go []     = elements [ Deriv, DerivPrv, DerivPub ]
+        go []     = genStartPath
         go (i:is) = (:/ i) <$> go is
 
 data ArbitraryDerivPath = ArbitraryDerivPath DerivPath
@@ -244,5 +244,7 @@ instance Arbitrary ArbitraryDerivPath where
         goSoft (i:is) h = (goSoft is h) :/ i
         goHard :: HardOrMixed t => [Word32] -> Gen (DerivPathI t)
         goHard (i:is) = (:| i) <$> goHard is
-        goHard []     = elements [ Deriv, DerivPrv, DerivPub ]
+        goHard []     = genStartPath
 
+genStartPath :: Gen (DerivPathI t)
+genStartPath = elements [ Deriv, DerivPrv, DerivPub ]

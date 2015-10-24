@@ -207,16 +207,10 @@ runXKeyVec (v,m) = do
 
 
 xKeyVec1 :: [([String], XPrvKey)]
-xKeyVec1 = zip xKeyResVec1 xKeyTestVec1
-
-xKeyTestVec1 :: [XPrvKey]
-xKeyTestVec1 =  map (deriveTestKey seed1) der1
+xKeyVec1 = zip xKeyResVec1 $ map (deriveTestKey seed1) der1
 
 xKeyVec2 :: [([String],XPrvKey)]
-xKeyVec2 = zip xKeyResVec2 xKeyTestVec2
-
-xKeyTestVec2 :: [XPrvKey]
-xKeyTestVec2 = map (deriveTestKey seed2) der2
+xKeyVec2 = zip xKeyResVec2 $ map (deriveTestKey seed2) der2
 
 deriveTestKey :: String -> String -> XPrvKey
 deriveTestKey seed path = derivePath (fromString path :: DerivPath) . makeXPrvKey . fromJust . hexToBS $ seed

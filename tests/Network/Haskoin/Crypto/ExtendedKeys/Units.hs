@@ -12,8 +12,6 @@ import qualified Data.ByteString.Lazy.Char8 as B8
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
-testToTestCase :: [String] -> Test
-testToTestCase v = testCase ("Chain " ++ v!!12) $ runXKeyVec v
 
 tests :: [Test]
 tests =
@@ -30,6 +28,9 @@ tests =
         , testGroup "ToJSON" testToJsonPath
         ]
     ]
+  where testToTestCase :: [String] -> Test
+        testToTestCase v = testCase ("Chain " ++ v!!12) $ runXKeyVec v
+
 
 testFromJsonPath :: [Test]
 testFromJsonPath = do

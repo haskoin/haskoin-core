@@ -12,29 +12,15 @@ import qualified Data.ByteString.Lazy.Char8 as B8
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
 
+testToTestCase :: [String] -> Test
+testToTestCase v = testCase ("Chain " ++ v!!12) $ runXKeyVec v
+
 tests :: [Test]
 tests =
     [ testGroup "BIP32 derivation vector 1"
-        [ testCase "Chain m" $ runXKeyVec (xKeyVec1 !! 0)
-        , testCase "Chain m/0'" $ runXKeyVec (xKeyVec1 !! 1)
-        , testCase "Chain m/0'/1" $ runXKeyVec (xKeyVec1 !! 2)
-        , testCase "Chain m/0'/1/2'" $ runXKeyVec (xKeyVec1 !! 3)
-        , testCase "Chain m/0'/1/2'/2" $ runXKeyVec (xKeyVec1 !! 4)
-        , testCase "Chain m/0'/1/2'/2/1000000000" $
-            runXKeyVec (xKeyVec1 !! 5)
-        ]
+        (map testToTestCase xKeyVec1)
     , testGroup "BIP32 subkey derivation vector 2"
-        [ testCase "Chain m" $ runXKeyVec (xKeyVec2 !! 0)
-        , testCase "Chain m/0" $ runXKeyVec (xKeyVec2 !! 1)
-        , testCase "Chain m/0/2147483647'" $
-            runXKeyVec (xKeyVec2 !! 2)
-        , testCase "Chain m/0/2147483647'/1" $
-            runXKeyVec (xKeyVec2 !! 3)
-        , testCase "Chain m/0/2147483647'/1/2147483646'" $
-            runXKeyVec (xKeyVec2 !! 4)
-        , testCase "Chain m/0/2147483647'/1/2147483646'/2" $
-            runXKeyVec (xKeyVec2 !! 5)
-        ]
+        (map testToTestCase xKeyVec2)
     , testGroup "BIP32 subkey derivation using string path"
         [ testGroup "Either Derivations" testDerivePathE
         , testGroup "Public Derivations" testDerivePubPath

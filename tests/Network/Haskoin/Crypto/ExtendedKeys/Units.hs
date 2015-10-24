@@ -219,8 +219,8 @@ xKeyTestVec2 :: [XPrvKey]
 xKeyTestVec2 = makeXKeyTestVec seed2 der2
 
 makeXKeyTestVec :: String -> [ String ] -> [XPrvKey]
-makeXKeyTestVec seed paths = map ( \path -> derivePath (fromString path :: DerivPath) m ) paths
-    where m = makeXPrvKey . fromJust . hexToBS $ seed
+makeXKeyTestVec seed paths = map deriveKey paths
+    where deriveKey path = derivePath (fromString path :: DerivPath) . makeXPrvKey . fromJust . hexToBS $ seed
 
 seed1 :: String
 seed1 = "000102030405060708090a0b0c0d0e0f"

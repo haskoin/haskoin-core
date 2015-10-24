@@ -208,19 +208,11 @@ runXKeyVec v = do
 -- BIP 0032 Test Vectors
 -- https://en.bitcoin.it/wiki/BIP_0032_TestVectors
 -- https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki
-
-
-xKeyVec1 :: [[String]]
-xKeyVec1 = xKeyResVec1
-
-xKeyVec2 :: [[String]]
-xKeyVec2 = xKeyResVec2
-
 seed1 :: String
 seed1 = "000102030405060708090a0b0c0d0e0f"
 
-xKeyResVec1 :: [[String]]
-xKeyResVec1 =
+xKeyVec1 :: [[String]]
+xKeyVec1 =
     [
       [ "3442193e1bb70916e914552172cd4e2dbc9df811"
       , "3442193e"
@@ -311,8 +303,8 @@ xKeyResVec1 =
 seed2 :: String
 seed2 = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
 
-xKeyResVec2 :: [[String]]
-xKeyResVec2 =
+xKeyVec2 :: [[String]]
+xKeyVec2 =
     [
       [ "bd16bee53961a47d6ad888e29545434a89bdfe95"
       , "bd16bee5"

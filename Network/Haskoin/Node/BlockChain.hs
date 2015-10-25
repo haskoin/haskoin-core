@@ -28,14 +28,15 @@ import Data.Unique (hashUnique)
 import Data.Conduit (Source, yield)
 import qualified Data.Sequence as S (length)
 import qualified Data.ByteString.Char8 as C (unpack)
+import Data.String.Conversions (cs)
 import qualified Data.Map as M (keys, lookup, null, delete)
+import Data.Word (Word32)
 
 import Network.Haskoin.Node
 import Network.Haskoin.Node.STM
 import Network.Haskoin.Node.HeaderTree
 import Network.Haskoin.Node.Peer
 import Network.Haskoin.Transaction
-import Network.Haskoin.Crypto
 import Network.Haskoin.Block
 
 startSPVNode :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
@@ -67,7 +68,7 @@ txSource = do
     case resM of
         Just (pid, ph, tx) -> do
             $(logInfo) $ formatPid pid ph $ unwords
-                [ "Received transaction broadcast", encodeTxHashLE $ txHash tx ]
+                [ "Received transaction broadcast", cs $ txHashToHex $ txHash tx ]
             yield tx >> txSource
         _ -> $(logError) "Tx channel closed unexpectedly"
 
@@ -82,7 +83,7 @@ handleGetData handler = forever $ do
         if M.null datMap then lift retry else return $ M.keys datMap
     forM (nub txids) $ \tid -> lift (handler tid) >>= \txM -> do
         $(logDebug) $ pack $ unwords
-            [ "Processing GetData txid request", encodeTxHashLE tid ]
+            [ "Processing GetData txid request", cs $ txHashToHex tid ]
         pidsM <- atomicallyNodeT $ do
             datMap <- readTVarS sharedTxGetData
             writeTVarS sharedTxGetData $ M.delete tid datMap
@@ -91,7 +92,7 @@ handleGetData handler = forever $ do
             -- Send the transaction to the required peers
             (Just tx, Just pids) -> forM_ pids $ \(pid, ph) -> do
                 $(logDebug) $ formatPid pid ph $ unwords
-                    [ "Sending tx", encodeTxHashLE tid, "to peer" ]
+                    [ "Sending tx", cs $ txHashToHex tid, "to peer" ]
                 atomicallyNodeT $ trySendMessage pid $ MTx tx
             _ -> return ()
 
@@ -100,9 +101,9 @@ broadcastTxs :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
              -> NodeT m ()
 broadcastTxs txids = do
     forM_ txids $ \tid -> $(logInfo) $ pack $ unwords
-        [ "Transaction INV broadcast:", encodeTxHashLE tid ]
+        [ "Transaction INV broadcast:", cs $ txHashToHex tid ]
     -- Broadcast an INV message for new transactions
-    let msg = MInv $ Inv $ map (InvVector InvTx . fromIntegral) txids
+    let msg = MInv $ Inv $ map (InvVector InvTx . getTxHash) txids
     atomicallyNodeT $ sendMessageAll msg
 
 rescanTs :: Timestamp -> NodeT STM ()
@@ -201,27 +202,21 @@ waitHeight :: BlockHeight -> NodeT STM ()
 waitHeight height = do
     node <- readTVarS sharedBestHeader
     -- Check if we passed the timestamp condition
-    if height < nodeHeaderHeight node
-        then return ()
-        else lift retry
+    unless (height < nodeHeaderHeight node) $ lift retry
 
 -- Wait for headers to catch up to the given timestamp
 waitFastCatchup :: Timestamp -> NodeT STM ()
 waitFastCatchup ts = do
     node <- readTVarS sharedBestHeader
     -- Check if we passed the timestamp condition
-    if ts < blockTimestamp (nodeHeader node)
-        then return ()
-        else lift retry
+    unless (ts < blockTimestamp (nodeHeader node)) $ lift retry
 
 -- Wait for a new block to be available for download
 waitNewBlock :: BlockHash -> NodeT STM ()
 waitNewBlock bh = do
     node <- readTVarS sharedBestHeader
-    if bh /= (nodeBlockHash node)
-        -- We have more merkle blocks to download
-        then return ()
-        else lift retry
+    -- We have more merkle blocks to download
+    unless (bh /= nodeBlockHash node) $ lift retry
 
 tryMerkleDwnHeight
     :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
@@ -281,7 +276,7 @@ tryMerkleDwnBlock
 tryMerkleDwnBlock bh batchSize = do
     $(logDebug) $ pack $ unwords
         [ "Requesting merkle download from block"
-        , encodeBlockHashLE bh, "and batch size", show batchSize
+        , cs $ blockHashToHex bh, "and batch size", show batchSize
         ]
     --Get the list of merkle blocks to download from our headers
     actionM <- runHeaderTree $ getNodeWindow bh batchSize
@@ -290,7 +285,7 @@ tryMerkleDwnBlock bh batchSize = do
         Nothing -> do
             $(logDebug) $ pack $ unwords
                 [ "No more merkle blocks available from block"
-                , encodeBlockHashLE bh
+                , cs $ blockHashToHex bh
                 ]
             return Nothing
         -- A batch of merkle blocks is available for download
@@ -331,7 +326,7 @@ peerMerkleDownload
     -> Source (NodeT m) (Either (MerkleBlock, MerkleTxs) Tx)
 peerMerkleDownload pid ph action = do
     let bids = map nodeBlockHash $ actionNodes action
-        vs   = map (InvVector InvMerkleBlock . fromIntegral) bids
+        vs   = map (InvVector InvMerkleBlock . getBlockHash) bids
     $(logInfo) $ formatPid pid ph $ unwords
         [ "Requesting", show $ length bids, "merkle block(s)" ]
     nonce <- liftIO randomIO
@@ -366,7 +361,7 @@ peerMerkleDownload pid ph action = do
             Right (Just res@(Left (MerkleBlock mHead _ _ _, _))) -> do
                 let mBid = headerHash mHead
                 $(logDebug) $ formatPid pid ph $ unwords
-                    [ "Processing merkle block", encodeBlockHashLE mBid ]
+                    [ "Processing merkle block", cs $ blockHashToHex mBid ]
                 -- Check if we were expecting this merkle block
                 if mBid == bid
                     then yield res >> checkOrder chan bids
@@ -376,9 +371,9 @@ peerMerkleDownload pid ph action = do
                         -- yield the merkle block and close the source
                         misbehaving pid ph moderateDoS $ unwords
                             [ "Peer sent us merkle block hash"
-                            , encodeBlockHashLE $ headerHash mHead
+                            , cs $ blockHashToHex $ headerHash mHead
                             , "but we expected merkle block hash"
-                            , encodeBlockHashLE bid
+                            , cs $ blockHashToHex bid
                             ]
                         -- Not sure how to recover from this situation.
                         -- Disconnect the peer. TODO: Is there a way to recover
@@ -397,32 +392,32 @@ processTickles = forever $ do
     $(logDebug) $ pack "Waiting for a block tickle ..."
     (pid, ph, tickle) <- atomicallyNodeT waitTickle
     $(logInfo) $ formatPid pid ph $ unwords
-        [ "Received block tickle", encodeBlockHashLE tickle ]
+        [ "Received block tickle", cs $ blockHashToHex tickle ]
     heightM <- runHeaderTree $ getBlockHeaderHeight tickle
     case heightM of
         Just height -> do
             $(logInfo) $ formatPid pid ph $ unwords
-                [ "The block tickle", encodeBlockHashLE tickle
+                [ "The block tickle", cs $ blockHashToHex tickle
                 , "is already connected"
                 ]
             updatePeerHeight pid ph height
         _ -> do
             $(logDebug) $ formatPid pid ph $ unwords
-                [ "The tickle", encodeBlockHashLE tickle
+                [ "The tickle", cs $ blockHashToHex tickle
                 , "is unknown. Requesting a peer header sync."
                 ]
-            peerHeaderSyncFull pid ph `catchAny` (const $ disconnectPeer pid ph)
+            peerHeaderSyncFull pid ph `catchAny` const (disconnectPeer pid ph)
             newHeightM <- runHeaderTree $ getBlockHeaderHeight tickle
             case newHeightM of
                 Just height -> do
                     $(logInfo) $ formatPid pid ph $ unwords
-                        [ "The block tickle", encodeBlockHashLE tickle
+                        [ "The block tickle", cs $ blockHashToHex tickle
                         , "was connected successfully"
                         ]
                     updatePeerHeight pid ph height
                 _ -> $(logWarn) $ formatPid pid ph $ unwords
                     [ "Could not find the height of block tickle"
-                    , encodeBlockHashLE tickle
+                    , cs $ blockHashToHex tickle
                     ]
   where
     updatePeerHeight pid ph height = do
@@ -440,6 +435,12 @@ waitTickle = do
     case resM of
         Just res -> return res
         _ -> throw $ NodeException "tickle channel closed unexpectedly"
+
+syncedHeight :: MonadIO m => NodeT m (Bool, Word32)
+syncedHeight = atomicallyNodeT $ do
+    synced <- areHeadersSynced
+    ourHeight <- liftM nodeHeaderHeight $ readTVarS sharedBestHeader
+    return (synced, ourHeight)
 
 headerSync :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
            => NodeT m ()
@@ -472,10 +473,7 @@ headerSync = do
 
     -- Check if we should continue the header sync
     if continue then headerSync else do
-        (synced, ourHeight) <- atomicallyNodeT $ do
-            synced <- areHeadersSynced
-            ourHeight <- liftM nodeHeaderHeight $ readTVarS sharedBestHeader
-            return (synced, ourHeight)
+        (synced, ourHeight) <- syncedHeight
         if synced
             then do
                 -- Check if merkles are synced
@@ -519,10 +517,7 @@ peerHeaderSyncFull pid ph =
     go prevM = peerHeaderSync pid ph prevM >>= \actionM -> case actionM of
         Just _  -> go actionM
         Nothing -> do
-            (synced, ourHeight) <- atomicallyNodeT $ do
-                synced <- areHeadersSynced
-                ourHeight <- liftM nodeHeaderHeight $ readTVarS sharedBestHeader
-                return (synced, ourHeight)
+            (synced, ourHeight) <- syncedHeight
             when synced $ $(logInfo) $ formatPid pid ph $ unwords
                 [ "Block headers are in sync with the"
                 , "network at height", show ourHeight
@@ -572,13 +567,12 @@ peerHeaderSync pid ph prevM = do
         $(logDebug) $ formatPid pid ph $ unwords
             [ "Requesting headers with block locator of size"
             , show $ length loc
-            , "Start block:", encodeBlockHashLE $ head loc
-            , "End block:", encodeBlockHashLE $ last loc
+            , "Start block:", cs $ blockHashToHex $ head loc
+            , "End block:", cs $ blockHashToHex $ last loc
             ]
 
         -- Send a GetHeaders message to the peer
-        _ <- atomicallyNodeT $ trySendMessage pid $
-            MGetHeaders $ GetHeaders 0x01 loc $ fromMaybe 0 Nothing
+        atomicallyNodeT $ sendMessage pid $ MGetHeaders $ GetHeaders 0x01 loc z
 
         $(logDebug) $ formatPid pid ph "Waiting 2 minutes for headers..."
 
@@ -590,6 +584,7 @@ peerHeaderSync pid ph prevM = do
         -- Return True if we can continue syncing from this peer
         return $ either (const Nothing) id continueE
   where
+    z = "0000000000000000000000000000000000000000000000000000000000000000"
     -- Wait for the headers to be available
     waitHeaders = do
         (rPid, headers) <- atomicallyNodeT $ takeTMVarS sharedHeaders
@@ -604,8 +599,8 @@ peerHeaderSync pid ph prevM = do
     processHeaders (Headers hs) = do
         $(logDebug) $ formatPid pid ph $ unwords
             [ "Received", show $ length hs, "headers."
-            , "Start blocks:", encodeBlockHashLE $ headerHash $ fst $ head hs
-            , "End blocks:", encodeBlockHashLE $ headerHash $ fst $ last hs
+            , "Start blocks:", cs $ blockHashToHex $ headerHash $ fst $ head hs
+            , "End blocks:", cs $ blockHashToHex $ headerHash $ fst $ last hs
             ]
         now <- liftM round $ liftIO getPOSIXTime
         actionE <- runHeaderTree $ connectHeaders (map fst hs) now True

@@ -32,6 +32,7 @@ import qualified Data.Conduit.Binary as CB (take)
 import qualified Data.ByteString.Char8 as C (pack)
 import qualified Data.ByteString as BS (ByteString, null, append)
 import qualified Data.ByteString.Lazy as BL (toStrict)
+import Data.String.Conversions (cs)
 import qualified Data.Map as M
     ( keys , lookup, assocs, elems, fromList, unionWith )
 import Data.Conduit.Network
@@ -45,7 +46,6 @@ import Network.Haskoin.Node
 import Network.Haskoin.Node.STM
 import Network.Haskoin.Node.HeaderTree
 import Network.Haskoin.Transaction
-import Network.Haskoin.Crypto
 import Network.Haskoin.Block
 import Network.Haskoin.Constants
 import Network.Haskoin.Util
@@ -138,7 +138,7 @@ startPeerPid pid ph@PeerHost{..} = do
     mChan   <- liftIO . atomically $ newTBMChan 1024
     pings   <- liftIO $ newTVarIO []
     atomicallyNodeT $ do
-        newPeerSession pid $ PeerSession
+        newPeerSession pid PeerSession
             { peerSessionConnected  = False
             , peerSessionVersion    = Nothing
             , peerSessionHeight     = 0
@@ -149,7 +149,7 @@ startPeerPid pid ph@PeerHost{..} = do
             , peerSessionPings      = pings
             , peerSessionScore      = Nothing
             }
-        newHostSession ph $ PeerHostSession
+        newHostSession ph PeerHostSession
             { peerHostSessionScore     = 0
             , peerHostSessionReconnect = 1
             }
@@ -157,15 +157,15 @@ startPeerPid pid ph@PeerHost{..} = do
     $(logDebug) $ formatPid pid ph "Starting a new client TCP connection"
 
     -- Start the client TCP connection
-    let cs  = clientSettings peerPort $ C.pack peerHost
-    runGeneralTCPClient cs (peerTCPClient chan) `finally` cleanupPeer
+    let c  = clientSettings peerPort $ C.pack peerHost
+    runGeneralTCPClient c (peerTCPClient chan) `finally` cleanupPeer
     return ()
   where
     peerTCPClient chan ad = do
             -- Conduit for receiving messages from the remote host
-        let recvMsg = (appSource ad) $$ decodeMessage pid ph
+        let recvMsg = appSource ad $$ decodeMessage pid ph
             -- Conduit for sending messages to the remote host
-            sendMsg = (sourceTBMChan chan) $= encodeMessage $$ (appSink ad)
+            sendMsg = sourceTBMChan chan $= encodeMessage $$ appSink ad
 
         withAsync (evalStateT recvMsg Nothing) $ \a1 -> link a1 >> do
             $(logDebug) $ formatPid pid ph
@@ -230,7 +230,7 @@ isPeerHostConnected :: PeerHost -> NodeT STM Bool
 isPeerHostConnected ph = do
     peerMap <- readTVarS sharedPeerMap
     sess <- lift $ mapM readTVar $ M.elems peerMap
-    return $ ph `elem` (map peerSessionHost sess)
+    return $ ph `elem` map peerSessionHost sess
 
 -- | Decode messages sent from the remote host and send them to the peers main
 -- message queue for processing. If we receive invalid messages, this function
@@ -250,12 +250,12 @@ decodeMessage pid ph = do
         case decodeToEither headerBytes of
             Left err -> lift . lift $ misbehaving pid ph moderateDoS $ unwords
                 [ "Could not decode message header:", err
-                , "Bytes:", bsToHex headerBytes
+                , "Bytes:", cs (encodeHex headerBytes)
                 ]
             Right (MessageHeader _ cmd len _) -> do
                 $(logDebug) $ formatPid pid ph $ unwords
                     [ "Received message header of type", show cmd ]
-                payloadBytes <- BL.toStrict <$> (CB.take $ fromIntegral len)
+                payloadBytes <- BL.toStrict <$> CB.take (fromIntegral len)
                 case decodeToEither $ headerBytes `BS.append` payloadBytes of
                     Left err -> lift . lift $ misbehaving pid ph moderateDoS $
                         unwords [ "Could not decode message payload:", err ]
@@ -305,10 +305,10 @@ processMessage pid ph msg = checkMerkleEnd >> case msg of
     MGetData (GetData inv) -> do
         $(logDebug) $ formatPid pid ph "Processing MGetData message"
         let txlist = filter ((== InvTx) . invType) inv
-            txids  = nub $ map (fromIntegral . invHash) txlist
+            txids  = nub $ map (TxHash . invHash) txlist
         $(logDebug) $ formatPid pid ph $ unlines $
             "Received GetData request for transactions"
-            : map (("  " ++) . encodeTxHashLE) txids
+            : map (("  " ++) . cs . txHashToHex) txids
         -- Add the txids to the GetData request map
         mapTVar <- asks sharedTxGetData
         liftIO . atomically $ modifyTVar' mapTVar $ \datMap ->
@@ -322,19 +322,19 @@ processMessage pid ph msg = checkMerkleEnd >> case msg of
             Just (_, mTxs) -> if txHash tx `elem` mTxs
                 then do
                     $(logDebug) $ formatPid pid ph $ unwords
-                        [ "Received merkle tx", encodeTxHashLE $ txHash tx ]
+                        [ "Received merkle tx", cs $ txHashToHex $ txHash tx ]
                     liftIO . atomically $
                         writeTBMChan peerSessionMerkleChan $ Right tx
                 else do
                     $(logDebug) $ formatPid pid ph $ unwords
                         [ "Received tx broadcast (ending a merkle block)"
-                        , encodeTxHashLE $ txHash tx
+                        , cs $ txHashToHex $ txHash tx
                         ]
                     endMerkle
                     liftIO . atomically $ writeTBMChan txChan (pid, ph, tx)
             _ -> do
                 $(logDebug) $ formatPid pid ph $ unwords
-                    [ "Received tx broadcast", encodeTxHashLE $ txHash tx ]
+                    [ "Received tx broadcast", cs $ txHashToHex $ txHash tx ]
                 liftIO . atomically $ writeTBMChan txChan (pid, ph, tx)
     MMerkleBlock mb@(MerkleBlock mHead ntx hs fs) -> do
         $(logDebug) $ formatPid pid ph "Processing MMerkleBlock message"
@@ -347,7 +347,7 @@ processMessage pid ph msg = checkMerkleEnd >> case msg of
                     then do
                         $(logDebug) $ formatPid pid ph $ unwords
                             [ "Received valid merkle block"
-                            , encodeBlockHashLE $ headerHash mHead
+                            , cs $ blockHashToHex $ headerHash mHead
                             ]
                         if null mTxs
                             -- Deliver the merkle block
@@ -356,7 +356,7 @@ processMessage pid ph msg = checkMerkleEnd >> case msg of
                                 lift $ writeTBMChan peerSessionMerkleChan $
                                     Left (mb, [])
                             -- Buffer the merkle block until we received all txs
-                            else put $! Just (mb, mTxs)
+                            else put $ Just (mb, mTxs)
                     else lift $ misbehaving pid ph severeDoS
                         "Received a merkle block with an invalid merkle root"
     _ -> return () -- Ignore other requests
@@ -380,34 +380,33 @@ processInvMessage :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
 processInvMessage pid ph (Inv vs) = case tickleM of
     Just tickle -> do
         $(logDebug) $ formatPid pid ph $ unwords
-            [ "Received block tickle", encodeBlockHashLE tickle ]
+            [ "Received block tickle", cs $ blockHashToHex tickle ]
         tickleChan <- asks sharedTickleChan
         liftIO $ atomically $ writeTBMChan tickleChan (pid, ph, tickle)
     _ -> do
         unless (null txlist) $ do
             forM_ txlist $ \tid -> $(logDebug) $ formatPid pid ph $ unwords
-                [ "Received transaction INV", encodeTxHashLE tid ]
+                [ "Received transaction INV", cs (txHashToHex tid) ]
             -- We simply request the transactions.
             -- TODO: Should we do something more elaborate here?
             atomicallyNodeT $ sendMessage pid $ MGetData $ GetData $
-                map (InvVector InvTx . fromIntegral) txlist
+                map (InvVector InvTx . getTxHash) txlist
         unless (null blocklist) $ do
             $(logDebug) $ formatPid pid ph $ unlines $
                 "Received block INV"
-                : map (("  " ++) . encodeBlockHashLE) blocklist
+                : map (("  " ++) . cs . blockHashToHex) blocklist
             -- We ignore block INVs as we do headers-first sync
             return ()
   where
     -- Single blockhash INV is a tickle
     tickleM = case blocklist of
-        (h:[]) -> if null txlist then (Just h) else Nothing
+        [h] -> if null txlist then Just h else Nothing
         _ -> Nothing
     txlist :: [TxHash]
-    txlist = map (fromIntegral . invHash) $
+    txlist = map (TxHash . invHash) $
         filter ((== InvTx) . invType) vs
     blocklist :: [BlockHash]
-    blocklist = map (fromIntegral . invHash) $
-        filter ((== InvBlock) . invType) vs
+    blocklist = map (BlockHash . invHash) $ filter ((== InvBlock) . invType) vs
 
 -- | Encode message that are being sent to the remote host.
 encodeMessage :: (MonadIO m, MonadLogger m)
@@ -515,20 +514,20 @@ peerHandshake pid ph chan = do
     buildVersion = do
         -- TODO: Get our correct IP here
         let add = NetworkAddress 1 $ SockAddrInet 0 0
-            ua  = VarString $ C.pack haskoinUserAgent
+            ua  = VarString haskoinUserAgent
         time <- liftM floor $ liftIO getPOSIXTime
         rdmn <- liftIO randomIO -- nonce
         h    <- runHeaderTree bestBlockHeaderHeight
-        return $ Version { version     = 70001
-                         , services    = 1
-                         , timestamp   = time
-                         , addrRecv    = add
-                         , addrSend    = add
-                         , verNonce    = rdmn
-                         , userAgent   = ua
-                         , startHeight = h
-                         , relay       = False
-                         }
+        return Version { version     = 70001
+                       , services    = 1
+                       , timestamp   = time
+                       , addrRecv    = add
+                       , addrSend    = add
+                       , verNonce    = rdmn
+                       , userAgent   = ua
+                       , startHeight = h
+                       , relay       = False
+                       }
 
 -- Wait for the version message of a peer and return it
 waitPeerVersion :: PeerId -> NodeT STM Version
@@ -559,17 +558,17 @@ waitPeerAvailable :: PeerId -> NodeT STM ()
 waitPeerAvailable pid = do
     hPidM <- readTVarS sharedHeaderPeer
     mPidM <- readTVarS sharedMerklePeer
-    if (Just pid) `elem` [hPidM, mPidM] then lift retry else return ()
+    when (Just pid `elem` [hPidM, mPidM]) $ lift retry
 
 -- Wait for a non-empty bloom filter to be available
 waitBloomFilter :: NodeT STM BloomFilter
 waitBloomFilter = maybe (lift retry) return =<< readTVarS sharedBloomFilter
 
 sendBloomFilter :: BloomFilter -> NodeT STM ()
-sendBloomFilter bloom = when (not $ isBloomEmpty bloom) $ do
+sendBloomFilter bloom = unless (isBloomEmpty bloom) $ do
     oldBloomM <- readTVarS sharedBloomFilter
     -- Don't do anything if the bloom filter is the same
-    if oldBloomM == Just bloom then return () else do
+    unless (oldBloomM == Just bloom) $ do
         writeTVarS sharedBloomFilter $ Just bloom
         sendMessageAll $ MFilterLoad $ FilterLoad bloom
 
@@ -670,7 +669,7 @@ misbehaving pid ph f msg = do
 
 {- LevelDB function -}
 
-runHeaderTree :: MonadIO m => (ReaderT L.DB IO a) -> NodeT m a
+runHeaderTree :: MonadIO m => ReaderT L.DB IO a -> NodeT m a
 runHeaderTree action = do
     lock <- asks sharedLevelDBLock
     fp   <- asks levelDBFilePath

@@ -36,7 +36,6 @@ import Network.Haskoin.Util
 import Network.Haskoin.Node
 import Network.Haskoin.Block
 import Network.Haskoin.Transaction
-import Network.Haskoin.Crypto
 import Network.Haskoin.Constants
 import Network.Haskoin.Node.HeaderTree
 

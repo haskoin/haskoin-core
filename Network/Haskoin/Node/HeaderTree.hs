@@ -1,4 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
 module Network.Haskoin.Node.HeaderTree
 ( HeaderTree(..)
 , BlockHeaderNode(..)
@@ -33,7 +32,7 @@ import Control.DeepSeq (NFData(..))
 
 import Data.Word (Word32)
 import Data.Bits (shiftL)
-import Data.Maybe (fromJust, isNothing, isJust, catMaybes)
+import Data.Maybe (fromMaybe, isNothing, isJust, catMaybes)
 import Data.List (sort)
 import Data.Binary.Get (getWord32le)
 import Data.Binary.Put (putWord32le)
@@ -44,7 +43,6 @@ import qualified Data.ByteString as BS (ByteString, reverse, append)
 import qualified Database.LevelDB.Base as L (DB, get, put)
 
 import Network.Haskoin.Block
-import Network.Haskoin.Crypto
 import Network.Haskoin.Constants
 import Network.Haskoin.Util
 import Network.Haskoin.Node.Checkpoints
@@ -130,8 +128,8 @@ isBestChain _             = False
 
 -- | Returns True if the action is a chain reorg
 isChainReorg :: BlockChainAction -> Bool
-isChainReorg (ChainReorg _ _ _) = True
-isChainReorg _                  = False
+isChainReorg ChainReorg{} = True
+isChainReorg _            = False
 
 -- | Returns True if the action is a side chain
 isSideChain :: BlockChainAction -> Bool
@@ -189,7 +187,7 @@ connectHeaders bhs adjustedTime commit
     | otherwise = return $ Left "BlockHeaders do not form a valid chain."
   where
     validChain (a:b:xs) =  prevBlock b == headerHash a && validChain (b:xs)
-    validChain (_:[]) = True
+    validChain [_] = True
     validChain _ = False
 
 -- | Connect a block header to this block header chain. Corresponds to bitcoind
@@ -254,8 +252,7 @@ verifyBlockHeader bh adjustedTime  = do
         left "Invalid header timestamp"
 
     parNodeM <- lift $ getBlockHeaderNode $ prevBlock bh
-    let parNode = fromJust parNodeM
-    when (isNothing parNodeM) $ left "Parent block not found"
+    parNode <- maybe (left "Parent block not found") return parNodeM
 
     nextWork <- lift $ nextWorkRequired parNode bh
     unless (blockBits bh == nextWork) $ left "Incorrect work transition (bits)"
@@ -265,9 +262,8 @@ verifyBlockHeader bh adjustedTime  = do
     when (blockTimestamp bh <= medianTime) $ left "Block timestamp is too early"
 
     chkPointM <- lift lastSeenCheckpoint
-    let chkPoint  = fromJust chkPointM
-        newHeight = nodeHeaderHeight parNode + 1
-    unless (isNothing chkPointM || (fromIntegral newHeight) > fst chkPoint) $
+    let newHeight = nodeHeaderHeight parNode + 1
+    unless (maybe True ((fromIntegral newHeight >) . fst) chkPointM) $
         left "Rewriting pre-checkpoint chain"
 
     unless (verifyCheckpoint (fromIntegral newHeight) bid) $
@@ -306,7 +302,7 @@ storeBlockHeader bh parNode = do
     bid       = headerHash bh
     newHeight = nodeHeaderHeight parNode + 1
     newWork   = nodeChainWork parNode + headerWork bh
-    newMedian = blockTimestamp bh : (take 10 $ nodeMedianTimes parNode)
+    newMedian = blockTimestamp bh : take 10 (nodeMedianTimes parNode)
     isDiffChange = newHeight `mod` diffInterval == 0
     isNotLimit   = blockBits bh /= encodeCompact powLimit
     minWork | not allowMinDifficultyBlocks = 0
@@ -341,9 +337,10 @@ getNodeWindow bh cnt = getBlockHeaderNode bh >>= \nodeM -> case nodeM of
     findMainChain currentHead = do
         -- Compute the split point from the original input node so that the old
         -- chain doesn't contain blocks beyond the original node.
-        node <- liftM fromJust $ getBlockHeaderNode bh
+        node <- fromMaybe e <$> getBlockHeaderNode bh
         (split, old, new) <- findSplitNode node currentHead
         return $ Just $ ChainReorg split old $ take cnt new
+    e = error "getNodeWindow: Could not get block header node"
 
 -- Find the first node right after the given timestamp
 getNodeAtTimestamp :: HeaderTree m
@@ -382,25 +379,27 @@ findSplitNode :: HeaderTree m
               => BlockHeaderNode
               -> BlockHeaderNode
               -> m (BlockHeaderNode, [BlockHeaderNode], [BlockHeaderNode])
-findSplitNode n1 n2 =
-    go [] [] n1 n2
+findSplitNode =
+    go [] []
   where
     go xs ys x y
         | nodeBlockHash x == nodeBlockHash y = return (x, xs, ys)
         | nodeHeaderHeight x > nodeHeaderHeight y = do
-            par <- liftM fromJust $ getParentNode x
+            par <- fromMaybe e <$> getParentNode x
             go (x:xs) ys par y
         | otherwise = do
-            par <- liftM fromJust $ getParentNode y
+            par <- fromMaybe e <$> getParentNode y
             go xs (y:ys) x par
+    e = error "findSplitNode: Could not get parent node"
 
 -- | Finds the parent of a BlockHeaderNode
 getParentNode :: HeaderTree m => BlockHeaderNode -> m (Maybe BlockHeaderNode)
 getParentNode node
-    | p == 0    = return Nothing
+    | p == z    = return Nothing
     | otherwise = getBlockHeaderNode p
   where
     p = prevBlock $ nodeHeader node
+    z = "0000000000000000000000000000000000000000000000000000000000000000"
 
 -- | Finds the child of a BlockHeaderNode if it exists. If a node has
 -- multiple children, this function will always return the child on the
@@ -426,7 +425,7 @@ lastSeenCheckpoint =
 nextWorkRequired :: HeaderTree m => BlockHeaderNode -> BlockHeader -> m Word32
 nextWorkRequired lastNode bh
     -- Genesis block
-    | prevBlock (nodeHeader lastNode) == 0 = return $ encodeCompact powLimit
+    | prevBlock (nodeHeader lastNode) == z = return $ encodeCompact powLimit
     -- Only change the difficulty once per interval
     | (nodeHeaderHeight lastNode + 1) `mod` diffInterval /= 0 = return $
         if allowMinDifficultyBlocks
@@ -439,12 +438,14 @@ nextWorkRequired lastNode bh
         return $ workFromInterval lastTs (nodeHeader lastNode)
   where
     len   = fromIntegral diffInterval - 1
-    fs    = replicate len (liftM fromJust . getParentNode)
+    fs    = replicate len (liftM (fromMaybe e) . getParentNode)
+    e = error "nextWorkRequired: Could not get parent node"
     delta = targetSpacing * 2
     minPOW
-        | blockTimestamp bh > (blockTimestamp $ nodeHeader lastNode) + delta =
+        | blockTimestamp bh > blockTimestamp (nodeHeader lastNode) + delta =
             encodeCompact powLimit
         | otherwise = nodeMinWork lastNode
+    z = "0000000000000000000000000000000000000000000000000000000000000000"
 
 -- | Computes the work required for the next block given a timestamp and the
 -- current block. The timestamp should come from the block that matched the
@@ -454,13 +455,13 @@ workFromInterval ts lastB
     | newDiff > powLimit = encodeCompact powLimit
     | otherwise          = encodeCompact newDiff
   where
-    t = fromIntegral $ (blockTimestamp lastB) - ts
+    t = fromIntegral $ blockTimestamp lastB - ts
     actualTime
         | t < targetTimespan `div` 4 = targetTimespan `div` 4
         | t > targetTimespan * 4     = targetTimespan * 4
         | otherwise                  = t
     lastDiff = decodeCompact $ blockBits lastB
-    newDiff = lastDiff * (toInteger actualTime) `div` (toInteger targetTimespan)
+    newDiff = lastDiff * toInteger actualTime `div` toInteger targetTimespan
 
 -- | Returns a BlockLocator object (newest block first, genesis at the end)
 blockLocator :: HeaderTree m => m BlockLocator
@@ -485,7 +486,7 @@ blockLocatorSide :: HeaderTree m => BlockChainAction -> m BlockLocator
 blockLocatorSide action = case action of
     SideChain (split:nodes) -> do
         mainLoc <- blockLocatorHeight $ nodeHeaderHeight split
-        return $ (take 10 $ map nodeBlockHash $ reverse nodes) ++ mainLoc
+        return $ take 10 (map nodeBlockHash $ reverse nodes) ++ mainLoc
     _ -> error "blockLocatorSide: Invalid blockchain action provided"
 
 -- | Returns a partial BlockLocator object.
@@ -535,13 +536,13 @@ headerWork bh =
 {- Default LevelDB implementation -}
 
 blockHashKey :: BlockHash -> BS.ByteString
-blockHashKey bid = "b_" `BS.append` (encode' bid)
+blockHashKey bid = "b_" `BS.append` encode' bid
 
 bestBlockKey :: BS.ByteString
 bestBlockKey = "bestblockheader_"
 
 heightKey :: BlockHeight -> BS.ByteString
-heightKey h = "h_" `BS.append` (encode' h)
+heightKey h = "h_" `BS.append` encode' h
 
 -- Get a node which is directly referenced by the key
 getLevelDBNode :: MonadIO m
@@ -573,9 +574,11 @@ instance MonadIO m => HeaderTree (ReaderT L.DB m) where
         db <- ask
         keyM <- liftIO $ L.get db def bestBlockKey
         case keyM of
-            Just key -> liftM fromJust $ getLevelDBNode key
+            Just key -> fromMaybe e <$> getLevelDBNode key
             Nothing  -> error
                 "GetBestBlockHeader: Best block header does not exist"
+      where
+        e = error "getBestBlockHeader: Could not get LevelDB node"
     setBestBlockHeader node = do
         db <- ask
         liftIO $ L.put db def bestBlockKey $ blockHashKey $ nodeBlockHash node

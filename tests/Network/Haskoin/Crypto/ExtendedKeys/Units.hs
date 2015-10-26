@@ -86,8 +86,8 @@ parsePathVectors =
     , ("M/0'", isJust)
     , ("m/2147483648", isNothing)
     , ("m/2147483647", isJust)
-    , ("m/0'/1/2'", isJust) -- from official test vector 1, fails
-    , ("m/0/2147483647'", isJust) -- from official test vector 2, fails
+    , ("m/0'/1/2'", isJust) -- from official test vector 1
+    , ("m/0/2147483647'", isJust) -- from official test vector 2
     , ("M/2147483648", isNothing)
     , ("M/2147483647", isJust)
     , ("M/-1", isNothing)
@@ -96,8 +96,8 @@ parsePathVectors =
     , ("M/1/2/3/4/5/6/7/8", isJust)
     , ("m/1'/2'/3/4", isJust)
     , ("M/1'/2'/3/4", isJust)
-    , ("m/1/2'/3/4'", isNothing) -- shouldn't this be isJust?
-    , ("M/1/2'/3/4'", isNothing) -- shoudn't this be isJust?
+    , ("m/1/2'/3/4'", isJust)
+    , ("M/1/2'/3/4'", isNothing)
     , ("meh", isNothing)
     , ("infinity", isNothing)
     , ("NaN", isNothing)

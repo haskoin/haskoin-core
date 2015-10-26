@@ -44,6 +44,7 @@ import Database.Persist.TH
     )
 
 import Network.Haskoin.Wallet.Types
+import Network.Haskoin.Block
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
@@ -134,7 +135,7 @@ instance NFData KeyRingConfig where
 
 {- JSON Types -}
 
-toJsonKeyRing :: KeyRing -> (Maybe XPrvKey) -> (Maybe Mnemonic) -> JsonKeyRing
+toJsonKeyRing :: KeyRing -> Maybe XPrvKey -> Maybe Mnemonic -> JsonKeyRing
 toJsonKeyRing keyRing masterM mnemonicM = JsonKeyRing
     { jsonKeyRingName     = keyRingName keyRing
     , jsonKeyRingMaster   = masterM
@@ -152,8 +153,8 @@ toJsonAccount acc = JsonAccount
     , jsonAccountCreated      = keyRingAccountCreated acc
     }
 
-toJsonAddr :: KeyRingAddr         -- ^ The address
-           -> (Maybe BalanceInfo) -- ^ The addresses balance
+toJsonAddr :: KeyRingAddr       -- ^ The address
+           -> Maybe BalanceInfo -- ^ The addresses balance
            -> JsonAddr
 toJsonAddr addr balM = JsonAddr
     { jsonAddrAddress        = keyRingAddrAddress addr
@@ -168,8 +169,8 @@ toJsonAddr addr balM = JsonAddr
     , jsonAddrBalance        = balM
     }
 
-toJsonTx :: KeyRingTx           -- ^ The transaction
-         -> (Maybe BlockHeight) -- ^ The current best block height
+toJsonTx :: KeyRingTx         -- ^ The transaction
+         -> Maybe BlockHeight -- ^ The current best block height
          -> JsonTx
 toJsonTx tx currentHeightM = JsonTx
     { jsonTxHash            = keyRingTxHash tx
@@ -177,8 +178,8 @@ toJsonTx tx currentHeightM = JsonTx
     , jsonTxType            = keyRingTxType tx
     , jsonTxInValue         = keyRingTxInValue tx
     , jsonTxOutValue        = keyRingTxOutValue tx
-    , jsonTxValue           = (fromIntegral $ keyRingTxInValue tx) -
-                              (fromIntegral $ keyRingTxOutValue tx)
+    , jsonTxValue           = fromIntegral (keyRingTxInValue tx) -
+                              fromIntegral (keyRingTxOutValue tx)
     , jsonTxInputs          = keyRingTxInputs tx
     , jsonTxOutputs         = keyRingTxOutputs tx
     , jsonTxChange          = keyRingTxChange tx
@@ -194,13 +195,13 @@ toJsonTx tx currentHeightM = JsonTx
   where
     f confirmedHeight = case currentHeightM of
         Just h -> return $ fromInteger $
-            max 0 $ (toInteger h) - (toInteger confirmedHeight) + 1
+            max 0 $ toInteger h - toInteger confirmedHeight + 1
         _ -> Nothing
 
 toJsonCoin :: KeyRingCoin      -- ^ The coin
-           -> (Maybe JsonTx)   -- ^ The coins transaction
-           -> (Maybe JsonAddr) -- ^ The coins address
-           -> (Maybe JsonTx)   -- ^ The coins spending transaction
+           -> Maybe JsonTx   -- ^ The coins transaction
+           -> Maybe JsonAddr -- ^ The coins address
+           -> Maybe JsonTx   -- ^ The coins spending transaction
            -> JsonCoin
 toJsonCoin coin txM addrM spendM = JsonCoin
     { jsonCoinHash       = keyRingCoinHash coin

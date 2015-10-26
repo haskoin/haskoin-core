@@ -33,6 +33,6 @@ instance Arbitrary TxAction where
         , do
             ArbitraryTx tx <- arbitrary
             return (ImportTx tx)
-        , SignTx <$> arbitrary
+        , SignTx <$> (arbitrary >>= \(ArbitraryTxHash h) -> return h)
         ]
 

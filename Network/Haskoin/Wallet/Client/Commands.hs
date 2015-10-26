@@ -45,9 +45,10 @@ import Control.Monad (forM_, when, liftM2)
 import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.Reader as R (ReaderT, ask, asks)
 
-import Data.Maybe (listToMaybe, isNothing, fromJust, fromMaybe, isJust)
-import Data.List (intersperse)
-import Data.Text (pack, unpack, splitOn)
+import Data.Maybe
+       (listToMaybe, isNothing, fromJust, fromMaybe, isJust, maybeToList)
+import Data.List (intercalate, intersperse)
+import Data.Text (Text, pack, unpack, splitOn)
 import Data.Word (Word64)
 import qualified Data.Yaml as YAML (encode)
 import qualified Data.Aeson.Encode.Pretty as JSON
@@ -66,7 +67,9 @@ import Data.Aeson
     , eitherDecode
     , (.=)
     )
+import Data.String.Conversions (cs)
 
+import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
@@ -132,7 +135,7 @@ cmdNewMS r name mStr nStr ks = case keysM of
   where
     m     = read mStr
     n     = read nStr
-    keysM = mapM xPubImport ks
+    keysM = mapM (xPubImport . cs) ks
 
 cmdNewRead :: String -> String -> Handler ()
 cmdNewRead name keyStr = case keyM of
@@ -143,7 +146,7 @@ cmdNewRead name keyStr = case keyM of
             \(JsonWithKeyRing _ acc) -> putStr $ printAccount acc
     _ -> error "Could not parse key"
   where
-    keyM = xPubImport keyStr
+    keyM = xPubImport $ cs keyStr
 
 cmdAddKeys :: String -> [String] -> Handler ()
 cmdAddKeys name ks = case keysM of
@@ -153,7 +156,7 @@ cmdAddKeys name ks = case keysM of
             \(JsonWithKeyRing _ acc) -> putStr $ printAccount acc
     _ -> error "Could not parse key(s)"
   where
-    keysM = mapM xPubImport ks
+    keysM = mapM (xPubImport . cs) ks
 
 cmdSetGap :: String -> String -> Handler ()
 cmdSetGap name gap = do
@@ -265,8 +268,8 @@ cmdSendMany name xs = case rcpsM of
             \(JsonWithAccount _ _ tx) -> putStr $ printTx tx
     _ -> error "Could not parse recipient information"
   where
-    g str   = map unpack $ splitOn ":" (pack str)
-    f [a,v] = liftM2 (,) (base58ToAddr a) (return $ read v)
+    g str   = map cs $ splitOn ":" (pack str)
+    f [a,v] = liftM2 (,) (base58ToAddr a) (return $ read $ cs v)
     f _     = Nothing
     rcpsM   = mapM (f . g) xs
 
@@ -279,7 +282,7 @@ cmdImport name txStr = case txM of
             \(JsonWithAccount _ _ t) -> putStr $ printTx t
     _ -> error "Could not parse transaction"
   where
-    txM = decodeToMaybe =<< hexToBS txStr
+    txM = decodeToMaybe =<< decodeHex (cs txStr)
 
 cmdSign :: String -> String -> Handler ()
 cmdSign name txidStr = case txidM of
@@ -290,7 +293,7 @@ cmdSign name txidStr = case txidM of
             \(JsonWithAccount _ _ tx) -> putStr $ printTx tx
     _ -> error "Could not parse txid"
   where
-    txidM = decodeTxHashLE txidStr
+    txidM = hexToTxHash $ cs txidStr
 
 cmdGetOffline :: String -> String -> Handler ()
 cmdGetOffline name tidStr = case tidM of
@@ -299,12 +302,12 @@ cmdGetOffline name tidStr = case tidM of
         sendZmq (GetOfflineTxR k (pack name) tid) $
             \(OfflineTxData tx dat) -> do
                 putStrLn $ unwords
-                    [ "Tx      :", bsToHex $ encode' tx ]
+                    [ "Tx      :", cs $ encodeHex $ encode' tx ]
                 putStrLn $ unwords
-                    [ "CoinData:", bsToHex $ toStrictBS $ encode dat ]
+                    [ "CoinData:", cs $ encodeHex $ cs $ encode dat ]
     _ -> error "Could not parse txid"
   where
-    tidM = decodeTxHashLE tidStr
+    tidM = hexToTxHash $ cs tidStr
 
 cmdSignOffline :: String -> String -> String -> Handler ()
 cmdSignOffline name txStr datStr = case (txM, datM) of
@@ -312,12 +315,12 @@ cmdSignOffline name txStr datStr = case (txM, datM) of
         k <- R.asks configKeyRing
         sendZmq (PostOfflineTxR k (pack name) tx dat) $
             \(TxCompleteRes tx' c) -> do
-                putStrLn $ unwords [ "Tx      :", bsToHex $ encode' tx' ]
+                putStrLn $ unwords [ "Tx      :", cs $ encodeHex $ encode' tx' ]
                 putStrLn $ unwords [ "Complete:", if c then "Yes" else "No" ]
     _ -> error "Could not decode input data"
   where
-    datM = decode . toLazyBS =<< hexToBS datStr
-    txM  = decodeToMaybe =<< hexToBS txStr
+    datM = decode . cs =<< decodeHex (cs datStr)
+    txM  = decodeToMaybe =<< decodeHex (cs txStr)
 
 cmdBalance :: String -> Handler ()
 cmdBalance name = do
@@ -336,7 +339,7 @@ cmdGetTx name tidStr = case tidM of
             \(JsonWithAccount _ _ tx) -> putStr $ printTx tx
     _ -> error "Could not parse txid"
   where
-    tidM = decodeTxHashLE tidStr
+    tidM = hexToTxHash $ cs tidStr
 
 cmdRescan :: [String] -> Handler ()
 cmdRescan timeLs =
@@ -349,19 +352,19 @@ cmdDecodeTx :: String -> Handler ()
 cmdDecodeTx txStr = do
     when (isNothing txM) $ error "Could not parse transaction"
     format <- R.asks configFormat
-    liftIO $ formatStr $ bsToString $ case format of
-        OutputJSON -> toStrictBS jsn
+    liftIO $ formatStr $ cs $ case format of
+        OutputJSON -> cs jsn
         _          -> YAML.encode val
   where
-    txM = decodeToMaybe =<< hexToBS txStr
+    txM = decodeToMaybe =<< decodeHex (cs txStr)
     val = encodeTxJSON $ fromJust txM
     jsn = JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } val
 
 cmdVersion :: Handler ()
 cmdVersion = liftIO $ do
-    putStrLn $ unwords [ "network   :", networkName ]
-    putStrLn $ unwords [ "user-agent:", haskoinUserAgent ]
-    putStrLn $ unwords [ "database  :", unpack databaseEngine ]
+    putStrLn $ unwords [ "network   :", cs networkName ]
+    putStrLn $ unwords [ "user-agent:", cs haskoinUserAgent ]
+    putStrLn $ unwords [ "database  :", cs databaseEngine ]
 
 cmdStatus :: Handler ()
 cmdStatus = do
@@ -377,8 +380,8 @@ sendZmq req handle = do
     resE <- liftIO $ runZMQ $ do
         sock <- socket Req
         connect sock sockName
-        send sock [] (toStrictBS $ encode req)
-        eitherDecode . toLazyBS <$> receive sock
+        send sock [] (cs $ encode req)
+        eitherDecode . cs <$> receive sock
     case resE of
         Right (ResponseValid (Just a)) -> formatOutput a =<< R.asks configFormat
         Right (ResponseValid Nothing)  -> return ()
@@ -386,10 +389,10 @@ sendZmq req handle = do
         Left err                       -> error err
   where
     formatOutput a format = liftIO $ case format of
-        OutputJSON   -> formatStr $ bsToString $ toStrictBS $
+        OutputJSON   -> formatStr $ cs $
             JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } a
         OutputYAML   -> formatStr $
-            bsToString $ YAML.encode a
+            cs $ YAML.encode a
         OutputNormal -> handle a
 
 formatStr :: String -> IO ()
@@ -397,7 +400,7 @@ formatStr str = forM_ (lines str) putStrLn
 
 encodeTxJSON :: Tx -> Value
 encodeTxJSON tx@(Tx v is os i) = object
-    [ "txid"     .= encodeTxHashLE (txHash tx)
+    [ "txid"     .= (cs $ txHashToHex (txHash tx) :: Text)
     , "version"  .= v
     , "inputs"   .= zipWith input is [0..]
     , "outputs"  .= zipWith output os [0..]
@@ -413,7 +416,7 @@ encodeTxInJSON :: TxIn -> Value
 encodeTxInJSON (TxIn o s i) = object $
     [ "outpoint"   .= encodeOutPointJSON o
     , "sequence"   .= i
-    , "raw-script" .= bsToHex s
+    , "raw-script" .= (cs $ encodeHex s :: Text)
     , "script"     .= encodeScriptJSON sp
     ] ++ decoded
   where
@@ -424,7 +427,7 @@ encodeTxInJSON (TxIn o s i) = object $
 encodeTxOutJSON :: TxOut -> Value
 encodeTxOutJSON (TxOut v s) = object $
     [ "value"      .= v
-    , "raw-script" .= bsToHex s
+    , "raw-script" .= (cs $ encodeHex s :: Text)
     , "script"     .= encodeScriptJSON sp
     ] ++ decoded
   where
@@ -435,8 +438,8 @@ encodeTxOutJSON (TxOut v s) = object $
 
 encodeOutPointJSON :: OutPoint -> Value
 encodeOutPointJSON (OutPoint h i) = object
-    [ "txid" .= encodeTxHashLE h
-    , "pos"  .= toJSON i
+    [ "txid" .= (cs $ txHashToHex h :: Text)
+    , "pos"  .= i
     ]
 
 encodeScriptJSON :: Script -> Value
@@ -444,7 +447,7 @@ encodeScriptJSON (Script ops) =
     toJSON $ map f ops
   where
     f (OP_PUSHDATA bs _) = String $ pack $ unwords
-        ["OP_PUSHDATA", bsToHex bs]
+        ["OP_PUSHDATA", cs $ encodeHex bs]
     f x = String $ pack $ show x
 
 encodeScriptInputJSON :: ScriptInput -> Value
@@ -454,8 +457,8 @@ encodeScriptInputJSON si = case si of
     RegularInput (SpendPKHash s p) -> object
         [ "spendpubkeyhash" .= object
             [ "sig"            .= encodeSigJSON s
-            , "pubkey"         .= bsToHex (encode' p)
-            , "sender-address" .= addrToBase58 (pubKeyAddr p)
+            , "pubkey"         .= (cs $ encodeHex (encode' p) :: Text)
+            , "sender-address" .= (cs $ addrToBase58 (pubKeyAddr p) :: Text)
             ]
         ]
     RegularInput (SpendMulSig sigs) -> object
@@ -464,37 +467,40 @@ encodeScriptInputJSON si = case si of
         [ "spendscripthash" .= object
             [ "scriptinput" .= encodeScriptInputJSON (RegularInput s)
             , "redeem" .= encodeScriptOutputJSON r
-            , "raw-redeem" .= bsToHex (encodeOutputBS r)
-            , "sender-address" .= addrToBase58 (scriptAddr r)
+            , "raw-redeem" .= (cs $ encodeHex (encodeOutputBS r) :: Text)
+            , "sender-address" .= (cs $ addrToBase58 (scriptAddr r) :: Text)
             ]
         ]
 
 encodeScriptOutputJSON :: ScriptOutput -> Value
 encodeScriptOutputJSON so = case so of
     PayPK p -> object
-        [ "pay2pubkey" .= object [ "pubkey" .= bsToHex (encode' p) ] ]
+        [ "pay2pubkey" .= object
+          [ "pubkey" .= (cs $ encodeHex (encode' p) :: Text) ]
+        ]
     PayPKHash a -> object
         [ "pay2pubkeyhash" .= object
-            [ "address-base64" .= bsToHex (encode' $ getAddrHash a)
-            , "address-base58" .= addrToBase58 a
+            [ "address-base64" .=
+              (cs $ encodeHex (encode' $ getAddrHash a) :: Text)
+            , "address-base58" .= (cs $ addrToBase58 a :: Text)
             ]
         ]
     PayMulSig ks r -> object
         [ "pay2mulsig" .= object
             [ "required-keys" .= r
-            , "pubkeys"       .= map (bsToHex . encode') ks
+            , "pubkeys"       .= (map (cs . encodeHex . encode') ks :: [Text])
             ]
         ]
     PayScriptHash a -> object
         [ "pay2scripthash" .= object
-            [ "address-base64" .= bsToHex (encode' $ getAddrHash a)
-            , "address-base58" .= addrToBase58 a
+            [ "address-base64" .= (cs $ encodeHex $ encode' $ getAddrHash a :: Text)
+            , "address-base58" .= (cs (addrToBase58 a) :: Text)
             ]
         ]
 
 encodeSigJSON :: TxSignature -> Value
 encodeSigJSON ts@(TxSignature _ sh) = object
-    [ "raw-sig" .= bsToHex (encodeSig ts)
+    [ "raw-sig" .= (cs $ encodeHex (encodeSig ts) :: Text)
     , "sighash" .= encodeSigHashJSON sh
     ]
 
@@ -524,12 +530,12 @@ printKeyRing :: JsonKeyRing -> String
 printKeyRing JsonKeyRing{..} = unlines $
     [ "KeyRing: " ++ unpack jsonKeyRingName ]
     ++
-    [ "Master key: " ++ xPrvExport (fromJust jsonKeyRingMaster)
-    | isJust jsonKeyRingMaster
+    [ "Master key: " ++ cs (xPrvExport m)
+    | m <- maybeToList jsonKeyRingMaster
     ]
     ++
-    [ "Mnemonic: " ++ fromJust jsonKeyRingMnemonic
-    | isJust jsonKeyRingMnemonic
+    [ "Mnemonic: " ++ cs m
+    | m <- maybeToList jsonKeyRingMnemonic
     ]
 
 printAccount :: JsonAccount -> String
@@ -539,15 +545,15 @@ printAccount JsonAccount{..} = unlines $
     , "Gap    : " ++ show jsonAccountGap
     ]
     ++
-    [ "Deriv  : " ++ show (fromJust jsonAccountDerivation)
-    | isJust jsonAccountDerivation
+    [ "Deriv  : " ++ pathToStr d
+    | d <- maybeToList jsonAccountDerivation
     ]
     ++
-    concat ( [ printKeys | not (null jsonAccountKeys) ] )
+    concat [ printKeys | not (null jsonAccountKeys) ]
   where
     printKeys =
-        ("Keys   : " ++ xPubExport (head jsonAccountKeys)) :
-        map (("         " ++) . xPubExport) (tail jsonAccountKeys)
+        ("Keys   : " ++ cs (xPubExport (head jsonAccountKeys))) :
+        map (("         " ++) . cs . xPubExport) (tail jsonAccountKeys)
     showType = case jsonAccountType of
         AccountRegular r -> if r then "Read-Only" else "Regular"
         AccountMultisig r m n -> unwords
@@ -557,19 +563,18 @@ printAccount JsonAccount{..} = unlines $
 
 printAddress :: JsonAddr -> String
 printAddress JsonAddr{..} = unwords $
-    [ show jsonAddrIndex, ":", addrToBase58 jsonAddrAddress ]
+    [ show jsonAddrIndex, ":", cs (addrToBase58 jsonAddrAddress) ]
     ++
     [ "(" ++ unpack jsonAddrLabel ++ ")" | not (null $ unpack jsonAddrLabel) ]
     ++ concat
-    ( [ [ "[Received: " ++ show (balanceInfoInBalance bal)   ++ "]"
+    [ [ "[Received: " ++ show (balanceInfoInBalance bal)   ++ "]"
         , "[Coins: "  ++ show (balanceInfoCoins bal)  ++ "]"
         , "[Spent Coins: " ++ show (balanceInfoSpentCoins bal) ++ "]"
         ]
         | isJust jsonAddrBalance && balanceInfoCoins bal > 0
       ]
-    )
   where
-    bal = fromJust jsonAddrBalance
+    bal = fromMaybe (error "Could not get address balance") jsonAddrBalance
 
 printTx :: JsonTx -> String
 printTx tx@JsonTx{..} = unlines $
@@ -577,43 +582,40 @@ printTx tx@JsonTx{..} = unlines $
     ++
     [ "Confidence : " ++ printTxConfidence tx ]
     ++ concat
-    ( [ printAddrInfos "Inputs     : " jsonTxInputs
-      | not (null jsonTxInputs)
-      ]
-    )
+    [ printAddrInfos "Inputs     : " jsonTxInputs
+    | not (null jsonTxInputs)
+    ]
     ++ concat
-    ( [ printAddrInfos "Outputs    : " jsonTxOutputs
-      | not (null jsonTxOutputs)
-      ]
-    )
+    [ printAddrInfos "Outputs    : " jsonTxOutputs
+    | not (null jsonTxOutputs)
+    ]
     ++ concat
-    ( [ printAddrInfos "Change     : " jsonTxChange
-      | not (null jsonTxChange)
-      ]
-    )
+    [ printAddrInfos "Change     : " jsonTxChange
+    | not (null jsonTxChange)
+    ]
   where
     printAddrInfos header xs =
         (header ++ f (head xs)) :
         map (("             " ++) . f) (tail xs)
     f (AddressInfo addr valM local) = unwords $
-        addrToBase58 addr :
-        [ show (fromJust valM) | isJust valM ]
+        cs (addrToBase58 addr) :
+        [ show v | v <- maybeToList valM ]
         ++
         [ if local then "<-" else "" ]
 
 printAddrTx :: AddrTx -> String
 printAddrTx (AddrTx tx BalanceInfo{..}) = unlines $
-    concat (
+    concat
     [ [ "Incoming value: " ++ show balanceInfoInBalance
       , "Incoming coins: " ++ show balanceInfoCoins
       ]
       | balanceInfoInBalance > 0
-    ] ) ++ concat (
+    ] ++ concat
     [ [ "Outgoing value: " ++ show balanceInfoOutBalance
       , "Spent coins   : " ++ show balanceInfoSpentCoins
       ]
       | balanceInfoOutBalance > 0
-    ] ) ++
+    ] ++
     [   "Confidence    : " ++ printTxConfidence tx ]
 
 printTxConfidence :: JsonTx -> String
@@ -636,31 +638,31 @@ printTxType t = case t of
 printNodeStatus :: Bool -> NodeStatus -> [String]
 printNodeStatus verbose NodeStatus{..} =
     [ "Network Height    : " ++ show nodeStatusNetworkHeight
-    , "Best Header       : " ++ encodeBlockHashLE nodeStatusBestHeader
+    , "Best Header       : " ++ cs (blockHashToHex nodeStatusBestHeader)
     , "Best Header Height: " ++ show nodeStatusBestHeaderHeight
-    , "Best Block        : " ++ encodeBlockHashLE nodeStatusBestBlock
+    , "Best Block        : " ++ cs (blockHashToHex nodeStatusBestBlock)
     , "Bloom Filter Size : " ++ show nodeStatusBloomSize
     ] ++
-    [ "Header Peer       : " ++ show (fromJust nodeStatusHeaderPeer)
-    | isJust nodeStatusHeaderPeer && verbose
+    [ "Header Peer       : " ++ show h
+    | h <- maybeToList nodeStatusHeaderPeer, verbose
     ] ++
-    [ "Merkle Peer       : " ++ show (fromJust nodeStatusMerklePeer)
-    | isJust nodeStatusMerklePeer && verbose
+    [ "Merkle Peer       : " ++ show m
+    | m <- maybeToList nodeStatusMerklePeer, verbose
     ] ++
     [ "Pending Headers   : " ++ show nodeStatusHaveHeaders | verbose ] ++
     [ "Pending Tickles   : " ++ show nodeStatusHaveTickles | verbose ] ++
     [ "Pending Txs       : " ++ show nodeStatusHaveTxs | verbose ] ++
-    [ "Pending GetData   : " ++ show (map encodeTxHashLE nodeStatusGetData)
+    [ "Pending GetData   : " ++ show (map txHashToHex nodeStatusGetData)
     | verbose
     ] ++
-    [ "Pending Rescan    : " ++ show (fromJust nodeStatusRescan)
-    | isJust nodeStatusRescan && verbose
+    [ "Pending Rescan    : " ++ show r
+    | r <- maybeToList nodeStatusRescan, verbose
     ] ++
     [ "Synced Mempool    : " ++ show nodeStatusMempool | verbose ] ++
     [ "HeaderSync Lock   : " ++ show nodeStatusSyncLock | verbose ] ++
     [ "LevelDB Lock      : " ++ show nodeStatusLevelDBLock | verbose ] ++
     [ "Peers: " ] ++
-    concat (intersperse ["-"] (map (printPeerStatus verbose) nodeStatusPeers))
+    intercalate ["-"] (map (printPeerStatus verbose) nodeStatusPeers)
 
 printPeerStatus :: Bool -> PeerStatus -> [String]
 printPeerStatus verbose PeerStatus{..} =
@@ -669,23 +671,19 @@ printPeerStatus verbose PeerStatus{..} =
     , "  Connected: " ++ if peerStatusConnected then "yes" else "no"
     , "  Height   : " ++ show peerStatusHeight
     ] ++
-    [ "  Protocol : " ++ show (fromJust peerStatusProtocol)
-    | isJust peerStatusProtocol
+    [ "  Protocol : " ++ show p | p <- maybeToList peerStatusProtocol
     ] ++
-    [ "  UserAgent: " ++ fromJust peerStatusUserAgent
-    | isJust peerStatusUserAgent
+    [ "  UserAgent: " ++ ua | ua <- maybeToList peerStatusUserAgent
     ] ++
-    [ "  Avg Ping : " ++ (fromJust peerStatusPing)
-    | isJust peerStatusPing
+    [ "  Avg Ping : " ++ p | p <- maybeToList peerStatusPing
     ] ++
-    [ "  DoS Score: " ++ show (fromJust peerStatusDoSScore)
-    | isJust peerStatusDoSScore
+    [ "  DoS Score: " ++ show d | d <- maybeToList peerStatusDoSScore
     ] ++
     [ "  ThreadId : " ++ peerStatusThreadId | verbose ] ++
     [ "  Merkles  : " ++ show peerStatusHaveMerkles | verbose ] ++
     [ "  Messages : " ++ show peerStatusHaveMessage | verbose ] ++
     [ "  Nonces   : " ++ show peerStatusPingNonces | verbose ] ++
-    [ "  Reconnect: " ++ show (fromJust peerStatusReconnectTimer)
-    | isJust peerStatusReconnectTimer && verbose
+    [ "  Reconnect: " ++ show t
+    | t <- maybeToList peerStatusReconnectTimer, verbose
     ]
 

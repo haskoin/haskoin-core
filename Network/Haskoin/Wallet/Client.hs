@@ -30,8 +30,8 @@ import Data.Default (def)
 import Data.FileEmbed (embedFile)
 import qualified Data.Text as T (pack, unpack)
 import Data.Yaml (decodeFileEither)
+import Data.String.Conversions (cs)
 
-import Network.Haskoin.Util
 import Network.Haskoin.Constants
 import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Client.Commands
@@ -43,7 +43,7 @@ usageHeader :: String
 usageHeader = "Usage: hw [<options>] <command> [<args>]"
 
 cmdHelp :: [String]
-cmdHelp = lines $ bsToString $ $(embedFile "config/help")
+cmdHelp = lines $ cs $ $(embedFile "config/help")
 
 warningMsg :: String
 warningMsg = unwords

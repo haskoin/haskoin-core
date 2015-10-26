@@ -2,16 +2,21 @@ flags: {}
 packages:
 - '.'
 - location:
+    git: https://github.com/haskoin/secp256k1.git
+    commit: 5ee603061b3c1eaf2943e8d2c08e6effe85f38e7
+  extra-dep: true
+- location:
     git: https://github.com/haskoin/haskoin.git
-    commit: b71bcfa4701e129b69776e6951fe0bb7c8b26ea3
+    commit: 142189161ea51a4b14369179d5e6d334ad3f8206
   extra-dep: true
 - location:
     git: https://github.com/haskoin/haskoin-node.git
-    commit: 6efcf84875ccefe7d176817b14469568b3877984
+    commit: d7ec8b54bc8dba08d7981f31d92b36e4671e4b1b
   extra-dep: true
 extra-deps:
 - daemons-0.2.1
 - leveldb-haskell-0.6.3
 - murmur3-1.0.0
 - pbkdf-1.1.1.1
+- largeword-1.2.4
 resolver: lts-3.4

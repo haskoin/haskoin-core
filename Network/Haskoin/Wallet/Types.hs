@@ -55,7 +55,6 @@ import Data.Maybe (maybeToList)
 import Data.Char (toLower)
 import Data.Word (Word32, Word64)
 import Data.Text (Text)
-import qualified Data.ByteString.Char8 as C (pack, unpack)
 import qualified Data.ByteString.Lazy as L
 import Data.Aeson.Types
     ( Options(..)
@@ -63,6 +62,7 @@ import Data.Aeson.Types
     , defaultOptions
     , defaultTaggedObject
     )
+import Data.String.Conversions (cs)
 import Data.Aeson.TH (deriveJSON)
 import Data.Aeson
     ( Value (..), FromJSON, ToJSON, encode
@@ -75,6 +75,7 @@ import Database.Persist.Class (PersistField, toPersistValue, fromPersistValue)
 import Database.Persist.Types (PersistValue(..))
 import Database.Persist.Sql (PersistFieldSql, SqlType(..), sqlType)
 
+import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Script
 import Network.Haskoin.Transaction
@@ -365,7 +366,26 @@ data JsonKeyRing = JsonKeyRing
     }
     deriving (Eq, Show, Read)
 
-$(deriveJSON (dropFieldLabel 11) ''JsonKeyRing)
+instance ToJSON JsonKeyRing where
+    toJSON jkr = object
+        [ "name"     .= jsonKeyRingName jkr
+        , "master"   .= jsonKeyRingMaster jkr
+        , "mnemonic" .= fmap (String . cs) (jsonKeyRingMnemonic jkr)
+        , "created"  .= jsonKeyRingCreated jkr
+        ]
+
+instance FromJSON JsonKeyRing where
+    parseJSON = withObject "JsonKeyRing" $ \o -> do
+        name <- o .: "name"
+        master <- o .: "master"
+        mnemonic <- o .:? "mnemonic" .!= Nothing
+        created <- o .: "created"
+        return JsonKeyRing
+            { jsonKeyRingName = name
+            , jsonKeyRingMaster = master
+            , jsonKeyRingMnemonic = cs <$> (mnemonic :: Maybe Text)
+            , jsonKeyRingCreated = created
+            }
 
 data JsonWithKeyRing a = JsonWithKeyRing
     { withKeyRingKeyRing :: !JsonKeyRing
@@ -506,9 +526,9 @@ instance Exception WalletException
 {- Persistent Instances -}
 
 instance PersistField XPrvKey where
-    toPersistValue = PersistByteString . C.pack . xPrvExport
+    toPersistValue = PersistByteString . xPrvExport
     fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent XPrvKey" $ xPrvImport $ C.unpack bs
+        maybeToEither "Invalid Persistent XPrvKey" $ xPrvImport bs
     fromPersistValue _ = Left "Invalid Persistent XPrvKey"
 
 instance PersistFieldSql XPrvKey where
@@ -524,27 +544,27 @@ instance PersistFieldSql [XPubKey] where
     sqlType _ = SqlString
 
 instance PersistField DerivPath where
-    toPersistValue = PersistByteString . C.pack . show
+    toPersistValue = PersistByteString . cs . pathToStr
     fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent DerivPath" $ parsePath $ C.unpack bs
+        maybeToEither "Invalid Persistent DerivPath" $ parsePath $ cs bs
     fromPersistValue _ = Left "Invalid Persistent DerivPath"
 
 instance PersistFieldSql DerivPath where
     sqlType _ = SqlString
 
 instance PersistField HardPath where
-    toPersistValue = PersistByteString . C.pack . show
+    toPersistValue = PersistByteString . cs . pathToStr
     fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent HardPath" $ parseHard $ C.unpack bs
+        maybeToEither "Invalid Persistent HardPath" $ parseHard $ cs bs
     fromPersistValue _ = Left "Invalid Persistent HardPath"
 
 instance PersistFieldSql HardPath where
     sqlType _ = SqlString
 
 instance PersistField SoftPath where
-    toPersistValue = PersistByteString . C.pack . show
+    toPersistValue = PersistByteString . cs . pathToStr
     fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent SoftPath" $ parseSoft $ C.unpack bs
+        maybeToEither "Invalid Persistent SoftPath" $ parseSoft $ cs bs
     fromPersistValue _ = Left "Invalid Persistent SoftPath"
 
 instance PersistFieldSql SoftPath where
@@ -592,9 +612,9 @@ instance PersistFieldSql TxType where
     sqlType _ = SqlString
 
 instance PersistField Address where
-    toPersistValue = PersistByteString . C.pack . addrToBase58
+    toPersistValue = PersistByteString . addrToBase58
     fromPersistValue (PersistByteString a) =
-        maybeToEither "Invalid Persistent Address" . base58ToAddr $ C.unpack a
+        maybeToEither "Invalid Persistent Address" $ base58ToAddr a
     fromPersistValue _ = Left "Invalid Persistent Address"
 
 instance PersistFieldSql Address where
@@ -610,20 +630,18 @@ instance PersistFieldSql BloomFilter where
     sqlType _ = SqlBlob
 
 instance PersistField BlockHash where
-    toPersistValue = PersistByteString . C.pack . encodeBlockHashLE
+    toPersistValue = PersistByteString . blockHashToHex
     fromPersistValue (PersistByteString h) =
-        maybeToEither "Could not decode BlockHash" $
-            decodeBlockHashLE $ C.unpack h
+        maybeToEither "Could not decode BlockHash" $ hexToBlockHash h
     fromPersistValue _ = Left "Invalid Persistent BlockHash"
 
 instance PersistFieldSql BlockHash where
     sqlType _ = SqlString
 
 instance PersistField TxHash where
-    toPersistValue = PersistByteString . C.pack . encodeTxHashLE
+    toPersistValue = PersistByteString . txHashToHex
     fromPersistValue (PersistByteString h) =
-        maybeToEither "Invalid Persistent TxHash" $
-            decodeTxHashLE $ C.unpack h
+        maybeToEither "Invalid Persistent TxHash" $ hexToTxHash h
     fromPersistValue _ = Left "Invalid Persistent TxHash"
 
 instance PersistFieldSql TxHash where
@@ -657,10 +675,10 @@ instance PersistFieldSql Tx where
     sqlType _ = SqlOther "MEDIUMBLOB"
 
 instance PersistField PubKeyC where
-    toPersistValue = PersistByteString . C.pack . bsToHex . encode'
+    toPersistValue = PersistByteString . encodeHex . encode'
     fromPersistValue (PersistByteString bs) =
         maybeToEither "Invalid Persistent PubKeyC" $
-            decodeToMaybe =<< hexToBS (C.unpack bs)
+            decodeToMaybe =<< decodeHex bs
     fromPersistValue _ = Left "Invalid Persistent PubKeyC"
 
 instance PersistFieldSql PubKeyC where

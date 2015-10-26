@@ -31,6 +31,7 @@ import Control.Monad.Logger
     , filterLogger
     )
 
+import qualified Data.ByteString.Lazy as BL (fromStrict, toStrict)
 import qualified Data.HashMap.Strict as H (lookup)
 import Data.Text (pack)
 import Data.Maybe (fromMaybe)
@@ -39,13 +40,13 @@ import Data.Conduit (await, awaitForever, ($$))
 import Data.Word (Word32)
 import qualified Data.Map.Strict as M
     (Map, unionWith, null, empty, fromListWith, assocs, elems)
+import Data.String.Conversions (cs)
 
 import Database.Persist.Sql (ConnectionPool, runMigration)
 import qualified Database.LevelDB.Base as DB (Options(..), defaultOptions)
 
 import Database.Esqueleto (from, where_, val , (^.), (==.), (&&.), (<=.))
 
-import Network.Haskoin.Crypto
 import Network.Haskoin.Constants
 import Network.Haskoin.Util
 import Network.Haskoin.Block
@@ -144,13 +145,13 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
         -- Wait until we are synced
         atomicallyNodeT $ do
             synced <- areBlocksSynced
-            if synced then return () else lift retry
+            unless synced $ lift retry
         -- Send an INV for those transactions to all peers
         broadcastTxs =<< runDBPool sem pool (getPendingTxs 100)
         -- Wait until we are not synced
         atomicallyNodeT $ do
             synced <- areBlocksSynced
-            if synced then lift retry else return ()
+            when synced $ lift retry
     processTx sem pool = awaitForever $ \tx -> lift $ do
         (_, newAddrs) <- runDBPool sem pool $ importNetTx tx
         unless (null newAddrs) $ do
@@ -244,19 +245,19 @@ merkleSync sem pool bSize = do
     go lastMerkleM mTxsAcc aMap = await >>= \resM -> case resM of
         Just (Right tx) -> do
             $(logDebug) $ pack $ unwords
-                [ "Importing merkle tx", encodeTxHashLE $ txHash tx ]
+                [ "Importing merkle tx", cs $ txHashToHex $ txHash tx ]
             (_, newAddrs) <- lift $ runDBPool sem pool $ importNetTx tx
             $(logDebug) $ pack $ unwords
                 [ "Generated", show $ length newAddrs
                 , "new addresses while importing tx"
-                , encodeTxHashLE $ txHash tx
+                , cs $ txHashToHex $ txHash tx
                 ]
             let newMap = M.unionWith (+) aMap $ groupByAcc newAddrs
             go lastMerkleM mTxsAcc newMap
-        Just (Left ((MerkleBlock mHead _ _ _), mTxs)) -> do
+        Just (Left (MerkleBlock mHead _ _ _, mTxs)) -> do
             $(logDebug) $ pack $ unwords
                 [ "Buffering merkle block"
-                , encodeBlockHashLE $ headerHash mHead
+                , cs $ blockHashToHex $ headerHash mHead
                 ]
             go (Just mHead) (mTxs:mTxsAcc) aMap
         -- Done processing this batch. Reverse mTxsAcc as we have been
@@ -281,25 +282,25 @@ merkleSync sem pool bSize = do
         BestChain nodes -> $(logInfo) $ pack $ unwords
             [ "Best chain height"
             , show $ nodeHeaderHeight $ last nodes
-            , "(", encodeBlockHashLE $ nodeBlockHash $ last nodes, ")"
+            , "(", cs $ blockHashToHex $ nodeBlockHash $ last nodes, ")"
             ]
         ChainReorg _ o n -> $(logInfo) $ pack $ unlines $
             [ "Chain reorg."
             , "Orphaned blocks:"
             ]
-            ++ map (("  " ++) . encodeBlockHashLE . nodeBlockHash) o
+            ++ map (("  " ++) . cs . blockHashToHex . nodeBlockHash) o
             ++ [ "New blocks:" ]
-            ++ map (("  " ++) . encodeBlockHashLE . nodeBlockHash) n
+            ++ map (("  " ++) . cs . blockHashToHex . nodeBlockHash) n
             ++ [ unwords [ "Best merkle chain height"
                         , show $ nodeHeaderHeight $ last n
                         ]
             ]
         SideChain n -> $(logWarn) $ pack $ unlines $
             "Side chain:" :
-            map (("  " ++) . encodeBlockHashLE . nodeBlockHash) n
+            map (("  " ++) . cs . blockHashToHex . nodeBlockHash) n
         KnownChain n -> $(logWarn) $ pack $ unlines $
             "Known chain:" :
-            map (("  " ++) . encodeBlockHashLE . nodeBlockHash) n
+            map (("  " ++) . cs . blockHashToHex . nodeBlockHash) n
 
 maybeDetach :: Config -> IO () -> IO ()
 maybeDetach cfg action =
@@ -330,11 +331,11 @@ runWalletApp session =
             liftIO $ bind sock $ configBind $ handlerConfig session
             forever $ do
                 bs  <- liftIO $ receive sock
-                res <- case decode $ toLazyBS bs of
+                res <- case decode $ BL.fromStrict bs of
                     Just r  -> catchErrors $
                         runHandler session $ dispatchRequest r
                     Nothing -> return $ ResponseError "Could not decode request"
-                liftIO $ send sock [] $ toStrictBS $ encode res
+                liftIO $ send sock [] $ BL.toStrict $ encode res
   where
     catchErrors m = catches m
         [ E.Handler $ \(WalletException err) ->
@@ -372,7 +373,7 @@ dispatchRequest req = liftM ResponseValid $ case req of
     PostTxsR r n a                   -> postTxsR r n a
     GetTxR r n h                     -> getTxR r n h
     GetOfflineTxR r n h              -> getOfflineTxR r n h
-    PostOfflineTxR r n t cs          -> postOfflineTxR r n t cs
+    PostOfflineTxR r n t c           -> postOfflineTxR r n t c
     GetBalanceR r n mc o             -> getBalanceR r n mc o
     PostNodeR na                     -> postNodeR na
 

@@ -3,6 +3,8 @@ module Network.Haskoin.Crypto.Keys.Tests (tests) where
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
+import Data.String (fromString)
+import Data.String.Conversions (cs)
 import Data.Binary.Get (runGet)
 import Data.Binary.Put (runPut)
 import qualified Data.ByteString as BS (length, index)
@@ -30,6 +32,20 @@ tests =
         , testProperty "Uncompressed public key" testUnCompressed
         , testProperty "Compressed private key" testPrivateCompressed
         , testProperty "Uncompressed private key" testPrivateUnCompressed
+        ]
+    , testGroup "From/To strings"
+        [ testProperty "Read/Show public key" testReadShowPubKey
+        , testProperty "Read/Show compressed public key" testReadShowPubKeyC
+        , testProperty "Read/Show uncompressed public key" testReadShowPubKeyU
+        , testProperty "Read/Show private key" testReadShowPrvKey
+        , testProperty "Read/Show private key" testReadShowPrvKeyC
+        , testProperty "Read/Show private key" testReadShowPrvKeyU
+        , testProperty "From string public key" testFromStringPubKey
+        , testProperty "From string compressed public key" testFromStringPubKeyC
+        , testProperty "From string uncompressed public key" testFromStringPubKeyU
+        , testProperty "From string private key" testFromStringPrvKey
+        , testProperty "From string compressed private key" testFromStringPrvKeyC
+        , testProperty "From string uncompressed private key" testFromStringPrvKeyU
         ]
     ]
 
@@ -87,3 +103,41 @@ testPrivateUnCompressed :: EC.SecKey -> Bool
 testPrivateUnCompressed n =
     (not $ prvKeyCompressed $ makePrvKeyG False n) &&
     (not $ prvKeyCompressed $ makePrvKeyU n)
+
+{- Strings -}
+
+testReadShowPubKey :: ArbitraryPubKey -> Bool
+testReadShowPubKey (ArbitraryPubKey _ k) = read (show k) == k
+
+testReadShowPubKeyC :: ArbitraryPubKeyC -> Bool
+testReadShowPubKeyC (ArbitraryPubKeyC _ k) = read (show k) == k
+
+testReadShowPubKeyU :: ArbitraryPubKeyU -> Bool
+testReadShowPubKeyU (ArbitraryPubKeyU _ k) = read (show k) == k
+
+testReadShowPrvKey :: ArbitraryPrvKey -> Bool
+testReadShowPrvKey (ArbitraryPrvKey k) = read (show k) == k
+
+testReadShowPrvKeyC :: ArbitraryPrvKeyC -> Bool
+testReadShowPrvKeyC (ArbitraryPrvKeyC k) = read (show k) == k
+
+testReadShowPrvKeyU :: ArbitraryPrvKeyU -> Bool
+testReadShowPrvKeyU (ArbitraryPrvKeyU k) = read (show k) == k
+
+testFromStringPubKey :: ArbitraryPubKey -> Bool
+testFromStringPubKey (ArbitraryPubKey _ k) = fromString (cs . encodeHex $ encode' k) == k
+
+testFromStringPubKeyC :: ArbitraryPubKeyC -> Bool
+testFromStringPubKeyC (ArbitraryPubKeyC _ k) = fromString (cs . encodeHex $ encode' k) == k
+
+testFromStringPubKeyU :: ArbitraryPubKeyU -> Bool
+testFromStringPubKeyU (ArbitraryPubKeyU _ k) = fromString (cs . encodeHex $ encode' k) == k
+
+testFromStringPrvKey :: ArbitraryPrvKey -> Bool
+testFromStringPrvKey (ArbitraryPrvKey k) = fromString (cs $ toWif k) == k
+
+testFromStringPrvKeyC :: ArbitraryPrvKeyC -> Bool
+testFromStringPrvKeyC (ArbitraryPrvKeyC k) = fromString (cs $ toWif k) == k
+
+testFromStringPrvKeyU :: ArbitraryPrvKeyU -> Bool
+testFromStringPrvKeyU (ArbitraryPrvKeyU k) = fromString (cs $ toWif k) == k

@@ -2,6 +2,8 @@ module Network.Haskoin.Block.Tests (tests) where
 
 import Control.Arrow
 
+import Data.String (fromString)
+import Data.String.Conversions (cs)
 import Test.QuickCheck (Property, (==>))
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
@@ -16,10 +18,14 @@ tests :: [Test]
 tests =
     [ testGroup "Block tests"
         [ testProperty "decode . encode BlockHash id" decEncBlockHashid ]
-    , testGroup "Merkle Trees"
+    , testGroup "Merkle trees"
         [ testProperty "Width of tree at maxmum height = 1" testTreeWidth
         , testProperty "Width of tree at height 0 is # txns" testBaseWidth
         , testProperty "extract . build partial merkle tree" buildExtractTree
+        ]
+    , testGroup "Block hashes"
+        [ testProperty "Read/Show block hash" testReadShowBlockHash
+        , testProperty "From string block hash" fromStringBlockHash
         ]
     ]
 
@@ -50,3 +56,8 @@ buildExtractTree txs = not (null txs) ==>
     hashes = map (txh . fst) txs
     txh (ArbitraryTxHash t) = t
 
+testReadShowBlockHash :: ArbitraryBlockHash -> Bool
+testReadShowBlockHash (ArbitraryBlockHash h) = read (show h) == h
+
+fromStringBlockHash :: ArbitraryBlockHash -> Bool
+fromStringBlockHash (ArbitraryBlockHash h) = fromString (cs $ blockHashToHex h) == h

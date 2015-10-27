@@ -36,7 +36,7 @@ import Crypto.Hash
 import Crypto.MAC.HMAC (hmac)
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (guard)
+import Control.Monad ((<=<), guard)
 import Data.Byteable (toBytes)
 import Data.Maybe (fromMaybe)
 import Data.Word (Word16)
@@ -89,7 +89,7 @@ instance Read CheckSum32 where
         maybe pfail return $ bsToCheckSum32 =<< decodeHex (cs str)
 
 instance IsString CheckSum32 where
-    fromString = fromMaybe e . bsToCheckSum32 . cs where
+    fromString = fromMaybe e . (bsToCheckSum32 <=< decodeHex) . cs where
         e = error "Could not decode checksum"
 
 instance Binary CheckSum32 where
@@ -111,7 +111,7 @@ instance Read Hash512 where
         maybe pfail return $ bsToHash512 =<< decodeHex (cs str)
 
 instance IsString Hash512 where
-    fromString = fromMaybe e . bsToHash512 . cs where
+    fromString = fromMaybe e . (bsToHash512 <=< decodeHex) . cs where
         e = error "Could not decode 64-byte hash"
 
 instance Binary Hash512 where
@@ -133,7 +133,7 @@ instance Read Hash256 where
         maybe pfail return $ bsToHash256 =<< decodeHex (cs str)
 
 instance IsString Hash256 where
-    fromString = fromMaybe e . bsToHash256 . cs where
+    fromString = fromMaybe e . (bsToHash256 <=< decodeHex) . cs where
         e = error "Could not decode 32-byte hash"
 
 instance Binary Hash256 where
@@ -155,7 +155,7 @@ instance Read Hash160 where
         maybe pfail return $ bsToHash160 =<< decodeHex (cs str)
 
 instance IsString Hash160 where
-    fromString = fromMaybe e . bsToHash160 . cs where
+    fromString = fromMaybe e . (bsToHash160 <=< decodeHex) . cs where
         e = error "Could not decode 20-byte hash"
 
 instance Binary Hash160 where

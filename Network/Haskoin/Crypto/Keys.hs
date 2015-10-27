@@ -117,6 +117,14 @@ instance IsString PubKey where
     fromString str = fromMaybe e $ decodeToMaybe <=< decodeHex $ cs str where
         e = error "Could not decode public key"
 
+instance IsString PubKeyC where
+    fromString str = fromMaybe e $ decodeToMaybe <=< decodeHex $ cs str where
+        e = error "Could not decode compressed public key"
+
+instance IsString PubKeyU where
+    fromString str = fromMaybe e $ decodeToMaybe <=< decodeHex $ cs str where
+        e = error "Could not decode uncompressed public key"
+
 instance NFData (PubKeyI c) where
     rnf (PubKeyI p c) = p `seq` rnf c
 

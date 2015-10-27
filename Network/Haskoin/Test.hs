@@ -7,8 +7,10 @@ module Network.Haskoin.Test
   ArbitraryByteString(..)
 , ArbitraryNotNullByteString(..)
 , ArbitraryUTCTime(..)
+, ArbitraryHash512(..)
 , ArbitraryHash256(..)
 , ArbitraryHash160(..)
+, ArbitraryCheckSum32(..)
 
   -- * Crypto Arbitrary instances
 , ArbitraryPrvKey(..)

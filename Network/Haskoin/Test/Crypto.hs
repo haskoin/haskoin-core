@@ -2,7 +2,8 @@
   Arbitrary types for Network.Haskoin.Crypto
 -}
 module Network.Haskoin.Test.Crypto
-( ArbitraryHash256(..)
+( ArbitraryHash512(..)
+, ArbitraryHash256(..)
 , ArbitraryHash160(..)
 , ArbitraryCheckSum32(..)
 , ArbitraryByteString(..)
@@ -65,6 +66,15 @@ instance Arbitrary ArbitraryHash256 where
         vectorOf 32 arbitrary
       where
         e = error "Could not read arbitrary 32-byte hash"
+
+newtype ArbitraryHash512 = ArbitraryHash512 Hash512
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryHash512 where
+    arbitrary = (ArbitraryHash512 . fromMaybe e . bsToHash512 . BS.pack) <$>
+        vectorOf 64 arbitrary
+      where
+        e = error "Could not read arbitrary 64-byte hash"
 
 newtype ArbitraryCheckSum32 = ArbitraryCheckSum32 CheckSum32
     deriving (Eq, Show, Read)

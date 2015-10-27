@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.ExtendedKeys.Units (tests) where
 
 import Test.HUnit (Assertion, assertBool, assertEqual)
@@ -7,6 +8,7 @@ import Test.Framework.Providers.HUnit (testCase)
 import Data.Aeson (decode, encode)
 import Data.Maybe (isJust, isNothing, fromJust)
 import Data.String (fromString)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as B8
 
 import Network.Haskoin.Crypto
@@ -183,29 +185,32 @@ derivePathVectors =
         \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
     xpub = deriveXPubKey xprv
 
-runXKeyVec :: ([String],XPrvKey) -> Assertion
-runXKeyVec (v,m) = do
-    assertBool "xPrvID" $ (bsToHex $ encode' $ xPrvID m) == v !! 0
-    assertBool "xPrvFP" $ (bsToHex $ encode' $ xPrvFP m) == v !! 1
+runXKeyVec :: ([ByteString], XPrvKey) -> Assertion
+runXKeyVec (v, m) = do
+    assertBool "xPrvID" $ (encodeHex $ encode' $ xPrvID m) == v !! 0
+    assertBool "xPrvFP" $ (encodeHex $ encode' $ xPrvFP m) == v !! 1
     assertBool "xPrvAddr" $
         (addrToBase58 $ xPubAddr $ deriveXPubKey m) == v !! 2
-    assertBool "prvKey" $ (bsToHex $ encodePrvKey $ xPrvKey m) == v !! 3
+    assertBool "prvKey" $
+        (encodeHex $ encodePrvKey $ xPrvKey m) == v !! 3
     assertBool "xPrvWIF" $ xPrvWif m == v !! 4
     assertBool "pubKey" $
-        (bsToHex $ encode' $ xPubKey $ deriveXPubKey m) == v !! 5
-    assertBool "chain code" $ (bsToHex $ encode' $ xPrvChain m) == v !! 6
-    assertBool "Hex PubKey" $ (bsToHex $ encode' $ deriveXPubKey m) == v !! 7
-    assertBool "Hex PrvKey" $ (bsToHex $ encode' m) == v !! 8
+        (encodeHex $ encode' $ xPubKey $ deriveXPubKey m) == v !! 5
+    assertBool "chain code" $
+        (encodeHex $ encode' $ xPrvChain m) == v !! 6
+    assertBool "Hex PubKey" $
+        (encodeHex $ encode' $ deriveXPubKey m) == v !! 7
+    assertBool "Hex PrvKey" $ (encodeHex $ encode' m) == v !! 8
     assertBool "Base58 PubKey" $ (xPubExport $ deriveXPubKey m) == v !! 9
     assertBool "Base58 PrvKey" $ xPrvExport m == v !! 10
 
 -- BIP 0032 Test Vectors
 -- https://en.bitcoin.it/wiki/BIP_0032_TestVectors
 
-xKeyVec :: [([String], XPrvKey)]
+xKeyVec :: [([ByteString], XPrvKey)]
 xKeyVec = zip xKeyResVec $ foldl f [m] der
     where f acc d = acc ++ [d $ last acc]
-          m   = makeXPrvKey $ fromJust $ hexToBS m0
+          m   = makeXPrvKey $ fromJust $ decodeHex m0
           der = [ flip hardSubKey 0
                 , flip prvSubKey 1
                 , flip hardSubKey 2
@@ -213,10 +218,10 @@ xKeyVec = zip xKeyResVec $ foldl f [m] der
                 , flip prvSubKey 1000000000
                 ]
 
-xKeyVec2 :: [([String],XPrvKey)]
+xKeyVec2 :: [([ByteString], XPrvKey)]
 xKeyVec2 = zip xKeyResVec2 $ foldl f [m] der
     where f acc d = acc ++ [d $ last acc]
-          m   = makeXPrvKey $ fromJust $ hexToBS m1
+          m   = makeXPrvKey $ fromJust $ decodeHex m1
           der = [ flip prvSubKey 0
                 , flip hardSubKey 2147483647
                 , flip prvSubKey 1
@@ -224,10 +229,10 @@ xKeyVec2 = zip xKeyResVec2 $ foldl f [m] der
                 , flip prvSubKey 2
                 ]
 
-m0 :: String
+m0 :: ByteString
 m0 = "000102030405060708090a0b0c0d0e0f"
 
-xKeyResVec :: [[String]]
+xKeyResVec :: [[ByteString]]
 xKeyResVec =
     [
       -- m
@@ -310,10 +315,10 @@ xKeyResVec =
       ]
     ]
 
-m1 :: String
+m1 :: ByteString
 m1 = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
 
-xKeyResVec2 :: [[String]]
+xKeyResVec2 :: [[ByteString]]
 xKeyResVec2 =
     [
       -- m

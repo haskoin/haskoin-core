@@ -1,30 +1,28 @@
 -- | Hashing functions and HMAC DRBG definition
 module Network.Haskoin.Crypto.Hash
-( CheckSum32
+( Hash512(getHash512)
+, Hash256(getHash256)
+, Hash160(getHash160)
+, CheckSum32(getCheckSum32)
+, bsToHash512
+, bsToHash256
+, bsToHash160
 , hash512
 , hash256
-, hashSha1
 , hash160
-, hash512BS
-, hash256BS
-, hashSha1BS
-, hash160BS
+, sha1
 , doubleHash256
-, doubleHash256BS
-, chksum32
+, bsToCheckSum32
+, checkSum32
 , hmac512
-, hmac512BS
 , hmac256
-, hmac256BS
+, split512
+, join512
 , hmacDRBGNew
 , hmacDRBGUpd
 , hmacDRBGRsd
 , hmacDRBGGen
 , WorkingState
-, split512
-, join512
-, decodeCompact
-, encodeCompact
 ) where
 
 import Crypto.Hash
@@ -37,14 +35,21 @@ import Crypto.Hash
     )
 import Crypto.MAC.HMAC (hmac)
 
-import Data.Word (Word16, Word32)
+import Control.DeepSeq (NFData, rnf)
+import Control.Monad (guard)
 import Data.Byteable (toBytes)
-import Data.Binary (get)
-import Data.Bits (shiftL, shiftR, (.&.), (.|.))
+import Data.Maybe (fromMaybe)
+import Data.Word (Word16)
+import Data.String (IsString, fromString)
+import Data.String.Conversions (cs)
+import Text.Read (Lexeme(String, Ident), readPrec, lexP, parens, pfail)
+import Data.Binary (Binary, get, put)
+import Data.Binary.Get (getByteString)
+import Data.Binary.Put (putByteString)
 
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-    ( ByteString
-    , null
+    ( null
     , append
     , cons
     , concat
@@ -52,158 +57,199 @@ import qualified Data.ByteString as BS
     , empty
     , length
     , replicate
+    , splitAt
     )
 
 import Network.Haskoin.Util
-import Network.Haskoin.Crypto.BigWord
 
-type CheckSum32 = Word32
+newtype CheckSum32 = CheckSum32 { getCheckSum32 :: ByteString }
+    deriving (Eq, Ord)
 
-run512 :: BS.ByteString -> BS.ByteString
-run512 = (toBytes :: Digest SHA512 -> BS.ByteString) . hash
+newtype Hash512 = Hash512 { getHash512 :: ByteString }
+    deriving (Eq, Ord)
 
-run256 :: BS.ByteString -> BS.ByteString
-run256 = (toBytes :: Digest SHA256 -> BS.ByteString) . hash
+newtype Hash256 = Hash256 { getHash256 :: ByteString }
+    deriving (Eq, Ord)
 
-run160 :: BS.ByteString -> BS.ByteString
-run160 = (toBytes :: Digest RIPEMD160 -> BS.ByteString) . hash
+newtype Hash160 = Hash160 { getHash160 :: ByteString }
+    deriving (Eq, Ord)
 
-runSha1 :: BS.ByteString -> BS.ByteString
-runSha1 = (toBytes :: Digest SHA1 -> BS.ByteString) . hash
 
--- | Computes SHA-512.
-hash512 :: BS.ByteString -> Word512
-hash512 bs = runGet' get (run512 bs)
+instance NFData CheckSum32 where
+    rnf (CheckSum32 bs) = rnf bs
 
--- | Computes SHA-512 and returns the result as a bytestring.
-hash512BS :: BS.ByteString -> BS.ByteString
-hash512BS bs = run512 bs
+instance Show CheckSum32 where
+    showsPrec d (CheckSum32 bs) = showParen (d > 10) $
+        showString "CheckSum32 " . shows (encodeHex bs)
 
--- | Computes SHA-256.
-hash256 :: BS.ByteString -> Word256
-hash256 bs = runGet' get (run256 bs)
+instance Read CheckSum32 where
+    readPrec = parens $ do
+        Ident "CheckSum32" <- lexP
+        String str <- lexP
+        maybe pfail return $ bsToCheckSum32 =<< decodeHex (cs str)
 
--- | Computes SHA-256 and returns the result as a bytestring.
-hash256BS :: BS.ByteString -> BS.ByteString
-hash256BS bs = run256 bs
+instance IsString CheckSum32 where
+    fromString = fromMaybe e . bsToCheckSum32 . cs where
+        e = error "Could not decode checksum"
 
--- | Computes SHA-160.
-hashSha1 :: BS.ByteString -> Word160
-hashSha1 bs = runGet' get (runSha1 bs)
+instance Binary CheckSum32 where
+    get = CheckSum32 <$> getByteString 4
+    put (CheckSum32 bs) = putByteString bs
 
--- | Computes SHA-160 and returns the result as a bytestring.
-hashSha1BS :: BS.ByteString -> BS.ByteString
-hashSha1BS bs = runSha1 bs
 
--- | Computes RIPEMD-160.
-hash160 :: BS.ByteString -> Word160
-hash160 bs = runGet' get (run160 bs)
+instance NFData Hash512 where
+    rnf (Hash512 bs) = rnf bs
 
--- | Computes RIPEMD-160 and returns the result as a bytestring.
-hash160BS :: BS.ByteString -> BS.ByteString
-hash160BS bs = run160 bs
+instance Show Hash512 where
+    showsPrec d (Hash512 bs) = showParen (d > 10) $
+        showString "Hash512 " . shows (encodeHex bs)
 
--- | Computes two rounds of SHA-256.
-doubleHash256 :: BS.ByteString -> Word256
-doubleHash256 bs = runGet' get (run256 $ run256 bs)
+instance Read Hash512 where
+    readPrec = parens $ do
+        Ident "Hash512" <- lexP
+        String str <- lexP
+        maybe pfail return $ bsToHash512 =<< decodeHex (cs str)
 
--- | Computes two rounds of SHA-256 and returns the result as a bytestring.
-doubleHash256BS :: BS.ByteString -> BS.ByteString
-doubleHash256BS bs = run256 $ run256 bs
+instance IsString Hash512 where
+    fromString = fromMaybe e . bsToHash512 . cs where
+        e = error "Could not decode 64-byte hash"
+
+instance Binary Hash512 where
+    get = Hash512 <$> getByteString 64
+    put (Hash512 bs) = putByteString bs
+
+
+instance NFData Hash256 where
+    rnf (Hash256 bs) = rnf bs
+
+instance Show Hash256 where
+    showsPrec d (Hash256 bs) = showParen (d > 10) $
+        showString "Hash256 " . shows (encodeHex bs)
+
+instance Read Hash256 where
+    readPrec = parens $ do
+        Ident "Hash256" <- lexP
+        String str <- lexP
+        maybe pfail return $ bsToHash256 =<< decodeHex (cs str)
+
+instance IsString Hash256 where
+    fromString = fromMaybe e . bsToHash256 . cs where
+        e = error "Could not decode 32-byte hash"
+
+instance Binary Hash256 where
+    get = Hash256 <$> getByteString 32
+    put (Hash256 bs) = putByteString bs
+
+
+instance NFData Hash160 where
+    rnf (Hash160 bs) = rnf bs
+
+instance Show Hash160 where
+    showsPrec d (Hash160 bs) = showParen (d > 10) $
+        showString "Hash160 " . shows (encodeHex bs)
+
+instance Read Hash160 where
+    readPrec = parens $ do
+        Ident "Hash160" <- lexP
+        String str <- lexP
+        maybe pfail return $ bsToHash160 =<< decodeHex (cs str)
+
+instance IsString Hash160 where
+    fromString = fromMaybe e . bsToHash160 . cs where
+        e = error "Could not decode 20-byte hash"
+
+instance Binary Hash160 where
+    get = Hash160 <$> getByteString 20
+    put (Hash160 bs) = putByteString bs
+
+
+bsToHash512 :: ByteString -> Maybe Hash512
+bsToHash512 bs = guard (BS.length bs == 64) >> return (Hash512 bs)
+
+bsToHash256 :: ByteString -> Maybe Hash256
+bsToHash256 bs = guard (BS.length bs == 32) >> return (Hash256 bs)
+
+bsToHash160 :: ByteString -> Maybe Hash160
+bsToHash160 bs = guard (BS.length bs == 20) >> return (Hash160 bs)
+
+-- | Compute SHA-512.
+hash512 :: ByteString -> Hash512
+hash512 = Hash512 . (toBytes :: Digest SHA512 -> ByteString) . hash
+
+-- | Compute SHA-256.
+hash256 :: ByteString -> Hash256
+hash256 = Hash256 . (toBytes :: Digest SHA256 -> ByteString) . hash
+
+-- | Compute RIPEMD-160.
+hash160 :: ByteString -> Hash160
+hash160 = Hash160 . (toBytes :: Digest RIPEMD160 -> ByteString) . hash
+
+-- | Compute SHA1
+sha1 :: ByteString -> Hash160
+sha1 = Hash160 . (toBytes :: Digest SHA1 -> ByteString) . hash
+
+-- | Compute two rounds of SHA-256.
+doubleHash256 :: ByteString -> Hash256
+doubleHash256 = hash256 . getHash256 . hash256
 
 {- CheckSum -}
 
+bsToCheckSum32 :: ByteString -> Maybe CheckSum32
+bsToCheckSum32 bs = guard (BS.length bs == 4) >> return (CheckSum32 bs)
+
 -- | Computes a 32 bit checksum.
-chksum32 :: BS.ByteString -> CheckSum32
-chksum32 bs = fromIntegral $ (doubleHash256 bs) `shiftR` 224
+checkSum32 :: ByteString -> CheckSum32
+checkSum32 bs = CheckSum32 $ BS.take 4 bs' where
+    Hash256 bs' = doubleHash256 bs
 
 {- HMAC -}
 
 -- | Computes HMAC over SHA-512.
-hmac512 :: BS.ByteString -> BS.ByteString -> Word512
-hmac512 key = decode' . (hmac512BS key)
-
--- | Computes HMAC over SHA-512 and return the result as a bytestring.
-hmac512BS :: BS.ByteString -> BS.ByteString -> BS.ByteString
-hmac512BS key msg = hmac hash512BS 128 key msg
+hmac512 :: ByteString -> ByteString -> Hash512
+hmac512 key msg = Hash512 $ hmac f 128 key msg where
+    f bs = let Hash512 bs' = hash512 bs in bs'
 
 -- | Computes HMAC over SHA-256.
-hmac256 :: BS.ByteString -> BS.ByteString -> Word256
-hmac256 key = decode' . (hmac256BS key)
+hmac256 :: ByteString -> ByteString -> Hash256
+hmac256 key msg = Hash256 $ hmac f 64 key msg where
+    f bs = let Hash256 bs' = hash256 bs in bs'
 
--- | Computes HMAC over SHA-256 and return the result as a bytestring.
-hmac256BS :: BS.ByteString -> BS.ByteString -> BS.ByteString
-hmac256BS key msg = hmac hash256BS 64 key msg
+-- | Split a 'Hash512' into a pair of 'Hash256'.
+split512 :: Hash512 -> (Hash256, Hash256)
+split512 (Hash512 bs) = (Hash256 a, Hash256 b) where
+    (a, b) = BS.splitAt 32 bs
 
--- | Split a 'Word512' into a pair of 'Word256'.
-split512 :: Word512 -> (Word256, Word256)
-split512 i = (fromIntegral $ i `shiftR` 256, fromIntegral i)
+-- | Join a pair of 'Hash256' into a 'Hash512'.
+join512 :: (Hash256, Hash256) -> Hash512
+join512 (Hash256 a, Hash256 b) = Hash512 $ a `BS.append` b
 
--- | Join a pair of 'Word256' into a 'Word512'.
-join512 :: (Word256, Word256) -> Word512
-join512 (a,b) =
-    ((fromIntegral a :: Word512) `shiftL` 256) + (fromIntegral b :: Word512)
-
--- | Decode the compact number used in the difficulty target of a block into an
--- Integer.
---
--- As described in the Satoshi reference implementation /src/bignum.h:
---
--- The "compact" format is a representation of a whole number N using an
--- unsigned 32bit number similar to a floating point format. The most
--- significant 8 bits are the unsigned exponent of base 256. This exponent can
--- be thought of as "number of bytes of N". The lower 23 bits are the mantissa.
--- Bit number 24 (0x800000) represents the sign of N.
---
--- >    N = (-1^sign) * mantissa * 256^(exponent-3)
-decodeCompact :: Word32 -> Integer
-decodeCompact c =
-    if neg then (-res) else res
-  where
-    size = fromIntegral $ c `shiftR` 24
-    neg  = (c .&. 0x00800000) /= 0
-    wrd  = c .&. 0x007fffff
-    res | size <= 3 = (toInteger wrd) `shiftR` (8*(3 - size))
-        | otherwise = (toInteger wrd) `shiftL` (8*(size - 3))
-
--- | Encode an Integer to the compact number format used in the difficulty
--- target of a block.
-encodeCompact :: Integer -> Word32
-encodeCompact i
-    | i < 0     = c3 .|. 0x00800000
-    | otherwise = c3
-  where
-    posi = abs i
-    s1 = BS.length $ integerToBS posi
-    c1 | s1 < 3    = posi `shiftL` (8*(3 - s1))
-       | otherwise = posi `shiftR` (8*(s1 - 3))
-    (s2,c2) | c1 .&. 0x00800000 /= 0  = (s1 + 1, c1 `shiftR` 8)
-            | otherwise               = (s1, c1)
-    c3 = fromIntegral $ c2 .|. ((toInteger s2) `shiftL` 24)
 
 {- 10.1.2 HMAC_DRBG with HMAC-SHA256
    http://csrc.nist.gov/publications/nistpubs/800-90A/SP800-90A.pdf
    Constants are based on recommentations in Appendix D section 2 (D.2)
 -}
 
-type WorkingState    = (BS.ByteString, BS.ByteString, Word16)
-type AdditionalInput = BS.ByteString
-type ProvidedData    = BS.ByteString
-type EntropyInput    = BS.ByteString
-type Nonce           = BS.ByteString
-type PersString      = BS.ByteString
+type WorkingState    = (ByteString, ByteString, Word16)
+type AdditionalInput = ByteString
+type ProvidedData    = ByteString
+type EntropyInput    = ByteString
+type Nonce           = ByteString
+type PersString      = ByteString
 
 -- 10.1.2.2 HMAC DRBG Update FUnction
-hmacDRBGUpd :: ProvidedData -> BS.ByteString -> BS.ByteString
-            -> (BS.ByteString, BS.ByteString)
-hmacDRBGUpd info k0 v0
-    | BS.null info = (k1,v1) -- 10.1.2.2.3
-    | otherwise    = (k2,v2) -- 10.1.2.2.6
+hmacDRBGUpd :: ProvidedData -> ByteString -> ByteString
+            -> (ByteString, ByteString)
+hmacDRBGUpd info k0 v0 | BS.null info = (k1, v1)        -- 10.1.2.2.3
+                       | otherwise    = (k2, v2)        -- 10.1.2.2.6
   where
-    k1 = hmac256BS k0 $ v0 `BS.append` (0 `BS.cons` info) -- 10.1.2.2.1
-    v1 = hmac256BS k1 v0                                  -- 10.1.2.2.2
-    k2 = hmac256BS k1 $ v1 `BS.append` (1 `BS.cons` info) -- 10.1.2.2.4
-    v2 = hmac256BS k2 v1                                  -- 10.1.2.2.5
+    -- 10.1.2.2.1
+    Hash256 k1 = hmac256 k0 $ v0 `BS.append` (0 `BS.cons` info)
+    -- 10.1.2.2.2
+    Hash256 v1 = hmac256 k1 v0
+    -- 10.1.2.2.4
+    Hash256 k2 = hmac256 k1 $ v1 `BS.append` (1 `BS.cons` info)
+    -- 10.1.2.2.5
+    Hash256 v2 = hmac256 k2 v1
 
 -- 10.1.2.3 HMAC DRBG Instantiation
 hmacDRBGNew :: EntropyInput -> Nonce -> PersString -> WorkingState
@@ -214,7 +260,7 @@ hmacDRBGNew seed nonce info
         "Entropy + nonce input length can not be greater than 1000 bit"
     | BS.length info * 8 > 256  = error $
         "Maximum personalization string length is 256 bit"
-    | otherwise                = (k1,v1,1)         -- 10.1.2.3.6
+    | otherwise                = (k1, v1, 1)         -- 10.1.2.3.6
   where
     s        = BS.concat [seed, nonce, info] -- 10.1.2.3.1
     k0       = BS.replicate 32 0             -- 10.1.2.3.2
@@ -223,31 +269,31 @@ hmacDRBGNew seed nonce info
 
 -- 10.1.2.4 HMAC DRBG Reseeding
 hmacDRBGRsd :: WorkingState -> EntropyInput -> AdditionalInput -> WorkingState
-hmacDRBGRsd (k,v,_) seed info
+hmacDRBGRsd (k, v, _) seed info
     | BS.length seed * 8 < 256 = error $
         "Entropy input length must be at least 256 bit"
     | BS.length seed * 8 > 1000 = error $
         "Entropy input length can not be greater than 1000 bit"
-    | otherwise   = (k0,v0,1)             -- 10.1.2.4.4
+    | otherwise   = (k0, v0, 1)             -- 10.1.2.4.4
   where
-    s       = seed `BS.append` info -- 10.1.2.4.1
-    (k0,v0) = hmacDRBGUpd s k v     -- 10.1.2.4.2
+    s        = seed `BS.append` info -- 10.1.2.4.1
+    (k0, v0) = hmacDRBGUpd s k v     -- 10.1.2.4.2
 
 -- 10.1.2.5 HMAC DRBG Generation
 hmacDRBGGen :: WorkingState -> Word16 -> AdditionalInput
-            -> (WorkingState, Maybe BS.ByteString)
-hmacDRBGGen (k0,v0,c0) bytes info
+            -> (WorkingState, Maybe ByteString)
+hmacDRBGGen (k0, v0, c0) bytes info
     | bytes * 8 > 7500 = error "Maximum bits per request is 7500"
-    | c0 > 10000       = ((k0,v0,c0), Nothing)  -- 10.1.2.5.1
-    | otherwise        = ((k2,v3,c1), Just res) -- 10.1.2.5.8
+    | c0 > 10000       = ((k0, v0, c0), Nothing)  -- 10.1.2.5.1
+    | otherwise        = ((k2, v3, c1), Just res) -- 10.1.2.5.8
   where
-    (k1,v1) | BS.null info = (k0,v0)
-            | otherwise    = hmacDRBGUpd info k0 v0   -- 10.1.2.5.2
-    (tmp,v2) = go (fromIntegral bytes) k1 v1 BS.empty -- 10.1.2.5.3/4
-    res      = BS.take (fromIntegral bytes) tmp       -- 10.1.2.5.5
-    (k2,v3)  = hmacDRBGUpd info k1 v2                 -- 10.1.2.5.6
-    c1       = c0 + 1                                 -- 10.1.2.5.7
+    (k1, v1)  | BS.null info = (k0, v0)
+              | otherwise    = hmacDRBGUpd info k0 v0   -- 10.1.2.5.2
+    (tmp, v2) = go (fromIntegral bytes) k1 v1 BS.empty -- 10.1.2.5.3/4
+    res       = BS.take (fromIntegral bytes) tmp       -- 10.1.2.5.5
+    (k2, v3)  = hmacDRBGUpd info k1 v2                 -- 10.1.2.5.6
+    c1        = c0 + 1                                 -- 10.1.2.5.7
     go l k v acc | BS.length acc >= l = (acc,v)
-                 | otherwise = let vn = hmac256BS k v
-                                   in go l k vn (acc `BS.append` vn)
+                 | otherwise = let vn = getHash256 $ hmac256 k v
+                               in go l k vn (acc `BS.append` vn)
 

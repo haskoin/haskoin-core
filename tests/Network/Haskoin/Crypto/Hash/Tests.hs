@@ -3,7 +3,9 @@ module Network.Haskoin.Crypto.Hash.Tests (tests) where
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
+import Network.Haskoin.Block
 import Network.Haskoin.Crypto
+import Network.Haskoin.Test
 
 tests :: [Test]
 tests =
@@ -13,8 +15,9 @@ tests =
         ]
     ]
 
-joinSplit512 :: Word512 -> Bool
-joinSplit512 h = (join512 $ split512 h) == h
+joinSplit512 :: (ArbitraryHash256, ArbitraryHash256) -> Bool
+joinSplit512 (ArbitraryHash256 a, ArbitraryHash256 b) =
+    (split512 $ join512 (a, b)) == (a, b)
 
 -- After encoding and decoding, we may loose precision so the new result is >=
 -- to the old one.

@@ -14,11 +14,9 @@ import Network.Haskoin.Util
 tests :: [Test]
 tests =
     [ testGroup "Utility functions"
-        [ testProperty "toStrict . toLazy bytestring" fromToLazy
-        , testProperty "bsToInteger . integerToBS Integer" getPutInteger
-        , testProperty "stringToBS . bsToString bytestring" fromToString
-        , testProperty "decodeOrFail' . encode' bytestring" decEncFailBS
-        , testProperty "fromHex . toHex bytestring" fromToHex
+        [ testProperty "bsToInteger . integerToBS" getPutInteger
+        , testProperty "decodeOrFail' . encode'" decEncFailBS
+        , testProperty "decodeHex . encodeHex" fromToHex
         , testProperty "fromDecode" testFromDecode
         , testProperty "compare updateIndex with Data.Sequence" testUpdateIndex
         , testProperty "matchTemplate" testMatchTemplate
@@ -29,12 +27,6 @@ tests =
     ]
 
 {- Various utilities -}
-
-fromToLazy :: ArbitraryByteString -> Bool
-fromToLazy (ArbitraryByteString bs) = (toStrictBS $ toLazyBS bs) == bs
-
-fromToString :: ArbitraryByteString  -> Bool
-fromToString (ArbitraryByteString bs) = (stringToBS $ bsToString bs) == bs
 
 decEncFailBS :: ArbitraryByteString -> Bool
 decEncFailBS (ArbitraryByteString bs) = case (decodeOrFail' $ encode' bs) of
@@ -47,7 +39,7 @@ getPutInteger i = (bsToInteger $ integerToBS p) == p
     p = abs i
 
 fromToHex :: ArbitraryByteString -> Bool
-fromToHex (ArbitraryByteString bs) = (fromJust $ hexToBS $ bsToHex bs) == bs
+fromToHex (ArbitraryByteString bs) = (fromJust $ decodeHex $ encodeHex bs) == bs
 
 testFromDecode :: ArbitraryByteString -> Integer -> Integer -> Bool
 testFromDecode (ArbitraryByteString bs) def v = case decodeOrFail' bs of

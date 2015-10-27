@@ -4,6 +4,7 @@
 module Network.Haskoin.Test.Transaction
 ( ArbitrarySatoshi(..)
 , ArbitraryTx(..)
+, ArbitraryTxHash(..)
 , ArbitraryTxIn(..)
 , ArbitraryTxOut(..)
 , ArbitraryOutPoint(..)
@@ -44,6 +45,14 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Constants
 import Network.Haskoin.Util
 
+newtype ArbitraryTxHash = ArbitraryTxHash TxHash
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryTxHash where
+    arbitrary = do
+        ArbitraryHash256 h <- arbitrary
+        return $ ArbitraryTxHash $ TxHash h
+
 -- | Arbitrary amount of Satoshi as Word64 (Between 1 and 21e14)
 newtype ArbitrarySatoshi = ArbitrarySatoshi Word64
     deriving (Eq, Show, Read)
@@ -59,7 +68,12 @@ newtype ArbitraryOutPoint = ArbitraryOutPoint OutPoint
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryOutPoint where
-    arbitrary = ArbitraryOutPoint <$> (OutPoint <$> arbitrary <*> arbitrary)
+    arbitrary = do
+        op <- do
+            ArbitraryTxHash tx <- arbitrary
+            i  <- arbitrary
+            return $ OutPoint tx i
+        return $ ArbitraryOutPoint op
 
 -- | Arbitrary TxOut
 newtype ArbitraryTxOut = ArbitraryTxOut TxOut
@@ -267,7 +281,7 @@ instance Arbitrary ArbitraryPartialTxs where
         singleSig so rdmM tx op prv = do
             ArbitraryValidSigHash sh <- arbitrary
             let sigi = SigInput so op sh rdmM
-            return $ fromRight $ detSignTx tx [sigi] [prv]
+            return $ fromRight $ signTx tx [sigi] [prv]
         arbitraryData = do
             ArbitraryMSParam m n <- arbitrary
             nPrv <- choose (m,n)

@@ -1,13 +1,13 @@
 module Network.Haskoin.Crypto.Keys.Tests (tests) where
 
-import Test.QuickCheck.Property (Property, (==>))
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Data.Maybe (fromJust)
 import Data.Binary.Get (runGet)
 import Data.Binary.Put (runPut)
 import qualified Data.ByteString as BS (length, index)
+
+import qualified Crypto.Secp256k1 as EC
 
 import Network.Haskoin.Test
 import Network.Haskoin.Crypto
@@ -20,23 +20,16 @@ tests =
         [ testProperty "is public key canonical" isCanonicalPubKey
         , testProperty "makeKey . toKey" makeToKey
         , testProperty "makeKeyU . toKey" makeToKeyU
-        ],
-      testGroup "Key formats"
+        ]
+    , testGroup "Key formats"
         [ testProperty "fromWif . toWif PrvKey" fromToWIF
         , testProperty "constant 32-byte encoding PrvKey" binaryPrvKey
-        ],
-      testGroup "Key compression"
+        ]
+    , testGroup "Key compression"
         [ testProperty "Compressed public key" testCompressed
         , testProperty "Uncompressed public key" testUnCompressed
         , testProperty "Compressed private key" testPrivateCompressed
         , testProperty "Uncompressed private key" testPrivateUnCompressed
-        ],
-      testGroup "Public Key"
-        [ testProperty "Derived public key valid" testDerivedPubKey
-        , testProperty "Derived public key from Integer valid" deriveFromInt
-        ],
-      testGroup "Key properties"
-        [ testProperty "PrvKey and PubKey are valid" validKeys
         ]
     ]
 
@@ -55,17 +48,11 @@ isCanonicalPubKey (ArbitraryPubKey _ p) = not $
   where
     bs = encode' p
 
-makeToKey :: FieldN -> Property
-makeToKey i = i /= 0 ==>
-    (fromPrvKey $ makeKey (fromIntegral i)) == (fromIntegral i)
-  where
-    makeKey = fromJust . makePrvKey
+makeToKey :: EC.SecKey -> Bool
+makeToKey i = prvKeySecKey (makePrvKey i) == i
 
-makeToKeyU :: FieldN -> Property
-makeToKeyU i = i /= 0 ==>
-    (fromPrvKey $ makeKey (fromIntegral i)) == (fromIntegral i)
-  where
-    makeKey = fromJust . makePrvKeyU
+makeToKeyU :: EC.SecKey -> Bool
+makeToKeyU i = prvKeySecKey (makePrvKeyU i) == i
 
 {- Key formats -}
 
@@ -81,35 +68,22 @@ binaryPrvKey (ArbitraryPrvKey k) =
 
 {- Key Compression -}
 
-testCompressed :: FieldN -> Property
-testCompressed n = n > 0 ==>
-    (pubKeyCompressed $ derivePubKey $ fromJust $ makePrvKey $ fromIntegral n) &&
-    (pubKeyCompressed $ derivePubKey $ fromJust $ makePrvKeyG True $ fromIntegral n)
+testCompressed :: EC.SecKey -> Bool
+testCompressed n =
+    (pubKeyCompressed $ derivePubKey $ makePrvKey n) &&
+    (pubKeyCompressed $ derivePubKey $ makePrvKeyG True n)
 
-testUnCompressed :: FieldN -> Property
-testUnCompressed n = n > 0 ==>
-    (not $ pubKeyCompressed $ derivePubKey $ fromJust $ makePrvKeyG False $ fromIntegral n) &&
-    (not $ pubKeyCompressed $ derivePubKey $ fromJust $ makePrvKeyU $ fromIntegral n)
+testUnCompressed :: EC.SecKey -> Bool
+testUnCompressed n =
+    (not $ pubKeyCompressed $ derivePubKey $ makePrvKeyG False n) &&
+    (not $ pubKeyCompressed $ derivePubKey $ makePrvKeyU n)
 
-testPrivateCompressed :: FieldN -> Property
-testPrivateCompressed n = n > 0 ==>
-    (prvKeyCompressed $ fromJust $ makePrvKey $ fromIntegral n) &&
-    (prvKeyCompressed $ fromJust $ makePrvKeyC $ fromIntegral n)
+testPrivateCompressed :: EC.SecKey -> Bool
+testPrivateCompressed n =
+    (prvKeyCompressed $ makePrvKey n) &&
+    (prvKeyCompressed $ makePrvKeyC n)
 
-testPrivateUnCompressed :: FieldN -> Property
-testPrivateUnCompressed n = n > 0 ==>
-    (not $ prvKeyCompressed $ fromJust $ makePrvKeyG False $ fromIntegral n) &&
-    (not $ prvKeyCompressed $ fromJust $ makePrvKeyU $ fromIntegral n)
-
-testDerivedPubKey :: ArbitraryPrvKey -> Bool
-testDerivedPubKey (ArbitraryPrvKey k) = isValidPubKey $ derivePubKey k
-
-deriveFromInt :: Integer -> Bool
-deriveFromInt i = maybe True (isValidPubKey . derivePubKey) $ makePrvKey i
-
-{- Key properties -}
-
-validKeys :: ArbitraryPubKey -> Bool
-validKeys (ArbitraryPubKey prv pub) =
-    isValidPubKey pub && isValidPrvKey (fromPrvKey prv)
-
+testPrivateUnCompressed :: EC.SecKey -> Bool
+testPrivateUnCompressed n =
+    (not $ prvKeyCompressed $ makePrvKeyG False n) &&
+    (not $ prvKeyCompressed $ makePrvKeyU n)

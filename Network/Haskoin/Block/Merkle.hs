@@ -23,15 +23,15 @@ import Data.Binary.Put (putWord8, putWord32le)
 import qualified Data.ByteString as BS
 
 import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Block.Types
+import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Util
 import Network.Haskoin.Constants
 import Network.Haskoin.Node.Types
 
-type MerkleRoot        = Word256
+type MerkleRoot        = Hash256
 type FlagBits          = [Bool]
-type PartialMerkleTree = [Word256]
+type PartialMerkleTree = [Hash256]
 
 data MerkleBlock =
     MerkleBlock {
@@ -42,7 +42,7 @@ data MerkleBlock =
                 , merkleTotalTxns :: !Word32
                 -- | Hashes in depth-first order. They are used to rebuild a
                 -- partial merkle tree.
-                , mHashes :: ![Word256]
+                , mHashes :: ![Hash256]
                 -- | Flag bits, packed per 8 in a byte. Least significant bit
                 -- first. Flag bits are used to rebuild a partial merkle
                 -- tree.
@@ -100,17 +100,17 @@ buildMerkleRoot :: [TxHash]   -- ^ List of transaction hashes (leaf nodes).
                 -> MerkleRoot -- ^ Root of the merkle tree.
 buildMerkleRoot txs = calcHash (calcTreeHeight $ length txs) 0 txs
 
-hash2 :: Word256 -> Word256 -> Word256
+hash2 :: Hash256 -> Hash256 -> Hash256
 hash2 a b = doubleHash256 $ encode' a `BS.append` encode' b
 
 -- | Computes the hash of a specific node in a merkle tree.
 calcHash :: Int       -- ^ Height of the node in the merkle tree.
          -> Int       -- ^ Position of the node (0 for the leftmost node).
          -> [TxHash]  -- ^ Transaction hashes of the merkle tree (leaf nodes).
-         -> Word256   -- ^ Hash of the node at the specified position.
+         -> Hash256   -- ^ Hash of the node at the specified position.
 calcHash height pos txs
     | height < 0 || pos < 0 = error "calcHash: Invalid parameters"
-    | height == 0 = fromIntegral $ txs !! pos
+    | height == 0 = getTxHash $ txs !! pos
     | otherwise = hash2 left right
   where
     left = calcHash (height-1) (pos*2) txs
@@ -148,7 +148,7 @@ traverseAndBuild height pos txs
 traverseAndExtract :: Int -> Int -> Int -> FlagBits -> PartialMerkleTree
                    -> Maybe (MerkleRoot, [TxHash], Int, Int)
 traverseAndExtract height pos ntx flags hashes
-    | length flags == 0        = Nothing
+    | length flags == 0         = Nothing
     | height == 0 || not match = leafResult
     | isNothing leftM          = Nothing
     | (pos*2+1) >= calcTreeWidth ntx (height-1) =
@@ -160,14 +160,15 @@ traverseAndExtract height pos ntx flags hashes
     leafResult
         | null hashes = Nothing
         | otherwise = Just
-            (h,if height == 0 && match then [fromIntegral h] else [],1,1)
+            (h, if height == 0 && match then [TxHash h] else [], 1, 1)
     (match:fs) = flags
     (h:_)     = hashes
     leftM  = traverseAndExtract (height-1) (pos*2) ntx fs hashes
-    (lh,lm,lcf,lch) = fromJust leftM
+    (lh,lm,lcf,lch) = fromMaybe e leftM
     rightM = traverseAndExtract (height-1) (pos*2+1) ntx
                 (drop lcf fs) (drop lch hashes)
-    (rh,rm,rcf,rch) = fromJust rightM
+    (rh,rm,rcf,rch) = fromMaybe e rightM
+    e = error "traverseAndExtract: unexpected error extracting a Maybe value"
 
 -- | Extracts the matching hashes from a partial merkle tree. This will return
 -- the list of transaction hashes that have been included (set to True) in
@@ -195,7 +196,8 @@ extractMatches flags hashes ntx
     | otherwise = return (merkRoot, matches)
   where
     resM = traverseAndExtract (calcTreeHeight ntx) 0 ntx flags hashes
-    (merkRoot, matches, nBitsUsed, nHashUsed) = fromJust resM
+    (merkRoot, matches, nBitsUsed, nHashUsed) = fromMaybe e resM
+    e = error "extractMatches: unexpected error extracting a Maybe value"
 
 splitIn :: Int -> [a] -> [[a]]
 splitIn _ [] = []

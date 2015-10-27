@@ -24,16 +24,19 @@ import qualified Crypto.Hash.SHA256 as SHA256
 import Crypto.PBKDF.ByteString (sha512PBKDF2)
 import Data.Bits ((.&.), shiftL, shiftR)
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Char8 as C (unwords, words)
+import Data.String.Conversions (cs)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as B8
-import Data.Char (isAscii)
+import qualified Data.Map.Strict as M
 import Data.List
 import Data.Maybe
-import Network.Haskoin.Util (bsToInteger, integerToBS)
+import Data.Vector ((!), Vector)
+import qualified Data.Vector as V
+import Network.Haskoin.Util
 
 type Entropy = ByteString
-type Mnemonic = String
-type Passphrase = String
+type Mnemonic = ByteString
+type Passphrase = ByteString
 type Seed = ByteString
 type Checksum = ByteString
 
@@ -45,26 +48,22 @@ toMnemonic ent = do
         Left "toMnemonic: entropy must be multiples of 4 bytes"
     when (cs_len > 16) $
         Left "toMnemonic: maximum entropy is 64 bytes (512 bits)"
-    when (isJust $ find (not . isAscii) ms) $
-        Left "fromMnemonic: non-ASCII characters not supported"
     return ms
   where
     (cs_len, remainder) = BS.length ent `quotRem` 4
-    cs = calcCS cs_len ent
-    indices = bsToIndices $ ent `BS.append` cs
-    ms = unwords $ map (wl !!) indices
+    c = calcCS cs_len ent
+    indices = bsToIndices $ ent `BS.append` c
+    ms = C.unwords $ map (wl!) indices
 
 -- | Revert 'toMnemonic'. Do not use this to generate seeds. Instead use
 -- 'mnemonicToSeed'. This outputs the original entropy used to generate a
 -- mnemonic.
 fromMnemonic :: Mnemonic -> Either String Entropy
 fromMnemonic ms = do
-    when (isJust $ find (not . isAscii) ms) $
-        Left "fromMnemonic: non-ASCII characters not supported"
     when (word_count > 48) $
         Left $ "fromMnemonic: too many words: " ++ show word_count
     when (word_count `mod` 3 /= 0) $
-        Left $ "fromMnemonic: wrong number of words: " ++ show word_count
+        Left $ "fromMnemonic: wrong number of words:" ++ show word_count
     ms_bs <- indicesToBS =<< getIndices ms_words
     let (ms_ent, ms_cs) = BS.splitAt (ent_len * 4) ms_bs
         ms_cs_num = numCS cs_len ms_cs
@@ -73,7 +72,7 @@ fromMnemonic ms = do
         Left $ "fromMnemonic: checksum failed: " ++ sh ent_cs_num ms_cs_num
     return ms_ent
   where
-    ms_words = words ms
+    ms_words = C.words ms
     word_count = length ms_words
     (ent_len, cs_len) = (word_count * 11) `quotRem` 32
     sh cs_a cs_b = show cs_a ++ " /= " ++ show cs_b
@@ -93,7 +92,8 @@ numCS len = shiftCS . bsToInteger
 -- get a seed from a mnemonic sentence.  Warning: Does not perform NFKD
 -- normalization.
 anyToSeed :: Passphrase -> Mnemonic -> Seed
-anyToSeed pf ms = sha512PBKDF2 (B8.pack ms) (B8.pack $ "mnemonic" ++ pf) 2048 64
+anyToSeed pf ms =
+    sha512PBKDF2 ms ("mnemonic" `mappend` pf) 2048 64
 
 -- | Get a 512-bit seed from a mnemonic sentence.  Will calculate checksum.
 -- Passphrase can be used to protect the mnemonic.  Use an empty string as
@@ -118,19 +118,19 @@ getBits b bs
     l = BS.last s .&. (0xff `shiftL` (8 - r))    -- zero unneeded bits
 
 -- | Get indices of words in word list.
-getIndices :: [String] -> Either String [Int]
+getIndices :: [ByteString] -> Either String [Int]
 getIndices ws
     | null n = return $ catMaybes i
-    | otherwise = Left $ "getIndices: words not found: " ++ w
+    | otherwise = Left $ "getIndices: words not found: " ++ cs w
   where
-    i = map (flip elemIndex wl) ws
+    i = map (`M.lookup` wl') ws
     n = elemIndices Nothing i
-    w = unwords $ map (ws !!) n
+    w = C.unwords $ map (ws!!) n
 
 indicesToBS :: [Int] -> Either String ByteString
 indicesToBS is = do
     when lrg $ Left "indicesToBS: index larger or equal than 2048"
-    return . pad . integerToBS $ (foldl' f 0 is) `shiftL` shift_width
+    return . pad . integerToBS $ foldl' f 0 is `shiftL` shift_width
   where
     lrg = not . isNothing $ find (>= 2048) is
     (q, r) = (length is * 11) `quotRem` 8
@@ -146,9 +146,12 @@ bsToIndices bs = reverse . go q $ bsToInteger bs `shiftR` r
     go 0 _ = []
     go n i = (fromIntegral $ i `mod` 2048) : go (n - 1) (i `shiftR` 11)
 
+wl' :: M.Map ByteString Int
+wl' = V.ifoldr' (\i w m -> M.insert w i m) M.empty wl
+
 -- | Standard English dictionary from BIP-39 specification.
-wl :: [String]
-wl =
+wl :: Vector ByteString
+wl = V.fromListN 2048
     [ "abandon", "ability", "able", "about", "above", "absent"
     , "absorb", "abstract", "absurd", "abuse", "access", "accident"
     , "account", "accuse", "achieve", "acid", "acoustic", "acquire"

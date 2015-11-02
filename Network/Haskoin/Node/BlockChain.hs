@@ -336,13 +336,16 @@ peerMerkleDownload pid ph action = do
         [ "Requesting", show $ length bids, "merkle block(s)" ]
     nonce <- liftIO randomIO
     -- Request a merkle batch download
-    PeerSession{..} <- lift . atomicallyNodeT $ do
-        sendMessage pid $ MGetData $ GetData vs
+    sessM <- lift . atomicallyNodeT $ do
+        _ <- trySendMessage pid $ MGetData $ GetData vs
         -- Send a ping to have a recognizable end message for
         -- the last merkle block download.
-        sendMessage pid $ MPing $ Ping nonce
-        getPeerSession pid
-    checkOrder peerSessionMerkleChan bids
+        _ <- trySendMessage pid $ MPing $ Ping nonce
+        tryGetPeerSession pid
+    case sessM of
+        Just PeerSession{..} -> checkOrder peerSessionMerkleChan bids
+        _ -> lift . atomicallyNodeT $
+            writeTVarS sharedMerklePeer Nothing
   where
     -- Build a source that that will check the order of the received merkle
     -- blocks against the initial request. If merkle blocks are sent out of
@@ -574,7 +577,7 @@ peerHeaderSync pid ph prevM = do
             ]
 
         -- Send a GetHeaders message to the peer
-        atomicallyNodeT $ sendMessage pid $
+        _ <- atomicallyNodeT $ trySendMessage pid $
             MGetHeaders $ GetHeaders 0x01 loc $ fromMaybe 0 Nothing
 
         $(logDebug) $ formatPid pid ph "Waiting 2 minutes for headers..."

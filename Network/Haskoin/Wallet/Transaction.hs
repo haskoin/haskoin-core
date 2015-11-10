@@ -33,6 +33,7 @@ module Network.Haskoin.Wallet.Transaction
 , splitUpdate
 , splitDelete
 , join2
+, InCoinData(..)
 ) where
 
 import Control.Arrow (second)
@@ -91,7 +92,11 @@ import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Database
 
 -- Input coin type with transaction and address information
-data InCoinData = InCoinData !(Entity KeyRingCoin) !KeyRingTx !KeyRingAddr
+data InCoinData = InCoinData
+    { inCoinDataCoin :: !(Entity KeyRingCoin)
+    , inCoinDataTx   :: !KeyRingTx
+    , inCoinDataAddr :: !KeyRingAddr
+    }
 
 instance Coin InCoinData where
     coinValue (InCoinData (Entity _ c) _ _) = keyRingCoinValue c

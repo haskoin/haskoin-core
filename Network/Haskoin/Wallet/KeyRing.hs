@@ -106,7 +106,10 @@ initWallet fpRate = do
 {- KeyRing -}
 
 -- | Create a new KeyRing from a seed
-newKeyRing :: MonadIO m => KeyRingName -> BS.ByteString -> SqlPersistT m KeyRing
+newKeyRing :: MonadIO m
+           => KeyRingName
+           -> BS.ByteString
+           -> SqlPersistT m (Entity KeyRing)
 newKeyRing name seed
     | BS.null seed = liftIO . throwIO $ WalletException "The seed is empty"
     | otherwise = do
@@ -117,7 +120,7 @@ newKeyRing name seed
                     , keyRingCreated = now
                     }
         insertUnique keyRing >>= \resM -> case resM of
-            Just _ -> return keyRing
+            Just ki -> return (Entity ki keyRing)
             _ -> liftIO . throwIO $ WalletException $ unwords
                 [ "KeyRing", unpack name, "already exists" ]
 

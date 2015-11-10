@@ -117,7 +117,7 @@ postKeyRingsR (NewKeyRing name passM msM) = do
                 ms   <- toMnemonic ent
                 seed <- mnemonicToSeed pass ms
                 return (ms, seed)
-    keyRing <- runDB $ newKeyRing name seed
+    Entity _ keyRing <- runDB $ newKeyRing name seed
     return $ Just $ toJSON $ toJsonKeyRing keyRing Nothing (Just ms)
   where
     pass = unpack $ fromMaybe "" passM

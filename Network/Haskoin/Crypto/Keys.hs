@@ -11,6 +11,7 @@ module Network.Haskoin.Crypto.Keys
 , maybePubKeyU
 , derivePubKey
 , pubKeyAddr
+, tweakPubKeyC
 , PrvKeyI(prvKeyCompressed, prvKeySecKey)
 , PrvKey, PrvKeyC, PrvKeyU
 , makePrvKey
@@ -27,6 +28,7 @@ module Network.Haskoin.Crypto.Keys
 , prvKeyGetMonad
 , fromWif
 , toWif
+, tweakPrvKeyC
 ) where
 
 import Control.Applicative ((<|>))
@@ -114,15 +116,21 @@ instance Read PubKeyU where
 
 -- TODO: Test
 instance IsString PubKey where
-    fromString str = fromMaybe e $ decodeToMaybe <=< decodeHex $ cs str where
+    fromString str =
+        fromMaybe e $ decodeToMaybe <=< decodeHex $ cs str
+      where
         e = error "Could not decode public key"
 
 instance IsString PubKeyC where
-    fromString str = fromMaybe e $ decodeToMaybe <=< decodeHex $ cs str where
+    fromString str =
+        fromMaybe e $ decodeToMaybe <=< decodeHex $ cs str
+      where
         e = error "Could not decode compressed public key"
 
 instance IsString PubKeyU where
-    fromString str = fromMaybe e $ decodeToMaybe <=< decodeHex $ cs str where
+    fromString str =
+        fromMaybe e $ decodeToMaybe <=< decodeHex $ cs str
+      where
         e = error "Could not decode uncompressed public key"
 
 instance NFData (PubKeyI c) where
@@ -187,7 +195,8 @@ derivePubKey :: PrvKeyI c -> PubKeyI c
 derivePubKey (PrvKeyI d c) = PubKeyI (EC.derivePubKey d) c
 
 instance Binary PubKey where
-    get = (toPubKeyG <$> getC) <|> (toPubKeyG <$> getU)
+    get =
+        (toPubKeyG <$> getC) <|> (toPubKeyG <$> getU)
       where
         getC = get :: Get (PubKeyI Compressed)
         getU = get :: Get (PubKeyI Uncompressed)
@@ -215,6 +224,14 @@ instance Binary PubKeyU where
 -- | Computes an 'Address' from a public key
 pubKeyAddr :: Binary (PubKeyI c) => PubKeyI c -> Address
 pubKeyAddr = PubKeyAddress . hash160 . getHash256 . hash256 . encode'
+
+-- | Tweak a compressed public key
+tweakPubKeyC :: PubKeyC -> Hash256 -> Maybe PubKeyC
+tweakPubKeyC pub h =
+    makePubKeyC <$> (EC.tweakAddPubKey point =<< tweak)
+  where
+    point = pubKeyPoint pub
+    tweak = EC.tweak $ getHash256 h
 
 {- Private Keys -}
 
@@ -276,7 +293,9 @@ instance Read PrvKeyU where
 
 -- TODO: Test
 instance IsString PrvKey where
-    fromString str = fromMaybe e $ fromWif $ cs str where
+    fromString str =
+        fromMaybe e $ fromWif $ cs str
+      where
         e = error "Could not decode WIF"
 
 -- TODO: Test
@@ -375,3 +394,13 @@ fromWif wif = do
 toWif :: PrvKeyI c -> ByteString
 toWif (PrvKeyI k c) = encodeBase58Check $ BS.cons secretPrefix $
     if c then EC.getSecKey k `BS.snoc` 0x01 else EC.getSecKey k
+
+
+-- | Tweak a private key
+tweakPrvKeyC :: PrvKeyC -> Hash256 -> Maybe PrvKeyC
+tweakPrvKeyC key h =
+    makePrvKeyC <$> (EC.tweakAddSecKey sec =<< tweak)
+  where
+    sec   = prvKeySecKey key
+    tweak = EC.tweak $ getHash256 h
+

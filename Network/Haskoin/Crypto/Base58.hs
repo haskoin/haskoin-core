@@ -48,9 +48,10 @@ encodeBase58I :: Integer -> ByteString
 encodeBase58I i = cs $ showIntAtBase 58 b58 i ""
 
 decodeBase58I :: ByteString -> Maybe Integer
-decodeBase58I s = case go of
-    Just (r,[]) -> Just r
-    _           -> Nothing
+decodeBase58I s =
+    case go of
+        Just (r,[]) -> Just r
+        _           -> Nothing
   where
     p = isJust . b58'
     f = fromMaybe e . b58'
@@ -59,7 +60,8 @@ decodeBase58I s = case go of
 
 -- | Encode a 'ByteString' to a base 58 representation.
 encodeBase58 :: ByteString -> ByteString
-encodeBase58 bs = l `mappend` r
+encodeBase58 bs =
+    l `mappend` r
   where
     (z, b) = BS.span (== 0) bs
     l = BS.replicate (BS.length z) (BS.index b58Data 0) -- preserve leading 0's
@@ -69,7 +71,8 @@ encodeBase58 bs = l `mappend` r
 -- | Decode a base58-encoded 'ByteString'. This can fail if the input
 -- 'ByteString' contains invalid base58 characters such as 0, O, l, I.
 decodeBase58 :: ByteString -> Maybe ByteString
-decodeBase58 t = BS.append prefix <$> r
+decodeBase58 t =
+    BS.append prefix <$> r
   where
     (z, b)  = BS.span (== BS.index b58Data 0) t
     prefix = BS.replicate (BS.length z) 0 -- preserve leading 1's
@@ -113,7 +116,9 @@ instance Read Address where
 
 -- TODO: Test
 instance IsString Address where
-    fromString = fromMaybe e . base58ToAddr . cs where
+    fromString =
+        fromMaybe e . base58ToAddr . cs
+      where
         e = error "Could not decode bitcoin address"
 
 instance NFData Address where

@@ -24,8 +24,6 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
     ( init
     , singleton
-    , cons
-    , replicate
     , length
     , last
     , append
@@ -141,8 +139,7 @@ txSigHash tx out i sh = do
         let newTx = tx{ txIn = newIn, txOut = newOut }
         return $ doubleHash256 $ encode' newTx `BS.append` encodeSigHash32 sh
   where
-    one = fromMaybe e $ bsToHash256 $ 0x01 `BS.cons` BS.replicate 31 0x00
-    e = error "Could not read default sighash into 32-byte hash"
+    one = "0100000000000000000000000000000000000000000000000000000000000000"
 
 -- Builds transaction inputs for computing SigHashes
 buildInputs :: [TxIn] -> Script -> Int -> SigHash -> [TxIn]

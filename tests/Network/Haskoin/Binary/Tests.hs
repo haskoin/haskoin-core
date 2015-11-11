@@ -12,6 +12,11 @@ tests :: [Test]
 tests =
     [ testGroup "Binary encoding and decoding of utility types"
         [ testProperty "ByteString" $ \(ArbitraryByteString x) -> metaBinary x ]
+    , testGroup "Binary encoding and decoding of hash types"
+        [ testProperty "Hash160" $ \(ArbitraryHash160 x) -> metaBinary x
+        , testProperty "Hash256" $ \(ArbitraryHash256 x) -> metaBinary x
+        , testProperty "Hash512" $ \(ArbitraryHash512 x) -> metaBinary x
+        ]
     , testGroup "Binary encoding and decoding of crypto types"
         [ testProperty "Signature" $ \(ArbitrarySignature _ _ x) -> metaBinary x
         , testProperty "PubKey" $ \(ArbitraryPubKey _ x) -> metaBinary x

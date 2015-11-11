@@ -19,7 +19,7 @@ import Data.Bits (testBit)
 import Data.List (isPrefixOf)
 import Data.List.Split ( splitOn )
 import Data.Char (ord)
-import Data.Maybe (catMaybes, fromJust, isNothing)
+import Data.Maybe (catMaybes, isNothing)
 import Data.Int (Int64)
 import Data.Word (Word8, Word32)
 import Data.Binary (encode, decode, decodeOrFail)
@@ -33,8 +33,6 @@ import qualified Data.ByteString as BS
     , tail
     , head
     , pack
-    , cons
-    , replicate
     , empty
     )
 import qualified Data.ByteString.Char8 as C (putStrLn)
@@ -157,7 +155,7 @@ testSigHashOne (ArbitraryTx tx) (ArbitraryScript s) acp = not (null $ txIn tx) =
         else res /= one
   where
     res = txSigHash tx s (length (txIn tx) - 1) (SigSingle acp)
-    one = fromJust $ bsToHash256 $ 0x01 `BS.cons` BS.replicate 31 0x00
+    one = "0100000000000000000000000000000000000000000000000000000000000000"
 
 {- Script Evaluation Primitives -}
 
@@ -328,7 +326,8 @@ maxSeqNum = 0xffffffff -- Perhaps this should be moved to constants.
 nullOutPoint :: OutPoint
 nullOutPoint =
     OutPoint
-        { outPointHash  = TxHash $ fromJust $ bsToHash256 $ BS.replicate 32 0x00
+        { outPointHash  =
+            "0000000000000000000000000000000000000000000000000000000000000000"
         , outPointIndex = -1
         }
 

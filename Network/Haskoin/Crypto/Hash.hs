@@ -89,7 +89,9 @@ instance Read CheckSum32 where
         maybe pfail return $ bsToCheckSum32 =<< decodeHex (cs str)
 
 instance IsString CheckSum32 where
-    fromString = fromMaybe e . (bsToCheckSum32 <=< decodeHex) . cs where
+    fromString =
+        fromMaybe e . (bsToCheckSum32 <=< decodeHex) . cs
+      where
         e = error "Could not decode checksum"
 
 instance Binary CheckSum32 where
@@ -111,7 +113,9 @@ instance Read Hash512 where
         maybe pfail return $ bsToHash512 =<< decodeHex (cs str)
 
 instance IsString Hash512 where
-    fromString = fromMaybe e . (bsToHash512 <=< decodeHex) . cs where
+    fromString =
+        fromMaybe e . (bsToHash512 <=< decodeHex) . cs
+      where
         e = error "Could not decode 64-byte hash"
 
 instance Binary Hash512 where
@@ -133,7 +137,9 @@ instance Read Hash256 where
         maybe pfail return $ bsToHash256 =<< decodeHex (cs str)
 
 instance IsString Hash256 where
-    fromString = fromMaybe e . (bsToHash256 <=< decodeHex) . cs where
+    fromString =
+        fromMaybe e . (bsToHash256 <=< decodeHex) . cs
+      where
         e = error "Could not decode 32-byte hash"
 
 instance Binary Hash256 where
@@ -155,7 +161,9 @@ instance Read Hash160 where
         maybe pfail return $ bsToHash160 =<< decodeHex (cs str)
 
 instance IsString Hash160 where
-    fromString = fromMaybe e . (bsToHash160 <=< decodeHex) . cs where
+    fromString =
+        fromMaybe e . (bsToHash160 <=< decodeHex) . cs
+      where
         e = error "Could not decode 20-byte hash"
 
 instance Binary Hash160 where
@@ -199,24 +207,32 @@ bsToCheckSum32 bs = guard (BS.length bs == 4) >> return (CheckSum32 bs)
 
 -- | Computes a 32 bit checksum.
 checkSum32 :: ByteString -> CheckSum32
-checkSum32 bs = CheckSum32 $ BS.take 4 bs' where
+checkSum32 bs =
+    CheckSum32 $ BS.take 4 bs'
+  where
     Hash256 bs' = doubleHash256 bs
 
 {- HMAC -}
 
 -- | Computes HMAC over SHA-512.
 hmac512 :: ByteString -> ByteString -> Hash512
-hmac512 key msg = Hash512 $ hmac f 128 key msg where
+hmac512 key msg =
+    Hash512 $ hmac f 128 key msg
+  where
     f bs = let Hash512 bs' = hash512 bs in bs'
 
 -- | Computes HMAC over SHA-256.
 hmac256 :: ByteString -> ByteString -> Hash256
-hmac256 key msg = Hash256 $ hmac f 64 key msg where
+hmac256 key msg =
+    Hash256 $ hmac f 64 key msg
+  where
     f bs = let Hash256 bs' = hash256 bs in bs'
 
 -- | Split a 'Hash512' into a pair of 'Hash256'.
 split512 :: Hash512 -> (Hash256, Hash256)
-split512 (Hash512 bs) = (Hash256 a, Hash256 b) where
+split512 (Hash512 bs) =
+    (Hash256 a, Hash256 b)
+  where
     (a, b) = BS.splitAt 32 bs
 
 -- | Join a pair of 'Hash256' into a 'Hash512'.
@@ -239,8 +255,9 @@ type PersString      = ByteString
 -- 10.1.2.2 HMAC DRBG Update FUnction
 hmacDRBGUpd :: ProvidedData -> ByteString -> ByteString
             -> (ByteString, ByteString)
-hmacDRBGUpd info k0 v0 | BS.null info = (k1, v1)        -- 10.1.2.2.3
-                       | otherwise    = (k2, v2)        -- 10.1.2.2.6
+hmacDRBGUpd info k0 v0
+    | BS.null info = (k1, v1)        -- 10.1.2.2.3
+    | otherwise    = (k2, v2)        -- 10.1.2.2.6
   where
     -- 10.1.2.2.1
     Hash256 k1 = hmac256 k0 $ v0 `BS.append` (0 `BS.cons` info)

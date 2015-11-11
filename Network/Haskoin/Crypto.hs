@@ -19,6 +19,7 @@ module Network.Haskoin.Crypto
 , maybePubKeyU
 , derivePubKey
 , pubKeyAddr
+, tweakPubKeyC
 
   -- **Private Keys
 , PrvKey, PrvKeyC, PrvKeyU
@@ -36,6 +37,7 @@ module Network.Haskoin.Crypto
 , prvKeyGetMonad
 , fromWif
 , toWif
+, tweakPrvKeyC
 
   -- *ECDSA
   -- **SecretT Monad

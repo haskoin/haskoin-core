@@ -113,6 +113,7 @@ test-suite test-haskoin
     main-is:           Main.hs
 
     extensions: EmptyDataDecls
+                OverloadedStrings
 
     other-modules: Network.Haskoin.Util.Tests
                    Network.Haskoin.Crypto.ECDSA.Tests

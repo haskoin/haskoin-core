@@ -124,7 +124,9 @@ instance Read XPrvKey where
 
 -- TODO: Test
 instance IsString XPrvKey where
-    fromString = fromMaybe e . xPrvImport . cs where
+    fromString =
+        fromMaybe e . xPrvImport . cs
+      where
         e = error "Could not decode extended private key"
 
 instance NFData XPrvKey where
@@ -160,7 +162,9 @@ instance Read XPubKey where
 
 -- TODO: Test
 instance IsString XPubKey where
-    fromString = fromMaybe e . xPubImport . cs where
+    fromString =
+        fromMaybe e . xPubImport . cs
+      where
         e = error "Could not import extended public key"
 
 instance NFData XPubKey where
@@ -209,10 +213,8 @@ prvSubKey xkey child
     pK     = xPubKey $ deriveXPubKey xkey
     msg    = BS.append (encode' pK) (encode' child)
     (a, c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
-    sa     = fromMaybe err1 $ makePrvKeyC <$> EC.secKey (getHash256 a)
-    k      = fromMaybe err2 $ addPrvKeys (xPrvKey xkey) sa
-    err1   = throw $ DerivationException "Cannot add private keys"
-    err2   = throw $ DerivationException "Invalid private key"
+    k      = fromMaybe err $ tweakPrvKeyC (xPrvKey xkey) a
+    err    = throw $ DerivationException "Invalid prvSubKey derivation"
 
 -- | Compute a public, soft child key derivation. Given a parent key /M/
 -- and a derivation index /i/, this function will compute M\/i\/.
@@ -226,10 +228,8 @@ pubSubKey xKey child
   where
     msg    = BS.append (encode' $ xPubKey xKey) (encode' child)
     (a, c) = split512 $ hmac512 (encode' $ xPubChain xKey) msg
-    sa     = fromMaybe err1 $ makePrvKeyC <$> EC.secKey (getHash256 a)
-    pK     = fromMaybe err2 $ addPubKeys (xPubKey xKey) sa
-    err1   = throw $ DerivationException "Invalid private key"
-    err2   = throw $ DerivationException "Cannot add public keys"
+    pK     = fromMaybe err $ tweakPubKeyC (xPubKey xKey) a
+    err    = throw $ DerivationException "Invalid pubSubKey derivation"
 
 -- | Compute a hard child key derivation. Hard derivations can only be computed
 -- for private keys. Hard derivations do not allow the parent public key to
@@ -248,24 +248,8 @@ hardSubKey xkey child
     i      = setBit child 31
     msg    = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode' i)
     (a, c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
-    sa     = fromMaybe err1 $ makePrvKeyC <$> EC.secKey (getHash256 a)
-    k      = fromMaybe err2 $ addPrvKeys (xPrvKey xkey) sa
-    err1   = throw $ DerivationException "Invalid private key"
-    err2   = throw $ DerivationException "Cannot add private keys"
-
--- Add two compressed private keys together.
-addPrvKeys :: PrvKeyC -> PrvKeyC -> Maybe PrvKeyC
-addPrvKeys key1 key2 = makePrvKeyC <$> EC.tweakAddSecKey key tweak where
-    key = prvKeySecKey key1
-    tweak = fromMaybe e $ EC.tweak $ EC.getSecKey $ prvKeySecKey key2
-    e = error "Could not convert private key to tweak"
-
--- Add a public key to a private key.
-addPubKeys :: PubKeyC -> PrvKeyC -> Maybe PubKeyC
-addPubKeys pub key = makePubKeyC <$> EC.tweakAddPubKey point tweak where
-    point = pubKeyPoint pub
-    tweak = fromMaybe e $ EC.tweak $ EC.getSecKey $ prvKeySecKey key
-    e = error "Could not convert private key to tweak"
+    k      = fromMaybe err $ tweakPrvKeyC (xPrvKey xkey) a
+    err    = throw $ DerivationException "Invalid hardSubKey derivation"
 
 -- | Returns True if the extended private key was derived through a hard
 -- derivation.
@@ -519,17 +503,23 @@ instance Read SoftPath where
 
 -- TODO: Test
 instance IsString DerivPath where
-    fromString = fromMaybe e . parsePath where
+    fromString =
+        fromMaybe e . parsePath
+      where
         e = error "Could not parse derivation path"
 
 -- TODO: Test
 instance IsString HardPath where
-    fromString = fromMaybe e . parseHard where
+    fromString =
+        fromMaybe e . parseHard
+      where
         e = error "Could not parse hard derivation path"
 
 -- TODO: Test
 instance IsString SoftPath where
-    fromString = fromMaybe e . parseSoft where
+    fromString =
+        fromMaybe e . parseSoft
+      where
         e = error "Could not parse soft derivation path"
 
 instance FromJSON DerivPath where

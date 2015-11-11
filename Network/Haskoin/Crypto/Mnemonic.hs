@@ -81,7 +81,8 @@ calcCS :: Int -> Entropy -> Checksum
 calcCS len = getBits len . SHA256.hash
 
 numCS :: Int -> Entropy -> Integer
-numCS len = shiftCS . bsToInteger
+numCS len =
+    shiftCS . bsToInteger
   where
     shiftCS = case 8 - len `mod` 8 of
         0 -> id
@@ -140,7 +141,8 @@ indicesToBS is = do
     f acc x = (acc `shiftL` 11) + fromIntegral x
 
 bsToIndices :: ByteString -> [Int]
-bsToIndices bs = reverse . go q $ bsToInteger bs `shiftR` r
+bsToIndices bs =
+    reverse . go q $ bsToInteger bs `shiftR` r
   where
     (q, r) = (BS.length bs * 8) `quotRem` 11
     go 0 _ = []

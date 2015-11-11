@@ -84,7 +84,9 @@ instance NFData Signature where
     rnf (Signature s) = s `seq` ()
 
 hashToMsg :: Hash256 -> EC.Msg
-hashToMsg = fromMaybe e . EC.msg . getHash256 where
+hashToMsg =
+    fromMaybe e . EC.msg . getHash256
+  where
     e = error "Could not convert 32-byte hash to secp256k1 message"
 
 -- <http://www.secg.org/sec1-v2.pdf Section 4.1.3>
@@ -94,7 +96,9 @@ signMsg h d = Signature $ EC.signMsg (prvKeySecKey d) (hashToMsg h)
 
 -- | Verify an ECDSA signature
 verifySig :: Hash256 -> Signature -> PubKey -> Bool
-verifySig h s q = EC.verifySig p g m where
+verifySig h s q =
+    EC.verifySig p g m
+  where
     (g, _) = EC.normalizeSig $ getSignature s
     m = hashToMsg h
     p = pubKeyPoint q
@@ -132,3 +136,4 @@ decodeStrictSig bs = do
     guard $ EC.getCompactSigR compact /= 0
     guard $ EC.getCompactSigS compact /= 0
     return $ Signature g
+

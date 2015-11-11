@@ -31,13 +31,10 @@ module Network.Haskoin.Constants
 
 import Data.Bits (shiftR)
 import Data.ByteString (ByteString)
-import Data.Maybe (fromMaybe)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Word (Word8, Word32, Word64)
 import Data.LargeWord (Word256)
-import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Block.Types
-import Network.Haskoin.Util
 import System.IO.Unsafe (unsafePerformIO)
 
 data Network = Network
@@ -147,9 +144,6 @@ targetSpacing = getTargetSpacing getNetwork
 checkpoints :: [(Int, BlockHash)]
 checkpoints = getCheckpoints getNetwork
 
-merkleRootError :: a
-merkleRootError = error "Could not import merkle root hash"
-
 prodnet :: Network
 prodnet = Network
     { getNetworkName = "prodnet"
@@ -164,7 +158,7 @@ prodnet = Network
         { blockVersion   = 0x01
         , prevBlock      =
           "0000000000000000000000000000000000000000000000000000000000000000"
-        , merkleRoot     = fromMaybe merkleRootError $ bsToHash256 =<< decodeHex
+        , merkleRoot     =
           "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
         , blockTimestamp = 1231006505
         , blockBits      = 486604799
@@ -232,7 +226,7 @@ testnet3 = Network
         { blockVersion   = 0x01
         , prevBlock      =
             "0000000000000000000000000000000000000000000000000000000000000000"
-        , merkleRoot     = fromMaybe merkleRootError $ bsToHash256 =<< decodeHex
+        , merkleRoot     =
             "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
         , blockTimestamp = 1296688602
         , blockBits      = 486604799

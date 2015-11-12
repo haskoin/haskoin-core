@@ -194,29 +194,55 @@ runUnit action = do
     return ()
 
 bs1 :: BS.ByteString
-bs1 = fromRight $ mnemonicToSeed pass $ unwords
-    [ "mass", "coast", "dance"
-    , "birth", "online", "various"
-    , "renew", "alert", "crunch"
-    , "middle", "absurd", "health"
-    ]
+bs1 = fromRight $ mnemonicToSeed pass
+    "mass coast dance birth online various renew alert crunch middle absurd health"
 
-pass :: String
+pass :: BS.ByteString
 pass = "passw0rd"
+
+tid1 :: TxHash
+tid1 = "0000000000000000000000000000000000000000000000000000000000000001"
+
+bid0 :: BlockHash
+bid0 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+bid1 :: BlockHash
+bid1 = "0000000000000000000000000000000000000000000000000000000000000001"
+
+bid2 :: BlockHash
+bid2 = "0000000000000000000000000000000000000000000000000000000000000002"
+
+bid3 :: BlockHash
+bid3 = "0000000000000000000000000000000000000000000000000000000000000003"
+
+bid4 :: BlockHash
+bid4 = "0000000000000000000000000000000000000000000000000000000000000004"
+
+bid5 :: BlockHash
+bid5 = "0000000000000000000000000000000000000000000000000000000000000005"
+
+bid6 :: BlockHash
+bid6 = "0000000000000000000000000000000000000000000000000000000000000006"
+
+bid7 :: BlockHash
+bid7 = "0000000000000000000000000000000000000000000000000000000000000007"
 
 -- Creates fake testing blocks
 fakeNode :: Word32 -> BlockHash -> BlockHeaderNode
 fakeNode i h = BlockHeaderNode
     { nodeBlockHash = h
-    , nodeHeader = BlockHeader 1 0 0 0 0 0
+    , nodeHeader = BlockHeader 1 z1 z2 0 0 0
     , nodeHeaderHeight = i
     , nodeChainWork = 0
     , nodeChild = Nothing
     , nodeMedianTimes = []
     , nodeMinWork = 0
     }
+  where
+    z1 = "0000000000000000000000000000000000000000000000000000000000000000"
+    z2 = "0000000000000000000000000000000000000000000000000000000000000000"
 
-fakeTx :: [(TxHash, Word32)] -> [(String, Word64)] -> Tx
+fakeTx :: [(TxHash, Word32)] -> [(BS.ByteString, Word64)] -> Tx
 fakeTx xs ys =
     Tx 1 txi txo 0
   where
@@ -262,7 +288,7 @@ testBalances = do
     keyE <- newKeyRing "test" bs1
     accE@(Entity ai _) <- newAccount keyE "acc1" (AccountRegular False) []
     let fundingTx = fakeTx
-            [ (1, 0) ]
+            [ (tid1, 0) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000)
             , ("1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r", 20000000)
             ]
@@ -414,7 +440,7 @@ testBalances = do
             [(1, BalanceInfo 20000000 20000000 1 1)]
 
     -- Confirm the funding transaction at height 1
-    importMerkles ((BestChain [fakeNode 1 0x01])) [[txHash fundingTx]]
+    importMerkles ((BestChain [fakeNode 1 bid1])) [[txHash fundingTx]]
 
     accountBalance ai 0 False >>=
         liftIO . (assertEqual "Balance is not 0") 0
@@ -444,7 +470,7 @@ testBalances = do
             [(1, BalanceInfo 20000000 20000000 1 1)]
 
     -- Confirm tx1 at height 2
-    importMerkles ((BestChain [fakeNode 2 0x02])) [[txHash tx1]]
+    importMerkles ((BestChain [fakeNode 2 bid2])) [[txHash tx1]]
 
     accountBalance ai 0 False >>=
         liftIO . (assertEqual "Balance is not 0") 0
@@ -476,9 +502,9 @@ testBalances = do
             [(1, BalanceInfo 0 0 0 0)]
 
     -- Reorg on tx2
-    let s = fakeNode 1 0x01
-        o = [fakeNode 2 0x02]
-        n = [fakeNode 2 0x03, fakeNode 3 0x04]
+    let s = fakeNode 1 bid1
+        o = [fakeNode 2 bid2]
+        n = [fakeNode 2 bid3, fakeNode 3 bid4]
     importMerkles (ChainReorg s o n) [[], [txHash tx2]]
 
     getBy (UniqueAccTx ai (txHash tx1))
@@ -591,9 +617,9 @@ testBalances = do
             [(0, BalanceInfo 0 0 0 0)]
 
     -- Reorg back onto tx1
-    let s2 = fakeNode 1 0x01
-        o2 = [fakeNode 2 0x03, fakeNode 3 0x04]
-        n2 = [fakeNode 2 0x02, fakeNode 3 0x05, fakeNode 4 0x06]
+    let s2 = fakeNode 1 bid1
+        o2 = [fakeNode 2 bid3, fakeNode 3 bid4]
+        n2 = [fakeNode 2 bid2, fakeNode 3 bid5, fakeNode 4 bid6]
     importMerkles (ChainReorg s2 o2 n2) [[txHash tx1], [], []]
 
     accountBalance ai 0 False >>=
@@ -650,7 +676,7 @@ testConflictBalances = do
     keyE <- newKeyRing "test" bs1
     accE@(Entity ai _) <- newAccount keyE "acc1" (AccountRegular False) []
     let tx1 = fakeTx
-            [ (4, 4) ]
+            [ (tid1, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
@@ -661,7 +687,7 @@ testConflictBalances = do
             [ (txHash tx2, 1) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 4000000) ] -- external
         tx4 = fakeTx
-            [ (4, 4) ]
+            [ (tid1, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 20000000) ]
 
     -- Import first transaction
@@ -707,7 +733,7 @@ testConflictBalances = do
 
     -- Let's confirm these two transactions
     importMerkles
-        (BestChain [fakeNode 1 0x01, fakeNode 2 0x02 ])
+        (BestChain [fakeNode 1 bid1, fakeNode 2 bid2 ])
         [[txHash tx1], [txHash tx2]]
 
     accountBalance ai 0 False >>=
@@ -832,9 +858,9 @@ testConflictBalances = do
             [(0, BalanceInfo 0 0 0 0)]
 
     -- Now we trigger a reorg that validates tx4. tx1, tx2 and tx3 should be dead
-    let s = fakeNode 0 0x00
-        o = [fakeNode 1 0x01, fakeNode 2 0x02]
-        n = [fakeNode 1 0x03, fakeNode 2 0x04, fakeNode 3 0x05]
+    let s = fakeNode 0 bid0
+        o = [fakeNode 1 bid1, fakeNode 2 bid2]
+        n = [fakeNode 1 bid3, fakeNode 2 bid4, fakeNode 3 bid5]
     importMerkles (ChainReorg s o n) [[], [txHash tx4], []]
 
     getBy (UniqueAccTx ai $ txHash tx1) >>=
@@ -879,10 +905,10 @@ testConflictBalances = do
             [(0, BalanceInfo 0 0 0 0)]
 
     -- Reorg back to tx1, tx2 and tx3
-    let s2 = fakeNode 0 0x00
-        o2 = [ fakeNode 1 0x03, fakeNode 2 0x04, fakeNode 3 0x05 ]
-        n2 = [ fakeNode 1 0x01, fakeNode 2 0x02
-             , fakeNode 3 0x06, fakeNode 4 0x07
+    let s2 = fakeNode 0 bid0
+        o2 = [ fakeNode 1 bid3, fakeNode 2 bid4, fakeNode 3 bid5 ]
+        n2 = [ fakeNode 1 bid1, fakeNode 2 bid2
+             , fakeNode 3 bid6, fakeNode 4 bid7
              ]
     importMerkles (ChainReorg s2 o2 n2) [[txHash tx1], [txHash tx2], [], []]
 
@@ -960,7 +986,7 @@ testOffline = do
     keyE <- newKeyRing "test" bs1
     accE@(Entity ai _) <- newAccount keyE "acc1" (AccountRegular False) []
     let tx1 = fakeTx
-            [ (4, 4) ]
+            [ (tid1, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
@@ -971,7 +997,7 @@ testOffline = do
             [ (txHash tx2, 1) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 4000000) ] -- external
         tx4 = fakeTx
-            [ (4, 4) ]
+            [ (tid1, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 20000000) ]
 
     -- Import first transaction
@@ -1109,7 +1135,7 @@ testKillOffline = do
     keyE <- newKeyRing "test" bs1
     accE@(Entity ai _) <- newAccount keyE "acc1" (AccountRegular False) []
     let tx1 = fakeTx
-            [ (4, 4) ]
+            [ (tid1, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
@@ -1266,7 +1292,7 @@ testKillOffline = do
 testOfflineExceptions :: Assertion
 testOfflineExceptions = do
     let tx1 = fakeTx
-            [ (4, 4) ]
+            [ (tid1, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
@@ -1277,7 +1303,7 @@ testOfflineExceptions = do
             [ (txHash tx2, 1) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 4000000) ] -- external
         tx4 = fakeTx
-            [ (4, 4) ]
+            [ (tid1, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 20000000) ]
 
     assertException (WalletException "Could not import offline transaction") $ do
@@ -1336,7 +1362,7 @@ testImportMultisig = do
     (_, accE2@(Entity ai2 _)) <- getAccount "test" "ms2"
 
     let fundingTx =
-            Tx 1 [ TxIn (OutPoint 1 0) (BS.pack [1]) maxBound ] -- dummy input
+            Tx 1 [ TxIn (OutPoint tid1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
                     encodeOutputBS $ PayScriptHash $ fromJust $
                     base58ToAddr "3Dgz9gqsAMPr7i9qocLMNHU8wuoKqtUNoM"
@@ -1466,7 +1492,7 @@ testKillTx = do
     _ <- newAccount keyE "acc1" (AccountRegular False) []
     (_, accE@(Entity ai _)) <- getAccount "test" "acc1"
     let tx1 = fakeTx
-            [ (4, 4) ]
+            [ (tid1, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]

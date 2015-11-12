@@ -3,7 +3,6 @@ module Main where
 import Test.Framework (defaultMain)
 
 import qualified Network.Haskoin.Wallet.Units (tests)
-import Test.Framework.Providers.HUnit (testCase) -- Remove when above fixed
 import qualified Network.Haskoin.Wallet.Tests (tests)
 
 import Network.Haskoin.Constants

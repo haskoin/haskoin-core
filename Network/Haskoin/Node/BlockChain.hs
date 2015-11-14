@@ -22,7 +22,7 @@ import Control.Concurrent.STM
 
 import Data.List (nub)
 import Data.Text (pack)
-import Data.Maybe (fromMaybe, listToMaybe)
+import Data.Maybe (listToMaybe)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Unique (hashUnique)
 import Data.Conduit (Source, yield)

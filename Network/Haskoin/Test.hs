@@ -7,10 +7,12 @@ module Network.Haskoin.Test
   ArbitraryByteString(..)
 , ArbitraryNotNullByteString(..)
 , ArbitraryUTCTime(..)
+, ArbitraryHash512(..)
+, ArbitraryHash256(..)
+, ArbitraryHash160(..)
+, ArbitraryCheckSum32(..)
 
   -- * Crypto Arbitrary instances
-, ArbitraryPoint(..)
-, ArbitraryInfPoint(..)
 , ArbitraryPrvKey(..)
 , ArbitraryPrvKeyC(..)
 , ArbitraryPrvKeyU(..)
@@ -21,7 +23,6 @@ module Network.Haskoin.Test
 , ArbitraryPubKeyAddress(..)
 , ArbitraryScriptAddress(..)
 , ArbitrarySignature(..)
-, ArbitraryDetSignature(..)
 , ArbitraryXPrvKey(..)
 , ArbitraryXPubKey(..)
 , ArbitraryHardPath(..)
@@ -61,7 +62,6 @@ module Network.Haskoin.Test
 , ArbitraryIntScriptOp(..)
 , ArbitraryPushDataType(..)
 , ArbitraryTxSignature(..)
-, ArbitraryDetTxSignature(..)
 , ArbitrarySigHash(..)
 , ArbitraryValidSigHash(..)
 , ArbitraryMSParam(..)
@@ -84,6 +84,7 @@ module Network.Haskoin.Test
   -- * Transaction Arbitrary instances
 , ArbitrarySatoshi(..)
 , ArbitraryTx(..)
+, ArbitraryTxHash(..)
 , ArbitraryTxIn(..)
 , ArbitraryTxOut(..)
 , ArbitraryOutPoint(..)
@@ -102,6 +103,7 @@ module Network.Haskoin.Test
   -- * Block Arbitrary instances
 , ArbitraryBlock(..)
 , ArbitraryBlockHeader(..)
+, ArbitraryBlockHash(..)
 , ArbitraryGetBlocks(..)
 , ArbitraryGetHeaders(..)
 , ArbitraryHeaders(..)

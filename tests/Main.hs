@@ -6,8 +6,6 @@ import Test.Framework (defaultMain)
 import qualified Network.Haskoin.Util.Tests (tests)
 
 -- Crypto tests
-import qualified Network.Haskoin.Crypto.BigWord.Tests (tests)
-import qualified Network.Haskoin.Crypto.Point.Tests (tests)
 import qualified Network.Haskoin.Crypto.ECDSA.Tests (tests)
 import qualified Network.Haskoin.Crypto.Base58.Tests (tests)
 import qualified Network.Haskoin.Crypto.Base58.Units (tests)
@@ -46,8 +44,6 @@ main = defaultMain
     (  Network.Haskoin.Json.Tests.tests
     ++ Network.Haskoin.Binary.Tests.tests
     ++ Network.Haskoin.Util.Tests.tests
-    ++ Network.Haskoin.Crypto.BigWord.Tests.tests
-    ++ Network.Haskoin.Crypto.Point.Tests.tests
     ++ Network.Haskoin.Crypto.ECDSA.Tests.tests
     ++ Network.Haskoin.Crypto.Base58.Tests.tests
     ++ Network.Haskoin.Crypto.Base58.Units.tests

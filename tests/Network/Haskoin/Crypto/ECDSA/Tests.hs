@@ -9,43 +9,30 @@ import qualified Data.ByteString as BS (index, length)
 import Network.Haskoin.Test
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
-import Network.Haskoin.Internals (Signature(..), BigWord(..), curveN)
 
 tests :: [Test]
 tests =
     [ testGroup "ECDSA signatures"
         [ testProperty "Verify signature" testVerifySig
-        , testProperty "verify deterministic signature" testVerifyDetSig
         , testProperty "S component <= order/2" $
-            \(ArbitrarySignature _ _ _ sig) -> halfOrderSig sig
-        , testProperty "S component <= order/2 (deterministic)" $
-            \(ArbitraryDetSignature _ _ sig) -> halfOrderSig sig
-        ],
-      testGroup "ECDSA Binary"
+            \(ArbitrarySignature _ _ sig) -> halfOrderSig sig
+        ]
+    , testGroup "ECDSA Binary"
         [ testProperty "Encoded signature is canonical" $
-            \(ArbitrarySignature _ _ _ sig) -> testIsCanonical sig
-        , testProperty "Encoded deterministic signature is canonical" $
-            \(ArbitraryDetSignature _ _ sig) -> testIsCanonical sig
+            \(ArbitrarySignature _ _ sig) -> testIsCanonical sig
         ]
     ]
 
 {- ECDSA Signatures -}
 
-testVerifySig :: ArbitrarySignature -> Bool
-testVerifySig (ArbitrarySignature msg key _ sig) =
-    verifySig msg sig pubkey
-  where
-    pubkey = derivePubKey key
-
-testVerifyDetSig :: ArbitraryDetSignature -> Bool
-testVerifyDetSig (ArbitraryDetSignature msg key sig) =
-    verifySig msg sig pubkey
-  where
-    pubkey = derivePubKey key
-
 halfOrderSig :: Signature -> Bool
-halfOrderSig sig@(Signature _ (BigWord s)) =
-    s <= (curveN `div` 2) && isCanonicalHalfOrder sig
+halfOrderSig = isCanonicalHalfOrder
+
+testVerifySig :: ArbitrarySignature -> Bool
+testVerifySig (ArbitrarySignature msg key sig) =
+    verifySig msg sig pubkey
+  where
+    pubkey = derivePubKey key
 
 {- ECDSA Binary -}
 
@@ -92,4 +79,3 @@ testIsCanonical sig = not $
     len = fromIntegral $ BS.length s
     rlen = BS.index s 3
     slen = BS.index s (fromIntegral rlen + 5)
-

@@ -15,7 +15,7 @@ import qualified Test.HUnit as HUnit (assertFailure, assertBool)
 
 import Control.Monad (when)
 
-import Data.Bits (setBit, testBit)
+import Data.Bits (testBit)
 import Data.List (isPrefixOf)
 import Data.List.Split ( splitOn )
 import Data.Char (ord)
@@ -26,6 +26,7 @@ import Data.Binary (encode, decode, decodeOrFail)
 import qualified Data.Aeson as A (decode)
 import qualified Data.ByteString.Lazy as LBS (pack, unpack)
 import qualified Data.ByteString.Lazy.Char8 as C (readFile)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
     ( singleton
     , length
@@ -33,8 +34,8 @@ import qualified Data.ByteString as BS
     , head
     , pack
     , empty
-    , ByteString
     )
+import qualified Data.ByteString.Char8 as C (putStrLn)
 
 import Numeric (readHex)
 import Text.Read (readMaybe)
@@ -65,19 +66,13 @@ tests =
         ]
     , testGroup "Script SigHash"
         [ testProperty "canonical signatures" $
-            \(ArbitraryTxSignature _ _ _ sig) -> testCanonicalSig sig
-        , testProperty "canonical deterministic signatures" $
-            \(ArbitraryDetTxSignature _ _ sig) -> testCanonicalSig sig
+            \(ArbitraryTxSignature _ _ sig) -> testCanonicalSig sig
         , testProperty "decode SigHash from Word8" binSigHashByte
         , testProperty "encodeSigHash32 is 4 bytes long" testEncodeSH32
         , testProperty "decode . encode TxSignature" $
-            \(ArbitraryTxSignature _ _ _ sig) -> binTxSig sig
-        , testProperty "decode . encode deterministic TxSignature" $
-            \(ArbitraryDetTxSignature _ _ sig) -> binTxSig sig
+            \(ArbitraryTxSignature _ _ sig) -> binTxSig sig
         , testProperty "decodeCanonical . encode TxSignature" $
-            \(ArbitraryTxSignature _ _ _ sig) -> binTxSigCanonical sig
-        , testProperty "decodeCanonical . encode deterministic TxSignature" $
-            \(ArbitraryDetTxSignature _ _ sig) -> binTxSigCanonical sig
+            \(ArbitraryTxSignature _ _ sig) -> binTxSigCanonical sig
         , testProperty "Testing txSigHash with SigSingle" testSigHashOne
         ]
     , testGroup "Integer Types"
@@ -119,8 +114,8 @@ testSortMulSig (ArbitraryMSOutput out) =
 testCanonicalSig :: TxSignature -> Bool
 testCanonicalSig ts@(TxSignature _ sh)
     | isSigUnknown sh = isLeft $ decodeCanonicalSig bs
-    | otherwise       = isRight (decodeCanonicalSig bs) &&
-                        isCanonicalHalfOrder (txSignature ts)
+    | otherwise =
+        isRight (decodeCanonicalSig bs) && isCanonicalHalfOrder (txSignature ts)
   where
     bs = encodeSig ts
 
@@ -156,9 +151,11 @@ binTxSigCanonical ts@(TxSignature _ sh)
 testSigHashOne :: ArbitraryTx -> ArbitraryScript -> Bool -> Property
 testSigHashOne (ArbitraryTx tx) (ArbitraryScript s) acp = not (null $ txIn tx) ==>
     if length (txIn tx) > length (txOut tx)
-        then res == (setBit 0 248)
-        else res /= (setBit 0 248)
-    where res = txSigHash tx s (length (txIn tx) - 1) (SigSingle acp)
+        then res == one
+        else res /= one
+  where
+    res = txSigHash tx s (length (txIn tx) - 1) (SigSingle acp)
+    one = "0100000000000000000000000000000000000000000000000000000000000000"
 
 {- Script Evaluation Primitives -}
 
@@ -293,7 +290,7 @@ testFile groupLabel path expected = buildTest $ do
 -- just handling the fact that comments may not be there or might have
 -- junk before it.  Output is the tuple ( sig, pubKey, flags, comment
 -- ) as strings
-testParts :: [ String ] -> Maybe ( String, String, String, String )
+testParts :: [String] -> Maybe (String, String, String, String)
 testParts l = let ( x, r ) = splitAt 3 l
                   comment = if null r then "" else last r
               in if length x < 3
@@ -311,7 +308,7 @@ execScriptIO sig key flgs = case (parseScript sig, parseScript key) of
       case execScript scriptSig scriptPubKey rejectSignature ( parseFlags flgs ) of
           Left e -> putStrLn $ "error " ++ show e
           Right p -> do putStrLn $ "successful execution"
-                        putStrLn $ dumpStack $ runStack p
+                        C.putStrLn $ dumpStack $ runStack p
 
 testValid :: Test
 testValid = testFile "Canonical Valid Script Test Cases"
@@ -327,10 +324,12 @@ maxSeqNum = 0xffffffff -- Perhaps this should be moved to constants.
 
 -- | Null output used to create CoinbaseTx
 nullOutPoint :: OutPoint
-nullOutPoint = OutPoint {
-                 outPointHash  = 0
-               , outPointIndex = -1
-               }
+nullOutPoint =
+    OutPoint
+        { outPointHash  =
+            "0000000000000000000000000000000000000000000000000000000000000000"
+        , outPointIndex = -1
+        }
 
 -- | Some of the scripts tests require transactions be built in a
 -- standard way.  This function builds the crediting transaction.
@@ -340,7 +339,7 @@ nullOutPoint = OutPoint {
 -- followed by a spending transaction which spends this output as only
 -- input (and correct prevout hash), using the given scriptSig. All
 -- nLockTimes are 0, all nSequences are max."
-buildCreditTx :: BS.ByteString -> Tx
+buildCreditTx :: ByteString -> Tx
 buildCreditTx scriptPubKey = Tx {
                  txVersion    = 1
                , txIn         = [ txI ]
@@ -359,7 +358,7 @@ buildCreditTx scriptPubKey = Tx {
 
 -- | Build a spending transaction for the tests.  Takes as input the
 -- crediting transaction
-buildSpendTx :: BS.ByteString  -- ScriptSig
+buildSpendTx :: ByteString  -- ScriptSig
              -> Tx     -- Creditting Tx
              -> Tx
 buildSpendTx scriptSig creditTx = Tx {

@@ -1,7 +1,12 @@
 flags: {}
 packages:
 - '.'
+- location:
+    git: https://github.com/haskoin/secp256k1.git
+    commit: 5ee603061b3c1eaf2943e8d2c08e6effe85f38e7
+  extra-dep: true
 extra-deps:
 - murmur3-1.0.0
 - pbkdf-1.1.1.1
+- largeword-1.2.4
 resolver: lts-3.4

@@ -7,14 +7,16 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.Bits ((.&.), shiftR)
 import Data.Binary (Binary)
-import Data.Word (Word32)
+import Data.Word (Word32, Word64)
 import qualified Data.ByteString as BS
     ( ByteString
     , empty
     , append
+    , concat
     , length
     , last
     )
+import qualified Data.ByteString.Char8 as C (words)
 
 import Network.Haskoin.Test
 import Network.Haskoin.Crypto
@@ -58,29 +60,33 @@ binWordsToBS = foldr f BS.empty
 
 {- Encode mnemonic -}
 
-toMnemonic128 :: Word128 -> Bool
-toMnemonic128 x = l == 12
+toMnemonic128 :: (Word64, Word64) -> Bool
+toMnemonic128 (a, b) = l == 12
   where
-    bs = encode' x
-    l = length . words . fromRight $ toMnemonic bs
+    bs = encode' a `BS.append` encode' b
+    l = length . C.words . fromRight $ toMnemonic bs
 
-toMnemonic160 :: Word160 -> Bool
-toMnemonic160 x = l == 15
+toMnemonic160 :: (Word32, Word64, Word64) -> Bool
+toMnemonic160 (a, b, c) = l == 15
   where
-    bs = encode' x
-    l = length . words . fromRight $ toMnemonic bs
+    bs = BS.concat [encode' a, encode' b, encode' c]
+    l = length . C.words . fromRight $ toMnemonic bs
 
-toMnemonic256 :: Word256 -> Bool
-toMnemonic256 x = l == 24
+toMnemonic256 :: (Word64, Word64, Word64, Word64) -> Bool
+toMnemonic256 (a, b, c, d) = l == 24
   where
-    bs = encode' x
-    l = length . words . fromRight $ toMnemonic bs
+    bs = BS.concat [encode' a, encode' b, encode' c, encode' d]
+    l = length . C.words . fromRight $ toMnemonic bs
 
-toMnemonic512 :: Word512 -> Bool
-toMnemonic512 x = l == 48
+toMnemonic512 ::
+    ((Word64, Word64, Word64, Word64), (Word64, Word64, Word64, Word64)) -> Bool
+toMnemonic512 ((a, b, c, d), (e, f, g, h)) = l == 48
   where
-    bs = encode' x
-    l = length . words . fromRight $ toMnemonic bs
+    bs = BS.concat
+        [ encode' a, encode' b, encode' c, encode' d
+        , encode' e, encode' f, encode' g, encode' h
+        ]
+    l = length . C.words . fromRight $ toMnemonic bs
 
 toMnemonicVar :: [Word32] -> Property
 toMnemonicVar ls = not (length ls > 8) ==> l == wc
@@ -89,32 +95,36 @@ toMnemonicVar ls = not (length ls > 8) ==> l == wc
     bl = BS.length bs
     cb = bl `div` 4
     wc = (cb + bl * 8) `div` 11
-    l = length . words . fromRight $ toMnemonic bs
+    l = length . C.words . fromRight $ toMnemonic bs
 
 {- Encode/Decode -}
 
-fromToMnemonic128 :: Word128 -> Bool
-fromToMnemonic128 x = bs == bs'
+fromToMnemonic128 :: (Word64, Word64) -> Bool
+fromToMnemonic128 (a, b) = bs == bs'
   where
-    bs = encode' x
+    bs = encode' a `BS.append` encode' b
     bs' = fromRight (fromMnemonic =<< toMnemonic bs)
 
-fromToMnemonic160 :: Word160 -> Bool
-fromToMnemonic160 x = bs == bs'
+fromToMnemonic160 :: (Word32, Word64, Word64) -> Bool
+fromToMnemonic160 (a, b, c) = bs == bs'
   where
-    bs = encode' x
+    bs = BS.concat [encode' a, encode' b, encode' c]
     bs' = fromRight (fromMnemonic =<< toMnemonic bs)
 
-fromToMnemonic256 :: Word256 -> Bool
-fromToMnemonic256 x = bs == bs'
+fromToMnemonic256 :: (Word64, Word64, Word64, Word64) -> Bool
+fromToMnemonic256 (a, b, c, d) = bs == bs'
   where
-    bs = encode' x
+    bs = BS.concat [encode' a, encode' b, encode' c, encode' d]
     bs' = fromRight (fromMnemonic =<< toMnemonic bs)
 
-fromToMnemonic512 :: Word512 -> Bool
-fromToMnemonic512 x = bs == bs'
+fromToMnemonic512 ::
+    ((Word64, Word64, Word64, Word64), (Word64, Word64, Word64, Word64)) -> Bool
+fromToMnemonic512 ((a, b, c, d), (e, f, g, h)) = bs == bs'
   where
-    bs = encode' x
+    bs = BS.concat
+        [ encode' a, encode' b, encode' c, encode' d
+        , encode' e, encode' f, encode' g, encode' h
+        ]
     bs' = fromRight (fromMnemonic =<< toMnemonic bs)
 
 fromToMnemonicVar :: [Word32] -> Property
@@ -125,31 +135,35 @@ fromToMnemonicVar ls = not (length ls > 8) ==> bs == bs'
 
 {- Mnemonic to seed -}
 
-mnemonicToSeed128 :: Word128 -> Bool
-mnemonicToSeed128 x = l == 64
+mnemonicToSeed128 :: (Word64, Word64) -> Bool
+mnemonicToSeed128 (a, b) = l == 64
   where
-    bs = encode' x
+    bs = encode' a `BS.append` encode' b
     seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
-mnemonicToSeed160 :: Word160 -> Bool
-mnemonicToSeed160 x = l == 64
+mnemonicToSeed160 :: (Word32, Word64, Word64) -> Bool
+mnemonicToSeed160 (a, b, c) = l == 64
   where
-    bs = encode' x
+    bs = BS.concat [encode' a, encode' b, encode' c]
     seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
-mnemonicToSeed256 :: Word256 -> Bool
-mnemonicToSeed256 x = l == 64
+mnemonicToSeed256 :: (Word64, Word64, Word64, Word64) -> Bool
+mnemonicToSeed256 (a, b, c, d) = l == 64
   where
-    bs = encode' x
+    bs = BS.concat [encode' a, encode' b, encode' c, encode' d]
     seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
-mnemonicToSeed512 :: Word512 -> Bool
-mnemonicToSeed512 x = l == 64
+mnemonicToSeed512 ::
+    ((Word64, Word64, Word64, Word64), (Word64, Word64, Word64, Word64)) -> Bool
+mnemonicToSeed512 ((a, b, c, d), (e, f, g, h)) = l == 64
   where
-    bs = encode' x
+    bs = BS.concat
+        [ encode' a, encode' b, encode' c, encode' d
+        , encode' e, encode' f, encode' g, encode' h
+        ]
     seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 

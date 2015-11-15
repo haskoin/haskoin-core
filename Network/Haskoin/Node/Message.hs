@@ -104,7 +104,7 @@ instance Binary Message where
         bs <- lookAhead $ getByteString $ fromIntegral len
         unless (mgc == networkMagic)
             (fail $ "get: Invalid network magic bytes: " ++ (show mgc))
-        unless (chksum32 bs == chk)
+        unless (checkSum32 bs == chk)
             (fail $ "get: Invalid message checksum: " ++ (show chk))
         if len > 0
             then isolate (fromIntegral len) $ case cmd of
@@ -156,7 +156,7 @@ instance Binary Message where
                 MAlert m       -> (MCAlert, encode' m)
                 MMempool       -> (MCMempool, BS.empty)
                 MReject m      -> (MCReject, encode' m)
-            chk = chksum32 payload
+            chk = checkSum32 payload
             len = fromIntegral $ BS.length payload
             header = MessageHeader networkMagic cmd len chk
         putByteString $ (encode' header) `BS.append` payload

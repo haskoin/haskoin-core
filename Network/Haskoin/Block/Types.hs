@@ -5,20 +5,33 @@ module Network.Haskoin.Block.Types
 , GetBlocks(..)
 , GetHeaders(..)
 , BlockHeaderCount
+, BlockHash(..)
+, blockHashToHex
+, hexToBlockHash
 , Headers(..)
 , headerHash
+, decodeCompact
+, encodeCompact
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM2, replicateM, forM_)
+import Control.Monad (liftM2, replicateM, forM_, mzero)
 
+import Data.Maybe (fromMaybe)
+import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
+import Data.Bits ((.&.), (.|.), shiftR, shiftL)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS (length, reverse)
 import Data.Word (Word32)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get (getWord32le)
 import Data.Binary.Put (putWord32le)
+import Data.String (IsString, fromString)
+import Data.String.Conversions (cs)
+import Text.Read (readPrec, parens, lexP, pfail)
+import qualified Text.Read as Read (Lexeme(Ident, String))
 
 import Network.Haskoin.Util
-import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Node.Types
 import Network.Haskoin.Transaction.Types
@@ -54,9 +67,49 @@ instance Binary Block where
         put cb
         forM_ txs put
 
+newtype BlockHash = BlockHash { getBlockHash :: Hash256 }
+    deriving (Eq, Ord)
+
+instance NFData BlockHash where
+    rnf (BlockHash h) = rnf $ getHash256 h
+
+instance Show BlockHash where
+    showsPrec d h = showParen (d > 10) $
+        showString "BlockHash " . shows (blockHashToHex h)
+
+instance Read BlockHash where
+    readPrec = parens $ do
+        Read.Ident "BlockHash" <- lexP
+        Read.String str <- lexP
+        maybe pfail return $ hexToBlockHash $ cs str
+
+instance IsString BlockHash where
+    fromString = fromMaybe e . hexToBlockHash . cs where
+        e = error "Could not read block hash from hex string"
+
+instance Binary BlockHash where
+    get = BlockHash <$> get
+    put = put . getBlockHash
+
+instance FromJSON BlockHash where
+    parseJSON = withText "Block hash" $ \t -> do
+        maybe mzero return $ BlockHash <$> (bsToHash256 =<< decodeHex (cs t))
+
+instance ToJSON BlockHash where
+    toJSON h = String $ cs $ encodeHex $ getHash256 $ getBlockHash h
+
+blockHashToHex :: BlockHash -> ByteString
+blockHashToHex (BlockHash h) = encodeHex $ BS.reverse $ getHash256 h
+
+hexToBlockHash :: ByteString -> Maybe BlockHash
+hexToBlockHash hex = do
+    bs <- BS.reverse <$> decodeHex hex
+    h <- bsToHash256 bs
+    return $ BlockHash h
+
 -- | Compute the hash of a block header
 headerHash :: BlockHeader -> BlockHash
-headerHash = fromIntegral . doubleHash256 . encode'
+headerHash = BlockHash . doubleHash256 . encode'
 
 -- | Data type recording information on a 'Block'. The hash of a block is
 -- defined as the hash of this data structure. The block mining process
@@ -74,7 +127,7 @@ data BlockHeader =
                 , prevBlock      :: !BlockHash
                   -- | Root of the merkle tree of all transactions pertaining
                   -- to this block.
-                , merkleRoot     :: !Word256
+                , merkleRoot     :: !Hash256
                   -- | Unix timestamp recording when this block was created
                 , blockTimestamp :: !Word32
                   -- | The difficulty target being used for this block
@@ -206,4 +259,41 @@ instance Binary Headers where
     put (Headers xs) = do
         put $ VarInt $ fromIntegral $ length xs
         forM_ xs $ \(a,b) -> put a >> put b
+
+-- | Decode the compact number used in the difficulty target of a block into an
+-- Integer.
+--
+-- As described in the Satoshi reference implementation /src/bignum.h:
+--
+-- The "compact" format is a representation of a whole number N using an
+-- unsigned 32bit number similar to a floating point format. The most
+-- significant 8 bits are the unsigned exponent of base 256. This exponent can
+-- be thought of as "number of bytes of N". The lower 23 bits are the mantissa.
+-- Bit number 24 (0x800000) represents the sign of N.
+--
+-- >    N = (-1^sign) * mantissa * 256^(exponent-3)
+decodeCompact :: Word32 -> Integer
+decodeCompact c =
+    if neg then (-res) else res
+  where
+    size = fromIntegral $ c `shiftR` 24
+    neg  = (c .&. 0x00800000) /= 0
+    wrd  = c .&. 0x007fffff
+    res | size <= 3 = (toInteger wrd) `shiftR` (8*(3 - size))
+        | otherwise = (toInteger wrd) `shiftL` (8*(size - 3))
+
+-- | Encode an Integer to the compact number format used in the difficulty
+-- target of a block.
+encodeCompact :: Integer -> Word32
+encodeCompact i
+    | i < 0     = c3 .|. 0x00800000
+    | otherwise = c3
+  where
+    posi = abs i
+    s1 = BS.length $ integerToBS posi
+    c1 | s1 < 3    = posi `shiftL` (8*(3 - s1))
+       | otherwise = posi `shiftR` (8*(s1 - 3))
+    (s2,c2) | c1 .&. 0x00800000 /= 0  = (s1 + 1, c1 `shiftR` 8)
+            | otherwise               = (s1, c1)
+    c3 = fromIntegral $ c2 .|. ((toInteger s2) `shiftL` 24)
 

@@ -3,6 +3,8 @@ module Network.Haskoin.Transaction.Tests (tests) where
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
+import Data.String (fromString)
+import Data.String.Conversions (cs)
 import Data.Word (Word64)
 import qualified Data.ByteString as BS (length)
 
@@ -16,6 +18,8 @@ tests :: [Test]
 tests =
     [ testGroup "Transaction tests"
         [ testProperty "decode . encode Txid" decEncTxid
+        , testProperty "Read/Show transaction id" testReadShowTxHash
+        , testProperty "From string transaction id" testFromStringTxHash
         ]
     , testGroup "Building Transactions"
         [ testProperty "building address tx" testBuildAddrTx
@@ -31,8 +35,14 @@ tests =
 
 {- Transaction Tests -}
 
-decEncTxid :: TxHash -> Bool
-decEncTxid h = decodeTxHashLE (encodeTxHashLE h) == Just h
+decEncTxid :: ArbitraryTxHash -> Bool
+decEncTxid (ArbitraryTxHash h) = hexToTxHash (txHashToHex h) == Just h
+
+testReadShowTxHash :: ArbitraryTxHash -> Bool
+testReadShowTxHash (ArbitraryTxHash h) = read (show h) == h
+
+testFromStringTxHash :: ArbitraryTxHash -> Bool
+testFromStringTxHash (ArbitraryTxHash h) = fromString (cs $ txHashToHex h) == h
 
 {- Building Transactions -}
 
@@ -97,8 +107,8 @@ testDetSignTx (ArbitrarySigningData tx sigis prv) =
         && (not $ verifyStdTx txSigP verData)
         && verifyStdTx txSigC verData
   where
-    txSigP  = fromRight $ detSignTx tx sigis (tail prv)
-    txSigC  = fromRight $ detSignTx txSigP sigis [head prv]
+    txSigP  = fromRight $ signTx tx sigis (tail prv)
+    txSigC  = fromRight $ signTx txSigP sigis [head prv]
     verData = map (\(SigInput s o _ _) -> (s,o)) sigis
 
 testMergeTx :: ArbitraryPartialTxs -> Bool

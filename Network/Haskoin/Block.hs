@@ -14,6 +14,9 @@ module Network.Haskoin.Block
 , GetHeaders(..)
 , Headers(..)
 , BlockHeaderCount
+, BlockHash(..)
+, blockHashToHex
+, hexToBlockHash
 
   -- * Merkle Blocks
 , MerkleBlock(..)
@@ -27,6 +30,9 @@ module Network.Haskoin.Block
 , buildPartialMerkle
 , extractMatches
 
+  -- * Difficulty Target
+, decodeCompact
+, encodeCompact
 ) where
 
 import Network.Haskoin.Block.Types

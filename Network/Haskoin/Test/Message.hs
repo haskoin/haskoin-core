@@ -12,6 +12,7 @@ import Test.QuickCheck
     , oneof
     )
 
+import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Test.Node
 import Network.Haskoin.Test.Transaction
 import Network.Haskoin.Test.Block
@@ -27,7 +28,7 @@ instance Arbitrary ArbitraryMessageHeader where
         m <- arbitrary
         ArbitraryMessageCommand mc <- arbitrary
         p <- arbitrary
-        c <- arbitrary
+        ArbitraryCheckSum32 c <- arbitrary
         return $ MessageHeader m mc p c
 
 -- | Arbitrary Message

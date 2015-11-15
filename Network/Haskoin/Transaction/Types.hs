@@ -4,7 +4,10 @@ module Network.Haskoin.Transaction.Types
 , TxOut(..)
 , OutPoint(..)
 , CoinbaseTx(..)
+, TxHash(..)
 , txHash
+, hexToTxHash
+, txHashToHex
 , nosigTxHash
 , cbHash
 ) where
@@ -14,7 +17,6 @@ import Control.Monad (liftM2, replicateM, forM_, unless, mzero, (<=<))
 
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
 import Data.Word (Word32, Word64)
-import qualified Data.Text as T
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get
     ( getWord32le
@@ -26,35 +28,82 @@ import Data.Binary.Put
     , putWord64le
     , putByteString
     )
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-    ( ByteString
-    , length
+    ( length
     , empty
+    , reverse
     )
-
+import Data.Maybe (fromMaybe)
+import Data.String (IsString, fromString)
+import Data.String.Conversions (cs)
+import Text.Read (readPrec, parens, lexP, pfail)
+import qualified Text.Read as Read (Lexeme(Ident, String))
 import Network.Haskoin.Util
-import Network.Haskoin.Crypto.BigWord
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Node.Types
 
+newtype TxHash = TxHash { getTxHash :: Hash256 }
+    deriving (Eq, Ord)
+
+instance NFData TxHash where
+    rnf  = rnf . getHash256 . getTxHash
+
+instance Read TxHash where
+    readPrec = parens $ do
+        Read.Ident "TxHash" <- lexP
+        Read.String str <- lexP
+        maybe pfail return $ hexToTxHash $ cs str
+
+instance Show TxHash where
+    showsPrec d h = showParen (d > 10) $
+        showString "TxHash " . shows (txHashToHex h)
+
+instance IsString TxHash where
+    fromString =
+        TxHash . fromMaybe e . bsToHash256
+               . BS.reverse . fromMaybe e' . decodeHex . cs
+      where
+        e = error "Could not read transaction hash from decoded hex string"
+        e' = error "Colud not decode hex string with transaction hash"
+
+instance Binary TxHash where
+    get = TxHash <$> get
+    put = put . getTxHash
+
 -- | Computes the hash of a transaction.
 txHash :: Tx -> TxHash
-txHash = fromIntegral . doubleHash256 . encode'
+txHash = TxHash . doubleHash256 . encode'
 
 nosigTxHash :: Tx -> TxHash
 nosigTxHash tx =
-    txHash tx{ txIn = map clearInput $ txIn tx}
+    txHash tx{ txIn = map clearInput $ txIn tx }
   where
     clearInput ti = ti{ scriptInput = BS.empty }
 
 -- | Computes the hash of a coinbase transaction.
 cbHash :: CoinbaseTx -> TxHash
-cbHash = fromIntegral . doubleHash256 . encode'
+cbHash = TxHash . doubleHash256 . encode'
+
+txHashToHex :: TxHash -> ByteString
+txHashToHex (TxHash h) = encodeHex $ BS.reverse $ getHash256 h
+
+hexToTxHash :: ByteString -> Maybe TxHash
+hexToTxHash hex = do
+    bs <- BS.reverse <$> decodeHex hex
+    h <- bsToHash256 bs
+    return $ TxHash h
+
+instance FromJSON TxHash where
+    parseJSON = withText "Transaction id" $ \t ->
+        maybe mzero return $ hexToTxHash $ cs t
+
+instance ToJSON TxHash where
+    toJSON h = String $ cs $ txHashToHex h
 
 -- | Data type representing a bitcoin transaction
 data Tx =
-    Tx {
-         -- | Transaction data format version
+    Tx { -- | Transaction data format version
          txVersion  :: !Word32
          -- | List of transaction inputs
        , txIn       :: ![TxIn]
@@ -62,17 +111,33 @@ data Tx =
        , txOut      :: ![TxOut]
          -- | The block number of timestamp at which this transaction is locked
        , txLockTime :: !Word32
-       } deriving (Eq, Show, Read)
+       } deriving (Eq)
+
+instance Show Tx where
+    showsPrec d tx = showParen (d > 10) $
+        showString "Tx " . shows (encodeHex $ encode' tx)
+
+instance Read Tx where
+    readPrec = parens $ do
+        Read.Ident "Tx" <- lexP
+        Read.String str <- lexP
+        maybe pfail return $ decodeToMaybe =<< decodeHex (cs str)
+
+instance IsString Tx where
+    fromString =
+        fromMaybe e . (decodeToMaybe <=< decodeHex) . cs
+      where
+        e = error "Could not read transaction from hex string"
 
 instance NFData Tx where
     rnf (Tx v i o l) = rnf v `seq` rnf i `seq` rnf o `seq` rnf l
 
 instance Binary Tx where
-
-    get = Tx <$> getWord32le
-             <*> (replicateList =<< get)
-             <*> (replicateList =<< get)
-             <*> getWord32le
+    get =
+        Tx <$> getWord32le
+           <*> (replicateList =<< get)
+           <*> (replicateList =<< get)
+           <*> getWord32le
       where
         replicateList (VarInt c) = replicateM (fromIntegral c) get
 
@@ -86,10 +151,10 @@ instance Binary Tx where
 
 instance FromJSON Tx where
     parseJSON = withText "Tx" $
-        maybe mzero return . (decodeToMaybe <=< hexToBS) . T.unpack
+        maybe mzero return . (decodeToMaybe <=< decodeHex) . cs
 
 instance ToJSON Tx where
-    toJSON = String . T.pack . bsToHex . encode'
+    toJSON = String . cs . encodeHex . encode'
 
 -- | Data type representing the coinbase transaction of a 'Block'. Coinbase
 -- transactions are special types of transactions which are created by miners
@@ -99,26 +164,25 @@ instance ToJSON Tx where
 -- in a Coinbase transaction which can be chosen by the miner of a block. This
 -- data also typically contains some randomness which is used, together with
 -- the nonce, to find a partial hash collision on the block's hash.
-data CoinbaseTx =
-    CoinbaseTx {
-                 -- | Transaction data format version.
-                 cbVersion    :: !Word32
-                 -- | Previous outpoint. This is ignored for
-                 -- coinbase transactions but preserved for computing
-                 -- the correct txid.
-               , cbPrevOutput :: !OutPoint
-                 -- | Data embedded inside the coinbase transaction.
-               , cbData       :: !BS.ByteString
-                 -- | Transaction sequence number. This is ignored for
-                 -- coinbase transactions but preserved for computing
-                 -- the correct txid.
-               , cbInSequence :: !Word32
-                 -- | List of transaction outputs.
-               , cbOut        :: ![TxOut]
-                 -- | The block number of timestamp at which this
-                 -- transaction is locked.
-               , cbLockTime   :: !Word32
-               } deriving (Eq, Show, Read)
+data CoinbaseTx = CoinbaseTx
+    { -- | Transaction data format version.
+      cbVersion    :: !Word32
+      -- | Previous outpoint. This is ignored for
+      -- coinbase transactions but preserved for computing
+      -- the correct txid.
+    , cbPrevOutput :: !OutPoint
+      -- | Data embedded inside the coinbase transaction.
+    , cbData       :: !ByteString
+      -- | Transaction sequence number. This is ignored for
+      -- coinbase transactions but preserved for computing
+      -- the correct txid.
+    , cbInSequence :: !Word32
+      -- | List of transaction outputs.
+    , cbOut        :: ![TxOut]
+      -- | The block number of timestamp at which this
+      -- transaction is locked.
+    , cbLockTime   :: !Word32
+    } deriving (Eq, Show, Read)
 
 instance NFData CoinbaseTx where
     rnf (CoinbaseTx v p d i o l) =
@@ -157,7 +221,7 @@ data TxIn =
            prevOutput   :: !OutPoint
            -- | Script providing the requirements of the previous transaction
            -- output to spend those coins.
-         , scriptInput  :: !BS.ByteString
+         , scriptInput  :: !ByteString
            -- | Transaction version as defined by the sender of the
            -- transaction. The intended use is for replacing transactions with
            -- new information before the transaction is included in a block.
@@ -168,7 +232,6 @@ instance NFData TxIn where
     rnf (TxIn p i s) = rnf p `seq` rnf i `seq` rnf s
 
 instance Binary TxIn where
-
     get =
         TxIn <$> get <*> (readBS =<< get) <*> getWord32le
       where
@@ -186,14 +249,13 @@ data TxOut =
             -- | Transaction output value.
             outValue     :: !Word64
             -- | Script specifying the conditions to spend this output.
-          , scriptOutput :: !BS.ByteString
+          , scriptOutput :: !ByteString
           } deriving (Eq, Show, Read)
 
 instance NFData TxOut where
     rnf (TxOut v o) = rnf v `seq` rnf o
 
 instance Binary TxOut where
-
     get = do
         val <- getWord64le
         (VarInt len) <- get
@@ -206,24 +268,23 @@ instance Binary TxOut where
 
 -- | The OutPoint is used inside a transaction input to reference the previous
 -- transaction output that it is spending.
-data OutPoint =
-    OutPoint {
-               -- | The hash of the referenced transaction.
-               outPointHash  :: !TxHash
-               -- | The position of the specific output in the transaction.
-               -- The first output position is 0.
-             , outPointIndex :: !Word32
-             } deriving (Read, Show, Eq)
+data OutPoint = OutPoint
+    { -- | The hash of the referenced transaction.
+      outPointHash  :: !TxHash
+      -- | The position of the specific output in the transaction.
+      -- The first output position is 0.
+    , outPointIndex :: !Word32
+    } deriving (Read, Show, Eq)
 
 instance NFData OutPoint where
     rnf (OutPoint h i) = rnf h `seq` rnf i
 
 instance FromJSON OutPoint where
     parseJSON = withText "OutPoint" $
-        maybe mzero return . (decodeToMaybe <=< hexToBS) .  T.unpack
+        maybe mzero return . (decodeToMaybe <=< decodeHex) . cs
 
 instance ToJSON OutPoint where
-    toJSON = String . T.pack . bsToHex . encode'
+    toJSON = String . cs . encodeHex . encode'
 
 instance Binary OutPoint where
     get = do

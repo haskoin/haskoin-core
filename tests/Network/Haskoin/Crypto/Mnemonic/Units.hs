@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Mnemonic.Units (tests) where
 
 import Test.HUnit (assertEqual)
@@ -5,6 +6,9 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Maybe (fromJust)
+import Data.String.Conversions (cs)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
@@ -20,26 +24,26 @@ tests =
 toMnemonicTest :: [Test]
 toMnemonicTest = map f $ zip ents mss
   where
-    f (e, m) = g e . assertEqual "" m . h $ e
+    f (e, m) = g (cs e) . assertEqual "" m . h $ e
     g = testCase
-    h = fromRight . toMnemonic . fromJust . hexToBS
+    h = fromRight . toMnemonic . fromJust . decodeHex
 
 fromMnemonicTest :: [Test]
 fromMnemonicTest = map f $ zip ents mss
   where
-    f (e, m) = g e . assertEqual "" e . h $ m
+    f (e, m) = g (cs e) . assertEqual "" e . h $ m
     g = testCase
-    h = bsToHex . fromRight . fromMnemonic
+    h = encodeHex . fromRight . fromMnemonic
 
 mnemonicToSeedTest :: [Test]
 mnemonicToSeedTest = map f $ zip mss seeds
   where
     f (m, s) = g s . assertEqual "" s . h $ m
-    g = testCase . (++ "...") . take 50
-    h = bsToHex . fromRight . mnemonicToSeed "TREZOR"
+    g = testCase . (++ "...") . cs . BS.take 50
+    h = encodeHex . fromRight . mnemonicToSeed "TREZOR"
 
 
-ents :: [String]
+ents :: [ByteString]
 ents =
     [ "00000000000000000000000000000000"
     , "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f"
@@ -124,7 +128,7 @@ mss =
       \ coconut"
     ]
 
-seeds :: [String]
+seeds :: [ByteString]
 seeds =
     [ "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a69\
       \87599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"

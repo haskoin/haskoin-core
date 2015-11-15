@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Node.Units (tests) where
 
 import Test.HUnit (Assertion, assertBool)
@@ -33,11 +34,11 @@ bloomFilter1 = do
     f1 = bloomInsert f0 v1
     f3 = bloomInsert f1 v3
     f4 = bloomInsert f3 v4
-    v1 = fromJust $ hexToBS "99108ad8ed9bb6274d3980bab5a85c048f0950c8"
-    v2 = fromJust $ hexToBS "19108ad8ed9bb6274d3980bab5a85c048f0950c8"
-    v3 = fromJust $ hexToBS "b5a2c786d9ef4658287ced5914b37a1b4aa32eee"
-    v4 = fromJust $ hexToBS "b9300670b4c5366e95b2699e8b18bc75e5f729c5"
-    bs = fromJust $ hexToBS "03614e9b050000000000000001"
+    v1 = fromJust $ decodeHex "99108ad8ed9bb6274d3980bab5a85c048f0950c8"
+    v2 = fromJust $ decodeHex "19108ad8ed9bb6274d3980bab5a85c048f0950c8"
+    v3 = fromJust $ decodeHex "b5a2c786d9ef4658287ced5914b37a1b4aa32eee"
+    v4 = fromJust $ decodeHex "b9300670b4c5366e95b2699e8b18bc75e5f729c5"
+    bs = fromJust $ decodeHex "03614e9b050000000000000001"
 
 bloomFilter2 :: Assertion
 bloomFilter2 = do
@@ -52,11 +53,11 @@ bloomFilter2 = do
     f1 = bloomInsert f0 v1
     f3 = bloomInsert f1 v3
     f4 = bloomInsert f3 v4
-    v1 = fromJust $ hexToBS "99108ad8ed9bb6274d3980bab5a85c048f0950c8"
-    v2 = fromJust $ hexToBS "19108ad8ed9bb6274d3980bab5a85c048f0950c8"
-    v3 = fromJust $ hexToBS "b5a2c786d9ef4658287ced5914b37a1b4aa32eee"
-    v4 = fromJust $ hexToBS "b9300670b4c5366e95b2699e8b18bc75e5f729c5"
-    bs = fromJust $ hexToBS "03ce4299050000000100008001"
+    v1 = fromJust $ decodeHex "99108ad8ed9bb6274d3980bab5a85c048f0950c8"
+    v2 = fromJust $ decodeHex "19108ad8ed9bb6274d3980bab5a85c048f0950c8"
+    v3 = fromJust $ decodeHex "b5a2c786d9ef4658287ced5914b37a1b4aa32eee"
+    v4 = fromJust $ decodeHex "b9300670b4c5366e95b2699e8b18bc75e5f729c5"
+    bs = fromJust $ decodeHex "03ce4299050000000100008001"
 
 bloomFilter3 :: Assertion
 bloomFilter3 = do
@@ -67,5 +68,5 @@ bloomFilter3 = do
     f2 = bloomInsert f1 $ encode' $ getAddrHash $ pubKeyAddr p
     k = fromJust $ fromWif "5Kg1gnAjaLfKiwhhPpGS3QfRg2m6awQvaj98JCZBZQ5SuS2F15C"
     p = derivePubKey k
-    bs = fromJust $ hexToBS "038fc16b080000000000000001"
+    bs = fromJust $ decodeHex "038fc16b080000000000000001"
 

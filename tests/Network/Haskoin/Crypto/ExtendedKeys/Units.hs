@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.ExtendedKeys.Units (tests) where
 
 import Test.HUnit (Assertion, assertBool, assertEqual)
@@ -7,6 +8,7 @@ import Test.Framework.Providers.HUnit (testCase)
 import Data.Aeson (decode, encode)
 import Data.Maybe (isJust, isNothing, fromJust)
 import Data.String (fromString)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as B8
 
 import Network.Haskoin.Crypto
@@ -141,18 +143,18 @@ derivePrvPathVectors =
     [ ( xprv, "m", xprv )
     , ( xprv, "M", xprv )
     , ( xprv, "m/8'", hardSubKey xprv 8 )
-    , ( xprv, "M/8'", hardSubKey xprv 8 )
+    , ( xprv, "M/8'", hardSubKey xprv 8 ) -- todo: prvSubKey seems incompatible with M.
     , ( xprv, "m/8'/30/1"
       , foldl prvSubKey (hardSubKey xprv 8) [30,1]
       )
     , ( xprv, "M/8'/30/1"
-      , foldl prvSubKey (hardSubKey xprv 8) [30,1]
+      , foldl prvSubKey (hardSubKey xprv 8) [30,1] -- todo: prvSubKey seems incompatible with M.
       )
     , ( xprv, "m/3/20"
       , foldl prvSubKey xprv [3,20]
       )
     , ( xprv, "M/3/20"
-      , foldl prvSubKey xprv [3,20]
+      , foldl prvSubKey xprv [3,20] -- todo: prvSubKey seems incompatible with M.
       )
     ]
   where
@@ -185,19 +187,22 @@ derivePathVectors =
         \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
     xpub = deriveXPubKey xprv
 
-runXKeyVec :: ([String],XPrvKey) -> Assertion
-runXKeyVec (v,m) = do
-    assertBool "xPrvID" $ (bsToHex $ encode' $ xPrvID m) == v !! 0
-    assertBool "xPrvFP" $ (bsToHex $ encode' $ xPrvFP m) == v !! 1
+runXKeyVec :: ([ByteString], XPrvKey) -> Assertion
+runXKeyVec (v, m) = do
+    assertBool "xPrvID" $ (encodeHex $ encode' $ xPrvID m) == v !! 0
+    assertBool "xPrvFP" $ (encodeHex $ encode' $ xPrvFP m) == v !! 1
     assertBool "xPrvAddr" $
         (addrToBase58 $ xPubAddr $ deriveXPubKey m) == v !! 2
-    assertBool "prvKey" $ (bsToHex $ encodePrvKey $ xPrvKey m) == v !! 3
+    assertBool "prvKey" $
+        (encodeHex $ encodePrvKey $ xPrvKey m) == v !! 3
     assertBool "xPrvWIF" $ xPrvWif m == v !! 4
     assertBool "pubKey" $
-        (bsToHex $ encode' $ xPubKey $ deriveXPubKey m) == v !! 5
-    assertBool "chain code" $ (bsToHex $ encode' $ xPrvChain m) == v !! 6
-    assertBool "Hex PubKey" $ (bsToHex $ encode' $ deriveXPubKey m) == v !! 7
-    assertBool "Hex PrvKey" $ (bsToHex $ encode' m) == v !! 8
+        (encodeHex $ encode' $ xPubKey $ deriveXPubKey m) == v !! 5
+    assertBool "chain code" $
+        (encodeHex $ encode' $ xPrvChain m) == v !! 6
+    assertBool "Hex PubKey" $
+        (encodeHex $ encode' $ deriveXPubKey m) == v !! 7
+    assertBool "Hex PrvKey" $ (encodeHex $ encode' m) == v !! 8
     assertBool "Base58 PubKey" $ (xPubExport $ deriveXPubKey m) == v !! 9
     assertBool "Base58 PrvKey" $ xPrvExport m == v !! 10
 
@@ -205,36 +210,34 @@ runXKeyVec (v,m) = do
 -- https://en.bitcoin.it/wiki/BIP_0032_TestVectors
 -- https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki
 
+xKeyVec1 :: [([ByteString], XPrvKey)]
+xKeyVec1 = zip xKeyResVec1 $ scanl (\xpk deriv -> deriv xpk) m der
+    where m = makeXPrvKey $ fromJust $ decodeHex seed
+          seed :: ByteString
+          seed = "000102030405060708090a0b0c0d0e0f"
+          der :: [XPrvKey -> XPrvKey]
+          der = [ flip hardSubKey 0
+                 , flip prvSubKey 1
+                 , flip hardSubKey 2
+                 , flip prvSubKey 2
+                 , flip prvSubKey 1000000000
+                 ]
 
-xKeyVec1 :: [([String], XPrvKey)]
-xKeyVec1 = zip xKeyResVec1 xKeyTestVec1
+xKeyVec2 :: [([ByteString], XPrvKey)]
+xKeyVec2 = zip xKeyResVec2 $ scanl (\xpk deriv -> deriv xpk ) m der
+    where m   = makeXPrvKey $ fromJust $ decodeHex seed 
+          seed :: ByteString
+          seed = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
+          der :: [XPrvKey -> XPrvKey]
+          der = [ flip prvSubKey 0
+                 , flip hardSubKey 2147483647
+                 , flip prvSubKey 1
+                 , flip hardSubKey 2147483646
+                 , flip prvSubKey 2
+                 ]
 
-xKeyTestVec1 :: [XPrvKey]
-xKeyTestVec1 =  makeXKeyTestVec seed1 der1
 
-xKeyVec2 :: [([String],XPrvKey)]
-xKeyVec2 = zip xKeyResVec2 xKeyTestVec2
-
-xKeyTestVec2 :: [XPrvKey]
-xKeyTestVec2 = makeXKeyTestVec seed2 der2
-
-makeXKeyTestVec :: String -> [ String ] -> [XPrvKey]
-makeXKeyTestVec seed paths = map ( \path -> derivePath (fromString path :: DerivPath) m ) paths
-    where m = makeXPrvKey $ fromJust $ hexToBS seed
-
-seed1 :: String
-seed1 = "000102030405060708090a0b0c0d0e0f"
-
-der1 :: [String]
-der1 =  [ "m"
-        , "m/0'"
-        , "m/0'/1"
-        , "m/0'/1/2'"
-        , "m/0'/1/2'/2"
-        , "m/0'/1/2'/2/1000000000"
-        ]
-
-xKeyResVec1 :: [[String]]
+xKeyResVec1 :: [[ByteString]]
 xKeyResVec1 =
     [
       -- m
@@ -317,19 +320,7 @@ xKeyResVec1 =
       ]
     ]
 
-seed2 :: String
-seed2 = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
-
-der2 :: [String]
-der2 =  [ "m"
-        , "m/0"
-        , "m/0/2147483647'"
-        , "m/0/2147483647'/1"
-        , "m/0/2147483647'/1/2147483646'"
-        , "m/0/2147483647'/1/2147483646'/2"
-        ]
-
-xKeyResVec2 :: [[String]]
+xKeyResVec2 :: [[ByteString]]
 xKeyResVec2 =
     [
       -- m

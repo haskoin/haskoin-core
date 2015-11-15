@@ -102,7 +102,7 @@ newtype ArbitraryInvVector = ArbitraryInvVector InvVector
 instance Arbitrary ArbitraryInvVector where
     arbitrary = do
         ArbitraryInvType t <- arbitrary
-        h <- arbitrary
+        ArbitraryHash256 h <- arbitrary
         return $ ArbitraryInvVector $ InvVector t h
 
 -- | Arbitrary non-empty Inv

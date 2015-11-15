@@ -1,6 +1,5 @@
 module Network.Haskoin.Binary.Tests (tests) where
 
-import Test.QuickCheck (Property, (==>))
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
@@ -8,24 +7,18 @@ import Data.Binary (Binary)
 
 import Network.Haskoin.Test
 import Network.Haskoin.Util
-import Network.Haskoin.Crypto
 
 tests :: [Test]
 tests =
     [ testGroup "Binary encoding and decoding of utility types"
         [ testProperty "ByteString" $ \(ArbitraryByteString x) -> metaBinary x ]
-    , testGroup "Binary encoding and decoding of bigword types"
-        [ testProperty "Word512" (metaBinary :: Word512 -> Bool)
-        , testProperty "Word256" (metaBinary :: Word256 -> Bool)
-        , testProperty "Word160" (metaBinary :: Word160 -> Bool)
-        , testProperty "Word128" (metaBinary :: Word128 -> Bool)
-        , testProperty "FieldP" (metaBinary :: FieldP -> Bool)
-        , testProperty "FieldN" binaryFieldN
+    , testGroup "Binary encoding and decoding of hash types"
+        [ testProperty "Hash160" $ \(ArbitraryHash160 x) -> metaBinary x
+        , testProperty "Hash256" $ \(ArbitraryHash256 x) -> metaBinary x
+        , testProperty "Hash512" $ \(ArbitraryHash512 x) -> metaBinary x
         ]
     , testGroup "Binary encoding and decoding of crypto types"
-        [ testProperty "Signature" $ \(ArbitrarySignature _ _ _ x) -> metaBinary x
-        , testProperty "Deterministic Signature" $
-            \(ArbitraryDetSignature _ _ x) -> metaBinary x
+        [ testProperty "Signature" $ \(ArbitrarySignature _ _ x) -> metaBinary x
         , testProperty "PubKey" $ \(ArbitraryPubKey _ x) -> metaBinary x
         , testProperty "XPrvKey" $ \(ArbitraryXPrvKey x) -> metaBinary x
         , testProperty "XPubKey" $ \(ArbitraryXPubKey _ x) -> metaBinary x
@@ -79,7 +72,3 @@ tests =
 
 metaBinary :: (Binary a, Eq a) => a -> Bool
 metaBinary x = decode' (encode' x) == x
-
-binaryFieldN :: FieldN -> Property
-binaryFieldN r = r > 0 ==> decode' (encode' r) == r
-

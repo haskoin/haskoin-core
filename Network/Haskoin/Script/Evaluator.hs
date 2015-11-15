@@ -33,15 +33,16 @@ import Control.Monad.Reader
 import Control.Monad.Except
 import Control.Monad.Identity
 
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
+import Data.String.Conversions (cs)
 
-import Data.List (intercalate)
 import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit, (.&.))
 import Data.Int (Int64)
 import Data.Word (Word8, Word64)
-import Data.Either ( rights )
-import Data.Maybe ( mapMaybe, isJust )
+import Data.Either (rights)
+import Data.Maybe (mapMaybe, isJust)
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Script.Types
@@ -109,26 +110,26 @@ data ProgramData = ProgramData {
     opCount      :: Int
 }
 
-dumpOp :: ScriptOp -> String
-dumpOp (OP_PUSHDATA payload optype) =
-  "OP_PUSHDATA(" ++ show optype ++ ")" ++
-  " 0x" ++ bsToHex payload
-dumpOp op = show op
+dumpOp :: ScriptOp -> ByteString
+dumpOp (OP_PUSHDATA payload optype) = mconcat
+  [ "OP_PUSHDATA(", cs (show optype), ")", " 0x", encodeHex payload ]
+dumpOp op = cs $ show op
 
-dumpList :: [String] -> String
-dumpList xs = "[" ++ intercalate "," xs ++ "]"
+dumpList :: [ByteString] -> ByteString
+dumpList xs = mconcat [ "[", BS.intercalate "," xs, "]" ]
 
-dumpScript :: [ScriptOp] -> String
+dumpScript :: [ScriptOp] -> ByteString
 dumpScript script = dumpList $ map dumpOp script
 
-dumpStack :: Stack -> String
-dumpStack s = dumpList $ map (bsToHex . BS.pack) s
+dumpStack :: Stack -> ByteString
+dumpStack s = dumpList $ map (encodeHex . BS.pack) s
 
+-- TODO: Test
 instance Show ProgramData where
-    show p = " stack: " ++ dumpStack (stack p)
+    show p = "stack: " ++ (cs $ dumpStack $ stack p)
 
 type ProgramState = ExceptT EvalError Identity
-type IfStack = [ Bool ]
+type IfStack = [Bool]
 
 -- | Monad of actions independent of conditional statements.
 type StackOperation = ReaderT FlagSet ( StateT ProgramData ProgramState )
@@ -282,7 +283,7 @@ getCond = get
 popCond :: Program Bool
 popCond = get >>= \condStack -> case condStack of
     [] -> lift $ programError "popCond: empty condStack"
-    (c:cs) -> put cs >> return c
+    (x:xs) -> put xs >> return x
 
 pushCond :: Bool -> Program ()
 pushCond c = get >>= \s ->
@@ -526,19 +527,22 @@ eval OP_MAX     = max <$> popInt <*> popInt >>= pushInt
 eval OP_WITHIN  = within <$> popInt <*> popInt <*> popInt >>= pushBool
                   where within y x a = (x <= a) && (a < y)
 
-eval OP_RIPEMD160 = tStack1 $ return . bsToSv . hash160BS . opToSv
-eval OP_SHA1 = tStack1 $ return . bsToSv . hashSha1BS . opToSv
+eval OP_RIPEMD160 = tStack1 $ return . bsToSv . getHash160 . hash160 . opToSv
+eval OP_SHA1 = tStack1 $ return . bsToSv . getHash160 . sha1 . opToSv
 
-eval OP_SHA256 = tStack1 $ return . bsToSv . hash256BS . opToSv
-eval OP_HASH160 = tStack1 $ return . bsToSv . hash160BS . hash256BS . opToSv
-eval OP_HASH256 = tStack1 $ return . bsToSv . doubleHash256BS  . opToSv
+eval OP_SHA256 = tStack1 $ return . bsToSv . getHash256 . hash256 . opToSv
+eval OP_HASH160 = tStack1 $
+    return . bsToSv . getHash160 . hash160 . getHash256 . hash256 . opToSv
+eval OP_HASH256 = tStack1 $
+    return . bsToSv . getHash256 . doubleHash256  . opToSv
 eval OP_CODESEPARATOR = dropHashOpsSeparatedCode
 eval OP_CHECKSIG = do
-  pubKey <- popStack
-  sig <- popStack
-  checker <- sigCheck <$> get
-  hOps <- preparedHashOps
-  pushBool $ checkMultiSig checker [ pubKey ] [ sig ] hOps -- Reuse checkMultiSig code
+    pubKey <- popStack
+    sig <- popStack
+    checker <- sigCheck <$> get
+    hOps <- preparedHashOps
+    -- Reuse checkMultiSig code
+    pushBool $ checkMultiSig checker [ pubKey ] [ sig ] hOps
 
 eval OP_CHECKMULTISIG =
     do nPubKeys <- fromIntegral <$> popInt

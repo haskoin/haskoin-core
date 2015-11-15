@@ -7,7 +7,6 @@ module Network.Haskoin.Test.Script
 , ArbitraryIntScriptOp(..)
 , ArbitraryPushDataType(..)
 , ArbitraryTxSignature(..)
-, ArbitraryDetTxSignature(..)
 , ArbitrarySigHash(..)
 , ArbitraryValidSigHash(..)
 , ArbitraryMSParam(..)
@@ -39,6 +38,7 @@ import Test.QuickCheck
 
 import Data.Bits (testBit)
 
+import Network.Haskoin.Transaction.Types
 import Network.Haskoin.Test.Crypto
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
@@ -223,31 +223,19 @@ instance Arbitrary ArbitraryValidSigHash where
         , SigSingle <$> arbitrary
         ]
 
--- | Arbitrary message hash, private key, nonce and corresponding TxSignature.
--- The signature is generated with a random message, random private key and
--- a random nonce.
+-- | Arbitrary message hash, private key and corresponding TxSignature. The
+-- signature is generated deterministically using a random message and a
+-- random private key.
 data ArbitraryTxSignature =
-    ArbitraryTxSignature Word256 PrvKey FieldN TxSignature
+    ArbitraryTxSignature TxHash PrvKey TxSignature
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryTxSignature where
     arbitrary = do
-        ArbitrarySignature msg key nonce sig <- arbitrary
+        ArbitrarySignature msg key sig <- arbitrary
         ArbitrarySigHash sh <- arbitrary
-        return $ ArbitraryTxSignature msg key nonce $ TxSignature sig sh
-
--- | Arbitrary message hash, private key and corresponding TxSignature. The
--- signature is generated deterministically using a random message and a
--- random private key.
-data ArbitraryDetTxSignature =
-    ArbitraryDetTxSignature Word256 PrvKey TxSignature
-    deriving (Eq, Show, Read)
-
-instance Arbitrary ArbitraryDetTxSignature where
-    arbitrary = do
-        ArbitraryDetSignature msg key sig <- arbitrary
-        ArbitrarySigHash sh <- arbitrary
-        return $ ArbitraryDetTxSignature msg key $ TxSignature sig sh
+        let txsig = TxSignature sig sh
+        return $ ArbitraryTxSignature (TxHash msg) key txsig
 
 -- | Arbitrary m of n parameters
 data ArbitraryMSParam = ArbitraryMSParam Int Int
@@ -363,10 +351,8 @@ newtype ArbitraryPKInput = ArbitraryPKInput ScriptInput
     deriving (Eq, Show, Read)
 
 instance Arbitrary ArbitraryPKInput where
-    arbitrary = ArbitraryPKInput . RegularInput . SpendPK <$> oneof
-        [ arbitrary >>= \(ArbitraryTxSignature _ _ _ sig) -> return sig
-        , arbitrary >>= \(ArbitraryDetTxSignature _ _ sig) -> return sig
-        ]
+    arbitrary = ArbitraryPKInput . RegularInput . SpendPK <$>
+        (arbitrary >>= \(ArbitraryTxSignature _ _ sig) -> return sig)
 
 -- | Arbitrary ScriptInput of type SpendPK
 newtype ArbitraryPKHashInput = ArbitraryPKHashInput ScriptInput
@@ -374,10 +360,7 @@ newtype ArbitraryPKHashInput = ArbitraryPKHashInput ScriptInput
 
 instance Arbitrary ArbitraryPKHashInput where
     arbitrary = do
-        sig <- oneof
-            [ arbitrary >>= \(ArbitraryTxSignature _ _ _ sig) -> return sig
-            , arbitrary >>= \(ArbitraryDetTxSignature _ _ sig) -> return sig
-            ]
+        sig <- arbitrary >>= \(ArbitraryTxSignature _ _ sig) -> return sig
         ArbitraryPubKey _ key <- arbitrary
         return $ ArbitraryPKHashInput $ RegularInput $ SpendPKHash sig key
 
@@ -387,10 +370,7 @@ newtype ArbitraryPKHashCInput = ArbitraryPKHashCInput ScriptInput
 
 instance Arbitrary ArbitraryPKHashCInput where
     arbitrary = do
-        sig <- oneof
-            [ arbitrary >>= \(ArbitraryTxSignature _ _ _ sig) -> return sig
-            , arbitrary >>= \(ArbitraryDetTxSignature _ _ sig) -> return sig
-            ]
+        sig <- arbitrary >>= \(ArbitraryTxSignature _ _ sig) -> return sig
         ArbitraryPubKeyC _ key <- arbitrary
         return $ ArbitraryPKHashCInput $ RegularInput $
             SpendPKHash sig $ toPubKeyG key
@@ -405,10 +385,7 @@ instance Arbitrary ArbitraryMSInput where
         sigs <- vectorOf m f
         return $ ArbitraryMSInput $ RegularInput $ SpendMulSig sigs
       where
-        f = oneof
-            [ arbitrary >>= \(ArbitraryTxSignature _ _ _ sig) -> return sig
-            , arbitrary >>= \(ArbitraryDetTxSignature _ _ sig) -> return sig
-            ]
+        f = arbitrary >>= \(ArbitraryTxSignature _ _ sig) -> return sig
 
 -- | Arbitrary ScriptInput of type ScriptHashInput
 newtype ArbitrarySHInput = ArbitrarySHInput ScriptInput
@@ -432,8 +409,5 @@ instance Arbitrary ArbitraryMulSigSHCInput where
         sigs <- vectorOf m f
         return $ ArbitraryMulSigSHCInput $ ScriptHashInput (SpendMulSig sigs) rdm
       where
-        f = oneof
-            [ arbitrary >>= \(ArbitraryTxSignature _ _ _ sig) -> return sig
-            , arbitrary >>= \(ArbitraryDetTxSignature _ _ sig) -> return sig
-            ]
+        f = arbitrary >>= \(ArbitraryTxSignature _ _ sig) -> return sig
 

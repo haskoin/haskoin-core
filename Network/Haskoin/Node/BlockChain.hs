@@ -685,6 +685,7 @@ peerStatus (pid, PeerSession{..}) = do
         peerStatusPing           = show <$> peerSessionScore
         peerStatusThreadId       = show peerSessionThreadId
         peerStatusDoSScore       = peerHostSessionScore <$> hostM
+        peerStatusLog            = peerHostSessionLog <$> hostM
         peerStatusReconnectTimer = peerHostSessionReconnect <$> hostM
     lift $ do
         peerStatusHaveMerkles <- liftM not $ isEmptyTBMChan peerSessionMerkleChan

@@ -152,6 +152,7 @@ startPeerPid pid ph@PeerHost{..} = do
         newHostSession ph PeerHostSession
             { peerHostSessionScore     = 0
             , peerHostSessionReconnect = 1
+            , peerHostSessionLog       = []
             }
 
     $(logDebug) $ formatPid pid ph "Starting a new client TCP connection"
@@ -654,7 +655,9 @@ misbehaving :: (MonadIO m, MonadLogger m)
 misbehaving pid ph f msg = do
     sessM <- atomicallyNodeT $ do
         modifyHostSession ph $ \s ->
-            s{ peerHostSessionScore =  f $! peerHostSessionScore s }
+            s{ peerHostSessionScore =  f $! peerHostSessionScore s
+             , peerHostSessionLog   = msg:(peerHostSessionLog s)
+             }
         getHostSession ph
     case sessM of
         Just PeerHostSession{..} -> do

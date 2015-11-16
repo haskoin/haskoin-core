@@ -98,12 +98,15 @@ atomicallyNodeT action = liftIO . atomically . runReaderT action =<< ask
 data PeerHostSession = PeerHostSession
     { peerHostSessionScore     :: !PeerHostScore
     , peerHostSessionReconnect :: !Int
+    , peerHostSessionLog       :: ![String]
+      -- ^ Important host log messages that should appear in status command
     }
 
 instance NFData PeerHostSession where
     rnf PeerHostSession{..} =
         rnf peerHostSessionScore `seq`
-        rnf peerHostSessionReconnect
+        rnf peerHostSessionReconnect `seq`
+        rnf peerHostSessionLog
 
 {- Shared Peer STM Type -}
 
@@ -217,6 +220,7 @@ data PeerStatus = PeerStatus
     , peerStatusHaveMessage    :: !Bool
     , peerStatusPingNonces     :: ![PingNonce]
     , peerStatusReconnectTimer :: !(Maybe Int)
+    , peerStatusLog            :: !(Maybe [String])
     }
 
 $(deriveJSON (dropFieldLabel 10) ''PeerStatus)
@@ -310,8 +314,9 @@ modifyHostSession ph f = do
     case M.lookup ph hostMap of
         Just hostSessionTVar -> lift $ modifyTVar' hostSessionTVar f
         _ -> newHostSession ph $!
-            f PeerHostSession { peerHostSessionScore = 0
+            f PeerHostSession { peerHostSessionScore     = 0
                               , peerHostSessionReconnect = 1
+                              , peerHostSessionLog       = []
                               }
 
 newHostSession :: PeerHost -> PeerHostSession -> NodeT STM ()

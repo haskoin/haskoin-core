@@ -187,7 +187,7 @@ startPeerPid pid ph@PeerHost{..} = do
                         atomicallyNodeT $ do
                             bloomM <- readTVarS sharedBloomFilter
                             case bloomM of
-                                Just bloom ->
+                                Just (bloom, _) ->
                                     sendMessage pid $
                                         MFilterLoad $ FilterLoad bloom
                                 _ -> return ()
@@ -560,14 +560,16 @@ isPeerBusy pid = do
 
 -- Wait for a non-empty bloom filter to be available
 waitBloomFilter :: NodeT STM BloomFilter
-waitBloomFilter = maybe (lift retry) return =<< readTVarS sharedBloomFilter
+waitBloomFilter =
+    maybe (lift retry) (return . fst) =<< readTVarS sharedBloomFilter
 
-sendBloomFilter :: BloomFilter -> NodeT STM ()
-sendBloomFilter bloom = unless (isBloomEmpty bloom) $ do
+sendBloomFilter :: BloomFilter -> Int -> NodeT STM ()
+sendBloomFilter bloom elems = unless (isBloomEmpty bloom) $ do
     oldBloomM <- readTVarS sharedBloomFilter
-    -- Don't do anything if the bloom filter is the same
-    unless (oldBloomM == Just bloom) $ do
-        writeTVarS sharedBloomFilter $ Just bloom
+    let oldElems = maybe 0 snd oldBloomM
+    -- Only update the bloom filter if the number of elements is larger
+    when (elems > oldElems) $ do
+        writeTVarS sharedBloomFilter $ Just (bloom, elems)
         sendMessageAll $ MFilterLoad $ FilterLoad bloom
 
 -- Returns the median height of all the peers

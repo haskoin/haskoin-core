@@ -42,10 +42,11 @@ import Network.Haskoin.Block
 startSPVNode :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
              => [PeerHost]
              -> BloomFilter
+             -> Int
              -> NodeT m ()
-startSPVNode hosts bloom = do
+startSPVNode hosts bloom elems = do
     $(logDebug) "Setting our bloom filter in the node"
-    atomicallyNodeT $ sendBloomFilter bloom
+    atomicallyNodeT $ sendBloomFilter bloom elems
     $(logDebug) $ pack $ unwords
         [ "Starting SPV node with", show $ length hosts, "hosts" ]
     withAsync (void $ mapConcurrently startReconnectPeer hosts) $ \a1 -> do
@@ -655,7 +656,7 @@ nodeStatus = do
         nodeStatusBestHeaderHeight <- liftM nodeHeaderHeight $
             readTVar sharedBestHeader
         nodeStatusBestBlock <- readTVar sharedBestBlock
-        nodeStatusBloomSize <- liftM (maybe 0 (S.length . bloomData)) $
+        nodeStatusBloomSize <- liftM (maybe 0 (S.length . bloomData . fst)) $
             readTVar sharedBloomFilter
         nodeStatusHeaderPeer <- liftM (fmap hashUnique) $
             readTVar sharedHeaderPeer

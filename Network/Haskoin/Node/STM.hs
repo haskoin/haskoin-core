@@ -130,7 +130,7 @@ data SharedNodeState = SharedNodeState
       -- ^ Our best merkle block
     , sharedTxGetData :: !(TVar (M.Map TxHash [(PeerId, PeerHost)]))
       -- ^ List of Tx GetData requests
-    , sharedBloomFilter :: !(TVar (Maybe BloomFilter))
+    , sharedBloomFilter :: !(TVar (Maybe (BloomFilter, Int)))
       -- ^ Bloom filter
     , sharedTickleChan :: !(TBMChan (PeerId, PeerHost, BlockHash))
       -- ^ Channel containing all the block tickles received from peers

@@ -615,8 +615,8 @@ updateNodeFilter :: (MonadBaseControl IO m, MonadIO m, MonadLogger m)
                  => Handler m ()
 updateNodeFilter = do
     $(logInfo) $ format "Sending a new bloom filter"
-    (bloom, _, _) <- runDB getBloomFilter
-    runNode $ atomicallyNodeT $ sendBloomFilter bloom
+    (bloom, elems, _) <- runDB getBloomFilter
+    runNode $ atomicallyNodeT $ sendBloomFilter bloom elems
 
 adjustFCTime :: Timestamp -> Timestamp
 adjustFCTime ts = fromInteger $ max 0 $ toInteger ts - 86400 * 7

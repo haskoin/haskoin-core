@@ -685,5 +685,8 @@ printPeerStatus verbose PeerStatus{..} =
     [ "  Nonces   : " ++ show peerStatusPingNonces | verbose ] ++
     [ "  Reconnect: " ++ show t
     | t <- maybeToList peerStatusReconnectTimer, verbose
-    ]
+    ] ++
+    [ "  Logs     : " | verbose ] ++
+    [ "    - " ++ msg | msg <- maybe [] id peerStatusLog, verbose]
+
 

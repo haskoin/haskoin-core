@@ -48,7 +48,6 @@ import qualified Database.LevelDB.Base as DB (Options(..), defaultOptions)
 import Database.Esqueleto (from, where_, val , (^.), (==.), (&&.), (<=.))
 
 import Network.Haskoin.Constants
-import Network.Haskoin.Util
 import Network.Haskoin.Block
 import Network.Haskoin.Transaction
 import Network.Haskoin.Node.Peer
@@ -94,8 +93,8 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
                 -- Start the SPV node
                 [ runNodeT nodeState $ do
                     -- Get our bloom filter
-                    bloom <- liftM fst3 $ runDBPool sem pool getBloomFilter
-                    startSPVNode hosts bloom
+                    (bloom, elems, _) <- runDBPool sem pool getBloomFilter
+                    startSPVNode hosts bloom elems
                 -- Merkle block synchronization
                 , runMerkleSync nodeState sem pool
                 -- Import solo transactions as they arrive from peers
@@ -160,8 +159,8 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
                 , "new addresses while importing the tx."
                 , "Updating the bloom filter"
                 ]
-            (bloom, _, _) <- runDBPool sem pool getBloomFilter
-            atomicallyNodeT $ sendBloomFilter bloom
+            (bloom, elems, _) <- runDBPool sem pool getBloomFilter
+            atomicallyNodeT $ sendBloomFilter bloom elems
 
 initDatabase :: Config -> IO (Sem.MSem Int, ConnectionPool)
 initDatabase cfg = do
@@ -209,8 +208,8 @@ merkleSync sem pool bSize = do
             , "new addresses while importing the merkle block."
             , "Sending our bloom filter."
             ]
-        (bloom, _, _) <- runDBPool sem pool getBloomFilter
-        atomicallyNodeT $ sendBloomFilter bloom
+        (bloom, elems, _) <- runDBPool sem pool getBloomFilter
+        atomicallyNodeT $ sendBloomFilter bloom elems
 
     -- Check if we should rescan the current merkle batch
     $(logDebug) "Checking if we need to rescan the current batch..."

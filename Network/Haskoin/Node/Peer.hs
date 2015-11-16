@@ -418,21 +418,18 @@ peerPing :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
          -> PeerHost
          -> NodeT m ()
 peerPing pid ph = forever $ do
-    $(logDebug) $ formatPid pid ph
-        "Waiting until the peer is available for sending pings..."
-    atomicallyNodeT $ waitPeerAvailable pid
-
     nonce <- liftIO randomIO
-    nonceTVar <- atomicallyNodeT $ do
+    (nonceTVar, busy) <- atomicallyNodeT $ do
+        busy <- isPeerBusy pid
         PeerSession{..} <- getPeerSession pid
         sendMessage pid $ MPing $ Ping nonce
-        return peerSessionPings
+        return (peerSessionPings, busy)
 
     $(logDebug) $ formatPid pid ph $ unwords
         [ "Waiting for Ping nonce", show nonce ]
-    -- Wait 60 seconds for the pong or time out
+    -- Wait 120 seconds for the pong or time out
     startTime <- liftIO getCurrentTime
-    resE <- raceTimeout 60 (killPeer nonce) (waitPong nonce nonceTVar)
+    resE <- raceTimeout 120 (killPeer nonce) (waitPong nonce nonceTVar)
     case resE of
         Right _ -> do
             endTime <- liftIO getCurrentTime
@@ -441,8 +438,9 @@ peerPing pid ph = forever $ do
                 -- Compute the ping time and the new score
                 let diff  = diffUTCTime endTime startTime
                     score = 0.5*diff + 0.5*(fromMaybe diff peerSessionScore)
-                -- Save the score in the peer session
-                modifyPeerSession pid $ \s -> s{ peerSessionScore = Just score }
+                -- Save the score in the peer session unless the peer is busy
+                unless busy $ modifyPeerSession pid $
+                    \s -> s{ peerSessionScore = Just score }
                 return (diff, score)
             $(logDebug) $ formatPid pid ph $ unwords
                 [ "Got response to ping", show nonce
@@ -553,12 +551,12 @@ disconnectPeer pid ph = do
 
 {- Peer utility functions -}
 
--- Wait until the given peer is not syncing headers or merkle blocks
-waitPeerAvailable :: PeerId -> NodeT STM ()
-waitPeerAvailable pid = do
+-- Is the peer busy?
+isPeerBusy :: PeerId -> NodeT STM Bool
+isPeerBusy pid = do
     hPidM <- readTVarS sharedHeaderPeer
     mPidM <- readTVarS sharedMerklePeer
-    when (Just pid `elem` [hPidM, mPidM]) $ lift retry
+    return $ Just pid `elem` [hPidM, mPidM]
 
 -- Wait for a non-empty bloom filter to be available
 waitBloomFilter :: NodeT STM BloomFilter

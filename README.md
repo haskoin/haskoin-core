@@ -1,26 +1,26 @@
 # Haskoin
 
+[![Build Status](https://travis-ci.org/haskoin/haskoin.svg?branch=master)](https://travis-ci.org/haskoin/haskoin)
+
 Haskoin is an implementation of the Bitcoin protocol in Haskell.
 
 ## Features
+Haskoin is a package implementing the core functionalities of the Bitcoin
+protocol specifications. The following features are provided:
 
-Haskoin is a package implementing the Bitcoin protocol specifications. It
-is written in pure Haskell and the library is implemented mostly with pure
-functions (no IO monad). It provides the following features:
-
-- ECDSA cryptographic primitives (secp256k1)
 - Hashing functions (sha-256, ripemd-160)
 - Base58 encoding
-- BIP32 extended key derivations
-- BIP39 mnemonic key
+- BIP32 extended key derivation and parsing (m/1'/2/3)
+- BIP39 mnemonic keys
+- ECDSA cryptographic primitives (using the C library libsecp256k1)
 - Script parsing and evaluation
 - Building and signing of standard transactions (regular, multisig, p2sh)
-- Deterministic signing (rfc-6979)
-- Network protocol type parsing
-- Bloom filters and partial merkle tree library
+- Parsing and manipulation of all Bitcoin protocol types
+- Bloom filters and partial merkle tree library (used in SPV wallets)
+- Comprehensive test suite
 
-A wallet implementation using the SPV node library is available in the
-haskoin-wallet package.
+A wallet implementation is available in haskoin-wallet which uses both this
+package and the node implementation in haskoin-node.
 
 ## Documentation
 

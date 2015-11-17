@@ -1,0 +1,19 @@
+language: haskell
+sudo: false
+before_install:
+  # stack
+  - mkdir -p ~/.local/bin
+  - export PATH=~/.local/bin:$PATH
+  - travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+
+addons:
+  apt:
+    packages:
+    - libgmp-dev
+
+install:
+  - ./travis_long stack --no-terminal setup
+  - ./travis_long stack --no-terminal test --only-snapshot
+
+script:
+  - stack --no-terminal test

@@ -7,11 +7,11 @@ packages:
   extra-dep: true
 - location:
     git: https://github.com/haskoin/haskoin.git
-    commit: 142189161ea51a4b14369179d5e6d334ad3f8206
+    commit: be9c45b9398044fd1aef6d80f055d4a1cc4cc4b7
   extra-dep: true
 - location:
     git: https://github.com/haskoin/haskoin-node.git
-    commit: 7e6736d3f57d3be1509203eb086af24073c90844
+    commit: 104b87da81e5b57649483f671bbde67cad8d81ac
   extra-dep: true
 extra-deps:
 - daemons-0.2.1

@@ -232,7 +232,7 @@ testnet3 = Network
         , blockBits      = 486604799
         , bhNonce        = 414098458
         }
-    , getMaxBlockSize = 1000000
+    , getMaxBlockSize = 8000000
     , getMaxSatoshi = 2100000000000000
     , getHaskoinUserAgent = "/haskoin-testnet:0.2.0/"
     , getDefaultPort = 18333

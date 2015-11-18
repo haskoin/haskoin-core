@@ -17,13 +17,13 @@ import Network.Haskoin.Util
 tests :: [Test]
 tests =
     [ testGroup "BIP32 derivation vector 1"
-        [ testCase "Chain m" $ runXKeyVec (xKeyVec !! 0)
-        , testCase "Chain m/0'" $ runXKeyVec (xKeyVec !! 1)
-        , testCase "Chain m/0'/1" $ runXKeyVec (xKeyVec !! 2)
-        , testCase "Chain m/0'/1/2'" $ runXKeyVec (xKeyVec !! 3)
-        , testCase "Chain m/0'/1/2'/2" $ runXKeyVec (xKeyVec !! 4)
+        [ testCase "Chain m" $ runXKeyVec (xKeyVec1 !! 0)
+        , testCase "Chain m/0'" $ runXKeyVec (xKeyVec1 !! 1)
+        , testCase "Chain m/0'/1" $ runXKeyVec (xKeyVec1 !! 2)
+        , testCase "Chain m/0'/1/2'" $ runXKeyVec (xKeyVec1 !! 3)
+        , testCase "Chain m/0'/1/2'/2" $ runXKeyVec (xKeyVec1 !! 4)
         , testCase "Chain m/0'/1/2'/2/1000000000" $
-            runXKeyVec (xKeyVec !! 5)
+            runXKeyVec (xKeyVec1 !! 5)
         ]
     , testGroup "BIP32 subkey derivation vector 2"
         [ testCase "Chain m" $ runXKeyVec (xKeyVec2 !! 0)
@@ -141,18 +141,18 @@ derivePrvPathVectors =
     [ ( xprv, "m", xprv )
     , ( xprv, "M", xprv )
     , ( xprv, "m/8'", hardSubKey xprv 8 )
-    , ( xprv, "M/8'", hardSubKey xprv 8 )
+    , ( xprv, "M/8'", hardSubKey xprv 8 ) -- todo: prvSubKey seems incompatible with M.
     , ( xprv, "m/8'/30/1"
       , foldl prvSubKey (hardSubKey xprv 8) [30,1]
       )
     , ( xprv, "M/8'/30/1"
-      , foldl prvSubKey (hardSubKey xprv 8) [30,1]
+      , foldl prvSubKey (hardSubKey xprv 8) [30,1] -- todo: prvSubKey seems incompatible with M.
       )
     , ( xprv, "m/3/20"
       , foldl prvSubKey xprv [3,20]
       )
     , ( xprv, "M/3/20"
-      , foldl prvSubKey xprv [3,20]
+      , foldl prvSubKey xprv [3,20] -- todo: prvSubKey seems incompatible with M.
       )
     ]
   where
@@ -206,34 +206,38 @@ runXKeyVec (v, m) = do
 
 -- BIP 0032 Test Vectors
 -- https://en.bitcoin.it/wiki/BIP_0032_TestVectors
+-- https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki
 
-xKeyVec :: [([ByteString], XPrvKey)]
-xKeyVec = zip xKeyResVec $ foldl f [m] der
-    where f acc d = acc ++ [d $ last acc]
-          m   = makeXPrvKey $ fromJust $ decodeHex m0
+xKeyVec1 :: [([ByteString], XPrvKey)]
+xKeyVec1 = zip xKeyResVec1 $ scanl (\xpk deriv -> deriv xpk) m der
+    where m = makeXPrvKey $ fromJust $ decodeHex seed
+          seed :: ByteString
+          seed = "000102030405060708090a0b0c0d0e0f"
+          der :: [XPrvKey -> XPrvKey]
           der = [ flip hardSubKey 0
-                , flip prvSubKey 1
-                , flip hardSubKey 2
-                , flip prvSubKey 2
-                , flip prvSubKey 1000000000
-                ]
+                 , flip prvSubKey 1
+                 , flip hardSubKey 2
+                 , flip prvSubKey 2
+                 , flip prvSubKey 1000000000
+                 ]
 
 xKeyVec2 :: [([ByteString], XPrvKey)]
-xKeyVec2 = zip xKeyResVec2 $ foldl f [m] der
-    where f acc d = acc ++ [d $ last acc]
-          m   = makeXPrvKey $ fromJust $ decodeHex m1
+xKeyVec2 = zip xKeyResVec2 $ scanl (\xpk deriv -> deriv xpk ) m der
+    where m   = makeXPrvKey $ fromJust $ decodeHex seed 
+          seed :: ByteString
+          seed = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
+          der :: [XPrvKey -> XPrvKey]
           der = [ flip prvSubKey 0
-                , flip hardSubKey 2147483647
-                , flip prvSubKey 1
-                , flip hardSubKey 2147483646
-                , flip prvSubKey 2
-                ]
+                 , flip hardSubKey 2147483647
+                 , flip prvSubKey 1
+                 , flip hardSubKey 2147483646
+                 , flip prvSubKey 2
+                 ]
 
-m0 :: ByteString
-m0 = "000102030405060708090a0b0c0d0e0f"
 
-xKeyResVec :: [[ByteString]]
-xKeyResVec =
+
+xKeyResVec1 :: [[ByteString]]
+xKeyResVec1 =
     [
       -- m
       [ "3442193e1bb70916e914552172cd4e2dbc9df811"
@@ -315,8 +319,6 @@ xKeyResVec =
       ]
     ]
 
-m1 :: ByteString
-m1 = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
 
 xKeyResVec2 :: [[ByteString]]
 xKeyResVec2 =

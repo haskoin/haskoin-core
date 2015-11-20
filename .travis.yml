@@ -1,5 +1,6 @@
-language: haskell
-sudo: false
+sudo: required
+dist: trusty
+
 before_install:
   # stack
   - mkdir -p ~/.local/bin
@@ -10,6 +11,11 @@ addons:
   apt:
     packages:
     - libgmp-dev
+    - libleveldb-dev 
+    - libzmq3-dev 
+    - libsnappy-dev 
+    - pkg-config 
+    - zlib1g-dev
 
 install:
   - ./travis_long stack --no-terminal setup

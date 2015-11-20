@@ -8,8 +8,8 @@ description:
     (RFC-6979) and first order support for multi-signature transactions. You
     can communicate with the wallet process through a ZeroMQ API or through a
     command-line tool called "hw" which is also provided in this package.
-homepage:              http://github.com/haskoin/haskoin-wallet
-bug-reports:           http://github.com/haskoin/haskoin-wallet/issues
+homepage:              http://github.com/haskoin/haskoin
+bug-reports:           http://github.com/haskoin/haskoin/issues
 license:               PublicDomain
 license-file:          UNLICENSE
 author:                Philippe Laprade
@@ -18,11 +18,13 @@ category:              Bitcoin, Finance, Network
 build-type:            Simple
 cabal-version:         >= 1.9.2
 extra-source-files:    database/sqlite/Network/Haskoin/Wallet/Database.hs,
-                       database/mysql/Network/Haskoin/Wallet/Database.hs
+                       database/mysql/Network/Haskoin/Wallet/Database.hs,
+                       stack.yaml,
+                       config/help, config/config.yml, config/models
 
 source-repository head
     type:     git
-    location: git://github.com/haskoin/haskoin-wallet.git
+    location: git://github.com/haskoin/haskoin.git
 
 Flag mysql
     Description: Use MySQL instead of Sqlite
@@ -74,7 +76,7 @@ library
                  , esqueleto                     >= 2.4       && < 2.5
                  , file-embed                    >= 0.0       && < 0.1
                  , filepath                      >= 1.4       && < 1.5
-                 , haskoin                       >= 0.2       && < 0.3
+                 , haskoin-core                  >= 0.2       && < 0.3
                  , haskoin-node                  >= 0.2       && < 0.3
                  , leveldb-haskell               >= 0.6       && < 0.7
                  , lifted-async                  >= 0.2       && < 0.8
@@ -132,7 +134,7 @@ test-suite test-haskoin-wallet
                  , bytestring                    >= 0.10      && < 0.11
                  , containers                    >= 0.5       && < 0.6
                  , directory                     >= 1.2       && < 1.3
-                 , haskoin                       >= 0.2       && < 0.3
+                 , haskoin-core                  >= 0.2       && < 0.3
                  , haskoin-node                  >= 0.2       && < 0.3
                  , haskoin-wallet
                  , monad-logger                  >= 0.3       && < 0.4

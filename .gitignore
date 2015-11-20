@@ -6,8 +6,13 @@
 *.hp
 *.ps
 *.prof
+hreaded
 dist
+tmp
+yesod-devel
+client_session_key.aes
 .cabal-sandbox
 cabal.sandbox.config
 cabal.config
 .stack-work
+TAGS

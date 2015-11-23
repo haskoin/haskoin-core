@@ -166,7 +166,7 @@ prodnet = Network
         }
     , getMaxBlockSize = 1000000
     , getMaxSatoshi = 2100000000000000
-    , getHaskoinUserAgent = "/haskoin:0.2.0/"
+    , getHaskoinUserAgent = "/haskoin:0.3.0/"
     , getDefaultPort = 8333
     , getAllowMinDifficultyBlocks = False
     , getPowLimit = fromIntegral (maxBound `shiftR` 32 :: Word256)
@@ -234,7 +234,7 @@ testnet3 = Network
         }
     , getMaxBlockSize = 8000000
     , getMaxSatoshi = 2100000000000000
-    , getHaskoinUserAgent = "/haskoin-testnet:0.2.0/"
+    , getHaskoinUserAgent = "/haskoin-testnet:0.3.0/"
     , getDefaultPort = 18333
     , getAllowMinDifficultyBlocks = True
     , getPowLimit = fromIntegral (maxBound `shiftR` 32 :: Word256)

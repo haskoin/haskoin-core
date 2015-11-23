@@ -1,5 +1,5 @@
 name:                  haskoin-wallet
-version:               0.2.0
+version:               0.3.0
 synopsis:
     Implementation of a Bitcoin SPV Wallet with BIP32 and multisig support.
 description:
@@ -76,8 +76,8 @@ library
                  , esqueleto                     >= 2.4       && < 2.5
                  , file-embed                    >= 0.0       && < 0.1
                  , filepath                      >= 1.4       && < 1.5
-                 , haskoin-core                  >= 0.2       && < 0.3
-                 , haskoin-node                  >= 0.2       && < 0.3
+                 , haskoin-core                  >= 0.3       && < 0.5
+                 , haskoin-node                  >= 0.3       && < 0.5
                  , leveldb-haskell               >= 0.6       && < 0.7
                  , lifted-async                  >= 0.2       && < 0.8
                  , lifted-base                   >= 0.2       && < 0.3
@@ -134,8 +134,8 @@ test-suite test-haskoin-wallet
                  , bytestring                    >= 0.10      && < 0.11
                  , containers                    >= 0.5       && < 0.6
                  , directory                     >= 1.2       && < 1.3
-                 , haskoin-core                  >= 0.2       && < 0.3
-                 , haskoin-node                  >= 0.2       && < 0.3
+                 , haskoin-core                  >= 0.3       && < 0.5
+                 , haskoin-node                  >= 0.3       && < 0.5
                  , haskoin-wallet
                  , monad-logger                  >= 0.3       && < 0.4
                  , mtl                           >= 2.1       && < 2.3

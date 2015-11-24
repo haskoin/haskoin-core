@@ -10,6 +10,7 @@ description:
     command-line tool called "hw" which is also provided in this package.
 homepage:              http://github.com/haskoin/haskoin
 bug-reports:           http://github.com/haskoin/haskoin/issues
+tested-with:           GHC==7.10.3, GHC==7.10.2, GHC==7.10.1
 license:               PublicDomain
 license-file:          UNLICENSE
 author:                Philippe Laprade

@@ -1,25 +1,188 @@
+language: generic
 sudo: required
 dist: trusty
 
-before_install:
-  # stack
-  - mkdir -p ~/.local/bin
-  - export PATH=~/.local/bin:$PATH
-  - travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+matrix:
+  include:
+    - env: CABALVER=1.22 GHCVER=7.10.1
+      addons:
+        apt:
+          sources: 
+            - hvr-ghc
+          packages:
+            - cabal-install-1.22
+            - ghc-7.10.1
+            - alex-3.1.3
+            - happy-1.19.4
+            - libgmp-dev
+            - libleveldb-dev 
+            - libzmq3-dev 
+            - libsnappy-dev 
+            - pkg-config 
+            - zlib1g-dev
+    - env: CABALVER=1.22 GHCVER=7.10.2
+      addons:
+        apt:
+          sources:
+            - hvr-ghc
+          packages:
+            - cabal-install-1.22
+            - ghc-7.10.2
+            - alex-3.1.3
+            - happy-1.19.4
+            - libgmp-dev
+            - libleveldb-dev 
+            - libzmq3-dev 
+            - libsnappy-dev 
+            - pkg-config 
+            - zlib1g-dev
+    - env: CABALVER=1.22 GHCVER=7.10.3
+      addons:
+        apt:
+          sources:
+            - hvr-ghc
+          packages:
+            - cabal-install-1.22
+            - ghc-7.10.3
+            - alex-3.1.3
+            - happy-1.19.4
+            - libgmp-dev
+            - libleveldb-dev 
+            - libzmq3-dev 
+            - libsnappy-dev 
+            - pkg-config 
+            - zlib1g-dev
+    - env: CABALVER=head GHCVER=head
+      addons:
+        apt:
+          sources:
+            - hvr-ghc
+          packages:
+            - cabal-install-head
+            - ghc-head
+            - alex-3.1.3
+            - happy-1.19.4
+            - libgmp-dev
+            - libleveldb-dev 
+            - libzmq3-dev 
+            - libsnappy-dev 
+            - pkg-config 
+            - zlib1g-dev
+    - env: CABALVER=stack GHCVER=stack
+      addons:
+        apt:
+          sources:
+            - hvr-ghc
+          packages:
+            - alex-3.1.3
+            - happy-1.19.4
+            - libgmp-dev
+            - libleveldb-dev 
+            - libzmq3-dev 
+            - libsnappy-dev 
+            - pkg-config 
+            - zlib1g-dev
+  allow_failures:
+    - env: CABALVER=head GHCVER=head
 
-addons:
-  apt:
-    packages:
-    - libgmp-dev
-    - libleveldb-dev 
-    - libzmq3-dev 
-    - libsnappy-dev 
-    - pkg-config 
-    - zlib1g-dev
+before_install:
+  - export PATH=/opt/alex/3.1.3/bin:/opt/happy/1.19.4/bin:$PATH
+  - if [[ "$GHCVER" == "stack" ]]; then 
+      mkdir -p ~/.local/bin;
+      export PATH=~/.local/bin:$PATH;
+      travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack';
+    fi
+  - if [[ "$GHCVER" != "stack" ]]; then 
+      export PATH=/opt/ghc/$GHCVER/bin:/opt/cabal/$CABALVER/bin:$PATH;
+      export WORKDIR="$PWD";
+      cabal --version;
+    fi
 
 install:
-  - ./travis_long stack --no-terminal setup
-  - ./travis_long stack --no-terminal test --only-snapshot
+  - if [[ "$GHCVER" == "stack" ]]; then 
+      travis/travis_long stack --no-terminal setup &&
+      stack --no-terminal install hscolour;
+    fi
+  - if [[ "$GHCVER" != "stack" ]]; then 
+      travis_retry cabal update;
+    fi
 
 script:
-  - stack --no-terminal test
+  - if [[ "$GHCVER" == "stack" ]]; then
+      travis/travis_long stack --no-terminal test --only-snapshot &&
+      travis/travis_long stack --no-terminal test &&
+      travis/travis_long stack --no-terminal haddock;
+    fi
+
+  - if [[ "$GHCVER" != "stack" ]]; then
+      cd "$WORKDIR/haskoin-core" &&
+      cabal sdist &&
+      export SRC_DIR=$(cabal info . | awk '{print $2 ;exit}') &&
+      export SRC_TGZ="$SRC_DIR.tar.gz" &&
+      cd dist/ &&
+      if [ ! -f "$SRC_TGZ" ]; then
+         echo "expected '$SRC_TGZ' not found" && exit 1;
+      else
+        tar -xf "$SRC_TGZ" &&
+        cd "$SRC_DIR";
+      fi
+    fi
+  - if [[ "$GHCVER" != "stack" ]]; then
+      $WORKDIR/travis/travis_long cabal install --only-dependencies --enable-tests -v &&
+      cabal configure --enable-tests -v2 &&
+      $WORKDIR/travis/travis_long cabal build &&
+      $WORKDIR/travis/travis_long cabal test --show-details=streaming && 
+      cabal check &&
+      $WORKDIR/travis/travis_long cabal haddock && 
+      cd .. && 
+      cabal install "$SRC_TGZ";
+    fi
+
+  - if [[ "$GHCVER" != "stack" ]]; then
+      cd "$WORKDIR/haskoin-node" &&
+      cabal sdist &&
+      export SRC_DIR=$(cabal info . | awk '{print $2 ;exit}') &&
+      export SRC_TGZ="$SRC_DIR.tar.gz" &&
+      cd dist/ &&
+      if [ ! -f "$SRC_TGZ" ]; then
+         echo "expected '$SRC_TGZ' not found" && exit 1;
+      else
+        tar -xf "$SRC_TGZ" &&
+        cd "$SRC_DIR";
+      fi
+    fi
+  - if [[ "$GHCVER" != "stack" ]]; then
+      $WORKDIR/travis/travis_long cabal install --only-dependencies --enable-tests -v &&
+      cabal configure --enable-tests -v2 &&
+      $WORKDIR/travis/travis_long cabal build &&
+      $WORKDIR/travis/travis_long cabal test --show-details=streaming && 
+      cabal check &&
+      $WORKDIR/travis/travis_long cabal haddock && 
+      cd .. && 
+      cabal install "$SRC_TGZ";
+    fi
+
+  - if [[ "$GHCVER" != "stack" ]]; then
+      cd "$WORKDIR/haskoin-wallet" &&
+      cabal sdist &&
+      export SRC_DIR=$(cabal info . | awk '{print $2 ;exit}') &&
+      export SRC_TGZ="$SRC_DIR.tar.gz" &&
+      cd dist/ &&
+      if [ ! -f "$SRC_TGZ" ]; then
+         echo "expected '$SRC_TGZ' not found" && exit 1;
+      else
+        tar -xf "$SRC_TGZ" &&
+        cd "$SRC_DIR";
+      fi
+    fi
+  - if [[ "$GHCVER" != "stack" ]]; then
+      $WORKDIR/travis/travis_long cabal install --only-dependencies --enable-tests -v &&
+      cabal configure --enable-tests -v2 &&
+      $WORKDIR/travis/travis_long cabal build &&
+      $WORKDIR/travis/travis_long cabal test --show-details=streaming && 
+      cabal check &&
+      $WORKDIR/travis/travis_long cabal haddock && 
+      cd .. && 
+      cabal install "$SRC_TGZ";
+    fi
+

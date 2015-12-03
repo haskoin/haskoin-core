@@ -2,11 +2,7 @@
   Arbitrary types for Network.Haskoin.Crypto
 -}
 module Network.Haskoin.Test.Crypto
-( ArbitraryHash512(..)
-, ArbitraryHash256(..)
-, ArbitraryHash160(..)
-, ArbitraryCheckSum32(..)
-, ArbitraryByteString(..)
+( ArbitraryByteString(..)
 , ArbitraryNotNullByteString(..)
 , ArbitraryPrvKey(..)
 , ArbitraryPrvKeyC(..)
@@ -15,6 +11,10 @@ module Network.Haskoin.Test.Crypto
 , ArbitraryPubKeyC(..)
 , ArbitraryPubKeyU(..)
 , ArbitraryAddress(..)
+, ArbitraryHash256(..)
+, ArbitraryHash512(..)
+, ArbitraryHash160(..)
+, ArbitraryCheckSum32(..)
 , ArbitraryPubKeyAddress(..)
 , ArbitraryScriptAddress(..)
 , ArbitrarySignature(..)
@@ -23,31 +23,44 @@ module Network.Haskoin.Test.Crypto
 , ArbitraryHardPath(..)
 , ArbitrarySoftPath(..)
 , ArbitraryDerivPath(..)
+, ArbitraryBip32Path(..)
+, ArbitraryXKeySoftIndex(..)
+, ArbitraryXKeyHardIndex(..)
+, ArbitraryXKeyChildIndex(..)
 ) where
 
+import Crypto.Secp256k1 (   )
 import Test.QuickCheck
     ( Arbitrary
     , Gen
     , arbitrary
-    , elements
+    -- , choose
+    -- , elements
+    -- , frequency
     , oneof
+    -- , listOf
+    , arbitraryBoundedEnum
+    , sized
     , vectorOf
-    , listOf
     )
 
 import Crypto.Secp256k1 ()
-
-import Data.Bits (clearBit)
+-- import Data.Bits (clearBit)
 import qualified Data.ByteString as BS (pack)
 import Data.Maybe (fromMaybe)
-import Data.Word (Word32)
+-- import Data.Word (Word32)
 
 import Network.Haskoin.Test.Util
 import Network.Haskoin.Crypto.ECDSA
+-- import Network.Haskoin.Crypto.BigWord
+-- import Network.Haskoin.Crypto.Point
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Base58
+-- import Network.Haskoin.Crypto.Curve
 import Network.Haskoin.Crypto.ExtendedKeys
+-- import Network.Haskoin.Crypto.ExtendedKeyHelpers
+-- import Data.List (foldl')
 
 newtype ArbitraryHash160 = ArbitraryHash160 Hash160
     deriving (Eq, Show, Read)
@@ -111,7 +124,7 @@ newtype ArbitraryPrvKeyU = ArbitraryPrvKeyU PrvKeyU
 instance Arbitrary ArbitraryPrvKeyU where
     arbitrary = do
         i <- arbitrary
-        return $ ArbitraryPrvKeyU $ makePrvKeyU i
+        return $ ArbitraryPrvKeyU $ makePrvKeyU i -- is makePrvKeyU unsafe
 
 -- | Arbitrary public key (can be both compressed or uncompressed) with its
 -- corresponding private key.
@@ -163,6 +176,7 @@ instance Arbitrary ArbitraryPubKeyAddress where
         ArbitraryHash160 i <- arbitrary
         return $ ArbitraryPubKeyAddress $ PubKeyAddress i
 
+
 -- | Arbitrary script hash address
 newtype ArbitraryScriptAddress = ArbitraryScriptAddress Address
     deriving (Eq, Show, Read)
@@ -184,6 +198,20 @@ instance Arbitrary ArbitrarySignature where
         ArbitraryPrvKey key <- arbitrary
         let sig = signMsg msg key
         return $ ArbitrarySignature msg key sig
+
+-- | Arbitrary message hash, private key and corresponding signature. The
+-- signature is generated deterministically using a random message and random
+-- private key.
+{-
+data ArbitraryDetSignature = ArbitraryDetSignature Hash256 PrvKey Signature
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryDetSignature where
+    arbitrary = do
+        msg  <- arbitrary
+        ArbitraryPrvKey prv   <- arbitrary
+        return $ ArbitraryDetSignature msg prv $ detSignMsg msg prv
+-}
 
 -- | Arbitrary extended private key.
 data ArbitraryXPrvKey = ArbitraryXPrvKey XPrvKey
@@ -208,42 +236,93 @@ instance Arbitrary ArbitraryXPubKey where
         return $ ArbitraryXPubKey k $ deriveXPubKey k
 
 {- Custom derivations -}
-
+{-
 genIndex :: Gen Word32
 genIndex = (`clearBit` 31) <$> arbitrary
+
+genIndexes :: Gen [Word32]
+genIndexes = listOf genIndex
+-}
 
 data ArbitraryHardPath = ArbitraryHardPath HardPath
     deriving (Show, Eq)
 
 instance Arbitrary ArbitraryHardPath where
-    arbitrary =
-        ArbitraryHardPath <$> (go =<< listOf genIndex)
-      where
-        go []     = elements [ Deriv, DerivPrv, DerivPub ]
-        go (i:is) = (:| i) <$> go is
+    arbitrary = sized hardpath'
+      where hardpath' 0 = ArbitraryHardPath <$> ( (:|/) <$> ( do ArbitraryXKeyHardIndex i <- arbitrary; pure i )
+                                                        <*> pure XKeyEmptyPath
+                                                ) 
+            hardpath' n = do let softCase = ( (:/|) <$> ( do ArbitraryXKeySoftIndex i <- arbitrary; pure i) 
+                                                    <*> ( do ArbitraryHardPath p <- hardpath' (n-1); pure p)
+                                            )
+                                 hardCase = ( (:||) <$> ( do ArbitraryXKeyHardIndex i <- arbitrary; pure i) 
+                                                    <*> ( do ArbitraryHardPath p <- hardpath' (n-1); pure p)
+                                            )
+                             ArbitraryHardPath <$> oneof [ softCase, hardCase]
+
+                          
+
 
 data ArbitrarySoftPath = ArbitrarySoftPath SoftPath
     deriving (Show, Eq)
 
 instance Arbitrary ArbitrarySoftPath where
-    arbitrary =
-        ArbitrarySoftPath <$> (go =<< listOf genIndex)
-      where
-        go []     = elements [ Deriv, DerivPrv, DerivPub ]
-        go (i:is) = (:/ i) <$> go is
+    arbitrary = sized softpath' 
+      where softpath' :: Int -> Gen ArbitrarySoftPath
+            softpath' 0 = ArbitrarySoftPath <$> pure XKeyEmptyPath
+            softpath' n = ArbitrarySoftPath <$> ( (://) <$> ( do ArbitraryXKeySoftIndex i <- arbitrary; pure i )
+                                                        <*> ( do ArbitrarySoftPath p <- softpath' ( n - 1);  pure p ) 
+                                                )
+
+data ArbitraryBip32Path = ArbitraryBip32Path Bip32Path
+  deriving (Show,Eq)
+
+instance Arbitrary ArbitraryBip32Path where
+  arbitrary = do
+    let hardCase = Bip32Hard <$> ( do ArbitraryHardPath p <- arbitrary; pure p) 
+        softCase = Bip32Soft <$> ( do ArbitrarySoftPath p <- arbitrary; pure p) 
+    ArbitraryBip32Path <$> oneof [hardCase, softCase]  
+
+
+data ArbitraryBip32XKey = ArbitraryBip32XKey Bip32XKey
+  deriving (Show,Eq)
+
+instance Arbitrary ArbitraryBip32XKey where
+    arbitrary = do
+      ArbitraryXPubKey pvk pbk <- arbitrary
+      ArbitraryBip32XKey <$> oneof [pure . Bip32PubK $ pbk, pure . Bip32PrvK $ pvk]
 
 data ArbitraryDerivPath = ArbitraryDerivPath DerivPath
     deriving (Show, Eq)
 
 instance Arbitrary ArbitraryDerivPath where
     arbitrary = do
-        xs  <- listOf genIndex
-        ys  <- listOf genIndex
-        return . ArbitraryDerivPath . goSoft ys =<< goHard xs
-      where
-        goSoft [] h     = h
-        goSoft (i:is) h = (goSoft is h) :/ i
-        goHard :: HardOrMixed t => [Word32] -> Gen (DerivPathI t)
-        goHard (i:is) = (:| i) <$> goHard is
-        goHard []     = elements [ Deriv, DerivPrv, DerivPub ]
+        ArbitraryBip32Path p <- arbitrary
+        let pubCase = Bip32PubM p
+            prvCase = Bip32Prvm p
+        ArbitraryDerivPath <$> oneof [pure pubCase, pure prvCase]
+
+data ArbitraryXKeyChildIndex = ArbitraryXKeyChildIndex XKeyChildIndex
+    deriving (Show, Eq)
+
+instance Arbitrary ArbitraryXKeyChildIndex
+  where arbitrary = ArbitraryXKeyChildIndex <$> arbitraryBoundedEnum
+
+
+data ArbitraryXKeySoftIndex = ArbitraryXKeySoftIndex XKeySoftIndex
+    deriving (Show, Eq)
+
+instance Arbitrary ArbitraryXKeySoftIndex
+  where arbitrary = ArbitraryXKeySoftIndex <$> arbitraryBoundedEnum
+
+data ArbitraryXKeyHardIndex = ArbitraryXKeyHardIndex XKeyHardIndex
+    deriving (Show, Eq)
+
+instance Arbitrary ArbitraryXKeyHardIndex
+  where arbitrary = ArbitraryXKeyHardIndex <$> arbitraryBoundedEnum
+
+
+
+
+
 

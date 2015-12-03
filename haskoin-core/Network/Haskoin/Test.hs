@@ -28,6 +28,7 @@ module Network.Haskoin.Test
 , ArbitraryHardPath(..)
 , ArbitrarySoftPath(..)
 , ArbitraryDerivPath(..)
+, ArbitraryBip32Path(..)
 
   -- * Node Arbitrary instances
 , ArbitraryVarInt(..)
@@ -108,6 +109,9 @@ module Network.Haskoin.Test
 , ArbitraryGetHeaders(..)
 , ArbitraryHeaders(..)
 , ArbitraryMerkleBlock(..)
+, ArbitraryXKeyHardIndex(..)
+, ArbitraryXKeySoftIndex(..)
+, ArbitraryXKeyChildIndex(..)
 ) where
 
 import Network.Haskoin.Test.Util

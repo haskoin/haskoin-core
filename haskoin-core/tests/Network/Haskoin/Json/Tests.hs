@@ -24,9 +24,12 @@ tests =
         , testProperty "XPrvKey" $ \(ArbitraryXPrvKey x) -> metaID x
         , testProperty "XPubKey" $ \(ArbitraryXPubKey _ x) -> metaID x
         , testProperty "DerivPath" $ \(ArbitraryDerivPath x) -> metaID x
+        , testProperty "SoftPath" $ \(ArbitrarySoftPath x) -> metaID x
+        , testProperty "HardPath" $ \(ArbitraryHardPath x) -> metaID x
         ]
     ]
 
 metaID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
 metaID x = (decode . encode) [x] == Just [x]
+
 

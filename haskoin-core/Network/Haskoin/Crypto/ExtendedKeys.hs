@@ -580,7 +580,6 @@ derivPathParser = do
                 ( ( try $ string "M/" >> bip32PathParser) 
                   <|> ( (try $ string "M") >> return (Bip32Soft XKeyEmptyPath) ) )
               )
-    -- eof
     return dp
 
 instance ToHaskoinString Bip32XKey where
@@ -599,7 +598,7 @@ instance FromHaskoinString Bip32Path where
 parseBip32Path :: String -> Either ParseError Bip32Path
 parseBip32Path x = parseConsumingAll bip32PathParser  "bip32PathParser" x
 bip32PathParser :: Parsec String () Bip32Path
-bip32PathParser = try ( Bip32Soft <$> softPathParser) <|> try ( Bip32Hard <$> hardPathParser)
+bip32PathParser = try ( Bip32Hard <$> hardPathParser) <|> ( Bip32Soft <$> softPathParser) 
   
 
 
@@ -635,7 +634,12 @@ parseHardIndex :: String -> Either ParseError XKeyHardIndex
 parseHardIndex = parseConsumingAll hardIndexParser "hardIndexParser" 
 
 parseConsumingAll :: Parsec String () a -> SourceName -> String -> Either ParseError a
-parseConsumingAll parser name x = parse ( do i <- parser; eof; return i ) name x
+parseConsumingAll pathPartParser name x = do
+  let p = do
+        i <- pathPartParser
+        choice [ try eof,  try $ do _ <- string "/" ; eof ]
+        return i
+  parse p name x
 
 hardIndexParser :: Parsec String () XKeyHardIndex
 hardIndexParser = do
@@ -672,7 +676,6 @@ softPathParser = do
   softPath <- choice [ try $ pure (://) <*> softIndexParser <*> ( do _ <- string "/"; softPathParser),
                        try $ pure (://) <*> softIndexParser <*> pure XKeyEmptyPath,
                        try $ return XKeyEmptyPath  ]
-  choice [ eof,  try $ do _ <- string "/" ; eof ]
   return softPath
 
 

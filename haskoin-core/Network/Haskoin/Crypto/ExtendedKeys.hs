@@ -672,15 +672,12 @@ softPathParser = do
   softPath <- try more 
                 <|> try oneSoftIndex 
                 <|> try ( return XKeyEmptyPath )    
-  endWithOptionalTrailingSlash
+  eof <|> ( try $ do _ <- string "/" ; eof )
   return softPath
   where more :: Parsec String () SoftPath
         more = pure (://) <*> softIndexParser <*> ( do _ <- string "/"; softPathParser)
         oneSoftIndex = pure (://) <*> softIndexParser <*> pure XKeyEmptyPath
 
--- can we do more precise eofs for more pieces of parsing? 
-endWithOptionalTrailingSlash :: Parsec String () ()
-endWithOptionalTrailingSlash = eof <|> ( try $ do _ <- string "/" ; eof )
 
 -- TODO: Test
 instance ToHaskoinString XPubKey where

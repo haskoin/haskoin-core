@@ -451,11 +451,23 @@ instance XPubKeyEndoDerivable XKeySoftIndex
 data DerivPath =  Bip32Prvm Bip32Path  | Bip32PubM Bip32Path
   deriving (Read,Show,Eq,Ord)
 
+instance XPrvKeyEndoDerivable DerivPath
+  where deriveXPrvKeyEndo (Bip32Prvm p) = deriveXPrvKeyEndo p
+        deriveXPrvKeyEndo (Bip32PubM p) = deriveXPrvKeyEndo p
+
 data Bip32Path = Bip32Hard HardPath | Bip32Soft SoftPath 
   deriving (Read,Show,Eq,Ord)
 
+instance XPrvKeyEndoDerivable Bip32Path
+  where deriveXPrvKeyEndo (Bip32Hard p) = deriveXPrvKeyEndo p
+        deriveXPrvKeyEndo (Bip32Soft p) = deriveXPrvKeyEndo p
+
 data Bip32XKey = Bip32PrvK XPrvKey | Bip32PubK XPubKey 
   deriving (Read,Show,Eq)
+
+
+
+
 
 -- todo: skeptical about strictness.  test with and without and compare times.  if doesn't make any difference, leave non strict.
 data SoftPath = XKeyEmptyPath
@@ -548,6 +560,7 @@ instance FromHaskoinString DerivPath where
 
 -- | Parse derivation path string for extended key.
 -- Forms: m/0'/2, M/2/3/4, m/1/2/3, M/1/2'3 
+--        m/ produces identity from private key, M/ produces identity from public key
 parsePath :: String -> Either ParseError DerivPath
 parsePath x = parseConsumingAll derivPathParser "derivPathParser" x
 

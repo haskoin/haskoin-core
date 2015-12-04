@@ -545,7 +545,7 @@ printAccount JsonAccount{..} = unlines $
     , "Gap    : " ++ show jsonAccountGap
     ]
     ++
-    [ "Deriv  : " ++ pathToStr d
+    [ "Deriv  : " ++ toHaskoinString d
     | d <- maybeToList jsonAccountDerivation
     ]
     ++

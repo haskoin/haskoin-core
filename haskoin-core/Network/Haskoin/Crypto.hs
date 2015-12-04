@@ -2,7 +2,7 @@
   This package provides the elliptic curve cryptography required for creating
   and validating bitcoin transactions. It also provides SHA-256 and RIPEMD-160
   hashing functions; as well as mnemonic keys from BIP-0039.
--}
+-}  
 module Network.Haskoin.Crypto
 (
   -- *Elliptic Curve Keys
@@ -138,28 +138,41 @@ module Network.Haskoin.Crypto
 , deriveMSAddr
 , deriveMSAddrs
 
-  -- ** Custom path derivations
-, DerivPathI((:|), (:/), Deriv, DerivPrv, DerivPub)
-, DerivPath
-, HardPath
-, SoftPath
-, pathToStr
-, parsePath
-, parseHard
-, parseSoft
-, toHard
-, toSoft
-, toMixed
-, (++/), (++|)
-, derivePath
-, derivePubPath
-, derivePathE
+-- ** Custom path derivations
+-- , DerivPathI((:|), (:/), Deriv, DerivPrv, DerivPub)
+, XKeyChildIndex
+, XKeySoftIndex (..)
+, XKeyHardIndex (..)
+, DerivPath (..)
+, HardPath (..)
+, SoftPath (..)
+, Bip32Path (..)
+, Bip32XKey (..)
+, bigWordParser 
+--, pathToStr
+-- , parsePath
+-- , parseHard
+-- , parseSoft
+--, toHard
+--, toSoft
+--, toMixed
+--, (++/), (++|)
+-- , derivePath
+, deriveHardPrvPath
+, deriveSoftPrvPath
+, derivePubPath 
+, derivePathE -- rename deriveBip32Path
+, derivePath 
 
   -- * Custom path address derivations
 , derivePathAddr
 , derivePathAddrs
 , derivePathMSAddr
 , derivePathMSAddrs
+
+, hardPlusSoft
+, softPlusSoft
+, incrementHardPathEnd
 
 ) where
 
@@ -169,4 +182,4 @@ import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.Base58
 import Network.Haskoin.Crypto.Mnemonic
 import Network.Haskoin.Crypto.ExtendedKeys
-
+import Network.Haskoin.Crypto.BigWord

@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Network.Haskoin.Wallet.KeyRing
 (
 -- *Database KeyRings
@@ -171,11 +173,10 @@ newAccount (Entity ki keyRing) accountName accountType extraKeys = do
         liftIO . throwIO $ WalletException "Invalid account type"
 
     -- Get the next account derivation
-    derivM <- if accountTypeRead accountType then return Nothing else
-        liftM Just $ nextAccountDeriv ki
+    derivM  <- nextAccountDeriv accountType ki
 
     -- Derive the next account key
-    let f d  = [ deriveXPubKey (derivePath d $ keyRingMaster keyRing) ]
+    let f d  = [ deriveXPubKey (deriveHardPrvPath d $ keyRingMaster keyRing ) ]
         keys = (maybe [] f derivM) ++ extraKeys
 
     -- Build the account
@@ -253,18 +254,25 @@ isValidAccKeys KeyRingAccount{..} = case keyRingAccountType of
         length keyRingAccountKeys >= minLen
 
 -- | Compute the next derivation path for a new account
-nextAccountDeriv :: MonadIO m => KeyRingId -> SqlPersistT m HardPath
-nextAccountDeriv ki = do
-    lastRes <- select $ from $ \a -> do
-        where_ (   a ^. KeyRingAccountKeyRing ==. val ki
-               &&. not_ (isNothing (a ^. KeyRingAccountDerivation))
-               )
-        orderBy [ desc (a ^. KeyRingAccountId) ]
-        limit 1
-        return $ a ^. KeyRingAccountDerivation
-    return $ case lastRes of
-        (Value (Just (prev :| i)):_) -> prev :| (i + 1)
-        _ -> Deriv :| 0
+nextAccountDeriv :: MonadIO m => AccountType -> KeyRingId -> SqlPersistT m (Maybe HardPath)
+nextAccountDeriv accountType ki = 
+  if accountTypeRead accountType 
+      then return Nothing 
+      else liftM Just $ do
+        ( lastRes :: [Value (Maybe HardPath)] )  <- select $ from $ \a -> do
+            where_ (   a ^. KeyRingAccountKeyRing ==. val ki
+                   &&. not_ (isNothing (a ^. KeyRingAccountDerivation))
+                   )
+            orderBy [ desc (a ^. KeyRingAccountId) ]
+            limit 1
+            return $ a ^. KeyRingAccountDerivation
+        return $ case lastRes of
+            -- the limit 1 clause above would limit lastRes to 0 or 1 elements
+            -- so we check both cases explicitly.
+            -- seems suspicious that empty case has length 1 segment, but non-empty has maybe more than 1.
+            -- perhaps the issue is why do we allow derivation field in KeyRingAccount to be optional in the first place
+            [] -> XKeyHardIndex 0 :|/ XKeyEmptyPath
+            Value (Just hardpath ):_ -> incrementHardPathEnd hardpath 
 
 -- Helper functions to get an Account if it exists, or throw an exception
 -- otherwise.
@@ -421,8 +429,12 @@ addressPrvKey keyRing accE@(Entity ai _) index addrType = do
                )
         return (x ^. KeyRingAddrFullDerivation)
     case res of
-        (Value (Just deriv):_) ->
-            return $ xPrvKey $ derivePath deriv $ keyRingMaster keyRing
+        -- todo: maxlen in models is suspicious, for long paths
+        Value (Just deriv):_ ->
+            case derivePathE deriv . Bip32PrvK . keyRingMaster $ keyRing of 
+              Left e -> error e
+              Right ( Bip32PrvK k) -> return . xPrvKey $ k
+              _ -> error $ "addressPrvKey, res: " ++ show res
         _ -> liftIO . throwIO $ WalletException "Invalid address"
 
 -- | Create new addresses in an account and increment the internal bloom filter.
@@ -446,47 +458,58 @@ createAddrs (Entity ai acc) addrType n
     | otherwise = do
         now <- liftIO getCurrentTime
         -- Find the next derivation index from the last address
-        lastRes <- select $ from $ \x -> do
+        -- to do: in models, KeyRingAddr Index should perhaps be XKeyChildIndex or XKeySoftIndex rather than KeyIndex
+        -- as it stands, KeyIndex is Word32, and allows hard bit.
+        lastRes :: [Value ( Maybe KeyIndex)] <- select $ from $ \x -> do
             where_ (   x ^. KeyRingAddrAccount ==. val ai
                    &&. x ^. KeyRingAddrType    ==. val addrType
                    )
             return $ max_ (x ^. KeyRingAddrIndex)
-        let nextI = case lastRes of
-                (Value (Just lastI):_) -> lastI + 1
-                _ -> 0
-            build (addr, keyM, rdmM, i) = KeyRingAddr
+        let nextI :: XKeySoftIndex
+            nextI = case lastRes of
+                Value (Just lastI):_ -> XKeySoftIndex $ ( fromIntegral . toInteger $ lastI ) + 1
+                _ -> XKeySoftIndex 0
+            build ( addr, keyM, rdmM, i@(XKeySoftIndex i31) ) = KeyRingAddr
                 { keyRingAddrAccount = ai
                 , keyRingAddrAddress = addr
-                , keyRingAddrIndex   = i
+                , keyRingAddrIndex   = fromIntegral . toInteger $ i31
                 , keyRingAddrType    = addrType
                 , keyRingAddrLabel   = ""
                 -- Full derivation from the master key
                 , keyRingAddrFullDerivation =
-                    let f d = toMixed d :/ branchType :/ i
+                    -- this should really be Bip32Path instead of DerivPath, because pub or priv doesn't matter here
+                    -- but leave as is to get it to compile and fix later.
+                    let f :: HardPath -> DerivPath
+                        f d = Bip32Prvm $ Bip32Hard $ hardPlusSoft d $  branchType :// (i :// XKeyEmptyPath) 
                     in  f <$> keyRingAccountDerivation acc
                 -- Partial derivation under the account derivation
-                , keyRingAddrDerivation = Deriv :/ branchType :/ i
+                , keyRingAddrDerivation = branchType :// ( i :// XKeyEmptyPath )
                 , keyRingAddrRedeem     = rdmM
                 , keyRingAddrKey        = keyM
                 , keyRingAddrCreated    = now
                 }
-            res = map build $ take (fromIntegral n) $ deriveFrom nextI
-
+            res = map build . take (fromIntegral n) . deriveFrom $ nextI
+            
         -- Save the addresses and increment the bloom filter
         insertMany_ res
         incrementFilter res
         return res
-  where
+  where   
     -- Branch type (external = 0, internal = 1)
+    branchType :: XKeySoftIndex
     branchType = addrTypeIndex addrType
-    deriveFrom = case keyRingAccountType acc of
+    deriv  = branchType :// XKeyEmptyPath
+    deriveFrom :: XKeySoftIndex -> [(Address, Maybe PubKeyC, Maybe RedeemScript, XKeySoftIndex)]
+    deriveFrom soft = case keyRingAccountType acc of
         AccountMultisig _ m _ ->
-            let f (a, r, i) = (a, Nothing, Just r, i)
-                deriv  = Deriv :/ branchType
-            in  map f . derivePathMSAddrs (keyRingAccountKeys acc) deriv m
+            -- wouldn't case (keyRingAccountKeys acc) is [] be an error case, just as for AccountRegular ? 
+            let f (a, r, i) = (a, Nothing, Just r, i)                
+            in  map f . derivePathMSAddrs (keyRingAccountKeys acc) deriv m $ soft
         AccountRegular _ -> case keyRingAccountKeys acc of
+            -- this seems wrong. aren't we expecting exactly one key?
+            -- why do we discard the additional keys if there are multiples?
             (key:_) -> let f (a, k, i) = (a, Just k, Nothing, i)
-                       in  map f . derivePathAddrs key (Deriv :/ branchType)
+                       in  map f . derivePathAddrs key deriv $ soft
             [] -> throw $ WalletException $ unwords
                 [ "createAddrs: No key available in regular account"
                 , unpack $ keyRingAccountName acc

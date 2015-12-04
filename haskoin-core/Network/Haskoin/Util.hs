@@ -48,7 +48,9 @@ module Network.Haskoin.Util
   -- * JSON Utilities
 , dropFieldLabel
 , dropSumLabels
-
+, FromHaskoinString (..)
+, ToHaskoinString (..)
+, derivFromString
 ) where
 
 import Control.Monad (guard)
@@ -69,6 +71,7 @@ import qualified Data.ByteString.Lazy as BL (toStrict, fromStrict)
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString as BS
     (pack, null, empty, foldr', reverse, unfoldr)
+import Data.Maybe (fromMaybe)
 
 -- ByteString helpers
 
@@ -278,4 +281,18 @@ dropSumLabels c f tag = (dropFieldLabel f)
     { constructorTagModifier = map toLower . drop c
     , sumEncoding = defaultTaggedObject { tagFieldName = tag }
     }
+
+-- alternative representations to Read/Show, to allow deriving of generic Read/Show instances
+class ToHaskoinString a where
+  toHaskoinString :: a -> String
+
+class FromHaskoinString a where
+  fromHaskoinString :: String -> Maybe a
+
+
+derivFromString :: FromHaskoinString a => String -> String -> a
+derivFromString e' s = fromMaybe e . fromHaskoinString $ s
+      where
+        e = error $ e' ++ s
+
 

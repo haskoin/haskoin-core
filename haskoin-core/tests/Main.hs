@@ -40,8 +40,8 @@ import qualified Network.Haskoin.Json.Tests (tests)
 import qualified Network.Haskoin.Binary.Tests (tests)
 
 main :: IO ()
-main = defaultMain
-    (  Network.Haskoin.Json.Tests.tests
+main = defaultMain $
+     Network.Haskoin.Json.Tests.tests 
     ++ Network.Haskoin.Binary.Tests.tests
     ++ Network.Haskoin.Util.Tests.tests
     ++ Network.Haskoin.Crypto.ECDSA.Tests.tests
@@ -49,10 +49,10 @@ main = defaultMain
     ++ Network.Haskoin.Crypto.Base58.Units.tests
     ++ Network.Haskoin.Crypto.Hash.Tests.tests
     ++ Network.Haskoin.Crypto.Hash.Units.tests
-    ++ Network.Haskoin.Crypto.Keys.Tests.tests
+    ++ Network.Haskoin.Crypto.Keys.Tests.tests 
     ++ Network.Haskoin.Crypto.ExtendedKeys.Tests.tests
-    ++ Network.Haskoin.Crypto.ExtendedKeys.Units.tests
-    ++ Network.Haskoin.Crypto.Mnemonic.Tests.tests
+    ++ Network.Haskoin.Crypto.ExtendedKeys.Units.tests  
+    ++ Network.Haskoin.Crypto.Mnemonic.Tests.tests 
     ++ Network.Haskoin.Crypto.Mnemonic.Units.tests
     ++ Network.Haskoin.Crypto.Units.tests
     ++ Network.Haskoin.Node.Units.tests
@@ -61,6 +61,6 @@ main = defaultMain
     ++ Network.Haskoin.Transaction.Tests.tests
     ++ Network.Haskoin.Transaction.Units.tests
     ++ Network.Haskoin.Block.Tests.tests
-    ++ Network.Haskoin.Block.Units.tests
-    )
+    ++ Network.Haskoin.Block.Units.tests 
+    
 

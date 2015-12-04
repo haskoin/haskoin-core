@@ -1045,16 +1045,16 @@ signOfflineTx keyRing acc tx coinSignData
     -- Compute all the private keys
     prvKeys = map (toPrvKey (keyRingMaster keyRing) acc) coinSignData
     -- Build a SigInput from a CoinSignData
-    toSigData acc' (CoinSignData op so deriv) =
+    toSigData acc' (CoinSignData op so softPath) =
         -- TODO: Here we override the SigHash to be SigAll False all the time.
         -- Should we be more flexible?
         SigInput so op (SigAll False) $
             if isMultisigAccount acc
-                then Just $ getPathRedeem acc' deriv
+                then Just $ getPathRedeem acc' softPath
                 else Nothing
-    toPrvKey master acc' (CoinSignData _ _ deriv) =
+    toPrvKey master acc' (CoinSignData _ _ softPath) =
         case keyRingAccountDerivation acc' of
-            Just root -> derivePath (root ++| deriv) master
+            Just root -> deriveHardPrvPath (root `hardPlusSoft` softPath) master
             _ -> throw $ WalletException $ unwords
                 [ "No derivation available in account"
                 , unpack $ keyRingAccountName acc'

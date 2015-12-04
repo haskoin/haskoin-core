@@ -315,9 +315,9 @@ $(deriveJSON (dropSumLabels 7 0 "") ''AddressType)
 instance NFData AddressType where
     rnf x = x `seq` ()
 
-addrTypeIndex :: AddressType -> KeyIndex
-addrTypeIndex AddressExternal = 0
-addrTypeIndex AddressInternal = 1
+addrTypeIndex :: AddressType -> XKeySoftIndex
+addrTypeIndex AddressExternal = XKeySoftIndex 0
+addrTypeIndex AddressInternal = XKeySoftIndex 1
 
 data WalletRequest
     = GetKeyRingsR
@@ -544,27 +544,27 @@ instance PersistFieldSql [XPubKey] where
     sqlType _ = SqlString
 
 instance PersistField DerivPath where
-    toPersistValue = PersistByteString . cs . pathToStr
+    toPersistValue = PersistByteString . cs . toHaskoinString
     fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent DerivPath" $ parsePath $ cs bs
+        maybeToEither "Invalid Persistent DerivPath" $ fromHaskoinString $ cs bs
     fromPersistValue _ = Left "Invalid Persistent DerivPath"
 
 instance PersistFieldSql DerivPath where
     sqlType _ = SqlString
 
 instance PersistField HardPath where
-    toPersistValue = PersistByteString . cs . pathToStr
+    toPersistValue = PersistByteString . cs . toHaskoinString
     fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent HardPath" $ parseHard $ cs bs
+        maybeToEither "Invalid Persistent HardPath" $ fromHaskoinString $ cs bs
     fromPersistValue _ = Left "Invalid Persistent HardPath"
 
 instance PersistFieldSql HardPath where
     sqlType _ = SqlString
 
 instance PersistField SoftPath where
-    toPersistValue = PersistByteString . cs . pathToStr
+    toPersistValue = PersistByteString . cs . toHaskoinString
     fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent SoftPath" $ parseSoft $ cs bs
+        maybeToEither "Invalid Persistent SoftPath" $ fromHaskoinString $ cs bs
     fromPersistValue _ = Left "Invalid Persistent SoftPath"
 
 instance PersistFieldSql SoftPath where

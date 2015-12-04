@@ -37,16 +37,11 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , XKeyChildIndex
 , XKeySoftIndex (..) 
 , XKeyHardIndex (..)
--- , StartDerivPath (..)
 , DerivPath (..)
 , HardPath (..)
 , SoftPath (..)
 , Bip32Path (..)
 , Bip32XKey (..)
--- , parsePath
--- , parseHard
--- , parseSoft
--- , (++/), (++|)
 , deriveHardPrvPath 
 , deriveSoftPrvPath
 , derivePubPath 
@@ -63,8 +58,6 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , hardPlusSoft
 , softPlusSoft
 , incrementHardPathEnd
--- , addPubPriv
--- , addPrivPriv
 ) where
 
 import Control.DeepSeq (NFData, rnf)
@@ -542,17 +535,6 @@ instance XPubKeyEndoDerivable SoftPath where
   deriveXPubKeyEndo XKeyEmptyPath = mempty
   deriveXPubKeyEndo (index :// path) = (deriveXPubKeyEndo path) <> (deriveXPubKeyEndo index)
 
-{-
-data StartDerivPath where
-    Deriv :: StartDerivPath -- neither m nor M, interpret as m (private)
-    DerivPrv :: StartDerivPath -- m (private)
-    DerivPub :: StartDerivPath -- M (public)
--}
--- hmmmmmm
-
--- pathToStr :: DerivPath -> String
--- pathToStr = toHaskoinString
-
 instance ToHaskoinString DerivPath where
     toHaskoinString x = case x of
         Bip32Prvm (Bip32Soft XKeyEmptyPath) -> "m"
@@ -563,10 +545,9 @@ instance IsString DerivPath where
     fromString = derivFromString "Could not read DerivPath: " 
 instance FromHaskoinString DerivPath where
     fromHaskoinString = eitherToMaybe . parsePath
+
 -- | Parse derivation path string for extended key.
--- Forms: “m/0'/2”, “M/2/3/4”.
--- wip, needs beginning of path
--- parsePath = parseDerivPath
+-- Forms: m/0'/2, M/2/3/4, m/1/2/3, M/1/2'3 
 parsePath :: String -> Either ParseError DerivPath
 parsePath x = parseConsumingAll derivPathParser "derivPathParser" x
 

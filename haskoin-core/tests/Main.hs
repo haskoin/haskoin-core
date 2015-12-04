@@ -41,7 +41,7 @@ import qualified Network.Haskoin.Binary.Tests (tests)
 
 main :: IO ()
 main = defaultMain $
-     {Network.Haskoin.Json.Tests.tests 
+     Network.Haskoin.Json.Tests.tests 
     ++ Network.Haskoin.Binary.Tests.tests
     ++ Network.Haskoin.Util.Tests.tests
     ++ Network.Haskoin.Crypto.ECDSA.Tests.tests

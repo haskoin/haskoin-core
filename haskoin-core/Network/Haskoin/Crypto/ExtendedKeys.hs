@@ -619,9 +619,9 @@ parseHard :: String -> Either ParseError HardPath
 parseHard x = parseConsumingAll hardPathParser "hardPathParser" x
 hardPathParser :: Parsec String () HardPath
 hardPathParser = do
-      hardPath <- choice [ try $ pure (:|/) <*> hardIndexParser <*> ( do _ <- string "/"; softPathParser ), 
-                           try $ pure (:/|) <*> softIndexParser <*> ( do _ <- string "/"; hardPathParser ) , 
-                           try $ pure (:||) <*> hardIndexParser <*> ( do _ <- string "/"; hardPathParser ), 
+      hardPath <- choice [ try $ pure (:||) <*> hardIndexParser <*> ( do _ <- string "/"; hardPathParser ), 
+                           try $ pure (:/|) <*> softIndexParser <*> ( do _ <- string "/"; hardPathParser ),
+                           try $ pure (:|/) <*> hardIndexParser <*> ( do _ <- string "/"; softPathParser ),  
                            try $ pure (:|/) <*> hardIndexParser <*> pure  XKeyEmptyPath ] 
       return hardPath
 
@@ -669,10 +669,10 @@ parseSoft :: String -> Either ParseError SoftPath
 parseSoft x = parseConsumingAll softPathParser "softPathParser" x
 softPathParser :: Parsec String () SoftPath
 softPathParser = do
-  softPath <- try more 
-                <|> try oneSoftIndex 
-                <|> try ( return XKeyEmptyPath )    
-  eof <|> ( try $ do _ <- string "/" ; eof )
+  softPath <- choice [ try more 
+                       , try oneSoftIndex 
+                       , try ( return XKeyEmptyPath ) ]
+  try eof <|> ( try $ do _ <- string "/" ; eof )
   return softPath
   where more :: Parsec String () SoftPath
         more = pure (://) <*> softIndexParser <*> ( do _ <- string "/"; softPathParser)

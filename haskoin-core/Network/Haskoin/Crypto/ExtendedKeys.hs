@@ -77,7 +77,6 @@ import Data.Binary.Get (Get, getWord8, getWord32be)
 import Data.Binary.Put (Put, putWord8, putWord32be)
 import Data.Word (Word8, Word32)
 import Data.Bits (setBit, testBit, clearBit)
--- import Data.List.Split (splitOn)
 import Data.Maybe (fromMaybe)
 import Data.String (IsString, fromString)
 import Data.String.Conversions (cs)
@@ -92,8 +91,6 @@ import Network.Haskoin.Script.Parser
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.Base58
-import Data.List (foldl')
--- import Network.Haskoin.Crypto.ExtendedKeyHelpers
 import Network.Haskoin.Crypto.BigWord (Word31, bigWordParser    )
 import Data.Monoid (Endo(..), (<>))
 import Text.Parsec
@@ -477,7 +474,9 @@ data HardPath = (:/|) !XKeySoftIndex !HardPath
                 | (:||) !XKeyHardIndex !HardPath
   deriving (Read,Show,Eq,Ord)
 
+incrementSoftIndex :: XKeySoftIndex -> XKeySoftIndex
 incrementSoftIndex (XKeySoftIndex i) = XKeySoftIndex $ i + 1
+incrementHardIndex :: XKeyHardIndex -> XKeyHardIndex
 incrementHardIndex (XKeyHardIndex i) = XKeyHardIndex $ i + 1
 
 incrementHardPathEnd :: HardPath -> HardPath
@@ -489,13 +488,8 @@ incrementHardPathEnd ( (:|/) hardIndex nonEmptySoftPath ) = hardIndex           
 
 incrementSoftPathEnd :: SoftPath -> SoftPath -> SoftPath
 incrementSoftPathEnd def XKeyEmptyPath            = def
-incrementSoftPathEnd def ( (://) softIndex XKeyEmptyPath) = incrementSoftIndex softIndex :// XKeyEmptyPath
-incrementSoftPathEnd def ( (://) softIndex softPath)             = softIndex :// incrementSoftPathEnd def softPath
-
-modifySoftEndOfSoftPath :: (XKeySoftIndex -> XKeySoftIndex) -> SoftPath -> Either String SoftPath
-modifySoftEndOfSoftPath f XKeyEmptyPath = Left "modifySoftEndOfSoftPath, empty soft path" 
-modifySoftEndOfSoftPath f ( (://) i XKeyEmptyPath ) = Right $ (f i) :// XKeyEmptyPath
-modifySoftEndOfSoftPath f ( (://) i p ) = (i ://) <$> modifySoftEndOfSoftPath f p
+incrementSoftPathEnd _ ( (://) softIndex XKeyEmptyPath) = incrementSoftIndex softIndex :// XKeyEmptyPath
+incrementSoftPathEnd def ( (://) softIndex softPath)    = softIndex :// incrementSoftPathEnd def softPath
 
 instance NFData HardPath where
     rnf ( (:/|) index path ) = rnf index `seq` rnf path
@@ -503,6 +497,7 @@ instance NFData HardPath where
     rnf ( (:||) index path ) = rnf index `seq` rnf path
     
 instance NFData SoftPath where
+    rnf XKeyEmptyPath = () 
     rnf ( (://) index path ) = rnf index `seq` rnf path
 
 instance NFData DerivPath where
@@ -628,17 +623,17 @@ hardPathParser = do
   where hardThenSoft, softThenHard, hardThenHard :: Parsec String () HardPath
         hardThenSoft = do
             i <- hardIndexParser            
-            string "/"
+            _ <- string "/"
             p <- softPathParser
             return $ i :|/ p
         softThenHard = do
             i <- softIndexParser
-            string "/"
+            _ <- string "/"
             p <- hardPathParser
             return $ i :/| p
         hardThenHard = do
             i <- hardIndexParser
-            string "/"
+            _ <- string "/"
             p <- hardPathParser
             return $ i :|| p
         oneHardIndex = do
@@ -657,7 +652,7 @@ parseHardIndex x = parse hardIndexParser "hardIndexParser" x
 hardIndexParser :: Parsec String () XKeyHardIndex
 hardIndexParser = do
     i <- bigWordParser
-    string "'"
+    _ <- string "'"
     return $ XKeyHardIndex i
 
 
@@ -689,12 +684,12 @@ parseSoft x = parse softPathParser "softPathParser" x
 softPathParser :: Parsec String () SoftPath
 softPathParser = do
   softPath <- try more <|> try oneSoftIndex <|> try ( return XKeyEmptyPath )    
-  eof <|> ( try $ string "/" >> eof ) -- optional trailing slash
+  eof <|> ( try $ do _ <- string "/" ; eof ) -- optional trailing slash
   return softPath
   where more :: Parsec String () SoftPath
         more = do 
             i <- softIndexParser
-            string "/"
+            _ <- string "/"
             p <- softPathParser
             return $ i :// p
         oneSoftIndex = do
@@ -779,9 +774,9 @@ deriveBip32Path dp xkey =
     Bip32PubK xpbk -> 
       case dp of
         Bip32PubM (Bip32Soft path) -> Right . Bip32PubK . dXPPubPath path $ xpbk
-        Bip32PubM (Bip32Hard path) -> Left $ "deriveBip32Path, can't derive hard path starting with public key for path: " ++ show dp ++ ", xkey: " ++ show xkey
-        Bip32Prvm (Bip32Soft path) -> Left $ "deriveBip32Path, can't derive private key starting with public key for path: " ++ show dp ++ ", xkey: " ++ show xkey
-        Bip32Prvm (Bip32Hard path) -> Left $ "deriveBip32Path, can't derive private key starting with public key for path: " ++ show dp ++ ", xkey: " ++ show xkey
+        Bip32PubM (Bip32Hard path) -> Left $ "deriveBip32Path, can't derive hard path starting with public key for path: " ++ toHaskoinString path ++ ", xkey: " ++ toHaskoinString xkey
+        Bip32Prvm (Bip32Soft path) -> Left $ "deriveBip32Path, can't derive private key starting with public key for path: " ++ toHaskoinString path ++ ", xkey: " ++ toHaskoinString xkey
+        Bip32Prvm (Bip32Hard path) -> Left $ "deriveBip32Path, can't derive private key starting with public key for path: " ++ toHaskoinString path ++ ", xkey: " ++ toHaskoinString xkey
     Bip32PrvK xpvk -> 
       case dp of
         Bip32PubM (Bip32Soft path) -> Right . Bip32PubK . deriveXPubKey . dXPrivPath path $ xpvk

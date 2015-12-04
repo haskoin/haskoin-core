@@ -133,9 +133,11 @@ derivePubPathVectors =
       ( xpub, "M", Nothing )
     , ( xpub, "M/8", Nothing )
     , ( xpub, "M/8/30/1", Nothing )
-    -- valid soft path
-    , ( xpub, "8/30/1", Just . foldl pubSubKey' xpub $ [8,30,1])
     , ( xpub, "M/M/M", Nothing )
+    , ( xpub, "8/30/1////asdf", Nothing)
+    -- valid soft path
+    , ( xpub, "8/30/1",  Just . foldl pubSubKey' xpub $ [8,30,1])
+    , ( xpub, "8/30/1/", Just . foldl pubSubKey' xpub $ [8,30,1])
     ]
 
 xprv :: XPrvKey

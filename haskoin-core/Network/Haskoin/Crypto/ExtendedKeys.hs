@@ -568,7 +568,8 @@ instance FromHaskoinString DerivPath where
 -- wip, needs beginning of path
 -- parsePath = parseDerivPath
 parsePath :: String -> Either ParseError DerivPath
-parsePath x = parse derivPathParser "derivPathParser" x
+parsePath x = parseConsumingAll derivPathParser "derivPathParser" x
+
 derivPathParser :: Parsec String () DerivPath
 derivPathParser = do
     dp <- try ( Bip32Prvm <$> 
@@ -579,7 +580,7 @@ derivPathParser = do
                 ( ( try $ string "M/" >> bip32PathParser) 
                   <|> ( (try $ string "M") >> return (Bip32Soft XKeyEmptyPath) ) )
               )
-    eof
+    -- eof
     return dp
 
 instance ToHaskoinString Bip32XKey where
@@ -596,7 +597,7 @@ instance IsString Bip32Path where
 instance FromHaskoinString Bip32Path where
     fromHaskoinString = eitherToMaybe . parseBip32Path
 parseBip32Path :: String -> Either ParseError Bip32Path
-parseBip32Path x = parse bip32PathParser  "bip32PathParser" x
+parseBip32Path x = parseConsumingAll bip32PathParser  "bip32PathParser" x
 bip32PathParser :: Parsec String () Bip32Path
 bip32PathParser = try ( Bip32Soft <$> softPathParser) <|> try ( Bip32Hard <$> hardPathParser)
   
@@ -615,31 +616,14 @@ instance IsString HardPath where
 instance FromHaskoinString HardPath where
     fromHaskoinString = eitherToMaybe . parseHard
 parseHard :: String -> Either ParseError HardPath
-parseHard x = parse hardPathParser "hardPathParser" x
+parseHard x = parseConsumingAll hardPathParser "hardPathParser" x
 hardPathParser :: Parsec String () HardPath
 hardPathParser = do
-      hardPath <- choice [ try hardThenSoft, try softThenHard, try hardThenHard, try oneHardIndex ] 
+      hardPath <- choice [ try $ pure (:|/) <*> hardIndexParser <*> ( do _ <- string "/"; softPathParser ), 
+                           try $ pure (:/|) <*> softIndexParser <*> ( do _ <- string "/"; hardPathParser ) , 
+                           try $ pure (:||) <*> hardIndexParser <*> ( do _ <- string "/"; hardPathParser ), 
+                           try $ pure (:|/) <*> hardIndexParser <*> pure  XKeyEmptyPath ] 
       return hardPath
-  where hardThenSoft, softThenHard, hardThenHard :: Parsec String () HardPath
-        hardThenSoft = do
-            i <- hardIndexParser            
-            _ <- string "/"
-            p <- softPathParser
-            return $ i :|/ p
-        softThenHard = do
-            i <- softIndexParser
-            _ <- string "/"
-            p <- hardPathParser
-            return $ i :/| p
-        hardThenHard = do
-            i <- hardIndexParser
-            _ <- string "/"
-            p <- hardPathParser
-            return $ i :|| p
-        oneHardIndex = do
-            i <- hardIndexParser
-            return $ i :|/ XKeyEmptyPath
-
 
 instance ToHaskoinString XKeyHardIndex where
     toHaskoinString (XKeyHardIndex i) = (show . toInteger $ i) ++ "'" 
@@ -648,12 +632,16 @@ instance IsString XKeyHardIndex where
 instance FromHaskoinString XKeyHardIndex where
     fromHaskoinString = eitherToMaybe . parseHardIndex 
 parseHardIndex :: String -> Either ParseError XKeyHardIndex
-parseHardIndex x = parse hardIndexParser "hardIndexParser" x
+parseHardIndex = parseConsumingAll hardIndexParser "hardIndexParser" 
+
+parseConsumingAll :: Parsec String () a -> SourceName -> String -> Either ParseError a
+parseConsumingAll parser name x = parse ( do i <- parser; eof; return i ) name x
+
 hardIndexParser :: Parsec String () XKeyHardIndex
 hardIndexParser = do
-    i <- bigWordParser
+    i <- pure XKeyHardIndex <*> bigWordParser
     _ <- string "'"
-    return $ XKeyHardIndex i
+    return i
 
 
 
@@ -664,11 +652,9 @@ instance IsString XKeySoftIndex where
 instance FromHaskoinString XKeySoftIndex where
     fromHaskoinString = eitherToMaybe . parseSoftIndex 
 parseSoftIndex :: String -> Either ParseError XKeySoftIndex
-parseSoftIndex x = parse softIndexParser "softIndexParser" x
+parseSoftIndex x = parseConsumingAll softIndexParser "softIndexParser" x
 softIndexParser :: Parsec String () XKeySoftIndex
-softIndexParser = do
-    i <- bigWordParser
-    return $ XKeySoftIndex i
+softIndexParser = pure XKeySoftIndex <*> bigWordParser
 
 instance ToHaskoinString SoftPath where
     toHaskoinString x = case x of 
@@ -680,23 +666,21 @@ instance IsString SoftPath where
 instance FromHaskoinString SoftPath where
     fromHaskoinString = eitherToMaybe . parseSoft 
 parseSoft :: String -> Either ParseError SoftPath
-parseSoft x = parse softPathParser "softPathParser" x
+parseSoft x = parseConsumingAll softPathParser "softPathParser" x
 softPathParser :: Parsec String () SoftPath
 softPathParser = do
-  softPath <- try more <|> try oneSoftIndex <|> try ( return XKeyEmptyPath )    
-  eof <|> ( try $ do _ <- string "/" ; eof ) -- optional trailing slash
+  softPath <- try more 
+                <|> try oneSoftIndex 
+                <|> try ( return XKeyEmptyPath )    
+  endWithOptionalTrailingSlash
   return softPath
   where more :: Parsec String () SoftPath
-        more = do 
-            i <- softIndexParser
-            _ <- string "/"
-            p <- softPathParser
-            return $ i :// p
-        oneSoftIndex = do
-            i <- softIndexParser
-            return $ i :// XKeyEmptyPath
+        more = pure (://) <*> softIndexParser <*> ( do _ <- string "/"; softPathParser)
+        oneSoftIndex = pure (://) <*> softIndexParser <*> pure XKeyEmptyPath
 
-
+-- can we do more precise eofs for more pieces of parsing? 
+endWithOptionalTrailingSlash :: Parsec String () ()
+endWithOptionalTrailingSlash = eof <|> ( try $ do _ <- string "/" ; eof )
 
 -- TODO: Test
 instance ToHaskoinString XPubKey where

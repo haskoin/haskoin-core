@@ -50,7 +50,7 @@ main = defaultMain $
     ++ Network.Haskoin.Crypto.Hash.Tests.tests
     ++ Network.Haskoin.Crypto.Hash.Units.tests
     ++ Network.Haskoin.Crypto.Keys.Tests.tests 
-    ++ -} Network.Haskoin.Crypto.ExtendedKeys.Tests.tests
+    ++ Network.Haskoin.Crypto.ExtendedKeys.Tests.tests
     ++ Network.Haskoin.Crypto.ExtendedKeys.Units.tests  
     ++ Network.Haskoin.Crypto.Mnemonic.Tests.tests 
     ++ Network.Haskoin.Crypto.Mnemonic.Units.tests

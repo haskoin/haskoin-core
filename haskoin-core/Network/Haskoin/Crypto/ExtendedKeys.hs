@@ -571,16 +571,13 @@ parsePath :: String -> Either ParseError DerivPath
 parsePath x = parseConsumingAll derivPathParser "derivPathParser" x
 
 derivPathParser :: Parsec String () DerivPath
-derivPathParser = do
-    dp <- try ( Bip32Prvm <$> 
-                 ( ( try $ ( string "m/" >> bip32PathParser )) 
-                   <|> ( (try $ string "m") >> return (Bip32Soft XKeyEmptyPath) ) )
-              ) 
-      <|> try ( Bip32PubM <$> 
-                ( ( try $ string "M/" >> bip32PathParser) 
-                  <|> ( (try $ string "M") >> return (Bip32Soft XKeyEmptyPath) ) )
-              )
-    return dp
+derivPathParser = 
+    choice [  Bip32Prvm <$> choice [ try $ string "m/" >> bip32PathParser,  
+                                     try $ string "m"  >> return empty ], 
+              Bip32PubM <$> choice [ try $ string "M/" >> bip32PathParser, 
+                                     try $ string "M"  >> return empty ]
+            ]
+  where empty = Bip32Soft XKeyEmptyPath
 
 instance ToHaskoinString Bip32XKey where
     toHaskoinString x = case x of 

@@ -765,10 +765,10 @@ derivePath path xpvk = ( appEndo . deriveXPrvKeyEndo $ path ) $ xpvk
 
 -- | Derive a key from a derivation path and return either a private or public
 -- key depending on the initial derivation constructor. If you parsed a string
--- as m/ you will get a private key and if you parsed a string as M/ you will
--- get a public key. If you used the neutral derivation constructor `Deriv`, a
--- private key will be returned.
--- wip
+-- with m/ you will get a private key and if you parsed a string starting with M/ you will
+-- get a public key, assuming the derivation is possible.  Impossible derivations will fail 
+-- with a Left error message.  Example impossible derivations: 
+-- m/1/2/3 (private key result) starting with pub key. Or M/1'/2'/3' (a hard path) starting with pub key.
 deriveBip32Path, derivePathE :: DerivPath -> Bip32XKey -> Either String Bip32XKey 
 deriveBip32Path dp xkey = 
   let dXPrivPath :: XPrvKeyEndoDerivable x => x -> XPrvKey -> XPrvKey 
@@ -779,7 +779,9 @@ deriveBip32Path dp xkey =
     Bip32PubK xpbk -> 
       case dp of
         Bip32PubM (Bip32Soft path) -> Right . Bip32PubK . dXPPubPath path $ xpbk
-        _ -> Left $ "deriveBip32Path, can't derive key for dp: " ++ show dp ++ ", xkey: " ++ show xkey
+        Bip32PubM (Bip32Hard path) -> Left $ "deriveBip32Path, can't derive hard path starting with public key for path: " ++ show dp ++ ", xkey: " ++ show xkey
+        Bip32Prvm (Bip32Soft path) -> Left $ "deriveBip32Path, can't derive private key starting with public key for path: " ++ show dp ++ ", xkey: " ++ show xkey
+        Bip32Prvm (Bip32Hard path) -> Left $ "deriveBip32Path, can't derive private key starting with public key for path: " ++ show dp ++ ", xkey: " ++ show xkey
     Bip32PrvK xpvk -> 
       case dp of
         Bip32PubM (Bip32Soft path) -> Right . Bip32PubK . deriveXPubKey . dXPrivPath path $ xpvk

@@ -669,14 +669,11 @@ parseSoft :: String -> Either ParseError SoftPath
 parseSoft x = parseConsumingAll softPathParser "softPathParser" x
 softPathParser :: Parsec String () SoftPath
 softPathParser = do
-  softPath <- choice [ try more 
-                       , try oneSoftIndex 
-                       , try ( return XKeyEmptyPath ) ]
-  try eof <|> ( try $ do _ <- string "/" ; eof )
+  softPath <- choice [ try $ pure (://) <*> softIndexParser <*> ( do _ <- string "/"; softPathParser),
+                       try $ pure (://) <*> softIndexParser <*> pure XKeyEmptyPath,
+                       try $ return XKeyEmptyPath  ]
+  choice [ eof,  try $ do _ <- string "/" ; eof ]
   return softPath
-  where more :: Parsec String () SoftPath
-        more = pure (://) <*> softIndexParser <*> ( do _ <- string "/"; softPathParser)
-        oneSoftIndex = pure (://) <*> softIndexParser <*> pure XKeyEmptyPath
 
 
 -- TODO: Test

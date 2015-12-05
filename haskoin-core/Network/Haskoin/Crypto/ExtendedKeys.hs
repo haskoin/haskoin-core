@@ -47,7 +47,7 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , toHard
 , toSoft
 , toMixed
-, (++/), (++|)
+, (++/)
 , derivePath
 , derivePubPath
 , derivePathE
@@ -238,8 +238,8 @@ pubSubKey xKey child
 -- parent private key. Given a parent key /m/ and a derivation index /i/, this
 -- function will compute m\/i'\/.
 hardSubKey :: XPrvKey  -- ^ Extended Parent private key
-            -> KeyIndex -- ^ Child derivation index
-            -> XPrvKey  -- ^ Extended child private key
+           -> KeyIndex -- ^ Child derivation index
+           -> XPrvKey  -- ^ Extended child private key
 hardSubKey xkey child
     | child >= 0 && child < 0x80000000 =
         XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) i c k
@@ -433,9 +433,9 @@ instance MixedOrSoft Mixed
 instance MixedOrSoft Soft
 
 data DerivPathI t where
-    (:|) :: HardOrMixed t => !HardPath -> !KeyIndex -> DerivPathI t
-    (:/) :: MixedOrSoft t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
-    Deriv :: DerivPathI t
+    (:|)     :: HardOrMixed t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
+    (:/)     :: MixedOrSoft t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
+    Deriv    :: DerivPathI t
     DerivPrv :: DerivPathI t
     DerivPub :: DerivPathI t
 
@@ -543,13 +543,8 @@ instance ToJSON (DerivPathI t) where
 -- | Parse derivation path string for extended key.
 -- Forms: “m/0'/2”, “M/2/3/4”.
 parsePath :: String -> Maybe DerivPath
-parsePath str = do
-    ds <- reverse <$> mapM f xs
-    let (s,h) = break fst ds
-    -- No soft derivations in the hard branch
-    guard $ null $ filter (not . fst) h
-    hPath <- pHard $ map snd h
-    pSoft hPath $ map snd s
+parsePath str =
+    go =<< reverse <$> mapM f xs
   where
     (x:xs) = splitOn "/" str
     f deriv = case reads deriv of
@@ -557,13 +552,10 @@ parsePath str = do
         [(i, "'")] -> (,) True <$> g i
         _ -> Nothing
     g i = guard (i >=0 && i < 0x80000000) >> return i
-    pSoft h (i:is) = (:/ i) <$> pSoft h is
-    pSoft h [] = return h
-    pHard :: HardOrMixed t => [KeyIndex] -> Maybe (DerivPathI t)
-    pHard (i:is) = (:| i) <$> pHard is
-    pHard [] = pEnd
-    pEnd :: Maybe (DerivPathI t)
-    pEnd = case x of
+    go ((hard, i):ds)
+        | hard      = (:| i) <$> go ds
+        | otherwise = (:/ i) <$> go ds
+    go [] = case x of
         ""  -> Just Deriv
         "m" -> Just DerivPrv
         "M" -> Just DerivPub
@@ -577,52 +569,38 @@ parseSoft = toSoft <=< parsePath
 
 toHard :: DerivPathI t -> Maybe HardPath
 toHard p = case p of
-    _ :/ _    -> Nothing
-    next :| i -> Just $ next :| i
+    next :| i -> (:| i) <$> toHard next
     Deriv     -> Just Deriv
     DerivPrv  -> Just DerivPrv
     DerivPub  -> Just DerivPub
+    _         -> Nothing
 
 toSoft :: DerivPathI t -> Maybe SoftPath
 toSoft p = case p of
-    _ :| _    -> Nothing
     next :/ i -> (:/ i) <$> toSoft next
     Deriv     -> Just Deriv
     DerivPrv  -> Just DerivPrv
     DerivPub  -> Just DerivPub
+    _         -> Nothing
 
 toMixed :: DerivPathI t -> DerivPath
 toMixed p = case p of
     next :/ i -> (toMixed next) :/ i
-    next :| i -> next :| i
+    next :| i -> (toMixed next) :| i
     Deriv     -> Deriv
     DerivPrv  -> DerivPrv
     DerivPub  -> DerivPub
 
--- | Append a SoftPath to any derivation path. It is always type-safe to
--- append a SoftPath to any derivation path. The result will be a mixed
+-- | Append two derivation paths together. The result will be a mixed
 -- derivation path.
-(++/) :: DerivPathI t -> SoftPath -> DerivPath
+(++/) :: DerivPathI t1 -> DerivPathI t2 -> DerivPath
 (++/) p1 p2 =
-    go id p2 $ toMixed p1
-  where
-    go f p = case p of
-        next :/ i -> go (f . (:/ i)) next
-        _ -> f
-
--- | Append any type of derivation to a HardPath. It is always type-safe to
--- append any type of path to a HardPath. The result will be a mixed derivation
--- path.
-(++|) :: HardPath -> DerivPathI t -> DerivPath
-(++|) p1 p2 =
     go id (toMixed p2) $ toMixed p1
   where
-    go :: (DerivPath -> DerivPath) -> DerivPath -> (DerivPath -> DerivPath)
     go f p = case p of
-        next :/ i -> go (f . (:/ i)) next
-        next :| i -> go (f . (:| i) . fromMaybe err . toHard) $ toMixed next
+        next :/ i -> go (f . (:/ i)) $ toMixed next
+        next :| i -> go (f . (:| i)) $ toMixed next
         _ -> f
-    err = error "Error while appending paths"
 
 -- | Derive a private key from a derivation path
 derivePath :: DerivPathI t -> XPrvKey -> XPrvKey
@@ -630,11 +608,10 @@ derivePath path key =
     go id path $ key
   where
     -- Build the full derivation function starting from the end
-    go :: (XPrvKey -> XPrvKey) -> DerivPathI t -> (XPrvKey -> XPrvKey)
     go f p = case p of
         next :| i -> go (f . flip hardSubKey i) next
         next :/ i -> go (f . flip prvSubKey i) next
-        _         -> f
+        _ -> f
 
 -- | Derive a public key from a soft derivation path
 derivePubPath :: SoftPath -> XPubKey -> XPubKey
@@ -644,7 +621,7 @@ derivePubPath path key =
     -- Build the full derivation function starting from the end
     go f p = case p of
         next :/ i -> go (f . flip pubSubKey i) next
-        _         -> f
+        _ -> f
 
 -- | Derive a key from a derivation path and return either a private or public
 -- key depending on the initial derivation constructor. If you parsed a string
@@ -656,15 +633,12 @@ derivePathE path key =
     go id path $ key
   where
     -- Build the full derivation function starting from the end
-    go :: (XPrvKey -> XPrvKey)
-       -> DerivPathI t
-       -> (XPrvKey -> Either XPubKey XPrvKey)
     go f p = case p of
         next :| i -> go (f . flip hardSubKey i) next
         next :/ i -> go (f . flip prvSubKey i) next
         -- Derive a public key as the last function
-        DerivPub  -> Left . deriveXPubKey . f
-        _         -> Right . f
+        DerivPub -> Left . deriveXPubKey . f
+        _ -> Right . f
 
 -- | Derive an address from a given parent path.
 derivePathAddr :: XPubKey -> SoftPath -> KeyIndex -> (Address, PubKeyC)

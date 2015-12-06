@@ -138,22 +138,26 @@ module Network.Haskoin.Crypto
 , deriveMSAddr
 , deriveMSAddrs
 
-  -- ** Custom path derivations
-, DerivPathI((:|), (:/), Deriv, DerivPrv, DerivPub)
+  -- ** Derivation paths
+, DerivPathI((:|), (:/), Deriv)
 , DerivPath
 , HardPath
 , SoftPath
+, derivePath
+, derivePubPath
+, toHard
+, toSoft
+, toGeneric
+, (++/)
 , pathToStr
+
+  -- ** Derivation path parsing
+, XKey(..)
+, ParsedPath(ParsedPrv, ParsedPub)
 , parsePath
 , parseHard
 , parseSoft
-, toHard
-, toSoft
-, toMixed
-, (++/)
-, derivePath
-, derivePubPath
-, derivePathE
+, applyPath
 
   -- * Custom path address derivations
 , derivePathAddr

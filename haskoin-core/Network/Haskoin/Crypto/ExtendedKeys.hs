@@ -33,24 +33,29 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , deriveMSAddr
 , deriveMSAddrs
 , cycleIndex
-  -- Custom derivations
+  -- Derivation paths
 , DerivPathI(..)
-, HardOrMixed
-, MixedOrSoft
+, HardOrGeneric
+, GenericOrSoft
 , DerivPath
 , HardPath
 , SoftPath
+, derivePath
+, derivePubPath
+, toHard
+, toSoft
+, toGeneric
+, (++/)
 , pathToStr
+
+  -- Derivation path parsing
+, XKey(..)
+, ParsedPath(..)
 , parsePath
 , parseHard
 , parseSoft
-, toHard
-, toSoft
-, toMixed
-, (++/)
-, derivePath
-, derivePubPath
-, derivePathE
+, applyPath
+
 , derivePathAddr
 , derivePathAddrs
 , derivePathMSAddr
@@ -414,45 +419,52 @@ cycleIndex i
     | i < 0x80000000 = cycle $ [i..0x7fffffff] ++ [0..(i-1)]
     | otherwise      = error $ "cycleIndex: invalid index " ++ (show i)
 
-{- Custom derivations -}
+{- Derivation Paths -}
 
 data Hard
-data Mixed
+data Generic
 data Soft
 
 type HardPath = DerivPathI Hard
-type DerivPath = DerivPathI Mixed
+type DerivPath = DerivPathI Generic
 type SoftPath = DerivPathI Soft
 
-class HardOrMixed a
-instance HardOrMixed Hard
-instance HardOrMixed Mixed
+class HardOrGeneric a
+instance HardOrGeneric Hard
+instance HardOrGeneric Generic
 
-class MixedOrSoft a
-instance MixedOrSoft Mixed
-instance MixedOrSoft Soft
+class GenericOrSoft a
+instance GenericOrSoft Generic
+instance GenericOrSoft Soft
 
+-- | Data type representing a derivation path. Two constructors are provided
+-- for specifying soft or hard derivations. The path /0/1'/2 for example can be
+-- expressed as Deriv :/ 0 :| 1 :/ 2. The HardOrGeneric and GenericOrSoft type
+-- classes are used to constrain the valid values for the phantom type t. If
+-- you mix hard (:|) and soft (:/) paths, the only valid type for t is Generic.
+-- Otherwise, t can be Hard if you only have hard derivation or Soft if you
+-- only have soft derivations.
+--
+-- Using this type is as easy as writing the required derivation like in these
+-- example:
+-- Deriv :/ 0 :/ 1 :/ 2 :: SoftPath
+-- Deriv :| 0 :| 1 :| 2 :: HardPath
+-- Deriv :| 0 :/ 1 :/ 2 :: DerivPath
 data DerivPathI t where
-    (:|)     :: HardOrMixed t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
-    (:/)     :: MixedOrSoft t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
-    Deriv    :: DerivPathI t
-    DerivPrv :: DerivPathI t
-    DerivPub :: DerivPathI t
+    (:|)  :: HardOrGeneric t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
+    (:/)  :: GenericOrSoft t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
+    Deriv :: DerivPathI t
 
 instance NFData (DerivPathI t) where
     rnf p = case p of
         next :| i -> rnf i `seq` rnf next
         next :/ i -> rnf i `seq` rnf next
         Deriv     -> ()
-        DerivPrv  -> ()
-        DerivPub  -> ()
 
 instance Eq (DerivPathI t) where
     (nextA :| iA) == (nextB :| iB) = iA == iB && nextA == nextB
     (nextA :/ iA) == (nextB :/ iB) = iA == iB && nextA == nextB
     Deriv         == Deriv         = True
-    DerivPrv      == DerivPrv      = True
-    DerivPub      == DerivPub      = True
     _             == _             = False
 
 -- TODO: Test
@@ -462,144 +474,34 @@ pathToStr p =
         next :| i -> concat [ pathToStr next, "/", show i, "'" ]
         next :/ i -> concat [ pathToStr next, "/", show i ]
         Deriv     -> ""
-        DerivPrv  -> "m"
-        DerivPub  -> "M"
-
--- TODO: Test
-instance Show DerivPath where
-    showsPrec d p = showParen (d > 10) $
-        showString "DerivPath " . shows (pathToStr p)
-
--- TODO: Test
-instance Show HardPath where
-    showsPrec d p = showParen (d > 10) $
-        showString "HardPath " . shows (pathToStr p)
-
--- TODO: Test
-instance Show SoftPath where
-    showsPrec d p = showParen (d > 10) $
-        showString "SoftPath " . shows (pathToStr p)
-
--- TODO: Test
-instance Read DerivPath where
-    readPrec = parens $ do
-        Read.Ident "DerivPath" <- lexP
-        Read.String str <- lexP
-        maybe pfail return $ parsePath str
-
--- TODO: Test
-instance Read HardPath where
-    readPrec = parens $ do
-        Read.Ident "HardPath" <- lexP
-        Read.String str <- lexP
-        maybe pfail return $ parseHard str
-
--- TODO: Test
-instance Read SoftPath where
-    readPrec = parens $ do
-        Read.Ident "SoftPath" <- lexP
-        Read.String str <- lexP
-        maybe pfail return $ parseSoft str
-
--- TODO: Test
-instance IsString DerivPath where
-    fromString =
-        fromMaybe e . parsePath
-      where
-        e = error "Could not parse derivation path"
-
--- TODO: Test
-instance IsString HardPath where
-    fromString =
-        fromMaybe e . parseHard
-      where
-        e = error "Could not parse hard derivation path"
-
--- TODO: Test
-instance IsString SoftPath where
-    fromString =
-        fromMaybe e . parseSoft
-      where
-        e = error "Could not parse soft derivation path"
-
-instance FromJSON DerivPath where
-    parseJSON = withText "DerivPath" $ \str -> case parsePath $ cs str of
-        Just p -> return p
-        _      -> mzero
-
-instance FromJSON HardPath where
-    parseJSON = withText "HardPath" $ \str -> case parseHard $ cs str of
-        Just p -> return p
-        _      -> mzero
-
-instance FromJSON SoftPath where
-    parseJSON = withText "SoftPath" $ \str -> case parseSoft $ cs str of
-        Just p -> return p
-        _      -> mzero
-
-instance ToJSON (DerivPathI t) where
-    toJSON = String . cs . pathToStr
-
--- | Parse derivation path string for extended key.
--- Forms: “m/0'/2”, “M/2/3/4”.
-parsePath :: String -> Maybe DerivPath
-parsePath str =
-    go =<< reverse <$> mapM f xs
-  where
-    (x:xs) = splitOn "/" str
-    f deriv = case reads deriv of
-        [(i, "" )] -> (,) False <$> g i
-        [(i, "'")] -> (,) True <$> g i
-        _ -> Nothing
-    g i = guard (i >=0 && i < 0x80000000) >> return i
-    go ((hard, i):ds)
-        | hard      = (:| i) <$> go ds
-        | otherwise = (:/ i) <$> go ds
-    go [] = case x of
-        ""  -> Just Deriv
-        "m" -> Just DerivPrv
-        "M" -> Just DerivPub
-        _   -> Nothing
-
-parseHard :: String -> Maybe HardPath
-parseHard = toHard <=< parsePath
-
-parseSoft :: String -> Maybe SoftPath
-parseSoft = toSoft <=< parsePath
 
 toHard :: DerivPathI t -> Maybe HardPath
 toHard p = case p of
     next :| i -> (:| i) <$> toHard next
     Deriv     -> Just Deriv
-    DerivPrv  -> Just DerivPrv
-    DerivPub  -> Just DerivPub
     _         -> Nothing
 
 toSoft :: DerivPathI t -> Maybe SoftPath
 toSoft p = case p of
     next :/ i -> (:/ i) <$> toSoft next
     Deriv     -> Just Deriv
-    DerivPrv  -> Just DerivPrv
-    DerivPub  -> Just DerivPub
     _         -> Nothing
 
-toMixed :: DerivPathI t -> DerivPath
-toMixed p = case p of
-    next :/ i -> (toMixed next) :/ i
-    next :| i -> (toMixed next) :| i
+toGeneric :: DerivPathI t -> DerivPath
+toGeneric p = case p of
+    next :/ i -> (toGeneric next) :/ i
+    next :| i -> (toGeneric next) :| i
     Deriv     -> Deriv
-    DerivPrv  -> DerivPrv
-    DerivPub  -> DerivPub
 
 -- | Append two derivation paths together. The result will be a mixed
 -- derivation path.
 (++/) :: DerivPathI t1 -> DerivPathI t2 -> DerivPath
 (++/) p1 p2 =
-    go id (toMixed p2) $ toMixed p1
+    go id (toGeneric p2) $ toGeneric p1
   where
     go f p = case p of
-        next :/ i -> go (f . (:/ i)) $ toMixed next
-        next :| i -> go (f . (:| i)) $ toMixed next
+        next :/ i -> go (f . (:/ i)) $ toGeneric next
+        next :| i -> go (f . (:| i)) $ toGeneric next
         _ -> f
 
 -- | Derive a private key from a derivation path
@@ -623,22 +525,147 @@ derivePubPath path key =
         next :/ i -> go (f . flip pubSubKey i) next
         _ -> f
 
--- | Derive a key from a derivation path and return either a private or public
--- key depending on the initial derivation constructor. If you parsed a string
--- as m/ you will get a private key and if you parsed a string as M/ you will
--- get a public key. If you used the neutral derivation constructor `Deriv`, a
--- private key will be returned.
-derivePathE :: DerivPathI t -> XPrvKey -> Either XPubKey XPrvKey
-derivePathE path key =
-    go id path $ key
+-- TODO: Test
+instance Show DerivPath where
+    showsPrec d p = showParen (d > 10) $
+        showString "DerivPath " . shows (pathToStr p)
+
+-- TODO: Test
+instance Show HardPath where
+    showsPrec d p = showParen (d > 10) $
+        showString "HardPath " . shows (pathToStr p)
+
+-- TODO: Test
+instance Show SoftPath where
+    showsPrec d p = showParen (d > 10) $
+        showString "SoftPath " . shows (pathToStr p)
+
+-- TODO: Test
+instance Read DerivPath where
+    readPrec = parens $ do
+        Read.Ident "DerivPath" <- lexP
+        Read.String str <- lexP
+        maybe pfail (return . getParsedPath) $ parsePath str
+
+-- TODO: Test
+instance Read HardPath where
+    readPrec = parens $ do
+        Read.Ident "HardPath" <- lexP
+        Read.String str <- lexP
+        maybe pfail return $ parseHard str
+
+-- TODO: Test
+instance Read SoftPath where
+    readPrec = parens $ do
+        Read.Ident "SoftPath" <- lexP
+        Read.String str <- lexP
+        maybe pfail return $ parseSoft str
+
+-- TODO: Test
+instance IsString DerivPath where
+    fromString =
+        getParsedPath . fromMaybe e . parsePath
+      where
+        e = error "Could not parse derivation path"
+
+-- TODO: Test
+instance IsString HardPath where
+    fromString =
+        fromMaybe e . parseHard
+      where
+        e = error "Could not parse hard derivation path"
+
+-- TODO: Test
+instance IsString SoftPath where
+    fromString =
+        fromMaybe e . parseSoft
+      where
+        e = error "Could not parse soft derivation path"
+
+instance FromJSON DerivPath where
+    parseJSON = withText "DerivPath" $ \str -> case parsePath $ cs str of
+        Just p -> return $ getParsedPath p
+        _      -> mzero
+
+instance FromJSON HardPath where
+    parseJSON = withText "HardPath" $ \str -> case parseHard $ cs str of
+        Just p -> return p
+        _      -> mzero
+
+instance FromJSON SoftPath where
+    parseJSON = withText "SoftPath" $ \str -> case parseSoft $ cs str of
+        Just p -> return p
+        _      -> mzero
+
+instance ToJSON (DerivPathI t) where
+    toJSON = String . cs . pathToStr
+
+{- Parsing derivation paths of the form m/1/2'/3 or M/1/2'/3 -}
+
+data ParsedPath = ParsedPrv   { getParsedPath :: !DerivPath }
+                | ParsedPub   { getParsedPath :: !DerivPath }
+                | ParsedEmpty { getParsedPath :: !DerivPath }
+
+-- | Parse derivation path string for extended key.
+-- Forms: “m/0'/2”, “M/2/3/4”.
+parsePath :: String -> Maybe ParsedPath
+parsePath str = do
+    res <- go =<< reverse <$> mapM f xs
+    case x of
+        "m" -> Just $ ParsedPrv res
+        "M" -> Just $ ParsedPub res
+        ""  -> Just $ ParsedEmpty res
+        _   -> Nothing
   where
-    -- Build the full derivation function starting from the end
-    go f p = case p of
-        next :| i -> go (f . flip hardSubKey i) next
-        next :/ i -> go (f . flip prvSubKey i) next
-        -- Derive a public key as the last function
-        DerivPub -> Left . deriveXPubKey . f
-        _ -> Right . f
+    (x:xs) = splitOn "/" str
+    f deriv = case reads deriv of
+        [(i, "" )] -> (,) False <$> g i
+        [(i, "'")] -> (,) True <$> g i
+        _ -> Nothing
+    g i = guard (i >=0 && i < 0x80000000) >> return i
+    go [] = Just Deriv
+    go ((hard, i):ds)
+        | hard      = (:| i) <$> go ds
+        | otherwise = (:/ i) <$> go ds
+
+-- Helper function to parse a hard path
+parseHard :: String -> Maybe HardPath
+parseHard = toHard . getParsedPath <=< parsePath
+
+-- Helper function to parse a soft path
+parseSoft :: String -> Maybe SoftPath
+parseSoft = toSoft . getParsedPath <=< parsePath
+
+data XKey = XPrv { getXPrvKey :: !XPrvKey }
+          | XPub { getXPubKey :: !XPubKey }
+
+-- | Apply a parsed path to a private key to derive the new key defined in the
+-- path. If the path starts with m/, a private key will be returned and if the
+-- path starts with M/, a public key will be returned.
+applyPath :: ParsedPath -> XKey -> Either String XKey
+applyPath path key = case (path, key) of
+    (ParsedPrv _, XPrv k) -> return $ XPrv $ derivPrvF k
+    (ParsedPrv _, XPub _) -> Left "applyPath: Invalid public key"
+    (ParsedPub _, XPrv k) -> return $ XPub $ deriveXPubKey $ derivPrvF k
+    (ParsedPub _, XPub k) -> derivPubFE >>= \f -> return $ XPub $ f k
+    -- For empty parsed paths, we take a hint from the provided key
+    (ParsedEmpty _, XPrv k) -> return $ XPrv $ derivPrvF k
+    (ParsedEmpty _, XPub k) -> derivPubFE >>= \f -> return $ XPub $ f k
+  where
+    derivPrvF  = goPrv id $ getParsedPath path
+    derivPubFE = goPubE id $ getParsedPath path
+    -- Build the full private derivation function starting from the end
+    goPrv f p = case p of
+        next :| i -> goPrv (f . flip hardSubKey i) next
+        next :/ i -> goPrv (f . flip prvSubKey i) next
+        Deriv     -> f
+    -- Build the full public derivation function starting from the end
+    goPubE f p = case p of
+        next :/ i -> goPubE (f . flip pubSubKey i) next
+        Deriv     -> Right f
+        _         -> Left "applyPath: Invalid hard derivation"
+
+{- Helpers for derivation paths and addresses -}
 
 -- | Derive an address from a given parent path.
 derivePathAddr :: XPubKey -> SoftPath -> KeyIndex -> (Address, PubKeyC)

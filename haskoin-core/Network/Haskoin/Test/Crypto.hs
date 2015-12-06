@@ -48,6 +48,7 @@ import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Base58
 import Network.Haskoin.Crypto.ExtendedKeys
+import Data.List (foldl')
 
 newtype ArbitraryHash160 = ArbitraryHash160 Hash160
     deriving (Eq, Show, Read)
@@ -212,24 +213,27 @@ instance Arbitrary ArbitraryXPubKey where
 genIndex :: Gen Word32
 genIndex = (`clearBit` 31) <$> arbitrary
 
+genIndexes :: Gen [Word32]
+genIndexes = listOf genIndex
+
 data ArbitraryHardPath = ArbitraryHardPath HardPath
     deriving (Show, Eq)
 
 instance Arbitrary ArbitraryHardPath where
-    arbitrary =
-        ArbitraryHardPath <$> (go =<< listOf genIndex)
-      where
-        go []     = elements [ Deriv, DerivPrv, DerivPub ]
-        go (i:is) = (:| i) <$> go is
+    arbitrary = ArbitraryHardPath <$> genHardPath
+
+genHardPath :: Gen HardPath
+genHardPath = ( pure foldl' ) <*> ( pure (:|) ) <*> genStartPath <*> genIndexes
+
 
 data ArbitrarySoftPath = ArbitrarySoftPath SoftPath
     deriving (Show, Eq)
 
 instance Arbitrary ArbitrarySoftPath where
     arbitrary =
-        ArbitrarySoftPath <$> (go =<< listOf genIndex)
+        ArbitrarySoftPath <$> (go =<< genIndexes)
       where
-        go []     = elements [ Deriv, DerivPrv, DerivPub ]
+        go []     = genStartPath
         go (i:is) = (:/ i) <$> go is
 
 data ArbitraryDerivPath = ArbitraryDerivPath DerivPath
@@ -237,13 +241,15 @@ data ArbitraryDerivPath = ArbitraryDerivPath DerivPath
 
 instance Arbitrary ArbitraryDerivPath where
     arbitrary = do
-        xs  <- listOf genIndex
-        ys  <- listOf genIndex
+        xs  <- genIndexes
+        ys  <- genIndexes
         return . ArbitraryDerivPath . goSoft ys =<< goHard xs
       where
         goSoft [] h     = h
         goSoft (i:is) h = (goSoft is h) :/ i
         goHard :: HardOrMixed t => [Word32] -> Gen (DerivPathI t)
         goHard (i:is) = (:| i) <$> goHard is
-        goHard []     = elements [ Deriv, DerivPrv, DerivPub ]
+        goHard []     = genStartPath
 
+genStartPath :: Gen (DerivPathI t)
+genStartPath = elements [ Deriv, DerivPrv, DerivPub ]

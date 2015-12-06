@@ -1,8 +1,8 @@
 flags: {}
 packages:
-- 'haskoin-core'
-- 'haskoin-node'
-- 'haskoin-wallet'
+- '.'
+- '../haskoin-core'
+- '../haskoin-node'
 - location:
     git: https://github.com/haskoin/secp256k1.git
     commit: 5ee603061b3c1eaf2943e8d2c08e6effe85f38e7

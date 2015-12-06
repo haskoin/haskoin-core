@@ -65,8 +65,7 @@ import Data.Aeson.Types
     (Options(..), SumEncoding(..), defaultOptions, defaultTaggedObject)
 
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as BL
-    (toStrict, fromStrict, toStrict)
+import qualified Data.ByteString.Lazy as BL (toStrict, fromStrict)
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString as BS
     (pack, null, empty, foldr', reverse, unfoldr)

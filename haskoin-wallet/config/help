@@ -1,0 +1,47 @@
+Server commands:
+  start [--detach]                        Start the haskoin daemon
+  stop                                    Stop the haskoin daemon
+  status [--verbose]                      Display node runtime information
+
+KeyRing commands:
+  newkeyring  [mnemonic] [-k name]        Create a new keyring
+  keyring  [-k name]                      Display keyrings by name
+  keyrings                                List all keyrings
+
+Account commands:
+  newacc    name                          Create a new account
+  newms     name M N [pubkey...]          Create a new multisig account
+  newread   name pubkey                   Create a new read-only account
+  newreadms name M N [pubkey...]          Create a new read-only ms account
+  addkeys   acc  {pubkey...}              Add pubkeys to a multisig account
+  setgap    acc gap                       Set the address gap for an account
+  accounts                                List all accounts in a keyring
+  account   acc                           Display an account by name
+
+Address commands:
+  list   acc [page] [-c pagesize] [-r]    Display addresses by page
+  unused acc                              Display unused addresses
+  label  acc index label                  Set the label of an address
+  addrtxs acc index [page] [-c pagesize]  Display txs related to an address
+  genaddrs acc index [--internal]         Generate addresses up to this index
+
+Transaction commands:
+  txs       acc [page] [-c pagesize] [-r] Display transactions by page
+  send      acc addr amount [-S]          Send coins to an address
+  sendmany  acc {addr:amount...} [-S]     Send coins to many addresses
+  import    acc tx                        Import a transaction (does not sign)
+  sign      acc txid                      Sign one of your offline transactions
+  balance   acc [--minconf] [--offline]   Display account balance
+  gettx     acc txid                      Get a transaction by txid
+
+Offline tx signing commands:
+  getoffline  acc txhash                  Get data to sign a tx offline
+  signoffline acc tx coindata             Sign a tx with offline signing data
+
+Utility commands:
+  decodetx tx                             Decode HEX transaction
+  rescan   [timestamp]                    Rescan the wallet
+
+Other commands:
+  version                                 Display version information
+  help                                    Display this help information

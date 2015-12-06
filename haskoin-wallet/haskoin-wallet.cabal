@@ -1,0 +1,155 @@
+name:                  haskoin-wallet
+version:               0.3.0
+synopsis:
+    Implementation of a Bitcoin SPV Wallet with BIP32 and multisig support.
+description:
+    This package provides a SPV (simple payment verification) wallet
+    implementation. It features BIP32 key management, deterministic signatures
+    (RFC-6979) and first order support for multi-signature transactions. You
+    can communicate with the wallet process through a ZeroMQ API or through a
+    command-line tool called "hw" which is also provided in this package.
+homepage:              http://github.com/haskoin/haskoin
+bug-reports:           http://github.com/haskoin/haskoin/issues
+tested-with:           GHC==7.10.3, GHC==7.10.2, GHC==7.10.1
+license:               PublicDomain
+license-file:          UNLICENSE
+author:                Philippe Laprade
+maintainer:            plaprade+hackage@gmail.com
+category:              Bitcoin, Finance, Network
+build-type:            Simple
+cabal-version:         >= 1.9.2
+extra-source-files:    database/sqlite/Network/Haskoin/Wallet/Database.hs,
+                       database/mysql/Network/Haskoin/Wallet/Database.hs,
+                       stack.yaml,
+                       config/help, config/config.yml, config/models
+
+source-repository head
+    type:     git
+    location: git://github.com/haskoin/haskoin.git
+
+Flag mysql
+    Description: Use MySQL instead of Sqlite
+    Default:     False
+
+Flag library-only
+    Description:   Do not build the executables
+    Default:       False
+
+library
+    exposed-modules: Network.Haskoin.Wallet
+                     Network.Haskoin.Wallet.Model
+                     Network.Haskoin.Wallet.Client
+                     Network.Haskoin.Wallet.Server
+                     Network.Haskoin.Wallet.Settings
+                     Network.Haskoin.Wallet.Internals
+
+    other-modules: Network.Haskoin.Wallet.Types
+                   Network.Haskoin.Wallet.KeyRing
+                   Network.Haskoin.Wallet.Transaction
+                   Network.Haskoin.Wallet.Server.Handler
+                   Network.Haskoin.Wallet.Client.Commands
+                   Network.Haskoin.Wallet.Database
+
+    extensions: TemplateHaskell
+                QuasiQuotes
+                OverloadedStrings
+                MultiParamTypeClasses
+                TypeFamilies
+                GADTs
+                FlexibleContexts
+                FlexibleInstances
+                EmptyDataDecls
+                DeriveDataTypeable
+                RecordWildCards
+                GeneralizedNewtypeDeriving
+
+    build-depends: aeson                         >= 0.7       && < 0.9
+                 , aeson-pretty                  >= 0.7       && < 0.8
+                 , base                          >= 4.8       && < 5
+                 , bytestring                    >= 0.10      && < 0.11
+                 , containers                    >= 0.5       && < 0.6
+                 , conduit                       >= 1.2       && < 1.3
+                 , deepseq                       >= 1.4       && < 1.5
+                 , data-default                  >= 0.5       && < 0.6
+                 , directory                     >= 1.2       && < 1.3
+                 , daemons                       >= 0.2       && < 0.3
+                 , exceptions                    >= 0.6       && < 0.9
+                 , esqueleto                     >= 2.4       && < 2.5
+                 , file-embed                    >= 0.0       && < 0.1
+                 , filepath                      >= 1.4       && < 1.5
+                 , haskoin-core                  >= 0.3       && < 0.5
+                 , haskoin-node                  >= 0.3       && < 0.5
+                 , leveldb-haskell               >= 0.6       && < 0.7
+                 , lifted-async                  >= 0.2       && < 0.8
+                 , lifted-base                   >= 0.2       && < 0.3
+                 , monad-logger                  >= 0.3.13    && < 0.4
+                 , monad-control                 >= 1.0       && < 1.1
+                 , mtl                           >= 2.1       && < 2.3
+                 , persistent                    >= 2.2       && < 2.3
+                 , persistent-template           >= 2.1       && < 2.2
+                 , resourcet                     >= 1.1       && < 1.2
+                 , SafeSemaphore                 >= 0.10      && < 0.11
+                 , split                         >= 0.2       && < 0.3
+                 , stm                           >= 2.4       && < 2.5
+                 , stm-chans                     >= 3.0       && < 3.1
+                 , stm-conduit                   >= 2.6       && < 2.7
+                 , string-conversions            >= 0.4       && < 0.5
+                 , text                          >= 0.11      && < 1.3
+                 , time                          >= 1.5       && < 1.6
+                 , transformers-base             >= 0.4       && < 0.5
+                 , unix                          >= 2.6       && < 2.8
+                 , unordered-containers          >= 0.2       && < 0.3
+                 , yaml                          >= 0.8       && < 0.9
+                 , zeromq4-haskell               >= 0.6       && < 0.7
+
+    ghc-options: -Wall
+
+  if flag(mysql)
+    build-depends: persistent-mysql >= 2.2 && < 2.3
+    hs-source-dirs: . database/mysql
+  else
+    build-depends: persistent-sqlite >= 2.2 && < 2.3
+    hs-source-dirs: . database/sqlite
+
+executable hw
+    if flag(library-only)
+        Buildable: False
+    main-is: Main.hs
+    build-depends: base, haskoin-wallet
+    hs-source-dirs: app
+    ghc-options: -Wall
+
+test-suite test-haskoin-wallet
+    type: exitcode-stdio-1.0
+    main-is: Main.hs
+
+    other-modules: Network.Haskoin.Wallet.Arbitrary
+                 , Network.Haskoin.Wallet.Tests
+                 , Network.Haskoin.Wallet.Units 
+
+    extensions: RecordWildCards
+                OverloadedStrings
+
+    build-depends: aeson                         >= 0.7       && < 0.9
+                 , base                          >= 4.8       && < 5
+                 , bytestring                    >= 0.10      && < 0.11
+                 , containers                    >= 0.5       && < 0.6
+                 , directory                     >= 1.2       && < 1.3
+                 , haskoin-core                  >= 0.3       && < 0.5
+                 , haskoin-node                  >= 0.3       && < 0.5
+                 , haskoin-wallet
+                 , monad-logger                  >= 0.3       && < 0.4
+                 , mtl                           >= 2.1       && < 2.3
+                 , persistent                    >= 2.2       && < 2.3
+                 , persistent-sqlite             >= 2.2       && < 2.3
+                 , resourcet                     >= 1.1       && < 1.2
+                 , text                          >= 0.11      && < 1.3
+                 , HUnit                         >= 1.2       && < 1.3
+                 , QuickCheck                    >= 2.8       && < 2.9
+                 , test-framework                >= 0.8       && < 0.9
+                 , test-framework-quickcheck2    >= 0.3       && < 0.4
+                 , test-framework-hunit          >= 0.3       && < 0.4
+
+    hs-source-dirs: tests
+    ghc-options: -Wall
+

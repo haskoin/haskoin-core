@@ -28,6 +28,7 @@ module Network.Haskoin.Test
 , ArbitraryHardPath(..)
 , ArbitrarySoftPath(..)
 , ArbitraryDerivPath(..)
+, ArbitraryParsedPath(..)
 
   -- * Node Arbitrary instances
 , ArbitraryVarInt(..)

@@ -24,6 +24,7 @@ tests =
         , testProperty "XPrvKey" $ \(ArbitraryXPrvKey x) -> metaID x
         , testProperty "XPubKey" $ \(ArbitraryXPubKey _ x) -> metaID x
         , testProperty "DerivPath" $ \(ArbitraryDerivPath x) -> metaID x
+        , testProperty "ParsedPath" $ \(ArbitraryParsedPath x) -> metaID x
         ]
     ]
 

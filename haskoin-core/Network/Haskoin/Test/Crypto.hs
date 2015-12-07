@@ -1,4 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 {-|
   Arbitrary types for Network.Haskoin.Crypto
 -}

@@ -40,6 +40,7 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , DerivPath
 , HardPath
 , SoftPath
+, Bip32PathIndex (..)
 , derivePath
 , derivePubPath
 , toHard
@@ -60,6 +61,7 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , derivePathAddrs
 , derivePathMSAddr
 , derivePathMSAddrs
+, concatBip32Segments
 ) where
 
 import Control.DeepSeq (NFData, rnf)
@@ -91,7 +93,7 @@ import Network.Haskoin.Script.Parser
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.Base58
-import Control.Monad (foldM)
+import Data.List (foldl')
 
 {- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
 
@@ -618,24 +620,39 @@ instance ToJSON ParsedPath where
 data ParsedPath = ParsedPrv   { getParsedPath :: !DerivPath }
                 | ParsedPub   { getParsedPath :: !DerivPath }
                 | ParsedEmpty { getParsedPath :: !DerivPath }
-
+  deriving (Read, Show, Eq)
 -- | Parse derivation path string for extended key.
 -- Forms: “m/0'/2”, “M/2/3/4”.
 parsePath :: String -> Maybe ParsedPath
 parsePath str = do
-    res <- foldM h Deriv xs
+    res <- concatBip32Segments <$> mapM parseBip32PathIndex xs
     case x of
         "m" -> Just $ ParsedPrv res
         "M" -> Just $ ParsedPub res
         ""  -> Just $ ParsedEmpty res
         _   -> Nothing
   where
-    (x:xs) = splitOn "/" str
-    h :: DerivPath -> String -> Maybe DerivPath
-    h d segment  = case reads segment of
-          [(i, "" )] -> guard (is31Bit i) >> ( return $ d :/ i )
-          [(i, "'")] -> guard (is31Bit i) >> ( return $ d :| i )
-          _ -> Nothing
+    (x : xs) = splitOn "/" str
+                
+
+concatBip32Segments :: [Bip32PathIndex] -> DerivPath
+concatBip32Segments xs = foldl' appendBip32Segment Deriv xs
+
+
+appendBip32Segment :: DerivPath -> Bip32PathIndex  -> DerivPath
+appendBip32Segment d (Bip32SoftIndex i) = d :/ i 
+appendBip32Segment d (Bip32HardIndex i) = d :| i 
+
+
+parseBip32PathIndex :: String -> Maybe Bip32PathIndex
+parseBip32PathIndex segment = case reads segment of
+    [(i, "" )] -> guard (is31Bit i) >> ( return $ Bip32SoftIndex i )
+    [(i, "'")] -> guard (is31Bit i) >> ( return $ Bip32HardIndex i )
+    _ -> Nothing
+
+
+data Bip32PathIndex = Bip32HardIndex KeyIndex | Bip32SoftIndex KeyIndex
+  deriving (Read,Show,Eq)
 
 is31Bit :: (Integral a) => a -> Bool
 is31Bit i = (i >=0 && i < 0x80000000) 

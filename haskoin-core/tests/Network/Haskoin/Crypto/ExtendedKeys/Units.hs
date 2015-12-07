@@ -59,7 +59,7 @@ testToJsonPath = do
     path <- jsonPathVectors
     return $ testCase ("Path " ++ path) $
         assertEqual path (B8.pack $ "[\"" ++ path ++ "\"]")
-            (encode [fromString path :: DerivPath])
+            (encode [fromString path :: ParsedPath])
 
 jsonPathVectors :: [String]
 jsonPathVectors =

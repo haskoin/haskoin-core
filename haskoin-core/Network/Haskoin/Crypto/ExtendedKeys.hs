@@ -562,6 +562,13 @@ instance Read SoftPath where
         maybe pfail return $ parseSoft str
 
 -- TODO: Test
+instance IsString ParsedPath where
+    fromString =
+        fromMaybe e . parsePath
+      where
+        e = error "Could not parse derivation path"
+
+-- TODO: Test
 instance IsString DerivPath where
     fromString =
         getParsedPath . fromMaybe e . parsePath
@@ -599,6 +606,11 @@ instance FromJSON SoftPath where
 
 instance ToJSON (DerivPathI t) where
     toJSON = String . cs . pathToStr
+
+instance ToJSON ParsedPath where
+    toJSON (ParsedPrv p)   = String . cs . ("m" ++) . pathToStr $ p
+    toJSON (ParsedPub p)   = String . cs . ("M" ++) . pathToStr $ p
+    toJSON (ParsedEmpty p) = String . cs . ("" ++) . pathToStr $ p
 
 {- Parsing derivation paths of the form m/1/2'/3 or M/1/2'/3 -}
 

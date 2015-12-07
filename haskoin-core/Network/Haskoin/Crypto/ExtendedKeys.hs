@@ -638,6 +638,7 @@ parseSoft = toSoft . getParsedPath <=< parsePath
 
 data XKey = XPrv { getXPrvKey :: !XPrvKey }
           | XPub { getXPubKey :: !XPubKey }
+    deriving (Eq, Show)
 
 -- | Apply a parsed path to a private key to derive the new key defined in the
 -- path. If the path starts with m/, a private key will be returned and if the

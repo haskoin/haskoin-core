@@ -38,7 +38,7 @@ tests =
             runXKeyVec (xKeyVec2 !! 5)
         ]
     , testGroup "BIP32 subkey derivation using string path"
-        [ testGroup "Either Derivations" testDerivePathE
+        [ testGroup "Either Derivations" testApplyPath
         , testGroup "Public Derivations" testDerivePubPath
         , testGroup "Private Derivations" testDerivePrvPath
         , testGroup "Path Parsing" testParsePath
@@ -81,7 +81,7 @@ testParsePath = do
     return $ testCase ("Path " ++ path) $
         assertBool path (t $ parsePath path)
 
-parsePathVectors :: [(String, Maybe DerivPath -> Bool)]
+parsePathVectors :: [(String, Maybe ParsedPath -> Bool)]
 parsePathVectors =
     [ ("m", isJust)
     , ("m/0'", isJust)
@@ -103,12 +103,12 @@ parsePathVectors =
     , ("NaN", isNothing)
     ]
 
-testDerivePathE :: [Test]
-testDerivePathE = do
+testApplyPath :: [Test]
+testApplyPath = do
     (key, path, final) <- derivePathVectors
     return $ testCase ("Path " ++ path) $
         assertEqual path final $
-            derivePathE (fromString path :: DerivPath) key
+            applyPath (fromJust $ parsePath path) key
 
 testDerivePubPath :: [Test]
 testDerivePubPath = do
@@ -160,23 +160,24 @@ derivePrvPathVectors =
         "xprv9s21ZrQH143K46iDVRSyFfGfMgQjzC4BV3ZUfNbG7PHQrJjE53ofAn5gYkp6KQ\
         \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
 
-derivePathVectors :: [(XPrvKey, String, Either XPubKey XPrvKey)]
+derivePathVectors :: [(XKey, String, Either String XKey)]
 derivePathVectors =
-    [ ( xprv, "m", Right xprv )
-    , ( xprv, "M", Left xpub )
-    , ( xprv, "m/8'", Right $ hardSubKey xprv 8 )
-    , ( xprv, "M/8'", Left $ deriveXPubKey $ hardSubKey xprv 8 )
-    , ( xprv, "m/8'/30/1"
-      , Right $ foldl prvSubKey (hardSubKey xprv 8) [30,1]
+    [ ( XPrv xprv, "m", Right $ XPrv xprv )
+    , ( XPrv xprv, "M", Right $ XPub xpub )
+    , ( XPrv xprv, "m/8'", Right $ XPrv $ hardSubKey xprv 8 )
+    , ( XPrv xprv, "M/8'", Right $ XPub $ deriveXPubKey $ hardSubKey xprv 8 )
+    , ( XPrv xprv, "m/8'/30/1"
+      , Right $ XPrv $ foldl prvSubKey (hardSubKey xprv 8) [30,1]
       )
-    , ( xprv, "M/8'/30/1"
-      , Left $ deriveXPubKey $ foldl prvSubKey (hardSubKey xprv 8) [30,1]
+    , ( XPrv xprv, "M/8'/30/1"
+      , Right $ XPub $
+          deriveXPubKey $ foldl prvSubKey (hardSubKey xprv 8) [30,1]
       )
-    , ( xprv, "m/3/20"
-      , Right $ foldl prvSubKey xprv [3,20]
+    , ( XPrv xprv, "m/3/20"
+      , Right $ XPrv $ foldl prvSubKey xprv [3,20]
       )
-    , ( xprv, "M/3/20"
-      , Left $ deriveXPubKey $ foldl prvSubKey xprv [3,20]
+    , ( XPrv xprv, "M/3/20"
+      , Right $ XPub $ deriveXPubKey $ foldl prvSubKey xprv [3,20]
       )
     ]
   where

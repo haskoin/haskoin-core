@@ -29,7 +29,6 @@ import Test.QuickCheck
     ( Arbitrary
     , Gen
     , arbitrary
-    , elements
     , oneof
     , vectorOf
     , listOf
@@ -219,7 +218,7 @@ instance Arbitrary ArbitraryHardPath where
     arbitrary =
         ArbitraryHardPath <$> (go =<< listOf genIndex)
       where
-        go []     = elements [ Deriv, DerivPrv, DerivPub ]
+        go []     = return Deriv
         go (i:is) = (:| i) <$> go is
 
 data ArbitrarySoftPath = ArbitrarySoftPath SoftPath
@@ -229,7 +228,7 @@ instance Arbitrary ArbitrarySoftPath where
     arbitrary =
         ArbitrarySoftPath <$> (go =<< listOf genIndex)
       where
-        go []     = elements [ Deriv, DerivPrv, DerivPub ]
+        go []     = return Deriv
         go (i:is) = (:/ i) <$> go is
 
 data ArbitraryDerivPath = ArbitraryDerivPath DerivPath
@@ -243,7 +242,7 @@ instance Arbitrary ArbitraryDerivPath where
       where
         goSoft [] h     = h
         goSoft (i:is) h = (goSoft is h) :/ i
-        goHard :: HardOrMixed t => [Word32] -> Gen (DerivPathI t)
+        goHard :: HardOrGeneric t => [Word32] -> Gen (DerivPathI t)
         goHard (i:is) = (:| i) <$> goHard is
-        goHard []     = elements [ Deriv, DerivPrv, DerivPub ]
+        goHard []     = return Deriv
 

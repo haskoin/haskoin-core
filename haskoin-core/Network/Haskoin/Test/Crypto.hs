@@ -244,17 +244,9 @@ instance Arbitrary ArbitrarySoftPath where
 data ArbitraryDerivPath = ArbitraryDerivPath DerivPath
     deriving (Show, Eq)
 
-instance Arbitrary ArbitraryDerivPath where
-    arbitrary = do
-        xs  <- listOf genIndex
-        ys  <- listOf genIndex
-        return . ArbitraryDerivPath . goSoft ys =<< goHard xs
-      where
-        goSoft [] h     = h
-        goSoft (i:is) h = (goSoft is h) :/ i
-        goHard :: HardOrGeneric t => [Word32] -> Gen (DerivPathI t)
-        goHard (i:is) = (:| i) <$> goHard is
-        goHard []     = return Deriv
+instance Arbitrary ArbitraryDerivPath where    
+    arbitrary = ArbitraryDerivPath . concatBip32Segments . map (\(ArbitraryBip32PathIndex i) -> i ) <$> arbitrary  
+        
 
 data ArbitraryParsedPath = ArbitraryParsedPath ParsedPath 
   deriving (Show, Eq)

@@ -592,6 +592,11 @@ instance IsString SoftPath where
       where
         e = error "Could not parse soft derivation path"
 
+instance FromJSON ParsedPath where
+    parseJSON = withText "ParsedPathPath" $ \str -> case parsePath $ cs str of
+        Just p -> return p
+        _      -> mzero
+
 instance FromJSON DerivPath where
     parseJSON = withText "DerivPath" $ \str -> case parsePath $ cs str of
         Just p -> return $ getParsedPath p

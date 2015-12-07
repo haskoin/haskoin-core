@@ -91,6 +91,7 @@ import Network.Haskoin.Script.Parser
 import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.Hash
 import Network.Haskoin.Crypto.Base58
+import Control.Monad (foldM)
 
 {- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
 
@@ -622,7 +623,7 @@ data ParsedPath = ParsedPrv   { getParsedPath :: !DerivPath }
 -- Forms: “m/0'/2”, “M/2/3/4”.
 parsePath :: String -> Maybe ParsedPath
 parsePath str = do
-    res <- go =<< reverse <$> mapM f xs
+    res <- foldM h Deriv xs
     case x of
         "m" -> Just $ ParsedPrv res
         "M" -> Just $ ParsedPub res
@@ -630,15 +631,15 @@ parsePath str = do
         _   -> Nothing
   where
     (x:xs) = splitOn "/" str
-    f deriv = case reads deriv of
-        [(i, "" )] -> (,) False <$> g i
-        [(i, "'")] -> (,) True <$> g i
-        _ -> Nothing
-    g i = guard (i >=0 && i < 0x80000000) >> return i
-    go [] = Just Deriv
-    go ((hard, i):ds)
-        | hard      = (:| i) <$> go ds
-        | otherwise = (:/ i) <$> go ds
+    h :: DerivPath -> String -> Maybe DerivPath
+    h d segment  = case reads segment of
+          [(i, "" )] -> guard (is31Bit i) >> ( return $ d :/ i )
+          [(i, "'")] -> guard (is31Bit i) >> ( return $ d :| i )
+          _ -> Nothing
+
+is31Bit :: (Integral a) => a -> Bool
+is31Bit i = (i >=0 && i < 0x80000000) 
+
 
 -- Helper function to parse a hard path
 parseHard :: String -> Maybe HardPath

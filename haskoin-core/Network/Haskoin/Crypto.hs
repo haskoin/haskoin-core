@@ -153,7 +153,7 @@ module Network.Haskoin.Crypto
 
   -- ** Derivation path parsing
 , XKey(..)
-, ParsedPath(ParsedPrv, ParsedPub)
+, ParsedPath(..)
 , parsePath
 , parseHard
 , parseSoft

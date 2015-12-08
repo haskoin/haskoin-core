@@ -462,8 +462,8 @@ createAddrs (Entity ai acc) addrType n
                 , keyRingAddrLabel   = ""
                 -- Full derivation from the master key
                 , keyRingAddrFullDerivation =
-                    let f d = toMixed d :/ branchType :/ i
-                    in  f <$> keyRingAccountDerivation acc
+                    let f d = d :/ branchType :/ i
+                    in  f <$> (fmap toGeneric . keyRingAccountDerivation $ acc)
                 -- Partial derivation under the account derivation
                 , keyRingAddrDerivation = Deriv :/ branchType :/ i
                 , keyRingAddrRedeem     = rdmM

@@ -1054,7 +1054,7 @@ signOfflineTx keyRing acc tx coinSignData
                 else Nothing
     toPrvKey master acc' (CoinSignData _ _ deriv) =
         case keyRingAccountDerivation acc' of
-            Just root -> derivePath (root ++| deriv) master
+            Just root -> derivePath (root ++/ deriv) master
             _ -> throw $ WalletException $ unwords
                 [ "No derivation available in account"
                 , unpack $ keyRingAccountName acc'

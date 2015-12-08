@@ -228,7 +228,7 @@ data ArbitraryHardPath = ArbitraryHardPath HardPath
 
 instance Arbitrary ArbitraryHardPath where
     arbitrary =
-        ArbitraryHardPath <$> ( foldl' (:|) Deriv <$> listOf genIndex)
+        ArbitraryHardPath . foldl' (:|) Deriv <$> listOf genIndex
 
 
 data ArbitrarySoftPath = ArbitrarySoftPath SoftPath
@@ -236,10 +236,7 @@ data ArbitrarySoftPath = ArbitrarySoftPath SoftPath
 
 instance Arbitrary ArbitrarySoftPath where
     arbitrary =
-        ArbitrarySoftPath <$> (go =<< listOf genIndex)
-      where
-        go []     = return Deriv
-        go (i:is) = (:/ i) <$> go is
+        ArbitrarySoftPath . foldl' (:/) Deriv <$> listOf genIndex
 
 data ArbitraryDerivPath = ArbitraryDerivPath DerivPath
     deriving (Show, Eq)

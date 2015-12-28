@@ -1,6 +1,7 @@
 module Network.Haskoin.Wallet.Database where
 
-import Control.Monad.Logger (runNoLoggingT)
+import Control.Monad.Logger (MonadLoggerIO)
+import Control.Monad.Trans.Control (MonadBaseControl)
 
 import Data.Text (Text)
 
@@ -12,9 +13,9 @@ type DatabaseConfType = SqliteConf
 databaseEngine :: Text
 databaseEngine = "sqlite"
 
-getDatabasePool :: DatabaseConfType -> IO ConnectionPool
-getDatabasePool conf = runNoLoggingT $
-    createSqlitePool (sqlDatabase conf) (sqlPoolSize conf)
+getDatabasePool :: (MonadLoggerIO m, MonadBaseControl IO m)
+                => DatabaseConfType -> m ConnectionPool
+getDatabasePool conf = createSqlitePool (sqlDatabase conf) (sqlPoolSize conf)
 
 paramLimit :: Int
 paramLimit = 20

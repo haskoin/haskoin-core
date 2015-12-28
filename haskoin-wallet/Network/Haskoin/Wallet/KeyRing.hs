@@ -86,22 +86,20 @@ initWallet :: MonadIO m => Double -> SqlPersistT m ()
 initWallet fpRate = do
     prevConfigRes <- select $ from $ \c -> return $ count $ c ^. KeyRingConfigId
     let cnt = maybe 0 unValue $ listToMaybe prevConfigRes
-    if cnt == (0 :: Int)
-        then do
-            time <- liftIO getCurrentTime
-            -- Create an initial bloom filter
-            -- TODO: Compute a random nonce
-            let bloom = bloomCreate (filterLen 0) fpRate 0 BloomUpdateNone
-            insert_ $ KeyRingConfig
-                { keyRingConfigHeight      = 0
-                , keyRingConfigBlock       = headerHash genesisHeader
-                , keyRingConfigBloomFilter = bloom
-                , keyRingConfigBloomElems  = 0
-                , keyRingConfigBloomFp     = fpRate
-                , keyRingConfigVersion     = 1
-                , keyRingConfigCreated     = time
-                }
-        else return () -- Nothing to do
+    when (cnt == (0 :: Int)) $ do
+        time <- liftIO getCurrentTime
+        -- Create an initial bloom filter
+        -- TODO: Compute a random nonce
+        let bloom = bloomCreate (filterLen 0) fpRate 0 BloomUpdateNone
+        insert_ KeyRingConfig
+            { keyRingConfigHeight      = 0
+            , keyRingConfigBlock       = headerHash genesisHeader
+            , keyRingConfigBloomFilter = bloom
+            , keyRingConfigBloomElems  = 0
+            , keyRingConfigBloomFp     = fpRate
+            , keyRingConfigVersion     = 1
+            , keyRingConfigCreated     = time
+            }
 
 {- KeyRing -}
 

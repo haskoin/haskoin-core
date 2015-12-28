@@ -11,7 +11,7 @@ import System.ZMQ4
     )
 
 import Control.Monad (when, unless, forever, liftM)
-import Control.Monad.Trans (MonadIO, lift, liftIO)
+import Control.Monad.Trans (lift, liftIO)
 import Control.Monad.Trans.Control (MonadBaseControl, liftBaseOpDiscard)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
@@ -23,9 +23,10 @@ import Control.Exception.Lifted (SomeException(..), ErrorCall(..), catches)
 import qualified Control.Exception.Lifted as E (Handler(..))
 import qualified Control.Concurrent.MSem as Sem (MSem, new)
 import Control.Monad.Logger
-    ( MonadLogger
+    ( MonadLoggerIO
     , runStdoutLoggingT
     , logDebug
+    , logError
     , logWarn
     , logInfo
     , filterLogger
@@ -75,11 +76,11 @@ instance NFData EventSession where
         rnf (M.elems eventNewAddrs)
 
 runSPVServer :: Config -> IO ()
-runSPVServer cfg = maybeDetach cfg $ do -- start the server process
+runSPVServer cfg = maybeDetach cfg $ run $ do -- start the server process
     -- Initialize the database
-    (sem, pool) <- initDatabase cfg
     -- Check the operation mode of the server.
-    run $ case configMode cfg of
+    (sem, pool) <- initDatabase cfg
+    case configMode cfg of
         -- In this mode, we do not launch an SPV node. We only accept
         -- client requests through the ZMQ API.
         SPVOffline -> runWalletApp $ HandlerSession cfg pool Nothing sem
@@ -162,10 +163,11 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
             (bloom, elems, _) <- runDBPool sem pool getBloomFilter
             atomicallyNodeT $ sendBloomFilter bloom elems
 
-initDatabase :: Config -> IO (Sem.MSem Int, ConnectionPool)
+initDatabase :: (MonadBaseControl IO m, MonadLoggerIO m)
+             => Config -> m (Sem.MSem Int, ConnectionPool)
 initDatabase cfg = do
     -- Create a semaphore with 1 resource
-    sem <- Sem.new 1
+    sem <- liftIO $ Sem.new 1
     -- Create a database pool
     let dbCfg = fromMaybe
             (error $ "DB config settings for " ++ networkName ++ " not found")
@@ -179,8 +181,7 @@ initDatabase cfg = do
     return (sem, pool)
 
 merkleSync
-    :: ( MonadLogger m
-       , MonadIO m
+    :: ( MonadLoggerIO m
        , MonadBaseControl IO m
        , MonadThrow m
        , MonadResource m
@@ -316,8 +317,7 @@ stopSPVServer cfg =
 -- Run the main ZeroMQ loop
 -- TODO: Support concurrent requests using DEALER socket when we can do
 -- concurrent MySQL requests.
-runWalletApp :: ( MonadIO m
-                , MonadLogger m
+runWalletApp :: ( MonadLoggerIO m
                 , MonadBaseControl IO m
                 , MonadBase IO m
                 , MonadThrow m
@@ -337,20 +337,22 @@ runWalletApp session =
                 liftIO $ send sock [] $ BL.toStrict $ encode res
   where
     catchErrors m = catches m
-        [ E.Handler $ \(WalletException err) ->
+        [ E.Handler $ \(WalletException err) -> do
+            $(logError) $ pack err
             return $ ResponseError $ pack err
-        , E.Handler $ \(ErrorCall err) ->
+        , E.Handler $ \(ErrorCall err) -> do
+            $(logError) $ pack err
             return $ ResponseError $ pack err
-        , E.Handler $ \(SomeException exc) ->
+        , E.Handler $ \(SomeException exc) -> do
+            $(logError) $ pack $ show exc
             return $ ResponseError $ pack $ show exc
         ]
 
-dispatchRequest :: ( MonadLogger m
+dispatchRequest :: ( MonadLoggerIO m
                    , MonadBaseControl IO m
                    , MonadBase IO m
                    , MonadThrow m
                    , MonadResource m
-                   , MonadIO m
                    )
                 => WalletRequest -> Handler m (WalletResponse Value)
 dispatchRequest req = liftM ResponseValid $ case req of

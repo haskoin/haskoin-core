@@ -50,7 +50,7 @@ import Data.Either (rights)
 import Data.List ((\\), nub, nubBy, find)
 import Data.List.Split (chunksOf)
 import Data.Text (unpack)
-import Data.Conduit (Source, mapOutput, ($$))
+import Data.Conduit (Source, mapOutput)
 import Data.Maybe (isNothing, isJust, fromMaybe, listToMaybe)
 import qualified Data.Map.Strict as M
     ( Map, toList, map, unionWith, fromListWith )
@@ -939,18 +939,16 @@ buildUnsignedTx accE@(Entity ai acc) origDests origFee minConf rcptFee = do
                 AccountMultisig _ m n -> (m, n)
                 _ -> throw . WalletException $ "Invalid account type"
         fee = if rcptFee then 0 else origFee
-        sink | isMultisigAccount acc = chooseMSCoinsSink tot fee p True
-             | otherwise             = chooseCoinsSink   tot fee   True
+        coins | isMultisigAccount acc = chooseMSCoins tot fee p True
+              | otherwise             = chooseCoins   tot fee   True
         -- TODO: Add more policies like confirmations or coin age
         -- Sort coins by their values in descending order
         orderPolicy c _ = [desc $ c ^. KeyRingCoinValue]
-
-    -- Find the spendable coins in the given account with the required number
-    -- of minimum confirmations.
-    selectRes <- spendableCoinsSource ai minConf orderPolicy $$ sink
-
+        -- Find the spendable coins in the given account with the required number
+        -- of minimum confirmations.
+    selectRes <- spendableCoins ai minConf orderPolicy
     -- Find a selection of spendable coins that matches our target value
-    let (selected, change) = either (throw . WalletException) id selectRes
+    let (selected, change) = either (throw . WalletException) id $ coins selectRes
         totFee | isMultisigAccount acc = getMSFee origFee p (length selected)
                | otherwise             = getFee   origFee   (length selected)
         -- Subtract fees from first destination if rcptFee

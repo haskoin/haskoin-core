@@ -4,7 +4,7 @@ module Network.Haskoin.Wallet.Settings
 , Config(..)
 ) where
 
-import Control.Monad (forM, mzero)
+import Control.Monad (mzero)
 import Control.Exception (throw)
 import Control.Monad.Logger (LogLevel(..))
 
@@ -12,23 +12,25 @@ import Data.Default (Default, def)
 import Data.FileEmbed (embedFile)
 import Data.Yaml (decodeEither')
 import Data.Word (Word32, Word64)
-import Data.HashMap.Strict (HashMap)
-import qualified Data.Traversable as V (mapM)
+import Data.HashMap.Strict (HashMap, unionWith)
 import qualified Data.ByteString as BS (ByteString)
 import qualified Data.Text as T (Text)
 import Data.Aeson
-    ( Value(..)
-    , FromJSON
-    , parseJSON
-    , withObject
-    , (.:), (.:?), (.!=)
+    ( Value(..), FromJSON, ToJSON
+    , parseJSON, toJSON, withObject
+    , (.:)
     )
-
 import Network.Haskoin.Wallet.Database
 import Network.Haskoin.Wallet.Types
 
 data SPVMode = SPVOnline | SPVOffline
     deriving (Eq, Show, Read)
+
+newtype LogLevelJSON = LogLevelJSON LogLevel
+    deriving (Eq, Show, Read)
+
+newtype DBConfigJSON = DBConfigJSON { dbConfigJSON :: DatabaseConfType }
+    deriving Show
 
 data OutputFormat
     = OutputNormal
@@ -70,7 +72,7 @@ data Config = Config
     -- ^ Working directory
     , configBind          :: !String
     -- ^ Bind address for the zeromq socket
-    , configBTCNodes      :: !(HashMap T.Text [(String, Int)])
+    , configBTCNodes      :: !(HashMap T.Text [BTCNode])
     -- ^ Trusted Bitcoin full nodes to connect to
     , configMode          :: !SPVMode
     -- ^ Operation mode of the SPV node.
@@ -91,83 +93,79 @@ data Config = Config
 configBS :: BS.ByteString
 configBS = $(embedFile "config/config.yml")
 
+instance ToJSON OutputFormat where
+    toJSON OutputNormal = String "normal"
+    toJSON OutputJSON   = String "json"
+    toJSON OutputYAML   = String "yaml"
+
+instance FromJSON OutputFormat where
+    parseJSON (String "normal") = return OutputNormal
+    parseJSON (String "json")   = return OutputJSON
+    parseJSON (String "yaml")   = return OutputYAML
+    parseJSON _ = mzero
+
+instance ToJSON SPVMode where
+    toJSON SPVOnline  = String "online"
+    toJSON SPVOffline = String "offline"
+
+instance FromJSON SPVMode where
+    parseJSON (String "online")  = return SPVOnline
+    parseJSON (String "offline") = return SPVOffline
+    parseJSON _ = mzero
+
+instance ToJSON LogLevelJSON where
+    toJSON (LogLevelJSON LevelDebug)     = String "debug"
+    toJSON (LogLevelJSON LevelInfo)      = String "info"
+    toJSON (LogLevelJSON LevelWarn)      = String "warn"
+    toJSON (LogLevelJSON LevelError)     = String "error"
+    toJSON (LogLevelJSON (LevelOther t)) = String t
+
+instance FromJSON LogLevelJSON where
+    parseJSON (String "debug") = return $ LogLevelJSON LevelDebug
+    parseJSON (String "info")  = return $ LogLevelJSON LevelInfo
+    parseJSON (String "warn")  = return $ LogLevelJSON LevelWarn
+    parseJSON (String "error") = return $ LogLevelJSON LevelError
+    parseJSON (String x)       = return $ LogLevelJSON (LevelOther x)
+    parseJSON _ = mzero
+
+instance FromJSON DBConfigJSON where
+    parseJSON = withObject "database" $ \o -> DBConfigJSON <$> o .: databaseEngine
+
 instance Default Config where
-    def = either throw id $ decodeEither' configBS
+    def = either throw id $ decodeEither' "{}"
 
 instance FromJSON Config where
-    parseJSON = withObject "Config" $ \o -> do
-        let configRcptFee    = False
-            configFile       = "config.yml"
+    parseJSON = withObject "config" $ \o' -> do
+        let defValue         = either throw id $ decodeEither' configBS
+            (Object o)       = mergeValues defValue (Object o')
             configPass       = Nothing
-        configKeyRing        <- o .:? "keyring-name"
-                                  .!= configKeyRing def
-        configCount          <- o .:? "output-size"
-                                  .!= configCount def
-        configMinConf        <- o .:? "minimum-confirmations"
-                                  .!= configMinConf def
-        configSignTx         <- o .:? "sign-transactions"
-                                  .!= configSignTx def
-        configFee            <- o .:? "transaction-fee"
-                                  .!= configFee def
-        configAddrType <- k =<< o .:? "address-type"
-        configOffline        <- o .:? "offline"
-                                  .!= configOffline def
-        configReversePaging  <- o .:? "reverse-paging"
-                                  .!= configReversePaging def
-        configFormat   <- f =<< o .:? "display-format"
-        configConnect        <- o .:? "connect-uri"
-                                  .!= configConnect def
-        configDetach         <- o .:? "detach-server"
-                                  .!= configDetach def
-        configTestnet        <- o .:? "use-testnet"
-                                  .!= configTestnet def
-        configDir            <- o .:? "work-dir"
-                                  .!= configDir def
-        configBind           <- o .:? "bind-socket"
-                                  .!= configBind def
-        configBTCNodes <- g =<< o .:? "bitcoin-full-nodes"
-        configMode     <- h =<< o .:? "server-mode"
-        configBloomFP        <- o .:? "bloom-false-positive"
-                                  .!= configBloomFP def
-        configDatabase <- i =<< o .:? "database"
-        configLogFile        <- o .:? "log-file"
-                                  .!= configLogFile def
-        configPidFile        <- o .:? "pid-file"
-                                  .!= configPidFile def
-        configLogLevel <- j =<< o .:? "log-level"
-        configVerbose        <- o .:? "verbose"
-                                  .!= configVerbose def
+        configFile                  <- o .: "config-file"
+        configRcptFee               <- o .: "recipient-fee"
+        configKeyRing               <- o .: "keyring-name"
+        configCount                 <- o .: "output-size"
+        configMinConf               <- o .: "minimum-confirmations"
+        configSignTx                <- o .: "sign-transactions"
+        configFee                   <- o .: "transaction-fee"
+        configAddrType              <- o .: "address-type"
+        configOffline               <- o .: "offline"
+        configReversePaging         <- o .: "reverse-paging"
+        configFormat                <- o .: "display-format"
+        configConnect               <- o .: "connect-uri"
+        configDetach                <- o .: "detach-server"
+        configTestnet               <- o .: "use-testnet"
+        configDir                   <- o .: "work-dir"
+        configBind                  <- o .: "bind-socket"
+        configBTCNodes              <- o .: "bitcoin-full-nodes"
+        configMode                  <- o .: "server-mode"
+        configBloomFP               <- o .: "bloom-false-positive"
+        configDatabaseJSON          <- o .: "database"
+        configLogFile               <- o .: "log-file"
+        configPidFile               <- o .: "pid-file"
+        LogLevelJSON configLogLevel <- o .: "log-level"
+        configVerbose               <- o .: "verbose"
+        let configDatabase = fmap dbConfigJSON configDatabaseJSON
         return Config {..}
-      where
-        f format = case format of
-            Just (String "normal") -> return OutputNormal
-            Just (String "json")   -> return OutputJSON
-            Just (String "yaml")   -> return OutputYAML
-            Just _                 -> mzero
-            Nothing                -> return $ configFormat def
-        g (Just x) = flip (withObject "btcnodesobj") x $ V.mapM $ \a -> do
-            ls <- parseJSON a
-            forM ls $ withObject "bitcoinnode" $ \o ->
-                (,) <$> (o .: "host") <*> (o .: "port")
-        g Nothing = return $ configBTCNodes def
-        h mode = case mode of
-            Just (String "online")  -> return SPVOnline
-            Just (String "offline") -> return SPVOffline
-            Just _                  -> mzero
-            Nothing                 -> return $ configMode def
-        i (Just x) = flip (withObject "databases") x $ V.mapM .
-            withObject "database" $ \v -> v .: databaseEngine
-        i Nothing = return $ configDatabase def
-        j level = case level of
-            Just (String "debug") -> return LevelDebug
-            Just (String "info")  -> return LevelInfo
-            Just (String "warn")  -> return LevelWarn
-            Just (String "error") -> return LevelError
-            Just _                -> mzero
-            Nothing               -> return $ configLogLevel def
-        k addrtype = case addrtype of
-            Just (String "internal") -> return AddressInternal
-            Just (String "external") -> return AddressExternal
-            Just _                   -> mzero
-            Nothing                  -> return $ configAddrType def
 
+mergeValues :: Value -> Value -> Value
+mergeValues (Object d) (Object c) = Object (unionWith mergeValues d c)
+mergeValues _ c = c

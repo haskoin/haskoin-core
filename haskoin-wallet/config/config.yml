@@ -118,3 +118,8 @@ log-level: info
 # Print verbose
 verbose: false
 
+# Recipient pays transaction fee. DANGEROUS.
+recipient-fee: false
+
+# Configuration file name. Only set at compile time.
+config-file: config.yml

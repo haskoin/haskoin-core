@@ -118,7 +118,7 @@ runSPVServer cfg = maybeDetach cfg $ do -- start the server process
     nodes = fromMaybe
         (error $ "BTC nodes for " ++ networkName ++ " not found")
         (pack networkName `H.lookup` configBTCNodes cfg)
-    hosts = map (uncurry PeerHost) nodes
+    hosts = map (\x -> PeerHost (btcNodeHost x) (btcNodePort x)) nodes
     -- LevelDB options
     fp = "headertree"
     opts = DB.defaultOptions { DB.createIfMissing = True

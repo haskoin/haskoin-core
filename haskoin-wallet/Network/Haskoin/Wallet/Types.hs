@@ -42,6 +42,7 @@ module Network.Haskoin.Wallet.Types
 
 -- Helper Types
 , WalletException(..)
+, BTCNode(..)
 ) where
 
 import Control.Monad (mzero)
@@ -522,6 +523,11 @@ data WalletException = WalletException String
     deriving (Eq, Read, Show, Typeable)
 
 instance Exception WalletException
+
+data BTCNode = BTCNode { btcNodeHost :: String, btcNodePort :: Int }
+    deriving (Eq, Read, Show)
+
+$(deriveJSON (dropFieldLabel 7) ''BTCNode)
 
 {- Persistent Instances -}
 

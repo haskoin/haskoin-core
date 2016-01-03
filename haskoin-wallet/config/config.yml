@@ -123,3 +123,9 @@ recipient-fee: false
 
 # Configuration file name. Only set at compile time.
 config-file: config.yml
+
+# Server key for authentication and encryption.
+server-key:
+
+# Client key for authentication and encryption.
+client-key:

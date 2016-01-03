@@ -552,7 +552,7 @@ instance PersistFieldSql [XPubKey] where
 instance PersistField DerivPath where
     toPersistValue = PersistByteString . cs . pathToStr
     fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent DerivPath" . fmap getParsedPath .  parsePath . cs $ bs 
+        maybeToEither "Invalid Persistent DerivPath" . fmap getParsedPath .  parsePath . cs $ bs
     fromPersistValue _ = Left "Invalid Persistent DerivPath"
 
 instance PersistFieldSql DerivPath where

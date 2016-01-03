@@ -13,8 +13,8 @@ import Data.FileEmbed (embedFile)
 import Data.Yaml (decodeEither')
 import Data.Word (Word32, Word64)
 import Data.HashMap.Strict (HashMap, unionWith)
-import qualified Data.ByteString as BS (ByteString)
-import qualified Data.Text as T (Text)
+import Data.ByteString (ByteString)
+import Data.Text (Text)
 import Data.Aeson
     ( Value(..), FromJSON, ToJSON
     , parseJSON, toJSON, withObject
@@ -38,7 +38,7 @@ data OutputFormat
     | OutputYAML
 
 data Config = Config
-    { configKeyRing       :: !T.Text
+    { configKeyRing       :: !Text
     -- ^ Keyring to use in commands
     , configCount         :: !Word32
     -- ^ Output size of commands
@@ -56,7 +56,7 @@ data Config = Config
     -- ^ Display the balance including offline transactions
     , configReversePaging :: !Bool
     -- ^ Use reverse paging for displaying addresses and transactions
-    , configPass          :: !(Maybe T.Text)
+    , configPass          :: !(Maybe Text)
     -- ^ Passphrase to use when creating new keyrings (bip39 mnemonic)
     , configFormat        :: !OutputFormat
     -- ^ How to format the command-line results
@@ -72,13 +72,13 @@ data Config = Config
     -- ^ Working directory
     , configBind          :: !String
     -- ^ Bind address for the zeromq socket
-    , configBTCNodes      :: !(HashMap T.Text [BTCNode])
+    , configBTCNodes      :: !(HashMap Text [BTCNode])
     -- ^ Trusted Bitcoin full nodes to connect to
     , configMode          :: !SPVMode
     -- ^ Operation mode of the SPV node.
     , configBloomFP       :: !Double
     -- ^ False positive rate for the bloom filter.
-    , configDatabase      :: !(HashMap T.Text DatabaseConfType)
+    , configDatabase      :: !(HashMap Text DatabaseConfType)
     -- ^ Database configuration
     , configLogFile       :: !FilePath
     -- ^ Log file
@@ -88,9 +88,12 @@ data Config = Config
     -- ^ Log level
     , configVerbose       :: !Bool
     -- ^ Verbose
+    , configServerKey     :: !(Maybe Text)
+    -- ^ Server Key for authentication and encryption
+    , configClientKey     :: !(Maybe Text)
     }
 
-configBS :: BS.ByteString
+configBS :: ByteString
 configBS = $(embedFile "config/config.yml")
 
 instance ToJSON OutputFormat where
@@ -163,6 +166,8 @@ instance FromJSON Config where
         configPidFile               <- o .: "pid-file"
         LogLevelJSON configLogLevel <- o .: "log-level"
         configVerbose               <- o .: "verbose"
+        configServerKey             <- o .: "server-key"
+        configClientKey             <- o .: "client-key"
         let configDatabase = fmap dbConfigJSON configDatabaseJSON
         return Config {..}
 

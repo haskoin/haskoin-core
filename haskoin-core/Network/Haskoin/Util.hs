@@ -270,7 +270,7 @@ modify' f = get >>= \x -> put $! f x
 dropFieldLabel :: Int -> Options
 dropFieldLabel n = defaultOptions
     { fieldLabelModifier = map toLower . drop n
-    , omitNothingFields  = True
+    , omitNothingFields  = False -- TODO: aeson issue #293 prompted this
     }
 
 dropSumLabels :: Int -> Int -> String -> Options

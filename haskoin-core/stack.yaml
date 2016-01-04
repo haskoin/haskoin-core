@@ -6,7 +6,7 @@ packages:
     commit: 5ee603061b3c1eaf2943e8d2c08e6effe85f38e7
   extra-dep: true
 extra-deps:
-- murmur3-1.0.0
+- murmur3-1.0.1
 - pbkdf-1.1.1.1
-- largeword-1.2.4
-resolver: lts-3.4
+- cereal-0.5.1.0
+resolver: lts-4.1

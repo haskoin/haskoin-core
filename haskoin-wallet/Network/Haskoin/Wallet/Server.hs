@@ -5,12 +5,17 @@ module Network.Haskoin.Wallet.Server
 ) where
 
 import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
+import Data.List.NonEmpty (NonEmpty((:|)))
 import System.ZMQ4
-    ( Rep(..), bind, receive, send
-    ,  withContext, withSocket
+    ( Context, Rep(..), KeyFormat(..), bind
+    , receive, receiveMulti
+    , send, sendMulti
+    , setCurveServer, setCurveSecretKey
+    , withContext, withSocket
+    , z85Decode
     )
 
-import Control.Monad (when, unless, forever, liftM)
+import Control.Monad (when, unless, forever, liftM, void)
 import Control.Monad.Trans (lift, liftIO)
 import Control.Monad.Trans.Control (MonadBaseControl, liftBaseOpDiscard)
 import Control.Monad.Base (MonadBase)
@@ -32,10 +37,11 @@ import Control.Monad.Logger
     , filterLogger
     )
 
+import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BL (fromStrict, toStrict)
 import qualified Data.HashMap.Strict as H (lookup)
 import Data.Text (pack)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust, fromJust)
 import Data.Aeson (Value, decode, encode)
 import Data.Conduit (await, awaitForever, ($$))
 import Data.Word (Word32)
@@ -324,18 +330,27 @@ runWalletApp :: ( MonadLoggerIO m
                 , MonadResource m
                 )
              => HandlerSession -> m ()
-runWalletApp session =
-    liftBaseOpDiscard withContext $ \ctx ->
-        liftBaseOpDiscard (withSocket ctx Rep) $ \sock -> do
-            liftIO $ bind sock $ configBind $ handlerConfig session
-            forever $ do
-                bs  <- liftIO $ receive sock
-                res <- case decode $ BL.fromStrict bs of
-                    Just r  -> catchErrors $
-                        runHandler session $ dispatchRequest r
-                    Nothing -> return $ ResponseError "Could not decode request"
-                liftIO $ send sock [] $ BL.toStrict $ encode res
+runWalletApp session = liftBaseOpDiscard withContext $ \ctx ->
+    liftBaseOpDiscard (withSocket ctx Rep) $ \sock -> do
+        when (isJust serverKeyM) $ liftIO $ do
+            let k = fromJust $ configServerKey $ handlerConfig session
+            setCurveServer True sock
+            setCurveSecretKey TextFormat k sock
+        when (isJust clientKeyPubM) $ do
+            k <- z85Decode (fromJust clientKeyPubM)
+            void $ async $ runZapAuth ctx k
+        liftIO $ bind sock $ configBind $ handlerConfig session
+        forever $ do
+            bs  <- liftIO $ receive sock
+            res <- case decode $ BL.fromStrict bs of
+                Just r  -> catchErrors $
+                    runHandler session $ dispatchRequest r
+                Nothing -> return $ ResponseError "Could not decode request"
+            liftIO $ send sock [] $ BL.toStrict $ encode res
   where
+    cfg = handlerConfig session
+    serverKeyM = configServerKey cfg
+    clientKeyPubM = configClientKeyPub cfg
     catchErrors m = catches m
         [ E.Handler $ \(WalletException err) -> do
             $(logError) $ pack err
@@ -347,6 +362,40 @@ runWalletApp session =
             $(logError) $ pack $ show exc
             return $ ResponseError $ pack $ show exc
         ]
+
+runZapAuth :: ( MonadLoggerIO m
+              , MonadBaseControl IO m
+              , MonadBase IO m
+              )
+           => Context -> ByteString -> m ()
+runZapAuth ctx k = do
+    $(logDebug) $ "Starting ØMQ authentication thread"
+    liftBaseOpDiscard (withSocket ctx Rep) $ \zap -> do
+        liftIO $ bind zap "inproc://zeromq.zap.01"
+        forever $ do
+            buffer <- liftIO $ receiveMulti zap
+            let actionE =
+                    case buffer of
+                      v:q:_:_:_:m:p:_ -> do
+                          when (v /= "1.0") $
+                              Left (q, "500", "Version number not valid")
+                          when (m /= "CURVE") $
+                              Left (q, "400", "Mechanism not supported")
+                          when (p /= k) $
+                              Left (q, "400", "Invalid client public key")
+                          return q
+                      _ -> Left ("", "500", "Malformed request")
+            case actionE of
+              Right q -> do
+                  $(logInfo) "Authenticated client successfully"
+                  liftIO $ sendMulti zap $
+                      "1.0" :| q : "200" : "OK" : "client" : "" : []
+              Left (q, c, m) -> do
+                  $(logError) $ pack $ unwords
+                      [ "Failed to authenticate client:" , cs c, cs m ]
+                  liftIO $ sendMulti zap $
+                      "1.0" :| q : c : m : "" : "" : []
+
 
 dispatchRequest :: ( MonadLoggerIO m
                    , MonadBaseControl IO m

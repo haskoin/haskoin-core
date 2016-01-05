@@ -29,16 +29,21 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdDecodeTx
 , cmdVersion
 , cmdStatus
+, cmdKeyPair
 )
 where
 
 import System.ZMQ4.Monadic
     ( Req(..)
+    , KeyFormat(..)
     , runZMQ
     , socket
     , send
     , receive
     , connect
+    , setCurveServerKey
+    , setCurvePublicKey
+    , setCurveSecretKey
     )
 
 import Control.Monad (forM_, when, liftM2)
@@ -48,6 +53,7 @@ import qualified Control.Monad.Reader as R (ReaderT, ask, asks)
 import Data.Maybe
        (listToMaybe, isNothing, fromJust, fromMaybe, isJust, maybeToList)
 import Data.List (intercalate, intersperse)
+import qualified Data.ByteString.Char8 as B8 (putStrLn, unwords)
 import Data.Text (Text, pack, unpack, splitOn)
 import Data.Word (Word64)
 import qualified Data.Yaml as YAML (encode)
@@ -81,6 +87,9 @@ import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Server
 import Network.Haskoin.Wallet.Database
+
+import Data.Restricted (rvalue)
+import System.ZMQ4 (curveKeyPair)
 
 type Handler = R.ReaderT Config IO
 
@@ -371,14 +380,35 @@ cmdStatus = do
     v <- R.asks configVerbose
     sendZmq (PostNodeR NodeActionStatus) $ mapM_ putStrLn . printNodeStatus v
 
+cmdKeyPair :: Handler ()
+cmdKeyPair = do
+    (pub, sec) <- curveKeyPair
+    liftIO $ do
+        B8.putStrLn $ B8.unwords [ "public :", rvalue pub ]
+        B8.putStrLn $ B8.unwords [ "private:", rvalue sec ]
+
 {- Helpers -}
 
 sendZmq :: (FromJSON a, ToJSON a)
         => WalletRequest -> (a -> IO ()) -> Handler ()
 sendZmq req handle = do
     sockName <- R.asks configConnect
+    clientKeyM <- R.asks configClientKey
+    clientKeyPubM <- R.asks configClientKeyPub
+    serverKeyPubM <- R.asks configServerKeyPub
     resE <- liftIO $ runZMQ $ do
         sock <- socket Req
+        when (isJust clientKeyM) $ do
+            let clientKey = fromJust clientKeyM
+                serverKeyPub = fromMaybe
+                    (error "Server public key not provided")
+                    serverKeyPubM
+                clientKeyPub = fromMaybe
+                    (error "Client public key not provided")
+                    clientKeyPubM
+            setCurveServerKey TextFormat serverKeyPub sock
+            setCurvePublicKey TextFormat clientKeyPub sock
+            setCurveSecretKey TextFormat clientKey sock
         connect sock sockName
         send sock [] (cs $ encode req)
         eitherDecode . cs <$> receive sock

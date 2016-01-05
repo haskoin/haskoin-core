@@ -41,6 +41,7 @@ Offline tx signing commands:
 Utility commands:
   decodetx tx                             Decode HEX transaction
   rescan   [timestamp]                    Rescan the wallet
+  keypair                                 Get curve key pair for ØMQ auth
 
 Other commands:
   version                                 Display version information

@@ -13,8 +13,10 @@ import Data.FileEmbed (embedFile)
 import Data.Yaml (decodeEither')
 import Data.Word (Word32, Word64)
 import Data.HashMap.Strict (HashMap, unionWith)
+import Data.String.Conversions (cs)
 import Data.ByteString (ByteString)
 import Data.Text (Text)
+import Data.Text.Encoding (encodeUtf8)
 import Data.Aeson
     ( Value(..), FromJSON, ToJSON
     , parseJSON, toJSON, withObject
@@ -22,6 +24,9 @@ import Data.Aeson
     )
 import Network.Haskoin.Wallet.Database
 import Network.Haskoin.Wallet.Types
+
+import Data.Restricted (Restricted, Div5)
+import System.ZMQ4 (toRestricted)
 
 data SPVMode = SPVOnline | SPVOffline
     deriving (Eq, Show, Read)
@@ -88,9 +93,15 @@ data Config = Config
     -- ^ Log level
     , configVerbose       :: !Bool
     -- ^ Verbose
-    , configServerKey     :: !(Maybe Text)
-    -- ^ Server Key for authentication and encryption
-    , configClientKey     :: !(Maybe Text)
+    , configServerKey     :: !(Maybe (Restricted Div5 ByteString))
+    -- ^ Server key for authentication and encryption (server config)
+    , configServerKeyPub  :: !(Maybe (Restricted Div5 ByteString))
+    -- ^ Server public key for authentication and encryption (client config)
+    , configClientKey     :: !(Maybe (Restricted Div5 ByteString))
+    -- ^ Client key for authentication and encryption (client config)
+    , configClientKeyPub  :: !(Maybe (Restricted Div5 ByteString))
+    -- ^ Client public key for authentication and encryption
+    -- (client + server config)
     }
 
 configBS :: ByteString
@@ -161,15 +172,25 @@ instance FromJSON Config where
         configBTCNodes              <- o .: "bitcoin-full-nodes"
         configMode                  <- o .: "server-mode"
         configBloomFP               <- o .: "bloom-false-positive"
-        configDatabaseJSON          <- o .: "database"
         configLogFile               <- o .: "log-file"
         configPidFile               <- o .: "pid-file"
         LogLevelJSON configLogLevel <- o .: "log-level"
         configVerbose               <- o .: "verbose"
-        configServerKey             <- o .: "server-key"
-        configClientKey             <- o .: "client-key"
-        let configDatabase = fmap dbConfigJSON configDatabaseJSON
+        configDatabase              <- fmap dbConfigJSON <$> o .: "database"
+        configServerKey             <- getKey o "server-key"
+        configServerKeyPub          <- getKey o "server-key-public"
+        configClientKey             <- getKey o "client-key"
+        configClientKeyPub          <- getKey o "client-key-public"
         return Config {..}
+      where
+        getKey o i = o .: i >>= \kM ->
+            case kM of
+              Nothing -> return Nothing
+              Just k ->
+                  case toRestricted $ encodeUtf8 k of
+                    Just k' -> return $ Just k'
+                    Nothing -> fail $ "Invalid " ++ cs k
+
 
 mergeValues :: Value -> Value -> Value
 mergeValues (Object d) (Object c) = Object (unionWith mergeValues d c)

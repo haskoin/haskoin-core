@@ -2,6 +2,10 @@
 # work-dir/network.
 bind-socket: ipc://hw.sock
 
+# ZeroMQ socket to communicate with the server.
+# Either absolute path or relative to the server work-dir/network path.
+connect-uri: ipc://hw.sock
+
 # Server mode. Can be either online or offline. In offline mode, the SPV
 # daemon does not start and only the local wallet is available to query.
 server-mode: online
@@ -101,10 +105,6 @@ display-format: normal
 # Detach the SPV server from the terminal when launched
 detach-server: false
 
-# ZeroMQ socket to communicate with the server.
-# Either absolute path or relative to the server work-dir/network path.
-connect-uri: ipc://hw.sock
-
 # Use Testnet3
 use-testnet: false
 
@@ -124,8 +124,12 @@ recipient-fee: false
 # Configuration file name. Only set at compile time.
 config-file: config.yml
 
-# Server key for authentication and encryption.
+# Server key for authentication and encryption (server config).
 server-key:
+# Server public key for authentication and encryption (client config).
+server-key-public:
 
-# Client key for authentication and encryption.
+# Client key for authentication and encryption (client config).
 client-key:
+# Client public key for aunthentication and encryption (client + server config).
+client-key-public:

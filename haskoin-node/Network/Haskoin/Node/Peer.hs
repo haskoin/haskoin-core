@@ -350,6 +350,9 @@ processMessage pid ph msg = checkMerkleEnd >> case msg of
                             [ "Received valid merkle block"
                             , cs $ blockHashToHex $ headerHash mHead
                             ]
+                        forM_ mTxs $ \h ->
+                            $(logDebug) $ formatPid pid ph $ unwords
+                                [ "Matched merkle tx:", cs $ txHashToHex h ]
                         if null mTxs
                             -- Deliver the merkle block
                             then lift . atomicallyNodeT $ do

@@ -29,10 +29,6 @@ module Network.Haskoin.Wallet.Transaction
 , resetRescan
 
 -- *Helpers
-, splitSelect
-, splitUpdate
-, splitDelete
-, join2
 , InCoinData(..)
 ) where
 
@@ -48,7 +44,6 @@ import Data.Time (UTCTime, getCurrentTime)
 import Data.Word (Word32, Word64)
 import Data.Either (rights)
 import Data.List ((\\), nub, nubBy, find)
-import Data.List.Split (chunksOf)
 import Data.Text (unpack)
 import Data.Conduit (Source, mapOutput)
 import Data.Maybe (isNothing, isJust, fromMaybe, listToMaybe)
@@ -57,11 +52,7 @@ import qualified Data.Map.Strict as M
 import Data.String.Conversions (cs)
 
 import qualified Database.Persist as P
-    ( Filter
-    , selectFirst
-    , deleteWhere, insertBy, insertMany_, PersistEntity
-    , PersistEntityBackend
-    )
+    ( Filter, selectFirst, deleteWhere, insertBy)
 import Database.Esqueleto
     ( Value(..), SqlQuery, SqlExpr, SqlBackend
     , InnerJoin(..), LeftOuterJoin(..), OrderBy, update, sum_, groupBy
@@ -75,8 +66,7 @@ import Database.Esqueleto
     , SqlPersistT, Entity(..)
     , getBy, replace
     )
-import qualified Database.Esqueleto as E (isNothing, delete)
-import Database.Esqueleto.Internal.Sql (SqlSelect)
+import qualified Database.Esqueleto as E (isNothing)
 
 import Network.Haskoin.Block
 import Network.Haskoin.Transaction
@@ -589,7 +579,7 @@ spendInputs :: MonadIO m
 spendInputs ai ti tx = do
     now <- liftIO getCurrentTime
     -- Spend the coins by inserting values in KeyRingSpentCoin
-    P.insertMany_ $ map (buildSpentCoin now) txInputs
+    splitInsertMany_ $ map (buildSpentCoin now) txInputs
   where
     txInputs = map prevOutput $ txIn tx
     buildSpentCoin now (OutPoint h p) =
@@ -1264,41 +1254,4 @@ resetRescan = do
     P.deleteWhere ([] :: [P.Filter KeyRingSpentCoin])
     P.deleteWhere ([] :: [P.Filter KeyRingTx])
     setBestBlock (headerHash genesisHeader) 0
-
-{- Helpers -}
-
--- Join AND expressions with OR conditions in a binary way
-join2 :: [SqlExpr (Value Bool)] -> SqlExpr (Value Bool)
-join2 xs = case xs of
-    [] -> val False
-    [x] -> x
-    _ -> let (ls,rs) = splitAt (length xs `div` 2) xs
-         in  join2 ls ||. join2 rs
-
-splitSelect :: (SqlSelect a r, MonadIO m)
-            => [t]
-            -> ([t] -> SqlQuery a)
-            -> SqlPersistT m [r]
-splitSelect ts queryF =
-    liftM concat $ forM vals $ select . queryF
-  where
-    vals = chunksOf paramLimit ts
-
-splitUpdate :: ( MonadIO m
-               , P.PersistEntity val
-               , P.PersistEntityBackend val ~ SqlBackend
-               )
-            => [t]
-            -> ([t] -> SqlExpr (Entity val) -> SqlQuery ())
-            -> SqlPersistT m ()
-splitUpdate ts updateF =
-    forM_ vals $ update . updateF
-  where
-    vals = chunksOf paramLimit ts
-
-splitDelete :: MonadIO m => [t] -> ([t] -> SqlQuery ()) -> SqlPersistT m ()
-splitDelete ts deleteF =
-    forM_ vals $ E.delete . deleteF
-  where
-    vals = chunksOf paramLimit ts
 

@@ -471,7 +471,7 @@ createAddrs (Entity ai acc) addrType n
             res = map build $ take (fromIntegral n) $ deriveFrom nextI
 
         -- Save the addresses and increment the bloom filter
-        insertMany_ res
+        splitInsertMany_ res
         incrementFilter res
         return res
   where

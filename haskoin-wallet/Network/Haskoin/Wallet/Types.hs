@@ -43,9 +43,17 @@ module Network.Haskoin.Wallet.Types
 -- Helper Types
 , WalletException(..)
 , BTCNode(..)
+
+-- *Helpers
+, splitSelect
+, splitUpdate
+, splitDelete
+, splitInsertMany_
+, join2
 ) where
 
-import Control.Monad (mzero)
+import Control.Monad (mzero, forM, forM_, liftM)
+import Control.Monad.Trans (MonadIO)
 import Control.Exception (Exception)
 import Control.DeepSeq (NFData(..))
 
@@ -56,6 +64,7 @@ import Data.Maybe (maybeToList)
 import Data.Char (toLower)
 import Data.Word (Word32, Word64)
 import Data.Text (Text)
+import Data.List.Split (chunksOf)
 import qualified Data.ByteString.Lazy as L
 import Data.Aeson.Types
     ( Options(..)
@@ -75,6 +84,20 @@ import Data.Aeson
 import Database.Persist.Class (PersistField, toPersistValue, fromPersistValue)
 import Database.Persist.Types (PersistValue(..))
 import Database.Persist.Sql (PersistFieldSql, SqlType(..), sqlType)
+import qualified Database.Persist as P
+    ( insertMany_, PersistEntity
+    , PersistEntityBackend
+    )
+import Database.Esqueleto
+    ( SqlQuery, SqlExpr, SqlBackend
+    , update
+    , select, val
+    , (||.)
+    -- Reexports from Database.Persist
+    , SqlPersistT, Entity(..)
+    )
+import qualified Database.Esqueleto as E (delete, Value)
+import Database.Esqueleto.Internal.Sql (SqlSelect)
 
 import Network.Haskoin.Block
 import Network.Haskoin.Crypto
@@ -82,6 +105,7 @@ import Network.Haskoin.Script
 import Network.Haskoin.Transaction
 import Network.Haskoin.Node
 import Network.Haskoin.Util
+import Network.Haskoin.Wallet.Database
 
 type KeyRingName = Text
 type AccountName = Text
@@ -708,4 +732,49 @@ instance PersistField [AddressInfo] where
 
 instance PersistFieldSql [AddressInfo] where
     sqlType _ = SqlString
+
+
+{- Helpers -}
+
+-- Join AND expressions with OR conditions in a binary way
+join2 :: [SqlExpr (E.Value Bool)] -> SqlExpr (E.Value Bool)
+join2 xs = case xs of
+    [] -> val False
+    [x] -> x
+    _ -> let (ls,rs) = splitAt (length xs `div` 2) xs
+         in  join2 ls ||. join2 rs
+
+splitSelect :: (SqlSelect a r, MonadIO m)
+            => [t]
+            -> ([t] -> SqlQuery a)
+            -> SqlPersistT m [r]
+splitSelect ts queryF =
+    liftM concat $ forM vals $ select . queryF
+  where
+    vals = chunksOf paramLimit ts
+
+splitUpdate :: ( MonadIO m
+               , P.PersistEntity val
+               , P.PersistEntityBackend val ~ SqlBackend
+               )
+            => [t]
+            -> ([t] -> SqlExpr (Entity val) -> SqlQuery ())
+            -> SqlPersistT m ()
+splitUpdate ts updateF =
+    forM_ vals $ update . updateF
+  where
+    vals = chunksOf paramLimit ts
+
+splitDelete :: MonadIO m => [t] -> ([t] -> SqlQuery ()) -> SqlPersistT m ()
+splitDelete ts deleteF =
+    forM_ vals $ E.delete . deleteF
+  where
+    vals = chunksOf paramLimit ts
+
+splitInsertMany_ :: ( MonadIO m
+                    , P.PersistEntity val
+                    , P.PersistEntityBackend val ~ SqlBackend
+                    )
+                 => [val] -> SqlPersistT m ()
+splitInsertMany_ = mapM_ P.insertMany_ . chunksOf paramLimit
 

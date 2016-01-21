@@ -54,7 +54,7 @@ import Data.String.Conversions (cs)
 import qualified Database.Persist as P
     ( Filter, selectFirst, deleteWhere, insertBy)
 import Database.Esqueleto
-    ( Value(..), SqlQuery, SqlExpr, SqlBackend
+    ( Value(..), SqlQuery, SqlExpr
     , InnerJoin(..), LeftOuterJoin(..), OrderBy, update, sum_, groupBy
     , select, from, where_, val, valList, sub_select, countRows, count
     , orderBy, limit, asc, desc, set, offset, selectSource
@@ -80,7 +80,6 @@ import Network.Haskoin.Node.HeaderTree
 import Network.Haskoin.Wallet.KeyRing
 import Network.Haskoin.Wallet.Model
 import Network.Haskoin.Wallet.Types
-import Network.Haskoin.Wallet.Database
 
 -- Input coin type with transaction and address information
 data InCoinData = InCoinData
@@ -107,7 +106,7 @@ txPage :: MonadIO m
        => KeyRingAccountId -- ^ Account ID
        -> PageRequest      -- ^ Page request
        -> SqlPersistT m ([KeyRingTx], Word32)
-          -- ^ Page result
+       -- ^ Page result
 txPage ai page@PageRequest{..}
     | validPageRequest page = do
         cntRes <- select $ from $ \t -> do
@@ -892,7 +891,8 @@ createTx :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
             -- ^ (New transaction hash, Completed flag)
 createTx keyRing accE@(Entity ai acc) dests fee minConf rcptFee sign = do
     -- Build an unsigned transaction from the given recipient values and fee
-    (unsignedTx, inCoins) <- buildUnsignedTx accE dests fee minConf rcptFee
+    (unsignedTx, inCoins, newChangeAddrs) <-
+        buildUnsignedTx accE dests fee minConf rcptFee
     -- Sign our new transaction if signing was requested
     let dat = map toCoinSignData inCoins
         tx | sign      = signOfflineTx keyRing acc unsignedTx dat
@@ -901,7 +901,7 @@ createTx keyRing accE@(Entity ai acc) dests fee minConf rcptFee sign = do
     -- it is complete, or as an offline transaction otherwise.
     (res, newAddrs) <- importTx' tx ai inCoins
     case res of
-        (txRes:_) -> return (txRes, newAddrs)
+        (txRes:_) -> return (txRes, newAddrs ++ newChangeAddrs)
         _ -> liftIO . throwIO $ WalletException
             "Error while importing the new transaction"
 
@@ -921,7 +921,8 @@ buildUnsignedTx
     -> Word64
     -> Word32
     -> Bool
-    -> SqlPersistT m (Tx, [InCoinData])
+    -> SqlPersistT m (Tx, [InCoinData], [KeyRingAddr])
+    -- ^ Generated change addresses
 buildUnsignedTx _ [] _ _ _ = liftIO . throwIO $ WalletException
     "buildUnsignedTx: No transaction recipients have been provided"
 buildUnsignedTx accE@(Entity ai acc) origDests origFee minConf rcptFee = do
@@ -963,26 +964,28 @@ buildUnsignedTx accE@(Entity ai acc) origDests origFee minConf rcptFee = do
     -- TODO: Put the dust value in a constant somewhere. We also need a more
     -- general way of detecting dust such as our transactions are not
     -- rejected by full nodes.
-    allDests <- if change < 5430
-        then return dests
-        else addChangeAddr change dests
+    (allDests, addrs) <- if change < 5430
+        then return (dests, [])
+        else do
+             (addr, chng) <- newChangeAddr change
+             return ((keyRingAddrAddress addr, chng) : dests, [addr])
 
     case buildAddrTx (map toOutPoint selected) $ map toBase58 allDests of
-        Right tx -> return (tx, selected)
+        Right tx -> return (tx, selected, addrs)
         Left err -> liftIO . throwIO $ WalletException err
   where
     tot = sum $ map snd origDests
     toBase58 (a, v) = (addrToBase58 a, v)
     toOutPoint (InCoinData (Entity _ c) t _) =
         OutPoint (keyRingTxHash t) (keyRingCoinPos c)
-    addChangeAddr change dests = do
+    newChangeAddr change = do
         as <- unusedAddresses accE AddressInternal
         case as of
             (a:_) -> do
                 -- Use the address to prevent reusing it again
                 _ <- useAddress a
                 -- TODO: Randomize the change position
-                return $ (keyRingAddrAddress a, change) : dests
+                return $ (a, change)
             _ -> liftIO . throwIO $ WalletException
                 "No unused addresses available"
 

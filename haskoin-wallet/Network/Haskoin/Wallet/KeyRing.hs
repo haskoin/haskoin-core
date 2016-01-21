@@ -66,7 +66,7 @@ import Database.Esqueleto
     , (^.), (==.), (&&.), (>.), (-.), (<.)
     -- Reexports from Database.Persist
     , SqlPersistT, Entity(..)
-    , getBy, insertUnique, insertMany_, insert_
+    , getBy, insertUnique, insert_
     )
 
 import Network.Haskoin.Crypto

@@ -1,0 +1,16 @@
+flags: {}
+packages:
+- 'haskoin-core'
+- 'haskoin-node'
+- 'haskoin-wallet'
+- location:
+    git: https://github.com/haskoin/secp256k1.git
+    commit: 5ee603061b3c1eaf2943e8d2c08e6effe85f38e7
+  extra-dep: true
+extra-deps:
+- concurrent-extra-0.7.0.10
+- daemons-0.2.1
+- murmur3-1.0.1
+- pbkdf-1.1.1.1
+- cereal-0.5.1.0
+resolver: lts-4.1

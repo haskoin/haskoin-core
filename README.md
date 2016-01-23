@@ -1,70 +1,90 @@
 # Haskoin
 
-Haskoin is an implementation of the Bitcoin protocol in Haskell.
+[![Build Status](https://travis-ci.org/haskoin/haskoin.svg?branch=master)](https://travis-ci.org/haskoin/haskoin)
 
-## Features
+Haskoin is an implementation of the Bitcoin protocol in Haskell. There are
+currently 3 main packages in Haskoin, namely haskoin-core, haskoin-node and
+haskoin-wallet.
 
-Haskoin is a package implementing the Bitcoin protocol specifications. It
-is written in pure Haskell and the library is implemented mostly with pure
-functions (no IO monad). It provides the following features:
+## haskoin-core
 
-- ECDSA cryptographic primitives (secp256k1)
+haskoin-core is a package implementing the core functionalities of the Bitcoin
+protocol specifications. The following features are provided:
+
 - Hashing functions (sha-256, ripemd-160)
 - Base58 encoding
-- BIP32 extended key derivations
-- BIP39 mnemonic key
+- BIP32 extended key derivation and parsing (m/1'/2/3)
+- BIP39 mnemonic keys
+- ECDSA cryptographic primitives (using the C library libsecp256k1)
 - Script parsing and evaluation
 - Building and signing of standard transactions (regular, multisig, p2sh)
-- Deterministic signing (rfc-6979)
-- Network protocol type parsing
-- Headerchain implementation (Blockchain with headers only)
-- Bloom filters and partial merkle tree library
-- Headers-first SPV node implementation (network-only, no wallet)
-- JSON-RPC/Stratum client library
+- Parsing and manipulation of all Bitcoin protocol types
+- Bloom filters and partial merkle tree library (used in SPV wallets)
+- Comprehensive test suite
 
-A wallet implementation using the SPV node library is available in the
-haskoin-wallet package.
+A wallet implementation is available in haskoin-wallet which uses both this
+package and the node implementation in haskoin-node.
 
-## Documentation
+[haskoin-core hackage documentation](http://hackage.haskell.org/package/haskoin-core)
 
-http://hackage.haskell.org/package/haskoin
+## haskoin-node
 
-## Installation
+haskoin-node is essentially an SPV (simple payment verification) server node.
+It implements the Bitcoin network protocol in Haskell and allows the
+synchronization of headers and the download of merkle blocks. haskoin-node is
+not a full node (yet) as it only support SPV verification of headers rather
+than full block validation. The following features are supported:
 
-### Dependencies
+- Implementation of the Bitcoin network protocol
+- Headertree implementation with SPV verification
+- Headers-first synchronization
+- Merkle block download from peers with bloom filters
+- Full block download from peers (without verification)
 
-You'll need Haskell Platform 2013 or 2014, pkg-config, as well as development
-libraries for LevelDB, Snappy, and zlib.  On Debian/Ubuntu, use following
-commands:
+[haskoin-node hackage documentation](http://hackage.haskell.org/package/haskoin-node)
+
+### haskoin-node dependencies
+
+* LevelDB
+
+On Debian/Ubuntu, use following command:
 
 ```sh
-sudo apt-get install git haskell-platform libleveldb-dev \
-    libzmq3-dev libsnappy-dev pkg-config
+sudo apt-get install libleveldb-dev
 ```
 
-### Git
+## haskoin-wallet
 
-Install from Git for the latest development snapshot.
+haskoin-wallet is an SPV (simple payment verification) wallet implementation in
+Haskell.  It features BIP32 hierarchical-deterministic key management,
+deterministic signatures (RFC-6979) and first order support for multi-signature
+transactions. You can communicate with the wallet process using JSON
+serialization over ØMQ socket or the supplied `hw` tool.
+
+[haskoin-wallet hackage documentation](http://hackage.haskell.org/package/haskoin-wallet)
+
+### Installing haskoin-wallet
+
+Get pkg-config, LevelDB, Snappy, zlib and ØMQ.
+On Debian/Ubuntu systems, use these command:
+
+```sh
+sudo apt-get install git wget libleveldb-dev \
+    libzmq3-dev libsnappy-dev pkg-config zlib1g-dev
+```
+
+Get [Stack](https://github.com/commercialhaskell/stack).
+
+Clone this repository, and then install using Stack.
 
 ```sh
 git clone https://github.com/haskoin/haskoin.git
 cd haskoin
-cabal install
+stack install
 ```
 
-### Cabal
-
-Use cabal-install to get the latest stable version from Hackage.  On
-Debian/Ubuntu operating system:
-
-```sh
-cabal update
-cabal install haskoin
-```
+Executable `hw` will be installed in `~/.local/bin`.
 
 ## Contributing
 
 Contribute via GitHub pull requests.
-
-We do a lot of our technical discussions in the IRC channel #haskoin on
-chat.freenode.net.

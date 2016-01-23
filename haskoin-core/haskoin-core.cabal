@@ -1,0 +1,161 @@
+name:                  haskoin-core
+version:               0.3.0
+synopsis:
+    Implementation of the core Bitcoin protocol features.
+description:
+    Haskoin is a package implementing the core functionalities of the Bitcoin
+    protocol specifications. The following features are provided:
+    .
+    * Hashing functions (sha-256, ripemd-160)
+    * Base58 encoding
+    * BIP32 extended key derivation and parsing (m/1'/2/3)
+    * BIP39 mnemonic keys
+    * ECDSA cryptographic primitives (using the C library libsecp256k1)
+    * Script parsing and evaluation
+    * Building and signing of standard transactions (regular, multisig, p2sh)
+    * Parsing and manipulation of all Bitcoin protocol types
+    * Bloom filters and partial merkle tree library (used in SPV wallets)
+    * Comprehensive test suite
+    .
+    A wallet implementation is available in haskoin-wallet which uses both this
+    package and the node implementation in haskoin-node.
+
+homepage:              http://github.com/haskoin/haskoin
+bug-reports:           http://github.com/haskoin/haskoin/issues
+tested-with:           GHC==7.10.3, GHC==7.10.2, GHC==7.10.1
+stability:             stable
+license:               PublicDomain
+license-file:          UNLICENSE
+author:                Philippe Laprade, Jean-Pierre Rupp
+maintainer:            plaprade+hackage@gmail.com
+category:              Bitcoin, Finance, Network
+build-type:            Simple
+cabal-version:         >= 1.9.2
+extra-source-files:    tests/data/*.json, stack.yaml
+
+source-repository head
+    type:     git
+    location: git://github.com/haskoin/haskoin.git
+
+library
+    exposed-modules: Network.Haskoin.Util
+                     Network.Haskoin.Crypto
+                     Network.Haskoin.Node
+                     Network.Haskoin.Script
+                     Network.Haskoin.Transaction
+                     Network.Haskoin.Block
+                     Network.Haskoin.Constants
+                     Network.Haskoin.Test
+                     Network.Haskoin.Internals
+
+    other-modules: Network.Haskoin.Crypto.Hash
+                   Network.Haskoin.Crypto.Base58
+                   Network.Haskoin.Crypto.Keys
+                   Network.Haskoin.Crypto.ExtendedKeys
+                   Network.Haskoin.Crypto.ECDSA
+                   Network.Haskoin.Crypto.Mnemonic
+                   Network.Haskoin.Node.Types
+                   Network.Haskoin.Node.Message
+                   Network.Haskoin.Node.Bloom
+                   Network.Haskoin.Script.Types
+                   Network.Haskoin.Script.Parser
+                   Network.Haskoin.Script.SigHash
+                   Network.Haskoin.Script.Evaluator
+                   Network.Haskoin.Transaction.Types
+                   Network.Haskoin.Transaction.Builder
+                   Network.Haskoin.Block.Types
+                   Network.Haskoin.Block.Merkle
+                   Network.Haskoin.Test.Util
+                   Network.Haskoin.Test.Crypto
+                   Network.Haskoin.Test.Node
+                   Network.Haskoin.Test.Message
+                   Network.Haskoin.Test.Script
+                   Network.Haskoin.Test.Transaction
+                   Network.Haskoin.Test.Block
+
+    extensions: EmptyDataDecls
+                OverloadedStrings
+                FlexibleInstances
+                FlexibleContexts
+                RecordWildCards
+                DeriveDataTypeable
+                GADTs
+
+    build-depends: aeson                    >= 0.7          && < 0.11
+                 , base                     >= 4.8          && < 5
+                 , binary                   >= 0.7          && < 0.8
+                 , byteable                 >= 0.1          && < 0.2
+                 , bytestring               >= 0.10         && < 0.11
+                 , base16-bytestring        >= 0.1          && < 0.2
+                 , conduit                  >= 1.2          && < 1.3
+                 , containers               >= 0.5          && < 0.6
+                 , cryptohash               >= 0.11         && < 0.12
+                 , deepseq                  >= 1.4          && < 1.5
+                 , either                   >= 4.3          && < 4.5
+                 , mtl                      >= 2.2          && < 2.3
+                 , murmur3                  >= 1.0          && < 1.1
+                 , network                  >= 2.6          && < 2.7
+                 , pbkdf                    >= 1.1          && < 1.2
+                 , QuickCheck               >= 2.6          && < 2.9
+                 , split                    >= 0.2          && < 0.3
+                 , text                     >= 0.11         && < 1.3
+                 , time                     >= 1.4          && < 1.6
+                 , string-conversions       >= 0.4          && < 0.5
+                 , vector                   >= 0.10         && < 0.12
+                 , secp256k1                >= 0.4          && < 0.5
+                 , largeword                >= 1.2.4        && < 1.3
+                 , entropy                  >= 0.3          && < 0.4
+
+    ghc-options:       -Wall
+
+test-suite test-haskoin-core
+    type:              exitcode-stdio-1.0
+    main-is:           Main.hs
+
+    extensions: EmptyDataDecls
+                OverloadedStrings
+
+    other-modules: Network.Haskoin.Util.Tests
+                   Network.Haskoin.Crypto.ECDSA.Tests
+                   Network.Haskoin.Crypto.Base58.Tests
+                   Network.Haskoin.Crypto.Base58.Units
+                   Network.Haskoin.Crypto.Keys.Tests
+                   Network.Haskoin.Crypto.ExtendedKeys.Tests
+                   Network.Haskoin.Crypto.ExtendedKeys.Units
+                   Network.Haskoin.Crypto.Hash.Tests
+                   Network.Haskoin.Crypto.Hash.Units
+                   Network.Haskoin.Crypto.Mnemonic.Tests
+                   Network.Haskoin.Crypto.Mnemonic.Units
+                   Network.Haskoin.Crypto.Units
+                   Network.Haskoin.Node.Units
+                   Network.Haskoin.Script.Tests
+                   Network.Haskoin.Script.Units
+                   Network.Haskoin.Transaction.Tests
+                   Network.Haskoin.Transaction.Units
+                   Network.Haskoin.Block.Tests
+                   Network.Haskoin.Block.Units
+                   Network.Haskoin.Json.Tests
+                   Network.Haskoin.Binary.Tests
+
+    build-depends: aeson                          >= 0.7        && < 0.11
+                 , base                           >= 4.8        && < 5
+                 , binary                         >= 0.7        && < 0.8
+                 , bytestring                     >= 0.10       && < 0.11
+                 , containers                     >= 0.5        && < 0.6
+                 , haskoin-core
+                 , mtl                            >= 2.2        && < 2.3
+                 , split                          >= 0.2        && < 0.3
+                 , HUnit                          >= 1.2        && < 1.4
+                 , QuickCheck                     >= 2.6        && < 2.9
+                 , test-framework                 >= 0.8        && < 0.9
+                 , test-framework-quickcheck2     >= 0.3        && < 0.4
+                 , test-framework-hunit           >= 0.3        && < 0.4
+                 , text                           >= 0.11       && < 1.3
+                 , unordered-containers           >= 0.2        && < 0.3
+                 , string-conversions             >= 0.4        && < 0.5
+                 , largeword                      >= 1.2        && < 1.3
+                 , secp256k1                      >= 0.4        && < 0.5
+
+    ghc-options: -Wall
+    hs-source-dirs: tests
+

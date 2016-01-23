@@ -33,6 +33,7 @@ Transaction commands:
   sign      acc txid                      Sign one of your offline transactions
   balance   acc [--minconf] [--offline]   Display account balance
   gettx     acc txid                      Get a transaction by txid
+  deletetx  txid                          Delete unconfirmed transaction
 
 Offline tx signing commands:
   getoffline  acc txhash                  Get data to sign a tx offline

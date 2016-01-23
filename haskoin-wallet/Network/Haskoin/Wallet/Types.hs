@@ -368,6 +368,7 @@ data WalletRequest
     | PostOfflineTxR !KeyRingName !AccountName !Tx ![CoinSignData]
     | GetBalanceR !KeyRingName !AccountName !Word32 !Bool
     | PostNodeR !NodeAction
+    | DeleteTxIdR !TxHash
 
 -- TODO: Set omitEmptyContents on aeson-0.9
 $(deriveJSON

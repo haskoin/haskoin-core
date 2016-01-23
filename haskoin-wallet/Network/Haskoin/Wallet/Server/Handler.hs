@@ -469,7 +469,7 @@ postTxsR keyRingName name action = do
                 [ "PostTxsR ImportTx"
                 , "  KeyRing name: " ++ unpack keyRingName
                 , "  Account name: " ++ unpack name
-                , "  Txid        : " ++ cs (txHashToHex (txHash tx))
+                , "  TxId        : " ++ cs (txHashToHex (txHash tx))
                 ]
             runDB $ do
                 (res, newAddrs) <- importTx tx ai
@@ -482,7 +482,7 @@ postTxsR keyRingName name action = do
                 [ "PostTxsR SignTx"
                 , "  KeyRing name: " ++ unpack keyRingName
                 , "  Account name: " ++ unpack name
-                , "  Txid        : " ++ cs (txHashToHex txid)
+                , "  TxId        : " ++ cs (txHashToHex txid)
                 ]
             runDB $ do
                 (res, newAddrs) <- signKeyRingTx keyRing accE txid
@@ -509,7 +509,7 @@ getTxR keyRingName name txid = do
         [ "GetTxR"
         , "  KeyRing name: " ++ unpack keyRingName
         , "  Account name: " ++ unpack name
-        , "  Txid        : " ++ cs (txHashToHex txid)
+        , "  TxId        : " ++ cs (txHashToHex txid)
         ]
     (keyRing, acc, res, height) <- runDB $ do
         (keyRing, Entity ai acc) <- getAccount keyRingName name
@@ -521,6 +521,16 @@ getTxR keyRingName name txid = do
         , withAccountAccount = toJsonAccount acc
         , withAccountData    = toJsonTx res (Just height)
         }
+
+deleteTxIdR :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
+            => TxHash -> Handler m (Maybe Value)
+deleteTxIdR txid = do
+    $(logInfo) $ format $ unlines
+        [ "DeleteTxR"
+        , "  TxId: " ++ cs (txHashToHex txid)
+        ]
+    runDB $ deleteTxId txid
+    return Nothing
 
 getBalanceR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
             => KeyRingName -> AccountName -> Word32 -> Bool
@@ -552,7 +562,7 @@ getOfflineTxR keyRingName accountName txid = do
         [ "GetOfflineTxR"
         , "  KeyRing name: " ++ unpack keyRingName
         , "  Account name: " ++ unpack accountName
-        , "  Txid        : " ++ cs (txHashToHex txid)
+        , "  TxId        : " ++ cs (txHashToHex txid)
         ]
     (dat, _) <- runDB $ do
         (_, Entity ai _) <- getAccount keyRingName accountName
@@ -572,7 +582,7 @@ postOfflineTxR keyRingName accountName tx signData = do
         [ "PostTxsR SignOfflineTx"
         , "  KeyRing name: " ++ unpack keyRingName
         , "  Account name: " ++ unpack accountName
-        , "  Txid        : " ++ cs (txHashToHex (txHash tx))
+        , "  TxId        : " ++ cs (txHashToHex (txHash tx))
         ]
     (keyRing, Entity _ acc) <- runDB $ getAccount keyRingName accountName
     let signedTx = signOfflineTx keyRing acc tx signData

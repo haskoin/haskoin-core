@@ -30,6 +30,7 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdVersion
 , cmdStatus
 , cmdKeyPair
+, cmdDeleteTx
 )
 where
 
@@ -356,6 +357,13 @@ cmdRescan timeLs =
         putStrLn $ unwords [ "Timestamp:", show ts]
   where
     timeM = read <$> listToMaybe timeLs
+
+cmdDeleteTx :: String -> Handler ()
+cmdDeleteTx tidStr = case tidM of
+    Just tid -> sendZmq (DeleteTxIdR tid) $ \() -> return ()
+    Nothing -> error "Could not parse txid"
+  where
+    tidM = hexToTxHash $ cs tidStr
 
 cmdDecodeTx :: String -> Handler ()
 cmdDecodeTx txStr = do

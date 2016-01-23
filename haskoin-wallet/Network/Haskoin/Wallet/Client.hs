@@ -191,6 +191,7 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "getoffline"  : [name, txid]           -> cmdGetOffline name txid
     "signoffline" : [name, tx, dat]        -> cmdSignOffline name tx dat
     "rescan"      : rescantime             -> cmdRescan rescantime
+    "deletetx"    : [txid]                 -> cmdDeleteTx txid
     "decodetx"    : [tx]                   -> cmdDecodeTx tx
     ["status"]                             -> cmdStatus
     ["keypair"]                            -> cmdKeyPair

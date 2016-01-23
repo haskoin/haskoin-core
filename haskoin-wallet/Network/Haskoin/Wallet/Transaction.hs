@@ -14,6 +14,8 @@ module Network.Haskoin.Wallet.Transaction
 , killTxs
 , reviveTx
 , getPendingTxs
+, deleteTxId
+, deleteTxIds
 
 -- *Database blocks
 , importMerkles
@@ -749,12 +751,56 @@ groupCoinsByAccount inCoins outCoins =
     inMap  = M.map (\is -> (is, [])) $ M.fromListWith (++) $ map f inCoins
     outMap = M.map (\os -> ([], os)) $ M.fromListWith (++) $ map g outCoins
 
--- Kill transactions and their child transactions by ids.
+deleteTxId :: MonadIO m => TxHash -> SqlPersistT m ()
+deleteTxId txId = do
+    txIds <- select $ from $ \t -> do
+        where_ $ t ^. KeyRingTxHash ==. val txId
+        return $ t ^. KeyRingTxId
+    deleteTxIds $ map unValue txIds
+
+-- Delete specified unconfirmed transactions
+deleteTxIds :: MonadIO m => [KeyRingTxId] -> SqlPersistT m ()
+deleteTxIds txIds = do
+    -- Remove confirmed transactions from transaction list
+    txValues' <- splitSelect txIds $ \ts -> from $ \t -> do
+        where_ (   t ^. KeyRingTxId `in_` valList ts
+               &&. t ^. KeyRingTxConfidence !=. val TxBuilding
+               )
+        return $ t ^. KeyRingTxId
+    let txIds' = map unValue txValues'
+
+    -- Find all immediate unconfirmed dependents
+    children <- splitSelect txIds' $ \ts -> from $ \(t `InnerJoin` s) -> do
+            on (   s ^. KeyRingSpentCoinAccount ==. t ^. KeyRingTxAccount
+               &&. s ^. KeyRingSpentCoinHash    ==. t ^. KeyRingTxHash
+               )
+            where_ (   t ^. KeyRingTxId `in_` valList ts
+                   &&. t ^. KeyRingTxConfidence !=. val TxBuilding
+                   )
+            return s
+
+    -- Recurse into immediate children
+    unless (null children) $ deleteTxIds $ nub $
+        map (keyRingSpentCoinSpendingTx . entityVal) children
+
+    -- Delete spent coins
+    splitDelete children $ \ss -> from $ \s ->
+        where_ $ s ^. KeyRingSpentCoinId `in_` valList (map entityKey ss)
+
+    -- Delete coins
+    splitDelete txIds' $ \ts -> from $ \c ->
+        where_ $ c ^. KeyRingCoinTx `in_` valList ts
+
+    -- Delete transactions
+    splitDelete txIds' $ \ts -> from $ \t ->
+        where_ $ t ^. KeyRingTxId `in_` valList ts
+
+-- Kill transactions and their children by ids.
 killTxIds :: MonadIO m => [KeyRingTxId] -> SqlPersistT m ()
 killTxIds txIds = do
     -- Find all the transactions spending the coins of these transactions
     -- (Find all the child transactions)
-    childs <- splitSelect txIds $ \ts -> from $ \(t `InnerJoin` s) -> do
+    children <- splitSelect txIds $ \ts -> from $ \(t `InnerJoin` s) -> do
         on (   s ^. KeyRingSpentCoinAccount ==. t ^. KeyRingTxAccount
            &&. s ^. KeyRingSpentCoinHash    ==. t ^. KeyRingTxHash
            )
@@ -772,7 +818,7 @@ killTxIds txIds = do
 
     -- Recursively kill all the child transactions.
     -- (Recurse at the end in case there are closed loops)
-    unless (null childs) $ killTxIds $ nub $ map unValue childs
+    unless (null children) $ killTxIds $ nub $ map unValue children
 
 -- Kill transactions and their child transactions by hashes.
 killTxs :: MonadIO m => [TxHash] -> SqlPersistT m ()

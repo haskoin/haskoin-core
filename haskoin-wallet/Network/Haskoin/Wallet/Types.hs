@@ -135,7 +135,7 @@ data TxConfidence
 instance NFData TxConfidence where
     rnf x = x `seq` ()
 
-$(deriveJSON (dropFieldLabel 2) ''TxConfidence)
+$(deriveJSON (dropSumLabels 2 0 "") ''TxConfidence)
 
 data AddressInfo = AddressInfo
     { addressInfoAddress :: !Address

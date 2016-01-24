@@ -215,7 +215,6 @@ data PeerStatus = PeerStatus
     , peerStatusPing           :: !(Maybe String)
     , peerStatusDoSScore       :: !(Maybe PeerHostScore)
     -- Debug fields
-    , peerStatusThreadId       :: !String
     , peerStatusHaveMerkles    :: !Bool
     , peerStatusHaveMessage    :: !Bool
     , peerStatusPingNonces     :: ![PingNonce]

@@ -683,7 +683,6 @@ peerStatus (pid, PeerSession{..}) = do
         peerStatusUserAgent =
             C.unpack . getVarString . userAgent <$> peerSessionVersion
         peerStatusPing           = show <$> peerSessionScore
-        peerStatusThreadId       = show peerSessionThreadId
         peerStatusDoSScore       = peerHostSessionScore <$> hostM
         peerStatusLog            = peerHostSessionLog <$> hostM
         peerStatusReconnectTimer = peerHostSessionReconnect <$> hostM

@@ -616,6 +616,8 @@ printAddress JsonAddr{..} = unwords $
 
 printTx :: JsonTx -> String
 printTx tx@JsonTx{..} = unlines $
+    [ "Id         : " ++ cs (txHashToHex jsonTxHash) ]
+    ++
     [ "Value      : " ++ printTxType jsonTxType ++ " " ++ show jsonTxValue ]
     ++
     [ "Confidence : " ++ printTxConfidence tx ]
@@ -717,7 +719,6 @@ printPeerStatus verbose PeerStatus{..} =
     ] ++
     [ "  DoS Score: " ++ show d | d <- maybeToList peerStatusDoSScore
     ] ++
-    [ "  ThreadId : " ++ peerStatusThreadId | verbose ] ++
     [ "  Merkles  : " ++ show peerStatusHaveMerkles | verbose ] ++
     [ "  Messages : " ++ show peerStatusHaveMessage | verbose ] ++
     [ "  Nonces   : " ++ show peerStatusPingNonces | verbose ] ++

@@ -152,8 +152,8 @@ bloomCreate :: Int          -- ^ Number of elements
              -- of geat consequence.
             -> BloomFlags   -- ^ Bloom filter flags
             -> BloomFilter  -- ^ Bloom filter
-bloomCreate numElem fpRate tweak flags =
-    BloomFilter (S.replicate bloomSize 0) numHashF tweak flags
+bloomCreate numElem fpRate =
+    BloomFilter (S.replicate bloomSize 0) numHashF
   where
     -- Bloom filter size in bytes
     bloomSize = truncate $ (min a b) / 8
@@ -195,7 +195,7 @@ bloomContains :: BloomFilter    -- ^ Bloom filter
 bloomContains bfilter bs
     | isBloomFull bfilter  = True
     | isBloomEmpty bfilter = False
-    | otherwise            = and $ map isSet idxs
+    | otherwise            = all isSet idxs
   where
     s       = bloomData bfilter
     idxs    = map (\i -> bloomHash bfilter i bs) [0..bloomHashFuncs bfilter - 1]

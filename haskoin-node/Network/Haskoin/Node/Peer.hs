@@ -19,6 +19,7 @@ import Control.Concurrent.Async.Lifted
 import Control.Concurrent.STM
     ( STM, atomically, readTVar, modifyTVar', swapTVar, retry, newTVarIO )
 
+import Data.Bits (testBit)
 import Data.List (nub, sort, sortBy)
 import Data.Text (Text, pack)
 import Data.Word (Word32)
@@ -52,7 +53,7 @@ import Network.Haskoin.Util
 
 -- TODO: Move constants elsewhere ?
 minProtocolVersion :: Word32
-minProtocolVersion = 70001
+minProtocolVersion = 70011
 
 -- Start a reconnecting peer that will idle once the connection is established
 -- and the handshake is performed.
@@ -462,13 +463,16 @@ peerPing pid ph = forever $ do
         ns <- liftIO . atomically $ do
             ns <- swapTVar nonceTVar []
             if null ns then retry else return ns
-        if nonce `elem` ns then return () else waitPong nonce nonceTVar
+        unless (nonce `elem` ns) $ waitPong nonce nonceTVar
     killPeer nonce = do
         $(logWarn) $ formatPid pid ph $ concat
             [ "Did not receive a timely reply for Ping ", show nonce
             , ". Reconnecting the peer."
             ]
         disconnectPeer pid ph
+
+isBloomEnabled :: Version -> Bool
+isBloomEnabled = (`testBit` 2) . services
 
 peerHandshake :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
               => PeerId
@@ -492,29 +496,34 @@ peerHandshake pid ph chan = do
         , unwords [ "  time     :", show $ timestamp peerVer ]
         , unwords [ "  blocks   :", show $ startHeight peerVer ]
         ]
-    -- Check the protocol version
-    if version peerVer < minProtocolVersion
-        then misbehaving pid ph severeDoS $ unwords
-            [ "Connected to a peer speaking protocol version"
-            , show $ version peerVer
-            , "but we require at least"
-            , show $ minProtocolVersion
-            ]
-        else do
-            atomicallyNodeT $ do
-                -- Save the peers height and update the network height
-                modifyPeerSession pid $ \s ->
-                    s{ peerSessionHeight    = startHeight peerVer
-                    , peerSessionConnected = True
-                    }
-                updateNetworkHeight
-                -- Reset the reconnection timer (exponential backoff)
-                modifyHostSession ph $ \s -> s{ peerHostSessionReconnect = 1 }
-                -- ACK the version message
-                lift $ writeTBMChan chan MVerAck
 
-            $(logDebug) $ formatPid pid ph "Handshake complete"
+    -- Check the protocol version
+    go peerVer $ do
+        atomicallyNodeT $ do
+            -- Save the peers height and update the network height
+            modifyPeerSession pid $ \s ->
+                s{ peerSessionHeight    = startHeight peerVer
+                , peerSessionConnected = True
+                }
+            updateNetworkHeight
+            -- Reset the reconnection timer (exponential backoff)
+            modifyHostSession ph $ \s ->
+                s{ peerHostSessionReconnect = 1 }
+            -- ACK the version message
+            lift $ writeTBMChan chan MVerAck
+        $(logDebug) $ formatPid pid ph "Handshake complete"
   where
+    go ver action
+        | version ver < minProtocolVersion =
+            misbehaving pid ph severeDoS $ unwords
+                [ "Connected to a peer speaking protocol version"
+                , show $ version ver
+                , "but we require at least"
+                , show $ minProtocolVersion
+                ]
+        | isBloomEnabled ver =
+            misbehaving pid ph severeDoS $ "Peers do not support bloom filters"
+        | otherwise = action
     buildVersion = do
         -- TODO: Get our correct IP here
         let add = NetworkAddress 1 $ SockAddrInet 0 0
@@ -522,8 +531,8 @@ peerHandshake pid ph chan = do
         time <- liftM floor $ liftIO getPOSIXTime
         rdmn <- liftIO randomIO -- nonce
         h    <- runHeaderTree bestBlockHeaderHeight
-        return Version { version     = 70001
-                       , services    = 1
+        return Version { version     = 70011
+                       , services    = 5
                        , timestamp   = time
                        , addrRecv    = add
                        , addrSend    = add

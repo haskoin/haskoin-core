@@ -135,7 +135,7 @@ addrTxs :: MonadIO m
         => Entity KeyRingAccount -- ^ Account entity
         -> KeyRingAddrId         -- ^ Address Id
         -> ListRequest           -- ^ List request
-        -> SqlPersistT m ([(KeyRingTx, BalanceInfo)], Word32)
+        -> SqlPersistT m ([KeyRingTx], Word32)
 addrTxs (Entity ai _) addrI ListRequest{..} = do
     let joinSpentCoin c2 s =
                 c2 ?. KeyRingCoinAccount ==. s ?. KeyRingSpentCoinAccount
@@ -151,6 +151,7 @@ addrTxs (Entity ai _) addrI ListRequest{..} = do
             on $ joinSpentCoin c2 s
             on $ joinSpent s t
             on $ joinCoin c t
+
     -- Find all the tids
     tids <- fmap (map unValue) $ select $ distinct $ from $
             \(t `LeftOuterJoin` c `LeftOuterJoin`
@@ -173,7 +174,7 @@ addrTxs (Entity ai _) addrI ListRequest{..} = do
         tidList = fOrd $ take (fromIntegral listLimit) $
             drop (fromIntegral listOffset) $ fOrd tids
 
-    -- Use a sliptSelect query here with the exact tids to speed up the
+    -- Use a splitSelect query here with the exact tids to speed up the
     -- query.
     res <- splitSelect tidList $ \tid ->
         from $ \(t `LeftOuterJoin` c `LeftOuterJoin`
@@ -182,27 +183,9 @@ addrTxs (Entity ai _) addrI ListRequest{..} = do
         where_ $ t ^. KeyRingTxId `in_` valList tid
         groupBy $ t ^. KeyRingTxId
         orderBy [ asc (t ^. KeyRingTxId) ]
-        return  ( t
-                  -- Incoming value
-                , coalesceDefault [sum_ (c  ?. KeyRingCoinValue)] (val 0)
-                  -- Outgoing value
-                , coalesceDefault [sum_ (c2 ?. KeyRingCoinValue)] (val 0)
-                  -- Number of new coins created
-                , count $ c ?. KeyRingCoinId
-                  -- Number of coins spent
-                , count $ c2 ?. KeyRingCoinId
-                )
+        return  t
 
-    let f (t, Value inVal, Value outVal, Value newCount, Value spentCount) =
-            ( entityVal t
-            , BalanceInfo
-                { balanceInfoInBalance  = floor (inVal :: Double)
-                , balanceInfoOutBalance = floor (outVal :: Double)
-                , balanceInfoCoins      = newCount
-                , balanceInfoSpentCoins = spentCount
-                }
-            )
-    return (map f res, fromIntegral (length tids))
+    return (map entityVal res, fromIntegral (length tids))
 
 
 -- Helper function to get a transaction from the wallet database. The function

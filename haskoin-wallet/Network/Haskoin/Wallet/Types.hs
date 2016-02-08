@@ -9,9 +9,6 @@ module Network.Haskoin.Wallet.Types
 , JsonAddr(..)
 , JsonCoin(..)
 , JsonTx(..)
-, JsonWithKeyRing(..)
-, JsonWithAccount(..)
-, JsonWithAddr(..)
 
 -- Request Types
 , WalletRequest(..)
@@ -35,7 +32,6 @@ module Network.Haskoin.Wallet.Types
 -- Response Types
 , WalletResponse(..)
 , TxCompleteRes(..)
-, AddrTx(..)
 , ListResult(..)
 , RescanRes(..)
 
@@ -409,13 +405,6 @@ instance FromJSON JsonKeyRing where
             , jsonKeyRingCreated = created
             }
 
-data JsonWithKeyRing a = JsonWithKeyRing
-    { withKeyRingKeyRing :: !JsonKeyRing
-    , withKeyRingData    :: !a
-    }
-
-$(deriveJSON (dropFieldLabel 11) ''JsonWithKeyRing)
-
 data JsonAccount = JsonAccount
     { jsonAccountName       :: !Text
     , jsonAccountType       :: !AccountType
@@ -427,14 +416,6 @@ data JsonAccount = JsonAccount
     deriving (Eq, Show, Read)
 
 $(deriveJSON (dropFieldLabel 11) ''JsonAccount)
-
-data JsonWithAccount a = JsonWithAccount
-    { withAccountKeyRing :: !JsonKeyRing
-    , withAccountAccount :: !JsonAccount
-    , withAccountData    :: !a
-    }
-
-$(deriveJSON (dropFieldLabel 11) ''JsonWithAccount)
 
 data JsonAddr = JsonAddr
     { jsonAddrAddress        :: !Address
@@ -452,15 +433,6 @@ data JsonAddr = JsonAddr
     deriving (Eq, Show, Read)
 
 $(deriveJSON (dropFieldLabel 8) ''JsonAddr)
-
-data JsonWithAddr a = JsonWithAddr
-    { withAddrKeyRing :: !JsonKeyRing
-    , withAddrAccount :: !JsonAccount
-    , withAddrAddress :: !JsonAddr
-    , withAddrData    :: !a
-    }
-
-$(deriveJSON (dropFieldLabel 8) ''JsonWithAddr)
 
 data JsonTx = JsonTx
     { jsonTxHash            :: !TxHash
@@ -504,13 +476,6 @@ data JsonCoin = JsonCoin
 $(deriveJSON (dropFieldLabel 8) ''JsonCoin)
 
 {- Response Types -}
-
-data AddrTx = AddrTx
-    { addrTxTx      :: !JsonTx
-    , addrTxBalance :: !BalanceInfo
-    }
-
-$(deriveJSON (dropFieldLabel 6) ''AddrTx)
 
 data TxCompleteRes = TxCompleteRes
     { txCompleteTx       :: !Tx

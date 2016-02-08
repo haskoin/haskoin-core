@@ -94,7 +94,7 @@ tests =
                 (WalletException "The account is already complete") $ do
                     keyE <- newKeyRing "main" $ BS.pack [0]
                     _ <- newAccount keyE "default" (AccountRegular False) []
-                    (_, accE) <- getAccount "main" "default"
+                    accE <- getAccount "main" "default"
                     addAccountKeys accE [ deriveXPubKey $ makeXPrvKey (BS.pack [1]) ]
 
         , testCase "Adding keys to a complete multisig account should fail" $
@@ -105,7 +105,7 @@ tests =
                         [ deriveXPubKey $ makeXPrvKey (BS.pack [1])
                         , deriveXPubKey $ makeXPrvKey (BS.pack [2])
                         ]
-                    (_, accE) <- getAccount "main" "ms"
+                    accE <- getAccount "main" "ms"
                     addAccountKeys accE [deriveXPubKey $ makeXPrvKey (BS.pack [3])]
 
         , testCase "Getting a non-existing account should fail" $
@@ -120,9 +120,9 @@ tests =
             assertException (WalletException "The gap of an account can only be increased") $ do
                 keyE <- newKeyRing "main" $ BS.pack [0]
                 _ <- newAccount keyE "default" (AccountRegular False) []
-                (_, acc1E) <- getAccount "main" "default"
+                acc1E <- getAccount "main" "default"
                 _ <- setAccountGap acc1E 15
-                (_, acc2E) <- getAccount "main" "default"
+                acc2E <- getAccount "main" "default"
                 setAccountGap acc2E 14
 
         , testCase "Setting a label on a hidden address key should fail" $
@@ -1289,7 +1289,7 @@ testOfflineExceptions = do
     assertException (WalletException "Could not import offline transaction") $ do
         keyE <- newKeyRing "test" bs1
         _ <- newAccount keyE "acc1" (AccountRegular False) []
-        (_, Entity ai _) <- getAccount "test" "acc1"
+        Entity ai _ <- getAccount "test" "acc1"
         importNetTx tx1
             >>= liftIO
             . (assertEqual "Confidence is not pending"
@@ -1300,7 +1300,7 @@ testOfflineExceptions = do
     assertException (WalletException "Could not import offline transaction") $ do
         keyE <- newKeyRing "test" bs1
         _ <- newAccount keyE "acc1" (AccountRegular False) []
-        (_, Entity ai _) <- getAccount "test" "acc1"
+        Entity ai _ <- getAccount "test" "acc1"
         importNetTx tx4
             >>= liftIO
             . (assertEqual "Confidence is not pending"
@@ -1321,7 +1321,7 @@ testOfflineExceptions = do
     assertException (WalletException "Could not import offline transaction") $ do
         keyE <- newKeyRing "test" bs1
         _ <- newAccount keyE "acc1" (AccountRegular False) []
-        (_, Entity ai _) <- getAccount "test" "acc1"
+        Entity ai _ <- getAccount "test" "acc1"
         importNetTx tx1
             >>= liftIO
             . (assertEqual "Confidence is not pending"
@@ -1338,8 +1338,8 @@ testImportMultisig = do
     _ <- newAccount keyE "ms2" (AccountMultisig False 2 2)
         [fromJust $ xPubImport "xpub69iinth3CTrfh5efv7baTWwk9hHi4zqcQEsNFgVwEJvdaZVEPytZzmNxjYTnF5F5x2CamLXvmD1T4RhpsuaXSFPo2MnLN5VqWqrWb82U7ED"]
     Entity _ keyRing <- getKeyRing "test"
-    (_, accE1@(Entity ai1 _)) <- getAccount "test" "ms1"
-    (_, accE2@(Entity ai2 _)) <- getAccount "test" "ms2"
+    accE1@(Entity ai1 _) <- getAccount "test" "ms1"
+    accE2@(Entity ai2 _) <- getAccount "test" "ms2"
 
     let fundingTx =
             Tx 1 [ TxIn (OutPoint tid1 0) (BS.pack [1]) maxBound ] -- dummy input
@@ -1470,7 +1470,7 @@ testKillTx :: App ()
 testKillTx = do
     keyE <- newKeyRing "test" bs1
     _ <- newAccount keyE "acc1" (AccountRegular False) []
-    (_, accE@(Entity ai _)) <- getAccount "test" "acc1"
+    accE@(Entity ai _) <- getAccount "test" "acc1"
     let tx1 = fakeTx
             [ (tid1, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ]

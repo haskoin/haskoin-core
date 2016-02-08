@@ -74,9 +74,6 @@ pid-file: hw.pid
 # work-dir. Can only be set as environment variable.
 config-file: config.yml
 
-# Default keyring name
-keyring-name: main
-
 # Default output size for commands such as page sizes.
 output-size: 10
 

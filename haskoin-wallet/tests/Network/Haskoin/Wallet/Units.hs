@@ -10,12 +10,12 @@ import Control.Exception (Exception, handleJust)
 import Control.Monad.Trans.Resource (ResourceT)
 import Control.Monad.Logger (NoLoggingT)
 
+import Data.String.Conversions (cs)
 import Data.Word (Word32, Word64)
 import Data.Maybe (fromJust)
 import Data.List (sort)
 import qualified Data.ByteString as BS
     ( ByteString
-    , empty
     , pack
     )
 
@@ -33,124 +33,239 @@ import Network.Haskoin.Block
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
-import Network.Haskoin.Util
 
 type App = SqlPersistT (NoLoggingT (ResourceT IO))
 
+-- TODO: Add tests for accounts with no private key
 tests :: [Test]
 tests =
-    [ testGroup "KeyRing creation"
-        [ testCase "Calling newKeyRing with an empty seed should fail" $
+    [ testGroup "Account tests"
+        [ testCase "Fail create account with wrong keys" $
             assertException
-                (WalletException "The seed is empty")
-                (newKeyRing "main" BS.empty)
+                (WalletException "Invalid account keys")
+                ( newAccount NewAccount
+                    { newAccountName = "fail-this"
+                    , newAccountType = AccountRegular
+                    -- This key does not correspond to the one below
+                    , newAccountMaster = Just
+                        "xprv9s21ZrQH143K33Ezpb81k5upGyhrVcwgqNzHRHnQ2kGBPHkJ3sLPjGwj4LML1kr1bLfguJiY21XrYfVrL1CGurfVoMKSPwRdmzt1LwBtVyR"
+                    , newAccountDeriv = Nothing
+                    , newAccountKeys =
+                        ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                    , newAccountMnemonic = Nothing
+                    , newAccountReadOnly = False
+                    }
+                )
 
-        , testCase "Creating two KeyRings with the same name should fail" $
+        , testCase "Creating two accounts with the same data should fail" $
             assertException
-                (WalletException "KeyRing main already exists") $ do
-                    _ <- newKeyRing "main" $ BS.pack [0]
-                    newKeyRing "main" $ BS.pack [1]
-        ]
-    , testGroup "Account tests"
-        [ testCase "Creating two accounts with the same name should fail" $
-            assertException (WalletException "Account acc already exists") $ do
-                keyE <- newKeyRing "main" $ BS.pack [1]
-                _ <- newAccount keyE "acc" (AccountRegular False) []
-                newAccount keyE "acc" (AccountRegular False) []
-
+                (WalletException "Account already exists") $ do
+                    _ <- newAccount NewAccount
+                        { newAccountName = "main"
+                        , newAccountType = AccountRegular
+                        , newAccountMaster = Just
+                            "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                        , newAccountDeriv = Nothing
+                        , newAccountKeys =
+                            ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                        , newAccountMnemonic = Nothing
+                        , newAccountReadOnly = False
+                        }
+                    newAccount NewAccount
+                        { newAccountName = "main"
+                        , newAccountType = AccountRegular
+                        , newAccountMaster = Nothing
+                        , newAccountDeriv = Nothing
+                        , newAccountKeys =
+                            ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                        , newAccountMnemonic = Nothing
+                        , newAccountReadOnly = False
+                        }
         , testCase "Invalid multisig parameters (0 of 1)" $
-            assertException (WalletException "Invalid account type") $ do
-                keyE <- newKeyRing "main" $ BS.pack [0]
-                newAccount keyE "ms" (AccountMultisig False 0 1) []
+            assertException (WalletException "Invalid account type") $
+                newAccount NewAccount
+                    { newAccountName = "multisig-0-of-1"
+                    , newAccountType = AccountMultisig 0 1
+                    , newAccountMaster = Just
+                        "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                    , newAccountDeriv = Nothing
+                    , newAccountKeys =
+                        ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                    , newAccountMnemonic = Nothing
+                    , newAccountReadOnly = False
+                    }
 
         , testCase "Invalid multisig parameters (2 of 1)" $
-            assertException (WalletException "Invalid account type") $ do
-                keyE <- newKeyRing "main" $ BS.pack [0]
-                newAccount keyE "ms" (AccountMultisig False 2 1) []
+            assertException (WalletException "Invalid account type") $
+                newAccount NewAccount
+                    { newAccountName = "multisig-2-of-1"
+                    , newAccountType = AccountMultisig 2 1
+                    , newAccountMaster = Just
+                        "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                    , newAccountDeriv = Nothing
+                    , newAccountKeys =
+                        ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                    , newAccountMnemonic = Nothing
+                    , newAccountReadOnly = False
+                    }
 
         , testCase "Invalid multisig parameters (15 of 16)" $
-            assertException (WalletException "Invalid account type") $ do
-                keyE <- newKeyRing "main" $ BS.pack [0]
-                newAccount keyE "ms" (AccountMultisig False 15 16) []
+            assertException (WalletException "Invalid account type") $
+                newAccount NewAccount
+                    { newAccountName = "multisig-15-of-16"
+                    , newAccountType = AccountMultisig 15 16
+                    , newAccountMaster = Just
+                        "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                    , newAccountDeriv = Nothing
+                    , newAccountKeys =
+                        ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                    , newAccountMnemonic = Nothing
+                    , newAccountReadOnly = False
+                    }
 
-        , testCase "To many multisig keys (2 keys for 1 of 2)" $
-            assertException
-                (WalletException "Invalid account keys") $ do
-                    keyE <- newKeyRing "main" $ BS.pack [0]
-                    newAccount keyE "ms" (AccountMultisig False 1 2)
-                        [ deriveXPubKey $ makeXPrvKey (BS.pack [1])
-                        , deriveXPubKey $ makeXPrvKey (BS.pack [2])
+        , testCase "To many multisig keys (3 keys for 1 of 2)" $
+            assertException (WalletException "Invalid account keys") $
+                newAccount NewAccount
+                    { newAccountName = "multisig-1-of-2-with-3"
+                    , newAccountType = AccountMultisig 1 2
+                    , newAccountMaster = Just
+                        "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                    , newAccountDeriv = Nothing
+                    , newAccountKeys =
+                        [ "xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"
+                        , "xpub661MyMwAqRbcFEPH5Aon6F7edspeu1v6a1Nw5qJgk1aX5XYg1ktBL9Azra2CKaAJ2bHXEXkeKHE3eFaCJktFiA5tSMDQDs6bi83maQtdYby"
+                        , "xpub661MyMwAqRbcFtDszBWpawpg4KbNWL9qD4VdRwjd1L5cmcS8nXHWXpg9WL1Xc9Yh7HbQBwWDw37YJfc4AF3YEpvAHEBPBFQPFkUcFHnopw8"
                         ]
+                    , newAccountMnemonic = Nothing
+                    , newAccountReadOnly = False
+                    }
 
         , testCase "Calling addAccountKeys with an empty key list should fail" $
             assertException
                 (WalletException "Invalid account keys") $ do
-                    keyE <- newKeyRing "main" $ BS.pack [0]
-                    accE <- newAccount keyE "default" (AccountRegular True) []
-                    addAccountKeys accE []
+                    res <- newAccount NewAccount
+                        { newAccountName = "multisig-1-of-2-plus-empty"
+                        , newAccountType = AccountMultisig 1 2
+                        , newAccountMaster = Just
+                            "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                        , newAccountDeriv = Nothing
+                        , newAccountKeys =
+                            ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                        , newAccountMnemonic = Nothing
+                        , newAccountReadOnly = False
+                        }
+                    addAccountKeys (fst res) []
 
         , testCase "Calling addAccountKeys on a non-multisig account should fail" $
             assertException
                 (WalletException "The account is already complete") $ do
-                    keyE <- newKeyRing "main" $ BS.pack [0]
-                    _ <- newAccount keyE "default" (AccountRegular False) []
-                    accE <- getAccount "main" "default"
-                    addAccountKeys accE [ deriveXPubKey $ makeXPrvKey (BS.pack [1]) ]
+                    res <- newAccount NewAccount
+                        { newAccountName = "regular-plus-more"
+                        , newAccountType = AccountRegular
+                        , newAccountMaster = Just
+                            "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                        , newAccountDeriv = Nothing
+                        , newAccountKeys =
+                            ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                        , newAccountMnemonic = Nothing
+                        , newAccountReadOnly = False
+                        }
+                    addAccountKeys (fst res)
+                        ["xpub661MyMwAqRbcFEPH5Aon6F7edspeu1v6a1Nw5qJgk1aX5XYg1ktBL9Azra2CKaAJ2bHXEXkeKHE3eFaCJktFiA5tSMDQDs6bi83maQtdYby"]
 
         , testCase "Adding keys to a complete multisig account should fail" $
             assertException
                 (WalletException "The account is already complete") $ do
-                    keyE <- newKeyRing "main" $ BS.pack [0]
-                    _ <- newAccount keyE "ms" (AccountMultisig False 2 3)
-                        [ deriveXPubKey $ makeXPrvKey (BS.pack [1])
-                        , deriveXPubKey $ makeXPrvKey (BS.pack [2])
-                        ]
-                    accE <- getAccount "main" "ms"
-                    addAccountKeys accE [deriveXPubKey $ makeXPrvKey (BS.pack [3])]
+                    res <- newAccount NewAccount
+                        { newAccountName = "regular-plus-more"
+                        , newAccountType = AccountMultisig 1 2
+                        , newAccountMaster = Just
+                            "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                        , newAccountDeriv = Nothing
+                        , newAccountKeys =
+                            [ "xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"
+                            , "xpub661MyMwAqRbcFEPH5Aon6F7edspeu1v6a1Nw5qJgk1aX5XYg1ktBL9Azra2CKaAJ2bHXEXkeKHE3eFaCJktFiA5tSMDQDs6bi83maQtdYby"
+                            ]
+                        , newAccountMnemonic = Nothing
+                        , newAccountReadOnly = False
+                        }
+                    addAccountKeys (fst res)
+                        ["xpub661MyMwAqRbcFtDszBWpawpg4KbNWL9qD4VdRwjd1L5cmcS8nXHWXpg9WL1Xc9Yh7HbQBwWDw37YJfc4AF3YEpvAHEBPBFQPFkUcFHnopw8"]
 
         , testCase "Getting a non-existing account should fail" $
             assertException
-                (WalletException "Account default does not exist") $ do
-                    _ <- newKeyRing "main" $ BS.pack [0]
-                    getAccount "main" "default"
+                (WalletException "Account inexistent does not exist") $
+                    getAccount "inexistent"
 
         ]
     , testGroup "Address tests"
         [ testCase "Decreasing the address gap should fail" $
             assertException (WalletException "The gap of an account can only be increased") $ do
-                keyE <- newKeyRing "main" $ BS.pack [0]
-                _ <- newAccount keyE "default" (AccountRegular False) []
-                acc1E <- getAccount "main" "default"
-                _ <- setAccountGap acc1E 15
-                acc2E <- getAccount "main" "default"
-                setAccountGap acc2E 14
+                res <- newAccount NewAccount
+                    { newAccountName = "reduce-gap"
+                    , newAccountType = AccountRegular
+                    , newAccountMaster = Just
+                        "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                    , newAccountDeriv = Nothing
+                    , newAccountKeys =
+                        ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                    , newAccountMnemonic = Nothing
+                    , newAccountReadOnly = False
+                    }
+                accE' <- setAccountGap (fst res) 15
+                setAccountGap accE' 14
 
         , testCase "Setting a label on a hidden address key should fail" $
             assertException (WalletException "Invalid address index 10") $ do
-                keyE <- newKeyRing "main" $ BS.pack [0]
-                accE <- newAccount keyE "default" (AccountRegular False) []
-                setAddrLabel accE 10 AddressExternal "Gym membership"
+                res <- newAccount NewAccount
+                    { newAccountName = "label-hidden"
+                    , newAccountType = AccountRegular
+                    , newAccountMaster = Just
+                        "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                    , newAccountDeriv = Nothing
+                    , newAccountKeys =
+                        ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                    , newAccountMnemonic = Nothing
+                    , newAccountReadOnly = False
+                    }
+                setAddrLabel (fst res) 10 AddressExternal "Gym membership"
 
         , testCase "Setting a label on an invalid address key should fail" $
             assertException (WalletException "Invalid address index 20") $ do
-                keyE <- newKeyRing "main" $ BS.pack [0]
-                accE <- newAccount keyE "default" (AccountRegular False) []
-                setAddrLabel accE 20 AddressExternal "Gym membership"
+                res <- newAccount NewAccount
+                    { newAccountName = "label-invalid"
+                    , newAccountType = AccountRegular
+                    , newAccountMaster = Just
+                        "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                    , newAccountDeriv = Nothing
+                    , newAccountKeys =
+                        ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                    , newAccountMnemonic = Nothing
+                    , newAccountReadOnly = False
+                    }
+                setAddrLabel (fst res) 20 AddressExternal "Gym membership"
 
         , testCase "Requesting an address prvkey on a read-only account should fail" $
             assertException
-                (WalletException "Invalid address") $ do
-                    keyE@(Entity _ kr) <- newKeyRing "main" $ BS.pack [0]
-                    accE <- newAccount keyE "default" (AccountRegular True)
-                        [deriveXPubKey $ makeXPrvKey $ BS.pack [1]]
-                    addressPrvKey kr accE 2 AddressExternal
+                (WalletException "Could not get private key") $ do
+                    res <- newAccount NewAccount
+                        { newAccountName = "label-invalid"
+                        , newAccountType = AccountRegular
+                        , newAccountMaster = Nothing
+                        , newAccountDeriv = Nothing
+                        , newAccountKeys =
+                            ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                        , newAccountMnemonic = Nothing
+                        , newAccountReadOnly = False
+                        }
+                    addressPrvKey (fst res) Nothing 2 AddressExternal
         ]
     , testGroup "Wallet tests"
         [ testCase "Verify address derivations" $ runUnit testDerivations
         , testCase "Verify balances" $ runUnit testBalances
         , testCase "Verify balances in conflict" $ runUnit testConflictBalances
         , testCase "Offline transactions" $ runUnit testOffline
-        , testCase "Kill an offline tx by spending his coins" $ runUnit testKillOffline
+        , testCase "Kill an offline tx by spending its coins" $ runUnit testKillOffline
         , testCase "Offline transaction exceptions" testOfflineExceptions
         , testCase "Multisig test 1" $ runUnit testImportMultisig
         , testCase "Kill Tx" $ runUnit testKillTx
@@ -173,12 +288,8 @@ runUnit action = do
         action
     return ()
 
-bs1 :: BS.ByteString
-bs1 = fromRight $ mnemonicToSeed pass
-    "mass coast dance birth online various renew alert crunch middle absurd health"
-
-pass :: BS.ByteString
-pass = "passw0rd"
+ms :: Mnemonic
+ms = "mass coast dance birth online various renew alert crunch middle absurd health"
 
 tid1 :: TxHash
 tid1 = "0000000000000000000000000000000000000000000000000000000000000001"
@@ -232,45 +343,59 @@ fakeTx xs ys =
 
 testDerivations :: App ()
 testDerivations = do
-    keyE <- newKeyRing "test" bs1
-    accE <- newAccount keyE "acc1" (AccountRegular False) []
+    (accE, _) <- newAccount NewAccount
+        { newAccountName = "acc1"
+        , newAccountType = AccountRegular
+        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountMaster = Nothing
+        , newAccountMnemonic = Just (cs ms)
+        , newAccountKeys = []
+        , newAccountReadOnly = False
+        }
 
     unusedAddresses accE AddressExternal
         >>= liftIO . assertEqual "Generated external addresses do not match"
-            [ "13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR"
-            , "1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r"
-            , "1J7n7Lz1VKYdemEDWfyFoGQpSByK9doqeZ"
-            , "184p3tofVNgFXfA7Ry3VU1uTPyr5dGCiUF"
-            , "1FkBfN2P6RdvSE6M4k1BGZqFYRLXMXyJen"
-            , "1MQRM1Luzq4rkrKV8ii7BiukjCa63wt91D"
-            , "14zzWHCS5969DL4ZqphMrsG7p2gCSJnCV7"
-            , "1FFCS3SzGduAv2MBM9Ak9tALT5snVySST"
-            , "18VNX8vQre2hGneuCrXtXwB5D1NVTBUB46"
-            , "17mE4ZUaWETvjyLXbTcgoyqTc3A1f7eWVs"
-            ] . map (addrToBase58 . keyRingAddrAddress)
+            [ "1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe"
+            , "1NrcKe9UNtxjjgMSLdhBYaEgrQWQFnvJXX"
+            , "123XgHRNxkprjec72EpxBFPytPim21u9Kc"
+            , "16AuD3mAQMzsUHkMGfkQQapG6jhHmV3Rys"
+            , "1AjF1GhsxyXCN5doPGLjSztDcuLbfYMkqw"
+            , "1LPUYEjUd1u9dgjM3RqnoYj7Zt4j4dmZYA"
+            , "1Kzyb5Fpj2VmMoCNWxLNMYeMSu5ocS7u7e"
+            , "131L3UXV6WakXpyXvmqzqNkHwWJzWExR9i"
+            , "19FWGTZERHzMePTqKoR8nB9y6w7S5u9yGr"
+            , "135dwGc8JG2dmhy79onerHKdqoqibHShRJ"
+            ] . map (addrToBase58 . walletAddrAddress)
 
     unusedAddresses accE AddressInternal
         >>= liftIO . assertEqual "Generated internal addresses do not match"
-            [ "1BwbQ8Wp7YUfaYeiQPgXu6br5e4ogKjuKd"
-            , "16wQCfrqW5QegVe5pXpczHaxDmqTAn4ieM"
-            , "1PZjbfPbGzvB7jvoRSkCQZfne154mjU3sY"
-            , "152Nc7WrB24foAydrHJ7Sie954NgXCx5Tn"
-            , "1HojKLGEQb9bZMMckXgujnv9HGCNxtowCP"
-            , "13X9ds52rRYGvLwfbAvQDVU7K13j9cU7BR"
-            , "1LSBEYAcmsZuxyPVpF1GqxXTRxpg4CaJPF"
-            , "1MUcLFqrYhkSHjYcQdfZJRwnkEi9xWaGZU"
-            , "12vgEgi8ExgCo7EBPG1kxwJGR5FCXmZpoB"
-            , "1K14RjZ3he6erLHFNrPWwvmxm4nbr1MEYC"
-            ] . map (addrToBase58 . keyRingAddrAddress)
+            [ "1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm"
+            , "1JVocGcqZvQFbfpeQUY92iL9ARLsAP4DjW"
+            , "15yaPowqF2g9B3xbdyXaPygV9bfXFjYj2X"
+            , "187xp9nQTsCa7QJLHYSMyaM1Mf5u2knJYY"
+            , "1QDQwk4d4zVWH3TnUHMCvDvvrTqFSaA3hr"
+            , "17ATGqWhkXYLxPdynWrFjnJBvD3EYxqC5A"
+            , "1EHgPV5DEs3GwUSaRQD7hd2m5MkR4hdByb"
+            , "1EvUYGoC7p7GC8BtYTz4RX2ERxjUsT3zLz"
+            , "15857PJZQxUH8Jgomv83mYqJqDsVEUZwz1"
+            , "18L5fQjr5yXdqqnK98v2UQi1WHAXfYHr7L"
+            ] . map (addrToBase58 . walletAddrAddress)
 
 testBalances :: App ()
 testBalances = do
-    keyE <- newKeyRing "test" bs1
-    accE@(Entity ai _) <- newAccount keyE "acc1" (AccountRegular False) []
+    (accE@(Entity ai _), _) <- newAccount NewAccount
+        { newAccountName = "acc1"
+        , newAccountType = AccountRegular
+        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountMaster = Nothing
+        , newAccountMnemonic = Just (cs ms)
+        , newAccountKeys = []
+        , newAccountReadOnly = False
+        }
     let fundingTx = fakeTx
             [ (tid1, 0) ]
-            [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000)
-            , ("1BECmeSVxBYCwL493wt9Vqx8mvaWozTF4r", 20000000)
+            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 10000000)
+            , ("1NrcKe9UNtxjjgMSLdhBYaEgrQWQFnvJXX", 20000000)
             ]
     let tx1 = fakeTx
             [ (txHash fundingTx, 0)
@@ -280,7 +405,7 @@ testBalances = do
         tx2 = fakeTx
             [ (txHash fundingTx, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 5000000) -- external
-            , ("1BwbQ8Wp7YUfaYeiQPgXu6br5e4ogKjuKd", 5000000) -- change
+            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 5000000) -- change
             ]
 
     accountBalance ai 0 False >>=
@@ -490,12 +615,12 @@ testBalances = do
     getBy (UniqueAccTx ai (txHash tx1))
         >>= liftIO
         . (assertEqual "Confidence is not dead" TxDead)
-        . keyRingTxConfidence . entityVal . fromJust
+        . walletTxConfidence . entityVal . fromJust
 
     getBy (UniqueAccTx ai (txHash tx2))
         >>= liftIO
         . (assertEqual "Confidence is not building" TxBuilding)
-        . keyRingTxConfidence . entityVal . fromJust
+        . walletTxConfidence . entityVal . fromJust
 
     accountBalance ai 0 False >>=
         liftIO . (assertEqual "Balance is not 25000000") 25000000
@@ -653,22 +778,29 @@ testBalances = do
 -- tx1, tx2 and tx3 form a chain, and tx4 is in conflict with tx1
 testConflictBalances :: App ()
 testConflictBalances = do
-    keyE <- newKeyRing "test" bs1
-    accE@(Entity ai _) <- newAccount keyE "acc1" (AccountRegular False) []
+    (accE@(Entity ai _), _) <- newAccount NewAccount
+        { newAccountName = "acc1"
+        , newAccountType = AccountRegular
+        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountMaster = Nothing
+        , newAccountMnemonic = Just (cs ms)
+        , newAccountKeys = []
+        , newAccountReadOnly = False
+        }
     let tx1 = fakeTx
             [ (tid1, 4) ]
-            [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ]
+            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
-            , ("1BwbQ8Wp7YUfaYeiQPgXu6br5e4ogKjuKd", 4000000) -- change
+            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 4000000) -- change
             ]
         tx3 = fakeTx
             [ (txHash tx2, 1) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 4000000) ] -- external
         tx4 = fakeTx
             [ (tid1, 4) ]
-            [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 20000000) ]
+            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 20000000) ]
 
     -- Import first transaction
     importNetTx tx1
@@ -845,15 +977,15 @@ testConflictBalances = do
 
     getBy (UniqueAccTx ai $ txHash tx1) >>=
         liftIO . (assertEqual "tx1 confidence is not dead") (Just TxDead)
-            . fmap (keyRingTxConfidence . entityVal)
+            . fmap (walletTxConfidence . entityVal)
 
     getBy (UniqueAccTx ai $ txHash tx2) >>=
         liftIO . (assertEqual "tx2 confidence is not dead") (Just TxDead)
-            . fmap (keyRingTxConfidence . entityVal)
+            . fmap (walletTxConfidence . entityVal)
 
     getBy (UniqueAccTx ai $ txHash tx3) >>=
         liftIO . (assertEqual "tx3 confidence is not dead") (Just TxDead)
-            . fmap (keyRingTxConfidence . entityVal)
+            . fmap (walletTxConfidence . entityVal)
 
     accountBalance ai 0 False >>=
         liftIO . (assertEqual "Balance is not 20000000") 20000000
@@ -895,23 +1027,23 @@ testConflictBalances = do
     getBy (UniqueAccTx ai $ txHash tx1)
         >>= liftIO
         . (assertEqual "tx1 confidence is not building") (Just TxBuilding)
-        . fmap (keyRingTxConfidence . entityVal)
+        . fmap (walletTxConfidence . entityVal)
 
     getBy (UniqueAccTx ai $ txHash tx2)
         >>= liftIO
         . (assertEqual "tx2 confidence is not building") (Just TxBuilding)
-        . fmap (keyRingTxConfidence . entityVal)
+        . fmap (walletTxConfidence . entityVal)
 
     -- Tx3 remains dead until it is included into a block. Dead transaction are
     -- only revived upon confirmations. They are not revived if they are not
     -- confirmed even if they have no conflicts anymore.
     getBy (UniqueAccTx ai $ txHash tx3) >>=
         liftIO . (assertEqual "tx3 confidence is not dead") (Just TxDead)
-            . fmap (keyRingTxConfidence . entityVal)
+            . fmap (walletTxConfidence . entityVal)
 
     getBy (UniqueAccTx ai $ txHash tx4) >>=
         liftIO . (assertEqual "tx4 confidence is not dead") (Just TxDead)
-            . fmap (keyRingTxConfidence . entityVal)
+            . fmap (walletTxConfidence . entityVal)
 
     accountBalance ai 0 False >>=
         liftIO . (assertEqual "Balance is not 4000000") 4000000
@@ -963,22 +1095,29 @@ testConflictBalances = do
 
 testOffline :: App ()
 testOffline = do
-    keyE <- newKeyRing "test" bs1
-    accE@(Entity ai _) <- newAccount keyE "acc1" (AccountRegular False) []
+    (accE@(Entity ai _), _) <- newAccount NewAccount
+        { newAccountName = "acc1"
+        , newAccountType = AccountRegular
+        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountMaster = Nothing
+        , newAccountMnemonic = Just (cs ms)
+        , newAccountKeys = []
+        , newAccountReadOnly = False
+        }
     let tx1 = fakeTx
             [ (tid1, 4) ]
-            [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ]
+            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
-            , ("1BwbQ8Wp7YUfaYeiQPgXu6br5e4ogKjuKd", 4000000) -- change
+            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 4000000) -- change
             ]
         tx3 = fakeTx
             [ (txHash tx2, 1) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 4000000) ] -- external
         tx4 = fakeTx
             [ (tid1, 4) ]
-            [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 20000000) ]
+            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 20000000) ]
 
     -- Import first transaction
     importTx tx1 ai
@@ -1071,15 +1210,15 @@ testOffline = do
 
     getBy (UniqueAccTx ai $ txHash tx1) >>=
         liftIO . (assertEqual "tx1 confidence is not dead") (Just TxDead)
-            . fmap (keyRingTxConfidence . entityVal)
+            . fmap (walletTxConfidence . entityVal)
 
     getBy (UniqueAccTx ai $ txHash tx2) >>=
         liftIO . (assertEqual "tx2 confidence is not dead") (Just TxDead)
-            . fmap (keyRingTxConfidence . entityVal)
+            . fmap (walletTxConfidence . entityVal)
 
     getBy (UniqueAccTx ai $ txHash tx3) >>=
         liftIO . (assertEqual "tx3 confidence is not dead") (Just TxDead)
-            . fmap (keyRingTxConfidence . entityVal)
+            . fmap (walletTxConfidence . entityVal)
 
     accountBalance ai 0 True >>=
         liftIO . (assertEqual "Balance is not 20000000") 20000000
@@ -1112,15 +1251,22 @@ testOffline = do
 
 testKillOffline :: App ()
 testKillOffline = do
-    keyE <- newKeyRing "test" bs1
-    accE@(Entity ai _) <- newAccount keyE "acc1" (AccountRegular False) []
+    (accE@(Entity ai _), _) <- newAccount NewAccount
+        { newAccountName = "acc1"
+        , newAccountType = AccountRegular
+        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountMaster = Nothing
+        , newAccountMnemonic = Just (cs ms)
+        , newAccountKeys = []
+        , newAccountReadOnly = False
+        }
     let tx1 = fakeTx
             [ (tid1, 4) ]
-            [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ]
+            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
-            , ("1BwbQ8Wp7YUfaYeiQPgXu6br5e4ogKjuKd", 4000000) -- change
+            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 4000000) -- change
             ]
         tx3 = fakeTx
             [ (txHash tx2, 1) ]
@@ -1128,8 +1274,8 @@ testKillOffline = do
         tx4 = fakeTx
             [ (txHash tx1, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 2000000) -- external
-            , ("1BwbQ8Wp7YUfaYeiQPgXu6br5e4ogKjuKd", 3000000) -- change
-            , ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 5000000) -- more change
+            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 3000000) -- change
+            , ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 5000000) -- more change
             ]
 
     -- Import tx1 as a network transaction
@@ -1233,12 +1379,12 @@ testKillOffline = do
     getBy (UniqueAccTx ai (txHash tx2))
         >>= liftIO
         . (assertEqual "Confidence is not dead" TxDead)
-        . keyRingTxConfidence . entityVal . fromJust
+        . walletTxConfidence . entityVal . fromJust
 
     getBy (UniqueAccTx ai (txHash tx3))
         >>= liftIO
         . (assertEqual "Confidence is not dead" TxDead)
-        . keyRingTxConfidence . entityVal . fromJust
+        . walletTxConfidence . entityVal . fromJust
 
     accountBalance ai 0 False >>=
         liftIO . (assertEqual "Balance is not 8000000") 8000000
@@ -1273,23 +1419,30 @@ testOfflineExceptions :: Assertion
 testOfflineExceptions = do
     let tx1 = fakeTx
             [ (tid1, 4) ]
-            [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ]
+            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
-            , ("1BwbQ8Wp7YUfaYeiQPgXu6br5e4ogKjuKd", 4000000) -- change
+            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 4000000) -- change
             ]
         tx3 = fakeTx
             [ (txHash tx2, 1) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 4000000) ] -- external
         tx4 = fakeTx
             [ (tid1, 4) ]
-            [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 20000000) ]
+            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 20000000) ]
 
     assertException (WalletException "Could not import offline transaction") $ do
-        keyE <- newKeyRing "test" bs1
-        _ <- newAccount keyE "acc1" (AccountRegular False) []
-        Entity ai _ <- getAccount "test" "acc1"
+        _ <- newAccount NewAccount
+            { newAccountName = "acc1"
+            , newAccountType = AccountRegular
+            , newAccountDeriv = Just (Deriv :| 0)
+            , newAccountMaster = Nothing
+            , newAccountMnemonic = Just (cs ms)
+            , newAccountKeys = []
+            , newAccountReadOnly = False
+            }
+        Entity ai _ <- getAccount "acc1"
         importNetTx tx1
             >>= liftIO
             . (assertEqual "Confidence is not pending"
@@ -1298,9 +1451,16 @@ testOfflineExceptions = do
         importTx tx4 ai
 
     assertException (WalletException "Could not import offline transaction") $ do
-        keyE <- newKeyRing "test" bs1
-        _ <- newAccount keyE "acc1" (AccountRegular False) []
-        Entity ai _ <- getAccount "test" "acc1"
+        _ <- newAccount NewAccount
+            { newAccountName = "acc1"
+            , newAccountType = AccountRegular
+            , newAccountDeriv = Just (Deriv :| 0)
+            , newAccountMaster = Nothing
+            , newAccountMnemonic = Just (cs ms)
+            , newAccountKeys = []
+            , newAccountReadOnly = False
+            }
+        Entity ai _ <- getAccount "acc1"
         importNetTx tx4
             >>= liftIO
             . (assertEqual "Confidence is not pending"
@@ -1319,9 +1479,16 @@ testOfflineExceptions = do
         importTx tx3 ai
 
     assertException (WalletException "Could not import offline transaction") $ do
-        keyE <- newKeyRing "test" bs1
-        _ <- newAccount keyE "acc1" (AccountRegular False) []
-        Entity ai _ <- getAccount "test" "acc1"
+        _ <- newAccount NewAccount
+            { newAccountName = "acc1"
+            , newAccountType = AccountRegular
+            , newAccountDeriv = Just (Deriv :| 0)
+            , newAccountMaster = Nothing
+            , newAccountMnemonic = Just (cs ms)
+            , newAccountKeys = []
+            , newAccountReadOnly = False
+            }
+        Entity ai _ <- getAccount "acc1"
         importNetTx tx1
             >>= liftIO
             . (assertEqual "Confidence is not pending"
@@ -1332,20 +1499,29 @@ testOfflineExceptions = do
 -- This test create a multisig account with the key of testImportMultisig2
 testImportMultisig :: App ()
 testImportMultisig = do
-    keyE <- newKeyRing "test" bs1
-    _ <- newAccount keyE "ms1" (AccountMultisig False 2 2)
-        [fromJust $ xPubImport "xpub69iinth3CTrfkmijzhQXi3kwhGQjba31fncrBgA9vM9T9tv69qSwp525yDVYmX2BTAdeuYSZqkcWhkrqD5Xbsz5YHJZL6CzYGL2WACorpdS"]
-    _ <- newAccount keyE "ms2" (AccountMultisig False 2 2)
-        [fromJust $ xPubImport "xpub69iinth3CTrfh5efv7baTWwk9hHi4zqcQEsNFgVwEJvdaZVEPytZzmNxjYTnF5F5x2CamLXvmD1T4RhpsuaXSFPo2MnLN5VqWqrWb82U7ED"]
-    Entity _ keyRing <- getKeyRing "test"
-    accE1@(Entity ai1 _) <- getAccount "test" "ms1"
-    accE2@(Entity ai2 _) <- getAccount "test" "ms2"
-
+    (accE1@(Entity ai1 _), _) <- newAccount NewAccount
+        { newAccountName = "ms1"
+        , newAccountType = AccountMultisig 2 2
+        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountMaster = Nothing
+        , newAccountMnemonic = Just (cs ms)
+        , newAccountKeys = ["xpub68kRFKHWxUt3oS8X5kVogwH5rvuAd4jrLkxVfHeudFC4MfwQ8oYV59F91uFnsLXANRB1MkN4Wa1PwymE4cRsU8PE755HNCb1EoBbSoAKXpW"]
+        , newAccountReadOnly = False
+        }
+    (accE2@(Entity ai2 _), _) <- newAccount NewAccount
+        { newAccountName = "ms2"
+        , newAccountType = AccountMultisig 2 2
+        , newAccountDeriv = Just (Deriv :| 1)
+        , newAccountMaster = Nothing
+        , newAccountMnemonic = Just (cs ms)
+        , newAccountKeys = ["xpub68kRFKHWxUt3mfJjcXdLeuDjCHnByqKSBVfMktJRXM6LSNNDR4ae6Nw1Kh621fzyKiBf6ssyZWPPTDUTQp1BhuZQuoVdtb8j2TRzqDLHmY7"]
+        , newAccountReadOnly = False
+        }
     let fundingTx =
             Tx 1 [ TxIn (OutPoint tid1 0) (BS.pack [1]) maxBound ] -- dummy input
                  [ TxOut 10000000 $
                     encodeOutputBS $ PayScriptHash $ fromJust $
-                    base58ToAddr "3Dgz9gqsAMPr7i9qocLMNHU8wuoKqtUNoM"
+                    base58ToAddr "32RexHZdsMoV8yzL1pQyFhYY6XeUNcWP78"
                  ] 0
 
     importNetTx fundingTx
@@ -1355,22 +1531,22 @@ testImportMultisig = do
         . testTx
 
     -- Create a transaction which has 0 signatures in ms1
-    (tx1, _) <- createTx keyRing accE1
-        [ ( fromJust $ base58ToAddr "3C9fz8kDwX2rV25YeWC7YcDNHtTreAV52m"
+    (tx1, _) <- createTx accE1 Nothing
+        [ ( fromJust $ base58ToAddr "3BYWaQHz6AVXx7wXmCka4846tRfa1ccWvh"
           , 5000000
           )
         ] 10000 0 False True
     liftIO $ assertEqual "Confidence is not offline" TxOffline $
-        keyRingTxConfidence tx1
+        walletTxConfidence tx1
     spendableCoins ai1 0 (const . const [])
         >>= liftIO
         . (assertEqual "Wrong txhash in coins" [])
-        . map (keyRingCoinHash . entityVal . inCoinDataCoin)
+        . map (walletCoinHash . entityVal . inCoinDataCoin)
     txs ai1 (ListRequest 0 10 False)
         >>= liftIO
         . (assertEqual "Wrong txhash in tx list"
-            (sort [txHash fundingTx, keyRingTxHash tx1]))
-        . sort . map keyRingTxHash . fst
+            (sort [txHash fundingTx, walletTxHash tx1]))
+        . sort . map walletTxHash . fst
     accountBalance ai1 0 False >>=
         liftIO . (assertEqual "Balance is not 10000000") 10000000
     accountBalance ai1 1 False >>=
@@ -1379,22 +1555,22 @@ testImportMultisig = do
         liftIO . (assertEqual "Offline balance is not 9990000") 9990000
 
     -- Import the empty transaction in ms2
-    (tx2:_, _) <- importTx (keyRingTxTx tx1) ai2
+    (tx2:_, _) <- importTx (walletTxTx tx1) ai2
     -- This second import should be idempotent
-    _ <- importTx (keyRingTxTx tx1) ai2
+    _ <- importTx (walletTxTx tx1) ai2
     liftIO $ assertEqual "Txid do not match"
-        (keyRingTxHash tx1) (keyRingTxHash tx2)
+        (walletTxHash tx1) (walletTxHash tx2)
     liftIO $ assertEqual "Confidence is not offline" TxOffline $
-        keyRingTxConfidence tx2
+        walletTxConfidence tx2
     spendableCoins ai2 0 (const . const [])
         >>= liftIO
         . (assertEqual "Wrong txhash in coins" [])
-        . map (keyRingCoinHash . entityVal . inCoinDataCoin)
+        . map (walletCoinHash . entityVal . inCoinDataCoin)
     txs ai2 (ListRequest 0 10 False)
         >>= liftIO
         . (assertEqual "Wrong txhash in tx list"
-            (sort [txHash fundingTx, keyRingTxHash tx2]))
-        . sort . map keyRingTxHash . fst
+            (sort [txHash fundingTx, walletTxHash tx2]))
+        . sort . map walletTxHash . fst
     accountBalance ai2 0 False >>=
         liftIO . (assertEqual "Balance is not 10000000") 10000000
     accountBalance ai2 1 False >>=
@@ -1403,19 +1579,19 @@ testImportMultisig = do
         liftIO . (assertEqual "Balance is not 9990000") 9990000
 
     -- Sign the transaction in ms2
-    (tx3:_, _) <- signKeyRingTx keyRing accE2 $ keyRingTxHash tx2
+    (tx3:_, _) <- signAccountTx accE2 Nothing $ walletTxHash tx2
     liftIO $ assertEqual "Confidence is not pending" TxPending $
-        keyRingTxConfidence tx3
+        walletTxConfidence tx3
     spendableCoins ai2 0 (const . const [])
         >>= liftIO
         . (assertEqual "Wrong txhash in coins"
-            [keyRingTxHash tx3, keyRingTxHash tx3])
-        . map (keyRingCoinHash . entityVal . inCoinDataCoin)
+            [walletTxHash tx3, walletTxHash tx3])
+        . map (walletCoinHash . entityVal . inCoinDataCoin)
     txs ai2 (ListRequest 0 10 False)
         >>= liftIO
         . (assertEqual "Wrong txhash in tx list"
-            (sort [txHash fundingTx, keyRingTxHash tx3]))
-        . sort . map keyRingTxHash . fst
+            (sort [txHash fundingTx, walletTxHash tx3]))
+        . sort . map walletTxHash . fst
     accountBalance ai2 0 False >>=
         liftIO . (assertEqual "Balance is not 9990000") 9990000
     accountBalance ai2 1 False >>=
@@ -1424,19 +1600,19 @@ testImportMultisig = do
         liftIO . (assertEqual "Balance is not 9990000") 9990000
 
     tx4 <- liftM (entityVal . fromJust) $
-        getBy $ UniqueAccTx ai1 $ keyRingTxHash tx3
+        getBy $ UniqueAccTx ai1 $ walletTxHash tx3
     liftIO $ assertEqual "Confidence is not pending" TxPending $
-        keyRingTxConfidence tx4
+        walletTxConfidence tx4
     spendableCoins ai1 0 (const . const [])
         >>= liftIO
         . (assertEqual "Wrong txhash in coins"
-            [keyRingTxHash tx3, keyRingTxHash tx3])
-        . map (keyRingCoinHash . entityVal . inCoinDataCoin)
+            [walletTxHash tx3, walletTxHash tx3])
+        . map (walletCoinHash . entityVal . inCoinDataCoin)
     txs ai1 (ListRequest 0 10 False)
         >>= liftIO
         . (assertEqual "Wrong txhash in tx list"
-            (sort [txHash fundingTx, keyRingTxHash tx3]))
-        . sort . map keyRingTxHash . fst
+            (sort [txHash fundingTx, walletTxHash tx3]))
+        . sort . map walletTxHash . fst
     accountBalance ai1 0 False >>=
         liftIO . (assertEqual "Balance is not 9990000") 9990000
     accountBalance ai1 1 False >>=
@@ -1446,19 +1622,19 @@ testImportMultisig = do
 
     -- Importing the transaction should have no effect as it was globally
     -- imported already in the previous step.
-    (tx5:_, _) <- importTx (keyRingTxTx tx3) ai1
+    (tx5:_, _) <- importTx (walletTxTx tx3) ai1
     liftIO $ assertEqual "Confidence is not pending" TxPending $
-        keyRingTxConfidence tx5
+        walletTxConfidence tx5
     spendableCoins ai1 0 (const . const [])
         >>= liftIO
         . (assertEqual "Wrong txhash in coins"
-            [keyRingTxHash tx5, keyRingTxHash tx5])
-        . map (keyRingCoinHash . entityVal . inCoinDataCoin)
+            [walletTxHash tx5, walletTxHash tx5])
+        . map (walletCoinHash . entityVal . inCoinDataCoin)
     txs ai1 (ListRequest 0 10 False)
         >>= liftIO
         . (assertEqual "Wrong txhash in tx list"
-            (sort [txHash fundingTx, keyRingTxHash tx5]))
-        . sort . map keyRingTxHash . fst
+            (sort [txHash fundingTx, walletTxHash tx5]))
+        . sort . map walletTxHash . fst
     accountBalance ai1 0 False >>=
         liftIO . (assertEqual "Balance is not 9990000") 9990000
     accountBalance ai1 1 False >>=
@@ -1468,16 +1644,22 @@ testImportMultisig = do
 
 testKillTx :: App ()
 testKillTx = do
-    keyE <- newKeyRing "test" bs1
-    _ <- newAccount keyE "acc1" (AccountRegular False) []
-    accE@(Entity ai _) <- getAccount "test" "acc1"
+    (accE@(Entity ai _), _) <- newAccount NewAccount
+        { newAccountName = "acc1"
+        , newAccountType = AccountRegular
+        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountMaster = Nothing
+        , newAccountMnemonic = Just (cs ms)
+        , newAccountKeys = []
+        , newAccountReadOnly = False
+        }
     let tx1 = fakeTx
             [ (tid1, 4) ]
-            [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ]
+            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
-            , ("1BwbQ8Wp7YUfaYeiQPgXu6br5e4ogKjuKd", 4000000) -- change
+            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 4000000) -- change
             ]
         tx3 = fakeTx
             [ (txHash tx2, 1) ]
@@ -1574,9 +1756,9 @@ testKillTx = do
         liftIO . (assertEqual "Address 0 balance is not (4000000, 0, 1, 0)")
             [(0, BalanceInfo 4000000 0 1 0)]
 
-testTx :: ([KeyRingTx], [KeyRingAddr])
-       -> ([(KeyRingAccountId, TxConfidence)], Int)
+testTx :: ([WalletTx], [WalletAddr])
+       -> ([(AccountId, TxConfidence)], Int)
 testTx (txls, addrs) = (map f txls, length addrs)
   where
-    f tx = (keyRingTxAccount tx, keyRingTxConfidence tx)
+    f tx = (walletTxAccount tx, walletTxConfidence tx)
 

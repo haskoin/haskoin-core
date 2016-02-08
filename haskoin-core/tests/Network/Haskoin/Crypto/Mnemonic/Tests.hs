@@ -89,7 +89,7 @@ toMnemonic512 ((a, b, c, d), (e, f, g, h)) = l == 48
     l = length . C.words . fromRight $ toMnemonic bs
 
 toMnemonicVar :: [Word32] -> Property
-toMnemonicVar ls = not (length ls > 8) ==> l == wc
+toMnemonicVar ls = length ls <= 8 ==> l == wc
   where
     bs = binWordsToBS ls
     bl = BS.length bs

@@ -76,6 +76,7 @@ library
                  , time                     >= 1.4          && < 1.7
 
     ghc-options:       -Wall
+                       -O3
 
 test-suite test-haskoin-node
     type:              exitcode-stdio-1.0

@@ -5,7 +5,7 @@ stability of the interface of these internal modules.
 
 module Network.Haskoin.Wallet.Internals
 ( module Network.Haskoin.Wallet
-, module Network.Haskoin.Wallet.KeyRing
+, module Network.Haskoin.Wallet.Accounts
 , module Network.Haskoin.Wallet.Transaction
 , module Network.Haskoin.Wallet.Client
 , module Network.Haskoin.Wallet.Client.Commands
@@ -18,7 +18,7 @@ module Network.Haskoin.Wallet.Internals
 ) where
 
 import Network.Haskoin.Wallet
-import Network.Haskoin.Wallet.KeyRing
+import Network.Haskoin.Wallet.Accounts
 import Network.Haskoin.Wallet.Transaction
 import Network.Haskoin.Wallet.Client
 import Network.Haskoin.Wallet.Client.Commands

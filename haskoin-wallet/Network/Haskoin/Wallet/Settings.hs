@@ -22,6 +22,8 @@ import Data.Aeson
     , parseJSON, toJSON, withObject
     , (.:)
     )
+
+import Network.Haskoin.Crypto
 import Network.Haskoin.Wallet.Database
 import Network.Haskoin.Wallet.Types
 
@@ -43,9 +45,7 @@ data OutputFormat
     | OutputYAML
 
 data Config = Config
-    { configKeyRing       :: !Text
-    -- ^ Keyring to use in commands
-    , configCount         :: !Word32
+    { configCount         :: !Word32
     -- ^ Output size of commands
     , configMinConf       :: !Word32
     -- ^ Minimum number of confirmations
@@ -61,8 +61,8 @@ data Config = Config
     -- ^ Display the balance including offline transactions
     , configReversePaging :: !Bool
     -- ^ Use reverse paging for displaying addresses and transactions
-    , configPass          :: !(Maybe Text)
-    -- ^ Passphrase to use when creating new keyrings (bip39 mnemonic)
+    , configPath          :: !(Maybe HardPath)
+    -- ^ Derivation path when creating account
     , configFormat        :: !OutputFormat
     -- ^ How to format the command-line results
     , configConnect       :: !String
@@ -152,10 +152,9 @@ instance FromJSON Config where
     parseJSON = withObject "config" $ \o' -> do
         let defValue         = either throw id $ decodeEither' configBS
             (Object o)       = mergeValues defValue (Object o')
-            configPass       = Nothing
+            configPath       = Nothing
         configFile                  <- o .: "config-file"
         configRcptFee               <- o .: "recipient-fee"
-        configKeyRing               <- o .: "keyring-name"
         configCount                 <- o .: "output-size"
         configMinConf               <- o .: "minimum-confirmations"
         configSignTx                <- o .: "sign-transactions"

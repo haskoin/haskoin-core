@@ -132,14 +132,10 @@ getAccountsR :: ( MonadLogger m
              => KeyRingName -> Handler m (Maybe Value)
 getAccountsR keyRingName = do
     $(logInfo) $ format $ unwords [ "GetAccountsR", unpack keyRingName ]
-    (keyRing, accs) <- runDB $ do
-        Entity ki keyRing <- getKeyRing keyRingName
-        accs <- accounts ki
-        return (keyRing, accs)
-    return $ Just $ toJSON JsonWithKeyRing
-        { withKeyRingKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withKeyRingData    = map toJsonAccount accs
-        }
+    accs <- runDB $ do
+        Entity ki _ <- getKeyRing keyRingName
+        accounts ki
+    return $ Just $ toJSON $ map toJsonAccount accs
 
 postAccountsR
     :: ( MonadResource m, MonadThrow m, MonadLogger m
@@ -153,17 +149,12 @@ postAccountsR keyRingName NewAccount{..} = do
         , "  Account type: " ++ show newAccountType
         , "  Account name: " ++ unpack newAccountAccountName
         ]
-    (keyRing, Entity _ newAcc) <- runDB $ do
-        keyRingE@(Entity _ keyRing) <- getKeyRing keyRingName
-        newAcc <- newAccount
-            keyRingE newAccountAccountName newAccountType newAccountKeys
-        return (keyRing, newAcc)
+    Entity _ newAcc <- runDB $ do
+        keyRingE <- getKeyRing keyRingName
+        newAccount keyRingE newAccountAccountName newAccountType newAccountKeys
     -- Update the bloom filter if the account is complete
     whenOnline $ when (isCompleteAccount newAcc) updateNodeFilter
-    return $ Just $ toJSON JsonWithKeyRing
-        { withKeyRingKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withKeyRingData    = toJsonAccount newAcc
-        }
+    return $ Just $ toJSON $ toJsonAccount newAcc
 
 getAccountR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
             => KeyRingName -> AccountName -> Handler m (Maybe Value)
@@ -173,11 +164,8 @@ getAccountR keyRingName name = do
         , "  KeyRing name: " ++ unpack keyRingName
         , "  Account name: " ++ unpack name
         ]
-    (keyRing, Entity _ acc) <- runDB $ getAccount keyRingName name
-    return $ Just $ toJSON JsonWithKeyRing
-        { withKeyRingKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withKeyRingData    = toJsonAccount acc
-        }
+    Entity _ acc <- runDB $ getAccount keyRingName name
+    return $ Just $ toJSON $ toJsonAccount acc
 
 postAccountKeysR
     :: ( MonadResource m, MonadThrow m, MonadLogger m
@@ -191,16 +179,12 @@ postAccountKeysR keyRingName name keys = do
         , "  Account name: " ++ unpack name
         , "  Key count   : " ++ show (length keys)
         ]
-    (keyRing, newAcc) <- runDB $ do
-        (keyRing, accE) <- getAccount keyRingName name
-        newAcc <- addAccountKeys accE keys
-        return (keyRing, newAcc)
+    newAcc <- runDB $ do
+        accE <- getAccount keyRingName name
+        addAccountKeys accE keys
     -- Update the bloom filter if the account is complete
     whenOnline $ when (isCompleteAccount newAcc) updateNodeFilter
-    return $ Just $ toJSON JsonWithKeyRing
-        { withKeyRingKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withKeyRingData    = toJsonAccount newAcc
-        }
+    return $ Just $ toJSON $ toJsonAccount newAcc
 
 postAccountGapR :: ( MonadLogger m
                    , MonadBaseControl IO m
@@ -219,16 +203,12 @@ postAccountGapR keyRingName name (SetAccountGap gap) = do
         , "  New gap size: " ++ show gap
         ]
     -- Update the gap
-    (keyRing, newAcc) <- runDB $ do
-        (keyRing, accE) <- getAccount keyRingName name
-        newAcc <- setAccountGap accE gap
-        return (keyRing, newAcc)
+    newAcc <- runDB $ do
+        accE <- getAccount keyRingName name
+        setAccountGap accE gap
     -- Update the bloom filter
     whenOnline updateNodeFilter
-    return $ Just $ toJSON JsonWithKeyRing
-        { withKeyRingKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withKeyRingData    = toJsonAccount newAcc
-        }
+    return $ Just $ toJSON $ toJsonAccount newAcc
 
 getAddressesR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
               => KeyRingName
@@ -250,25 +230,21 @@ getAddressesR keyRingName name addrType minConf offline listReq = do
         , "  Offline     : " ++ show offline
         ]
 
-    (keyRing, acc, res, bals, cnt) <- runDB $ do
-        (keyRing, accE@(Entity _ acc)) <- getAccount keyRingName name
+    (res, bals, cnt) <- runDB $ do
+        accE <- getAccount keyRingName name
         (res, cnt) <- addresses accE addrType listReq
         case res of
-            [] -> return (keyRing, acc, res, [], cnt)
+            [] -> return (res, [], cnt)
             _ -> do
                 let is = map keyRingAddrIndex res
                     (iMin, iMax) = (minimum is, maximum is)
                 bals <- addressBalances accE iMin iMax addrType minConf offline
-                return (keyRing, acc, res, bals, cnt)
+                return (res, bals, cnt)
 
     -- Join addresses and balances together
     let g (addr, bal) = toJsonAddr addr (Just bal)
         addrBals = map g $ M.elems $ joinAddrs res bals
-    return $ Just $ toJSON JsonWithAccount
-        { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withAccountAccount = toJsonAccount acc
-        , withAccountData    = ListResult addrBals cnt
-        }
+    return $ Just $ toJSON $ ListResult addrBals cnt
   where
     joinAddrs addrs bals =
         let f addr = (keyRingAddrIndex addr, addr)
@@ -285,16 +261,11 @@ getAddressesUnusedR keyRingName name addrType = do
         , "  Address type: " ++ show addrType
         ]
 
-    (keyRing, acc, addrs) <- runDB $ do
-        (keyRing, accE@(Entity _ acc)) <- getAccount keyRingName name
-        addrs <- unusedAddresses accE addrType
-        return (keyRing, acc, addrs)
+    addrs <- runDB $ do
+        accE <- getAccount keyRingName name
+        unusedAddresses accE addrType
 
-    return $ Just $ toJSON JsonWithAccount
-        { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withAccountAccount = toJsonAccount acc
-        , withAccountData    = map (`toJsonAddr` Nothing) addrs
-        }
+    return $ Just $ toJSON $ map (`toJsonAddr` Nothing) addrs
 
 getAddressR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
             => KeyRingName -> AccountName -> KeyIndex -> AddressType
@@ -309,18 +280,14 @@ getAddressR keyRingName name i addrType minConf offline = do
         , "  Address type: " ++ show addrType
         ]
 
-    (keyRing, acc, addr, balM) <- runDB $ do
-        (keyRing, accE@(Entity _ acc)) <- getAccount keyRingName name
+    (addr, balM) <- runDB $ do
+        accE <- getAccount keyRingName name
         addrE <- getAddress accE addrType i
         bals <- addressBalances accE i i addrType minConf offline
         return $ case bals of
-            ((_,bal):_) -> (keyRing, acc, entityVal addrE, Just bal)
-            _           -> (keyRing, acc, entityVal addrE, Nothing)
-    return $ Just $ toJSON JsonWithAccount
-        { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withAccountAccount = toJsonAccount acc
-        , withAccountData    = toJsonAddr addr balM
-        }
+            ((_,bal):_) -> (entityVal addrE, Just bal)
+            _           -> (entityVal addrE, Nothing)
+    return $ Just $ toJSON $ toJsonAddr addr balM
 
 putAddressR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
             => KeyRingName
@@ -338,16 +305,11 @@ putAddressR keyRingName name i addrType (AddressLabel label) = do
         , "  Label       : " ++ unpack label
         ]
 
-    (keyRing, acc, newAddr) <- runDB $ do
-        (keyRing, accE@(Entity _ acc)) <- getAccount keyRingName name
-        newAddr <- setAddrLabel accE i addrType label
-        return (keyRing, acc, newAddr)
+    newAddr <- runDB $ do
+        accE <- getAccount keyRingName name
+        setAddrLabel accE i addrType label
 
-    return $ Just $ toJSON JsonWithAccount
-        { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withAccountAccount = toJsonAccount acc
-        , withAccountData    = toJsonAddr newAddr Nothing
-        }
+    return $ Just $ toJSON $ toJsonAddr newAddr Nothing
 
 postAddressesR :: ( MonadLogger m
                   , MonadBaseControl IO m
@@ -369,19 +331,14 @@ postAddressesR keyRingName name i addrType = do
         , "  Index       : " ++ show i
         ]
 
-    (keyRing, acc, cnt) <- runDB $ do
-        (keyRing, accE@(Entity _ acc)) <- getAccount keyRingName name
-        cnt <- generateAddrs accE addrType i
-        return (keyRing, acc, cnt)
+    cnt <- runDB $ do
+        accE <- getAccount keyRingName name
+        generateAddrs accE addrType i
 
     -- Update the bloom filter
     whenOnline updateNodeFilter
 
-    return $ Just $ toJSON JsonWithAccount
-        { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withAccountAccount = toJsonAccount acc
-        , withAccountData    = cnt
-        }
+    return $ Just $ toJSON cnt
 
 getTxsR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
         => KeyRingName -> AccountName -> ListRequest -> Handler m (Maybe Value)
@@ -394,18 +351,13 @@ getTxsR keyRingName name listReq = do
         , "  Reversed    : " ++ show (listReverse listReq)
         ]
 
-    (keyRing, acc, res, cnt, height) <- runDB $ do
-        (keyRing, Entity ai acc) <- getAccount keyRingName name
+    (res, cnt, height) <- runDB $ do
+        Entity ai _ <- getAccount keyRingName name
         (_, height) <- getBestBlock
         (res, cnt) <- txs ai listReq
-        return (keyRing, acc, res, cnt, height)
+        return (res, cnt, height)
 
-    return $ Just $ toJSON JsonWithAccount
-        { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withAccountAccount = toJsonAccount acc
-        , withAccountData =
-            ListResult (map (`toJsonTx` Just height) res) cnt
-        }
+    return $ Just $ toJSON $ ListResult (map (`toJsonTx` Just height) res) cnt
 
 getAddrTxsR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
             => KeyRingName -> AccountName
@@ -422,29 +374,23 @@ getAddrTxsR keyRingName name index addrType listReq = do
         , "  Reversed     : " ++ show (listReverse listReq)
         ]
 
-    (keyRing, acc, res, cnt, height, addr) <- runDB $ do
-        (keyRing, accE@(Entity _ acc)) <- getAccount keyRingName name
-        Entity addrI addr <- getAddress accE addrType index
+    (res, cnt, height) <- runDB $ do
+        accE <- getAccount keyRingName name
+        addrE <- getAddress accE addrType index
         (_, height) <- getBestBlock
-        (res, cnt) <- addrTxs accE addrI listReq
-        return (keyRing, acc, res, cnt, height, addr)
+        (res, cnt) <- addrTxs accE addrE listReq
+        return (res, cnt, height)
 
-    return $ Just $ toJSON JsonWithAddr
-        { withAddrKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withAddrAccount = toJsonAccount acc
-        , withAddrAddress = toJsonAddr addr Nothing
-        , withAddrData    = ListResult (map (f height) res) cnt
-        }
-  where
-    f height (tx, bal) = AddrTx (toJsonTx tx (Just height)) bal
+    return $ Just $ toJSON $ ListResult (map (`toJsonTx` Just height) res) cnt
 
 postTxsR :: ( MonadLogger m, MonadBaseControl IO m, MonadBase IO m
             , MonadIO m, MonadThrow m, MonadResource m
             )
          => KeyRingName -> AccountName -> TxAction -> Handler m (Maybe Value)
 postTxsR keyRingName name action = do
-    (keyRing, accE@(Entity ai acc), height) <- runDB $ do
-        (keyRing, accE) <- getAccount keyRingName name
+    (keyRing, accE@(Entity ai _), height) <- runDB $ do
+        accE <- getAccount keyRingName name
+        Entity _ keyRing <- getKeyRing keyRingName
         (_, height) <- getBestBlock
         return (keyRing, accE, height)
 
@@ -493,11 +439,7 @@ postTxsR keyRingName name action = do
         -- If the transaction is pending, broadcast it to the network
         when (keyRingTxConfidence txRes == TxPending) $
             runNode $ broadcastTxs [keyRingTxHash txRes]
-    return $ Just $ toJSON JsonWithAccount
-        { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withAccountAccount = toJsonAccount acc
-        , withAccountData    = toJsonTx txRes (Just height)
-        }
+    return $ Just $ toJSON $ toJsonTx txRes (Just height)
 
 getTxR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
        => KeyRingName -> AccountName -> TxHash -> Handler m (Maybe Value)
@@ -508,16 +450,12 @@ getTxR keyRingName name txid = do
         , "  Account name: " ++ unpack name
         , "  TxId        : " ++ cs (txHashToHex txid)
         ]
-    (keyRing, acc, res, height) <- runDB $ do
-        (keyRing, Entity ai acc) <- getAccount keyRingName name
+    (res, height) <- runDB $ do
+        Entity ai _ <- getAccount keyRingName name
         (_, height) <- getBestBlock
         res <- getAccountTx ai txid
-        return (keyRing, acc, res, height)
-    return $ Just $ toJSON JsonWithAccount
-        { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withAccountAccount = toJsonAccount acc
-        , withAccountData    = toJsonTx res (Just height)
-        }
+        return (res, height)
+    return $ Just $ toJSON $ toJsonTx res (Just height)
 
 deleteTxIdR :: (MonadIO m, MonadLogger m, MonadThrow m, MonadBaseControl IO m)
             => TxHash -> Handler m (Maybe Value)
@@ -540,15 +478,10 @@ getBalanceR keyRingName name minconf offline = do
         , "  Minconf     : " ++ show minconf
         , "  Offline     : " ++ show offline
         ]
-    (keyRing, acc, bal) <- runDB $ do
-        (keyRing, Entity ai acc) <- getAccount keyRingName name
-        bal <- accountBalance ai minconf offline
-        return (keyRing, acc, bal)
-    return $ Just $ toJSON JsonWithAccount
-        { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
-        , withAccountAccount = toJsonAccount acc
-        , withAccountData    = bal
-        }
+    bal <- runDB $ do
+        Entity ai _ <- getAccount keyRingName name
+        accountBalance ai minconf offline
+    return $ Just $ toJSON bal
 
 getOfflineTxR :: ( MonadLogger m, MonadIO m, MonadBaseControl IO m
                  , MonadBase IO m, MonadThrow m, MonadResource m
@@ -562,7 +495,7 @@ getOfflineTxR keyRingName accountName txid = do
         , "  TxId        : " ++ cs (txHashToHex txid)
         ]
     (dat, _) <- runDB $ do
-        (_, Entity ai _) <- getAccount keyRingName accountName
+        Entity ai _ <- getAccount keyRingName accountName
         getOfflineTxData ai txid
     return $ Just $ toJSON dat
 
@@ -581,7 +514,8 @@ postOfflineTxR keyRingName accountName tx signData = do
         , "  Account name: " ++ unpack accountName
         , "  TxId        : " ++ cs (txHashToHex (txHash tx))
         ]
-    (keyRing, Entity _ acc) <- runDB $ getAccount keyRingName accountName
+    Entity _ acc <- runDB $ getAccount keyRingName accountName
+    Entity _ keyRing <- runDB $ getKeyRing keyRingName
     let signedTx = signOfflineTx keyRing acc tx signData
         complete = verifyStdTx signedTx $ map toDat signData
         toDat CoinSignData{..} = (coinSignScriptOutput, coinSignOutPoint)

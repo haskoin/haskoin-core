@@ -236,31 +236,30 @@ getAddressesR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
               -> AddressType
               -> Word32
               -> Bool
-              -> PageRequest
+              -> ListRequest
               -> Handler m (Maybe Value)
-getAddressesR keyRingName name addrType minConf offline page = do
+getAddressesR keyRingName name addrType minConf offline listReq = do
     $(logInfo) $ format $ unlines
         [ "GetAddressesR"
         , "  KeyRing name: " ++ unpack keyRingName
         , "  Account name: " ++ unpack name
         , "  Address type: " ++ show addrType
-        , "  Page number : " ++ show (pageNum page)
-        , "  Page size   : " ++ show (pageLen page)
-        , "  Page reverse: " ++ show (pageReverse page)
+        , "  Start index : " ++ show (listOffset listReq)
+        , "  Reversed    : " ++ show (listReverse listReq)
         , "  MinConf     : " ++ show minConf
         , "  Offline     : " ++ show offline
         ]
 
-    (keyRing, acc, res, bals, maxPage) <- runDB $ do
+    (keyRing, acc, res, bals, cnt) <- runDB $ do
         (keyRing, accE@(Entity _ acc)) <- getAccount keyRingName name
-        (res, maxPage) <- addressPage accE addrType page
+        (res, cnt) <- addresses accE addrType listReq
         case res of
-            [] -> return (keyRing, acc, res, [], maxPage)
+            [] -> return (keyRing, acc, res, [], cnt)
             _ -> do
                 let is = map keyRingAddrIndex res
                     (iMin, iMax) = (minimum is, maximum is)
                 bals <- addressBalances accE iMin iMax addrType minConf offline
-                return (keyRing, acc, res, bals, maxPage)
+                return (keyRing, acc, res, bals, cnt)
 
     -- Join addresses and balances together
     let g (addr, bal) = toJsonAddr addr (Just bal)
@@ -268,7 +267,7 @@ getAddressesR keyRingName name addrType minConf offline page = do
     return $ Just $ toJSON JsonWithAccount
         { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
         , withAccountAccount = toJsonAccount acc
-        , withAccountData    = PageRes addrBals maxPage
+        , withAccountData    = ListResult addrBals cnt
         }
   where
     joinAddrs addrs bals =
@@ -385,58 +384,56 @@ postAddressesR keyRingName name i addrType = do
         }
 
 getTxsR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
-        => KeyRingName -> AccountName -> PageRequest -> Handler m (Maybe Value)
-getTxsR keyRingName name page = do
+        => KeyRingName -> AccountName -> ListRequest -> Handler m (Maybe Value)
+getTxsR keyRingName name listReq = do
     $(logInfo) $ format $ unlines
         [ "GetTxsR"
         , "  KeyRing name: " ++ unpack keyRingName
         , "  Account name: " ++ unpack name
-        , "  Page number : " ++ show (pageNum page)
-        , "  Page size   : " ++ show (pageLen page)
-        , "  Page reverse: " ++ show (pageReverse page)
+        , "  Start index : " ++ show (listOffset listReq)
+        , "  Reversed    : " ++ show (listReverse listReq)
         ]
 
-    (keyRing, acc, res, maxPage, height) <- runDB $ do
+    (keyRing, acc, res, cnt, height) <- runDB $ do
         (keyRing, Entity ai acc) <- getAccount keyRingName name
         (_, height) <- getBestBlock
-        (res, maxPage) <- txPage ai page
-        return (keyRing, acc, res, maxPage, height)
+        (res, cnt) <- txs ai listReq
+        return (keyRing, acc, res, cnt, height)
 
     return $ Just $ toJSON JsonWithAccount
         { withAccountKeyRing = toJsonKeyRing keyRing Nothing Nothing
         , withAccountAccount = toJsonAccount acc
         , withAccountData =
-            PageRes (map (`toJsonTx` Just height) res) maxPage
+            ListResult (map (`toJsonTx` Just height) res) cnt
         }
 
 getAddrTxsR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)
             => KeyRingName -> AccountName
-            -> KeyIndex -> AddressType -> PageRequest
+            -> KeyIndex -> AddressType -> ListRequest
             -> Handler m (Maybe Value)
-getAddrTxsR keyRingName name index addrType page = do
+getAddrTxsR keyRingName name index addrType listReq = do
     $(logInfo) $ format $ unlines
         [ "GetAddrTxsR"
         , "  KeyRing name : " ++ unpack keyRingName
         , "  Account name : " ++ unpack name
         , "  Address index: " ++ show index
         , "  Address type : " ++ show addrType
-        , "  Page number  : " ++ show (pageNum page)
-        , "  Page size    : " ++ show (pageLen page)
-        , "  Page reverse : " ++ show (pageReverse page)
+        , "  Start index  : " ++ show (listOffset listReq)
+        , "  Reversed     : " ++ show (listReverse listReq)
         ]
 
-    (keyRing, acc, res, maxPage, height, addr) <- runDB $ do
+    (keyRing, acc, res, cnt, height, addr) <- runDB $ do
         (keyRing, accE@(Entity _ acc)) <- getAccount keyRingName name
         Entity addrI addr <- getAddress accE addrType index
         (_, height) <- getBestBlock
-        (res, maxPage) <- addrTxPage accE addrI page
-        return (keyRing, acc, res, maxPage, height, addr)
+        (res, cnt) <- addrTxs accE addrI listReq
+        return (keyRing, acc, res, cnt, height, addr)
 
     return $ Just $ toJSON JsonWithAddr
         { withAddrKeyRing = toJsonKeyRing keyRing Nothing Nothing
         , withAddrAccount = toJsonAccount acc
         , withAddrAddress = toJsonAddr addr Nothing
-        , withAddrData    = PageRes (map (f height) res) maxPage
+        , withAddrData    = ListResult (map (f height) res) cnt
         }
   where
     f height (tx, bal) = AddrTx (toJsonTx tx (Just height)) bal

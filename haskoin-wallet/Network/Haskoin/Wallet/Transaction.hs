@@ -247,9 +247,9 @@ getAccountTx ai txid = do
 -- included into blocks yet.
 getPendingTxs :: MonadIO m => Int -> SqlPersistT m [TxHash]
 getPendingTxs i =
-    liftM (map unValue) $ select $ from $ \t -> do
+    fmap (map unValue) $ select $ from $ \t -> do
         where_ $ t ^. KeyRingTxConfidence ==. val TxPending
-        limit $ fromIntegral i
+        when (i > 0) $ limit $ fromIntegral i
         return $ t ^. KeyRingTxHash
 
 {- Transaction Import -}

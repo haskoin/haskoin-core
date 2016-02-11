@@ -15,7 +15,7 @@ import System.ZMQ4
     , z85Decode
     )
 
-import Control.Monad (when, unless, forever, liftM, void)
+import Control.Monad (when, unless, forever, void)
 import Control.Monad.Trans (lift, liftIO)
 import Control.Monad.Trans.Control (MonadBaseControl, liftBaseOpDiscard)
 import Control.Monad.Base (MonadBase)
@@ -139,7 +139,7 @@ runSPVServer cfg = maybeDetach cfg $ run $ do -- start the server process
         _ <- atomicallyNodeT waitBloomFilter
 
         -- Provide a fast catchup time if we are at height 0
-        fcM <- liftM (fmap adjustFCTime) $ runDBPool sem pool $ do
+        fcM <- fmap (fmap adjustFCTime) $ runDBPool sem pool $ do
             (_, h) <- getBestBlock
             if h == 0 then firstAddrTime else return Nothing
         maybe (return ()) (atomicallyNodeT . rescanTs) fcM
@@ -153,7 +153,7 @@ runSPVServer cfg = maybeDetach cfg $ run $ do -- start the server process
             synced <- areBlocksSynced
             unless synced $ lift retry
         -- Send an INV for those transactions to all peers
-        broadcastTxs =<< runDBPool sem pool (getPendingTxs 100)
+        broadcastTxs =<< runDBPool sem pool (getPendingTxs 0)
         -- Wait until we are not synced
         atomicallyNodeT $ do
             synced <- areBlocksSynced
@@ -389,12 +389,12 @@ runZapAuth ctx k = do
               Right q -> do
                   $(logInfo) "Authenticated client successfully"
                   liftIO $ sendMulti zap $
-                      "1.0" :| q : "200" : "OK" : "client" : "" : []
+                      "1.0" :| [q, "200", "OK", "client", ""]
               Left (q, c, m) -> do
                   $(logError) $ pack $ unwords
                       [ "Failed to authenticate client:" , cs c, cs m ]
                   liftIO $ sendMulti zap $
-                      "1.0" :| q : c : m : "" : "" : []
+                      "1.0" :| [q, c, m, "", ""]
 
 
 dispatchRequest :: ( MonadLoggerIO m
@@ -404,7 +404,7 @@ dispatchRequest :: ( MonadLoggerIO m
                    , MonadResource m
                    )
                 => WalletRequest -> Handler m (WalletResponse Value)
-dispatchRequest req = liftM ResponseValid $ case req of
+dispatchRequest req = fmap ResponseValid $ case req of
     GetKeyRingsR                     -> getKeyRingsR
     GetKeyRingR r                    -> getKeyRingR r
     PostKeyRingsR r                  -> postKeyRingsR r

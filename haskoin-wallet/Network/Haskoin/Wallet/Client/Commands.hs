@@ -5,6 +5,7 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdAddKey
 , cmdSetGap
 , cmdAccount
+, cmdRenameAcc
 , cmdAccounts
 , cmdList
 , cmdUnused
@@ -253,6 +254,11 @@ cmdAccounts = do
     handleResponse resE $ \as -> do
         let xs = map (liftIO . putStr . printAccount) as
         sequence_ $ intersperse (liftIO $ putStrLn "-") xs
+
+cmdRenameAcc :: String -> String -> Handler ()
+cmdRenameAcc oldName newName = do
+    resE <- sendZmq $ PostAccountRenameR (pack oldName) (pack newName)
+    handleResponse resE $ liftIO . putStr . printAccount
 
 listAction :: (FromJSON a, ToJSON a)
             => Word32

@@ -334,6 +334,7 @@ addrTypeIndex AddressInternal = 1
 data WalletRequest
     = GetAccountsR
     | PostAccountsR !NewAccount
+    | PostAccountRenameR !AccountName !AccountName
     | GetAccountR !AccountName
     | PostAccountKeysR !AccountName ![XPubKey]
     | PostAccountGapR !AccountName !SetAccountGap

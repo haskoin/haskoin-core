@@ -188,6 +188,7 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "setgap"      : name : gap            : [] -> cmdSetGap name gap
     "account"     : name                  : [] -> cmdAccount name
     "accounts"                            : [] -> cmdAccounts
+    "rename"      : name : new            : [] -> cmdRenameAcc name new
     "list"        : name : page                -> cmdList name page
     "unused"      : name                  : [] -> cmdUnused name
     "label"       : name : index : label  : [] -> cmdLabel name index label

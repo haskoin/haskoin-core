@@ -12,6 +12,7 @@ Account commands:
   setgap    acc gap                       Set the address gap for an account
   accounts                                List all accounts in a keyring
   account   acc                           Display an account by name
+  rename    old new                       Rename account
 
 Address commands:
   list   acc [page] [-c pagesize] [-r]    Display addresses by page

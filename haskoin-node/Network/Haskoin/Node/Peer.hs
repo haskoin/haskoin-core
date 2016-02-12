@@ -53,7 +53,7 @@ import Network.Haskoin.Util
 
 -- TODO: Move constants elsewhere ?
 minProtocolVersion :: Word32
-minProtocolVersion = 70011
+minProtocolVersion = 70001
 
 -- Start a reconnecting peer that will idle once the connection is established
 -- and the handshake is performed.
@@ -471,8 +471,8 @@ peerPing pid ph = forever $ do
             ]
         disconnectPeer pid ph
 
-isBloomEnabled :: Version -> Bool
-isBloomEnabled = (`testBit` 2) . services
+isBloomDisabled :: Version -> Bool
+isBloomDisabled ver = version ver >= 70011 && not (services ver `testBit` 2)
 
 peerHandshake :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
               => PeerId
@@ -521,8 +521,8 @@ peerHandshake pid ph chan = do
                 , "but we require at least"
                 , show $ minProtocolVersion
                 ]
-        | isBloomEnabled ver =
-            misbehaving pid ph severeDoS $ "Peers do not support bloom filters"
+        | isBloomDisabled ver =
+            misbehaving pid ph severeDoS $ "Peer does not support bloom filters"
         | otherwise = action
     buildVersion = do
         -- TODO: Get our correct IP here

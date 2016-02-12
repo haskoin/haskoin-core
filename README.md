@@ -78,7 +78,7 @@ Get [Stack](https://github.com/commercialhaskell/stack).
 Clone this repository, and then install using Stack.
 
 ```sh
-git clone https://github.com/haskoin/haskoin.git
+git clone --recursive https://github.com/haskoin/haskoin.git
 cd haskoin
 stack install
 ```

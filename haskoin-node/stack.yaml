@@ -1,11 +1,10 @@
 flags: {}
 packages:
 - '.'
-- location: '../haskoin-core'
-  extra-dep: true
-- location:
-    git: https://github.com/haskoin/secp256k1.git
-    commit: 5ee603061b3c1eaf2943e8d2c08e6effe85f38e7
+- location: '..'
+  subdirs:
+    - haskoin-core
+    - secp256k1-haskell
   extra-dep: true
 extra-deps:
 - concurrent-extra-0.7.0.10

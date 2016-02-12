@@ -9,14 +9,10 @@ module Network.Haskoin.Wallet.Types
 , JsonAddr(..)
 , JsonCoin(..)
 , JsonTx(..)
-, JsonWithKeyRing(..)
-, JsonWithAccount(..)
-, JsonWithAddr(..)
 
 -- Request Types
 , WalletRequest(..)
-, PageRequest(..)
-, validPageRequest
+, ListRequest(..)
 , NewKeyRing(..)
 , NewAccount(..)
 , SetAccountGap(..)
@@ -36,8 +32,7 @@ module Network.Haskoin.Wallet.Types
 -- Response Types
 , WalletResponse(..)
 , TxCompleteRes(..)
-, AddrTx(..)
-, PageRes(..)
+, ListResult(..)
 , RescanRes(..)
 
 -- Helper Types
@@ -52,7 +47,7 @@ module Network.Haskoin.Wallet.Types
 , join2
 ) where
 
-import Control.Monad (mzero, forM, forM_, liftM)
+import Control.Monad (mzero, forM, forM_)
 import Control.Monad.Trans (MonadIO)
 import Control.Exception (Exception)
 import Control.DeepSeq (NFData(..))
@@ -228,17 +223,14 @@ data SetAccountGap = SetAccountGap { getAccountGap :: !Word32 }
 
 $(deriveJSON (dropFieldLabel 10) ''SetAccountGap)
 
-data PageRequest = PageRequest
-    { pageNum     :: !Word32
-    , pageLen     :: !Word32
-    , pageReverse :: !Bool
+data ListRequest = ListRequest
+    { listOffset  :: !Word32
+    , listLimit   :: !Word32
+    , listReverse :: !Bool
     }
     deriving (Eq, Show, Read)
 
-$(deriveJSON (dropFieldLabel 0) ''PageRequest)
-
-validPageRequest :: PageRequest -> Bool
-validPageRequest PageRequest{..} = pageNum >= 1 && pageLen >= 1
+$(deriveJSON (dropFieldLabel 4) ''ListRequest)
 
 data CoinSignData = CoinSignData
     { coinSignOutPoint     :: !OutPoint
@@ -354,14 +346,14 @@ data WalletRequest
     | PostAccountKeysR !KeyRingName !AccountName ![XPubKey]
     | PostAccountGapR !KeyRingName !AccountName !SetAccountGap
     | GetAddressesR !KeyRingName !AccountName
-        !AddressType !Word32 !Bool !PageRequest
+        !AddressType !Word32 !Bool !ListRequest
     | GetAddressesUnusedR !KeyRingName !AccountName !AddressType
     | GetAddressR !KeyRingName !AccountName !KeyIndex !AddressType
         !Word32 !Bool
     | PutAddressR !KeyRingName !AccountName !KeyIndex !AddressType !AddressLabel
     | PostAddressesR !KeyRingName !AccountName !KeyIndex !AddressType
-    | GetTxsR !KeyRingName !AccountName !PageRequest
-    | GetAddrTxsR !KeyRingName !AccountName !KeyIndex !AddressType !PageRequest
+    | GetTxsR !KeyRingName !AccountName !ListRequest
+    | GetAddrTxsR !KeyRingName !AccountName !KeyIndex !AddressType !ListRequest
     | PostTxsR !KeyRingName !AccountName !TxAction
     | GetTxR !KeyRingName !AccountName !TxHash
     | GetOfflineTxR !KeyRingName !AccountName !TxHash
@@ -413,13 +405,6 @@ instance FromJSON JsonKeyRing where
             , jsonKeyRingCreated = created
             }
 
-data JsonWithKeyRing a = JsonWithKeyRing
-    { withKeyRingKeyRing :: !JsonKeyRing
-    , withKeyRingData    :: !a
-    }
-
-$(deriveJSON (dropFieldLabel 11) ''JsonWithKeyRing)
-
 data JsonAccount = JsonAccount
     { jsonAccountName       :: !Text
     , jsonAccountType       :: !AccountType
@@ -431,14 +416,6 @@ data JsonAccount = JsonAccount
     deriving (Eq, Show, Read)
 
 $(deriveJSON (dropFieldLabel 11) ''JsonAccount)
-
-data JsonWithAccount a = JsonWithAccount
-    { withAccountKeyRing :: !JsonKeyRing
-    , withAccountAccount :: !JsonAccount
-    , withAccountData    :: !a
-    }
-
-$(deriveJSON (dropFieldLabel 11) ''JsonWithAccount)
 
 data JsonAddr = JsonAddr
     { jsonAddrAddress        :: !Address
@@ -456,15 +433,6 @@ data JsonAddr = JsonAddr
     deriving (Eq, Show, Read)
 
 $(deriveJSON (dropFieldLabel 8) ''JsonAddr)
-
-data JsonWithAddr a = JsonWithAddr
-    { withAddrKeyRing :: !JsonKeyRing
-    , withAddrAccount :: !JsonAccount
-    , withAddrAddress :: !JsonAddr
-    , withAddrData    :: !a
-    }
-
-$(deriveJSON (dropFieldLabel 8) ''JsonWithAddr)
 
 data JsonTx = JsonTx
     { jsonTxHash            :: !TxHash
@@ -509,13 +477,6 @@ $(deriveJSON (dropFieldLabel 8) ''JsonCoin)
 
 {- Response Types -}
 
-data AddrTx = AddrTx
-    { addrTxTx      :: !JsonTx
-    , addrTxBalance :: !BalanceInfo
-    }
-
-$(deriveJSON (dropFieldLabel 6) ''AddrTx)
-
 data TxCompleteRes = TxCompleteRes
     { txCompleteTx       :: !Tx
     , txCompleteComplete :: !Bool
@@ -523,12 +484,12 @@ data TxCompleteRes = TxCompleteRes
 
 $(deriveJSON (dropFieldLabel 10) ''TxCompleteRes)
 
-data PageRes a = PageRes
-    { pageResPage    :: ![a]
-    , pageResMaxPage :: !Word32
+data ListResult a = ListResult
+    { listResultItems :: ![a]
+    , listResultTotal :: !Word32
     }
 
-$(deriveJSON (dropFieldLabel 7) ''PageRes)
+$(deriveJSON (dropFieldLabel 10) ''ListResult)
 
 data RescanRes = RescanRes { rescanTimestamp :: !Word32 }
     deriving (Eq, Show, Read)
@@ -750,7 +711,7 @@ splitSelect :: (SqlSelect a r, MonadIO m)
             -> ([t] -> SqlQuery a)
             -> SqlPersistT m [r]
 splitSelect ts queryF =
-    liftM concat $ forM vals $ select . queryF
+    fmap concat $ forM vals $ select . queryF
   where
     vals = chunksOf paramLimit ts
 

@@ -56,7 +56,7 @@ import Data.Maybe
 import Data.List (intercalate, intersperse)
 import qualified Data.ByteString.Char8 as B8 (putStrLn, unwords)
 import Data.Text (Text, pack, unpack, splitOn)
-import Data.Word (Word64)
+import Data.Word (Word32, Word64)
 import qualified Data.Yaml as YAML (encode)
 import qualified Data.Aeson.Encode.Pretty as JSON
     ( Config(..)
@@ -129,7 +129,7 @@ cmdNewAcc :: String -> Handler ()
 cmdNewAcc name = do
     k <- R.asks configKeyRing
     sendZmq (PostAccountsR k newAcc) $
-        \(JsonWithKeyRing _ acc) -> putStr $ printAccount acc
+        \acc -> putStr $ printAccount acc
   where
     newAcc = NewAccount (pack name) (AccountRegular False) []
 
@@ -140,7 +140,7 @@ cmdNewMS r name mStr nStr ks = case keysM of
         k <- R.asks configKeyRing
         let newAcc = NewAccount (pack name) (AccountMultisig r m n) keys
         sendZmq (PostAccountsR k newAcc) $
-            \(JsonWithKeyRing _ acc) -> putStr $ printAccount acc
+            \acc -> putStr $ printAccount acc
     _ -> error "Could not parse key(s)"
   where
     m     = read mStr
@@ -153,7 +153,7 @@ cmdNewRead name keyStr = case keyM of
         k <- R.asks configKeyRing
         let newAcc = NewAccount (pack name) (AccountRegular True) [key]
         sendZmq (PostAccountsR k newAcc) $
-            \(JsonWithKeyRing _ acc) -> putStr $ printAccount acc
+            \acc -> putStr $ printAccount acc
     _ -> error "Could not parse key"
   where
     keyM = xPubImport $ cs keyStr
@@ -163,7 +163,7 @@ cmdAddKeys name ks = case keysM of
     Just keys -> do
         k <- R.asks configKeyRing
         sendZmq (PostAccountKeysR k (pack name) keys) $
-            \(JsonWithKeyRing _ acc) -> putStr $ printAccount acc
+            \acc -> putStr $ printAccount acc
     _ -> error "Could not parse key(s)"
   where
     keysM = mapM (xPubImport . cs) ks
@@ -172,7 +172,7 @@ cmdSetGap :: String -> String -> Handler ()
 cmdSetGap name gap = do
     k <- R.asks configKeyRing
     sendZmq (PostAccountGapR k (pack name) setGap) $
-        \(JsonWithKeyRing _ acc) -> putStr $ printAccount acc
+        \acc -> putStr $ printAccount acc
   where
     setGap = SetAccountGap $ read gap
 
@@ -180,76 +180,78 @@ cmdAccount :: String -> Handler ()
 cmdAccount name = do
     k <- R.asks configKeyRing
     sendZmq (GetAccountR k $ pack name) $
-        \(JsonWithKeyRing _ acc) -> putStr $ printAccount acc
+        \acc -> putStr $ printAccount acc
 
 cmdAccounts :: Handler ()
 cmdAccounts = do
     k <- R.asks configKeyRing
-    sendZmq (GetAccountsR k) $ \(JsonWithKeyRing _ as) -> do
+    sendZmq (GetAccountsR k) $ \as -> do
         let xs = map (putStr . printAccount) as
         sequence_ $ intersperse (putStrLn "-") xs
 
-pagedAction :: (FromJSON a, ToJSON a)
-            => [String]
-            -> (PageRequest -> WalletRequest)
+listAction :: (FromJSON a, ToJSON a)
+            => Word32
+            -> (ListRequest -> WalletRequest)
             -> ([a] -> IO ())
             -> Handler ()
-pagedAction pageLs requestBuilder action = do
+listAction page requestBuilder action = do
     c <- R.asks configCount
     r <- R.asks configReversePaging
-    let pageReq = PageRequest page c r
-    sendZmq (requestBuilder pageReq) $ \(JsonWithAccount _ _ (PageRes a m)) -> do
-        putStrLn $ unwords [ "Page", show page, "of", show m ]
+    when (page < 1) $ error "Page cannot be less than 1"
+    let listReq = ListRequest ((page - 1) * c) c r
+    sendZmq (requestBuilder listReq) $ \(ListResult a m) -> do
+        putStrLn $ "Page " ++ show page ++ " of " ++ show (pages m c) ++
+                   " (" ++ show m ++ " elements)"
         action a
   where
-    page = fromMaybe 1 (read <$> listToMaybe pageLs)
+    pages m c | m `mod` c == 0 = m `div` c
+              | otherwise = m `div` c + 1
 
 cmdList :: String -> [String] -> Handler ()
-cmdList name pageLs = do
+cmdList name ls = do
     k <- R.asks configKeyRing
     t <- R.asks configAddrType
     m <- R.asks configMinConf
     o <- R.asks configOffline
+    let page = maybe 1 read $ listToMaybe ls
     let f = GetAddressesR k (pack name) t m o
-    pagedAction pageLs f $ \as -> forM_ as (putStrLn . printAddress)
+    listAction page f $ \as -> forM_ as (putStrLn . printAddress)
 
 cmdUnused :: String -> Handler ()
 cmdUnused name = do
     k <- R.asks configKeyRing
     t <- R.asks configAddrType
     sendZmq (GetAddressesUnusedR k (pack name) t) $
-        \(JsonWithAccount _ _ as) -> forM_ (as :: [JsonAddr]) $ putStrLn . printAddress
+        \as -> forM_ (as :: [JsonAddr]) $ putStrLn . printAddress
 
 cmdLabel :: String -> String -> String -> Handler ()
 cmdLabel name iStr label = do
     k <- R.asks configKeyRing
     t <- R.asks configAddrType
     sendZmq (PutAddressR k (pack name) i t addrLabel) $
-        \(JsonWithAccount _ _ a) -> putStrLn $ printAddress a
+        \a -> putStrLn $ printAddress a
   where
     i         = read iStr
     addrLabel = AddressLabel $ pack label
 
 cmdTxs :: String -> [String] -> Handler ()
-cmdTxs name pageLs = do
+cmdTxs name ls = do
     k <- R.asks configKeyRing
-    pagedAction pageLs (GetTxsR k (pack name)) $ \ts -> do
+    let page = maybe 1 read $ listToMaybe ls
+    listAction page (GetTxsR k (pack name)) $ \ts -> do
         let xs = map (putStr . printTx) ts
         sequence_ $ intersperse (putStrLn "-") xs
 
 cmdAddrTxs :: String -> String -> [String] -> Handler ()
-cmdAddrTxs name i pageLs = do
+cmdAddrTxs name i ls = do
     k <- R.asks configKeyRing
     t <- R.asks configAddrType
-    c <- R.asks configCount
-    r <- R.asks configReversePaging
-    let req = GetAddrTxsR k (pack name) index t $ PageRequest page c r
-    sendZmq req $ \(JsonWithAddr _ _ _ (PageRes ts m)) -> do
-        putStrLn $ unwords [ "Page", show page, "of", show m ]
-        let xs = map (putStr . printAddrTx) ts
+    let page = maybe 1 read $ listToMaybe ls
+    let f = GetAddrTxsR k (pack name) index t
+    listAction page f $ \ts -> do
+        let xs = map (putStr . printTx) ts
         sequence_ $ intersperse (putStrLn "-") xs
   where
-    page  = fromMaybe 1 (read <$> listToMaybe pageLs)
     index = read i
 
 cmdGenAddrs :: String -> String -> Handler ()
@@ -257,7 +259,7 @@ cmdGenAddrs name i = do
     k <- R.asks configKeyRing
     t <- R.asks configAddrType
     let req = PostAddressesR k (pack name) index t
-    sendZmq req $ \(JsonWithAccount _ _ cnt) ->
+    sendZmq req $ \cnt ->
         putStrLn $ unwords [ "Generated", show (cnt :: Int), "addresses" ]
   where
     index = read i
@@ -275,7 +277,7 @@ cmdSendMany name xs = case rcpsM of
         sign    <- R.asks configSignTx
         let action = CreateTx rcps fee minconf rcptFee sign
         sendZmq (PostTxsR k (pack name) action) $
-            \(JsonWithAccount _ _ tx) -> putStr $ printTx tx
+            \tx -> putStr $ printTx tx
     _ -> error "Could not parse recipient information"
   where
     g str   = map cs $ splitOn ":" (pack str)
@@ -289,7 +291,7 @@ cmdImport name txStr = case txM of
         k <- R.asks configKeyRing
         let action = ImportTx tx
         sendZmq (PostTxsR k (pack name) action) $
-            \(JsonWithAccount _ _ t) -> putStr $ printTx t
+            \t -> putStr $ printTx t
     _ -> error "Could not parse transaction"
   where
     txM = decodeToMaybe =<< decodeHex (cs txStr)
@@ -300,7 +302,7 @@ cmdSign name txidStr = case txidM of
         k <- R.asks configKeyRing
         let action = SignTx txid
         sendZmq (PostTxsR k (pack name) action) $
-            \(JsonWithAccount _ _ tx) -> putStr $ printTx tx
+            \tx -> putStr $ printTx tx
     _ -> error "Could not parse txid"
   where
     txidM = hexToTxHash $ cs txidStr
@@ -338,7 +340,7 @@ cmdBalance name = do
     m <- R.asks configMinConf
     o <- R.asks configOffline
     sendZmq (GetBalanceR k (pack name) m o) $
-        \(JsonWithAccount _ _ bal) ->
+        \bal ->
             putStrLn $ unwords [ "Balance:", show (bal :: Word64) ]
 
 cmdGetTx :: String -> String -> Handler ()
@@ -346,7 +348,7 @@ cmdGetTx name tidStr = case tidM of
     Just tid -> do
         k <- R.asks configKeyRing
         sendZmq (GetTxR k (pack name) tid) $
-            \(JsonWithAccount _ _ tx) -> putStr $ printTx tx
+            \tx -> putStr $ printTx tx
     _ -> error "Could not parse txid"
   where
     tidM = hexToTxHash $ cs tidStr
@@ -643,21 +645,6 @@ printTx tx@JsonTx{..} = unlines $
         ++
         [ if local then "<-" else "" ]
 
-printAddrTx :: AddrTx -> String
-printAddrTx (AddrTx tx BalanceInfo{..}) = unlines $
-    concat
-    [ [ "Incoming value: " ++ show balanceInfoInBalance
-      , "Incoming coins: " ++ show balanceInfoCoins
-      ]
-      | balanceInfoInBalance > 0
-    ] ++ concat
-    [ [ "Outgoing value: " ++ show balanceInfoOutBalance
-      , "Spent coins   : " ++ show balanceInfoSpentCoins
-      ]
-      | balanceInfoOutBalance > 0
-    ] ++
-    [   "Confidence    : " ++ printTxConfidence tx ]
-
 printTxConfidence :: JsonTx -> String
 printTxConfidence JsonTx{..} = case jsonTxConfidence of
     TxBuilding -> "Building" ++ confirmations
@@ -726,6 +713,6 @@ printPeerStatus verbose PeerStatus{..} =
     | t <- maybeToList peerStatusReconnectTimer, verbose
     ] ++
     [ "  Logs     : " | verbose ] ++
-    [ "    - " ++ msg | msg <- maybe [] id peerStatusLog, verbose]
+    [ "    - " ++ msg | msg <- fromMaybe [] peerStatusLog, verbose]
 
 

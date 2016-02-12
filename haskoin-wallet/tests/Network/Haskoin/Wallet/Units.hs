@@ -12,6 +12,7 @@ import Control.Monad.Logger (NoLoggingT)
 
 import Data.Word (Word32, Word64)
 import Data.Maybe (fromJust)
+import Data.List (sort)
 import qualified Data.ByteString as BS
     ( ByteString
     , empty
@@ -93,7 +94,7 @@ tests =
                 (WalletException "The account is already complete") $ do
                     keyE <- newKeyRing "main" $ BS.pack [0]
                     _ <- newAccount keyE "default" (AccountRegular False) []
-                    (_, accE) <- getAccount "main" "default"
+                    accE <- getAccount "main" "default"
                     addAccountKeys accE [ deriveXPubKey $ makeXPrvKey (BS.pack [1]) ]
 
         , testCase "Adding keys to a complete multisig account should fail" $
@@ -104,7 +105,7 @@ tests =
                         [ deriveXPubKey $ makeXPrvKey (BS.pack [1])
                         , deriveXPubKey $ makeXPrvKey (BS.pack [2])
                         ]
-                    (_, accE) <- getAccount "main" "ms"
+                    accE <- getAccount "main" "ms"
                     addAccountKeys accE [deriveXPubKey $ makeXPrvKey (BS.pack [3])]
 
         , testCase "Getting a non-existing account should fail" $
@@ -115,34 +116,13 @@ tests =
 
         ]
     , testGroup "Address tests"
-        [ testCase "Displaying page 0 should fail" $
-            assertException
-                (WalletException "Invalid page request (Page: 0, Page size: 1)" ) $ do
-                    keyE <- newKeyRing "main" $ BS.pack [0]
-                    accE <- newAccount keyE "default" (AccountRegular False) []
-                    addressPage accE AddressExternal $ PageRequest 0 1 False
-
-        , testCase "Displaying 0 results per page should fail" $
-            assertException
-                (WalletException "Invalid page request (Page: 1, Page size: 0)" ) $ do
-                    keyE <- newKeyRing "main" $ BS.pack [0]
-                    accE <- newAccount keyE "default" (AccountRegular False) []
-                    addressPage accE AddressExternal $ PageRequest 1 0 False
-
-        , testCase "Displaying a page number that is too high should fail" $
-            assertException
-                (WalletException "Invalid page number 5") $ do
-                    keyE <- newKeyRing "main" $ BS.pack [0]
-                    accE <- newAccount keyE "default" (AccountRegular False) []
-                    addressPage accE AddressExternal $ PageRequest 5 3 False
-
-        , testCase "Decreasing the address gap should fail" $
+        [ testCase "Decreasing the address gap should fail" $
             assertException (WalletException "The gap of an account can only be increased") $ do
                 keyE <- newKeyRing "main" $ BS.pack [0]
                 _ <- newAccount keyE "default" (AccountRegular False) []
-                (_, acc1E) <- getAccount "main" "default"
+                acc1E <- getAccount "main" "default"
                 _ <- setAccountGap acc1E 15
-                (_, acc2E) <- getAccount "main" "default"
+                acc2E <- getAccount "main" "default"
                 setAccountGap acc2E 14
 
         , testCase "Setting a label on a hidden address key should fail" $
@@ -470,7 +450,7 @@ testBalances = do
             [(1, BalanceInfo 20000000 20000000 1 1)]
 
     -- Confirm tx1 at height 2
-    importMerkles ((BestChain [fakeNode 2 bid2])) [[txHash tx1]]
+    importMerkles (BestChain [fakeNode 2 bid2]) [[txHash tx1]]
 
     accountBalance ai 0 False >>=
         liftIO . (assertEqual "Balance is not 0") 0
@@ -1309,7 +1289,7 @@ testOfflineExceptions = do
     assertException (WalletException "Could not import offline transaction") $ do
         keyE <- newKeyRing "test" bs1
         _ <- newAccount keyE "acc1" (AccountRegular False) []
-        (_, Entity ai _) <- getAccount "test" "acc1"
+        Entity ai _ <- getAccount "test" "acc1"
         importNetTx tx1
             >>= liftIO
             . (assertEqual "Confidence is not pending"
@@ -1320,7 +1300,7 @@ testOfflineExceptions = do
     assertException (WalletException "Could not import offline transaction") $ do
         keyE <- newKeyRing "test" bs1
         _ <- newAccount keyE "acc1" (AccountRegular False) []
-        (_, Entity ai _) <- getAccount "test" "acc1"
+        Entity ai _ <- getAccount "test" "acc1"
         importNetTx tx4
             >>= liftIO
             . (assertEqual "Confidence is not pending"
@@ -1341,7 +1321,7 @@ testOfflineExceptions = do
     assertException (WalletException "Could not import offline transaction") $ do
         keyE <- newKeyRing "test" bs1
         _ <- newAccount keyE "acc1" (AccountRegular False) []
-        (_, Entity ai _) <- getAccount "test" "acc1"
+        Entity ai _ <- getAccount "test" "acc1"
         importNetTx tx1
             >>= liftIO
             . (assertEqual "Confidence is not pending"
@@ -1358,8 +1338,8 @@ testImportMultisig = do
     _ <- newAccount keyE "ms2" (AccountMultisig False 2 2)
         [fromJust $ xPubImport "xpub69iinth3CTrfh5efv7baTWwk9hHi4zqcQEsNFgVwEJvdaZVEPytZzmNxjYTnF5F5x2CamLXvmD1T4RhpsuaXSFPo2MnLN5VqWqrWb82U7ED"]
     Entity _ keyRing <- getKeyRing "test"
-    (_, accE1@(Entity ai1 _)) <- getAccount "test" "ms1"
-    (_, accE2@(Entity ai2 _)) <- getAccount "test" "ms2"
+    accE1@(Entity ai1 _) <- getAccount "test" "ms1"
+    accE2@(Entity ai2 _) <- getAccount "test" "ms2"
 
     let fundingTx =
             Tx 1 [ TxIn (OutPoint tid1 0) (BS.pack [1]) maxBound ] -- dummy input
@@ -1386,11 +1366,11 @@ testImportMultisig = do
         >>= liftIO
         . (assertEqual "Wrong txhash in coins" [])
         . map (keyRingCoinHash . entityVal . inCoinDataCoin)
-    txPage ai1 (PageRequest 1 10 False)
+    txs ai1 (ListRequest 0 10 False)
         >>= liftIO
         . (assertEqual "Wrong txhash in tx list"
-            [txHash fundingTx, keyRingTxHash tx1])
-        . (map keyRingTxHash) . fst
+            (sort [txHash fundingTx, keyRingTxHash tx1]))
+        . sort . map keyRingTxHash . fst
     accountBalance ai1 0 False >>=
         liftIO . (assertEqual "Balance is not 10000000") 10000000
     accountBalance ai1 1 False >>=
@@ -1410,11 +1390,11 @@ testImportMultisig = do
         >>= liftIO
         . (assertEqual "Wrong txhash in coins" [])
         . map (keyRingCoinHash . entityVal . inCoinDataCoin)
-    txPage ai2 (PageRequest 1 10 False)
+    txs ai2 (ListRequest 0 10 False)
         >>= liftIO
         . (assertEqual "Wrong txhash in tx list"
-            [txHash fundingTx, keyRingTxHash tx2])
-        . (map keyRingTxHash) . fst
+            (sort [txHash fundingTx, keyRingTxHash tx2]))
+        . sort . map keyRingTxHash . fst
     accountBalance ai2 0 False >>=
         liftIO . (assertEqual "Balance is not 10000000") 10000000
     accountBalance ai2 1 False >>=
@@ -1431,11 +1411,11 @@ testImportMultisig = do
         . (assertEqual "Wrong txhash in coins"
             [keyRingTxHash tx3, keyRingTxHash tx3])
         . map (keyRingCoinHash . entityVal . inCoinDataCoin)
-    txPage ai2 (PageRequest 1 10 False)
+    txs ai2 (ListRequest 0 10 False)
         >>= liftIO
         . (assertEqual "Wrong txhash in tx list"
-            [txHash fundingTx, keyRingTxHash tx3])
-        . (map keyRingTxHash) . fst
+            (sort [txHash fundingTx, keyRingTxHash tx3]))
+        . sort . map keyRingTxHash . fst
     accountBalance ai2 0 False >>=
         liftIO . (assertEqual "Balance is not 9990000") 9990000
     accountBalance ai2 1 False >>=
@@ -1452,11 +1432,11 @@ testImportMultisig = do
         . (assertEqual "Wrong txhash in coins"
             [keyRingTxHash tx3, keyRingTxHash tx3])
         . map (keyRingCoinHash . entityVal . inCoinDataCoin)
-    txPage ai1 (PageRequest 1 10 False)
+    txs ai1 (ListRequest 0 10 False)
         >>= liftIO
         . (assertEqual "Wrong txhash in tx list"
-            [txHash fundingTx, keyRingTxHash tx3])
-        . (map keyRingTxHash ) . fst
+            (sort [txHash fundingTx, keyRingTxHash tx3]))
+        . sort . map keyRingTxHash . fst
     accountBalance ai1 0 False >>=
         liftIO . (assertEqual "Balance is not 9990000") 9990000
     accountBalance ai1 1 False >>=
@@ -1474,11 +1454,11 @@ testImportMultisig = do
         . (assertEqual "Wrong txhash in coins"
             [keyRingTxHash tx5, keyRingTxHash tx5])
         . map (keyRingCoinHash . entityVal . inCoinDataCoin)
-    txPage ai1 (PageRequest 1 10 False)
+    txs ai1 (ListRequest 0 10 False)
         >>= liftIO
         . (assertEqual "Wrong txhash in tx list"
-            [txHash fundingTx, keyRingTxHash tx5])
-        . (map keyRingTxHash) . fst
+            (sort [txHash fundingTx, keyRingTxHash tx5]))
+        . sort . map keyRingTxHash . fst
     accountBalance ai1 0 False >>=
         liftIO . (assertEqual "Balance is not 9990000") 9990000
     accountBalance ai1 1 False >>=
@@ -1490,7 +1470,7 @@ testKillTx :: App ()
 testKillTx = do
     keyE <- newKeyRing "test" bs1
     _ <- newAccount keyE "acc1" (AccountRegular False) []
-    (_, accE@(Entity ai _)) <- getAccount "test" "acc1"
+    accE@(Entity ai _) <- getAccount "test" "acc1"
     let tx1 = fakeTx
             [ (tid1, 4) ]
             [ ("13XaDQvvE4rqiVKMi4MApsaZwTcDNiwfuR", 10000000) ]
@@ -1596,7 +1576,7 @@ testKillTx = do
 
 testTx :: ([KeyRingTx], [KeyRingAddr])
        -> ([(KeyRingAccountId, TxConfidence)], Int)
-testTx (txs, addrs) = (map f txs, length addrs)
+testTx (txls, addrs) = (map f txls, length addrs)
   where
     f tx = (keyRingTxAccount tx, keyRingTxConfidence tx)
 

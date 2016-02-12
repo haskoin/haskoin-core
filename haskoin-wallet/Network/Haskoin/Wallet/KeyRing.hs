@@ -21,7 +21,7 @@ module Network.Haskoin.Wallet.KeyRing
 , getAddress
 , addressSourceAll
 , addressSource
-, addressPage
+, addresses
 , unusedAddresses
 , addressCount
 , setAddrLabel
@@ -40,7 +40,7 @@ module Network.Haskoin.Wallet.KeyRing
 , subSelectAddrCount
 ) where
 
-import Control.Monad (unless, when, liftM)
+import Control.Monad (unless, when)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
@@ -124,7 +124,7 @@ newKeyRing name seed
 
 keyRings :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
          => SqlPersistT m [KeyRing]
-keyRings = liftM (map entityVal) $ select $ from return
+keyRings = fmap (map entityVal) $ select $ from return
 
 -- | Stream all KeyRings
 keyRingSource :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
@@ -144,7 +144,7 @@ getKeyRing name = getBy (UniqueKeyRing name) >>= \resM -> case resM of
 -- | Fetch all the accounts in a keyring
 accounts :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
          => KeyRingId -> SqlPersistT m [KeyRingAccount]
-accounts ki = liftM (map entityVal) $ select $ accountsFrom ki
+accounts ki = fmap (map entityVal) $ select $ accountsFrom ki
 
 -- | Stream all accounts in a keyring
 accountSource :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
@@ -170,7 +170,7 @@ newAccount (Entity ki keyRing) accountName accountType extraKeys = do
 
     -- Get the next account derivation
     derivM <- if accountTypeRead accountType then return Nothing else
-        liftM Just $ nextAccountDeriv ki
+        fmap Just $ nextAccountDeriv ki
 
     -- Derive the next account key
     let f d  = [ deriveXPubKey (derivePath d $ keyRingMaster keyRing) ]
@@ -220,11 +220,11 @@ addAccountKeys (Entity ai acc) keys
     -- We can only add keys on incomplete accounts
     | isCompleteAccount acc = liftIO . throwIO $
         WalletException "The account is already complete"
-    | null keys || (not $ isValidAccKeys accKeys) = liftIO . throwIO $
+    | null keys || not (isValidAccKeys accKeys) = liftIO . throwIO $
         WalletException "Invalid account keys"
     | otherwise = do
         let canSetGap = isCompleteAccount accKeys
-            updGap = if canSetGap then [ KeyRingAccountGap P.=. 10 ] else []
+            updGap = [ KeyRingAccountGap P.=. 10 | canSetGap]
             newAcc = accKeys{ keyRingAccountGap = if canSetGap then 10 else 0 }
         -- Update the account with the keys and the new gap if it is complete
         P.update ai $ (KeyRingAccountKeys P.=. newKeys) : updGap
@@ -323,42 +323,30 @@ addressSource accE@(Entity ai _) addrType = mapOutput entityVal $
         return x
 
 -- | Get addresses by pages.
-addressPage :: MonadIO m
-            => Entity KeyRingAccount -- ^ Account Entity
-            -> AddressType           -- ^ Address type
-            -> PageRequest           -- ^ Page request
-            -> SqlPersistT m ([KeyRingAddr], Word32)
-                -- ^ Page result
-addressPage accE@(Entity ai _) addrType page@PageRequest{..}
-    | validPageRequest page = do
-        cnt <- addressCount accE addrType
+addresses :: MonadIO m
+          => Entity KeyRingAccount -- ^ Account Entity
+          -> AddressType           -- ^ Address type
+          -> ListRequest           -- ^ List request
+          -> SqlPersistT m ([KeyRingAddr], Word32)
+          -- ^ List result
+addresses accE@(Entity ai _) addrType ListRequest{..} = do
+    cnt <- addressCount accE addrType
 
-        let (d, m)  = cnt `divMod` pageLen
-            maxPage = max 1 $ d + min 1 m
+    when (listOffset >= cnt) $ throw $ WalletException
+        "Offset beyond end of data set"
 
-        when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
-            unwords [ "Invalid page number", show pageNum ]
+    res <- fmap (map entityVal) $ select $ from $ \x -> do
+        where_ (   x ^. KeyRingAddrAccount ==. val ai
+                &&. x ^. KeyRingAddrType    ==. val addrType
+                &&. x ^. KeyRingAddrIndex   <.  val cnt
+                )
+        let order = if listReverse then asc else desc
+        orderBy [ order (x ^. KeyRingAddrIndex) ]
+        limit $ fromIntegral listLimit
+        offset $ fromIntegral listOffset
+        return x
 
-        if cnt == 0 then return ([], maxPage) else do
-            res <- liftM (map entityVal) $ select $ from $ \x -> do
-                where_ (   x ^. KeyRingAddrAccount ==. val ai
-                       &&. x ^. KeyRingAddrType    ==. val addrType
-                       &&. x ^. KeyRingAddrIndex   <.  val cnt
-                       )
-                let order = if pageReverse then asc else desc
-                orderBy [ order (x ^. KeyRingAddrIndex) ]
-                limit $ fromIntegral pageLen
-                offset $ fromIntegral $ (pageNum - 1) * pageLen
-                return x
-
-            -- Flip the order back to ASC if we had it DEC
-            let f = if pageReverse then id else reverse
-            return (f res, maxPage)
-
-    | otherwise = liftIO . throwIO $ WalletException $
-        concat [ "Invalid page request"
-               , " (Page: ", show pageNum, ", Page size: ", show pageLen, ")"
-               ]
+    return (res, cnt)
 
 -- | Get a count of all the addresses in an account
 addressCount :: MonadIO m
@@ -381,8 +369,8 @@ unusedAddresses :: MonadIO m
                 => Entity KeyRingAccount -- ^ Account ID
                 -> AddressType           -- ^ Address type
                 -> SqlPersistT m [KeyRingAddr] -- ^ Unused addresses
-unusedAddresses (Entity ai acc) addrType = do
-    liftM (reverse . map entityVal) $ select $ from $ \x -> do
+unusedAddresses (Entity ai acc) addrType =
+    fmap (reverse . map entityVal) $ select $ from $ \x -> do
         where_ (   x ^. KeyRingAddrAccount ==. val ai
                &&. x ^. KeyRingAddrType    ==. val addrType
                )
@@ -498,7 +486,7 @@ generateAddrs :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
               -> SqlPersistT m Int
 generateAddrs accE@(Entity _ _) addrType genIndex = do
     cnt <- addressCount accE addrType
-    let toGen = (fromIntegral genIndex) - (fromIntegral cnt) + 1
+    let toGen = fromIntegral genIndex - fromIntegral cnt + 1
     if toGen > 0
         then do
             _ <- createAddrs accE addrType $ fromIntegral toGen
@@ -517,7 +505,7 @@ useAddress KeyRingAddr{..} = do
                )
         return countRows
     case res of
-        ((Value cnt):_) -> get keyRingAddrAccount >>= \accM -> case accM of
+        (Value cnt:_) -> get keyRingAddrAccount >>= \accM -> case accM of
             Just acc -> do
                 let accE    = Entity keyRingAddrAccount acc
                     gap     = fromIntegral (keyRingAccountGap acc) :: Int
@@ -703,8 +691,8 @@ validAccountType t = case t of
 
 isMultisigAccount :: KeyRingAccount -> Bool
 isMultisigAccount acc = case keyRingAccountType acc of
-    AccountRegular _      -> False
-    AccountMultisig _ _ _ -> True
+    AccountRegular _  -> False
+    AccountMultisig{} -> True
 
 isReadAccount :: KeyRingAccount -> Bool
 isReadAccount acc = case keyRingAccountType acc of

@@ -56,7 +56,7 @@ import Data.Maybe
 import Data.List (intercalate, intersperse)
 import qualified Data.ByteString.Char8 as B8 (putStrLn, unwords)
 import Data.Text (Text, pack, unpack, splitOn)
-import Data.Word (Word64)
+import Data.Word (Word32, Word64)
 import qualified Data.Yaml as YAML (encode)
 import qualified Data.Aeson.Encode.Pretty as JSON
     ( Config(..)
@@ -189,29 +189,33 @@ cmdAccounts = do
         let xs = map (putStr . printAccount) as
         sequence_ $ intersperse (putStrLn "-") xs
 
-pagedAction :: (FromJSON a, ToJSON a)
-            => [String]
-            -> (PageRequest -> WalletRequest)
+listAction :: (FromJSON a, ToJSON a)
+            => Word32
+            -> (ListRequest -> WalletRequest)
             -> ([a] -> IO ())
             -> Handler ()
-pagedAction pageLs requestBuilder action = do
+listAction page requestBuilder action = do
     c <- R.asks configCount
     r <- R.asks configReversePaging
-    let pageReq = PageRequest page c r
-    sendZmq (requestBuilder pageReq) $ \(JsonWithAccount _ _ (PageRes a m)) -> do
-        putStrLn $ unwords [ "Page", show page, "of", show m ]
+    when (page < 1) $ error "Page cannot be less than 1"
+    let listReq = ListRequest ((page - 1) * c) c r
+    sendZmq (requestBuilder listReq) $ \(JsonWithAccount _ _ (ListResult a m)) -> do
+        putStrLn $ "Page " ++ show page ++ " of " ++ show (pages m c) ++
+                   " (" ++ show m ++ " elements)"
         action a
   where
-    page = fromMaybe 1 (read <$> listToMaybe pageLs)
+    pages m c | m `mod` c == 0 = m `div` c
+              | otherwise = m `div` c + 1
 
 cmdList :: String -> [String] -> Handler ()
-cmdList name pageLs = do
+cmdList name ls = do
     k <- R.asks configKeyRing
     t <- R.asks configAddrType
     m <- R.asks configMinConf
     o <- R.asks configOffline
+    let page = maybe 1 read $ listToMaybe ls
     let f = GetAddressesR k (pack name) t m o
-    pagedAction pageLs f $ \as -> forM_ as (putStrLn . printAddress)
+    listAction page f $ \as -> forM_ as (putStrLn . printAddress)
 
 cmdUnused :: String -> Handler ()
 cmdUnused name = do
@@ -231,26 +235,32 @@ cmdLabel name iStr label = do
     addrLabel = AddressLabel $ pack label
 
 cmdTxs :: String -> [String] -> Handler ()
-cmdTxs name pageLs = do
+cmdTxs name ls = do
     k <- R.asks configKeyRing
-    pagedAction pageLs (GetTxsR k (pack name)) $ \ts -> do
+    let page = maybe 1 read $ listToMaybe ls
+    listAction page (GetTxsR k (pack name)) $ \ts -> do
         let xs = map (putStr . printTx) ts
         sequence_ $ intersperse (putStrLn "-") xs
 
 cmdAddrTxs :: String -> String -> [String] -> Handler ()
-cmdAddrTxs name i pageLs = do
+cmdAddrTxs name i ls = do
     k <- R.asks configKeyRing
     t <- R.asks configAddrType
     c <- R.asks configCount
     r <- R.asks configReversePaging
-    let req = GetAddrTxsR k (pack name) index t $ PageRequest page c r
-    sendZmq req $ \(JsonWithAddr _ _ _ (PageRes ts m)) -> do
-        putStrLn $ unwords [ "Page", show page, "of", show m ]
+    let page = maybe 1 read $ listToMaybe ls
+    when (page < 1) $ error "Page cannot be less than 1"
+    let req = GetAddrTxsR k (pack name) index t
+                (ListRequest ((page - 1) * c) c r)
+    sendZmq req $ \(JsonWithAddr _ _ _ (ListResult ts m)) -> do
+        putStrLn $ "Page " ++ show page ++ " of " ++ show (pages m c) ++
+                   " (" ++ show m ++ " elements)"
         let xs = map (putStr . printAddrTx) ts
         sequence_ $ intersperse (putStrLn "-") xs
   where
-    page  = fromMaybe 1 (read <$> listToMaybe pageLs)
     index = read i
+    pages m c | m `mod` c == 0 = m `div` c
+              | otherwise = m `div` c + 1
 
 cmdGenAddrs :: String -> String -> Handler ()
 cmdGenAddrs name i = do
@@ -726,6 +736,6 @@ printPeerStatus verbose PeerStatus{..} =
     | t <- maybeToList peerStatusReconnectTimer, verbose
     ] ++
     [ "  Logs     : " | verbose ] ++
-    [ "    - " ++ msg | msg <- maybe [] id peerStatusLog, verbose]
+    [ "    - " ++ msg | msg <- fromMaybe [] peerStatusLog, verbose]
 
 

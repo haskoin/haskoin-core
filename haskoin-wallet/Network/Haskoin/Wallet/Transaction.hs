@@ -1,8 +1,8 @@
 module Network.Haskoin.Wallet.Transaction
 (
 -- *Database transactions
-  txPage
-, addrTxPage
+  txs
+, addrTxs
 , getTx
 , getAccountTx
 , importTx
@@ -35,7 +35,7 @@ module Network.Haskoin.Wallet.Transaction
 ) where
 
 import Control.Arrow (second)
-import Control.Monad (forM, forM_, when, liftM, unless)
+import Control.Monad (forM, forM_, when, unless)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
@@ -101,123 +101,108 @@ data OutCoinData = OutCoinData
     , outCoinDataScript :: !ScriptOutput
     }
 
-{- List transaction -}
+{- List transactions -}
 
--- | Get transactions by page
-txPage :: MonadIO m
-       => KeyRingAccountId -- ^ Account ID
-       -> PageRequest      -- ^ Page request
-       -> SqlPersistT m ([KeyRingTx], Word32)
-       -- ^ Page result
-txPage ai page@PageRequest{..}
-    | validPageRequest page = do
-        cntRes <- select $ from $ \t -> do
-            where_ $ t ^. KeyRingTxAccount ==. val ai
-            return countRows
+-- | Get transactions
+txs :: MonadIO m
+    => KeyRingAccountId -- ^ Account ID
+    -> ListRequest      -- ^ List request
+    -> SqlPersistT m ([KeyRingTx], Word32)
+    -- ^ List result
+txs ai ListRequest{..} = do
+    cntRes <- select $ from $ \t -> do
+        where_ $ t ^. KeyRingTxAccount ==. val ai
+        return countRows
 
-        let cnt     = maybe 0 unValue $ listToMaybe cntRes
-            (d, m)  = cnt `divMod` pageLen
-            maxPage = max 1 $ d + min 1 m
+    let cnt = maybe 0 unValue $ listToMaybe cntRes
 
-        when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
-            unwords [ "Invalid page number", show pageNum ]
+    when (listOffset >= cnt) $ throw $ WalletException
+        "Offset beyond end of data set"
 
-        res <- liftM (map entityVal) $ select $ from $ \t -> do
-            where_ $ t ^. KeyRingTxAccount ==. val ai
-            let order = if pageReverse then asc else desc
-            orderBy [ order (t ^. KeyRingTxId) ]
-            limit $ fromIntegral pageLen
-            offset $ fromIntegral $ (pageNum - 1) * pageLen
-            return t
+    res <- fmap (map entityVal) $ select $ from $ \t -> do
+        where_ $ t ^. KeyRingTxAccount ==. val ai
+        let order = if listReverse then asc else desc
+        orderBy [ order (t ^. KeyRingTxId) ]
+        limit $ fromIntegral listLimit
+        offset $ fromIntegral listOffset
+        return t
 
-        let f = if pageReverse then id else reverse
-        return (f res, maxPage)
-    | otherwise = liftIO . throwIO $ WalletException $
-        concat [ "Invalid page request"
-               , " (Page: ", show pageNum, ", Page size: ", show pageLen, ")"
-               ]
+    return (res, cnt)
 
-addrTxPage :: MonadIO m
-           => Entity KeyRingAccount -- ^ Account entity
-           -> KeyRingAddrId         -- ^ Address Id
-           -> PageRequest           -- ^ Page request
-           -> SqlPersistT m ([(KeyRingTx, BalanceInfo)], Word32)
-addrTxPage (Entity ai _) addrI page@PageRequest{..}
-    | validPageRequest page = do
-        let joinSpentCoin c2 s =
-                    c2 ?. KeyRingCoinAccount ==. s ?. KeyRingSpentCoinAccount
-                &&. c2 ?. KeyRingCoinHash    ==. s ?. KeyRingSpentCoinHash
-                &&. c2 ?. KeyRingCoinPos     ==. s ?. KeyRingSpentCoinPos
-                &&. c2 ?. KeyRingCoinAddr    ==. just (val addrI)
-            joinSpent s t =
-                s ?. KeyRingSpentCoinSpendingTx ==. just (t ^. KeyRingTxId)
-            joinCoin c t =
-                    c ?. KeyRingCoinTx   ==. just (t ^. KeyRingTxId)
-                &&. c ?. KeyRingCoinAddr ==. just (val addrI)
-            joinAll t c c2 s = do
-                on $ joinSpentCoin c2 s
-                on $ joinSpent s t
-                on $ joinCoin c t
-        -- Find all the tids
-        tids <- liftM (map unValue) $ select $ distinct $ from $
-                \(t `LeftOuterJoin` c `LeftOuterJoin`
-                  s `LeftOuterJoin` c2) -> do
-            joinAll t c c2 s
-            where_ (   t ^. KeyRingTxAccount ==. val ai
-                   &&. (   not_ (E.isNothing (c  ?. KeyRingCoinId))
-                       ||. not_ (E.isNothing (c2 ?. KeyRingCoinId))
-                       )
-                   )
-            orderBy [ asc (t ^. KeyRingTxId) ]
-            return $ t ^. KeyRingTxId
+{- List transactions for an account and address -}
 
-        let cnt     = fromIntegral $ length tids
-            (d, m)  = cnt `divMod` pageLen
-            maxPage = max 1 $ d + min 1 m
-
-        when (pageNum > maxPage) $ liftIO . throwIO $ WalletException $
-            unwords [ "Invalid page number", show pageNum ]
-
-        let fOrd = if pageReverse then reverse else id
-            toDrop = fromIntegral $ (pageNum - 1) * pageLen
-            -- We call fOrd twice to reverse the page back to ASC
-            tidPage =
-                fOrd $ take (fromIntegral pageLen) $ drop toDrop $ fOrd tids
-
-        -- Use a sliptSelect query here with the exact tids to speed up the
-        -- query.
-        res <- splitSelect tidPage $ \tid ->
-            from $ \(t `LeftOuterJoin` c `LeftOuterJoin`
-                     s `LeftOuterJoin` c2) -> do
-            joinAll t c c2 s
-            where_ $ t ^. KeyRingTxId `in_` valList tid
-            groupBy $ t ^. KeyRingTxId
-            orderBy [ asc (t ^. KeyRingTxId) ]
-            return ( t
-                     -- Incoming value
-                   , coalesceDefault [sum_ (c  ?. KeyRingCoinValue)] (val 0)
-                     -- Outgoing value
-                   , coalesceDefault [sum_ (c2 ?. KeyRingCoinValue)] (val 0)
-                     -- Number of new coins created
-                   , count $ c ?. KeyRingCoinId
-                     -- Number of coins spent
-                   , count $ c2 ?. KeyRingCoinId
-                   )
-
-        let f (t, Value inVal, Value outVal, Value newCount, Value spentCount) =
-                ( entityVal t
-                , BalanceInfo
-                    { balanceInfoInBalance  = floor (inVal :: Double)
-                    , balanceInfoOutBalance = floor (outVal :: Double)
-                    , balanceInfoCoins      = newCount
-                    , balanceInfoSpentCoins = spentCount
-                    }
+addrTxs :: MonadIO m
+        => Entity KeyRingAccount -- ^ Account entity
+        -> KeyRingAddrId         -- ^ Address Id
+        -> ListRequest           -- ^ List request
+        -> SqlPersistT m ([(KeyRingTx, BalanceInfo)], Word32)
+addrTxs (Entity ai _) addrI ListRequest{..} = do
+    let joinSpentCoin c2 s =
+                c2 ?. KeyRingCoinAccount ==. s ?. KeyRingSpentCoinAccount
+            &&. c2 ?. KeyRingCoinHash    ==. s ?. KeyRingSpentCoinHash
+            &&. c2 ?. KeyRingCoinPos     ==. s ?. KeyRingSpentCoinPos
+            &&. c2 ?. KeyRingCoinAddr    ==. just (val addrI)
+        joinSpent s t =
+            s ?. KeyRingSpentCoinSpendingTx ==. just (t ^. KeyRingTxId)
+        joinCoin c t =
+                c ?. KeyRingCoinTx   ==. just (t ^. KeyRingTxId)
+            &&. c ?. KeyRingCoinAddr ==. just (val addrI)
+        joinAll t c c2 s = do
+            on $ joinSpentCoin c2 s
+            on $ joinSpent s t
+            on $ joinCoin c t
+    -- Find all the tids
+    tids <- fmap (map unValue) $ select $ distinct $ from $
+            \(t `LeftOuterJoin` c `LeftOuterJoin`
+              s `LeftOuterJoin` c2) -> do
+        joinAll t c c2 s
+        where_ (   t ^. KeyRingTxAccount ==. val ai
+                &&. (   not_ (E.isNothing (c  ?. KeyRingCoinId))
+                    ||. not_ (E.isNothing (c2 ?. KeyRingCoinId))
+                    )
                 )
-        return (map f res, maxPage)
-    | otherwise = liftIO . throwIO $ WalletException $
-        concat [ "Invalid page request"
-               , " (Page: ", show pageNum, ", Page size: ", show pageLen, ")"
-               ]
+        orderBy [ asc (t ^. KeyRingTxId) ]
+        return $ t ^. KeyRingTxId
+
+
+    when (fromIntegral listOffset >= length tids) $ throw $ WalletException
+        "Offset beyond end of data set"
+
+    let fOrd = if listReverse then reverse else id
+        -- We call fOrd twice to reverse the page back to ASC
+        tidList = fOrd $ take (fromIntegral listLimit) $
+            drop (fromIntegral listOffset) $ fOrd tids
+
+    -- Use a sliptSelect query here with the exact tids to speed up the
+    -- query.
+    res <- splitSelect tidList $ \tid ->
+        from $ \(t `LeftOuterJoin` c `LeftOuterJoin`
+                  s `LeftOuterJoin` c2) -> do
+        joinAll t c c2 s
+        where_ $ t ^. KeyRingTxId `in_` valList tid
+        groupBy $ t ^. KeyRingTxId
+        orderBy [ asc (t ^. KeyRingTxId) ]
+        return  ( t
+                  -- Incoming value
+                , coalesceDefault [sum_ (c  ?. KeyRingCoinValue)] (val 0)
+                  -- Outgoing value
+                , coalesceDefault [sum_ (c2 ?. KeyRingCoinValue)] (val 0)
+                  -- Number of new coins created
+                , count $ c ?. KeyRingCoinId
+                  -- Number of coins spent
+                , count $ c2 ?. KeyRingCoinId
+                )
+
+    let f (t, Value inVal, Value outVal, Value newCount, Value spentCount) =
+            ( entityVal t
+            , BalanceInfo
+                { balanceInfoInBalance  = floor (inVal :: Double)
+                , balanceInfoOutBalance = floor (outVal :: Double)
+                , balanceInfoCoins      = newCount
+                , balanceInfoSpentCoins = spentCount
+                }
+            )
+    return (map f res, fromIntegral (length tids))
 
 
 -- Helper function to get a transaction from the wallet database. The function
@@ -251,7 +236,7 @@ getAccountTx ai txid = do
 -- included into blocks yet.
 getPendingTxs :: MonadIO m => Int -> SqlPersistT m [TxHash]
 getPendingTxs i =
-    liftM (map unValue) $ select $ from $ \t -> do
+    fmap (map unValue) $ select $ from $ \t -> do
         where_ $ t ^. KeyRingTxConfidence ==. val TxPending
         limit $ fromIntegral i
         return $ t ^. KeyRingTxHash
@@ -371,7 +356,7 @@ importOfflineTx tx ai inCoins spendingTxs = do
     -- Only continue if the transaction is relevant to the account
     when (null inCoins && null outCoins) err
     -- Find the details of an existing transaction if it exists.
-    prevM <- liftM (fmap entityVal) $ getBy $ UniqueAccTx ai txid
+    prevM <- fmap (fmap entityVal) $ getBy $ UniqueAccTx ai txid
     -- Check if we can import the transaction
     unless (canImport $ keyRingTxConfidence <$> prevM) err
     -- Kill transactions that are spending our coins
@@ -887,7 +872,7 @@ setBestBlock bid i = update $ \t -> set t [ KeyRingConfigBlock  =. val bid
 -- Helper function to get the best block and best block height from the DB
 getBestBlock :: MonadIO m => SqlPersistT m (BlockHash, Word32)
 getBestBlock = do
-    cfgM <- liftM (fmap entityVal) $ P.selectFirst [] []
+    cfgM <- fmap entityVal <$> P.selectFirst [] []
     return $ case cfgM of
         Just KeyRingConfig{..} -> (keyRingConfigBlock, keyRingConfigHeight)
         Nothing -> throw $ WalletException $ unwords
@@ -1031,7 +1016,7 @@ buildUnsignedTx accE@(Entity ai acc) origDests origFee minConf rcptFee = do
                 -- Use the address to prevent reusing it again
                 _ <- useAddress a
                 -- TODO: Randomize the change position
-                return $ (a, change)
+                return (a, change)
             _ -> liftIO . throwIO $ WalletException
                 "No unused addresses available"
 
@@ -1111,7 +1096,7 @@ spendableCoins
         -- ^ Coin ordering policy
     -> SqlPersistT m [InCoinData]       -- ^ Spendable coins
 spendableCoins ai minConf orderPolicy =
-    liftM (map f) $ select $ spendableCoinsFrom ai minConf orderPolicy
+    fmap (map f) $ select $ spendableCoinsFrom ai minConf orderPolicy
   where
     f (c, t, x) = InCoinData c (entityVal t) (entityVal x)
 

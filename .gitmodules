@@ -1,0 +1,3 @@
+[submodule "secp256k1-haskell"]
+	path = secp256k1-haskell
+	url = https://github.com/haskoin/secp256k1-haskell.git

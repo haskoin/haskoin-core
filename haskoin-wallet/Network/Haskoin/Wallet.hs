@@ -28,8 +28,7 @@ module Network.Haskoin.Wallet
 
 -- *API Request Types
 , WalletRequest(..)
-, PageRequest(..)
-, validPageRequest
+, ListRequest(..)
 , NewKeyRing(..)
 , NewAccount(..)
 , SetAccountGap(..)
@@ -50,7 +49,7 @@ module Network.Haskoin.Wallet
 , WalletResponse(..)
 , TxCompleteRes(..)
 , AddrTx(..)
-, PageRes(..)
+, ListResult(..)
 , RescanRes(..)
 
 -- *Database KeyRings
@@ -74,7 +73,7 @@ module Network.Haskoin.Wallet
 , getAddress
 , addressSourceAll
 , addressSource
-, addressPage
+, addresses
 , unusedAddresses
 , addressCount
 , setAddrLabel
@@ -89,8 +88,8 @@ module Network.Haskoin.Wallet
 , getBloomFilter
 
 -- *Database transactions
-, txPage
-, addrTxPage
+, txs
+, addrTxs
 , getTx
 , getAccountTx
 , importTx

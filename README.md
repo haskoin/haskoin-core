@@ -69,8 +69,8 @@ Get pkg-config, LevelDB, Snappy, zlib and ØMQ.
 On Debian/Ubuntu systems, use these command:
 
 ```sh
-sudo apt-get install git wget libleveldb-dev \
-    libzmq3-dev libsnappy-dev pkg-config zlib1g-dev
+sudo apt-get install -y git libleveldb-dev libzmq3-dev \
+    libsnappy-dev pkg-config zlib1g-dev
 ```
 
 Get [Stack](https://github.com/commercialhaskell/stack).

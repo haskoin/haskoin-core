@@ -198,10 +198,10 @@ merkleSync
     -> NodeT m ()
 merkleSync sem pool bSize = do
     -- Get our best block
-    best <- fst <$> runDBPool sem pool getBestBlock
+    (best, height) <- runDBPool sem pool getBestBlock
     $(logDebug) "Starting merkle batch download"
     -- Wait for a new block or a rescan
-    (action, source) <- merkleDownload best bSize
+    (action, source) <- merkleDownload best height bSize
     $(logDebug) "Received a merkle action and source. Processing the source..."
 
     -- Read and process the data from the source

@@ -695,6 +695,7 @@ printNodeStatus verbose NodeStatus{..} =
     , "Best Header       : " ++ cs (blockHashToHex nodeStatusBestHeader)
     , "Best Header Height: " ++ show nodeStatusBestHeaderHeight
     , "Best Block        : " ++ cs (blockHashToHex nodeStatusBestBlock)
+    , "Best Block Height : " ++ show nodeStatusBestBlockHeight
     , "Bloom Filter Size : " ++ show nodeStatusBloomSize
     ] ++
     [ "Header Peer       : " ++ show h

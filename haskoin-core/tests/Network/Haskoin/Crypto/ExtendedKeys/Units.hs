@@ -39,6 +39,7 @@ tests =
         ]
     , testGroup "BIP32 subkey derivation using string path"
         [ testGroup "Either Derivations" testApplyPath
+        , testGroup "Either Derivations" testBadApplyPath
         , testGroup "Public Derivations" testDerivePubPath
         , testGroup "Private Derivations" testDerivePrvPath
         , testGroup "Path Parsing" testParsePath
@@ -105,10 +106,20 @@ parsePathVectors =
 
 testApplyPath :: [Test]
 testApplyPath = do
-    (key, path, final) <- derivePathVectors
+    (key, path, final) <- applyPathVectors
     return $ testCase ("Path " ++ path) $
         assertEqual path final $
             applyPath (fromJust $ parsePath path) key
+
+testBadApplyPath :: [Test]
+testBadApplyPath = do
+    (key, path) <- badApplyPathVectors
+    return $ testCase ("Path " ++ path) $
+        assertBool path $ isLeft $
+            applyPath (fromJust $ parsePath path) key
+  where isLeft (Left x) = True
+        isLeft _ = False
+
 
 testDerivePubPath :: [Test]
 testDerivePubPath = do
@@ -160,8 +171,8 @@ derivePrvPathVectors =
         "xprv9s21ZrQH143K46iDVRSyFfGfMgQjzC4BV3ZUfNbG7PHQrJjE53ofAn5gYkp6KQ\
         \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
 
-derivePathVectors :: [(XKey, String, Either String XKey)]
-derivePathVectors =
+applyPathVectors :: [(XKey, String, Either String XKey)]
+applyPathVectors =
     [ ( XPrv xprv, "m", Right $ XPrv xprv )
     , ( XPrv xprv, "M", Right $ XPub xpub )
     , ( XPrv xprv, "m/8'", Right $ XPrv $ hardSubKey xprv 8 )
@@ -179,12 +190,28 @@ derivePathVectors =
     , ( XPrv xprv, "M/3/20"
       , Right $ XPub $ deriveXPubKey $ foldl prvSubKey xprv [3,20]
       )
+    , ( XPub xpub, "M/3/20"
+      , Right $ XPub $ deriveXPubKey $ foldl prvSubKey xprv [3,20]
+      )
     ]
   where
     xprv = fromJust $ xPrvImport
         "xprv9s21ZrQH143K46iDVRSyFfGfMgQjzC4BV3ZUfNbG7PHQrJjE53ofAn5gYkp6KQ\
         \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
     xpub = deriveXPubKey xprv
+
+badApplyPathVectors :: [(XKey, String)]
+badApplyPathVectors = [ 
+    ( XPub xpub, "m/8'" )
+  , ( XPub xpub, "M/8'" )
+  , ( XPub xpub, "M/1/2/3'/4/5" )
+  ]
+  where
+    xprv = fromJust $ xPrvImport
+        "xprv9s21ZrQH143K46iDVRSyFfGfMgQjzC4BV3ZUfNbG7PHQrJjE53ofAn5gYkp6KQ\
+        \WzGmb8oageSRxBY8s4rjr9VXPVp2HQDbwPt4H31Gg4LpB"
+    xpub = deriveXPubKey xprv
+
 
 runXKeyVec :: ([ByteString], XPrvKey) -> Assertion
 runXKeyVec (v, m) = do

@@ -522,14 +522,14 @@ getTxR keyRingName name txid = do
         , withAccountData    = toJsonTx res (Just height)
         }
 
-deleteTxIdR :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
+deleteTxIdR :: (MonadIO m, MonadLogger m, MonadThrow m, MonadBaseControl IO m)
             => TxHash -> Handler m (Maybe Value)
 deleteTxIdR txid = do
     $(logInfo) $ format $ unlines
         [ "DeleteTxR"
         , "  TxId: " ++ cs (txHashToHex txid)
         ]
-    runDB $ deleteTxId txid
+    runDB $ deleteTx txid
     return Nothing
 
 getBalanceR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m)

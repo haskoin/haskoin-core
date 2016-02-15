@@ -14,8 +14,7 @@ module Network.Haskoin.Wallet.Transaction
 , killTxs
 , reviveTx
 , getPendingTxs
-, deleteTxId
-, deleteTxIds
+, deleteTx
 
 -- *Database blocks
 , importMerkles
@@ -38,7 +37,7 @@ import Control.Arrow (second)
 import Control.Monad (forM, forM_, when, liftM, unless)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Base (MonadBase)
-import Control.Monad.Catch (MonadThrow)
+import Control.Monad.Catch (MonadThrow, throwM)
 import Control.Monad.Trans.Resource (MonadResource)
 import Control.Exception (throwIO, throw)
 
@@ -59,7 +58,7 @@ import Database.Esqueleto
     ( Value(..), SqlQuery, SqlExpr
     , InnerJoin(..), LeftOuterJoin(..), OrderBy, update, sum_, groupBy
     , select, from, where_, val, valList, sub_select, countRows, count
-    , orderBy, limit, asc, desc, set, offset, selectSource
+    , orderBy, limit, asc, desc, set, offset, delete, selectSource
     , in_, unValue, not_, coalesceDefault, just, on
     , case_, when_, then_, else_, distinct
     , (^.), (=.), (==.), (&&.), (||.), (<.)
@@ -220,18 +219,15 @@ addrTxPage (Entity ai _) addrI page@PageRequest{..}
                ]
 
 
--- Helper function to get a transaction from the wallet database. The function
--- will look across all accounts and return the first available transaction. If
--- the transaction does not exist, this function will throw a wallet exception.
 getTx :: MonadIO m => TxHash -> SqlPersistT m (Maybe Tx)
 getTx txid = do
-    res <- select $ from $ \t -> do
+    tEM <- fmap listToMaybe $ select $ from $ \t -> do
         where_ $ t ^. KeyRingTxHash ==. val txid
         limit 1
-        return $ t ^. KeyRingTxTx
-    case res of
-        (Value tx:_) -> return $ Just tx
-        _ -> return Nothing
+        return t
+    case tEM of
+        Just (Entity _ t) -> return $ Just $ keyRingTxTx t
+        Nothing -> return Nothing
 
 getAccountTx :: MonadIO m
              => KeyRingAccountId -> TxHash -> SqlPersistT m KeyRingTx
@@ -751,49 +747,39 @@ groupCoinsByAccount inCoins outCoins =
     inMap  = M.map (\is -> (is, [])) $ M.fromListWith (++) $ map f inCoins
     outMap = M.map (\os -> ([], os)) $ M.fromListWith (++) $ map g outCoins
 
-deleteTxId :: MonadIO m => TxHash -> SqlPersistT m ()
-deleteTxId txId = do
-    txIds <- select $ from $ \t -> do
-        where_ $ t ^. KeyRingTxHash ==. val txId
-        return $ t ^. KeyRingTxId
-    deleteTxIds $ map unValue txIds
-
--- Delete specified unconfirmed transactions
-deleteTxIds :: MonadIO m => [KeyRingTxId] -> SqlPersistT m ()
-deleteTxIds txIds = do
-    -- Remove confirmed transactions from transaction list
-    txValues' <- splitSelect txIds $ \ts -> from $ \t -> do
-        where_ (   t ^. KeyRingTxId `in_` valList ts
-               &&. t ^. KeyRingTxConfidence !=. val TxBuilding
+deleteTx :: (MonadIO m, MonadThrow m) => TxHash -> SqlPersistT m ()
+deleteTx txid = do
+    ts <- select $ from $ \t -> do
+        where_ $ t ^. KeyRingTxHash ==. val txid
+        return t
+    case ts of
+        [] -> throwM $ WalletException $ unwords
+            [ "Cannot delete inexistent transaction"
+            , cs (txHashToHex txid)
+            ]
+        Entity{entityVal = KeyRingTx{keyRingTxConfidence = TxBuilding}} : _ ->
+            throwM $ WalletException $ unwords
+                [ "Cannot delete confirmed transaction"
+                , cs (txHashToHex txid)
+                ]
+        _ -> return ()
+    children <- fmap (map unValue) $ select $ from $
+        \(t `InnerJoin` c `InnerJoin` s `InnerJoin` t2) -> do
+            on $   s ^. KeyRingSpentCoinSpendingTx ==. t2 ^. KeyRingTxId
+            on (   c ^. KeyRingCoinAccount         ==. t  ^. KeyRingTxAccount
+               &&. c ^. KeyRingCoinHash            ==. s  ^. KeyRingSpentCoinHash
+               &&. c ^. KeyRingCoinPos             ==. s  ^. KeyRingSpentCoinPos
                )
-        return $ t ^. KeyRingTxId
-    let txIds' = map unValue txValues'
-
-    -- Find all immediate unconfirmed dependents
-    children <- splitSelect txIds' $ \ts -> from $ \(t `InnerJoin` s) -> do
-            on (   s ^. KeyRingSpentCoinAccount ==. t ^. KeyRingTxAccount
-               &&. s ^. KeyRingSpentCoinHash    ==. t ^. KeyRingTxHash
-               )
-            where_ (   t ^. KeyRingTxId `in_` valList ts
-                   &&. t ^. KeyRingTxConfidence !=. val TxBuilding
-                   )
-            return s
-
-    -- Recurse into immediate children
-    unless (null children) $ deleteTxIds $ nub $
-        map (keyRingSpentCoinSpendingTx . entityVal) children
-
-    -- Delete spent coins
-    splitDelete children $ \ss -> from $ \s ->
-        where_ $ s ^. KeyRingSpentCoinId `in_` valList (map entityKey ss)
-
-    -- Delete coins
-    splitDelete txIds' $ \ts -> from $ \c ->
-        where_ $ c ^. KeyRingCoinTx `in_` valList ts
-
-    -- Delete transactions
-    splitDelete txIds' $ \ts -> from $ \t ->
-        where_ $ t ^. KeyRingTxId `in_` valList ts
+            on $   c ^. KeyRingCoinTx        ==. t  ^. KeyRingTxId
+            where_ $ t ^. KeyRingTxHash ==. val txid
+            return $ t2 ^. KeyRingTxHash
+    forM_ children deleteTx
+    forM_ ts $ \Entity{entityKey = ti} ->
+        delete $ from $ \s -> where_ $ s ^. KeyRingSpentCoinSpendingTx ==. val ti
+    delete $ from $ \s -> where_ $ s ^. KeyRingSpentCoinHash ==. val txid
+    forM_ ts $ \Entity{entityKey = ti} -> do
+        delete $ from $ \c -> where_ $ c ^. KeyRingCoinTx ==. val ti
+        delete $ from $ \t -> where_ $ t ^. KeyRingTxId   ==. val ti
 
 -- Kill transactions and their children by ids.
 killTxIds :: MonadIO m => [KeyRingTxId] -> SqlPersistT m ()

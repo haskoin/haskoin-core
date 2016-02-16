@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings, FlexibleContexts #-}
+
 module Network.Haskoin.Transaction.Builder
 ( Coin(..)
 , buildTx

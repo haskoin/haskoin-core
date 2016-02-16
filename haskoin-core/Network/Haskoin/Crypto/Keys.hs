@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, FlexibleContexts #-}
+
 module Network.Haskoin.Crypto.Keys
 ( PubKeyI(pubKeyCompressed, pubKeyPoint)
 , PubKey, PubKeyC, PubKeyU

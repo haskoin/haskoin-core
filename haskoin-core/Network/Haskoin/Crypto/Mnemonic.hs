@@ -1,5 +1,7 @@
 -- | Mnemonic keys (BIP-39). Only the English dictionary in the BIP is
 -- supported.
+{-# LANGUAGE OverloadedStrings #-}
+
 module Network.Haskoin.Crypto.Mnemonic
 (
   -- * Data types

@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards, OverloadedStrings #-}
+
 module Network.Haskoin.Node.Types
 ( Addr(..)
 , NetworkAddressTime

@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -fno-cse -fno-full-laziness #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-|
   Network specific constants
 -}

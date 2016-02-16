@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase, OverloadedStrings  #-}
 {-|
 
 Module providing Bitcoin script evaluation.  See

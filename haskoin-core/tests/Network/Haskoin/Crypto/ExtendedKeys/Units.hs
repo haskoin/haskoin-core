@@ -117,9 +117,6 @@ testBadApplyPath = do
     return $ testCase ("Path " ++ path) $
         assertBool path $ isLeft $
             applyPath (fromJust $ parsePath path) key
-  where isLeft (Left x) = True
-        isLeft _ = False
-
 
 testDerivePubPath :: [Test]
 testDerivePubPath = do

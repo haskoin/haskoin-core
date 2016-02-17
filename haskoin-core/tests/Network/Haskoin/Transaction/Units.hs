@@ -71,10 +71,13 @@ mapVerifyVec (v, i) = testCase name $ runVerifyVec v i
 
 runVerifyVec :: ([(ByteString, ByteString, ByteString)], ByteString) -> Int -> Assertion
 runVerifyVec (is, bsTx) i =
-    assertBool name $ verifyStdTx tx $ map f is
+    assertBool name $ verifyStdTx tx outputsAndOutpoints
   where
     name = "    > Verify transaction " ++ (show i)
+    tx :: Tx
     tx  = decode' (fromJust $ decodeHex bsTx)
+    outputsAndOutpoints :: [(ScriptOutput, OutPoint)] 
+    outputsAndOutpoints = map f is
     f (o1, o2, bsScript) =
         let s = fromRight $ decodeOutputBS $ fromJust $ decodeHex $ bsScript
             op = OutPoint
@@ -115,7 +118,7 @@ pkHashVec =
 
 {- Test vectors from bitcoind -}
 -- github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_valid.json
-
+-- prevout hash, prevout index, prevout scriptPubKey
 verifyVec :: [([(ByteString, ByteString, ByteString)], ByteString)]
 verifyVec =
     [

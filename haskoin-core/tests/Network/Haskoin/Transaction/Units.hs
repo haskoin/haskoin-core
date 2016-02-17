@@ -78,11 +78,13 @@ runVerifyVec (is, bsTx) i =
     tx  = decode' (fromJust $ decodeHex bsTx)
     outputsAndOutpoints :: [(ScriptOutput, OutPoint)] 
     outputsAndOutpoints = map f is
-    f (o1, o2, bsScript) =
-        let s = fromRight $ decodeOutputBS $ fromJust $ decodeHex $ bsScript
+    f (outputHash, outputIndex, outputBsScriptPubKey) =
+        let s :: ScriptOutput
+            s = fromRight $ decodeOutputBS $ fromJust $ decodeHex $ outputBsScriptPubKey
+            op :: OutPoint
             op = OutPoint
-                (decode' $ BS.reverse $ fromJust $ decodeHex o1)
-                (runGet' getWord32le $ fromJust $ decodeHex o2)
+                (decode' $ BS.reverse $ fromJust $ decodeHex outputHash)
+                (runGet' getWord32le $ fromJust $ decodeHex outputIndex)
         in (s, op)
 
 -- These test vectors have been generated from bitcoind raw transaction api

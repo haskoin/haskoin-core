@@ -1,5 +1,5 @@
-{-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Transaction.Units (tests) where
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
+module Network.Haskoin.Transaction.Units (tests, satoshiCoreTxTests) where
 
 import Test.HUnit (Assertion, assertBool)
 import Test.Framework (Test, testGroup)
@@ -8,8 +8,17 @@ import Test.Framework.Providers.HUnit (testCase)
 import Data.Word (Word32, Word64)
 import Data.Maybe (fromJust)
 import Data.Binary.Get (getWord32le)
+import Data.Binary.Put (putWord32le)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS (reverse)
+import qualified Data.ByteString.Lazy as LBS 
+import Safe (readMay)
+import GHC.Exts( IsString(..) )
+import qualified Data.Aeson as Aeson 
+import qualified Data.Aeson.Types as Aeson.Types
+import Control.Monad ((<=<))
+import qualified Data.Vector as V
+import Data.String.Conversions (convertString)
 
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
@@ -23,6 +32,7 @@ tests =
         ( map mapPKHashVec $ zip pkHashVec [0..] )
     , testGroup "Verify transaction (bitcoind /test/data/tx_valid.json)"
         ( map mapVerifyVec $ zip verifyVec [0..] )
+    , testCase "" tEncodeSatoshiCoreScriptPubKey
     ]
 
 mapTxIDVec :: ((ByteString, ByteString), Int) -> Test.Framework.Test
@@ -64,22 +74,27 @@ runPKHashVec (xs, ys, res) =
           f (tid,ix) = OutPoint (fromJust $ hexToTxHash tid) ix
 
 
-mapVerifyVec :: (([(ByteString, ByteString, ByteString)], ByteString), Int)
+mapVerifyVec :: (SatoshiCoreTxTest, Int)
              -> Test.Framework.Test
 mapVerifyVec (v, i) = testCase name $ runVerifyVec v i
     where name = "Verify Tx " ++ (show i)
 
-runVerifyVec :: ([(ByteString, ByteString, ByteString)], ByteString) -> Int -> Assertion
-runVerifyVec (is, bsTx) i =
-    assertBool name $ verifyStdTx tx $ map f is
+runVerifyVec :: SatoshiCoreTxTest -> Int -> Assertion
+runVerifyVec (SatoshiCoreTxTest is bsTx) i =
+    assertBool name $ verifyStdTx tx outputsAndOutpoints
   where
     name = "    > Verify transaction " ++ (show i)
-    tx  = decode' (fromJust $ decodeHex bsTx)
-    f (o1, o2, bsScript) =
-        let s = fromRight $ decodeOutputBS $ fromJust $ decodeHex $ bsScript
+    tx :: Tx
+    tx  = decode' . fromJust . decodeHex $ bsTx
+    outputsAndOutpoints :: [(ScriptOutput, OutPoint)] 
+    outputsAndOutpoints = map f is
+    f (SatoshiCoreTxTestInput bsOutputHash bsOutputIndex bsOutputScriptPubKey) =
+        let s :: ScriptOutput
+            s = fromRight . decodeOutputBS . fromJust . decodeHex $ bsOutputScriptPubKey
+            op :: OutPoint
             op = OutPoint
-                (decode' $ BS.reverse $ fromJust $ decodeHex o1)
-                (runGet' getWord32le $ fromJust $ decodeHex o2)
+                (decode' . BS.reverse . fromJust . decodeHex $ bsOutputHash)
+                (runGet' getWord32le  . fromJust . decodeHex $ bsOutputIndex)
         in (s, op)
 
 -- These test vectors have been generated from bitcoind raw transaction api
@@ -113,11 +128,25 @@ pkHashVec =
       )
     ]
 
+data SatoshiCoreTxTest = 
+  SatoshiCoreTxTest { satCoreTxTestInputs :: [SatoshiCoreTxTestInput], 
+                      satCoreTxTestSerTx :: ByteString}
+  deriving (Read,Show)
+
+data SatoshiCoreTxTestInput = 
+  SatoshiCoreTxTestInput { satCoreTxTestPrevoutHash :: ByteString,
+                           satCoreTxTestPrevoutIndex :: ByteString,
+                           satCoreTxTestPrevoutScriptPubKey :: ByteString}
+  deriving (Read,Show)
+
 {- Test vectors from bitcoind -}
 -- github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_valid.json
-
-verifyVec :: [([(ByteString, ByteString, ByteString)], ByteString)]
+-- [[(prevout hash, prevout index, prevout scriptPubKey)], serialized tx], 
+verifyVec :: [SatoshiCoreTxTest]
 verifyVec =
+  let toSatCoreTest (is, sertx) = SatoshiCoreTxTest (map toInputs is) sertx
+      toInputs (a,b,c) = SatoshiCoreTxTestInput a b c
+  in  map toSatCoreTest
     [
       -- It is of particular interest because it contains an invalidly-encoded signature which OpenSSL accepts
       ( [
@@ -244,4 +273,80 @@ verifyVec =
       , "010000000370ac0a1ae588aaf284c308d67ca92c69a39e2db81337e563bf40c59da0a5cf63000000006a4730440220360d20baff382059040ba9be98947fd678fb08aab2bb0c172efa996fd8ece9b702201b4fb0de67f015c90e7ac8a193aeab486a1f587e0f54d0fb9552ef7f5ce6caec032103579ca2e6d107522f012cd00b52b9a65fb46f0c57b9b8b6e377c48f526a44741affffffff7d815b6447e35fbea097e00e028fb7dfbad4f3f0987b4734676c84f3fcd0e804010000006b483045022100c714310be1e3a9ff1c5f7cacc65c2d8e781fc3a88ceb063c6153bf950650802102200b2d0979c76e12bb480da635f192cc8dc6f905380dd4ac1ff35a4f68f462fffd032103579ca2e6d107522f012cd00b52b9a65fb46f0c57b9b8b6e377c48f526a44741affffffff3f1f097333e4d46d51f5e77b53264db8f7f5d2e18217e1099957d0f5af7713ee010000006c493046022100b663499ef73273a3788dea342717c2640ac43c5a1cf862c9e09b206fcb3f6bb8022100b09972e75972d9148f2bdd462e5cb69b57c1214b88fc55ca638676c07cfc10d8032103579ca2e6d107522f012cd00b52b9a65fb46f0c57b9b8b6e377c48f526a44741affffffff0380841e00000000001976a914bfb282c70c4191f45b5a6665cad1682f2c9cfdfb88ac80841e00000000001976a9149857cc07bed33a5cf12b9c5e0500b675d500c81188ace0fd1c00000000001976a91443c52850606c872403c0601e69fa34b26f62db4a88ac00000000"
       )
     ]
+
+tEncodeSatoshiCoreScriptPubKey :: Assertion
+tEncodeSatoshiCoreScriptPubKey = assertBool "tEncodeSatoshiCoreScriptPubKey" $ 
+  t1BsOutputScriptPubKey == encodeSatoshiCoreScriptPubKey t1SatoshiCoreJsonScriptPubKey
+  where 
+    t1BsOutputScriptPubKey :: ByteString
+    t1BsOutputScriptPubKey = "514104cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef58bbfbfaff7d8a473e7e2e6d317b87bafe8bde97e3cf8f065dec022b51d11fcdd0d348ac4410461cbdcc5409fb4b4d42b51d33381354d80e550078cb532a34bfa2fcfdeb7d76519aecc62770f5b0e4ef8551946d8a540911abe3e7854a26f39f58b25c15342af52ae"
+    t1SatoshiCoreJsonScriptPubKey :: String
+    t1SatoshiCoreJsonScriptPubKey = "1 0x41 0x04cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef58bbfbfaff7d8a473e7e2e6d317b87bafe8bde97e3cf8f065dec022b51d11fcdd0d348ac4 0x41 0x0461cbdcc5409fb4b4d42b51d33381354d80e550078cb532a34bfa2fcfdeb7d76519aecc62770f5b0e4ef8551946d8a540911abe3e7854a26f39f58b25c15342af 2 OP_CHECKMULTISIG"
+
+
+encodeSatoshiCoreScriptPubKey :: String -> ByteString
+encodeSatoshiCoreScriptPubKey = 
+  mconcat . map encodeSatoshiCoreScriptPiece . words
+  where 
+    encodeSatoshiCoreScriptPiece :: String -> ByteString
+    encodeSatoshiCoreScriptPiece s = case (readMay ("OP_" ++ s) :: Maybe ScriptOp) of
+      Just op -> encodeHex . encode' $ op
+      Nothing -> case (take 2 s) of 
+          "OP" -> encodeHex . encode' . (read :: String -> ScriptOp) $ s
+          "0x" -> ( fromString . drop 2 :: String -> ByteString) $ s          
+          _ -> case (readMay s :: Maybe Int) of -- can we get rid of this case now?
+            Just i -> encodeHex . encode' . intToScriptOp $ i
+            Nothing -> error $ "encodeSatoshiCoreScriptPubKey: " ++ s
+
+satoshiCoreTxTests :: IO [Test]
+satoshiCoreTxTests = do
+  txVec <- maybe (error "satoshiCoreTxVec, no parse") id <$> satoshiCoreTxVec
+  return $ [ 
+    testGroup "Verify transaction (bitcoind /test/data/tx_valid.json) (using copied source json)"
+      ( map mapVerifyVec . filter isCurrentlyPassing $ zip txVec [0..] ) 
+    ]
+  where
+    passingTests = [0..5] ++ [8] ++ [11..13] ++ [16..18] ++ [20] ++ [52]
+    isCurrentlyPassing (_, testNum) = elem testNum passingTests
+
+
+satoshiCoreTxVec :: IO (Maybe [SatoshiCoreTxTest])
+satoshiCoreTxVec = do 
+    tx_validBS <- LBS.readFile "tests/data/tx_valid.json"
+    return $ do 
+      testsAndCommentsVal <- Aeson.decode tx_validBS            
+      flip Aeson.Types.parseMaybe testsAndCommentsVal $ \arr -> do
+        (testVectors :: [Aeson.Types.Value]) <- do
+          flip (Aeson.Types.withArray "testsAndCommentsVal") testsAndCommentsVal $ \testsAndComments -> do
+            return $ filter (not . isComment) . V.toList $ testsAndComments
+        mapM toTest testVectors
+      where
+        isComment (Aeson.Array v) | V.length v == 1 = True
+        isComment _ = False
+        toTest :: Aeson.Value -> Aeson.Types.Parser SatoshiCoreTxTest
+        toTest testVectorVal = flip (Aeson.Types.withArray "testVectorVal") testVectorVal $ \testVector -> 
+          let inputsVal = testVector V.! 0
+              inputs :: Aeson.Types.Parser [SatoshiCoreTxTestInput]
+              inputs = flip (Aeson.Types.withArray "inputsVal") inputsVal $ \inputsArr ->           
+                let toInput inputVal = flip (Aeson.Types.withArray "inputVal") inputVal $ \input -> 
+                      let hashVal = input V.! 0
+                          hash = flip (Aeson.Types.withText "hashVal") hashVal $ \txt -> 
+                            return . convertString $ txt
+                          indexVal = input V.! 1 
+                          index = flip (Aeson.Types.withScientific "indexVal") indexVal $ \n -> 
+                            return . encodeHex . runPut' . putWord32le . floor $ n -- floor seems suspect
+                          pubkeyVal = input V.! 2 
+                          pubkey = flip (Aeson.Types.withText "pubkeyVal") pubkeyVal $ \txt -> 
+                            return . encodeSatoshiCoreScriptPubKey . convertString $ txt
+                      in  pure SatoshiCoreTxTestInput <*> hash <*> index <*> pubkey 
+                in  mapM toInput . V.toList $ inputsArr
+              txVal = testVector V.! 1
+              tx    = flip (Aeson.Types.withText "txVal") txVal $ return . convertString
+              -- flags -- v V.! 2  -- ignored for now? 
+          in  pure SatoshiCoreTxTest <*> inputs <*> tx 
+
+
+
+
+
 

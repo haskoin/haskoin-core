@@ -27,7 +27,7 @@ import qualified Network.Haskoin.Script.Units (tests)
 
 -- Transaction tests
 import qualified Network.Haskoin.Transaction.Tests (tests)
-import qualified Network.Haskoin.Transaction.Units (tests)
+import qualified Network.Haskoin.Transaction.Units (tests, satoshiCoreTxTests)
 
 -- Block tests
 import qualified Network.Haskoin.Block.Tests (tests)
@@ -40,7 +40,9 @@ import qualified Network.Haskoin.Json.Tests (tests)
 import qualified Network.Haskoin.Binary.Tests (tests)
 
 main :: IO ()
-main = defaultMain
+main = do
+  satoshiTxTests <- Network.Haskoin.Transaction.Units.satoshiCoreTxTests
+  defaultMain
     (  Network.Haskoin.Json.Tests.tests
     ++ Network.Haskoin.Binary.Tests.tests
     ++ Network.Haskoin.Util.Tests.tests
@@ -60,6 +62,7 @@ main = defaultMain
     ++ Network.Haskoin.Script.Units.tests
     ++ Network.Haskoin.Transaction.Tests.tests
     ++ Network.Haskoin.Transaction.Units.tests
+    ++ satoshiTxTests
     ++ Network.Haskoin.Block.Tests.tests
     ++ Network.Haskoin.Block.Units.tests
     )

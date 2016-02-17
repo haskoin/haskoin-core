@@ -7,7 +7,7 @@ module Network.Haskoin.Script.Types
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM2, unless, forM_)
+import Control.Monad (unless, forM_)
 
 import Data.Word (Word8)
 import Data.Binary (Binary, get, put)
@@ -53,7 +53,7 @@ instance Binary Script where
             empty <- isEmpty
             if empty
                 then return []
-                else liftM2 (:) get getScriptOps
+                else (:) <$> get <*> getScriptOps
 
     put (Script ops) = forM_ ops put
 

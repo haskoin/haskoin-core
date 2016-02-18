@@ -75,16 +75,16 @@ runVerifyVec (is, bsTx) i =
   where
     name = "    > Verify transaction " ++ (show i)
     tx :: Tx
-    tx  = decode' (fromJust $ decodeHex bsTx)
+    tx  = decode' . fromJust . decodeHex $ bsTx
     outputsAndOutpoints :: [(ScriptOutput, OutPoint)] 
     outputsAndOutpoints = map f is
-    f (outputHash, outputIndex, outputBsScriptPubKey) =
+    f (bsOutputHash, bsOutputIndex, bsOutputScriptPubKey) =
         let s :: ScriptOutput
-            s = fromRight $ decodeOutputBS $ fromJust $ decodeHex $ outputBsScriptPubKey
+            s = fromRight . decodeOutputBS . fromJust . decodeHex $ bsOutputScriptPubKey
             op :: OutPoint
             op = OutPoint
-                (decode' $ BS.reverse $ fromJust $ decodeHex outputHash)
-                (runGet' getWord32le $ fromJust $ decodeHex outputIndex)
+                (decode' . BS.reverse . fromJust . decodeHex $ bsOutputHash)
+                (runGet' getWord32le  . fromJust . decodeHex $ bsOutputIndex)
         in (s, op)
 
 -- These test vectors have been generated from bitcoind raw transaction api
@@ -120,7 +120,7 @@ pkHashVec =
 
 {- Test vectors from bitcoind -}
 -- github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_valid.json
--- prevout hash, prevout index, prevout scriptPubKey
+-- [[(prevout hash, prevout index, prevout scriptPubKey)], serialized tx], 
 verifyVec :: [([(ByteString, ByteString, ByteString)], ByteString)]
 verifyVec =
     [

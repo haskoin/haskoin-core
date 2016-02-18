@@ -253,11 +253,11 @@ cmdAccount name = do
     resE <- sendZmq (GetAccountR $ pack name)
     handleResponse resE $ liftIO . putStr . printAccount
 
-cmdAccounts :: Handler ()
-cmdAccounts = do
-    resE <- sendZmq GetAccountsR
-    handleResponse resE $ \as -> do
-        let xs = map (liftIO . putStr . printAccount) as
+cmdAccounts :: [String] -> Handler ()
+cmdAccounts ls = do
+    let page = maybe 1 read $ listToMaybe ls
+    listAction page GetAccountsR $ \ts -> do
+        let xs = map (liftIO . putStr . printAccount) ts
         sequence_ $ intersperse (liftIO $ putStrLn "-") xs
 
 cmdRenameAcc :: String -> String -> Handler ()
@@ -273,17 +273,22 @@ listAction :: (FromJSON a, ToJSON a)
 listAction page requestBuilder action = do
     c <- R.asks configCount
     r <- R.asks configReversePaging
-    when (page < 1) $ error "Page cannot be less than 1"
-    let listReq = ListRequest ((page - 1) * c) c r
-    resE <- sendZmq (requestBuilder listReq)
-    handleResponse resE $ \(ListResult a m) ->
-      case m of
-          0 -> liftIO . putStrLn $ "No elements"
-          _ -> do
-              liftIO . putStrLn $
-                  "Page " ++ show page ++ " of " ++ show (pages m c) ++
-                  " (" ++ show m ++ " elements)"
-              action a
+    case c of
+        0 -> do
+            let listReq = ListRequest 0 0 r
+            resE <- sendZmq (requestBuilder listReq)
+            handleResponse resE $ \(ListResult a _) -> action a
+        _ -> do
+            when (page < 1) $ error "Page cannot be less than 1"
+            let listReq = ListRequest ((page - 1) * c) c r
+            resE <- sendZmq (requestBuilder listReq)
+            handleResponse resE $ \(ListResult a m) -> case m of
+                0 -> liftIO . putStrLn $ "No elements"
+                _ -> do
+                    liftIO . putStrLn $
+                        "Page " ++ show page ++ " of " ++ show (pages m c) ++
+                        " (" ++ show m ++ " elements)"
+                    action a
   where
     pages m c | m `mod` c == 0 = m `div` c
               | otherwise = m `div` c + 1
@@ -294,14 +299,15 @@ cmdList name ls = do
     m <- R.asks configMinConf
     o <- R.asks configOffline
     let page = maybe 1 read $ listToMaybe ls
-    let f = GetAddressesR (pack name) t m o
+        f = GetAddressesR (pack name) t m o
     listAction page f $ \as -> forM_ as (liftIO . putStrLn . printAddress)
 
-cmdUnused :: String -> Handler ()
-cmdUnused name = do
+cmdUnused :: String -> [String] -> Handler ()
+cmdUnused name ls = do
     t <- R.asks configAddrType
-    resE <- sendZmq (GetAddressesUnusedR (pack name) t)
-    handleResponse resE $ \as -> forM_ (as :: [JsonAddr]) $
+    let page = maybe 1 read $ listToMaybe ls
+        f = GetAddressesUnusedR (pack name) t
+    listAction page f $ \as -> forM_ (as :: [JsonAddr]) $
         liftIO . putStrLn . printAddress
 
 cmdLabel :: String -> String -> String -> Handler ()
@@ -316,21 +322,25 @@ cmdLabel name iStr label = do
 cmdTxs :: String -> [String] -> Handler ()
 cmdTxs name ls = do
     let page = maybe 1 read $ listToMaybe ls
+    r <- R.asks configReversePaging
     listAction page (GetTxsR (pack name)) $ \ts -> do
         let xs = map (liftIO . putStr . printTx Nothing) ts
-        sequence_ $ intersperse (liftIO $ putStrLn "-") xs
+            xs' = if r then xs else reverse xs
+        sequence_ $ intersperse (liftIO $ putStrLn "-") xs'
 
 cmdAddrTxs :: String -> String -> [String] -> Handler ()
 cmdAddrTxs name i ls = do
     t <- R.asks configAddrType
     m <- R.asks configMinConf
     o <- R.asks configOffline
+    r <- R.asks configReversePaging
     let page = maybe 1 read $ listToMaybe ls
         f = GetAddrTxsR (pack name) index t
     resE <- sendZmq (GetAddressR (pack name) index t m o)
     handleResponse resE $ \JsonAddr{..} -> listAction page f $ \ts -> do
         let xs = map (liftIO . putStr . printTx (Just jsonAddrAddress)) ts
-        sequence_ $ intersperse (liftIO $ putStrLn "-") xs
+            xs' = if r then xs else reverse xs
+        sequence_ $ intersperse (liftIO $ putStrLn "-") xs'
   where
     index = fromMaybe (error "Could not read index") $ readMaybe i
 

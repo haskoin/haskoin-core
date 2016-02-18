@@ -44,9 +44,10 @@ module Network.Haskoin.Wallet.Types
 , splitDelete
 , splitInsertMany_
 , join2
+, limitOffset
 ) where
 
-import Control.Monad (mzero, forM, forM_)
+import Control.Monad (mzero, forM, forM_, when)
 import Control.Monad.Trans (MonadIO)
 import Control.Exception (Exception)
 import Control.DeepSeq (NFData(..))
@@ -93,7 +94,7 @@ import qualified Database.Persist as P
     )
 import Database.Esqueleto
     ( SqlQuery, SqlExpr, SqlBackend
-    , update
+    , update, limit, offset
     , select, val
     , (||.)
     -- Reexports from Database.Persist
@@ -335,7 +336,7 @@ addrTypeIndex AddressExternal = 0
 addrTypeIndex AddressInternal = 1
 
 data WalletRequest
-    = GetAccountsR
+    = GetAccountsR !ListRequest
     | PostAccountsR !NewAccount
     | PostAccountRenameR !AccountName !AccountName
     | GetAccountR !AccountName
@@ -343,7 +344,7 @@ data WalletRequest
     | PostAccountGapR !AccountName !SetAccountGap
     | GetAddressesR !AccountName
         !AddressType !Word32 !Bool !ListRequest
-    | GetAddressesUnusedR !AccountName !AddressType
+    | GetAddressesUnusedR !AccountName !AddressType !ListRequest
     | GetAddressR !AccountName !KeyIndex !AddressType
         !Word32 !Bool
     | PutAddressR !AccountName !KeyIndex !AddressType !AddressLabel
@@ -762,4 +763,9 @@ splitInsertMany_ :: ( MonadIO m
                     )
                  => [val] -> SqlPersistT m ()
 splitInsertMany_ = mapM_ P.insertMany_ . chunksOf paramLimit
+
+limitOffset :: Word32 -> Word32 -> SqlQuery ()
+limitOffset l o = do
+    when (l > 0) $ limit  $ fromIntegral l
+    when (o > 0) $ offset $ fromIntegral o
 

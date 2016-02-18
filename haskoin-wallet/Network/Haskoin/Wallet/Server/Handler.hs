@@ -90,11 +90,17 @@ getAccountsR :: ( MonadLogger m
                 , MonadThrow m
                 , MonadResource m
                 )
-             => Handler m (Maybe Value)
-getAccountsR = do
-    $(logInfo) $ format "GetAccountsR"
-    accs <- runDB accounts
-    return $ Just $ toJSON $ map (toJsonAccount Nothing) accs
+             => ListRequest
+             -> Handler m (Maybe Value)
+getAccountsR lq@ListRequest{..} = do
+    $(logInfo) $ format $ unlines
+        [ "GetAccountsR"
+        , "  Offset      : " ++ show listOffset
+        , "  Limit       : " ++ show listLimit
+        , "  Reversed    : " ++ show listReverse
+        ]
+    (accs, cnt) <- runDB $ accounts lq
+    return $ Just $ toJSON $ ListResult (map (toJsonAccount Nothing) accs) cnt
 
 postAccountsR
     :: ( MonadResource m, MonadThrow m, MonadLogger m
@@ -219,19 +225,22 @@ getAddressesR name addrType minConf offline listReq = do
 
 getAddressesUnusedR
     :: (MonadLogger m, MonadBaseControl IO m, MonadIO m, MonadThrow m)
-    => AccountName -> AddressType -> Handler m (Maybe Value)
-getAddressesUnusedR name addrType = do
+    => AccountName -> AddressType -> ListRequest -> Handler m (Maybe Value)
+getAddressesUnusedR name addrType lq@ListRequest{..} = do
     $(logInfo) $ format $ unlines
         [ "GetAddressesUnusedR"
         , "  Account name: " ++ unpack name
         , "  Address type: " ++ show addrType
+        , "  Offset      : " ++ show listOffset
+        , "  Limit       : " ++ show listLimit
+        , "  Reversed    : " ++ show listReverse
         ]
 
-    addrs <- runDB $ do
+    (addrs, cnt) <- runDB $ do
         accE <- getAccount name
-        unusedAddresses accE addrType
+        unusedAddresses accE addrType lq
 
-    return $ Just $ toJSON $ map (`toJsonAddr` Nothing) addrs
+    return $ Just $ toJSON $ ListResult (map (`toJsonAddr` Nothing) addrs) cnt
 
 getAddressR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m, MonadThrow m)
             => AccountName -> KeyIndex -> AddressType
@@ -303,18 +312,19 @@ postAddressesR name i addrType = do
 
 getTxsR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m, MonadThrow m)
         => AccountName -> ListRequest -> Handler m (Maybe Value)
-getTxsR name listReq = do
+getTxsR name lq@ListRequest{..} = do
     $(logInfo) $ format $ unlines
         [ "GetTxsR"
         , "  Account name: " ++ unpack name
-        , "  Start index : " ++ show (listOffset listReq)
-        , "  Reversed    : " ++ show (listReverse listReq)
+        , "  Offset      : " ++ show listOffset
+        , "  Limit       : " ++ show listLimit
+        , "  Reversed    : " ++ show listReverse
         ]
 
     (res, cnt, height) <- runDB $ do
         Entity ai _ <- getAccount name
         (_, height) <- getBestBlock
-        (res, cnt) <- txs ai listReq
+        (res, cnt) <- txs ai lq
         return (res, cnt, height)
 
     return $ Just $ toJSON $ ListResult (map (`toJsonTx` Just height) res) cnt
@@ -322,21 +332,22 @@ getTxsR name listReq = do
 getAddrTxsR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m, MonadThrow m)
             => AccountName -> KeyIndex -> AddressType -> ListRequest
             -> Handler m (Maybe Value)
-getAddrTxsR name index addrType listReq = do
+getAddrTxsR name index addrType lq@ListRequest{..} = do
     $(logInfo) $ format $ unlines
         [ "GetAddrTxsR"
         , "  Account name : " ++ unpack name
         , "  Address index: " ++ show index
         , "  Address type : " ++ show addrType
-        , "  Start index  : " ++ show (listOffset listReq)
-        , "  Reversed     : " ++ show (listReverse listReq)
+        , "  Offset       : " ++ show listOffset
+        , "  Limit        : " ++ show listLimit
+        , "  Reversed     : " ++ show listReverse
         ]
 
     (res, cnt, height) <- runDB $ do
         accE <- getAccount name
         addrE <- getAddress accE addrType index
         (_, height) <- getBestBlock
-        (res, cnt) <- addrTxs accE addrE listReq
+        (res, cnt) <- addrTxs accE addrE lq
         return (res, cnt, height)
 
     return $ Just $ toJSON $ ListResult (map (`toJsonTx` Just height) res) cnt

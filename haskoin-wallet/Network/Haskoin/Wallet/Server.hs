@@ -427,14 +427,14 @@ dispatchRequest :: ( MonadLoggerIO m
                    )
                 => WalletRequest -> Handler m (WalletResponse Value)
 dispatchRequest req = fmap ResponseValid $ case req of
-    GetAccountsR                     -> getAccountsR
+    GetAccountsR p                   -> getAccountsR p
     PostAccountsR na                 -> postAccountsR na
     PostAccountRenameR n n'          -> postAccountRenameR n n'
     GetAccountR n                    -> getAccountR n
     PostAccountKeysR n ks            -> postAccountKeysR n ks
     PostAccountGapR n g              -> postAccountGapR n g
     GetAddressesR n t m o p          -> getAddressesR n t m o p
-    GetAddressesUnusedR n t          -> getAddressesUnusedR n t
+    GetAddressesUnusedR n t p        -> getAddressesUnusedR n t p
     GetAddressR n i t m o            -> getAddressR n i t m o
     PutAddressR n i t l              -> putAddressR n i t l
     PostAddressesR n i t             -> postAddressesR n i t

@@ -356,7 +356,7 @@ testDerivations = do
         , newAccountReadOnly = False
         }
 
-    unusedAddresses accE AddressExternal
+    unusedAddresses accE AddressExternal (ListRequest 0 0 False)
         >>= liftIO . assertEqual "Generated external addresses do not match"
             [ "1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe"
             , "1NrcKe9UNtxjjgMSLdhBYaEgrQWQFnvJXX"
@@ -368,9 +368,9 @@ testDerivations = do
             , "131L3UXV6WakXpyXvmqzqNkHwWJzWExR9i"
             , "19FWGTZERHzMePTqKoR8nB9y6w7S5u9yGr"
             , "135dwGc8JG2dmhy79onerHKdqoqibHShRJ"
-            ] . map (addrToBase58 . walletAddrAddress)
+            ] . map (addrToBase58 . walletAddrAddress) . fst
 
-    unusedAddresses accE AddressInternal
+    unusedAddresses accE AddressInternal (ListRequest 0 0 False)
         >>= liftIO . assertEqual "Generated internal addresses do not match"
             [ "1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm"
             , "1JVocGcqZvQFbfpeQUY92iL9ARLsAP4DjW"
@@ -382,7 +382,7 @@ testDerivations = do
             , "1EvUYGoC7p7GC8BtYTz4RX2ERxjUsT3zLz"
             , "15857PJZQxUH8Jgomv83mYqJqDsVEUZwz1"
             , "18L5fQjr5yXdqqnK98v2UQi1WHAXfYHr7L"
-            ] . map (addrToBase58 . walletAddrAddress)
+            ] . map (addrToBase58 . walletAddrAddress) . fst
 
 
 assertBalance :: AccountId -> Word32 -> Word64 -> App ()

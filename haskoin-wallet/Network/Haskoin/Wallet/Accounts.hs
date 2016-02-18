@@ -56,7 +56,7 @@ import qualified Database.Persist as P (updateWhere, update , (=.))
 import Database.Esqueleto
     ( Value(..), SqlExpr
     , select, from, where_, val, sub_select, countRows, count, unValue
-    , orderBy, limit, asc, desc, offset, get
+    , orderBy, limit, asc, desc, offset, get, countDistinct
     , max_, case_, when_, then_, else_
     , (^.), (==.), (&&.), (>.), (-.), (<.)
     -- Reexports from Database.Persist
@@ -100,8 +100,19 @@ initWallet fpRate = do
 
 -- | Fetch all accounts
 accounts :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
-         => SqlPersistT m [Account]
-accounts = fmap (map entityVal) $ select $ from return
+         => ListRequest -> SqlPersistT m ([Account], Word32)
+accounts ListRequest{..} = do
+    [cnt] <- fmap (map unValue) $ select $ from $ \acc ->
+        return $ countDistinct $ acc ^. AccountId
+
+    when (listOffset > 0 && listOffset >= cnt) $ throw $ WalletException
+        "Offset beyond end of data set"
+
+    res <- fmap (map entityVal) $ select $ from $ \acc -> do
+        limitOffset listLimit listOffset
+        return acc
+
+    return (res, cnt)
 
 initGap :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
         => Entity Account -> SqlPersistT m ()
@@ -303,8 +314,8 @@ addressList accE@(Entity ai _) addrType ListRequest{..} = do
                 )
         let order = if listReverse then asc else desc
         orderBy [ order (x ^. WalletAddrIndex) ]
-        limit $ fromIntegral listLimit
-        offset $ fromIntegral listOffset
+        when (listLimit  > 0) $ limit  $ fromIntegral listLimit
+        when (listOffset > 0) $ offset $ fromIntegral listOffset
         return x
 
     return (res, cnt)
@@ -325,18 +336,37 @@ addressCount (Entity ai acc) addrType = do
 
 -- | Get a list of all unused addresses.
 unusedAddresses :: MonadIO m
-                => Entity Account             -- ^ Account ID
-                -> AddressType                -- ^ Address type
-                -> SqlPersistT m [WalletAddr] -- ^ Unused addresses
-unusedAddresses (Entity ai acc) addrType =
-    fmap (reverse . map entityVal) $ select $ from $ \x -> do
+                => Entity Account                       -- ^ Account ID
+                -> AddressType                          -- ^ Address type
+                -> ListRequest
+                -> SqlPersistT m ([WalletAddr], Word32) -- ^ Unused addresses
+unusedAddresses (Entity ai acc) addrType ListRequest{..} = do
+    [cnt] <- fmap (map unValue) $ select $ from $ \x -> do
         where_ (   x ^. WalletAddrAccount ==. val ai
                &&. x ^. WalletAddrType    ==. val addrType
                )
-        orderBy [ desc $ x ^. WalletAddrIndex ]
-        limit $ fromIntegral $ accountGap acc
-        offset $ fromIntegral $ accountGap acc
+        return countRows
+
+    when (listOffset > 0 && listOffset >= gap) $ throw $ WalletException
+        "Offset beyond end of data set"
+
+    res <- fmap (map entityVal) $ select $ from $ \x -> do
+        where_ (   x ^. WalletAddrAccount ==. val ai
+               &&. x ^. WalletAddrType    ==. val addrType
+               )
+        orderBy [ order $ x ^. WalletAddrIndex ]
+        limit  $ fromIntegral $ lim cnt
+        offset $ fromIntegral $ off cnt
         return x
+    return (res, gap)
+  where
+    gap = accountGap acc
+    lim' = if listLimit > 0 then listLimit else gap
+    off cnt | listReverse = listOffset + gap
+            | otherwise   = cnt - 2 * gap + listOffset
+    lim cnt | listReverse = min lim' (gap - listOffset)
+            | otherwise   = min lim' (cnt - off cnt - gap)
+    order = if listReverse then desc else asc
 
 -- | Add a label to an address.
 setAddrLabel :: (MonadIO m, MonadThrow m)

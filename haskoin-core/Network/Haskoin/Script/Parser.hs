@@ -330,5 +330,5 @@ decodeInput s@(Script ops) = maybeToEither errMsg $
 
 -- | Similar to 'decodeInput' but decodes from a ByteString
 decodeInputBS :: ByteString -> Either String ScriptInput
-decodeInputBS = (decodeInput =<<) . decodeToEither
+decodeInputBS = decodeInput <=< decodeToEither
 

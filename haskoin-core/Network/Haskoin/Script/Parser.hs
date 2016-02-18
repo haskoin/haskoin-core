@@ -28,7 +28,7 @@ module Network.Haskoin.Script.Parser
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM2, guard)
+import Control.Monad (liftM2, guard, (<=<))
 import Control.Applicative ((<|>))
 
 import Data.List (sortBy)
@@ -171,7 +171,7 @@ decodeOutput s = case scriptOps s of
 
 -- | Similar to 'decodeOutput' but decodes from a ByteString
 decodeOutputBS :: ByteString -> Either String ScriptOutput
-decodeOutputBS = (decodeOutput =<<) . decodeToEither
+decodeOutputBS = decodeOutput <=< decodeToEither
 
 -- Match [ OP_N, PubKey1, ..., PubKeyM, OP_M, OP_CHECKMULTISIG ]
 matchPayMulSig :: Script -> Either String ScriptOutput

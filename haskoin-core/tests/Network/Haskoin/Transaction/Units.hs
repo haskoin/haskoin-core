@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
-module Network.Haskoin.Transaction.Units (tests) where
+module Network.Haskoin.Transaction.Units (tests, satoshiCoreTxTests) where
 
 import Test.HUnit (Assertion, assertBool)
 import Test.Framework (Test, testGroup)
@@ -8,14 +8,16 @@ import Test.Framework.Providers.HUnit (testCase)
 import Data.Word (Word32, Word64)
 import Data.Maybe (fromJust)
 import Data.Binary.Get (getWord32le)
+import Data.Binary.Put (putWord32le)
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS (reverse, readFile)
+import qualified Data.ByteString as BS (reverse)
 import qualified Data.ByteString.Lazy as LBS 
 import Safe (readMay)
 import GHC.Exts( IsString(..) )
 import qualified Data.Aeson as Aeson 
 import Control.Monad ((<=<))
 import qualified Data.Vector as V
+import Data.String.Conversions (convertString)
 
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
@@ -128,11 +130,13 @@ pkHashVec =
 data SatoshiCoreTxTest = 
   SatoshiCoreTxTest { satCoreTxTestInputs :: [SatoshiCoreTxTestInput], 
                       satCoreTxTestSerTx :: ByteString}
+  deriving (Read,Show)
 
 data SatoshiCoreTxTestInput = 
   SatoshiCoreTxTestInput { satCoreTxTestPrevoutHash :: ByteString,
                            satCoreTxTestPrevoutIndex :: ByteString,
                            satCoreTxTestPrevoutScriptPubKey :: ByteString}
+  deriving (Read,Show)
 
 {- Test vectors from bitcoind -}
 -- github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_valid.json
@@ -291,25 +295,52 @@ encodeSatoshiCoreScriptPubKey =
             Just i -> encodeHex . encode' . intToScriptOp $ i
             Nothing -> error $ "encodeSatoshiCoreScriptPubKey: " ++ s
 
-tVal = do 
+satoshiCoreTxTests :: IO [Test]
+satoshiCoreTxTests = do
+  txVec <- satoshiCoreTxVec
+  return $ [ 
+    testGroup "Verify transaction (bitcoind /test/data/tx_valid.json) (using copied source json)"
+      ( map mapVerifyVec $ zip txVec [0..] ) 
+    ]
+
+satoshiCoreTxVec :: IO [SatoshiCoreTxTest]
+satoshiCoreTxVec = do 
   ( mbVal :: Maybe Aeson.Value) <- ( return . Aeson.decode <=< LBS.readFile ) "tests/data/tx_valid.json"
-  case mbVal of 
-    Nothing -> error "tval, can't parse the json"
-    Just val -> case val of 
-      Aeson.Array y -> mapM_ processItem . V.take 10 . V.filter (not . isComment) $ y
-  where
-    processItem (Aeson.Array v) = 
-      let inputs = v V.! 0 
-          tx     = v V.! 1
-          flags  = v V.! 2  
-      in  do print "*********************"
-             print ("inputs: ", inputs)
-             print ("tx: ", tx)
-             print ("flags: ", flags)       
-    isComment (Aeson.Array v) | V.length v == 1 = True
-    isComment _ = False
--- todo: 
---    read the json. from aeson docs
+  let txTests = case mbVal of 
+        Nothing -> error "tval, can't parse the json"
+        Just val -> case val of 
+          Aeson.Array y -> map processItem . take 10 . filter (not . isComment) . V.toList $ y
+          _ -> error "tval, not an array"
+  return $ txTests
+    where
+      processItem :: Aeson.Value -> SatoshiCoreTxTest
+      processItem (Aeson.Array v) = 
+        let inputs = case ( v V.! 0 ) of            
+              Aeson.Array inputsV -> 
+                let toInput ( Aeson.Array oneInputV ) = 
+                      let hash = case oneInputV V.! 0 of 
+                            Aeson.String txt -> convertString txt
+                            _ -> error "processItem, hash not a string"
+                          index = case oneInputV V.! 01 of 
+                            Aeson.Number n -> encodeHex . runPut' . putWord32le . floor $ n
+                            _ -> error "processItem, n not a number"
+                          pubkey = case oneInputV V.! 2 of
+                            Aeson.String txt -> encodeSatoshiCoreScriptPubKey . convertString $ txt
+                            _ -> error "processItem, pubkey not a string"
+                      in  SatoshiCoreTxTestInput hash index pubkey 
+                    toInput _ = error "processItem, oneInputV not an array"
+                in  map toInput . V.toList $ inputsV
+              _ -> error "processItem, inputsV not an array"
+            tx     = case (v V.! 1) of
+              Aeson.String txt -> convertString txt
+              _ -> error "processItem, tx not a string"
+            -- flags  = v V.! 2  -- ignored for now? 
+        in  SatoshiCoreTxTest inputs tx
+      processItem _ = error "processItem, v not an array"
+      isComment (Aeson.Array v) | V.length v == 1 = True
+      isComment _ = False
+  -- todo: 
+  --    read the json. from aeson docs
 
 
 

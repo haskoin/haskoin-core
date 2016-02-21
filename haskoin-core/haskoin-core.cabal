@@ -157,6 +157,7 @@ test-suite test-haskoin-core
                  , secp256k1                      >= 0.4        && < 0.5
                  , safe
                  , vector
+                 , scientific
 
     ghc-options: -Wall
     hs-source-dirs: tests

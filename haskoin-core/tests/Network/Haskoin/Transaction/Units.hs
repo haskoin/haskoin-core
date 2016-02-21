@@ -9,9 +9,13 @@ import Data.Word (Word32, Word64)
 import Data.Maybe (fromJust)
 import Data.Binary.Get (getWord32le)
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS (reverse)
+import qualified Data.ByteString as BS (reverse, readFile)
+import qualified Data.ByteString.Lazy as LBS 
 import Safe (readMay)
 import GHC.Exts( IsString(..) )
+import qualified Data.Aeson as Aeson 
+import Control.Monad ((<=<))
+import qualified Data.Vector as V
 
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
@@ -67,13 +71,13 @@ runPKHashVec (xs, ys, res) =
           f (tid,ix) = OutPoint (fromJust $ hexToTxHash tid) ix
 
 
-mapVerifyVec :: (([(ByteString, ByteString, ByteString)], ByteString), Int)
+mapVerifyVec :: (SatoshiCoreTxTest, Int)
              -> Test.Framework.Test
 mapVerifyVec (v, i) = testCase name $ runVerifyVec v i
     where name = "Verify Tx " ++ (show i)
 
-runVerifyVec :: ([(ByteString, ByteString, ByteString)], ByteString) -> Int -> Assertion
-runVerifyVec (is, bsTx) i =
+runVerifyVec :: SatoshiCoreTxTest -> Int -> Assertion
+runVerifyVec (SatoshiCoreTxTest is bsTx) i =
     assertBool name $ verifyStdTx tx outputsAndOutpoints
   where
     name = "    > Verify transaction " ++ (show i)
@@ -81,7 +85,7 @@ runVerifyVec (is, bsTx) i =
     tx  = decode' . fromJust . decodeHex $ bsTx
     outputsAndOutpoints :: [(ScriptOutput, OutPoint)] 
     outputsAndOutpoints = map f is
-    f (bsOutputHash, bsOutputIndex, bsOutputScriptPubKey) =
+    f (SatoshiCoreTxTestInput bsOutputHash bsOutputIndex bsOutputScriptPubKey) =
         let s :: ScriptOutput
             s = fromRight . decodeOutputBS . fromJust . decodeHex $ bsOutputScriptPubKey
             op :: OutPoint
@@ -133,8 +137,11 @@ data SatoshiCoreTxTestInput =
 {- Test vectors from bitcoind -}
 -- github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_valid.json
 -- [[(prevout hash, prevout index, prevout scriptPubKey)], serialized tx], 
-verifyVec :: [([(ByteString, ByteString, ByteString)], ByteString)]
+verifyVec :: [SatoshiCoreTxTest]
 verifyVec =
+  let toSatCoreTest (is, sertx) = SatoshiCoreTxTest (map toInputs is) sertx
+      toInputs (a,b,c) = SatoshiCoreTxTestInput a b c
+  in  map toSatCoreTest
     [
       -- It is of particular interest because it contains an invalidly-encoded signature which OpenSSL accepts
       ( [
@@ -284,9 +291,24 @@ encodeSatoshiCoreScriptPubKey =
             Just i -> encodeHex . encode' . intToScriptOp $ i
             Nothing -> error $ "encodeSatoshiCoreScriptPubKey: " ++ s
 
-
+tVal = do 
+  ( mbVal :: Maybe Aeson.Value) <- ( return . Aeson.decode <=< LBS.readFile ) "tests/data/tx_valid.json"
+  case mbVal of 
+    Nothing -> error "tval, can't parse the json"
+    Just val -> case val of 
+      Aeson.Array y -> mapM_ processItem . V.take 10 . V.filter (not . isComment) $ y
+  where
+    processItem (Aeson.Array v) = 
+      let inputs = v V.! 0 
+          tx     = v V.! 1
+          flags  = v V.! 2  
+      in  do print "*********************"
+             print ("inputs: ", inputs)
+             print ("tx: ", tx)
+             print ("flags: ", flags)       
+    isComment (Aeson.Array v) | V.length v == 1 = True
+    isComment _ = False
 -- todo: 
---    encodeScriptPiece, readByteString. from figure out what ReadOverloadedStrings is doing
 --    read the json. from aeson docs
 
 

@@ -288,10 +288,12 @@ encodeSatoshiCoreScriptPubKey =
   mconcat . map encodeSatoshiCoreScriptPiece . words
   where 
     encodeSatoshiCoreScriptPiece :: String -> ByteString
-    encodeSatoshiCoreScriptPiece s = case (take 2 s) of 
+    encodeSatoshiCoreScriptPiece s = case (readMay ("OP_" ++ s) :: Maybe ScriptOp) of
+      Just op -> encodeHex . encode' $ op
+      Nothing -> case (take 2 s) of 
           "OP" -> encodeHex . encode' . (read :: String -> ScriptOp) $ s
-          "0x" -> ( fromString . drop 2 :: String -> ByteString) $ s
-          _ -> case (readMay s :: Maybe Int) of
+          "0x" -> ( fromString . drop 2 :: String -> ByteString) $ s          
+          _ -> case (readMay s :: Maybe Int) of -- can we get rid of this case now?
             Just i -> encodeHex . encode' . intToScriptOp $ i
             Nothing -> error $ "encodeSatoshiCoreScriptPubKey: " ++ s
 

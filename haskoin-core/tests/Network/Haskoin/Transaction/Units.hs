@@ -121,6 +121,15 @@ pkHashVec =
       )
     ]
 
+data SatoshiCoreTxTest = 
+  SatoshiCoreTxTest { satCoreTxTestInputs :: [SatoshiCoreTxTestInput], 
+                      satCoreTxTestSerTx :: ByteString}
+
+data SatoshiCoreTxTestInput = 
+  SatoshiCoreTxTestInput { satCoreTxTestPrevoutHash :: ByteString,
+                           satCoreTxTestPrevoutIndex :: ByteString,
+                           satCoreTxTestPrevoutScriptPubKey :: ByteString}
+
 {- Test vectors from bitcoind -}
 -- github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_valid.json
 -- [[(prevout hash, prevout index, prevout scriptPubKey)], serialized tx], 

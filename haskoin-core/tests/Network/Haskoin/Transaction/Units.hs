@@ -311,7 +311,7 @@ satoshiCoreTxTests = do
     let txTests = case mbVal of 
           Nothing -> error "tval, can't parse the json"
           Just val -> case val of 
-            Aeson.Array y -> map processItem . take 10 . filter (not . isComment) . V.toList $ y
+            Aeson.Array y -> map processItem . filter (not . isComment) . V.toList $ y
             _ -> error "tval, not an array"
     return $ txTests
       where

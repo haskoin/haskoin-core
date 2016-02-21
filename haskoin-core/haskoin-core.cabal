@@ -155,6 +155,7 @@ test-suite test-haskoin-core
                  , string-conversions             >= 0.4        && < 0.5
                  , largeword                      >= 1.2        && < 1.3
                  , secp256k1                      >= 0.4        && < 0.5
+                 , safe
 
     ghc-options: -Wall
     hs-source-dirs: tests

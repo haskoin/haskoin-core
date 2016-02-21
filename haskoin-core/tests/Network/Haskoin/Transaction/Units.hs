@@ -302,43 +302,43 @@ satoshiCoreTxTests = do
     testGroup "Verify transaction (bitcoind /test/data/tx_valid.json) (using copied source json)"
       ( map mapVerifyVec $ zip txVec [0..] ) 
     ]
-
-satoshiCoreTxVec :: IO [SatoshiCoreTxTest]
-satoshiCoreTxVec = do 
-  ( mbVal :: Maybe Aeson.Value) <- ( return . Aeson.decode <=< LBS.readFile ) "tests/data/tx_valid.json"
-  let txTests = case mbVal of 
-        Nothing -> error "tval, can't parse the json"
-        Just val -> case val of 
-          Aeson.Array y -> map processItem . take 10 . filter (not . isComment) . V.toList $ y
-          _ -> error "tval, not an array"
-  return $ txTests
-    where
-      processItem :: Aeson.Value -> SatoshiCoreTxTest
-      processItem (Aeson.Array v) = 
-        let inputs = case ( v V.! 0 ) of            
-              Aeson.Array inputsV -> 
-                let toInput ( Aeson.Array oneInputV ) = 
-                      let hash = case oneInputV V.! 0 of 
-                            Aeson.String txt -> convertString txt
-                            _ -> error "processItem, hash not a string"
-                          index = case oneInputV V.! 01 of 
-                            Aeson.Number n -> encodeHex . runPut' . putWord32le . floor $ n
-                            _ -> error "processItem, n not a number"
-                          pubkey = case oneInputV V.! 2 of
-                            Aeson.String txt -> encodeSatoshiCoreScriptPubKey . convertString $ txt
-                            _ -> error "processItem, pubkey not a string"
-                      in  SatoshiCoreTxTestInput hash index pubkey 
-                    toInput _ = error "processItem, oneInputV not an array"
-                in  map toInput . V.toList $ inputsV
-              _ -> error "processItem, inputsV not an array"
-            tx     = case (v V.! 1) of
-              Aeson.String txt -> convertString txt
-              _ -> error "processItem, tx not a string"
-            -- flags  = v V.! 2  -- ignored for now? 
-        in  SatoshiCoreTxTest inputs tx
-      processItem _ = error "processItem, v not an array"
-      isComment (Aeson.Array v) | V.length v == 1 = True
-      isComment _ = False
+  where 
+    satoshiCoreTxVec :: IO [SatoshiCoreTxTest]
+    satoshiCoreTxVec = do 
+    ( mbVal :: Maybe Aeson.Value) <- ( return . Aeson.decode <=< LBS.readFile ) "tests/data/tx_valid.json"
+    let txTests = case mbVal of 
+          Nothing -> error "tval, can't parse the json"
+          Just val -> case val of 
+            Aeson.Array y -> map processItem . take 10 . filter (not . isComment) . V.toList $ y
+            _ -> error "tval, not an array"
+    return $ txTests
+      where
+        processItem :: Aeson.Value -> SatoshiCoreTxTest
+        processItem (Aeson.Array v) = 
+          let inputs = case ( v V.! 0 ) of            
+                Aeson.Array inputsV -> 
+                  let toInput ( Aeson.Array oneInputV ) = 
+                        let hash = case oneInputV V.! 0 of 
+                              Aeson.String txt -> convertString txt
+                              _ -> error "processItem, hash not a string"
+                            index = case oneInputV V.! 01 of 
+                              Aeson.Number n -> encodeHex . runPut' . putWord32le . floor $ n
+                              _ -> error "processItem, n not a number"
+                            pubkey = case oneInputV V.! 2 of
+                              Aeson.String txt -> encodeSatoshiCoreScriptPubKey . convertString $ txt
+                              _ -> error "processItem, pubkey not a string"
+                        in  SatoshiCoreTxTestInput hash index pubkey 
+                      toInput _ = error "processItem, oneInputV not an array"
+                  in  map toInput . V.toList $ inputsV
+                _ -> error "processItem, inputsV not an array"
+              tx     = case (v V.! 1) of
+                Aeson.String txt -> convertString txt
+                _ -> error "processItem, tx not a string"
+              -- flags  = v V.! 2  -- ignored for now? 
+          in  SatoshiCoreTxTest inputs tx
+        processItem _ = error "processItem, v not an array"
+        isComment (Aeson.Array v) | V.length v == 1 = True
+        isComment _ = False
   -- todo: 
   --    read the json. from aeson docs
 

@@ -81,9 +81,9 @@ toJsonAddr addr balM = JsonAddr
     }
 
 toJsonTx :: WalletTx
-         -> Maybe BlockHeight -- ^ Current best block height
+         -> Maybe (BlockHash, BlockHeight) -- ^ Current best block
          -> JsonTx
-toJsonTx tx currentHeightM = JsonTx
+toJsonTx tx bbM = JsonTx
     { jsonTxHash            = walletTxHash tx
     , jsonTxNosigHash       = walletTxNosigHash tx
     , jsonTxType            = walletTxType tx
@@ -102,10 +102,12 @@ toJsonTx tx currentHeightM = JsonTx
     , jsonTxConfirmedDate   = walletTxConfirmedDate tx
     , jsonTxCreated         = walletTxCreated tx
     , jsonTxConfirmations   = f =<< walletTxConfirmedHeight tx
+    , jsonTxBestBlock       = fst <$> bbM
+    , jsonTxBestBlockHeight = snd <$> bbM
     }
   where
-    f confirmedHeight = case currentHeightM of
-        Just h -> return $ fromInteger $
+    f confirmedHeight = case bbM of
+        Just (_, h) -> return $ fromInteger $
             max 0 $ toInteger h - toInteger confirmedHeight + 1
         _ -> Nothing
 

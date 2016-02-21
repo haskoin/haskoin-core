@@ -6,6 +6,7 @@ module Network.Haskoin.Wallet.Transaction
 -- *Database transactions
   txs
 , addrTxs
+, accTxsFromBlock
 , getTx
 , getAccountTx
 , importTx
@@ -67,8 +68,8 @@ import           Database.Esqueleto              (Entity (..), InnerJoin (..),
                                                   unValue, update, val, valList,
                                                   when_, where_, (!=.), (&&.),
                                                   (-.), (<.), (<=.), (=.),
-                                                  (==.), (>=.), (?.), (^.),
-                                                  (||.))
+                                                  (==.), (>.), (>=.), (?.),
+                                                  (^.), (||.))
 import qualified Database.Esqueleto              as E (isNothing)
 import qualified Database.Persist                as P (Filter, deleteWhere,
                                                        insertBy, selectFirst)
@@ -172,9 +173,9 @@ addrTxs (Entity ai _) (Entity addrI WalletAddr{..}) ListRequest{..} = do
         "Offset beyond end of data set"
 
     res <- select $ distinct $ tables $ \t c s c2 -> do
-         query t c s c2
-         limitOffset listLimit listOffset
-         return t
+        query t c s c2
+        limitOffset listLimit listOffset
+        return t
 
     return (map (updBals . entityVal) res, cnt)
 
@@ -190,6 +191,28 @@ addrTxs (Entity ai _) (Entity addrI WalletAddr{..}) ListRequest{..} = do
         t { walletTxInValue  = output + change
           , walletTxOutValue = input
           }
+
+accTxsFromBlock :: (MonadIO m, MonadThrow m)
+                => AccountId
+                -> BlockHeight
+                -> Word32 -- ^ Block count (0 for all)
+                -> SqlPersistT m [WalletTx]
+accTxsFromBlock ai bh n =
+    fmap (map entityVal) $ select $ from $ \t -> do
+        query t
+        orderBy [ asc (t ^. WalletTxConfirmedHeight), asc (t ^. WalletTxId) ]
+        return t
+  where
+    query t
+      | n == 0 = where_
+        (   t ^. WalletTxAccount ==. val ai
+        &&. t ^. WalletTxConfirmedHeight >.  just (val bh)
+        )
+      | otherwise = where_
+         (   t ^. WalletTxAccount ==. val ai
+         &&. t ^. WalletTxConfirmedHeight >.  just (val bh)
+         &&. t ^. WalletTxConfirmedHeight <=. just (val $ bh + n)
+         )
 
 -- Helper function to get a transaction from the wallet database. The function
 -- will look across all accounts and return the first available transaction. If
@@ -841,7 +864,7 @@ importMerkles action expTxsLs notifChanM =
                     where_ $ t ^. WalletTxHash `in_` valList h
                     return t
 
-            let jsonTxs = map (`toJsonTx` Just height) ts
+            let jsonTxs = map (`toJsonTx` Just (hash, height)) ts
 
             -- Update the best height in the wallet (used to compute the number
             -- of confirmations of transactions)

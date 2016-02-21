@@ -1,6 +1,6 @@
 module Network.Haskoin.Wallet.Accounts
 (
--- *Database KeyRings
+-- *Database Wallet
   initWallet
 
 -- *Database Accounts
@@ -102,8 +102,10 @@ initWallet fpRate = do
 accounts :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
          => ListRequest -> SqlPersistT m ([Account], Word32)
 accounts ListRequest{..} = do
-    [cnt] <- fmap (map unValue) $ select $ from $ \acc ->
+    cntRes <- select $ from $ \acc ->
         return $ countDistinct $ acc ^. AccountId
+
+    let cnt = maybe 0 unValue $ listToMaybe cntRes
 
     when (listOffset > 0 && listOffset >= cnt) $ throw $ WalletException
         "Offset beyond end of data set"
@@ -341,11 +343,13 @@ unusedAddresses :: MonadIO m
                 -> ListRequest
                 -> SqlPersistT m ([WalletAddr], Word32) -- ^ Unused addresses
 unusedAddresses (Entity ai acc) addrType ListRequest{..} = do
-    [cnt] <- fmap (map unValue) $ select $ from $ \x -> do
+    cntRes <- select $ from $ \x -> do
         where_ (   x ^. WalletAddrAccount ==. val ai
                &&. x ^. WalletAddrType    ==. val addrType
                )
         return countRows
+
+    let cnt = maybe 0 unValue $ listToMaybe cntRes
 
     when (listOffset > 0 && listOffset >= gap) $ throw $ WalletException
         "Offset beyond end of data set"

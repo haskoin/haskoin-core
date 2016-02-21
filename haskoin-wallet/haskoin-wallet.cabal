@@ -45,6 +45,7 @@ library
     other-modules: Network.Haskoin.Wallet.Types
                    Network.Haskoin.Wallet.Accounts
                    Network.Haskoin.Wallet.Transaction
+                   Network.Haskoin.Wallet.Block
                    Network.Haskoin.Wallet.Server.Handler
                    Network.Haskoin.Wallet.Client.Commands
                    Network.Haskoin.Wallet.Database

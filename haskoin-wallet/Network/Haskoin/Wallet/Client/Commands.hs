@@ -26,12 +26,13 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdVersion
 , cmdStatus
 , cmdMonitor
+, cmdSync
 , cmdKeyPair
 , cmdDeleteTx
 )
 where
 
-import           Control.Concurrent.Async.Lifted (asyncBound, link, wait)
+import           Control.Concurrent.Async.Lifted (asyncBound, wait)
 import           System.IO                       (stderr)
 import           System.ZMQ4                     (KeyFormat (..), Req (..),
                                                   Socket, SocketType, Sub (..),
@@ -236,7 +237,7 @@ cmdAccount name = do
 
 cmdAccounts :: [String] -> Handler ()
 cmdAccounts ls = do
-    let page = maybe 1 read $ listToMaybe ls
+    let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
     listAction page GetAccountsR $ \ts -> do
         let xs = map (liftIO . putStr . printAccount) ts
         sequence_ $ intersperse (liftIO $ putStrLn "-") xs
@@ -279,14 +280,14 @@ cmdList name ls = do
     t <- R.asks configAddrType
     m <- R.asks configMinConf
     o <- R.asks configOffline
-    let page = maybe 1 read $ listToMaybe ls
+    let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
         f = GetAddressesR (pack name) t m o
     listAction page f $ \as -> forM_ as (liftIO . putStrLn . printAddress)
 
 cmdUnused :: String -> [String] -> Handler ()
 cmdUnused name ls = do
     t <- R.asks configAddrType
-    let page = maybe 1 read $ listToMaybe ls
+    let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
         f = GetAddressesUnusedR (pack name) t
     listAction page f $ \as -> forM_ (as :: [JsonAddr]) $
         liftIO . putStrLn . printAddress
@@ -302,7 +303,7 @@ cmdLabel name iStr label = do
 
 cmdTxs :: String -> [String] -> Handler ()
 cmdTxs name ls = do
-    let page = maybe 1 read $ listToMaybe ls
+    let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
     r <- R.asks configReversePaging
     listAction page (GetTxsR (pack name)) $ \ts -> do
         let xs = map (liftIO . putStr . printTx Nothing) ts
@@ -315,7 +316,7 @@ cmdAddrTxs name i ls = do
     m <- R.asks configMinConf
     o <- R.asks configOffline
     r <- R.asks configReversePaging
-    let page = maybe 1 read $ listToMaybe ls
+    let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
         f = GetAddrTxsR (pack name) index t
     resE <- sendZmq (GetAddressR (pack name) index t m o)
     handleResponse resE $ \JsonAddr{..} -> listAction page f $ \ts -> do
@@ -359,7 +360,7 @@ cmdSendMany name xs = case rcpsM of
 getHexTx :: Handler Tx
 getHexTx = do
     hexM <- Haskeline.runInputT Haskeline.defaultSettings $
-        Haskeline.getInputLine "Transaction in hex: "
+        Haskeline.getInputLine ""
     let txM = case hexM of
             Nothing -> error "No action due to EOF"
             Just hex -> decodeToMaybe =<< decodeHex (cs hex)
@@ -432,11 +433,14 @@ cmdGetTx name tidStr = case tidM of
 
 cmdRescan :: [String] -> Handler ()
 cmdRescan timeLs = do
+    let timeM = case timeLs of
+            [] -> Nothing
+            str:_ -> case readMaybe str of
+                Nothing -> error "Could not decode time"
+                Just t -> Just t
     resE <- sendZmq (PostNodeR $ NodeActionRescan timeM)
     handleResponse resE $ \(RescanRes ts) ->
         liftIO $ putStrLn $ unwords [ "Timestamp:", show ts]
-  where
-    timeM = read <$> listToMaybe timeLs
 
 cmdDeleteTx :: String -> Handler ()
 cmdDeleteTx tidStr = case tidM of
@@ -455,6 +459,20 @@ cmdMonitor = do
         connect sock (configConnectNotif cfg)
         subscribe sock ""
         forever $ receive sock >>= (liftIO . B8.putStrLn)
+
+cmdSync :: String -> String -> [String] -> Handler ()
+cmdSync acc block ls = do
+    let blockE = case length block of
+            64 -> Right $ fromMaybe (error "Could not decode block id") $
+                hexToBlockHash $ cs block
+            _  -> Left  $ fromMaybe (error "Could not decode block height") $
+                readMaybe block
+        page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
+        f = GetSyncR (cs acc) blockE
+    r <- R.asks configReversePaging
+    listAction page f $ \blocks -> do
+        let blocks' = if r then reverse blocks else blocks
+        forM_ (blocks' :: [JsonBlock]) $ liftIO . putStrLn . printBlock
 
 cmdDecodeTx :: Handler ()
 cmdDecodeTx = do
@@ -761,6 +779,16 @@ printTxType t = case t of
     TxOutgoing -> "Outgoing"
     TxSelf     -> "Self"
 
+printBlock :: JsonBlock -> String
+printBlock JsonBlock{..} = unlines $
+    [ "Block Hash      : " ++ cs (blockHashToHex jsonBlockHash)
+    , "Block Height    : " ++ show jsonBlockHeight
+    , "Previous block  : " ++ cs (blockHashToHex jsonBlockPrev)
+    ] ++
+    [ "Transaction id  : " ++ cs (txHashToHex $ jsonTxHash t)
+    | t <- jsonBlockTxs
+    ]
+
 printNodeStatus :: Bool -> NodeStatus -> [String]
 printNodeStatus verbose NodeStatus{..} =
     [ "Network Height    : " ++ show nodeStatusNetworkHeight
@@ -813,5 +841,3 @@ printPeerStatus verbose PeerStatus{..} =
     ] ++
     [ "  Logs     : " | verbose ] ++
     [ "    - " ++ msg | msg <- fromMaybe [] peerStatusLog, verbose]
-
-

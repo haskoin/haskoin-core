@@ -1255,9 +1255,9 @@ testDeleteTx = do
     liftIO $ assertBool "Transaction 2 not found" $ isJust tx2M'
     deleteTx $ txHash tx2
 
-    tx1M <- getTx $ txHash tx1
+    tx1M   <- getTx $ txHash tx1
     tx2M'' <- getTx $ txHash tx2
-    tx3M <- getTx $ txHash tx3
+    tx3M   <- getTx $ txHash tx3
     liftIO $ assertEqual "Transaction 1 removed" (Just tx1) tx1M
     liftIO $ assertEqual "Transaction 2 not removed" Nothing tx2M''
     liftIO $ assertEqual "Transaction 3 not removed" Nothing tx3M

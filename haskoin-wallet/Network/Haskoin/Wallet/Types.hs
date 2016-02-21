@@ -358,6 +358,7 @@ data WalletRequest
     | GetBalanceR !AccountName !Word32 !Bool
     | PostNodeR !NodeAction
     | DeleteTxIdR !TxHash
+    | GetSyncR !AccountName !(Either BlockHeight BlockHash) !ListRequest
 
 -- TODO: Set omitEmptyContents on aeson-0.9
 $(deriveJSON
@@ -421,6 +422,8 @@ data JsonTx = JsonTx
     , jsonTxCreated         :: !UTCTime
     -- Optional confirmation
     , jsonTxConfirmations   :: !(Maybe Word32)
+    , jsonTxBestBlock       :: !(Maybe BlockHash)
+    , jsonTxBestBlockHeight :: !(Maybe BlockHeight)
     }
     deriving (Eq, Show, Read)
 

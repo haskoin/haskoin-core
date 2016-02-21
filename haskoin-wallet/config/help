@@ -30,6 +30,7 @@ Transaction commands:
   balance   acc [--minconf] [--offline]    Display account balance
   gettx     acc txid                       Get a transaction by txid
   deletetx  txid                           Delete unconfirmed transaction
+  sync      acc {hash|height} [page]       Get blocks following specified one
 
 Offline tx signing commands:
   getoffline  acc txhash                   Get data to sign a tx offline

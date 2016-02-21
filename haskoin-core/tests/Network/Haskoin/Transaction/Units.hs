@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
 module Network.Haskoin.Transaction.Units (tests) where
 
 import Test.HUnit (Assertion, assertBool)

@@ -128,14 +128,17 @@ rescanHeight h = do
 merkleDownload
     :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
     => BlockHash
+    -> BlockHeight
     -> Int
     -> NodeT m ( BlockChainAction
                , Source (NodeT m) (Either (MerkleBlock, MerkleTxs) Tx)
                )
-merkleDownload bh batchSize = do
+merkleDownload bh height batchSize = do
     -- Store the best block received from the wallet for information only.
     -- This will be displayed in `hw status`
-    atomicallyNodeT $ writeTVarS sharedBestBlock bh
+    atomicallyNodeT $ do
+        writeTVarS sharedBestBlock bh
+        writeTVarS sharedBestBlockHeight height
     merkleCheckSync
     rescanTMVar <- asks sharedRescan
     -- Wait either for a new block to arrive or a rescan to be triggered
@@ -163,7 +166,7 @@ merkleDownload bh batchSize = do
             $(logWarn) "Invalid merkleDownload result. Retrying ..."
             -- Sleep 10 seconds and retry
             liftIO $ threadDelay $ 10*1000000
-            merkleDownload bh batchSize
+            merkleDownload bh height batchSize
   where
     waitRescan rescanTMVar valE = do
         resE <- atomicallyNodeT $ orElseNodeT
@@ -656,6 +659,7 @@ nodeStatus = do
         nodeStatusBestHeaderHeight <- liftM nodeHeaderHeight $
             readTVar sharedBestHeader
         nodeStatusBestBlock <- readTVar sharedBestBlock
+        nodeStatusBestBlockHeight <- readTVar sharedBestBlockHeight
         nodeStatusBloomSize <- liftM (maybe 0 (S.length . bloomData . fst)) $
             readTVar sharedBloomFilter
         nodeStatusHeaderPeer <- liftM (fmap hashUnique) $

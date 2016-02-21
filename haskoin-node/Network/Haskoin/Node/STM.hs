@@ -78,6 +78,7 @@ getNodeState levelDBFilePath levelDBOptions = do
                                                 levelDBOptions
                                                 (runReaderT getBestBlockHeader)
         sharedBestBlock     <- newTVarIO $ headerHash genesisHeader
+        sharedBestBlockHeight <- newTVarIO 0
         return SharedNodeState{..}
 
 runNodeT :: Monad m => SharedNodeState -> NodeT m a -> m a
@@ -131,6 +132,8 @@ data SharedNodeState = SharedNodeState
       -- ^ Our best block header
     , sharedBestBlock :: !(TVar BlockHash)
       -- ^ Our best merkle block
+    , sharedBestBlockHeight :: !(TVar BlockHeight)
+      -- ^ Our best merkle block's height
     , sharedTxGetData :: !(TVar (M.Map TxHash [(PeerId, PeerHost)]))
       -- ^ List of Tx GetData requests
     , sharedBloomFilter :: !(TVar (Maybe (BloomFilter, Int)))
@@ -231,6 +234,7 @@ data NodeStatus = NodeStatus
     , nodeStatusBestHeader       :: !BlockHash
     , nodeStatusBestHeaderHeight :: !BlockHeight
     , nodeStatusBestBlock        :: !BlockHash
+    , nodeStatusBestBlockHeight  :: !BlockHeight
     , nodeStatusBloomSize        :: !Int
     -- Debug fields
     , nodeStatusHeaderPeer       :: !(Maybe Int)

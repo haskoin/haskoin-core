@@ -37,6 +37,8 @@ import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Client.Commands
 import Network.Haskoin.Wallet.Types
 
+import System.Exit (exitFailure)
+import System.IO (hPutStrLn, stderr)
 import System.FilePath.Posix (isAbsolute)
 
 usageHeader :: String
@@ -196,10 +198,10 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     ["status"]                             -> cmdStatus
     ["keypair"]                            -> cmdKeyPair
     ["version"]                            -> cmdVersion
-    ["help"]                               -> liftIO $ forM_ usage putStrLn
-    []                                     -> liftIO $ forM_ usage putStrLn
-    _ -> liftIO $ forM_ ("Invalid command" : usage) putStrLn
-
+    ["help"]           -> liftIO $ forM_ usage (hPutStrLn stderr)
+    []                 -> liftIO $ forM_ usage (hPutStrLn stderr)
+    _ -> liftIO $
+        forM_ ("Invalid command" : usage) (hPutStrLn stderr) >> exitFailure
 
 appDir :: IO FilePath
 appDir = case os of "mingw"   -> windows

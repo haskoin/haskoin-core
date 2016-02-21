@@ -51,6 +51,4 @@ install:
   - travis/travis_long $STACK --no-terminal install hscolour
 
 script:
-  - travis/travis_long $STACK --no-terminal test --only-snapshot
-  - travis/travis_long $STACK --no-terminal test
-  - travis/travis_long $STACK --no-terminal haddock;
+  - travis/travis_long $STACK --no-terminal build --test --haddock

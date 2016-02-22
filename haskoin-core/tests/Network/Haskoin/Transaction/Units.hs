@@ -15,6 +15,7 @@ import qualified Data.ByteString.Lazy as LBS
 import Safe (readMay)
 import GHC.Exts( IsString(..) )
 import qualified Data.Aeson as Aeson 
+import Data.Aeson.Types (withArray, parseMaybe)
 import Control.Monad ((<=<))
 import qualified Data.Vector as V
 import Data.String.Conversions (convertString)
@@ -299,21 +300,20 @@ encodeSatoshiCoreScriptPubKey =
 
 satoshiCoreTxTests :: IO [Test]
 satoshiCoreTxTests = do
-  txVec <- satoshiCoreTxVec
+  txVec <- maybe (error "satoshiCoreTxVec, no parse") id <$> satoshiCoreTxVec
   return $ [ 
     testGroup "Verify transaction (bitcoind /test/data/tx_valid.json) (using copied source json)"
       ( map mapVerifyVec $ zip txVec [0..] ) 
     ]
   where 
-    satoshiCoreTxVec :: IO [SatoshiCoreTxTest]
+    satoshiCoreTxVec :: IO (Maybe [SatoshiCoreTxTest])
     satoshiCoreTxVec = do 
     ( mbVal :: Maybe Aeson.Value) <- ( return . Aeson.decode <=< LBS.readFile ) "tests/data/tx_valid.json"
-    let txTests = case mbVal of 
-          Nothing -> error "tval, can't parse the json"
-          Just val -> case val of 
-            Aeson.Array y -> map processItem . filter (not . isComment) . V.toList $ y
-            _ -> error "tval, not an array"
-    return $ txTests
+    return $ do 
+      val <- mbVal
+      flip parseMaybe val $ \v2 -> 
+        flip (withArray "arr") v2 $ \v3 -> do
+          return $ map processItem . filter (not . isComment) . V.toList $ v3
       where
         processItem :: Aeson.Value -> SatoshiCoreTxTest
         processItem (Aeson.Array v) = 
@@ -341,8 +341,7 @@ satoshiCoreTxTests = do
         processItem _ = error "processItem, v not an array"
         isComment (Aeson.Array v) | V.length v == 1 = True
         isComment _ = False
-  -- todo: 
-  --    read the json. from aeson docs
+
 
 
 

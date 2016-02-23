@@ -34,6 +34,8 @@ module Network.Haskoin.Wallet.Transaction
 
 import Control.Arrow (second)
 import Control.Monad (forM, forM_, when, unless)
+import Control.Concurrent.STM (atomically)
+import Control.Concurrent.STM.TBMChan (TBMChan, writeTBMChan)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow, throwM)
@@ -283,7 +285,7 @@ importTx' origTx ai origInCoins = do
         validIn = length inCoins == length (txIn tx)
                && canSpendCoins inCoins spendingTxs False
     if validIn && validTx
-        then importNetTx tx
+        then importNetTx tx Nothing
         else importOfflineTx tx ai inCoins spendingTxs
   where
     toVerDat (InCoinData (Entity _ c) t _) =
@@ -379,9 +381,10 @@ importOfflineTx tx ai inCoins spendingTxs = do
 importNetTx
     :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
     => Tx -- Network transaction to import
+    -> Maybe (TBMChan Notif)
     -> SqlPersistT m ([WalletTx], [WalletAddr])
        -- ^ Returns the new transactions and addresses created
-importNetTx tx = do
+importNetTx tx notifChanM = do
     -- Find all the coins spent by this transaction
     inCoins <- getInCoins tx Nothing
     -- Get all the new coins to be created by this transaction
@@ -404,6 +407,8 @@ importNetTx tx = do
         -- Use up the addresses of our new coins (replenish gap addresses)
         newAddrs <- forM (nubBy sameKey $ map outCoinDataAddr outCoins) $
             useAddress . entityVal
+        forM_ notifChanM $ \notifChan -> liftIO $ atomically $ forM_ txRes $
+            writeTBMChan notifChan . NotifTx . flip toJsonTx Nothing
         return (txRes, concat newAddrs)
   where
     sameKey e1 e2 = entityKey e1 == entityKey e2
@@ -792,8 +797,9 @@ killTxs txHashes = do
 importMerkles :: MonadIO m
               => BlockChainAction
               -> [MerkleTxs]
+              -> Maybe (TBMChan Notif)
               -> SqlPersistT m ()
-importMerkles action expTxsLs =
+importMerkles action expTxsLs notifChanM =
     when (isBestChain action || isChainReorg action) $ do
         case action of
             ChainReorg _ os _ ->
@@ -819,23 +825,38 @@ importMerkles action expTxsLs =
         forM_ deadTxs $ reviveTx . unValue
 
         -- Confirm the transactions
-        forM_ (zip (actionNodes action) expTxsLs) $ \(node, hs) ->
+        forM_ (zip (actionNodes action) expTxsLs) $ \(node, hs) -> do
+            let hash   = nodeBlockHash    node
+                height = nodeHeaderHeight node
+
             splitUpdate hs $ \h t -> do
                 set t [ WalletTxConfidence =. val TxBuilding
-                      , WalletTxConfirmedBy =. val (Just (nodeBlockHash node))
+                      , WalletTxConfirmedBy =. val (Just hash)
                       , WalletTxConfirmedHeight =.
-                          val (Just (nodeHeaderHeight node))
+                          val (Just height)
                       , WalletTxConfirmedDate =.
                           val (Just (blockTimestamp $ nodeHeader node))
                       ]
                 where_ $ t ^. WalletTxHash `in_` valList h
 
-        -- Update the best height in the wallet (used to compute the number
-        -- of confirmations of transactions)
-        case reverse $ actionNodes action of
-            (best:_) ->
-                setBestBlock (nodeBlockHash best) (nodeHeaderHeight best)
-            _ -> return ()
+            ts <- fmap (map entityVal) $ splitSelect hs $ \h -> from $ \t -> do
+                    where_ $ t ^. WalletTxHash `in_` valList h
+                    return t
+
+            let jsonTxs = map (`toJsonTx` Just height) ts
+
+            -- Update the best height in the wallet (used to compute the number
+            -- of confirmations of transactions)
+            setBestBlock hash height
+
+            -- Send notification for block
+            forM_ notifChanM $ \notifChan -> liftIO $ atomically $
+                writeTBMChan notifChan $ NotifBlock JsonBlock
+                    { jsonBlockHash    = hash
+                    , jsonBlockHeight  = height
+                    , jsonBlockPrev    = prevBlock $ nodeHeader node
+                    , jsonBlockTxs     = jsonTxs
+                    }
 
 -- Helper function to set the best block and best block height in the DB.
 setBestBlock :: MonadIO m => BlockHash -> Word32 -> SqlPersistT m ()

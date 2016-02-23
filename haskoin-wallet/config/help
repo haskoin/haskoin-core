@@ -39,6 +39,7 @@ Utility commands:
   decodetx                                Decode HEX transaction
   rescan   [timestamp]                    Rescan the wallet
   keypair                                 Get curve key pair for ØMQ auth
+  monitor                                 Get notifications (JSON, one per line)
 
 Other commands:
   version                                 Display version information

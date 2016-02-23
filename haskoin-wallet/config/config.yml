@@ -1,10 +1,12 @@
 # ZeroMQ socket on which to listen to. Either absolute path or relative to
 # work-dir/network.
-bind-socket: ipc://hw.sock
+bind-socket:       ipc://hw.sock
+bind-socket-notif: ipc://notif.sock
 
 # ZeroMQ socket to communicate with the server.
 # Either absolute path or relative to the server work-dir/network path.
-connect-uri: ipc://hw.sock
+connect-uri:       ipc://hw.sock
+connect-uri-notif: ipc://notif.sock
 
 # Server mode. Can be either online or offline. In offline mode, the SPV
 # daemon does not start and only the local wallet is available to query.

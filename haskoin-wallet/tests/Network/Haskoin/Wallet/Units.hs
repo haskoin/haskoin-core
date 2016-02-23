@@ -414,12 +414,12 @@ testBalances = do
         liftIO . (assertEqual "Balance is not 0") 0
 
     -- Import funding transaction twice. This operation should be idempotent
-    importNetTx fundingTx
+    importNetTx fundingTx Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending"
             ([(ai, TxPending)], 2))
         . testTx
-    importNetTx fundingTx
+    importNetTx fundingTx Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending"
             ([(ai, TxPending)], 0))
@@ -455,7 +455,7 @@ testBalances = do
         . (assertEqual "Address 1 1-conf balance is not (0, 0, 0, 0)")
             [(1, BalanceInfo 0 0 0 0)]
 
-    importNetTx tx1
+    importNetTx tx1 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending"
             ([(ai, TxPending)], 0))
@@ -488,7 +488,7 @@ testBalances = do
 
     -- We re-import tx1. This operation has to be idempotent with respect to
     -- balances.
-    importNetTx tx1
+    importNetTx tx1 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending"
             ([(ai, TxPending)], 0))
@@ -520,12 +520,12 @@ testBalances = do
             [(1, BalanceInfo 0 0 0 0)]
 
     -- Importing tx2 twice. This operation has to be idempotent.
-    importNetTx tx2
+    importNetTx tx2 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not dead"
             ([(ai, TxDead)], 1))
         . testTx
-    importNetTx tx2
+    importNetTx tx2 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not dead"
             ([(ai, TxDead)], 0))
@@ -547,7 +547,7 @@ testBalances = do
             [(1, BalanceInfo 20000000 20000000 1 1)]
 
     -- Confirm the funding transaction at height 1
-    importMerkles ((BestChain [fakeNode 1 bid1])) [[txHash fundingTx]]
+    importMerkles ((BestChain [fakeNode 1 bid1])) [[txHash fundingTx]] Nothing
 
     accountBalance ai 0 False >>=
         liftIO . (assertEqual "Balance is not 0") 0
@@ -577,7 +577,7 @@ testBalances = do
             [(1, BalanceInfo 20000000 20000000 1 1)]
 
     -- Confirm tx1 at height 2
-    importMerkles (BestChain [fakeNode 2 bid2]) [[txHash tx1]]
+    importMerkles (BestChain [fakeNode 2 bid2]) [[txHash tx1]] Nothing
 
     accountBalance ai 0 False >>=
         liftIO . (assertEqual "Balance is not 0") 0
@@ -612,7 +612,7 @@ testBalances = do
     let s = fakeNode 1 bid1
         o = [fakeNode 2 bid2]
         n = [fakeNode 2 bid3, fakeNode 3 bid4]
-    importMerkles (ChainReorg s o n) [[], [txHash tx2]]
+    importMerkles (ChainReorg s o n) [[], [txHash tx2]] Nothing
 
     getBy (UniqueAccTx ai (txHash tx1))
         >>= liftIO
@@ -671,7 +671,7 @@ testBalances = do
             [(0, BalanceInfo 0 0 0 0)]
 
     -- Reimporting tx2 should be idempotent and return TxBuilding
-    importNetTx tx2
+    importNetTx tx2 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not building"
             ([(ai, TxBuilding)], 0))
@@ -727,7 +727,7 @@ testBalances = do
     let s2 = fakeNode 1 bid1
         o2 = [fakeNode 2 bid3, fakeNode 3 bid4]
         n2 = [fakeNode 2 bid2, fakeNode 3 bid5, fakeNode 4 bid6]
-    importMerkles (ChainReorg s2 o2 n2) [[txHash tx1], [], []]
+    importMerkles (ChainReorg s2 o2 n2) [[txHash tx1], [], []] Nothing
 
     accountBalance ai 0 False >>=
         liftIO . (assertEqual "Balance is not 0") 0
@@ -805,7 +805,7 @@ testConflictBalances = do
             [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 20000000) ]
 
     -- Import first transaction
-    importNetTx tx1
+    importNetTx tx1 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending"
             ([(ai, TxPending)], 1))
@@ -824,7 +824,7 @@ testConflictBalances = do
             [(0, BalanceInfo 10000000 0 1 0)]
 
     -- Import second transaction
-    importNetTx tx2
+    importNetTx tx2 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending"
             ([(ai, TxPending)], 1))
@@ -849,6 +849,7 @@ testConflictBalances = do
     importMerkles
         (BestChain [fakeNode 1 bid1, fakeNode 2 bid2 ])
         [[txHash tx1], [txHash tx2]]
+        Nothing
 
     accountBalance ai 0 False >>=
         liftIO . (assertEqual "Balance is not 4000000") 4000000
@@ -880,7 +881,7 @@ testConflictBalances = do
             [(0, BalanceInfo 0 0 0 0)]
 
     -- Import third transaction
-    importNetTx tx3
+    importNetTx tx3 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending"
             ([(ai, TxPending)], 0))
@@ -926,7 +927,7 @@ testConflictBalances = do
             [(0, BalanceInfo 0 0 0 0)]
 
     -- Now let's add tx4 which is in conflict with tx1
-    importNetTx tx4
+    importNetTx tx4 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending"
             ([(ai, TxDead)], 0))
@@ -975,7 +976,7 @@ testConflictBalances = do
     let s = fakeNode 0 bid0
         o = [fakeNode 1 bid1, fakeNode 2 bid2]
         n = [fakeNode 1 bid3, fakeNode 2 bid4, fakeNode 3 bid5]
-    importMerkles (ChainReorg s o n) [[], [txHash tx4], []]
+    importMerkles (ChainReorg s o n) [[], [txHash tx4], []] Nothing
 
     getBy (UniqueAccTx ai $ txHash tx1) >>=
         liftIO . (assertEqual "tx1 confidence is not dead") (Just TxDead)
@@ -1024,7 +1025,7 @@ testConflictBalances = do
         n2 = [ fakeNode 1 bid1, fakeNode 2 bid2
              , fakeNode 3 bid6, fakeNode 4 bid7
              ]
-    importMerkles (ChainReorg s2 o2 n2) [[txHash tx1], [txHash tx2], [], []]
+    importMerkles (ChainReorg s2 o2 n2) [[txHash tx1], [txHash tx2], [], []] Nothing
 
     getBy (UniqueAccTx ai $ txHash tx1)
         >>= liftIO
@@ -1281,7 +1282,7 @@ testKillOffline = do
             ]
 
     -- Import tx1 as a network transaction
-    importNetTx tx1
+    importNetTx tx1 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending"
             ([(ai, TxPending)], 1))
@@ -1372,7 +1373,7 @@ testKillOffline = do
             [(0, BalanceInfo 4000000 4000000 1 1)]
 
     -- Import tx4 as a network transaction. It should override tx2 and tx3.
-    importNetTx tx4
+    importNetTx tx4 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending"
             ([(ai, TxPending)], 0))
@@ -1445,7 +1446,7 @@ testOfflineExceptions = do
             , newAccountReadOnly = False
             }
         Entity ai _ <- getAccount "acc1"
-        importNetTx tx1
+        importNetTx tx1 Nothing
             >>= liftIO
             . (assertEqual "Confidence is not pending"
                 ([(ai, TxPending)], 1))
@@ -1463,17 +1464,17 @@ testOfflineExceptions = do
             , newAccountReadOnly = False
             }
         Entity ai _ <- getAccount "acc1"
-        importNetTx tx4
+        importNetTx tx4 Nothing
             >>= liftIO
             . (assertEqual "Confidence is not pending"
                 ([(ai, TxPending)], 1))
             . testTx
-        importNetTx tx1
+        importNetTx tx1 Nothing
             >>= liftIO
             . (assertEqual "Confidence is not dead"
                 ([(ai, TxDead)], 0))
             . testTx
-        importNetTx tx2
+        importNetTx tx2 Nothing
             >>= liftIO
             . (assertEqual "Confidence is not dead"
                 ([(ai, TxDead)], 1))
@@ -1491,7 +1492,7 @@ testOfflineExceptions = do
             , newAccountReadOnly = False
             }
         Entity ai _ <- getAccount "acc1"
-        importNetTx tx1
+        importNetTx tx1 Nothing
             >>= liftIO
             . (assertEqual "Confidence is not pending"
                 ([(ai, TxPending)], 1))
@@ -1526,7 +1527,7 @@ testImportMultisig = do
                     base58ToAddr "32RexHZdsMoV8yzL1pQyFhYY6XeUNcWP78"
                  ] 0
 
-    importNetTx fundingTx
+    importNetTx fundingTx Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending"
             ([(ai1, TxPending), (ai2, TxPending)], 2))
@@ -1667,15 +1668,15 @@ testDeleteTx = do
             [ (txHash tx2, 1) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 4000000) ] -- external
 
-    importNetTx tx1
+    importNetTx tx1 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending" ([(ai, TxPending)], 1))
         . testTx
-    importNetTx tx2
+    importNetTx tx2 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending" ([(ai, TxPending)], 1))
         . testTx
-    importNetTx tx3
+    importNetTx tx3 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending" ([(ai, TxPending)], 0))
         . testTx
@@ -1691,15 +1692,15 @@ testDeleteTx = do
         liftIO . (assertEqual "Address 0 balance is not (4000000, 4000000, 1, 1)")
             [(0, BalanceInfo 4000000 4000000 1 1)]
 
-    tx2M <- getTx $ txHash tx2
-    liftIO $ assertBool "Transaction 2 not found" $ isJust tx2M
+    tx2M' <- getTx $ txHash tx2
+    liftIO $ assertBool "Transaction 2 not found" $ isJust tx2M'
     deleteTx $ txHash tx2
 
     tx1M <- getTx $ txHash tx1
-    tx2M <- getTx $ txHash tx2
+    tx2M'' <- getTx $ txHash tx2
     tx3M <- getTx $ txHash tx3
     liftIO $ assertEqual "Transaction 1 removed" (Just tx1) tx1M
-    liftIO $ assertEqual "Transaction 2 not removed" Nothing tx2M
+    liftIO $ assertEqual "Transaction 2 not removed" Nothing tx2M''
     liftIO $ assertEqual "Transaction 3 not removed" Nothing tx3M
 
     accountBalance ai 0 True >>=
@@ -1740,7 +1741,7 @@ testDeleteUnsignedTx = do
                     base58ToAddr "32RexHZdsMoV8yzL1pQyFhYY6XeUNcWP78"
                  ] 0
 
-    importNetTx fundingTx
+    importNetTx fundingTx Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending"
             ([(ai1, TxPending), (ai2, TxPending)], 2))
@@ -1800,15 +1801,15 @@ testKillTx = do
             [ (txHash tx2, 1) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 4000000) ] -- external
 
-    importNetTx tx1
+    importNetTx tx1 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending" ([(ai, TxPending)], 1))
         . testTx
-    importNetTx tx2
+    importNetTx tx2 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending" ([(ai, TxPending)], 1))
         . testTx
-    importNetTx tx3
+    importNetTx tx3 Nothing
         >>= liftIO
         . (assertEqual "Confidence is not pending" ([(ai, TxPending)], 0))
         . testTx

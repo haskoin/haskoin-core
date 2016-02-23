@@ -7,7 +7,7 @@ module Network.Haskoin.Wallet.Server
 import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
 import Data.List.NonEmpty (NonEmpty((:|)))
 import System.ZMQ4
-    ( Context, Rep(..), KeyFormat(..), bind
+    ( Context, Rep(..), Pub(..), KeyFormat(..), Socket, bind
     , receive, receiveMulti
     , send, sendMulti
     , setCurveServer, setCurveSecretKey
@@ -15,15 +15,16 @@ import System.ZMQ4
     , z85Decode
     )
 
-import Control.Monad (when, unless, forever, void)
+import Control.Monad (when, unless, forever, void, forM_)
 import Control.Monad.Trans (lift, liftIO)
 import Control.Monad.Trans.Control (MonadBaseControl, liftBaseOpDiscard)
 import Control.Monad.Base (MonadBase)
 import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Trans.Resource (MonadResource, runResourceT)
 import Control.DeepSeq (NFData(..))
-import Control.Concurrent.STM (retry)
-import Control.Concurrent.Async.Lifted (async, waitAnyCancel)
+import Control.Concurrent.STM (atomically, retry)
+import Control.Concurrent.STM.TBMChan (TBMChan, newTBMChan, readTBMChan)
+import Control.Concurrent.Async.Lifted (async, waitAnyCancel, link)
 import Control.Exception.Lifted (SomeException(..), ErrorCall(..), catches)
 import qualified Control.Exception.Lifted as E (Handler(..))
 import qualified Control.Concurrent.MSem as Sem (MSem, new)
@@ -86,10 +87,12 @@ runSPVServer cfg = maybeDetach cfg $ run $ do -- start the server process
     -- Initialize the database
     -- Check the operation mode of the server.
     (sem, pool) <- initDatabase cfg
+    -- Notification channel
+    notifChan <- liftIO $ atomically $ newTBMChan 1000
     case configMode cfg of
         -- In this mode, we do not launch an SPV node. We only accept
         -- client requests through the ZMQ API.
-        SPVOffline -> runWalletApp $ HandlerSession cfg pool Nothing sem
+        SPVOffline -> runWalletApp (HandlerSession cfg pool Nothing sem) notifChan
         -- In this mode, we launch the client ZMQ API and we sync the
         -- wallet database with an SPV node.
         SPVOnline -> do
@@ -103,16 +106,17 @@ runSPVServer cfg = maybeDetach cfg $ run $ do -- start the server process
                     (bloom, elems, _) <- runDBPool sem pool getBloomFilter
                     startSPVNode hosts bloom elems
                 -- Merkle block synchronization
-                , runMerkleSync nodeState sem pool
+                , runMerkleSync nodeState sem pool notifChan
                 -- Import solo transactions as they arrive from peers
-                , runNodeT nodeState $ txSource $$ processTx sem pool
+                , runNodeT nodeState $ txSource $$ processTx sem pool notifChan
                 -- Respond to transaction GetData requests
                 , runNodeT nodeState $
                     handleGetData $ runDBPool sem pool . getTx
                 -- Re-broadcast pending transactions
                 , broadcastPendingTxs nodeState sem pool
                 -- Run the ZMQ API server
-                , runWalletApp $ HandlerSession cfg pool (Just nodeState) sem
+                , runWalletApp
+                  (HandlerSession cfg pool (Just nodeState) sem) notifChan
                 ]
             _ <- waitAnyCancel as
             return ()
@@ -132,7 +136,7 @@ runSPVServer cfg = maybeDetach cfg $ run $ do -- start the server process
                              , DB.cacheSize       = 2048
                              }
     -- Run the merkle syncing thread
-    runMerkleSync nodeState sem pool = runNodeT nodeState $ do
+    runMerkleSync nodeState sem pool notifChan = runNodeT nodeState $ do
         $(logDebug) "Waiting for a valid bloom filter for merkle downloads..."
 
         -- Only download merkles if we have a valid bloom filter
@@ -145,7 +149,7 @@ runSPVServer cfg = maybeDetach cfg $ run $ do -- start the server process
         maybe (return ()) (atomicallyNodeT . rescanTs) fcM
 
         -- Start the merkle sync
-        merkleSync sem pool 500
+        merkleSync sem pool 500 notifChan
     -- Run a thread that will re-broadcast pending transactions
     broadcastPendingTxs nodeState sem pool = runNodeT nodeState $ forever $ do
         -- Wait until we are synced
@@ -158,8 +162,8 @@ runSPVServer cfg = maybeDetach cfg $ run $ do -- start the server process
         atomicallyNodeT $ do
             synced <- areBlocksSynced
             when synced $ lift retry
-    processTx sem pool = awaitForever $ \tx -> lift $ do
-        (_, newAddrs) <- runDBPool sem pool $ importNetTx tx
+    processTx sem pool notifChan = awaitForever $ \tx -> lift $ do
+        (_, newAddrs) <- runDBPool sem pool $ importNetTx tx (Just notifChan)
         unless (null newAddrs) $ do
             $(logInfo) $ pack $ unwords
                 [ "Generated", show $ length newAddrs
@@ -195,8 +199,9 @@ merkleSync
     => Sem.MSem Int
     -> ConnectionPool
     -> Int
+    -> TBMChan Notif
     -> NodeT m ()
-merkleSync sem pool bSize = do
+merkleSync sem pool bSize notifChan = do
     -- Get our best block
     (best, height) <- runDBPool sem pool getBestBlock
     $(logDebug) "Starting merkle batch download"
@@ -242,17 +247,17 @@ merkleSync sem pool bSize = do
     unless (rescan || missing) $ do
         $(logDebug) "Importing merkles into the wallet..."
         -- Confirm the transactions
-        runDBPool sem pool $ importMerkles action mTxsAcc
+        runDBPool sem pool $ importMerkles action mTxsAcc (Just notifChan)
         $(logDebug) "Done importing merkles into the wallet"
         logBlockChainAction action
 
-    merkleSync sem pool newBSize
+    merkleSync sem pool newBSize notifChan
   where
     go lastMerkleM mTxsAcc aMap = await >>= \resM -> case resM of
         Just (Right tx) -> do
             $(logDebug) $ pack $ unwords
                 [ "Importing merkle tx", cs $ txHashToHex $ txHash tx ]
-            (_, newAddrs) <- lift $ runDBPool sem pool $ importNetTx tx
+            (_, newAddrs) <- lift $ runDBPool sem pool $ importNetTx tx Nothing
             $(logDebug) $ pack $ unwords
                 [ "Generated", show $ length newAddrs
                 , "new addresses while importing tx"
@@ -329,16 +334,23 @@ runWalletApp :: ( MonadLoggerIO m
                 , MonadThrow m
                 , MonadResource m
                 )
-             => HandlerSession -> m ()
-runWalletApp session = liftBaseOpDiscard withContext $ \ctx ->
+             => HandlerSession -> TBMChan Notif -> m ()
+runWalletApp session notifChan = liftBaseOpDiscard withContext $ \ctx -> do
+    na <- async $ liftBaseOpDiscard (withSocket ctx Pub) $ \sock -> do
+        setupCrypto ctx sock
+        liftIO $ bind sock $ configBindNotif $ handlerConfig session
+        forever $ do
+            xM <- liftIO $ atomically $ readTBMChan notifChan
+            forM_ xM $ \x -> do
+                liftIO $ send sock [] $ cs $ encode x
+                case x of
+                    NotifTx JsonTx{..} -> $(logInfo) $ cs $ unwords
+                        [ "Notif Tx:", cs (txHashToHex jsonTxHash) ]
+                    NotifBlock JsonBlock{..} -> $(logInfo) $ cs $ unwords
+                        [ "Notif Block:", cs (blockHashToHex jsonBlockHash) ]
+    link na
     liftBaseOpDiscard (withSocket ctx Rep) $ \sock -> do
-        when (isJust serverKeyM) $ liftIO $ do
-            let k = fromJust $ configServerKey $ handlerConfig session
-            setCurveServer True sock
-            setCurveSecretKey TextFormat k sock
-        when (isJust clientKeyPubM) $ do
-            k <- z85Decode (fromJust clientKeyPubM)
-            void $ async $ runZapAuth ctx k
+        setupCrypto ctx sock
         liftIO $ bind sock $ configBind $ handlerConfig session
         forever $ do
             bs  <- liftIO $ receive sock
@@ -348,6 +360,16 @@ runWalletApp session = liftBaseOpDiscard withContext $ \ctx ->
                 Nothing -> return $ ResponseError "Could not decode request"
             liftIO $ send sock [] $ BL.toStrict $ encode res
   where
+    setupCrypto :: (MonadLoggerIO m, MonadBaseControl IO m)
+                => Context -> Socket a -> m ()
+    setupCrypto ctx sock = do
+        when (isJust serverKeyM) $ liftIO $ do
+            let k = fromJust $ configServerKey $ handlerConfig session
+            setCurveServer True sock
+            setCurveSecretKey TextFormat k sock
+        when (isJust clientKeyPubM) $ do
+            k <- z85Decode (fromJust clientKeyPubM)
+            void $ async $ runZapAuth ctx k
     cfg = handlerConfig session
     serverKeyM = configServerKey cfg
     clientKeyPubM = configClientKeyPub cfg

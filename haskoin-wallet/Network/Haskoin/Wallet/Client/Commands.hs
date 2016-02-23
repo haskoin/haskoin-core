@@ -25,6 +25,7 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdDecodeTx
 , cmdVersion
 , cmdStatus
+, cmdMonitor
 , cmdKeyPair
 , cmdDeleteTx
 )
@@ -32,10 +33,15 @@ where
 
 import System.ZMQ4.Monadic
     ( Req(..)
+    , Sub(..)
     , KeyFormat(..)
+    , SocketType
+    , Socket
+    , ZMQ
     , runZMQ
     , socket
     , send
+    , subscribe
     , receive
     , connect
     , setCurveServerKey
@@ -44,12 +50,11 @@ import System.ZMQ4.Monadic
     )
 
 import Control.Applicative ((<|>))
-import Control.Monad (forM_, unless, when, liftM2)
+import Control.Monad (forM_, forever, unless, when, liftM2)
 import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.Reader as R (ReaderT, ask, asks)
 
-import Data.Maybe
-       (listToMaybe, isNothing, fromJust, fromMaybe, isJust, maybeToList)
+import Data.Maybe (listToMaybe, isNothing, fromMaybe, isJust, maybeToList)
 import Data.List (intercalate, intersperse)
 import qualified Data.ByteString.Char8 as B8 (putStrLn, unwords)
 import Data.Text (Text, pack, unpack, splitOn)
@@ -451,6 +456,16 @@ cmdDeleteTx tidStr = case tidM of
   where
     tidM = hexToTxHash $ cs tidStr
 
+cmdMonitor :: Handler ()
+cmdMonitor = do
+    cfg <- R.ask
+    liftIO $ runZMQ $ do
+        sock <- socket Sub
+        setupAuth cfg sock
+        connect sock (configConnectNotif cfg)
+        subscribe sock ""
+        forever $ receive sock >>= (liftIO . B8.putStrLn)
+
 cmdDecodeTx :: Handler ()
 cmdDecodeTx = do
     tx <- getHexTx
@@ -504,26 +519,32 @@ sendZmq :: (FromJSON a, ToJSON a)
         => WalletRequest
         -> Handler (Either String (WalletResponse a))
 sendZmq req = do
-    sockName <- R.asks configConnect
-    clientKeyM <- R.asks configClientKey
-    clientKeyPubM <- R.asks configClientKeyPub
-    serverKeyPubM <- R.asks configServerKeyPub
+    cfg <- R.ask
     liftIO $ runZMQ $ do
         sock <- socket Req
-        when (isJust clientKeyM) $ do
-            let clientKey = fromJust clientKeyM
-                serverKeyPub = fromMaybe
-                    (error "Server public key not provided")
-                    serverKeyPubM
-                clientKeyPub = fromMaybe
-                    (error "Client public key not provided")
-                    clientKeyPubM
-            setCurveServerKey TextFormat serverKeyPub sock
-            setCurvePublicKey TextFormat clientKeyPub sock
-            setCurveSecretKey TextFormat clientKey sock
-        connect sock sockName
+        setupAuth cfg sock
+        connect sock (configConnect cfg)
         send sock [] (cs $ encode req)
         eitherDecode . cs <$> receive sock
+
+setupAuth :: (SocketType t)
+          => Config
+          -> Socket z t
+          -> ZMQ z ()
+setupAuth cfg sock = do
+    let clientKeyM    = configClientKey    cfg
+        clientKeyPubM = configClientKeyPub cfg
+        serverKeyPubM = configServerKeyPub cfg
+    forM_ clientKeyM $ \clientKey -> do
+        let serverKeyPub = fromMaybe
+              (error "Server public key not provided")
+              serverKeyPubM
+            clientKeyPub = fromMaybe
+              (error "Client public key not provided")
+              clientKeyPubM
+        setCurveServerKey TextFormat serverKeyPub sock
+        setCurvePublicKey TextFormat clientKeyPub sock
+        setCurveSecretKey TextFormat clientKey sock
 
 formatStr :: String -> IO ()
 formatStr str = forM_ (lines str) putStrLn

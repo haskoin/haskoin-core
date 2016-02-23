@@ -67,6 +67,8 @@ data Config = Config
     -- ^ How to format the command-line results
     , configConnect       :: !String
     -- ^ ZeroMQ socket to connect to (location of the server)
+    , configConnectNotif  :: !String
+    -- ^ ZeroMQ socket to connect for notifications
     , configDetach        :: !Bool
     -- ^ Detach server when launched from command-line
     , configFile          :: !FilePath
@@ -76,7 +78,9 @@ data Config = Config
     , configDir           :: !FilePath
     -- ^ Working directory
     , configBind          :: !String
-    -- ^ Bind address for the zeromq socket
+    -- ^ Bind address for the ZeroMQ socket
+    , configBindNotif     :: !String
+    -- ^ Bind address for ZeroMQ notifications
     , configBTCNodes      :: !(HashMap Text [BTCNode])
     -- ^ Trusted Bitcoin full nodes to connect to
     , configMode          :: !SPVMode
@@ -164,10 +168,12 @@ instance FromJSON Config where
         configReversePaging         <- o .: "reverse-paging"
         configFormat                <- o .: "display-format"
         configConnect               <- o .: "connect-uri"
+        configConnectNotif          <- o .: "connect-uri-notif"
         configDetach                <- o .: "detach-server"
         configTestnet               <- o .: "use-testnet"
         configDir                   <- o .: "work-dir"
         configBind                  <- o .: "bind-socket"
+        configBindNotif             <- o .: "bind-socket-notif"
         configBTCNodes              <- o .: "bitcoin-full-nodes"
         configMode                  <- o .: "server-mode"
         configBloomFP               <- o .: "bloom-false-positive"

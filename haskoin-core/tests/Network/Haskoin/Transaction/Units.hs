@@ -15,7 +15,7 @@ import qualified Data.ByteString.Lazy as LBS
 import Safe (readMay)
 import GHC.Exts( IsString(..) )
 import qualified Data.Aeson as Aeson 
-import Data.Aeson.Types (withArray, parseMaybe)
+import qualified Data.Aeson.Types as Aeson.Types
 import Control.Monad ((<=<))
 import qualified Data.Vector as V
 import Data.String.Conversions (convertString)
@@ -306,41 +306,42 @@ satoshiCoreTxTests = do
       ( map mapVerifyVec $ zip txVec [0..] ) 
     ]
   where 
-    satoshiCoreTxVec :: IO (Maybe [SatoshiCoreTxTest])
-    satoshiCoreTxVec = do 
-    ( mbVal :: Maybe Aeson.Value) <- ( return . Aeson.decode <=< LBS.readFile ) "tests/data/tx_valid.json"
+
+satoshiCoreTxVec :: IO (Maybe [SatoshiCoreTxTest])
+satoshiCoreTxVec = do 
+    tx_validBS <- LBS.readFile "tests/data/tx_valid.json"
     return $ do 
-      val <- mbVal
-      flip parseMaybe val $ \v2 -> 
-        flip (withArray "arr") v2 $ \v3 -> do
-          return $ map processItem . filter (not . isComment) . V.toList $ v3
+      testsAndCommentsVal <- Aeson.decode tx_validBS            
+      flip Aeson.Types.parseMaybe testsAndCommentsVal $ \arr -> do
+        (testVectors :: [Aeson.Types.Value]) <- do
+          flip (Aeson.Types.withArray "testsAndCommentsVal") testsAndCommentsVal $ \testsAndComments -> do
+            return $ filter (not . isComment) . V.toList $ testsAndComments
+        mapM toTest testVectors
       where
-        processItem :: Aeson.Value -> SatoshiCoreTxTest
-        processItem (Aeson.Array v) = 
-          let inputs = case ( v V.! 0 ) of            
-                Aeson.Array inputsV -> 
-                  let toInput ( Aeson.Array oneInputV ) = 
-                        let hash = case oneInputV V.! 0 of 
-                              Aeson.String txt -> convertString txt
-                              _ -> error "processItem, hash not a string"
-                            index = case oneInputV V.! 01 of 
-                              Aeson.Number n -> encodeHex . runPut' . putWord32le . floor $ n
-                              _ -> error "processItem, n not a number"
-                            pubkey = case oneInputV V.! 2 of
-                              Aeson.String txt -> encodeSatoshiCoreScriptPubKey . convertString $ txt
-                              _ -> error "processItem, pubkey not a string"
-                        in  SatoshiCoreTxTestInput hash index pubkey 
-                      toInput _ = error "processItem, oneInputV not an array"
-                  in  map toInput . V.toList $ inputsV
-                _ -> error "processItem, inputsV not an array"
-              tx     = case (v V.! 1) of
-                Aeson.String txt -> convertString txt
-                _ -> error "processItem, tx not a string"
-              -- flags  = v V.! 2  -- ignored for now? 
-          in  SatoshiCoreTxTest inputs tx
-        processItem _ = error "processItem, v not an array"
         isComment (Aeson.Array v) | V.length v == 1 = True
         isComment _ = False
+        toTest :: Aeson.Value -> Aeson.Types.Parser SatoshiCoreTxTest
+        toTest testVectorVal = flip (Aeson.Types.withArray "testVectorVal") testVectorVal $ \testVector -> 
+          let inputsVal = testVector V.! 0
+              inputs :: Aeson.Types.Parser [SatoshiCoreTxTestInput]
+              inputs = flip (Aeson.Types.withArray "inputsVal") inputsVal $ \inputsArr ->           
+                let toInput inputVal = flip (Aeson.Types.withArray "inputVal") inputVal $ \input -> 
+                      let hashVal = input V.! 0
+                          hash = flip (Aeson.Types.withText "hashVal") hashVal $ \txt -> 
+                            return . convertString $ txt
+                          indexVal = input V.! 1 
+                          index = flip (Aeson.Types.withScientific "indexVal") indexVal $ \n -> 
+                            return . encodeHex . runPut' . putWord32le . floor $ n -- floor seems suspect
+                          pubkeyVal = input V.! 2 
+                          pubkey = flip (Aeson.Types.withText "pubkeyVal") pubkeyVal $ \txt -> 
+                            return . encodeSatoshiCoreScriptPubKey . convertString $ txt
+                      in  pure SatoshiCoreTxTestInput <*> hash <*> index <*> pubkey 
+                in  mapM toInput . V.toList $ inputsArr
+              txVal = testVector V.! 1
+              tx    = flip (Aeson.Types.withText "txVal") txVal $ return . convertString
+              -- flags -- v V.! 2  -- ignored for now? 
+          in  pure SatoshiCoreTxTest <*> inputs <*> tx 
+
 
 
 

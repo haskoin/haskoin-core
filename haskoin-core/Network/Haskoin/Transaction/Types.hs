@@ -99,7 +99,7 @@ instance FromJSON TxHash where
         maybe mzero return $ hexToTxHash $ cs t
 
 instance ToJSON TxHash where
-    toJSON h = String $ cs $ txHashToHex h
+    toJSON = String . cs . txHashToHex
 
 -- | Data type representing a bitcoin transaction
 data Tx =

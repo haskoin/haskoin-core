@@ -92,11 +92,11 @@ instance Binary BlockHash where
     put = put . getBlockHash
 
 instance FromJSON BlockHash where
-    parseJSON = withText "Block hash" $ \t -> do
-        maybe mzero return $ BlockHash <$> (bsToHash256 =<< decodeHex (cs t))
+    parseJSON = withText "Block hash" $ \t ->
+        maybe mzero return $ hexToBlockHash $ cs t
 
 instance ToJSON BlockHash where
-    toJSON h = String $ cs $ encodeHex $ getHash256 $ getBlockHash h
+    toJSON = String . cs . blockHashToHex
 
 blockHashToHex :: BlockHash -> ByteString
 blockHashToHex (BlockHash h) = encodeHex $ BS.reverse $ getHash256 h

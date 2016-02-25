@@ -53,7 +53,7 @@ instance Binary Script where
             empty <- isEmpty
             if empty
                 then return []
-                else (pure (:)) <*> get <*> getScriptOps
+                else (:) <$> get <*> getScriptOps
 
     put (Script ops) = forM_ ops put
 

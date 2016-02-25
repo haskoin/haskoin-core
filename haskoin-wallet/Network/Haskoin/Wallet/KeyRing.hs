@@ -267,16 +267,16 @@ nextAccountDeriv ki = do
 -- Helper functions to get an Account if it exists, or throw an exception
 -- otherwise.
 getAccount :: MonadIO m => KeyRingName -> AccountName
-           -> SqlPersistT m (KeyRing, Entity KeyRingAccount)
+           -> SqlPersistT m (Entity KeyRingAccount)
 getAccount keyRingName accountName = do
     as <- select $ from $ \(k `InnerJoin` a) -> do
         on $ a ^. KeyRingAccountKeyRing ==. k ^. KeyRingId
         where_ (   k ^. KeyRingName        ==. val keyRingName
                &&. a ^. KeyRingAccountName ==. val accountName
                )
-        return (k, a)
+        return a
     case as of
-        ((Entity _ k, accEnt):_) -> return (k, accEnt)
+        (accEnt:_) -> return accEnt
         _ -> liftIO . throwIO $ WalletException $ unwords
             [ "Account", unpack accountName, "does not exist" ]
 

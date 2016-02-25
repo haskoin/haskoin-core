@@ -47,7 +47,7 @@ import Data.Either (rights)
 import Data.List ((\\), nub, nubBy, find)
 import Data.Text (unpack)
 import Data.Conduit (Source, mapOutput)
-import Data.Maybe (isNothing, isJust, fromMaybe, listToMaybe)
+import Data.Maybe (isNothing, isJust, fromMaybe, listToMaybe, catMaybes)
 import qualified Data.Map.Strict as M
     ( Map, toList, map, unionWith, fromListWith )
 import Data.String.Conversions (cs)
@@ -132,10 +132,10 @@ txs ai ListRequest{..} = do
 
 addrTxs :: MonadIO m
         => Entity KeyRingAccount -- ^ Account entity
-        -> KeyRingAddrId         -- ^ Address Id
+        -> Entity KeyRingAddr    -- ^ Address Id
         -> ListRequest           -- ^ List request
-        -> SqlPersistT m ([(KeyRingTx, BalanceInfo)], Word32)
-addrTxs (Entity ai _) addrI ListRequest{..} = do
+        -> SqlPersistT m ([KeyRingTx], Word32)
+addrTxs (Entity ai _) (Entity addrI KeyRingAddr{..}) ListRequest{..} = do
     let joinSpentCoin c2 s =
                 c2 ?. KeyRingCoinAccount ==. s ?. KeyRingSpentCoinAccount
             &&. c2 ?. KeyRingCoinHash    ==. s ?. KeyRingSpentCoinHash
@@ -150,6 +150,7 @@ addrTxs (Entity ai _) addrI ListRequest{..} = do
             on $ joinSpentCoin c2 s
             on $ joinSpent s t
             on $ joinCoin c t
+
     -- Find all the tids
     tids <- fmap (map unValue) $ select $ distinct $ from $
             \(t `LeftOuterJoin` c `LeftOuterJoin`
@@ -173,7 +174,7 @@ addrTxs (Entity ai _) addrI ListRequest{..} = do
         tidList = fOrd $ take (fromIntegral listLimit) $
             drop (fromIntegral listOffset) $ fOrd tids
 
-    -- Use a sliptSelect query here with the exact tids to speed up the
+    -- Use a splitSelect query here with the exact tids to speed up the
     -- query.
     res <- splitSelect tidList $ \tid ->
         from $ \(t `LeftOuterJoin` c `LeftOuterJoin`
@@ -182,27 +183,21 @@ addrTxs (Entity ai _) addrI ListRequest{..} = do
         where_ $ t ^. KeyRingTxId `in_` valList tid
         groupBy $ t ^. KeyRingTxId
         orderBy [ asc (t ^. KeyRingTxId) ]
-        return  ( t
-                  -- Incoming value
-                , coalesceDefault [sum_ (c  ?. KeyRingCoinValue)] (val 0)
-                  -- Outgoing value
-                , coalesceDefault [sum_ (c2 ?. KeyRingCoinValue)] (val 0)
-                  -- Number of new coins created
-                , count $ c ?. KeyRingCoinId
-                  -- Number of coins spent
-                , count $ c2 ?. KeyRingCoinId
-                )
+        return  t
 
-    let f (t, Value inVal, Value outVal, Value newCount, Value spentCount) =
-            ( entityVal t
-            , BalanceInfo
-                { balanceInfoInBalance  = floor (inVal :: Double)
-                , balanceInfoOutBalance = floor (outVal :: Double)
-                , balanceInfoCoins      = newCount
-                , balanceInfoSpentCoins = spentCount
-                }
-            )
-    return (map f res, fromIntegral (length tids))
+    return (map (updBals . entityVal) res, fromIntegral (length tids))
+  where
+    agg = sum . catMaybes . map addressInfoValue .
+        filter ((== keyRingAddrAddress) . addressInfoAddress)
+    updBals t =
+      let
+        input  = agg $ keyRingTxInputs  t
+        output = agg $ keyRingTxOutputs t
+        change = agg $ keyRingTxChange  t
+      in
+        t { keyRingTxInValue  = output + change
+          , keyRingTxOutValue = input
+          }
 
 
 getTx :: MonadIO m => TxHash -> SqlPersistT m (Maybe Tx)

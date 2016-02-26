@@ -317,16 +317,22 @@ satoshiCoreTxVec = do
       testsAndCommentsVal <- Aeson.decode tx_validBS            
       flip Aeson.Types.parseMaybe testsAndCommentsVal toTests 
 
-toTests :: Value -> Aeson.Types.Parser [SatoshiCoreTxTest]      
+instance Aeson.Types.FromJSON [SatoshiCoreTxTest] where
+  parseJSON = toTests
+
+toTests :: Aeson.Value -> Aeson.Types.Parser [SatoshiCoreTxTest]      
 toTests arr = do
         (testVectors :: [Aeson.Types.Value]) <- do
           flip (Aeson.Types.withArray "testsAndCommentsVal") arr $ \testsAndComments -> do
             return $ filter (not . isComment) . V.toList $ testsAndComments
-        mapM toTest testVectors
+        mapM Aeson.Types.parseJSON testVectors
 
+instance Aeson.Types.FromJSON SatoshiCoreTxTest where
+  parseJSON = toTest
 
 isComment (Aeson.Array v) | V.length v == 1 = True
 isComment _ = False
+
 toTest :: Aeson.Value -> Aeson.Types.Parser SatoshiCoreTxTest
 toTest testVectorVal = flip (Aeson.Types.withArray "testVectorVal") testVectorVal $ \testVector -> 
   let inputsVal = testVector V.! 0
@@ -337,6 +343,9 @@ toTest testVectorVal = flip (Aeson.Types.withArray "testVectorVal") testVectorVa
       tx    = flip (Aeson.Types.withText "txVal") txVal $ return . convertString
       -- flags -- v V.! 2  -- ignored for now? 
   in  pure SatoshiCoreTxTest <*> inputs <*> tx 
+
+instance Aeson.Types.FromJSON SatoshiCoreTxTestInput where
+  parseJSON = toInput
 
 toInput :: Aeson.Value -> Aeson.Types.Parser SatoshiCoreTxTestInput
 toInput inputVal = flip (Aeson.Types.withArray "inputVal") inputVal $ \input -> 

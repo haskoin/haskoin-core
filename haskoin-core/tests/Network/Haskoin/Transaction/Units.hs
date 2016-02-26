@@ -320,33 +320,33 @@ satoshiCoreTxVec = do
           flip (Aeson.Types.withArray "testsAndCommentsVal") testsAndCommentsVal $ \testsAndComments -> do
             return $ filter (not . isComment) . V.toList $ testsAndComments
         mapM toTest testVectors
-      where
-        isComment (Aeson.Array v) | V.length v == 1 = True
-        isComment _ = False
-        toTest :: Aeson.Value -> Aeson.Types.Parser SatoshiCoreTxTest
-        toTest testVectorVal = flip (Aeson.Types.withArray "testVectorVal") testVectorVal $ \testVector -> 
-          let inputsVal = testVector V.! 0
-              inputs :: Aeson.Types.Parser [SatoshiCoreTxTestInput]
-              inputs = flip (Aeson.Types.withArray "inputsVal") inputsVal $ \inputsArr ->           
-                let toInput inputVal = flip (Aeson.Types.withArray "inputVal") inputVal $ \input -> 
-                      let hashVal = input V.! 0
-                          hash = flip (Aeson.Types.withText "hashVal") hashVal $ \txt -> 
-                            return . convertString $ txt
-                          indexVal = input V.! 1 
-                          index = flip (Aeson.Types.withScientific "indexVal") indexVal $ \n -> 
-                            return . encodeHex . runPut' . putWord32le . floor $ n -- floor seems suspect
-                          pubkeyVal = input V.! 2 
-                          pubkey = flip (Aeson.Types.withText "pubkeyVal") pubkeyVal $ \txt -> 
-                            return . encodeSatoshiCoreScriptPubKey . convertString $ txt
-                      in  pure SatoshiCoreTxTestInput <*> hash <*> index <*> pubkey 
-                in  mapM toInput . V.toList $ inputsArr
-              txVal = testVector V.! 1
-              tx    = flip (Aeson.Types.withText "txVal") txVal $ return . convertString
-              -- flags -- v V.! 2  -- ignored for now? 
-          in  pure SatoshiCoreTxTest <*> inputs <*> tx 
 
 
+isComment (Aeson.Array v) | V.length v == 1 = True
+isComment _ = False
+toTest :: Aeson.Value -> Aeson.Types.Parser SatoshiCoreTxTest
+toTest testVectorVal = flip (Aeson.Types.withArray "testVectorVal") testVectorVal $ \testVector -> 
+  let inputsVal = testVector V.! 0
+      inputs :: Aeson.Types.Parser [SatoshiCoreTxTestInput]
+      inputs = flip (Aeson.Types.withArray "inputsVal") inputsVal $ \inputsArr ->           
+        mapM toInput . V.toList $ inputsArr
+      txVal = testVector V.! 1
+      tx    = flip (Aeson.Types.withText "txVal") txVal $ return . convertString
+      -- flags -- v V.! 2  -- ignored for now? 
+  in  pure SatoshiCoreTxTest <*> inputs <*> tx 
 
+toInput :: Aeson.Value -> Aeson.Types.Parser SatoshiCoreTxTestInput
+toInput inputVal = flip (Aeson.Types.withArray "inputVal") inputVal $ \input -> 
+  let hashVal = input V.! 0
+      hash = flip (Aeson.Types.withText "hashVal") hashVal $ \txt -> 
+        return . convertString $ txt
+      indexVal = input V.! 1 
+      index = flip (Aeson.Types.withScientific "indexVal") indexVal $ \n -> 
+        return . encodeHex . runPut' . putWord32le . floor $ n -- floor seems suspect
+      pubkeyVal = input V.! 2 
+      pubkey = flip (Aeson.Types.withText "pubkeyVal") pubkeyVal $ \txt -> 
+        return . encodeSatoshiCoreScriptPubKey . convertString $ txt
+  in  pure SatoshiCoreTxTestInput <*> hash <*> index <*> pubkey 
 
 
 

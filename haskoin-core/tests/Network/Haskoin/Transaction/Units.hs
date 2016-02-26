@@ -317,7 +317,7 @@ satoshiCoreTxVec = do
       testsAndCommentsVal <- Aeson.decode tx_validBS            
       flip Aeson.Types.parseMaybe testsAndCommentsVal $ \arr -> do
         (testVectors :: [Aeson.Types.Value]) <- do
-          flip (Aeson.Types.withArray "testsAndCommentsVal") testsAndCommentsVal $ \testsAndComments -> do
+          flip (Aeson.Types.withArray "testsAndCommentsVal") arr $ \testsAndComments -> do
             return $ filter (not . isComment) . V.toList $ testsAndComments
         mapM toTest testVectors
 

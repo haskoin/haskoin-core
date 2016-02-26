@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables, FlexibleInstances #-}
 module Network.Haskoin.Transaction.Units (tests, satoshiCoreTxTests) where
 
 import Test.HUnit (Assertion, assertBool)

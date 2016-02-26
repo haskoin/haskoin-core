@@ -315,7 +315,10 @@ satoshiCoreTxVec = do
     tx_validBS <- LBS.readFile "tests/data/tx_valid.json"
     return $ do 
       testsAndCommentsVal <- Aeson.decode tx_validBS            
-      flip Aeson.Types.parseMaybe testsAndCommentsVal $ \arr -> do
+      flip Aeson.Types.parseMaybe testsAndCommentsVal toTests 
+
+toTests :: Value -> Aeson.Types.Parser [SatoshiCoreTxTest]      
+toTests arr = do
         (testVectors :: [Aeson.Types.Value]) <- do
           flip (Aeson.Types.withArray "testsAndCommentsVal") arr $ \testsAndComments -> do
             return $ filter (not . isComment) . V.toList $ testsAndComments

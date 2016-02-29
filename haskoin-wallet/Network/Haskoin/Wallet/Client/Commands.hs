@@ -32,6 +32,7 @@ module Network.Haskoin.Wallet.Client.Commands
 where
 
 import           Control.Concurrent.Async.Lifted (asyncBound, link, wait)
+import           System.IO                       (stderr)
 import           System.ZMQ4                     (KeyFormat (..), Req (..),
                                                   Socket, SocketType, Sub (..),
                                                   connect, curveKeyPair,
@@ -53,7 +54,8 @@ import           Data.Aeson                      (FromJSON, ToJSON, Value (..),
 import qualified Data.Aeson.Encode.Pretty        as JSON (Config (..),
                                                           defConfig,
                                                           encodePretty')
-import qualified Data.ByteString.Char8           as B8 (putStrLn, unwords)
+import qualified Data.ByteString.Char8           as B8 (hPutStrLn, putStrLn,
+                                                        unwords)
 import           Data.List                       (intercalate, intersperse)
 import           Data.Maybe                      (fromMaybe, isJust, isNothing,
                                                   listToMaybe, maybeToList)
@@ -508,6 +510,9 @@ sendZmq :: (FromJSON a, ToJSON a)
         -> Handler (Either String (WalletResponse a))
 sendZmq req = do
     cfg <- R.ask
+    let msg = cs $ encode req
+    when (configVerbose cfg) $ liftIO $
+        B8.hPutStrLn stderr $ "Outgoing JSON: " `mappend` msg
     a <- asyncBound $ liftIO $ withContext $ \ctx ->
         withSocket ctx Req $ \sock -> do
             setupAuth cfg sock
@@ -515,8 +520,6 @@ sendZmq req = do
             send sock [] (cs $ encode req)
             eitherDecode . cs <$> receive sock
     wait a
-
-
 
 setupAuth :: (SocketType t)
           => Config

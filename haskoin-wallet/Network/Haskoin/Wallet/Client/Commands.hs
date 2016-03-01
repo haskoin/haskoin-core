@@ -1,13 +1,8 @@
 module Network.Haskoin.Wallet.Client.Commands
 ( cmdStart
 , cmdStop
-, cmdNewKeyRing
-, cmdKeyRing
-, cmdKeyRings
 , cmdNewAcc
-, cmdNewMS
-, cmdNewRead
-, cmdAddKeys
+, cmdAddKey
 , cmdSetGap
 , cmdAccount
 , cmdAccounts
@@ -47,7 +42,8 @@ import System.ZMQ4.Monadic
     , setCurveSecretKey
     )
 
-import Control.Monad (forM_, when, liftM2)
+import Control.Applicative ((<|>))
+import Control.Monad (forM_, unless, when, liftM2)
 import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.Reader as R (ReaderT, ask, asks)
 
@@ -76,6 +72,7 @@ import Data.Aeson
     )
 import Data.String.Conversions (cs)
 
+
 import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Transaction
@@ -91,8 +88,14 @@ import Network.Haskoin.Wallet.Database
 
 import Data.Restricted (rvalue)
 import System.ZMQ4 (curveKeyPair)
+import Text.Read (readMaybe)
+
+import qualified System.Console.Haskeline as Haskeline
 
 type Handler = R.ReaderT Config IO
+
+defaultDeriv :: HardPath
+defaultDeriv = Deriv :| 0
 
 -- hw start [config] [--detach]
 cmdStart :: Handler ()
@@ -107,164 +110,226 @@ cmdStop = R.ask >>= \cfg -> liftIO $ do
     stopSPVServer cfg
     putStrLn "Process stopped"
 
-cmdNewKeyRing :: [String] -> Handler ()
-cmdNewKeyRing mnemonicLs = do
-    keyRingName <- R.asks configKeyRing
-    passphraseM <- R.asks configPass
-    let mnemonicM  = pack <$> listToMaybe mnemonicLs
-        newKeyRing = NewKeyRing keyRingName passphraseM mnemonicM
-    sendZmq (PostKeyRingsR newKeyRing) $ putStr . printKeyRing
-
-cmdKeyRing :: Handler ()
-cmdKeyRing = do
-    k <- R.asks configKeyRing
-    sendZmq (GetKeyRingR k) $ putStr . printKeyRing
-
-cmdKeyRings :: Handler ()
-cmdKeyRings = sendZmq GetKeyRingsR $ \ks -> do
-    let xs = map (putStr . printKeyRing) ks
-    sequence_ $ intersperse (putStrLn "-") xs
-
-cmdNewAcc :: String -> Handler ()
-cmdNewAcc name = do
-    k <- R.asks configKeyRing
-    sendZmq (PostAccountsR k newAcc) $
-        \acc -> putStr $ printAccount acc
+getSigningKeys :: String
+               -> Handler (Maybe XPrvKey)
+getSigningKeys name = do
+    derivM <- R.asks configPath
+    kM <- masterKey
+    case kM of
+        Just _ -> return Nothing
+        Nothing -> do
+            keyOrMnemonic <-
+                liftIO . Haskeline.runInputT
+                    Haskeline.defaultSettings $
+                    Haskeline.getPassword (Just '*')
+                    "Mnemonic or private extended key: "
+            case keyOrMnemonic of
+                Just ms -> return $ go (cs ms) derivM
+                Nothing -> error "No action due to EOF"
   where
-    newAcc = NewAccount (pack name) (AccountRegular False) []
+    masterKey = do
+        resE <- sendZmq $ GetAccountR $ pack name
+        case resE of
+            Right (ResponseValid (Just acc)) ->
+                return $ jsonAccountMaster acc
+            Right (ResponseError e) -> error $ cs e
+            Left e -> error e
+            _ -> error "You find yourself in a strange place"
+    go "" _ = error "Need key to sign"
+    go str derivM = case xPrvImport str of
+        Just k -> case derivM of
+            Just d -> Just $ derivePath d k
+            Nothing -> Just k
+        Nothing -> case mnemonicToSeed "" str of
+            Right s -> let k = makeXPrvKey s in case derivM of
+                Just d -> Just $ derivePath d k
+                Nothing -> Just $ derivePath defaultDeriv k
+            Left _ -> error "Could not parse key"
+
+checkExists :: String -> Handler Bool
+checkExists name = do
+     resE <- sendZmq $ GetAccountR $ pack name
+     case (resE :: Either String (WalletResponse JsonAccount)) of
+         Right (ResponseValid _) -> return True
+         Right (ResponseError  _) -> return False
+         Left e -> error e
+
+getKey :: Handler (Maybe Mnemonic, Maybe XPrvKey, Maybe HardPath, Maybe XPubKey)
+getKey = do
+    derivM <- R.asks configPath
+    i <- liftIO . Haskeline.runInputT Haskeline.defaultSettings $
+        Haskeline.getPassword (Just '*')
+            "Type mnemonic, extended key or leave empty to generate: "
+    case i of
+        Just s -> go (cs s) derivM
+        Nothing -> error "No action due to EOF"
+  where
+    go "" derivM = return
+        ( Nothing
+        , Nothing
+        , derivM <|> Just defaultDeriv
+        , Nothing
+        )
+    go str' derivM = case xPrvImport str' of
+        Just k -> return
+            ( Nothing
+            , Just $ maybe k (`derivePath` k) derivM
+            , derivM
+            , Nothing
+            )
+        Nothing -> case xPubImport str' of
+            Just p -> return
+                ( Nothing
+                , Nothing
+                , derivM
+                , Just p
+                )
+            Nothing -> return
+                ( Just $ cs str'
+                , Nothing
+                , derivM <|> Just defaultDeriv
+                , Nothing
+                )
 
 -- First argument: is account read-only?
-cmdNewMS :: Bool -> String -> String -> String -> [String] -> Handler ()
-cmdNewMS r name mStr nStr ks = case keysM of
-    Just keys -> do
-        k <- R.asks configKeyRing
-        let newAcc = NewAccount (pack name) (AccountMultisig r m n) keys
-        sendZmq (PostAccountsR k newAcc) $
-            \acc -> putStr $ printAccount acc
-    _ -> error "Could not parse key(s)"
+cmdNewAcc :: Bool -> String -> [String] -> Handler ()
+cmdNewAcc r name ls = do
+    _ <- return $! typ
+    e <- checkExists name
+    when e $ error "Account exists"
+    (mnemonicM, masterM, derivM, keyM) <- getKey
+    let newAcc = NewAccount
+            { newAccountName     = pack name
+            , newAccountType     = typ
+            , newAccountMnemonic = cs <$> mnemonicM
+            , newAccountMaster   = masterM
+            , newAccountDeriv    = derivM
+            , newAccountKeys     = maybeToList keyM
+            , newAccountReadOnly = r
+            }
+    resE <- sendZmq $ PostAccountsR newAcc
+    handleResponse resE $ liftIO . putStr . printAccount
   where
-    m     = read mStr
-    n     = read nStr
-    keysM = mapM (xPubImport . cs) ks
+    typ = case ls of
+        [] -> AccountRegular
+        [mS, nS] -> fromMaybe (error "Account information incorrect") $ do
+            m <- readMaybe mS
+            n <- readMaybe nS
+            return $ AccountMultisig m n
+        _ -> error "Number of parametres incorrect"
 
-cmdNewRead :: String -> String -> Handler ()
-cmdNewRead name keyStr = case keyM of
-    Just key -> do
-        k <- R.asks configKeyRing
-        let newAcc = NewAccount (pack name) (AccountRegular True) [key]
-        sendZmq (PostAccountsR k newAcc) $
-            \acc -> putStr $ printAccount acc
-    _ -> error "Could not parse key"
-  where
-    keyM = xPubImport $ cs keyStr
-
-cmdAddKeys :: String -> [String] -> Handler ()
-cmdAddKeys name ks = case keysM of
-    Just keys -> do
-        k <- R.asks configKeyRing
-        sendZmq (PostAccountKeysR k (pack name) keys) $
-            \acc -> putStr $ printAccount acc
-    _ -> error "Could not parse key(s)"
-  where
-    keysM = mapM (xPubImport . cs) ks
+cmdAddKey :: String -> Handler ()
+cmdAddKey name = do
+    e <- checkExists name
+    unless e $ error "Account does not exist"
+    (mnemonicM, masterM, derivM, pubM) <- getKey
+    let key = case mnemonicM of
+            Just ms -> case mnemonicToSeed "" (cs ms) of
+                Right s -> deriveXPubKey $
+                    derivePath (fromMaybe defaultDeriv derivM) $
+                    makeXPrvKey s
+                Left _ -> error "Could not decode mnemonic sentence"
+            Nothing -> case masterM of
+                Just m -> deriveXPubKey $ maybe m (`derivePath` m) derivM
+                Nothing -> fromMaybe (error "No keys provided") pubM
+    resE <- sendZmq (PostAccountKeysR (pack name) [key])
+    handleResponse resE $ liftIO . putStr . printAccount
 
 cmdSetGap :: String -> String -> Handler ()
 cmdSetGap name gap = do
-    k <- R.asks configKeyRing
-    sendZmq (PostAccountGapR k (pack name) setGap) $
-        \acc -> putStr $ printAccount acc
+    resE <- sendZmq (PostAccountGapR (pack name) setGap)
+    handleResponse resE $ liftIO . putStr . printAccount
   where
     setGap = SetAccountGap $ read gap
 
 cmdAccount :: String -> Handler ()
 cmdAccount name = do
-    k <- R.asks configKeyRing
-    sendZmq (GetAccountR k $ pack name) $
-        \acc -> putStr $ printAccount acc
+    resE <- sendZmq (GetAccountR $ pack name)
+    handleResponse resE $ liftIO . putStr . printAccount
 
 cmdAccounts :: Handler ()
 cmdAccounts = do
-    k <- R.asks configKeyRing
-    sendZmq (GetAccountsR k) $ \as -> do
-        let xs = map (putStr . printAccount) as
-        sequence_ $ intersperse (putStrLn "-") xs
+    resE <- sendZmq GetAccountsR
+    handleResponse resE $ \as -> do
+        let xs = map (liftIO . putStr . printAccount) as
+        sequence_ $ intersperse (liftIO $ putStrLn "-") xs
 
 listAction :: (FromJSON a, ToJSON a)
             => Word32
             -> (ListRequest -> WalletRequest)
-            -> ([a] -> IO ())
+            -> ([a] -> Handler ())
             -> Handler ()
 listAction page requestBuilder action = do
     c <- R.asks configCount
     r <- R.asks configReversePaging
     when (page < 1) $ error "Page cannot be less than 1"
     let listReq = ListRequest ((page - 1) * c) c r
-    sendZmq (requestBuilder listReq) $ \(ListResult a m) ->
-         case m of
-             0 -> liftIO . putStrLn $ "No elements"
-             _ -> do
-                 liftIO . putStrLn $
-                     "Page " ++ show page ++ " of " ++ show (pages m c) ++
-                     " (" ++ show m ++ " elements)"
-                 action a
+    resE <- sendZmq (requestBuilder listReq)
+    handleResponse resE $ \(ListResult a m) ->
+      case m of
+          0 -> liftIO . putStrLn $ "No elements"
+          _ -> do
+              liftIO . putStrLn $
+                  "Page " ++ show page ++ " of " ++ show (pages m c) ++
+                  " (" ++ show m ++ " elements)"
+              action a
   where
     pages m c | m `mod` c == 0 = m `div` c
               | otherwise = m `div` c + 1
 
 cmdList :: String -> [String] -> Handler ()
 cmdList name ls = do
-    k <- R.asks configKeyRing
     t <- R.asks configAddrType
     m <- R.asks configMinConf
     o <- R.asks configOffline
     let page = maybe 1 read $ listToMaybe ls
-    let f = GetAddressesR k (pack name) t m o
-    listAction page f $ \as -> forM_ as (putStrLn . printAddress)
+    let f = GetAddressesR (pack name) t m o
+    listAction page f $ \as -> forM_ as (liftIO . putStrLn . printAddress)
 
 cmdUnused :: String -> Handler ()
 cmdUnused name = do
-    k <- R.asks configKeyRing
     t <- R.asks configAddrType
-    sendZmq (GetAddressesUnusedR k (pack name) t) $
-        \as -> forM_ (as :: [JsonAddr]) $ putStrLn . printAddress
+    resE <- sendZmq (GetAddressesUnusedR (pack name) t)
+    handleResponse resE $ \as -> forM_ (as :: [JsonAddr]) $
+        liftIO . putStrLn . printAddress
 
 cmdLabel :: String -> String -> String -> Handler ()
 cmdLabel name iStr label = do
-    k <- R.asks configKeyRing
     t <- R.asks configAddrType
-    sendZmq (PutAddressR k (pack name) i t addrLabel) $
-        \a -> putStrLn $ printAddress a
+    resE <- sendZmq (PutAddressR (pack name) i t addrLabel)
+    handleResponse resE $ liftIO . putStrLn . printAddress
   where
     i         = read iStr
     addrLabel = AddressLabel $ pack label
 
 cmdTxs :: String -> [String] -> Handler ()
 cmdTxs name ls = do
-    k <- R.asks configKeyRing
     let page = maybe 1 read $ listToMaybe ls
-    listAction page (GetTxsR k (pack name)) $ \ts -> do
-        let xs = map (putStr . printTx True) ts
-        sequence_ $ intersperse (putStrLn "-") xs
+    listAction page (GetTxsR (pack name)) $ \ts -> do
+        let xs = map (liftIO . putStr . printTx Nothing) ts
+        sequence_ $ intersperse (liftIO $ putStrLn "-") xs
 
 cmdAddrTxs :: String -> String -> [String] -> Handler ()
 cmdAddrTxs name i ls = do
-    k <- R.asks configKeyRing
     t <- R.asks configAddrType
+    m <- R.asks configMinConf
+    o <- R.asks configOffline
     let page = maybe 1 read $ listToMaybe ls
-    let f = GetAddrTxsR k (pack name) index t
-    listAction page f $ \ts -> do
-        let xs = map (putStr . printTx False) ts
-        sequence_ $ intersperse (putStrLn "-") xs
+        f = GetAddrTxsR (pack name) index t
+    resE <- sendZmq (GetAddressR (pack name) index t m o)
+    handleResponse resE $ \JsonAddr{..} -> listAction page f $ \ts -> do
+        let xs = map (liftIO . putStr . printTx (Just jsonAddrAddress)) ts
+        sequence_ $ intersperse (liftIO $ putStrLn "-") xs
   where
-    index = read i
+    index = fromMaybe (error "Could not read index") $ readMaybe i
 
 cmdGenAddrs :: String -> String -> Handler ()
 cmdGenAddrs name i = do
-    k <- R.asks configKeyRing
     t <- R.asks configAddrType
-    let req = PostAddressesR k (pack name) index t
-    sendZmq req $ \cnt ->
-        putStrLn $ unwords [ "Generated", show (cnt :: Int), "addresses" ]
+    let req = PostAddressesR (pack name) index t
+    resE <- sendZmq req
+    handleResponse resE $ \cnt -> liftIO . putStrLn $
+        unwords [ "Generated", show (cnt :: Int), "addresses" ]
   where
     index = read i
 
@@ -274,14 +339,14 @@ cmdSend name addrStr amntStr = cmdSendMany name [addrStr ++ ":" ++ amntStr]
 cmdSendMany :: String -> [String] -> Handler ()
 cmdSendMany name xs = case rcpsM of
     Just rcps -> do
-        k       <- R.asks configKeyRing
         fee     <- R.asks configFee
         rcptFee <- R.asks configRcptFee
         minconf <- R.asks configMinConf
         sign    <- R.asks configSignTx
+        masterM <- if sign then getSigningKeys name else return Nothing
         let action = CreateTx rcps fee minconf rcptFee sign
-        sendZmq (PostTxsR k (pack name) action) $
-            \tx -> putStr $ printTx True tx
+        resE <- sendZmq (PostTxsR (pack name) masterM action)
+        handleResponse resE $ liftIO . putStr . printTx Nothing
     _ -> error "Could not parse recipient information"
   where
     g str   = map cs $ splitOn ":" (pack str)
@@ -289,24 +354,31 @@ cmdSendMany name xs = case rcpsM of
     f _     = Nothing
     rcpsM   = mapM (f . g) xs
 
-cmdImport :: String -> String -> Handler ()
-cmdImport name txStr = case txM of
-    Just tx -> do
-        k <- R.asks configKeyRing
-        let action = ImportTx tx
-        sendZmq (PostTxsR k (pack name) action) $
-            \t -> putStr $ printTx True t
-    _ -> error "Could not parse transaction"
-  where
-    txM = decodeToMaybe =<< decodeHex (cs txStr)
+getHexTx :: Handler Tx
+getHexTx = do
+    hexM <- Haskeline.runInputT Haskeline.defaultSettings $
+        Haskeline.getInputLine "Transaction in hex: "
+    let txM = case hexM of
+            Nothing -> error "No action due to EOF"
+            Just hex -> decodeToMaybe =<< decodeHex (cs hex)
+    case txM of
+        Just tx -> return tx
+        Nothing -> error "Could not parse transaction"
+
+cmdImport :: String -> Handler ()
+cmdImport name = do
+    tx <- getHexTx
+    let action = ImportTx tx
+    resE <- sendZmq (PostTxsR (pack name) Nothing action)
+    handleResponse resE $ liftIO . putStr . printTx Nothing
 
 cmdSign :: String -> String -> Handler ()
 cmdSign name txidStr = case txidM of
     Just txid -> do
-        k <- R.asks configKeyRing
+        masterM <- getSigningKeys name
         let action = SignTx txid
-        sendZmq (PostTxsR k (pack name) action) $
-            \tx -> putStr $ printTx True tx
+        resE <- sendZmq (PostTxsR (pack name) masterM action)
+        handleResponse resE $ liftIO . putStr . printTx Nothing
     _ -> error "Could not parse txid"
   where
     txidM = hexToTxHash $ cs txidStr
@@ -314,13 +386,12 @@ cmdSign name txidStr = case txidM of
 cmdGetOffline :: String -> String -> Handler ()
 cmdGetOffline name tidStr = case tidM of
     Just tid -> do
-        k <- R.asks configKeyRing
-        sendZmq (GetOfflineTxR k (pack name) tid) $
-            \(OfflineTxData tx dat) -> do
-                putStrLn $ unwords
-                    [ "Tx      :", cs $ encodeHex $ encode' tx ]
-                putStrLn $ unwords
-                    [ "CoinData:", cs $ encodeHex $ cs $ encode dat ]
+        resE <- sendZmq (GetOfflineTxR (pack name) tid)
+        handleResponse resE $ \(OfflineTxData tx dat) -> do
+            liftIO $ putStrLn $ unwords
+                [ "Tx      :", cs $ encodeHex $ encode' tx ]
+            liftIO $ putStrLn $ unwords
+                [ "CoinData:", cs $ encodeHex $ cs $ encode dat ]
     _ -> error "Could not parse txid"
   where
     tidM = hexToTxHash $ cs tidStr
@@ -328,11 +399,13 @@ cmdGetOffline name tidStr = case tidM of
 cmdSignOffline :: String -> String -> String -> Handler ()
 cmdSignOffline name txStr datStr = case (txM, datM) of
     (Just tx, Just dat) -> do
-        k <- R.asks configKeyRing
-        sendZmq (PostOfflineTxR k (pack name) tx dat) $
-            \(TxCompleteRes tx' c) -> do
-                putStrLn $ unwords [ "Tx      :", cs $ encodeHex $ encode' tx' ]
-                putStrLn $ unwords [ "Complete:", if c then "Yes" else "No" ]
+        masterM <- getSigningKeys name
+        resE <- sendZmq (PostOfflineTxR (pack name) masterM tx dat)
+        handleResponse resE $ \(TxCompleteRes tx' c) -> do
+            liftIO $ putStrLn $ unwords
+                [ "Tx      :", cs $ encodeHex $ encode' tx' ]
+            liftIO $ putStrLn $ unwords
+                [ "Complete:", if c then "Yes" else "No" ]
     _ -> error "Could not decode input data"
   where
     datM = decode . cs =<< decodeHex (cs datStr)
@@ -340,48 +413,48 @@ cmdSignOffline name txStr datStr = case (txM, datM) of
 
 cmdBalance :: String -> Handler ()
 cmdBalance name = do
-    k <- R.asks configKeyRing
     m <- R.asks configMinConf
     o <- R.asks configOffline
-    sendZmq (GetBalanceR k (pack name) m o) $
-        \bal ->
-            putStrLn $ unwords [ "Balance:", show (bal :: Word64) ]
+    resE <- sendZmq (GetBalanceR (pack name) m o)
+    handleResponse resE $ \bal ->
+        liftIO $ putStrLn $ unwords [ "Balance:", show (bal :: Word64) ]
 
 cmdGetTx :: String -> String -> Handler ()
 cmdGetTx name tidStr = case tidM of
     Just tid -> do
-        k <- R.asks configKeyRing
-        sendZmq (GetTxR k (pack name) tid) $
-            \tx -> putStr $ printTx True tx
+        resE <- sendZmq (GetTxR (pack name) tid)
+        handleResponse resE $ liftIO . putStr . printTx Nothing
     _ -> error "Could not parse txid"
   where
     tidM = hexToTxHash $ cs tidStr
 
 cmdRescan :: [String] -> Handler ()
-cmdRescan timeLs =
-    sendZmq (PostNodeR $ NodeActionRescan timeM) $ \(RescanRes ts) ->
-        putStrLn $ unwords [ "Timestamp:", show ts]
+cmdRescan timeLs = do
+    resE <- sendZmq (PostNodeR $ NodeActionRescan timeM)
+    handleResponse resE $ \(RescanRes ts) ->
+        liftIO $ putStrLn $ unwords [ "Timestamp:", show ts]
   where
     timeM = read <$> listToMaybe timeLs
 
 cmdDeleteTx :: String -> Handler ()
 cmdDeleteTx tidStr = case tidM of
-    Just tid -> sendZmq (DeleteTxIdR tid) $ \() -> return ()
+    Just tid -> do
+        resE <- sendZmq (DeleteTxIdR tid)
+        handleResponse resE $ \() -> return ()
     Nothing -> error "Could not parse txid"
   where
     tidM = hexToTxHash $ cs tidStr
 
-cmdDecodeTx :: String -> Handler ()
-cmdDecodeTx txStr = do
-    when (isNothing txM) $ error "Could not parse transaction"
+cmdDecodeTx :: Handler ()
+cmdDecodeTx = do
+    tx <- getHexTx
     format <- R.asks configFormat
     liftIO $ formatStr $ cs $ case format of
-        OutputJSON -> cs jsn
-        _          -> YAML.encode val
+        OutputJSON -> cs $ jsn tx
+        _          -> YAML.encode $ val tx
   where
-    txM = decodeToMaybe =<< decodeHex (cs txStr)
-    val = encodeTxJSON $ fromJust txM
-    jsn = JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } val
+    val = encodeTxJSON
+    jsn = JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } . val
 
 cmdVersion :: Handler ()
 cmdVersion = liftIO $ do
@@ -392,7 +465,8 @@ cmdVersion = liftIO $ do
 cmdStatus :: Handler ()
 cmdStatus = do
     v <- R.asks configVerbose
-    sendZmq (PostNodeR NodeActionStatus) $ mapM_ putStrLn . printNodeStatus v
+    resE <- sendZmq (PostNodeR NodeActionStatus)
+    handleResponse resE $ mapM_ (liftIO . putStrLn) . printNodeStatus v
 
 cmdKeyPair :: Handler ()
 cmdKeyPair = do
@@ -403,14 +477,32 @@ cmdKeyPair = do
 
 {- Helpers -}
 
+handleResponse
+    :: (FromJSON a, ToJSON a)
+    => Either String (WalletResponse a)
+    -> (a -> Handler ())
+    -> Handler ()
+handleResponse resE handle = case resE of
+    Right (ResponseValid (Just a)) -> formatOutput a =<< R.asks configFormat
+    Right (ResponseValid Nothing)  -> return ()
+    Right (ResponseError err)      -> error $ unpack err
+    Left err                       -> error err
+  where
+    formatOutput a format = case format of
+        OutputJSON   -> liftIO . formatStr $ cs $
+            JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } a
+        OutputYAML   -> liftIO . formatStr $ cs $ YAML.encode a
+        OutputNormal -> handle a
+
 sendZmq :: (FromJSON a, ToJSON a)
-        => WalletRequest -> (a -> IO ()) -> Handler ()
-sendZmq req handle = do
+        => WalletRequest
+        -> Handler (Either String (WalletResponse a))
+sendZmq req = do
     sockName <- R.asks configConnect
     clientKeyM <- R.asks configClientKey
     clientKeyPubM <- R.asks configClientKeyPub
     serverKeyPubM <- R.asks configServerKeyPub
-    resE <- liftIO $ runZMQ $ do
+    liftIO $ runZMQ $ do
         sock <- socket Req
         when (isJust clientKeyM) $ do
             let clientKey = fromJust clientKeyM
@@ -426,18 +518,6 @@ sendZmq req handle = do
         connect sock sockName
         send sock [] (cs $ encode req)
         eitherDecode . cs <$> receive sock
-    case resE of
-        Right (ResponseValid (Just a)) -> formatOutput a =<< R.asks configFormat
-        Right (ResponseValid Nothing)  -> return ()
-        Right (ResponseError err)      -> error $ unpack err
-        Left err                       -> error err
-  where
-    formatOutput a format = liftIO $ case format of
-        OutputJSON   -> formatStr $ cs $
-            JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } a
-        OutputYAML   -> formatStr $
-            cs $ YAML.encode a
-        OutputNormal -> handle a
 
 formatStr :: String -> IO ()
 formatStr str = forM_ (lines str) putStrLn
@@ -570,38 +650,32 @@ encodeSigHashJSON sh = case sh of
 
 {- Print utilities -}
 
-printKeyRing :: JsonKeyRing -> String
-printKeyRing JsonKeyRing{..} = unlines $
-    [ "KeyRing: " ++ unpack jsonKeyRingName ]
-    ++
-    [ "Master key: " ++ cs (xPrvExport m)
-    | m <- maybeToList jsonKeyRingMaster
-    ]
-    ++
-    [ "Mnemonic: " ++ cs m
-    | m <- maybeToList jsonKeyRingMnemonic
-    ]
-
 printAccount :: JsonAccount -> String
 printAccount JsonAccount{..} = unlines $
-    [ "Account: " ++ unpack jsonAccountName
-    , "Type   : " ++ showType
-    , "Gap    : " ++ show jsonAccountGap
+    [ "Account : " ++ unpack jsonAccountName
+    , "Type    : " ++ showType
+    , "Gap     : " ++ show jsonAccountGap
     ]
     ++
-    [ "Deriv  : " ++ pathToStr d
+    [ "Deriv   : " ++ pathToStr d
     | d <- maybeToList jsonAccountDerivation
+    ]
+    ++
+    [ "Mnemonic: " ++ cs ms
+    | ms <- maybeToList jsonAccountMnemonic
     ]
     ++
     concat [ printKeys | not (null jsonAccountKeys) ]
   where
     printKeys =
-        ("Keys   : " ++ cs (xPubExport (head jsonAccountKeys))) :
-        map (("         " ++) . cs . xPubExport) (tail jsonAccountKeys)
+        ("Keys    : " ++ cs (xPubExport (head jsonAccountKeys))) :
+        map (("          " ++) . cs . xPubExport) (tail jsonAccountKeys)
     showType = case jsonAccountType of
-        AccountRegular r -> if r then "Read-Only" else "Regular"
-        AccountMultisig r m n -> unwords
-            [ if r then "Read-Only Multisig" else "Multisig"
+        AccountRegular -> if isNothing jsonAccountMaster
+                              then "Read-Only" else "Regular"
+        AccountMultisig m n -> unwords
+            [ if isNothing jsonAccountMaster
+                 then "Read-Only Multisig" else "Multisig"
             , show m, "of", show n
             ]
 
@@ -611,17 +685,17 @@ printAddress JsonAddr{..} = unwords $
     ++
     [ "(" ++ unpack jsonAddrLabel ++ ")" | not (null $ unpack jsonAddrLabel) ]
     ++ concat
-    [ [ "[Received: " ++ show (balanceInfoInBalance bal)   ++ "]"
-        , "[Coins: "  ++ show (balanceInfoCoins bal)  ++ "]"
-        , "[Spent Coins: " ++ show (balanceInfoSpentCoins bal) ++ "]"
-        ]
-        | isJust jsonAddrBalance && balanceInfoCoins bal > 0
+    [ [ "[Received: "    ++ show (balanceInfoInBalance  bal) ++ "]"
+      , "[Coins: "       ++ show (balanceInfoCoins      bal) ++ "]"
+      , "[Spent Coins: " ++ show (balanceInfoSpentCoins bal) ++ "]"
       ]
+    | isJust jsonAddrBalance && balanceInfoCoins bal > 0
+    ]
   where
     bal = fromMaybe (error "Could not get address balance") jsonAddrBalance
 
-printTx :: Bool -> JsonTx -> String
-printTx b tx@JsonTx{..} = unlines $
+printTx :: Maybe Address -> JsonTx -> String
+printTx aM tx@JsonTx{..} = unlines $
     [ "Id         : " ++ cs (txHashToHex jsonTxHash) ]
     ++
     [ "Value      : " ++ printTxType jsonTxType ++ " " ++ show jsonTxValue ]
@@ -647,7 +721,7 @@ printTx b tx@JsonTx{..} = unlines $
         cs (addrToBase58 addr) :
         [ show v | v <- maybeToList valM ]
         ++
-        [ "<-" | b && local ]
+        [ "<-" | maybe local (== addr) aM ]
 
 printTxConfidence :: JsonTx -> String
 printTxConfidence JsonTx{..} = case jsonTxConfidence of

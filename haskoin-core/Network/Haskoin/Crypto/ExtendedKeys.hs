@@ -118,6 +118,9 @@ data XPrvKey = XPrvKey
     , xPrvKey    :: !PrvKeyC   -- ^ The private key of this extended key node.
     } deriving (Eq)
 
+instance Ord XPrvKey where
+    compare k1 k2 = xPrvExport k1 `compare` xPrvExport k2
+
 -- TODO: Test
 instance Show XPrvKey where
     showsPrec d k = showParen (d > 10) $
@@ -155,6 +158,9 @@ data XPubKey = XPubKey
     , xPubChain  :: !ChainCode -- ^ Chain code.
     , xPubKey    :: !PubKeyC   -- ^ The public key of this extended key node.
     } deriving (Eq)
+
+instance Ord XPubKey where
+    compare k1 k2 = xPubExport k1 `compare` xPubExport k2
 
 -- TODO: Test
 instance Show XPubKey where
@@ -509,8 +515,7 @@ toGeneric p = case p of
 
 -- | Derive a private key from a derivation path
 derivePath :: DerivPathI t -> XPrvKey -> XPrvKey
-derivePath path key =
-    go id path $ key
+derivePath = go id
   where
     -- Build the full derivation function starting from the end
     go f p = case p of
@@ -520,8 +525,7 @@ derivePath path key =
 
 -- | Derive a public key from a soft derivation path
 derivePubPath :: SoftPath -> XPubKey -> XPubKey
-derivePubPath path key =
-    go id path $ key
+derivePubPath = go id
   where
     -- Build the full derivation function starting from the end
     go f p = case p of
@@ -638,7 +642,6 @@ parsePath str = do
         _   -> Nothing
   where
     (x : xs) = splitOn "/" str
-                
 
 concatBip32Segments :: [Bip32PathIndex] -> DerivPath
 concatBip32Segments xs = foldl' appendBip32Segment Deriv xs

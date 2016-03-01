@@ -28,11 +28,11 @@ import qualified Control.Monad.Reader as R (runReaderT)
 
 import Data.Default (def)
 import Data.FileEmbed (embedFile)
-import qualified Data.Text as T (pack, unpack)
 import Data.Yaml (decodeFileEither)
 import Data.String.Conversions (cs)
 
 import Network.Haskoin.Constants
+import Network.Haskoin.Crypto
 import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Client.Commands
 import Network.Haskoin.Wallet.Types
@@ -56,21 +56,30 @@ warningMsg = unwords
 usage :: [String]
 usage = warningMsg : usageInfo usageHeader options : cmdHelp
 
+read' :: Read x => String -> String -> x
+read' e s = case reads s of
+    [(x, "")] -> x
+    _ -> error e
+
 options :: [OptDescr (Config -> Config)]
 options =
-    [ Option "k" ["keyring"]
-        (ReqArg (\s cfg -> cfg { configKeyRing = T.pack s }) "NAME") $
-        "Default: " ++ T.unpack (configKeyRing def)
-    , Option "c" ["count"]
-        (ReqArg (\s cfg -> cfg { configCount = read s }) "INT") $
-        "Items per page. Default: " ++ show (configCount def)
+    [ Option "c" ["count"]
+        ( ReqArg
+            (\s cfg -> cfg { configCount = read' "Could not parse count" s })
+            "INT"
+        ) $ "Items per page. Default: " ++ show (configCount def)
     , Option "m" ["minconf"]
-        (ReqArg (\s cfg -> cfg { configMinConf = read s }) "INT") $
-        "Minimum confirmations. Default: "
+        ( ReqArg
+            (\s cfg ->
+                cfg { configMinConf = read' "Colud not parse minconf" s }
+            ) "INT"
+        ) $ "Minimum confirmations. Default: "
             ++ show (configMinConf def)
     , Option "f" ["fee"]
-        (ReqArg (\s cfg -> cfg { configFee = read s }) "INT") $
-        "Fee per kilobyte. Default: " ++ show (configFee def)
+        ( ReqArg
+            (\s cfg -> cfg { configFee = read' "Could not parse fee" s })
+            "INT"
+        ) $ "Fee per kilobyte. Default: " ++ show (configFee def)
     , Option "R" ["rcptfee"]
         (NoArg $ \cfg -> cfg { configRcptFee = True }) $
         "Recipient pays fee. Default: " ++ show (configRcptFee def)
@@ -88,9 +97,13 @@ options =
         (NoArg $ \cfg -> cfg { configReversePaging = True }) $
         "Reverse paging. Default: "
             ++ show (configReversePaging def)
-    , Option "p" ["pass"]
-        (ReqArg (\s cfg -> cfg { configPass = Just $ T.pack s }) "PASS")
-        "Mnemonic passphrase"
+    , Option "p" ["path"]
+        ( ReqArg ( \s cfg -> case parseHard s of
+                       Just p -> cfg { configPath = Just p }
+                       Nothing -> error "Could not parse derivation path"
+                 ) "PATH"
+        )
+        "Derivation path (e.g. m/44'/3')"
     , Option "j" ["json"]
         (NoArg $ \cfg -> cfg { configFormat = OutputJSON })
         "Output JSON"
@@ -165,40 +178,37 @@ clientMain = getArgs >>= \args -> case getOpt Permute options args of
 
 dispatchCommand :: Config -> [String] -> IO ()
 dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
-    ["start"]                              -> cmdStart
-    ["stop"]                               -> cmdStop
-    "newkeyring"  : mnemonic               -> cmdNewKeyRing mnemonic
-    ["keyring"]                            -> cmdKeyRing
-    ["keyrings"]                           -> cmdKeyRings
-    "newacc"      : [name]                 -> cmdNewAcc name
-    "newms"       : name : m : n : ks      -> cmdNewMS False name m n ks
-    "newread"     : [name, key]            -> cmdNewRead name key
-    "newreadms"   : name : m : n : ks      -> cmdNewMS True name m n ks
-    "addkeys"     : name : ks              -> cmdAddKeys name ks
-    "setgap"      : [name, gap]            -> cmdSetGap name gap
-    "account"     : [name]                 -> cmdAccount name
-    ["accounts"]                           -> cmdAccounts
-    "list"        : name : page            -> cmdList name page
-    "unused"      : [name]                 -> cmdUnused name
-    "label"       : [name, index, label]   -> cmdLabel name index label
-    "txs"         : name : page            -> cmdTxs name page
-    "addrtxs"     : name : index : page    -> cmdAddrTxs name index page
-    "genaddrs"    : [name, i]              -> cmdGenAddrs name i
-    "send"        : [name, add, amnt]      -> cmdSend name add amnt
-    "sendmany"    : name : xs              -> cmdSendMany name xs
-    "import"      : [name, tx]             -> cmdImport name tx
-    "sign"        : [name, txid]           -> cmdSign name txid
-    "gettx"       : [name, txid]           -> cmdGetTx name txid
-    "balance"     : [name]                 -> cmdBalance name
-    "getoffline"  : [name, txid]           -> cmdGetOffline name txid
-    "signoffline" : [name, tx, dat]        -> cmdSignOffline name tx dat
-    "rescan"      : rescantime             -> cmdRescan rescantime
-    "deletetx"    : [txid]                 -> cmdDeleteTx txid
-    "decodetx"    : [tx]                   -> cmdDecodeTx tx
-    ["status"]                             -> cmdStatus
-    ["keypair"]                            -> cmdKeyPair
-    ["version"]                            -> cmdVersion
-    ["help"]           -> liftIO $ forM_ usage (hPutStrLn stderr)
+    "start"                               : [] -> cmdStart
+    "stop"                                : [] -> cmdStop
+    "newacc"      : name                  : [] -> cmdNewAcc False name []
+    "newread"     : name                  : [] -> cmdNewAcc True  name []
+    "newms"       : name : m : n          : [] -> cmdNewAcc False name [m, n]
+    "newreadms"   : name : m : n          : [] -> cmdNewAcc True  name [m, n]
+    "addkey"      : name                  : [] -> cmdAddKey name
+    "setgap"      : name : gap            : [] -> cmdSetGap name gap
+    "account"     : name                  : [] -> cmdAccount name
+    "accounts"                            : [] -> cmdAccounts
+    "list"        : name : page                -> cmdList name page
+    "unused"      : name                  : [] -> cmdUnused name
+    "label"       : name : index : label  : [] -> cmdLabel name index label
+    "txs"         : name : page                -> cmdTxs name page
+    "addrtxs"     : name : index : page        -> cmdAddrTxs name index page
+    "genaddrs"    : name : i              : [] -> cmdGenAddrs name i
+    "send"        : name : add : amnt     : [] -> cmdSend name add amnt
+    "sendmany"    : name : xs                  -> cmdSendMany name xs
+    "import"      : name                  : [] -> cmdImport name
+    "sign"        : name : txid           : [] -> cmdSign name txid
+    "gettx"       : name : txid           : [] -> cmdGetTx name txid
+    "balance"     : name                  : [] -> cmdBalance name
+    "getoffline"  : name : txid           : [] -> cmdGetOffline name txid
+    "signoffline" : name : tx : dat       : [] -> cmdSignOffline name tx dat
+    "rescan"      : rescantime                 -> cmdRescan rescantime
+    "deletetx"    : txid                  : [] -> cmdDeleteTx txid
+    "decodetx"                            : [] -> cmdDecodeTx
+    "status"                              : [] -> cmdStatus
+    "keypair"                             : [] -> cmdKeyPair
+    "version"                             : [] -> cmdVersion
+    "help"        : [] -> liftIO $ forM_ usage (hPutStrLn stderr)
     []                 -> liftIO $ forM_ usage (hPutStrLn stderr)
     _ -> liftIO $
         forM_ ("Invalid command" : usage) (hPutStrLn stderr) >> exitFailure

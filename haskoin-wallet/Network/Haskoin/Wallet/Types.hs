@@ -1,10 +1,8 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Network.Haskoin.Wallet.Types
-( KeyRingName
-, AccountName
+( AccountName
 
 -- JSON Types
-, JsonKeyRing(..)
 , JsonAccount(..)
 , JsonAddr(..)
 , JsonCoin(..)
@@ -13,7 +11,6 @@ module Network.Haskoin.Wallet.Types
 -- Request Types
 , WalletRequest(..)
 , ListRequest(..)
-, NewKeyRing(..)
 , NewAccount(..)
 , SetAccountGap(..)
 , OfflineTxData(..)
@@ -59,26 +56,35 @@ import Data.Maybe (maybeToList)
 import Data.Char (toLower)
 import Data.Word (Word32, Word64)
 import Data.Text (Text)
+import Data.String.Conversions (cs)
 import Data.List.Split (chunksOf)
-import qualified Data.ByteString.Lazy as L
 import Data.Aeson.Types
     ( Options(..)
     , SumEncoding(..)
     , defaultOptions
     , defaultTaggedObject
     )
-import Data.String.Conversions (cs)
 import Data.Aeson.TH (deriveJSON)
 import Data.Aeson
-    ( Value (..), FromJSON, ToJSON, encode
-    , decodeStrict', withObject
+    ( Value (..), FromJSON, ToJSON
+    , withObject, encode, decodeStrict'
     , (.=), (.:), (.:?), (.!=)
     , object, parseJSON, toJSON
     )
 
-import Database.Persist.Class (PersistField, toPersistValue, fromPersistValue)
-import Database.Persist.Types (PersistValue(..))
-import Database.Persist.Sql (PersistFieldSql, SqlType(..), sqlType)
+import Database.Persist.Types
+    ( PersistValue(..)
+    )
+import Database.Persist.Class
+    ( PersistField
+    , toPersistValue
+    , fromPersistValue
+    )
+import Database.Persist.Sql
+    ( PersistFieldSql
+    , SqlType(..)
+    , sqlType
+    )
 import qualified Database.Persist as P
     ( insertMany_, PersistEntity
     , PersistEntityBackend
@@ -102,7 +108,6 @@ import Network.Haskoin.Node
 import Network.Haskoin.Util
 import Network.Haskoin.Wallet.Database
 
-type KeyRingName = Text
 type AccountName = Text
 
 -- TODO: Add NFData instances for all those types
@@ -164,38 +169,25 @@ instance NFData BalanceInfo where
         rnf balanceInfoCoins `seq`
         rnf balanceInfoSpentCoins
 
-data NewKeyRing = NewKeyRing
-    { newKeyRingKeyRingName :: !KeyRingName
-    , newKeyRingPassphrase  :: !(Maybe Text)
-    , newKeyRingMnemonic    :: !(Maybe Text)
-    } deriving (Eq, Read, Show)
-
-$(deriveJSON (dropFieldLabel 10) ''NewKeyRing)
-
 data AccountType
     = AccountRegular
-        { accountTypeRead         :: !Bool }
     | AccountMultisig
-        { accountTypeRead         :: !Bool
-        , accountTypeRequiredSigs :: !Int
+        { accountTypeRequiredSigs :: !Int
         , accountTypeTotalKeys    :: !Int
         }
     deriving (Eq, Show, Read)
 
 instance NFData AccountType where
     rnf t = case t of
-        AccountRegular r -> rnf r
-        AccountMultisig r m n -> rnf r `seq` rnf m `seq` rnf n
+        AccountRegular -> ()
+        AccountMultisig m n -> rnf m `seq` rnf n
 
 instance ToJSON AccountType where
     toJSON accType = case accType of
-        AccountRegular r -> object
-            [ "type"         .= String "regular"
-            , "readonly"     .= r
-            ]
-        AccountMultisig r m n -> object
+        AccountRegular -> object
+            [ "type"         .= String "regular" ]
+        AccountMultisig m n -> object
             [ "type"         .= String "multisig"
-            , "readonly"     .= r
             , "requiredsigs" .= m
             , "totalkeys"    .= n
             ]
@@ -203,16 +195,19 @@ instance ToJSON AccountType where
 instance FromJSON AccountType where
     parseJSON = withObject "AccountType" $ \o ->
         o .: "type" >>= \t -> case (t :: Text) of
-            "regular"  -> AccountRegular <$> o .: "readonly"
-            "multisig" -> AccountMultisig <$> o .: "readonly"
-                                          <*> o .: "requiredsigs"
+            "regular"  -> return AccountRegular
+            "multisig" -> AccountMultisig <$> o .: "requiredsigs"
                                           <*> o .: "totalkeys"
             _ -> mzero
 
 data NewAccount = NewAccount
-    { newAccountAccountName  :: !AccountName
-    , newAccountType         :: !AccountType
-    , newAccountKeys         :: ![XPubKey]
+    { newAccountName     :: !AccountName
+    , newAccountType     :: !AccountType
+    , newAccountMnemonic :: !(Maybe Text)
+    , newAccountMaster   :: !(Maybe XPrvKey)
+    , newAccountDeriv    :: !(Maybe HardPath)
+    , newAccountKeys     :: ![XPubKey]
+    , newAccountReadOnly :: !Bool
     }
     deriving (Eq, Show, Read)
 
@@ -337,28 +332,25 @@ addrTypeIndex AddressExternal = 0
 addrTypeIndex AddressInternal = 1
 
 data WalletRequest
-    = GetKeyRingsR
-    | GetKeyRingR !KeyRingName
-    | PostKeyRingsR !NewKeyRing
-    | GetAccountsR !KeyRingName
-    | PostAccountsR !KeyRingName !NewAccount
-    | GetAccountR !KeyRingName !AccountName
-    | PostAccountKeysR !KeyRingName !AccountName ![XPubKey]
-    | PostAccountGapR !KeyRingName !AccountName !SetAccountGap
-    | GetAddressesR !KeyRingName !AccountName
+    = GetAccountsR
+    | PostAccountsR !NewAccount
+    | GetAccountR !AccountName
+    | PostAccountKeysR !AccountName ![XPubKey]
+    | PostAccountGapR !AccountName !SetAccountGap
+    | GetAddressesR !AccountName
         !AddressType !Word32 !Bool !ListRequest
-    | GetAddressesUnusedR !KeyRingName !AccountName !AddressType
-    | GetAddressR !KeyRingName !AccountName !KeyIndex !AddressType
+    | GetAddressesUnusedR !AccountName !AddressType
+    | GetAddressR !AccountName !KeyIndex !AddressType
         !Word32 !Bool
-    | PutAddressR !KeyRingName !AccountName !KeyIndex !AddressType !AddressLabel
-    | PostAddressesR !KeyRingName !AccountName !KeyIndex !AddressType
-    | GetTxsR !KeyRingName !AccountName !ListRequest
-    | GetAddrTxsR !KeyRingName !AccountName !KeyIndex !AddressType !ListRequest
-    | PostTxsR !KeyRingName !AccountName !TxAction
-    | GetTxR !KeyRingName !AccountName !TxHash
-    | GetOfflineTxR !KeyRingName !AccountName !TxHash
-    | PostOfflineTxR !KeyRingName !AccountName !Tx ![CoinSignData]
-    | GetBalanceR !KeyRingName !AccountName !Word32 !Bool
+    | PutAddressR !AccountName !KeyIndex !AddressType !AddressLabel
+    | PostAddressesR !AccountName !KeyIndex !AddressType
+    | GetTxsR !AccountName !ListRequest
+    | GetAddrTxsR !AccountName !KeyIndex !AddressType !ListRequest
+    | PostTxsR !AccountName !(Maybe XPrvKey) !TxAction
+    | GetTxR !AccountName !TxHash
+    | GetOfflineTxR !AccountName !TxHash
+    | PostOfflineTxR !AccountName !(Maybe XPrvKey) !Tx ![CoinSignData]
+    | GetBalanceR !AccountName !Word32 !Bool
     | PostNodeR !NodeAction
     | DeleteTxIdR !TxHash
 
@@ -376,38 +368,11 @@ $(deriveJSON
 
 {- JSON Types -}
 
-data JsonKeyRing = JsonKeyRing
-    { jsonKeyRingName     :: !Text
-    , jsonKeyRingMaster   :: !(Maybe XPrvKey)
-    , jsonKeyRingMnemonic :: !(Maybe Mnemonic)
-    , jsonKeyRingCreated  :: !UTCTime
-    }
-    deriving (Eq, Show, Read)
-
-instance ToJSON JsonKeyRing where
-    toJSON jkr = object
-        [ "name"     .= jsonKeyRingName jkr
-        , "master"   .= jsonKeyRingMaster jkr
-        , "mnemonic" .= fmap (String . cs) (jsonKeyRingMnemonic jkr)
-        , "created"  .= jsonKeyRingCreated jkr
-        ]
-
-instance FromJSON JsonKeyRing where
-    parseJSON = withObject "JsonKeyRing" $ \o -> do
-        name <- o .: "name"
-        master <- o .: "master"
-        mnemonic <- o .:? "mnemonic" .!= Nothing
-        created <- o .: "created"
-        return JsonKeyRing
-            { jsonKeyRingName = name
-            , jsonKeyRingMaster = master
-            , jsonKeyRingMnemonic = cs <$> (mnemonic :: Maybe Text)
-            , jsonKeyRingCreated = created
-            }
-
 data JsonAccount = JsonAccount
     { jsonAccountName       :: !Text
     , jsonAccountType       :: !AccountType
+    , jsonAccountMaster     :: !(Maybe XPrvKey)
+    , jsonAccountMnemonic   :: !(Maybe Text)
     , jsonAccountDerivation :: !(Maybe HardPath)
     , jsonAccountKeys       :: ![XPubKey]
     , jsonAccountGap        :: !Word32
@@ -422,8 +387,6 @@ data JsonAddr = JsonAddr
     , jsonAddrIndex          :: !KeyIndex
     , jsonAddrType           :: !AddressType
     , jsonAddrLabel          :: !Text
-    , jsonAddrFullDerivation :: !(Maybe DerivPath)
-    , jsonAddrDerivation     :: !SoftPath
     , jsonAddrRedeem         :: !(Maybe ScriptOutput)
     , jsonAddrKey            :: !(Maybe PubKeyC)
     , jsonAddrCreated        :: !UTCTime
@@ -518,7 +481,9 @@ $(deriveJSON (dropFieldLabel 7) ''BTCNode)
 {- Persistent Instances -}
 
 instance PersistField XPrvKey where
-    toPersistValue = PersistByteString . xPrvExport
+    toPersistValue = PersistText . cs . xPrvExport
+    fromPersistValue (PersistText txt) =
+        maybeToEither "Invalid Persistent XPrvKey" $ xPrvImport $ cs txt
     fromPersistValue (PersistByteString bs) =
         maybeToEither "Invalid Persistent XPrvKey" $ xPrvImport bs
     fromPersistValue _ = Left "Invalid Persistent XPrvKey"
@@ -527,7 +492,9 @@ instance PersistFieldSql XPrvKey where
     sqlType _ = SqlString
 
 instance PersistField [XPubKey] where
-    toPersistValue = PersistByteString . L.toStrict . encode
+    toPersistValue = PersistText . cs . encode
+    fromPersistValue (PersistText txt) =
+        maybeToEither "Invalid Persistent XPubKey" $ decodeStrict' $ cs txt
     fromPersistValue (PersistByteString bs) =
         maybeToEither "Invalid Persistent XPubKey" $ decodeStrict' bs
     fromPersistValue _ = Left "Invalid Persistent XPubKey"
@@ -536,61 +503,79 @@ instance PersistFieldSql [XPubKey] where
     sqlType _ = SqlString
 
 instance PersistField DerivPath where
-    toPersistValue = PersistByteString . cs . pathToStr
-    fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent DerivPath" . fmap getParsedPath .  parsePath . cs $ bs
+    toPersistValue = PersistText . cs . pathToStr
+    fromPersistValue (PersistText txt) = maybeToEither
+        "Invalid Persistent DerivPath" . fmap getParsedPath .
+        parsePath . cs $ txt
+    fromPersistValue (PersistByteString bs) = maybeToEither
+        "Invalid Persistent DerivPath" . fmap getParsedPath .
+        parsePath . cs $ bs
     fromPersistValue _ = Left "Invalid Persistent DerivPath"
 
 instance PersistFieldSql DerivPath where
     sqlType _ = SqlString
 
 instance PersistField HardPath where
-    toPersistValue = PersistByteString . cs . pathToStr
-    fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent HardPath" $ parseHard $ cs bs
+    toPersistValue = PersistText . cs . pathToStr
+    fromPersistValue (PersistText txt) = maybeToEither
+        "Invalid Persistent HardPath" $ parseHard $ cs txt
+    fromPersistValue (PersistByteString bs) = maybeToEither
+        "Invalid Persistent HardPath" $ parseHard $ cs bs
     fromPersistValue _ = Left "Invalid Persistent HardPath"
 
 instance PersistFieldSql HardPath where
     sqlType _ = SqlString
 
 instance PersistField SoftPath where
-    toPersistValue = PersistByteString . cs . pathToStr
-    fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent SoftPath" $ parseSoft $ cs bs
+    toPersistValue = PersistText . cs . pathToStr
+    fromPersistValue (PersistText txt) = maybeToEither
+        "Invalid Persistent SoftPath" $ parseSoft $ cs txt
+    fromPersistValue (PersistByteString bs) = maybeToEither
+        "Invalid Persistent SoftPath" $ parseSoft $ cs bs
     fromPersistValue _ = Left "Invalid Persistent SoftPath"
 
 instance PersistFieldSql SoftPath where
     sqlType _ = SqlString
 
 instance PersistField AccountType where
-    toPersistValue = PersistByteString . L.toStrict . encode
-    fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent AccountType" $ decodeStrict' bs
+    toPersistValue = PersistText . cs . encode
+    fromPersistValue (PersistText txt) = maybeToEither
+        "Invalid Persistent AccountType" $ decodeStrict' $ cs txt
+    fromPersistValue (PersistByteString bs) = maybeToEither
+        "Invalid Persistent AccountType" $ decodeStrict' bs
     fromPersistValue _ = Left "Invalid Persistent AccountType"
 
 instance PersistFieldSql AccountType where
     sqlType _ = SqlString
 
 instance PersistField AddressType where
-    toPersistValue ts = PersistInt64 $ case ts of
-        AddressExternal -> 0
-        AddressInternal -> 1
+    toPersistValue ts = PersistBool $ case ts of
+        AddressExternal -> True
+        AddressInternal -> False
 
-    fromPersistValue (PersistInt64 t) = case t of
-        0 -> return AddressExternal
-        1 -> return AddressInternal
-        _ -> Left "Invalid Persistent AddressType"
+    fromPersistValue (PersistBool b) = return $
+        if b then AddressExternal else AddressInternal
+
+    fromPersistValue (PersistInt64 i) = return $ case i of
+        0 -> AddressInternal
+        _ -> AddressExternal
 
     fromPersistValue _ = Left "Invalid Persistent AddressType"
 
 instance PersistFieldSql AddressType where
-    sqlType _ = SqlInt64
+    sqlType _ = SqlBool
 
 instance PersistField TxType where
-    toPersistValue ts = PersistByteString $ case ts of
+    toPersistValue ts = PersistText $ case ts of
         TxIncoming -> "incoming"
         TxOutgoing -> "outgoing"
         TxSelf     -> "self"
+
+    fromPersistValue (PersistText txt) = case txt of
+        "incoming" -> return TxIncoming
+        "outgoing" -> return TxOutgoing
+        "self"     -> return TxSelf
+        _ -> Left "Invalid Persistent TxType"
 
     fromPersistValue (PersistByteString bs) = case bs of
         "incoming" -> return TxIncoming
@@ -604,7 +589,9 @@ instance PersistFieldSql TxType where
     sqlType _ = SqlString
 
 instance PersistField Address where
-    toPersistValue = PersistByteString . addrToBase58
+    toPersistValue = PersistText . cs . addrToBase58
+    fromPersistValue (PersistText a) =
+        maybeToEither "Invalid Persistent Address" $ base58ToAddr $ cs a
     fromPersistValue (PersistByteString a) =
         maybeToEither "Invalid Persistent Address" $ base58ToAddr a
     fromPersistValue _ = Left "Invalid Persistent Address"
@@ -622,7 +609,9 @@ instance PersistFieldSql BloomFilter where
     sqlType _ = SqlBlob
 
 instance PersistField BlockHash where
-    toPersistValue = PersistByteString . blockHashToHex
+    toPersistValue = PersistText . cs . blockHashToHex
+    fromPersistValue (PersistText h) =
+        maybeToEither "Could not decode BlockHash" $ hexToBlockHash $ cs h
     fromPersistValue (PersistByteString h) =
         maybeToEither "Could not decode BlockHash" $ hexToBlockHash h
     fromPersistValue _ = Left "Invalid Persistent BlockHash"
@@ -631,7 +620,9 @@ instance PersistFieldSql BlockHash where
     sqlType _ = SqlString
 
 instance PersistField TxHash where
-    toPersistValue = PersistByteString . txHashToHex
+    toPersistValue = PersistText . cs . txHashToHex
+    fromPersistValue (PersistText h) =
+        maybeToEither "Invalid Persistent TxHash" $ hexToTxHash $ cs h
     fromPersistValue (PersistByteString h) =
         maybeToEither "Invalid Persistent TxHash" $ hexToTxHash h
     fromPersistValue _ = Left "Invalid Persistent TxHash"
@@ -640,11 +631,18 @@ instance PersistFieldSql TxHash where
     sqlType _ = SqlString
 
 instance PersistField TxConfidence where
-    toPersistValue tc = PersistByteString $ case tc of
+    toPersistValue tc = PersistText $ case tc of
         TxOffline  -> "offline"
         TxDead     -> "dead"
         TxPending  -> "pending"
         TxBuilding -> "building"
+
+    fromPersistValue (PersistText txt) = case txt of
+        "offline"  -> return TxOffline
+        "dead"     -> return TxDead
+        "pending"  -> return TxPending
+        "building" -> return TxBuilding
+        _ -> Left "Invalid Persistent TxConfidence"
 
     fromPersistValue (PersistByteString bs) = case bs of
         "offline"  -> return TxOffline
@@ -652,6 +650,7 @@ instance PersistField TxConfidence where
         "pending"  -> return TxPending
         "building" -> return TxBuilding
         _ -> Left "Invalid Persistent TxConfidence"
+
     fromPersistValue _ = Left "Invalid Persistent TxConfidence"
 
 instance PersistFieldSql TxConfidence where
@@ -667,7 +666,10 @@ instance PersistFieldSql Tx where
     sqlType _ = SqlOther "MEDIUMBLOB"
 
 instance PersistField PubKeyC where
-    toPersistValue = PersistByteString . encodeHex . encode'
+    toPersistValue = PersistText . cs . encodeHex . encode'
+    fromPersistValue (PersistText txt) =
+        maybeToEither "Invalid Persistent PubKeyC" $
+            decodeToMaybe =<< decodeHex (cs txt)
     fromPersistValue (PersistByteString bs) =
         maybeToEither "Invalid Persistent PubKeyC" $
             decodeToMaybe =<< decodeHex bs
@@ -687,14 +689,15 @@ instance PersistFieldSql ScriptOutput where
     sqlType _ = SqlBlob
 
 instance PersistField [AddressInfo] where
-    toPersistValue = PersistByteString . L.toStrict . encode
+    toPersistValue = PersistText . cs . encode
+    fromPersistValue (PersistText txt) =
+        maybeToEither "Invalid Persistent AddressInfo" $ decodeStrict' $ cs txt
     fromPersistValue (PersistByteString bs) =
         maybeToEither "Invalid Persistent AddressInfo" $ decodeStrict' bs
     fromPersistValue _ = Left "Invalid Persistent AddressInfo"
 
 instance PersistFieldSql [AddressInfo] where
     sqlType _ = SqlString
-
 
 {- Helpers -}
 

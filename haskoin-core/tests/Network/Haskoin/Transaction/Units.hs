@@ -97,7 +97,7 @@ runVerifyVec (SatoshiCoreTxTest description is bsTx) i =
             op = OutPoint
                 (decode' . BS.reverse . fromJust . decodeHex $ bsOutputHash)
                 (runGet' getWord32le  . fromJust . decodeHex $ bsOutputIndex)
-        in (s, op) 
+        in (s, op)
 
 -- These test vectors have been generated from bitcoind raw transaction api
 

@@ -8,11 +8,10 @@ import Network.Haskoin.Wallet
 
 instance Arbitrary AccountType where
     arbitrary = oneof
-        [ AccountRegular <$> arbitrary
+        [ return AccountRegular
         , do
             ArbitraryMSParam m n <- arbitrary
-            r <- arbitrary
-            return $ AccountMultisig r m n
+            return $ AccountMultisig m n
         ]
 
 instance Arbitrary NodeAction where

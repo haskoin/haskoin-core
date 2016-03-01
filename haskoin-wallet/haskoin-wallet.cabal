@@ -43,7 +43,7 @@ library
                      Network.Haskoin.Wallet.Internals
 
     other-modules: Network.Haskoin.Wallet.Types
-                   Network.Haskoin.Wallet.KeyRing
+                   Network.Haskoin.Wallet.Accounts
                    Network.Haskoin.Wallet.Transaction
                    Network.Haskoin.Wallet.Server.Handler
                    Network.Haskoin.Wallet.Client.Commands
@@ -76,6 +76,7 @@ library
                  , esqueleto                     >= 2.4       && < 2.5
                  , file-embed                    >= 0.0       && < 0.1
                  , filepath                      >= 1.4       && < 1.5
+                 , haskeline
                  , haskoin-core                  >= 0.3       && < 0.5
                  , haskoin-node                  >= 0.3       && < 0.5
                  , leveldb-haskell               >= 0.6       && < 0.7
@@ -103,6 +104,7 @@ library
                  , zeromq4-haskell               >= 0.6       && < 0.7
 
     ghc-options: -Wall
+                 -O3
 
   if flag(mysql)
     build-depends: persistent-mysql >= 2.2 && < 2.3
@@ -118,6 +120,10 @@ executable hw
     build-depends: base, haskoin-wallet
     hs-source-dirs: app
     ghc-options: -Wall
+                 -O3
+                 -threaded
+                 -rtsopts
+                 -with-rtsopts=-N4
 
 test-suite test-haskoin-wallet
     type: exitcode-stdio-1.0
@@ -147,6 +153,7 @@ test-suite test-haskoin-wallet
                  , unordered-containers          >= 0.2       && < 0.3
                  , HUnit                         >= 1.2       && < 1.4
                  , QuickCheck                    >= 2.8       && < 2.9
+                 , string-conversions            >= 0.4       && < 0.5
                  , test-framework                >= 0.8       && < 0.9
                  , test-framework-quickcheck2    >= 0.3       && < 0.4
                  , test-framework-hunit          >= 0.3       && < 0.4

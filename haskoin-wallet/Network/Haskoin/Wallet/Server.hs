@@ -62,7 +62,7 @@ import Network.Haskoin.Node.BlockChain
 import Network.Haskoin.Node.STM
 import Network.Haskoin.Node.HeaderTree
 
-import Network.Haskoin.Wallet.KeyRing
+import Network.Haskoin.Wallet.Accounts
 import Network.Haskoin.Wallet.Transaction
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Model
@@ -72,7 +72,7 @@ import Network.Haskoin.Wallet.Database
 
 data EventSession = EventSession
     { eventBatchSize :: !Int
-    , eventNewAddrs  :: !(M.Map KeyRingAccountId Word32)
+    , eventNewAddrs  :: !(M.Map AccountId Word32)
     }
     deriving (Eq, Show, Read)
 
@@ -270,7 +270,7 @@ merkleSync sem pool bSize = do
         -- prepending new values to it.
         _ -> return (lastMerkleM, reverse mTxsAcc, aMap)
     groupByAcc addrs =
-        let xs = map (\a -> (keyRingAddrAccount a, 1)) addrs
+        let xs = map (\a -> (walletAddrAccount a, 1)) addrs
         in  M.fromListWith (+) xs
     shouldRescan aMap = do
         -- Try to find an account whos gap is smaller than the number of new
@@ -278,10 +278,10 @@ merkleSync sem pool bSize = do
         res <- runDBPool sem pool $ splitSelect (M.assocs aMap) $ \ks ->
             from $ \a -> do
                 let andCond (ai, cnt) =
-                        a ^. KeyRingAccountId ==. val ai &&.
-                        a ^. KeyRingAccountGap <=. val cnt
+                        a ^. AccountId ==. val ai &&.
+                        a ^. AccountGap <=. val cnt
                 where_ $ join2 $ map andCond ks
-                return $ a ^. KeyRingAccountId
+                return $ a ^. AccountId
         return $ not $ null res
     -- Some logging of the blocks
     logBlockChainAction action = case action of
@@ -405,26 +405,23 @@ dispatchRequest :: ( MonadLoggerIO m
                    )
                 => WalletRequest -> Handler m (WalletResponse Value)
 dispatchRequest req = fmap ResponseValid $ case req of
-    GetKeyRingsR                     -> getKeyRingsR
-    GetKeyRingR r                    -> getKeyRingR r
-    PostKeyRingsR r                  -> postKeyRingsR r
-    GetAccountsR r                   -> getAccountsR r
-    PostAccountsR r na               -> postAccountsR r na
-    GetAccountR r n                  -> getAccountR r n
-    PostAccountKeysR r n ks          -> postAccountKeysR r n ks
-    PostAccountGapR r n g            -> postAccountGapR r n g
-    GetAddressesR r n t m o p        -> getAddressesR r n t m o p
-    GetAddressesUnusedR r n t        -> getAddressesUnusedR r n t
-    GetAddressR r n i t m o          -> getAddressR r n i t m o
-    PutAddressR r n i t l            -> putAddressR r n i t l
-    PostAddressesR r n i t           -> postAddressesR r n i t
-    GetTxsR r n p                    -> getTxsR r n p
-    GetAddrTxsR r n i t p            -> getAddrTxsR r n i t p
-    PostTxsR r n a                   -> postTxsR r n a
-    GetTxR r n h                     -> getTxR r n h
-    GetOfflineTxR r n h              -> getOfflineTxR r n h
-    PostOfflineTxR r n t c           -> postOfflineTxR r n t c
-    GetBalanceR r n mc o             -> getBalanceR r n mc o
+    GetAccountsR                     -> getAccountsR
+    PostAccountsR na                 -> postAccountsR na
+    GetAccountR n                    -> getAccountR n
+    PostAccountKeysR n ks            -> postAccountKeysR n ks
+    PostAccountGapR n g              -> postAccountGapR n g
+    GetAddressesR n t m o p          -> getAddressesR n t m o p
+    GetAddressesUnusedR n t          -> getAddressesUnusedR n t
+    GetAddressR n i t m o            -> getAddressR n i t m o
+    PutAddressR n i t l              -> putAddressR n i t l
+    PostAddressesR n i t             -> postAddressesR n i t
+    GetTxsR n p                      -> getTxsR n p
+    GetAddrTxsR n i t p              -> getAddrTxsR n i t p
+    PostTxsR n k a                   -> postTxsR n k a
+    GetTxR n h                       -> getTxR n h
+    GetOfflineTxR n h                -> getOfflineTxR n h
+    PostOfflineTxR n k t c           -> postOfflineTxR n k t c
+    GetBalanceR n mc o               -> getBalanceR n mc o
     PostNodeR na                     -> postNodeR na
     DeleteTxIdR t                    -> deleteTxIdR t
 

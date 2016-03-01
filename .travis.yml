@@ -17,6 +17,7 @@ matrix:
             - libleveldb-dev 
             - libzmq3-dev 
             - libsnappy-dev 
+            - libncurses5-dev
             - pkg-config 
             - zlib1g-dev
     - env: LTS=3.22 GHCVER=7.10.2
@@ -32,6 +33,7 @@ matrix:
             - libleveldb-dev 
             - libzmq3-dev 
             - libsnappy-dev 
+            - libncurses5-dev
             - pkg-config 
             - zlib1g-dev
 

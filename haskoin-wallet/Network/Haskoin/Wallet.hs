@@ -17,7 +17,6 @@ module Network.Haskoin.Wallet
 , SPVMode(..)
 
 -- *API JSON Types
-, JsonKeyRing(..)
 , JsonAccount(..)
 , JsonAddr(..)
 , JsonCoin(..)
@@ -26,7 +25,6 @@ module Network.Haskoin.Wallet
 -- *API Request Types
 , WalletRequest(..)
 , ListRequest(..)
-, NewKeyRing(..)
 , NewAccount(..)
 , SetAccountGap(..)
 , OfflineTxData(..)
@@ -48,16 +46,9 @@ module Network.Haskoin.Wallet
 , ListResult(..)
 , RescanRes(..)
 
--- *Database KeyRings
-, initWallet
-, newKeyRing
-, keyRings
-, keyRingSource
-, getKeyRing
-
 -- *Database Accounts
+, initWallet
 , accounts
-, accountSource
 , newAccount
 , addAccountKeys
 , getAccount
@@ -67,9 +58,9 @@ module Network.Haskoin.Wallet
 
 -- *Database Addresses
 , getAddress
-, addressSourceAll
-, addressSource
+, addressesAll
 , addresses
+, addressList
 , unusedAddresses
 , addressCount
 , setAddrLabel
@@ -90,7 +81,7 @@ module Network.Haskoin.Wallet
 , getAccountTx
 , importTx
 , importNetTx
-, signKeyRingTx
+, signAccountTx
 , createTx
 , signOfflineTx
 , getOfflineTxData
@@ -101,7 +92,6 @@ module Network.Haskoin.Wallet
 
 -- *Database coins and balances
 , spendableCoins
-, spendableCoinsSource
 , accountBalance
 , addressBalances
 
@@ -113,6 +103,6 @@ import Network.Haskoin.Wallet.Client
 import Network.Haskoin.Wallet.Server
 import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Types
-import Network.Haskoin.Wallet.KeyRing
+import Network.Haskoin.Wallet.Accounts
 import Network.Haskoin.Wallet.Transaction
 

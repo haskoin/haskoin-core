@@ -84,7 +84,7 @@ runVerifyVec :: SatoshiCoreTxTest -> Int -> Assertion
 runVerifyVec (SatoshiCoreTxTest description is bsTx) i =
     assertBool name $ verifyStdTx tx outputsAndOutpoints
   where
-    name = "    > Verify transaction " ++ (show i) ++ ", about: " ++ description
+    name = "    > Verify transaction " ++ (show i) 
     tx :: Tx
     tx  = decode' . fromJust . decodeHex $ bsTx
     outputsAndOutpoints :: [(ScriptOutput, OutPoint)] 

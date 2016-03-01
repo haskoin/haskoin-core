@@ -55,7 +55,7 @@ import Database.Esqueleto
     ( Value(..), SqlQuery, SqlExpr
     , InnerJoin(..), LeftOuterJoin(..), OrderBy, update, sum_, groupBy
     , select, from, where_, val, valList, sub_select, countRows, count
-    , orderBy, limit, asc, desc, set, offset, delete
+    , orderBy, limit, asc, desc, set, offset, delete, countDistinct
     , in_, unValue, not_, coalesceDefault, just, on
     , case_, when_, then_, else_, distinct
     , (^.), (=.), (==.), (&&.), (||.), (<.)
@@ -147,42 +147,35 @@ addrTxs (Entity ai _) (Entity addrI WalletAddr{..}) ListRequest{..} = do
             on $ joinSpentCoin c2 s
             on $ joinSpent s t
             on $ joinCoin c t
+        tables f = from $ \(t `LeftOuterJoin` c `LeftOuterJoin`
+                            s `LeftOuterJoin` c2) -> f t c s c2
+        query t c s c2 = do
+            joinAll t c c2 s
+            where_ (   t ^. WalletTxAccount ==. val ai
+                    &&. (   not_ (E.isNothing (c  ?. WalletCoinId))
+                        ||. not_ (E.isNothing (c2 ?. WalletCoinId))
+                        )
+                    )
+            orderBy [(if listReverse then desc else asc) (t ^. WalletTxId)]
+
+
+    cntRes <- select $ tables $ \t c s c2 -> do
+        query t c s c2
+        return $ countDistinct $ t ^. WalletTxId
+
+    let cnt = maybe 0 unValue $ listToMaybe cntRes
+
+    when (listOffset > 0 && listOffset >= cnt) $ throw $ WalletException
+        "Offset beyond end of data set"
 
     -- Find all the tids
-    tids <- fmap (map unValue) $ select $ distinct $ from $
-            \(t `LeftOuterJoin` c `LeftOuterJoin`
-              s `LeftOuterJoin` c2) -> do
-        joinAll t c c2 s
-        where_ (   t ^. WalletTxAccount ==. val ai
-                &&. (   not_ (E.isNothing (c  ?. WalletCoinId))
-                    ||. not_ (E.isNothing (c2 ?. WalletCoinId))
-                    )
-                )
-        orderBy [ asc (t ^. WalletTxId) ]
-        return $ t ^. WalletTxId
+    res <- select $ distinct $ tables $ \t c s c2 -> do
+         query t c s c2
+         offset $ fromIntegral listOffset
+         limit $ fromIntegral listLimit
+         return t
 
-
-    when (listOffset > 0 && listOffset >= fromIntegral (length tids)) $
-        throw $ WalletException
-            "Offset beyond end of data set"
-
-    let fOrd = if listReverse then reverse else id
-        -- We call fOrd twice to reverse the page back to ASC
-        tidList = fOrd $ take (fromIntegral listLimit) $
-            drop (fromIntegral listOffset) $ fOrd tids
-
-    -- Use a splitSelect query here with the exact tids to speed up the
-    -- query.
-    res <- splitSelect tidList $ \tid ->
-        from $ \(t `LeftOuterJoin` c `LeftOuterJoin`
-                  s `LeftOuterJoin` c2) -> do
-        joinAll t c c2 s
-        where_ $ t ^. WalletTxId `in_` valList tid
-        groupBy $ t ^. WalletTxId
-        orderBy [ asc (t ^. WalletTxId) ]
-        return  t
-
-    return (map (updBals . entityVal) res, fromIntegral (length tids))
+    return (map (updBals . entityVal) res, cnt)
 
   where
     agg = sum . mapMaybe addressInfoValue .

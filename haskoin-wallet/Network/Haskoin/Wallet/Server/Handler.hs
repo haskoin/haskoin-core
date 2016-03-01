@@ -112,6 +112,22 @@ postAccountsR newAcc@NewAccount{..} = do
     whenOnline $ when (isCompleteAccount newAcc') updateNodeFilter
     return $ Just $ toJSON $ toJsonAccount mnemonicM newAcc'
 
+postAccountRenameR
+    :: ( MonadResource m, MonadThrow m, MonadLogger m
+       , MonadBaseControl IO m, MonadIO m
+       )
+    => AccountName -> AccountName -> Handler m (Maybe Value)
+postAccountRenameR oldName newName = do
+    $(logInfo) $ format $ unlines
+        [ "PostAccountRenameR"
+        , "  Account name: " ++ unpack oldName
+        , "  New name    : " ++ unpack newName
+        ]
+    newAcc <- runDB $ do
+        accE <- getAccount oldName
+        renameAccount accE newName
+    return $ Just $ toJSON $ toJsonAccount Nothing newAcc
+
 getAccountR :: (MonadLogger m, MonadBaseControl IO m, MonadIO m, MonadThrow m)
             => AccountName -> Handler m (Maybe Value)
 getAccountR name = do

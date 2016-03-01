@@ -6,6 +6,7 @@ module Network.Haskoin.Wallet.Accounts
 -- *Database Accounts
 , accounts
 , newAccount
+, renameAccount
 , addAccountKeys
 , getAccount
 , isMultisigAccount
@@ -181,6 +182,14 @@ newAccount NewAccount{..} = do
             return (accE, mnemonicM)
         -- The account already exists
         Nothing -> throwM $ WalletException "Account already exists"
+
+renameAccount :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+              => Entity Account
+              -> AccountName
+              -> SqlPersistT m Account
+renameAccount (Entity ai acc) name = do
+    P.update ai [ AccountName P.=. name ]
+    return $ acc{ accountName = name }
 
 -- | Add new thirdparty keys to a multisignature account. This function can
 -- fail if the multisignature account already has all required keys.

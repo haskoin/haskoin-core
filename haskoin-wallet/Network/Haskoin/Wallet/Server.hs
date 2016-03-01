@@ -407,6 +407,7 @@ dispatchRequest :: ( MonadLoggerIO m
 dispatchRequest req = fmap ResponseValid $ case req of
     GetAccountsR                     -> getAccountsR
     PostAccountsR na                 -> postAccountsR na
+    PostAccountRenameR n n'          -> postAccountRenameR n n'
     GetAccountR n                    -> getAccountR n
     PostAccountKeysR n ks            -> postAccountKeysR n ks
     PostAccountGapR n g              -> postAccountGapR n g

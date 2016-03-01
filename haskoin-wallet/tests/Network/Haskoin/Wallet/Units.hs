@@ -1,6 +1,6 @@
 module Network.Haskoin.Wallet.Units (tests) where
 
-import Test.HUnit (Assertion, assertEqual, assertFailure)
+import Test.HUnit (Assertion, assertEqual, assertFailure, assertBool)
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
@@ -12,7 +12,7 @@ import Control.Monad.Logger (NoLoggingT)
 
 import Data.String.Conversions (cs)
 import Data.Word (Word32, Word64)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, isJust)
 import Data.List (sort)
 import qualified Data.ByteString as BS
     ( ByteString
@@ -269,6 +269,8 @@ tests =
         , testCase "Offline transaction exceptions" testOfflineExceptions
         , testCase "Multisig test 1" $ runUnit testImportMultisig
         , testCase "Kill Tx" $ runUnit testKillTx
+        , testCase "Delete Tx" $ runUnit testDeleteTx
+        , testCase "Delete Unsigned Tx" $ runUnit testDeleteUnsignedTx
         ]
     ]
 
@@ -1641,6 +1643,139 @@ testImportMultisig = do
         liftIO . (assertEqual "Balance is not 0") 0
     accountBalance ai1 0 True  >>=
         liftIO . (assertEqual "Balance is not 9990000") 9990000
+
+testDeleteTx :: App ()
+testDeleteTx = do
+    (accE@(Entity ai _), _) <- newAccount NewAccount
+        { newAccountName = "acc1"
+        , newAccountType = AccountRegular
+        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountMaster = Nothing
+        , newAccountMnemonic = Just (cs ms)
+        , newAccountKeys = []
+        , newAccountReadOnly = False
+        }
+    let tx1 = fakeTx
+            [ (tid1, 4) ]
+            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 10000000) ]
+        tx2 = fakeTx
+            [ (txHash tx1, 0) ]
+            [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
+            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 4000000) -- change
+            ]
+        tx3 = fakeTx
+            [ (txHash tx2, 1) ]
+            [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 4000000) ] -- external
+
+    importNetTx tx1
+        >>= liftIO
+        . (assertEqual "Confidence is not pending" ([(ai, TxPending)], 1))
+        . testTx
+    importNetTx tx2
+        >>= liftIO
+        . (assertEqual "Confidence is not pending" ([(ai, TxPending)], 1))
+        . testTx
+    importNetTx tx3
+        >>= liftIO
+        . (assertEqual "Confidence is not pending" ([(ai, TxPending)], 0))
+        . testTx
+
+    accountBalance ai 0 True >>=
+        liftIO . (assertEqual "Balance is not 0") 0
+
+    addressBalances accE 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 10000000, 1, 1)")
+            [(0, BalanceInfo 10000000 10000000 1 1)]
+
+    addressBalances accE 0 0 AddressInternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (4000000, 4000000, 1, 1)")
+            [(0, BalanceInfo 4000000 4000000 1 1)]
+
+    tx2M <- getTx $ txHash tx2
+    liftIO $ assertBool "Transaction 2 not found" $ isJust tx2M
+    deleteTx $ txHash tx2
+
+    tx1M <- getTx $ txHash tx1
+    tx2M <- getTx $ txHash tx2
+    tx3M <- getTx $ txHash tx3
+    liftIO $ assertEqual "Transaction 1 removed" (Just tx1) tx1M
+    liftIO $ assertEqual "Transaction 2 not removed" Nothing tx2M
+    liftIO $ assertEqual "Transaction 3 not removed" Nothing tx3M
+
+    accountBalance ai 0 True >>=
+        liftIO . (assertEqual "Balance is not 10000000") 10000000
+
+    addressBalances accE 0 0 AddressExternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (10000000, 0, 1, 0)")
+            [(0, BalanceInfo 10000000 0 1 0)]
+
+    addressBalances accE 0 0 AddressInternal 0 True >>=
+        liftIO . (assertEqual "Address 0 balance is not (0, 0, 0, 0)")
+            [(0, BalanceInfo 0 0 0 0)]
+
+testDeleteUnsignedTx :: App ()
+testDeleteUnsignedTx = do
+    (accE1@(Entity ai1 _), _) <- newAccount NewAccount
+        { newAccountName = "ms1"
+        , newAccountType = AccountMultisig 2 2
+        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountMaster = Nothing
+        , newAccountMnemonic = Just (cs ms)
+        , newAccountKeys = ["xpub68kRFKHWxUt3oS8X5kVogwH5rvuAd4jrLkxVfHeudFC4MfwQ8oYV59F91uFnsLXANRB1MkN4Wa1PwymE4cRsU8PE755HNCb1EoBbSoAKXpW"]
+        , newAccountReadOnly = False
+        }
+    ((Entity ai2 _), _) <- newAccount NewAccount
+        { newAccountName = "ms2"
+        , newAccountType = AccountMultisig 2 2
+        , newAccountDeriv = Just (Deriv :| 1)
+        , newAccountMaster = Nothing
+        , newAccountMnemonic = Just (cs ms)
+        , newAccountKeys = ["xpub68kRFKHWxUt3mfJjcXdLeuDjCHnByqKSBVfMktJRXM6LSNNDR4ae6Nw1Kh621fzyKiBf6ssyZWPPTDUTQp1BhuZQuoVdtb8j2TRzqDLHmY7"]
+        , newAccountReadOnly = False
+        }
+    let fundingTx =
+            Tx 1 [ TxIn (OutPoint tid1 0) (BS.pack [1]) maxBound ] -- dummy input
+                 [ TxOut 10000000 $
+                    encodeOutputBS $ PayScriptHash $ fromJust $
+                    base58ToAddr "32RexHZdsMoV8yzL1pQyFhYY6XeUNcWP78"
+                 ] 0
+
+    importNetTx fundingTx
+        >>= liftIO
+        . (assertEqual "Confidence is not pending"
+            ([(ai1, TxPending), (ai2, TxPending)], 2))
+        . testTx
+
+    -- Create a transaction which has 0 signatures in ms1
+    (tx1, _) <- createTx accE1 Nothing
+        [ ( fromJust $ base58ToAddr "3BYWaQHz6AVXx7wXmCka4846tRfa1ccWvh"
+          , 5000000
+          )
+        ] 10000 0 False True
+    liftIO $ assertEqual "Confidence is not offline" TxOffline $
+        walletTxConfidence tx1
+    spendableCoins ai1 0 (const . const [])
+        >>= liftIO
+        . (assertEqual "Wrong txhash in coins" [])
+        . map (walletCoinHash . entityVal . inCoinDataCoin)
+    txs ai1 (ListRequest 0 10 False)
+        >>= liftIO
+        . (assertEqual "Wrong txhash in tx list"
+            (sort [txHash fundingTx, walletTxHash tx1]))
+        . sort . map walletTxHash . fst
+    accountBalance ai1 0 False >>=
+        liftIO . (assertEqual "Balance is not 10000000") 10000000
+    accountBalance ai1 1 False >>=
+        liftIO . (assertEqual "Balance is not 0") 0
+    accountBalance ai1 0 True >>=
+        liftIO . (assertEqual "Offline balance is not 9990000") 9990000
+
+    tx1EM <- getTx $ walletTxHash tx1
+    liftIO $ assertBool "Transaction 1 not found" $ isJust tx1EM
+    deleteTx $ walletTxHash tx1
+
+    tx1M <- getTx $ walletTxHash tx1
+    liftIO $ assertEqual "Transaction not removed" Nothing tx1M
 
 testKillTx :: App ()
 testKillTx = do

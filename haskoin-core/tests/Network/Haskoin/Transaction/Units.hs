@@ -84,14 +84,15 @@ runVerifyVec :: SatoshiCoreTxTest -> Int -> Assertion
 runVerifyVec (SatoshiCoreTxTest description is bsTx) i =
     assertBool name $ verifyStdTx tx outputsAndOutpoints
   where
-    name = "    > Verify transaction " ++ (show i) 
+    name = "    > Verify transaction " ++ (show i) ++ "bsTx: " ++ convertString bsTx
     tx :: Tx
     tx  = decode' . fromJust . decodeHex $ bsTx
     outputsAndOutpoints :: [(ScriptOutput, OutPoint)] 
     outputsAndOutpoints = map f is
     f (SatoshiCoreTxTestInput bsOutputHash bsOutputIndex bsOutputScriptPubKey) =
         let s :: ScriptOutput
-            s = fromRight . decodeOutputBS . fromJust . decodeHex $ bsOutputScriptPubKey
+            s = either (\e -> error $ "could not decode: " ++ convertString bsOutputScriptPubKey) id
+                  . decodeOutputBS . fromJust . decodeHex $ bsOutputScriptPubKey
             op :: OutPoint
             op = OutPoint
                 (decode' . BS.reverse . fromJust . decodeHex $ bsOutputHash)

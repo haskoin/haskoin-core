@@ -153,6 +153,8 @@ test-suite test-haskoin-wallet
                  , unordered-containers          >= 0.2       && < 0.3
                  , HUnit                         >= 1.2       && < 1.4
                  , QuickCheck                    >= 2.8       && < 2.9
+                 , stm                           >= 2.4       && < 2.5
+                 , stm-chans                     >= 3.0       && < 3.1
                  , string-conversions            >= 0.4       && < 0.5
                  , test-framework                >= 0.8       && < 0.9
                  , test-framework-quickcheck2    >= 0.3       && < 0.4

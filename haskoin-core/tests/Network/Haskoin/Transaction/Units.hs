@@ -304,7 +304,7 @@ encodeSatoshiCoreScriptPubKey =
 
 satoshiCoreTxTests :: IO [Test]
 satoshiCoreTxTests = do
-  txVec <- maybe (error "satoshiCoreTxVec, no parse") id <$> satoshiCoreTxVec
+  txVec <- satoshiCoreTxVec
   return $ [ 
     testGroup "Verify transaction (bitcoind /test/data/tx_valid.json) (using copied source json)"
       ( map mapVerifyVec . filter isCurrentlyPassing $ zip txVec [0..] ) 
@@ -315,16 +315,15 @@ satoshiCoreTxTests = do
 
 
 type TestComment = String
-satoshiCoreTxVec :: IO (Maybe [SatoshiCoreTxTest])
+satoshiCoreTxVec :: IO [SatoshiCoreTxTest]
 satoshiCoreTxVec = do 
     tx_validBS <- LBS.readFile "tests/data/tx_valid.json"
-    return $ do 
-      testsAndCommentsVal <- Aeson.decode tx_validBS            
-      flip Aeson.Types.parseMaybe testsAndCommentsVal $ \result -> do
-          flip (Aeson.Types.withArray "testsAndCommentsVal") result $ \arr -> do
-            testsOrComments <- mapM toTestOrComment . V.toList $ arr 
-            return $ processTestsAndComments testsOrComments
-
+    let testsAndComments = maybe (error $ "satoshiCoreTxVec, couldn't decode json") id . Aeson.decode $ tx_validBS            
+    return $ case testsAndComments of
+        (Aeson.Array arr) -> 
+            let testsOrComments = map toTestOrComment . V.toList $ arr 
+            in  processTestsAndComments testsOrComments
+        _ -> error $ "satoshiCoreTxVec, testsAndComments not an array"
       where
         processTestsAndComments :: [Either TestComment SatoshiCoreTxTest] -> [SatoshiCoreTxTest]
         processTestsAndComments testOrComments = 
@@ -340,37 +339,39 @@ satoshiCoreTxVec = do
                       description = unwords . map fromLeft $ descriptionLines
           in  concat . map includeDescriptions . takePairs . grouper $ testOrComments
 
-toTestOrComment :: Aeson.Value -> Aeson.Types.Parser (Either TestComment SatoshiCoreTxTest)
-toTestOrComment testVectorVal = flip (Aeson.Types.withArray "testVectorVal") testVectorVal $ \arr -> 
-  if V.length arr == 1 
-    then  
-          let commentsVal = arr V.! 0
-          in  flip (Aeson.Types.withText "commentsVal") commentsVal $ \txt -> 
-                return . Left . convertString $ txt
-    else  do 
-          let testVector = arr
-              inputsVal = testVector V.! 0
-              inputs :: Aeson.Types.Parser [SatoshiCoreTxTestInput]
-              inputs = flip (Aeson.Types.withArray "inputsVal") inputsVal $ \inputsArr ->           
-                let toInput inputVal = flip (Aeson.Types.withArray "inputVal") inputVal $ \input -> 
-                      let hashVal = input V.! 0
-                          hash = flip (Aeson.Types.withText "hashVal") hashVal $ \txt -> 
-                            return . convertString $ txt
-                          indexVal = input V.! 1 
-                          index = flip (Aeson.Types.withScientific "indexVal") indexVal $ \n -> 
-                            return . encodeHex . runPut' . putWord32le . floor $ n -- floor seems suspect
-                          pubkeyVal = input V.! 2 
-                          pubkey = flip (Aeson.Types.withText "pubkeyVal") pubkeyVal $ \txt -> 
-                            return . encodeSatoshiCoreScriptPubKey . convertString $ txt
-                      in  pure SatoshiCoreTxTestInput <*> hash <*> index <*> pubkey 
-                in  mapM toInput . V.toList $ inputsArr
-              txVal = testVector V.! 1
-              tx    = flip (Aeson.Types.withText "txVal") txVal $ return . convertString
-              -- flags -- v V.! 2  -- ignored for now? 
-          test <- pure (SatoshiCoreTxTest "") <*> inputs <*> tx 
-          return $ Right test
-
-
+toTestOrComment :: Aeson.Value -> (Either TestComment SatoshiCoreTxTest)
+toTestOrComment testVectorOrComment = 
+  case testVectorOrComment of
+    (Aeson.Types.Array arr) -> 
+      case (V.length arr) of
+        1 ->  let comment = arr V.! 0
+              in case comment of
+                   Aeson.Types.String txt -> Left . convertString $ txt
+                   _ -> error $ "toTestOrComment, comment not text"
+        3 ->  let inputs = case ( arr V.! 0 ) of            
+                    (Aeson.Array inputsV) -> 
+                      let toInput ( Aeson.Array oneInputV ) = 
+                            let hash = case oneInputV V.! 0 of 
+                                  Aeson.String txt -> convertString txt
+                                  _ -> error "processItem, hash not a string"
+                                index = case oneInputV V.! 01 of 
+                                  Aeson.Number n -> encodeHex . runPut' . putWord32le . floor $ n
+                                  _ -> error "processItem, n not a number"
+                                pubkey = case oneInputV V.! 2 of
+                                  Aeson.String txt -> encodeSatoshiCoreScriptPubKey . convertString $ txt
+                                  _ -> error "processItem, pubkey not a string"
+                            in  SatoshiCoreTxTestInput hash index pubkey 
+                          toInput _ = error "processItem, oneInputV not an array"
+                      in  map toInput . V.toList $ inputsV
+                    _ -> error "inputs not an array"
+                  tx = let txVal = arr V.! 1
+                       in case txVal of
+                          Aeson.Types.String txt -> convertString txt
+                          _ -> error $ "toTestOrComment, tx, not text"
+                  -- flags -- v V.! 2  -- ignored for now? 
+              in  Right $ SatoshiCoreTxTest "" inputs tx 
+        i -> error $ "toTestOrComment, bad length: " ++ show i 
+    _ -> error "testVectorOrComment is not an array"
 
 
 

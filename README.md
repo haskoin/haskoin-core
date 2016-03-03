@@ -29,11 +29,11 @@ package and the node implementation in haskoin-node.
 
 ## haskoin-node
 
-haskoin-node is essentially an SPV (simple payment verification) server node.
-It implements the Bitcoin network protocol in Haskell and allows the
+haskoin-node is essentially an SPV (simple payment verification) server node. It
+implements the Bitcoin network protocol in Haskell and allows the
 synchronization of headers and the download of merkle blocks. haskoin-node is
-not a full node (yet) as it only support SPV verification of headers rather
-than full block validation. The following features are supported:
+not a full node (yet) as it only support SPV verification of headers rather than
+full block validation. The following features are supported:
 
 - Implementation of the Bitcoin network protocol
 - Headertree implementation with SPV verification
@@ -43,20 +43,10 @@ than full block validation. The following features are supported:
 
 [haskoin-node hackage documentation](http://hackage.haskell.org/package/haskoin-node)
 
-### haskoin-node dependencies
-
-* LevelDB
-
-On Debian/Ubuntu, use following command:
-
-```sh
-sudo apt-get install libleveldb-dev
-```
-
 ## haskoin-wallet
 
 haskoin-wallet is an SPV (simple payment verification) wallet implementation in
-Haskell.  It features BIP32 hierarchical-deterministic key management,
+Haskell. It features BIP32 hierarchical-deterministic key management,
 deterministic signatures (RFC-6979) and first order support for multi-signature
 transactions. You can communicate with the wallet process using JSON
 serialization over ØMQ socket or the supplied `hw` tool.
@@ -65,12 +55,11 @@ serialization over ØMQ socket or the supplied `hw` tool.
 
 ### Installing haskoin-wallet
 
-Get pkg-config, LevelDB, Snappy, zlib and ØMQ.
-On Debian/Ubuntu systems, use these command:
+Get pkg-config, Snappy, zlib and ØMQ. On Debian/Ubuntu systems, use this
+command:
 
 ```sh
-sudo apt-get install -y git libleveldb-dev libzmq3-dev \
-    libsnappy-dev pkg-config zlib1g-dev
+sudo apt-get install -y git libzmq3-dev libsnappy-dev pkg-config zlib1g-dev
 ```
 
 Get [Stack](https://github.com/commercialhaskell/stack).

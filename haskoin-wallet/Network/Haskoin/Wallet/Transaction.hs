@@ -1,3 +1,6 @@
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RecordWildCards       #-}
 module Network.Haskoin.Wallet.Transaction
 (
 -- *Database transactions
@@ -18,7 +21,7 @@ module Network.Haskoin.Wallet.Transaction
 
 -- *Database blocks
 , importMerkles
-, getBestBlock
+, walletBestBlock
 
 -- *Database coins and balances
 , spendableCoins
@@ -32,54 +35,54 @@ module Network.Haskoin.Wallet.Transaction
 , InCoinData(..)
 ) where
 
-import Control.Arrow (second)
-import Control.Monad (forM, forM_, when, unless)
-import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TBMChan (TBMChan, writeTBMChan)
-import Control.Monad.Trans (MonadIO, liftIO)
-import Control.Monad.Base (MonadBase)
-import Control.Monad.Catch (MonadThrow, throwM)
-import Control.Monad.Trans.Resource (MonadResource)
-import Control.Exception (throwIO, throw)
-
-import Data.Time (UTCTime, getCurrentTime)
-import Data.Word (Word32, Word64)
-import Data.Either (rights)
-import Data.List ((\\), nub, nubBy, find)
-import Data.Maybe (isNothing, isJust, fromMaybe, listToMaybe, mapMaybe)
-import qualified Data.Map.Strict as M
-    ( Map, toList, map, unionWith, fromListWith )
-import Data.String.Conversions (cs)
-
-import qualified Database.Persist as P
-    ( Filter, selectFirst, deleteWhere, insertBy)
-import Database.Esqueleto
-    ( Value(..), SqlQuery, SqlExpr
-    , InnerJoin(..), LeftOuterJoin(..), OrderBy, update, sum_, groupBy
-    , select, from, where_, val, valList, sub_select, countRows, count
-    , orderBy, limit, asc, desc, set, delete, countDistinct
-    , in_, unValue, not_, coalesceDefault, just, on
-    , case_, when_, then_, else_, distinct
-    , (^.), (=.), (==.), (&&.), (||.), (<.)
-    , (<=.), (>=.), (-.), (?.), (!=.)
-    -- Reexports from Database.Persist
-    , SqlPersistT, Entity(..)
-    , getBy, replace
-    )
-import qualified Database.Esqueleto as E (isNothing)
-
-import Network.Haskoin.Block
-import Network.Haskoin.Transaction
-import Network.Haskoin.Script
-import Network.Haskoin.Crypto
-import Network.Haskoin.Util
-import Network.Haskoin.Constants
-import Network.Haskoin.Node.STM
-import Network.Haskoin.Node.HeaderTree
-
-import Network.Haskoin.Wallet.Accounts
-import Network.Haskoin.Wallet.Model
-import Network.Haskoin.Wallet.Types
+import           Control.Arrow                   (second)
+import           Control.Concurrent.STM          (atomically)
+import           Control.Concurrent.STM.TBMChan  (TBMChan, writeTBMChan)
+import           Control.Exception               (throw, throwIO)
+import           Control.Monad                   (forM, forM_, unless, when)
+import           Control.Monad.Base              (MonadBase)
+import           Control.Monad.Catch             (MonadThrow, throwM)
+import           Control.Monad.Trans             (MonadIO, liftIO)
+import           Control.Monad.Trans.Resource    (MonadResource)
+import           Data.Either                     (rights)
+import           Data.List                       (find, nub, nubBy, (\\))
+import qualified Data.Map.Strict                 as M (Map, fromListWith, map,
+                                                       toList, unionWith)
+import           Data.Maybe                      (fromMaybe, isJust, isNothing,
+                                                  listToMaybe, mapMaybe)
+import           Data.String.Conversions         (cs)
+import           Data.Time                       (UTCTime, getCurrentTime)
+import           Data.Word                       (Word32, Word64)
+import           Database.Esqueleto              (Entity (..), InnerJoin (..),
+                                                  LeftOuterJoin (..), OrderBy,
+                                                  SqlExpr, SqlPersistT,
+                                                  SqlQuery, Value (..), asc,
+                                                  case_, coalesceDefault, count,
+                                                  countDistinct, countRows,
+                                                  delete, desc, distinct, else_,
+                                                  from, getBy, groupBy, in_,
+                                                  just, limit, not_, on,
+                                                  orderBy, replace, select, set,
+                                                  sub_select, sum_, then_,
+                                                  unValue, update, val, valList,
+                                                  when_, where_, (!=.), (&&.),
+                                                  (-.), (<.), (<=.), (=.),
+                                                  (==.), (>=.), (?.), (^.),
+                                                  (||.))
+import qualified Database.Esqueleto              as E (isNothing)
+import qualified Database.Persist                as P (Filter, deleteWhere,
+                                                       insertBy, selectFirst)
+import           Network.Haskoin.Block
+import           Network.Haskoin.Constants
+import           Network.Haskoin.Crypto
+import           Network.Haskoin.Node.HeaderTree
+import           Network.Haskoin.Node.STM
+import           Network.Haskoin.Script
+import           Network.Haskoin.Transaction
+import           Network.Haskoin.Util
+import           Network.Haskoin.Wallet.Accounts
+import           Network.Haskoin.Wallet.Model
+import           Network.Haskoin.Wallet.Types
 
 -- Input coin type with transaction and address information
 data InCoinData = InCoinData
@@ -799,7 +802,7 @@ importMerkles action expTxsLs notifChanM =
         case action of
             ChainReorg _ os _ ->
                 -- Unconfirm transactions from the old chain.
-                let hs = map (Just . nodeBlockHash) os
+                let hs = map (Just . getNodeHash . nodeBlockHash) os
                 in  splitUpdate hs $ \h t -> do
                         set t [ WalletTxConfidence      =. val TxPending
                               , WalletTxConfirmedBy     =. val Nothing
@@ -821,8 +824,8 @@ importMerkles action expTxsLs notifChanM =
 
         -- Confirm the transactions
         forM_ (zip (actionNodes action) expTxsLs) $ \(node, hs) -> do
-            let hash   = nodeBlockHash    node
-                height = nodeHeaderHeight node
+            let hash   = getNodeHash $ nodeBlockHash node
+                height = nodeBlockHeight node
 
             splitUpdate hs $ \h t -> do
                 set t [ WalletTxConfidence =. val TxBuilding
@@ -830,7 +833,7 @@ importMerkles action expTxsLs notifChanM =
                       , WalletTxConfirmedHeight =.
                           val (Just height)
                       , WalletTxConfirmedDate =.
-                          val (Just (blockTimestamp $ nodeHeader node))
+                          val (Just $ nodeBlockTime node)
                       ]
                 where_ $ t ^. WalletTxHash `in_` valList h
 
@@ -849,7 +852,7 @@ importMerkles action expTxsLs notifChanM =
                 writeTBMChan notifChan $ NotifBlock JsonBlock
                     { jsonBlockHash    = hash
                     , jsonBlockHeight  = height
-                    , jsonBlockPrev    = prevBlock $ nodeHeader node
+                    , jsonBlockPrev    = getNodeHash $ nodeBlockPrev node
                     , jsonBlockTxs     = jsonTxs
                     }
 
@@ -860,8 +863,8 @@ setBestBlock bid i = update $ \t -> set t [ WalletStateBlock  =. val bid
                                           ]
 
 -- Helper function to get the best block and best block height from the DB
-getBestBlock :: MonadIO m => SqlPersistT m (BlockHash, Word32)
-getBestBlock = do
+walletBestBlock :: MonadIO m => SqlPersistT m (BlockHash, Word32)
+walletBestBlock = do
     cfgM <- fmap entityVal <$> P.selectFirst [] []
     return $ case cfgM of
         Just WalletState{..} -> (walletStateBlock, walletStateHeight)

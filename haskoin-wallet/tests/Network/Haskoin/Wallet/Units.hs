@@ -1,11 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 module Network.Haskoin.Wallet.Units (tests) where
 
-import           Test.Framework                   (Test, testGroup)
-import           Test.Framework.Providers.HUnit   (testCase)
-import           Test.HUnit                       (Assertion, assertBool,
-                                                   assertEqual, assertFailure)
-
 import           Control.Concurrent.STM
 import           Control.Concurrent.STM.TBMChan
 import           Control.Exception                (Exception, handleJust)
@@ -13,26 +8,26 @@ import           Control.Monad                    (guard)
 import           Control.Monad.Logger             (NoLoggingT)
 import           Control.Monad.Trans              (liftIO)
 import           Control.Monad.Trans.Resource     (ResourceT)
-
 import qualified Data.ByteString                  as BS (ByteString, pack)
 import           Data.List                        (sort)
 import           Data.Maybe                       (fromJust, isJust)
 import           Data.String.Conversions          (cs)
 import           Data.Word                        (Word32, Word64)
-
 import           Database.Persist                 (Entity (..), entityVal,
                                                    getBy)
 import           Database.Persist.Sqlite          (SqlPersistT,
                                                    runMigrationSilent,
                                                    runSqlite)
-
-import           Network.Haskoin.Node.HeaderTree
-import           Network.Haskoin.Wallet.Internals
-
 import           Network.Haskoin.Block
 import           Network.Haskoin.Crypto
+import           Network.Haskoin.Node.HeaderTree
 import           Network.Haskoin.Script
 import           Network.Haskoin.Transaction
+import           Network.Haskoin.Wallet.Internals
+import           Test.Framework                   (Test, testGroup)
+import           Test.Framework.Providers.HUnit   (testCase)
+import           Test.HUnit                       (Assertion, assertBool,
+                                                   assertEqual, assertFailure)
 
 type App = SqlPersistT (NoLoggingT (ResourceT IO))
 
@@ -297,44 +292,39 @@ ms = "mass coast dance birth online various renew alert crunch middle absurd hea
 tid1 :: TxHash
 tid1 = "0000000000000000000000000000000000000000000000000000000000000001"
 
-bid0 :: BlockHash
-bid0 = "0000000000000000000000000000000000000000000000000000000000000000"
+z :: Hash256
+z = "0000000000000000000000000000000000000000000000000000000000000000"
 
-bid1 :: BlockHash
-bid1 = "0000000000000000000000000000000000000000000000000000000000000001"
-
-bid2 :: BlockHash
-bid2 = "0000000000000000000000000000000000000000000000000000000000000002"
-
-bid3 :: BlockHash
-bid3 = "0000000000000000000000000000000000000000000000000000000000000003"
-
-bid4 :: BlockHash
-bid4 = "0000000000000000000000000000000000000000000000000000000000000004"
-
-bid5 :: BlockHash
-bid5 = "0000000000000000000000000000000000000000000000000000000000000005"
-
-bid6 :: BlockHash
-bid6 = "0000000000000000000000000000000000000000000000000000000000000006"
-
-bid7 :: BlockHash
-bid7 = "0000000000000000000000000000000000000000000000000000000000000007"
-
--- Creates fake testing blocks
-fakeNode :: Word32 -> BlockHash -> BlockHeaderNode
-fakeNode i h = BlockHeaderNode
-    { nodeBlockHash = h
-    , nodeHeader = BlockHeader 1 z1 z2 0 0 0
-    , nodeHeaderHeight = i
-    , nodeChainWork = 0
-    , nodeChild = Nothing
-    , nodeMedianTimes = []
-    , nodeMinWork = 0
-    }
+fakeNode :: NodeBlock     -- ^ Parent
+         -> [TxHash]      -- ^ Transactions
+         -> Int           -- ^ Chain
+         -> Word32        -- ^ Nonce
+         -> NodeBlock
+fakeNode parent tids chain nonce =
+    nodeBlock parent chain header
   where
-    z1 = "0000000000000000000000000000000000000000000000000000000000000000"
-    z2 = "0000000000000000000000000000000000000000000000000000000000000000"
+    header = BlockHeader
+        { blockVersion   = nodeBlockVersion parent
+        , prevBlock      = getNodeHash $ nodeBlockHash parent
+        , merkleRoot     = if null tids then z else buildMerkleRoot tids
+        , blockTimestamp = nodeBlockTime parent + 600
+        , blockBits      = nodeBlockBits parent
+        , bhNonce        = nonce
+        }
+
+-- -- Creates fake testing blocks
+-- fakeNode :: Word32 -> BlockHash -> NodeBlock
+-- fakeNode i h = BlockHeaderNode
+--     { blockHeaderNodeHash = headerHash header
+--     , blockHeaderNodeHeader = BlockHeader 1 z1 z2 0 0 0
+--     , blockHeaderNodeHeight = i
+--     , blockHeaderNodeWork = 0
+--     , blockHeaderNodeMedianTimes = []
+--     , blockHeaderNodeMinWork = 0
+--     }
+--   where
+--     z1 = "0000000000000000000000000000000000000000000000000000000000000000"
+--     z2 = "0000000000000000000000000000000000000000000000000000000000000000"
 
 fakeTx :: [(TxHash, Word32)] -> [(BS.ByteString, Word64)] -> Tx
 fakeTx xs ys =
@@ -523,7 +513,8 @@ testBalances = do
         [(1, BalanceInfo 20000000 20000000 1 1)]
 
     -- Confirm the funding transaction at height 1
-    importMerkles (BestChain [fakeNode 1 bid1]) [[txHash fundingTx]] Nothing
+    let block1 = fakeNode genesisBlock [txHash fundingTx] 0 1
+    importMerkles (BestChain [block1]) [[txHash fundingTx]] Nothing
 
     assertBalance ai 0 0
     assertBalance ai 1 0
@@ -539,7 +530,8 @@ testBalances = do
         [(1, BalanceInfo 20000000 20000000 1 1)]
 
     -- Confirm tx1 at height 2
-    importMerkles (BestChain [fakeNode 2 bid2]) [[txHash tx1]] Nothing
+    let block2 = fakeNode block1 [txHash tx1] 0 2
+    importMerkles (BestChain [block2]) [[txHash tx1]] Nothing
 
     assertBalance ai 0 0
     assertBalance ai 1 0
@@ -556,10 +548,9 @@ testBalances = do
         [(1, BalanceInfo 0 0 0 0)]
 
     -- Reorg on tx2
-    let s = fakeNode 1 bid1
-        o = [fakeNode 2 bid2]
-        n = [fakeNode 2 bid3, fakeNode 3 bid4]
-    importMerkles (ChainReorg s o n) [[], [txHash tx2]] Nothing
+    let block2' = fakeNode block1 [] 1 22
+        block3' = fakeNode block2 [txHash tx2] 1 33
+    importMerkles (ChainReorg block1 [block2] [block2', block3']) [[], [txHash tx2]] Nothing
 
     getBy (UniqueAccTx ai (txHash tx1))
         >>= liftIO
@@ -623,10 +614,10 @@ testBalances = do
         [(0, BalanceInfo 0 0 0 0)]
 
     -- Reorg back onto tx1
-    let s2 = fakeNode 1 bid1
-        o2 = [fakeNode 2 bid3, fakeNode 3 bid4]
-        n2 = [fakeNode 2 bid2, fakeNode 3 bid5, fakeNode 4 bid6]
-    importMerkles (ChainReorg s2 o2 n2) [[txHash tx1], [], []] Nothing
+    let block3 = fakeNode block2 [] 0 3
+        block4 = fakeNode block3 [] 0 4
+    importMerkles (ChainReorg block1 [block2', block3'] [block2, block3, block4])
+        [[txHash tx1], [], []] Nothing
 
     assertBalance ai 0 0
     assertBalance ai 1 0
@@ -699,10 +690,10 @@ testConflictBalances = do
         [(0, BalanceInfo 4000000 0 1 0)]
 
     -- Let's confirm these two transactions
-    importMerkles
-        (BestChain [fakeNode 1 bid1, fakeNode 2 bid2 ])
-        [[txHash tx1], [txHash tx2]]
-        Nothing
+    let block1 = fakeNode genesisBlock [txHash tx1] 0 1
+        block2 = fakeNode block1 [txHash tx2] 0 2
+    importMerkles (BestChain [block1, block2])
+        [[txHash tx1], [txHash tx2]] Nothing
 
     assertBalance ai 0 4000000
     assertBalance ai 1 4000000
@@ -761,10 +752,12 @@ testConflictBalances = do
         [(0, BalanceInfo 0 0 0 0)]
 
     -- Now we trigger a reorg that validates tx4. tx1, tx2 and tx3 should be dead
-    let s = fakeNode 0 bid0
-        o = [fakeNode 1 bid1, fakeNode 2 bid2]
-        n = [fakeNode 1 bid3, fakeNode 2 bid4, fakeNode 3 bid5]
-    importMerkles (ChainReorg s o n) [[], [txHash tx4], []] Nothing
+    let block1' = fakeNode genesisBlock [] 1 11
+        block2' = fakeNode block1' [txHash tx4] 1 22
+        block3' = fakeNode block2' [] 1 33
+    importMerkles
+        (ChainReorg genesisBlock [block1, block2] [block1', block2', block3'])
+        [[], [txHash tx4], []] Nothing
 
     assertTxConfidence ai (txHash tx1) TxDead
     assertTxConfidence ai (txHash tx2) TxDead
@@ -785,12 +778,12 @@ testConflictBalances = do
         [(0, BalanceInfo 0 0 0 0)]
 
     -- Reorg back to tx1, tx2 and tx3
-    let s2 = fakeNode 0 bid0
-        o2 = [ fakeNode 1 bid3, fakeNode 2 bid4, fakeNode 3 bid5 ]
-        n2 = [ fakeNode 1 bid1, fakeNode 2 bid2
-             , fakeNode 3 bid6, fakeNode 4 bid7
-             ]
-    importMerkles (ChainReorg s2 o2 n2) [[txHash tx1], [txHash tx2], [], []] Nothing
+    let block3 = fakeNode block2 [] 0 3
+        block4 = fakeNode block3 [] 0 4
+    importMerkles
+        (ChainReorg genesisBlock [block1', block2', block3']
+         [block1, block2, block3, block4])
+        [[txHash tx1], [txHash tx2], [], []] Nothing
 
     assertTxConfidence ai (txHash tx1) TxBuilding
     assertTxConfidence ai (txHash tx2) TxBuilding
@@ -1382,32 +1375,38 @@ testNotification = do
 
     _ <- importNetTx tx3 Nothing
 
-    let best = BestChain [fakeNode 1 bid1, fakeNode 2 bid2]
-        ts1 = [[txHash tx1], [txHash tx2]]
-    importMerkles best ts1 (Just notifChan)
+    let block1 = fakeNode genesisBlock [txHash tx1] 0 1
+        block2 = fakeNode block1 [txHash tx2] 0 2
+        best = BestChain [block1, block2]
+        txs1 = [[txHash tx1], [txHash tx2]]
+    importMerkles best txs1 (Just notifChan)
     b1NM <- liftIO $ atomically $ readTBMChan notifChan
     liftIO $ case b1NM of
         Just (NotifBlock JsonBlock{..}) -> do
-            assertEqual "Block hash does not match" bid1 jsonBlockHash
+            assertEqual "Block hash does not match"
+                (getNodeHash $ nodeBlockHash block1) jsonBlockHash
             assertEqual "Transaction list does not match" [txHash tx1]
                 (map jsonTxHash jsonBlockTxs)
         _ -> assertFailure "Block notification not the right type"
     b2NM <- liftIO $ atomically $ readTBMChan notifChan
     liftIO $ case b2NM of
         Just (NotifBlock JsonBlock{..}) -> do
-            assertEqual "Block hash does not match" bid2 jsonBlockHash
+            assertEqual "Block hash does not match"
+                (getNodeHash $ nodeBlockHash block2) jsonBlockHash
             assertEqual "Transaction list does not match" [txHash tx2]
                 (map jsonTxHash jsonBlockTxs)
         _ -> assertFailure "Block notification not the right type"
 
 
-    let reorg = ChainReorg (fakeNode 1 bid1) [fakeNode 2 bid2] [fakeNode 3 bid3]
-        ts2 = [[txHash tx2, txHash tx3]]
-    importMerkles reorg ts2 (Just notifChan)
+    let block2' = fakeNode block1 [txHash tx2, txHash tx3] 1 22
+        txs2 = [[txHash tx2, txHash tx3]]
+        reorg = ChainReorg block1 [block2] [block2']
+    importMerkles reorg txs2 (Just notifChan)
     b3NM <- liftIO $ atomically $ readTBMChan notifChan
     liftIO $ case b3NM of
         Just (NotifBlock JsonBlock{..}) -> do
-            assertEqual "Block hash does not match" bid3 jsonBlockHash
+            assertEqual "Block hash does not match"
+                (getNodeHash $ nodeBlockHash block2') jsonBlockHash
             assertEqual "Transaction list does not match"
                 [txHash tx2, txHash tx3]
                 (map jsonTxHash jsonBlockTxs)

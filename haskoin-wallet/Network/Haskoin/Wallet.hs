@@ -88,7 +88,7 @@ module Network.Haskoin.Wallet
 
 -- *Database blocks
 , importMerkles
-, getBestBlock
+, walletBestBlock
 
 -- *Database coins and balances
 , spendableCoins

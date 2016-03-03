@@ -1,45 +1,46 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell       #-}
 module Network.Haskoin.Node.BlockChain where
 
-import System.Random (randomIO)
+import           Control.Concurrent              (threadDelay)
+import           Control.Concurrent.Async.Lifted (link, mapConcurrently,
+                                                  waitAny, withAsync)
+import           Control.Concurrent.STM          (STM, atomically, isEmptyTMVar,
+                                                  putTMVar, readTVar, retry,
+                                                  takeTMVar, tryReadTMVar,
+                                                  tryTakeTMVar)
+import           Control.Concurrent.STM.Lock     (locked)
+import qualified Control.Concurrent.STM.Lock     as Lock (with)
+import           Control.Concurrent.STM.TBMChan  (isEmptyTBMChan, readTBMChan)
+import           Control.Exception.Lifted        (throw)
+import           Control.Monad                   (forM, forM_, forever, unless,
+                                                  void, when)
+import           Control.Monad.Logger            (MonadLoggerIO, logDebug,
+                                                  logError, logInfo, logWarn)
+import           Control.Monad.Reader            (ask, asks)
+import           Control.Monad.Trans             (MonadIO, lift, liftIO)
+import           Control.Monad.Trans.Control     (MonadBaseControl, liftBaseOp_)
+import qualified Data.ByteString.Char8           as C (unpack)
+import           Data.Conduit                    (Source, yield)
+import           Data.List                       (nub)
+import qualified Data.Map                        as M (delete, keys, lookup,
+                                                       null)
+import           Data.Maybe                      (listToMaybe)
+import qualified Data.Sequence                   as S (length)
+import           Data.String.Conversions         (cs)
+import           Data.Text                       (pack)
+import           Data.Time.Clock.POSIX           (getPOSIXTime)
+import           Data.Unique                     (hashUnique)
+import           Data.Word                       (Word32)
+import           Network.Haskoin.Block
+import           Network.Haskoin.Node
+import           Network.Haskoin.Node.HeaderTree
+import           Network.Haskoin.Node.Peer
+import           Network.Haskoin.Node.STM
+import           Network.Haskoin.Transaction
+import           System.Random                   (randomIO)
 
-import Control.Monad (void, liftM, when, unless, forever, forM, forM_)
-import Control.Monad.Trans (MonadIO, lift, liftIO)
-import Control.Monad.Trans.Control (MonadBaseControl, liftBaseOp_)
-import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug, logError)
-import Control.Monad.Reader (ask, asks)
-import Control.Concurrent (threadDelay)
-import Control.Concurrent.STM.Lock (locked)
-import qualified Control.Concurrent.STM.Lock as Lock (with)
-import Control.Exception.Lifted (throw)
-import Control.Concurrent.STM.TBMChan (readTBMChan, isEmptyTBMChan)
-import Control.Concurrent.Async.Lifted
-    ( withAsync, link, waitAny, mapConcurrently )
-import Control.Concurrent.STM
-    ( STM, atomically, readTVar, putTMVar, isEmptyTMVar
-    , takeTMVar, tryTakeTMVar, retry, tryReadTMVar
-    )
-
-import Data.List (nub)
-import Data.Text (pack)
-import Data.Maybe (listToMaybe)
-import Data.Time.Clock.POSIX (getPOSIXTime)
-import Data.Unique (hashUnique)
-import Data.Conduit (Source, yield)
-import qualified Data.Sequence as S (length)
-import qualified Data.ByteString.Char8 as C (unpack)
-import Data.String.Conversions (cs)
-import qualified Data.Map as M (keys, lookup, null, delete)
-import Data.Word (Word32)
-
-import Network.Haskoin.Node
-import Network.Haskoin.Node.STM
-import Network.Haskoin.Node.HeaderTree
-import Network.Haskoin.Node.Peer
-import Network.Haskoin.Transaction
-import Network.Haskoin.Block
-
-startSPVNode :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+startSPVNode :: (MonadLoggerIO m, MonadBaseControl IO m)
              => [PeerHost]
              -> BloomFilter
              -> Int
@@ -60,7 +61,7 @@ startSPVNode hosts bloom elems = do
             return ()
 
 -- Source of all transaction broadcasts
-txSource :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+txSource :: (MonadLoggerIO m, MonadBaseControl IO m)
          => Source (NodeT m) Tx
 txSource = do
     chan <- lift $ asks sharedTxChan
@@ -73,7 +74,7 @@ txSource = do
             yield tx >> txSource
         _ -> $(logError) "Tx channel closed unexpectedly"
 
-handleGetData :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+handleGetData :: (MonadLoggerIO m, MonadBaseControl IO m)
               => (TxHash -> m (Maybe Tx))
               -> NodeT m ()
 handleGetData handler = forever $ do
@@ -97,7 +98,7 @@ handleGetData handler = forever $ do
                 atomicallyNodeT $ trySendMessage pid $ MTx tx
             _ -> return ()
 
-broadcastTxs :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+broadcastTxs :: (MonadLoggerIO m, MonadBaseControl IO m)
              => [TxHash]
              -> NodeT m ()
 broadcastTxs txids = do
@@ -126,26 +127,22 @@ rescanHeight h = do
 -- Wait for the next merkle batch to be available. This function will check for
 -- rescans.
 merkleDownload
-    :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
-    => BlockHash
-    -> BlockHeight
-    -> Int
-    -> NodeT m ( BlockChainAction
-               , Source (NodeT m) (Either (MerkleBlock, MerkleTxs) Tx)
-               )
-merkleDownload bh height batchSize = do
+    :: (MonadLoggerIO m, MonadBaseControl IO m)
+    => NodeBlock
+    -> Word32
+    -> NodeT m
+       (BlockChainAction, Source (NodeT m) (Either (MerkleBlock, MerkleTxs) Tx))
+merkleDownload bh batchSize = do
     -- Store the best block received from the wallet for information only.
     -- This will be displayed in `hw status`
-    atomicallyNodeT $ do
-        writeTVarS sharedBestBlock bh
-        writeTVarS sharedBestBlockHeight height
+    atomicallyNodeT $ writeTVarS sharedBestBlock bh
     merkleCheckSync
     rescanTMVar <- asks sharedRescan
     -- Wait either for a new block to arrive or a rescan to be triggered
     $(logDebug) "Waiting for a new block or a rescan..."
     resE <- atomicallyNodeT $ orElseNodeT
-        (liftM Left $ lift $ takeTMVar rescanTMVar)
-        (liftM (const $ Right ()) $ waitNewBlock bh)
+        (fmap Left $ lift $ takeTMVar rescanTMVar)
+        (const (Right ()) <$> waitNewBlock (getNodeHash $ nodeBlockHash bh))
     resM <- case resE of
         -- A rescan was triggered
         Left valE -> do
@@ -157,7 +154,7 @@ merkleDownload bh height batchSize = do
                 [ "Rescan condition reached:", show newValE ]
             case newValE of
                 Left ts -> tryMerkleDwnTimestamp ts batchSize
-                Right h -> tryMerkleDwnHeight h batchSize
+                Right _ -> tryMerkleDwnHeight bh batchSize
         -- Continue download from a hash
         Right _ -> tryMerkleDwnBlock bh batchSize
     case resM of
@@ -166,11 +163,11 @@ merkleDownload bh height batchSize = do
             $(logWarn) "Invalid merkleDownload result. Retrying ..."
             -- Sleep 10 seconds and retry
             liftIO $ threadDelay $ 10*1000000
-            merkleDownload bh height batchSize
+            merkleDownload bh batchSize
   where
     waitRescan rescanTMVar valE = do
         resE <- atomicallyNodeT $ orElseNodeT
-            (liftM Left (lift $ takeTMVar rescanTMVar))
+            (fmap Left (lift $ takeTMVar rescanTMVar))
             (waitVal valE >> return (Right valE))
         case resE of
             Left newValE -> waitRescan rescanTMVar newValE
@@ -179,14 +176,14 @@ merkleDownload bh height batchSize = do
         Left ts -> waitFastCatchup ts
         Right h -> waitHeight h
 
-merkleCheckSync :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+merkleCheckSync :: (MonadLoggerIO m, MonadBaseControl IO m)
                 => NodeT m ()
 merkleCheckSync = do
     -- Check if we are synced
     (synced, mempool, ourHeight) <- atomicallyNodeT $ do
         synced <- areBlocksSynced
         when synced $ writeTVarS sharedMerklePeer Nothing
-        ourHeight <- liftM nodeHeaderHeight $ readTVarS sharedBestHeader
+        ourHeight <- nodeBlockHeight <$> readTVarS sharedBestHeader
         mempool <- readTVarS sharedMempool
         return (synced, mempool, ourHeight)
     when synced $ do
@@ -206,39 +203,38 @@ waitHeight :: BlockHeight -> NodeT STM ()
 waitHeight height = do
     node <- readTVarS sharedBestHeader
     -- Check if we passed the timestamp condition
-    unless (height < nodeHeaderHeight node) $ lift retry
+    unless (height < nodeBlockHeight node) $ lift retry
 
 -- Wait for headers to catch up to the given timestamp
 waitFastCatchup :: Timestamp -> NodeT STM ()
 waitFastCatchup ts = do
     node <- readTVarS sharedBestHeader
     -- Check if we passed the timestamp condition
-    unless (ts < blockTimestamp (nodeHeader node)) $ lift retry
+    unless (ts < blockTimestamp (nodeBlockHeader node)) $ lift retry
 
 -- Wait for a new block to be available for download
 waitNewBlock :: BlockHash -> NodeT STM ()
 waitNewBlock bh = do
     node <- readTVarS sharedBestHeader
     -- We have more merkle blocks to download
-    unless (bh /= nodeBlockHash node) $ lift retry
+    unless (bh /= getNodeHash (nodeBlockHash node)) $ lift retry
 
 tryMerkleDwnHeight
-    :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
-    => BlockHeight
-    -> Int
-    -> NodeT m ( Maybe ( BlockChainAction
-                       , Source (NodeT m) (Either (MerkleBlock, MerkleTxs) Tx)
-                       )
-               )
-tryMerkleDwnHeight height batchSize = do
+    :: (MonadLoggerIO m, MonadBaseControl IO m)
+    => NodeBlock
+    -> Word32
+    -> NodeT m (Maybe (BlockChainAction,
+                       Source (NodeT m) (Either (MerkleBlock, MerkleTxs) Tx)))
+tryMerkleDwnHeight block batchSize = do
     $(logInfo) $ pack $ unwords
-        [ "Requesting merkle blocks at height", show height
+        [ "Requesting merkle blocks at height", show $ nodeBlockHeight block
         , "with batch size", show batchSize
         ]
     -- Request height - 1 as we want to start downloading at height
-    nodeM <- runHeaderTree $ getBlockHeaderByHeight $ height - 1
+    nodeM <- runSqlNodeT $ getParentBlock block
     case nodeM of
-        Just BlockHeaderNode{..} -> tryMerkleDwnBlock nodeBlockHash batchSize
+        Just bn ->
+            tryMerkleDwnBlock bn batchSize
         _ -> do
             $(logDebug) $ pack $ unwords
                 [ "Can't download merkle blocks."
@@ -247,21 +243,20 @@ tryMerkleDwnHeight height batchSize = do
             return Nothing
 
 tryMerkleDwnTimestamp
-    :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+    :: (MonadLoggerIO m, MonadBaseControl IO m)
     => Timestamp
-    -> Int
-    -> NodeT m ( Maybe ( BlockChainAction
-                       , Source (NodeT m) (Either (MerkleBlock, MerkleTxs) Tx)
-                       )
-               )
+    -> Word32
+    -> NodeT m (Maybe (BlockChainAction,
+                       Source (NodeT m) (Either (MerkleBlock, MerkleTxs) Tx)))
 tryMerkleDwnTimestamp ts batchSize = do
     $(logInfo) $ pack $ unwords
         [ "Requesting merkle blocks after timestamp", show ts
         , "with batch size", show batchSize
         ]
-    nodeM <- runHeaderTree $ getNodeAtTimestamp ts
+    nodeM <- runSqlNodeT $ getBlockAfterTime ts
     case nodeM of
-        Just BlockHeaderNode{..} -> tryMerkleDwnBlock nodeBlockHash batchSize
+        Just bh ->
+            tryMerkleDwnBlock bh batchSize
         _ -> do
             $(logDebug) $ pack $ unwords
                 [ "Can't download merkle blocks."
@@ -270,45 +265,36 @@ tryMerkleDwnTimestamp ts batchSize = do
             return Nothing
 
 tryMerkleDwnBlock
-    :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
-    => BlockHash
-    -> Int
-    -> NodeT m ( Maybe ( BlockChainAction
-                       , Source (NodeT m) (Either (MerkleBlock, MerkleTxs) Tx)
-                       )
-               )
+    :: (MonadLoggerIO m, MonadBaseControl IO m)
+    => NodeBlock
+    -> Word32
+    -> NodeT m (Maybe (BlockChainAction,
+                       Source (NodeT m) (Either (MerkleBlock, MerkleTxs) Tx)))
 tryMerkleDwnBlock bh batchSize = do
     $(logDebug) $ pack $ unwords
         [ "Requesting merkle download from block"
-        , cs $ blockHashToHex bh, "and batch size", show batchSize
+        , cs $ blockHashToHex (getNodeHash $ nodeBlockHash bh)
+        , "and batch size", show batchSize
         ]
-    --Get the list of merkle blocks to download from our headers
-    actionM <- runHeaderTree $ getNodeWindow bh batchSize
-    case actionM of
-        -- Nothing to download
-        Nothing -> do
-            $(logDebug) $ pack $ unwords
-                [ "No more merkle blocks available from block"
-                , cs $ blockHashToHex bh
-                ]
+    -- Get the list of merkle blocks to download from our headers
+    best <- atomicallyNodeT $ readTVarS sharedBestHeader
+    action <- runSqlNodeT $ getBlockWindow best bh batchSize
+    case actionNodes action of
+        [] -> do
+            $(logError) "BlockChainAction was empty"
             return Nothing
-        -- A batch of merkle blocks is available for download
-        Just action -> case actionNodes action of
-            [] -> do
-                $(logError) "BlockChainAction was empty"
-                return Nothing
-            ns -> do
-                -- Wait for a peer available for merkle download
-                (pid, PeerSession{..}) <- waitMerklePeer $
-                    nodeHeaderHeight $ last ns
+        ns -> do
+            -- Wait for a peer available for merkle download
+            (pid, PeerSession{..}) <- waitMerklePeer $
+                nodeBlockHeight $ last ns
 
-                $(logDebug) $ formatPid pid peerSessionHost $ unwords
-                    [ "Found merkle downloading peer with score"
-                    , show peerSessionScore
-                    ]
+            $(logDebug) $ formatPid pid peerSessionHost $ unwords
+                [ "Found merkle downloading peer with score"
+                , show peerSessionScore
+                ]
 
-                let source = peerMerkleDownload pid peerSessionHost action
-                return $ Just (action, source)
+            let source = peerMerkleDownload pid peerSessionHost action
+            return $ Just (action, source)
   where
     waitMerklePeer height = atomicallyNodeT $ do
         pidM <- readTVarS sharedHeaderPeer
@@ -323,13 +309,13 @@ tryMerkleDwnBlock bh batchSize = do
             _ -> lift retry
 
 peerMerkleDownload
-    :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+    :: (MonadLoggerIO m, MonadBaseControl IO m)
     => PeerId
     -> PeerHost
     -> BlockChainAction
     -> Source (NodeT m) (Either (MerkleBlock, MerkleTxs) Tx)
 peerMerkleDownload pid ph action = do
-    let bids = map nodeBlockHash $ actionNodes action
+    let bids = map (getNodeHash . nodeBlockHash) $ actionNodes action
         vs   = map (InvVector InvMerkleBlock . getBlockHash) bids
     $(logInfo) $ formatPid pid ph $ unwords
         [ "Requesting", show $ length bids, "merkle block(s)" ]
@@ -390,14 +376,14 @@ peerMerkleDownload pid ph action = do
                     "Merkle channel closed unexpectedly"
                 lift $ atomicallyNodeT $ writeTVarS sharedMerklePeer Nothing
 
-processTickles :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+processTickles :: (MonadLoggerIO m, MonadBaseControl IO m)
                => NodeT m ()
 processTickles = forever $ do
     $(logDebug) $ pack "Waiting for a block tickle ..."
     (pid, ph, tickle) <- atomicallyNodeT waitTickle
     $(logInfo) $ formatPid pid ph $ unwords
         [ "Received block tickle", cs $ blockHashToHex tickle ]
-    heightM <- runHeaderTree $ getBlockHeaderHeight tickle
+    heightM <- fmap nodeBlockHeight <$> runSqlNodeT (getBlockByHash tickle)
     case heightM of
         Just height -> do
             $(logInfo) $ formatPid pid ph $ unwords
@@ -411,7 +397,8 @@ processTickles = forever $ do
                 , "is unknown. Requesting a peer header sync."
                 ]
             peerHeaderSyncFull pid ph `catchAny` const (disconnectPeer pid ph)
-            newHeightM <- runHeaderTree $ getBlockHeaderHeight tickle
+            newHeightM <-
+                fmap nodeBlockHeight <$> runSqlNodeT (getBlockByHash tickle)
             case newHeightM of
                 Just height -> do
                     $(logInfo) $ formatPid pid ph $ unwords
@@ -443,10 +430,10 @@ waitTickle = do
 syncedHeight :: MonadIO m => NodeT m (Bool, Word32)
 syncedHeight = atomicallyNodeT $ do
     synced <- areHeadersSynced
-    ourHeight <- liftM nodeHeaderHeight $ readTVarS sharedBestHeader
+    ourHeight <- nodeBlockHeight <$> readTVarS sharedBestHeader
     return (synced, ourHeight)
 
-headerSync :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+headerSync :: (MonadLoggerIO m, MonadBaseControl IO m)
            => NodeT m ()
 headerSync = do
     -- Start the header sync
@@ -489,7 +476,7 @@ headerSync = do
             -- Continue the download if we are not yet synced
             else headerSync
 
-peerHeaderSyncLimit :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+peerHeaderSyncLimit :: (MonadLoggerIO m, MonadBaseControl IO m)
                     => PeerId
                     -> PeerHost
                     -> Int
@@ -511,7 +498,7 @@ peerHeaderSyncLimit pid ph initLimit
         _ -> return False
 
 -- Sync all the headers from a given peer
-peerHeaderSyncFull :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+peerHeaderSyncFull :: (MonadLoggerIO m, MonadBaseControl IO m)
                    => PeerId
                    -> PeerHost
                    -> NodeT m ()
@@ -532,12 +519,13 @@ areBlocksSynced = do
     headersSynced <- areHeadersSynced
     bestBlock     <- readTVarS sharedBestBlock
     bestHeader    <- readTVarS sharedBestHeader
-    return $ headersSynced && bestBlock == nodeBlockHash bestHeader
+    return $ headersSynced &&
+        nodeBlockHash bestBlock == nodeBlockHash bestHeader
 
 -- Check if the block headers are synced with the network height
 areHeadersSynced :: NodeT STM Bool
 areHeadersSynced = do
-    ourHeight <- liftM nodeHeaderHeight $ readTVarS sharedBestHeader
+    ourHeight <- nodeBlockHeight <$> readTVarS sharedBestHeader
     netHeight <- readTVarS sharedNetworkHeight
     -- If netHeight == 0 then we did not connect to any peers yet
     return $ ourHeight >= netHeight && netHeight > 0
@@ -545,7 +533,7 @@ areHeadersSynced = do
 -- | Sync one batch of headers from the given peer. Accept the result of a
 -- previous peerHeaderSync to correctly compute block locators in the
 -- presence of side chains.
-peerHeaderSync :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+peerHeaderSync :: (MonadLoggerIO m, MonadBaseControl IO m)
                => PeerId
                -> PeerHost
                -> Maybe BlockChainAction
@@ -559,20 +547,27 @@ peerHeaderSync pid ph prevM = do
         -- Retrieve the block locator
         loc <- case prevM of
             Just (KnownChain ns) -> do
-                $(logDebug) $ formatPid pid ph "Building a KnownChain locator"
-                runHeaderTree $ blockLocatorHeight $ nodeHeaderHeight $ last ns
-            Just action@(SideChain _) -> do
-                $(logDebug) $ formatPid pid ph "Building a SideChain locator"
-                runHeaderTree $ blockLocatorSide action
-            _ -> do
-                $(logDebug) $ formatPid pid ph "Building a regular locator"
-                runHeaderTree blockLocator
+                $(logDebug) $ formatPid pid ph "Building a known chain locator"
+                runSqlNodeT $ blockLocator $ last ns
+            Just (SideChain ns) -> do
+                $(logDebug) $ formatPid pid ph "Building a side chain locator"
+                runSqlNodeT $ blockLocator $ last ns
+            Just (BestChain ns) -> do
+                $(logDebug) $ formatPid pid ph "Building a best chain locator"
+                runSqlNodeT $ blockLocator $ last ns
+            Just (ChainReorg _ _ ns) -> do
+                $(logDebug) $ formatPid pid ph "Building a reorg locator"
+                runSqlNodeT $ blockLocator $ last ns
+            Nothing -> do
+                $(logDebug) $ formatPid pid ph "Building a locator to best"
+                best <- atomicallyNodeT $ readTVarS sharedBestHeader
+                runSqlNodeT $ blockLocator best
 
         $(logDebug) $ formatPid pid ph $ unwords
             [ "Requesting headers with block locator of size"
             , show $ length loc
             , "Start block:", cs $ blockHashToHex $ head loc
-            , "End block:", cs $ blockHashToHex $ last loc
+            , "End block:",   cs $ blockHashToHex $ last loc
             ]
 
         -- Send a GetHeaders message to the peer
@@ -581,9 +576,7 @@ peerHeaderSync pid ph prevM = do
         $(logDebug) $ formatPid pid ph "Waiting 2 minutes for headers..."
 
         -- Wait 120 seconds for a response or time out
-        continueE <- raceTimeout 120
-                        (disconnectPeer pid ph)
-                        waitHeaders
+        continueE <- raceTimeout 120 (disconnectPeer pid ph) waitHeaders
 
         -- Return True if we can continue syncing from this peer
         return $ either (const Nothing) id continueE
@@ -606,8 +599,8 @@ peerHeaderSync pid ph prevM = do
             , "Start blocks:", cs $ blockHashToHex $ headerHash $ fst $ head hs
             , "End blocks:", cs $ blockHashToHex $ headerHash $ fst $ last hs
             ]
-        now <- liftM round $ liftIO getPOSIXTime
-        actionE <- runHeaderTree $ connectHeaders (map fst hs) now True
+        now <- round <$> liftIO getPOSIXTime
+        actionE <- runSqlNodeT $ connectHeaders (map fst hs) now
         case actionE of
             Left err -> do
                 misbehaving pid ph severeDoS err
@@ -622,7 +615,7 @@ peerHeaderSync pid ph prevM = do
                         [ "Received", show $ length nodes
                         , "nodes in the action"
                         ]
-                    let height = nodeHeaderHeight $ last nodes
+                    let height = nodeBlockHeight $ last nodes
                     case action of
                         KnownChain _ ->
                             $(logInfo) $ formatPid pid ph $ unwords
@@ -653,27 +646,34 @@ nodeStatus = do
     nodeStatusPeers <- mapM peerStatus =<< getPeers
     SharedNodeState{..} <- ask
     lift $ do
-        nodeStatusNetworkHeight <- readTVar sharedNetworkHeight
-        nodeStatusBestHeader <- liftM nodeBlockHash $
-            readTVar sharedBestHeader
-        nodeStatusBestHeaderHeight <- liftM nodeHeaderHeight $
-            readTVar sharedBestHeader
-        nodeStatusBestBlock <- readTVar sharedBestBlock
-        nodeStatusBestBlockHeight <- readTVar sharedBestBlockHeight
-        nodeStatusBloomSize <- liftM (maybe 0 (S.length . bloomData . fst)) $
-            readTVar sharedBloomFilter
-        nodeStatusHeaderPeer <- liftM (fmap hashUnique) $
-            readTVar sharedHeaderPeer
-        nodeStatusMerklePeer <- liftM (fmap hashUnique) $
-            readTVar sharedMerklePeer
-        nodeStatusHaveHeaders <- liftM not $ isEmptyTMVar sharedHeaders
-        nodeStatusHaveTickles <- liftM not $ isEmptyTBMChan sharedTickleChan
-        nodeStatusHaveTxs <- liftM not $ isEmptyTBMChan sharedTxChan
-        nodeStatusGetData <- liftM M.keys $ readTVar sharedTxGetData
-        nodeStatusRescan <- tryReadTMVar sharedRescan
-        nodeStatusMempool <- readTVar sharedMempool
-        nodeStatusSyncLock <- locked sharedSyncLock
-        nodeStatusLevelDBLock <- locked sharedLevelDBLock
+        best   <- readTVar sharedBestBlock
+        header <- readTVar sharedBestHeader
+        let nodeStatusBestBlock        = getNodeHash $ nodeBlockHash   best
+            nodeStatusBestBlockHeight  =               nodeBlockHeight best
+            nodeStatusBestHeader       = getNodeHash $ nodeBlockHash   header
+            nodeStatusBestHeaderHeight =               nodeBlockHeight header
+        nodeStatusNetworkHeight <-
+            readTVar sharedNetworkHeight
+        nodeStatusBloomSize <-
+            maybe 0 (S.length . bloomData . fst) <$> readTVar sharedBloomFilter
+        nodeStatusHeaderPeer <-
+            fmap hashUnique <$> readTVar sharedHeaderPeer
+        nodeStatusMerklePeer <-
+            fmap hashUnique <$> readTVar sharedMerklePeer
+        nodeStatusHaveHeaders <-
+            not <$> isEmptyTMVar sharedHeaders
+        nodeStatusHaveTickles <-
+            not <$> isEmptyTBMChan sharedTickleChan
+        nodeStatusHaveTxs <-
+            not <$> isEmptyTBMChan sharedTxChan
+        nodeStatusGetData <-
+            M.keys <$> readTVar sharedTxGetData
+        nodeStatusRescan <-
+            tryReadTMVar sharedRescan
+        nodeStatusMempool <-
+            readTVar sharedMempool
+        nodeStatusSyncLock <-
+            locked sharedSyncLock
         return NodeStatus{..}
 
 peerStatus :: (PeerId, PeerSession) -> NodeT STM PeerStatus
@@ -691,8 +691,8 @@ peerStatus (pid, PeerSession{..}) = do
         peerStatusLog            = peerHostSessionLog <$> hostM
         peerStatusReconnectTimer = peerHostSessionReconnect <$> hostM
     lift $ do
-        peerStatusHaveMerkles <- liftM not $ isEmptyTBMChan peerSessionMerkleChan
-        peerStatusHaveMessage <- liftM not $ isEmptyTBMChan peerSessionChan
+        peerStatusHaveMerkles <- not <$> isEmptyTBMChan peerSessionMerkleChan
+        peerStatusHaveMessage <- not <$> isEmptyTBMChan peerSessionChan
         peerStatusPingNonces  <- readTVar peerSessionPings
         return PeerStatus{..}
 

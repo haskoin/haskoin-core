@@ -79,7 +79,6 @@ library
                  , haskeline
                  , haskoin-core                  >= 0.3       && < 0.5
                  , haskoin-node                  >= 0.3       && < 0.5
-                 , leveldb-haskell               >= 0.6       && < 0.7
                  , lifted-async                  >= 0.2       && < 0.9
                  , lifted-base                   >= 0.2       && < 0.3
                  , monad-logger                  >= 0.3.13    && < 0.4
@@ -88,7 +87,6 @@ library
                  , persistent                    >= 2.2       && < 2.3
                  , persistent-template           >= 2.1       && < 2.2
                  , resourcet                     >= 1.1       && < 1.2
-                 , SafeSemaphore                 >= 0.10      && < 0.11
                  , semigroups
                  , split                         >= 0.2       && < 0.3
                  , stm                           >= 2.4       && < 2.5
@@ -104,7 +102,6 @@ library
                  , zeromq4-haskell               >= 0.6       && < 0.7
 
     ghc-options: -Wall
-                 -O3
 
   if flag(mysql)
     build-depends: persistent-mysql >= 2.2 && < 2.3

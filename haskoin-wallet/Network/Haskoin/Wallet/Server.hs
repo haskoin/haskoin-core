@@ -1,75 +1,82 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell       #-}
 module Network.Haskoin.Wallet.Server
 ( runSPVServer
 , stopSPVServer
 ) where
 
-import System.Posix.Daemon (runDetached, Redirection (ToFile), killAndWait)
-import Data.List.NonEmpty (NonEmpty((:|)))
-import System.ZMQ4
-    ( Context, Rep(..), Pub(..), KeyFormat(..), Socket, bind
-    , receive, receiveMulti
-    , send, sendMulti
-    , setCurveServer, setCurveSecretKey
-    , withContext, withSocket
-    , z85Decode
-    )
-
-import Control.Monad (when, unless, forever, void, forM_)
-import Control.Monad.Trans (lift, liftIO)
-import Control.Monad.Trans.Control (MonadBaseControl, liftBaseOpDiscard)
-import Control.Monad.Base (MonadBase)
-import Control.Monad.Catch (MonadThrow)
-import Control.Monad.Trans.Resource (MonadResource, runResourceT)
-import Control.DeepSeq (NFData(..))
-import Control.Concurrent.STM (atomically, retry)
-import Control.Concurrent.STM.TBMChan (TBMChan, newTBMChan, readTBMChan)
-import Control.Concurrent.Async.Lifted (async, waitAnyCancel, link)
-import Control.Exception.Lifted (SomeException(..), ErrorCall(..), catches)
-import qualified Control.Exception.Lifted as E (Handler(..))
-import qualified Control.Concurrent.MSem as Sem (MSem, new)
-import Control.Monad.Logger
-    ( MonadLoggerIO
-    , runStdoutLoggingT
-    , logDebug
-    , logError
-    , logWarn
-    , logInfo
-    , filterLogger
-    )
-
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as BL (fromStrict, toStrict)
-import qualified Data.HashMap.Strict as H (lookup)
-import Data.Text (pack)
-import Data.Maybe (fromMaybe, isJust, fromJust)
-import Data.Aeson (Value, decode, encode)
-import Data.Conduit (await, awaitForever, ($$))
-import Data.Word (Word32)
-import qualified Data.Map.Strict as M
-    (Map, unionWith, null, empty, fromListWith, assocs, elems)
-import Data.String.Conversions (cs)
-
-import Database.Persist.Sql (ConnectionPool, runMigration)
-import qualified Database.LevelDB.Base as DB (Options(..), defaultOptions)
-
-import Database.Esqueleto (from, where_, val , (^.), (==.), (&&.), (<=.))
-
-import Network.Haskoin.Constants
-import Network.Haskoin.Block
-import Network.Haskoin.Transaction
-import Network.Haskoin.Node.Peer
-import Network.Haskoin.Node.BlockChain
-import Network.Haskoin.Node.STM
-import Network.Haskoin.Node.HeaderTree
-
-import Network.Haskoin.Wallet.Accounts
-import Network.Haskoin.Wallet.Transaction
-import Network.Haskoin.Wallet.Types
-import Network.Haskoin.Wallet.Model
-import Network.Haskoin.Wallet.Settings
-import Network.Haskoin.Wallet.Server.Handler
-import Network.Haskoin.Wallet.Database
+import           Control.Concurrent.Async.Lifted       (async, link,
+                                                        waitAnyCancel)
+import           Control.Concurrent.STM                (atomically, retry)
+import           Control.Concurrent.STM.TBMChan        (TBMChan, newTBMChan,
+                                                        readTBMChan)
+import           Control.DeepSeq                       (NFData (..))
+import           Control.Exception.Lifted              (ErrorCall (..),
+                                                        SomeException (..),
+                                                        catches)
+import qualified Control.Exception.Lifted              as E (Handler (..))
+import           Control.Monad                         (forM_, forever, unless,
+                                                        void, when)
+import           Control.Monad.Base                    (MonadBase)
+import           Control.Monad.Catch                   (MonadThrow)
+import           Control.Monad.Logger                  (MonadLoggerIO,
+                                                        filterLogger, logDebug,
+                                                        logError, logInfo,
+                                                        logWarn,
+                                                        runStdoutLoggingT)
+import           Control.Monad.Trans                   (lift, liftIO)
+import           Control.Monad.Trans.Control           (MonadBaseControl,
+                                                        liftBaseOpDiscard)
+import           Control.Monad.Trans.Resource          (MonadResource,
+                                                        runResourceT)
+import           Data.Aeson                            (Value, decode, encode)
+import           Data.ByteString                       (ByteString)
+import qualified Data.ByteString.Lazy                  as BL (fromStrict,
+                                                              toStrict)
+import           Data.Conduit                          (await, awaitForever,
+                                                        ($$))
+import qualified Data.HashMap.Strict                   as H (lookup)
+import           Data.List.NonEmpty                    (NonEmpty ((:|)))
+import qualified Data.Map.Strict                       as M (Map, assocs, elems,
+                                                             empty,
+                                                             fromListWith, null,
+                                                             unionWith)
+import           Data.Maybe                            (fromJust, fromMaybe,
+                                                        isJust)
+import           Data.String.Conversions               (cs)
+import           Data.Text                             (pack)
+import           Data.Word                             (Word32)
+import           Database.Esqueleto                    (from, val, where_,
+                                                        (&&.), (<=.), (==.),
+                                                        (^.))
+import           Database.Persist.Sql                  (ConnectionPool,
+                                                        runMigration)
+import           Network.Haskoin.Block
+import           Network.Haskoin.Constants
+import           Network.Haskoin.Node.BlockChain
+import           Network.Haskoin.Node.HeaderTree
+import           Network.Haskoin.Node.Peer
+import           Network.Haskoin.Node.STM
+import           Network.Haskoin.Transaction
+import           Network.Haskoin.Wallet.Accounts
+import           Network.Haskoin.Wallet.Database
+import           Network.Haskoin.Wallet.Model
+import           Network.Haskoin.Wallet.Server.Handler
+import           Network.Haskoin.Wallet.Settings
+import           Network.Haskoin.Wallet.Transaction
+import           Network.Haskoin.Wallet.Types
+import           System.Posix.Daemon                   (Redirection (ToFile),
+                                                        killAndWait,
+                                                        runDetached)
+import           System.ZMQ4                           (Context, KeyFormat (..),
+                                                        Pub (..), Rep (..),
+                                                        Socket, bind, receive,
+                                                        receiveMulti, send,
+                                                        sendMulti,
+                                                        setCurveSecretKey,
+                                                        setCurveServer,
+                                                        withContext, withSocket,
+                                                        z85Decode)
 
 data EventSession = EventSession
     { eventBatchSize :: !Int
@@ -86,127 +93,119 @@ runSPVServer :: Config -> IO ()
 runSPVServer cfg = maybeDetach cfg $ run $ do -- start the server process
     -- Initialize the database
     -- Check the operation mode of the server.
-    (sem, pool) <- initDatabase cfg
+    pool <- initDatabase cfg
     -- Notification channel
-    notifChan <- liftIO $ atomically $ newTBMChan 1000
+    notif <- liftIO $ atomically $ newTBMChan 1000
     case configMode cfg of
         -- In this mode, we do not launch an SPV node. We only accept
         -- client requests through the ZMQ API.
-        SPVOffline -> runWalletApp (HandlerSession cfg pool Nothing sem) notifChan
+        SPVOffline -> runWalletApp (HandlerSession cfg pool Nothing) notif
         -- In this mode, we launch the client ZMQ API and we sync the
         -- wallet database with an SPV node.
         SPVOnline -> do
             -- Initialize the node state
-            nodeState <- getNodeState fp opts
+            node <- getNodeState (Right pool)
             -- Spin up the node threads
+            let session = HandlerSession cfg pool (Just node)
             as <- mapM async
                 -- Start the SPV node
-                [ runNodeT nodeState $ do
-                    -- Get our bloom filter
-                    (bloom, elems, _) <- runDBPool sem pool getBloomFilter
-                    startSPVNode hosts bloom elems
+                [ runNodeT (spv pool) node
                 -- Merkle block synchronization
-                , runMerkleSync nodeState sem pool notifChan
+                , runNodeT (runMerkleSync pool notif) node
                 -- Import solo transactions as they arrive from peers
-                , runNodeT nodeState $ txSource $$ processTx sem pool notifChan
+                , runNodeT (txSource $$ processTx pool notif) node
                 -- Respond to transaction GetData requests
-                , runNodeT nodeState $
-                    handleGetData $ runDBPool sem pool . getTx
+                , runNodeT (handleGetData $ (`runDBPool` pool) . getTx) node
                 -- Re-broadcast pending transactions
-                , broadcastPendingTxs nodeState sem pool
+                , runNodeT (broadcastPendingTxs pool) node
                 -- Run the ZMQ API server
-                , runWalletApp
-                  (HandlerSession cfg pool (Just nodeState) sem) notifChan
+                , runWalletApp session notif
                 ]
+            mapM_ link as
             _ <- waitAnyCancel as
             return ()
   where
+    spv pool = do
+        -- Get our bloom filter
+        (bloom, elems, _) <- runDBPool getBloomFilter pool
+        startSPVNode hosts bloom elems
     -- Setup logging monads
-    run               = runResourceT . runLogging
-    runLogging        = runStdoutLoggingT . filterLogger logFilter
+    run          = runResourceT . runLogging
+    runLogging   = runStdoutLoggingT . filterLogger logFilter
     logFilter _ level = level >= configLogLevel cfg
         -- Bitcoin nodes to connect to
     nodes = fromMaybe
         (error $ "BTC nodes for " ++ networkName ++ " not found")
         (pack networkName `H.lookup` configBTCNodes cfg)
     hosts = map (\x -> PeerHost (btcNodeHost x) (btcNodePort x)) nodes
-    -- LevelDB options
-    fp = "headertree"
-    opts = DB.defaultOptions { DB.createIfMissing = True
-                             , DB.cacheSize       = 2048
-                             }
     -- Run the merkle syncing thread
-    runMerkleSync nodeState sem pool notifChan = runNodeT nodeState $ do
+    runMerkleSync pool notif = do
         $(logDebug) "Waiting for a valid bloom filter for merkle downloads..."
 
         -- Only download merkles if we have a valid bloom filter
         _ <- atomicallyNodeT waitBloomFilter
 
         -- Provide a fast catchup time if we are at height 0
-        fcM <- fmap (fmap adjustFCTime) $ runDBPool sem pool $ do
-            (_, h) <- getBestBlock
+        fcM <- fmap (fmap adjustFCTime) $ (`runDBPool` pool) $ do
+            (_, h) <- walletBestBlock
             if h == 0 then firstAddrTime else return Nothing
         maybe (return ()) (atomicallyNodeT . rescanTs) fcM
 
         -- Start the merkle sync
-        merkleSync sem pool 500 notifChan
+        merkleSync pool 500 notif
     -- Run a thread that will re-broadcast pending transactions
-    broadcastPendingTxs nodeState sem pool = runNodeT nodeState $ forever $ do
+    broadcastPendingTxs pool = forever $ do
         -- Wait until we are synced
         atomicallyNodeT $ do
             synced <- areBlocksSynced
             unless synced $ lift retry
         -- Send an INV for those transactions to all peers
-        broadcastTxs =<< runDBPool sem pool (getPendingTxs 0)
+        broadcastTxs =<< runDBPool (getPendingTxs 0) pool
         -- Wait until we are not synced
         atomicallyNodeT $ do
             synced <- areBlocksSynced
             when synced $ lift retry
-    processTx sem pool notifChan = awaitForever $ \tx -> lift $ do
-        (_, newAddrs) <- runDBPool sem pool $ importNetTx tx (Just notifChan)
+    processTx pool notif = awaitForever $ \tx -> lift $ do
+        (_, newAddrs) <- runDBPool (importNetTx tx (Just notif)) pool
         unless (null newAddrs) $ do
             $(logInfo) $ pack $ unwords
                 [ "Generated", show $ length newAddrs
                 , "new addresses while importing the tx."
                 , "Updating the bloom filter"
                 ]
-            (bloom, elems, _) <- runDBPool sem pool getBloomFilter
+            (bloom, elems, _) <- runDBPool getBloomFilter pool
             atomicallyNodeT $ sendBloomFilter bloom elems
 
 initDatabase :: (MonadBaseControl IO m, MonadLoggerIO m)
-             => Config -> m (Sem.MSem Int, ConnectionPool)
+             => Config -> m ConnectionPool
 initDatabase cfg = do
-    -- Create a semaphore with 1 resource
-    sem <- liftIO $ Sem.new 1
     -- Create a database pool
     let dbCfg = fromMaybe
             (error $ "DB config settings for " ++ networkName ++ " not found")
             (pack networkName `H.lookup` configDatabase cfg)
     pool <- getDatabasePool dbCfg
     -- Initialize wallet database
-    runDBPool sem pool $ do
+    flip runDBPool pool $ do
         _ <- runMigration migrateWallet
+        _ <- runMigration migrateHeaderTree
         initWallet $ configBloomFP cfg
     -- Return the semaphrone and the connection pool
-    return (sem, pool)
+    return pool
 
 merkleSync
-    :: ( MonadLoggerIO m
-       , MonadBaseControl IO m
-       , MonadThrow m
-       , MonadResource m
-       )
-    => Sem.MSem Int
-    -> ConnectionPool
-    -> Int
+    :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m, MonadResource m)
+    => ConnectionPool
+    -> Word32
     -> TBMChan Notif
     -> NodeT m ()
-merkleSync sem pool bSize notifChan = do
+merkleSync pool bSize notif = do
     -- Get our best block
-    (best, height) <- runDBPool sem pool getBestBlock
+    (hash, _) <- runDBPool walletBestBlock pool
     $(logDebug) "Starting merkle batch download"
     -- Wait for a new block or a rescan
-    (action, source) <- merkleDownload best height bSize
+    bestM <- runSqlNodeT $ getBlockByHash hash
+    let best = fromMaybe (error "Best wallet block not found") bestM
+    (action, source) <- merkleDownload best bSize
     $(logDebug) "Received a merkle action and source. Processing the source..."
 
     -- Read and process the data from the source
@@ -220,12 +219,12 @@ merkleSync sem pool bSize notifChan = do
             , "new addresses while importing the merkle block."
             , "Sending our bloom filter."
             ]
-        (bloom, elems, _) <- runDBPool sem pool getBloomFilter
+        (bloom, elems, _) <- runDBPool getBloomFilter pool
         atomicallyNodeT $ sendBloomFilter bloom elems
 
     -- Check if we should rescan the current merkle batch
     $(logDebug) "Checking if we need to rescan the current batch..."
-    rescan <- lift $ shouldRescan aMap
+    rescan <- shouldRescan aMap
     when rescan $ $(logDebug) "We need to rescan the current batch"
     -- Compute the new batch size
     let newBSize | rescan    = max 1 $ bSize `div` 2
@@ -236,7 +235,7 @@ merkleSync sem pool bSize notifChan = do
 
     -- Did we receive all the merkles that we asked for ?
     let missing = (headerHash <$> lastMerkleM) /=
-                  Just (nodeBlockHash $ last $ actionNodes action)
+            Just (getNodeHash $ nodeBlockHash $ last $ actionNodes action)
 
     when missing $ $(logWarn) $ pack $ unwords
         [ "Merkle block stream closed prematurely"
@@ -247,17 +246,17 @@ merkleSync sem pool bSize notifChan = do
     unless (rescan || missing) $ do
         $(logDebug) "Importing merkles into the wallet..."
         -- Confirm the transactions
-        runDBPool sem pool $ importMerkles action mTxsAcc (Just notifChan)
+        runDBPool (importMerkles action mTxsAcc (Just notif)) pool
         $(logDebug) "Done importing merkles into the wallet"
         logBlockChainAction action
 
-    merkleSync sem pool newBSize notifChan
+    merkleSync pool newBSize notif
   where
     go lastMerkleM mTxsAcc aMap = await >>= \resM -> case resM of
         Just (Right tx) -> do
             $(logDebug) $ pack $ unwords
                 [ "Importing merkle tx", cs $ txHashToHex $ txHash tx ]
-            (_, newAddrs) <- lift $ runDBPool sem pool $ importNetTx tx Nothing
+            (_, newAddrs) <- lift $ runDBPool (importNetTx tx Nothing) pool
             $(logDebug) $ pack $ unwords
                 [ "Generated", show $ length newAddrs
                 , "new addresses while importing tx"
@@ -280,7 +279,7 @@ merkleSync sem pool bSize notifChan = do
     shouldRescan aMap = do
         -- Try to find an account whos gap is smaller than the number of new
         -- addresses generated in that account.
-        res <- runDBPool sem pool $ splitSelect (M.assocs aMap) $ \ks ->
+        res <- (`runDBPool` pool) $ splitSelect (M.assocs aMap) $ \ks ->
             from $ \a -> do
                 let andCond (ai, cnt) =
                         a ^. AccountId ==. val ai &&.
@@ -292,26 +291,32 @@ merkleSync sem pool bSize notifChan = do
     logBlockChainAction action = case action of
         BestChain nodes -> $(logInfo) $ pack $ unwords
             [ "Best chain height"
-            , show $ nodeHeaderHeight $ last nodes
-            , "(", cs $ blockHashToHex $ nodeBlockHash $ last nodes, ")"
+            , show $ nodeBlockHeight $ last nodes
+            , "(", cs $ blockHashToHex $ getNodeHash $ nodeBlockHash $
+                last nodes
+            , ")"
             ]
         ChainReorg _ o n -> $(logInfo) $ pack $ unlines $
             [ "Chain reorg."
             , "Orphaned blocks:"
             ]
-            ++ map (("  " ++) . cs . blockHashToHex . nodeBlockHash) o
+            ++ map (("  " ++) . cs . blockHashToHex . getNodeHash .
+                    nodeBlockHash) o
             ++ [ "New blocks:" ]
-            ++ map (("  " ++) . cs . blockHashToHex . nodeBlockHash) n
+            ++ map (("  " ++) . cs . blockHashToHex . getNodeHash .
+                    nodeBlockHash) n
             ++ [ unwords [ "Best merkle chain height"
-                        , show $ nodeHeaderHeight $ last n
+                        , show $ nodeBlockHeight $ last n
                         ]
             ]
         SideChain n -> $(logWarn) $ pack $ unlines $
             "Side chain:" :
-            map (("  " ++) . cs . blockHashToHex . nodeBlockHash) n
+            map (("  " ++) . cs . blockHashToHex . getNodeHash .
+                 nodeBlockHash) n
         KnownChain n -> $(logWarn) $ pack $ unlines $
             "Known chain:" :
-            map (("  " ++) . cs . blockHashToHex . nodeBlockHash) n
+            map (("  " ++) . cs . blockHashToHex . getNodeHash .
+                 nodeBlockHash) n
 
 maybeDetach :: Config -> IO () -> IO ()
 maybeDetach cfg action =
@@ -335,19 +340,13 @@ runWalletApp :: ( MonadLoggerIO m
                 , MonadResource m
                 )
              => HandlerSession -> TBMChan Notif -> m ()
-runWalletApp session notifChan = liftBaseOpDiscard withContext $ \ctx -> do
+runWalletApp session notif = liftBaseOpDiscard withContext $ \ctx -> do
     na <- async $ liftBaseOpDiscard (withSocket ctx Pub) $ \sock -> do
         setupCrypto ctx sock
         liftIO $ bind sock $ configBindNotif $ handlerConfig session
         forever $ do
-            xM <- liftIO $ atomically $ readTBMChan notifChan
-            forM_ xM $ \x -> do
-                liftIO $ send sock [] $ cs $ encode x
-                case x of
-                    NotifTx JsonTx{..} -> $(logInfo) $ cs $ unwords
-                        [ "Notif Tx:", cs (txHashToHex jsonTxHash) ]
-                    NotifBlock JsonBlock{..} -> $(logInfo) $ cs $ unwords
-                        [ "Notif Block:", cs (blockHashToHex jsonBlockHash) ]
+            xM <- liftIO $ atomically $ readTBMChan notif
+            forM_ xM $ \x -> liftIO $ send sock [] $ cs $ encode x
     link na
     liftBaseOpDiscard (withSocket ctx Rep) $ \sock -> do
         setupCrypto ctx sock
@@ -356,7 +355,7 @@ runWalletApp session notifChan = liftBaseOpDiscard withContext $ \ctx -> do
             bs  <- liftIO $ receive sock
             res <- case decode $ BL.fromStrict bs of
                 Just r  -> catchErrors $
-                    runHandler session $ dispatchRequest r
+                    runHandler (dispatchRequest r) session
                 Nothing -> return $ ResponseError "Could not decode request"
             liftIO $ send sock [] $ BL.toStrict $ encode res
   where

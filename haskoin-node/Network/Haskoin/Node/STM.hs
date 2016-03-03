@@ -1,43 +1,46 @@
-{-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE TemplateHaskell       #-}
 module Network.Haskoin.Node.STM where
 
-import Control.Monad (liftM, (<=<))
-import Control.Monad.Trans (MonadIO, lift, liftIO)
-import Control.Monad.Reader (ReaderT, ask, asks, runReaderT)
-import Control.Monad.Trans.Control (MonadBaseControl)
-import Control.Monad.Logger (MonadLogger, logDebug)
-import Control.Concurrent (ThreadId)
-import Control.Concurrent.STM.Lock (Lock)
-import Control.DeepSeq (NFData(..))
-import qualified Control.Concurrent.STM.Lock as Lock (new)
-import Control.Concurrent.STM.TBMChan
-    (TBMChan, closeTBMChan, newTBMChan)
-import Control.Exception.Lifted
-    (SomeException, Exception, fromException, throw, catch)
-import Control.Concurrent.STM
-    ( STM, TMVar, TVar, atomically, orElse
-    , readTVar, writeTVar, newTVarIO, modifyTVar', newTVar
-    , tryPutTMVar, takeTMVar, newEmptyTMVarIO, isEmptyTMVar, putTMVar
-    , tryReadTMVar, readTMVar
-    )
-
-import Data.Time.Clock (NominalDiffTime)
-import Data.Unique (Unique, hashUnique)
-import Data.Typeable (Typeable)
-import Data.Word (Word32, Word64)
-import Data.Maybe (isJust)
-import Data.Aeson.TH (deriveJSON)
-import qualified Data.Map.Strict as M (Map, insert, lookup, delete, empty)
-
-import qualified Database.LevelDB.Base as L (Options(..), withDB)
-
-import Network.Haskoin.Util
-import Network.Haskoin.Node
-import Network.Haskoin.Block
-import Network.Haskoin.Transaction
-import Network.Haskoin.Constants
-import Network.Haskoin.Node.HeaderTree
+import           Control.Concurrent              (ThreadId)
+import           Control.Concurrent.STM          (STM, TMVar, TVar, atomically,
+                                                  isEmptyTMVar, modifyTVar',
+                                                  newEmptyTMVarIO, newTVar,
+                                                  newTVarIO, orElse, putTMVar,
+                                                  readTMVar, readTVar,
+                                                  takeTMVar, tryPutTMVar,
+                                                  tryReadTMVar, writeTVar)
+import           Control.Concurrent.STM.Lock     (Lock)
+import qualified Control.Concurrent.STM.Lock     as Lock (new)
+import           Control.Concurrent.STM.TBMChan  (TBMChan, closeTBMChan,
+                                                  newTBMChan)
+import           Control.DeepSeq                 (NFData (..))
+import           Control.Exception.Lifted        (Exception, SomeException,
+                                                  catch, fromException, throw)
+import           Control.Monad                   ((<=<))
+import           Control.Monad.Logger            (MonadLoggerIO, logDebug)
+import           Control.Monad.Reader            (ReaderT, ask, asks,
+                                                  runReaderT)
+import           Control.Monad.Trans             (MonadIO, lift, liftIO)
+import           Control.Monad.Trans.Control     (MonadBaseControl)
+import           Data.Aeson.TH                   (deriveJSON)
+import qualified Data.Map.Strict                 as M (Map, delete, empty,
+                                                       insert, lookup)
+import           Data.Maybe                      (isJust)
+import           Data.Time.Clock                 (NominalDiffTime)
+import           Data.Typeable                   (Typeable)
+import           Data.Unique                     (Unique, hashUnique)
+import           Data.Word                       (Word32, Word64)
+import           Database.Persist.Sql            (ConnectionPool, SqlBackend,
+                                                  SqlPersistT, runSqlConn,
+                                                  runSqlPool)
+import           Network.Haskoin.Block
+import           Network.Haskoin.Node
+import           Network.Haskoin.Node.HeaderTree
+import           Network.Haskoin.Transaction
+import           Network.Haskoin.Util
 
 {- Type aliases -}
 
@@ -46,50 +49,56 @@ type NodeT = ReaderT SharedNodeState
 type PeerId = Unique
 type PeerHostScore = Word32
 
-instance Show PeerId where
-    show = show . hashUnique
+newtype ShowPeerId = ShowPeerId { getShowPeerId :: PeerId }
+  deriving (Eq)
 
-getNodeState :: (MonadIO m, MonadLogger m)
-             => FilePath
-             -> L.Options
+instance Show ShowPeerId where
+    show = show . hashUnique . getShowPeerId
+
+runSql :: (MonadBaseControl IO m)
+       => SqlPersistT m a
+       -> Either SqlBackend ConnectionPool
+       -> m a
+runSql f (Left  conn) = runSqlConn f conn
+runSql f (Right pool) = runSqlPool f pool
+
+runSqlNodeT :: (MonadBaseControl IO m) => SqlPersistT m a -> NodeT m a
+runSqlNodeT f = asks sharedSqlBackend >>= lift . runSql f
+
+getNodeState :: (MonadLoggerIO m, MonadBaseControl IO m)
+             => Either SqlBackend ConnectionPool
              -> m SharedNodeState
-getNodeState levelDBFilePath levelDBOptions = do
+getNodeState sharedSqlBackend = do
     -- Initialize the HeaderTree
     $(logDebug) "Initializing the HeaderTree and NodeState"
+    best <- runSql (initHeaderTree >> getBestBlock) sharedSqlBackend
     liftIO $ do
-        L.withDB levelDBFilePath levelDBOptions $ runReaderT initHeaderTree
-        sharedPeerMap       <- newTVarIO M.empty
-        sharedHostMap       <- newTVarIO M.empty
-        sharedNetworkHeight <- newTVarIO 0
-        sharedHeaders       <- newEmptyTMVarIO
-        sharedHeaderPeer    <- newTVarIO Nothing
-        sharedMerklePeer    <- newTVarIO Nothing
-        sharedSyncLock      <- atomically Lock.new
-        sharedTickleChan    <- atomically $ newTBMChan 1024
-        sharedTxChan        <- atomically $ newTBMChan 1024
-        sharedTxGetData     <- newTVarIO M.empty
-        sharedRescan        <- newEmptyTMVarIO
-        sharedMempool       <- newTVarIO False
-        sharedLevelDBLock   <- atomically Lock.new
-        sharedBloomFilter   <- newTVarIO Nothing
+        sharedPeerMap         <- newTVarIO M.empty
+        sharedHostMap         <- newTVarIO M.empty
+        sharedNetworkHeight   <- newTVarIO 0
+        sharedHeaders         <- newEmptyTMVarIO
+        sharedHeaderPeer      <- newTVarIO Nothing
+        sharedMerklePeer      <- newTVarIO Nothing
+        sharedSyncLock        <- atomically Lock.new
+        sharedTickleChan      <- atomically $ newTBMChan 1024
+        sharedTxChan          <- atomically $ newTBMChan 1024
+        sharedTxGetData       <- newTVarIO M.empty
+        sharedRescan          <- newEmptyTMVarIO
+        sharedMempool         <- newTVarIO False
+        sharedBloomFilter     <- newTVarIO Nothing
         -- Find our best node in the HeaderTree
-        sharedBestHeader    <- newTVarIO =<< L.withDB
-                                                levelDBFilePath
-                                                levelDBOptions
-                                                (runReaderT getBestBlockHeader)
-        sharedBestBlock     <- newTVarIO $ headerHash genesisHeader
-        sharedBestBlockHeight <- newTVarIO 0
+        sharedBestHeader      <- newTVarIO best
+        sharedBestBlock       <- newTVarIO genesisBlock
         return SharedNodeState{..}
 
-runNodeT :: Monad m => SharedNodeState -> NodeT m a -> m a
-runNodeT state action = runReaderT action state
+runNodeT :: Monad m => NodeT m a -> SharedNodeState -> m a
+runNodeT = runReaderT
 
-withNodeT :: (MonadIO m, MonadLogger m)
-          => FilePath
-          -> L.Options
-          -> NodeT m a
+withNodeT :: (MonadLoggerIO m, MonadBaseControl IO m)
+          => NodeT m a
+          -> Either SqlBackend ConnectionPool
           -> m a
-withNodeT fp opts action = flip runNodeT action =<< getNodeState fp opts
+withNodeT action sql = runNodeT action =<< getNodeState sql
 
 atomicallyNodeT :: MonadIO m => NodeT STM a -> NodeT m a
 atomicallyNodeT action = liftIO . atomically . runReaderT action =<< ask
@@ -112,44 +121,37 @@ instance NFData PeerHostSession where
 {- Shared Peer STM Type -}
 
 data SharedNodeState = SharedNodeState
-    { sharedPeerMap :: !(TVar (M.Map PeerId (TVar PeerSession)))
+    { sharedPeerMap       :: !(TVar (M.Map PeerId (TVar PeerSession)))
       -- ^ Map of all active peers and their sessions
-    , sharedHostMap :: !(TVar (M.Map PeerHost (TVar PeerHostSession)))
+    , sharedHostMap       :: !(TVar (M.Map PeerHost (TVar PeerHostSession)))
       -- ^ The peer that is currently syncing the block headers
     , sharedNetworkHeight :: !(TVar BlockHeight)
       -- ^ The current height of the network
-    , sharedHeaders :: !(TMVar (PeerId, Headers))
+    , sharedHeaders       :: !(TMVar (PeerId, Headers))
       -- ^ Block headers sent from a peer
-    , sharedHeaderPeer :: !(TVar (Maybe PeerId))
+    , sharedHeaderPeer    :: !(TVar (Maybe PeerId))
       -- ^ Peer currently syncing headers
-    , sharedMerklePeer :: !(TVar (Maybe PeerId))
+    , sharedMerklePeer    :: !(TVar (Maybe PeerId))
       -- ^ Peer currently downloading merkle blocks
-    , sharedSyncLock :: !Lock
+    , sharedSyncLock      :: !Lock
       -- ^ Lock on the header syncing process
-    , sharedLevelDBLock :: !Lock
-      -- ^ LevelDB lock
-    , sharedBestHeader :: !(TVar BlockHeaderNode)
+    , sharedBestHeader    :: !(TVar NodeBlock)
       -- ^ Our best block header
-    , sharedBestBlock :: !(TVar BlockHash)
-      -- ^ Our best merkle block
-    , sharedBestBlockHeight :: !(TVar BlockHeight)
+    , sharedBestBlock     :: !(TVar NodeBlock)
       -- ^ Our best merkle block's height
-    , sharedTxGetData :: !(TVar (M.Map TxHash [(PeerId, PeerHost)]))
+    , sharedTxGetData     :: !(TVar (M.Map TxHash [(PeerId, PeerHost)]))
       -- ^ List of Tx GetData requests
-    , sharedBloomFilter :: !(TVar (Maybe (BloomFilter, Int)))
+    , sharedBloomFilter   :: !(TVar (Maybe (BloomFilter, Int)))
       -- ^ Bloom filter
-    , sharedTickleChan :: !(TBMChan (PeerId, PeerHost, BlockHash))
+    , sharedTickleChan    :: !(TBMChan (PeerId, PeerHost, BlockHash))
       -- ^ Channel containing all the block tickles received from peers
-    , sharedTxChan :: !(TBMChan (PeerId, PeerHost, Tx))
+    , sharedTxChan        :: !(TBMChan (PeerId, PeerHost, Tx))
       -- ^ Transaction channel
-    , sharedRescan :: !(TMVar (Either Timestamp BlockHeight))
+    , sharedRescan        :: !(TMVar (Either Timestamp BlockHeight))
       -- ^ Rescan requests from a timestamp or from a block height
-    , sharedMempool :: !(TVar Bool)
+    , sharedMempool       :: !(TVar Bool)
       -- ^ Did we do a Mempool sync ?
-    , levelDBFilePath :: !FilePath
-      -- ^ LevelDB FilePath
-    , levelDBOptions :: !L.Options
-      -- ^ LevelDB Options
+    , sharedSqlBackend    :: !(Either SqlBackend ConnectionPool)
     }
 
 {- Peer Data -}
@@ -158,23 +160,23 @@ type PingNonce = Word64
 
 -- Data stored about a peer
 data PeerSession = PeerSession
-    { peerSessionConnected    :: !Bool
+    { peerSessionConnected  :: !Bool
       -- ^ True if the peer is connected (completed the handshake)
-    , peerSessionVersion      :: !(Maybe Version)
+    , peerSessionVersion    :: !(Maybe Version)
       -- ^ Contains the version message that we received from the peer
-    , peerSessionHeight       :: !BlockHeight
+    , peerSessionHeight     :: !BlockHeight
       -- ^ Current known height of the peer
-    , peerSessionChan         :: !(TBMChan Message)
+    , peerSessionChan       :: !(TBMChan Message)
       -- ^ Message channel to send messages to the peer
-    , peerSessionHost         :: !PeerHost
+    , peerSessionHost       :: !PeerHost
       -- ^ Host to which this peer is connected
-    , peerSessionThreadId     :: !ThreadId
+    , peerSessionThreadId   :: !ThreadId
       -- ^ Peer ThreadId
-    , peerSessionMerkleChan   :: !(TBMChan (Either (MerkleBlock, MerkleTxs) Tx))
+    , peerSessionMerkleChan :: !(TBMChan (Either (MerkleBlock, MerkleTxs) Tx))
       -- ^ Merkle block/Merkle transaction channel
-    , peerSessionPings        :: !(TVar [PingNonce])
+    , peerSessionPings      :: !(TVar [PingNonce])
       -- ^ Time at which we requested pings
-    , peerSessionScore        :: !(Maybe NominalDiffTime)
+    , peerSessionScore      :: !(Maybe NominalDiffTime)
       -- ^ Ping scores for this peer (round trip times)
     }
 
@@ -246,7 +248,6 @@ data NodeStatus = NodeStatus
     , nodeStatusRescan           :: !(Maybe (Either Timestamp BlockHeight))
     , nodeStatusMempool          :: !Bool
     , nodeStatusSyncLock         :: !Bool
-    , nodeStatusLevelDBLock      :: !Bool
     }
 
 $(deriveJSON (dropFieldLabel 10) ''NodeStatus)
@@ -257,7 +258,7 @@ tryGetPeerSession :: PeerId -> NodeT STM (Maybe PeerSession)
 tryGetPeerSession pid = do
     peerMap <- readTVarS sharedPeerMap
     case M.lookup pid peerMap of
-        Just sessTVar -> liftM Just $ lift $ readTVar sessTVar
+        Just sessTVar -> fmap Just $ lift $ readTVar sessTVar
         _ -> return Nothing
 
 getPeerSession :: PeerId -> NodeT STM PeerSession
@@ -265,7 +266,7 @@ getPeerSession pid = do
     sessM <- tryGetPeerSession pid
     case sessM of
         Just sess -> return sess
-        _ -> throw $ NodeExceptionInvalidPeer pid
+        _ -> throw $ NodeExceptionInvalidPeer $ ShowPeerId pid
 
 newPeerSession :: PeerId -> PeerSession -> NodeT STM ()
 newPeerSession pid sess = do
@@ -306,7 +307,7 @@ getHostSession :: PeerHost
 getHostSession ph = do
     hostMap <- readTVarS sharedHostMap
     lift $ case M.lookup ph hostMap of
-        Just hostSessionTVar -> liftM Just $ readTVar hostSessionTVar
+        Just hostSessionTVar -> Just <$> readTVar hostSessionTVar
         _ -> return Nothing
 
 modifyHostSession :: PeerHost
@@ -355,7 +356,7 @@ isHostScoreBanned = (>= bannedScore)
 orElseNodeT :: NodeT STM a -> NodeT STM a -> NodeT STM a
 orElseNodeT a b = do
     s <- ask
-    lift $ (runNodeT s a) `orElse` (runNodeT s b)
+    lift $ runNodeT a s `orElse` runNodeT b s
 
 {- TVar Utilities -}
 
@@ -363,7 +364,7 @@ readTVarS :: (SharedNodeState -> TVar a) -> NodeT STM a
 readTVarS = lift . readTVar <=< asks
 
 writeTVarS :: (SharedNodeState -> TVar a) -> a -> NodeT STM ()
-writeTVarS f val = lift . (flip writeTVar val) =<< asks f
+writeTVarS f val = lift . flip writeTVar val =<< asks f
 
 {- TMVar Utilities -}
 
@@ -377,13 +378,13 @@ tryReadTMVarS :: (SharedNodeState -> TMVar a) -> NodeT STM (Maybe a)
 tryReadTMVarS = lift . tryReadTMVar <=< asks
 
 putTMVarS :: (SharedNodeState -> TMVar a) -> a -> NodeT STM ()
-putTMVarS f val = lift . (flip putTMVar val) =<< asks f
+putTMVarS f val = lift . flip putTMVar val =<< asks f
 
 tryPutTMVarS :: (SharedNodeState -> TMVar a) -> a -> NodeT STM Bool
-tryPutTMVarS f val = lift . (flip tryPutTMVar val) =<< asks f
+tryPutTMVarS f val = lift . flip tryPutTMVar val =<< asks f
 
 swapTMVarS :: (SharedNodeState -> TMVar a) -> a -> NodeT STM ()
-swapTMVarS f val = lift . (flip putTMVar val) =<< asks f
+swapTMVarS f val = lift . flip putTMVar val =<< asks f
 
 isEmptyTMVarS :: (SharedNodeState -> TMVar a) -> NodeT STM Bool
 isEmptyTMVarS f = lift . isEmptyTMVar =<< asks f
@@ -391,8 +392,8 @@ isEmptyTMVarS f = lift . isEmptyTMVar =<< asks f
 data NodeException
     = NodeExceptionBanned
     | NodeExceptionConnected
-    | NodeExceptionInvalidPeer !PeerId
-    | NodeExceptionPeerNotConnected !PeerId
+    | NodeExceptionInvalidPeer !ShowPeerId
+    | NodeExceptionPeerNotConnected !ShowPeerId
     | NodeException !String
     deriving (Show, Typeable)
 

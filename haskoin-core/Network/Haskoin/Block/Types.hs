@@ -25,7 +25,7 @@ import qualified Data.ByteString as BS (length, reverse)
 import Data.Word (Word32)
 import Data.Binary (Binary, get, put)
 import Data.Binary.Get (getWord32le)
-import Data.Binary.Put (putWord32le)
+import Data.Binary.Put (Put, putWord32le)
 import Data.String (IsString, fromString)
 import Data.String.Conversions (cs)
 import Text.Read (readPrec, parens, lexP, pfail)
@@ -63,7 +63,7 @@ instance Binary Block where
 
     put (Block h cb txs) = do
         put h
-        put $ VarInt $ fromIntegral $ (length txs) + 1
+        put $ VarInt $ fromIntegral $ length txs + 1
         put cb
         forM_ txs put
 
@@ -193,11 +193,14 @@ instance Binary GetBlocks where
       where
         repList (VarInt c) = replicateM (fromIntegral c) get
 
-    put (GetBlocks v xs h) = do
-        putWord32le v
-        put $ VarInt $ fromIntegral $ length xs
-        forM_ xs put
-        put h
+    put (GetBlocks v xs h) = putGetBlockMsg v xs h
+
+putGetBlockMsg :: Word32 -> BlockLocator -> BlockHash -> Put
+putGetBlockMsg v xs h = do
+    putWord32le v
+    put $ VarInt $ fromIntegral $ length xs
+    forM_ xs put
+    put h
 
 -- | Similar to the 'GetBlocks' message type but for retrieving block headers
 -- only. The response to a 'GetHeaders' request is a 'Headers' message
@@ -228,11 +231,7 @@ instance Binary GetHeaders where
       where
         repList (VarInt c) = replicateM (fromIntegral c) get
 
-    put (GetHeaders v xs h) = do
-        putWord32le v
-        put $ VarInt $ fromIntegral $ length xs
-        forM_ xs put
-        put h
+    put (GetHeaders v xs h) = putGetBlockMsg v xs h
 
 -- | 'BlockHeader' type with a transaction count as 'VarInt'
 type BlockHeaderCount = (BlockHeader, VarInt)
@@ -279,8 +278,8 @@ decodeCompact c =
     size = fromIntegral $ c `shiftR` 24
     neg  = (c .&. 0x00800000) /= 0
     wrd  = c .&. 0x007fffff
-    res | size <= 3 = (toInteger wrd) `shiftR` (8*(3 - size))
-        | otherwise = (toInteger wrd) `shiftL` (8*(size - 3))
+    res | size <= 3 = toInteger wrd `shiftR` (8*(3 - size))
+        | otherwise = toInteger wrd `shiftL` (8*(size - 3))
 
 -- | Encode an Integer to the compact number format used in the difficulty
 -- target of a block.
@@ -295,5 +294,5 @@ encodeCompact i
        | otherwise = posi `shiftR` (8*(s1 - 3))
     (s2,c2) | c1 .&. 0x00800000 /= 0  = (s1 + 1, c1 `shiftR` 8)
             | otherwise               = (s1, c1)
-    c3 = fromIntegral $ c2 .|. ((toInteger s2) `shiftL` 24)
+    c3 = fromIntegral $ c2 .|. (toInteger s2 `shiftL` 24)
 

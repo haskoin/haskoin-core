@@ -1,4 +1,3 @@
-{-# LANGUAGE GADTs #-}
 module Network.Haskoin.Crypto.ExtendedKeys
 ( XPubKey(..)
 , XPrvKey(..)

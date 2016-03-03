@@ -1,55 +1,58 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell       #-}
 module Network.Haskoin.Node.Peer where
 
-import System.Random (randomIO)
-
-import Control.Monad (liftM, when, unless, join, forM_, forever)
-import Control.Monad.Trans (MonadIO, lift, liftIO)
-import Control.Monad.Trans.Control (MonadBaseControl)
-import Control.Monad.Logger (MonadLogger, logInfo, logWarn, logDebug, logError)
-import Control.Monad.Reader (ReaderT, asks, runReaderT)
-import Control.Monad.State (StateT, evalStateT, get, put)
-import Control.Concurrent (threadDelay, killThread, myThreadId)
-import qualified Control.Concurrent.STM.Lock as Lock (with)
-import Control.Exception.Lifted (fromException, finally, throwIO, throw)
-import Control.Concurrent.STM.TBMChan
-    ( TBMChan, writeTBMChan, closeTBMChan, newTBMChan )
-import Control.Concurrent.Async.Lifted
-    ( race, withAsync, waitAnyCancel, link, waitCatch )
-import Control.Concurrent.STM
-    ( STM, atomically, readTVar, modifyTVar', swapTVar, retry, newTVarIO )
-
-import Data.Bits (testBit)
-import Data.List (nub, sort, sortBy)
-import Data.Text (Text, pack)
-import Data.Word (Word32)
-import Data.Maybe (fromMaybe, isJust, listToMaybe)
-import Data.Time.Clock.POSIX (getPOSIXTime)
-import Data.Time.Clock (getCurrentTime, diffUTCTime)
-import Data.Unique (hashUnique, newUnique)
-import Data.Conduit (Conduit, Sink, awaitForever, yield, ($$), ($=))
-import Data.Conduit.TMChan (sourceTBMChan)
-import qualified Data.Conduit.Binary as CB (take)
-import qualified Data.ByteString.Char8 as C (pack)
-import qualified Data.ByteString as BS (ByteString, null, append)
-import qualified Data.ByteString.Lazy as BL (toStrict)
-import Data.String.Conversions (cs)
-import qualified Data.Map as M
-    ( keys , lookup, assocs, elems, fromList, unionWith )
-import Data.Conduit.Network
-    ( runGeneralTCPClient, appSink, appSource, clientSettings )
-
-import qualified Database.LevelDB.Base as L (DB, withDB)
-
-import Network.Socket (SockAddr (SockAddrInet))
-
-import Network.Haskoin.Node
-import Network.Haskoin.Node.STM
-import Network.Haskoin.Node.HeaderTree
-import Network.Haskoin.Transaction
-import Network.Haskoin.Block
-import Network.Haskoin.Constants
-import Network.Haskoin.Util
+import           Control.Concurrent              (killThread, myThreadId,
+                                                  threadDelay)
+import           Control.Concurrent.Async.Lifted (link, race, waitAnyCancel,
+                                                  waitCatch, withAsync)
+import           Control.Concurrent.STM          (STM, atomically, modifyTVar',
+                                                  newTVarIO, readTVar, retry,
+                                                  swapTVar)
+import           Control.Concurrent.STM.TBMChan  (TBMChan, closeTBMChan,
+                                                  newTBMChan, writeTBMChan)
+import           Control.Exception.Lifted        (finally, fromException, throw,
+                                                  throwIO)
+import           Control.Monad                   (forM_, forever, join, unless,
+                                                  when)
+import           Control.Monad.Logger            (MonadLoggerIO, logDebug,
+                                                  logError, logInfo, logWarn)
+import           Control.Monad.Reader            (asks)
+import           Control.Monad.State             (StateT, evalStateT, get, put)
+import           Control.Monad.Trans             (MonadIO, lift, liftIO)
+import           Control.Monad.Trans.Control     (MonadBaseControl)
+import           Data.Bits                       (testBit)
+import qualified Data.ByteString                 as BS (ByteString, append,
+                                                        null)
+import qualified Data.ByteString.Char8           as C (pack)
+import qualified Data.ByteString.Lazy            as BL (toStrict)
+import           Data.Conduit                    (Conduit, Sink, awaitForever,
+                                                  yield, ($$), ($=))
+import qualified Data.Conduit.Binary             as CB (take)
+import           Data.Conduit.Network            (appSink, appSource,
+                                                  clientSettings,
+                                                  runGeneralTCPClient)
+import           Data.Conduit.TMChan             (sourceTBMChan)
+import           Data.List                       (nub, sort, sortBy)
+import qualified Data.Map                        as M (assocs, elems, fromList,
+                                                       keys, lookup, unionWith)
+import           Data.Maybe                      (fromMaybe, isJust,
+                                                  listToMaybe)
+import           Data.String.Conversions         (cs)
+import           Data.Text                       (Text, pack)
+import           Data.Time.Clock                 (diffUTCTime, getCurrentTime)
+import           Data.Time.Clock.POSIX           (getPOSIXTime)
+import           Data.Unique                     (hashUnique, newUnique)
+import           Data.Word                       (Word32)
+import           Network.Haskoin.Block
+import           Network.Haskoin.Constants
+import           Network.Haskoin.Node
+import           Network.Haskoin.Node.HeaderTree
+import           Network.Haskoin.Node.STM
+import           Network.Haskoin.Transaction
+import           Network.Haskoin.Util
+import           Network.Socket                  (SockAddr (SockAddrInet))
+import           System.Random                   (randomIO)
 
 -- TODO: Move constants elsewhere ?
 minProtocolVersion :: Word32
@@ -57,7 +60,7 @@ minProtocolVersion = 70001
 
 -- Start a reconnecting peer that will idle once the connection is established
 -- and the handshake is performed.
-startPeer :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
+startPeer :: (MonadLoggerIO m, MonadBaseControl IO m)
           => PeerHost
           -> NodeT m ()
 startPeer ph@PeerHost{..} = do
@@ -70,7 +73,7 @@ startPeer ph@PeerHost{..} = do
 -- reconnections are performed using an expoential backoff time. This function
 -- blocks until the peer cannot reconnect (either the peer is banned or we
 -- already have a peer connected to the given peer host).
-startReconnectPeer :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
+startReconnectPeer :: (MonadLoggerIO m, MonadBaseControl IO m)
                    => PeerHost
                    -> NodeT m ()
 startReconnectPeer ph@PeerHost{..} = do
@@ -117,7 +120,7 @@ startReconnectPeer ph@PeerHost{..} = do
 -- Start a peer with with the given peer host/peer id and initiate the
 -- network protocol handshake. This function will block until the peer
 -- connection is closed or an exception is raised.
-startPeerPid :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
+startPeerPid :: (MonadLoggerIO m, MonadBaseControl IO m)
              => PeerId
              -> PeerHost
              -> NodeT m ()
@@ -238,7 +241,7 @@ isPeerHostConnected ph = do
 -- message queue for processing. If we receive invalid messages, this function
 -- will also notify the PeerManager about a misbehaving remote host.
 decodeMessage
-    :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+    :: (MonadLoggerIO m, MonadBaseControl IO m)
     => PeerId
     -> PeerHost
     -> Sink BS.ByteString (StateT (Maybe (MerkleBlock, MerkleTxs)) (NodeT m)) ()
@@ -265,7 +268,7 @@ decodeMessage pid ph = do
         decodeMessage pid ph
 
 -- Handle a message from a peer
-processMessage :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+processMessage :: (MonadLoggerIO m, MonadBaseControl IO m)
                => PeerId
                -> PeerHost
                -> Message
@@ -274,7 +277,7 @@ processMessage pid ph msg = checkMerkleEnd >> case msg of
     MVersion v -> lift $ do
         $(logDebug) $ formatPid pid ph "Processing MVersion message"
         join . atomicallyNodeT $ do
-            oldVerM <- liftM peerSessionVersion $ getPeerSession pid
+            oldVerM <- peerSessionVersion <$> getPeerSession pid
             case oldVerM of
                 Just _ -> do
                     _ <- trySendMessage pid $ MReject $ reject
@@ -377,7 +380,7 @@ processMessage pid ph msg = checkMerkleEnd >> case msg of
     isTxMsg (MTx _) = True
     isTxMsg _       = False
 
-processInvMessage :: (MonadLogger m, MonadIO m, MonadBaseControl IO m)
+processInvMessage :: (MonadLoggerIO m, MonadBaseControl IO m)
                   => PeerId
                   -> PeerHost
                   -> Inv
@@ -414,11 +417,11 @@ processInvMessage pid ph (Inv vs) = case tickleM of
     blocklist = map (BlockHash . invHash) $ filter ((== InvBlock) . invType) vs
 
 -- | Encode message that are being sent to the remote host.
-encodeMessage :: (MonadIO m, MonadLogger m)
+encodeMessage :: MonadLoggerIO m
               => Conduit Message (NodeT m) BS.ByteString
 encodeMessage = awaitForever $ yield . encode'
 
-peerPing :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
+peerPing :: (MonadLoggerIO m, MonadBaseControl IO m)
          => PeerId
          -> PeerHost
          -> NodeT m ()
@@ -445,7 +448,7 @@ peerPing pid ph = forever $ do
                 PeerSession{..} <- getPeerSession pid
                 -- Compute the ping time and the new score
                 let diff  = diffUTCTime endTime startTime
-                    score = 0.5*diff + 0.5*(fromMaybe diff peerSessionScore)
+                    score = 0.5 * diff + 0.5 * fromMaybe diff peerSessionScore
                 -- Save the score in the peer session unless the peer is busy
                 modifyPeerSession pid $ \s -> s{ peerSessionScore = Just score }
                 return (diff, score)
@@ -474,7 +477,7 @@ peerPing pid ph = forever $ do
 isBloomDisabled :: Version -> Bool
 isBloomDisabled ver = version ver >= 70011 && not (services ver `testBit` 2)
 
-peerHandshake :: (MonadIO m, MonadLogger m, MonadBaseControl IO m)
+peerHandshake :: (MonadLoggerIO m, MonadBaseControl IO m)
               => PeerId
               -> PeerHost
               -> TBMChan Message
@@ -519,18 +522,18 @@ peerHandshake pid ph chan = do
                 [ "Connected to a peer speaking protocol version"
                 , show $ version ver
                 , "but we require at least"
-                , show $ minProtocolVersion
+                , show minProtocolVersion
                 ]
         | isBloomDisabled ver =
-            misbehaving pid ph severeDoS $ "Peer does not support bloom filters"
+            misbehaving pid ph severeDoS "Peer does not support bloom filters"
         | otherwise = action
     buildVersion = do
         -- TODO: Get our correct IP here
         let add = NetworkAddress 1 $ SockAddrInet 0 0
             ua  = VarString haskoinUserAgent
-        time <- liftM floor $ liftIO getPOSIXTime
+        time <- floor <$> liftIO getPOSIXTime
         rdmn <- liftIO randomIO -- nonce
-        h    <- runHeaderTree bestBlockHeaderHeight
+        height <- nodeBlockHeight <$> atomicallyNodeT (readTVarS sharedBestHeader)
         return Version { version     = 70011
                        , services    = 5
                        , timestamp   = time
@@ -538,7 +541,7 @@ peerHandshake pid ph chan = do
                        , addrSend    = add
                        , verNonce    = rdmn
                        , userAgent   = ua
-                       , startHeight = h
+                       , startHeight = height
                        , relay       = False
                        }
 
@@ -552,7 +555,7 @@ waitPeerVersion pid = do
 
 -- Delete the session of a peer and send a kill signal to the peers thread.
 -- Unless the peer is banned, the peer will try to reconnect.
-disconnectPeer :: (MonadIO m, MonadLogger m)
+disconnectPeer :: (MonadLoggerIO m)
                => PeerId
                -> PeerHost
                -> NodeT m ()
@@ -590,7 +593,7 @@ sendBloomFilter bloom elems = unless (isBloomEmpty bloom) $ do
 -- Returns the median height of all the peers
 getMedianHeight :: NodeT STM BlockHeight
 getMedianHeight = do
-    hs <- liftM (map (peerSessionHeight . snd)) getConnectedPeers
+    hs <- map (peerSessionHeight . snd) <$> getConnectedPeers
     let (_,ms) = splitAt (length hs `div` 2) $ sort hs
     return $ fromMaybe 0 $ listToMaybe ms
 
@@ -603,10 +606,10 @@ getPeers = do
     peerMap <- readTVarS sharedPeerMap
     lift $ mapM f $ M.assocs peerMap
   where
-    f (pid, sess) = liftM ((,) pid) $ readTVar sess
+    f (pid, sess) = (,) pid <$> readTVar sess
 
 getConnectedPeers :: NodeT STM [(PeerId, PeerSession)]
-getConnectedPeers = liftM (filter (peerSessionConnected . snd)) getPeers
+getConnectedPeers = filter (peerSessionConnected . snd) <$> getPeers
 
 -- Returns a peer that is connected, at the network height and
 -- with the best score.
@@ -620,7 +623,7 @@ getPeersAtNetHeight = do
 getPeersAtHeight :: (BlockHeight -> Bool)
                  -> NodeT STM [(PeerId, PeerSession)]
 getPeersAtHeight cmpHeight = do
-    peers <- liftM (filter f) getPeers
+    peers <- filter f <$> getPeers
     -- Choose the peer with the best score
     return $ sortBy s peers
   where
@@ -649,7 +652,7 @@ sendMessage pid msg = do
     PeerSession{..} <- getPeerSession pid
     if peerSessionConnected
         then lift $ writeTBMChan peerSessionChan msg
-        else throw $ NodeExceptionPeerNotConnected pid
+        else throw $ NodeExceptionPeerNotConnected $ ShowPeerId pid
 
 -- Send a message to all connected peers.
 sendMessageAll :: Message -> NodeT STM ()
@@ -660,7 +663,7 @@ sendMessageAll msg = do
 getNetworkHeight :: NodeT STM BlockHeight
 getNetworkHeight = readTVarS sharedNetworkHeight
 
-misbehaving :: (MonadIO m, MonadLogger m)
+misbehaving :: (MonadLoggerIO m)
             => PeerId
             -> PeerHost
             -> (PeerHostScore -> PeerHostScore)
@@ -670,7 +673,7 @@ misbehaving pid ph f msg = do
     sessM <- atomicallyNodeT $ do
         modifyHostSession ph $ \s ->
             s{ peerHostSessionScore =  f $! peerHostSessionScore s
-             , peerHostSessionLog   = msg:(peerHostSessionLog s)
+             , peerHostSessionLog   = msg : peerHostSessionLog s
              }
         getHostSession ph
     case sessM of
@@ -684,14 +687,10 @@ misbehaving pid ph f msg = do
                 disconnectPeer pid ph
         _ -> return ()
 
-{- LevelDB function -}
+{- Run header tree database action -}
 
-runHeaderTree :: MonadIO m => ReaderT L.DB IO a -> NodeT m a
-runHeaderTree action = do
-    lock <- asks sharedLevelDBLock
-    fp   <- asks levelDBFilePath
-    opts <- asks levelDBOptions
-    liftIO $ Lock.with lock $ L.withDB fp opts $ runReaderT action
+-- runHeaderTree :: MonadIO m => ReaderT L.DB IO a -> NodeT m a
+-- runHeaderTree action = undefined
 
 {- Utilities -}
 
@@ -707,7 +706,7 @@ raceTimeout sec cleanup action = do
     resE <- race (liftIO $ threadDelay (sec * 1000000)) action
     case resE of
         Right res -> return $ Right res
-        Left _ -> liftM Left cleanup
+        Left _ -> fmap Left cleanup
 
 formatPid :: PeerId -> PeerHost -> String -> Text
 formatPid pid ph str = pack $ concat

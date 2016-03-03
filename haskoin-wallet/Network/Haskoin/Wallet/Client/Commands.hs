@@ -31,72 +31,51 @@ module Network.Haskoin.Wallet.Client.Commands
 )
 where
 
-import System.ZMQ4.Monadic
-    ( Req(..)
-    , Sub(..)
-    , KeyFormat(..)
-    , SocketType
-    , Socket
-    , ZMQ
-    , runZMQ
-    , socket
-    , send
-    , subscribe
-    , receive
-    , connect
-    , setCurveServerKey
-    , setCurvePublicKey
-    , setCurveSecretKey
-    )
+import           Control.Concurrent.Async.Lifted (asyncBound, link, wait)
+import           System.ZMQ4                     (KeyFormat (..), Req (..),
+                                                  Socket, SocketType, Sub (..),
+                                                  connect, curveKeyPair,
+                                                  receive, send,
+                                                  setCurvePublicKey,
+                                                  setCurveSecretKey,
+                                                  setCurveServerKey, subscribe,
+                                                  withContext, withSocket)
 
-import Control.Applicative ((<|>))
-import Control.Monad (forM_, forever, unless, when, liftM2)
-import Control.Monad.Trans (liftIO)
-import qualified Control.Monad.Reader as R (ReaderT, ask, asks)
+import           Control.Applicative             ((<|>))
+import           Control.Monad                   (forM_, forever, liftM2,
+                                                  unless, when)
+import qualified Control.Monad.Reader            as R (ReaderT, ask, asks)
+import           Control.Monad.Trans             (liftIO)
 
-import Data.Maybe (listToMaybe, isNothing, fromMaybe, isJust, maybeToList)
-import Data.List (intercalate, intersperse)
-import qualified Data.ByteString.Char8 as B8 (putStrLn, unwords)
-import Data.Text (Text, pack, unpack, splitOn)
-import Data.Word (Word32, Word64)
-import qualified Data.Yaml as YAML (encode)
-import qualified Data.Aeson.Encode.Pretty as JSON
-    ( Config(..)
-    , encodePretty'
-    , defConfig
-    )
-import Data.Aeson
-    ( Value(..)
-    , FromJSON
-    , ToJSON
-    , toJSON
-    , object
-    , encode
-    , decode
-    , eitherDecode
-    , (.=)
-    )
-import Data.String.Conversions (cs)
+import           Data.Aeson                      (FromJSON, ToJSON, Value (..),
+                                                  decode, eitherDecode, encode,
+                                                  object, toJSON, (.=))
+import qualified Data.Aeson.Encode.Pretty        as JSON (Config (..),
+                                                          defConfig,
+                                                          encodePretty')
+import qualified Data.ByteString.Char8           as B8 (putStrLn, unwords)
+import           Data.List                       (intercalate, intersperse)
+import           Data.Maybe                      (fromMaybe, isJust, isNothing,
+                                                  listToMaybe, maybeToList)
+import           Data.Restricted                 (rvalue)
+import           Data.String.Conversions         (cs)
+import           Data.Text                       (Text, pack, splitOn, unpack)
+import           Data.Word                       (Word32, Word64)
+import qualified Data.Yaml                       as YAML (encode)
+import           Network.Haskoin.Block
+import           Network.Haskoin.Constants
+import           Network.Haskoin.Crypto
+import           Network.Haskoin.Node.STM
+import           Network.Haskoin.Script
+import           Network.Haskoin.Transaction
+import           Network.Haskoin.Util
+import           Network.Haskoin.Wallet.Database
+import           Network.Haskoin.Wallet.Server
+import           Network.Haskoin.Wallet.Settings
+import           Network.Haskoin.Wallet.Types
+import           Text.Read                       (readMaybe)
 
-
-import Network.Haskoin.Block
-import Network.Haskoin.Crypto
-import Network.Haskoin.Transaction
-import Network.Haskoin.Script
-import Network.Haskoin.Util
-import Network.Haskoin.Constants
-import Network.Haskoin.Node.STM
-
-import Network.Haskoin.Wallet.Types
-import Network.Haskoin.Wallet.Settings
-import Network.Haskoin.Wallet.Server
-import Network.Haskoin.Wallet.Database
-
-import Data.Restricted (rvalue)
-import System.ZMQ4 (curveKeyPair)
-import Text.Read (readMaybe)
-
-import qualified System.Console.Haskeline as Haskeline
+import qualified System.Console.Haskeline        as Haskeline
 
 type Handler = R.ReaderT Config IO
 
@@ -469,8 +448,7 @@ cmdDeleteTx tidStr = case tidM of
 cmdMonitor :: Handler ()
 cmdMonitor = do
     cfg <- R.ask
-    liftIO $ runZMQ $ do
-        sock <- socket Sub
+    liftIO $ withContext $ \ctx -> withSocket ctx Sub $ \sock -> do
         setupAuth cfg sock
         connect sock (configConnectNotif cfg)
         subscribe sock ""
@@ -530,17 +508,20 @@ sendZmq :: (FromJSON a, ToJSON a)
         -> Handler (Either String (WalletResponse a))
 sendZmq req = do
     cfg <- R.ask
-    liftIO $ runZMQ $ do
-        sock <- socket Req
-        setupAuth cfg sock
-        connect sock (configConnect cfg)
-        send sock [] (cs $ encode req)
-        eitherDecode . cs <$> receive sock
+    a <- asyncBound $ liftIO $ withContext $ \ctx ->
+        withSocket ctx Req $ \sock -> do
+            setupAuth cfg sock
+            connect sock (configConnect cfg)
+            send sock [] (cs $ encode req)
+            eitherDecode . cs <$> receive sock
+    wait a
+
+
 
 setupAuth :: (SocketType t)
           => Config
-          -> Socket z t
-          -> ZMQ z ()
+          -> Socket t
+          -> IO ()
 setupAuth cfg sock = do
     let clientKeyM    = configClientKey    cfg
         clientKeyPubM = configClientKeyPub cfg
@@ -803,7 +784,6 @@ printNodeStatus verbose NodeStatus{..} =
     ] ++
     [ "Synced Mempool    : " ++ show nodeStatusMempool | verbose ] ++
     [ "HeaderSync Lock   : " ++ show nodeStatusSyncLock | verbose ] ++
-    [ "LevelDB Lock      : " ++ show nodeStatusLevelDBLock | verbose ] ++
     [ "Peers: " ] ++
     intercalate ["-"] (map (printPeerStatus verbose) nodeStatusPeers)
 

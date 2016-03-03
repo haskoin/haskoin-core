@@ -76,7 +76,7 @@ import qualified Data.ByteString as BS
 bsToInteger :: ByteString -> Integer
 bsToInteger = BS.foldr' f 0 . BS.reverse
   where
-    f w n = (toInteger w) .|. shiftL n 8
+    f w n = toInteger w .|. shiftL n 8
 
 -- | Encode an Integer to a bytestring as big endian
 integerToBS :: Integer -> ByteString
@@ -86,7 +86,7 @@ integerToBS i
     | otherwise = error "integerToBS not defined for negative values"
   where
     f 0 = Nothing
-    f x = Just $ (fromInteger x :: Word8, x `shiftR` 8)
+    f x = Just (fromInteger x :: Word8, x `shiftR` 8)
 
 encodeHex :: ByteString -> ByteString
 encodeHex = B16.encode
@@ -110,7 +110,7 @@ decode' = decode . BL.fromStrict
 
 -- | Strict version of 'Data.Binary.runGet'
 runGet' :: Binary a => Get a -> ByteString -> a
-runGet' m = (runGet m) . BL.fromStrict
+runGet' m = runGet m . BL.fromStrict
 
 -- | Strict version of 'Data.Binary.runPut'
 runPut' :: Put -> ByteString
@@ -213,7 +213,7 @@ eitherToMaybe _ = Nothing
 -- 'Right' and 'Nothing' is mapped to 'Left'. You also pass in an error value
 -- in case 'Left' is returned.
 maybeToEither :: b -> Maybe a -> Either b a
-maybeToEither err m = maybe (Left err) Right m
+maybeToEither err = maybe (Left err) Right
 
 -- | Lift a 'Either' computation into the 'EitherT' monad
 liftEither :: Monad m => Either b a -> EitherT b m a
@@ -221,7 +221,7 @@ liftEither = hoistEither
 
 -- | Lift a 'Maybe' computation into the 'EitherT' monad
 liftMaybe :: Monad m => b -> Maybe a -> EitherT b m a
-liftMaybe err = liftEither . (maybeToEither err)
+liftMaybe err = liftEither . maybeToEither err
 
 -- Various helpers
 
@@ -247,9 +247,9 @@ matchTemplate :: [a]              -- ^ The input list
               -> [Maybe a]        -- ^ Results of the template matching
 matchTemplate [] bs _ = replicate (length bs) Nothing
 matchTemplate _  [] _ = []
-matchTemplate as (b:bs) f = case break (flip f b) as of
-    (l,(r:rs)) -> (Just r) : matchTemplate (l ++ rs) bs f
-    _          -> Nothing  : matchTemplate as bs f
+matchTemplate as (b:bs) f = case break (`f` b) as of
+    (l,r:rs) -> Just r  : matchTemplate (l ++ rs) bs f
+    _        -> Nothing : matchTemplate as bs f
 
 -- | Returns the first value of a triple.
 fst3 :: (a,b,c) -> a

@@ -1,451 +1,360 @@
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
 module Network.Haskoin.Node.HeaderTree
-( HeaderTree(..)
-, BlockHeaderNode(..)
-, BlockChainAction(..)
-, BlockHeight
-, Timestamp
+( BlockChainAction(..)
+, genesisBlock
 , initHeaderTree
 , connectHeader
 , connectHeaders
-, commitAction
 , isBestChain
 , isChainReorg
 , isSideChain
 , isKnownChain
 , blockLocator
-, blockLocatorHeight
-, blockLocatorSide
-, blockLocatorPartial
-, getNodeWindow
-, bestBlockHeaderHeight
-, getBlockHeaderHeight
-, getNodeAtTimestamp
-, genesisNode
-, getParentNode
+, verifyBlockHeader
+, nodeBlock
+, getBlockWindow
+, splitChains
+, getParentBlock
+, getChildBlocks
+, lastSeenCheckpoint
+, nextWorkRequired
+, workFromInterval
+, isValidPOW
+, headerPOW
+, headerWork
+, nodeBlockHeader
+, getForks
+, chainPathQuery
+, getHeads
+, getChain
+, splitBlock
+, putBlock
+, putBlocks
+, getBestBlock
+, getBlockByHash
+, getBlocksByHash
+, getBlockByHeight
+, getBlocksByHeight
+, getBlocksFromHeight
+, getBlockAfterTime
+, getBlocksAtHeight
+, evalNewChain
+, module Network.Haskoin.Node.HeaderTree.Model
+, module Network.Haskoin.Node.HeaderTree.Types
 ) where
 
-import Control.Monad (foldM, when, unless, liftM, (<=<), forM, forM_)
-import Control.Monad.Trans (lift, liftIO, MonadIO)
-import Control.Monad.Trans.Either (EitherT, left, runEitherT)
-import Control.Monad.Reader (MonadReader(..), ReaderT, ask)
-import Control.DeepSeq (NFData(..))
+import           Control.Monad                         (forM, unless, when,
+                                                        (<=<))
+import           Control.Monad.State                   (evalStateT, get, put)
+import           Control.Monad.Trans                   (MonadIO, lift)
+import           Control.Monad.Trans.Either            (left, runEitherT)
+import           Data.Bits                             (shiftL)
+import qualified Data.ByteString                       as BS (reverse)
+import           Data.Function                         (on)
+import           Data.LargeWord                        (Word256)
+import           Data.List                             (find, maximumBy,
+                                                        minimumBy, sort)
+import           Data.Maybe                            (fromMaybe, isNothing,
+                                                        listToMaybe, mapMaybe)
+import           Data.Word                             (Word32)
+import           Database.Esqueleto                    (Esqueleto, Value, asc,
+                                                        from, groupBy, in_,
+                                                        insertMany_, limit,
+                                                        max_, orderBy, select,
+                                                        unValue, val, valList,
+                                                        where_, (&&.), (<=.),
+                                                        (==.), (>.), (>=.),
+                                                        (^.), (||.))
+import           Database.Persist                      (Entity (..), insert_)
+import           Database.Persist.Sql                  (SqlPersistT)
+import           Network.Haskoin.Block
+import           Network.Haskoin.Constants
+import           Network.Haskoin.Node.Checkpoints
+import           Network.Haskoin.Node.HeaderTree.Model
+import           Network.Haskoin.Node.HeaderTree.Types
+import           Network.Haskoin.Transaction
+import           Network.Haskoin.Util
 
-import Data.Word (Word32)
-import Data.Bits (shiftL)
-import Data.Maybe (fromMaybe, isNothing, isJust, catMaybes)
-import Data.List (sort)
-import Data.Binary.Get (getWord32le)
-import Data.Binary.Put (putWord32le)
-import Data.Default (def)
-import qualified Data.Binary as B (Binary, get, put)
-import qualified Data.ByteString as BS (ByteString, reverse, append)
-
-import qualified Database.LevelDB.Base as L (DB, get, put)
-
-import Network.Haskoin.Block
-import Network.Haskoin.Constants
-import Network.Haskoin.Util
-import Network.Haskoin.Node.Checkpoints
-
-type BlockHeight = Word32
-type Timestamp = Word32
-
-class Monad m => HeaderTree m where
-    getBlockHeaderNode     :: BlockHash -> m (Maybe BlockHeaderNode)
-    putBlockHeaderNode     :: BlockHeaderNode -> m ()
-    -- The height is only updated when the node is part of the main chain.
-    -- Side chains are not indexed by their height.
-    putBlockHeaderHeight   :: BlockHeaderNode -> m ()
-    getBlockHeaderByHeight :: BlockHeight -> m (Maybe BlockHeaderNode)
-    getBestBlockHeader     :: m BlockHeaderNode
-    setBestBlockHeader     :: BlockHeaderNode -> m ()
-
--- | Data type representing a BlockHeader node in the header chain. It
--- contains additional data such as the chain work and chain height for this
--- node.
-data BlockHeaderNode = BlockHeaderNode
-    { nodeBlockHash    :: !BlockHash
-    , nodeHeader       :: !BlockHeader
-    , nodeHeaderHeight :: !BlockHeight
-    , nodeChainWork    :: !Integer
-    , nodeChild        :: !(Maybe BlockHash)
-    , nodeMedianTimes  :: ![Timestamp]
-    , nodeMinWork      :: !Word32 -- Only used for testnet
-    } deriving (Show, Read, Eq)
-
-instance NFData BlockHeaderNode where
-    rnf BlockHeaderNode{..} =
-        rnf nodeBlockHash `seq`
-        rnf nodeHeader `seq`
-        rnf nodeHeaderHeight `seq`
-        rnf nodeChainWork `seq`
-        rnf nodeChild `seq`
-        rnf nodeMedianTimes `seq`
-        rnf nodeMinWork
-
-instance B.Binary BlockHeaderNode where
-
-    get = do
-        nodeBlockHash    <- B.get
-        nodeHeader       <- B.get
-        nodeHeaderHeight <- getWord32le
-        nodeChainWork    <- B.get
-        nodeChild        <- B.get
-        nodeMedianTimes  <- B.get
-        nodeMinWork      <- B.get
-        return BlockHeaderNode{..}
-
-    put BlockHeaderNode{..} = do
-        B.put       nodeBlockHash
-        B.put       nodeHeader
-        putWord32le nodeHeaderHeight
-        B.put       nodeChainWork
-        B.put       nodeChild
-        B.put       nodeMedianTimes
-        B.put       nodeMinWork
+z :: BlockHash
+z = "0000000000000000000000000000000000000000000000000000000000000000"
 
 data BlockChainAction
-    = BestChain  { actionNodes     :: ![BlockHeaderNode] }
-    | ChainReorg { actionSplitNode :: !BlockHeaderNode
-                 , actionOldNodes  :: ![BlockHeaderNode]
-                 , actionNodes     :: ![BlockHeaderNode]
+    = BestChain  { actionNodes :: ![NodeBlock] }
+    | ChainReorg { actionSplitNode :: !NodeBlock
+                 , actionOldNodes  :: ![NodeBlock]
+                 , actionNodes     :: ![NodeBlock]
                  }
-    | SideChain  { actionNodes     :: ![BlockHeaderNode] }
-    | KnownChain { actionNodes     :: ![BlockHeaderNode] }
-    deriving (Read, Show, Eq)
+    | SideChain  { actionNodes :: ![NodeBlock] }
+    | KnownChain { actionNodes :: ![NodeBlock] }
+    deriving (Show, Eq)
 
-instance NFData BlockChainAction where
-    rnf bca = case bca of
-        BestChain ns -> rnf ns
-        ChainReorg s os ns -> rnf s `seq` rnf os `seq` rnf ns
-        KnownChain ns -> rnf ns
-        SideChain ns -> rnf ns
+-- | Number of blocks on average between difficulty cycles (2016 blocks).
+diffInterval :: Word32
+diffInterval = targetTimespan `div` targetSpacing
 
--- | Returns True if the action is a best chain
+-- | Genesis block.
+genesisBlock :: NodeBlock
+genesisBlock = NodeBlock
+    { nodeBlockHash          = NodeHash $ headerHash genesisHeader
+    , nodeBlockVersion       = blockVersion genesisHeader
+    , nodeBlockPrev          = NodeHash $ prevBlock genesisHeader
+    , nodeBlockMerkleRoot    = MerkleHash $ TxHash $ merkleRoot genesisHeader
+    , nodeBlockTime          = blockTimestamp genesisHeader
+    , nodeBlockBits          = blockBits genesisHeader
+    , nodeBlockNonce         = bhNonce genesisHeader
+    , nodeBlockHeight        = 0
+    , nodeBlockWork          = Work $ headerWork genesisHeader
+    , nodeBlockMedianTimes   = [blockTimestamp genesisHeader]
+    , nodeBlockMinWork       = blockBits genesisHeader
+    , nodeBlockChain         = 0
+    , nodeBlockPivots        = []
+    , nodeBlockPivotChains   = []
+    }
+
+-- | Initialize the block header chain by inserting the genesis block if it
+-- doesn't already exist.
+initHeaderTree :: MonadIO m => SqlPersistT m ()
+initHeaderTree = do
+    nodeM <- getBlockByHash $ headerHash genesisHeader
+    when (isNothing nodeM) $ putBlock genesisBlock
+
+-- | Connect a block header to this block header chain. Corresponds to bitcoind
+-- function ProcessBlockHeader and AcceptBlockHeader in main.cpp.
+connectHeader :: MonadIO m
+              => NodeBlock
+              -> BlockHeader
+              -> Timestamp
+              -> SqlPersistT m (Either String BlockChainAction)
+connectHeader best bh ts = runEitherT $ do
+    parentM <- lift $ getBlockByHash $ prevBlock bh
+    parent <- maybe (left "Could not get parent node") return parentM
+    checkPointM <- fmap nodeBlockHeight <$> lift lastSeenCheckpoint
+    chain <- lift $ getChain parent
+    let bn = nodeBlock parent chain bh
+    diffBlockM <- lift $ getBlockByHeight parent $
+        nodeBlockHeight parent `div` diffInterval * diffInterval
+    diffTime <- maybe (left "Could not get difficulty change block")
+        (return . blockTimestamp . nodeBlockHeader)
+        diffBlockM
+    liftEither $ verifyBlockHeader parent diffTime checkPointM ts bh
+    lift $ putBlock bn
+    lift $ evalNewChain best [bn]
+
+-- | A more efficient way of connecting a list of block headers than connecting
+-- them individually. The list of block headers have must form a valid chain.
+connectHeaders :: MonadIO m
+               => [BlockHeader]
+               -> Timestamp
+               -> SqlPersistT m (Either String BlockChainAction)
+connectHeaders [] _ = runEitherT $ left "Nothing to connect"
+connectHeaders bhs@(bh:_) ts = runEitherT $ do
+    unless (validChain bhs) $
+        left "Block headers do not form a valid chain"
+    best <- lift getBestBlock
+    checkPointM <- fmap nodeBlockHeight <$> lift lastSeenCheckpoint
+    parentM <- lift $ getBlockByHash $ prevBlock bh
+    parent <- maybe (left "Could not get parent node") return parentM
+    chain <- lift $ getChain parent
+    diffBlockM <- lift $ getBlockByHeight parent $
+        nodeBlockHeight parent `div` diffInterval * diffInterval
+    diffTime <- maybe (left "Could not get difficulty change block")
+        (return . blockTimestamp . nodeBlockHeader)
+        diffBlockM
+    nodes <- (`evalStateT` (parent, diffTime)) $ forM bhs $ \b -> do
+        (p, d) <- get
+        lift $ liftEither $ verifyBlockHeader p d checkPointM ts b
+        let bn = nodeBlock p chain b
+            d' = if nodeBlockHeight bn `mod` diffInterval == 0
+                 then blockTimestamp b
+                 else d
+        put (bn, d')
+        return bn
+    lift $ putBlocks nodes
+    lift $ evalNewChain best nodes
+  where
+    validChain (a:b:xs) = prevBlock b == headerHash a && validChain (b:xs)
+    validChain [_] = True
+    validChain _ = False
+
+-- | Returns True if the action is a best chain.
 isBestChain :: BlockChainAction -> Bool
 isBestChain (BestChain _) = True
 isBestChain _             = False
 
--- | Returns True if the action is a chain reorg
+-- | Returns True if the action is a chain reorg.
 isChainReorg :: BlockChainAction -> Bool
 isChainReorg ChainReorg{} = True
 isChainReorg _            = False
 
--- | Returns True if the action is a side chain
+-- | Returns True if the action is a side chain.
 isSideChain :: BlockChainAction -> Bool
 isSideChain (SideChain _) = True
 isSideChain _             = False
 
--- | Returns True if the action is a known chain
+-- | Returns True if the action is a known chain.
 isKnownChain :: BlockChainAction -> Bool
 isKnownChain (KnownChain _) = True
 isKnownChain _              = False
 
--- | Number of blocks on average between difficulty cycles (2016 blocks)
-diffInterval :: Word32
-diffInterval = targetTimespan `div` targetSpacing
-
--- | Genesis BlockHeaderNode
-genesisNode :: BlockHeaderNode
-genesisNode = BlockHeaderNode
-    { nodeBlockHash    = headerHash genesisHeader
-    , nodeHeader       = genesisHeader
-    , nodeHeaderHeight = 0
-    , nodeChainWork    = headerWork genesisHeader
-    , nodeChild        = Nothing
-    , nodeMedianTimes  = [blockTimestamp genesisHeader]
-    , nodeMinWork      = blockBits genesisHeader
-    }
-
--- | Initialize the block header chain by inserting the genesis block if
--- it doesn't already exist.
-initHeaderTree :: HeaderTree m => m ()
-initHeaderTree = do
-    genM <- getBlockHeaderNode $ nodeBlockHash genesisNode
-    when (isNothing genM) $ do
-        putBlockHeaderNode genesisNode
-        putBlockHeaderHeight genesisNode
-        setBestBlockHeader genesisNode
-
--- A more efficient way of connecting a list of BlockHeaders than connecting
--- them individually. The work check will only be done once for the whole
--- chain. The list of BlockHeaders have to form a valid chain, linked by their
--- parents.
-connectHeaders :: HeaderTree m
-               => [BlockHeader]
-               -> Timestamp
-               -> Bool
-               -> m (Either String BlockChainAction)
-connectHeaders bhs adjustedTime commit
-    | null bhs = return $ Left "Invalid empty BlockHeaders in connectHeaders"
-    | validChain bhs = runEitherT $ do
-        newNodes <- forM bhs $ \bh -> do
-            parNode <- verifyBlockHeader bh adjustedTime
-            lift $ storeBlockHeader bh parNode
-        -- Best header will only be updated if we have no errors
-        lift $ evalNewChain commit newNodes
-    | otherwise = return $ Left "BlockHeaders do not form a valid chain."
+-- | Returns a BlockLocator object for a given block hash.
+blockLocator :: MonadIO m => NodeBlock -> SqlPersistT m BlockLocator
+blockLocator node = do
+    nodes <- getBlocksByHeight node bs
+    return $ map (getNodeHash . nodeBlockHash) nodes
   where
-    validChain (a:b:xs) =  prevBlock b == headerHash a && validChain (b:xs)
-    validChain [_] = True
-    validChain _ = False
+    h = nodeBlockHeight node
+    f x s = (fst x - s, fst x > s)
+    bs = (++ [0]) $ map fst $ takeWhile snd $
+        [(h - x, x < h) | x <- [0..9]] ++
+        scanl f (h - 10, h > 10) [2 ^ (x :: Word32) | x <- [1..]]
 
--- | Connect a block header to this block header chain. Corresponds to bitcoind
--- function ProcessBlockHeader and AcceptBlockHeader in main.cpp.
-connectHeader :: HeaderTree m
-              => BlockHeader
-              -> Timestamp
-              -> Bool
-              -> m (Either String BlockChainAction)
-connectHeader bh adjustedTime commit = runEitherT $ do
-    parNode <- verifyBlockHeader bh adjustedTime
-    lift $ evalNewChain commit . (: []) =<< storeBlockHeader bh parNode
-
-evalNewChain :: HeaderTree m
-             => Bool
-             -> [BlockHeaderNode]
-             -> m BlockChainAction
-evalNewChain commit newNodes = do
-    currentHead <- getBestBlockHeader
-    action <- go =<< findSplitNode currentHead (last newNodes)
-    when commit $ commitAction action
-    return action
-  where
-    go (split, old, new)
-        | null old && not (null new) = return $ BestChain new
-        | not (null old) && not (null new) =
-            return $ if nodeChainWork (last new) > nodeChainWork (last old)
-                  then ChainReorg split old new
-                  else SideChain $ split : new
-        | otherwise = return $ KnownChain newNodes
-
--- | Update the best block header of the action in the header tree
-commitAction :: HeaderTree m => BlockChainAction -> m ()
-commitAction action = do
-    currentHead <- getBestBlockHeader
-    case action of
-        BestChain nodes -> unless (null nodes) $ do
-            updateChildren $ currentHead:nodes
-            forM_ nodes putBlockHeaderHeight
-            setBestBlockHeader $ last nodes
-        ChainReorg s _ ns -> unless (null ns) $ do
-            updateChildren $ s:ns
-            forM_ ns putBlockHeaderHeight
-            setBestBlockHeader $ last ns
-        KnownChain _ -> return ()
-        SideChain _ -> return ()
-  where
-    updateChildren (a:b:xs) = do
-        putBlockHeaderNode a{ nodeChild = Just $ nodeBlockHash b }
-        updateChildren (b:xs)
-    updateChildren _ = return ()
-
+-- | Verify block header conforms to protocol.
+verifyBlockHeader :: NodeBlock        -- ^ Parent block header
+                  -> Timestamp        -- ^ Previous difficulty change
+                  -> Maybe Word32     -- ^ Height of most recent checkpoint
+                  -> Timestamp        -- ^ Current time
+                  -> BlockHeader      -- ^ Block header to validate
+                  -> Either String ()
 -- TODO: Add DOS return values
-verifyBlockHeader :: HeaderTree m
-                  => BlockHeader
-                  -> Timestamp
-                  -> EitherT String m BlockHeaderNode
-verifyBlockHeader bh adjustedTime  = do
-    unless (isValidPOW bh) $ left "Invalid proof of work"
+verifyBlockHeader parent prevDiffTime checkPointM timestamp bh = do
+    unless (isValidPOW bh) $
+        Left "Invalid proof of work"
 
-    unless (blockTimestamp bh <= adjustedTime + 2 * 60 * 60) $
-        left "Invalid header timestamp"
+    unless (blockTimestamp bh <= timestamp + 2 * 60 * 60) $
+        Left "Invalid header timestamp"
 
-    parNodeM <- lift $ getBlockHeaderNode $ prevBlock bh
-    parNode <- maybe (left "Parent block not found") return parNodeM
+    let nextWork = nextWorkRequired parent prevDiffTime bh
+    unless (blockBits bh == nextWork) $
+        Left "Incorrect work transition (bits)"
 
-    nextWork <- lift $ nextWorkRequired parNode bh
-    unless (blockBits bh == nextWork) $ left "Incorrect work transition (bits)"
-
-    let sortedMedians = sort $ nodeMedianTimes parNode
+    let sortedMedians = sort $ nodeBlockMedianTimes parent
         medianTime    = sortedMedians !! (length sortedMedians `div` 2)
-    when (blockTimestamp bh <= medianTime) $ left "Block timestamp is too early"
+    when (blockTimestamp bh <= medianTime) $
+        Left "Block timestamp is too early"
 
-    chkPointM <- lift lastSeenCheckpoint
-    let newHeight = nodeHeaderHeight parNode + 1
-    unless (maybe True ((fromIntegral newHeight >) . fst) chkPointM) $
-        left "Rewriting pre-checkpoint chain"
+    let newHeight = nodeBlockHeight parent + 1
+    unless (maybe True (fromIntegral newHeight >) checkPointM) $
+        Left "Rewriting pre-checkpoint chain"
 
-    unless (verifyCheckpoint (fromIntegral newHeight) bid) $
-        left "Rejected by checkpoint lock-in"
+    unless (verifyCheckpoint (fromIntegral newHeight) (headerHash bh)) $
+        Left "Rejected by checkpoint lock-in"
 
     -- All block of height 227836 or more use version 2 in prodnet
     -- TODO: Find out the value here for testnet
-    when (  networkName == "prodnet"
-         && blockVersion bh == 1
-         && nodeHeaderHeight parNode + 1 >= 227836) $
-        left "Rejected version=1 block"
+    when (networkName == "prodnet"
+          && blockVersion bh == 1
+          && nodeBlockHeight parent + 1 >= 227836) $
+        Left "Rejected version 1 block"
 
-    return parNode
+-- | Create a block node data structure from a block header.
+nodeBlock :: NodeBlock    -- ^ Parent block node
+          -> Int          -- ^ Chain number for new node
+          -> BlockHeader
+          -> NodeBlock
+nodeBlock parent chain bh = NodeBlock
+    { nodeBlockHash              = NodeHash $ headerHash bh
+    , nodeBlockVersion           = blockVersion bh
+    , nodeBlockPrev              = NodeHash $ prevBlock bh
+    , nodeBlockMerkleRoot        = MerkleHash $ TxHash $ merkleRoot bh
+    , nodeBlockTime              = blockTimestamp bh
+    , nodeBlockBits              = blockBits bh
+    , nodeBlockNonce             = bhNonce bh
+    , nodeBlockHeight            = height
+    , nodeBlockWork              = newWork
+    , nodeBlockMedianTimes       = medianTimes
+    , nodeBlockMinWork           = minWork
+    , nodeBlockChain             = chain
+    , nodeBlockPivots            = pivots
+    , nodeBlockPivotChains       = chains
+    }
   where
-    bid = headerHash bh
-
--- Build a new block header and store it
-storeBlockHeader :: HeaderTree m
-                 => BlockHeader
-                 -> BlockHeaderNode
-                 -> m BlockHeaderNode
-storeBlockHeader bh parNode = do
-    let nodeBlockHash    = bid
-        nodeHeader       = bh
-        nodeHeaderHeight = newHeight
-        nodeChainWork    = newWork
-        nodeChild        = Nothing
-        nodeMedianTimes  = newMedian
-        nodeMinWork      = minWork
-        newNode          = BlockHeaderNode{..}
-    prevM <- getBlockHeaderNode bid
-    case prevM of
-        Just prev -> return prev
-        Nothing   -> putBlockHeaderNode newNode >> return newNode
-  where
-    bid       = headerHash bh
-    newHeight = nodeHeaderHeight parNode + 1
-    newWork   = nodeChainWork parNode + headerWork bh
-    newMedian = blockTimestamp bh : take 10 (nodeMedianTimes parNode)
-    isDiffChange = newHeight `mod` diffInterval == 0
+    newWork = Work $ getWork (nodeBlockWork parent) + headerWork bh
+    medianTimes = blockTimestamp bh : take 10 (nodeBlockMedianTimes parent)
+    height = nodeBlockHeight parent + 1
+    isDiffChange = height `mod` diffInterval == 0
     isNotLimit   = blockBits bh /= encodeCompact powLimit
     minWork | not allowMinDifficultyBlocks = 0
             | isDiffChange || isNotLimit   = blockBits bh
-            | otherwise                    = nodeMinWork parNode
+            | otherwise                    = nodeBlockMinWork parent
+    pivots | chain == nodeBlockChain parent = nodeBlockPivots parent
+           | otherwise = nodeBlockHeight parent : nodeBlockPivots parent
+    chains | chain == nodeBlockChain parent = nodeBlockPivotChains parent
+           | otherwise = nodeBlockChain parent : nodeBlockPivotChains parent
 
--- | Return the window of nodes starting from the child of the given node.
--- Child links are followed to build the window. If the window ends in an
--- orphaned chain, we backtrack and return the window in the main chain.
--- The result is returned in a BlockChainAction to know if we had to
--- backtrack into the main chain or not.
-getNodeWindow :: HeaderTree m
-              => BlockHash -> Int -> m (Maybe BlockChainAction)
-getNodeWindow bh cnt = getBlockHeaderNode bh >>= \nodeM -> case nodeM of
-        Just node -> go [] cnt node
-        Nothing -> return Nothing
-  where
-    go [] 0 _  = return Nothing
-    go acc 0 _ = return $ Just $ BestChain $ reverse acc
-    go acc i node = getChildNode node >>= \childM -> case childM of
-        Just child -> go (child:acc) (i-1) child
-        Nothing -> do
-            -- We are at the end of our chain. Check if there is a better chain.
-            currentHead <- getBestBlockHeader
-            if nodeChainWork currentHead > nodeChainWork node
-                -- We got stuck in an orphan chain. We need to backtrack.
-                then findMainChain currentHead
-                -- We are at the end of the main chain
-                else return $ if null acc
-                    then Nothing
-                    else Just $ BestChain $ reverse acc
-    findMainChain currentHead = do
-        -- Compute the split point from the original input node so that the old
-        -- chain doesn't contain blocks beyond the original node.
-        node <- fromMaybe e <$> getBlockHeaderNode bh
-        (split, old, new) <- findSplitNode node currentHead
-        return $ Just $ ChainReorg split old $ take cnt new
-    e = error "getNodeWindow: Could not get block header node"
-
--- Find the first node right after the given timestamp
-getNodeAtTimestamp :: HeaderTree m
-                   => Timestamp
-                   -> m (Maybe BlockHeaderNode)
-getNodeAtTimestamp ts = do
-    best <- getBestBlockHeader
-    if ts < blockTimestamp (nodeHeader best)
-        -- there is a solution. Perform a binary search.
-        then go 0 $ nodeHeaderHeight best
-        -- There is no solution.
-        else return Nothing
-  where
-    go a b
-        | a == b = getBlockHeaderByHeight a
-        | otherwise = do
-            -- compute the middle point
-            let m = a + ((b - a) `div` 2)
-            nodeM <- getBlockHeaderByHeight m
-            case nodeM of
-                Just node -> if ts < blockTimestamp (nodeHeader node)
-                    -- The block is after the timestamp. The block could be the
-                    -- solution, or the solution is smaller.
-                    then go a m
-                    -- The block is before the timestamp. The solution is
-                    -- striclty higher than m.
-                    else go (m+1) b
-                _ -> error $ unwords
-                    [ "getNodeAtTimestamp: Possibly corrupted chain"
-                    , "at height", show m
-                    ]
+-- | Return blockchain action to connect given block with best block. Count will
+-- limit the amount of blocks building up from split point towards the best
+-- block.
+getBlockWindow :: MonadIO m
+               => NodeBlock  -- ^ Best block
+               -> NodeBlock  -- ^ Start of window
+               -> Word32     -- ^ Window count
+               -> SqlPersistT m BlockChainAction
+getBlockWindow best node cnt = do
+    (_, old, new) <- splitChains (node, 0) (best, cnt)
+    return $ if null old then BestChain new else ChainReorg node old new
 
 -- | Find the split point between two nodes. It also returns the two partial
--- chains leading from the split point to the respective nodes.
-findSplitNode :: HeaderTree m
-              => BlockHeaderNode
-              -> BlockHeaderNode
-              -> m (BlockHeaderNode, [BlockHeaderNode], [BlockHeaderNode])
-findSplitNode =
-    go [] []
-  where
-    go xs ys x y
-        | nodeBlockHash x == nodeBlockHash y = return (x, xs, ys)
-        | nodeHeaderHeight x > nodeHeaderHeight y = do
-            par <- fromMaybe e <$> getParentNode x
-            go (x:xs) ys par y
-        | otherwise = do
-            par <- fromMaybe e <$> getParentNode y
-            go xs (y:ys) x par
-    e = error "findSplitNode: Could not get parent node"
+-- chains leading from the split point to the respective nodes. Tuples must
+-- contain a block node and the count of nodes that should be returned from the
+-- split towards that block. 0 means all.
+splitChains :: MonadIO m
+            => (NodeBlock, Word32)
+            -> (NodeBlock, Word32)
+            -> SqlPersistT m (NodeBlock, [NodeBlock], [NodeBlock])
+splitChains (l, ln) (r, rn) = do
+    let (height, _) = splitBlock l r
+    (split:ls) <- getBlocksFromHeight l ln height
+    rs         <- getBlocksFromHeight r rn (height + 1)
+    return (split, ls, rs)
 
--- | Finds the parent of a BlockHeaderNode
-getParentNode :: HeaderTree m => BlockHeaderNode -> m (Maybe BlockHeaderNode)
-getParentNode node
+-- | Finds the parent of a block.
+getParentBlock :: MonadIO m
+               => NodeBlock
+               -> SqlPersistT m (Maybe NodeBlock)
+getParentBlock node
     | p == z    = return Nothing
-    | otherwise = getBlockHeaderNode p
+    | otherwise = getBlockByHash p
   where
-    p = prevBlock $ nodeHeader node
-    z = "0000000000000000000000000000000000000000000000000000000000000000"
+    p = getNodeHash $ nodeBlockPrev node
 
--- | Finds the child of a BlockHeaderNode if it exists. If a node has
--- multiple children, this function will always return the child on the
--- main branch.
-getChildNode :: HeaderTree m => BlockHeaderNode -> m (Maybe BlockHeaderNode)
-getChildNode node = case nodeChild node of
-    Just child -> getBlockHeaderNode child
-    Nothing    -> return Nothing
+-- | Get all children for a block
+getChildBlocks :: MonadIO m
+              => BlockHash
+              -> SqlPersistT m [NodeBlock]
+getChildBlocks h = fmap (map entityVal) $ select $ from $ \t -> do
+    where_ $ t ^. NodeBlockPrev ==. val (NodeHash h)
+    return t
 
--- | Get the last checkpoint that we have seen
-lastSeenCheckpoint :: HeaderTree m => m (Maybe (Int, BlockHash))
+
+-- | Get the last checkpoint that we have seen.
+lastSeenCheckpoint :: MonadIO m
+                   => SqlPersistT m (Maybe NodeBlock)
 lastSeenCheckpoint =
-    go $ reverse checkpointList
-  where
-    go ((i, chk):xs) = do
-        existsChk <- liftM isJust $ getBlockHeaderNode chk
-        if existsChk then return $ Just (i, chk) else go xs
-    go [] = return Nothing
+    fmap listToMaybe $ getBlocksByHash $ map snd $ reverse checkpointList
 
--- | Returns the work required for a BlockHeader given the previous
--- BlockHeaderNode. This function coresponds to bitcoind function
--- GetNextWorkRequired in main.cpp.
-nextWorkRequired :: HeaderTree m => BlockHeaderNode -> BlockHeader -> m Word32
-nextWorkRequired lastNode bh
+-- | Returns the work required for a block header given the previous block. This
+-- coresponds to bitcoind function GetNextWorkRequired in main.cpp.
+nextWorkRequired :: NodeBlock
+                 -> Timestamp
+                 -> BlockHeader
+                 -> Word32
+nextWorkRequired parent ts bh
     -- Genesis block
-    | prevBlock (nodeHeader lastNode) == z = return $ encodeCompact powLimit
+    | nodeBlockPrev parent == NodeHash z = encodeCompact powLimit
     -- Only change the difficulty once per interval
-    | (nodeHeaderHeight lastNode + 1) `mod` diffInterval /= 0 = return $
+    | (nodeBlockHeight parent + 1) `mod` diffInterval /= 0 =
         if allowMinDifficultyBlocks
             then minPOW
-            else blockBits $ nodeHeader lastNode
-    | otherwise = do
-        -- TODO: Can this break if there are not enough blocks in the chain?
-        firstNode <- foldM (flip ($)) lastNode fs
-        let lastTs = blockTimestamp $ nodeHeader firstNode
-        return $ workFromInterval lastTs (nodeHeader lastNode)
+            else nodeBlockBits parent
+    | otherwise = workFromInterval ts (nodeBlockHeader parent)
   where
-    len   = fromIntegral diffInterval - 1
-    fs    = replicate len (liftM (fromMaybe e) . getParentNode)
-    e = error "nextWorkRequired: Could not get parent node"
     delta = targetSpacing * 2
     minPOW
-        | blockTimestamp bh > blockTimestamp (nodeHeader lastNode) + delta =
+        | blockTimestamp bh > nodeBlockTime parent + delta =
             encodeCompact powLimit
-        | otherwise = nodeMinWork lastNode
-    z = "0000000000000000000000000000000000000000000000000000000000000000"
+        | otherwise = nodeBlockMinWork parent
 
 -- | Computes the work required for the next block given a timestamp and the
 -- current block. The timestamp should come from the block that matched the
@@ -463,55 +372,10 @@ workFromInterval ts lastB
     lastDiff = decodeCompact $ blockBits lastB
     newDiff = lastDiff * toInteger actualTime `div` toInteger targetTimespan
 
--- | Returns a BlockLocator object (newest block first, genesis at the end)
-blockLocator :: HeaderTree m => m BlockLocator
-blockLocator = bestBlockHeaderHeight >>= blockLocatorHeight
-
--- | Returns a BlockLocator object for a given block height on the main chain.
-blockLocatorHeight :: HeaderTree m => BlockHeight -> m BlockLocator
-blockLocatorHeight height = do
-    -- Take only indices > 0 to avoid the genesis block
-    let is = takeWhile (> (0 :: Int)) $
-            [h, (h - 1) .. (h - 9)] ++ [(h - 10) - 2^x | x <- [(0 :: Int)..]]
-    ns <- liftM catMaybes $ forM (map fromIntegral is) getBlockHeaderByHeight
-    return $ map nodeBlockHash ns ++ [headerHash genesisHeader]
-  where
-    h = fromIntegral height
-
--- | Build a block locator starting from a side chain. We do not have access
--- to the height index for the portion of the side chain so we build the
--- part in the side chain manually, then use the block height index for the
--- rest of the locator once we're back on the main chain.
-blockLocatorSide :: HeaderTree m => BlockChainAction -> m BlockLocator
-blockLocatorSide action = case action of
-    SideChain (split:nodes) -> do
-        mainLoc <- blockLocatorHeight $ nodeHeaderHeight split
-        return $ take 10 (map nodeBlockHash $ reverse nodes) ++ mainLoc
-    _ -> error "blockLocatorSide: Invalid blockchain action provided"
-
--- | Returns a partial BlockLocator object.
-blockLocatorPartial :: HeaderTree m => Int -> m BlockLocator
-blockLocatorPartial i
-    | i < 1 = error "Locator length must be greater than 0"
-    | otherwise = do
-        h <- getBestBlockHeader
-        liftM (map nodeBlockHash . reverse) $ go [] i h
-  where
-    go acc 1 node = return $ node:acc
-    go acc step node = getParentNode node >>= \parM -> case parM of
-        Just par -> go (node:acc) (step - 1) par
-        Nothing  -> return $ node:acc
-
-bestBlockHeaderHeight :: HeaderTree m => m BlockHeight
-bestBlockHeaderHeight = liftM nodeHeaderHeight getBestBlockHeader
-
-getBlockHeaderHeight :: HeaderTree m => BlockHash -> m (Maybe BlockHeight)
-getBlockHeaderHeight = return . fmap nodeHeaderHeight <=< getBlockHeaderNode
-
--- | Returns True if the difficulty target (bits) of the header is valid
--- and the proof of work of the header matches the advertised difficulty target.
--- This function corresponds to the function CheckProofOfWork from bitcoind
--- in main.cpp
+-- | Returns True if the difficulty target (bits) of the header is valid and the
+-- proof of work of the header matches the advertised difficulty target. This
+-- function corresponds to the function CheckProofOfWork from bitcoind in
+-- main.cpp.
 isValidPOW :: BlockHeader -> Bool
 isValidPOW bh
     | target <= 0 || target > powLimit = False
@@ -526,60 +390,185 @@ headerPOW =  bsToInteger . BS.reverse . encode' . headerHash
 -- | Returns the work represented by this block. Work is defined as the number
 -- of tries needed to solve a block in the average case with respect to the
 -- target.
-headerWork :: BlockHeader -> Integer
+headerWork :: BlockHeader -> Word256
 headerWork bh =
-    largestHash `div` (target + 1)
+    fromIntegral $ largestHash `div` (target + 1)
   where
     target      = decodeCompact (blockBits bh)
     largestHash = 1 `shiftL` 256
 
-{- Default LevelDB implementation -}
+{- Persistent backend -}
 
-blockHashKey :: BlockHash -> BS.ByteString
-blockHashKey bid = "b_" `BS.append` encode' bid
+nodeBlockHeader :: NodeBlock -> BlockHeader
+nodeBlockHeader node = BlockHeader
+    { blockVersion    = nodeBlockVersion node
+    , prevBlock       = getNodeHash $ nodeBlockPrev node
+    , merkleRoot      = getTxHash $ getMerkleHash $ nodeBlockMerkleRoot node
+    , blockTimestamp  = nodeBlockTime node
+    , blockBits       = nodeBlockBits node
+    , bhNonce         = nodeBlockNonce node
+    }
 
-bestBlockKey :: BS.ByteString
-bestBlockKey = "bestblockheader_"
+getForks :: NodeBlock -> [(BlockHeight, Int)]
+getForks NodeBlock{..} = zip nodeBlockPivots nodeBlockPivotChains
 
-heightKey :: BlockHeight -> BS.ByteString
-heightKey h = "h_" `BS.append` encode' h
+chainPathQuery :: forall (expr :: * -> *) (query :: * -> *) backend.
+                  Esqueleto query expr backend
+               => expr (Entity NodeBlock)
+               -> [(BlockHeight, Int)]
+               -> expr (Value Bool)
+chainPathQuery _ [] = error "Monsters, monsters everywhere"
 
--- Get a node which is directly referenced by the key
-getLevelDBNode :: MonadIO m
-               => BS.ByteString -> ReaderT L.DB m (Maybe BlockHeaderNode)
-getLevelDBNode key = do
-    db <- ask
-    resM <- liftIO $ L.get db def key
-    return $ decodeToMaybe =<< resM
+chainPathQuery t [(h,c)] =
+    t ^. NodeBlockHeight <=. val h &&. t ^. NodeBlockChain ==. val c
 
--- Get a node that has 1 level of indirection
-getLevelDBNode' :: MonadIO m
-                => BS.ByteString -> ReaderT L.DB m (Maybe BlockHeaderNode)
-getLevelDBNode' key = do
-    db <- ask
-    resM <- liftIO $ L.get db def key
-    maybe (return Nothing) getLevelDBNode resM
+chainPathQuery t ((h1,c):bs@((h2,_):_)) = chainPathQuery t bs ||.
+    (   t ^. NodeBlockHeight <=. val h1
+    &&. t ^. NodeBlockHeight >.  val h2
+    &&. t ^. NodeBlockChain  ==. val c
+    )
 
-instance MonadIO m => HeaderTree (ReaderT L.DB m) where
-    getBlockHeaderNode = getLevelDBNode . blockHashKey
-    putBlockHeaderNode node = do
-        db <- ask
-        liftIO $ L.put db def (blockHashKey $ nodeBlockHash node) $ encode' node
-    getBlockHeaderByHeight = getLevelDBNode' . heightKey
-    putBlockHeaderHeight node = do
-        db <- ask
-        let val = blockHashKey $ nodeBlockHash node
-        liftIO $ L.put db def (heightKey $ nodeHeaderHeight node) val
-    getBestBlockHeader = do
-        db <- ask
-        keyM <- liftIO $ L.get db def bestBlockKey
-        case keyM of
-            Just key -> fromMaybe e <$> getLevelDBNode key
-            Nothing  -> error
-                "GetBestBlockHeader: Best block header does not exist"
-      where
-        e = error "getBestBlockHeader: Could not get LevelDB node"
-    setBestBlockHeader node = do
-        db <- ask
-        liftIO $ L.put db def bestBlockKey $ blockHashKey $ nodeBlockHash node
+getHeads :: MonadIO m => SqlPersistT m [NodeBlock]
+getHeads = fmap (map (entityVal . snd)) $ select $ from $ \t -> do
+    groupBy $ t ^. NodeBlockChain
+    return (max_ (t ^. NodeBlockHeight), t)
 
+-- | Chain for new block building on a parent node
+getChain :: MonadIO m
+         => NodeBlock    -- ^ Parent node
+         -> SqlPersistT m Int
+getChain parent = do
+    maxHeightM <- fmap (unValue <=< listToMaybe) $ select $ from $ \t -> do
+        where_ $ t ^. NodeBlockChain ==. val (nodeBlockChain parent)
+        return $ max_ $ t ^. NodeBlockHeight
+    let maxHeight = fromMaybe (error "That chain does not exist") maxHeightM
+    if maxHeight == nodeBlockHeight parent
+        then return $ nodeBlockChain parent
+        else do
+            maxChainM <- fmap (unValue <=< listToMaybe) $ select $ from $ \t ->
+                return $ max_ $ t ^. NodeBlockChain
+            let maxChain = fromMaybe (error "Ran out of chains") maxChainM
+            return $ maxChain + 1
+
+-- | Get node height and chain common to both given.
+splitBlock :: NodeBlock -> NodeBlock -> (BlockHeight, Int)
+splitBlock l r =
+    if nodeBlockChain l == nodeBlockChain r
+      then
+        let nb = minimumBy (compare `on` nodeBlockHeight) [l,r]
+        in (nodeBlockHeight nb, nodeBlockChain nb)
+      else
+        let f (x,y) = snd x == snd y
+            g x = (0, 0) :
+                reverse ((nodeBlockHeight x, nodeBlockChain x) : getForks x)
+            ns = zip (g l) (g r)
+            xs = reverse $ takeWhile f ns
+        in minimumBy (compare `on` fst) [fst (head xs), snd (head xs)]
+
+-- | Put single block in database.
+putBlock :: MonadIO m => NodeBlock -> SqlPersistT m ()
+putBlock = insert_
+
+-- | Put multiple blocks in database.
+putBlocks :: MonadIO m => [NodeBlock] -> SqlPersistT m ()
+putBlocks = mapM_ insertMany_ . f
+  where
+    f [] = []
+    f xs = let (xs',xxs) = splitAt 50 xs in xs' : f xxs
+
+getBestBlock :: MonadIO m => SqlPersistT m NodeBlock
+getBestBlock = maximumBy (compare `on` nodeBlockWork) <$> getHeads
+
+getBlockByHash :: MonadIO m => BlockHash -> SqlPersistT m (Maybe NodeBlock)
+getBlockByHash h =
+    fmap (listToMaybe . map entityVal) $ select $ from $ \t -> do
+        where_ $ t ^. NodeBlockHash ==. val (NodeHash h)
+        return t
+
+-- | Get multiple blocks corresponding to given hashes
+getBlocksByHash :: MonadIO m
+                => [BlockHash]
+                -> SqlPersistT m [NodeBlock]
+getBlocksByHash hashes = do
+    nodes <- fmap (map entityVal) $ select $ from $ \t -> do
+        where_ $ t ^. NodeBlockHash `in_` valList (map NodeHash hashes)
+        return t
+    return $ mapMaybe
+        (\h -> find ((==h) . getNodeHash . nodeBlockHash) nodes)
+        hashes
+
+-- | Get ancestor of specified block at given height.
+getBlockByHeight :: MonadIO m
+                  => NodeBlock     -- ^ Best block
+                  -> BlockHeight
+                  -> SqlPersistT m (Maybe NodeBlock)
+getBlockByHeight best height = do
+    let forks = (nodeBlockHeight best, nodeBlockChain best) : getForks best
+    fmap (listToMaybe . map entityVal) $ select $ from $ \t -> do
+        where_ $ chainPathQuery t forks &&.
+            t ^. NodeBlockHeight ==. val height
+        return t
+
+-- | Get ancestors for specified block at given heights.
+getBlocksByHeight :: MonadIO m
+                  => NodeBlock       -- ^ Best block
+                  -> [BlockHeight]
+                  -> SqlPersistT m [NodeBlock]
+getBlocksByHeight best heights = do
+    let forks = (nodeBlockHeight best, nodeBlockChain best) : getForks best
+    nodes <- fmap (map entityVal) $ select $ from $ \t -> do
+        where_ $ chainPathQuery t forks &&.
+            t ^. NodeBlockHeight `in_` valList heights
+        return t
+    return $ mapMaybe (\h -> find ((==h) . nodeBlockHeight) nodes) heights
+
+-- | Get a range of block headers building up to specified block. If
+-- specified height is too large, an empty list will be returned.
+getBlocksFromHeight :: MonadIO m
+                    => NodeBlock     -- ^ Best block
+                    -> Word32        -- ^ Count (0 for all)
+                    -> BlockHeight   -- ^ Height from (including)
+                    -> SqlPersistT m [NodeBlock]
+getBlocksFromHeight best cnt height = do
+    let forks = (nodeBlockHeight best, nodeBlockChain best) : getForks best
+    fmap (map entityVal) $ select $ from $ \t -> do
+        where_ $ chainPathQuery t forks &&.
+            t ^. NodeBlockHeight >=. val height
+        when (cnt > 0) $ limit $ fromIntegral cnt
+        return t
+
+-- | Get node immediately at or after timestamp in main chain.
+getBlockAfterTime :: MonadIO m => Timestamp -> SqlPersistT m (Maybe NodeBlock)
+getBlockAfterTime ts = do
+    n <- getBestBlock
+    let ns = (nodeBlockHeight n, nodeBlockChain n) : getForks n
+    fmap (listToMaybe . map entityVal) $ select $ from $ \t -> do
+        where_ $ chainPathQuery t ns &&. t ^. NodeBlockTime >=. val ts
+        orderBy [asc $ t ^. NodeBlockHeight]
+        limit 1
+        return t
+
+-- | Get nodes at height.
+getBlocksAtHeight :: MonadIO m => BlockHeight -> SqlPersistT m [NodeBlock]
+getBlocksAtHeight height = fmap (map entityVal) $ select $ from $ \t -> do
+      where_ $ t ^. NodeBlockHeight ==. val height
+      return t
+
+-- | Evaluate block action for provided best block and chain of new blocks.
+evalNewChain :: MonadIO m
+             => NodeBlock
+             -> [NodeBlock]
+             -> SqlPersistT m BlockChainAction
+evalNewChain _ [] = error "You find yourself in the dungeon of missing blocks"
+evalNewChain best newNodes
+    | buildsOnBest = return $ BestChain newNodes
+    | nodeBlockWork (last newNodes) > nodeBlockWork best = do
+        (split, old, new) <- splitChains (best, 0) (head newNodes, 0)
+        return $ ChainReorg split old (new ++ tail newNodes)
+    | otherwise = do
+        (split, _, new) <- splitChains (best, 0) (head newNodes, 0)
+        case new of
+            [] -> return $ KnownChain newNodes
+            _  -> return $ SideChain $ split : new ++ tail newNodes
+  where
+    buildsOnBest = nodeBlockPrev (head newNodes) == nodeBlockHash best

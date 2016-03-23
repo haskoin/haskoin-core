@@ -16,9 +16,10 @@ import Safe (readMay)
 import GHC.Exts( IsString(..) )
 import qualified Data.Aeson as Aeson 
 import qualified Data.Aeson.Types as Aeson.Types
-import Control.Monad ((<=<))
 import qualified Data.Vector as V
 import Data.String.Conversions (convertString)
+import Data.List (groupBy)
+import qualified Data.Either
 
 import Network.Haskoin.Transaction
 import Network.Haskoin.Script
@@ -77,20 +78,21 @@ runPKHashVec (xs, ys, res) =
 mapVerifyVec :: (SatoshiCoreTxTest, Int)
              -> Test.Framework.Test
 mapVerifyVec (v, i) = testCase name $ runVerifyVec v i
-    where name = "Verify Tx " ++ (show i)
+    where name = "Verify Tx " ++ (show i) ++ ", about: " ++ (satCoreTxTestDescription $ v)
 
 runVerifyVec :: SatoshiCoreTxTest -> Int -> Assertion
-runVerifyVec (SatoshiCoreTxTest is bsTx) i =
+runVerifyVec (SatoshiCoreTxTest description is bsTx) i =
     assertBool name $ verifyStdTx tx outputsAndOutpoints
   where
-    name = "    > Verify transaction " ++ (show i)
+    name = "    > Verify transaction " ++ (show i) ++ "bsTx: " ++ convertString bsTx
     tx :: Tx
     tx  = decode' . fromJust . decodeHex $ bsTx
     outputsAndOutpoints :: [(ScriptOutput, OutPoint)] 
     outputsAndOutpoints = map f is
     f (SatoshiCoreTxTestInput bsOutputHash bsOutputIndex bsOutputScriptPubKey) =
         let s :: ScriptOutput
-            s = fromRight . decodeOutputBS . fromJust . decodeHex $ bsOutputScriptPubKey
+            s = either (\e -> error $ "could not decode: " ++ convertString bsOutputScriptPubKey) id
+                  . decodeOutputBS . fromJust . decodeHex $ bsOutputScriptPubKey
             op :: OutPoint
             op = OutPoint
                 (decode' . BS.reverse . fromJust . decodeHex $ bsOutputHash)
@@ -129,7 +131,8 @@ pkHashVec =
     ]
 
 data SatoshiCoreTxTest = 
-  SatoshiCoreTxTest { satCoreTxTestInputs :: [SatoshiCoreTxTestInput], 
+  SatoshiCoreTxTest { satCoreTxTestDescription :: String,
+                      satCoreTxTestInputs :: [SatoshiCoreTxTestInput], 
                       satCoreTxTestSerTx :: ByteString}
   deriving (Read,Show)
 
@@ -144,11 +147,10 @@ data SatoshiCoreTxTestInput =
 -- [[(prevout hash, prevout index, prevout scriptPubKey)], serialized tx], 
 verifyVec :: [SatoshiCoreTxTest]
 verifyVec =
-  let toSatCoreTest (is, sertx) = SatoshiCoreTxTest (map toInputs is) sertx
+  let toSatCoreTest (is, sertx, description) = SatoshiCoreTxTest description (map toInputs is) sertx
       toInputs (a,b,c) = SatoshiCoreTxTestInput a b c
   in  map toSatCoreTest
     [
-      -- It is of particular interest because it contains an invalidly-encoded signature which OpenSSL accepts
       ( [
           ( "60a20bd93aa49ab4b28d514ec10b06e1829ce6818ec06cd3aabd013ebcdc4bb1"
           , "00000000"
@@ -156,8 +158,8 @@ verifyVec =
           )
         ]
       , "0100000001b14bdcbc3e01bdaad36cc08e81e69c82e1060bc14e518db2b49aa43ad90ba26000000000490047304402203f16c6f40162ab686621ef3000b04e75418a0c0cb2d8aebeac894ae360ac1e780220ddc15ecdfc3507ac48e1681a33eb60996631bf6bf5bc0a0682c4db743ce7ca2b01ffffffff0140420f00000000001976a914660d4ef3a743e3e696ad990364e555c271ad504b88ac00000000"
+      , "It is of particular interest because it contains an invalidly-encoded signature which OpenSSL accepts"
       )
-      -- It has an arbitrary extra byte stuffed into the signature at pos length - 2
     , ( [
           ( "60a20bd93aa49ab4b28d514ec10b06e1829ce6818ec06cd3aabd013ebcdc4bb1"
           , "00000000"
@@ -165,8 +167,8 @@ verifyVec =
           )
         ]
       , "0100000001b14bdcbc3e01bdaad36cc08e81e69c82e1060bc14e518db2b49aa43ad90ba260000000004A0048304402203f16c6f40162ab686621ef3000b04e75418a0c0cb2d8aebeac894ae360ac1e780220ddc15ecdfc3507ac48e1681a33eb60996631bf6bf5bc0a0682c4db743ce7ca2bab01ffffffff0140420f00000000001976a914660d4ef3a743e3e696ad990364e555c271ad504b88ac00000000"
+      , "It has an arbitrary extra byte stuffed into the signature at pos length - 2"
       )
-      -- it is of interest because it contains a 0-sequence as well as a signature of SIGHASH type 0 (which is not a real type)
     , ( [
           ( "406b2b06bcd34d3c8733e6b79f7a394c8a431fbf4ff5ac705c93f4076bb77602"
           , "00000000"
@@ -174,8 +176,8 @@ verifyVec =
           )
         ]
       , "01000000010276b76b07f4935c70acf54fbf1f438a4c397a9fb7e633873c4dd3bc062b6b40000000008c493046022100d23459d03ed7e9511a47d13292d3430a04627de6235b6e51a40f9cd386f2abe3022100e7d25b080f0bb8d8d5f878bba7d54ad2fda650ea8d158a33ee3cbd11768191fd004104b0e2c879e4daf7b9ab68350228c159766676a14f5815084ba166432aab46198d4cca98fa3e9981d0a90b2effc514b76279476550ba3663fdcaff94c38420e9d5000000000100093d00000000001976a9149a7b0f3b80c6baaeedce0a0842553800f832ba1f88ac00000000"
+      , "it is of interest because it contains a 0-sequence as well as a signature of SIGHASH type 0 (which is not a real type)"
       )
-      -- It caught a bug in the workaround for 23b397edccd3740a74adb603c9756370fafcde9bcc4483eb271ecad09a94dd63 in an overly simple implementation
     , ( [
           ( "b464e85df2a238416f8bdae11d120add610380ea07f4ef19c5f9dfd472f96c3d"
           , "00000000"
@@ -187,9 +189,9 @@ verifyVec =
           )
         ]
       , "01000000023d6cf972d4dff9c519eff407ea800361dd0a121de1da8b6f4138a2f25de864b4000000008a4730440220ffda47bfc776bcd269da4832626ac332adfca6dd835e8ecd83cd1ebe7d709b0e022049cffa1cdc102a0b56e0e04913606c70af702a1149dc3b305ab9439288fee090014104266abb36d66eb4218a6dd31f09bb92cf3cfa803c7ea72c1fc80a50f919273e613f895b855fb7465ccbc8919ad1bd4a306c783f22cd3227327694c4fa4c1c439affffffff21ebc9ba20594737864352e95b727f1a565756f9d365083eb1a8596ec98c97b7010000008a4730440220503ff10e9f1e0de731407a4a245531c9ff17676eda461f8ceeb8c06049fa2c810220c008ac34694510298fa60b3f000df01caa244f165b727d4896eb84f81e46bcc4014104266abb36d66eb4218a6dd31f09bb92cf3cfa803c7ea72c1fc80a50f919273e613f895b855fb7465ccbc8919ad1bd4a306c783f22cd3227327694c4fa4c1c439affffffff01f0da5200000000001976a914857ccd42dded6df32949d4646dfa10a92458cfaa88ac00000000"
+      , "It caught a bug in the workaround for 23b397edccd3740a74adb603c9756370fafcde9bcc4483eb271ecad09a94dd63 in an overly simple implementation"
       )
-      -- It results in signing the constant 1, instead of something generated based on the transaction,
-      -- when the input doing the signing has an index greater than the maximum output index
+      
     , ( [
           ( "0000000000000000000000000000000000000000000000000000000000000100"
           , "00000000"
@@ -201,8 +203,9 @@ verifyVec =
           )
         ]
         , "01000000020002000000000000000000000000000000000000000000000000000000000000000000006a47304402200469f169b8091cd18a2770136be7411f079b3ac2b5c199885eb66a80aa3ed75002201fa89f3e6f80974e1b3474e70a0fbe907c766137ff231e4dd05a555d8544536701210279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798ffffffff0001000000000000000000000000000000000000000000000000000000000000000000006b483045022100c9cdd08798a28af9d1baf44a6c77bcc7e279f47dc487c8c899911bc48feaffcc0220503c5c50ae3998a733263c5c0f7061b483e2b56c4c41b456e7d2f5a78a74c077032102d5c25adb51b61339d2b05315791e21bbe80ea470a49db0135720983c905aace0ffffffff010000000000000000015100000000"
+        , "-- It results in signing the constant 1, instead of something generated based on the transaction,\
+          \-- when the input doing the signing has an index greater than the maximum output index"
       )
-      -- A valid P2SH Transaction using the standard transaction type put forth in BIP 16
     , ( [
           ( "0000000000000000000000000000000000000000000000000000000000000100"
           , "00000000"
@@ -210,8 +213,8 @@ verifyVec =
           )
         ]
       , "01000000010001000000000000000000000000000000000000000000000000000000000000000000006e493046022100c66c9cdf4c43609586d15424c54707156e316d88b0a1534c9e6b0d4f311406310221009c0fe51dbc9c4ab7cc25d3fdbeccf6679fe6827f08edf2b4a9f16ee3eb0e438a0123210338e8034509af564c62644c07691942e0c056752008a173c89f60ab2a88ac2ebfacffffffff010000000000000000015100000000"
+      , "A valid P2SH Transaction using the standard transaction type put forth in BIP 16"
       )
-      -- MAX_MONEY output
     , ( [
           ( "0000000000000000000000000000000000000000000000000000000000000100"
           , "00000000"
@@ -219,8 +222,8 @@ verifyVec =
           )
         ]
       , "01000000010001000000000000000000000000000000000000000000000000000000000000000000006e493046022100e1eadba00d9296c743cb6ecc703fd9ddc9b3cd12906176a226ae4c18d6b00796022100a71aef7d2874deff681ba6080f1b278bac7bb99c61b08a85f4311970ffe7f63f012321030c0588dc44d92bdcbf8e72093466766fdc265ead8db64517b0c542275b70fffbacffffffff010040075af0750700015100000000"
+      , "MAX_MONEY output"
       )
-      -- MAX_MONEY output + 0 output
     , ( [
           ( "0000000000000000000000000000000000000000000000000000000000000100"
           , "00000000"
@@ -228,8 +231,8 @@ verifyVec =
           )
         ]
       , "01000000010001000000000000000000000000000000000000000000000000000000000000000000006d483045022027deccc14aa6668e78a8c9da3484fbcd4f9dcc9bb7d1b85146314b21b9ae4d86022100d0b43dece8cfb07348de0ca8bc5b86276fa88f7f2138381128b7c36ab2e42264012321029bb13463ddd5d2cc05da6e84e37536cb9525703cfd8f43afdb414988987a92f6acffffffff020040075af075070001510000000000000000015100000000"
+      , "MAX_MONEY output + 0 output"
       )
-      -- Simple transaction with first input is signed with SIGHASH_ALL, second with SIGHASH_ANYONECANPAY
     , ( [
           ( "0000000000000000000000000000000000000000000000000000000000000100"
           , "00000000"
@@ -241,8 +244,8 @@ verifyVec =
           )
         ]
       , "010000000200010000000000000000000000000000000000000000000000000000000000000000000049483045022100d180fd2eb9140aeb4210c9204d3f358766eb53842b2a9473db687fa24b12a3cc022079781799cd4f038b85135bbe49ec2b57f306b2bb17101b17f71f000fcab2b6fb01ffffffff0002000000000000000000000000000000000000000000000000000000000000000000004847304402205f7530653eea9b38699e476320ab135b74771e1c48b81a5d041e2ca84b9be7a802200ac8d1f40fb026674fe5a5edd3dea715c27baa9baca51ed45ea750ac9dc0a55e81ffffffff010100000000000000015100000000"
+      , "Simple transaction with first input is signed with SIGHASH_ALL, second with SIGHASH_ANYONECANPAY"
       )
-      -- Same as above, but we change the sequence number of the first input to check that SIGHASH_ANYONECANPAY is being followed
     , ( [
           ( "0000000000000000000000000000000000000000000000000000000000000100"
           , "00000000"
@@ -254,8 +257,8 @@ verifyVec =
           )
         ]
       , "01000000020001000000000000000000000000000000000000000000000000000000000000000000004948304502203a0f5f0e1f2bdbcd04db3061d18f3af70e07f4f467cbc1b8116f267025f5360b022100c792b6e215afc5afc721a351ec413e714305cb749aae3d7fee76621313418df101010000000002000000000000000000000000000000000000000000000000000000000000000000004847304402205f7530653eea9b38699e476320ab135b74771e1c48b81a5d041e2ca84b9be7a802200ac8d1f40fb026674fe5a5edd3dea715c27baa9baca51ed45ea750ac9dc0a55e81ffffffff010100000000000000015100000000"
+      , "Same as above, but we change the sequence number of the first input to check that SIGHASH_ANYONECANPAY is being followed"
       )
-      -- several SIGHASH_SINGLE signatures
     , ( [
           ( "63cfa5a09dc540bf63e53713b82d9ea3692ca97cd608c384f2aa88e51a0aac70"
           , "00000000"
@@ -271,6 +274,7 @@ verifyVec =
           )
         ]
       , "010000000370ac0a1ae588aaf284c308d67ca92c69a39e2db81337e563bf40c59da0a5cf63000000006a4730440220360d20baff382059040ba9be98947fd678fb08aab2bb0c172efa996fd8ece9b702201b4fb0de67f015c90e7ac8a193aeab486a1f587e0f54d0fb9552ef7f5ce6caec032103579ca2e6d107522f012cd00b52b9a65fb46f0c57b9b8b6e377c48f526a44741affffffff7d815b6447e35fbea097e00e028fb7dfbad4f3f0987b4734676c84f3fcd0e804010000006b483045022100c714310be1e3a9ff1c5f7cacc65c2d8e781fc3a88ceb063c6153bf950650802102200b2d0979c76e12bb480da635f192cc8dc6f905380dd4ac1ff35a4f68f462fffd032103579ca2e6d107522f012cd00b52b9a65fb46f0c57b9b8b6e377c48f526a44741affffffff3f1f097333e4d46d51f5e77b53264db8f7f5d2e18217e1099957d0f5af7713ee010000006c493046022100b663499ef73273a3788dea342717c2640ac43c5a1cf862c9e09b206fcb3f6bb8022100b09972e75972d9148f2bdd462e5cb69b57c1214b88fc55ca638676c07cfc10d8032103579ca2e6d107522f012cd00b52b9a65fb46f0c57b9b8b6e377c48f526a44741affffffff0380841e00000000001976a914bfb282c70c4191f45b5a6665cad1682f2c9cfdfb88ac80841e00000000001976a9149857cc07bed33a5cf12b9c5e0500b675d500c81188ace0fd1c00000000001976a91443c52850606c872403c0601e69fa34b26f62db4a88ac00000000"
+      , "several SIGHASH_SINGLE signatures"
       )
     ]
 
@@ -300,7 +304,7 @@ encodeSatoshiCoreScriptPubKey =
 
 satoshiCoreTxTests :: IO [Test]
 satoshiCoreTxTests = do
-  txVec <- maybe (error "satoshiCoreTxVec, no parse") id <$> satoshiCoreTxVec
+  txVec <- satoshiCoreTxVec
   return $ [ 
     testGroup "Verify transaction (bitcoind /test/data/tx_valid.json) (using copied source json)"
       ( map mapVerifyVec . filter isCurrentlyPassing $ zip txVec [0..] ) 
@@ -310,42 +314,64 @@ satoshiCoreTxTests = do
     isCurrentlyPassing (_, testNum) = elem testNum passingTests
 
 
-satoshiCoreTxVec :: IO (Maybe [SatoshiCoreTxTest])
+type TestComment = String
+satoshiCoreTxVec :: IO [SatoshiCoreTxTest]
 satoshiCoreTxVec = do 
     tx_validBS <- LBS.readFile "tests/data/tx_valid.json"
-    return $ do 
-      testsAndCommentsVal <- Aeson.decode tx_validBS            
-      flip Aeson.Types.parseMaybe testsAndCommentsVal $ \arr -> do
-        (testVectors :: [Aeson.Types.Value]) <- do
-          flip (Aeson.Types.withArray "testsAndCommentsVal") testsAndCommentsVal $ \testsAndComments -> do
-            return $ filter (not . isComment) . V.toList $ testsAndComments
-        mapM toTest testVectors
+    let testsAndComments = maybe (error $ "satoshiCoreTxVec, couldn't decode json") id . Aeson.decode $ tx_validBS            
+    return $ case testsAndComments of
+        (Aeson.Array arr) -> 
+            let testsOrComments = map toTestOrComment . V.toList $ arr 
+            in  processTestsAndComments testsOrComments
+        _ -> error $ "satoshiCoreTxVec, testsAndComments not an array"
       where
-        isComment (Aeson.Array v) | V.length v == 1 = True
-        isComment _ = False
-        toTest :: Aeson.Value -> Aeson.Types.Parser SatoshiCoreTxTest
-        toTest testVectorVal = flip (Aeson.Types.withArray "testVectorVal") testVectorVal $ \testVector -> 
-          let inputsVal = testVector V.! 0
-              inputs :: Aeson.Types.Parser [SatoshiCoreTxTestInput]
-              inputs = flip (Aeson.Types.withArray "inputsVal") inputsVal $ \inputsArr ->           
-                let toInput inputVal = flip (Aeson.Types.withArray "inputVal") inputVal $ \input -> 
-                      let hashVal = input V.! 0
-                          hash = flip (Aeson.Types.withText "hashVal") hashVal $ \txt -> 
-                            return . convertString $ txt
-                          indexVal = input V.! 1 
-                          index = flip (Aeson.Types.withScientific "indexVal") indexVal $ \n -> 
-                            return . encodeHex . runPut' . putWord32le . floor $ n -- floor seems suspect
-                          pubkeyVal = input V.! 2 
-                          pubkey = flip (Aeson.Types.withText "pubkeyVal") pubkeyVal $ \txt -> 
-                            return . encodeSatoshiCoreScriptPubKey . convertString $ txt
-                      in  pure SatoshiCoreTxTestInput <*> hash <*> index <*> pubkey 
-                in  mapM toInput . V.toList $ inputsArr
-              txVal = testVector V.! 1
-              tx    = flip (Aeson.Types.withText "txVal") txVal $ return . convertString
-              -- flags -- v V.! 2  -- ignored for now? 
-          in  pure SatoshiCoreTxTest <*> inputs <*> tx 
+        processTestsAndComments :: [Either TestComment SatoshiCoreTxTest] -> [SatoshiCoreTxTest]
+        processTestsAndComments testOrComments = 
+          -- ghetto parser, because this older version of ootb aeson parser isn't parsec based
+          -- to do ideally soon, upgrade aeson, use aeson/attoparsec, should be much cleaner
+          let grouper = Data.List.groupBy (\x y -> (Data.Either.isLeft x && Data.Either.isLeft y) 
+                                                || (Data.Either.isRight x && Data.Either.isRight y))              
+              takePairs (a:b:xs) = (a,b):takePairs xs
+              takePairs _ = [] -- ugh, wish we were using a real parser.
+              includeDescriptions (descriptionLines,tests') = map updateDescription tests'
+                where updateDescription (Right (SatoshiCoreTxTest _ inputs ser)) = SatoshiCoreTxTest description inputs ser
+                      updateDescription e = error $ "updateDescription: " ++ show e
+                      description = unwords . map fromLeft $ descriptionLines
+          in  concat . map includeDescriptions . takePairs . grouper $ testOrComments
 
-
+toTestOrComment :: Aeson.Value -> (Either TestComment SatoshiCoreTxTest)
+toTestOrComment testVectorOrComment = 
+  case testVectorOrComment of
+    (Aeson.Types.Array arr) -> 
+      case (V.length arr) of
+        1 ->  let comment = arr V.! 0
+              in case comment of
+                   Aeson.Types.String txt -> Left . convertString $ txt
+                   _ -> error $ "toTestOrComment, comment not text"
+        3 ->  let inputs = case ( arr V.! 0 ) of            
+                    (Aeson.Array inputsV) -> 
+                      let toInput ( Aeson.Array oneInputV ) = 
+                            let hash = case oneInputV V.! 0 of 
+                                  Aeson.String txt -> convertString txt
+                                  _ -> error "processItem, hash not a string"
+                                index = case oneInputV V.! 01 of 
+                                  Aeson.Number n -> encodeHex . runPut' . putWord32le . floor $ n
+                                  _ -> error "processItem, n not a number"
+                                pubkey = case oneInputV V.! 2 of
+                                  Aeson.String txt -> encodeSatoshiCoreScriptPubKey . convertString $ txt
+                                  _ -> error "processItem, pubkey not a string"
+                            in  SatoshiCoreTxTestInput hash index pubkey 
+                          toInput _ = error "processItem, oneInputV not an array"
+                      in  map toInput . V.toList $ inputsV
+                    _ -> error "inputs not an array"
+                  tx = let txVal = arr V.! 1
+                       in case txVal of
+                          Aeson.Types.String txt -> convertString txt
+                          _ -> error $ "toTestOrComment, tx, not text"
+                  -- flags -- v V.! 2  -- ignored for now? 
+              in  Right $ SatoshiCoreTxTest "" inputs tx 
+        i -> error $ "toTestOrComment, bad length: " ++ show i 
+    _ -> error "testVectorOrComment is not an array"
 
 
 

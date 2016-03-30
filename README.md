@@ -55,11 +55,14 @@ serialization over ØMQ socket or the supplied `hw` tool.
 
 ### Installing haskoin-wallet
 
-Get pkg-config, Snappy, zlib and ØMQ. On Debian/Ubuntu systems, use this
-command:
+Get autoconf, pkg-config, ncurses, libtool and ØMQ.
+
+On Debian/Ubuntu systems, use this command:
 
 ```sh
-sudo apt-get install -y git libzmq3-dev libsnappy-dev pkg-config zlib1g-dev
+sudo apt-get install -y \
+    git autoconf pkg-config libncurses5-dev libtool \
+    libzmq3-dev
 ```
 
 Get [Stack](https://github.com/commercialhaskell/stack).

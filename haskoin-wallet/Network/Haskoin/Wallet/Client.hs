@@ -208,7 +208,7 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "sync"        : name : block : page        -> cmdSync name block page
     "pending"     : name : page                -> cmdPending name page
     "dead"        : name : page                -> cmdDead name page
-    "monitor"                             : [] -> cmdMonitor
+    "monitor"     : name                       -> cmdMonitor name
     "decodetx"                            : [] -> cmdDecodeTx
     "status"                              : [] -> cmdStatus
     "keypair"                             : [] -> cmdKeyPair

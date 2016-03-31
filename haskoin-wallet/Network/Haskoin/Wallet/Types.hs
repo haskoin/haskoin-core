@@ -31,6 +31,7 @@ module Network.Haskoin.Wallet.Types
 , TxCompleteRes(..)
 , ListResult(..)
 , RescanRes(..)
+, JsonSyncBlock(..)
 , JsonBlock(..)
 , Notif(..)
 
@@ -404,6 +405,7 @@ data JsonTx = JsonTx
     , jsonTxConfirmedHeight :: !(Maybe Word32)
     , jsonTxConfirmedDate   :: !(Maybe Word32)
     , jsonTxCreated         :: !UTCTime
+    , jsonTxAccount         :: !AccountName
     -- Optional confirmation
     , jsonTxConfirmations   :: !(Maybe Word32)
     , jsonTxBestBlock       :: !(Maybe BlockHash)
@@ -452,36 +454,44 @@ data RescanRes = RescanRes { rescanTimestamp :: !Word32 }
 $(deriveJSON (dropFieldLabel 6) ''RescanRes)
 
 data WalletResponse a
-    = ResponseError { responseError :: !Text }
+    = ResponseError { responseError  :: !Text }
     | ResponseValid { responseResult :: !(Maybe a)  }
     deriving (Eq, Show)
 
 $(deriveJSON (dropSumLabels 8 8 "status") ''WalletResponse)
 
+data JsonSyncBlock = JsonSyncBlock
+    { jsonSyncBlockHash   :: !BlockHash
+    , jsonSyncBlockHeight :: !BlockHeight
+    , jsonSyncBlockPrev   :: !BlockHash
+    , jsonSyncBlockTxs    :: ![JsonTx]
+    } deriving (Eq, Show, Read)
+
+$(deriveJSON (dropFieldLabel 13) ''JsonSyncBlock)
+
 data JsonBlock = JsonBlock
-    { jsonBlockHash   :: BlockHash
-    , jsonBlockHeight :: BlockHeight
-    , jsonBlockPrev   :: BlockHash
-    , jsonBlockTxs    :: [JsonTx]
+    { jsonBlockHash   :: !BlockHash
+    , jsonBlockHeight :: !BlockHeight
+    , jsonBlockPrev   :: !BlockHash
     } deriving (Eq, Show, Read)
 
 $(deriveJSON (dropFieldLabel 9) ''JsonBlock)
 
 data Notif
-    = NotifBlock JsonBlock
-    | NotifTx    JsonTx
+    = NotifBlock !JsonBlock
+    | NotifTx    !JsonTx
     deriving (Eq, Show, Read)
 
 $(deriveJSON (dropSumLabels 5 5 "type") ''Notif)
 
 {- Helper Types -}
 
-data WalletException = WalletException String
+data WalletException = WalletException !String
     deriving (Eq, Read, Show, Typeable)
 
 instance Exception WalletException
 
-data BTCNode = BTCNode { btcNodeHost :: String, btcNodePort :: Int }
+data BTCNode = BTCNode { btcNodeHost :: !String, btcNodePort :: !Int }
     deriving (Eq, Read, Show)
 
 $(deriveJSON (dropFieldLabel 7) ''BTCNode)

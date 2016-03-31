@@ -43,6 +43,7 @@ import qualified Data.Map.Strict                       as M (Map, assocs, elems,
                                                              unionWith)
 import           Data.Maybe                            (fromJust, fromMaybe,
                                                         isJust)
+import           Data.Monoid                           ((<>))
 import           Data.String.Conversions               (cs)
 import           Data.Text                             (pack)
 import           Data.Word                             (Word32)
@@ -99,14 +100,15 @@ runSPVServer cfg = maybeDetach cfg $ run $ do -- start the server process
     case configMode cfg of
         -- In this mode, we do not launch an SPV node. We only accept
         -- client requests through the ZMQ API.
-        SPVOffline -> runWalletApp (HandlerSession cfg pool Nothing) notif
+        SPVOffline ->
+            runWalletApp $ HandlerSession cfg pool Nothing notif
         -- In this mode, we launch the client ZMQ API and we sync the
         -- wallet database with an SPV node.
         SPVOnline -> do
             -- Initialize the node state
             node <- getNodeState (Right pool)
             -- Spin up the node threads
-            let session = HandlerSession cfg pool (Just node)
+            let session = HandlerSession cfg pool (Just node) notif
             as <- mapM async
                 -- Start the SPV node
                 [ runNodeT (spv pool) node
@@ -119,7 +121,7 @@ runSPVServer cfg = maybeDetach cfg $ run $ do -- start the server process
                 -- Re-broadcast pending transactions
                 , runNodeT (broadcastPendingTxs pool) node
                 -- Run the ZMQ API server
-                , runWalletApp session notif
+                , runWalletApp session
                 ]
             mapM_ link as
             _ <- waitAnyCancel as
@@ -339,14 +341,20 @@ runWalletApp :: ( MonadLoggerIO m
                 , MonadThrow m
                 , MonadResource m
                 )
-             => HandlerSession -> TBMChan Notif -> m ()
-runWalletApp session notif = liftBaseOpDiscard withContext $ \ctx -> do
+             => HandlerSession -> m ()
+runWalletApp session = liftBaseOpDiscard withContext $ \ctx -> do
     na <- async $ liftBaseOpDiscard (withSocket ctx Pub) $ \sock -> do
         setupCrypto ctx sock
         liftIO $ bind sock $ configBindNotif $ handlerConfig session
         forever $ do
-            xM <- liftIO $ atomically $ readTBMChan notif
-            forM_ xM $ \x -> liftIO $ send sock [] $ cs $ encode x
+            xM <- liftIO $ atomically $ readTBMChan $ handlerNotifChan session
+            forM_ xM $ \x ->
+                let (typ, pay) = case x of
+                        NotifBlock _ ->
+                            ("[block]", cs $ encode x)
+                        NotifTx JsonTx{..} ->
+                            ("{" <> cs jsonTxAccount <> "}", cs $ encode x)
+                in liftIO $ sendMulti sock $ typ :| [pay]
     link na
     liftBaseOpDiscard (withSocket ctx Rep) $ \sock -> do
         setupCrypto ctx sock

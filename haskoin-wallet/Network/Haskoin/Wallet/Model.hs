@@ -80,10 +80,11 @@ toJsonAddr addr balM = JsonAddr
     , jsonAddrBalance        = balM
     }
 
-toJsonTx :: WalletTx
+toJsonTx :: AccountName
          -> Maybe (BlockHash, BlockHeight) -- ^ Current best block
+         -> WalletTx
          -> JsonTx
-toJsonTx tx bbM = JsonTx
+toJsonTx acc bbM tx = JsonTx
     { jsonTxHash            = walletTxHash tx
     , jsonTxNosigHash       = walletTxNosigHash tx
     , jsonTxType            = walletTxType tx
@@ -101,6 +102,7 @@ toJsonTx tx bbM = JsonTx
     , jsonTxConfirmedHeight = walletTxConfirmedHeight tx
     , jsonTxConfirmedDate   = walletTxConfirmedDate tx
     , jsonTxCreated         = walletTxCreated tx
+    , jsonTxAccount         = acc
     , jsonTxConfirmations   = f =<< walletTxConfirmedHeight tx
     , jsonTxBestBlock       = fst <$> bbM
     , jsonTxBestBlockHeight = snd <$> bbM

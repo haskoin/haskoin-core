@@ -336,7 +336,7 @@ fakeTx xs ys =
 
 testDerivations :: App ()
 testDerivations = do
-    (accE, _) <- newAccount NewAccount
+    accE <- fst <$> newAccount NewAccount
         { newAccountName = "acc1"
         , newAccountType = AccountRegular
         , newAccountDeriv = Just (Deriv :| 0)
@@ -412,7 +412,7 @@ assertImportTx ai as conf tx = do
 
 assertImportTxOffline :: AccountId -> Int -> TxConfidence -> Tx -> App ()
 assertImportTxOffline ai as conf tx = do
-    tx' <- testTx <$> importTx tx ai
+    tx' <- testTx <$> importTx tx Nothing ai
     liftIO $ assertEqual "Transaction import failed" ([(ai, conf)], as) tx'
 
 assertTxConfidence :: AccountId -> TxHash -> TxConfidence -> App ()
@@ -426,7 +426,7 @@ assertTxConfidence ai txh conf = do
 
 testBalances :: App ()
 testBalances = do
-    (accE@(Entity ai _), _) <- newAccount NewAccount
+    accE@(Entity ai _) <- fst <$> newAccount NewAccount
         { newAccountName = "acc1"
         , newAccountType = AccountRegular
         , newAccountDeriv = Just (Deriv :| 0)
@@ -644,7 +644,7 @@ testBalances = do
 -- tx1, tx2 and tx3 form a chain, and tx4 is in conflict with tx1
 testConflictBalances :: App ()
 testConflictBalances = do
-    (accE@(Entity ai _), _) <- newAccount NewAccount
+    accE@(Entity ai _) <- fst <$> newAccount NewAccount
         { newAccountName = "acc1"
         , newAccountType = AccountRegular
         , newAccountDeriv = Just (Deriv :| 0)
@@ -818,7 +818,7 @@ testConflictBalances = do
 
 testOffline :: App ()
 testOffline = do
-    (accE@(Entity ai _), _) <- newAccount NewAccount
+    accE@(Entity ai _) <- fst <$> newAccount NewAccount
         { newAccountName = "acc1"
         , newAccountType = AccountRegular
         , newAccountDeriv = Just (Deriv :| 0)
@@ -912,7 +912,7 @@ testOffline = do
 
 testKillOffline :: App ()
 testKillOffline = do
-    (accE@(Entity ai _), _) <- newAccount NewAccount
+    accE@(Entity ai _) <- fst <$> newAccount NewAccount
         { newAccountName = "acc1"
         , newAccountType = AccountRegular
         , newAccountDeriv = Just (Deriv :| 0)
@@ -1032,7 +1032,7 @@ testOfflineExceptions = do
             }
         Entity ai _ <- getAccount "acc1"
         assertImportTx ai 1 TxPending tx1
-        importTx tx4 ai
+        importTx tx4 Nothing ai
 
     assertException (WalletException "Could not import offline transaction") $ do
         _ <- newAccount NewAccount
@@ -1048,7 +1048,7 @@ testOfflineExceptions = do
         assertImportTx ai 1 TxPending tx4
         assertImportTx ai 0 TxDead tx1
         assertImportTx ai 1 TxDead tx2
-        importTx tx3 ai
+        importTx tx3 Nothing ai
 
     assertException (WalletException "Could not import offline transaction") $ do
         _ <- newAccount NewAccount
@@ -1062,12 +1062,12 @@ testOfflineExceptions = do
             }
         Entity ai _ <- getAccount "acc1"
         assertImportTx ai 1 TxPending tx1
-        importTx tx1 ai
+        importTx tx1 Nothing ai
 
 -- This test create a multisig account with the key of testImportMultisig2
 testImportMultisig :: App ()
 testImportMultisig = do
-    (accE1@(Entity ai1 _), _) <- newAccount NewAccount
+    accE1@(Entity ai1 _) <- fst <$> newAccount NewAccount
         { newAccountName = "ms1"
         , newAccountType = AccountMultisig 2 2
         , newAccountDeriv = Just (Deriv :| 0)
@@ -1076,7 +1076,7 @@ testImportMultisig = do
         , newAccountKeys = ["xpub68kRFKHWxUt3oS8X5kVogwH5rvuAd4jrLkxVfHeudFC4MfwQ8oYV59F91uFnsLXANRB1MkN4Wa1PwymE4cRsU8PE755HNCb1EoBbSoAKXpW"]
         , newAccountReadOnly = False
         }
-    (accE2@(Entity ai2 _), _) <- newAccount NewAccount
+    accE2@(Entity ai2 _) <- fst <$> newAccount NewAccount
         { newAccountName = "ms2"
         , newAccountType = AccountMultisig 2 2
         , newAccountDeriv = Just (Deriv :| 1)
@@ -1099,7 +1099,7 @@ testImportMultisig = do
         . testTx
 
     -- Create a transaction which has 0 signatures in ms1
-    (tx1, _) <- createTx accE1 Nothing
+    tx1 <- fst <$> createTx accE1 Nothing Nothing
         [ ( fromJust $ base58ToAddr "3BYWaQHz6AVXx7wXmCka4846tRfa1ccWvh"
           , 5000000
           )
@@ -1113,7 +1113,7 @@ testImportMultisig = do
         . assertEqual "Wrong txhash in coins" []
         . map (walletCoinHash . entityVal . inCoinDataCoin)
 
-    txs ai1 (ListRequest 0 10 False)
+    txs Nothing ai1 (ListRequest 0 10 False)
         >>= liftIO
         . assertEqual "Wrong txhash in tx list"
             (sort [txHash fundingTx, walletTxHash tx1])
@@ -1124,10 +1124,10 @@ testImportMultisig = do
     assertBalanceOffline ai1 0 9990000
 
     -- Import the empty transaction in ms2
-    (tx2:_, _) <- importTx (walletTxTx tx1) ai2
+    tx2 <- head . fst <$> importTx (walletTxTx tx1) Nothing ai2
 
     -- This second import should be idempotent
-    _ <- importTx (walletTxTx tx1) ai2
+    _ <- importTx (walletTxTx tx1) Nothing ai2
 
     liftIO $ assertEqual "Txid do not match"
         (walletTxHash tx1) (walletTxHash tx2)
@@ -1140,7 +1140,7 @@ testImportMultisig = do
         . assertEqual "Wrong txhash in coins" []
         . map (walletCoinHash . entityVal . inCoinDataCoin)
 
-    txs ai2 (ListRequest 0 10 False)
+    txs Nothing ai2 (ListRequest 0 10 False)
         >>= liftIO
         . assertEqual "Wrong txhash in tx list"
             (sort [txHash fundingTx, walletTxHash tx2])
@@ -1151,7 +1151,7 @@ testImportMultisig = do
     assertBalanceOffline ai2 0 9990000
 
     -- Sign the transaction in ms2
-    (tx3:_, _) <- signAccountTx accE2 Nothing $ walletTxHash tx2
+    tx3:_ <- fst <$> signAccountTx accE2 Nothing Nothing (walletTxHash tx2)
 
     liftIO $ assertEqual "Confidence is not pending" TxPending $
         walletTxConfidence tx3
@@ -1162,7 +1162,7 @@ testImportMultisig = do
             [walletTxHash tx3, walletTxHash tx3]
         . map (walletCoinHash . entityVal . inCoinDataCoin)
 
-    txs ai2 (ListRequest 0 10 False)
+    txs Nothing ai2 (ListRequest 0 10 False)
         >>= liftIO
         . assertEqual "Wrong txhash in tx list"
             (sort [txHash fundingTx, walletTxHash tx3])
@@ -1184,7 +1184,7 @@ testImportMultisig = do
             [walletTxHash tx3, walletTxHash tx3]
         . map (walletCoinHash . entityVal . inCoinDataCoin)
 
-    txs ai1 (ListRequest 0 10 False)
+    txs Nothing ai1 (ListRequest 0 10 False)
         >>= liftIO
         . assertEqual "Wrong txhash in tx list"
             (sort [txHash fundingTx, walletTxHash tx3])
@@ -1196,7 +1196,7 @@ testImportMultisig = do
 
     -- Importing the transaction should have no effect as it was globally
     -- imported already in the previous step.
-    (tx5:_, _) <- importTx (walletTxTx tx3) ai1
+    tx5 <- head . fst <$> importTx (walletTxTx tx3) Nothing ai1
 
     liftIO $ assertEqual "Confidence is not pending" TxPending $
         walletTxConfidence tx5
@@ -1207,7 +1207,7 @@ testImportMultisig = do
             [walletTxHash tx5, walletTxHash tx5]
         . map (walletCoinHash . entityVal . inCoinDataCoin)
 
-    txs ai1 (ListRequest 0 10 False)
+    txs Nothing ai1 (ListRequest 0 10 False)
         >>= liftIO
         . assertEqual "Wrong txhash in tx list"
             (sort [txHash fundingTx, walletTxHash tx5])
@@ -1219,7 +1219,7 @@ testImportMultisig = do
 
 testDeleteTx :: App ()
 testDeleteTx = do
-    (accE@(Entity ai _), _) <- newAccount NewAccount
+    accE@(Entity ai _) <- fst <$> newAccount NewAccount
         { newAccountName = "acc1"
         , newAccountType = AccountRegular
         , newAccountDeriv = Just (Deriv :| 0)
@@ -1271,7 +1271,7 @@ testDeleteTx = do
 
 testDeleteUnsignedTx :: App ()
 testDeleteUnsignedTx = do
-    (accE1@(Entity ai1 _), _) <- newAccount NewAccount
+    accE1@(Entity ai1 _) <- fst <$> newAccount NewAccount
         { newAccountName = "ms1"
         , newAccountType = AccountMultisig 2 2
         , newAccountDeriv = Just (Deriv :| 0)
@@ -1280,7 +1280,7 @@ testDeleteUnsignedTx = do
         , newAccountKeys = ["xpub68kRFKHWxUt3oS8X5kVogwH5rvuAd4jrLkxVfHeudFC4MfwQ8oYV59F91uFnsLXANRB1MkN4Wa1PwymE4cRsU8PE755HNCb1EoBbSoAKXpW"]
         , newAccountReadOnly = False
         }
-    (Entity ai2 _, _) <- newAccount NewAccount
+    Entity ai2 _ <- fst <$> newAccount NewAccount
         { newAccountName = "ms2"
         , newAccountType = AccountMultisig 2 2
         , newAccountDeriv = Just (Deriv :| 1)
@@ -1303,7 +1303,7 @@ testDeleteUnsignedTx = do
         . testTx
 
     -- Create a transaction which has 0 signatures in ms1
-    (tx1, _) <- createTx accE1 Nothing
+    tx1 <- fst <$> createTx accE1 Nothing Nothing
         [ ( fromJust $ base58ToAddr "3BYWaQHz6AVXx7wXmCka4846tRfa1ccWvh"
           , 5000000
           )
@@ -1317,7 +1317,7 @@ testDeleteUnsignedTx = do
         . assertEqual "Wrong txhash in coins" []
         . map (walletCoinHash . entityVal . inCoinDataCoin)
 
-    txs ai1 (ListRequest 0 10 False)
+    txs Nothing ai1 (ListRequest 0 10 False)
         >>= liftIO
         . assertEqual "Wrong txhash in tx list"
             (sort [txHash fundingTx, walletTxHash tx1])
@@ -1382,20 +1382,28 @@ testNotification = do
     importMerkles best txs1 (Just notifChan)
     b1NM <- liftIO $ atomically $ readTBMChan notifChan
     liftIO $ case b1NM of
-        Just (NotifBlock JsonBlock{..}) -> do
+        Just (NotifBlock JsonBlock{..}) ->
             assertEqual "Block hash does not match"
                 (getNodeHash $ nodeBlockHash block1) jsonBlockHash
-            assertEqual "Transaction list does not match" [txHash tx1]
-                (map jsonTxHash jsonBlockTxs)
         _ -> assertFailure "Block notification not the right type"
+    tx1NM' <- liftIO $ atomically $ readTBMChan notifChan
+    liftIO $ case tx1NM' of
+        Just (NotifTx JsonTx{..}) ->
+            assertEqual "Transaction list does not match" (txHash tx1)
+                jsonTxHash
+        _ -> assertFailure "Transaction notification not the right type"
     b2NM <- liftIO $ atomically $ readTBMChan notifChan
     liftIO $ case b2NM of
-        Just (NotifBlock JsonBlock{..}) -> do
+        Just (NotifBlock JsonBlock{..}) ->
             assertEqual "Block hash does not match"
                 (getNodeHash $ nodeBlockHash block2) jsonBlockHash
-            assertEqual "Transaction list does not match" [txHash tx2]
-                (map jsonTxHash jsonBlockTxs)
         _ -> assertFailure "Block notification not the right type"
+    tx2NM' <- liftIO $ atomically $ readTBMChan notifChan
+    liftIO $ case tx2NM' of
+        Just (NotifTx JsonTx{..}) ->
+            assertEqual "Transaction list does not match" (txHash tx2)
+                jsonTxHash
+        _ -> assertFailure "Transaction notification not the right type"
 
 
     let block2' = fakeNode block1 [txHash tx2, txHash tx3] 1 22
@@ -1404,18 +1412,29 @@ testNotification = do
     importMerkles reorg txs2 (Just notifChan)
     b3NM <- liftIO $ atomically $ readTBMChan notifChan
     liftIO $ case b3NM of
-        Just (NotifBlock JsonBlock{..}) -> do
+        Just (NotifBlock JsonBlock{..}) ->
             assertEqual "Block hash does not match"
                 (getNodeHash $ nodeBlockHash block2') jsonBlockHash
-            assertEqual "Transaction list does not match"
-                [txHash tx2, txHash tx3]
-                (map jsonTxHash jsonBlockTxs)
         _ -> assertFailure "Block notification not the right type"
+    tx3NM2 <- liftIO $ atomically $ readTBMChan notifChan
+    liftIO $ case tx3NM2 of
+        Just (NotifTx JsonTx{..}) ->
+            assertEqual "Transaction does not match"
+                (txHash tx2)
+                jsonTxHash
+        _ -> assertFailure "Transaction notification not the right type"
+    tx3NM3 <- liftIO $ atomically $ readTBMChan notifChan
+    liftIO $ case tx3NM3 of
+        Just (NotifTx JsonTx{..}) ->
+            assertEqual "Transaction does not match"
+                (txHash tx3)
+                jsonTxHash
+        _ -> assertFailure "Transaction notification not the right type"
 
 
 testKillTx :: App ()
 testKillTx = do
-    (accE@(Entity ai _), _) <- newAccount NewAccount
+    accE@(Entity ai _) <- fst <$> newAccount NewAccount
         { newAccountName = "acc1"
         , newAccountType = AccountRegular
         , newAccountDeriv = Just (Deriv :| 0)
@@ -1447,7 +1466,7 @@ testKillTx = do
     assertAddressOffline accE 0 0 AddressInternal
         [(0, BalanceInfo 4000000 4000000 1 1)]
 
-    killTxs [txHash tx2]
+    killTxs Nothing [txHash tx2]
 
     assertBalanceOffline ai 0 10000000
 
@@ -1457,7 +1476,7 @@ testKillTx = do
         [(0, BalanceInfo 0 0 0 0)]
 
     -- Killing a transaction should be idempotent
-    killTxs [txHash tx2]
+    killTxs Nothing [txHash tx2]
 
     assertBalanceOffline ai 0 10000000
 
@@ -1466,7 +1485,7 @@ testKillTx = do
     assertAddressOffline accE 0 0 AddressInternal
         [(0, BalanceInfo 0 0 0 0)]
 
-    killTxs [txHash tx3]
+    killTxs Nothing [txHash tx3]
 
     assertBalanceOffline ai 0 10000000
 
@@ -1475,7 +1494,7 @@ testKillTx = do
     assertAddressOffline accE 0 0 AddressInternal
         [(0, BalanceInfo 0 0 0 0)]
 
-    reviveTx tx2
+    reviveTx Nothing tx2
 
     assertBalanceOffline ai 0 4000000
 
@@ -1485,7 +1504,7 @@ testKillTx = do
         [(0, BalanceInfo 4000000 0 1 0)]
 
     -- Reviving a transaction should be idempotent
-    reviveTx tx2
+    reviveTx Nothing tx2
 
     assertBalanceOffline ai 0 4000000
 

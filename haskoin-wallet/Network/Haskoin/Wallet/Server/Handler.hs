@@ -5,6 +5,7 @@
 module Network.Haskoin.Wallet.Server.Handler where
 
 import           Control.Arrow                      (first)
+import           Control.Concurrent.STM.TBMChan     (TBMChan)
 import           Control.Exception                  (SomeException (..),
                                                      tryJust)
 import           Control.Monad                      (liftM, unless, when)
@@ -47,6 +48,7 @@ data HandlerSession = HandlerSession
     { handlerConfig    :: !Config
     , handlerPool      :: !ConnectionPool
     , handlerNodeState :: !(Maybe SharedNodeState)
+    , handlerNotifChan :: !(TBMChan Notif)
     }
 
 runHandler :: Monad m => Handler m a -> HandlerSession -> m a
@@ -317,7 +319,9 @@ getTxs name lq@ListRequest{..} cmd f = do
         (res, cnt) <- f ai lq
         return (res, cnt, bb)
 
-    return $ Just $ toJSON $ ListResult (map (`toJsonTx` Just bb) res) cnt
+    return $ Just $ toJSON $ ListResult (map (g bb) res) cnt
+  where
+    g bb = toJsonTx name (Just bb)
 
 getTxsR :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
         => AccountName -> ListRequest -> Handler m (Maybe Value)
@@ -352,7 +356,9 @@ getAddrTxsR name index addrType lq@ListRequest{..} = do
         (res, cnt) <- addrTxs accE addrE lq
         return (res, cnt, bb)
 
-    return $ Just $ toJSON $ ListResult (map (`toJsonTx` Just bb) res) cnt
+    return $ Just $ toJSON $ ListResult (map (f bb) res) cnt
+  where
+    f bb = toJsonTx name (Just bb)
 
 postTxsR :: ( MonadLoggerIO m, MonadBaseControl IO m, MonadBase IO m
             , MonadThrow m, MonadResource m
@@ -364,6 +370,7 @@ postTxsR name masterM action = do
         bb <- walletBestBlock
         return (accE, bb)
 
+    notif <- asks handlerNotifChan
     (txRes, newAddrs) <- case action of
         CreateTx rs fee minconf rcptFee sign -> do
             $(logInfo) $ format $ unlines
@@ -375,7 +382,8 @@ postTxsR name masterM action = do
                 , "  Rcpt. Fee   : " ++ show rcptFee
                 , "  Sign        : " ++ show sign
                 ]
-            runDB $ createTx accE masterM rs fee minconf rcptFee sign
+            runDB $ createTx
+                accE (Just notif) masterM rs fee minconf rcptFee sign
         ImportTx tx -> do
             $(logInfo) $ format $ unlines
                 [ "PostTxsR ImportTx"
@@ -383,7 +391,7 @@ postTxsR name masterM action = do
                 , "  TxId        : " ++ cs (txHashToHex (txHash tx))
                 ]
             runDB $ do
-                (res, newAddrs) <- importTx tx ai
+                (res, newAddrs) <- importTx tx (Just notif) ai
                 case filter ((== ai) . walletTxAccount) res of
                     (txRes:_) -> return (txRes, newAddrs)
                     _ -> throwM $ WalletException
@@ -395,7 +403,7 @@ postTxsR name masterM action = do
                 , "  TxId        : " ++ cs (txHashToHex txid)
                 ]
             runDB $ do
-                (res, newAddrs) <- signAccountTx accE masterM txid
+                (res, newAddrs) <- signAccountTx accE (Just notif) masterM txid
                 case filter ((== ai) . walletTxAccount) res of
                     (txRes:_) -> return (txRes, newAddrs)
                     _ -> throwM $ WalletException
@@ -406,7 +414,7 @@ postTxsR name masterM action = do
         -- If the transaction is pending, broadcast it to the network
         when (walletTxConfidence txRes == TxPending) $
             runNode $ broadcastTxs [walletTxHash txRes]
-    return $ Just $ toJSON $ toJsonTx txRes (Just bb)
+    return $ Just $ toJSON $ toJsonTx name (Just bb) txRes
 
 getTxR :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
        => AccountName -> TxHash -> Handler m (Maybe Value)
@@ -421,7 +429,7 @@ getTxR name txid = do
         bb <- walletBestBlock
         res <- getAccountTx ai txid
         return (res, bb)
-    return $ Just $ toJSON $ toJsonTx res (Just bb)
+    return $ Just $ toJSON $ toJsonTx name (Just bb) res
 
 deleteTxIdR :: (MonadLoggerIO m, MonadThrow m, MonadBaseControl IO m)
             => TxHash -> Handler m (Maybe Value)
@@ -528,8 +536,15 @@ getSyncR acc blockE lq@ListRequest{..} = runDB $ do
             Entity ai _ <- getAccount acc
             ts <- accTxsFromBlock ai (nodeBlockHeight b)
                 (fromIntegral $ length nodes)
-            return $ Just $ toJSON $ ListResult (blockTxs nodes ts) cnt
+            let bts = blockTxs nodes ts
+            return $ Just $ toJSON $ ListResult (map f bts) cnt
   where
+    f (NodeBlock{..}, txs') = JsonSyncBlock
+        { jsonSyncBlockHash   = getNodeHash nodeBlockHash
+        , jsonSyncBlockHeight = nodeBlockHeight
+        , jsonSyncBlockPrev   = getNodeHash nodeBlockPrev
+        , jsonSyncBlockTxs    = map (toJsonTx acc Nothing) txs'
+        }
     showBlock = case blockE of
         Left  e -> show e
         Right b -> cs $ blockHashToHex b

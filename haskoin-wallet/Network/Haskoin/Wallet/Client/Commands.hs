@@ -51,6 +51,7 @@ import qualified Data.ByteString.Char8           as B8 (hPutStrLn, putStrLn,
 import           Data.List                       (intercalate, intersperse)
 import           Data.Maybe                      (fromMaybe, isJust, isNothing,
                                                   listToMaybe, maybeToList)
+import           Data.Monoid                     ((<>))
 import           Data.Restricted                 (rvalue)
 import           Data.String.Conversions         (cs)
 import           Data.Text                       (Text, pack, splitOn, unpack)
@@ -72,7 +73,7 @@ import           System.IO                       (stderr)
 import           System.ZMQ4                     (KeyFormat (..), Req (..),
                                                   Socket, SocketType, Sub (..),
                                                   connect, curveKeyPair,
-                                                  receive, send,
+                                                  receive, receiveMulti, send,
                                                   setCurvePublicKey,
                                                   setCurveSecretKey,
                                                   setCurveServerKey, subscribe,
@@ -468,14 +469,17 @@ cmdDeleteTx tidStr = case tidM of
   where
     tidM = hexToTxHash $ cs tidStr
 
-cmdMonitor :: Handler ()
-cmdMonitor = do
-    cfg <- R.ask
+cmdMonitor :: [String] -> Handler ()
+cmdMonitor ls = do
+    cfg@Config{..} <- R.ask
     liftIO $ withContext $ \ctx -> withSocket ctx Sub $ \sock -> do
         setupAuth cfg sock
-        connect sock (configConnectNotif cfg)
-        subscribe sock ""
-        forever $ receive sock >>= (liftIO . B8.putStrLn)
+        connect sock configConnectNotif
+        subscribe sock "[block]"
+        forM_ ls $ \name -> subscribe sock $ "{" <> cs name <> "}"
+        forever $ do
+            [_,m] <- receiveMulti sock
+            handleNotif configFormat $ eitherDecode $ cs m
 
 cmdSync :: String -> String -> [String] -> Handler ()
 cmdSync acc block ls = do
@@ -489,7 +493,7 @@ cmdSync acc block ls = do
     r <- R.asks configReversePaging
     listAction page f $ \blocks -> do
         let blocks' = if r then reverse blocks else blocks
-        forM_ (blocks' :: [JsonBlock]) $ liftIO . putStrLn . printBlock
+        forM_ (blocks' :: [JsonSyncBlock]) $ liftIO . putStrLn . printSyncBlock
 
 cmdDecodeTx :: Handler ()
 cmdDecodeTx = do
@@ -522,6 +526,18 @@ cmdKeyPair = do
         B8.putStrLn $ B8.unwords [ "private:", rvalue sec ]
 
 {- Helpers -}
+
+handleNotif :: OutputFormat -> Either String Notif -> IO ()
+handleNotif _   (Left e) = error e
+handleNotif fmt (Right notif) = case fmt of
+    OutputJSON -> formatStr $ cs $
+        JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } notif
+    OutputYAML -> do
+        putStrLn "---"
+        formatStr $ cs $ YAML.encode notif
+        putStrLn "..."
+    OutputNormal ->
+        putStrLn $ printNotif notif
 
 handleResponse
     :: (FromJSON a, ToJSON a)
@@ -750,6 +766,10 @@ printAddress JsonAddr{..} = unwords $
   where
     bal = fromMaybe (error "Could not get address balance") jsonAddrBalance
 
+printNotif :: Notif -> String
+printNotif (NotifTx   tx) = printTx Nothing tx
+printNotif (NotifBlock b) = printBlock b
+
 printTx :: Maybe Address -> JsonTx -> String
 printTx aM tx@JsonTx{..} = unlines $
     [ "Id         : " ++ cs (txHashToHex jsonTxHash) ]
@@ -797,13 +817,18 @@ printTxType t = case t of
     TxSelf     -> "Self"
 
 printBlock :: JsonBlock -> String
-printBlock JsonBlock{..} = unlines $
+printBlock JsonBlock{..} = unlines
     [ "Block Hash      : " ++ cs (blockHashToHex jsonBlockHash)
     , "Block Height    : " ++ show jsonBlockHeight
     , "Previous block  : " ++ cs (blockHashToHex jsonBlockPrev)
-    ] ++
-    [ "Transaction id  : " ++ cs (txHashToHex $ jsonTxHash t)
-    | t <- jsonBlockTxs
+    ]
+
+printSyncBlock :: JsonSyncBlock -> String
+printSyncBlock JsonSyncBlock{..} = unlines
+    [ "Block Hash      : " ++ cs (blockHashToHex jsonSyncBlockHash)
+    , "Block Height    : " ++ show jsonSyncBlockHeight
+    , "Previous block  : " ++ cs (blockHashToHex jsonSyncBlockPrev)
+    , "Transactions    : " ++ show (length jsonSyncBlockTxs)
     ]
 
 printNodeStatus :: Bool -> NodeStatus -> [String]

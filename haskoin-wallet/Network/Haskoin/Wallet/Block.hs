@@ -29,42 +29,28 @@ mainChain blockE ListRequest{..} = do
             heightNodeM <- getBlockByHeight bestNode h
             maybe (throwM $ WalletException "Could not find bock height")
                 return heightNodeM
-    let split = fst $ splitBlock bestNode remoteNode
-        cnt = nodeBlockHeight bestNode - split
+    let frst = (+1) $ fst $ splitBlock bestNode remoteNode
+        cnt = nodeBlockHeight bestNode - frst
         limit = min listLimit (cnt - listOffset)
         offset =
             if listReverse
             then cnt - listOffset - limit
             else listOffset
-    nodes <- getBlocksFromHeight bestNode limit (split + offset)
+    nodes <- getBlocksFromHeight bestNode limit (frst + offset)
     return $ ListResult nodes cnt
 
-blockTxs :: [NodeBlock] -> [WalletTx] -> [JsonBlock]
+blockTxs :: [NodeBlock] -> [WalletTx] -> [(NodeBlock, [WalletTx])]
 blockTxs blocks transactions = reverse $ go [] blocks transactions
   where
     go bs [] _ = bs
-    go bs (n : ns) [] = go (toJsonBlock n [] : bs) ns []
-    go [] (n : ns) xs = go [toJsonBlock n []] ns xs
-    go (b : bs) (n : ns) (x : xs)
-       | jsonBlockHash b == blockHashOf x = go
-           (b{ jsonBlockTxs = toJsonTx x Nothing : jsonBlockTxs b } : bs)
-           (n : ns)
-           xs
-       | getNodeHash (nodeBlockHash n) == blockHashOf x = go
-           (toJsonBlock n [toJsonTx x Nothing] : b : bs)
-           ns
-           xs
-       | otherwise = go
-           (toJsonBlock n [] : b : bs)
-           ns
-           (x : xs)
+    go bs (n:ns) [] = go ((n,[]):bs) ns []
+    go [] (n:ns) xs = go [(n,[])] ns xs
+    go (b:bs) (n:ns) (x:xs)
+       | getNodeHash (nodeBlockHash (fst b)) == blockHashOf x =
+           go ((fst b, x : snd b) : bs) (n:ns) xs
+       | getNodeHash (nodeBlockHash n) == blockHashOf x =
+           go ((n, [x]) : b : bs) ns xs
+       | otherwise = go ((n, []) : b : bs) ns (x:xs)
     blockHashOf t = fromMaybe
         (throw $ WalletException "Unexpected unconfirmed transaction")
         (walletTxConfirmedBy t)
-    toJsonBlock NodeBlock{..} ts = JsonBlock
-        { jsonBlockHash   = getNodeHash nodeBlockHash
-        , jsonBlockHeight = nodeBlockHeight
-        , jsonBlockPrev   = getNodeHash nodeBlockPrev
-        , jsonBlockTxs    = ts
-        }
-

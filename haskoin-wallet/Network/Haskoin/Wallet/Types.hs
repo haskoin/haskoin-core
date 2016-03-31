@@ -47,70 +47,54 @@ module Network.Haskoin.Wallet.Types
 , limitOffset
 ) where
 
-import Control.Monad (mzero, forM, forM_, when)
-import Control.Monad.Trans (MonadIO)
-import Control.Exception (Exception)
-import Control.DeepSeq (NFData(..))
+import           Control.DeepSeq                 (NFData (..))
+import           Control.Exception               (Exception)
+import           Control.Monad                   (forM, forM_, mzero, when)
+import           Control.Monad.Trans             (MonadIO)
 
-import Data.Int (Int64)
-import Data.Time (UTCTime)
-import Data.Typeable (Typeable)
-import Data.Maybe (maybeToList)
-import Data.Char (toLower)
-import Data.Word (Word32, Word64)
-import Data.Text (Text)
-import Data.String.Conversions (cs)
-import Data.List.Split (chunksOf)
-import Data.Aeson.Types
-    ( Options(..)
-    , SumEncoding(..)
-    , defaultOptions
-    , defaultTaggedObject
-    )
-import Data.Aeson.TH (deriveJSON)
-import Data.Aeson
-    ( Value (..), FromJSON, ToJSON
-    , withObject, encode, decodeStrict'
-    , (.=), (.:), (.:?), (.!=)
-    , object, parseJSON, toJSON
-    )
+import           Data.Aeson                      (FromJSON, ToJSON, Value (..),
+                                                  decodeStrict', encode, object,
+                                                  parseJSON, toJSON, withObject,
+                                                  (.!=), (.:), (.:?), (.=))
+import           Data.Aeson.TH                   (deriveJSON)
+import           Data.Aeson.Types                (Options (..),
+                                                  SumEncoding (..),
+                                                  defaultOptions,
+                                                  defaultTaggedObject)
+import           Data.Char                       (toLower)
+import           Data.Int                        (Int64)
+import           Data.List.Split                 (chunksOf)
+import           Data.Maybe                      (maybeToList)
+import           Data.String.Conversions         (cs)
+import           Data.Text                       (Text)
+import           Data.Time                       (UTCTime)
+import           Data.Typeable                   (Typeable)
+import           Data.Word                       (Word32, Word64)
 
-import Database.Persist.Types
-    ( PersistValue(..)
-    )
-import Database.Persist.Class
-    ( PersistField
-    , toPersistValue
-    , fromPersistValue
-    )
-import Database.Persist.Sql
-    ( PersistFieldSql
-    , SqlType(..)
-    , sqlType
-    )
-import qualified Database.Persist as P
-    ( insertMany_, PersistEntity
-    , PersistEntityBackend
-    )
-import Database.Esqueleto
-    ( SqlQuery, SqlExpr, SqlBackend
-    , update, limit, offset
-    , select, val
-    , (||.)
-    -- Reexports from Database.Persist
-    , SqlPersistT, Entity(..)
-    )
-import qualified Database.Esqueleto as E (delete, Value)
-import Database.Esqueleto.Internal.Sql (SqlSelect)
+import           Database.Esqueleto              (Entity (..), SqlBackend,
+                                                  SqlExpr, SqlPersistT,
+                                                  SqlQuery, limit, offset,
+                                                  select, update, val, (||.))
+import qualified Database.Esqueleto              as E (Value, delete)
+import           Database.Esqueleto.Internal.Sql (SqlSelect)
+import qualified Database.Persist                as P (PersistEntity,
+                                                       PersistEntityBackend,
+                                                       insertMany_)
+import           Database.Persist.Class          (PersistField,
+                                                  fromPersistValue,
+                                                  toPersistValue)
+import           Database.Persist.Sql            (PersistFieldSql, SqlType (..),
+                                                  sqlType)
+import           Database.Persist.Types          (PersistValue (..))
 
-import Network.Haskoin.Block
-import Network.Haskoin.Crypto
-import Network.Haskoin.Script
-import Network.Haskoin.Transaction
-import Network.Haskoin.Node
-import Network.Haskoin.Node.HeaderTree
-import Network.Haskoin.Util
-import Network.Haskoin.Wallet.Database
+import           Network.Haskoin.Block
+import           Network.Haskoin.Crypto
+import           Network.Haskoin.Node
+import           Network.Haskoin.Node.HeaderTree
+import           Network.Haskoin.Script
+import           Network.Haskoin.Transaction
+import           Network.Haskoin.Util
+import           Network.Haskoin.Wallet.Database
 
 type AccountName = Text
 
@@ -157,10 +141,10 @@ instance NFData AddressInfo where
         rnf addressInfoIsLocal
 
 data BalanceInfo = BalanceInfo
-    { balanceInfoInBalance   :: !Word64
-    , balanceInfoOutBalance  :: !Word64
-    , balanceInfoCoins       :: !Int
-    , balanceInfoSpentCoins  :: !Int
+    { balanceInfoInBalance  :: !Word64
+    , balanceInfoOutBalance :: !Word64
+    , balanceInfoCoins      :: !Int
+    , balanceInfoSpentCoins :: !Int
     }
     deriving (Eq, Show, Read)
 
@@ -342,11 +326,9 @@ data WalletRequest
     | GetAccountR !AccountName
     | PostAccountKeysR !AccountName ![XPubKey]
     | PostAccountGapR !AccountName !SetAccountGap
-    | GetAddressesR !AccountName
-        !AddressType !Word32 !Bool !ListRequest
+    | GetAddressesR !AccountName !AddressType !Word32 !Bool !ListRequest
     | GetAddressesUnusedR !AccountName !AddressType !ListRequest
-    | GetAddressR !AccountName !KeyIndex !AddressType
-        !Word32 !Bool
+    | GetAddressR !AccountName !KeyIndex !AddressType !Word32 !Bool
     | PutAddressR !AccountName !KeyIndex !AddressType !AddressLabel
     | PostAddressesR !AccountName !KeyIndex !AddressType
     | GetTxsR !AccountName !ListRequest
@@ -359,6 +341,8 @@ data WalletRequest
     | PostNodeR !NodeAction
     | DeleteTxIdR !TxHash
     | GetSyncR !AccountName !(Either BlockHeight BlockHash) !ListRequest
+    | GetPendingR !AccountName !ListRequest
+    | GetDeadR !AccountName !ListRequest
 
 -- TODO: Set omitEmptyContents on aeson-0.9
 $(deriveJSON
@@ -389,15 +373,15 @@ data JsonAccount = JsonAccount
 $(deriveJSON (dropFieldLabel 11) ''JsonAccount)
 
 data JsonAddr = JsonAddr
-    { jsonAddrAddress        :: !Address
-    , jsonAddrIndex          :: !KeyIndex
-    , jsonAddrType           :: !AddressType
-    , jsonAddrLabel          :: !Text
-    , jsonAddrRedeem         :: !(Maybe ScriptOutput)
-    , jsonAddrKey            :: !(Maybe PubKeyC)
-    , jsonAddrCreated        :: !UTCTime
+    { jsonAddrAddress :: !Address
+    , jsonAddrIndex   :: !KeyIndex
+    , jsonAddrType    :: !AddressType
+    , jsonAddrLabel   :: !Text
+    , jsonAddrRedeem  :: !(Maybe ScriptOutput)
+    , jsonAddrKey     :: !(Maybe PubKeyC)
+    , jsonAddrCreated :: !UTCTime
     -- Optional Balance
-    , jsonAddrBalance        :: !(Maybe BalanceInfo)
+    , jsonAddrBalance :: !(Maybe BalanceInfo)
     }
     deriving (Eq, Show, Read)
 
@@ -468,7 +452,7 @@ data RescanRes = RescanRes { rescanTimestamp :: !Word32 }
 $(deriveJSON (dropFieldLabel 6) ''RescanRes)
 
 data WalletResponse a
-    = ResponseError { responseError  :: !Text }
+    = ResponseError { responseError :: !Text }
     | ResponseValid { responseResult :: !(Maybe a)  }
     deriving (Eq, Show)
 

@@ -107,26 +107,29 @@ data OutCoinData = OutCoinData
 
 -- | Get transactions.
 txs :: MonadIO m
-    => AccountId        -- ^ Account ID
+    => Maybe TxConfidence
+    -> AccountId        -- ^ Account ID
     -> ListRequest      -- ^ List request
     -> SqlPersistT m ([WalletTx], Word32)
     -- ^ List result
-txs ai ListRequest{..} = do
+txs conf ai ListRequest{..} = do
     [cnt] <- fmap (map unValue) $ select $ from $ \t -> do
-        where_ $ t ^. WalletTxAccount ==. val ai
+        cond t
         return countRows
-
     when (listOffset > 0 && listOffset >= cnt) $ throw $ WalletException
         "Offset beyond end of data set"
-
     res <- fmap (map entityVal) $ select $ from $ \t -> do
-        where_ $ t ^. WalletTxAccount ==. val ai
-        let order = if listReverse then asc else desc
+        cond t
         orderBy [ order (t ^. WalletTxId) ]
         limitOffset listLimit listOffset
         return t
-
     return (res, cnt)
+  where
+    account t = t ^. WalletTxAccount ==. val ai
+    cond t = where_ $ case conf of
+        Just  n -> account t &&. t ^. WalletTxConfidence ==. val n
+        Nothing -> account t
+    order = if listReverse then asc else desc
 
 {- List transactions for an account and address -}
 

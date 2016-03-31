@@ -29,26 +29,17 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdSync
 , cmdKeyPair
 , cmdDeleteTx
+, cmdPending
+, cmdDead
 )
 where
 
-import           Control.Concurrent.Async.Lifted (asyncBound, wait)
-import           System.IO                       (stderr)
-import           System.ZMQ4                     (KeyFormat (..), Req (..),
-                                                  Socket, SocketType, Sub (..),
-                                                  connect, curveKeyPair,
-                                                  receive, send,
-                                                  setCurvePublicKey,
-                                                  setCurveSecretKey,
-                                                  setCurveServerKey, subscribe,
-                                                  withContext, withSocket)
-
 import           Control.Applicative             ((<|>))
+import           Control.Concurrent.Async.Lifted (asyncBound, wait)
 import           Control.Monad                   (forM_, forever, liftM2,
                                                   unless, when)
 import qualified Control.Monad.Reader            as R (ReaderT, ask, asks)
 import           Control.Monad.Trans             (liftIO)
-
 import           Data.Aeson                      (FromJSON, ToJSON, Value (..),
                                                   decode, eitherDecode, encode,
                                                   object, toJSON, (.=))
@@ -76,9 +67,17 @@ import           Network.Haskoin.Wallet.Database
 import           Network.Haskoin.Wallet.Server
 import           Network.Haskoin.Wallet.Settings
 import           Network.Haskoin.Wallet.Types
-import           Text.Read                       (readMaybe)
-
 import qualified System.Console.Haskeline        as Haskeline
+import           System.IO                       (stderr)
+import           System.ZMQ4                     (KeyFormat (..), Req (..),
+                                                  Socket, SocketType, Sub (..),
+                                                  connect, curveKeyPair,
+                                                  receive, send,
+                                                  setCurvePublicKey,
+                                                  setCurveSecretKey,
+                                                  setCurveServerKey, subscribe,
+                                                  withContext, withSocket)
+import           Text.Read                       (readMaybe)
 
 type Handler = R.ReaderT Config IO
 
@@ -306,6 +305,24 @@ cmdTxs name ls = do
     let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
     r <- R.asks configReversePaging
     listAction page (GetTxsR (pack name)) $ \ts -> do
+        let xs = map (liftIO . putStr . printTx Nothing) ts
+            xs' = if r then xs else reverse xs
+        sequence_ $ intersperse (liftIO $ putStrLn "-") xs'
+
+cmdPending :: String -> [String] -> Handler ()
+cmdPending name ls = do
+    let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
+    r <- R.asks configReversePaging
+    listAction page (GetPendingR (pack name)) $ \ts -> do
+        let xs = map (liftIO . putStr . printTx Nothing) ts
+            xs' = if r then xs else reverse xs
+        sequence_ $ intersperse (liftIO $ putStrLn "-") xs'
+
+cmdDead :: String -> [String] -> Handler ()
+cmdDead name ls = do
+    let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
+    r <- R.asks configReversePaging
+    listAction page (GetDeadR (pack name)) $ \ts -> do
         let xs = map (liftIO . putStr . printTx Nothing) ts
             xs' = if r then xs else reverse xs
         sequence_ $ intersperse (liftIO $ putStrLn "-") xs'

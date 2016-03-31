@@ -296,11 +296,15 @@ postAddressesR name i addrType = do
 
     return $ Just $ toJSON cnt
 
-getTxsR :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
-        => AccountName -> ListRequest -> Handler m (Maybe Value)
-getTxsR name lq@ListRequest{..} = do
+getTxs :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+       => AccountName
+       -> ListRequest
+       -> String
+       -> (AccountId -> ListRequest -> SqlPersistT m ([WalletTx], Word32))
+       -> Handler m (Maybe Value)
+getTxs name lq@ListRequest{..} cmd f = do
     $(logInfo) $ format $ unlines
-        [ "GetTxsR"
+        [ cmd
         , "  Account name: " ++ unpack name
         , "  Offset      : " ++ show listOffset
         , "  Limit       : " ++ show listLimit
@@ -310,10 +314,22 @@ getTxsR name lq@ListRequest{..} = do
     (res, cnt, bb) <- runDB $ do
         Entity ai _ <- getAccount name
         bb <- walletBestBlock
-        (res, cnt) <- txs ai lq
+        (res, cnt) <- f ai lq
         return (res, cnt, bb)
 
     return $ Just $ toJSON $ ListResult (map (`toJsonTx` Just bb) res) cnt
+
+getTxsR :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+        => AccountName -> ListRequest -> Handler m (Maybe Value)
+getTxsR name lq = getTxs name lq "GetTxsR" (txs Nothing)
+
+getPendingR :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+            => AccountName -> ListRequest -> Handler m (Maybe Value)
+getPendingR name lq = getTxs name lq "GetPendingR" (txs (Just TxPending))
+
+getDeadR :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+         => AccountName -> ListRequest -> Handler m (Maybe Value)
+getDeadR name lq = getTxs name lq "GetDeadR" (txs (Just TxDead))
 
 getAddrTxsR :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
             => AccountName -> KeyIndex -> AddressType -> ListRequest

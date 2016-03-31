@@ -22,7 +22,9 @@ Address commands:
   genaddrs  acc index [--internal]         Generate addresses up to this index
 
 Transaction commands:
-  txs       acc [page] [-c pagesize] [-r]  Display transactions by page
+  txs       acc [page] [-c pagesize] [-r]  Display all transactions by page
+  pending   acc [page] [-c pagesize] [-r]  Display pending transactions by page
+  dead      acc [page] [-c pagesize] [-r]  Display dead transactions by page
   send      acc addr amount [-S]           Send coins to an address
   sendmany  acc {addr:amount...} [-S]      Send coins to many addresses
   import    acc                            Import a transaction (does not sign)
@@ -40,7 +42,7 @@ Utility commands:
   decodetx                                 Decode HEX transaction
   rescan   [timestamp]                     Rescan the wallet
   keypair                                  Get curve key pair for ØMQ auth
-  monitor                                  Get notifications (JSON, one per line)
+  monitor                                  Get notifications (JSON line output)
 
 Other commands:
   version                                  Display version information

@@ -206,6 +206,8 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "rescan"      : rescantime                 -> cmdRescan rescantime
     "deletetx"    : txid                  : [] -> cmdDeleteTx txid
     "sync"        : name : block : page        -> cmdSync name block page
+    "pending"     : name : page                -> cmdPending name page
+    "dead"        : name : page                -> cmdDead name page
     "monitor"                             : [] -> cmdMonitor
     "decodetx"                            : [] -> cmdDecodeTx
     "status"                              : [] -> cmdStatus

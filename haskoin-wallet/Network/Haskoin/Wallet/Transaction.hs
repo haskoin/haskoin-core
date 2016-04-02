@@ -859,7 +859,7 @@ importMerkles action expTxsLs notifChanM =
         case action of
             ChainReorg _ os _ ->
                 -- Unconfirm transactions from the old chain.
-                let hs = map (Just . getNodeHash . nodeBlockHash) os
+                let hs = map (Just . nodeHash) os
                 in  splitUpdate hs $ \h t -> do
                         set t [ WalletTxConfidence      =. val TxPending
                               , WalletTxConfirmedBy     =. val Nothing
@@ -881,7 +881,7 @@ importMerkles action expTxsLs notifChanM =
 
         -- Confirm the transactions
         forM_ (zip (actionNodes action) expTxsLs) $ \(node, hs) -> do
-            let hash   = getNodeHash $ nodeBlockHash node
+            let hash   = nodeHash node
                 height = nodeBlockHeight node
 
             splitUpdate hs $ \h t -> do
@@ -890,7 +890,7 @@ importMerkles action expTxsLs notifChanM =
                       , WalletTxConfirmedHeight =.
                           val (Just height)
                       , WalletTxConfirmedDate =.
-                          val (Just $ nodeBlockTime node)
+                          val (Just $ nodeTimestamp node)
                       ]
                 where_ $ t ^. WalletTxHash `in_` valList h
 
@@ -906,9 +906,9 @@ importMerkles action expTxsLs notifChanM =
             forM_ notifChanM $ \notifChan -> do
                 liftIO $ atomically $ writeTBMChan notifChan $
                     NotifBlock JsonBlock
-                        { jsonBlockHash    = hash
-                        , jsonBlockHeight  = height
-                        , jsonBlockPrev    = getNodeHash $ nodeBlockPrev node
+                        { jsonBlockHash = hash
+                        , jsonBlockHeight = height
+                        , jsonBlockPrev = nodePrev node
                         }
                 sendTxs notifChan ts hash height
   where

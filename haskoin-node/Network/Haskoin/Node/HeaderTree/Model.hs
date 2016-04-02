@@ -15,20 +15,13 @@ import           Network.Haskoin.Node.HeaderTree.Types
 
 share [mkPersist sqlSettings, mkMigrate "migrateHeaderTree"] [persistLowerCase|
 NodeBlock
-    hash         NodeHash      maxlen=64
-    version      Word32
-    prev         NodeHash      maxlen=64
-    merkleRoot   MerkleHash    maxlen=64
-    time         Timestamp
-    bits         Word32
-    nonce        Word32
+    hash         ShortHash
+    header       NodeHeader    maxlen=80
+    work         Work          maxlen=32
     height       BlockHeight
-    work         Work          maxlen=64
-    medianTimes  [Timestamp]
+    chain        Word32
+    pivots       Pivots
     minWork      Word32
-    chain        Int
-    pivots       [BlockHeight]
-    pivotChains  [Int]
     UniqueHash   hash
     UniqueChain  chain height
     deriving     Show

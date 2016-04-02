@@ -297,18 +297,18 @@ z = "0000000000000000000000000000000000000000000000000000000000000000"
 
 fakeNode :: NodeBlock     -- ^ Parent
          -> [TxHash]      -- ^ Transactions
-         -> Int           -- ^ Chain
+         -> Word32        -- ^ Chain
          -> Word32        -- ^ Nonce
          -> NodeBlock
 fakeNode parent tids chain nonce =
     nodeBlock parent chain header
   where
     header = BlockHeader
-        { blockVersion   = nodeBlockVersion parent
-        , prevBlock      = getNodeHash $ nodeBlockHash parent
+        { blockVersion   = blockVersion $ nodeHeader parent
+        , prevBlock      = nodeHash parent
         , merkleRoot     = if null tids then z else buildMerkleRoot tids
-        , blockTimestamp = nodeBlockTime parent + 600
-        , blockBits      = nodeBlockBits parent
+        , blockTimestamp = nodeTimestamp parent + 600
+        , blockBits      = blockBits $ nodeHeader parent
         , bhNonce        = nonce
         }
 
@@ -1384,7 +1384,7 @@ testNotification = do
     liftIO $ case b1NM of
         Just (NotifBlock JsonBlock{..}) ->
             assertEqual "Block hash does not match"
-                (getNodeHash $ nodeBlockHash block1) jsonBlockHash
+                (nodeHash block1) jsonBlockHash
         _ -> assertFailure "Block notification not the right type"
     tx1NM' <- liftIO $ atomically $ readTBMChan notifChan
     liftIO $ case tx1NM' of
@@ -1396,7 +1396,7 @@ testNotification = do
     liftIO $ case b2NM of
         Just (NotifBlock JsonBlock{..}) ->
             assertEqual "Block hash does not match"
-                (getNodeHash $ nodeBlockHash block2) jsonBlockHash
+                (nodeHash block2) jsonBlockHash
         _ -> assertFailure "Block notification not the right type"
     tx2NM' <- liftIO $ atomically $ readTBMChan notifChan
     liftIO $ case tx2NM' of
@@ -1414,7 +1414,7 @@ testNotification = do
     liftIO $ case b3NM of
         Just (NotifBlock JsonBlock{..}) ->
             assertEqual "Block hash does not match"
-                (getNodeHash $ nodeBlockHash block2') jsonBlockHash
+                (nodeHash block2') jsonBlockHash
         _ -> assertFailure "Block notification not the right type"
     tx3NM2 <- liftIO $ atomically $ readTBMChan notifChan
     liftIO $ case tx3NM2 of

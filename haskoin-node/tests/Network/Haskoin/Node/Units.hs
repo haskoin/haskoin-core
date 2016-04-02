@@ -55,9 +55,10 @@ addSecondBlock = do
     initHeaderTree
     let block = head chain0
     liftIO $ assertEqual "Block builds on genesis block"
-        (headerHash genesisHeader) (prevBlock $ nodeBlockHeader block)
+        (headerHash genesisHeader)
+        (nodePrev block)
     putBlock block
-    block' <- getBlockByHash $ getNodeHash $ nodeBlockHash block
+    block' <- getBlockByHash $ nodeHash block
     liftIO $ assertEqual "Block can be retrieved" (Just block) block'
 
 blockChainHead :: App ()
@@ -68,7 +69,7 @@ blockChainHead = mockBlockChain >> do
         heads
     bh <- getBestBlock
     liftIO $ assertEqual "Best block has correct hash"
-        (nodeBlockHash $ last chain3) (nodeBlockHash bh)
+        (nodeHash $ last chain3) (nodeHash bh)
     liftIO $ assertEqual "Best block height is right"
         (nodeBlockHeight $ last chain3) (nodeBlockHeight bh)
 
@@ -103,9 +104,11 @@ forkNode = mockBlockChain >> do
 
     liftIO $ assertEqual "Fork node is same in both sides" commonL commonR
     liftIO $ assertEqual "Fork node connect with left side"
-        (nodeBlockHash commonL) (nodeBlockPrev firstL)
+        (nodeHash commonL)
+        (nodePrev firstL)
     liftIO $ assertEqual "Fork node connect with right side"
-        (nodeBlockHash commonR) (nodeBlockPrev firstR)
+        (nodeHash commonR)
+        (nodePrev firstR)
     liftIO $ assertBool "After-fork chains diverge" $ firstL /= firstR
     liftIO $ assertEqual "Fork node matches hardcoded one"
         (chain0 !! 1) commonL
@@ -161,14 +164,14 @@ blockLocatorToHead = do
         (headerHash genesisHeader)
     liftIO $ assertEqual "First is current head"
         (head ls)
-        (getNodeHash $ nodeBlockHash h)
-    last10 <- map (getNodeHash . nodeBlockHash) . reverse <$>
+        (nodeHash h)
+    last10 <- map nodeHash . reverse <$>
         getBlocksFromHeight h 0 (nodeBlockHeight h - 9)
     liftIO $ assertEqual "Last ten blocks contiguous"
         last10
         (take 10 ls)
     let h10 = nodeBlockHeight h - 10
-    bhs <- map (getNodeHash . nodeBlockHash . fromJust) <$>
+    bhs <- map (nodeHash . fromJust) <$>
         mapM (getBlockByHeight h)
         [h10, h10 - 2, h10 - 6, h10 - 14, h10 - 30, h10 - 62]
     liftIO $ assertEqual "All block hashes correct"
@@ -181,9 +184,9 @@ blockLocatorToNode :: App ()
 blockLocatorToNode = do
     mockBlockChain
     putBlocks bs
-    n <- fromJust <$> getBlockByHash (getNodeHash . nodeBlockHash $ chain3 !! 4)
+    n <- fromJust <$> getBlockByHash (nodeHash $ chain3 !! 4)
     ls <- blockLocator n
-    xs <- map (getNodeHash . nodeBlockHash) . reverse <$>
+    xs <- map nodeHash . reverse <$>
         getBlocksFromHeight n 0 0
     liftIO $ assertEqual "Block locator for non-head node is correct" xs ls
   where
@@ -230,22 +233,22 @@ chain3 :: [NodeBlock]
 chain3 =
     tail $ reverse $ foldBlock (Just $ chain0 !! 1) $ zip [11..17] (repeat 3)
 
-foldBlock :: Maybe NodeBlock -> [(Word32, Int)] -> [NodeBlock]
+foldBlock :: Maybe NodeBlock -> [(Word32, Word32)] -> [NodeBlock]
 foldBlock nM =
     foldl f (maybeToList nM)
   where
     f [] _ = [genesisBlock]
     f ls@(l:_) (n, chain) = mockBlock l chain n : ls
 
-mockBlock :: NodeBlock -> Int -> Word32 -> NodeBlock
+mockBlock :: NodeBlock -> Word32 -> Word32 -> NodeBlock
 mockBlock parent chain n = nodeBlock parent chain bh
   where
     bh = BlockHeader
-        { blockVersion     = blockVersion (nodeBlockHeader parent)
-        , prevBlock        = getNodeHash $ nodeBlockHash parent
-        , merkleRoot       = z
-        , blockTimestamp   = blockTimestamp (nodeBlockHeader parent) + 600
-        , blockBits        = blockBits (nodeBlockHeader parent)
-        , bhNonce          = n
+        { blockVersion   = blockVersion $ nodeHeader parent
+        , prevBlock      = nodeHash parent
+        , merkleRoot     = z
+        , blockTimestamp = nodeTimestamp parent + 600
+        , blockBits      = blockBits $ nodeHeader parent
+        , bhNonce        = n
         }
     z = "0000000000000000000000000000000000000000000000000000000000000000"

@@ -237,7 +237,7 @@ merkleSync pool bSize notif = do
 
     -- Did we receive all the merkles that we asked for ?
     let missing = (headerHash <$> lastMerkleM) /=
-            Just (getNodeHash $ nodeBlockHash $ last $ actionNodes action)
+            Just (nodeHash $ last $ actionNodes action)
 
     when missing $ $(logWarn) $ pack $ unwords
         [ "Merkle block stream closed prematurely"
@@ -294,31 +294,26 @@ merkleSync pool bSize notif = do
         BestChain nodes -> $(logInfo) $ pack $ unwords
             [ "Best chain height"
             , show $ nodeBlockHeight $ last nodes
-            , "(", cs $ blockHashToHex $ getNodeHash $ nodeBlockHash $
-                last nodes
+            , "(", cs $ blockHashToHex $ nodeHash $ last nodes
             , ")"
             ]
         ChainReorg _ o n -> $(logInfo) $ pack $ unlines $
             [ "Chain reorg."
             , "Orphaned blocks:"
             ]
-            ++ map (("  " ++) . cs . blockHashToHex . getNodeHash .
-                    nodeBlockHash) o
+            ++ map (("  " ++) . cs . blockHashToHex . nodeHash) o
             ++ [ "New blocks:" ]
-            ++ map (("  " ++) . cs . blockHashToHex . getNodeHash .
-                    nodeBlockHash) n
+            ++ map (("  " ++) . cs . blockHashToHex . nodeHash) n
             ++ [ unwords [ "Best merkle chain height"
                         , show $ nodeBlockHeight $ last n
                         ]
             ]
         SideChain n -> $(logWarn) $ pack $ unlines $
             "Side chain:" :
-            map (("  " ++) . cs . blockHashToHex . getNodeHash .
-                 nodeBlockHash) n
+            map (("  " ++) . cs . blockHashToHex . nodeHash) n
         KnownChain n -> $(logWarn) $ pack $ unlines $
             "Known chain:" :
-            map (("  " ++) . cs . blockHashToHex . getNodeHash .
-                 nodeBlockHash) n
+            map (("  " ++) . cs . blockHashToHex . nodeHash) n
 
 maybeDetach :: Config -> IO () -> IO ()
 maybeDetach cfg action =

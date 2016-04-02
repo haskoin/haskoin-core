@@ -46,9 +46,9 @@ blockTxs blocks transactions = reverse $ go [] blocks transactions
     go bs (n:ns) [] = go ((n,[]):bs) ns []
     go [] (n:ns) xs = go [(n,[])] ns xs
     go (b:bs) (n:ns) (x:xs)
-       | getNodeHash (nodeBlockHash (fst b)) == blockHashOf x =
+       | nodeHash (fst b) == blockHashOf x =
            go ((fst b, x : snd b) : bs) (n:ns) xs
-       | getNodeHash (nodeBlockHash n) == blockHashOf x =
+       | nodeHash n == blockHashOf x =
            go ((n, [x]) : b : bs) ns xs
        | otherwise = go ((n, []) : b : bs) ns (x:xs)
     blockHashOf t = fromMaybe

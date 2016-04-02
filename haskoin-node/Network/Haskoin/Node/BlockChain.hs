@@ -142,7 +142,7 @@ merkleDownload bh batchSize = do
     $(logDebug) "Waiting for a new block or a rescan..."
     resE <- atomicallyNodeT $ orElseNodeT
         (fmap Left $ lift $ takeTMVar rescanTMVar)
-        (const (Right ()) <$> waitNewBlock (getNodeHash $ nodeBlockHash bh))
+        (const (Right ()) <$> waitNewBlock (nodeHash bh))
     resM <- case resE of
         -- A rescan was triggered
         Left valE -> do
@@ -210,14 +210,16 @@ waitFastCatchup :: Timestamp -> NodeT STM ()
 waitFastCatchup ts = do
     node <- readTVarS sharedBestHeader
     -- Check if we passed the timestamp condition
-    unless (ts < blockTimestamp (nodeBlockHeader node)) $ lift retry
+    unless (ts < blockTimestamp (nodeHeader node)) $
+        lift retry
 
 -- Wait for a new block to be available for download
 waitNewBlock :: BlockHash -> NodeT STM ()
 waitNewBlock bh = do
     node <- readTVarS sharedBestHeader
     -- We have more merkle blocks to download
-    unless (bh /= getNodeHash (nodeBlockHash node)) $ lift retry
+    unless (bh /= nodeHash node) $
+        lift retry
 
 tryMerkleDwnHeight
     :: (MonadLoggerIO m, MonadBaseControl IO m)
@@ -273,7 +275,7 @@ tryMerkleDwnBlock
 tryMerkleDwnBlock bh batchSize = do
     $(logDebug) $ pack $ unwords
         [ "Requesting merkle download from block"
-        , cs $ blockHashToHex (getNodeHash $ nodeBlockHash bh)
+        , cs $ blockHashToHex (nodeHash bh)
         , "and batch size", show batchSize
         ]
     -- Get the list of merkle blocks to download from our headers
@@ -315,7 +317,7 @@ peerMerkleDownload
     -> BlockChainAction
     -> Source (NodeT m) (Either (MerkleBlock, MerkleTxs) Tx)
 peerMerkleDownload pid ph action = do
-    let bids = map (getNodeHash . nodeBlockHash) $ actionNodes action
+    let bids = map nodeHash $ actionNodes action
         vs   = map (InvVector InvMerkleBlock . getBlockHash) bids
     $(logInfo) $ formatPid pid ph $ unwords
         [ "Requesting", show $ length bids, "merkle block(s)" ]
@@ -519,8 +521,7 @@ areBlocksSynced = do
     headersSynced <- areHeadersSynced
     bestBlock     <- readTVarS sharedBestBlock
     bestHeader    <- readTVarS sharedBestHeader
-    return $ headersSynced &&
-        nodeBlockHash bestBlock == nodeBlockHash bestHeader
+    return $ headersSynced && nodeHash bestBlock == nodeHash bestHeader
 
 -- Check if the block headers are synced with the network height
 areHeadersSynced :: NodeT STM Bool
@@ -544,6 +545,8 @@ peerHeaderSync pid ph prevM = do
     lock <- asks sharedSyncLock
     liftBaseOp_ (Lock.with lock) $ do
 
+        best <- atomicallyNodeT $ readTVarS sharedBestHeader
+
         -- Retrieve the block locator
         loc <- case prevM of
             Just (KnownChain ns) -> do
@@ -560,7 +563,6 @@ peerHeaderSync pid ph prevM = do
                 runSqlNodeT $ blockLocator $ last ns
             Nothing -> do
                 $(logDebug) $ formatPid pid ph "Building a locator to best"
-                best <- atomicallyNodeT $ readTVarS sharedBestHeader
                 runSqlNodeT $ blockLocator best
 
         $(logDebug) $ formatPid pid ph $ unwords
@@ -576,31 +578,31 @@ peerHeaderSync pid ph prevM = do
         $(logDebug) $ formatPid pid ph "Waiting 2 minutes for headers..."
 
         -- Wait 120 seconds for a response or time out
-        continueE <- raceTimeout 120 (disconnectPeer pid ph) waitHeaders
+        continueE <- raceTimeout 120 (disconnectPeer pid ph) (waitHeaders best)
 
         -- Return True if we can continue syncing from this peer
         return $ either (const Nothing) id continueE
   where
     z = "0000000000000000000000000000000000000000000000000000000000000000"
     -- Wait for the headers to be available
-    waitHeaders = do
+    waitHeaders best = do
         (rPid, headers) <- atomicallyNodeT $ takeTMVarS sharedHeaders
         if rPid == pid
-            then processHeaders headers
-            else waitHeaders
-    processHeaders (Headers []) = do
+            then processHeaders best headers
+            else waitHeaders best
+    processHeaders _ (Headers []) = do
         $(logDebug) $ formatPid pid ph
             "Received empty headers. Finished downloading headers."
         -- Do not continue the header download
         return Nothing
-    processHeaders (Headers hs) = do
+    processHeaders best (Headers hs) = do
         $(logDebug) $ formatPid pid ph $ unwords
             [ "Received", show $ length hs, "headers."
             , "Start blocks:", cs $ blockHashToHex $ headerHash $ fst $ head hs
             , "End blocks:", cs $ blockHashToHex $ headerHash $ fst $ last hs
             ]
         now <- round <$> liftIO getPOSIXTime
-        actionE <- runSqlNodeT $ connectHeaders (map fst hs) now
+        actionE <- runSqlNodeT $ connectHeaders best (map fst hs) now
         case actionE of
             Left err -> do
                 misbehaving pid ph severeDoS err
@@ -648,10 +650,10 @@ nodeStatus = do
     lift $ do
         best   <- readTVar sharedBestBlock
         header <- readTVar sharedBestHeader
-        let nodeStatusBestBlock        = getNodeHash $ nodeBlockHash   best
-            nodeStatusBestBlockHeight  =               nodeBlockHeight best
-            nodeStatusBestHeader       = getNodeHash $ nodeBlockHash   header
-            nodeStatusBestHeaderHeight =               nodeBlockHeight header
+        let nodeStatusBestBlock        = nodeHash best
+            nodeStatusBestBlockHeight  = nodeBlockHeight best
+            nodeStatusBestHeader       = nodeHash header
+            nodeStatusBestHeaderHeight = nodeBlockHeight header
         nodeStatusNetworkHeight <-
             readTVar sharedNetworkHeight
         nodeStatusBloomSize <-

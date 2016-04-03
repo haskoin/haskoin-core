@@ -1,13 +1,10 @@
-{-# LANGUAGE DeriveGeneric #-}
 module Network.Haskoin.Node.HeaderTree.Types where
 
-import           Data.Binary           (Binary)
 import           Data.LargeWord        (Word256)
 import           Data.Word             (Word32, Word64)
 import           Database.Persist      (PersistField (..), PersistValue (..),
                                         SqlType (..))
 import           Database.Persist.Sql  (PersistFieldSql (..))
-import           GHC.Generics          (Generic)
 import           Network.Haskoin.Block
 import           Network.Haskoin.Util
 
@@ -21,21 +18,7 @@ newtype NodeHeader = NodeHeader { getNodeHeader :: BlockHeader }
 newtype Work = Work { getWork :: Word256 }
     deriving (Show, Eq, Ord)
 
-newtype Pivots = Pivots { getPivots :: [(BlockHeight, Word32)] }
-    deriving (Generic, Show, Eq, Ord)
-
-instance Binary Pivots
-
 {- SQL database backend for HeaderTree -}
-
-instance PersistField Pivots where
-    toPersistValue = PersistByteString . encode'
-    fromPersistValue (PersistByteString bs) = maybeToEither
-        "Could not decode pivots" $ decodeToMaybe bs
-    fromPersistValue _ = Left "Invalid persistent block header"
-
-instance PersistFieldSql Pivots where
-    sqlType _ = SqlBlob
 
 instance PersistField NodeHeader where
     toPersistValue = PersistByteString . encode' . getNodeHeader

@@ -77,27 +77,27 @@ forkNode :: App ()
 forkNode = mockBlockChain >> do
     let l = last chain2
         r = last chain3
-        (height, chain) = splitBlock l r
+    bn <- splitBlock l r
 
-    liftIO $ assertEqual "Height and chain of split block are correct"
-        (2, 0) (height, chain)
+    liftIO $ assertEqual "Split block are correct"
+        (chain0 !! 1) bn
 
-    commonLM <- getBlockByHeight l height
+    commonLM <- getBlockByHeight l $ nodeBlockHeight bn
     when (isNothing commonLM) $ liftIO $
         assertFailure "Could not find fork on left side"
     let commonL = fromJust commonLM
 
-    commonRM <- getBlockByHeight r height
+    commonRM <- getBlockByHeight r $ nodeBlockHeight bn
     when (isNothing commonRM) $ liftIO $
         assertFailure "Could not find fork on right side"
     let commonR = fromJust commonRM
 
-    firstLM  <- getBlockByHeight l (height + 1)
+    firstLM  <- getBlockByHeight l (nodeBlockHeight bn + 1)
     when (isNothing firstLM) $ liftIO $
         assertFailure "Could not find fork child on left side"
     let firstL = fromJust firstLM
 
-    firstRM  <- getBlockByHeight r (height + 1)
+    firstRM  <- getBlockByHeight r (nodeBlockHeight bn + 1)
     when (isNothing firstLM) $ liftIO $
         assertFailure "Could not find fork child on right side"
     let firstR = fromJust firstRM
@@ -117,7 +117,7 @@ forkNodeNonHead :: App ()
 forkNodeNonHead = mockBlockChain >> do
     let l = chain2 !! 1
         r = chain1 !! 1
-        (height, _) = splitBlock l r
+    height <- nodeBlockHeight <$> splitBlock l r
     splitM <- getBlockByHeight l height
     liftIO $ assertEqual "Fork node is correct" (Just $ chain1 !! 1) splitM
 
@@ -125,7 +125,7 @@ forkNodeSameChain :: App ()
 forkNodeSameChain = mockBlockChain >> do
     let l = chain3 !! 5
         r = chain3 !! 3
-        (height, _) = splitBlock l r
+    height <- nodeBlockHeight <$> splitBlock l r
     splitM <- getBlockByHeight r height
     liftIO $ assertEqual "Fork node is correct" (Just $ chain3 !! 3) splitM
 

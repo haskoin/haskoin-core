@@ -49,20 +49,19 @@ import           Data.Bits                             (shiftL)
 import qualified Data.ByteString                       as BS (reverse, take)
 import           Data.Function                         (on)
 import           Data.LargeWord                        (Word256)
-import           Data.List                             (find, maximumBy,
-                                                        minimumBy, sort)
+import           Data.List                             (find, maximumBy, sort)
 import           Data.Maybe                            (fromMaybe, isNothing,
                                                         listToMaybe, mapMaybe)
 import           Data.String.Conversions               (cs)
 import           Data.Word                             (Word32)
-import           Database.Esqueleto                    (Esqueleto, Value, from,
-                                                        groupBy, in_,
+import           Database.Esqueleto                    (Esqueleto, Value, asc,
+                                                        from, groupBy, in_,
                                                         insertMany_, limit,
-                                                        max_, select, unValue,
-                                                        val, valList, where_,
-                                                        (&&.), (<=.), (==.),
-                                                        (>.), (>=.), (^.),
-                                                        (||.))
+                                                        max_, orderBy, select,
+                                                        unValue, val, valList,
+                                                        where_, (&&.), (<=.),
+                                                        (==.), (>.), (>=.),
+                                                        (^.), (||.))
 import           Database.Persist                      (Entity (..), insert_)
 import           Database.Persist.Sql                  (SqlPersistT)
 import           Network.Haskoin.Block
@@ -82,6 +81,8 @@ data BlockChainAction
     | SideChain  { actionNodes :: ![NodeBlock] }
     | KnownChain { actionNodes :: ![NodeBlock] }
     deriving (Show, Eq)
+
+type MinWork = Word32
 
 shortHash :: BlockHash -> ShortHash
 shortHash = decode' . BS.take 8 . getHash256 . getBlockHash
@@ -110,8 +111,6 @@ genesisBlock = NodeBlock
     , nodeBlockWork          = Work $ headerWork genesisHeader
     , nodeBlockHeight        = 0
     , nodeBlockChain         = 0
-    , nodeBlockPivots        = Pivots []
-    , nodeBlockMinWork       = blockBits genesisHeader
     }
 
 -- | Initialize the block header chain by inserting the genesis block if it
@@ -125,7 +124,7 @@ getVerifyParams
     :: MonadIO m
     => BlockHeader
     -> EitherT String (SqlPersistT m)
-               (NodeBlock, [Timestamp], Timestamp, Maybe Word32)
+               (NodeBlock, [Timestamp], Timestamp, Word32, Maybe Word32)
 getVerifyParams bh = do
     parentM <- lift $ getBlockByHash $ prevBlock bh
     parent <- maybe (left "Could not get parent node") return parentM
@@ -137,7 +136,21 @@ getVerifyParams bh = do
         diffBlockM
     medianBlocks <- lift $ map nodeTimestamp <$>
         getBlocksFromHeight parent 11 (min 0 $ nodeBlockHeight parent - 10)
-    return (parent, medianBlocks, diffTime, checkPointM)
+    minWork <- lift $ findMinWork parent
+    return (parent, medianBlocks, diffTime, minWork, checkPointM)
+
+findMinWork :: MonadIO m => NodeBlock -> SqlPersistT m MinWork
+findMinWork bn
+    | isMinWork bn = return $ blockBits $ nodeHeader bn
+    | otherwise = getParentBlock bn >>=
+        maybe (return $ blockBits $ nodeHeader bn) findMinWork
+
+isMinWork :: NodeBlock -> Bool
+isMinWork bn
+    | not allowMinDifficultyBlocks = True
+    | nodeBlockHeight bn `mod` diffInterval == 0 = True
+    | blockBits (nodeHeader bn) /= encodeCompact powLimit = True
+    | otherwise = False
 
 -- | Connect a block header to this block header chain. Corresponds to bitcoind
 -- function ProcessBlockHeader and AcceptBlockHeader in main.cpp.
@@ -147,10 +160,10 @@ connectHeader :: MonadIO m
               -> Timestamp
               -> SqlPersistT m (Either String BlockChainAction)
 connectHeader best bh ts = runEitherT $ do
-    (parent, medians, diffTime, cpM) <- getVerifyParams bh
+    (parent, medians, diffTime, minWork, cpM) <- getVerifyParams bh
     chain <- lift $ getChain parent
     let bn = nodeBlock parent chain bh
-    liftEither $ verifyBlockHeader parent medians diffTime cpM ts bh
+    liftEither $ verifyBlockHeader parent medians diffTime cpM minWork ts bh
     lift $ putBlock bn
     lift $ evalNewChain best [bn]
 
@@ -164,18 +177,19 @@ connectHeaders :: MonadIO m
 connectHeaders _ [] _ = runEitherT $ left "Nothing to connect"
 connectHeaders best bhs@(bh:_) ts = runEitherT $ do
     unless (validChain bhs) $ left "Block headers do not form a valid chain"
-    (parent, medians, diffTime, cpM) <- getVerifyParams bh
+    (parent, medians, diffTime, minWork, cpM) <- getVerifyParams bh
     chain <- lift $ getChain parent
-    nodes <- (`evalStateT` (parent, diffTime, medians)) $
+    nodes <- (`evalStateT` (parent, diffTime, medians, minWork)) $
         forM bhs $ \b -> do
-            (p, d, ms) <- get
-            lift $ liftEither $ verifyBlockHeader p ms d cpM ts b
+            (p, d, ms, mw) <- get
+            lift $ liftEither $ verifyBlockHeader p ms d cpM mw ts b
             let bn = nodeBlock p chain b
                 d' = if nodeBlockHeight bn `mod` diffInterval == 0
                     then blockTimestamp b
                     else d
-            put (bn, d',
-                 blockTimestamp b : if length ms == 11 then tail ms else ms)
+                ms' = blockTimestamp b : if length ms == 11 then tail ms else ms
+                mw' = if isMinWork bn then blockBits b else mw
+            put (bn, d', ms', mw')
             return bn
     lift $ putBlocks nodes
     lift $ evalNewChain best nodes
@@ -221,28 +235,29 @@ verifyBlockHeader :: NodeBlock        -- ^ Parent block header
                   -> [Timestamp]      -- ^ Timestamps of previous 11 blocks
                   -> Timestamp        -- ^ Previous difficulty change
                   -> Maybe Word32     -- ^ Height of most recent checkpoint
+                  -> MinWork          -- ^ Last MinWork (e.g. Testnet3)
                   -> Timestamp        -- ^ Current time
                   -> BlockHeader      -- ^ Block header to validate
                   -> Either String ()
 -- TODO: Add DOS return values
-verifyBlockHeader parent medianTimes prevDiffTime checkPointM timestamp bh = do
+verifyBlockHeader par mts dt cp mw ts bh = do
     unless (isValidPOW bh) $
         Left "Invalid proof of work"
 
-    unless (blockTimestamp bh <= timestamp + 2 * 60 * 60) $
+    unless (blockTimestamp bh <= ts + 2 * 60 * 60) $
         Left "Invalid header timestamp"
 
-    let nextWork = nextWorkRequired parent prevDiffTime bh
+    let nextWork = nextWorkRequired par dt mw bh
     unless (blockBits bh == nextWork) $
         Left "Incorrect work transition (bits)"
 
-    let sortedMedians = sort medianTimes
+    let sortedMedians = sort mts
         medianTime    = sortedMedians !! (length sortedMedians `div` 2)
     when (blockTimestamp bh <= medianTime) $
         Left "Block timestamp is too early"
 
-    let newHeight = nodeBlockHeight parent + 1
-    unless (maybe True (fromIntegral newHeight >) checkPointM) $
+    let newHeight = nodeBlockHeight par + 1
+    unless (maybe True (fromIntegral newHeight >) cp) $
         Left "Rewriting pre-checkpoint chain"
 
     unless (verifyCheckpoint (fromIntegral newHeight) (headerHash bh)) $
@@ -252,7 +267,7 @@ verifyBlockHeader parent medianTimes prevDiffTime checkPointM timestamp bh = do
     -- TODO: Find out the value here for testnet
     when (networkName == "prodnet"
           && blockVersion bh == 1
-          && nodeBlockHeight parent + 1 >= 227836) $
+          && nodeBlockHeight par + 1 >= 227836) $
         Left "Rejected version 1 block"
 
 -- | Create a block node data structure from a block header.
@@ -266,22 +281,10 @@ nodeBlock parent chain bh = NodeBlock
     , nodeBlockWork              = newWork
     , nodeBlockHeight            = height
     , nodeBlockChain             = chain
-    , nodeBlockPivots            = pivots
-    , nodeBlockMinWork           = minWork
     }
   where
     newWork = Work $ getWork (nodeBlockWork parent) + headerWork bh
     height = nodeBlockHeight parent + 1
-    isDiffChange = height `mod` diffInterval == 0
-    isNotLimit   = blockBits bh /= encodeCompact powLimit
-    minWork | not allowMinDifficultyBlocks = 0
-            | isDiffChange || isNotLimit   = blockBits bh
-            | otherwise                    = nodeBlockMinWork parent
-    parChain = nodeBlockChain parent
-    parHeight = nodeBlockHeight parent
-    parPivots = getPivots $ nodeBlockPivots parent
-    pivots | chain == parChain = nodeBlockPivots parent
-           | otherwise = Pivots $ (parHeight, parChain) : parPivots
 
 -- | Return blockchain action to connect given block with best block. Count will
 -- limit the amount of blocks building up from split point towards the best
@@ -304,9 +307,9 @@ splitChains :: MonadIO m
             -> (NodeBlock, Word32)
             -> SqlPersistT m (NodeBlock, [NodeBlock], [NodeBlock])
 splitChains (l, ln) (r, rn) = do
-    let (height, _) = splitBlock l r
-    (split:ls) <- getBlocksFromHeight l ln height
-    rs         <- getBlocksFromHeight r rn (height + 1)
+    sn <- splitBlock l r
+    (split:ls) <- getBlocksFromHeight l ln (nodeBlockHeight sn)
+    rs         <- getBlocksFromHeight r rn (nodeBlockHeight sn + 1)
     return (split, ls, rs)
 
 -- | Finds the parent of a block.
@@ -340,23 +343,23 @@ lastSeenCheckpoint =
 -- coresponds to bitcoind function GetNextWorkRequired in main.cpp.
 nextWorkRequired :: NodeBlock
                  -> Timestamp
+                 -> MinWork
                  -> BlockHeader
                  -> Word32
-nextWorkRequired parent ts bh
+nextWorkRequired par ts mw bh
     -- Genesis block
-    | nodeBlockHeight parent == 0 = encodeCompact powLimit
+    | nodeBlockHeight par == 0 = encodeCompact powLimit
     -- Only change the difficulty once per interval
-    | (nodeBlockHeight parent + 1) `mod` diffInterval /= 0 =
+    | (nodeBlockHeight par + 1) `mod` diffInterval /= 0 =
         if allowMinDifficultyBlocks
             then minPOW
-            else blockBits $ nodeHeader parent
-    | otherwise = workFromInterval ts (nodeHeader parent)
+            else blockBits $ nodeHeader par
+    | otherwise = workFromInterval ts (nodeHeader par)
   where
     delta = targetSpacing * 2
     minPOW
-        | blockTimestamp bh > nodeTimestamp parent + delta =
-            encodeCompact powLimit
-        | otherwise = nodeBlockMinWork parent
+        | blockTimestamp bh > nodeTimestamp par + delta = encodeCompact powLimit
+        | otherwise = mw
 
 -- | Computes the work required for the next block given a timestamp and the
 -- current block. The timestamp should come from the block that matched the
@@ -404,17 +407,18 @@ headerWork bh =
 chainPathQuery :: forall (expr :: * -> *) (query :: * -> *) backend.
                   Esqueleto query expr backend
                => expr (Entity NodeBlock)
-               -> [(BlockHeight, Word32)]
+               -> [NodeBlock]
                -> expr (Value Bool)
 chainPathQuery _ [] = error "Monsters, monsters everywhere"
 
-chainPathQuery t [(h,c)] =
-    t ^. NodeBlockHeight <=. val h &&. t ^. NodeBlockChain ==. val c
+chainPathQuery t [NodeBlock{..}] =
+    t ^. NodeBlockHeight <=. val nodeBlockHeight &&.
+    t ^. NodeBlockChain ==. val nodeBlockChain
 
-chainPathQuery t ((h1,c):bs@((h2,_):_)) = chainPathQuery t bs ||.
-    (   t ^. NodeBlockHeight <=. val h1
-    &&. t ^. NodeBlockHeight >.  val h2
-    &&. t ^. NodeBlockChain  ==. val c
+chainPathQuery t (n1:bs@(n2:_)) = chainPathQuery t bs ||.
+    (   t ^. NodeBlockHeight <=. val (nodeBlockHeight n1)
+    &&. t ^. NodeBlockHeight >.  val (nodeBlockHeight n2)
+    &&. t ^. NodeBlockChain  ==. val (nodeBlockChain  n1)
     )
 
 getHeads :: MonadIO m => SqlPersistT m [NodeBlock]
@@ -439,20 +443,44 @@ getChain parent = do
             let maxChain = fromMaybe (error "Ran out of chains") maxChainM
             return $ maxChain + 1
 
+getPivots :: MonadIO m => NodeBlock -> SqlPersistT m [NodeBlock]
+getPivots = go []
+  where
+    go acc b
+        | nodeBlockChain b == 0 = return $ genesisBlock : b : acc
+        | otherwise = do
+            l <- fromMaybe (error "Houston, we have a problem") <$>
+                getChainLowest b
+            c <- fromMaybe (error "Ground Control to Major Tom") <$>
+                getParentBlock l
+            go (b:acc) c
+
+getChainLowest :: MonadIO m => NodeBlock -> SqlPersistT m (Maybe NodeBlock)
+getChainLowest nb = fmap (listToMaybe . map entityVal) $
+    select $ from $ \t -> do
+        where_ $ t ^. NodeBlockChain ==. val (nodeBlockChain nb)
+        orderBy [ asc $ t ^. NodeBlockHeight ]
+        limit 1
+        return t
+
 -- | Get node height and chain common to both given.
-splitBlock :: NodeBlock -> NodeBlock -> (BlockHeight, Word32)
-splitBlock l r =
-    if nodeBlockChain l == nodeBlockChain r
-      then
-        let nb = minimumBy (compare `on` nodeBlockHeight) [l,r]
-        in (nodeBlockHeight nb, nodeBlockChain nb)
-      else
-        let f (x,y) = snd x == snd y
-            g NodeBlock{..} = (0, 0) : reverse
-                ((nodeBlockHeight, nodeBlockChain) : getPivots nodeBlockPivots)
-            ns = zip (g l) (g r)
-            xs = reverse $ takeWhile f ns
-        in minimumBy (compare `on` fst) [fst (head xs), snd (head xs)]
+splitBlock :: MonadIO m
+           => NodeBlock
+           -> NodeBlock
+           -> SqlPersistT m NodeBlock
+splitBlock l r = if nodeBlockChain l == nodeBlockChain r
+    then if nodeBlockHeight l < nodeBlockHeight r
+        then return l
+        else return r
+    else do
+        pivotsL <- getPivots l
+        pivotsR <- getPivots r
+        let ns = zip pivotsL pivotsR
+            f (x,y) = nodeBlockChain x == nodeBlockChain y
+            (one, two) = last $ takeWhile f ns
+        if nodeBlockHeight one < nodeBlockHeight two
+            then return one
+            else return two
 
 -- | Put single block in database.
 putBlock :: MonadIO m => NodeBlock -> SqlPersistT m ()
@@ -491,8 +519,8 @@ getBlockByHeight :: MonadIO m
                   => NodeBlock     -- ^ Best block
                   -> BlockHeight
                   -> SqlPersistT m (Maybe NodeBlock)
-getBlockByHeight NodeBlock{..} height = do
-    let forks = (nodeBlockHeight, nodeBlockChain) : getPivots nodeBlockPivots
+getBlockByHeight block height = do
+    forks <- reverse <$> getPivots block
     fmap (listToMaybe . map entityVal) $ select $ from $ \t -> do
         where_ $ chainPathQuery t forks &&.
             t ^. NodeBlockHeight ==. val height
@@ -504,8 +532,7 @@ getBlocksByHeight :: MonadIO m
                   -> [BlockHeight]
                   -> SqlPersistT m [NodeBlock]
 getBlocksByHeight best heights = do
-    let forks = (nodeBlockHeight best, nodeBlockChain best) :
-            getPivots (nodeBlockPivots best)
+    forks <- reverse <$> getPivots best
     nodes <- fmap (map entityVal) $ select $ from $ \t -> do
         where_ $ chainPathQuery t forks &&.
             t ^. NodeBlockHeight `in_` valList heights
@@ -519,8 +546,8 @@ getBlocksFromHeight :: MonadIO m
                     -> Word32        -- ^ Count (0 for all)
                     -> BlockHeight   -- ^ Height from (including)
                     -> SqlPersistT m [NodeBlock]
-getBlocksFromHeight NodeBlock{..} cnt height = do
-    let forks = (nodeBlockHeight, nodeBlockChain) : getPivots nodeBlockPivots
+getBlocksFromHeight block cnt height = do
+    forks <- reverse <$> getPivots block
     fmap (map entityVal) $ select $ from $ \t -> do
         where_ $ chainPathQuery t forks &&.
             t ^. NodeBlockHeight >=. val height

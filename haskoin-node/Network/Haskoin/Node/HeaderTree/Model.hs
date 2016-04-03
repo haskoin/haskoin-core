@@ -20,8 +20,6 @@ NodeBlock
     work         Work          maxlen=32
     height       BlockHeight
     chain        Word32
-    pivots       Pivots
-    minWork      Word32
     UniqueHash   hash
     UniqueChain  chain height
     deriving     Show

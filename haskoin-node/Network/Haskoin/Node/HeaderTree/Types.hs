@@ -1,6 +1,5 @@
 module Network.Haskoin.Node.HeaderTree.Types where
 
-import           Data.LargeWord        (Word256)
 import           Data.Word             (Word32, Word64)
 import           Database.Persist      (PersistField (..), PersistValue (..),
                                         SqlType (..))
@@ -11,12 +10,10 @@ import           Network.Haskoin.Util
 type BlockHeight = Word32
 type ShortHash = Word64
 type Timestamp = Word32
+type Work = Double
 
 newtype NodeHeader = NodeHeader { getNodeHeader :: BlockHeader }
     deriving (Show, Eq)
-
-newtype Work = Work { getWork :: Word256 }
-    deriving (Show, Eq, Ord)
 
 {- SQL database backend for HeaderTree -}
 
@@ -27,13 +24,4 @@ instance PersistField NodeHeader where
     fromPersistValue _ = Left "Invalid persistent block header"
 
 instance PersistFieldSql NodeHeader where
-    sqlType _ = SqlBlob
-
-instance PersistField Work where
-    toPersistValue = PersistByteString . encode' . getWork
-    fromPersistValue (PersistByteString bs) = maybeToEither
-        "Could not decode work" $ Work <$> decodeToMaybe bs
-    fromPersistValue _ = Left "Invalid persistent work"
-
-instance PersistFieldSql Work where
     sqlType _ = SqlBlob

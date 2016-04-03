@@ -48,7 +48,6 @@ import           Control.Monad.Trans.Either            (EitherT, left,
 import           Data.Bits                             (shiftL)
 import qualified Data.ByteString                       as BS (reverse, take)
 import           Data.Function                         (on)
-import           Data.LargeWord                        (Word256)
 import           Data.List                             (find, maximumBy, sort)
 import           Data.Maybe                            (fromMaybe, isNothing,
                                                         listToMaybe, mapMaybe)
@@ -108,7 +107,7 @@ genesisBlock :: NodeBlock
 genesisBlock = NodeBlock
     { nodeBlockHash          = shortHash $ headerHash genesisHeader
     , nodeBlockHeader        = NodeHeader genesisHeader
-    , nodeBlockWork          = Work $ headerWork genesisHeader
+    , nodeBlockWork          = 1.0
     , nodeBlockHeight        = 0
     , nodeBlockChain         = 0
     }
@@ -283,7 +282,8 @@ nodeBlock parent chain bh = NodeBlock
     , nodeBlockChain             = chain
     }
   where
-    newWork = Work $ getWork (nodeBlockWork parent) + headerWork bh
+    newWork = nodeBlockWork parent + fromIntegral
+        (headerWork bh `div` headerWork genesisHeader)
     height = nodeBlockHeight parent + 1
 
 -- | Return blockchain action to connect given block with best block. Count will
@@ -395,7 +395,7 @@ headerPOW =  bsToInteger . BS.reverse . encode' . headerHash
 -- | Returns the work represented by this block. Work is defined as the number
 -- of tries needed to solve a block in the average case with respect to the
 -- target.
-headerWork :: BlockHeader -> Word256
+headerWork :: BlockHeader -> Integer
 headerWork bh =
     fromIntegral $ largestHash `div` (target + 1)
   where
@@ -494,7 +494,8 @@ putBlocks = mapM_ insertMany_ . f
     f xs = let (xs',xxs) = splitAt 50 xs in xs' : f xxs
 
 getBestBlock :: MonadIO m => SqlPersistT m NodeBlock
-getBestBlock = maximumBy (compare `on` nodeBlockWork) <$> getHeads
+getBestBlock =
+    maximumBy (compare `on` nodeBlockWork) <$> getHeads
 
 getBlockByHash :: MonadIO m => BlockHash -> SqlPersistT m (Maybe NodeBlock)
 getBlockByHash h =

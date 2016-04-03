@@ -17,7 +17,7 @@ share [mkPersist sqlSettings, mkMigrate "migrateHeaderTree"] [persistLowerCase|
 NodeBlock
     hash         ShortHash
     header       NodeHeader    maxlen=80
-    work         Work          maxlen=32
+    work         Work
     height       BlockHeight
     chain        Word32
     UniqueHash   hash

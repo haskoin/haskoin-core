@@ -483,13 +483,14 @@ cmdMonitor ls = do
 
 cmdSync :: String -> String -> [String] -> Handler ()
 cmdSync acc block ls = do
-    let blockE = case length block of
-            64 -> Right $ fromMaybe (error "Could not decode block id") $
+    let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
+        f = case length block of
+            64 -> GetSyncR (cs acc) $
+                fromMaybe (error "Could not decode block id") $
                 hexToBlockHash $ cs block
-            _  -> Left  $ fromMaybe (error "Could not decode block height") $
+            _  -> GetSyncHeightR (cs acc) $
+                fromMaybe (error "Could not decode block height") $
                 readMaybe block
-        page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
-        f = GetSyncR (cs acc) blockE
     r <- R.asks configReversePaging
     listAction page f $ \blocks -> do
         let blocks' = if r then reverse blocks else blocks

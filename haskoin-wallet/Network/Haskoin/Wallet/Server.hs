@@ -449,6 +449,7 @@ dispatchRequest req = fmap ResponseValid $ case req of
     GetBalanceR n mc o               -> getBalanceR n mc o
     PostNodeR na                     -> postNodeR na
     DeleteTxIdR t                    -> deleteTxIdR t
-    GetSyncR a n b                   -> getSyncR a n b
+    GetSyncR a n b                   -> getSyncR a (Right n) b
+    GetSyncHeightR a n b             -> getSyncR a (Left n) b
     GetPendingR a p                  -> getPendingR a p
     GetDeadR a p                     -> getDeadR a p

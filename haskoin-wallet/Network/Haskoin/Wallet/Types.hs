@@ -341,7 +341,8 @@ data WalletRequest
     | GetBalanceR !AccountName !Word32 !Bool
     | PostNodeR !NodeAction
     | DeleteTxIdR !TxHash
-    | GetSyncR !AccountName !(Either BlockHeight BlockHash) !ListRequest
+    | GetSyncR !AccountName !BlockHash !ListRequest
+    | GetSyncHeightR !AccountName !BlockHeight !ListRequest
     | GetPendingR !AccountName !ListRequest
     | GetDeadR !AccountName !ListRequest
 

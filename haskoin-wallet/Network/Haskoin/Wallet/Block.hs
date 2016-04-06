@@ -18,7 +18,8 @@ mainChain :: (MonadIO m, MonadThrow m)
 mainChain blockE ListRequest{..} = do
     bestHash <- fst <$> walletBestBlock
     bestM <- getBlockByHash bestHash
-    best <- maybe (error "Could not find wallet best block") return bestM
+    best <- maybe (throwM $ WalletException "Could not find wallet best block")
+        return bestM
     remoteNode <- case blockE of
         Right h -> do
             remoteNodeM <- getBlockByHash h
@@ -29,14 +30,17 @@ mainChain blockE ListRequest{..} = do
             maybe (throwM $ WalletException "Could not find bock height")
                 return heightNodeM
     frst <- (+1) . nodeBlockHeight <$> splitBlock best remoteNode
-    let cnt = nodeBlockHeight best - frst
-        limit = min listLimit (cnt - listOffset)
-        offset =
-            if listReverse
-            then cnt - listOffset - limit
-            else listOffset
-    nodes <- getBlocksFromHeight best limit (frst + offset)
-    return $ ListResult nodes cnt
+    if nodeBlockHeight best < frst
+        then return $ ListResult [] 0
+        else do
+            let cnt = nodeBlockHeight best - frst
+                limit = min listLimit (cnt - listOffset)
+                offset =
+                    if listReverse
+                    then cnt - listOffset - limit
+                    else listOffset
+            nodes <- getBlocksFromHeight best limit (frst + offset)
+            return $ ListResult nodes cnt
 
 blockTxs :: [NodeBlock] -> [WalletTx] -> [(NodeBlock, [WalletTx])]
 blockTxs blocks transactions = reverse $ go [] blocks transactions

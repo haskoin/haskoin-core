@@ -371,7 +371,7 @@ cmdSendMany name xs = case rcpsM of
     _ -> error "Could not parse recipient information"
   where
     g str   = map cs $ splitOn ":" (pack str)
-    f [a,v] = liftM2 (,) (base58ToAddr a) (return $ read $ cs v)
+    f [a,v] = liftM2 (,) (base58ToAddr a) (readMaybe $ cs v)
     f _     = Nothing
     rcpsM   = mapM (f . g) xs
 

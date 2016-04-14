@@ -599,15 +599,10 @@ encodeTxJSON :: Tx -> Value
 encodeTxJSON tx@(Tx v is os i) = object
     [ "txid"     .= (cs $ txHashToHex (txHash tx) :: Text)
     , "version"  .= v
-    , "inputs"   .= zipWith input is [0..]
-    , "outputs"  .= zipWith output os [0..]
+    , "inputs"   .= map encodeTxInJSON is
+    , "outputs"  .= map encodeTxOutJSON os
     , "locktime" .= i
     ]
-  where
-    input x j = object
-      [pack ("input " ++ show (j :: Int)) .= encodeTxInJSON x]
-    output x j = object
-      [pack ("output " ++ show (j :: Int)) .= encodeTxOutJSON x]
 
 encodeTxInJSON :: TxIn -> Value
 encodeTxInJSON (TxIn o s i) = object $

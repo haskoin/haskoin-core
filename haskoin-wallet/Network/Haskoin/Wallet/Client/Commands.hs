@@ -64,7 +64,6 @@ import           Network.Haskoin.Node.STM
 import           Network.Haskoin.Script
 import           Network.Haskoin.Transaction
 import           Network.Haskoin.Util
-import           Network.Haskoin.Wallet.Database
 import           Network.Haskoin.Wallet.Server
 import           Network.Haskoin.Wallet.Settings
 import           Network.Haskoin.Wallet.Types
@@ -511,7 +510,6 @@ cmdVersion :: Handler ()
 cmdVersion = liftIO $ do
     putStrLn $ unwords [ "network   :", cs networkName ]
     putStrLn $ unwords [ "user-agent:", cs haskoinUserAgent ]
-    putStrLn $ unwords [ "database  :", cs databaseEngine ]
 
 cmdStatus :: Handler ()
 cmdStatus = do

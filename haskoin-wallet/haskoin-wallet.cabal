@@ -18,17 +18,11 @@ maintainer:            plaprade+hackage@gmail.com
 category:              Bitcoin, Finance, Network
 build-type:            Simple
 cabal-version:         >= 1.9.2
-extra-source-files:    database/sqlite/Network/Haskoin/Wallet/Database.hs,
-                       database/mysql/Network/Haskoin/Wallet/Database.hs,
-                       config/help, config/config.yml, config/models
+extra-source-files:    config/help, config/config.yml, config/models
 
 source-repository head
     type:     git
     location: git://github.com/haskoin/haskoin.git
-
-Flag mysql
-    Description: Use MySQL instead of Sqlite
-    Default:     False
 
 Flag library-only
     Description:   Do not build the executables
@@ -87,6 +81,7 @@ library
                  , mtl                           >= 2.1       && < 2.3
                  , persistent                    >= 2.2       && < 2.3
                  , persistent-template           >= 2.1       && < 2.2
+                 , persistent-sqlite             >= 2.2       && < 2.3
                  , resourcet                     >= 1.1       && < 1.2
                  , semigroups
                  , split                         >= 0.2       && < 0.3
@@ -103,13 +98,6 @@ library
                  , zeromq4-haskell               >= 0.6       && < 0.7
 
     ghc-options: -Wall
-
-  if flag(mysql)
-    build-depends: persistent-mysql >= 2.2 && < 2.3
-    hs-source-dirs: . database/mysql
-  else
-    build-depends: persistent-sqlite >= 2.2 && < 2.3
-    hs-source-dirs: . database/sqlite
 
 executable hw
     if flag(library-only)

@@ -36,9 +36,6 @@ data SPVMode = SPVOnline | SPVOffline
 newtype LogLevelJSON = LogLevelJSON LogLevel
     deriving (Eq, Show, Read)
 
-newtype DBConfigJSON = DBConfigJSON { dbConfigJSON :: DatabaseConfType }
-    deriving Show
-
 data OutputFormat
     = OutputNormal
     | OutputJSON
@@ -146,9 +143,6 @@ instance FromJSON LogLevelJSON where
     parseJSON (String x)       = return $ LogLevelJSON (LevelOther x)
     parseJSON _ = mzero
 
-instance FromJSON DBConfigJSON where
-    parseJSON = withObject "database" $ \o -> DBConfigJSON <$> o .: databaseEngine
-
 instance Default Config where
     def = either throw id $ decodeEither' "{}"
 
@@ -181,7 +175,7 @@ instance FromJSON Config where
         configPidFile               <- o .: "pid-file"
         LogLevelJSON configLogLevel <- o .: "log-level"
         configVerbose               <- o .: "verbose"
-        configDatabase              <- fmap dbConfigJSON <$> o .: "database"
+        configDatabase              <- o .: "database"
         configServerKey             <- getKey o "server-key"
         configServerKeyPub          <- getKey o "server-key-public"
         configClientKey             <- getKey o "client-key"

@@ -18,27 +18,11 @@ bloom-false-positive: 0.00001
 # Database connection information.
 database:
     testnet:
-        sqlite:
-            database: hw-wallet.sqlite3
-            poolsize: 1
-        mysql:
-            database: haskoin_wallet_testnet
-            poolsize: 1
-            user:     root
-            password: ""
-            host:     localhost
-            port:     5432
+        database: hw-wallet.sqlite3
+        poolsize: 1
     prodnet:
-        sqlite:
-            database: hw-wallet.sqlite3
-            poolsize: 1
-        mysql:
-            database: haskoin_wallet
-            poolsize: 1
-            user:     root
-            password: ""
-            host:     localhost
-            port:     5432
+        database: hw-wallet.sqlite3
+        poolsize: 1
 
 # List of trusted bitcoin full-nodes to connect to.
 bitcoin-full-nodes:

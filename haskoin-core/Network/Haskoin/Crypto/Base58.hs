@@ -8,32 +8,26 @@ module Network.Haskoin.Crypto.Base58
 , decodeBase58Check
 ) where
 
-import Control.DeepSeq (NFData, rnf)
-import Control.Monad (guard, mzero)
-
-import Data.Maybe (fromMaybe, isJust, listToMaybe)
-import Numeric (showIntAtBase, readInt)
-import Data.Aeson
-    ( Value (String)
-    , FromJSON
-    , ToJSON
-    , parseJSON
-    , toJSON
-    , withText
-    )
-
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as C
-import Data.String (IsString, fromString)
-import Data.String.Conversions (cs)
-
-import Text.Read (readPrec, parens, lexP, pfail)
-import qualified Text.Read as Read (Lexeme(Ident, String))
-
-import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Constants
-import Network.Haskoin.Util
+import           Control.DeepSeq             (NFData, rnf)
+import           Control.Monad               (guard, mzero)
+import           Data.Aeson                  (FromJSON, ToJSON, Value (String),
+                                              parseJSON, toJSON, withText)
+import           Data.Binary                 (Binary, get, put)
+import           Data.Binary.Get             (getByteString, getWord8)
+import           Data.Binary.Put             (putByteString, putWord8)
+import           Data.ByteString             (ByteString)
+import qualified Data.ByteString             as BS
+import qualified Data.ByteString.Char8       as C
+import           Data.Maybe                  (fromJust, fromMaybe, isJust,
+                                              listToMaybe)
+import           Data.String                 (IsString, fromString)
+import           Data.String.Conversions     (cs)
+import           Network.Haskoin.Constants
+import           Network.Haskoin.Crypto.Hash
+import           Network.Haskoin.Util
+import           Numeric                     (readInt, showIntAtBase)
+import           Text.Read                   (lexP, parens, pfail, readPrec)
+import qualified Text.Read                   as Read (Lexeme (Ident, String))
 
 b58Data :: ByteString
 b58Data = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -102,6 +96,23 @@ data Address
     | ScriptAddress { getAddrHash :: !Hash160 }
        deriving (Eq, Ord)
 
+instance Binary Address where
+    get = do
+        pfx <- getWord8
+        bs <- getByteString 20
+        let addr = fromJust (bsToHash160 bs)
+        f pfx addr
+      where
+        f x a | x == addrPrefix   = return (PubKeyAddress a)
+              | x == scriptPrefix = return (ScriptAddress a)
+              | otherwise = fail "Does not recognize address prefix"
+    put (PubKeyAddress h) = do
+        putWord8 addrPrefix
+        putByteString (getHash160 h)
+    put (ScriptAddress h) = do
+        putWord8 scriptPrefix
+        putByteString (getHash160 h)
+
 -- TODO: Test
 instance Show Address where
     showsPrec d a = showParen (d > 10) $
@@ -134,18 +145,11 @@ instance ToJSON Address where
 
 -- | Transforms an Address into a base58 encoded String
 addrToBase58 :: Address -> ByteString
-addrToBase58 addr = encodeBase58Check $ case addr of
-    PubKeyAddress h -> BS.cons addrPrefix   $ getHash160 h
-    ScriptAddress h -> BS.cons scriptPrefix $ getHash160 h
+addrToBase58 = encodeBase58Check . encode'
 
 -- | Decodes an Address from a base58 encoded String. This function can fail
 -- if the String is not properly encoded as base58 or the checksum fails.
 base58ToAddr :: ByteString -> Maybe Address
 base58ToAddr str = do
     val <- decodeBase58Check str
-    guard $ BS.length val == 21
-    let f | BS.head val == addrPrefix   = Just PubKeyAddress
-          | BS.head val == scriptPrefix = Just ScriptAddress
-          | otherwise = Nothing
-    f <*> bsToHash160 (BS.tail val)
-
+    decodeToMaybe val

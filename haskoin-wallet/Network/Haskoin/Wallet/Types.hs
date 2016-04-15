@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Network.Haskoin.Wallet.Types
 ( AccountName
@@ -52,7 +53,6 @@ import           Control.DeepSeq                 (NFData (..))
 import           Control.Exception               (Exception)
 import           Control.Monad                   (forM, forM_, mzero, when)
 import           Control.Monad.Trans             (MonadIO)
-
 import           Data.Aeson                      (FromJSON, ToJSON, Value (..),
                                                   decodeStrict', encode, object,
                                                   parseJSON, toJSON, withObject,
@@ -62,6 +62,7 @@ import           Data.Aeson.Types                (Options (..),
                                                   SumEncoding (..),
                                                   defaultOptions,
                                                   defaultTaggedObject)
+import           Data.Binary                     (Binary)
 import           Data.Char                       (toLower)
 import           Data.Int                        (Int64)
 import           Data.List.Split                 (chunksOf)
@@ -71,7 +72,6 @@ import           Data.Text                       (Text)
 import           Data.Time                       (UTCTime)
 import           Data.Typeable                   (Typeable)
 import           Data.Word                       (Word32, Word64)
-
 import           Database.Esqueleto              (Entity (..), SqlBackend,
                                                   SqlExpr, SqlPersistT,
                                                   SqlQuery, limit, offset,
@@ -87,7 +87,7 @@ import           Database.Persist.Class          (PersistField,
 import           Database.Persist.Sql            (PersistFieldSql, SqlType (..),
                                                   sqlType)
 import           Database.Persist.Types          (PersistValue (..))
-
+import           GHC.Generics                    (Generic)
 import           Network.Haskoin.Block
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Node
@@ -131,7 +131,9 @@ data AddressInfo = AddressInfo
     , addressInfoValue   :: !(Maybe Word64)
     , addressInfoIsLocal :: !Bool
     }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show, Read, Generic)
+
+instance Binary AddressInfo
 
 $(deriveJSON (dropFieldLabel 11) ''AddressInfo)
 
@@ -455,7 +457,7 @@ data RescanRes = RescanRes { rescanTimestamp :: !Word32 }
 $(deriveJSON (dropFieldLabel 6) ''RescanRes)
 
 data WalletResponse a
-    = ResponseError { responseError  :: !Text }
+    = ResponseError { responseError :: !Text }
     | ResponseValid { responseResult :: !(Maybe a)  }
     deriving (Eq, Show)
 
@@ -708,15 +710,13 @@ instance PersistFieldSql ScriptOutput where
     sqlType _ = SqlBlob
 
 instance PersistField [AddressInfo] where
-    toPersistValue = PersistText . cs . encode
-    fromPersistValue (PersistText txt) =
-        maybeToEither "Invalid Persistent AddressInfo" $ decodeStrict' $ cs txt
+    toPersistValue = PersistByteString . encode'
     fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent AddressInfo" $ decodeStrict' bs
+        maybeToEither "Invalid Persistent AddressInfo" $ decodeToMaybe bs
     fromPersistValue _ = Left "Invalid Persistent AddressInfo"
 
 instance PersistFieldSql [AddressInfo] where
-    sqlType _ = SqlString
+    sqlType _ = SqlOther "MEDIUMBLOB"
 
 {- Helpers -}
 

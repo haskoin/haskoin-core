@@ -128,9 +128,7 @@ getSigningKeys name = do
             Just d -> Just $ derivePath d k
             Nothing -> Just k
         Nothing -> case mnemonicToSeed "" str of
-            Right s -> let k = makeXPrvKey s in case derivM of
-                Just d -> Just $ derivePath d k
-                Nothing -> Just $ derivePath defaultDeriv k
+            Right s -> Just (makeXPrvKey s)
             Left _ -> error "Could not parse key"
 
 checkExists :: String -> Handler Bool

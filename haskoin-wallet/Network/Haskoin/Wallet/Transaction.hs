@@ -1136,9 +1136,6 @@ signOfflineTx :: Account        -- ^ Account used for signing
 signOfflineTx acc masterM tx coinSignData
     | not validMaster = throw $ WalletException
         "Master key not valid"
-    -- Fail for read-only accounts
-    | isReadAccount acc = throw $ WalletException
-        "signOfflineTx is not supported on read-only accounts"
     -- Sign the transaction deterministically
     | otherwise = either (throw . WalletException) id $
         signTx tx sigData $ map (toPrvKeyG . xPrvKey) prvKeys

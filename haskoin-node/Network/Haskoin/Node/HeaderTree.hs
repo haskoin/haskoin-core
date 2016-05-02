@@ -39,8 +39,8 @@ module Network.Haskoin.Node.HeaderTree
 , blockLocator
 ) where
 
-import           Control.Monad                         (forM, unless, when,
-                                                        (<=<))
+import           Control.Monad                         (foldM, forM, unless,
+                                                        when, (<=<))
 import           Control.Monad.State                   (evalStateT, get, put)
 import           Control.Monad.Trans                   (MonadIO, lift)
 import           Control.Monad.Trans.Either            (EitherT, left,
@@ -151,6 +151,20 @@ isMinWork bn
     | blockBits (nodeHeader bn) /= encodeCompact powLimit = True
     | otherwise = False
 
+splitKnown :: MonadIO m
+           => [BlockHeader]
+           -> SqlPersistT m ([NodeBlock], [BlockHeader])
+splitKnown hs = do
+    (kno, unk) <- foldM f ([], []) hs
+    return (reverse kno, reverse unk)
+  where
+    f (kno, []) n = do
+        bnM <- getBlockByHash (headerHash n)
+        case bnM of
+            Nothing -> return (kno, [n])
+            Just bn -> return (bn:kno, [])
+    f (kno, unk) n = return (kno, n:unk)
+
 -- | Connect a block header to this block header chain. Corresponds to bitcoind
 -- function ProcessBlockHeader and AcceptBlockHeader in main.cpp.
 connectHeader :: MonadIO m
@@ -160,11 +174,16 @@ connectHeader :: MonadIO m
               -> SqlPersistT m (Either String BlockChainAction)
 connectHeader best bh ts = runEitherT $ do
     (parent, medians, diffTime, minWork, cpM) <- getVerifyParams bh
-    chain <- lift $ getChain parent
-    let bn = nodeBlock parent chain bh
-    liftEither $ verifyBlockHeader parent medians diffTime cpM minWork ts bh
-    lift $ putBlock bn
-    lift $ evalNewChain best [bn]
+    (kno, _) <- lift $ splitKnown [bh]
+    case kno of
+        [] -> do
+            chain <- lift $ getChain parent
+            let bn = nodeBlock parent chain bh
+            liftEither $
+                verifyBlockHeader parent medians diffTime cpM minWork ts bh
+            lift $ putBlock bn
+            lift $ evalNewChain best [bn]
+        _ -> return $ KnownChain kno
 
 -- | A more efficient way of connecting a list of block headers than connecting
 -- them individually. The list of block headers have must form a valid chain.
@@ -176,22 +195,28 @@ connectHeaders :: MonadIO m
 connectHeaders _ [] _ = runEitherT $ left "Nothing to connect"
 connectHeaders best bhs@(bh:_) ts = runEitherT $ do
     unless (validChain bhs) $ left "Block headers do not form a valid chain"
-    (parent, medians, diffTime, minWork, cpM) <- getVerifyParams bh
-    chain <- lift $ getChain parent
-    nodes <- (`evalStateT` (parent, diffTime, medians, minWork)) $
-        forM bhs $ \b -> do
-            (p, d, ms, mw) <- get
-            lift $ liftEither $ verifyBlockHeader p ms d cpM mw ts b
-            let bn = nodeBlock p chain b
-                d' = if nodeBlockHeight bn `mod` diffInterval == 0
-                    then blockTimestamp b
-                    else d
-                ms' = blockTimestamp b : if length ms == 11 then tail ms else ms
-                mw' = if isMinWork bn then blockBits b else mw
-            put (bn, d', ms', mw')
-            return bn
-    lift $ putBlocks nodes
-    lift $ evalNewChain best nodes
+    (kno, unk) <- lift $ splitKnown bhs
+    case unk of
+        [] -> return $ KnownChain kno
+        _ -> do
+            (parent, medians, diffTime, minWork, cpM) <- getVerifyParams bh
+            chain <- lift $ getChain parent
+            nodes <- (`evalStateT` (parent, diffTime, medians, minWork)) $
+                forM unk $ \b -> do
+                    (p, d, ms, mw) <- get
+                    lift $ liftEither $ verifyBlockHeader p ms d cpM mw ts b
+                    let bn = nodeBlock p chain b
+                        d' = if nodeBlockHeight bn `mod` diffInterval == 0
+                             then blockTimestamp b
+                             else d
+                        ms' = blockTimestamp b : if length ms == 11
+                                                 then tail ms
+                                                 else ms
+                        mw' = if isMinWork bn then blockBits b else mw
+                    put (bn, d', ms', mw')
+                    return bn
+            lift $ putBlocks nodes
+            lift $ evalNewChain best nodes
   where
     validChain (a:b:xs) = prevBlock b == headerHash a && validChain (b:xs)
     validChain [_] = True

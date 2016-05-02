@@ -173,10 +173,10 @@ connectHeader :: MonadIO m
               -> Timestamp
               -> SqlPersistT m (Either String BlockChainAction)
 connectHeader best bh ts = runEitherT $ do
-    (parent, medians, diffTime, minWork, cpM) <- getVerifyParams bh
     (kno, _) <- lift $ splitKnown [bh]
     case kno of
         [] -> do
+            (parent, medians, diffTime, minWork, cpM) <- getVerifyParams bh
             chain <- lift $ getChain parent
             let bn = nodeBlock parent chain bh
             liftEither $
@@ -193,12 +193,12 @@ connectHeaders :: MonadIO m
                -> Timestamp
                -> SqlPersistT m (Either String BlockChainAction)
 connectHeaders _ [] _ = runEitherT $ left "Nothing to connect"
-connectHeaders best bhs@(bh:_) ts = runEitherT $ do
+connectHeaders best bhs ts = runEitherT $ do
     unless (validChain bhs) $ left "Block headers do not form a valid chain"
     (kno, unk) <- lift $ splitKnown bhs
     case unk of
         [] -> return $ KnownChain kno
-        _ -> do
+        (bh:_) -> do
             (parent, medians, diffTime, minWork, cpM) <- getVerifyParams bh
             chain <- lift $ getChain parent
             nodes <- (`evalStateT` (parent, diffTime, medians, minWork)) $

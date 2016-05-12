@@ -54,13 +54,15 @@ import           Data.Maybe                            (fromMaybe, isNothing,
 import           Data.String.Conversions               (cs)
 import           Data.Word                             (Word32)
 import           Database.Esqueleto                    (Esqueleto, Value, asc,
-                                                        from, groupBy, in_,
-                                                        insertMany_, limit,
-                                                        max_, orderBy, select,
-                                                        unValue, val, valList,
-                                                        where_, (&&.), (<=.),
-                                                        (==.), (>.), (>=.),
-                                                        (^.), (||.))
+                                                        delete, from, groupBy,
+                                                        in_, insertMany_, limit,
+                                                        max_, not_, orderBy,
+                                                        select, set, unValue,
+                                                        update, val, valList,
+                                                        where_, (!=.), (&&.),
+                                                        (<=.), (=.), (==.),
+                                                        (>.), (>=.), (^.),
+                                                        (||.))
 import           Database.Persist                      (Entity (..), insert_)
 import           Database.Persist.Sql                  (SqlPersistT)
 import           Network.Haskoin.Block
@@ -613,7 +615,9 @@ evalNewChain :: MonadIO m
              -> SqlPersistT m BlockChainAction
 evalNewChain _ [] = error "You find yourself in the dungeon of missing blocks"
 evalNewChain best newNodes
-    | buildsOnBest = return $ BestChain newNodes
+    | buildsOnBest = do
+        pruneChain best
+        return $ BestChain $ map (\n -> n{ nodeBlockChain = 0 }) newNodes
     | nodeBlockWork (last newNodes) > nodeBlockWork best = do
         (split, old, new) <- splitChains (best, 0) (head newNodes, 0)
         return $ ChainReorg split old (new ++ tail newNodes)
@@ -624,3 +628,17 @@ evalNewChain best newNodes
             _  -> return $ SideChain $ split : new ++ tail newNodes
   where
     buildsOnBest = nodePrev (head newNodes) == nodeHash best
+
+pruneChain :: MonadIO m
+           => NodeBlock
+           -> SqlPersistT m ()
+pruneChain best = do
+    when (nodeBlockChain best /= 0) $ do
+        forks <- reverse <$> getPivots best
+        delete $ from $ \t -> do
+            where_ $ not_ (chainPathQuery t forks)
+                 &&. t ^. NodeBlockHeight <=. val (nodeBlockHeight best)
+        update $ \t -> do
+            set t [ NodeBlockChain =. val 0 ]
+            where_ $ t ^. NodeBlockHeight <=. val (nodeBlockHeight best)
+                 &&. t ^. NodeBlockChain  !=. val 0

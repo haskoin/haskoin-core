@@ -72,11 +72,13 @@ import           System.IO                       (stderr)
 import           System.ZMQ4                     (KeyFormat (..), Req (..),
                                                   Socket, SocketType, Sub (..),
                                                   connect, curveKeyPair,
-                                                  receive, receiveMulti, send,
+                                                  receive, receiveMulti,
+                                                  restrict, send,
                                                   setCurvePublicKey,
                                                   setCurveSecretKey,
-                                                  setCurveServerKey, subscribe,
-                                                  withContext, withSocket)
+                                                  setCurveServerKey, setLinger,
+                                                  subscribe, withContext,
+                                                  withSocket)
 import           Text.Read                       (readMaybe)
 
 type Handler = R.ReaderT Config IO

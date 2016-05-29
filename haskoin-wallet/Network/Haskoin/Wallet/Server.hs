@@ -72,12 +72,12 @@ import           System.Posix.Daemon                   (Redirection (ToFile),
 import           System.ZMQ4                           (Context, KeyFormat (..),
                                                         Pub (..), Rep (..),
                                                         Socket, bind, receive,
-                                                        receiveMulti, send,
-                                                        sendMulti,
+                                                        receiveMulti, restrict,
+                                                        send, sendMulti,
                                                         setCurveSecretKey,
                                                         setCurveServer,
-                                                        withContext, withSocket,
-                                                        z85Decode)
+                                                        setLinger, withContext,
+                                                        withSocket, z85Decode)
 
 data EventSession = EventSession
     { eventBatchSize :: !Int
@@ -338,10 +338,9 @@ runWalletApp :: ( MonadLoggerIO m
                 )
              => HandlerSession -> m ()
 runWalletApp session = do
-    na <- async $
-        liftBaseOpDiscard withContext $ \ctx ->
+    na <- async $ liftBaseOpDiscard withContext $ \ctx ->
         liftBaseOpDiscard (withSocket ctx Pub) $ \sock -> do
-        setLinger (restrict (0 :: Int)) sock
+        liftIO $ setLinger (restrict (0 :: Int)) sock
         setupCrypto ctx sock
         liftIO $ bind sock $ configBindNotif $ handlerConfig session
         forever $ do
@@ -356,7 +355,7 @@ runWalletApp session = do
     link na
     liftBaseOpDiscard withContext $ \ctx ->
         liftBaseOpDiscard (withSocket ctx Rep) $ \sock -> do
-        setLinger (restrict (0 :: Int)) sock
+        liftIO $ setLinger (restrict (0 :: Int)) sock
         setupCrypto ctx sock
         liftIO $ bind sock $ configBind $ handlerConfig session
         forever $ do
@@ -400,7 +399,7 @@ runZapAuth :: ( MonadLoggerIO m
 runZapAuth ctx k = do
     $(logDebug) $ "Starting ØMQ authentication thread"
     liftBaseOpDiscard (withSocket ctx Rep) $ \zap -> do
-        setLinger (restrict (0 :: Int)) zap
+        liftIO $ setLinger (restrict (0 :: Int)) zap
         liftIO $ bind zap "inproc://zeromq.zap.01"
         forever $ do
             buffer <- liftIO $ receiveMulti zap

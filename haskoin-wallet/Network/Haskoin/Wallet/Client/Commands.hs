@@ -35,7 +35,7 @@ module Network.Haskoin.Wallet.Client.Commands
 where
 
 import           Control.Applicative             ((<|>))
-import           Control.Concurrent.Async.Lifted (asyncBound, wait)
+import           Control.Concurrent.Async.Lifted (async, wait)
 import           Control.Monad                   (forM_, forever, liftM2,
                                                   unless, when)
 import qualified Control.Monad.Reader            as R (ReaderT, ask, asks)
@@ -469,7 +469,9 @@ cmdDeleteTx tidStr = case tidM of
 cmdMonitor :: [String] -> Handler ()
 cmdMonitor ls = do
     cfg@Config{..} <- R.ask
+    -- TODO: I can do this in the same thread without ^C twice (see sendZmq)
     liftIO $ withContext $ \ctx -> withSocket ctx Sub $ \sock -> do
+        setLinger (restrict (0 :: Int)) sock
         setupAuth cfg sock
         connect sock configConnectNotif
         subscribe sock "[block]"
@@ -561,8 +563,10 @@ sendZmq req = do
     let msg = cs $ encode req
     when (configVerbose cfg) $ liftIO $
         B8.hPutStrLn stderr $ "Outgoing JSON: " `mappend` msg
-    a <- asyncBound $ liftIO $ withContext $ \ctx ->
+    -- TODO: If I do this in the same thread I have to ^C twice to exit
+    a <- async $ liftIO $ withContext $ \ctx ->
         withSocket ctx Req $ \sock -> do
+            setLinger (restrict (0 :: Int)) sock
             setupAuth cfg sock
             connect sock (configConnect cfg)
             send sock [] (cs $ encode req)

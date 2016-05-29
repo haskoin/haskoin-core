@@ -337,8 +337,11 @@ runWalletApp :: ( MonadLoggerIO m
                 , MonadResource m
                 )
              => HandlerSession -> m ()
-runWalletApp session = liftBaseOpDiscard withContext $ \ctx -> do
-    na <- async $ liftBaseOpDiscard (withSocket ctx Pub) $ \sock -> do
+runWalletApp session = do
+    na <- async $
+        liftBaseOpDiscard withContext $ \ctx ->
+        liftBaseOpDiscard (withSocket ctx Pub) $ \sock -> do
+        setLinger (restrict (0 :: Int)) sock
         setupCrypto ctx sock
         liftIO $ bind sock $ configBindNotif $ handlerConfig session
         forever $ do
@@ -351,7 +354,9 @@ runWalletApp session = liftBaseOpDiscard withContext $ \ctx -> do
                             ("{" <> cs jsonTxAccount <> "}", cs $ encode x)
                 in liftIO $ sendMulti sock $ typ :| [pay]
     link na
-    liftBaseOpDiscard (withSocket ctx Rep) $ \sock -> do
+    liftBaseOpDiscard withContext $ \ctx ->
+        liftBaseOpDiscard (withSocket ctx Rep) $ \sock -> do
+        setLinger (restrict (0 :: Int)) sock
         setupCrypto ctx sock
         liftIO $ bind sock $ configBind $ handlerConfig session
         forever $ do
@@ -395,6 +400,7 @@ runZapAuth :: ( MonadLoggerIO m
 runZapAuth ctx k = do
     $(logDebug) $ "Starting ØMQ authentication thread"
     liftBaseOpDiscard (withSocket ctx Rep) $ \zap -> do
+        setLinger (restrict (0 :: Int)) zap
         liftIO $ bind zap "inproc://zeromq.zap.01"
         forever $ do
             buffer <- liftIO $ receiveMulti zap

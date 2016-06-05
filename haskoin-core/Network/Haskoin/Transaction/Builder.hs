@@ -15,6 +15,8 @@ module Network.Haskoin.Transaction.Builder
 , chooseMSCoinsSink
 , getFee
 , getMSFee
+
+, buildInput
 ) where
 
 import Control.Arrow (first)

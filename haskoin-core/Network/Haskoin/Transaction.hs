@@ -39,6 +39,7 @@ module Network.Haskoin.Transaction
 , getFee
 , getMSFee
 
+, buildInput
 ) where
 
 import Network.Haskoin.Transaction.Builder

@@ -1,5 +1,5 @@
 name:                  haskoin-wallet
-version:               0.3.0
+version:               0.3.1
 synopsis:
     Implementation of a Bitcoin SPV Wallet with BIP32 and multisig support.
 description:

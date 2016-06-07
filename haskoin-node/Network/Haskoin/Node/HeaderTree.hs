@@ -37,6 +37,7 @@ module Network.Haskoin.Node.HeaderTree
 , connectHeader
 , connectHeaders
 , blockLocator
+, pruneChain
 ) where
 
 import           Control.Monad                         (foldM, forM, unless,
@@ -616,8 +617,7 @@ evalNewChain :: MonadIO m
 evalNewChain _ [] = error "You find yourself in the dungeon of missing blocks"
 evalNewChain best newNodes
     | buildsOnBest = do
-        pruneChain best
-        return $ BestChain $ map (\n -> n{ nodeBlockChain = 0 }) newNodes
+        return $ BestChain newNodes
     | nodeBlockWork (last newNodes) > nodeBlockWork best = do
         (split, old, new) <- splitChains (best, 0) (head newNodes, 0)
         return $ ChainReorg split old (new ++ tail newNodes)
@@ -629,15 +629,14 @@ evalNewChain best newNodes
   where
     buildsOnBest = nodePrev (head newNodes) == nodeHash best
 
+-- | Remove all side chains from database.
 pruneChain :: MonadIO m
            => NodeBlock
            -> SqlPersistT m ()
 pruneChain best = do
     when (nodeBlockChain best /= 0) $ do
         forks <- reverse <$> getPivots best
-        delete $ from $ \t -> do
-            where_ $ not_ (chainPathQuery t forks)
-                 &&. t ^. NodeBlockHeight <=. val (nodeBlockHeight best)
+        delete $ from $ \t -> where_ $ not_ (chainPathQuery t forks)
         update $ \t -> do
             set t [ NodeBlockChain =. val 0 ]
             where_ $ t ^. NodeBlockHeight <=. val (nodeBlockHeight best)

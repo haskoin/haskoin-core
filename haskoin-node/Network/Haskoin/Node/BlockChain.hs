@@ -180,17 +180,28 @@ merkleCheckSync :: (MonadLoggerIO m, MonadBaseControl IO m)
                 => NodeT m ()
 merkleCheckSync = do
     -- Check if we are synced
-    (synced, mempool, ourHeight) <- atomicallyNodeT $ do
+    (synced, mempool, best) <- atomicallyNodeT $ do
         synced <- areBlocksSynced
         when synced $ writeTVarS sharedMerklePeer Nothing
-        ourHeight <- nodeBlockHeight <$> readTVarS sharedBestHeader
+        best <- readTVarS sharedBestHeader
         mempool <- readTVarS sharedMempool
-        return (synced, mempool, ourHeight)
+        return (synced, mempool, best)
     when synced $ do
         $(logInfo) $ pack $ unwords
             [ "Merkle blocks are in sync with the"
-            , "network at height", show ourHeight
+            , "network at height", show (nodeBlockHeight best)
             ]
+        -- Prune side chains
+        lock <- asks sharedSyncLock
+        () <- liftBaseOp_ (Lock.with lock) $ do
+            bn <- runSqlNodeT $ do
+                pruneChain best
+                bM <- getBlockByHash (nodeHash best)
+                maybe (error "Twilight zone") return bM
+            -- Correct STM chain entries
+            atomicallyNodeT $ do
+                writeTVarS sharedBestHeader bn
+                writeTVarS sharedBestBlock bn
         -- Do a mempool sync on the first merkle sync
         unless mempool $ do
             atomicallyNodeT $ do

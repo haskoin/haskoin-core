@@ -205,9 +205,7 @@ merkleSync pool bSize notif = do
     (hash, _) <- runDBPool walletBestBlock pool
     $(logDebug) "Starting merkle batch download"
     -- Wait for a new block or a rescan
-    bestM <- runSqlNodeT $ getBlockByHash hash
-    let best = fromMaybe (error "Best wallet block not found") bestM
-    (action, source) <- merkleDownload best bSize
+    (action, source) <- merkleDownload hash bSize
     $(logDebug) "Received a merkle action and source. Processing the source..."
 
     -- Read and process the data from the source

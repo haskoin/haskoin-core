@@ -5,6 +5,8 @@
 module Network.Haskoin.Constants
 ( -- ** Data
   Network(..)
+, prodnet
+, testnet3
   -- ** Functions
 , switchToTestnet3
 , setNetwork
@@ -31,11 +33,14 @@ module Network.Haskoin.Constants
 
 import Data.Bits (shiftR)
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Char8 as C8 (concat, pack)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Data.Version (showVersion)
 import Data.Word (Word8, Word32, Word64)
 import Data.LargeWord (Word256)
 import Network.Haskoin.Block.Types
 import System.IO.Unsafe (unsafePerformIO)
+import Paths_haskoin_core (version)
 
 data Network = Network
     { getNetworkName                :: !String
@@ -166,7 +171,11 @@ prodnet = Network
         }
     , getMaxBlockSize = 1000000
     , getMaxSatoshi = 2100000000000000
-    , getHaskoinUserAgent = "/haskoin:0.3.1/"
+    , getHaskoinUserAgent = C8.concat
+        [ "/haskoin:"
+        , C8.pack $ showVersion version
+        , "/"
+        ]
     , getDefaultPort = 8333
     , getAllowMinDifficultyBlocks = False
     , getPowLimit = fromIntegral (maxBound `shiftR` 32 :: Word256)
@@ -234,7 +243,11 @@ testnet3 = Network
         }
     , getMaxBlockSize = 1000000
     , getMaxSatoshi = 2100000000000000
-    , getHaskoinUserAgent = "/haskoin-testnet:0.3.1/"
+    , getHaskoinUserAgent = C8.concat
+        [ "/haskoin-testnet:"
+        , C8.pack $ showVersion version
+        , "/"
+        ]
     , getDefaultPort = 18333
     , getAllowMinDifficultyBlocks = True
     , getPowLimit = fromIntegral (maxBound `shiftR` 32 :: Word256)

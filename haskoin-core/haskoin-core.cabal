@@ -72,6 +72,7 @@ library
                    Network.Haskoin.Test.Script
                    Network.Haskoin.Test.Transaction
                    Network.Haskoin.Test.Block
+                   Paths_haskoin_core
 
     extensions: EmptyDataDecls
                 OverloadedStrings

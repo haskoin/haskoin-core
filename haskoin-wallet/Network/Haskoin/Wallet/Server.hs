@@ -157,15 +157,16 @@ runSPVServer cfg = maybeDetach cfg $ run $ do -- start the server process
         merkleSync pool 500 notif
     -- Run a thread that will re-broadcast pending transactions
     broadcastPendingTxs pool = forever $ do
+        (hash, _) <- runSqlNodeT $ walletBestBlock
         -- Wait until we are synced
         atomicallyNodeT $ do
-            synced <- areBlocksSynced
+            synced <- areBlocksSynced hash
             unless synced $ lift retry
         -- Send an INV for those transactions to all peers
         broadcastTxs =<< runDBPool (getPendingTxs 0) pool
         -- Wait until we are not synced
         atomicallyNodeT $ do
-            synced <- areBlocksSynced
+            synced <- areBlocksSynced hash
             when synced $ lift retry
     processTx pool notif = awaitForever $ \tx -> lift $ do
         (_, newAddrs) <- runDBPool (importNetTx tx (Just notif)) pool

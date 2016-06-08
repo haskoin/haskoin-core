@@ -25,7 +25,7 @@ import           Data.Conduit                    (Source, yield)
 import           Data.List                       (nub)
 import qualified Data.Map                        as M (delete, keys, lookup,
                                                        null)
-import           Data.Maybe                      (fromMaybe, listToMaybe)
+import           Data.Maybe                      (listToMaybe)
 import qualified Data.Sequence                   as S (length)
 import           Data.String.Conversions         (cs)
 import           Data.Text                       (pack)
@@ -135,10 +135,14 @@ merkleDownload
 merkleDownload walletHash batchSize = do
     -- Store the best block received from the wallet for information only.
     -- This will be displayed in `hw status`
-    walletBestM <- runSqlNodeT $ getBlockByHash walletHash
-    let walletBest = fromMaybe (error "Best wallet block unknown") walletBestM
-    atomicallyNodeT $ writeTVarS sharedBestBlock walletBest
-    bestBlock <- merkleCheckSyncPrune
+    merkleSyncedActions walletHash
+    walletBlockM <- runSqlNodeT $ getBlockByHash walletHash
+    walletBlock <- case walletBlockM of
+        Just walletBlock -> do
+            atomicallyNodeT $ writeTVarS sharedBestBlock walletBlock
+            return walletBlock
+        Nothing ->
+            error "Could not find wallet best block in headers"
     rescanTMVar <- asks sharedRescan
     -- Wait either for a new block to arrive or a rescan to be triggered
     $(logDebug) "Waiting for a new block or a rescan..."
@@ -156,9 +160,9 @@ merkleDownload walletHash batchSize = do
                 [ "Rescan condition reached:", show newValE ]
             case newValE of
                 Left ts -> tryMerkleDwnTimestamp ts batchSize
-                Right _ -> tryMerkleDwnHeight bestBlock batchSize
+                Right _ -> tryMerkleDwnHeight walletBlock batchSize
         -- Continue download from a hash
-        Right _ -> tryMerkleDwnBlock bestBlock batchSize
+        Right _ -> tryMerkleDwnBlock walletBlock batchSize
     case resM of
         Just res -> return res
         _ -> do
@@ -178,38 +182,36 @@ merkleDownload walletHash batchSize = do
         Left ts -> waitFastCatchup ts
         Right h -> waitHeight h
 
-merkleCheckSyncPrune :: (MonadLoggerIO m, MonadBaseControl IO m)
-                => NodeT m NodeBlock
-merkleCheckSyncPrune =
+-- | Perform some actions only when headers have been synced.
+merkleSyncedActions
+    :: (MonadLoggerIO m, MonadBaseControl IO m)
+    => BlockHash -- ^ Wallet best block
+    -> NodeT m ()
+merkleSyncedActions walletHash =
     asks sharedSyncLock >>= \lock -> liftBaseOp_ (Lock.with lock) $ do
     -- Check if we are synced
-    (synced, mempool, bestHeader) <- atomicallyNodeT $ do
-        synced <- areBlocksSynced
-        when synced $ writeTVarS sharedMerklePeer Nothing
-        bestHeader <- readTVarS sharedBestHeader
+    (synced, mempool, header) <- atomicallyNodeT $ do
+        header <- readTVarS sharedBestHeader
+        synced <- areBlocksSynced walletHash
         mempool <- readTVarS sharedMempool
-        return (synced, mempool, bestHeader)
-    if not synced then return bestHeader else do
+        return (synced, mempool, header)
+    when synced $ do
         $(logInfo) $ pack $ unwords
             [ "Merkle blocks are in sync with the"
-            , "network at height", show (nodeBlockHeight bestHeader)
+            , "network at height", show walletHash
             ]
         -- Prune side chains
-        bestBlock <- runSqlNodeT $ do
-            pruneChain bestHeader
-            bestBlockM <- getBlockByHash (nodeHash bestHeader)
-            maybe (error "Twilight zone") return bestBlockM
-        -- Correct STM chain entries
+        bestBlock <- runSqlNodeT $ pruneChain header
         atomicallyNodeT $ do
+            -- Update shared best header after pruning
             writeTVarS sharedBestHeader bestBlock
-            writeTVarS sharedBestBlock bestBlock
+            writeTVarS sharedMerklePeer Nothing
         -- Do a mempool sync on the first merkle sync
         unless mempool $ do
             atomicallyNodeT $ do
                 sendMessageAll MMempool
                 writeTVarS sharedMempool True
             $(logInfo) "Requesting a mempool sync"
-        return bestBlock
 
 -- Wait for headers to catch up to the given height
 waitHeight :: BlockHeight -> NodeT STM ()
@@ -482,8 +484,6 @@ headerSync = do
         (synced, ourHeight) <- syncedHeight
         if synced
             then do
-                -- Check if merkles are synced
-                _ <- merkleCheckSyncPrune
                 $(logInfo) $ formatPid pid peerSessionHost $ unwords
                     [ "Block headers are in sync with the"
                     , "network at height", show ourHeight
@@ -529,12 +529,11 @@ peerHeaderSyncFull pid ph =
                 , "network at height", show ourHeight
                 ]
 
-areBlocksSynced :: NodeT STM Bool
-areBlocksSynced = do
+areBlocksSynced :: BlockHash -> NodeT STM Bool
+areBlocksSynced walletHash = do
     headersSynced <- areHeadersSynced
-    bestBlock     <- readTVarS sharedBestBlock
     bestHeader    <- readTVarS sharedBestHeader
-    return $ headersSynced && nodeHash bestBlock == nodeHash bestHeader
+    return $ headersSynced && walletHash == nodeHash bestHeader
 
 -- Check if the block headers are synced with the network height
 areHeadersSynced :: NodeT STM Bool

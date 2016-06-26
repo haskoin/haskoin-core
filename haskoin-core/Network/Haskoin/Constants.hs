@@ -158,17 +158,14 @@ prodnet = Network
     , getExtPubKeyPrefix = 0x0488b21e
     , getExtSecretPrefix = 0x0488ade4
     , getNetworkMagic = 0xf9beb4d9
-    , getGenesisHeader = BlockHeader
+    , getGenesisHeader = createBlockHeader
+        0x01
+        "0000000000000000000000000000000000000000000000000000000000000000"
+        "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
+        1231006505
+        486604799
+        2083236893
         -- Hash 000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f
-        { blockVersion   = 0x01
-        , prevBlock      =
-          "0000000000000000000000000000000000000000000000000000000000000000"
-        , merkleRoot     =
-          "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
-        , blockTimestamp = 1231006505
-        , blockBits      = 486604799
-        , bhNonce        = 2083236893
-        }
     , getMaxBlockSize = 1000000
     , getMaxSatoshi = 2100000000000000
     , getHaskoinUserAgent = C8.concat
@@ -230,17 +227,14 @@ testnet3 = Network
     , getExtPubKeyPrefix = 0x043587cf
     , getExtSecretPrefix = 0x04358394
     , getNetworkMagic = 0x0b110907
-    , getGenesisHeader = BlockHeader
+    , getGenesisHeader = createBlockHeader
+        0x01
+        "0000000000000000000000000000000000000000000000000000000000000000"
+        "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
+        1296688602
+        486604799
+        414098458
         -- Hash 000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943
-        { blockVersion   = 0x01
-        , prevBlock      =
-            "0000000000000000000000000000000000000000000000000000000000000000"
-        , merkleRoot     =
-            "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
-        , blockTimestamp = 1296688602
-        , blockBits      = 486604799
-        , bhNonce        = 414098458
-        }
     , getMaxBlockSize = 1000000
     , getMaxSatoshi = 2100000000000000
     , getHaskoinUserAgent = C8.concat

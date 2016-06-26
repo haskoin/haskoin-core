@@ -5,10 +5,10 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.Bits (testBit)
 import qualified Data.ByteString as BS (index, length)
+import Data.Serialize (encode)
 
 import Network.Haskoin.Test
 import Network.Haskoin.Crypto
-import Network.Haskoin.Util
 
 tests :: [Test]
 tests =
@@ -75,7 +75,7 @@ testIsCanonical sig = not $
     && not (testBit (BS.index s (fromIntegral rlen+7)) 7)
     )
   where
-    s = encode' sig
+    s = encode sig
     len = fromIntegral $ BS.length s
     rlen = BS.index s 3
     slen = BS.index s (fromIntegral rlen + 5)

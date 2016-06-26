@@ -82,7 +82,7 @@ module Network.Haskoin.Wallet
 , importTx
 , importNetTx
 , signAccountTx
-, createTx
+, createWalletTx
 , signOfflineTx
 , getOfflineTxData
 

@@ -8,7 +8,6 @@ module Network.Haskoin.Test.Transaction
 , ArbitraryTxIn(..)
 , ArbitraryTxOut(..)
 , ArbitraryOutPoint(..)
-, ArbitraryCoinbaseTx(..)
 , ArbitraryAddrOnlyTx(..)
 , ArbitraryAddrOnlyTxIn(..)
 , ArbitraryAddrOnlyTxOut(..)
@@ -109,22 +108,7 @@ instance Arbitrary ArbitraryTx where
         outs <- vectorOf no $ arbitrary >>= \(ArbitraryTxOut o) -> return o
         let uniqueInps = nubBy (\a b -> prevOutput a == prevOutput b) inps
         t <- arbitrary
-        return $ ArbitraryTx $ Tx v uniqueInps outs t
-
--- | Arbitrary CoinbaseTx
-newtype ArbitraryCoinbaseTx = ArbitraryCoinbaseTx CoinbaseTx
-    deriving (Eq, Show, Read)
-
-instance Arbitrary ArbitraryCoinbaseTx where
-    arbitrary = do
-        v <- arbitrary
-        ArbitraryOutPoint op <- arbitrary
-        ArbitraryByteString d <- arbitrary
-        s <- arbitrary
-        no <- choose (0,5)
-        outs <- vectorOf no $ arbitrary >>= \(ArbitraryTxOut o) -> return o
-        t <- arbitrary
-        return $ ArbitraryCoinbaseTx $ CoinbaseTx v op d s outs t
+        return $ ArbitraryTx $ createTx v uniqueInps outs t
 
 -- | Arbitrary Tx containing only inputs of type SpendPKHash, SpendScriptHash
 -- (multisig) and outputs of type PayPKHash and PaySH. Only compressed
@@ -142,7 +126,7 @@ instance Arbitrary ArbitraryAddrOnlyTx where
         outs <- vectorOf no $
             arbitrary >>= \(ArbitraryAddrOnlyTxOut o) -> return o
         t <- arbitrary
-        return $ ArbitraryAddrOnlyTx $ Tx v inps outs t
+        return $ ArbitraryAddrOnlyTx $ createTx v inps outs t
 
 -- | Arbitrary TxIn that can only be of type SpendPKHash or
 -- SpendScriptHash (multisig). Only compressed public keys are used.
@@ -259,7 +243,7 @@ instance Arbitrary ArbitrarySigningData where
         outs <- map (\(ArbitraryTxOut o) -> o) <$> vectorOf no arbitrary
         l <- arbitrary
         perm <- choose (0, length inps - 1)
-        let tx   = Tx v (permutations inps !! perm) outs l
+        let tx   = createTx v (permutations inps !! perm) outs l
             keys = concat $ map snd uSigis
         return $ ArbitrarySigningData tx (map fst uSigis) keys
       where
@@ -302,6 +286,7 @@ instance Arbitrary ArbitraryPartialTxs where
             ops <- vectorOf ni $ (\(ArbitraryOutPoint op) -> op) <$> arbitrary
             t <- arbitrary
             s <- arbitrary
-            return $ Tx v (map (\op -> TxIn op BS.empty s) (nub ops)) outs t
+            return $ createTx
+                v (map (\op -> TxIn op BS.empty s) (nub ops)) outs t
 
 

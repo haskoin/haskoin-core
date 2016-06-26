@@ -1,12 +1,11 @@
-module Network.Haskoin.Binary.Tests (tests) where
+module Network.Haskoin.Cereal.Tests (tests) where
 
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
-import Data.Binary (Binary)
+import Data.Serialize (Serialize, decode, encode)
 
 import Network.Haskoin.Test
-import Network.Haskoin.Util
 
 tests :: [Test]
 tests =
@@ -52,7 +51,6 @@ tests =
         , testProperty "TxOut" $ \(ArbitraryTxOut x) -> metaBinary x
         , testProperty "OutPoint" $ \(ArbitraryOutPoint x) -> metaBinary x
         , testProperty "Tx" $ \(ArbitraryTx x) -> metaBinary x
-        , testProperty "CoinbaseTx" $ \(ArbitraryCoinbaseTx x) -> metaBinary x
         ]
     , testGroup "Binary encoding and decoding of block types"
         [ testProperty "Block" $ \(ArbitraryBlock x) -> metaBinary x
@@ -70,5 +68,5 @@ tests =
         ]
     ]
 
-metaBinary :: (Binary a, Eq a) => a -> Bool
-metaBinary x = decode' (encode' x) == x
+metaBinary :: (Serialize a, Eq a) => a -> Bool
+metaBinary x = decode (encode x) == Right x

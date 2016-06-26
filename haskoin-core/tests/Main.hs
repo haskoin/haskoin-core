@@ -37,14 +37,14 @@ import qualified Network.Haskoin.Block.Units (tests)
 import qualified Network.Haskoin.Json.Tests (tests)
 
 -- Binary tests
-import qualified Network.Haskoin.Binary.Tests (tests)
+import qualified Network.Haskoin.Cereal.Tests (tests)
 
 main :: IO ()
 main = do
   satoshiTxTests <- Network.Haskoin.Transaction.Units.satoshiCoreTxTests
   defaultMain
     (  Network.Haskoin.Json.Tests.tests
-    ++ Network.Haskoin.Binary.Tests.tests
+    ++ Network.Haskoin.Cereal.Tests.tests
     ++ Network.Haskoin.Util.Tests.tests
     ++ Network.Haskoin.Crypto.ECDSA.Tests.tests
     ++ Network.Haskoin.Crypto.Base58.Tests.tests

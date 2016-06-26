@@ -63,36 +63,36 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , concatBip32Segments
 ) where
 
-import Control.DeepSeq (NFData, rnf)
-import Control.Monad (mzero, guard, unless, (<=<))
-import Control.Exception (Exception, throw)
-
-import qualified Crypto.Secp256k1 as EC
-
-import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
-import Data.Binary (Binary, get, put)
-import Data.Binary.Get (Get, getWord8, getWord32be)
-import Data.Binary.Put (Put, putWord8, putWord32be)
-import Data.Word (Word8, Word32)
-import Data.Bits (setBit, testBit, clearBit)
-import Data.List.Split (splitOn)
-import Data.Maybe (fromMaybe)
-import Data.String (IsString, fromString)
-import Data.String.Conversions (cs)
-import Data.Typeable (Typeable)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS (append, take)
-
-import Text.Read (readPrec, parens, lexP, pfail)
-import qualified Text.Read as Read (Lexeme(Ident, String))
-
-import Network.Haskoin.Util
-import Network.Haskoin.Constants
-import Network.Haskoin.Script.Parser
-import Network.Haskoin.Crypto.Keys
-import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Crypto.Base58
-import Data.List (foldl')
+import           Control.DeepSeq               (NFData, rnf)
+import           Control.Exception             (Exception, throw)
+import           Control.Monad                 (guard, mzero, unless, (<=<))
+import qualified Crypto.Secp256k1              as EC
+import           Data.Aeson                    (FromJSON, ToJSON,
+                                                Value (String), parseJSON,
+                                                toJSON, withText)
+import           Data.Bits                     (clearBit, setBit, testBit)
+import           Data.ByteString               (ByteString)
+import qualified Data.ByteString               as BS (append, take)
+import           Data.List                     (foldl')
+import           Data.List.Split               (splitOn)
+import           Data.Maybe                    (fromMaybe)
+import           Data.Serialize                (Serialize, decode, encode, get,
+                                                put)
+import           Data.Serialize.Get            (Get, getWord32be, getWord8)
+import           Data.Serialize.Put            (Put, putWord32be, putWord8,
+                                                runPut)
+import           Data.String                   (IsString, fromString)
+import           Data.String.Conversions       (cs)
+import           Data.Typeable                 (Typeable)
+import           Data.Word                     (Word32, Word8)
+import           Network.Haskoin.Constants
+import           Network.Haskoin.Crypto.Base58
+import           Network.Haskoin.Crypto.Hash
+import           Network.Haskoin.Crypto.Keys
+import           Network.Haskoin.Script.Parser
+import           Network.Haskoin.Util
+import           Text.Read                     (lexP, parens, pfail, readPrec)
+import qualified Text.Read                     as Read (Lexeme (Ident, String))
 
 {- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
 
@@ -224,8 +224,8 @@ prvSubKey xkey child
     | otherwise = error "Invalid child derivation index"
   where
     pK     = xPubKey $ deriveXPubKey xkey
-    msg    = BS.append (encode' pK) (encode' child)
-    (a, c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
+    msg    = BS.append (encode pK) (encode child)
+    (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) msg
     k      = fromMaybe err $ tweakPrvKeyC (xPrvKey xkey) a
     err    = throw $ DerivationException "Invalid prvSubKey derivation"
 
@@ -239,8 +239,8 @@ pubSubKey xKey child
         XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK
     | otherwise = error "Invalid child derivation index"
   where
-    msg    = BS.append (encode' $ xPubKey xKey) (encode' child)
-    (a, c) = split512 $ hmac512 (encode' $ xPubChain xKey) msg
+    msg    = BS.append (encode $ xPubKey xKey) (encode child)
+    (a, c) = split512 $ hmac512 (encode $ xPubChain xKey) msg
     pK     = fromMaybe err $ tweakPubKeyC (xPubKey xKey) a
     err    = throw $ DerivationException "Invalid pubSubKey derivation"
 
@@ -259,8 +259,8 @@ hardSubKey xkey child
     | otherwise = error "Invalid child derivation index"
   where
     i      = setBit child 31
-    msg    = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode' i)
-    (a, c) = split512 $ hmac512 (encode' $ xPrvChain xkey) msg
+    msg    = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode i)
+    (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) msg
     k      = fromMaybe err $ tweakPrvKeyC (xPrvKey xkey) a
     err    = throw $ DerivationException "Invalid hardSubKey derivation"
 
@@ -290,15 +290,21 @@ xPrvID = xPubID . deriveXPubKey
 
 -- | Computes the key identifier of an extended public key.
 xPubID :: XPubKey -> Hash160
-xPubID = hash160 . getHash256 . hash256 . encode' . xPubKey
+xPubID = hash160 . getHash256 . hash256 . encode . xPubKey
 
 -- | Computes the key fingerprint of an extended private key.
 xPrvFP :: XPrvKey -> Word32
-xPrvFP = decode' . BS.take 4 . getHash160 . xPrvID
+xPrvFP =
+    either (const err) id . decode . BS.take 4 . getHash160 . xPrvID
+  where
+    err = error "Could not decode xPrvFP"
 
 -- | Computes the key fingerprint of an extended public key.
 xPubFP :: XPubKey -> Word32
-xPubFP = decode' . BS.take 4 . getHash160 . xPubID
+xPubFP =
+    either (const err) id . decode . BS.take 4 . getHash160 . xPubID
+  where
+    err = error "Could not decode xPubFP"
 
 -- | Computer the 'Address' of an extended public key.
 xPubAddr :: XPubKey -> Address
@@ -306,11 +312,11 @@ xPubAddr = pubKeyAddr . xPubKey
 
 -- | Exports an extended private key to the BIP32 key export format (base 58).
 xPrvExport :: XPrvKey -> ByteString
-xPrvExport = encodeBase58Check . encode'
+xPrvExport = encodeBase58Check . encode
 
 -- | Exports an extended public key to the BIP32 key export format (base 58).
 xPubExport :: XPubKey -> ByteString
-xPubExport = encodeBase58Check . encode'
+xPubExport = encodeBase58Check . encode
 
 -- | Decodes a BIP32 encoded extended private key. This function will fail if
 -- invalid base 58 characters are detected or if the checksum fails.
@@ -326,7 +332,7 @@ xPubImport = decodeToMaybe <=< decodeBase58Check
 xPrvWif :: XPrvKey -> ByteString
 xPrvWif = toWif . xPrvKey
 
-instance Binary XPrvKey where
+instance Serialize XPrvKey where
 
     get = do
         ver <- getWord32be
@@ -347,7 +353,7 @@ instance Binary XPrvKey where
         put          $ xPrvChain k
         putPadPrvKey $ xPrvKey k
 
-instance Binary XPubKey where
+instance Serialize XPubKey where
 
     get = do
         ver <- getWord32be
@@ -647,8 +653,8 @@ concatBip32Segments xs = foldl' appendBip32Segment Deriv xs
 
 
 appendBip32Segment :: DerivPath -> Bip32PathIndex  -> DerivPath
-appendBip32Segment d (Bip32SoftIndex i) = d :/ i 
-appendBip32Segment d (Bip32HardIndex i) = d :| i 
+appendBip32Segment d (Bip32SoftIndex i) = d :/ i
+appendBip32Segment d (Bip32HardIndex i) = d :| i
 
 
 parseBip32PathIndex :: String -> Maybe Bip32PathIndex
@@ -662,7 +668,7 @@ data Bip32PathIndex = Bip32HardIndex KeyIndex | Bip32SoftIndex KeyIndex
   deriving (Read,Show,Eq)
 
 is31Bit :: (Integral a) => a -> Bool
-is31Bit i = (i >=0 && i < 0x80000000) 
+is31Bit i = (i >=0 && i < 0x80000000)
 
 
 -- Helper function to parse a hard path
@@ -747,5 +753,5 @@ putPadPrvKey :: PrvKeyC -> Put
 putPadPrvKey p = putWord8 0x00 >> prvKeyPutMonad p
 
 bsPadPrvKey :: PrvKeyC -> ByteString
-bsPadPrvKey = runPut' . putPadPrvKey
+bsPadPrvKey = runPut . putPadPrvKey
 

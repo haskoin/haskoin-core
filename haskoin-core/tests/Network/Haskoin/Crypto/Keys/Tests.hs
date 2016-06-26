@@ -5,9 +5,8 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.String (fromString)
 import Data.String.Conversions (cs)
-import Data.Binary.Get (runGet)
-import Data.Binary.Put (runPut)
 import qualified Data.ByteString as BS (length, index)
+import Data.Serialize (encode, runGet, runPut)
 
 import qualified Crypto.Secp256k1 as EC
 
@@ -62,7 +61,7 @@ isCanonicalPubKey (ArbitraryPubKey _ p) = not $
     -- Non-canonical public key: compressed nor uncompressed
     (not $ BS.index bs 0 `elem` [2,3,4])
   where
-    bs = encode' p
+    bs = encode p
 
 makeToKey :: EC.SecKey -> Bool
 makeToKey i = prvKeySecKey (makePrvKey i) == i
@@ -77,7 +76,7 @@ fromToWIF (ArbitraryPrvKey pk) = (fromWif $ toWif pk) == Just pk
 
 binaryPrvKey :: ArbitraryPrvKey -> Bool
 binaryPrvKey (ArbitraryPrvKey k) =
-    (k == runGet (prvKeyGetMonad f) (runPut $ prvKeyPutMonad k)) &&
+    (Right k == runGet (prvKeyGetMonad f) (runPut $ prvKeyPutMonad k)) &&
     (Just k == decodePrvKey f (encodePrvKey k))
   where
     f = makePrvKeyG (prvKeyCompressed k)
@@ -125,13 +124,13 @@ testReadShowPrvKeyU :: ArbitraryPrvKeyU -> Bool
 testReadShowPrvKeyU (ArbitraryPrvKeyU k) = read (show k) == k
 
 testFromStringPubKey :: ArbitraryPubKey -> Bool
-testFromStringPubKey (ArbitraryPubKey _ k) = fromString (cs . encodeHex $ encode' k) == k
+testFromStringPubKey (ArbitraryPubKey _ k) = fromString (cs . encodeHex $ encode k) == k
 
 testFromStringPubKeyC :: ArbitraryPubKeyC -> Bool
-testFromStringPubKeyC (ArbitraryPubKeyC _ k) = fromString (cs . encodeHex $ encode' k) == k
+testFromStringPubKeyC (ArbitraryPubKeyC _ k) = fromString (cs . encodeHex $ encode k) == k
 
 testFromStringPubKeyU :: ArbitraryPubKeyU -> Bool
-testFromStringPubKeyU (ArbitraryPubKeyU _ k) = fromString (cs . encodeHex $ encode' k) == k
+testFromStringPubKeyU (ArbitraryPubKeyU _ k) = fromString (cs . encodeHex $ encode k) == k
 
 testFromStringPrvKey :: ArbitraryPrvKey -> Bool
 testFromStringPrvKey (ArbitraryPrvKey k) = fromString (cs $ toWif k) == k

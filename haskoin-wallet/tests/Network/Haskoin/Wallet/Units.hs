@@ -303,14 +303,13 @@ fakeNode :: NodeBlock     -- ^ Parent
 fakeNode parent tids chain nonce =
     nodeBlock parent chain header
   where
-    header = BlockHeader
-        { blockVersion   = blockVersion $ nodeHeader parent
-        , prevBlock      = nodeHash parent
-        , merkleRoot     = if null tids then z else buildMerkleRoot tids
-        , blockTimestamp = nodeTimestamp parent + 600
-        , blockBits      = blockBits $ nodeHeader parent
-        , bhNonce        = nonce
-        }
+    header = createBlockHeader
+        (blockVersion $ nodeHeader parent)
+        (nodeHash parent)
+        (if null tids then z else buildMerkleRoot tids)
+        (nodeTimestamp parent + 600)
+        (blockBits $ nodeHeader parent)
+        nonce
 
 -- -- Creates fake testing blocks
 -- fakeNode :: Word32 -> BlockHash -> NodeBlock
@@ -328,7 +327,7 @@ fakeNode parent tids chain nonce =
 
 fakeTx :: [(TxHash, Word32)] -> [(BS.ByteString, Word64)] -> Tx
 fakeTx xs ys =
-    Tx 1 txi txo 0
+    createTx 1 txi txo 0
   where
     txi = map (\(h,p) -> TxIn (OutPoint h p) (BS.pack [1]) maxBound) xs
     f = encodeOutputBS . PayPKHash . fromJust . base58ToAddr
@@ -1085,12 +1084,14 @@ testImportMultisig = do
         , newAccountKeys = ["xpub68kRFKHWxUt3mfJjcXdLeuDjCHnByqKSBVfMktJRXM6LSNNDR4ae6Nw1Kh621fzyKiBf6ssyZWPPTDUTQp1BhuZQuoVdtb8j2TRzqDLHmY7"]
         , newAccountReadOnly = False
         }
-    let fundingTx =
-            Tx 1 [ TxIn (OutPoint tid1 0) (BS.pack [1]) maxBound ] -- dummy input
-                 [ TxOut 10000000 $
-                    encodeOutputBS $ PayScriptHash $ fromJust $
-                    base58ToAddr "32RexHZdsMoV8yzL1pQyFhYY6XeUNcWP78"
-                 ] 0
+    let fundingTx = createTx
+            1
+            [ TxIn (OutPoint tid1 0) (BS.pack [1]) maxBound ] -- dummy input
+            [ TxOut 10000000 $
+              encodeOutputBS $ PayScriptHash $ fromJust $
+              base58ToAddr "32RexHZdsMoV8yzL1pQyFhYY6XeUNcWP78"
+            ]
+            0
 
     importNetTx fundingTx Nothing
         >>= liftIO
@@ -1099,7 +1100,7 @@ testImportMultisig = do
         . testTx
 
     -- Create a transaction which has 0 signatures in ms1
-    tx1 <- fst <$> createTx accE1 Nothing Nothing
+    tx1 <- fst <$> createWalletTx accE1 Nothing Nothing
         [ ( fromJust $ base58ToAddr "3BYWaQHz6AVXx7wXmCka4846tRfa1ccWvh"
           , 5000000
           )
@@ -1289,12 +1290,14 @@ testDeleteUnsignedTx = do
         , newAccountKeys = ["xpub68kRFKHWxUt3mfJjcXdLeuDjCHnByqKSBVfMktJRXM6LSNNDR4ae6Nw1Kh621fzyKiBf6ssyZWPPTDUTQp1BhuZQuoVdtb8j2TRzqDLHmY7"]
         , newAccountReadOnly = False
         }
-    let fundingTx =
-            Tx 1 [ TxIn (OutPoint tid1 0) (BS.pack [1]) maxBound ] -- dummy input
-                 [ TxOut 10000000 $
-                    encodeOutputBS $ PayScriptHash $ fromJust $
-                    base58ToAddr "32RexHZdsMoV8yzL1pQyFhYY6XeUNcWP78"
-                 ] 0
+    let fundingTx = createTx
+            1
+            [ TxIn (OutPoint tid1 0) (BS.pack [1]) maxBound ] -- dummy input
+            [ TxOut 10000000 $
+              encodeOutputBS $ PayScriptHash $ fromJust $
+              base58ToAddr "32RexHZdsMoV8yzL1pQyFhYY6XeUNcWP78"
+            ]
+            0
 
     importNetTx fundingTx Nothing
         >>= liftIO
@@ -1303,7 +1306,7 @@ testDeleteUnsignedTx = do
         . testTx
 
     -- Create a transaction which has 0 signatures in ms1
-    tx1 <- fst <$> createTx accE1 Nothing Nothing
+    tx1 <- fst <$> createWalletTx accE1 Nothing Nothing
         [ ( fromJust $ base58ToAddr "3BYWaQHz6AVXx7wXmCka4846tRfa1ccWvh"
           , 5000000
           )

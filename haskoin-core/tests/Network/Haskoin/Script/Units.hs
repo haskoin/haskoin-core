@@ -7,6 +7,7 @@ import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Maybe (fromJust)
 import Data.ByteString (ByteString)
+import Data.Serialize (decode)
 
 import Network.Haskoin.Script
 import Network.Haskoin.Crypto
@@ -64,7 +65,7 @@ runMulSigVector :: (ByteString, ByteString) -> Assertion
 runMulSigVector (a, ops) =
     assertBool "    >  MultiSig Vector" $ a == b
   where
-    s = decode' $ fromJust $ decodeHex ops
+    s = fromRight . decode $ fromJust $ decodeHex ops
     b = addrToBase58 $ scriptAddr $ fromRight $ decodeOutput s
 
 testSigDecode :: ByteString -> Assertion

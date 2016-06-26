@@ -3,6 +3,7 @@ module Network.Haskoin.Transaction.Tests (tests) where
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
 
+import Data.Serialize (encode)
 import Data.String (fromString)
 import Data.String.Conversions (cs)
 import Data.Word (Word64)
@@ -62,7 +63,7 @@ testGuessSize (ArbitraryAddrOnlyTx tx) =
   where
     delta    = pki + (sum $ map fst msi)
     guess    = guessTxSize pki msi pkout msout
-    len      = BS.length $ encode' tx
+    len      = BS.length $ encode tx
     ins      = map f $ txIn tx
     f i      = fromRight $ decodeInputBS $ scriptInput i
     pki      = length $ filter isSpendPKHash ins

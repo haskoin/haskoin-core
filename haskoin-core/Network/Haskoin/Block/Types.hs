@@ -1,6 +1,14 @@
 module Network.Haskoin.Block.Types
 ( Block(..)
-, BlockHeader(..)
+, BlockHeader
+, createBlockHeader
+, blockVersion
+, prevBlock
+, merkleRoot
+, blockTimestamp
+, blockBits
+, bhNonce
+, headerHash
 , BlockLocator
 , GetBlocks(..)
 , GetHeaders(..)
@@ -9,32 +17,35 @@ module Network.Haskoin.Block.Types
 , blockHashToHex
 , hexToBlockHash
 , Headers(..)
-, headerHash
 , decodeCompact
 , encodeCompact
 ) where
 
-import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM2, replicateM, forM_, mzero)
-
-import Data.Maybe (fromMaybe)
-import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
-import Data.Bits ((.&.), (.|.), shiftR, shiftL)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS (length, reverse)
-import Data.Word (Word32)
-import Data.Binary (Binary, get, put)
-import Data.Binary.Get (getWord32le)
-import Data.Binary.Put (Put, putWord32le)
-import Data.String (IsString, fromString)
-import Data.String.Conversions (cs)
-import Text.Read (readPrec, parens, lexP, pfail)
-import qualified Text.Read as Read (Lexeme(Ident, String))
-
-import Network.Haskoin.Util
-import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Node.Types
-import Network.Haskoin.Transaction.Types
+import           Control.DeepSeq                   (NFData, rnf)
+import           Control.Monad                     (forM_, liftM2, mzero,
+                                                    replicateM)
+import           Data.Aeson                        (FromJSON, ToJSON,
+                                                    Value (String), parseJSON,
+                                                    toJSON, withText)
+import           Data.Bits                         (shiftL, shiftR, (.&.),
+                                                    (.|.))
+import           Data.ByteString                   (ByteString)
+import qualified Data.ByteString                   as BS (length, reverse)
+import           Data.Maybe                        (fromMaybe)
+import           Data.Serialize                    (Serialize, encode, get, put)
+import           Data.Serialize.Get                (getWord32le, lookAhead,
+                                                    remaining, getByteString)
+import           Data.Serialize.Put                (Put, putWord32le)
+import           Data.String                       (IsString, fromString)
+import           Data.String.Conversions           (cs)
+import           Data.Word                         (Word32)
+import           Network.Haskoin.Crypto.Hash
+import           Network.Haskoin.Node.Types
+import           Network.Haskoin.Transaction.Types
+import           Network.Haskoin.Util
+import           Text.Read                         (lexP, parens, pfail,
+                                                    readPrec)
+import qualified Text.Read                         as Read (Lexeme (Ident, String))
 
 -- | Data type describing a block in the bitcoin protocol. Blocks are sent in
 -- response to 'GetData' messages that are requesting information from a
@@ -43,28 +54,24 @@ data Block =
     Block {
             -- | Header information for this block.
             blockHeader     :: !BlockHeader
-            -- | Coinbase transaction of this block.
-          , blockCoinbaseTx :: !CoinbaseTx
             -- | List of transactions pertaining to this block.
           , blockTxns       :: ![Tx]
           } deriving (Eq, Show, Read)
 
 instance NFData Block where
-    rnf (Block h c ts) = rnf h `seq` rnf c `seq` rnf ts
+    rnf (Block h ts) = rnf h `seq` rnf ts
 
-instance Binary Block where
+instance Serialize Block where
 
     get = do
         header     <- get
         (VarInt c) <- get
-        cb         <- get
-        txs        <- replicateM (fromIntegral (c-1)) get
-        return $ Block header cb txs
+        txs        <- replicateM (fromIntegral c) get
+        return $ Block header txs
 
-    put (Block h cb txs) = do
+    put (Block h txs) = do
         put h
-        put $ VarInt $ fromIntegral $ length txs + 1
-        put cb
+        put $ VarInt $ fromIntegral $ length txs
         forM_ txs put
 
 newtype BlockHash = BlockHash { getBlockHash :: Hash256 }
@@ -87,7 +94,7 @@ instance IsString BlockHash where
     fromString = fromMaybe e . hexToBlockHash . cs where
         e = error "Could not read block hash from hex string"
 
-instance Binary BlockHash where
+instance Serialize BlockHash where
     get = BlockHash <$> get
     put = put . getBlockHash
 
@@ -107,51 +114,106 @@ hexToBlockHash hex = do
     h <- bsToHash256 bs
     return $ BlockHash h
 
--- | Compute the hash of a block header
-headerHash :: BlockHeader -> BlockHash
-headerHash = BlockHash . doubleHash256 . encode'
-
 -- | Data type recording information on a 'Block'. The hash of a block is
 -- defined as the hash of this data structure. The block mining process
 -- involves finding a partial hash collision by varying the nonce in the
--- 'BlockHeader' and/or additional randomness in the 'CoinbaseTx' of this
--- 'Block'. Variations in the 'CoinbaseTx' will result in different merkle
+-- 'BlockHeader' and/or additional randomness in the coinbase tx of this
+-- 'Block'. Variations in the coinbase tx will result in different merkle
 -- roots in the 'BlockHeader'.
 data BlockHeader =
     BlockHeader {
                   -- | Block version information, based on the version of the
                   -- software creating this block.
-                  blockVersion   :: !Word32
+                  _blockVersion   :: !Word32
                   -- | Hash of the previous block (parent) referenced by this
                   -- block.
-                , prevBlock      :: !BlockHash
+                , _prevBlock      :: !BlockHash
                   -- | Root of the merkle tree of all transactions pertaining
                   -- to this block.
-                , merkleRoot     :: !Hash256
+                , _merkleRoot     :: !Hash256
                   -- | Unix timestamp recording when this block was created
-                , blockTimestamp :: !Word32
+                , _blockTimestamp :: !Word32
                   -- | The difficulty target being used for this block
-                , blockBits      :: !Word32
+                , _blockBits      :: !Word32
                   -- | A random nonce used to generate this block. Additional
                   -- randomness is included in the coinbase transaction of
                   -- this block.
-                , bhNonce        :: !Word32
+                , _bhNonce        :: !Word32
+                  -- | Hash of the header
+                , _headerHash     :: !BlockHash
                 } deriving (Eq, Show, Read)
 
+createBlockHeader :: Word32 -> BlockHash -> Hash256
+                  -> Word32 -> Word32 -> Word32 -> BlockHeader
+createBlockHeader v p m t b n =
+    BlockHeader { _blockVersion   = v
+                , _prevBlock      = p
+                , _merkleRoot     = m
+                , _blockTimestamp = t
+                , _blockBits      = b
+                , _bhNonce        = n
+                , _headerHash     = BlockHash $ doubleHash256 $ encode bh
+                }
+  where
+    bh = BlockHeader { _blockVersion   = v
+                     , _prevBlock      = p
+                     , _merkleRoot     = m
+                     , _blockTimestamp = t
+                     , _blockBits      = b
+                     , _bhNonce        = n
+                     , _headerHash     = fromString $ replicate 64 '0'
+                     }
+
+blockVersion :: BlockHeader -> Word32
+blockVersion = _blockVersion
+
+prevBlock :: BlockHeader -> BlockHash
+prevBlock = _prevBlock
+
+merkleRoot :: BlockHeader -> Hash256
+merkleRoot = _merkleRoot
+
+blockTimestamp :: BlockHeader -> Word32
+blockTimestamp = _blockTimestamp
+
+blockBits :: BlockHeader -> Word32
+blockBits = _blockBits
+
+bhNonce :: BlockHeader -> Word32
+bhNonce = _bhNonce
+
+headerHash :: BlockHeader -> BlockHash
+headerHash = _headerHash
+
 instance NFData BlockHeader where
-    rnf (BlockHeader v p m t b n) =
-        rnf v `seq` rnf p `seq` rnf m `seq` rnf t `seq` rnf b `seq` rnf n
+    rnf (BlockHeader v p m t b n h) =
+        rnf v `seq` rnf p `seq` rnf m `seq`
+        rnf t `seq` rnf b `seq` rnf n `seq` rnf h
 
-instance Binary BlockHeader where
+instance Serialize BlockHeader where
+    get = do
+        start <- remaining
+        (v, p, m, t, b, n, end) <- lookAhead $ do
+            v <- getWord32le
+            p <- get
+            m <- get
+            t <- getWord32le
+            b <- getWord32le
+            n <- getWord32le
+            end <- remaining
+            return (v, p, m, t, b, n, end)
+        bs <- getByteString $ fromIntegral $ start - end
+        return $ BlockHeader
+            { _blockVersion   = v
+            , _prevBlock      = p
+            , _merkleRoot     = m
+            , _blockTimestamp = t
+            , _blockBits      = b
+            , _bhNonce        = n
+            , _headerHash     = BlockHash $ doubleHash256 bs
+            }
 
-    get = BlockHeader <$> getWord32le
-                      <*> get
-                      <*> get
-                      <*> getWord32le
-                      <*> getWord32le
-                      <*> getWord32le
-
-    put (BlockHeader v p m bt bb n) = do
+    put (BlockHeader v p m bt bb n _) = do
         putWord32le v
         put         p
         put         m
@@ -185,7 +247,7 @@ data GetBlocks =
 instance NFData GetBlocks where
     rnf (GetBlocks v l h) = rnf v `seq` rnf l `seq` rnf h
 
-instance Binary GetBlocks where
+instance Serialize GetBlocks where
 
     get = GetBlocks <$> getWord32le
                     <*> (repList =<< get)
@@ -223,7 +285,7 @@ data GetHeaders =
 instance NFData GetHeaders where
     rnf (GetHeaders v l h) = rnf v `seq` rnf l `seq` rnf h
 
-instance Binary GetHeaders where
+instance Serialize GetHeaders where
 
     get = GetHeaders <$> getWord32le
                      <*> (repList =<< get)
@@ -248,7 +310,7 @@ data Headers =
 instance NFData Headers where
     rnf (Headers l) = rnf l
 
-instance Binary Headers where
+instance Serialize Headers where
 
     get = Headers <$> (repList =<< get)
       where

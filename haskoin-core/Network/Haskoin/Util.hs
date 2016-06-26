@@ -10,19 +10,6 @@ module Network.Haskoin.Util
 , encodeHex
 , decodeHex
 
-  -- * Data.Binary helpers
-, encode'
-, decode'
-, runPut'
-, runGet'
-, decodeOrFail'
-, runGetOrFail'
-, fromDecode
-, fromRunGet
-, decodeToEither
-, decodeToMaybe
-, isolate
-
   -- * Maybe and Either monad helpers
 , isLeft
 , isRight
@@ -34,6 +21,7 @@ module Network.Haskoin.Util
 , liftMaybe
 
   -- * Various helpers
+, decodeToMaybe
 , updateIndex
 , matchTemplate
 
@@ -55,20 +43,17 @@ import Control.Monad (guard)
 import Control.Monad.Trans.Either (EitherT, hoistEither)
 import Control.Monad.State (MonadState, get, put)
 
+import Data.Serialize (Serialize, decode)
 import Data.Word (Word8)
 import Data.Bits ((.|.), shiftL, shiftR)
 import Data.Char (toLower)
-import Data.Binary.Put (Put, runPut)
-import Data.Binary (Binary, encode, decode, decodeOrFail)
-import Data.Binary.Get (Get, runGetOrFail, getByteString, ByteOffset, runGet)
 import Data.Aeson.Types
     (Options(..), SumEncoding(..), defaultOptions, defaultTaggedObject)
 
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as BL (toStrict, fromStrict)
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString as BS
-    (pack, null, empty, foldr', reverse, unfoldr)
+    (pack, empty, foldr', reverse, unfoldr)
 
 -- ByteString helpers
 
@@ -97,89 +82,6 @@ decodeHex :: ByteString -> Maybe ByteString
 decodeHex bs =
     let (x, b) = B16.decode bs
     in guard (b == BS.empty) >> return x
-
--- Data.Binary helpers
-
--- | Strict version of 'Data.Binary.encode'
-encode' :: Binary a => a -> ByteString
-encode' = BL.toStrict . encode
-
--- | Strict version of 'Data.Binary.decode'
-decode' :: Binary a => ByteString -> a
-decode' = decode . BL.fromStrict
-
--- | Strict version of 'Data.Binary.runGet'
-runGet' :: Binary a => Get a -> ByteString -> a
-runGet' m = runGet m . BL.fromStrict
-
--- | Strict version of 'Data.Binary.runPut'
-runPut' :: Put -> ByteString
-runPut' = BL.toStrict . runPut
-
--- | Strict version of 'Data.Binary.decodeOrFail'
-decodeOrFail' ::
-    Binary a =>
-    ByteString ->
-    Either (ByteString, ByteOffset, String) (ByteString, ByteOffset, a)
-decodeOrFail' bs = case decodeOrFail $ BL.fromStrict bs of
-    Left  (lbs, o, err) -> Left  (BL.toStrict lbs, o, err)
-    Right (lbs, o, res) -> Right (BL.toStrict lbs, o, res)
-
--- | Strict version of 'Data.Binary.runGetOrFail'
-runGetOrFail' ::
-    Get a -> ByteString ->
-    Either (ByteString, ByteOffset, String) (ByteString, ByteOffset, a)
-runGetOrFail' m bs = case runGetOrFail m $ BL.fromStrict bs of
-    Left  (lbs, o, err) -> Left  (BL.toStrict lbs, o, err)
-    Right (lbs, o, res) -> Right (BL.toStrict lbs, o, res)
-
--- | Try to decode a 'Data.Binary' value. If decoding succeeds, apply the
--- function to the result. Otherwise, return the default value.
-fromDecode :: Binary a
-           => ByteString    -- ^ The bytestring to decode
-           -> b             -- ^ Default value to return when decoding fails
-           -> (a -> b)      -- ^ Function to apply when decoding succeeds
-           -> b             -- ^ Final result
-fromDecode bs def f = either (const def) (f . lst) $ decodeOrFail' bs
-  where
-    lst (_,_,c) = c
-
--- | Try to run a 'Data.Binary.Get' monad. If decoding succeeds, apply a
--- function to the result. Otherwise, return the default value.
-fromRunGet :: Binary a
-           => Get a         -- ^ The Get monad to run
-           -> ByteString    -- ^ The bytestring to decode
-           -> b             -- ^ Default value to return when decoding fails
-           -> (a -> b)      -- ^ Function to apply when decoding succeeds
-           -> b             -- ^ Final result
-fromRunGet m bs def f = either (const def) (f . lst) $ runGetOrFail' m bs
-  where
-    lst (_,_,c) = c
-
--- | Decode a 'Data.Binary' value. A 'Right' value is returned with the result
--- upon success. Otherwise a 'Left' value with the error message is returned.
-decodeToEither :: Binary a => ByteString -> Either String a
-decodeToEither bs = case decodeOrFail' bs of
-    Left  (_,_,err) -> Left err
-    Right (_,_,res) -> Right res
-
--- | Decode a 'Data.Binary' value. A 'Just' value is returned with the result
--- upon success. Otherwise, 'Nothing' is returned.
-decodeToMaybe :: Binary a => ByteString -> Maybe a
-decodeToMaybe bs = fromDecode bs Nothing Just
-
--- | Isolate a 'Data.Binary.Get' monad for the next 'Int' bytes. Only the next
--- 'Int' bytes of the input 'ByteString' will be available for the 'Get' monad
--- to consume. This function will fail if the Get monad fails or some of the
--- input is not consumed.
-isolate :: Binary a => Int -> Get a -> Get a
-isolate i g = do
-    bs <- getByteString i
-    case runGetOrFail' g bs of
-        Left (_, _, err) -> fail err
-        Right (unconsumed, _, res)
-            | BS.null unconsumed -> return res
-            | otherwise          -> fail "Isolate: unconsumed input"
 
 -- Maybe and Either monad helpers
 
@@ -224,6 +126,10 @@ liftMaybe :: Monad m => b -> Maybe a -> EitherT b m a
 liftMaybe err = liftEither . maybeToEither err
 
 -- Various helpers
+
+-- Helper function to decode Data.Serialize into Maybe
+decodeToMaybe :: Serialize a => ByteString -> Maybe a
+decodeToMaybe bs = eitherToMaybe $ decode bs
 
 -- | Applies a function to only one element of a list defined by its index.  If
 -- the index is out of the bounds of the list, the original list is returned.

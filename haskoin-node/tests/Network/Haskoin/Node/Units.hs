@@ -243,12 +243,10 @@ foldBlock nM =
 mockBlock :: NodeBlock -> Word32 -> Word32 -> NodeBlock
 mockBlock parent chain n = nodeBlock parent chain bh
   where
-    bh = BlockHeader
-        { blockVersion   = blockVersion $ nodeHeader parent
-        , prevBlock      = nodeHash parent
-        , merkleRoot     = z
-        , blockTimestamp = nodeTimestamp parent + 600
-        , blockBits      = blockBits $ nodeHeader parent
-        , bhNonce        = n
-        }
-    z = "0000000000000000000000000000000000000000000000000000000000000000"
+    bh = createBlockHeader
+        (blockVersion $ nodeHeader parent)
+        (nodeHash parent)
+        "0000000000000000000000000000000000000000000000000000000000000000"
+        (nodeTimestamp parent + 600)
+        (blockBits $ nodeHeader parent)
+        n

@@ -17,13 +17,13 @@ import Control.DeepSeq (NFData, rnf)
 import Data.Word
 import Data.Bits
 import Data.Hash.Murmur (murmur3)
-import Data.Binary (Binary, get, put)
-import Data.Binary.Get
+import Data.Serialize (Serialize, get, put)
+import Data.Serialize.Get
     ( getWord8
     , getWord32le
     , getByteString
     )
-import Data.Binary.Put
+import Data.Serialize.Put
     ( putWord8
     , putWord32le
     , putByteString
@@ -62,7 +62,7 @@ data BloomFlags
 
 instance NFData BloomFlags where rnf x = seq x ()
 
-instance Binary BloomFlags where
+instance Serialize BloomFlags where
     get = go =<< getWord8
       where
         go 0 = return BloomUpdateNone
@@ -97,7 +97,7 @@ instance NFData BloomFilter where
     rnf (BloomFilter d h t g) =
         rnf d `seq` rnf h `seq` rnf t `seq` rnf g
 
-instance Binary BloomFilter where
+instance Serialize BloomFilter where
 
     get = BloomFilter <$> (S.fromList <$> (readDat =<< get))
                       <*> getWord32le <*> getWord32le
@@ -119,7 +119,7 @@ newtype FilterLoad = FilterLoad { filterLoadBloomFilter :: BloomFilter }
 instance NFData FilterLoad where
     rnf (FilterLoad f) = rnf f
 
-instance Binary FilterLoad where
+instance Serialize FilterLoad where
     get = FilterLoad <$> get
     put (FilterLoad f) = put f
 
@@ -131,7 +131,7 @@ newtype FilterAdd = FilterAdd { getFilterData :: BS.ByteString }
 instance NFData FilterAdd where
     rnf (FilterAdd f) = rnf f
 
-instance Binary FilterAdd where
+instance Serialize FilterAdd where
     get = do
         (VarInt len) <- get
         dat <- getByteString $ fromIntegral len

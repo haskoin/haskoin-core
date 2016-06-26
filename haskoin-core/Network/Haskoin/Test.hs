@@ -89,7 +89,6 @@ module Network.Haskoin.Test
 , ArbitraryTxIn(..)
 , ArbitraryTxOut(..)
 , ArbitraryOutPoint(..)
-, ArbitraryCoinbaseTx(..)
 , ArbitraryAddrOnlyTx(..)
 , ArbitraryAddrOnlyTxIn(..)
 , ArbitraryAddrOnlyTxOut(..)

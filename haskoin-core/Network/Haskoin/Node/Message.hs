@@ -3,36 +3,23 @@ module Network.Haskoin.Node.Message
 , MessageHeader(..)
 ) where
 
-import Control.DeepSeq (NFData, rnf)
-import Control.Monad (unless)
-
-import Data.Word (Word32)
-import Data.Binary (Binary, get, put)
-import Data.Binary.Get
-    ( lookAhead
-    , getByteString
-    , getWord32le
-    , getWord32be
-    )
-import Data.Binary.Put
-    ( putByteString
-    , putWord32le
-    , putWord32be
-    )
-import qualified Data.ByteString as BS
-    ( length
-    , append
-    , empty
-    )
-
-import Network.Haskoin.Node.Types
-import Network.Haskoin.Transaction.Types
-import Network.Haskoin.Block.Types
-import Network.Haskoin.Block.Merkle
-import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Node.Bloom
-import Network.Haskoin.Constants
-import Network.Haskoin.Util
+import           Control.DeepSeq                   (NFData, rnf)
+import           Control.Monad                     (unless)
+import qualified Data.ByteString                   as BS (append, empty, length)
+import           Data.Serialize                    (Serialize, encode, get, put)
+import           Data.Serialize.Get                (getByteString, getWord32be,
+                                                    getWord32le, isolate,
+                                                    lookAhead)
+import           Data.Serialize.Put                (putByteString, putWord32be,
+                                                    putWord32le)
+import           Data.Word                         (Word32)
+import           Network.Haskoin.Block.Merkle
+import           Network.Haskoin.Block.Types
+import           Network.Haskoin.Constants
+import           Network.Haskoin.Crypto.Hash
+import           Network.Haskoin.Node.Bloom
+import           Network.Haskoin.Node.Types
+import           Network.Haskoin.Transaction.Types
 
 -- | Data type representing the header of a 'Message'. All messages sent between
 -- nodes contain a message header.
@@ -54,7 +41,7 @@ data MessageHeader =
 instance NFData MessageHeader where
     rnf (MessageHeader m c p s) = rnf m `seq` rnf c `seq` rnf p `seq` rnf s
 
-instance Binary MessageHeader where
+instance Serialize MessageHeader where
 
     get = MessageHeader <$> getWord32be
                         <*> get
@@ -97,7 +84,7 @@ data Message
     | MReject !Reject
     deriving (Eq, Show)
 
-instance Binary Message where
+instance Serialize Message where
 
     get = do
         (MessageHeader mgc cmd len chk) <- get
@@ -135,29 +122,29 @@ instance Binary Message where
 
     put msg = do
         let (cmd, payload) = case msg of
-                MVersion m     -> (MCVersion, encode' m)
+                MVersion m     -> (MCVersion, encode m)
                 MVerAck        -> (MCVerAck, BS.empty)
-                MAddr m        -> (MCAddr, encode' m)
-                MInv m         -> (MCInv, encode' m)
-                MGetData m     -> (MCGetData, encode' m)
-                MNotFound m    -> (MCNotFound, encode' m)
-                MGetBlocks m   -> (MCGetBlocks, encode' m)
-                MGetHeaders m  -> (MCGetHeaders, encode' m)
-                MTx m          -> (MCTx, encode' m)
-                MBlock m       -> (MCBlock, encode' m)
-                MMerkleBlock m -> (MCMerkleBlock, encode' m)
-                MHeaders m     -> (MCHeaders, encode' m)
+                MAddr m        -> (MCAddr, encode m)
+                MInv m         -> (MCInv, encode m)
+                MGetData m     -> (MCGetData, encode m)
+                MNotFound m    -> (MCNotFound, encode m)
+                MGetBlocks m   -> (MCGetBlocks, encode m)
+                MGetHeaders m  -> (MCGetHeaders, encode m)
+                MTx m          -> (MCTx, encode m)
+                MBlock m       -> (MCBlock, encode m)
+                MMerkleBlock m -> (MCMerkleBlock, encode m)
+                MHeaders m     -> (MCHeaders, encode m)
                 MGetAddr       -> (MCGetAddr, BS.empty)
-                MFilterLoad m  -> (MCFilterLoad, encode' m)
-                MFilterAdd m   -> (MCFilterAdd, encode' m)
+                MFilterLoad m  -> (MCFilterLoad, encode m)
+                MFilterAdd m   -> (MCFilterAdd, encode m)
                 MFilterClear   -> (MCFilterClear, BS.empty)
-                MPing m        -> (MCPing, encode' m)
-                MPong m        -> (MCPong, encode' m)
-                MAlert m       -> (MCAlert, encode' m)
+                MPing m        -> (MCPing, encode m)
+                MPong m        -> (MCPong, encode m)
+                MAlert m       -> (MCAlert, encode m)
                 MMempool       -> (MCMempool, BS.empty)
-                MReject m      -> (MCReject, encode' m)
+                MReject m      -> (MCReject, encode m)
             chk = checkSum32 payload
             len = fromIntegral $ BS.length payload
             header = MessageHeader networkMagic cmd len chk
-        putByteString $ (encode' header) `BS.append` payload
+        putByteString $ (encode header) `BS.append` payload
 

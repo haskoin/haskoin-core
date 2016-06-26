@@ -43,9 +43,9 @@ import Data.Word (Word16)
 import Data.String (IsString, fromString)
 import Data.String.Conversions (cs)
 import Text.Read (Lexeme(String, Ident), readPrec, lexP, parens, pfail)
-import Data.Binary (Binary, get, put)
-import Data.Binary.Get (getByteString)
-import Data.Binary.Put (putByteString)
+import Data.Serialize (Serialize, get, put)
+import Data.Serialize.Get (getByteString)
+import Data.Serialize.Put (putByteString)
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -94,7 +94,7 @@ instance IsString CheckSum32 where
       where
         e = error "Could not decode checksum"
 
-instance Binary CheckSum32 where
+instance Serialize CheckSum32 where
     get = CheckSum32 <$> getByteString 4
     put (CheckSum32 bs) = putByteString bs
 
@@ -118,7 +118,7 @@ instance IsString Hash512 where
       where
         e = error "Could not decode 64-byte hash"
 
-instance Binary Hash512 where
+instance Serialize Hash512 where
     get = Hash512 <$> getByteString 64
     put (Hash512 bs) = putByteString bs
 
@@ -142,7 +142,7 @@ instance IsString Hash256 where
       where
         e = error "Could not decode 32-byte hash"
 
-instance Binary Hash256 where
+instance Serialize Hash256 where
     get = Hash256 <$> getByteString 32
     put (Hash256 bs) = putByteString bs
 
@@ -166,7 +166,7 @@ instance IsString Hash160 where
       where
         e = error "Could not decode 20-byte hash"
 
-instance Binary Hash160 where
+instance Serialize Hash160 where
     get = Hash160 <$> getByteString 20
     put (Hash160 bs) = putByteString bs
 

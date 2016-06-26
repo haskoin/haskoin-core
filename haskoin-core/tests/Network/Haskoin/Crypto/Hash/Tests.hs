@@ -5,6 +5,7 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 
 import Data.String (fromString)
 import Data.String.Conversions (cs)
+import Data.Serialize (encode)
 import Network.Haskoin.Block
 import Network.Haskoin.Crypto
 import Network.Haskoin.Test
@@ -46,25 +47,25 @@ testReadShowHash512 :: ArbitraryHash512 -> Bool
 testReadShowHash512 (ArbitraryHash512 k) = read (show k) == k
 
 testFromStringHash512 :: ArbitraryHash512 -> Bool
-testFromStringHash512 (ArbitraryHash512 k) = fromString (cs $ encodeHex $ encode' k) == k
+testFromStringHash512 (ArbitraryHash512 k) = fromString (cs $ encodeHex $ encode k) == k
 
 
 testReadShowHash256 :: ArbitraryHash256 -> Bool
 testReadShowHash256 (ArbitraryHash256 k) = read (show k) == k
 
 testFromStringHash256 :: ArbitraryHash256 -> Bool
-testFromStringHash256 (ArbitraryHash256 k) = fromString (cs $ encodeHex $ encode' k) == k
+testFromStringHash256 (ArbitraryHash256 k) = fromString (cs $ encodeHex $ encode k) == k
 
 
 testReadShowHash160 :: ArbitraryHash160 -> Bool
 testReadShowHash160 (ArbitraryHash160 k) = read (show k) == k
 
 testFromStringHash160 :: ArbitraryHash160 -> Bool
-testFromStringHash160 (ArbitraryHash160 k) = fromString (cs $ encodeHex $ encode' k) == k
+testFromStringHash160 (ArbitraryHash160 k) = fromString (cs $ encodeHex $ encode k) == k
 
 
 testReadShowCheckSum32 :: ArbitraryCheckSum32 -> Bool
 testReadShowCheckSum32 (ArbitraryCheckSum32 k) = read (show k) == k
 
 testFromStringCheckSum32 :: ArbitraryCheckSum32 -> Bool
-testFromStringCheckSum32 (ArbitraryCheckSum32 k) = fromString (cs $ encodeHex $ encode' k) == k
+testFromStringCheckSum32 (ArbitraryCheckSum32 k) = fromString (cs $ encodeHex $ encode k) == k

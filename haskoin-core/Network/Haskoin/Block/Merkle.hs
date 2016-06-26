@@ -11,23 +11,20 @@ module Network.Haskoin.Block.Merkle
 , extractMatches
 ) where
 
-import Control.Monad (forM_, replicateM)
-import Control.DeepSeq (NFData, rnf)
-
-import Data.Bits
-import Data.Maybe
-import Data.Word (Word8, Word32)
-import Data.Binary (Binary, get, put)
-import Data.Binary.Get (getWord8, getWord32le)
-import Data.Binary.Put (putWord8, putWord32le)
-import qualified Data.ByteString as BS
-
-import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Block.Types
-import Network.Haskoin.Transaction.Types
-import Network.Haskoin.Util
-import Network.Haskoin.Constants
-import Network.Haskoin.Node.Types
+import           Control.DeepSeq                   (NFData, rnf)
+import           Control.Monad                     (forM_, replicateM)
+import           Data.Bits
+import qualified Data.ByteString                   as BS
+import           Data.Maybe
+import           Data.Serialize                    (Serialize, encode, get, put)
+import           Data.Serialize.Get                (getWord32le, getWord8)
+import           Data.Serialize.Put                (putWord32le, putWord8)
+import           Data.Word                         (Word32, Word8)
+import           Network.Haskoin.Block.Types
+import           Network.Haskoin.Constants
+import           Network.Haskoin.Crypto.Hash
+import           Network.Haskoin.Node.Types
+import           Network.Haskoin.Transaction.Types
 
 type MerkleRoot        = Hash256
 type FlagBits          = [Bool]
@@ -52,7 +49,7 @@ data MerkleBlock =
 instance NFData MerkleBlock where
     rnf (MerkleBlock m t h f) = rnf m `seq` rnf t `seq` rnf h `seq` rnf f
 
-instance Binary MerkleBlock where
+instance Serialize MerkleBlock where
 
     get = do
         header <- get
@@ -101,7 +98,7 @@ buildMerkleRoot :: [TxHash]   -- ^ List of transaction hashes (leaf nodes).
 buildMerkleRoot txs = calcHash (calcTreeHeight $ length txs) 0 txs
 
 hash2 :: Hash256 -> Hash256 -> Hash256
-hash2 a b = doubleHash256 $ encode' a `BS.append` encode' b
+hash2 a b = doubleHash256 $ encode a `BS.append` encode b
 
 -- | Computes the hash of a specific node in a merkle tree.
 calcHash :: Int       -- ^ Height of the node in the merkle tree.

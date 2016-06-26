@@ -12,32 +12,27 @@ module Network.Haskoin.Script.SigHash
 , decodeCanonicalSig
 ) where
 
-import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM2, mzero, (<=<))
-
-import Data.Word (Word8)
-import Data.Bits (testBit, clearBit)
-import Data.Maybe (fromMaybe)
-import Data.Binary (Binary, get, put, getWord8, putWord8)
-import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-    ( init
-    , singleton
-    , length
-    , last
-    , append
-    , pack
-    , splitAt
-    , empty
-    )
-import Data.String.Conversions (cs)
-
-import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Crypto.ECDSA
-import Network.Haskoin.Script.Types
-import Network.Haskoin.Transaction.Types
-import Network.Haskoin.Util
+import           Control.DeepSeq                   (NFData, rnf)
+import           Control.Monad                     (liftM2, mzero, (<=<))
+import           Data.Aeson                        (FromJSON, ToJSON,
+                                                    Value (String), parseJSON,
+                                                    toJSON, withText)
+import           Data.Bits                         (clearBit, testBit)
+import           Data.ByteString                   (ByteString)
+import qualified Data.ByteString                   as BS (append, empty, init,
+                                                          last, length, pack,
+                                                          singleton, splitAt)
+import           Data.Maybe                        (fromMaybe)
+import           Data.Serialize                    (Serialize, decode, encode,
+                                                    get, getWord8, put,
+                                                    putWord8, runPut)
+import           Data.String.Conversions           (cs)
+import           Data.Word                         (Word8)
+import           Network.Haskoin.Crypto.ECDSA
+import           Network.Haskoin.Crypto.Hash
+import           Network.Haskoin.Script.Types
+import           Network.Haskoin.Transaction.Types
+import           Network.Haskoin.Util
 
 -- | Data type representing the different ways a transaction can be signed.
 -- When producing a signature, a hash of the transaction is used as the message
@@ -98,7 +93,7 @@ isSigUnknown sh = case sh of
     SigUnknown _ _ -> True
     _ -> False
 
-instance Binary SigHash where
+instance Serialize SigHash where
 
     get = getWord8 >>= \w ->
         let acp = testBit w 7
@@ -115,7 +110,7 @@ instance Binary SigHash where
         SigUnknown _ w -> w
 
 instance ToJSON SigHash where
-    toJSON = String . cs . encodeHex . encode'
+    toJSON = String . cs . encodeHex . encode
 
 instance FromJSON SigHash where
     parseJSON = withText "sighash" $
@@ -123,7 +118,7 @@ instance FromJSON SigHash where
 
 -- | Encodes a 'SigHash' to a 32 bit-long bytestring.
 encodeSigHash32 :: SigHash -> ByteString
-encodeSigHash32 sh = encode' sh `BS.append` BS.pack [0,0,0]
+encodeSigHash32 sh = encode sh `BS.append` BS.pack [0,0,0]
 
 -- | Computes the hash that will be used for signing a transaction.
 txSigHash :: Tx      -- ^ Transaction to sign.
@@ -136,20 +131,20 @@ txSigHash tx out i sh = do
     -- When SigSingle and input index > outputs, then sign integer 1
     fromMaybe one $ do
         newOut <- buildOutputs (txOut tx) i sh
-        let newTx = tx{ txIn = newIn, txOut = newOut }
-        return $ doubleHash256 $ encode' newTx `BS.append` encodeSigHash32 sh
+        let newTx = createTx (txVersion tx) newIn newOut (txLockTime tx)
+        return $ doubleHash256 $ encode newTx `BS.append` encodeSigHash32 sh
   where
     one = "0100000000000000000000000000000000000000000000000000000000000000"
 
 -- Builds transaction inputs for computing SigHashes
 buildInputs :: [TxIn] -> Script -> Int -> SigHash -> [TxIn]
 buildInputs txins out i sh
-    | anyoneCanPay sh   = (txins !! i) { scriptInput = encode' out } : []
+    | anyoneCanPay sh   = (txins !! i) { scriptInput = encode out } : []
     | isSigAll sh || isSigUnknown sh = single
     | otherwise         = map noSeq $ zip single [0..]
   where
     empty  = map (\ti -> ti{ scriptInput = BS.empty }) txins
-    single = updateIndex i empty $ \ti -> ti{ scriptInput = encode' out }
+    single = updateIndex i empty $ \ti -> ti{ scriptInput = encode out }
     noSeq (ti,j) = if i == j then ti else ti{ txInSequence = 0 }
 
 -- Build transaction outputs for computing SigHashes
@@ -175,13 +170,13 @@ instance NFData TxSignature where
 
 -- | Serialize a 'TxSignature' to a ByteString.
 encodeSig :: TxSignature -> ByteString
-encodeSig (TxSignature sig sh) = runPut' $ put sig >> put sh
+encodeSig (TxSignature sig sh) = runPut $ put sig >> put sh
 
 -- | Decode a 'TxSignature' from a ByteString.
 decodeSig :: ByteString -> Either String TxSignature
 decodeSig bs = do
     let (h, l) = BS.splitAt (BS.length bs - 1) bs
-    liftM2 TxSignature (decodeToEither h) (decodeToEither l)
+    liftM2 TxSignature (decode h) (decode l)
 
 decodeCanonicalSig :: ByteString -> Either String TxSignature
 decodeCanonicalSig bs
@@ -190,7 +185,7 @@ decodeCanonicalSig bs
     | otherwise =
         case decodeStrictSig $ BS.init bs of
             Just sig ->
-                TxSignature sig <$> decodeToEither (BS.singleton $ BS.last bs)
+                TxSignature sig <$> decode (BS.singleton $ BS.last bs)
             Nothing  ->
                 Left "Non-canonical signature: could not parse signature"
   where

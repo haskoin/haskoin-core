@@ -41,8 +41,9 @@ import           Control.Monad                   (forM_, forever, liftM2,
 import qualified Control.Monad.Reader            as R (ReaderT, ask, asks)
 import           Control.Monad.Trans             (liftIO)
 import           Data.Aeson                      (FromJSON, ToJSON, Value (..),
-                                                  decode, eitherDecode, encode,
-                                                  object, toJSON, (.=))
+                                                  decode, eitherDecode, object,
+                                                  toJSON, (.=))
+import qualified Data.Aeson                      as Aeson (encode)
 import qualified Data.Aeson.Encode.Pretty        as JSON (Config (..),
                                                           defConfig,
                                                           encodePretty')
@@ -53,6 +54,7 @@ import           Data.Maybe                      (fromMaybe, isJust, isNothing,
                                                   listToMaybe, maybeToList)
 import           Data.Monoid                     ((<>))
 import           Data.Restricted                 (rvalue)
+import           Data.Serialize                  (encode)
 import           Data.String.Conversions         (cs)
 import           Data.Text                       (Text, pack, splitOn, unpack)
 import           Data.Word                       (Word32, Word64)
@@ -409,9 +411,9 @@ cmdGetOffline name tidStr = case tidM of
         resE <- sendZmq (GetOfflineTxR (pack name) tid)
         handleResponse resE $ \(OfflineTxData tx dat) -> do
             liftIO $ putStrLn $ unwords
-                [ "Tx      :", cs $ encodeHex $ encode' tx ]
+                [ "Tx      :", cs $ encodeHex $ encode tx ]
             liftIO $ putStrLn $ unwords
-                [ "CoinData:", cs $ encodeHex $ cs $ encode dat ]
+                [ "CoinData:", cs $ encodeHex $ cs $ Aeson.encode dat ]
     _ -> error "Could not parse txid"
   where
     tidM = hexToTxHash $ cs tidStr
@@ -423,7 +425,7 @@ cmdSignOffline name txStr datStr = case (txM, datM) of
         resE <- sendZmq (PostOfflineTxR (pack name) masterM tx dat)
         handleResponse resE $ \(TxCompleteRes tx' c) -> do
             liftIO $ putStrLn $ unwords
-                [ "Tx      :", cs $ encodeHex $ encode' tx' ]
+                [ "Tx      :", cs $ encodeHex $ encode tx' ]
             liftIO $ putStrLn $ unwords
                 [ "Complete:", if c then "Yes" else "No" ]
     _ -> error "Could not decode input data"
@@ -562,7 +564,7 @@ sendZmq :: (FromJSON a, ToJSON a)
         -> Handler (Either String (WalletResponse a))
 sendZmq req = do
     cfg <- R.ask
-    let msg = cs $ encode req
+    let msg = cs $ Aeson.encode req
     when (configVerbose cfg) $ liftIO $
         B8.hPutStrLn stderr $ "Outgoing JSON: " `mappend` msg
     -- TODO: If I do this in the same thread I have to ^C twice to exit
@@ -571,7 +573,7 @@ sendZmq req = do
             setLinger (restrict (0 :: Int)) sock
             setupAuth cfg sock
             connect sock (configConnect cfg)
-            send sock [] (cs $ encode req)
+            send sock [] (cs $ Aeson.encode req)
             eitherDecode . cs <$> receive sock
     wait a
 
@@ -598,12 +600,12 @@ formatStr :: String -> IO ()
 formatStr str = forM_ (lines str) putStrLn
 
 encodeTxJSON :: Tx -> Value
-encodeTxJSON tx@(Tx v is os i) = object
+encodeTxJSON tx = object
     [ "txid"     .= (cs $ txHashToHex (txHash tx) :: Text)
-    , "version"  .= v
-    , "inputs"   .= map encodeTxInJSON is
-    , "outputs"  .= map encodeTxOutJSON os
-    , "locktime" .= i
+    , "version"  .= txVersion tx
+    , "inputs"   .= map encodeTxInJSON (txIn tx)
+    , "outputs"  .= map encodeTxOutJSON (txOut tx)
+    , "locktime" .= txLockTime tx
     ]
 
 encodeTxInJSON :: TxIn -> Value
@@ -651,7 +653,7 @@ encodeScriptInputJSON si = case si of
     RegularInput (SpendPKHash s p) -> object
         [ "spendpubkeyhash" .= object
             [ "sig"            .= encodeSigJSON s
-            , "pubkey"         .= (cs $ encodeHex (encode' p) :: Text)
+            , "pubkey"         .= (cs $ encodeHex (encode p) :: Text)
             , "sender-address" .= (cs $ addrToBase58 (pubKeyAddr p) :: Text)
             ]
         ]
@@ -670,24 +672,24 @@ encodeScriptOutputJSON :: ScriptOutput -> Value
 encodeScriptOutputJSON so = case so of
     PayPK p -> object
         [ "pay2pubkey" .= object
-          [ "pubkey" .= (cs $ encodeHex (encode' p) :: Text) ]
+          [ "pubkey" .= (cs $ encodeHex (encode p) :: Text) ]
         ]
     PayPKHash a -> object
         [ "pay2pubkeyhash" .= object
             [ "address-base64" .=
-              (cs $ encodeHex (encode' $ getAddrHash a) :: Text)
+              (cs $ encodeHex (encode $ getAddrHash a) :: Text)
             , "address-base58" .= (cs $ addrToBase58 a :: Text)
             ]
         ]
     PayMulSig ks r -> object
         [ "pay2mulsig" .= object
             [ "required-keys" .= r
-            , "pubkeys"       .= (map (cs . encodeHex . encode') ks :: [Text])
+            , "pubkeys"       .= (map (cs . encodeHex . encode) ks :: [Text])
             ]
         ]
     PayScriptHash a -> object
         [ "pay2scripthash" .= object
-            [ "address-base64" .= (cs $ encodeHex $ encode' $ getAddrHash a :: Text)
+            [ "address-base64" .= (cs $ encodeHex $ encode $ getAddrHash a :: Text)
             , "address-base58" .= (cs (addrToBase58 a) :: Text)
             ]
         ]

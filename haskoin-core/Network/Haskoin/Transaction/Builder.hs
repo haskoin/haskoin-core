@@ -19,34 +19,31 @@ module Network.Haskoin.Transaction.Builder
 , buildInput
 ) where
 
-import Control.Arrow (first)
-import Control.Monad (mzero, foldM, unless)
-import Control.Monad.Identity (runIdentity)
-import Control.DeepSeq (NFData, rnf)
-
-import Data.Maybe (catMaybes, maybeToList, isJust, fromJust, fromMaybe)
-import Data.List (find, nub)
-import Data.Word (Word64)
-import Data.Conduit (Sink, await, ($$))
-import Data.Conduit.List (sourceList)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS (length, replicate, empty, null)
-import Data.String.Conversions (cs)
-import Data.Aeson
-    ( Value (Object)
-    , FromJSON
-    , ToJSON
-    , (.=), (.:), (.:?)
-    , object
-    , parseJSON
-    , toJSON
-    )
-
-import Network.Haskoin.Util
-import Network.Haskoin.Crypto
-import Network.Haskoin.Node.Types
-import Network.Haskoin.Script
-import Network.Haskoin.Transaction.Types
+import           Control.Arrow                     (first)
+import           Control.DeepSeq                   (NFData, rnf)
+import           Control.Monad                     (foldM, mzero, unless)
+import           Control.Monad.Identity            (runIdentity)
+import           Data.Aeson                        (FromJSON, ToJSON,
+                                                    Value (Object), object,
+                                                    parseJSON, toJSON, (.:),
+                                                    (.:?), (.=))
+import           Data.ByteString                   (ByteString)
+import qualified Data.ByteString                   as BS (empty, length, null,
+                                                          replicate)
+import           Data.Conduit                      (Sink, await, ($$))
+import           Data.Conduit.List                 (sourceList)
+import           Data.List                         (find, nub)
+import           Data.Maybe                        (catMaybes, fromJust,
+                                                    fromMaybe, isJust,
+                                                    maybeToList)
+import           Data.Serialize                    (encode)
+import           Data.String.Conversions           (cs)
+import           Data.Word                         (Word64)
+import           Network.Haskoin.Crypto
+import           Network.Haskoin.Node.Types
+import           Network.Haskoin.Script
+import           Network.Haskoin.Transaction.Types
+import           Network.Haskoin.Util
 
 -- | Any type can be used as a Coin if it can provide a value in Satoshi.
 -- The value is used in coin selection algorithms.
@@ -188,8 +185,8 @@ guessTxSize :: Int         -- ^ Number of regular transaction inputs.
 guessTxSize pki msi pkout msout =
     8 + inpLen + inp + outLen + out
   where
-    inpLen = BS.length $ encode' $ VarInt $ fromIntegral $ (length msi) + pki
-    outLen = BS.length $ encode' $ VarInt $ fromIntegral $ pkout + msout
+    inpLen = BS.length $ encode $ VarInt $ fromIntegral $ (length msi) + pki
+    outLen = BS.length $ encode $ VarInt $ fromIntegral $ pkout + msout
     inp    = pki*148 + (sum $ map guessMSSize msi)
              -- (20: hash160) + (5: opcodes) +
              -- (1: script len) + (8: Word64)
@@ -202,10 +199,10 @@ guessTxSize pki msi pkout msout =
 guessMSSize :: (Int,Int) -> Int
 guessMSSize (m,n) =
     -- OutPoint (36) + Sequence (4) + Script
-    40 + (BS.length $ encode' $ VarInt $ fromIntegral scp) + scp
+    40 + (BS.length $ encode $ VarInt $ fromIntegral scp) + scp
   where
     -- OP_M + n*PubKey + OP_N + OP_CHECKMULTISIG
-    rdm = BS.length $ encode' $ opPushData $ BS.replicate (n*34 + 3) 0
+    rdm = BS.length $ encode $ opPushData $ BS.replicate (n*34 + 3) 0
     -- Redeem + m*sig + OP_0
     scp = rdm + m*73 + 1
 
@@ -226,7 +223,7 @@ buildAddrTx xs ys =
 -- and a list of 'ScriptOutput' and amounts as outputs.
 buildTx :: [OutPoint] -> [(ScriptOutput, Word64)] -> Either String Tx
 buildTx xs ys =
-    mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os 0
+    mapM fo ys >>= \os -> return $ createTx 1 (map fi xs) os 0
   where
     fi outPoint = TxIn outPoint BS.empty maxBound
     fo (o, v)
@@ -268,13 +265,14 @@ instance FromJSON SigInput where
 -- a list of private keys. The signature is computed deterministically as
 -- defined in RFC-6979.
 signTx :: Tx               -- ^ Transaction to sign
-          -> [SigInput]       -- ^ SigInput signing parameters
-          -> [PrvKey]         -- ^ List of private keys to use for signing
-          -> Either String Tx -- ^ Signed transaction
-signTx otx@(Tx _ ti _ _) sigis allKeys
+       -> [SigInput]       -- ^ SigInput signing parameters
+       -> [PrvKey]         -- ^ List of private keys to use for signing
+       -> Either String Tx -- ^ Signed transaction
+signTx otx sigis allKeys
     | null ti   = Left "signTx: Transaction has no inputs"
     | otherwise = foldM go otx $ findSigInput sigis ti
   where
+    ti = txIn otx
     go tx (sigi@(SigInput so _ _ rdmM), i) = do
         keys <- sigKeys so rdmM allKeys
         foldM (\t k -> signInput t i sigi k) tx keys
@@ -284,7 +282,8 @@ signInput :: Tx -> Int -> SigInput -> PrvKey -> Either String Tx
 signInput tx i (SigInput so _ sh rdmM) key = do
     let sig = TxSignature (signMsg msg key) sh
     si <- buildInput tx i so rdmM sig $ derivePubKey key
-    return tx{ txIn = updateIndex i (txIn tx) (f si) }
+    let ins = updateIndex i (txIn tx) (f si)
+    return $ createTx (txVersion tx) ins (txOut tx) (txLockTime tx)
   where
     f si x = x{ scriptInput = encodeInputBS si }
     msg = txSigHash tx (encodeOutput $ fromMaybe so rdmM) i sh
@@ -355,8 +354,9 @@ mergeTxs txs os
     outs = map (first $ fst . fromJust) $ filter (isJust . fst) zipOp
     f (_,o) txin = o == prevOutput txin
     emptyTxs = map (\tx -> foldl clearInput tx outs) txs
-    clearInput tx (_, i) = tx{ txIn =
-        updateIndex i (txIn tx) (\ti -> ti{ scriptInput = BS.empty }) }
+    ins is i = updateIndex i is (\ti -> ti{ scriptInput = BS.empty })
+    clearInput tx (_, i) =
+        createTx (txVersion tx) (ins (txIn tx) i) (txOut tx) (txLockTime tx)
 
 mergeTxInput :: [Tx] -> Tx -> (ScriptOutput, Int) -> Either String Tx
 mergeTxInput txs tx (so, i) = do
@@ -367,7 +367,8 @@ mergeTxInput txs tx (so, i) = do
     unless (all (== rdm) $ map snd sigRes) $
         Left "Redeem scripts do not match"
     si <- encodeInputBS <$> go (nub $ concat $ map fst sigRes) so rdm
-    return tx{ txIn = updateIndex i (txIn tx) (\ti -> ti{ scriptInput = si }) }
+    let ins' = updateIndex i (txIn tx) (\ti -> ti{ scriptInput = si })
+    return $ createTx (txVersion tx) ins' (txOut tx) (txLockTime tx)
   where
     go allSigs out rdmM = case out of
         PayMulSig msPubs r ->

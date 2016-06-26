@@ -12,7 +12,7 @@ module Network.Haskoin.Wallet.Transaction
 , importTx
 , importNetTx
 , signAccountTx
-, createTx
+, createWalletTx
 , signOfflineTx
 , getOfflineTxData
 , killTxs
@@ -567,12 +567,12 @@ getNewCoins tx aiM = do
 getDataFromOutput :: TxOut -> Either String (Address, ScriptOutput)
 getDataFromOutput out = do
     so   <- decodeOutputBS $ scriptOutput out
-    addr <- scriptRecipient $ encodeOutput so
+    addr <- outputAddress so
     return (addr, so)
 
 isCoinbaseTx :: Tx -> Bool
-isCoinbaseTx (Tx _ tin _ _) =
-    length tin == 1 && outPointHash (prevOutput $ head tin) ==
+isCoinbaseTx tx =
+    length (txIn tx) == 1 && outPointHash (prevOutput $ head (txIn tx)) ==
         "0000000000000000000000000000000000000000000000000000000000000000"
 
 -- | Spend the given input coins. We also create dummy coins for the inputs
@@ -726,13 +726,14 @@ buildAccTx tx confidence ai inCoins outCoins now = WalletTx
     -- List of all the decodable input addresses in the transaction
     allInAddrs =
         let f inp = do
-                addr <- scriptSender =<< decodeToEither (scriptInput inp)
+                input <- decodeInputBS (scriptInput inp)
+                addr <- inputAddress input
                 return (addr, prevOutput inp)
         in  rights $ map f $ txIn tx
     -- List of all the decodable output addresses in the transaction
     allOutAddrs =
         let f op i = do
-                addr <- scriptRecipient =<< decodeToEither (scriptOutput op)
+                addr <- outputAddress =<< decodeOutputBS (scriptOutput op)
                 return (addr, i, outValue op)
         in  rights $ zipWith f (txOut tx) [0..]
     changeAddrs
@@ -982,18 +983,19 @@ reviveTx notifChanM tx = do
 {- Transaction creation and signing (local wallet functions) -}
 
 -- | Create a transaction sending some coins to a list of recipient addresses.
-createTx :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
-         => Entity Account        -- ^ Account Entity
-         -> Maybe (TBMChan Notif) -- ^ Notification channel
-         -> Maybe XPrvKey         -- ^ Key if not provided by account
-         -> [(Address,Word64)]    -- ^ List of recipient addresses and amounts
-         -> Word64                -- ^ Fee per 1000 bytes
-         -> Word32                -- ^ Minimum confirmations
-         -> Bool                  -- ^ Should fee be paid by recipient
-         -> Bool                  -- ^ Should the transaction be signed
-         -> SqlPersistT m (WalletTx, [WalletAddr])
-            -- ^ (New transaction hash, Completed flag)
-createTx accE@(Entity ai acc) notifM masterM dests fee minConf rcptFee sign = do
+createWalletTx
+    :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+        => Entity Account        -- ^ Account Entity
+        -> Maybe (TBMChan Notif) -- ^ Notification channel
+        -> Maybe XPrvKey         -- ^ Key if not provided by account
+        -> [(Address,Word64)]    -- ^ List of recipient addresses and amounts
+        -> Word64                -- ^ Fee per 1000 bytes
+        -> Word32                -- ^ Minimum confirmations
+        -> Bool                  -- ^ Should fee be paid by recipient
+        -> Bool                  -- ^ Should the transaction be signed
+        -> SqlPersistT m (WalletTx, [WalletAddr])
+        -- ^ (New transaction hash, Completed flag)
+createWalletTx accE@(Entity ai acc) notifM masterM dests fee minConf rcptFee sign = do
     -- Build an unsigned transaction from the given recipient values and fee
     (unsignedTx, inCoins, newChangeAddrs) <-
         buildUnsignedTx accE dests fee minConf rcptFee

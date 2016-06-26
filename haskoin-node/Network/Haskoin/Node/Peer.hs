@@ -38,6 +38,7 @@ import qualified Data.Map                        as M (assocs, elems, fromList,
                                                        keys, lookup, unionWith)
 import           Data.Maybe                      (fromMaybe, isJust,
                                                   listToMaybe)
+import           Data.Serialize                  (decode, encode)
 import           Data.String.Conversions         (cs)
 import           Data.Text                       (Text, pack)
 import           Data.Time.Clock                 (diffUTCTime, getCurrentTime)
@@ -252,7 +253,7 @@ decodeMessage pid ph = do
     -- exit (not recurse). Otherwise, we go into an infinite loop here.
     unless (BS.null headerBytes) $ do
         -- Introspection required to know the length of the payload
-        case decodeToEither headerBytes of
+        case decode headerBytes of
             Left err -> lift . lift $ misbehaving pid ph moderateDoS $ unwords
                 [ "Could not decode message header:", err
                 , "Bytes:", cs (encodeHex headerBytes)
@@ -261,7 +262,7 @@ decodeMessage pid ph = do
                 $(logDebug) $ formatPid pid ph $ unwords
                     [ "Received message header of type", show cmd ]
                 payloadBytes <- BL.toStrict <$> CB.take (fromIntegral len)
-                case decodeToEither $ headerBytes `BS.append` payloadBytes of
+                case decode $ headerBytes `BS.append` payloadBytes of
                     Left err -> lift . lift $ misbehaving pid ph moderateDoS $
                         unwords [ "Could not decode message payload:", err ]
                     Right msg -> lift $ processMessage pid ph msg
@@ -419,7 +420,7 @@ processInvMessage pid ph (Inv vs) = case tickleM of
 -- | Encode message that are being sent to the remote host.
 encodeMessage :: MonadLoggerIO m
               => Conduit Message (NodeT m) BS.ByteString
-encodeMessage = awaitForever $ yield . encode'
+encodeMessage = awaitForever $ yield . encode
 
 peerPing :: (MonadLoggerIO m, MonadBaseControl IO m)
          => PeerId

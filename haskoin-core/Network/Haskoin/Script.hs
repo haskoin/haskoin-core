@@ -41,8 +41,8 @@ module Network.Haskoin.Script
 , isScriptHashInput
 
   -- * Helpers
-, scriptRecipient
-, scriptSender
+, inputAddress
+, outputAddress
 , intToScriptOp
 , scriptOpToInt
 

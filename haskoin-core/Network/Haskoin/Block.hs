@@ -9,8 +9,15 @@ module Network.Haskoin.Block
 , GetBlocks(..)
 
   -- * Block Headers
+, BlockHeader
+, createBlockHeader
+, blockVersion
+, prevBlock
+, merkleRoot
+, blockTimestamp
+, blockBits
+, bhNonce
 , headerHash
-, BlockHeader(..)
 , GetHeaders(..)
 , Headers(..)
 , BlockHeaderCount

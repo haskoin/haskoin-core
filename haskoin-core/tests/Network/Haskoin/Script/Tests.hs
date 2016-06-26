@@ -22,9 +22,7 @@ import Data.Char (ord)
 import Data.Maybe (catMaybes, isNothing)
 import Data.Int (Int64)
 import Data.Word (Word8, Word32)
-import Data.Binary (encode, decode, decodeOrFail)
 import qualified Data.Aeson as A (decode)
-import qualified Data.ByteString.Lazy as LBS (pack, unpack)
 import qualified Data.ByteString.Lazy.Char8 as C (readFile)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -33,9 +31,11 @@ import qualified Data.ByteString as BS
     , tail
     , head
     , pack
+    , unpack
     , empty
     )
 import qualified Data.ByteString.Char8 as C (putStrLn)
+import Data.Serialize (decode, encode)
 
 import Numeric (readHex)
 import Text.Read (readMaybe)
@@ -106,7 +106,7 @@ testSortMulSig (ArbitraryMSOutput out) =
     snd $ foldl f (head pubs,True) $ tail pubs
   where
     pubs = getOutputMulSigKeys $ sortMulSig out
-    f (a,t) b | t && encode' a <= encode' b = (b,True)
+    f (a,t) b | t && encode a <= encode b = (b,True)
               | otherwise                   = (b,False)
 
 {- Script SigHash -}
@@ -130,12 +130,12 @@ binSigHashByte w
     | testBit w 7 = res == SigUnknown True w
     | otherwise = res == SigUnknown False w
   where
-    res = decode' $ BS.singleton w
+    res = fromRight . decode $ BS.singleton w
 
 testEncodeSH32 :: ArbitrarySigHash -> Bool
 testEncodeSH32 (ArbitrarySigHash sh) =
     BS.length bs == 4 &&
-    BS.head bs == (BS.head $ encode' sh) &&
+    BS.head bs == (BS.head $ encode sh) &&
     BS.tail bs == BS.pack [0,0,0]
   where
     bs = encodeSigHash32 sh
@@ -194,17 +194,17 @@ parseFlags s = map read . splitOn "," $ s
 
 parseScript :: String -> Either ParseError Script
 parseScript scriptString =
-      do bytes <- LBS.pack <$> parseBytes scriptString
+      do bytes <- BS.pack <$> parseBytes scriptString
          script <- decodeScript bytes
          when (encode script /= bytes) $
             Left "encode script /= bytes"
-         when (decode (encode script) /= script) $
+         when (fromRight (decode $ encode script) /= script) $
             Left "decode (encode script) /= script"
          return script
       where
-          decodeScript bytes = case decodeOrFail bytes of
-            Left (_, _, e) -> Left $ "decode error: " ++ e
-            Right (_, _, Script s) -> Right $ Script s
+          decodeScript bytes = case decode bytes of
+            Left e -> Left $ "decode error: " ++ e
+            Right (Script s) -> Right $ Script s
           parseBytes :: String -> Either ParseError [Word8]
           parseBytes string = concat <$> mapM parseToken (words string)
           parseToken :: String -> Either ParseError [Word8]
@@ -236,7 +236,7 @@ parseScript scriptString =
                                                 $ opPushData $ BS.pack
                                                 $ encodeInt n
                     parseOp = encodeBytes <$> (readMaybe $ "OP_" ++ tok)
-                    encodeBytes = LBS.unpack . encode
+                    encodeBytes = BS.unpack . encode
 
 testFile :: String -> String -> Bool -> Test
 testFile groupLabel path expected = buildTest $ do
@@ -340,39 +340,32 @@ nullOutPoint =
 -- input (and correct prevout hash), using the given scriptSig. All
 -- nLockTimes are 0, all nSequences are max."
 buildCreditTx :: ByteString -> Tx
-buildCreditTx scriptPubKey = Tx {
-                 txVersion    = 1
-               , txIn         = [ txI ]
-               , txOut        = [ txO ]
-               , txLockTime   = 0
+buildCreditTx scriptPubKey =
+    createTx 1 [ txI ] [ txO ] 0
+  where
+    txO = TxOut { outValue = 0
+                , scriptOutput = scriptPubKey
+                }
+    txI = TxIn { prevOutput = nullOutPoint
+               , scriptInput = encode $ Script [ OP_0, OP_0 ]
+               , txInSequence = maxSeqNum
                }
-    where txO = TxOut {
-                       outValue = 0
-                     , scriptOutput = scriptPubKey
-                     }
-          txI = TxIn {
-                        prevOutput = nullOutPoint
-                      , scriptInput = encode' $ Script [ OP_0, OP_0 ]
-                      , txInSequence = maxSeqNum
-                      }
 
 -- | Build a spending transaction for the tests.  Takes as input the
 -- crediting transaction
 buildSpendTx :: ByteString  -- ScriptSig
-             -> Tx     -- Creditting Tx
+             -> Tx          -- Creditting Tx
              -> Tx
-buildSpendTx scriptSig creditTx = Tx {
-         txVersion  = 1
-       , txIn       = [ txI ]
-       , txOut      = [ txO ]
-       , txLockTime = 0
-       }
-    where txI = TxIn {
-               prevOutput   = OutPoint { outPointHash = txHash creditTx , outPointIndex = 0 }
-             , scriptInput  = scriptSig
-             , txInSequence = maxSeqNum
-             }
-          txO = TxOut { outValue = 0, scriptOutput = BS.empty }
+buildSpendTx scriptSig creditTx =
+    createTx 1 [ txI ] [ txO ] 0
+  where
+    txI = TxIn { prevOutput = OutPoint { outPointHash = txHash creditTx
+                                       , outPointIndex = 0
+                                       }
+               , scriptInput  = scriptSig
+               , txInSequence = maxSeqNum
+               }
+    txO = TxOut { outValue = 0, scriptOutput = BS.empty }
 
 -- | Executes the test of a scriptSig, pubKeyScript pair, including
 -- building the required transactions and verifying the spending
@@ -382,8 +375,8 @@ scriptPairTestExec :: Script    -- scriptSig
                    -> [ Flag ] -- Evaluation flags
                    -> Bool
 scriptPairTestExec scriptSig pubKey flags =
-    let bsScriptSig = encode' scriptSig
-        bsPubKey = encode' pubKey
+    let bsScriptSig = encode scriptSig
+        bsPubKey = encode pubKey
         spendTx = buildSpendTx bsScriptSig ( buildCreditTx bsPubKey )
     in verifySpend spendTx 0 pubKey flags
 

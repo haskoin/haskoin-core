@@ -6,6 +6,7 @@ import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Maybe (fromJust)
+import Data.Serialize (encode)
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Node
@@ -28,7 +29,7 @@ bloomFilter1 = do
         not $ bloomContains f1 v2
     assertBool "Bloom filter doesn't contain vector 3" $ bloomContains f3 v3
     assertBool "Bloom filter doesn't contain vector 4" $ bloomContains f4 v4
-    assertBool "Bloom filter serialization is incorrect" $ (encode' f4) == bs
+    assertBool "Bloom filter serialization is incorrect" $ (encode f4) == bs
   where
     f0 = bloomCreate 3 0.01 0 BloomUpdateAll
     f1 = bloomInsert f0 v1
@@ -47,7 +48,7 @@ bloomFilter2 = do
         not $ bloomContains f1 v2
     assertBool "Bloom filter doesn't contain vector 3" $ bloomContains f3 v3
     assertBool "Bloom filter doesn't contain vector 4" $ bloomContains f4 v4
-    assertBool "Bloom filter serialization is incorrect" $ (encode' f4) == bs
+    assertBool "Bloom filter serialization is incorrect" $ (encode f4) == bs
   where
     f0 = bloomCreate 3 0.01 2147483649 BloomUpdateAll
     f1 = bloomInsert f0 v1
@@ -61,11 +62,11 @@ bloomFilter2 = do
 
 bloomFilter3 :: Assertion
 bloomFilter3 = do
-    assertBool "Bloom filter serialization is incorrect" $ (encode' f2) == bs
+    assertBool "Bloom filter serialization is incorrect" $ (encode f2) == bs
   where
     f0 = bloomCreate 2 0.001 0 BloomUpdateAll
-    f1 = bloomInsert f0 $ encode' p
-    f2 = bloomInsert f1 $ encode' $ getAddrHash $ pubKeyAddr p
+    f1 = bloomInsert f0 $ encode p
+    f2 = bloomInsert f1 $ encode $ getAddrHash $ pubKeyAddr p
     k = fromJust $ fromWif "5Kg1gnAjaLfKiwhhPpGS3QfRg2m6awQvaj98JCZBZQ5SuS2F15C"
     p = derivePubKey k
     bs = fromJust $ decodeHex "038fc16b080000000000000001"

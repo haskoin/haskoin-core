@@ -28,30 +28,25 @@ module Network.Haskoin.Script.Evaluator
 , execScript
 ) where
 
-import Control.Monad.State
-import Control.Monad.Reader
-import Control.Monad.Except
-import Control.Monad.Identity
-
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BSL
-import Data.String.Conversions (cs)
-
-import Data.Bits (shiftR, shiftL, testBit, setBit, clearBit, (.&.))
-import Data.Int (Int64)
-import Data.Word (Word8, Word64)
-import Data.Either (rights)
-import Data.Maybe (mapMaybe, isJust)
-
-import Network.Haskoin.Crypto
-import Network.Haskoin.Script.Types
-import Network.Haskoin.Script.SigHash
-import Network.Haskoin.Util
-import Network.Haskoin.Transaction.Types
-
-import Data.Binary (encode, decodeOrFail)
-
+import           Control.Monad.Except
+import           Control.Monad.Identity
+import           Control.Monad.Reader
+import           Control.Monad.State
+import           Data.Bits                         (clearBit, setBit, shiftL,
+                                                    shiftR, testBit, (.&.))
+import           Data.ByteString                   (ByteString)
+import qualified Data.ByteString                   as BS
+import           Data.Either                       (rights)
+import           Data.Int                          (Int64)
+import           Data.Maybe                        (isJust, mapMaybe)
+import           Data.Serialize                    (decode, encode)
+import           Data.String.Conversions           (cs)
+import           Data.Word                         (Word64, Word8)
+import           Network.Haskoin.Crypto
+import           Network.Haskoin.Script.SigHash
+import           Network.Haskoin.Script.Types
+import           Network.Haskoin.Transaction.Types
+import           Network.Haskoin.Util
 
 maxScriptSize :: Int
 maxScriptSize = 10000
@@ -696,12 +691,10 @@ isPayToScriptHash [OP_HASH160, OP_PUSHDATA bytes OPCODE, OP_EQUAL] flgs
 isPayToScriptHash _ _ = False
 
 stackToScriptOps :: StackValue -> [ ScriptOp ]
-stackToScriptOps sv = let script = decodeOrFail $ BSL.pack sv in
-  case script of
-    Left _ -> []  -- Maybe should propogate the error some how
-    Right (_,_,s) -> scriptOps s
+stackToScriptOps sv = case decode $ BS.pack sv of
+    Left _  -> []  -- Maybe should propogate the error some how
+    Right s -> scriptOps s
 
---
 -- exported functions
 
 execScript :: Script -- ^ scriptSig ( redeemScript )
@@ -725,7 +718,7 @@ execScript scriptSig scriptPubKey sigCheckFcn flags =
                | SIGPUSHONLY `elem` flags = checkPushOnly sigOps
                | otherwise = return ()
 
-      checkKey | BSL.length (encode scriptPubKey) > fromIntegral maxScriptSize
+      checkKey | BS.length (encode scriptPubKey) > fromIntegral maxScriptSize
                  = lift $ programError "pubKey > maxScriptSize"
                | otherwise = return ()
 
@@ -772,7 +765,8 @@ verifySpend :: Tx     -- ^ The spending transaction
             -> [ Flag ] -- ^ Evaluation flags
             -> Bool
 verifySpend tx i outscript flags =
-  let scriptSig = decode' . scriptInput $ txIn tx !! i
+  let scriptSig = either (const err) id . decode . scriptInput $ txIn tx !! i
       verifyFcn = verifySigWithType tx i
-  in
-  evalScript scriptSig outscript verifyFcn flags
+      err       = error "Could not decode scriptInput in verifySpend"
+  in evalScript scriptSig outscript verifyFcn flags
+

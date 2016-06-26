@@ -24,9 +24,9 @@ import qualified Control.Monad.State as S
     )
 
 import Data.Maybe (fromMaybe)
-import Data.Binary (Binary, get, put)
-import Data.Binary.Put (putByteString, putByteString)
-import Data.Binary.Get (getWord8, lookAhead, getByteString)
+import Data.Serialize (Serialize, get, put)
+import Data.Serialize.Put (putByteString, putByteString)
+import Data.Serialize.Get (getWord8, lookAhead, getByteString)
 import Data.ByteString (ByteString)
 import System.Entropy (getEntropy)
 
@@ -103,7 +103,7 @@ verifySig h s q =
     m = hashToMsg h
     p = pubKeyPoint q
 
-instance Binary Signature where
+instance Serialize Signature where
     get = do
         l <- lookAhead $ do
             t <- getWord8

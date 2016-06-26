@@ -31,34 +31,29 @@ module Network.Haskoin.Crypto.Keys
 , tweakPrvKeyC
 ) where
 
-import Control.Applicative ((<|>))
-import Control.Monad ((<=<), guard, mzero)
-import Control.DeepSeq (NFData, rnf)
-
-import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
-import Data.Maybe (fromMaybe)
-import Data.Binary (Binary, get, put)
-import Data.Binary.Get (Get, getByteString)
-import Data.Binary.Put (Put, putByteString)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-    ( head, tail
-    , last, init
-    , cons, snoc
-    , length, elem, pack
-    )
-import Data.String (IsString, fromString)
-import Data.String.Conversions (cs)
-
-import qualified Crypto.Secp256k1 as EC
-
-import Text.Read (readPrec, parens, lexP, pfail)
-import qualified Text.Read as Read (Lexeme(Ident, String))
-
-import Network.Haskoin.Crypto.Base58
-import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Constants
-import Network.Haskoin.Util
+import           Control.Applicative           ((<|>))
+import           Control.DeepSeq               (NFData, rnf)
+import           Control.Monad                 (guard, mzero, (<=<))
+import qualified Crypto.Secp256k1              as EC
+import           Data.Aeson                    (FromJSON, ToJSON,
+                                                Value (String), parseJSON,
+                                                toJSON, withText)
+import           Data.ByteString               (ByteString)
+import qualified Data.ByteString               as BS (cons, elem, head, init,
+                                                      last, length, pack, snoc,
+                                                      tail)
+import           Data.Maybe                    (fromMaybe)
+import           Data.Serialize                (Serialize, encode, get, put)
+import           Data.Serialize.Get            (Get, getByteString)
+import           Data.Serialize.Put            (Put, putByteString)
+import           Data.String                   (IsString, fromString)
+import           Data.String.Conversions       (cs)
+import           Network.Haskoin.Constants
+import           Network.Haskoin.Crypto.Base58
+import           Network.Haskoin.Crypto.Hash
+import           Network.Haskoin.Util
+import           Text.Read                     (lexP, parens, pfail, readPrec)
+import qualified Text.Read                     as Read (Lexeme (Ident, String))
 
 data Generic
 data Compressed
@@ -81,17 +76,17 @@ data PubKeyI c = PubKeyI
 -- TODO: Test
 instance Show PubKey where
     showsPrec d k = showParen (d > 10) $
-        showString "PubKey " . shows (encodeHex $ encode' k)
+        showString "PubKey " . shows (encodeHex $ encode k)
 
 -- TODO: Test
 instance Show PubKeyC where
     showsPrec d k = showParen (d > 10) $
-        showString "PubKeyC " . shows (encodeHex $ encode' k)
+        showString "PubKeyC " . shows (encodeHex $ encode k)
 
 -- TODO: Test
 instance Show PubKeyU where
     showsPrec d k = showParen (d > 10) $
-        showString "PubKeyU " . shows (encodeHex $ encode' k)
+        showString "PubKeyU " . shows (encodeHex $ encode k)
 
 -- TODO: Test
 instance Read PubKey where
@@ -137,21 +132,21 @@ instance NFData (PubKeyI c) where
     rnf (PubKeyI p c) = p `seq` rnf c
 
 instance ToJSON PubKey where
-    toJSON = String . cs . encodeHex . encode'
+    toJSON = String . cs . encodeHex . encode
 
 instance FromJSON PubKey where
     parseJSON = withText "PubKey" $
         maybe mzero return . (decodeToMaybe =<<) . decodeHex . cs
 
 instance ToJSON PubKeyC where
-    toJSON = String . cs . encodeHex . encode'
+    toJSON = String . cs . encodeHex . encode
 
 instance FromJSON PubKeyC where
     parseJSON = withText "PubKeyC" $
         maybe mzero return . (decodeToMaybe =<<) . decodeHex . cs
 
 instance ToJSON PubKeyU where
-    toJSON = String . cs . encodeHex . encode'
+    toJSON = String . cs . encodeHex . encode
 
 instance FromJSON PubKeyU where
     parseJSON = withText "PubKeyU" $
@@ -194,7 +189,7 @@ maybePubKeyU pk
 derivePubKey :: PrvKeyI c -> PubKeyI c
 derivePubKey (PrvKeyI d c) = PubKeyI (EC.derivePubKey d) c
 
-instance Binary PubKey where
+instance Serialize PubKey where
     get =
         (toPubKeyG <$> getC) <|> (toPubKeyG <$> getU)
       where
@@ -205,7 +200,7 @@ instance Binary PubKey where
         Left k  -> put k
         Right k -> put k
 
-instance Binary PubKeyC where
+instance Serialize PubKeyC where
     get = do
         bs <- getByteString 33
         guard $ BS.head bs `BS.elem` BS.pack [0x02, 0x03]
@@ -213,7 +208,7 @@ instance Binary PubKeyC where
 
     put pk = putByteString $ EC.exportPubKey True $ pubKeyPoint pk
 
-instance Binary PubKeyU where
+instance Serialize PubKeyU where
     get = do
         bs <- getByteString 65
         guard $ BS.head bs == 0x04
@@ -222,8 +217,8 @@ instance Binary PubKeyU where
     put pk = putByteString $ EC.exportPubKey False $ pubKeyPoint pk
 
 -- | Computes an 'Address' from a public key
-pubKeyAddr :: Binary (PubKeyI c) => PubKeyI c -> Address
-pubKeyAddr = PubKeyAddress . hash160 . getHash256 . hash256 . encode'
+pubKeyAddr :: Serialize (PubKeyI c) => PubKeyI c -> Address
+pubKeyAddr = PubKeyAddress . hash160 . getHash256 . hash256 . encode
 
 -- | Tweak a compressed public key
 tweakPubKeyC :: PubKeyC -> Hash256 -> Maybe PubKeyC

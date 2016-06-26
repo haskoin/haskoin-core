@@ -54,19 +54,21 @@ import           Control.Exception               (Exception)
 import           Control.Monad                   (forM, forM_, mzero, when)
 import           Control.Monad.Trans             (MonadIO)
 import           Data.Aeson                      (FromJSON, ToJSON, Value (..),
-                                                  decodeStrict', encode, object,
+                                                  decodeStrict', object,
                                                   parseJSON, toJSON, withObject,
                                                   (.!=), (.:), (.:?), (.=))
+import qualified Data.Aeson                      as Aeson
 import           Data.Aeson.TH                   (deriveJSON)
 import           Data.Aeson.Types                (Options (..),
                                                   SumEncoding (..),
                                                   defaultOptions,
                                                   defaultTaggedObject)
-import           Data.Binary                     (Binary)
 import           Data.Char                       (toLower)
 import           Data.Int                        (Int64)
 import           Data.List.Split                 (chunksOf)
 import           Data.Maybe                      (maybeToList)
+import           Data.Serialize                  (Serialize, decode, encode)
+import           Data.String                     (fromString)
 import           Data.String.Conversions         (cs)
 import           Data.Text                       (Text)
 import           Data.Time                       (UTCTime)
@@ -133,7 +135,7 @@ data AddressInfo = AddressInfo
     }
     deriving (Eq, Show, Read, Generic)
 
-instance Binary AddressInfo
+instance Serialize AddressInfo
 
 $(deriveJSON (dropFieldLabel 11) ''AddressInfo)
 
@@ -513,7 +515,7 @@ instance PersistFieldSql XPrvKey where
     sqlType _ = SqlString
 
 instance PersistField [XPubKey] where
-    toPersistValue = PersistText . cs . encode
+    toPersistValue = PersistText . cs . Aeson.encode
     fromPersistValue (PersistText txt) =
         maybeToEither "Invalid Persistent XPubKey" $ decodeStrict' $ cs txt
     fromPersistValue (PersistByteString bs) =
@@ -559,7 +561,7 @@ instance PersistFieldSql SoftPath where
     sqlType _ = SqlString
 
 instance PersistField AccountType where
-    toPersistValue = PersistText . cs . encode
+    toPersistValue = PersistText . cs . Aeson.encode
     fromPersistValue (PersistText txt) = maybeToEither
         "Invalid Persistent AccountType" $ decodeStrict' $ cs txt
     fromPersistValue (PersistByteString bs) = maybeToEither
@@ -621,9 +623,11 @@ instance PersistFieldSql Address where
     sqlType _ = SqlString
 
 instance PersistField BloomFilter where
-    toPersistValue = PersistByteString . encode'
+    toPersistValue = PersistByteString . encode
     fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent BloomFilter" $ decodeToMaybe bs
+        case decode bs of
+            Right x -> Right x
+            Left  e -> Left  (fromString e)
     fromPersistValue _ = Left "Invalid Persistent BloomFilter"
 
 instance PersistFieldSql BloomFilter where
@@ -678,22 +682,30 @@ instance PersistFieldSql TxConfidence where
     sqlType _ = SqlString
 
 instance PersistField Tx where
-    toPersistValue = PersistByteString . encode'
+    toPersistValue = PersistByteString . encode
     fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent Tx" $ decodeToMaybe bs
+        case decode bs of
+            Right x -> Right x
+            Left  e -> Left (fromString e)
     fromPersistValue _ = Left "Invalid Persistent Tx"
 
 instance PersistFieldSql Tx where
     sqlType _ = SqlOther "MEDIUMBLOB"
 
 instance PersistField PubKeyC where
-    toPersistValue = PersistText . cs . encodeHex . encode'
+    toPersistValue = PersistText . cs . encodeHex . encode
     fromPersistValue (PersistText txt) =
-        maybeToEither "Invalid Persistent PubKeyC" $
-            decodeToMaybe =<< decodeHex (cs txt)
+        case hex >>= decode of
+            Right x -> Right x
+            Left  e -> Left (fromString e)
+      where
+        hex = maybeToEither "Could not decode hex" (decodeHex (cs txt))
     fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent PubKeyC" $
-            decodeToMaybe =<< decodeHex bs
+        case hex >>= decode of
+            Right x -> Right x
+            Left  e -> Left (fromString e)
+      where
+        hex = maybeToEither "Could not decode hex" (decodeHex bs)
     fromPersistValue _ = Left "Invalid Persistent PubKeyC"
 
 instance PersistFieldSql PubKeyC where
@@ -702,17 +714,20 @@ instance PersistFieldSql PubKeyC where
 instance PersistField ScriptOutput where
     toPersistValue = PersistByteString . encodeOutputBS
     fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent ScriptOutput" $
-            eitherToMaybe $ decodeOutputBS bs
+        case decodeOutputBS bs of
+            Right x -> Right x
+            Left  e -> Left (fromString e)
     fromPersistValue _ = Left "Invalid Persistent ScriptOutput"
 
 instance PersistFieldSql ScriptOutput where
     sqlType _ = SqlBlob
 
 instance PersistField [AddressInfo] where
-    toPersistValue = PersistByteString . encode'
+    toPersistValue = PersistByteString . encode
     fromPersistValue (PersistByteString bs) =
-        maybeToEither "Invalid Persistent AddressInfo" $ decodeToMaybe bs
+        case decode bs of
+            Right x -> Right x
+            Left  e -> Left (fromString e)
     fromPersistValue _ = Left "Invalid Persistent AddressInfo"
 
 instance PersistFieldSql [AddressInfo] where

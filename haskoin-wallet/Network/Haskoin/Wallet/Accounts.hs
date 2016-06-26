@@ -51,6 +51,7 @@ import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.List (nub)
 import Data.Word (Word32)
 import Data.String.Conversions (cs)
+import Data.Serialize (encode)
 
 import qualified Database.Persist as P (updateWhere, update , (=.))
 import Database.Esqueleto
@@ -589,13 +590,13 @@ addToFilter bloom addrs =
     pks  = mapMaybe walletAddrKey addrs
     rdms = mapMaybe walletAddrRedeem addrs
     -- Add the Hash160 of the addresses
-    f1 b a  = bloomInsert b $ encode' $ getAddrHash a
+    f1 b a  = bloomInsert b $ encode $ getAddrHash a
     bloom1 = foldl f1 bloom $ map walletAddrAddress addrs
     -- Add the redeem scripts
     f2 b r  = bloomInsert b $ encodeOutputBS r
     bloom2 = foldl f2 bloom1 rdms
     -- Add the public keys
-    f3 b p  = bloomInsert b $ encode' p
+    f3 b p  = bloomInsert b $ encode p
     bloom3 = foldl f3 bloom2 pks
 
 -- | Returns a bloom filter containing all the addresses in this wallet. This

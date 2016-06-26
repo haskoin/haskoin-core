@@ -7,14 +7,13 @@ import Test.Framework.Providers.HUnit (testCase)
 
 import Data.Word (Word32, Word64)
 import Data.Maybe (fromJust)
-import Data.Binary.Get (getWord32le)
-import Data.Binary.Put (putWord32le)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS (reverse)
-import qualified Data.ByteString.Lazy as LBS 
+import qualified Data.ByteString.Lazy as LBS
+import Data.Serialize (decode, encode, getWord32le, putWord32le, runGet, runPut)
 import Safe (readMay)
 import GHC.Exts( IsString(..) )
-import qualified Data.Aeson as Aeson 
+import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson.Types
 import qualified Data.Vector as V
 import Data.String.Conversions (convertString)
@@ -45,7 +44,7 @@ runTxIDVec :: (ByteString, ByteString) -> Assertion
 runTxIDVec (tid,tx) = assertBool "TxID" $
     (txHashToHex $ txHash txBS) == tid
   where
-    txBS = decode' $ fromJust $ decodeHex tx
+    txBS = fromRight . decode $ fromJust $ decodeHex tx
 
 txIDVec :: [(ByteString, ByteString)]
 txIDVec =
@@ -70,33 +69,33 @@ mapPKHashVec (v, i) = testCase name $ runPKHashVec v
 
 runPKHashVec :: ([(ByteString, Word32)], [(ByteString, Word64)], ByteString) -> Assertion
 runPKHashVec (xs, ys, res) =
-    assertBool "Build PKHash Tx" $ (encodeHex $ encode' tx) == res
+    assertBool "Build PKHash Tx" $ (encodeHex $ encode tx) == res
     where tx = fromRight $ buildAddrTx (map f xs) ys
           f (tid,ix) = OutPoint (fromJust $ hexToTxHash tid) ix
 
 
 mapVerifyVec :: (SatoshiCoreTxTest, Int)
              -> Test.Framework.Test
-mapVerifyVec (v, i) = testCase name $ runVerifyVec v i
-    where name = "Verify Tx " ++ (show i) ++ ", about: " ++ (satCoreTxTestDescription $ v)
+mapVerifyVec (v@(SatoshiCoreTxTest d _ _), i) = testCase name $ runVerifyVec v i
+    where name = "Verify Tx " ++ (show i) ++ ", about: " ++ d
 
 runVerifyVec :: SatoshiCoreTxTest -> Int -> Assertion
-runVerifyVec (SatoshiCoreTxTest description is bsTx) i =
+runVerifyVec (SatoshiCoreTxTest _ is bsTx) i =
     assertBool name $ verifyStdTx tx outputsAndOutpoints
   where
     name = "    > Verify transaction " ++ (show i) ++ "bsTx: " ++ convertString bsTx
     tx :: Tx
-    tx  = decode' . fromJust . decodeHex $ bsTx
+    tx  = fromRight . decode . fromJust . decodeHex $ bsTx
     outputsAndOutpoints :: [(ScriptOutput, OutPoint)] 
     outputsAndOutpoints = map f is
     f (SatoshiCoreTxTestInput bsOutputHash bsOutputIndex bsOutputScriptPubKey) =
         let s :: ScriptOutput
-            s = either (\e -> error $ "could not decode: " ++ convertString bsOutputScriptPubKey) id
+            s = either (const $ error $ "could not decode: " ++ convertString bsOutputScriptPubKey) id
                   . decodeOutputBS . fromJust . decodeHex $ bsOutputScriptPubKey
             op :: OutPoint
             op = OutPoint
-                (decode' . BS.reverse . fromJust . decodeHex $ bsOutputHash)
-                (runGet' getWord32le  . fromJust . decodeHex $ bsOutputIndex)
+                (fromRight . decode . BS.reverse . fromJust . decodeHex $ bsOutputHash)
+                (fromRight . runGet getWord32le  . fromJust . decodeHex $ bsOutputIndex)
         in (s, op)
 
 -- These test vectors have been generated from bitcoind raw transaction api
@@ -130,21 +129,15 @@ pkHashVec =
       )
     ]
 
-data SatoshiCoreTxTest = 
-  SatoshiCoreTxTest { satCoreTxTestDescription :: String,
-                      satCoreTxTestInputs :: [SatoshiCoreTxTestInput], 
-                      satCoreTxTestSerTx :: ByteString}
-  deriving (Read,Show)
+data SatoshiCoreTxTest = SatoshiCoreTxTest String [SatoshiCoreTxTestInput] ByteString
+    deriving (Read,Show)
 
-data SatoshiCoreTxTestInput = 
-  SatoshiCoreTxTestInput { satCoreTxTestPrevoutHash :: ByteString,
-                           satCoreTxTestPrevoutIndex :: ByteString,
-                           satCoreTxTestPrevoutScriptPubKey :: ByteString}
-  deriving (Read,Show)
+data SatoshiCoreTxTestInput = SatoshiCoreTxTestInput ByteString ByteString ByteString
+    deriving (Read,Show)
 
 {- Test vectors from bitcoind -}
 -- github.com/bitcoin/bitcoin/blob/master/src/test/data/tx_valid.json
--- [[(prevout hash, prevout index, prevout scriptPubKey)], serialized tx], 
+-- [[(prevout hash, prevout index, prevout scriptPubKey)], serialized tx],
 verifyVec :: [SatoshiCoreTxTest]
 verifyVec =
   let toSatCoreTest (is, sertx, description) = SatoshiCoreTxTest description (map toInputs is) sertx
@@ -294,12 +287,12 @@ encodeSatoshiCoreScriptPubKey =
   where 
     encodeSatoshiCoreScriptPiece :: String -> ByteString
     encodeSatoshiCoreScriptPiece s = case (readMay ("OP_" ++ s) :: Maybe ScriptOp) of
-      Just op -> encodeHex . encode' $ op
+      Just op -> encodeHex . encode $ op
       Nothing -> case (take 2 s) of 
-          "OP" -> encodeHex . encode' . (read :: String -> ScriptOp) $ s
+          "OP" -> encodeHex . encode . (read :: String -> ScriptOp) $ s
           "0x" -> ( fromString . drop 2 :: String -> ByteString) $ s          
           _ -> case (readMay s :: Maybe Int) of -- can we get rid of this case now?
-            Just i -> encodeHex . encode' . intToScriptOp $ i
+            Just i -> encodeHex . encode . intToScriptOp $ i
             Nothing -> error $ "encodeSatoshiCoreScriptPubKey: " ++ s
 
 satoshiCoreTxTests :: IO [Test]
@@ -355,7 +348,7 @@ toTestOrComment testVectorOrComment =
                                   Aeson.String txt -> convertString txt
                                   _ -> error "processItem, hash not a string"
                                 index = case oneInputV V.! 01 of 
-                                  Aeson.Number n -> encodeHex . runPut' . putWord32le . floor $ n
+                                  Aeson.Number n -> encodeHex . runPut . putWord32le . floor $ n
                                   _ -> error "processItem, n not a number"
                                 pubkey = case oneInputV V.! 2 of
                                   Aeson.String txt -> encodeSatoshiCoreScriptPubKey . convertString $ txt

@@ -5,17 +5,20 @@
 module Network.Haskoin.Transaction
 (
   -- *Transaction Types
-  Tx(..)
+  Tx
+, createTx
+, txVersion
+, txIn
+, txOut
+, txLockTime
+, txHash
 , TxIn(..)
 , TxOut(..)
 , OutPoint(..)
-, CoinbaseTx(..)
 , TxHash(..)
-, txHash
 , hexToTxHash
 , txHashToHex
 , nosigTxHash
-, cbHash
 
   -- *Build Transactions
 , buildTx

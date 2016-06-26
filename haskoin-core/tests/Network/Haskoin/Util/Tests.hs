@@ -15,9 +15,7 @@ tests :: [Test]
 tests =
     [ testGroup "Utility functions"
         [ testProperty "bsToInteger . integerToBS" getPutInteger
-        , testProperty "decodeOrFail' . encode'" decEncFailBS
         , testProperty "decodeHex . encodeHex" fromToHex
-        , testProperty "fromDecode" testFromDecode
         , testProperty "compare updateIndex with Data.Sequence" testUpdateIndex
         , testProperty "matchTemplate" testMatchTemplate
         , testProperty
@@ -28,11 +26,6 @@ tests =
 
 {- Various utilities -}
 
-decEncFailBS :: ArbitraryByteString -> Bool
-decEncFailBS (ArbitraryByteString bs) = case (decodeOrFail' $ encode' bs) of
-    (Left _)            -> False
-    (Right (_, _, res)) -> res == bs
-
 getPutInteger :: Integer -> Bool
 getPutInteger i = (bsToInteger $ integerToBS p) == p
   where
@@ -40,11 +33,6 @@ getPutInteger i = (bsToInteger $ integerToBS p) == p
 
 fromToHex :: ArbitraryByteString -> Bool
 fromToHex (ArbitraryByteString bs) = (fromJust $ decodeHex $ encodeHex bs) == bs
-
-testFromDecode :: ArbitraryByteString -> Integer -> Integer -> Bool
-testFromDecode (ArbitraryByteString bs) def v = case decodeOrFail' bs of
-    (Left _)          -> fromDecode bs def (*v) == def
-    (Right (_,_,res)) -> fromDecode bs def (*v) == res*v
 
 testUpdateIndex :: [Int] -> Int -> Int -> Bool
 testUpdateIndex xs v i =

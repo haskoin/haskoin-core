@@ -33,10 +33,9 @@ newtype ArbitraryBlock = ArbitraryBlock Block
 instance Arbitrary ArbitraryBlock where
     arbitrary = do
         ArbitraryBlockHeader h <- arbitrary
-        ArbitraryCoinbaseTx cb <- arbitrary
         c <- choose (0,10)
         txs <- map (\(ArbitraryTx x) -> x) <$> vectorOf c arbitrary
-        return $ ArbitraryBlock $ Block h cb txs
+        return $ ArbitraryBlock $ Block h txs
 
 -- | Arbitrary BlockHeader
 newtype ArbitraryBlockHeader = ArbitraryBlockHeader BlockHeader
@@ -46,8 +45,8 @@ instance Arbitrary ArbitraryBlockHeader where
     arbitrary = do
         ArbitraryBlockHash h1 <- arbitrary
         ArbitraryHash256 h2 <- arbitrary
-        h <- BlockHeader <$> arbitrary <*> return h1 <*> return h2
-                         <*> arbitrary <*> arbitrary <*> arbitrary
+        h <- createBlockHeader <$> arbitrary <*> return h1 <*> return h2
+                               <*> arbitrary <*> arbitrary <*> arbitrary
         return $ ArbitraryBlockHeader h
 
 newtype ArbitraryBlockHash = ArbitraryBlockHash BlockHash

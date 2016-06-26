@@ -10,15 +10,15 @@ import Control.DeepSeq (NFData, rnf)
 import Control.Monad (unless, forM_)
 
 import Data.Word (Word8)
-import Data.Binary (Binary, get, put)
-import Data.Binary.Get
+import Data.Serialize (Serialize, get, put)
+import Data.Serialize.Get
     ( isEmpty
     , getWord8
     , getWord16le
     , getWord32le
     , getByteString
     )
-import Data.Binary.Put
+import Data.Serialize.Put
     ( putWord8
     , putWord16le
     , putWord32le
@@ -45,7 +45,7 @@ data Script =
 instance NFData Script where
     rnf (Script o) = rnf o
 
-instance Binary Script where
+instance Serialize Script where
     get =
         Script <$> getScriptOps
       where
@@ -197,7 +197,7 @@ instance NFData ScriptOp where
     rnf x = x `seq` ()
 
 
-instance Binary ScriptOp where
+instance Serialize ScriptOp where
 
     get = go =<< (fromIntegral <$> getWord8)
       where

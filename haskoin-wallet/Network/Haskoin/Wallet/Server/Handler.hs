@@ -382,7 +382,7 @@ postTxsR name masterM action = do
                 , "  Rcpt. Fee   : " ++ show rcptFee
                 , "  Sign        : " ++ show sign
                 ]
-            runDB $ createTx
+            runDB $ createWalletTx
                 accE (Just notif) masterM rs fee minconf rcptFee sign
         ImportTx tx -> do
             $(logInfo) $ format $ unlines

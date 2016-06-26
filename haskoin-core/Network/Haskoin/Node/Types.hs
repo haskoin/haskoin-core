@@ -23,8 +23,8 @@ import Control.DeepSeq (NFData, rnf)
 import Control.Monad (replicateM, liftM2, forM_, unless)
 
 import Data.Word (Word32, Word64)
-import Data.Binary (Binary, get, put)
-import Data.Binary.Get
+import Data.Serialize (Serialize, get, put)
+import Data.Serialize.Get
     ( Get
     , getWord8
     , getWord16le
@@ -36,7 +36,7 @@ import Data.Binary.Get
     , getByteString
     , isEmpty
     )
-import Data.Binary.Put
+import Data.Serialize.Put
     ( Put
     , putWord8
     , putWord16le
@@ -73,7 +73,7 @@ data Addr =
          }
     deriving (Eq, Show)
 
-instance Binary Addr where
+instance Serialize Addr where
 
     get = Addr <$> (repList =<< get)
       where
@@ -98,7 +98,7 @@ data Alert =
 instance NFData Alert where
     rnf (Alert p s) = rnf p `seq` rnf s
 
-instance Binary Alert where
+instance Serialize Alert where
     get = Alert <$> get <*> get
     put (Alert p s) = put p >> put s
 
@@ -119,7 +119,7 @@ data GetData =
 instance NFData GetData where
     rnf (GetData l) = rnf l
 
-instance Binary GetData where
+instance Serialize GetData where
 
     get = GetData <$> (repList =<< get)
       where
@@ -141,7 +141,7 @@ data Inv =
 instance NFData Inv where
     rnf (Inv l) = rnf l
 
-instance Binary Inv where
+instance Serialize Inv where
 
     get = Inv <$> (repList =<< get)
       where
@@ -161,7 +161,7 @@ data InvType
 
 instance NFData InvType where rnf x = seq x ()
 
-instance Binary InvType where
+instance Serialize InvType where
 
     get = go =<< getWord32le
       where
@@ -192,7 +192,7 @@ data InvVector =
 instance NFData InvVector where
     rnf (InvVector t h) = rnf t `seq` rnf h
 
-instance Binary InvVector where
+instance Serialize InvVector where
     get = InvVector <$> get <*> get
     put (InvVector t h) = put t >> put h
 
@@ -212,7 +212,7 @@ data NetworkAddress =
 instance NFData NetworkAddress where
     rnf NetworkAddress{..} = rnf naServices `seq` naAddress `seq` ()
 
-instance Binary NetworkAddress where
+instance Serialize NetworkAddress where
 
     get = NetworkAddress <$> getWord64le
                          <*> getAddrPort
@@ -262,7 +262,7 @@ data NotFound =
 instance NFData NotFound where
     rnf (NotFound l) = rnf l
 
-instance Binary NotFound where
+instance Serialize NotFound where
 
     get = NotFound <$> (repList =<< get)
       where
@@ -295,11 +295,11 @@ newtype Pong =
 instance NFData Pong where
     rnf (Pong n) = rnf n
 
-instance Binary Ping where
+instance Serialize Ping where
     get = Ping <$> getWord64le
     put (Ping n) = putWord64le n
 
-instance Binary Pong where
+instance Serialize Pong where
     get = Pong <$> getWord64le
     put (Pong n) = putWord64le n
 
@@ -328,7 +328,7 @@ data RejectCode
     | RejectCheckpoint
     deriving (Eq, Show, Read)
 
-instance Binary RejectCode where
+instance Serialize RejectCode where
 
     get = getWord8 >>= \code -> case code of
         0x01 -> return RejectMalformed
@@ -359,7 +359,7 @@ reject :: MessageCommand -> RejectCode -> ByteString -> Reject
 reject cmd code reason =
     Reject cmd code (VarString reason) BS.empty
 
-instance Binary Reject where
+instance Serialize Reject where
 
     get = get >>= \(VarString bs) -> case stringToCommand bs of
         Just cmd -> Reject cmd <$> get <*> get <*> maybeData
@@ -383,7 +383,7 @@ newtype VarInt = VarInt { getVarInt :: Word64 }
 instance NFData VarInt where
     rnf (VarInt w) = rnf w
 
-instance Binary VarInt where
+instance Serialize VarInt where
 
     get = VarInt <$> ( getWord8 >>= go )
       where
@@ -413,7 +413,7 @@ newtype VarString = VarString { getVarString :: ByteString }
 instance NFData VarString where
     rnf (VarString s) = rnf s
 
-instance Binary VarString where
+instance Serialize VarString where
 
     get = VarString <$> (readBS =<< get)
       where
@@ -463,7 +463,7 @@ instance NFData Version where
         rnf startHeight `seq`
         rnf relay
 
-instance Binary Version where
+instance Serialize Version where
 
     get = Version <$> getWord32le
                   <*> getWord64le
@@ -530,7 +530,7 @@ data MessageCommand
 
 instance NFData MessageCommand where rnf x = seq x ()
 
-instance Binary MessageCommand where
+instance Serialize MessageCommand where
 
     get = go =<< getByteString 12
       where

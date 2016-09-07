@@ -8,4 +8,4 @@ extra-deps:
 - murmur3-1.0.2
 - pbkdf-1.1.1.1
 - secp256k1-0.4.6
-resolver: lts-6.4
+resolver: lts-6.15

@@ -60,6 +60,8 @@ data ScriptOutput =
                     }
       -- | Pay to a script hash.
     | PayScriptHash { getOutputAddress  :: !Address }
+      -- | Provably unspendable data carrier.
+    | DataCarrier { getOutputData :: !ByteString }
     deriving (Eq, Show, Read)
 
 instance FromJSON ScriptOutput where
@@ -75,6 +77,7 @@ instance NFData ScriptOutput where
     rnf (PayPKHash a) = rnf a
     rnf (PayMulSig k r) = rnf k `seq` rnf r
     rnf (PayScriptHash a) = rnf a
+    rnf (DataCarrier a) = rnf a
 
 -- | Returns True if the script is a pay to public key output.
 isPayPK :: ScriptOutput -> Bool
@@ -95,6 +98,11 @@ isPayMulSig _ = False
 isPayScriptHash :: ScriptOutput -> Bool
 isPayScriptHash (PayScriptHash _) = True
 isPayScriptHash _ = False
+
+-- | Returns True if the script is an OP_RETURN "datacarrier" output
+isDataCarrier :: ScriptOutput -> Bool
+isDataCarrier (DataCarrier _) = True
+isDataCarrier _ = False
 
 -- | Computes a script address from a script output. This address can be used
 -- in a pay to script hash output.
@@ -141,6 +149,8 @@ encodeOutput s = Script $ case s of
                              ]
         (PubKeyAddress _) ->
             error "encodeOutput: PubKeyAddress is invalid in PayScriptHash"
+    -- Provably unspendable output
+    (DataCarrier d) -> [OP_RETURN, opPushData d]
 
 -- | Similar to 'encodeOutput' but encodes to a ByteString
 encodeOutputBS :: ScriptOutput -> ByteString
@@ -158,6 +168,8 @@ decodeOutput s = case scriptOps s of
     -- Pay to Script Hash
     [OP_HASH160, OP_PUSHDATA bs _, OP_EQUAL] ->
         (PayScriptHash . ScriptAddress) <$> decode bs
+    -- Provably unspendable data carrier output
+    [OP_RETURN, OP_PUSHDATA bs _] -> Right $ DataCarrier bs
     -- Pay to MultiSig Keys
     _ -> matchPayMulSig s
 

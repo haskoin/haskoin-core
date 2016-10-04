@@ -257,10 +257,11 @@ instance Arbitrary ArbitraryScriptOutput where
         , arbitrary >>= \(ArbitraryPKHashOutput o) -> return o
         , arbitrary >>= \(ArbitraryMSOutput o) -> return o
         , arbitrary >>= \(ArbitrarySHOutput o) -> return o
+        , arbitrary >>= \(ArbitraryDCOutput o) -> return o
         ]
 
 -- | Arbitrary ScriptOutput of type PayPK, PayPKHash or PayMS
--- (Not PayScriptHash)
+-- (Not PayScriptHash or DataCarrier)
 newtype ArbitrarySimpleOutput = ArbitrarySimpleOutput ScriptOutput
     deriving (Eq, Show, Read)
 
@@ -321,6 +322,15 @@ instance Arbitrary ArbitrarySHOutput where
     arbitrary = do
         ArbitraryScriptAddress a <- arbitrary
         return $ ArbitrarySHOutput $ PayScriptHash a
+
+-- | Arbitrary ScriptOutput of type DataCarrier
+newtype ArbitraryDCOutput = ArbitraryDCOutput ScriptOutput
+    deriving (Eq, Show, Read)
+
+instance Arbitrary ArbitraryDCOutput where
+    arbitrary = do
+        ArbitraryNotNullByteString bs <- arbitrary
+        return $ ArbitraryDCOutput $ DataCarrier bs
 
 -- | Arbitrary ScriptInput
 newtype ArbitraryScriptInput = ArbitraryScriptInput ScriptInput

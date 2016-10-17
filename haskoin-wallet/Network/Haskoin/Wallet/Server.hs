@@ -3,6 +3,7 @@
 module Network.Haskoin.Wallet.Server
 ( runSPVServer
 , stopSPVServer
+, runSPVServerWithContext
 ) where
 
 import           Control.Concurrent.Async.Lifted       (async, link,
@@ -91,7 +92,26 @@ instance NFData EventSession where
         rnf (M.elems eventNewAddrs)
 
 runSPVServer :: Config -> IO ()
-runSPVServer cfg = maybeDetach cfg $ run $ do -- start the server process
+runSPVServer cfg = maybeDetach cfg $ -- start the server process
+    withContext (run . runSPVServerWithContext cfg)
+  where
+    -- Setup logging monads
+    run          = runResourceT . runLogging
+    runLogging   = runStdoutLoggingT . filterLogger logFilter
+    logFilter _ level = level >= configLogLevel cfg
+
+-- |Run the server, and use the specifed ZeroMQ context.
+--  Useful if you want to communicate with the server using
+--  the "inproc" ZeroMQ transport, where a shared context is
+--  required.
+runSPVServerWithContext :: ( MonadLoggerIO m
+                           , MonadBaseControl IO m
+                           , MonadBase IO m
+                           , MonadThrow m
+                           , MonadResource m
+                           )
+                        => Config -> Context -> m ()
+runSPVServerWithContext cfg ctx = do
     -- Initialize the database
     -- Check the operation mode of the server.
     pool <- initDatabase cfg
@@ -101,7 +121,7 @@ runSPVServer cfg = maybeDetach cfg $ run $ do -- start the server process
         -- In this mode, we do not launch an SPV node. We only accept
         -- client requests through the ZMQ API.
         SPVOffline ->
-            runWalletApp $ HandlerSession cfg pool Nothing notif
+            runWalletApp ctx $ HandlerSession cfg pool Nothing notif
         -- In this mode, we launch the client ZMQ API and we sync the
         -- wallet database with an SPV node.
         SPVOnline -> do
@@ -121,20 +141,16 @@ runSPVServer cfg = maybeDetach cfg $ run $ do -- start the server process
                 -- Re-broadcast pending transactions
                 , runNodeT (broadcastPendingTxs pool) node
                 -- Run the ZMQ API server
-                , runWalletApp session
+                , runWalletApp ctx session
                 ]
             mapM_ link as
-            _ <- waitAnyCancel as
-            return ()
+            (_,r) <- waitAnyCancel as
+            return r
   where
     spv pool = do
         -- Get our bloom filter
         (bloom, elems, _) <- runDBPool getBloomFilter pool
         startSPVNode hosts bloom elems
-    -- Setup logging monads
-    run          = runResourceT . runLogging
-    runLogging   = runStdoutLoggingT . filterLogger logFilter
-    logFilter _ level = level >= configLogLevel cfg
         -- Bitcoin nodes to connect to
     nodes = fromMaybe
         (error $ "BTC nodes for " ++ networkName ++ " not found")
@@ -335,10 +351,9 @@ runWalletApp :: ( MonadLoggerIO m
                 , MonadThrow m
                 , MonadResource m
                 )
-             => HandlerSession -> m ()
-runWalletApp session = do
-    na <- async $ liftBaseOpDiscard withContext $ \ctx ->
-        liftBaseOpDiscard (withSocket ctx Pub) $ \sock -> do
+             => Context -> HandlerSession -> m ()
+runWalletApp ctx session = do
+    na <- async $ liftBaseOpDiscard (withSocket ctx Pub) $ \sock -> do
         liftIO $ setLinger (restrict (0 :: Int)) sock
         setupCrypto ctx sock
         liftIO $ bind sock $ configBindNotif $ handlerConfig session
@@ -352,8 +367,7 @@ runWalletApp session = do
                             ("{" <> cs jsonTxAccount <> "}", cs $ encode x)
                 in liftIO $ sendMulti sock $ typ :| [pay]
     link na
-    liftBaseOpDiscard withContext $ \ctx ->
-        liftBaseOpDiscard (withSocket ctx Rep) $ \sock -> do
+    liftBaseOpDiscard (withSocket ctx Rep) $ \sock -> do
         liftIO $ setLinger (restrict (0 :: Int)) sock
         setupCrypto ctx sock
         liftIO $ bind sock $ configBind $ handlerConfig session
@@ -367,14 +381,14 @@ runWalletApp session = do
   where
     setupCrypto :: (MonadLoggerIO m, MonadBaseControl IO m)
                 => Context -> Socket a -> m ()
-    setupCrypto ctx sock = do
+    setupCrypto ctx' sock = do
         when (isJust serverKeyM) $ liftIO $ do
             let k = fromJust $ configServerKey $ handlerConfig session
             setCurveServer True sock
             setCurveSecretKey TextFormat k sock
         when (isJust clientKeyPubM) $ do
             k <- z85Decode (fromJust clientKeyPubM)
-            void $ async $ runZapAuth ctx k
+            void $ async $ runZapAuth ctx' k
     cfg = handlerConfig session
     serverKeyM = configServerKey cfg
     clientKeyPubM = configClientKeyPub cfg

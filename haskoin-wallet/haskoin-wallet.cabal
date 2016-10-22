@@ -150,3 +150,28 @@ test-suite test-haskoin-wallet
     hs-source-dirs: tests
     ghc-options: -Wall
 
+executable example-inproc-wallet-server
+    if flag(library-only)
+        Buildable: False
+
+    main-is:        Main.hs
+    hs-source-dirs: examples/embedded-inproc-wallet-server/
+    extensions:     OverloadedStrings
+
+    ghc-options: -Wall
+                 -O3
+                 -threaded
+                 -rtsopts
+                 -with-rtsopts=-N4
+
+    build-depends:     base                          >= 4.8       && < 5
+                     , aeson                         >= 0.7       && < 0.12
+                     , aeson-pretty                  >= 0.7       && < 0.8
+                     , haskoin-node                  >= 0.3       && < 0.5
+                     , haskoin-wallet
+                     , monad-logger                  >= 0.3       && < 0.4
+                     , persistent-sqlite             >= 2.2       && < 2.3
+                     , resourcet                     >= 1.1       && < 1.2
+                     , unordered-containers          >= 0.2       && < 0.3
+                     , string-conversions            >= 0.4       && < 0.5
+                     , zeromq4-haskell               >= 0.6       && < 0.7

@@ -91,11 +91,11 @@ hashToMsg =
 
 -- <http://www.secg.org/sec1-v2.pdf Section 4.1.3>
 -- | Sign a message
-signMsg :: Hash256 -> PrvKey -> Signature
+signMsg :: Hash256 -> PrvKeyI c -> Signature
 signMsg h d = Signature $ EC.signMsg (prvKeySecKey d) (hashToMsg h)
 
 -- | Verify an ECDSA signature
-verifySig :: Hash256 -> Signature -> PubKey -> Bool
+verifySig :: Hash256 -> Signature -> PubKeyI c -> Bool
 verifySig h s q =
     EC.verifySig p g m
   where

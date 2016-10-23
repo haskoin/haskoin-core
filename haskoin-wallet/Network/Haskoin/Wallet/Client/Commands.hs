@@ -8,6 +8,7 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdRenameAcc
 , cmdAccounts
 , cmdList
+, cmdPubKeys
 , cmdUnused
 , cmdLabel
 , cmdTxs
@@ -276,14 +277,23 @@ listAction page requestBuilder action = do
     pages m c | m `mod` c == 0 = m `div` c
               | otherwise = m `div` c + 1
 
-cmdList :: String -> [String] -> Handler ()
-cmdList name ls = do
+listJsonAddrs :: (JsonAddr -> String)
+              -> String
+              -> [String]
+              -> Handler ()
+listJsonAddrs showFunc name ls = do
     t <- R.asks configAddrType
     m <- R.asks configMinConf
     o <- R.asks configOffline
     let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
         f = GetAddressesR (pack name) t m o
-    listAction page f $ \as -> forM_ as (liftIO . putStrLn . printAddress)
+    listAction page f $ \as -> forM_ as (liftIO . putStrLn . showFunc)
+
+cmdList :: String -> [String] -> Handler ()
+cmdList = listJsonAddrs printAddress
+
+cmdPubKeys :: String -> [String] -> Handler ()
+cmdPubKeys = listJsonAddrs printPubKey
 
 cmdUnused :: String -> [String] -> Handler ()
 cmdUnused name ls = do
@@ -765,6 +775,16 @@ printAddress JsonAddr{..} = unwords $
     ]
   where
     bal = fromMaybe (error "Could not get address balance") jsonAddrBalance
+
+printPubKey :: JsonAddr -> String
+printPubKey JsonAddr{..} = unwords $
+    [ show jsonAddrIndex, ":", showPubKey jsonAddrKey ]
+    ++
+    [ "(" ++ unpack jsonAddrLabel ++ ")" | not (null $ unpack jsonAddrLabel) ]
+  where
+    showPubKey = maybe "<no pubkey available>" (jsonStr2Str . toJSON)
+    jsonStr2Str (String t) = cs t
+    jsonStr2Str _          = ""     -- It totally is a String though
 
 printNotif :: Notif -> String
 printNotif (NotifTx   tx) = printTx Nothing tx

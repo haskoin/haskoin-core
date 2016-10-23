@@ -190,6 +190,7 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "accounts"    : page                       -> cmdAccounts page
     "rename"      : name : new            : [] -> cmdRenameAcc name new
     "list"        : name : page                -> cmdList name page
+    "pubkeys"     : name : page                -> cmdPubKeys name page
     "unused"      : name : page                -> cmdUnused name page
     "label"       : name : index : label  : [] -> cmdLabel name index label
     "txs"         : name : page                -> cmdTxs name page

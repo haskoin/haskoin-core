@@ -442,6 +442,7 @@ dispatchRequest req = fmap ResponseValid $ case req of
     GetAddressesR n t m o p          -> getAddressesR n t m o p
     GetAddressesUnusedR n t p        -> getAddressesUnusedR n t p
     GetAddressR n i t m o            -> getAddressR n i t m o
+    GetIndexR n k t                  -> getIndexR n k t
     PutAddressR n i t l              -> putAddressR n i t l
     PostAddressesR n i t             -> postAddressesR n i t
     GetTxsR n p                      -> getTxsR n p

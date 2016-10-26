@@ -334,6 +334,7 @@ data WalletRequest
     | GetAddressesR !AccountName !AddressType !Word32 !Bool !ListRequest
     | GetAddressesUnusedR !AccountName !AddressType !ListRequest
     | GetAddressR !AccountName !KeyIndex !AddressType !Word32 !Bool
+    | GetIndexR !AccountName !PubKeyC !AddressType
     | PutAddressR !AccountName !KeyIndex !AddressType !AddressLabel
     | PostAddressesR !AccountName !KeyIndex !AddressType
     | GetTxsR !AccountName !ListRequest

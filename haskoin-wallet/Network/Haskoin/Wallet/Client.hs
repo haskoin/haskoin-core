@@ -195,6 +195,7 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "label"       : name : index : label  : [] -> cmdLabel name index label
     "txs"         : name : page                -> cmdTxs name page
     "addrtxs"     : name : index : page        -> cmdAddrTxs name index page
+    "getindex"    : name : key            : [] -> cmdKeyIndex name key
     "genaddrs"    : name : i              : [] -> cmdGenAddrs name i
     "send"        : name : add : amnt     : [] -> cmdSend name add amnt
     "sendmany"    : name : xs                  -> cmdSendMany name xs

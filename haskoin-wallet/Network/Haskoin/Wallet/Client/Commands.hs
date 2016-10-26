@@ -13,6 +13,7 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdLabel
 , cmdTxs
 , cmdAddrTxs
+, cmdKeyIndex
 , cmdGenAddrs
 , cmdSend
 , cmdSendMany
@@ -50,6 +51,7 @@ import qualified Data.Aeson.Encode.Pretty        as JSON (Config (..),
                                                           encodePretty')
 import qualified Data.ByteString.Char8           as B8 (hPutStrLn, putStrLn,
                                                         unwords)
+import           Data.String                     (fromString)
 import           Data.List                       (intercalate, intersperse)
 import           Data.Maybe                      (fromMaybe, isJust, isNothing,
                                                   listToMaybe, maybeToList)
@@ -354,6 +356,21 @@ cmdAddrTxs name i ls = do
         sequence_ $ intersperse (liftIO $ putStrLn "-") xs'
   where
     index = fromMaybe (error "Could not read index") $ readMaybe i
+
+cmdKeyIndex :: String -> String -> Handler ()
+cmdKeyIndex name k = do
+    t <- R.asks configAddrType
+    resE <- sendZmq $ GetIndexR (pack name) (fromString k) t
+    handleResponse resE $ \res -> case res of
+        []  -> liftIO $ putStrLn "No matching pubkeys found"
+        lst -> liftIO $ putStrLn $ unlines $    -- Two or more pubkeys with the same index is extremely improbable. But let's print it out if it happens.
+            map (\adr -> showLine (jsonAddrIndex adr, jsonAddrKey adr)) lst
+  where
+    showLine :: (KeyIndex, Maybe PubKeyC) -> String
+    showLine (idx,k') = unwords [ show (idx :: KeyIndex), ":", showPubKey k' ]
+    showPubKey = maybe "<no pubkey available>" (jsonStr2Str . toJSON)
+    jsonStr2Str (String t) = cs t
+    jsonStr2Str _          = ""
 
 cmdGenAddrs :: String -> String -> Handler ()
 cmdGenAddrs name i = do

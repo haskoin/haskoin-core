@@ -252,6 +252,26 @@ getAddressR name i addrType minConf offline = do
             _           -> (entityVal addrE, Nothing)
     return $ Just $ toJSON $ toJsonAddr addr balM
 
+getIndexR :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+          => AccountName
+          -> PubKeyC
+          -> AddressType
+          -> Handler m (Maybe Value)
+getIndexR name key addrType = do
+    $(logInfo) $ format $ unlines
+        [ "getIndexR"
+        , "  Account name: " ++ unpack name
+        , "  Key         : " ++ show key
+        , "  Address type: " ++ show addrType
+        ]
+    addrLst <- runDB $ do
+        accE <- getAccount name
+        lookupByPubKey accE key addrType
+    let hello = map (`toJsonAddr` Nothing) addrLst
+    liftIO $ putStrLn $ show hello
+    liftIO $ print $ toJSON $ hello
+    return $ Just $ toJSON $ hello
+
 putAddressR :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
             => AccountName
             -> KeyIndex

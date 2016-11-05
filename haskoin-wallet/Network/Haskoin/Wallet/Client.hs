@@ -214,6 +214,7 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "decodetx"                            : [] -> cmdDecodeTx
     "status"                              : [] -> cmdStatus
     "keypair"                             : [] -> cmdKeyPair
+    "blockinfo"   : hashes                     -> cmdBlockInfo hashes
     "version"                             : [] -> cmdVersion
     "help"        : [] -> liftIO $ forM_ usage (hPutStrLn stderr)
     []                 -> liftIO $ forM_ usage (hPutStrLn stderr)

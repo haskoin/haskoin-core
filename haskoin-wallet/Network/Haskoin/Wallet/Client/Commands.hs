@@ -27,6 +27,7 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdDecodeTx
 , cmdVersion
 , cmdStatus
+, cmdBlockInfo
 , cmdMonitor
 , cmdSync
 , cmdKeyPair
@@ -38,7 +39,7 @@ where
 
 import           Control.Applicative             ((<|>))
 import           Control.Concurrent.Async.Lifted (async, wait)
-import           Control.Monad                   (forM_, forever, liftM2,
+import           Control.Monad                   (mapM_, forM_, forever, liftM2,
                                                   unless, when)
 import qualified Control.Monad.Reader            as R (ReaderT, ask, asks)
 import           Control.Monad.Trans             (liftIO)
@@ -62,6 +63,7 @@ import           Data.String.Conversions         (cs)
 import           Data.Text                       (Text, pack, splitOn, unpack)
 import           Data.Word                       (Word32, Word64)
 import qualified Data.Yaml                       as YAML (encode)
+import qualified Data.Time.Format                as Time
 import           Network.Haskoin.Block
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
@@ -555,6 +557,24 @@ cmdKeyPair = do
         B8.putStrLn $ B8.unwords [ "public :", rvalue pub ]
         B8.putStrLn $ B8.unwords [ "private:", rvalue sec ]
 
+cmdBlockInfo :: [String] -> Handler ()
+cmdBlockInfo headers = do
+    -- Show best block if no arguments are provided
+    hashL <- if null headers then
+            -- Fetch best block hash from status msg, and return as list
+            (: []) . parseRes <$> sendZmq (PostNodeR NodeActionStatus)
+        else
+            return (map fromString headers)
+    sendZmq (GetBlockInfoR hashL) >>=
+        \resE -> handleResponse resE (liftIO . printResults)
+  where
+    printResults :: [BlockInfo] -> IO ()
+    printResults = mapM_ $ putStrLn . unlines . printBlockInfo
+    parseRes :: Either String (WalletResponse NodeStatus) -> BlockHash
+    parseRes = nodeStatusBestHeader . fromMaybe
+        (error "No response to NodeActionStatus msg") . parseResponse
+
+
 {- Helpers -}
 
 handleNotif :: OutputFormat -> Either String Notif -> IO ()
@@ -569,16 +589,22 @@ handleNotif fmt (Right notif) = case fmt of
     OutputNormal ->
         putStrLn $ printNotif notif
 
+parseResponse
+    :: Either String (WalletResponse a)
+    -> Maybe a
+parseResponse resE = case resE of
+    Right (ResponseValid resM) -> resM
+    Right (ResponseError err)  -> error $ unpack err
+    Left err                   -> error err
+
 handleResponse
     :: (FromJSON a, ToJSON a)
     => Either String (WalletResponse a)
     -> (a -> Handler ())
     -> Handler ()
-handleResponse resE handle = case resE of
-    Right (ResponseValid (Just a)) -> formatOutput a =<< R.asks configFormat
-    Right (ResponseValid Nothing)  -> return ()
-    Right (ResponseError err)      -> error $ unpack err
-    Left err                       -> error err
+handleResponse resE handle = case parseResponse resE of
+    Just a  -> formatOutput a =<< R.asks configFormat
+    Nothing -> return ()
   where
     formatOutput a format = case format of
         OutputJSON   -> liftIO . formatStr $ cs $
@@ -920,3 +946,22 @@ printPeerStatus verbose PeerStatus{..} =
     ] ++
     [ "  Logs     : " | verbose ] ++
     [ "    - " ++ msg | msg <- fromMaybe [] peerStatusLog, verbose]
+
+printBlockInfo :: BlockInfo -> [String]
+printBlockInfo BlockInfo{..} =
+    [ "Block Height     : " ++ show blockInfoHeight
+    , "Block Hash       : " ++ cs (blockHashToHex blockInfoHash)
+    , "Block Timestamp  : " ++ formatUTCTime blockInfoTimestamp
+    , "Previous Block   : " ++ cs (blockHashToHex blockInfoPrevBlock)
+    , "Merkle Root      : " ++ cs blockInfoMerkleRoot
+    , "Block Version    : " ++ "0x" ++ cs (encodeHex versionData)
+    , "Block Difficulty : " ++ show (blockDiff blockInfoBits)
+    , "Chain Work       : " ++ show blockInfoChainWork
+    ]
+  where
+    blockDiff :: Word32 -> Double
+    blockDiff target = getTarget (blockBits genesisHeader) / getTarget target
+    getTarget   = fromIntegral . decodeCompact
+    versionData = integerToBS (fromIntegral blockInfoVersion)
+    formatUTCTime = Time.formatTime Time.defaultTimeLocale
+        "%Y-%m-%d %H:%M:%S (UTC)"

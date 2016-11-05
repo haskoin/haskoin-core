@@ -37,6 +37,7 @@ library
                      Network.Haskoin.Wallet.Internals
 
     other-modules: Network.Haskoin.Wallet.Types
+                   Network.Haskoin.Wallet.Types.BlockInfo
                    Network.Haskoin.Wallet.Accounts
                    Network.Haskoin.Wallet.Transaction
                    Network.Haskoin.Wallet.Block

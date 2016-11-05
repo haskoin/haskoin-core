@@ -458,3 +458,4 @@ dispatchRequest req = fmap ResponseValid $ case req of
     GetSyncHeightR a n b             -> getSyncR a (Left n) b
     GetPendingR a p                  -> getPendingR a p
     GetDeadR a p                     -> getDeadR a p
+    GetBlockInfoR l                  -> getBlockInfoR l

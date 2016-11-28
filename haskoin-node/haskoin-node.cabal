@@ -48,7 +48,7 @@ library
                 RecordWildCards
                 DeriveDataTypeable
 
-    build-depends: aeson                    >= 0.7          && < 0.12
+    build-depends: aeson                    >= 0.7          && < 1.1
                  , async                    >= 2.0          && < 2.2
                  , base                     >= 4.8          && < 5
                  , bytestring               >= 0.10         && < 0.11
@@ -96,7 +96,7 @@ test-suite test-haskoin-node
                  , haskoin-core
                  , haskoin-node
                  , HUnit                          >= 1.2        && < 1.4
-                 , QuickCheck                     >= 2.6        && < 2.9
+                 , QuickCheck                     >= 2.6        && < 2.10
                  , monad-logger                   >= 0.3        && < 0.4
                  , mtl                            >= 2.2        && < 2.3
                  , persistent                     >= 2.2        && < 2.3

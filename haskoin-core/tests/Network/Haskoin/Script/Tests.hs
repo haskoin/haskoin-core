@@ -51,6 +51,8 @@ import Network.Haskoin.Internals
     , dumpStack
     , decodeInt
     , encodeInt
+    , decodeFullInt
+    , cltvDecodeInt
     , decodeBool
     , encodeBool
     , execScript
@@ -77,6 +79,8 @@ tests =
         ]
     , testGroup "Integer Types"
         [ testProperty "decodeInt . encodeInt Int"  testEncodeInt
+        , testProperty "decodeFullInt . encodeInt Int"  testEncodeInt64
+        , testProperty "cltvDecodeInt . encodeInt Int" testEncodeCltv
         , testProperty "decodeBool . encodeBool Bool" testEncodeBool
         ]
     , testFile "Canonical Valid Script Test Cases"
@@ -166,6 +170,19 @@ testEncodeInt i
     | otherwise       = i' == Just i
   where
     i' = decodeInt $ encodeInt i
+
+testEncodeCltv :: Int64 -> Bool
+testEncodeCltv i
+    -- As 'cltvEncodeInt' is just a wrapper for 'encodeInt',
+    -- we use 'encodeInt' for encoding, to simultaneously
+    -- test the handling of out-of-range integers by 'cltvDecodeInt'.
+    | i < 0 || i > fromIntegral (maxBound :: Word32) =
+        isNothing $ cltvDecodeInt (encodeInt i)
+    | otherwise =
+        cltvDecodeInt (encodeInt i) == Just (fromIntegral i)
+
+testEncodeInt64 :: Int64 -> Bool
+testEncodeInt64 i = decodeFullInt (encodeInt i) == Just i
 
 testEncodeBool :: Bool -> Bool
 testEncodeBool b = decodeBool (encodeBool b) == b

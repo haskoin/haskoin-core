@@ -8,10 +8,12 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdRenameAcc
 , cmdAccounts
 , cmdList
+, cmdPubKeys
 , cmdUnused
 , cmdLabel
 , cmdTxs
 , cmdAddrTxs
+, cmdKeyIndex
 , cmdGenAddrs
 , cmdSend
 , cmdSendMany
@@ -25,6 +27,7 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdDecodeTx
 , cmdVersion
 , cmdStatus
+, cmdBlockInfo
 , cmdMonitor
 , cmdSync
 , cmdKeyPair
@@ -36,7 +39,7 @@ where
 
 import           Control.Applicative             ((<|>))
 import           Control.Concurrent.Async.Lifted (async, wait)
-import           Control.Monad                   (forM_, forever, liftM2,
+import           Control.Monad                   (mapM_, forM_, forever, liftM2,
                                                   unless, when)
 import qualified Control.Monad.Reader            as R (ReaderT, ask, asks)
 import           Control.Monad.Trans             (liftIO)
@@ -49,6 +52,7 @@ import qualified Data.Aeson.Encode.Pretty        as JSON (Config (..),
                                                           encodePretty')
 import qualified Data.ByteString.Char8           as B8 (hPutStrLn, putStrLn,
                                                         unwords)
+import           Data.String                     (fromString)
 import           Data.List                       (intercalate, intersperse)
 import           Data.Maybe                      (fromMaybe, isJust, isNothing,
                                                   listToMaybe, maybeToList)
@@ -59,6 +63,7 @@ import           Data.String.Conversions         (cs)
 import           Data.Text                       (Text, pack, splitOn, unpack)
 import           Data.Word                       (Word32, Word64)
 import qualified Data.Yaml                       as YAML (encode)
+import qualified Data.Time.Format                as Time
 import           Network.Haskoin.Block
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
@@ -276,14 +281,23 @@ listAction page requestBuilder action = do
     pages m c | m `mod` c == 0 = m `div` c
               | otherwise = m `div` c + 1
 
-cmdList :: String -> [String] -> Handler ()
-cmdList name ls = do
+listJsonAddrs :: (JsonAddr -> String)
+              -> String
+              -> [String]
+              -> Handler ()
+listJsonAddrs showFunc name ls = do
     t <- R.asks configAddrType
     m <- R.asks configMinConf
     o <- R.asks configOffline
     let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
         f = GetAddressesR (pack name) t m o
-    listAction page f $ \as -> forM_ as (liftIO . putStrLn . printAddress)
+    listAction page f $ \as -> forM_ as (liftIO . putStrLn . showFunc)
+
+cmdList :: String -> [String] -> Handler ()
+cmdList = listJsonAddrs printAddress
+
+cmdPubKeys :: String -> [String] -> Handler ()
+cmdPubKeys = listJsonAddrs printPubKey
 
 cmdUnused :: String -> [String] -> Handler ()
 cmdUnused name ls = do
@@ -344,6 +358,21 @@ cmdAddrTxs name i ls = do
         sequence_ $ intersperse (liftIO $ putStrLn "-") xs'
   where
     index = fromMaybe (error "Could not read index") $ readMaybe i
+
+cmdKeyIndex :: String -> String -> Handler ()
+cmdKeyIndex name k = do
+    t <- R.asks configAddrType
+    resE <- sendZmq $ GetIndexR (pack name) (fromString k) t
+    handleResponse resE $ \res -> case res of
+        []  -> liftIO $ putStrLn "No matching pubkeys found"
+        lst -> liftIO $ putStrLn $ unlines $    -- Two or more pubkeys with the same index is extremely improbable. But let's print it out if it happens.
+            map (\adr -> showLine (jsonAddrIndex adr, jsonAddrKey adr)) lst
+  where
+    showLine :: (KeyIndex, Maybe PubKeyC) -> String
+    showLine (idx,k') = unwords [ show (idx :: KeyIndex), ":", showPubKey k' ]
+    showPubKey = maybe "<no pubkey available>" (jsonStr2Str . toJSON)
+    jsonStr2Str (String t) = cs t
+    jsonStr2Str _          = ""
 
 cmdGenAddrs :: String -> String -> Handler ()
 cmdGenAddrs name i = do
@@ -528,6 +557,24 @@ cmdKeyPair = do
         B8.putStrLn $ B8.unwords [ "public :", rvalue pub ]
         B8.putStrLn $ B8.unwords [ "private:", rvalue sec ]
 
+cmdBlockInfo :: [String] -> Handler ()
+cmdBlockInfo headers = do
+    -- Show best block if no arguments are provided
+    hashL <- if null headers then
+            -- Fetch best block hash from status msg, and return as list
+            (: []) . parseRes <$> sendZmq (PostNodeR NodeActionStatus)
+        else
+            return (map fromString headers)
+    sendZmq (GetBlockInfoR hashL) >>=
+        \resE -> handleResponse resE (liftIO . printResults)
+  where
+    printResults :: [BlockInfo] -> IO ()
+    printResults = mapM_ $ putStrLn . unlines . printBlockInfo
+    parseRes :: Either String (WalletResponse NodeStatus) -> BlockHash
+    parseRes = nodeStatusBestHeader . fromMaybe
+        (error "No response to NodeActionStatus msg") . parseResponse
+
+
 {- Helpers -}
 
 handleNotif :: OutputFormat -> Either String Notif -> IO ()
@@ -542,16 +589,22 @@ handleNotif fmt (Right notif) = case fmt of
     OutputNormal ->
         putStrLn $ printNotif notif
 
+parseResponse
+    :: Either String (WalletResponse a)
+    -> Maybe a
+parseResponse resE = case resE of
+    Right (ResponseValid resM) -> resM
+    Right (ResponseError err)  -> error $ unpack err
+    Left err                   -> error err
+
 handleResponse
     :: (FromJSON a, ToJSON a)
     => Either String (WalletResponse a)
     -> (a -> Handler ())
     -> Handler ()
-handleResponse resE handle = case resE of
-    Right (ResponseValid (Just a)) -> formatOutput a =<< R.asks configFormat
-    Right (ResponseValid Nothing)  -> return ()
-    Right (ResponseError err)      -> error $ unpack err
-    Left err                       -> error err
+handleResponse resE handle = case parseResponse resE of
+    Just a  -> formatOutput a =<< R.asks configFormat
+    Nothing -> return ()
   where
     formatOutput a format = case format of
         OutputJSON   -> liftIO . formatStr $ cs $
@@ -766,6 +819,16 @@ printAddress JsonAddr{..} = unwords $
   where
     bal = fromMaybe (error "Could not get address balance") jsonAddrBalance
 
+printPubKey :: JsonAddr -> String
+printPubKey JsonAddr{..} = unwords $
+    [ show jsonAddrIndex, ":", showPubKey jsonAddrKey ]
+    ++
+    [ "(" ++ unpack jsonAddrLabel ++ ")" | not (null $ unpack jsonAddrLabel) ]
+  where
+    showPubKey = maybe "<no pubkey available>" (jsonStr2Str . toJSON)
+    jsonStr2Str (String t) = cs t
+    jsonStr2Str _          = ""     -- It totally is a String though
+
 printNotif :: Notif -> String
 printNotif (NotifTx   tx) = printTx Nothing tx
 printNotif (NotifBlock b) = printBlock b
@@ -883,3 +946,22 @@ printPeerStatus verbose PeerStatus{..} =
     ] ++
     [ "  Logs     : " | verbose ] ++
     [ "    - " ++ msg | msg <- fromMaybe [] peerStatusLog, verbose]
+
+printBlockInfo :: BlockInfo -> [String]
+printBlockInfo BlockInfo{..} =
+    [ "Block Height     : " ++ show blockInfoHeight
+    , "Block Hash       : " ++ cs (blockHashToHex blockInfoHash)
+    , "Block Timestamp  : " ++ formatUTCTime blockInfoTimestamp
+    , "Previous Block   : " ++ cs (blockHashToHex blockInfoPrevBlock)
+    , "Merkle Root      : " ++ cs blockInfoMerkleRoot
+    , "Block Version    : " ++ "0x" ++ cs (encodeHex versionData)
+    , "Block Difficulty : " ++ show (blockDiff blockInfoBits)
+    , "Chain Work       : " ++ show blockInfoChainWork
+    ]
+  where
+    blockDiff :: Word32 -> Double
+    blockDiff target = getTarget (blockBits genesisHeader) / getTarget target
+    getTarget   = fromIntegral . decodeCompact
+    versionData = integerToBS (fromIntegral blockInfoVersion)
+    formatUTCTime = Time.formatTime Time.defaultTimeLocale
+        "%Y-%m-%d %H:%M:%S (UTC)"

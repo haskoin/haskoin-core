@@ -19,6 +19,7 @@ module Network.Haskoin.Wallet.Accounts
 , addresses
 , addressList
 , unusedAddresses
+, lookupByPubKey
 , addressCount
 , setAddrLabel
 , addressPrvKey
@@ -372,6 +373,19 @@ unusedAddresses (Entity ai acc) addrType ListRequest{..} = do
     lim cnt | listReverse = min lim' (gap - listOffset)
             | otherwise   = min lim' (cnt - off cnt - gap)
     order = if listReverse then desc else asc
+
+lookupByPubKey :: (MonadIO m, MonadThrow m)
+               => Entity Account         -- ^ Account Entity
+               -> PubKeyC                -- ^ Pubkey of interest
+               -> AddressType            -- ^ Address type
+               -> SqlPersistT m [WalletAddr]
+lookupByPubKey (Entity ai _) key addrType =
+    fmap (map entityVal) $ select $ from $ \x -> do
+        where_ (   x ^. WalletAddrAccount ==. val ai
+               &&. x ^. WalletAddrType    ==. val addrType
+               &&. x ^. WalletAddrKey     ==. val (Just key)
+               )
+        return x
 
 -- | Add a label to an address.
 setAddrLabel :: (MonadIO m, MonadThrow m)

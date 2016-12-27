@@ -190,10 +190,12 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "accounts"    : page                       -> cmdAccounts page
     "rename"      : name : new            : [] -> cmdRenameAcc name new
     "list"        : name : page                -> cmdList name page
+    "pubkeys"     : name : page                -> cmdPubKeys name page
     "unused"      : name : page                -> cmdUnused name page
     "label"       : name : index : label  : [] -> cmdLabel name index label
     "txs"         : name : page                -> cmdTxs name page
     "addrtxs"     : name : index : page        -> cmdAddrTxs name index page
+    "getindex"    : name : key            : [] -> cmdKeyIndex name key
     "genaddrs"    : name : i              : [] -> cmdGenAddrs name i
     "send"        : name : add : amnt     : [] -> cmdSend name add amnt
     "sendmany"    : name : xs                  -> cmdSendMany name xs
@@ -212,6 +214,7 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "decodetx"                            : [] -> cmdDecodeTx
     "status"                              : [] -> cmdStatus
     "keypair"                             : [] -> cmdKeyPair
+    "blockinfo"   : hashes                     -> cmdBlockInfo hashes
     "version"                             : [] -> cmdVersion
     "help"        : [] -> liftIO $ forM_ usage (hPutStrLn stderr)
     []                 -> liftIO $ forM_ usage (hPutStrLn stderr)

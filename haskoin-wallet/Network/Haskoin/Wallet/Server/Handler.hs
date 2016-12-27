@@ -8,7 +8,7 @@ import           Control.Arrow                      (first)
 import           Control.Concurrent.STM.TBMChan     (TBMChan)
 import           Control.Exception                  (SomeException (..),
                                                      tryJust)
-import           Control.Monad                      (liftM, unless, when)
+import           Control.Monad                      (liftM, forM, unless, when)
 import           Control.Monad.Base                 (MonadBase)
 import           Control.Monad.Catch                (MonadThrow, throwM)
 import           Control.Monad.Logger               (MonadLoggerIO, logError,
@@ -23,6 +23,7 @@ import qualified Data.Map.Strict                    as M (elems, fromList,
 import           Data.String.Conversions            (cs)
 import           Data.Text                          (Text, pack, unpack)
 import           Data.Word                          (Word32)
+import           Data.Maybe                         (catMaybes)
 import           Database.Esqueleto                 (Entity (..), SqlPersistT)
 import           Database.Persist.Sql               (ConnectionPool,
                                                      SqlPersistM,
@@ -41,6 +42,7 @@ import           Network.Haskoin.Wallet.Model
 import           Network.Haskoin.Wallet.Settings
 import           Network.Haskoin.Wallet.Transaction
 import           Network.Haskoin.Wallet.Types
+import           Network.Haskoin.Wallet.Types.BlockInfo (fromNodeBlock)
 
 type Handler m = ReaderT HandlerSession m
 
@@ -251,6 +253,26 @@ getAddressR name i addrType minConf offline = do
             ((_,bal):_) -> (entityVal addrE, Just bal)
             _           -> (entityVal addrE, Nothing)
     return $ Just $ toJSON $ toJsonAddr addr balM
+
+getIndexR :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+          => AccountName
+          -> PubKeyC
+          -> AddressType
+          -> Handler m (Maybe Value)
+getIndexR name key addrType = do
+    $(logInfo) $ format $ unlines
+        [ "getIndexR"
+        , "  Account name: " ++ unpack name
+        , "  Key         : " ++ show key
+        , "  Address type: " ++ show addrType
+        ]
+    addrLst <- runDB $ do
+        accE <- getAccount name
+        lookupByPubKey accE key addrType
+    let hello = map (`toJsonAddr` Nothing) addrLst
+    liftIO $ putStrLn $ show hello
+    liftIO $ print $ toJSON $ hello
+    return $ Just $ toJSON $ hello
 
 putAddressR :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
             => AccountName
@@ -548,6 +570,16 @@ getSyncR acc blockE lq@ListRequest{..} = runDB $ do
     showBlock = case blockE of
         Left  e -> show e
         Right b -> cs $ blockHashToHex b
+
+getBlockInfoR :: (MonadThrow m, MonadLoggerIO m, MonadBaseControl IO m)
+              => [BlockHash]
+              -> Handler m (Maybe Value)
+getBlockInfoR headerLst = do
+    lstMaybeBlk <- forM headerLst (runNode . runSqlNodeT . getBlockByHash)
+    return $ toJSON <$> Just (handleRes lstMaybeBlk)
+  where
+    handleRes :: [Maybe NodeBlock] -> [BlockInfo]
+    handleRes = map fromNodeBlock . catMaybes
 
 {- Helpers -}
 

@@ -35,6 +35,7 @@ module Network.Haskoin.Wallet.Types
 , JsonSyncBlock(..)
 , JsonBlock(..)
 , Notif(..)
+, BlockInfo(..)
 
 -- Helper Types
 , WalletException(..)
@@ -98,6 +99,7 @@ import           Network.Haskoin.Script
 import           Network.Haskoin.Transaction
 import           Network.Haskoin.Util
 import           Network.Haskoin.Wallet.Database
+import           Network.Haskoin.Wallet.Types.BlockInfo
 
 type AccountName = Text
 
@@ -334,6 +336,7 @@ data WalletRequest
     | GetAddressesR !AccountName !AddressType !Word32 !Bool !ListRequest
     | GetAddressesUnusedR !AccountName !AddressType !ListRequest
     | GetAddressR !AccountName !KeyIndex !AddressType !Word32 !Bool
+    | GetIndexR !AccountName !PubKeyC !AddressType
     | PutAddressR !AccountName !KeyIndex !AddressType !AddressLabel
     | PostAddressesR !AccountName !KeyIndex !AddressType
     | GetTxsR !AccountName !ListRequest
@@ -349,6 +352,7 @@ data WalletRequest
     | GetSyncHeightR !AccountName !BlockHeight !ListRequest
     | GetPendingR !AccountName !ListRequest
     | GetDeadR !AccountName !ListRequest
+    | GetBlockInfoR ![BlockHash]
 
 -- TODO: Set omitEmptyContents on aeson-0.9
 $(deriveJSON

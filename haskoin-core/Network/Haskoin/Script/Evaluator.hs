@@ -19,6 +19,9 @@ module Network.Haskoin.Script.Evaluator
 -- * Helper functions
 , encodeInt
 , decodeInt
+, decodeFullInt
+, cltvEncodeInt
+, cltvDecodeInt
 , encodeBool
 , decodeBool
 , runStack
@@ -41,7 +44,7 @@ import           Data.Int                          (Int64)
 import           Data.Maybe                        (isJust, mapMaybe)
 import           Data.Serialize                    (decode, encode)
 import           Data.String.Conversions           (cs)
-import           Data.Word                         (Word64, Word8)
+import           Data.Word                         (Word64, Word32, Word8)
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Script.SigHash
 import           Network.Haskoin.Script.Types
@@ -156,6 +159,9 @@ disabled op = throwError . DisabledOp $ op
 
 -- | Encoding function for the stack value format of integers.  Most
 -- significant bit defines sign.
+-- Note that this function will encode any Int64 into a StackValue,
+-- thus producing stack-encoded integers which are not valid numeric
+-- opcodes, as they exceed 4 bytes in length.
 encodeInt :: Int64 -> StackValue
 encodeInt i = prefix $ encod (fromIntegral $ abs i) []
     where encod :: Word64 -> StackValue -> StackValue
@@ -167,16 +173,50 @@ encodeInt i = prefix $ encod (fromIntegral $ abs i) []
                     | i < 0 = init xs ++ [setBit (last xs) 7]
                     | otherwise = xs
 
--- | Inverse of `encodeInt`.
+-- | Decode an Int64 from the stack value integer format.
+-- Inverse of `encodeInt`.
+-- Note that only integers decoded by 'decodeInt' are valid
+-- numeric opcodes (numeric opcodes can only be up to 4 bytes in size).
+-- However, in the case of eg. CHECKLOCKTIMEVERIFY, we need to
+-- be able to encode and decode stack integers up to
+-- (maxBound :: Word32), which are 5 bytes.
+decodeFullInt :: StackValue -> Maybe Int64
+decodeFullInt bytes
+    | length bytes > 8 = Nothing
+    | otherwise = Just $ sign' (decodeW bytes)
+        where decodeW [] = 0
+              decodeW [x] = fromIntegral $ clearBit x 7
+              decodeW (x:xs) = fromIntegral x + decodeW xs `shiftL` 8
+              sign' i | null bytes = 0
+                    | testBit (last bytes) 7 = -i
+                    | otherwise = i
+
+-- | Used for decoding numeric opcodes. Will not return
+-- an integer that takes up more than
+-- 4 bytes on the stack (the size limit for numeric opcodes).
+-- The naming is kept for backwards compatibility.
 decodeInt :: StackValue -> Maybe Int64
 decodeInt bytes | length bytes > 4 = Nothing
-                | otherwise = Just $ sign' (decodeW bytes)
-                  where decodeW [] = 0
-                        decodeW [x] = fromIntegral $ clearBit x 7
-                        decodeW (x:xs) = fromIntegral x + decodeW xs `shiftL` 8
-                        sign' i | null bytes = 0
-                                | testBit (last bytes) 7 = -i
-                                | otherwise = i
+                | otherwise = decodeFullInt bytes
+
+-- | Decode the integer argument to OP_CHECKLOCKTIMEVERIFY (CLTV)
+-- from a stack value.
+-- The full uint32 range is needed in order to represent timestamps
+-- for use with CLTV. Reference:
+-- https://github.com/bitcoin/bips/blob/master/bip-0065.mediawiki#Detailed_Specification
+cltvDecodeInt :: StackValue -> Maybe Word32
+cltvDecodeInt bytes
+    | length bytes > 5 = Nothing
+    | otherwise = decodeFullInt bytes >>= uint32Bounds
+  where
+    uint32Bounds :: Int64 -> Maybe Word32
+    uint32Bounds i64
+        | i64 < 0 || i64 > fromIntegral (maxBound :: Word32) = Nothing
+        | otherwise = Just $ fromIntegral i64
+
+-- | Helper function for encoding the argument to OP_CHECKLOCKTIMEVERIFY
+cltvEncodeInt :: Word32 -> StackValue
+cltvEncodeInt = encodeInt . fromIntegral
 
 -- | Conversion of StackValue to Bool (true if non-zero).
 decodeBool :: StackValue -> Bool

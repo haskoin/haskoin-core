@@ -30,6 +30,9 @@ module Network.Haskoin.Node.HeaderTree
 , nodeHeader
 , nodePrev
 , nodeTimestamp
+, nodeWork
+, nodeHeight
+, nodeChain
 , isBestChain
 , isChainReorg
 , isSideChain
@@ -101,6 +104,15 @@ nodePrev = prevBlock . nodeHeader
 
 nodeTimestamp :: NodeBlock -> Timestamp
 nodeTimestamp = blockTimestamp . nodeHeader
+
+nodeWork :: NodeBlock -> Work
+nodeWork = nodeBlockWork
+
+nodeHeight :: NodeBlock -> BlockHeight
+nodeHeight = nodeBlockHeight
+
+nodeChain :: NodeBlock -> Word32
+nodeChain = nodeBlockChain
 
 -- | Number of blocks on average between difficulty cycles (2016 blocks).
 diffInterval :: Word32

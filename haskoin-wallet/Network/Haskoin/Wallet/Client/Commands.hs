@@ -47,9 +47,6 @@ import           Data.Aeson                      (FromJSON, ToJSON, Value (..),
                                                   decode, eitherDecode, object,
                                                   toJSON, (.=))
 import qualified Data.Aeson                      as Aeson (encode)
-import qualified Data.Aeson.Encode.Pretty        as JSON (Config (..),
-                                                          defConfig,
-                                                          encodePretty')
 import qualified Data.ByteString.Char8           as B8 (hPutStrLn, putStrLn,
                                                         unwords)
 import           Data.String                     (fromString)
@@ -74,6 +71,7 @@ import           Network.Haskoin.Util
 import           Network.Haskoin.Wallet.Server
 import           Network.Haskoin.Wallet.Settings
 import           Network.Haskoin.Wallet.Types
+import qualified Network.Haskoin.Wallet.Client.PrettyJson as JSON
 import qualified System.Console.Haskeline        as Haskeline
 import           System.IO                       (stderr)
 import           System.ZMQ4                     (KeyFormat (..), Req (..),
@@ -537,7 +535,7 @@ cmdDecodeTx = do
         _          -> YAML.encode $ val tx
   where
     val = encodeTxJSON
-    jsn = JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } . val
+    jsn = JSON.encodePretty . val
 
 cmdVersion :: Handler ()
 cmdVersion = liftIO $ do
@@ -581,7 +579,7 @@ handleNotif :: OutputFormat -> Either String Notif -> IO ()
 handleNotif _   (Left e) = error e
 handleNotif fmt (Right notif) = case fmt of
     OutputJSON -> formatStr $ cs $
-        JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } notif
+        JSON.encodePretty notif
     OutputYAML -> do
         putStrLn "---"
         formatStr $ cs $ YAML.encode notif
@@ -608,7 +606,7 @@ handleResponse resE handle = case parseResponse resE of
   where
     formatOutput a format = case format of
         OutputJSON   -> liftIO . formatStr $ cs $
-            JSON.encodePretty' JSON.defConfig{ JSON.confIndent = 2 } a
+            JSON.encodePretty a
         OutputYAML   -> liftIO . formatStr $ cs $ YAML.encode a
         OutputNormal -> handle a
 

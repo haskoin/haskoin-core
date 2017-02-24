@@ -39,7 +39,7 @@ where
 
 import           Control.Applicative             ((<|>))
 import           Control.Concurrent.Async.Lifted (async, wait)
-import           Control.Monad                   (mapM_, forM_, forever, liftM2,
+import           Control.Monad                   (forM_, forever, liftM2,
                                                   unless, when)
 import qualified Control.Monad.Reader            as R (ReaderT, ask, asks)
 import           Control.Monad.Trans             (liftIO)
@@ -742,6 +742,11 @@ encodeScriptOutputJSON so = case so of
         [ "pay2scripthash" .= object
             [ "address-base64" .= (cs $ encodeHex $ encode $ getAddrHash a :: Text)
             , "address-base58" .= (cs (addrToBase58 a) :: Text)
+            ]
+        ]
+    DataCarrier bs -> object
+        [ "op_return" .= object
+            [ "data" .= (cs $ encodeHex bs :: Text)
             ]
         ]
 

@@ -1,0 +1,13 @@
+resolver: lts-8.5
+
+flags: {}
+packages:
+- haskoin-core
+- haskoin-node
+- haskoin-wallet
+extra-deps:
+- daemons-0.2.1
+- pbkdf-1.1.1.1
+- secp256k1-0.4.6
+- murmur3-1.0.3
+- concurrent-extra-0.7.0.10

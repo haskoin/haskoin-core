@@ -21,7 +21,6 @@ import Network.Haskoin.Block
 import Network.Haskoin.Node.HeaderTree
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
-import Network.Haskoin.Constants
 
 
 newtype JsonHash256 = JsonHash256 { jsonGetHash256 :: Hash256 }

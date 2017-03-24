@@ -376,13 +376,15 @@ runWalletApp ctx session = do
             bs  <- liftIO $ receive sock
             let msg = decode $ BL.fromStrict bs
             res <- case msg of
-                Just StopServerR ->
-                    return $ ResponseValid Nothing
+                Just StopServerR -> do
+                    $(logInfo) "Received StopServer request"
+                    return (ResponseValid Nothing)
                 Just r  -> catchErrors $
                     runHandler (dispatchRequest r) session
                 Nothing -> return $ ResponseError "Could not decode request"
             liftIO $ send sock [] $ BL.toStrict $ encode res
             unless (msg == Just StopServerR) loop
+            $(logInfo) "Exiting..."
   where
     setupCrypto :: (MonadLoggerIO m, MonadBaseControl IO m)
                 => Context -> Socket a -> m ()

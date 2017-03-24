@@ -18,6 +18,7 @@ import           Control.Exception.Lifted              (ErrorCall (..),
 import qualified Control.Exception.Lifted              as E (Handler (..))
 import           Control.Monad                         (forM_, forever, unless,
                                                         void, when)
+import           Control.Monad.Fix                     (fix)
 import           Control.Monad.Base                    (MonadBase)
 import           Control.Monad.Catch                   (MonadThrow)
 import           Control.Monad.Logger                  (MonadLoggerIO,
@@ -371,13 +372,17 @@ runWalletApp ctx session = do
         liftIO $ setLinger (restrict (0 :: Int)) sock
         setupCrypto ctx sock
         liftIO $ bind sock $ configBind $ handlerConfig session
-        forever $ do
+        fix $ \loop -> do
             bs  <- liftIO $ receive sock
-            res <- case decode $ BL.fromStrict bs of
+            let msg = decode $ BL.fromStrict bs
+            res <- case msg of
+                Just StopServerR ->
+                    return $ ResponseValid Nothing
                 Just r  -> catchErrors $
                     runHandler (dispatchRequest r) session
                 Nothing -> return $ ResponseError "Could not decode request"
             liftIO $ send sock [] $ BL.toStrict $ encode res
+            unless (msg == Just StopServerR) loop
   where
     setupCrypto :: (MonadLoggerIO m, MonadBaseControl IO m)
                 => Context -> Socket a -> m ()
@@ -473,3 +478,4 @@ dispatchRequest req = fmap ResponseValid $ case req of
     GetPendingR a p                  -> getPendingR a p
     GetDeadR a p                     -> getDeadR a p
     GetBlockInfoR l                  -> getBlockInfoR l
+    StopServerR                      -> error "Should be handled by runWalletApp"

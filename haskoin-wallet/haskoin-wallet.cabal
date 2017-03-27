@@ -111,6 +111,7 @@ executable hw
     ghc-options: -Wall
                  -O3
                  -threaded
+                 -eventlog
                  -rtsopts
                  -with-rtsopts=-N4
 

@@ -11,6 +11,7 @@ import           Control.Concurrent.STM          (STM, atomically, modifyTVar',
                                                   swapTVar)
 import           Control.Concurrent.STM.TBMChan  (TBMChan, closeTBMChan,
                                                   newTBMChan, writeTBMChan)
+import           Control.Exception               (AsyncException(ThreadKilled))
 import           Control.Exception.Lifted        (finally, fromException, throw,
                                                   throwIO)
 import           Control.Monad                   (forM_, forever, join, unless,
@@ -90,9 +91,10 @@ startReconnectPeer ph@PeerHost{..} = do
                 $(logError) $ formatPid pid ph $ unwords
                     [ "Peer thread stopped with exception:", show se ]
                 return $ case fromException se of
-                    Just NodeExceptionBanned    -> False
-                    Just NodeExceptionConnected -> False
-                    _ -> True
+                    Just  NodeExceptionBanned         -> False
+                    Just  NodeExceptionConnected      -> False
+                    Just (NodeExceptionInvalidPeer _) -> False
+                    _ -> fromException se /= Just ThreadKilled
             Right _ -> do
                 $(logDebug) $ formatPid pid ph "Peer thread stopped"
                 return True
@@ -200,6 +202,7 @@ startPeerPid pid ph@PeerHost{..} = do
                         withAsync (peerPing pid ph) $ \a3 -> link a3 >> do
                             $(logDebug) $ formatPid pid ph "Ping thread started"
                             _ <- liftIO $ waitAnyCancel [a1, a2, a3]
+                            $(logDebug) $ formatPid pid ph "Exiting peer TCP thread"
                             return ()
 
     cleanupPeer = do

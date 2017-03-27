@@ -96,13 +96,13 @@ cmdStart :: Handler ()
 cmdStart = do
     cfg <- R.ask
     liftIO $ runSPVServer cfg
-    liftIO $ putStrLn "Process started"
 
 -- hw stop [config]
 cmdStop :: Handler ()
-cmdStop = R.ask >>= \cfg -> liftIO $ do
-    stopSPVServer cfg
-    putStrLn "Process stopped"
+cmdStop = do
+    resE <- sendZmq StopServerR
+    handleResponse (resE :: Either String (WalletResponse (Maybe ()))) (const $ return ())
+    liftIO $ putStrLn "Process stopped"
 
 getSigningKeys :: String
                -> Handler (Maybe XPrvKey)

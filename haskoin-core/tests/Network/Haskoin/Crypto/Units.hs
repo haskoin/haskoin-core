@@ -10,8 +10,9 @@ import Control.Monad.Trans (liftIO)
 
 import Data.Maybe (fromJust, isJust, isNothing)
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as B 
+import qualified Data.Binary as Bin
 import qualified Data.ByteString.Char8 as C (pack)
-import Data.Serialize (put, runPut)
 
 import qualified Crypto.Secp256k1 as EC (SecKey, exportCompactSig)
 
@@ -244,4 +245,4 @@ testSigning (prv, msg, str) = do
     msg' = hash256 msg
     prv' = makePrvKey prv
     compact = EC.exportCompactSig g
-    res = runPut $ put compact
+    res = B.toStrict $ Bin.encode compact

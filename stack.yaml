@@ -1,4 +1,4 @@
-resolver: lts-6.15
+resolver: lts-8.13
 
 flags: {}
 packages:
@@ -8,7 +8,8 @@ packages:
 extra-deps:
 - daemons-0.2.1
 - pbkdf-1.1.1.1
-- secp256k1-0.4.6
+- secp256k1-0.4.8
 - murmur3-1.0.3
+- concurrent-extra-0.7.0.10
 ### uncomment below for lts-7.18 compatibility
 #- esqueleto-2.5.1

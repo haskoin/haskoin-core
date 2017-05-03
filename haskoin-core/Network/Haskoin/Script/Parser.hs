@@ -25,6 +25,7 @@ module Network.Haskoin.Script.Parser
 , isSpendPKHash
 , isSpendMulSig
 , isScriptHashInput
+, isDataCarrier
 ) where
 
 import           Control.Applicative            ((<|>))

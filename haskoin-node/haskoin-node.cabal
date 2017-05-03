@@ -1,5 +1,5 @@
 name:                  haskoin-node
-version:               0.4.0
+version:               0.4.1
 synopsis:
     Implementation of a Bitoin node.
 description:
@@ -19,12 +19,12 @@ description:
 
 homepage:              http://github.com/haskoin/haskoin
 bug-reports:           http://github.com/haskoin/haskoin/issues
-tested-with:           GHC==7.10.3, GHC==7.10.2, GHC==7.10.1
+tested-with:           GHC==8.0.2
 stability:             stable
 license:               PublicDomain
 license-file:          UNLICENSE
 author:                Philippe Laprade, Jean-Pierre Rupp
-maintainer:            plaprade+hackage@gmail.com
+maintainer:            xenog@protonmail.com
 category:              Bitcoin, Finance, Network
 build-type:            Simple
 cabal-version:         >= 1.9.2

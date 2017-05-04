@@ -4,7 +4,7 @@ module Network.Haskoin.Node.BlockChain where
 
 import           Control.Concurrent              (threadDelay)
 import           Control.Concurrent.Async.Lifted (link, mapConcurrently,
-                                                  waitAny, waitAnyCancel, withAsync)
+                                                  waitAnyCancel, withAsync)
 import           Control.Concurrent.STM          (STM, atomically, isEmptyTMVar,
                                                   putTMVar, readTVar, retry,
                                                   takeTMVar, tryReadTMVar,
@@ -178,7 +178,7 @@ merkleDownload walletHash batchSize = do
             (waitVal valE >> return (Right valE))
         case resE of
             Left newValE -> waitRescan rescanTMVar newValE
-            Right res -> return res
+            Right res    -> return res
     waitVal valE = case valE of
         Left ts -> waitFastCatchup ts
         Right h -> waitHeight h

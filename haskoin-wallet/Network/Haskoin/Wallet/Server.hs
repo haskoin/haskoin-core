@@ -6,8 +6,8 @@ module Network.Haskoin.Wallet.Server
 , runSPVServerWithContext
 ) where
 
-import           Control.Concurrent.Async.Lifted       (async, link, cancel,
-                                                        withAsync, waitAnyCancel, waitAny)
+import           Control.Concurrent.Async.Lifted       (async, link,
+                                                        waitAnyCancel)
 import           Control.Concurrent.STM                (atomically, retry)
 import           Control.Concurrent.STM.TBMChan        (TBMChan, newTBMChan,
                                                         readTBMChan)
@@ -18,9 +18,9 @@ import           Control.Exception.Lifted              (ErrorCall (..),
 import qualified Control.Exception.Lifted              as E (Handler (..))
 import           Control.Monad                         (forM_, forever, unless,
                                                         void, when)
-import           Control.Monad.Fix                     (fix)
 import           Control.Monad.Base                    (MonadBase)
 import           Control.Monad.Catch                   (MonadThrow)
+import           Control.Monad.Fix                     (fix)
 import           Control.Monad.Logger                  (MonadLoggerIO,
                                                         filterLogger, logDebug,
                                                         logError, logInfo,
@@ -411,9 +411,6 @@ runWalletCmd ctx session = do
             unless (msg == Just StopServerR) loop
     $(logInfo) "Exiting ZMQ command thread..."
   where
-    cfg = handlerConfig session
-    serverKeyM = configServerKey cfg
-    clientKeyPubM = configClientKeyPub cfg
     catchErrors m = catches m
         [ E.Handler $ \(WalletException err) -> do
             $(logError) $ pack err
@@ -484,30 +481,30 @@ dispatchRequest :: ( MonadLoggerIO m
                    )
                 => WalletRequest -> Handler m (WalletResponse Value)
 dispatchRequest req = fmap ResponseValid $ case req of
-    GetAccountsR p                   -> getAccountsR p
-    PostAccountsR na                 -> postAccountsR na
-    PostAccountRenameR n n'          -> postAccountRenameR n n'
-    GetAccountR n                    -> getAccountR n
-    PostAccountKeysR n ks            -> postAccountKeysR n ks
-    PostAccountGapR n g              -> postAccountGapR n g
-    GetAddressesR n t m o p          -> getAddressesR n t m o p
-    GetAddressesUnusedR n t p        -> getAddressesUnusedR n t p
-    GetAddressR n i t m o            -> getAddressR n i t m o
-    GetIndexR n k t                  -> getIndexR n k t
-    PutAddressR n i t l              -> putAddressR n i t l
-    PostAddressesR n i t             -> postAddressesR n i t
-    GetTxsR n p                      -> getTxsR n p
-    GetAddrTxsR n i t p              -> getAddrTxsR n i t p
-    PostTxsR n k a                   -> postTxsR n k a
-    GetTxR n h                       -> getTxR n h
-    GetOfflineTxR n h                -> getOfflineTxR n h
-    PostOfflineTxR n k t c           -> postOfflineTxR n k t c
-    GetBalanceR n mc o               -> getBalanceR n mc o
-    PostNodeR na                     -> postNodeR na
-    DeleteTxIdR t                    -> deleteTxIdR t
-    GetSyncR a n b                   -> getSyncR a (Right n) b
-    GetSyncHeightR a n b             -> getSyncR a (Left n) b
-    GetPendingR a p                  -> getPendingR a p
-    GetDeadR a p                     -> getDeadR a p
-    GetBlockInfoR l                  -> getBlockInfoR l
-    StopServerR                      -> error "Should be handled elsewhere"
+    GetAccountsR p            -> getAccountsR p
+    PostAccountsR na          -> postAccountsR na
+    PostAccountRenameR n n'   -> postAccountRenameR n n'
+    GetAccountR n             -> getAccountR n
+    PostAccountKeysR n ks     -> postAccountKeysR n ks
+    PostAccountGapR n g       -> postAccountGapR n g
+    GetAddressesR n t m o p   -> getAddressesR n t m o p
+    GetAddressesUnusedR n t p -> getAddressesUnusedR n t p
+    GetAddressR n i t m o     -> getAddressR n i t m o
+    GetIndexR n k t           -> getIndexR n k t
+    PutAddressR n i t l       -> putAddressR n i t l
+    PostAddressesR n i t      -> postAddressesR n i t
+    GetTxsR n p               -> getTxsR n p
+    GetAddrTxsR n i t p       -> getAddrTxsR n i t p
+    PostTxsR n k a            -> postTxsR n k a
+    GetTxR n h                -> getTxR n h
+    GetOfflineTxR n h         -> getOfflineTxR n h
+    PostOfflineTxR n k t c    -> postOfflineTxR n k t c
+    GetBalanceR n mc o        -> getBalanceR n mc o
+    PostNodeR na              -> postNodeR na
+    DeleteTxIdR t             -> deleteTxIdR t
+    GetSyncR a n b            -> getSyncR a (Right n) b
+    GetSyncHeightR a n b      -> getSyncR a (Left n) b
+    GetPendingR a p           -> getPendingR a p
+    GetDeadR a p              -> getDeadR a p
+    GetBlockInfoR l           -> getBlockInfoR l
+    StopServerR               -> error "Should be handled elsewhere"

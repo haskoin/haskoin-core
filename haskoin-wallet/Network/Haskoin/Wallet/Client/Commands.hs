@@ -727,7 +727,7 @@ encodeScriptOutputJSON so = case so of
         ]
     PayPKHash a -> object
         [ "pay2pubkeyhash" .= object
-            [ "address-base64" .=
+            [ "address-hex" .=
               (cs $ encodeHex (encode $ getAddrHash a) :: Text)
             , "address-base58" .= (cs $ addrToBase58 a :: Text)
             ]
@@ -740,7 +740,7 @@ encodeScriptOutputJSON so = case so of
         ]
     PayScriptHash a -> object
         [ "pay2scripthash" .= object
-            [ "address-base64" .= (cs $ encodeHex $ encode $ getAddrHash a :: Text)
+            [ "address-hex" .= (cs $ encodeHex $ encode $ getAddrHash a :: Text)
             , "address-base58" .= (cs (addrToBase58 a) :: Text)
             ]
         ]

@@ -8,6 +8,9 @@
 # Copy these contents into the root directory of your Github project in a file
 # named .travis.yml
 
+# Use Trusty beta build environment
+dist: trusty
+
 # Use new container infrastructure to enable caching
 sudo: false
 
@@ -24,6 +27,8 @@ addons:
   apt:
     packages:
       - libgmp-dev
+      - libleveldb-dev
+      - libzmq3-dev
 
 before_install:
 # Download and unpack the stack executable

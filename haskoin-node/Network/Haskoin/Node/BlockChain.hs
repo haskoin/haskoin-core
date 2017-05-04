@@ -4,7 +4,7 @@ module Network.Haskoin.Node.BlockChain where
 
 import           Control.Concurrent              (threadDelay)
 import           Control.Concurrent.Async.Lifted (link, mapConcurrently,
-                                                  waitAny, withAsync)
+                                                  waitAny, waitAnyCancel, withAsync)
 import           Control.Concurrent.STM          (STM, atomically, isEmptyTMVar,
                                                   putTMVar, readTVar, retry,
                                                   takeTMVar, tryReadTMVar,
@@ -57,8 +57,9 @@ startSPVNode hosts bloom elems = do
         $(logInfo) "Initial header sync complete"
         $(logDebug) "Starting the tickle processing thread"
         withAsync processTickles $ \a2 -> link a2 >> do
-            _ <- liftIO $ waitAny [a1, a2]
+            _ <- liftIO $ waitAnyCancel [a1, a2]
             return ()
+        $(logDebug) "Exiting SPV-node thread"
 
 -- Source of all transaction broadcasts
 txSource :: (MonadLoggerIO m, MonadBaseControl IO m)
@@ -473,7 +474,7 @@ headerSync = do
     -- Then we re-evaluate the best peer
     continue <- catchAny (peerHeaderSyncLimit pid peerSessionHost 10) $
         \e -> do
-            $(logError) $ pack $ show e
+            $(logError) $ pack $ unwords ["peerHeaderSyncLimit:", show e]
             disconnectPeer pid peerSessionHost >> return True
 
     -- Reset the header syncing peer

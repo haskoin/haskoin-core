@@ -353,6 +353,8 @@ data WalletRequest
     | GetPendingR !AccountName !ListRequest
     | GetDeadR !AccountName !ListRequest
     | GetBlockInfoR ![BlockHash]
+    | StopServerR
+        deriving (Show, Eq)
 
 -- TODO: Set omitEmptyContents on aeson-0.9
 $(deriveJSON

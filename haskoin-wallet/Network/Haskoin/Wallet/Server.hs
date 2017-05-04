@@ -6,8 +6,8 @@ module Network.Haskoin.Wallet.Server
 , runSPVServerWithContext
 ) where
 
-import           Control.Concurrent.Async.Lifted       (async, link,
-                                                        waitAnyCancel)
+import           Control.Concurrent.Async.Lifted       (async, link, cancel,
+                                                        withAsync, waitAnyCancel, waitAny)
 import           Control.Concurrent.STM                (atomically, retry)
 import           Control.Concurrent.STM.TBMChan        (TBMChan, newTBMChan,
                                                         readTBMChan)
@@ -18,6 +18,7 @@ import           Control.Exception.Lifted              (ErrorCall (..),
 import qualified Control.Exception.Lifted              as E (Handler (..))
 import           Control.Monad                         (forM_, forever, unless,
                                                         void, when)
+import           Control.Monad.Fix                     (fix)
 import           Control.Monad.Base                    (MonadBase)
 import           Control.Monad.Catch                   (MonadThrow)
 import           Control.Monad.Logger                  (MonadLoggerIO,
@@ -120,8 +121,17 @@ runSPVServerWithContext cfg ctx = do
     case configMode cfg of
         -- In this mode, we do not launch an SPV node. We only accept
         -- client requests through the ZMQ API.
-        SPVOffline ->
-            runWalletApp ctx $ HandlerSession cfg pool Nothing notif
+        SPVOffline -> do
+            let session = HandlerSession cfg pool Nothing notif
+            as <- mapM async
+                -- Run the ZMQ API-command server
+                [ runWalletCmd ctx session
+                -- Run the ZMQ notification thread
+                , runWalletNotif ctx session
+                ]
+            mapM_ link as
+            (_,r) <- waitAnyCancel as
+            return r
         -- In this mode, we launch the client ZMQ API and we sync the
         -- wallet database with an SPV node.
         SPVOnline -> do
@@ -140,11 +150,14 @@ runSPVServerWithContext cfg ctx = do
                 , runNodeT (handleGetData $ (`runDBPool` pool) . getTx) node
                 -- Re-broadcast pending transactions
                 , runNodeT (broadcastPendingTxs pool) node
-                -- Run the ZMQ API server
-                , runWalletApp ctx session
+                -- Run the ZMQ API-command server
+                , runWalletCmd ctx session
+                -- Run the ZMQ notification thread
+                , runWalletNotif ctx session
                 ]
             mapM_ link as
             (_,r) <- waitAnyCancel as
+            $(logDebug) "Exiting main thread"
             return r
   where
     spv pool = do
@@ -171,6 +184,7 @@ runSPVServerWithContext cfg ctx = do
 
         -- Start the merkle sync
         merkleSync pool 500 notif
+        $(logDebug) "Exiting Merkle-sync thread"
     -- Run a thread that will re-broadcast pending transactions
     broadcastPendingTxs pool = forever $ do
         (hash, _) <- runSqlNodeT $ walletBestBlock
@@ -184,16 +198,19 @@ runSPVServerWithContext cfg ctx = do
         atomicallyNodeT $ do
             synced <- areBlocksSynced hash
             when synced $ lift retry
-    processTx pool notif = awaitForever $ \tx -> lift $ do
-        (_, newAddrs) <- runDBPool (importNetTx tx (Just notif)) pool
-        unless (null newAddrs) $ do
-            $(logInfo) $ pack $ unwords
-                [ "Generated", show $ length newAddrs
-                , "new addresses while importing the tx."
-                , "Updating the bloom filter"
-                ]
-            (bloom, elems, _) <- runDBPool getBloomFilter pool
-            atomicallyNodeT $ sendBloomFilter bloom elems
+        $(logDebug) "Exiting tx-broadcast thread"
+    processTx pool notif = do
+        awaitForever $ \tx -> lift $ do
+            (_, newAddrs) <- runDBPool (importNetTx tx (Just notif)) pool
+            unless (null newAddrs) $ do
+                $(logInfo) $ pack $ unwords
+                    [ "Generated", show $ length newAddrs
+                    , "new addresses while importing the tx."
+                    , "Updating the bloom filter"
+                    ]
+                (bloom, elems, _) <- runDBPool getBloomFilter pool
+                atomicallyNodeT $ sendBloomFilter bloom elems
+        $(logDebug) "Exiting tx-import thread"
 
 initDatabase :: (MonadBaseControl IO m, MonadLoggerIO m)
              => Config -> m ConnectionPool
@@ -332,8 +349,9 @@ merkleSync pool bSize notif = do
 
 maybeDetach :: Config -> IO () -> IO ()
 maybeDetach cfg action =
-    if configDetach cfg then runDetached pidFile logFile action else action
+    if configDetach cfg then runDetached pidFile logFile action >> logStarted else action
   where
+    logStarted = putStrLn "Process started"
     pidFile = Just $ configPidFile cfg
     logFile = ToFile $ configLogFile cfg
 
@@ -345,17 +363,17 @@ stopSPVServer cfg =
 -- Run the main ZeroMQ loop
 -- TODO: Support concurrent requests using DEALER socket when we can do
 -- concurrent MySQL requests.
-runWalletApp :: ( MonadLoggerIO m
+runWalletNotif :: ( MonadLoggerIO m
                 , MonadBaseControl IO m
                 , MonadBase IO m
                 , MonadThrow m
                 , MonadResource m
                 )
-             => Context -> HandlerSession -> m ()
-runWalletApp ctx session = do
-    na <- async $ liftBaseOpDiscard (withSocket ctx Pub) $ \sock -> do
+               => Context -> HandlerSession -> m ()
+runWalletNotif ctx session =
+    liftBaseOpDiscard (withSocket ctx Pub) $ \sock -> do
         liftIO $ setLinger (restrict (0 :: Int)) sock
-        setupCrypto ctx sock
+        setupCrypto ctx sock session
         liftIO $ bind sock $ configBindNotif $ handlerConfig session
         forever $ do
             xM <- liftIO $ atomically $ readTBMChan $ handlerNotifChan session
@@ -366,29 +384,33 @@ runWalletApp ctx session = do
                         NotifTx JsonTx{..} ->
                             ("{" <> cs jsonTxAccount <> "}", cs $ encode x)
                 in liftIO $ sendMulti sock $ typ :| [pay]
-    link na
+
+runWalletCmd :: ( MonadLoggerIO m
+                , MonadBaseControl IO m
+                , MonadBase IO m
+                , MonadThrow m
+                , MonadResource m
+                )
+             => Context -> HandlerSession -> m ()
+runWalletCmd ctx session = do
     liftBaseOpDiscard (withSocket ctx Rep) $ \sock -> do
         liftIO $ setLinger (restrict (0 :: Int)) sock
-        setupCrypto ctx sock
+        setupCrypto ctx sock session
         liftIO $ bind sock $ configBind $ handlerConfig session
-        forever $ do
+        fix $ \loop -> do
             bs  <- liftIO $ receive sock
-            res <- case decode $ BL.fromStrict bs of
+            let msg = decode $ BL.fromStrict bs
+            res <- case msg of
+                Just StopServerR -> do
+                    $(logInfo) "Received StopServer request"
+                    return (ResponseValid Nothing)
                 Just r  -> catchErrors $
                     runHandler (dispatchRequest r) session
                 Nothing -> return $ ResponseError "Could not decode request"
             liftIO $ send sock [] $ BL.toStrict $ encode res
+            unless (msg == Just StopServerR) loop
+    $(logInfo) "Exiting ZMQ command thread..."
   where
-    setupCrypto :: (MonadLoggerIO m, MonadBaseControl IO m)
-                => Context -> Socket a -> m ()
-    setupCrypto ctx' sock = do
-        when (isJust serverKeyM) $ liftIO $ do
-            let k = fromJust $ configServerKey $ handlerConfig session
-            setCurveServer True sock
-            setCurveSecretKey TextFormat k sock
-        when (isJust clientKeyPubM) $ do
-            k <- z85Decode (fromJust clientKeyPubM)
-            void $ async $ runZapAuth ctx' k
     cfg = handlerConfig session
     serverKeyM = configServerKey cfg
     clientKeyPubM = configClientKeyPub cfg
@@ -403,6 +425,21 @@ runWalletApp ctx session = do
             $(logError) $ pack $ show exc
             return $ ResponseError $ pack $ show exc
         ]
+
+setupCrypto :: (MonadLoggerIO m, MonadBaseControl IO m)
+            => Context -> Socket a -> HandlerSession -> m ()
+setupCrypto ctx' sock session = do
+    when (isJust serverKeyM) $ liftIO $ do
+        let k = fromJust $ configServerKey $ handlerConfig session
+        setCurveServer True sock
+        setCurveSecretKey TextFormat k sock
+    when (isJust clientKeyPubM) $ do
+        k <- z85Decode (fromJust clientKeyPubM)
+        void $ async $ runZapAuth ctx' k
+  where
+    cfg = handlerConfig session
+    serverKeyM = configServerKey cfg
+    clientKeyPubM = configClientKeyPub cfg
 
 runZapAuth :: ( MonadLoggerIO m
               , MonadBaseControl IO m
@@ -473,3 +510,4 @@ dispatchRequest req = fmap ResponseValid $ case req of
     GetPendingR a p                  -> getPendingR a p
     GetDeadR a p                     -> getDeadR a p
     GetBlockInfoR l                  -> getBlockInfoR l
+    StopServerR                      -> error "Should be handled elsewhere"

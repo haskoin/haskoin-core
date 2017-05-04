@@ -1,40 +1,40 @@
-language: generic
-sudo: required
-dist: trusty
+# This is the simple Travis configuration, which is intended for use
+# on applications which do not require cross-platform and
+# multiple-GHC-version support. For more information and other
+# options, see:
+#
+# https://docs.haskellstack.org/en/stable/travis_ci/
+#
+# Copy these contents into the root directory of your Github project in a file
+# named .travis.yml
 
-matrix:
-  include:
-    - env: LTS=default GHCVER=7.10.3
-      addons:
-        apt:
-          sources: 
-            - hvr-ghc
-          packages:
-            - ghc-7.10.3
-            - alex-3.1.3
-            - happy-1.19.4
-            - libgmp-dev
-            - libleveldb-dev 
-            - libzmq3-dev 
-            - libsnappy-dev 
-            - libncurses5-dev
-            - pkg-config 
-            - zlib1g-dev
+# Use new container infrastructure to enable caching
+sudo: false
+
+# Do not choose a language; we provide our own build tools.
+language: generic
+
+# Caching so the next build will be fast too.
+cache:
+  directories:
+  - $HOME/.stack
+
+# Ensure necessary system libraries are present
+addons:
+  apt:
+    packages:
+      - libgmp-dev
 
 before_install:
-  - export PATH=/opt/ghc/$GHCVER/bin:/opt/alex/3.1.3/bin:/opt/happy/1.19.4/bin:$PATH
-  - if [[ "$LTS" == "default" ]]; then
-      export STACK=stack;
-    else
-      export STACK="stack --stack-yaml stack-$LTS.yaml";
-    fi 
-  - mkdir -p ~/.local/bin
-  - export PATH=~/.local/bin:$PATH
-  - travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+# Download and unpack the stack executable
+- mkdir -p ~/.local/bin
+- export PATH=$HOME/.local/bin:$PATH
+- travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
 
 install:
-  - travis/travis_long $STACK --no-terminal setup
-  - travis/travis_long $STACK --no-terminal install hscolour
+# Build dependencies
+- stack --no-terminal --install-ghc test --only-dependencies
 
 script:
-  - travis/travis_long $STACK --no-terminal build --test --haddock
+# Build the package, its tests, and its docs and run the tests
+- stack --no-terminal test --haddock --no-haddock-deps

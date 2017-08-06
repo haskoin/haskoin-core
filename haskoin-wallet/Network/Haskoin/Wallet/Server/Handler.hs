@@ -269,10 +269,8 @@ getIndexR name key addrType = do
     addrLst <- runDB $ do
         accE <- getAccount name
         lookupByPubKey accE key addrType
-    let hello = map (`toJsonAddr` Nothing) addrLst
-    liftIO $ putStrLn $ show hello
-    liftIO $ print $ toJSON $ hello
-    return $ Just $ toJSON $ hello
+    -- TODO: We don't return the balance for now. Maybe add it? Or not?
+    return $ Just $ toJSON $ map (`toJsonAddr` Nothing) addrLst
 
 putAddressR :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
             => AccountName
@@ -575,11 +573,17 @@ getBlockInfoR :: (MonadThrow m, MonadLoggerIO m, MonadBaseControl IO m)
               => [BlockHash]
               -> Handler m (Maybe Value)
 getBlockInfoR headerLst = do
+    $(logInfo) $ format "Received GetBlockInfoR request"
     lstMaybeBlk <- forM headerLst (runNode . runSqlNodeT . getBlockByHash)
     return $ toJSON <$> Just (handleRes lstMaybeBlk)
   where
     handleRes :: [Maybe NodeBlock] -> [BlockInfo]
     handleRes = map fromNodeBlock . catMaybes
+
+postStopServerR :: MonadLoggerIO m => Handler m (Maybe Value)
+postStopServerR = do
+    $(logInfo) $ format "Received StopServerR request"
+    return Nothing
 
 {- Helpers -}
 

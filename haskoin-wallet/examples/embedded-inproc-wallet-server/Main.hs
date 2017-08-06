@@ -120,64 +120,66 @@ btcNodes =
 
 walletServerConf :: Config
 walletServerConf = Config
-    { configCount         = 100
+    { configCount          = 100
     -- ^ Output size of commands
-    , configMinConf       = 6
+    , configMinConf        = 6
     -- ^ Minimum number of confirmations
-    , configSignTx        = True
+    , configSignTx         = True
     -- ^ Sign transactions
-    , configFee           = 50000
+    , configFee            = 50000
     -- ^ Fee to pay per 1000 bytes when creating new transactions
-    , configRcptFee       = False
+    , configRcptFee        = False
     -- ^ Recipient pays fee (dangerous, no config file setting)
-    , configAddrType      = AddressExternal
+    , configAddrType       = AddressExternal
     -- ^ Return internal instead of external addresses
-    , configOffline       = False
+    , configDisplayPubKeys = False
+    -- ^ Display public keys instead of addresses
+    , configOffline        = False
     -- ^ Display the balance including offline transactions
-    , configReversePaging = False
+    , configReversePaging  = False
     -- ^ Use reverse paging for displaying addresses and transactions
-    , configPath          = Nothing
+    , configPath           = Nothing
     -- ^ Derivation path when creating account
-    , configFormat        = OutputNormal
+    , configFormat         = OutputNormal
     -- ^ How to format the command-line results
-    , configConnect       = cmdSocket
+    , configConnect        = cmdSocket
     -- ^ ZeroMQ socket to connect to (location of the server)
-    , configConnectNotif  = notifSocket
+    , configConnectNotif   = notifSocket
     -- ^ ZeroMQ socket to connect for notifications
-    , configDetach        = False
+    , configDetach         = False
     -- ^ Detach server when launched from command-line
-    , configFile          = ""
+    , configFile           = ""
     -- ^ Configuration file
-    , configTestnet       = False
+    , configTestnet        = False
     -- ^ Use Testnet3 network
-    , configDir           = ""
+    , configDir            = ""
     -- ^ Working directory
-    , configBind          = cmdSocket
+    , configBind           = cmdSocket
     -- ^ Bind address for the ZeroMQ socket
-    , configBindNotif     = notifSocket
+    , configBindNotif      = notifSocket
     -- ^ Bind address for ZeroMQ notifications
-    , configBTCNodes      = HM.fromList [ ( "prodnet", btcNodes ) ]
+    , configBTCNodes       = HM.fromList [ ( "prodnet", btcNodes ) ]
     -- ^ Trusted Bitcoin full nodes to connect to
-    , configMode          = SPVOnline
+    , configMode           = SPVOnline
     -- ^ Operation mode of the SPV node.
-    , configBloomFP       = 0.00001
+    , configBloomFP        = 0.00001
     -- ^ False positive rate for the bloom filter.
-    , configDatabase      = HM.fromList [ ( "prodnet", databaseConf ) ]
+    , configDatabase       = HM.fromList [ ( "prodnet", databaseConf ) ]
     -- ^ Database configuration
-    , configLogFile       = ""
+    , configLogFile        = ""
     -- ^ Log file
-    , configPidFile       = ""
+    , configPidFile        = ""
     -- ^ PID File
-    , configLogLevel      = Log.LevelInfo
+    , configLogLevel       = Log.LevelInfo
     -- ^ Log level
-    , configVerbose       = True
+    , configVerbose        = True
     -- ^ Verbose
-    , configServerKey     = Nothing
+    , configServerKey      = Nothing
     -- ^ Server key for authentication and encryption (server config)
-    , configServerKeyPub  = Nothing
+    , configServerKeyPub   = Nothing
     -- ^ Server public key for authentication and encryption (client config)
-    , configClientKey     = Nothing
+    , configClientKey      = Nothing
     -- ^ Client key for authentication and encryption (client config)
-    , configClientKeyPub  = Nothing
+    , configClientKeyPub   = Nothing
     -- ^ Client public key for authentication and encryption
     }

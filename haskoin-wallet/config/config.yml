@@ -66,6 +66,9 @@ output-size: 10
 # Type of addresses to display. Example: external, internal
 address-type: external
 
+# Displaz public keys instead of addresses in relevant commands
+display-pubkeys: false
+
 # Use reverse paging for diplaying addresses and txs when set to True.
 reverse-paging: false
 
@@ -103,9 +106,6 @@ verbose: false
 
 # Recipient pays transaction fee. DANGEROUS.
 recipient-fee: false
-
-# Configuration file name. Only set at compile time.
-config-file: config.yml
 
 # Server key for authentication and encryption (server config).
 server-key:

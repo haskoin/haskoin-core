@@ -2,7 +2,6 @@
 {-# LANGUAGE TemplateHaskell       #-}
 module Network.Haskoin.Wallet.Server
 ( runSPVServer
-, stopSPVServer
 , runSPVServerWithContext
 ) where
 
@@ -355,11 +354,6 @@ maybeDetach cfg action =
     pidFile = Just $ configPidFile cfg
     logFile = ToFile $ configLogFile cfg
 
-stopSPVServer :: Config -> IO ()
-stopSPVServer cfg =
-    -- TODO: Should we send a message instead of killing the process ?
-    killAndWait $ configPidFile cfg
-
 -- Run the main ZeroMQ loop
 -- TODO: Support concurrent requests using DEALER socket when we can do
 -- concurrent MySQL requests.
@@ -401,9 +395,6 @@ runWalletCmd ctx session = do
             bs  <- liftIO $ receive sock
             let msg = decode $ BL.fromStrict bs
             res <- case msg of
-                Just StopServerR -> do
-                    $(logInfo) "Received StopServer request"
-                    return (ResponseValid Nothing)
                 Just r  -> catchErrors $
                     runHandler (dispatchRequest r) session
                 Nothing -> return $ ResponseError "Could not decode request"
@@ -507,4 +498,5 @@ dispatchRequest req = fmap ResponseValid $ case req of
     GetPendingR a p           -> getPendingR a p
     GetDeadR a p              -> getDeadR a p
     GetBlockInfoR l           -> getBlockInfoR l
-    StopServerR               -> error "Should be handled elsewhere"
+    StopServerR               -> postStopServerR
+

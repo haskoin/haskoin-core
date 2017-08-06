@@ -28,9 +28,9 @@ database:
 bitcoin-full-nodes:
     testnet5:
         - host: seed.testnet5.b-pay.net
-          port: 18333
+          port: 18555
         - host: bitcoin-testnet.bloqseeds.net
-          port: 18333
+          port: 18555
     prodnet:
         - host: seed.mainnet.b-pay.net
           port: 8333

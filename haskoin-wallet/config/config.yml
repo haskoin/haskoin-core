@@ -17,7 +17,7 @@ bloom-false-positive: 0.00001
 
 # Database connection information.
 database:
-    testnet:
+    testnet5:
         database: hw-wallet.sqlite3
         poolsize: 1
     prodnet:
@@ -26,16 +26,20 @@ database:
 
 # List of trusted bitcoin full-nodes to connect to.
 bitcoin-full-nodes:
-    testnet:
-        - host: testnet-seed.alexykot.me
+    testnet5:
+        - host: seed.testnet5.b-pay.net
           port: 18333
-        - host: testnet-seed.bitcoin.petertodd.org
-          port: 18333
-        - host: testnet-seed.bluematt.me
-          port: 18333
-        - host: testnet-seed.bitcoin.schildbach.de
+        - host: bitcoin-testnet.bloqseeds.net
           port: 18333
     prodnet:
+        - host: seed.mainnet.b-pay.net
+          port: 8333
+        - host: seed.ob1.io
+          port: 8333
+        - host: seed.blockchain.info
+          port: 8333
+        - host: bitcoin.bloqseeds.net
+          port: 8333
         - host: seed.bitcoin.sipa.be
           port: 8333
         - host: dnsseed.bluematt.me
@@ -43,8 +47,6 @@ bitcoin-full-nodes:
         - host: dnsseed.bitcoin.dashjr.org
           port: 8333
         - host: seed.bitcoinstats.com
-          port: 8333
-        - host: bitseed.xf2.org
           port: 8333
         - host: seed.bitcoin.jonasschnelli.ch
           port: 8333

@@ -7,8 +7,10 @@ module Network.Haskoin.Constants
   Network(..)
 , prodnet
 , testnet3
+, testnet5
   -- ** Functions
 , switchToTestnet3
+, switchToTestnet5
 , setNetwork
 , getNetwork
   -- ** Network parameters
@@ -65,6 +67,10 @@ data Network = Network
 -- | Switch to Testnet3.  Do at start of program.
 switchToTestnet3 :: IO ()
 switchToTestnet3 = setNetwork testnet3
+
+-- | Switch to Testnet5.  Do at start of program.
+switchToTestnet5 :: IO ()
+switchToTestnet5 = setNetwork testnet5
 
 -- | Change network constants manually.  If switching to Testnet3, use
 -- switchToTestnet3 instead.
@@ -166,7 +172,7 @@ prodnet = Network
         486604799
         2083236893
         -- Hash 000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f
-    , getMaxBlockSize = 1000000
+    , getMaxBlockSize = 2000000
     , getMaxSatoshi = 2100000000000000
     , getHaskoinUserAgent = C8.concat
         [ "/haskoin:"
@@ -220,7 +226,7 @@ prodnet = Network
 
 testnet3 :: Network
 testnet3 = Network
-    { getNetworkName = "testnet"
+    { getNetworkName = "testnet3"
     , getAddrPrefix = 111
     , getScriptPrefix = 196
     , getSecretPrefix = 239
@@ -238,7 +244,7 @@ testnet3 = Network
     , getMaxBlockSize = 1000000
     , getMaxSatoshi = 2100000000000000
     , getHaskoinUserAgent = C8.concat
-        [ "/haskoin-testnet:"
+        [ "/haskoin-testnet3:"
         , C8.pack $ showVersion version
         , "/"
         ]
@@ -254,3 +260,37 @@ testnet3 = Network
         ]
     }
 
+testnet5 :: Network
+testnet5 = Network
+    { getNetworkName = "testnet5"
+    , getAddrPrefix = 111
+    , getScriptPrefix = 196
+    , getSecretPrefix = 239
+    , getExtPubKeyPrefix = 0x043587cf
+    , getExtSecretPrefix = 0x04358394
+    , getNetworkMagic = 0x6e657400
+    , getGenesisHeader = createBlockHeader
+        0x01
+        "0000000000000000000000000000000000000000000000000000000000000000"
+        "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
+        1296688602
+        486604799
+        414098458
+        -- Hash 000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943
+    , getMaxBlockSize = 2000000
+    , getMaxSatoshi = 2100000000000000
+    , getHaskoinUserAgent = C8.concat
+        [ "/haskoin-testnet5:"
+        , C8.pack $ showVersion version
+        , "/"
+        ]
+    , getDefaultPort = 18555
+    , getAllowMinDifficultyBlocks = True
+    , getPowLimit = fromIntegral (maxBound `shiftR` 32 :: Word256)
+    , getTargetTimespan = 14 * 24 * 60 * 60
+    , getTargetSpacing = 10 * 60
+    , getCheckpoints =
+        [ ( 10001
+          , "00000000fb7c0a2aeb5f1244e81921b84b7ac770004543144e10c2284f89bfd8" )
+        ]
+    }

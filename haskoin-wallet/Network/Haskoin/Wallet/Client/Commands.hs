@@ -154,6 +154,8 @@ getKey = do
         Just s -> go (cs s) derivM
         Nothing -> error "No action due to EOF"
   where
+    -- Default case. Generate a seed and derive account key using given or
+    -- default derivation.
     go "" derivM = return
         ( Nothing
         , Nothing
@@ -161,19 +163,23 @@ getKey = do
         , Nothing
         )
     go str' derivM = case xPrvImport str' of
+        -- Provided account private key. No further derivation should be
+        -- required unless one was given.
         Just k -> return
             ( Nothing
-            , Just $ maybe k (`derivePath` k) derivM
+            , Just k
             , derivM
             , Nothing
             )
         Nothing -> case xPubImport str' of
+            -- Public key was provided.
             Just p -> return
                 ( Nothing
                 , Nothing
                 , derivM
                 , Just p
                 )
+            -- Mnemonic was provided. Use given or default derivation.
             Nothing -> return
                 ( Just $ cs str'
                 , Nothing
@@ -183,19 +189,20 @@ getKey = do
 
 -- First argument: is account read-only?
 cmdNewAcc :: Bool -> String -> [String] -> Handler ()
-cmdNewAcc r name ls = do
+cmdNewAcc readOnly name ls = do
+    e <- R.asks configEntropy
     _ <- return $! typ
-    e <- checkExists name
-    when e $ error "Account exists"
+    checkExists name >>= (`when` error "Account exists")
     (mnemonicM, masterM, derivM, keyM) <- getKey
     let newAcc = NewAccount
             { newAccountName     = pack name
             , newAccountType     = typ
             , newAccountMnemonic = cs <$> mnemonicM
+            , newAccountEntropy  = Just e
             , newAccountMaster   = masterM
             , newAccountDeriv    = derivM
             , newAccountKeys     = maybeToList keyM
-            , newAccountReadOnly = r
+            , newAccountReadOnly = readOnly
             }
     resE <- sendZmq $ PostAccountsR newAcc
     handleResponse resE $ liftIO . putStr . printAccount

@@ -136,6 +136,8 @@ walletServerConf = Config
     -- ^ Display public keys instead of addresses
     , configOffline        = False
     -- ^ Display the balance including offline transactions
+    , configEntropy        = 16
+    -- ^ Entropy in bytes to use when generating a mnemonic (between 16 and 32)
     , configReversePaging  = False
     -- ^ Use reverse paging for displaying addresses and transactions
     , configPath           = Nothing

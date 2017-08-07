@@ -68,7 +68,6 @@ import           Network.Haskoin.Wallet.Settings
 import           Network.Haskoin.Wallet.Transaction
 import           Network.Haskoin.Wallet.Types
 import           System.Posix.Daemon                   (Redirection (ToFile),
-                                                        killAndWait,
                                                         runDetached)
 import           System.ZMQ4                           (Context, KeyFormat (..),
                                                         Pub (..), Rep (..),

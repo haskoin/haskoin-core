@@ -74,7 +74,7 @@ import           Data.String.Conversions         (cs)
 import           Data.Text                       (Text)
 import           Data.Time                       (UTCTime)
 import           Data.Typeable                   (Typeable)
-import           Data.Word                       (Word32, Word64)
+import           Data.Word                       (Word8, Word32, Word64)
 import           Database.Esqueleto              (Entity (..), SqlBackend,
                                                   SqlExpr, SqlPersistT,
                                                   SqlQuery, limit, offset,
@@ -199,6 +199,7 @@ data NewAccount = NewAccount
     { newAccountName     :: !AccountName
     , newAccountType     :: !AccountType
     , newAccountMnemonic :: !(Maybe Text)
+    , newAccountEntropy  :: !(Maybe Word8)
     , newAccountMaster   :: !(Maybe XPrvKey)
     , newAccountDeriv    :: !(Maybe HardPath)
     , newAccountKeys     :: ![XPubKey]

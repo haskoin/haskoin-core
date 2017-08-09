@@ -42,65 +42,67 @@ data OutputFormat
     | OutputYAML
 
 data Config = Config
-    { configCount         :: !Word32
+    { configCount          :: !Word32
     -- ^ Output size of commands
-    , configMinConf       :: !Word32
+    , configMinConf        :: !Word32
     -- ^ Minimum number of confirmations
-    , configSignTx        :: !Bool
+    , configSignTx         :: !Bool
     -- ^ Sign transactions
-    , configFee           :: !Word64
+    , configFee            :: !Word64
     -- ^ Fee to pay per 1000 bytes when creating new transactions
-    , configRcptFee       :: !Bool
+    , configRcptFee        :: !Bool
     -- ^ Recipient pays fee (dangerous, no config file setting)
-    , configAddrType      :: !AddressType
+    , configAddrType       :: !AddressType
     -- ^ Return internal instead of external addresses
-    , configOffline       :: !Bool
+    , configDisplayPubKeys :: !Bool
+    -- ^ Display public keys instead of addresses
+    , configOffline        :: !Bool
     -- ^ Display the balance including offline transactions
-    , configReversePaging :: !Bool
+    , configReversePaging  :: !Bool
     -- ^ Use reverse paging for displaying addresses and transactions
-    , configPath          :: !(Maybe HardPath)
+    , configPath           :: !(Maybe HardPath)
     -- ^ Derivation path when creating account
-    , configFormat        :: !OutputFormat
+    , configFormat         :: !OutputFormat
     -- ^ How to format the command-line results
-    , configConnect       :: !String
+    , configConnect        :: !String
     -- ^ ZeroMQ socket to connect to (location of the server)
-    , configConnectNotif  :: !String
+    , configConnectNotif   :: !String
     -- ^ ZeroMQ socket to connect for notifications
-    , configDetach        :: !Bool
+    , configDetach         :: !Bool
     -- ^ Detach server when launched from command-line
-    , configFile          :: !FilePath
+    , configFile           :: !FilePath
     -- ^ Configuration file
-    , configTestnet       :: !Bool
+    , configTestnet        :: !Bool
     -- ^ Use Testnet3 network
-    , configDir           :: !FilePath
+    , configDir            :: !FilePath
     -- ^ Working directory
-    , configBind          :: !String
+    , configBind           :: !String
     -- ^ Bind address for the ZeroMQ socket
-    , configBindNotif     :: !String
+    , configBindNotif      :: !String
     -- ^ Bind address for ZeroMQ notifications
-    , configBTCNodes      :: !(HashMap Text [BTCNode])
+    , configBTCNodes       :: !(HashMap Text [BTCNode])
     -- ^ Trusted Bitcoin full nodes to connect to
-    , configMode          :: !SPVMode
+    , configMode           :: !SPVMode
     -- ^ Operation mode of the SPV node.
-    , configBloomFP       :: !Double
+    , configBloomFP        :: !Double
     -- ^ False positive rate for the bloom filter.
-    , configDatabase      :: !(HashMap Text DatabaseConfType)
+    , configDatabase       :: !(HashMap Text DatabaseConfType)
     -- ^ Database configuration
-    , configLogFile       :: !FilePath
+    , configLogFile        :: !FilePath
     -- ^ Log file
-    , configPidFile       :: !FilePath
+    , configPidFile        :: !FilePath
     -- ^ PID File
-    , configLogLevel      :: !LogLevel
+    , configLogLevel       :: !LogLevel
     -- ^ Log level
-    , configVerbose       :: !Bool
+    , configVerbose        :: !Bool
     -- ^ Verbose
-    , configServerKey     :: !(Maybe (Restricted Div5 ByteString))
+    , configServerKey      :: !(Maybe (Restricted Div5 ByteString))
     -- ^ Server key for authentication and encryption (server config)
-    , configServerKeyPub  :: !(Maybe (Restricted Div5 ByteString))
+    , configServerKeyPub   :: !(Maybe (Restricted Div5 ByteString))
     -- ^ Server public key for authentication and encryption (client config)
-    , configClientKey     :: !(Maybe (Restricted Div5 ByteString))
+    , configClientKey      :: !(Maybe (Restricted Div5 ByteString))
     -- ^ Client key for authentication and encryption (client config)
-    , configClientKeyPub  :: !(Maybe (Restricted Div5 ByteString))
+    , configClientKeyPub   :: !(Maybe (Restricted Div5 ByteString))
     -- ^ Client public key for authentication and encryption
     -- (client + server config)
     }
@@ -158,6 +160,7 @@ instance FromJSON Config where
         configSignTx                <- o .: "sign-transactions"
         configFee                   <- o .: "transaction-fee"
         configAddrType              <- o .: "address-type"
+        configDisplayPubKeys        <- o .: "display-pubkeys"
         configOffline               <- o .: "offline"
         configReversePaging         <- o .: "reverse-paging"
         configFormat                <- o .: "display-format"

@@ -8,12 +8,11 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdRenameAcc
 , cmdAccounts
 , cmdList
-, cmdPubKeys
 , cmdUnused
 , cmdLabel
 , cmdTxs
 , cmdAddrTxs
-, cmdKeyIndex
+, cmdGetIndex
 , cmdGenAddrs
 , cmdSend
 , cmdSendMany
@@ -100,8 +99,7 @@ cmdStart = do
 -- hw stop [config]
 cmdStop :: Handler ()
 cmdStop = do
-    resE <- sendZmq StopServerR
-    handleResponse (resE :: Either String (WalletResponse (Maybe ()))) (const $ return ())
+    sendZmq StopServerR >>= (flip handleResponse $ \() -> return ())
     liftIO $ putStrLn "Process stopped"
 
 getSigningKeys :: String
@@ -279,37 +277,31 @@ listAction page requestBuilder action = do
     pages m c | m `mod` c == 0 = m `div` c
               | otherwise = m `div` c + 1
 
-listJsonAddrs :: (JsonAddr -> String)
-              -> String
-              -> [String]
-              -> Handler ()
-listJsonAddrs showFunc name ls = do
+cmdList :: String -> [String] -> Handler ()
+cmdList name ls = do
     t <- R.asks configAddrType
     m <- R.asks configMinConf
     o <- R.asks configOffline
+    p <- R.asks configDisplayPubKeys
     let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
         f = GetAddressesR (pack name) t m o
-    listAction page f $ \as -> forM_ as (liftIO . putStrLn . showFunc)
-
-cmdList :: String -> [String] -> Handler ()
-cmdList = listJsonAddrs printAddress
-
-cmdPubKeys :: String -> [String] -> Handler ()
-cmdPubKeys = listJsonAddrs printPubKey
+    listAction page f $ \as -> forM_ as (liftIO . putStrLn . printAddress p)
 
 cmdUnused :: String -> [String] -> Handler ()
 cmdUnused name ls = do
     t <- R.asks configAddrType
+    p <- R.asks configDisplayPubKeys
     let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
         f = GetAddressesUnusedR (pack name) t
     listAction page f $ \as -> forM_ (as :: [JsonAddr]) $
-        liftIO . putStrLn . printAddress
+        liftIO . putStrLn . printAddress p
 
 cmdLabel :: String -> String -> String -> Handler ()
 cmdLabel name iStr label = do
     t <- R.asks configAddrType
+    p <- R.asks configDisplayPubKeys
     resE <- sendZmq (PutAddressR (pack name) i t addrLabel)
-    handleResponse resE $ liftIO . putStrLn . printAddress
+    handleResponse resE $ liftIO . putStrLn . printAddress p
   where
     i         = read iStr
     addrLabel = AddressLabel $ pack label
@@ -357,20 +349,15 @@ cmdAddrTxs name i ls = do
   where
     index = fromMaybe (error "Could not read index") $ readMaybe i
 
-cmdKeyIndex :: String -> String -> Handler ()
-cmdKeyIndex name k = do
+cmdGetIndex :: String -> String -> Handler ()
+cmdGetIndex name k = do
     t <- R.asks configAddrType
     resE <- sendZmq $ GetIndexR (pack name) (fromString k) t
-    handleResponse resE $ \res -> case res of
-        []  -> liftIO $ putStrLn "No matching pubkeys found"
-        lst -> liftIO $ putStrLn $ unlines $    -- Two or more pubkeys with the same index is extremely improbable. But let's print it out if it happens.
-            map (\adr -> showLine (jsonAddrIndex adr, jsonAddrKey adr)) lst
+    handleResponse resE go
   where
-    showLine :: (KeyIndex, Maybe PubKeyC) -> String
-    showLine (idx,k') = unwords [ show (idx :: KeyIndex), ":", showPubKey k' ]
-    showPubKey = maybe "<no pubkey available>" (jsonStr2Str . toJSON)
-    jsonStr2Str (String t) = cs t
-    jsonStr2Str _          = ""
+    go :: [JsonAddr] -> Handler ()
+    go [] = liftIO $ putStrLn $ "No matching pubkey found"
+    go as = mapM_ (liftIO . putStrLn . printAddress True) as
 
 cmdGenAddrs :: String -> String -> Handler ()
 cmdGenAddrs name i = do
@@ -807,9 +794,9 @@ printAccount JsonAccount{..} = unlines $
             , show m, "of", show n
             ]
 
-printAddress :: JsonAddr -> String
-printAddress JsonAddr{..} = unwords $
-    [ show jsonAddrIndex, ":", cs (addrToBase58 jsonAddrAddress) ]
+printAddress :: Bool -> JsonAddr -> String
+printAddress displayPubKey JsonAddr{..} = unwords $
+    [ show jsonAddrIndex, ":", cs dat ]
     ++
     [ "(" ++ unpack jsonAddrLabel ++ ")" | not (null $ unpack jsonAddrLabel) ]
     ++ concat
@@ -820,17 +807,10 @@ printAddress JsonAddr{..} = unwords $
     | isJust jsonAddrBalance && balanceInfoCoins bal > 0
     ]
   where
+    dat | displayPubKey =
+            maybe "<no pubkey available>" (encodeHex . encode) jsonAddrKey
+        | otherwise = addrToBase58 jsonAddrAddress
     bal = fromMaybe (error "Could not get address balance") jsonAddrBalance
-
-printPubKey :: JsonAddr -> String
-printPubKey JsonAddr{..} = unwords $
-    [ show jsonAddrIndex, ":", showPubKey jsonAddrKey ]
-    ++
-    [ "(" ++ unpack jsonAddrLabel ++ ")" | not (null $ unpack jsonAddrLabel) ]
-  where
-    showPubKey = maybe "<no pubkey available>" (jsonStr2Str . toJSON)
-    jsonStr2Str (String t) = cs t
-    jsonStr2Str _          = ""     -- It totally is a String though
 
 printNotif :: Notif -> String
 printNotif (NotifTx   tx) = printTx Nothing tx

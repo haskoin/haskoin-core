@@ -13,7 +13,6 @@ module Network.Haskoin.Wallet
 
 -- *Server
 , runSPVServer
-, stopSPVServer
 , SPVMode(..)
 
 -- *API JSON Types

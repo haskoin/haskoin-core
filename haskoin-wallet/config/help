@@ -16,7 +16,6 @@ Account commands:
 
 Address commands:
   list      acc [page] [-c pagesize] [-r]  Display addresses by page
-  pubkeys   acc [page] [-c pagesize] [-r]  Display address public keys
   unused    acc [page] [-c pagesize] [-r]  Display unused addresses
   label     acc index label                Set the label of an address
   addrtxs   acc index [page] [-c pagesize] Display txs related to an address

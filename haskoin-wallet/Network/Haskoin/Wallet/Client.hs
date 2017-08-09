@@ -90,6 +90,10 @@ options =
         (NoArg $ \cfg -> cfg { configAddrType = AddressInternal }) $
         "Internal addresses. Default: "
             ++ show (configAddrType def == AddressInternal)
+    , Option "k" ["pubkeys"]
+        (NoArg $ \cfg -> cfg { configDisplayPubKeys = True }) $
+        "Display public keys instead of addresses. Default: "
+            ++ show (configDisplayPubKeys def)
     , Option "o" ["offline"]
         (NoArg $ \cfg -> cfg { configOffline = True }) $
         "Offline balance. Default: " ++ show (configOffline def)
@@ -190,12 +194,11 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "accounts"    : page                       -> cmdAccounts page
     "rename"      : name : new            : [] -> cmdRenameAcc name new
     "list"        : name : page                -> cmdList name page
-    "pubkeys"     : name : page                -> cmdPubKeys name page
     "unused"      : name : page                -> cmdUnused name page
     "label"       : name : index : label  : [] -> cmdLabel name index label
     "txs"         : name : page                -> cmdTxs name page
     "addrtxs"     : name : index : page        -> cmdAddrTxs name index page
-    "getindex"    : name : key            : [] -> cmdKeyIndex name key
+    "getindex"    : name : key            : [] -> cmdGetIndex name key
     "genaddrs"    : name : i              : [] -> cmdGenAddrs name i
     "send"        : name : add : amnt     : [] -> cmdSend name add amnt
     "sendmany"    : name : xs                  -> cmdSendMany name xs

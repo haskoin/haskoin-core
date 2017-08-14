@@ -33,33 +33,38 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdDeleteTx
 , cmdPending
 , cmdDead
+, cmdDice
+, decodeBase6
+, diceToEntropy
+, diceToMnemonic
 )
 where
 
-import           Control.Applicative             ((<|>))
-import           Control.Concurrent.Async.Lifted (async, wait)
-import           Control.Monad                   (forM_, forever, liftM2,
-                                                  unless, when)
-import qualified Control.Monad.Reader            as R (ReaderT, ask, asks)
-import           Control.Monad.Trans             (liftIO)
-import           Data.Aeson                      (FromJSON, ToJSON, Value (..),
-                                                  decode, eitherDecode, object,
-                                                  toJSON, (.=))
-import qualified Data.Aeson                      as Aeson (encode)
-import qualified Data.ByteString.Char8           as B8 (hPutStrLn, putStrLn,
-                                                        unwords)
-import           Data.String                     (fromString)
-import           Data.List                       (intercalate, intersperse)
-import           Data.Maybe                      (fromMaybe, isJust, isNothing,
-                                                  listToMaybe, maybeToList)
-import           Data.Monoid                     ((<>))
-import           Data.Restricted                 (rvalue)
-import           Data.Serialize                  (encode)
-import           Data.String.Conversions         (cs)
-import           Data.Text                       (Text, pack, splitOn, unpack)
-import           Data.Word                       (Word32, Word64)
-import qualified Data.Yaml                       as YAML (encode)
-import qualified Data.Time.Format                as Time
+import           Control.Applicative                      ((<|>))
+import           Control.Concurrent.Async.Lifted          (async, wait)
+import           Control.Monad
+import qualified Control.Monad.Reader                     as R
+import           Control.Monad.Trans                      (liftIO)
+import           Data.Aeson                               (FromJSON, ToJSON,
+                                                           Value (..), decode,
+                                                           eitherDecode, object,
+                                                           toJSON, (.=))
+import qualified Data.Aeson                               as Aeson (encode)
+import qualified Data.ByteString                          as BS
+import qualified Data.ByteString.Char8                    as B8
+import           Data.List                                (intercalate,
+                                                           intersperse)
+import           Data.Maybe
+import           Data.Monoid                              ((<>))
+import           Data.Restricted                          (rvalue)
+import           Data.Serialize                           (encode)
+import           Data.String                              (fromString)
+import           Data.String.Conversions                  (cs)
+import           Data.Text                                (Text, pack, splitOn,
+                                                           unpack)
+import qualified Data.Time.Format                         as Time
+import           Data.Word                                (Word32, Word64)
+import qualified Data.Yaml                                as YAML (encode)
 import           Network.Haskoin.Block
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
@@ -67,23 +72,15 @@ import           Network.Haskoin.Node.STM
 import           Network.Haskoin.Script
 import           Network.Haskoin.Transaction
 import           Network.Haskoin.Util
+import qualified Network.Haskoin.Wallet.Client.PrettyJson as JSON
 import           Network.Haskoin.Wallet.Server
 import           Network.Haskoin.Wallet.Settings
 import           Network.Haskoin.Wallet.Types
-import qualified Network.Haskoin.Wallet.Client.PrettyJson as JSON
-import qualified System.Console.Haskeline        as Haskeline
-import           System.IO                       (stderr)
-import           System.ZMQ4                     (KeyFormat (..), Req (..),
-                                                  Socket, SocketType, Sub (..),
-                                                  connect, curveKeyPair,
-                                                  receive, receiveMulti,
-                                                  restrict, send,
-                                                  setCurvePublicKey,
-                                                  setCurveSecretKey,
-                                                  setCurveServerKey, setLinger,
-                                                  subscribe, withContext,
-                                                  withSocket)
-import           Text.Read                       (readMaybe)
+import           Numeric                                  (readInt)
+import qualified System.Console.Haskeline                 as Haskeline
+import           System.IO                                (stderr)
+import           System.ZMQ4
+import           Text.Read                                (readMaybe)
 
 type Handler = R.ReaderT Config IO
 
@@ -566,6 +563,43 @@ cmdBlockInfo headers = do
     parseRes = nodeStatusBestHeader . fromMaybe
         (error "No response to NodeActionStatus msg") . parseResponse
 
+cmdDice :: String -> Handler ()
+cmdDice rolls = case diceToMnemonic rolls of
+    Left err -> error err
+    Right ms  -> liftIO $ putStrLn $ cs ms
+
+diceToMnemonic :: String -> Either String BS.ByteString
+diceToMnemonic = toMnemonic <=< diceToEntropy
+
+-- Transform 99 dice rolls (255.9 bits of entropy) into zero padded 32 bytes
+diceToEntropy :: String -> Either String BS.ByteString
+diceToEntropy rolls
+    | length rolls /= 99 = Left "99 dice rolls are required"
+    | otherwise = do
+        ent <- maybeToEither "Could not decode base6" $ decodeBase6 $ cs rolls
+        -- This check should probably never trigger
+        when (BS.length ent > 32) $ Left "Invalid entropy length"
+        let z = BS.replicate (32 - BS.length ent) 0x00
+        return $ BS.append z ent
+
+b6Data :: BS.ByteString
+b6Data = "612345"
+
+b6' :: Char -> Maybe Int
+b6' = flip B8.elemIndex b6Data
+
+decodeBase6 :: BS.ByteString -> Maybe BS.ByteString
+decodeBase6 t
+    | BS.null t = Just BS.empty
+    | otherwise = integerToBS <$> decodeBase6I t
+
+decodeBase6I :: BS.ByteString -> Maybe Integer
+decodeBase6I bs = case resM of
+    Just (i,[]) -> return i
+    _ -> Nothing
+  where
+    resM = listToMaybe $ readInt 6 (isJust . b6') f $ cs bs
+    f    = fromMaybe (error "Could not decode base6") . b6'
 
 {- Helpers -}
 

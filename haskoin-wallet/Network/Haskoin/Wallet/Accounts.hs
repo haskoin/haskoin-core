@@ -46,11 +46,13 @@ import Control.Monad.Trans.Resource (MonadResource)
 import Control.Exception (throw)
 
 import Data.Text (Text, unpack)
-import Data.Maybe (mapMaybe, listToMaybe, isJust, isNothing)
+import Data.Default (def)
+import Data.Maybe
+    (mapMaybe, listToMaybe, maybeToList, isJust, isNothing, fromMaybe)
 import Data.Time.Clock (getCurrentTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.List (nub)
-import Data.Word (Word32)
+import Data.Word (Word8, Word32)
 import Data.String.Conversions (cs)
 import Data.Serialize (encode)
 
@@ -70,12 +72,12 @@ import Network.Haskoin.Crypto
 import Network.Haskoin.Block
 import Network.Haskoin.Script
 import Network.Haskoin.Node
-import Network.Haskoin.Util
 import Network.Haskoin.Constants
 import Network.Haskoin.Node.HeaderTree
 
 import Network.Haskoin.Wallet.Types
 import Network.Haskoin.Wallet.Model
+import Network.Haskoin.Wallet.Settings
 
 {- Initialization -}
 
@@ -124,56 +126,63 @@ initGap accE = do
     void $ createAddrs accE AddressExternal 20
     void $ createAddrs accE AddressInternal 20
 
--- | Create a new account
+genMnemonic :: (MonadThrow m, MonadIO m) => Word8 -> m Mnemonic
+genMnemonic bytes
+    | bytes `elem` [16,20..32] = do
+        entropy <- liftIO $ getEntropy $ fromIntegral bytes
+        case toMnemonic entropy of
+            Right ms -> return ms
+            Left err -> throwM $ WalletException err
+    | otherwise = throwM $
+        WalletException "Entropy can only be 16, 20, 24, 28 or 32 bytes"
+
+mnemonicToPrvKey :: MonadThrow m => Mnemonic -> m XPrvKey
+mnemonicToPrvKey ms = case mnemonicToSeed "" ms of
+    Right s  -> return $ makeXPrvKey s
+    Left err -> throwM $ WalletException err
+
+-- |Create a new account using the given mnemonic or keys. If no mnemonic,
+-- master key or public keys are provided, a new mnemonic will be generated.
 newAccount :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
            => NewAccount
            -> SqlPersistT m (Entity Account, Maybe Mnemonic)
 newAccount NewAccount{..} = do
     unless (validAccountType newAccountType) $
         throwM $ WalletException "Invalid account type"
-    let gen = isNothing newAccountMnemonic &&
-              isNothing newAccountMaster &&
-              null newAccountKeys
-    (mnemonicM, masterM, keys) <- if gen
-        then do
-            when (isJust newAccountMaster || isJust newAccountMnemonic) $
-                throwM $ WalletException
-                "Master key or mnemonic not allowed for generate"
-            ent <- liftIO $ getEntropy 16
-            let ms = fromRight $ toMnemonic ent
-                root = makeXPrvKey $ fromRight $ mnemonicToSeed "" ms
-                master = case newAccountDeriv of
-                    Nothing -> root
-                    Just d  -> derivePath d root
-                keys = deriveXPubKey master : newAccountKeys
-            return (Just ms, Just master, keys)
-        else case newAccountMnemonic of
-             Just ms -> do
-                 when (isJust newAccountMaster) $ throwM $ WalletException
-                     "Cannot provide both master key and mnemonic"
-                 root <- case mnemonicToSeed "" (cs ms) of
-                     Right s -> return $ makeXPrvKey s
-                     Left _ -> throwM $ WalletException
-                         "Mnemonic sentence invalid"
-                 let master = case newAccountDeriv of
-                         Nothing -> root
-                         Just d -> derivePath d root
-                     keys = deriveXPubKey master : newAccountKeys
-                 return (Nothing, Just master, keys)
-             Nothing -> case newAccountMaster of
-                 Just master -> do
-                     let keys = deriveXPubKey master : newAccountKeys
-                     return (Nothing, newAccountMaster, keys)
-                 Nothing -> return (Nothing, newAccountMaster, newAccountKeys)
+
+    when (isJust newAccountMnemonic && isJust newAccountMaster) $ throwM $
+        WalletException "Can not set both master key and mnemonic"
+
+    (mnemonicM, rootM) <- case newAccountMaster of
+        Just _ -> return (Nothing, newAccountMaster)
+        _ -> case newAccountMnemonic of
+            Just ms -> do
+                root <- mnemonicToPrvKey $ cs ms
+                -- Don't return our own mnemonic as we don't want it displayed
+                return (Nothing, Just root)
+            _ -> if null newAccountKeys
+                    then do
+                        -- Generate a key if nothing was provided
+                        let defEnt = configEntropy def
+                        ms   <- genMnemonic $ fromMaybe defEnt newAccountEntropy
+                        root <- mnemonicToPrvKey ms
+                        return (Just ms, Just root)
+                    else return (Nothing, Nothing)
+
+    let masterM = case newAccountDeriv of
+                      Nothing -> rootM
+                      Just d  -> (derivePath d) <$> rootM
+        keys    = maybeToList (deriveXPubKey <$> masterM) ++ newAccountKeys
 
     -- Build the account
     now <- liftIO getCurrentTime
     let acc = Account
             { accountName       = newAccountName
             , accountType       = newAccountType
+            -- Never store private keys for read only accounts
             , accountMaster     = if newAccountReadOnly
-                                  then Nothing
-                                  else masterM
+                                     then Nothing
+                                     else masterM
             , accountDerivation = newAccountDeriv
             , accountKeys       = nub keys
             , accountGap        = 0
@@ -194,6 +203,8 @@ newAccount NewAccount{..} = do
             let accE = Entity ai newAcc
             -- If we can set the gap, create the gap addresses
             when canSetGap $ initGap accE
+            -- The mnemonic is returned to eventually be displayed as it is
+            -- not stored anywhere.
             return (accE, mnemonicM)
         -- The account already exists
         Nothing -> throwM $ WalletException "Account already exists"

@@ -11,7 +11,7 @@ import Control.Monad.Logger (LogLevel(..))
 import Data.Default (Default, def)
 import Data.FileEmbed (embedFile)
 import Data.Yaml (decodeEither')
-import Data.Word (Word32, Word64)
+import Data.Word (Word8, Word32, Word64)
 import Data.HashMap.Strict (HashMap, unionWith)
 import Data.String.Conversions (cs)
 import Data.ByteString (ByteString)
@@ -58,6 +58,8 @@ data Config = Config
     -- ^ Display public keys instead of addresses
     , configOffline        :: !Bool
     -- ^ Display the balance including offline transactions
+    , configEntropy        :: !Word8
+    -- ^ Entropy in bytes to use when generating a mnemonic (between 16 and 32)
     , configReversePaging  :: !Bool
     -- ^ Use reverse paging for displaying addresses and transactions
     , configPath           :: !(Maybe HardPath)
@@ -162,6 +164,7 @@ instance FromJSON Config where
         configAddrType              <- o .: "address-type"
         configDisplayPubKeys        <- o .: "display-pubkeys"
         configOffline               <- o .: "offline"
+        configEntropy               <- o .: "seed-entropy"
         configReversePaging         <- o .: "reverse-paging"
         configFormat                <- o .: "display-format"
         configConnect               <- o .: "connect-uri"

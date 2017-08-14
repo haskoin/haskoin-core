@@ -49,6 +49,7 @@ tests =
                         ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
                     , newAccountMnemonic = Nothing
                     , newAccountReadOnly = False
+                    , newAccountEntropy  = Nothing
                     }
                 )
 
@@ -65,6 +66,7 @@ tests =
                             ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
                         , newAccountMnemonic = Nothing
                         , newAccountReadOnly = False
+                        , newAccountEntropy  = Nothing
                         }
                     newAccount NewAccount
                         { newAccountName = "main"
@@ -75,6 +77,7 @@ tests =
                             ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
                         , newAccountMnemonic = Nothing
                         , newAccountReadOnly = False
+                        , newAccountEntropy  = Nothing
                         }
         , testCase "Invalid multisig parameters (0 of 1)" $
             assertException (WalletException "Invalid account type") $
@@ -88,6 +91,7 @@ tests =
                         ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
                     , newAccountMnemonic = Nothing
                     , newAccountReadOnly = False
+                    , newAccountEntropy  = Nothing
                     }
 
         , testCase "Invalid multisig parameters (2 of 1)" $
@@ -102,6 +106,7 @@ tests =
                         ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
                     , newAccountMnemonic = Nothing
                     , newAccountReadOnly = False
+                    , newAccountEntropy  = Nothing
                     }
 
         , testCase "Invalid multisig parameters (15 of 16)" $
@@ -116,6 +121,7 @@ tests =
                         ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
                     , newAccountMnemonic = Nothing
                     , newAccountReadOnly = False
+                    , newAccountEntropy  = Nothing
                     }
 
         , testCase "To many multisig keys (3 keys for 1 of 2)" $
@@ -133,6 +139,7 @@ tests =
                         ]
                     , newAccountMnemonic = Nothing
                     , newAccountReadOnly = False
+                    , newAccountEntropy  = Nothing
                     }
 
         , testCase "Calling addAccountKeys with an empty key list should fail" $
@@ -148,6 +155,7 @@ tests =
                             ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
                         , newAccountMnemonic = Nothing
                         , newAccountReadOnly = False
+                        , newAccountEntropy  = Nothing
                         }
                     addAccountKeys (fst res) []
 
@@ -164,6 +172,7 @@ tests =
                             ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
                         , newAccountMnemonic = Nothing
                         , newAccountReadOnly = False
+                        , newAccountEntropy  = Nothing
                         }
                     addAccountKeys (fst res)
                         ["xpub661MyMwAqRbcFEPH5Aon6F7edspeu1v6a1Nw5qJgk1aX5XYg1ktBL9Azra2CKaAJ2bHXEXkeKHE3eFaCJktFiA5tSMDQDs6bi83maQtdYby"]
@@ -183,6 +192,7 @@ tests =
                             ]
                         , newAccountMnemonic = Nothing
                         , newAccountReadOnly = False
+                        , newAccountEntropy  = Nothing
                         }
                     addAccountKeys (fst res)
                         ["xpub661MyMwAqRbcFtDszBWpawpg4KbNWL9qD4VdRwjd1L5cmcS8nXHWXpg9WL1Xc9Yh7HbQBwWDw37YJfc4AF3YEpvAHEBPBFQPFkUcFHnopw8"]
@@ -206,6 +216,7 @@ tests =
                         ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
                     , newAccountMnemonic = Nothing
                     , newAccountReadOnly = False
+                    , newAccountEntropy  = Nothing
                     }
                 accE' <- setAccountGap (fst res) 15
                 setAccountGap accE' 14
@@ -222,6 +233,7 @@ tests =
                         ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
                     , newAccountMnemonic = Nothing
                     , newAccountReadOnly = False
+                    , newAccountEntropy  = Nothing
                     }
                 setAddrLabel (fst res) 10 AddressExternal "Gym membership"
 
@@ -237,6 +249,7 @@ tests =
                         ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
                     , newAccountMnemonic = Nothing
                     , newAccountReadOnly = False
+                    , newAccountEntropy  = Nothing
                     }
                 setAddrLabel (fst res) 20 AddressExternal "Gym membership"
 
@@ -252,8 +265,33 @@ tests =
                             ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
                         , newAccountMnemonic = Nothing
                         , newAccountReadOnly = False
+                        , newAccountEntropy  = Nothing
                         }
                     addressPrvKey (fst res) Nothing 2 AddressExternal
+        , testCase "Invalid entropy (15)" $ assertException
+            (WalletException "Entropy can only be 16, 20, 24, 28 or 32 bytes") $
+                newAccount NewAccount
+                    { newAccountName = "account"
+                    , newAccountType = AccountRegular
+                    , newAccountMaster = Nothing
+                    , newAccountDeriv = Nothing
+                    , newAccountKeys = []
+                    , newAccountMnemonic = Nothing
+                    , newAccountReadOnly = False
+                    , newAccountEntropy  = Just 15
+                    }
+        , testCase "Invalid entropy (33)" $ assertException
+            (WalletException "Entropy can only be 16, 20, 24, 28 or 32 bytes") $
+                newAccount NewAccount
+                    { newAccountName = "account"
+                    , newAccountType = AccountRegular
+                    , newAccountMaster = Nothing
+                    , newAccountDeriv = Nothing
+                    , newAccountKeys = []
+                    , newAccountMnemonic = Nothing
+                    , newAccountReadOnly = False
+                    , newAccountEntropy  = Just 33
+                    }
         ]
     , testGroup "Wallet tests"
         [ testCase "Verify address derivations" $ runUnit testDerivations
@@ -343,6 +381,7 @@ testDerivations = do
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
         , newAccountReadOnly = False
+        , newAccountEntropy  = Nothing
         }
 
     unusedAddresses accE AddressExternal (ListRequest 0 0 False)
@@ -433,6 +472,7 @@ testBalances = do
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
         , newAccountReadOnly = False
+        , newAccountEntropy  = Nothing
         }
     let fundingTx = fakeTx
             [ (tid1, 0) ]
@@ -651,6 +691,7 @@ testConflictBalances = do
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
         , newAccountReadOnly = False
+        , newAccountEntropy  = Nothing
         }
     let tx1 = fakeTx
             [ (tid1, 4) ]
@@ -825,6 +866,7 @@ testOffline = do
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
         , newAccountReadOnly = False
+        , newAccountEntropy  = Nothing
         }
     let tx1 = fakeTx
             [ (tid1, 4) ]
@@ -919,6 +961,7 @@ testKillOffline = do
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
         , newAccountReadOnly = False
+        , newAccountEntropy  = Nothing
         }
     let tx1 = fakeTx
             [ (tid1, 4) ]
@@ -1028,6 +1071,7 @@ testOfflineExceptions = do
             , newAccountMnemonic = Just (cs ms)
             , newAccountKeys = []
             , newAccountReadOnly = False
+            , newAccountEntropy  = Nothing
             }
         Entity ai _ <- getAccount "acc1"
         assertImportTx ai 1 TxPending tx1
@@ -1042,6 +1086,7 @@ testOfflineExceptions = do
             , newAccountMnemonic = Just (cs ms)
             , newAccountKeys = []
             , newAccountReadOnly = False
+            , newAccountEntropy  = Nothing
             }
         Entity ai _ <- getAccount "acc1"
         assertImportTx ai 1 TxPending tx4
@@ -1058,6 +1103,7 @@ testOfflineExceptions = do
             , newAccountMnemonic = Just (cs ms)
             , newAccountKeys = []
             , newAccountReadOnly = False
+            , newAccountEntropy  = Nothing
             }
         Entity ai _ <- getAccount "acc1"
         assertImportTx ai 1 TxPending tx1
@@ -1074,6 +1120,7 @@ testImportMultisig = do
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = ["xpub68kRFKHWxUt3oS8X5kVogwH5rvuAd4jrLkxVfHeudFC4MfwQ8oYV59F91uFnsLXANRB1MkN4Wa1PwymE4cRsU8PE755HNCb1EoBbSoAKXpW"]
         , newAccountReadOnly = False
+        , newAccountEntropy  = Nothing
         }
     accE2@(Entity ai2 _) <- fst <$> newAccount NewAccount
         { newAccountName = "ms2"
@@ -1083,6 +1130,7 @@ testImportMultisig = do
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = ["xpub68kRFKHWxUt3mfJjcXdLeuDjCHnByqKSBVfMktJRXM6LSNNDR4ae6Nw1Kh621fzyKiBf6ssyZWPPTDUTQp1BhuZQuoVdtb8j2TRzqDLHmY7"]
         , newAccountReadOnly = False
+        , newAccountEntropy  = Nothing
         }
     let fundingTx = createTx
             1
@@ -1228,6 +1276,7 @@ testDeleteTx = do
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
         , newAccountReadOnly = False
+        , newAccountEntropy  = Nothing
         }
     let tx1 = fakeTx
             [ (tid1, 4) ]
@@ -1280,6 +1329,7 @@ testDeleteUnsignedTx = do
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = ["xpub68kRFKHWxUt3oS8X5kVogwH5rvuAd4jrLkxVfHeudFC4MfwQ8oYV59F91uFnsLXANRB1MkN4Wa1PwymE4cRsU8PE755HNCb1EoBbSoAKXpW"]
         , newAccountReadOnly = False
+        , newAccountEntropy  = Nothing
         }
     Entity ai2 _ <- fst <$> newAccount NewAccount
         { newAccountName = "ms2"
@@ -1289,6 +1339,7 @@ testDeleteUnsignedTx = do
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = ["xpub68kRFKHWxUt3mfJjcXdLeuDjCHnByqKSBVfMktJRXM6LSNNDR4ae6Nw1Kh621fzyKiBf6ssyZWPPTDUTQp1BhuZQuoVdtb8j2TRzqDLHmY7"]
         , newAccountReadOnly = False
+        , newAccountEntropy  = Nothing
         }
     let fundingTx = createTx
             1
@@ -1347,6 +1398,7 @@ testNotification = do
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
         , newAccountReadOnly = False
+        , newAccountEntropy  = Nothing
         }
     let tx1 = fakeTx
             [ (tid1, 4) ]
@@ -1445,6 +1497,7 @@ testKillTx = do
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
         , newAccountReadOnly = False
+        , newAccountEntropy  = Nothing
         }
     let tx1 = fakeTx
             [ (tid1, 4) ]

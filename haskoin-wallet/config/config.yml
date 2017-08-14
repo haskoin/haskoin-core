@@ -86,6 +86,9 @@ minimum-confirmations: 0
 # Display the balance including offline transactions
 offline: false
 
+# Entropy in bytes to use when generating a mnemonic (between 16 and 32)
+seed-entropy: 20
+
 # How command-line output should be displayed. Supported values are:
 # normal, json or yaml.
 display-format: normal

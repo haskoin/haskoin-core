@@ -97,6 +97,14 @@ options =
     , Option "o" ["offline"]
         (NoArg $ \cfg -> cfg { configOffline = True }) $
         "Offline balance. Default: " ++ show (configOffline def)
+    , Option "e" ["entropy"]
+        ( ReqArg
+            (\s cfg -> cfg { configEntropy =
+                                read' "Could not parse entropy" s
+                           })
+            "INT"
+        ) $ "Entropy in Bytes between 16 and 32. Default: "
+            ++ show (configEntropy def)
     , Option "r" ["revpage"]
         (NoArg $ \cfg -> cfg { configReversePaging = True }) $
         "Reverse paging. Default: "

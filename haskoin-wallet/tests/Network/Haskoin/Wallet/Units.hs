@@ -8,8 +8,7 @@ import           Control.Monad                    (guard)
 import           Control.Monad.Logger             (NoLoggingT)
 import           Control.Monad.Trans              (liftIO)
 import           Control.Monad.Trans.Resource     (ResourceT)
-import qualified Data.ByteString                  as BS (ByteString, empty,
-                                                         pack, replicate)
+import qualified Data.ByteString                  as BS
 import           Data.List                        (sort)
 import           Data.Maybe                       (fromJust, isJust)
 import           Data.String.Conversions          (cs)
@@ -314,6 +313,7 @@ tests =
         , testCase "diceToEntropy" testDiceToEntropy
         , testCase "diceToMnemonic" testDiceToMnemonic
         , testCase "Invalid dice rolls" testInvalidDiceToEntropy
+        , testCase "mixEntropy" testMixEntropy
         ]
     ]
 
@@ -1631,4 +1631,28 @@ testInvalidDiceToEntropy = do
     assertEqual "Invalid dice roll digit 0"
         (Left "Could not decode base6")
         (diceToEntropy "666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666660")
+
+testMixEntropy :: Assertion
+testMixEntropy = do
+    assertEqual "Unit 1"
+        (BS.pack [0x00])
+        (mixEntropy (BS.pack [0x00]) (BS.pack [0x00]))
+    assertEqual "Unit 2"
+        (BS.pack [0xff])
+        (mixEntropy (BS.pack [0x00]) (BS.pack [0xff]))
+    assertEqual "Unit 3"
+        (BS.pack [0xff])
+        (mixEntropy (BS.pack [0xff]) (BS.pack [0x00]))
+    assertEqual "Unit 4"
+        (BS.pack [0x00])
+        (mixEntropy (BS.pack [0xff]) (BS.pack [0xff]))
+    assertEqual "Unit 5"
+        (BS.pack [0xff])
+        (mixEntropy (BS.pack [0xaa]) (BS.pack [0x55]))
+    assertEqual "Unit 6"
+        (BS.pack [0xff, 0xff])
+        (mixEntropy (BS.pack [0x55, 0xaa]) (BS.pack [0xaa, 0x55]))
+    assertEqual "Unit 7"
+        (BS.pack [0xa9, 0xda])
+        (mixEntropy (BS.pack [0x7a, 0x54]) (BS.pack [0xd3, 0x8e]))
 

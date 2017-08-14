@@ -37,6 +37,7 @@ module Network.Haskoin.Wallet.Client.Commands
 , decodeBase6
 , diceToEntropy
 , diceToMnemonic
+, mixEntropy
 )
 where
 
@@ -50,6 +51,7 @@ import           Data.Aeson                               (FromJSON, ToJSON,
                                                            eitherDecode, object,
                                                            toJSON, (.=))
 import qualified Data.Aeson                               as Aeson (encode)
+import           Data.Bits                                (xor)
 import qualified Data.ByteString                          as BS
 import qualified Data.ByteString.Char8                    as B8
 import           Data.List                                (intercalate,
@@ -78,6 +80,7 @@ import           Network.Haskoin.Wallet.Settings
 import           Network.Haskoin.Wallet.Types
 import           Numeric                                  (readInt)
 import qualified System.Console.Haskeline                 as Haskeline
+import           System.Entropy                           (getEntropy)
 import           System.IO                                (stderr)
 import           System.ZMQ4
 import           Text.Read                                (readMaybe)
@@ -563,10 +566,26 @@ cmdBlockInfo headers = do
     parseRes = nodeStatusBestHeader . fromMaybe
         (error "No response to NodeActionStatus msg") . parseResponse
 
+-- Do not reuse a dice roll to generate mnemonics because:
+-- (D xor B) xor (D xor C) = (D xor D) xor (B xor C) = (B xor C)
+-- You will leak (B xor C) which is the xor of your computer entropy.
+-- In other words, don't reuse any part of a one time pad.
 cmdDice :: String -> Handler ()
-cmdDice rolls = case diceToMnemonic rolls of
+cmdDice rolls = case diceToEntropy rolls of
+    Right ent1 -> do
+        -- Get more entropy from /dev/urandom
+        ent2 <- liftIO $ getEntropy 32
+        -- Mix the entropy using xor and generate a mnemonic
+        case toMnemonic $ mixEntropy ent1 ent2 of
+            Right ms -> liftIO $ putStrLn $ cs ms
+            Left err -> error err
     Left err -> error err
-    Right ms  -> liftIO $ putStrLn $ cs ms
+
+-- Mix entropy of same length by xoring them
+mixEntropy :: BS.ByteString -> BS.ByteString -> BS.ByteString
+mixEntropy ent1 ent2
+    | BS.length ent1 == BS.length ent2 = BS.pack $ BS.zipWith xor ent1 ent2
+    | otherwise = error "Entropy is not of the same length"
 
 diceToMnemonic :: String -> Either String BS.ByteString
 diceToMnemonic = toMnemonic <=< diceToEntropy

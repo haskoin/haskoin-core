@@ -70,6 +70,7 @@ library
                  , data-default                  >= 0.5       && < 0.8
                  , directory                     >= 1.2       && < 1.4
                  , daemons                       >= 0.2       && < 0.3
+                 , entropy                       >= 0.3.7     && < 0.4
                  , exceptions                    >= 0.6       && < 0.9
                  , esqueleto                     >= 2.4       && < 2.6
                  , file-embed                    >= 0.0       && < 0.1

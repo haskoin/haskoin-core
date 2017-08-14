@@ -8,7 +8,8 @@ import           Control.Monad                    (guard)
 import           Control.Monad.Logger             (NoLoggingT)
 import           Control.Monad.Trans              (liftIO)
 import           Control.Monad.Trans.Resource     (ResourceT)
-import qualified Data.ByteString                  as BS (ByteString, pack)
+import qualified Data.ByteString                  as BS (ByteString, empty,
+                                                         pack, replicate)
 import           Data.List                        (sort)
 import           Data.Maybe                       (fromJust, isJust)
 import           Data.String.Conversions          (cs)
@@ -28,6 +29,8 @@ import           Test.Framework                   (Test, testGroup)
 import           Test.Framework.Providers.HUnit   (testCase)
 import           Test.HUnit                       (Assertion, assertBool,
                                                    assertEqual, assertFailure)
+
+import           Network.Haskoin.Util
 
 type App = SqlPersistT (NoLoggingT (ResourceT IO))
 
@@ -305,6 +308,12 @@ tests =
         , testCase "Delete Tx" $ runUnit testDeleteTx
         , testCase "Delete Unsigned Tx" $ runUnit testDeleteUnsignedTx
         , testCase "Notifications" $ runUnit testNotification
+        ]
+    , testGroup "Dice conversion tests"
+        [ testCase "Base 6 to Base 16" testDecodeBase6
+        , testCase "diceToEntropy" testDiceToEntropy
+        , testCase "diceToMnemonic" testDiceToMnemonic
+        , testCase "Invalid dice rolls" testInvalidDiceToEntropy
         ]
     ]
 
@@ -1574,4 +1583,52 @@ testTx :: ([WalletTx], [WalletAddr])
 testTx (txls, addrs) = (map f txls, length addrs)
   where
     f tx = (walletTxAccount tx, walletTxConfidence tx)
+
+testDecodeBase6 :: Assertion
+testDecodeBase6 = do
+    assertEqual "Unit 1" (decodeBase6 BS.empty) $ Just BS.empty
+    assertEqual "Unit 2" (decodeBase6 "6") $ decodeHex "00"
+    assertEqual "Unit 3" (decodeBase6 "666") $ decodeHex "00"
+    assertEqual "Unit 4" (decodeBase6 "661") $ decodeHex "01"
+    assertEqual "Unit 5" (decodeBase6 "6615") $ decodeHex "0B"
+    assertEqual "Unit 6" (decodeBase6 "6645") $ decodeHex "1D"
+    assertEqual "Unit 7" (decodeBase6 "66456666") $ decodeHex "92D0"
+    assertEqual "Unit 8" (decodeBase6 "111111111111111111111111111111111") $ decodeHex "07E65FDC244B0133333333"
+    assertEqual "Unit 9" (decodeBase6 "55555555555555555555555555555555") $ decodeHex "06954FE21E3E80FFFFFFFF"
+    assertEqual "Unit 10" (decodeBase6 "161254362643213454433626115643626632163246612666332415423213664") $ decodeHex "0140F8D002341BDF377F1723C9EB6C7ACFF134581C"
+
+testDiceToEntropy :: Assertion
+testDiceToEntropy = do
+    assertEqual "Unit 1" (diceToEntropy "666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666") $ Right $ BS.replicate 32 0x00
+    assertEqual "Unit 2" (diceToEntropy "111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111") $ Right $ fromJust $ decodeHex "302582058C61D13F1F9AA61CB6B5982DC3D9A42B333333333333333333333333"
+    assertEqual "Unit 3" (diceToEntropy "666655555555555555555544444444444444444444444333333333333333333322222222222222222111111111111111111") $ Right $ fromJust $ decodeHex "002F8D57547E01B124FE849EE71CB96CA91478A542F7D4AA833EFAF5255F3333"
+    assertEqual "Unit 4" (diceToEntropy "615243524162543244414631524314243526152432442413461523424314523615243251625434236413615423162365223") $ Right $ fromJust $ decodeHex "0CC66852D7580358E47819E37CDAF115E00364724346D83D49E59F094DB4972F"
+
+-- These test cases have been generated with haskoin and are provided here
+-- for regression
+testDiceToMnemonic :: Assertion
+testDiceToMnemonic = do
+    assertEqual "Unit 1" (diceToMnemonic "666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666") $ Right "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
+    assertEqual "Unit 2" (diceToMnemonic "111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111") $ Right "coral clown lift boat brown panel lazy feel bronze remember gravity fortune diesel spirit proud grid creek office smoke grid creek office smoke interest"
+
+testInvalidDiceToEntropy :: Assertion
+testInvalidDiceToEntropy = do
+    assertEqual "Invalid empty dice roll"
+        (Left "99 dice rolls are required")
+        (diceToEntropy "")
+    assertEqual "Dice roll too short"
+        (Left "99 dice rolls are required")
+        (diceToEntropy "666")
+    assertEqual "Dice roll too short (98 rolls)"
+        (Left "99 dice rolls are required")
+        (diceToEntropy "66666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666")
+    assertEqual "Dice roll too short (100 rolls)"
+        (Left "99 dice rolls are required")
+        (diceToEntropy "6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666")
+    assertEqual "Invalid dice roll digit 7"
+        (Left "Could not decode base6")
+        (diceToEntropy "666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666667")
+    assertEqual "Invalid dice roll digit 0"
+        (Left "Could not decode base6")
+        (diceToEntropy "666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666660")
 

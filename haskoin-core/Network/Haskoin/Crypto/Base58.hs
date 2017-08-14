@@ -47,10 +47,10 @@ decodeBase58I s =
         Just (r,[]) -> Just r
         _           -> Nothing
   where
-    p = isJust . b58'
-    f = fromMaybe e . b58'
+    p  = isJust . b58'
+    f  = fromMaybe e . b58'
     go = listToMaybe $ readInt 58 p f (cs s)
-    e = error "Could not decode base58"
+    e  = error "Could not decode base58"
 
 -- | Encode a 'ByteString' to a base 58 representation.
 encodeBase58 :: ByteString -> ByteString
@@ -68,7 +68,7 @@ decodeBase58 :: ByteString -> Maybe ByteString
 decodeBase58 t =
     BS.append prefix <$> r
   where
-    (z, b)  = BS.span (== BS.index b58Data 0) t
+    (z, b) = BS.span (== BS.index b58Data 0) t
     prefix = BS.replicate (BS.length z) 0 -- preserve leading 1's
     r | BS.null b = Just BS.empty
       | otherwise = integerToBS <$> decodeBase58I b

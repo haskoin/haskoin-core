@@ -223,6 +223,7 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "dead"        : name : page                -> cmdDead name page
     "monitor"     : name                       -> cmdMonitor name
     "decodetx"                            : [] -> cmdDecodeTx
+    "dice"        : rolls                 : [] -> cmdDice rolls
     "status"                              : [] -> cmdStatus
     "keypair"                             : [] -> cmdKeyPair
     "blockinfo"   : hashes                     -> cmdBlockInfo hashes

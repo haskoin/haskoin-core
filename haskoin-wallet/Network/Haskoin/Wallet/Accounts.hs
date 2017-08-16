@@ -157,10 +157,10 @@ genMnemonic bytes
     | otherwise = throwM $
         WalletException "Entropy can only be 16, 20, 24, 28 or 32 bytes"
 
-mnemonicToPrvKey :: MonadThrow m => Mnemonic -> m XPrvKey
-mnemonicToPrvKey ms = case mnemonicToSeed "" ms of
-    Right s  -> return $ makeXPrvKey s
-    Left err -> throwM $ WalletException err
+mnemonicToPrvKey :: MonadThrow m => Passphrase -> Mnemonic -> m XPrvKey
+mnemonicToPrvKey pass ms = case mnemonicToSeed pass ms of
+    Right seed -> return $ makeXPrvKey seed
+    Left err   -> throwM $ WalletException err
 
 -- |Create a new account using the given mnemonic or keys. If no mnemonic,
 -- master key or public keys are provided, a new mnemonic will be generated.
@@ -174,11 +174,13 @@ newAccount NewAccount{..} = do
     when (isJust newAccountMnemonic && isJust newAccountMaster) $ throwM $
         WalletException "Can not set both master key and mnemonic"
 
+    let pass = cs $ fromMaybe "" newAccountPassword
+
     (mnemonicM, keyM) <- case newAccountMaster of
         Just xPrv -> return (Nothing, Just xPrv)
         _ -> case newAccountMnemonic of
             Just ms -> do
-                root <- mnemonicToPrvKey $ cs ms
+                root <- mnemonicToPrvKey pass $ cs ms
                 -- Don't return our own mnemonic as we don't want it displayed
                 return (Nothing, Just root)
             _ -> if null newAccountKeys
@@ -186,7 +188,7 @@ newAccount NewAccount{..} = do
                         -- Generate a key if nothing was provided
                         let defEnt = configEntropy def
                         ms   <- genMnemonic $ fromMaybe defEnt newAccountEntropy
-                        root <- mnemonicToPrvKey ms
+                        root <- mnemonicToPrvKey pass ms
                         return (Just ms, Just root)
                     else return (Nothing, Nothing)
 

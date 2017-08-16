@@ -45,7 +45,7 @@ Utility commands:
   keypair                                  Get curve key pair for ØMQ auth
   monitor   [account]                      Monitor events (no account: blocks)
   blockinfo [hash1] [hash2] [...]          Get block header information by hash
-  dice      dicerolls                      Mnemonic from 99 dice rolls
+  dice      dicerolls                      Mnemonic from 99 dice rolls (1 to 6)
 
 Other commands:
   version                                  Display version information

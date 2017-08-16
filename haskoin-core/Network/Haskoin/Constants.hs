@@ -31,6 +31,7 @@ module Network.Haskoin.Constants
 , targetTimespan
 , targetSpacing
 , checkpoints
+, bip44Coin
 ) where
 
 import Data.Bits (shiftR)
@@ -62,6 +63,7 @@ data Network = Network
     , getTargetTimespan             :: !Word32
     , getTargetSpacing              :: !Word32
     , getCheckpoints                :: ![(Int, BlockHash)]
+    , getBip44Coin                  :: !Word32
     } deriving (Eq, Show, Read)
 
 -- | Switch to Testnet3.  Do at start of program.
@@ -155,6 +157,10 @@ targetSpacing = getTargetSpacing getNetwork
 checkpoints :: [(Int, BlockHash)]
 checkpoints = getCheckpoints getNetwork
 
+-- | Bip44 coin derivation (m/44'/coin'/account'/internal/address/)
+bip44Coin :: Word32
+bip44Coin = getBip44Coin getNetwork
+
 prodnet :: Network
 prodnet = Network
     { getNetworkName = "prodnet"
@@ -222,6 +228,7 @@ prodnet = Network
           , "0000000000000001ae8c72a0b0c301f67e3afca10e819efa9041e458e9bd7e40"
           )
         ]
+    , getBip44Coin = 0
     }
 
 testnet3 :: Network
@@ -258,6 +265,7 @@ testnet3 = Network
           , "000000002a936ca763904c3c35fce2f3556c559c0214345d31b1bcebf76acb70"
           )
         ]
+    , getBip44Coin = 1
     }
 
 testnet5 :: Network
@@ -293,4 +301,5 @@ testnet5 = Network
         [ ( 10001
           , "00000000fb7c0a2aeb5f1244e81921b84b7ac770004543144e10c2284f89bfd8" )
         ]
+    , getBip44Coin = 1
     }

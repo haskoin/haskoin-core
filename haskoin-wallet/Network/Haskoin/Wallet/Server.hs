@@ -223,7 +223,6 @@ initDatabase cfg = do
         _ <- runMigration migrateWallet
         _ <- runMigration migrateHeaderTree
         initWallet $ configBloomFP cfg
-    -- Return the semaphrone and the connection pool
     return pool
 
 merkleSync

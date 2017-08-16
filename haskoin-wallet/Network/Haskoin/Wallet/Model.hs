@@ -60,7 +60,6 @@ toJsonAccount msM acc = JsonAccount
     , jsonAccountType         = accountType acc
     , jsonAccountMnemonic     = fmap cs msM
     , jsonAccountMaster       = accountMaster acc
-    , jsonAccountDerivation   = accountDerivation acc
     , jsonAccountKeys         = accountKeys acc
     , jsonAccountGap          = accountGap acc
     , jsonAccountCreated      = accountCreated acc

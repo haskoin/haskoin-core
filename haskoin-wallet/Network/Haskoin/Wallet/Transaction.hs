@@ -1043,11 +1043,12 @@ buildUnsignedTx accE@(Entity ai acc) origDests origFee minConf rcptFee = do
         -- TODO: Add more policies like confirmations or coin age
         -- Sort coins by their values in descending order
         orderPolicy c _ = [desc $ c ^. WalletCoinValue]
-        -- Find the spendable coins in the given account with the required number
-        -- of minimum confirmations.
+    -- Find the spendable coins in the given account with the required
+    -- number of minimum confirmations.
     selectRes <- spendableCoins ai minConf orderPolicy
     -- Find a selection of spendable coins that matches our target value
-    let (selected, change) = either (throw . WalletException) id $ coins selectRes
+    let (selected, change) =
+            either (throw . WalletException) id $ coins selectRes
         totFee | isMultisigAccount acc = getMSFee origFee p (length selected)
                | otherwise             = getFee   origFee   (length selected)
         -- Subtract fees from first destination if rcptFee
@@ -1136,16 +1137,14 @@ signOfflineTx :: Account        -- ^ Account used for signing
               -> [CoinSignData] -- ^ Input signing data
               -> Tx
 signOfflineTx acc masterM tx coinSignData
-    | not validMaster = throw $ WalletException
-        "Master key not valid"
-    -- Sign the transaction deterministically
+    | null myMasters = throw $ WalletException "Invalid master key"
     | otherwise = either (throw . WalletException) id $
         signTx tx sigData $ map (toPrvKeyG . xPrvKey) prvKeys
   where
     -- Compute all the SigInputs
     sigData = map (toSigData acc) coinSignData
     -- Compute all the private keys
-    prvKeys = map toPrvKey coinSignData
+    prvKeys = concat $ map toPrvKeys coinSignData
     -- Build a SigInput from a CoinSignData
     toSigData acc' (CoinSignData op so deriv) =
         -- TODO: Here we override the SigHash to be SigAll False all the time.
@@ -1154,15 +1153,12 @@ signOfflineTx acc masterM tx coinSignData
             if isMultisigAccount acc
                 then Just $ getPathRedeem acc' deriv
                 else Nothing
-    toPrvKey (CoinSignData _ _ deriv) = derivePath deriv master
-    master = case masterM of
-        Just m -> case accountDerivation acc of
-            Just d -> derivePath d m
-            Nothing -> m
-        Nothing -> fromMaybe
-            (throw $ WalletException "No extended private key available")
-            (accountMaster acc)
-    validMaster = deriveXPubKey master `elem` accountKeys acc
+    toPrvKeys (CoinSignData _ _ deriv) = map (derivePath deriv) myMasters
+    allMasters = case masterM of
+        Just m -> rootToAccKeys m $ accountKeys acc
+        _      -> [fromMaybe (throw err) (accountMaster acc)]
+    err = WalletException "No extended private key available"
+    myMasters = filter ((`elem` accountKeys acc) . deriveXPubKey) allMasters
 
 -- Returns unspent coins that can be spent in an account that have a minimum
 -- number of confirmations. Coinbase coins can only be spent after 100

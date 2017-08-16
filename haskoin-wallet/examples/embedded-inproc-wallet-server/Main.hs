@@ -140,7 +140,7 @@ walletServerConf = Config
     -- ^ Entropy in bytes to use when generating a mnemonic (between 16 and 32)
     , configReversePaging  = False
     -- ^ Use reverse paging for displaying addresses and transactions
-    , configPath           = Nothing
+    , configDerivIndex     = 0
     -- ^ Derivation path when creating account
     , configFormat         = OutputNormal
     -- ^ How to format the command-line results

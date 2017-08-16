@@ -33,6 +33,13 @@ import           Network.Haskoin.Util
 
 type App = SqlPersistT (NoLoggingT (ResourceT IO))
 
+xPrv1 :: XPrvKey
+xPrv1 = "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+
+-- Bip44 account derivation 0 of xPrv1
+xPub1 :: XPubKey
+xPub1 = "xpub6CsAAZAfnTnNFdmJu6St12N1vHHCPpG8uunWsTwc5PPnB4tk4k99mrgGoRBbt48SarGnLJZf5uwqGBtaBnQzVBtoA6aqtZAsx1xYvFCXM6H"
+
 -- TODO: Add tests for accounts with no private key
 tests :: [Test]
 tests =
@@ -44,11 +51,9 @@ tests =
                     { newAccountName = "fail-this"
                     , newAccountType = AccountRegular
                     -- This key does not correspond to the one below
-                    , newAccountMaster = Just
-                        "xprv9s21ZrQH143K33Ezpb81k5upGyhrVcwgqNzHRHnQ2kGBPHkJ3sLPjGwj4LML1kr1bLfguJiY21XrYfVrL1CGurfVoMKSPwRdmzt1LwBtVyR"
-                    , newAccountDeriv = Nothing
-                    , newAccountKeys =
-                        ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                    , newAccountMaster = Just "xprv9s21ZrQH143K33Ezpb81k5upGyhrVcwgqNzHRHnQ2kGBPHkJ3sLPjGwj4LML1kr1bLfguJiY21XrYfVrL1CGurfVoMKSPwRdmzt1LwBtVyR"
+                    , newAccountDeriv = Just 0
+                    , newAccountKeys = [xPub1]
                     , newAccountMnemonic = Nothing
                     , newAccountReadOnly = False
                     , newAccountEntropy  = Nothing
@@ -61,11 +66,9 @@ tests =
                     _ <- newAccount NewAccount
                         { newAccountName = "main"
                         , newAccountType = AccountRegular
-                        , newAccountMaster = Just
-                            "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
-                        , newAccountDeriv = Nothing
-                        , newAccountKeys =
-                            ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                        , newAccountMaster = Just xPrv1
+                        , newAccountDeriv = Just 0
+                        , newAccountKeys = [xPub1]
                         , newAccountMnemonic = Nothing
                         , newAccountReadOnly = False
                         , newAccountEntropy  = Nothing
@@ -74,9 +77,8 @@ tests =
                         { newAccountName = "main"
                         , newAccountType = AccountRegular
                         , newAccountMaster = Nothing
-                        , newAccountDeriv = Nothing
-                        , newAccountKeys =
-                            ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                        , newAccountDeriv = Just 0
+                        , newAccountKeys = [xPub1]
                         , newAccountMnemonic = Nothing
                         , newAccountReadOnly = False
                         , newAccountEntropy  = Nothing
@@ -86,11 +88,9 @@ tests =
                 newAccount NewAccount
                     { newAccountName = "multisig-0-of-1"
                     , newAccountType = AccountMultisig 0 1
-                    , newAccountMaster = Just
-                        "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                    , newAccountMaster = Just xPrv1
                     , newAccountDeriv = Nothing
-                    , newAccountKeys =
-                        ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                    , newAccountKeys = [xPub1]
                     , newAccountMnemonic = Nothing
                     , newAccountReadOnly = False
                     , newAccountEntropy  = Nothing
@@ -101,11 +101,9 @@ tests =
                 newAccount NewAccount
                     { newAccountName = "multisig-2-of-1"
                     , newAccountType = AccountMultisig 2 1
-                    , newAccountMaster = Just
-                        "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                    , newAccountMaster = Just xPrv1
                     , newAccountDeriv = Nothing
-                    , newAccountKeys =
-                        ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                    , newAccountKeys = [xPub1]
                     , newAccountMnemonic = Nothing
                     , newAccountReadOnly = False
                     , newAccountEntropy  = Nothing
@@ -116,11 +114,9 @@ tests =
                 newAccount NewAccount
                     { newAccountName = "multisig-15-of-16"
                     , newAccountType = AccountMultisig 15 16
-                    , newAccountMaster = Just
-                        "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                    , newAccountMaster = Just xPrv1
                     , newAccountDeriv = Nothing
-                    , newAccountKeys =
-                        ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                    , newAccountKeys = [xPub1]
                     , newAccountMnemonic = Nothing
                     , newAccountReadOnly = False
                     , newAccountEntropy  = Nothing
@@ -131,11 +127,10 @@ tests =
                 newAccount NewAccount
                     { newAccountName = "multisig-1-of-2-with-3"
                     , newAccountType = AccountMultisig 1 2
-                    , newAccountMaster = Just
-                        "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                    , newAccountMaster = Just xPrv1
                     , newAccountDeriv = Nothing
                     , newAccountKeys =
-                        [ "xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"
+                        [ xPub1
                         , "xpub661MyMwAqRbcFEPH5Aon6F7edspeu1v6a1Nw5qJgk1aX5XYg1ktBL9Azra2CKaAJ2bHXEXkeKHE3eFaCJktFiA5tSMDQDs6bi83maQtdYby"
                         , "xpub661MyMwAqRbcFtDszBWpawpg4KbNWL9qD4VdRwjd1L5cmcS8nXHWXpg9WL1Xc9Yh7HbQBwWDw37YJfc4AF3YEpvAHEBPBFQPFkUcFHnopw8"
                         ]
@@ -150,11 +145,9 @@ tests =
                     res <- newAccount NewAccount
                         { newAccountName = "multisig-1-of-2-plus-empty"
                         , newAccountType = AccountMultisig 1 2
-                        , newAccountMaster = Just
-                            "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                        , newAccountMaster = Just xPrv1
                         , newAccountDeriv = Nothing
-                        , newAccountKeys =
-                            ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                        , newAccountKeys = [xPub1]
                         , newAccountMnemonic = Nothing
                         , newAccountReadOnly = False
                         , newAccountEntropy  = Nothing
@@ -167,11 +160,9 @@ tests =
                     res <- newAccount NewAccount
                         { newAccountName = "regular-plus-more"
                         , newAccountType = AccountRegular
-                        , newAccountMaster = Just
-                            "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                        , newAccountMaster = Just xPrv1
                         , newAccountDeriv = Nothing
-                        , newAccountKeys =
-                            ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                        , newAccountKeys = [xPub1]
                         , newAccountMnemonic = Nothing
                         , newAccountReadOnly = False
                         , newAccountEntropy  = Nothing
@@ -185,11 +176,10 @@ tests =
                     res <- newAccount NewAccount
                         { newAccountName = "regular-plus-more"
                         , newAccountType = AccountMultisig 1 2
-                        , newAccountMaster = Just
-                            "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                        , newAccountMaster = Just xPrv1
                         , newAccountDeriv = Nothing
                         , newAccountKeys =
-                            [ "xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"
+                            [ xPub1
                             , "xpub661MyMwAqRbcFEPH5Aon6F7edspeu1v6a1Nw5qJgk1aX5XYg1ktBL9Azra2CKaAJ2bHXEXkeKHE3eFaCJktFiA5tSMDQDs6bi83maQtdYby"
                             ]
                         , newAccountMnemonic = Nothing
@@ -211,11 +201,9 @@ tests =
                 res <- newAccount NewAccount
                     { newAccountName = "reduce-gap"
                     , newAccountType = AccountRegular
-                    , newAccountMaster = Just
-                        "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                    , newAccountMaster = Just xPrv1
                     , newAccountDeriv = Nothing
-                    , newAccountKeys =
-                        ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                    , newAccountKeys = [xPub1]
                     , newAccountMnemonic = Nothing
                     , newAccountReadOnly = False
                     , newAccountEntropy  = Nothing
@@ -228,11 +216,9 @@ tests =
                 res <- newAccount NewAccount
                     { newAccountName = "label-hidden"
                     , newAccountType = AccountRegular
-                    , newAccountMaster = Just
-                        "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                    , newAccountMaster = Just xPrv1
                     , newAccountDeriv = Nothing
-                    , newAccountKeys =
-                        ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                    , newAccountKeys = [xPub1]
                     , newAccountMnemonic = Nothing
                     , newAccountReadOnly = False
                     , newAccountEntropy  = Nothing
@@ -244,11 +230,9 @@ tests =
                 res <- newAccount NewAccount
                     { newAccountName = "label-invalid"
                     , newAccountType = AccountRegular
-                    , newAccountMaster = Just
-                        "xprv9s21ZrQH143K4a5123LatJaWPdyMvCG4Phpb79kLUXNF3Y9U537QUeKzUjkrdoZVVse747ZnNNUGryPZXEoMFjkuUKyWpEMcg7jbxYECE2b"
+                    , newAccountMaster = Just xPrv1
                     , newAccountDeriv = Nothing
-                    , newAccountKeys =
-                        ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                    , newAccountKeys = [xPub1]
                     , newAccountMnemonic = Nothing
                     , newAccountReadOnly = False
                     , newAccountEntropy  = Nothing
@@ -263,8 +247,7 @@ tests =
                         , newAccountType = AccountRegular
                         , newAccountMaster = Nothing
                         , newAccountDeriv = Nothing
-                        , newAccountKeys =
-                            ["xpub661MyMwAqRbcH49U84sbFSXEwforKeyukvkBuY9x2ruDvLUccaRf2SeUL1f6StQke7sCuvott5CjzFqw6aA49g2NSjaARBkQdHE18zjC5hB"]
+                        , newAccountKeys = [xPub1]
                         , newAccountMnemonic = Nothing
                         , newAccountReadOnly = False
                         , newAccountEntropy  = Nothing
@@ -307,6 +290,7 @@ tests =
         , testCase "Delete Tx" $ runUnit testDeleteTx
         , testCase "Delete Unsigned Tx" $ runUnit testDeleteUnsignedTx
         , testCase "Notifications" $ runUnit testNotification
+        , testCase "RootToAccKey" $ testRootToAccKey
         ]
     , testGroup "Dice conversion tests"
         [ testCase "Base 6 to Base 16" testDecodeBase6
@@ -385,7 +369,7 @@ testDerivations = do
     accE <- fst <$> newAccount NewAccount
         { newAccountName = "acc1"
         , newAccountType = AccountRegular
-        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountDeriv = Just 0
         , newAccountMaster = Nothing
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
@@ -393,34 +377,19 @@ testDerivations = do
         , newAccountEntropy  = Nothing
         }
 
-    unusedAddresses accE AddressExternal (ListRequest 0 0 False)
+    unusedAddresses accE AddressExternal (ListRequest 0 3 False)
         >>= liftIO . assertEqual "Generated external addresses do not match"
-            [ "1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe"
-            , "1NrcKe9UNtxjjgMSLdhBYaEgrQWQFnvJXX"
-            , "123XgHRNxkprjec72EpxBFPytPim21u9Kc"
-            , "16AuD3mAQMzsUHkMGfkQQapG6jhHmV3Rys"
-            , "1AjF1GhsxyXCN5doPGLjSztDcuLbfYMkqw"
-            , "1LPUYEjUd1u9dgjM3RqnoYj7Zt4j4dmZYA"
-            , "1Kzyb5Fpj2VmMoCNWxLNMYeMSu5ocS7u7e"
-            , "131L3UXV6WakXpyXvmqzqNkHwWJzWExR9i"
-            , "19FWGTZERHzMePTqKoR8nB9y6w7S5u9yGr"
-            , "135dwGc8JG2dmhy79onerHKdqoqibHShRJ"
+            [ "1BThGRupK6Ah44sfCtsg2QkoEDJA58d8in"
+            , "1Cf66C6MVTYgMSuXrpn5W1x12RRtAa6v2x"
+            , "1Guyp96E7ph4PQJoPpz1DLsash8pqjEdVN"
             ] . map (addrToBase58 . walletAddrAddress) . fst
 
-    unusedAddresses accE AddressInternal (ListRequest 0 0 False)
+    unusedAddresses accE AddressInternal (ListRequest 0 3 False)
         >>= liftIO . assertEqual "Generated internal addresses do not match"
-            [ "1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm"
-            , "1JVocGcqZvQFbfpeQUY92iL9ARLsAP4DjW"
-            , "15yaPowqF2g9B3xbdyXaPygV9bfXFjYj2X"
-            , "187xp9nQTsCa7QJLHYSMyaM1Mf5u2knJYY"
-            , "1QDQwk4d4zVWH3TnUHMCvDvvrTqFSaA3hr"
-            , "17ATGqWhkXYLxPdynWrFjnJBvD3EYxqC5A"
-            , "1EHgPV5DEs3GwUSaRQD7hd2m5MkR4hdByb"
-            , "1EvUYGoC7p7GC8BtYTz4RX2ERxjUsT3zLz"
-            , "15857PJZQxUH8Jgomv83mYqJqDsVEUZwz1"
-            , "18L5fQjr5yXdqqnK98v2UQi1WHAXfYHr7L"
+            [ "1JGvK2MYQ3wwxMdYeyf7Eg1HeVJuEq3AT1"
+            , "1JMTxp3kbXtwHwFMNPCUc2QyjQNQ8ZZxc4"
+            , "19mTjNo7m7eRVULZ47PzYvnbdXGHGnKXKi"
             ] . map (addrToBase58 . walletAddrAddress) . fst
-
 
 assertBalance :: AccountId -> Word32 -> Word64 -> App ()
 assertBalance ai conf b = do
@@ -476,7 +445,7 @@ testBalances = do
     accE@(Entity ai _) <- fst <$> newAccount NewAccount
         { newAccountName = "acc1"
         , newAccountType = AccountRegular
-        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountDeriv = Just 0
         , newAccountMaster = Nothing
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
@@ -485,8 +454,8 @@ testBalances = do
         }
     let fundingTx = fakeTx
             [ (tid1, 0) ]
-            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 10000000)
-            , ("1NrcKe9UNtxjjgMSLdhBYaEgrQWQFnvJXX", 20000000)
+            [ ("1BThGRupK6Ah44sfCtsg2QkoEDJA58d8in", 10000000)
+            , ("1Cf66C6MVTYgMSuXrpn5W1x12RRtAa6v2x", 20000000)
             ]
     let tx1 = fakeTx
             [ (txHash fundingTx, 0)
@@ -496,7 +465,7 @@ testBalances = do
         tx2 = fakeTx
             [ (txHash fundingTx, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 5000000) -- external
-            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 5000000) -- change
+            , ("1JGvK2MYQ3wwxMdYeyf7Eg1HeVJuEq3AT1", 5000000) -- change
             ]
 
     assertBalance ai 0 0
@@ -695,7 +664,7 @@ testConflictBalances = do
     accE@(Entity ai _) <- fst <$> newAccount NewAccount
         { newAccountName = "acc1"
         , newAccountType = AccountRegular
-        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountDeriv = Just 0
         , newAccountMaster = Nothing
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
@@ -704,18 +673,18 @@ testConflictBalances = do
         }
     let tx1 = fakeTx
             [ (tid1, 4) ]
-            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 10000000) ]
+            [ ("1BThGRupK6Ah44sfCtsg2QkoEDJA58d8in", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
-            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 4000000) -- change
+            , ("1JGvK2MYQ3wwxMdYeyf7Eg1HeVJuEq3AT1", 4000000) -- change
             ]
         tx3 = fakeTx
             [ (txHash tx2, 1) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 4000000) ] -- external
         tx4 = fakeTx
             [ (tid1, 4) ]
-            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 20000000) ]
+            [ ("1BThGRupK6Ah44sfCtsg2QkoEDJA58d8in", 20000000) ]
 
     -- Import first transaction
     assertImportTx ai 1 TxPending tx1
@@ -870,7 +839,7 @@ testOffline = do
     accE@(Entity ai _) <- fst <$> newAccount NewAccount
         { newAccountName = "acc1"
         , newAccountType = AccountRegular
-        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountDeriv = Just 0
         , newAccountMaster = Nothing
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
@@ -879,18 +848,18 @@ testOffline = do
         }
     let tx1 = fakeTx
             [ (tid1, 4) ]
-            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 10000000) ]
+            [ ("1BThGRupK6Ah44sfCtsg2QkoEDJA58d8in", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
-            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 4000000) -- change
+            , ("1JGvK2MYQ3wwxMdYeyf7Eg1HeVJuEq3AT1", 4000000) -- change
             ]
         tx3 = fakeTx
             [ (txHash tx2, 1) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 4000000) ] -- external
         tx4 = fakeTx
             [ (tid1, 4) ]
-            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 20000000) ]
+            [ ("1BThGRupK6Ah44sfCtsg2QkoEDJA58d8in", 20000000) ]
 
     -- Import first transaction
     assertImportTxOffline ai 1 TxOffline tx1
@@ -965,7 +934,7 @@ testKillOffline = do
     accE@(Entity ai _) <- fst <$> newAccount NewAccount
         { newAccountName = "acc1"
         , newAccountType = AccountRegular
-        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountDeriv = Just 0
         , newAccountMaster = Nothing
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
@@ -974,11 +943,11 @@ testKillOffline = do
         }
     let tx1 = fakeTx
             [ (tid1, 4) ]
-            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 10000000) ]
+            [ ("1BThGRupK6Ah44sfCtsg2QkoEDJA58d8in", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
-            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 4000000) -- change
+            , ("1JGvK2MYQ3wwxMdYeyf7Eg1HeVJuEq3AT1", 4000000) -- change
             ]
         tx3 = fakeTx
             [ (txHash tx2, 1) ]
@@ -986,8 +955,8 @@ testKillOffline = do
         tx4 = fakeTx
             [ (txHash tx1, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 2000000) -- external
-            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 3000000) -- change
-            , ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 5000000) -- more change
+            , ("1JGvK2MYQ3wwxMdYeyf7Eg1HeVJuEq3AT1", 3000000) -- change
+            , ("1BThGRupK6Ah44sfCtsg2QkoEDJA58d8in", 5000000) -- more change
             ]
 
     -- Import tx1 as a network transaction
@@ -1058,24 +1027,24 @@ testOfflineExceptions :: Assertion
 testOfflineExceptions = do
     let tx1 = fakeTx
             [ (tid1, 4) ]
-            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 10000000) ]
+            [ ("1BThGRupK6Ah44sfCtsg2QkoEDJA58d8in", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
-            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 4000000) -- change
+            , ("1JGvK2MYQ3wwxMdYeyf7Eg1HeVJuEq3AT1", 4000000) -- change
             ]
         tx3 = fakeTx
             [ (txHash tx2, 1) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 4000000) ] -- external
         tx4 = fakeTx
             [ (tid1, 4) ]
-            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 20000000) ]
+            [ ("1BThGRupK6Ah44sfCtsg2QkoEDJA58d8in", 20000000) ]
 
     assertException (WalletException "Could not import offline transaction") $ do
         _ <- newAccount NewAccount
             { newAccountName = "acc1"
             , newAccountType = AccountRegular
-            , newAccountDeriv = Just (Deriv :| 0)
+            , newAccountDeriv = Just 0
             , newAccountMaster = Nothing
             , newAccountMnemonic = Just (cs ms)
             , newAccountKeys = []
@@ -1090,7 +1059,7 @@ testOfflineExceptions = do
         _ <- newAccount NewAccount
             { newAccountName = "acc1"
             , newAccountType = AccountRegular
-            , newAccountDeriv = Just (Deriv :| 0)
+            , newAccountDeriv = Just 0
             , newAccountMaster = Nothing
             , newAccountMnemonic = Just (cs ms)
             , newAccountKeys = []
@@ -1107,7 +1076,7 @@ testOfflineExceptions = do
         _ <- newAccount NewAccount
             { newAccountName = "acc1"
             , newAccountType = AccountRegular
-            , newAccountDeriv = Just (Deriv :| 0)
+            , newAccountDeriv = Just 0
             , newAccountMaster = Nothing
             , newAccountMnemonic = Just (cs ms)
             , newAccountKeys = []
@@ -1124,20 +1093,20 @@ testImportMultisig = do
     accE1@(Entity ai1 _) <- fst <$> newAccount NewAccount
         { newAccountName = "ms1"
         , newAccountType = AccountMultisig 2 2
-        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountDeriv = Just 0
         , newAccountMaster = Nothing
         , newAccountMnemonic = Just (cs ms)
-        , newAccountKeys = ["xpub68kRFKHWxUt3oS8X5kVogwH5rvuAd4jrLkxVfHeudFC4MfwQ8oYV59F91uFnsLXANRB1MkN4Wa1PwymE4cRsU8PE755HNCb1EoBbSoAKXpW"]
+        , newAccountKeys = ["xpub6C5bmQQw4h4DVMVydW4bhtuz4jZpUpsrvfMYdZXVVuXyePRcDhBzXufZ5sfSZqtcnXPtDCYyAAPPkuAKEtasfRo9RatgFNP4X58zM1QjjYK"]
         , newAccountReadOnly = False
         , newAccountEntropy  = Nothing
         }
     accE2@(Entity ai2 _) <- fst <$> newAccount NewAccount
         { newAccountName = "ms2"
         , newAccountType = AccountMultisig 2 2
-        , newAccountDeriv = Just (Deriv :| 1)
+        , newAccountDeriv = Just 1
         , newAccountMaster = Nothing
         , newAccountMnemonic = Just (cs ms)
-        , newAccountKeys = ["xpub68kRFKHWxUt3mfJjcXdLeuDjCHnByqKSBVfMktJRXM6LSNNDR4ae6Nw1Kh621fzyKiBf6ssyZWPPTDUTQp1BhuZQuoVdtb8j2TRzqDLHmY7"]
+        , newAccountKeys = ["xpub6C5bmQQw4h4DSHbWsT7GDaU1CxcamCwTGRo81T2g9VewnEyb16eHwzojDPsZguGizLD3ttFynKPby7ABY4MQ3xAf5DNafj32uf84Gw48Phb"]
         , newAccountReadOnly = False
         , newAccountEntropy  = Nothing
         }
@@ -1146,7 +1115,7 @@ testImportMultisig = do
             [ TxIn (OutPoint tid1 0) (BS.pack [1]) maxBound ] -- dummy input
             [ TxOut 10000000 $
               encodeOutputBS $ PayScriptHash $ fromJust $
-              base58ToAddr "32RexHZdsMoV8yzL1pQyFhYY6XeUNcWP78"
+              base58ToAddr "32SupmLrYyZMSPfL4tgkuUCyvbzEyBfqxd"
             ]
             0
 
@@ -1158,7 +1127,7 @@ testImportMultisig = do
 
     -- Create a transaction which has 0 signatures in ms1
     tx1 <- fst <$> createWalletTx accE1 Nothing Nothing
-        [ ( fromJust $ base58ToAddr "3BYWaQHz6AVXx7wXmCka4846tRfa1ccWvh"
+        [ ( fromJust $ base58ToAddr "3AV9s2W9atAaChWdwTpRv8qvTHcV7L1zyj"
           , 5000000
           )
         ] 10000 0 False True
@@ -1280,7 +1249,7 @@ testDeleteTx = do
     accE@(Entity ai _) <- fst <$> newAccount NewAccount
         { newAccountName = "acc1"
         , newAccountType = AccountRegular
-        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountDeriv = Just 0
         , newAccountMaster = Nothing
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
@@ -1289,11 +1258,11 @@ testDeleteTx = do
         }
     let tx1 = fakeTx
             [ (tid1, 4) ]
-            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 10000000) ]
+            [ ("1BThGRupK6Ah44sfCtsg2QkoEDJA58d8in", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
-            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 4000000) -- change
+            , ("1JGvK2MYQ3wwxMdYeyf7Eg1HeVJuEq3AT1", 4000000) -- change
             ]
         tx3 = fakeTx
             [ (txHash tx2, 1) ]
@@ -1333,20 +1302,20 @@ testDeleteUnsignedTx = do
     accE1@(Entity ai1 _) <- fst <$> newAccount NewAccount
         { newAccountName = "ms1"
         , newAccountType = AccountMultisig 2 2
-        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountDeriv = Just 0
         , newAccountMaster = Nothing
         , newAccountMnemonic = Just (cs ms)
-        , newAccountKeys = ["xpub68kRFKHWxUt3oS8X5kVogwH5rvuAd4jrLkxVfHeudFC4MfwQ8oYV59F91uFnsLXANRB1MkN4Wa1PwymE4cRsU8PE755HNCb1EoBbSoAKXpW"]
+        , newAccountKeys = ["xpub6C5bmQQw4h4DVMVydW4bhtuz4jZpUpsrvfMYdZXVVuXyePRcDhBzXufZ5sfSZqtcnXPtDCYyAAPPkuAKEtasfRo9RatgFNP4X58zM1QjjYK"]
         , newAccountReadOnly = False
         , newAccountEntropy  = Nothing
         }
     Entity ai2 _ <- fst <$> newAccount NewAccount
         { newAccountName = "ms2"
         , newAccountType = AccountMultisig 2 2
-        , newAccountDeriv = Just (Deriv :| 1)
+        , newAccountDeriv = Just 1
         , newAccountMaster = Nothing
         , newAccountMnemonic = Just (cs ms)
-        , newAccountKeys = ["xpub68kRFKHWxUt3mfJjcXdLeuDjCHnByqKSBVfMktJRXM6LSNNDR4ae6Nw1Kh621fzyKiBf6ssyZWPPTDUTQp1BhuZQuoVdtb8j2TRzqDLHmY7"]
+        , newAccountKeys = ["xpub6C5bmQQw4h4DSHbWsT7GDaU1CxcamCwTGRo81T2g9VewnEyb16eHwzojDPsZguGizLD3ttFynKPby7ABY4MQ3xAf5DNafj32uf84Gw48Phb"]
         , newAccountReadOnly = False
         , newAccountEntropy  = Nothing
         }
@@ -1355,7 +1324,7 @@ testDeleteUnsignedTx = do
             [ TxIn (OutPoint tid1 0) (BS.pack [1]) maxBound ] -- dummy input
             [ TxOut 10000000 $
               encodeOutputBS $ PayScriptHash $ fromJust $
-              base58ToAddr "32RexHZdsMoV8yzL1pQyFhYY6XeUNcWP78"
+              base58ToAddr "32SupmLrYyZMSPfL4tgkuUCyvbzEyBfqxd"
             ]
             0
 
@@ -1367,7 +1336,7 @@ testDeleteUnsignedTx = do
 
     -- Create a transaction which has 0 signatures in ms1
     tx1 <- fst <$> createWalletTx accE1 Nothing Nothing
-        [ ( fromJust $ base58ToAddr "3BYWaQHz6AVXx7wXmCka4846tRfa1ccWvh"
+        [ ( fromJust $ base58ToAddr "3AV9s2W9atAaChWdwTpRv8qvTHcV7L1zyj"
           , 5000000
           )
         ] 10000 0 False True
@@ -1402,7 +1371,7 @@ testNotification = do
     _ <- newAccount NewAccount
         { newAccountName = "acc1"
         , newAccountType = AccountRegular
-        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountDeriv = Just 0
         , newAccountMaster = Nothing
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
@@ -1411,11 +1380,11 @@ testNotification = do
         }
     let tx1 = fakeTx
             [ (tid1, 4) ]
-            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 10000000) ]
+            [ ("1BThGRupK6Ah44sfCtsg2QkoEDJA58d8in", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
-            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 4000000) -- change
+            , ("1JGvK2MYQ3wwxMdYeyf7Eg1HeVJuEq3AT1", 4000000) -- change
             ]
         tx3 = fakeTx
             [ (txHash tx2, 1) ]
@@ -1501,7 +1470,7 @@ testKillTx = do
     accE@(Entity ai _) <- fst <$> newAccount NewAccount
         { newAccountName = "acc1"
         , newAccountType = AccountRegular
-        , newAccountDeriv = Just (Deriv :| 0)
+        , newAccountDeriv = Just 0
         , newAccountMaster = Nothing
         , newAccountMnemonic = Just (cs ms)
         , newAccountKeys = []
@@ -1510,11 +1479,11 @@ testKillTx = do
         }
     let tx1 = fakeTx
             [ (tid1, 4) ]
-            [ ("1DLW4wieCwUPMh6ThVwT2bKqSzkjeb8wUe", 10000000) ]
+            [ ("1BThGRupK6Ah44sfCtsg2QkoEDJA58d8in", 10000000) ]
         tx2 = fakeTx
             [ (txHash tx1, 0) ]
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
-            , ("1PY7pWZ5FddWi747C6k5Y7okNHFUM2BKAm", 4000000) -- change
+            , ("1JGvK2MYQ3wwxMdYeyf7Eg1HeVJuEq3AT1", 4000000) -- change
             ]
         tx3 = fakeTx
             [ (txHash tx2, 1) ]
@@ -1655,4 +1624,25 @@ testMixEntropy = do
     assertEqual "Unit 7"
         (BS.pack [0xa9, 0xda])
         (mixEntropy (BS.pack [0x7a, 0x54]) (BS.pack [0xd3, 0x8e]))
+
+testRootToAccKey :: Assertion
+testRootToAccKey = do
+    let root = "xprv9s21ZrQH143K3rhWwd1RSvWM64Z2a5ZzT5RHZ7pPC4DikEGW9AWTLzuGfX8C117bfhargkgKSm3PTSyM74AnkLfJo8iHb4hoRmJWZ5AH1C6"
+        prv0 = "xprv9y6FMtt3EKVvDoX3mRaFrSXGevn6MkDbuCsXD4d4bA7xuSeSTZL3QCVFN7u1dGf7af1utDqwGjXSKVsPbcy4s5dVRJ4iFpQseVf4ZgHZuMP"
+        prv1 = "xprv9y6FMtt3EKVvGsRWXUXbLkyFWhjL5NA1ZSRwqB7swZzzmb6Tg9sjz7M5EavfWWBzLxSzA5AHxZswUCwV1KUxhyKefw8UBsWT34HuDisuDg7"
+        prv2 = "xprv9y6FMtt3EKVvLtvKwuA8H4AFB2Vz4o7T15y4GDJ3FjY2vxafMdDLBuCkG65HDW8nMQs3FVRr3SqMQ1X5LHsdDd6VzxuwLmPcz7SP1TafMyN"
+        acc0 = "xpub6C5bmQQw4h4DSHbWsT7GDaU1CxcamCwTGRo81T2g9VewnEyb16eHwzojDPsZguGizLD3ttFynKPby7ABY4MQ3xAf5DNafj32uf84Gw48Phb"
+        acc1 = "xpub6C5bmQQw4h4DVMVydW4bhtuz4jZpUpsrvfMYdZXVVuXyePRcDhBzXufZ5sfSZqtcnXPtDCYyAAPPkuAKEtasfRo9RatgFNP4X58zM1QjjYK"
+        acc2 = "xpub6C5bmQQw4h4DZNzo3vh8eC6yj4LUUFqJNJtf4bhep551okuouAXajhXE7QZqGNLJigrRWairbTKeKZ5LsLcSNbmzZGarY1JJcjFDi8JxFPC"
+        custom = "xprvA1kxrV2ViHBViVSwasXMsWutXtNR8N3L6w88KT7Z6FodeCVtg2qsrgnqcvLkMpoNq4tSnEuNwFaKtSTaAH2U15qipAPWpT7g1PG6ecZfED8"
+
+    assertEqual "Unit 1" prv0 $ rootToAccKey root 0
+    assertEqual "Unit 2" prv0 $ rootToAccKey prv0 0
+    assertEqual "Unit 3" custom $ rootToAccKey custom 0
+    assertEqual "Unit 4" [prv0, prv1, prv2] $
+        rootToAccKeys root [acc0, acc1, acc2]
+    assertEqual "Unit 5" [prv0] $
+        rootToAccKeys prv0 [acc0, acc1, acc2]
+    assertEqual "Unit 6" [custom] $
+        rootToAccKeys custom [acc0, acc1, acc2]
 

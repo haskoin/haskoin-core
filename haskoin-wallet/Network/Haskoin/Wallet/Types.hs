@@ -201,7 +201,7 @@ data NewAccount = NewAccount
     , newAccountMnemonic :: !(Maybe Text)
     , newAccountEntropy  :: !(Maybe Word8)
     , newAccountMaster   :: !(Maybe XPrvKey)
-    , newAccountDeriv    :: !(Maybe HardPath)
+    , newAccountDeriv    :: !(Maybe KeyIndex)
     , newAccountKeys     :: ![XPubKey]
     , newAccountReadOnly :: !Bool
     }
@@ -376,7 +376,6 @@ data JsonAccount = JsonAccount
     , jsonAccountType       :: !AccountType
     , jsonAccountMaster     :: !(Maybe XPrvKey)
     , jsonAccountMnemonic   :: !(Maybe Text)
-    , jsonAccountDerivation :: !(Maybe HardPath)
     , jsonAccountKeys       :: ![XPubKey]
     , jsonAccountGap        :: !Word32
     , jsonAccountCreated    :: !UTCTime

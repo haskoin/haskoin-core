@@ -62,7 +62,7 @@ data Config = Config
     -- ^ Entropy in bytes to use when generating a mnemonic (between 16 and 32)
     , configReversePaging  :: !Bool
     -- ^ Use reverse paging for displaying addresses and transactions
-    , configPath           :: !(Maybe HardPath)
+    , configDerivIndex     :: !KeyIndex
     -- ^ Derivation path when creating account
     , configFormat         :: !OutputFormat
     -- ^ How to format the command-line results
@@ -154,7 +154,7 @@ instance FromJSON Config where
     parseJSON = withObject "config" $ \o' -> do
         let defValue         = either throw id $ decodeEither' configBS
             (Object o)       = mergeValues defValue (Object o')
-            configPath       = Nothing
+            configDerivIndex = 0
         configFile                  <- o .: "config-file"
         configRcptFee               <- o .: "recipient-fee"
         configCount                 <- o .: "output-size"

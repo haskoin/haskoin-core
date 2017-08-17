@@ -1,7 +1,6 @@
 Account
     name Text maxlen=200
     type AccountType maxlen=64
-    derivation HardPath Maybe maxlen=200
     master XPrvKey Maybe
     keys [XPubKey]
     gap Word32

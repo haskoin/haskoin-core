@@ -32,7 +32,6 @@ import Data.Yaml (decodeFileEither)
 import Data.String.Conversions (cs)
 
 import Network.Haskoin.Constants
-import Network.Haskoin.Crypto
 import Network.Haskoin.Wallet.Settings
 import Network.Haskoin.Wallet.Client.Commands
 import Network.Haskoin.Wallet.Types
@@ -98,24 +97,23 @@ options =
         (NoArg $ \cfg -> cfg { configOffline = True }) $
         "Offline balance. Default: " ++ show (configOffline def)
     , Option "e" ["entropy"]
-        ( ReqArg
-            (\s cfg -> cfg { configEntropy =
-                                read' "Could not parse entropy" s
-                           })
-            "INT"
+        ( ReqArg ( \s cfg -> cfg { configEntropy =
+                                       read' "Could not parse entropy" s
+                                 }
+                 ) "INT"
         ) $ "Entropy in Bytes between 16 and 32. Default: "
             ++ show (configEntropy def)
     , Option "r" ["revpage"]
         (NoArg $ \cfg -> cfg { configReversePaging = True }) $
         "Reverse paging. Default: "
             ++ show (configReversePaging def)
-    , Option "p" ["path"]
-        ( ReqArg ( \s cfg -> case parseHard s of
-                       Just p -> cfg { configPath = Just p }
-                       Nothing -> error "Could not parse derivation path"
-                 ) "PATH"
-        )
-        "Derivation path (e.g. m/44'/3')"
+    , Option "I" ["index"]
+        ( ReqArg ( \s cfg -> cfg { configDerivIndex =
+                                       read' "Could not parse index" s
+                                 }
+                 ) "INT"
+        ) $ "Derivation index for new accounts. Default: "
+            ++ show (configDerivIndex def)
     , Option "j" ["json"]
         (NoArg $ \cfg -> cfg { configFormat = OutputJSON })
         "Output JSON"

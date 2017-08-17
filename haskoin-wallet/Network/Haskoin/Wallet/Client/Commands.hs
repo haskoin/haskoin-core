@@ -41,7 +41,6 @@ module Network.Haskoin.Wallet.Client.Commands
 )
 where
 
-import           Control.Applicative                      ((<|>))
 import           Control.Concurrent.Async.Lifted          (async, wait)
 import           Control.Monad
 import qualified Control.Monad.Reader                     as R
@@ -74,6 +73,7 @@ import           Network.Haskoin.Node.STM
 import           Network.Haskoin.Script
 import           Network.Haskoin.Transaction
 import           Network.Haskoin.Util
+import           Network.Haskoin.Wallet.Accounts          (rootToAccKey)
 import qualified Network.Haskoin.Wallet.Client.PrettyJson as JSON
 import           Network.Haskoin.Wallet.Server
 import           Network.Haskoin.Wallet.Settings
@@ -87,8 +87,68 @@ import           Text.Read                                (readMaybe)
 
 type Handler = R.ReaderT Config IO
 
-defaultDeriv :: HardPath
-defaultDeriv = Deriv :| 0
+accountExists :: String -> Handler Bool
+accountExists name = do
+    resE <- sendZmq (GetAccountR $ pack name)
+    case (resE :: Either String (WalletResponse JsonAccount)) of
+        Right (ResponseValid _) -> return True
+        Right (ResponseError _) -> return False
+        Left err                -> error err
+
+accountKeyExists :: String -> Handler Bool
+accountKeyExists name = do
+    accM <- parseResponse <$> sendZmq (GetAccountR $ pack name)
+    return $ isJust $ jsonAccountMaster =<< accM
+
+data ParsedKey = ParsedXPrvKey  !XPrvKey
+               | ParsedXPubKey  !XPubKey
+               | ParsedMnemonic !Mnemonic !XPrvKey
+               | ParsedNothing
+
+parseMnemonicOrKey :: String -> ParsedKey
+parseMnemonicOrKey ""  = ParsedNothing
+parseMnemonicOrKey str = case xPrvImport ms of
+    Just k -> ParsedXPrvKey k
+    _ -> case xPubImport ms of
+        Just p -> ParsedXPubKey p
+        _ -> case mnemonicToSeed "" ms of
+            Right seed -> ParsedMnemonic ms (makeXPrvKey seed)
+            _ -> error "Could not parse mnemonic or xkey"
+  where
+    ms = cs str
+
+parsedKeyTuple :: ParsedKey -> (Maybe XPrvKey, Maybe XPubKey, Maybe Mnemonic)
+parsedKeyTuple pk = case pk of
+    ParsedXPrvKey k    -> (Just k, Nothing, Nothing)
+    ParsedXPubKey p    -> (Nothing, Just p, Nothing)
+    ParsedMnemonic m _ -> (Nothing, Nothing, Just m)
+    ParsedNothing      -> (Nothing, Nothing, Nothing)
+
+askPassword :: String -> Handler String
+askPassword msg = do
+    inputM <- liftIO $
+        Haskeline.runInputT Haskeline.defaultSettings $
+        Haskeline.getPassword (Just '*') msg
+    return $ fromMaybe err inputM
+  where
+    err = error "No action due to EOF"
+
+askKey :: Handler ParsedKey
+askKey = parseMnemonicOrKey <$> askPassword
+    "Type mnemonic, extended key or leave empty to generate: "
+
+askSigningKeys :: String -> Handler (Maybe XPrvKey)
+askSigningKeys name = do
+    -- Only ask for signing keys if the account doesn't have one already
+    exists <- accountKeyExists name
+    if exists
+        then return Nothing
+        else do
+            input <- askPassword "Mnemonic or private extended key: "
+            case parseMnemonicOrKey input of
+                ParsedXPrvKey k    -> return $ Just k
+                ParsedMnemonic _ k -> return $ Just k
+                _ -> error "Need a private key to sign"
 
 -- hw start [config] [--detach]
 cmdStart :: Handler ()
@@ -102,105 +162,21 @@ cmdStop = do
     sendZmq StopServerR >>= (flip handleResponse $ \() -> return ())
     liftIO $ putStrLn "Process stopped"
 
-getSigningKeys :: String
-               -> Handler (Maybe XPrvKey)
-getSigningKeys name = do
-    derivM <- R.asks configPath
-    kM <- masterKey
-    case kM of
-        Just _ -> return Nothing
-        Nothing -> do
-            keyOrMnemonic <-
-                liftIO . Haskeline.runInputT
-                    Haskeline.defaultSettings $
-                    Haskeline.getPassword (Just '*')
-                    "Mnemonic or private extended key: "
-            case keyOrMnemonic of
-                Just ms -> return $ go (cs ms) derivM
-                Nothing -> error "No action due to EOF"
-  where
-    masterKey = do
-        resE <- sendZmq $ GetAccountR $ pack name
-        case resE of
-            Right (ResponseValid (Just acc)) ->
-                return $ jsonAccountMaster acc
-            Right (ResponseError e) -> error $ cs e
-            Left e -> error e
-            _ -> error "You find yourself in a strange place"
-    go "" _ = error "Need key to sign"
-    go str derivM = case xPrvImport str of
-        Just k -> case derivM of
-            Just d -> Just $ derivePath d k
-            Nothing -> Just k
-        Nothing -> case mnemonicToSeed "" str of
-            Right s -> Just (makeXPrvKey s)
-            Left _ -> error "Could not parse key"
-
-checkExists :: String -> Handler Bool
-checkExists name = do
-     resE <- sendZmq $ GetAccountR $ pack name
-     case (resE :: Either String (WalletResponse JsonAccount)) of
-         Right (ResponseValid _) -> return True
-         Right (ResponseError  _) -> return False
-         Left e -> error e
-
-getKey :: Handler (Maybe Mnemonic, Maybe XPrvKey, Maybe HardPath, Maybe XPubKey)
-getKey = do
-    derivM <- R.asks configPath
-    i <- liftIO . Haskeline.runInputT Haskeline.defaultSettings $
-        Haskeline.getPassword (Just '*')
-            "Type mnemonic, extended key or leave empty to generate: "
-    case i of
-        Just s -> go (cs s) derivM
-        Nothing -> error "No action due to EOF"
-  where
-    -- Default case. Generate a seed and derive account key using given or
-    -- default derivation.
-    go "" derivM = return
-        ( Nothing
-        , Nothing
-        , derivM <|> Just defaultDeriv
-        , Nothing
-        )
-    go str' derivM = case xPrvImport str' of
-        -- Provided account private key. No further derivation should be
-        -- required unless one was given.
-        Just k -> return
-            ( Nothing
-            , Just k
-            , derivM
-            , Nothing
-            )
-        Nothing -> case xPubImport str' of
-            -- Public key was provided.
-            Just p -> return
-                ( Nothing
-                , Nothing
-                , derivM
-                , Just p
-                )
-            -- Mnemonic was provided. Use given or default derivation.
-            Nothing -> return
-                ( Just $ cs str'
-                , Nothing
-                , derivM <|> Just defaultDeriv
-                , Nothing
-                )
-
 -- First argument: is account read-only?
 cmdNewAcc :: Bool -> String -> [String] -> Handler ()
 cmdNewAcc readOnly name ls = do
     e <- R.asks configEntropy
+    d <- R.asks configDerivIndex
     _ <- return $! typ
-    checkExists name >>= (`when` error "Account exists")
-    (mnemonicM, masterM, derivM, keyM) <- getKey
+    accountExists name >>= (`when` error "Account exists")
+    (masterM, keyM, mnemonicM) <- parsedKeyTuple <$> askKey
     let newAcc = NewAccount
             { newAccountName     = pack name
             , newAccountType     = typ
             , newAccountMnemonic = cs <$> mnemonicM
             , newAccountEntropy  = Just e
             , newAccountMaster   = masterM
-            , newAccountDeriv    = derivM
+            , newAccountDeriv    = Just d
             , newAccountKeys     = maybeToList keyM
             , newAccountReadOnly = readOnly
             }
@@ -217,18 +193,13 @@ cmdNewAcc readOnly name ls = do
 
 cmdAddKey :: String -> Handler ()
 cmdAddKey name = do
-    e <- checkExists name
-    unless e $ error "Account does not exist"
-    (mnemonicM, masterM, derivM, pubM) <- getKey
-    let key = case mnemonicM of
-            Just ms -> case mnemonicToSeed "" (cs ms) of
-                Right s -> deriveXPubKey $
-                    derivePath (fromMaybe defaultDeriv derivM) $
-                    makeXPrvKey s
-                Left _ -> error "Could not decode mnemonic sentence"
-            Nothing -> case masterM of
-                Just m -> deriveXPubKey $ maybe m (`derivePath` m) derivM
-                Nothing -> fromMaybe (error "No keys provided") pubM
+    d <- R.asks configDerivIndex
+    accountExists name >>= (`unless` error "Account does not exist")
+    key <- askKey >>= \pk -> return $ case pk of
+        ParsedXPrvKey k    -> deriveXPubKey $ rootToAccKey k d
+        ParsedMnemonic _ k -> deriveXPubKey $ rootToAccKey k d
+        ParsedXPubKey p    -> p
+        ParsedNothing      -> error "Invalid empty input"
     resE <- sendZmq (PostAccountKeysR (pack name) [key])
     handleResponse resE $ liftIO . putStr . printAccount
 
@@ -386,7 +357,7 @@ cmdSendMany name xs = case rcpsM of
         rcptFee <- R.asks configRcptFee
         minconf <- R.asks configMinConf
         sign    <- R.asks configSignTx
-        masterM <- if sign then getSigningKeys name else return Nothing
+        masterM <- if sign then askSigningKeys name else return Nothing
         let action = CreateTx rcps fee minconf rcptFee sign
         resE <- sendZmq (PostTxsR (pack name) masterM action)
         handleResponse resE $ liftIO . putStr . printTx Nothing
@@ -418,7 +389,7 @@ cmdImport name = do
 cmdSign :: String -> String -> Handler ()
 cmdSign name txidStr = case txidM of
     Just txid -> do
-        masterM <- getSigningKeys name
+        masterM <- askSigningKeys name
         let action = SignTx txid
         resE <- sendZmq (PostTxsR (pack name) masterM action)
         handleResponse resE $ liftIO . putStr . printTx Nothing
@@ -442,7 +413,7 @@ cmdGetOffline name tidStr = case tidM of
 cmdSignOffline :: String -> String -> String -> Handler ()
 cmdSignOffline name txStr datStr = case (txM, datM) of
     (Just tx, Just dat) -> do
-        masterM <- getSigningKeys name
+        masterM <- askSigningKeys name
         resE <- sendZmq (PostOfflineTxR (pack name) masterM tx dat)
         handleResponse resE $ \(TxCompleteRes tx' c) -> do
             liftIO $ putStrLn $ unwords
@@ -832,9 +803,7 @@ printAccount JsonAccount{..} = unlines $
     , "Gap     : " ++ show jsonAccountGap
     ]
     ++
-    [ "Deriv   : " ++ pathToStr d
-    | d <- maybeToList jsonAccountDerivation
-    ]
+    [ "Index   : " ++ show i | i <- childLs ]
     ++
     [ "Mnemonic: " ++ cs ms
     | ms <- maybeToList jsonAccountMnemonic
@@ -842,6 +811,9 @@ printAccount JsonAccount{..} = unlines $
     ++
     concat [ printKeys | not (null jsonAccountKeys) ]
   where
+    childLs = case jsonAccountType of
+        AccountRegular -> map xPubChild jsonAccountKeys
+        _ -> maybeToList $ xPrvChild <$> jsonAccountMaster
     printKeys =
         ("Keys    : " ++ cs (xPubExport (head jsonAccountKeys))) :
         map (("          " ++) . cs . xPubExport) (tail jsonAccountKeys)

@@ -54,6 +54,9 @@ module Network.Haskoin.Wallet
 , isMultisigAccount
 , isReadAccount
 , isCompleteAccount
+, defaultDeriv
+, rootToAccKey
+, rootToAccKeys
 
 -- *Database Addresses
 , getAddress

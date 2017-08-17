@@ -34,50 +34,55 @@ module Network.Haskoin.Wallet.Accounts
 , getBloomFilter
 
 -- * Helpers
+, defaultDeriv
+, rootToAccKey
+, rootToAccKeys
 , subSelectAddrCount
 ) where
 
-import Control.Applicative ((<|>))
-import Control.Monad (unless, void, when)
-import Control.Monad.Trans (MonadIO, liftIO)
-import Control.Monad.Base (MonadBase)
-import Control.Monad.Catch (MonadThrow, throwM)
-import Control.Monad.Trans.Resource (MonadResource)
-import Control.Exception (throw)
+import           Control.Applicative             ((<|>))
+import           Control.Exception               (throw)
+import           Control.Monad                   (unless, void, when)
+import           Control.Monad.Base              (MonadBase)
+import           Control.Monad.Catch             (MonadThrow, throwM)
+import           Control.Monad.Trans             (MonadIO, liftIO)
+import           Control.Monad.Trans.Resource    (MonadResource)
 
-import Data.Text (Text, unpack)
-import Data.Default (def)
-import Data.Maybe
-    (mapMaybe, listToMaybe, maybeToList, isJust, isNothing, fromMaybe)
-import Data.Time.Clock (getCurrentTime)
-import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
-import Data.List (nub)
-import Data.Word (Word8, Word32)
-import Data.String.Conversions (cs)
-import Data.Serialize (encode)
+import           Data.Default                    (def)
+import           Data.List                       (nub)
+import           Data.Maybe                      (fromMaybe, isJust, isNothing,
+                                                  listToMaybe, mapMaybe,
+                                                  maybeToList)
+import           Data.Serialize                  (encode)
+import           Data.String.Conversions         (cs)
+import           Data.Text                       (Text, unpack)
+import           Data.Time.Clock                 (getCurrentTime)
+import           Data.Time.Clock.POSIX           (utcTimeToPOSIXSeconds)
+import           Data.Word                       (Word32, Word8)
 
-import qualified Database.Persist as P (updateWhere, update , (=.))
-import Database.Esqueleto
-    ( Value(..), SqlExpr
-    , select, from, where_, val, sub_select, countRows, count, unValue
-    , orderBy, limit, asc, desc, offset, get, countDistinct
-    , max_, case_, when_, then_, else_
-    , (^.), (==.), (&&.), (>.), (-.), (<.)
-    -- Reexports from Database.Persist
-    , SqlPersistT, Entity(..)
-    , insertUnique, insert_
-    )
+import           Database.Esqueleto              (Entity (..), SqlExpr,
+                                                  SqlPersistT, Value (..), asc,
+                                                  case_, count, countDistinct,
+                                                  countRows, desc, else_, from,
+                                                  get, insertUnique, insert_,
+                                                  limit, max_, offset, orderBy,
+                                                  select, sub_select, then_,
+                                                  unValue, val, when_, where_,
+                                                  (&&.), (-.), (<.), (==.),
+                                                  (>.), (^.))
+import qualified Database.Persist                as P (update, updateWhere,
+                                                       (=.))
 
-import Network.Haskoin.Crypto
-import Network.Haskoin.Block
-import Network.Haskoin.Script
-import Network.Haskoin.Node
-import Network.Haskoin.Constants
-import Network.Haskoin.Node.HeaderTree
+import           Network.Haskoin.Block
+import           Network.Haskoin.Constants
+import           Network.Haskoin.Crypto
+import           Network.Haskoin.Node
+import           Network.Haskoin.Node.HeaderTree
+import           Network.Haskoin.Script
 
-import Network.Haskoin.Wallet.Types
-import Network.Haskoin.Wallet.Model
-import Network.Haskoin.Wallet.Settings
+import           Network.Haskoin.Wallet.Model
+import           Network.Haskoin.Wallet.Settings
+import           Network.Haskoin.Wallet.Types
 
 {- Initialization -}
 
@@ -101,6 +106,22 @@ initWallet fpRate = do
             }
 
 {- Account -}
+
+defaultDeriv :: KeyIndex -> HardPath
+defaultDeriv a = Deriv :| 44 :| bip44Coin :| a
+
+rootToAccKey :: XPrvKey -> KeyIndex -> XPrvKey
+rootToAccKey xKey deriv
+    -- use bip44 derivation for root keys
+    | xPrvDepth xKey == 0 = derivePath (defaultDeriv deriv) xKey
+    -- use custom keys as is
+    | otherwise = xKey
+
+rootToAccKeys :: XPrvKey -> [XPubKey] -> [XPrvKey]
+rootToAccKeys xKey pubs =
+    nub $ map (rootToAccKey xKey) is
+  where
+    is = nub $ map xPubChild pubs
 
 -- | Fetch all accounts
 accounts :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
@@ -153,8 +174,8 @@ newAccount NewAccount{..} = do
     when (isJust newAccountMnemonic && isJust newAccountMaster) $ throwM $
         WalletException "Can not set both master key and mnemonic"
 
-    (mnemonicM, rootM) <- case newAccountMaster of
-        Just _ -> return (Nothing, newAccountMaster)
+    (mnemonicM, keyM) <- case newAccountMaster of
+        Just xPrv -> return (Nothing, Just xPrv)
         _ -> case newAccountMnemonic of
             Just ms -> do
                 root <- mnemonicToPrvKey $ cs ms
@@ -169,10 +190,10 @@ newAccount NewAccount{..} = do
                         return (Just ms, Just root)
                     else return (Nothing, Nothing)
 
-    let masterM = case newAccountDeriv of
-                      Nothing -> rootM
-                      Just d  -> (derivePath d) <$> rootM
-        keys    = maybeToList (deriveXPubKey <$> masterM) ++ newAccountKeys
+    -- TODO: If account already exists, increase the derivation index
+    let d = fromMaybe 0 newAccountDeriv
+        accKeyM = (`rootToAccKey` d) <$> keyM
+        accPubKeys = maybeToList (deriveXPubKey <$> accKeyM) ++ newAccountKeys
 
     -- Build the account
     now <- liftIO getCurrentTime
@@ -182,9 +203,8 @@ newAccount NewAccount{..} = do
             -- Never store private keys for read only accounts
             , accountMaster     = if newAccountReadOnly
                                      then Nothing
-                                     else masterM
-            , accountDerivation = newAccountDeriv
-            , accountKeys       = nub keys
+                                     else accKeyM
+            , accountKeys       = nub accPubKeys
             , accountGap        = 0
             , accountCreated    = now
             }
@@ -231,7 +251,7 @@ addAccountKeys (Entity ai acc) keys
         WalletException "Invalid account keys"
     | otherwise = do
         let canSetGap = isCompleteAccount accKeys
-            updGap = [ AccountGap P.=. 10 | canSetGap]
+            updGap = [ AccountGap P.=. 10 | canSetGap ]
             newAcc = accKeys{ accountGap = if canSetGap then 10 else 0 }
         -- Update the account with the keys and the new gap if it is complete
         P.update ai $ (AccountKeys P.=. newKeys) : updGap

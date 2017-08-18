@@ -52,7 +52,8 @@ module Network.Haskoin.Wallet.Types
 
 import           Control.DeepSeq                 (NFData (..))
 import           Control.Exception               (Exception)
-import           Control.Monad                   (forM, forM_, mzero, when)
+import           Control.Monad                   (forM, forM_, mzero, when,
+                                                  replicateM)
 import           Control.Monad.Trans             (MonadIO)
 import           Data.Aeson                      (FromJSON, ToJSON, Value (..),
                                                   decodeStrict', object,
@@ -66,9 +67,12 @@ import           Data.Aeson.Types                (Options (..),
                                                   defaultTaggedObject)
 import           Data.Char                       (toLower)
 import           Data.Int                        (Int64)
+import qualified Data.ByteString                 as BS
 import           Data.List.Split                 (chunksOf)
 import           Data.Maybe                      (maybeToList)
-import           Data.Serialize                  (Serialize, decode, encode)
+import           Data.Serialize                  (Serialize, decode, encode,
+                                                  get, put, getByteString,
+                                                  putByteString)
 import           Data.String                     (fromString)
 import           Data.String.Conversions         (cs)
 import           Data.Text                       (Text)
@@ -233,12 +237,43 @@ data CoinSignData = CoinSignData
 
 $(deriveJSON (dropFieldLabel 8) ''CoinSignData)
 
+instance Serialize CoinSignData where
+    get = do
+        p <- get
+        s <- readBS >>= \bs -> case decodeOutputBS bs of
+            Right s -> return s
+            _ -> error "Invalid ScriptOutput in CoinSignData"
+        get >>= \dM -> case toSoft (dM :: DerivPath) of
+            Just d -> return $ CoinSignData p s d
+            _ -> error "Invalid derivation in CoinSignData"
+      where
+        readBS = get >>= \(VarInt l) -> getByteString $ fromIntegral l
+
+    put (CoinSignData p s d) = do
+        put p
+        writeBS $ encodeOutputBS s
+        put $ toGeneric d
+      where
+        writeBS bs = do
+            put $ VarInt $ fromIntegral $ BS.length bs
+            putByteString bs
+
 data OfflineTxData = OfflineTxData
     { offlineTxDataTx       :: !Tx
     , offlineTxDataCoinData :: ![CoinSignData]
     }
 
 $(deriveJSON (dropFieldLabel 13) ''OfflineTxData)
+
+instance Serialize OfflineTxData where
+    get = OfflineTxData <$> get <*> (replicateList =<< get)
+      where
+        replicateList (VarInt c) = replicateM (fromIntegral c) get
+
+    put (OfflineTxData t ds) = do
+        put t
+        put $ VarInt $ fromIntegral $ length ds
+        forM_ ds put
 
 data TxAction
     = CreateTx

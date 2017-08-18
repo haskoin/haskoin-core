@@ -10,6 +10,7 @@ module Network.Haskoin.Wallet.Client.Commands
 , cmdList
 , cmdUnused
 , cmdLabel
+, cmdURI
 , cmdTxs
 , cmdAddrTxs
 , cmdGetIndex
@@ -46,19 +47,20 @@ import           Control.Monad
 import qualified Control.Monad.Reader                     as R
 import           Control.Monad.Trans                      (liftIO)
 import           Data.Aeson                               (FromJSON, ToJSON,
-                                                           Value (..), decode,
+                                                           Value (..),
                                                            eitherDecode, object,
                                                            toJSON, (.=))
 import qualified Data.Aeson                               as Aeson (encode)
 import           Data.Bits                                (xor)
 import qualified Data.ByteString                          as BS
 import qualified Data.ByteString.Char8                    as B8
+import qualified Data.ByteString.Base64                   as B64
 import           Data.List                                (intercalate,
                                                            intersperse)
 import           Data.Maybe
 import           Data.Monoid                              ((<>))
 import           Data.Restricted                          (rvalue)
-import           Data.Serialize                           (encode)
+import           Data.Serialize                           (encode, decode)
 import           Data.String                              (fromString)
 import           Data.String.Conversions                  (cs)
 import           Data.Text                                (Text, pack, splitOn,
@@ -78,6 +80,7 @@ import qualified Network.Haskoin.Wallet.Client.PrettyJson as JSON
 import           Network.Haskoin.Wallet.Server
 import           Network.Haskoin.Wallet.Settings
 import           Network.Haskoin.Wallet.Types
+import qualified Network.URI.Encode                       as URI
 import           Numeric                                  (readInt)
 import qualified System.Console.Haskeline                 as Haskeline
 import           System.Entropy                           (getEntropy)
@@ -358,6 +361,31 @@ cmdGenAddrs name i = do
   where
     index = read i
 
+-- Build a bitcoin payment request URI
+cmdURI :: String -> String -> [String] -> Handler ()
+cmdURI name iStr ls = do
+    t <- R.asks configAddrType
+    resE <- sendZmq (GetAddressR (pack name) i t 0 False)
+    case parseResponse resE of
+        Just a  -> do
+            let uri = buildPaymentRequest (jsonAddrAddress a) ls
+            liftIO $ putStrLn $ cs uri
+        Nothing -> error "No address found"
+  where
+    i = read iStr
+
+buildPaymentRequest :: Address -> [String] -> BS.ByteString
+buildPaymentRequest a ls =
+    "bitcoin:" <> addrToBase58 a <> cs params
+  where
+    params = if null paramStr then "" else "?" <> paramStr
+    paramStr = concat $ intersperse "&" $ zipWith ($)
+        [ ("amount" `buildParam`) . parseAmount
+        , ("message" `buildParam`) . URI.encode
+        ] ls
+    parseAmount str = show (read str :: Double)
+    buildParam str val = str <> "=" <> val
+
 cmdSend :: String -> String -> String -> Handler ()
 cmdSend name addrStr amntStr = cmdSendMany name [addrStr ++ ":" ++ amntStr]
 
@@ -412,29 +440,24 @@ cmdGetOffline :: String -> String -> Handler ()
 cmdGetOffline name tidStr = case tidM of
     Just tid -> do
         resE <- sendZmq (GetOfflineTxR (pack name) tid)
-        handleResponse resE $ \(OfflineTxData tx dat) -> do
-            liftIO $ putStrLn $ unwords
-                [ "Tx      :", cs $ encodeHex $ encode tx ]
-            liftIO $ putStrLn $ unwords
-                [ "CoinData:", cs $ encodeHex $ cs $ Aeson.encode dat ]
+        handleResponse resE $ \otd ->
+            liftIO $ putStrLn $ cs $
+                B64.encode $ encode (otd :: OfflineTxData)
     _ -> error "Could not parse txid"
   where
     tidM = hexToTxHash $ cs tidStr
 
-cmdSignOffline :: String -> String -> String -> Handler ()
-cmdSignOffline name txStr datStr = case (txM, datM) of
-    (Just tx, Just dat) -> do
-        masterM <- askSigningKeys name
-        resE <- sendZmq (PostOfflineTxR (pack name) masterM tx dat)
-        handleResponse resE $ \(TxCompleteRes tx' c) -> do
-            liftIO $ putStrLn $ unwords
-                [ "Tx      :", cs $ encodeHex $ encode tx' ]
-            liftIO $ putStrLn $ unwords
-                [ "Complete:", if c then "Yes" else "No" ]
-    _ -> error "Could not decode input data"
-  where
-    datM = decode . cs =<< decodeHex (cs datStr)
-    txM  = decodeToMaybe =<< decodeHex (cs txStr)
+cmdSignOffline :: String -> Handler ()
+cmdSignOffline name = do
+    inputM <- Haskeline.runInputT Haskeline.defaultSettings $
+        Haskeline.getInputLine ""
+    case decode =<< B64.decode . cs =<< maybeToEither "" inputM of
+        Right (OfflineTxData tx dat) -> do
+            masterM <- askSigningKeys name
+            resE <- sendZmq (PostOfflineTxR (pack name) masterM tx dat)
+            handleResponse resE $ \(TxCompleteRes sTx _) ->
+                liftIO $ putStrLn $ cs $ encodeHex $ encode sTx
+        _ -> error "Could not decode input data"
 
 cmdBalance :: String -> Handler ()
 cmdBalance name = do

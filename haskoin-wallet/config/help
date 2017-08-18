@@ -21,6 +21,7 @@ Address commands:
   addrtxs   acc index [page] [-c pagesize] Display txs related to an address
   getindex  acc key                        Get key index by pubkey
   genaddrs  acc index [--internal]         Generate addresses up to this index
+  uri       acc index [amount] [msg]       Create a Bitcoin payment request URI
 
 Transaction commands:
   txs       acc [page] [-c pagesize] [-r]  Display all transactions by page
@@ -37,7 +38,7 @@ Transaction commands:
 
 Offline tx signing commands:
   getoffline  acc txhash                   Get data to sign a tx offline
-  signoffline acc tx coindata              Sign a tx with offline signing data
+  signoffline acc                          Sign a tx with offline signing data
 
 Utility commands:
   decodetx                                 Decode HEX transaction

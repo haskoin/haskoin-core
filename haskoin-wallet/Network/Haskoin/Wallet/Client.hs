@@ -202,6 +202,7 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "list"        : name : page                -> cmdList name page
     "unused"      : name : page                -> cmdUnused name page
     "label"       : name : index : label  : [] -> cmdLabel name index label
+    "uri"         : name : index : ls          -> cmdURI name index ls
     "txs"         : name : page                -> cmdTxs name page
     "addrtxs"     : name : index : page        -> cmdAddrTxs name index page
     "getindex"    : name : key            : [] -> cmdGetIndex name key
@@ -213,7 +214,7 @@ dispatchCommand cfg args = flip R.runReaderT cfg $ case args of
     "gettx"       : name : txid           : [] -> cmdGetTx name txid
     "balance"     : name                  : [] -> cmdBalance name
     "getoffline"  : name : txid           : [] -> cmdGetOffline name txid
-    "signoffline" : name : tx : dat       : [] -> cmdSignOffline name tx dat
+    "signoffline" : name                  : [] -> cmdSignOffline name
     "rescan"      : rescantime                 -> cmdRescan rescantime
     "deletetx"    : txid                  : [] -> cmdDeleteTx txid
     "sync"        : name : block : page        -> cmdSync name block page

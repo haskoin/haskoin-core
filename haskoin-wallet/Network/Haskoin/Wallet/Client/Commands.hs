@@ -102,30 +102,28 @@ accountKeyExists name = do
 
 data ParsedKey = ParsedXPrvKey  !XPrvKey
                | ParsedXPubKey  !XPubKey
-               | ParsedMnemonic !Mnemonic !XPrvKey
+               | ParsedMnemonic !Mnemonic !Passphrase !XPrvKey
                | ParsedNothing
 
-parseMnemonicOrKey :: String -> ParsedKey
-parseMnemonicOrKey ""  = ParsedNothing
-parseMnemonicOrKey str = case xPrvImport ms of
-    Just k -> ParsedXPrvKey k
-    _ -> case xPubImport ms of
-        Just p -> ParsedXPubKey p
-        _ -> case mnemonicToSeed "" ms of
-            Right seed -> ParsedMnemonic ms (makeXPrvKey seed)
-            _ -> error "Could not parse mnemonic or xkey"
+askMnemonicOrKey :: String -> Handler ParsedKey
+askMnemonicOrKey msg =
+    go . cs =<< askInput msg
   where
-    ms = cs str
+    go "" = return ParsedNothing
+    go str = case xPrvImport str of
+        Just k -> return $ ParsedXPrvKey k
+        _ -> case xPubImport str of
+            Just p -> return $ ParsedXPubKey p
+            -- This first check is just to verify if the mnemonic parses
+            _ -> case mnemonicToSeed "" str of
+                Right _ -> do
+                    pass <- cs <$> askPassword
+                    let seed = fromRight $ mnemonicToSeed (cs pass) str
+                    return $ ParsedMnemonic str pass (makeXPrvKey seed)
+                _ -> error "Could not parse mnemonic or extended key"
 
-parsedKeyTuple :: ParsedKey -> (Maybe XPrvKey, Maybe XPubKey, Maybe Mnemonic)
-parsedKeyTuple pk = case pk of
-    ParsedXPrvKey k    -> (Just k, Nothing, Nothing)
-    ParsedXPubKey p    -> (Nothing, Just p, Nothing)
-    ParsedMnemonic m _ -> (Nothing, Nothing, Just m)
-    ParsedNothing      -> (Nothing, Nothing, Nothing)
-
-askPassword :: String -> Handler String
-askPassword msg = do
+askInput :: String -> Handler String
+askInput msg = do
     inputM <- liftIO $
         Haskeline.runInputT Haskeline.defaultSettings $
         Haskeline.getPassword (Just '*') msg
@@ -133,22 +131,26 @@ askPassword msg = do
   where
     err = error "No action due to EOF"
 
-askKey :: Handler ParsedKey
-askKey = parseMnemonicOrKey <$> askPassword
-    "Type mnemonic, extended key or leave empty to generate: "
+askPassword :: Handler String
+askPassword = do
+    pass <- askInput "Mnemonic password or leave empty: "
+    unless (null pass) $ do
+        pass2 <- askInput "Enter your mnemonic password again: "
+        when (pass /= pass2) $ error "Passwords do not match"
+    return pass
 
 askSigningKeys :: String -> Handler (Maybe XPrvKey)
 askSigningKeys name = do
     -- Only ask for signing keys if the account doesn't have one already
-    exists <- accountKeyExists name
-    if exists
-        then return Nothing
-        else do
-            input <- askPassword "Mnemonic or private extended key: "
-            case parseMnemonicOrKey input of
-                ParsedXPrvKey k    -> return $ Just k
-                ParsedMnemonic _ k -> return $ Just k
-                _ -> error "Need a private key to sign"
+    go =<< accountKeyExists name
+  where
+    go True = return Nothing
+    go _ = do
+        input <- askMnemonicOrKey "Enter mnemonic or extended private key: "
+        case input of
+            ParsedXPrvKey k      -> return $ Just k
+            ParsedMnemonic _ _ k -> return $ Just k
+            _ -> error "Need a private key to sign"
 
 -- hw start [config] [--detach]
 cmdStart :: Handler ()
@@ -169,11 +171,13 @@ cmdNewAcc readOnly name ls = do
     d <- R.asks configDerivIndex
     _ <- return $! typ
     accountExists name >>= (`when` error "Account exists")
-    (masterM, keyM, mnemonicM) <- parsedKeyTuple <$> askKey
+    (masterM, keyM, mnemonicM, passM) <- go =<< askMnemonicOrKey
+        "Enter mnemonic, extended key or leave empty to generate: "
     let newAcc = NewAccount
             { newAccountName     = pack name
             , newAccountType     = typ
             , newAccountMnemonic = cs <$> mnemonicM
+            , newAccountPassword = cs <$> passM
             , newAccountEntropy  = Just e
             , newAccountMaster   = masterM
             , newAccountDeriv    = Just d
@@ -183,6 +187,12 @@ cmdNewAcc readOnly name ls = do
     resE <- sendZmq $ PostAccountsR newAcc
     handleResponse resE $ liftIO . putStr . printAccount
   where
+    go (ParsedXPrvKey k)      = return (Just k, Nothing, Nothing, Nothing)
+    go (ParsedXPubKey p)      = return (Nothing, Just p, Nothing, Nothing)
+    go (ParsedMnemonic m x _) = return (Nothing, Nothing, Just m, Just x)
+    go ParsedNothing = do
+        pass <- cs <$> askPassword
+        return (Nothing, Nothing, Nothing, Just pass)
     typ = case ls of
         [] -> AccountRegular
         [mS, nS] -> fromMaybe (error "Account information incorrect") $ do
@@ -195,11 +205,12 @@ cmdAddKey :: String -> Handler ()
 cmdAddKey name = do
     d <- R.asks configDerivIndex
     accountExists name >>= (`unless` error "Account does not exist")
-    key <- askKey >>= \pk -> return $ case pk of
-        ParsedXPrvKey k    -> deriveXPubKey $ rootToAccKey k d
-        ParsedMnemonic _ k -> deriveXPubKey $ rootToAccKey k d
-        ParsedXPubKey p    -> p
-        ParsedNothing      -> error "Invalid empty input"
+    let msg = "Enter mnemonic or extended private key: "
+    key <- askMnemonicOrKey msg >>= \pk -> return $ case pk of
+        ParsedXPrvKey k      -> deriveXPubKey $ rootToAccKey k d
+        ParsedMnemonic _ _ k -> deriveXPubKey $ rootToAccKey k d
+        ParsedXPubKey p      -> p
+        ParsedNothing        -> error "Invalid empty input"
     resE <- sendZmq (PostAccountKeysR (pack name) [key])
     handleResponse resE $ liftIO . putStr . printAccount
 

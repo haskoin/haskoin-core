@@ -199,6 +199,7 @@ data NewAccount = NewAccount
     { newAccountName     :: !AccountName
     , newAccountType     :: !AccountType
     , newAccountMnemonic :: !(Maybe Text)
+    , newAccountPassword :: !(Maybe Text)
     , newAccountEntropy  :: !(Maybe Word8)
     , newAccountMaster   :: !(Maybe XPrvKey)
     , newAccountDeriv    :: !(Maybe KeyIndex)

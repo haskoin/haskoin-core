@@ -47,6 +47,8 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , toGeneric
 , (++/)
 , pathToStr
+, listToPath
+, pathToList
 
   -- Derivation path parsing
 , XKey(..)
@@ -480,6 +482,27 @@ instance Eq (DerivPathI t) where
     (nextA :/ iA) == (nextB :/ iB) = iA == iB && nextA == nextB
     Deriv         == Deriv         = True
     _             == _             = False
+
+instance Serialize DerivPath where
+    get = listToPath <$> get
+    put = put . pathToList
+
+pathToList :: DerivPathI t -> [KeyIndex]
+pathToList =
+    reverse . go
+  where
+    go (next :| i) = setBit i 31 : go next
+    go (next :/ i) = i : go next
+    go _           = []
+
+listToPath :: [KeyIndex] -> DerivPath
+listToPath =
+    go . reverse
+  where
+    go (i:is)
+        | testBit i 31 = (go is) :| clearBit i 31
+        | otherwise    = (go is) :/ i
+    go [] = Deriv
 
 -- TODO: Test
 pathToStr :: DerivPathI t -> String

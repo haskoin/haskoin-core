@@ -150,6 +150,8 @@ module Network.Haskoin.Crypto
 , toGeneric
 , (++/)
 , pathToStr
+, pathToList
+, listToPath
 
   -- ** Derivation path parsing
 , XKey(..)

@@ -7,6 +7,7 @@ import Data.String (fromString)
 import Data.String.Conversions (cs)
 import Data.Word (Word32)
 import Data.Bits ((.&.))
+import Data.Maybe (fromJust)
 
 import Network.Haskoin.Test
 import Network.Haskoin.Crypto
@@ -29,6 +30,9 @@ tests =
         , testProperty "From string derivation path" testFromStringDerivPath
         , testProperty "From string hard derivation path" testFromStringHardPath
         , testProperty "From string soft derivation path" testFromStringSoftPath
+        , testProperty "listToPath . pathToList == id" testPathToList
+        , testProperty "listToPath . pathToList == id (Hard)" testPathToListHard
+        , testProperty "listToPath . pathToList == id (Soft)" testPathToListSoft
         ]
     ]
 
@@ -77,3 +81,15 @@ testFromStringHardPath (ArbitraryHardPath k) = fromString (cs $ pathToStr k) == 
 
 testFromStringSoftPath :: ArbitrarySoftPath -> Bool
 testFromStringSoftPath (ArbitrarySoftPath k) = fromString (cs $ pathToStr k) == k
+
+testPathToList :: ArbitraryDerivPath -> Bool
+testPathToList (ArbitraryDerivPath p) = listToPath (pathToList p) == p
+
+testPathToListHard :: ArbitraryHardPath -> Bool
+testPathToListHard (ArbitraryHardPath p) =
+    p == (fromJust $ toHard $ listToPath $ pathToList p)
+
+testPathToListSoft :: ArbitrarySoftPath -> Bool
+testPathToListSoft (ArbitrarySoftPath p) =
+    p == (fromJust $ toSoft $ listToPath $ pathToList p)
+

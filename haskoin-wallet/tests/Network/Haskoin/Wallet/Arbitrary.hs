@@ -19,19 +19,3 @@ instance Arbitrary NodeAction where
                       , return NodeActionStatus
                       ]
 
-instance Arbitrary TxAction where
-    arbitrary = oneof
-        [ do
-            as' <- arbitrary
-            let as = map (\(ArbitraryAddress a, x) -> (a, x)) as'
-            fee <- arbitrary
-            rcptFee <- arbitrary
-            minConf <- arbitrary
-            sign <- arbitrary
-            return $ CreateTx as fee rcptFee minConf sign
-        , do
-            ArbitraryTx tx <- arbitrary
-            return (ImportTx tx)
-        , SignTx <$> (arbitrary >>= \(ArbitraryTxHash h) -> return h)
-        ]
-

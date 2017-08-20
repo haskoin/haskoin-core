@@ -46,28 +46,23 @@ import           Control.Concurrent.Async.Lifted          (async, wait)
 import           Control.Monad
 import qualified Control.Monad.Reader                     as R
 import           Control.Monad.Trans                      (liftIO)
-import           Data.Aeson                               (FromJSON, ToJSON,
-                                                           Value (..),
-                                                           eitherDecode, object,
-                                                           toJSON, (.=))
-import qualified Data.Aeson                               as Aeson (encode)
+import           Data.Aeson
 import           Data.Bits                                (xor)
 import qualified Data.ByteString                          as BS
-import qualified Data.ByteString.Char8                    as B8
 import qualified Data.ByteString.Base64                   as B64
+import qualified Data.ByteString.Char8                    as B8
 import           Data.List                                (intercalate,
                                                            intersperse)
 import           Data.Maybe
 import           Data.Monoid                              ((<>))
 import           Data.Restricted                          (rvalue)
-import           Data.Serialize                           (encode, decode)
+import qualified Data.Serialize                           as S
 import           Data.String                              (fromString)
 import           Data.String.Conversions                  (cs)
-import           Data.Text                                (Text, pack, splitOn,
-                                                           unpack)
+import qualified Data.Text                                as T
 import qualified Data.Time.Format                         as Time
 import           Data.Word                                (Word32, Word64)
-import qualified Data.Yaml                                as YAML (encode)
+import qualified Data.Yaml                                as YAML
 import           Network.Haskoin.Block
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
@@ -92,7 +87,7 @@ type Handler = R.ReaderT Config IO
 
 accountExists :: String -> Handler Bool
 accountExists name = do
-    resE <- sendZmq (GetAccountR $ pack name)
+    resE <- sendZmq (AccountReq $ T.pack name)
     case (resE :: Either String (WalletResponse JsonAccount)) of
         Right (ResponseValid _) -> return True
         Right (ResponseError _) -> return False
@@ -100,7 +95,7 @@ accountExists name = do
 
 accountKeyExists :: String -> Handler Bool
 accountKeyExists name = do
-    accM <- parseResponse <$> sendZmq (GetAccountR $ pack name)
+    accM <- parseResponse <$> sendZmq (AccountReq $ T.pack name)
     return $ isJust $ jsonAccountMaster =<< accM
 
 data ParsedKey = ParsedXPrvKey  !XPrvKey
@@ -164,7 +159,7 @@ cmdStart = do
 -- hw stop [config]
 cmdStop :: Handler ()
 cmdStop = do
-    sendZmq StopServerR >>= (flip handleResponse $ \() -> return ())
+    sendZmq StopServerReq >>= (flip handleResponse $ \() -> return ())
     liftIO $ putStrLn "Process stopped"
 
 -- First argument: is account read-only?
@@ -177,7 +172,7 @@ cmdNewAcc readOnly name ls = do
     (masterM, keyM, mnemonicM, passM) <- go =<< askMnemonicOrKey
         "Enter mnemonic, extended key or leave empty to generate: "
     let newAcc = NewAccount
-            { newAccountName     = pack name
+            { newAccountName     = T.pack name
             , newAccountType     = typ
             , newAccountMnemonic = cs <$> mnemonicM
             , newAccountPassword = cs <$> passM
@@ -187,7 +182,7 @@ cmdNewAcc readOnly name ls = do
             , newAccountKeys     = maybeToList keyM
             , newAccountReadOnly = readOnly
             }
-    resE <- sendZmq $ PostAccountsR newAcc
+    resE <- sendZmq $ NewAccountReq newAcc
     handleResponse resE $ liftIO . putStr . printAccount
   where
     go (ParsedXPrvKey k)      = return (Just k, Nothing, Nothing, Nothing)
@@ -214,31 +209,31 @@ cmdAddKey name = do
         ParsedMnemonic _ _ k -> deriveXPubKey $ rootToAccKey k d
         ParsedXPubKey p      -> p
         ParsedNothing        -> error "Invalid empty input"
-    resE <- sendZmq (PostAccountKeysR (pack name) [key])
+    resE <- sendZmq (AddPubKeysReq (T.pack name) [key])
     handleResponse resE $ liftIO . putStr . printAccount
 
 cmdSetGap :: String -> String -> Handler ()
 cmdSetGap name gap = do
-    resE <- sendZmq (PostAccountGapR (pack name) setGap)
+    resE <- sendZmq (SetAccountGapReq (T.pack name) newGap)
     handleResponse resE $ liftIO . putStr . printAccount
   where
-    setGap = SetAccountGap $ read gap
+    newGap = read gap
 
 cmdAccount :: String -> Handler ()
 cmdAccount name = do
-    resE <- sendZmq (GetAccountR $ pack name)
+    resE <- sendZmq (AccountReq $ T.pack name)
     handleResponse resE $ liftIO . putStr . printAccount
 
 cmdAccounts :: [String] -> Handler ()
 cmdAccounts ls = do
     let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
-    listAction page GetAccountsR $ \ts -> do
+    listAction page AccountsReq $ \ts -> do
         let xs = map (liftIO . putStr . printAccount) ts
         sequence_ $ intersperse (liftIO $ putStrLn "-") xs
 
 cmdRenameAcc :: String -> String -> Handler ()
 cmdRenameAcc oldName newName = do
-    resE <- sendZmq $ PostAccountRenameR (pack oldName) (pack newName)
+    resE <- sendZmq $ RenameAccountReq (T.pack oldName) (T.pack newName)
     handleResponse resE $ liftIO . putStr . printAccount
 
 listAction :: (FromJSON a, ToJSON a)
@@ -276,7 +271,7 @@ cmdList name ls = do
     o <- R.asks configOffline
     p <- R.asks configDisplayPubKeys
     let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
-        f = GetAddressesR (pack name) t m o
+        f = AddrsReq (T.pack name) t m o
     listAction page f $ \as -> forM_ as (liftIO . putStrLn . printAddress p)
 
 cmdUnused :: String -> [String] -> Handler ()
@@ -284,7 +279,7 @@ cmdUnused name ls = do
     t <- R.asks configAddrType
     p <- R.asks configDisplayPubKeys
     let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
-        f = GetAddressesUnusedR (pack name) t
+        f = UnusedAddrsReq (T.pack name) t
     listAction page f $ \as -> forM_ (as :: [JsonAddr]) $
         liftIO . putStrLn . printAddress p
 
@@ -292,17 +287,17 @@ cmdLabel :: String -> String -> String -> Handler ()
 cmdLabel name iStr label = do
     t <- R.asks configAddrType
     p <- R.asks configDisplayPubKeys
-    resE <- sendZmq (PutAddressR (pack name) i t addrLabel)
+    resE <- sendZmq (SetAddrLabelReq (T.pack name) i t addrLabel)
     handleResponse resE $ liftIO . putStrLn . printAddress p
   where
     i         = read iStr
-    addrLabel = AddressLabel $ pack label
+    addrLabel = T.pack label
 
 cmdTxs :: String -> [String] -> Handler ()
 cmdTxs name ls = do
     let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
     r <- R.asks configReversePaging
-    listAction page (GetTxsR (pack name)) $ \ts -> do
+    listAction page (TxsReq (T.pack name)) $ \ts -> do
         let xs = map (liftIO . putStr . printTx Nothing) ts
             xs' = if r then xs else reverse xs
         sequence_ $ intersperse (liftIO $ putStrLn "-") xs'
@@ -311,7 +306,7 @@ cmdPending :: String -> [String] -> Handler ()
 cmdPending name ls = do
     let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
     r <- R.asks configReversePaging
-    listAction page (GetPendingR (pack name)) $ \ts -> do
+    listAction page (PendingTxsReq (T.pack name)) $ \ts -> do
         let xs = map (liftIO . putStr . printTx Nothing) ts
             xs' = if r then xs else reverse xs
         sequence_ $ intersperse (liftIO $ putStrLn "-") xs'
@@ -320,7 +315,7 @@ cmdDead :: String -> [String] -> Handler ()
 cmdDead name ls = do
     let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
     r <- R.asks configReversePaging
-    listAction page (GetDeadR (pack name)) $ \ts -> do
+    listAction page (DeadTxsReq (T.pack name)) $ \ts -> do
         let xs = map (liftIO . putStr . printTx Nothing) ts
             xs' = if r then xs else reverse xs
         sequence_ $ intersperse (liftIO $ putStrLn "-") xs'
@@ -332,8 +327,8 @@ cmdAddrTxs name i ls = do
     o <- R.asks configOffline
     r <- R.asks configReversePaging
     let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
-        f = GetAddrTxsR (pack name) index t
-    resE <- sendZmq (GetAddressR (pack name) index t m o)
+        f = AddrTxsReq (T.pack name) index t
+    resE <- sendZmq (AddressReq (T.pack name) index t m o)
     handleResponse resE $ \JsonAddr{..} -> listAction page f $ \ts -> do
         let xs = map (liftIO . putStr . printTx (Just jsonAddrAddress)) ts
             xs' = if r then xs else reverse xs
@@ -344,7 +339,7 @@ cmdAddrTxs name i ls = do
 cmdGetIndex :: String -> String -> Handler ()
 cmdGetIndex name k = do
     t <- R.asks configAddrType
-    resE <- sendZmq $ GetIndexR (pack name) (fromString k) t
+    resE <- sendZmq $ PubKeyIndexReq (T.pack name) (fromString k) t
     handleResponse resE go
   where
     go :: [JsonAddr] -> Handler ()
@@ -354,7 +349,7 @@ cmdGetIndex name k = do
 cmdGenAddrs :: String -> String -> Handler ()
 cmdGenAddrs name i = do
     t <- R.asks configAddrType
-    let req = PostAddressesR (pack name) index t
+    let req = GenerateAddrsReq (T.pack name) index t
     resE <- sendZmq req
     handleResponse resE $ \cnt -> liftIO . putStrLn $
         unwords [ "Generated", show (cnt :: Int), "addresses" ]
@@ -365,7 +360,7 @@ cmdGenAddrs name i = do
 cmdURI :: String -> String -> [String] -> Handler ()
 cmdURI name iStr ls = do
     t <- R.asks configAddrType
-    resE <- sendZmq (GetAddressR (pack name) i t 0 False)
+    resE <- sendZmq (AddressReq (T.pack name) i t 0 False)
     case parseResponse resE of
         Just a  -> do
             let uri = buildPaymentRequest (jsonAddrAddress a) ls
@@ -397,12 +392,12 @@ cmdSendMany name xs = case rcpsM of
         minconf <- R.asks configMinConf
         sign    <- R.asks configSignTx
         masterM <- if sign then askSigningKeys name else return Nothing
-        let action = CreateTx rcps fee minconf rcptFee sign
-        resE <- sendZmq (PostTxsR (pack name) masterM action)
+        let action = CreateTx rcps fee minconf rcptFee sign masterM
+        resE <- sendZmq (CreateTxReq (T.pack name) action)
         handleResponse resE $ liftIO . putStr . printTx Nothing
     _ -> error "Could not parse recipient information"
   where
-    g str   = map cs $ splitOn ":" (pack str)
+    g str   = map cs $ T.splitOn ":" (T.pack str)
     f [a,v] = liftM2 (,) (base58ToAddr a) (readMaybe $ cs v)
     f _     = Nothing
     rcpsM   = mapM (f . g) xs
@@ -421,16 +416,14 @@ getHexTx = do
 cmdImport :: String -> Handler ()
 cmdImport name = do
     tx <- getHexTx
-    let action = ImportTx tx
-    resE <- sendZmq (PostTxsR (pack name) Nothing action)
+    resE <- sendZmq (ImportTxReq (T.pack name) tx)
     handleResponse resE $ liftIO . putStr . printTx Nothing
 
 cmdSign :: String -> String -> Handler ()
 cmdSign name txidStr = case txidM of
     Just txid -> do
         masterM <- askSigningKeys name
-        let action = SignTx txid
-        resE <- sendZmq (PostTxsR (pack name) masterM action)
+        resE <- sendZmq (SignTxReq (T.pack name) $ SignTx txid masterM)
         handleResponse resE $ liftIO . putStr . printTx Nothing
     _ -> error "Could not parse txid"
   where
@@ -439,10 +432,10 @@ cmdSign name txidStr = case txidM of
 cmdGetOffline :: String -> String -> Handler ()
 cmdGetOffline name tidStr = case tidM of
     Just tid -> do
-        resE <- sendZmq (GetOfflineTxR (pack name) tid)
+        resE <- sendZmq (OfflineTxReq (T.pack name) tid)
         handleResponse resE $ \otd ->
             liftIO $ putStrLn $ cs $
-                B64.encode $ encode (otd :: OfflineTxData)
+                B64.encode $ S.encode (otd :: OfflineTxData)
     _ -> error "Could not parse txid"
   where
     tidM = hexToTxHash $ cs tidStr
@@ -451,26 +444,26 @@ cmdSignOffline :: String -> Handler ()
 cmdSignOffline name = do
     inputM <- Haskeline.runInputT Haskeline.defaultSettings $
         Haskeline.getInputLine ""
-    case decode =<< B64.decode . cs =<< maybeToEither "" inputM of
+    case S.decode =<< B64.decode . cs =<< maybeToEither "" inputM of
         Right (OfflineTxData tx dat) -> do
             masterM <- askSigningKeys name
-            resE <- sendZmq (PostOfflineTxR (pack name) masterM tx dat)
+            resE <- sendZmq (SignOfflineTxReq (T.pack name) masterM tx dat)
             handleResponse resE $ \(TxCompleteRes sTx _) ->
-                liftIO $ putStrLn $ cs $ encodeHex $ encode sTx
+                liftIO $ putStrLn $ cs $ encodeHex $ S.encode sTx
         _ -> error "Could not decode input data"
 
 cmdBalance :: String -> Handler ()
 cmdBalance name = do
     m <- R.asks configMinConf
     o <- R.asks configOffline
-    resE <- sendZmq (GetBalanceR (pack name) m o)
+    resE <- sendZmq (BalanceReq (T.pack name) m o)
     handleResponse resE $ \bal ->
         liftIO $ putStrLn $ unwords [ "Balance:", show (bal :: Word64) ]
 
 cmdGetTx :: String -> String -> Handler ()
 cmdGetTx name tidStr = case tidM of
     Just tid -> do
-        resE <- sendZmq (GetTxR (pack name) tid)
+        resE <- sendZmq (TxReq (T.pack name) tid)
         handleResponse resE $ liftIO . putStr . printTx Nothing
     _ -> error "Could not parse txid"
   where
@@ -483,14 +476,14 @@ cmdRescan timeLs = do
             str:_ -> case readMaybe str of
                 Nothing -> error "Could not decode time"
                 Just t -> Just t
-    resE <- sendZmq (PostNodeR $ NodeActionRescan timeM)
+    resE <- sendZmq (NodeActionReq $ NodeActionRescan timeM)
     handleResponse resE $ \(RescanRes ts) ->
         liftIO $ putStrLn $ unwords [ "Timestamp:", show ts]
 
 cmdDeleteTx :: String -> Handler ()
 cmdDeleteTx tidStr = case tidM of
     Just tid -> do
-        resE <- sendZmq (DeleteTxIdR tid)
+        resE <- sendZmq (DeleteTxReq tid)
         handleResponse resE $ \() -> return ()
     Nothing -> error "Could not parse txid"
   where
@@ -514,10 +507,10 @@ cmdSync :: String -> String -> [String] -> Handler ()
 cmdSync acc block ls = do
     let page = fromMaybe 1 $ listToMaybe ls >>= readMaybe
         f = case length block of
-            64 -> GetSyncR (cs acc) $
+            64 -> SyncReq (cs acc) $
                 fromMaybe (error "Could not decode block id") $
                 hexToBlockHash $ cs block
-            _  -> GetSyncHeightR (cs acc) $
+            _  -> SyncHeightReq (cs acc) $
                 fromMaybe (error "Could not decode block height") $
                 readMaybe block
     r <- R.asks configReversePaging
@@ -544,7 +537,7 @@ cmdVersion = liftIO $ do
 cmdStatus :: Handler ()
 cmdStatus = do
     v <- R.asks configVerbose
-    resE <- sendZmq (PostNodeR NodeActionStatus)
+    resE <- sendZmq (NodeActionReq NodeActionStatus)
     handleResponse resE $ mapM_ (liftIO . putStrLn) . printNodeStatus v
 
 cmdKeyPair :: Handler ()
@@ -559,10 +552,10 @@ cmdBlockInfo headers = do
     -- Show best block if no arguments are provided
     hashL <- if null headers then
             -- Fetch best block hash from status msg, and return as list
-            (: []) . parseRes <$> sendZmq (PostNodeR NodeActionStatus)
+            (: []) . parseRes <$> sendZmq (NodeActionReq NodeActionStatus)
         else
             return (map fromString headers)
-    sendZmq (GetBlockInfoR hashL) >>=
+    sendZmq (BlockInfoReq hashL) >>=
         \resE -> handleResponse resE (liftIO . printResults)
   where
     printResults :: [BlockInfo] -> IO ()
@@ -644,7 +637,7 @@ parseResponse
     -> Maybe a
 parseResponse resE = case resE of
     Right (ResponseValid resM) -> resM
-    Right (ResponseError err)  -> error $ unpack err
+    Right (ResponseError err)  -> error $ T.unpack err
     Left err                   -> error err
 
 handleResponse
@@ -667,7 +660,7 @@ sendZmq :: (FromJSON a, ToJSON a)
         -> Handler (Either String (WalletResponse a))
 sendZmq req = do
     cfg <- R.ask
-    let msg = cs $ Aeson.encode req
+    let msg = cs $ encode req
     when (configVerbose cfg) $ liftIO $
         B8.hPutStrLn stderr $ "Outgoing JSON: " `mappend` msg
     -- TODO: If I do this in the same thread I have to ^C twice to exit
@@ -676,7 +669,7 @@ sendZmq req = do
             setLinger (restrict (0 :: Int)) sock
             setupAuth cfg sock
             connect sock (configConnect cfg)
-            send sock [] (cs $ Aeson.encode req)
+            send sock [] (cs $ encode req)
             eitherDecode . cs <$> receive sock
     wait a
 
@@ -704,7 +697,7 @@ formatStr str = forM_ (lines str) putStrLn
 
 encodeTxJSON :: Tx -> Value
 encodeTxJSON tx = object
-    [ "txid"     .= (cs $ txHashToHex (txHash tx) :: Text)
+    [ "txid"     .= (cs $ txHashToHex (txHash tx) :: T.Text)
     , "version"  .= txVersion tx
     , "inputs"   .= map encodeTxInJSON (txIn tx)
     , "outputs"  .= map encodeTxOutJSON (txOut tx)
@@ -715,7 +708,7 @@ encodeTxInJSON :: TxIn -> Value
 encodeTxInJSON (TxIn o s i) = object $
     [ "outpoint"   .= encodeOutPointJSON o
     , "sequence"   .= i
-    , "raw-script" .= (cs $ encodeHex s :: Text)
+    , "raw-script" .= (cs $ encodeHex s :: T.Text)
     , "script"     .= encodeScriptJSON sp
     ] ++ decoded
   where
@@ -726,7 +719,7 @@ encodeTxInJSON (TxIn o s i) = object $
 encodeTxOutJSON :: TxOut -> Value
 encodeTxOutJSON (TxOut v s) = object $
     [ "value"      .= v
-    , "raw-script" .= (cs $ encodeHex s :: Text)
+    , "raw-script" .= (cs $ encodeHex s :: T.Text)
     , "script"     .= encodeScriptJSON sp
     ] ++ decoded
   where
@@ -737,7 +730,7 @@ encodeTxOutJSON (TxOut v s) = object $
 
 encodeOutPointJSON :: OutPoint -> Value
 encodeOutPointJSON (OutPoint h i) = object
-    [ "txid" .= (cs $ txHashToHex h :: Text)
+    [ "txid" .= (cs $ txHashToHex h :: T.Text)
     , "pos"  .= i
     ]
 
@@ -745,9 +738,9 @@ encodeScriptJSON :: Script -> Value
 encodeScriptJSON (Script ops) =
     toJSON $ map f ops
   where
-    f (OP_PUSHDATA bs _) = String $ pack $ unwords
+    f (OP_PUSHDATA bs _) = String $ T.pack $ unwords
         ["OP_PUSHDATA", cs $ encodeHex bs]
-    f x = String $ pack $ show x
+    f x = String $ T.pack $ show x
 
 encodeScriptInputJSON :: ScriptInput -> Value
 encodeScriptInputJSON si = case si of
@@ -756,8 +749,8 @@ encodeScriptInputJSON si = case si of
     RegularInput (SpendPKHash s p) -> object
         [ "spendpubkeyhash" .= object
             [ "sig"            .= encodeSigJSON s
-            , "pubkey"         .= (cs $ encodeHex (encode p) :: Text)
-            , "sender-address" .= (cs $ addrToBase58 (pubKeyAddr p) :: Text)
+            , "pubkey"         .= (cs $ encodeHex (S.encode p) :: T.Text)
+            , "sender-address" .= (cs $ addrToBase58 (pubKeyAddr p) :: T.Text)
             ]
         ]
     RegularInput (SpendMulSig sigs) -> object
@@ -766,8 +759,8 @@ encodeScriptInputJSON si = case si of
         [ "spendscripthash" .= object
             [ "scriptinput" .= encodeScriptInputJSON (RegularInput s)
             , "redeem" .= encodeScriptOutputJSON r
-            , "raw-redeem" .= (cs $ encodeHex (encodeOutputBS r) :: Text)
-            , "sender-address" .= (cs $ addrToBase58 (scriptAddr r) :: Text)
+            , "raw-redeem" .= (cs $ encodeHex (encodeOutputBS r) :: T.Text)
+            , "sender-address" .= (cs $ addrToBase58 (scriptAddr r) :: T.Text)
             ]
         ]
 
@@ -775,36 +768,37 @@ encodeScriptOutputJSON :: ScriptOutput -> Value
 encodeScriptOutputJSON so = case so of
     PayPK p -> object
         [ "pay2pubkey" .= object
-          [ "pubkey" .= (cs $ encodeHex (encode p) :: Text) ]
+          [ "pubkey" .= (cs $ encodeHex (S.encode p) :: T.Text) ]
         ]
     PayPKHash a -> object
         [ "pay2pubkeyhash" .= object
             [ "address-hex" .=
-              (cs $ encodeHex (encode $ getAddrHash a) :: Text)
-            , "address-base58" .= (cs $ addrToBase58 a :: Text)
+              (cs $ encodeHex (S.encode $ getAddrHash a) :: T.Text)
+            , "address-base58" .= (cs $ addrToBase58 a :: T.Text)
             ]
         ]
     PayMulSig ks r -> object
         [ "pay2mulsig" .= object
             [ "required-keys" .= r
-            , "pubkeys"       .= (map (cs . encodeHex . encode) ks :: [Text])
+            , "pubkeys" .= (map (cs . encodeHex . S.encode) ks :: [T.Text])
             ]
         ]
     PayScriptHash a -> object
         [ "pay2scripthash" .= object
-            [ "address-hex" .= (cs $ encodeHex $ encode $ getAddrHash a :: Text)
-            , "address-base58" .= (cs (addrToBase58 a) :: Text)
+            [ "address-hex" .= (cs $ encodeHex $
+                S.encode $ getAddrHash a :: T.Text)
+            , "address-base58" .= (cs (addrToBase58 a) :: T.Text)
             ]
         ]
     DataCarrier bs -> object
         [ "op_return" .= object
-            [ "data" .= (cs $ encodeHex bs :: Text)
+            [ "data" .= (cs $ encodeHex bs :: T.Text)
             ]
         ]
 
 encodeSigJSON :: TxSignature -> Value
 encodeSigJSON ts@(TxSignature _ sh) = object
-    [ "raw-sig" .= (cs $ encodeHex (encodeSig ts) :: Text)
+    [ "raw-sig" .= (cs $ encodeHex (encodeSig ts) :: T.Text)
     , "sighash" .= encodeSigHashJSON sh
     ]
 
@@ -832,7 +826,7 @@ encodeSigHashJSON sh = case sh of
 
 printAccount :: JsonAccount -> String
 printAccount JsonAccount{..} = unlines $
-    [ "Account : " ++ unpack jsonAccountName
+    [ "Account : " ++ T.unpack jsonAccountName
     , "Type    : " ++ showType
     , "Gap     : " ++ show jsonAccountGap
     ]
@@ -864,7 +858,9 @@ printAddress :: Bool -> JsonAddr -> String
 printAddress displayPubKey JsonAddr{..} = unwords $
     [ show jsonAddrIndex, ":", cs dat ]
     ++
-    [ "(" ++ unpack jsonAddrLabel ++ ")" | not (null $ unpack jsonAddrLabel) ]
+    [ "(" ++ T.unpack jsonAddrLabel ++ ")"
+    | not (null $ T.unpack jsonAddrLabel)
+    ]
     ++ concat
     [ [ "[Received: "    ++ show (balanceInfoInBalance  bal) ++ "]"
       , "[Coins: "       ++ show (balanceInfoCoins      bal) ++ "]"
@@ -874,7 +870,7 @@ printAddress displayPubKey JsonAddr{..} = unwords $
     ]
   where
     dat | displayPubKey =
-            maybe "<no pubkey available>" (encodeHex . encode) jsonAddrKey
+            maybe "<no pubkey available>" (encodeHex . S.encode) jsonAddrKey
         | otherwise = addrToBase58 jsonAddrAddress
     bal = fromMaybe (error "Could not get address balance") jsonAddrBalance
 

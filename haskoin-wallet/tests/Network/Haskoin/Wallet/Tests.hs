@@ -13,7 +13,6 @@ tests :: [Test]
 tests =
     [ testGroup "Serialize & de-serialize types to JSON"
         [ testProperty "AccountType" (metaID :: AccountType -> Bool)
-        , testProperty "TxAction" (metaID :: TxAction -> Bool)
         , testProperty "NodeAction" (metaID :: NodeAction -> Bool)
         ]
     ]

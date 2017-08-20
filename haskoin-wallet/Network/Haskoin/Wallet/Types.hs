@@ -13,11 +13,10 @@ module Network.Haskoin.Wallet.Types
 , WalletRequest(..)
 , ListRequest(..)
 , NewAccount(..)
-, SetAccountGap(..)
 , OfflineTxData(..)
 , CoinSignData(..)
-, TxAction(..)
-, AddressLabel(..)
+, CreateTx(..)
+, SignTx(..)
 , NodeAction(..)
 , AccountType(..)
 , AddressType(..)
@@ -50,51 +49,30 @@ module Network.Haskoin.Wallet.Types
 , limitOffset
 ) where
 
-import           Control.DeepSeq                 (NFData (..))
-import           Control.Exception               (Exception)
-import           Control.Monad                   (forM, forM_, mzero, when,
-                                                  replicateM)
-import           Control.Monad.Trans             (MonadIO)
-import           Data.Aeson                      (FromJSON, ToJSON, Value (..),
-                                                  decodeStrict', object,
-                                                  parseJSON, toJSON, withObject,
-                                                  (.!=), (.:), (.:?), (.=))
-import qualified Data.Aeson                      as Aeson
-import           Data.Aeson.TH                   (deriveJSON)
-import           Data.Aeson.Types                (Options (..),
-                                                  SumEncoding (..),
-                                                  defaultOptions,
-                                                  defaultTaggedObject)
-import           Data.Char                       (toLower)
-import           Data.Int                        (Int64)
-import qualified Data.ByteString                 as BS
-import           Data.List.Split                 (chunksOf)
-import           Data.Maybe                      (maybeToList)
-import           Data.Serialize                  (Serialize, decode, encode,
-                                                  get, put, getByteString,
-                                                  putByteString)
-import           Data.String                     (fromString)
-import           Data.String.Conversions         (cs)
-import           Data.Text                       (Text)
-import           Data.Time                       (UTCTime)
-import           Data.Typeable                   (Typeable)
-import           Data.Word                       (Word8, Word32, Word64)
-import           Database.Esqueleto              (Entity (..), SqlBackend,
-                                                  SqlExpr, SqlPersistT,
-                                                  SqlQuery, limit, offset,
-                                                  select, update, val, (||.))
-import qualified Database.Esqueleto              as E (Value, delete)
-import           Database.Esqueleto.Internal.Sql (SqlSelect)
-import qualified Database.Persist                as P (PersistEntity,
-                                                       PersistEntityBackend,
-                                                       insertMany_)
-import           Database.Persist.Class          (PersistField,
-                                                  fromPersistValue,
-                                                  toPersistValue)
-import           Database.Persist.Sql            (PersistFieldSql, SqlType (..),
-                                                  sqlType)
-import           Database.Persist.Types          (PersistValue (..))
-import           GHC.Generics                    (Generic)
+import           Control.DeepSeq                        (NFData (..))
+import           Control.Exception                      (Exception)
+import           Control.Monad
+import           Control.Monad.Trans                    (MonadIO)
+import           Data.Aeson
+import           Data.Aeson.TH
+import qualified Data.ByteString                        as BS
+import           Data.Char                              (toLower)
+import           Data.Int                               (Int64)
+import           Data.List.Split                        (chunksOf)
+import           Data.Maybe                             (maybeToList)
+import qualified Data.Serialize                         as S
+import           Data.String                            (fromString)
+import           Data.String.Conversions                (cs)
+import           Data.Text                              (Text)
+import           Data.Time                              (UTCTime)
+import           Data.Typeable                          (Typeable)
+import           Data.Word                              (Word32, Word64, Word8)
+import qualified Database.Esqueleto                     as E
+import           Database.Esqueleto.Internal.Sql        (SqlSelect)
+import qualified Database.Persist                       as P
+import           Database.Persist.Class
+import           Database.Persist.Sql
+import           GHC.Generics
 import           Network.Haskoin.Block
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Node
@@ -141,7 +119,7 @@ data AddressInfo = AddressInfo
     }
     deriving (Eq, Show, Read, Generic)
 
-instance Serialize AddressInfo
+instance S.Serialize AddressInfo
 
 $(deriveJSON (dropFieldLabel 11) ''AddressInfo)
 
@@ -214,11 +192,6 @@ data NewAccount = NewAccount
 
 $(deriveJSON (dropFieldLabel 10) ''NewAccount)
 
-data SetAccountGap = SetAccountGap { getAccountGap :: !Word32 }
-    deriving (Eq, Show, Read)
-
-$(deriveJSON (dropFieldLabel 10) ''SetAccountGap)
-
 data ListRequest = ListRequest
     { listOffset  :: !Word32
     , listLimit   :: !Word32
@@ -237,26 +210,26 @@ data CoinSignData = CoinSignData
 
 $(deriveJSON (dropFieldLabel 8) ''CoinSignData)
 
-instance Serialize CoinSignData where
+instance S.Serialize CoinSignData where
     get = do
-        p <- get
+        p <- S.get
         s <- readBS >>= \bs -> case decodeOutputBS bs of
             Right s -> return s
             _ -> error "Invalid ScriptOutput in CoinSignData"
-        get >>= \dM -> case toSoft (dM :: DerivPath) of
+        S.get >>= \dM -> case toSoft (dM :: DerivPath) of
             Just d -> return $ CoinSignData p s d
             _ -> error "Invalid derivation in CoinSignData"
       where
-        readBS = get >>= \(VarInt l) -> getByteString $ fromIntegral l
+        readBS = S.get >>= \(VarInt l) -> S.getByteString $ fromIntegral l
 
     put (CoinSignData p s d) = do
-        put p
+        S.put p
         writeBS $ encodeOutputBS s
-        put $ toGeneric d
+        S.put $ toGeneric d
       where
         writeBS bs = do
-            put $ VarInt $ fromIntegral $ BS.length bs
-            putByteString bs
+            S.put $ VarInt $ fromIntegral $ BS.length bs
+            S.putByteString bs
 
 data OfflineTxData = OfflineTxData
     { offlineTxDataTx       :: !Tx
@@ -265,70 +238,33 @@ data OfflineTxData = OfflineTxData
 
 $(deriveJSON (dropFieldLabel 13) ''OfflineTxData)
 
-instance Serialize OfflineTxData where
-    get = OfflineTxData <$> get <*> (replicateList =<< get)
+instance S.Serialize OfflineTxData where
+    get = OfflineTxData <$> S.get <*> (replicateList =<< S.get)
       where
-        replicateList (VarInt c) = replicateM (fromIntegral c) get
+        replicateList (VarInt c) = replicateM (fromIntegral c) S.get
 
     put (OfflineTxData t ds) = do
-        put t
-        put $ VarInt $ fromIntegral $ length ds
-        forM_ ds put
+        S.put t
+        S.put $ VarInt $ fromIntegral $ length ds
+        forM_ ds S.put
 
-data TxAction
-    = CreateTx
-        { accTxActionRecipients :: ![(Address, Word64)]
-        , accTxActionFee        :: !Word64
-        , accTxActionMinConf    :: !Word32
-        , accTxActionRcptFee    :: !Bool
-        , accTxActionSign       :: !Bool
-        }
-    | ImportTx
-        { accTxActionTx :: !Tx }
-    | SignTx
-        { accTxActionHash :: !TxHash }
-    deriving (Eq, Show)
+data CreateTx = CreateTx
+    { createTxRecipients :: ![(Address, Word64)]
+    , createTxFee        :: !Word64
+    , createTxMinConf    :: !Word32
+    , createTxRcptFee    :: !Bool
+    , createTxSign       :: !Bool
+    , createTxSignKey    :: !(Maybe XPrvKey)
+    } deriving (Eq, Show)
 
-instance ToJSON TxAction where
-    toJSON (CreateTx recipients fee minConf rcptFee sign) = object $
-        [ "type" .= ("createtx" :: Text)
-        , "recipients" .= recipients
-        , "fee"  .= fee
-        , "minconf" .= minConf
-        , "sign" .= sign
-        ] ++ [ "rcptfee" .= True | rcptFee ]
-    toJSON (ImportTx tx) = object
-        [ "type" .= ("importtx" :: Text)
-        , "tx" .= tx
-        ]
-    toJSON (SignTx txid) = object
-        [ "type" .= ("signtx" :: Text)
-        , "hash" .= txid
-        ]
+$(deriveJSON (dropFieldLabel 8) ''CreateTx)
 
-instance FromJSON TxAction where
-    parseJSON = withObject "TxAction" $ \o -> do
-        t <- o .: "type"
-        case (t :: Text) of
-            "createtx" -> do
-                recipients <- o .: "recipients"
-                fee <- o .: "fee"
-                minConf <- o .: "minconf"
-                sign <- o .: "sign"
-                rcptFee <- o .:? "rcptfee" .!= False
-                return (CreateTx recipients fee minConf rcptFee sign)
-            "importtx" -> do
-                tx <- o .: "tx"
-                return (ImportTx tx)
-            "signtx" -> do
-                txid <- o .: "hash"
-                return (SignTx txid)
-            _ -> mzero
+data SignTx = SignTx
+    { signTxTxHash  :: !TxHash
+    , signTxSignKey :: !(Maybe XPrvKey)
+    } deriving (Eq, Show)
 
-data AddressLabel = AddressLabel { addressLabelLabel :: !Text }
-    deriving (Eq, Show, Read)
-
-$(deriveJSON (dropFieldLabel 12) ''AddressLabel)
+$(deriveJSON (dropFieldLabel 6) ''SignTx)
 
 data NodeAction
     = NodeActionRescan { nodeActionTimestamp :: !(Maybe Word32) }
@@ -364,33 +300,35 @@ addrTypeIndex AddressExternal = 0
 addrTypeIndex AddressInternal = 1
 
 data WalletRequest
-    = GetAccountsR !ListRequest
-    | PostAccountsR !NewAccount
-    | PostAccountRenameR !AccountName !AccountName
-    | GetAccountR !AccountName
-    | PostAccountKeysR !AccountName ![XPubKey]
-    | PostAccountGapR !AccountName !SetAccountGap
-    | GetAddressesR !AccountName !AddressType !Word32 !Bool !ListRequest
-    | GetAddressesUnusedR !AccountName !AddressType !ListRequest
-    | GetAddressR !AccountName !KeyIndex !AddressType !Word32 !Bool
-    | GetIndexR !AccountName !PubKeyC !AddressType
-    | PutAddressR !AccountName !KeyIndex !AddressType !AddressLabel
-    | PostAddressesR !AccountName !KeyIndex !AddressType
-    | GetTxsR !AccountName !ListRequest
-    | GetAddrTxsR !AccountName !KeyIndex !AddressType !ListRequest
-    | PostTxsR !AccountName !(Maybe XPrvKey) !TxAction
-    | GetTxR !AccountName !TxHash
-    | GetOfflineTxR !AccountName !TxHash
-    | PostOfflineTxR !AccountName !(Maybe XPrvKey) !Tx ![CoinSignData]
-    | GetBalanceR !AccountName !Word32 !Bool
-    | PostNodeR !NodeAction
-    | DeleteTxIdR !TxHash
-    | GetSyncR !AccountName !BlockHash !ListRequest
-    | GetSyncHeightR !AccountName !BlockHeight !ListRequest
-    | GetPendingR !AccountName !ListRequest
-    | GetDeadR !AccountName !ListRequest
-    | GetBlockInfoR ![BlockHash]
-    | StopServerR
+    = AccountReq !AccountName
+    | AccountsReq !ListRequest
+    | NewAccountReq !NewAccount
+    | RenameAccountReq !AccountName !AccountName
+    | AddPubKeysReq !AccountName ![XPubKey]
+    | SetAccountGapReq !AccountName !Word32
+    | AddrsReq !AccountName !AddressType !Word32 !Bool !ListRequest
+    | UnusedAddrsReq !AccountName !AddressType !ListRequest
+    | AddressReq !AccountName !KeyIndex !AddressType !Word32 !Bool
+    | PubKeyIndexReq !AccountName !PubKeyC !AddressType
+    | SetAddrLabelReq !AccountName !KeyIndex !AddressType !Text
+    | GenerateAddrsReq !AccountName !KeyIndex !AddressType
+    | TxsReq !AccountName !ListRequest
+    | PendingTxsReq !AccountName !ListRequest
+    | DeadTxsReq !AccountName !ListRequest
+    | AddrTxsReq !AccountName !KeyIndex !AddressType !ListRequest
+    | CreateTxReq !AccountName !CreateTx
+    | ImportTxReq !AccountName !Tx
+    | SignTxReq !AccountName !SignTx
+    | TxReq !AccountName !TxHash
+    | DeleteTxReq !TxHash
+    | OfflineTxReq !AccountName !TxHash
+    | SignOfflineTxReq !AccountName !(Maybe XPrvKey) !Tx ![CoinSignData]
+    | BalanceReq !AccountName !Word32 !Bool
+    | NodeActionReq !NodeAction
+    | SyncReq !AccountName !BlockHash !ListRequest
+    | SyncHeightReq !AccountName !BlockHeight !ListRequest
+    | BlockInfoReq ![BlockHash]
+    | StopServerReq
         deriving (Show, Eq)
 
 -- TODO: Set omitEmptyContents on aeson-0.9
@@ -557,7 +495,7 @@ instance PersistFieldSql XPrvKey where
     sqlType _ = SqlString
 
 instance PersistField [XPubKey] where
-    toPersistValue = PersistText . cs . Aeson.encode
+    toPersistValue = PersistText . cs . encode
     fromPersistValue (PersistText txt) =
         maybeToEither "Invalid Persistent XPubKey" $ decodeStrict' $ cs txt
     fromPersistValue (PersistByteString bs) =
@@ -603,7 +541,7 @@ instance PersistFieldSql SoftPath where
     sqlType _ = SqlString
 
 instance PersistField AccountType where
-    toPersistValue = PersistText . cs . Aeson.encode
+    toPersistValue = PersistText . cs . encode
     fromPersistValue (PersistText txt) = maybeToEither
         "Invalid Persistent AccountType" $ decodeStrict' $ cs txt
     fromPersistValue (PersistByteString bs) = maybeToEither
@@ -665,9 +603,9 @@ instance PersistFieldSql Address where
     sqlType _ = SqlString
 
 instance PersistField BloomFilter where
-    toPersistValue = PersistByteString . encode
+    toPersistValue = PersistByteString . S.encode
     fromPersistValue (PersistByteString bs) =
-        case decode bs of
+        case S.decode bs of
             Right x -> Right x
             Left  e -> Left  (fromString e)
     fromPersistValue _ = Left "Invalid Persistent BloomFilter"
@@ -724,9 +662,9 @@ instance PersistFieldSql TxConfidence where
     sqlType _ = SqlString
 
 instance PersistField Tx where
-    toPersistValue = PersistByteString . encode
+    toPersistValue = PersistByteString . S.encode
     fromPersistValue (PersistByteString bs) =
-        case decode bs of
+        case S.decode bs of
             Right x -> Right x
             Left  e -> Left (fromString e)
     fromPersistValue _ = Left "Invalid Persistent Tx"
@@ -735,15 +673,15 @@ instance PersistFieldSql Tx where
     sqlType _ = SqlOther "MEDIUMBLOB"
 
 instance PersistField PubKeyC where
-    toPersistValue = PersistText . cs . encodeHex . encode
+    toPersistValue = PersistText . cs . encodeHex . S.encode
     fromPersistValue (PersistText txt) =
-        case hex >>= decode of
+        case hex >>= S.decode of
             Right x -> Right x
             Left  e -> Left (fromString e)
       where
         hex = maybeToEither "Could not decode hex" (decodeHex (cs txt))
     fromPersistValue (PersistByteString bs) =
-        case hex >>= decode of
+        case hex >>= S.decode of
             Right x -> Right x
             Left  e -> Left (fromString e)
       where
@@ -765,9 +703,9 @@ instance PersistFieldSql ScriptOutput where
     sqlType _ = SqlBlob
 
 instance PersistField [AddressInfo] where
-    toPersistValue = PersistByteString . encode
+    toPersistValue = PersistByteString . S.encode
     fromPersistValue (PersistByteString bs) =
-        case decode bs of
+        case S.decode bs of
             Right x -> Right x
             Left  e -> Left (fromString e)
     fromPersistValue _ = Left "Invalid Persistent AddressInfo"
@@ -778,35 +716,35 @@ instance PersistFieldSql [AddressInfo] where
 {- Helpers -}
 
 -- Join AND expressions with OR conditions in a binary way
-join2 :: [SqlExpr (E.Value Bool)] -> SqlExpr (E.Value Bool)
+join2 :: [E.SqlExpr (E.Value Bool)] -> E.SqlExpr (E.Value Bool)
 join2 xs = case xs of
-    [] -> val False
+    [] -> E.val False
     [x] -> x
     _ -> let (ls,rs) = splitAt (length xs `div` 2) xs
-         in  join2 ls ||. join2 rs
+         in  join2 ls E.||. join2 rs
 
 splitSelect :: (SqlSelect a r, MonadIO m)
             => [t]
-            -> ([t] -> SqlQuery a)
-            -> SqlPersistT m [r]
+            -> ([t] -> E.SqlQuery a)
+            -> E.SqlPersistT m [r]
 splitSelect ts queryF =
-    fmap concat $ forM vals $ select . queryF
+    fmap concat $ forM vals $ E.select . queryF
   where
     vals = chunksOf paramLimit ts
 
 splitUpdate :: ( MonadIO m
                , P.PersistEntity val
-               , P.PersistEntityBackend val ~ SqlBackend
+               , P.PersistEntityBackend val ~ E.SqlBackend
                )
             => [t]
-            -> ([t] -> SqlExpr (Entity val) -> SqlQuery ())
-            -> SqlPersistT m ()
+            -> ([t] -> E.SqlExpr (E.Entity val) -> E.SqlQuery ())
+            -> E.SqlPersistT m ()
 splitUpdate ts updateF =
-    forM_ vals $ update . updateF
+    forM_ vals $ E.update . updateF
   where
     vals = chunksOf paramLimit ts
 
-splitDelete :: MonadIO m => [t] -> ([t] -> SqlQuery ()) -> SqlPersistT m ()
+splitDelete :: MonadIO m => [t] -> ([t] -> E.SqlQuery ()) -> E.SqlPersistT m ()
 splitDelete ts deleteF =
     forM_ vals $ E.delete . deleteF
   where
@@ -814,13 +752,13 @@ splitDelete ts deleteF =
 
 splitInsertMany_ :: ( MonadIO m
                     , P.PersistEntity val
-                    , P.PersistEntityBackend val ~ SqlBackend
+                    , P.PersistEntityBackend val ~ E.SqlBackend
                     )
-                 => [val] -> SqlPersistT m ()
+                 => [val] -> E.SqlPersistT m ()
 splitInsertMany_ = mapM_ P.insertMany_ . chunksOf paramLimit
 
-limitOffset :: Word32 -> Word32 -> SqlQuery ()
+limitOffset :: Word32 -> Word32 -> E.SqlQuery ()
 limitOffset l o = do
-    when (l > 0) $ limit  $ fromIntegral l
-    when (o > 0) $ offset $ fromIntegral o
+    when (l > 0) $ E.limit  $ fromIntegral l
+    when (o > 0) $ E.offset $ fromIntegral o
 

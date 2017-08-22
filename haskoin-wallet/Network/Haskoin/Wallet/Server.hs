@@ -397,7 +397,7 @@ runWalletCmd ctx session = do
                     runHandler (dispatchRequest r) session
                 Nothing -> return $ ResponseError "Could not decode request"
             liftIO $ send sock [] $ BL.toStrict $ encode res
-            unless (msg == Just StopServerR) loop
+            unless (msg == Just StopServerReq) loop
     $(logInfo) "Exiting ZMQ command thread..."
   where
     catchErrors m = catches m
@@ -470,31 +470,33 @@ dispatchRequest :: ( MonadLoggerIO m
                    )
                 => WalletRequest -> Handler m (WalletResponse Value)
 dispatchRequest req = fmap ResponseValid $ case req of
-    GetAccountsR p            -> getAccountsR p
-    PostAccountsR na          -> postAccountsR na
-    PostAccountRenameR n n'   -> postAccountRenameR n n'
-    GetAccountR n             -> getAccountR n
-    PostAccountKeysR n ks     -> postAccountKeysR n ks
-    PostAccountGapR n g       -> postAccountGapR n g
-    GetAddressesR n t m o p   -> getAddressesR n t m o p
-    GetAddressesUnusedR n t p -> getAddressesUnusedR n t p
-    GetAddressR n i t m o     -> getAddressR n i t m o
-    GetIndexR n k t           -> getIndexR n k t
-    PutAddressR n i t l       -> putAddressR n i t l
-    PostAddressesR n i t      -> postAddressesR n i t
-    GetTxsR n p               -> getTxsR n p
-    GetAddrTxsR n i t p       -> getAddrTxsR n i t p
-    PostTxsR n k a            -> postTxsR n k a
-    GetTxR n h                -> getTxR n h
-    GetOfflineTxR n h         -> getOfflineTxR n h
-    PostOfflineTxR n k t c    -> postOfflineTxR n k t c
-    GetBalanceR n mc o        -> getBalanceR n mc o
-    PostNodeR na              -> postNodeR na
-    DeleteTxIdR t             -> deleteTxIdR t
-    GetSyncR a n b            -> getSyncR a (Right n) b
-    GetSyncHeightR a n b      -> getSyncR a (Left n) b
-    GetPendingR a p           -> getPendingR a p
-    GetDeadR a p              -> getDeadR a p
-    GetBlockInfoR l           -> getBlockInfoR l
-    StopServerR               -> postStopServerR
+    AccountReq n              -> accountReq n
+    AccountsReq p             -> accountsReq p
+    NewAccountReq na          -> newAccountReq na
+    RenameAccountReq n n'     -> renameAccountReq n n'
+    AddPubKeysReq n ks        -> addPubKeysReq n ks
+    SetAccountGapReq n g      -> setAccountGapReq n g
+    AddrsReq n t m o p        -> addrsReq n t m o p
+    UnusedAddrsReq n t p      -> unusedAddrsReq n t p
+    AddressReq n i t m o      -> addressReq n i t m o
+    PubKeyIndexReq n k t      -> pubKeyIndexReq n k t
+    SetAddrLabelReq n i t l   -> setAddrLabelReq n i t l
+    GenerateAddrsReq n i t    -> generateAddrsReq n i t
+    TxsReq n p                -> txsReq n p
+    PendingTxsReq a p         -> pendingTxsReq a p
+    DeadTxsReq a p            -> deadTxsReq a p
+    AddrTxsReq n i t p        -> addrTxsReq n i t p
+    CreateTxReq n c           -> createTxReq n c
+    ImportTxReq n t           -> importTxReq n t
+    SignTxReq n s             -> signTxReq n s
+    TxReq n h                 -> txReq n h
+    DeleteTxReq t             -> deleteTxReq t
+    OfflineTxReq n h          -> offlineTxReq n h
+    SignOfflineTxReq n k t c  -> signOfflineTxReq n k t c
+    BalanceReq n mc o         -> balanceReq n mc o
+    NodeActionReq na          -> nodeActionReq na
+    SyncReq a n b             -> syncReq a (Right n) b
+    SyncHeightReq a n b       -> syncReq a (Left n) b
+    BlockInfoReq l            -> blockInfoReq l
+    StopServerReq             -> stopServerReq
 

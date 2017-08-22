@@ -62,7 +62,7 @@ runWallet cfg ctx = run $ runSPVServerWithContext cfg ctx
 
 cmdGetStatus :: ZMQ.Context -> IO Node.NodeStatus
 cmdGetStatus ctx =
-    sendCmdOrFail (PostNodeR NodeActionStatus) ctx >>=
+    sendCmdOrFail (NodeActionReq NodeActionStatus) ctx >>=
     \res -> case res of
         Nothing     -> error "ERROR: Status command: no response."
         Just status -> return status

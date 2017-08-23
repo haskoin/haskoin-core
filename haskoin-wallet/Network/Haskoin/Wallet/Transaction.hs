@@ -33,6 +33,7 @@ module Network.Haskoin.Wallet.Transaction
 , resetRescan
 
 -- *Helpers
+, isCoinbaseTx
 , InCoinData(..)
 ) where
 
@@ -45,12 +46,14 @@ import           Control.Monad.Base              (MonadBase)
 import           Control.Monad.Catch             (MonadThrow, throwM)
 import           Control.Monad.Trans             (MonadIO, liftIO)
 import           Control.Monad.Trans.Resource    (MonadResource)
+import qualified Data.ByteString                 as BS
 import           Data.Either                     (rights)
 import           Data.List                       (find, nub, nubBy, (\\))
 import qualified Data.Map.Strict                 as M (Map, fromListWith, map,
                                                        toList, unionWith)
-import           Data.Maybe                      (fromMaybe, isJust, isNothing,
-                                                  listToMaybe, mapMaybe)
+import           Data.Maybe                      (fromJust, fromMaybe, isJust,
+                                                  isNothing, listToMaybe,
+                                                  mapMaybe)
 import           Data.String.Conversions         (cs)
 import           Data.Time                       (UTCTime, getCurrentTime)
 import           Data.Word                       (Word32, Word64)
@@ -526,11 +529,14 @@ getSpendingTxs tx aiM
             return t
   where
     txid = txHash tx
-    txInputs = map prevOutput $ txIn tx
+    txInputs = filter nonZero $ map prevOutput $ txIn tx
     limitSpent s ins = join2 $ map (f s) ins
     f s (OutPoint h i) =
         s ^. SpentCoinHash ==. val h &&.
         s ^. SpentCoinPos  ==. val i
+    nonZero (OutPoint h _)
+      | h == TxHash (fromJust $ bsToHash256 (BS.replicate 32 0x00)) = False
+      | otherwise = True
 
 -- Returns all the new coins that need to be created from a transaction.
 -- Also returns the addresses associted with those coins.
@@ -586,7 +592,7 @@ spendInputs :: MonadIO m
 spendInputs ai ti tx = do
     now <- liftIO getCurrentTime
     -- Spend the coins by inserting values in SpentCoin
-    splitInsertMany_ $ map (buildSpentCoin now) txInputs
+    splitInsertMany_ $ map (buildSpentCoin now) $ filter nonZero txInputs
   where
     txInputs = map prevOutput $ txIn tx
     buildSpentCoin now (OutPoint h p) =
@@ -596,6 +602,9 @@ spendInputs ai ti tx = do
                  , spentCoinSpendingTx = ti
                  , spentCoinCreated    = now
                  }
+    nonZero (OutPoint h _)
+        | h == TxHash (fromJust $ bsToHash256 (BS.replicate 32 0x00)) = False
+        | otherwise = True
 
 -- Build account transaction for the given input and output coins
 buildAccTxs :: MonadIO m
@@ -644,7 +653,7 @@ buildAccTxs notifChanM tx confidence inCoins outCoins = do
         let newOs = map (toCoin ai ti now) os
         forM_ newOs $ \c -> P.insertBy c >>= \resE -> case resE of
             Left (Entity ci _) -> replace ci c
-            _ -> return ()
+            _                  -> return ()
 
         -- Return the new transaction record
         return newAtx
@@ -1269,7 +1278,7 @@ accountBalance ai minconf offline = do
         return $ sum_ (c ^. WalletCoinValue)
     case res of
         (Value (Just s):_) -> return $ floor (s :: Double)
-        _ -> return 0
+        _                  -> return 0
   where
     validConfidence = TxPending : TxBuilding : [ TxOffline | offline ]
 

@@ -6,6 +6,7 @@
 *.hp
 *.ps
 *.prof
+.#*
 hreaded
 dist
 tmp

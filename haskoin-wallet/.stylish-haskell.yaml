@@ -15,6 +15,14 @@ steps:
   #     # true.
   #     add_language_pragma: true
 
+  # Align the right hand side of some elements.  This is quite conservative
+  # and only applies to statements where each element occupies a single
+  # line.
+  - simple_align:
+      cases: true
+      top_level_patterns: true
+      records: true
+
   # Import cleanup
   - imports:
       # There are different ways we can align names and lists.
@@ -127,9 +135,6 @@ steps:
       # stylish-haskell can detect redundancy of some language pragmas. If this
       # is set to true, it will remove those redundant pragmas. Default: true.
       remove_redundant: true
-
-  # Align the types in record declarations
-  - records: {}
 
   # Replace tabs by spaces. This is disabled by default.
   # - tabs:

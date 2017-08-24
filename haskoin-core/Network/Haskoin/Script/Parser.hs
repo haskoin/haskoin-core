@@ -35,10 +35,10 @@ import           Data.Aeson                     (FromJSON, ToJSON,
                                                  Value (String), parseJSON,
                                                  toJSON, withText)
 import           Data.ByteString                (ByteString)
-import qualified Data.ByteString                as BS (head, singleton)
+import qualified Data.ByteString                as BS
 import           Data.Foldable                  (foldrM)
 import           Data.List                      (sortBy)
-import           Data.Serialize                 (encode, decode)
+import           Data.Serialize                 (decode, encode)
 import           Data.String.Conversions        (cs)
 import           Network.Haskoin.Crypto.Base58
 import           Network.Haskoin.Crypto.Hash
@@ -74,36 +74,36 @@ instance ToJSON ScriptOutput where
     toJSON = String . cs . encodeHex . encodeOutputBS
 
 instance NFData ScriptOutput where
-    rnf (PayPK k) = rnf k
-    rnf (PayPKHash a) = rnf a
-    rnf (PayMulSig k r) = rnf k `seq` rnf r
+    rnf (PayPK k)         = rnf k
+    rnf (PayPKHash a)     = rnf a
+    rnf (PayMulSig k r)   = rnf k `seq` rnf r
     rnf (PayScriptHash a) = rnf a
-    rnf (DataCarrier a) = rnf a
+    rnf (DataCarrier a)   = rnf a
 
 -- | Returns True if the script is a pay to public key output.
 isPayPK :: ScriptOutput -> Bool
 isPayPK (PayPK _) = True
-isPayPK _ = False
+isPayPK _         = False
 
 -- | Returns True if the script is a pay to public key hash output.
 isPayPKHash :: ScriptOutput -> Bool
 isPayPKHash (PayPKHash _) = True
-isPayPKHash _ = False
+isPayPKHash _             = False
 
 -- | Returns True if the script is a pay to multiple public keys output.
 isPayMulSig :: ScriptOutput -> Bool
 isPayMulSig (PayMulSig _ _) = True
-isPayMulSig _ = False
+isPayMulSig _               = False
 
 -- | Returns true if the script is a pay to script hash output.
 isPayScriptHash :: ScriptOutput -> Bool
 isPayScriptHash (PayScriptHash _) = True
-isPayScriptHash _ = False
+isPayScriptHash _                 = False
 
 -- | Returns True if the script is an OP_RETURN "datacarrier" output
 isDataCarrier :: ScriptOutput -> Bool
 isDataCarrier (DataCarrier _) = True
-isDataCarrier _ = False
+isDataCarrier _               = False
 
 -- | Computes a script address from a script output. This address can be used
 -- in a pay to script hash output.
@@ -189,8 +189,8 @@ matchPayMulSig (Script ops) = case splitAt (length ops - 2) ops of
     _ -> Left "matchPayMulSig: script did not match output template"
   where
     go (OP_PUSHDATA bs _:xs) = liftM2 (:) (decode bs) (go xs)
-    go [] = return []
-    go  _ = Left "matchPayMulSig: invalid multisig opcode"
+    go []                    = return []
+    go  _                    = Left "matchPayMulSig: invalid multisig opcode"
 
 -- | Transforms integers [1 .. 16] to 'ScriptOp' [OP_1 .. OP_16]
 intToScriptOp :: Int -> ScriptOp
@@ -199,24 +199,24 @@ intToScriptOp i
     | otherwise = err
   where
     op  = decode $ BS.singleton $ fromIntegral $ i + 0x50
-    err = error $ "intToScriptOp: Invalid integer " ++ (show i)
+    err = error $ "intToScriptOp: Invalid integer " ++ show i
 
 -- | Decode 'ScriptOp' [OP_1 .. OP_16] to integers [1 .. 16]. This functions
 -- fails for other values of 'ScriptOp'
 scriptOpToInt :: ScriptOp -> Either String Int
 scriptOpToInt s
     | res `elem` [1..16] = return res
-    | otherwise          = Left $ "scriptOpToInt: invalid opcode " ++ (show s)
+    | otherwise          = Left $ "scriptOpToInt: invalid opcode " ++ show s
   where
-    res = (fromIntegral $ BS.head $ encode s) - 0x50
+    res = fromIntegral (BS.head $ encode s) - 0x50
 
 -- | Get the address of a `ScriptOutput`
 outputAddress :: ScriptOutput -> Either String Address
 outputAddress s = case s of
-    PayPKHash a -> return a
+    PayPKHash a     -> return a
     PayScriptHash a -> return a
-    PayPK k -> return $ pubKeyAddr k
-    _ -> Left "outputAddress: bad output script type"
+    PayPK k         -> return $ pubKeyAddr k
+    _               -> Left "outputAddress: bad output script type"
 
 -- | Get the address of a `ScriptInput`
 inputAddress :: ScriptInput -> Either String Address
@@ -240,28 +240,28 @@ data SimpleInput
     deriving (Eq, Show, Read)
 
 instance NFData SimpleInput where
-    rnf (SpendPK i) = rnf i
+    rnf (SpendPK i)       = rnf i
     rnf (SpendPKHash i k) = rnf i `seq` rnf k
-    rnf (SpendMulSig k) = rnf k
+    rnf (SpendMulSig k)   = rnf k
 
 -- | Returns True if the input script is spending a public key.
 isSpendPK :: ScriptInput -> Bool
 isSpendPK (RegularInput (SpendPK _)) = True
-isSpendPK _ = False
+isSpendPK _                          = False
 
 -- | Returns True if the input script is spending a public key hash.
 isSpendPKHash :: ScriptInput -> Bool
 isSpendPKHash (RegularInput (SpendPKHash _ _)) = True
-isSpendPKHash _ = False
+isSpendPKHash _                                = False
 
 -- | Returns True if the input script is spending a multisignature output.
 isSpendMulSig :: ScriptInput -> Bool
 isSpendMulSig (RegularInput (SpendMulSig _)) = True
-isSpendMulSig _ = False
+isSpendMulSig _                              = False
 
 isScriptHashInput :: ScriptInput -> Bool
 isScriptHashInput (ScriptHashInput _ _) = True
-isScriptHashInput _ = False
+isScriptHashInput _                     = False
 
 type RedeemScript = ScriptOutput
 
@@ -273,7 +273,7 @@ data ScriptInput
     deriving (Eq, Show, Read)
 
 instance NFData ScriptInput where
-    rnf (RegularInput i) = rnf i
+    rnf (RegularInput i)      = rnf i
     rnf (ScriptHashInput i o) = rnf i `seq` rnf o
 
 -- | Computes a 'Script' from a 'SimpleInput'. The 'Script' is a list of
@@ -291,7 +291,7 @@ decodeSimpleInput (Script ops) = maybeToEither errMsg $
     matchPK ops <|> matchPKHash ops <|> matchMulSig ops
   where
     matchPK [OP_PUSHDATA bs _] = SpendPK <$> eitherToMaybe (decodeSig bs)
-    matchPK _ = Nothing
+    matchPK _                  = Nothing
     matchPKHash [OP_PUSHDATA sig _, OP_PUSHDATA pub _] =
         liftM2 SpendPKHash (eitherToMaybe $ decodeSig sig) (decodeToMaybe pub)
     matchPKHash _ = Nothing
@@ -308,7 +308,7 @@ encodeInput :: ScriptInput -> Script
 encodeInput s = case s of
     RegularInput ri -> encodeSimpleInput ri
     ScriptHashInput i o -> Script $
-        (scriptOps $ encodeSimpleInput i) ++ [opPushData $ encodeOutputBS o]
+        scriptOps (encodeSimpleInput i) ++ [opPushData $ encodeOutputBS o]
 
 -- | Similar to 'encodeInput' but encodes to a ByteString
 encodeInputBS :: ScriptInput -> ByteString
@@ -320,7 +320,7 @@ decodeInput :: Script -> Either String ScriptInput
 decodeInput s@(Script ops) = maybeToEither errMsg $
     matchSimpleInput <|> matchPayScriptHash
   where
-    matchSimpleInput = RegularInput <$> (eitherToMaybe $ decodeSimpleInput s)
+    matchSimpleInput = RegularInput <$> eitherToMaybe (decodeSimpleInput s)
     matchPayScriptHash = case splitAt (length (scriptOps s) - 1) ops of
         (is, [OP_PUSHDATA bs _]) -> do
             rdm <- eitherToMaybe $ decodeOutputBS bs

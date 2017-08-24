@@ -1,72 +1,72 @@
 module Network.Haskoin.Cereal.Tests (tests) where
 
-import Test.Framework (Test, testGroup)
-import Test.Framework.Providers.QuickCheck2 (testProperty)
-
-import Data.Serialize (Serialize, decode, encode)
-
-import Network.Haskoin.Test
+import           Data.Serialize
+import           Network.Haskoin.Test
+import           Network.Haskoin.Util
+import           Test.Framework
+import           Test.Framework.Providers.QuickCheck2
+import           Test.QuickCheck
 
 tests :: [Test]
 tests =
     [ testGroup "Binary encoding and decoding of utility types"
-        [ testProperty "ByteString" $ \(ArbitraryByteString x) -> metaBinary x ]
+        [ testProperty "ByteString" $ forAll arbitraryBS testId ]
     , testGroup "Binary encoding and decoding of hash types"
-        [ testProperty "Hash160" $ \(ArbitraryHash160 x) -> metaBinary x
-        , testProperty "Hash256" $ \(ArbitraryHash256 x) -> metaBinary x
-        , testProperty "Hash512" $ \(ArbitraryHash512 x) -> metaBinary x
+        [ testProperty "Hash160" $ forAll arbitraryHash160 testId
+        , testProperty "Hash256" $ forAll arbitraryHash256 testId
+        , testProperty "Hash512" $ forAll arbitraryHash512 testId
         ]
     , testGroup "Binary encoding and decoding of crypto types"
-        [ testProperty "Signature" $ \(ArbitrarySignature _ _ x) -> metaBinary x
-        , testProperty "PubKey" $ \(ArbitraryPubKey _ x) -> metaBinary x
-        , testProperty "XPrvKey" $ \(ArbitraryXPrvKey x) -> metaBinary x
-        , testProperty "XPubKey" $ \(ArbitraryXPubKey _ x) -> metaBinary x
+        [ testProperty "Signature" $ forAll arbitrarySignature $ testId . lst3
+        , testProperty "PubKey" $ forAll arbitraryPubKey $ testId . snd
+        , testProperty "XPrvKey" $ forAll arbitraryXPrvKey testId
+        , testProperty "XPubKey" $ forAll arbitraryXPubKey $ testId . snd
         ]
     , testGroup "Binary encoding and decoding of protocol types"
-        [ testProperty "VarInt" $ \(ArbitraryVarInt x) -> metaBinary x
-        , testProperty "VarString" $ \(ArbitraryVarString x) -> metaBinary x
-        , testProperty "NetworkAddress" $ \(ArbitraryNetworkAddress x) -> metaBinary x
-        , testProperty "InvType" $ \(ArbitraryInvType x) -> metaBinary x
-        , testProperty "InvVector" $ \(ArbitraryInvVector x) -> metaBinary x
-        , testProperty "Inv" $ \(ArbitraryInv x) -> metaBinary x
-        , testProperty "Version" $ \(ArbitraryVersion x) -> metaBinary x
-        , testProperty "Addr" $ \(ArbitraryAddr x) -> metaBinary x
-        , testProperty "Alert" $ \(ArbitraryAlert x) -> metaBinary x
-        , testProperty "Reject" $ \(ArbitraryReject x) -> metaBinary x
-        , testProperty "GetData" $ \(ArbitraryGetData x) -> metaBinary x
-        , testProperty "NotFound" $ \(ArbitraryNotFound x) -> metaBinary x
-        , testProperty "Ping" $ \(ArbitraryPing x) -> metaBinary x
-        , testProperty "Pong" $ \(ArbitraryPong x) -> metaBinary x
-        , testProperty "MessageCommand" $ \(ArbitraryMessageCommand x) -> metaBinary x
-        , testProperty "MessageHeader" $ \(ArbitraryMessageHeader x) -> metaBinary x
-        , testProperty "Message" $ \(ArbitraryMessage x) -> metaBinary x
+        [ testProperty "VarInt" $ forAll arbitraryVarInt testId
+        , testProperty "VarString" $ forAll arbitraryVarString testId
+        , testProperty "NetworkAddress" $ forAll arbitraryNetworkAddress testId
+        , testProperty "InvType" $ forAll arbitraryInvType testId
+        , testProperty "InvVector" $ forAll arbitraryInvVector testId
+        , testProperty "Inv" $ forAll arbitraryInv1 testId
+        , testProperty "Version" $ forAll arbitraryVersion testId
+        , testProperty "Addr" $ forAll arbitraryAddr1 testId
+        , testProperty "Alert" $ forAll arbitraryAlert testId
+        , testProperty "Reject" $ forAll arbitraryReject testId
+        , testProperty "GetData" $ forAll arbitraryGetData testId
+        , testProperty "NotFound" $ forAll arbitraryNotFound testId
+        , testProperty "Ping" $ forAll arbitraryPing testId
+        , testProperty "Pong" $ forAll arbitraryPong testId
+        , testProperty "MessageCommand" $ forAll arbitraryMessageCommand testId
+        , testProperty "MessageHeader" $ forAll arbitraryMessageHeader testId
+        , testProperty "Message" $ forAll arbitraryMessage testId
         ]
     , testGroup "Binary encoding and decoding of script types"
-        [ testProperty "ScriptOp" $ \(ArbitraryScriptOp x) -> metaBinary x
-        , testProperty "Script" $ \(ArbitraryScript x) -> metaBinary x
-        , testProperty "SigHash" $ \(ArbitrarySigHash x) -> metaBinary x
+        [ testProperty "ScriptOp" $ forAll arbitraryScriptOp testId
+        , testProperty "Script" $ forAll arbitraryScript testId
+        , testProperty "SigHash" $ forAll arbitrarySigHash testId
         ]
     , testGroup "Binary encoding and decoding of transaction types"
-        [ testProperty "TxIn" $ \(ArbitraryTxIn x) -> metaBinary x
-        , testProperty "TxOut" $ \(ArbitraryTxOut x) -> metaBinary x
-        , testProperty "OutPoint" $ \(ArbitraryOutPoint x) -> metaBinary x
-        , testProperty "Tx" $ \(ArbitraryTx x) -> metaBinary x
+        [ testProperty "TxIn" $ forAll arbitraryTxIn testId
+        , testProperty "TxOut" $ forAll arbitraryTxOut testId
+        , testProperty "OutPoint" $ forAll arbitraryOutPoint testId
+        , testProperty "Tx" $ forAll arbitraryTx testId
         ]
     , testGroup "Binary encoding and decoding of block types"
-        [ testProperty "Block" $ \(ArbitraryBlock x) -> metaBinary x
-        , testProperty "BlockHeader" $ \(ArbitraryBlockHeader x) -> metaBinary x
-        , testProperty "GetBlocks" $ \(ArbitraryGetBlocks x) -> metaBinary x
-        , testProperty "GetHeaders" $ \(ArbitraryGetHeaders x) -> metaBinary x
-        , testProperty "Headers" $ \(ArbitraryHeaders x) -> metaBinary x
-        , testProperty "MerkleBlock" $ \(ArbitraryMerkleBlock x) -> metaBinary x
+        [ testProperty "Block" $ forAll arbitraryBlock testId
+        , testProperty "BlockHeader" $ forAll arbitraryBlockHeader testId
+        , testProperty "GetBlocks" $ forAll arbitraryGetBlocks testId
+        , testProperty "GetHeaders" $ forAll arbitraryGetHeaders testId
+        , testProperty "Headers" $ forAll arbitraryHeaders testId
+        , testProperty "MerkleBlock" $ forAll arbitraryMerkleBlock testId
         ]
     , testGroup "Binary encoding and decoding of bloom types"
-        [ testProperty "BloomFlags" $ \(ArbitraryBloomFlags x) -> metaBinary x
-        , testProperty "BloomFilter" $ \(ArbitraryBloomFilter _ _ x) -> metaBinary x
-        , testProperty "FilterLoad" $ \(ArbitraryFilterLoad x) -> metaBinary x
-        , testProperty "FilterAdd" $ \(ArbitraryFilterAdd x) -> metaBinary x
+        [ testProperty "BloomFlags" $ forAll arbitraryBloomFlags testId
+        , testProperty "BloomFilter" $ forAll arbitraryBloomFilter $ testId . lst3
+        , testProperty "FilterLoad" $ forAll arbitraryFilterLoad testId
+        , testProperty "FilterAdd" $ forAll arbitraryFilterAdd testId
         ]
     ]
 
-metaBinary :: (Serialize a, Eq a) => a -> Bool
-metaBinary x = decode (encode x) == Right x
+testId :: (Serialize a, Eq a) => a -> Bool
+testId x = decode (encode x) == Right x

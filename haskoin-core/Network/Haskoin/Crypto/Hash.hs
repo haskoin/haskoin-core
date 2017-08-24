@@ -25,42 +25,25 @@ module Network.Haskoin.Crypto.Hash
 , WorkingState
 ) where
 
-import Crypto.Hash
-    ( Digest
-    , SHA512
-    , SHA256
-    , SHA1
-    , RIPEMD160
-    , hash
-    )
-import Crypto.MAC.HMAC (hmac)
+import           Control.DeepSeq         (NFData, rnf)
+import           Control.Monad           (guard, (<=<))
+import           Crypto.Hash             (Digest, RIPEMD160, SHA1, SHA256,
+                                          SHA512, hash)
+import           Crypto.MAC.HMAC         (hmac)
+import           Data.Byteable           (toBytes)
+import           Data.ByteString         (ByteString)
+import qualified Data.ByteString         as BS
+import           Data.Maybe              (fromMaybe)
+import           Data.Serialize          (Serialize, get, put)
+import           Data.Serialize.Get      (getByteString)
+import           Data.Serialize.Put      (putByteString)
+import           Data.String             (IsString, fromString)
+import           Data.String.Conversions (cs)
+import           Data.Word               (Word16)
+import           Text.Read               (Lexeme (Ident, String), lexP, parens,
+                                          pfail, readPrec)
 
-import Control.DeepSeq (NFData, rnf)
-import Control.Monad ((<=<), guard)
-import Data.Byteable (toBytes)
-import Data.Maybe (fromMaybe)
-import Data.Word (Word16)
-import Data.String (IsString, fromString)
-import Data.String.Conversions (cs)
-import Text.Read (Lexeme(String, Ident), readPrec, lexP, parens, pfail)
-import Data.Serialize (Serialize, get, put)
-import Data.Serialize.Get (getByteString)
-import Data.Serialize.Put (putByteString)
-
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-    ( null
-    , append
-    , cons
-    , concat
-    , take
-    , empty
-    , length
-    , replicate
-    , splitAt
-    )
-
-import Network.Haskoin.Util
+import           Network.Haskoin.Util
 
 newtype CheckSum32 = CheckSum32 { getCheckSum32 :: ByteString }
     deriving (Eq, Ord)
@@ -271,11 +254,11 @@ hmacDRBGUpd info k0 v0
 -- 10.1.2.3 HMAC DRBG Instantiation
 hmacDRBGNew :: EntropyInput -> Nonce -> PersString -> WorkingState
 hmacDRBGNew seed nonce info
-    | (BS.length seed + BS.length nonce) * 8 < 384  = error $
+    | (BS.length seed + BS.length nonce) * 8 < 384  = error
         "Entropy + nonce input length must be at least 384 bit"
-    | (BS.length seed + BS.length nonce) * 8 > 1000 = error $
+    | (BS.length seed + BS.length nonce) * 8 > 1000 = error
         "Entropy + nonce input length can not be greater than 1000 bit"
-    | BS.length info * 8 > 256  = error $
+    | BS.length info * 8 > 256  = error
         "Maximum personalization string length is 256 bit"
     | otherwise                = (k1, v1, 1)         -- 10.1.2.3.6
   where
@@ -287,9 +270,9 @@ hmacDRBGNew seed nonce info
 -- 10.1.2.4 HMAC DRBG Reseeding
 hmacDRBGRsd :: WorkingState -> EntropyInput -> AdditionalInput -> WorkingState
 hmacDRBGRsd (k, v, _) seed info
-    | BS.length seed * 8 < 256 = error $
+    | BS.length seed * 8 < 256 = error
         "Entropy input length must be at least 256 bit"
-    | BS.length seed * 8 > 1000 = error $
+    | BS.length seed * 8 > 1000 = error
         "Entropy input length can not be greater than 1000 bit"
     | otherwise   = (k0, v0, 1)             -- 10.1.2.4.4
   where

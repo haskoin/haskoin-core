@@ -1,48 +1,32 @@
-module Network.Haskoin.Test.Util
-( ArbitraryByteString(..)
-, ArbitraryNotNullByteString(..)
-, ArbitraryUTCTime(..)
-) where
+module Network.Haskoin.Test.Util where
 
-import Test.QuickCheck
-    ( Arbitrary
-    , Gen
-    , arbitrary
-    , choose
-    , listOf1
-    )
-
-import Data.Word (Word32)
-import Data.Time.Clock (UTCTime(..))
-import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import qualified Data.ByteString as BS (ByteString, pack, drop)
+import qualified Data.ByteString       as BS
+import           Data.Time.Clock       (UTCTime (..))
+import           Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import           Data.Word             (Word32)
+import           Test.QuickCheck
 
 -- | Arbitrary strict ByteString
-data ArbitraryByteString = ArbitraryByteString BS.ByteString
-    deriving (Eq, Show, Read)
-
-instance Arbitrary ArbitraryByteString where
-    arbitrary = do
-        bs <- BS.pack `fmap` arbitrary
-        n <- choose (0, 2)
-        -- to give us some with non-0 offset
-        return $ ArbitraryByteString $ BS.drop n bs
+arbitraryBS :: Gen BS.ByteString
+arbitraryBS = BS.pack `fmap` arbitrary
 
 -- | Arbitrary strict ByteString that is not empty
-data ArbitraryNotNullByteString = ArbitraryNotNullByteString BS.ByteString
-    deriving (Eq, Show, Read)
+arbitraryBS1 :: Gen BS.ByteString
+arbitraryBS1 = BS.pack `fmap` listOf1 arbitrary
 
-instance Arbitrary ArbitraryNotNullByteString where
-    arbitrary = do
-        bs <- BS.pack `fmap` (listOf1 arbitrary)
-        return $ ArbitraryNotNullByteString bs
+-- | Arbitrary strict ByteString of a given length
+arbitraryBSn :: Int -> Gen BS.ByteString
+arbitraryBSn n = BS.pack `fmap` vectorOf n arbitrary
 
 -- | Arbitrary UTCTime that generates dates after 01 Jan 1970 01:00:00 CET
-newtype ArbitraryUTCTime = ArbitraryUTCTime UTCTime
-    deriving (Eq, Show, Read)
+arbitraryUTCTime :: Gen UTCTime
+arbitraryUTCTime = do
+    w <- arbitrary :: Gen Word32
+    return $ posixSecondsToUTCTime $ realToFrac w
 
-instance Arbitrary ArbitraryUTCTime where
-    arbitrary = do
-        w <- (arbitrary :: Gen Word32)
-        return $ ArbitraryUTCTime $ posixSecondsToUTCTime $ realToFrac w
+-- | Generate a Maybe from a Gen a
+arbitraryMaybe :: Gen a -> Gen (Maybe a)
+arbitraryMaybe g = frequency [ (1, return Nothing)
+                             , (5, Just <$> g)
+                             ]
 

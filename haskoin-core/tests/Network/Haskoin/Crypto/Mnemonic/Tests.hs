@@ -1,28 +1,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Mnemonic.Tests (tests) where
 
-import Test.QuickCheck (Arbitrary, Property, arbitrary, choose, (==>))
-import Test.Framework (Test, testGroup)
-import Test.Framework.Providers.QuickCheck2 (testProperty)
-
-import Data.Bits ((.&.), shiftR)
-import Data.Word (Word32, Word64)
-import qualified Data.ByteString as BS
-    ( ByteString
-    , empty
-    , append
-    , concat
-    , length
-    , last
-    )
-import qualified Data.ByteString.Char8 as C (words)
-import Data.Serialize (Serialize, encode)
-
-import Network.Haskoin.Test
-import Network.Haskoin.Crypto
-import Network.Haskoin.Util
-import Network.Haskoin.Internals (fromMnemonic, getBits)
-
+import           Data.Bits                            (shiftR, (.&.))
+import qualified Data.ByteString                      as BS
+import qualified Data.ByteString.Char8                as C
+import           Data.Serialize                       (Serialize, encode)
+import           Data.Word                            (Word32, Word64)
+import           Network.Haskoin.Crypto
+import           Network.Haskoin.Internals            (fromMnemonic, getBits)
+import           Network.Haskoin.Test
+import           Network.Haskoin.Util
+import           Test.Framework
+import           Test.Framework.Providers.QuickCheck2
+import           Test.QuickCheck                      (Arbitrary, Property,
+                                                       arbitrary, choose, (==>))
 
 tests :: [Test]
 tests =
@@ -128,7 +119,7 @@ fromToMnemonic512 ((a, b, c, d), (e, f, g, h)) = bs == bs'
     bs' = fromRight (fromMnemonic =<< toMnemonic bs)
 
 fromToMnemonicVar :: [Word32] -> Property
-fromToMnemonicVar ls = not (length ls > 8) ==> bs == bs'
+fromToMnemonicVar ls = length ls <= 8 ==> bs == bs'
   where
     bs = binWordsToBS ls
     bs' = fromRight (fromMnemonic =<< toMnemonic bs)
@@ -168,7 +159,7 @@ mnemonicToSeed512 ((a, b, c, d), (e, f, g, h)) = l == 64
     l = BS.length seed
 
 mnemonicToSeedVar :: [Word32] -> Property
-mnemonicToSeedVar ls = not (length ls > 16) ==> l == 64
+mnemonicToSeedVar ls = length ls <= 16 ==> l == 64
   where
     bs = binWordsToBS ls
     seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)
@@ -180,7 +171,7 @@ data ByteCountGen = ByteCountGen BS.ByteString Int deriving Show
 
 instance Arbitrary ByteCountGen where
     arbitrary = do
-        ArbitraryByteString bs <- arbitrary
+        bs <- arbitraryBS
         i <- choose (0, BS.length bs * 8)
         return $ ByteCountGen bs i
 
@@ -192,9 +183,9 @@ getBitsByteCount (ByteCountGen bs i) = BS.length bits == l
     l = if r == 0 then q else q + 1
 
 getBitsEndBits :: ByteCountGen -> Bool
-getBitsEndBits (ByteCountGen bs i) = mask
+getBitsEndBits (ByteCountGen bs i) =
+    (r == 0) || (BS.last bits .&. (0xff `shiftR` r) == 0x00)
   where
     r = i `mod` 8
     bits = getBits i bs
-    mask = if r == 0 then True else BS.last bits .&. (0xff `shiftR` r) == 0x00
 

@@ -10,7 +10,7 @@ instance Arbitrary AccountType where
     arbitrary = oneof
         [ return AccountRegular
         , do
-            ArbitraryMSParam m n <- arbitrary
+            (m, n) <- arbitraryMSParam
             return $ AccountMultisig m n
         ]
 

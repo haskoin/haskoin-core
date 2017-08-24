@@ -86,6 +86,7 @@ module Network.Haskoin.Wallet
 , createWalletTx
 , signOfflineTx
 , getOfflineTxData
+, isCoinbaseTx
 
 -- *Database blocks
 , importMerkles

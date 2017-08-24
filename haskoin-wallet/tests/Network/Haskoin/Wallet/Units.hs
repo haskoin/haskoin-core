@@ -300,6 +300,7 @@ tests =
         , testCase "Verify balances in conflict" $ runUnit testConflictBalances
         , testCase "Offline transactions" $ runUnit testOffline
         , testCase "Kill an offline tx by spending its coins" $ runUnit testKillOffline
+        , testCase "Importing coinbase txs" $ runUnit testCoinbaseTxs
         , testCase "Offline transaction exceptions" testOfflineExceptions
         , testCase "Multisig test 1" $ runUnit testImportMultisig
         , testCase "Kill Tx" $ runUnit testKillTx
@@ -948,6 +949,62 @@ testOffline = do
         [(0, BalanceInfo 20000000 0 1 0)]
     assertAddressOffline accE 0 0 AddressInternal
         [(0, BalanceInfo 0 0 0 0)]
+
+
+tid0 :: TxHash
+tid0 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+testCoinbaseTxs :: App ()
+testCoinbaseTxs = do
+    (Entity ai _) <- fst <$> newAccount NewAccount
+        { newAccountName = "acc1"
+        , newAccountType = AccountRegular
+        , newAccountDeriv = Just 0
+        , newAccountMaster = Nothing
+        , newAccountMnemonic = Just (cs ms)
+        , newAccountPassword = Nothing
+        , newAccountKeys = []
+        , newAccountReadOnly = False
+        , newAccountEntropy  = Nothing
+        }
+    let cb1 = fakeTx
+            [ (tid0, 0) ]
+            [ ("1BThGRupK6Ah44sfCtsg2QkoEDJA58d8in", 10000000) ]
+        cb2 = fakeTx
+            [ (tid0, 0) ]
+            [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
+            , ("1JGvK2MYQ3wwxMdYeyf7Eg1HeVJuEq3AT1", 4000000) -- change
+            ]
+        tx1 = fakeTx
+            [ (tid1, 0) ]
+            [ ("1BThGRupK6Ah44sfCtsg2QkoEDJA58d8in", 10000000) ]
+        tx2 = fakeTx
+            [ (tid1, 0) ]
+            [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
+            , ("1JGvK2MYQ3wwxMdYeyf7Eg1HeVJuEq3AT1", 4000000) -- change
+            ]
+        block1 = fakeNode genesisBlock [txHash cb1, txHash tx1] 0 1
+        block2 = fakeNode block1 [txHash cb2, txHash tx2] 0 1
+
+    liftIO $ assertBool "Tx1 is not a coinbase tx" $ isCoinbaseTx cb1
+    liftIO $ assertBool "Tx2 is not a coinbase tx" $ isCoinbaseTx cb2
+
+    -- Here we are testing that coinbase transactions can be imported
+    -- without double spending each other (they all spend the same coin 0x000...)
+
+    assertImportTx ai 1 TxPending cb1
+    assertImportTx ai 0 TxPending tx1
+    importMerkles (BestChain [block1]) [[txHash cb1, txHash tx1]] Nothing
+    assertTxConfidence ai (txHash cb1) TxBuilding
+    assertTxConfidence ai (txHash tx1) TxBuilding
+
+    assertImportTx ai 1 TxPending cb2 -- This is pending and not dead
+    assertImportTx ai 0 TxDead tx2
+    importMerkles (BestChain [block1, block2]) [[txHash cb2, txHash tx2]] Nothing
+    assertTxConfidence ai (txHash cb1) TxBuilding -- This is pending and not dead
+    assertTxConfidence ai (txHash tx1) TxDead
+    assertTxConfidence ai (txHash cb2) TxBuilding
+    assertTxConfidence ai (txHash tx2) TxBuilding
 
 testKillOffline :: App ()
 testKillOffline = do

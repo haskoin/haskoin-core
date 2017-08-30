@@ -33,7 +33,7 @@ module Network.Haskoin.Test
 , arbitraryDerivPath
 , arbitraryParsedPath
 
-  -- * Node Arbitrary functions
+  -- * Network Arbitrary functions
 , arbitraryVarInt
 , arbitraryVarString
 , arbitraryNetworkAddress
@@ -116,7 +116,7 @@ module Network.Haskoin.Test
 
 import Network.Haskoin.Test.Util
 import Network.Haskoin.Test.Crypto
-import Network.Haskoin.Test.Node
+import Network.Haskoin.Test.Network
 import Network.Haskoin.Test.Message
 import Network.Haskoin.Test.Script
 import Network.Haskoin.Test.Transaction

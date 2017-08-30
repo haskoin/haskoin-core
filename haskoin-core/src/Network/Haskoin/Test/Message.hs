@@ -3,10 +3,10 @@
 -}
 module Network.Haskoin.Test.Message where
 
-import           Network.Haskoin.Node.Message
+import           Network.Haskoin.Network.Message
 import           Network.Haskoin.Test.Block
 import           Network.Haskoin.Test.Crypto
-import           Network.Haskoin.Test.Node
+import           Network.Haskoin.Test.Network
 import           Network.Haskoin.Test.Transaction
 import           Test.QuickCheck
 

@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Node.Units (tests) where
+module Network.Haskoin.Network.Units (tests) where
 
 import Test.HUnit (Assertion, assertBool)
 import Test.Framework (Test, testGroup)
@@ -9,7 +9,7 @@ import Data.Maybe (fromJust)
 import Data.Serialize (encode)
 
 import Network.Haskoin.Crypto
-import Network.Haskoin.Node
+import Network.Haskoin.Network
 import Network.Haskoin.Util
 
 tests :: [Test]

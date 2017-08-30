@@ -310,7 +310,7 @@ satoshiCoreTxTests = do
 type TestComment = String
 satoshiCoreTxVec :: IO [SatoshiCoreTxTest]
 satoshiCoreTxVec = do 
-    tx_validBS <- LBS.readFile "tests/data/tx_valid.json"
+    tx_validBS <- LBS.readFile "test/data/tx_valid.json"
     let testsAndComments = maybe (error $ "satoshiCoreTxVec, couldn't decode json") id . Aeson.decode $ tx_validBS            
     return $ case testsAndComments of
         (Aeson.Array arr) -> 

@@ -1,4 +1,4 @@
-module Network.Haskoin.Node.Bloom
+module Network.Haskoin.Network.Bloom
 ( BloomFlags(..)
 , BloomFilter(..)
 , FilterLoad(..)
@@ -32,7 +32,7 @@ import qualified Data.Foldable as F
 import qualified Data.Sequence as S
 import qualified Data.ByteString as BS
 
-import Network.Haskoin.Node.Types
+import Network.Haskoin.Network.Types
 
 -- 20,000 items with fp rate < 0.1% or 10,000 items and <0.0001%
 maxBloomSize :: Int

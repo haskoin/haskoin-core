@@ -19,7 +19,7 @@ import qualified Network.Haskoin.Crypto.Mnemonic.Units     (tests)
 import qualified Network.Haskoin.Crypto.Units              (tests)
 
 -- Node tests
-import qualified Network.Haskoin.Node.Units                (tests)
+import qualified Network.Haskoin.Network.Units             (tests)
 
 -- Script tests
 import qualified Network.Haskoin.Script.Tests              (tests)
@@ -58,7 +58,7 @@ main = do
     ++ Network.Haskoin.Crypto.Mnemonic.Tests.tests
     ++ Network.Haskoin.Crypto.Mnemonic.Units.tests
     ++ Network.Haskoin.Crypto.Units.tests
-    ++ Network.Haskoin.Node.Units.tests
+    ++ Network.Haskoin.Network.Units.tests
     ++ Network.Haskoin.Script.Tests.tests
     ++ Network.Haskoin.Script.Units.tests
     ++ Network.Haskoin.Transaction.Tests.tests

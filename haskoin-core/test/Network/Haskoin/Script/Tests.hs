@@ -79,11 +79,11 @@ tests =
           ]
     , testFile
           "Canonical Valid Script Test Cases"
-          "tests/data/script_valid.json"
+          "test/data/script_valid.json"
           True
     , testFile
           "Canonical Invalid Script Test Cases"
-          "tests/data/script_invalid.json"
+          "test/data/script_invalid.json"
           False
     ]
 
@@ -328,11 +328,11 @@ execScriptIO sig key flgs =
 
 testValid :: Test
 testValid = testFile "Canonical Valid Script Test Cases"
-            "tests/data/script_valid.json" True
+            "test/data/script_valid.json" True
 
 testInvalid :: Test
 testInvalid = testFile "Canonical Valid Script Test Cases"
-              "tests/data/script_invalid.json" False
+              "test/data/script_invalid.json" False
 
 -- | Maximum value of sequence number
 maxSeqNum :: Word32

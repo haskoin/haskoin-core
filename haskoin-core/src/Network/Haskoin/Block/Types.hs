@@ -40,7 +40,7 @@ import           Data.String                       (IsString, fromString)
 import           Data.String.Conversions           (cs)
 import           Data.Word                         (Word32)
 import           Network.Haskoin.Crypto.Hash
-import           Network.Haskoin.Node.Types
+import           Network.Haskoin.Network.Types
 import           Network.Haskoin.Transaction.Types
 import           Network.Haskoin.Util
 import           Text.Read                         (lexP, parens, pfail,

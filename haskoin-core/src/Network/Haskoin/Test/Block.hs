@@ -6,7 +6,7 @@ module Network.Haskoin.Test.Block where
 import           Network.Haskoin.Block.Merkle
 import           Network.Haskoin.Block.Types
 import           Network.Haskoin.Test.Crypto
-import           Network.Haskoin.Test.Node
+import           Network.Haskoin.Test.Network
 import           Network.Haskoin.Test.Transaction
 import           Test.QuickCheck
 

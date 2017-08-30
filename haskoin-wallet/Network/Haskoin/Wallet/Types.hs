@@ -75,7 +75,7 @@ import           Database.Persist.Sql
 import           GHC.Generics
 import           Network.Haskoin.Block
 import           Network.Haskoin.Crypto
-import           Network.Haskoin.Node
+import           Network.Haskoin.Network
 import           Network.Haskoin.Node.HeaderTree
 import           Network.Haskoin.Script
 import           Network.Haskoin.Transaction

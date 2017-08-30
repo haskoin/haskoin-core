@@ -40,7 +40,7 @@ import           Data.Serialize                    (encode)
 import           Data.String.Conversions           (cs)
 import           Data.Word                         (Word64)
 import           Network.Haskoin.Crypto
-import           Network.Haskoin.Node.Types
+import           Network.Haskoin.Network.Types
 import           Network.Haskoin.Script
 import           Network.Haskoin.Transaction.Types
 import           Network.Haskoin.Util

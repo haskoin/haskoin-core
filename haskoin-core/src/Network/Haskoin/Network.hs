@@ -4,7 +4,7 @@
   de-serializing them. More information on the bitcoin protocol is available
   here: <http://en.bitcoin.it/wiki/Protocol_specification>
 -}
-module Network.Haskoin.Node
+module Network.Haskoin.Network
 (
   -- * Requesting data
   GetData(..)
@@ -46,7 +46,7 @@ module Network.Haskoin.Node
 
 ) where
 
-import Network.Haskoin.Node.Message
-import Network.Haskoin.Node.Types
-import Network.Haskoin.Node.Bloom
+import Network.Haskoin.Network.Message
+import Network.Haskoin.Network.Types
+import Network.Haskoin.Network.Bloom
 

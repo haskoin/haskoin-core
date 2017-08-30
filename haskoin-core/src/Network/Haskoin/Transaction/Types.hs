@@ -46,7 +46,7 @@ import Text.Read (readPrec, parens, lexP, pfail)
 import qualified Text.Read as Read (Lexeme(Ident, String))
 import Network.Haskoin.Util
 import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Node.Types
+import Network.Haskoin.Network.Types
 
 newtype TxHash = TxHash { getTxHash :: Hash256 }
     deriving (Eq, Ord)

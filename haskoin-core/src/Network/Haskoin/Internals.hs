@@ -11,9 +11,9 @@ module Network.Haskoin.Internals
 , module Network.Haskoin.Crypto.ExtendedKeys
 , module Network.Haskoin.Crypto.ECDSA
 , module Network.Haskoin.Crypto.Mnemonic
-, module Network.Haskoin.Node.Types
-, module Network.Haskoin.Node.Message
-, module Network.Haskoin.Node.Bloom
+, module Network.Haskoin.Network.Types
+, module Network.Haskoin.Network.Message
+, module Network.Haskoin.Network.Bloom
 , module Network.Haskoin.Script.Types
 , module Network.Haskoin.Script.Parser
 , module Network.Haskoin.Script.SigHash
@@ -24,7 +24,7 @@ module Network.Haskoin.Internals
 , module Network.Haskoin.Block.Merkle
 , module Network.Haskoin.Test.Util
 , module Network.Haskoin.Test.Crypto
-, module Network.Haskoin.Test.Node
+, module Network.Haskoin.Test.Network
 , module Network.Haskoin.Test.Message
 , module Network.Haskoin.Test.Script
 , module Network.Haskoin.Test.Transaction
@@ -39,9 +39,9 @@ import Network.Haskoin.Crypto.Keys
 import Network.Haskoin.Crypto.ExtendedKeys
 import Network.Haskoin.Crypto.ECDSA
 import Network.Haskoin.Crypto.Mnemonic
-import Network.Haskoin.Node.Types
-import Network.Haskoin.Node.Message
-import Network.Haskoin.Node.Bloom
+import Network.Haskoin.Network.Types
+import Network.Haskoin.Network.Message
+import Network.Haskoin.Network.Bloom
 import Network.Haskoin.Script.Types
 import Network.Haskoin.Script.Parser
 import Network.Haskoin.Script.SigHash
@@ -52,7 +52,7 @@ import Network.Haskoin.Block.Types
 import Network.Haskoin.Block.Merkle
 import Network.Haskoin.Test.Util
 import Network.Haskoin.Test.Crypto
-import Network.Haskoin.Test.Node
+import Network.Haskoin.Test.Network
 import Network.Haskoin.Test.Message
 import Network.Haskoin.Test.Script
 import Network.Haskoin.Test.Transaction

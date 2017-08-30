@@ -23,7 +23,7 @@ import           Data.Word                         (Word32, Word8)
 import           Network.Haskoin.Block.Types
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
-import           Network.Haskoin.Node.Types
+import           Network.Haskoin.Network.Types
 import           Network.Haskoin.Transaction.Types
 
 type MerkleRoot        = Hash256

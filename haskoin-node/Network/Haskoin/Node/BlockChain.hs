@@ -33,7 +33,7 @@ import           Data.Time.Clock.POSIX           (getPOSIXTime)
 import           Data.Unique                     (hashUnique)
 import           Data.Word                       (Word32)
 import           Network.Haskoin.Block
-import           Network.Haskoin.Node
+import           Network.Haskoin.Network
 import           Network.Haskoin.Node.HeaderTree
 import           Network.Haskoin.Node.Peer
 import           Network.Haskoin.Node.STM

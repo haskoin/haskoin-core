@@ -1,11 +1,11 @@
 {-|
-  Arbitrary types for Network.Haskoin.Node
+  Arbitrary types for Network.Haskoin.Network
 -}
-module Network.Haskoin.Test.Node where
+module Network.Haskoin.Test.Network where
 
 import qualified Data.ByteString             as BS (empty, pack)
 import           Data.Word                   (Word16, Word32)
-import           Network.Haskoin.Node
+import           Network.Haskoin.Network
 import           Network.Haskoin.Test.Crypto
 import           Network.Haskoin.Test.Util
 import           Network.Socket              (SockAddr (..))

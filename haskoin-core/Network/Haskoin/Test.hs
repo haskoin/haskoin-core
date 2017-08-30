@@ -3,111 +3,115 @@
 -}
 module Network.Haskoin.Test
 (
-  -- * Util Arbitrary instances
-  ArbitraryByteString(..)
-, ArbitraryNotNullByteString(..)
-, ArbitraryUTCTime(..)
-, ArbitraryHash512(..)
-, ArbitraryHash256(..)
-, ArbitraryHash160(..)
-, ArbitraryCheckSum32(..)
+  -- * Util Arbitrary functions
+  arbitraryBS
+, arbitraryBS1
+, arbitraryBSn
+, arbitraryUTCTime
+, arbitraryMaybe
 
-  -- * Crypto Arbitrary instances
-, ArbitraryPrvKey(..)
-, ArbitraryPrvKeyC(..)
-, ArbitraryPrvKeyU(..)
-, ArbitraryPubKey(..)
-, ArbitraryPubKeyC(..)
-, ArbitraryPubKeyU(..)
-, ArbitraryAddress(..)
-, ArbitraryPubKeyAddress(..)
-, ArbitraryScriptAddress(..)
-, ArbitrarySignature(..)
-, ArbitraryXPrvKey(..)
-, ArbitraryXPubKey(..)
-, ArbitraryHardPath(..)
-, ArbitrarySoftPath(..)
-, ArbitraryDerivPath(..)
-, ArbitraryParsedPath(..)
+  -- * Crypto Arbitrary functions
+, arbitraryHash160
+, arbitraryHash256
+, arbitraryHash512
+, arbitraryCheckSum32
+, arbitraryPrvKey
+, arbitraryPrvKeyC
+, arbitraryPrvKeyU
+, arbitraryPubKey
+, arbitraryPubKeyC
+, arbitraryPubKeyU
+, arbitraryAddress
+, arbitraryPubKeyAddress
+, arbitraryScriptAddress
+, arbitrarySignature
+, arbitraryXPrvKey
+, arbitraryXPubKey
+, arbitraryBip32PathIndex
+, arbitraryHardPath
+, arbitrarySoftPath
+, arbitraryDerivPath
+, arbitraryParsedPath
 
-  -- * Node Arbitrary instances
-, ArbitraryVarInt(..)
-, ArbitraryVarString(..)
-, ArbitraryNetworkAddress(..)
-, ArbitraryNetworkAddressTime(..)
-, ArbitraryInvType(..)
-, ArbitraryInvVector(..)
-, ArbitraryInv(..)
-, ArbitraryVersion(..)
-, ArbitraryAddr(..)
-, ArbitraryAlert(..)
-, ArbitraryReject(..)
-, ArbitraryRejectCode(..)
-, ArbitraryGetData(..)
-, ArbitraryNotFound(..)
-, ArbitraryPing(..)
-, ArbitraryPong(..)
-, ArbitraryBloomFlags(..)
-, ArbitraryBloomFilter(..)
-, ArbitraryFilterLoad(..)
-, ArbitraryFilterAdd(..)
-, ArbitraryMessageCommand(..)
+  -- * Node Arbitrary functions
+, arbitraryVarInt
+, arbitraryVarString
+, arbitraryNetworkAddress
+, arbitraryNetworkAddressTime
+, arbitraryInvType
+, arbitraryInvVector
+, arbitraryInv1
+, arbitraryVersion
+, arbitraryAddr1
+, arbitraryAlert
+, arbitraryReject
+, arbitraryRejectCode
+, arbitraryGetData
+, arbitraryNotFound
+, arbitraryPing
+, arbitraryPong
+, arbitraryBloomFlags
+, arbitraryBloomFilter
+, arbitraryFilterLoad
+, arbitraryFilterAdd
+, arbitraryMessageCommand
 
-  -- * Message Arbitrary instances
-, ArbitraryMessageHeader(..)
-, ArbitraryMessage(..)
+  -- * Message Arbitrary functions
+, arbitraryMessageHeader
+, arbitraryMessage
 
-  -- * Script Arbitrary instances
-, ArbitraryScriptOp(..)
-, ArbitraryScript(..)
-, ArbitraryIntScriptOp(..)
-, ArbitraryPushDataType(..)
-, ArbitraryTxSignature(..)
-, ArbitrarySigHash(..)
-, ArbitraryValidSigHash(..)
-, ArbitraryMSParam(..)
-, ArbitraryScriptOutput(..)
-, ArbitrarySimpleOutput(..)
-, ArbitraryPKOutput(..)
-, ArbitraryPKHashOutput(..)
-, ArbitraryMSOutput(..)
-, ArbitraryMSCOutput(..)
-, ArbitrarySHOutput(..)
-, ArbitraryScriptInput(..)
-, ArbitrarySimpleInput(..)
-, ArbitraryPKInput(..)
-, ArbitraryPKHashInput(..)
-, ArbitraryPKHashCInput(..)
-, ArbitraryMSInput(..)
-, ArbitrarySHInput(..)
-, ArbitraryMulSigSHCInput(..)
+  -- * Script arbitrary functions
+, arbitraryScriptOp
+, arbitraryScript
+, arbitraryIntScriptOp
+, arbitraryPushDataType
+, arbitraryTxSignature
+, arbitrarySigHash
+, arbitraryValidSigHash
+, arbitraryMSParam
+, arbitraryScriptOutput
+, arbitrarySimpleOutput
+, arbitraryPKOutput
+, arbitraryPKHashOutput
+, arbitraryMSOutput
+, arbitraryMSCOutput
+, arbitrarySHOutput
+, arbitraryScriptInput
+, arbitrarySimpleInput
+, arbitraryPKInput
+, arbitraryPKHashInput
+, arbitraryPKHashCInput
+, arbitraryMSInput
+, arbitrarySHInput
+, arbitraryMulSigSHCInput
 
-  -- * Transaction Arbitrary instances
-, ArbitrarySatoshi(..)
-, ArbitraryTx(..)
-, ArbitraryTxHash(..)
-, ArbitraryTxIn(..)
-, ArbitraryTxOut(..)
-, ArbitraryOutPoint(..)
-, ArbitraryAddrOnlyTx(..)
-, ArbitraryAddrOnlyTxIn(..)
-, ArbitraryAddrOnlyTxOut(..)
-, ArbitrarySigInput(..)
-, ArbitraryPKSigInput(..)
-, ArbitraryPKHashSigInput(..)
-, ArbitraryMSSigInput(..)
-, ArbitrarySHSigInput(..)
-, ArbitrarySigningData(..)
-, ArbitraryPartialTxs(..)
+  -- * Transaction arbitrary functions
+, TestCoin(..)
+, arbitrarySatoshi
+, arbitraryTx
+, arbitraryTxHash
+, arbitraryTxIn
+, arbitraryTxOut
+, arbitraryOutPoint
+, arbitraryAddrOnlyTx
+, arbitraryAddrOnlyTxIn
+, arbitraryAddrOnlyTxOut
+, arbitrarySigInput
+, arbitraryPKSigInput
+, arbitraryPKHashSigInput
+, arbitraryMSSigInput
+, arbitrarySHSigInput
+, arbitrarySigningData
+, arbitraryPartialTxs
 
-  -- * Block Arbitrary instances
-, ArbitraryBlock(..)
-, ArbitraryBlockHeader(..)
-, ArbitraryBlockHash(..)
-, ArbitraryGetBlocks(..)
-, ArbitraryGetHeaders(..)
-, ArbitraryHeaders(..)
-, ArbitraryMerkleBlock(..)
+  -- * Block arbitrary functions
+, arbitraryBlock
+, arbitraryBlockHeader
+, arbitraryBlockHash
+, arbitraryGetBlocks
+, arbitraryGetHeaders
+, arbitraryHeaders
+, arbitraryMerkleBlock
 ) where
 
 import Network.Haskoin.Test.Util

@@ -19,20 +19,20 @@ module Network.Haskoin.Crypto.Mnemonic
 , getBits
 ) where
 
-import Control.Monad (when)
-import qualified Crypto.Hash.SHA256 as SHA256
-import Crypto.PBKDF.ByteString (sha512PBKDF2)
-import Data.Bits ((.&.), shiftL, shiftR)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as C (unwords, words)
-import Data.String.Conversions (cs)
-import qualified Data.ByteString as BS
-import qualified Data.Map.Strict as M
-import Data.List
-import Data.Maybe
-import Data.Vector ((!), Vector)
-import qualified Data.Vector as V
-import Network.Haskoin.Util
+import           Control.Monad           (when)
+import qualified Crypto.Hash.SHA256      as SHA256
+import           Crypto.PBKDF.ByteString (sha512PBKDF2)
+import           Data.Bits               (shiftL, shiftR, (.&.))
+import           Data.ByteString         (ByteString)
+import qualified Data.ByteString         as BS
+import qualified Data.ByteString.Char8   as C
+import           Data.List
+import qualified Data.Map.Strict         as M
+import           Data.Maybe
+import           Data.String.Conversions (cs)
+import           Data.Vector             (Vector, (!))
+import qualified Data.Vector             as V
+import           Network.Haskoin.Util
 
 type Entropy = ByteString
 type Mnemonic = ByteString
@@ -114,9 +114,9 @@ getBits b bs
     | otherwise = i `BS.snoc` l
   where
     (q, r) = b `quotRem` 8
-    s = (BS.take (q + 1) bs)
+    s = BS.take (q + 1) bs
     i = BS.init s
-    l = BS.last s .&. (0xff `shiftL` (8 - r))    -- zero unneeded bits
+    l = BS.last s .&. (0xff `shiftL` (8 - r)) -- zero unneeded bits
 
 -- | Get indices of words in word list.
 getIndices :: [ByteString] -> Either String [Int]
@@ -126,17 +126,23 @@ getIndices ws
   where
     i = map (`M.lookup` wl') ws
     n = elemIndices Nothing i
-    w = C.unwords $ map (ws!!) n
+    w = C.unwords $ map (ws !!) n
 
 indicesToBS :: [Int] -> Either String ByteString
 indicesToBS is = do
     when lrg $ Left "indicesToBS: index larger or equal than 2048"
     return . pad . integerToBS $ foldl' f 0 is `shiftL` shift_width
   where
-    lrg = not . isNothing $ find (>= 2048) is
+    lrg = isJust $ find (>= 2048) is
     (q, r) = (length is * 11) `quotRem` 8
-    shift_width = if r == 0 then 0 else 8 - r
-    bl = if r == 0 then q else q + 1   -- length of resulting ByteString
+    shift_width =
+        if r == 0
+            then 0
+            else 8 - r
+    bl =
+        if r == 0
+            then q
+            else q + 1 -- length of resulting ByteString
     pad bs = BS.append (BS.replicate (bl - BS.length bs) 0x00) bs
     f acc x = (acc `shiftL` 11) + fromIntegral x
 
@@ -146,7 +152,7 @@ bsToIndices bs =
   where
     (q, r) = (BS.length bs * 8) `quotRem` 11
     go 0 _ = []
-    go n i = (fromIntegral $ i `mod` 2048) : go (n - 1) (i `shiftR` 11)
+    go n i = fromIntegral (i `mod` 2048) : go (n - 1) (i `shiftR` 11)
 
 wl' :: M.Map ByteString Int
 wl' = V.ifoldr' (\i w m -> M.insert w i m) M.empty wl

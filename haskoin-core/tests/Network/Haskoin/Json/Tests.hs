@@ -1,35 +1,35 @@
 module Network.Haskoin.Json.Tests (tests) where
 
-import Test.Framework (Test, testGroup)
-import Test.Framework.Providers.QuickCheck2 (testProperty)
-
-import Data.Aeson (FromJSON, ToJSON, decode, encode)
-import Data.HashMap.Strict (singleton)
-
-import Network.Haskoin.Test
+import           Data.Aeson
+import           Data.HashMap.Strict                  (singleton)
+import           Network.Haskoin.Test
+import           Test.Framework
+import           Test.Framework.Providers.QuickCheck2
+import           Test.QuickCheck
 
 tests :: [Test]
 tests =
-    [ testGroup "Serialize & de-serialize haskoin types to JSON"
-        [ testProperty "ScriptOutput" $ \(ArbitraryScriptOutput x) -> metaID x
-        , testProperty "OutPoint" $ \(ArbitraryOutPoint x) -> metaID x
-        , testProperty "Address" $ \(ArbitraryAddress x) -> metaID x
-        , testProperty "Tx" $ \(ArbitraryTx x) -> metaID x
-        , testProperty "TxHash" $ \(ArbitraryTxHash x) -> metaID x
-        , testProperty "BlockHash" $ \(ArbitraryBlockHash x) -> metaID x
-        , testProperty "SigHash" $ \(ArbitrarySigHash x) -> metaID x
-        , testProperty "SigInput" $ \(ArbitrarySigInput x _) -> metaID x
-        , testProperty "PubKey" $ \(ArbitraryPubKey _ x) -> metaID x
-        , testProperty "PubKeyC" $ \(ArbitraryPubKeyC _ x) -> metaID x
-        , testProperty "PubKeyU" $ \(ArbitraryPubKeyU _ x) -> metaID x
-        , testProperty "XPrvKey" $ \(ArbitraryXPrvKey x) -> metaID x
-        , testProperty "XPubKey" $ \(ArbitraryXPubKey _ x) -> metaID x
-        , testProperty "DerivPath" $ \(ArbitraryDerivPath x) -> metaID x
-        , testProperty "ParsedPath" $ \(ArbitraryParsedPath x) -> metaID x
-        ]
+    [ testGroup
+          "Serialize & de-serialize haskoin types to JSON"
+          [ testProperty "ScriptOutput" $ forAll arbitraryScriptOutput testID
+          , testProperty "OutPoint" $ forAll arbitraryOutPoint testID
+          , testProperty "Address" $ forAll arbitraryAddress testID
+          , testProperty "Tx" $ forAll arbitraryTx testID
+          , testProperty "TxHash" $ forAll arbitraryTxHash testID
+          , testProperty "BlockHash" $ forAll arbitraryBlockHash testID
+          , testProperty "SigHash" $ forAll arbitrarySigHash testID
+          , testProperty "SigInput" $ forAll arbitrarySigInput (testID . fst)
+          , testProperty "PubKey" $ forAll arbitraryPubKey (testID . snd)
+          , testProperty "PubKeyC" $ forAll arbitraryPubKeyC (testID . snd)
+          , testProperty "PubKeyU" $ forAll arbitraryPubKeyU (testID . snd)
+          , testProperty "XPrvKey" $ forAll arbitraryXPrvKey testID
+          , testProperty "XPubKey" $ forAll arbitraryXPubKey (testID . snd)
+          , testProperty "DerivPath" $ forAll arbitraryDerivPath testID
+          , testProperty "ParsedPath" $ forAll arbitraryParsedPath testID
+          ]
     ]
 
-metaID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
-metaID x = (decode . encode) (singleton ("object" :: String) x) ==
+testID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
+testID x =
+    (decode . encode) (singleton ("object" :: String) x) ==
     Just (singleton ("object" :: String) x)
-

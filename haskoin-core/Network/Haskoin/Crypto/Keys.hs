@@ -39,9 +39,7 @@ import           Data.Aeson                    (FromJSON, ToJSON,
                                                 Value (String), parseJSON,
                                                 toJSON, withText)
 import           Data.ByteString               (ByteString)
-import qualified Data.ByteString               as BS (cons, elem, head, init,
-                                                      last, length, pack, snoc,
-                                                      tail)
+import qualified Data.ByteString               as BS
 import           Data.Maybe                    (fromMaybe)
 import           Data.Serialize                (Serialize, encode, get, put)
 import           Data.Serialize.Get            (Get, getByteString)
@@ -53,7 +51,7 @@ import           Network.Haskoin.Crypto.Base58
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Util
 import           Text.Read                     (lexP, parens, pfail, readPrec)
-import qualified Text.Read                     as Read (Lexeme (Ident, String))
+import qualified Text.Read                     as Read 
 
 data Generic
 data Compressed
@@ -244,29 +242,24 @@ data PrvKeyI c = PrvKeyI
 instance NFData (PrvKeyI c) where
     rnf (PrvKeyI s b) = s `seq` b `seq` ()
 
--- TODO: Test
 instance Show PrvKey where
     showsPrec d k = showParen (d > 10) $
         showString "PrvKey " . shows (toWif k)
 
--- TODO: Test
 instance Show PrvKeyC where
     showsPrec d k = showParen (d > 10) $
         showString "PrvKeyC " . shows (toWif k)
 
--- TODO: Test
 instance Show PrvKeyU where
     showsPrec d k = showParen (d > 10) $
         showString "PrvKeyU " . shows (toWif k)
 
--- TODO: Test
 instance Read PrvKey where
     readPrec = parens $ do
         Read.Ident "PrvKey" <- lexP
         Read.String str <- lexP
         maybe pfail return $ fromWif $ cs str
 
--- TODO: Test
 instance Read PrvKeyC where
     readPrec = parens $ do
         Read.Ident "PrvKeyC" <- lexP
@@ -276,7 +269,6 @@ instance Read PrvKeyC where
             Left _  -> pfail
             Right k -> return k
 
--- TODO: Test
 instance Read PrvKeyU where
     readPrec = parens $ do
         Read.Ident "PrvKeyU" <- lexP
@@ -286,14 +278,12 @@ instance Read PrvKeyU where
             Left k  -> return k
             Right _ -> pfail
 
--- TODO: Test
 instance IsString PrvKey where
     fromString str =
         fromMaybe e $ fromWif $ cs str
       where
         e = error "Could not decode WIF"
 
--- TODO: Test
 instance IsString PrvKeyC where
     fromString str =
         case eitherPrvKey key of
@@ -303,7 +293,6 @@ instance IsString PrvKeyC where
         key = fromMaybe e $ fromWif $ cs str
         e = error "Could not decode WIF"
 
--- TODO: Test
 instance IsString PrvKeyU where
     fromString str =
         case eitherPrvKey key of
@@ -321,16 +310,16 @@ makePrvKeyI :: Bool -> EC.SecKey -> PrvKeyI c
 makePrvKeyI c d = PrvKeyI d c
 
 makePrvKey :: EC.SecKey -> PrvKey
-makePrvKey d = makePrvKeyI True d
+makePrvKey = makePrvKeyI True
 
 makePrvKeyG :: Bool -> EC.SecKey -> PrvKey
 makePrvKeyG = makePrvKeyI
 
 makePrvKeyC :: EC.SecKey -> PrvKeyC
-makePrvKeyC d = makePrvKeyI True d
+makePrvKeyC = makePrvKeyI True
 
 makePrvKeyU :: EC.SecKey -> PrvKeyU
-makePrvKeyU d = makePrvKeyI False d
+makePrvKeyU = makePrvKeyI False
 
 toPrvKeyG :: PrvKeyI c -> PrvKey
 toPrvKeyG (PrvKeyI d c) = PrvKeyI d c
@@ -361,7 +350,7 @@ decodePrvKey f bs = f <$> EC.secKey bs
 prvKeyGetMonad :: (EC.SecKey -> PrvKeyI c) -> Get (PrvKeyI c)
 prvKeyGetMonad f = do
     bs <- getByteString 32
-    fromMaybe err $ return <$> f <$> EC.secKey bs
+    fromMaybe err $ return . f <$> EC.secKey bs
   where
     err = fail "Get: Invalid private key"
 
@@ -378,17 +367,23 @@ fromWif wif = do
     -- Check that this is a private key
     guard (BS.head bs == secretPrefix)
     case BS.length bs of
-        33 -> do               -- Uncompressed format
-            makePrvKeyG False <$> EC.secKey (BS.tail bs)
-        34 -> do               -- Compressed format
+        -- Uncompressed format
+        33 -> makePrvKeyG False <$> EC.secKey (BS.tail bs)
+        -- Compressed format
+        34 -> do
             guard $ BS.last bs == 0x01
             makePrvKeyG True <$> EC.secKey (BS.tail $ BS.init bs)
-        _  -> Nothing          -- Bad length
+        -- Bad length
+        _  -> Nothing
 
 -- | Encodes a private key into WIF format
 toWif :: PrvKeyI c -> ByteString
-toWif (PrvKeyI k c) = encodeBase58Check $ BS.cons secretPrefix $
-    if c then EC.getSecKey k `BS.snoc` 0x01 else EC.getSecKey k
+toWif (PrvKeyI k c) =
+    encodeBase58Check $
+    BS.cons secretPrefix $
+    if c
+        then EC.getSecKey k `BS.snoc` 0x01
+        else EC.getSecKey k
 
 
 -- | Tweak a private key

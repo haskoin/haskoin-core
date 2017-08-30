@@ -74,7 +74,7 @@ import           Data.Aeson                    (FromJSON, ToJSON,
                                                 toJSON, withText)
 import           Data.Bits                     (clearBit, setBit, testBit)
 import           Data.ByteString               (ByteString)
-import qualified Data.ByteString               as BS (append, take)
+import qualified Data.ByteString               as BS
 import           Data.List                     (foldl')
 import           Data.List.Split               (splitOn)
 import           Data.Maybe                    (fromMaybe)
@@ -94,13 +94,13 @@ import           Network.Haskoin.Crypto.Keys
 import           Network.Haskoin.Script.Parser
 import           Network.Haskoin.Util
 import           Text.Read                     (lexP, parens, pfail, readPrec)
-import qualified Text.Read                     as Read (Lexeme (Ident, String))
+import qualified Text.Read                     as Read
 
 {- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
 
 -- | A derivation exception is thrown in the very unlikely event that a
 -- derivation is invalid.
-data DerivationException = DerivationException String
+newtype DerivationException = DerivationException String
     deriving (Eq, Read, Show, Typeable)
 
 instance Exception DerivationException
@@ -122,19 +122,16 @@ data XPrvKey = XPrvKey
 instance Ord XPrvKey where
     compare k1 k2 = xPrvExport k1 `compare` xPrvExport k2
 
--- TODO: Test
 instance Show XPrvKey where
     showsPrec d k = showParen (d > 10) $
         showString "XPrvKey " . shows (xPrvExport k)
 
--- TODO: Test
 instance Read XPrvKey where
     readPrec = parens $ do
         Read.Ident "XPrvKey" <- lexP
         Read.String str <- lexP
         maybe pfail return $ xPrvImport $ cs str
 
--- TODO: Test
 instance IsString XPrvKey where
     fromString =
         fromMaybe e . xPrvImport . cs
@@ -163,19 +160,16 @@ data XPubKey = XPubKey
 instance Ord XPubKey where
     compare k1 k2 = xPubExport k1 `compare` xPubExport k2
 
--- TODO: Test
 instance Show XPubKey where
     showsPrec d k = showParen (d > 10) $
         showString "XPubKey " . shows (xPubExport k)
 
--- TODO: Test
 instance Read XPubKey where
     readPrec = parens $ do
         Read.Ident "XPubKey" <- lexP
         Read.String str <- lexP
         maybe pfail return $ xPubImport $ cs str
 
--- TODO: Test
 instance IsString XPubKey where
     fromString =
         fromMaybe e . xPubImport . cs
@@ -338,14 +332,13 @@ instance Serialize XPrvKey where
 
     get = do
         ver <- getWord32be
-        unless (ver == extSecretPrefix) $ fail $
+        unless (ver == extSecretPrefix) $ fail
             "Get: Invalid version for extended private key"
-        dep <- getWord8
-        par <- getWord32be
-        idx <- getWord32be
-        chn <- get
-        prv <- getPadPrvKey
-        return $ XPrvKey dep par idx chn prv
+        XPrvKey <$> getWord8
+                <*> getWord32be
+                <*> getWord32be
+                <*> get
+                <*> getPadPrvKey
 
     put k = do
         putWord32be  extSecretPrefix
@@ -359,14 +352,13 @@ instance Serialize XPubKey where
 
     get = do
         ver <- getWord32be
-        unless (ver == extPubKeyPrefix) $ fail $
+        unless (ver == extPubKeyPrefix) $ fail
             "Get: Invalid version for extended public key"
-        dep <- getWord8
-        par <- getWord32be
-        idx <- getWord32be
-        chn <- get
-        pub <- get
-        return $ XPubKey dep par idx chn pub
+        XPubKey <$> getWord8
+                <*> getWord32be
+                <*> getWord32be
+                <*> get
+                <*> get
 
     put k = do
         putWord32be extPubKeyPrefix
@@ -433,7 +425,7 @@ cycleIndex :: KeyIndex -> [KeyIndex]
 cycleIndex i
     | i == 0         = cycle [0..0x7fffffff]
     | i < 0x80000000 = cycle $ [i..0x7fffffff] ++ [0..(i-1)]
-    | otherwise      = error $ "cycleIndex: invalid index " ++ (show i)
+    | otherwise      = error $ "cycleIndex: invalid index " ++ show i
 
 {- Derivation Paths -}
 
@@ -500,11 +492,10 @@ listToPath =
     go . reverse
   where
     go (i:is)
-        | testBit i 31 = (go is) :| clearBit i 31
-        | otherwise    = (go is) :/ i
+        | testBit i 31 = go is :| clearBit i 31
+        | otherwise    = go is :/ i
     go [] = Deriv
 
--- TODO: Test
 pathToStr :: DerivPathI t -> String
 pathToStr p =
     case p of
@@ -526,8 +517,8 @@ toSoft p = case p of
 
 toGeneric :: DerivPathI t -> DerivPath
 toGeneric p = case p of
-    next :/ i -> (toGeneric next) :/ i
-    next :| i -> (toGeneric next) :| i
+    next :/ i -> toGeneric next :/ i
+    next :| i -> toGeneric next :| i
     Deriv     -> Deriv
 
 -- | Append two derivation paths together. The result will be a mixed
@@ -539,7 +530,7 @@ toGeneric p = case p of
     go f p = case p of
         next :/ i -> go (f . (:/ i)) $ toGeneric next
         next :| i -> go (f . (:| i)) $ toGeneric next
-        _ -> f
+        _         -> f
 
 -- | Derive a private key from a derivation path
 derivePath :: DerivPathI t -> XPrvKey -> XPrvKey
@@ -549,7 +540,7 @@ derivePath = go id
     go f p = case p of
         next :| i -> go (f . flip hardSubKey i) next
         next :/ i -> go (f . flip prvSubKey i) next
-        _ -> f
+        _         -> f
 
 -- | Derive a public key from a soft derivation path
 derivePubPath :: SoftPath -> XPubKey -> XPubKey
@@ -558,66 +549,56 @@ derivePubPath = go id
     -- Build the full derivation function starting from the end
     go f p = case p of
         next :/ i -> go (f . flip pubSubKey i) next
-        _ -> f
+        _         -> f
 
--- TODO: Test
 instance Show DerivPath where
     showsPrec d p = showParen (d > 10) $
         showString "DerivPath " . shows (pathToStr p)
 
--- TODO: Test
 instance Show HardPath where
     showsPrec d p = showParen (d > 10) $
         showString "HardPath " . shows (pathToStr p)
 
--- TODO: Test
 instance Show SoftPath where
     showsPrec d p = showParen (d > 10) $
         showString "SoftPath " . shows (pathToStr p)
 
--- TODO: Test
 instance Read DerivPath where
     readPrec = parens $ do
         Read.Ident "DerivPath" <- lexP
         Read.String str <- lexP
         maybe pfail (return . getParsedPath) $ parsePath str
 
--- TODO: Test
 instance Read HardPath where
     readPrec = parens $ do
         Read.Ident "HardPath" <- lexP
         Read.String str <- lexP
         maybe pfail return $ parseHard str
 
--- TODO: Test
 instance Read SoftPath where
     readPrec = parens $ do
         Read.Ident "SoftPath" <- lexP
         Read.String str <- lexP
         maybe pfail return $ parseSoft str
 
--- TODO: Test
 instance IsString ParsedPath where
     fromString =
         fromMaybe e . parsePath
       where
         e = error "Could not parse derivation path"
 
--- TODO: Test
 instance IsString DerivPath where
     fromString =
         getParsedPath . fromMaybe e . parsePath
       where
         e = error "Could not parse derivation path"
 
--- TODO: Test
 instance IsString HardPath where
     fromString =
         fromMaybe e . parseHard
       where
         e = error "Could not parse hard derivation path"
 
--- TODO: Test
 instance IsString SoftPath where
     fromString =
         fromMaybe e . parseSoft
@@ -672,7 +653,7 @@ parsePath str = do
     (x : xs) = splitOn "/" str
 
 concatBip32Segments :: [Bip32PathIndex] -> DerivPath
-concatBip32Segments xs = foldl' appendBip32Segment Deriv xs
+concatBip32Segments = foldl' appendBip32Segment Deriv
 
 
 appendBip32Segment :: DerivPath -> Bip32PathIndex  -> DerivPath
@@ -682,16 +663,16 @@ appendBip32Segment d (Bip32HardIndex i) = d :| i
 
 parseBip32PathIndex :: String -> Maybe Bip32PathIndex
 parseBip32PathIndex segment = case reads segment of
-    [(i, "" )] -> guard (is31Bit i) >> ( return $ Bip32SoftIndex i )
-    [(i, "'")] -> guard (is31Bit i) >> ( return $ Bip32HardIndex i )
-    _ -> Nothing
+    [(i, "" )] -> guard (is31Bit i) >> return (Bip32SoftIndex i)
+    [(i, "'")] -> guard (is31Bit i) >> return (Bip32HardIndex i)
+    _          -> Nothing
 
 
 data Bip32PathIndex = Bip32HardIndex KeyIndex | Bip32SoftIndex KeyIndex
   deriving (Read,Show,Eq)
 
 is31Bit :: (Integral a) => a -> Bool
-is31Bit i = (i >=0 && i < 0x80000000)
+is31Bit i = i >=0 && i < 0x80000000
 
 
 -- Helper function to parse a hard path
@@ -708,15 +689,15 @@ data XKey = XPrv { getXPrvKey :: !XPrvKey }
 
 -- | Apply a parsed path to an extended key to derive the new key defined in the
 -- path. If the path starts with m/, a private key will be returned and if the
--- path starts with M/, a public key will be returned.
--- Private derivations on a public key, and public derivations with a hard segment,
--- return an error value.
+-- path starts with M/, a public key will be returned. Private derivations on a
+-- public key, and public derivations with a hard segment, return an error
+-- value.
 applyPath :: ParsedPath -> XKey -> Either String XKey
 applyPath path key = case (path, key) of
-    (ParsedPrv _, XPrv k) -> return $ XPrv $ derivPrvF k
-    (ParsedPrv _, XPub _) -> Left "applyPath: Invalid public key"
-    (ParsedPub _, XPrv k) -> return $ XPub $ deriveXPubKey $ derivPrvF k
-    (ParsedPub _, XPub k) -> derivPubFE >>= \f -> return $ XPub $ f k
+    (ParsedPrv _, XPrv k)   -> return $ XPrv $ derivPrvF k
+    (ParsedPrv _, XPub _)   -> Left "applyPath: Invalid public key"
+    (ParsedPub _, XPrv k)   -> return $ XPub $ deriveXPubKey $ derivPrvF k
+    (ParsedPub _, XPub k)   -> derivPubFE >>= \f -> return $ XPub $ f k
     -- For empty parsed paths, we take a hint from the provided key
     (ParsedEmpty _, XPrv k) -> return $ XPrv $ derivPrvF k
     (ParsedEmpty _, XPub k) -> derivPubFE >>= \f -> return $ XPub $ f k
@@ -738,28 +719,26 @@ applyPath path key = case (path, key) of
 
 -- | Derive an address from a given parent path.
 derivePathAddr :: XPubKey -> SoftPath -> KeyIndex -> (Address, PubKeyC)
-derivePathAddr key path i = deriveAddr (derivePubPath path key) i
+derivePathAddr key path = deriveAddr (derivePubPath path key)
 
 -- | Cyclic list of all addresses derived from a given parent path and starting
 -- from the given offset index.
 derivePathAddrs :: XPubKey -> SoftPath -> KeyIndex
                 -> [(Address, PubKeyC, KeyIndex)]
-derivePathAddrs key path i = deriveAddrs (derivePubPath path key) i
+derivePathAddrs key path = deriveAddrs (derivePubPath path key)
 
 -- | Derive a multisig address from a given parent path. The number of required
 -- signatures (m in m of n) is also needed.
 derivePathMSAddr :: [XPubKey] -> SoftPath -> Int -> KeyIndex
                  -> (Address, RedeemScript)
-derivePathMSAddr keys path m i =
-    deriveMSAddr (map (derivePubPath path) keys) m i
+derivePathMSAddr keys path = deriveMSAddr $ map (derivePubPath path) keys
 
 -- | Cyclic list of all multisig addresses derived from a given parent path and
 -- starting from the given offset index. The number of required signatures
 -- (m in m of n) is also needed.
 derivePathMSAddrs :: [XPubKey] -> SoftPath -> Int -> KeyIndex
                   -> [(Address, RedeemScript, KeyIndex)]
-derivePathMSAddrs keys path m i =
-    deriveMSAddrs (map (derivePubPath path) keys) m i
+derivePathMSAddrs keys path = deriveMSAddrs $ map (derivePubPath path) keys
 
 {- Utilities for extended keys -}
 
@@ -767,8 +746,7 @@ derivePathMSAddrs keys path m i =
 getPadPrvKey :: Get PrvKeyC
 getPadPrvKey = do
     pad <- getWord8
-    unless (pad == 0x00) $ fail $
-        "Private key must be padded with 0x00"
+    unless (pad == 0x00) $ fail "Private key must be padded with 0x00"
     prvKeyGetMonad makePrvKeyC -- Compressed version
 
 -- Serialize HDW-specific private key

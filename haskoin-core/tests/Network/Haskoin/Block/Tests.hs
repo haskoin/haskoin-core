@@ -1,63 +1,50 @@
 module Network.Haskoin.Block.Tests (tests) where
 
-import Control.Arrow
-
-import Data.String (fromString)
-import Data.String.Conversions (cs)
-import Test.QuickCheck (Property, (==>))
-import Test.Framework (Test, testGroup)
-import Test.Framework.Providers.QuickCheck2 (testProperty)
-
-import Data.Maybe (fromJust)
-
-import Network.Haskoin.Block
-import Network.Haskoin.Util
-import Network.Haskoin.Test
+import           Data.String                          (fromString)
+import           Data.String.Conversions              (cs)
+import           Network.Haskoin.Block
+import           Network.Haskoin.Test
+import           Network.Haskoin.Transaction
+import           Network.Haskoin.Util
+import           Test.Framework
+import           Test.Framework.Providers.QuickCheck2
+import           Test.QuickCheck
 
 tests :: [Test]
 tests =
-    [ testGroup "Block tests"
-        [ testProperty "decode . encode BlockHash id" decEncBlockHashid ]
-    , testGroup "Merkle trees"
-        [ testProperty "Width of tree at maxmum height = 1" testTreeWidth
-        , testProperty "Width of tree at height 0 is # txns" testBaseWidth
-        , testProperty "extract . build partial merkle tree" buildExtractTree
-        ]
-    , testGroup "Block hashes"
-        [ testProperty "Read/Show block hash" testReadShowBlockHash
-        , testProperty "From string block hash" fromStringBlockHash
-        ]
+    [ testGroup
+          "Block hash tests"
+          [ testProperty "decode . encode block hash" $
+            forAll arbitraryBlockHash $ \h ->
+                hexToBlockHash (blockHashToHex h) == Just h
+          , testProperty "Read/Show block hash" $
+            forAll arbitraryBlockHash $ \h -> read (show h) == h
+          , testProperty "From string block hash" $
+            forAll arbitraryBlockHash $ \h ->
+                fromString (cs $ blockHashToHex h) == h
+          ]
+    , testGroup
+          "Merkle trees"
+          [ testProperty "Width of tree at maxmum height = 1" testTreeWidth
+          , testProperty "Width of tree at height 0 is # txns" testBaseWidth
+          , testProperty "extract . build partial merkle tree" $
+            forAll
+                (listOf1 ((,) <$> arbitraryTxHash <*> arbitrary))
+                buildExtractTree
+          ]
     ]
-
-decEncBlockHashid :: ArbitraryBlockHash -> Bool
-decEncBlockHashid (ArbitraryBlockHash h) =
-    fromJust (hexToBlockHash $ blockHashToHex h) == h
 
 {- Merkle Trees -}
 
 testTreeWidth :: Int -> Property
-testTreeWidth i = i /= 0 ==>
-    calcTreeWidth i' (calcTreeHeight i') == 1
-  where
-    i' = abs i
+testTreeWidth i = i /= 0 ==> calcTreeWidth (abs i) (calcTreeHeight $ abs i) == 1
 
 testBaseWidth :: Int -> Property
-testBaseWidth i = i /= 0 ==>
-    calcTreeWidth i' 0 == i'
-  where
-    i' = abs i
+testBaseWidth i = i /= 0 ==> calcTreeWidth (abs i) 0 == abs i
 
-buildExtractTree :: [(ArbitraryTxHash, Bool)] -> Property
-buildExtractTree txs = not (null txs) ==>
-    r == (buildMerkleRoot hashes) && m == (map (txh . fst) $ filter snd txs)
+buildExtractTree :: [(TxHash, Bool)] -> Bool
+buildExtractTree txs =
+    r == buildMerkleRoot (map fst txs) && m == map fst (filter snd txs)
   where
-    (f, h) = buildPartialMerkle $ map (first txh) txs
+    (f, h) = buildPartialMerkle txs
     (r, m) = fromRight $ extractMatches f h (length txs)
-    hashes = map (txh . fst) txs
-    txh (ArbitraryTxHash t) = t
-
-testReadShowBlockHash :: ArbitraryBlockHash -> Bool
-testReadShowBlockHash (ArbitraryBlockHash h) = read (show h) == h
-
-fromStringBlockHash :: ArbitraryBlockHash -> Bool
-fromStringBlockHash (ArbitraryBlockHash h) = fromString (cs $ blockHashToHex h) == h

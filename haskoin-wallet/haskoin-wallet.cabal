@@ -29,6 +29,7 @@ Flag library-only
     Default:       False
 
 library
+    hs-source-dirs: src
     exposed-modules: Network.Haskoin.Wallet
                      Network.Haskoin.Wallet.Model
                      Network.Haskoin.Wallet.Client
@@ -153,7 +154,7 @@ test-suite test-haskoin-wallet
                  , test-framework-quickcheck2    >= 0.3       && < 0.4
                  , test-framework-hunit          >= 0.3       && < 0.4
 
-    hs-source-dirs: tests
+    hs-source-dirs: test
     ghc-options: -Wall
 
 executable example-inproc-wallet-server

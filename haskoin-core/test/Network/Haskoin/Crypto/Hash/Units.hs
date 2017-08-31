@@ -1,16 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Hash.Units (tests) where
 
-import Test.HUnit (assertBool, Assertion)
-import Test.Framework (Test, testGroup)
-import Test.Framework.Providers.HUnit (testCase)
-
-import Data.Maybe (fromJust)
-import Data.ByteString (ByteString)
-
-import Network.Haskoin.Block
-import Network.Haskoin.Util
-import Network.Haskoin.Internals (hmacDRBGNew, hmacDRBGGen, hmacDRBGRsd)
+import           Data.ByteString                (ByteString)
+import           Data.Maybe                     (fromJust)
+import           Network.Haskoin.Internals      (hmacDRBGGen, hmacDRBGNew,
+                                                 hmacDRBGRsd)
+import           Network.Haskoin.Util
+import           Test.Framework                 (Test, testGroup)
+import           Test.Framework.Providers.HUnit (testCase)
+import           Test.HUnit                     (Assertion, assertBool)
 
 -- Test vectors from NIST
 -- http://csrc.nist.gov/groups/STM/cavp/documents/drbg/drbgtestvectors.zip
@@ -26,8 +24,6 @@ tests =
     , testGroup "HMAC DRBG Suite 6 (Reseed)" [mapDRBGRsd r2]
     , testGroup "HMAC DRBG Suite 7 (Reseed)" [mapDRBGRsd r3]
     , testGroup "HMAC DRBG Suite 8 (Reseed)" [mapDRBGRsd r4]
-    , testGroup "Compact number representation"
-        [ testCase "Compact number representations" testCompact ]
     ]
 
 type TestVector = [ByteString]
@@ -40,31 +36,22 @@ mapDRBGRsd vs = testCase "HMAC DRBG Vectors" $ mapM_ testDRBGRsd $ zip vs [0..]
 
 testDRBG :: (TestVector, Int) -> Assertion
 testDRBG (s,i) = do
-    let w1     = hmacDRBGNew (v !! 0) (v !! 1) (v !! 2)
+    let w1     = hmacDRBGNew (head v) (v !! 1) (v !! 2)
         (w2,_) = hmacDRBGGen w1 128 (v !! 3)
         (_,r)  = hmacDRBGGen w2 128 (v !! 4)
     assertBool name $ fromJust r == (v !! 5)
     where v = map (fromJust . decodeHex) s
-          name = "    > HMAC DRBG Vector " ++ (show i)
+          name = "    > HMAC DRBG Vector " ++ show i
 
 testDRBGRsd :: (TestVector, Int) -> Assertion
 testDRBGRsd (s,i) = do
-    let w1 = hmacDRBGNew (v !! 0) (v !! 1) (v !! 2)
+    let w1 = hmacDRBGNew (head v) (v !! 1) (v !! 2)
         w2 = hmacDRBGRsd w1 (v !! 3) (v !! 4)
         (w3,_) = hmacDRBGGen w2 128 (v !! 5)
         (_,r)  = hmacDRBGGen w3 128 (v !! 6)
     assertBool name $ fromJust r == (v !! 7)
     where v = map (fromJust . decodeHex) s
-          name = "    > HMAC DRBG Vector " ++ (show i)
-
-testCompact :: Assertion
-testCompact = do
-    assertBool "Vector 1" $ (encodeCompact 0x1234560000)    == 0x05123456
-    assertBool "Vector 2" $ (decodeCompact 0x05123456)      == 0x1234560000
-    assertBool "Vector 3" $ (encodeCompact 0xc0de000000)    == 0x0600c0de
-    assertBool "Vector 4" $ (decodeCompact 0x0600c0de)      == 0xc0de000000
-    assertBool "Vector 5" $ (encodeCompact (-0x40de000000)) == 0x05c0de00
-    assertBool "Vector 6" $ (decodeCompact 0x05c0de00)      == (-0x40de000000)
+          name = "    > HMAC DRBG Vector " ++ show i
 
 {-
     [SHA-256]

@@ -91,7 +91,7 @@ data BlockChainAction
 type MinWork = Word32
 
 shortHash :: BlockHash -> ShortHash
-shortHash = fromRight . decode . BS.take 8 . getHash256 . getBlockHash
+shortHash = fromRight . decode . BS.take 8 . hash256ToBS . getBlockHash
 
 nodeHeader :: NodeBlock -> BlockHeader
 nodeHeader = getNodeHeader . nodeBlockHeader
@@ -415,7 +415,7 @@ workFromInterval ts lastB
         | t < targetTimespan `div` 4 = targetTimespan `div` 4
         | t > targetTimespan * 4     = targetTimespan * 4
         | otherwise                  = t
-    lastDiff = decodeCompact $ blockBits lastB
+    lastDiff = fst $ decodeCompact $ blockBits lastB
     newDiff = lastDiff * toInteger actualTime `div` toInteger targetTimespan
 
 -- | Returns True if the difficulty target (bits) of the header is valid and the
@@ -427,7 +427,7 @@ isValidPOW bh
     | target <= 0 || target > powLimit = False
     | otherwise = headerPOW bh <= fromIntegral target
   where
-    target = decodeCompact $ blockBits bh
+    target = fst $ decodeCompact $ blockBits bh
 
 -- | Returns the proof of work of a block header as an Integer number.
 headerPOW :: BlockHeader -> Integer
@@ -440,7 +440,7 @@ headerWork :: BlockHeader -> Integer
 headerWork bh =
     fromIntegral $ largestHash `div` (target + 1)
   where
-    target      = decodeCompact (blockBits bh)
+    target      = fst $ decodeCompact (blockBits bh)
     largestHash = 1 `shiftL` 256
 
 {- Persistent backend -}
@@ -629,7 +629,7 @@ evalNewChain :: MonadIO m
              -> SqlPersistT m BlockChainAction
 evalNewChain _ [] = error "You find yourself in the dungeon of missing blocks"
 evalNewChain best newNodes
-    | buildsOnBest = do
+    | buildsOnBest =
         return $ BestChain newNodes
     | nodeBlockWork (last newNodes) > nodeBlockWork best = do
         (split, old, new) <- splitChains (best, 0) (head newNodes, 0)

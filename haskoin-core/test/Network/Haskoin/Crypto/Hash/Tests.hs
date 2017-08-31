@@ -17,21 +17,11 @@ tests =
         [ testProperty "join512( split512(h) ) == h" $
           forAll arbitraryHash256 $ forAll arbitraryHash256 . joinSplit512
         , testProperty "decodeCompact . encodeCompact i == i" decEncCompact
-        , testProperty "Read/Show 64-byte hash" $ forAll arbitraryHash512 $
-          \h -> read (show h) == h
         , testProperty "From string 64-byte hash" $ forAll arbitraryHash512 $
           \h -> fromString (cs $ encodeHex $ encode h) == h
-        , testProperty "Read/Show 32-byte hash" $ forAll arbitraryHash256 $
-          \h -> read (show h) == h
         , testProperty "From string 32-byte hash" $ forAll arbitraryHash256 $
           \h -> fromString (cs $ encodeHex $ encode h) == h
-        , testProperty "Read/Show 20-byte hash" $ forAll arbitraryHash160 $
-          \h -> read (show h) == h
         , testProperty "From string 20-byte hash" $ forAll arbitraryHash160 $
-          \h -> fromString (cs $ encodeHex $ encode h) == h
-        , testProperty "Read/Show checksum" $ forAll arbitraryCheckSum32 $
-          \h -> read (show h) == h
-        , testProperty "From string checksum" $ forAll arbitraryCheckSum32 $
           \h -> fromString (cs $ encodeHex $ encode h) == h
         ]
     ]
@@ -44,9 +34,9 @@ joinSplit512 a b = split512 (join512 (a, b)) == (a, b)
 decEncCompact :: Integer -> Bool
 decEncCompact i
     -- Integer completely fits inside the mantisse
-    | abs i <= 0x007fffff = decodeCompact (encodeCompact i) == i
+    | abs i <= 0x007fffff = decodeCompact (encodeCompact i) == (i, False)
     -- Otherwise precision will be lost and the decoded result will
     -- be smaller than the original number
-    | i >= 0              = decodeCompact (encodeCompact i) < i
-    | otherwise           = decodeCompact (encodeCompact i) > i
+    | i >= 0              = fst (decodeCompact (encodeCompact i)) < i
+    | otherwise           = fst (decodeCompact (encodeCompact i)) > i
 

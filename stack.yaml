@@ -5,10 +5,13 @@ packages:
 - haskoin-core
 - haskoin-node
 - haskoin-wallet
+- location:
+   git: https://github.com/haskoin/secp256k1-haskell.git
+   commit: 438682e1b3d157192189afc3f592cc06d33c8ea5
+  extra-dep: true
 extra-deps:
 - daemons-0.2.1
 - pbkdf-1.1.1.1
-- secp256k1-0.4.8
 - murmur3-1.0.3
 - concurrent-extra-0.7.0.10
 ### uncomment below for lts-7.18 compatibility

@@ -6,6 +6,7 @@ module Network.Haskoin.Node.Checkpoints
 
 import qualified Data.IntMap.Strict as M (IntMap, fromList, lookup)
 
+import Control.Arrow
 import Network.Haskoin.Block
 import Network.Haskoin.Constants
 
@@ -17,7 +18,7 @@ checkpointMap = M.fromList checkpointList
 -- | Checkpoints from bitcoind reference implementation /src/checkpoints.cpp
 -- presented as a list.
 checkpointList :: [(Int, BlockHash)]
-checkpointList = checkpoints
+checkpointList = map (first fromIntegral) checkpoints
 
 -- | Verify that a block hash at a given height either matches an existing
 -- checkpoint or is not a checkpoint.

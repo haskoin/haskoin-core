@@ -12,29 +12,24 @@ module Network.Haskoin.Crypto.ECDSA
 , decodeStrictSig
 ) where
 
-import Numeric (showHex)
-
-import Control.DeepSeq (NFData, rnf)
-import Control.Monad (when, unless, guard)
-import Control.Monad.Trans (lift)
-import qualified Control.Monad.State as S
-    ( StateT
-    , evalStateT
-    , get, put
-    )
-
-import Data.Maybe (fromMaybe)
-import Data.Serialize (Serialize, get, put)
-import Data.Serialize.Put (putByteString, putByteString)
-import Data.Serialize.Get (getWord8, lookAhead, getByteString)
-import Data.ByteString (ByteString)
-import System.Entropy (getEntropy)
-
-import qualified Crypto.Secp256k1 as EC
-
-import Network.Haskoin.Constants
-import Network.Haskoin.Crypto.Hash
-import Network.Haskoin.Crypto.Keys
+import           Control.DeepSeq             (NFData, rnf)
+import           Control.Monad               (guard, unless, when)
+import qualified Control.Monad.State         as S (StateT, evalStateT, get, put)
+import           Control.Monad.Trans         (lift)
+import qualified Crypto.Secp256k1            as EC
+import           Data.ByteString             (ByteString)
+import qualified Data.ByteString             as BS
+import           Data.ByteString.Short       (toShort)
+import           Data.Maybe                  (fromMaybe)
+import           Data.Serialize              (Serialize, get, put)
+import           Data.Serialize.Get          (getByteString, getWord8,
+                                              lookAhead)
+import           Data.Serialize.Put          (putByteString, putByteString)
+import           Network.Haskoin.Constants
+import           Network.Haskoin.Crypto.Hash
+import           Network.Haskoin.Crypto.Keys
+import           Numeric                     (showHex)
+import           System.Entropy              (getEntropy)
 
 -- | Internal state of the 'SecretT' monad
 type SecretState m = (WorkingState, Int -> m ByteString)
@@ -85,7 +80,7 @@ instance NFData Signature where
 
 hashToMsg :: Hash256 -> EC.Msg
 hashToMsg =
-    fromMaybe e . EC.msg . getHash256
+    fromMaybe e . EC.msg . hash256ToBS
   where
     e = error "Could not convert 32-byte hash to secp256k1 message"
 
@@ -133,7 +128,9 @@ decodeStrictSig bs = do
     let compact = EC.exportCompactSig g
     -- <http://www.secg.org/sec1-v2.pdf Section 4.1.4>
     -- 4.1.4.1 (r and s can not be zero)
-    guard $ EC.getCompactSigR compact /= 0
-    guard $ EC.getCompactSigS compact /= 0
+    guard $ EC.getCompactSigR compact /= zero
+    guard $ EC.getCompactSigS compact /= zero
     return $ Signature g
+  where
+    zero = toShort $ BS.replicate 32 0
 

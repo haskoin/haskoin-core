@@ -408,7 +408,7 @@ getHexTx = do
         Haskeline.getInputLine ""
     let txM = case hexM of
             Nothing -> error "No action due to EOF"
-            Just hex -> decodeToMaybe =<< decodeHex (cs hex)
+            Just hex -> decodeMaybeStrict =<< decodeHex (cs hex)
     case txM of
         Just tx -> return tx
         Nothing -> error "Could not parse transaction"
@@ -712,7 +712,7 @@ encodeTxInJSON (TxIn o s i) = object $
     , "script"     .= encodeScriptJSON sp
     ] ++ decoded
   where
-    sp = fromMaybe (Script []) $ decodeToMaybe s
+    sp = fromMaybe (Script []) $ decodeMaybeStrict s
     decoded = either (const []) f $ decodeInputBS s
     f inp = ["decoded-script" .= encodeScriptInputJSON inp]
 
@@ -723,7 +723,7 @@ encodeTxOutJSON (TxOut v s) = object $
     , "script"     .= encodeScriptJSON sp
     ] ++ decoded
   where
-    sp = fromMaybe (Script []) $ decodeToMaybe s
+    sp = fromMaybe (Script []) $ decodeMaybeStrict s
     decoded = either (const [])
                  (\out -> ["decoded-script" .= encodeScriptOutputJSON out])
                  (decodeOutputBS s)
@@ -1006,7 +1006,7 @@ printBlockInfo BlockInfo{..} =
   where
     blockDiff :: Word32 -> Double
     blockDiff target = getTarget (blockBits genesisHeader) / getTarget target
-    getTarget   = fromIntegral . decodeCompact
+    getTarget   = fromIntegral . fst . decodeCompact
     versionData = integerToBS (fromIntegral blockInfoVersion)
     formatUTCTime = Time.formatTime Time.defaultTimeLocale
         "%Y-%m-%d %H:%M:%S (UTC)"

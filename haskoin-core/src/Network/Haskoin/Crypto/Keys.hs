@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Network.Haskoin.Crypto.Keys
 ( PubKeyI(pubKeyCompressed, pubKeyPoint)
 , PubKey, PubKeyC, PubKeyU
@@ -41,7 +43,7 @@ import           Data.Aeson                    (FromJSON, ToJSON,
 import           Data.ByteString               (ByteString)
 import qualified Data.ByteString               as BS
 import           Data.Maybe                    (fromMaybe)
-import           Data.Serialize                (Serialize, encode, get, put)
+import           Data.Serialize                (Serialize, get, put)
 import           Data.Serialize.Get            (Get, getByteString)
 import           Data.Serialize.Put            (Put, putByteString)
 import           Data.String                   (IsString, fromString)
@@ -74,55 +76,55 @@ data PubKeyI c = PubKeyI
 -- TODO: Test
 instance Show PubKey where
     showsPrec d k = showParen (d > 10) $
-        showString "PubKey " . shows (encodeHex $ encode k)
+        showString "PubKey " . shows (encodeHex $ encodeStrict k)
 
 -- TODO: Test
 instance Show PubKeyC where
     showsPrec d k = showParen (d > 10) $
-        showString "PubKeyC " . shows (encodeHex $ encode k)
+        showString "PubKeyC " . shows (encodeHex $ encodeStrict k)
 
 -- TODO: Test
 instance Show PubKeyU where
     showsPrec d k = showParen (d > 10) $
-        showString "PubKeyU " . shows (encodeHex $ encode k)
+        showString "PubKeyU " . shows (encodeHex $ encodeStrict k)
 
 -- TODO: Test
 instance Read PubKey where
     readPrec = parens $ do
         Read.Ident "PubKey" <- lexP
         Read.String str <- lexP
-        maybe pfail return $ decodeToMaybe <=< decodeHex $ cs str
+        maybe pfail return $ decodeMaybeStrict <=< decodeHex $ cs str
 
 -- TODO: Test
 instance Read PubKeyC where
     readPrec = parens $ do
         Read.Ident "PubKeyC" <- lexP
         Read.String str <- lexP
-        maybe pfail return $ decodeToMaybe <=< decodeHex $ cs str
+        maybe pfail return $ decodeMaybeStrict <=< decodeHex $ cs str
 
 -- TODO: Test
 instance Read PubKeyU where
     readPrec = parens $ do
         Read.Ident "PubKeyU" <- lexP
         Read.String str <- lexP
-        maybe pfail return $ decodeToMaybe <=< decodeHex $ cs str
+        maybe pfail return $ decodeMaybeStrict <=< decodeHex $ cs str
 
 -- TODO: Test
 instance IsString PubKey where
     fromString str =
-        fromMaybe e $ decodeToMaybe <=< decodeHex $ cs str
+        fromMaybe e $ decodeMaybeStrict <=< decodeHex $ cs str
       where
         e = error "Could not decode public key"
 
 instance IsString PubKeyC where
     fromString str =
-        fromMaybe e $ decodeToMaybe <=< decodeHex $ cs str
+        fromMaybe e $ decodeMaybeStrict <=< decodeHex $ cs str
       where
         e = error "Could not decode compressed public key"
 
 instance IsString PubKeyU where
     fromString str =
-        fromMaybe e $ decodeToMaybe <=< decodeHex $ cs str
+        fromMaybe e $ decodeMaybeStrict <=< decodeHex $ cs str
       where
         e = error "Could not decode uncompressed public key"
 
@@ -130,25 +132,25 @@ instance NFData (PubKeyI c) where
     rnf (PubKeyI p c) = p `seq` rnf c
 
 instance ToJSON PubKey where
-    toJSON = String . cs . encodeHex . encode
+    toJSON = String . cs . encodeHex . encodeStrict
 
 instance FromJSON PubKey where
     parseJSON = withText "PubKey" $
-        maybe mzero return . (decodeToMaybe =<<) . decodeHex . cs
+        maybe mzero return . (decodeMaybeStrict =<<) . decodeHex . cs
 
 instance ToJSON PubKeyC where
-    toJSON = String . cs . encodeHex . encode
+    toJSON = String . cs . encodeHex . encodeStrict
 
 instance FromJSON PubKeyC where
     parseJSON = withText "PubKeyC" $
-        maybe mzero return . (decodeToMaybe =<<) . decodeHex . cs
+        maybe mzero return . (decodeMaybeStrict =<<) . decodeHex . cs
 
 instance ToJSON PubKeyU where
-    toJSON = String . cs . encodeHex . encode
+    toJSON = String . cs . encodeHex . encodeStrict
 
 instance FromJSON PubKeyU where
     parseJSON = withText "PubKeyU" $
-        maybe mzero return . (decodeToMaybe =<<) . decodeHex . cs
+        maybe mzero return . (decodeMaybeStrict =<<) . decodeHex . cs
 
 -- Constructors for public keys
 makePubKey :: EC.PubKey -> PubKey
@@ -216,7 +218,8 @@ instance Serialize PubKeyU where
 
 -- | Computes an 'Address' from a public key
 pubKeyAddr :: Serialize (PubKeyI c) => PubKeyI c -> Address
-pubKeyAddr = PubKeyAddress . hash160 . getHash256 . hash256 . encode
+pubKeyAddr =
+    PubKeyAddress . hash160 . hash256ToBS . hash256 . encodeStrict
 
 -- | Tweak a compressed public key
 tweakPubKeyC :: PubKeyC -> Hash256 -> Maybe PubKeyC
@@ -224,7 +227,7 @@ tweakPubKeyC pub h =
     makePubKeyC <$> (EC.tweakAddPubKey point =<< tweak)
   where
     point = pubKeyPoint pub
-    tweak = EC.tweak $ getHash256 h
+    tweak = EC.tweak $ hash256ToBS h
 
 {- Private Keys -}
 
@@ -392,5 +395,5 @@ tweakPrvKeyC key h =
     makePrvKeyC <$> (EC.tweakAddSecKey sec =<< tweak)
   where
     sec   = prvKeySecKey key
-    tweak = EC.tweak $ getHash256 h
+    tweak = EC.tweak $ hash256ToBS h
 

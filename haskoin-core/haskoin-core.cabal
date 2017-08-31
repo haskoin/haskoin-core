@@ -31,16 +31,17 @@ maintainer:            xenog@protonmail.com
 category:              Bitcoin, Finance, Network
 build-type:            Simple
 cabal-version:         >= 1.9.2
-extra-source-files:    tests/data/*.json
+extra-source-files:    test/data/*.json
 
 source-repository head
     type:     git
     location: git://github.com/haskoin/haskoin.git
 
 library
+    hs-source-dirs: src
     exposed-modules: Network.Haskoin.Util
                      Network.Haskoin.Crypto
-                     Network.Haskoin.Node
+                     Network.Haskoin.Network
                      Network.Haskoin.Script
                      Network.Haskoin.Transaction
                      Network.Haskoin.Block
@@ -54,9 +55,9 @@ library
                    Network.Haskoin.Crypto.ExtendedKeys
                    Network.Haskoin.Crypto.ECDSA
                    Network.Haskoin.Crypto.Mnemonic
-                   Network.Haskoin.Node.Types
-                   Network.Haskoin.Node.Message
-                   Network.Haskoin.Node.Bloom
+                   Network.Haskoin.Network.Types
+                   Network.Haskoin.Network.Message
+                   Network.Haskoin.Network.Bloom
                    Network.Haskoin.Script.Types
                    Network.Haskoin.Script.Parser
                    Network.Haskoin.Script.SigHash
@@ -67,7 +68,7 @@ library
                    Network.Haskoin.Block.Merkle
                    Network.Haskoin.Test.Util
                    Network.Haskoin.Test.Crypto
-                   Network.Haskoin.Test.Node
+                   Network.Haskoin.Test.Network
                    Network.Haskoin.Test.Message
                    Network.Haskoin.Test.Script
                    Network.Haskoin.Test.Transaction
@@ -128,7 +129,7 @@ test-suite test-haskoin-core
                    Network.Haskoin.Crypto.Mnemonic.Tests
                    Network.Haskoin.Crypto.Mnemonic.Units
                    Network.Haskoin.Crypto.Units
-                   Network.Haskoin.Node.Units
+                   Network.Haskoin.Network.Units
                    Network.Haskoin.Script.Tests
                    Network.Haskoin.Script.Units
                    Network.Haskoin.Transaction.Tests
@@ -162,5 +163,5 @@ test-suite test-haskoin-core
                  , scientific
 
     ghc-options: -Wall
-    hs-source-dirs: tests
+    hs-source-dirs: test
 

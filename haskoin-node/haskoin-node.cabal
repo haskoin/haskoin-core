@@ -34,6 +34,7 @@ source-repository head
     location: git://github.com/haskoin/haskoin.git
 
 library
+    hs-source-dirs: src
     exposed-modules: Network.Haskoin.Node.HeaderTree
                      Network.Haskoin.Node.Checkpoints
                      Network.Haskoin.Node.Peer
@@ -107,4 +108,4 @@ test-suite test-haskoin-node
                  , test-framework-hunit           >= 0.3        && < 0.4
 
     ghc-options: -Wall
-    hs-source-dirs: tests
+    hs-source-dirs: test

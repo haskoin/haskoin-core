@@ -92,6 +92,7 @@ module Network.Haskoin.Test
 , arbitraryTxHash
 , arbitraryTxIn
 , arbitraryTxOut
+, arbitraryWitness
 , arbitraryOutPoint
 , arbitraryAddrOnlyTx
 , arbitraryAddrOnlyTxIn

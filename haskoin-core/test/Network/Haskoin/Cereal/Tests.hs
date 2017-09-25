@@ -48,6 +48,7 @@ tests =
         ]
     , testGroup "Binary encoding and decoding of transaction types"
         [ testProperty "TxIn" $ forAll arbitraryTxIn testId
+        , testProperty "Witness" $ forAll arbitraryWitness testId
         , testProperty "TxOut" $ forAll arbitraryTxOut testId
         , testProperty "OutPoint" $ forAll arbitraryOutPoint testId
         , testProperty "Tx" $ forAll arbitraryTx testId

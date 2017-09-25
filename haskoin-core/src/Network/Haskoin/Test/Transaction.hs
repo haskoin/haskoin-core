@@ -12,6 +12,7 @@ import           Network.Haskoin.Crypto
 import           Network.Haskoin.Script
 import           Network.Haskoin.Test.Crypto
 import           Network.Haskoin.Test.Script
+import           Network.Haskoin.Test.Util
 import           Network.Haskoin.Transaction
 import           Network.Haskoin.Util
 import           Test.QuickCheck
@@ -39,11 +40,27 @@ arbitraryTxOut =
     TxOut <$> (getTestCoin <$> arbitrarySatoshi)
           <*> (encodeOutputBS <$> arbitraryScriptOutput)
 
--- | Arbitrary TxIn
+-- | Arbitrary Witness
+arbitraryWitness :: Gen Witness
+arbitraryWitness = do
+    n <- choose (0, 5)
+    ws <- vectorOf n arbitraryBS
+    return $ Witness ws
+
+-- | Arbitrary TxIn without Witness
 arbitraryTxIn :: Gen TxIn
 arbitraryTxIn =
     TxIn <$> arbitraryOutPoint
          <*> (encodeInputBS <$> arbitraryScriptInput)
+         <*> return (Witness [])
+         <*> arbitrary
+
+-- | Arbitrary TxIn with Witness
+arbitraryTxInWitness :: Gen TxIn
+arbitraryTxInWitness =
+    TxIn <$> arbitraryOutPoint
+         <*> (encodeInputBS <$> arbitraryScriptInput)
+         <*> arbitraryWitness
          <*> arbitrary
 
 -- | Arbitrary Tx
@@ -52,7 +69,7 @@ arbitraryTx = do
     v    <- arbitrary
     ni   <- choose (0,5)
     no   <- choose (0,5)
-    inps <- vectorOf ni arbitraryTxIn
+    inps <- vectorOf ni arbitraryTxInWitness
     outs <- vectorOf no arbitraryTxOut
     let uniqueInps = nubBy (\a b -> prevOutput a == prevOutput b) inps
     t    <- arbitrary
@@ -78,7 +95,7 @@ arbitraryAddrOnlyTxIn = do
     o   <- arbitraryOutPoint
     inp <- oneof [ arbitraryPKHashCInput, arbitraryMulSigSHCInput ]
     s   <- arbitrary
-    return $ TxIn o (encodeInputBS inp) s
+    return $ TxIn o (encodeInputBS inp) (Witness []) s
 
 -- | Arbitrary TxOut that can only be of type PayPKHash or PaySH
 arbitraryAddrOnlyTxOut :: Gen TxOut
@@ -152,7 +169,7 @@ arbitrarySigningData = do
     let uSigis = nubBy (\(a,_) (b,_) -> sigDataOP a == sigDataOP b) sigis
     inps <- forM uSigis $ \(s,_) -> do
         sq <- arbitrary
-        return $ TxIn (sigDataOP s) BS.empty sq
+        return $ TxIn (sigDataOP s) BS.empty (Witness []) sq
     outs <- vectorOf no arbitraryTxOut
     l    <- arbitrary
     perm <- choose (0, length inps - 1)
@@ -169,7 +186,7 @@ arbitraryEmptyTx = do
     ops  <- vectorOf ni arbitraryOutPoint
     t    <- arbitrary
     s    <- arbitrary
-    return $ createTx v (map (\op -> TxIn op BS.empty s) (nub ops)) outs t
+    return $ createTx v (map (\op -> TxIn op BS.empty (Witness []) s) (nub ops)) outs t
 
 arbitraryPartialTxs :: Gen ([Tx], [(ScriptOutput, OutPoint, Int, Int)])
 arbitraryPartialTxs = do
@@ -195,4 +212,3 @@ arbitraryPartialTxs = do
         elements [ (so, Nothing, prvKeys, m, n)
                  , (PayScriptHash $ scriptAddr so, Just so, prvKeys, m, n)
                  ]
-

@@ -364,6 +364,7 @@ buildCreditTx scriptPubKey =
                 }
     txI = TxIn { prevOutput = nullOutPoint
                , scriptInput = encode $ Script [ OP_0, OP_0 ]
+               , witness = Witness []
                , txInSequence = maxSeqNum
                }
 
@@ -379,6 +380,7 @@ buildSpendTx scriptSig creditTx =
                                        , outPointIndex = 0
                                        }
                , scriptInput  = scriptSig
+               , witness = Witness []
                , txInSequence = maxSeqNum
                }
     txO = TxOut { outValue = 0, scriptOutput = BS.empty }

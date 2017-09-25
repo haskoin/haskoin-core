@@ -705,16 +705,19 @@ encodeTxJSON tx = object
     ]
 
 encodeTxInJSON :: TxIn -> Value
-encodeTxInJSON (TxIn o s i) = object $
+encodeTxInJSON (TxIn o s w i) = object $
     [ "outpoint"   .= encodeOutPointJSON o
     , "sequence"   .= i
     , "raw-script" .= (cs $ encodeHex s :: T.Text)
     , "script"     .= encodeScriptJSON sp
-    ] ++ decoded
+    ]
+    ++ decoded 
+    ++ witness
   where
     sp = fromMaybe (Script []) $ decodeToMaybe s
     decoded = either (const []) f $ decodeInputBS s
     f inp = ["decoded-script" .= encodeScriptInputJSON inp]
+    witness = ["witness" .= encodeWitness w | w /= Witness []]
 
 encodeTxOutJSON :: TxOut -> Value
 encodeTxOutJSON (TxOut v s) = object $
@@ -733,6 +736,9 @@ encodeOutPointJSON (OutPoint h i) = object
     [ "txid" .= (cs $ txHashToHex h :: T.Text)
     , "pos"  .= i
     ]
+
+encodeWitness :: Witness -> Value
+encodeWitness (Witness bs) = toJSON (fmap (cs . encodeHex) bs :: [T.Text])
 
 encodeScriptJSON :: Script -> Value
 encodeScriptJSON (Script ops) =

@@ -9,6 +9,7 @@ module Network.Haskoin.Transaction.Types
 , TxIn(..)
 , TxOut(..)
 , OutPoint(..)
+, Witness(..)
 , TxHash(..)
 , hexToTxHash
 , txHashToHex
@@ -16,20 +17,22 @@ module Network.Haskoin.Transaction.Types
 ) where
 
 import Control.DeepSeq (NFData, rnf)
-import Control.Monad (liftM2, replicateM, forM_, mzero, (<=<))
+import Control.Monad (liftM2, replicateM, forM_, mzero, (<=<), when)
+import Control.Applicative ((<|>))
 
 import Data.Aeson (Value(String), FromJSON, ToJSON, parseJSON, toJSON, withText)
-import Data.Word (Word32, Word64)
-import Data.Serialize (Serialize, get, put, encode)
+import Data.Word (Word8, Word32, Word64)
+import Data.Serialize (Serialize, expect, get, put, encode)
 import Data.Serialize.Get
-    ( getWord32le
+    ( Get
+    , getWord32le
     , getWord64le
     , getByteString
-    , remaining
-    , lookAhead
     )
 import Data.Serialize.Put
-    ( putWord32le
+    ( runPut
+    , putWord8
+    , putWord32le
     , putWord64le
     , putByteString
     )
@@ -76,9 +79,18 @@ instance Serialize TxHash where
     get = TxHash <$> get
     put = put . getTxHash
 
+createTxHash :: Tx -> TxHash
+createTxHash (Tx v is os l _) = TxHash . doubleHash256 . runPut $ do
+    putWord32le v
+    put $ VarInt $ fromIntegral $ length is
+    forM_ is put
+    put $ VarInt $ fromIntegral $ length os
+    forM_ os put
+    putWord32le l
+
 nosigTxHash :: Tx -> TxHash
 nosigTxHash tx =
-    TxHash $ doubleHash256 $ encode tx{ _txIn = map clearInput $ txIn tx }
+    createTxHash tx{ _txIn = map clearInput $ txIn tx }
   where
     clearInput ti = ti{ scriptInput = BS.empty }
 
@@ -133,7 +145,7 @@ createTx v is os l =
        , _txIn       = is
        , _txOut      = os
        , _txLockTime = l
-       , _txHash     = TxHash $ doubleHash256 $ encode tx
+       , _txHash     = createTxHash tx
        }
   where
     tx = Tx { _txVersion  = v
@@ -163,32 +175,48 @@ instance NFData Tx where
     rnf (Tx v i o l t) = rnf v `seq` rnf i `seq` rnf o `seq` rnf l `seq` rnf t
 
 instance Serialize Tx where
-    get = do
-        start <- remaining
-        (v, is, os, l, end) <- lookAhead $ do
-            v  <- getWord32le
-            is <- replicateList =<< get
-            os <- replicateList =<< get
-            l  <- getWord32le
-            end <- remaining
-            return (v, is, os, l, end)
-        bs <- getByteString $ fromIntegral $ start - end
-        return $ Tx { _txVersion  = v
-                    , _txIn       = is
-                    , _txOut      = os
-                    , _txLockTime = l
-                    , _txHash     = TxHash $ doubleHash256 bs
-                    }
-      where
-        replicateList (VarInt c) = replicateM (fromIntegral c) get
+    get = getTx <|> getTxNoWitness
 
     put (Tx v is os l _) = do
         putWord32le v
+        when (hasWitness is) $ do
+            putWord8 0
+            putWord8 1
         put $ VarInt $ fromIntegral $ length is
         forM_ is put
         put $ VarInt $ fromIntegral $ length os
         forM_ os put
+        when (hasWitness is) $ do
+            forM_ is (put . witness)
         putWord32le l
+
+replicateList :: Serialize a => VarInt -> Get [a]
+replicateList (VarInt c) = replicateM (fromIntegral c) get
+
+getTx :: Get Tx
+getTx = do
+    v <- getWord32le
+    _ <- expect (0 :: Word8)
+    _ <- expect (1 :: Word8)
+    is <- replicateList =<< get
+    os <- replicateList =<< get
+    ws <- replicateM (length is) get
+    l <- getWord32le
+    return $ createTx v (zipWitness is ws) os l
+
+getTxNoWitness :: Get Tx
+getTxNoWitness = do
+    v  <- getWord32le
+    is <- replicateList =<< get
+    os <- replicateList =<< get
+    l  <- getWord32le
+    return $ createTx v is os l
+
+zipWitness :: [TxIn] -> [Witness] -> [TxIn]
+zipWitness = zipWith (\i w -> i { witness = w })
+
+hasWitness :: [TxIn] -> Bool
+hasWitness = any (/= Witness []) . fmap witness
 
 instance FromJSON Tx where
     parseJSON = withText "Tx" $
@@ -205,6 +233,8 @@ data TxIn =
            -- | Script providing the requirements of the previous transaction
            -- output to spend those coins.
          , scriptInput  :: !ByteString
+           -- | Witness field to support segregated witness
+         , witness :: !Witness
            -- | Transaction version as defined by the sender of the
            -- transaction. The intended use is for replacing transactions with
            -- new information before the transaction is included in a block.
@@ -212,15 +242,15 @@ data TxIn =
          } deriving (Eq, Show, Read)
 
 instance NFData TxIn where
-    rnf (TxIn p i s) = rnf p `seq` rnf i `seq` rnf s
+    rnf (TxIn p i w s) = rnf p `seq` rnf i `seq` rnf w `seq` rnf s
 
 instance Serialize TxIn where
     get =
-        TxIn <$> get <*> (readBS =<< get) <*> getWord32le
+        TxIn <$> get <*> (readBS =<< get) <*> return (Witness []) <*> getWord32le
       where
         readBS (VarInt len) = getByteString $ fromIntegral len
 
-    put (TxIn o s q) = do
+    put (TxIn o s _ q) = do
         put o
         put $ VarInt $ fromIntegral $ BS.length s
         putByteString s
@@ -275,3 +305,22 @@ instance Serialize OutPoint where
         return $ OutPoint h i
     put (OutPoint h i) = put h >> putWord32le i
 
+-- | Data type representing witness for each transaction input
+newtype Witness = Witness [ByteString] deriving (Eq, Show, Read)
+
+instance NFData Witness where
+    rnf (Witness bs) = rnf bs
+
+instance Serialize Witness where
+    get = do
+        (VarInt count) <- get
+        bs <- replicateM (fromIntegral count) $ do
+                  (VarInt len) <- get
+                  getByteString $ fromIntegral len
+        return $ Witness bs
+
+    put (Witness bs) = do
+        put $ VarInt $ fromIntegral $ length bs
+        forM_ bs $ \b -> do
+            put $ VarInt $ fromIntegral $ BS.length b
+            putByteString b

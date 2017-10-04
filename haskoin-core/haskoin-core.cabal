@@ -148,8 +148,8 @@ test-suite test-haskoin-core
                  , haskoin-core
                  , mtl                            >= 2.2        && < 2.3
                  , split                          >= 0.2        && < 0.3
-                 , HUnit                          >= 1.2        && < 1.6
-                 , QuickCheck                     >= 2.6        && < 2.10
+                 , HUnit                          >= 1.2        && < 1.7
+                 , QuickCheck                     >= 2.6        && < 2.11
                  , test-framework                 >= 0.8        && < 0.9
                  , test-framework-quickcheck2     >= 0.3        && < 0.4
                  , test-framework-hunit           >= 0.3        && < 0.4

@@ -86,7 +86,7 @@ runVerifyVec (SatoshiCoreTxTest _ is bsTx) i =
     name = "    > Verify transaction " ++ (show i) ++ "bsTx: " ++ convertString bsTx
     tx :: Tx
     tx  = fromRight . decode . fromJust . decodeHex $ bsTx
-    outputsAndOutpoints :: [(ScriptOutput, OutPoint)] 
+    outputsAndOutpoints :: [(ScriptOutput, OutPoint)]
     outputsAndOutpoints = map f is
     f (SatoshiCoreTxTestInput bsOutputHash bsOutputIndex bsOutputScriptPubKey) =
         let s :: ScriptOutput
@@ -184,7 +184,7 @@ verifyVec =
       , "01000000023d6cf972d4dff9c519eff407ea800361dd0a121de1da8b6f4138a2f25de864b4000000008a4730440220ffda47bfc776bcd269da4832626ac332adfca6dd835e8ecd83cd1ebe7d709b0e022049cffa1cdc102a0b56e0e04913606c70af702a1149dc3b305ab9439288fee090014104266abb36d66eb4218a6dd31f09bb92cf3cfa803c7ea72c1fc80a50f919273e613f895b855fb7465ccbc8919ad1bd4a306c783f22cd3227327694c4fa4c1c439affffffff21ebc9ba20594737864352e95b727f1a565756f9d365083eb1a8596ec98c97b7010000008a4730440220503ff10e9f1e0de731407a4a245531c9ff17676eda461f8ceeb8c06049fa2c810220c008ac34694510298fa60b3f000df01caa244f165b727d4896eb84f81e46bcc4014104266abb36d66eb4218a6dd31f09bb92cf3cfa803c7ea72c1fc80a50f919273e613f895b855fb7465ccbc8919ad1bd4a306c783f22cd3227327694c4fa4c1c439affffffff01f0da5200000000001976a914857ccd42dded6df32949d4646dfa10a92458cfaa88ac00000000"
       , "It caught a bug in the workaround for 23b397edccd3740a74adb603c9756370fafcde9bcc4483eb271ecad09a94dd63 in an overly simple implementation"
       )
-      
+
     , ( [
           ( "0000000000000000000000000000000000000000000000000000000000000100"
           , "00000000"
@@ -272,9 +272,9 @@ verifyVec =
     ]
 
 tEncodeSatoshiCoreScriptPubKey :: Assertion
-tEncodeSatoshiCoreScriptPubKey = assertBool "tEncodeSatoshiCoreScriptPubKey" $ 
+tEncodeSatoshiCoreScriptPubKey = assertBool "tEncodeSatoshiCoreScriptPubKey" $
   t1BsOutputScriptPubKey == encodeSatoshiCoreScriptPubKey t1SatoshiCoreJsonScriptPubKey
-  where 
+  where
     t1BsOutputScriptPubKey :: ByteString
     t1BsOutputScriptPubKey = "514104cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef58bbfbfaff7d8a473e7e2e6d317b87bafe8bde97e3cf8f065dec022b51d11fcdd0d348ac4410461cbdcc5409fb4b4d42b51d33381354d80e550078cb532a34bfa2fcfdeb7d76519aecc62770f5b0e4ef8551946d8a540911abe3e7854a26f39f58b25c15342af52ae"
     t1SatoshiCoreJsonScriptPubKey :: String
@@ -282,15 +282,15 @@ tEncodeSatoshiCoreScriptPubKey = assertBool "tEncodeSatoshiCoreScriptPubKey" $
 
 
 encodeSatoshiCoreScriptPubKey :: String -> ByteString
-encodeSatoshiCoreScriptPubKey = 
+encodeSatoshiCoreScriptPubKey =
   mconcat . map encodeSatoshiCoreScriptPiece . words
-  where 
+  where
     encodeSatoshiCoreScriptPiece :: String -> ByteString
     encodeSatoshiCoreScriptPiece s = case (readMay ("OP_" ++ s) :: Maybe ScriptOp) of
       Just op -> encodeHex . encode $ op
-      Nothing -> case (take 2 s) of 
+      Nothing -> case (take 2 s) of
           "OP" -> encodeHex . encode . (read :: String -> ScriptOp) $ s
-          "0x" -> ( fromString . drop 2 :: String -> ByteString) $ s          
+          "0x" -> ( fromString . drop 2 :: String -> ByteString) $ s
           _ -> case (readMay s :: Maybe Int) of -- can we get rid of this case now?
             Just i -> encodeHex . encode . intToScriptOp $ i
             Nothing -> error $ "encodeSatoshiCoreScriptPubKey: " ++ s
@@ -298,9 +298,9 @@ encodeSatoshiCoreScriptPubKey =
 satoshiCoreTxTests :: IO [Test]
 satoshiCoreTxTests = do
   txVec <- satoshiCoreTxVec
-  return $ [ 
+  return $ [
     testGroup "Verify transaction (bitcoind /test/data/tx_valid.json) (using copied source json)"
-      ( map mapVerifyVec . filter isCurrentlyPassing $ zip txVec [0..] ) 
+      ( map mapVerifyVec . filter isCurrentlyPassing $ zip txVec [0..] )
     ]
   where
     passingTests = [0..5] ++ [8] ++ [11..13] ++ [16..18] ++ [20] ++ [52]
@@ -309,21 +309,21 @@ satoshiCoreTxTests = do
 
 type TestComment = String
 satoshiCoreTxVec :: IO [SatoshiCoreTxTest]
-satoshiCoreTxVec = do 
+satoshiCoreTxVec = do
     tx_validBS <- LBS.readFile "test/data/tx_valid.json"
-    let testsAndComments = maybe (error $ "satoshiCoreTxVec, couldn't decode json") id . Aeson.decode $ tx_validBS            
+    let testsAndComments = maybe (error $ "satoshiCoreTxVec, couldn't decode json") id . Aeson.decode $ tx_validBS
     return $ case testsAndComments of
-        (Aeson.Array arr) -> 
-            let testsOrComments = map toTestOrComment . V.toList $ arr 
+        (Aeson.Array arr) ->
+            let testsOrComments = map toTestOrComment . V.toList $ arr
             in  processTestsAndComments testsOrComments
         _ -> error $ "satoshiCoreTxVec, testsAndComments not an array"
       where
         processTestsAndComments :: [Either TestComment SatoshiCoreTxTest] -> [SatoshiCoreTxTest]
-        processTestsAndComments testOrComments = 
+        processTestsAndComments testOrComments =
           -- ghetto parser, because this older version of ootb aeson parser isn't parsec based
           -- to do ideally soon, upgrade aeson, use aeson/attoparsec, should be much cleaner
-          let grouper = Data.List.groupBy (\x y -> (Data.Either.isLeft x && Data.Either.isLeft y) 
-                                                || (Data.Either.isRight x && Data.Either.isRight y))              
+          let grouper = Data.List.groupBy (\x y -> (Data.Either.isLeft x && Data.Either.isLeft y)
+                                                || (Data.Either.isRight x && Data.Either.isRight y))
               takePairs (a:b:xs) = (a,b):takePairs xs
               takePairs _ = [] -- ugh, wish we were using a real parser.
               includeDescriptions (descriptionLines,tests') = map updateDescription tests'
@@ -333,27 +333,27 @@ satoshiCoreTxVec = do
           in  concat . map includeDescriptions . takePairs . grouper $ testOrComments
 
 toTestOrComment :: Aeson.Value -> (Either TestComment SatoshiCoreTxTest)
-toTestOrComment testVectorOrComment = 
+toTestOrComment testVectorOrComment =
   case testVectorOrComment of
-    (Aeson.Types.Array arr) -> 
+    (Aeson.Types.Array arr) ->
       case (V.length arr) of
         1 ->  let comment = arr V.! 0
               in case comment of
                    Aeson.Types.String txt -> Left . convertString $ txt
                    _ -> error $ "toTestOrComment, comment not text"
-        3 ->  let inputs = case ( arr V.! 0 ) of            
-                    (Aeson.Array inputsV) -> 
-                      let toInput ( Aeson.Array oneInputV ) = 
-                            let hash = case oneInputV V.! 0 of 
+        3 ->  let inputs = case ( arr V.! 0 ) of
+                    (Aeson.Array inputsV) ->
+                      let toInput ( Aeson.Array oneInputV ) =
+                            let hash = case oneInputV V.! 0 of
                                   Aeson.String txt -> convertString txt
                                   _ -> error "processItem, hash not a string"
-                                index = case oneInputV V.! 01 of 
+                                index = case oneInputV V.! 01 of
                                   Aeson.Number n -> encodeHex . runPut . putWord32le . floor $ n
                                   _ -> error "processItem, n not a number"
                                 pubkey = case oneInputV V.! 2 of
                                   Aeson.String txt -> encodeSatoshiCoreScriptPubKey . convertString $ txt
                                   _ -> error "processItem, pubkey not a string"
-                            in  SatoshiCoreTxTestInput hash index pubkey 
+                            in  SatoshiCoreTxTestInput hash index pubkey
                           toInput _ = error "processItem, oneInputV not an array"
                       in  map toInput . V.toList $ inputsV
                     _ -> error "inputs not an array"
@@ -361,11 +361,7 @@ toTestOrComment testVectorOrComment =
                        in case txVal of
                           Aeson.Types.String txt -> convertString txt
                           _ -> error $ "toTestOrComment, tx, not text"
-                  -- flags -- v V.! 2  -- ignored for now? 
-              in  Right $ SatoshiCoreTxTest "" inputs tx 
-        i -> error $ "toTestOrComment, bad length: " ++ show i 
+                  -- flags -- v V.! 2  -- ignored for now?
+              in  Right $ SatoshiCoreTxTest "" inputs tx
+        i -> error $ "toTestOrComment, bad length: " ++ show i
     _ -> error "testVectorOrComment is not an array"
-
-
-
-

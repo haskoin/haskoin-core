@@ -15,6 +15,7 @@ module Network.Haskoin.Transaction
 , TxIn(..)
 , TxOut(..)
 , OutPoint(..)
+, Witness(..)
 , TxHash(..)
 , hexToTxHash
 , txHashToHex

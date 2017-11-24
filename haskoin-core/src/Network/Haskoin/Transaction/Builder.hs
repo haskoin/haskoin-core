@@ -225,7 +225,7 @@ buildTx :: [OutPoint] -> [(ScriptOutput, Word64)] -> Either String Tx
 buildTx xs ys =
     mapM fo ys >>= \os -> return $ createTx 1 (map fi xs) os 0
   where
-    fi outPoint = TxIn outPoint BS.empty maxBound
+    fi outPoint = TxIn outPoint BS.empty (Witness []) maxBound
     fo (o, v)
         | v <= 2100000000000000 = return $ TxOut v $ encodeOutputBS o
         | otherwise =

@@ -377,7 +377,7 @@ fakeTx :: [(TxHash, Word32)] -> [(BS.ByteString, Word64)] -> Tx
 fakeTx xs ys =
     createTx 1 txi txo 0
   where
-    txi = map (\(h,p) -> TxIn (OutPoint h p) (BS.pack [1]) maxBound) xs
+    txi = map (\(h,p) -> TxIn (OutPoint h p) (BS.pack [1]) (Witness []) maxBound) xs
     f = encodeOutputBS . PayPKHash . fromJust . base58ToAddr
     txo = map (\(a,v) -> TxOut v $ f a ) ys
 
@@ -1195,7 +1195,7 @@ testImportMultisig = do
         }
     let fundingTx = createTx
             1
-            [ TxIn (OutPoint tid1 0) (BS.pack [1]) maxBound ] -- dummy input
+            [ TxIn (OutPoint tid1 0) (BS.pack [1]) (Witness []) maxBound ] -- dummy input
             [ TxOut 10000000 $
               encodeOutputBS $ PayScriptHash $ fromJust $
               base58ToAddr "32SupmLrYyZMSPfL4tgkuUCyvbzEyBfqxd"
@@ -1407,7 +1407,7 @@ testDeleteUnsignedTx = do
         }
     let fundingTx = createTx
             1
-            [ TxIn (OutPoint tid1 0) (BS.pack [1]) maxBound ] -- dummy input
+            [ TxIn (OutPoint tid1 0) (BS.pack [1]) (Witness []) maxBound ] -- dummy input
             [ TxOut 10000000 $
               encodeOutputBS $ PayScriptHash $ fromJust $
               base58ToAddr "32SupmLrYyZMSPfL4tgkuUCyvbzEyBfqxd"

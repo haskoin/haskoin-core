@@ -85,7 +85,7 @@ numCS len =
     shiftCS . bsToInteger
   where
     shiftCS = case 8 - len `mod` 8 of
-        0 -> id
+        8 -> id
         x -> flip shiftR x
 
 -- | Turn any sequence of characters into a 512-bit seed.  Does not have to be

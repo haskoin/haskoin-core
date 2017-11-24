@@ -1,14 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Mnemonic.Units (tests) where
 
-import Test.HUnit (assertEqual)
+import Test.HUnit (assertBool, assertEqual)
 import Test.Framework (Test, testGroup)
 import Test.Framework.Providers.HUnit (testCase)
 
+import Data.List (isPrefixOf)
 import Data.Maybe (fromJust)
 import Data.String.Conversions (cs)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as C
 
 import Network.Haskoin.Crypto
 import Network.Haskoin.Util
@@ -19,6 +21,7 @@ tests =
     [ testGroup "Entropy to mnemonic sentence" toMnemonicTest
     , testGroup "Mnemonic sentence to entropy" fromMnemonicTest
     , testGroup "Mnemonic sentence to seed" mnemonicToSeedTest
+    , testGroup "Mnemonic sentence with invalid checksum" fromMnemonicInvalidTest
     ]
 
 toMnemonicTest :: [Test]
@@ -41,6 +44,18 @@ mnemonicToSeedTest = map f $ zip mss seeds
     f (m, s) = g s . assertEqual "" s . h $ m
     g = testCase . (++ "...") . cs . BS.take 50
     h = encodeHex . fromRight . mnemonicToSeed "TREZOR"
+
+fromMnemonicInvalidTest :: [Test]
+fromMnemonicInvalidTest = map f invalidMss
+  where
+    f m = g m . assertBool "" . h $ m
+    g m = let ms = length (C.words m)
+              msg = concat [ "[MS: ", show ms, "]"
+                           , cs (BS.take 50 m), "..." ]
+           in testCase msg
+    h m = case fromMnemonic m of
+            Right _ -> False
+            Left err -> isPrefixOf "fromMnemonic: checksum failed:" err
 
 
 ents :: [ByteString]
@@ -178,4 +193,61 @@ seeds =
       \7c1d5a97c0834307c5c852d8ceb88e7c97923c0a3b496bedd4e5f88a9"
     , "b15509eaa2d09d3efd3e006ef42151b30367dc6e3aa5e44caba3fe4d3e352e65101fbdb\
       \86a96776b91946ff06f8eac594dc6ee1d3e82a42dfe1b40fef6bcc3fd"
+    ]
+
+invalidMss :: [Mnemonic]
+invalidMss =
+    [ "abandon abandon abandon abandon abandon abandon abandon abandon abandon\
+      \ abandon abandon abandon"
+    , "legal winner thank year wave sausage worth useful legal winner thank\
+      \ thank"
+    , "letter advice cage absurd amount doctor acoustic avoid letter advice\
+      \ cage sausage"
+    , "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo"
+    , "abandon abandon abandon abandon abandon abandon abandon abandon abandon\
+      \ abandon abandon abandon abandon abandon abandon abandon abandon abandon"
+    , "legal winner thank year wave sausage worth useful legal winner thank\
+      \ year wave sausage worth useful legal letter"
+    , "letter advice cage absurd amount doctor acoustic avoid letter advice\
+      \ cage absurd amount doctor acoustic avoid letter abandon"
+    , "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo\
+      \ zoo"
+    , "abandon abandon abandon abandon abandon abandon abandon abandon abandon\
+      \ abandon abandon abandon abandon abandon abandon abandon abandon abandon\
+      \ abandon abandon abandon abandon abandon abandon"
+    , "legal winner thank year wave sausage worth useful legal winner thank\
+      \ year wave sausage worth useful legal winner thank year wave sausage\
+      \ worth letter"
+    , "letter advice cage absurd amount doctor acoustic avoid letter advice\
+      \ cage absurd amount doctor acoustic avoid letter advice cage absurd\
+      \ amount doctor acoustic letter"
+    , "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo\
+      \ zoo zoo zoo zoo zoo zoo"
+    , "jelly better achieve collect unaware mountain thought cargo oxygen act\
+      \ hood zoo"
+    , "renew stay biology evidence goat welcome casual join adapt armor shuffle\
+      \ fault little machine walk stumble urge zoo"
+    , "dignity pass list indicate nasty swamp pool script soccer toe leaf photo\
+      \ multiply desk host tomato cradle drill spread actor shine dismiss\
+      \ champion zoo"
+    , "afford alter spike radar gate glance object seek swamp infant panel\
+      \ zoo"
+    , "indicate race push merry suffer human cruise dwarf pole review arch keep\
+      \ canvas theme poem divorce alter zoo"
+    , "clutch control vehicle tonight unusual clog visa ice plunge glimpse\
+      \ recipe series open hour vintage deposit universe tip job dress radar\
+      \ refuse motion zoo"
+    , "turtle front uncle idea crush write shrug there lottery flower risk\
+      \ zoo"
+    , "kiss carry display unusual confirm curtain upgrade antique rotate hello\
+      \ void custom frequent obey nut hole price zoo"
+    , "exile ask congress lamp submit jacket era scheme attend cousin alcohol\
+      \ catch course end lucky hurt sentence oven short ball bird grab wing zoo"
+    , "board flee heavy tunnel powder denial science ski answer betray cargo\
+      \ zoo"
+    , "board blade invite damage undo sun mimic interest slam gaze truly\
+      \ inherit resist great inject rocket museum zoo"
+    , "beyond stage sleep clip because twist token leaf atom beauty genius food\
+      \ business side grid unable middle armed observe pair crouch tonight away\
+      \ zoo"
     ]

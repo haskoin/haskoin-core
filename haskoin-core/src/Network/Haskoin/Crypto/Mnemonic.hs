@@ -44,6 +44,8 @@ type Checksum = ByteString
 -- Output a mnemonic sentence.
 toMnemonic :: Entropy -> Either String Mnemonic
 toMnemonic ent = do
+    when (BS.null ent) $
+        Left "toMnemonic: entropy can not be empty"
     when (remainder /= 0) $
         Left "toMnemonic: entropy must be multiples of 4 bytes"
     when (cs_len > 16) $
@@ -60,6 +62,8 @@ toMnemonic ent = do
 -- mnemonic.
 fromMnemonic :: Mnemonic -> Either String Entropy
 fromMnemonic ms = do
+    when (BS.null ms) $
+        Left $ "fromMnemonic: empty mnemonic"
     when (word_count > 48) $
         Left $ "fromMnemonic: too many words: " ++ show word_count
     when (word_count `mod` 3 /= 0) $

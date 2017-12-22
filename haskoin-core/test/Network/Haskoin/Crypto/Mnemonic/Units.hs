@@ -22,6 +22,7 @@ tests =
     , testGroup "Mnemonic sentence to entropy" fromMnemonicTest
     , testGroup "Mnemonic sentence to seed" mnemonicToSeedTest
     , testGroup "Mnemonic sentence with invalid checksum" fromMnemonicInvalidTest
+    , testGroup "Empty mnemonic sentence is invalid" [emptyMnemonicTest]
     ]
 
 toMnemonicTest :: [Test]
@@ -57,6 +58,11 @@ fromMnemonicInvalidTest = map f invalidMss
             Right _ -> False
             Left err -> isPrefixOf "fromMnemonic: checksum failed:" err
 
+emptyMnemonicTest :: Test
+emptyMnemonicTest = testCase "mnemonic sentence can not be empty" $
+    assertBool "" $ case fromMnemonic "" of
+        Right _ -> False
+        Left err -> isPrefixOf "fromMnemonic: empty mnemonic" err
 
 ents :: [ByteString]
 ents =

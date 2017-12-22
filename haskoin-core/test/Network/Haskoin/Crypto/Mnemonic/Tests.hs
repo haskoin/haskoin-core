@@ -80,7 +80,7 @@ toMnemonic512 ((a, b, c, d), (e, f, g, h)) = l == 48
     l = length . C.words . fromRight $ toMnemonic bs
 
 toMnemonicVar :: [Word32] -> Property
-toMnemonicVar ls = length ls <= 8 ==> l == wc
+toMnemonicVar ls = length ls > 0 && length ls <= 8 ==> l == wc
   where
     bs = binWordsToBS ls
     bl = BS.length bs
@@ -119,7 +119,7 @@ fromToMnemonic512 ((a, b, c, d), (e, f, g, h)) = bs == bs'
     bs' = fromRight (fromMnemonic =<< toMnemonic bs)
 
 fromToMnemonicVar :: [Word32] -> Property
-fromToMnemonicVar ls = length ls <= 8 ==> bs == bs'
+fromToMnemonicVar ls = length ls > 0 && length ls <= 8 ==> bs == bs'
   where
     bs = binWordsToBS ls
     bs' = fromRight (fromMnemonic =<< toMnemonic bs)
@@ -159,7 +159,7 @@ mnemonicToSeed512 ((a, b, c, d), (e, f, g, h)) = l == 64
     l = BS.length seed
 
 mnemonicToSeedVar :: [Word32] -> Property
-mnemonicToSeedVar ls = length ls <= 16 ==> l == 64
+mnemonicToSeedVar ls = length ls > 0 && length ls <= 16 ==> l == 64
   where
     bs = binWordsToBS ls
     seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)

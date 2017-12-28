@@ -562,14 +562,14 @@ eval OP_MAX     = max <$> popInt <*> popInt >>= pushInt
 eval OP_WITHIN  = within <$> popInt <*> popInt <*> popInt >>= pushBool
                   where within y x a = (x <= a) && (a < y)
 
-eval OP_RIPEMD160 = tStack1 $ return . bsToSv . getHash160 . hash160 . opToSv
-eval OP_SHA1 = tStack1 $ return . bsToSv . getHash160 . sha1 . opToSv
+eval OP_RIPEMD160 = tStack1 $ return . bsToSv . hash160ToBS . hash160 . opToSv
+eval OP_SHA1 = tStack1 $ return . bsToSv . hashSHA1ToBS . hashSHA1 . opToSv
 
-eval OP_SHA256 = tStack1 $ return . bsToSv . getHash256 . hash256 . opToSv
+eval OP_SHA256 = tStack1 $ return . bsToSv . hash256ToBS . hash256 . opToSv
 eval OP_HASH160 = tStack1 $
-    return . bsToSv . getHash160 . hash160 . getHash256 . hash256 . opToSv
+    return . bsToSv . hash160ToBS . hash160 . hash256ToBS . hash256 . opToSv
 eval OP_HASH256 = tStack1 $
-    return . bsToSv . getHash256 . doubleHash256  . opToSv
+    return . bsToSv . hash256ToBS . doubleHash256  . opToSv
 eval OP_CODESEPARATOR = dropHashOpsSeparatedCode
 eval OP_CHECKSIG = do
     pubKey <- popStack

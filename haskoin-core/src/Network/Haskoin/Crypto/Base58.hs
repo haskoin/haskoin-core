@@ -108,10 +108,10 @@ instance Serialize Address where
               | otherwise = fail "Does not recognize address prefix"
     put (PubKeyAddress h) = do
         putWord8 addrPrefix
-        putByteString (getHash160 h)
+        putByteString (hash160ToBS h)
     put (ScriptAddress h) = do
         putWord8 scriptPrefix
-        putByteString (getHash160 h)
+        putByteString (hash160ToBS h)
 
 -- TODO: Test
 instance Show Address where

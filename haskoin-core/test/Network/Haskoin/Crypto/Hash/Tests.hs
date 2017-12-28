@@ -1,12 +1,8 @@
 module Network.Haskoin.Crypto.Hash.Tests (tests) where
 
-import           Data.Serialize                       (encode)
-import           Data.String                          (fromString)
-import           Data.String.Conversions              (cs)
 import           Network.Haskoin.Block
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Test
-import           Network.Haskoin.Util
 import           Test.Framework
 import           Test.Framework.Providers.QuickCheck2
 import           Test.QuickCheck
@@ -17,22 +13,6 @@ tests =
         [ testProperty "join512( split512(h) ) == h" $
           forAll arbitraryHash256 $ forAll arbitraryHash256 . joinSplit512
         , testProperty "decodeCompact . encodeCompact i == i" decEncCompact
-        , testProperty "Read/Show 64-byte hash" $ forAll arbitraryHash512 $
-          \h -> read (show h) == h
-        , testProperty "From string 64-byte hash" $ forAll arbitraryHash512 $
-          \h -> fromString (cs $ encodeHex $ encode h) == h
-        , testProperty "Read/Show 32-byte hash" $ forAll arbitraryHash256 $
-          \h -> read (show h) == h
-        , testProperty "From string 32-byte hash" $ forAll arbitraryHash256 $
-          \h -> fromString (cs $ encodeHex $ encode h) == h
-        , testProperty "Read/Show 20-byte hash" $ forAll arbitraryHash160 $
-          \h -> read (show h) == h
-        , testProperty "From string 20-byte hash" $ forAll arbitraryHash160 $
-          \h -> fromString (cs $ encodeHex $ encode h) == h
-        , testProperty "Read/Show checksum" $ forAll arbitraryCheckSum32 $
-          \h -> read (show h) == h
-        , testProperty "From string checksum" $ forAll arbitraryCheckSum32 $
-          \h -> fromString (cs $ encodeHex $ encode h) == h
         ]
     ]
 

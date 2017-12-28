@@ -91,7 +91,7 @@ data BlockChainAction
 type MinWork = Word32
 
 shortHash :: BlockHash -> ShortHash
-shortHash = fromRight . decode . BS.take 8 . getHash256 . getBlockHash
+shortHash = fromRight . decode . BS.take 8 . hash256ToBS . getBlockHash
 
 nodeHeader :: NodeBlock -> BlockHeader
 nodeHeader = getNodeHeader . nodeBlockHeader

@@ -56,7 +56,7 @@ data Block =
             blockHeader     :: !BlockHeader
             -- | List of transactions pertaining to this block.
           , blockTxns       :: ![Tx]
-          } deriving (Eq, Show, Read)
+          } deriving (Eq, Show)
 
 instance NFData Block where
     rnf (Block h ts) = rnf h `seq` rnf ts
@@ -106,7 +106,7 @@ instance ToJSON BlockHash where
     toJSON = String . cs . blockHashToHex
 
 blockHashToHex :: BlockHash -> ByteString
-blockHashToHex (BlockHash h) = encodeHex $ BS.reverse $ getHash256 h
+blockHashToHex (BlockHash h) = encodeHex $ BS.reverse $ hash256ToBS h
 
 hexToBlockHash :: ByteString -> Maybe BlockHash
 hexToBlockHash hex = do
@@ -141,7 +141,7 @@ data BlockHeader =
                 , _bhNonce        :: !Word32
                   -- | Hash of the header
                 , _headerHash     :: !BlockHash
-                } deriving (Eq, Show, Read)
+                } deriving (Eq, Show)
 
 createBlockHeader :: Word32 -> BlockHash -> Hash256
                   -> Word32 -> Word32 -> Word32 -> BlockHeader
@@ -305,7 +305,7 @@ data Headers =
               -- | List of block headers with respective transaction counts
               headersList :: ![BlockHeaderCount]
             }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show)
 
 instance NFData Headers where
     rnf (Headers l) = rnf l

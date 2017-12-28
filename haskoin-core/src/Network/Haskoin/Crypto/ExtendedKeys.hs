@@ -193,7 +193,7 @@ makeXPrvKey bs =
     XPrvKey 0 0 0 c k
   where
     (p, c) = split512 $ hmac512 "Bitcoin seed" bs
-    k     = fromMaybe err $ makePrvKeyC <$> EC.secKey (getHash256 p)
+    k     = fromMaybe err $ makePrvKeyC <$> EC.secKey (hash256ToBS p)
     err   = throw $ DerivationException "Invalid seed"
 
 -- | Derive an extended public key from an extended private key. This function
@@ -286,19 +286,19 @@ xPrvID = xPubID . deriveXPubKey
 
 -- | Computes the key identifier of an extended public key.
 xPubID :: XPubKey -> Hash160
-xPubID = hash160 . getHash256 . hash256 . encode . xPubKey
+xPubID = hash160 . hash256ToBS . hash256 . encode . xPubKey
 
 -- | Computes the key fingerprint of an extended private key.
 xPrvFP :: XPrvKey -> Word32
 xPrvFP =
-    either (const err) id . decode . BS.take 4 . getHash160 . xPrvID
+    either (const err) id . decode . BS.take 4 . hash160ToBS . xPrvID
   where
     err = error "Could not decode xPrvFP"
 
 -- | Computes the key fingerprint of an extended public key.
 xPubFP :: XPubKey -> Word32
 xPubFP =
-    either (const err) id . decode . BS.take 4 . getHash160 . xPubID
+    either (const err) id . decode . BS.take 4 . hash160ToBS . xPubID
   where
     err = error "Could not decode xPubFP"
 

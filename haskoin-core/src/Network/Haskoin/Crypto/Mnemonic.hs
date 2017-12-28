@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 -- | Mnemonic keys (BIP-39). Only the English dictionary in the BIP is
 -- supported.
 module Network.Haskoin.Crypto.Mnemonic
@@ -20,12 +21,13 @@ module Network.Haskoin.Crypto.Mnemonic
 ) where
 
 import           Control.Monad           (when)
-import qualified Crypto.Hash.SHA256      as SHA256
+import           Crypto.Hash             (SHA256 (..), hashWith)
 import           Crypto.PBKDF.ByteString (sha512PBKDF2)
 import           Data.Bits               (shiftL, shiftR, (.&.))
+import qualified Data.ByteArray          as BA
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as BS
-import qualified Data.ByteString.Char8   as C
+import qualified Data.ByteString.Char8   as C (unwords, words)
 import           Data.List
 import qualified Data.Map.Strict         as M
 import           Data.Maybe
@@ -82,7 +84,7 @@ fromMnemonic ms = do
     sh cs_a cs_b = show cs_a ++ " /= " ++ show cs_b
 
 calcCS :: Int -> Entropy -> Checksum
-calcCS len = getBits len . SHA256.hash
+calcCS len = getBits len . BA.convert . hashWith SHA256
 
 numCS :: Int -> Entropy -> Integer
 numCS len =

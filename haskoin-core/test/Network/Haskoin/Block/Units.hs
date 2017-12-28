@@ -1,31 +1,40 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Block.Units (tests) where
 
-import Data.ByteString (ByteString)
-
-import Test.HUnit (Assertion, assertBool)
-import Test.Framework (Test, testGroup)
-import Test.Framework.Providers.HUnit (testCase)
-
-import Data.Maybe (fromJust)
-
-import Network.Haskoin.Block
-import Network.Haskoin.Transaction
+import           Data.ByteString                (ByteString)
+import           Data.Maybe                     (fromJust)
+import           Network.Haskoin.Block
+import           Network.Haskoin.Transaction
+import           Test.Framework                 (Test, testGroup)
+import           Test.Framework.Providers.HUnit (testCase)
+import           Test.HUnit                     (Assertion, assertBool,
+                                                 assertEqual)
 
 tests :: [Test]
 tests =
     [ testGroup "Merkle Roots"
-        (map mapMerkleVectors $ zip merkleVectors [0..])
+        ( zipWith (curry mapMerkleVectors) merkleVectors [0..] )
+    , testGroup "Compact number representation"
+        [ testCase "Compact number representations" testCompact ]
     ]
+
+testCompact :: Assertion
+testCompact = do
+    assertEqual "Vector 1" 0x05123456 (encodeCompact 0x1234560000)
+    assertEqual "Vector 2" (0x1234560000, False) (decodeCompact 0x05123456)
+    assertEqual "Vector 3" 0x0600c0de (encodeCompact 0xc0de000000)
+    assertEqual "Vector 4" (0xc0de000000, False) (decodeCompact 0x0600c0de)
+    assertEqual "Vector 5" 0x05c0de00 (encodeCompact (-0x40de000000))
+    assertEqual "Vector 6" (-0x40de000000, False) (decodeCompact 0x05c0de00)
 
 mapMerkleVectors :: ((ByteString, [ByteString]), Int) -> Test.Framework.Test
 mapMerkleVectors (v, i) =
     testCase name $ runMerkleVector v
   where
-    name = "MerkleRoot vector " ++ (show i)
+    name = "MerkleRoot vector " ++ show i
 
 runMerkleVector :: (ByteString, [ByteString]) -> Assertion
-runMerkleVector (r, hs) = do
+runMerkleVector (r, hs) =
     assertBool "    >  Merkle Vector" $
         buildMerkleRoot (map f hs) == getTxHash (f r)
   where

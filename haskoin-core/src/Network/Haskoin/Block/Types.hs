@@ -32,7 +32,7 @@ import           Data.Aeson                        (FromJSON, ToJSON,
 import           Data.Bits                         (shiftL, shiftR, (.&.),
                                                     (.|.))
 import           Data.ByteString                   (ByteString)
-import qualified Data.ByteString                   as BS (length, reverse)
+import qualified Data.ByteString                   as BS (reverse)
 import           Data.Maybe                        (fromMaybe)
 import           Data.Serialize                    (Serialize, encode, get, put)
 import           Data.Serialize.Get                (getByteString, getWord32le,
@@ -306,10 +306,9 @@ type BlockHeaderCount = (BlockHeader, VarInt)
 
 -- | The 'Headers' type is used to return a list of block headers in
 -- response to a 'GetHeaders' message.
-data Headers =
-    Headers {
-              -- | List of block headers with respective transaction counts
-              headersList :: ![BlockHeaderCount]
+newtype Headers =
+    Headers { -- | List of block headers with respective transaction counts
+              headersList :: [BlockHeaderCount]
             }
     deriving (Eq, Show)
 
@@ -327,10 +326,7 @@ instance Serialize Headers where
         put $ VarInt $ fromIntegral $ length xs
         forM_ xs $ \(a,b) -> put a >> put b
 
--- | Decode the compact number used in the difficulty target of a block into an
--- Integer.
---
--- As described in the Satoshi reference implementation /src/bignum.h:
+-- | Decode the compact number used in the difficulty target of a block.
 --
 -- The "compact" format is a representation of a whole number N using an
 -- unsigned 32bit number similar to a floating point format. The most
@@ -339,28 +335,51 @@ instance Serialize Headers where
 -- Bit number 24 (0x800000) represents the sign of N.
 --
 -- >    N = (-1^sign) * mantissa * 256^(exponent-3)
-decodeCompact :: Word32 -> Integer
-decodeCompact c =
-    if neg then (-res) else res
+decodeCompact :: Word32 -> (Integer, Bool) -- ^ overflow
+decodeCompact nCompact = (if neg then res * (-1) else res, over)
   where
-    size = fromIntegral $ c `shiftR` 24
-    neg  = (c .&. 0x00800000) /= 0
-    wrd  = c .&. 0x007fffff
-    res | size <= 3 = toInteger wrd `shiftR` (8*(3 - size))
-        | otherwise = toInteger wrd `shiftL` (8*(size - 3))
+    nSize :: Int
+    nSize = fromIntegral nCompact `shiftR` 24
+    nWord' :: Word32
+    nWord' = nCompact .&. 0x007fffff
+    nWord :: Word32
+    nWord | nSize <= 3 = nWord' `shiftR` (8 * (3 - nSize))
+          | otherwise = nWord'
+    res :: Integer
+    res | nSize <= 3 = fromIntegral nWord
+        | otherwise = fromIntegral nWord `shiftL` (8 * (nSize - 3))
+    neg = nWord /= 0 && (nCompact .&. 0x00800000) /= 0
+    over = nWord /= 0 && (nSize > 34 ||
+                          nWord > 0xff && nSize > 33 ||
+                          nWord > 0xffff && nSize > 32)
 
 -- | Encode an Integer to the compact number format used in the difficulty
 -- target of a block.
-encodeCompact :: Integer -> Word32
-encodeCompact i
-    | i < 0     = c3 .|. 0x00800000
-    | otherwise = c3
+encodeCompact :: Integer
+              -> Word32
+encodeCompact i = nCompact
   where
-    posi = abs i
-    s1 = BS.length $ integerToBS posi
-    c1 | s1 < 3    = posi `shiftL` (8*(3 - s1))
-       | otherwise = posi `shiftR` (8*(s1 - 3))
-    (s2,c2) | c1 .&. 0x00800000 /= 0  = (s1 + 1, c1 `shiftR` 8)
-            | otherwise               = (s1, c1)
-    c3 = fromIntegral $ c2 .|. (toInteger s2 `shiftL` 24)
-
+    i' = abs i
+    neg = i < 0
+    nSize' :: Int
+    nSize' = let f n = let n' = n `shiftR` 8
+                       in if n' == 0
+                          then 1
+                          else 1 + f n'
+             in f i'
+    nCompact''' :: Word32
+    nCompact'''
+        | nSize' <= 3 = fromIntegral $ (low64 .&. i') `shiftL` (8 * (3 - nSize'))
+        | otherwise = fromIntegral $ low64 .&. (i' `shiftR` (8 * (nSize' - 3)))
+    nCompact'' :: Word32
+    nSize :: Int
+    (nCompact'', nSize)
+        | nCompact''' .&. 0x00800000 /= 0 = (nCompact''' `shiftR` 8, nSize' + 1)
+        | otherwise = (nCompact''', nSize')
+    nCompact' :: Word32
+    nCompact' = nCompact'' .|. (fromIntegral nSize `shiftL` 24)
+    nCompact :: Word32
+    nCompact | neg && (nCompact' .&. 0x007fffff /= 0) = nCompact' .|. 0x00800000
+             | otherwise = nCompact'
+    low64 :: Integer
+    low64 = 0xffffffffffffffff

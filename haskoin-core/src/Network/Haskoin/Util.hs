@@ -52,7 +52,7 @@ import           Data.Word                   (Word8)
 
 -- | Decode a big endian Integer from a bytestring.
 bsToInteger :: ByteString -> Integer
-bsToInteger = BS.foldr' f 0 . BS.reverse
+bsToInteger = BS.foldr f 0 . BS.reverse
   where
     f w n = toInteger w .|. shiftL n 8
 

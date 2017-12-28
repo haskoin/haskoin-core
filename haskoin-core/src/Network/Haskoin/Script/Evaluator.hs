@@ -317,7 +317,7 @@ getCond :: Program [Bool]
 getCond = get
 
 popCond :: Program Bool
-popCond = get >>= \condStack -> case condStack of
+popCond = get >>= \case
     []     -> lift $ programError "popCond: empty condStack"
     (x:xs) -> put xs >> return x
 

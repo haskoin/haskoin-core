@@ -1,18 +1,25 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 -- | Hashing functions and HMAC DRBG definition
 module Network.Haskoin.Crypto.Hash
 ( Hash512(getHash512)
 , Hash256(getHash256)
 , Hash160(getHash160)
+, HashSHA1(getHashSHA1)
 , CheckSum32(getCheckSum32)
-, bsToHash512
-, bsToHash256
-, bsToHash160
 , hash512
 , hash256
 , hash160
-, sha1
-, doubleHash256
+, hashSHA1
+, hash512ToBS
+, hash256ToBS
+, hash160ToBS
+, hashSHA1ToBS
+, bsToHash512
+, bsToHash256
+, bsToHash160
+, bsToHashSHA1
 , bsToCheckSum32
+, doubleHash256
 , checkSum32
 , hmac512
 , hmac256
@@ -25,202 +32,207 @@ module Network.Haskoin.Crypto.Hash
 , WorkingState
 ) where
 
-import           Control.DeepSeq         (NFData, rnf)
-import           Control.Monad           (guard, (<=<))
-import           Crypto.Hash             (Digest, RIPEMD160, SHA1, SHA256,
-                                          SHA512, hash)
-import           Crypto.MAC.HMAC         (hmac)
-import           Data.Byteable           (toBytes)
+import           Control.DeepSeq         (NFData)
+import           Control.Monad           (guard)
+import           Crypto.Hash             (RIPEMD160 (..), SHA1 (..),
+                                          SHA256 (..), SHA512 (..), hashWith)
+import           Crypto.MAC.HMAC         (HMAC, hmac)
+import           Data.ByteArray          (ByteArrayAccess)
+import qualified Data.ByteArray          as BA
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as BS
-import           Data.Maybe              (fromMaybe)
-import           Data.Serialize          (Serialize, get, put)
-import           Data.Serialize.Get      (getByteString)
-import           Data.Serialize.Put      (putByteString)
+import           Data.ByteString.Short   (ShortByteString)
+import qualified Data.ByteString.Short   as BSS
+import           Data.Hashable           (Hashable)
+import           Data.Serialize          (Serialize (..), decode)
+import qualified Data.Serialize.Get      as Get
+import qualified Data.Serialize.Put      as Put
 import           Data.String             (IsString, fromString)
 import           Data.String.Conversions (cs)
-import           Data.Word               (Word16)
-import           Text.Read               (Lexeme (Ident, String), lexP, parens,
-                                          pfail, readPrec)
-
+import           Data.Word               (Word16, Word32)
 import           Network.Haskoin.Util
 
-newtype CheckSum32 = CheckSum32 { getCheckSum32 :: ByteString }
-    deriving (Eq, Ord)
+newtype CheckSum32 = CheckSum32 { getCheckSum32 :: Word32 }
+    deriving (Eq, Ord, Serialize, NFData, Show, Hashable)
 
-newtype Hash512 = Hash512 { getHash512 :: ByteString }
-    deriving (Eq, Ord)
+newtype Hash512 = Hash512 { getHash512 :: ShortByteString }
+    deriving (Eq, Ord, NFData, Hashable)
 
-newtype Hash256 = Hash256 { getHash256 :: ByteString }
-    deriving (Eq, Ord)
+newtype Hash256 = Hash256 { getHash256 :: ShortByteString }
+    deriving (Eq, Ord, NFData, Hashable)
 
-newtype Hash160 = Hash160 { getHash160 :: ByteString }
-    deriving (Eq, Ord)
+newtype Hash160 = Hash160 { getHash160 :: ShortByteString }
+    deriving (Eq, Ord, NFData, Hashable)
 
-
-instance NFData CheckSum32 where
-    rnf (CheckSum32 bs) = rnf bs
-
-instance Show CheckSum32 where
-    showsPrec d (CheckSum32 bs) = showParen (d > 10) $
-        showString "CheckSum32 " . shows (encodeHex bs)
-
-instance Read CheckSum32 where
-    readPrec = parens $ do
-        Ident "CheckSum32" <- lexP
-        String str <- lexP
-        maybe pfail return $ bsToCheckSum32 =<< decodeHex (cs str)
-
-instance IsString CheckSum32 where
-    fromString =
-        fromMaybe e . (bsToCheckSum32 <=< decodeHex) . cs
-      where
-        e = error "Could not decode checksum"
-
-instance Serialize CheckSum32 where
-    get = CheckSum32 <$> getByteString 4
-    put (CheckSum32 bs) = putByteString bs
-
-
-instance NFData Hash512 where
-    rnf (Hash512 bs) = rnf bs
+newtype HashSHA1 = HashSHA1 { getHashSHA1 :: ShortByteString }
+    deriving (Eq, Ord, NFData, Hashable)
 
 instance Show Hash512 where
-    showsPrec d (Hash512 bs) = showParen (d > 10) $
-        showString "Hash512 " . shows (encodeHex bs)
-
-instance Read Hash512 where
-    readPrec = parens $ do
-        Ident "Hash512" <- lexP
-        String str <- lexP
-        maybe pfail return $ bsToHash512 =<< decodeHex (cs str)
-
-instance IsString Hash512 where
-    fromString =
-        fromMaybe e . (bsToHash512 <=< decodeHex) . cs
-      where
-        e = error "Could not decode 64-byte hash"
-
-instance Serialize Hash512 where
-    get = Hash512 <$> getByteString 64
-    put (Hash512 bs) = putByteString bs
-
-
-instance NFData Hash256 where
-    rnf (Hash256 bs) = rnf bs
+    show = cs . encodeHex . hash512ToBS
 
 instance Show Hash256 where
-    showsPrec d (Hash256 bs) = showParen (d > 10) $
-        showString "Hash256 " . shows (encodeHex bs)
-
-instance Read Hash256 where
-    readPrec = parens $ do
-        Ident "Hash256" <- lexP
-        String str <- lexP
-        maybe pfail return $ bsToHash256 =<< decodeHex (cs str)
-
-instance IsString Hash256 where
-    fromString =
-        fromMaybe e . (bsToHash256 <=< decodeHex) . cs
-      where
-        e = error "Could not decode 32-byte hash"
-
-instance Serialize Hash256 where
-    get = Hash256 <$> getByteString 32
-    put (Hash256 bs) = putByteString bs
-
-
-instance NFData Hash160 where
-    rnf (Hash160 bs) = rnf bs
+    show = cs . encodeHex . hash256ToBS
 
 instance Show Hash160 where
-    showsPrec d (Hash160 bs) = showParen (d > 10) $
-        showString "Hash160 " . shows (encodeHex bs)
+    show = cs . encodeHex . hash160ToBS
 
-instance Read Hash160 where
-    readPrec = parens $ do
-        Ident "Hash160" <- lexP
-        String str <- lexP
-        maybe pfail return $ bsToHash160 =<< decodeHex (cs str)
+instance Show HashSHA1 where
+    show = cs . encodeHex . hashSHA1ToBS
+
+instance IsString Hash512 where
+    fromString str =
+        case decodeHex $ cs str of
+            Nothing -> e
+            Just bs ->
+                case BS.length bs of
+                    64 -> Hash512 (BSS.toShort bs)
+                    _  -> e
+      where
+        e = error "Could not decode hash from hex string"
+
+instance Serialize Hash512 where
+    get = do
+        bs <- Get.getByteString 64
+        return $ Hash512 $ BSS.toShort bs
+    put = Put.putByteString . hash512ToBS
+
+instance IsString Hash256 where
+    fromString str =
+        case decodeHex $ cs str of
+            Nothing -> e
+            Just bs ->
+                case BS.length bs of
+                    32 -> Hash256 (BSS.toShort bs)
+                    _  -> e
+      where
+        e = error "Could not decode hash from hex string"
+
+instance Serialize Hash256 where
+    get = do
+        bs <- Get.getByteString 32
+        return $ Hash256 $ BSS.toShort bs
+    put = Put.putByteString . hash256ToBS
 
 instance IsString Hash160 where
-    fromString =
-        fromMaybe e . (bsToHash160 <=< decodeHex) . cs
+    fromString str =
+        case decodeHex $ cs str of
+            Nothing -> e
+            Just bs ->
+                case BS.length bs of
+                    20 -> Hash160 (BSS.toShort bs)
+                    _  -> e
       where
-        e = error "Could not decode 20-byte hash"
+        e = error "Could not decode hash from hex string"
 
 instance Serialize Hash160 where
-    get = Hash160 <$> getByteString 20
-    put (Hash160 bs) = putByteString bs
+    get = do
+        bs <- Get.getByteString 20
+        return $ Hash160 $ BSS.toShort bs
+    put = Put.putByteString . hash160ToBS
 
+instance IsString HashSHA1 where
+    fromString str =
+        case decodeHex $ cs str of
+            Nothing -> e
+            Just bs ->
+                case BS.length bs of
+                    20 -> HashSHA1 (BSS.toShort bs)
+                    _  -> e
+      where
+        e = error "Could not decode hash from hex string"
 
-bsToHash512 :: ByteString -> Maybe Hash512
-bsToHash512 bs = guard (BS.length bs == 64) >> return (Hash512 bs)
+instance Serialize HashSHA1 where
+    get = do
+        bs <- Get.getByteString 20
+        return $ HashSHA1 $ BSS.toShort bs
+    put = Put.putByteString . hashSHA1ToBS
 
-bsToHash256 :: ByteString -> Maybe Hash256
-bsToHash256 bs = guard (BS.length bs == 32) >> return (Hash256 bs)
+hash512 :: ByteArrayAccess b => b -> Hash512
+hash512 = Hash512 . BSS.toShort . BA.convert . hashWith SHA512
 
-bsToHash160 :: ByteString -> Maybe Hash160
-bsToHash160 bs = guard (BS.length bs == 20) >> return (Hash160 bs)
+hash256 :: ByteArrayAccess b => b -> Hash256
+hash256 = Hash256 . BSS.toShort . BA.convert . hashWith SHA256
 
--- | Compute SHA-512.
-hash512 :: ByteString -> Hash512
-hash512 = Hash512 . (toBytes :: Digest SHA512 -> ByteString) . hash
+hash160 :: ByteArrayAccess b => b -> Hash160
+hash160 = Hash160 . BSS.toShort . BA.convert. hashWith RIPEMD160
 
--- | Compute SHA-256.
-hash256 :: ByteString -> Hash256
-hash256 = Hash256 . (toBytes :: Digest SHA256 -> ByteString) . hash
+hashSHA1 :: ByteArrayAccess b => b -> HashSHA1
+hashSHA1 = HashSHA1 . BSS.toShort . BA.convert . hashWith SHA1
 
--- | Compute RIPEMD-160.
-hash160 :: ByteString -> Hash160
-hash160 = Hash160 . (toBytes :: Digest RIPEMD160 -> ByteString) . hash
+hash512ToBS :: Hash512 -> ByteString
+hash512ToBS (Hash512 bs) = BSS.fromShort bs
 
--- | Compute SHA1
-sha1 :: ByteString -> Hash160
-sha1 = Hash160 . (toBytes :: Digest SHA1 -> ByteString) . hash
+hash256ToBS :: Hash256 -> ByteString
+hash256ToBS (Hash256 bs) = BSS.fromShort bs
+
+hash160ToBS :: Hash160 -> ByteString
+hash160ToBS (Hash160 bs) = BSS.fromShort bs
+
+hashSHA1ToBS :: HashSHA1 -> ByteString
+hashSHA1ToBS (HashSHA1 bs) = BSS.fromShort bs
+
+bsToHash512 :: ByteArrayAccess b => b -> Maybe Hash512
+bsToHash512 bs = do
+    guard $ BA.length bs == 64
+    return $ Hash512 $ BSS.toShort $ BA.convert bs
+
+bsToHash256 :: ByteArrayAccess b => b -> Maybe Hash256
+bsToHash256 bs = do
+    guard $ BA.length bs == 32
+    return $ Hash256 $ BSS.toShort $ BA.convert bs
+
+bsToHash160 :: ByteArrayAccess b => b -> Maybe Hash160
+bsToHash160 bs = do
+    guard $ BA.length bs == 20
+    return $ Hash160 $ BSS.toShort $ BA.convert bs
+
+bsToHashSHA1 :: ByteArrayAccess b => b -> Maybe HashSHA1
+bsToHashSHA1 bs = do
+    guard $ BA.length bs == 20
+    return $ HashSHA1 $ BSS.toShort $ BA.convert bs
+
+bsToCheckSum32 :: ByteString -> Maybe CheckSum32
+bsToCheckSum32 = either (const Nothing) Just . decode
 
 -- | Compute two rounds of SHA-256.
-doubleHash256 :: ByteString -> Hash256
-doubleHash256 = hash256 . getHash256 . hash256
+doubleHash256 :: ByteArrayAccess b => b -> Hash256
+doubleHash256 =
+    Hash256 . BSS.toShort . BA.convert . hashWith SHA256 . hashWith SHA256
 
 {- CheckSum -}
 
-bsToCheckSum32 :: ByteString -> Maybe CheckSum32
-bsToCheckSum32 bs = guard (BS.length bs == 4) >> return (CheckSum32 bs)
-
 -- | Computes a 32 bit checksum.
-checkSum32 :: ByteString -> CheckSum32
-checkSum32 bs =
-    CheckSum32 $ BS.take 4 bs'
-  where
-    Hash256 bs' = doubleHash256 bs
+checkSum32 :: ByteArrayAccess b => b -> CheckSum32
+checkSum32 = fromRight
+             . decode
+             . BS.take 4
+             . BA.convert
+             . hashWith SHA256
+             . hashWith SHA256
 
 {- HMAC -}
 
 -- | Computes HMAC over SHA-512.
 hmac512 :: ByteString -> ByteString -> Hash512
 hmac512 key msg =
-    Hash512 $ hmac f 128 key msg
-  where
-    f bs = let Hash512 bs' = hash512 bs in bs'
+    Hash512 $ BSS.toShort $ BA.convert (hmac key msg :: HMAC SHA512)
 
 -- | Computes HMAC over SHA-256.
-hmac256 :: ByteString -> ByteString -> Hash256
+hmac256 :: (ByteArrayAccess k, ByteArrayAccess m) => k -> m -> Hash256
 hmac256 key msg =
-    Hash256 $ hmac f 64 key msg
-  where
-    f bs = let Hash256 bs' = hash256 bs in bs'
+    Hash256 $ BSS.toShort $ BA.convert (hmac key msg :: HMAC SHA256)
 
 -- | Split a 'Hash512' into a pair of 'Hash256'.
 split512 :: Hash512 -> (Hash256, Hash256)
-split512 (Hash512 bs) =
-    (Hash256 a, Hash256 b)
+split512 h =
+    (Hash256 (BSS.toShort a), Hash256 (BSS.toShort b))
   where
-    (a, b) = BS.splitAt 32 bs
+    (a, b) = BS.splitAt 32 $ hash512ToBS h
 
 -- | Join a pair of 'Hash256' into a 'Hash512'.
 join512 :: (Hash256, Hash256) -> Hash512
-join512 (Hash256 a, Hash256 b) = Hash512 $ a `BS.append` b
+join512 (a, b) =
+    Hash512 $ BSS.toShort $ hash256ToBS a `BS.append` hash256ToBS b
 
 
 {- 10.1.2 HMAC_DRBG with HMAC-SHA256
@@ -236,20 +248,22 @@ type Nonce           = ByteString
 type PersString      = ByteString
 
 -- 10.1.2.2 HMAC DRBG Update FUnction
-hmacDRBGUpd :: ProvidedData -> ByteString -> ByteString
+hmacDRBGUpd :: ProvidedData
+            -> ByteString
+            -> ByteString
             -> (ByteString, ByteString)
 hmacDRBGUpd info k0 v0
     | BS.null info = (k1, v1)        -- 10.1.2.2.3
     | otherwise    = (k2, v2)        -- 10.1.2.2.6
   where
     -- 10.1.2.2.1
-    Hash256 k1 = hmac256 k0 $ v0 `BS.append` (0 `BS.cons` info)
+    k1 = hash256ToBS . hmac256 k0 $ v0 `BS.append` (0 `BS.cons` info)
     -- 10.1.2.2.2
-    Hash256 v1 = hmac256 k1 v0
+    v1 = hash256ToBS $ hmac256 k1 v0
     -- 10.1.2.2.4
-    Hash256 k2 = hmac256 k1 $ v1 `BS.append` (1 `BS.cons` info)
+    k2 = hash256ToBS $ hmac256 k1 $ v1 `BS.append` (1 `BS.cons` info)
     -- 10.1.2.2.5
-    Hash256 v2 = hmac256 k2 v1
+    v2 = hash256ToBS $ hmac256 k2 v1
 
 -- 10.1.2.3 HMAC DRBG Instantiation
 hmacDRBGNew :: EntropyInput -> Nonce -> PersString -> WorkingState
@@ -280,7 +294,9 @@ hmacDRBGRsd (k, v, _) seed info
     (k0, v0) = hmacDRBGUpd s k v     -- 10.1.2.4.2
 
 -- 10.1.2.5 HMAC DRBG Generation
-hmacDRBGGen :: WorkingState -> Word16 -> AdditionalInput
+hmacDRBGGen :: WorkingState
+            -> Word16
+            -> AdditionalInput
             -> (WorkingState, Maybe ByteString)
 hmacDRBGGen (k0, v0, c0) bytes info
     | bytes * 8 > 7500 = error "Maximum bits per request is 7500"
@@ -289,11 +305,11 @@ hmacDRBGGen (k0, v0, c0) bytes info
   where
     (k1, v1)  | BS.null info = (k0, v0)
               | otherwise    = hmacDRBGUpd info k0 v0   -- 10.1.2.5.2
-    (tmp, v2) = go (fromIntegral bytes) k1 v1 BS.empty -- 10.1.2.5.3/4
-    res       = BS.take (fromIntegral bytes) tmp       -- 10.1.2.5.5
-    (k2, v3)  = hmacDRBGUpd info k1 v2                 -- 10.1.2.5.6
-    c1        = c0 + 1                                 -- 10.1.2.5.7
-    go l k v acc | BS.length acc >= l = (acc,v)
-                 | otherwise = let vn = getHash256 $ hmac256 k v
+    (tmp, v2) = go (fromIntegral bytes) k1 v1 BS.empty  -- 10.1.2.5.3/4
+    res       = BS.take (fromIntegral bytes) tmp        -- 10.1.2.5.5
+    (k2, v3)  = hmacDRBGUpd info k1 v2                  -- 10.1.2.5.6
+    c1        = c0 + 1                                  -- 10.1.2.5.7
+    go l k v acc | BS.length acc >= l = (acc, v)
+                 | otherwise = let vn = hash256ToBS $ hmac256 k v
                                in go l k vn (acc `BS.append` vn)
 

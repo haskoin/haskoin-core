@@ -114,7 +114,7 @@ data GetData =
     GetData {
               -- | List of object hashes
               getDataList :: ![InvVector]
-            } deriving (Eq, Show, Read)
+            } deriving (Eq, Show)
 
 instance NFData GetData where
     rnf (GetData l) = rnf l
@@ -136,7 +136,7 @@ data Inv =
     Inv {
         -- | Inventory vectors
           invList :: ![InvVector]
-        } deriving (Eq, Show, Read)
+        } deriving (Eq, Show)
 
 instance NFData Inv where
     rnf (Inv l) = rnf l
@@ -187,7 +187,7 @@ data InvVector =
                 invType :: !InvType
                 -- | Hash of the object referenced by this inventory vector
               , invHash :: !Hash256
-              } deriving (Eq, Show, Read)
+              } deriving (Eq, Show)
 
 instance NFData InvVector where
     rnf (InvVector t h) = rnf t `seq` rnf h
@@ -257,7 +257,7 @@ data NotFound =
     NotFound {
              -- | Inventory vectors related to this request
                notFoundList :: ![InvVector]
-             } deriving (Eq, Show, Read)
+             } deriving (Eq, Show)
 
 instance NFData NotFound where
     rnf (NotFound l) = rnf l

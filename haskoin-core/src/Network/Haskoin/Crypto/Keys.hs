@@ -216,7 +216,7 @@ instance Serialize PubKeyU where
 
 -- | Computes an 'Address' from a public key
 pubKeyAddr :: Serialize (PubKeyI c) => PubKeyI c -> Address
-pubKeyAddr = PubKeyAddress . hash160 . getHash256 . hash256 . encode
+pubKeyAddr = PubKeyAddress . hash160 . hash256ToBS . hash256 . encode
 
 -- | Tweak a compressed public key
 tweakPubKeyC :: PubKeyC -> Hash256 -> Maybe PubKeyC
@@ -224,7 +224,7 @@ tweakPubKeyC pub h =
     makePubKeyC <$> (EC.tweakAddPubKey point =<< tweak)
   where
     point = pubKeyPoint pub
-    tweak = EC.tweak $ getHash256 h
+    tweak = EC.tweak $ hash256ToBS h
 
 {- Private Keys -}
 
@@ -392,5 +392,5 @@ tweakPrvKeyC key h =
     makePrvKeyC <$> (EC.tweakAddSecKey sec =<< tweak)
   where
     sec   = prvKeySecKey key
-    tweak = EC.tweak $ getHash256 h
+    tweak = EC.tweak $ hash256ToBS h
 

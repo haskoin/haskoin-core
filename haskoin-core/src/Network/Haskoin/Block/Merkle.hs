@@ -44,7 +44,7 @@ data MerkleBlock =
                 -- first. Flag bits are used to rebuild a partial merkle
                 -- tree.
                 , mFlags :: ![Bool]
-                } deriving (Eq, Show, Read)
+                } deriving (Eq, Show)
 
 instance NFData MerkleBlock where
     rnf (MerkleBlock m t h f) = rnf m `seq` rnf t `seq` rnf h `seq` rnf f

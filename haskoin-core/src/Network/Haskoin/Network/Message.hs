@@ -36,7 +36,7 @@ data MessageHeader =
                   , headPayloadSize :: !Word32
                   -- | Checksum of the payload.
                   , headChecksum    :: !CheckSum32
-                  } deriving (Eq, Show, Read)
+                  } deriving (Eq, Show)
 
 instance NFData MessageHeader where
     rnf (MessageHeader m c p s) = rnf m `seq` rnf c `seq` rnf p `seq` rnf s

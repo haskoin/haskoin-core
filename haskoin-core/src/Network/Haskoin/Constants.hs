@@ -64,7 +64,7 @@ data Network = Network
     , getTargetSpacing              :: !Word32
     , getCheckpoints                :: ![(Int, BlockHash)]
     , getBip44Coin                  :: !Word32
-    } deriving (Eq, Show, Read)
+    } deriving (Eq, Show)
 
 -- | Switch to Testnet3.  Do at start of program.
 switchToTestnet3 :: IO ()

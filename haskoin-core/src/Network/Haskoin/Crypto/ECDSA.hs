@@ -87,7 +87,7 @@ instance NFData Signature where
 
 hashToMsg :: Hash256 -> EC.Msg
 hashToMsg =
-    fromMaybe e . EC.msg . getHash256
+    fromMaybe e . EC.msg . hash256ToBS
   where
     e = error "Could not convert 32-byte hash to secp256k1 message"
 

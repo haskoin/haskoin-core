@@ -1,5 +1,7 @@
 module Network.Haskoin.Block.Types
 ( Block(..)
+, BlockHeight
+, Timestamp
 , BlockHeader
 , createBlockHeader
 , blockVersion
@@ -33,8 +35,8 @@ import           Data.ByteString                   (ByteString)
 import qualified Data.ByteString                   as BS (length, reverse)
 import           Data.Maybe                        (fromMaybe)
 import           Data.Serialize                    (Serialize, encode, get, put)
-import           Data.Serialize.Get                (getWord32le, lookAhead,
-                                                    remaining, getByteString)
+import           Data.Serialize.Get                (getByteString, getWord32le,
+                                                    lookAhead, remaining)
 import           Data.Serialize.Put                (Put, putWord32le)
 import           Data.String                       (IsString, fromString)
 import           Data.String.Conversions           (cs)
@@ -47,15 +49,19 @@ import           Text.Read                         (lexP, parens, pfail,
                                                     readPrec)
 import qualified Text.Read                         as Read (Lexeme (Ident, String))
 
+
+type BlockHeight = Word32
+type Timestamp = Word32
+
 -- | Data type describing a block in the bitcoin protocol. Blocks are sent in
 -- response to 'GetData' messages that are requesting information from a
 -- block hash.
 data Block =
     Block {
             -- | Header information for this block.
-            blockHeader     :: !BlockHeader
+            blockHeader :: !BlockHeader
             -- | List of transactions pertaining to this block.
-          , blockTxns       :: ![Tx]
+          , blockTxns   :: ![Tx]
           } deriving (Eq, Show)
 
 instance NFData Block where

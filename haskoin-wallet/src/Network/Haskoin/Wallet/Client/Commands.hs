@@ -408,7 +408,7 @@ getHexTx = do
         Haskeline.getInputLine ""
     let txM = case hexM of
             Nothing -> error "No action due to EOF"
-            Just hex -> decodeToMaybe =<< decodeHex (cs hex)
+            Just hex -> eitherToMaybe . S.decode =<< decodeHex (cs hex)
     case txM of
         Just tx -> return tx
         Nothing -> error "Could not parse transaction"
@@ -712,7 +712,7 @@ encodeTxInJSON (TxIn o s i) = object $
     , "script"     .= encodeScriptJSON sp
     ] ++ decoded
   where
-    sp = fromMaybe (Script []) $ decodeToMaybe s
+    sp = either (const $ Script []) id $ S.decode s
     decoded = either (const []) f $ decodeInputBS s
     f inp = ["decoded-script" .= encodeScriptInputJSON inp]
 
@@ -723,7 +723,7 @@ encodeTxOutJSON (TxOut v s) = object $
     , "script"     .= encodeScriptJSON sp
     ] ++ decoded
   where
-    sp = fromMaybe (Script []) $ decodeToMaybe s
+    sp = either (const $ Script []) id $ S.decode s
     decoded = either (const [])
                  (\out -> ["decoded-script" .= encodeScriptOutputJSON out])
                  (decodeOutputBS s)

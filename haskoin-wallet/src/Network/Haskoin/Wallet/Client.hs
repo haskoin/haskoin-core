@@ -22,7 +22,7 @@ import System.Console.GetOpt
     , ArgOrder (Permute)
     )
 
-import Control.Monad (when, forM_)
+import Control.Monad (forM_)
 import Control.Monad.Trans (liftIO)
 import qualified Control.Monad.Reader as R (runReaderT)
 
@@ -181,7 +181,9 @@ clientMain :: IO ()
 clientMain = getArgs >>= \args -> case getOpt Permute options args of
     (fs, commands, []) -> do
         cfg <- getConfig fs
-        when (configTestnet cfg) switchToTestnet5
+        if configTestnet cfg
+            then setTestnet
+            else setProdnet
         setWorkDir cfg
         dispatchCommand cfg commands
     (_, _, msgs) -> forM_ (msgs ++ usage) putStrLn

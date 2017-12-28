@@ -1,5 +1,6 @@
 module Main where
 
+import           Network.Haskoin.Constants                 (setProdnet)
 import           Test.Framework                            (defaultMain)
 
 -- Util tests
@@ -18,7 +19,7 @@ import qualified Network.Haskoin.Crypto.Mnemonic.Tests     (tests)
 import qualified Network.Haskoin.Crypto.Mnemonic.Units     (tests)
 import qualified Network.Haskoin.Crypto.Units              (tests)
 
--- Node tests
+-- Network tests
 import qualified Network.Haskoin.Network.Units             (tests)
 
 -- Script tests
@@ -42,6 +43,7 @@ import qualified Network.Haskoin.Cereal.Tests              (tests)
 
 main :: IO ()
 main = do
+  setProdnet
   satoshiTxTests <- Network.Haskoin.Transaction.Units.satoshiCoreTxTests
   defaultMain
     (  Network.Haskoin.Json.Tests.tests

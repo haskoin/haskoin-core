@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-|
   This module defines various utility functions used across the
   Network.Haskoin modules.
@@ -21,7 +22,6 @@ module Network.Haskoin.Util
 , liftMaybe
 
   -- * Various helpers
-, decodeToMaybe
 , updateIndex
 , matchTemplate
 
@@ -30,36 +30,29 @@ module Network.Haskoin.Util
 , snd3
 , lst3
 
-  -- * MonadState
-, modify'
-
   -- * JSON Utilities
 , dropFieldLabel
 , dropSumLabels
 
 ) where
 
-import Control.Monad (guard)
-import Control.Monad.Trans.Either (EitherT, hoistEither)
-import Control.Monad.State (MonadState, get, put)
-
-import Data.Serialize (Serialize, decode)
-import Data.Word (Word8)
-import Data.Bits ((.|.), shiftL, shiftR)
-import Data.Char (toLower)
-import Data.Aeson.Types
-    (Options(..), SumEncoding(..), defaultOptions, defaultTaggedObject)
-
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Base16 as B16
-import qualified Data.ByteString as BS
-    (pack, empty, foldr', reverse, unfoldr)
+import           Control.Monad               (guard)
+import           Control.Monad.Trans.Either  (EitherT, hoistEither)
+import           Data.Aeson.Types            (Options (..), SumEncoding (..),
+                                              defaultOptions,
+                                              defaultTaggedObject)
+import           Data.Bits                   (shiftL, shiftR, (.|.))
+import           Data.ByteString             (ByteString)
+import qualified Data.ByteString             as BS
+import qualified Data.ByteString.Base16      as B16
+import           Data.Char                   (toLower)
+import           Data.Word                   (Word8)
 
 -- ByteString helpers
 
 -- | Decode a big endian Integer from a bytestring.
 bsToInteger :: ByteString -> Integer
-bsToInteger = BS.foldr' f 0 . BS.reverse
+bsToInteger = BS.foldr f 0 . BS.reverse
   where
     f w n = toInteger w .|. shiftL n 8
 
@@ -98,18 +91,18 @@ isLeft = not . isRight
 -- 'Left'
 fromRight :: Either a b -> b
 fromRight (Right b) = b
-fromRight _ = error "Either.fromRight: Left"
+fromRight _         = error "Either.fromRight: Left"
 
 -- | Extract the 'Left' value from an 'Either' value. Fails if the value is 'Right'
 fromLeft :: Either a b -> a
 fromLeft (Left a) = a
-fromLeft _ = error "Either.fromLeft: Right"
+fromLeft _        = error "Either.fromLeft: Right"
 
 -- | Transforms an 'Either' value into a 'Maybe' value. 'Right' is mapped to 'Just'
 -- and 'Left' is mapped to 'Nothing'. The value inside 'Left' is lost.
 eitherToMaybe :: Either a b -> Maybe b
 eitherToMaybe (Right b) = Just b
-eitherToMaybe _ = Nothing
+eitherToMaybe _         = Nothing
 
 -- | Transforms a 'Maybe' value into an 'Either' value. 'Just' is mapped to
 -- 'Right' and 'Nothing' is mapped to 'Left'. You also pass in an error value
@@ -126,10 +119,6 @@ liftMaybe :: Monad m => b -> Maybe a -> EitherT b m a
 liftMaybe err = liftEither . maybeToEither err
 
 -- Various helpers
-
--- Helper function to decode Data.Serialize into Maybe
-decodeToMaybe :: Serialize a => ByteString -> Maybe a
-decodeToMaybe bs = eitherToMaybe $ decode bs
 
 -- | Applies a function to only one element of a list defined by its index.  If
 -- the index is out of the bounds of the list, the original list is returned.
@@ -168,10 +157,6 @@ snd3 (_,b,_) = b
 -- | Returns the last value of a triple.
 lst3 :: (a,b,c) -> c
 lst3 (_,_,c) = c
-
--- | Strict evaluation of the new state
-modify' :: MonadState s m => (s -> s) -> m ()
-modify' f = get >>= \x -> put $! f x
 
 dropFieldLabel :: Int -> Options
 dropFieldLabel n = defaultOptions

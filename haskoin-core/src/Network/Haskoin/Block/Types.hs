@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Network.Haskoin.Block.Types
 ( Block(..)
 , BlockHeight
@@ -32,11 +33,11 @@ import           Data.Aeson                        (FromJSON, ToJSON,
 import           Data.Bits                         (shiftL, shiftR, (.&.),
                                                     (.|.))
 import           Data.ByteString                   (ByteString)
-import qualified Data.ByteString                   as BS (reverse)
+import qualified Data.ByteString                   as BS
+import           Data.Hashable                     (Hashable)
 import           Data.Maybe                        (fromMaybe)
 import           Data.Serialize                    (Serialize, encode, get, put)
-import           Data.Serialize.Get                (getByteString, getWord32le,
-                                                    lookAhead, remaining)
+import           Data.Serialize.Get                (getWord32le)
 import           Data.Serialize.Put                (Put, putWord32le)
 import           Data.String                       (IsString, fromString)
 import           Data.String.Conversions           (cs)
@@ -45,10 +46,6 @@ import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Network.Types
 import           Network.Haskoin.Transaction.Types
 import           Network.Haskoin.Util
-import           Text.Read                         (lexP, parens, pfail,
-                                                    readPrec)
-import qualified Text.Read                         as Read (Lexeme (Ident, String))
-
 
 type BlockHeight = Word32
 type Timestamp = Word32
@@ -57,8 +54,7 @@ type Timestamp = Word32
 -- response to 'GetData' messages that are requesting information from a
 -- block hash.
 data Block =
-    Block {
-            -- | Header information for this block.
+    Block { -- | Header information for this block.
             blockHeader :: !BlockHeader
             -- | List of transactions pertaining to this block.
           , blockTxns   :: ![Tx]
@@ -68,41 +64,27 @@ instance NFData Block where
     rnf (Block h ts) = rnf h `seq` rnf ts
 
 instance Serialize Block where
-
     get = do
         header     <- get
         (VarInt c) <- get
         txs        <- replicateM (fromIntegral c) get
         return $ Block header txs
-
     put (Block h txs) = do
         put h
         put $ VarInt $ fromIntegral $ length txs
         forM_ txs put
 
-newtype BlockHash = BlockHash { getBlockHash :: Hash256 }
-    deriving (Eq, Ord)
-
-instance NFData BlockHash where
-    rnf (BlockHash h) = rnf $ getHash256 h
+newtype BlockHash = BlockHash
+    { getBlockHash :: Hash256 }
+    deriving (Eq, Ord, NFData, Hashable, Serialize)
 
 instance Show BlockHash where
-    showsPrec d h = showParen (d > 10) $
-        showString "BlockHash " . shows (blockHashToHex h)
-
-instance Read BlockHash where
-    readPrec = parens $ do
-        Read.Ident "BlockHash" <- lexP
-        Read.String str <- lexP
-        maybe pfail return $ hexToBlockHash $ cs str
+    show = cs . blockHashToHex
 
 instance IsString BlockHash where
-    fromString = fromMaybe e . hexToBlockHash . cs where
-        e = error "Could not read block hash from hex string"
-
-instance Serialize BlockHash where
-    get = BlockHash <$> get
-    put = put . getBlockHash
+    fromString s =
+        let e = error "Could not read block hash from hex string"
+        in fromMaybe e $ hexToBlockHash $ cs s
 
 instance FromJSON BlockHash where
     parseJSON = withText "Block hash" $ \t ->
@@ -127,99 +109,67 @@ hexToBlockHash hex = do
 -- 'Block'. Variations in the coinbase tx will result in different merkle
 -- roots in the 'BlockHeader'.
 data BlockHeader =
-    BlockHeader {
-                  -- | Block version information, based on the version of the
+    BlockHeader { -- | Block version information, based on the version of the
                   -- software creating this block.
-                  _blockVersion   :: !Word32
+                  blockVersion   :: !Word32      -- 16 bytes
                   -- | Hash of the previous block (parent) referenced by this
                   -- block.
-                , _prevBlock      :: !BlockHash
+                , prevBlock      :: !BlockHash   -- 64 bytes
                   -- | Root of the merkle tree of all transactions pertaining
                   -- to this block.
-                , _merkleRoot     :: !Hash256
+                , merkleRoot     :: !Hash256     -- 64 bytes
                   -- | Unix timestamp recording when this block was created
-                , _blockTimestamp :: !Word32
+                , blockTimestamp :: !Word32      -- 16 bytes
                   -- | The difficulty target being used for this block
-                , _blockBits      :: !Word32
+                , blockBits      :: !Word32      -- 16 bytes
                   -- | A random nonce used to generate this block. Additional
                   -- randomness is included in the coinbase transaction of
                   -- this block.
-                , _bhNonce        :: !Word32
-                  -- | Hash of the header
-                , _headerHash     :: !BlockHash
-                } deriving (Eq, Show)
+                , bhNonce        :: !Word32      -- 16 bytes
+                } deriving (Eq, Show)            -- 208 bytes (above + 16 bytes)
 
-createBlockHeader :: Word32 -> BlockHash -> Hash256
-                  -> Word32 -> Word32 -> Word32 -> BlockHeader
+createBlockHeader :: Word32
+                  -> BlockHash
+                  -> Hash256
+                  -> Word32
+                  -> Word32
+                  -> Word32
+                  -> BlockHeader
 createBlockHeader v p m t b n =
-    BlockHeader { _blockVersion   = v
-                , _prevBlock      = p
-                , _merkleRoot     = m
-                , _blockTimestamp = t
-                , _blockBits      = b
-                , _bhNonce        = n
-                , _headerHash     = BlockHash $ doubleHash256 $ encode bh
+    BlockHeader { blockVersion   = v
+                , prevBlock      = p
+                , merkleRoot     = m
+                , blockTimestamp = t
+                , blockBits      = b
+                , bhNonce        = n
                 }
-  where
-    bh = BlockHeader { _blockVersion   = v
-                     , _prevBlock      = p
-                     , _merkleRoot     = m
-                     , _blockTimestamp = t
-                     , _blockBits      = b
-                     , _bhNonce        = n
-                     , _headerHash     = fromString $ replicate 64 '0'
-                     }
-
-blockVersion :: BlockHeader -> Word32
-blockVersion = _blockVersion
-
-prevBlock :: BlockHeader -> BlockHash
-prevBlock = _prevBlock
-
-merkleRoot :: BlockHeader -> Hash256
-merkleRoot = _merkleRoot
-
-blockTimestamp :: BlockHeader -> Word32
-blockTimestamp = _blockTimestamp
-
-blockBits :: BlockHeader -> Word32
-blockBits = _blockBits
-
-bhNonce :: BlockHeader -> Word32
-bhNonce = _bhNonce
 
 headerHash :: BlockHeader -> BlockHash
-headerHash = _headerHash
+headerHash = BlockHash . doubleHash256 . encode
 
 instance NFData BlockHeader where
-    rnf (BlockHeader v p m t b n h) =
+    rnf (BlockHeader v p m t b n) =
         rnf v `seq` rnf p `seq` rnf m `seq`
-        rnf t `seq` rnf b `seq` rnf n `seq` rnf h
+        rnf t `seq` rnf b `seq` rnf n
 
 instance Serialize BlockHeader where
     get = do
-        start <- remaining
-        (v, p, m, t, b, n, end) <- lookAhead $ do
-            v <- getWord32le
-            p <- get
-            m <- get
-            t <- getWord32le
-            b <- getWord32le
-            n <- getWord32le
-            end <- remaining
-            return (v, p, m, t, b, n, end)
-        bs <- getByteString $ fromIntegral $ start - end
-        return $ BlockHeader
-            { _blockVersion   = v
-            , _prevBlock      = p
-            , _merkleRoot     = m
-            , _blockTimestamp = t
-            , _blockBits      = b
-            , _bhNonce        = n
-            , _headerHash     = BlockHash $ doubleHash256 bs
+        v <- getWord32le
+        p <- get
+        m <- get
+        t <- getWord32le
+        b <- getWord32le
+        n <- getWord32le
+        return BlockHeader
+            { blockVersion   = v
+            , prevBlock      = p
+            , merkleRoot     = m
+            , blockTimestamp = t
+            , blockBits      = b
+            , bhNonce        = n
             }
 
-    put (BlockHeader v p m bt bb n _) = do
+    put (BlockHeader v p m bt bb n) = do
         putWord32le v
         put         p
         put         m
@@ -238,8 +188,7 @@ type BlockLocator = [BlockHash]
 -- 'Blocks'. The response to a 'GetBlocks' message is an 'Inv' message
 -- containing the list of block hashes pertaining to the request.
 data GetBlocks =
-    GetBlocks {
-                -- | The protocol version
+    GetBlocks { -- | The protocol version
                 getBlocksVersion  :: !Word32
                 -- | Block locator object. It is a list of block hashes from the
                 -- most recent block back to the genesis block. The list is
@@ -248,7 +197,7 @@ data GetBlocks =
                 -- | Hash of the last desired block. If set to zero, the
                 -- maximum number of block hashes is returned (500).
               , getBlocksHashStop :: !BlockHash
-              } deriving (Eq, Show, Read)
+              } deriving (Eq, Show)
 
 instance NFData GetBlocks where
     rnf (GetBlocks v l h) = rnf v `seq` rnf l `seq` rnf h
@@ -286,7 +235,7 @@ data GetHeaders =
                  -- | Hash of the last desired block header. When set to zero,
                  -- the maximum number of block headers is returned (2000)
                , getHeadersHashStop :: !BlockHash
-               } deriving (Eq, Show, Read)
+               } deriving (Eq, Show)
 
 instance NFData GetHeaders where
     rnf (GetHeaders v l h) = rnf v `seq` rnf l `seq` rnf h

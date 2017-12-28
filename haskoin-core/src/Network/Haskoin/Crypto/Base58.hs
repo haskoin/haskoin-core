@@ -17,7 +17,8 @@ import qualified Data.ByteString             as BS
 import qualified Data.ByteString.Char8       as C
 import           Data.Maybe                  (fromJust, fromMaybe, isJust,
                                               listToMaybe)
-import           Data.Serialize              (Serialize, encode, get, put)
+import           Data.Serialize              (Serialize, decode, encode, get,
+                                              put)
 import           Data.Serialize.Get          (getByteString, getWord8)
 import           Data.Serialize.Put          (putByteString, putWord8)
 import           Data.String                 (IsString, fromString)
@@ -152,5 +153,5 @@ addrToBase58 = encodeBase58Check . encode
 base58ToAddr :: ByteString -> Maybe Address
 base58ToAddr str = do
     val <- decodeBase58Check str
-    decodeToMaybe val
+    eitherToMaybe $ decode val
 

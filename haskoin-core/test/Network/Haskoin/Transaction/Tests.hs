@@ -20,8 +20,6 @@ tests =
           "Transaction tests"
           [ testProperty "decode . encode Txid" $
             forAll arbitraryTxHash $ \h -> hexToTxHash (txHashToHex h) == Just h
-          , testProperty "Read/Show transaction id" $
-            forAll arbitraryTxHash $ \h -> read (show h) == h
           , testProperty "From string transaction id" $
             forAll arbitraryTxHash $ \h -> fromString (cs $ txHashToHex h) == h
           ]

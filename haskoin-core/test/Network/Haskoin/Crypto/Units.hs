@@ -51,7 +51,7 @@ strAddressBad = "1HV9Lc3sNHZxwj4Zk6fB38tEmBryq2cBiF"
 
 sigMsg :: [ByteString]
 sigMsg =
-    [ mconcat ["Very secret message ", (C.pack $ show (i :: Int)), ": 11"]
+    [ mconcat ["Very secret message ", C.pack (show (i :: Int)), ": 11"]
     | i <- [0..15]
     ]
 
@@ -91,10 +91,9 @@ tests =
         , testCase "Check public key compression" checkKeyCompressed
         , testCase "Check matching address" checkMatchingAddress
         ] ++
-        ( map (\x -> (testCase ("Check sig: " ++ (show x))
-                (checkSignatures $ doubleHash256 x))) sigMsg )
+        map (\x -> testCase ("Check sig: " ++ show x) $ checkSignatures (doubleHash256 x)) sigMsg
     , testGroup "Trezor RFC 6979 Test Vectors"
-        [ testCase "RFC 6979 Test Vector 1" (testSigning $ detVec !! 0)
+        [ testCase "RFC 6979 Test Vector 1" (testSigning $ head detVec)
         , testCase "RFC 6979 Test Vector 2" (testSigning $ detVec !! 1)
         , testCase "RFC 6979 Test Vector 3" (testSigning $ detVec !! 2)
         , testCase "RFC 6979 Test Vector 4" (testSigning $ detVec !! 3)
@@ -150,10 +149,10 @@ checkKeyCompressed = do
 
 checkMatchingAddress :: Assertion
 checkMatchingAddress = do
-    assertBool "Key 1"  $ addr1  == (addrToBase58 $ pubKeyAddr pub1)
-    assertBool "Key 2"  $ addr2  == (addrToBase58 $ pubKeyAddr pub2)
-    assertBool "Key 1C" $ addr1C == (addrToBase58 $ pubKeyAddr pub1C)
-    assertBool "Key 2C" $ addr2C == (addrToBase58 $ pubKeyAddr pub2C)
+    assertBool "Key 1"  $ addr1  == addrToBase58 (pubKeyAddr pub1)
+    assertBool "Key 2"  $ addr2  == addrToBase58 (pubKeyAddr pub2)
+    assertBool "Key 1C" $ addr1C == addrToBase58 (pubKeyAddr pub1C)
+    assertBool "Key 2C" $ addr2C == addrToBase58 (pubKeyAddr pub2C)
 
 checkSignatures :: Hash256 -> Assertion
 checkSignatures h = do

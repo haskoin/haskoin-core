@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Script.SigHash
 ( SigHash(..)
 , encodeSigHash32
@@ -19,13 +20,12 @@ import           Data.Aeson                        (FromJSON, ToJSON,
                                                     toJSON, withText)
 import           Data.Bits                         (clearBit, testBit)
 import           Data.ByteString                   (ByteString)
-import qualified Data.ByteString                   as BS (append, empty, init,
-                                                          last, length, pack,
-                                                          singleton, splitAt)
+import qualified Data.ByteString                   as BS
 import           Data.Maybe                        (fromMaybe)
 import           Data.Serialize                    (Serialize, decode, encode,
                                                     get, getWord8, put,
-                                                    putWord8, runPut)
+                                                    putWord8)
+import           Data.Serialize.Put                (runPut)
 import           Data.String.Conversions           (cs)
 import           Data.Word                         (Word8)
 import           Network.Haskoin.Crypto.ECDSA
@@ -64,34 +64,34 @@ data SigHash
     deriving (Eq, Show, Read)
 
 instance NFData SigHash where
-    rnf (SigAll a) = rnf a
-    rnf (SigNone a) = rnf a
-    rnf (SigSingle a) = rnf a
+    rnf (SigAll a)       = rnf a
+    rnf (SigNone a)      = rnf a
+    rnf (SigSingle a)    = rnf a
     rnf (SigUnknown a c) = rnf a `seq` rnf c
 
 -- | Returns True if the 'SigHash' has the value SigAll.
 isSigAll :: SigHash -> Bool
 isSigAll sh = case sh of
     SigAll _ -> True
-    _ -> False
+    _        -> False
 
 -- | Returns True if the 'SigHash' has the value SigNone.
 isSigNone :: SigHash -> Bool
 isSigNone sh = case sh of
     SigNone _ -> True
-    _ -> False
+    _         -> False
 
 -- | Returns True if the 'SigHash' has the value SigSingle.
 isSigSingle :: SigHash -> Bool
 isSigSingle sh = case sh of
     SigSingle _ -> True
-    _ -> False
+    _           -> False
 
 -- | Returns True if the 'SigHash' has the value SigUnknown.
 isSigUnknown :: SigHash -> Bool
 isSigUnknown sh = case sh of
     SigUnknown _ _ -> True
-    _ -> False
+    _              -> False
 
 instance Serialize SigHash where
 
@@ -104,9 +104,9 @@ instance Serialize SigHash where
                 _ -> SigUnknown acp w
 
     put sh = putWord8 $ case sh of
-        SigAll acp -> if acp then 0x81 else 0x01
-        SigNone acp -> if acp then 0x82 else 0x02
-        SigSingle acp -> if acp then 0x83 else 0x03
+        SigAll acp     -> if acp then 0x81 else 0x01
+        SigNone acp    -> if acp then 0x82 else 0x02
+        SigSingle acp  -> if acp then 0x83 else 0x03
         SigUnknown _ w -> w
 
 instance ToJSON SigHash where
@@ -114,11 +114,11 @@ instance ToJSON SigHash where
 
 instance FromJSON SigHash where
     parseJSON = withText "sighash" $
-        maybe mzero return . (decodeToMaybe <=< decodeHex) . cs
+        maybe mzero return . (eitherToMaybe . decode <=< decodeHex) . cs
 
 -- | Encodes a 'SigHash' to a 32 bit-long bytestring.
 encodeSigHash32 :: SigHash -> ByteString
-encodeSigHash32 sh = encode sh `BS.append` BS.pack [0,0,0]
+encodeSigHash32 sh = encode sh `BS.append` BS.pack [0, 0, 0]
 
 -- | Computes the hash that will be used for signing a transaction.
 txSigHash :: Tx      -- ^ Transaction to sign.

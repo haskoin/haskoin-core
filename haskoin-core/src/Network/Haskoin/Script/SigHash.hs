@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Script.SigHash
 ( SigHash(..)
 , encodeSigHash32
@@ -19,13 +20,11 @@ import           Data.Aeson                        (FromJSON, ToJSON,
                                                     toJSON, withText)
 import           Data.Bits                         (clearBit, testBit)
 import           Data.ByteString                   (ByteString)
-import qualified Data.ByteString                   as BS (append, empty, init,
-                                                          last, length, pack,
-                                                          singleton, splitAt)
+import qualified Data.ByteString                   as BS
 import           Data.Maybe                        (fromMaybe)
-import           Data.Serialize                    (Serialize, decode, encode,
-                                                    get, getWord8, put,
-                                                    putWord8, runPut)
+import           Data.Serialize                    (Serialize, get, getWord8,
+                                                    put, putWord8)
+import           Data.Serialize.Put                (runPut)
 import           Data.String.Conversions           (cs)
 import           Data.Word                         (Word8)
 import           Network.Haskoin.Crypto.ECDSA
@@ -64,34 +63,34 @@ data SigHash
     deriving (Eq, Show, Read)
 
 instance NFData SigHash where
-    rnf (SigAll a) = rnf a
-    rnf (SigNone a) = rnf a
-    rnf (SigSingle a) = rnf a
+    rnf (SigAll a)       = rnf a
+    rnf (SigNone a)      = rnf a
+    rnf (SigSingle a)    = rnf a
     rnf (SigUnknown a c) = rnf a `seq` rnf c
 
 -- | Returns True if the 'SigHash' has the value SigAll.
 isSigAll :: SigHash -> Bool
 isSigAll sh = case sh of
     SigAll _ -> True
-    _ -> False
+    _        -> False
 
 -- | Returns True if the 'SigHash' has the value SigNone.
 isSigNone :: SigHash -> Bool
 isSigNone sh = case sh of
     SigNone _ -> True
-    _ -> False
+    _         -> False
 
 -- | Returns True if the 'SigHash' has the value SigSingle.
 isSigSingle :: SigHash -> Bool
 isSigSingle sh = case sh of
     SigSingle _ -> True
-    _ -> False
+    _           -> False
 
 -- | Returns True if the 'SigHash' has the value SigUnknown.
 isSigUnknown :: SigHash -> Bool
 isSigUnknown sh = case sh of
     SigUnknown _ _ -> True
-    _ -> False
+    _              -> False
 
 instance Serialize SigHash where
 
@@ -104,21 +103,21 @@ instance Serialize SigHash where
                 _ -> SigUnknown acp w
 
     put sh = putWord8 $ case sh of
-        SigAll acp -> if acp then 0x81 else 0x01
-        SigNone acp -> if acp then 0x82 else 0x02
-        SigSingle acp -> if acp then 0x83 else 0x03
+        SigAll acp     -> if acp then 0x81 else 0x01
+        SigNone acp    -> if acp then 0x82 else 0x02
+        SigSingle acp  -> if acp then 0x83 else 0x03
         SigUnknown _ w -> w
 
 instance ToJSON SigHash where
-    toJSON = String . cs . encodeHex . encode
+    toJSON = String . cs . encodeHex . encodeStrict
 
 instance FromJSON SigHash where
     parseJSON = withText "sighash" $
-        maybe mzero return . (decodeToMaybe <=< decodeHex) . cs
+        maybe mzero return . (decodeMaybeStrict <=< decodeHex) . cs
 
 -- | Encodes a 'SigHash' to a 32 bit-long bytestring.
 encodeSigHash32 :: SigHash -> ByteString
-encodeSigHash32 sh = encode sh `BS.append` BS.pack [0,0,0]
+encodeSigHash32 sh = encodeStrict sh `BS.append` BS.pack [0, 0, 0]
 
 -- | Computes the hash that will be used for signing a transaction.
 txSigHash :: Tx      -- ^ Transaction to sign.
@@ -132,20 +131,27 @@ txSigHash tx out i sh = do
     fromMaybe one $ do
         newOut <- buildOutputs (txOut tx) i sh
         let newTx = createTx (txVersion tx) newIn newOut (txLockTime tx)
-        return $ doubleHash256 $ encode newTx `BS.append` encodeSigHash32 sh
+        return $
+            doubleHash256 $
+            encodeStrict newTx `BS.append` encodeSigHash32 sh
   where
     one = "0100000000000000000000000000000000000000000000000000000000000000"
 
 -- Builds transaction inputs for computing SigHashes
 buildInputs :: [TxIn] -> Script -> Int -> SigHash -> [TxIn]
 buildInputs txins out i sh
-    | anyoneCanPay sh   = (txins !! i) { scriptInput = encode out } : []
+    | anyoneCanPay sh =
+        [ (txins !! i) { scriptInput = encodeStrict out } ]
     | isSigAll sh || isSigUnknown sh = single
-    | otherwise         = map noSeq $ zip single [0..]
+    | otherwise = zipWith noSeq single [0 ..]
   where
-    empty  = map (\ti -> ti{ scriptInput = BS.empty }) txins
-    single = updateIndex i empty $ \ti -> ti{ scriptInput = encode out }
-    noSeq (ti,j) = if i == j then ti else ti{ txInSequence = 0 }
+    empty = map (\ti -> ti { scriptInput = BS.empty }) txins
+    single =
+        updateIndex i empty $ \ti -> ti { scriptInput = encodeStrict out }
+    noSeq ti j =
+        if i == j
+        then ti
+        else ti { txInSequence = 0 }
 
 -- Build transaction outputs for computing SigHashes
 buildOutputs :: [TxOut] -> Int -> SigHash -> Maybe [TxOut]
@@ -176,7 +182,7 @@ encodeSig (TxSignature sig sh) = runPut $ put sig >> put sh
 decodeSig :: ByteString -> Either String TxSignature
 decodeSig bs = do
     let (h, l) = BS.splitAt (BS.length bs - 1) bs
-    liftM2 TxSignature (decode h) (decode l)
+    liftM2 TxSignature (decodeEitherStrict h) (decodeEitherStrict l)
 
 decodeCanonicalSig :: ByteString -> Either String TxSignature
 decodeCanonicalSig bs
@@ -185,7 +191,7 @@ decodeCanonicalSig bs
     | otherwise =
         case decodeStrictSig $ BS.init bs of
             Just sig ->
-                TxSignature sig <$> decode (BS.singleton $ BS.last bs)
+                TxSignature sig <$> decodeEitherStrict (BS.singleton $ BS.last bs)
             Nothing  ->
                 Left "Non-canonical signature: could not parse signature"
   where

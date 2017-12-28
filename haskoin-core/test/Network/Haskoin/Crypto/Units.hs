@@ -1,24 +1,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Units (tests) where
 
-import Test.HUnit (Assertion, assertBool)
-import Test.Framework (Test, testGroup)
-import Test.Framework.Providers.HUnit (testCase)
-
-import Control.Monad (replicateM_)
-import Control.Monad.Trans (liftIO)
-
-import Data.Maybe (fromJust, isJust, isNothing)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as B 
-import qualified Data.Binary as Bin
-import qualified Data.ByteString.Char8 as C (pack)
-
-import qualified Crypto.Secp256k1 as EC (SecKey, exportCompactSig)
-
-import Network.Haskoin.Crypto
-import Network.Haskoin.Util
-import Network.Haskoin.Internals (PrvKeyI(..), PubKeyI(..), Signature(..))
+import           Control.Monad                  (replicateM_)
+import           Control.Monad.Trans            (liftIO)
+import qualified Crypto.Secp256k1               as EC (SecKey, exportCompactSig)
+import           Data.ByteString                (ByteString)
+import qualified Data.ByteString.Char8          as C (pack)
+import           Data.Maybe                     (fromJust, isJust, isNothing)
+import           Network.Haskoin.Crypto
+import           Network.Haskoin.Internals      (PrvKeyI (..), PubKeyI (..),
+                                                 Signature (..))
+import           Network.Haskoin.Util
+import           Test.Framework                 (Test, testGroup)
+import           Test.Framework.Providers.HUnit (testCase)
+import           Test.HUnit                     (Assertion, assertBool)
 
 -- Unit tests copied from bitcoind implementation
 -- https://github.com/bitcoin/bitcoin/blob/master/src/test/key_tests.cpp
@@ -52,7 +47,7 @@ strAddressBad = "1HV9Lc3sNHZxwj4Zk6fB38tEmBryq2cBiF"
 
 sigMsg :: [ByteString]
 sigMsg =
-    [ mconcat ["Very secret message ", (C.pack $ show (i :: Int)), ": 11"]
+    [ mconcat ["Very secret message ", C.pack (show (i :: Int)), ": 11"]
     | i <- [0..15]
     ]
 
@@ -92,10 +87,9 @@ tests =
         , testCase "Check public key compression" checkKeyCompressed
         , testCase "Check matching address" checkMatchingAddress
         ] ++
-        ( map (\x -> (testCase ("Check sig: " ++ (show x))
-                (checkSignatures $ doubleHash256 x))) sigMsg )
+        map (\x -> testCase ("Check sig: " ++ show x) $ checkSignatures (doubleHash256 x)) sigMsg
     , testGroup "Trezor RFC 6979 Test Vectors"
-        [ testCase "RFC 6979 Test Vector 1" (testSigning $ detVec !! 0)
+        [ testCase "RFC 6979 Test Vector 1" (testSigning $ head detVec)
         , testCase "RFC 6979 Test Vector 2" (testSigning $ detVec !! 1)
         , testCase "RFC 6979 Test Vector 3" (testSigning $ detVec !! 2)
         , testCase "RFC 6979 Test Vector 4" (testSigning $ detVec !! 3)
@@ -151,10 +145,10 @@ checkKeyCompressed = do
 
 checkMatchingAddress :: Assertion
 checkMatchingAddress = do
-    assertBool "Key 1"  $ addr1  == (addrToBase58 $ pubKeyAddr pub1)
-    assertBool "Key 2"  $ addr2  == (addrToBase58 $ pubKeyAddr pub2)
-    assertBool "Key 1C" $ addr1C == (addrToBase58 $ pubKeyAddr pub1C)
-    assertBool "Key 2C" $ addr2C == (addrToBase58 $ pubKeyAddr pub2C)
+    assertBool "Key 1"  $ addr1  == addrToBase58 (pubKeyAddr pub1)
+    assertBool "Key 2"  $ addr2  == addrToBase58 (pubKeyAddr pub2)
+    assertBool "Key 1C" $ addr1C == addrToBase58 (pubKeyAddr pub1C)
+    assertBool "Key 2C" $ addr2C == addrToBase58 (pubKeyAddr pub2C)
 
 checkSignatures :: Hash256 -> Assertion
 checkSignatures h = do
@@ -245,4 +239,4 @@ testSigning (prv, msg, str) = do
     msg' = hash256 msg
     prv' = makePrvKey prv
     compact = EC.exportCompactSig g
-    res = B.toStrict $ Bin.encode compact
+    res = encodeStrict compact

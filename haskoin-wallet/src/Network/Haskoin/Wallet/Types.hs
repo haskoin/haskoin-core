@@ -396,7 +396,7 @@ data JsonTx = JsonTx
     , jsonTxBestBlock       :: !(Maybe BlockHash)
     , jsonTxBestBlockHeight :: !(Maybe BlockHeight)
     }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show)
 
 $(deriveJSON (dropFieldLabel 6) ''JsonTx)
 
@@ -413,7 +413,7 @@ data JsonCoin = JsonCoin
     -- Optional spender
     , jsonCoinSpendingTx :: !(Maybe JsonTx)
     }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show)
 
 $(deriveJSON (dropFieldLabel 8) ''JsonCoin)
 
@@ -422,7 +422,7 @@ $(deriveJSON (dropFieldLabel 8) ''JsonCoin)
 data TxCompleteRes = TxCompleteRes
     { txCompleteTx       :: !Tx
     , txCompleteComplete :: !Bool
-    } deriving (Eq, Show, Read)
+    } deriving (Eq, Show)
 
 $(deriveJSON (dropFieldLabel 10) ''TxCompleteRes)
 
@@ -450,7 +450,7 @@ data JsonSyncBlock = JsonSyncBlock
     , jsonSyncBlockHeight :: !BlockHeight
     , jsonSyncBlockPrev   :: !BlockHash
     , jsonSyncBlockTxs    :: ![JsonTx]
-    } deriving (Eq, Show, Read)
+    } deriving (Eq, Show)
 
 $(deriveJSON (dropFieldLabel 13) ''JsonSyncBlock)
 
@@ -458,14 +458,14 @@ data JsonBlock = JsonBlock
     { jsonBlockHash   :: !BlockHash
     , jsonBlockHeight :: !BlockHeight
     , jsonBlockPrev   :: !BlockHash
-    } deriving (Eq, Show, Read)
+    } deriving (Eq, Show)
 
 $(deriveJSON (dropFieldLabel 9) ''JsonBlock)
 
 data Notif
     = NotifBlock !JsonBlock
     | NotifTx    !JsonTx
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show)
 
 $(deriveJSON (dropSumLabels 5 5 "type") ''Notif)
 

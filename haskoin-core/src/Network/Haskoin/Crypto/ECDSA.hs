@@ -28,6 +28,8 @@ import Data.Serialize (Serialize, get, put)
 import Data.Serialize.Put (putByteString, putByteString)
 import Data.Serialize.Get (getWord8, lookAhead, getByteString)
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Short as BSS
 import System.Entropy (getEntropy)
 
 import qualified Crypto.Secp256k1 as EC
@@ -133,7 +135,9 @@ decodeStrictSig bs = do
     let compact = EC.exportCompactSig g
     -- <http://www.secg.org/sec1-v2.pdf Section 4.1.4>
     -- 4.1.4.1 (r and s can not be zero)
-    guard $ EC.getCompactSigR compact /= 0
-    guard $ EC.getCompactSigS compact /= 0
+    guard $ EC.getCompactSigR compact /= zero
+    guard $ EC.getCompactSigS compact /= zero
     return $ Signature g
+  where
+    zero = BSS.toShort $ BS.replicate 32 0
 

@@ -7,10 +7,8 @@ module Network.Haskoin.Constants
   Network(..)
 , prodnet
 , testnet3
-, testnet5
   -- ** Functions
 , switchToTestnet3
-, switchToTestnet5
 , setNetwork
 , getNetwork
   -- ** Network parameters
@@ -69,10 +67,6 @@ data Network = Network
 -- | Switch to Testnet3.  Do at start of program.
 switchToTestnet3 :: IO ()
 switchToTestnet3 = setNetwork testnet3
-
--- | Switch to Testnet5.  Do at start of program.
-switchToTestnet5 :: IO ()
-switchToTestnet5 = setNetwork testnet5
 
 -- | Change network constants manually.  If switching to Testnet3, use
 -- switchToTestnet3 instead.
@@ -264,42 +258,6 @@ testnet3 = Network
         [ ( 546
           , "000000002a936ca763904c3c35fce2f3556c559c0214345d31b1bcebf76acb70"
           )
-        ]
-    , getBip44Coin = 1
-    }
-
-testnet5 :: Network
-testnet5 = Network
-    { getNetworkName = "testnet5"
-    , getAddrPrefix = 111
-    , getScriptPrefix = 196
-    , getSecretPrefix = 239
-    , getExtPubKeyPrefix = 0x043587cf
-    , getExtSecretPrefix = 0x04358394
-    , getNetworkMagic = 0x6e657400
-    , getGenesisHeader = createBlockHeader
-        0x01
-        "0000000000000000000000000000000000000000000000000000000000000000"
-        "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
-        1296688602
-        486604799
-        414098458
-        -- Hash 000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943
-    , getMaxBlockSize = 2000000
-    , getMaxSatoshi = 2100000000000000
-    , getHaskoinUserAgent = C8.concat
-        [ "/haskoin-testnet5:"
-        , C8.pack $ showVersion version
-        , "/"
-        ]
-    , getDefaultPort = 18555
-    , getAllowMinDifficultyBlocks = True
-    , getPowLimit = fromIntegral (maxBound `shiftR` 32 :: Word256)
-    , getTargetTimespan = 14 * 24 * 60 * 60
-    , getTargetSpacing = 10 * 60
-    , getCheckpoints =
-        [ ( 10001
-          , "00000000fb7c0a2aeb5f1244e81921b84b7ac770004543144e10c2284f89bfd8" )
         ]
     , getBip44Coin = 1
     }

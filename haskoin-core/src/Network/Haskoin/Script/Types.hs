@@ -6,28 +6,16 @@ module Network.Haskoin.Script.Types
 , opPushData
 ) where
 
-import Control.DeepSeq (NFData, rnf)
-import Control.Monad (unless, forM_)
-
-import Data.Word (Word8)
-import Data.Serialize (Serialize, get, put)
-import Data.Serialize.Get
-    ( isEmpty
-    , getWord8
-    , getWord16le
-    , getWord32le
-    , getByteString
-    )
-import Data.Serialize.Put
-    ( putWord8
-    , putWord16le
-    , putWord32le
-    , putByteString
-    )
-import qualified Data.ByteString as BS
-    ( ByteString
-    , length
-    )
+import           Control.DeepSeq    (NFData, rnf)
+import           Control.Monad      (forM_, unless)
+import           Data.ByteString    (ByteString)
+import qualified Data.ByteString    as BS
+import           Data.Serialize     (Serialize, get, put)
+import           Data.Serialize.Get (getByteString, getWord16le, getWord32le,
+                                     getWord8, isEmpty)
+import           Data.Serialize.Put (putByteString, putWord16le, putWord32le,
+                                     putWord8)
+import           Data.Word          (Word8)
 
 -- | Data type representing a transaction script. Scripts are defined as lists
 -- of script operators 'ScriptOp'. Scripts are used to:
@@ -78,7 +66,7 @@ instance NFData PushDataType where rnf x = seq x ()
 -- | Data type representing all of the operators allowed inside a 'Script'.
 data ScriptOp
       -- Pushing Data
-    = OP_PUSHDATA !BS.ByteString !PushDataType
+    = OP_PUSHDATA !ByteString !PushDataType
     | OP_0
     | OP_1NEGATE
     | OP_RESERVED
@@ -192,9 +180,9 @@ data ScriptOp
 
 
 instance NFData ScriptOp where
-    rnf (OP_PUSHDATA b t) = rnf b `seq` rnf t
+    rnf (OP_PUSHDATA b t)    = rnf b `seq` rnf t
     rnf (OP_INVALIDOPCODE c) = rnf c
-    rnf x = x `seq` ()
+    rnf x                    = x `seq` ()
 
 
 instance Serialize ScriptOp where
@@ -529,7 +517,7 @@ isPushOp op = case op of
     _               -> False
 
 -- | Optimally encode data using one of the 4 types of data pushing opcodes
-opPushData :: BS.ByteString -> ScriptOp
+opPushData :: ByteString -> ScriptOp
 opPushData bs
     | len <= 0x4b       = OP_PUSHDATA bs OPCODE
     | len <= 0xff       = OP_PUSHDATA bs OPDATA1

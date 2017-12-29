@@ -63,18 +63,18 @@ testIsCanonical sig = not $
     && not (testBit (BS.index s 5) 7)
     ) ||
     -- Non-canonical signature: S value type mismatch
-    (BS.index s (fromIntegral rlen+4) /= 0x02) ||
+    (BS.index s (fromIntegral rlen + 4) /= 0x02) ||
     -- Non-canonical signature: S length is zero
     (slen == 0) ||
     -- Non-canonical signature: S value negative
     testBit (BS.index s (fromIntegral rlen+6)) 7 ||
     -- Non-canonical signature: S value excessively padded
     (  slen > 1
-    && BS.index s (fromIntegral rlen+6) == 0
-    && not (testBit (BS.index s (fromIntegral rlen+7)) 7)
+    && BS.index s (fromIntegral rlen + 6) == 0
+    && not (testBit (BS.index s (fromIntegral rlen + 7)) 7)
     )
   where
-    s = encode sig
+    s = encodeStrict sig
     len = fromIntegral $ BS.length s
     rlen = BS.index s 3
     slen = BS.index s (fromIntegral rlen + 5)

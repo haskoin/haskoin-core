@@ -110,7 +110,7 @@ instance Serialize SigHash where
         SigUnknown _ w -> w
 
 instance ToJSON SigHash where
-    toJSON = String . cs . encodeHex . encode
+    toJSON = String . cs . encodeHex . encodeStrict
 
 instance FromJSON SigHash where
     parseJSON = withText "sighash" $
@@ -132,20 +132,27 @@ txSigHash tx out i sh = do
     fromMaybe one $ do
         newOut <- buildOutputs (txOut tx) i sh
         let newTx = createTx (txVersion tx) newIn newOut (txLockTime tx)
-        return $ doubleHash256 $ encode newTx `BS.append` encodeSigHash32 sh
+        return $
+            doubleHash256 $
+            encodeStrict newTx `BS.append` encodeSigHash32 sh
   where
     one = "0100000000000000000000000000000000000000000000000000000000000000"
 
 -- Builds transaction inputs for computing SigHashes
 buildInputs :: [TxIn] -> Script -> Int -> SigHash -> [TxIn]
 buildInputs txins out i sh
-    | anyoneCanPay sh   = (txins !! i) { scriptInput = encode out } : []
+    | anyoneCanPay sh =
+        [ (txins !! i) { scriptInput = encodeStrict out } ]
     | isSigAll sh || isSigUnknown sh = single
-    | otherwise         = map noSeq $ zip single [0..]
+    | otherwise = zipWith noSeq single [0 ..]
   where
-    empty  = map (\ti -> ti{ scriptInput = BS.empty }) txins
-    single = updateIndex i empty $ \ti -> ti{ scriptInput = encode out }
-    noSeq (ti,j) = if i == j then ti else ti{ txInSequence = 0 }
+    empty = map (\ti -> ti { scriptInput = BS.empty }) txins
+    single =
+        updateIndex i empty $ \ti -> ti { scriptInput = encodeStrict out }
+    noSeq ti j =
+        if i == j
+        then ti
+        else ti { txInSequence = 0 }
 
 -- Build transaction outputs for computing SigHashes
 buildOutputs :: [TxOut] -> Int -> SigHash -> Maybe [TxOut]
@@ -176,7 +183,7 @@ encodeSig (TxSignature sig sh) = runPut $ put sig >> put sh
 decodeSig :: ByteString -> Either String TxSignature
 decodeSig bs = do
     let (h, l) = BS.splitAt (BS.length bs - 1) bs
-    liftM2 TxSignature (decode h) (decode l)
+    liftM2 TxSignature (decodeEitherStrict h) (decodeEitherStrict l)
 
 decodeCanonicalSig :: ByteString -> Either String TxSignature
 decodeCanonicalSig bs
@@ -185,7 +192,7 @@ decodeCanonicalSig bs
     | otherwise =
         case decodeStrictSig $ BS.init bs of
             Just sig ->
-                TxSignature sig <$> decode (BS.singleton $ BS.last bs)
+                TxSignature sig <$> decodeEitherStrict (BS.singleton $ BS.last bs)
             Nothing  ->
                 Left "Non-canonical signature: could not parse signature"
   where

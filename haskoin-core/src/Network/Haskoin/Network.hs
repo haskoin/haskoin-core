@@ -27,10 +27,21 @@ module Network.Haskoin.Network
 , RejectCode(..)
 , reject
 
+  -- ** Constants
+, nodeNone
+, nodeNetwork
+, nodeGetUTXO
+, nodeBloom
+, nodeWitness
+, nodeXThin
+
   -- * Messages
 , Message(..)
+, msgType
 , MessageHeader(..)
 , MessageCommand(..)
+, commandToString
+, stringToCommand
 
   -- * Bloom filters
 , BloomFlags(..)
@@ -43,6 +54,7 @@ module Network.Haskoin.Network
 , isBloomValid
 , isBloomEmpty
 , isBloomFull
+, acceptsFilters
 
 ) where
 

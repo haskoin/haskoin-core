@@ -1,20 +1,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Mnemonic.Units (tests) where
 
-import Test.HUnit (assertBool, assertEqual)
-import Test.Framework (Test, testGroup)
-import Test.Framework.Providers.HUnit (testCase)
-
-import Data.List (isPrefixOf)
-import Data.Maybe (fromJust)
-import Data.String.Conversions (cs)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as C
-
-import Network.Haskoin.Crypto
-import Network.Haskoin.Util
-import Network.Haskoin.Internals (fromMnemonic)
+import           Data.ByteString                (ByteString)
+import qualified Data.ByteString                as BS
+import qualified Data.ByteString.Char8          as C
+import           Data.List                      (isPrefixOf)
+import           Data.Maybe                     (fromJust)
+import           Data.String.Conversions        (cs)
+import           Network.Haskoin.Crypto
+import           Network.Haskoin.Internals      (fromMnemonic)
+import           Network.Haskoin.Util
+import           Test.Framework                 (Test, testGroup)
+import           Test.Framework.Providers.HUnit (testCase)
+import           Test.HUnit                     (assertBool, assertEqual)
 
 tests :: [Test]
 tests =
@@ -26,23 +24,23 @@ tests =
     ]
 
 toMnemonicTest :: [Test]
-toMnemonicTest = map f $ zip ents mss
+toMnemonicTest = zipWith f ents mss
   where
-    f (e, m) = g (cs e) . assertEqual "" m . h $ e
+    f e m = g (cs e) . assertEqual "" m . h $ e
     g = testCase
     h = fromRight . toMnemonic . fromJust . decodeHex
 
 fromMnemonicTest :: [Test]
-fromMnemonicTest = map f $ zip ents mss
+fromMnemonicTest = zipWith f ents mss
   where
-    f (e, m) = g (cs e) . assertEqual "" e . h $ m
+    f e = g (cs e) . assertEqual "" e . h
     g = testCase
     h = encodeHex . fromRight . fromMnemonic
 
 mnemonicToSeedTest :: [Test]
-mnemonicToSeedTest = map f $ zip mss seeds
+mnemonicToSeedTest = zipWith f mss seeds
   where
-    f (m, s) = g s . assertEqual "" s . h $ m
+    f m s = g s . assertEqual "" s . h $ m
     g = testCase . (++ "...") . cs . BS.take 50
     h = encodeHex . fromRight . mnemonicToSeed "TREZOR"
 
@@ -55,13 +53,13 @@ fromMnemonicInvalidTest = map f invalidMss
                            , cs (BS.take 50 m), "..." ]
            in testCase msg
     h m = case fromMnemonic m of
-            Right _ -> False
+            Right _  -> False
             Left err -> isPrefixOf "fromMnemonic: checksum failed:" err
 
 emptyMnemonicTest :: Test
 emptyMnemonicTest = testCase "mnemonic sentence can not be empty" $
     assertBool "" $ case fromMnemonic "" of
-        Right _ -> False
+        Right _  -> False
         Left err -> isPrefixOf "fromMnemonic: empty mnemonic" err
 
 ents :: [ByteString]

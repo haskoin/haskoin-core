@@ -1,11 +1,11 @@
 module Network.Haskoin.Block.Merkle where
 
 import           Control.DeepSeq                   (NFData, rnf)
-import           Control.Monad                     (forM_, replicateM)
+import           Control.Monad                     (forM_, replicateM, when)
 import           Data.Bits
 import qualified Data.ByteString                   as BS
 import           Data.Maybe
-import           Data.Serialize                    (Serialize, encode, get, put)
+import           Data.Serialize                    (Serialize, get, put)
 import           Data.Serialize.Get                (getWord32le, getWord8)
 import           Data.Serialize.Put                (putWord32le, putWord8)
 import           Data.Word                         (Word32, Word8)
@@ -14,6 +14,7 @@ import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Network.Types
 import           Network.Haskoin.Transaction.Types
+import           Network.Haskoin.Util
 
 type MerkleRoot        = Hash256
 type FlagBits          = [Bool]
@@ -87,7 +88,7 @@ buildMerkleRoot :: [TxHash]   -- ^ List of transaction hashes (leaf nodes).
 buildMerkleRoot txs = calcHash (calcTreeHeight $ length txs) 0 txs
 
 hash2 :: Hash256 -> Hash256 -> Hash256
-hash2 a b = doubleHash256 $ encode a `BS.append` encode b
+hash2 a b = doubleHash256 $ encodeStrict a `BS.append` encodeStrict b
 
 -- | Computes the hash of a specific node in a merkle tree.
 calcHash :: Int       -- ^ Height of the node in the merkle tree.
@@ -192,3 +193,15 @@ boolsToWord8 :: [Bool] -> Word8
 boolsToWord8 [] = 0
 boolsToWord8 xs = foldl setBit 0 (map snd $ filter fst $ zip xs [0..7])
 
+merkleBlockTxs :: MerkleBlock -> Either String [TxHash]
+merkleBlockTxs b =
+    let flags = mFlags b
+        hs = mHashes b
+        n = fromIntegral $ merkleTotalTxns b
+        merkle = merkleRoot $ merkleHeader b
+    in do (root, ths) <- extractMatches flags hs n
+          when (root /= merkle) $ Left "merkleBlockTxs: Merkle root incorrect"
+          return ths
+
+testMerkleRoot :: MerkleBlock -> Bool
+testMerkleRoot = isRight . merkleBlockTxs

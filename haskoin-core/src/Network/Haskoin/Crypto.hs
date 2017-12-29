@@ -66,6 +66,10 @@ module Network.Haskoin.Crypto
 , Hash512(getHash512)
 , Hash256(getHash256)
 , Hash160(getHash160)
+, hash512ToBS
+, hash256ToBS
+, hash160ToBS
+, hashSHA1ToBS
 , bsToCheckSum32
 , bsToHash512
 , bsToHash256
@@ -75,10 +79,6 @@ module Network.Haskoin.Crypto
 , hash256
 , hash160
 , hashSHA1
-, hash512ToBS
-, hash256ToBS
-, hash160ToBS
-, hashSHA1ToBS
 , doubleHash256
 , hmac512
 , hmac256

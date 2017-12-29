@@ -88,7 +88,7 @@ getNodeState sharedSqlBackend = do
         sharedBloomFilter     <- newTVarIO Nothing
         -- Find our best node in the HeaderTree
         sharedBestHeader      <- newTVarIO best
-        sharedBestBlock       <- newTVarIO genesisBlock
+        sharedBestBlock       <- newTVarIO nGenesisBlock
         return SharedNodeState{..}
 
 runNodeT :: Monad m => NodeT m a -> SharedNodeState -> m a

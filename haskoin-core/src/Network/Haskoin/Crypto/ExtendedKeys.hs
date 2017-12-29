@@ -26,6 +26,7 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , xPubImport
 , xPrvImport
 , xPrvWif
+
   -- Helpers
 , prvSubKeys
 , pubSubKeys
@@ -35,6 +36,7 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , deriveMSAddr
 , deriveMSAddrs
 , cycleIndex
+
   -- Derivation paths
 , DerivPathI(..)
 , HardOrGeneric
@@ -223,8 +225,8 @@ prvSubKey xkey child
     | otherwise = error "Invalid child derivation index"
   where
     pK     = xPubKey $ deriveXPubKey xkey
-    msg    = BS.append (encode pK) (encode child)
-    (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) msg
+    msg    = BS.append (encodeStrict pK) (encodeStrict child)
+    (a, c) = split512 $ hmac512 (encodeStrict $ xPrvChain xkey) msg
     k      = fromMaybe err $ tweakPrvKeyC (xPrvKey xkey) a
     err    = throw $ DerivationException "Invalid prvSubKey derivation"
 
@@ -238,8 +240,8 @@ pubSubKey xKey child
         XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK
     | otherwise = error "Invalid child derivation index"
   where
-    msg    = BS.append (encode $ xPubKey xKey) (encode child)
-    (a, c) = split512 $ hmac512 (encode $ xPubChain xKey) msg
+    msg    = BS.append (encodeStrict $ xPubKey xKey) (encodeStrict child)
+    (a, c) = split512 $ hmac512 (encodeStrict $ xPubChain xKey) msg
     pK     = fromMaybe err $ tweakPubKeyC (xPubKey xKey) a
     err    = throw $ DerivationException "Invalid pubSubKey derivation"
 
@@ -258,8 +260,8 @@ hardSubKey xkey child
     | otherwise = error "Invalid child derivation index"
   where
     i      = setBit child 31
-    msg    = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode i)
-    (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) msg
+    msg    = BS.append (bsPadPrvKey $ xPrvKey xkey) (encodeStrict i)
+    (a, c) = split512 $ hmac512 (encodeStrict $ xPrvChain xkey) msg
     k      = fromMaybe err $ tweakPrvKeyC (xPrvKey xkey) a
     err    = throw $ DerivationException "Invalid hardSubKey derivation"
 
@@ -311,11 +313,11 @@ xPubAddr = pubKeyAddr . xPubKey
 
 -- | Exports an extended private key to the BIP32 key export format (base 58).
 xPrvExport :: XPrvKey -> ByteString
-xPrvExport = encodeBase58Check . encode
+xPrvExport = encodeBase58Check . encodeStrict
 
 -- | Exports an extended public key to the BIP32 key export format (base 58).
 xPubExport :: XPubKey -> ByteString
-xPubExport = encodeBase58Check . encode
+xPubExport = encodeBase58Check . encodeStrict
 
 -- | Decodes a BIP32 encoded extended private key. This function will fail if
 -- invalid base 58 characters are detected or if the checksum fails.
@@ -675,7 +677,7 @@ data Bip32PathIndex = Bip32HardIndex KeyIndex | Bip32SoftIndex KeyIndex
   deriving (Read,Show,Eq)
 
 is31Bit :: (Integral a) => a -> Bool
-is31Bit i = i >=0 && i < 0x80000000
+is31Bit i = i >= 0 && i < 0x80000000
 
 
 -- Helper function to parse a hard path

@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Base58
 ( Address(..)
 , addrToBase58
@@ -77,7 +78,8 @@ decodeBase58 t =
 -- | Computes a checksum for the input 'ByteString' and encodes the input and
 -- the checksum to a base58 representation.
 encodeBase58Check :: ByteString -> ByteString
-encodeBase58Check bs = encodeBase58 $ BS.append bs (encode $ checkSum32 bs)
+encodeBase58Check bs =
+    encodeBase58 $ BS.append bs $ encodeStrict $ checkSum32 bs
 
 -- | Decode a base58-encoded string that contains a checksum. This function
 -- returns 'Nothing' if the input string contains invalid base58 characters or
@@ -86,7 +88,7 @@ decodeBase58Check :: ByteString -> Maybe ByteString
 decodeBase58Check bs = do
     rs <- decodeBase58 bs
     let (res, chk) = BS.splitAt (BS.length rs - 4) rs
-    guard $ chk == encode (checkSum32 res)
+    guard $ chk == encodeStrict (checkSum32 res)
     return res
 
 -- | Data type representing a Bitcoin address
@@ -146,7 +148,7 @@ instance ToJSON Address where
 
 -- | Transforms an Address into a base58 encoded String
 addrToBase58 :: Address -> ByteString
-addrToBase58 = encodeBase58Check . encode
+addrToBase58 = encodeBase58Check . encodeStrict
 
 -- | Decodes an Address from a base58 encoded String. This function can fail
 -- if the String is not properly encoded as base58 or the checksum fails.

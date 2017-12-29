@@ -45,7 +45,7 @@ import           Data.Int                          (Int64)
 import           Data.Maybe                        (isJust, mapMaybe)
 import           Data.Serialize                    (decode, encode)
 import           Data.String.Conversions           (cs)
-import           Data.Word                         (Word64, Word32, Word8)
+import           Data.Word                         (Word32, Word64, Word8)
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Script.SigHash
 import           Network.Haskoin.Script.Types
@@ -724,7 +724,7 @@ isPayToScriptHash [OP_HASH160, OP_PUSHDATA bytes OPCODE, OP_EQUAL] flgs
 isPayToScriptHash _ _ = False
 
 stackToScriptOps :: StackValue -> [ ScriptOp ]
-stackToScriptOps sv = case decode $ BS.pack sv of
+stackToScriptOps sv = case decodeEitherStrict $ BS.pack sv of
     Left _  -> []  -- Maybe should propogate the error some how
     Right s -> scriptOps s
 

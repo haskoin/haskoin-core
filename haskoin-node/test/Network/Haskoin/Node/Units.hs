@@ -34,8 +34,8 @@ tests =
         , testCase "Get best chain"              $ runUnit getBestChain
         , testCase "Get side chain"              $ runUnit getSideChain
         , testCase "Nodes at height"             $ runUnit getNodesHeight
-        , testCase "Block locator to head"       $ runUnit blockLocatorToHead
-        , testCase "Block locator to non-head"   $ runUnit blockLocatorToNode
+        , testCase "Block locator to head"       $ runUnit bLocatorToHead
+        , testCase "Block locator to non-head"   $ runUnit bLocatorToNode
         , testCase "Find split node"             $ runUnit splitNode
         ]
     ]
@@ -44,11 +44,11 @@ initialize :: App ()
 initialize = do
     initHeaderTree
     bM <- getBlockByHash (headerHash genesisHeader)
-    liftIO $ assertEqual "Genesis node in header tree" (Just genesisBlock) bM
+    liftIO $ assertEqual "Genesis node in header tree" (Just nGenesisBlock) bM
     hs <- getHeads
-    liftIO $ assertEqual "Genesis node is only head" [genesisBlock] hs
+    liftIO $ assertEqual "Genesis node is only head" [nGenesisBlock] hs
     bh <- getBestBlock
-    liftIO $ assertEqual "Genesis node matches best header" genesisBlock bh
+    liftIO $ assertEqual "Genesis node matches best header" nGenesisBlock bh
 
 addSecondBlock :: App ()
 addSecondBlock = do
@@ -135,14 +135,14 @@ getBestChain = mockBlockChain >> do
     ch <- getBlocksFromHeight h 0 0
     liftIO $ assertEqual "Best chain correct" bch ch
   where
-    bch = genesisBlock : take 2 chain0 ++ chain3
+    bch = nGenesisBlock : take 2 chain0 ++ chain3
 
 getSideChain :: App ()
 getSideChain = mockBlockChain >> do
     ch <- getBlocksFromHeight (chain2 !! 1) 0 0
     liftIO $ assertEqual "Side chain correct" sch ch
   where
-    sch = genesisBlock :
+    sch = nGenesisBlock :
         take 3 chain0 ++ take 2 chain1 ++ take 2 chain2
 
 getNodesHeight :: App ()
@@ -152,13 +152,13 @@ getNodesHeight = mockBlockChain >> do
   where
     hns = [chain0 !! 2, head chain3]
 
-blockLocatorToHead :: App ()
-blockLocatorToHead = do
+bLocatorToHead :: App ()
+bLocatorToHead = do
     mockBlockChain
     putBlocks bs
     h <- getBestBlock
     liftIO $ assertEqual "Head matches" (last bs) h
-    ls <- blockLocator h
+    ls <- bLocator h
     liftIO $ assertEqual "Last is genesis"
         (last ls)
         (headerHash genesisHeader)
@@ -180,12 +180,12 @@ blockLocatorToHead = do
   where
     bs = manyBlocks $ last chain1
 
-blockLocatorToNode :: App ()
-blockLocatorToNode = do
+bLocatorToNode :: App ()
+bLocatorToNode = do
     mockBlockChain
     putBlocks bs
     n <- fromJust <$> getBlockByHash (nodeHash $ chain3 !! 4)
-    ls <- blockLocator n
+    ls <- bLocator n
     xs <- map nodeHash . reverse <$>
         getBlocksFromHeight n 0 0
     liftIO $ assertEqual "Block locator for non-head node is correct" xs ls
@@ -237,7 +237,7 @@ foldBlock :: Maybe NodeBlock -> [(Word32, Word32)] -> [NodeBlock]
 foldBlock nM =
     foldl f (maybeToList nM)
   where
-    f [] _ = [genesisBlock]
+    f [] _ = [nGenesisBlock]
     f ls@(l:_) (n, chain) = mockBlock l chain n : ls
 
 mockBlock :: NodeBlock -> Word32 -> Word32 -> NodeBlock
@@ -248,5 +248,5 @@ mockBlock parent chain n = nodeBlock parent chain bh
         (nodeHash parent)
         "0000000000000000000000000000000000000000000000000000000000000000"
         (nodeTimestamp parent + 600)
-        (blockBits $ nodeHeader parent)
+        (blockBits $ nHeader parent)
         n

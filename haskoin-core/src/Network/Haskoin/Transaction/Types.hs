@@ -134,7 +134,7 @@ instance FromJSON Tx where
         maybe mzero return . (eitherToMaybe . decode <=< decodeHex) . cs
 
 instance ToJSON Tx where
-    toJSON = String . cs . encodeHex . encode
+    toJSON = String . cs . encodeHex . encodeStrict
 
 -- | Data type representing a transaction input.
 data TxIn =
@@ -205,7 +205,7 @@ instance FromJSON OutPoint where
         maybe mzero return . (eitherToMaybe . decode <=< decodeHex) . cs
 
 instance ToJSON OutPoint where
-    toJSON = String . cs . encodeHex . encode
+    toJSON = String . cs . encodeHex . encodeStrict
 
 instance Serialize OutPoint where
     get = do

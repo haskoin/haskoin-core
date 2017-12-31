@@ -362,10 +362,8 @@ encodeCompact i = nCompact
     i' = abs i
     neg = i < 0
     nSize' :: Int
-    nSize' = let f n = let n' = n `shiftR` 8
-                       in if n' == 0
-                          then 1
-                          else 1 + f n'
+    nSize' = let f 0 = 0
+                 f n = 1 + f (n `shiftR` 8)
              in f i'
     nCompact''' :: Word32
     nCompact'''

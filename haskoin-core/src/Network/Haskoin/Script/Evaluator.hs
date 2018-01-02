@@ -799,7 +799,8 @@ verifySpend :: Tx     -- ^ The spending transaction
             -> [Flag] -- ^ Evaluation flags
             -> Bool
 verifySpend tx i outscript flags =
-  let scriptSig = fromRight . decode . scriptInput $ txIn tx !! i
+  let scriptSig = either err id . decode . scriptInput $ txIn tx !! i
       verifyFcn = verifySigWithType tx i
+      err e = error $ "Could not decode scriptInput in verifySpend: " ++ e
   in evalScript scriptSig outscript verifyFcn flags
 

@@ -14,7 +14,7 @@ genesisTx =
     txin = TxIn outpoint inputBS maxBound
     txout = TxOut 5000000000 (encodeOutputBS output)
     locktime = 0
-    outpoint = OutPoint z (-1)
+    outpoint = OutPoint z maxBound
     Just inputBS = decodeHex $ fromString $
         "04ffff001d0104455468652054696d65732030332f4a616e2f323030392043686" ++
         "16e63656c6c6f72206f6e206272696e6b206f66207365636f6e64206261696c6f" ++

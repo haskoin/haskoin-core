@@ -1,8 +1,5 @@
 module Network.Haskoin.Test.Transaction where
-{-|
-  Arbitrary types for Network.Haskoin.Transaction
--}
-
+-- | Arbitrary types for Network.Haskoin.Transaction
 import           Control.Monad
 import qualified Data.ByteString             as BS
 import           Data.List                   (nub, nubBy, permutations)

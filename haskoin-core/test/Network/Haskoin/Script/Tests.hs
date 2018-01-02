@@ -345,7 +345,7 @@ nullOutPoint =
     OutPoint
     { outPointHash =
           "0000000000000000000000000000000000000000000000000000000000000000"
-    , outPointIndex = -1
+    , outPointIndex = maxBound
     }
 
 -- | Some of the scripts tests require transactions be built in a

@@ -162,7 +162,7 @@ buildOutputs txos i sh
     | i >= length txos = Nothing
     | otherwise = return $ buffer ++ [txos !! i]
   where
-    buffer = replicate i $ TxOut (-1) BS.empty
+    buffer = replicate i $ TxOut maxBound BS.empty
 
 -- | Data type representing a 'Signature' together with a 'SigHash'. The
 -- 'SigHash' is serialized as one byte at the end of a regular ECDSA

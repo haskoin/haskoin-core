@@ -17,8 +17,6 @@ tests =
           [ testProperty "decode . encode block hash" $
             forAll arbitraryBlockHash $ \h ->
                 hexToBlockHash (blockHashToHex h) == Just h
-          , testProperty "Read/Show block hash" $
-            forAll arbitraryBlockHash $ \h -> read (show h) == h
           , testProperty "From string block hash" $
             forAll arbitraryBlockHash $ \h ->
                 fromString (cs $ blockHashToHex h) == h

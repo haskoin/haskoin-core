@@ -351,7 +351,7 @@ fakeNode :: NodeBlock     -- ^ Parent
 fakeNode parent tids chain nonce =
     nodeBlock parent chain header
   where
-    header = createBlockHeader
+    header = BlockHeader
         (blockVersion $ nodeHeader parent)
         (nodeHash parent)
         (if null tids then z else buildMerkleRoot tids)

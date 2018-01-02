@@ -243,7 +243,7 @@ foldBlock nM =
 mockBlock :: NodeBlock -> Word32 -> Word32 -> NodeBlock
 mockBlock parent chain n = nodeBlock parent chain bh
   where
-    bh = createBlockHeader
+    bh = BlockHeader
         (blockVersion $ nodeHeader parent)
         (nodeHash parent)
         "0000000000000000000000000000000000000000000000000000000000000000"

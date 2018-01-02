@@ -1,3 +1,6 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.ExtendedKeys
 ( XPubKey(..)
 , XPrvKey(..)
@@ -317,12 +320,12 @@ xPubExport = encodeBase58Check . encode
 -- | Decodes a BIP32 encoded extended private key. This function will fail if
 -- invalid base 58 characters are detected or if the checksum fails.
 xPrvImport :: ByteString -> Maybe XPrvKey
-xPrvImport = decodeToMaybe <=< decodeBase58Check
+xPrvImport = eitherToMaybe . decode <=< decodeBase58Check
 
 -- | Decodes a BIP32 encoded extended public key. This function will fail if
 -- invalid base 58 characters are detected or if the checksum fails.
 xPubImport :: ByteString -> Maybe XPubKey
-xPubImport = decodeToMaybe <=< decodeBase58Check
+xPubImport = eitherToMaybe . decode <=< decodeBase58Check
 
 -- | Export an extended private key to WIF (Wallet Import Format).
 xPrvWif :: XPrvKey -> ByteString

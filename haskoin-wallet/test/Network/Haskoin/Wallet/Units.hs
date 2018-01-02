@@ -352,7 +352,7 @@ fakeNode parent tids chain nonce =
     nodeBlock parent chain header
   where
     header = BlockHeader
-        (blockVersion $ nodeHeader parent)
+        (blockVersion $ nHeader parent)
         (nodeHash parent)
         (if null tids then z else buildMerkleRoot tids)
         (nodeTimestamp parent + 600)

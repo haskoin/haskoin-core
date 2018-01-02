@@ -10,7 +10,6 @@ module Network.Haskoin.Block
   -- * Block Headers
 , BlockHeader(..)
 , headerHash
-, createBlockHeader
 , GetHeaders(..)
 , Headers(..)
 , BlockHeaderCount

@@ -244,7 +244,7 @@ mockBlock :: NodeBlock -> Word32 -> Word32 -> NodeBlock
 mockBlock parent chain n = nodeBlock parent chain bh
   where
     bh = BlockHeader
-        (blockVersion $ nodeHeader parent)
+        (blockVersion $ nHeader parent)
         (nodeHash parent)
         "0000000000000000000000000000000000000000000000000000000000000000"
         (nodeTimestamp parent + 600)

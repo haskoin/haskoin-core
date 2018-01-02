@@ -42,4 +42,5 @@ arbitraryMessage =
         , MPong <$> arbitraryPong
         , MAlert <$> arbitraryAlert
         , MReject <$> arbitraryReject
+        , return MSendHeaders
         ]

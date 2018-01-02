@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 module Network.Haskoin.Network.Types
 ( Addr(..)
 , NetworkAddressTime
@@ -17,59 +19,45 @@ module Network.Haskoin.Network.Types
 , VarString(..)
 , Version(..)
 , MessageCommand(..)
+, commandToString
+, stringToCommand
+, nodeNone
+, nodeNetwork
+, nodeGetUTXO
+, nodeBloom
+, nodeWitness
+, nodeXThin
 ) where
 
-import Control.DeepSeq (NFData, rnf)
-import Control.Monad (replicateM, liftM2, forM_, unless)
-
-import Data.Word (Word32, Word64)
-import Data.Serialize (Serialize, get, put)
-import Data.Serialize.Get
-    ( Get
-    , getWord8
-    , getWord16le
-    , getWord16be
-    , getWord32be
-    , getWord32host
-    , getWord32le
-    , getWord64le
-    , getByteString
-    , isEmpty
-    )
-import Data.Serialize.Put
-    ( Put
-    , putWord8
-    , putWord16le
-    , putWord16be
-    , putWord32be
-    , putWord32host
-    , putWord32le
-    , putWord64le
-    , putByteString
-    )
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-    ( length
-    , takeWhile
-    , empty
-    , null
-    , take
-    )
-import Data.ByteString.Char8 as C (replicate)
-import Data.String.Conversions (cs)
-import Network.Socket (SockAddr (SockAddrInet, SockAddrInet6))
-
-import Network.Haskoin.Crypto.Hash
+import           Control.DeepSeq             (NFData, rnf)
+import           Control.Monad               (forM_, liftM2, replicateM, unless)
+import           Data.Bits                   (shiftL)
+import           Data.ByteString             (ByteString)
+import qualified Data.ByteString             as BS
+import           Data.ByteString.Char8       as C (replicate)
+import           Data.Monoid                 ((<>))
+import           Data.Serialize              (Serialize, get, put)
+import           Data.Serialize.Get          (Get, getByteString, getWord16be,
+                                              getWord16le, getWord32be,
+                                              getWord32host, getWord32le,
+                                              getWord64le, getWord8, isEmpty)
+import           Data.Serialize.Put          (Put, putByteString, putWord16be,
+                                              putWord16le, putWord32be,
+                                              putWord32host, putWord32le,
+                                              putWord64le, putWord8)
+import           Data.String.Conversions     (cs)
+import           Data.Word                   (Word32, Word64)
+import           Network.Haskoin.Crypto.Hash
+import           Network.Socket              (SockAddr (..))
 
 -- | Network address with a timestamp
 type NetworkAddressTime = (Word32, NetworkAddress)
 
 -- | Provides information on known nodes in the bitcoin network. An 'Addr'
 -- type is sent inside a 'Message' as a response to a 'GetAddr' message.
-data Addr =
-    Addr {
-           -- List of addresses of other nodes on the network with timestamps.
-           addrList :: ![NetworkAddressTime]
+newtype Addr =
+    Addr { -- List of addresses of other nodes on the network with timestamps.
+           addrList :: [NetworkAddressTime]
          }
     deriving (Eq, Show)
 
@@ -110,10 +98,9 @@ instance Serialize Alert where
 -- object referenced by the hash. Usually, 'GetData' messages are sent after a
 -- node receives an 'Inv' message to obtain information on unknown object
 -- hashes.
-data GetData =
-    GetData {
-              -- | List of object hashes
-              getDataList :: ![InvVector]
+newtype GetData =
+    GetData { -- | List of object hashes
+              getDataList :: [InvVector]
             } deriving (Eq, Show)
 
 instance NFData GetData where
@@ -132,10 +119,10 @@ instance Serialize GetData where
 -- | 'Inv' messages are used by nodes to advertise their knowledge of new
 -- objects by publishing a list of hashes. 'Inv' messages can be sent
 -- unsolicited or in response to a 'GetBlocks' message.
-data Inv =
+newtype Inv =
     Inv {
         -- | Inventory vectors
-          invList :: ![InvVector]
+          invList :: [InvVector]
         } deriving (Eq, Show)
 
 instance NFData Inv where
@@ -202,10 +189,9 @@ instance Serialize InvVector where
 -- timestamps are sent together with the 'NetworkAddress' such as in the 'Addr'
 -- data type.
 data NetworkAddress =
-    NetworkAddress {
-                   -- | Bitmask of services available for this address
+    NetworkAddress { -- | Bitmask of services available for this address
                      naServices :: !Word64
-                   -- | IPv6 address and port
+                     -- | IPv6 address and port
                    , naAddress  :: !SockAddr
                    } deriving (Eq, Show)
 
@@ -253,10 +239,9 @@ instance Serialize NetworkAddress where
 -- whe one of the requested objects could not be retrieved. This could happen,
 -- for example, if a tranasaction was requested and was not available in the
 -- memory pool of the receiving node.
-data NotFound =
-    NotFound {
-             -- | Inventory vectors related to this request
-               notFoundList :: ![InvVector]
+newtype NotFound =
+    NotFound { -- | Inventory vectors related to this request
+               notFoundList :: [InvVector]
              } deriving (Eq, Show)
 
 instance NFData NotFound where
@@ -275,8 +260,7 @@ instance Serialize NotFound where
 -- | A Ping message is sent to bitcoin peers to check if a TCP\/IP connection
 -- is still valid.
 newtype Ping =
-    Ping {
-           -- | A random nonce used to identify the recipient of the ping
+    Ping { -- | A random nonce used to identify the recipient of the ping
            -- request once a Pong response is received.
            pingNonce :: Word64
          } deriving (Eq, Show, Read)
@@ -438,7 +422,7 @@ data Version =
             , addrRecv    :: !NetworkAddress
               -- | Network address of the node sending this message.
             , addrSend    :: !NetworkAddress
-              -- | Randomly generated identifying sent with every version
+              -- | Randomly generated identifier sent with every version
               -- message. This nonce is used to detect connection to self.
             , verNonce    :: !Word64
               -- | User agent
@@ -526,18 +510,20 @@ data MessageCommand
     | MCAlert
     | MCMempool
     | MCReject
+    | MCSendHeaders
     deriving (Eq, Show, Read)
 
 instance NFData MessageCommand where rnf x = seq x ()
 
 instance Serialize MessageCommand where
-
     get = go =<< getByteString 12
       where
-        go bs = case stringToCommand $ unpackCommand bs of
-            Just cmd -> return cmd
-            Nothing  -> fail "get MessageCommand : Invalid command"
-
+        go bs =
+            let str = unpackCommand bs
+            in case stringToCommand str of
+                Just cmd -> return cmd
+                Nothing  -> fail $ cs $
+                    "get MessageCommand: Invalid command: " <> str
     put mc = putByteString $ packCommand $ commandToString mc
 
 
@@ -564,6 +550,7 @@ stringToCommand str = case str of
     "alert"       -> Just MCAlert
     "mempool"     -> Just MCMempool
     "reject"      -> Just MCReject
+    "sendheaders" -> Just MCSendHeaders
     _             -> Nothing
 
 commandToString :: MessageCommand -> ByteString
@@ -589,6 +576,7 @@ commandToString mc = case mc of
     MCAlert       -> "alert"
     MCMempool     -> "mempool"
     MCReject      -> "reject"
+    MCSendHeaders -> "sendheaders"
 
 packCommand :: ByteString -> ByteString
 packCommand s = BS.take 12 $
@@ -597,3 +585,20 @@ packCommand s = BS.take 12 $
 unpackCommand :: ByteString -> ByteString
 unpackCommand = BS.takeWhile (/= 0)
 
+nodeNone :: Word64
+nodeNone = 0
+
+nodeNetwork :: Word64
+nodeNetwork = 1
+
+nodeGetUTXO :: Word64
+nodeGetUTXO = 1 `shiftL` 1
+
+nodeBloom :: Word64
+nodeBloom = 1 `shiftL` 2
+
+nodeWitness :: Word64
+nodeWitness = 1 `shiftL` 3
+
+nodeXThin :: Word64
+nodeXThin = 1 `shiftL` 4

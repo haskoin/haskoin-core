@@ -1,11 +1,12 @@
 module Network.Haskoin.Network.Message
 ( Message(..)
 , MessageHeader(..)
+, msgType
 ) where
 
 import           Control.DeepSeq                   (NFData, rnf)
 import           Control.Monad                     (unless)
-import qualified Data.ByteString                   as BS (append, empty, length)
+import qualified Data.ByteString                   as BS
 import           Data.Serialize                    (Serialize, encode, get, put)
 import           Data.Serialize.Get                (getByteString, getWord32be,
                                                     getWord32le, isolate,
@@ -23,20 +24,19 @@ import           Network.Haskoin.Transaction.Types
 
 -- | Data type representing the header of a 'Message'. All messages sent between
 -- nodes contain a message header.
-data MessageHeader =
-    MessageHeader {
-                  -- | Network magic bytes. It is used to differentiate
-                  -- messages meant for different bitcoin networks, such as
-                  -- prodnet and testnet.
-                    headMagic       :: !Word32
-                  -- | Message command identifying the type of message.
-                  -- included in the payload.
-                  , headCmd         :: !MessageCommand
-                  -- | Byte length of the payload.
-                  , headPayloadSize :: !Word32
-                  -- | Checksum of the payload.
-                  , headChecksum    :: !CheckSum32
-                  } deriving (Eq, Show)
+data MessageHeader = MessageHeader
+    { -- | Network magic bytes. It is used to differentiate
+      -- messages meant for different bitcoin networks, such as
+      -- prodnet and testnet.
+      headMagic       :: !Word32
+      -- | Message command identifying the type of message.
+      -- included in the payload.
+    , headCmd         :: !MessageCommand
+      -- | Byte length of the payload.
+    , headPayloadSize :: !Word32
+      -- | Checksum of the payload.
+    , headChecksum    :: !CheckSum32
+    } deriving (Eq, Show)
 
 instance NFData MessageHeader where
     rnf (MessageHeader m c p s) = rnf m `seq` rnf c `seq` rnf p `seq` rnf s
@@ -82,17 +82,41 @@ data Message
     | MAlert !Alert
     | MMempool
     | MReject !Reject
+    | MSendHeaders
     deriving (Eq, Show)
 
-instance Serialize Message where
+msgType :: Message -> String
+msgType (MVersion _)     = "version"
+msgType MVerAck          = "verack"
+msgType (MAddr _)        = "addr"
+msgType (MInv _)         = "inv"
+msgType (MGetData _)     = "getdata"
+msgType (MNotFound _)    = "notfound"
+msgType (MGetBlocks _)   = "getblocks"
+msgType (MGetHeaders _)  = "getheaders"
+msgType (MTx _)          = "tx"
+msgType (MBlock _)       = "block"
+msgType (MMerkleBlock _) = "merkleblock"
+msgType (MHeaders _)     = "headers"
+msgType MGetAddr         = "getaddr"
+msgType (MFilterLoad _)  = "filterload"
+msgType (MFilterAdd _)   = "filteradd"
+msgType MFilterClear     = "filterclear"
+msgType (MPing _)        = "ping"
+msgType (MPong _)        = "pong"
+msgType (MAlert _)       = "alert"
+msgType MMempool         = "mempool"
+msgType (MReject _)      = "reject"
+msgType MSendHeaders     = "sendheaders"
 
+instance Serialize Message where
     get = do
         (MessageHeader mgc cmd len chk) <- get
         bs <- lookAhead $ getByteString $ fromIntegral len
         unless (mgc == networkMagic)
-            (fail $ "get: Invalid network magic bytes: " ++ (show mgc))
+            (fail $ "get: Invalid network magic bytes: " ++ show mgc)
         unless (checkSum32 bs == chk)
-            (fail $ "get: Invalid message checksum: " ++ (show chk))
+            (fail $ "get: Invalid message checksum: " ++ show chk)
         if len > 0
             then isolate (fromIntegral len) $ case cmd of
                 MCVersion     -> MVersion <$> get
@@ -112,14 +136,14 @@ instance Serialize Message where
                 MCPong        -> MPong <$> get
                 MCAlert       -> MAlert <$> get
                 MCReject      -> MReject <$> get
-                _             -> fail $ "get: Invalid command " ++ (show cmd)
+                _             -> fail $ "get: Invalid command " ++ show cmd
             else case cmd of
                 MCGetAddr     -> return MGetAddr
                 MCVerAck      -> return MVerAck
                 MCFilterClear -> return MFilterClear
                 MCMempool     -> return MMempool
-                _             -> fail $ "get: Invalid command " ++ (show cmd)
-
+                MCSendHeaders -> return MSendHeaders
+                _             -> fail $ "get: Invalid command " ++ show cmd
     put msg = do
         let (cmd, payload) = case msg of
                 MVersion m     -> (MCVersion, encode m)
@@ -143,8 +167,9 @@ instance Serialize Message where
                 MAlert m       -> (MCAlert, encode m)
                 MMempool       -> (MCMempool, BS.empty)
                 MReject m      -> (MCReject, encode m)
+                MSendHeaders   -> (MCSendHeaders, BS.empty)
             chk = checkSum32 payload
             len = fromIntegral $ BS.length payload
             header = MessageHeader networkMagic cmd len chk
-        putByteString $ (encode header) `BS.append` payload
+        putByteString $ encode header `BS.append` payload
 

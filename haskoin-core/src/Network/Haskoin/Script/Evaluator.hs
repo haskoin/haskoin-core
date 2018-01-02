@@ -724,7 +724,7 @@ isPayToScriptHash [OP_HASH160, OP_PUSHDATA bytes OPCODE, OP_EQUAL] flgs
 isPayToScriptHash _ _ = False
 
 stackToScriptOps :: StackValue -> [ ScriptOp ]
-stackToScriptOps sv = case decodeEitherStrict $ BS.pack sv of
+stackToScriptOps sv = case decode $ BS.pack sv of
     Left _  -> []  -- Maybe should propogate the error some how
     Right s -> scriptOps s
 

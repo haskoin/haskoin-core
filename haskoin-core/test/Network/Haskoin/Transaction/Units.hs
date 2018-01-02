@@ -9,6 +9,7 @@ import qualified Data.ByteString.Lazy           as BL
 import qualified Data.Either
 import           Data.List                      (groupBy)
 import           Data.Maybe                     (fromJust, fromMaybe)
+import           Data.Serialize                 (decode, encode)
 import           Data.Serialize.Get             (getWord32le, runGet)
 import           Data.Serialize.Put             (putWord32le, runPut)
 import           Data.String.Conversions        (convertString)
@@ -40,10 +41,9 @@ mapTxIDVec (v,i) = testCase name $ runTxIDVec v
     name = "Compute TxID " ++ show i
 
 runTxIDVec :: (ByteString, ByteString) -> Assertion
-runTxIDVec (tid,tx) = assertBool "TxID" $
-    txHashToHex (txHash txBS) == tid
+runTxIDVec (tid, tx) = assertBool "TxID" $ txHashToHex (txHash txBS) == tid
   where
-    txBS = decodeStrict $ fromJust $ decodeHex tx
+    txBS = fromJust $ either (const Nothing) return . decode =<< decodeHex tx
 
 txIDVec :: [(ByteString, ByteString)]
 txIDVec =
@@ -68,7 +68,7 @@ mapPKHashVec (v, i) = testCase name $ runPKHashVec v
 
 runPKHashVec :: ([(ByteString, Word32)], [(ByteString, Word64)], ByteString) -> Assertion
 runPKHashVec (xs, ys, res) =
-    assertBool "Build PKHash Tx" $ encodeHex (encodeStrict tx) == res
+    assertBool "Build PKHash Tx" $ encodeHex (encode tx) == res
     where tx = fromRight $ buildAddrTx (map f xs) ys
           f (tid,ix) = OutPoint (fromJust $ hexToTxHash tid) ix
 
@@ -86,7 +86,7 @@ runVerifyVec (SatoshiCoreTxTest _ is bsTx) i =
         "    > Verify transaction " ++
         show i ++ "bsTx: " ++ convertString bsTx
     tx :: Tx
-    tx = decodeStrict . fromJust . decodeHex $ bsTx
+    tx = fromJust $ either (const Nothing) return . decode =<< decodeHex bsTx
     outputsAndOutpoints :: [(ScriptOutput, OutPoint)]
     outputsAndOutpoints = map f is
     f (SatoshiCoreTxTestInput bsOutputHash bsOutputIndex bsOutputScriptPubKey) =
@@ -102,7 +102,7 @@ runVerifyVec (SatoshiCoreTxTest _ is bsTx) i =
             op :: OutPoint
             op =
                 OutPoint
-                    (decodeStrict . BS.reverse . fromJust . decodeHex $
+                    (fromRight . decode . BS.reverse . fromJust . decodeHex $
                      bsOutputHash)
                     (fromRight . runGet getWord32le . fromJust . decodeHex $
                      bsOutputIndex)
@@ -297,12 +297,12 @@ encodeSatoshiCoreScriptPubKey =
   where
     encodeSatoshiCoreScriptPiece :: String -> ByteString
     encodeSatoshiCoreScriptPiece s = case (readMay ("OP_" ++ s) :: Maybe ScriptOp) of
-      Just op -> encodeHex . encodeStrict $ op
+      Just op -> encodeHex . encode $ op
       Nothing -> case take 2 s of
-          "OP" -> encodeHex . encodeStrict . (read :: String -> ScriptOp) $ s
+          "OP" -> encodeHex . encode . (read :: String -> ScriptOp) $ s
           "0x" -> (fromString . drop 2 :: String -> ByteString) s
           _ -> case (readMay s :: Maybe Int) of -- can we get rid of this case now?
-            Just i  -> encodeHex . encodeStrict . intToScriptOp $ i
+            Just i  -> encodeHex . encode . intToScriptOp $ i
             Nothing -> error $ "encodeSatoshiCoreScriptPubKey: " ++ s
 
 satoshiCoreTxTests :: IO [Test]

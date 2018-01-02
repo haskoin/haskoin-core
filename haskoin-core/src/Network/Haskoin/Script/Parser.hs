@@ -38,7 +38,7 @@ import           Data.ByteString                (ByteString)
 import qualified Data.ByteString                as BS
 import           Data.Foldable                  (foldrM)
 import           Data.List                      (sortBy)
-import           Data.Serialize                 (decode)
+import           Data.Serialize                 (decode, encode)
 import           Data.String.Conversions        (cs)
 import           Network.Haskoin.Crypto.Base58
 import           Network.Haskoin.Crypto.Hash
@@ -120,17 +120,17 @@ sortMulSig out = case out of
     PayMulSig keys r -> PayMulSig (sortBy f keys) r
     _ -> error "Can only call orderMulSig on PayMulSig scripts"
   where
-    f a b = encodeStrict a `compare` encodeStrict b
+    f a b = encode a `compare` encode b
 
 -- | Computes a 'Script' from a 'ScriptOutput'. The 'Script' is a list of
 -- 'ScriptOp' can can be used to build a 'Tx'.
 encodeOutput :: ScriptOutput -> Script
 encodeOutput s = Script $ case s of
     -- Pay to PubKey
-    (PayPK k) -> [opPushData $ encodeStrict k, OP_CHECKSIG]
+    (PayPK k) -> [opPushData $ encode k, OP_CHECKSIG]
     -- Pay to PubKey Hash Address
     (PayPKHash a) -> case a of
-        (PubKeyAddress h) -> [ OP_DUP, OP_HASH160, opPushData $ encodeStrict h
+        (PubKeyAddress h) -> [ OP_DUP, OP_HASH160, opPushData $ encode h
                              , OP_EQUALVERIFY, OP_CHECKSIG
                              ]
         (ScriptAddress _) ->
@@ -140,13 +140,13 @@ encodeOutput s = Script $ case s of
       | r <= length ps ->
         let opM = intToScriptOp r
             opN = intToScriptOp $ length ps
-            keys = map (opPushData . encodeStrict) ps
+            keys = map (opPushData . encode) ps
             in opM : keys ++ [opN, OP_CHECKMULTISIG]
       | otherwise -> error "encodeOutput: PayMulSig r must be <= than pkeys"
     -- Pay to Script Hash Address
     (PayScriptHash a) -> case a of
         (ScriptAddress h) -> [ OP_HASH160
-                             , opPushData $ encodeStrict h, OP_EQUAL
+                             , opPushData $ encode h, OP_EQUAL
                              ]
         (PubKeyAddress _) ->
             error "encodeOutput: PubKeyAddress is invalid in PayScriptHash"
@@ -155,20 +155,20 @@ encodeOutput s = Script $ case s of
 
 -- | Similar to 'encodeOutput' but encodes to a ByteString
 encodeOutputBS :: ScriptOutput -> ByteString
-encodeOutputBS = encodeStrict . encodeOutput
+encodeOutputBS = encode . encodeOutput
 
 -- | Tries to decode a 'ScriptOutput' from a 'Script'. This can fail if the
 -- script is not recognized as any of the standard output types.
 decodeOutput :: Script -> Either String ScriptOutput
 decodeOutput s = case scriptOps s of
     -- Pay to PubKey
-    [OP_PUSHDATA bs _, OP_CHECKSIG] -> PayPK <$> decodeEitherStrict bs
+    [OP_PUSHDATA bs _, OP_CHECKSIG] -> PayPK <$> decode bs
     -- Pay to PubKey Hash
     [OP_DUP, OP_HASH160, OP_PUSHDATA bs _, OP_EQUALVERIFY, OP_CHECKSIG] ->
-        (PayPKHash . PubKeyAddress) <$> decodeEitherStrict bs
+        (PayPKHash . PubKeyAddress) <$> decode bs
     -- Pay to Script Hash
     [OP_HASH160, OP_PUSHDATA bs _, OP_EQUAL] ->
-        (PayScriptHash . ScriptAddress) <$> decodeEitherStrict  bs
+        (PayScriptHash . ScriptAddress) <$> decode  bs
     -- Provably unspendable data carrier output
     [OP_RETURN, OP_PUSHDATA bs _] -> Right $ DataCarrier bs
     -- Pay to MultiSig Keys
@@ -176,7 +176,7 @@ decodeOutput s = case scriptOps s of
 
 -- | Similar to 'decodeOutput' but decodes from a ByteString
 decodeOutputBS :: ByteString -> Either String ScriptOutput
-decodeOutputBS = decodeOutput <=< decodeEitherStrict
+decodeOutputBS = decodeOutput <=< decode
 
 -- Match [ OP_N, PubKey1, ..., PubKeyM, OP_M, OP_CHECKMULTISIG ]
 matchPayMulSig :: Script -> Either String ScriptOutput
@@ -188,17 +188,17 @@ matchPayMulSig (Script ops) = case splitAt (length ops - 2) ops of
             else Left "matchPayMulSig: Invalid M or N parameters"
     _ -> Left "matchPayMulSig: script did not match output template"
   where
-    go (OP_PUSHDATA bs _:xs) = liftM2 (:) (decodeEitherStrict bs) (go xs)
+    go (OP_PUSHDATA bs _:xs) = liftM2 (:) (decode bs) (go xs)
     go []                    = return []
     go  _                    = Left "matchPayMulSig: invalid multisig opcode"
 
 -- | Transforms integers [1 .. 16] to 'ScriptOp' [OP_1 .. OP_16]
 intToScriptOp :: Int -> ScriptOp
 intToScriptOp i
-    | i `elem` [1..16] = op
+    | i `elem` [1 .. 16] = op
     | otherwise = err
   where
-    op  = decodeStrict $ BS.singleton $ fromIntegral $ i + 0x50
+    op = either (const err) id . decode . BS.singleton . fromIntegral $ i + 0x50
     err = error $ "intToScriptOp: Invalid integer " ++ show i
 
 -- | Decode 'ScriptOp' [OP_1 .. OP_16] to integers [1 .. 16]. This functions
@@ -208,7 +208,7 @@ scriptOpToInt s
     | res `elem` [1..16] = return res
     | otherwise          = Left $ "scriptOpToInt: invalid opcode " ++ show s
   where
-    res = fromIntegral (BS.head $ encodeStrict s) - 0x50
+    res = fromIntegral (BS.head $ encode s) - 0x50
 
 -- | Get the address of a `ScriptOutput`
 outputAddress :: ScriptOutput -> Either String Address
@@ -282,7 +282,7 @@ encodeSimpleInput :: SimpleInput -> Script
 encodeSimpleInput s = Script $ case s of
     SpendPK ts       -> [ opPushData $ encodeSig ts ]
     SpendPKHash ts p -> [ opPushData $ encodeSig ts
-                        , opPushData $ encodeStrict p
+                        , opPushData $ encode p
                         ]
     SpendMulSig ts   -> OP_0 : map (opPushData . encodeSig) ts
 
@@ -315,7 +315,7 @@ encodeInput s = case s of
 
 -- | Similar to 'encodeInput' but encodes to a ByteString
 encodeInputBS :: ScriptInput -> ByteString
-encodeInputBS = encodeStrict . encodeInput
+encodeInputBS = encode . encodeInput
 
 -- | Decodes a 'ScriptInput' from a 'Script'. This function fails if the
 -- script can not be parsed as a standard script input.
@@ -334,5 +334,5 @@ decodeInput s@(Script ops) = maybeToEither errMsg $
 
 -- | Similar to 'decodeInput' but decodes from a ByteString
 decodeInputBS :: ByteString -> Either String ScriptInput
-decodeInputBS = decodeInput <=< decodeEitherStrict
+decodeInputBS = decodeInput <=< decode
 

@@ -119,7 +119,7 @@ binSigHashByte w
     | testBit w 7 = res == SigUnknown True w
     | otherwise = res == SigUnknown False w
   where
-    res = decodeStrict $ BS.singleton w
+    res = either error id . decode $ BS.singleton w
 
 testEncodeSH32 :: SigHash -> Bool
 testEncodeSH32 sh =
@@ -364,7 +364,7 @@ buildCreditTx scriptPubKey =
                 , scriptOutput = scriptPubKey
                 }
     txI = TxIn { prevOutput = nullOutPoint
-               , scriptInput = encodeStrict $ Script [ OP_0, OP_0 ]
+               , scriptInput = encode $ Script [ OP_0, OP_0 ]
                , txInSequence = maxSeqNum
                }
 

@@ -198,7 +198,7 @@ makeXPrvKey bs =
     XPrvKey 0 0 0 c k
   where
     (p, c) = split512 $ hmac512 "Bitcoin seed" bs
-    k     = fromMaybe err $ makePrvKeyC <$> EC.secKey (hash256ToBS p)
+    k     = maybe err makePrvKeyC (EC.secKey (hash256ToBS p))
     err   = throw $ DerivationException "Invalid seed"
 
 -- | Derive an extended public key from an extended private key. This function
@@ -225,8 +225,8 @@ prvSubKey xkey child
     | otherwise = error "Invalid child derivation index"
   where
     pK     = xPubKey $ deriveXPubKey xkey
-    msg    = BS.append (encodeStrict pK) (encodeStrict child)
-    (a, c) = split512 $ hmac512 (encodeStrict $ xPrvChain xkey) msg
+    msg    = BS.append (encode pK) (encode child)
+    (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) msg
     k      = fromMaybe err $ tweakPrvKeyC (xPrvKey xkey) a
     err    = throw $ DerivationException "Invalid prvSubKey derivation"
 
@@ -240,8 +240,8 @@ pubSubKey xKey child
         XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK
     | otherwise = error "Invalid child derivation index"
   where
-    msg    = BS.append (encodeStrict $ xPubKey xKey) (encodeStrict child)
-    (a, c) = split512 $ hmac512 (encodeStrict $ xPubChain xKey) msg
+    msg    = BS.append (encode $ xPubKey xKey) (encode child)
+    (a, c) = split512 $ hmac512 (encode $ xPubChain xKey) msg
     pK     = fromMaybe err $ tweakPubKeyC (xPubKey xKey) a
     err    = throw $ DerivationException "Invalid pubSubKey derivation"
 
@@ -260,8 +260,8 @@ hardSubKey xkey child
     | otherwise = error "Invalid child derivation index"
   where
     i      = setBit child 31
-    msg    = BS.append (bsPadPrvKey $ xPrvKey xkey) (encodeStrict i)
-    (a, c) = split512 $ hmac512 (encodeStrict $ xPrvChain xkey) msg
+    msg    = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode i)
+    (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) msg
     k      = fromMaybe err $ tweakPrvKeyC (xPrvKey xkey) a
     err    = throw $ DerivationException "Invalid hardSubKey derivation"
 
@@ -313,11 +313,11 @@ xPubAddr = pubKeyAddr . xPubKey
 
 -- | Exports an extended private key to the BIP32 key export format (base 58).
 xPrvExport :: XPrvKey -> ByteString
-xPrvExport = encodeBase58Check . encodeStrict
+xPrvExport = encodeBase58Check . encode
 
 -- | Exports an extended public key to the BIP32 key export format (base 58).
 xPubExport :: XPubKey -> ByteString
-xPubExport = encodeBase58Check . encodeStrict
+xPubExport = encodeBase58Check . encode
 
 -- | Decodes a BIP32 encoded extended private key. This function will fail if
 -- invalid base 58 characters are detected or if the checksum fails.

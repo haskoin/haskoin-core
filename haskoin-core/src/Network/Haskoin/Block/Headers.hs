@@ -18,6 +18,7 @@ import           Data.HashMap.Strict         (HashMap)
 import qualified Data.HashMap.Strict         as HashMap
 import           Data.List                   (sort)
 import           Data.Maybe                  (fromMaybe, listToMaybe)
+import           Data.Serialize              (decode, encode)
 import           Data.Serialize              as Serialize (Serialize (..))
 import           Data.Serialize.Get          (getWord32le)
 import           Data.Serialize.Put          (putWord32le)
@@ -108,16 +109,16 @@ addBlockHeaderMemory bn s@HeaderMemory{..} =
 getBlockHeaderMemory :: BlockHash -> HeaderMemory -> Maybe BlockNode
 getBlockHeaderMemory bh HeaderMemory{..} = do
     bs <- shortBlockHash bh `HashMap.lookup` memoryHeaderMap
-    decodeMaybeStrict $ fromShort bs
+    either (const Nothing) return . decode $ fromShort bs
 
 shortBlockHash :: BlockHash -> ShortBlockHash
-shortBlockHash = decodeStrict . BS.take 8 . encodeStrict
+shortBlockHash = either error id . decode . BS.take 8 . encode
 
 addBlockToMap :: BlockNode -> BlockMap -> BlockMap
 addBlockToMap node =
     HashMap.insert
     (shortBlockHash $ headerHash $ nodeHeader node)
-    (toShort $ encodeStrict node)
+    (toShort $ encode node)
 
 getAncestor :: BlockHeaders m
             => BlockHeight
@@ -163,7 +164,7 @@ genesisMap :: BlockMap
 genesisMap =
     HashMap.singleton
     (shortBlockHash $ headerHash genesisHeader)
-    (toShort $ encodeStrict genesisNode)
+    (toShort $ encode genesisNode)
 
 genesisNode :: BlockNode
 genesisNode = GenesisNode { nodeHeader = genesisHeader
@@ -406,7 +407,7 @@ isValidPOW h
 
 -- | Returns the proof of work of a block header hash as an Integer number.
 blockPOW :: BlockHash -> Integer
-blockPOW =  bsToInteger . BS.reverse . encodeStrict
+blockPOW =  bsToInteger . BS.reverse . encode
 
 -- | Returns the work represented by this block. Work is defined as the number
 -- of tries needed to solve a block in the average case with respect to the
@@ -472,7 +473,7 @@ appendBlocks seed bh i =
     bh' = mineBlock seed bh
         { prevBlock = headerHash bh
           -- Just to make it different in every header
-        , merkleRoot = hash256 $ encodeStrict seed
+        , merkleRoot = hash256 $ encode seed
         }
 
 splitPoint :: BlockHeaders m => BlockNode -> BlockNode -> m BlockNode

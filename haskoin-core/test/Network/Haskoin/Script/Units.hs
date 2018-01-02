@@ -3,6 +3,7 @@ module Network.Haskoin.Script.Units (tests) where
 
 import           Data.ByteString                (ByteString)
 import           Data.Maybe                     (fromJust)
+import           Data.Serialize                 (decode)
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Script
 import           Network.Haskoin.Util
@@ -62,7 +63,7 @@ runMulSigVector :: (ByteString, ByteString) -> Assertion
 runMulSigVector (a, ops) =
     assertBool "    >  MultiSig Vector" $ a == b
   where
-    s = decodeStrict $ fromJust $ decodeHex ops
+    s = fromJust $ either (const Nothing) return . decode =<< decodeHex ops
     b = addrToBase58 $ scriptAddr $ fromRight $ decodeOutput s
 
 testSigDecode :: ByteString -> Assertion

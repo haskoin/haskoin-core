@@ -74,7 +74,7 @@ testIsCanonical sig = not $
     && not (testBit (BS.index s (fromIntegral rlen + 7)) 7)
     )
   where
-    s = encodeStrict sig
+    s = encode sig
     len = fromIntegral $ BS.length s
     rlen = BS.index s 3
     slen = BS.index s (fromIntegral rlen + 5)

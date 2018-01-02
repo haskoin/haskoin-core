@@ -77,17 +77,17 @@ data PubKeyI c = PubKeyI
 -- TODO: Test
 instance Show PubKey where
     showsPrec d k = showParen (d > 10) $
-        showString "PubKey " . shows (encodeHex $ encodeStrict k)
+        showString "PubKey " . shows (encodeHex $ encode k)
 
 -- TODO: Test
 instance Show PubKeyC where
     showsPrec d k = showParen (d > 10) $
-        showString "PubKeyC " . shows (encodeHex $ encodeStrict k)
+        showString "PubKeyC " . shows (encodeHex $ encode k)
 
 -- TODO: Test
 instance Show PubKeyU where
     showsPrec d k = showParen (d > 10) $
-        showString "PubKeyU " . shows (encodeHex $ encodeStrict k)
+        showString "PubKeyU " . shows (encodeHex $ encode k)
 
 -- TODO: Test
 instance Read PubKey where
@@ -133,21 +133,21 @@ instance NFData (PubKeyI c) where
     rnf (PubKeyI p c) = p `seq` rnf c
 
 instance ToJSON PubKey where
-    toJSON = String . cs . encodeHex . encodeStrict
+    toJSON = String . cs . encodeHex . encode
 
 instance FromJSON PubKey where
     parseJSON = withText "PubKey" $
         maybe mzero return . (eitherToMaybe . decode =<<) . decodeHex . cs
 
 instance ToJSON PubKeyC where
-    toJSON = String . cs . encodeHex . encodeStrict
+    toJSON = String . cs . encodeHex . encode
 
 instance FromJSON PubKeyC where
     parseJSON = withText "PubKeyC" $
         maybe mzero return . (eitherToMaybe . decode =<<) . decodeHex . cs
 
 instance ToJSON PubKeyU where
-    toJSON = String . cs . encodeHex . encodeStrict
+    toJSON = String . cs . encodeHex . encode
 
 instance FromJSON PubKeyU where
     parseJSON = withText "PubKeyU" $
@@ -353,7 +353,7 @@ decodePrvKey f bs = f <$> EC.secKey bs
 prvKeyGetMonad :: (EC.SecKey -> PrvKeyI c) -> Get (PrvKeyI c)
 prvKeyGetMonad f = do
     bs <- getByteString 32
-    fromMaybe err $ return . f <$> EC.secKey bs
+    maybe err (return . f) (EC.secKey bs)
   where
     err = fail "Get: Invalid private key"
 

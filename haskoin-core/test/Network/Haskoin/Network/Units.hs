@@ -3,6 +3,7 @@ module Network.Haskoin.Network.Units (tests) where
 
 import           Data.ByteString                (ByteString)
 import           Data.Maybe                     (fromJust)
+import           Data.Serialize                 (encode)
 import           Data.Word                      (Word32)
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Network
@@ -29,7 +30,7 @@ bloomFilter n x = do
     assertBool "Bloom filter doesn't contain vector 3" $ bloomContains f3 v3
     assertBool "Bloom filter doesn't contain vector 4" $ bloomContains f4 v4
     assertBool "Bloom filter serialization is incorrect" $
-        encodeStrict f4 == bs
+        encode f4 == bs
   where
     f0 = bloomCreate 3 0.01 n BloomUpdateAll
     f1 = bloomInsert f0 v1
@@ -50,11 +51,11 @@ bloomFilter2 = bloomFilter 2147483649 "03ce4299050000000100008001"
 bloomFilter3 :: Assertion
 bloomFilter3 =
     assertBool "Bloom filter serialization is incorrect" $
-        encodeStrict f2 == bs
+        encode f2 == bs
   where
     f0 = bloomCreate 2 0.001 0 BloomUpdateAll
-    f1 = bloomInsert f0 $ encodeStrict p
-    f2 = bloomInsert f1 $ encodeStrict $ getAddrHash $ pubKeyAddr p
+    f1 = bloomInsert f0 $ encode p
+    f2 = bloomInsert f1 $ encode $ getAddrHash $ pubKeyAddr p
     k = fromJust $ fromWif "5Kg1gnAjaLfKiwhhPpGS3QfRg2m6awQvaj98JCZBZQ5SuS2F15C"
     p = derivePubKey k
     bs = fromJust $ decodeHex "038fc16b080000000000000001"

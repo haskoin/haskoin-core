@@ -21,7 +21,6 @@ import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Network.Bloom
 import           Network.Haskoin.Network.Types
 import           Network.Haskoin.Transaction.Types
-import           Network.Haskoin.Util
 
 -- | Data type representing the header of a 'Message'. All messages sent between
 -- nodes contain a message header.
@@ -147,25 +146,25 @@ instance Serialize Message where
                 _             -> fail $ "get: Invalid command " ++ show cmd
     put msg = do
         let (cmd, payload) = case msg of
-                MVersion m     -> (MCVersion, encodeStrict m)
+                MVersion m     -> (MCVersion, encode m)
                 MVerAck        -> (MCVerAck, BS.empty)
-                MAddr m        -> (MCAddr, encodeStrict m)
-                MInv m         -> (MCInv, encodeStrict m)
-                MGetData m     -> (MCGetData, encodeStrict m)
-                MNotFound m    -> (MCNotFound, encodeStrict m)
-                MGetBlocks m   -> (MCGetBlocks, encodeStrict m)
-                MGetHeaders m  -> (MCGetHeaders, encodeStrict m)
-                MTx m          -> (MCTx, encodeStrict m)
-                MBlock m       -> (MCBlock, encodeStrict m)
-                MMerkleBlock m -> (MCMerkleBlock, encodeStrict m)
-                MHeaders m     -> (MCHeaders, encodeStrict m)
+                MAddr m        -> (MCAddr, encode m)
+                MInv m         -> (MCInv, encode m)
+                MGetData m     -> (MCGetData, encode m)
+                MNotFound m    -> (MCNotFound, encode m)
+                MGetBlocks m   -> (MCGetBlocks, encode m)
+                MGetHeaders m  -> (MCGetHeaders, encode m)
+                MTx m          -> (MCTx, encode m)
+                MBlock m       -> (MCBlock, encode m)
+                MMerkleBlock m -> (MCMerkleBlock, encode m)
+                MHeaders m     -> (MCHeaders, encode m)
                 MGetAddr       -> (MCGetAddr, BS.empty)
-                MFilterLoad m  -> (MCFilterLoad, encodeStrict m)
-                MFilterAdd m   -> (MCFilterAdd, encodeStrict m)
+                MFilterLoad m  -> (MCFilterLoad, encode m)
+                MFilterAdd m   -> (MCFilterAdd, encode m)
                 MFilterClear   -> (MCFilterClear, BS.empty)
-                MPing m        -> (MCPing, encodeStrict m)
-                MPong m        -> (MCPong, encodeStrict m)
-                MAlert m       -> (MCAlert, encodeStrict m)
+                MPing m        -> (MCPing, encode m)
+                MPong m        -> (MCPong, encode m)
+                MAlert m       -> (MCAlert, encode m)
                 MMempool       -> (MCMempool, BS.empty)
                 MReject m      -> (MCReject, encode m)
                 MSendHeaders   -> (MCSendHeaders, BS.empty)

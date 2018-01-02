@@ -82,7 +82,7 @@ isCanonicalPubKey p = not $
     -- Non-canonical public key: compressed nor uncompressed
     (BS.index bs 0 `notElem` [2,3,4])
   where
-    bs = encodeStrict p
+    bs = encode p
 
 makeToKey :: EC.SecKey -> Bool
 makeToKey i = prvKeySecKey (makePrvKey i) == i

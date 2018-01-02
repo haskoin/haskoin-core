@@ -5,7 +5,7 @@ import           Control.Monad                     (forM_, replicateM, when)
 import           Data.Bits
 import qualified Data.ByteString                   as BS
 import           Data.Maybe
-import           Data.Serialize                    (Serialize, get, put)
+import           Data.Serialize                    (Serialize, encode, get, put)
 import           Data.Serialize.Get                (getWord32le, getWord8)
 import           Data.Serialize.Put                (putWord32le, putWord8)
 import           Data.Word                         (Word32, Word8)
@@ -88,7 +88,7 @@ buildMerkleRoot :: [TxHash]   -- ^ List of transaction hashes (leaf nodes).
 buildMerkleRoot txs = calcHash (calcTreeHeight $ length txs) 0 txs
 
 hash2 :: Hash256 -> Hash256 -> Hash256
-hash2 a b = doubleHash256 $ encodeStrict a `BS.append` encodeStrict b
+hash2 a b = doubleHash256 $ encode a `BS.append` encode b
 
 -- | Computes the hash of a specific node in a merkle tree.
 calcHash :: Int       -- ^ Height of the node in the merkle tree.

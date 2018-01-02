@@ -1,6 +1,7 @@
 module Network.Haskoin.Transaction.Tests (tests) where
 
 import qualified Data.ByteString                      as BS
+import           Data.Serialize                       (encode)
 import           Data.String                          (fromString)
 import           Data.String.Conversions              (cs)
 import           Data.Word                            (Word64)
@@ -61,7 +62,7 @@ testGuessSize tx =
   where
     delta    = pki + sum (map fst msi)
     guess    = guessTxSize pki msi pkout msout
-    len      = BS.length $ encodeStrict tx
+    len      = BS.length $ encode tx
     ins      = map f $ txIn tx
     f i      = fromRight $ decodeInputBS $ scriptInput i
     pki      = length $ filter isSpendPKHash ins

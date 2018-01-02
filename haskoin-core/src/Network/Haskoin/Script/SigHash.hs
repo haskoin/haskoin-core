@@ -110,7 +110,7 @@ instance Serialize SigHash where
         SigUnknown _ w -> w
 
 instance ToJSON SigHash where
-    toJSON = String . cs . encodeHex . encodeStrict
+    toJSON = String . cs . encodeHex . encode
 
 instance FromJSON SigHash where
     parseJSON = withText "sighash" $
@@ -134,7 +134,7 @@ txSigHash tx out i sh = do
         let newTx = createTx (txVersion tx) newIn newOut (txLockTime tx)
         return $
             doubleHash256 $
-            encodeStrict newTx `BS.append` encodeSigHash32 sh
+            encode newTx `BS.append` encodeSigHash32 sh
   where
     one = "0100000000000000000000000000000000000000000000000000000000000000"
 
@@ -142,13 +142,13 @@ txSigHash tx out i sh = do
 buildInputs :: [TxIn] -> Script -> Int -> SigHash -> [TxIn]
 buildInputs txins out i sh
     | anyoneCanPay sh =
-        [ (txins !! i) { scriptInput = encodeStrict out } ]
+        [ (txins !! i) { scriptInput = encode out } ]
     | isSigAll sh || isSigUnknown sh = single
     | otherwise = zipWith noSeq single [0 ..]
   where
     empty = map (\ti -> ti { scriptInput = BS.empty }) txins
     single =
-        updateIndex i empty $ \ti -> ti { scriptInput = encodeStrict out }
+        updateIndex i empty $ \ti -> ti { scriptInput = encode out }
     noSeq ti j =
         if i == j
         then ti
@@ -183,7 +183,7 @@ encodeSig (TxSignature sig sh) = runPut $ put sig >> put sh
 decodeSig :: ByteString -> Either String TxSignature
 decodeSig bs = do
     let (h, l) = BS.splitAt (BS.length bs - 1) bs
-    liftM2 TxSignature (decodeEitherStrict h) (decodeEitherStrict l)
+    liftM2 TxSignature (decode h) (decode l)
 
 decodeCanonicalSig :: ByteString -> Either String TxSignature
 decodeCanonicalSig bs
@@ -192,7 +192,7 @@ decodeCanonicalSig bs
     | otherwise =
         case decodeStrictSig $ BS.init bs of
             Just sig ->
-                TxSignature sig <$> decodeEitherStrict (BS.singleton $ BS.last bs)
+                TxSignature sig <$> decode (BS.singleton $ BS.last bs)
             Nothing  ->
                 Left "Non-canonical signature: could not parse signature"
   where

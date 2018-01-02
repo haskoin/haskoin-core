@@ -5,6 +5,7 @@ import qualified Data.Aeson                     as Aeson (decode, encode)
 import           Data.ByteString                (ByteString)
 import qualified Data.ByteString.Lazy.Char8     as B8
 import           Data.Maybe                     (fromJust, isJust, isNothing)
+import           Data.Serialize                 (encode)
 import           Data.String                    (fromString)
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Util
@@ -211,20 +212,20 @@ badApplyPathVectors = [
 
 runXKeyVec :: ([ByteString], XPrvKey) -> Assertion
 runXKeyVec (v, m) = do
-    assertBool "xPrvID" $ encodeHex (encodeStrict $ xPrvID m) == head v
-    assertBool "xPrvFP" $ encodeHex (encodeStrict $ xPrvFP m) == v !! 1
+    assertBool "xPrvID" $ encodeHex (encode $ xPrvID m) == head v
+    assertBool "xPrvFP" $ encodeHex (encode $ xPrvFP m) == v !! 1
     assertBool "xPrvAddr" $
         addrToBase58 (xPubAddr $ deriveXPubKey m) == v !! 2
     assertBool "prvKey" $
         encodeHex (encodePrvKey $ xPrvKey m) == v !! 3
     assertBool "xPrvWIF" $ xPrvWif m == v !! 4
     assertBool "pubKey" $
-        encodeHex (encodeStrict $ xPubKey $ deriveXPubKey m) == v !! 5
+        encodeHex (encode $ xPubKey $ deriveXPubKey m) == v !! 5
     assertBool "chain code" $
-        encodeHex (encodeStrict $ xPrvChain m) == v !! 6
+        encodeHex (encode $ xPrvChain m) == v !! 6
     assertBool "Hex PubKey" $
-        encodeHex (encodeStrict $ deriveXPubKey m) == v !! 7
-    assertBool "Hex PrvKey" $ encodeHex (encodeStrict m) == v !! 8
+        encodeHex (encode $ deriveXPubKey m) == v !! 7
+    assertBool "Hex PrvKey" $ encodeHex (encode m) == v !! 8
     assertBool "Base58 PubKey" $ xPubExport (deriveXPubKey m) == v !! 9
     assertBool "Base58 PrvKey" $ xPrvExport m == v !! 10
 

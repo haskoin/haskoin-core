@@ -10,10 +10,6 @@ module Network.Haskoin.Util
 , integerToBS
 , encodeHex
 , decodeHex
-, decodeStrict
-, encodeStrict
-, decodeMaybeStrict
-, decodeEitherStrict
 
   -- * Maybe and Either monad helpers
 , isLeft
@@ -49,16 +45,9 @@ import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Base16 as B16
 import           Data.Char              (toLower)
-import           Data.Serialize         (Serialize, decode, encode)
 import           Data.Word              (Word8)
 
 -- ByteString helpers
-
-decodeStrict :: Serialize a => ByteString -> a
-decodeStrict = either error id . decode
-
-decodeEitherStrict :: Serialize a => ByteString -> Either String a
-decodeEitherStrict = decode
 
 -- | Decode a big endian Integer from a bytestring.
 bsToInteger :: ByteString -> Integer
@@ -75,12 +64,6 @@ integerToBS i
   where
     f 0 = Nothing
     f x = Just (fromInteger x :: Word8, x `shiftR` 8)
-
-encodeStrict :: Serialize b => b -> ByteString
-encodeStrict = encode
-
-decodeMaybeStrict :: Serialize b => ByteString -> Maybe b
-decodeMaybeStrict = either (const Nothing) Just . decode
 
 encodeHex :: ByteString -> ByteString
 encodeHex = B16.encode
@@ -185,4 +168,3 @@ dropSumLabels c f tag = (dropFieldLabel f)
     { constructorTagModifier = map toLower . drop c
     , sumEncoding = defaultTaggedObject { tagFieldName = tag }
     }
-

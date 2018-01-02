@@ -19,7 +19,7 @@ arbitraryBlock = do
 
 arbitraryBlockHeader :: Gen BlockHeader
 arbitraryBlockHeader =
-    createBlockHeader <$> arbitrary
+    BlockHeader <$> arbitrary
                       <*> arbitraryBlockHash
                       <*> arbitraryHash256
                       <*> arbitrary
@@ -43,7 +43,7 @@ arbitraryGetHeaders =
 
 arbitraryHeaders :: Gen Headers
 arbitraryHeaders =
-    Headers <$> (listOf1 $ (,) <$> arbitraryBlockHeader <*> arbitraryVarInt)
+    Headers <$> listOf1 ((,) <$> arbitraryBlockHeader <*> arbitraryVarInt)
 
 arbitraryMerkleBlock :: Gen MerkleBlock
 arbitraryMerkleBlock = do

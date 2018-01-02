@@ -193,7 +193,7 @@ prodnet = Network
     , getExtSecretPrefix = 0x0488ade4
     , getNetworkMagic = 0xf9beb4d9
     , getGenesisHeader =
-        createBlockHeader
+        BlockHeader
             0x01
             "0000000000000000000000000000000000000000000000000000000000000000"
             "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
@@ -269,7 +269,7 @@ testnet3 = Network
     , getExtSecretPrefix = 0x04358394
     , getNetworkMagic = 0x0b110907
     , getGenesisHeader =
-        createBlockHeader
+        BlockHeader
             0x01
             "0000000000000000000000000000000000000000000000000000000000000000"
             "3ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a"
@@ -321,7 +321,7 @@ regtest = Network
     , getExtPubKeyPrefix = 0x043587cf
     , getExtSecretPrefix = 0x04358394
     , getNetworkMagic = 0xfabfb5da
-    , getGenesisHeader = createBlockHeader
+    , getGenesisHeader = BlockHeader
         -- 0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206
         0x01
         "0000000000000000000000000000000000000000000000000000000000000000"

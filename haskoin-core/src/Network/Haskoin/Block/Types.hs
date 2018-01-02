@@ -3,14 +3,7 @@ module Network.Haskoin.Block.Types
 ( Block(..)
 , BlockHeight
 , Timestamp
-, BlockHeader
-, createBlockHeader
-, blockVersion
-, prevBlock
-, merkleRoot
-, blockTimestamp
-, blockBits
-, bhNonce
+, BlockHeader(..)
 , headerHash
 , BlockLocator
 , GetBlocks(..)
@@ -127,22 +120,6 @@ data BlockHeader =
                   -- this block.
                 , bhNonce        :: !Word32      -- 16 bytes
                 } deriving (Eq, Show)            -- 208 bytes (above + 16 bytes)
-
-createBlockHeader :: Word32
-                  -> BlockHash
-                  -> Hash256
-                  -> Word32
-                  -> Word32
-                  -> Word32
-                  -> BlockHeader
-createBlockHeader v p m t b n =
-    BlockHeader { blockVersion   = v
-                , prevBlock      = p
-                , merkleRoot     = m
-                , blockTimestamp = t
-                , blockBits      = b
-                , bhNonce        = n
-                }
 
 headerHash :: BlockHeader -> BlockHash
 headerHash = BlockHash . doubleHash256 . encode

@@ -1006,7 +1006,7 @@ printBlockInfo BlockInfo{..} =
   where
     blockDiff :: Word32 -> Double
     blockDiff target = getTarget (blockBits genesisHeader) / getTarget target
-    getTarget   = fromIntegral . decodeCompact
+    getTarget   = fromIntegral . fst . decodeCompact
     versionData = integerToBS (fromIntegral blockInfoVersion)
     formatUTCTime = Time.formatTime Time.defaultTimeLocale
         "%Y-%m-%d %H:%M:%S (UTC)"

@@ -1,31 +1,125 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Block.Units (tests) where
 
-import Data.ByteString (ByteString)
-
-import Test.HUnit (Assertion, assertBool)
-import Test.Framework (Test, testGroup)
-import Test.Framework.Providers.HUnit (testCase)
-
-import Data.Maybe (fromJust)
-
-import Network.Haskoin.Block
-import Network.Haskoin.Transaction
+import           Data.ByteString                (ByteString)
+import           Data.Maybe                     (fromJust)
+import           Network.Haskoin.Block
+import           Network.Haskoin.Transaction
+import           Test.Framework                 (Test, testGroup)
+import           Test.Framework.Providers.HUnit (testCase)
+import           Test.HUnit                     (Assertion, assertBool,
+                                                 assertEqual)
 
 tests :: [Test]
 tests =
-    [ testGroup "Merkle Roots"
-        (map mapMerkleVectors $ zip merkleVectors [0..])
+    [ testGroup
+          "Merkle Roots"
+          (zipWith (curry mapMerkleVectors) merkleVectors [0 ..])
+    , testGroup
+          "Compact number representation"
+          [ testCase "Compact number representations" testCompact
+          , testCase
+                "Compact number representations from Bitcoin Core tests"
+                testCompactBitcoinCore
+          ]
     ]
+
+testCompact :: Assertion
+testCompact = do
+    assertEqual "Vector 1" 0x05123456 (encodeCompact 0x1234560000)
+    assertEqual "Vector 2" (0x1234560000, False) (decodeCompact 0x05123456)
+    assertEqual "Vector 3" 0x0600c0de (encodeCompact 0xc0de000000)
+    assertEqual "Vector 4" (0xc0de000000, False) (decodeCompact 0x0600c0de)
+    assertEqual "Vector 5" 0x05c0de00 (encodeCompact (-0x40de000000))
+    assertEqual "Vector 6" (-0x40de000000, False) (decodeCompact 0x05c0de00)
+
+testCompactBitcoinCore :: Assertion
+testCompactBitcoinCore = do
+    assertEqual "Zero" (0, False) (decodeCompact 0x00000000)
+    assertEqual
+        "Zero (encode · decode)"
+        0x00000000
+        (encodeCompact . fst $ decodeCompact 0x00000000)
+    assertEqual "Rounds to zero" (0, False) (decodeCompact 0x00123456)
+    assertEqual "Rounds to zero" (0, False) (decodeCompact 0x01003456)
+    assertEqual "Rounds to zero" (0, False) (decodeCompact 0x02000056)
+    assertEqual "Rounds to zero" (0, False) (decodeCompact 0x03000000)
+    assertEqual "Rounds to zero" (0, False) (decodeCompact 0x04000000)
+    assertEqual "Rounds to zero" (0, False) (decodeCompact 0x00923456)
+    assertEqual "Rounds to zero" (0, False) (decodeCompact 0x01803456)
+    assertEqual "Rounds to zero" (0, False) (decodeCompact 0x02800056)
+    assertEqual "Rounds to zero" (0, False) (decodeCompact 0x03800000)
+    assertEqual "Rounds to zero" (0, False) (decodeCompact 0x04800000)
+    assertEqual "Vector 1 (decode)" (0x12, False) (decodeCompact 0x01123456)
+    assertEqual
+        "Vector 1 (encode · decode)"
+        0x01120000
+        (encodeCompact . fst $ decodeCompact 0x01123456)
+    assertEqual "0x80 bit set" 0x02008000 (encodeCompact 0x80)
+    assertEqual
+        "Vector 2 (negative) (decode)"
+        (-0x7e, False)
+        (decodeCompact 0x01fedcba)
+    assertEqual
+        "Vector 2 (negative) (encode · decode)"
+        0x01fe0000
+        (encodeCompact . fst $ decodeCompact 0x01fedcba)
+    assertEqual "Vector 3 (decode)" (0x1234, False) (decodeCompact 0x02123456)
+    assertEqual
+        "Vector 3 (encode · decode)"
+        0x02123400
+        (encodeCompact . fst $ decodeCompact 0x02123456)
+    assertEqual "Vector 4 (decode)" (0x123456, False) (decodeCompact 0x03123456)
+    assertEqual
+        "Vector 4 (encode · decode)"
+        0x03123456
+        (encodeCompact . fst $ decodeCompact 0x03123456)
+    assertEqual
+        "Vector 5 (decode)"
+        (0x12345600, False)
+        (decodeCompact 0x04123456)
+    assertEqual
+        "Vector 5 (encode · decode)"
+        0x04123456
+        (encodeCompact . fst $ decodeCompact 0x04123456)
+    assertEqual
+        "Vector 6 (decode)"
+        (-0x12345600, False)
+        (decodeCompact 0x04923456)
+    assertEqual
+        "Vector 6 (encode · decode)"
+        0x04923456
+        (encodeCompact . fst $ decodeCompact 0x04923456)
+    assertEqual
+        "Vector 7 (decode)"
+        (0x92340000, False)
+        (decodeCompact 0x05009234)
+    assertEqual
+        "Vector 7 (encode · decode)"
+        0x05009234
+        (encodeCompact . fst $ decodeCompact 0x05009234)
+    assertEqual
+        "Vector 8 (decode)"
+        ( 0x1234560000000000000000000000000000000000000000000000000000000000
+        , False)
+        (decodeCompact 0x20123456)
+    assertEqual
+        "Vector 8 (encode · decode)"
+        0x20123456
+        (encodeCompact . fst $ decodeCompact 0x20123456)
+    assertBool "Vector 9 (decode) (overflow)" (snd $ decodeCompact 0xff123456)
+    assertBool
+        "Vector 9 (decode) (positive)"
+        ((> 0) . fst $ decodeCompact 0xff123456)
 
 mapMerkleVectors :: ((ByteString, [ByteString]), Int) -> Test.Framework.Test
 mapMerkleVectors (v, i) =
     testCase name $ runMerkleVector v
   where
-    name = "MerkleRoot vector " ++ (show i)
+    name = "MerkleRoot vector " ++ show i
 
 runMerkleVector :: (ByteString, [ByteString]) -> Assertion
-runMerkleVector (r, hs) = do
+runMerkleVector (r, hs) =
     assertBool "    >  Merkle Vector" $
         buildMerkleRoot (map f hs) == getTxHash (f r)
   where

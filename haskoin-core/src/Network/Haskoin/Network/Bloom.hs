@@ -9,30 +9,24 @@ module Network.Haskoin.Network.Bloom
 , isBloomValid
 , isBloomEmpty
 , isBloomFull
+, acceptsFilters
 ) where
 
-import Control.Monad (replicateM, forM_)
-import Control.DeepSeq (NFData, rnf)
-
-import Data.Word
-import Data.Bits
-import Data.Hash.Murmur (murmur3)
-import Data.Serialize (Serialize, get, put)
-import Data.Serialize.Get
-    ( getWord8
-    , getWord32le
-    , getByteString
-    )
-import Data.Serialize.Put
-    ( putWord8
-    , putWord32le
-    , putByteString
-    )
-import qualified Data.Foldable as F
-import qualified Data.Sequence as S
-import qualified Data.ByteString as BS
-
-import Network.Haskoin.Network.Types
+import           Control.DeepSeq            (NFData, rnf)
+import           Control.Monad              (forM_, replicateM)
+import           Data.Bits
+import           Data.ByteString            (ByteString)
+import qualified Data.ByteString            as BS
+import qualified Data.Foldable              as F
+import           Data.Hash.Murmur           (murmur3)
+import qualified Data.Sequence              as S
+import           Data.Serialize             (Serialize, get, put)
+import           Data.Serialize.Get         (getByteString, getWord32le,
+                                             getWord8)
+import           Data.Serialize.Put         (putByteString, putWord32le,
+                                             putWord8)
+import           Data.Word
+import           Network.Haskoin.Network.Types
 
 -- 20,000 items with fp rate < 0.1% or 10,000 items and <0.0001%
 maxBloomSize :: Int
@@ -125,7 +119,7 @@ instance Serialize FilterLoad where
 
 -- | Add the given data element to the connections current filter without
 -- requiring a completely new one to be set.
-newtype FilterAdd = FilterAdd { getFilterData :: BS.ByteString }
+newtype FilterAdd = FilterAdd { getFilterData :: ByteString }
     deriving (Eq, Show, Read)
 
 instance NFData FilterAdd where
@@ -156,25 +150,25 @@ bloomCreate numElem fpRate =
     BloomFilter (S.replicate bloomSize 0) numHashF
   where
     -- Bloom filter size in bytes
-    bloomSize = truncate $ (min a b) / 8
+    bloomSize = truncate $ min a b / 8
     -- Suggested size in bits
-    a         = -1 / ln2Squared * (fromIntegral numElem) * log fpRate
+    a         = -1 / ln2Squared * fromIntegral numElem * log fpRate
     -- Maximum size in bits
     b         = fromIntegral $ maxBloomSize * 8
     numHashF  = truncate $ min c (fromIntegral maxHashFuncs)
     -- Suggested number of hash functions
-    c         = (fromIntegral bloomSize) * 8 / (fromIntegral numElem) * ln2
+    c         = fromIntegral bloomSize * 8 / fromIntegral numElem * ln2
 
-bloomHash :: BloomFilter -> Word32 -> BS.ByteString -> Word32
+bloomHash :: BloomFilter -> Word32 -> ByteString -> Word32
 bloomHash bfilter hashNum bs =
     murmur3 seed bs `mod` (fromIntegral (S.length (bloomData bfilter)) * 8)
   where
-    seed = hashNum * 0xfba4c795 + (bloomTweak bfilter)
+    seed = hashNum * 0xfba4c795 + bloomTweak bfilter
 
 -- | Insert arbitrary data into a bloom filter. Returns the new bloom filter
 -- containing the new data.
 bloomInsert :: BloomFilter    -- ^ Original bloom filter
-            -> BS.ByteString  -- ^ New data to insert
+            -> ByteString     -- ^ New data to insert
             -> BloomFilter    -- ^ Bloom filter containing the new data
 bloomInsert bfilter bs
     | isBloomFull bfilter = bfilter
@@ -188,7 +182,7 @@ bloomInsert bfilter bs
 -- | Tests if some arbitrary data matches the filter. This can be either because
 -- the data was inserted into the filter or because it is a false positive.
 bloomContains :: BloomFilter    -- ^ Bloom filter
-              -> BS.ByteString
+              -> ByteString
               -- ^ Data that will be checked against the given bloom filter
               -> Bool
               -- ^ Returns True if the data matches the filter
@@ -199,7 +193,7 @@ bloomContains bfilter bs
   where
     s       = bloomData bfilter
     idxs    = map (\i -> bloomHash bfilter i bs) [0..bloomHashFuncs bfilter - 1]
-    isSet i = (S.index s (fromIntegral $ i `shiftR` 3))
+    isSet i = S.index s (fromIntegral $ i `shiftR` 3)
           .&. (bitMask !! fromIntegral (7 .&. i)) /= 0
 
 -- TODO: Write bloomRelevantUpdate
@@ -217,6 +211,8 @@ isBloomFull bfilter = all (== 0xff) $ F.toList $ bloomData bfilter
 isBloomValid :: BloomFilter -- ^ Bloom filter to test
              -> Bool        -- ^ True if the given filter is valid
 isBloomValid bfilter =
-    (S.length $ bloomData bfilter) <= maxBloomSize &&
-    (bloomHashFuncs bfilter) <= maxHashFuncs
+    S.length (bloomData bfilter) <= maxBloomSize &&
+    bloomHashFuncs bfilter <= maxHashFuncs
 
+acceptsFilters :: Word64 -> Bool
+acceptsFilters srv = srv .&. (1 `shiftL` 2) /= 0

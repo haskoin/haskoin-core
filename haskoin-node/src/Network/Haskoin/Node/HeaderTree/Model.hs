@@ -11,6 +11,7 @@ import           Data.Word                             (Word32)
 import           Database.Persist.TH                   (mkMigrate, mkPersist,
                                                         persistLowerCase, share,
                                                         sqlSettings)
+import           Network.Haskoin.Block
 import           Network.Haskoin.Node.HeaderTree.Types
 
 share [mkPersist sqlSettings, mkMigrate "migrateHeaderTree"] [persistLowerCase|

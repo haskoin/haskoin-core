@@ -1,7 +1,7 @@
 module Network.Haskoin.Block.Merkle where
 
 import           Control.DeepSeq                   (NFData, rnf)
-import           Control.Monad                     (forM_, replicateM)
+import           Control.Monad                     (forM_, replicateM, when)
 import           Data.Bits
 import qualified Data.ByteString                   as BS
 import           Data.Maybe
@@ -14,6 +14,7 @@ import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Network.Types
 import           Network.Haskoin.Transaction.Types
+import           Network.Haskoin.Util
 
 type MerkleRoot        = Hash256
 type FlagBits          = [Bool]
@@ -192,3 +193,15 @@ boolsToWord8 :: [Bool] -> Word8
 boolsToWord8 [] = 0
 boolsToWord8 xs = foldl setBit 0 (map snd $ filter fst $ zip xs [0..7])
 
+merkleBlockTxs :: MerkleBlock -> Either String [TxHash]
+merkleBlockTxs b =
+    let flags = mFlags b
+        hs = mHashes b
+        n = fromIntegral $ merkleTotalTxns b
+        merkle = merkleRoot $ merkleHeader b
+    in do (root, ths) <- extractMatches flags hs n
+          when (root /= merkle) $ Left "merkleBlockTxs: Merkle root incorrect"
+          return ths
+
+testMerkleRoot :: MerkleBlock -> Bool
+testMerkleRoot = isRight . merkleBlockTxs

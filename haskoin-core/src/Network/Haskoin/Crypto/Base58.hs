@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Base58
 ( Address(..)
 , addrToBase58
@@ -77,7 +78,8 @@ decodeBase58 t =
 -- | Computes a checksum for the input 'ByteString' and encodes the input and
 -- the checksum to a base58 representation.
 encodeBase58Check :: ByteString -> ByteString
-encodeBase58Check bs = encodeBase58 $ BS.append bs (encode $ checkSum32 bs)
+encodeBase58Check bs =
+    encodeBase58 $ BS.append bs $ encode $ checkSum32 bs
 
 -- | Decode a base58-encoded string that contains a checksum. This function
 -- returns 'Nothing' if the input string contains invalid base58 characters or

@@ -1,23 +1,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Units (tests) where
 
-import Test.HUnit (Assertion, assertBool)
-import Test.Framework (Test, testGroup)
-import Test.Framework.Providers.HUnit (testCase)
-
-import Control.Monad (replicateM_)
-import Control.Monad.Trans (liftIO)
-
-import Data.Maybe (fromJust, isJust, isNothing)
-import Data.ByteString (ByteString)
-import qualified Data.Serialize as Cereal
-import qualified Data.ByteString.Char8 as C (pack)
-
-import qualified Crypto.Secp256k1 as EC (SecKey, exportCompactSig)
-
-import Network.Haskoin.Crypto
-import Network.Haskoin.Util
-import Network.Haskoin.Internals (PrvKeyI(..), PubKeyI(..), Signature(..))
+import           Control.Monad                  (replicateM_)
+import           Control.Monad.Trans            (liftIO)
+import qualified Crypto.Secp256k1               as EC (SecKey, exportCompactSig)
+import           Data.ByteString                (ByteString)
+import qualified Data.ByteString.Char8          as C (pack)
+import           Data.Maybe                     (fromJust, isJust, isNothing)
+import           Data.Serialize                 (encode)
+import           Network.Haskoin.Crypto
+import           Network.Haskoin.Internals      (PrvKeyI (..), PubKeyI (..),
+                                                 Signature (..))
+import           Network.Haskoin.Util
+import           Test.Framework                 (Test, testGroup)
+import           Test.Framework.Providers.HUnit (testCase)
+import           Test.HUnit                     (Assertion, assertBool)
 
 -- Unit tests copied from bitcoind implementation
 -- https://github.com/bitcoin/bitcoin/blob/master/src/test/key_tests.cpp
@@ -243,4 +240,4 @@ testSigning (prv, msg, str) = do
     msg' = hash256 msg
     prv' = makePrvKey prv
     compact = EC.exportCompactSig g
-    res = Cereal.encode compact
+    res = encode compact

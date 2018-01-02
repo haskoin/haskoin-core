@@ -5,12 +5,8 @@
 module Network.Haskoin.Transaction
 (
   -- *Transaction Types
-  Tx
+  Tx(..)
 , createTx
-, txVersion
-, txIn
-, txOut
-, txLockTime
 , txHash
 , TxIn(..)
 , TxOut(..)
@@ -43,8 +39,12 @@ module Network.Haskoin.Transaction
 , getMSFee
 
 , buildInput
+
+  -- *Genesis
+, genesisTx
 ) where
 
 import Network.Haskoin.Transaction.Builder
 import Network.Haskoin.Transaction.Types
+import Network.Haskoin.Transaction.Genesis
 

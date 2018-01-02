@@ -168,7 +168,7 @@ decodeOutput s = case scriptOps s of
         (PayPKHash . PubKeyAddress) <$> decode bs
     -- Pay to Script Hash
     [OP_HASH160, OP_PUSHDATA bs _, OP_EQUAL] ->
-        (PayScriptHash . ScriptAddress) <$> decode bs
+        (PayScriptHash . ScriptAddress) <$> decode  bs
     -- Provably unspendable data carrier output
     [OP_RETURN, OP_PUSHDATA bs _] -> Right $ DataCarrier bs
     -- Pay to MultiSig Keys
@@ -195,10 +195,10 @@ matchPayMulSig (Script ops) = case splitAt (length ops - 2) ops of
 -- | Transforms integers [1 .. 16] to 'ScriptOp' [OP_1 .. OP_16]
 intToScriptOp :: Int -> ScriptOp
 intToScriptOp i
-    | i `elem` [1..16] = either (const err) id op
+    | i `elem` [1 .. 16] = op
     | otherwise = err
   where
-    op  = decode $ BS.singleton $ fromIntegral $ i + 0x50
+    op = either (const err) id . decode . BS.singleton . fromIntegral $ i + 0x50
     err = error $ "intToScriptOp: Invalid integer " ++ show i
 
 -- | Decode 'ScriptOp' [OP_1 .. OP_16] to integers [1 .. 16]. This functions

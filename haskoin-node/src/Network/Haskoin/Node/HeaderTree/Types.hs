@@ -2,15 +2,13 @@ module Network.Haskoin.Node.HeaderTree.Types where
 
 import           Data.Serialize        (decode, encode)
 import           Data.String           (fromString)
-import           Data.Word             (Word32, Word64)
+import           Data.Word             (Word64)
 import           Database.Persist      (PersistField (..), PersistValue (..),
                                         SqlType (..))
 import           Database.Persist.Sql  (PersistFieldSql (..))
 import           Network.Haskoin.Block
 
-type BlockHeight = Word32
 type ShortHash = Word64
-type Timestamp = Word32
 type Work = Double
 
 newtype NodeHeader = NodeHeader { getNodeHeader :: BlockHeader }

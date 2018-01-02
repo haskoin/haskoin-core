@@ -1,33 +1,31 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Script.Units (tests) where
 
-import Test.HUnit (Assertion, assertBool)
-import Test.Framework (Test, testGroup)
-import Test.Framework.Providers.HUnit (testCase)
-
-import Data.Maybe (fromJust)
-import Data.ByteString (ByteString)
-import Data.Serialize (decode)
-
-import Network.Haskoin.Script
-import Network.Haskoin.Crypto
-import Network.Haskoin.Util
+import           Data.ByteString                (ByteString)
+import           Data.Maybe                     (fromJust)
+import           Data.Serialize                 (decode)
+import           Network.Haskoin.Crypto
+import           Network.Haskoin.Script
+import           Network.Haskoin.Util
+import           Test.Framework                 (Test, testGroup)
+import           Test.Framework.Providers.HUnit (testCase)
+import           Test.HUnit                     (Assertion, assertBool)
 
 tests :: [Test]
 tests =
     [ testGroup "Canonical signatures"
-        (map canonicalVectorsMap $ zip canonicalVectors [0..])
+        (zipWith (curry canonicalVectorsMap) canonicalVectors [0..])
     , testGroup "Non-canonical signatures"
-        (map notCanonicalVectorsMap $ zip notCanonicalVectors [0..])
+        (zipWith (curry notCanonicalVectorsMap) notCanonicalVectors [0..])
     , testGroup "Multi Signatures"
-        (map mapMulSigVector $ zip mulSigVectors [0..])
+        (zipWith (curry mapMulSigVector) mulSigVectors [0..])
     , testGroup "Signature decoding"
-        (map sigDecodeMap $ zip scriptSigSignatures [0..])
+        (zipWith (curry sigDecodeMap) scriptSigSignatures [0..])
     ]
 
 canonicalVectorsMap :: (ByteString, Int) -> Test.Framework.Test
 canonicalVectorsMap (_, i) =
-    testCase ("Canonical Sig " ++ (show i)) func
+    testCase ("Canonical Sig " ++ show i) func
   where
     func = testCanonicalSig $ canonicalVectors !! i
 
@@ -59,13 +57,13 @@ mapMulSigVector :: ((ByteString, ByteString), Int) -> Test.Framework.Test
 mapMulSigVector (v, i) =
     testCase name $ runMulSigVector v
   where
-    name = "MultiSignature vector " ++ (show i)
+    name = "MultiSignature vector " ++ show i
 
 runMulSigVector :: (ByteString, ByteString) -> Assertion
 runMulSigVector (a, ops) =
     assertBool "    >  MultiSig Vector" $ a == b
   where
-    s = fromRight . decode $ fromJust $ decodeHex ops
+    s = fromJust $ either (const Nothing) return . decode =<< decodeHex ops
     b = addrToBase58 $ scriptAddr $ fromRight $ decodeOutput s
 
 testSigDecode :: ByteString -> Assertion

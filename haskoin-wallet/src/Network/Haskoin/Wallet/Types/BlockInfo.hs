@@ -66,12 +66,12 @@ fromNodeBlock nb =
        , blockInfoBits          =    blockBits header
        , blockInfoMerkleRoot    = JsonHash256 $ merkleRoot header
        , blockInfoTimestamp     = utcTimestamp
-       , blockInfoChainWork     = nodeWork   nb
-       , blockInfoHeight        = nodeHeight nb
+       , blockInfoChainWork     = nWork   nb
+       , blockInfoHeight        = nHeight nb
        , blockInfoChain         = nodeChain  nb
        }
   where
-    header = nodeHeader nb
+    header = nHeader nb
     utcTimestamp = posixSecondsToUTCTime . realToFrac .
         blockTimestamp $ header
 

@@ -353,7 +353,7 @@ decodePrvKey f bs = f <$> EC.secKey bs
 prvKeyGetMonad :: (EC.SecKey -> PrvKeyI c) -> Get (PrvKeyI c)
 prvKeyGetMonad f = do
     bs <- getByteString 32
-    fromMaybe err $ return . f <$> EC.secKey bs
+    maybe err (return . f) (EC.secKey bs)
   where
     err = fail "Get: Invalid private key"
 

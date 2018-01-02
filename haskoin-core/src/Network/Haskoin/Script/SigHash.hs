@@ -132,20 +132,27 @@ txSigHash tx out i sh = do
     fromMaybe one $ do
         newOut <- buildOutputs (txOut tx) i sh
         let newTx = createTx (txVersion tx) newIn newOut (txLockTime tx)
-        return $ doubleHash256 $ encode newTx `BS.append` encodeSigHash32 sh
+        return $
+            doubleHash256 $
+            encode newTx `BS.append` encodeSigHash32 sh
   where
     one = "0100000000000000000000000000000000000000000000000000000000000000"
 
 -- Builds transaction inputs for computing SigHashes
 buildInputs :: [TxIn] -> Script -> Int -> SigHash -> [TxIn]
 buildInputs txins out i sh
-    | anyoneCanPay sh   = (txins !! i) { scriptInput = encode out } : []
+    | anyoneCanPay sh =
+        [ (txins !! i) { scriptInput = encode out } ]
     | isSigAll sh || isSigUnknown sh = single
-    | otherwise         = map noSeq $ zip single [0..]
+    | otherwise = zipWith noSeq single [0 ..]
   where
-    empty  = map (\ti -> ti{ scriptInput = BS.empty }) txins
-    single = updateIndex i empty $ \ti -> ti{ scriptInput = encode out }
-    noSeq (ti,j) = if i == j then ti else ti{ txInSequence = 0 }
+    empty = map (\ti -> ti { scriptInput = BS.empty }) txins
+    single =
+        updateIndex i empty $ \ti -> ti { scriptInput = encode out }
+    noSeq ti j =
+        if i == j
+        then ti
+        else ti { txInSequence = 0 }
 
 -- Build transaction outputs for computing SigHashes
 buildOutputs :: [TxOut] -> Int -> SigHash -> Maybe [TxOut]
@@ -155,7 +162,7 @@ buildOutputs txos i sh
     | i >= length txos = Nothing
     | otherwise = return $ buffer ++ [txos !! i]
   where
-    buffer = replicate i $ TxOut (-1) BS.empty
+    buffer = replicate i $ TxOut maxBound BS.empty
 
 -- | Data type representing a 'Signature' together with a 'SigHash'. The
 -- 'SigHash' is serialized as one byte at the end of a regular ECDSA

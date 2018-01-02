@@ -226,7 +226,7 @@ waitFastCatchup :: Timestamp -> NodeT STM ()
 waitFastCatchup ts = do
     node <- readTVarS sharedBestHeader
     -- Check if we passed the timestamp condition
-    unless (ts < blockTimestamp (nodeHeader node)) $
+    unless (ts < blockTimestamp (nHeader node)) $
         lift retry
 
 -- Wait for a new block to be available for download
@@ -484,7 +484,7 @@ headerSync = do
     if continue then headerSync else do
         (synced, ourHeight) <- syncedHeight
         if synced
-            then do
+            then
                 $(logInfo) $ formatPid pid peerSessionHost $ unwords
                     [ "Block headers are in sync with the"
                     , "network at height", show ourHeight
@@ -564,19 +564,19 @@ peerHeaderSync pid ph prevM = do
         loc <- case prevM of
             Just (KnownChain ns) -> do
                 $(logDebug) $ formatPid pid ph "Building a known chain locator"
-                runSqlNodeT $ blockLocator $ last ns
+                runSqlNodeT $ bLocator $ last ns
             Just (SideChain ns) -> do
                 $(logDebug) $ formatPid pid ph "Building a side chain locator"
-                runSqlNodeT $ blockLocator $ last ns
+                runSqlNodeT $ bLocator $ last ns
             Just (BestChain ns) -> do
                 $(logDebug) $ formatPid pid ph "Building a best chain locator"
-                runSqlNodeT $ blockLocator $ last ns
+                runSqlNodeT $ bLocator $ last ns
             Just (ChainReorg _ _ ns) -> do
                 $(logDebug) $ formatPid pid ph "Building a reorg locator"
-                runSqlNodeT $ blockLocator $ last ns
+                runSqlNodeT $ bLocator $ last ns
             Nothing -> do
                 $(logDebug) $ formatPid pid ph "Building a locator to best"
-                runSqlNodeT $ blockLocator best
+                runSqlNodeT $ bLocator best
 
         $(logDebug) $ formatPid pid ph $ unwords
             [ "Requesting headers with block locator of size"

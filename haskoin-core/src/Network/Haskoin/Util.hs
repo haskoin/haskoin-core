@@ -36,23 +36,22 @@ module Network.Haskoin.Util
 
 ) where
 
-import           Control.Monad               (guard)
-import           Control.Monad.Trans.Either  (EitherT, hoistEither)
-import           Data.Aeson.Types            (Options (..), SumEncoding (..),
-                                              defaultOptions,
-                                              defaultTaggedObject)
-import           Data.Bits                   (shiftL, shiftR, (.|.))
-import           Data.ByteString             (ByteString)
-import qualified Data.ByteString             as BS
-import qualified Data.ByteString.Base16      as B16
-import           Data.Char                   (toLower)
-import           Data.Word                   (Word8)
+import           Control.Monad          (guard)
+import           Control.Monad.Except   (ExceptT (..))
+import           Data.Aeson.Types       (Options (..), SumEncoding (..),
+                                         defaultOptions, defaultTaggedObject)
+import           Data.Bits              (shiftL, shiftR, (.|.))
+import           Data.ByteString        (ByteString)
+import qualified Data.ByteString        as BS
+import qualified Data.ByteString.Base16 as B16
+import           Data.Char              (toLower)
+import           Data.Word              (Word8)
 
 -- ByteString helpers
 
 -- | Decode a big endian Integer from a bytestring.
 bsToInteger :: ByteString -> Integer
-bsToInteger = BS.foldr' f 0 . BS.reverse
+bsToInteger = BS.foldr f 0 . BS.reverse
   where
     f w n = toInteger w .|. shiftL n 8
 
@@ -111,11 +110,11 @@ maybeToEither :: b -> Maybe a -> Either b a
 maybeToEither err = maybe (Left err) Right
 
 -- | Lift a 'Either' computation into the 'EitherT' monad
-liftEither :: Monad m => Either b a -> EitherT b m a
-liftEither = hoistEither
+liftEither :: Monad m => Either b a -> ExceptT b m a
+liftEither = ExceptT . return
 
 -- | Lift a 'Maybe' computation into the 'EitherT' monad
-liftMaybe :: Monad m => b -> Maybe a -> EitherT b m a
+liftMaybe :: Monad m => b -> Maybe a -> ExceptT b m a
 liftMaybe err = liftEither . maybeToEither err
 
 -- Various helpers
@@ -169,4 +168,3 @@ dropSumLabels c f tag = (dropFieldLabel f)
     { constructorTagModifier = map toLower . drop c
     , sumEncoding = defaultTaggedObject { tagFieldName = tag }
     }
-

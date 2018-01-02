@@ -352,11 +352,11 @@ fakeNode parent tids chain nonce =
     nodeBlock parent chain header
   where
     header = BlockHeader
-        (blockVersion $ nodeHeader parent)
+        (blockVersion $ nHeader parent)
         (nodeHash parent)
         (if null tids then z else buildMerkleRoot tids)
         (nodeTimestamp parent + 600)
-        (blockBits $ nodeHeader parent)
+        (blockBits $ nHeader parent)
         nonce
 
 -- -- Creates fake testing blocks
@@ -549,7 +549,7 @@ testBalances = do
         [(1, BalanceInfo 20000000 20000000 1 1)]
 
     -- Confirm the funding transaction at height 1
-    let block1 = fakeNode genesisBlock [txHash fundingTx] 0 1
+    let block1 = fakeNode nGenesisBlock [txHash fundingTx] 0 1
     importMerkles (BestChain [block1]) [[txHash fundingTx]] Nothing
 
     assertBalance ai 0 0
@@ -728,7 +728,7 @@ testConflictBalances = do
         [(0, BalanceInfo 4000000 0 1 0)]
 
     -- Let's confirm these two transactions
-    let block1 = fakeNode genesisBlock [txHash tx1] 0 1
+    let block1 = fakeNode nGenesisBlock [txHash tx1] 0 1
         block2 = fakeNode block1 [txHash tx2] 0 2
     importMerkles (BestChain [block1, block2])
         [[txHash tx1], [txHash tx2]] Nothing
@@ -790,11 +790,11 @@ testConflictBalances = do
         [(0, BalanceInfo 0 0 0 0)]
 
     -- Now we trigger a reorg that validates tx4. tx1, tx2 and tx3 should be dead
-    let block1' = fakeNode genesisBlock [] 1 11
+    let block1' = fakeNode nGenesisBlock [] 1 11
         block2' = fakeNode block1' [txHash tx4] 1 22
         block3' = fakeNode block2' [] 1 33
     importMerkles
-        (ChainReorg genesisBlock [block1, block2] [block1', block2', block3'])
+        (ChainReorg nGenesisBlock [block1, block2] [block1', block2', block3'])
         [[], [txHash tx4], []] Nothing
 
     assertTxConfidence ai (txHash tx1) TxDead
@@ -819,7 +819,7 @@ testConflictBalances = do
     let block3 = fakeNode block2 [] 0 3
         block4 = fakeNode block3 [] 0 4
     importMerkles
-        (ChainReorg genesisBlock [block1', block2', block3']
+        (ChainReorg nGenesisBlock [block1', block2', block3']
          [block1, block2, block3, block4])
         [[txHash tx1], [txHash tx2], [], []] Nothing
 
@@ -983,7 +983,7 @@ testCoinbaseTxs = do
             [ ("1MchgrtQEUgV1f7Nqe1vEzvdmBzJHz8zrY", 6000000) -- external
             , ("1JGvK2MYQ3wwxMdYeyf7Eg1HeVJuEq3AT1", 4000000) -- change
             ]
-        block1 = fakeNode genesisBlock [txHash cb1, txHash tx1] 0 1
+        block1 = fakeNode nGenesisBlock [txHash cb1, txHash tx1] 0 1
         block2 = fakeNode block1 [txHash cb2, txHash tx2] 0 1
 
     liftIO $ assertBool "Tx1 is not a coinbase tx" $ isCoinbaseTx cb1
@@ -1495,7 +1495,7 @@ testNotification = do
 
     _ <- importNetTx tx3 Nothing
 
-    let block1 = fakeNode genesisBlock [txHash tx1] 0 1
+    let block1 = fakeNode nGenesisBlock [txHash tx1] 0 1
         block2 = fakeNode block1 [txHash tx2] 0 2
         best = BestChain [block1, block2]
         txs1 = [[txHash tx1], [txHash tx2]]

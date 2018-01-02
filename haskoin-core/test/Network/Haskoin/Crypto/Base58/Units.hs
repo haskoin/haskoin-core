@@ -1,19 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Base58.Units (tests) where
 
-import Test.HUnit (Assertion, assertBool)
-import Test.Framework (Test, testGroup)
-import Test.Framework.Providers.HUnit (testCase)
-
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS (append, pack, empty)
-
-import Network.Haskoin.Crypto
+import           Data.ByteString                (ByteString)
+import qualified Data.ByteString                as BS (append, empty, pack)
+import           Network.Haskoin.Crypto
+import           Test.Framework                 (Test, testGroup)
+import           Test.Framework.Providers.HUnit (testCase)
+import           Test.HUnit                     (Assertion, assertBool)
 
 tests :: [Test]
 tests =
-    [ testGroup "Test base58 encodings"
-        ( map mapBase58Vec $ zip vectors [0..] )
+    [ testGroup "Test base58 encodings" $
+        zipWith (curry mapBase58Vec) vectors [0..]
     ]
 
 mapBase58Vec :: ((ByteString, ByteString, ByteString), Int) -> Test.Framework.Test

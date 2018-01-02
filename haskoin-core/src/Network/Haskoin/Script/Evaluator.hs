@@ -45,7 +45,7 @@ import           Data.Int                          (Int64)
 import           Data.Maybe                        (isJust, mapMaybe)
 import           Data.Serialize                    (decode, encode)
 import           Data.String.Conversions           (cs)
-import           Data.Word                         (Word64, Word32, Word8)
+import           Data.Word                         (Word32, Word64, Word8)
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Script.SigHash
 import           Network.Haskoin.Script.Types
@@ -317,7 +317,7 @@ getCond :: Program [Bool]
 getCond = get
 
 popCond :: Program Bool
-popCond = get >>= \condStack -> case condStack of
+popCond = get >>= \case
     []     -> lift $ programError "popCond: empty condStack"
     (x:xs) -> put xs >> return x
 

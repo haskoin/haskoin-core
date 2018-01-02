@@ -310,7 +310,7 @@ testnet3 = Network
         , "testnet-seed.bitcoin.schildbach.de"
         ]
     , getBip44Coin = 1
-}
+    }
 
 regtest :: Network
 regtest = Network
@@ -351,4 +351,3 @@ regtest = Network
     , getSeeds = [ "localhost" ]
     , getBip44Coin = 1
     }
-

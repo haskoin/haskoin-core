@@ -26,6 +26,7 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , xPubImport
 , xPrvImport
 , xPrvWif
+
   -- Helpers
 , prvSubKeys
 , pubSubKeys
@@ -35,6 +36,7 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , deriveMSAddr
 , deriveMSAddrs
 , cycleIndex
+
   -- Derivation paths
 , DerivPathI(..)
 , HardOrGeneric
@@ -196,7 +198,7 @@ makeXPrvKey bs =
     XPrvKey 0 0 0 c k
   where
     (p, c) = split512 $ hmac512 "Bitcoin seed" bs
-    k     = fromMaybe err $ makePrvKeyC <$> EC.secKey (hash256ToBS p)
+    k     = maybe err makePrvKeyC (EC.secKey (hash256ToBS p))
     err   = throw $ DerivationException "Invalid seed"
 
 -- | Derive an extended public key from an extended private key. This function
@@ -675,7 +677,7 @@ data Bip32PathIndex = Bip32HardIndex KeyIndex | Bip32SoftIndex KeyIndex
   deriving (Read,Show,Eq)
 
 is31Bit :: (Integral a) => a -> Bool
-is31Bit i = i >=0 && i < 0x80000000
+is31Bit i = i >= 0 && i < 0x80000000
 
 
 -- Helper function to parse a hard path

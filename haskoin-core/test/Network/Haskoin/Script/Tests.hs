@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Script.Tests
 ( tests
 , execScriptIO
@@ -118,7 +119,7 @@ binSigHashByte w
     | testBit w 7 = res == SigUnknown True w
     | otherwise = res == SigUnknown False w
   where
-    res = fromRight . decode $ BS.singleton w
+    res = either error id . decode $ BS.singleton w
 
 testEncodeSH32 :: SigHash -> Bool
 testEncodeSH32 sh =
@@ -344,7 +345,7 @@ nullOutPoint =
     OutPoint
     { outPointHash =
           "0000000000000000000000000000000000000000000000000000000000000000"
-    , outPointIndex = -1
+    , outPointIndex = maxBound
     }
 
 -- | Some of the scripts tests require transactions be built in a

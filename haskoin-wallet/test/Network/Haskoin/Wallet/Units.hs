@@ -1213,7 +1213,7 @@ testImportMultisig = do
         [ ( fromJust $ base58ToAddr "3AV9s2W9atAaChWdwTpRv8qvTHcV7L1zyj"
           , 5000000
           )
-        ] 10000 0 False True
+        ] 100 0 False True
 
     liftIO $ assertEqual "Confidence is not offline" TxOffline $
         walletTxConfidence tx1
@@ -1231,7 +1231,7 @@ testImportMultisig = do
 
     assertBalance        ai1 0 10000000
     assertBalance        ai1 1 0
-    assertBalanceOffline ai1 0 9990000
+    assertBalanceOffline ai1 0 9966200
 
     -- Import the empty transaction in ms2
     tx2 <- head . fst <$> importTx (walletTxTx tx1) Nothing ai2
@@ -1258,7 +1258,7 @@ testImportMultisig = do
 
     assertBalance        ai2 0 10000000
     assertBalance        ai2 1 0
-    assertBalanceOffline ai2 0 9990000
+    assertBalanceOffline ai2 0 9966200
 
     -- Sign the transaction in ms2
     tx3:_ <- fst <$> signAccountTx accE2 Nothing Nothing (walletTxHash tx2)
@@ -1278,9 +1278,9 @@ testImportMultisig = do
             (sort [txHash fundingTx, walletTxHash tx3])
         . sort . map walletTxHash . fst
 
-    assertBalance        ai2 0 9990000
+    assertBalance        ai2 0 9966200
     assertBalance        ai2 1 0
-    assertBalanceOffline ai2 0 9990000
+    assertBalanceOffline ai2 0 9966200
 
     tx4 <- fmap (entityVal . fromJust) $
         getBy $ UniqueAccTx ai1 $ walletTxHash tx3
@@ -1300,9 +1300,9 @@ testImportMultisig = do
             (sort [txHash fundingTx, walletTxHash tx3])
         . sort . map walletTxHash . fst
 
-    assertBalance        ai1 0 9990000
+    assertBalance        ai1 0 9966200
     assertBalance        ai1 1 0
-    assertBalanceOffline ai1 0 9990000
+    assertBalanceOffline ai1 0 9966200
 
     -- Importing the transaction should have no effect as it was globally
     -- imported already in the previous step.
@@ -1323,9 +1323,9 @@ testImportMultisig = do
             (sort [txHash fundingTx, walletTxHash tx5])
         . sort . map walletTxHash . fst
 
-    assertBalance        ai1 0 9990000
+    assertBalance        ai1 0 9966200
     assertBalance        ai1 1 0
-    assertBalanceOffline ai1 0 9990000
+    assertBalanceOffline ai1 0 9966200
 
 testDeleteTx :: App ()
 testDeleteTx = do
@@ -1425,7 +1425,7 @@ testDeleteUnsignedTx = do
         [ ( fromJust $ base58ToAddr "3AV9s2W9atAaChWdwTpRv8qvTHcV7L1zyj"
           , 5000000
           )
-        ] 10000 0 False True
+        ] 100 0 False True
 
     liftIO $ assertEqual "Confidence is not offline" TxOffline $
         walletTxConfidence tx1
@@ -1443,7 +1443,7 @@ testDeleteUnsignedTx = do
 
     assertBalance        ai1 0 10000000
     assertBalance        ai1 1 0
-    assertBalanceOffline ai1 0 9990000
+    assertBalanceOffline ai1 0 9966200
 
     tx1EM <- getTx $ walletTxHash tx1
     liftIO $ assertBool "Transaction 1 not found" $ isJust tx1EM

@@ -998,7 +998,7 @@ createWalletTx
         -> Maybe (TBMChan Notif) -- ^ Notification channel
         -> Maybe XPrvKey         -- ^ Key if not provided by account
         -> [(Address,Word64)]    -- ^ List of recipient addresses and amounts
-        -> Word64                -- ^ Fee per 1000 bytes
+        -> Word64                -- ^ Fee per byte
         -> Word32                -- ^ Minimum confirmations
         -> Bool                  -- ^ Should fee be paid by recipient
         -> Bool                  -- ^ Should the transaction be signed
@@ -1047,19 +1047,22 @@ buildUnsignedTx accE@(Entity ai acc) origDests origFee minConf rcptFee = do
                 AccountMultisig m n -> (m, n)
                 _ -> throw . WalletException $ "Invalid account type"
         fee = if rcptFee then 0 else origFee
-        coins | isMultisigAccount acc = chooseMSCoins tot fee p True
-              | otherwise             = chooseCoins   tot fee   True
+        nOut = length origDests + 1 -- + 1 for the change address
+        coins | isMultisigAccount acc = chooseMSCoins tot fee p nOut True
+              | otherwise             = chooseCoins   tot fee   nOut True
         -- TODO: Add more policies like confirmations or coin age
         -- Sort coins by their values in descending order
         orderPolicy c _ = [desc $ c ^. WalletCoinValue]
+
     -- Find the spendable coins in the given account with the required
     -- number of minimum confirmations.
     selectRes <- spendableCoins ai minConf orderPolicy
     -- Find a selection of spendable coins that matches our target value
     let (selected, change) =
             either (throw . WalletException) id $ coins selectRes
-        totFee | isMultisigAccount acc = getMSFee origFee p (length selected)
-               | otherwise             = getFee   origFee   (length selected)
+        totFee | isMultisigAccount acc =
+                    guessMSTxFee origFee p nOut (length selected)
+               | otherwise = guessTxFee origFee nOut (length selected)
         -- Subtract fees from first destination if rcptFee
         value = snd $ head origDests
 

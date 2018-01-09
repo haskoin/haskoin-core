@@ -1,23 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Transaction.Builder
-( Coin(..)
-, buildTx
-, buildAddrTx
-, SigInput(..)
-, signTx
-, signInput
-, mergeTxs
-, verifyStdTx
-, verifyStdInput
-, guessTxSize
-, chooseCoins
-, chooseCoinsSink
-, chooseMSCoins
-, chooseMSCoinsSink
-, getFee
-, getMSFee
-, buildInput
-) where
+module Network.Haskoin.Transaction.Builder where
 
 import           Control.Arrow                     (first)
 import           Control.DeepSeq                   (NFData, rnf)
@@ -53,14 +35,15 @@ class Coin c where
 -- function returns the selected coins together with the amount of change to
 -- send back to yourself, taking the fee into account.
 chooseCoins :: Coin c
-            => Word64 -- ^ Target price to pay.
-            -> Word64 -- ^ Fee price per 1000 bytes.
+            => Word64 -- ^ Value to send.
+            -> Word64 -- ^ Fee per byte.
+            -> Int    -- ^ Number of outputs (including change)
             -> Bool   -- ^ Try to find better solution when one is found
             -> [c]    -- ^ List of ordered coins to choose from.
             -> Either String ([c], Word64)
                -- ^ Coin selection result and change amount.
-chooseCoins target kbfee continue coins =
-    runIdentity $ sourceList coins $$ chooseCoinsSink target kbfee continue
+chooseCoins target fee nOut continue coins =
+    runIdentity $ sourceList coins $$ chooseCoinsSink target fee nOut continue
 
 -- | Coin selection algorithm for normal (non-multisig) transactions. This
 -- function returns the selected coins together with the amount of change to
@@ -68,13 +51,15 @@ chooseCoins target kbfee continue coins =
 -- Sink if you need conduit-based coin selection.
 chooseCoinsSink :: (Monad m, Coin c)
                 => Word64 -- ^ Target price to pay.
-                -> Word64 -- ^ Fee price per 1000 bytes.
+                -> Word64 -- ^ Fee per byte.
+                -> Int    -- ^ Number of outputs (including change)
                 -> Bool   -- ^ Try to find better solution when one is found
                 -> Sink c m (Either String ([c], Word64))
                    -- ^ Coin selection result and change amount.
-chooseCoinsSink target kbfee continue
+chooseCoinsSink target fee nOut continue
     | target > 0 =
-        maybeToEither err <$> greedyAddSink target (getFee kbfee) continue
+        maybeToEither err <$>
+            greedyAddSink target (guessTxFee fee nOut) continue
     | otherwise = return $ Left "chooseCoins: Target must be > 0"
   where
     err = "chooseCoins: No solution found"
@@ -85,14 +70,16 @@ chooseCoinsSink target kbfee continue
 -- coins are script hash outputs that send funds to a multisignature address.
 chooseMSCoins :: Coin c
               => Word64     -- ^ Target price to pay.
-              -> Word64     -- ^ Fee price per 1000 bytes.
+              -> Word64     -- ^ Fee per byte.
               -> (Int, Int) -- ^ Multisig parameters m of n (m,n).
+              -> Int        -- ^ Number of outputs (including change)
               -> Bool -- ^ Try to find better solution when one is found
               -> [c]
               -> Either String ([c], Word64)
                  -- ^ Coin selection result and change amount.
-chooseMSCoins target kbfee ms continue coins =
-    runIdentity $ sourceList coins $$ chooseMSCoinsSink target kbfee ms continue
+chooseMSCoins target fee ms nOut continue coins =
+    runIdentity $
+        sourceList coins $$ chooseMSCoinsSink target fee ms nOut continue
 
 -- | Coin selection algorithm for multisignature transactions. This function
 -- returns the selected coins together with the amount of change to send back
@@ -101,14 +88,16 @@ chooseMSCoins target kbfee ms continue coins =
 -- This version uses a Sink if you need conduit-based coin selection.
 chooseMSCoinsSink :: (Monad m, Coin c)
                   => Word64     -- ^ Target price to pay.
-                  -> Word64     -- ^ Fee price per 1000 bytes.
+                  -> Word64     -- ^ Fee per byte.
                   -> (Int, Int) -- ^ Multisig parameters m of n (m,n).
+                  -> Int  -- ^ Number of outputs (including change)
                   -> Bool -- ^ Try to find better solution when one is found
                   -> Sink c m (Either String ([c], Word64))
                      -- ^ Coin selection result and change amount.
-chooseMSCoinsSink target kbfee ms continue
+chooseMSCoinsSink target fee ms nOut continue
     | target > 0 =
-        maybeToEither err <$> greedyAddSink target (getMSFee kbfee ms) continue
+        maybeToEither err <$>
+            greedyAddSink target (guessMSTxFee fee ms nOut) continue
     | otherwise = return $ Left "chooseMSCoins: Target must be > 0"
   where
     err = "chooseMSCoins: No solution found"
@@ -124,12 +113,12 @@ greedyAddSink :: (Monad m, Coin c)
               -> (Int -> Word64) -- ^ Coin count to fee function
               -> Bool            -- ^ Try to find better solutions
               -> Sink c m (Maybe ([c], Word64)) -- (Selected coins, change)
-greedyAddSink target fee continue =
+greedyAddSink target guessFee continue =
     go [] 0 [] 0
   where
     -- The goal is the value we must reach (including the fee) for a certain
     -- amount of selected coins.
-    goal c = target + fee c
+    goal c = target + guessFee c
     go acc aTot ps pTot = await >>= \coinM -> case coinM of
         -- A coin is available in the stream
         Just coin -> do
@@ -160,17 +149,13 @@ greedyAddSink target fee continue =
                 -- If we have a solution, return it
                 else Just (ps, pTot - goal (length ps))
 
-getFee :: Word64 -> Int -> Word64
-getFee kbfee count =
-    kbfee*((len + 999) `div` 1000)
-  where
-    len = fromIntegral $ guessTxSize count [] 2 0
+guessTxFee :: Word64 -> Int -> Int -> Word64
+guessTxFee byteFee nOut nIn =
+    byteFee * fromIntegral (guessTxSize nIn [] nOut 0)
 
-getMSFee :: Word64 -> (Int, Int) -> Int -> Word64
-getMSFee kbfee ms count =
-    kbfee*((len + 999) `div` 1000)
-  where
-    len = fromIntegral $ guessTxSize 0 (replicate count ms) 2 0
+guessMSTxFee :: Word64 -> (Int, Int) -> Int -> Int -> Word64
+guessMSTxFee byteFee ms nOut nIn =
+    byteFee * fromIntegral (guessTxSize 0 (replicate nIn ms) nOut 0)
 
 -- | Computes an upper bound on the size of a transaction based on some known
 -- properties of the transaction.

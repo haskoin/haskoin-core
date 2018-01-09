@@ -73,28 +73,29 @@ testGuessSize tx =
     pkout    = length $ filter isPayPKHash out
     msout    = length $ filter isPayScriptHash out
 
-testChooseCoins :: [TestCoin] -> Word64 -> Word64 -> Bool
-testChooseCoins coins target kbfee =
-    case chooseCoins target kbfee True coins of
+testChooseCoins :: [TestCoin] -> Word64 -> Word64 -> Int -> Property
+testChooseCoins coins target byteFee nOut = nOut >= 0 ==>
+    case chooseCoins target byteFee nOut True coins of
         Right (chosen, change) ->
             let outSum = sum $ map coinValue chosen
-                fee    = getFee kbfee (length chosen)
+                fee    = guessTxFee byteFee nOut (length chosen)
             in outSum == target + change + fee
         Left _ ->
-            let fee = getFee kbfee (length coins)
-            in target == 0 || s < target || s < target + fee
+            let fee = guessTxFee byteFee nOut (length coins)
+            in target == 0 || s < target + fee
   where
     s  = sum $ map coinValue coins
 
-testChooseMSCoins :: (Int, Int) -> [TestCoin] -> Word64 -> Word64 -> Bool
-testChooseMSCoins (m, n) coins target kbfee =
-    case chooseMSCoins target kbfee (m,n) True coins of
+testChooseMSCoins :: (Int, Int) -> [TestCoin]
+                  -> Word64 -> Word64 -> Int -> Property
+testChooseMSCoins (m, n) coins target byteFee nOut = nOut >= 0 ==>
+    case chooseMSCoins target byteFee (m,n) nOut True coins of
         Right (chosen,change) ->
             let outSum = sum $ map coinValue chosen
-                fee    = getMSFee kbfee (m,n) (length chosen)
+                fee    = guessMSTxFee byteFee (m,n) nOut (length chosen)
             in outSum == target + change + fee
         Left _ ->
-            let fee = getMSFee kbfee (m,n) (length coins)
+            let fee = guessMSTxFee byteFee (m,n) nOut (length coins)
             in target == 0 || s < target + fee
   where
     s = sum $ map coinValue coins

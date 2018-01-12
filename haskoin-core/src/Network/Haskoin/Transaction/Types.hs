@@ -64,7 +64,7 @@ nosigTxHash tx =
     clearInput ti = ti { scriptInput = BS.empty }
 
 txHashToHex :: TxHash -> ByteString
-txHashToHex (TxHash h) = encodeHex $ BS.reverse $ hash256ToBS h
+txHashToHex (TxHash h) = encodeHex (BS.reverse (encode h))
 
 hexToTxHash :: ByteString -> Maybe TxHash
 hexToTxHash hex = do

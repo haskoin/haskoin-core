@@ -10,10 +10,6 @@ module Network.Haskoin.Crypto.Hash
 , hash256
 , hash160
 , hashSHA1
-, hash512ToBS
-, hash256ToBS
-, hash160ToBS
-, hashSHA1ToBS
 , doubleHash256
 , checkSum32
 , hmac512

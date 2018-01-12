@@ -88,7 +88,7 @@ instance ToJSON BlockHash where
     toJSON = String . cs . blockHashToHex
 
 blockHashToHex :: BlockHash -> ByteString
-blockHashToHex (BlockHash h) = encodeHex $ BS.reverse $ hash256ToBS h
+blockHashToHex (BlockHash h) = encodeHex (BS.reverse (encode h))
 
 hexToBlockHash :: ByteString -> Maybe BlockHash
 hexToBlockHash hex = do

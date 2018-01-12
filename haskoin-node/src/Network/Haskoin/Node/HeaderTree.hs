@@ -56,7 +56,7 @@ import           Data.Function                         (on)
 import           Data.List                             (find, maximumBy, sort)
 import           Data.Maybe                            (fromMaybe, isNothing,
                                                         listToMaybe, mapMaybe)
-import           Data.Serialize                        (decode)
+import           Data.Serialize                        (decode, encode)
 import           Data.String.Conversions               (cs)
 import           Data.Word                             (Word32)
 import           Database.Esqueleto                    (Esqueleto, Value, asc,
@@ -73,7 +73,6 @@ import           Database.Persist                      (Entity (..), insert_)
 import           Database.Persist.Sql                  (SqlPersistT)
 import           Network.Haskoin.Block
 import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto
 import           Network.Haskoin.Node.Checkpoints
 import           Network.Haskoin.Node.HeaderTree.Model
 import           Network.Haskoin.Node.HeaderTree.Types
@@ -91,7 +90,7 @@ data BlockChainAction
 shortHash :: BlockHash -> ShortHash
 shortHash =
     fromRight (error "Could not decdoe block hash") .
-    decode . BS.take 8 . hash256ToBS . getBlockHash
+    decode . BS.take 8 . encode . getBlockHash
 
 nHeader :: NodeBlock -> BlockHeader
 nHeader = getNodeHeader . nodeBlockHeader
@@ -631,7 +630,7 @@ evalNewChain best newNodes
 pruneChain :: MonadIO m
            => NodeBlock
            -> SqlPersistT m NodeBlock
-pruneChain best = if (nodeBlockChain best == 0) then return best else do
+pruneChain best = if nodeBlockChain best == 0 then return best else do
     forks <- reverse <$> getPivots best
     delete $ from $ \t -> where_ $ not_ (chainPathQuery t forks)
     update $ \t -> do

@@ -21,10 +21,10 @@ import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as BS
 import           Data.ByteString.Short       (toShort)
 import           Data.Maybe                  (fromMaybe)
-import           Data.Serialize              (Serialize, get, put)
+import           Data.Serialize              (Serialize, encode, get, put)
 import           Data.Serialize.Get          (getByteString, getWord8,
                                               lookAhead)
-import           Data.Serialize.Put          (putByteString, putByteString)
+import           Data.Serialize.Put          (putByteString)
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Crypto.Keys
@@ -80,7 +80,7 @@ instance NFData Signature where
 
 hashToMsg :: Hash256 -> EC.Msg
 hashToMsg =
-    fromMaybe e . EC.msg . hash256ToBS
+    fromMaybe e . EC.msg . encode
   where
     e = error "Could not convert 32-byte hash to secp256k1 message"
 

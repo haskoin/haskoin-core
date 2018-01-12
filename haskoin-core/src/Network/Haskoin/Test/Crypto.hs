@@ -5,8 +5,9 @@ module Network.Haskoin.Test.Crypto where
 
 import           Crypto.Secp256k1                    ()
 import           Data.Bits                           (clearBit)
+import           Data.Either                         (fromRight)
 import           Data.List                           (foldl')
-import           Data.Maybe                          (fromJust)
+import           Data.Serialize                      (decode)
 import           Data.Word                           (Word32)
 import           Network.Haskoin.Crypto.Base58
 import           Network.Haskoin.Crypto.ECDSA
@@ -17,16 +18,21 @@ import           Network.Haskoin.Test.Util
 import           Test.QuickCheck
 
 arbitraryHash160 :: Gen Hash160
-arbitraryHash160 = (fromJust . bsToHash160) <$> arbitraryBSn 20
+arbitraryHash160 =
+    (fromRight (error "Could not decode Hash160") . decode) <$> arbitraryBSn 20
 
 arbitraryHash256 :: Gen Hash256
-arbitraryHash256 = (fromJust . bsToHash256) <$> arbitraryBSn 32
+arbitraryHash256 =
+    (fromRight (error "Could not decode Hash256") . decode) <$> arbitraryBSn 32
 
 arbitraryHash512 :: Gen Hash512
-arbitraryHash512 = (fromJust . bsToHash512) <$> arbitraryBSn 64
+arbitraryHash512 =
+    (fromRight (error "Could not decode Hash512") . decode) <$> arbitraryBSn 64
 
 arbitraryCheckSum32 :: Gen CheckSum32
-arbitraryCheckSum32 = (fromJust . bsToCheckSum32) <$> arbitraryBSn 4
+arbitraryCheckSum32 =
+    (fromRight (error "Could not decode CheckSum32") . decode) <$>
+    arbitraryBSn 4
 
 arbitraryPrvKey :: Gen PrvKey
 arbitraryPrvKey = oneof [ toPrvKeyG <$> arbitraryPrvKeyC

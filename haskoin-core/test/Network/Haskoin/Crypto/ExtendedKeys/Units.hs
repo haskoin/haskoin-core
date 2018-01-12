@@ -4,6 +4,7 @@ module Network.Haskoin.Crypto.ExtendedKeys.Units (tests) where
 import qualified Data.Aeson                     as Aeson (decode, encode)
 import           Data.ByteString                (ByteString)
 import qualified Data.ByteString.Lazy.Char8     as B8
+import           Data.Either                    (isLeft)
 import           Data.Maybe                     (fromJust, isJust, isNothing)
 import           Data.Serialize                 (encode)
 import           Data.String                    (fromString)

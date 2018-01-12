@@ -1,6 +1,8 @@
 module Network.Haskoin.Util.Tests (tests) where
 
 import qualified Data.ByteString                      as BS
+import           Data.Either                          (fromLeft, fromRight,
+                                                       isLeft, isRight)
 import           Data.Foldable                        (toList)
 import           Data.List                            (permutations)
 import           Data.Maybe
@@ -60,7 +62,11 @@ testEither e =
     case e of
         (Right v) ->
             isRight e &&
-            not (isLeft e) && fromRight e == v && eitherToMaybe e == Just v
+            not (isLeft e) &&
+            fromRight (error "Unexpected Left") e == v &&
+            eitherToMaybe e == Just v
         (Left v) ->
             isLeft e &&
-            not (isRight e) && fromLeft e == v && isNothing (eitherToMaybe e)
+            not (isRight e) &&
+            fromLeft (error "Unexpected Right") e == v &&
+            isNothing (eitherToMaybe e)

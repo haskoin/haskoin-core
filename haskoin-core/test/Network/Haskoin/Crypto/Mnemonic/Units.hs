@@ -4,6 +4,7 @@ module Network.Haskoin.Crypto.Mnemonic.Units (tests) where
 import           Data.ByteString                (ByteString)
 import qualified Data.ByteString                as BS
 import qualified Data.ByteString.Char8          as C
+import           Data.Either                    (fromRight)
 import           Data.List                      (isPrefixOf)
 import           Data.Maybe                     (fromJust)
 import           Data.String.Conversions        (cs)
@@ -28,21 +29,28 @@ toMnemonicTest = zipWith f ents mss
   where
     f e m = g (cs e) . assertEqual "" m . h $ e
     g = testCase
-    h = fromRight . toMnemonic . fromJust . decodeHex
+    h =
+        fromRight (error "Could not decode mnemonic sentence") .
+        toMnemonic . fromJust . decodeHex
 
 fromMnemonicTest :: [Test]
 fromMnemonicTest = zipWith f ents mss
   where
     f e = g (cs e) . assertEqual "" e . h
     g = testCase
-    h = encodeHex . fromRight . fromMnemonic
+    h =
+        encodeHex .
+        fromRight (error "Could not decode mnemonic sentence") . fromMnemonic
 
 mnemonicToSeedTest :: [Test]
 mnemonicToSeedTest = zipWith f mss seeds
   where
     f m s = g s . assertEqual "" s . h $ m
     g = testCase . (++ "...") . cs . BS.take 50
-    h = encodeHex . fromRight . mnemonicToSeed "TREZOR"
+    h =
+        encodeHex .
+        fromRight (error "Could not decode mnemonic seed") .
+        mnemonicToSeed "TREZOR"
 
 fromMnemonicInvalidTest :: [Test]
 fromMnemonicInvalidTest = map f invalidMss
@@ -54,13 +62,13 @@ fromMnemonicInvalidTest = map f invalidMss
            in testCase msg
     h m = case fromMnemonic m of
             Right _  -> False
-            Left err -> isPrefixOf "fromMnemonic: checksum failed:" err
+            Left err -> "fromMnemonic: checksum failed:" `isPrefixOf` err
 
 emptyMnemonicTest :: Test
 emptyMnemonicTest = testCase "mnemonic sentence can not be empty" $
     assertBool "" $ case fromMnemonic "" of
         Right _  -> False
-        Left err -> isPrefixOf "fromMnemonic: empty mnemonic" err
+        Left err -> "fromMnemonic: empty mnemonic" `isPrefixOf` err
 
 ents :: [ByteString]
 ents =

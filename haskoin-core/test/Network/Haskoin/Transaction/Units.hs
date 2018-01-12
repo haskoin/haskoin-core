@@ -6,7 +6,8 @@ import qualified Data.Aeson.Types               as Aeson.Types
 import           Data.ByteString                (ByteString)
 import qualified Data.ByteString                as BS
 import qualified Data.ByteString.Lazy           as BL
-import qualified Data.Either
+import           Data.Either                    (fromLeft, fromRight, isLeft,
+                                                 isRight)
 import           Data.List                      (groupBy)
 import           Data.Maybe                     (fromJust, fromMaybe)
 import           Data.Serialize                 (decode, encode)
@@ -69,8 +70,11 @@ mapPKHashVec (v, i) = testCase name $ runPKHashVec v
 runPKHashVec :: ([(ByteString, Word32)], [(ByteString, Word64)], ByteString) -> Assertion
 runPKHashVec (xs, ys, res) =
     assertBool "Build PKHash Tx" $ encodeHex (encode tx) == res
-    where tx = fromRight $ buildAddrTx (map f xs) ys
-          f (tid,ix) = OutPoint (fromJust $ hexToTxHash tid) ix
+  where
+    tx =
+        fromRight (error "Could not decode transaction") $
+        buildAddrTx (map f xs) ys
+    f (tid, ix) = OutPoint (fromJust $ hexToTxHash tid) ix
 
 
 mapVerifyVec :: (SatoshiCoreTxTest, Int)
@@ -83,8 +87,7 @@ runVerifyVec (SatoshiCoreTxTest _ is bsTx) i =
     assertBool name $ verifyStdTx tx outputsAndOutpoints
   where
     name =
-        "    > Verify transaction " ++
-        show i ++ "bsTx: " ++ convertString bsTx
+        "    > Verify transaction " ++ show i ++ "bsTx: " ++ convertString bsTx
     tx :: Tx
     tx = fromJust $ either (const Nothing) return . decode =<< decodeHex bsTx
     outputsAndOutpoints :: [(ScriptOutput, OutPoint)]
@@ -102,9 +105,11 @@ runVerifyVec (SatoshiCoreTxTest _ is bsTx) i =
             op :: OutPoint
             op =
                 OutPoint
-                    (fromRight . decode . BS.reverse . fromJust . decodeHex $
+                    (fromRight (error "Could not decode output hash") .
+                     decode . BS.reverse . fromJust . decodeHex $
                      bsOutputHash)
-                    (fromRight . runGet getWord32le . fromJust . decodeHex $
+                    (fromRight (error "Could not decode output index") .
+                     runGet getWord32le . fromJust . decodeHex $
                      bsOutputIndex)
         in (s, op)
 
@@ -333,28 +338,27 @@ satoshiCoreTxVec = do
                 in processTestsAndComments testsOrComments
             _ -> error "satoshiCoreTxVec, testsAndComments not an array"
   where
-    processTestsAndComments :: [Either TestComment SatoshiCoreTxTest]
-                            -> [SatoshiCoreTxTest]
+    processTestsAndComments ::
+           [Either TestComment SatoshiCoreTxTest] -> [SatoshiCoreTxTest]
     processTestsAndComments testOrComments
           -- ghetto parser, because this older version of ootb aeson parser isn't parsec based
           -- to do ideally soon, upgrade aeson, use aeson/attoparsec, should be much cleaner
      =
         let grouper =
                 Data.List.groupBy
-                    (\x y ->
-                         (Data.Either.isLeft x && Data.Either.isLeft y) ||
-                         (Data.Either.isRight x && Data.Either.isRight y))
+                    (\x y -> (isLeft x && isLeft y) || (isRight x && isRight y))
             takePairs (a:b:xs) = (a, b) : takePairs xs
-            takePairs _        = [] -- ugh, wish we were using a real parser.
+            takePairs _ = [] -- ugh, wish we were using a real parser.
             includeDescriptions (descriptionLines, tests') =
                 map updateDescription tests'
               where
                 updateDescription (Right (SatoshiCoreTxTest _ inputs ser)) =
                     SatoshiCoreTxTest description inputs ser
                 updateDescription e = error $ "updateDescription: " ++ show e
-                description = unwords . map fromLeft $ descriptionLines
-        in concatMap includeDescriptions . takePairs . grouper $
-           testOrComments
+                description =
+                    unwords . map (fromLeft "Unexpected Right") $
+                    descriptionLines
+        in concatMap includeDescriptions . takePairs . grouper $ testOrComments
 
 toTestOrComment :: Aeson.Value -> Either TestComment SatoshiCoreTxTest
 toTestOrComment testVectorOrComment =

@@ -4,6 +4,7 @@
 module Network.Haskoin.Test.Transaction where
 import           Control.Monad
 import qualified Data.ByteString             as BS
+import           Data.Either                 (fromRight)
 import           Data.List                   (nub, nubBy, permutations)
 import           Data.Word                   (Word64)
 import           Network.Haskoin.Constants
@@ -12,7 +13,6 @@ import           Network.Haskoin.Script
 import           Network.Haskoin.Test.Crypto
 import           Network.Haskoin.Test.Script
 import           Network.Haskoin.Transaction
-import           Network.Haskoin.Util
 import           Test.QuickCheck
 
 newtype TestCoin = TestCoin { getTestCoin :: Word64 }
@@ -173,25 +173,27 @@ arbitraryEmptyTx = do
 arbitraryPartialTxs :: Gen ([Tx], [(ScriptOutput, OutPoint, Int, Int)])
 arbitraryPartialTxs = do
     tx <- arbitraryEmptyTx
-    res <- forM (map prevOutput $ txIn tx) $ \op -> do
-        (so, rdmM, prvs, m, n) <- arbitraryData
-        txs <- mapM (singleSig so rdmM tx op) prvs
-        return (txs, (so, op, m, n))
+    res <-
+        forM (map prevOutput $ txIn tx) $ \op -> do
+            (so, rdmM, prvs, m, n) <- arbitraryData
+            txs <- mapM (singleSig so rdmM tx op) prvs
+            return (txs, (so, op, m, n))
     return (concatMap fst res, map snd res)
   where
     singleSig so rdmM tx op prv = do
         sh <- arbitraryValidSigHash
         let sigi = SigInput so op sh rdmM
-        return $ fromRight $ signTx tx [sigi] [prv]
+        return . fromRight (error "Colud not decode transaction") $
+            signTx tx [sigi] [prv]
     arbitraryData = do
-        (m,n) <- arbitraryMSParam
-        nPrv  <- choose (m,n)
-        keys  <- vectorOf n arbitraryPubKey
+        (m, n) <- arbitraryMSParam
+        nPrv <- choose (m, n)
+        keys <- vectorOf n arbitraryPubKey
         perm <- choose (0, length keys - 1)
         let pubKeys = map snd keys
             prvKeys = take nPrv $ permutations (map fst keys) !! perm
         let so = PayMulSig pubKeys m
-        elements [ (so, Nothing, prvKeys, m, n)
-                 , (PayScriptHash $ scriptAddr so, Just so, prvKeys, m, n)
-                 ]
-
+        elements
+            [ (so, Nothing, prvKeys, m, n)
+            , (PayScriptHash $ scriptAddr so, Just so, prvKeys, m, n)
+            ]

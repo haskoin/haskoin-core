@@ -16,8 +16,7 @@ import           Data.Aeson                  (FromJSON, ToJSON, Value (String),
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as BS
 import qualified Data.ByteString.Char8       as C
-import           Data.Maybe                  (fromJust, fromMaybe, isJust,
-                                              listToMaybe)
+import           Data.Maybe                  (fromMaybe, isJust, listToMaybe)
 import           Data.Serialize              (Serialize, decode, encode, get,
                                               put)
 import           Data.Serialize.Get          (getByteString, getWord8)
@@ -103,7 +102,7 @@ instance Serialize Address where
     get = do
         pfx <- getWord8
         bs <- getByteString 20
-        let addr = fromJust (bsToHash160 bs)
+        addr <- either (fail "Could not decode address") return (decode bs)
         f pfx addr
       where
         f x a | x == addrPrefix   = return (PubKeyAddress a)

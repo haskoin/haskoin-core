@@ -1,11 +1,11 @@
 module Network.Haskoin.Block.Tests (tests) where
 
+import           Data.Either                          (fromRight)
 import           Data.String                          (fromString)
 import           Data.String.Conversions              (cs)
 import           Network.Haskoin.Block
 import           Network.Haskoin.Test
 import           Network.Haskoin.Transaction
-import           Network.Haskoin.Util
 import           Test.Framework
 import           Test.Framework.Providers.QuickCheck2
 import           Test.QuickCheck
@@ -45,4 +45,6 @@ buildExtractTree txs =
     r == buildMerkleRoot (map fst txs) && m == map fst (filter snd txs)
   where
     (f, h) = buildPartialMerkle txs
-    (r, m) = fromRight $ extractMatches f h (length txs)
+    (r, m) =
+        fromRight (error "Could not extract matches from Merkle tree") $
+        extractMatches f h (length txs)

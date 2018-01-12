@@ -29,7 +29,8 @@ import           Data.ByteString                   (ByteString)
 import qualified Data.ByteString                   as BS
 import           Data.Hashable                     (Hashable)
 import           Data.Maybe                        (fromMaybe)
-import           Data.Serialize                    (Serialize, encode, get, put)
+import           Data.Serialize                    (Serialize, decode, encode,
+                                                    get, put)
 import           Data.Serialize.Get                (getWord32le)
 import           Data.Serialize.Put                (Put, putWord32le)
 import           Data.String                       (IsString, fromString)
@@ -92,7 +93,7 @@ blockHashToHex (BlockHash h) = encodeHex $ BS.reverse $ hash256ToBS h
 hexToBlockHash :: ByteString -> Maybe BlockHash
 hexToBlockHash hex = do
     bs <- BS.reverse <$> decodeHex hex
-    h <- bsToHash256 bs
+    h <- eitherToMaybe (decode bs)
     return $ BlockHash h
 
 -- | Data type recording information on a 'Block'. The hash of a block is

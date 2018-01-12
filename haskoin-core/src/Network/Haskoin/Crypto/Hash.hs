@@ -14,11 +14,6 @@ module Network.Haskoin.Crypto.Hash
 , hash256ToBS
 , hash160ToBS
 , hashSHA1ToBS
-, bsToHash512
-, bsToHash256
-, bsToHash160
-, bsToHashSHA1
-, bsToCheckSum32
 , doubleHash256
 , checkSum32
 , hmac512
@@ -33,7 +28,6 @@ module Network.Haskoin.Crypto.Hash
 ) where
 
 import           Control.DeepSeq         (NFData)
-import           Control.Monad           (guard)
 import           Crypto.Hash             (RIPEMD160 (..), SHA1 (..),
                                           SHA256 (..), SHA512 (..), hashWith)
 import           Crypto.MAC.HMAC         (HMAC, hmac)
@@ -43,6 +37,7 @@ import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as BS
 import           Data.ByteString.Short   (ShortByteString)
 import qualified Data.ByteString.Short   as BSS
+import           Data.Either             (fromRight)
 import           Data.Hashable           (Hashable)
 import           Data.Serialize          (Serialize (..), decode)
 import qualified Data.Serialize.Get      as Get
@@ -171,29 +166,6 @@ hash160ToBS (Hash160 bs) = BSS.fromShort bs
 hashSHA1ToBS :: HashSHA1 -> ByteString
 hashSHA1ToBS (HashSHA1 bs) = BSS.fromShort bs
 
-bsToHash512 :: ByteArrayAccess b => b -> Maybe Hash512
-bsToHash512 bs = do
-    guard $ BA.length bs == 64
-    return $ Hash512 $ BSS.toShort $ BA.convert bs
-
-bsToHash256 :: ByteArrayAccess b => b -> Maybe Hash256
-bsToHash256 bs = do
-    guard $ BA.length bs == 32
-    return $ Hash256 $ BSS.toShort $ BA.convert bs
-
-bsToHash160 :: ByteArrayAccess b => b -> Maybe Hash160
-bsToHash160 bs = do
-    guard $ BA.length bs == 20
-    return $ Hash160 $ BSS.toShort $ BA.convert bs
-
-bsToHashSHA1 :: ByteArrayAccess b => b -> Maybe HashSHA1
-bsToHashSHA1 bs = do
-    guard $ BA.length bs == 20
-    return $ HashSHA1 $ BSS.toShort $ BA.convert bs
-
-bsToCheckSum32 :: ByteString -> Maybe CheckSum32
-bsToCheckSum32 = either (const Nothing) Just . decode
-
 -- | Compute two rounds of SHA-256.
 doubleHash256 :: ByteArrayAccess b => b -> Hash256
 doubleHash256 =
@@ -203,7 +175,7 @@ doubleHash256 =
 
 -- | Computes a 32 bit checksum.
 checkSum32 :: ByteArrayAccess b => b -> CheckSum32
-checkSum32 = fromRight
+checkSum32 = fromRight (error "Colud not decode bytes as CheckSum32")
              . decode
              . BS.take 4
              . BA.convert

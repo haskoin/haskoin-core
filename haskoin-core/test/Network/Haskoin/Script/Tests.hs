@@ -15,6 +15,7 @@ import qualified Data.ByteString                      as BS
 import qualified Data.ByteString.Char8                as C
 import qualified Data.ByteString.Lazy.Char8           as CL
 import           Data.Char                            (ord)
+import           Data.Either                          (fromRight, isRight, isLeft)
 import           Data.Int                             (Int64)
 import           Data.List                            (isPrefixOf)
 import           Data.List.Split                      (splitOn)
@@ -135,7 +136,11 @@ binTxSig ts = decodeSig (encodeSig ts) == Right ts
 binTxSigCanonical :: TxSignature -> Bool
 binTxSigCanonical ts@(TxSignature _ sh)
     | isSigUnknown sh = isLeft $ decodeCanonicalSig $ encodeSig ts
-    | otherwise = fromRight (decodeCanonicalSig $ encodeSig ts) == ts
+    | otherwise =
+        fromRight
+            (error "Colud not decode sig")
+            (decodeCanonicalSig $ encodeSig ts) ==
+        ts
 
 testSigHashOne :: Tx -> Script -> Bool -> Property
 testSigHashOne tx s acp = not (null $ txIn tx) ==>
@@ -187,7 +192,7 @@ parseHex' (a:b:xs) =
         [(i, "")] ->
             case parseHex' xs of
                 Just ops -> Just $ fromIntegral i : ops
-                Nothing -> Nothing
+                Nothing  -> Nothing
         _ -> Nothing
 parseHex' [_] = Nothing
 parseHex' [] = Just []
@@ -201,7 +206,9 @@ parseScript scriptString = do
     bytes <- BS.pack <$> parseBytes scriptString
     script <- decodeScript bytes
     when (encode script /= bytes) $ Left "encode script /= bytes"
-    when (fromRight (decode $ encode script) /= script) $
+    when
+        (fromRight (error "Could not decode script") (decode (encode script)) /=
+         script) $
         Left "decode (encode script) /= script"
     return script
   where
@@ -290,7 +297,7 @@ testFile groupLabel path expected =
         run f = f scriptSig scriptPubKey rejectSignature scriptFlags
         errorMessage =
             case run execScript of
-                Left e -> show e
+                Left e  -> show e
                 Right _ -> " none"
 
 -- | Splits the JSON test into the different parts.  No processing,

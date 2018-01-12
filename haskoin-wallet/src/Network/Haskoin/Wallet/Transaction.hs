@@ -47,13 +47,13 @@ import           Control.Monad.Catch             (MonadThrow, throwM)
 import           Control.Monad.Trans             (MonadIO, liftIO)
 import           Control.Monad.Trans.Resource    (MonadResource)
 import qualified Data.ByteString                 as BS
-import           Data.Either                     (rights)
+import           Data.Either                     (fromRight, rights)
 import           Data.List                       (find, nub, nubBy, (\\))
 import qualified Data.Map.Strict                 as M (Map, fromListWith, map,
                                                        toList, unionWith)
-import           Data.Maybe                      (fromJust, fromMaybe, isJust,
-                                                  isNothing, listToMaybe,
-                                                  mapMaybe)
+import           Data.Maybe                      (fromMaybe, isJust, isNothing,
+                                                  listToMaybe, mapMaybe)
+import           Data.Serialize                  (decode)
 import           Data.String.Conversions         (cs)
 import           Data.Time                       (UTCTime, getCurrentTime)
 import           Data.Word                       (Word32, Word64)
@@ -517,26 +517,29 @@ getSpendingTxs :: MonadIO m
 getSpendingTxs tx aiM
     | null txInputs = return []
     | otherwise =
-        splitSelect txInputs $ \ins -> from $ \(s `InnerJoin` t) -> do
-            on $ s ^. SpentCoinSpendingTx ==. t ^. WalletTxId
+        splitSelect txInputs $ \ins ->
+            from $ \(s `InnerJoin` t) -> do
+                on $ s ^. SpentCoinSpendingTx ==. t ^. WalletTxId
                         -- Filter out the given transaction
-            let cond = t ^. WalletTxHash !=. val txid
-                        -- Limit to only the input coins of the given tx
-                       &&. limitSpent s ins
-            where_ $ case aiM of
-                Just ai -> cond &&. s ^. SpentCoinAccount ==. val ai
-                _       -> cond
-            return t
+                let cond = t ^. WalletTxHash !=. val txid &&. limitSpent s ins
+                where_ $
+                    case aiM of
+                        Just ai -> cond &&. s ^. SpentCoinAccount ==. val ai
+                        _       -> cond
+                return t
   where
     txid = txHash tx
     txInputs = filter nonZero $ map prevOutput $ txIn tx
     limitSpent s ins = join2 $ map (f s) ins
     f s (OutPoint h i) =
-        s ^. SpentCoinHash ==. val h &&.
-        s ^. SpentCoinPos  ==. val i
+        s ^. SpentCoinHash ==. val h &&. s ^. SpentCoinPos ==. val i
     nonZero (OutPoint h _)
-      | h == TxHash (fromJust $ bsToHash256 (BS.replicate 32 0x00)) = False
-      | otherwise = True
+        | h ==
+              TxHash
+                  (fromRight
+                       (error "Could not decode zero hash")
+                       (decode (BS.replicate 32 0x00))) = False
+        | otherwise = True
 
 -- Returns all the new coins that need to be created from a transaction.
 -- Also returns the addresses associted with those coins.
@@ -596,14 +599,19 @@ spendInputs ai ti tx = do
   where
     txInputs = map prevOutput $ txIn tx
     buildSpentCoin now (OutPoint h p) =
-        SpentCoin{ spentCoinAccount    = ai
-                 , spentCoinHash       = h
-                 , spentCoinPos        = p
-                 , spentCoinSpendingTx = ti
-                 , spentCoinCreated    = now
-                 }
+        SpentCoin
+        { spentCoinAccount = ai
+        , spentCoinHash = h
+        , spentCoinPos = p
+        , spentCoinSpendingTx = ti
+        , spentCoinCreated = now
+        }
     nonZero (OutPoint h _)
-        | h == TxHash (fromJust $ bsToHash256 (BS.replicate 32 0x00)) = False
+        | h ==
+              TxHash
+                  (fromRight
+                       (error "Could not decode zero hash")
+                       (decode (BS.replicate 32 0x00))) = False
         | otherwise = True
 
 -- Build account transaction for the given input and output coins
@@ -1156,7 +1164,7 @@ signOfflineTx acc masterM tx coinSignData
     -- Compute all the SigInputs
     sigData = map (toSigData acc) coinSignData
     -- Compute all the private keys
-    prvKeys = concat $ map toPrvKeys coinSignData
+    prvKeys = concatMap toPrvKeys coinSignData
     -- Build a SigInput from a CoinSignData
     toSigData acc' (CoinSignData op so deriv) =
         -- TODO: Here we override the SigHash to be SigAll False all the time.

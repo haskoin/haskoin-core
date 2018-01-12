@@ -4,6 +4,7 @@ import           Control.DeepSeq                   (NFData, rnf)
 import           Control.Monad                     (forM_, replicateM, when)
 import           Data.Bits
 import qualified Data.ByteString                   as BS
+import           Data.Either                       (isRight)
 import           Data.Maybe
 import           Data.Serialize                    (Serialize, encode, get, put)
 import           Data.Serialize.Get                (getWord32le, getWord8)
@@ -14,7 +15,6 @@ import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Network.Types
 import           Network.Haskoin.Transaction.Types
-import           Network.Haskoin.Util
 
 type MerkleRoot        = Hash256
 type FlagBits          = [Bool]

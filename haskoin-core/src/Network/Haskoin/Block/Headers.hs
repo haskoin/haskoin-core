@@ -109,7 +109,7 @@ addBlockHeaderMemory bn s@HeaderMemory{..} =
 getBlockHeaderMemory :: BlockHash -> HeaderMemory -> Maybe BlockNode
 getBlockHeaderMemory bh HeaderMemory{..} = do
     bs <- shortBlockHash bh `HashMap.lookup` memoryHeaderMap
-    either (const Nothing) return . decode $ fromShort bs
+    eitherToMaybe . decode $ fromShort bs
 
 shortBlockHash :: BlockHash -> ShortBlockHash
 shortBlockHash = either error id . decode . BS.take 8 . encode

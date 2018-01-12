@@ -70,10 +70,6 @@ module Network.Haskoin.Crypto
 , hash256ToBS
 , hash160ToBS
 , hashSHA1ToBS
-, bsToCheckSum32
-, bsToHash512
-, bsToHash256
-, bsToHash160
 , checkSum32
 , hash512
 , hash256

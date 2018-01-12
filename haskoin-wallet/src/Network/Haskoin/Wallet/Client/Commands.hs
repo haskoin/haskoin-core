@@ -51,6 +51,7 @@ import           Data.Bits                                (xor)
 import qualified Data.ByteString                          as BS
 import qualified Data.ByteString.Base64                   as B64
 import qualified Data.ByteString.Char8                    as B8
+import           Data.Either                              (fromRight)
 import           Data.List                                (intercalate,
                                                            intersperse)
 import           Data.Maybe
@@ -116,7 +117,8 @@ askMnemonicOrKey msg =
             _ -> case mnemonicToSeed "" str of
                 Right _ -> do
                     pass <- cs <$> askPassword
-                    let seed = fromRight $ mnemonicToSeed (cs pass) str
+                    let seed = fromRight (error "Could not decode mnemonic seed") $
+                               mnemonicToSeed (cs pass) str
                     return $ ParsedMnemonic str pass (makeXPrvKey seed)
                 _ -> error "Could not parse mnemonic or extended key"
 
@@ -138,7 +140,7 @@ askPassword = do
     return pass
 
 askSigningKeys :: String -> Handler (Maybe XPrvKey)
-askSigningKeys name = do
+askSigningKeys name =
     -- Only ask for signing keys if the account doesn't have one already
     go =<< accountKeyExists name
   where
@@ -148,7 +150,7 @@ askSigningKeys name = do
         case input of
             ParsedXPrvKey k      -> return $ Just k
             ParsedMnemonic _ _ k -> return $ Just k
-            _ -> error "Need a private key to sign"
+            _                    -> error "Need a private key to sign"
 
 -- hw start [config] [--detach]
 cmdStart :: Handler ()
@@ -159,7 +161,7 @@ cmdStart = do
 -- hw stop [config]
 cmdStop :: Handler ()
 cmdStop = do
-    sendZmq StopServerReq >>= (flip handleResponse $ \() -> return ())
+    sendZmq StopServerReq >>= (`handleResponse` (\() -> return ()))
     liftIO $ putStrLn "Process stopped"
 
 -- First argument: is account read-only?
@@ -407,7 +409,7 @@ getHexTx = do
     hexM <- Haskeline.runInputT Haskeline.defaultSettings $
         Haskeline.getInputLine ""
     let txM = case hexM of
-            Nothing -> error "No action due to EOF"
+            Nothing  -> error "No action due to EOF"
             Just hex -> eitherToMaybe . S.decode =<< decodeHex (cs hex)
     case txM of
         Just tx -> return tx
@@ -475,7 +477,7 @@ cmdRescan timeLs = do
             [] -> Nothing
             str:_ -> case readMaybe str of
                 Nothing -> error "Could not decode time"
-                Just t -> Just t
+                Just t  -> Just t
     resE <- sendZmq (NodeActionReq $ NodeActionRescan timeM)
     handleResponse resE $ \(RescanRes ts) ->
         liftIO $ putStrLn $ unwords [ "Timestamp:", show ts]
@@ -613,7 +615,7 @@ decodeBase6 t
 decodeBase6I :: BS.ByteString -> Maybe Integer
 decodeBase6I bs = case resM of
     Just (i,[]) -> return i
-    _ -> Nothing
+    _           -> Nothing
   where
     resM = listToMaybe $ readInt 6 (isJust . b6') f $ cs bs
     f    = fromMaybe (error "Could not decode base6") . b6'
@@ -841,7 +843,7 @@ printAccount JsonAccount{..} = unlines $
   where
     childLs = case jsonAccountType of
         AccountRegular -> map xPubChild jsonAccountKeys
-        _ -> maybeToList $ xPrvChild <$> jsonAccountMaster
+        _              -> maybeToList $ xPrvChild <$> jsonAccountMaster
     printKeys =
         ("Keys    : " ++ cs (xPubExport (head jsonAccountKeys))) :
         map (("          " ++) . cs . xPubExport) (tail jsonAccountKeys)

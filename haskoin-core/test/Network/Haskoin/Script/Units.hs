@@ -2,6 +2,8 @@
 module Network.Haskoin.Script.Units (tests) where
 
 import           Data.ByteString                (ByteString)
+import           Data.Either                    (fromLeft, fromRight, isLeft,
+                                                 isRight)
 import           Data.Maybe                     (fromJust)
 import           Data.Serialize                 (decode)
 import           Network.Haskoin.Crypto
@@ -60,18 +62,23 @@ mapMulSigVector (v, i) =
     name = "MultiSignature vector " ++ show i
 
 runMulSigVector :: (ByteString, ByteString) -> Assertion
-runMulSigVector (a, ops) =
-    assertBool "    >  MultiSig Vector" $ a == b
+runMulSigVector (a, ops) = assertBool "    >  MultiSig Vector" $ a == b
   where
     s = fromJust $ either (const Nothing) return . decode =<< decodeHex ops
-    b = addrToBase58 $ scriptAddr $ fromRight $ decodeOutput s
+    b =
+        addrToBase58 . scriptAddr . fromRight (error "Could not decode output") $
+        decodeOutput s
 
 testSigDecode :: ByteString -> Assertion
 testSigDecode str =
-  let bs = fromJust $ decodeHex str
-      eitherSig = decodeSig bs
-  in
-  assertBool (unwords ["Decode failed:", fromLeft eitherSig]) $ isRight eitherSig
+    let bs = fromJust $ decodeHex str
+        eitherSig = decodeSig bs
+    in assertBool
+           (unwords
+                [ "Decode failed:"
+                , fromLeft (error "Decode did not fail") eitherSig
+                ]) $
+       isRight eitherSig
 
 {- Canonical Signatures -}
 

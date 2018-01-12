@@ -69,7 +69,7 @@ txHashToHex (TxHash h) = encodeHex $ BS.reverse $ hash256ToBS h
 hexToTxHash :: ByteString -> Maybe TxHash
 hexToTxHash hex = do
     bs <- BS.reverse <$> decodeHex hex
-    h <- bsToHash256 bs
+    h <- either (const Nothing) Just (decode bs)
     return $ TxHash h
 
 -- | Data type representing a bitcoin transaction

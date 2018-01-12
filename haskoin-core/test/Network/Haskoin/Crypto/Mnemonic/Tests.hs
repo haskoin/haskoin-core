@@ -4,12 +4,12 @@ module Network.Haskoin.Crypto.Mnemonic.Tests (tests) where
 import           Data.Bits                            (shiftR, (.&.))
 import qualified Data.ByteString                      as BS
 import qualified Data.ByteString.Char8                as C
+import           Data.Either                          (fromRight)
 import           Data.Serialize                       (Serialize, encode)
 import           Data.Word                            (Word32, Word64)
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Internals            (fromMnemonic, getBits)
 import           Network.Haskoin.Test
-import           Network.Haskoin.Util
 import           Test.Framework
 import           Test.Framework.Providers.QuickCheck2
 import           Test.QuickCheck                      (Arbitrary, Property,
@@ -55,29 +55,48 @@ toMnemonic128 :: (Word64, Word64) -> Bool
 toMnemonic128 (a, b) = l == 12
   where
     bs = encode a `BS.append` encode b
-    l = length . C.words . fromRight $ toMnemonic bs
+    l =
+        length .
+        C.words . fromRight (error "Could not decode mnemonic senttence") $
+        toMnemonic bs
 
 toMnemonic160 :: (Word32, Word64, Word64) -> Bool
 toMnemonic160 (a, b, c) = l == 15
   where
     bs = BS.concat [encode a, encode b, encode c]
-    l = length . C.words . fromRight $ toMnemonic bs
+    l =
+        length .
+        C.words . fromRight (error "Colud not decode mnemonic sentence") $
+        toMnemonic bs
 
 toMnemonic256 :: (Word64, Word64, Word64, Word64) -> Bool
 toMnemonic256 (a, b, c, d) = l == 24
   where
     bs = BS.concat [encode a, encode b, encode c, encode d]
-    l = length . C.words . fromRight $ toMnemonic bs
+    l =
+        length .
+        C.words . fromRight (error "Could not decode mnemonic sentence") $
+        toMnemonic bs
 
 toMnemonic512 ::
     ((Word64, Word64, Word64, Word64), (Word64, Word64, Word64, Word64)) -> Bool
 toMnemonic512 ((a, b, c, d), (e, f, g, h)) = l == 48
   where
-    bs = BS.concat
-        [ encode a, encode b, encode c, encode d
-        , encode e, encode f, encode g, encode h
-        ]
-    l = length . C.words . fromRight $ toMnemonic bs
+    bs =
+        BS.concat
+            [ encode a
+            , encode b
+            , encode c
+            , encode d
+            , encode e
+            , encode f
+            , encode g
+            , encode h
+            ]
+    l =
+        length .
+        C.words . fromRight (error "Colud not decode mnemoonic sentence") $
+        toMnemonic bs
 
 toMnemonicVar :: [Word32] -> Property
 toMnemonicVar ls = not (null ls) && length ls <= 8 ==> l == wc
@@ -86,7 +105,10 @@ toMnemonicVar ls = not (null ls) && length ls <= 8 ==> l == wc
     bl = BS.length bs
     cb = bl `div` 4
     wc = (cb + bl * 8) `div` 11
-    l = length . C.words . fromRight $ toMnemonic bs
+    l =
+        length . C.words .
+        fromRight (error "Could not decode mnemonic sentence") $
+        toMnemonic bs
 
 {- Encode/Decode -}
 
@@ -94,35 +116,57 @@ fromToMnemonic128 :: (Word64, Word64) -> Bool
 fromToMnemonic128 (a, b) = bs == bs'
   where
     bs = encode a `BS.append` encode b
-    bs' = fromRight (fromMnemonic =<< toMnemonic bs)
+    bs' =
+        fromRight
+            (error "Colud not decode mnemonic entropy")
+            (fromMnemonic =<< toMnemonic bs)
 
 fromToMnemonic160 :: (Word32, Word64, Word64) -> Bool
 fromToMnemonic160 (a, b, c) = bs == bs'
   where
     bs = BS.concat [encode a, encode b, encode c]
-    bs' = fromRight (fromMnemonic =<< toMnemonic bs)
+    bs' =
+        fromRight
+            (error "Could not decode mnemonic entropy")
+            (fromMnemonic =<< toMnemonic bs)
 
 fromToMnemonic256 :: (Word64, Word64, Word64, Word64) -> Bool
 fromToMnemonic256 (a, b, c, d) = bs == bs'
   where
     bs = BS.concat [encode a, encode b, encode c, encode d]
-    bs' = fromRight (fromMnemonic =<< toMnemonic bs)
+    bs' =
+        fromRight
+            (error "Could not decode mnemonic entropy")
+            (fromMnemonic =<< toMnemonic bs)
 
 fromToMnemonic512 ::
     ((Word64, Word64, Word64, Word64), (Word64, Word64, Word64, Word64)) -> Bool
 fromToMnemonic512 ((a, b, c, d), (e, f, g, h)) = bs == bs'
   where
-    bs = BS.concat
-        [ encode a, encode b, encode c, encode d
-        , encode e, encode f, encode g, encode h
-        ]
-    bs' = fromRight (fromMnemonic =<< toMnemonic bs)
+    bs =
+        BS.concat
+            [ encode a
+            , encode b
+            , encode c
+            , encode d
+            , encode e
+            , encode f
+            , encode g
+            , encode h
+            ]
+    bs' =
+        fromRight
+            (error "Could not decode mnemonic entropy")
+            (fromMnemonic =<< toMnemonic bs)
 
 fromToMnemonicVar :: [Word32] -> Property
 fromToMnemonicVar ls = not (null ls) && length ls <= 8 ==> bs == bs'
   where
     bs = binWordsToBS ls
-    bs' = fromRight (fromMnemonic =<< toMnemonic bs)
+    bs' =
+        fromRight
+            (error "Colud not decode mnemonic entropy")
+            (fromMnemonic =<< toMnemonic bs)
 
 {- Mnemonic to seed -}
 
@@ -130,39 +174,61 @@ mnemonicToSeed128 :: (Word64, Word64) -> Bool
 mnemonicToSeed128 (a, b) = l == 64
   where
     bs = encode a `BS.append` encode b
-    seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)
+    seed =
+        fromRight
+            (error "Could not decode mnemonic seed")
+            (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
 mnemonicToSeed160 :: (Word32, Word64, Word64) -> Bool
 mnemonicToSeed160 (a, b, c) = l == 64
   where
     bs = BS.concat [encode a, encode b, encode c]
-    seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)
+    seed =
+        fromRight
+            (error "Could not decode mnemonic seed")
+            (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
 mnemonicToSeed256 :: (Word64, Word64, Word64, Word64) -> Bool
 mnemonicToSeed256 (a, b, c, d) = l == 64
   where
     bs = BS.concat [encode a, encode b, encode c, encode d]
-    seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)
+    seed =
+        fromRight
+            (error "Colud not decode mnemonic seed")
+            (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
 mnemonicToSeed512 ::
     ((Word64, Word64, Word64, Word64), (Word64, Word64, Word64, Word64)) -> Bool
 mnemonicToSeed512 ((a, b, c, d), (e, f, g, h)) = l == 64
   where
-    bs = BS.concat
-        [ encode a, encode b, encode c, encode d
-        , encode e, encode f, encode g, encode h
-        ]
-    seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)
+    bs =
+        BS.concat
+            [ encode a
+            , encode b
+            , encode c
+            , encode d
+            , encode e
+            , encode f
+            , encode g
+            , encode h
+            ]
+    seed =
+        fromRight
+            (error "Could not decode mnemonic seed")
+            (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
 mnemonicToSeedVar :: [Word32] -> Property
 mnemonicToSeedVar ls = not (null ls) && length ls <= 16 ==> l == 64
   where
     bs = binWordsToBS ls
-    seed = fromRight (mnemonicToSeed "" =<< toMnemonic bs)
+    seed =
+        fromRight
+            (error "Could not decode mnemonic seed")
+            (mnemonicToSeed "" =<< toMnemonic bs)
     l = BS.length seed
 
 {- Get bits from ByteString -}

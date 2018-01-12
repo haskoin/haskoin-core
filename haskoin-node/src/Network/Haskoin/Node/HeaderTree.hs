@@ -51,6 +51,7 @@ import           Control.Monad.State                   (evalStateT, get, put)
 import           Control.Monad.Trans                   (MonadIO, lift)
 import           Data.Bits                             (shiftL)
 import qualified Data.ByteString                       as BS (take)
+import           Data.Either                           (fromRight)
 import           Data.Function                         (on)
 import           Data.List                             (find, maximumBy, sort)
 import           Data.Maybe                            (fromMaybe, isNothing,
@@ -76,7 +77,6 @@ import           Network.Haskoin.Crypto
 import           Network.Haskoin.Node.Checkpoints
 import           Network.Haskoin.Node.HeaderTree.Model
 import           Network.Haskoin.Node.HeaderTree.Types
-import           Network.Haskoin.Util
 
 data BlockChainAction
     = BestChain  { actionNodes :: ![NodeBlock] }
@@ -89,7 +89,9 @@ data BlockChainAction
     deriving (Show, Eq)
 
 shortHash :: BlockHash -> ShortHash
-shortHash = fromRight . decode . BS.take 8 . hash256ToBS . getBlockHash
+shortHash =
+    fromRight (error "Could not decdoe block hash") .
+    decode . BS.take 8 . hash256ToBS . getBlockHash
 
 nHeader :: NodeBlock -> BlockHeader
 nHeader = getNodeHeader . nodeBlockHeader

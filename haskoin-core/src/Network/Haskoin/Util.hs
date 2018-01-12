@@ -12,10 +12,6 @@ module Network.Haskoin.Util
 , decodeHex
 
   -- * Maybe and Either monad helpers
-, isLeft
-, isRight
-, fromRight
-, fromLeft
 , eitherToMaybe
 , maybeToEither
 , liftEither
@@ -77,26 +73,6 @@ decodeHex bs =
 
 -- Maybe and Either monad helpers
 
--- | Returns 'True' if the 'Either' value is 'Right'
-isRight :: Either a b -> Bool
-isRight (Right _) = True
-isRight _         = False
-
--- | Returns 'True' if the 'Either' value is 'Left'
-isLeft :: Either a b -> Bool
-isLeft = not . isRight
-
--- | Extract the 'Right' value from an 'Either' value. Fails if the value is
--- 'Left'
-fromRight :: Either a b -> b
-fromRight (Right b) = b
-fromRight _         = error "Either.fromRight: Left"
-
--- | Extract the 'Left' value from an 'Either' value. Fails if the value is 'Right'
-fromLeft :: Either a b -> a
-fromLeft (Left a) = a
-fromLeft _        = error "Either.fromLeft: Right"
-
 -- | Transforms an 'Either' value into a 'Maybe' value. 'Right' is mapped to 'Just'
 -- and 'Left' is mapped to 'Nothing'. The value inside 'Left' is lost.
 eitherToMaybe :: Either a b -> Maybe b
@@ -109,11 +85,11 @@ eitherToMaybe _         = Nothing
 maybeToEither :: b -> Maybe a -> Either b a
 maybeToEither err = maybe (Left err) Right
 
--- | Lift a 'Either' computation into the 'EitherT' monad
+-- | Lift a 'Either' computation into the 'ExceptT' monad
 liftEither :: Monad m => Either b a -> ExceptT b m a
 liftEither = ExceptT . return
 
--- | Lift a 'Maybe' computation into the 'EitherT' monad
+-- | Lift a 'Maybe' computation into the 'ExceptT' monad
 liftMaybe :: Monad m => b -> Maybe a -> ExceptT b m a
 liftMaybe err = liftEither . maybeToEither err
 

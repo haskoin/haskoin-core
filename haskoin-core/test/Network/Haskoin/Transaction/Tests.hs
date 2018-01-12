@@ -1,6 +1,7 @@
 module Network.Haskoin.Transaction.Tests (tests) where
 
 import qualified Data.ByteString                      as BS
+import           Data.Either                          (fromRight, isRight)
 import           Data.Serialize                       (encode)
 import           Data.String                          (fromString)
 import           Data.String.Conversions              (cs)
@@ -9,7 +10,6 @@ import           Network.Haskoin.Crypto
 import           Network.Haskoin.Script
 import           Network.Haskoin.Test
 import           Network.Haskoin.Transaction
-import           Network.Haskoin.Util
 import           Test.Framework
 import           Test.Framework.Providers.QuickCheck2
 import           Test.QuickCheck
@@ -47,31 +47,41 @@ tests =
 {- Building Transactions -}
 
 testBuildAddrTx :: Address -> TestCoin -> Bool
-testBuildAddrTx a (TestCoin v) = case a of
-    x@(PubKeyAddress _) -> Right (PayPKHash x) == out
-    x@(ScriptAddress _) -> Right (PayScriptHash x) == out
+testBuildAddrTx a (TestCoin v) =
+    case a of
+        x@(PubKeyAddress _) -> Right (PayPKHash x) == out
+        x@(ScriptAddress _) -> Right (PayScriptHash x) == out
   where
-    tx  = buildAddrTx [] [(addrToBase58 a,v)]
-    out = decodeOutputBS $ scriptOutput $ head $ txOut (fromRight tx)
+    tx = buildAddrTx [] [(addrToBase58 a, v)]
+    out =
+        decodeOutputBS $
+        scriptOutput $
+        head $ txOut (fromRight (error "Could not build transaction") tx)
 
 testGuessSize :: Tx -> Bool
-testGuessSize tx =
+testGuessSize tx
     -- We compute an upper bound but it should be close enough to the real size
     -- We give 2 bytes of slack on every signature (1 on r and 1 on s)
-    guess >= len && guess <= len + 2*delta
+ = guess >= len && guess <= len + 2 * delta
   where
-    delta    = pki + sum (map fst msi)
-    guess    = guessTxSize pki msi pkout msout
-    len      = BS.length $ encode tx
-    ins      = map f $ txIn tx
-    f i      = fromRight $ decodeInputBS $ scriptInput i
-    pki      = length $ filter isSpendPKHash ins
-    msi      = concatMap shData ins
-    shData (ScriptHashInput _ (PayMulSig keys r)) = [(r,length keys)]
+    delta = pki + sum (map fst msi)
+    guess = guessTxSize pki msi pkout msout
+    len = BS.length $ encode tx
+    ins = map f $ txIn tx
+    f i =
+        fromRight (error "Could not decode input") $
+        decodeInputBS $ scriptInput i
+    pki = length $ filter isSpendPKHash ins
+    msi = concatMap shData ins
+    shData (ScriptHashInput _ (PayMulSig keys r)) = [(r, length keys)]
     shData _                                      = []
-    out      = map (fromRight . decodeOutputBS . scriptOutput) $ txOut tx
-    pkout    = length $ filter isPayPKHash out
-    msout    = length $ filter isPayScriptHash out
+    out =
+        map
+            (fromRight (error "Could not decode transaction output") .
+             decodeOutputBS . scriptOutput) $
+        txOut tx
+    pkout = length $ filter isPayPKHash out
+    msout = length $ filter isPayScriptHash out
 
 testChooseCoins :: [TestCoin] -> Word64 -> Word64 -> Int -> Property
 testChooseCoins coins target byteFee nOut = nOut >= 0 ==>
@@ -104,13 +114,16 @@ testChooseMSCoins (m, n) coins target byteFee nOut = nOut >= 0 ==>
 
 testDetSignTx :: (Tx, [SigInput], [PrvKey]) -> Bool
 testDetSignTx (tx, sigis, prv) =
-    not (verifyStdTx tx verData)
-        && not (verifyStdTx txSigP verData)
-        && verifyStdTx txSigC verData
+    not (verifyStdTx tx verData) &&
+    not (verifyStdTx txSigP verData) && verifyStdTx txSigC verData
   where
-    txSigP  = fromRight $ signTx tx sigis (tail prv)
-    txSigC  = fromRight $ signTx txSigP sigis [head prv]
-    verData = map (\(SigInput s o _ _) -> (s,o)) sigis
+    txSigP =
+        fromRight (error "Could not decode transaction") $
+        signTx tx sigis (tail prv)
+    txSigC =
+        fromRight (error "Could not decode transaction") $
+        signTx txSigP sigis [head prv]
+    verData = map (\(SigInput s o _ _) -> (s, o)) sigis
 
 testMergeTx :: ([Tx], [(ScriptOutput, OutPoint, Int, Int)]) -> Bool
 testMergeTx (txs, os) = and
@@ -123,7 +136,7 @@ testMergeTx (txs, os) = and
   where
     outs = map (\(so, op, _, _) -> (so, op)) os
     mergeRes = mergeTxs txs outs
-    mergedTx = fromRight mergeRes
+    mergedTx = fromRight (error "Could not merge") mergeRes
     isValid = verifyStdTx mergedTx outs
     enoughSigs = all (\(m,c) -> c >= m) sigMap
     sigMap = map (\((_,_,m,_), inp) -> (m, sigCnt inp)) $ zip os $ txIn mergedTx

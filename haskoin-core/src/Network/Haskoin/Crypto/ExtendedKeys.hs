@@ -80,6 +80,7 @@ import           Data.Aeson                    (FromJSON, ToJSON,
 import           Data.Bits                     (clearBit, setBit, testBit)
 import           Data.ByteString               (ByteString)
 import qualified Data.ByteString               as BS
+import           Data.Either                   (fromRight)
 import           Data.List                     (foldl')
 import           Data.List.Split               (splitOn)
 import           Data.Maybe                    (fromMaybe)
@@ -296,14 +297,14 @@ xPubID = hash160 . hash256ToBS . hash256 . encode . xPubKey
 -- | Computes the key fingerprint of an extended private key.
 xPrvFP :: XPrvKey -> Word32
 xPrvFP =
-    either (const err) id . decode . BS.take 4 . hash160ToBS . xPrvID
+    fromRight err . decode . BS.take 4 . hash160ToBS . xPrvID
   where
     err = error "Could not decode xPrvFP"
 
 -- | Computes the key fingerprint of an extended public key.
 xPubFP :: XPubKey -> Word32
 xPubFP =
-    either (const err) id . decode . BS.take 4 . hash160ToBS . xPubID
+    fromRight err . decode . BS.take 4 . hash160ToBS . xPubID
   where
     err = error "Could not decode xPubFP"
 

@@ -76,10 +76,8 @@ instance IsString Hash512 where
         e = error "Could not decode hash from hex string"
 
 instance Serialize Hash512 where
-    get = do
-        bs <- Get.getByteString 64
-        return $ Hash512 $ BSS.toShort bs
-    put = Put.putByteString . BSS.fromShort . getHash512
+    get = Hash512 <$> Get.getShortByteString 64
+    put = Put.putShortByteString . getHash512
 
 instance IsString Hash256 where
     fromString str =
@@ -93,10 +91,8 @@ instance IsString Hash256 where
         e = error "Could not decode hash from hex string"
 
 instance Serialize Hash256 where
-    get = do
-        bs <- Get.getByteString 32
-        return $ Hash256 $ BSS.toShort bs
-    put = Put.putByteString . BSS.fromShort . getHash256
+    get = Hash256 <$> Get.getShortByteString 32
+    put = Put.putShortByteString . getHash256
 
 instance IsString Hash160 where
     fromString str =
@@ -110,10 +106,8 @@ instance IsString Hash160 where
         e = error "Could not decode hash from hex string"
 
 instance Serialize Hash160 where
-    get = do
-        bs <- Get.getByteString 20
-        return $ Hash160 $ BSS.toShort bs
-    put = Put.putByteString . BSS.fromShort . getHash160
+    get = Hash160 <$> Get.getShortByteString 20
+    put = Put.putShortByteString . getHash160
 
 hash512 :: ByteArrayAccess b => b -> Hash512
 hash512 = Hash512 . BSS.toShort . BA.convert . hashWith SHA512

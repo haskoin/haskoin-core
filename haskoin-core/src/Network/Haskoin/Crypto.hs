@@ -71,6 +71,7 @@ module Network.Haskoin.Crypto
 , hash256
 , hash160
 , hashSHA1
+, addressHash
 , doubleHash256
 , hmac512
 , hmac256

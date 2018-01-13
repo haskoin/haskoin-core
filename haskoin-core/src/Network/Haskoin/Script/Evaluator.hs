@@ -567,7 +567,7 @@ eval OP_SHA1 = tStack1 $ return . bsToSv . encode . hashSHA1 . opToSv
 
 eval OP_SHA256 = tStack1 $ return . bsToSv . encode . hash256 . opToSv
 eval OP_HASH160 = tStack1 $
-    return . bsToSv . encode . hash160 . encode . hash256 . opToSv
+    return . bsToSv . encode . addressHash . opToSv
 eval OP_HASH256 = tStack1 $
     return . bsToSv . encode . doubleHash256  . opToSv
 eval OP_CODESEPARATOR = dropHashOpsSeparatedCode

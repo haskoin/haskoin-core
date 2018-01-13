@@ -219,7 +219,7 @@ instance Serialize PubKeyU where
 
 -- | Computes an 'Address' from a public key
 pubKeyAddr :: Serialize (PubKeyI c) => PubKeyI c -> Address
-pubKeyAddr = PubKeyAddress . hash160 . encode . hash256 . encode
+pubKeyAddr = PubKeyAddress . addressHash . encode
 
 -- | Tweak a compressed public key
 tweakPubKeyC :: PubKeyC -> Hash256 -> Maybe PubKeyC

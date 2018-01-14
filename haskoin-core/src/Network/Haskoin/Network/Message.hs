@@ -171,5 +171,6 @@ instance Serialize Message where
             chk = checkSum32 payload
             len = fromIntegral $ BS.length payload
             header = MessageHeader networkMagic cmd len chk
-        putByteString $ encode header `BS.append` payload
+        put header
+        putByteString payload
 

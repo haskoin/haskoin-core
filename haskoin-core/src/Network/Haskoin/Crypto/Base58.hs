@@ -19,8 +19,8 @@ import qualified Data.ByteString.Char8       as C
 import           Data.Maybe                  (fromMaybe, isJust, listToMaybe)
 import           Data.Serialize              (Serialize, decode, encode, get,
                                               put)
-import           Data.Serialize.Get          (getByteString, getWord8)
-import           Data.Serialize.Put          (putByteString, putWord8)
+import           Data.Serialize.Get          (getWord8)
+import           Data.Serialize.Put          (putWord8)
 import           Data.String                 (IsString, fromString)
 import           Data.String.Conversions     (cs)
 import           Network.Haskoin.Constants
@@ -101,8 +101,7 @@ data Address
 instance Serialize Address where
     get = do
         pfx <- getWord8
-        bs <- getByteString 20
-        addr <- either (fail "Could not decode address") return (decode bs)
+        addr <- get
         f pfx addr
       where
         f x a | x == addrPrefix   = return (PubKeyAddress a)
@@ -110,10 +109,10 @@ instance Serialize Address where
               | otherwise = fail "Does not recognize address prefix"
     put (PubKeyAddress h) = do
         putWord8 addrPrefix
-        putByteString (hash160ToBS h)
+        put h
     put (ScriptAddress h) = do
         putWord8 scriptPrefix
-        putByteString (hash160ToBS h)
+        put h
 
 -- TODO: Test
 instance Show Address where

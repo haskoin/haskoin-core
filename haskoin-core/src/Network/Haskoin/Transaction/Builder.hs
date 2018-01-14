@@ -169,7 +169,7 @@ guessTxSize :: Int         -- ^ Number of regular transaction inputs.
 guessTxSize pki msi pkout msout =
     8 + inpLen + inp + outLen + out
   where
-    inpLen = BS.length $ encode $ VarInt $ fromIntegral $ (length msi) + pki
+    inpLen = BS.length $ encode $ VarInt $ fromIntegral $ length msi + pki
     outLen = BS.length $ encode $ VarInt $ fromIntegral $ pkout + msout
     inp = pki * 148 + sum (map guessMSSize msi)
              -- (20: hash160) + (5: opcodes) +

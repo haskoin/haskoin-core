@@ -37,6 +37,7 @@ import           Data.Aeson                     (FromJSON, ToJSON,
 import           Data.ByteString                (ByteString)
 import qualified Data.ByteString                as BS
 import           Data.Foldable                  (foldrM)
+import           Data.Function                  (on)
 import           Data.List                      (sortBy)
 import           Data.Serialize                 (decode, encode)
 import           Data.String.Conversions        (cs)
@@ -108,7 +109,7 @@ isDataCarrier _               = False
 -- | Computes a script address from a script output. This address can be used
 -- in a pay to script hash output.
 scriptAddr :: ScriptOutput -> Address
-scriptAddr = ScriptAddress . hash160 . hash256ToBS . hash256 . encodeOutputBS
+scriptAddr = ScriptAddress . hash160 . encode . hash256 . encodeOutputBS
 
 -- | Sorts the public keys of a multisignature output in ascending order by
 -- comparing their serialized representations. This feature allows for easier
@@ -117,10 +118,8 @@ scriptAddr = ScriptAddress . hash160 . hash256ToBS . hash256 . encodeOutputBS
 -- communicate.
 sortMulSig :: ScriptOutput -> ScriptOutput
 sortMulSig out = case out of
-    PayMulSig keys r -> PayMulSig (sortBy f keys) r
+    PayMulSig keys r -> PayMulSig (sortBy (compare `on` encode) keys) r
     _ -> error "Can only call orderMulSig on PayMulSig scripts"
-  where
-    f a b = encode a `compare` encode b
 
 -- | Computes a 'Script' from a 'ScriptOutput'. The 'Script' is a list of
 -- 'ScriptOp' can can be used to build a 'Tx'.

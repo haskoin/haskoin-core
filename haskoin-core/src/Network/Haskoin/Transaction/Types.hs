@@ -1,11 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Network.Haskoin.Transaction.Types
-( Tx
+( Tx(..)
 , createTx
-, txVersion
-, txIn
-, txOut
-, txLockTime
 , txHash
 , TxIn(..)
 , TxOut(..)

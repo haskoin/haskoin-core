@@ -62,10 +62,10 @@ module Network.Haskoin.Crypto
 , decodeStrictSig
 
   -- *Hash functions
-, CheckSum32(getCheckSum32)
-, Hash512(getHash512)
-, Hash256(getHash256)
-, Hash160(getHash160)
+, CheckSum32(..)
+, Hash512(..)
+, Hash256(..)
+, Hash160(..)
 , checkSum32
 , hash512
 , hash256

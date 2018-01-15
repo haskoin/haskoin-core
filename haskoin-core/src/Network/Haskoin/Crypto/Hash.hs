@@ -1,10 +1,10 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 -- | Hashing functions and HMAC DRBG definition
 module Network.Haskoin.Crypto.Hash
-( Hash512(getHash512)
-, Hash256(getHash256)
-, Hash160(getHash160)
-, CheckSum32(getCheckSum32)
+( Hash512(..)
+, Hash256(..)
+, Hash160(..)
+, CheckSum32(..)
 , hash512
 , hash256
 , hash160

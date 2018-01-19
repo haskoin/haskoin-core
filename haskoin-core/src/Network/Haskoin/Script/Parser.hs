@@ -12,6 +12,8 @@ module Network.Haskoin.Script.Parser
 , decodeInputBS
 , addressToScript
 , addressToScriptBS
+, scriptToAddress
+, scriptToAddressBS
 , encodeOutput
 , encodeOutputBS
 , decodeOutput
@@ -131,6 +133,19 @@ addressToScript (ScriptAddress h) = encodeOutput (PayScriptHash h)
 -- | Encode address as output script in ByteString form.
 addressToScriptBS :: Address -> ByteString
 addressToScriptBS = encode . addressToScript
+
+-- | Encode an output script as an address if it has such representation.
+scriptToAddress :: Script -> Maybe Address
+scriptToAddress s =
+    case decodeOutput s of
+        Left _ -> Nothing
+        Right output -> eitherToMaybe (outputAddress output)
+
+scriptToAddressBS :: ByteString -> Maybe Address
+scriptToAddressBS s =
+    case decodeOutputBS s of
+        Left _ -> Nothing
+        Right output -> eitherToMaybe (outputAddress output)
 
 -- | Computes a 'Script' from a 'ScriptOutput'. The 'Script' is a list of
 -- 'ScriptOp' can can be used to build a 'Tx'.

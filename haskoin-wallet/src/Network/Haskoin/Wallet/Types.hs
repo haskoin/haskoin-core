@@ -187,7 +187,7 @@ data NewAccount = NewAccount
     , newAccountKeys     :: ![XPubKey]
     , newAccountReadOnly :: !Bool
     }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show)
 
 $(deriveJSON (dropFieldLabel 10) ''NewAccount)
 
@@ -353,7 +353,7 @@ data JsonAccount = JsonAccount
     , jsonAccountGap        :: !Word32
     , jsonAccountCreated    :: !UTCTime
     }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show)
 
 $(deriveJSON (dropFieldLabel 11) ''JsonAccount)
 

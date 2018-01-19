@@ -24,19 +24,19 @@ tests =
     , testGroup
           "From/To strings"
           [ testProperty "Read/Show extended public key" $ forAll arbitraryXPubKey $
-            \(_, k) -> read (show k) == k
+            \(_, k) -> fromString (show k) == k
           , testProperty "Read/Show extended private key" $ forAll arbitraryXPrvKey $
-            \k -> read (show k) == k
+            \k -> fromString (show k) == k
           , testProperty "From string extended public key" $ forAll arbitraryXPubKey $
             \(_, k) -> fromString (cs $ xPubExport k) == k
           , testProperty "From string extended private key" $ forAll arbitraryXPrvKey $
             \k -> fromString (cs $ xPrvExport k) == k
           , testProperty "Read/Show derivation path" $ forAll arbitraryDerivPath $
-            \p -> read (show p) == p
+            \p -> fromString (show p) == p
           , testProperty "Read/Show hard derivation path" $ forAll arbitraryHardPath $
-            \p -> read (show p) == p
+            \p -> fromString (show p) == p
           , testProperty "Read/Show soft derivation path" $ forAll arbitrarySoftPath $
-            \p -> read (show p) == p
+            \p -> fromString (show p) == p
           , testProperty "From string derivation path" $ forAll arbitraryDerivPath $
             \p -> fromString (cs $ pathToStr p) == p
           , testProperty "From string hard derivation path" $ forAll arbitraryHardPath $
@@ -49,6 +49,8 @@ tests =
             forAll arbitraryHardPath $ \p -> toHard (listToPath $ pathToList p) == Just p
           , testProperty "listToPath . pathToList == id (Soft)" $
             forAll arbitrarySoftPath $ \p -> toSoft (listToPath $ pathToList p) == Just p
+          , testProperty "parsePath . show == id (ParsedPath)" $
+            forAll arbitraryParsedPath $ \p -> parsePath (show p) == Just p
           ]
     ]
 

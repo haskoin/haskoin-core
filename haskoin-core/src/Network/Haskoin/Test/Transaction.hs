@@ -110,7 +110,7 @@ arbitraryPKSigInput = do
 arbitraryPKHashSigInput :: Gen (SigInput, PrvKey)
 arbitraryPKHashSigInput = do
     k <- arbitraryPrvKey
-    let out = PayPKHash $ pubKeyAddr $ derivePubKey k
+    let out = PayPKHash $ getAddrHash $ pubKeyAddr $ derivePubKey k
     op <- arbitraryOutPoint
     sh <- arbitraryValidSigHash
     return (SigInput out op sh Nothing, k)
@@ -135,7 +135,7 @@ arbitrarySHSigInput = do
         , f <$> arbitraryPKHashSigInput
         , arbitraryMSSigInput
         ]
-    let out = PayScriptHash $ scriptAddr rdm
+    let out = PayScriptHash $ getAddrHash $ scriptAddr rdm
     return (SigInput out op sh $ Just rdm, ks)
   where
     f (si, k) = (si, [k])
@@ -195,5 +195,9 @@ arbitraryPartialTxs = do
         let so = PayMulSig pubKeys m
         elements
             [ (so, Nothing, prvKeys, m, n)
-            , (PayScriptHash $ scriptAddr so, Just so, prvKeys, m, n)
+            , ( PayScriptHash $ getAddrHash $ scriptAddr so
+              , Just so
+              , prvKeys
+              , m
+              , n)
             ]

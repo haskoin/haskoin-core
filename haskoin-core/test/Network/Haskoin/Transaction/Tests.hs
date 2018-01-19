@@ -49,8 +49,8 @@ tests =
 testBuildAddrTx :: Address -> TestCoin -> Bool
 testBuildAddrTx a (TestCoin v) =
     case a of
-        x@(PubKeyAddress _) -> Right (PayPKHash x) == out
-        x@(ScriptAddress _) -> Right (PayScriptHash x) == out
+        PubKeyAddress h -> Right (PayPKHash h) == out
+        ScriptAddress h -> Right (PayScriptHash h) == out
   where
     tx = buildAddrTx [] [(addrToBase58 a, v)]
     out =

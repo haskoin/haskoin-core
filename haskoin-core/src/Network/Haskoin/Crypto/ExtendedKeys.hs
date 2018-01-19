@@ -84,6 +84,7 @@ import           Data.Either                   (fromRight)
 import           Data.List                     (foldl')
 import           Data.List.Split               (splitOn)
 import           Data.Maybe                    (fromMaybe)
+import           Data.Monoid                   ((<>))
 import           Data.Serialize                (Serialize, decode, encode, get,
                                                 put)
 import           Data.Serialize.Get            (Get, getWord32be, getWord8)
@@ -129,14 +130,7 @@ instance Ord XPrvKey where
     compare k1 k2 = xPrvExport k1 `compare` xPrvExport k2
 
 instance Show XPrvKey where
-    showsPrec d k = showParen (d > 10) $
-        showString "XPrvKey " . shows (xPrvExport k)
-
-instance Read XPrvKey where
-    readPrec = parens $ do
-        Read.Ident "XPrvKey" <- lexP
-        Read.String str <- lexP
-        maybe pfail return $ xPrvImport $ cs str
+    show = cs . xPrvExport
 
 instance IsString XPrvKey where
     fromString =
@@ -167,14 +161,7 @@ instance Ord XPubKey where
     compare k1 k2 = xPubExport k1 `compare` xPubExport k2
 
 instance Show XPubKey where
-    showsPrec d k = showParen (d > 10) $
-        showString "XPubKey " . shows (xPubExport k)
-
-instance Read XPubKey where
-    readPrec = parens $ do
-        Read.Ident "XPubKey" <- lexP
-        Read.String str <- lexP
-        maybe pfail return $ xPubImport $ cs str
+    show = cs . xPubExport
 
 instance IsString XPubKey where
     fromString =
@@ -557,35 +544,8 @@ derivePubPath = go id
         next :/ i -> go (f . flip pubSubKey i) next
         _         -> f
 
-instance Show DerivPath where
-    showsPrec d p = showParen (d > 10) $
-        showString "DerivPath " . shows (pathToStr p)
-
-instance Show HardPath where
-    showsPrec d p = showParen (d > 10) $
-        showString "HardPath " . shows (pathToStr p)
-
-instance Show SoftPath where
-    showsPrec d p = showParen (d > 10) $
-        showString "SoftPath " . shows (pathToStr p)
-
-instance Read DerivPath where
-    readPrec = parens $ do
-        Read.Ident "DerivPath" <- lexP
-        Read.String str <- lexP
-        maybe pfail (return . getParsedPath) $ parsePath str
-
-instance Read HardPath where
-    readPrec = parens $ do
-        Read.Ident "HardPath" <- lexP
-        Read.String str <- lexP
-        maybe pfail return $ parseHard str
-
-instance Read SoftPath where
-    readPrec = parens $ do
-        Read.Ident "SoftPath" <- lexP
-        Read.String str <- lexP
-        maybe pfail return $ parseSoft str
+instance Show (DerivPathI t) where
+    show = pathToStr
 
 instance IsString ParsedPath where
     fromString =
@@ -612,7 +572,7 @@ instance IsString SoftPath where
         e = error "Could not parse soft derivation path"
 
 instance FromJSON ParsedPath where
-    parseJSON = withText "ParsedPathPath" $ \str -> case parsePath $ cs str of
+    parseJSON = withText "ParsedPath" $ \str -> case parsePath $ cs str of
         Just p -> return p
         _      -> mzero
 
@@ -644,7 +604,14 @@ instance ToJSON ParsedPath where
 data ParsedPath = ParsedPrv   { getParsedPath :: !DerivPath }
                 | ParsedPub   { getParsedPath :: !DerivPath }
                 | ParsedEmpty { getParsedPath :: !DerivPath }
-  deriving (Read, Show, Eq)
+  deriving Eq
+
+instance Show ParsedPath where
+    show p = case p of
+        ParsedPrv d   -> "m" <> pathToStr d
+        ParsedPub d   -> "M" <> pathToStr d
+        ParsedEmpty d -> pathToStr d
+
 -- | Parse derivation path string for extended key.
 -- Forms: “m/0'/2”, “M/2/3/4”.
 parsePath :: String -> Maybe ParsedPath
@@ -661,11 +628,9 @@ parsePath str = do
 concatBip32Segments :: [Bip32PathIndex] -> DerivPath
 concatBip32Segments = foldl' appendBip32Segment Deriv
 
-
 appendBip32Segment :: DerivPath -> Bip32PathIndex  -> DerivPath
 appendBip32Segment d (Bip32SoftIndex i) = d :/ i
 appendBip32Segment d (Bip32HardIndex i) = d :| i
-
 
 parseBip32PathIndex :: String -> Maybe Bip32PathIndex
 parseBip32PathIndex segment = case reads segment of
@@ -673,13 +638,16 @@ parseBip32PathIndex segment = case reads segment of
     [(i, "'")] -> guard (is31Bit i) >> return (Bip32HardIndex i)
     _          -> Nothing
 
+data Bip32PathIndex = Bip32HardIndex KeyIndex
+                    | Bip32SoftIndex KeyIndex
+  deriving Eq
 
-data Bip32PathIndex = Bip32HardIndex KeyIndex | Bip32SoftIndex KeyIndex
-  deriving (Read,Show,Eq)
+instance Show Bip32PathIndex where
+    show (Bip32HardIndex i) = show i <> "'"
+    show (Bip32SoftIndex i) = show i
 
 is31Bit :: (Integral a) => a -> Bool
 is31Bit i = i >= 0 && i < 0x80000000
-
 
 -- Helper function to parse a hard path
 parseHard :: String -> Maybe HardPath

@@ -378,7 +378,7 @@ fakeTx xs ys =
     createTx 1 txi txo 0
   where
     txi = map (\(h,p) -> TxIn (OutPoint h p) (BS.pack [1]) maxBound) xs
-    f = encodeOutputBS . PayPKHash . fromJust . base58ToAddr
+    f = addressToScriptBS . fromJust . base58ToAddr
     txo = map (\(a,v) -> TxOut v $ f a ) ys
 
 testDerivations :: App ()
@@ -1197,7 +1197,7 @@ testImportMultisig = do
             1
             [ TxIn (OutPoint tid1 0) (BS.pack [1]) maxBound ] -- dummy input
             [ TxOut 10000000 $
-              encodeOutputBS $ PayScriptHash $ fromJust $
+              addressToScriptBS $ fromJust $
               base58ToAddr "32SupmLrYyZMSPfL4tgkuUCyvbzEyBfqxd"
             ]
             0
@@ -1409,7 +1409,7 @@ testDeleteUnsignedTx = do
             1
             [ TxIn (OutPoint tid1 0) (BS.pack [1]) maxBound ] -- dummy input
             [ TxOut 10000000 $
-              encodeOutputBS $ PayScriptHash $ fromJust $
+              addressToScriptBS $ fromJust $
               base58ToAddr "32SupmLrYyZMSPfL4tgkuUCyvbzEyBfqxd"
             ]
             0

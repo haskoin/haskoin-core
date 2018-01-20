@@ -202,8 +202,7 @@ buildAddrTx xs ys =
     buildTx xs =<< mapM f ys
   where
     f (s, v) = case base58ToAddr s of
-        Just (PubKeyAddress h) -> return (PayPKHash h, v)
-        Just (ScriptAddress h) -> return (PayScriptHash h, v)
+        Just a -> return (addressToOutput a, v)
         _ -> Left $ "buildAddrTx: Invalid address " ++ cs s
 
 -- | Build a transaction by providing a list of outpoints as inputs
@@ -403,7 +402,7 @@ verifyStdInput tx i =
                 r    = getOutputMulSigRequired so
             in  countMulSig tx out i pubs sigs == r
         Right (ScriptHashInput si rdm) ->
-            scriptAddr rdm == ScriptAddress (getOutputHash so) &&
+            p2shAddr rdm == ScriptAddress (getOutputHash so) &&
             go (encodeInputBS $ RegularInput si) rdm
         _ -> False
       where

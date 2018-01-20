@@ -3,13 +3,14 @@ module Network.Haskoin.Script.Parser
 , ScriptInput(..)
 , SimpleInput(..)
 , RedeemScript
-, scriptAddr
+, p2shAddr
 , outputAddress
 , inputAddress
 , encodeInput
 , encodeInputBS
 , decodeInput
 , decodeInputBS
+, addressToOutput
 , addressToScript
 , addressToScriptBS
 , scriptToAddress
@@ -112,8 +113,8 @@ isDataCarrier _               = False
 
 -- | Computes a script address from a script output. This address can be used
 -- in a pay to script hash output.
-scriptAddr :: ScriptOutput -> Address
-scriptAddr = ScriptAddress . hash160 . encode . hash256 . encodeOutputBS
+p2shAddr :: ScriptOutput -> Address
+p2shAddr = ScriptAddress . addressHash . encodeOutputBS
 
 -- | Sorts the public keys of a multisignature output in ascending order by
 -- comparing their serialized representations. This feature allows for easier
@@ -125,10 +126,13 @@ sortMulSig out = case out of
     PayMulSig keys r -> PayMulSig (sortBy (compare `on` encode) keys) r
     _ -> error "Can only call orderMulSig on PayMulSig scripts"
 
+addressToOutput :: Address -> ScriptOutput
+addressToOutput (PubKeyAddress h) = PayPKHash h
+addressToOutput (ScriptAddress h) = PayScriptHash h
+
 -- | Get output script AST for an address.
 addressToScript :: Address -> Script
-addressToScript (PubKeyAddress h) = encodeOutput (PayPKHash h)
-addressToScript (ScriptAddress h) = encodeOutput (PayScriptHash h)
+addressToScript = encodeOutput . addressToOutput
 
 -- | Encode address as output script in ByteString form.
 addressToScriptBS :: Address -> ByteString
@@ -239,7 +243,7 @@ outputAddress s = case s of
 inputAddress :: ScriptInput -> Either String Address
 inputAddress s = case s of
     RegularInput (SpendPKHash _ key) -> return $ pubKeyAddr key
-    ScriptHashInput _ rdm -> return $ scriptAddr rdm
+    ScriptHashInput _ rdm -> return $ p2shAddr rdm
     _ -> Left "inputAddress: bad input script type"
 
 -- | Data type describing standard transaction input scripts. Input scripts

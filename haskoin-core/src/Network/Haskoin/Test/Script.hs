@@ -222,7 +222,7 @@ arbitraryPKOutput =  PayPK . snd <$> arbitraryPubKey
 
 -- | Arbitrary ScriptOutput of type PayPKHash
 arbitraryPKHashOutput :: Gen ScriptOutput
-arbitraryPKHashOutput = PayPKHash . getAddrHash <$> arbitraryPubKeyAddress
+arbitraryPKHashOutput = PayPKHash <$> arbitraryHash160
 
 -- | Arbitrary ScriptOutput of type PayMS
 arbitraryMSOutput :: Gen ScriptOutput

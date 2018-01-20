@@ -20,6 +20,7 @@ module Network.Haskoin.Script
 , encodeOutputBS
 , decodeOutput
 , decodeOutputBS
+, addressToOutput
 , addressToScript
 , addressToScriptBS
 , scriptToAddress
@@ -28,7 +29,7 @@ module Network.Haskoin.Script
 , isPayPKHash
 , isPayMulSig
 , isPayScriptHash
-, scriptAddr
+, p2shAddr
 , sortMulSig
 
   -- **Script Inputs

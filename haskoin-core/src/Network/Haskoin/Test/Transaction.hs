@@ -135,7 +135,7 @@ arbitrarySHSigInput = do
         , f <$> arbitraryPKHashSigInput
         , arbitraryMSSigInput
         ]
-    let out = PayScriptHash $ getAddrHash $ scriptAddr rdm
+    let out = PayScriptHash $ getAddrHash $ p2shAddr rdm
     return (SigInput out op sh $ Just rdm, ks)
   where
     f (si, k) = (si, [k])
@@ -195,7 +195,7 @@ arbitraryPartialTxs = do
         let so = PayMulSig pubKeys m
         elements
             [ (so, Nothing, prvKeys, m, n)
-            , ( PayScriptHash $ getAddrHash $ scriptAddr so
+            , ( PayScriptHash $ getAddrHash $ p2shAddr so
               , Just so
               , prvKeys
               , m

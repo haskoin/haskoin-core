@@ -202,8 +202,7 @@ buildAddrTx xs ys =
     buildTx xs =<< mapM f ys
   where
     f (s, v) = case base58ToAddr s of
-        Just a@(PubKeyAddress _) -> return (PayPKHash a,v)
-        Just a@(ScriptAddress _) -> return (PayScriptHash a,v)
+        Just a -> return (addressToOutput a, v)
         _ -> Left $ "buildAddrTx: Invalid address " ++ cs s
 
 -- | Build a transaction by providing a list of outpoints as inputs
@@ -294,8 +293,8 @@ sigKeys so rdmM keys =
     case (so, rdmM) of
         (PayPK p, Nothing) -> return $
             map fst $ maybeToList $ find ((== p) . snd) zipKeys
-        (PayPKHash a, Nothing) -> return $
-            map fst $ maybeToList $ find ((== a) . pubKeyAddr . snd) zipKeys
+        (PayPKHash h, Nothing) -> return $
+            map fst $ maybeToList $ find ((== h) . getAddrHash . pubKeyAddr . snd) zipKeys
         (PayMulSig ps r, Nothing) -> return $
             map fst $ take r $ filter ((`elem` ps) . snd) zipKeys
         (PayScriptHash _, Just rdm) ->
@@ -395,7 +394,7 @@ verifyStdInput tx i =
             let pub = getOutputPubKey so
             in  verifySig (txSigHash tx out i sh) sig pub
         Right (RegularInput (SpendPKHash (TxSignature sig sh) pub)) ->
-            let a = getOutputAddress so
+            let a = PubKeyAddress (getOutputHash so)
             in pubKeyAddr pub == a &&
                 verifySig (txSigHash tx out i sh) sig pub
         Right (RegularInput (SpendMulSig sigs)) ->
@@ -403,7 +402,7 @@ verifyStdInput tx i =
                 r    = getOutputMulSigRequired so
             in  countMulSig tx out i pubs sigs == r
         Right (ScriptHashInput si rdm) ->
-            scriptAddr rdm == getOutputAddress so &&
+            p2shAddr rdm == ScriptAddress (getOutputHash so) &&
             go (encodeInputBS $ RegularInput si) rdm
         _ -> False
       where

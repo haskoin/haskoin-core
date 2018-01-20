@@ -3,13 +3,18 @@ module Network.Haskoin.Script.Parser
 , ScriptInput(..)
 , SimpleInput(..)
 , RedeemScript
-, scriptAddr
+, p2shAddr
 , outputAddress
 , inputAddress
 , encodeInput
 , encodeInputBS
 , decodeInput
 , decodeInputBS
+, addressToOutput
+, addressToScript
+, addressToScriptBS
+, scriptToAddress
+, scriptToAddressBS
 , encodeOutput
 , encodeOutputBS
 , decodeOutput
@@ -55,16 +60,16 @@ data ScriptOutput =
       -- | Pay to a public key.
       PayPK         { getOutputPubKey   :: !PubKey }
       -- | Pay to a public key hash.
-    | PayPKHash     { getOutputAddress  :: !Address }
+    | PayPKHash     { getOutputHash     :: !Hash160 }
       -- | Pay to multiple public keys.
     | PayMulSig     { getOutputMulSigKeys     :: ![PubKey]
                     , getOutputMulSigRequired :: !Int
                     }
       -- | Pay to a script hash.
-    | PayScriptHash { getOutputAddress  :: !Address }
+    | PayScriptHash { getOutputHash     :: !Hash160 }
       -- | Provably unspendable data carrier.
     | DataCarrier { getOutputData :: !ByteString }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show)
 
 instance FromJSON ScriptOutput where
     parseJSON = withText "scriptoutput" $ \t -> either fail return $
@@ -108,8 +113,8 @@ isDataCarrier _               = False
 
 -- | Computes a script address from a script output. This address can be used
 -- in a pay to script hash output.
-scriptAddr :: ScriptOutput -> Address
-scriptAddr = ScriptAddress . hash160 . encode . hash256 . encodeOutputBS
+p2shAddr :: ScriptOutput -> Address
+p2shAddr = ScriptAddress . addressHash . encodeOutputBS
 
 -- | Sorts the public keys of a multisignature output in ascending order by
 -- comparing their serialized representations. This feature allows for easier
@@ -121,6 +126,25 @@ sortMulSig out = case out of
     PayMulSig keys r -> PayMulSig (sortBy (compare `on` encode) keys) r
     _ -> error "Can only call orderMulSig on PayMulSig scripts"
 
+addressToOutput :: Address -> ScriptOutput
+addressToOutput (PubKeyAddress h) = PayPKHash h
+addressToOutput (ScriptAddress h) = PayScriptHash h
+
+-- | Get output script AST for an address.
+addressToScript :: Address -> Script
+addressToScript = encodeOutput . addressToOutput
+
+-- | Encode address as output script in ByteString form.
+addressToScriptBS :: Address -> ByteString
+addressToScriptBS = encode . addressToScript
+
+-- | Encode an output script as an address if it has such representation.
+scriptToAddress :: Script -> Maybe Address
+scriptToAddress = eitherToMaybe . (outputAddress <=< decodeOutput)
+
+scriptToAddressBS :: ByteString -> Maybe Address
+scriptToAddressBS = eitherToMaybe . (outputAddress <=< decodeOutputBS)
+
 -- | Computes a 'Script' from a 'ScriptOutput'. The 'Script' is a list of
 -- 'ScriptOp' can can be used to build a 'Tx'.
 encodeOutput :: ScriptOutput -> Script
@@ -128,12 +152,8 @@ encodeOutput s = Script $ case s of
     -- Pay to PubKey
     (PayPK k) -> [opPushData $ encode k, OP_CHECKSIG]
     -- Pay to PubKey Hash Address
-    (PayPKHash a) -> case a of
-        (PubKeyAddress h) -> [ OP_DUP, OP_HASH160, opPushData $ encode h
-                             , OP_EQUALVERIFY, OP_CHECKSIG
-                             ]
-        (ScriptAddress _) ->
-            error "encodeOutput: ScriptAddress is invalid in PayPKHash"
+    (PayPKHash h) ->
+        [ OP_DUP, OP_HASH160, opPushData $ encode h, OP_EQUALVERIFY, OP_CHECKSIG]
     -- Pay to MultiSig Keys
     (PayMulSig ps r)
       | r <= length ps ->
@@ -143,12 +163,8 @@ encodeOutput s = Script $ case s of
             in opM : keys ++ [opN, OP_CHECKMULTISIG]
       | otherwise -> error "encodeOutput: PayMulSig r must be <= than pkeys"
     -- Pay to Script Hash Address
-    (PayScriptHash a) -> case a of
-        (ScriptAddress h) -> [ OP_HASH160
-                             , opPushData $ encode h, OP_EQUAL
-                             ]
-        (PubKeyAddress _) ->
-            error "encodeOutput: PubKeyAddress is invalid in PayScriptHash"
+    (PayScriptHash h) ->
+        [ OP_HASH160, opPushData $ encode h, OP_EQUAL]
     -- Provably unspendable output
     (DataCarrier d) -> [OP_RETURN, opPushData d]
 
@@ -164,10 +180,10 @@ decodeOutput s = case scriptOps s of
     [OP_PUSHDATA bs _, OP_CHECKSIG] -> PayPK <$> decode bs
     -- Pay to PubKey Hash
     [OP_DUP, OP_HASH160, OP_PUSHDATA bs _, OP_EQUALVERIFY, OP_CHECKSIG] ->
-        (PayPKHash . PubKeyAddress) <$> decode bs
+        PayPKHash <$> decode bs
     -- Pay to Script Hash
     [OP_HASH160, OP_PUSHDATA bs _, OP_EQUAL] ->
-        (PayScriptHash . ScriptAddress) <$> decode  bs
+        PayScriptHash <$> decode  bs
     -- Provably unspendable data carrier output
     [OP_RETURN, OP_PUSHDATA bs _] -> Right $ DataCarrier bs
     -- Pay to MultiSig Keys
@@ -212,8 +228,8 @@ scriptOpToInt s
 -- | Get the address of a `ScriptOutput`
 outputAddress :: ScriptOutput -> Either String Address
 outputAddress s = case s of
-    PayPKHash a     -> return a
-    PayScriptHash a -> return a
+    PayPKHash h     -> return $ PubKeyAddress h
+    PayScriptHash h -> return $ ScriptAddress h
     PayPK k         -> return $ pubKeyAddr k
     _               -> Left "outputAddress: bad output script type"
 
@@ -221,7 +237,7 @@ outputAddress s = case s of
 inputAddress :: ScriptInput -> Either String Address
 inputAddress s = case s of
     RegularInput (SpendPKHash _ key) -> return $ pubKeyAddr key
-    ScriptHashInput _ rdm -> return $ scriptAddr rdm
+    ScriptHashInput _ rdm -> return $ p2shAddr rdm
     _ -> Left "inputAddress: bad input script type"
 
 -- | Data type describing standard transaction input scripts. Input scripts
@@ -269,7 +285,7 @@ data ScriptInput
     | ScriptHashInput { getScriptHashInput  :: SimpleInput
                       , getScriptHashRedeem :: RedeemScript
                       }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show)
 
 instance NFData ScriptInput where
     rnf (RegularInput i)      = rnf i

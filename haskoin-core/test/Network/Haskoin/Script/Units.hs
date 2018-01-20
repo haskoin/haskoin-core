@@ -66,7 +66,7 @@ runMulSigVector (a, ops) = assertBool "    >  MultiSig Vector" $ a == b
   where
     s = fromJust $ either (const Nothing) return . decode =<< decodeHex ops
     b =
-        addrToBase58 . scriptAddr . fromRight (error "Could not decode output") $
+        addrToBase58 . p2shAddr . fromRight (error "Could not decode output") $
         decodeOutput s
 
 testSigDecode :: ByteString -> Assertion

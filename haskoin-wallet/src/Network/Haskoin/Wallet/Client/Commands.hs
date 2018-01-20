@@ -762,41 +762,50 @@ encodeScriptInputJSON si = case si of
             [ "scriptinput" .= encodeScriptInputJSON (RegularInput s)
             , "redeem" .= encodeScriptOutputJSON r
             , "raw-redeem" .= (cs $ encodeHex (encodeOutputBS r) :: T.Text)
-            , "sender-address" .= (cs $ addrToBase58 (scriptAddr r) :: T.Text)
+            , "sender-address" .= (cs $ addrToBase58 (p2shAddr r) :: T.Text)
             ]
         ]
 
 encodeScriptOutputJSON :: ScriptOutput -> Value
-encodeScriptOutputJSON so = case so of
-    PayPK p -> object
-        [ "pay2pubkey" .= object
-          [ "pubkey" .= (cs $ encodeHex (S.encode p) :: T.Text) ]
-        ]
-    PayPKHash a -> object
-        [ "pay2pubkeyhash" .= object
-            [ "address-hex" .=
-              (cs $ encodeHex (S.encode $ getAddrHash a) :: T.Text)
-            , "address-base58" .= (cs $ addrToBase58 a :: T.Text)
-            ]
-        ]
-    PayMulSig ks r -> object
-        [ "pay2mulsig" .= object
-            [ "required-keys" .= r
-            , "pubkeys" .= (map (cs . encodeHex . S.encode) ks :: [T.Text])
-            ]
-        ]
-    PayScriptHash a -> object
-        [ "pay2scripthash" .= object
-            [ "address-hex" .= (cs $ encodeHex $
-                S.encode $ getAddrHash a :: T.Text)
-            , "address-base58" .= (cs (addrToBase58 a) :: T.Text)
-            ]
-        ]
-    DataCarrier bs -> object
-        [ "op_return" .= object
-            [ "data" .= (cs $ encodeHex bs :: T.Text)
-            ]
-        ]
+encodeScriptOutputJSON so =
+    case so of
+        PayPK p ->
+            object
+                [ "pay2pubkey" .=
+                  object ["pubkey" .= (cs $ encodeHex (S.encode p) :: T.Text)]
+                ]
+        PayPKHash h ->
+            object
+                [ "pay2pubkeyhash" .=
+                  object
+                      [ "address-hex" .= (cs $ encodeHex (S.encode h) :: T.Text)
+                      , "address-base58" .=
+                        (cs (addrToBase58 (PubKeyAddress h)) :: T.Text)
+                      ]
+                ]
+        PayMulSig ks r ->
+            object
+                [ "pay2mulsig" .=
+                  object
+                      [ "required-keys" .= r
+                      , "pubkeys" .=
+                        (map (cs . encodeHex . S.encode) ks :: [T.Text])
+                      ]
+                ]
+        PayScriptHash h ->
+            object
+                [ "pay2scripthash" .=
+                  object
+                      [ "address-hex" .= (cs $ encodeHex $ S.encode h :: T.Text)
+                      , "address-base58" .=
+                        (cs (addrToBase58 (ScriptAddress h)) :: T.Text)
+                      ]
+                ]
+        DataCarrier bs ->
+            object
+                [ "op_return" .=
+                  object ["data" .= (cs $ encodeHex bs :: T.Text)]
+                ]
 
 encodeSigJSON :: TxSignature -> Value
 encodeSigJSON ts@(TxSignature _ sh) = object

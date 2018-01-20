@@ -100,8 +100,6 @@ import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Crypto.Keys
 import           Network.Haskoin.Script.Parser
 import           Network.Haskoin.Util
-import           Text.Read                     (lexP, parens, pfail, readPrec)
-import qualified Text.Read                     as Read
 
 {- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
 
@@ -399,7 +397,7 @@ deriveAddrs k =
 -- public, soft derivation.
 deriveMSAddr :: [XPubKey] -> Int -> KeyIndex -> (Address, RedeemScript)
 deriveMSAddr keys m i =
-    (scriptAddr rdm, rdm)
+    (p2shAddr rdm, rdm)
   where
     rdm = sortMulSig $ PayMulSig k m
     k   = map (toPubKeyG . xPubKey . flip pubSubKey i) keys

@@ -368,7 +368,7 @@ data JsonAddr = JsonAddr
     -- Optional Balance
     , jsonAddrBalance :: !(Maybe BalanceInfo)
     }
-    deriving (Eq, Show, Read)
+    deriving (Eq, Show)
 
 $(deriveJSON (dropFieldLabel 8) ''JsonAddr)
 

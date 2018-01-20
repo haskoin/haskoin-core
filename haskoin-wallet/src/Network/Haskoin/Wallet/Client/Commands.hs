@@ -762,7 +762,7 @@ encodeScriptInputJSON si = case si of
             [ "scriptinput" .= encodeScriptInputJSON (RegularInput s)
             , "redeem" .= encodeScriptOutputJSON r
             , "raw-redeem" .= (cs $ encodeHex (encodeOutputBS r) :: T.Text)
-            , "sender-address" .= (cs $ addrToBase58 (scriptAddr r) :: T.Text)
+            , "sender-address" .= (cs $ addrToBase58 (p2shAddr r) :: T.Text)
             ]
         ]
 

@@ -140,16 +140,10 @@ addressToScriptBS = encode . addressToScript
 
 -- | Encode an output script as an address if it has such representation.
 scriptToAddress :: Script -> Maybe Address
-scriptToAddress s =
-    case decodeOutput s of
-        Left _ -> Nothing
-        Right output -> eitherToMaybe (outputAddress output)
+scriptToAddress = eitherToMaybe . (outputAddress <=< decodeOutput)
 
 scriptToAddressBS :: ByteString -> Maybe Address
-scriptToAddressBS s =
-    case decodeOutputBS s of
-        Left _ -> Nothing
-        Right output -> eitherToMaybe (outputAddress output)
+scriptToAddressBS = eitherToMaybe . (outputAddress <=< decodeOutputBS)
 
 -- | Computes a 'Script' from a 'ScriptOutput'. The 'Script' is a list of
 -- 'ScriptOp' can can be used to build a 'Tx'.

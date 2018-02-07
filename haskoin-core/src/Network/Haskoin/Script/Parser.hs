@@ -26,11 +26,11 @@ module Network.Haskoin.Script.Parser
 , isPayPKHash
 , isPayMulSig
 , isPayScriptHash
+, isDataCarrier
 , isSpendPK
 , isSpendPKHash
 , isSpendMulSig
 , isScriptHashInput
-, isDataCarrier
 ) where
 
 import           Control.Applicative            ((<|>))

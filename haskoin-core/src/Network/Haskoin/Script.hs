@@ -29,6 +29,7 @@ module Network.Haskoin.Script
 , isPayPKHash
 , isPayMulSig
 , isPayScriptHash
+, isDataCarrier
 , p2shAddr
 , sortMulSig
 

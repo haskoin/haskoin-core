@@ -80,7 +80,7 @@ data Tx = Tx
     , txIn       :: ![TxIn]
       -- | List of transaction outputs
     , txOut      :: ![TxOut]
-      -- | The block number of timestamp at which this transaction is locked
+      -- | The block number or timestamp at which this transaction is locked
     , txLockTime :: !Word32
     } deriving (Eq)
 

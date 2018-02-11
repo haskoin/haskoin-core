@@ -20,6 +20,9 @@ database:
     testnet5:
         database: hw-wallet.sqlite3
         poolsize: 1
+    testnet3:
+        database: hw-wallet.sqlite3
+        poolsize: 1
     prodnet:
         database: hw-wallet.sqlite3
         poolsize: 1
@@ -31,6 +34,11 @@ bitcoin-full-nodes:
           port: 18555
         - host: bitcoin-testnet.bloqseeds.net
           port: 18555
+    testnet3:
+        - host: testnet-seed.bitcoin.jonasschnelli.ch
+          port: 18333
+        - host: seed.tbtc.petertodd.org
+          port: 18333
     prodnet:
         - host: seed.mainnet.b-pay.net
           port: 8333

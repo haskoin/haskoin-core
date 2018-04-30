@@ -4,24 +4,20 @@ module Network.Haskoin.Node.Peer where
 
 import           Control.Concurrent              (killThread, myThreadId,
                                                   threadDelay)
-import           Control.Concurrent.Async.Lifted (link, race, waitAnyCancel,
-                                                  waitCatch, withAsync)
 import           Control.Concurrent.STM          (STM, atomically, modifyTVar',
                                                   newTVarIO, readTVar, retry,
                                                   swapTVar)
 import           Control.Concurrent.STM.TBMChan  (TBMChan, closeTBMChan,
                                                   newTBMChan, writeTBMChan)
-import           Control.Exception               (AsyncException(ThreadKilled))
-import           Control.Exception.Lifted        (finally, fromException, throw,
-                                                  throwIO)
+import           Control.Exception               (AsyncException(ThreadKilled), throw)
 import           Control.Monad                   (forM_, forever, join, unless,
                                                   when)
+import           Control.Monad.IO.Unlift         (MonadUnliftIO)
 import           Control.Monad.Logger            (MonadLoggerIO, logDebug,
                                                   logError, logInfo, logWarn)
 import           Control.Monad.Reader            (asks)
 import           Control.Monad.State             (StateT, evalStateT, get, put)
 import           Control.Monad.Trans             (MonadIO, lift, liftIO)
-import           Control.Monad.Trans.Control     (MonadBaseControl)
 import           Data.Bits                       (testBit)
 import qualified Data.ByteString                 as BS (ByteString, append,
                                                         null)
@@ -55,6 +51,9 @@ import           Network.Haskoin.Transaction
 import           Network.Haskoin.Util
 import           Network.Socket                  (SockAddr (SockAddrInet))
 import           System.Random                   (randomIO)
+import           UnliftIO.Async                  (link, race, waitAnyCancel,
+                                                  waitCatch, withAsync)
+import           UnliftIO.Exception              (finally, fromException, throwIO)
 
 -- TODO: Move constants elsewhere ?
 minProtocolVersion :: Word32
@@ -62,7 +61,7 @@ minProtocolVersion = 70001
 
 -- Start a reconnecting peer that will idle once the connection is established
 -- and the handshake is performed.
-startPeer :: (MonadLoggerIO m, MonadBaseControl IO m)
+startPeer :: (MonadLoggerIO m, MonadUnliftIO m)
           => PeerHost
           -> NodeT m ()
 startPeer ph@PeerHost{..} = do
@@ -75,7 +74,7 @@ startPeer ph@PeerHost{..} = do
 -- reconnections are performed using an expoential backoff time. This function
 -- blocks until the peer cannot reconnect (either the peer is banned or we
 -- already have a peer connected to the given peer host).
-startReconnectPeer :: (MonadLoggerIO m, MonadBaseControl IO m)
+startReconnectPeer :: (MonadLoggerIO m, MonadUnliftIO m)
                    => PeerHost
                    -> NodeT m ()
 startReconnectPeer ph@PeerHost{..} = do
@@ -123,7 +122,7 @@ startReconnectPeer ph@PeerHost{..} = do
 -- Start a peer with with the given peer host/peer id and initiate the
 -- network protocol handshake. This function will block until the peer
 -- connection is closed or an exception is raised.
-startPeerPid :: (MonadLoggerIO m, MonadBaseControl IO m)
+startPeerPid :: (MonadLoggerIO m, MonadUnliftIO m)
              => PeerId
              -> PeerHost
              -> NodeT m ()
@@ -245,7 +244,7 @@ isPeerHostConnected ph = do
 -- message queue for processing. If we receive invalid messages, this function
 -- will also notify the PeerManager about a misbehaving remote host.
 decodeMessage
-    :: (MonadLoggerIO m, MonadBaseControl IO m)
+    :: MonadLoggerIO m
     => PeerId
     -> PeerHost
     -> Sink BS.ByteString (StateT (Maybe (MerkleBlock, MerkleTxs)) (NodeT m)) ()
@@ -272,7 +271,7 @@ decodeMessage pid ph = do
         decodeMessage pid ph
 
 -- Handle a message from a peer
-processMessage :: (MonadLoggerIO m, MonadBaseControl IO m)
+processMessage :: MonadLoggerIO m
                => PeerId
                -> PeerHost
                -> Message
@@ -384,7 +383,7 @@ processMessage pid ph msg = checkMerkleEnd >> case msg of
     isTxMsg (MTx _) = True
     isTxMsg _       = False
 
-processInvMessage :: (MonadLoggerIO m, MonadBaseControl IO m)
+processInvMessage :: MonadLoggerIO m
                   => PeerId
                   -> PeerHost
                   -> Inv
@@ -425,7 +424,7 @@ encodeMessage :: MonadLoggerIO m
               => Conduit Message (NodeT m) BS.ByteString
 encodeMessage = awaitForever $ yield . encode
 
-peerPing :: (MonadLoggerIO m, MonadBaseControl IO m)
+peerPing :: (MonadLoggerIO m, MonadUnliftIO m)
          => PeerId
          -> PeerHost
          -> NodeT m ()
@@ -481,7 +480,7 @@ peerPing pid ph = forever $ do
 isBloomDisabled :: Version -> Bool
 isBloomDisabled ver = version ver >= 70011 && not (services ver `testBit` 2)
 
-peerHandshake :: (MonadLoggerIO m, MonadBaseControl IO m)
+peerHandshake :: MonadLoggerIO m
               => PeerId
               -> PeerHost
               -> TBMChan Message
@@ -698,7 +697,7 @@ misbehaving pid ph f msg = do
 
 {- Utilities -}
 
-raceTimeout :: (MonadIO m, MonadBaseControl IO m)
+raceTimeout :: (MonadIO m, MonadUnliftIO m)
             => Int
                -- ^ Timeout value in seconds
             -> m a

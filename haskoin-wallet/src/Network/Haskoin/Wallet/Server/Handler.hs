@@ -9,13 +9,12 @@ import           Control.Concurrent.STM.TBMChan     (TBMChan)
 import           Control.Exception                  (SomeException (..),
                                                      tryJust)
 import           Control.Monad                      (liftM, forM, unless, when)
-import           Control.Monad.Base                 (MonadBase)
 import           Control.Monad.Catch                (MonadThrow, throwM)
+import           Control.Monad.IO.Unlift            (MonadUnliftIO)
 import           Control.Monad.Logger               (MonadLoggerIO, logError,
                                                      logInfo)
 import           Control.Monad.Reader               (ReaderT, asks, runReaderT)
 import           Control.Monad.Trans                (MonadIO, lift, liftIO)
-import           Control.Monad.Trans.Control        (MonadBaseControl)
 import           Control.Monad.Trans.Resource       (MonadResource)
 import           Data.Aeson                         (Value (..), toJSON)
 import qualified Data.Map.Strict                    as M (elems, fromList,
@@ -56,10 +55,10 @@ data HandlerSession = HandlerSession
 runHandler :: Monad m => Handler m a -> HandlerSession -> m a
 runHandler = runReaderT
 
-runDB :: MonadBaseControl IO m => SqlPersistT m a -> Handler m a
+runDB :: MonadUnliftIO m => SqlPersistT m a -> Handler m a
 runDB action = asks handlerPool >>= lift . runDBPool action
 
-runDBPool :: MonadBaseControl IO m => SqlPersistT m a -> ConnectionPool -> m a
+runDBPool :: MonadUnliftIO m => SqlPersistT m a -> ConnectionPool -> m a
 runDBPool = runSqlPool
 
 tryDBPool :: MonadLoggerIO m => ConnectionPool -> SqlPersistM a -> m (Maybe a)
@@ -82,7 +81,7 @@ runNode action = do
 
 {- Server Handlers -}
 
-accountReq :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+accountReq :: (MonadLoggerIO m, MonadUnliftIO m, MonadThrow m)
            => AccountName -> Handler m (Maybe Value)
 accountReq name = do
     $(logInfo) $ format $ unlines
@@ -93,8 +92,7 @@ accountReq name = do
     return $ Just $ toJSON $ toJsonAccount Nothing acc
 
 accountsReq :: ( MonadLoggerIO m
-               , MonadBaseControl IO m
-               , MonadBase IO m
+               , MonadUnliftIO m
                , MonadThrow m
                , MonadResource m
                )
@@ -111,7 +109,7 @@ accountsReq lq@ListRequest{..} = do
     return $ Just $ toJSON $ ListResult (map (toJsonAccount Nothing) accs) cnt
 
 newAccountReq
-    :: (MonadResource m, MonadThrow m, MonadLoggerIO m, MonadBaseControl IO m)
+    :: (MonadResource m, MonadThrow m, MonadLoggerIO m, MonadUnliftIO m)
     => NewAccount -> Handler m (Maybe Value)
 newAccountReq newAcc@NewAccount{..} = do
     $(logInfo) $ format $ unlines
@@ -125,7 +123,7 @@ newAccountReq newAcc@NewAccount{..} = do
     return $ Just $ toJSON $ toJsonAccount mnemonicM newAcc'
 
 renameAccountReq
-    :: (MonadResource m, MonadThrow m, MonadLoggerIO m, MonadBaseControl IO m)
+    :: (MonadResource m, MonadThrow m, MonadLoggerIO m, MonadUnliftIO m)
     => AccountName -> AccountName -> Handler m (Maybe Value)
 renameAccountReq oldName newName = do
     $(logInfo) $ format $ unlines
@@ -139,7 +137,7 @@ renameAccountReq oldName newName = do
     return $ Just $ toJSON $ toJsonAccount Nothing newAcc
 
 addPubKeysReq
-    :: (MonadResource m, MonadThrow m, MonadLoggerIO m, MonadBaseControl IO m)
+    :: (MonadResource m, MonadThrow m, MonadLoggerIO m, MonadUnliftIO m)
     => AccountName -> [XPubKey] -> Handler m (Maybe Value)
 addPubKeysReq name keys = do
     $(logInfo) $ format $ unlines
@@ -155,8 +153,7 @@ addPubKeysReq name keys = do
     return $ Just $ toJSON $ toJsonAccount Nothing newAcc
 
 setAccountGapReq :: ( MonadLoggerIO m
-                    , MonadBaseControl IO m
-                    , MonadBase IO m
+                    , MonadUnliftIO m
                     , MonadThrow m
                     , MonadResource m
                     )
@@ -176,7 +173,7 @@ setAccountGapReq name gap = do
     whenOnline updateNodeFilter
     return $ Just $ toJSON $ toJsonAccount Nothing newAcc
 
-addrsReq :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+addrsReq :: (MonadLoggerIO m, MonadUnliftIO m, MonadThrow m)
          => AccountName
          -> AddressType
          -> Word32
@@ -215,7 +212,7 @@ addrsReq name addrType minConf offline listReq = do
         in  M.intersectionWith (,) (M.fromList $ map f addrs) (M.fromList bals)
 
 unusedAddrsReq
-    :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+    :: (MonadLoggerIO m, MonadUnliftIO m, MonadThrow m)
     => AccountName -> AddressType -> ListRequest -> Handler m (Maybe Value)
 unusedAddrsReq name addrType lq@ListRequest{..} = do
     $(logInfo) $ format $ unlines
@@ -233,7 +230,7 @@ unusedAddrsReq name addrType lq@ListRequest{..} = do
 
     return $ Just $ toJSON $ ListResult (map (`toJsonAddr` Nothing) addrs) cnt
 
-addressReq :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+addressReq :: (MonadLoggerIO m, MonadUnliftIO m, MonadThrow m)
            => AccountName -> KeyIndex -> AddressType
            -> Word32 -> Bool
            -> Handler m (Maybe Value)
@@ -255,7 +252,7 @@ addressReq name i addrType minConf offline = do
     return $ Just $ toJSON $ toJsonAddr addr balM
 
 -- TODO: How can we generalize this? Perhaps as part of wallet searching?
-pubKeyIndexReq :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+pubKeyIndexReq :: (MonadLoggerIO m, MonadUnliftIO m, MonadThrow m)
                => AccountName
                -> PubKeyC
                -> AddressType
@@ -273,7 +270,7 @@ pubKeyIndexReq name key addrType = do
     -- TODO: We don't return the balance for now. Maybe add it? Or not?
     return $ Just $ toJSON $ map (`toJsonAddr` Nothing) addrLst
 
-setAddrLabelReq :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+setAddrLabelReq :: (MonadLoggerIO m, MonadUnliftIO m, MonadThrow m)
                 => AccountName
                 -> KeyIndex
                 -> AddressType
@@ -294,9 +291,8 @@ setAddrLabelReq name i addrType label = do
     return $ Just $ toJSON $ toJsonAddr newAddr Nothing
 
 generateAddrsReq :: ( MonadLoggerIO m
-                    , MonadBaseControl IO m
+                    , MonadUnliftIO m
                     , MonadThrow m
-                    , MonadBase IO m
                     , MonadResource m
                     )
                  => AccountName
@@ -320,7 +316,7 @@ generateAddrsReq name i addrType = do
     return $ Just $ toJSON cnt
 
 -- This is a generic function (see specifics below)
-getTxs :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+getTxs :: (MonadLoggerIO m, MonadUnliftIO m, MonadThrow m)
        => AccountName
        -> ListRequest
        -> String
@@ -345,19 +341,19 @@ getTxs name lq@ListRequest{..} cmd f = do
   where
     g bb = toJsonTx name (Just bb)
 
-txsReq :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+txsReq :: (MonadLoggerIO m, MonadUnliftIO m, MonadThrow m)
        => AccountName -> ListRequest -> Handler m (Maybe Value)
 txsReq name lq = getTxs name lq "Txs" (txs Nothing)
 
-pendingTxsReq :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+pendingTxsReq :: (MonadLoggerIO m, MonadUnliftIO m, MonadThrow m)
               => AccountName -> ListRequest -> Handler m (Maybe Value)
 pendingTxsReq name lq = getTxs name lq "PendingTxs" (txs (Just TxPending))
 
-deadTxsReq :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+deadTxsReq :: (MonadLoggerIO m, MonadUnliftIO m, MonadThrow m)
          => AccountName -> ListRequest -> Handler m (Maybe Value)
 deadTxsReq name lq = getTxs name lq "DeadTxs" (txs (Just TxDead))
 
-addrTxsReq :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+addrTxsReq :: (MonadLoggerIO m, MonadUnliftIO m, MonadThrow m)
            => AccountName -> KeyIndex -> AddressType -> ListRequest
            -> Handler m (Maybe Value)
 addrTxsReq name index addrType lq@ListRequest{..} = do
@@ -382,7 +378,7 @@ addrTxsReq name index addrType lq@ListRequest{..} = do
   where
     f bb = toJsonTx name (Just bb)
 
-createTxReq :: ( MonadLoggerIO m, MonadBaseControl IO m, MonadBase IO m
+createTxReq :: ( MonadLoggerIO m, MonadUnliftIO m
                , MonadThrow m, MonadResource m
                )
             => AccountName
@@ -416,7 +412,7 @@ createTxReq name (CreateTx rs fee minconf rcptFee sign masterM) = do
             runNode $ broadcastTxs [walletTxHash txRes]
     return $ Just $ toJSON $ toJsonTx name (Just bb) txRes
 
-importTxReq :: ( MonadLoggerIO m, MonadBaseControl IO m, MonadBase IO m
+importTxReq :: ( MonadLoggerIO m, MonadUnliftIO m
                , MonadThrow m, MonadResource m
                )
             => AccountName -> Tx -> Handler m (Maybe Value)
@@ -445,7 +441,7 @@ importTxReq name tx = do
             runNode $ broadcastTxs [walletTxHash txRes]
     return $ Just $ toJSON $ toJsonTx name (Just bb) txRes
 
-signTxReq :: ( MonadLoggerIO m, MonadBaseControl IO m, MonadBase IO m
+signTxReq :: ( MonadLoggerIO m, MonadUnliftIO m
              , MonadThrow m, MonadResource m
              )
           => AccountName -> SignTx -> Handler m (Maybe Value)
@@ -474,7 +470,7 @@ signTxReq name (SignTx txid masterM) = do
             runNode $ broadcastTxs [walletTxHash txRes]
     return $ Just $ toJSON $ toJsonTx name (Just bb) txRes
 
-txReq :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+txReq :: (MonadLoggerIO m, MonadUnliftIO m, MonadThrow m)
       => AccountName -> TxHash -> Handler m (Maybe Value)
 txReq name txid = do
     $(logInfo) $ format $ unlines
@@ -490,7 +486,7 @@ txReq name txid = do
     return $ Just $ toJSON $ toJsonTx name (Just bb) res
 
 -- TODO: This should be limited to a single account
-deleteTxReq :: (MonadLoggerIO m, MonadThrow m, MonadBaseControl IO m)
+deleteTxReq :: (MonadLoggerIO m, MonadThrow m, MonadUnliftIO m)
             => TxHash -> Handler m (Maybe Value)
 deleteTxReq txid = do
     $(logInfo) $ format $ unlines
@@ -500,8 +496,8 @@ deleteTxReq txid = do
     runDB $ deleteTx txid
     return Nothing
 
-offlineTxReq :: ( MonadLoggerIO m, MonadBaseControl IO m
-                , MonadBase IO m, MonadThrow m, MonadResource m
+offlineTxReq :: ( MonadLoggerIO m, MonadUnliftIO m
+                , MonadThrow m, MonadResource m
                 )
              => AccountName -> TxHash -> Handler m (Maybe Value)
 offlineTxReq accountName txid = do
@@ -515,8 +511,8 @@ offlineTxReq accountName txid = do
         getOfflineTxData ai txid
     return $ Just $ toJSON dat
 
-signOfflineTxReq :: ( MonadLoggerIO m, MonadBaseControl IO m
-                    , MonadBase IO m, MonadThrow m, MonadResource m
+signOfflineTxReq :: ( MonadLoggerIO m, MonadUnliftIO m
+                    , MonadThrow m, MonadResource m
                     )
                  => AccountName
                  -> Maybe XPrvKey
@@ -535,7 +531,7 @@ signOfflineTxReq accountName masterM tx signData = do
         toDat CoinSignData{..} = (coinSignScriptOutput, coinSignOutPoint)
     return $ Just $ toJSON $ TxCompleteRes signedTx complete
 
-balanceReq :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+balanceReq :: (MonadLoggerIO m, MonadUnliftIO m, MonadThrow m)
            => AccountName -> Word32 -> Bool
            -> Handler m (Maybe Value)
 balanceReq name minconf offline = do
@@ -550,7 +546,7 @@ balanceReq name minconf offline = do
         accountBalance ai minconf offline
     return $ Just $ toJSON bal
 
-nodeActionReq :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m)
+nodeActionReq :: (MonadLoggerIO m, MonadUnliftIO m, MonadThrow m)
               => NodeAction -> Handler m (Maybe Value)
 nodeActionReq action = case action of
     NodeActionRescan tM -> do
@@ -575,7 +571,7 @@ nodeActionReq action = case action of
     err = throwM $ WalletException
         "No keys have been generated in the wallet"
 
-syncReq :: (MonadThrow m, MonadLoggerIO m, MonadBaseControl IO m)
+syncReq :: (MonadThrow m, MonadLoggerIO m, MonadUnliftIO m)
         => AccountName
         -> Either BlockHeight BlockHash
         -> ListRequest
@@ -609,7 +605,7 @@ syncReq acc blockE lq@ListRequest{..} = runDB $ do
         Left  e -> show e
         Right b -> cs $ blockHashToHex b
 
-blockInfoReq :: (MonadThrow m, MonadLoggerIO m, MonadBaseControl IO m)
+blockInfoReq :: (MonadThrow m, MonadLoggerIO m, MonadUnliftIO m)
              => [BlockHash] -> Handler m (Maybe Value)
 blockInfoReq headerLst = do
     $(logInfo) $ format "Received BlockInfo request"
@@ -632,7 +628,7 @@ whenOnline handler = do
     when (mode == SPVOnline) handler
 
 updateNodeFilter
-    :: (MonadBaseControl IO m, MonadLoggerIO m, MonadThrow m)
+    :: (MonadUnliftIO m, MonadLoggerIO m, MonadThrow m)
     => Handler m ()
 updateNodeFilter = do
     $(logInfo) $ format "Sending a new bloom filter"

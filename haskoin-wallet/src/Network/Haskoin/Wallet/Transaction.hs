@@ -42,7 +42,6 @@ import           Control.Concurrent.STM          (atomically)
 import           Control.Concurrent.STM.TBMChan  (TBMChan, writeTBMChan)
 import           Control.Exception               (throw, throwIO)
 import           Control.Monad                   (forM, forM_, unless, when)
-import           Control.Monad.Base              (MonadBase)
 import           Control.Monad.Catch             (MonadThrow, throwM)
 import           Control.Monad.Trans             (MonadIO, liftIO)
 import           Control.Monad.Trans.Resource    (MonadResource)
@@ -258,7 +257,7 @@ getPendingTxs i =
 -- spent, then the transaction will be imported as a network transaction.
 -- Otherwise, the transaction will be imported into the local account as an
 -- offline transaction.
-importTx :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+importTx :: (MonadIO m, MonadThrow m, MonadResource m)
          => Tx               -- ^ Transaction to import
          -> Maybe (TBMChan Notif)
          -> AccountId        -- ^ Account ID
@@ -267,7 +266,7 @@ importTx :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
 importTx tx notifChanM ai =
     importTx' tx notifChanM ai =<< getInCoins tx (Just ai)
 
-importTx' :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+importTx' :: (MonadIO m, MonadThrow m, MonadResource m)
           => Tx                   -- ^ Transaction to import
           -> Maybe (TBMChan Notif)
           -> AccountId            -- ^ Account ID
@@ -358,7 +357,7 @@ mergeNoSigHashTxs ai tx inCoins = do
 -- have no idea if they are valid or not. Transactions are broadcast from the
 -- transaction creation function and only if the transaction is complete.
 importOfflineTx
-    :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+    :: (MonadIO m, MonadThrow m, MonadResource m)
     => Tx
     -> Maybe (TBMChan Notif)
     -> AccountId
@@ -408,7 +407,7 @@ importOfflineTx tx notifChanM ai inCoins spendingTxs = do
 --
 -- This function returns the network confidence of the imported transaction.
 importNetTx
-    :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+    :: (MonadIO m, MonadThrow m, MonadResource m)
     => Tx -- Network transaction to import
     -> Maybe (TBMChan Notif)
     -> SqlPersistT m ([WalletTx], [WalletAddr])
@@ -1001,7 +1000,7 @@ reviveTx notifChanM tx = do
 
 -- | Create a transaction sending some coins to a list of recipient addresses.
 createWalletTx
-    :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+    :: (MonadIO m, MonadThrow m, MonadResource m)
         => Entity Account        -- ^ Account Entity
         -> Maybe (TBMChan Notif) -- ^ Notification channel
         -> Maybe XPrvKey         -- ^ Key if not provided by account
@@ -1040,7 +1039,7 @@ toCoinSignData (InCoinData (Entity _ c) t x) =
 -- the unsigned transaction together with the input coins that have been
 -- selected or spending.
 buildUnsignedTx
-    :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+    :: (MonadIO m, MonadThrow m, MonadResource m)
     => Entity Account
     -> [(Address, Word64)]
     -> Word64
@@ -1119,7 +1118,7 @@ buildUnsignedTx accE@(Entity ai acc) origDests origFee minConf rcptFee = do
             _ -> liftIO . throwIO $ WalletException
                 "No unused addresses available"
 
-signAccountTx :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+signAccountTx :: (MonadIO m, MonadThrow m, MonadResource m)
               => Entity Account
               -> Maybe (TBMChan Notif)
               -> Maybe XPrvKey
@@ -1131,7 +1130,7 @@ signAccountTx (Entity ai acc) notifChanM masterM txid = do
     importTx' signedTx notifChanM ai inCoins
 
 getOfflineTxData
-    :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+    :: (MonadIO m, MonadThrow m, MonadResource m)
     => AccountId
     -> TxHash
     -> SqlPersistT m (OfflineTxData, [InCoinData])
@@ -1184,7 +1183,7 @@ signOfflineTx acc masterM tx coinSignData
 -- number of confirmations. Coinbase coins can only be spent after 100
 -- confirmations.
 spendableCoins
-    :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+    :: (MonadIO m, MonadThrow m, MonadResource m)
     => AccountId                   -- ^ Account key
     -> Word32                      -- ^ Minimum confirmations
     -> (    SqlExpr (Entity WalletCoin)

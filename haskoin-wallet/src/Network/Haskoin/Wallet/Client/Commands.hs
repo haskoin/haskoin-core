@@ -42,7 +42,7 @@ module Network.Haskoin.Wallet.Client.Commands
 )
 where
 
-import           Control.Concurrent.Async.Lifted          (async, wait)
+import           Control.Concurrent.Async                (async, wait)
 import           Control.Monad
 import qualified Control.Monad.Reader                     as R
 import           Control.Monad.Trans                      (liftIO)
@@ -666,14 +666,14 @@ sendZmq req = do
     when (configVerbose cfg) $ liftIO $
         B8.hPutStrLn stderr $ "Outgoing JSON: " `mappend` msg
     -- TODO: If I do this in the same thread I have to ^C twice to exit
-    a <- async $ liftIO $ withContext $ \ctx ->
+    a <- liftIO $ async $ withContext $ \ctx ->
         withSocket ctx Req $ \sock -> do
             setLinger (restrict (0 :: Int)) sock
             setupAuth cfg sock
             connect sock (configConnect cfg)
             send sock [] (cs $ encode req)
             eitherDecode . cs <$> receive sock
-    wait a
+    liftIO $ wait a
 
 setupAuth :: (SocketType t)
           => Config

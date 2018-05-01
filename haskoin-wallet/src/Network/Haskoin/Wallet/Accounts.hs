@@ -43,7 +43,6 @@ module Network.Haskoin.Wallet.Accounts
 import           Control.Applicative             ((<|>))
 import           Control.Exception               (throw)
 import           Control.Monad                   (unless, void, when)
-import           Control.Monad.Base              (MonadBase)
 import           Control.Monad.Catch             (MonadThrow, throwM)
 import           Control.Monad.Trans             (MonadIO, liftIO)
 import           Control.Monad.Trans.Resource    (MonadResource)
@@ -123,7 +122,7 @@ rootToAccKeys xKey pubs =
     is = nub $ map xPubChild pubs
 
 -- | Fetch all accounts
-accounts :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+accounts :: (MonadIO m, MonadResource m)
          => ListRequest -> SqlPersistT m ([Account], Word32)
 accounts ListRequest{..} = do
     cntRes <- select $ from $ \acc ->
@@ -140,7 +139,7 @@ accounts ListRequest{..} = do
 
     return (res, cnt)
 
-initGap :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+initGap :: (MonadIO m, MonadThrow m, MonadResource m)
         => Entity Account -> SqlPersistT m ()
 initGap accE = do
     void $ createAddrs accE AddressExternal 20
@@ -163,7 +162,7 @@ mnemonicToPrvKey pass ms = case mnemonicToSeed pass ms of
 
 -- |Create a new account using the given mnemonic or keys. If no mnemonic,
 -- master key or public keys are provided, a new mnemonic will be generated.
-newAccount :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+newAccount :: (MonadIO m, MonadThrow m, MonadResource m)
            => NewAccount
            -> SqlPersistT m (Entity Account, Maybe Mnemonic)
 newAccount NewAccount{..} = do
@@ -230,7 +229,7 @@ newAccount NewAccount{..} = do
         -- The account already exists
         Nothing -> throwM $ WalletException "Account already exists"
 
-renameAccount :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+renameAccount :: (MonadIO m, MonadResource m)
               => Entity Account
               -> AccountName
               -> SqlPersistT m Account
@@ -240,7 +239,7 @@ renameAccount (Entity ai acc) name = do
 
 -- | Add new thirdparty keys to a multisignature account. This function can
 -- fail if the multisignature account already has all required keys.
-addAccountKeys :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+addAccountKeys :: (MonadIO m, MonadThrow m, MonadResource m)
                => Entity Account        -- ^ Account Entity
                -> [XPubKey]             -- ^ Thirdparty public keys to add
                -> SqlPersistT m Account -- ^ Account information
@@ -313,12 +312,12 @@ getAddress accE@(Entity ai _) addrType index = do
 
 -- | All addresses in the wallet, including hidden gap addresses. This is useful
 -- for building a bloom filter.
-addressesAll :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+addressesAll :: (MonadIO m, MonadResource m)
              => SqlPersistT m [WalletAddr]
 addressesAll = fmap (map entityVal) $ select $ from return
 
 -- | All addresses in one account excluding hidden gap.
-addresses :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+addresses :: (MonadIO m, MonadResource m)
           => Entity Account             -- ^ Account Entity
           -> AddressType                -- ^ Address Type
           -> SqlPersistT m [WalletAddr] -- ^ Addresses
@@ -406,7 +405,7 @@ unusedAddresses (Entity ai acc) addrType ListRequest{..} = do
             | otherwise   = min lim' (cnt - off cnt - gap)
     order = if listReverse then desc else asc
 
-lookupByPubKey :: (MonadIO m, MonadThrow m)
+lookupByPubKey :: (MonadIO m)
                => Entity Account         -- ^ Account Entity
                -> PubKeyC                -- ^ Pubkey of interest
                -> AddressType            -- ^ Address type
@@ -461,7 +460,7 @@ addressPrvKey accE@(Entity ai acc) masterM index addrType = do
 -- addresses in an account, disregarding visible and hidden address gaps. You
 -- should use the function `setAccountGap` if you want to control the gap of an
 -- account instead.
-createAddrs :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+createAddrs :: (MonadIO m, MonadThrow m, MonadResource m)
             => Entity Account
             -> AddressType
             -> Word32
@@ -518,7 +517,7 @@ createAddrs (Entity ai acc) addrType n
                 ]
 
 -- | Generate all the addresses up to certain index.
-generateAddrs :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+generateAddrs :: (MonadIO m, MonadThrow m, MonadResource m)
               => Entity Account
               -> AddressType
               -> KeyIndex
@@ -534,7 +533,7 @@ generateAddrs accE addrType genIndex = do
 
 -- | Use an address and make sure we have enough gap addresses after it.
 -- Returns the new addresses that have been created.
-useAddress :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+useAddress :: (MonadIO m, MonadThrow m, MonadResource m)
            => WalletAddr -> SqlPersistT m [WalletAddr]
 useAddress WalletAddr{..} = do
     res <- select $ from $ \x -> do
@@ -558,7 +557,7 @@ useAddress WalletAddr{..} = do
 -- | Set the address gap of an account to a new value. This will create new
 -- internal and external addresses as required. The gap can only be increased,
 -- not decreased in size.
-setAccountGap :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+setAccountGap :: (MonadIO m, MonadThrow m, MonadResource m)
               => Entity Account -- ^ Account Entity
               -> Word32         -- ^ New gap value
               -> SqlPersistT m (Entity Account)
@@ -595,7 +594,7 @@ firstAddrTime = do
 
 -- | Add the given addresses to the bloom filter. If the number of elements
 -- becomes too large, a new bloom filter is computed from scratch.
-incrementFilter :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+incrementFilter :: (MonadIO m, MonadThrow m, MonadResource m)
                 => [WalletAddr]
                 -> SqlPersistT m ()
 incrementFilter addrs = do
@@ -606,7 +605,7 @@ incrementFilter addrs = do
         else setBloomFilter (addToFilter bloom addrs) newElems
 
 -- | Generate a new bloom filter from the data in the database
-computeNewFilter :: (MonadIO m, MonadThrow m, MonadBase IO m, MonadResource m)
+computeNewFilter :: (MonadIO m, MonadThrow m, MonadResource m)
                  => SqlPersistT m ()
 computeNewFilter = do
     (_, _, fpRate) <- getBloomFilter

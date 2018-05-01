@@ -42,7 +42,7 @@ module Network.Haskoin.Wallet.Client.Commands
 )
 where
 
-import           Control.Concurrent.Async.Lifted          (async, wait)
+import           Control.Concurrent.Async                (async, wait)
 import           Control.Monad
 import qualified Control.Monad.Reader                     as R
 import           Control.Monad.Trans                      (liftIO)
@@ -643,7 +643,7 @@ parseResponse resE = case resE of
     Left err                   -> error err
 
 handleResponse
-    :: (FromJSON a, ToJSON a)
+    :: ToJSON a
     => Either String (WalletResponse a)
     -> (a -> Handler ())
     -> Handler ()
@@ -657,7 +657,7 @@ handleResponse resE handle = case parseResponse resE of
         OutputYAML   -> liftIO . formatStr $ cs $ YAML.encode a
         OutputNormal -> handle a
 
-sendZmq :: (FromJSON a, ToJSON a)
+sendZmq :: FromJSON a
         => WalletRequest
         -> Handler (Either String (WalletResponse a))
 sendZmq req = do
@@ -666,17 +666,16 @@ sendZmq req = do
     when (configVerbose cfg) $ liftIO $
         B8.hPutStrLn stderr $ "Outgoing JSON: " `mappend` msg
     -- TODO: If I do this in the same thread I have to ^C twice to exit
-    a <- async $ liftIO $ withContext $ \ctx ->
+    a <- liftIO $ async $ withContext $ \ctx ->
         withSocket ctx Req $ \sock -> do
             setLinger (restrict (0 :: Int)) sock
             setupAuth cfg sock
             connect sock (configConnect cfg)
             send sock [] (cs $ encode req)
             eitherDecode . cs <$> receive sock
-    wait a
+    liftIO $ wait a
 
-setupAuth :: (SocketType t)
-          => Config
+setupAuth :: Config
           -> Socket t
           -> IO ()
 setupAuth cfg sock = do

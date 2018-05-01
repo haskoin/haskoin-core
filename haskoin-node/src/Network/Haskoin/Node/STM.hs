@@ -13,18 +13,17 @@ import           Control.Concurrent.STM          (STM, TMVar, TVar, atomically,
                                                   takeTMVar, tryPutTMVar,
                                                   tryReadTMVar, writeTVar)
 import           Control.Concurrent.STM.Lock     (Lock)
-import qualified Control.Concurrent.STM.Lock     as Lock (new)
+import qualified Control.Concurrent.STM.Lock     as Lock (new, with)
 import           Control.Concurrent.STM.TBMChan  (TBMChan, closeTBMChan,
                                                   newTBMChan)
 import           Control.DeepSeq                 (NFData (..))
-import           Control.Exception.Lifted        (Exception, SomeException,
-                                                  catch, fromException, throw)
+import           Control.Exception               (throw)
 import           Control.Monad                   ((<=<))
+import           Control.Monad.IO.Unlift         (MonadUnliftIO, withRunInIO)
 import           Control.Monad.Logger            (MonadLoggerIO, logDebug)
 import           Control.Monad.Reader            (ReaderT, ask, asks,
                                                   runReaderT)
 import           Control.Monad.Trans             (MonadIO, lift, liftIO)
-import           Control.Monad.Trans.Control     (MonadBaseControl)
 import           Data.Aeson.TH                   (deriveJSON)
 import qualified Data.Map.Strict                 as M (Map, delete, empty,
                                                        insert, lookup)
@@ -41,6 +40,8 @@ import           Network.Haskoin.Network
 import           Network.Haskoin.Node.HeaderTree
 import           Network.Haskoin.Transaction
 import           Network.Haskoin.Util
+import           UnliftIO.Exception              (Exception, SomeException,
+                                                  catch, fromException)
 
 {- Type aliases -}
 
@@ -55,17 +56,17 @@ newtype ShowPeerId = ShowPeerId { getShowPeerId :: PeerId }
 instance Show ShowPeerId where
     show = show . hashUnique . getShowPeerId
 
-runSql :: (MonadBaseControl IO m)
+runSql :: MonadUnliftIO m
        => SqlPersistT m a
        -> Either SqlBackend ConnectionPool
        -> m a
 runSql f (Left  conn) = runSqlConn f conn
 runSql f (Right pool) = runSqlPool f pool
 
-runSqlNodeT :: (MonadBaseControl IO m) => SqlPersistT m a -> NodeT m a
+runSqlNodeT :: MonadUnliftIO m => SqlPersistT m a -> NodeT m a
 runSqlNodeT f = asks sharedSqlBackend >>= lift . runSql f
 
-getNodeState :: (MonadLoggerIO m, MonadBaseControl IO m)
+getNodeState :: (MonadLoggerIO m, MonadUnliftIO m)
              => Either SqlBackend ConnectionPool
              -> m SharedNodeState
 getNodeState sharedSqlBackend = do
@@ -94,7 +95,7 @@ getNodeState sharedSqlBackend = do
 runNodeT :: Monad m => NodeT m a -> SharedNodeState -> m a
 runNodeT = runReaderT
 
-withNodeT :: (MonadLoggerIO m, MonadBaseControl IO m)
+withNodeT :: (MonadLoggerIO m, MonadUnliftIO m)
           => NodeT m a
           -> Either SqlBackend ConnectionPool
           -> m a
@@ -358,6 +359,12 @@ orElseNodeT a b = do
     s <- ask
     lift $ runNodeT a s `orElse` runNodeT b s
 
+{- Lock Utilities -}
+
+-- | Lifted version of Lock.with
+withLock :: MonadUnliftIO m => Lock -> m b -> m b
+withLock lock a = withRunInIO $ \run -> Lock.with lock (run a)
+
 {- TVar Utilities -}
 
 readTVarS :: (SharedNodeState -> TVar a) -> NodeT STM a
@@ -402,11 +409,11 @@ instance Exception NodeException
 isNodeException :: SomeException -> Bool
 isNodeException se = isJust (fromException se :: Maybe NodeException)
 
-catchAny :: MonadBaseControl IO m
+catchAny :: MonadUnliftIO m
          => m a -> (SomeException -> m a) -> m a
 catchAny = catch
 
-catchAny_ :: MonadBaseControl IO m
+catchAny_ :: MonadUnliftIO m
           => m () -> m ()
 catchAny_ = flip catchAny $ \_ -> return ()
 

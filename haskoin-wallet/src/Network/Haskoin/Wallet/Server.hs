@@ -5,29 +5,24 @@ module Network.Haskoin.Wallet.Server
 , runSPVServerWithContext
 ) where
 
-import           Control.Concurrent.Async.Lifted       (async, link,
-                                                        waitAnyCancel)
 import           Control.Concurrent.STM                (atomically, retry)
 import           Control.Concurrent.STM.TBMChan        (TBMChan, newTBMChan,
                                                         readTBMChan)
 import           Control.DeepSeq                       (NFData (..))
-import           Control.Exception.Lifted              (ErrorCall (..),
-                                                        SomeException (..),
-                                                        catches)
-import qualified Control.Exception.Lifted              as E (Handler (..))
+import           Control.Exception                     (ErrorCall (..),
+                                                        SomeException(..))
 import           Control.Monad                         (forM_, forever, unless,
                                                         void, when)
-import           Control.Monad.Base                    (MonadBase)
 import           Control.Monad.Catch                   (MonadThrow)
 import           Control.Monad.Fix                     (fix)
+import           Control.Monad.IO.Unlift               (MonadUnliftIO,
+                                                        withRunInIO)
 import           Control.Monad.Logger                  (MonadLoggerIO,
                                                         filterLogger, logDebug,
                                                         logError, logInfo,
                                                         logWarn,
                                                         runStdoutLoggingT)
 import           Control.Monad.Trans                   (lift, liftIO)
-import           Control.Monad.Trans.Control           (MonadBaseControl,
-                                                        liftBaseOpDiscard)
 import           Control.Monad.Trans.Resource          (MonadResource,
                                                         runResourceT)
 import           Data.Aeson                            (Value, decode, encode)
@@ -71,13 +66,26 @@ import           System.Posix.Daemon                   (Redirection (ToFile),
                                                         runDetached)
 import           System.ZMQ4                           (Context, KeyFormat (..),
                                                         Pub (..), Rep (..),
-                                                        Socket, bind, receive,
+                                                        Socket, SocketType,
+                                                        bind, receive,
                                                         receiveMulti, restrict,
                                                         send, sendMulti,
                                                         setCurveSecretKey,
                                                         setCurveServer,
                                                         setLinger, withContext,
                                                         withSocket, z85Decode)
+import           UnliftIO.Exception                    (catches)
+import qualified UnliftIO.Exception               as E (Handler (..))
+import           UnliftIO.Async                        (async, link,
+                                                        waitAnyCancel)
+
+withSocketLifted
+    :: (MonadUnliftIO m, SocketType a)
+    => Context
+    -> a
+    -> (Socket a -> m b)
+    -> m b
+withSocketLifted ctx a go = withRunInIO $ \run -> withSocket ctx a $ run . go
 
 data EventSession = EventSession
     { eventBatchSize :: !Int
@@ -104,8 +112,7 @@ runSPVServer cfg = maybeDetach cfg $ -- start the server process
 --  the "inproc" ZeroMQ transport, where a shared context is
 --  required.
 runSPVServerWithContext :: ( MonadLoggerIO m
-                           , MonadBaseControl IO m
-                           , MonadBase IO m
+                           , MonadUnliftIO m
                            , MonadThrow m
                            , MonadResource m
                            )
@@ -210,7 +217,7 @@ runSPVServerWithContext cfg ctx = do
                 atomicallyNodeT $ sendBloomFilter bloom elems
         $(logDebug) "Exiting tx-import thread"
 
-initDatabase :: (MonadBaseControl IO m, MonadLoggerIO m)
+initDatabase :: (MonadUnliftIO m, MonadLoggerIO m)
              => Config -> m ConnectionPool
 initDatabase cfg = do
     -- Create a database pool
@@ -226,7 +233,7 @@ initDatabase cfg = do
     return pool
 
 merkleSync
-    :: (MonadLoggerIO m, MonadBaseControl IO m, MonadThrow m, MonadResource m)
+    :: (MonadLoggerIO m, MonadUnliftIO m, MonadThrow m, MonadResource m)
     => ConnectionPool
     -> Word32
     -> TBMChan Notif
@@ -356,14 +363,11 @@ maybeDetach cfg action =
 -- TODO: Support concurrent requests using DEALER socket when we can do
 -- concurrent MySQL requests.
 runWalletNotif :: ( MonadLoggerIO m
-                , MonadBaseControl IO m
-                , MonadBase IO m
-                , MonadThrow m
-                , MonadResource m
+                , MonadUnliftIO m
                 )
                => Context -> HandlerSession -> m ()
 runWalletNotif ctx session =
-    liftBaseOpDiscard (withSocket ctx Pub) $ \sock -> do
+    withSocketLifted ctx Pub $ \sock -> do
         liftIO $ setLinger (restrict (0 :: Int)) sock
         setupCrypto ctx sock session
         liftIO $ bind sock $ configBindNotif $ handlerConfig session
@@ -378,14 +382,13 @@ runWalletNotif ctx session =
                 in liftIO $ sendMulti sock $ typ :| [pay]
 
 runWalletCmd :: ( MonadLoggerIO m
-                , MonadBaseControl IO m
-                , MonadBase IO m
+                , MonadUnliftIO m
                 , MonadThrow m
                 , MonadResource m
                 )
              => Context -> HandlerSession -> m ()
 runWalletCmd ctx session = do
-    liftBaseOpDiscard (withSocket ctx Rep) $ \sock -> do
+    withSocketLifted ctx Rep $ \sock -> do
         liftIO $ setLinger (restrict (0 :: Int)) sock
         setupCrypto ctx sock session
         liftIO $ bind sock $ configBind $ handlerConfig session
@@ -412,7 +415,7 @@ runWalletCmd ctx session = do
             return $ ResponseError $ pack $ show exc
         ]
 
-setupCrypto :: (MonadLoggerIO m, MonadBaseControl IO m)
+setupCrypto :: (MonadLoggerIO m, MonadUnliftIO m)
             => Context -> Socket a -> HandlerSession -> m ()
 setupCrypto ctx' sock session = do
     when (isJust serverKeyM) $ liftIO $ do
@@ -428,13 +431,12 @@ setupCrypto ctx' sock session = do
     clientKeyPubM = configClientKeyPub cfg
 
 runZapAuth :: ( MonadLoggerIO m
-              , MonadBaseControl IO m
-              , MonadBase IO m
+              , MonadUnliftIO m
               )
            => Context -> ByteString -> m ()
 runZapAuth ctx k = do
     $(logDebug) $ "Starting ØMQ authentication thread"
-    liftBaseOpDiscard (withSocket ctx Rep) $ \zap -> do
+    withSocketLifted ctx Rep $ \zap -> do
         liftIO $ setLinger (restrict (0 :: Int)) zap
         liftIO $ bind zap "inproc://zeromq.zap.01"
         forever $ do
@@ -463,8 +465,7 @@ runZapAuth ctx k = do
 
 
 dispatchRequest :: ( MonadLoggerIO m
-                   , MonadBaseControl IO m
-                   , MonadBase IO m
+                   , MonadUnliftIO m
                    , MonadThrow m
                    , MonadResource m
                    )

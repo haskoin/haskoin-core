@@ -3,23 +3,20 @@
 module Network.Haskoin.Node.BlockChain where
 
 import           Control.Concurrent              (threadDelay)
-import           Control.Concurrent.Async.Lifted (link, mapConcurrently,
-                                                  waitAnyCancel, withAsync)
 import           Control.Concurrent.STM          (STM, atomically, isEmptyTMVar,
                                                   putTMVar, readTVar, retry,
                                                   takeTMVar, tryReadTMVar,
                                                   tryTakeTMVar)
 import           Control.Concurrent.STM.Lock     (locked)
-import qualified Control.Concurrent.STM.Lock     as Lock (with)
 import           Control.Concurrent.STM.TBMChan  (isEmptyTBMChan, readTBMChan)
-import           Control.Exception.Lifted        (throw)
+import           Control.Exception               (throw)
 import           Control.Monad                   (forM, forM_, forever, unless,
                                                   void, when)
+import           Control.Monad.IO.Unlift         (MonadUnliftIO)
 import           Control.Monad.Logger            (MonadLoggerIO, logDebug,
                                                   logError, logInfo, logWarn)
 import           Control.Monad.Reader            (ask, asks)
 import           Control.Monad.Trans             (MonadIO, lift, liftIO)
-import           Control.Monad.Trans.Control     (MonadBaseControl, liftBaseOp_)
 import qualified Data.ByteString.Char8           as C (unpack)
 import           Data.Conduit                    (Source, yield)
 import           Data.List                       (nub)
@@ -39,8 +36,10 @@ import           Network.Haskoin.Node.Peer
 import           Network.Haskoin.Node.STM
 import           Network.Haskoin.Transaction
 import           System.Random                   (randomIO)
+import           UnliftIO.Async                  (link, mapConcurrently,
+                                                  waitAnyCancel, withAsync)
 
-startSPVNode :: (MonadLoggerIO m, MonadBaseControl IO m)
+startSPVNode :: (MonadLoggerIO m, MonadUnliftIO m)
              => [PeerHost]
              -> BloomFilter
              -> Int
@@ -62,7 +61,7 @@ startSPVNode hosts bloom elems = do
         $(logDebug) "Exiting SPV-node thread"
 
 -- Source of all transaction broadcasts
-txSource :: (MonadLoggerIO m, MonadBaseControl IO m)
+txSource :: (MonadLoggerIO m)
          => Source (NodeT m) Tx
 txSource = do
     chan <- lift $ asks sharedTxChan
@@ -75,7 +74,7 @@ txSource = do
             yield tx >> txSource
         _ -> $(logError) "Tx channel closed unexpectedly"
 
-handleGetData :: (MonadLoggerIO m, MonadBaseControl IO m)
+handleGetData :: (MonadLoggerIO m)
               => (TxHash -> m (Maybe Tx))
               -> NodeT m ()
 handleGetData handler = forever $ do
@@ -99,7 +98,7 @@ handleGetData handler = forever $ do
                 atomicallyNodeT $ trySendMessage pid $ MTx tx
             _ -> return ()
 
-broadcastTxs :: (MonadLoggerIO m, MonadBaseControl IO m)
+broadcastTxs :: (MonadLoggerIO m)
              => [TxHash]
              -> NodeT m ()
 broadcastTxs txids = do
@@ -128,7 +127,7 @@ rescanHeight h = do
 -- Wait for the next merkle batch to be available. This function will check for
 -- rescans.
 merkleDownload
-    :: (MonadLoggerIO m, MonadBaseControl IO m)
+    :: (MonadLoggerIO m, MonadUnliftIO m)
     => BlockHash
     -> Word32
     -> NodeT m
@@ -185,11 +184,11 @@ merkleDownload walletHash batchSize = do
 
 -- | Perform some actions only when headers have been synced.
 merkleSyncedActions
-    :: (MonadLoggerIO m, MonadBaseControl IO m)
+    :: (MonadLoggerIO m, MonadUnliftIO m)
     => BlockHash -- ^ Wallet best block
     -> NodeT m ()
 merkleSyncedActions walletHash =
-    asks sharedSyncLock >>= \lock -> liftBaseOp_ (Lock.with lock) $ do
+    asks sharedSyncLock >>= \lock -> withLock lock $ do
     -- Check if we are synced
     (synced, mempool, header) <- atomicallyNodeT $ do
         header <- readTVarS sharedBestHeader
@@ -238,7 +237,7 @@ waitNewBlock bh = do
         lift retry
 
 tryMerkleDwnHeight
-    :: (MonadLoggerIO m, MonadBaseControl IO m)
+    :: (MonadLoggerIO m, MonadUnliftIO m)
     => NodeBlock
     -> Word32
     -> NodeT m (Maybe (BlockChainAction,
@@ -261,7 +260,7 @@ tryMerkleDwnHeight block batchSize = do
             return Nothing
 
 tryMerkleDwnTimestamp
-    :: (MonadLoggerIO m, MonadBaseControl IO m)
+    :: (MonadLoggerIO m, MonadUnliftIO m)
     => Timestamp
     -> Word32
     -> NodeT m (Maybe (BlockChainAction,
@@ -283,7 +282,7 @@ tryMerkleDwnTimestamp ts batchSize = do
             return Nothing
 
 tryMerkleDwnBlock
-    :: (MonadLoggerIO m, MonadBaseControl IO m)
+    :: (MonadLoggerIO m, MonadUnliftIO m)
     => NodeBlock
     -> Word32
     -> NodeT m (Maybe (BlockChainAction,
@@ -327,7 +326,7 @@ tryMerkleDwnBlock bh batchSize = do
             _ -> lift retry
 
 peerMerkleDownload
-    :: (MonadLoggerIO m, MonadBaseControl IO m)
+    :: (MonadLoggerIO m, MonadUnliftIO m)
     => PeerId
     -> PeerHost
     -> BlockChainAction
@@ -394,7 +393,7 @@ peerMerkleDownload pid ph action = do
                     "Merkle channel closed unexpectedly"
                 lift $ atomicallyNodeT $ writeTVarS sharedMerklePeer Nothing
 
-processTickles :: (MonadLoggerIO m, MonadBaseControl IO m)
+processTickles :: (MonadLoggerIO m, MonadUnliftIO m)
                => NodeT m ()
 processTickles = forever $ do
     $(logDebug) $ pack "Waiting for a block tickle ..."
@@ -451,7 +450,7 @@ syncedHeight = atomicallyNodeT $ do
     ourHeight <- nodeBlockHeight <$> readTVarS sharedBestHeader
     return (synced, ourHeight)
 
-headerSync :: (MonadLoggerIO m, MonadBaseControl IO m)
+headerSync :: (MonadLoggerIO m, MonadUnliftIO m)
            => NodeT m ()
 headerSync = do
     -- Start the header sync
@@ -492,7 +491,7 @@ headerSync = do
             -- Continue the download if we are not yet synced
             else headerSync
 
-peerHeaderSyncLimit :: (MonadLoggerIO m, MonadBaseControl IO m)
+peerHeaderSyncLimit :: (MonadLoggerIO m, MonadUnliftIO m)
                     => PeerId
                     -> PeerHost
                     -> Int
@@ -514,7 +513,7 @@ peerHeaderSyncLimit pid ph initLimit
         _ -> return False
 
 -- Sync all the headers from a given peer
-peerHeaderSyncFull :: (MonadLoggerIO m, MonadBaseControl IO m)
+peerHeaderSyncFull :: (MonadLoggerIO m, MonadUnliftIO m)
                    => PeerId
                    -> PeerHost
                    -> NodeT m ()
@@ -547,7 +546,7 @@ areHeadersSynced = do
 -- | Sync one batch of headers from the given peer. Accept the result of a
 -- previous peerHeaderSync to correctly compute block locators in the
 -- presence of side chains.
-peerHeaderSync :: (MonadLoggerIO m, MonadBaseControl IO m)
+peerHeaderSync :: (MonadLoggerIO m, MonadUnliftIO m)
                => PeerId
                -> PeerHost
                -> Maybe BlockChainAction
@@ -556,7 +555,7 @@ peerHeaderSync pid ph prevM = do
     $(logDebug) $ formatPid pid ph "Waiting for the HeaderSync lock"
     -- Aquire the header syncing lock
     lock <- asks sharedSyncLock
-    liftBaseOp_ (Lock.with lock) $ do
+    withLock lock $ do
 
         best <- atomicallyNodeT $ readTVarS sharedBestHeader
 

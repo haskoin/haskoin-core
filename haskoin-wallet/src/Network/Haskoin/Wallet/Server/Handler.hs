@@ -52,7 +52,7 @@ data HandlerSession = HandlerSession
     , handlerNotifChan :: !(TBMChan Notif)
     }
 
-runHandler :: Monad m => Handler m a -> HandlerSession -> m a
+runHandler :: Handler m a -> HandlerSession -> m a
 runHandler = runReaderT
 
 runDB :: MonadUnliftIO m => SqlPersistT m a -> Handler m a
@@ -93,7 +93,6 @@ accountReq name = do
 
 accountsReq :: ( MonadLoggerIO m
                , MonadUnliftIO m
-               , MonadThrow m
                , MonadResource m
                )
              => ListRequest
@@ -511,8 +510,9 @@ offlineTxReq accountName txid = do
         getOfflineTxData ai txid
     return $ Just $ toJSON dat
 
-signOfflineTxReq :: ( MonadLoggerIO m, MonadUnliftIO m
-                    , MonadThrow m, MonadResource m
+signOfflineTxReq :: ( MonadLoggerIO m
+                    , MonadUnliftIO m
+                    , MonadThrow m
                     )
                  => AccountName
                  -> Maybe XPrvKey

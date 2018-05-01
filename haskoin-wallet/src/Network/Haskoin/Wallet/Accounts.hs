@@ -122,7 +122,7 @@ rootToAccKeys xKey pubs =
     is = nub $ map xPubChild pubs
 
 -- | Fetch all accounts
-accounts :: (MonadIO m, MonadThrow m, MonadResource m)
+accounts :: (MonadIO m, MonadResource m)
          => ListRequest -> SqlPersistT m ([Account], Word32)
 accounts ListRequest{..} = do
     cntRes <- select $ from $ \acc ->
@@ -229,7 +229,7 @@ newAccount NewAccount{..} = do
         -- The account already exists
         Nothing -> throwM $ WalletException "Account already exists"
 
-renameAccount :: (MonadIO m, MonadThrow m, MonadResource m)
+renameAccount :: (MonadIO m, MonadResource m)
               => Entity Account
               -> AccountName
               -> SqlPersistT m Account
@@ -312,12 +312,12 @@ getAddress accE@(Entity ai _) addrType index = do
 
 -- | All addresses in the wallet, including hidden gap addresses. This is useful
 -- for building a bloom filter.
-addressesAll :: (MonadIO m, MonadThrow m, MonadResource m)
+addressesAll :: (MonadIO m, MonadResource m)
              => SqlPersistT m [WalletAddr]
 addressesAll = fmap (map entityVal) $ select $ from return
 
 -- | All addresses in one account excluding hidden gap.
-addresses :: (MonadIO m, MonadThrow m, MonadResource m)
+addresses :: (MonadIO m, MonadResource m)
           => Entity Account             -- ^ Account Entity
           -> AddressType                -- ^ Address Type
           -> SqlPersistT m [WalletAddr] -- ^ Addresses
@@ -405,7 +405,7 @@ unusedAddresses (Entity ai acc) addrType ListRequest{..} = do
             | otherwise   = min lim' (cnt - off cnt - gap)
     order = if listReverse then desc else asc
 
-lookupByPubKey :: (MonadIO m, MonadThrow m)
+lookupByPubKey :: (MonadIO m)
                => Entity Account         -- ^ Account Entity
                -> PubKeyC                -- ^ Pubkey of interest
                -> AddressType            -- ^ Address type

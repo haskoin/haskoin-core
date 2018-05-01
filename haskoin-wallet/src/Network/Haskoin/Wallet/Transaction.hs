@@ -197,7 +197,7 @@ addrTxs (Entity ai _) (Entity addrI WalletAddr{..}) ListRequest{..} = do
           , walletTxOutValue = input
           }
 
-accTxsFromBlock :: (MonadIO m, MonadThrow m)
+accTxsFromBlock :: MonadIO m
                 => AccountId
                 -> BlockHeight
                 -> Word32 -- ^ Block count (0 for all)
@@ -1130,7 +1130,7 @@ signAccountTx (Entity ai acc) notifChanM masterM txid = do
     importTx' signedTx notifChanM ai inCoins
 
 getOfflineTxData
-    :: (MonadIO m, MonadThrow m, MonadResource m)
+    :: (MonadIO m, MonadResource m)
     => AccountId
     -> TxHash
     -> SqlPersistT m (OfflineTxData, [InCoinData])
@@ -1183,7 +1183,7 @@ signOfflineTx acc masterM tx coinSignData
 -- number of confirmations. Coinbase coins can only be spent after 100
 -- confirmations.
 spendableCoins
-    :: (MonadIO m, MonadThrow m, MonadResource m)
+    :: (MonadIO m, MonadResource m)
     => AccountId                   -- ^ Account key
     -> Word32                      -- ^ Minimum confirmations
     -> (    SqlExpr (Entity WalletCoin)

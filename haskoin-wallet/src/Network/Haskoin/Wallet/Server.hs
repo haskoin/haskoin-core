@@ -364,8 +364,6 @@ maybeDetach cfg action =
 -- concurrent MySQL requests.
 runWalletNotif :: ( MonadLoggerIO m
                 , MonadUnliftIO m
-                , MonadThrow m
-                , MonadResource m
                 )
                => Context -> HandlerSession -> m ()
 runWalletNotif ctx session =

@@ -1,4 +1,4 @@
-resolver: lts-10.1
+resolver: lts-12.2
 flags: {}
 packages:
 - haskoin-core

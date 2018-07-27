@@ -3,15 +3,15 @@ module Network.Haskoin.Transaction.Builder where
 
 import           Control.Arrow                     (first)
 import           Control.DeepSeq                   (NFData, rnf)
-import           Control.Monad                     (foldM, mzero, unless)
-import           Control.Monad.Identity            (runIdentity)
+import           Control.Monad                     (foldM, join, mzero, unless)
 import           Data.Aeson                        (FromJSON, ToJSON,
                                                     Value (Object), object,
                                                     parseJSON, toJSON, (.:),
                                                     (.:?), (.=))
 import           Data.ByteString                   (ByteString)
 import qualified Data.ByteString                   as BS
-import           Data.Conduit                      (Sink, await, ($$))
+import           Data.Conduit                      (ConduitT, Void, await,
+                                                    runConduit, (.|))
 import           Data.Conduit.List                 (sourceList)
 import           Data.List                         (find, nub)
 import           Data.Maybe                        (catMaybes, fromJust,
@@ -43,7 +43,7 @@ chooseCoins :: Coin c
             -> Either String ([c], Word64)
                -- ^ Coin selection result and change amount.
 chooseCoins target fee nOut continue coins =
-    runIdentity $ sourceList coins $$ chooseCoinsSink target fee nOut continue
+    join . runConduit $ sourceList coins .| chooseCoinsSink target fee nOut continue
 
 -- | Coin selection algorithm for normal (non-multisig) transactions. This
 -- function returns the selected coins together with the amount of change to
@@ -54,7 +54,7 @@ chooseCoinsSink :: (Monad m, Coin c)
                 -> Word64 -- ^ Fee per byte.
                 -> Int    -- ^ Number of outputs (including change)
                 -> Bool   -- ^ Try to find better solution when one is found
-                -> Sink c m (Either String ([c], Word64))
+                -> ConduitT c Void m (Either String ([c], Word64))
                    -- ^ Coin selection result and change amount.
 chooseCoinsSink target fee nOut continue
     | target > 0 =
@@ -78,8 +78,8 @@ chooseMSCoins :: Coin c
               -> Either String ([c], Word64)
                  -- ^ Coin selection result and change amount.
 chooseMSCoins target fee ms nOut continue coins =
-    runIdentity $
-        sourceList coins $$ chooseMSCoinsSink target fee ms nOut continue
+    join . runConduit $
+        sourceList coins .| chooseMSCoinsSink target fee ms nOut continue
 
 -- | Coin selection algorithm for multisignature transactions. This function
 -- returns the selected coins together with the amount of change to send back
@@ -92,7 +92,7 @@ chooseMSCoinsSink :: (Monad m, Coin c)
                   -> (Int, Int) -- ^ Multisig parameters m of n (m,n).
                   -> Int  -- ^ Number of outputs (including change)
                   -> Bool -- ^ Try to find better solution when one is found
-                  -> Sink c m (Either String ([c], Word64))
+                  -> ConduitT c Void m (Either String ([c], Word64))
                      -- ^ Coin selection result and change amount.
 chooseMSCoinsSink target fee ms nOut continue
     | target > 0 =
@@ -112,7 +112,7 @@ greedyAddSink :: (Monad m, Coin c)
               => Word64          -- ^ Target to reach
               -> (Int -> Word64) -- ^ Coin count to fee function
               -> Bool            -- ^ Try to find better solutions
-              -> Sink c m (Maybe ([c], Word64)) -- (Selected coins, change)
+              -> ConduitT c Void m (Maybe ([c], Word64)) -- (Selected coins, change)
 greedyAddSink target guessFee continue =
     go [] 0 [] 0
   where

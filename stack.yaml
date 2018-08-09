@@ -1,9 +1,4 @@
 resolver: lts-10.1
-flags: {}
-packages:
-- haskoin-core
-- haskoin-node
-- haskoin-wallet
 extra-deps:
 - daemons-0.2.1
 - pbkdf-1.1.1.1

@@ -5,11 +5,11 @@ module Network.Haskoin.Crypto.Hash
 , Hash256(getHash256)
 , Hash160(getHash160)
 , CheckSum32(getCheckSum32)
-, hash512
-, hash256
-, hash160
-, hashSHA1
-, doubleHash256
+, sha512
+, sha256
+, ripemd160
+, sha1
+, doubleSHA256
 , addressHash
 , checkSum32
 , hmac512
@@ -109,21 +109,21 @@ instance Serialize Hash160 where
     get = Hash160 <$> Get.getShortByteString 20
     put = Put.putShortByteString . getHash160
 
-hash512 :: ByteArrayAccess b => b -> Hash512
-hash512 = Hash512 . BSS.toShort . BA.convert . hashWith SHA512
+sha512 :: ByteArrayAccess b => b -> Hash512
+sha512 = Hash512 . BSS.toShort . BA.convert . hashWith SHA512
 
-hash256 :: ByteArrayAccess b => b -> Hash256
-hash256 = Hash256 . BSS.toShort . BA.convert . hashWith SHA256
+sha256 :: ByteArrayAccess b => b -> Hash256
+sha256 = Hash256 . BSS.toShort . BA.convert . hashWith SHA256
 
-hash160 :: ByteArrayAccess b => b -> Hash160
-hash160 = Hash160 . BSS.toShort . BA.convert. hashWith RIPEMD160
+ripemd160 :: ByteArrayAccess b => b -> Hash160
+ripemd160 = Hash160 . BSS.toShort . BA.convert. hashWith RIPEMD160
 
-hashSHA1 :: ByteArrayAccess b => b -> Hash160
-hashSHA1 = Hash160 . BSS.toShort . BA.convert . hashWith SHA1
+sha1 :: ByteArrayAccess b => b -> Hash160
+sha1 = Hash160 . BSS.toShort . BA.convert . hashWith SHA1
 
 -- | Compute two rounds of SHA-256.
-doubleHash256 :: ByteArrayAccess b => b -> Hash256
-doubleHash256 =
+doubleSHA256 :: ByteArrayAccess b => b -> Hash256
+doubleSHA256 =
     Hash256 . BSS.toShort . BA.convert . hashWith SHA256 . hashWith SHA256
 
 -- | Compute SHA-256 followed by RIPMED-160.

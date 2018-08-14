@@ -8,7 +8,7 @@ module Network.Haskoin.Crypto.ECDSA
 , verifySig
 , genPrvKey
 , isCanonicalHalfOrder
-, decodeDerSig
+, decodeLaxSig
 , decodeStrictSig
 ) where
 
@@ -110,7 +110,7 @@ instance Serialize Signature where
             when (l >= 0x80) $ fail "Multi-octect length not supported"
             return $ fromIntegral l
         bs <- getByteString $ l + 2
-        case decodeDerSig bs of
+        case decodeLaxSig bs of
             Just s  -> return s
             Nothing -> fail "Invalid signature"
 
@@ -119,18 +119,20 @@ instance Serialize Signature where
 isCanonicalHalfOrder :: Signature -> Bool
 isCanonicalHalfOrder = not . snd . EC.normalizeSig . getSignature
 
-decodeDerSig :: ByteString -> Maybe Signature
-decodeDerSig bs = Signature <$> EC.laxImportSig bs
+decodeLaxSig :: ByteString -> Maybe Signature
+decodeLaxSig bs = Signature <$> EC.laxImportSig bs
 
 decodeStrictSig :: ByteString -> Maybe Signature
 decodeStrictSig bs = do
     g <- EC.importSig bs
     let compact = EC.exportCompactSig g
+        sig = Signature g
     -- <http://www.secg.org/sec1-v2.pdf Section 4.1.4>
     -- 4.1.4.1 (r and s can not be zero)
     guard $ EC.getCompactSigR compact /= zero
     guard $ EC.getCompactSigS compact /= zero
-    return $ Signature g
+    guard $ isCanonicalHalfOrder sig
+    return sig
   where
     zero = toShort $ BS.replicate 32 0
 

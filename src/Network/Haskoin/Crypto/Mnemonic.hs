@@ -22,7 +22,7 @@ module Network.Haskoin.Crypto.Mnemonic
 
 import           Control.Monad           (when)
 import           Crypto.Hash             (SHA256 (..), hashWith)
-import           Crypto.PBKDF.ByteString (sha512PBKDF2)
+import           Crypto.KDF.PBKDF2       (Parameters (..), fastPBKDF2_SHA512)
 import           Data.Bits               (shiftL, shiftR, (.&.))
 import qualified Data.ByteArray          as BA
 import           Data.ByteString         (ByteString)
@@ -41,6 +41,9 @@ type Mnemonic = ByteString
 type Passphrase = ByteString
 type Seed = ByteString
 type Checksum = ByteString
+
+pbkdfParams :: Parameters
+pbkdfParams = Parameters {iterCounts = 2048, outputLength = 64}
 
 -- | Provide intial entropy as a 'ByteString' of length multiple of 4 bytes.
 -- Output a mnemonic sentence.
@@ -65,7 +68,7 @@ toMnemonic ent = do
 fromMnemonic :: Mnemonic -> Either String Entropy
 fromMnemonic ms = do
     when (BS.null ms) $
-        Left $ "fromMnemonic: empty mnemonic"
+        Left "fromMnemonic: empty mnemonic"
     when (word_count > 48) $
         Left $ "fromMnemonic: too many words: " ++ show word_count
     when (word_count `mod` 3 /= 0) $
@@ -100,7 +103,7 @@ numCS len =
 -- normalization.
 anyToSeed :: Passphrase -> Mnemonic -> Seed
 anyToSeed pf ms =
-    sha512PBKDF2 ms ("mnemonic" `mappend` pf) 2048 64
+    fastPBKDF2_SHA512 pbkdfParams ms ("mnemonic" `mappend` pf)
 
 -- | Get a 512-bit seed from a mnemonic sentence.  Will calculate checksum.
 -- Passphrase can be used to protect the mnemonic.  Use an empty string as

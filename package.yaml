@@ -1,0 +1,98 @@
+name: haskoin-core
+version: 1.0.0
+synopsis: Bitcoin & Bitcoin Cash library for Haskell
+description: 'Haskoin Core is a complete Bitcoin and Bitcoin Cash library of functions and data types for Haskell developers.'
+category: Bitcoin, Finance, Network
+author:
+- Philippe Laprade
+- Jean-Pierre Rupp
+maintainer: xenog@protonmail.com
+license: PublicDomain
+license-file: UNLICENSE
+homepage: http://github.com/haskoin/haskoin#readme
+git: git://github.com/haskoin/haskoin.git
+bug-reports: http://github.com/haskoin/haskoin/issues
+extra-source-files:
+- test/data/*.json
+- README.md
+- CHANGELOG.md
+dependencies:
+- aeson
+- base >=4.7 && <5
+- base16-bytestring
+- bytestring
+- cereal
+- conduit
+- containers
+- cryptonite
+- deepseq
+- entropy
+- hashable
+- memory
+- mtl
+- murmur3
+- network
+- QuickCheck
+- secp256k1
+- split
+- string-conversions
+- time
+- unordered-containers
+- vector
+library:
+  source-dirs: src
+  exposed-modules:
+  - Network.Haskoin.Util
+  - Network.Haskoin.Crypto
+  - Network.Haskoin.Network
+  - Network.Haskoin.Script
+  - Network.Haskoin.Transaction
+  - Network.Haskoin.Block
+  - Network.Haskoin.Constants
+  - Network.Haskoin.Test
+tests:
+  haskoin-core-btc-test:
+    main: Main.hs
+    source-dirs:
+    - test/btc
+    - test/common
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - haskoin-core
+    - hspec
+    - HUnit
+    - QuickCheck
+    - safe
+    - test-framework
+    - test-framework-quickcheck2
+    - test-framework-hunit
+  haskoin-core-btc-regtest:
+    main: Main.hs
+    source-dirs: test/btc-regtest
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - haskoin-core
+    - HUnit
+    - QuickCheck
+    - test-framework
+    - test-framework-quickcheck2
+    - test-framework-hunit
+  haskoin-core-bch-test:
+    main: Main.hs
+    source-dirs:
+    - test/bch
+    - test/common
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - haskoin-core
+    - hspec
+    - QuickCheck

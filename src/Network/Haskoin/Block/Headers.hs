@@ -3,20 +3,21 @@
 {-# LANGUAGE RecordWildCards   #-}
 module Network.Haskoin.Block.Headers where
 
+import           Control.Applicative         ((<|>))
 import           Control.DeepSeq             (NFData, rnf)
-import           Control.Monad               (unless, when)
+import           Control.Monad               (guard, unless, when)
 import           Control.Monad.Except        (ExceptT (..), runExceptT,
                                               throwError)
 import           Control.Monad.State.Strict  as State (StateT, get, gets, lift,
                                                        modify)
-import           Data.Bits                   (shiftL, (.&.))
+import           Data.Bits                   (shiftL, shiftR, (.&.))
 import qualified Data.ByteString             as BS
 import           Data.ByteString.Short       (ShortByteString, fromShort,
                                               toShort)
 import           Data.Function               (on)
 import           Data.HashMap.Strict         (HashMap)
 import qualified Data.HashMap.Strict         as HashMap
-import           Data.List                   (sort)
+import           Data.List                   (sort, sortBy)
 import           Data.Maybe                  (fromMaybe, listToMaybe)
 import           Data.Serialize              (decode, encode)
 import           Data.Serialize              as Serialize (Serialize (..))
@@ -248,7 +249,7 @@ validBlock :: Timestamp     -- ^ current time
            -> BlockNode     -- ^ skip
            -> Either String BlockNode
 validBlock t bb par pars bh sk = do
-    let mt = medtime $ par : pars
+    let mt = medianTime . map (blockTimestamp . nodeHeader) $ par : pars
         nt = blockTimestamp bh
         hh = headerHash bh
         nv = blockVersion bh
@@ -273,9 +274,11 @@ validBlock t bb par pars bh sk = do
                      , nodeWork = aw
                      , nodeSkip = headerHash $ nodeHeader sk
                      }
-  where
-    medtime ps = sort (map (blockTimestamp . nodeHeader) ps)
-                 !! (length pars `div` 2)
+
+medianTime :: [Timestamp] -> Timestamp
+medianTime ts
+    | null ts = error "Cannot compute median time of empty header list"
+    | otherwise = sort ts !! (length ts `div` 2)
 
 skipHeight :: BlockHeight -> BlockHeight
 skipHeight height
@@ -359,7 +362,93 @@ nextWorkRequired :: BlockHeaders m
                  => BlockNode
                  -> BlockHeader
                  -> m Word32
-nextWorkRequired par bh
+nextWorkRequired par bh = do
+    let mf = daa <|> eda <|> pow
+    case mf of
+        Just f -> f par bh
+        Nothing ->
+            error
+                "Could not get an appropriate difficulty calculation algorithm"
+  where
+    daa = daaBlockHeight >>= \daaHeight -> do
+        guard (nodeHeight par + 1 >= daaHeight)
+        return nextDAAWorkRequired
+    eda = edaBlockHeight >>= \edaHeight -> do
+        guard (nodeHeight par + 1 >= edaHeight)
+        return nextEDAWorkRequired
+    pow = return nextPOWWorkRequired
+
+nextEDAWorkRequired :: BlockHeaders m => BlockNode -> BlockHeader -> m Word32
+nextEDAWorkRequired par bh
+    | nodeHeight par + 1 `mod` diffInterval == 0 = nextWorkRequired par bh
+    | minDifficulty = return (encodeCompact powLimit)
+    | blockBits (nodeHeader par) == encodeCompact powLimit =
+        return (encodeCompact powLimit)
+    | otherwise = do
+        par6 <- fromMaybe e1 <$> getAncestor (nodeHeight par - 6) par
+        pars <- getParents 10 par
+        pars6 <- getParents 10 par6
+        let par6med =
+                medianTime $ map (blockTimestamp . nodeHeader) (par6 : pars6)
+            parmed = medianTime $ map (blockTimestamp . nodeHeader) (par : pars)
+            mtp6 = parmed - par6med
+        if mtp6 < 12 * 3600
+            then return $ blockBits (nodeHeader par)
+            else return $
+                 let (diff, _) = decodeCompact (blockBits (nodeHeader par))
+                     ndiff = diff + (diff `shiftR` 2)
+                 in if powLimit > ndiff
+                        then encodeCompact powLimit
+                        else encodeCompact ndiff
+  where
+    minDifficulty =
+        blockTimestamp bh > blockTimestamp (nodeHeader par) + targetSpacing * 2
+    e1 = error "Could not get seventh ancestor of block"
+
+nextDAAWorkRequired :: BlockHeaders m => BlockNode -> BlockHeader -> m Word32
+nextDAAWorkRequired par bh
+    | minDifficulty = return (encodeCompact powLimit)
+    | otherwise = do
+        let height = nodeHeight par
+        unless (height >= diffInterval) $
+            error "Block height below difficulty interval"
+        l <- getSuitableBlock par
+        par144 <- fromMaybe e1 <$> getAncestor (height - 144) par
+        f <- getSuitableBlock par144
+        let nextTarget = computeTarget f l
+        if nextTarget > powLimit
+            then return $ encodeCompact powLimit
+            else return $ encodeCompact nextTarget
+  where
+    e1 = error "Cannot get ancestor at parent - 144 height"
+    minDifficulty =
+        blockTimestamp bh > blockTimestamp (nodeHeader par) + targetSpacing * 2
+
+computeTarget :: BlockNode -> BlockNode -> Integer
+computeTarget f l =
+    let work = (nodeWork l - nodeWork f) * fromIntegral targetSpacing
+        actualTimespan =
+            blockTimestamp (nodeHeader l) - blockTimestamp (nodeHeader f)
+        actualTimespan'
+            | actualTimespan > 288 * targetSpacing = 288 * targetSpacing
+            | actualTimespan < 72 * targetSpacing = 72 * targetSpacing
+            | otherwise = actualTimespan
+        work' = work `div` fromIntegral actualTimespan'
+    in 2 ^ (256 :: Integer) `div` work'
+
+getSuitableBlock :: BlockHeaders m => BlockNode -> m BlockNode
+getSuitableBlock par = do
+    unless (nodeHeight par >= 3) $ error "Block height is less than three"
+    blocks <- (par :) <$> getParents 2 par
+    return $ sortBy (compare `on` blockTimestamp . nodeHeader) blocks !! 1
+
+-- | Returns the work required on a block header given the previous block. This
+-- coresponds to bitcoind function GetNextWorkRequired in main.cpp.
+nextPOWWorkRequired :: BlockHeaders m
+                 => BlockNode
+                 -> BlockHeader
+                 -> m Word32
+nextPOWWorkRequired par bh
     | nodeHeight par + 1 `mod` diffInterval /= 0 =
           if allowMinDifficultyBlocks
           then if ht > pt + delta
@@ -473,7 +562,7 @@ appendBlocks seed bh i =
     bh' = mineBlock seed bh
         { prevBlock = headerHash bh
           -- Just to make it different in every header
-        , merkleRoot = hash256 $ encode seed
+        , merkleRoot = sha256 $ encode seed
         }
 
 splitPoint :: BlockHeaders m => BlockNode -> BlockNode -> m BlockNode

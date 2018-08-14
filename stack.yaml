@@ -1,5 +1,4 @@
-resolver: lts-10.1
+resolver: lts-12.5
 extra-deps:
-- pbkdf-1.1.1.1
 - murmur3-1.0.3
-- secp256k1-0.5.2
+- secp256k1-0.5.3

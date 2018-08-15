@@ -98,7 +98,7 @@ import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Base58
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Crypto.Keys
-import           Network.Haskoin.Script.Parser
+import           Network.Haskoin.Script.Standard
 import           Network.Haskoin.Util
 
 {- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
@@ -277,7 +277,7 @@ xPrvID = xPubID . deriveXPubKey
 
 -- | Computes the key identifier of an extended public key.
 xPubID :: XPubKey -> Hash160
-xPubID = hash160 . encode . hash256 . encode . xPubKey
+xPubID = ripemd160 . encode . sha256 . encode . xPubKey
 
 -- | Computes the key fingerprint of an extended private key.
 xPrvFP :: XPrvKey -> Word32

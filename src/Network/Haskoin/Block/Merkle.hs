@@ -88,7 +88,7 @@ buildMerkleRoot :: [TxHash]   -- ^ List of transaction hashes (leaf nodes).
 buildMerkleRoot txs = calcHash (calcTreeHeight $ length txs) 0 txs
 
 hash2 :: Hash256 -> Hash256 -> Hash256
-hash2 a b = doubleHash256 $ encode a `BS.append` encode b
+hash2 a b = doubleSHA256 $ encode a `BS.append` encode b
 
 -- | Computes the hash of a specific node in a merkle tree.
 calcHash :: Int       -- ^ Height of the node in the merkle tree.

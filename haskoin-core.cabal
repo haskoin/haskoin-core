@@ -1,165 +1,241 @@
-name:                    haskoin-core
-version:                 0.4.3
-synopsis:                Implementation of the core Bitcoin protocol features.
-description:
-    Haskoin is a package implementing the core functionalities of the Bitcoin
-    protocol specifications. The following features are provided:
-    .
-    * Hashing functions (sha-256, ripemd-160)
-    * Base58 encoding
-    * BIP32 extended key derivation and parsing (m/1'/2/3)
-    * BIP39 mnemonic keys
-    * ECDSA cryptographic primitives (using the C library libsecp256k1)
-    * Script parsing and evaluation
-    * Building and signing of standard transactions (regular, multisig, p2sh)
-    * Parsing and manipulation of all Bitcoin protocol types
-    * Bloom filters and partial merkle tree library (used in SPV wallets)
-    * Comprehensive test suite
-    .
-    A wallet implementation is available in haskoin-wallet which uses both this
-    package and the node implementation in haskoin-node.
-homepage:                http://github.com/haskoin/haskoin#readme
-bug-reports:             http://github.com/haskoin/haskoin/issues
-license:                 PublicDomain
-license-file:            UNLICENSE
-author:                  Philippe Laprade, Jean-Pierre Rupp
-maintainer:              xenog@protonmail.com
-category:                Bitcoin, Finance, Network
-build-type:              Simple
-cabal-version:           >= 1.10
-extra-source-files:      test/data/*.json
+-- This file has been generated from package.yaml by hpack version 0.20.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 6aab7e46230bd5685573e115e5b3fba91d8f99e2ad550bd4d70bd720b6c0230a
+
+name:           haskoin-core
+version:        1.0.0
+synopsis:       Bitcoin & Bitcoin Cash library for Haskell
+description:    Haskoin Core is a complete Bitcoin and Bitcoin Cash library of functions and data types for Haskell developers.
+category:       Bitcoin, Finance, Network
+homepage:       http://github.com/haskoin/haskoin#readme
+bug-reports:    http://github.com/haskoin/haskoin/issues
+author:         Philippe Laprade,
+                Jean-Pierre Rupp
+maintainer:     xenog@protonmail.com
+license:        PublicDomain
+license-file:   UNLICENSE
+build-type:     Simple
+cabal-version:  >= 1.10
+
+extra-source-files:
+    CHANGELOG.md
+    README.md
+    test/data/forkid_script_tests.json
+    test/data/forkid_sighash.json
+    test/data/script_invalid.json
+    test/data/script_tests.json
+    test/data/script_valid.json
+    test/data/sig_nonstrict.json
+    test/data/sig_strict.json
+    test/data/sighash.json
+    test/data/tx_valid.json
 
 source-repository head
-    type:     git
-    location: git://github.com/haskoin/haskoin.git
+  type: git
+  location: git://github.com/haskoin/haskoin.git
 
 library
-    hs-source-dirs:      src
-    exposed-modules:     Network.Haskoin.Util
-                         Network.Haskoin.Crypto
-                         Network.Haskoin.Network
-                         Network.Haskoin.Script
-                         Network.Haskoin.Transaction
-                         Network.Haskoin.Block
-                         Network.Haskoin.Constants
-                         Network.Haskoin.Test
-                         Network.Haskoin.Internals
-    other-modules:       Network.Haskoin.Crypto.Hash
-                         Network.Haskoin.Crypto.Base58
-                         Network.Haskoin.Crypto.Keys
-                         Network.Haskoin.Crypto.ExtendedKeys
-                         Network.Haskoin.Crypto.ECDSA
-                         Network.Haskoin.Crypto.Mnemonic
-                         Network.Haskoin.Network.Types
-                         Network.Haskoin.Network.Message
-                         Network.Haskoin.Network.Bloom
-                         Network.Haskoin.Script.Types
-                         Network.Haskoin.Script.Parser
-                         Network.Haskoin.Script.SigHash
-                         Network.Haskoin.Script.Evaluator
-                         Network.Haskoin.Transaction.Types
-                         Network.Haskoin.Transaction.Builder
-                         Network.Haskoin.Transaction.Genesis
-                         Network.Haskoin.Block.Headers
-                         Network.Haskoin.Block.Types
-                         Network.Haskoin.Block.Merkle
-                         Network.Haskoin.Block.Genesis
-                         Network.Haskoin.Test.Util
-                         Network.Haskoin.Test.Crypto
-                         Network.Haskoin.Test.Network
-                         Network.Haskoin.Test.Message
-                         Network.Haskoin.Test.Script
-                         Network.Haskoin.Test.Transaction
-                         Network.Haskoin.Test.Block
-                         Paths_haskoin_core
-    build-depends:       aeson >= 1.2 && < 1.3
-                       , base >= 4.8 && < 5
-                       , byteable >= 0.1 && < 0.2
-                       , bytestring >= 0.10 && < 0.11
-                       , base16-bytestring >= 0.1 && < 0.2
-                       , cereal >= 0.5 && < 0.6
-                       , conduit >= 1.2 && < 1.3
-                       , containers >= 0.5 && < 0.6
-                       , cryptonite >= 0.24 && < 0.25
-                       , deepseq >= 1.4 && < 1.5
-                       , either >= 4.5 && < 4.6
-                       , hashable >= 1.2 && < 1.3
-                       , mtl >= 2.2 && < 2.3
-                       , memory >= 0.14 && < 0.15
-                       , murmur3 >= 1.0&& < 1.1
-                       , network >= 2.6&& < 2.7
-                       , pbkdf >= 1.1 && < 1.2
-                       , QuickCheck >= 2.10 && < 2.11
-                       , split >= 0.2 && < 0.3
-                       , string-conversions >= 0.4 && < 0.5
-                       , text >= 0.11 && < 1.3
-                       , time >= 1.8 && < 1.9
-                       , unordered-containers >= 0.2 && < 0.3
-                       , vector >= 0.12 && < 0.13
-                       , secp256k1 >= 0.5 && < 0.6
-                       , entropy >= 0.3 && < 0.4
-    default-language:    Haskell2010
+  hs-source-dirs:
+      src
+  build-depends:
+      QuickCheck
+    , aeson
+    , base >=4.7 && <5
+    , base16-bytestring
+    , bytestring
+    , cereal
+    , conduit
+    , containers
+    , cryptonite
+    , deepseq
+    , entropy
+    , hashable
+    , memory
+    , mtl
+    , murmur3
+    , network
+    , secp256k1
+    , split
+    , string-conversions
+    , time
+    , unordered-containers
+    , vector
+  exposed-modules:
+      Network.Haskoin.Util
+      Network.Haskoin.Crypto
+      Network.Haskoin.Network
+      Network.Haskoin.Script
+      Network.Haskoin.Transaction
+      Network.Haskoin.Block
+      Network.Haskoin.Constants
+      Network.Haskoin.Test
+  other-modules:
+      Network.Haskoin.Block.Genesis
+      Network.Haskoin.Block.Headers
+      Network.Haskoin.Block.Merkle
+      Network.Haskoin.Block.Types
+      Network.Haskoin.Crypto.Base58
+      Network.Haskoin.Crypto.ECDSA
+      Network.Haskoin.Crypto.ExtendedKeys
+      Network.Haskoin.Crypto.Hash
+      Network.Haskoin.Crypto.Keys
+      Network.Haskoin.Crypto.Mnemonic
+      Network.Haskoin.Network.Bloom
+      Network.Haskoin.Network.Message
+      Network.Haskoin.Network.Types
+      Network.Haskoin.Script.Evaluator
+      Network.Haskoin.Script.SigHash
+      Network.Haskoin.Script.Standard
+      Network.Haskoin.Script.Types
+      Network.Haskoin.Test.Block
+      Network.Haskoin.Test.Crypto
+      Network.Haskoin.Test.Message
+      Network.Haskoin.Test.Network
+      Network.Haskoin.Test.Script
+      Network.Haskoin.Test.Transaction
+      Network.Haskoin.Test.Util
+      Network.Haskoin.Transaction.Builder
+      Network.Haskoin.Transaction.Genesis
+      Network.Haskoin.Transaction.Types
+      Paths_haskoin_core
+  default-language: Haskell2010
 
-test-suite haskoin-core-test
-    type:                exitcode-stdio-1.0
-    hs-source-dirs:      test
-    main-is:             Main.hs
-    other-modules:       Network.Haskoin.Util.Tests
-                         Network.Haskoin.Crypto.ECDSA.Tests
-                         Network.Haskoin.Crypto.Base58.Tests
-                         Network.Haskoin.Crypto.Base58.Units
-                         Network.Haskoin.Crypto.Keys.Tests
-                         Network.Haskoin.Crypto.ExtendedKeys.Tests
-                         Network.Haskoin.Crypto.ExtendedKeys.Units
-                         Network.Haskoin.Crypto.Hash.Tests
-                         Network.Haskoin.Crypto.Hash.Units
-                         Network.Haskoin.Crypto.Mnemonic.Tests
-                         Network.Haskoin.Crypto.Mnemonic.Units
-                         Network.Haskoin.Crypto.Units
-                         Network.Haskoin.Network.Units
-                         Network.Haskoin.Script.Tests
-                         Network.Haskoin.Script.Units
-                         Network.Haskoin.Transaction.Tests
-                         Network.Haskoin.Transaction.Units
-                         Network.Haskoin.Block.Tests
-                         Network.Haskoin.Block.Units
-                         Network.Haskoin.Json.Tests
-                         Network.Haskoin.Cereal.Tests
-    build-depends:       base >= 4.8 && < 5
-                       , aeson >= 1.2 && < 1.3
-                       , haskoin-core
-                       , bytestring >= 0.10 && < 0.11
-                       , cereal >= 0.5 && < 0.6
-                       , containers >= 0.5 && < 0.6
-                       , mtl >= 2.2 && < 2.3
-                       , split >= 0.2 && < 0.3
-                       , HUnit >= 1.6 && < 1.7
-                       , QuickCheck >= 2.10 && < 2.11
-                       , test-framework >= 0.8 && < 0.9
-                       , test-framework-quickcheck2 >= 0.3 && < 0.4
-                       , test-framework-hunit >= 0.3 && < 0.4
-                       , text >= 0.11 && < 1.3
-                       , unordered-containers >= 0.2 && < 0.3
-                       , string-conversions >= 0.4 && < 0.5
-                       , secp256k1 >= 0.5 && < 0.6
-                       , safe >= 0.3 && < 0.4
-                       , vector >= 0.12 && < 0.13
-                       , scientific >= 0.3 && < 0.4
-    ghc-options:         -threaded -rtsopts -with-rtsopts=-N
-    default-language:    Haskell2010
+test-suite haskoin-core-bch-test
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs:
+      test/bch
+      test/common
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      QuickCheck
+    , aeson
+    , base >=4.7 && <5
+    , base16-bytestring
+    , bytestring
+    , cereal
+    , conduit
+    , containers
+    , cryptonite
+    , deepseq
+    , entropy
+    , hashable
+    , haskoin-core
+    , hspec
+    , memory
+    , mtl
+    , murmur3
+    , network
+    , secp256k1
+    , split
+    , string-conversions
+    , time
+    , unordered-containers
+    , vector
+  other-modules:
+      Network.Haskoin.Script.Spec
+      Paths_haskoin_core
+  default-language: Haskell2010
 
-test-suite haskoin-core-regtest
-    type:                exitcode-stdio-1.0
-    hs-source-dirs:      test
-    main-is:             Regtest.hs
-    build-depends:       base >= 4.8 && < 5
-                       , haskoin-core
-                       , HUnit >= 1.6 && < 1.7
-                       , QuickCheck >= 2.10 && < 2.11
-                       , mtl >= 2.2 && < 2.3
-                       , test-framework >= 0.8 && < 0.9
-                       , test-framework-quickcheck2 >= 0.3 && < 0.4
-                       , test-framework-hunit >= 0.3 && < 0.4
-                       , unordered-containers >= 0.2 && < 0.3
-    ghc-options:         -threaded -rtsopts -with-rtsopts=-N
-    default-language:    Haskell2010
+test-suite haskoin-core-btc-regtest
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs:
+      test/btc-regtest
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      HUnit
+    , QuickCheck
+    , aeson
+    , base >=4.7 && <5
+    , base16-bytestring
+    , bytestring
+    , cereal
+    , conduit
+    , containers
+    , cryptonite
+    , deepseq
+    , entropy
+    , hashable
+    , haskoin-core
+    , memory
+    , mtl
+    , murmur3
+    , network
+    , secp256k1
+    , split
+    , string-conversions
+    , test-framework
+    , test-framework-hunit
+    , test-framework-quickcheck2
+    , time
+    , unordered-containers
+    , vector
+  other-modules:
+      Paths_haskoin_core
+  default-language: Haskell2010
+
+test-suite haskoin-core-btc-test
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs:
+      test/btc
+      test/common
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      HUnit
+    , QuickCheck
+    , aeson
+    , base >=4.7 && <5
+    , base16-bytestring
+    , bytestring
+    , cereal
+    , conduit
+    , containers
+    , cryptonite
+    , deepseq
+    , entropy
+    , hashable
+    , haskoin-core
+    , hspec
+    , memory
+    , mtl
+    , murmur3
+    , network
+    , safe
+    , secp256k1
+    , split
+    , string-conversions
+    , test-framework
+    , test-framework-hunit
+    , test-framework-quickcheck2
+    , time
+    , unordered-containers
+    , vector
+  other-modules:
+      Network.Haskoin.Block.Tests
+      Network.Haskoin.Block.Units
+      Network.Haskoin.Cereal.Tests
+      Network.Haskoin.Crypto.Base58.Tests
+      Network.Haskoin.Crypto.Base58.Units
+      Network.Haskoin.Crypto.ECDSA.Tests
+      Network.Haskoin.Crypto.ExtendedKeys.Tests
+      Network.Haskoin.Crypto.ExtendedKeys.Units
+      Network.Haskoin.Crypto.Hash.Tests
+      Network.Haskoin.Crypto.Hash.Units
+      Network.Haskoin.Crypto.Keys.Tests
+      Network.Haskoin.Crypto.Mnemonic.Tests
+      Network.Haskoin.Crypto.Mnemonic.Units
+      Network.Haskoin.Crypto.Units
+      Network.Haskoin.Json.Tests
+      Network.Haskoin.Network.Units
+      Network.Haskoin.Script.Tests
+      Network.Haskoin.Script.Units
+      Network.Haskoin.Transaction.Tests
+      Network.Haskoin.Transaction.Units
+      Network.Haskoin.Util.Tests
+      Network.Haskoin.Script.Spec
+      Paths_haskoin_core
+  default-language: Haskell2010

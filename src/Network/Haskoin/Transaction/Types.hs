@@ -1,11 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
 module Network.Haskoin.Transaction.Types
-( Tx
-, createTx
-, txVersion
-, txIn
-, txOut
-, txLockTime
+( Tx(..)
 , txHash
 , TxIn(..)
 , TxOut(..)
@@ -14,10 +10,12 @@ module Network.Haskoin.Transaction.Types
 , hexToTxHash
 , txHashToHex
 , nosigTxHash
+, nullOutPoint
 ) where
 
+import           Control.Applicative           ((<|>))
 import           Control.DeepSeq               (NFData, rnf)
-import           Control.Monad                 (forM_, liftM2, mzero,
+import           Control.Monad                 (forM_, guard, liftM2, mzero,
                                                 replicateM, (<=<))
 import           Data.Aeson                    (FromJSON, ToJSON,
                                                 Value (String), parseJSON,
@@ -28,10 +26,8 @@ import           Data.Hashable                 (Hashable)
 import           Data.Maybe                    (fromMaybe, maybe)
 import           Data.Serialize                (Serialize, decode, encode, get,
                                                 put)
-import           Data.Serialize.Get            (getByteString, getWord32le,
-                                                getWord64le)
-import           Data.Serialize.Put            (putByteString, putWord32le,
-                                                putWord64le)
+import           Data.Serialize.Get
+import           Data.Serialize.Put
 import           Data.String                   (IsString, fromString)
 import           Data.String.Conversions       (cs)
 import           Data.Word                     (Word32, Word64)
@@ -59,7 +55,7 @@ instance ToJSON TxHash where
 
 nosigTxHash :: Tx -> TxHash
 nosigTxHash tx =
-    TxHash $ doubleHash256 $ encode tx { txIn = map clearInput $ txIn tx }
+    TxHash $ doubleSHA256 $ encode tx { txIn = map clearInput $ txIn tx }
   where
     clearInput ti = ti { scriptInput = BS.empty }
 
@@ -72,6 +68,10 @@ hexToTxHash hex = do
     h <- either (const Nothing) Just (decode bs)
     return $ TxHash h
 
+type WitnessData = [WitnessStack]
+type WitnessStack = [WitnessStackItem]
+type WitnessStackItem = ByteString
+
 -- | Data type representing a bitcoin transaction
 data Tx = Tx
     { -- | Transaction data format version
@@ -80,20 +80,14 @@ data Tx = Tx
     , txIn       :: ![TxIn]
       -- | List of transaction outputs
     , txOut      :: ![TxOut]
+      -- | The witness data for the transaction
+    , txWitness  :: !WitnessData
       -- | The block number or timestamp at which this transaction is locked
     , txLockTime :: !Word32
-    } deriving (Eq)
+    } deriving (Eq, Ord)
 
 txHash :: Tx -> TxHash
-txHash = TxHash . doubleHash256 . encode
-
-createTx :: Word32 -> [TxIn] -> [TxOut] -> Word32 -> Tx
-createTx v is os l =
-    Tx { txVersion  = v
-       , txIn       = is
-       , txOut      = os
-       , txLockTime = l
-       }
+txHash = TxHash . doubleSHA256 . encode
 
 instance Show Tx where
     show = show . encodeHex . encode
@@ -105,29 +99,83 @@ instance IsString Tx where
         e = error "Could not read transaction from hex string"
 
 instance NFData Tx where
-    rnf (Tx v i o l) = rnf v `seq` rnf i `seq` rnf o `seq` rnf l
+    rnf (Tx v i o w l) = rnf v `seq` rnf i `seq` rnf o `seq` rnf w `seq` rnf l
 
 instance Serialize Tx where
-    get = do
-        v  <- getWord32le
-        is <- replicateList =<< get
-        os <- replicateList =<< get
-        l  <- getWord32le
-        return Tx { txVersion  = v
-                  , txIn       = is
-                  , txOut      = os
-                  , txLockTime = l
-                  }
-      where
-        replicateList (VarInt c) = replicateM (fromIntegral c) get
+    get = parseWitnessTx <|> parseLegacyTx
+    put tx
+        | null (txWitness tx) = putLegacyTx tx
+        | otherwise = putWitnessTx tx
 
-    put (Tx v is os l) = do
-        putWord32le v
-        put $ VarInt $ fromIntegral $ length is
-        forM_ is put
-        put $ VarInt $ fromIntegral $ length os
-        forM_ os put
-        putWord32le l
+putLegacyTx :: Tx -> Put
+putLegacyTx (Tx v is os _ l) = do
+    putWord32le v
+    put $ VarInt $ fromIntegral $ length is
+    forM_ is put
+    put $ VarInt $ fromIntegral $ length os
+    forM_ os put
+    putWord32le l
+
+putWitnessTx :: Tx -> Put
+putWitnessTx (Tx v is os w l) = do
+    putWord32le v
+    putWord8 0x00
+    putWord8 0x01
+    put $ VarInt $ fromIntegral $ length is
+    forM_ is put
+    put $ VarInt $ fromIntegral $ length os
+    forM_ os put
+    putWitnessData w
+    putWord32le l
+
+parseLegacyTx :: Get Tx
+parseLegacyTx = do
+    v <- getWord32le
+    is <- replicateList =<< get
+    os <- replicateList =<< get
+    l <- getWord32le
+    return
+        Tx
+        {txVersion = v, txIn = is, txOut = os, txWitness = [], txLockTime = l}
+  where
+    replicateList (VarInt c) = replicateM (fromIntegral c) get
+
+parseWitnessTx :: Get Tx
+parseWitnessTx = do
+    v <- getWord32le
+    m <- getWord8
+    f <- getWord8
+    guard $ m == 0x00
+    guard $ f == 0x01
+    is <- replicateList =<< get
+    os <- replicateList =<< get
+    w <- parseWitnessData $ length is
+    l <- getWord32le
+    return
+        Tx {txVersion = v, txIn = is, txOut = os, txWitness = w, txLockTime = l}
+  where
+    replicateList (VarInt c) = replicateM (fromIntegral c) get
+
+parseWitnessData :: Int -> Get WitnessData
+parseWitnessData n = replicateM n parseWitnessStack
+  where
+    parseWitnessStack = do
+        VarInt i <- get
+        replicateM (fromIntegral i) parseWitnessStackItem
+    parseWitnessStackItem = do
+        VarInt i <- get
+        getByteString $ fromIntegral i
+
+
+putWitnessData :: WitnessData -> Put
+putWitnessData = mapM_ putWitnessStack
+  where
+    putWitnessStack ws = do
+        put $ VarInt $ fromIntegral $ length ws
+        mapM_ putWitnessStackItem ws
+    putWitnessStackItem bs = do
+        put $ VarInt $ fromIntegral $ BS.length bs
+        putByteString bs
 
 instance FromJSON Tx where
     parseJSON = withText "Tx" $
@@ -147,7 +195,7 @@ data TxIn =
            -- | BIP-68:
            -- Relative lock-time using consensus-enforced sequence numbers
          , txInSequence :: !Word32
-         } deriving (Eq, Show)
+         } deriving (Eq, Show, Ord)
 
 instance NFData TxIn where
     rnf (TxIn p i s) = rnf p `seq` rnf i `seq` rnf s
@@ -171,7 +219,7 @@ data TxOut =
             outValue     :: !Word64
             -- | Script specifying the conditions to spend this output.
           , scriptOutput :: !ByteString
-          } deriving (Eq, Show, Read)
+          } deriving (Eq, Show, Ord)
 
 instance NFData TxOut where
     rnf (TxOut v o) = rnf v `seq` rnf o
@@ -195,7 +243,7 @@ data OutPoint = OutPoint
       -- | The position of the specific output in the transaction.
       -- The first output position is 0.
     , outPointIndex :: !Word32
-    } deriving (Show, Eq)
+    } deriving (Show, Eq, Ord)
 
 instance NFData OutPoint where
     rnf (OutPoint h i) = rnf h `seq` rnf i
@@ -212,3 +260,12 @@ instance Serialize OutPoint where
         (h,i) <- liftM2 (,) get getWord32le
         return $ OutPoint h i
     put (OutPoint h i) = put h >> putWord32le i
+
+-- | Outpoint used in coinbase transactions
+nullOutPoint :: OutPoint
+nullOutPoint =
+    OutPoint
+    { outPointHash =
+          "0000000000000000000000000000000000000000000000000000000000000000"
+    , outPointIndex = maxBound
+    }

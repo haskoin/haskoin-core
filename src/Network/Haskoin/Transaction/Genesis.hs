@@ -2,13 +2,13 @@
 module Network.Haskoin.Transaction.Genesis where
 
 import           Data.String                       (fromString)
-import           Network.Haskoin.Script.Parser
+import           Network.Haskoin.Script.Standard
 import           Network.Haskoin.Transaction.Types
 import           Network.Haskoin.Util
 
 genesisTx :: Tx
 genesisTx =
-    createTx version [txin] [txout] locktime
+    Tx version [txin] [txout] [] locktime
   where
     version = 1
     txin = TxIn outpoint inputBS maxBound

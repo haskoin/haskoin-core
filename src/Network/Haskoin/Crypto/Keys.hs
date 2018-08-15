@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Keys
 ( PubKeyI(pubKeyCompressed, pubKeyPoint)
 , PubKey, PubKeyC, PubKeyU
@@ -30,6 +31,7 @@ module Network.Haskoin.Crypto.Keys
 , prvKeyGetMonad
 , fromWif
 , toWif
+, fromMiniKey
 , tweakPrvKeyC
 ) where
 
@@ -388,6 +390,14 @@ toWif (PrvKeyI k c) =
         then EC.getSecKey k `BS.snoc` 0x01
         else EC.getSecKey k
 
+-- | Decode Casascius mini private keys (22 or 30 characters)
+fromMiniKey :: ByteString -> Maybe PrvKeyU
+fromMiniKey bs = do
+    guard checkShortKey
+    decodePrvKey makePrvKeyU (encode $ sha256 bs)
+  where
+    checkHash = encode $ sha256 $ bs `BS.append` "?"
+    checkShortKey = BS.length bs `elem` [22, 30] && BS.head checkHash == 0x00
 
 -- | Tweak a private key
 tweakPrvKeyC :: PrvKeyC -> Hash256 -> Maybe PrvKeyC

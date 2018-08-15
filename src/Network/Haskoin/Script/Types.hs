@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Script.Types
 ( ScriptOp(..)
 , Script(..)

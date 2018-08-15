@@ -1,6 +1,6 @@
 # Haskoin Core
 
-Haskoin Core is a library of Bitcoin and Bitcoin Cash functions written in Haskell. Some of the available code:
+Haskoin Core is a library of Bitcoin and Bitcoin Cash functions written in Haskell featuring:
 
 - Hashing functions (SHA-256, RIPEMD-160)
 - Base58 encoding

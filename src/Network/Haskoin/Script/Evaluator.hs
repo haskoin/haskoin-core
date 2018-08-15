@@ -410,7 +410,7 @@ checkMultiSig :: SigCheck -- ^ Signature checking function
               -> Bool
 checkMultiSig f encPubKeys encSigs hOps =
   let pubKeys = mapMaybe (eitherToMaybe . decode . opToSv) encPubKeys
-      sigs = rights $ map ( decodeSig . opToSv ) encSigs
+      sigs = rights $ map ( decodeTxLaxSig . opToSv ) encSigs
       cleanHashOps = findAndDelete encSigs hOps
   in (length sigs == length encSigs) && -- check for bad signatures
      orderedSatisfy (f cleanHashOps) sigs pubKeys
@@ -562,14 +562,14 @@ eval OP_MAX     = max <$> popInt <*> popInt >>= pushInt
 eval OP_WITHIN  = within <$> popInt <*> popInt <*> popInt >>= pushBool
                   where within y x a = (x <= a) && (a < y)
 
-eval OP_RIPEMD160 = tStack1 $ return . bsToSv . encode . hash160 . opToSv
-eval OP_SHA1 = tStack1 $ return . bsToSv . encode . hashSHA1 . opToSv
+eval OP_RIPEMD160 = tStack1 $ return . bsToSv . encode . ripemd160 . opToSv
+eval OP_SHA1 = tStack1 $ return . bsToSv . encode . sha1 . opToSv
 
-eval OP_SHA256 = tStack1 $ return . bsToSv . encode . hash256 . opToSv
+eval OP_SHA256 = tStack1 $ return . bsToSv . encode . sha256 . opToSv
 eval OP_HASH160 = tStack1 $
     return . bsToSv . encode . addressHash . opToSv
 eval OP_HASH256 = tStack1 $
-    return . bsToSv . encode . doubleHash256  . opToSv
+    return . bsToSv . encode . doubleSHA256  . opToSv
 eval OP_CODESEPARATOR = dropHashOpsSeparatedCode
 eval OP_CHECKSIG = do
     pubKey <- popStack
@@ -785,22 +785,24 @@ runStack :: ProgramData -> Stack
 runStack = stack
 
 -- | A wrapper around 'verifySig' which handles grabbing the hash type
-verifySigWithType :: Tx -> Int -> [ ScriptOp ] -> TxSignature -> PubKey -> Bool
-verifySigWithType tx i outOps txSig pubKey =
-  let outScript = Script outOps
-      h = txSigHash tx outScript i ( sigHashType txSig ) in
-  verifySig h ( txSignature txSig ) pubKey
+verifySigWithType ::
+       Tx -> Int -> Word64 -> [ScriptOp] -> TxSignature -> PubKey -> Bool
+verifySigWithType tx i val outOps txSig pubKey =
+    let outScript = Script outOps
+        h = txSigHash tx outScript val i (txSignatureSigHash txSig)
+    in verifySig h (txSignature txSig) pubKey
 
 -- | Uses `evalScript` to check that the input script of a spending
 -- transaction satisfies the output script.
 verifySpend :: Tx     -- ^ The spending transaction
             -> Int    -- ^ The input index
             -> Script -- ^ The output script we are spending
+            -> Word64 -- ^ The value of the output script
             -> [Flag] -- ^ Evaluation flags
             -> Bool
-verifySpend tx i outscript flags =
+verifySpend tx i outscript val flags =
   let scriptSig = either err id . decode . scriptInput $ txIn tx !! i
-      verifyFcn = verifySigWithType tx i
+      verifyFcn = verifySigWithType tx i val
       err e = error $ "Could not decode scriptInput in verifySpend: " ++ e
   in evalScript scriptSig outscript verifyFcn flags
 

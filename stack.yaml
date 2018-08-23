@@ -1,4 +1,10 @@
 resolver: lts-12.5
+nix:
+  enable: true
+  packages:
+    - autoconf
+    - automake
+    - libtool
 extra-deps:
 - murmur3-1.0.3
 - secp256k1-0.5.3

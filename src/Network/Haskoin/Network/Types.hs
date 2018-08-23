@@ -141,29 +141,40 @@ instance Serialize Inv where
 -- | Data type identifying the type of an inventory vector.
 data InvType
     = InvError -- ^ Error. Data containing this type can be ignored.
-    | InvTx    -- ^ InvVector hash is related to a transaction
+    | InvTx -- ^ InvVector hash is related to a transaction
     | InvBlock -- ^ InvVector hash is related to a block
     | InvMerkleBlock -- ^ InvVector has is related to a merkle block
+    | InvWitnessTx
+    | InvWitnessBlock
+    | InvWitnessMerkleBlock
     deriving (Eq, Show, Read)
 
 instance NFData InvType where rnf x = seq x ()
 
 instance Serialize InvType where
-
     get = go =<< getWord32le
       where
-        go x = case x of
-            0 -> return InvError
-            1 -> return InvTx
-            2 -> return InvBlock
-            3 -> return InvMerkleBlock
-            _ -> fail "bitcoinGet InvType: Invalid Type"
-
-    put x = putWord32le $ case x of
-                InvError       -> 0
-                InvTx          -> 1
-                InvBlock       -> 2
-                InvMerkleBlock -> 3
+        go x =
+            case x of
+                0 -> return InvError
+                1 -> return InvTx
+                2 -> return InvBlock
+                3 -> return InvMerkleBlock
+                _
+                    | x == 1 `shiftL` 30 + 1 -> return InvWitnessTx
+                    | x == 1 `shiftL` 30 + 2 -> return InvWitnessBlock
+                    | x == 1 `shiftL` 30 + 3 -> return InvWitnessMerkleBlock
+                    | otherwise -> fail "bitcoinGet InvType: Invalid Type"
+    put x =
+        putWord32le $
+        case x of
+            InvError -> 0
+            InvTx -> 1
+            InvBlock -> 2
+            InvMerkleBlock -> 3
+            InvWitnessTx -> 1 `shiftL` 30 + 1
+            InvWitnessBlock -> 1 `shiftL` 30 + 2
+            InvWitnessMerkleBlock -> 1 `shiftL` 30 + 3
 
 -- | Invectory vectors represent hashes identifying objects such as a 'Block'
 -- or a 'Tx'. They are sent inside messages to notify other peers about

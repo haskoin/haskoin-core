@@ -87,7 +87,7 @@ data Tx = Tx
     } deriving (Eq, Ord)
 
 txHash :: Tx -> TxHash
-txHash = TxHash . doubleSHA256 . encode
+txHash tx = TxHash (doubleSHA256 (encode tx {txWitness = []}))
 
 instance Show Tx where
     show = show . encodeHex . encode

@@ -48,6 +48,7 @@ module Network.Haskoin.Constants
 , sigHashForkId
 , edaBlockHeight
 , daaBlockHeight
+, onlySegWit
 ) where
 
 import           Control.Concurrent.MVar
@@ -88,6 +89,7 @@ data Network = Network
     , getSigHashForkId            :: !(Maybe Word32)
     , getEDABlockHeight           :: !(Maybe Word32)
     , getDAABlockHeight           :: !(Maybe Word32)
+    , getOnlySegWit               :: !Bool
     } deriving (Eq)
 
 setBTC :: IO ()
@@ -213,6 +215,10 @@ edaBlockHeight = getEDABlockHeight getNetwork
 daaBlockHeight :: Maybe Word32
 daaBlockHeight = getDAABlockHeight getNetwork
 
+-- | Only connect to nodes advertising SegWit support.
+onlySegWit :: Bool
+onlySegWit = getOnlySegWit getNetwork
+
 btc :: Network
 btc =
     Network
@@ -277,20 +283,19 @@ btc =
             , "00000000000000004d9b4ef50f0f9d686fd69db2e03af35a100370c64632a983")
           ]
     , getSeeds =
-          [ "seed.mainnet.b-pay.net" -- BitPay
-          , "seed.ob1.io" -- OB1
-          , "seed.blockchain.info" -- Blockchain
-          , "bitcoin.bloqseeds.net" -- Bloq
-          , "seed.bitcoin.sipa.be" -- Pieter Wuille
+          [ "seed.bitcoin.sipa.be" -- Pieter Wuille
           , "dnsseed.bluematt.me" -- Matt Corallo
           , "dnsseed.bitcoin.dashjr.org" -- Luke Dashjr
           , "seed.bitcoinstats.com" -- Chris Decker
           , "seed.bitcoin.jonasschnelli.ch" -- Jonas Schnelli
+          , "seed.btc.petertodd.org" -- Peter Todd
+          , "seed.bitcoin.sprovoost.nl" -- Sjors Provoost
           ]
     , getBip44Coin = 0
     , getSigHashForkId = Nothing
     , getEDABlockHeight = Nothing
     , getDAABlockHeight = Nothing
+    , getOnlySegWit = True
     }
 
 btcTest :: Network
@@ -335,13 +340,14 @@ btcTest =
     , getSeeds =
           [ "testnet-seed.bitcoin.jonasschnelli.ch"
           , "seed.tbtc.petertodd.org"
+          , "seed.testnet.bitcoin.sprovoost.nl"
           , "testnet-seed.bluematt.me"
-          , "testnet-seed.bitcoin.schildbach.de"
           ]
     , getBip44Coin = 1
     , getSigHashForkId = Nothing
     , getEDABlockHeight = Nothing
     , getDAABlockHeight = Nothing
+    , getOnlySegWit = True
     }
 
 btcRegTest :: Network
@@ -385,6 +391,7 @@ btcRegTest =
     , getSigHashForkId = Nothing
     , getEDABlockHeight = Nothing
     , getDAABlockHeight = Nothing
+    , getOnlySegWit = True
     }
 
 bch :: Network
@@ -469,6 +476,7 @@ bch =
     , getSigHashForkId = Just 0
     , getEDABlockHeight = Just 478559
     , getDAABlockHeight = Just 404031
+    , getOnlySegWit = False
     }
 
 bchTest :: Network
@@ -531,6 +539,7 @@ bchTest =
     , getSigHashForkId = Just 0
     , getEDABlockHeight = Just 1155876
     , getDAABlockHeight = Just 1188697
+    , getOnlySegWit = False
     }
 
 bchRegTest :: Network
@@ -577,4 +586,5 @@ bchRegTest =
     , getSigHashForkId = Just 0
     , getEDABlockHeight = Nothing
     , getDAABlockHeight = Just 0
+    , getOnlySegWit = False
     }

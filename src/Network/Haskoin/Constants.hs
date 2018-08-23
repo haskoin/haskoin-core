@@ -48,7 +48,7 @@ module Network.Haskoin.Constants
 , sigHashForkId
 , edaBlockHeight
 , daaBlockHeight
-, onlySegWit
+, segWit
 ) where
 
 import           Control.Concurrent.MVar
@@ -89,7 +89,7 @@ data Network = Network
     , getSigHashForkId            :: !(Maybe Word32)
     , getEDABlockHeight           :: !(Maybe Word32)
     , getDAABlockHeight           :: !(Maybe Word32)
-    , getOnlySegWit               :: !Bool
+    , getSegWit               :: !Bool
     } deriving (Eq)
 
 setBTC :: IO ()
@@ -216,8 +216,8 @@ daaBlockHeight :: Maybe Word32
 daaBlockHeight = getDAABlockHeight getNetwork
 
 -- | Only connect to nodes advertising SegWit support.
-onlySegWit :: Bool
-onlySegWit = getOnlySegWit getNetwork
+segWit :: Bool
+segWit = getSegWit getNetwork
 
 btc :: Network
 btc =
@@ -295,7 +295,7 @@ btc =
     , getSigHashForkId = Nothing
     , getEDABlockHeight = Nothing
     , getDAABlockHeight = Nothing
-    , getOnlySegWit = True
+    , getSegWit = True
     }
 
 btcTest :: Network
@@ -347,7 +347,7 @@ btcTest =
     , getSigHashForkId = Nothing
     , getEDABlockHeight = Nothing
     , getDAABlockHeight = Nothing
-    , getOnlySegWit = True
+    , getSegWit = True
     }
 
 btcRegTest :: Network
@@ -391,7 +391,7 @@ btcRegTest =
     , getSigHashForkId = Nothing
     , getEDABlockHeight = Nothing
     , getDAABlockHeight = Nothing
-    , getOnlySegWit = True
+    , getSegWit = True
     }
 
 bch :: Network
@@ -476,7 +476,7 @@ bch =
     , getSigHashForkId = Just 0
     , getEDABlockHeight = Just 478559
     , getDAABlockHeight = Just 404031
-    , getOnlySegWit = False
+    , getSegWit = False
     }
 
 bchTest :: Network
@@ -539,7 +539,7 @@ bchTest =
     , getSigHashForkId = Just 0
     , getEDABlockHeight = Just 1155876
     , getDAABlockHeight = Just 1188697
-    , getOnlySegWit = False
+    , getSegWit = False
     }
 
 bchRegTest :: Network
@@ -586,5 +586,5 @@ bchRegTest =
     , getSigHashForkId = Just 0
     , getEDABlockHeight = Nothing
     , getDAABlockHeight = Just 0
-    , getOnlySegWit = False
+    , getSegWit = False
     }

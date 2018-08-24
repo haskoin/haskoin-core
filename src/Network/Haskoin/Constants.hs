@@ -54,13 +54,14 @@ module Network.Haskoin.Constants
 import           Control.Concurrent.MVar
 import           Control.Monad
 import           Data.ByteString             (ByteString)
-import qualified Data.ByteString.Char8       as C8 (concat, pack)
 import           Data.Maybe
-import           Data.Version                (showVersion)
+import           Data.String
 import           Data.Word                   (Word32, Word64, Word8)
 import           Network.Haskoin.Block.Types
-import           Paths_haskoin_core          (version)
 import           System.IO.Unsafe            (unsafePerformIO)
+
+version :: IsString a => a
+version = "1.0.0"
 
 data Network = Network
     { getNetworkName              :: !String
@@ -89,7 +90,7 @@ data Network = Network
     , getSigHashForkId            :: !(Maybe Word32)
     , getEDABlockHeight           :: !(Maybe Word32)
     , getDAABlockHeight           :: !(Maybe Word32)
-    , getSegWit               :: !Bool
+    , getSegWit                   :: !Bool
     } deriving (Eq)
 
 setBTC :: IO ()
@@ -241,7 +242,7 @@ btc =
     , getMaxBlockSize = 1000000
     , getMaxSatoshi = 2100000000000000
     , getHaskoinUserAgent =
-          C8.concat ["/haskoin-btc:", C8.pack $ showVersion version, "/"]
+          "/haskoin-btc:" <> version <> "/"
     , getDefaultPort = 8333
     , getAllowMinDifficultyBlocks = False
     , getPowNoRetargetting = False
@@ -319,8 +320,7 @@ btcTest =
             -- Hash 000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943
     , getMaxBlockSize = 1000000
     , getMaxSatoshi = 2100000000000000
-    , getHaskoinUserAgent =
-          C8.concat ["/haskoin-btc-test:", C8.pack $ showVersion version, "/"]
+    , getHaskoinUserAgent = "/haskoin-btc-test:" <> version <> "/"
     , getDefaultPort = 18333
     , getAllowMinDifficultyBlocks = True
     , getPowNoRetargetting = False
@@ -371,8 +371,7 @@ btcRegTest =
               2
     , getMaxBlockSize = 1000000
     , getMaxSatoshi = 2100000000000000
-    , getHaskoinUserAgent =
-          C8.concat ["/haskoin-btc-regtest:", C8.pack $ showVersion version, "/"]
+    , getHaskoinUserAgent = "/haskoin-btc-regtest:" <> version <> "/"
     , getDefaultPort = 18444
     , getAllowMinDifficultyBlocks = True
     , getPowNoRetargetting = True
@@ -415,9 +414,7 @@ bch =
             -- Hash 000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f
     , getMaxBlockSize = 32000000
     , getMaxSatoshi = 2100000000000000
-    , getHaskoinUserAgent =
-          C8.concat
-              ["/haskoin-bch:", C8.pack $ showVersion version, "/"]
+    , getHaskoinUserAgent = "/haskoin-bch:" <> version <> "/"
     , getDefaultPort = 8333
     , getAllowMinDifficultyBlocks = False
     , getPowNoRetargetting = False
@@ -500,12 +497,7 @@ bchTest =
             -- Hash 000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943
     , getMaxBlockSize = 32000000
     , getMaxSatoshi = 2100000000000000
-    , getHaskoinUserAgent =
-          C8.concat
-              [ "/haskoin-bch-test:"
-              , C8.pack $ showVersion version
-              , "/"
-              ]
+    , getHaskoinUserAgent = "/haskoin-bch-test:" <> version <> "/"
     , getDefaultPort = 18333
     , getAllowMinDifficultyBlocks = True
     , getPowNoRetargetting = False
@@ -563,8 +555,7 @@ bchRegTest =
               2
     , getMaxBlockSize = 1000000
     , getMaxSatoshi = 2100000000000000
-    , getHaskoinUserAgent =
-          C8.concat ["/haskoin-bch-regtest:", C8.pack $ showVersion version, "/"]
+    , getHaskoinUserAgent = "/haskoin-bch-regtest:" <> version <> "/"
     , getDefaultPort = 18444
     , getAllowMinDifficultyBlocks = True
     , getPowNoRetargetting = True

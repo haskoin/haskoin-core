@@ -114,19 +114,6 @@ mnemonicToSeed pf ms = do
     mnm <- toMnemonic ent
     return $ anyToSeed pf mnm
 
--- | Obtain 'Int' bits from beginning of 'ByteString'. Resulting 'ByteString'
--- will be smallest required to hold that many bits, padded with zeroes to the
--- right.
-getBits :: Int -> ByteString -> ByteString
-getBits b bs
-    | r == 0 = BS.take q bs
-    | otherwise = i `BS.snoc` l
-  where
-    (q, r) = b `quotRem` 8
-    s = BS.take (q + 1) bs
-    i = BS.init s
-    l = BS.last s .&. (0xff `shiftL` (8 - r)) -- zero unneeded bits
-
 -- | Get indices of words in word list.
 getIndices :: [ByteString] -> Either String [Int]
 getIndices ws

@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Address where
 
+import           Control.Applicative
 import           Control.DeepSeq
 import           Control.Monad
 import           Data.Aeson                      as A
@@ -55,14 +56,20 @@ base58put (ScriptAddress h) = do
         put h
 
 instance Show Address where
-    showsPrec d a = showParen (d > 10) $
-        showString "Address " . shows (addrToString a)
+    showsPrec d a = case addrToString a of
+        Just s -> shows s
+        Nothing -> showString "InvalidAddress"
 
 instance Read Address where
-    readPrec = parens $ do
-        R.Ident "Address" <- lexP
-        R.String str <- lexP
-        maybe pfail return $ stringToAddr $ cs str
+    readPrec = j <|> n
+      where
+        j =
+            parens $ do
+                R.String str <- lexP
+                maybe pfail return $ stringToAddr $ cs str
+        n = do
+            R.Ident "InvalidAddress" <- lexP
+            pfail
 
 instance IsString Address where
     fromString =
@@ -78,13 +85,50 @@ instance FromJSON Address where
     parseJSON = withText "address" $ maybe mzero return . stringToAddr . cs
 
 instance ToJSON Address where
-    toJSON = A.String . cs . addrToString
+    toJSON =
+        A.String .
+        cs . fromMaybe (error "Could not encode address") . addrToString
 
 -- | Transforms an Address into an encoded String
-addrToString :: Address -> ByteString
-addrToString = encodeBase58Check . runPut . base58put
+addrToString :: Address -> Maybe ByteString
+addrToString a@PubKeyAddress {getAddrHash = h}
+    | isNothing cashAddrPrefix =
+        return $ encodeBase58Check $ runPut $ base58put a
+    | otherwise = cashAddrEncode 0 (S.encode h)
+addrToString a@ScriptAddress {getAddrHash = h}
+    | isNothing cashAddrPrefix =
+        return $ encodeBase58Check $ runPut $ base58put a
+    | otherwise = cashAddrEncode 1 (S.encode h)
+addrToString WitnessPubKeyAddress {getAddrHash = h} = do
+    hrp <- bech32Prefix
+    segwitEncode hrp 0 (B.unpack (S.encode h))
+addrToString WitnessScriptAddress {getScriptHash = h} = do
+    hrp <- bech32Prefix
+    segwitEncode hrp 0 (B.unpack (S.encode h))
 
 -- | Decodes an Address from an encoded String. This function can fail
 -- if the String is not properly encoded or its checksum fails.
 stringToAddr :: ByteString -> Maybe Address
-stringToAddr = eitherToMaybe . runGet base58get <=< decodeBase58Check
+stringToAddr bs = b58 <|> cash <|> segwit
+  where
+    b58 = eitherToMaybe . runGet base58get =<< decodeBase58Check bs
+    cash = cashAddrDecode bs >>= \(ver, bs') -> case ver of
+        0 -> do
+            h <- eitherToMaybe (S.decode bs')
+            return $ PubKeyAddress h
+        1 -> do
+            h <- eitherToMaybe (S.decode bs')
+            return $ ScriptAddress h
+    segwit = do
+        hrp <- bech32Prefix
+        (ver, bs') <- segwitDecode hrp bs
+        guard (ver == 0)
+        let bs'' = B.pack bs'
+        case B.length bs'' of
+            20 -> do
+                h <- eitherToMaybe (S.decode bs'')
+                return $ WitnessPubKeyAddress h
+            32 -> do
+                h <- eitherToMaybe (S.decode bs'')
+                return $ WitnessScriptAddress h
+            _ -> Nothing

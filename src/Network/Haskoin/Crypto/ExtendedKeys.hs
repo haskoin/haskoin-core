@@ -128,7 +128,15 @@ instance Ord XPrvKey where
     compare k1 k2 = xPrvExport k1 `compare` xPrvExport k2
 
 instance Show XPrvKey where
-    show = cs . xPrvExport
+    showsPrec d k = showParen (d > 10) $
+        showString "XPrvKey " . shows (cs (xPrvExport k))
+
+instance Read XPrvKey where
+    readPrec =
+        parens $ do
+            R.Ident "XPrvKey" <- lexP
+            R.String str <- lexP
+            maybe pfail return $ xPrvImport $ cs str
 
 instance IsString XPrvKey where
     fromString =
@@ -159,7 +167,14 @@ instance Ord XPubKey where
     compare k1 k2 = xPubExport k1 `compare` xPubExport k2
 
 instance Show XPubKey where
-    show = cs . xPubExport
+    showsPrec d k = showParen (d > 10) $
+        showString "XPubKey" . shows (cs (xPubExport k))
+
+instance Read XPubKey where
+    readPrec = parens $ do
+        R.Ident "XPubKey" <- lexP
+        R.String str <- lexP
+        maybe pfail return $ xPubImport $ cs str
 
 instance IsString XPubKey where
     fromString =
@@ -543,7 +558,14 @@ derivePubPath = go id
         _         -> f
 
 instance Show (DerivPathI t) where
-    show = pathToStr
+    showsPrec d p = showParen (d > 10) $
+        showString "DerivPathI " . shows (pathtoStr p)
+
+instance Read (DerivPathI t) where
+    readPrec = parens $ do
+        R.Ident "DerivPathI " <- lexP
+        R.String str <- lexP
+        maybe pfail return $ parsePath str
 
 instance IsString ParsedPath where
     fromString =
@@ -605,10 +627,17 @@ data ParsedPath = ParsedPrv   { getParsedPath :: !DerivPath }
   deriving Eq
 
 instance Show ParsedPath where
-    show p = case p of
-        ParsedPrv d   -> "m" <> pathToStr d
-        ParsedPub d   -> "M" <> pathToStr d
-        ParsedEmpty d -> pathToStr d
+    showsPrec d p = showParen (d > 10) $
+        showString "ParsedPath " . shows $ case p of
+            ParsedPrv d' -> "m" <> pathToStr d'
+            ParsedPub d' -> "M" <> pathToStr d'
+            ParsedEmpty d' -> pathToStr d'
+
+instance Read ParsedPath where
+    readPrec = parens $ do
+        R.Ident "ParsedPath" <- lexP
+        R.String str <- lexP
+        maybe pfail return $ parsePath str
 
 -- | Parse derivation path string for extended key.
 -- Forms: “m/0'/2”, “M/2/3/4”.
@@ -641,8 +670,17 @@ data Bip32PathIndex = Bip32HardIndex KeyIndex
   deriving Eq
 
 instance Show Bip32PathIndex where
-    show (Bip32HardIndex i) = show i <> "'"
-    show (Bip32SoftIndex i) = show i
+    showsPrec d (Bip32HardIndex i) = showString (show i <> "'")
+    showsPrec d (Bip32SoftIndex i) = showString (show i)
+
+instance Read Bip32PathIndex where
+    readPrec =
+        parens $ do
+            R.String str <- lexP
+            guard $ not $ null str
+            if last str == '\''
+                then Bip32HardIndex <$> read (init str)
+                else Bip32softIndex <$> read str
 
 is31Bit :: (Integral a) => a -> Bool
 is31Bit i = i >= 0 && i < 0x80000000

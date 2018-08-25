@@ -70,10 +70,7 @@ instance Serialize Block where
 
 newtype BlockHash = BlockHash
     { getBlockHash :: Hash256 }
-    deriving (Eq, Ord, NFData, Hashable, Serialize)
-
-instance Show BlockHash where
-    show = cs . blockHashToHex
+    deriving (Eq, Ord, NFData, Hashable, Serialize, Show, Read)
 
 instance IsString BlockHash where
     fromString s =

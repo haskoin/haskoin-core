@@ -43,6 +43,8 @@ import           Network.Haskoin.Network
 import           Network.Haskoin.Script.Types
 import           Network.Haskoin.Transaction.Types
 import           Network.Haskoin.Util
+import           Text.Read                         as R
+import           Text.Read.Lex                     (numberToInteger)
 
 -- | Data type representing the different ways a transaction can be signed.
 -- When producing a signature, a hash of the transaction is used as the message
@@ -59,7 +61,14 @@ newtype SigHash = SigHash Word32
     deriving (Eq, Ord, Enum, Bits, Num, Real, Integral, NFData)
 
 instance Show SigHash where
-    show sh = cs $ encodeHex $ runPut $ putWord32be $ fromIntegral sh
+    showsPrec d sh =
+        showParen (d > 10) $ showString "SigHash " . shows (fromIntegral sh)
+
+instance Read SigHash where
+    readPrec = do
+        R.Ident "SigHash" <- lexP
+        R.Number n <- lexP
+        maybe pfail return $ fromIntegral <$> numberToInteger n
 
 instance IsString SigHash where
     fromString s =

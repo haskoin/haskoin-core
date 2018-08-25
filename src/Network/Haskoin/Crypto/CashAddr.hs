@@ -2,18 +2,18 @@
 module Network.Haskoin.Crypto.CashAddr
     ( CashPrefix
     , CashVersion
-    -- , cashAddrDecode , cashAddrEncode
+    , cashAddrDecode
+    , cashAddrEncode
     , cash32decode
     , cash32encode
     ) where
 
 import           Control.Monad
 import           Control.Monad.State.Strict
-import           Data.Array                    ((!))
 import           Data.Bits
-import           Data.ByteString               (ByteString)
-import qualified Data.ByteString               as B
-import qualified Data.ByteString.Char8         as C
+import           Data.ByteString            (ByteString)
+import qualified Data.ByteString            as B
+import qualified Data.ByteString.Char8      as C
 import           Data.Char
 import           Data.List
 import           Data.Maybe
@@ -34,31 +34,33 @@ charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 base32char :: Char -> Maybe Word8
 base32char = fmap fromIntegral . (`elemIndex` charset)
 
--- cashAddrDecode :: CashAddr -> Maybe (CashVersion, ByteString)
--- cashAddrDecode ca' = do
---     epfx <- cashAddrPrefix
---     guard (B.length ca <= 90)
---     guard (C.map toUpper ca' == ca' || ca == ca')
---     let (cpfx', cdat) = C.breakEnd (== ':') ca
---         cpfx | B.null cpfx' = epfx
---              | otherwise = B.init cpfx'
---     (dpfx, bs) <- cash32decode (epfx <> ":" <> cdat)
---     guard (not (B.null bs))
---     guard (dpfx == epfx)
---     let len = decodeCashLength (B.head bs)
---         ver = decodeCashVersion (B.head bs)
---     return (ver, B.take len bs)
---   where
---     ca = C.map toLower ca'
+cashAddrDecode :: CashAddr -> Maybe (CashVersion, ByteString)
+cashAddrDecode ca' = do
+    epfx <- cashAddrPrefix
+    guard (B.length ca <= 90)
+    guard (C.map toUpper ca' == ca' || ca == ca')
+    let (cpfx', cdat) = C.breakEnd (== ':') ca
+        cpfx
+            | B.null cpfx' = epfx
+            | otherwise = B.init cpfx'
+    (dpfx, bs) <- cash32decode (epfx <> ":" <> cdat)
+    guard (not (B.null bs))
+    guard (dpfx == epfx)
+    let len = decodeCashLength (B.head bs)
+        ver = decodeCashVersion (B.head bs)
+    guard (B.length (B.tail bs) == len)
+    return (ver, B.tail bs)
+  where
+    ca = C.map toLower ca'
 
--- cashAddrEncode :: CashVersion -> ByteString -> Maybe CashAddr
--- cashAddrEncode cv bs = do
---     pfx <- cashAddrPrefix
---     ver <- encodeCashVersion cv
---     len <- encodeCashLength (B.length bs)
---     let vb = ver .|. len
---         pl = vb `B.cons` bs
---     return (cash32encode pfx pl)
+cashAddrEncode :: CashVersion -> ByteString -> Maybe CashAddr
+cashAddrEncode cv bs = do
+    pfx <- cashAddrPrefix
+    ver <- encodeCashVersion cv
+    len <- encodeCashLength (B.length bs)
+    let vb = ver .|. len
+        pl = vb `B.cons` bs
+    return (cash32encode pfx pl)
 
 cash32decode :: Cash32 -> Maybe (CashPrefix, ByteString)
 cash32decode bs' = do

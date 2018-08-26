@@ -18,14 +18,14 @@ tests =
           , testProperty "decode58Chk . encode58Chk == id" $
             forAll arbitraryBS $ \bs ->
                 decodeBase58Check (encodeBase58Check bs) == Just bs
-          , testProperty "base58ToAddr . addrToBase58 == id" $
+          , testProperty "stringToAddr . addrToString == id" $
             forAll arbitraryAddress $ \a ->
-                base58ToAddr (addrToBase58 a) == Just a
+                (stringToAddr =<< addrToString a) == Just a
           , testProperty "Read/Show address" $
             forAll arbitraryAddress $ \a -> read (show a) == a
           , testProperty "From string address" $
             forAll arbitraryAddress $ \a ->
-                fromString (cs $ addrToBase58 a) == a
+                fmap (fromString . cs) (addrToString a) == Just a
           ]
     ]
 

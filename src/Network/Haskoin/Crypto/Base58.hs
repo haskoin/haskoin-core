@@ -1,13 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Crypto.Base58
-( Address(..)
-, addrToBase58
-, base58ToAddr
-, encodeBase58
-, decodeBase58
-, encodeBase58Check
-, decodeBase58Check
-) where
+module Network.Haskoin.Crypto.Base58 where
 
 import           Control.DeepSeq             (NFData, rnf)
 import           Control.Monad               (guard, mzero)
@@ -89,69 +81,3 @@ decodeBase58Check bs = do
     let (res, chk) = BS.splitAt (BS.length rs - 4) rs
     guard $ chk == encode (checkSum32 res)
     return res
-
--- | Data type representing a Bitcoin address
-data Address
-    -- | Public Key Hash Address
-    = PubKeyAddress { getAddrHash :: !Hash160 }
-    -- | Script Hash Address
-    | ScriptAddress { getAddrHash :: !Hash160 }
-       deriving (Eq, Ord)
-
-instance Serialize Address where
-    get = do
-        pfx <- getWord8
-        addr <- get
-        f pfx addr
-      where
-        f x a | x == addrPrefix   = return (PubKeyAddress a)
-              | x == scriptPrefix = return (ScriptAddress a)
-              | otherwise = fail "Does not recognize address prefix"
-    put (PubKeyAddress h) = do
-        putWord8 addrPrefix
-        put h
-    put (ScriptAddress h) = do
-        putWord8 scriptPrefix
-        put h
-
--- TODO: Test
-instance Show Address where
-    showsPrec d a = showParen (d > 10) $
-        showString "Address " . shows (addrToBase58 a)
-
--- TODO: Test
-instance Read Address where
-    readPrec = parens $ do
-        Read.Ident "Address" <- lexP
-        Read.String str <- lexP
-        maybe pfail return $ base58ToAddr $ cs str
-
--- TODO: Test
-instance IsString Address where
-    fromString =
-        fromMaybe e . base58ToAddr . cs
-      where
-        e = error "Could not decode bitcoin address"
-
-instance NFData Address where
-    rnf (PubKeyAddress h) = rnf h
-    rnf (ScriptAddress h) = rnf h
-
-instance FromJSON Address where
-    parseJSON = withText "Address" $
-        maybe mzero return . base58ToAddr . cs
-
-instance ToJSON Address where
-    toJSON = String . cs . addrToBase58
-
--- | Transforms an Address into a base58 encoded String
-addrToBase58 :: Address -> ByteString
-addrToBase58 = encodeBase58Check . encode
-
--- | Decodes an Address from a base58 encoded String. This function can fail
--- if the String is not properly encoded as base58 or the checksum fails.
-base58ToAddr :: ByteString -> Maybe Address
-base58ToAddr str = do
-    val <- decodeBase58Check str
-    eitherToMaybe $ decode val
-

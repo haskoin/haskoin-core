@@ -49,6 +49,8 @@ module Network.Haskoin.Constants
 , edaBlockHeight
 , daaBlockHeight
 , segWit
+, cashAddrPrefix
+, bech32Prefix
 ) where
 
 import           Control.Concurrent.MVar
@@ -56,12 +58,14 @@ import           Control.Monad
 import           Data.ByteString             (ByteString)
 import           Data.Maybe
 import           Data.String
+import           Data.Version
 import           Data.Word                   (Word32, Word64, Word8)
 import           Network.Haskoin.Block.Types
+import           Paths_haskoin_core
 import           System.IO.Unsafe            (unsafePerformIO)
 
-version :: IsString a => a
-version = "1.0.0"
+versionString :: IsString a => a
+versionString = fromString (showVersion version)
 
 data Network = Network
     { getNetworkName              :: !String
@@ -91,6 +95,8 @@ data Network = Network
     , getEDABlockHeight           :: !(Maybe Word32)
     , getDAABlockHeight           :: !(Maybe Word32)
     , getSegWit                   :: !Bool
+    , getCashAddrPrefix           :: !(Maybe ByteString)
+    , getBech32Prefix             :: !(Maybe ByteString)
     } deriving (Eq)
 
 setBTC :: IO ()
@@ -220,6 +226,12 @@ daaBlockHeight = getDAABlockHeight getNetwork
 segWit :: Bool
 segWit = getSegWit getNetwork
 
+cashAddrPrefix :: Maybe ByteString
+cashAddrPrefix = getCashAddrPrefix getNetwork
+
+bech32Prefix :: Maybe ByteString
+bech32Prefix = getBech32Prefix getNetwork
+
 btc :: Network
 btc =
     Network
@@ -242,7 +254,7 @@ btc =
     , getMaxBlockSize = 1000000
     , getMaxSatoshi = 2100000000000000
     , getHaskoinUserAgent =
-          "/haskoin-btc:" <> version <> "/"
+          "/haskoin-btc:" <> versionString <> "/"
     , getDefaultPort = 8333
     , getAllowMinDifficultyBlocks = False
     , getPowNoRetargetting = False
@@ -297,6 +309,8 @@ btc =
     , getEDABlockHeight = Nothing
     , getDAABlockHeight = Nothing
     , getSegWit = True
+    , getCashAddrPrefix = Nothing
+    , getBech32Prefix = Just "bc"
     }
 
 btcTest :: Network
@@ -320,7 +334,7 @@ btcTest =
             -- Hash 000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943
     , getMaxBlockSize = 1000000
     , getMaxSatoshi = 2100000000000000
-    , getHaskoinUserAgent = "/haskoin-btc-test:" <> version <> "/"
+    , getHaskoinUserAgent = "/haskoin-btc-test:" <> versionString <> "/"
     , getDefaultPort = 18333
     , getAllowMinDifficultyBlocks = True
     , getPowNoRetargetting = False
@@ -348,6 +362,8 @@ btcTest =
     , getEDABlockHeight = Nothing
     , getDAABlockHeight = Nothing
     , getSegWit = True
+    , getCashAddrPrefix = Nothing
+    , getBech32Prefix = Just "tb"
     }
 
 btcRegTest :: Network
@@ -371,7 +387,7 @@ btcRegTest =
               2
     , getMaxBlockSize = 1000000
     , getMaxSatoshi = 2100000000000000
-    , getHaskoinUserAgent = "/haskoin-btc-regtest:" <> version <> "/"
+    , getHaskoinUserAgent = "/haskoin-btc-regtest:" <> versionString <> "/"
     , getDefaultPort = 18444
     , getAllowMinDifficultyBlocks = True
     , getPowNoRetargetting = True
@@ -391,6 +407,8 @@ btcRegTest =
     , getEDABlockHeight = Nothing
     , getDAABlockHeight = Nothing
     , getSegWit = True
+    , getCashAddrPrefix = Nothing
+    , getBech32Prefix = Just "bcrt"
     }
 
 bch :: Network
@@ -414,7 +432,7 @@ bch =
             -- Hash 000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f
     , getMaxBlockSize = 32000000
     , getMaxSatoshi = 2100000000000000
-    , getHaskoinUserAgent = "/haskoin-bch:" <> version <> "/"
+    , getHaskoinUserAgent = "/haskoin-bch:" <> versionString <> "/"
     , getDefaultPort = 8333
     , getAllowMinDifficultyBlocks = False
     , getPowNoRetargetting = False
@@ -474,6 +492,8 @@ bch =
     , getEDABlockHeight = Just 478559
     , getDAABlockHeight = Just 404031
     , getSegWit = False
+    , getCashAddrPrefix = Just "bitcoincash"
+    , getBech32Prefix = Nothing
     }
 
 bchTest :: Network
@@ -497,7 +517,7 @@ bchTest =
             -- Hash 000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943
     , getMaxBlockSize = 32000000
     , getMaxSatoshi = 2100000000000000
-    , getHaskoinUserAgent = "/haskoin-bch-test:" <> version <> "/"
+    , getHaskoinUserAgent = "/haskoin-bch-test:" <> versionString <> "/"
     , getDefaultPort = 18333
     , getAllowMinDifficultyBlocks = True
     , getPowNoRetargetting = False
@@ -532,6 +552,8 @@ bchTest =
     , getEDABlockHeight = Just 1155876
     , getDAABlockHeight = Just 1188697
     , getSegWit = False
+    , getCashAddrPrefix = Just "bchtest"
+    , getBech32Prefix = Nothing
     }
 
 bchRegTest :: Network
@@ -555,7 +577,7 @@ bchRegTest =
               2
     , getMaxBlockSize = 1000000
     , getMaxSatoshi = 2100000000000000
-    , getHaskoinUserAgent = "/haskoin-bch-regtest:" <> version <> "/"
+    , getHaskoinUserAgent = "/haskoin-bch-regtest:" <> versionString <> "/"
     , getDefaultPort = 18444
     , getAllowMinDifficultyBlocks = True
     , getPowNoRetargetting = True
@@ -578,4 +600,6 @@ bchRegTest =
     , getEDABlockHeight = Nothing
     , getDAABlockHeight = Just 0
     , getSegWit = False
+    , getCashAddrPrefix = Just "bchreg"
+    , getBech32Prefix = Nothing
     }

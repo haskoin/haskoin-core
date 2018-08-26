@@ -10,6 +10,7 @@ module Network.Haskoin.Util
 , integerToBS
 , encodeHex
 , decodeHex
+, getBits
 
   -- * Maybe and Either monad helpers
 , eitherToMaybe
@@ -20,6 +21,7 @@ module Network.Haskoin.Util
   -- * Various helpers
 , updateIndex
 , matchTemplate
+, convertBits
 
   -- * Triples
 , fst3
@@ -36,11 +38,12 @@ import           Control.Monad          (guard)
 import           Control.Monad.Except   (ExceptT (..))
 import           Data.Aeson.Types       (Options (..), SumEncoding (..),
                                          defaultOptions, defaultTaggedObject)
-import           Data.Bits              (shiftL, shiftR, (.|.))
+import           Data.Bits
 import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Base16 as B16
 import           Data.Char              (toLower)
+import           Data.List
 import           Data.Word              (Word8)
 
 -- ByteString helpers
@@ -70,6 +73,19 @@ decodeHex :: ByteString -> Maybe ByteString
 decodeHex bs =
     let (x, b) = B16.decode bs
     in guard (b == BS.empty) >> return x
+
+-- | Obtain 'Int' bits from beginning of 'ByteString'. Resulting 'ByteString'
+-- will be smallest required to hold that many bits, padded with zeroes to the
+-- right.
+getBits :: Int -> ByteString -> ByteString
+getBits b bs
+    | r == 0 = BS.take q bs
+    | otherwise = i `BS.snoc` l
+  where
+    (q, r) = b `quotRem` 8
+    s = BS.take (q + 1) bs
+    i = BS.init s
+    l = BS.last s .&. (0xff `shiftL` (8 - r)) -- zero unneeded bits
 
 -- Maybe and Either monad helpers
 
@@ -144,3 +160,29 @@ dropSumLabels c f tag = (dropFieldLabel f)
     { constructorTagModifier = map toLower . drop c
     , sumEncoding = defaultTaggedObject { tagFieldName = tag }
     }
+
+-- | Convert from one power-of-two base to another.
+convertBits :: Bool -> Int -> Int -> [Word] -> ([Word], Bool)
+convertBits pad frombits tobits i = (reverse yout, rem)
+  where
+    (xacc, xbits, xout) = foldl' outer (0, 0, []) i
+    (yout, rem)
+        | pad && xbits /= 0 =
+            let xout' = (xacc `shiftL` (tobits - xbits)) .&. maxv : xout
+            in (xout', False)
+        | pad = (xout, False)
+        | xbits /= 0 = (xout, True)
+        | otherwise = (xout, False)
+    maxv = 1 `shiftL` tobits - 1
+    max_acc = 1 `shiftL` (frombits + tobits - 1) - 1
+    outer (acc, bits, out) it =
+        let acc' = ((acc `shiftL` frombits) .|. it) .&. max_acc
+            bits' = bits + frombits
+            (out', bits'') = inner acc' out bits'
+        in (acc', bits'', out')
+    inner acc out bits
+        | bits >= tobits =
+            let bits' = bits - tobits
+                out' = ((acc `shiftR` bits') .&. maxv) : out
+            in inner acc out' bits'
+        | otherwise = (out, bits)

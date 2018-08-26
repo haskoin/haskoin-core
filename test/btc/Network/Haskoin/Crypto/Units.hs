@@ -156,10 +156,10 @@ checkKeyCompressed = do
 
 checkMatchingAddress :: Assertion
 checkMatchingAddress = do
-    assertBool "Key 1"  $ addr1  == addrToBase58 (pubKeyAddr pub1)
-    assertBool "Key 2"  $ addr2  == addrToBase58 (pubKeyAddr pub2)
-    assertBool "Key 1C" $ addr1C == addrToBase58 (pubKeyAddr pub1C)
-    assertBool "Key 2C" $ addr2C == addrToBase58 (pubKeyAddr pub2C)
+    assertBool "Key 1"  $ Just addr1  == addrToString (pubKeyAddr pub1)
+    assertBool "Key 2"  $ Just addr2  == addrToString (pubKeyAddr pub2)
+    assertBool "Key 1C" $ Just addr1C == addrToString (pubKeyAddr pub1C)
+    assertBool "Key 2C" $ Just addr2C == addrToString (pubKeyAddr pub2C)
 
 checkSignatures :: Hash256 -> Assertion
 checkSignatures h = do

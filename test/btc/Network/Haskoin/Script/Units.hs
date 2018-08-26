@@ -27,12 +27,15 @@ mapMulSigVector (v, i) =
     name = "MultiSignature vector " ++ show i
 
 runMulSigVector :: (ByteString, ByteString) -> Assertion
-runMulSigVector (a, ops) = assertBool "    >  MultiSig Vector" $ a == b
+runMulSigVector (a, ops) = assertBool "    >  MultiSig Vector" $ Just a == b
   where
-    s = fromJust $ either (const Nothing) return . decode =<< decodeHex ops
-    b =
-        addrToBase58 . p2shAddr . fromRight (error "Could not decode output") $
-        decodeOutput s
+    s = do
+        s <- decodeHex ops
+        eitherToMaybe $ decode s
+    b = do
+        o <- s
+        d <- eitherToMaybe $ decodeOutput o
+        addrToString $ p2shAddr d
 
 sigDecodeMap :: (ByteString, Int) -> Test.Framework.Test
 sigDecodeMap (_, i) =

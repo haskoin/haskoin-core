@@ -9,7 +9,7 @@ import           Data.Either                         (fromRight)
 import           Data.List                           (foldl')
 import           Data.Serialize                      (decode)
 import           Data.Word                           (Word32)
-import           Network.Haskoin.Crypto.Base58
+import           Network.Haskoin.Crypto.Address
 import           Network.Haskoin.Crypto.ECDSA
 import           Network.Haskoin.Crypto.ExtendedKeys
 import           Network.Haskoin.Crypto.Hash
@@ -65,7 +65,7 @@ arbitraryPubKeyC = (\k -> (k, derivePubKey k)) <$> arbitraryPrvKeyC
 arbitraryPubKeyU :: Gen (PrvKeyU, PubKeyU)
 arbitraryPubKeyU = (\k -> (k, derivePubKey k)) <$> arbitraryPrvKeyU
 
--- | Arbitrary address (can be a pubkey or script hash address)
+-- | Arbitrary non-witness address (can be a pubkey or script hash address)
 arbitraryAddress :: Gen Address
 arbitraryAddress = oneof [ arbitraryPubKeyAddress
                          , arbitraryScriptAddress

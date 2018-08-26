@@ -42,9 +42,11 @@ import           Data.String             (IsString, fromString)
 import           Data.String.Conversions (cs)
 import           Data.Word               (Word16, Word32)
 import           Network.Haskoin.Util
+import           Text.Read               as R
 
-newtype CheckSum32 = CheckSum32 { getCheckSum32 :: Word32 }
-    deriving (Eq, Ord, Serialize, NFData, Show, Hashable)
+newtype CheckSum32 = CheckSum32
+    { getCheckSum32 :: Word32
+    } deriving (Eq, Ord, Serialize, NFData, Show, Read, Hashable)
 
 newtype Hash512 = Hash512 { getHash512 :: ShortByteString }
     deriving (Eq, Ord, NFData, Hashable)
@@ -56,13 +58,40 @@ newtype Hash160 = Hash160 { getHash160 :: ShortByteString }
     deriving (Eq, Ord, NFData, Hashable)
 
 instance Show Hash512 where
-    show = cs . encodeHex . BSS.fromShort . getHash512
+    showsPrec d k =
+        showParen (d > 10) $
+        showString "Hash512 " . shows (encodeHex (BSS.fromShort (getHash512 k)))
+
+instance Read Hash512 where
+    readPrec =
+        parens $ do
+            R.Ident "Hash512" <- lexP
+            R.String str <- lexP
+            maybe pfail return $ Hash512 . BSS.toShort <$> decodeHex (cs str)
 
 instance Show Hash256 where
-    show = cs . encodeHex . BSS.fromShort . getHash256
+    showsPrec d k =
+        showParen (d > 10) $
+        showString "Hash256 " . shows (encodeHex (BSS.fromShort (getHash256 k)))
+
+instance Read Hash256 where
+    readPrec =
+        parens $ do
+            R.Ident "Hash256" <- lexP
+            R.String str <- lexP
+            maybe pfail return $ Hash256 . BSS.toShort <$> decodeHex (cs str)
 
 instance Show Hash160 where
-    show = cs . encodeHex . BSS.fromShort . getHash160
+    showsPrec d k =
+        showParen (d > 10) $
+        showString "Hash160 " . shows (encodeHex (BSS.fromShort (getHash160 k)))
+
+instance Read Hash160 where
+    readPrec =
+        parens $ do
+            R.Ident "Hash160" <- lexP
+            R.String str <- lexP
+            maybe pfail return $ Hash160 . BSS.toShort <$> decodeHex (cs str)
 
 instance IsString Hash512 where
     fromString str =

@@ -35,28 +35,29 @@ module Network.Haskoin.Crypto.Keys
 , tweakPrvKeyC
 ) where
 
-import           Control.Applicative           ((<|>))
-import           Control.DeepSeq               (NFData, rnf)
-import           Control.Monad                 (guard, mzero, (<=<))
-import qualified Crypto.Secp256k1              as EC
-import           Data.Aeson                    (FromJSON, ToJSON,
-                                                Value (String), parseJSON,
-                                                toJSON, withText)
-import           Data.ByteString               (ByteString)
-import qualified Data.ByteString               as BS
-import           Data.Maybe                    (fromMaybe)
-import           Data.Serialize                (Serialize, decode, encode, get,
-                                                put)
-import           Data.Serialize.Get            (Get, getByteString)
-import           Data.Serialize.Put            (Put, putByteString)
-import           Data.String                   (IsString, fromString)
-import           Data.String.Conversions       (cs)
+import           Control.Applicative            ((<|>))
+import           Control.DeepSeq                (NFData, rnf)
+import           Control.Monad                  (guard, mzero, (<=<))
+import qualified Crypto.Secp256k1               as EC
+import           Data.Aeson                     (FromJSON, ToJSON,
+                                                 Value (String), parseJSON,
+                                                 toJSON, withText)
+import           Data.ByteString                (ByteString)
+import qualified Data.ByteString                as BS
+import           Data.Maybe                     (fromMaybe)
+import           Data.Serialize                 (Serialize, decode, encode, get,
+                                                 put)
+import           Data.Serialize.Get             (Get, getByteString)
+import           Data.Serialize.Put             (Put, putByteString)
+import           Data.String                    (IsString, fromString)
+import           Data.String.Conversions        (cs)
 import           Network.Haskoin.Constants
+import           Network.Haskoin.Crypto.Address
 import           Network.Haskoin.Crypto.Base58
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Util
-import           Text.Read                     (lexP, parens, pfail, readPrec)
-import qualified Text.Read                     as Read
+import           Text.Read                      (lexP, parens, pfail, readPrec)
+import qualified Text.Read                      as Read
 
 data Generic
 data Compressed

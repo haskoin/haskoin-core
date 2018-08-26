@@ -31,6 +31,7 @@ import           Data.Bits
 import           Data.ByteString                   (ByteString)
 import qualified Data.ByteString                   as BS
 import           Data.Maybe
+import           Data.Scientific
 import           Data.Serialize
 import           Data.Serialize.Put                (runPut)
 import           Data.String                       (IsString, fromString)
@@ -43,6 +44,8 @@ import           Network.Haskoin.Network
 import           Network.Haskoin.Script.Types
 import           Network.Haskoin.Transaction.Types
 import           Network.Haskoin.Util
+import           Text.Read                         as R
+import           Text.Read.Lex                     (numberToInteger)
 
 -- | Data type representing the different ways a transaction can be signed.
 -- When producing a signature, a hash of the transaction is used as the message
@@ -56,22 +59,15 @@ import           Network.Haskoin.Util
 -- Otherwise, all of the inputs of a transaction are signed. The default value
 -- for anyoneCanPay is False.
 newtype SigHash = SigHash Word32
-    deriving (Eq, Ord, Enum, Bits, Num, Real, Integral, NFData)
-
-instance Show SigHash where
-    show sh = cs $ encodeHex $ runPut $ putWord32be $ fromIntegral sh
-
-instance IsString SigHash where
-    fromString s =
-        let e = error "Could not read sighash from hex string"
-        in fromIntegral $
-           fromMaybe e $ eitherToMaybe . runGet getWord32be =<< decodeHex (cs s)
+    deriving (Eq, Ord, Enum, Bits, Num, Real, Integral, NFData, Show, Read)
 
 instance J.FromJSON SigHash where
-    parseJSON = J.withText "sighash" $ \t -> return $ fromString $ cs t
+    parseJSON =
+        J.withScientific "sighash" $
+        either (const mzero) return . floatingOrInteger
 
 instance J.ToJSON SigHash where
-    toJSON = J.String . cs . show
+    toJSON = J.Number . fromIntegral
 
 sigHashAll :: SigHash
 sigHashAll = 0x01

@@ -34,12 +34,20 @@ import           Data.Word                     (Word32, Word64)
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Network.Types
 import           Network.Haskoin.Util
+import qualified Text.Read                     as R
 
 newtype TxHash = TxHash { getTxHash :: Hash256 }
     deriving (Eq, Ord, NFData, Hashable, Serialize)
 
 instance Show TxHash where
-    show = cs . txHashToHex
+    showsPrec d a =
+        showParen (d > 10) $ showString "TxHash " . shows (txHashToHex a)
+
+instance Read TxHash where
+    readPrec = R.parens $ do
+        R.Ident "TxHash" <- R.lexP
+        R.String str <- R.lexP
+        maybe R.pfail return $ hexToTxHash $ cs str
 
 instance IsString TxHash where
     fromString s =

@@ -56,9 +56,10 @@ base58put (ScriptAddress h) = do
         put h
 
 instance Show Address where
-    showsPrec d a = case addrToString a of
-        Just s -> showString "Address " . shows s
-        Nothing -> showString "InvalidAddress"
+    showsPrec d a =
+        case addrToString a of
+            Just s -> showParen (d > 10) $ showString "Address " . shows s
+            Nothing -> showString "InvalidAddress"
 
 instance Read Address where
     readPrec = j <|> n

@@ -40,6 +40,7 @@ import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Network.Types
 import           Network.Haskoin.Transaction.Types
 import           Network.Haskoin.Util
+import qualified Text.Read                         as R
 
 type BlockHeight = Word32
 type Timestamp = Word32
@@ -70,7 +71,18 @@ instance Serialize Block where
 
 newtype BlockHash = BlockHash
     { getBlockHash :: Hash256 }
-    deriving (Eq, Ord, NFData, Hashable, Serialize, Show, Read)
+    deriving (Eq, Ord, NFData, Hashable, Serialize)
+
+instance Show BlockHash where
+    showsPrec d a =
+        showParen (d > 10) $ showString "BlockHash " . shows (blockHashToHex a)
+
+instance Read BlockHash where
+    readPrec =
+        R.parens $ do
+            R.Ident "BlockHash" <- R.lexP
+            R.String str <- R.lexP
+            maybe R.pfail return $ hexToBlockHash $ cs str
 
 instance IsString BlockHash where
     fromString s =

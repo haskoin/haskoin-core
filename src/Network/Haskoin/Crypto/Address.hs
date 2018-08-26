@@ -57,7 +57,7 @@ base58put (ScriptAddress h) = do
 
 instance Show Address where
     showsPrec d a = case addrToString a of
-        Just s -> shows s
+        Just s -> showString "Address " . shows s
         Nothing -> showString "InvalidAddress"
 
 instance Read Address where
@@ -65,11 +65,13 @@ instance Read Address where
       where
         j =
             parens $ do
+                R.Ident "Address" <- lexP
                 R.String str <- lexP
                 maybe pfail return $ stringToAddr $ cs str
-        n = do
-            R.Ident "InvalidAddress" <- lexP
-            pfail
+        n =
+            parens $ do
+                R.Ident "InvalidAddress" <- lexP
+                pfail
 
 instance IsString Address where
     fromString =

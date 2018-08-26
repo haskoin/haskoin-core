@@ -1,5 +1,15 @@
 {- Copied from reference implementation contributed by Marko Bencun -}
-module Network.Haskoin.Crypto.Bech32 where
+module Network.Haskoin.Crypto.Bech32
+    ( bech32Encode
+    , bech32Decode
+    , toBase32
+    , toBase256
+    , segwitEncode
+    , segwitDecode
+    , Word5()
+    , word5
+    , fromWord5
+    ) where
 
 import           Control.Monad         (guard)
 import           Data.Array            (Array, assocs, bounds, listArray, (!),

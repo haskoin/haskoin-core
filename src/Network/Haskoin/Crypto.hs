@@ -8,6 +8,7 @@ module Network.Haskoin.Crypto
 ) where
 
 import           Network.Haskoin.Crypto.Base58       as X
+import           Network.Haskoin.Crypto.CashAddr     as X
 import           Network.Haskoin.Crypto.ECDSA        as X
 import           Network.Haskoin.Crypto.ExtendedKeys as X
 import           Network.Haskoin.Crypto.Hash         as X

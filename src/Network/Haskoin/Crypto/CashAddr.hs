@@ -2,6 +2,8 @@
 module Network.Haskoin.Crypto.CashAddr
     ( CashPrefix
     , CashVersion
+    , CashAddr
+    , Cash32
     , cashAddrDecode
     , cashAddrEncode
     , cash32decode

@@ -70,36 +70,41 @@ module Network.Haskoin.Crypto.ExtendedKeys
 , concatBip32Segments
 ) where
 
-import           Control.DeepSeq               (NFData, rnf)
-import           Control.Exception             (Exception, throw)
-import           Control.Monad                 (guard, mzero, unless, (<=<))
-import qualified Crypto.Secp256k1              as EC
-import           Data.Aeson                    (FromJSON, ToJSON,
-                                                Value (String), parseJSON,
-                                                toJSON, withText)
-import           Data.Bits                     (clearBit, setBit, testBit)
-import           Data.ByteString               (ByteString)
-import qualified Data.ByteString               as BS
-import           Data.Either                   (fromRight)
-import           Data.List                     (foldl')
-import           Data.List.Split               (splitOn)
-import           Data.Maybe                    (fromMaybe)
-import           Data.Monoid                   ((<>))
-import           Data.Serialize                (Serialize, decode, encode, get,
-                                                put)
-import           Data.Serialize.Get            (Get, getWord32be, getWord8)
-import           Data.Serialize.Put            (Put, putWord32be, putWord8,
-                                                runPut)
-import           Data.String                   (IsString, fromString)
-import           Data.String.Conversions       (cs)
-import           Data.Typeable                 (Typeable)
-import           Data.Word                     (Word32, Word8)
+import           Control.Applicative
+import           Control.DeepSeq                 (NFData, rnf)
+import           Control.Exception               (Exception, throw)
+import           Control.Monad                   (guard, mzero, unless, (<=<))
+import qualified Crypto.Secp256k1                as EC
+import           Data.Aeson                      as A (FromJSON, ToJSON,
+                                                       Value (String),
+                                                       parseJSON, toJSON,
+                                                       withText)
+import           Data.Bits                       (clearBit, setBit, testBit)
+import           Data.ByteString                 (ByteString)
+import qualified Data.ByteString                 as BS
+import           Data.Either                     (fromRight)
+import           Data.List                       (foldl')
+import           Data.List.Split                 (splitOn)
+import           Data.Maybe                      (fromMaybe)
+import           Data.Monoid                     ((<>))
+import           Data.Serialize                  as S (Serialize, decode,
+                                                       encode, get, put)
+import           Data.Serialize.Get              (Get, getWord32be, getWord8)
+import           Data.Serialize.Put              (Put, putWord32be, putWord8,
+                                                  runPut)
+import           Data.String                     (IsString, fromString)
+import           Data.String.Conversions         (cs)
+import           Data.Typeable                   (Typeable)
+import           Data.Word                       (Word32, Word8)
 import           Network.Haskoin.Constants
+import           Network.Haskoin.Crypto.Address
 import           Network.Haskoin.Crypto.Base58
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Crypto.Keys
 import           Network.Haskoin.Script.Standard
 import           Network.Haskoin.Util
+import           Text.Read                       as R
+import           Text.Read.Lex
 
 {- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
 
@@ -129,7 +134,7 @@ instance Ord XPrvKey where
 
 instance Show XPrvKey where
     showsPrec d k = showParen (d > 10) $
-        showString "XPrvKey " . shows (cs (xPrvExport k))
+        showString "XPrvKey " . shows (xPrvExport k)
 
 instance Read XPrvKey where
     readPrec =
@@ -149,7 +154,7 @@ instance NFData XPrvKey where
         rnf d `seq` rnf p `seq` rnf i `seq` rnf c `seq` rnf k
 
 instance ToJSON XPrvKey where
-    toJSON = String . cs . xPrvExport
+    toJSON = A.String . cs . xPrvExport
 
 instance FromJSON XPrvKey where
     parseJSON = withText "xprvkey" $ maybe mzero return . xPrvImport . cs
@@ -168,7 +173,7 @@ instance Ord XPubKey where
 
 instance Show XPubKey where
     showsPrec d k = showParen (d > 10) $
-        showString "XPubKey" . shows (cs (xPubExport k))
+        showString "XPubKey " . shows (xPubExport k)
 
 instance Read XPubKey where
     readPrec = parens $ do
@@ -187,7 +192,7 @@ instance NFData XPubKey where
         rnf d `seq` rnf p `seq` rnf i `seq` rnf c `seq` rnf k
 
 instance ToJSON XPubKey where
-    toJSON = String . cs . xPubExport
+    toJSON = A.String . cs . xPubExport
 
 instance FromJSON XPubKey where
     parseJSON = withText "xpubkey" $ maybe mzero return . xPubImport . cs
@@ -343,7 +348,7 @@ instance Serialize XPrvKey where
         XPrvKey <$> getWord8
                 <*> getWord32be
                 <*> getWord32be
-                <*> get
+                <*> S.get
                 <*> getPadPrvKey
 
     put k = do
@@ -363,8 +368,8 @@ instance Serialize XPubKey where
         XPubKey <$> getWord8
                 <*> getWord32be
                 <*> getWord32be
-                <*> get
-                <*> get
+                <*> S.get
+                <*> S.get
 
     put k = do
         putWord32be extPubKeyPrefix
@@ -482,7 +487,7 @@ instance Eq (DerivPathI t) where
     _             == _             = False
 
 instance Serialize DerivPath where
-    get = listToPath <$> get
+    get = listToPath <$> S.get
     put = put . pathToList
 
 pathToList :: DerivPathI t -> [KeyIndex]
@@ -557,15 +562,35 @@ derivePubPath = go id
         next :/ i -> go (f . flip pubSubKey i) next
         _         -> f
 
-instance Show (DerivPathI t) where
+instance Show DerivPath where
     showsPrec d p = showParen (d > 10) $
-        showString "DerivPathI " . shows (pathtoStr p)
+        showString "DerivPath " . shows (pathToStr p)
 
-instance Read (DerivPathI t) where
+instance Read DerivPath where
     readPrec = parens $ do
-        R.Ident "DerivPathI " <- lexP
+        R.Ident "DerivPath" <- lexP
         R.String str <- lexP
-        maybe pfail return $ parsePath str
+        maybe pfail return $ getParsedPath <$> parsePath str
+
+instance Show HardPath where
+    showsPrec d p = showParen (d > 10) $
+        showString "HardPath " . shows (pathToStr p)
+
+instance Read HardPath where
+    readPrec = parens $ do
+        R.Ident "HardPath " <- lexP
+        R.String str <- lexP
+        maybe pfail return $ parseHard str
+
+instance Show SoftPath where
+    showsPrec d p = showParen (d > 10) $
+        showString "SoftPath " . shows (pathToStr p)
+
+instance Read SoftPath where
+    readPrec = parens $ do
+        R.Ident "SoftPath " <- lexP
+        R.String str <- lexP
+        maybe pfail return $ parseSoft str
 
 instance IsString ParsedPath where
     fromString =
@@ -612,12 +637,12 @@ instance FromJSON SoftPath where
         _      -> mzero
 
 instance ToJSON (DerivPathI t) where
-    toJSON = String . cs . pathToStr
+    toJSON = A.String . cs . pathToStr
 
 instance ToJSON ParsedPath where
-    toJSON (ParsedPrv p)   = String . cs . ("m" ++) . pathToStr $ p
-    toJSON (ParsedPub p)   = String . cs . ("M" ++) . pathToStr $ p
-    toJSON (ParsedEmpty p) = String . cs . ("" ++) . pathToStr $ p
+    toJSON (ParsedPrv p)   = A.String . cs . ("m" ++) . pathToStr $ p
+    toJSON (ParsedPub p)   = A.String . cs . ("M" ++) . pathToStr $ p
+    toJSON (ParsedEmpty p) = A.String . cs . ("" ++) . pathToStr $ p
 
 {- Parsing derivation paths of the form m/1/2'/3 or M/1/2'/3 -}
 
@@ -627,11 +652,13 @@ data ParsedPath = ParsedPrv   { getParsedPath :: !DerivPath }
   deriving Eq
 
 instance Show ParsedPath where
-    showsPrec d p = showParen (d > 10) $
-        showString "ParsedPath " . shows $ case p of
-            ParsedPrv d' -> "m" <> pathToStr d'
-            ParsedPub d' -> "M" <> pathToStr d'
-            ParsedEmpty d' -> pathToStr d'
+    showsPrec d p = showParen (d > 10) $ showString "ParsedPath " . shows f
+      where
+        f =
+            case p of
+                ParsedPrv d' -> "m" <> pathToStr d'
+                ParsedPub d' -> "M" <> pathToStr d'
+                ParsedEmpty d' -> pathToStr d'
 
 instance Read ParsedPath where
     readPrec = parens $ do
@@ -670,17 +697,26 @@ data Bip32PathIndex = Bip32HardIndex KeyIndex
   deriving Eq
 
 instance Show Bip32PathIndex where
-    showsPrec d (Bip32HardIndex i) = showString (show i <> "'")
-    showsPrec d (Bip32SoftIndex i) = showString (show i)
+    showsPrec d (Bip32HardIndex i) = showParen (d > 10) $
+        showString "Bip32HardIndex " . shows i
+    showsPrec d (Bip32SoftIndex i) = showParen (d > 10) $
+        showString "Bip32SoftIndex " . shows i
 
 instance Read Bip32PathIndex where
-    readPrec =
-        parens $ do
-            R.String str <- lexP
-            guard $ not $ null str
-            if last str == '\''
-                then Bip32HardIndex <$> read (init str)
-                else Bip32softIndex <$> read str
+    readPrec = h <|> s
+      where
+        h =
+            parens $ do
+                R.Ident "Bip32HardIndex" <- lexP
+                R.Number n <- lexP
+                maybe pfail return $
+                    Bip32HardIndex . fromIntegral <$> numberToInteger n
+        s =
+            parens $ do
+                R.Ident "Bip32SoftIndex" <- lexP
+                R.Number n <- lexP
+                maybe pfail return $
+                    Bip32SoftIndex . fromIntegral <$> numberToInteger n
 
 is31Bit :: (Integral a) => a -> Bool
 is31Bit i = i >= 0 && i < 0x80000000

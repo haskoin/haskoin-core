@@ -2,6 +2,7 @@ module Network.Haskoin.Transaction.Tests (tests) where
 
 import qualified Data.ByteString                      as BS
 import           Data.Either                          (fromRight, isRight)
+import           Data.Maybe
 import           Data.Serialize                       (encode)
 import           Data.String                          (fromString)
 import           Data.String.Conversions              (cs)
@@ -52,7 +53,7 @@ testBuildAddrTx a (TestCoin v) =
         PubKeyAddress h -> Right (PayPKHash h) == out
         ScriptAddress h -> Right (PayScriptHash h) == out
   where
-    tx = buildAddrTx [] [(addrToBase58 a, v)]
+    tx = buildAddrTx [] [(fromMaybe (error "Could not convert address to string") (addrToString a), v)]
     out =
         decodeOutputBS $
         scriptOutput $

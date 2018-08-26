@@ -203,7 +203,7 @@ buildAddrTx :: [OutPoint] -> [(ByteString, Word64)] -> Either String Tx
 buildAddrTx xs ys =
     buildTx xs =<< mapM f ys
   where
-    f (s, v) = case base58ToAddr s of
+    f (s, v) = case stringToAddr s of
         Just a -> return (addressToOutput a, v)
         _      -> Left $ "buildAddrTx: Invalid address " ++ cs s
 

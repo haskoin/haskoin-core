@@ -216,7 +216,7 @@ runXKeyVec (v, m) = do
     assertBool "xPrvID" $ encodeHex (encode $ xPrvID m) == head v
     assertBool "xPrvFP" $ encodeHex (encode $ xPrvFP m) == v !! 1
     assertBool "xPrvAddr" $
-        addrToBase58 (xPubAddr $ deriveXPubKey m) == v !! 2
+        addrToString (xPubAddr $ deriveXPubKey m) == Just (v !! 2)
     assertBool "prvKey" $
         encodeHex (encodePrvKey $ xPrvKey m) == v !! 3
     assertBool "xPrvWIF" $ xPrvWif m == v !! 4

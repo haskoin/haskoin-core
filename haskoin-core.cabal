@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: cf0cf560c7b8aa45af45bc5da81ed3e1d8aa268b03f95a28757001613328e880
+-- hash: 5ddb6bb753c470590debd2bd92138a01e493116359bbed51050cb4fc9de70921
 
 name:           haskoin-core
 version:        1.0.0
@@ -39,7 +39,8 @@ library
   hs-source-dirs:
       src
   build-depends:
-      QuickCheck
+      HUnit
+    , QuickCheck
     , aeson
     , array
     , base >=4.7 && <5
@@ -52,13 +53,19 @@ library
     , deepseq
     , entropy
     , hashable
+    , hspec
     , memory
     , mtl
     , murmur3
     , network
+    , safe
+    , scientific
     , secp256k1
     , split
     , string-conversions
+    , test-framework
+    , test-framework-hunit
+    , test-framework-quickcheck2
     , time
     , unordered-containers
     , vector
@@ -115,7 +122,8 @@ test-suite haskoin-core-bch-test
       test/common
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      QuickCheck
+      HUnit
+    , QuickCheck
     , aeson
     , array
     , base >=4.7 && <5
@@ -134,9 +142,14 @@ test-suite haskoin-core-bch-test
     , mtl
     , murmur3
     , network
+    , safe
+    , scientific
     , secp256k1
     , split
     , string-conversions
+    , test-framework
+    , test-framework-hunit
+    , test-framework-quickcheck2
     , time
     , unordered-containers
     , vector
@@ -167,10 +180,13 @@ test-suite haskoin-core-btc-regtest
     , entropy
     , hashable
     , haskoin-core
+    , hspec
     , memory
     , mtl
     , murmur3
     , network
+    , safe
+    , scientific
     , secp256k1
     , split
     , string-conversions
@@ -213,6 +229,7 @@ test-suite haskoin-core-btc-test
     , murmur3
     , network
     , safe
+    , scientific
     , secp256k1
     , split
     , string-conversions

@@ -578,7 +578,7 @@ instance Show HardPath where
 
 instance Read HardPath where
     readPrec = parens $ do
-        R.Ident "HardPath " <- lexP
+        R.Ident "HardPath" <- lexP
         R.String str <- lexP
         maybe pfail return $ parseHard str
 
@@ -588,7 +588,7 @@ instance Show SoftPath where
 
 instance Read SoftPath where
     readPrec = parens $ do
-        R.Ident "SoftPath " <- lexP
+        R.Ident "SoftPath" <- lexP
         R.String str <- lexP
         maybe pfail return $ parseSoft str
 

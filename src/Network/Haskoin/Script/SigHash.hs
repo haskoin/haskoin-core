@@ -31,6 +31,7 @@ import           Data.Bits
 import           Data.ByteString                   (ByteString)
 import qualified Data.ByteString                   as BS
 import           Data.Maybe
+import           Data.Scientific
 import           Data.Serialize
 import           Data.Serialize.Put                (runPut)
 import           Data.String                       (IsString, fromString)
@@ -58,29 +59,15 @@ import           Text.Read.Lex                     (numberToInteger)
 -- Otherwise, all of the inputs of a transaction are signed. The default value
 -- for anyoneCanPay is False.
 newtype SigHash = SigHash Word32
-    deriving (Eq, Ord, Enum, Bits, Num, Real, Integral, NFData)
-
-instance Show SigHash where
-    showsPrec d sh =
-        showParen (d > 10) $ showString "SigHash " . shows (fromIntegral sh)
-
-instance Read SigHash where
-    readPrec = do
-        R.Ident "SigHash" <- lexP
-        R.Number n <- lexP
-        maybe pfail return $ fromIntegral <$> numberToInteger n
-
-instance IsString SigHash where
-    fromString s =
-        let e = error "Could not read sighash from hex string"
-        in fromIntegral $
-           fromMaybe e $ eitherToMaybe . runGet getWord32be =<< decodeHex (cs s)
+    deriving (Eq, Ord, Enum, Bits, Num, Real, Integral, NFData, Show, Read)
 
 instance J.FromJSON SigHash where
-    parseJSON = J.withText "sighash" $ \t -> return $ fromString $ cs t
+    parseJSON =
+        J.withScientific "sighash" $
+        either (const mzero) return . floatingOrInteger
 
 instance J.ToJSON SigHash where
-    toJSON = J.String . cs . show
+    toJSON = J.Number . fromIntegral
 
 sigHashAll :: SigHash
 sigHashAll = 0x01

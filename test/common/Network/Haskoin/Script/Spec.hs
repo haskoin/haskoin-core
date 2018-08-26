@@ -250,15 +250,15 @@ txSigHashForkIdSpec =
 sigHashSpec :: Spec
 sigHashSpec =
     describe "Network.Haskoin.Script.SigHash" $ do
-        it "can fromString . show a SigHash" $
+        it "can read . show a SigHash" $
             property $
-            forAll arbitrarySigHash $
-                \sh -> fromString (show sh) `shouldBe` sh
+            forAll arbitrarySigHash $ \sh -> read (show sh) `shouldBe` sh
         it "can correctly show a SigHash" $ do
-            show (0x00 :: SigHash) `shouldBe` "00000000"
-            show (0x01 :: SigHash) `shouldBe` "00000001"
-            show (0xff :: SigHash) `shouldBe` "000000ff"
-            show (0xabac3344 :: SigHash) `shouldBe` "abac3344"
+            show (0x00 :: SigHash) `shouldBe` "SigHash " <> show 0x00
+            show (0x01 :: SigHash) `shouldBe` "SigHash " <> show 0x01
+            show (0xff :: SigHash) `shouldBe` "SigHash " <> show 0xff
+            show (0xabac3344 :: SigHash) `shouldBe` "SigHash " <>
+                show 0xabac3344
         it "can add a forkid to a SigHash" $ do
             0x00 `sigHashAddForkId` 0x00 `shouldBe` 0x00
             0xff `sigHashAddForkId` 0x00ffffff `shouldBe` 0xffffffff

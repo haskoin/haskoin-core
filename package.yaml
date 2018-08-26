@@ -29,14 +29,21 @@ dependencies:
 - deepseq
 - entropy
 - hashable
+- hspec
+- HUnit
 - memory
 - mtl
 - murmur3
 - network
 - QuickCheck
+- safe
+- scientific
 - secp256k1
 - split
 - string-conversions
+- test-framework
+- test-framework-quickcheck2
+- test-framework-hunit
 - time
 - unordered-containers
 - vector
@@ -65,13 +72,6 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - haskoin-core
-    - hspec
-    - HUnit
-    - QuickCheck
-    - safe
-    - test-framework
-    - test-framework-quickcheck2
-    - test-framework-hunit
   haskoin-core-btc-regtest:
     main: Main.hs
     source-dirs: test/btc-regtest
@@ -81,11 +81,6 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - haskoin-core
-    - HUnit
-    - QuickCheck
-    - test-framework
-    - test-framework-quickcheck2
-    - test-framework-hunit
   haskoin-core-bch-test:
     main: Main.hs
     source-dirs:
@@ -97,5 +92,3 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - haskoin-core
-    - hspec
-    - QuickCheck

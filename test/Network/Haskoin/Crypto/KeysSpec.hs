@@ -1,4 +1,4 @@
-module Network.Haskoin.Crypto.Keys.Tests (spec) where
+module Network.Haskoin.Crypto.KeysSpec (spec) where
 
 import qualified Crypto.Secp256k1          as EC
 import qualified Data.ByteString           as BS
@@ -12,26 +12,24 @@ import           Network.Haskoin.Util
 import           Test.Hspec
 import           Test.QuickCheck
 
-spec :: Network -> Spec
-spec net = do
-    describe "pubkey binary" $ do
+spec :: Spec
+spec =
+    describe "keys" $ do
+        let net = btc
         it "is public key canonical" $
             property $ forAll arbitraryPubKey (isCanonicalPubKey . snd)
         it "makeKey . toKey" $ property makeToKey
         it "makeKeyU . toKey" $ property makeToKeyU
-    describe "key formats" $ do
         it "fromWif . toWif PrvKey" $
             property $
             forAll arbitraryPrvKey $ \pk ->
                 fromWif net (toWif net pk) == Just pk
         it "constant 32-byte encoding PrvKey" $
             property $ forAll arbitraryPrvKey binaryPrvKey
-    describe "key compression" $ do
         it "compressed public key" $ property testCompressed
         it "uncompressed public key" $ property testUnCompressed
         it "compressed private key" $ property testPrivateCompressed
         it "uncompressed private key" $ property testPrivateUnCompressed
-    describe "keys from and to strings" $ do
         it "read and show public key" $
             property $ forAll arbitraryPubKey $ \(_, k) -> read (show k) == k
         it "read and show compressed public key" $

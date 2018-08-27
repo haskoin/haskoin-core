@@ -1,4 +1,4 @@
-module Network.Haskoin.Cereal.Tests (spec) where
+module Network.Haskoin.CerealSpec (spec) where
 
 import           Data.Serialize
 import           Network.Haskoin.Constants
@@ -9,8 +9,9 @@ import           Network.Haskoin.Util
 import           Test.Hspec
 import           Test.QuickCheck
 
-spec :: Network -> Spec
-spec net = do
+spec :: Spec
+spec = do
+    let net = btc
     describe "serialization of keys and hashes" $ do
         it "encodes and decodes bytestring" $
             property $ forAll arbitraryBS testId

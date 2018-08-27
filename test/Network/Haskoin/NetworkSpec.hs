@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Network.Units (spec) where
+module Network.Haskoin.NetworkSpec (spec) where
 
 import           Data.ByteString           (ByteString)
 import           Data.Maybe                (fromJust)

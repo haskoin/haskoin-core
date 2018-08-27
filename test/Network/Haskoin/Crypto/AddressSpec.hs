@@ -1,20 +1,39 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Crypto.Base58.Units (spec) where
+module Network.Haskoin.Crypto.AddressSpec (spec) where
 
-import           Data.ByteString        (ByteString)
-import qualified Data.ByteString        as BS (append, empty, pack)
+import           Data.ByteString           (ByteString)
+import qualified Data.ByteString           as BS (append, empty, pack)
+import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
+import           Network.Haskoin.Test
 import           Test.Hspec
-import           Test.HUnit             (Assertion, assertBool)
+import           Test.HUnit                (Assertion, assertBool)
+import           Test.QuickCheck
 
 spec :: Spec
-spec =
-    describe "base58 encodings" $
-    sequence_ $ zipWith (curry mapBase58Vec) vectors [0 ..]
+spec = do
+    describe "btc address" $ do
+        let net = btc
+        it "base58 encodings" $ mapM_ runVector vectors
+    describe "btc-test address" $ props btcTest
+    describe "bch address" $ props bch
+    describe "bch-test address" $ props bchTest
+    describe "bch-regtest address" $ props bchRegTest
 
-mapBase58Vec :: ((ByteString, ByteString, ByteString), Int) -> Spec
-mapBase58Vec (v, i) =
-    it (unwords ["test base58 vector", show i]) $ runVector v
+props :: Network -> Spec
+props net = do
+    it "encodes and decodes base58 bytestring" $
+        property $
+        forAll arbitraryBS $ \bs ->
+            decodeBase58 (encodeBase58 bs) == Just bs
+    it "encodes and decodes base58 bytestring with checksum" $
+        property $
+        forAll arbitraryBS $ \bs ->
+            decodeBase58Check (encodeBase58Check bs) == Just bs
+    it "encodes and decodes address" $
+        property $
+        forAll (arbitraryAddress net) $ \a ->
+            (stringToAddr net =<< addrToString a) == Just a
 
 runVector :: (ByteString, ByteString, ByteString) -> Assertion
 runVector (bs, e, chk) = do

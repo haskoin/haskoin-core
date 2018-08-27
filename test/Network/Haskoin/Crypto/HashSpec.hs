@@ -1,27 +1,51 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Crypto.Hash.Units (spec) where
+module Network.Haskoin.Crypto.HashSpec (spec) where
 
-import           Data.ByteString        (ByteString)
-import           Data.Maybe             (fromJust)
+import           Data.ByteString         (ByteString)
+import           Data.Maybe              (fromJust)
+import           Data.Serialize          (encode)
+import           Data.String             (fromString)
+import           Data.String.Conversions
+import           Network.Haskoin.Block
 import           Network.Haskoin.Crypto
+import           Network.Haskoin.Test
 import           Network.Haskoin.Util
 import           Test.Hspec
-import           Test.HUnit             (Assertion, assertBool)
+import           Test.HUnit              (Assertion, assertBool)
+import           Test.QuickCheck
 
 -- Test vectors from NIST
 -- http://csrc.nist.gov/groups/STM/cavp/documents/drbg/drbgtestvectors.zip
 -- About 1/3 of HMAC DRBG SHA-256 test vectors are tested here
 
 spec :: Spec
-spec = describe "HMAC DRBG" $ do
-    it "HMAC DRBG suite 1" $ sequence_ [mapDRBG t1]
-    it "HMAC DRBG suite 2" $ sequence_ [mapDRBG t2]
-    it "HMAC DRBG suite 3" $ sequence_ [mapDRBG t3]
-    it "HMAC DRBG suite 4" $ sequence_ [mapDRBG t4]
-    it "HMAC DRBG suite 5 (Reseed)" $ sequence_ [mapDRBGRsd r1]
-    it "HMAC DRBG suite 6 (Reseed)" $ sequence_ [mapDRBGRsd r2]
-    it "HMAC DRBG suite 7 (Reseed)" $ sequence_ [mapDRBGRsd r3]
-    it "HMAC DRBG suite 8 (Reseed)" $ sequence_ [mapDRBGRsd r4]
+spec = do
+    describe "random number generator" $ do
+        it "suite 1" $ sequence_ [mapDRBG t1]
+        it "suite 2" $ sequence_ [mapDRBG t2]
+        it "suite 3" $ sequence_ [mapDRBG t3]
+        it "suite 4" $ sequence_ [mapDRBG t4]
+        it "suite 5 (reseed)" $ sequence_ [mapDRBGRsd r1]
+        it "suite 6 (reseed)" $ sequence_ [mapDRBGRsd r2]
+        it "suite 7 (reseed)" $ sequence_ [mapDRBGRsd r3]
+        it "suite 8 (reseed)" $ sequence_ [mapDRBGRsd r4]
+    describe "hash" $ do
+        it "join512( split512(h) ) == h" $
+            property $
+            forAll arbitraryHash256 $ forAll arbitraryHash256 . joinSplit512
+        it "decodeCompact . encodeCompact i == i" $ property decEncCompact
+        it "from string 64-byte hash" $
+            property $
+            forAll arbitraryHash512 $ \h ->
+                fromString (cs $ encodeHex $ encode h) == h
+        it "from string 32-byte hash" $
+            property $
+            forAll arbitraryHash256 $ \h ->
+                fromString (cs $ encodeHex $ encode h) == h
+        it "from string 20-byte hash" $
+            property $
+            forAll arbitraryHash160 $ \h ->
+                fromString (cs $ encodeHex $ encode h) == h
 
 type TestVector = [ByteString]
 
@@ -1252,3 +1276,16 @@ r4 =
     ]
     ]
 
+joinSplit512 :: Hash256 -> Hash256 -> Bool
+joinSplit512 a b = split512 (join512 (a, b)) == (a, b)
+
+-- After encoding and decoding, we may loose precision so the new result is >=
+-- to the old one.
+decEncCompact :: Integer -> Bool
+decEncCompact i
+    -- Integer completely fits inside the mantisse
+    | abs i <= 0x007fffff = decodeCompact (encodeCompact i) == (i, False)
+    -- Otherwise precision will be lost and the decoded result will
+    -- be smaller than the original number
+    | i >= 0              = fst (decodeCompact (encodeCompact i)) < i
+    | otherwise           = fst (decodeCompact (encodeCompact i)) > i

@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Crypto.Units (spec) where
+module Network.Haskoin.CryptoSpec (spec) where
 
 import           Control.Monad             (replicateM_)
 import           Control.Monad.Trans       (liftIO)
@@ -76,11 +76,11 @@ pub2C = derivePubKey sec2C
 
 spec :: Spec
 spec = do
-    describe "ECDSA PRNG unit tests" $
+    describe "ecdsa prng unit tests" $
         it "genPrvKey produces unique keys" uniqueKeys
     describe "bitcoind /src/test/key_tests.cpp" $ do
-        it "decode valid WIF" checkPrivkey
-        it "decode invalid WIF" checkInvalidKey
+        it "decode valid wif" checkPrivkey
+        it "decode invalid wif" checkInvalidKey
         it "decode minikey format" checkMiniKey
         it "check private key compression" checkPrvKeyCompressed
         it "check public key compression" checkKeyCompressed
@@ -89,19 +89,19 @@ spec = do
             (\x ->
                  it ("check sig: " ++ show x) $ checkSignatures (doubleSHA256 x))
             sigMsg
-    describe "trezor RFC 6979 test vectors" $ do
-        it "RFC 6979 test vector 1" (testSigning $ head detVec)
-        it "RFC 6979 test vector 2" (testSigning $ detVec !! 1)
-        it "RFC 6979 test vector 3" (testSigning $ detVec !! 2)
-        it "RFC 6979 test vector 4" (testSigning $ detVec !! 3)
-        it "RFC 6979 test vector 5" (testSigning $ detVec !! 4)
-        it "RFC 6979 test vector 6" (testSigning $ detVec !! 5)
-        it "RFC 6979 test vector 7" (testSigning $ detVec !! 6)
-        it "RFC 6979 test vector 8" (testSigning $ detVec !! 7)
-        it "RFC 6979 test vector 9" (testSigning $ detVec !! 8)
-        it "RFC 6979 test vector 10" (testSigning $ detVec !! 9)
-        it "RFC 6979 test vector 11" (testSigning $ detVec !! 10)
-        it "RFC 6979 test vector 12" (testSigning $ detVec !! 11)
+    describe "trezor rfc6979 test vectors" $ do
+        it "rfc6979 test vector 1" (testSigning $ head detVec)
+        it "rfc6979 test vector 2" (testSigning $ detVec !! 1)
+        it "rfc6979 test vector 3" (testSigning $ detVec !! 2)
+        it "rfc6979 test vector 4" (testSigning $ detVec !! 3)
+        it "rfc6979 test vector 5" (testSigning $ detVec !! 4)
+        it "rfc6979 test vector 6" (testSigning $ detVec !! 5)
+        it "rfc6979 test vector 7" (testSigning $ detVec !! 6)
+        it "rfc6979 test vector 8" (testSigning $ detVec !! 7)
+        it "rfc6979 test vector 9" (testSigning $ detVec !! 8)
+        it "rfc6979 test vector 10" (testSigning $ detVec !! 9)
+        it "rfc6979 test vector 11" (testSigning $ detVec !! 10)
+        it "rfc6979 test vector 12" (testSigning $ detVec !! 11)
 
 {- ECDSA PRNG unit tests -}
 

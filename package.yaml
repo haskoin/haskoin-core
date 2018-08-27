@@ -4,8 +4,8 @@ synopsis: Bitcoin & Bitcoin Cash library for Haskell
 description: 'Haskoin Core is a complete Bitcoin and Bitcoin Cash library of functions and data types for Haskell developers.'
 category: Bitcoin, Finance, Network
 author:
-- Philippe Laprade
-- Jean-Pierre Rupp
+  - Philippe Laprade
+  - Jean-Pierre Rupp
 maintainer: xenog@protonmail.com
 license: PublicDomain
 license-file: UNLICENSE
@@ -13,57 +13,52 @@ homepage: http://github.com/haskoin/haskoin#readme
 git: git://github.com/haskoin/haskoin.git
 bug-reports: http://github.com/haskoin/haskoin/issues
 extra-source-files:
-- data/*.json
-- README.md
-- CHANGELOG.md
+  - data/*.json
+  - README.md
+  - CHANGELOG.md
 dependencies:
-- aeson
-- array
-- base >=4.7 && <5
-- base16-bytestring
-- bytestring
-- cereal
-- conduit
-- containers
-- cryptonite
-- deepseq
-- entropy
-- hashable
-- hspec
-- HUnit
-- memory
-- mtl
-- murmur3
-- network
-- QuickCheck
-- safe
-- scientific
-- secp256k1
-- split
-- string-conversions
-- time
-- unordered-containers
-- vector
+  - aeson
+  - array
+  - base >=4.7 && <5
+  - base16-bytestring
+  - bytestring
+  - cereal
+  - conduit
+  - containers
+  - cryptonite
+  - deepseq
+  - entropy
+  - hashable
+  - hspec
+  - memory
+  - mtl
+  - murmur3
+  - network
+  - QuickCheck
+  - safe
+  - scientific
+  - secp256k1
+  - split
+  - string-conversions
+  - time
+  - unordered-containers
+  - vector
 library:
   source-dirs: src
   generated-other-modules:
-  - Paths_haskoin_core
+    - Paths_haskoin_core
   exposed-modules:
-  - Network.Haskoin.Util
-  - Network.Haskoin.Crypto
-  - Network.Haskoin.Network
-  - Network.Haskoin.Script
-  - Network.Haskoin.Transaction
-  - Network.Haskoin.Block
-  - Network.Haskoin.Constants
-  - Network.Haskoin.Test
+    - Network.Haskoin.Util
+    - Network.Haskoin.Crypto
+    - Network.Haskoin.Network
+    - Network.Haskoin.Script
+    - Network.Haskoin.Transaction
+    - Network.Haskoin.Block
+    - Network.Haskoin.Constants
+    - Network.Haskoin.Test
 tests:
-  haskoin-core-test:
-    main: Spec.hs
-    source-dirs: test
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
+  spec:
+    defaults: hspec/hspec@master
     dependencies:
-    - haskoin-core
+      - haskoin-core
+      - HUnit

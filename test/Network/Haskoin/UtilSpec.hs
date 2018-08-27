@@ -1,4 +1,4 @@
-module Network.Haskoin.Util.Tests (spec) where
+module Network.Haskoin.UtilSpec (spec) where
 
 import qualified Data.ByteString      as BS
 import           Data.Either          (fromLeft, fromRight, isLeft, isRight)

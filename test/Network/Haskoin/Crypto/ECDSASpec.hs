@@ -1,4 +1,4 @@
-module Network.Haskoin.Crypto.ECDSA.Tests (spec) where
+module Network.Haskoin.Crypto.ECDSASpec (spec) where
 
 import           Data.Bits                 (testBit)
 import qualified Data.ByteString           as BS (index, length)
@@ -10,26 +10,32 @@ import           Network.Haskoin.Util
 import           Test.Hspec
 import           Test.QuickCheck
 
-spec :: Network -> Spec
-spec net = do
-    describe "ecdsa signatures" $ do
-        it "verify signature" $
-            property $
-            forAll arbitrarySignature $ \(msg, key, sig) ->
-                verifySig msg sig (derivePubKey key)
-        it "s component ≤ order ÷ 2" $
-            property $ forAll arbitrarySignature $ isCanonicalHalfOrder . lst3
-    describe "ecdsa binary" $ do
-        it "encoded signature is canonical" $
-            property $ forAll arbitrarySignature $ testIsCanonical . lst3
-        it "decodeStrict . encode sig == id" $
-            property $
-            forAll arbitrarySignature $
-            (\s -> decodeStrictSig (encode s) == Just s) . lst3
-        it "decode . encode sig == id" $
-            property $
-            forAll arbitrarySignature $
-            (\s -> decodeLaxSig (encode s) == Just s) . lst3
+spec :: Spec
+spec = do
+    describe "btc signatures" $ props btc
+    describe "bch signatures" $ props bch
+    describe "btc-test signatures" $ props btcTest
+    describe "bch-test signatures" $ props bchTest
+    describe "bch-regtest signatures" $ props bchRegTest
+
+props :: Network -> Spec
+props net = do
+    it "verify signature" $
+        property $
+        forAll arbitrarySignature $ \(msg, key, sig) ->
+            verifySig msg sig (derivePubKey key)
+    it "s component ≤ order ÷ 2" $
+        property $ forAll arbitrarySignature $ isCanonicalHalfOrder . lst3
+    it "encoded signature is canonical" $
+        property $ forAll arbitrarySignature $ testIsCanonical . lst3
+    it "decodeStrict . encode sig == id" $
+        property $
+        forAll arbitrarySignature $
+        (\s -> decodeStrictSig (encode s) == Just s) . lst3
+    it "decode . encode sig == id" $
+        property $
+        forAll arbitrarySignature $
+        (\s -> decodeLaxSig (encode s) == Just s) . lst3
 
 {- ECDSA Canonical -}
 

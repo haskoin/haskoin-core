@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c15f226b69c129df8ee665fec2652722d4a7d6b2e9d249a8c6b49e0b82c5ee0e
+-- hash: 4b49c0247fdfaccdf851bc59e5bd343751382d0d5f6549e5907926b752e95071
 
 name:           haskoin-core
 version:        1.0.0
@@ -39,8 +39,7 @@ library
   hs-source-dirs:
       src
   build-depends:
-      HUnit
-    , QuickCheck
+      QuickCheck
     , aeson
     , array
     , base >=4.7 && <5
@@ -111,37 +110,27 @@ library
       Paths_haskoin_core
   default-language: Haskell2010
 
-test-suite haskoin-core-test
+test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Network.Haskoin.Block.Spec
-      Network.Haskoin.Block.Tests
-      Network.Haskoin.Block.Units
-      Network.Haskoin.Cereal.Tests
-      Network.Haskoin.Crypto.Base58.Tests
-      Network.Haskoin.Crypto.Base58.Units
-      Network.Haskoin.Crypto.ECDSA.Tests
-      Network.Haskoin.Crypto.ExtendedKeys.Tests
-      Network.Haskoin.Crypto.ExtendedKeys.Units
-      Network.Haskoin.Crypto.Hash.Tests
-      Network.Haskoin.Crypto.Hash.Units
-      Network.Haskoin.Crypto.Keys.Tests
-      Network.Haskoin.Crypto.Mnemonic.Tests
-      Network.Haskoin.Crypto.Mnemonic.Units
-      Network.Haskoin.Crypto.Units
-      Network.Haskoin.Json.Tests
-      Network.Haskoin.Network.Units
-      Network.Haskoin.Script.Spec
-      Network.Haskoin.Script.Tests
-      Network.Haskoin.Script.Units
-      Network.Haskoin.Transaction.Tests
-      Network.Haskoin.Transaction.Units
-      Network.Haskoin.Util.Tests
+      Network.Haskoin.BlockSpec
+      Network.Haskoin.CerealSpec
+      Network.Haskoin.Crypto.AddressSpec
+      Network.Haskoin.Crypto.ECDSASpec
+      Network.Haskoin.Crypto.ExtendedKeysSpec
+      Network.Haskoin.Crypto.HashSpec
+      Network.Haskoin.Crypto.KeysSpec
+      Network.Haskoin.Crypto.MnemonicSpec
+      Network.Haskoin.CryptoSpec
+      Network.Haskoin.JsonSpec
+      Network.Haskoin.NetworkSpec
+      Network.Haskoin.ScriptSpec
+      Network.Haskoin.TransactionSpec
+      Network.Haskoin.UtilSpec
       Paths_haskoin_core
   hs-source-dirs:
       test
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       HUnit
     , QuickCheck
@@ -158,7 +147,7 @@ test-suite haskoin-core-test
     , entropy
     , hashable
     , haskoin-core
-    , hspec
+    , hspec ==2.*
     , memory
     , mtl
     , murmur3
@@ -172,3 +161,4 @@ test-suite haskoin-core-test
     , unordered-containers
     , vector
   default-language: Haskell2010
+  build-tool-depends: hspec-discover:hspec-discover == 2.*

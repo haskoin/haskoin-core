@@ -1,21 +1,137 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Block.Units (spec) where
+module Network.Haskoin.BlockSpec
+    ( spec
+    ) where
 
+import           Control.Monad.State.Strict
 import           Data.ByteString             (ByteString)
+import           Data.Either                 (fromRight)
 import           Data.Maybe                  (fromJust)
+import           Data.String                 (fromString)
+import           Data.String.Conversions     (cs)
 import           Network.Haskoin.Block
+import           Network.Haskoin.Constants
+import           Network.Haskoin.Test
 import           Network.Haskoin.Transaction
 import           Test.Hspec
-import           Test.HUnit                  (Assertion, assertBool,
-                                              assertEqual)
+import           Test.HUnit                  hiding (State)
+import           Test.QuickCheck
+
+myTime :: Timestamp
+myTime = 1499083075
+
+withChain :: Network -> State HeaderMemory a -> a
+withChain net f = evalState f (initialChain net)
+
+chain :: BlockHeaders m => Network -> BlockHeader -> Int -> m ()
+chain net bh i = do
+    bnsE <- connectBlocks net myTime bhs
+    either error (const $ return ()) bnsE
+  where
+    bhs = appendBlocks net 6 bh i
 
 spec :: Spec
 spec = do
-    describe "merkle roots" $
-        sequence_ $ zipWith (curry mapMerkleVectors) merkleVectors [0 ..]
-    describe "compact number representation" $ do
-        it "check local vectors" testCompact
-        it "check vectors from Bitcoin Core" testCompactBitcoinCore
+    describe "blockchain headers" $ do
+        let net = bchRegTest
+        it "gets best block" $
+            let bb =
+                    withChain net $ do
+                        chain net (getGenesisHeader net) 100
+                        getBestBlockHeader
+             in nodeHeight bb `shouldBe` 100
+        it "builds a block locator" $
+            let net = bchRegTest
+                loc =
+                    withChain net $ do
+                        chain net (getGenesisHeader net) 100
+                        bb <- getBestBlockHeader
+                        blockLocatorNodes net bb
+                heights = map nodeHeight loc
+             in heights `shouldBe` [100,99 .. 90] <> [88, 84, 76, 60, 28, 0]
+        it "follows split chains" $
+            let bb = withChain net $ splitChain net >> getBestBlockHeader
+             in nodeHeight bb `shouldBe` 4035
+    describe "block hash" $ do
+        it "encodes and decodes block hash" $
+            property $
+            forAll arbitraryBlockHash $ \h ->
+                hexToBlockHash (blockHashToHex h) == Just h
+        it "From string block hash" $
+            property $
+            forAll arbitraryBlockHash $ \h ->
+                fromString (cs $ blockHashToHex h) == h
+    describe "merkle trees" $ do
+        let net = btc
+        it "builds tree of right width at height 1" $ property testTreeWidth
+        it "builds tree of right width at height 0" $ property testBaseWidth
+        it "builds and extracts partial merkle tree" $
+            property $
+            forAll
+                (listOf1 ((,) <$> arbitraryTxHash <*> arbitrary))
+                (buildExtractTree net)
+        it "merkle root test vectors" $
+            sequence_ $ zipWith (curry mapMerkleVectors) merkleVectors [0 ..]
+    describe "compact number" $ do
+        it "compact number local vectors" testCompact
+        it "compact number imported vectors" testCompactBitcoinCore
+
+-- 0 → → 2015 → → → → → → → 4031
+--       ↓
+--       → → 2035 → → → → → → 4035*
+--           ↓
+--           → → 2185
+splitChain :: Network -> State HeaderMemory ()
+splitChain net = do
+    start <- go 1 (getGenesisHeader net) 2015
+    e 2015 (head start)
+    tail1 <- go 2 (nodeHeader $ head start) 2016
+    e 4031 (head tail1)
+    tail2 <- go 3 (nodeHeader $ head start) 20
+    e 2035 (head tail2)
+    tail3 <- go 4 (nodeHeader $ head tail2) 2000
+    e 4035 (head tail3)
+    tail4 <- go 5 (nodeHeader $ head tail2) 150
+    e 2185 (head tail4)
+    sp1 <- splitPoint net (head tail1) (head tail3)
+    unless (sp1 == head start) $
+        error $
+        "Split point wrong between blocks 4031 and 4035: " ++
+        show (nodeHeight sp1)
+    sp2 <- splitPoint net (head tail4) (head tail3)
+    unless (sp2 == head tail2) $
+        error $
+        "Split point wrong between blocks 2185 and 4035: " ++
+        show (nodeHeight sp2)
+  where
+    e n bn =
+        unless (nodeHeight bn == n) $
+        error $
+        "Node height " ++
+        show (nodeHeight bn) ++ " of first chunk should be " ++ show n
+    go seed start n = do
+        let bhs = appendBlocks net seed start n
+        bnE <- connectBlocks net myTime bhs
+        case bnE of
+            Right bn -> return bn
+            Left ex  -> error ex
+
+{- Merkle Trees -}
+
+testTreeWidth :: Int -> Property
+testTreeWidth i = i /= 0 ==> calcTreeWidth (abs i) (calcTreeHeight $ abs i) == 1
+
+testBaseWidth :: Int -> Property
+testBaseWidth i = i /= 0 ==> calcTreeWidth (abs i) 0 == abs i
+
+buildExtractTree :: Network -> [(TxHash, Bool)] -> Bool
+buildExtractTree net txs =
+    r == buildMerkleRoot (map fst txs) && m == map fst (filter snd txs)
+  where
+    (f, h) = buildPartialMerkle txs
+    (r, m) =
+        fromRight (error "Could not extract matches from Merkle tree") $
+        extractMatches net f h (length txs)
 
 testCompact :: Assertion
 testCompact = do
@@ -105,11 +221,8 @@ testCompactBitcoinCore = do
         "vector 9 (decode) (positive)"
         ((> 0) . fst $ decodeCompact 0xff123456)
 
-mapMerkleVectors :: ((ByteString, [ByteString]), Int) -> Spec
-mapMerkleVectors (v, i) =
-    it name $ runMerkleVector v
-  where
-    name = "merkle root vector " ++ show i
+mapMerkleVectors :: ((ByteString, [ByteString]), Int) -> Assertion
+mapMerkleVectors (v, i) = runMerkleVector v
 
 runMerkleVector :: (ByteString, [ByteString]) -> Assertion
 runMerkleVector (r, hs) =
@@ -200,4 +313,3 @@ merkleVectors =
         ]
       )
     ]
-

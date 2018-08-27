@@ -159,15 +159,16 @@ traverseAndExtract height pos ntx flags hashes
 -- | Extracts the matching hashes from a partial merkle tree. This will return
 -- the list of transaction hashes that have been included (set to True) in
 -- a call to 'buildPartialMerkle'.
-extractMatches :: FlagBits -- ^ Flag bits (produced by buildPartialMerkle).
+extractMatches :: Network
+               -> FlagBits -- ^ Flag bits (produced by buildPartialMerkle).
                -> PartialMerkleTree -- ^ Partial merkle tree.
                -> Int -- ^ Number of transaction at height 0 (leaf nodes).
                -> Either String (MerkleRoot, [TxHash])
                -- ^ Merkle root and the list of matching transaction hashes.
-extractMatches flags hashes ntx
+extractMatches net flags hashes ntx
     | ntx == 0 = Left
         "extractMatches: number of transactions can not be 0"
-    | ntx > maxBlockSize `div` 60 = Left
+    | ntx > getMaxBlockSize net `div` 60 = Left
         "extractMatches: number of transactions excessively high"
     | length hashes > ntx = Left
         "extractMatches: More hashes provided than the number of transactions"
@@ -193,15 +194,15 @@ boolsToWord8 :: [Bool] -> Word8
 boolsToWord8 [] = 0
 boolsToWord8 xs = foldl setBit 0 (map snd $ filter fst $ zip xs [0..7])
 
-merkleBlockTxs :: MerkleBlock -> Either String [TxHash]
-merkleBlockTxs b =
+merkleBlockTxs :: Network -> MerkleBlock -> Either String [TxHash]
+merkleBlockTxs net b =
     let flags = mFlags b
         hs = mHashes b
         n = fromIntegral $ merkleTotalTxns b
         merkle = merkleRoot $ merkleHeader b
-    in do (root, ths) <- extractMatches flags hs n
+    in do (root, ths) <- extractMatches net flags hs n
           when (root /= merkle) $ Left "merkleBlockTxs: Merkle root incorrect"
           return ths
 
-testMerkleRoot :: MerkleBlock -> Bool
-testMerkleRoot = isRight . merkleBlockTxs
+testMerkleRoot :: Network -> MerkleBlock -> Bool
+testMerkleRoot net = isRight . merkleBlockTxs net

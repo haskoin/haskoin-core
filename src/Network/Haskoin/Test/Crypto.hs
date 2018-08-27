@@ -9,6 +9,7 @@ import           Data.Either                         (fromRight)
 import           Data.List                           (foldl')
 import           Data.Serialize                      (decode)
 import           Data.Word                           (Word32)
+import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Address
 import           Network.Haskoin.Crypto.ECDSA
 import           Network.Haskoin.Crypto.ExtendedKeys
@@ -66,18 +67,17 @@ arbitraryPubKeyU :: Gen (PrvKeyU, PubKeyU)
 arbitraryPubKeyU = (\k -> (k, derivePubKey k)) <$> arbitraryPrvKeyU
 
 -- | Arbitrary non-witness address (can be a pubkey or script hash address)
-arbitraryAddress :: Gen Address
-arbitraryAddress = oneof [ arbitraryPubKeyAddress
-                         , arbitraryScriptAddress
-                         ]
+arbitraryAddress :: Network -> Gen Address
+arbitraryAddress net =
+    oneof [arbitraryPubKeyAddress net, arbitraryScriptAddress net]
 
 -- | Arbitrary public key hash address
-arbitraryPubKeyAddress :: Gen Address
-arbitraryPubKeyAddress = PubKeyAddress <$> arbitraryHash160
+arbitraryPubKeyAddress :: Network -> Gen Address
+arbitraryPubKeyAddress net = PubKeyAddress <$> arbitraryHash160 <*> pure net
 
 -- | Arbitrary script hash address
-arbitraryScriptAddress :: Gen Address
-arbitraryScriptAddress = ScriptAddress <$> arbitraryHash160
+arbitraryScriptAddress :: Network -> Gen Address
+arbitraryScriptAddress net = ScriptAddress <$> arbitraryHash160 <*> pure net
 
 -- | Arbitrary message hash, private key, nonce and corresponding signature.
 -- The signature is generated with a random message, random private key and a
@@ -90,16 +90,15 @@ arbitrarySignature = do
     return (msg, key, sig)
 
 -- | Arbitrary extended private key.
-arbitraryXPrvKey :: Gen XPrvKey
-arbitraryXPrvKey = XPrvKey <$> arbitrary
-                           <*> arbitrary
-                           <*> arbitrary
-                           <*> arbitraryHash256
-                           <*> arbitraryPrvKeyC
+arbitraryXPrvKey :: Network -> Gen XPrvKey
+arbitraryXPrvKey net =
+    XPrvKey <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitraryHash256 <*>
+    arbitraryPrvKeyC <*>
+    pure net
 
 -- | Arbitrary extended public key with its corresponding private key.
-arbitraryXPubKey :: Gen (XPrvKey, XPubKey)
-arbitraryXPubKey = (\k -> (k, deriveXPubKey k)) <$> arbitraryXPrvKey
+arbitraryXPubKey :: Network -> Gen (XPrvKey, XPubKey)
+arbitraryXPubKey net = (\k -> (k, deriveXPubKey k)) <$> arbitraryXPrvKey net
 
 {- Custom derivations -}
 

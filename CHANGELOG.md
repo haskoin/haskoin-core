@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Support for LTS Haskell 12.5.
 - New tests for various networks and new features.
 - Added `CHANGELOG.md` file.
+- Support for SegWit addresses.
+- Support for CashAddr addresses.
 
 ### Changed
 - Use of hpack `package.yaml` file to auto-generate Cabal file.

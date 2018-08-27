@@ -221,8 +221,8 @@ instance Serialize PubKeyU where
     put pk = putByteString $ EC.exportPubKey False $ pubKeyPoint pk
 
 -- | Computes an 'Address' from a public key
-pubKeyAddr :: Serialize (PubKeyI c) => PubKeyI c -> Address
-pubKeyAddr = PubKeyAddress . addressHash . encode
+pubKeyAddr :: Serialize (PubKeyI c) => Network -> PubKeyI c -> Address
+pubKeyAddr net k = PubKeyAddress (addressHash (encode k)) net
 
 -- | Tweak a compressed public key
 tweakPubKeyC :: PubKeyC -> Hash256 -> Maybe PubKeyC
@@ -243,70 +243,10 @@ tweakPubKeyC pub h =
 data PrvKeyI c = PrvKeyI
     { prvKeySecKey     :: !EC.SecKey
     , prvKeyCompressed :: !Bool
-    } deriving (Eq)
+    } deriving (Eq, Show, Read)
 
 instance NFData (PrvKeyI c) where
-    rnf (PrvKeyI s b) = s `seq` b `seq` ()
-
-instance Show PrvKey where
-    showsPrec d k = showParen (d > 10) $
-        showString "PrvKey " . shows (toWif k)
-
-instance Show PrvKeyC where
-    showsPrec d k = showParen (d > 10) $
-        showString "PrvKeyC " . shows (toWif k)
-
-instance Show PrvKeyU where
-    showsPrec d k = showParen (d > 10) $
-        showString "PrvKeyU " . shows (toWif k)
-
-instance Read PrvKey where
-    readPrec = parens $ do
-        Read.Ident "PrvKey" <- lexP
-        Read.String str <- lexP
-        maybe pfail return $ fromWif $ cs str
-
-instance Read PrvKeyC where
-    readPrec = parens $ do
-        Read.Ident "PrvKeyC" <- lexP
-        Read.String str <- lexP
-        key <- maybe pfail return $ fromWif $ cs str
-        case eitherPrvKey key of
-            Left _  -> pfail
-            Right k -> return k
-
-instance Read PrvKeyU where
-    readPrec = parens $ do
-        Read.Ident "PrvKeyU" <- lexP
-        Read.String str <- lexP
-        key <- maybe pfail return $ fromWif $ cs str
-        case eitherPrvKey key of
-            Left k  -> return k
-            Right _ -> pfail
-
-instance IsString PrvKey where
-    fromString str =
-        fromMaybe e $ fromWif $ cs str
-      where
-        e = error "Could not decode WIF"
-
-instance IsString PrvKeyC where
-    fromString str =
-        case eitherPrvKey key of
-            Left _  -> undefined
-            Right k -> k
-      where
-        key = fromMaybe e $ fromWif $ cs str
-        e = error "Could not decode WIF"
-
-instance IsString PrvKeyU where
-    fromString str =
-        case eitherPrvKey key of
-            Left k  -> k
-            Right _ -> undefined
-      where
-        key = fromMaybe e $ fromWif $ cs str
-        e = error "Could not decode WIF"
+    rnf (PrvKeyI k c) = k `seq` c `seq` ()
 
 type PrvKey = PrvKeyI Generic
 type PrvKeyC = PrvKeyI Compressed
@@ -367,11 +307,11 @@ prvKeyPutMonad (PrvKeyI k _) = putByteString $ EC.getSecKey k
 -- fail if the input string does not decode correctly as a base 58 string or if
 -- the checksum fails.
 -- <http://en.bitcoin.it/wiki/Wallet_import_format>
-fromWif :: ByteString -> Maybe PrvKey
-fromWif wif = do
+fromWif :: Network -> ByteString -> Maybe PrvKey
+fromWif net wif = do
     bs <- decodeBase58Check wif
     -- Check that this is a private key
-    guard (BS.head bs == secretPrefix)
+    guard (BS.head bs == getSecretPrefix net)
     case BS.length bs of
         -- Uncompressed format
         33 -> makePrvKeyG False <$> EC.secKey (BS.tail bs)
@@ -383,10 +323,9 @@ fromWif wif = do
         _  -> Nothing
 
 -- | Encodes a private key into WIF format
-toWif :: PrvKeyI c -> ByteString
-toWif (PrvKeyI k c) =
-    encodeBase58Check $
-    BS.cons secretPrefix $
+toWif :: Network -> PrvKeyI c -> ByteString
+toWif net (PrvKeyI k c) =
+    encodeBase58Check . BS.cons (getSecretPrefix net) $
     if c
         then EC.getSecKey k `BS.snoc` 0x01
         else EC.getSecKey k

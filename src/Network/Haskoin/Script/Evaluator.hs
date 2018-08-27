@@ -46,6 +46,7 @@ import           Data.Maybe                        (isJust, mapMaybe)
 import           Data.Serialize                    (decode, encode)
 import           Data.String.Conversions           (cs)
 import           Data.Word                         (Word32, Word64, Word8)
+import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Script.SigHash
 import           Network.Haskoin.Script.Types
@@ -786,23 +787,24 @@ runStack = stack
 
 -- | A wrapper around 'verifySig' which handles grabbing the hash type
 verifySigWithType ::
-       Tx -> Int -> Word64 -> [ScriptOp] -> TxSignature -> PubKey -> Bool
-verifySigWithType tx i val outOps txSig pubKey =
+       Network -> Tx -> Int -> Word64 -> [ScriptOp] -> TxSignature -> PubKey -> Bool
+verifySigWithType net tx i val outOps txSig pubKey =
     let outScript = Script outOps
-        h = txSigHash tx outScript val i (txSignatureSigHash txSig)
+        h = txSigHash net tx outScript val i (txSignatureSigHash txSig)
     in verifySig h (txSignature txSig) pubKey
 
 -- | Uses `evalScript` to check that the input script of a spending
 -- transaction satisfies the output script.
-verifySpend :: Tx     -- ^ The spending transaction
+verifySpend :: Network
+            -> Tx     -- ^ The spending transaction
             -> Int    -- ^ The input index
             -> Script -- ^ The output script we are spending
             -> Word64 -- ^ The value of the output script
             -> [Flag] -- ^ Evaluation flags
             -> Bool
-verifySpend tx i outscript val flags =
+verifySpend net tx i outscript val flags =
   let scriptSig = either err id . decode . scriptInput $ txIn tx !! i
-      verifyFcn = verifySigWithType tx i val
+      verifyFcn = verifySigWithType net tx i val
       err e = error $ "Could not decode scriptInput in verifySpend: " ++ e
   in evalScript scriptSig outscript verifyFcn flags
 

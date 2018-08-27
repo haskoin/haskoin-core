@@ -3,6 +3,7 @@
 -}
 module Network.Haskoin.Test.Message where
 
+import           Network.Haskoin.Constants
 import           Network.Haskoin.Network.Message
 import           Network.Haskoin.Test.Block
 import           Network.Haskoin.Test.Crypto
@@ -19,8 +20,8 @@ arbitraryMessageHeader =
                   <*> arbitraryCheckSum32
 
 -- | Arbitrary Message
-arbitraryMessage :: Gen Message
-arbitraryMessage =
+arbitraryMessage :: Network -> Gen Message
+arbitraryMessage net =
     oneof
         [ MVersion <$> arbitraryVersion
         , return MVerAck
@@ -30,8 +31,8 @@ arbitraryMessage =
         , MNotFound <$> arbitraryNotFound
         , MGetBlocks <$> arbitraryGetBlocks
         , MGetHeaders <$> arbitraryGetHeaders
-        , MTx <$> arbitraryTx
-        , MBlock <$> arbitraryBlock
+        , MTx <$> arbitraryTx net
+        , MBlock <$> arbitraryBlock net
         , MMerkleBlock <$> arbitraryMerkleBlock
         , MHeaders <$> arbitraryHeaders
         , return MGetAddr

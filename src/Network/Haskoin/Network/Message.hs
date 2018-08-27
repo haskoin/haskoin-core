@@ -2,17 +2,19 @@ module Network.Haskoin.Network.Message
 ( Message(..)
 , MessageHeader(..)
 , msgType
+, putMessage
+, getMessage
 ) where
 
 import           Control.DeepSeq                   (NFData, rnf)
 import           Control.Monad                     (unless)
 import qualified Data.ByteString                   as BS
 import           Data.Serialize                    (Serialize, encode, get, put)
-import           Data.Serialize.Get                (getByteString, getWord32be,
-                                                    getWord32le, isolate,
-                                                    lookAhead)
-import           Data.Serialize.Put                (putByteString, putWord32be,
-                                                    putWord32le)
+import           Data.Serialize.Get                (Get, getByteString,
+                                                    getWord32be, getWord32le,
+                                                    isolate, lookAhead)
+import           Data.Serialize.Put                (Putter, putByteString,
+                                                    putWord32be, putWord32le)
 import           Data.Word                         (Word32)
 import           Network.Haskoin.Block.Merkle
 import           Network.Haskoin.Block.Types
@@ -109,68 +111,73 @@ msgType MMempool         = "mempool"
 msgType (MReject _)      = "reject"
 msgType MSendHeaders     = "sendheaders"
 
-instance Serialize Message where
-    get = do
-        (MessageHeader mgc cmd len chk) <- get
-        bs <- lookAhead $ getByteString $ fromIntegral len
-        unless (mgc == networkMagic)
-            (fail $ "get: Invalid network magic bytes: " ++ show mgc)
-        unless (checkSum32 bs == chk)
-            (fail $ "get: Invalid message checksum: " ++ show chk)
-        if len > 0
-            then isolate (fromIntegral len) $ case cmd of
-                MCVersion     -> MVersion <$> get
-                MCAddr        -> MAddr <$> get
-                MCInv         -> MInv <$> get
-                MCGetData     -> MGetData <$> get
-                MCNotFound    -> MNotFound <$> get
-                MCGetBlocks   -> MGetBlocks <$> get
-                MCGetHeaders  -> MGetHeaders <$> get
-                MCTx          -> MTx <$> get
-                MCBlock       -> MBlock <$> get
-                MCMerkleBlock -> MMerkleBlock <$> get
-                MCHeaders     -> MHeaders <$> get
-                MCFilterLoad  -> MFilterLoad <$> get
-                MCFilterAdd   -> MFilterAdd <$> get
-                MCPing        -> MPing <$> get
-                MCPong        -> MPong <$> get
-                MCAlert       -> MAlert <$> get
-                MCReject      -> MReject <$> get
-                _             -> fail $ "get: Invalid command " ++ show cmd
-            else case cmd of
-                MCGetAddr     -> return MGetAddr
-                MCVerAck      -> return MVerAck
-                MCFilterClear -> return MFilterClear
-                MCMempool     -> return MMempool
-                MCSendHeaders -> return MSendHeaders
-                _             -> fail $ "get: Invalid command " ++ show cmd
-    put msg = do
-        let (cmd, payload) = case msg of
-                MVersion m     -> (MCVersion, encode m)
-                MVerAck        -> (MCVerAck, BS.empty)
-                MAddr m        -> (MCAddr, encode m)
-                MInv m         -> (MCInv, encode m)
-                MGetData m     -> (MCGetData, encode m)
-                MNotFound m    -> (MCNotFound, encode m)
-                MGetBlocks m   -> (MCGetBlocks, encode m)
-                MGetHeaders m  -> (MCGetHeaders, encode m)
-                MTx m          -> (MCTx, encode m)
-                MBlock m       -> (MCBlock, encode m)
-                MMerkleBlock m -> (MCMerkleBlock, encode m)
-                MHeaders m     -> (MCHeaders, encode m)
-                MGetAddr       -> (MCGetAddr, BS.empty)
-                MFilterLoad m  -> (MCFilterLoad, encode m)
-                MFilterAdd m   -> (MCFilterAdd, encode m)
-                MFilterClear   -> (MCFilterClear, BS.empty)
-                MPing m        -> (MCPing, encode m)
-                MPong m        -> (MCPong, encode m)
-                MAlert m       -> (MCAlert, encode m)
-                MMempool       -> (MCMempool, BS.empty)
-                MReject m      -> (MCReject, encode m)
-                MSendHeaders   -> (MCSendHeaders, BS.empty)
-            chk = checkSum32 payload
-            len = fromIntegral $ BS.length payload
-            header = MessageHeader networkMagic cmd len chk
-        put header
-        putByteString payload
+getMessage :: Network -> Get Message
+getMessage net = do
+    (MessageHeader mgc cmd len chk) <- get
+    bs <- lookAhead $ getByteString $ fromIntegral len
+    unless
+        (mgc == getNetworkMagic net)
+        (fail $ "get: Invalid network magic bytes: " ++ show mgc)
+    unless
+        (checkSum32 bs == chk)
+        (fail $ "get: Invalid message checksum: " ++ show chk)
+    if len > 0
+        then isolate (fromIntegral len) $
+             case cmd of
+                 MCVersion     -> MVersion <$> get
+                 MCAddr        -> MAddr <$> get
+                 MCInv         -> MInv <$> get
+                 MCGetData     -> MGetData <$> get
+                 MCNotFound    -> MNotFound <$> get
+                 MCGetBlocks   -> MGetBlocks <$> get
+                 MCGetHeaders  -> MGetHeaders <$> get
+                 MCTx          -> MTx <$> get
+                 MCBlock       -> MBlock <$> get
+                 MCMerkleBlock -> MMerkleBlock <$> get
+                 MCHeaders     -> MHeaders <$> get
+                 MCFilterLoad  -> MFilterLoad <$> get
+                 MCFilterAdd   -> MFilterAdd <$> get
+                 MCPing        -> MPing <$> get
+                 MCPong        -> MPong <$> get
+                 MCAlert       -> MAlert <$> get
+                 MCReject      -> MReject <$> get
+                 _             -> fail $ "get: Invalid command " ++ show cmd
+        else case cmd of
+                 MCGetAddr     -> return MGetAddr
+                 MCVerAck      -> return MVerAck
+                 MCFilterClear -> return MFilterClear
+                 MCMempool     -> return MMempool
+                 MCSendHeaders -> return MSendHeaders
+                 _             -> fail $ "get: Invalid command " ++ show cmd
 
+putMessage :: Network -> Putter Message
+putMessage net msg = do
+    let (cmd, payload) =
+            case msg of
+                MVersion m -> (MCVersion, encode m)
+                MVerAck -> (MCVerAck, BS.empty)
+                MAddr m -> (MCAddr, encode m)
+                MInv m -> (MCInv, encode m)
+                MGetData m -> (MCGetData, encode m)
+                MNotFound m -> (MCNotFound, encode m)
+                MGetBlocks m -> (MCGetBlocks, encode m)
+                MGetHeaders m -> (MCGetHeaders, encode m)
+                MTx m -> (MCTx, encode m)
+                MBlock m -> (MCBlock, encode m)
+                MMerkleBlock m -> (MCMerkleBlock, encode m)
+                MHeaders m -> (MCHeaders, encode m)
+                MGetAddr -> (MCGetAddr, BS.empty)
+                MFilterLoad m -> (MCFilterLoad, encode m)
+                MFilterAdd m -> (MCFilterAdd, encode m)
+                MFilterClear -> (MCFilterClear, BS.empty)
+                MPing m -> (MCPing, encode m)
+                MPong m -> (MCPong, encode m)
+                MAlert m -> (MCAlert, encode m)
+                MMempool -> (MCMempool, BS.empty)
+                MReject m -> (MCReject, encode m)
+                MSendHeaders -> (MCSendHeaders, BS.empty)
+        chk = checkSum32 payload
+        len = fromIntegral $ BS.length payload
+        header = MessageHeader (getNetworkMagic net) cmd len chk
+    put header
+    putByteString payload

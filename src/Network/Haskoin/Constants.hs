@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -fno-cse -fno-full-laziness #-}
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-|
   Network specific constants
@@ -12,63 +12,31 @@ module Network.Haskoin.Constants
 , bch
 , bchTest
 , bchRegTest
-  -- ** Functions
-, setBTC
-, setBTCtest
-, setBTCregTest
-, setBCH
-, setBCHtest
-, setBCHregTest
-, setNetwork
-, getNetwork
-  -- ** Network parameters
-, networkName
-, addrPrefix
-, scriptPrefix
-, secretPrefix
-, extPubKeyPrefix
-, extSecretPrefix
-, networkMagic
-, genesisHeader
-, maxBlockSize
-, maxSatoshi
-, haskoinUserAgent
-, defaultPort
-, allowMinDifficultyBlocks
-, powNoRetargetting
-, powLimit
-, bip34Block
-, bip65Height
-, bip66Height
-, targetTimespan
-, targetSpacing
-, checkpoints
-, bip44Coin
-, seeds
-, sigHashForkId
-, edaBlockHeight
-, daaBlockHeight
-, segWit
-, cashAddrPrefix
-, bech32Prefix
+, allNets
+, netByName
 ) where
 
 import           Control.Concurrent.MVar
+import           Control.DeepSeq
 import           Control.Monad
 import           Data.ByteString             (ByteString)
+import           Data.List
 import           Data.Maybe
 import           Data.String
 import           Data.Version
 import           Data.Word                   (Word32, Word64, Word8)
+import           GHC.Generics                (Generic)
 import           Network.Haskoin.Block.Types
 import           Paths_haskoin_core
 import           System.IO.Unsafe            (unsafePerformIO)
+import           Text.Read
 
 versionString :: IsString a => a
 versionString = fromString (showVersion version)
 
 data Network = Network
     { getNetworkName              :: !String
+    , getNetworkIdent             :: !String
     , getAddrPrefix               :: !Word8
     , getScriptPrefix             :: !Word8
     , getSecretPrefix             :: !Word8
@@ -92,150 +60,34 @@ data Network = Network
     , getBip44Coin                :: !Word32
     , getSeeds                    :: ![String]
     , getSigHashForkId            :: !(Maybe Word32)
-    , getEDABlockHeight           :: !(Maybe Word32)
-    , getDAABlockHeight           :: !(Maybe Word32)
+    , getEdaBlockHeight           :: !(Maybe Word32)
+    , getDaaBlockHeight           :: !(Maybe Word32)
     , getSegWit                   :: !Bool
     , getCashAddrPrefix           :: !(Maybe ByteString)
     , getBech32Prefix             :: !(Maybe ByteString)
-    } deriving (Eq)
+    } deriving (Eq, Generic)
 
-setBTC :: IO ()
-setBTC = setNetwork btc
+instance NFData Network
 
-setBTCtest :: IO ()
-setBTCtest = setNetwork btcTest
+instance Show Network where
+    show = getNetworkIdent
 
-setBTCregTest :: IO ()
-setBTCregTest = setNetwork btcRegTest
+instance Read Network where
+    readPrec = do
+        Ident str <- lexP
+        maybe pfail return (netByIdent str)
 
-setBCH :: IO ()
-setBCH = setNetwork bch
+netByName :: String -> Maybe Network
+netByName str = find ((== str) . getNetworkName) allNets
 
-setBCHtest :: IO ()
-setBCHtest = setNetwork bchTest
-
-setBCHregTest :: IO ()
-setBCHregTest = setNetwork bchRegTest
-
-setNetwork :: Network -> IO ()
-setNetwork net = do
-    success <- tryPutMVar networkMVar net
-    unless success $ error "The network has already been set"
-
-{-# NOINLINE networkMVar #-}
-networkMVar :: MVar Network
-networkMVar = unsafePerformIO newEmptyMVar
-
-{-# NOINLINE getNetwork #-}
-getNetwork :: Network
-getNetwork =
-    fromMaybe err $ unsafePerformIO $ tryTakeMVar networkMVar
-  where
-    err = error "Use Network.Haskoin.Constants.setNetwork"
-
-networkName :: String
-networkName = getNetworkName getNetwork
-
-addrPrefix :: Word8
-addrPrefix = getAddrPrefix getNetwork
-
-scriptPrefix :: Word8
-scriptPrefix = getScriptPrefix getNetwork
-
-secretPrefix :: Word8
-secretPrefix = getSecretPrefix getNetwork
-
-extPubKeyPrefix :: Word32
-extPubKeyPrefix = getExtPubKeyPrefix getNetwork
-
-extSecretPrefix :: Word32
-extSecretPrefix = getExtSecretPrefix getNetwork
-
-networkMagic :: Word32
-networkMagic = getNetworkMagic getNetwork
-
-genesisHeader :: BlockHeader
-genesisHeader = getGenesisHeader getNetwork
-
-maxBlockSize :: Int
-maxBlockSize = getMaxBlockSize getNetwork
-
-maxSatoshi :: Word64
-maxSatoshi = getMaxSatoshi getNetwork
-
-haskoinUserAgent :: ByteString
-haskoinUserAgent = getHaskoinUserAgent getNetwork
-
-defaultPort :: Int
-defaultPort = getDefaultPort getNetwork
-
-allowMinDifficultyBlocks :: Bool
-allowMinDifficultyBlocks = getAllowMinDifficultyBlocks getNetwork
-
-powNoRetargetting :: Bool
-powNoRetargetting = getPowNoRetargetting getNetwork
-
-powLimit :: Integer
-powLimit = getPowLimit getNetwork
-
--- | Version 2 blocks start here.
-bip34Block :: (BlockHeight, BlockHash)
-bip34Block = getBip34Block getNetwork
-
--- | Version 3 blocks start here.
-bip65Height :: BlockHeight
-bip65Height = getBip65Height getNetwork
-
--- | Version 4 blocks start here.
-bip66Height :: BlockHeight
-bip66Height = getBip66Height getNetwork
-
--- | Time between difficulty cycles (2 weeks on average).
-targetTimespan :: Word32
-targetTimespan = getTargetTimespan getNetwork
-
--- | Time between blocks (10 minutes per block).
-targetSpacing :: Word32
-targetSpacing = getTargetSpacing getNetwork
-
--- | Checkpoints to enfore.
-checkpoints :: [(Word32, BlockHash)]
-checkpoints = getCheckpoints getNetwork
-
--- | Bip44 coin derivation (m/44'/coin'/account'/internal/address/)
-bip44Coin :: Word32
-bip44Coin = getBip44Coin getNetwork
-
--- | DNS seeds.
-seeds :: [String]
-seeds = getSeeds getNetwork
-
--- | The Fork ID used for producing signatures on different networks.
-sigHashForkId :: Maybe Word32
-sigHashForkId = getSigHashForkId getNetwork
-
--- | EDA Block height. Used by Bitcoin Cash network.
-edaBlockHeight :: Maybe Word32
-edaBlockHeight = getEDABlockHeight getNetwork
-
--- | DAA Block height. Used by Bitcoin Cash network.
-daaBlockHeight :: Maybe Word32
-daaBlockHeight = getDAABlockHeight getNetwork
-
--- | Only connect to nodes advertising SegWit support.
-segWit :: Bool
-segWit = getSegWit getNetwork
-
-cashAddrPrefix :: Maybe ByteString
-cashAddrPrefix = getCashAddrPrefix getNetwork
-
-bech32Prefix :: Maybe ByteString
-bech32Prefix = getBech32Prefix getNetwork
+netByIdent :: String -> Maybe Network
+netByIdent str = find ((== str) . getNetworkIdent) allNets
 
 btc :: Network
 btc =
     Network
     { getNetworkName = "btc"
+    , getNetworkIdent = "btc"
     , getAddrPrefix = 0
     , getScriptPrefix = 5
     , getSecretPrefix = 128
@@ -306,8 +158,8 @@ btc =
           ]
     , getBip44Coin = 0
     , getSigHashForkId = Nothing
-    , getEDABlockHeight = Nothing
-    , getDAABlockHeight = Nothing
+    , getEdaBlockHeight = Nothing
+    , getDaaBlockHeight = Nothing
     , getSegWit = True
     , getCashAddrPrefix = Nothing
     , getBech32Prefix = Just "bc"
@@ -317,6 +169,7 @@ btcTest :: Network
 btcTest =
     Network
     { getNetworkName = "btc-test"
+    , getNetworkIdent = "btcTest"
     , getAddrPrefix = 111
     , getScriptPrefix = 196
     , getSecretPrefix = 239
@@ -359,8 +212,8 @@ btcTest =
           ]
     , getBip44Coin = 1
     , getSigHashForkId = Nothing
-    , getEDABlockHeight = Nothing
-    , getDAABlockHeight = Nothing
+    , getEdaBlockHeight = Nothing
+    , getDaaBlockHeight = Nothing
     , getSegWit = True
     , getCashAddrPrefix = Nothing
     , getBech32Prefix = Just "tb"
@@ -370,6 +223,7 @@ btcRegTest :: Network
 btcRegTest =
     Network
     { getNetworkName = "btc-regtest"
+    , getNetworkIdent = "btcRegTest"
     , getAddrPrefix = 111
     , getScriptPrefix = 196
     , getSecretPrefix = 239
@@ -404,8 +258,8 @@ btcRegTest =
     , getSeeds = ["localhost"]
     , getBip44Coin = 1
     , getSigHashForkId = Nothing
-    , getEDABlockHeight = Nothing
-    , getDAABlockHeight = Nothing
+    , getEdaBlockHeight = Nothing
+    , getDaaBlockHeight = Nothing
     , getSegWit = True
     , getCashAddrPrefix = Nothing
     , getBech32Prefix = Just "bcrt"
@@ -415,6 +269,7 @@ bch :: Network
 bch =
     Network
     { getNetworkName = "bch"
+    , getNetworkIdent = "bch"
     , getAddrPrefix = 0
     , getScriptPrefix = 5
     , getSecretPrefix = 128
@@ -489,8 +344,8 @@ bch =
           ]
     , getBip44Coin = 145
     , getSigHashForkId = Just 0
-    , getEDABlockHeight = Just 478559
-    , getDAABlockHeight = Just 404031
+    , getEdaBlockHeight = Just 478559
+    , getDaaBlockHeight = Just 404031
     , getSegWit = False
     , getCashAddrPrefix = Just "bitcoincash"
     , getBech32Prefix = Nothing
@@ -500,6 +355,7 @@ bchTest :: Network
 bchTest =
     Network
     { getNetworkName = "bch-test"
+    , getNetworkIdent = "bchTest"
     , getAddrPrefix = 111
     , getScriptPrefix = 196
     , getSecretPrefix = 239
@@ -549,8 +405,8 @@ bchTest =
           ]
     , getBip44Coin = 1
     , getSigHashForkId = Just 0
-    , getEDABlockHeight = Just 1155876
-    , getDAABlockHeight = Just 1188697
+    , getEdaBlockHeight = Just 1155876
+    , getDaaBlockHeight = Just 1188697
     , getSegWit = False
     , getCashAddrPrefix = Just "bchtest"
     , getBech32Prefix = Nothing
@@ -560,6 +416,7 @@ bchRegTest :: Network
 bchRegTest =
     Network
     { getNetworkName = "bch-regtest"
+    , getNetworkIdent = "bchRegTest"
     , getAddrPrefix = 111
     , getScriptPrefix = 196
     , getSecretPrefix = 239
@@ -597,9 +454,12 @@ bchRegTest =
     , getSeeds = ["localhost"]
     , getBip44Coin = 1
     , getSigHashForkId = Just 0
-    , getEDABlockHeight = Nothing
-    , getDAABlockHeight = Just 0
+    , getEdaBlockHeight = Nothing
+    , getDaaBlockHeight = Just 0
     , getSegWit = False
     , getCashAddrPrefix = Just "bchreg"
     , getBech32Prefix = Nothing
     }
+
+allNets :: [Network]
+allNets = [btc, bch, btcTest, bchTest, btcRegTest, bchRegTest]

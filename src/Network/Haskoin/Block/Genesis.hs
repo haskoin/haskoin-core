@@ -4,5 +4,5 @@ import Network.Haskoin.Block.Types
 import Network.Haskoin.Transaction.Genesis
 import Network.Haskoin.Constants
 
-genesisBlock :: Block
-genesisBlock = Block genesisHeader [genesisTx]
+genesisBlock :: Network -> Block
+genesisBlock net = Block (getGenesisHeader net) [genesisTx]

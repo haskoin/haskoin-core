@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 5ddb6bb753c470590debd2bd92138a01e493116359bbed51050cb4fc9de70921
+-- hash: c15f226b69c129df8ee665fec2652722d4a7d6b2e9d249a8c6b49e0b82c5ee0e
 
 name:           haskoin-core
 version:        1.0.0
@@ -20,16 +20,16 @@ build-type:     Simple
 cabal-version:  >= 2.0
 extra-source-files:
     CHANGELOG.md
+    data/forkid_script_tests.json
+    data/forkid_sighash.json
+    data/script_invalid.json
+    data/script_tests.json
+    data/script_valid.json
+    data/sig_nonstrict.json
+    data/sig_strict.json
+    data/sighash.json
+    data/tx_valid.json
     README.md
-    test/data/forkid_script_tests.json
-    test/data/forkid_sighash.json
-    test/data/script_invalid.json
-    test/data/script_tests.json
-    test/data/script_valid.json
-    test/data/sig_nonstrict.json
-    test/data/sig_strict.json
-    test/data/sighash.json
-    test/data/tx_valid.json
 
 source-repository head
   type: git
@@ -63,9 +63,6 @@ library
     , secp256k1
     , split
     , string-conversions
-    , test-framework
-    , test-framework-hunit
-    , test-framework-quickcheck2
     , time
     , unordered-containers
     , vector
@@ -114,132 +111,11 @@ library
       Paths_haskoin_core
   default-language: Haskell2010
 
-test-suite haskoin-core-bch-test
+test-suite haskoin-core-test
   type: exitcode-stdio-1.0
-  main-is: Main.hs
-  hs-source-dirs:
-      test/bch
-      test/common
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      HUnit
-    , QuickCheck
-    , aeson
-    , array
-    , base >=4.7 && <5
-    , base16-bytestring
-    , bytestring
-    , cereal
-    , conduit
-    , containers
-    , cryptonite
-    , deepseq
-    , entropy
-    , hashable
-    , haskoin-core
-    , hspec
-    , memory
-    , mtl
-    , murmur3
-    , network
-    , safe
-    , scientific
-    , secp256k1
-    , split
-    , string-conversions
-    , test-framework
-    , test-framework-hunit
-    , test-framework-quickcheck2
-    , time
-    , unordered-containers
-    , vector
+  main-is: Spec.hs
   other-modules:
-      Network.Haskoin.Script.Spec
-      Paths_haskoin_core
-  default-language: Haskell2010
-
-test-suite haskoin-core-btc-regtest
-  type: exitcode-stdio-1.0
-  main-is: Main.hs
-  hs-source-dirs:
-      test/btc-regtest
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      HUnit
-    , QuickCheck
-    , aeson
-    , array
-    , base >=4.7 && <5
-    , base16-bytestring
-    , bytestring
-    , cereal
-    , conduit
-    , containers
-    , cryptonite
-    , deepseq
-    , entropy
-    , hashable
-    , haskoin-core
-    , hspec
-    , memory
-    , mtl
-    , murmur3
-    , network
-    , safe
-    , scientific
-    , secp256k1
-    , split
-    , string-conversions
-    , test-framework
-    , test-framework-hunit
-    , test-framework-quickcheck2
-    , time
-    , unordered-containers
-    , vector
-  other-modules:
-      Paths_haskoin_core
-  default-language: Haskell2010
-
-test-suite haskoin-core-btc-test
-  type: exitcode-stdio-1.0
-  main-is: Main.hs
-  hs-source-dirs:
-      test/btc
-      test/common
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      HUnit
-    , QuickCheck
-    , aeson
-    , array
-    , base >=4.7 && <5
-    , base16-bytestring
-    , bytestring
-    , cereal
-    , conduit
-    , containers
-    , cryptonite
-    , deepseq
-    , entropy
-    , hashable
-    , haskoin-core
-    , hspec
-    , memory
-    , mtl
-    , murmur3
-    , network
-    , safe
-    , scientific
-    , secp256k1
-    , split
-    , string-conversions
-    , test-framework
-    , test-framework-hunit
-    , test-framework-quickcheck2
-    , time
-    , unordered-containers
-    , vector
-  other-modules:
+      Network.Haskoin.Block.Spec
       Network.Haskoin.Block.Tests
       Network.Haskoin.Block.Units
       Network.Haskoin.Cereal.Tests
@@ -256,11 +132,43 @@ test-suite haskoin-core-btc-test
       Network.Haskoin.Crypto.Units
       Network.Haskoin.Json.Tests
       Network.Haskoin.Network.Units
+      Network.Haskoin.Script.Spec
       Network.Haskoin.Script.Tests
       Network.Haskoin.Script.Units
       Network.Haskoin.Transaction.Tests
       Network.Haskoin.Transaction.Units
       Network.Haskoin.Util.Tests
-      Network.Haskoin.Script.Spec
       Paths_haskoin_core
+  hs-source-dirs:
+      test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      HUnit
+    , QuickCheck
+    , aeson
+    , array
+    , base >=4.7 && <5
+    , base16-bytestring
+    , bytestring
+    , cereal
+    , conduit
+    , containers
+    , cryptonite
+    , deepseq
+    , entropy
+    , hashable
+    , haskoin-core
+    , hspec
+    , memory
+    , mtl
+    , murmur3
+    , network
+    , safe
+    , scientific
+    , secp256k1
+    , split
+    , string-conversions
+    , time
+    , unordered-containers
+    , vector
   default-language: Haskell2010

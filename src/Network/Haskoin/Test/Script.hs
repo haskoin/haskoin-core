@@ -4,6 +4,7 @@
 module Network.Haskoin.Test.Script where
 
 import           Data.Word
+import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Script
 import           Network.Haskoin.Test.Crypto
@@ -194,13 +195,13 @@ arbitraryMSParam = do
     return (m, n)
 
 -- | Arbitrary ScriptOutput (Can by any valid type)
-arbitraryScriptOutput :: Gen ScriptOutput
-arbitraryScriptOutput =
+arbitraryScriptOutput :: Network -> Gen ScriptOutput
+arbitraryScriptOutput net =
     oneof
         [ arbitraryPKOutput
         , arbitraryPKHashOutput
         , arbitraryMSOutput
-        , arbitrarySHOutput
+        , arbitrarySHOutput net
         , arbitraryDCOutput
         ]
 
@@ -237,8 +238,9 @@ arbitraryMSCOutput = do
     return $ PayMulSig keys m
 
 -- | Arbitrary ScriptOutput of type PayScriptHash
-arbitrarySHOutput :: Gen ScriptOutput
-arbitrarySHOutput = PayScriptHash . getAddrHash <$> arbitraryScriptAddress
+arbitrarySHOutput :: Network -> Gen ScriptOutput
+arbitrarySHOutput net =
+    PayScriptHash . getAddrHash <$> arbitraryScriptAddress net
 
 -- | Arbitrary ScriptOutput of type DataCarrier
 arbitraryDCOutput :: Gen ScriptOutput

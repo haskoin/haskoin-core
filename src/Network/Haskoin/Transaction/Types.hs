@@ -251,7 +251,7 @@ data OutPoint = OutPoint
       -- | The position of the specific output in the transaction.
       -- The first output position is 0.
     , outPointIndex :: !Word32
-    } deriving (Show, Eq, Ord)
+    } deriving (Show, Read, Eq, Ord)
 
 instance NFData OutPoint where
     rnf (OutPoint h i) = rnf h `seq` rnf i

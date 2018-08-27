@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 -- | ECDSA Signatures
 module Network.Haskoin.Crypto.ECDSA
 ( SecretT
@@ -45,7 +46,7 @@ withSource :: Monad m => (Int -> m ByteString) -> SecretT m a -> m a
 withSource f m = do
     seed  <- f 32 -- Read 256 bits from the random source
     nonce <- f 16 -- Read 128 bits from the random source
-    let ws = hmacDRBGNew seed nonce haskoinUserAgent
+    let ws = hmacDRBGNew seed nonce "haskoin"
     S.evalStateT m (ws,f)
 
 -- | Generate a new random 'EC.SecKey' value from the 'SecretT' monad. This
@@ -54,7 +55,7 @@ withSource f m = do
 nextSecret :: Monad m => SecretT m EC.SecKey
 nextSecret = do
     (ws, f) <- S.get
-    let (ws', randM) = hmacDRBGGen ws 32 haskoinUserAgent
+    let (ws', randM) = hmacDRBGGen ws 32 "haskoin"
     case randM of
         (Just rand) -> do
             S.put (ws', f)
@@ -63,7 +64,7 @@ nextSecret = do
                 Nothing  -> nextSecret
         Nothing -> do
             seed <- lift $ f 32 -- Read 256 bits to re-seed the PRNG
-            let ws0 = hmacDRBGRsd ws' seed haskoinUserAgent
+            let ws0 = hmacDRBGRsd ws' seed "haskoin"
             S.put (ws0, f)
             nextSecret
 

@@ -5,16 +5,17 @@ module Network.Haskoin.Test.Block where
 
 import           Network.Haskoin.Block.Merkle
 import           Network.Haskoin.Block.Types
+import           Network.Haskoin.Constants
 import           Network.Haskoin.Test.Crypto
 import           Network.Haskoin.Test.Network
 import           Network.Haskoin.Test.Transaction
 import           Test.QuickCheck
 
-arbitraryBlock :: Gen Block
-arbitraryBlock = do
+arbitraryBlock :: Network -> Gen Block
+arbitraryBlock net = do
     h   <- arbitraryBlockHeader
     c   <- choose (0,10)
-    txs <- vectorOf c arbitraryTx
+    txs <- vectorOf c (arbitraryTx net)
     return $ Block h txs
 
 arbitraryBlockHeader :: Gen BlockHeader

@@ -22,6 +22,7 @@ import           Data.Maybe                        (catMaybes, fromJust,
 import           Data.Serialize                    (encode)
 import           Data.String.Conversions           (cs)
 import           Data.Word                         (Word64)
+import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Network.Types
 import           Network.Haskoin.Script
@@ -199,11 +200,11 @@ guessMSSize (m, n)
 
 -- | Build a transaction by providing a list of outpoints as inputs
 -- and a list of recipients addresses and amounts as outputs.
-buildAddrTx :: [OutPoint] -> [(ByteString, Word64)] -> Either String Tx
-buildAddrTx xs ys =
+buildAddrTx :: Network -> [OutPoint] -> [(ByteString, Word64)] -> Either String Tx
+buildAddrTx net xs ys =
     buildTx xs =<< mapM f ys
   where
-    f (s, v) = case stringToAddr s of
+    f (s, v) = case stringToAddr net s of
         Just a -> return (addressToOutput a, v)
         _      -> Left $ "buildAddrTx: Invalid address " ++ cs s
 
@@ -256,29 +257,30 @@ instance FromJSON SigInput where
 -- | Sign a transaction by providing the 'SigInput' signing paramters and
 -- a list of private keys. The signature is computed deterministically as
 -- defined in RFC-6979.
-signTx :: Tx               -- ^ Transaction to sign
+signTx :: Network
+       -> Tx               -- ^ Transaction to sign
        -> [SigInput]       -- ^ SigInput signing parameters
        -> [PrvKey]         -- ^ List of private keys to use for signing
        -> Either String Tx -- ^ Signed transaction
-signTx otx sigis allKeys
+signTx net otx sigis allKeys
     | null ti   = Left "signTx: Transaction has no inputs"
     | otherwise = foldM go otx $ findSigInput sigis ti
   where
     ti = txIn otx
     go tx (sigi@(SigInput so _ _ _ rdmM), i) = do
-        keys <- sigKeys so rdmM allKeys
-        foldM (\t k -> signInput t i sigi k) tx keys
+        keys <- sigKeys net so rdmM allKeys
+        foldM (\t k -> signInput net t i sigi k) tx keys
 
 -- | Sign a single input in a transaction deterministically (RFC-6979).
-signInput :: Tx -> Int -> SigInput -> PrvKey -> Either String Tx
-signInput tx i (SigInput so val _ sh rdmM) key = do
+signInput :: Network -> Tx -> Int -> SigInput -> PrvKey -> Either String Tx
+signInput net tx i (SigInput so val _ sh rdmM) key = do
     let sig = TxSignature (signMsg msg key) sh
-    si <- buildInput tx i so val rdmM sig $ derivePubKey key
+    si <- buildInput net tx i so val rdmM sig $ derivePubKey key
     let ins = updateIndex i (txIn tx) (f si)
     return $ Tx (txVersion tx) ins (txOut tx) [] (txLockTime tx)
   where
-    f si x = x{ scriptInput = encodeInputBS si }
-    msg = txSigHash tx (encodeOutput $ fromMaybe so rdmM) val i sh
+    f si x = x {scriptInput = encodeInputBS si}
+    msg = txSigHash net tx (encodeOutput $ fromMaybe so rdmM) val i sh
 
 -- Order the SigInput with respect to the transaction inputs. This allow the
 -- users to provide the SigInput in any order. Users can also provide only a
@@ -293,26 +295,30 @@ findSigInput si ti =
 
 -- Find from the list of private keys which one is required to sign the
 -- provided ScriptOutput.
-sigKeys :: ScriptOutput -> Maybe RedeemScript -> [PrvKey]
-        -> Either String [PrvKey]
-sigKeys so rdmM keys =
+sigKeys ::
+       Network
+    -> ScriptOutput
+    -> Maybe RedeemScript
+    -> [PrvKey]
+    -> Either String [PrvKey]
+sigKeys net so rdmM keys =
     case (so, rdmM) of
         (PayPK p, Nothing) ->
-            return $ map fst $ maybeToList $ find ((== p) . snd) zipKeys
+            return . map fst . maybeToList $ find ((== p) . snd) zipKeys
         (PayPKHash h, Nothing) ->
-            return $
-            map fst $
-            maybeToList $ find ((== h) . getAddrHash . pubKeyAddr . snd) zipKeys
+            return . map fst . maybeToList $
+            find ((== h) . getAddrHash . pubKeyAddr net . snd) zipKeys
         (PayMulSig ps r, Nothing) ->
             return $ map fst $ take r $ filter ((`elem` ps) . snd) zipKeys
-        (PayScriptHash _, Just rdm) -> sigKeys rdm Nothing keys
+        (PayScriptHash _, Just rdm) -> sigKeys net rdm Nothing keys
         _ -> Left "sigKeys: Could not decode output script"
   where
     zipKeys = zip keys (map derivePubKey keys)
 
 -- Construct an input, given a signature and a public key
 buildInput ::
-       Tx
+       Network
+    -> Tx
     -> Int
     -> ScriptOutput
     -> Word64
@@ -320,36 +326,38 @@ buildInput ::
     -> TxSignature
     -> PubKey
     -> Either String ScriptInput
-buildInput tx i so val rdmM sig pub = case (so, rdmM) of
-    (PayPK _, Nothing) ->
-        return $ RegularInput $ SpendPK sig
-    (PayPKHash _, Nothing) ->
-        return $ RegularInput $ SpendPKHash sig pub
-    (PayMulSig msPubs r, Nothing) -> do
-        let mSigs = take r $ catMaybes $ matchTemplate allSigs msPubs f
-        return $ RegularInput $ SpendMulSig mSigs
-    (PayScriptHash _, Just rdm) -> do
-        inp  <- buildInput tx i rdm val Nothing sig pub
-        return $ ScriptHashInput (getRegularInput inp) rdm
-    _ -> Left "buildInput: Invalid output/redeem script combination"
+buildInput net tx i so val rdmM sig pub =
+    case (so, rdmM) of
+        (PayPK _, Nothing) -> return $ RegularInput $ SpendPK sig
+        (PayPKHash _, Nothing) -> return $ RegularInput $ SpendPKHash sig pub
+        (PayMulSig msPubs r, Nothing) -> do
+            let mSigs = take r $ catMaybes $ matchTemplate allSigs msPubs f
+            return $ RegularInput $ SpendMulSig mSigs
+        (PayScriptHash _, Just rdm) -> do
+            inp <- buildInput net tx i rdm val Nothing sig pub
+            return $ ScriptHashInput (getRegularInput inp) rdm
+        _ -> Left "buildInput: Invalid output/redeem script combination"
   where
-    scp     = scriptInput $ txIn tx !! i
-    allSigs = nub $ sig : case decodeInputBS scp of
-        Right (ScriptHashInput (SpendMulSig xs) _) -> xs
-        Right (RegularInput    (SpendMulSig xs))   -> xs
-        _                                          -> []
+    scp = scriptInput $ txIn tx !! i
+    allSigs =
+        nub $
+        sig :
+        case decodeInputBS net scp of
+            Right (ScriptHashInput (SpendMulSig xs) _) -> xs
+            Right (RegularInput (SpendMulSig xs))      -> xs
+            _                                          -> []
     out = encodeOutput so
-    f (TxSignature x sh) p = verifySig (txSigHash tx out val i sh) x p
+    f (TxSignature x sh) p = verifySig (txSigHash net tx out val i sh) x p
     f TxSignatureEmpty _   = False
 
 {- Merge multisig transactions -}
 
-mergeTxs :: [Tx] -> [(ScriptOutput, Word64, OutPoint)] -> Either String Tx
-mergeTxs txs os
+mergeTxs :: Network -> [Tx] -> [(ScriptOutput, Word64, OutPoint)] -> Either String Tx
+mergeTxs net txs os
     | null txs = error "Transaction list is empty"
     | length (nub emptyTxs) /= 1 = Left "Transactions do not match"
     | length txs == 1 = return $ head txs
-    | otherwise = foldM (mergeTxInput txs) (head emptyTxs) outs
+    | otherwise = foldM (mergeTxInput net txs) (head emptyTxs) outs
   where
     zipOp = zip (matchTemplate os (txIn $ head txs) f) [0..]
     outs = map (first $ (\(o,v,_) -> (o,v)) . fromJust) $ filter (isJust . fst) zipOp
@@ -359,8 +367,13 @@ mergeTxs txs os
     clearInput tx (_, i) =
         Tx (txVersion tx) (ins (txIn tx) i) (txOut tx) [] (txLockTime tx)
 
-mergeTxInput :: [Tx] -> Tx -> ((ScriptOutput, Word64), Int) -> Either String Tx
-mergeTxInput txs tx ((so, val), i) = do
+mergeTxInput ::
+       Network
+    -> [Tx]
+    -> Tx
+    -> ((ScriptOutput, Word64), Int)
+    -> Either String Tx
+mergeTxInput net txs tx ((so, val), i) = do
     -- Ignore transactions with empty inputs
     let ins = map (scriptInput . (!! i) . txIn) txs
     sigRes <- mapM extractSigs $ filter (not . BS.null) ins
@@ -381,57 +394,62 @@ mergeTxInput txs tx ((so, val), i) = do
                 return $ ScriptHashInput (getRegularInput si) rdm
             _ -> Left "Invalid output script type"
         _ -> Left "Invalid output script type"
-    extractSigs si = case decodeInputBS si of
+    extractSigs si = case decodeInputBS net si of
         Right (RegularInput (SpendMulSig sigs)) -> Right (sigs, Nothing)
         Right (ScriptHashInput (SpendMulSig sigs) rdm) -> Right (sigs, Just rdm)
         _ -> Left "Invalid script input type"
     f out (TxSignature x sh) p =
-        verifySig (txSigHash tx (encodeOutput out) val i sh) x p
+        verifySig (txSigHash net tx (encodeOutput out) val i sh) x p
     f _ TxSignatureEmpty _ = False
 
 {- Tx verification -}
 
 -- | Verify if a transaction is valid and all of its inputs are standard.
-verifyStdTx :: Tx -> [(ScriptOutput, Word64, OutPoint)] -> Bool
-verifyStdTx = verifyStdTxGen False
+verifyStdTx :: Network -> Tx -> [(ScriptOutput, Word64, OutPoint)] -> Bool
+verifyStdTx net = verifyStdTxGen net False
 
 -- | Like 'verifyStdTx' but using strict signature decoding
-verifyStdTxStrict :: Tx -> [(ScriptOutput, Word64, OutPoint)] -> Bool
-verifyStdTxStrict = verifyStdTxGen True
+verifyStdTxStrict :: Network -> Tx -> [(ScriptOutput, Word64, OutPoint)] -> Bool
+verifyStdTxStrict net = verifyStdTxGen net True
 
-verifyStdTxGen :: Bool -> Tx -> [(ScriptOutput, Word64, OutPoint)] -> Bool
-verifyStdTxGen strict tx xs =
-    not (null (txIn tx)) && all go (zip (matchTemplate xs (txIn tx) f) [0..])
+verifyStdTxGen :: Network -> Bool -> Tx -> [(ScriptOutput, Word64, OutPoint)] -> Bool
+verifyStdTxGen net strict tx xs =
+    not (null (txIn tx)) && all go (zip (matchTemplate xs (txIn tx) f) [0 ..])
   where
-    f (_,_,o) txin        = o == prevOutput txin
-    go (Just (so,val,_), i) = verifyStdInput strict tx i so val
-    go _                    = False
+    f (_, _, o) txin = o == prevOutput txin
+    go (Just (so, val, _), i) = verifyStdInput net strict tx i so val
+    go _                      = False
 
 -- | Verify if a transaction input is valid and standard.
-verifyStdInput :: Bool -> Tx -> Int -> ScriptOutput -> Word64 -> Bool
-verifyStdInput strict tx i = go (scriptInput $ txIn tx !! i)
+verifyStdInput :: Network -> Bool -> Tx -> Int -> ScriptOutput -> Word64 -> Bool
+verifyStdInput net strict tx i = go (scriptInput $ txIn tx !! i)
   where
-    dec = if strict then decodeInputStrictBS else decodeInputBS
+    dec =
+        if strict
+            then decodeInputStrictBS net
+            else decodeInputBS net
     go inp so val =
         case dec inp of
             Right (RegularInput (SpendPK (TxSignature sig sh))) ->
                 case so of
-                    PayPK pub -> verifySig (txSigHash tx out val i sh) sig pub
+                    PayPK pub ->
+                        verifySig (txSigHash net tx out val i sh) sig pub
                     _ -> False
             Right (RegularInput (SpendPKHash (TxSignature sig sh) pub)) ->
                 case so of
                     PayPKHash h ->
-                        pubKeyAddr pub == PubKeyAddress h &&
-                        verifySig (txSigHash tx out val i sh) sig pub
+                        pubKeyAddr net pub == PubKeyAddress h net &&
+                        verifySig (txSigHash net tx out val i sh) sig pub
                     _ -> False
             Right (RegularInput (SpendMulSig sigs)) ->
                 case so of
-                    PayMulSig pubs r -> countMulSig tx out val i pubs sigs == r
+                    PayMulSig pubs r ->
+                        countMulSig net tx out val i pubs sigs == r
                     _ -> False
             Right (ScriptHashInput si rdm) ->
                 case so of
                     PayScriptHash h ->
-                        p2shAddr rdm == ScriptAddress h &&
+                        p2shAddr net rdm == ScriptAddress h net &&
                         go (encodeInputBS $ RegularInput si) rdm val
                     _ -> False
             _ -> False
@@ -439,12 +457,12 @@ verifyStdInput strict tx i = go (scriptInput $ txIn tx !! i)
         out = encodeOutput so
 
 -- Count the number of valid signatures
-countMulSig :: Tx -> Script -> Word64 -> Int -> [PubKey] -> [TxSignature] -> Int
-countMulSig _ _ _ _ [] _  = 0
-countMulSig _ _ _ _ _  [] = 0
-countMulSig tx out val i (_:pubs) (TxSignatureEmpty:rest) =
-    countMulSig tx out val i pubs rest
-countMulSig tx out val i (pub:pubs) sigs@(TxSignature sig sh:rest)
-    | verifySig (txSigHash tx out val i sh) sig pub =
-         1 + countMulSig tx out val i pubs rest
-    | otherwise = countMulSig tx out val i pubs sigs
+countMulSig :: Network -> Tx -> Script -> Word64 -> Int -> [PubKey] -> [TxSignature] -> Int
+countMulSig _ _ _ _ _ [] _  = 0
+countMulSig _ _ _ _ _ _  [] = 0
+countMulSig net tx out val i (_:pubs) (TxSignatureEmpty:rest) =
+    countMulSig net tx out val i pubs rest
+countMulSig net tx out val i (pub:pubs) sigs@(TxSignature sig sh:rest)
+    | verifySig (txSigHash net tx out val i sh) sig pub =
+         1 + countMulSig net tx out val i pubs rest
+    | otherwise = countMulSig net tx out val i pubs sigs

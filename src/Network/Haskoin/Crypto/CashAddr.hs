@@ -36,9 +36,9 @@ charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 base32char :: Char -> Maybe Word8
 base32char = fmap fromIntegral . (`elemIndex` charset)
 
-cashAddrDecode :: CashAddr -> Maybe (CashVersion, ByteString)
-cashAddrDecode ca' = do
-    epfx <- cashAddrPrefix
+cashAddrDecode :: Network -> CashAddr -> Maybe (CashVersion, ByteString)
+cashAddrDecode net ca' = do
+    epfx <- getCashAddrPrefix net
     guard (B.length ca <= 90)
     guard (C.map toUpper ca' == ca' || ca == ca')
     let (cpfx', cdat) = C.breakEnd (== ':') ca
@@ -55,9 +55,9 @@ cashAddrDecode ca' = do
   where
     ca = C.map toLower ca'
 
-cashAddrEncode :: CashVersion -> ByteString -> Maybe CashAddr
-cashAddrEncode cv bs = do
-    pfx <- cashAddrPrefix
+cashAddrEncode :: Network -> CashVersion -> ByteString -> Maybe CashAddr
+cashAddrEncode net cv bs = do
+    pfx <- getCashAddrPrefix net
     ver <- encodeCashVersion cv
     len <- encodeCashLength (B.length bs)
     let vb = ver .|. len

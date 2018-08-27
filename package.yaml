@@ -13,7 +13,7 @@ homepage: http://github.com/haskoin/haskoin#readme
 git: git://github.com/haskoin/haskoin.git
 bug-reports: http://github.com/haskoin/haskoin/issues
 extra-source-files:
-- test/data/*.json
+- data/*.json
 - README.md
 - CHANGELOG.md
 dependencies:
@@ -41,9 +41,6 @@ dependencies:
 - secp256k1
 - split
 - string-conversions
-- test-framework
-- test-framework-quickcheck2
-- test-framework-hunit
 - time
 - unordered-containers
 - vector
@@ -61,31 +58,9 @@ library:
   - Network.Haskoin.Constants
   - Network.Haskoin.Test
 tests:
-  haskoin-core-btc-test:
-    main: Main.hs
-    source-dirs:
-    - test/btc
-    - test/common
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - haskoin-core
-  haskoin-core-btc-regtest:
-    main: Main.hs
-    source-dirs: test/btc-regtest
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - haskoin-core
-  haskoin-core-bch-test:
-    main: Main.hs
-    source-dirs:
-    - test/bch
-    - test/common
+  haskoin-core-test:
+    main: Spec.hs
+    source-dirs: test
     ghc-options:
     - -threaded
     - -rtsopts

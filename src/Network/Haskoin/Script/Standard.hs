@@ -48,6 +48,7 @@ import           Data.Function                  (on)
 import           Data.List                      (sortBy)
 import           Data.Serialize                 (decode, encode)
 import           Data.String.Conversions        (cs)
+import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Address
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Crypto.Keys
@@ -129,13 +130,13 @@ isDataCarrier _               = False
 
 -- | Computes a script address from a script output. This address can be used
 -- in a pay to script hash output.
-p2shAddr :: ScriptOutput -> Address
-p2shAddr = ScriptAddress . addressHash . encodeOutputBS
+p2shAddr :: Network -> ScriptOutput -> Address
+p2shAddr net out = ScriptAddress (addressHash (encodeOutputBS out)) net
 
 -- | Computes a script address from a script output for a
 -- pay-to-witness-script-hash output.
-p2wshAddr :: ScriptOutput -> Address
-p2wshAddr = WitnessScriptAddress . sha256 . encodeOutputBS
+p2wshAddr :: Network -> ScriptOutput -> Address
+p2wshAddr net out = WitnessScriptAddress (sha256 (encodeOutputBS out)) net
 
 -- | Sorts the public keys of a multisignature output in ascending order by
 -- comparing their serialized representations. This feature allows for easier
@@ -148,10 +149,10 @@ sortMulSig out = case out of
     _ -> error "Can only call orderMulSig on PayMulSig scripts"
 
 addressToOutput :: Address -> ScriptOutput
-addressToOutput (PubKeyAddress h)        = PayPKHash h
-addressToOutput (ScriptAddress h)        = PayScriptHash h
-addressToOutput (WitnessPubKeyAddress h) = PayWitnessPKHash h
-addressToOutput (WitnessScriptAddress h) = PayWitnessScriptHash h
+addressToOutput (PubKeyAddress h _)        = PayPKHash h
+addressToOutput (ScriptAddress h _)        = PayScriptHash h
+addressToOutput (WitnessPubKeyAddress h _) = PayWitnessPKHash h
+addressToOutput (WitnessScriptAddress h _) = PayWitnessScriptHash h
 
 -- | Get output script AST for an address.
 addressToScript :: Address -> Script
@@ -162,11 +163,11 @@ addressToScriptBS :: Address -> ByteString
 addressToScriptBS = encode . addressToScript
 
 -- | Encode an output script as an address if it has such representation.
-scriptToAddress :: Script -> Maybe Address
-scriptToAddress = eitherToMaybe . (outputAddress <=< decodeOutput)
+scriptToAddress :: Network -> Script -> Maybe Address
+scriptToAddress net = eitherToMaybe . (outputAddress net <=< decodeOutput)
 
-scriptToAddressBS :: ByteString -> Maybe Address
-scriptToAddressBS = eitherToMaybe . (outputAddress <=< decodeOutputBS)
+scriptToAddressBS :: Network -> ByteString -> Maybe Address
+scriptToAddressBS net = eitherToMaybe . (outputAddress net <=< decodeOutputBS)
 
 -- | Computes a 'Script' from a 'ScriptOutput'. The 'Script' is a list of
 -- 'ScriptOp' can can be used to build a 'Tx'.
@@ -258,20 +259,20 @@ scriptOpToInt s
     res = fromIntegral (BS.head $ encode s) - 0x50
 
 -- | Get the address of a `ScriptOutput`
-outputAddress :: ScriptOutput -> Either String Address
-outputAddress s = case s of
-    PayPKHash h            -> return $ PubKeyAddress h
-    PayScriptHash h        -> return $ ScriptAddress h
-    PayPK k                -> return $ pubKeyAddr k
-    PayWitnessPKHash h     -> return $ WitnessPubKeyAddress h
-    PayWitnessScriptHash h -> return $ WitnessScriptAddress h
+outputAddress :: Network -> ScriptOutput -> Either String Address
+outputAddress net s = case s of
+    PayPKHash h            -> return $ PubKeyAddress h net
+    PayScriptHash h        -> return $ ScriptAddress h net
+    PayPK k                -> return $ pubKeyAddr net k
+    PayWitnessPKHash h     -> return $ WitnessPubKeyAddress h net
+    PayWitnessScriptHash h -> return $ WitnessScriptAddress h net
     _                      -> Left "outputAddress: bad output script type"
 
 -- | Get the address of a `ScriptInput`
-inputAddress :: ScriptInput -> Either String Address
-inputAddress s = case s of
-    RegularInput (SpendPKHash _ key) -> return $ pubKeyAddr key
-    ScriptHashInput _ rdm -> return $ p2shAddr rdm
+inputAddress :: Network -> ScriptInput -> Either String Address
+inputAddress net s = case s of
+    RegularInput (SpendPKHash _ key) -> return $ pubKeyAddr net key
+    ScriptHashInput _ rdm -> return $ p2shAddr net rdm
     _ -> Left "inputAddress: bad input script type"
 
 -- | Data type describing standard transaction input scripts. Input scripts
@@ -338,12 +339,12 @@ encodeSimpleInput s =
     f TxSignatureEmpty = OP_0
     f ts               = opPushData $ encodeTxSig ts
 
-decodeSimpleInput :: Bool -> Script -> Either String SimpleInput
-decodeSimpleInput strict (Script ops) =
+decodeSimpleInput :: Network -> Bool -> Script -> Either String SimpleInput
+decodeSimpleInput net strict (Script ops) =
     maybeToEither errMsg $ matchPK ops <|> matchPKHash ops <|> matchMulSig ops
   where
     matchPK [op] = SpendPK <$> f op
-    matchPK _ = Nothing
+    matchPK _    = Nothing
     matchPKHash [op, OP_PUSHDATA pub _] =
         SpendPKHash <$> f op <*> eitherToMaybe (decode pub)
     matchPKHash _ = Nothing
@@ -357,7 +358,7 @@ decodeSimpleInput strict (Script ops) =
     f OP_0 = return TxSignatureEmpty
     f (OP_PUSHDATA "" OPCODE) = f OP_0
     f (OP_PUSHDATA bs _)
-        | strict = eitherToMaybe $ decodeTxStrictSig bs
+        | strict = eitherToMaybe $ decodeTxStrictSig net bs
         | otherwise = eitherToMaybe $ decodeTxLaxSig bs
     f _ = Nothing
     errMsg = "decodeInput: Could not decode script input"
@@ -374,31 +375,33 @@ encodeInputBS = encode . encodeInput
 
 -- | Decodes a 'ScriptInput' from a 'Script'. This function fails if the
 -- script can not be parsed as a standard script input.
-decodeInput :: Script -> Either String ScriptInput
-decodeInput = decodeInputGen False
+decodeInput :: Network -> Script -> Either String ScriptInput
+decodeInput net = decodeInputGen net False
 
 -- | Like 'decodeInput' but uses strict signature decoding
-decodeInputStrict :: Script -> Either String ScriptInput
-decodeInputStrict = decodeInputGen True
+decodeInputStrict :: Network -> Script -> Either String ScriptInput
+decodeInputStrict net = decodeInputGen net True
 
-decodeInputGen :: Bool -> Script -> Either String ScriptInput
-decodeInputGen strict s@(Script ops) = maybeToEither errMsg $
-    matchSimpleInput <|> matchPayScriptHash
+decodeInputGen :: Network -> Bool -> Script -> Either String ScriptInput
+decodeInputGen net strict s@(Script ops) =
+    maybeToEither errMsg $ matchSimpleInput <|> matchPayScriptHash
   where
-    matchSimpleInput = RegularInput <$> eitherToMaybe (decodeSimpleInput strict s)
-    matchPayScriptHash = case splitAt (length (scriptOps s) - 1) ops of
-        (is, [OP_PUSHDATA bs _]) -> do
-            rdm <- eitherToMaybe $ decodeOutputBS bs
-            inp <- eitherToMaybe $ decodeSimpleInput strict $ Script is
-            return $ ScriptHashInput inp rdm
-        _ -> Nothing
+    matchSimpleInput =
+        RegularInput <$> eitherToMaybe (decodeSimpleInput net strict s)
+    matchPayScriptHash =
+        case splitAt (length (scriptOps s) - 1) ops of
+            (is, [OP_PUSHDATA bs _]) -> do
+                rdm <- eitherToMaybe $ decodeOutputBS bs
+                inp <- eitherToMaybe $ decodeSimpleInput net strict $ Script is
+                return $ ScriptHashInput inp rdm
+            _ -> Nothing
     errMsg = "decodeInput: Could not decode script input"
 
 -- | Like 'decodeInput' but decodes from a ByteString
-decodeInputBS :: ByteString -> Either String ScriptInput
-decodeInputBS = decodeInput <=< decode
+decodeInputBS :: Network -> ByteString -> Either String ScriptInput
+decodeInputBS net = decodeInput net <=< decode
 
 -- | Like 'decodeInputStrict' but decodes from a ByteString
-decodeInputStrictBS :: ByteString -> Either String ScriptInput
-decodeInputStrictBS = decodeInputStrict <=< decode
+decodeInputStrictBS :: Network -> ByteString -> Either String ScriptInput
+decodeInputStrictBS net = decodeInputStrict net <=< decode
 

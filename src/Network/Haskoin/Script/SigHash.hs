@@ -110,22 +110,24 @@ isSigHashUnknown =
 sigHashAddForkId :: SigHash -> Word32 -> SigHash
 sigHashAddForkId sh w = (fromIntegral w `shiftL` 8) .|. (sh .&. 0x000000ff)
 
-sigHashAddNetworkId :: SigHash -> SigHash
-sigHashAddNetworkId = (`sigHashAddForkId` fromMaybe 0 sigHashForkId)
+sigHashAddNetworkId :: Network -> SigHash -> SigHash
+sigHashAddNetworkId net =
+    (`sigHashAddForkId` fromMaybe 0 (getSigHashForkId net))
 
 sigHashGetForkId :: SigHash -> Word32
 sigHashGetForkId = fromIntegral . (`shiftR` 8)
 
 -- | Computes the hash that will be used for signing a transaction.
-txSigHash :: Tx      -- ^ Transaction to sign.
+txSigHash :: Network
+          -> Tx      -- ^ Transaction to sign.
           -> Script  -- ^ Output script that is being spent.
           -> Word64  -- ^ Value of the output being spent.
           -> Int     -- ^ Index of the input that is being signed.
           -> SigHash -- ^ What parts of the transaction should be signed.
           -> Hash256 -- ^ Result hash to be signed.
-txSigHash tx out v i sh
-    | hasForkIdFlag sh && isJust sigHashForkId =
-        txSigHashForkId tx out v i sh
+txSigHash net tx out v i sh
+    | hasForkIdFlag sh && isJust (getSigHashForkId net) =
+        txSigHashForkId net tx out v i sh
     | otherwise = do
         let newIn = buildInputs (txIn tx) fout i sh
         -- When SigSingle and input index > outputs, then sign integer 1
@@ -170,13 +172,14 @@ buildOutputs txos i sh
 -- | Computes the hash that will be used for signing a transaction. This
 -- function is used when the sigHashForkId flag is set.
 txSigHashForkId
-    :: Tx      -- ^ Transaction to sign.
+    :: Network
+    -> Tx      -- ^ Transaction to sign.
     -> Script  -- ^ Output script that is being spent.
     -> Word64  -- ^ Value of the output being spent.
     -> Int     -- ^ Index of the input that is being signed.
     -> SigHash -- ^ What parts of the transaction should be signed.
     -> Hash256 -- ^ Result hash to be signed.
-txSigHashForkId tx out v i sh =
+txSigHashForkId net tx out v i sh =
     doubleSHA256 . runPut $ do
         putWord32le $ txVersion tx
         put hashPrevouts
@@ -187,7 +190,7 @@ txSigHashForkId tx out v i sh =
         putWord32le $ txInSequence $ txIn tx !! i
         put hashOutputs
         putWord32le $ txLockTime tx
-        putWord32le $ fromIntegral $ sigHashAddNetworkId sh
+        putWord32le $ fromIntegral $ sigHashAddNetworkId net sh
   where
     hashPrevouts
         | not $ hasAnyoneCanPayFlag sh =
@@ -237,14 +240,14 @@ decodeTxLaxSig bs =
     TxSignature <$> decode (BS.init bs)
                 <*> return (fromIntegral $ BS.last bs)
 
-decodeTxStrictSig :: ByteString -> Either String TxSignature
-decodeTxStrictSig bs =
+decodeTxStrictSig :: Network -> ByteString -> Either String TxSignature
+decodeTxStrictSig net bs =
     case decodeStrictSig $ BS.init bs of
         Just sig -> do
             let sh = fromIntegral $ BS.last bs
             when (isSigHashUnknown sh) $
                 Left "Non-canonical signature: unknown hashtype byte"
-            when (isNothing sigHashForkId && hasForkIdFlag sh) $
+            when (isNothing (getSigHashForkId net) && hasForkIdFlag sh) $
                 Left "Non-canonical signature: invalid network for forkId"
             return $ TxSignature sig sh
         Nothing -> Left "Non-canonical signature: could not parse signature"

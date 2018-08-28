@@ -5,6 +5,9 @@ module Network.Haskoin.Block.Headers
     ( BlockNode(..)
     , HeaderMemory(..)
     , BlockHeaders(..)
+    , BlockWork
+    , BlockMap
+    , ShortBlockHash
     , getAncestor
     , isGenesis
     , initialChain

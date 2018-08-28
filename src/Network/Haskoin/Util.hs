@@ -5,20 +5,20 @@
 -}
 module Network.Haskoin.Util
     (
-      -- * ByteString helpers
+      -- * ByteString Helpers
       bsToInteger
     , integerToBS
     , encodeHex
     , decodeHex
     , getBits
 
-      -- * Maybe and Either monad helpers
+      -- * Maybe & Either Helpers
     , eitherToMaybe
     , maybeToEither
     , liftEither
     , liftMaybe
 
-      -- * Various helpers
+      -- * Other Helpers
     , updateIndex
     , matchTemplate
     , convertBits

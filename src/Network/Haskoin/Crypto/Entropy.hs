@@ -2,6 +2,7 @@
 -- | ECDSA Signatures
 module Network.Haskoin.Crypto.Entropy
     ( SecretT
+    , SecretState
     , withSource
     , getEntropy
     , genPrvKey
@@ -26,7 +27,7 @@ import           Network.Haskoin.Keys.Types
 import           Numeric                     (showHex)
 import           System.Entropy              (getEntropy)
 
--- | Internal state of the 'SecretT' monad
+-- Internal state of the 'SecretT' monad
 type SecretState m = (WorkingState, Int -> m ByteString)
 
 -- | StateT monad stack tracking the internal state of HMAC DRBG

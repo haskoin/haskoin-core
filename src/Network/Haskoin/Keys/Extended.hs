@@ -47,6 +47,7 @@ module Network.Haskoin.Keys.Extended
 
       -- ** Derivation Paths
     , DerivPathI(..)
+    , AnyDeriv, HardDeriv, SoftDeriv
     , HardOrAny
     , AnyOrSoft
     , DerivPath
@@ -105,9 +106,9 @@ import           Data.String                     (IsString, fromString)
 import           Data.String.Conversions         (cs)
 import           Data.Typeable                   (Typeable)
 import           Data.Word                       (Word32, Word8)
-import           Network.Haskoin.Constants
 import           Network.Haskoin.Address
 import           Network.Haskoin.Address.Base58
+import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Keys.Types
 import           Network.Haskoin.Script.Standard

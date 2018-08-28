@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | Mnemonic keys (BIP-39). Only English dictionary.
 module Network.Haskoin.Keys.Mnemonic
-    -- * Mnemonic
-    ( Entropy
+    ( -- * Mnemonic
+      Entropy
     , Mnemonic
     , Passphrase
     , Seed

@@ -6,6 +6,9 @@ module Network.Haskoin.Transaction.Types
     , TxOut(..)
     , OutPoint(..)
     , TxHash(..)
+    , WitnessData
+    , WitnessStack
+    , WitnessStackItem
     , txHash
     , hexToTxHash
     , txHashToHex

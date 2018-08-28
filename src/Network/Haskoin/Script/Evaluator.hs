@@ -9,15 +9,17 @@ EvalScript and <https://en.bitcoin.it/wiki/Script>
 -}
 module Network.Haskoin.Script.Evaluator
 (
--- * Script evaluation
+-- * Script Evaluation
   verifySpend
 , evalScript
 , SigCheck
 , Flag
--- * Evaluation data types
+-- ** Data Types
 , ProgramData
 , Stack
--- * Helper functions
+, StackValue
+, EvalError
+-- ** Helper Functions
 , encodeInt
 , decodeInt
 , decodeFullInt

@@ -12,6 +12,7 @@ module Network.Haskoin.Block
     , BlockHash
     , BlockHeight
     , Timestamp
+    , BlockWork
     , headerHash
     , blockHashToHex
     , hexToBlockHash
@@ -21,6 +22,7 @@ module Network.Haskoin.Block
     , BlockHeaders(..)
     , BlockNode(..)
     , HeaderMemory(..)
+    , BlockMap
     , getAncestor
     , isGenesis
     , initialChain

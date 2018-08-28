@@ -21,6 +21,11 @@ module Network.Haskoin.Crypto.Hash
 , hmacDRBGRsd
 , hmacDRBGGen
 , WorkingState
+, EntropyInput
+, AdditionalInput
+, ProvidedData
+, Nonce
+, PersString
 ) where
 
 import           Control.DeepSeq         (NFData)

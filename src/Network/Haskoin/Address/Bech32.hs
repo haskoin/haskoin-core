@@ -1,12 +1,14 @@
 {- Copied from reference implementation contributed by Marko Bencun -}
 module Network.Haskoin.Address.Bech32
-    ( bech32Encode
+    ( HRP
+    , Data
+    , bech32Encode
     , bech32Decode
     , toBase32
     , toBase256
     , segwitEncode
     , segwitDecode
-    , Word5()
+    , Word5(..)
     , word5
     , fromWord5
     ) where

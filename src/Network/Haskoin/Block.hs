@@ -1,10 +1,48 @@
-{-|
-  This package provides block and block-related types.
--}
 module Network.Haskoin.Block
-    ( module X
+    ( -- * Block
+      Block(..)
+      -- ** Messages
+    , Headers(..)
+    , GetBlocks(..)
+    , GetHeaders(..)
+    , BlockHeaderCount
+    , BlockLocator
+      -- ** Header
+    , BlockHeader(..)
+    , BlockHash
+    , BlockHeight
+    , Timestamp
+    , headerHash
+    , blockHashToHex
+    , hexToBlockHash
+    , decodeCompact
+    , encodeCompact
+      -- ** Storage
+    , BlockHeaders(..)
+    , BlockNode(..)
+    , HeaderMemory(..)
+    , getAncestor
+    , isGenesis
+    , initialChain
+    , genesisMap
+    , genesisNode
+    , genesisBlock
+    , connectBlocks
+    , connectBlock
+    , parentBlock
+    , splitPoint
+    , blockLocator
+      -- ** Merkle Blocks
+    , MerkleBlock (..)
+    , MerkleRoot
+    , FlagBits
+    , PartialMerkleTree
+    , buildMerkleRoot
+    , buildPartialMerkle
+    , merkleBlockTxs
+    , testMerkleRoot
     ) where
 
-import           Network.Haskoin.Block.Headers as X
-import           Network.Haskoin.Block.Merkle  as X
-import           Network.Haskoin.Block.Types   as X
+import           Network.Haskoin.Block.Headers
+import           Network.Haskoin.Block.Merkle
+import           Network.Haskoin.Block.Types

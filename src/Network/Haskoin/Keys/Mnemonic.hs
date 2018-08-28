@@ -1,24 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
--- | Mnemonic keys (BIP-39). Only the English dictionary in the BIP is
--- supported.
+-- | Mnemonic keys (BIP-39). Only English dictionary.
 module Network.Haskoin.Keys.Mnemonic
-  (
-    -- * Data types
-    Entropy
-  , Mnemonic
-  , Passphrase
-  , Seed
-
-    -- * Entropy encoding and decoding
-  , toMnemonic
-  , fromMnemonic
-
-    -- * Generating 512-bit seeds
-  , mnemonicToSeed
-
-    -- * Helper functions
-  , getBits
-  ) where
+    -- * Mnemonic
+    ( Entropy
+    , Mnemonic
+    , Passphrase
+    , Seed
+    , toMnemonic
+    , fromMnemonic
+    , mnemonicToSeed
+    ) where
 
 import           Control.Monad           (when)
 import           Crypto.Hash             (SHA256 (..), hashWith)

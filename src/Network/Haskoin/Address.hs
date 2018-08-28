@@ -2,11 +2,13 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Address
-    ( Address(..)
+    ( -- * Address
+      Address(..)
     , addrToString
     , stringToAddr
     , addrFromJSON
     , pubKeyAddr
+      -- ** Wallet Import Format (WIF)
     , fromWif
     , toWif
     ) where
@@ -40,18 +42,13 @@ import           Network.Haskoin.Keys.Types
 import           Network.Haskoin.Util
 import           Text.Read                        as R
 
--- | Data type representing a Bitcoin address
 data Address
-    -- | Public Key Hash Address
     = PubKeyAddress { getAddrHash160 :: !Hash160
                     , getAddrNet     :: !Network }
-    -- | Script Hash Address
     | ScriptAddress { getAddrHash160 :: !Hash160
                     , getAddrNet     :: !Network }
-    -- | SegWit Public Key Hash Address
     | WitnessPubKeyAddress { getAddrHash160 :: !Hash160
                            , getAddrNet     :: !Network }
-    -- | SegWit Script Hash Address
     | WitnessScriptAddress { getAddrHash256 :: !Hash256
                            , getAddrNet     :: !Network }
     deriving (Eq, G.Generic)
@@ -103,7 +100,6 @@ addrFromJSON net =
             Nothing -> fail "could not decode address"
             Just x  -> return x
 
--- | Transforms an Address into an encoded String
 addrToString :: Address -> Maybe ByteString
 addrToString a@PubKeyAddress {getAddrHash160 = h, getAddrNet = net}
     | isNothing (getCashAddrPrefix net) =
@@ -120,8 +116,6 @@ addrToString WitnessScriptAddress {getAddrHash256 = h, getAddrNet = net} = do
     hrp <- (getBech32Prefix net)
     segwitEncode hrp 0 (B.unpack (S.encode h))
 
--- | Decodes an Address from an encoded String. This function can fail
--- if the String is not properly encoded or its checksum fails.
 stringToAddr :: Network -> ByteString -> Maybe Address
 stringToAddr net bs = cash <|> segwit <|> b58
   where
@@ -147,14 +141,9 @@ stringToAddr net bs = cash <|> segwit <|> b58
                 return $ WitnessScriptAddress h net
             _ -> Nothing
 
--- | Computes an 'Address' from a public key
 pubKeyAddr :: Serialize (PubKeyI c) => Network -> PubKeyI c -> Address
 pubKeyAddr net k = PubKeyAddress (addressHash (S.encode k)) net
 
--- | Decodes a private key from a WIF encoded 'ByteString'. This function can
--- fail if the input string does not decode correctly as a base 58 string or if
--- the checksum fails.
--- <http://en.bitcoin.it/wiki/Wallet_import_format>
 fromWif :: Network -> ByteString -> Maybe PrvKey
 fromWif net wif = do
     bs <- decodeBase58Check wif
@@ -170,7 +159,6 @@ fromWif net wif = do
         -- Bad length
         _  -> Nothing
 
--- | Encodes a private key into WIF format
 toWif :: Network -> PrvKeyI c -> ByteString
 toWif net (PrvKeyI k c) =
     encodeBase58Check . B.cons (getSecretPrefix net) $

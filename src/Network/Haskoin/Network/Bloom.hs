@@ -1,5 +1,12 @@
+{-|
+  Bloom filters are used to reduce data transfer when synchronizing thin cients.
+  When bloom filters are used a client will obtain filtered blocks that only
+  contain transactions that pass the bloom filter. Transactions announced via
+  inv messages also pass the filter.
+-}
 module Network.Haskoin.Network.Bloom
-    ( BloomFlags(..)
+    ( -- * Bloom Filters
+      BloomFlags(..)
     , BloomFilter(..)
     , FilterLoad(..)
     , FilterAdd(..)
@@ -12,19 +19,19 @@ module Network.Haskoin.Network.Bloom
     , acceptsFilters
     ) where
 
-import           Control.DeepSeq            (NFData, rnf)
-import           Control.Monad              (forM_, replicateM)
+import           Control.DeepSeq               (NFData, rnf)
+import           Control.Monad                 (forM_, replicateM)
 import           Data.Bits
-import           Data.ByteString            (ByteString)
-import qualified Data.ByteString            as BS
-import qualified Data.Foldable              as F
-import           Data.Hash.Murmur           (murmur3)
-import qualified Data.Sequence              as S
-import           Data.Serialize             (Serialize, get, put)
-import           Data.Serialize.Get         (getByteString, getWord32le,
-                                             getWord8)
-import           Data.Serialize.Put         (putByteString, putWord32le,
-                                             putWord8)
+import           Data.ByteString               (ByteString)
+import qualified Data.ByteString               as BS
+import qualified Data.Foldable                 as F
+import           Data.Hash.Murmur              (murmur3)
+import qualified Data.Sequence                 as S
+import           Data.Serialize                (Serialize, get, put)
+import           Data.Serialize.Get            (getByteString, getWord32le,
+                                                getWord8)
+import           Data.Serialize.Put            (putByteString, putWord32le,
+                                                putWord8)
 import           Data.Word
 import           Network.Haskoin.Network.Types
 

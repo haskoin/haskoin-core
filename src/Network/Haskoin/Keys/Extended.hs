@@ -2,7 +2,9 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Keys.Extended
-    ( XPubKey(..)
+    (
+      -- * Extended Keys
+      XPubKey(..)
     , XPrvKey(..)
     , ChainCode
     , KeyIndex
@@ -33,7 +35,7 @@ module Network.Haskoin.Keys.Extended
     , xPubFromJSON
     , xPrvFromJSON
 
-      -- Helpers
+      -- ** Helpers
     , prvSubKeys
     , pubSubKeys
     , hardSubKeys
@@ -43,7 +45,7 @@ module Network.Haskoin.Keys.Extended
     , deriveMSAddrs
     , cycleIndex
 
-      -- Derivation paths
+      -- ** Derivation Paths
     , DerivPathI(..)
     , HardOrAny
     , AnyOrSoft
@@ -61,14 +63,13 @@ module Network.Haskoin.Keys.Extended
     , listToPath
     , pathToList
 
-      -- Derivation path parsing
+      -- *** Derivation Path Parsing
     , XKey(..)
     , ParsedPath(..)
     , parsePath
     , parseHard
     , parseSoft
     , applyPath
-
     , derivePathAddr
     , derivePathAddrs
     , derivePathMSAddr

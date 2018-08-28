@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 module Network.Haskoin.Network.Types
-    ( Addr(..)
+    ( -- * Network Data Types
+      Addr(..)
     , NetworkAddressTime
     , Alert(..)
     , GetData(..)
@@ -18,15 +19,15 @@ module Network.Haskoin.Network.Types
     , VarInt(..)
     , VarString(..)
     , Version(..)
-    , MessageCommand(..)
-    , commandToString
-    , stringToCommand
     , nodeNone
     , nodeNetwork
     , nodeGetUTXO
     , nodeBloom
     , nodeWitness
     , nodeXThin
+    , MessageCommand(..)
+    , commandToString
+    , stringToCommand
     ) where
 
 import           Control.DeepSeq             (NFData, rnf)

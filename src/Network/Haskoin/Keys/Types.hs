@@ -2,35 +2,45 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Keys.Types
-    ( PubKeyI(..)
+    ( -- * Public & Private Keys
+      PubKeyI(..)
     , PubKey, PubKeyC, PubKeyU
     , PrvKeyI(..)
     , PrvKey, PrvKeyC, PrvKeyU
     , CompressedOrNot, Compressed, Uncompressed
+
+      -- ** Public Key Construction
     , makePubKey
     , makePubKeyG
     , makePubKeyC
     , makePubKeyU
+
+      -- ** Public Key Manipulation
     , toPubKeyG
     , eitherPubKey
     , maybePubKeyC
     , maybePubKeyU
     , derivePubKey
     , tweakPubKeyC
+
+
+      -- ** Private Key Construction
     , makePrvKey
     , makePrvKeyG
     , makePrvKeyC
     , makePrvKeyU
+    , fromMiniKey
+
+      -- ** Private Key Manipulation
     , toPrvKeyG
     , eitherPrvKey
     , maybePrvKeyC
     , maybePrvKeyU
     , encodePrvKey
     , decodePrvKey
+    , tweakPrvKeyC
     , prvKeyPutMonad
     , prvKeyGetMonad
-    , fromMiniKey
-    , tweakPrvKeyC
     ) where
 
 import           Control.Applicative         ((<|>))
@@ -224,7 +234,6 @@ tweakPubKeyC pub h =
 
 {- Private Keys -}
 
--- Internal private key type
 data PrvKeyI c = PrvKeyI
     { prvKeySecKey     :: !EC.SecKey
     , prvKeyCompressed :: !Bool

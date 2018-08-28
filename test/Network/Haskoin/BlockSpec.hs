@@ -12,7 +12,9 @@ import           Data.Maybe                  (fromJust)
 import           Data.Serialize              as S
 import           Data.String                 (fromString)
 import           Data.String.Conversions     (cs)
-import           Network.Haskoin.Block
+import           Network.Haskoin.Block.Types
+import           Network.Haskoin.Block.Headers
+import           Network.Haskoin.Block.Merkle
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Test
 import           Network.Haskoin.Transaction
@@ -49,7 +51,7 @@ spec = do
                     withChain net $ do
                         chain net (getGenesisHeader net) 100
                         bb <- getBestBlockHeader
-                        blockLocatorNodes net bb
+                        blockLocatorNodes bb
                 heights = map nodeHeight loc
              in heights `shouldBe` [100,99 .. 90] <> [88, 84, 76, 60, 28, 0]
         it "follows split chains" $
@@ -110,12 +112,12 @@ splitChain net = do
     e 4035 (head tail3)
     tail4 <- go 5 (nodeHeader $ head tail2) 150
     e 2185 (head tail4)
-    sp1 <- splitPoint net (head tail1) (head tail3)
+    sp1 <- splitPoint (head tail1) (head tail3)
     unless (sp1 == head start) $
         error $
         "Split point wrong between blocks 4031 and 4035: " ++
         show (nodeHeight sp1)
-    sp2 <- splitPoint net (head tail4) (head tail3)
+    sp2 <- splitPoint (head tail4) (head tail3)
     unless (sp2 == head tail2) $
         error $
         "Split point wrong between blocks 2185 and 4035: " ++

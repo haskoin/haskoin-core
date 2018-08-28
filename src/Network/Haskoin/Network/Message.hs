@@ -1,5 +1,6 @@
 module Network.Haskoin.Network.Message
-    ( Message(..)
+    ( -- * Network Message
+      Message(..)
     , MessageHeader(..)
     , msgType
     , putMessage

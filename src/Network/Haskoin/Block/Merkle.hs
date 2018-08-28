@@ -49,11 +49,11 @@ data MerkleBlock =
                 , merkleTotalTxns :: !Word32
                 -- | Hashes in depth-first order. They are used to rebuild a
                 -- partial merkle tree.
-                , mHashes         :: ![Hash256]
+                , mHashes         :: !PartialMerkleTree
                 -- | Flag bits, packed per 8 in a byte. Least significant bit
                 -- first. Flag bits are used to rebuild a partial merkle
                 -- tree.
-                , mFlags          :: ![Bool]
+                , mFlags          :: !FlagBits
                 } deriving (Eq, Show)
 
 instance NFData MerkleBlock where

@@ -1,10 +1,7 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-|
-  Network specific constants
--}
 module Network.Haskoin.Constants
-    ( -- ** Data
+    ( -- * Network Constants
       Network(..)
     , btc
     , btcTest

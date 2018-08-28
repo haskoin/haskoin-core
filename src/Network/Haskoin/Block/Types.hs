@@ -45,13 +45,8 @@ import qualified Text.Read                         as R
 type BlockHeight = Word32
 type Timestamp = Word32
 
--- | Data type describing a block in the bitcoin protocol. Blocks are sent in
--- response to 'GetData' messages that are requesting information from a
--- block hash.
 data Block =
-    Block { -- | Header information for this block.
-            blockHeader :: !BlockHeader
-            -- | List of transactions pertaining to this block.
+    Block { blockHeader :: !BlockHeader
           , blockTxns   :: ![Tx]
           } deriving (Eq, Show)
 
@@ -96,6 +91,8 @@ instance FromJSON BlockHash where
 instance ToJSON BlockHash where
     toJSON = String . cs . blockHashToHex
 
+-- | Block hashes are reversed with respect to the regular byte order in a
+-- SHA256 hash when displayed.
 blockHashToHex :: BlockHash -> ByteString
 blockHashToHex (BlockHash h) = encodeHex (BS.reverse (encode h))
 
@@ -106,11 +103,10 @@ hexToBlockHash hex = do
     return $ BlockHash h
 
 -- | Data type recording information on a 'Block'. The hash of a block is
--- defined as the hash of this data structure. The block mining process
--- involves finding a partial hash collision by varying the nonce in the
--- 'BlockHeader' and/or additional randomness in the coinbase tx of this
--- 'Block'. Variations in the coinbase tx will result in different merkle
--- roots in the 'BlockHeader'.
+-- defined as the hash of this data structure. The block mining process involves
+-- finding a partial hash collision by varying the nonce in the 'BlockHeader'
+-- and/or additional entropy in the coinbase tx of this 'Block'. Variations in
+-- the coinbase tx will result in different merkle roots in the 'BlockHeader'.
 data BlockHeader =
     BlockHeader { -- | Block version information, based on the version of the
                   -- software creating this block.

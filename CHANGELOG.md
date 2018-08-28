@@ -24,10 +24,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Changed
 - Use of hpack `package.yaml` file to auto-generate Cabal file.
 - Removal of dependency version limits, relying on `stack.yaml` instead.
-- Started migration of tests to `hspec`.
+- Tests moved to `hspec`.
 - New documentation.
 - Updated `.gitignore`.
 - Renamed network constants to use same style for BTC and BCH.
+- Network constants must be passed explicitly.
 
 ### Removed
 - Removed `.stylish-haskell.yaml` files.

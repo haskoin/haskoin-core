@@ -27,6 +27,7 @@ module Network.Haskoin.Block
     , isGenesis
     , initialChain
     , genesisMap
+    , getBlockHash
     , genesisNode
     , genesisBlock
     , connectBlocks

@@ -13,6 +13,7 @@ import           Data.ByteString                 (ByteString)
 import qualified Data.ByteString                 as B
 import qualified Data.ByteString.Char8           as C
 import           Data.Char
+import           Data.Function
 import           Data.List
 import           Data.Maybe
 import           Data.Serialize                  as S
@@ -43,6 +44,14 @@ data Address
     | WitnessScriptAddress { getScriptHash :: !Hash256
                            , getAddrNet    :: !Network }
     deriving (Eq, Generic)
+
+instance Ord Address where
+    compare = compare `on` f
+      where
+        f (PubKeyAddress h _)        = S.encode h
+        f (ScriptAddress h _)        = S.encode h
+        f (WitnessPubKeyAddress h _) = S.encode h
+        f (WitnessScriptAddress h _) = S.encode h
 
 instance NFData Address
 
@@ -81,7 +90,7 @@ addrFromJSON net =
     withText "address" $ \t ->
         case stringToAddr net (cs t) of
             Nothing -> fail "could not decode address"
-            Just x -> return x
+            Just x  -> return x
 
 -- | Transforms an Address into an encoded String
 addrToString :: Address -> Maybe ByteString

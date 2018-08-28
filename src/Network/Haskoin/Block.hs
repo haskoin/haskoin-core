@@ -9,7 +9,7 @@ module Network.Haskoin.Block
     , BlockLocator
       -- ** Header
     , BlockHeader(..)
-    , BlockHash
+    , BlockHash(..)
     , BlockHeight
     , Timestamp
     , BlockWork
@@ -27,7 +27,6 @@ module Network.Haskoin.Block
     , isGenesis
     , initialChain
     , genesisMap
-    , getBlockHash
     , genesisNode
     , genesisBlock
     , connectBlocks

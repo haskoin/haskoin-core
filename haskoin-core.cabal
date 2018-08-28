@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 4b49c0247fdfaccdf851bc59e5bd343751382d0d5f6549e5907926b752e95071
+-- hash: eb81ca338197e51fee128117a8d02fce36344deec2dde274a31e58f7596f1248
 
 name:           haskoin-core
 version:        1.0.0
@@ -39,7 +39,8 @@ library
   hs-source-dirs:
       src
   build-depends:
-      QuickCheck
+      HUnit
+    , QuickCheck
     , aeson
     , array
     , base >=4.7 && <5
@@ -115,7 +116,6 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Network.Haskoin.BlockSpec
-      Network.Haskoin.CerealSpec
       Network.Haskoin.Crypto.AddressSpec
       Network.Haskoin.Crypto.ECDSASpec
       Network.Haskoin.Crypto.ExtendedKeysSpec

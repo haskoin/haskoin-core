@@ -21,21 +21,21 @@ import           Test.QuickCheck            hiding ((.&.))
 
 spec :: Spec
 spec = do
-    describe "BIP32 derivation vector 1" $ do
+    describe "bip32 derivation vector 1" $ do
         it "chain m" $ runXKeyVec (head xKeyVec)
         it "chain m/0'" $ runXKeyVec (xKeyVec !! 1)
         it "chain m/0'/1" $ runXKeyVec (xKeyVec !! 2)
         it "chain m/0'/1/2'" $ runXKeyVec (xKeyVec !! 3)
         it "chain m/0'/1/2'/2" $ runXKeyVec (xKeyVec !! 4)
         it "chain m/0'/1/2'/2/1000000000" $ runXKeyVec (xKeyVec !! 5)
-    describe "BIP32 subkey derivation vector 2" $ do
+    describe "bip32 subkey derivation vector 2" $ do
         it "chain m" $ runXKeyVec (head xKeyVec2)
         it "chain m/0" $ runXKeyVec (xKeyVec2 !! 1)
         it "chain m/0/2147483647'" $ runXKeyVec (xKeyVec2 !! 2)
         it "chain m/0/2147483647'/1" $ runXKeyVec (xKeyVec2 !! 3)
         it "chain m/0/2147483647'/1/2147483646'" $ runXKeyVec (xKeyVec2 !! 4)
         it "Chain m/0/2147483647'/1/2147483646'/2" $ runXKeyVec (xKeyVec2 !! 5)
-    describe "BIP32 subkey derivation using string path" $ do
+    describe "bip32 subkey derivation using string path" $ do
         it "either derivations" testApplyPath
         it "either derivations" testBadApplyPath
         it "dublic derivations" testDerivePubPath

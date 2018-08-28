@@ -1,5 +1,6 @@
 resolver: lts-12.7
 nix:
+  enable: true
   packages:
     - autoconf
     - automake

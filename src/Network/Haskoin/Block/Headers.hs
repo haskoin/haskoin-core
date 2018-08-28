@@ -50,6 +50,24 @@ data BlockNode
         }
     deriving (Show)
 
+instance Serialize BlockNode where
+    get = do
+        nodeHeader <- Serialize.get
+        nodeHeight <- getWord32le
+        nodeWork <- Serialize.get
+        if nodeHeight == 0
+            then return GenesisNode {..}
+            else do
+                nodeSkip <- Serialize.get
+                return BlockNode {..}
+    put bn = do
+        put $ nodeHeader bn
+        putWord32le $ nodeHeight bn
+        put $ nodeWork bn
+        case bn of
+            GenesisNode {} -> return ()
+            BlockNode {} -> put $ nodeSkip bn
+
 getBlockNode :: Network -> Get BlockNode
 getBlockNode net = do
     nodeHeader <- Serialize.get

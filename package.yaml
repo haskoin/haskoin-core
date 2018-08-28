@@ -30,6 +30,7 @@ dependencies:
   - entropy
   - hashable
   - hspec
+  - HUnit
   - memory
   - mtl
   - murmur3
@@ -61,4 +62,3 @@ tests:
     defaults: hspec/hspec@master
     dependencies:
       - haskoin-core
-      - HUnit

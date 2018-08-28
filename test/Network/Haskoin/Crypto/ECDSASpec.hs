@@ -24,7 +24,7 @@ props net = do
         property $
         forAll arbitrarySignature $ \(msg, key, sig) ->
             verifySig msg sig (derivePubKey key)
-    it "s component ≤ order ÷ 2" $
+    it "s component less than half order" $
         property $ forAll arbitrarySignature $ isCanonicalHalfOrder . lst3
     it "encoded signature is canonical" $
         property $ forAll arbitrarySignature $ testIsCanonical . lst3

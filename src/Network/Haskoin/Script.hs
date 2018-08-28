@@ -4,8 +4,8 @@
   deconstructing all of the standard input and output script types.
 -}
 module Network.Haskoin.Script
-( module X
-) where
+    ( module X
+    ) where
 
 import           Network.Haskoin.Script.Evaluator as X
 import           Network.Haskoin.Script.SigHash   as X

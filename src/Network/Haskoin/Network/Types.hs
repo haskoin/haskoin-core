@@ -1,33 +1,33 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 module Network.Haskoin.Network.Types
-( Addr(..)
-, NetworkAddressTime
-, Alert(..)
-, GetData(..)
-, Inv(..)
-, InvVector(..)
-, InvType(..)
-, NetworkAddress(..)
-, NotFound(..)
-, Ping(..)
-, Pong(..)
-, Reject(..)
-, RejectCode(..)
-, reject
-, VarInt(..)
-, VarString(..)
-, Version(..)
-, MessageCommand(..)
-, commandToString
-, stringToCommand
-, nodeNone
-, nodeNetwork
-, nodeGetUTXO
-, nodeBloom
-, nodeWitness
-, nodeXThin
-) where
+    ( Addr(..)
+    , NetworkAddressTime
+    , Alert(..)
+    , GetData(..)
+    , Inv(..)
+    , InvVector(..)
+    , InvType(..)
+    , NetworkAddress(..)
+    , NotFound(..)
+    , Ping(..)
+    , Pong(..)
+    , Reject(..)
+    , RejectCode(..)
+    , reject
+    , VarInt(..)
+    , VarString(..)
+    , Version(..)
+    , MessageCommand(..)
+    , commandToString
+    , stringToCommand
+    , nodeNone
+    , nodeNetwork
+    , nodeGetUTXO
+    , nodeBloom
+    , nodeWitness
+    , nodeXThin
+    ) where
 
 import           Control.DeepSeq             (NFData, rnf)
 import           Control.Monad               (forM_, liftM2, replicateM, unless)

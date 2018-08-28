@@ -1,33 +1,44 @@
 {-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Crypto.Address where
+module Network.Haskoin.Address
+    ( Address(..)
+    , addrToString
+    , stringToAddr
+    , addrFromJSON
+    , pubKeyAddr
+    , fromWif
+    , toWif
+    ) where
 
 import           Control.Applicative
 import           Control.DeepSeq
 import           Control.Monad
-import           Data.Aeson                      as A
+import qualified Crypto.Secp256k1                 as EC
+import           Data.Aeson                       as A
 import           Data.Aeson.Types
-import qualified Data.Array                      as Arr
+import qualified Data.Array                       as Arr
 import           Data.Bits
-import           Data.ByteString                 (ByteString)
-import qualified Data.ByteString                 as B
-import qualified Data.ByteString.Char8           as C
+import           Data.ByteString                  (ByteString)
+import qualified Data.ByteString                  as B
+import qualified Data.ByteString.Char8            as C
 import           Data.Char
 import           Data.Function
 import           Data.List
 import           Data.Maybe
-import           Data.Serialize                  as S
+import           Data.Serialize                   as S
 import           Data.String
 import           Data.String.Conversions
 import           Data.Word
-import           GHC.Generics                    (Generic)
+import           GHC.Generics                     as G (Generic)
+import           Network.Haskoin.Address.Base58
+import           Network.Haskoin.Address.Bech32
+import           Network.Haskoin.Address.CashAddr
 import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto.Base58
-import           Network.Haskoin.Crypto.Bech32
-import           Network.Haskoin.Crypto.CashAddr
-import           Network.Haskoin.Crypto.Hash
+import           Network.Haskoin.Crypto
+import           Network.Haskoin.Keys.Types
 import           Network.Haskoin.Util
-import           Text.Read                       as R
+import           Text.Read                        as R
 
 -- | Data type representing a Bitcoin address
 data Address
@@ -43,7 +54,7 @@ data Address
     -- | SegWit Script Hash Address
     | WitnessScriptAddress { getScriptHash :: !Hash256
                            , getAddrNet    :: !Network }
-    deriving (Eq, Generic)
+    deriving (Eq, G.Generic)
 
 instance Ord Address where
     compare = compare `on` f
@@ -135,3 +146,34 @@ stringToAddr net bs = cash <|> segwit <|> b58
                 h <- eitherToMaybe (S.decode bs'')
                 return $ WitnessScriptAddress h net
             _ -> Nothing
+
+-- | Computes an 'Address' from a public key
+pubKeyAddr :: Serialize (PubKeyI c) => Network -> PubKeyI c -> Address
+pubKeyAddr net k = PubKeyAddress (addressHash (S.encode k)) net
+
+-- | Decodes a private key from a WIF encoded 'ByteString'. This function can
+-- fail if the input string does not decode correctly as a base 58 string or if
+-- the checksum fails.
+-- <http://en.bitcoin.it/wiki/Wallet_import_format>
+fromWif :: Network -> ByteString -> Maybe PrvKey
+fromWif net wif = do
+    bs <- decodeBase58Check wif
+    -- Check that this is a private key
+    guard (B.head bs == getSecretPrefix net)
+    case B.length bs of
+        -- Uncompressed format
+        33 -> makePrvKeyG False <$> EC.secKey (B.tail bs)
+        -- Compressed format
+        34 -> do
+            guard $ B.last bs == 0x01
+            makePrvKeyG True <$> EC.secKey (B.tail $ B.init bs)
+        -- Bad length
+        _  -> Nothing
+
+-- | Encodes a private key into WIF format
+toWif :: Network -> PrvKeyI c -> ByteString
+toWif net (PrvKeyI k c) =
+    encodeBase58Check . B.cons (getSecretPrefix net) $
+    if c
+        then EC.getSecKey k `B.snoc` 0x01
+        else EC.getSecKey k

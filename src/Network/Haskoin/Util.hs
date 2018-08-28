@@ -4,35 +4,35 @@
   Network.Haskoin modules.
 -}
 module Network.Haskoin.Util
-(
-  -- * ByteString helpers
-  bsToInteger
-, integerToBS
-, encodeHex
-, decodeHex
-, getBits
+    (
+      -- * ByteString helpers
+      bsToInteger
+    , integerToBS
+    , encodeHex
+    , decodeHex
+    , getBits
 
-  -- * Maybe and Either monad helpers
-, eitherToMaybe
-, maybeToEither
-, liftEither
-, liftMaybe
+      -- * Maybe and Either monad helpers
+    , eitherToMaybe
+    , maybeToEither
+    , liftEither
+    , liftMaybe
 
-  -- * Various helpers
-, updateIndex
-, matchTemplate
-, convertBits
+      -- * Various helpers
+    , updateIndex
+    , matchTemplate
+    , convertBits
 
-  -- * Triples
-, fst3
-, snd3
-, lst3
+      -- * Triples
+    , fst3
+    , snd3
+    , lst3
 
-  -- * JSON Utilities
-, dropFieldLabel
-, dropSumLabels
+      -- * JSON Utilities
+    , dropFieldLabel
+    , dropSumLabels
 
-) where
+    ) where
 
 import           Control.Monad          (guard)
 import           Control.Monad.Except   (ExceptT (..))

@@ -1,5 +1,5 @@
 {- Copied from reference implementation contributed by Marko Bencun -}
-module Network.Haskoin.Crypto.Bech32
+module Network.Haskoin.Address.Bech32
     ( bech32Encode
     , bech32Decode
     , toBase32

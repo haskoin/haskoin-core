@@ -1,16 +1,16 @@
 module Network.Haskoin.Network.Bloom
-( BloomFlags(..)
-, BloomFilter(..)
-, FilterLoad(..)
-, FilterAdd(..)
-, bloomCreate
-, bloomInsert
-, bloomContains
-, isBloomValid
-, isBloomEmpty
-, isBloomFull
-, acceptsFilters
-) where
+    ( BloomFlags(..)
+    , BloomFilter(..)
+    , FilterLoad(..)
+    , FilterAdd(..)
+    , bloomCreate
+    , bloomInsert
+    , bloomContains
+    , isBloomValid
+    , isBloomEmpty
+    , isBloomFull
+    , acceptsFilters
+    ) where
 
 import           Control.DeepSeq            (NFData, rnf)
 import           Control.Monad              (forM_, replicateM)

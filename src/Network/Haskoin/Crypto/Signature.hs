@@ -1,17 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | ECDSA Signatures
-module Network.Haskoin.Crypto.ECDSA
-( SecretT
-, Signature(..)
-, withSource
-, getEntropy
-, signMsg
-, verifySig
-, genPrvKey
-, isCanonicalHalfOrder
-, decodeLaxSig
-, decodeStrictSig
-) where
+module Network.Haskoin.Crypto.Signature
+    ( SecretT
+    , Signature(..)
+    , withSource
+    , getEntropy
+    , signMsg
+    , verifySig
+    , genPrvKey
+    , isCanonicalHalfOrder
+    , decodeLaxSig
+    , decodeStrictSig
+    ) where
 
 import           Control.DeepSeq             (NFData, rnf)
 import           Control.Monad               (guard, unless, when)
@@ -28,7 +28,7 @@ import           Data.Serialize.Get          (getByteString, getWord8,
 import           Data.Serialize.Put          (putByteString)
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
-import           Network.Haskoin.Crypto.Keys
+import           Network.Haskoin.Keys.Types
 import           Numeric                     (showHex)
 import           System.Entropy              (getEntropy)
 
@@ -136,4 +136,3 @@ decodeStrictSig bs = do
     return sig
   where
     zero = toShort $ BS.replicate 32 0
-

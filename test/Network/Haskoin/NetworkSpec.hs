@@ -1,13 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.NetworkSpec (spec) where
 
+import           Data.Aeson                as A
 import           Data.ByteString           (ByteString)
 import           Data.Maybe                (fromJust)
-import           Data.Serialize            (Get, Putter, Serialize, decode,
-                                            encode, runGet, runPut)
+import           Data.Serialize            as S
 import           Data.Word                 (Word32)
+import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
+import           Network.Haskoin.Keys
 import           Network.Haskoin.Network
 import           Network.Haskoin.Test
 import           Network.Haskoin.Util
@@ -22,95 +24,47 @@ spec = do
         it "bloom filter vector 1" bloomFilter1
         it "bloom filter vector 2" bloomFilter2
         it "bloom filter vector 3" bloomFilter3
-    describe "serialization of keys and hashes" $ do
-        it "encodes and decodes bytestring" $
-            property $ forAll arbitraryBS testId
-        it "encodes and decodes hash160" $
-            property $ forAll arbitraryHash160 testId
-        it "encodes and decodes hash256" $
-            property $ forAll arbitraryHash256 testId
-        it "encodes and decodes hash512" $
-            property $ forAll arbitraryHash512 testId
-        it "encodes and decodes signature" $
-            property $ forAll arbitrarySignature $ testId . lst3
-        it "encodes and decodes public key" $
-            property $ forAll arbitraryPubKey $ testId . snd
-        it "encodes and decodes extended private key" $
-            property $
-            forAll (arbitraryXPrvKey net) $
-            testPutGet (getXPrvKey net) putXPrvKey
     describe "serialization of protocol types" $ do
         it "encodes and decodes varint" $
-            property $ forAll arbitraryVarInt testId
+            property $ forAll arbitraryVarInt cerealID
         it "encodes and decodes varstring" $
-            property $ forAll arbitraryVarString testId
+            property $ forAll arbitraryVarString cerealID
         it "encodes and decodes network address" $
-            property $ forAll arbitraryNetworkAddress testId
+            property $ forAll arbitraryNetworkAddress cerealID
         it "encodes and decodes invtype" $
-            property $ forAll arbitraryInvType testId
+            property $ forAll arbitraryInvType cerealID
         it "encodes and decodes invvector" $
-            property $ forAll arbitraryInvVector testId
-        it "encodes and decodes inv" $ property $ forAll arbitraryInv1 testId
+            property $ forAll arbitraryInvVector cerealID
+        it "encodes and decodes inv" $ property $ forAll arbitraryInv1 cerealID
         it "encodes and decodes version" $
-            property $ forAll arbitraryVersion testId
-        it "encodes and decodes addr" $ property $ forAll arbitraryAddr1 testId
-        it "encodes and decodes alert" $ property $ forAll arbitraryAlert testId
+            property $ forAll arbitraryVersion cerealID
+        it "encodes and decodes addr" $ property $ forAll arbitraryAddr1 cerealID
+        it "encodes and decodes alert" $ property $ forAll arbitraryAlert cerealID
         it "encodes and decodes reject" $
-            property $forAll arbitraryReject testId
+            property $forAll arbitraryReject cerealID
         it "encodes and decodes getdata" $
-            property $ forAll arbitraryGetData testId
+            property $ forAll arbitraryGetData cerealID
         it "encodes and decodes notfound" $
-            property $ forAll arbitraryNotFound testId
-        it "encodes and decodes ping" $ property $ forAll arbitraryPing testId
-        it "encodes and decodes pong" $ property $ forAll arbitraryPong testId
+            property $ forAll arbitraryNotFound cerealID
+        it "encodes and decodes ping" $ property $ forAll arbitraryPing cerealID
+        it "encodes and decodes pong" $ property $ forAll arbitraryPong cerealID
         it "encodes and decodes message command" $
-            property $ forAll arbitraryMessageCommand testId
+            property $ forAll arbitraryMessageCommand cerealID
         it "encodes and decodes message header" $
-            property $ forAll arbitraryMessageHeader testId
+            property $ forAll arbitraryMessageHeader cerealID
         it "encodes and decodes message" $
             property $
             forAll (arbitraryMessage net) $
             testPutGet (getMessage net) (putMessage net)
-    describe "serialization of script types" $ do
-        it "encodes and decodes script op" $
-            property $ forAll arbitraryScriptOp testId
-        it "encodes and decodes script" $
-            property $ forAll arbitraryScript testId
-    describe "serialization of transaction types" $ do
-        it "encodes and decodes tx input" $
-            property $ forAll arbitraryTxIn testId
-        it "encodes and decodes tx output" $
-            property $ forAll (arbitraryTxOut net) testId
-        it "encodes and decodes outpoint" $
-            property $ forAll arbitraryOutPoint testId
-        it "encodes and decodes transaction" $
-            property $ forAll (arbitraryTx net) testId
-        it "encodes and decodes witness transaction" $
-            property $ forAll (arbitraryWitnessTx net) testId
-        it "encodes and decodes legacy transaction" $
-            property $ forAll (arbitraryLegacyTx net) testId
-    describe "serialization of block types" $ do
-        it "encodes and decodes block" $
-            property $ forAll (arbitraryBlock net) testId
-        it "encodes and decodes block header" $
-            property $ forAll arbitraryBlockHeader testId
-        it "encodes and decodes getblocks" $
-            property $ forAll arbitraryGetBlocks testId
-        it "encodes and decodes getheaders" $
-            property $ forAll arbitraryGetHeaders testId
-        it "encodes and decdoes headers" $
-            property $ forAll arbitraryHeaders testId
-        it "encodes and decodes merklel block" $
-            property $ forAll arbitraryMerkleBlock testId
     describe "serialization of bloom types" $ do
         it "encodes and decodes bloom flags" $
-            property $ forAll arbitraryBloomFlags testId
+            property $ forAll arbitraryBloomFlags cerealID
         it "encodes and decodes bloom filter" $
-            property $ forAll arbitraryBloomFilter $ testId . lst3
+            property $ forAll arbitraryBloomFilter $ cerealID . lst3
         it "encodes and decodes filterload" $
-            property $ forAll arbitraryFilterLoad testId
+            property $ forAll arbitraryFilterLoad cerealID
         it "encodes and decodes filteradd" $
-            property $ forAll arbitraryFilterAdd testId
+            property $ forAll arbitraryFilterAdd cerealID
 
 bloomFilter :: Word32 -> ByteString -> Assertion
 bloomFilter n x = do
@@ -120,7 +74,7 @@ bloomFilter n x = do
     assertBool "Bloom filter doesn't contain vector 3" $ bloomContains f3 v3
     assertBool "Bloom filter doesn't contain vector 4" $ bloomContains f4 v4
     assertBool "Bloom filter serialization is incorrect" $
-        encode f4 == bs
+        S.encode f4 == bs
   where
     f0 = bloomCreate 3 0.01 n BloomUpdateAll
     f1 = bloomInsert f0 v1
@@ -141,17 +95,17 @@ bloomFilter2 = bloomFilter 2147483649 "03ce4299050000000100008001"
 bloomFilter3 :: Assertion
 bloomFilter3 =
     assertBool "Bloom filter serialization is incorrect" $
-        encode f2 == bs
+        S.encode f2 == bs
   where
     f0 = bloomCreate 2 0.001 0 BloomUpdateAll
-    f1 = bloomInsert f0 $ encode p
-    f2 = bloomInsert f1 $ encode $ getAddrHash $ pubKeyAddr btc p
+    f1 = bloomInsert f0 $ S.encode p
+    f2 = bloomInsert f1 $ S.encode $ getAddrHash $ pubKeyAddr btc p
     k = fromJust $ fromWif btc "5Kg1gnAjaLfKiwhhPpGS3QfRg2m6awQvaj98JCZBZQ5SuS2F15C"
     p = derivePubKey k
     bs = fromJust $ decodeHex "038fc16b080000000000000001"
 
-testId :: (Serialize a, Eq a) => a -> Bool
-testId x = decode (encode x) == Right x
+cerealID :: (Serialize a, Eq a) => a -> Bool
+cerealID x = S.decode (S.encode x) == Right x
 
 testPutGet :: Eq a => Get a -> Putter a -> a -> Bool
 testPutGet g p a = runGet g (runPut (p a)) == Right a

@@ -1,12 +1,16 @@
-module Network.Haskoin.Crypto.KeysSpec (spec) where
+module Network.Haskoin.KeysSpec (spec) where
 
 import qualified Crypto.Secp256k1          as EC
+import           Data.Aeson                as A
 import qualified Data.ByteString           as BS
-import           Data.Serialize            (encode, runGet, runPut)
+import           Data.Map.Strict           (singleton)
+import           Data.Serialize            as S
 import           Data.String               (fromString)
 import           Data.String.Conversions   (cs)
+import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
+import           Network.Haskoin.Keys
 import           Network.Haskoin.Test
 import           Network.Haskoin.Util
 import           Test.Hspec
@@ -45,15 +49,23 @@ spec =
         it "from string public key" $
             property $
             forAll arbitraryPubKey $ \(_, k) ->
-                fromString (cs . encodeHex $ encode k) == k
+                fromString (cs . encodeHex $ S.encode k) == k
         it "from string compressed public key" $
             property $
             forAll arbitraryPubKeyC $ \(_, k) ->
-                fromString (cs . encodeHex $ encode k) == k
+                fromString (cs . encodeHex $ S.encode k) == k
         it "from string uncompressed public key" $
             property $
             forAll arbitraryPubKeyU $ \(_, k) ->
-                fromString (cs . encodeHex $ encode k) == k
+                fromString (cs . encodeHex $ S.encode k) == k
+        it "json public key" $ property $ forAll arbitraryPubKey (testID . snd)
+        it "json compressed public key" $ property $
+            forAll arbitraryPubKeyC (testID . snd)
+        it "json uncompressed public key" $
+            forAll arbitraryPubKeyU (testID . snd)
+        it "encodes and decodes public key" $
+            property $ forAll arbitraryPubKey $ cerealID . snd
+
 
 -- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
 -- from function IsCanonicalPubKey
@@ -68,7 +80,7 @@ isCanonicalPubKey p = not $
     -- Non-canonical public key: compressed nor uncompressed
     (BS.index bs 0 `notElem` [2,3,4])
   where
-    bs = encode p
+    bs = S.encode p
 
 makeToKey :: EC.SecKey -> Bool
 makeToKey i = prvKeySecKey (makePrvKey i) == i
@@ -106,3 +118,11 @@ testPrivateUnCompressed :: EC.SecKey -> Bool
 testPrivateUnCompressed n =
     not (prvKeyCompressed $ makePrvKeyG False n) &&
     not (prvKeyCompressed $ makePrvKeyU n)
+
+testID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
+testID x =
+    (A.decode . A.encode) (singleton ("object" :: String) x) ==
+    Just (singleton ("object" :: String) x)
+
+cerealID :: (Serialize a, Eq a) => a -> Bool
+cerealID x = S.decode (S.encode x) == Right x

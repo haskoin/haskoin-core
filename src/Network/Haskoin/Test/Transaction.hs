@@ -3,16 +3,20 @@
 -}
 module Network.Haskoin.Test.Transaction where
 import           Control.Monad
-import qualified Data.ByteString             as BS
-import           Data.Either                 (fromRight)
-import           Data.List                   (nub, nubBy, permutations)
-import           Data.Word                   (Word64)
+import qualified Data.ByteString              as BS
+import           Data.Either                  (fromRight)
+import           Data.List                    (nub, nubBy, permutations)
+import           Data.Word                    (Word64)
+import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto
+import           Network.Haskoin.Crypto.Hash
+import           Network.Haskoin.Keys.Types
 import           Network.Haskoin.Script
+import           Network.Haskoin.Test.Address
 import           Network.Haskoin.Test.Crypto
-import           Network.Haskoin.Test.Util
+import           Network.Haskoin.Test.Keys
 import           Network.Haskoin.Test.Script
+import           Network.Haskoin.Test.Util
 import           Network.Haskoin.Transaction
 import           Test.QuickCheck
 

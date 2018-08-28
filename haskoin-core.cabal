@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: eb81ca338197e51fee128117a8d02fce36344deec2dde274a31e58f7596f1248
+-- hash: 647cb8c059c9d1eadbcb66b705081d5f53760cf26aabe684cb9ff940388fccfa
 
 name:           haskoin-core
 version:        1.0.0
@@ -67,45 +67,46 @@ library
     , unordered-containers
     , vector
   exposed-modules:
-      Network.Haskoin.Util
-      Network.Haskoin.Crypto
-      Network.Haskoin.Network
-      Network.Haskoin.Script
-      Network.Haskoin.Transaction
+      Network.Haskoin.Address
+      Network.Haskoin.Address.Base58
+      Network.Haskoin.Address.Bech32
+      Network.Haskoin.Address.CashAddr
       Network.Haskoin.Block
-      Network.Haskoin.Constants
-      Network.Haskoin.Test
-  other-modules:
-      Network.Haskoin.Block.Genesis
       Network.Haskoin.Block.Headers
       Network.Haskoin.Block.Merkle
       Network.Haskoin.Block.Types
-      Network.Haskoin.Crypto.Address
-      Network.Haskoin.Crypto.Base58
-      Network.Haskoin.Crypto.Bech32
-      Network.Haskoin.Crypto.CashAddr
-      Network.Haskoin.Crypto.ECDSA
-      Network.Haskoin.Crypto.ExtendedKeys
+      Network.Haskoin.Constants
+      Network.Haskoin.Crypto
       Network.Haskoin.Crypto.Hash
-      Network.Haskoin.Crypto.Keys
-      Network.Haskoin.Crypto.Mnemonic
+      Network.Haskoin.Crypto.Signature
+      Network.Haskoin.Keys
+      Network.Haskoin.Keys.Extended
+      Network.Haskoin.Keys.Mnemonic
+      Network.Haskoin.Keys.Types
+      Network.Haskoin.Network
       Network.Haskoin.Network.Bloom
       Network.Haskoin.Network.Message
       Network.Haskoin.Network.Types
+      Network.Haskoin.Script
       Network.Haskoin.Script.Evaluator
       Network.Haskoin.Script.SigHash
       Network.Haskoin.Script.Standard
       Network.Haskoin.Script.Types
+      Network.Haskoin.Test
+      Network.Haskoin.Test.Address
       Network.Haskoin.Test.Block
       Network.Haskoin.Test.Crypto
+      Network.Haskoin.Test.Keys
       Network.Haskoin.Test.Message
       Network.Haskoin.Test.Network
       Network.Haskoin.Test.Script
       Network.Haskoin.Test.Transaction
       Network.Haskoin.Test.Util
+      Network.Haskoin.Transaction
       Network.Haskoin.Transaction.Builder
-      Network.Haskoin.Transaction.Genesis
       Network.Haskoin.Transaction.Types
+      Network.Haskoin.Util
+  other-modules:
       Paths_haskoin_core
   autogen-modules:
       Paths_haskoin_core
@@ -115,15 +116,15 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Network.Haskoin.Address.CashAddrSpec
+      Network.Haskoin.AddressSpec
       Network.Haskoin.BlockSpec
-      Network.Haskoin.Crypto.AddressSpec
-      Network.Haskoin.Crypto.ECDSASpec
-      Network.Haskoin.Crypto.ExtendedKeysSpec
       Network.Haskoin.Crypto.HashSpec
-      Network.Haskoin.Crypto.KeysSpec
-      Network.Haskoin.Crypto.MnemonicSpec
+      Network.Haskoin.Crypto.SignatureSpec
       Network.Haskoin.CryptoSpec
-      Network.Haskoin.JsonSpec
+      Network.Haskoin.Keys.ExtendedSpec
+      Network.Haskoin.Keys.MnemonicSpec
+      Network.Haskoin.KeysSpec
       Network.Haskoin.NetworkSpec
       Network.Haskoin.ScriptSpec
       Network.Haskoin.TransactionSpec

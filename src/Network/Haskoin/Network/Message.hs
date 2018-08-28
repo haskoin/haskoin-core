@@ -1,10 +1,10 @@
 module Network.Haskoin.Network.Message
-( Message(..)
-, MessageHeader(..)
-, msgType
-, putMessage
-, getMessage
-) where
+    ( Message(..)
+    , MessageHeader(..)
+    , msgType
+    , putMessage
+    , getMessage
+    ) where
 
 import           Control.DeepSeq                   (NFData, rnf)
 import           Control.Monad                     (unless)

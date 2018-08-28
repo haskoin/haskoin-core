@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Crypto.MnemonicSpec (spec) where
+module Network.Haskoin.Keys.MnemonicSpec (spec) where
 
 import           Data.Bits               (shiftR, (.&.))
 import           Data.ByteString         (ByteString)
@@ -12,6 +12,7 @@ import           Data.Serialize          (Serialize, encode)
 import           Data.String.Conversions (cs)
 import           Data.Word               (Word32, Word64)
 import           Network.Haskoin.Crypto
+import           Network.Haskoin.Keys
 import           Network.Haskoin.Test
 import           Network.Haskoin.Util
 import           Test.Hspec

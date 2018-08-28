@@ -1,21 +1,21 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Network.Haskoin.Block.Types
-( Block(..)
-, BlockHeight
-, Timestamp
-, BlockHeader(..)
-, headerHash
-, BlockLocator
-, GetBlocks(..)
-, GetHeaders(..)
-, BlockHeaderCount
-, BlockHash(..)
-, blockHashToHex
-, hexToBlockHash
-, Headers(..)
-, decodeCompact
-, encodeCompact
-) where
+    ( Block(..)
+    , BlockHeight
+    , Timestamp
+    , BlockHeader(..)
+    , headerHash
+    , BlockLocator
+    , GetBlocks(..)
+    , GetHeaders(..)
+    , BlockHeaderCount
+    , BlockHash(..)
+    , blockHashToHex
+    , hexToBlockHash
+    , Headers(..)
+    , decodeCompact
+    , encodeCompact
+    ) where
 
 import           Control.DeepSeq                   (NFData, rnf)
 import           Control.Monad                     (forM_, liftM2, mzero,

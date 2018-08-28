@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Crypto.CashAddr
+module Network.Haskoin.Address.CashAddr
     ( CashPrefix
     , CashVersion
     , CashAddr

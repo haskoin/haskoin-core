@@ -47,7 +47,9 @@ import           Data.Serialize                    (decode, encode)
 import           Data.String.Conversions           (cs)
 import           Data.Word                         (Word32, Word64, Word8)
 import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto
+import           Network.Haskoin.Crypto.Hash
+import           Network.Haskoin.Crypto.Signature
+import           Network.Haskoin.Keys.Types
 import           Network.Haskoin.Script.SigHash
 import           Network.Haskoin.Script.Types
 import           Network.Haskoin.Transaction.Types
@@ -807,4 +809,3 @@ verifySpend net tx i outscript val flags =
       verifyFcn = verifySigWithType net tx i val
       err e = error $ "Could not decode scriptInput in verifySpend: " ++ e
   in evalScript scriptSig outscript verifyFcn flags
-

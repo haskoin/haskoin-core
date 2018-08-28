@@ -1,4 +1,24 @@
-module Network.Haskoin.Block.Merkle where
+module Network.Haskoin.Block.Merkle
+    ( MerkleRoot
+    , FlagBits
+    , PartialMerkleTree
+    , MerkleBlock(..)
+    , decodeMerkleFlags
+    , encodeMerkleFlags
+    , calcTreeHeight
+    , calcTreeWidth
+    , buildMerkleRoot
+    , hash2
+    , calcHash
+    , buildPartialMerkle
+    , traverseAndBuild
+    , traverseAndExtract
+    , extractMatches
+    , splitIn
+    , boolsToWord8
+    , merkleBlockTxs
+    , testMerkleRoot
+    ) where
 
 import           Control.DeepSeq                   (NFData, rnf)
 import           Control.Monad                     (forM_, replicateM, when)

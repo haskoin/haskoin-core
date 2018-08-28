@@ -2,17 +2,17 @@
 module Network.Haskoin.TransactionSpec (spec) where
 
 import           Control.Monad.IO.Class
-import qualified Data.Aeson                  as Aeson
-import qualified Data.Aeson.Types            as Aeson.Types
+import           Data.Aeson                  as A
+import           Data.Aeson.Types            as A
 import           Data.ByteString             (ByteString)
-import qualified Data.ByteString             as BS
 import qualified Data.ByteString             as BS
 import qualified Data.ByteString.Lazy        as BL
 import           Data.Either                 (fromLeft, fromRight, isLeft,
                                               isRight)
 import           Data.List                   (groupBy)
+import           Data.Map.Strict             (singleton)
 import           Data.Maybe
-import           Data.Serialize              (decode, encode)
+import           Data.Serialize              as S
 import           Data.Serialize.Get          (getWord32le, runGet)
 import           Data.Serialize.Put          (putWord32le, runPut)
 import           Data.String                 (fromString)
@@ -20,8 +20,10 @@ import           Data.String.Conversions
 import qualified Data.Vector                 as V
 import           Data.Word                   (Word32, Word64)
 import           GHC.Exts                    (IsString (..))
+import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
+import           Network.Haskoin.Keys
 import           Network.Haskoin.Script
 import           Network.Haskoin.Test
 import           Network.Haskoin.Transaction
@@ -33,6 +35,7 @@ import           Test.QuickCheck
 
 spec :: Spec
 spec = do
+    let net = btc
     describe "transaction unit tests" $ do
         it "compute txid from tx" $
             sequence_ $ zipWith (curry mapTxIDVec) txIDVec [0 ..]
@@ -43,7 +46,6 @@ spec = do
         it "encode satoshi core script pubkey" tEncodeSatoshiCoreScriptPubKey
         satoshiCoreTxTests
     describe "btc transaction" $ do
-        let net = btc
         it "decode and encode txid" $
             property $
             forAll arbitraryTxHash $ \h -> hexToTxHash (txHashToHex h) == Just h
@@ -66,6 +68,27 @@ spec = do
             property $ forAll (arbitrarySigningData net) (testDetSignTx net)
         it "merge partially signed transactions" $
             property $ forAll (arbitraryPartialTxs net) (testMergeTx net)
+    describe "json serialization" $ do
+        it "encodes and decodes transaction" $ property $
+            forAll (arbitraryTx net) testID
+        it "encodes and decodes transaction hash" $ property $
+            forAll arbitraryTxHash testID
+    describe "transaction serialization" $ do
+        it "encodes and decodes tx input" $
+            property $ forAll arbitraryTxIn cerealID
+        it "encodes and decodes tx output" $
+            property $ forAll (arbitraryTxOut net) cerealID
+        it "encodes and decodes outpoint" $
+            property $ forAll arbitraryOutPoint cerealID
+        it "encodes and decodes transaction" $
+            property $ forAll (arbitraryTx net) cerealID
+        it "encodes and decodes witness transaction" $
+            property $ forAll (arbitraryWitnessTx net) cerealID
+        it "encodes and decodes legacy transaction" $
+            property $ forAll (arbitraryLegacyTx net) cerealID
+
+cerealID :: (Serialize a, Eq a) => a -> Bool
+cerealID x = S.decode (S.encode x) == Right x
 
 mapTxIDVec :: ((ByteString, ByteString), Int) -> Assertion
 mapTxIDVec (v,i) = runTxIDVec v
@@ -73,7 +96,7 @@ mapTxIDVec (v,i) = runTxIDVec v
 runTxIDVec :: (ByteString, ByteString) -> Assertion
 runTxIDVec (tid, tx) = assertBool "txid" $ txHashToHex (txHash txBS) == tid
   where
-    txBS = fromJust $ either (const Nothing) return . decode =<< decodeHex tx
+    txBS = fromJust $ either (const Nothing) return . S.decode =<< decodeHex tx
 
 txIDVec :: [(ByteString, ByteString)]
 txIDVec =
@@ -97,7 +120,7 @@ mapPKHashVec (v, i) = runPKHashVec v
 
 runPKHashVec :: ([(ByteString, Word32)], [(ByteString, Word64)], ByteString) -> Assertion
 runPKHashVec (xs, ys, res) =
-    assertBool "Build PKHash Tx" $ encodeHex (encode tx) == res
+    assertBool "Build PKHash Tx" $ encodeHex (S.encode tx) == res
   where
     tx =
         fromRight (error "Could not decode transaction") $
@@ -116,7 +139,7 @@ runVerifyVec (SatoshiCoreTxTest _ is bsTx) i =
     name =
         "verify transaction " ++ show i ++ "bsTx: " ++ convertString bsTx
     tx :: Tx
-    tx = fromJust $ either (const Nothing) return . decode =<< decodeHex bsTx
+    tx = fromJust $ either (const Nothing) return . S.decode =<< decodeHex bsTx
     outputsAndOutpoints :: [(ScriptOutput, Word64, OutPoint)]
     outputsAndOutpoints = map f is
     f (SatoshiCoreTxTestInput bsOutputHash bsOutputIndex bsOutputScriptPubKey) =
@@ -133,7 +156,7 @@ runVerifyVec (SatoshiCoreTxTest _ is bsTx) i =
             op =
                 OutPoint
                     (fromRight (error "Could not decode output hash") .
-                     decode . BS.reverse . fromJust . decodeHex $
+                     S.decode . BS.reverse . fromJust . decodeHex $
                      bsOutputHash)
                     (fromRight (error "Could not decode output index") .
                      runGet getWord32le . fromJust . decodeHex $
@@ -329,12 +352,12 @@ encodeSatoshiCoreScriptPubKey =
   where
     encodeSatoshiCoreScriptPiece :: String -> ByteString
     encodeSatoshiCoreScriptPiece s = case (readMay ("OP_" ++ s) :: Maybe ScriptOp) of
-      Just op -> encodeHex . encode $ op
+      Just op -> encodeHex . S.encode $ op
       Nothing -> case take 2 s of
-          "OP" -> encodeHex . encode . (read :: String -> ScriptOp) $ s
+          "OP" -> encodeHex . S.encode . (read :: String -> ScriptOp) $ s
           "0x" -> (fromString . drop 2 :: String -> ByteString) s
           _ -> case (readMay s :: Maybe Int) of -- can we get rid of this case now?
-            Just i  -> encodeHex . encode . intToScriptOp $ i
+            Just i  -> encodeHex . S.encode . intToScriptOp $ i
             Nothing -> error $ "encodeSatoshiCoreScriptPubKey: " ++ s
 
 satoshiCoreTxTests :: Spec
@@ -354,11 +377,11 @@ satoshiCoreTxVec = do
     tx_validBS <- BL.readFile "data/tx_valid.json"
     let testsAndComments =
             fromMaybe (error "satoshiCoreTxVec, couldn't decode json") .
-            Aeson.decode $
+            A.decode $
             tx_validBS
     return $
         case testsAndComments of
-            (Aeson.Array arr) ->
+            (A.Array arr) ->
                 let testsOrComments = map toTestOrComment . V.toList $ arr
                 in processTestsAndComments testsOrComments
             _ -> error "satoshiCoreTxVec, testsAndComments not an array"
@@ -385,31 +408,31 @@ satoshiCoreTxVec = do
                     descriptionLines
         in concatMap includeDescriptions . takePairs . grouper $ testOrComments
 
-toTestOrComment :: Aeson.Value -> Either TestComment SatoshiCoreTxTest
+toTestOrComment :: Value -> Either TestComment SatoshiCoreTxTest
 toTestOrComment testVectorOrComment =
     case testVectorOrComment of
-        (Aeson.Types.Array arr) ->
+        (Array arr) ->
             case V.length arr of
                 1 ->
                     let comment = arr V.! 0
                     in case comment of
-                           Aeson.Types.String txt -> Left . convertString $ txt
+                           String txt -> Left . convertString $ txt
                            _ -> error "toTestOrComment, comment not text"
                 3 ->
                     let inputs =
                             case arr V.! 0 of
-                                (Aeson.Array inputsV) ->
-                                    let toInput (Aeson.Array oneInputV) =
+                                Array inputsV ->
+                                    let toInput (Array oneInputV) =
                                             let hash =
                                                     case oneInputV V.! 0 of
-                                                        Aeson.String txt ->
+                                                        String txt ->
                                                             convertString txt
                                                         _ ->
                                                             error
                                                                 "processItem, hash not a string"
                                                 index =
                                                     case oneInputV V.! 01 of
-                                                        Aeson.Number n ->
+                                                        Number n ->
                                                             encodeHex .
                                                             runPut .
                                                             putWord32le . floor $
@@ -419,7 +442,7 @@ toTestOrComment testVectorOrComment =
                                                                 "processItem, n not a number"
                                                 pubkey =
                                                     case oneInputV V.! 2 of
-                                                        Aeson.String txt ->
+                                                        String txt ->
                                                             encodeSatoshiCoreScriptPubKey .
                                                             convertString $
                                                             txt
@@ -438,7 +461,7 @@ toTestOrComment testVectorOrComment =
                         tx =
                             let txVal = arr V.! 1
                             in case txVal of
-                                   Aeson.Types.String txt -> convertString txt
+                                   String txt -> convertString txt
                                    _ -> error "toTestOrComment, tx, not text"
                   -- flags -- v V.! 2  -- ignored for now?
                     in Right $ SatoshiCoreTxTest "" inputs tx
@@ -475,7 +498,7 @@ testGuessSize net tx
   where
     delta = pki + sum (map fst msi)
     guess = guessTxSize pki msi pkout msout
-    len = BS.length $ encode tx
+    len = BS.length $ S.encode tx
     ins = map f $ txIn tx
     f i =
         fromRight (error "Could not decode input") $
@@ -553,3 +576,8 @@ testMergeTx net (txs, os) = and
         Right (RegularInput (SpendMulSig sigs)) -> length sigs
         Right (ScriptHashInput (SpendMulSig sigs) _) -> length sigs
         _ -> error "Invalid input script type"
+
+testID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
+testID x =
+    (A.decode . A.encode) (singleton ("object" :: String) x) ==
+    Just (singleton ("object" :: String) x)

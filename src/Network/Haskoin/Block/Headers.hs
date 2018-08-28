@@ -1,34 +1,75 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards   #-}
-module Network.Haskoin.Block.Headers where
+module Network.Haskoin.Block.Headers
+    ( BlockNode(..)
+    , getBlockNode
+    , putBlockNode
+    , HeaderMemory(..)
+    , BlockHeaders(..)
+    , getAncestor
+    , isGenesis
+    , initialChain
+    , genesisMap
+    , genesisNode
+    , connectBlocks
+    , parentBlock
+    , connectBlock
+    , validBlock
+    , getParents
+    , validCP
+    , afterLastCP
+    , bip34
+    , validVersion
+    , lastNoMinDiff
+    , nextWorkRequired
+    , nextEdaWorkRequired
+    , nextDaaWorkRequired
+    , computeTarget
+    , getSuitableBlock
+    , nextPowWorkRequired
+    , calcNextWork
+    , isValidPOW
+    , blockPOW
+    , headerWork
+    , diffInterval
+    , chooseBest
+    , blockLocatorNodes
+    , blockLocator
+    , mineBlock
+    , appendBlocks
+    , splitPoint
+    , genesisBlock
+    , ) where
 
-import           Control.Applicative         ((<|>))
-import           Control.DeepSeq             (NFData, rnf)
-import           Control.Monad               (guard, unless, when)
-import           Control.Monad.Except        (ExceptT (..), runExceptT,
-                                              throwError)
-import           Control.Monad.State.Strict  as State (StateT, get, gets, lift,
-                                                       modify)
-import           Data.Bits                   (shiftL, shiftR, (.&.))
-import qualified Data.ByteString             as BS
-import           Data.ByteString.Short       (ShortByteString, fromShort,
-                                              toShort)
-import           Data.Function               (on)
-import           Data.HashMap.Strict         (HashMap)
-import qualified Data.HashMap.Strict         as HashMap
-import           Data.List                   (sort, sortBy)
-import           Data.Maybe                  (fromMaybe, listToMaybe)
-import           Data.Serialize              as Serialize (Serialize (..),
-                                                           decode, encode, get,
-                                                           put)
-import           Data.Serialize.Get          (Get, getWord32le, runGet)
-import           Data.Serialize.Put          (Put, Putter, putWord32le, runPut)
-import           Data.Typeable               (Typeable)
-import           Data.Word                   (Word32, Word64)
+import           Control.Applicative               ((<|>))
+import           Control.DeepSeq                   (NFData, rnf)
+import           Control.Monad                     (guard, unless, when)
+import           Control.Monad.Except              (ExceptT (..), runExceptT,
+                                                    throwError)
+import           Control.Monad.State.Strict        as State (StateT, get, gets,
+                                                             lift, modify)
+import           Data.Bits                         (shiftL, shiftR, (.&.))
+import qualified Data.ByteString                   as BS
+import           Data.ByteString.Short             (ShortByteString, fromShort,
+                                                    toShort)
+import           Data.Function                     (on)
+import           Data.HashMap.Strict               (HashMap)
+import qualified Data.HashMap.Strict               as HashMap
+import           Data.List                         (sort, sortBy)
+import           Data.Maybe                        (fromMaybe, listToMaybe)
+import           Data.Serialize                    as Serialize (Serialize (..),
+                                                                 decode, encode,
+                                                                 get, put)
+import           Data.Serialize.Get                (Get, getWord32le, runGet)
+import           Data.Serialize.Put                (Put, Putter, putWord32le,
+                                                    runPut)
+import           Data.Typeable                     (Typeable)
+import           Data.Word                         (Word32, Word64)
 import           Network.Haskoin.Block.Types
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
+import           Network.Haskoin.Transaction.Types
 import           Network.Haskoin.Util
 
 type ShortBlockHash = Word64
@@ -66,7 +107,7 @@ instance Serialize BlockNode where
         put $ nodeWork bn
         case bn of
             GenesisNode {} -> return ()
-            BlockNode {} -> put $ nodeSkip bn
+            BlockNode {}   -> put $ nodeSkip bn
 
 getBlockNode :: Network -> Get BlockNode
 getBlockNode net = do
@@ -415,7 +456,7 @@ nextWorkRequired net par bh = do
     eda = getEdaBlockHeight net >>= \edaHeight -> do
         guard (nodeHeight par + 1 >= edaHeight)
         return nextEdaWorkRequired
-    pow = return nextPOWWorkRequired
+    pow = return nextPowWorkRequired
 
 nextEdaWorkRequired ::
        BlockHeaders m => Network -> BlockNode -> BlockHeader -> m Word32
@@ -490,8 +531,8 @@ getSuitableBlock net par = do
 
 -- | Returns the work required on a block header given the previous block. This
 -- coresponds to bitcoind function GetNextWorkRequired in main.cpp.
-nextPOWWorkRequired :: BlockHeaders m => Network -> BlockNode -> BlockHeader -> m Word32
-nextPOWWorkRequired net par bh
+nextPowWorkRequired :: BlockHeaders m => Network -> BlockNode -> BlockHeader -> m Word32
+nextPowWorkRequired net par bh
     | nodeHeight par + 1 `mod` diffInterval net /= 0 =
         if getAllowMinDifficultyBlocks net
             then if ht > pt + delta
@@ -630,3 +671,7 @@ splitPoint net l r = do
                 pl <- fromMaybe e <$> getAncestor net h ll
                 pr <- fromMaybe e <$> getAncestor net h lr
                 f pl pr
+
+
+genesisBlock :: Network -> Block
+genesisBlock net = Block (getGenesisHeader net) [genesisTx]

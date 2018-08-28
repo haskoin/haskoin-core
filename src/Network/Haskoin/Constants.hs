@@ -4,17 +4,17 @@
   Network specific constants
 -}
 module Network.Haskoin.Constants
-( -- ** Data
-  Network(..)
-, btc
-, btcTest
-, btcRegTest
-, bch
-, bchTest
-, bchRegTest
-, allNets
-, netByName
-) where
+    ( -- ** Data
+      Network(..)
+    , btc
+    , btcTest
+    , btcRegTest
+    , bch
+    , bchTest
+    , bchRegTest
+    , allNets
+    , netByName
+    ) where
 
 import           Control.Concurrent.MVar
 import           Control.DeepSeq

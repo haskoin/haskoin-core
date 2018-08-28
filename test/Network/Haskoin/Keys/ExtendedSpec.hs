@@ -1,18 +1,22 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Crypto.ExtendedKeysSpec (spec) where
+module Network.Haskoin.Keys.ExtendedSpec (spec) where
 
-import qualified Data.Aeson                 as Aeson (decode, encode)
+import           Data.Aeson                 as A
+import           Data.Aeson.Types           as A
 import           Data.Bits                  ((.&.))
 import           Data.ByteString            (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as B8
 import           Data.Either                (isLeft)
+import           Data.Map.Strict            (singleton)
 import           Data.Maybe                 (fromJust, isJust, isNothing)
-import           Data.Serialize             (encode, runPut)
+import           Data.Serialize             as S
 import           Data.String                (fromString)
 import           Data.String.Conversions    (cs)
 import           Data.Word                  (Word32)
+import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
+import           Network.Haskoin.Keys
 import           Network.Haskoin.Test
 import           Network.Haskoin.Util
 import           Test.Hspec
@@ -84,6 +88,17 @@ spec = do
                 toSoft (listToPath $ pathToList p) == Just p
         it "read and show parsed path" $
             property $ forAll arbitraryParsedPath $ \p -> read (show p) == p
+        it "encodes and decodes extended private key" $
+            forAll (arbitraryXPrvKey net) (testCustom (xPrvFromJSON net))
+        it "encodes and decodes extended public key" $
+            forAll (arbitraryXPubKey net) (testCustom (xPubFromJSON net) . snd)
+        it "encodes and decodes derivation path" $ forAll arbitraryDerivPath testID
+        it "encodes and decodes parsed derivation path" $
+            forAll arbitraryParsedPath testID
+        it "encodes and decodes extended private key" $
+            property $
+            forAll (arbitraryXPrvKey net) $
+            testPutGet (getXPrvKey net) putXPrvKey
 
 testFromJsonPath :: Assertion
 testFromJsonPath =
@@ -93,7 +108,7 @@ testFromJsonPath =
             assertEqual
                 path
                 (Just [fromString path :: DerivPath])
-                (Aeson.decode $ B8.pack $ "[\"" ++ path ++ "\"]")
+                (A.decode $ B8.pack $ "[\"" ++ path ++ "\"]")
 
 testToJsonPath :: Assertion
 testToJsonPath =
@@ -103,7 +118,7 @@ testToJsonPath =
             assertEqual
                 path
                 (B8.pack $ "[\"" ++ path ++ "\"]")
-                (Aeson.encode [fromString path :: ParsedPath])
+                (A.encode [fromString path :: ParsedPath])
 
 jsonPathVectors :: [String]
 jsonPathVectors =
@@ -265,15 +280,15 @@ badApplyPathVectors =
 
 runXKeyVec :: ([ByteString], XPrvKey) -> Assertion
 runXKeyVec (v, m) = do
-    assertBool "xPrvID" $ encodeHex (encode $ xPrvID m) == head v
-    assertBool "xPrvFP" $ encodeHex (encode $ xPrvFP m) == v !! 1
+    assertBool "xPrvID" $ encodeHex (S.encode $ xPrvID m) == head v
+    assertBool "xPrvFP" $ encodeHex (S.encode $ xPrvFP m) == v !! 1
     assertBool "xPrvAddr" $
         addrToString (xPubAddr $ deriveXPubKey m) == Just (v !! 2)
     assertBool "prvKey" $ encodeHex (encodePrvKey $ xPrvKey m) == v !! 3
     assertBool "xPrvWIF" $ xPrvWif m == v !! 4
     assertBool "pubKey" $
-        encodeHex (encode $ xPubKey $ deriveXPubKey m) == v !! 5
-    assertBool "chain code" $ encodeHex (encode $ xPrvChain m) == v !! 6
+        encodeHex (S.encode $ xPubKey $ deriveXPubKey m) == v !! 5
+    assertBool "chain code" $ encodeHex (S.encode $ xPrvChain m) == v !! 6
     assertBool "Hex PubKey" $
         encodeHex (runPut $ putXPubKey $ deriveXPubKey m) == v !! 7
     assertBool "Hex PrvKey" $ encodeHex (runPut (putXPrvKey m)) == v !! 8
@@ -482,3 +497,15 @@ pubKeyOfSubKeyIsSubKeyOfPubKey k i =
     deriveXPubKey (prvSubKey k i') == pubSubKey (deriveXPubKey k) i'
   where
     i' = fromIntegral $ i .&. 0x7fffffff -- make it a public derivation
+
+
+testID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
+testID x =
+    (A.decode . A.encode) (singleton ("object" :: String) x) ==
+    Just (singleton ("object" :: String) x)
+
+testCustom :: (ToJSON a, Eq a) => (Value -> Parser a) -> a -> Bool
+testCustom f x = parseMaybe f (toJSON x) == Just x
+
+testPutGet :: Eq a => Get a -> Putter a -> a -> Bool
+testPutGet g p a = runGet g (runPut (p a)) == Right a

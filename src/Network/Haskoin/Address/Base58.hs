@@ -1,5 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Crypto.Base58 where
+module Network.Haskoin.Address.Base58
+    ( encodeBase58
+    , decodeBase58
+    , encodeBase58Check
+    , decodeBase58Check
+    ) where
 
 import           Control.DeepSeq             (NFData, rnf)
 import           Control.Monad               (guard, mzero)

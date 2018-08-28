@@ -2,8 +2,9 @@
 module Network.Haskoin.Crypto.HashSpec (spec) where
 
 import           Data.ByteString         (ByteString)
+import           Data.Map.Strict         (singleton)
 import           Data.Maybe              (fromJust)
-import           Data.Serialize          (encode)
+import           Data.Serialize          as S
 import           Data.String             (fromString)
 import           Data.String.Conversions
 import           Network.Haskoin.Block
@@ -46,6 +47,14 @@ spec = do
             property $
             forAll arbitraryHash160 $ \h ->
                 fromString (cs $ encodeHex $ encode h) == h
+        it "encodes and decodes bytestring" $
+            property $ forAll arbitraryBS cerealID
+        it "encodes and decodes hash160" $
+            property $ forAll arbitraryHash160 cerealID
+        it "encodes and decodes hash256" $
+            property $ forAll arbitraryHash256 cerealID
+        it "encodes and decodes hash512" $
+            property $ forAll arbitraryHash512 cerealID
 
 type TestVector = [ByteString]
 
@@ -83,6 +92,23 @@ testDRBGRsd (s,i) = do
     [AdditionalInputLen = 0]
     [ReturnedBitsLen = 1024]
 -}
+
+joinSplit512 :: Hash256 -> Hash256 -> Bool
+joinSplit512 a b = split512 (join512 (a, b)) == (a, b)
+
+-- After encoding and decoding, we may loose precision so the new result is >=
+-- to the old one.
+decEncCompact :: Integer -> Bool
+decEncCompact i
+    -- Integer completely fits inside the mantisse
+    | abs i <= 0x007fffff = decodeCompact (encodeCompact i) == (i, False)
+    -- Otherwise precision will be lost and the decoded result will
+    -- be smaller than the original number
+    | i >= 0              = fst (decodeCompact (encodeCompact i)) < i
+    | otherwise           = fst (decodeCompact (encodeCompact i)) > i
+
+cerealID :: (Serialize a, Eq a) => a -> Bool
+cerealID x = decode (encode x) == Right x
 
 t1 :: [TestVector]
 t1 =
@@ -1275,17 +1301,3 @@ r4 =
     , "5b029ef68b6799868b04dc28dbea26bc2fa9fcc8c2b2795aafeed0127b7297fa19a4ef2ba60c42ff8259d5a759f92bd90fdfb27145e82d798bb3ab7fd60bfaefb7aefb116ca2a4fa8b01d96a03c47c8d987fdd33c460e560b138891278313bb619d0c3c6f9d7c5a37e88fce83e94943705c6ff68e00484e74ad4097b0c9e5f10"
     ]
     ]
-
-joinSplit512 :: Hash256 -> Hash256 -> Bool
-joinSplit512 a b = split512 (join512 (a, b)) == (a, b)
-
--- After encoding and decoding, we may loose precision so the new result is >=
--- to the old one.
-decEncCompact :: Integer -> Bool
-decEncCompact i
-    -- Integer completely fits inside the mantisse
-    | abs i <= 0x007fffff = decodeCompact (encodeCompact i) == (i, False)
-    -- Otherwise precision will be lost and the decoded result will
-    -- be smaller than the original number
-    | i >= 0              = fst (decodeCompact (encodeCompact i)) < i
-    | otherwise           = fst (decodeCompact (encodeCompact i)) > i

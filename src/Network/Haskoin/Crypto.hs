@@ -4,15 +4,8 @@
   hashing functions; as well as mnemonic keys from BIP-0039.
 -}
 module Network.Haskoin.Crypto
-( module X
-) where
+    ( module X
+    ) where
 
-import           Network.Haskoin.Crypto.Address      as X
-import           Network.Haskoin.Crypto.Base58       as X
-import           Network.Haskoin.Crypto.CashAddr     as X
-import           Network.Haskoin.Crypto.ECDSA        as X
-import           Network.Haskoin.Crypto.ExtendedKeys as X
+import           Network.Haskoin.Crypto.Signature    as X
 import           Network.Haskoin.Crypto.Hash         as X
-import           Network.Haskoin.Crypto.Keys         as X
-import           Network.Haskoin.Crypto.Mnemonic     as X
-

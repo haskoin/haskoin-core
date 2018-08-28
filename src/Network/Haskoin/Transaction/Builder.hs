@@ -23,7 +23,9 @@ import           Data.Serialize                    (encode)
 import           Data.String.Conversions           (cs)
 import           Data.Word                         (Word64)
 import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto
+import           Network.Haskoin.Keys.Types
+import Network.Haskoin.Crypto.Signature
+import Network.Haskoin.Address
 import           Network.Haskoin.Network.Types
 import           Network.Haskoin.Script
 import           Network.Haskoin.Transaction.Types

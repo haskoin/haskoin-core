@@ -4,7 +4,7 @@ module Network.Haskoin.ScriptSpec (spec) where
 import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Crypto.Secp256k1            as EC
-import qualified Data.Aeson                  as A
+import           Data.Aeson                  as A
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as BS
 import qualified Data.ByteString             as BS
@@ -17,16 +17,18 @@ import           Data.Int                    (Int64)
 import           Data.List
 import           Data.List
 import           Data.List.Split             (splitOn)
+import           Data.Map.Strict             (singleton)
 import           Data.Maybe
 import           Data.Monoid                 ((<>))
-import           Data.Serialize
-import           Data.Serialize
+import           Data.Serialize              as S
 import           Data.String
 import           Data.String.Conversions     (cs)
 import           Data.Word
 import           Data.Word
+import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
+import           Network.Haskoin.Keys
 import           Network.Haskoin.Script
 import           Network.Haskoin.Test
 import           Network.Haskoin.Transaction
@@ -39,6 +41,7 @@ import           Text.Read
 
 spec :: Spec
 spec = do
+    let net = btc
     describe "btc scripts" $ props btc
     describe "bch scripts" $ props bch
     describe "integer types" $ do
@@ -55,6 +58,18 @@ spec = do
         sequence_ $ zipWith (curry mapMulSigVector) mulSigVectors [0 ..]
     describe "signature decoding" $
         sequence_ $ zipWith (curry sigDecodeMap) scriptSigSignatures [0 ..]
+    describe "json serialization" $ do
+        it "encodes and decodes script output" $
+            forAll (arbitraryScriptOutput net) testID
+        it "encodes and decodes outpoint" $ forAll arbitraryOutPoint testID
+        it "encodes and decodes sighash" $ forAll arbitrarySigHash testID
+        it "encodes and decodes siginput" $
+            forAll (arbitrarySigInput net) (testID . fst)
+    describe "script serialization" $ do
+        it "encodes and decodes script op" $
+            property $ forAll arbitraryScriptOp cerealID
+        it "encodes and decodes script" $
+            property $ forAll arbitraryScript cerealID
 
 props :: Network -> Spec
 props net = do
@@ -65,6 +80,9 @@ props net = do
     forkIdScriptSpec net
     sigHashSpec net
     txSigHashSpec net
+
+cerealID :: (Serialize a, Eq a) => a -> Bool
+cerealID x = S.decode (S.encode x) == Right x
 
 standardSpec :: Network -> Spec
 standardSpec net = do
@@ -82,7 +100,7 @@ standardSpec net = do
             decodeInput net (encodeInput si) `shouldBe` Right si
     it "can sort multisig scripts" $
         forAll arbitraryMSOutput $ \out ->
-            map encode (getOutputMulSigKeys (sortMulSig out)) `shouldSatisfy` \xs ->
+            map S.encode (getOutputMulSigKeys (sortMulSig out)) `shouldSatisfy` \xs ->
                 xs == sort xs
     it "can decode inputs with empty signatures" $ do
         decodeInput net (Script [OP_0]) `shouldBe`
@@ -92,7 +110,7 @@ standardSpec net = do
         let pk =
                 derivePubKey $
                 makePrvKey $ fromJust $ EC.secKey $ BS.replicate 32 1
-        decodeInput net (Script [OP_0, opPushData $ encode pk]) `shouldBe`
+        decodeInput net (Script [OP_0, opPushData $ S.encode pk]) `shouldBe`
             Right (RegularInput (SpendPKHash TxSignatureEmpty pk))
         decodeInput net (Script [OP_0, OP_0]) `shouldBe`
             Right (RegularInput (SpendMulSig [TxSignatureEmpty]))
@@ -186,7 +204,7 @@ creditTx scriptPubKey val =
     txI =
         TxIn
         { prevOutput = nullOutPoint
-        , scriptInput = encode $ Script [OP_0, OP_0]
+        , scriptInput = S.encode $ Script [OP_0, OP_0]
         , txInSequence = maxBound
         }
 
@@ -213,7 +231,7 @@ parseScript str =
 
 replaceToken :: String -> String
 replaceToken str = case readMaybe $ "OP_" <> str of
-    Just opcode -> "0x" <> cs (encodeHex $ encode (opcode :: ScriptOp))
+    Just opcode -> "0x" <> cs (encodeHex $ S.encode (opcode :: ScriptOp))
     _           -> str
 
 strictSigSpec :: Network -> Spec
@@ -248,10 +266,10 @@ txSigHashSpec net =
             let tx = fromString txStr
                 s =
                     fromMaybe (error $ "Could not decode script: " <> cs scpStr) $
-                    eitherToMaybe . decode =<< decodeHex (cs scpStr)
+                    eitherToMaybe . S.decode =<< decodeHex (cs scpStr)
                 sh = fromIntegral shI
                 res =
-                    eitherToMaybe . decode . BS.reverse =<<
+                    eitherToMaybe . S.decode . BS.reverse =<<
                     decodeHex (cs resStr)
             Just (txSigHash net tx s 0 i sh) `shouldBe` res
 
@@ -272,9 +290,9 @@ txSigHashForkIdSpec net =
             let tx = fromString txStr
                 s =
                     fromMaybe (error $ "Could not decode script: " <> cs scpStr) $
-                    eitherToMaybe . decode =<< decodeHex (cs scpStr)
+                    eitherToMaybe . S.decode =<< decodeHex (cs scpStr)
                 sh = fromIntegral shI
-                res = eitherToMaybe . decode =<< decodeHex (cs resStr)
+                res = eitherToMaybe . S.decode =<< decodeHex (cs resStr)
             Just (txSigHashForkId net tx s val i sh) `shouldBe` res
 
 sigHashSpec :: Network -> Spec
@@ -413,15 +431,15 @@ parseScriptEither :: String -> Either ParseError Script
 parseScriptEither scriptString = do
     bytes <- BS.pack <$> parseBytes scriptString
     script <- decodeScript bytes
-    when (encode script /= bytes) $ Left "encode script /= bytes"
+    when (S.encode script /= bytes) $ Left "encode script /= bytes"
     when
-        (fromRight (error "Could not decode script") (decode (encode script)) /=
+        (fromRight (error "Could not decode script") (S.decode (S.encode script)) /=
          script) $
         Left "decode (encode script) /= script"
     return script
   where
     decodeScript bytes =
-        case decode bytes of
+        case S.decode bytes of
             Left e           -> Left $ "decode error: " ++ e
             Right (Script s) -> Right $ Script s
     parseBytes :: String -> Either ParseError [Word8]
@@ -453,7 +471,7 @@ parseScriptEither scriptString = do
             | 1 <= n && n <= 16 = [0x50 + fromIntegral n]
             | otherwise = encodeBytes $ opPushData $ BS.pack $ encodeInt n
         parseOp = encodeBytes <$> readMaybe ("OP_" ++ tok)
-        encodeBytes = BS.unpack . encode
+        encodeBytes = BS.unpack . S.encode
 
 testFile :: String -> Bool -> Assertion
 testFile path expected =
@@ -534,7 +552,7 @@ buildCreditTx scriptPubKey =
                 , scriptOutput = scriptPubKey
                 }
     txI = TxIn { prevOutput = nullOutPoint
-               , scriptInput = encode $ Script [ OP_0, OP_0 ]
+               , scriptInput = S.encode $ Script [ OP_0, OP_0 ]
                , txInSequence = maxSeqNum
                }
 
@@ -562,8 +580,8 @@ scriptPairTestExec :: Script    -- scriptSig
                    -> [ Flag ] -- Evaluation flags
                    -> Bool
 scriptPairTestExec scriptSig pubKey flags =
-    let bsScriptSig = encode scriptSig
-        bsPubKey = encode pubKey
+    let bsScriptSig = S.encode scriptSig
+        bsPubKey = S.encode pubKey
         spendTx = buildSpendTx bsScriptSig (buildCreditTx bsPubKey)
     in verifySpend btc spendTx 0 pubKey 0 flags
 
@@ -579,7 +597,7 @@ runMulSigVector (a, ops) = assertBool "multisig vector" $ Just a == b
   where
     s = do
         s <- decodeHex ops
-        eitherToMaybe $ decode s
+        eitherToMaybe $ S.decode s
     b = do
         o <- s
         d <- eitherToMaybe $ decodeOutput o
@@ -616,3 +634,9 @@ scriptSigSignatures =
       -- Signature in input of txid fb0a1d8d34fa5537e461ac384bac761125e1bfa7fec286fa72511240fa66864d  Strange DER sizes. But in Blockchain
     , "3048022200002b83d59c1d23c08efd82ee0662fec23309c3adbcbd1f0b8695378db4b14e736602220000334a96676e58b1bb01784cb7c556dd8ce1c220171904da22e18fe1e7d1510db501"
     ]
+
+
+testID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
+testID x =
+    (A.decode . A.encode) (singleton ("object" :: String) x) ==
+    Just (singleton ("object" :: String) x)

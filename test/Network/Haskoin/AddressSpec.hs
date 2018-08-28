@@ -1,24 +1,31 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Crypto.AddressSpec (spec) where
+module Network.Haskoin.AddressSpec (spec) where
 
-import           Data.ByteString           (ByteString)
-import qualified Data.ByteString           as BS (append, empty, pack)
+import           Data.Aeson
+import           Data.Aeson.Types
+import           Data.ByteString                (ByteString)
+import qualified Data.ByteString                as BS (append, empty, pack)
+import           Network.Haskoin.Address
+import           Network.Haskoin.Address.Base58
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Test
 import           Test.Hspec
-import           Test.HUnit                (Assertion, assertBool)
+import           Test.HUnit                     (Assertion, assertBool)
 import           Test.QuickCheck
 
 spec :: Spec
 spec = do
-    describe "btc address" $ do
-        let net = btc
+    let net = btc
+    describe "btc address" $
         it "base58 encodings" $ mapM_ runVector vectors
     describe "btc-test address" $ props btcTest
     describe "bch address" $ props bch
     describe "bch-test address" $ props bchTest
     describe "bch-regtest address" $ props bchRegTest
+    describe "json serialization" $
+        it "encodes and decodes address" $
+            forAll (arbitraryAddress net) (testCustom (addrFromJSON net))
 
 props :: Network -> Spec
 props net = do
@@ -58,3 +65,5 @@ vectors =
       )
     ]
 
+testCustom :: (ToJSON a, Eq a) => (Value -> Parser a) -> a -> Bool
+testCustom f x = parseMaybe f (toJSON x) == Just x

@@ -4,9 +4,12 @@ module Network.Haskoin.BlockSpec
     ) where
 
 import           Control.Monad.State.Strict
+import           Data.Aeson                  as A
 import           Data.ByteString             (ByteString)
 import           Data.Either                 (fromRight)
+import           Data.Map.Strict             (singleton)
 import           Data.Maybe                  (fromJust)
+import           Data.Serialize              as S
 import           Data.String                 (fromString)
 import           Data.String.Conversions     (cs)
 import           Network.Haskoin.Block
@@ -32,8 +35,8 @@ chain net bh i = do
 
 spec :: Spec
 spec = do
+    let net = bchRegTest
     describe "blockchain headers" $ do
-        let net = bchRegTest
         it "gets best block" $
             let bb =
                     withChain net $ do
@@ -57,10 +60,11 @@ spec = do
             property $
             forAll arbitraryBlockHash $ \h ->
                 hexToBlockHash (blockHashToHex h) == Just h
-        it "From string block hash" $
+        it "from string block hash" $
             property $
             forAll arbitraryBlockHash $ \h ->
                 fromString (cs $ blockHashToHex h) == h
+        it "json block hash" $ property $ forAll arbitraryBlockHash testID
     describe "merkle trees" $ do
         let net = btc
         it "builds tree of right width at height 1" $ property testTreeWidth
@@ -75,6 +79,19 @@ spec = do
     describe "compact number" $ do
         it "compact number local vectors" testCompact
         it "compact number imported vectors" testCompactBitcoinCore
+    describe "block serialization" $ do
+        it "encodes and decodes block" $
+            property $ forAll (arbitraryBlock net) cerealID
+        it "encodes and decodes block header" $
+            property $ forAll arbitraryBlockHeader cerealID
+        it "encodes and decodes getblocks" $
+            property $ forAll arbitraryGetBlocks cerealID
+        it "encodes and decodes getheaders" $
+            property $ forAll arbitraryGetHeaders cerealID
+        it "encodes and decdoes headers" $
+            property $ forAll arbitraryHeaders cerealID
+        it "encodes and decodes merkle block" $
+            property $ forAll arbitraryMerkleBlock cerealID
 
 -- 0 → → 2015 → → → → → → → 4031
 --       ↓
@@ -313,3 +330,11 @@ merkleVectors =
         ]
       )
     ]
+
+testID :: (FromJSON a, ToJSON a, Eq a) => a -> Bool
+testID x =
+    (A.decode . A.encode) (singleton ("object" :: String) x) ==
+    Just (singleton ("object" :: String) x)
+
+cerealID :: (Serialize a, Eq a) => a -> Bool
+cerealID x = S.decode (S.encode x) == Right x

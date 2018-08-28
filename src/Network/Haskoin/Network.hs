@@ -5,10 +5,9 @@
   here: <http://en.bitcoin.it/wiki/Protocol_specification>
 -}
 module Network.Haskoin.Network
-( module X
-) where
+    ( module X
+    ) where
 
 import           Network.Haskoin.Network.Bloom   as X
 import           Network.Haskoin.Network.Message as X
 import           Network.Haskoin.Network.Types   as X
-

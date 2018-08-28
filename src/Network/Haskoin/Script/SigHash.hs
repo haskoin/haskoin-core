@@ -38,8 +38,9 @@ import           Data.String                       (IsString, fromString)
 import           Data.String.Conversions           (cs)
 import           Data.Word
 import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto.ECDSA
 import           Network.Haskoin.Crypto.Hash
+import           Network.Haskoin.Crypto.Signature
+import           Network.Haskoin.Keys.Types
 import           Network.Haskoin.Network
 import           Network.Haskoin.Script.Types
 import           Network.Haskoin.Transaction.Types

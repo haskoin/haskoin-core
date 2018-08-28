@@ -4,10 +4,14 @@
 module Network.Haskoin.Test.Script where
 
 import           Data.Word
+import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
+import           Network.Haskoin.Keys.Types
 import           Network.Haskoin.Script
+import           Network.Haskoin.Test.Address
 import           Network.Haskoin.Test.Crypto
+import           Network.Haskoin.Test.Keys
 import           Network.Haskoin.Test.Util
 import           Network.Haskoin.Transaction.Types
 import           Network.Haskoin.Util
@@ -320,4 +324,3 @@ arbitraryMulSigSHCInputFull = do
     rdm@(PayMulSig _ m) <- arbitraryMSCOutput
     sigs <- map lst3 <$> vectorOf m arbitraryTxSignature
     return $ ScriptHashInput (SpendMulSig sigs) rdm
-

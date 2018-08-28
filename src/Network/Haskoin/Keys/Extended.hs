@@ -1,80 +1,80 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Crypto.ExtendedKeys
-( XPubKey(..)
-, XPrvKey(..)
-, ChainCode
-, KeyIndex
-, DerivationException(..)
-, makeXPrvKey
-, deriveXPubKey
-, prvSubKey
-, pubSubKey
-, hardSubKey
-, xPrvIsHard
-, xPubIsHard
-, xPrvChild
-, xPubChild
-, xPubID
-, xPrvID
-, xPubFP
-, xPrvFP
-, xPubAddr
-, xPubExport
-, xPrvExport
-, xPubImport
-, xPrvImport
-, xPrvWif
-, putXPrvKey
-, putXPubKey
-, getXPrvKey
-, getXPubKey
-, xPubFromJSON
-, xPrvFromJSON
+module Network.Haskoin.Keys.Extended
+    ( XPubKey(..)
+    , XPrvKey(..)
+    , ChainCode
+    , KeyIndex
+    , DerivationException(..)
+    , makeXPrvKey
+    , deriveXPubKey
+    , prvSubKey
+    , pubSubKey
+    , hardSubKey
+    , xPrvIsHard
+    , xPubIsHard
+    , xPrvChild
+    , xPubChild
+    , xPubID
+    , xPrvID
+    , xPubFP
+    , xPrvFP
+    , xPubAddr
+    , xPubExport
+    , xPrvExport
+    , xPubImport
+    , xPrvImport
+    , xPrvWif
+    , putXPrvKey
+    , putXPubKey
+    , getXPrvKey
+    , getXPubKey
+    , xPubFromJSON
+    , xPrvFromJSON
 
-  -- Helpers
-, prvSubKeys
-, pubSubKeys
-, hardSubKeys
-, deriveAddr
-, deriveAddrs
-, deriveMSAddr
-, deriveMSAddrs
-, cycleIndex
+      -- Helpers
+    , prvSubKeys
+    , pubSubKeys
+    , hardSubKeys
+    , deriveAddr
+    , deriveAddrs
+    , deriveMSAddr
+    , deriveMSAddrs
+    , cycleIndex
 
-  -- Derivation paths
-, DerivPathI(..)
-, HardOrGeneric
-, GenericOrSoft
-, DerivPath
-, HardPath
-, SoftPath
-, Bip32PathIndex (..)
-, derivePath
-, derivePubPath
-, toHard
-, toSoft
-, toGeneric
-, (++/)
-, pathToStr
-, listToPath
-, pathToList
+      -- Derivation paths
+    , DerivPathI(..)
+    , HardOrAny
+    , AnyOrSoft
+    , DerivPath
+    , HardPath
+    , SoftPath
+    , Bip32PathIndex (..)
+    , derivePath
+    , derivePubPath
+    , toHard
+    , toSoft
+    , toGeneric
+    , (++/)
+    , pathToStr
+    , listToPath
+    , pathToList
 
-  -- Derivation path parsing
-, XKey(..)
-, ParsedPath(..)
-, parsePath
-, parseHard
-, parseSoft
-, applyPath
+      -- Derivation path parsing
+    , XKey(..)
+    , ParsedPath(..)
+    , parsePath
+    , parseHard
+    , parseSoft
+    , applyPath
 
-, derivePathAddr
-, derivePathAddrs
-, derivePathMSAddr
-, derivePathMSAddrs
-, concatBip32Segments
-) where
+    , derivePathAddr
+    , derivePathAddrs
+    , derivePathMSAddr
+    , derivePathMSAddrs
+    , concatBip32Segments
+    ) where
 
 import           Control.Applicative
 import           Control.DeepSeq                 (NFData, rnf)
@@ -105,10 +105,10 @@ import           Data.String.Conversions         (cs)
 import           Data.Typeable                   (Typeable)
 import           Data.Word                       (Word32, Word8)
 import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto.Address
-import           Network.Haskoin.Crypto.Base58
+import           Network.Haskoin.Address
+import           Network.Haskoin.Address.Base58
 import           Network.Haskoin.Crypto.Hash
-import           Network.Haskoin.Crypto.Keys
+import           Network.Haskoin.Keys.Types
 import           Network.Haskoin.Script.Standard
 import           Network.Haskoin.Util
 import           Text.Read                       as R
@@ -438,29 +438,29 @@ cycleIndex i
 
 {- Derivation Paths -}
 
-data Hard
-data Generic
-data Soft
+data HardDeriv
+data AnyDeriv
+data SoftDeriv
 
-type HardPath = DerivPathI Hard
-type DerivPath = DerivPathI Generic
-type SoftPath = DerivPathI Soft
+type HardPath = DerivPathI HardDeriv
+type DerivPath = DerivPathI AnyDeriv
+type SoftPath = DerivPathI SoftDeriv
 
-class HardOrGeneric a
-instance HardOrGeneric Hard
-instance HardOrGeneric Generic
+class HardOrAny a
+instance HardOrAny HardDeriv
+instance HardOrAny AnyDeriv
 
-class GenericOrSoft a
-instance GenericOrSoft Generic
-instance GenericOrSoft Soft
+class AnyOrSoft a
+instance AnyOrSoft AnyDeriv
+instance AnyOrSoft SoftDeriv
 
 -- | Data type representing a derivation path. Two constructors are provided
 -- for specifying soft or hard derivations. The path /0/1'/2 for example can be
--- expressed as Deriv :/ 0 :| 1 :/ 2. The HardOrGeneric and GenericOrSoft type
+-- expressed as Deriv :/ 0 :| 1 :/ 2. The HardOrAny and AnyOrSoft type
 -- classes are used to constrain the valid values for the phantom type t. If
--- you mix hard (:|) and soft (:/) paths, the only valid type for t is Generic.
--- Otherwise, t can be Hard if you only have hard derivation or Soft if you
--- only have soft derivations.
+-- you mix hard (:|) and soft (:/) paths, the only valid type for t is AnyDeriv.
+-- Otherwise, t can be HardDeriv if you only have hard derivation or SoftDeriv
+-- if you only have soft derivations.
 --
 -- Using this type is as easy as writing the required derivation like in these
 -- example:
@@ -468,8 +468,8 @@ instance GenericOrSoft Soft
 -- Deriv :| 0 :| 1 :| 2 :: HardPath
 -- Deriv :| 0 :/ 1 :/ 2 :: DerivPath
 data DerivPathI t where
-    (:|)  :: HardOrGeneric t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
-    (:/)  :: GenericOrSoft t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
+    (:|)  :: HardOrAny t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
+    (:/)  :: AnyOrSoft t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
     Deriv :: DerivPathI t
 
 instance NFData (DerivPathI t) where
@@ -817,4 +817,3 @@ putPadPrvKey p = putWord8 0x00 >> prvKeyPutMonad p
 
 bsPadPrvKey :: PrvKeyC -> ByteString
 bsPadPrvKey = runPut . putPadPrvKey
-

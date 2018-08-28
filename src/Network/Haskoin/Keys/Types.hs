@@ -1,65 +1,59 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Crypto.Keys
-( PubKeyI(pubKeyCompressed, pubKeyPoint)
-, PubKey, PubKeyC, PubKeyU
-, makePubKey
-, makePubKeyG
-, makePubKeyC
-, makePubKeyU
-, toPubKeyG
-, eitherPubKey
-, maybePubKeyC
-, maybePubKeyU
-, derivePubKey
-, pubKeyAddr
-, tweakPubKeyC
-, PrvKeyI(prvKeyCompressed, prvKeySecKey)
-, PrvKey, PrvKeyC, PrvKeyU
-, makePrvKey
-, makePrvKeyG
-, makePrvKeyC
-, makePrvKeyU
-, toPrvKeyG
-, eitherPrvKey
-, maybePrvKeyC
-, maybePrvKeyU
-, encodePrvKey
-, decodePrvKey
-, prvKeyPutMonad
-, prvKeyGetMonad
-, fromWif
-, toWif
-, fromMiniKey
-, tweakPrvKeyC
-) where
+module Network.Haskoin.Keys.Types
+    ( PubKeyI(..)
+    , PubKey, PubKeyC, PubKeyU
+    , PrvKeyI(..)
+    , PrvKey, PrvKeyC, PrvKeyU
+    , CompressedOrNot, Compressed, Uncompressed
+    , makePubKey
+    , makePubKeyG
+    , makePubKeyC
+    , makePubKeyU
+    , toPubKeyG
+    , eitherPubKey
+    , maybePubKeyC
+    , maybePubKeyU
+    , derivePubKey
+    , tweakPubKeyC
+    , makePrvKey
+    , makePrvKeyG
+    , makePrvKeyC
+    , makePrvKeyU
+    , toPrvKeyG
+    , eitherPrvKey
+    , maybePrvKeyC
+    , maybePrvKeyU
+    , encodePrvKey
+    , decodePrvKey
+    , prvKeyPutMonad
+    , prvKeyGetMonad
+    , fromMiniKey
+    , tweakPrvKeyC
+    ) where
 
-import           Control.Applicative            ((<|>))
-import           Control.DeepSeq                (NFData, rnf)
-import           Control.Monad                  (guard, mzero, (<=<))
-import qualified Crypto.Secp256k1               as EC
-import           Data.Aeson                     (FromJSON, ToJSON,
-                                                 Value (String), parseJSON,
-                                                 toJSON, withText)
-import           Data.ByteString                (ByteString)
-import qualified Data.ByteString                as BS
-import           Data.Maybe                     (fromMaybe)
-import           Data.Serialize                 (Serialize, decode, encode, get,
-                                                 put)
-import           Data.Serialize.Get             (Get, getByteString)
-import           Data.Serialize.Put             (Put, putByteString)
-import           Data.String                    (IsString, fromString)
-import           Data.String.Conversions        (cs)
-import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto.Address
-import           Network.Haskoin.Crypto.Base58
+import           Control.Applicative         ((<|>))
+import           Control.DeepSeq             (NFData, rnf)
+import           Control.Monad               (guard, mzero, (<=<))
+import qualified Crypto.Secp256k1            as EC
+import           Data.Aeson                  (FromJSON, ToJSON, Value (String),
+                                              parseJSON, toJSON, withText)
+import           Data.ByteString             (ByteString)
+import qualified Data.ByteString             as BS
+import           Data.Maybe                  (fromMaybe)
+import           Data.Serialize              (Serialize, decode, encode, get,
+                                              put)
+import           Data.Serialize.Get          (Get, getByteString)
+import           Data.Serialize.Put          (Put, putByteString)
+import           Data.String                 (IsString, fromString)
+import           Data.String.Conversions     (cs)
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Util
-import           Text.Read                      (lexP, parens, pfail, readPrec)
-import qualified Text.Read                      as Read
+import           Text.Read                   (lexP, parens, pfail, readPrec)
+import qualified Text.Read                   as Read
 
-data Generic
+data CompressedOrNot
 data Compressed
 data Uncompressed
 
@@ -67,7 +61,7 @@ data Uncompressed
 -- compressed and uncompressed public keys from a Point. The use of compressed
 -- keys is preferred as it produces shorter keys without compromising security.
 -- Uncompressed keys are supported for backwards compatibility.
-type PubKey = PubKeyI Generic
+type PubKey = PubKeyI CompressedOrNot
 type PubKeyC = PubKeyI Compressed
 type PubKeyU = PubKeyI Uncompressed
 
@@ -156,6 +150,33 @@ instance FromJSON PubKeyU where
     parseJSON = withText "PubKeyU" $
         maybe mzero return . (eitherToMaybe . decode =<<) . decodeHex . cs
 
+instance Serialize PubKey where
+    get =
+        (toPubKeyG <$> getC) <|> (toPubKeyG <$> getU)
+      where
+        getC = get :: Get (PubKeyI Compressed)
+        getU = get :: Get (PubKeyI Uncompressed)
+
+    put pk = case eitherPubKey pk of
+        Left k  -> put k
+        Right k -> put k
+
+instance Serialize PubKeyC where
+    get = do
+        bs <- getByteString 33
+        guard $ BS.head bs `BS.elem` BS.pack [0x02, 0x03]
+        maybe mzero return $ makePubKeyC <$> EC.importPubKey bs
+
+    put pk = putByteString $ EC.exportPubKey True $ pubKeyPoint pk
+
+instance Serialize PubKeyU where
+    get = do
+        bs <- getByteString 65
+        guard $ BS.head bs == 0x04
+        maybe mzero return $ makePubKeyU <$> EC.importPubKey bs
+
+    put pk = putByteString $ EC.exportPubKey False $ pubKeyPoint pk
+
 -- Constructors for public keys
 makePubKey :: EC.PubKey -> PubKey
 makePubKey p = PubKeyI p True
@@ -193,37 +214,6 @@ maybePubKeyU pk
 derivePubKey :: PrvKeyI c -> PubKeyI c
 derivePubKey (PrvKeyI d c) = PubKeyI (EC.derivePubKey d) c
 
-instance Serialize PubKey where
-    get =
-        (toPubKeyG <$> getC) <|> (toPubKeyG <$> getU)
-      where
-        getC = get :: Get (PubKeyI Compressed)
-        getU = get :: Get (PubKeyI Uncompressed)
-
-    put pk = case eitherPubKey pk of
-        Left k  -> put k
-        Right k -> put k
-
-instance Serialize PubKeyC where
-    get = do
-        bs <- getByteString 33
-        guard $ BS.head bs `BS.elem` BS.pack [0x02, 0x03]
-        maybe mzero return $ makePubKeyC <$> EC.importPubKey bs
-
-    put pk = putByteString $ EC.exportPubKey True $ pubKeyPoint pk
-
-instance Serialize PubKeyU where
-    get = do
-        bs <- getByteString 65
-        guard $ BS.head bs == 0x04
-        maybe mzero return $ makePubKeyU <$> EC.importPubKey bs
-
-    put pk = putByteString $ EC.exportPubKey False $ pubKeyPoint pk
-
--- | Computes an 'Address' from a public key
-pubKeyAddr :: Serialize (PubKeyI c) => Network -> PubKeyI c -> Address
-pubKeyAddr net k = PubKeyAddress (addressHash (encode k)) net
-
 -- | Tweak a compressed public key
 tweakPubKeyC :: PubKeyC -> Hash256 -> Maybe PubKeyC
 tweakPubKeyC pub h =
@@ -234,11 +224,6 @@ tweakPubKeyC pub h =
 
 {- Private Keys -}
 
--- | Elliptic curve private key type. Two constructors are provided for creating
--- compressed or uncompressed private keys. Compression information is stored
--- in private key WIF formats and needs to be preserved to generate the correct
--- addresses from the corresponding public key.
-
 -- Internal private key type
 data PrvKeyI c = PrvKeyI
     { prvKeySecKey     :: !EC.SecKey
@@ -248,9 +233,14 @@ data PrvKeyI c = PrvKeyI
 instance NFData (PrvKeyI c) where
     rnf (PrvKeyI k c) = k `seq` c `seq` ()
 
-type PrvKey = PrvKeyI Generic
+type PrvKey = PrvKeyI CompressedOrNot
 type PrvKeyC = PrvKeyI Compressed
 type PrvKeyU = PrvKeyI Uncompressed
+
+-- | Elliptic curve private key type. Two constructors are provided for creating
+-- compressed or uncompressed private keys. Compression information is stored
+-- in private key WIF formats and needs to be preserved to generate the correct
+-- addresses from the corresponding public key.
 
 makePrvKeyI :: Bool -> EC.SecKey -> PrvKeyI c
 makePrvKeyI c d = PrvKeyI d c
@@ -303,32 +293,6 @@ prvKeyGetMonad f = do
 prvKeyPutMonad :: PrvKeyI c -> Put
 prvKeyPutMonad (PrvKeyI k _) = putByteString $ EC.getSecKey k
 
--- | Decodes a private key from a WIF encoded 'ByteString'. This function can
--- fail if the input string does not decode correctly as a base 58 string or if
--- the checksum fails.
--- <http://en.bitcoin.it/wiki/Wallet_import_format>
-fromWif :: Network -> ByteString -> Maybe PrvKey
-fromWif net wif = do
-    bs <- decodeBase58Check wif
-    -- Check that this is a private key
-    guard (BS.head bs == getSecretPrefix net)
-    case BS.length bs of
-        -- Uncompressed format
-        33 -> makePrvKeyG False <$> EC.secKey (BS.tail bs)
-        -- Compressed format
-        34 -> do
-            guard $ BS.last bs == 0x01
-            makePrvKeyG True <$> EC.secKey (BS.tail $ BS.init bs)
-        -- Bad length
-        _  -> Nothing
-
--- | Encodes a private key into WIF format
-toWif :: Network -> PrvKeyI c -> ByteString
-toWif net (PrvKeyI k c) =
-    encodeBase58Check . BS.cons (getSecretPrefix net) $
-    if c
-        then EC.getSecKey k `BS.snoc` 0x01
-        else EC.getSecKey k
 
 -- | Decode Casascius mini private keys (22 or 30 characters)
 fromMiniKey :: ByteString -> Maybe PrvKeyU
@@ -346,4 +310,3 @@ tweakPrvKeyC key h =
   where
     sec   = prvKeySecKey key
     tweak = EC.tweak (encode h)
-

@@ -3,10 +3,8 @@
   transactions and multisignature transactions.
 -}
 module Network.Haskoin.Transaction
-( module X
-) where
+    ( module X
+    ) where
 
 import           Network.Haskoin.Transaction.Builder as X
-import           Network.Haskoin.Transaction.Genesis as X
 import           Network.Haskoin.Transaction.Types   as X
-

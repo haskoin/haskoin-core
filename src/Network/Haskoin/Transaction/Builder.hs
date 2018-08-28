@@ -22,10 +22,10 @@ import           Data.Maybe                        (catMaybes, fromJust,
 import           Data.Serialize                    (encode)
 import           Data.String.Conversions           (cs)
 import           Data.Word                         (Word64)
+import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
+import           Network.Haskoin.Crypto.Signature
 import           Network.Haskoin.Keys.Types
-import Network.Haskoin.Crypto.Signature
-import Network.Haskoin.Address
 import           Network.Haskoin.Network.Types
 import           Network.Haskoin.Script
 import           Network.Haskoin.Transaction.Types
@@ -309,7 +309,7 @@ sigKeys net so rdmM keys =
             return . map fst . maybeToList $ find ((== p) . snd) zipKeys
         (PayPKHash h, Nothing) ->
             return . map fst . maybeToList $
-            find ((== h) . getAddrHash . pubKeyAddr net . snd) zipKeys
+            find ((== h) . getAddrHash160 . pubKeyAddr net . snd) zipKeys
         (PayMulSig ps r, Nothing) ->
             return $ map fst $ take r $ filter ((`elem` ps) . snd) zipKeys
         (PayScriptHash _, Just rdm) -> sigKeys net rdm Nothing keys

@@ -151,7 +151,7 @@ arbitraryPKSigInput net = do
 arbitraryPKHashSigInput :: Network -> Gen (SigInput, PrvKey)
 arbitraryPKHashSigInput net = do
     k <- arbitraryPrvKey
-    let out = PayPKHash $ getAddrHash $ pubKeyAddr net $ derivePubKey k
+    let out = PayPKHash $ getAddrHash160 $ pubKeyAddr net $ derivePubKey k
     val <- getTestCoin <$> arbitrarySatoshi net
     op <- arbitraryOutPoint
     sh <- arbitraryValidSigHash
@@ -178,7 +178,7 @@ arbitrarySHSigInput net = do
         , f <$> arbitraryPKHashSigInput net
         , arbitraryMSSigInput net
         ]
-    let out = PayScriptHash $ getAddrHash $ p2shAddr net rdm
+    let out = PayScriptHash $ getAddrHash160 $ p2shAddr net rdm
     return (SigInput out val op sh $ Just rdm, ks)
   where
     f (si, k) = (si, [k])
@@ -239,7 +239,7 @@ arbitraryPartialTxs net = do
         let so = PayMulSig pubKeys m
         elements
             [ (so, val, Nothing, prvKeys, m, n)
-            , ( PayScriptHash $ getAddrHash $ p2shAddr net so
+            , ( PayScriptHash $ getAddrHash160 $ p2shAddr net so
               , val
               , Just so
               , prvKeys

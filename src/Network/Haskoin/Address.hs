@@ -43,17 +43,17 @@ import           Text.Read                        as R
 -- | Data type representing a Bitcoin address
 data Address
     -- | Public Key Hash Address
-    = PubKeyAddress { getAddrHash :: !Hash160
-                    , getAddrNet  :: !Network }
+    = PubKeyAddress { getAddrHash160 :: !Hash160
+                    , getAddrNet     :: !Network }
     -- | Script Hash Address
-    | ScriptAddress { getAddrHash :: !Hash160
-                    , getAddrNet  :: !Network }
+    | ScriptAddress { getAddrHash160 :: !Hash160
+                    , getAddrNet     :: !Network }
     -- | SegWit Public Key Hash Address
-    | WitnessPubKeyAddress { getAddrHash :: !Hash160
-                           , getAddrNet  :: !Network }
+    | WitnessPubKeyAddress { getAddrHash160 :: !Hash160
+                           , getAddrNet     :: !Network }
     -- | SegWit Script Hash Address
-    | WitnessScriptAddress { getScriptHash :: !Hash256
-                           , getAddrNet    :: !Network }
+    | WitnessScriptAddress { getAddrHash256 :: !Hash256
+                           , getAddrNet     :: !Network }
     deriving (Eq, G.Generic)
 
 instance Ord Address where
@@ -105,18 +105,18 @@ addrFromJSON net =
 
 -- | Transforms an Address into an encoded String
 addrToString :: Address -> Maybe ByteString
-addrToString a@PubKeyAddress {getAddrHash = h, getAddrNet = net}
+addrToString a@PubKeyAddress {getAddrHash160 = h, getAddrNet = net}
     | isNothing (getCashAddrPrefix net) =
         return $ encodeBase58Check $ runPut $ base58put a
     | otherwise = cashAddrEncode net 0 (S.encode h)
-addrToString a@ScriptAddress {getAddrHash = h, getAddrNet = net}
+addrToString a@ScriptAddress {getAddrHash160 = h, getAddrNet = net}
     | isNothing (getCashAddrPrefix net) =
         return $ encodeBase58Check $ runPut $ base58put a
     | otherwise = cashAddrEncode net 1 (S.encode h)
-addrToString WitnessPubKeyAddress {getAddrHash = h, getAddrNet = net} = do
+addrToString WitnessPubKeyAddress {getAddrHash160 = h, getAddrNet = net} = do
     hrp <- (getBech32Prefix net)
     segwitEncode hrp 0 (B.unpack (S.encode h))
-addrToString WitnessScriptAddress {getScriptHash = h, getAddrNet = net} = do
+addrToString WitnessScriptAddress {getAddrHash256 = h, getAddrNet = net} = do
     hrp <- (getBech32Prefix net)
     segwitEncode hrp 0 (B.unpack (S.encode h))
 

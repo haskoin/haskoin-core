@@ -99,7 +99,7 @@ bloomFilter3 =
   where
     f0 = bloomCreate 2 0.001 0 BloomUpdateAll
     f1 = bloomInsert f0 $ S.encode p
-    f2 = bloomInsert f1 $ S.encode $ getAddrHash $ pubKeyAddr btc p
+    f2 = bloomInsert f1 $ S.encode $ getAddrHash160 $ pubKeyAddr btc p
     k = fromJust $ fromWif btc "5Kg1gnAjaLfKiwhhPpGS3QfRg2m6awQvaj98JCZBZQ5SuS2F15C"
     p = derivePubKey k
     bs = fromJust $ decodeHex "038fc16b080000000000000001"

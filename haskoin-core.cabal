@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 647cb8c059c9d1eadbcb66b705081d5f53760cf26aabe684cb9ff940388fccfa
+-- hash: 4276138f5218124535499732eec8c90decb94244c8a2573e2ffec1db4b439606
 
 name:           haskoin-core
 version:        1.0.0
@@ -76,6 +76,7 @@ library
       Network.Haskoin.Block.Merkle
       Network.Haskoin.Block.Types
       Network.Haskoin.Constants
+      Network.Haskoin.Core
       Network.Haskoin.Crypto
       Network.Haskoin.Crypto.Hash
       Network.Haskoin.Crypto.Signature

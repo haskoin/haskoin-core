@@ -244,7 +244,7 @@ arbitraryMSCOutput = do
 -- | Arbitrary ScriptOutput of type PayScriptHash
 arbitrarySHOutput :: Network -> Gen ScriptOutput
 arbitrarySHOutput net =
-    PayScriptHash . getAddrHash <$> arbitraryScriptAddress net
+    PayScriptHash . getAddrHash160 <$> arbitraryScriptAddress net
 
 -- | Arbitrary ScriptOutput of type DataCarrier
 arbitraryDCOutput :: Gen ScriptOutput

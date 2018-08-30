@@ -3,6 +3,7 @@
 -}
 module Network.Haskoin.Test.Script where
 
+import           Data.Maybe
 import           Data.Word
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
@@ -201,13 +202,16 @@ arbitraryMSParam = do
 -- | Arbitrary ScriptOutput (Can by any valid type)
 arbitraryScriptOutput :: Network -> Gen ScriptOutput
 arbitraryScriptOutput net =
-    oneof
-        [ arbitraryPKOutput
-        , arbitraryPKHashOutput
-        , arbitraryMSOutput
-        , arbitrarySHOutput net
-        , arbitraryDCOutput
-        ]
+    oneof $
+    [ arbitraryPKOutput
+    , arbitraryPKHashOutput
+    , arbitraryMSOutput
+    , arbitrarySHOutput net
+    , arbitraryDCOutput
+    ] ++
+    if getSegWit net
+        then [arbitraryWPKHashOutput, arbitraryWSHOutput]
+        else []
 
 -- | Arbitrary ScriptOutput of type PayPK, PayPKHash or PayMS
 -- (Not PayScriptHash or DataCarrier)
@@ -226,6 +230,12 @@ arbitraryPKOutput =  PayPK . snd <$> arbitraryPubKey
 -- | Arbitrary ScriptOutput of type PayPKHash
 arbitraryPKHashOutput :: Gen ScriptOutput
 arbitraryPKHashOutput = PayPKHash <$> arbitraryHash160
+
+arbitraryWPKHashOutput :: Gen ScriptOutput
+arbitraryWPKHashOutput = PayWitnessPKHash <$> arbitraryHash160
+
+arbitraryWSHOutput :: Gen ScriptOutput
+arbitraryWSHOutput = PayWitnessScriptHash <$> arbitraryHash256
 
 -- | Arbitrary ScriptOutput of type PayMS
 arbitraryMSOutput :: Gen ScriptOutput

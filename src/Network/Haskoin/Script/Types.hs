@@ -662,7 +662,7 @@ decodeOutput s = case scriptOps s of
     [OP_HASH160, OP_PUSHDATA bs _, OP_EQUAL] ->
         PayScriptHash <$> S.decode  bs
     -- Pay to Witness
-    [OP_0, OP_PUSHDATA bs OPCODE, OP_EQUAL]
+    [OP_0, OP_PUSHDATA bs OPCODE]
       | BS.length bs == 20 -> PayWitnessPKHash     <$> S.decode bs
       | BS.length bs == 32 -> PayWitnessScriptHash <$> S.decode bs
     -- Provably unspendable data carrier output

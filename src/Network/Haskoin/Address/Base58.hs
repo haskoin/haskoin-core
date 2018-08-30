@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Address.Base58
-    ( encodeBase58
+    ( Base58
+    , encodeBase58
     , decodeBase58
     , encodeBase58Check
     , decodeBase58Check
@@ -27,19 +28,29 @@ import           Numeric                     (readInt, showIntAtBase)
 import           Text.Read                   (lexP, parens, pfail, readPrec)
 import qualified Text.Read                   as Read (Lexeme (Ident, String))
 
+-- | 'Base58' classic Bitcoin address format.
+type Base58 = ByteString
+
+-- | Symbols for Base58 encoding.
 b58Data :: ByteString
 b58Data = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
+-- | Convert a number less than or equal to provided integer into a 'Base58'
+-- character.
 b58 :: Int -> Char
 b58 = C.index b58Data
 
+-- | Convert a 'Base58' character into the number it represents.
 b58' :: Char -> Maybe Int
 b58' = flip C.elemIndex b58Data
 
-encodeBase58I :: Integer -> ByteString
+-- | Encode an arbitrary-length 'Integer' into a 'Base58' string. Leading zeroes
+-- will not be part of the resulting string.
+encodeBase58I :: Integer -> Base58
 encodeBase58I i = cs $ showIntAtBase 58 b58 i ""
 
-decodeBase58I :: ByteString -> Maybe Integer
+-- | Decode a 'Base58' string into an arbitrary-length 'Integer'.
+decodeBase58I :: Base58 -> Maybe Integer
 decodeBase58I s =
     case go of
         Just (r,[]) -> Just r
@@ -50,8 +61,9 @@ decodeBase58I s =
     go = listToMaybe $ readInt 58 p f (cs s)
     e  = error "Could not decode base58"
 
--- | Encode a 'ByteString' to a base 58 representation.
-encodeBase58 :: ByteString -> ByteString
+-- | Encode an arbitrary 'ByteString' into a its 'Base58' representation,
+-- preserving leading zeroes.
+encodeBase58 :: ByteString -> Base58
 encodeBase58 bs =
     l `mappend` r
   where
@@ -60,9 +72,8 @@ encodeBase58 bs =
     r | BS.null b = BS.empty
       | otherwise = encodeBase58I $ bsToInteger b
 
--- | Decode a base58-encoded 'ByteString'. This can fail if the input
--- 'ByteString' contains invalid base58 characters such as 0, O, l, I.
-decodeBase58 :: ByteString -> Maybe ByteString
+-- | Decode a 'Base58'-encoded 'ByteString'.
+decodeBase58 :: Base58 -> Maybe ByteString
 decodeBase58 t =
     BS.append prefix <$> r
   where
@@ -72,15 +83,15 @@ decodeBase58 t =
       | otherwise = integerToBS <$> decodeBase58I b
 
 -- | Computes a checksum for the input 'ByteString' and encodes the input and
--- the checksum to a base58 representation.
-encodeBase58Check :: ByteString -> ByteString
+-- the checksum as 'Base58'.
+encodeBase58Check :: ByteString -> Base58
 encodeBase58Check bs =
     encodeBase58 $ BS.append bs $ encode $ checkSum32 bs
 
--- | Decode a base58-encoded string that contains a checksum. This function
--- returns 'Nothing' if the input string contains invalid base58 characters or
+-- | Decode a 'Base58'-encoded string that contains a checksum. This function
+-- returns 'Nothing' if the input string contains invalid 'Base58' characters or
 -- if the checksum fails.
-decodeBase58Check :: ByteString -> Maybe ByteString
+decodeBase58Check :: Base58 -> Maybe ByteString
 decodeBase58Check bs = do
     rs <- decodeBase58 bs
     let (res, chk) = BS.splitAt (BS.length rs - 4) rs

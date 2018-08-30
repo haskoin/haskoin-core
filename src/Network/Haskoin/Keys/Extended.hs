@@ -4,6 +4,8 @@
 module Network.Haskoin.Keys.Extended
     (
       -- * Extended Keys
+      -- | See BIP32 for details:
+      -- <https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki>
       XPubKey(..)
     , XPrvKey(..)
     , ChainCode
@@ -64,7 +66,7 @@ module Network.Haskoin.Keys.Extended
     , listToPath
     , pathToList
 
-      -- *** Derivation Path Parsing
+      -- ** Derivation Path Parser
     , XKey(..)
     , ParsedPath(..)
     , parsePath
@@ -116,7 +118,6 @@ import           Network.Haskoin.Util
 import           Text.Read                       as R
 import           Text.Read.Lex
 
-{- See BIP32 for details: https://en.bitcoin.it/wiki/BIP_0032 -}
 
 -- | A derivation exception is thrown in the very unlikely event that a
 -- derivation is invalid.
@@ -132,11 +133,11 @@ type KeyIndex = Word32
 -- is a node in a tree of key derivations. It has a depth in the tree, a
 -- parent node and an index to differentiate it from other siblings.
 data XPrvKey = XPrvKey
-    { xPrvDepth  :: !Word8 -- ^ Depth in the tree of key derivations.
-    , xPrvParent :: !Word32 -- ^ Fingerprint of the parent key.
-    , xPrvIndex  :: !KeyIndex -- ^ Key derivation index.
-    , xPrvChain  :: !ChainCode -- ^ Chain code.
-    , xPrvKey    :: !PrvKeyC -- ^ The private key of this extended key node.
+    { xPrvDepth  :: !Word8     -- ^ depth in the tree
+    , xPrvParent :: !Word32    -- ^ fingerprint of parent
+    , xPrvIndex  :: !KeyIndex  -- ^ derivation index
+    , xPrvChain  :: !ChainCode -- ^ chain code
+    , xPrvKey    :: !PrvKeyC   -- ^ private key of this node
     , xPrvNet    :: !Network
     } deriving (Eq)
 
@@ -156,11 +157,11 @@ instance ToJSON XPrvKey where
 
 -- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
-    { xPubDepth  :: !Word8 -- ^ Depth in the tree of key derivations.
-    , xPubParent :: !Word32 -- ^ Fingerprint of the parent key.
-    , xPubIndex  :: !KeyIndex -- ^ Key derivation index.
-    , xPubChain  :: !ChainCode -- ^ Chain code.
-    , xPubKey    :: !PubKeyC -- ^ The public key of this extended key node.
+    { xPubDepth  :: !Word8     -- ^ depth in the tree
+    , xPubParent :: !Word32    -- ^ fingerprint of parent
+    , xPubIndex  :: !KeyIndex  -- ^ derivation index
+    , xPubChain  :: !ChainCode -- ^ chain code
+    , xPubKey    :: !PubKeyC   -- ^ public key of this node
     , xPubNet    :: !Network
     } deriving (Eq)
 
@@ -179,6 +180,7 @@ instance NFData XPubKey where
 instance ToJSON XPubKey where
     toJSON = A.String . cs . xPubExport
 
+-- | Decode an extended public key from a JSON string
 xPubFromJSON :: Network -> Value -> Parser XPubKey
 xPubFromJSON net =
     withText "xpub" $ \t ->
@@ -186,6 +188,7 @@ xPubFromJSON net =
             Nothing -> fail "could not read xpub"
             Just x  -> return x
 
+-- | Decode an extended private key from a JSON string
 xPrvFromJSON :: Network -> Value -> Parser XPrvKey
 xPrvFromJSON net =
     withText "xprv" $ \t ->
@@ -194,7 +197,7 @@ xPrvFromJSON net =
             Just x  -> return x
 
 -- | Build a BIP32 compatible extended private key from a bytestring. This will
--- produce a root node (depth=0 and parent=0).
+-- produce a root node (@depth=0@ and @parent=0@).
 makeXPrvKey :: Network -> ByteString -> XPrvKey
 makeXPrvKey net bs =
     XPrvKey 0 0 0 c k net
@@ -212,15 +215,15 @@ deriveXPubKey (XPrvKey d p i c k n) = XPubKey d p i c (derivePubKey k) n
 -- | Compute a private, soft child key derivation. A private soft derivation
 -- will allow the equivalent extended public key to derive the public key for
 -- this child. Given a parent key /m/ and a derivation index /i/, this function
--- will compute m\/i\/.
+-- will compute /m\/i/.
 --
 -- Soft derivations allow for more flexibility such as read-only wallets.
 -- However, care must be taken not the leak both the parent extended public key
 -- and one of the extended child private keys as this would compromise the
 -- extended parent private key.
-prvSubKey :: XPrvKey  -- ^ Extended parent private key
-          -> KeyIndex -- ^ Child derivation index
-          -> XPrvKey  -- ^ Extended child private key
+prvSubKey :: XPrvKey  -- ^ extended parent private key
+          -> KeyIndex -- ^ child derivation index
+          -> XPrvKey  -- ^ extended child private key
 prvSubKey xkey child
     | child >= 0 && child < 0x80000000 =
         XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) child c k (xPrvNet xkey)
@@ -233,10 +236,10 @@ prvSubKey xkey child
     err = throw $ DerivationException "Invalid prvSubKey derivation"
 
 -- | Compute a public, soft child key derivation. Given a parent key /M/
--- and a derivation index /i/, this function will compute M\/i\/.
-pubSubKey :: XPubKey  -- ^ Extended Parent public key
-          -> KeyIndex -- ^ Child derivation index
-          -> XPubKey  -- ^ Extended child public key
+-- and a derivation index /i/, this function will compute /M\/i/.
+pubSubKey :: XPubKey  -- ^ extended parent public key
+          -> KeyIndex -- ^ child derivation index
+          -> XPubKey  -- ^ extended child public key
 pubSubKey xKey child
     | child >= 0 && child < 0x80000000 =
         XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK (xPubNet xKey)
@@ -252,10 +255,10 @@ pubSubKey xKey child
 -- derive the child public keys. However, they are safer as a breach of the
 -- parent public key and child private keys does not lead to a breach of the
 -- parent private key. Given a parent key /m/ and a derivation index /i/, this
--- function will compute m\/i'\/.
-hardSubKey :: XPrvKey  -- ^ Extended Parent private key
-           -> KeyIndex -- ^ Child derivation index
-           -> XPrvKey  -- ^ Extended child private key
+-- function will compute /m\/i'/.
+hardSubKey :: XPrvKey  -- ^ extended parent private key
+           -> KeyIndex -- ^ child derivation index
+           -> XPrvKey  -- ^ extended child private key
 hardSubKey xkey child
     | child >= 0 && child < 0x80000000 =
         XPrvKey (xPrvDepth xkey + 1) (xPrvFP xkey) i c k (xPrvNet xkey)
@@ -267,12 +270,12 @@ hardSubKey xkey child
     k      = fromMaybe err $ tweakPrvKeyC (xPrvKey xkey) a
     err    = throw $ DerivationException "Invalid hardSubKey derivation"
 
--- | Returns True if the extended private key was derived through a hard
+-- | Returns true if the extended private key was derived through a hard
 -- derivation.
 xPrvIsHard :: XPrvKey -> Bool
 xPrvIsHard k = testBit (xPrvIndex k) 31
 
--- | Returns True if the extended public key was derived through a hard
+-- | Returns true if the extended public key was derived through a hard
 -- derivation.
 xPubIsHard :: XPubKey -> Bool
 xPubIsHard k = testBit (xPubIndex k) 31
@@ -313,28 +316,29 @@ xPubFP =
 xPubAddr :: XPubKey -> Address
 xPubAddr xkey = pubKeyAddr (xPubNet xkey) (xPubKey xkey)
 
--- | Exports an extended private key to the BIP32 key export format (base 58).
-xPrvExport :: XPrvKey -> ByteString
+-- | Exports an extended private key to the BIP32 key export format ('Base58').
+xPrvExport :: XPrvKey -> Base58
 xPrvExport = encodeBase58Check . runPut . putXPrvKey
 
--- | Exports an extended public key to the BIP32 key export format (base 58).
-xPubExport :: XPubKey -> ByteString
+-- | Exports an extended public key to the BIP32 key export format ('Base58').
+xPubExport :: XPubKey -> Base58
 xPubExport = encodeBase58Check . runPut . putXPubKey
 
 -- | Decodes a BIP32 encoded extended private key. This function will fail if
 -- invalid base 58 characters are detected or if the checksum fails.
-xPrvImport :: Network -> ByteString -> Maybe XPrvKey
+xPrvImport :: Network -> Base58 -> Maybe XPrvKey
 xPrvImport net = eitherToMaybe . runGet (getXPrvKey net) <=< decodeBase58Check
 
 -- | Decodes a BIP32 encoded extended public key. This function will fail if
 -- invalid base 58 characters are detected or if the checksum fails.
-xPubImport :: Network -> ByteString -> Maybe XPubKey
+xPubImport :: Network -> Base58 -> Maybe XPubKey
 xPubImport net = eitherToMaybe . runGet (getXPubKey net) <=< decodeBase58Check
 
 -- | Export an extended private key to WIF (Wallet Import Format).
-xPrvWif :: XPrvKey -> ByteString
+xPrvWif :: XPrvKey -> Base58
 xPrvWif xkey = toWif (xPrvNet xkey) (xPrvKey xkey)
 
+-- | Parse a binary extended private key.
 getXPrvKey :: Network -> Get XPrvKey
 getXPrvKey net = do
         ver <- getWord32be
@@ -347,6 +351,7 @@ getXPrvKey net = do
                 <*> getPadPrvKey
                 <*> pure net
 
+-- | Serialize an extended private key.
 putXPrvKey :: Putter XPrvKey
 putXPrvKey k = do
         putWord32be  $ getExtSecretPrefix (xPrvNet k)
@@ -356,6 +361,7 @@ putXPrvKey k = do
         put          $ xPrvChain k
         putPadPrvKey $ xPrvKey k
 
+-- | Parse a binary extended public key.
 getXPubKey :: Network -> Get XPubKey
 getXPubKey net = do
         ver <- getWord32be
@@ -368,6 +374,7 @@ getXPubKey net = do
                 <*> S.get
                 <*> pure net
 
+-- | Serialize an extended public key.
 putXPubKey :: Putter XPubKey
 putXPubKey k = do
         putWord32be $ getExtPubKeyPrefix (xPubNet k)
@@ -411,7 +418,7 @@ deriveAddrs k =
     f i = let (a, key) = deriveAddr k i in (a, key, i)
 
 -- | Derive a multisig address from a list of public keys, the number of
--- required signatures (m) and a derivation index. The derivation type is a
+-- required signatures /m/ and a derivation index. The derivation type is a
 -- public, soft derivation.
 deriveMSAddr :: Network -> [XPubKey] -> Int -> KeyIndex -> (Address, RedeemScript)
 deriveMSAddr net keys m i
@@ -422,7 +429,7 @@ deriveMSAddr net keys m i
     k = map (toPubKeyG . xPubKey . flip pubSubKey i) keys
 
 -- | Cyclic list of all multisig addresses derived from a list of public keys,
--- a number of required signatures (m) and starting from an offset index. The
+-- a number of required signatures /m/ and starting from an offset index. The
 -- derivation type is a public, soft derivation.
 deriveMSAddrs :: Network -> [XPubKey] -> Int -> KeyIndex
               -> [(Address, RedeemScript, KeyIndex)]
@@ -432,6 +439,7 @@ deriveMSAddrs net keys m = map f . cycleIndex
         let (a, rdm) = deriveMSAddr net keys m i
          in (a, rdm, i)
 
+-- | Helper function to go through derivation indices.
 cycleIndex :: KeyIndex -> [KeyIndex]
 cycleIndex i
     | i == 0         = cycle [0..0x7fffffff]
@@ -457,18 +465,19 @@ instance AnyOrSoft AnyDeriv
 instance AnyOrSoft SoftDeriv
 
 -- | Data type representing a derivation path. Two constructors are provided
--- for specifying soft or hard derivations. The path /0/1'/2 for example can be
--- expressed as Deriv :/ 0 :| 1 :/ 2. The HardOrAny and AnyOrSoft type
--- classes are used to constrain the valid values for the phantom type t. If
--- you mix hard (:|) and soft (:/) paths, the only valid type for t is AnyDeriv.
--- Otherwise, t can be HardDeriv if you only have hard derivation or SoftDeriv
+-- for specifying soft or hard derivations. The path /\/0\/1'\/2/ for example can be
+-- expressed as @'Deriv' :\/ 0 :| 1 :\/ 2@. The 'HardOrAny' and 'AnyOrSoft' type
+-- classes are used to constrain the valid values for the phantom type /t/. If
+-- you mix hard '(:|)' and soft '(:\/)' paths, the only valid type for /t/ is 'AnyDeriv'.
+-- Otherwise, /t/ can be 'HardDeriv' if you only have hard derivation or 'SoftDeriv'
 -- if you only have soft derivations.
 --
 -- Using this type is as easy as writing the required derivation like in these
 -- example:
--- Deriv :/ 0 :/ 1 :/ 2 :: SoftPath
--- Deriv :| 0 :| 1 :| 2 :: HardPath
--- Deriv :| 0 :/ 1 :/ 2 :: DerivPath
+--
+-- > Deriv :/ 0 :/ 1 :/ 2 :: SoftPath
+-- > Deriv :| 0 :| 1 :| 2 :: HardPath
+-- > Deriv :| 0 :/ 1 :/ 2 :: DerivPath
 data DerivPathI t where
     (:|)  :: HardOrAny t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
     (:/)  :: AnyOrSoft t => !(DerivPathI t) -> !KeyIndex -> DerivPathI t
@@ -490,6 +499,7 @@ instance Serialize DerivPath where
     get = listToPath <$> S.get
     put = put . pathToList
 
+-- | Get a list of derivation indices from a derivation path.
 pathToList :: DerivPathI t -> [KeyIndex]
 pathToList =
     reverse . go
@@ -498,6 +508,7 @@ pathToList =
     go (next :/ i) = i : go next
     go _           = []
 
+-- | Convert a list of derivation indices to a derivation path.
 listToPath :: [KeyIndex] -> DerivPath
 listToPath =
     go . reverse
@@ -507,6 +518,7 @@ listToPath =
         | otherwise    = go is :/ i
     go [] = Deriv
 
+-- | Convert a derivation path to a human-readable string.
 pathToStr :: DerivPathI t -> String
 pathToStr p =
     case p of
@@ -514,18 +526,23 @@ pathToStr p =
         next :/ i -> concat [ pathToStr next, "/", show i ]
         Deriv     -> ""
 
+-- | Turn a derivation path into a hard derivation path. Will fail if the path
+-- contains soft derivations.
 toHard :: DerivPathI t -> Maybe HardPath
 toHard p = case p of
     next :| i -> (:| i) <$> toHard next
     Deriv     -> Just Deriv
     _         -> Nothing
 
+-- | Turn a derivatino path into a soft derivation path. Will fail if the path
+-- has hard derivations.
 toSoft :: DerivPathI t -> Maybe SoftPath
 toSoft p = case p of
     next :/ i -> (:/ i) <$> toSoft next
     Deriv     -> Just Deriv
     _         -> Nothing
 
+-- | Make a derivation path generic.
 toGeneric :: DerivPathI t -> DerivPath
 toGeneric p = case p of
     next :/ i -> toGeneric next :/ i
@@ -646,6 +663,8 @@ instance ToJSON ParsedPath where
 
 {- Parsing derivation paths of the form m/1/2'/3 or M/1/2'/3 -}
 
+-- | Type for parsing derivation paths of the form /m\/1\/2'\/3/ or
+-- /M\/1\/2'\/3/.
 data ParsedPath = ParsedPrv   { getParsedPath :: !DerivPath }
                 | ParsedPub   { getParsedPath :: !DerivPath }
                 | ParsedEmpty { getParsedPath :: !DerivPath }
@@ -667,7 +686,7 @@ instance Read ParsedPath where
         maybe pfail return $ parsePath str
 
 -- | Parse derivation path string for extended key.
--- Forms: “m/0'/2”, “M/2/3/4”.
+-- Forms: /m\/0'\/2/, /M\/2\/3\/4/.
 parsePath :: String -> Maybe ParsedPath
 parsePath str = do
     res <- concatBip32Segments <$> mapM parseBip32PathIndex xs
@@ -679,19 +698,23 @@ parsePath str = do
   where
     (x : xs) = splitOn "/" str
 
+-- | Concatenate derivation path indices into a derivation path.
 concatBip32Segments :: [Bip32PathIndex] -> DerivPath
 concatBip32Segments = foldl' appendBip32Segment Deriv
 
+-- | Append an extra derivation path index element into an existing path.
 appendBip32Segment :: DerivPath -> Bip32PathIndex  -> DerivPath
 appendBip32Segment d (Bip32SoftIndex i) = d :/ i
 appendBip32Segment d (Bip32HardIndex i) = d :| i
 
+-- | Parse a BIP32 derivation path index element from a string.
 parseBip32PathIndex :: String -> Maybe Bip32PathIndex
 parseBip32PathIndex segment = case reads segment of
     [(i, "" )] -> guard (is31Bit i) >> return (Bip32SoftIndex i)
     [(i, "'")] -> guard (is31Bit i) >> return (Bip32HardIndex i)
     _          -> Nothing
 
+-- | Type for BIP32 path index element.
 data Bip32PathIndex = Bip32HardIndex KeyIndex
                     | Bip32SoftIndex KeyIndex
   deriving Eq
@@ -718,17 +741,19 @@ instance Read Bip32PathIndex where
                 maybe pfail return $
                     Bip32SoftIndex . fromIntegral <$> numberToInteger n
 
+-- | Test whether the number could be a valid BIP32 derivation index.
 is31Bit :: (Integral a) => a -> Bool
 is31Bit i = i >= 0 && i < 0x80000000
 
--- Helper function to parse a hard path
+-- | Helper function to parse a hard path.
 parseHard :: String -> Maybe HardPath
 parseHard = toHard . getParsedPath <=< parsePath
 
--- Helper function to parse a soft path
+-- | Helper function to parse a soft path.
 parseSoft :: String -> Maybe SoftPath
 parseSoft = toSoft . getParsedPath <=< parsePath
 
+-- | Data type representing a private or public key with its respective network.
 data XKey
     = XPrv { getXKeyPrv :: !XPrvKey
            , getXKeyNet :: !Network }
@@ -737,8 +762,8 @@ data XKey
     deriving (Eq, Show)
 
 -- | Apply a parsed path to an extended key to derive the new key defined in the
--- path. If the path starts with m/, a private key will be returned and if the
--- path starts with M/, a public key will be returned. Private derivations on a
+-- path. If the path starts with /m/, a private key will be returned and if the
+-- path starts with /M/, a public key will be returned. Private derivations on a
 -- public key, and public derivations with a hard segment, return an error
 -- value.
 applyPath :: ParsedPath -> XKey -> Either String XKey
@@ -806,14 +831,14 @@ derivePathMSAddrs net keys path =
 
 {- Utilities for extended keys -}
 
--- De-serialize HDW-specific private key
+-- | De-serialize HDW-specific private key.
 getPadPrvKey :: Get PrvKeyC
 getPadPrvKey = do
     pad <- getWord8
     unless (pad == 0x00) $ fail "Private key must be padded with 0x00"
     prvKeyGetMonad makePrvKeyC -- Compressed version
 
--- Serialize HDW-specific private key
+-- | Serialize HDW-specific private key.
 putPadPrvKey :: PrvKeyC -> Put
 putPadPrvKey p = putWord8 0x00 >> prvKeyPutMonad p
 

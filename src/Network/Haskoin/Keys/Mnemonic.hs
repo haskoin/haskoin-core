@@ -27,17 +27,28 @@ import           Data.Vector             (Vector, (!))
 import qualified Data.Vector             as V
 import           Network.Haskoin.Util
 
+-- | Random data used to create a mnemonic sentence. Use a good entropy source.
+-- You will get your coins stolen if you don't. You have been warned.
 type Entropy = ByteString
+
+-- | Human-readable mnemonic sentence.
 type Mnemonic = ByteString
+
+-- | Optional passphrase for mnemnoic sentence.
 type Passphrase = ByteString
+
+-- | Seed for a private key from a mnemonic sentence.
 type Seed = ByteString
+
+-- | Mnemonic key checksum.
 type Checksum = ByteString
 
+-- | Paremeters for PBKDF2 function.
 pbkdfParams :: Parameters
 pbkdfParams = Parameters {iterCounts = 2048, outputLength = 64}
 
--- | Provide intial entropy as a 'ByteString' of length multiple of 4 bytes.
--- Output a mnemonic sentence.
+-- | Provide intial 'Entropy' as a 'ByteString' of length multiple of 4 bytes.
+-- Output a 'Mnemonic' sentence.
 toMnemonic :: Entropy -> Either String Mnemonic
 toMnemonic ent = do
     when (BS.null ent) $
@@ -53,9 +64,9 @@ toMnemonic ent = do
     indices = bsToIndices $ ent `BS.append` c
     ms = C.unwords $ map (wl!) indices
 
--- | Revert 'toMnemonic'. Do not use this to generate seeds. Instead use
--- 'mnemonicToSeed'. This outputs the original entropy used to generate a
--- mnemonic.
+-- | Revert 'toMnemonic'. Do not use this to generate a 'Seed'. Instead use
+-- 'mnemonicToSeed'. This outputs the original 'Entropy' used to generate a
+-- 'Mnemonic' sentence.
 fromMnemonic :: Mnemonic -> Either String Entropy
 fromMnemonic ms = do
     when (BS.null ms) $
@@ -77,6 +88,7 @@ fromMnemonic ms = do
     (ent_len, cs_len) = (word_count * 11) `quotRem` 32
     sh cs_a cs_b = show cs_a ++ " /= " ++ show cs_b
 
+-- | Compute 'Checksum'.
 calcCS :: Int -> Entropy -> Checksum
 calcCS len = getBits len . BA.convert . hashWith SHA256
 
@@ -88,17 +100,16 @@ numCS len =
         8 -> id
         x -> flip shiftR x
 
--- | Turn any sequence of characters into a 512-bit seed.  Does not have to be
--- a mnemonic sentence generated from 'toMnemonic'.  Use 'mnemonicToSeed' to
--- get a seed from a mnemonic sentence.  Warning: Does not perform NFKD
--- normalization.
+-- | Turn an arbitrary sequence of characters into a 512-bit 'Seed'. Use
+-- 'mnemonicToSeed' to get a seed from a 'Mnemonic' sentence. Warning: Does not
+-- perform NFKD normalization.
 anyToSeed :: Passphrase -> Mnemonic -> Seed
 anyToSeed pf ms =
     fastPBKDF2_SHA512 pbkdfParams ms ("mnemonic" `mappend` pf)
 
--- | Get a 512-bit seed from a mnemonic sentence.  Will calculate checksum.
--- Passphrase can be used to protect the mnemonic.  Use an empty string as
--- passphrase if none is required.
+-- | Get a 512-bit 'Seed' from a 'Mnemonic' sentence. Will validate checksum.
+-- 'Passphrase' can be used to protect the 'Mnemonic'. Use an empty string as
+-- 'Passphrase' if none is required.
 mnemonicToSeed :: Passphrase -> Mnemonic -> Either String Seed
 mnemonicToSeed pf ms = do
     ent <- fromMnemonic ms
@@ -115,6 +126,7 @@ getIndices ws
     n = elemIndices Nothing i
     w = C.unwords $ map (ws !!) n
 
+-- | Turn a list of 11-bit numbers into a 'ByteString'
 indicesToBS :: [Int] -> Either String ByteString
 indicesToBS is = do
     when lrg $ Left "indicesToBS: index larger or equal than 2048"
@@ -133,6 +145,7 @@ indicesToBS is = do
     pad bs = BS.append (BS.replicate (bl - BS.length bs) 0x00) bs
     f acc x = (acc `shiftL` 11) + fromIntegral x
 
+-- | Turn a 'ByteString' into a list of 11-bit numbers.
 bsToIndices :: ByteString -> [Int]
 bsToIndices bs =
     reverse . go q $ bsToInteger bs `shiftR` r

@@ -66,6 +66,10 @@ spec = do
             property $
             forAll arbitraryBlockHash $ \h ->
                 fromString (cs $ blockHashToHex h) == h
+        it "show and read block hash" $
+            property $
+            forAll arbitraryBlockHash $ \h ->
+                read (show h) == h
         it "json block hash" $ property $ forAll arbitraryBlockHash testID
     describe "merkle trees" $ do
         let net = btc

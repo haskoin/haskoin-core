@@ -35,6 +35,7 @@ newtype Signature = Signature { getSignature :: EC.Sig }
 instance NFData Signature where
     rnf (Signature s) = s `seq` ()
 
+-- | Convert 256-bit key into an 'EC.Msg' for signing or verification.
 hashToMsg :: Hash256 -> EC.Msg
 hashToMsg =
     fromMaybe e . EC.msg . encode
@@ -73,12 +74,15 @@ instance Serialize Signature where
 
     put (Signature s) = putByteString $ EC.exportSig s
 
+-- | Is canonical half order.
 isCanonicalHalfOrder :: Signature -> Bool
 isCanonicalHalfOrder = not . snd . EC.normalizeSig . getSignature
 
+-- | Decode signature (not strictly).
 decodeLaxSig :: ByteString -> Maybe Signature
 decodeLaxSig bs = Signature <$> EC.laxImportSig bs
 
+-- | Decode signature strictly.
 decodeStrictSig :: ByteString -> Maybe Signature
 decodeStrictSig bs = do
     g <- EC.importSig bs

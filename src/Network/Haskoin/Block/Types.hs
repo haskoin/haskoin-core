@@ -1,6 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Network.Haskoin.Block.Types
-    ( Block(..)
+    ( -- * Block
+      Block(..)
     , BlockHeight
     , Timestamp
     , BlockHeader(..)
@@ -42,9 +43,13 @@ import           Network.Haskoin.Transaction.Types
 import           Network.Haskoin.Util
 import qualified Text.Read                         as R
 
+-- | Height of a block in the blockchain, starting at 0 for Genesis.
 type BlockHeight = Word32
+
+-- | Block timestamp as Unix time (seconds since 1970-01-01 00:00 UTC).
 type Timestamp = Word32
 
+-- | Block header and transactions.
 data Block =
     Block { blockHeader :: !BlockHeader
           , blockTxns   :: ![Tx]
@@ -64,6 +69,7 @@ instance Serialize Block where
         put $ VarInt $ fromIntegral $ length txs
         forM_ txs put
 
+-- | Block header hash. To be serialized reversed for display purposes.
 newtype BlockHash = BlockHash
     { getBlockHash :: Hash256 }
     deriving (Eq, Ord, NFData, Hashable, Serialize)
@@ -91,22 +97,25 @@ instance FromJSON BlockHash where
 instance ToJSON BlockHash where
     toJSON = String . cs . blockHashToHex
 
--- | Block hashes are reversed with respect to the regular byte order in a
--- SHA256 hash when displayed.
+-- | Block hashes are reversed with respect to the in-memory byte order in a
+-- block hash when displayed.
 blockHashToHex :: BlockHash -> ByteString
 blockHashToHex (BlockHash h) = encodeHex (BS.reverse (encode h))
 
+-- | Convert a human-readable hex block hash into a 'BlockHash'. Bytes are
+-- reversed as normal.
 hexToBlockHash :: ByteString -> Maybe BlockHash
 hexToBlockHash hex = do
     bs <- BS.reverse <$> decodeHex hex
     h <- eitherToMaybe (decode bs)
     return $ BlockHash h
 
--- | Data type recording information on a 'Block'. The hash of a block is
--- defined as the hash of this data structure. The block mining process involves
--- finding a partial hash collision by varying the nonce in the 'BlockHeader'
--- and/or additional entropy in the coinbase tx of this 'Block'. Variations in
--- the coinbase tx will result in different merkle roots in the 'BlockHeader'.
+-- | Data type recording information of a 'Block'. The hash of a block is
+-- defined as the hash of this data structure, serialized. The block mining
+-- process involves finding a partial hash collision by varying the nonce in the
+-- 'BlockHeader' and/or additional entropy in the coinbase 'Transaction' of this
+-- 'Block'. Variations in the coinbase will result in different merkle roots in
+-- the 'BlockHeader'.
 data BlockHeader =
     BlockHeader { -- | Block version information, based on the version of the
                   -- software creating this block.
@@ -118,7 +127,7 @@ data BlockHeader =
                   -- to this block.
                 , merkleRoot     :: !Hash256     -- 64 bytes
                   -- | Unix timestamp recording when this block was created
-                , blockTimestamp :: !Word32      -- 16 bytes
+                , blockTimestamp :: !Timestamp   -- 16 bytes
                   -- | The difficulty target being used for this block
                 , blockBits      :: !Word32      -- 16 bytes
                   -- | A random nonce used to generate this block. Additional
@@ -127,6 +136,7 @@ data BlockHeader =
                 , bhNonce        :: !Word32      -- 16 bytes
                 } deriving (Eq, Show, Ord)       -- 208 bytes (above + 16 bytes)
 
+-- | Compute hash of 'BlockHeader'.
 headerHash :: BlockHeader -> BlockHash
 headerHash = BlockHash . doubleSHA256 . encode
 
@@ -160,21 +170,23 @@ instance Serialize BlockHeader where
         putWord32le bb
         putWord32le n
 
+-- | A block locator is a set of block headers, denser towards the best block
+-- and sparser towards the genesis block. It starts at the highest block known.
+-- It is used by a node to synchronize against the network. When the locator is
+-- provided to a peer, it will send back block hashes starting from the first
+-- block in the locator that it recognizes.
 type BlockLocator = [BlockHash]
 
--- | Data type representing a GetBlocks message request. It is used in the
+-- | Data type representing a getblocks message request. It is used in the
 -- bitcoin protocol to retrieve blocks from a peer by providing it a
--- 'BlockLocator' object. The 'BlockLocator' is a sparse list of block hashes
--- from the caller node with the purpose of informing the receiving node
--- about the state of the caller's blockchain. The receiver node will detect
--- a wrong branch in the caller's main chain and send the caller appropriate
--- 'Blocks'. The response to a 'GetBlocks' message is an 'Inv' message
--- containing the list of block hashes pertaining to the request.
+-- 'BlockLocator' object. The response to a 'GetBlocks' message is an 'Inv'
+-- message containing a list of block hashes that the peer believes this node is
+-- missing.
 data GetBlocks =
-    GetBlocks { -- | The protocol version
+    GetBlocks { -- | Protocol version.
                 getBlocksVersion  :: !Word32
                 -- | Block locator object. It is a list of block hashes from the
-                -- most recent block back to the genesis block. The list is
+                -- most recent block back to the Genesis block. The list is
                 -- dense at first and sparse towards the end.
               , getBlocksLocator  :: !BlockLocator
                 -- | Hash of the last desired block. If set to zero, the
@@ -204,19 +216,19 @@ putGetBlockMsg v xs h = do
 
 -- | Similar to the 'GetBlocks' message type but for retrieving block headers
 -- only. The response to a 'GetHeaders' request is a 'Headers' message
--- containing a list of block headers pertaining to the request. A maximum of
--- 2000 block headers can be returned. 'GetHeaders' is used by thin (SPV)
+-- containing a list of block headers. A maximum of 2000 block headers can be
+-- returned. 'GetHeaders' is used by simplified payment verification (SPV)
 -- clients to exclude block contents when synchronizing the blockchain.
 data GetHeaders =
     GetHeaders {
-                 -- | The protocol version
+                 -- | Protocol version.
                  getHeadersVersion  :: !Word32
                  -- | Block locator object. It is a list of block hashes from
-                 -- the most recent block back to the Genesis block. The list
-                 -- is dense at first and sparse towards the end.
+                 -- the most recent block back to the Genesis block. The list is
+                 -- dense at first and sparse towards the end.
                , getHeadersBL       :: !BlockLocator
                  -- | Hash of the last desired block header. When set to zero,
-                 -- the maximum number of block headers is returned (2000)
+                 -- the maximum number of block headers is returned (2000).
                , getHeadersHashStop :: !BlockHash
                } deriving (Eq, Show)
 
@@ -239,7 +251,7 @@ type BlockHeaderCount = (BlockHeader, VarInt)
 -- | The 'Headers' type is used to return a list of block headers in
 -- response to a 'GetHeaders' message.
 newtype Headers =
-    Headers { -- | List of block headers with respective transaction counts
+    Headers { -- | List of block headers with respective transaction counts.
               headersList :: [BlockHeaderCount]
             }
     deriving (Eq, Show)
@@ -260,14 +272,16 @@ instance Serialize Headers where
 
 -- | Decode the compact number used in the difficulty target of a block.
 --
--- The "compact" format is a representation of a whole number N using an
--- unsigned 32bit number similar to a floating point format. The most
+-- The compact format is a representation of a whole number \(N\) using an
+-- unsigned 32-bit number similar to a floating point format. The most
 -- significant 8 bits are the unsigned exponent of base 256. This exponent can
--- be thought of as "number of bytes of N". The lower 23 bits are the mantissa.
--- Bit number 24 (0x800000) represents the sign of N.
+-- be thought of as the number of bytes of \(N\). The lower 23 bits are the
+-- mantissa. Bit number 24 represents the sign of \(N\).
 --
--- >    N = (-1^sign) * mantissa * 256^(exponent-3)
-decodeCompact :: Word32 -> (Integer, Bool) -- ^ overflow
+-- \[
+-- N = -1^{sign} \times mantissa \times 256^{exponent-3}
+-- \]
+decodeCompact :: Word32 -> (Integer, Bool) -- ^ true means overflow
 decodeCompact nCompact = (if neg then res * (-1) else res, over)
   where
     nSize :: Int
@@ -285,7 +299,7 @@ decodeCompact nCompact = (if neg then res * (-1) else res, over)
                           nWord > 0xff && nSize > 33 ||
                           nWord > 0xffff && nSize > 32)
 
--- | Encode an Integer to the compact number format used in the difficulty
+-- | Encode an 'Integer' to the compact number format used in the difficulty
 -- target of a block.
 encodeCompact :: Integer
               -> Word32

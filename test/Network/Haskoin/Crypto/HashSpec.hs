@@ -21,15 +21,6 @@ import           Test.QuickCheck
 
 spec :: Spec
 spec = do
-    describe "random number generator" $ do
-        it "suite 1" $ sequence_ [mapDRBG t1]
-        it "suite 2" $ sequence_ [mapDRBG t2]
-        it "suite 3" $ sequence_ [mapDRBG t3]
-        it "suite 4" $ sequence_ [mapDRBG t4]
-        it "suite 5 (reseed)" $ sequence_ [mapDRBGRsd r1]
-        it "suite 6 (reseed)" $ sequence_ [mapDRBGRsd r2]
-        it "suite 7 (reseed)" $ sequence_ [mapDRBGRsd r3]
-        it "suite 8 (reseed)" $ sequence_ [mapDRBGRsd r4]
     describe "hash" $ do
         it "join512( split512(h) ) == h" $
             property $
@@ -57,31 +48,6 @@ spec = do
             property $ forAll arbitraryHash512 cerealID
 
 type TestVector = [ByteString]
-
-mapDRBG :: [TestVector] -> Assertion
-mapDRBG vs = mapM_ testDRBG $ zip vs [0..]
-
-mapDRBGRsd :: [TestVector] -> Assertion
-mapDRBGRsd vs = mapM_ testDRBGRsd $ zip vs [0..]
-
-testDRBG :: (TestVector, Int) -> Assertion
-testDRBG (s,i) = do
-    let w1     = hmacDRBGNew (head v) (v !! 1) (v !! 2)
-        (w2,_) = hmacDRBGGen w1 128 (v !! 3)
-        (_,r)  = hmacDRBGGen w2 128 (v !! 4)
-    assertBool name $ fromJust r == (v !! 5)
-    where v = map (fromJust . decodeHex) s
-          name = "    > HMAC DRBG Vector " ++ show i
-
-testDRBGRsd :: (TestVector, Int) -> Assertion
-testDRBGRsd (s,i) = do
-    let w1 = hmacDRBGNew (head v) (v !! 1) (v !! 2)
-        w2 = hmacDRBGRsd w1 (v !! 3) (v !! 4)
-        (w3,_) = hmacDRBGGen w2 128 (v !! 5)
-        (_,r)  = hmacDRBGGen w3 128 (v !! 6)
-    assertBool name $ fromJust r == (v !! 7)
-    where v = map (fromJust . decodeHex) s
-          name = "    > HMAC DRBG Vector " ++ show i
 
 {-
     [SHA-256]

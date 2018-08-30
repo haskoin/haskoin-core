@@ -24,18 +24,34 @@ import           Debug.Trace
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Util
 
+-- | 'CashAddr' prefix, usually shown before the colon in addresses, but sometimes
+-- omitted. It is used in the checksum calculation to avoid parsing an address
+-- from the wrong network.
 type CashPrefix = ByteString
+
+-- | 'CashAddr' version, until new address schemes appear it will be zero.
 type CashVersion = Word8
+
+-- | High level 'CashAddr' human-reabale string, with explicit or implicit prefix.
 type CashAddr = ByteString
+
+-- | Low level 'Cash32' is the human-readable low-level encoding used by 'CashAddr'. It
+-- need not encode a valid address but any binary data.
 type Cash32 = ByteString
+
+-- | Internal type for encoding Base32 data.
 type Word5 = Word8
 
+-- | Symbols for encoding 'Cash32' data in human-readable strings.
 charset :: [Char]
 charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 
+-- | Get the 32-bit number associated with this 'Cash32' character.
 base32char :: Char -> Maybe Word8
 base32char = fmap fromIntegral . (`elemIndex` charset)
 
+-- | High-Level: Decode 'CashAddr' string if it is valid for the
+-- provided 'Network'. Prefix may be omitted from the string.
 cashAddrDecode :: Network -> CashAddr -> Maybe (CashVersion, ByteString)
 cashAddrDecode net ca' = do
     epfx <- getCashAddrPrefix net
@@ -55,6 +71,8 @@ cashAddrDecode net ca' = do
   where
     ca = C.map toLower ca'
 
+-- | High-Level: Encode 'CashAddr' string for the provided network and hash.
+-- Fails if the 'CashVersion' or length of hash 'ByteString' is invalid.
 cashAddrEncode :: Network -> CashVersion -> ByteString -> Maybe CashAddr
 cashAddrEncode net cv bs = do
     pfx <- getCashAddrPrefix net
@@ -64,6 +82,8 @@ cashAddrEncode net cv bs = do
         pl = vb `B.cons` bs
     return (cash32encode pfx pl)
 
+-- | Low-Level: Decode 'Cash32' string. 'CashPrefix' must be part of the string.
+-- No version or hash length validation is performed.
 cash32decode :: Cash32 -> Maybe (CashPrefix, ByteString)
 cash32decode bs' = do
     let bs = C.map toLower bs'
@@ -80,12 +100,14 @@ cash32decode bs' = do
         cs = cash32Polymod pd
         bb = B.take (B.length b32 - 8) b32
     guard (verifyCash32Polymod cs)
-    let out = toBase256 (B.unpack bb)
-    return (pfx, B.pack out)
+    let out = toBase256 bb
+    return (pfx, out)
 
+-- | Low-Level: Encode 'Cash32' string for 'CashPrefix' provided. Can encode
+-- arbitrary data. No prefix or length validation is performed.
 cash32encode :: CashPrefix -> ByteString -> Cash32
 cash32encode pfx bs =
-    let b32 = B.pack (toBase32 (B.unpack bs))
+    let b32 = toBase32 bs
         px = B.map (.&. 0x1f) pfx
         pd = px <> B.singleton 0 <> b32 <> B.replicate 8 0
         cs = cash32Polymod pd
@@ -93,25 +115,38 @@ cash32encode pfx bs =
         f = fromIntegral . ord . (charset !!) . fromIntegral
     in pfx <> ":" <> c32
 
-toBase32 :: [Word8] -> [Word5]
-toBase32 = map fromIntegral . fst . convertBits True 8 5 . map fromIntegral
+-- | Convert base of 'ByteString' from eight bits per byte to five bits per
+-- byte, adding padding as necessary.
+toBase32 :: ByteString -> ByteString
+toBase32 =
+    B.pack .
+    map fromIntegral . fst . convertBits True 8 5 . map fromIntegral . B.unpack
 
-toBase256 :: [Word5] -> [Word8]
-toBase256 = map fromIntegral . fst . convertBits False 5 8 . map fromIntegral
+-- | Convert base of 'ByteString' from five to eight bits per byte. Ignore
+-- padding to be symmetric with respect to 'toBase32' function.
+toBase256 :: ByteString -> ByteString
+toBase256 =
+    B.pack .
+    map fromIntegral . fst . convertBits False 5 8 . map fromIntegral . B.unpack
 
+-- | Obtain 'CashVersion' from 'CashAddr' version byte.
 decodeCashVersion :: Word8 -> Word8
 decodeCashVersion ver = ver `shiftR` 3
 
+-- | Encode 'CashVersion' from byte. Fail if version is larger than five bits,
+-- since that is invalid.
 encodeCashVersion :: Word8 -> Maybe Word8
 encodeCashVersion ver = do
     guard (ver == ver .&. 0x1f)
     return (ver `shiftL` 3)
 
+-- | Decode length of hash from 'CashAddr' version byte.
 decodeCashLength :: Word8 -> Int
 decodeCashLength w8 = lengths !! fromIntegral (w8 .&. 0x07)
   where
     lengths = [20, 24, 28, 32, 40, 48, 56, 64]
 
+-- | Encode length of hash into a 'CashAddr' version byte.
 encodeCashLength :: Int -> Maybe Word8
 encodeCashLength len
     | len == 20 = Just 0
@@ -124,7 +159,8 @@ encodeCashLength len
     | len == 64 = Just 7
     | otherwise = Nothing
 
-cash32Polymod :: Cash32 -> Cash32
+-- | Calculate or validate checksum from base32 'ByteString' (excluding prefix).
+cash32Polymod :: ByteString -> ByteString
 cash32Polymod v =
     B.pack
         [fromIntegral (polymod `shiftR` (5 * (7 - i))) .&. 0x1f | i <- [0 .. 7]]
@@ -140,5 +176,6 @@ cash32Polymod v =
         | c0 `testBit` b = c `xor` g
         | otherwise = c
 
+-- | Validate that polymod 'ByteString' (eight bytes) is equal to zero.
 verifyCash32Polymod :: ByteString -> Bool
 verifyCash32Polymod = (== B.replicate 8 0)

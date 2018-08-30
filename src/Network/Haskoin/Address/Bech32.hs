@@ -1,6 +1,7 @@
 {- Copied from reference implementation contributed by Marko Bencun -}
 module Network.Haskoin.Address.Bech32
     ( HRP
+    , Bech32
     , Data
     , bech32Encode
     , bech32Decode
@@ -27,13 +28,20 @@ import           Data.Functor.Identity (Identity, runIdentity)
 import           Data.Ix               (Ix (..))
 import           Data.Word             (Word8)
 
+-- | Bech32 human-readable string.
+type Bech32 = ByteString
+
+-- | Human-readable part of 'Bech32' address.
 type HRP = ByteString
+
+-- | Data part of 'Bech32' address.
 type Data = [Word8]
 
 (.>>.), (.<<.) :: Bits a => a -> Int -> a
 (.>>.) = unsafeShiftR
 (.<<.) = unsafeShiftL
 
+-- | Five-bit word for Bech32.
 newtype Word5 =
     UnsafeWord5 Word8
     deriving (Eq, Ord)
@@ -43,19 +51,24 @@ instance Ix Word5 where
     index (UnsafeWord5 m, UnsafeWord5 n) (UnsafeWord5 i) = index (m, n) i
     inRange (m, n) i = m <= i && i <= n
 
+-- | Convert an integer number into a five-bit word.
 word5 :: Integral a => a -> Word5
 word5 x = UnsafeWord5 ((fromIntegral x) .&. 31)
 {-# INLINE word5 #-}
 {-# SPECIALIZE INLINE word5 :: Word8 -> Word5 #-}
 
+-- | Convert a five-bit word into a number.
 fromWord5 :: Num a => Word5 -> a
 fromWord5 (UnsafeWord5 x) = fromIntegral x
 {-# INLINE fromWord5 #-}
 {-# SPECIALIZE INLINE fromWord5 :: Word5 -> Word8 #-}
 
+-- | 'Bech32' character map as array of five-bit integers to character.
 charset :: Array Word5 Char
-charset = listArray (UnsafeWord5 0, UnsafeWord5 31) "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+charset =
+    listArray (UnsafeWord5 0, UnsafeWord5 31) "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 
+-- | Convert a character to its five-bit value from 'Bech32' 'charset'.
 charsetMap :: Char -> Maybe Word5
 charsetMap c
     | inRange (bounds inv) upperC = inv ! upperC
@@ -65,6 +78,7 @@ charsetMap c
     inv = listArray ('0', 'Z') (repeat Nothing) // (map swap (assocs charset))
     swap (a, b) = (toUpper b, Just a)
 
+-- | Calculate or validate 'Bech32' checksum.
 bech32Polymod :: [Word5] -> Word
 bech32Polymod values = foldl' go 1 values .&. 0x3fffffff
   where
@@ -74,11 +88,14 @@ bech32Polymod values = foldl' go 1 values .&. 0x3fffffff
         generator = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3]
         chk' = chk .<<. 5 `xor` (fromWord5 value)
 
+-- | Convert human-readable part of 'Bech32' string into a list of five-bit
+-- words.
 bech32HRPExpand :: HRP -> [Word5]
 bech32HRPExpand hrp =
     map (UnsafeWord5 . (.>>. 5)) (B.unpack hrp) ++
     [UnsafeWord5 0] ++ map word5 (B.unpack hrp)
 
+-- | Calculate checksum for a string of five-bit words.
 bech32CreateChecksum :: HRP -> [Word5] -> [Word5]
 bech32CreateChecksum hrp dat = [word5 (polymod .>>. i) | i <- [25,20 .. 0]]
   where
@@ -86,10 +103,14 @@ bech32CreateChecksum hrp dat = [word5 (polymod .>>. i) | i <- [25,20 .. 0]]
     polymod =
         bech32Polymod (values ++ map UnsafeWord5 [0, 0, 0, 0, 0, 0]) `xor` 1
 
+-- | Verify checksum for a human-readable part and string of five-bit words.
 bech32VerifyChecksum :: HRP -> [Word5] -> Bool
 bech32VerifyChecksum hrp dat = bech32Polymod (bech32HRPExpand hrp ++ dat) == 1
 
-bech32Encode :: HRP -> [Word5] -> Maybe ByteString
+-- | Encode string of five-bit words into 'Bech32' using a provided
+-- human-readable part. Can fail if 'HRP' is invalid or result would be longer
+-- than 90 words.
+bech32Encode :: HRP -> [Word5] -> Maybe Bech32
 bech32Encode hrp dat = do
     guard $ checkHRP hrp
     let dat' = dat ++ bech32CreateChecksum hrp dat
@@ -98,10 +119,13 @@ bech32Encode hrp dat = do
     guard $ B.length result <= 90
     return result
 
-checkHRP :: ByteString -> Bool
+-- | Check that human-readable part is valid for a 'Bech32' string.
+checkHRP :: HRP -> Bool
 checkHRP hrp = not (B.null hrp) && B.all (\char -> char >= 33 && char <= 126) hrp
 
-bech32Decode :: ByteString -> Maybe (HRP, [Word5])
+-- | Decode human-readable 'Bech32' string into a human-readable part and a
+-- string of five-bit words.
+bech32Decode :: Bech32 -> Maybe (HRP, [Word5])
 bech32Decode bech32 = do
     guard $ B.length bech32 <= 90
     guard $ C.map toUpper bech32 == bech32 || C.map toLower bech32 == bech32
@@ -126,10 +150,10 @@ noPadding frombits bits padValue result = do
     return result
 {-# INLINE noPadding #-}
 
--- Big endian conversion of a bytestring from base 2^frombits to base 2^tobits.
--- frombits and twobits must be positive and 2^frombits and 2^tobits must be
--- smaller than the size of Word. Every value in dat must be strictly smaller
--- than 2^frombits.
+-- | Big endian conversion of a bytestring from base \(2^{frombits}\) to base
+-- \(2^{tobits}\). {frombits} and {twobits} must be positive and
+-- \(2^{frombits}\) and \(2^{tobits}\) must be smaller than the size of Word.
+-- Every value in 'dat' must be strictly smaller than \(2^{frombits}\).
 convertBits :: Functor f => [Word] -> Int -> Int -> Pad f -> f [Word]
 convertBits dat frombits tobits pad = fmap (concat . reverse) $ go dat 0 0 []
   where
@@ -148,13 +172,16 @@ convertBits dat frombits tobits pad = fmap (concat . reverse) $ go dat 0 0 []
     maxv = (1 .<<. tobits) - 1
 {-# INLINE convertBits #-}
 
+-- | Convert from eight-bit to five-bit word string, adding padding as required.
 toBase32 :: [Word8] -> [Word5]
 toBase32 dat =
     map word5 $ runIdentity $ convertBits (map fromIntegral dat) 8 5 yesPadding
 
+-- | Convert from five-bit word string to eight-bit word string, ignoring padding.
 toBase256 :: [Word5] -> Maybe [Word8]
 toBase256 dat = fmap (map fromIntegral) $ convertBits (map fromWord5 dat) 5 8 noPadding
 
+-- | Check if witness version and program are valid.
 segwitCheck :: Word8 -> Data -> Bool
 segwitCheck witver witprog =
     witver <= 16 &&
@@ -162,7 +189,8 @@ segwitCheck witver witprog =
         then length witprog == 20 || length witprog == 32
         else length witprog >= 2 && length witprog <= 40
 
-segwitDecode :: HRP -> ByteString -> Maybe (Word8, Data)
+-- | Decode SegWit 'Bech32' address from a string and expected human-readable part.
+segwitDecode :: HRP -> Bech32 -> Maybe (Word8, Data)
 segwitDecode hrp addr = do
     (hrp', dat) <- bech32Decode addr
     guard $ (hrp == hrp') && not (null dat)
@@ -171,6 +199,8 @@ segwitDecode hrp addr = do
     guard $ segwitCheck witver decoded
     return (witver, decoded)
 
+-- | Encode 'Data' as a SegWit 'Bech32' address. Needs human-readable part and
+-- witness program version.
 segwitEncode :: HRP -> Word8 -> Data -> Maybe ByteString
 segwitEncode hrp witver witprog = do
     guard $ segwitCheck witver witprog

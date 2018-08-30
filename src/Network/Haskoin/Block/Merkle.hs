@@ -1,23 +1,25 @@
 module Network.Haskoin.Block.Merkle
-    ( MerkleRoot
+    ( -- * Merkle Block
+      MerkleBlock(..)
+    , MerkleRoot
     , FlagBits
     , PartialMerkleTree
-    , MerkleBlock(..)
+    , buildMerkleRoot
+    , merkleBlockTxs
+    , testMerkleRoot
+    -- ** Helper functions
+    , buildPartialMerkle
     , decodeMerkleFlags
     , encodeMerkleFlags
     , calcTreeHeight
     , calcTreeWidth
-    , buildMerkleRoot
     , hash2
     , calcHash
-    , buildPartialMerkle
     , traverseAndBuild
     , traverseAndExtract
     , extractMatches
     , splitIn
     , boolsToWord8
-    , merkleBlockTxs
-    , testMerkleRoot
     ) where
 
 import           Control.DeepSeq                   (NFData, rnf)
@@ -36,23 +38,26 @@ import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Network.Types
 import           Network.Haskoin.Transaction.Types
 
+-- | Hash of the block's Merkle root.
 type MerkleRoot        = Hash256
+
+-- | Bits that are used to rebuild partial merkle tree transaction hash list.
 type FlagBits          = [Bool]
+
+-- | Partial Merkle tree for a filtered block.
 type PartialMerkleTree = [Hash256]
 
+-- | Filtered block: a block with a partial Merkle tree that only includes the
+-- transactions that pass a bloom filter that was negotiated.
 data MerkleBlock =
     MerkleBlock {
-                -- | Header information for this merkle block.
+                -- | block header
                   merkleHeader    :: !BlockHeader
-                -- | Number of transactions in the block (including
-                -- unmatched transactions).
+                -- | total number of transactions in block
                 , merkleTotalTxns :: !Word32
-                -- | Hashes in depth-first order. They are used to rebuild a
-                -- partial merkle tree.
+                -- | hashes in depth-first order
                 , mHashes         :: !PartialMerkleTree
-                -- | Flag bits, packed per 8 in a byte. Least significant bit
-                -- first. Flag bits are used to rebuild a partial merkle
-                -- tree.
+                -- | bits to rebuild partial merkle tree
                 , mFlags          :: !FlagBits
                 } deriving (Eq, Show)
 
@@ -79,42 +84,45 @@ instance Serialize MerkleBlock where
         put $ VarInt $ fromIntegral $ length ws
         forM_ ws putWord8
 
-decodeMerkleFlags :: [Word8] -> [Bool]
+-- | Unpack Merkle flags into 'FlagBits' structure.
+decodeMerkleFlags :: [Word8] -> FlagBits
 decodeMerkleFlags ws =
     [ b | p <- [ 0 .. length ws * 8 - 1 ]
         , b <- [ testBit (ws !! (p `div` 8)) (p `mod` 8) ]
     ]
 
-encodeMerkleFlags :: [Bool] -> [Word8]
+-- | Pack Merkle flags from 'FlagBits'.
+encodeMerkleFlags :: FlagBits -> [Word8]
 encodeMerkleFlags bs = map boolsToWord8 $ splitIn 8 bs
 
--- | Computes the height of a merkle tree.
-calcTreeHeight :: Int -- ^ Number of transactions (leaf nodes).
-               -> Int -- ^ Height of the merkle tree.
+-- | Computes the height of a Merkle tree.
+calcTreeHeight :: Int -- ^ number of transactions (leaf nodes)
+               -> Int -- ^ height of the merkle tree
 calcTreeHeight ntx | ntx < 2 = 0
                    | even ntx  = 1 + calcTreeHeight (ntx `div` 2)
                    | otherwise = calcTreeHeight $ ntx + 1
 
--- | Computes the width of a merkle tree at a specific height. The transactions
+-- | Computes the width of a Merkle tree at a specific height. The transactions
 -- are at height 0.
-calcTreeWidth :: Int -- ^ Number of transactions (leaf nodes).
-              -> Int -- ^ Height at which we want to compute the width.
-              -> Int -- ^ Width of the merkle tree.
+calcTreeWidth :: Int -- ^ number of transactions (leaf nodes)
+              -> Int -- ^ height at which we want to compute the width
+              -> Int -- ^ width of the Merkle tree
 calcTreeWidth ntx h = (ntx + (1 `shiftL` h) - 1) `shiftR` h
 
--- | Computes the root of a merkle tree from a list of leaf node hashes.
-buildMerkleRoot :: [TxHash]   -- ^ List of transaction hashes (leaf nodes).
-                -> MerkleRoot -- ^ Root of the merkle tree.
+-- | Computes the root of a Merkle tree from a list of leaf node hashes.
+buildMerkleRoot :: [TxHash]   -- ^ transaction hashes (leaf nodes)
+                -> MerkleRoot -- ^ root of the Merkle tree
 buildMerkleRoot txs = calcHash (calcTreeHeight $ length txs) 0 txs
 
+-- | Concatenate and compute double SHA256.
 hash2 :: Hash256 -> Hash256 -> Hash256
 hash2 a b = doubleSHA256 $ encode a `BS.append` encode b
 
--- | Computes the hash of a specific node in a merkle tree.
-calcHash :: Int       -- ^ Height of the node in the merkle tree.
-         -> Int       -- ^ Position of the node (0 for the leftmost node).
-         -> [TxHash]  -- ^ Transaction hashes of the merkle tree (leaf nodes).
-         -> Hash256   -- ^ Hash of the node at the specified position.
+-- | Computes the hash of a specific node in a Merkle tree.
+calcHash :: Int       -- ^ height of the node
+         -> Int       -- ^ position of the node (0 for the leftmost node)
+         -> [TxHash]  -- ^ transaction hashes (leaf nodes)
+         -> Hash256   -- ^ hash of the node at the specified position
 calcHash height pos txs
     | height < 0 || pos < 0 = error "calcHash: Invalid parameters"
     | height == 0 = getTxHash $ txs !! pos
@@ -125,33 +133,35 @@ calcHash height pos txs
                 calcHash (height-1) (pos*2+1) txs
           | otherwise = left
 
--- | Build a partial merkle tree.
-buildPartialMerkle
-    :: [(TxHash,Bool)]
-    -- ^ List of transactions hashes forming the leaves of the merkle tree
-    -- and a bool indicating if that transaction should be included in the
-    -- partial merkle tree.
-    -> (FlagBits, PartialMerkleTree)
-    -- ^ Flag bits (used to parse the partial merkle tree) and the
-    -- partial merkle tree.
+-- | Build a partial Merkle tree. Provide a list of tuples with all transaction
+-- hashes in the block, and whether the transaction is to be included in the
+-- partial tree. Returns a flag bits structure and the computed partial Merkle
+-- tree.
+buildPartialMerkle ::
+       [(TxHash, Bool)] -- ^ transaction hash and whether to include
+    -> (FlagBits, PartialMerkleTree) -- ^ flag bits and partial Merkle tree
 buildPartialMerkle hs = traverseAndBuild (calcTreeHeight $ length hs) 0 hs
 
-traverseAndBuild :: Int -> Int -> [(TxHash,Bool)]
-                 -> (FlagBits, PartialMerkleTree)
+-- | Helper function to build partial Merkle tree. Used by 'buildPartialMerkle'
+-- above.
+traverseAndBuild ::
+       Int -> Int -> [(TxHash, Bool)] -> (FlagBits, PartialMerkleTree)
 traverseAndBuild height pos txs
     | height < 0 || pos < 0 = error "traverseAndBuild: Invalid parameters"
-    | height == 0 || not match = ([match],[calcHash height pos t])
+    | height == 0 || not match = ([match], [calcHash height pos t])
     | otherwise = (match : lb ++ rb, lh ++ rh)
   where
     t = map fst txs
     s = pos `shiftL` height
-    e = min (length txs) $ (pos+1) `shiftL` height
-    match = any snd $ take (e-s) $ drop s txs
-    (lb,lh) = traverseAndBuild (height-1) (pos*2) txs
-    (rb,rh) | (pos*2+1) < calcTreeWidth (length txs) (height-1)
-                = traverseAndBuild (height-1) (pos*2+1) txs
-            | otherwise = ([],[])
+    e = min (length txs) $ (pos + 1) `shiftL` height
+    match = any snd $ take (e - s) $ drop s txs
+    (lb, lh) = traverseAndBuild (height - 1) (pos * 2) txs
+    (rb, rh)
+        | (pos * 2 + 1) < calcTreeWidth (length txs) (height - 1) =
+            traverseAndBuild (height - 1) (pos * 2 + 1) txs
+        | otherwise = ([], [])
 
+-- | Helper function to extract transaction hashes from partial Merkle tree.
 traverseAndExtract :: Int -> Int -> Int -> FlagBits -> PartialMerkleTree
                    -> Maybe (MerkleRoot, [TxHash], Int, Int)
 traverseAndExtract height pos ntx flags hashes
@@ -177,14 +187,14 @@ traverseAndExtract height pos ntx flags hashes
     e = error "traverseAndExtract: unexpected error extracting a Maybe value"
 
 -- | Extracts the matching hashes from a partial merkle tree. This will return
--- the list of transaction hashes that have been included (set to True) in
+-- the list of transaction hashes that have been included (set to true) in
 -- a call to 'buildPartialMerkle'.
 extractMatches :: Network
-               -> FlagBits -- ^ Flag bits (produced by buildPartialMerkle).
-               -> PartialMerkleTree -- ^ Partial merkle tree.
-               -> Int -- ^ Number of transaction at height 0 (leaf nodes).
+               -> FlagBits
+               -> PartialMerkleTree
+               -> Int -- ^ number of transaction at height 0 (leaf nodes)
                -> Either String (MerkleRoot, [TxHash])
-               -- ^ Merkle root and the list of matching transaction hashes.
+               -- ^ Merkle root and list of matching transaction hashes
 extractMatches net flags hashes ntx
     | ntx == 0 = Left
         "extractMatches: number of transactions can not be 0"
@@ -206,14 +216,19 @@ extractMatches net flags hashes ntx
     (merkRoot, matches, nBitsUsed, nHashUsed) = fromMaybe e resM
     e = error "extractMatches: unexpected error extracting a Maybe value"
 
+-- | Helper function to split a list.
 splitIn :: Int -> [a] -> [[a]]
 splitIn _ [] = []
-splitIn c xs = take c xs : splitIn c (drop c xs)
+splitIn c xs = xs1 : splitIn c xs2
+  where
+    (xs1, xs2) = splitAt c xs
 
+-- | Pack up to eight bools in a byte.
 boolsToWord8 :: [Bool] -> Word8
 boolsToWord8 [] = 0
 boolsToWord8 xs = foldl setBit 0 (map snd $ filter fst $ zip xs [0..7])
 
+-- | Get matching transactions from Merkle block.
 merkleBlockTxs :: Network -> MerkleBlock -> Either String [TxHash]
 merkleBlockTxs net b =
     let flags = mFlags b
@@ -224,5 +239,6 @@ merkleBlockTxs net b =
           when (root /= merkle) $ Left "merkleBlockTxs: Merkle root incorrect"
           return ths
 
+-- | Check if Merkle block root is valid against the block header.
 testMerkleRoot :: Network -> MerkleBlock -> Bool
 testMerkleRoot net = isRight . merkleBlockTxs net

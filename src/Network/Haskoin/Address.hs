@@ -42,15 +42,20 @@ import           Network.Haskoin.Keys.Types
 import           Network.Haskoin.Util
 import           Text.Read                        as R
 
+-- | Address format for Bitcoin and Bitcoin Cash.
 data Address
+    -- | Common Bitcoin or Bitcoin Cash pay-to-public-key-hash (P2PKH) address.
     = PubKeyAddress { getAddrHash160 :: !Hash160
-                    , getAddrNet     :: !Network }
+                    , getAddrNet :: !Network }
+    -- | Bitcoin or Bitcoin Cash pay-to-script-hash (P2SH) address.
     | ScriptAddress { getAddrHash160 :: !Hash160
-                    , getAddrNet     :: !Network }
+                    , getAddrNet :: !Network }
+    -- | SegWit pay-to-witness-public-key-hash (P2WPKH) address. Only SegWit networks.
     | WitnessPubKeyAddress { getAddrHash160 :: !Hash160
-                           , getAddrNet     :: !Network }
+                           , getAddrNet :: !Network }
+    -- | SegWit pay-to-witness-script-hash (P2WSH) address. Only SegWit networks.
     | WitnessScriptAddress { getAddrHash256 :: !Hash256
-                           , getAddrNet     :: !Network }
+                           , getAddrNet :: !Network }
     deriving (Eq, G.Generic)
 
 instance Ord Address where
@@ -63,6 +68,7 @@ instance Ord Address where
 
 instance NFData Address
 
+-- | Binary decoder (cereal) for 'Base58' addresses.
 base58get :: Network -> Get Address
 base58get net = do
     pfx <- getWord8
@@ -74,6 +80,7 @@ base58get net = do
         | x == getScriptPrefix net = return (ScriptAddress a net)
         | otherwise = fail "Does not recognize address prefix"
 
+-- | Binary encoder (cereal) for 'Base58' addresses.
 base58put :: Putter Address
 base58put (PubKeyAddress h net) = do
         putWord8 (getAddrPrefix net)
@@ -93,6 +100,8 @@ instance ToJSON Address where
         A.String .
         cs . fromMaybe (error "Could not encode address") . addrToString
 
+-- | JSON parsing for Bitcoin addresses. Works with 'Base58', 'CashAddr' and
+-- 'Bech32'.
 addrFromJSON :: Network -> Value -> Parser Address
 addrFromJSON net =
     withText "address" $ \t ->
@@ -100,6 +109,8 @@ addrFromJSON net =
             Nothing -> fail "could not decode address"
             Just x  -> return x
 
+-- | Convert address to string. Uses 'Base58' and 'Bech32' for Bitcoin addresses
+-- and 'CashAddr' for Bitcoin Cash addreses.
 addrToString :: Address -> Maybe ByteString
 addrToString a@PubKeyAddress {getAddrHash160 = h, getAddrNet = net}
     | isNothing (getCashAddrPrefix net) =
@@ -116,6 +127,7 @@ addrToString WitnessScriptAddress {getAddrHash256 = h, getAddrNet = net} = do
     hrp <- (getBech32Prefix net)
     segwitEncode hrp 0 (B.unpack (S.encode h))
 
+-- | Parse 'Base58', 'Bech32' or 'CashAddr' address, depending no network.
 stringToAddr :: Network -> ByteString -> Maybe Address
 stringToAddr net bs = cash <|> segwit <|> b58
   where
@@ -141,10 +153,12 @@ stringToAddr net bs = cash <|> segwit <|> b58
                 return $ WitnessScriptAddress h net
             _ -> Nothing
 
+-- | Obtain a P2PKH address from a public key.
 pubKeyAddr :: Serialize (PubKeyI c) => Network -> PubKeyI c -> Address
 pubKeyAddr net k = PubKeyAddress (addressHash (S.encode k)) net
 
-fromWif :: Network -> ByteString -> Maybe PrvKey
+-- | Decode private key from WIF-formatted (Wallet Import Format) string.
+fromWif :: Network -> Base58 -> Maybe PrvKey
 fromWif net wif = do
     bs <- decodeBase58Check wif
     -- Check that this is a private key
@@ -159,7 +173,8 @@ fromWif net wif = do
         -- Bad length
         _  -> Nothing
 
-toWif :: Network -> PrvKeyI c -> ByteString
+-- | Encode private key into a WIF-formatted string.
+toWif :: Network -> PrvKeyI c -> Base58
 toWif net (PrvKeyI k c) =
     encodeBase58Check . B.cons (getSecretPrefix net) $
     if c

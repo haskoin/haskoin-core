@@ -2,22 +2,35 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards   #-}
 module Network.Haskoin.Block.Headers
-    ( BlockNode(..)
-    , HeaderMemory(..)
+    ( -- * Block Header Chain
+      BlockNode(..)
     , BlockHeaders(..)
     , BlockWork
-    , BlockMap
-    , ShortBlockHash
-    , getAncestor
+    , genesisNode
+    , genesisBlock
     , isGenesis
+    , chooseBest
+
+      -- ** Header Chain Storage Functions
+    , parentBlock
+    , getParents
+    , getAncestor
+    , splitPoint
+    , connectBlocks
+    , connectBlock
+    , blockLocator
+
+      -- ** In-Memory Header Chain
+    , HeaderMemory(..)
+    , ShortBlockHash
+    , BlockMap
+    , shortBlockHash
     , initialChain
     , genesisMap
-    , genesisNode
-    , connectBlocks
-    , parentBlock
-    , connectBlock
+
+      -- ** Helper Functions
+    , appendBlocks
     , validBlock
-    , getParents
     , validCP
     , afterLastCP
     , bip34
@@ -34,13 +47,8 @@ module Network.Haskoin.Block.Headers
     , blockPOW
     , headerWork
     , diffInterval
-    , chooseBest
     , blockLocatorNodes
-    , blockLocator
     , mineBlock
-    , appendBlocks
-    , splitPoint
-    , genesisBlock
     , ) where
 
 import           Control.Applicative               ((<|>))
@@ -50,6 +58,7 @@ import           Control.Monad.Except              (ExceptT (..), runExceptT,
                                                     throwError)
 import           Control.Monad.State.Strict        as State (StateT, get, gets,
                                                              lift, modify)
+import           Control.Monad.Trans.Maybe
 import           Data.Bits                         (shiftL, shiftR, (.&.))
 import qualified Data.ByteString                   as B
 import           Data.ByteString.Short             (ShortByteString, fromShort,
@@ -72,23 +81,35 @@ import           Network.Haskoin.Crypto
 import           Network.Haskoin.Transaction.Types
 import           Network.Haskoin.Util
 
+-- | Short version of the block hash. Uses the good end of the hash (the part
+-- that doesn't have a long string of zeroes).
 type ShortBlockHash = Word64
+
+-- | Memory-based map to a serialized 'BlockNode' data structure.
+-- 'ShortByteString' is used to avoid memory fragmentation and make the data
+-- structure compact.
 type BlockMap = HashMap ShortBlockHash ShortByteString
+
+-- | Represents minimum required amount of work for block validity computation.
 type MinWork = Word32
+
+-- | Represents accumulated work in the blockchain so far.
 type BlockWork = Integer
 
+-- | Data structure representing a block header and its position in the
+-- blockchain.
 data BlockNode
-    = BlockNode
-        { nodeHeader :: !BlockHeader
-        , nodeHeight :: !BlockHeight
-        , nodeWork   :: !BlockWork
-        , nodeSkip   :: !BlockHash
-        }
-    | GenesisNode
-        { nodeHeader :: !BlockHeader
-        , nodeHeight :: !BlockHeight
-        , nodeWork   :: !BlockWork
-        }
+    -- | non-Genesis block header
+    = BlockNode { nodeHeader :: !BlockHeader
+                , nodeHeight :: !BlockHeight
+        -- | accumulated work so far
+                , nodeWork :: !BlockWork
+        -- | akip magic block hash
+                , nodeSkip :: !BlockHash }
+    -- | Genesis block header
+    | GenesisNode { nodeHeader :: !BlockHeader
+                  , nodeHeight :: !BlockHeight
+                  , nodeWork :: !BlockWork }
     deriving (Show)
 
 instance Serialize BlockNode where
@@ -121,6 +142,7 @@ instance Eq BlockNode where
 instance Ord BlockNode where
     compare = compare `on` nodeHeight
 
+-- | Memory-based header tree.
 data HeaderMemory = HeaderMemory
     { memoryHeaderMap  :: !BlockMap
     , memoryBestHeader :: !BlockNode
@@ -132,39 +154,65 @@ instance NFData HeaderMemory where
 
 -- | Typeclass for block header chain storage monad.
 class Monad m => BlockHeaders m where
+    -- | Add a new 'BlockNode' to the chain. Does not validate.
     addBlockHeader :: BlockNode -> m ()
+    -- | Get a 'BlockNode' associated with a 'BlockHash'.
     getBlockHeader :: BlockHash -> m (Maybe BlockNode)
+    -- | Locate the 'BlockNode' for the highest block in the chain
     getBestBlockHeader :: m BlockNode
+    -- | Set the highest block in the chain.
     setBestBlockHeader :: BlockNode -> m ()
+    -- | Add a continuous bunch of block headers the chain. Does not validate.
     addBlockHeaders :: [BlockNode] -> m ()
     addBlockHeaders = mapM_ addBlockHeader
 
--- | Memory-based block header chain store monad.
 instance Monad m => BlockHeaders (StateT HeaderMemory m) where
     addBlockHeader = modify . addBlockHeaderMemory
     getBlockHeader bh = getBlockHeaderMemory bh <$> State.get
     getBestBlockHeader = gets memoryBestHeader
     setBestBlockHeader bn = modify $ \s -> s { memoryBestHeader = bn }
 
+-- | Initialize memory-based chain.
+initialChain :: Network -> HeaderMemory
+initialChain net = HeaderMemory
+    { memoryHeaderMap = genesisMap net
+    , memoryBestHeader = genesisNode net
+    }
+
+-- | Initialize map for memory-based chain.
+genesisMap :: Network -> BlockMap
+genesisMap net =
+    HashMap.singleton
+        (shortBlockHash (headerHash (getGenesisHeader net)))
+        (toShort (encode (genesisNode net)))
+
+-- | Add block header to memory block map.
 addBlockHeaderMemory :: BlockNode -> HeaderMemory -> HeaderMemory
 addBlockHeaderMemory bn s@HeaderMemory{..} =
     let bm' = addBlockToMap bn memoryHeaderMap
     in s { memoryHeaderMap = bm' }
 
+-- | Get block header from memory block map.
 getBlockHeaderMemory :: BlockHash -> HeaderMemory -> Maybe BlockNode
 getBlockHeaderMemory bh HeaderMemory {..} = do
     bs <- shortBlockHash bh `HashMap.lookup` memoryHeaderMap
     eitherToMaybe . decode $ fromShort bs
 
+-- | Calculate short block hash taking eight non-zero bytes from the 16-byte
+-- hash. This function will take the bytes that are not on the zero-side of the
+-- hash, making colissions between short block hashes difficult.
 shortBlockHash :: BlockHash -> ShortBlockHash
 shortBlockHash = either error id . decode . B.take 8 . encode
 
+-- | Add a block to memory-based block map.
 addBlockToMap :: BlockNode -> BlockMap -> BlockMap
 addBlockToMap node =
     HashMap.insert
     (shortBlockHash $ headerHash $ nodeHeader node)
     (toShort $ encode node)
 
+-- | Get the ancestor of the provided 'BlockNode' at the specified
+-- 'BlockHeight'.
 getAncestor :: BlockHeaders m
             => BlockHeight
             -> BlockNode
@@ -195,22 +243,12 @@ getAncestor height node
                         go walk'
         | otherwise = return $ Just walk
 
+-- | Is the provided 'BlockNode' the Genesis block?
 isGenesis :: BlockNode -> Bool
 isGenesis GenesisNode{} = True
 isGenesis BlockNode{}   = False
 
-initialChain :: Network -> HeaderMemory
-initialChain net = HeaderMemory
-    { memoryHeaderMap = genesisMap net
-    , memoryBestHeader = genesisNode net
-    }
-
-genesisMap :: Network -> BlockMap
-genesisMap net =
-    HashMap.singleton
-        (shortBlockHash (headerHash (getGenesisHeader net)))
-        (toShort (encode (genesisNode net)))
-
+-- | Build the genesis 'BlockNode' for the supplied 'Network'.
 genesisNode :: Network -> BlockNode
 genesisNode net =
     GenesisNode
@@ -219,6 +257,8 @@ genesisNode net =
         , nodeWork = headerWork (getGenesisHeader net)
         }
 
+-- | Validate a list of continuous block headers and import them to the
+-- blockchain. Return 'Left' on failure with error information.
 connectBlocks :: BlockHeaders m
               => Network
               -> Timestamp       -- ^ current time
@@ -229,7 +269,10 @@ connectBlocks net t bhs@(bh:_) =
     runExceptT $ do
         unless (chained bhs) $
             throwError "Blocks to connect do not form a chain"
-        par <- ExceptT $ parentBlock bh
+        par <-
+            maybeToExceptT
+                "Could not get parent block"
+                (MaybeT (parentBlock bh))
         pars <- lift $ getParents 10 par
         bb <- lift getBestBlockHeader
         bns@(bn:_) <- go par [] bb par pars bhs
@@ -239,7 +282,7 @@ connectBlocks net t bhs@(bh:_) =
         return bns
   where
     chained (h1:h2:hs) = headerHash h1 == prevBlock h2 && chained (h2 : hs)
-    chained _          = True
+    chained _ = True
     skip lbh ls par
         | sh == nodeHeight lbh = return lbh
         | sh < nodeHeight lbh = do
@@ -263,15 +306,15 @@ connectBlocks net t bhs@(bh:_) =
         bn <- ExceptT . return $ validBlock net t bb par pars h sk
         go lbh (bn : acc) (chooseBest bn bb) bn (take 10 $ par : pars) hs
 
+-- | Block's parent. If the block header is in the store, its parent must also
+-- be there. No block header get deleted or pruned from the store.
 parentBlock :: BlockHeaders m
             => BlockHeader
-            -> m (Either String BlockNode)
-parentBlock bh = runExceptT $ do
-    parM <- lift $ getBlockHeader $ prevBlock bh
-    case parM of
-        Nothing -> throwError $ "Parent block not found for " ++ show (prevBlock bh)
-        Just par -> return par
+            -> m (Maybe BlockNode)
+parentBlock bh = getBlockHeader (prevBlock bh)
 
+-- | Validate and connect single block header to the blockchain. Return 'Left' if fails
+-- to be validated.
 connectBlock ::
        BlockHeaders m
     => Network
@@ -280,7 +323,10 @@ connectBlock ::
     -> m (Either String BlockNode)
 connectBlock net t bh =
     runExceptT $ do
-        par <- ExceptT $ parentBlock bh
+        par <-
+            maybeToExceptT
+                "Could not get parent block"
+                (MaybeT (parentBlock bh))
         pars <- lift $ getParents 10 par
         skM <- lift $ getAncestor (skipHeight (nodeHeight par + 1)) par
         sk <-
@@ -297,13 +343,14 @@ connectBlock net t bh =
         when (bb /= bb') . lift $ setBestBlockHeader bb'
         return bn
 
+-- | Validate this block header. Build a 'BlockNode' if successful.
 validBlock :: Network
            -> Timestamp     -- ^ current time
            -> BlockNode     -- ^ best block
            -> BlockNode     -- ^ immediate parent
            -> [BlockNode]   -- ^ 10 parents above
            -> BlockHeader   -- ^ header to validate
-           -> BlockNode     -- ^ skip
+           -> BlockNode     -- ^ skip node (black magic)
            -> Either String BlockNode
 validBlock net t bb par pars bh sk = do
     let mt = medianTime . map (blockTimestamp . nodeHeader) $ par : pars
@@ -332,24 +379,31 @@ validBlock net t bb par pars bh sk = do
                      , nodeSkip = headerHash $ nodeHeader sk
                      }
 
+-- | Return the median of all provided timestamps. Can be unsorted. Error on
+-- empty list.
 medianTime :: [Timestamp] -> Timestamp
 medianTime ts
     | null ts = error "Cannot compute median time of empty header list"
     | otherwise = sort ts !! (length ts `div` 2)
 
+-- | Calculate the height of the skip (magic) block that corresponds to the
+-- given height. The block hash of the ancestor at that height will be placed on
+-- the 'BlockNode' structure to help locate ancestors at any height quickly.
 skipHeight :: BlockHeight -> BlockHeight
 skipHeight height
     | height < 2 = 0
     | height .&. 1 /= 0 = invertLowestOne (invertLowestOne $ height - 1) + 1
     | otherwise = invertLowestOne height
 
+-- | Part of the skip black magic calculation.
 invertLowestOne :: BlockHeight -> BlockHeight
 invertLowestOne height = height .&. (height - 1)
 
+-- | Get a number of parents for the provided block.
 getParents :: BlockHeaders m
            => Int
            -> BlockNode
-           -> m [BlockNode]   -- ^ starting from closest parent
+           -> m [BlockNode]   -- ^ starts from immediate parent
 getParents = getpars []
   where
     getpars acc 0 _ = return $ reverse acc
@@ -370,9 +424,11 @@ validCP net height newChildHash =
         Just cpHash -> cpHash == newChildHash
         Nothing     -> True
 
+-- | New block height above the last checkpoint imported. Used to prevent a
+-- reorg below the highest checkpoint that was already imported.
 afterLastCP :: Network
             -> BlockHeight  -- ^ best height
-            -> BlockHeight  -- ^ new child height
+            -> BlockHeight  -- ^ new imported block height
             -> Bool
 afterLastCP net bestHeight newChildHeight =
     case lM of
@@ -381,8 +437,11 @@ afterLastCP net bestHeight newChildHeight =
   where
     lM =
         listToMaybe . reverse $
-        [fst c | c <- getCheckpoints net, fst c <= bestHeight]
+        [c | (c, _) <- getCheckpoints net, c <= bestHeight]
 
+-- | This block should be at least version 2 (BIP34). Block height must be
+-- included in the coinbase transaction to prevent non-unique transaction
+-- hashes.
 bip34 :: Network
       -> BlockHeight  -- ^ new child height
       -> BlockHash    -- ^ new child hash
@@ -392,6 +451,7 @@ bip34 net height hash
     | fst (getBip34Block net) == height = snd (getBip34Block net) == hash
     | otherwise = True
 
+-- | Check if the provided block height and version are valid.
 validVersion :: Network
              -> BlockHeight  -- ^ new child height
              -> Word32       -- ^ new child version
@@ -422,7 +482,7 @@ lastNoMinDiff net bn@BlockNode {..} = do
 lastNoMinDiff _ bn@GenesisNode{} = return bn
 
 -- | Returns the work required on a block header given the previous block. This
--- coresponds to bitcoind function GetNextWorkRequired in main.cpp.
+-- coresponds to @bitcoind@ function @GetNextWorkRequired@ in @main.cpp@.
 nextWorkRequired :: BlockHeaders m
                  => Network
                  -> BlockNode
@@ -444,6 +504,8 @@ nextWorkRequired net par bh = do
         return nextEdaWorkRequired
     pow = return nextPowWorkRequired
 
+-- | Find out the next amount of work required according to the Emergency
+-- Difficulty Adjustment (EDA) algorithm from Bitcoin Cash.
 nextEdaWorkRequired ::
        BlockHeaders m => Network -> BlockNode -> BlockHeader -> m Word32
 nextEdaWorkRequired net par bh
@@ -474,6 +536,8 @@ nextEdaWorkRequired net par bh
         blockTimestamp (nodeHeader par) + getTargetSpacing net * 2
     e1 = error "Could not get seventh ancestor of block"
 
+-- | Find the next amount of work required according to the Difficulty
+-- Adjustment Algorithm (DAA) from Bitcoin Cash.
 nextDaaWorkRequired ::
        BlockHeaders m => Network -> BlockNode -> BlockHeader -> m Word32
 nextDaaWorkRequired net par bh
@@ -558,8 +622,8 @@ calcNextWork net header time
 
 -- | Returns True if the difficulty target (bits) of the header is valid and the
 -- proof of work of the header matches the advertised difficulty target. This
--- function corresponds to the function CheckProofOfWork from bitcoind in
--- main.cpp.
+-- function corresponds to the function @CheckProofOfWork@ from @bitcoind@ in
+-- @main.cpp@.
 isValidPOW :: Network -> BlockHeader -> Bool
 isValidPOW net h
     | target <= 0 || over || target > getPowLimit net = False
@@ -567,7 +631,7 @@ isValidPOW net h
   where
     (target, over) = decodeCompact $ blockBits h
 
--- | Returns the proof of work of a block header hash as an Integer number.
+-- | Returns the proof of work of a block header hash as an 'Integer' number.
 blockPOW :: BlockHash -> Integer
 blockPOW =  bsToInteger . B.reverse . encode
 
@@ -611,6 +675,7 @@ blockLocatorNodes best =
                    bn' <- fromMaybe e1 <$> getAncestor h bn
                    go loc' bn' n'
 
+-- | Get block locator.
 blockLocator :: BlockHeaders m => BlockNode -> m BlockLocator
 blockLocator bn = map (headerHash . nodeHeader) <$> blockLocatorNodes bn
 
@@ -641,6 +706,7 @@ appendBlocks net seed bh i =
         , merkleRoot = sha256 $ encode seed
         }
 
+-- | Find the last common block ancestor between provided block headers.
 splitPoint :: BlockHeaders m => BlockNode -> BlockNode -> m BlockNode
 splitPoint l r = do
     let h = min (nodeHeight l) (nodeHeight r)
@@ -658,6 +724,6 @@ splitPoint l r = do
                 pr <- fromMaybe e <$> getAncestor h lr
                 f pl pr
 
-
+-- | Generate the entire Genesis block for 'Network'.
 genesisBlock :: Network -> Block
 genesisBlock net = Block (getGenesisHeader net) [genesisTx]

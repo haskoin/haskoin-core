@@ -20,6 +20,7 @@ import           Data.ByteString             (ByteString)
 import           Data.List
 import           Data.Maybe
 import           Data.String
+import           Data.String
 import           Data.Version
 import           Data.Word                   (Word32, Word64, Word8)
 import           GHC.Generics                (Generic)
@@ -28,39 +29,71 @@ import           Paths_haskoin_core
 import           System.IO.Unsafe            (unsafePerformIO)
 import           Text.Read
 
+-- | Version of Haskoin Core package.
 versionString :: IsString a => a
 versionString = fromString (showVersion version)
 
+-- | Constants for network.
 data Network = Network
-    { getNetworkName              :: !String
+    { -- | lowercase alphanumeric and dashes
+      getNetworkName              :: !String
+      -- | network Haskell identifier
     , getNetworkIdent             :: !String
+      -- | prefix for 'Base58' P2PKH addresses
     , getAddrPrefix               :: !Word8
+      -- | prefix for 'Base58' P2SH addresses
     , getScriptPrefix             :: !Word8
+      -- | prefix for WIF private key
     , getSecretPrefix             :: !Word8
+      -- | prefix for extended public key
     , getExtPubKeyPrefix          :: !Word32
+      -- | prefix for extended private key
     , getExtSecretPrefix          :: !Word32
+      -- | network magic
     , getNetworkMagic             :: !Word32
+      -- | genesis block header
     , getGenesisHeader            :: !BlockHeader
+      -- | maximum block size in bytes
     , getMaxBlockSize             :: !Int
+      -- | maximum amount of satoshi
     , getMaxSatoshi               :: !Word64
+      -- | user agent string
     , getHaskoinUserAgent         :: !ByteString
+      -- | default port for P2P connections
     , getDefaultPort              :: !Int
+      -- | allow min difficulty blocks (testnet)
     , getAllowMinDifficultyBlocks :: !Bool
+      -- | do not retarget difficulty (regtest)
     , getPowNoRetargetting        :: !Bool
+      -- | proof-of-work target higest possible value
     , getPowLimit                 :: !Integer
+      -- | block at which BIP34 activates
     , getBip34Block               :: !(BlockHeight, BlockHash)
+      -- | block at which BIP65 activates
     , getBip65Height              :: !BlockHeight
+      -- | block at which BIP66 activates
     , getBip66Height              :: !BlockHeight
+      -- | time between difficulty retargets
     , getTargetTimespan           :: !Word32
+      -- | time between blocks
     , getTargetSpacing            :: !Word32
+      -- | checkpoints
     , getCheckpoints              :: ![(BlockHeight, BlockHash)]
+      -- | BIP44 derivation path root
     , getBip44Coin                :: !Word32
+      -- | peer-to-peer network seeds
     , getSeeds                    :: ![String]
+      -- | fork id for replay protection
     , getSigHashForkId            :: !(Maybe Word32)
+      -- | EDA start block height
     , getEdaBlockHeight           :: !(Maybe Word32)
+      -- | DAA start block height
     , getDaaBlockHeight           :: !(Maybe Word32)
+      -- | segregated witness active
     , getSegWit                   :: !Bool
+      -- | 'CashAddr' prefix (for Bitcoin Cash)
     , getCashAddrPrefix           :: !(Maybe ByteString)
+      -- | 'Bech32' prefix (for SegWit network)
     , getBech32Prefix             :: !(Maybe ByteString)
     } deriving (Eq, Generic)
 
@@ -74,12 +107,18 @@ instance Read Network where
         Ident str <- lexP
         maybe pfail return (netByIdent str)
 
+instance IsString Network where
+    fromString = fromMaybe (error "Network name invalid") . netByName
+
+-- | Query known networks by name.
 netByName :: String -> Maybe Network
 netByName str = find ((== str) . getNetworkName) allNets
 
+-- | Query known networks by Haskell identifier.
 netByIdent :: String -> Maybe Network
 netByIdent str = find ((== str) . getNetworkIdent) allNets
 
+-- | Bitcoin SegWit network. Symbol: BTC.
 btc :: Network
 btc =
     Network
@@ -162,6 +201,7 @@ btc =
     , getBech32Prefix = Just "bc"
     }
 
+-- | Testnet for Bitcoin SegWit network.
 btcTest :: Network
 btcTest =
     Network
@@ -216,6 +256,7 @@ btcTest =
     , getBech32Prefix = Just "tb"
     }
 
+-- | RegTest for Bitcoin SegWit network.
 btcRegTest :: Network
 btcRegTest =
     Network
@@ -262,6 +303,7 @@ btcRegTest =
     , getBech32Prefix = Just "bcrt"
     }
 
+-- | Bitcoin Cash network. Symbol: BCH.
 bch :: Network
 bch =
     Network
@@ -348,6 +390,7 @@ bch =
     , getBech32Prefix = Nothing
     }
 
+-- | Testnet for Bitcoin Cash network.
 bchTest :: Network
 bchTest =
     Network
@@ -409,6 +452,7 @@ bchTest =
     , getBech32Prefix = Nothing
     }
 
+-- | RegTest for Bitcoin Cash network.
 bchRegTest :: Network
 bchRegTest =
     Network

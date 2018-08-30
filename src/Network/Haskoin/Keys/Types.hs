@@ -63,8 +63,13 @@ import           Network.Haskoin.Util
 import           Text.Read                   (lexP, parens, pfail, readPrec)
 import qualified Text.Read                   as Read
 
+-- | Public key compression not specified.
 data CompressedOrNot
+
+-- | Public key must be compressed when serialized.
 data Compressed
+
+-- | Public key must be uncompressed when serialized.
 data Uncompressed
 
 -- | Elliptic curve public key type. Two constructors are provided for creating
@@ -75,49 +80,42 @@ type PubKey = PubKeyI CompressedOrNot
 type PubKeyC = PubKeyI Compressed
 type PubKeyU = PubKeyI Uncompressed
 
--- Internal type for public keys
+-- | Internal type for public keys
 data PubKeyI c = PubKeyI
     { pubKeyPoint      :: !EC.PubKey
     , pubKeyCompressed :: !Bool
     } deriving (Eq)
 
--- TODO: Test
 instance Show PubKey where
     showsPrec d k = showParen (d > 10) $
         showString "PubKey " . shows (encodeHex $ encode k)
 
--- TODO: Test
 instance Show PubKeyC where
     showsPrec d k = showParen (d > 10) $
         showString "PubKeyC " . shows (encodeHex $ encode k)
 
--- TODO: Test
 instance Show PubKeyU where
     showsPrec d k = showParen (d > 10) $
         showString "PubKeyU " . shows (encodeHex $ encode k)
 
--- TODO: Test
 instance Read PubKey where
     readPrec = parens $ do
         Read.Ident "PubKey" <- lexP
         Read.String str <- lexP
         maybe pfail return $ eitherToMaybe . decode <=< decodeHex $ cs str
 
--- TODO: Test
 instance Read PubKeyC where
     readPrec = parens $ do
         Read.Ident "PubKeyC" <- lexP
         Read.String str <- lexP
         maybe pfail return $ eitherToMaybe . decode <=< decodeHex $ cs str
 
--- TODO: Test
 instance Read PubKeyU where
     readPrec = parens $ do
         Read.Ident "PubKeyU" <- lexP
         Read.String str <- lexP
         maybe pfail return $ eitherToMaybe . decode <=< decodeHex $ cs str
 
--- TODO: Test
 instance IsString PubKey where
     fromString str =
         fromMaybe e $ eitherToMaybe . decode <=< decodeHex $ cs str
@@ -187,32 +185,41 @@ instance Serialize PubKeyU where
 
     put pk = putByteString $ EC.exportPubKey False $ pubKeyPoint pk
 
--- Constructors for public keys
+-- | Wrap a public key from secp256k1 library.
 makePubKey :: EC.PubKey -> PubKey
 makePubKey p = PubKeyI p True
 
+-- | Make a generic (compressed or not) public key.
 makePubKeyG :: Bool -> EC.PubKey -> PubKey
 makePubKeyG c p = PubKeyI p c
 
+-- | Make a compressed public key.
 makePubKeyC :: EC.PubKey -> PubKeyC
 makePubKeyC p = PubKeyI p True
 
+-- | Make an uncompressed public key.
 makePubKeyU :: EC.PubKey -> PubKeyU
 makePubKeyU p = PubKeyI p False
 
+-- | Convert a compressed or uncompressed key to generic form.
 toPubKeyG :: PubKeyI c -> PubKey
 toPubKeyG (PubKeyI p c) = makePubKeyG c p
 
+-- | Convert a public key to 'Right' 'PubKeyC' or 'Left' 'PubKeyU' according to
+-- its compress flag.
 eitherPubKey :: PubKeyI c -> Either PubKeyU PubKeyC
 eitherPubKey pk
     | pubKeyCompressed pk = Right $ makePubKeyC $ pubKeyPoint pk
     | otherwise           = Left  $ makePubKeyU $ pubKeyPoint pk
 
+-- | Turn a public key into a compressed 'PubKeyC' if its compress flag is true.
 maybePubKeyC :: PubKeyI c -> Maybe PubKeyC
 maybePubKeyC pk
     | pubKeyCompressed pk = Just $ makePubKeyC $ pubKeyPoint pk
     | otherwise           = Nothing
 
+-- | Turn a public key into an uncompressed 'PubKeyU' if its compresse flag is
+-- false.
 maybePubKeyU :: PubKeyI c -> Maybe PubKeyU
 maybePubKeyU pk
     | not (pubKeyCompressed pk) = Just $ makePubKeyU $ pubKeyPoint pk
@@ -224,7 +231,7 @@ maybePubKeyU pk
 derivePubKey :: PrvKeyI c -> PubKeyI c
 derivePubKey (PrvKeyI d c) = PubKeyI (EC.derivePubKey d) c
 
--- | Tweak a compressed public key
+-- | Tweak a compressed public key.
 tweakPubKeyC :: PubKeyC -> Hash256 -> Maybe PubKeyC
 tweakPubKeyC pub h =
     makePubKeyC <$> (EC.tweakAddPubKey point =<< tweak)
@@ -232,8 +239,7 @@ tweakPubKeyC pub h =
     point = pubKeyPoint pub
     tweak = EC.tweak (encode h)
 
-{- Private Keys -}
-
+-- | Internal private key type.
 data PrvKeyI c = PrvKeyI
     { prvKeySecKey     :: !EC.SecKey
     , prvKeyCompressed :: !Bool
@@ -242,8 +248,13 @@ data PrvKeyI c = PrvKeyI
 instance NFData (PrvKeyI c) where
     rnf (PrvKeyI k c) = k `seq` c `seq` ()
 
+-- | Private key that may be compressed or not.
 type PrvKey = PrvKeyI CompressedOrNot
+
+-- | Compressed private key.
 type PrvKeyC = PrvKeyI Compressed
+
+-- | Uncompressed private key.
 type PrvKeyU = PrvKeyI Uncompressed
 
 -- | Elliptic curve private key type. Two constructors are provided for creating

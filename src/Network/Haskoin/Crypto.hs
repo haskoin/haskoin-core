@@ -6,11 +6,6 @@ module Network.Haskoin.Crypto
     , isCanonicalHalfOrder
     , decodeLaxSig
     , decodeStrictSig
-      -- * Entropy
-    , SecretT
-    , withSource
-    , getEntropy
-    , genPrvKey
       -- * Hash
     , Hash512(getHash512)
     , Hash256(getHash256)
@@ -27,13 +22,7 @@ module Network.Haskoin.Crypto
     , hmac256
     , split512
     , join512
-    , WorkingState
-    , hmacDRBGNew
-    , hmacDRBGUpd
-    , hmacDRBGRsd
-    , hmacDRBGGen
     ) where
 
-import           Network.Haskoin.Crypto.Entropy
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Crypto.Signature

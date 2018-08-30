@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: a5e5857f759daeacf4e147101f4ada29413cce9361f7389e5ae195047f2c88be
+-- hash: 591aa00a1a45bd7714b91f8a014cf3520d8079bf4450fbce0c97508a371dff98
 
 name:           haskoin-core
 version:        1.0.0
@@ -64,6 +64,7 @@ library
     , split
     , string-conversions
     , time
+    , transformers
     , unordered-containers
     , vector
   exposed-modules:
@@ -78,7 +79,6 @@ library
       Network.Haskoin.Constants
       Network.Haskoin.Core
       Network.Haskoin.Crypto
-      Network.Haskoin.Crypto.Entropy
       Network.Haskoin.Crypto.Hash
       Network.Haskoin.Crypto.Signature
       Network.Haskoin.Keys
@@ -161,6 +161,7 @@ test-suite spec
     , split
     , string-conversions
     , time
+    , transformers
     , unordered-containers
     , vector
   default-language: Haskell2010

@@ -78,8 +78,6 @@ pub2C = derivePubKey sec2C
 
 spec :: Spec
 spec = do
-    describe "ecdsa prng unit tests" $
-        it "genPrvKey produces unique keys" uniqueKeys
     describe "bitcoind /src/test/key_tests.cpp" $ do
         it "decode valid wif" checkPrivkey
         it "decode invalid wif" checkInvalidKey
@@ -91,18 +89,6 @@ spec = do
 
 sigCheck :: Assertion
 sigCheck = forM_ sigMsg $ checkSignatures . doubleSHA256
-
-{- ECDSA PRNG unit tests -}
-
-uniqueKeys :: Assertion
-uniqueKeys = do
-    (k1,k2,k3) <- liftIO $ withSource getEntropy $ do
-        a <- genPrvKey
-        b <- genPrvKey
-        replicateM_ 20 genPrvKey
-        c <- genPrvKey
-        return (a,b,c)
-    assertBool "DiffKey" $ k1 /= k2 && k1 /= k3 && k2 /= k3
 
 {- bitcoind /src/test/key_tests.cpp -}
 

@@ -42,6 +42,7 @@ dependencies:
   - split
   - string-conversions
   - time
+  - transformers
   - unordered-containers
   - vector
 library:

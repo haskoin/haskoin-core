@@ -219,26 +219,26 @@ txSigHashForkId net tx out v i sh =
 -- 'SigHash' is serialized as one byte at the end of a regular ECDSA
 -- 'Signature'. All signatures in transaction inputs are of type 'TxSignature'.
 data TxSignature
-    = TxSignature { txSignature        :: !Signature
+    = TxSignature { txSignature        :: !Sig
                   , txSignatureSigHash :: !SigHash
                   }
     | TxSignatureEmpty
     deriving (Eq, Show)
 
 instance NFData TxSignature where
-    rnf (TxSignature s h) = rnf s `seq` rnf h
+    rnf (TxSignature s h) = s `seq` rnf h `seq` ()
     rnf TxSignatureEmpty  = ()
 
 -- | Serialize a 'TxSignature' to a ByteString.
 encodeTxSig :: TxSignature -> ByteString
 encodeTxSig TxSignatureEmpty = error "Can not encode an empty signature"
-encodeTxSig (TxSignature sig sh) = runPut $ put sig >> putWord8 (fromIntegral sh)
+encodeTxSig (TxSignature sig sh) = runPut $ putSig sig >> putWord8 (fromIntegral sh)
 
 -- | Decode a 'TxSignature' from a ByteString.
 decodeTxLaxSig :: ByteString -> Either String TxSignature
 decodeTxLaxSig "" = Left "decodeTxLaxSig: empty bytestring"
 decodeTxLaxSig bs =
-    TxSignature <$> decode (BS.init bs)
+    TxSignature <$> runGet getSig (BS.init bs)
                 <*> return (fromIntegral $ BS.last bs)
 
 decodeTxStrictSig :: Network -> ByteString -> Either String TxSignature

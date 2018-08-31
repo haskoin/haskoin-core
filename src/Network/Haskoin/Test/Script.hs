@@ -178,7 +178,7 @@ arbitraryValidSigHash = do
 -- | Arbitrary message hash, private key and corresponding TxSignature. The
 -- signature is generated deterministically using a random message and a
 -- random private key.
-arbitraryTxSignature :: Gen (TxHash, PrvKey, TxSignature)
+arbitraryTxSignature :: Gen (TxHash, SecKey, TxSignature)
 arbitraryTxSignature = do
     (msg, key, sig) <- arbitrarySignature
     sh <- fromIntegral <$> (arbitrary :: Gen Word8)
@@ -225,7 +225,7 @@ arbitrarySimpleOutput =
 
 -- | Arbitrary ScriptOutput of type PayPK
 arbitraryPKOutput :: Gen ScriptOutput
-arbitraryPKOutput =  PayPK . snd <$> arbitraryPubKey
+arbitraryPKOutput =  PayPK . snd <$> arbitraryKeyPair
 
 -- | Arbitrary ScriptOutput of type PayPKHash
 arbitraryPKHashOutput :: Gen ScriptOutput
@@ -241,14 +241,16 @@ arbitraryWSHOutput = PayWitnessScriptHash <$> arbitraryHash256
 arbitraryMSOutput :: Gen ScriptOutput
 arbitraryMSOutput = do
     (m, n) <- arbitraryMSParam
-    keys <- map snd <$> vectorOf n arbitraryPubKey
+    keys <- map snd <$> vectorOf n arbitraryKeyPair
     return $ PayMulSig keys m
 
--- | Arbitrary ScriptOutput of type PayMS containing only compressed keys
-arbitraryMSCOutput :: Gen ScriptOutput
-arbitraryMSCOutput = do
+-- | Arbitrary ScriptOutput of type PayMS, but only compressed keys
+arbitraryMSOutputC :: Gen ScriptOutput
+arbitraryMSOutputC = do
     (m, n) <- arbitraryMSParam
-    keys <- map (toPubKeyG . snd) <$> vectorOf n arbitraryPubKeyC
+    keys <-
+        map snd <$>
+        vectorOf n (arbitraryKeyPair `suchThat` (pubKeyCompressed . snd))
     return $ PayMulSig keys m
 
 -- | Arbitrary ScriptOutput of type PayScriptHash
@@ -288,22 +290,22 @@ arbitraryPKInput = RegularInput . SpendPK <$> arbitraryTxSignatureEmpty
 arbitraryPKHashInput :: Gen ScriptInput
 arbitraryPKHashInput = do
     sig <- arbitraryTxSignatureEmpty
-    key <- snd <$> arbitraryPubKey
+    key <- snd <$> arbitraryKeyPair
     return $ RegularInput $ SpendPKHash sig key
 
--- | Arbitrary ScriptInput of type SpendPK with a compressed public key
-arbitraryPKHashCInput :: Gen ScriptInput
-arbitraryPKHashCInput = do
-    sig <- arbitraryTxSignatureEmpty
-    key <- snd <$> arbitraryPubKeyC
-    return $ RegularInput $ SpendPKHash sig $ toPubKeyG key
-
--- | Like 'arbitraryPKHashCInput' without empty signatures
-arbitraryPKHashCInputFull :: Gen ScriptInput
-arbitraryPKHashCInputFull = do
+-- | Like 'arbitraryPKHashInput' without empty signatures
+arbitraryPKHashInputFull :: Gen ScriptInput
+arbitraryPKHashInputFull = do
     sig <- lst3 <$> arbitraryTxSignature
-    key <- snd <$> arbitraryPubKeyC
-    return $ RegularInput $ SpendPKHash sig $ toPubKeyG key
+    key <- snd <$> arbitraryKeyPair
+    return $ RegularInput $ SpendPKHash sig key
+
+-- | Like above but only compressed
+arbitraryPKHashInputFullC :: Gen ScriptInput
+arbitraryPKHashInputFullC = do
+    sig <- lst3 <$> arbitraryTxSignature
+    key <- fmap snd $ arbitraryKeyPair `suchThat` (pubKeyCompressed . snd)
+    return $ RegularInput $ SpendPKHash sig key
 
 -- | Arbitrary ScriptInput of type SpendMulSig
 arbitraryMSInput :: Gen ScriptInput
@@ -320,17 +322,31 @@ arbitrarySHInput = do
     return $ ScriptHashInput (getRegularInput i) o
 
 -- | Arbitrary ScriptInput of type ScriptHashInput containing a RedeemScript
--- of type PayMulSig and an input of type SpendMulSig. Only compressed keys
--- are used.
-arbitraryMulSigSHCInput :: Gen ScriptInput
-arbitraryMulSigSHCInput = do
-    rdm@(PayMulSig _ m) <- arbitraryMSCOutput
+-- of type PayMulSig and an input of type SpendMulSig.
+arbitraryMulSigSHInput :: Gen ScriptInput
+arbitraryMulSigSHInput = do
+    rdm@(PayMulSig _ m) <- arbitraryMSOutput
+    sigs <- vectorOf m arbitraryTxSignatureEmpty
+    return $ ScriptHashInput (SpendMulSig sigs) rdm
+
+-- | Arbitrary ScriptInput of type ScriptHashInput containing a RedeemScript
+-- of type PayMulSig and an input of type SpendMulSig.
+arbitraryMulSigSHInputC :: Gen ScriptInput
+arbitraryMulSigSHInputC = do
+    rdm@(PayMulSig _ m) <- arbitraryMSOutputC
     sigs <- vectorOf m arbitraryTxSignatureEmpty
     return $ ScriptHashInput (SpendMulSig sigs) rdm
 
 -- | Like 'arbitraryMulSigSHCInput' with no empty signatures
-arbitraryMulSigSHCInputFull :: Gen ScriptInput
-arbitraryMulSigSHCInputFull = do
-    rdm@(PayMulSig _ m) <- arbitraryMSCOutput
+arbitraryMulSigSHInputFull :: Gen ScriptInput
+arbitraryMulSigSHInputFull = do
+    rdm@(PayMulSig _ m) <- arbitraryMSOutput
+    sigs <- map lst3 <$> vectorOf m arbitraryTxSignature
+    return $ ScriptHashInput (SpendMulSig sigs) rdm
+
+-- | Like 'arbitraryMulSigSHCInput' with no empty signatures
+arbitraryMulSigSHInputFullC :: Gen ScriptInput
+arbitraryMulSigSHInputFullC = do
+    rdm@(PayMulSig _ m) <- arbitraryMSOutputC
     sigs <- map lst3 <$> vectorOf m arbitraryTxSignature
     return $ ScriptHashInput (SpendMulSig sigs) rdm

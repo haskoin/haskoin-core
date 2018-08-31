@@ -53,8 +53,10 @@ p2shAddr net out = ScriptAddress (addressHash (encodeOutputBS out)) net
 
 -- | Computes a script address from a script output for a
 -- pay-to-witness-script-hash output.
-p2wshAddr :: Network -> ScriptOutput -> Address
-p2wshAddr net out = WitnessScriptAddress (sha256 (encodeOutputBS out)) net
+p2wshAddr :: Network -> ScriptOutput -> Maybe Address
+p2wshAddr net out = do
+    guard (getSegWit net)
+    return $ WitnessScriptAddress (sha256 (encodeOutputBS out)) net
 
 -- | Sorts the public keys of a multisignature output in ascending order by
 -- comparing their serialized representations. This feature allows for easier
@@ -112,7 +114,7 @@ data SimpleInput
     = SpendPK     { getInputSig :: !TxSignature }
       -- | Spend the coins of a PayPKHash output.
     | SpendPKHash { getInputSig :: !TxSignature
-                  , getInputKey :: !PubKey
+                  , getInputKey :: !PubKeyI
                   }
       -- | Spend the coins of a PayMulSig output.
     | SpendMulSig { getInputMulSigKeys :: ![TxSignature] }

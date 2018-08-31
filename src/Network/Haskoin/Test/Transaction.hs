@@ -107,7 +107,7 @@ arbitraryAddrOnlyTxFull net = do
 arbitraryAddrOnlyTxIn :: Gen TxIn
 arbitraryAddrOnlyTxIn = do
     o   <- arbitraryOutPoint
-    inp <- oneof [ arbitraryPKHashCInput, arbitraryMulSigSHCInput ]
+    inp <- oneof [ arbitraryPKHashInput, arbitraryMulSigSHInput ]
     s   <- arbitrary
     return $ TxIn o (encodeInputBS inp) s
 
@@ -115,7 +115,7 @@ arbitraryAddrOnlyTxIn = do
 arbitraryAddrOnlyTxInFull :: Gen TxIn
 arbitraryAddrOnlyTxInFull = do
     o   <- arbitraryOutPoint
-    inp <- oneof [ arbitraryPKHashCInputFull, arbitraryMulSigSHCInputFull ]
+    inp <- oneof [ arbitraryPKHashInputFullC, arbitraryMulSigSHInputFullC ]
     s   <- arbitrary
     return $ TxIn o (encodeInputBS inp) s
 
@@ -128,7 +128,7 @@ arbitraryAddrOnlyTxOut net = do
 
 -- | Arbitrary SigInput with the corresponding private keys used
 -- to generate the ScriptOutput or RedeemScript
-arbitrarySigInput :: Network -> Gen (SigInput, [PrvKey])
+arbitrarySigInput :: Network -> Gen (SigInput, [SecKeyI])
 arbitrarySigInput net =
     oneof
         [ arbitraryPKSigInput net >>= \(si, k) -> return (si, [k])
@@ -138,40 +138,40 @@ arbitrarySigInput net =
         ]
 
 -- | Arbitrary SigInput with a ScriptOutput of type PayPK
-arbitraryPKSigInput :: Network -> Gen (SigInput, PrvKey)
+arbitraryPKSigInput :: Network -> Gen (SigInput, SecKeyI)
 arbitraryPKSigInput net = do
-    k <- arbitraryPrvKey
-    let out = PayPK $ derivePubKey k
+    (k, p) <- arbitraryKeyPair
+    let out = PayPK p
     val <- getTestCoin <$> arbitrarySatoshi net
     op <- arbitraryOutPoint
     sh <- arbitraryValidSigHash
     return (SigInput out val op sh Nothing, k)
 
 -- | Arbitrary SigInput with a ScriptOutput of type PayPKHash
-arbitraryPKHashSigInput :: Network -> Gen (SigInput, PrvKey)
+arbitraryPKHashSigInput :: Network -> Gen (SigInput, SecKeyI)
 arbitraryPKHashSigInput net = do
-    k <- arbitraryPrvKey
-    let out = PayPKHash $ getAddrHash160 $ pubKeyAddr net $ derivePubKey k
+    (k, p) <- arbitraryKeyPair
+    let out = PayPKHash $ getAddrHash160 $ pubKeyAddr net p
     val <- getTestCoin <$> arbitrarySatoshi net
     op <- arbitraryOutPoint
     sh <- arbitraryValidSigHash
     return (SigInput out val op sh Nothing, k)
 
 -- | Arbitrary SigInput with a ScriptOutput of type PayMulSig
-arbitraryMSSigInput :: Network -> Gen (SigInput, [PrvKey])
+arbitraryMSSigInput :: Network -> Gen (SigInput, [SecKeyI])
 arbitraryMSSigInput net = do
-    (m,n) <- arbitraryMSParam
-    ks    <- vectorOf n arbitraryPrvKey
-    let out = PayMulSig (map derivePubKey ks) m
+    (m, n) <- arbitraryMSParam
+    ks <- vectorOf n arbitraryKeyPair
+    let out = PayMulSig (map snd ks) m
     val <- getTestCoin <$> arbitrarySatoshi net
     op <- arbitraryOutPoint
     sh <- arbitraryValidSigHash
-    perm <- choose (0,n-1)
-    let ksPerm = take m $ permutations ks !! perm
+    perm <- choose (0, n - 1)
+    let ksPerm = map fst $ take m $ permutations ks !! perm
     return (SigInput out val op sh Nothing, ksPerm)
 
 -- | Arbitrary SigInput with  ScriptOutput of type PaySH and a RedeemScript
-arbitrarySHSigInput :: Network -> Gen (SigInput, [PrvKey])
+arbitrarySHSigInput :: Network -> Gen (SigInput, [SecKeyI])
 arbitrarySHSigInput net = do
     (SigInput rdm val op sh _, ks) <- oneof
         [ f <$> arbitraryPKSigInput net
@@ -185,7 +185,7 @@ arbitrarySHSigInput net = do
 
 -- | Arbitrary Tx (empty TxIn), SigInputs and PrvKeys that can be passed to
 -- signTx or detSignTx to fully sign the Tx.
-arbitrarySigningData :: Network -> Gen (Tx, [SigInput], [PrvKey])
+arbitrarySigningData :: Network -> Gen (Tx, [SigInput], [SecKeyI])
 arbitrarySigningData net = do
     v  <- arbitrary
     ni <- choose (1,5)
@@ -232,7 +232,7 @@ arbitraryPartialTxs net = do
         (m, n) <- arbitraryMSParam
         val <- getTestCoin <$> arbitrarySatoshi net
         nPrv <- choose (m, n)
-        keys <- vectorOf n arbitraryPubKey
+        keys <- vectorOf n arbitraryKeyPair
         perm <- choose (0, length keys - 1)
         let pubKeys = map snd keys
             prvKeys = take nPrv $ permutations (map fst keys) !! perm

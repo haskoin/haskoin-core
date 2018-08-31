@@ -3,7 +3,6 @@
 -}
 module Network.Haskoin.Test.Address where
 
-import           Crypto.Secp256k1            ()
 import           Data.Bits                   (clearBit)
 import           Data.Either                 (fromRight)
 import           Data.List                   (foldl')

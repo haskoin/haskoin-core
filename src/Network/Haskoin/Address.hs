@@ -16,7 +16,6 @@ module Network.Haskoin.Address
 import           Control.Applicative
 import           Control.DeepSeq
 import           Control.Monad
-import qualified Crypto.Secp256k1                 as EC
 import           Data.Aeson                       as A
 import           Data.Aeson.Types
 import qualified Data.Array                       as Arr
@@ -154,29 +153,29 @@ stringToAddr net bs = cash <|> segwit <|> b58
             _ -> Nothing
 
 -- | Obtain a P2PKH address from a public key.
-pubKeyAddr :: Serialize (PubKeyI c) => Network -> PubKeyI c -> Address
+pubKeyAddr :: Network -> PubKeyI -> Address
 pubKeyAddr net k = PubKeyAddress (addressHash (S.encode k)) net
 
 -- | Decode private key from WIF-formatted (Wallet Import Format) string.
-fromWif :: Network -> Base58 -> Maybe PrvKey
+fromWif :: Network -> Base58 -> Maybe SecKeyI
 fromWif net wif = do
     bs <- decodeBase58Check wif
     -- Check that this is a private key
     guard (B.head bs == getSecretPrefix net)
     case B.length bs of
         -- Uncompressed format
-        33 -> makePrvKeyG False <$> EC.secKey (B.tail bs)
+        33 -> wrapSecKey False <$> secKey (B.tail bs)
         -- Compressed format
         34 -> do
             guard $ B.last bs == 0x01
-            makePrvKeyG True <$> EC.secKey (B.tail $ B.init bs)
+            wrapSecKey True <$> secKey (B.tail $ B.init bs)
         -- Bad length
         _  -> Nothing
 
 -- | Encode private key into a WIF-formatted string.
-toWif :: Network -> PrvKeyI c -> Base58
-toWif net (PrvKeyI k c) =
+toWif :: Network -> SecKeyI -> Base58
+toWif net (SecKeyI k c) =
     encodeBase58Check . B.cons (getSecretPrefix net) $
     if c
-        then EC.getSecKey k `B.snoc` 0x01
-        else EC.getSecKey k
+        then getSecKey k `B.snoc` 0x01
+        else getSecKey k

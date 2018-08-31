@@ -68,11 +68,11 @@ instance Serialize Script where
 -- output coins.
 data ScriptOutput
       -- | Pay to a public key.
-    = PayPK { getOutputPubKey :: !PubKey }
+    = PayPK { getOutputPubKey :: !PubKeyI }
       -- | Pay to a public key hash.
     | PayPKHash { getOutputHash :: !Hash160 }
       -- | Pay to multiple public keys.
-    | PayMulSig { getOutputMulSigKeys     :: ![PubKey]
+    | PayMulSig { getOutputMulSigKeys     :: ![PubKeyI]
                 , getOutputMulSigRequired :: !Int }
       -- | Pay to a script hash.
     | PayScriptHash { getOutputHash :: !Hash160 }

@@ -1,63 +1,59 @@
 {-# LANGUAGE OverloadedStrings #-}
--- | ECDSA Signatures
 module Network.Haskoin.Crypto.Signature
-    ( Signature(..)
-    , signMsg
-    , verifySig
+      -- * Signatures
+    ( Sig
+    , putSig
+    , getSig
+    , signHash
+    , verifyHashSig
     , isCanonicalHalfOrder
     , decodeLaxSig
     , decodeStrictSig
+    , exportSig
+    , exportCompactSig
     ) where
 
 import           Control.DeepSeq             (NFData, rnf)
 import           Control.Monad               (guard, unless, when)
 import qualified Control.Monad.State         as S (StateT, evalStateT, get, put)
 import           Control.Monad.Trans         (lift)
-import qualified Crypto.Secp256k1            as EC
+import           Crypto.Secp256k1
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as BS
 import           Data.ByteString.Short       (toShort)
 import           Data.Maybe                  (fromMaybe)
 import           Data.Serialize              (Serialize, encode, get, put)
-import           Data.Serialize.Get          (getByteString, getWord8,
+import           Data.Serialize.Get          (Get, getByteString, getWord8,
                                               lookAhead)
-import           Data.Serialize.Put          (putByteString)
+import           Data.Serialize.Put          (Putter, putByteString)
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Keys.Types
 import           Numeric                     (showHex)
 import           System.Entropy              (getEntropy)
 
--- | Data type representing an ECDSA signature.
-newtype Signature = Signature { getSignature :: EC.Sig }
-    deriving (Read, Show, Eq)
-
-instance NFData Signature where
-    rnf (Signature s) = s `seq` ()
-
--- | Convert 256-bit key into an 'EC.Msg' for signing or verification.
-hashToMsg :: Hash256 -> EC.Msg
+-- | Convert 256-bit hash into a 'Msg' for signing or verification.
+hashToMsg :: Hash256 -> Msg
 hashToMsg =
-    fromMaybe e . EC.msg . encode
+    fromMaybe e . msg . encode
   where
     e = error "Could not convert 32-byte hash to secp256k1 message"
 
--- <http://www.secg.org/sec1-v2.pdf Section 4.1.3>
--- | Sign a message
-signMsg :: Hash256 -> PrvKeyI c -> Signature
-signMsg h d = Signature $ EC.signMsg (prvKeySecKey d) (hashToMsg h)
+-- | Sign a 256-bit hash using secp256k1 elliptic curve.
+signHash :: SecKey -> Hash256 -> Sig
+signHash k = signMsg k . hashToMsg
 
--- | Verify an ECDSA signature
-verifySig :: Hash256 -> Signature -> PubKeyI c -> Bool
-verifySig h s q =
-    EC.verifySig p g m
+-- | Verify an ECDSA signature for a 256-bit hash.
+verifyHashSig :: Hash256 -> Sig -> PubKey -> Bool
+verifyHashSig h s p =
+    verifySig p g m
   where
-    (g, _) = EC.normalizeSig $ getSignature s
+    (g, _) = normalizeSig s
     m = hashToMsg h
-    p = pubKeyPoint q
 
-instance Serialize Signature where
-    get = do
+-- | Deserialize an ECDSA signature as commonly encoded in Bitcoin.
+getSig :: Get Sig
+getSig = do
         l <- lookAhead $ do
             t <- getWord8
             -- 0x30 is DER sequence type
@@ -72,27 +68,28 @@ instance Serialize Signature where
             Just s  -> return s
             Nothing -> fail "Invalid signature"
 
-    put (Signature s) = putByteString $ EC.exportSig s
+-- | Serialize an ECDSA signatur for Bitcoin use.
+putSig :: Putter Sig
+putSig s = putByteString $ exportSig s
 
 -- | Is canonical half order.
-isCanonicalHalfOrder :: Signature -> Bool
-isCanonicalHalfOrder = not . snd . EC.normalizeSig . getSignature
+isCanonicalHalfOrder :: Sig -> Bool
+isCanonicalHalfOrder = not . snd . normalizeSig
 
 -- | Decode signature (not strictly).
-decodeLaxSig :: ByteString -> Maybe Signature
-decodeLaxSig bs = Signature <$> EC.laxImportSig bs
+decodeLaxSig :: ByteString -> Maybe Sig
+decodeLaxSig = laxImportSig
 
 -- | Decode signature strictly.
-decodeStrictSig :: ByteString -> Maybe Signature
+decodeStrictSig :: ByteString -> Maybe Sig
 decodeStrictSig bs = do
-    g <- EC.importSig bs
-    let compact = EC.exportCompactSig g
-        sig = Signature g
+    g <- importSig bs
+    let compact = exportCompactSig g
     -- <http://www.secg.org/sec1-v2.pdf Section 4.1.4>
     -- 4.1.4.1 (r and s can not be zero)
-    guard $ EC.getCompactSigR compact /= zero
-    guard $ EC.getCompactSigS compact /= zero
-    guard $ isCanonicalHalfOrder sig
-    return sig
+    guard $ getCompactSigR compact /= zero
+    guard $ getCompactSigS compact /= zero
+    guard $ isCanonicalHalfOrder g
+    return g
   where
     zero = toShort $ BS.replicate 32 0

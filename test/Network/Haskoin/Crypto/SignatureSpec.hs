@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.SignatureSpec (spec) where
 
-import qualified Crypto.Secp256k1          as EC
 import           Data.Bits                 (testBit)
 import           Data.ByteString           (ByteString)
 import qualified Data.ByteString           as BS (index, length)
@@ -22,21 +21,19 @@ spec = do
         it "verify signature" $
             property $
             forAll arbitrarySignature $ \(msg, key, sig) ->
-                verifySig msg sig (derivePubKey key)
+                verifyHashSig msg sig (derivePubKey key)
         it "s component less than half order" $
             property $ forAll arbitrarySignature $ isCanonicalHalfOrder . lst3
         it "encoded signature is canonical" $
             property $ forAll arbitrarySignature $ testIsCanonical . lst3
-        it "decodeStrict . encode sig == id" $
+        it "encode signature and decode strictly" $
             property $
             forAll arbitrarySignature $
-            (\s -> decodeStrictSig (encode s) == Just s) . lst3
-        it "decode . encode sig == id" $
-            property $
-            forAll arbitrarySignature $
-            (\s -> decodeLaxSig (encode s) == Just s) . lst3
+            (\s -> decodeStrictSig (exportSig s) == Just s) . lst3
         it "encodes and decodes signature" $
-            property $ forAll arbitrarySignature $ cerealID . lst3
+            property $
+            forAll arbitrarySignature $
+            (\s -> decodeLaxSig (exportSig s) == Just s) . lst3
     describe "trezor rfc6979 test vectors" $ do
         it "rfc6979 test vector 1" (testSigning $ head detVec)
         it "rfc6979 test vector 2" (testSigning $ detVec !! 1)
@@ -51,26 +48,22 @@ spec = do
         it "rfc6979 test vector 11" (testSigning $ detVec !! 10)
         it "rfc6979 test vector 12" (testSigning $ detVec !! 11)
 
-testSigning :: (EC.SecKey, ByteString, ByteString) -> Assertion
+testSigning :: (SecKey, ByteString, ByteString) -> Assertion
 testSigning (prv, msg, str) = do
     assertBool "RFC 6979 Vector" $ res == fromJust (decodeHex str)
-    assertBool "Valid sig" $ verifySig msg' sig (derivePubKey prv')
+    assertBool "valid sig" $ verifyHashSig msg' g (derivePubKey prv)
   where
-    sig@(Signature g) = signMsg msg' prv'
+    g = signHash prv msg'
     msg' = sha256 msg
-    prv' = makePrvKey prv
-    compact = EC.exportCompactSig g
+    compact = exportCompactSig g
     res = encode compact
-
-cerealID :: (Serialize a, Eq a) => a -> Bool
-cerealID x = decode (encode x) == Right x
 
 
 {- ECDSA Canonical -}
 
 -- github.com/bitcoin/bitcoin/blob/master/src/script.cpp
 -- from function IsCanonicalSignature
-testIsCanonical :: Signature -> Bool
+testIsCanonical :: Sig -> Bool
 testIsCanonical sig = not $
     -- Non-canonical signature: too short
     (len < 8) ||
@@ -107,7 +100,7 @@ testIsCanonical sig = not $
     && not (testBit (BS.index s (fromIntegral rlen + 7)) 7)
     )
   where
-    s = encode sig
+    s = exportSig sig
     len = fromIntegral $ BS.length s
     rlen = BS.index s 3
     slen = BS.index s (fromIntegral rlen + 5)
@@ -116,7 +109,7 @@ testIsCanonical sig = not $
 {- Trezor RFC 6979 Test Vectors -}
 -- github.com/trezor/python-ecdsa/blob/master/ecdsa/test_pyecdsa.py
 
-detVec :: [(EC.SecKey, ByteString, ByteString)]
+detVec :: [(SecKey, ByteString, ByteString)]
 detVec =
     [
       ( "0000000000000000000000000000000000000000000000000000000000000001"

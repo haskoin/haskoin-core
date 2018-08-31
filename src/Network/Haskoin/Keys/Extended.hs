@@ -84,7 +84,6 @@ import           Control.Applicative
 import           Control.DeepSeq                 (NFData, rnf)
 import           Control.Exception               (Exception, throw)
 import           Control.Monad                   (guard, mzero, unless, (<=<))
-import qualified Crypto.Secp256k1                as EC
 import           Data.Aeson                      as A (FromJSON, ToJSON,
                                                        Value (String),
                                                        parseJSON, toJSON,
@@ -137,7 +136,7 @@ data XPrvKey = XPrvKey
     , xPrvParent :: !Word32    -- ^ fingerprint of parent
     , xPrvIndex  :: !KeyIndex  -- ^ derivation index
     , xPrvChain  :: !ChainCode -- ^ chain code
-    , xPrvKey    :: !PrvKeyC   -- ^ private key of this node
+    , xPrvKey    :: !SecKey    -- ^ private key of this node
     , xPrvNet    :: !Network
     } deriving (Eq)
 
@@ -150,7 +149,7 @@ instance Show XPrvKey where
 instance NFData XPrvKey where
     rnf (XPrvKey d p i c k n) =
         rnf d `seq`
-        rnf p `seq` rnf i `seq` rnf c `seq` rnf k `seq` rnf n `seq` ()
+        rnf p `seq` rnf i `seq` rnf c `seq` k `seq` rnf n `seq` ()
 
 instance ToJSON XPrvKey where
     toJSON = A.String . cs . xPrvExport
@@ -161,7 +160,7 @@ data XPubKey = XPubKey
     , xPubParent :: !Word32    -- ^ fingerprint of parent
     , xPubIndex  :: !KeyIndex  -- ^ derivation index
     , xPubChain  :: !ChainCode -- ^ chain code
-    , xPubKey    :: !PubKeyC   -- ^ public key of this node
+    , xPubKey    :: !PubKey    -- ^ public key of this node
     , xPubNet    :: !Network
     } deriving (Eq)
 
@@ -175,7 +174,7 @@ instance Show XPubKey where
 instance NFData XPubKey where
     rnf (XPubKey d p i c k n) =
         rnf d `seq`
-        rnf p `seq` rnf i `seq` rnf c `seq` rnf k `seq` rnf n `seq` ()
+        rnf p `seq` rnf i `seq` rnf c `seq` k `seq` rnf n `seq` ()
 
 instance ToJSON XPubKey where
     toJSON = A.String . cs . xPubExport
@@ -203,7 +202,7 @@ makeXPrvKey net bs =
     XPrvKey 0 0 0 c k net
   where
     (p, c) = split512 $ hmac512 "Bitcoin seed" bs
-    k     = maybe err makePrvKeyC (EC.secKey (encode p))
+    k     = fromMaybe err (secKey (encode p))
     err   = throw $ DerivationException "Invalid seed"
 
 -- | Derive an extended public key from an extended private key. This function
@@ -230,9 +229,9 @@ prvSubKey xkey child
     | otherwise = error "Invalid child derivation index"
   where
     pK = xPubKey $ deriveXPubKey xkey
-    msg = BS.append (encode pK) (encode child)
+    msg = BS.append (exportPubKey True pK) (encode child)
     (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) msg
-    k = fromMaybe err $ tweakPrvKeyC (xPrvKey xkey) a
+    k = fromMaybe err $ tweakSecKey (xPrvKey xkey) a
     err = throw $ DerivationException "Invalid prvSubKey derivation"
 
 -- | Compute a public, soft child key derivation. Given a parent key /M/
@@ -245,9 +244,9 @@ pubSubKey xKey child
         XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK (xPubNet xKey)
     | otherwise = error "Invalid child derivation index"
   where
-    msg    = BS.append (encode $ xPubKey xKey) (encode child)
+    msg    = BS.append (exportPubKey True (xPubKey xKey)) (encode child)
     (a, c) = split512 $ hmac512 (encode $ xPubChain xKey) msg
-    pK     = fromMaybe err $ tweakPubKeyC (xPubKey xKey) a
+    pK     = fromMaybe err $ tweakPubKey (xPubKey xKey) a
     err    = throw $ DerivationException "Invalid pubSubKey derivation"
 
 -- | Compute a hard child key derivation. Hard derivations can only be computed
@@ -267,7 +266,7 @@ hardSubKey xkey child
     i      = setBit child 31
     msg    = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode i)
     (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) msg
-    k      = fromMaybe err $ tweakPrvKeyC (xPrvKey xkey) a
+    k      = fromMaybe err $ tweakSecKey (xPrvKey xkey) a
     err    = throw $ DerivationException "Invalid hardSubKey derivation"
 
 -- | Returns true if the extended private key was derived through a hard
@@ -296,7 +295,7 @@ xPrvID = xPubID . deriveXPubKey
 
 -- | Computes the key identifier of an extended public key.
 xPubID :: XPubKey -> Hash160
-xPubID = ripemd160 . encode . sha256 . encode . xPubKey
+xPubID = ripemd160 . encode . sha256 . exportPubKey True . xPubKey
 
 -- | Computes the key fingerprint of an extended private key.
 xPrvFP :: XPrvKey -> Word32
@@ -314,7 +313,7 @@ xPubFP =
 
 -- | Computer the 'Address' of an extended public key.
 xPubAddr :: XPubKey -> Address
-xPubAddr xkey = pubKeyAddr (xPubNet xkey) (xPubKey xkey)
+xPubAddr xkey = pubKeyAddr (xPubNet xkey) (wrapPubKey True (xPubKey xkey))
 
 -- | Exports an extended private key to the BIP32 key export format ('Base58').
 xPrvExport :: XPrvKey -> Base58
@@ -336,7 +335,7 @@ xPubImport net = eitherToMaybe . runGet (getXPubKey net) <=< decodeBase58Check
 
 -- | Export an extended private key to WIF (Wallet Import Format).
 xPrvWif :: XPrvKey -> Base58
-xPrvWif xkey = toWif (xPrvNet xkey) (xPrvKey xkey)
+xPrvWif xkey = toWif (xPrvNet xkey) (wrapSecKey True (xPrvKey xkey))
 
 -- | Parse a binary extended private key.
 getXPrvKey :: Network -> Get XPrvKey
@@ -371,7 +370,7 @@ getXPubKey net = do
                 <*> getWord32be
                 <*> getWord32be
                 <*> S.get
-                <*> S.get
+                <*> (pubKeyPoint <$> S.get)
                 <*> pure net
 
 -- | Serialize an extended public key.
@@ -382,7 +381,7 @@ putXPubKey k = do
         putWord32be $ xPubParent k
         putWord32be $ xPubIndex k
         put         $ xPubChain k
-        put         $ xPubKey k
+        put         $ wrapPubKey True (xPubKey k)
 
 {- Derivation helpers -}
 
@@ -403,7 +402,7 @@ hardSubKeys k = map (\i -> (hardSubKey k i, i)) . cycleIndex
 
 -- | Derive an address from a public key and an index. The derivation type
 -- is a public, soft derivation.
-deriveAddr :: XPubKey -> KeyIndex -> (Address, PubKeyC)
+deriveAddr :: XPubKey -> KeyIndex -> (Address, PubKey)
 deriveAddr k i =
     (xPubAddr key, xPubKey key)
   where
@@ -411,7 +410,7 @@ deriveAddr k i =
 
 -- | Cyclic list of all addresses derived from a public key starting from an
 -- offset index. The derivation types are public, soft derivations.
-deriveAddrs :: XPubKey -> KeyIndex -> [(Address, PubKeyC, KeyIndex)]
+deriveAddrs :: XPubKey -> KeyIndex -> [(Address, PubKey, KeyIndex)]
 deriveAddrs k =
     map f . cycleIndex
   where
@@ -426,7 +425,7 @@ deriveMSAddr net keys m i
     | otherwise = error "Some extended public keys on the wrong network"
   where
     rdm = sortMulSig $ PayMulSig k m
-    k = map (toPubKeyG . xPubKey . flip pubSubKey i) keys
+    k = map (wrapPubKey True . xPubKey . flip pubSubKey i) keys
 
 -- | Cyclic list of all multisig addresses derived from a list of public keys,
 -- a number of required signatures /m/ and starting from an offset index. The
@@ -795,13 +794,13 @@ applyPath path key =
 {- Helpers for derivation paths and addresses -}
 
 -- | Derive an address from a given parent path.
-derivePathAddr :: XPubKey -> SoftPath -> KeyIndex -> (Address, PubKeyC)
+derivePathAddr :: XPubKey -> SoftPath -> KeyIndex -> (Address, PubKey)
 derivePathAddr key path = deriveAddr (derivePubPath path key)
 
 -- | Cyclic list of all addresses derived from a given parent path and starting
 -- from the given offset index.
 derivePathAddrs ::
-       XPubKey -> SoftPath -> KeyIndex -> [(Address, PubKeyC, KeyIndex)]
+       XPubKey -> SoftPath -> KeyIndex -> [(Address, PubKey, KeyIndex)]
 derivePathAddrs key path = deriveAddrs (derivePubPath path key)
 
 -- | Derive a multisig address from a given parent path. The number of required
@@ -832,15 +831,15 @@ derivePathMSAddrs net keys path =
 {- Utilities for extended keys -}
 
 -- | De-serialize HDW-specific private key.
-getPadPrvKey :: Get PrvKeyC
+getPadPrvKey :: Get SecKey
 getPadPrvKey = do
     pad <- getWord8
     unless (pad == 0x00) $ fail "Private key must be padded with 0x00"
-    prvKeyGetMonad makePrvKeyC -- Compressed version
+    secKeyGet
 
 -- | Serialize HDW-specific private key.
-putPadPrvKey :: PrvKeyC -> Put
-putPadPrvKey p = putWord8 0x00 >> prvKeyPutMonad p
+putPadPrvKey :: Putter SecKey
+putPadPrvKey p = putWord8 0x00 >> secKeyPut p
 
-bsPadPrvKey :: PrvKeyC -> ByteString
+bsPadPrvKey :: SecKey -> ByteString
 bsPadPrvKey = runPut . putPadPrvKey

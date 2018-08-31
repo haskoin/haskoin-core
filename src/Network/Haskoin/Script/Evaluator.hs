@@ -414,7 +414,9 @@ checkMultiSig :: SigCheck -- ^ Signature checking function
               -> [ ScriptOp ]   -- ^ CODESEPARATOR'd hashops
               -> Bool
 checkMultiSig f encPubKeys encSigs hOps =
-  let pubKeys = mapMaybe (eitherToMaybe . decode . opToSv) encPubKeys
+  let pubKeys = mapMaybe
+          (eitherToMaybe . fmap pubKeyPoint . decode . opToSv)
+          encPubKeys
       sigs = rights $ map ( decodeTxLaxSig . opToSv ) encSigs
       cleanHashOps = findAndDelete encSigs hOps
   in (length sigs == length encSigs) && -- check for bad signatures
@@ -795,7 +797,7 @@ verifySigWithType ::
 verifySigWithType net tx i val outOps txSig pubKey =
     let outScript = Script outOps
         h = txSigHash net tx outScript val i (txSignatureSigHash txSig)
-    in verifySig h (txSignature txSig) pubKey
+    in verifyHashSig h (txSignature txSig) pubKey
 
 -- | Uses `evalScript` to check that the input script of a spending
 -- transaction satisfies the output script.

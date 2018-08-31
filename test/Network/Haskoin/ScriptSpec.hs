@@ -3,7 +3,6 @@ module Network.Haskoin.ScriptSpec (spec) where
 
 import           Control.Monad
 import           Control.Monad.IO.Class
-import qualified Crypto.Secp256k1            as EC
 import           Data.Aeson                  as A
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as BS
@@ -108,8 +107,8 @@ standardSpec net = do
         decodeInput net (Script [opPushData ""]) `shouldBe`
             Right (RegularInput (SpendPK TxSignatureEmpty))
         let pk =
-                derivePubKey $
-                makePrvKey $ fromJust $ EC.secKey $ BS.replicate 32 1
+                derivePubKeyI $
+                wrapSecKey True $ fromJust $ secKey $ BS.replicate 32 1
         decodeInput net (Script [OP_0, opPushData $ S.encode pk]) `shouldBe`
             Right (RegularInput (SpendPKHash TxSignatureEmpty pk))
         decodeInput net (Script [OP_0, OP_0]) `shouldBe`

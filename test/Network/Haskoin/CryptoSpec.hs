@@ -3,10 +3,9 @@ module Network.Haskoin.CryptoSpec (spec) where
 
 import           Control.Monad             (forM_, replicateM_)
 import           Control.Monad.Trans       (liftIO)
-import qualified Crypto.Secp256k1          as EC (SecKey, exportCompactSig)
 import           Data.ByteString           (ByteString)
 import qualified Data.ByteString.Char8     as C (pack)
-import           Data.Maybe                (fromJust, isJust, isNothing)
+import           Data.Maybe                (fromMaybe, isJust, isNothing)
 import           Data.Serialize            (encode)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
@@ -52,29 +51,37 @@ sigMsg =
     | i <- [0..15]
     ]
 
-sec1 :: PrvKey
-sec1  = fromJust $ fromWif btc strSecret1
+sec1 :: SecKeyI
+sec1 =
+    fromMaybe (error "Could not decode WIF secret 1") (fromWif btc strSecret1)
 
-sec2 :: PrvKey
-sec2  = fromJust $ fromWif btc strSecret2
+sec2 :: SecKeyI
+sec2 =
+    fromMaybe (error "Could not decode WIF secret 2") (fromWif btc strSecret2)
 
-sec1C :: PrvKey
-sec1C = fromJust $ fromWif btc strSecret1C
+sec1C :: SecKeyI
+sec1C =
+    fromMaybe
+        (error "Could not decode WIF compressed secret 1")
+        (fromWif btc strSecret1C)
 
-sec2C :: PrvKey
-sec2C = fromJust $ fromWif btc strSecret2C
+sec2C :: SecKeyI
+sec2C =
+    fromMaybe
+        (error "Could not decode WIF compressed secret 2")
+        (fromWif btc strSecret2C)
 
-pub1 :: PubKey
-pub1  = derivePubKey sec1
+pub1 :: PubKeyI
+pub1  = derivePubKeyI sec1
 
-pub2 :: PubKey
-pub2  = derivePubKey sec2
+pub2 :: PubKeyI
+pub2  = derivePubKeyI sec2
 
-pub1C :: PubKey
-pub1C = derivePubKey sec1C
+pub1C :: PubKeyI
+pub1C = derivePubKeyI sec1C
 
-pub2C :: PubKey
-pub2C = derivePubKey sec2C
+pub2C :: PubKeyI
+pub2C = derivePubKeyI sec2C
 
 spec :: Spec
 spec = do
@@ -112,14 +119,14 @@ checkMiniKey =
         bs <-
             decodeHex
                 "4C7A9640C72DC2099F23715D0C8A0D8A35F8906E3CAB61DD3F78B67BF887C9AB"
-        decodePrvKey makePrvKeyU bs
+        wrapSecKey False <$> secKey bs
 
 checkPrvKeyCompressed :: Assertion
 checkPrvKeyCompressed = do
-    assertBool "Key 1"  $ not $ prvKeyCompressed sec1
-    assertBool "Key 2"  $ not $ prvKeyCompressed sec2
-    assertBool "Key 1C" $ prvKeyCompressed sec1C
-    assertBool "Key 2C" $ prvKeyCompressed sec2C
+    assertBool "Key 1"  $ not $ secKeyCompressed sec1
+    assertBool "Key 2"  $ not $ secKeyCompressed sec2
+    assertBool "Key 1C" $ secKeyCompressed sec1C
+    assertBool "Key 2C" $ secKeyCompressed sec2C
 
 checkKeyCompressed :: Assertion
 checkKeyCompressed = do
@@ -137,23 +144,23 @@ checkMatchingAddress = do
 
 checkSignatures :: Hash256 -> Assertion
 checkSignatures h = do
-    let sign1  = signMsg h sec1
-        sign2  = signMsg h sec2
-        sign1C = signMsg h sec1C
-        sign2C = signMsg h sec2C
-    assertBool "Key 1, Sign1"   $ verifySig h sign1 pub1
-    assertBool "Key 1, Sign2"   $ not $ verifySig h sign2 pub1
-    assertBool "Key 1, Sign1C"  $ verifySig h sign1C pub1
-    assertBool "Key 1, Sign2C"  $ not $ verifySig h sign2C pub1
-    assertBool "Key 2, Sign1"   $ not $ verifySig h sign1 pub2
-    assertBool "Key 2, Sign2"   $ verifySig h sign2 pub2
-    assertBool "Key 2, Sign1C"  $ not $ verifySig h sign1C pub2
-    assertBool "Key 2, Sign2C"  $ verifySig h sign2C pub2
-    assertBool "Key 1C, Sign1"  $ verifySig h sign1 pub1C
-    assertBool "Key 1C, Sign2"  $ not $ verifySig h sign2 pub1C
-    assertBool "Key 1C, Sign1C" $ verifySig h sign1C pub1C
-    assertBool "Key 1C, Sign2C" $ not $ verifySig h sign2C pub1C
-    assertBool "Key 2C, Sign1"  $ not $ verifySig h sign1 pub2C
-    assertBool "Key 2C, Sign2"  $ verifySig h sign2 pub2C
-    assertBool "Key 2C, Sign1C" $ not $ verifySig h sign1C pub2C
-    assertBool "Key 2C, Sign2C" $ verifySig h sign2C pub2C
+    let sign1  = signHash (secKeyData sec1) h
+        sign2  = signHash (secKeyData sec2) h
+        sign1C = signHash (secKeyData sec1C) h
+        sign2C = signHash (secKeyData sec2C) h
+    assertBool "Key 1, Sign1"   $ verifyHashSig h sign1 (pubKeyPoint pub1)
+    assertBool "Key 1, Sign2"   $ not $ verifyHashSig h sign2 (pubKeyPoint pub1)
+    assertBool "Key 1, Sign1C"  $ verifyHashSig h sign1C (pubKeyPoint pub1)
+    assertBool "Key 1, Sign2C"  $ not $ verifyHashSig h sign2C (pubKeyPoint pub1)
+    assertBool "Key 2, Sign1"   $ not $ verifyHashSig h sign1 (pubKeyPoint pub2)
+    assertBool "Key 2, Sign2"   $ verifyHashSig h sign2 (pubKeyPoint pub2)
+    assertBool "Key 2, Sign1C"  $ not $ verifyHashSig h sign1C (pubKeyPoint pub2)
+    assertBool "Key 2, Sign2C"  $ verifyHashSig h sign2C (pubKeyPoint pub2)
+    assertBool "Key 1C, Sign1"  $ verifyHashSig h sign1 (pubKeyPoint pub1C)
+    assertBool "Key 1C, Sign2"  $ not $ verifyHashSig h sign2 (pubKeyPoint pub1C)
+    assertBool "Key 1C, Sign1C" $ verifyHashSig h sign1C (pubKeyPoint pub1C)
+    assertBool "Key 1C, Sign2C" $ not $ verifyHashSig h sign2C (pubKeyPoint pub1C)
+    assertBool "Key 2C, Sign1"  $ not $ verifyHashSig h sign1 (pubKeyPoint pub2C)
+    assertBool "Key 2C, Sign2"  $ verifyHashSig h sign2 (pubKeyPoint pub2C)
+    assertBool "Key 2C, Sign1C" $ not $ verifyHashSig h sign1C (pubKeyPoint pub2C)
+    assertBool "Key 2C, Sign2C" $ verifyHashSig h sign2C (pubKeyPoint pub2C)

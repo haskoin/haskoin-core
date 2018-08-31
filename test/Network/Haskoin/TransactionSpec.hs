@@ -544,7 +544,7 @@ testChooseMSCoins (m, n) coins target byteFee nOut = nOut >= 0 ==>
 
 {- Signing Transactions -}
 
-testDetSignTx :: Network -> (Tx, [SigInput], [PrvKey]) -> Bool
+testDetSignTx :: Network -> (Tx, [SigInput], [SecKeyI]) -> Bool
 testDetSignTx net  (tx, sigis, prv) =
     not (verifyStdTx net tx verData) &&
     not (verifyStdTx net txSigP verData) && verifyStdTx net txSigC verData

@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Crypto.Signature
-      -- * Signatures
-    ( Sig
+    ( -- * Signatures
+      Sig
     , putSig
     , getSig
     , signHash
@@ -27,7 +27,7 @@ import           Data.Serialize.Get          (Get, getByteString, getWord8,
 import           Data.Serialize.Put          (Putter, putByteString)
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
-import           Network.Haskoin.Keys.Types
+import           Network.Haskoin.Keys.Common
 import           Numeric                     (showHex)
 import           System.Entropy              (getEntropy)
 

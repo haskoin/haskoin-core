@@ -19,21 +19,21 @@ module Network.Haskoin.Network.Bloom
     , acceptsFilters
     ) where
 
-import           Control.DeepSeq               (NFData, rnf)
-import           Control.Monad                 (forM_, replicateM)
+import           Control.DeepSeq                (NFData, rnf)
+import           Control.Monad                  (forM_, replicateM)
 import           Data.Bits
-import           Data.ByteString               (ByteString)
-import qualified Data.ByteString               as BS
-import qualified Data.Foldable                 as F
-import           Data.Hash.Murmur              (murmur3)
-import qualified Data.Sequence                 as S
-import           Data.Serialize                (Serialize, get, put)
-import           Data.Serialize.Get            (getByteString, getWord32le,
-                                                getWord8)
-import           Data.Serialize.Put            (putByteString, putWord32le,
-                                                putWord8)
+import           Data.ByteString                (ByteString)
+import qualified Data.ByteString                as BS
+import qualified Data.Foldable                  as F
+import           Data.Hash.Murmur               (murmur3)
+import qualified Data.Sequence                  as S
+import           Data.Serialize                 (Serialize, get, put)
+import           Data.Serialize.Get             (getByteString, getWord32le,
+                                                 getWord8)
+import           Data.Serialize.Put             (putByteString, putWord32le,
+                                                 putWord8)
 import           Data.Word
-import           Network.Haskoin.Network.Types
+import           Network.Haskoin.Network.Common
 
 -- 20,000 items with fp rate < 0.1% or 10,000 items and <0.0001%
 maxBloomSize :: Int

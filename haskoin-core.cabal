@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 11f27fb4ecf65d82ede580312a951b20113ae5d854174884556fe4be84aed08c
+-- hash: 3f23cb254d4f05b44fb1b4100ce0d8a096e124a5a3f0109ba3f724461ba4cf6f
 
 name:           haskoin-core
 version:        1.0.0
@@ -67,30 +67,33 @@ library
   exposed-modules:
       Network.Haskoin.Address
       Network.Haskoin.Address.Base58
-      Network.Haskoin.Address.Bech32
       Network.Haskoin.Address.CashAddr
+      Network.Haskoin.Address.Bech32
       Network.Haskoin.Block
       Network.Haskoin.Block.Headers
       Network.Haskoin.Block.Merkle
-      Network.Haskoin.Block.Types
       Network.Haskoin.Constants
       Network.Haskoin.Core
       Network.Haskoin.Crypto
+      Network.Haskoin.Keys
+      Network.Haskoin.Network
+      Network.Haskoin.Script
+      Network.Haskoin.Test
+      Network.Haskoin.Transaction
+      Network.Haskoin.Util
+  other-modules:
+      Network.Haskoin.Block.Common
       Network.Haskoin.Crypto.Hash
       Network.Haskoin.Crypto.Signature
-      Network.Haskoin.Keys
+      Network.Haskoin.Keys.Common
       Network.Haskoin.Keys.Extended
       Network.Haskoin.Keys.Mnemonic
-      Network.Haskoin.Keys.Types
-      Network.Haskoin.Network
       Network.Haskoin.Network.Bloom
+      Network.Haskoin.Network.Common
       Network.Haskoin.Network.Message
-      Network.Haskoin.Network.Types
-      Network.Haskoin.Script
+      Network.Haskoin.Script.Common
       Network.Haskoin.Script.SigHash
       Network.Haskoin.Script.Standard
-      Network.Haskoin.Script.Types
-      Network.Haskoin.Test
       Network.Haskoin.Test.Address
       Network.Haskoin.Test.Block
       Network.Haskoin.Test.Crypto
@@ -100,11 +103,8 @@ library
       Network.Haskoin.Test.Script
       Network.Haskoin.Test.Transaction
       Network.Haskoin.Test.Util
-      Network.Haskoin.Transaction
       Network.Haskoin.Transaction.Builder
-      Network.Haskoin.Transaction.Types
-      Network.Haskoin.Util
-  other-modules:
+      Network.Haskoin.Transaction.Common
       Paths_haskoin_core
   autogen-modules:
       Paths_haskoin_core

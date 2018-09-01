@@ -1,6 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
-module Network.Haskoin.Transaction.Types
+module Network.Haskoin.Transaction.Common
     ( Tx(..)
     , TxIn(..)
     , TxOut(..)
@@ -17,29 +17,29 @@ module Network.Haskoin.Transaction.Types
     , genesisTx
     ) where
 
-import           Control.Applicative           ((<|>))
-import           Control.DeepSeq               (NFData, rnf)
-import           Control.Monad                 (forM_, guard, liftM2, mzero,
-                                                replicateM, (<=<))
-import           Data.Aeson                    (FromJSON, ToJSON,
-                                                Value (String), parseJSON,
-                                                toJSON, withText)
-import           Data.ByteString               (ByteString)
-import qualified Data.ByteString               as BS
-import           Data.Hashable                 (Hashable)
-import           Data.Maybe                    (fromMaybe, maybe)
-import           Data.Serialize                (Serialize, decode, encode, get,
-                                                put)
+import           Control.Applicative            ((<|>))
+import           Control.DeepSeq                (NFData, rnf)
+import           Control.Monad                  (forM_, guard, liftM2, mzero,
+                                                 replicateM, (<=<))
+import           Data.Aeson                     (FromJSON, ToJSON,
+                                                 Value (String), parseJSON,
+                                                 toJSON, withText)
+import           Data.ByteString                (ByteString)
+import qualified Data.ByteString                as BS
+import           Data.Hashable                  (Hashable)
+import           Data.Maybe                     (fromMaybe, maybe)
+import           Data.Serialize                 (Serialize, decode, encode, get,
+                                                 put)
 import           Data.Serialize.Get
 import           Data.Serialize.Put
-import           Data.String                   (IsString, fromString)
-import           Data.String.Conversions       (cs)
-import           Data.Word                     (Word32, Word64)
+import           Data.String                    (IsString, fromString)
+import           Data.String.Conversions        (cs)
+import           Data.Word                      (Word32, Word64)
 import           Network.Haskoin.Crypto.Hash
-import           Network.Haskoin.Network.Types
-import           Network.Haskoin.Script.Types
+import           Network.Haskoin.Network.Common
+import           Network.Haskoin.Script.Common
 import           Network.Haskoin.Util
-import qualified Text.Read                     as R
+import qualified Text.Read                      as R
 
 newtype TxHash = TxHash { getTxHash :: Hash256 }
     deriving (Eq, Ord, NFData, Hashable, Serialize)

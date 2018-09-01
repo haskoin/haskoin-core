@@ -23,29 +23,29 @@ module Network.Haskoin.Script.SigHash
 , decodeTxSig
 ) where
 
-import           Control.DeepSeq                   (NFData, rnf)
+import           Control.DeepSeq                    (NFData, rnf)
 import           Control.Monad
-import qualified Data.Aeson                        as J
+import qualified Data.Aeson                         as J
 import           Data.Bits
-import           Data.ByteString                   (ByteString)
-import qualified Data.ByteString                   as BS
+import           Data.ByteString                    (ByteString)
+import qualified Data.ByteString                    as BS
 import           Data.Maybe
 import           Data.Scientific
 import           Data.Serialize
-import           Data.Serialize.Put                (runPut)
-import           Data.String                       (IsString, fromString)
-import           Data.String.Conversions           (cs)
+import           Data.Serialize.Put                 (runPut)
+import           Data.String                        (IsString, fromString)
+import           Data.String.Conversions            (cs)
 import           Data.Word
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Crypto.Signature
-import           Network.Haskoin.Keys.Types
+import           Network.Haskoin.Keys.Common
 import           Network.Haskoin.Network
-import           Network.Haskoin.Script.Types
-import           Network.Haskoin.Transaction.Types
+import           Network.Haskoin.Script.Common
+import           Network.Haskoin.Transaction.Common
 import           Network.Haskoin.Util
-import           Text.Read                         as R
-import           Text.Read.Lex                     (numberToInteger)
+import           Text.Read                          as R
+import           Text.Read.Lex                      (numberToInteger)
 
 -- | Data type representing the different ways a transaction can be signed.
 -- When producing a signature, a hash of the transaction is used as the message

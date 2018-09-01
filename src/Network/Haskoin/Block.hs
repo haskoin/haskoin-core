@@ -1,24 +1,7 @@
 module Network.Haskoin.Block
-    ( -- * Block
-      Block(..)
-      -- ** Messages
-    , Headers(..)
-    , GetBlocks(..)
-    , GetHeaders(..)
-    , BlockHeaderCount
-    , BlockLocator
-      -- ** Header
-    , BlockHeader(..)
-    , BlockHash(..)
-    , BlockHeight
-    , Timestamp
+    ( module Network.Haskoin.Block.Common
+      -- * Block Header Chain
     , BlockWork
-    , headerHash
-    , blockHashToHex
-    , hexToBlockHash
-    , decodeCompact
-    , encodeCompact
-      -- ** Storage
     , BlockHeaders(..)
     , BlockNode(..)
     , HeaderMemory(..)
@@ -34,8 +17,8 @@ module Network.Haskoin.Block
     , parentBlock
     , splitPoint
     , blockLocator
-      -- ** Merkle Blocks
-    , MerkleBlock (..)
+      -- * Merkle Blocks
+    , MerkleBlock(..)
     , MerkleRoot
     , FlagBits
     , PartialMerkleTree
@@ -47,4 +30,4 @@ module Network.Haskoin.Block
 
 import           Network.Haskoin.Block.Headers
 import           Network.Haskoin.Block.Merkle
-import           Network.Haskoin.Block.Types
+import           Network.Haskoin.Block.Common

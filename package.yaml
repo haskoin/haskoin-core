@@ -49,6 +49,23 @@ library:
   source-dirs: src
   generated-other-modules:
     - Paths_haskoin_core
+  exposed-modules:
+    - Network.Haskoin.Address
+    - Network.Haskoin.Address.Base58
+    - Network.Haskoin.Address.CashAddr
+    - Network.Haskoin.Address.Bech32
+    - Network.Haskoin.Block
+    - Network.Haskoin.Block.Headers
+    - Network.Haskoin.Block.Merkle
+    - Network.Haskoin.Constants
+    - Network.Haskoin.Core
+    - Network.Haskoin.Crypto
+    - Network.Haskoin.Keys
+    - Network.Haskoin.Network
+    - Network.Haskoin.Script
+    - Network.Haskoin.Test
+    - Network.Haskoin.Transaction
+    - Network.Haskoin.Util
 tests:
   spec:
     defaults: hspec/hspec@master

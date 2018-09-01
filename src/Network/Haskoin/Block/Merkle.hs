@@ -1,13 +1,12 @@
 module Network.Haskoin.Block.Merkle
-    ( -- * Merkle Block
-      MerkleBlock(..)
+    ( MerkleBlock(..)
     , MerkleRoot
     , FlagBits
     , PartialMerkleTree
     , buildMerkleRoot
     , merkleBlockTxs
     , testMerkleRoot
-    -- ** Helper functions
+    -- * Helper functions
     , buildPartialMerkle
     , decodeMerkleFlags
     , encodeMerkleFlags
@@ -32,11 +31,11 @@ import           Data.Serialize                    (Serialize, encode, get, put)
 import           Data.Serialize.Get                (getWord32le, getWord8)
 import           Data.Serialize.Put                (putWord32le, putWord8)
 import           Data.Word                         (Word32, Word8)
-import           Network.Haskoin.Block.Types
+import           Network.Haskoin.Block.Common
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
-import           Network.Haskoin.Network.Types
-import           Network.Haskoin.Transaction.Types
+import           Network.Haskoin.Network.Common
+import           Network.Haskoin.Transaction.Common
 
 -- | Hash of the block's Merkle root.
 type MerkleRoot        = Hash256
@@ -216,7 +215,8 @@ extractMatches net flags hashes ntx
     (merkRoot, matches, nBitsUsed, nHashUsed) = fromMaybe e resM
     e = error "extractMatches: unexpected error extracting a Maybe value"
 
--- | Helper function to split a list.
+-- | Helper function to split a list in chunks 'Int' length. Last chunk may be
+-- smaller.
 splitIn :: Int -> [a] -> [[a]]
 splitIn _ [] = []
 splitIn c xs = xs1 : splitIn c xs2

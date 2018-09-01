@@ -111,8 +111,8 @@ import           Network.Haskoin.Address
 import           Network.Haskoin.Address.Base58
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
-import           Network.Haskoin.Keys.Types
-import           Network.Haskoin.Script.Standard
+import           Network.Haskoin.Keys.Common
+import           Network.Haskoin.Script
 import           Network.Haskoin.Util
 import           Text.Read                       as R
 import           Text.Read.Lex

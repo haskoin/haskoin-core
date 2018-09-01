@@ -1,22 +1,22 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Network.Haskoin.Crypto.Hash
--- * Hashes
-( Hash512(getHash512)
-, Hash256(getHash256)
-, Hash160(getHash160)
-, CheckSum32(getCheckSum32)
-, sha512
-, sha256
-, ripemd160
-, sha1
-, doubleSHA256
-, addressHash
-, checkSum32
-, hmac512
-, hmac256
-, split512
-, join512
-) where
+    ( -- * Hashes
+      Hash512(getHash512)
+    , Hash256(getHash256)
+    , Hash160(getHash160)
+    , CheckSum32(getCheckSum32)
+    , sha512
+    , sha256
+    , ripemd160
+    , sha1
+    , doubleSHA256
+    , addressHash
+    , checkSum32
+    , hmac512
+    , hmac256
+    , split512
+    , join512
+    ) where
 
 import           Control.DeepSeq         (NFData)
 import           Crypto.Hash             (RIPEMD160 (..), SHA1 (..),

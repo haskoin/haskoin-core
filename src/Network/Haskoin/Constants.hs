@@ -1,8 +1,7 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Constants
-    ( -- * Network Constants
-      Network(..)
+    ( Network(..)
     , btc
     , btcTest
     , btcRegTest
@@ -11,6 +10,7 @@ module Network.Haskoin.Constants
     , bchRegTest
     , allNets
     , netByName
+    , netByIdent
     ) where
 
 import           Control.Concurrent.MVar
@@ -24,7 +24,7 @@ import           Data.String
 import           Data.Version
 import           Data.Word                   (Word32, Word64, Word8)
 import           GHC.Generics                (Generic)
-import           Network.Haskoin.Block.Types
+import           Network.Haskoin.Block.Common
 import           Paths_haskoin_core
 import           System.IO.Unsafe            (unsafePerformIO)
 import           Text.Read

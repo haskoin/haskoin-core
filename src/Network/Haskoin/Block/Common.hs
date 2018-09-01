@@ -1,7 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module Network.Haskoin.Block.Types
-    ( -- * Block
-      Block(..)
+module Network.Haskoin.Block.Common
+    ( Block(..)
     , BlockHeight
     , Timestamp
     , BlockHeader(..)
@@ -38,8 +37,8 @@ import           Data.String                       (IsString, fromString)
 import           Data.String.Conversions           (cs)
 import           Data.Word                         (Word32)
 import           Network.Haskoin.Crypto.Hash
-import           Network.Haskoin.Network.Types
-import           Network.Haskoin.Transaction.Types
+import           Network.Haskoin.Network.Common
+import           Network.Haskoin.Transaction.Common
 import           Network.Haskoin.Util
 import qualified Text.Read                         as R
 
@@ -117,22 +116,16 @@ hexToBlockHash hex = do
 -- 'Block'. Variations in the coinbase will result in different merkle roots in
 -- the 'BlockHeader'.
 data BlockHeader =
-    BlockHeader { -- | Block version information, based on the version of the
-                  -- software creating this block.
-                  blockVersion   :: !Word32      -- 16 bytes
-                  -- | Hash of the previous block (parent) referenced by this
-                  -- block.
+    BlockHeader {blockVersion   :: !Word32      -- 16 bytes
+                  -- | hash of the previous block (parent)
                 , prevBlock      :: !BlockHash   -- 64 bytes
-                  -- | Root of the merkle tree of all transactions pertaining
-                  -- to this block.
+                  -- | root of the merkle tree of transactions
                 , merkleRoot     :: !Hash256     -- 64 bytes
-                  -- | Unix timestamp recording when this block was created
+                  -- | unix timestamp
                 , blockTimestamp :: !Timestamp   -- 16 bytes
-                  -- | The difficulty target being used for this block
+                  -- | difficulty target
                 , blockBits      :: !Word32      -- 16 bytes
-                  -- | A random nonce used to generate this block. Additional
-                  -- randomness is included in the coinbase transaction of
-                  -- this block.
+                  -- | random nonce
                 , bhNonce        :: !Word32      -- 16 bytes
                 } deriving (Eq, Show, Ord)       -- 208 bytes (above + 16 bytes)
 
@@ -181,16 +174,15 @@ type BlockLocator = [BlockHash]
 -- bitcoin protocol to retrieve blocks from a peer by providing it a
 -- 'BlockLocator' object. The response to a 'GetBlocks' message is an 'Inv'
 -- message containing a list of block hashes that the peer believes this node is
--- missing.
+-- missing. The number of block hashes in that inv message will end at the stop
+-- block hash, at at the tip of the chain, or after 500 entries, whichever comes
+-- earlier.
 data GetBlocks =
-    GetBlocks { -- | Protocol version.
+    GetBlocks { -- | protocol version.
                 getBlocksVersion  :: !Word32
-                -- | Block locator object. It is a list of block hashes from the
-                -- most recent block back to the Genesis block. The list is
-                -- dense at first and sparse towards the end.
+                -- | block locator object
               , getBlocksLocator  :: !BlockLocator
-                -- | Hash of the last desired block. If set to zero, the
-                -- maximum number of block hashes is returned (500).
+                -- | hash of the last desired block
               , getBlocksHashStop :: !BlockHash
               } deriving (Eq, Show)
 
@@ -221,14 +213,11 @@ putGetBlockMsg v xs h = do
 -- clients to exclude block contents when synchronizing the blockchain.
 data GetHeaders =
     GetHeaders {
-                 -- | Protocol version.
+                 -- | protocol version
                  getHeadersVersion  :: !Word32
-                 -- | Block locator object. It is a list of block hashes from
-                 -- the most recent block back to the Genesis block. The list is
-                 -- dense at first and sparse towards the end.
+                 -- | block locator object
                , getHeadersBL       :: !BlockLocator
-                 -- | Hash of the last desired block header. When set to zero,
-                 -- the maximum number of block headers is returned (2000).
+                 -- | hash of the last desired block header
                , getHeadersHashStop :: !BlockHash
                } deriving (Eq, Show)
 
@@ -251,7 +240,7 @@ type BlockHeaderCount = (BlockHeader, VarInt)
 -- | The 'Headers' type is used to return a list of block headers in
 -- response to a 'GetHeaders' message.
 newtype Headers =
-    Headers { -- | List of block headers with respective transaction counts.
+    Headers { -- | list of block headers with transaction count
               headersList :: [BlockHeaderCount]
             }
     deriving (Eq, Show)

@@ -1,34 +1,60 @@
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Transaction.Builder where
+module Network.Haskoin.Transaction.Builder
+    ( -- * Transaction Creation & Signing
+      buildAddrTx
+    , buildTx
+    , buildInput
+    , SigInput(..)
+    , signTx
+    , signInput
+    , verifyStdTx
+    , mergeTxs
+    , sigKeys
+    , mergeTxInput
+    , findSigInput
+    , verifyStdInput
+      -- * Coin Selection
+    , Coin(..)
+    , chooseCoins
+    , chooseCoinsSink
+    , chooseMSCoins
+    , chooseMSCoinsSink
+    , countMulSig
+    , greedyAddSink
+    , guessTxFee
+    , guessMSTxFee
+    , guessTxSize
+    , guessMSSize
+    ) where
 
-import           Control.Arrow                     (first)
-import           Control.DeepSeq                   (NFData, rnf)
-import           Control.Monad                     (foldM, mzero, unless)
-import           Control.Monad.Identity            (runIdentity)
-import           Data.Aeson                        (FromJSON, ToJSON,
-                                                    Value (Object), object,
-                                                    parseJSON, toJSON, (.:),
-                                                    (.:?), (.=))
-import           Data.ByteString                   (ByteString)
-import qualified Data.ByteString                   as BS
-import           Data.Conduit                      (ConduitT, Void, await,
-                                                    runConduit, (.|))
-import           Data.Conduit.List                 (sourceList)
-import           Data.List                         (find, nub)
-import           Data.Maybe                        (catMaybes, fromJust,
-                                                    fromMaybe, isJust, mapMaybe,
-                                                    maybeToList)
-import           Data.Serialize                    (encode)
-import           Data.String.Conversions           (cs)
-import           Data.Word                         (Word64)
+import           Control.Arrow                      (first)
+import           Control.DeepSeq                    (NFData, rnf)
+import           Control.Monad                      (foldM, mzero, unless, when)
+import           Control.Monad.Identity             (runIdentity)
+import           Data.Aeson                         (FromJSON, ToJSON,
+                                                     Value (Object), object,
+                                                     parseJSON, toJSON, (.:),
+                                                     (.:?), (.=))
+import           Data.ByteString                    (ByteString)
+import qualified Data.ByteString                    as BS
+import           Data.Conduit                       (ConduitT, Void, await,
+                                                     runConduit, (.|))
+import           Data.Conduit.List                  (sourceList)
+import           Data.List                          (find, nub)
+import           Data.Maybe                         (catMaybes, fromJust,
+                                                     fromMaybe, isJust,
+                                                     mapMaybe, maybeToList)
+import           Data.Serialize                     (encode)
+import           Data.String.Conversions            (cs)
+import           Data.Word                          (Word64)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Signature
-import           Network.Haskoin.Keys.Types
-import           Network.Haskoin.Network.Types
+import           Network.Haskoin.Keys.Common
+import           Network.Haskoin.Network.Common
 import           Network.Haskoin.Script
-import           Network.Haskoin.Transaction.Types
+import           Network.Haskoin.Transaction.Common
 import           Network.Haskoin.Util
 
 -- | Any type can be used as a Coin if it can provide a value in Satoshi.
@@ -285,9 +311,9 @@ signInput net tx i (SigInput so val _ sh rdmM) key = do
     f si x = x {scriptInput = encodeInputBS si}
     msg = txSigHash net tx (encodeOutput $ fromMaybe so rdmM) val i sh
 
--- Order the SigInput with respect to the transaction inputs. This allow the
--- users to provide the SigInput in any order. Users can also provide only a
--- partial set of SigInputs.
+-- | Order the 'SigInput' with respect to the transaction inputs. This allows
+-- the user to provide the SigInput in any order. Users can also provide only a
+-- partial set of 'SigInput' entries.
 findSigInput :: [SigInput] -> [TxIn] -> [(SigInput, Int)]
 findSigInput si ti =
     mapMaybe g $ zip (matchTemplate si ti f) [0..]
@@ -296,8 +322,8 @@ findSigInput si ti =
     g (Just s, i)  = Just (s,i)
     g (Nothing, _) = Nothing
 
--- Find from the list of private keys which one is required to sign the
--- provided ScriptOutput.
+-- | Find from the list of provided private keys which one is required to sign
+-- the 'ScriptOutput'.
 sigKeys ::
        Network
     -> ScriptOutput
@@ -318,18 +344,20 @@ sigKeys net so rdmM keys =
   where
     zipKeys = map (\k -> (k, derivePubKeyI k)) keys
 
--- Construct an input, given a signature and a public key
+-- | Construct an input for a transaction given a signature, public key and data
+-- about the previous output.
 buildInput ::
        Network
-    -> Tx
-    -> Int
-    -> ScriptOutput
-    -> Word64
-    -> Maybe RedeemScript
+    -> Tx -- ^ transaction where input will be added
+    -> Int -- ^ input index where signature will go
+    -> ScriptOutput -- ^ output script being spent
+    -> Word64 -- ^ amount of previous output
+    -> Maybe RedeemScript -- ^ redeem script if pay-to-script-hash
     -> TxSignature
     -> PubKeyI
     -> Either String ScriptInput
-buildInput net tx i so val rdmM sig pub =
+buildInput net tx i so val rdmM sig pub = do
+    when (i >= length (txIn tx)) $ Left "buildInput: Invalid input index"
     case (so, rdmM) of
         (PayPK _, Nothing) -> return $ RegularInput $ SpendPK sig
         (PayPKHash _, Nothing) -> return $ RegularInput $ SpendPKHash sig pub
@@ -356,6 +384,7 @@ buildInput net tx i so val rdmM sig pub =
 
 {- Merge multisig transactions -}
 
+-- | Merge partially-signed multisig transactions.
 mergeTxs :: Network -> [Tx] -> [(ScriptOutput, Word64, OutPoint)] -> Either String Tx
 mergeTxs net txs os
     | null txs = error "Transaction list is empty"
@@ -371,6 +400,7 @@ mergeTxs net txs os
     clearInput tx (_, i) =
         Tx (txVersion tx) (ins (txIn tx) i) (txOut tx) [] (txLockTime tx)
 
+-- | Merge input from partially-signed multisig transactions.
 mergeTxInput ::
        Network
     -> [Tx]
@@ -466,7 +496,7 @@ verifyStdInput net tx i = go (scriptInput $ txIn tx !! i)
       where
         out = encodeOutput so
 
--- Count the number of valid signatures
+-- | Count the number of valid signatures for a multi-signature transaction.
 countMulSig :: Network -> Tx -> Script -> Word64 -> Int -> [PubKey] -> [TxSignature] -> Int
 countMulSig _ _ _ _ _ [] _  = 0
 countMulSig _ _ _ _ _ _  [] = 0

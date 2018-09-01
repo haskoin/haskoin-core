@@ -18,12 +18,12 @@ import           Data.Serialize.Put                (Putter, putByteString,
                                                     putWord32be, putWord32le)
 import           Data.Word                         (Word32)
 import           Network.Haskoin.Block.Merkle
-import           Network.Haskoin.Block.Types
+import           Network.Haskoin.Block.Common
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Network.Bloom
-import           Network.Haskoin.Network.Types
-import           Network.Haskoin.Transaction.Types
+import           Network.Haskoin.Network.Common
+import           Network.Haskoin.Transaction.Common
 
 -- | Data type representing the header of a 'Message'. All messages sent between
 -- nodes contain a message header.

@@ -2,16 +2,14 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards   #-}
 module Network.Haskoin.Block.Headers
-    ( -- * Block Header Chain
-      BlockNode(..)
+    ( BlockNode(..)
     , BlockHeaders(..)
     , BlockWork
     , genesisNode
     , genesisBlock
     , isGenesis
     , chooseBest
-
-      -- ** Header Chain Storage Functions
+      -- * Header Chain Storage Functions
     , parentBlock
     , getParents
     , getAncestor
@@ -19,16 +17,14 @@ module Network.Haskoin.Block.Headers
     , connectBlocks
     , connectBlock
     , blockLocator
-
-      -- ** In-Memory Header Chain
+      -- * In-Memory Header Chain Store
     , HeaderMemory(..)
     , ShortBlockHash
     , BlockMap
     , shortBlockHash
     , initialChain
     , genesisMap
-
-      -- ** Helper Functions
+      -- * Helper Functions
     , appendBlocks
     , validBlock
     , validCP
@@ -51,34 +47,35 @@ module Network.Haskoin.Block.Headers
     , mineBlock
     , ) where
 
-import           Control.Applicative               ((<|>))
-import           Control.DeepSeq                   (NFData, rnf)
-import           Control.Monad                     (guard, unless, when)
-import           Control.Monad.Except              (ExceptT (..), runExceptT,
-                                                    throwError)
-import           Control.Monad.State.Strict        as State (StateT, get, gets,
-                                                             lift, modify)
+import           Control.Applicative                ((<|>))
+import           Control.DeepSeq                    (NFData, rnf)
+import           Control.Monad                      (guard, unless, when)
+import           Control.Monad.Except               (ExceptT (..), runExceptT,
+                                                     throwError)
+import           Control.Monad.State.Strict         as State (StateT, get, gets,
+                                                              lift, modify)
 import           Control.Monad.Trans.Maybe
-import           Data.Bits                         (shiftL, shiftR, (.&.))
-import qualified Data.ByteString                   as B
-import           Data.ByteString.Short             (ShortByteString, fromShort,
-                                                    toShort)
-import           Data.Function                     (on)
-import           Data.HashMap.Strict               (HashMap)
-import qualified Data.HashMap.Strict               as HashMap
-import           Data.List                         (sort, sortBy)
-import           Data.Maybe                        (fromMaybe, listToMaybe)
-import           Data.Serialize                    as S (Serialize (..), decode,
-                                                         encode, get, put)
-import           Data.Serialize.Get                (Get, getWord32le, runGet)
-import           Data.Serialize.Put                (Put, Putter, putWord32le,
-                                                    runPut)
-import           Data.Typeable                     (Typeable)
-import           Data.Word                         (Word32, Word64)
-import           Network.Haskoin.Block.Types
+import           Data.Bits                          (shiftL, shiftR, (.&.))
+import qualified Data.ByteString                    as B
+import           Data.ByteString.Short              (ShortByteString, fromShort,
+                                                     toShort)
+import           Data.Function                      (on)
+import           Data.HashMap.Strict                (HashMap)
+import qualified Data.HashMap.Strict                as HashMap
+import           Data.List                          (sort, sortBy)
+import           Data.Maybe                         (fromMaybe, listToMaybe)
+import           Data.Serialize                     as S (Serialize (..),
+                                                          decode, encode, get,
+                                                          put)
+import           Data.Serialize.Get                 (Get, getWord32le, runGet)
+import           Data.Serialize.Put                 (Put, Putter, putWord32le,
+                                                     runPut)
+import           Data.Typeable                      (Typeable)
+import           Data.Word                          (Word32, Word64)
+import           Network.Haskoin.Block.Common
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
-import           Network.Haskoin.Transaction.Types
+import           Network.Haskoin.Transaction.Common
 import           Network.Haskoin.Util
 
 -- | Short version of the block hash. Uses the good end of the hash (the part
@@ -103,13 +100,13 @@ data BlockNode
     = BlockNode { nodeHeader :: !BlockHeader
                 , nodeHeight :: !BlockHeight
         -- | accumulated work so far
-                , nodeWork :: !BlockWork
+                , nodeWork   :: !BlockWork
         -- | akip magic block hash
-                , nodeSkip :: !BlockHash }
+                , nodeSkip   :: !BlockHash }
     -- | Genesis block header
     | GenesisNode { nodeHeader :: !BlockHeader
                   , nodeHeight :: !BlockHeight
-                  , nodeWork :: !BlockWork }
+                  , nodeWork   :: !BlockWork }
     deriving (Show)
 
 instance Serialize BlockNode where
@@ -282,7 +279,7 @@ connectBlocks net t bhs@(bh:_) =
         return bns
   where
     chained (h1:h2:hs) = headerHash h1 == prevBlock h2 && chained (h2 : hs)
-    chained _ = True
+    chained _          = True
     skip lbh ls par
         | sh == nodeHeight lbh = return lbh
         | sh < nodeHeight lbh = do

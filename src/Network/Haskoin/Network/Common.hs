@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
-module Network.Haskoin.Network.Types
+module Network.Haskoin.Network.Common
     ( -- * Network Data Types
       Addr(..)
     , NetworkAddressTime
@@ -15,17 +15,18 @@ module Network.Haskoin.Network.Types
     , Pong(..)
     , Reject(..)
     , RejectCode(..)
-    , reject
     , VarInt(..)
     , VarString(..)
     , Version(..)
+    , MessageCommand(..)
+      -- ** Useful Functions
+    , reject
     , nodeNone
     , nodeNetwork
     , nodeGetUTXO
     , nodeBloom
     , nodeWitness
     , nodeXThin
-    , MessageCommand(..)
     , commandToString
     , stringToCommand
     ) where

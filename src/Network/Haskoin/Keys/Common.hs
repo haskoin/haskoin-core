@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Keys.Types
+module Network.Haskoin.Keys.Common
     ( -- * Public & Private Keys
       PubKeyI(..)
     , SecKeyI(..)

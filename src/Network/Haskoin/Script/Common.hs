@@ -1,11 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Script.Types
+module Network.Haskoin.Script.Common
 ( ScriptOp(..)
-, ScriptOutput(..)
 , Script(..)
 , PushDataType(..)
-, isPushOp
-, opPushData
+, ScriptOutput(..)
 , isPayPK
 , isPayPKHash
 , isPayMulSig
@@ -15,35 +13,37 @@ module Network.Haskoin.Script.Types
 , encodeOutputBS
 , decodeOutput
 , decodeOutputBS
+, isPushOp
+, opPushData
 , intToScriptOp
 , scriptOpToInt
 ) where
 
-import           Control.DeepSeq             (NFData, rnf)
+import           Control.DeepSeq                    (NFData, rnf)
 import           Control.Monad
-import           Data.Aeson                  as A
-import           Data.ByteString             (ByteString)
-import qualified Data.ByteString             as BS
-import           Data.Serialize              as S
-import           Data.Serialize.Get          (getByteString, getWord16le,
-                                              getWord32le, getWord8, isEmpty)
-import           Data.Serialize.Put          (putByteString, putWord16le,
-                                              putWord32le, putWord8)
+import           Data.Aeson                         as A
+import           Data.ByteString                    (ByteString)
+import qualified Data.ByteString                    as BS
+import           Data.Serialize                     as S
+import           Data.Serialize.Get                 (getByteString, getWord16le,
+                                                     getWord32le, getWord8,
+                                                     isEmpty)
+import           Data.Serialize.Put                 (putByteString, putWord16le,
+                                                     putWord32le, putWord8)
 import           Data.String.Conversions
-import           Data.Word                   (Word8)
+import           Data.Word                          (Word8)
 import           Network.Haskoin.Crypto.Hash
-import           Network.Haskoin.Keys.Types
+import           Network.Haskoin.Keys.Common
 import           Network.Haskoin.Util
 
 -- | Data type representing a transaction script. Scripts are defined as lists
 -- of script operators 'ScriptOp'. Scripts are used to:
 --
 -- * Define the spending conditions in the output of a transaction
---
 -- * Provide the spending signatures in the input of a transaction
 newtype Script =
     Script {
-             -- | List of script operators defining this script
+             -- | script operators defining this script
              scriptOps :: [ScriptOp]
            }
     deriving (Eq, Show, Read)
@@ -62,78 +62,6 @@ instance Serialize Script where
                 else (:) <$> get <*> getScriptOps
 
     put (Script ops) = forM_ ops put
-
--- | Data type describing standard transaction output scripts. Output scripts
--- provide the conditions that must be fulfilled for someone to spend the
--- output coins.
-data ScriptOutput
-      -- | Pay to a public key.
-    = PayPK { getOutputPubKey :: !PubKeyI }
-      -- | Pay to a public key hash.
-    | PayPKHash { getOutputHash :: !Hash160 }
-      -- | Pay to multiple public keys.
-    | PayMulSig { getOutputMulSigKeys     :: ![PubKeyI]
-                , getOutputMulSigRequired :: !Int }
-      -- | Pay to a script hash.
-    | PayScriptHash { getOutputHash :: !Hash160 }
-      -- | Pay to witness public key hash.
-    | PayWitnessPKHash { getOutputHash :: !Hash160 }
-      -- | Pay to witness script hash.
-    | PayWitnessScriptHash { getScriptHash :: !Hash256 }
-      -- | Provably unspendable data carrier.
-    | DataCarrier { getOutputData :: !ByteString }
-    deriving (Eq, Show)
-
-instance FromJSON ScriptOutput where
-    parseJSON = withText "scriptoutput" $ \t -> either fail return $
-        maybeToEither "scriptoutput not hex" (decodeHex $ cs t) >>=
-        decodeOutputBS
-
-instance ToJSON ScriptOutput where
-    toJSON = String . cs . encodeHex . encodeOutputBS
-
-instance NFData ScriptOutput where
-    rnf (PayPK k)                = rnf k
-    rnf (PayPKHash a)            = rnf a
-    rnf (PayMulSig k r)          = rnf k `seq` rnf r
-    rnf (PayScriptHash a)        = rnf a
-    rnf (PayWitnessPKHash a)     = rnf a
-    rnf (PayWitnessScriptHash h) = rnf h
-    rnf (DataCarrier a)          = rnf a
-
--- | Returns True if the script is a pay to public key output.
-isPayPK :: ScriptOutput -> Bool
-isPayPK (PayPK _) = True
-isPayPK _         = False
-
--- | Returns True if the script is a pay to public key hash output.
-isPayPKHash :: ScriptOutput -> Bool
-isPayPKHash (PayPKHash _) = True
-isPayPKHash _             = False
-
--- | Returns True if the script is a pay to multiple public keys output.
-isPayMulSig :: ScriptOutput -> Bool
-isPayMulSig (PayMulSig _ _) = True
-isPayMulSig _               = False
-
--- | Returns true if the script is a pay to script hash output.
-isPayScriptHash :: ScriptOutput -> Bool
-isPayScriptHash (PayScriptHash _) = True
-isPayScriptHash _                 = False
-
--- | Returns true if the script is a pay to witness public key hash output.
-isPayWitnessPKHash :: ScriptOutput -> Bool
-isPayWitnessPKHash (PayWitnessPKHash _) = True
-isPayWitnessPKHash _                    = False
-
-isPayWitnessScriptHash :: ScriptOutput -> Bool
-isPayWitnessScriptHash (PayWitnessScriptHash _) = True
-isPayWitnessScriptHash _                        = False
-
--- | Returns True if the script is an OP_RETURN "datacarrier" output
-isDataCarrier :: ScriptOutput -> Bool
-isDataCarrier (DataCarrier _) = True
-isDataCarrier _               = False
 
 -- | Data type representing the type of an OP_PUSHDATA opcode.
 data PushDataType
@@ -617,6 +545,120 @@ opPushData bs
   where
     len = BS.length bs
 
+-- | Transforms integers [1 .. 16] to 'ScriptOp' [OP_1 .. OP_16]
+intToScriptOp :: Int -> ScriptOp
+intToScriptOp i
+    | i `elem` [1 .. 16] = op
+    | otherwise = err
+  where
+    op = either (const err) id . S.decode . BS.singleton . fromIntegral $ i + 0x50
+    err = error $ "intToScriptOp: Invalid integer " ++ show i
+
+-- | Decode 'ScriptOp' [OP_1 .. OP_16] to integers [1 .. 16]. This functions
+-- fails for other values of 'ScriptOp'
+scriptOpToInt :: ScriptOp -> Either String Int
+scriptOpToInt s
+    | res `elem` [1..16] = return res
+    | otherwise          = Left $ "scriptOpToInt: invalid opcode " ++ show s
+  where
+    res = fromIntegral (BS.head $ S.encode s) - 0x50
+
+-- | Data type describing standard transaction output scripts. Output scripts
+-- provide the conditions that must be fulfilled for someone to spend the
+-- output coins.
+data ScriptOutput
+      -- | Pay to a public key.
+    = PayPK { getOutputPubKey :: !PubKeyI }
+      -- | Pay to a public key hash.
+    | PayPKHash { getOutputHash :: !Hash160 }
+      -- | Pay to multiple public keys.
+    | PayMulSig { getOutputMulSigKeys     :: ![PubKeyI]
+                , getOutputMulSigRequired :: !Int }
+      -- | Pay to a script hash.
+    | PayScriptHash { getOutputHash :: !Hash160 }
+      -- | Pay to witness public key hash.
+    | PayWitnessPKHash { getOutputHash :: !Hash160 }
+      -- | Pay to witness script hash.
+    | PayWitnessScriptHash { getScriptHash :: !Hash256 }
+      -- | Provably unspendable data carrier.
+    | DataCarrier { getOutputData :: !ByteString }
+    deriving (Eq, Show)
+
+instance FromJSON ScriptOutput where
+    parseJSON = withText "scriptoutput" $ \t -> either fail return $
+        maybeToEither "scriptoutput not hex" (decodeHex $ cs t) >>=
+        decodeOutputBS
+
+instance ToJSON ScriptOutput where
+    toJSON = String . cs . encodeHex . encodeOutputBS
+
+instance NFData ScriptOutput where
+    rnf (PayPK k)                = rnf k
+    rnf (PayPKHash a)            = rnf a
+    rnf (PayMulSig k r)          = rnf k `seq` rnf r
+    rnf (PayScriptHash a)        = rnf a
+    rnf (PayWitnessPKHash a)     = rnf a
+    rnf (PayWitnessScriptHash h) = rnf h
+    rnf (DataCarrier a)          = rnf a
+
+-- | Returns True if the script is a pay to public key output.
+isPayPK :: ScriptOutput -> Bool
+isPayPK (PayPK _) = True
+isPayPK _         = False
+
+-- | Returns True if the script is a pay to public key hash output.
+isPayPKHash :: ScriptOutput -> Bool
+isPayPKHash (PayPKHash _) = True
+isPayPKHash _             = False
+
+-- | Returns True if the script is a pay to multiple public keys output.
+isPayMulSig :: ScriptOutput -> Bool
+isPayMulSig (PayMulSig _ _) = True
+isPayMulSig _               = False
+
+-- | Returns true if the script is a pay to script hash output.
+isPayScriptHash :: ScriptOutput -> Bool
+isPayScriptHash (PayScriptHash _) = True
+isPayScriptHash _                 = False
+
+-- | Returns true if the script is a pay to witness public key hash output.
+isPayWitnessPKHash :: ScriptOutput -> Bool
+isPayWitnessPKHash (PayWitnessPKHash _) = True
+isPayWitnessPKHash _                    = False
+
+isPayWitnessScriptHash :: ScriptOutput -> Bool
+isPayWitnessScriptHash (PayWitnessScriptHash _) = True
+isPayWitnessScriptHash _                        = False
+
+-- | Returns True if the script is an OP_RETURN "datacarrier" output
+isDataCarrier :: ScriptOutput -> Bool
+isDataCarrier (DataCarrier _) = True
+isDataCarrier _               = False
+
+-- | Tries to decode a 'ScriptOutput' from a 'Script'. This can fail if the
+-- script is not recognized as any of the standard output types.
+decodeOutput :: Script -> Either String ScriptOutput
+decodeOutput s = case scriptOps s of
+    -- Pay to PubKey
+    [OP_PUSHDATA bs _, OP_CHECKSIG] -> PayPK <$> S.decode bs
+    -- Pay to PubKey Hash
+    [OP_DUP, OP_HASH160, OP_PUSHDATA bs _, OP_EQUALVERIFY, OP_CHECKSIG] ->
+        PayPKHash <$> S.decode bs
+    -- Pay to Script Hash
+    [OP_HASH160, OP_PUSHDATA bs _, OP_EQUAL] ->
+        PayScriptHash <$> S.decode  bs
+    -- Pay to Witness
+    [OP_0, OP_PUSHDATA bs OPCODE]
+      | BS.length bs == 20 -> PayWitnessPKHash     <$> S.decode bs
+      | BS.length bs == 32 -> PayWitnessScriptHash <$> S.decode bs
+    -- Provably unspendable data carrier output
+    [OP_RETURN, OP_PUSHDATA bs _] -> Right $ DataCarrier bs
+    -- Pay to MultiSig Keys
+    _ -> matchPayMulSig s
+
+-- | Similar to 'decodeOutput' but decodes from a ByteString
+decodeOutputBS :: ByteString -> Either String ScriptOutput
+decodeOutputBS = decodeOutput <=< S.decode
 -- | Computes a 'Script' from a 'ScriptOutput'. The 'Script' is a list of
 -- 'ScriptOp' can can be used to build a 'Tx'.
 encodeOutput :: ScriptOutput -> Script
@@ -648,49 +690,6 @@ encodeOutput s = Script $ case s of
 -- | Similar to 'encodeOutput' but encodes to a ByteString
 encodeOutputBS :: ScriptOutput -> ByteString
 encodeOutputBS = S.encode . encodeOutput
-
--- | Tries to decode a 'ScriptOutput' from a 'Script'. This can fail if the
--- script is not recognized as any of the standard output types.
-decodeOutput :: Script -> Either String ScriptOutput
-decodeOutput s = case scriptOps s of
-    -- Pay to PubKey
-    [OP_PUSHDATA bs _, OP_CHECKSIG] -> PayPK <$> S.decode bs
-    -- Pay to PubKey Hash
-    [OP_DUP, OP_HASH160, OP_PUSHDATA bs _, OP_EQUALVERIFY, OP_CHECKSIG] ->
-        PayPKHash <$> S.decode bs
-    -- Pay to Script Hash
-    [OP_HASH160, OP_PUSHDATA bs _, OP_EQUAL] ->
-        PayScriptHash <$> S.decode  bs
-    -- Pay to Witness
-    [OP_0, OP_PUSHDATA bs OPCODE]
-      | BS.length bs == 20 -> PayWitnessPKHash     <$> S.decode bs
-      | BS.length bs == 32 -> PayWitnessScriptHash <$> S.decode bs
-    -- Provably unspendable data carrier output
-    [OP_RETURN, OP_PUSHDATA bs _] -> Right $ DataCarrier bs
-    -- Pay to MultiSig Keys
-    _ -> matchPayMulSig s
-
--- | Similar to 'decodeOutput' but decodes from a ByteString
-decodeOutputBS :: ByteString -> Either String ScriptOutput
-decodeOutputBS = decodeOutput <=< S.decode
-
--- | Transforms integers [1 .. 16] to 'ScriptOp' [OP_1 .. OP_16]
-intToScriptOp :: Int -> ScriptOp
-intToScriptOp i
-    | i `elem` [1 .. 16] = op
-    | otherwise = err
-  where
-    op = either (const err) id . S.decode . BS.singleton . fromIntegral $ i + 0x50
-    err = error $ "intToScriptOp: Invalid integer " ++ show i
-
--- | Decode 'ScriptOp' [OP_1 .. OP_16] to integers [1 .. 16]. This functions
--- fails for other values of 'ScriptOp'
-scriptOpToInt :: ScriptOp -> Either String Int
-scriptOpToInt s
-    | res `elem` [1..16] = return res
-    | otherwise          = Left $ "scriptOpToInt: invalid opcode " ++ show s
-  where
-    res = fromIntegral (BS.head $ S.encode s) - 0x50
 
 -- Match [ OP_N, PubKey1, ..., PubKeyM, OP_M, OP_CHECKMULTISIG ]
 matchPayMulSig :: Script -> Either String ScriptOutput

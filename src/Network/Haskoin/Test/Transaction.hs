@@ -10,7 +10,7 @@ import           Data.Word                    (Word64)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
-import           Network.Haskoin.Keys.Types
+import           Network.Haskoin.Keys.Common
 import           Network.Haskoin.Script
 import           Network.Haskoin.Test.Address
 import           Network.Haskoin.Test.Crypto

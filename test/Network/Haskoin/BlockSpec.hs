@@ -12,7 +12,7 @@ import           Data.Maybe                  (fromJust)
 import           Data.Serialize              as S
 import           Data.String                 (fromString)
 import           Data.String.Conversions     (cs)
-import           Network.Haskoin.Block.Types
+import           Network.Haskoin.Block
 import           Network.Haskoin.Block.Headers
 import           Network.Haskoin.Block.Merkle
 import           Network.Haskoin.Constants

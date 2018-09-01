@@ -1,7 +1,6 @@
 module Network.Haskoin.Crypto
-    ( module Network.Haskoin.Crypto.Signature
-    , module Network.Haskoin.Crypto.Hash
+    ( module X
     ) where
 
-import           Network.Haskoin.Crypto.Hash
-import           Network.Haskoin.Crypto.Signature
+import           Network.Haskoin.Crypto.Hash      as X
+import           Network.Haskoin.Crypto.Signature as X

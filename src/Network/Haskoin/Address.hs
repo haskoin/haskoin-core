@@ -2,13 +2,12 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Address
-    ( -- * Address
-      Address(..)
+    ( Address(..)
     , addrToString
     , stringToAddr
     , addrFromJSON
     , pubKeyAddr
-      -- ** Wallet Import Format (WIF)
+      -- * Private Key Wallet Import Format (WIF)
     , fromWif
     , toWif
     ) where
@@ -37,24 +36,24 @@ import           Network.Haskoin.Address.Bech32
 import           Network.Haskoin.Address.CashAddr
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
-import           Network.Haskoin.Keys.Types
+import           Network.Haskoin.Keys.Common
 import           Network.Haskoin.Util
 import           Text.Read                        as R
 
 -- | Address format for Bitcoin and Bitcoin Cash.
 data Address
-    -- | Common Bitcoin or Bitcoin Cash pay-to-public-key-hash (P2PKH) address.
+    -- | pay to public key hash (regular)
     = PubKeyAddress { getAddrHash160 :: !Hash160
-                    , getAddrNet :: !Network }
-    -- | Bitcoin or Bitcoin Cash pay-to-script-hash (P2SH) address.
+                    , getAddrNet     :: !Network }
+    -- | pay to script hash
     | ScriptAddress { getAddrHash160 :: !Hash160
-                    , getAddrNet :: !Network }
-    -- | SegWit pay-to-witness-public-key-hash (P2WPKH) address. Only SegWit networks.
+                    , getAddrNet     :: !Network }
+    -- | pay to witness public key hash
     | WitnessPubKeyAddress { getAddrHash160 :: !Hash160
-                           , getAddrNet :: !Network }
-    -- | SegWit pay-to-witness-script-hash (P2WSH) address. Only SegWit networks.
+                           , getAddrNet     :: !Network }
+    -- | pay to witness script hash
     | WitnessScriptAddress { getAddrHash256 :: !Hash256
-                           , getAddrNet :: !Network }
+                           , getAddrNet     :: !Network }
     deriving (Eq, G.Generic)
 
 instance Ord Address where
@@ -67,7 +66,7 @@ instance Ord Address where
 
 instance NFData Address
 
--- | Binary decoder (cereal) for 'Base58' addresses.
+-- | Deserializer for binary 'Base58' addresses.
 base58get :: Network -> Get Address
 base58get net = do
     pfx <- getWord8
@@ -79,7 +78,7 @@ base58get net = do
         | x == getScriptPrefix net = return (ScriptAddress a net)
         | otherwise = fail "Does not recognize address prefix"
 
--- | Binary encoder (cereal) for 'Base58' addresses.
+-- | Binary serializer for 'Base58' addresses.
 base58put :: Putter Address
 base58put (PubKeyAddress h net) = do
         putWord8 (getAddrPrefix net)
@@ -108,8 +107,8 @@ addrFromJSON net =
             Nothing -> fail "could not decode address"
             Just x  -> return x
 
--- | Convert address to string. Uses 'Base58' and 'Bech32' for Bitcoin addresses
--- and 'CashAddr' for Bitcoin Cash addreses.
+-- | Convert address to human-readable string. Uses 'Base58', 'Bech32', or
+-- 'CashAddr' depending on network.
 addrToString :: Address -> Maybe ByteString
 addrToString a@PubKeyAddress {getAddrHash160 = h, getAddrNet = net}
     | isNothing (getCashAddrPrefix net) =
@@ -126,7 +125,7 @@ addrToString WitnessScriptAddress {getAddrHash256 = h, getAddrNet = net} = do
     hrp <- (getBech32Prefix net)
     segwitEncode hrp 0 (B.unpack (S.encode h))
 
--- | Parse 'Base58', 'Bech32' or 'CashAddr' address, depending no network.
+-- | Parse 'Base58', 'Bech32' or 'CashAddr' address, depending on network.
 stringToAddr :: Network -> ByteString -> Maybe Address
 stringToAddr net bs = cash <|> segwit <|> b58
   where
@@ -156,7 +155,7 @@ stringToAddr net bs = cash <|> segwit <|> b58
 pubKeyAddr :: Network -> PubKeyI -> Address
 pubKeyAddr net k = PubKeyAddress (addressHash (S.encode k)) net
 
--- | Decode private key from WIF-formatted (Wallet Import Format) string.
+-- | Decode private key from WIF (wallet import format) string.
 fromWif :: Network -> Base58 -> Maybe SecKeyI
 fromWif net wif = do
     bs <- decodeBase58Check wif
@@ -172,7 +171,7 @@ fromWif net wif = do
         -- Bad length
         _  -> Nothing
 
--- | Encode private key into a WIF-formatted string.
+-- | Encode private key into a WIF string.
 toWif :: Network -> SecKeyI -> Base58
 toWif net (SecKeyI k c) =
     encodeBase58Check . B.cons (getSecretPrefix net) $

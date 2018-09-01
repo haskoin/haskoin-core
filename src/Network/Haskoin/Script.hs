@@ -7,6 +7,6 @@ module Network.Haskoin.Script
     ( module X
     ) where
 
-import           Network.Haskoin.Script.SigHash   as X
-import           Network.Haskoin.Script.Standard  as X
-import           Network.Haskoin.Script.Types     as X
+import           Network.Haskoin.Script.Common   as X
+import           Network.Haskoin.Script.SigHash  as X
+import           Network.Haskoin.Script.Standard as X

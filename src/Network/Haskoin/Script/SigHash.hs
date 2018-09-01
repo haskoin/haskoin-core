@@ -20,8 +20,7 @@ module Network.Haskoin.Script.SigHash
 , txSigHashForkId
 , TxSignature(..)
 , encodeTxSig
-, decodeTxLaxSig
-, decodeTxStrictSig
+, decodeTxSig
 ) where
 
 import           Control.DeepSeq                   (NFData, rnf)
@@ -234,15 +233,8 @@ encodeTxSig :: TxSignature -> ByteString
 encodeTxSig TxSignatureEmpty = error "Can not encode an empty signature"
 encodeTxSig (TxSignature sig sh) = runPut $ putSig sig >> putWord8 (fromIntegral sh)
 
--- | Decode a 'TxSignature' from a ByteString.
-decodeTxLaxSig :: ByteString -> Either String TxSignature
-decodeTxLaxSig "" = Left "decodeTxLaxSig: empty bytestring"
-decodeTxLaxSig bs =
-    TxSignature <$> runGet getSig (BS.init bs)
-                <*> return (fromIntegral $ BS.last bs)
-
-decodeTxStrictSig :: Network -> ByteString -> Either String TxSignature
-decodeTxStrictSig net bs =
+decodeTxSig :: Network -> ByteString -> Either String TxSignature
+decodeTxSig net bs =
     case decodeStrictSig $ BS.init bs of
         Just sig -> do
             let sh = fromIntegral $ BS.last bs

@@ -44,10 +44,10 @@ arbitraryTxOut net =
           <*> (encodeOutputBS <$> arbitraryScriptOutput net)
 
 -- | Arbitrary TxIn
-arbitraryTxIn :: Gen TxIn
-arbitraryTxIn =
+arbitraryTxIn :: Network -> Gen TxIn
+arbitraryTxIn net =
     TxIn <$> arbitraryOutPoint
-         <*> (encodeInputBS <$> arbitraryScriptInput)
+         <*> (encodeInputBS <$> arbitraryScriptInput net)
          <*> arbitrary
 
 arbitraryTx :: Network -> Gen Tx
@@ -59,7 +59,7 @@ arbitraryLegacyTx net = do
     v    <- arbitrary
     ni   <- choose (0,5)
     no   <- choose (if ni == 0 then 2 else 0, 5) -- avoid witness case
-    inps <- vectorOf ni arbitraryTxIn
+    inps <- vectorOf ni (arbitraryTxIn net)
     outs <- vectorOf no (arbitraryTxOut net)
     let uniqueInps = nubBy (\a b -> prevOutput a == prevOutput b) inps
     t    <- arbitrary
@@ -71,7 +71,7 @@ arbitraryWitnessTx net = do
     v    <- arbitrary
     ni   <- choose (0,5)
     no   <- choose (0,5)
-    inps <- vectorOf ni arbitraryTxIn
+    inps <- vectorOf ni (arbitraryTxIn net)
     outs <- vectorOf no (arbitraryTxOut net)
     let uniqueInps = nubBy (\a b -> prevOutput a == prevOutput b) inps
     t    <- arbitrary
@@ -86,7 +86,7 @@ arbitraryAddrOnlyTx net = do
     v    <- arbitrary
     ni   <- choose (0,5)
     no   <- choose (0,5)
-    inps <- vectorOf ni arbitraryAddrOnlyTxIn
+    inps <- vectorOf ni (arbitraryAddrOnlyTxIn net)
     outs <- vectorOf no (arbitraryAddrOnlyTxOut net)
     t    <- arbitrary
     return $ Tx v inps outs [] t
@@ -97,25 +97,25 @@ arbitraryAddrOnlyTxFull net = do
     v    <- arbitrary
     ni   <- choose (0,5)
     no   <- choose (0,5)
-    inps <- vectorOf ni arbitraryAddrOnlyTxInFull
+    inps <- vectorOf ni (arbitraryAddrOnlyTxInFull net)
     outs <- vectorOf no (arbitraryAddrOnlyTxOut net)
     t    <- arbitrary
     return $ Tx v inps outs [] t
 
 -- | Arbitrary TxIn that can only be of type SpendPKHash or
 -- SpendScriptHash (multisig). Only compressed public keys are used.
-arbitraryAddrOnlyTxIn :: Gen TxIn
-arbitraryAddrOnlyTxIn = do
+arbitraryAddrOnlyTxIn :: Network -> Gen TxIn
+arbitraryAddrOnlyTxIn net = do
     o   <- arbitraryOutPoint
-    inp <- oneof [ arbitraryPKHashInput, arbitraryMulSigSHInput ]
+    inp <- oneof [ arbitraryPKHashInput net, arbitraryMulSigSHInput net ]
     s   <- arbitrary
     return $ TxIn o (encodeInputBS inp) s
 
 -- | like `arbitraryAddrOnlyTxIn` with no empty signatures
-arbitraryAddrOnlyTxInFull :: Gen TxIn
-arbitraryAddrOnlyTxInFull = do
+arbitraryAddrOnlyTxInFull :: Network -> Gen TxIn
+arbitraryAddrOnlyTxInFull net = do
     o   <- arbitraryOutPoint
-    inp <- oneof [ arbitraryPKHashInputFullC, arbitraryMulSigSHInputFullC ]
+    inp <- oneof [ arbitraryPKHashInputFullC net, arbitraryMulSigSHInputFullC net ]
     s   <- arbitrary
     return $ TxIn o (encodeInputBS inp) s
 
@@ -144,7 +144,7 @@ arbitraryPKSigInput net = do
     let out = PayPK p
     val <- getTestCoin <$> arbitrarySatoshi net
     op <- arbitraryOutPoint
-    sh <- arbitraryValidSigHash
+    sh <- arbitraryValidSigHash net
     return (SigInput out val op sh Nothing, k)
 
 -- | Arbitrary SigInput with a ScriptOutput of type PayPKHash
@@ -154,7 +154,7 @@ arbitraryPKHashSigInput net = do
     let out = PayPKHash $ getAddrHash160 $ pubKeyAddr net p
     val <- getTestCoin <$> arbitrarySatoshi net
     op <- arbitraryOutPoint
-    sh <- arbitraryValidSigHash
+    sh <- arbitraryValidSigHash net
     return (SigInput out val op sh Nothing, k)
 
 -- | Arbitrary SigInput with a ScriptOutput of type PayMulSig
@@ -165,7 +165,7 @@ arbitraryMSSigInput net = do
     let out = PayMulSig (map snd ks) m
     val <- getTestCoin <$> arbitrarySatoshi net
     op <- arbitraryOutPoint
-    sh <- arbitraryValidSigHash
+    sh <- arbitraryValidSigHash net
     perm <- choose (0, n - 1)
     let ksPerm = map fst $ take m $ permutations ks !! perm
     return (SigInput out val op sh Nothing, ksPerm)
@@ -224,7 +224,7 @@ arbitraryPartialTxs net = do
     return (concatMap fst res, map snd res)
   where
     singleSig so val rdmM tx op prv = do
-        sh <- arbitraryValidSigHash
+        sh <- arbitraryValidSigHash net
         let sigi = SigInput so val op sh rdmM
         return . fromRight (error "Colud not decode transaction") $
             signTx net tx [sigi] [prv]

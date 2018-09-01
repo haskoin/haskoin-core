@@ -11,8 +11,6 @@ module Network.Haskoin.Script.Standard
 , encodeInputBS
 , decodeInput
 , decodeInputBS
-, decodeInputStrict
-, decodeInputStrictBS
 , addressToOutput
 , addressToScript
 , addressToScriptBS
@@ -170,8 +168,8 @@ encodeSimpleInput s =
     f TxSignatureEmpty = OP_0
     f ts               = opPushData $ encodeTxSig ts
 
-decodeSimpleInput :: Network -> Bool -> Script -> Either String SimpleInput
-decodeSimpleInput net strict (Script ops) =
+decodeSimpleInput :: Network -> Script -> Either String SimpleInput
+decodeSimpleInput net (Script ops) =
     maybeToEither errMsg $ matchPK ops <|> matchPKHash ops <|> matchMulSig ops
   where
     matchPK [op] = SpendPK <$> f op
@@ -180,17 +178,12 @@ decodeSimpleInput net strict (Script ops) =
         SpendPKHash <$> f op <*> eitherToMaybe (decode pub)
     matchPKHash _ = Nothing
     matchMulSig (x:xs) = do
-        guard $
-            if strict
-                then x == OP_0
-                else isPushOp x
+        guard $ x == OP_0
         SpendMulSig <$> mapM f xs
     matchMulSig _ = Nothing
     f OP_0 = return TxSignatureEmpty
     f (OP_PUSHDATA "" OPCODE) = f OP_0
-    f (OP_PUSHDATA bs _)
-        | strict = eitherToMaybe $ decodeTxStrictSig net bs
-        | otherwise = eitherToMaybe $ decodeTxLaxSig bs
+    f (OP_PUSHDATA bs _) = eitherToMaybe $ decodeTxSig net bs
     f _ = Nothing
     errMsg = "decodeInput: Could not decode script input"
 
@@ -207,23 +200,16 @@ encodeInputBS = encode . encodeInput
 -- | Decodes a 'ScriptInput' from a 'Script'. This function fails if the
 -- script can not be parsed as a standard script input.
 decodeInput :: Network -> Script -> Either String ScriptInput
-decodeInput net = decodeInputGen net False
-
--- | Like 'decodeInput' but uses strict signature decoding
-decodeInputStrict :: Network -> Script -> Either String ScriptInput
-decodeInputStrict net = decodeInputGen net True
-
-decodeInputGen :: Network -> Bool -> Script -> Either String ScriptInput
-decodeInputGen net strict s@(Script ops) =
+decodeInput net s@(Script ops) =
     maybeToEither errMsg $ matchSimpleInput <|> matchPayScriptHash
   where
     matchSimpleInput =
-        RegularInput <$> eitherToMaybe (decodeSimpleInput net strict s)
+        RegularInput <$> eitherToMaybe (decodeSimpleInput net s)
     matchPayScriptHash =
         case splitAt (length (scriptOps s) - 1) ops of
             (is, [OP_PUSHDATA bs _]) -> do
                 rdm <- eitherToMaybe $ decodeOutputBS bs
-                inp <- eitherToMaybe $ decodeSimpleInput net strict $ Script is
+                inp <- eitherToMaybe $ decodeSimpleInput net $ Script is
                 return $ ScriptHashInput inp rdm
             _ -> Nothing
     errMsg = "decodeInput: Could not decode script input"
@@ -231,7 +217,3 @@ decodeInputGen net strict s@(Script ops) =
 -- | Like 'decodeInput' but decodes from a ByteString
 decodeInputBS :: Network -> ByteString -> Either String ScriptInput
 decodeInputBS net = decodeInput net <=< decode
-
--- | Like 'decodeInputStrict' but decodes from a ByteString
-decodeInputStrictBS :: Network -> ByteString -> Either String ScriptInput
-decodeInputStrictBS net = decodeInputStrict net <=< decode

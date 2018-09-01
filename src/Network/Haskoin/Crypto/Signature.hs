@@ -7,7 +7,6 @@ module Network.Haskoin.Crypto.Signature
     , signHash
     , verifyHashSig
     , isCanonicalHalfOrder
-    , decodeLaxSig
     , decodeStrictSig
     , exportSig
     , exportCompactSig
@@ -64,7 +63,7 @@ getSig = do
             when (l >= 0x80) $ fail "Multi-octect length not supported"
             return $ fromIntegral l
         bs <- getByteString $ l + 2
-        case decodeLaxSig bs of
+        case decodeStrictSig bs of
             Just s  -> return s
             Nothing -> fail "Invalid signature"
 
@@ -75,10 +74,6 @@ putSig s = putByteString $ exportSig s
 -- | Is canonical half order.
 isCanonicalHalfOrder :: Sig -> Bool
 isCanonicalHalfOrder = not . snd . normalizeSig
-
--- | Decode signature (not strictly).
-decodeLaxSig :: ByteString -> Maybe Sig
-decodeLaxSig = laxImportSig
 
 -- | Decode signature strictly.
 decodeStrictSig :: ByteString -> Maybe Sig

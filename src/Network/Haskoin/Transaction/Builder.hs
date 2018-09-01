@@ -419,28 +419,18 @@ mergeTxInput net txs tx ((so, val), i)
 
 -- | Verify if a transaction is valid and all of its inputs are standard.
 verifyStdTx :: Network -> Tx -> [(ScriptOutput, Word64, OutPoint)] -> Bool
-verifyStdTx net = verifyStdTxGen net False
-
--- | Like 'verifyStdTx' but using strict signature decoding
-verifyStdTxStrict :: Network -> Tx -> [(ScriptOutput, Word64, OutPoint)] -> Bool
-verifyStdTxStrict net = verifyStdTxGen net True
-
-verifyStdTxGen :: Network -> Bool -> Tx -> [(ScriptOutput, Word64, OutPoint)] -> Bool
-verifyStdTxGen net strict tx xs =
+verifyStdTx net tx xs =
     not (null (txIn tx)) && all go (zip (matchTemplate xs (txIn tx) f) [0 ..])
   where
     f (_, _, o) txin = o == prevOutput txin
-    go (Just (so, val, _), i) = verifyStdInput net strict tx i so val
+    go (Just (so, val, _), i) = verifyStdInput net tx i so val
     go _                      = False
 
 -- | Verify if a transaction input is valid and standard.
-verifyStdInput :: Network -> Bool -> Tx -> Int -> ScriptOutput -> Word64 -> Bool
-verifyStdInput net strict tx i = go (scriptInput $ txIn tx !! i)
+verifyStdInput :: Network -> Tx -> Int -> ScriptOutput -> Word64 -> Bool
+verifyStdInput net tx i = go (scriptInput $ txIn tx !! i)
   where
-    dec =
-        if strict
-            then decodeInputStrictBS net
-            else decodeInputBS net
+    dec = decodeInputBS net
     go inp so val =
         case dec inp of
             Right (RegularInput (SpendPK (TxSignature sig sh))) ->

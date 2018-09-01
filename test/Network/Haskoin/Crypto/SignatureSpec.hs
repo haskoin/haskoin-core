@@ -33,7 +33,7 @@ spec = do
         it "encodes and decodes signature" $
             property $
             forAll arbitrarySignature $
-            (\s -> decodeLaxSig (exportSig s) == Just s) . lst3
+            (\s -> decodeStrictSig (exportSig s) == Just s) . lst3
     describe "trezor rfc6979 test vectors" $ do
         it "rfc6979 test vector 1" (testSigning $ head detVec)
         it "rfc6979 test vector 2" (testSigning $ detVec !! 1)

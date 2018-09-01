@@ -43,20 +43,10 @@ spec = do
     let net = btc
     describe "btc scripts" $ props btc
     describe "bch scripts" $ props bch
-    describe "integer types" $ do
-        it "decodeInt . encodeInt Int" $ property testEncodeInt
-        it "decodeFullInt . encodeInt Int" $ property testEncodeInt64
-        it "cltvDecodeInt . encodeInt Int" $ property testEncodeCltv
-        it "decodeBool . encodeBool Bool" $ property testEncodeBool
-    describe "script file tests" $ do
-        it "runs all canonical valid scripts" $
-            testFile "data/script_valid.json" True
-        it "runs all canonical invalid scripts" $
-            testFile "data/script_invalid.json" False
     describe "multi signatures" $
         sequence_ $ zipWith (curry mapMulSigVector) mulSigVectors [0 ..]
     describe "signature decoding" $
-        sequence_ $ zipWith (curry sigDecodeMap) scriptSigSignatures [0 ..]
+        sequence_ $ zipWith (curry (sigDecodeMap net)) scriptSigSignatures [0 ..]
     describe "json serialization" $ do
         it "encodes and decodes script output" $
             forAll (arbitraryScriptOutput net) testID
@@ -95,7 +85,7 @@ standardSpec net = do
             decodeOutput (encodeOutput so) `shouldBe` Right so
     it "has decodeInput . encodeOutput identity" $
         property $
-        forAll arbitraryScriptInput $ \si ->
+        forAll (arbitraryScriptInput net) $ \si ->
             decodeInput net (encodeInput si) `shouldBe` Right si
     it "can sort multisig scripts" $
         forAll arbitraryMSOutput $ \out ->
@@ -138,7 +128,7 @@ scriptSpec net =
                 map (\(a, b, c, d, e) -> ([0], a, b, c, d, e)) vectorsA <>
                 vectorsB
         length vectors `shouldBe` 86
-        forM_ vectors $ \([val], siStr, soStr, flags, res, _)
+        forM_ vectors $ \([val], siStr, soStr, flags, res, desc)
           -- We can disable specific tests by adding a DISABLED flag in the data
          ->
             unless ("DISABLED" `isInfixOf` flags) $ do
@@ -154,14 +144,13 @@ scriptSpec net =
                     ver =
                         verifyStdInput
                             net
-                            strict
                             (spendTx scriptPubKey 0 scriptSig)
                             0
                             decodedOutput
                             (val * 100000000)
                 case res of
-                    "OK" -> ver `shouldBe` True
-                    _    -> ver `shouldBe` False
+                    "OK" -> assertBool desc ver
+                    _    -> assertBool desc (not ver)
 
 forkIdScriptSpec :: Network -> Spec
 forkIdScriptSpec net =
@@ -186,7 +175,6 @@ forkIdScriptSpec net =
                 ver =
                     verifyStdInput
                         net
-                        True -- Always strict
                         (spendTx scriptPubKey val scriptSig)
                         0
                         decodedOutput
@@ -241,13 +229,13 @@ strictSigSpec net =
             let vectors = mapMaybe (decodeHex . cs) (xs :: [String])
             length vectors `shouldBe` 3
             forM_ vectors $ \sig ->
-                decodeTxStrictSig net sig `shouldSatisfy` isRight
+                decodeTxSig net sig `shouldSatisfy` isRight
         it "can detect non-strict signatures" $ do
             xs <- readTestFile "sig_nonstrict"
             let vectors = mapMaybe (decodeHex . cs) (xs :: [String])
             length vectors `shouldBe` 17
             forM_ vectors $ \sig ->
-                decodeTxStrictSig net sig `shouldSatisfy` isLeft
+                decodeTxSig net sig `shouldSatisfy` isLeft
 
 txSigHashSpec :: Network -> Spec
 txSigHashSpec net =
@@ -339,18 +327,10 @@ sigHashSpec net = do
         isSigHashUnknown sigHashSingle `shouldBe` False
         isSigHashUnknown 0x00 `shouldBe` True
         isSigHashUnknown 0x04 `shouldBe` True
-    it "can decodeTxLaxSig . encode a TxSignature" $
+    it "can decodeTxSig . encode a TxSignature" $
         property $
-        forAll arbitraryTxSignature $ \(_, _, ts) ->
-            decodeTxLaxSig (encodeTxSig ts) `shouldBe` Right ts
-    when (getNetworkName net == "btc") $
-        it "can decodeTxStrictSig . encode a TxSignature" $
-        property $
-        forAll arbitraryTxSignature $ \(_, _, ts@(TxSignature _ sh)) ->
-            if isSigHashUnknown sh || hasForkIdFlag sh
-                then decodeTxStrictSig net (encodeTxSig ts) `shouldSatisfy`
-                     isLeft
-                else decodeTxStrictSig net (encodeTxSig ts) `shouldBe` Right ts
+        forAll (arbitraryTxSignature net) $ \(_, _, ts@(TxSignature _ sh)) ->
+            decodeTxSig net (encodeTxSig ts) `shouldBe` Right ts
     it "can produce the sighash one" $
         property $
         forAll (arbitraryTx net) $ forAll arbitraryScript . testSigHashOne net
@@ -376,37 +356,6 @@ readTestFile fp = do
     bs <- BL.readFile $ "data/" <> fp <> ".json"
     maybe (error $ "Could not read test file " <> fp) return $ A.decode bs
 
-{- Script Evaluation Primitives -}
-
-testEncodeInt :: Int64 -> Bool
-testEncodeInt i
-    | i >  0x7fffffff = isNothing i'
-    | i < -0x7fffffff = isNothing i'
-    | otherwise       = i' == Just i
-  where
-    i' = decodeInt $ encodeInt i
-
-testEncodeCltv :: Int64 -> Bool
-testEncodeCltv i
-    -- As 'cltvEncodeInt' is just a wrapper for 'encodeInt',
-    -- we use 'encodeInt' for encoding, to simultaneously
-    -- test the handling of out-of-range integers by 'cltvDecodeInt'.
-    | i < 0 || i > fromIntegral (maxBound :: Word32) =
-        isNothing $ cltvDecodeInt (encodeInt i)
-    | otherwise =
-        cltvDecodeInt (encodeInt i) == Just (fromIntegral i)
-
-testEncodeInt64 :: Int64 -> Bool
-testEncodeInt64 i = decodeFullInt (encodeInt i) == Just i
-
-testEncodeBool :: Bool -> Bool
-testEncodeBool b = decodeBool (encodeBool b) == b
-
-{- Script Evaluation -}
-
-rejectSignature :: SigCheck
-rejectSignature _ _ _ = False
-
 {- Parse tests from bitcoin-qt repository -}
 
 type ParseError = String
@@ -421,99 +370,6 @@ parseHex' (a:b:xs) =
         _ -> Nothing
 parseHex' [_] = Nothing
 parseHex' [] = Just []
-
-parseFlags :: String -> [ Flag ]
-parseFlags "" = []
-parseFlags s  = map read . splitOn "," $ s
-
-parseScriptEither :: String -> Either ParseError Script
-parseScriptEither scriptString = do
-    bytes <- BS.pack <$> parseBytes scriptString
-    script <- decodeScript bytes
-    when (S.encode script /= bytes) $ Left "encode script /= bytes"
-    when
-        (fromRight (error "Could not decode script") (S.decode (S.encode script)) /=
-         script) $
-        Left "decode (encode script) /= script"
-    return script
-  where
-    decodeScript bytes =
-        case S.decode bytes of
-            Left e           -> Left $ "decode error: " ++ e
-            Right (Script s) -> Right $ Script s
-    parseBytes :: String -> Either ParseError [Word8]
-    parseBytes string = concat <$> mapM parseToken (words string)
-    parseToken :: String -> Either ParseError [Word8]
-    parseToken tok =
-        case alternatives of
-            (ops:_) -> Right ops
-            _       -> Left $ "unknown token " ++ tok
-      where
-        alternatives :: [[Word8]]
-        alternatives = catMaybes [parseHex, parseInt, parseQuote, parseOp]
-        parseHex
-            | "0x" `isPrefixOf` tok = parseHex' (drop 2 tok)
-            | otherwise = Nothing
-        parseInt = fromInt . fromIntegral <$> (readMaybe tok :: Maybe Integer)
-        parseQuote
-            | tok == "''" = Just [0]
-            | head tok == '\'' && last tok == '\'' =
-                Just $
-                encodeBytes $
-                opPushData $
-                BS.pack $ map (fromIntegral . ord) $ init . tail $ tok
-            | otherwise = Nothing
-        fromInt :: Int64 -> [Word8]
-        fromInt n
-            | n == 0 = [0x00]
-            | n == -1 = [0x4f]
-            | 1 <= n && n <= 16 = [0x50 + fromIntegral n]
-            | otherwise = encodeBytes $ opPushData $ BS.pack $ encodeInt n
-        parseOp = encodeBytes <$> readMaybe ("OP_" ++ tok)
-        encodeBytes = BS.unpack . S.encode
-
-testFile :: String -> Bool -> Assertion
-testFile path expected =
-    do
-        dat <- liftIO $ CL.readFile path
-        case A.decode dat :: Maybe [[String]] of
-            Nothing -> assertFailure $ "can't read test file " ++ path
-            Just testDefs ->
-                mapM_ parseTest $ filterPureComments testDefs
-  where
-    parseTest s =
-        case testParts s of
-            Nothing -> assertFailure $ "json element " ++ show s
-            Just (sig, pubKey, flags, l) -> makeTest l sig pubKey flags
-    makeTest l sig pubKey flags =
-        case (parseScriptEither sig, parseScriptEither pubKey) of
-            (Left e, _) ->
-                parseError $ "can't parse sig: " ++ show sig ++ " error: " ++ e
-            (_, Left e) ->
-                parseError $
-                "can't parse key: " ++ show pubKey ++ " error: " ++ e
-            (Right scriptSig, Right scriptPubKey) ->
-                runTest scriptSig scriptPubKey (parseFlags flags)
-      where
-        label' =
-            if null l
-                then "sig: [" ++ sig ++ "] " ++ " pubKey: [" ++ pubKey ++ "] "
-                else " label: " ++ l
-    parseError message =
-        HUnit.assertBool
-            ("parse error in valid script: " ++ message)
-            (not expected)
-    filterPureComments = filter (not . null . tail)
-    runTest scriptSig scriptPubKey scriptFlags =
-        HUnit.assertBool
-            (" eval error: " ++ errorMessage)
-            (expected == scriptPairTestExec scriptSig scriptPubKey scriptFlags)
-      where
-        run f = f scriptSig scriptPubKey rejectSignature scriptFlags
-        errorMessage =
-            case run execScript of
-                Left e  -> show e
-                Right _ -> " none"
 
 -- | Splits the JSON test into the different parts.  No processing,
 -- just handling the fact that comments may not be there or might have
@@ -571,20 +427,6 @@ buildSpendTx scriptSig creditTx =
                }
     txO = TxOut { outValue = 0, scriptOutput = BS.empty }
 
--- | Executes the test of a scriptSig, pubKeyScript pair, including
--- building the required transactions and verifying the spending
--- transaction.
-scriptPairTestExec :: Script    -- scriptSig
-                   -> Script    -- pubKey
-                   -> [ Flag ] -- Evaluation flags
-                   -> Bool
-scriptPairTestExec scriptSig pubKey flags =
-    let bsScriptSig = S.encode scriptSig
-        bsPubKey = S.encode pubKey
-        spendTx = buildSpendTx bsScriptSig (buildCreditTx bsPubKey)
-    in verifySpend btc spendTx 0 pubKey 0 flags
-
-
 mapMulSigVector :: ((ByteString, ByteString), Int) -> Spec
 mapMulSigVector (v, i) =
     it name $ runMulSigVector v
@@ -602,16 +444,16 @@ runMulSigVector (a, ops) = assertBool "multisig vector" $ Just a == b
         d <- eitherToMaybe $ decodeOutput o
         addrToString $ p2shAddr btc d
 
-sigDecodeMap :: (ByteString, Int) -> Spec
-sigDecodeMap (_, i) =
+sigDecodeMap :: Network -> (ByteString, Int) -> Spec
+sigDecodeMap net (_, i) =
     it ("check signature " ++ show i) func
   where
-    func = testSigDecode $ scriptSigSignatures !! i
+    func = testSigDecode net $ scriptSigSignatures !! i
 
-testSigDecode :: ByteString -> Assertion
-testSigDecode str =
+testSigDecode :: Network -> ByteString -> Assertion
+testSigDecode net str =
     let bs = fromJust $ decodeHex str
-        eitherSig = decodeTxLaxSig bs
+        eitherSig = decodeTxSig net bs
     in assertBool
            (unwords
                 [ "Decode failed:"
@@ -630,8 +472,11 @@ scriptSigSignatures :: [ByteString]
 scriptSigSignatures =
      -- Signature in input of txid 1983a69265920c24f89aac81942b1a59f7eb30821a8b3fb258f88882b6336053
     [ "304402205ca6249f43538908151fe67b26d020306c0e59fa206cf9f3ccf641f33357119d02206c82f244d04ac0a48024fb9cc246b66e58598acf206139bdb7b75a2941a2b1e401"
-      -- Signature in input of txid fb0a1d8d34fa5537e461ac384bac761125e1bfa7fec286fa72511240fa66864d  Strange DER sizes. But in Blockchain
-    , "3048022200002b83d59c1d23c08efd82ee0662fec23309c3adbcbd1f0b8695378db4b14e736602220000334a96676e58b1bb01784cb7c556dd8ce1c220171904da22e18fe1e7d1510db501"
+      -- Signature in input of txid
+      -- fb0a1d8d34fa5537e461ac384bac761125e1bfa7fec286fa72511240fa66864d.
+      -- Strange DER sizes, but in Blockchain. Now invalid as Haskoin can only
+      -- decode strict signatures.
+      -- "3048022200002b83d59c1d23c08efd82ee0662fec23309c3adbcbd1f0b8695378db4b14e736602220000334a96676e58b1bb01784cb7c556dd8ce1c220171904da22e18fe1e7d1510db501"
     ]
 
 

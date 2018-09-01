@@ -4,6 +4,8 @@ nix:
     - autoconf
     - automake
     - libtool
+    - secp256k1
 extra-deps:
   - murmur3-1.0.3
-  - secp256k1-0.5.3
+  - github: haskoin/secp256k1-haskell
+    commit: 5d218aad793a3e635538f3156b5ae4a04daef496

@@ -7,7 +7,6 @@ module Network.Haskoin.Script
     ( module X
     ) where
 
-import           Network.Haskoin.Script.Evaluator as X
 import           Network.Haskoin.Script.SigHash   as X
 import           Network.Haskoin.Script.Standard  as X
 import           Network.Haskoin.Script.Types     as X

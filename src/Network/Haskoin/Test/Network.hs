@@ -11,15 +11,15 @@ import           Network.Haskoin.Test.Util
 import           Network.Socket              (SockAddr (..))
 import           Test.QuickCheck
 
--- | Arbitrary VarInt
+-- | Arbitrary 'VarInt'.
 arbitraryVarInt :: Gen VarInt
 arbitraryVarInt = VarInt <$> arbitrary
 
--- | Arbitrary VarString
+-- | Arbitrary 'VarString'.
 arbitraryVarString :: Gen VarString
 arbitraryVarString = VarString <$> arbitraryBS
 
--- | Arbitrary NetworkAddress
+-- | Arbitrary 'NetworkAddress'.
 arbitraryNetworkAddress :: Gen NetworkAddress
 arbitraryNetworkAddress = do
     s <- arbitrary
@@ -34,22 +34,23 @@ arbitraryNetworkAddress = do
         , return $ SockAddrInet (fromIntegral (p :: Word16)) a
         ]
 
--- | Arbitrary NetworkAddressTime
+-- | Arbitrary 'NetworkAddressTime'.
 arbitraryNetworkAddressTime :: Gen (Word32, NetworkAddress)
 arbitraryNetworkAddressTime = (,) <$> arbitrary <*> arbitraryNetworkAddress
 
--- | Arbitrary InvType
+-- | Arbitrary 'InvType'.
 arbitraryInvType :: Gen InvType
 arbitraryInvType = elements [InvError, InvTx, InvBlock, InvMerkleBlock]
 
+-- | Arbitrary 'InvVector'.
 arbitraryInvVector :: Gen InvVector
 arbitraryInvVector = InvVector <$> arbitraryInvType <*> arbitraryHash256
 
--- | Arbitrary non-empty Inv
+-- | Arbitrary non-empty 'Inv'.
 arbitraryInv1 :: Gen Inv
 arbitraryInv1 = Inv <$> listOf1 arbitraryInvVector
 
--- | Arbitrary Version
+-- | Arbitrary 'Version'.
 arbitraryVersion :: Gen Version
 arbitraryVersion =
     Version <$> arbitrary
@@ -62,16 +63,16 @@ arbitraryVersion =
             <*> arbitrary
             <*> arbitrary
 
--- | Arbitrary non-empty Addr
+-- | Arbitrary non-empty 'Addr'.
 arbitraryAddr1 :: Gen Addr
 arbitraryAddr1 = Addr <$> listOf1 arbitraryNetworkAddressTime
 
--- | Arbitrary alert with random payload and signature. Signature is not
+-- | Arbitrary 'Alert' with random payload and signature. Signature is not
 -- valid.
 arbitraryAlert :: Gen Alert
 arbitraryAlert = Alert <$> arbitraryVarString <*> arbitraryVarString
 
--- | Arbitrary Reject
+-- | Arbitrary 'Reject'.
 arbitraryReject :: Gen Reject
 arbitraryReject = do
     m <- arbitraryMessageCommand
@@ -82,7 +83,7 @@ arbitraryReject = do
                ]
     return $ Reject m c s d
 
--- | Arbitrary RejectCode
+-- | Arbitrary 'RejectCode'.
 arbitraryRejectCode :: Gen RejectCode
 arbitraryRejectCode =
     elements
@@ -96,23 +97,23 @@ arbitraryRejectCode =
         , RejectCheckpoint
         ]
 
--- | Arbitrary non-empty GetData
+-- | Arbitrary non-empty 'GetData'.
 arbitraryGetData :: Gen GetData
 arbitraryGetData = GetData <$> listOf1 arbitraryInvVector
 
--- | Arbitrary NotFound
+-- | Arbitrary 'NotFound'.
 arbitraryNotFound :: Gen NotFound
 arbitraryNotFound = NotFound <$> listOf1 arbitraryInvVector
 
--- | Arbitrary Ping
+-- | Arbitrary 'Ping'.
 arbitraryPing :: Gen Ping
 arbitraryPing = Ping <$> arbitrary
 
--- | Arbitrary Pong
+-- | Arbitrary 'Pong'.
 arbitraryPong :: Gen Pong
 arbitraryPong = Pong <$> arbitrary
 
--- | Arbitrary bloom filter flags
+-- | Arbitrary bloom filter flags.
 arbitraryBloomFlags :: Gen BloomFlags
 arbitraryBloomFlags =
     elements
@@ -131,17 +132,17 @@ arbitraryBloomFilter = do
     fl    <- arbitraryBloomFlags
     return (n, fp, bloomCreate n fp tweak fl)
 
--- | Arbitrary FilterLoad
+-- | Arbitrary 'FilterLoad'.
 arbitraryFilterLoad :: Gen FilterLoad
 arbitraryFilterLoad = do
     (_, _, bf) <- arbitraryBloomFilter
     return $ FilterLoad bf
 
--- | Arbitrary FilterAdd
+-- | Arbitrary 'FilterAdd'.
 arbitraryFilterAdd :: Gen FilterAdd
 arbitraryFilterAdd = FilterAdd <$> arbitraryBS
 
--- | Arbitrary MessageCommand
+-- | Arbitrary 'MessageCommand'.
 arbitraryMessageCommand :: Gen MessageCommand
 arbitraryMessageCommand =
     elements

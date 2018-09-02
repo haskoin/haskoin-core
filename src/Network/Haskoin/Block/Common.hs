@@ -52,7 +52,7 @@ type Timestamp = Word32
 data Block =
     Block { blockHeader :: !BlockHeader
           , blockTxns   :: ![Tx]
-          } deriving (Eq, Show)
+          } deriving (Eq, Show, Read)
 
 instance NFData Block where
     rnf (Block h ts) = rnf h `seq` rnf ts
@@ -74,15 +74,12 @@ newtype BlockHash = BlockHash
     deriving (Eq, Ord, NFData, Hashable, Serialize)
 
 instance Show BlockHash where
-    showsPrec d a =
-        showParen (d > 10) $ showString "BlockHash " . shows (blockHashToHex a)
+    showsPrec _ = shows . blockHashToHex
 
 instance Read BlockHash where
-    readPrec =
-        R.parens $ do
-            R.Ident "BlockHash" <- R.lexP
-            R.String str <- R.lexP
-            maybe R.pfail return $ hexToBlockHash $ cs str
+    readPrec = do
+        R.String str <- R.lexP
+        maybe R.pfail return $ hexToBlockHash $ cs str
 
 instance IsString BlockHash where
     fromString s =
@@ -90,7 +87,7 @@ instance IsString BlockHash where
         in fromMaybe e $ hexToBlockHash $ cs s
 
 instance FromJSON BlockHash where
-    parseJSON = withText "Block hash" $ \t ->
+    parseJSON = withText "block hash" $ \t ->
         maybe mzero return $ hexToBlockHash $ cs t
 
 instance ToJSON BlockHash where
@@ -116,7 +113,7 @@ hexToBlockHash hex = do
 -- 'Block'. Variations in the coinbase will result in different merkle roots in
 -- the 'BlockHeader'.
 data BlockHeader =
-    BlockHeader {blockVersion   :: !Word32      -- 16 bytes
+    BlockHeader { blockVersion   :: !Word32      -- 16 bytes
                   -- | hash of the previous block (parent)
                 , prevBlock      :: !BlockHash   -- 64 bytes
                   -- | root of the merkle tree of transactions
@@ -127,7 +124,7 @@ data BlockHeader =
                 , blockBits      :: !Word32      -- 16 bytes
                   -- | random nonce
                 , bhNonce        :: !Word32      -- 16 bytes
-                } deriving (Eq, Show, Ord)       -- 208 bytes (above + 16 bytes)
+                } deriving (Eq, Ord, Show, Read) -- 208 bytes (above + 16 bytes)
 
 -- | Compute hash of 'BlockHeader'.
 headerHash :: BlockHeader -> BlockHash

@@ -48,13 +48,13 @@ import           Data.Word              (Word8)
 
 -- ByteString helpers
 
--- | Decode a big endian Integer from a bytestring.
+-- | Decode a big endian 'Integer' from a 'ByteString'.
 bsToInteger :: ByteString -> Integer
 bsToInteger = BS.foldr f 0 . BS.reverse
   where
     f w n = toInteger w .|. shiftL n 8
 
--- | Encode an Integer to a bytestring as big endian
+-- | Encode an 'Integer' to a 'ByteString' as big endian.
 integerToBS :: Integer -> ByteString
 integerToBS 0 = BS.pack [0]
 integerToBS i
@@ -64,11 +64,11 @@ integerToBS i
     f 0 = Nothing
     f x = Just (fromInteger x :: Word8, x `shiftR` 8)
 
+-- | Encode as string of human-readable hex characters.
 encodeHex :: ByteString -> ByteString
 encodeHex = B16.encode
 
--- | Decode hexadecimal 'ByteString'. This function can fail if the string
--- contains invalid hexadecimal (0-9, a-f, A-F) characters
+-- | Decode string of human-readable hex characters.
 decodeHex :: ByteString -> Maybe ByteString
 decodeHex bs =
     let (x, b) = B16.decode bs
@@ -89,23 +89,22 @@ getBits b bs
 
 -- Maybe and Either monad helpers
 
--- | Transforms an 'Either' value into a 'Maybe' value. 'Right' is mapped to 'Just'
--- and 'Left' is mapped to 'Nothing'. The value inside 'Left' is lost.
+-- | Transform an 'Either' value into a 'Maybe' value. 'Right' is mapped to
+-- 'Just' and 'Left' is mapped to 'Nothing'. The value inside 'Left' is lost.
 eitherToMaybe :: Either a b -> Maybe b
 eitherToMaybe (Right b) = Just b
 eitherToMaybe _         = Nothing
 
--- | Transforms a 'Maybe' value into an 'Either' value. 'Just' is mapped to
--- 'Right' and 'Nothing' is mapped to 'Left'. You also pass in an error value
--- in case 'Left' is returned.
+-- | Transform a 'Maybe' value into an 'Either' value. 'Just' is mapped to
+-- 'Right' and 'Nothing' is mapped to 'Left'. Default 'Left' required.
 maybeToEither :: b -> Maybe a -> Either b a
 maybeToEither err = maybe (Left err) Right
 
--- | Lift a 'Either' computation into the 'ExceptT' monad
+-- | Lift a 'Either' computation into the 'ExceptT' monad.
 liftEither :: Monad m => Either b a -> ExceptT b m a
 liftEither = ExceptT . return
 
--- | Lift a 'Maybe' computation into the 'ExceptT' monad
+-- | Lift a 'Maybe' computation into the 'ExceptT' monad.
 liftMaybe :: Monad m => b -> Maybe a -> ExceptT b m a
 liftMaybe err = liftEither . maybeToEither err
 
@@ -113,10 +112,10 @@ liftMaybe err = liftEither . maybeToEither err
 
 -- | Applies a function to only one element of a list defined by its index.  If
 -- the index is out of the bounds of the list, the original list is returned.
-updateIndex :: Int      -- ^ The index of the element to change
-            -> [a]      -- ^ The list of elements
-            -> (a -> a) -- ^ The function to apply
-            -> [a]      -- ^ The result with one element changed
+updateIndex :: Int      -- ^ index of the element to change
+            -> [a]      -- ^ list of elements
+            -> (a -> a) -- ^ function to apply
+            -> [a]      -- ^ result with one element changed
 updateIndex i xs f
     | i < 0 || i >= length xs = xs
     | otherwise = l ++ (f h : r)
@@ -127,10 +126,10 @@ updateIndex i xs f
 -- against it. For each element of @[b]@ return the (first) matching element of
 -- @[a]@, or 'Nothing'. Output list has same size as @[b]@ and contains results
 -- in same order. Elements of @[a]@ can only appear once.
-matchTemplate :: [a]              -- ^ The input list
-              -> [b]              -- ^ The list to serve as a template
-              -> (a -> b -> Bool) -- ^ The comparison function
-              -> [Maybe a]        -- ^ Results of the template matching
+matchTemplate :: [a]              -- ^ input list
+              -> [b]              -- ^ list to serve as a template
+              -> (a -> b -> Bool) -- ^ comparison function
+              -> [Maybe a]
 matchTemplate [] bs _ = replicate (length bs) Nothing
 matchTemplate _  [] _ = []
 matchTemplate as (b:bs) f = case break (`f` b) as of
@@ -149,19 +148,24 @@ snd3 (_,b,_) = b
 lst3 :: (a,b,c) -> c
 lst3 (_,_,c) = c
 
+-- | Field label goes lowercase and first @n@ characters get removed.
 dropFieldLabel :: Int -> Options
 dropFieldLabel n = defaultOptions
     { fieldLabelModifier = map toLower . drop n
-    , omitNothingFields  = False -- TODO: aeson issue #293 prompted this
     }
 
+-- | Transformation from 'dropFieldLabel' is applied with argument @f@, plus
+-- constructor tags are lowercased and first @c@ characters removed. @tag@ is
+-- used as the name of the object field name that will hold the transformed
+-- constructor tag as its value.
 dropSumLabels :: Int -> Int -> String -> Options
 dropSumLabels c f tag = (dropFieldLabel f)
     { constructorTagModifier = map toLower . drop c
     , sumEncoding = defaultTaggedObject { tagFieldName = tag }
     }
 
--- | Convert from one power-of-two base to another.
+-- | Convert from one power-of-two base to another, as long as it fits in a
+-- 'Word'.
 convertBits :: Bool -> Int -> Int -> [Word] -> ([Word], Bool)
 convertBits pad frombits tobits i = (reverse yout, rem)
   where

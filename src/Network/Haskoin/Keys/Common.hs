@@ -49,13 +49,10 @@ data PubKeyI = PubKeyI
     } deriving (Eq)
 
 instance Show PubKeyI where
-    showsPrec d k =
-        showParen (d > 10) $
-        showString "PubKeyI " . shows (encodeHex $ encode k)
+    showsPrec _ = shows . encodeHex . encode
 
 instance Read PubKeyI where
     readPrec = parens $ do
-        Read.Ident "PubKeyI" <- lexP
         Read.String str <- lexP
         maybe pfail return $ eitherToMaybe . decode <=< decodeHex $ cs str
 

@@ -31,8 +31,7 @@ props :: Network -> Spec
 props net = do
     it "encodes and decodes base58 bytestring" $
         property $
-        forAll arbitraryBS $ \bs ->
-            decodeBase58 (encodeBase58 bs) == Just bs
+        forAll arbitraryBS $ \bs -> decodeBase58 (encodeBase58 bs) == Just bs
     it "encodes and decodes base58 bytestring with checksum" $
         property $
         forAll arbitraryBS $ \bs ->
@@ -41,6 +40,8 @@ props net = do
         property $
         forAll (arbitraryAddress net) $ \a ->
             (stringToAddr net =<< addrToString a) == Just a
+    it "shows and reads address" $
+        property $ forAll (arbitraryAddress net) $ \a -> read (show a) == a
 
 runVector :: (ByteString, ByteString, ByteString) -> Assertion
 runVector (bs, e, chk) = do

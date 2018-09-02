@@ -144,7 +144,14 @@ instance Ord XPrvKey where
     compare k1 k2 = xPrvExport k1 `compare` xPrvExport k2
 
 instance Show XPrvKey where
-    showsPrec d k = shows (xPrvExport k)
+    showsPrec _ = shows . xPrvExport
+
+instance Read XPrvKey where
+    readPrec = do
+        R.String str <- lexP
+        let bs = cs str
+            f k n = k <|> xPrvImport n bs
+        maybe pfail return $ foldl' f Nothing allNets
 
 instance NFData XPrvKey where
     rnf (XPrvKey d p i c k n) =
@@ -168,8 +175,14 @@ instance Ord XPubKey where
     compare k1 k2 = xPubExport k1 `compare` xPubExport k2
 
 instance Show XPubKey where
-    showsPrec d k = showParen (d > 10) $
-        showString "XPubKey " . shows (xPubExport k)
+    showsPrec d = shows . xPubExport
+
+instance Read XPubKey where
+    readPrec = do
+        R.String str <- lexP
+        let bs = cs str
+            f k n = k <|> xPubImport n bs
+        maybe pfail return $ foldl' f Nothing allNets
 
 instance NFData XPubKey where
     rnf (XPubKey d p i c k n) =

@@ -92,13 +92,24 @@ spec = do
             forAll (arbitraryXPrvKey net) (testCustom (xPrvFromJSON net))
         it "encodes and decodes extended public key" $
             forAll (arbitraryXPubKey net) (testCustom (xPubFromJSON net) . snd)
-        it "encodes and decodes derivation path" $ forAll arbitraryDerivPath testID
+        it "encodes and decodes derivation path" $
+            forAll arbitraryDerivPath testID
         it "encodes and decodes parsed derivation path" $
             forAll arbitraryParsedPath testID
         it "encodes and decodes extended private key" $
             property $
             forAll (arbitraryXPrvKey net) $
             testPutGet (getXPrvKey net) putXPrvKey
+        it "shows and reads extended private key" $
+            property $
+            forAll (arbitraryXPrvKey net) $ \k -> do
+                let k' = read (show k)
+                k' {xPrvNet = xPrvNet k} `shouldBe` k
+        it "shows and reads extended private key" $
+            property $
+            forAll (arbitraryXPubKey net) $ \(_, k) -> do
+                let k' = read (show k)
+                k' {xPubNet = xPubNet k} `shouldBe` k
 
 testFromJsonPath :: Assertion
 testFromJsonPath =

@@ -57,40 +57,28 @@ newtype Hash160 = Hash160 { getHash160 :: ShortByteString }
     deriving (Eq, Ord, NFData, Hashable)
 
 instance Show Hash512 where
-    showsPrec d k =
-        showParen (d > 10) $
-        showString "Hash512 " . shows (encodeHex (BSS.fromShort (getHash512 k)))
+    showsPrec _ = shows . encodeHex . BSS.fromShort . getHash512
 
 instance Read Hash512 where
-    readPrec =
-        parens $ do
-            R.Ident "Hash512" <- lexP
-            R.String str <- lexP
-            maybe pfail return $ Hash512 . BSS.toShort <$> decodeHex (cs str)
+    readPrec = do
+        R.String str <- lexP
+        maybe pfail return $ Hash512 . BSS.toShort <$> decodeHex (cs str)
 
 instance Show Hash256 where
-    showsPrec d k =
-        showParen (d > 10) $
-        showString "Hash256 " . shows (encodeHex (BSS.fromShort (getHash256 k)))
+    showsPrec _ = shows . encodeHex . BSS.fromShort . getHash256
 
 instance Read Hash256 where
-    readPrec =
-        parens $ do
-            R.Ident "Hash256" <- lexP
-            R.String str <- lexP
-            maybe pfail return $ Hash256 . BSS.toShort <$> decodeHex (cs str)
+    readPrec = do
+        R.String str <- lexP
+        maybe pfail return $ Hash256 . BSS.toShort <$> decodeHex (cs str)
 
 instance Show Hash160 where
-    showsPrec d k =
-        showParen (d > 10) $
-        showString "Hash160 " . shows (encodeHex (BSS.fromShort (getHash160 k)))
+    showsPrec _ = shows . encodeHex . BSS.fromShort . getHash160
 
 instance Read Hash160 where
-    readPrec =
-        parens $ do
-            R.Ident "Hash160" <- lexP
-            R.String str <- lexP
-            maybe pfail return $ Hash160 . BSS.toShort <$> decodeHex (cs str)
+    readPrec = do
+        R.String str <- lexP
+        maybe pfail return $ Hash160 . BSS.toShort <$> decodeHex (cs str)
 
 instance IsString Hash512 where
     fromString str =

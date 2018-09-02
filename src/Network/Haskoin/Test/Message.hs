@@ -11,7 +11,7 @@ import           Network.Haskoin.Test.Network
 import           Network.Haskoin.Test.Transaction
 import           Test.QuickCheck
 
--- | Arbitrary MessageHeader
+-- | Arbitrary 'MessageHeader'.
 arbitraryMessageHeader :: Gen MessageHeader
 arbitraryMessageHeader =
     MessageHeader <$> arbitrary
@@ -19,7 +19,7 @@ arbitraryMessageHeader =
                   <*> arbitrary
                   <*> arbitraryCheckSum32
 
--- | Arbitrary Message
+-- | Arbitrary 'Message'.
 arbitraryMessage :: Network -> Gen Message
 arbitraryMessage net =
     oneof

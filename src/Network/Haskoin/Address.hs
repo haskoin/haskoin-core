@@ -88,10 +88,17 @@ base58put (ScriptAddress h net) = do
         put h
 
 instance Show Address where
-    showsPrec d a =
+    showsPrec _ a =
         case addrToString a of
             Just s  -> shows s
-            Nothing -> showString "InvalidAddress"
+            Nothing -> fail "Cannot show this transaction"
+
+instance Read Address where
+    readPrec = do
+        R.String str <- lexP
+        let bs = cs str
+        maybe pfail return $
+            foldl' (\a n -> a <|> stringToAddr n bs) Nothing allNets
 
 instance ToJSON Address where
     toJSON =

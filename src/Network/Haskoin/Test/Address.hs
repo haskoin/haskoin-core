@@ -14,15 +14,15 @@ import           Network.Haskoin.Test.Crypto
 import           Network.Haskoin.Test.Util
 import           Test.QuickCheck
 
--- | Arbitrary non-witness address (can be a pubkey or script hash address)
+-- | Arbitrary pay-to-public-key-hash or pay-to-script-hash address.
 arbitraryAddress :: Network -> Gen Address
 arbitraryAddress net =
     oneof [arbitraryPubKeyAddress net, arbitraryScriptAddress net]
 
--- | Arbitrary public key hash address
+-- | Arbitrary pay-to-public-key-hash address.
 arbitraryPubKeyAddress :: Network -> Gen Address
 arbitraryPubKeyAddress net = PubKeyAddress <$> arbitraryHash160 <*> pure net
 
--- | Arbitrary script hash address
+-- | Arbitrary pay-to-script-hash address.
 arbitraryScriptAddress :: Network -> Gen Address
 arbitraryScriptAddress net = ScriptAddress <$> arbitraryHash160 <*> pure net

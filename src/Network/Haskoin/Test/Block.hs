@@ -11,6 +11,7 @@ import           Network.Haskoin.Test.Network
 import           Network.Haskoin.Test.Transaction
 import           Test.QuickCheck
 
+-- | Block full or arbitrary transactions.
 arbitraryBlock :: Network -> Gen Block
 arbitraryBlock net = do
     h   <- arbitraryBlockHeader
@@ -18,6 +19,7 @@ arbitraryBlock net = do
     txs <- vectorOf c (arbitraryTx net)
     return $ Block h txs
 
+-- | Block header with random hash.
 arbitraryBlockHeader :: Gen BlockHeader
 arbitraryBlockHeader =
     BlockHeader <$> arbitrary

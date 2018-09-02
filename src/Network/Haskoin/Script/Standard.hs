@@ -46,15 +46,16 @@ import           Network.Haskoin.Util
 
 -- | Data type describing standard transaction input scripts. Input scripts
 -- provide the signing data required to unlock the coins of the output they are
--- trying to spend.
+-- trying to spend, except in pay-to-witness-public-key-hash and
+-- pay-to-script-hash transactions.
 data SimpleInput
-      -- | Spend the coins of a PayPK output.
+      -- | spend pay-to-public-key output
     = SpendPK     { getInputSig :: !TxSignature }
-      -- | Spend the coins of a PayPKHash output.
+      -- | spend pay-to-public-key-hash output
     | SpendPKHash { getInputSig :: !TxSignature
                   , getInputKey :: !PubKeyI
                   }
-      -- | Spend the coins of a PayMulSig output.
+      -- | spend multisig output
     | SpendMulSig { getInputMulSigKeys :: ![TxSignature] }
     deriving (Eq, Show)
 
@@ -63,25 +64,30 @@ instance NFData SimpleInput where
     rnf (SpendPKHash i k) = rnf i `seq` rnf k
     rnf (SpendMulSig k)   = rnf k
 
--- | Returns True if the input script is spending a public key.
+-- | Returns true if the input script is spending from a pay-to-public-key
+-- output.
 isSpendPK :: ScriptInput -> Bool
 isSpendPK (RegularInput (SpendPK _)) = True
 isSpendPK _                          = False
 
--- | Returns True if the input script is spending a public key hash.
+-- | Returns true if the input script is spending from a pay-to-public-key-hash
+-- output.
 isSpendPKHash :: ScriptInput -> Bool
 isSpendPKHash (RegularInput (SpendPKHash _ _)) = True
 isSpendPKHash _                                = False
 
--- | Returns True if the input script is spending a multisignature output.
+-- | Returns true if the input script is spending a multisig output.
 isSpendMulSig :: ScriptInput -> Bool
 isSpendMulSig (RegularInput (SpendMulSig _)) = True
 isSpendMulSig _                              = False
 
+-- | Returns true if the input script is spending a pay-to-script-hash output.
 isScriptHashInput :: ScriptInput -> Bool
 isScriptHashInput (ScriptHashInput _ _) = True
 isScriptHashInput _                     = False
 
+-- | A redeem script is the output script serialized into the spending input
+-- script. It must be included in inputs that spend pay-to-script-hash outputs.
 type RedeemScript = ScriptOutput
 
 data ScriptInput
@@ -96,57 +102,66 @@ instance NFData ScriptInput where
     rnf (ScriptHashInput i o) = rnf i `seq` rnf o
 
 
--- | Computes a script address from a script output. This address can be used
--- in a pay to script hash output.
+-- | Compute a pay-to-script-hash address for an output script.
 p2shAddr :: Network -> ScriptOutput -> Address
 p2shAddr net out = ScriptAddress (addressHash (encodeOutputBS out)) net
 
--- | Computes a script address from a script output for a
--- pay-to-witness-script-hash output.
+-- | Compute a pay-to-witness-script-hash address for an output script. Only on
+-- SegWit networks.
 p2wshAddr :: Network -> ScriptOutput -> Maybe Address
 p2wshAddr net out = do
     guard (getSegWit net)
     return $ WitnessScriptAddress (sha256 (encodeOutputBS out)) net
 
-addressToOutput :: Address -> ScriptOutput
-addressToOutput (PubKeyAddress h _)        = PayPKHash h
-addressToOutput (ScriptAddress h _)        = PayScriptHash h
-addressToOutput (WitnessPubKeyAddress h _) = PayWitnessPKHash h
-addressToOutput (WitnessScriptAddress h _) = PayWitnessScriptHash h
+-- | Encode an output script from an address. Will fail if using a
+-- pay-to-witness address on a non-SegWit network.
+addressToOutput :: Address -> Maybe ScriptOutput
+addressToOutput (PubKeyAddress h _)        = Just (PayPKHash h)
+addressToOutput (ScriptAddress h _)        = Just (PayScriptHash h)
+addressToOutput (WitnessPubKeyAddress h n)
+    | getSegWit n = Just (PayWitnessPKHash h)
+    | otherwise = Nothing
+addressToOutput (WitnessScriptAddress h n)
+    | getSegWit n = Just (PayWitnessScriptHash h)
+    | otherwise = Nothing
 
--- | Get output script AST for an address.
-addressToScript :: Address -> Script
-addressToScript = encodeOutput . addressToOutput
+-- | Get output script AST for an 'Address'.
+addressToScript :: Address -> Maybe Script
+addressToScript a = encodeOutput <$> addressToOutput a
 
--- | Encode address as output script in ByteString form.
-addressToScriptBS :: Address -> ByteString
-addressToScriptBS = encode . addressToScript
+-- | Encode address as output script in 'ByteString' form.
+addressToScriptBS :: Address -> Maybe ByteString
+addressToScriptBS a = encode <$> addressToScript a
 
--- | Encode an output script as an address if it has such representation.
+-- | Decode an output script into an 'Address' if it has such representation.
 scriptToAddress :: Network -> Script -> Maybe Address
 scriptToAddress net = eitherToMaybe . (outputAddress net <=< decodeOutput)
 
+-- | Decode a serialized script into an 'Address'.
 scriptToAddressBS :: Network -> ByteString -> Maybe Address
 scriptToAddressBS net = eitherToMaybe . (outputAddress net <=< decodeOutputBS)
 
--- | Get the address of a `ScriptOutput`
+-- | Get the 'Address' of a 'ScriptOutput'.
 outputAddress :: Network -> ScriptOutput -> Either String Address
-outputAddress net s = case s of
-    PayPKHash h            -> return $ PubKeyAddress h net
-    PayScriptHash h        -> return $ ScriptAddress h net
-    PayPK k                -> return $ pubKeyAddr net k
-    PayWitnessPKHash h     -> return $ WitnessPubKeyAddress h net
-    PayWitnessScriptHash h -> return $ WitnessScriptAddress h net
-    _                      -> Left "outputAddress: bad output script type"
+outputAddress net s =
+    case s of
+        PayPKHash h -> return $ PubKeyAddress h net
+        PayScriptHash h -> return $ ScriptAddress h net
+        PayPK k -> return $ pubKeyAddr net k
+        PayWitnessPKHash h
+            | getSegWit net -> return $ WitnessPubKeyAddress h net
+        PayWitnessScriptHash h
+            | getSegWit net -> return $ WitnessScriptAddress h net
+        _ -> Left "outputAddress: bad output script type"
 
--- | Get the address of a 'ScriptInput'
+-- | Infer the address of a 'ScriptInput'
 inputAddress :: Network -> ScriptInput -> Either String Address
 inputAddress net s = case s of
     RegularInput (SpendPKHash _ key) -> return $ pubKeyAddr net key
     ScriptHashInput _ rdm -> return $ p2shAddr net rdm
     _ -> Left "inputAddress: bad input script type"
 
--- | Decode an input script into one of the standard types.
+-- | Heuristic to decode an input script into one of the standard types.
 decodeSimpleInput :: Network -> Script -> Either String SimpleInput
 decodeSimpleInput net (Script ops) =
     maybeToEither errMsg $ matchPK ops <|> matchPKHash ops <|> matchMulSig ops
@@ -166,8 +181,8 @@ decodeSimpleInput net (Script ops) =
     f _                       = Nothing
     errMsg = "decodeInput: Could not decode script input"
 
--- | Decodes a 'ScriptInput' from a 'Script'. This function fails if the
--- script can not be parsed as a standard script input.
+-- | Heuristic to decode a 'ScriptInput' from a 'Script'. This function fails if
+-- the script can not be parsed as a standard script input.
 decodeInput :: Network -> Script -> Either String ScriptInput
 decodeInput net s@(Script ops) =
     maybeToEither errMsg $ matchSimpleInput <|> matchPayScriptHash
@@ -183,22 +198,24 @@ decodeInput net s@(Script ops) =
             _ -> Nothing
     errMsg = "decodeInput: Could not decode script input"
 
--- | Like 'decodeInput' but decodes from a ByteString
+-- | Like 'decodeInput' but decodes directly from a serialized script
+-- 'ByteString'.
 decodeInputBS :: Network -> ByteString -> Either String ScriptInput
 decodeInputBS net = decodeInput net <=< decode
 
+-- | Encode a standard input into a script.
 encodeInput :: ScriptInput -> Script
 encodeInput s = case s of
     RegularInput ri -> encodeSimpleInput ri
     ScriptHashInput i o -> Script $
         scriptOps (encodeSimpleInput i) ++ [opPushData $ encodeOutputBS o]
 
--- | Similar to 'encodeInput' but encodes to a ByteString
+-- | Similar to 'encodeInput' but encodes directly to a serialized script
+-- 'ByteString'.
 encodeInputBS :: ScriptInput -> ByteString
 encodeInputBS = encode . encodeInput
 
--- | Computes a 'Script' from a 'SimpleInput'. The 'Script' is a list of
--- 'ScriptOp' that can be used to build a 'Tx'.
+-- | Encode a standard 'SimpleInput' into opcodes as an input 'Script'.
 encodeSimpleInput :: SimpleInput -> Script
 encodeSimpleInput s =
     Script $
@@ -210,11 +227,8 @@ encodeSimpleInput s =
     f TxSignatureEmpty = OP_0
     f ts               = opPushData $ encodeTxSig ts
 
--- | Sorts the public keys of a multisignature output in ascending order by
--- comparing their serialized representations. This feature allows for easier
--- multisignature account management as participants in a multisignature wallet
--- will blindly agree on an ordering of the public keys without having to
--- communicate.
+-- | Sort the public keys of a multisig output in ascending order by comparing
+-- their compressed serialized representations. Refer to BIP-67.
 sortMulSig :: ScriptOutput -> ScriptOutput
 sortMulSig out = case out of
     PayMulSig keys r -> PayMulSig (sortBy (compare `on` encode) keys) r

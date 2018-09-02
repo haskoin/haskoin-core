@@ -170,7 +170,11 @@ arbitrarySigHash = fromIntegral <$> (arbitrary :: Gen Word32)
 -- | Arbitrary valid SigHash
 arbitraryValidSigHash :: Network -> Gen SigHash
 arbitraryValidSigHash net = do
-    sh <- elements [sigHashAll, sigHashNone, sigHashSingle]
+    sh <-
+        elements $
+        map
+            (fromIntegral . fromEnum)
+            [SIGHASH_ALL, SIGHASH_NONE, SIGHASH_SINGLE]
     f1 <-
         elements $
         if isJust (getSigHashForkId net)

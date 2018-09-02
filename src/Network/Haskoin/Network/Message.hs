@@ -28,16 +28,13 @@ import           Network.Haskoin.Transaction.Common
 -- | Data type representing the header of a 'Message'. All messages sent between
 -- nodes contain a message header.
 data MessageHeader = MessageHeader
-    { -- | Network magic bytes. It is used to differentiate
-      -- messages meant for different bitcoin networks, such as
-      -- prodnet and testnet.
+    { -- | magic bytes identify network
       headMagic       :: !Word32
-      -- | Message command identifying the type of message.
-      -- included in the payload.
+      -- | message type
     , headCmd         :: !MessageCommand
-      -- | Byte length of the payload.
+      -- | length of payload
     , headPayloadSize :: !Word32
-      -- | Checksum of the payload.
+      -- | checksum of payload
     , headChecksum    :: !CheckSum32
     } deriving (Eq, Show)
 
@@ -88,30 +85,32 @@ data Message
     | MSendHeaders
     deriving (Eq, Show)
 
-msgType :: Message -> String
-msgType (MVersion _)     = "version"
-msgType MVerAck          = "verack"
-msgType (MAddr _)        = "addr"
-msgType (MInv _)         = "inv"
-msgType (MGetData _)     = "getdata"
-msgType (MNotFound _)    = "notfound"
-msgType (MGetBlocks _)   = "getblocks"
-msgType (MGetHeaders _)  = "getheaders"
-msgType (MTx _)          = "tx"
-msgType (MBlock _)       = "block"
-msgType (MMerkleBlock _) = "merkleblock"
-msgType (MHeaders _)     = "headers"
-msgType MGetAddr         = "getaddr"
-msgType (MFilterLoad _)  = "filterload"
-msgType (MFilterAdd _)   = "filteradd"
-msgType MFilterClear     = "filterclear"
-msgType (MPing _)        = "ping"
-msgType (MPong _)        = "pong"
-msgType (MAlert _)       = "alert"
-msgType MMempool         = "mempool"
-msgType (MReject _)      = "reject"
-msgType MSendHeaders     = "sendheaders"
+-- | Get 'MessageCommand' assocated with a message.
+msgType :: Message -> MessageCommand
+msgType (MVersion _)     = MCVersion
+msgType MVerAck          = MCVerAck
+msgType (MAddr _)        = MCAddr
+msgType (MInv _)         = MCInv
+msgType (MGetData _)     = MCGetData
+msgType (MNotFound _)    = MCNotFound
+msgType (MGetBlocks _)   = MCGetBlocks
+msgType (MGetHeaders _)  = MCGetHeaders
+msgType (MTx _)          = MCTx
+msgType (MBlock _)       = MCBlock
+msgType (MMerkleBlock _) = MCMerkleBlock
+msgType (MHeaders _)     = MCHeaders
 
+msgType (MFilterLoad _)  = MCFilterLoad
+msgType (MFilterAdd _)   = MCFilterAdd
+msgType MFilterClear     = MCFilterClear
+msgType (MPing _)        = MCPing
+msgType (MPong _)        = MCPong
+msgType (MAlert _)       = MCAlert
+msgType MMempool         = MCMempool
+msgType (MReject _)      = MCReject
+msgType MSendHeaders     = MCSendHeaders
+
+-- | Deserializer for network messages.
 getMessage :: Network -> Get Message
 getMessage net = do
     (MessageHeader mgc cmd len chk) <- get
@@ -151,6 +150,7 @@ getMessage net = do
                  MCSendHeaders -> return MSendHeaders
                  _             -> fail $ "get: Invalid command " ++ show cmd
 
+-- | Serializer for network messages.
 putMessage :: Network -> Putter Message
 putMessage net msg = do
     let (cmd, payload) =

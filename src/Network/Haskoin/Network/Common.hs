@@ -52,10 +52,10 @@ import           Data.Word                   (Word32, Word64)
 import           Network.Haskoin.Crypto.Hash
 import           Network.Socket              (SockAddr (..))
 
--- | Network address with a timestamp
+-- | Network address with a timestamp.
 type NetworkAddressTime = (Word32, NetworkAddress)
 
--- | Provides information on known nodes in the bitcoin network. An 'Addr'
+-- | Provides information about known nodes in the bitcoin network. An 'Addr'
 -- type is sent inside a 'Message' as a response to a 'GetAddr' message.
 newtype Addr =
     Addr { -- List of addresses of other nodes on the network with timestamps.
@@ -94,14 +94,13 @@ instance Serialize Alert where
 
 -- | The 'GetData' type is used to retrieve information on a specific object
 -- ('Block' or 'Tx') identified by the objects hash. The payload of a 'GetData'
--- request is a list of 'InvVector' which represent all the hashes for which a
--- node wants to request information. The response to a 'GetBlock' message
--- wille be either a 'Block' or a 'Tx' message depending on the type of the
--- object referenced by the hash. Usually, 'GetData' messages are sent after a
--- node receives an 'Inv' message to obtain information on unknown object
--- hashes.
+-- request is a list of 'InvVector' which represent all the hashes of objects
+-- that a node wants. The response to a 'GetBlock' message will be either a
+-- 'Block' or a 'Tx' message depending on the type of the object referenced by
+-- the hash. Usually, 'GetData' messages are sent after a node receives an 'Inv'
+-- message that contains unknown object hashes.
 newtype GetData =
-    GetData { -- | List of object hashes
+    GetData { -- | list of object hashes
               getDataList :: [InvVector]
             } deriving (Eq, Show)
 
@@ -119,11 +118,11 @@ instance Serialize GetData where
         forM_ xs put
 
 -- | 'Inv' messages are used by nodes to advertise their knowledge of new
--- objects by publishing a list of hashes. 'Inv' messages can be sent
+-- objects by publishing a list of hashes to a peer. 'Inv' messages can be sent
 -- unsolicited or in response to a 'GetBlocks' message.
 newtype Inv =
     Inv {
-        -- | Inventory vectors
+        -- | inventory
           invList :: [InvVector]
         } deriving (Eq, Show)
 
@@ -140,15 +139,16 @@ instance Serialize Inv where
         put $ VarInt $ fromIntegral $ length xs
         forM_ xs put
 
--- | Data type identifying the type of an inventory vector.
+-- | Data type identifying the type of an inventory vector. SegWit types are
+-- only used in 'GetData' messages, not 'Inv'.
 data InvType
-    = InvError -- ^ Error. Data containing this type can be ignored.
-    | InvTx -- ^ InvVector hash is related to a transaction
-    | InvBlock -- ^ InvVector hash is related to a block
-    | InvMerkleBlock -- ^ InvVector has is related to a merkle block
-    | InvWitnessTx
-    | InvWitnessBlock
-    | InvWitnessMerkleBlock
+    = InvError -- ^ error
+    | InvTx -- ^ transaction
+    | InvBlock -- ^ block
+    | InvMerkleBlock -- ^ filtered block
+    | InvWitnessTx -- ^ segwit transaction
+    | InvWitnessBlock -- ^ segwit block
+    | InvWitnessMerkleBlock -- ^ segwit filtere block
     deriving (Eq, Show, Read)
 
 instance NFData InvType where rnf x = seq x ()
@@ -178,14 +178,14 @@ instance Serialize InvType where
             InvWitnessBlock -> 1 `shiftL` 30 + 2
             InvWitnessMerkleBlock -> 1 `shiftL` 30 + 3
 
--- | Invectory vectors represent hashes identifying objects such as a 'Block'
--- or a 'Tx'. They are sent inside messages to notify other peers about
--- new data or data they have requested.
+-- | Invectory vectors represent hashes identifying objects such as a 'Block' or
+-- a 'Tx'. They notify other peers about new data or data they have otherwise
+-- requested.
 data InvVector =
     InvVector {
-                -- | Type of the object referenced by this inventory vector
+                -- | type of object
                 invType :: !InvType
-                -- | Hash of the object referenced by this inventory vector
+                -- | 256-bit hash of object
               , invHash :: !Hash256
               } deriving (Eq, Show)
 
@@ -197,14 +197,12 @@ instance Serialize InvVector where
     put (InvVector t h) = put t >> put h
 
 -- | Data type describing a bitcoin network address. Addresses are stored in
--- IPv6. IPv4 addresses are mapped to IPv6 using IPv4 mapped IPv6 addresses:
--- <http://en.wikipedia.org/wiki/IPv6#IPv4-mapped_IPv6_addresses>. Sometimes,
--- timestamps are sent together with the 'NetworkAddress' such as in the 'Addr'
--- data type.
+-- IPv6 format. IPv4 addresses are mapped to IPv6 using IPv4 mapped IPv6
+-- addresses: <http://en.wikipedia.org/wiki/IPv6#IPv4-mapped_IPv6_addresses>.
 data NetworkAddress =
-    NetworkAddress { -- | Bitmask of services available for this address
+    NetworkAddress { -- | bitmask of services available for this address
                      naServices :: !Word64
-                     -- | IPv6 address and port
+                     -- | address and port information
                    , naAddress  :: !SockAddr
                    } deriving (Eq, Show)
 
@@ -270,8 +268,8 @@ instance Serialize NotFound where
         put $ VarInt $ fromIntegral $ length xs
         forM_ xs put
 
--- | A Ping message is sent to bitcoin peers to check if a TCP\/IP connection
--- is still valid.
+-- | A 'Ping' message is sent to bitcoin peers to check if a connection is still
+-- open.
 newtype Ping =
     Ping { -- | A random nonce used to identify the recipient of the ping
            -- request once a Pong response is received.
@@ -284,8 +282,7 @@ instance NFData Ping where
 -- | A Pong message is sent as a response to a ping message.
 newtype Pong =
     Pong {
-           -- | When responding to a Ping request, the nonce from the Ping
-           -- is copied in the Pong response.
+           -- | nonce from corresponding 'Ping'
            pongNonce :: Word64
          } deriving (Eq, Show, Read)
 
@@ -300,16 +297,16 @@ instance Serialize Pong where
     get = Pong <$> getWord64le
     put (Pong n) = putWord64le n
 
--- | The reject message is sent when messages are rejected by a peer.
+-- | The 'Reject' message is sent when messages are rejected by a peer.
 data Reject =
     Reject {
-             -- | Type of message rejected
+             -- | type of message rejected
              rejectMessage :: !MessageCommand
-             -- | Code related to the rejected message
+             -- | rejection code
            , rejectCode    :: !RejectCode
-             -- | Text version of rejected reason
+             -- | text reason for rejection
            , rejectReason  :: !VarString
-             -- | Optional extra data provided by some errors
+             -- | extra data such as block or tx hash
            , rejectData    :: !ByteString
            } deriving (Eq, Show, Read)
 
@@ -351,7 +348,7 @@ instance Serialize RejectCode where
         RejectInsufficientFee -> 0x42
         RejectCheckpoint      -> 0x43
 
--- | Convenience function to build a Reject message
+-- | Convenience function to build a 'Reject' message.
 reject :: MessageCommand -> RejectCode -> ByteString -> Reject
 reject cmd code reason =
     Reject cmd code (VarString reason) BS.empty
@@ -372,7 +369,7 @@ instance Serialize Reject where
         put reason
         unless (BS.null dat) $ putByteString dat
 
--- | Data type representing a variable length integer. The 'VarInt' type
+-- | Data type representing a variable-length integer. The 'VarInt' type
 -- usually precedes an array or a string that can vary in length.
 newtype VarInt = VarInt { getVarInt :: Word64 }
     deriving (Eq, Show, Read)
@@ -402,8 +399,7 @@ instance Serialize VarInt where
             putWord8 0xff
             putWord64le x
 
--- | Data type for variable length strings. Variable length strings are
--- serialized as a 'VarInt' followed by a bytestring.
+-- | Data type for serialization of variable-length strings.
 newtype VarString = VarString { getVarString :: ByteString }
     deriving (Eq, Show, Read)
 
@@ -425,26 +421,23 @@ instance Serialize VarString where
 -- will similarly respond with it's own 'Version' message.
 data Version =
     Version {
-              -- | Protocol version being used by the node.
+              -- | protocol version
               version     :: !Word32
-              -- | Bitmask of features to enable for this connection.
+              -- | features supported by this connection
             , services    :: !Word64
-              -- | UNIX timestamp
+              -- | unix timestamp
             , timestamp   :: !Word64
-              -- | Network address of the node receiving this message.
+              -- | network address of remote node
             , addrRecv    :: !NetworkAddress
-              -- | Network address of the node sending this message.
+              -- | network address of sending node
             , addrSend    :: !NetworkAddress
-              -- | Randomly generated identifier sent with every version
-              -- message. This nonce is used to detect connection to self.
+              -- | random nonce to detect connection to self
             , verNonce    :: !Word64
-              -- | User agent
+              -- | user agent string
             , userAgent   :: !VarString
-              -- | The height of the last block received by the sending node.
+              -- | height of the last block in sending node
             , startHeight :: !Word32
-              -- | Wether the remote peer should announce relaying transactions
-              -- or not. This feature is enabled since version >= 70001. See
-              -- BIP37 for more details.
+              -- | relay transactions flag (BIP-37)
             , relay       :: !Bool
             } deriving (Eq, Show)
 
@@ -486,6 +479,7 @@ instance Serialize Version where
         putWord32le sh
         putBool     r
 
+-- | 0x00 is 'False', anything else is 'True'.
 getBool :: Get Bool
 getBool = go =<< getWord8
   where
@@ -539,7 +533,7 @@ instance Serialize MessageCommand where
                     "get MessageCommand: Invalid command: " <> str
     put mc = putByteString $ packCommand $ commandToString mc
 
-
+-- | Read a 'MessageCommand' from its string representation.
 stringToCommand :: ByteString -> Maybe MessageCommand
 stringToCommand str = case str of
     "version"     -> Just MCVersion
@@ -566,6 +560,7 @@ stringToCommand str = case str of
     "sendheaders" -> Just MCSendHeaders
     _             -> Nothing
 
+-- | Convert a 'MessageCommand' to its string representation.
 commandToString :: MessageCommand -> ByteString
 commandToString mc = case mc of
     MCVersion     -> "version"
@@ -591,27 +586,35 @@ commandToString mc = case mc of
     MCReject      -> "reject"
     MCSendHeaders -> "sendheaders"
 
+-- | Pack a string 'MessageCommand' so that it is exactly 12-bytes long.
 packCommand :: ByteString -> ByteString
 packCommand s = BS.take 12 $
     s `mappend` C.replicate 12 '\NUL'
 
+-- | Undo packing done by 'packCommand'.
 unpackCommand :: ByteString -> ByteString
 unpackCommand = BS.takeWhile (/= 0)
 
+-- | Node offers no services.
 nodeNone :: Word64
 nodeNone = 0
 
+-- | Services indicate node is a full node that can serve full blocks.
 nodeNetwork :: Word64
 nodeNetwork = 1
 
+-- | Services indicate node allows to request 'UTXO' set.
 nodeGetUTXO :: Word64
 nodeGetUTXO = 1 `shiftL` 1
 
+-- | Services indicate node accepts bloom filters.
 nodeBloom :: Word64
 nodeBloom = 1 `shiftL` 2
 
+-- | Services indicate SegWit-capable node.
 nodeWitness :: Word64
 nodeWitness = 1 `shiftL` 3
 
+-- | Services indicate Xtreme Thinblocks compatibility.
 nodeXThin :: Word64
 nodeXThin = 1 `shiftL` 4

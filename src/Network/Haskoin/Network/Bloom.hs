@@ -35,7 +35,7 @@ import           Data.Serialize.Put             (putByteString, putWord32le,
 import           Data.Word
 import           Network.Haskoin.Network.Common
 
--- 20,000 items with fp rate < 0.1% or 10,000 items and <0.0001%
+-- | 20,000 items with fp rate < 0.1% or 10,000 items and <0.0001%
 maxBloomSize :: Int
 maxBloomSize = 36000
 
@@ -54,11 +54,10 @@ bitMask = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]
 -- | The bloom flags are used to tell the remote peer how to auto-update
 -- the provided bloom filter.
 data BloomFlags
-    = BloomUpdateNone         -- ^ Never update
-    | BloomUpdateAll          -- ^ Auto-update on all outputs
+    = BloomUpdateNone -- ^ never update
+    | BloomUpdateAll -- ^ auto-update on all outputs
     | BloomUpdateP2PubKeyOnly
-    -- ^ Only auto-update on outputs that are pay-to-pubkey or pay-to-multisig.
-    -- This is the default setting.
+    -- ^ auto-update on pay-to-pubkey or pay-to-multisig (default)
     deriving (Eq, Show, Read)
 
 instance NFData BloomFlags where rnf x = seq x ()
@@ -78,19 +77,19 @@ instance Serialize BloomFlags where
 
 -- | A bloom filter is a probabilistic data structure that SPV clients send to
 -- other peers to filter the set of transactions received from them. Bloom
--- filters are probabilistic and have a false positive rate. Some transactions
+-- filters can have false positives but not false negatives. Some transactions
 -- that pass the filter may not be relevant to the receiving peer. By
 -- controlling the false positive rate, SPV nodes can trade off bandwidth
 -- versus privacy.
 data BloomFilter = BloomFilter
     { bloomData      :: !(S.Seq Word8)
-    -- ^ Bloom filter data
+    -- ^ bloom filter data
     , bloomHashFuncs :: !Word32
-    -- ^ Number of hash functions for this filter
+    -- ^ number of hash functions for this filter
     , bloomTweak     :: !Word32
-    -- ^ Hash function random nonce
+    -- ^ hash function random nonce
     , bloomFlags     :: !BloomFlags
-    -- ^ Bloom filter auto-update flags
+    -- ^ bloom filter auto-update flags
     }
     deriving (Eq, Show, Read)
 
@@ -145,14 +144,11 @@ instance Serialize FilterAdd where
 
 -- | Build a bloom filter that will provide the given false positive rate when
 -- the given number of elements have been inserted.
-bloomCreate :: Int          -- ^ Number of elements
-            -> Double       -- ^ False positive rate
-            -> Word32
-             -- ^ A random nonce (tweak) for the hash function. It should be
-             -- a random number but the secureness of the random value is not
-             -- of geat consequence.
-            -> BloomFlags   -- ^ Bloom filter flags
-            -> BloomFilter  -- ^ Bloom filter
+bloomCreate :: Int          -- ^ number of elements
+            -> Double       -- ^ false positive rate
+            -> Word32       -- ^ random nonce (tweak) for the hash function
+            -> BloomFlags   -- ^ bloom filter flags
+            -> BloomFilter  -- ^ bloom filter
 bloomCreate numElem fpRate =
     BloomFilter (S.replicate bloomSize 0) numHashF
   where
@@ -221,5 +217,6 @@ isBloomValid bfilter =
     S.length (bloomData bfilter) <= maxBloomSize &&
     bloomHashFuncs bfilter <= maxHashFuncs
 
+-- | Does the peer with these version services accept bloom filters?
 acceptsFilters :: Word64 -> Bool
 acceptsFilters srv = srv .&. (1 `shiftL` 2) /= 0

@@ -39,8 +39,12 @@ import           Network.Haskoin.Util
 -- | Data type representing a transaction script. Scripts are defined as lists
 -- of script operators 'ScriptOp'. Scripts are used to:
 --
--- * Define the spending conditions in the output of a transaction
--- * Provide the spending signatures in the input of a transaction
+-- * Define the spending conditions in the output of a transaction.
+-- * Provide signatures in the input of a transaction (except SegWit).
+--
+-- SigWit only: the segregated witness data structure, and not the input script,
+-- contains signatures and redeem script for pay-to-witness-script and
+-- pay-to-witness-public-key-hash transactions.
 newtype Script =
     Script {
              -- | script operators defining this script
@@ -66,22 +70,19 @@ instance Serialize Script where
 -- | Data type representing the type of an OP_PUSHDATA opcode.
 data PushDataType
     =
-      -- | The next opcode bytes is data to be pushed onto the stack
+      -- | next opcode bytes is data to be pushed
       OPCODE
-      -- | The next byte contains the number of bytes to be pushed onto
-      -- the stack
+      -- | next byte contains number of bytes of data to be pushed
     | OPDATA1
-      -- | The next two bytes contains the number of bytes to be pushed onto
-      -- the stack
+      -- | next two bytes contains number of bytes to be pushed
     | OPDATA2
-      -- | The next four bytes contains the number of bytes to be pushed onto
-      -- the stack
+      -- | next four bytes contains the number of bytes to be pushed
     | OPDATA4
     deriving (Show, Read, Eq)
 
 instance NFData PushDataType where rnf x = seq x ()
 
--- | Data type representing all of the operators allowed inside a 'Script'.
+-- | Data type representing an operator allowed inside a 'Script'.
 data ScriptOp
       -- Pushing Data
     = OP_PUSHDATA !ByteString !PushDataType
@@ -534,7 +535,7 @@ isPushOp op = case op of
     OP_16           -> True
     _               -> False
 
--- | Optimally encode data using one of the 4 types of data pushing opcodes
+-- | Optimally encode data using one of the 4 types of data pushing opcodes.
 opPushData :: ByteString -> ScriptOp
 opPushData bs
     | len <= 0x4b       = OP_PUSHDATA bs OPCODE
@@ -545,7 +546,7 @@ opPushData bs
   where
     len = BS.length bs
 
--- | Transforms integers [1 .. 16] to 'ScriptOp' [OP_1 .. OP_16]
+-- | Transforms integers @[1 .. 16]@ to 'ScriptOp' @[OP_1 .. OP_16]@.
 intToScriptOp :: Int -> ScriptOp
 intToScriptOp i
     | i `elem` [1 .. 16] = op
@@ -554,7 +555,7 @@ intToScriptOp i
     op = either (const err) id . S.decode . BS.singleton . fromIntegral $ i + 0x50
     err = error $ "intToScriptOp: Invalid integer " ++ show i
 
--- | Decode 'ScriptOp' [OP_1 .. OP_16] to integers [1 .. 16]. This functions
+-- | Decode 'ScriptOp' @[OP_1 .. OP_16]@ to integers @[1 .. 16]@. This functions
 -- fails for other values of 'ScriptOp'
 scriptOpToInt :: ScriptOp -> Either String Int
 scriptOpToInt s
@@ -564,23 +565,23 @@ scriptOpToInt s
     res = fromIntegral (BS.head $ S.encode s) - 0x50
 
 -- | Data type describing standard transaction output scripts. Output scripts
--- provide the conditions that must be fulfilled for someone to spend the
--- output coins.
+-- provide the conditions that must be fulfilled for someone to spend the funds
+-- in a transaction output.
 data ScriptOutput
-      -- | Pay to a public key.
+      -- | pay to public key
     = PayPK { getOutputPubKey :: !PubKeyI }
-      -- | Pay to a public key hash.
+      -- | pay to public key hash
     | PayPKHash { getOutputHash :: !Hash160 }
-      -- | Pay to multiple public keys.
+      -- | multisig
     | PayMulSig { getOutputMulSigKeys     :: ![PubKeyI]
                 , getOutputMulSigRequired :: !Int }
-      -- | Pay to a script hash.
+      -- | pay to a script hash
     | PayScriptHash { getOutputHash :: !Hash160 }
-      -- | Pay to witness public key hash.
+      -- | pay to witness public key hash
     | PayWitnessPKHash { getOutputHash :: !Hash160 }
-      -- | Pay to witness script hash.
+      -- | pay to witness script hash
     | PayWitnessScriptHash { getScriptHash :: !Hash256 }
-      -- | Provably unspendable data carrier.
+      -- | provably unspendable data carrier
     | DataCarrier { getOutputData :: !ByteString }
     deriving (Eq, Show)
 
@@ -611,7 +612,7 @@ isPayPKHash :: ScriptOutput -> Bool
 isPayPKHash (PayPKHash _) = True
 isPayPKHash _             = False
 
--- | Returns True if the script is a pay to multiple public keys output.
+-- | Returns True if the script is a multisig output.
 isPayMulSig :: ScriptOutput -> Bool
 isPayMulSig (PayMulSig _ _) = True
 isPayMulSig _               = False
@@ -630,7 +631,7 @@ isPayWitnessScriptHash :: ScriptOutput -> Bool
 isPayWitnessScriptHash (PayWitnessScriptHash _) = True
 isPayWitnessScriptHash _                        = False
 
--- | Returns True if the script is an OP_RETURN "datacarrier" output
+-- | Returns True if the script is an @OP_RETURN@ "datacarrier" output
 isDataCarrier :: ScriptOutput -> Bool
 isDataCarrier (DataCarrier _) = True
 isDataCarrier _               = False
@@ -656,11 +657,11 @@ decodeOutput s = case scriptOps s of
     -- Pay to MultiSig Keys
     _ -> matchPayMulSig s
 
--- | Similar to 'decodeOutput' but decodes from a ByteString
+-- | Similar to 'decodeOutput' but decodes from a 'ByteString'.
 decodeOutputBS :: ByteString -> Either String ScriptOutput
 decodeOutputBS = decodeOutput <=< S.decode
--- | Computes a 'Script' from a 'ScriptOutput'. The 'Script' is a list of
--- 'ScriptOp' can can be used to build a 'Tx'.
+
+-- | Computes a 'Script' from a standard 'ScriptOutput'.
 encodeOutput :: ScriptOutput -> Script
 encodeOutput s = Script $ case s of
     -- Pay to PubKey
@@ -691,7 +692,7 @@ encodeOutput s = Script $ case s of
 encodeOutputBS :: ScriptOutput -> ByteString
 encodeOutputBS = S.encode . encodeOutput
 
--- Match [ OP_N, PubKey1, ..., PubKeyM, OP_M, OP_CHECKMULTISIG ]
+-- | Match @[OP_N, PubKey1, ..., PubKeyM, OP_M, OP_CHECKMULTISIG]@
 matchPayMulSig :: Script -> Either String ScriptOutput
 matchPayMulSig (Script ops) = case splitAt (length ops - 2) ops of
     (m:xs,[n,OP_CHECKMULTISIG]) -> do

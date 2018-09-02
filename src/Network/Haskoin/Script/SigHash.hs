@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 module Network.Haskoin.Script.SigHash
 ( SigHash
+, SigHashFlag(..)
 , sigHashAll
 , sigHashNone
 , sigHashSingle
@@ -47,6 +48,26 @@ import           Network.Haskoin.Util
 import           Text.Read                          as R
 import           Text.Read.Lex                      (numberToInteger)
 
+data SigHashFlag
+    = SIGHASH_ALL
+    | SIGHASH_NONE
+    | SIGHASH_SINGLE
+    | SIGHASH_FORKID
+    | SIGHASH_ANYONECANPAY
+    deriving (Eq, Ord, Show)
+
+instance Enum SigHashFlag where
+    fromEnum SIGHASH_ALL = 0x01
+    fromEnum SIGHASH_NONE = 0x02
+    fromEnum SIGHASH_SINGLE = 0x03
+    fromEnum SIGHASH_FORKID = 0x40
+    fromEnum SIGHASH_ANYONECANPAY = 0x80
+    toEnum 0x01 = SIGHASH_ALL
+    toEnum 0x02 = SIGHASH_NONE
+    toEnum 0x03 = SIGHASH_SINGLE
+    toEnum 0x40 = SIGHASH_FORKID
+    toEnum 0x80 = SIGHASH_ANYONECANPAY
+
 -- | Data type representing the different ways a transaction can be signed.
 -- When producing a signature, a hash of the transaction is used as the message
 -- to be signed. The 'SigHash' parameter controls which parts of the
@@ -55,9 +76,9 @@ import           Text.Read.Lex                      (numberToInteger)
 -- hash, then you can change that part of the transaction after producing a
 -- signature without invalidating that signature.
 --
--- If the anyoneCanPay flag is True, then only the current input is signed.
--- Otherwise, all of the inputs of a transaction are signed. The default value
--- for anyoneCanPay is False.
+-- If the 'SIGHASH_ANYONECANPAY' flag is set (true), then only the current input
+-- is signed. Otherwise, all of the inputs of a transaction are signed. The
+-- default value for 'SIGHASH_ANYONECANPAY' is unset (false).
 newtype SigHash = SigHash Word32
     deriving (Eq, Ord, Enum, Bits, Num, Real, Integral, NFData, Show, Read)
 
@@ -69,40 +90,46 @@ instance J.FromJSON SigHash where
 instance J.ToJSON SigHash where
     toJSON = J.Number . fromIntegral
 
-sigHashAll :: SigHash
-sigHashAll = 0x01
-
 sigHashNone :: SigHash
-sigHashNone = 0x02
+sigHashNone = fromIntegral $ fromEnum SIGHASH_NONE
+
+sigHashAll :: SigHash
+sigHashAll = fromIntegral $ fromEnum SIGHASH_ALL
 
 sigHashSingle :: SigHash
-sigHashSingle = 0x03
+sigHashSingle = fromIntegral $ fromEnum SIGHASH_SINGLE
+
+sigHashForkId :: SigHash
+sigHashForkId = fromIntegral $ fromEnum SIGHASH_FORKID
+
+sigHashAnyoneCanPay :: SigHash
+sigHashAnyoneCanPay = fromIntegral $ fromEnum SIGHASH_ANYONECANPAY
 
 setForkIdFlag :: SigHash -> SigHash
-setForkIdFlag = (.|. 0x40)
+setForkIdFlag = (.|. sigHashForkId)
 
 setAnyoneCanPayFlag :: SigHash -> SigHash
-setAnyoneCanPayFlag = (.|. 0x80)
+setAnyoneCanPayFlag = (.|. sigHashAnyoneCanPay)
 
 hasForkIdFlag :: SigHash -> Bool
-hasForkIdFlag = (/= 0) . (.&. 0x40)
+hasForkIdFlag = (/= 0) . (.&. sigHashForkId)
 
 hasAnyoneCanPayFlag :: SigHash -> Bool
-hasAnyoneCanPayFlag = (/= 0) . (.&. 0x80)
+hasAnyoneCanPayFlag = (/= 0) . (.&. sigHashAnyoneCanPay)
 
--- | Returns True if the 'SigHash' has the value SigAll.
+-- | Returns True if the 'SigHash' has the value 'SIGHASH_ALL'.
 isSigHashAll :: SigHash -> Bool
 isSigHashAll = (== sigHashAll) . (.&. 0x1f)
 
--- | Returns True if the 'SigHash' has the value SigNone.
+-- | Returns True if the 'SigHash' has the value 'SIGHASH_NONE'.
 isSigHashNone :: SigHash -> Bool
 isSigHashNone = (== sigHashNone) . (.&. 0x1f)
 
--- | Returns True if the 'SigHash' has the value SigSingle.
+-- | Returns True if the 'SigHash' has the value 'SIGHASH_SINGLE'.
 isSigHashSingle :: SigHash -> Bool
 isSigHashSingle = (== sigHashSingle) . (.&. 0x1f)
 
--- | Returns True if the 'SigHash' has the value SigUnknown.
+-- | Returns True if the 'SigHash' has the value 'SIGHASH_UNKNOWN'.
 isSigHashUnknown :: SigHash -> Bool
 isSigHashUnknown =
     (`notElem` [sigHashAll, sigHashNone, sigHashSingle]) . (.&. 0x1f)
@@ -119,12 +146,12 @@ sigHashGetForkId = fromIntegral . (`shiftR` 8)
 
 -- | Computes the hash that will be used for signing a transaction.
 txSigHash :: Network
-          -> Tx      -- ^ Transaction to sign.
-          -> Script  -- ^ Output script that is being spent.
-          -> Word64  -- ^ Value of the output being spent.
-          -> Int     -- ^ Index of the input that is being signed.
-          -> SigHash -- ^ What parts of the transaction should be signed.
-          -> Hash256 -- ^ Result hash to be signed.
+          -> Tx      -- ^ transaction to sign
+          -> Script  -- ^ csript from output being spent
+          -> Word64  -- ^ value of output being spent
+          -> Int     -- ^ index of input being signed
+          -> SigHash -- ^ what to sign
+          -> Hash256 -- ^ hash to be signed
 txSigHash net tx out v i sh
     | hasForkIdFlag sh && isJust (getSigHashForkId net) =
         txSigHashForkId net tx out v i sh
@@ -143,7 +170,7 @@ txSigHash net tx out v i sh
     fout = Script $ filter (/= OP_CODESEPARATOR) $ scriptOps out
     one = "0100000000000000000000000000000000000000000000000000000000000000"
 
--- Builds transaction inputs for computing SigHashes
+-- | Build transaction inputs for computing sighashes.
 buildInputs :: [TxIn] -> Script -> Int -> SigHash -> [TxIn]
 buildInputs txins out i sh
     | hasAnyoneCanPayFlag sh =
@@ -159,7 +186,7 @@ buildInputs txins out i sh
         then ti
         else ti { txInSequence = 0 }
 
--- Build transaction outputs for computing SigHashes
+-- | Build transaction outputs for computing sighashes.
 buildOutputs :: [TxOut] -> Int -> SigHash -> Maybe [TxOut]
 buildOutputs txos i sh
     | isSigHashAll sh || isSigHashUnknown sh = return txos
@@ -169,16 +196,16 @@ buildOutputs txos i sh
   where
     buffer = replicate i $ TxOut maxBound BS.empty
 
--- | Computes the hash that will be used for signing a transaction. This
--- function is used when the sigHashForkId flag is set.
+-- | Compute the hash that will be used for signing a transaction. This
+-- function is used when the 'SIGHASH_FORKID' flag is set.
 txSigHashForkId
     :: Network
-    -> Tx      -- ^ Transaction to sign.
-    -> Script  -- ^ Output script that is being spent.
-    -> Word64  -- ^ Value of the output being spent.
-    -> Int     -- ^ Index of the input that is being signed.
-    -> SigHash -- ^ What parts of the transaction should be signed.
-    -> Hash256 -- ^ Result hash to be signed.
+    -> Tx      -- ^ transaction to sign
+    -> Script  -- ^ script from output being spent
+    -> Word64  -- ^ value of output being spent
+    -> Int     -- ^ index of input being signed
+    -> SigHash -- ^ what to sign
+    -> Hash256 -- ^ hash to be signed
 txSigHashForkId net tx out v i sh =
     doubleSHA256 . runPut $ do
         putWord32le $ txVersion tx
@@ -214,9 +241,9 @@ txSigHashForkId net tx out v i sh =
     zeros :: Hash256
     zeros = "0000000000000000000000000000000000000000000000000000000000000000"
 
--- | Data type representing a 'Signature' together with a 'SigHash'. The
--- 'SigHash' is serialized as one byte at the end of a regular ECDSA
--- 'Signature'. All signatures in transaction inputs are of type 'TxSignature'.
+-- | Data type representing a signature together with a 'SigHash'. The 'SigHash'
+-- is serialized as one byte at the end of an ECDSA 'Sig'. All signatures in
+-- transaction inputs are of type 'TxSignature'.
 data TxSignature
     = TxSignature { txSignature        :: !Sig
                   , txSignatureSigHash :: !SigHash
@@ -228,11 +255,12 @@ instance NFData TxSignature where
     rnf (TxSignature s h) = s `seq` rnf h `seq` ()
     rnf TxSignatureEmpty  = ()
 
--- | Serialize a 'TxSignature' to a ByteString.
+-- | Serialize a 'TxSignature'.
 encodeTxSig :: TxSignature -> ByteString
 encodeTxSig TxSignatureEmpty = error "Can not encode an empty signature"
 encodeTxSig (TxSignature sig sh) = runPut $ putSig sig >> putWord8 (fromIntegral sh)
 
+-- | Deserialize a 'TxSignature'.
 decodeTxSig :: Network -> ByteString -> Either String TxSignature
 decodeTxSig net bs =
     case decodeStrictSig $ BS.init bs of

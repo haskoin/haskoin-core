@@ -35,22 +35,19 @@ import           Control.DeepSeq             (NFData, rnf)
 import           Control.Monad               (forM_, liftM2, replicateM, unless)
 import           Data.Bits                   (shiftL)
 import           Data.ByteString             (ByteString)
-import qualified Data.ByteString             as BS
+import qualified Data.ByteString             as B
 import           Data.ByteString.Char8       as C (replicate)
+import           Data.Maybe
 import           Data.Monoid                 ((<>))
-import           Data.Serialize              (Serialize, get, put)
-import           Data.Serialize.Get          (Get, getByteString, getWord16be,
-                                              getWord16le, getWord32be,
-                                              getWord32host, getWord32le,
-                                              getWord64le, getWord8, isEmpty)
-import           Data.Serialize.Put          (Put, putByteString, putWord16be,
-                                              putWord16le, putWord32be,
-                                              putWord32host, putWord32le,
-                                              putWord64le, putWord8)
+import           Data.Serialize              as S
+import           Data.Serialize.Get          as S
+import           Data.Serialize.Put          as S
+import           Data.String
 import           Data.String.Conversions     (cs)
 import           Data.Word                   (Word32, Word64)
 import           Network.Haskoin.Crypto.Hash
 import           Network.Socket              (SockAddr (..))
+import           Text.Read                   as R
 
 -- | Network address with a timestamp.
 type NetworkAddressTime = (Word32, NetworkAddress)
@@ -65,10 +62,10 @@ newtype Addr =
 
 instance Serialize Addr where
 
-    get = Addr <$> (repList =<< get)
+    get = Addr <$> (repList =<< S.get)
       where
         repList (VarInt c) = replicateM (fromIntegral c) action
-        action             = liftM2 (,) getWord32le get
+        action             = liftM2 (,) getWord32le S.get
 
     put (Addr xs) = do
         put $ VarInt $ fromIntegral $ length xs
@@ -89,7 +86,7 @@ instance NFData Alert where
     rnf (Alert p s) = rnf p `seq` rnf s
 
 instance Serialize Alert where
-    get = Alert <$> get <*> get
+    get = Alert <$> S.get <*> S.get
     put (Alert p s) = put p >> put s
 
 -- | The 'GetData' type is used to retrieve information on a specific object
@@ -109,9 +106,9 @@ instance NFData GetData where
 
 instance Serialize GetData where
 
-    get = GetData <$> (repList =<< get)
+    get = GetData <$> (repList =<< S.get)
       where
-        repList (VarInt c) = replicateM (fromIntegral c) get
+        repList (VarInt c) = replicateM (fromIntegral c) S.get
 
     put (GetData xs) = do
         put $ VarInt $ fromIntegral $ length xs
@@ -131,9 +128,9 @@ instance NFData Inv where
 
 instance Serialize Inv where
 
-    get = Inv <$> (repList =<< get)
+    get = Inv <$> (repList =<< S.get)
       where
-        repList (VarInt c) = replicateM (fromIntegral c) get
+        repList (VarInt c) = replicateM (fromIntegral c) S.get
 
     put (Inv xs) = do
         put $ VarInt $ fromIntegral $ length xs
@@ -170,12 +167,12 @@ instance Serialize InvType where
     put x =
         putWord32le $
         case x of
-            InvError -> 0
-            InvTx -> 1
-            InvBlock -> 2
-            InvMerkleBlock -> 3
-            InvWitnessTx -> 1 `shiftL` 30 + 1
-            InvWitnessBlock -> 1 `shiftL` 30 + 2
+            InvError              -> 0
+            InvTx                 -> 1
+            InvBlock              -> 2
+            InvMerkleBlock        -> 3
+            InvWitnessTx          -> 1 `shiftL` 30 + 1
+            InvWitnessBlock       -> 1 `shiftL` 30 + 2
             InvWitnessMerkleBlock -> 1 `shiftL` 30 + 3
 
 -- | Invectory vectors represent hashes identifying objects such as a 'Block' or
@@ -193,7 +190,7 @@ instance NFData InvVector where
     rnf (InvVector t h) = rnf t `seq` rnf h
 
 instance Serialize InvVector where
-    get = InvVector <$> get <*> get
+    get = InvVector <$> S.get <*> S.get
     put (InvVector t h) = put t >> put h
 
 -- | Data type describing a bitcoin network address. Addresses are stored in
@@ -260,9 +257,9 @@ instance NFData NotFound where
 
 instance Serialize NotFound where
 
-    get = NotFound <$> (repList =<< get)
+    get = NotFound <$> (repList =<< S.get)
       where
-        repList (VarInt c) = replicateM (fromIntegral c) get
+        repList (VarInt c) = replicateM (fromIntegral c) S.get
 
     put (NotFound xs) = do
         put $ VarInt $ fromIntegral $ length xs
@@ -351,23 +348,23 @@ instance Serialize RejectCode where
 -- | Convenience function to build a 'Reject' message.
 reject :: MessageCommand -> RejectCode -> ByteString -> Reject
 reject cmd code reason =
-    Reject cmd code (VarString reason) BS.empty
+    Reject cmd code (VarString reason) B.empty
 
 instance Serialize Reject where
 
-    get = get >>= \(VarString bs) -> case stringToCommand bs of
-        Just cmd -> Reject cmd <$> get <*> get <*> maybeData
+    get = S.get >>= \(VarString bs) -> case stringToCommand bs of
+        Just cmd -> Reject cmd <$> S.get <*> S.get <*> maybeData
         _ -> fail $ unwords
             ["Reason get: Invalid message command" ,cs bs]
       where
         maybeData = isEmpty >>= \done ->
-            if done then return BS.empty else getByteString 32
+            if done then return B.empty else getByteString 32
 
     put (Reject cmd code reason dat) = do
         put $ VarString $ commandToString cmd
         put code
         put reason
-        unless (BS.null dat) $ putByteString dat
+        unless (B.null dat) $ putByteString dat
 
 -- | Data type representing a variable-length integer. The 'VarInt' type
 -- usually precedes an array or a string that can vary in length.
@@ -408,12 +405,12 @@ instance NFData VarString where
 
 instance Serialize VarString where
 
-    get = VarString <$> (readBS =<< get)
+    get = VarString <$> (readBS =<< S.get)
       where
         readBS (VarInt len) = getByteString (fromIntegral len)
 
     put (VarString bs) = do
-        put $ VarInt $ fromIntegral $ BS.length bs
+        put $ VarInt $ fromIntegral $ B.length bs
         putByteString bs
 
 -- | When a bitcoin node creates an outgoing connection to another node,
@@ -458,10 +455,10 @@ instance Serialize Version where
     get = Version <$> getWord32le
                   <*> getWord64le
                   <*> getWord64le
-                  <*> get
-                  <*> get
+                  <*> S.get
+                  <*> S.get
                   <*> getWord64le
-                  <*> get
+                  <*> S.get
                   <*> getWord32le
                   <*> (go =<< isEmpty)
       where
@@ -518,7 +515,15 @@ data MessageCommand
     | MCMempool
     | MCReject
     | MCSendHeaders
-    deriving (Eq, Show, Read)
+    deriving (Eq)
+
+instance Show MessageCommand where
+    showsPrec _ = shows . commandToString
+
+instance Read MessageCommand where
+    readPrec = do
+        String str <- lexP
+        maybe pfail return (stringToCommand (cs str))
 
 instance NFData MessageCommand where rnf x = seq x ()
 
@@ -532,6 +537,12 @@ instance Serialize MessageCommand where
                 Nothing  -> fail $ cs $
                     "get MessageCommand: Invalid command: " <> str
     put mc = putByteString $ packCommand $ commandToString mc
+
+instance IsString MessageCommand where
+    fromString str =
+        fromMaybe
+            (error ("Could not recognize message command " <> str))
+            (stringToCommand (cs str))
 
 -- | Read a 'MessageCommand' from its string representation.
 stringToCommand :: ByteString -> Maybe MessageCommand
@@ -588,12 +599,12 @@ commandToString mc = case mc of
 
 -- | Pack a string 'MessageCommand' so that it is exactly 12-bytes long.
 packCommand :: ByteString -> ByteString
-packCommand s = BS.take 12 $
+packCommand s = B.take 12 $
     s `mappend` C.replicate 12 '\NUL'
 
 -- | Undo packing done by 'packCommand'.
 unpackCommand :: ByteString -> ByteString
-unpackCommand = BS.takeWhile (/= 0)
+unpackCommand = B.takeWhile (/= 0)
 
 -- | Node offers no services.
 nodeNone :: Word64

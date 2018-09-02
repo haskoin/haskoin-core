@@ -7,5 +7,4 @@ nix:
     - secp256k1
 extra-deps:
   - murmur3-1.0.3
-  - github: haskoin/secp256k1-haskell
-    commit: 97f1c4c69e78102df5191a2d49a08eacba52f3ad
+  - secp256k1-1.1.2

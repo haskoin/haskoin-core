@@ -156,20 +156,18 @@ decodeVersionByte vb = do
 -- larger than five bits, or length incorrect, since that is invalid.
 encodeVersionByte :: CashVersion -> Int -> Maybe Word8
 encodeVersionByte ver len = do
-    guard (ver == ver .&. 0x1f)
-    l <- ml
+    guard (ver == ver .&. 0x0f)
+    l <- case len of
+        20 -> Just 0
+        24 -> Just 1
+        28 -> Just 2
+        32 -> Just 3
+        40 -> Just 4
+        48 -> Just 5
+        56 -> Just 6
+        64 -> Just 7
+        _  -> Nothing
     return ((ver `shiftL` 3) .|. l)
-  where
-    ml
-        | len == 20 = Just 0
-        | len == 24 = Just 1
-        | len == 28 = Just 2
-        | len == 32 = Just 3
-        | len == 40 = Just 4
-        | len == 48 = Just 5
-        | len == 56 = Just 6
-        | len == 64 = Just 7
-        | otherwise = Nothing
 
 -- | Calculate or validate checksum from base32 'ByteString' (excluding prefix).
 cash32Polymod :: ByteString -> ByteString

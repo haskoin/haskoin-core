@@ -6,6 +6,8 @@ module Network.Haskoin.Address.CashAddr
     , Cash32
     , cashAddrDecode
     , cashAddrEncode
+    , cash32decodeType
+    , cash32encodeType
     , cash32decode
     , cash32encode
     ) where
@@ -50,39 +52,52 @@ charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 base32char :: Char -> Maybe Word8
 base32char = fmap fromIntegral . (`elemIndex` charset)
 
--- | High-Level: Decode 'CashAddr' string if it is valid for the
+-- | High-Level: decode 'CashAddr' string if it is valid for the
 -- provided 'Network'. Prefix may be omitted from the string.
 cashAddrDecode :: Network -> CashAddr -> Maybe (CashVersion, ByteString)
-cashAddrDecode net ca' = do
+cashAddrDecode net ca = do
     epfx <- getCashAddrPrefix net
-    guard (B.length ca <= 90)
-    guard (C.map toUpper ca' == ca' || ca == ca')
-    let (cpfx', cdat) = C.breakEnd (== ':') ca
-        cpfx
-            | B.null cpfx' = epfx
-            | otherwise = B.init cpfx'
-    (dpfx, bs) <- cash32decode (epfx <> ":" <> cdat)
-    guard (not (B.null bs))
+    let (cpfx, cdat) = C.breakEnd (== ':') (C.map toLower ca)
+    guard (B.null cpfx || B.init cpfx == epfx)
+    (dpfx, ver, bs) <- cash32decodeType (epfx <> ":" <> cdat)
     guard (dpfx == epfx)
-    let len = decodeCashLength (B.head bs)
-        ver = decodeCashVersion (B.head bs)
-    guard (B.length (B.tail bs) == len)
-    return (ver, B.tail bs)
-  where
-    ca = C.map toLower ca'
+    return (ver, bs)
 
--- | High-Level: Encode 'CashAddr' string for the provided network and hash.
+-- | High-Level: encode 'CashAddr' string for the provided network and hash.
 -- Fails if the 'CashVersion' or length of hash 'ByteString' is invalid.
 cashAddrEncode :: Network -> CashVersion -> ByteString -> Maybe CashAddr
 cashAddrEncode net cv bs = do
     pfx <- getCashAddrPrefix net
+    cash32encodeType pfx cv bs
+
+-- | Mid-Level: decode 'CashAddr' string containing arbitrary prefix, plus a
+-- version byte before the 'ByteString' that encodes type and length.
+cash32decodeType :: Cash32 -> Maybe (CashPrefix, CashVersion, ByteString)
+cash32decodeType ca' = do
+    guard (B.length ca' <= 90)
+    guard (C.map toUpper ca' == ca' || ca == ca')
+    (dpfx, bs) <- cash32decode ca
+    guard (not (B.null bs))
+    let vbyte = B.head bs
+        len = decodeCashLength vbyte
+        ver = decodeCashVersion vbyte
+        pay = B.tail bs
+    guard (B.length pay == len)
+    return (dpfx, ver, pay)
+  where
+    ca = C.map toLower ca'
+
+-- | Mid-Level: encode 'CashAddr' string containing arbitrary prefix and
+-- 'CashVersion'. Length must be among those allowed by the standard.
+cash32encodeType :: CashPrefix -> CashVersion -> ByteString -> Maybe Cash32
+cash32encodeType pfx cv bs = do
     ver <- encodeCashVersion cv
     len <- encodeCashLength (B.length bs)
     let vb = ver .|. len
         pl = vb `B.cons` bs
     return (cash32encode pfx pl)
 
--- | Low-Level: Decode 'Cash32' string. 'CashPrefix' must be part of the string.
+-- | Low-Level: decode 'Cash32' string. 'CashPrefix' must be part of the string.
 -- No version or hash length validation is performed.
 cash32decode :: Cash32 -> Maybe (CashPrefix, ByteString)
 cash32decode bs' = do
@@ -103,7 +118,7 @@ cash32decode bs' = do
     let out = toBase256 bb
     return (pfx, out)
 
--- | Low-Level: Encode 'Cash32' string for 'CashPrefix' provided. Can encode
+-- | Low-Level: encode 'Cash32' string for 'CashPrefix' provided. Can encode
 -- arbitrary data. No prefix or length validation is performed.
 cash32encode :: CashPrefix -> ByteString -> Cash32
 cash32encode pfx bs =

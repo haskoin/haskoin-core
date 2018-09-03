@@ -100,7 +100,7 @@ cash32encodeType pfx cv bs = do
 cash32decode :: Cash32 -> Maybe (CashPrefix, ByteString)
 cash32decode bs' = do
     let bs = C.map toLower bs'
-    guard (B.length bs' <= 90)
+    guard (B.length bs' <= 1000)
     guard (C.map toUpper bs' == bs' || bs == bs')
     let (pfx', dat) = C.breakEnd (== ':') bs
     pfx <-

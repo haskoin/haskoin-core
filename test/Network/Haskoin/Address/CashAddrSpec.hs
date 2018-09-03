@@ -2,16 +2,17 @@
 module Network.Haskoin.Address.CashAddrSpec (spec) where
 
 import           Control.Monad
-import           Data.ByteString                  (ByteString, length)
-import           Data.ByteString.Char8            (pack)
+import           Data.ByteString                  (ByteString)
+import qualified Data.ByteString.Char8            as C
 import           Data.Maybe
+import           Data.String.Conversions
 import           Network.Haskoin.Address
 import           Network.Haskoin.Address.CashAddr
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Util
 import           Test.Hspec
-import           Test.HUnit                       (Assertion, assertBool)
+import           Test.HUnit
 
 spec = do
   describe "cashaddr checksum test vectors" $ do
@@ -51,7 +52,7 @@ spec = do
       let addr = base58ToCashAddr "31nwvkZwyPdgzjBJZXfDmSWsC4ZLKpYyUw"
       addr `shouldBe` Just "bitcoincash:pqq3728yw0y47sqn6l2na30mcw6zm78dzq5ucqzc37"
 
-  describe "base58 to cashAddr translation test vectors" $ do
+  describe "base58 to cashaddr translation test vectors" $ do
     it "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a" $ do
       let addr = cashAddrtoBase58 "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a"
       addr `shouldBe` Just "1BpEi6DfDAUFd7GtittLSdBeYJvcoaVggu"
@@ -71,7 +72,7 @@ spec = do
       let addr = cashAddrtoBase58 "bitcoincash:pqq3728yw0y47sqn6l2na30mcw6zm78dzq5ucqzc37"
       addr `shouldBe` Just "31nwvkZwyPdgzjBJZXfDmSWsC4ZLKpYyUw"
 
-  describe "cashAddress larger test vectors" $ do
+  describe "cashaddr larger test vectors" $ do
       forM_ (zip [0..] vectors) $ \(i, vec) ->
           it ("cashaddr test vector " <> show i) $ testCashAddr vec
 
@@ -92,13 +93,19 @@ cashAddrtoBase58 c32 = fromCashAddr c32 >>= toBase58
 testCashAddr :: (Int, CashVersion, Cash32, ByteString) -> Assertion
 testCashAddr (len, typ, addr, hex) = do
     let mbs = decodeHex hex
-    mbs `shouldSatisfy` isJust
+    assertBool "Could not decode hex payload from test vector" (isJust mbs)
+    let Just bs = mbs
+    let mlow = cash32decode addr
+    assertBool ("Could not decode low level address") (isJust mlow)
+    let Just (lpfx, lbs) = mlow
+    assertBool "Low-level payload too small" (C.length lbs > 20)
+    assertEqual "Low-level payload doesn't match" bs (C.tail lbs)
     let mdec = cash32decodeType addr
-    mdec `shouldSatisfy` isJust
+    assertBool ("Could not decode test address: " <> cs addr) (isJust mdec)
     let Just (pfx, ver, pay) = mdec
-    assertBool "Length" $ len == Data.ByteString.length pay
-    assertBool "Version" $ ver == typ
-    assertBool "Payload" $ pay == bs
+    assertEqual "Length doesn't match" len (C.length pay)
+    assertEqual "Version doesn't match" typ ver
+    assertEqual "Payload doesn't match" bs pay
   where
     Just bs = decodeHex hex
     Just (pfx, ver, pay) = cash32decodeType addr

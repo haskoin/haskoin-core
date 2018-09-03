@@ -78,10 +78,9 @@ cash32decodeType ca' = do
     guard (C.map toUpper ca' == ca' || ca == ca')
     (dpfx, bs) <- cash32decode ca
     guard (not (B.null bs))
-    let vbyte = B.head bs
-        len = decodeCashLength vbyte
-        ver = decodeCashVersion vbyte
+    let vb = B.head bs
         pay = B.tail bs
+    (ver, len) <- decodeVersionByte vb
     guard (B.length pay == len)
     return (dpfx, ver, pay)
   where
@@ -91,10 +90,9 @@ cash32decodeType ca' = do
 -- 'CashVersion'. Length must be among those allowed by the standard.
 cash32encodeType :: CashPrefix -> CashVersion -> ByteString -> Maybe Cash32
 cash32encodeType pfx cv bs = do
-    ver <- encodeCashVersion cv
-    len <- encodeCashLength (B.length bs)
-    let vb = ver .|. len
-        pl = vb `B.cons` bs
+    let len = B.length bs
+    vb <- encodeVersionByte cv len
+    let pl = vb `B.cons` bs
     return (cash32encode pfx pl)
 
 -- | Low-Level: decode 'Cash32' string. 'CashPrefix' must be part of the string.
@@ -144,35 +142,34 @@ toBase256 =
     B.pack .
     map fromIntegral . fst . convertBits False 5 8 . map fromIntegral . B.unpack
 
--- | Obtain 'CashVersion' from 'CashAddr' version byte.
-decodeCashVersion :: Word8 -> Word8
-decodeCashVersion ver = ver `shiftR` 3
-
--- | Encode 'CashVersion' from byte. Fail if version is larger than five bits,
--- since that is invalid.
-encodeCashVersion :: Word8 -> Maybe Word8
-encodeCashVersion ver = do
-    guard (ver == ver .&. 0x1f)
-    return (ver `shiftL` 3)
-
--- | Decode length of hash from 'CashAddr' version byte.
-decodeCashLength :: Word8 -> Int
-decodeCashLength w8 = lengths !! fromIntegral (w8 .&. 0x07)
+-- | Obtain 'CashVersion' and payload length from 'CashAddr' version byte.
+decodeVersionByte :: Word8 -> Maybe (CashVersion, Int)
+decodeVersionByte vb = do
+    guard (vb .&. 0x80 == 0)
+    return (ver, len)
   where
-    lengths = [20, 24, 28, 32, 40, 48, 56, 64]
+    ver = vb `shiftR` 3
+    len = ls !! fromIntegral (vb .&. 0x07)
+    ls = [20, 24, 28, 32, 40, 48, 56, 64]
 
--- | Encode length of hash into a 'CashAddr' version byte.
-encodeCashLength :: Int -> Maybe Word8
-encodeCashLength len
-    | len == 20 = Just 0
-    | len == 24 = Just 1
-    | len == 28 = Just 2
-    | len == 32 = Just 3
-    | len == 40 = Just 4
-    | len == 48 = Just 5
-    | len == 56 = Just 6
-    | len == 64 = Just 7
-    | otherwise = Nothing
+-- | Encode 'CashVersion' and length into version byte. Fail if version is
+-- larger than five bits, or length incorrect, since that is invalid.
+encodeVersionByte :: CashVersion -> Int -> Maybe Word8
+encodeVersionByte ver len = do
+    guard (ver == ver .&. 0x1f)
+    l <- ml
+    return ((ver `shiftL` 3) .|. l)
+  where
+    ml
+        | len == 20 = Just 0
+        | len == 24 = Just 1
+        | len == 28 = Just 2
+        | len == 32 = Just 3
+        | len == 40 = Just 4
+        | len == 48 = Just 5
+        | len == 56 = Just 6
+        | len == 64 = Just 7
+        | otherwise = Nothing
 
 -- | Calculate or validate checksum from base32 'ByteString' (excluding prefix).
 cash32Polymod :: ByteString -> ByteString

@@ -74,7 +74,6 @@ cashAddrEncode net cv bs = do
 -- version byte before the 'ByteString' that encodes type and length.
 cash32decodeType :: Cash32 -> Maybe (CashPrefix, CashVersion, ByteString)
 cash32decodeType ca' = do
-    guard (B.length ca' <= 90)
     guard (C.map toUpper ca' == ca' || ca == ca')
     (dpfx, bs) <- cash32decode ca
     guard (not (B.null bs))
@@ -100,7 +99,6 @@ cash32encodeType pfx cv bs = do
 cash32decode :: Cash32 -> Maybe (CashPrefix, ByteString)
 cash32decode bs' = do
     let bs = C.map toLower bs'
-    guard (B.length bs' <= 1000)
     guard (C.map toUpper bs' == bs' || bs == bs')
     let (pfx', dat) = C.breakEnd (== ':') bs
     pfx <-

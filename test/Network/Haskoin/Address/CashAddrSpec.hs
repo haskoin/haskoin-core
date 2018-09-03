@@ -98,7 +98,7 @@ testCashAddr (len, typ, addr, hex) = do
     let mlow = cash32decode addr
     assertBool ("Could not decode low level address") (isJust mlow)
     let Just (lpfx, lbs) = mlow
-    assertBool "Low-level payload too small" (C.length lbs > 20)
+    assertEqual "Low-level payload size incorrect" len (C.length lbs - 1)
     assertEqual "Low-level payload doesn't match" bs (C.tail lbs)
     let mdec = cash32decodeType addr
     assertBool ("Could not decode test address: " <> cs addr) (isJust mdec)

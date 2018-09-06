@@ -112,6 +112,10 @@ bech32CreateChecksum hrp dat = [word5 (polymod .>>. i) | i <- [25,20 .. 0]]
 bech32VerifyChecksum :: HRP -> [Word5] -> Bool
 bech32VerifyChecksum hrp dat = bech32Polymod (bech32HRPExpand hrp ++ dat) == 1
 
+-- | Maximum length of a Bech32 result.
+maxBech32Length :: Int
+maxBech32Length = 90
+
 -- | Encode string of five-bit words into 'Bech32' using a provided
 -- human-readable part. Can fail if 'HRP' is invalid or result would be longer
 -- than 90 characters.
@@ -123,8 +127,6 @@ bech32Encode hrp dat = do
         result = T.concat [T.toLower hrp, T.pack "1", T.pack rest]
     guard $ T.length result <= maxBech32Length
     return result
-  where
-    maxBech32Length = 90
 
 -- | Check that human-readable part is valid for a 'Bech32' string.
 checkHRP :: HRP -> Bool
@@ -134,7 +136,7 @@ checkHRP hrp = not (T.null hrp) && T.all (\char -> char >= '\x21' && char <= '\x
 -- string of five-bit words.
 bech32Decode :: Bech32 -> Maybe (HRP, [Word5])
 bech32Decode bech32 = do
-    guard $ T.length bech32 <= 90
+    guard $ T.length bech32 <= maxBech32Length
     guard $ T.toUpper bech32 == bech32 || lowerBech32 == bech32
     let (hrp, dat) = T.breakOnEnd "1" lowerBech32
     guard $ T.length dat >= 6

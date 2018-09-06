@@ -66,7 +66,7 @@ cashAddrDecode net ca = do
     guard (dpfx == epfx)
     return (ver, bs)
 
--- | High-Level: encode "CashAddr' string for the provided network and hash.
+-- | High-Level: encode 'CashAddr' string for the provided network and hash.
 -- Fails if the 'CashVersion' or length of hash 'ByteString' is invalid.
 cashAddrEncode :: Network -> CashVersion -> ByteString -> Maybe CashAddr
 cashAddrEncode net cv bs = do

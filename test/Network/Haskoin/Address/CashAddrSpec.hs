@@ -72,7 +72,7 @@ spec = do
       let addr = cashAddrtoBase58 "bitcoincash:pqq3728yw0y47sqn6l2na30mcw6zm78dzq5ucqzc37"
       addr `shouldBe` Just "31nwvkZwyPdgzjBJZXfDmSWsC4ZLKpYyUw"
 
-  describe "cashaddr larger test vectors" $ do
+  describe "cashaddr larger test vectors" $
       forM_ (zip [0..] vectors) $ \(i, vec) ->
           it ("cashaddr test vector " <> show i) $ testCashAddr vec
 
@@ -96,7 +96,7 @@ testCashAddr (len, typ, addr, hex) = do
     assertBool "Could not decode hex payload from test vector" (isJust mbs)
     let Just bs = mbs
     let mlow = cash32decode addr
-    assertBool ("Could not decode low level address") (isJust mlow)
+    assertBool "Could not decode low level address" (isJust mlow)
     let Just (lpfx, lbs) = mlow
     assertEqual "Low-level payload size incorrect" len (C.length lbs - 1)
     assertEqual "Low-level payload doesn't match" bs (C.tail lbs)

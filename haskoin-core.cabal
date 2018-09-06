@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 3f23cb254d4f05b44fb1b4100ce0d8a096e124a5a3f0109ba3f724461ba4cf6f
+-- hash: b138eaa35c1c8579d3872fe9dc7e97e18964db4682e98995bde6038f814663c6
 
 name:           haskoin-core
 version:        1.0.0
@@ -114,6 +114,7 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Network.Haskoin.Address.Bech32Spec
       Network.Haskoin.Address.CashAddrSpec
       Network.Haskoin.AddressSpec
       Network.Haskoin.BlockSpec

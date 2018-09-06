@@ -97,8 +97,10 @@ bech32Polymod values = foldl' go 1 values .&. 0x3fffffff
 -- words.
 bech32HRPExpand :: HRP -> [Word5]
 bech32HRPExpand hrp =
-    map (UnsafeWord5 . (.>>. 5)) (B.unpack $ E.encodeUtf8 hrp) ++
-    [UnsafeWord5 0] ++ map word5 (B.unpack $ E.encodeUtf8 hrp)
+    map (UnsafeWord5 . (.>>. 5)) hrpBytes ++
+    [UnsafeWord5 0] ++ map word5 hrpBytes
+  where
+    hrpBytes = B.unpack $ E.encodeUtf8 hrp
 
 -- | Calculate checksum for a string of five-bit words.
 bech32CreateChecksum :: HRP -> [Word5] -> [Word5]

@@ -1,20 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.Haskoin.Address.Bech32Spec       ( spec )
-where
+module Network.Haskoin.Address.Bech32Spec
+    ( spec
+    ) where
 
 import           Control.Monad
-import           Data.ByteString                ( ByteString
-                                                , uncons
-                                                , append
-                                                , snoc
-                                                , pack
-                                                )
-import qualified Data.ByteString.Char8         as C
+import           Data.Bits                      (xor)
+import           Data.ByteString                (ByteString, append, pack, snoc,
+                                                 uncons)
+import qualified Data.ByteString.Char8          as C
+import           Data.Char                      (toLower)
 import           Data.Maybe
-import           Data.Char                      ( toLower )
-import           Data.Bits                      ( xor )
-import           Data.Word                      ( Word8 )
 import           Data.String.Conversions
+import           Data.Word                      (Word8)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Address.Bech32
 import           Network.Haskoin.Constants
@@ -25,42 +22,31 @@ import           Test.HUnit
 
 spec = do
     describe "bech32 checksum" $ do
-        forM_ validChecksums $ \checksum ->
-            it "should have a valid checksum" $ testValidChecksum checksum
-        forM_ invalidChecksums
-            $ \checksum -> it "should have a invalid checksum"
-                  $ testInvalidChecksum checksum
-        forM_ validAddresses $ \vector ->
-            it "should be a valid address" $ testValidAddress vector
-        forM_ invalidAddresses $ \address ->
-            it "should be an invalid address" $ testInvalidAddress address
-
-    describe "More Encoding/Decoding Cases" $ do
-        it "length > 90" $ assert $ isNothing $ bech32Encode
-            (C.pack "bc")
-            (replicate 82 (word5 (1 :: Word8)))
-        it "segwit version bounds" $ assert $ isNothing $ segwitEncode
-            (C.pack "bc")
-            17
-            []
-        it "segwit prog len version 0" $ assert $ isNothing $ segwitEncode
-            (C.pack "bc")
-            0
-            (replicate 30 1)
-        it "segwit prog len version != 0" $ assert $ isJust $ segwitEncode
-            (C.pack "bc")
-            1
-            (replicate 30 1)
-        it "segwit prog len version != 0" $ assert $ isNothing $ segwitEncode
-            (C.pack "bc")
-            1
-            (replicate 41 1)
+        it "should have valid checksum" $ forM_ validChecksums testValidChecksum
+        it "should have invalid checksum" $
+            forM_ invalidChecksums testInvalidChecksum
+        it "should be a valid address" $ forM_ validAddresses testValidAddress
+        it "should be an invalid address" $
+            forM_ invalidAddresses testInvalidAddress
+    describe "more encoding/decoding cases" $ do
+        it "length > 90" $
+            assert $
+            isNothing $
+            bech32Encode (C.pack "bc") (replicate 82 (word5 (1 :: Word8)))
+        it "segwit version bounds" $
+            assert $ isNothing $ segwitEncode (C.pack "bc") 17 []
+        it "segwit prog len version 0" $
+            assert $ isNothing $ segwitEncode (C.pack "bc") 0 (replicate 30 1)
+        it "segwit prog len version != 0" $
+            assert $ isJust $ segwitEncode (C.pack "bc") 1 (replicate 30 1)
+        it "segwit prog len version != 0" $
+            assert $ isNothing $ segwitEncode (C.pack "bc") 1 (replicate 41 1)
         it "empty HRP encode" $ assert $ isNothing $ bech32Encode (C.pack "") []
-        it "empty HRP encode" $ assert $ isNothing $ bech32Decode
-            (C.pack "10a06t8")
-        it "hrp lowercased"
-            $          (Just $ C.pack "hrp1g9xj8m")
-            `shouldBe` (bech32Encode (C.pack "HRP") [])
+        it "empty HRP encode" $
+            assert $ isNothing $ bech32Decode (C.pack "10a06t8")
+        it "hrp lowercased" $
+            (Just $ C.pack "hrp1g9xj8m") `shouldBe`
+            (bech32Encode (C.pack "HRP") [])
 
 
 testValidChecksum :: Bech32 -> Assertion

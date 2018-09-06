@@ -44,6 +44,8 @@ import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Base16 as B16
 import           Data.Char              (toLower)
 import           Data.List
+import           Data.Text              (Text)
+import qualified Data.Text.Encoding     as E
 import           Data.Word              (Word8)
 
 -- ByteString helpers
@@ -65,13 +67,13 @@ integerToBS i
     f x = Just (fromInteger x :: Word8, x `shiftR` 8)
 
 -- | Encode as string of human-readable hex characters.
-encodeHex :: ByteString -> ByteString
-encodeHex = B16.encode
+encodeHex :: ByteString -> Text
+encodeHex = E.decodeUtf8 . B16.encode
 
 -- | Decode string of human-readable hex characters.
-decodeHex :: ByteString -> Maybe ByteString
-decodeHex bs =
-    let (x, b) = B16.decode bs
+decodeHex :: Text -> Maybe ByteString
+decodeHex text =
+    let (x, b) = B16.decode (E.encodeUtf8 text)
     in guard (b == BS.empty) >> return x
 
 -- | Obtain 'Int' bits from beginning of 'ByteString'. Resulting 'ByteString'

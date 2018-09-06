@@ -6,14 +6,12 @@ import           Control.Monad.IO.Class
 import           Data.Aeson                  as A
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as BS
-import qualified Data.ByteString             as BS
 import qualified Data.ByteString.Char8       as C
 import qualified Data.ByteString.Lazy        as BL
 import qualified Data.ByteString.Lazy.Char8  as CL
 import           Data.Char                   (ord)
 import           Data.Either
 import           Data.Int                    (Int64)
-import           Data.List
 import           Data.List
 import           Data.List.Split             (splitOn)
 import           Data.Map.Strict             (singleton)
@@ -22,7 +20,7 @@ import           Data.Monoid                 ((<>))
 import           Data.Serialize              as S
 import           Data.String
 import           Data.String.Conversions     (cs)
-import           Data.Word
+import           Data.Text                   (Text)
 import           Data.Word
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
@@ -44,9 +42,9 @@ spec = do
     describe "btc scripts" $ props btc
     describe "bch scripts" $ props bch
     describe "multi signatures" $
-        sequence_ $ zipWith (curry mapMulSigVector) mulSigVectors [0 ..]
+        zipWithM_ (curry mapMulSigVector) mulSigVectors [0 ..]
     describe "signature decoding" $
-        sequence_ $ zipWith (curry (sigDecodeMap net)) scriptSigSignatures [0 ..]
+        zipWithM_ (curry (sigDecodeMap net)) scriptSigSignatures [0 ..]
     describe "json serialization" $ do
         it "encodes and decodes script output" $
             forAll (arbitraryScriptOutput net) testID
@@ -427,13 +425,13 @@ buildSpendTx scriptSig creditTx =
                }
     txO = TxOut { outValue = 0, scriptOutput = BS.empty }
 
-mapMulSigVector :: ((ByteString, ByteString), Int) -> Spec
+mapMulSigVector :: ((Text, Text), Int) -> Spec
 mapMulSigVector (v, i) =
     it name $ runMulSigVector v
   where
     name = "check multisig vector " <> show i
 
-runMulSigVector :: (ByteString, ByteString) -> Assertion
+runMulSigVector :: (Text, Text) -> Assertion
 runMulSigVector (a, ops) = assertBool "multisig vector" $ Just a == b
   where
     s = do
@@ -444,13 +442,13 @@ runMulSigVector (a, ops) = assertBool "multisig vector" $ Just a == b
         d <- eitherToMaybe $ decodeOutput o
         addrToString $ p2shAddr btc d
 
-sigDecodeMap :: Network -> (ByteString, Int) -> Spec
+sigDecodeMap :: Network -> (Text, Int) -> Spec
 sigDecodeMap net (_, i) =
     it ("check signature " ++ show i) func
   where
     func = testSigDecode net $ scriptSigSignatures !! i
 
-testSigDecode :: Network -> ByteString -> Assertion
+testSigDecode :: Network -> Text -> Assertion
 testSigDecode net str =
     let bs = fromJust $ decodeHex str
         eitherSig = decodeTxSig net bs
@@ -461,14 +459,14 @@ testSigDecode net str =
                 ]) $
        isRight eitherSig
 
-mulSigVectors :: [(ByteString, ByteString)]
+mulSigVectors :: [(Text, Text)]
 mulSigVectors =
     [ ( "3QJmV3qfvL9SuYo34YihAf3sRCW3qSinyC"
       , "52410491bba2510912a5bd37da1fb5b1673010e43d2c6d812c514e91bfa9f2eb129e1c183329db55bd868e209aac2fbc02cb33d98fe74bf23f0c235d6126b1d8334f864104865c40293a680cb9c020e7b1e106d8c1916d3cef99aa431a56d253e69256dac09ef122b1a986818a7cb624532f062c1d1f8722084861c5c3291ccffef4ec687441048d2455d2403e08708fc1f556002f1b6cd83f992d085097f9974ab08a28838f07896fbab08f39495e15fa6fad6edbfb1e754e35fa1c7844c41f322a1863d4621353ae"
       )
     ]
 
-scriptSigSignatures :: [ByteString]
+scriptSigSignatures :: [Text]
 scriptSigSignatures =
      -- Signature in input of txid 1983a69265920c24f89aac81942b1a59f7eb30821a8b3fb258f88882b6336053
     [ "304402205ca6249f43538908151fe67b26d020306c0e59fa206cf9f3ccf641f33357119d02206c82f244d04ac0a48024fb9cc246b66e58598acf206139bdb7b75a2941a2b1e401"

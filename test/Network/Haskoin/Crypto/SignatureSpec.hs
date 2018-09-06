@@ -6,6 +6,7 @@ import           Data.ByteString           (ByteString)
 import qualified Data.ByteString           as BS (index, length)
 import           Data.Maybe
 import           Data.Serialize            as S
+import           Data.Text                 (Text)
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Keys
@@ -48,7 +49,7 @@ spec = do
         it "rfc6979 test vector 11" (testSigning $ detVec !! 10)
         it "rfc6979 test vector 12" (testSigning $ detVec !! 11)
 
-testSigning :: (SecKey, ByteString, ByteString) -> Assertion
+testSigning :: (SecKey, ByteString, Text) -> Assertion
 testSigning (prv, msg, str) = do
     assertBool "RFC 6979 Vector" $ res == fromJust (decodeHex str)
     assertBool "valid sig" $ verifyHashSig msg' g (derivePubKey prv)
@@ -109,7 +110,7 @@ testIsCanonical sig = not $
 {- Trezor RFC 6979 Test Vectors -}
 -- github.com/trezor/python-ecdsa/blob/master/ecdsa/test_pyecdsa.py
 
-detVec :: [(SecKey, ByteString, ByteString)]
+detVec :: [(SecKey, ByteString, Text)]
 detVec =
     [
       ( "0000000000000000000000000000000000000000000000000000000000000001"

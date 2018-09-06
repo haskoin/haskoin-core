@@ -4,14 +4,15 @@ module Network.Haskoin.BlockSpec
     ) where
 
 import           Control.Monad.State.Strict
-import           Data.Aeson                  as A
-import           Data.ByteString             (ByteString)
-import           Data.Either                 (fromRight)
-import           Data.Map.Strict             (singleton)
-import           Data.Maybe                  (fromJust)
-import           Data.Serialize              as S
-import           Data.String                 (fromString)
-import           Data.String.Conversions     (cs)
+import           Data.Aeson                    as A
+import           Data.ByteString               (ByteString)
+import           Data.Either                   (fromRight)
+import           Data.Map.Strict               (singleton)
+import           Data.Maybe                    (fromJust)
+import           Data.Serialize                as S
+import           Data.String                   (fromString)
+import           Data.String.Conversions       (cs)
+import           Data.Text                     (Text)
 import           Network.Haskoin.Block
 import           Network.Haskoin.Block.Headers
 import           Network.Haskoin.Block.Merkle
@@ -19,7 +20,7 @@ import           Network.Haskoin.Constants
 import           Network.Haskoin.Test
 import           Network.Haskoin.Transaction
 import           Test.Hspec
-import           Test.HUnit                  hiding (State)
+import           Test.HUnit                    hiding (State)
 import           Test.QuickCheck
 
 myTime :: Timestamp
@@ -244,17 +245,17 @@ testCompactBitcoinCore = do
         "vector 9 (decode) (positive)"
         ((> 0) . fst $ decodeCompact 0xff123456)
 
-mapMerkleVectors :: ((ByteString, [ByteString]), Int) -> Assertion
+mapMerkleVectors :: ((Text, [Text]), Int) -> Assertion
 mapMerkleVectors (v, i) = runMerkleVector v
 
-runMerkleVector :: (ByteString, [ByteString]) -> Assertion
+runMerkleVector :: (Text, [Text]) -> Assertion
 runMerkleVector (r, hs) =
     assertBool "merkle vector" $
         buildMerkleRoot (map f hs) == getTxHash (f r)
   where
     f = fromJust . hexToTxHash
 
-merkleVectors :: [(ByteString, [ByteString])]
+merkleVectors :: [(Text, [Text])]
 merkleVectors =
       -- Block 000000000000cd7e8cf6510303dde76121a1a791c15dba0be4be7022b07cf9e1
     [ ( "fb6698ac95b754256c5e71b4fbe07638cb6ca83ee67f44e181b91727f09f4b1f"

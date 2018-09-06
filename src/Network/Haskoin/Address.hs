@@ -29,6 +29,7 @@ import           Data.Maybe
 import           Data.Serialize                   as S
 import           Data.String
 import           Data.String.Conversions
+import           Data.Text                        (Text)
 import           Data.Word
 import           GHC.Generics                     as G (Generic)
 import           Network.Haskoin.Address.Base58
@@ -101,9 +102,7 @@ instance Read Address where
             foldl' (\a n -> a <|> stringToAddr n bs) Nothing allNets
 
 instance ToJSON Address where
-    toJSON =
-        A.String .
-        cs . fromMaybe (error "Could not encode address") . addrToString
+    toJSON = A.String . fromMaybe (error "Could not encode address") . addrToString
 
 -- | JSON parsing for Bitcoin addresses. Works with 'Base58', 'CashAddr' and
 -- 'Bech32'.
@@ -116,7 +115,7 @@ addrFromJSON net =
 
 -- | Convert address to human-readable string. Uses 'Base58', 'Bech32', or
 -- 'CashAddr' depending on network.
-addrToString :: Address -> Maybe ByteString
+addrToString :: Address -> Maybe Text
 addrToString a@PubKeyAddress {getAddrHash160 = h, getAddrNet = net}
     | isNothing (getCashAddrPrefix net) =
         return $ encodeBase58Check $ runPut $ base58put a
@@ -126,14 +125,14 @@ addrToString a@ScriptAddress {getAddrHash160 = h, getAddrNet = net}
         return $ encodeBase58Check $ runPut $ base58put a
     | otherwise = cashAddrEncode net 1 (S.encode h)
 addrToString WitnessPubKeyAddress {getAddrHash160 = h, getAddrNet = net} = do
-    hrp <- (getBech32Prefix net)
+    hrp <- getBech32Prefix net
     segwitEncode hrp 0 (B.unpack (S.encode h))
 addrToString WitnessScriptAddress {getAddrHash256 = h, getAddrNet = net} = do
-    hrp <- (getBech32Prefix net)
+    hrp <- getBech32Prefix net
     segwitEncode hrp 0 (B.unpack (S.encode h))
 
 -- | Parse 'Base58', 'Bech32' or 'CashAddr' address, depending on network.
-stringToAddr :: Network -> ByteString -> Maybe Address
+stringToAddr :: Network -> Text -> Maybe Address
 stringToAddr net bs = cash <|> segwit <|> b58
   where
     b58 = eitherToMaybe . runGet (base58get net) =<< decodeBase58Check bs

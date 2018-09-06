@@ -7,6 +7,7 @@ import           Data.ByteString           (ByteString)
 import qualified Data.ByteString.Char8     as C (pack)
 import           Data.Maybe                (fromMaybe, isJust, isNothing)
 import           Data.Serialize            (encode)
+import           Data.Text                 (Text)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
@@ -18,31 +19,31 @@ import           Test.HUnit                (Assertion, assertBool)
 -- Unit tests copied from bitcoind implementation
 -- https://github.com/bitcoin/bitcoin/blob/master/src/test/key_tests.cpp
 
-strSecret1 :: ByteString
+strSecret1 :: Text
 strSecret1  = "5HxWvvfubhXpYYpS3tJkw6fq9jE9j18THftkZjHHfmFiWtmAbrj"
 
-strSecret2 :: ByteString
+strSecret2 :: Text
 strSecret2  = "5KC4ejrDjv152FGwP386VD1i2NYc5KkfSMyv1nGy1VGDxGHqVY3"
 
-strSecret1C :: ByteString
+strSecret1C :: Text
 strSecret1C = "Kwr371tjA9u2rFSMZjTNun2PXXP3WPZu2afRHTcta6KxEUdm1vEw"
 
-strSecret2C :: ByteString
+strSecret2C :: Text
 strSecret2C = "L3Hq7a8FEQwJkW1M2GNKDW28546Vp5miewcCzSqUD9kCAXrJdS3g"
 
-addr1 :: ByteString
+addr1 :: Text
 addr1  = "1QFqqMUD55ZV3PJEJZtaKCsQmjLT6JkjvJ"
 
-addr2 :: ByteString
+addr2 :: Text
 addr2  = "1F5y5E5FMc5YzdJtB9hLaUe43GDxEKXENJ"
 
-addr1C :: ByteString
+addr1C :: Text
 addr1C = "1NoJrossxPBKfCHuJXT4HadJrXRE9Fxiqs"
 
-addr2C :: ByteString
+addr2C :: Text
 addr2C = "1CRj2HyM1CXWzHAXLQtiGLyggNT9WQqsDs"
 
-strAddressBad :: ByteString
+strAddressBad :: Text
 strAddressBad = "1HV9Lc3sNHZxwj4Zk6fB38tEmBryq2cBiF"
 
 sigMsg :: [ByteString]

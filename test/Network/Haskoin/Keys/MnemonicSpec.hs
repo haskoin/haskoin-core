@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Keys.MnemonicSpec (spec) where
 
+import           Control.Monad           (zipWithM_)
 import           Data.Bits               (shiftR, (.&.))
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as BS
@@ -10,6 +11,8 @@ import           Data.List               (isPrefixOf)
 import           Data.Maybe              (fromJust)
 import           Data.Serialize          (Serialize, encode)
 import           Data.String.Conversions (cs)
+import           Data.Text               (Text)
+import qualified Data.Text               as T
 import           Data.Word               (Word32, Word64)
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Keys
@@ -46,7 +49,7 @@ spec =
         it "get end bits" $ property getBitsEndBits
 
 toMnemonicTest :: Assertion
-toMnemonicTest = sequence_ $ zipWith f ents mss
+toMnemonicTest = zipWithM_ f ents mss
   where
     f e m = assertEqual "" m . h $ e
     h =
@@ -54,7 +57,7 @@ toMnemonicTest = sequence_ $ zipWith f ents mss
         toMnemonic . fromJust . decodeHex
 
 fromMnemonicTest :: Assertion
-fromMnemonicTest = sequence_ $ zipWith f ents mss
+fromMnemonicTest = zipWithM_ f ents mss
   where
     f e = assertEqual "" e . h
     h =
@@ -62,7 +65,7 @@ fromMnemonicTest = sequence_ $ zipWith f ents mss
         fromRight (error "Could not decode mnemonic sentence") . fromMnemonic
 
 mnemonicToSeedTest :: Assertion
-mnemonicToSeedTest = sequence_ $ zipWith f mss seeds
+mnemonicToSeedTest = zipWithM_ f mss seeds
   where
     f m s = assertEqual "" s . h $ m
     h =
@@ -71,9 +74,9 @@ mnemonicToSeedTest = sequence_ $ zipWith f mss seeds
         mnemonicToSeed "TREZOR"
 
 fromMnemonicInvalidTest :: Assertion
-fromMnemonicInvalidTest = sequence_ $ map f invalidMss
+fromMnemonicInvalidTest = mapM_ f invalidMss
   where
-    f m = assertBool "" . h $ m
+    f = assertBool "" . h
     h m = case fromMnemonic m of
             Right _  -> False
             Left err -> "fromMnemonic: checksum failed:" `isPrefixOf` err
@@ -85,7 +88,7 @@ emptyMnemonicTest =
         Right _  -> False
         Left err -> "fromMnemonic: empty mnemonic" `isPrefixOf` err
 
-ents :: [ByteString]
+ents :: [Text]
 ents =
     [ "00000000000000000000000000000000"
     , "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f"
@@ -170,7 +173,7 @@ mss =
       \ coconut"
     ]
 
-seeds :: [ByteString]
+seeds :: [Text]
 seeds =
     [ "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a69\
       \87599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"
@@ -292,7 +295,7 @@ toMnemonic128 (a, b) = l == 12
     bs = encode a `BS.append` encode b
     l =
         length .
-        C.words . fromRight (error "Could not decode mnemonic senttence") $
+        T.words . fromRight (error "Could not decode mnemonic senttence") $
         toMnemonic bs
 
 toMnemonic160 :: (Word32, Word64, Word64) -> Bool
@@ -301,7 +304,7 @@ toMnemonic160 (a, b, c) = l == 15
     bs = BS.concat [encode a, encode b, encode c]
     l =
         length .
-        C.words . fromRight (error "Colud not decode mnemonic sentence") $
+        T.words . fromRight (error "Colud not decode mnemonic sentence") $
         toMnemonic bs
 
 toMnemonic256 :: (Word64, Word64, Word64, Word64) -> Bool
@@ -310,7 +313,7 @@ toMnemonic256 (a, b, c, d) = l == 24
     bs = BS.concat [encode a, encode b, encode c, encode d]
     l =
         length .
-        C.words . fromRight (error "Could not decode mnemonic sentence") $
+        T.words . fromRight (error "Could not decode mnemonic sentence") $
         toMnemonic bs
 
 toMnemonic512 ::
@@ -330,7 +333,7 @@ toMnemonic512 ((a, b, c, d), (e, f, g, h)) = l == 48
             ]
     l =
         length .
-        C.words . fromRight (error "Colud not decode mnemoonic sentence") $
+        T.words . fromRight (error "Colud not decode mnemoonic sentence") $
         toMnemonic bs
 
 toMnemonicVar :: [Word32] -> Property
@@ -341,7 +344,7 @@ toMnemonicVar ls = not (null ls) && length ls <= 8 ==> l == wc
     cb = bl `div` 4
     wc = (cb + bl * 8) `div` 11
     l =
-        length . C.words .
+        length . T.words .
         fromRight (error "Could not decode mnemonic sentence") $
         toMnemonic bs
 

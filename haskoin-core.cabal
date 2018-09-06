@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b138eaa35c1c8579d3872fe9dc7e97e18964db4682e98995bde6038f814663c6
+-- hash: b8c74c45c39870e532ba27b56a0434dbb130d364ab97d54efe035169d589cccd
 
 name:           haskoin-core
 version:        1.0.0
@@ -60,6 +60,7 @@ library
     , secp256k1
     , split
     , string-conversions
+    , text
     , time
     , transformers
     , unordered-containers
@@ -157,6 +158,7 @@ test-suite spec
     , secp256k1
     , split
     , string-conversions
+    , text
     , time
     , transformers
     , unordered-containers

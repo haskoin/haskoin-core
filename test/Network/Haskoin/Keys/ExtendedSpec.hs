@@ -12,6 +12,7 @@ import           Data.Maybe                 (fromJust, isJust, isNothing)
 import           Data.Serialize             as S
 import           Data.String                (fromString)
 import           Data.String.Conversions    (cs)
+import           Data.Text                  (Text)
 import           Data.Word                  (Word32)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
@@ -289,7 +290,7 @@ badApplyPathVectors =
     xpub = deriveXPubKey xprv
 
 
-runXKeyVec :: ([ByteString], XPrvKey) -> Assertion
+runXKeyVec :: ([Text], XPrvKey) -> Assertion
 runXKeyVec (v, m) = do
     assertBool "xPrvID" $ encodeHex (S.encode $ xPrvID m) == head v
     assertBool "xPrvFP" $ encodeHex (S.encode $ xPrvFP m) == v !! 1
@@ -309,7 +310,7 @@ runXKeyVec (v, m) = do
 -- BIP 0032 Test Vectors
 -- https://en.bitcoin.it/wiki/BIP_0032_TestVectors
 
-xKeyVec :: [([ByteString], XPrvKey)]
+xKeyVec :: [([Text], XPrvKey)]
 xKeyVec = zip xKeyResVec $ foldl f [m] der
     where f acc d = acc ++ [d $ last acc]
           m   = makeXPrvKey btc $ fromJust $ decodeHex m0
@@ -320,7 +321,7 @@ xKeyVec = zip xKeyResVec $ foldl f [m] der
                 , flip prvSubKey 1000000000
                 ]
 
-xKeyVec2 :: [([ByteString], XPrvKey)]
+xKeyVec2 :: [([Text], XPrvKey)]
 xKeyVec2 = zip xKeyResVec2 $ foldl f [m] der
     where f acc d = acc ++ [d $ last acc]
           m   = makeXPrvKey btc $ fromJust $ decodeHex m1
@@ -331,10 +332,10 @@ xKeyVec2 = zip xKeyResVec2 $ foldl f [m] der
                 , flip prvSubKey 2
                 ]
 
-m0 :: ByteString
+m0 :: Text
 m0 = "000102030405060708090a0b0c0d0e0f"
 
-xKeyResVec :: [[ByteString]]
+xKeyResVec :: [[Text]]
 xKeyResVec =
     [
       -- m
@@ -417,10 +418,10 @@ xKeyResVec =
       ]
     ]
 
-m1 :: ByteString
+m1 :: Text
 m1 = "fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542"
 
-xKeyResVec2 :: [[ByteString]]
+xKeyResVec2 :: [[Text]]
 xKeyResVec2 =
     [
       -- m

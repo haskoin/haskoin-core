@@ -23,6 +23,9 @@ import           Data.List
 import qualified Data.Map.Strict         as M
 import           Data.Maybe
 import           Data.String.Conversions (cs)
+import           Data.Text               (Text)
+import qualified Data.Text               as T
+import qualified Data.Text.Encoding      as E
 import           Data.Vector             (Vector, (!))
 import qualified Data.Vector             as V
 import           Network.Haskoin.Util
@@ -32,7 +35,7 @@ import           Network.Haskoin.Util
 type Entropy = ByteString
 
 -- | Human-readable mnemonic sentence.
-type Mnemonic = ByteString
+type Mnemonic = Text
 
 -- | Optional passphrase for mnemnoic sentence.
 type Passphrase = ByteString
@@ -62,14 +65,14 @@ toMnemonic ent = do
     (cs_len, remainder) = BS.length ent `quotRem` 4
     c = calcCS cs_len ent
     indices = bsToIndices $ ent `BS.append` c
-    ms = C.unwords $ map (wl!) indices
+    ms = T.unwords $ map (wl!) indices
 
 -- | Revert 'toMnemonic'. Do not use this to generate a 'Seed'. Instead use
 -- 'mnemonicToSeed'. This outputs the original 'Entropy' used to generate a
 -- 'Mnemonic' sentence.
 fromMnemonic :: Mnemonic -> Either String Entropy
 fromMnemonic ms = do
-    when (BS.null ms) $
+    when (T.null ms) $
         Left "fromMnemonic: empty mnemonic"
     when (word_count > 48) $
         Left $ "fromMnemonic: too many words: " ++ show word_count
@@ -83,7 +86,7 @@ fromMnemonic ms = do
         Left $ "fromMnemonic: checksum failed: " ++ sh ent_cs_num ms_cs_num
     return ms_ent
   where
-    ms_words = C.words ms
+    ms_words = T.words ms
     word_count = length ms_words
     (ent_len, cs_len) = (word_count * 11) `quotRem` 32
     sh cs_a cs_b = show cs_a ++ " /= " ++ show cs_b
@@ -105,7 +108,7 @@ numCS len =
 -- perform NFKD normalization.
 anyToSeed :: Passphrase -> Mnemonic -> Seed
 anyToSeed pf ms =
-    fastPBKDF2_SHA512 pbkdfParams ms ("mnemonic" `mappend` pf)
+    fastPBKDF2_SHA512 pbkdfParams (E.encodeUtf8 ms) ("mnemonic" `mappend` pf)
 
 -- | Get a 512-bit 'Seed' from a 'Mnemonic' sentence. Will validate checksum.
 -- 'Passphrase' can be used to protect the 'Mnemonic'. Use an empty string as
@@ -117,14 +120,14 @@ mnemonicToSeed pf ms = do
     return $ anyToSeed pf mnm
 
 -- | Get indices of words in word list.
-getIndices :: [ByteString] -> Either String [Int]
+getIndices :: [Text] -> Either String [Int]
 getIndices ws
     | null n = return $ catMaybes i
     | otherwise = Left $ "getIndices: words not found: " ++ cs w
   where
     i = map (`M.lookup` wl') ws
     n = elemIndices Nothing i
-    w = C.unwords $ map (ws !!) n
+    w = T.unwords $ map (ws !!) n
 
 -- | Turn a list of 11-bit numbers into a 'ByteString'
 indicesToBS :: [Int] -> Either String ByteString
@@ -154,11 +157,11 @@ bsToIndices bs =
     go 0 _ = []
     go n i = fromIntegral (i `mod` 2048) : go (n - 1) (i `shiftR` 11)
 
-wl' :: M.Map ByteString Int
+wl' :: M.Map Text Int
 wl' = V.ifoldr' (\i w m -> M.insert w i m) M.empty wl
 
 -- | Standard English dictionary from BIP-39 specification.
-wl :: Vector ByteString
+wl :: Vector Text
 wl = V.fromListN 2048
     [ "abandon", "ability", "able", "about", "above", "absent"
     , "absorb", "abstract", "absurd", "abuse", "access", "accident"

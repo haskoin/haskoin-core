@@ -6,6 +6,7 @@ import           Data.ByteString                  (ByteString)
 import qualified Data.ByteString.Char8            as C
 import           Data.Maybe
 import           Data.String.Conversions
+import           Data.Text                        (Text)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Address.CashAddr
 import           Network.Haskoin.Constants
@@ -14,6 +15,7 @@ import           Network.Haskoin.Util
 import           Test.Hspec
 import           Test.HUnit
 
+spec :: Spec
 spec = do
   describe "cashaddr checksum test vectors" $ do
     it "prefix:x64nx6hz" $ do
@@ -78,19 +80,19 @@ spec = do
 
 {- Various utilities -}
 
-base58ToCashAddr :: ByteString -> Maybe ByteString
+base58ToCashAddr :: Text -> Maybe Text
 base58ToCashAddr b58 = fromBase58 b58 >>= toCashAddr
   where
     fromBase58 = stringToAddr btc
     toCashAddr a = addrToString a { getAddrNet = bch }
 
-cashAddrtoBase58 :: ByteString -> Maybe ByteString
+cashAddrtoBase58 :: Text -> Maybe Text
 cashAddrtoBase58 c32 = fromCashAddr c32 >>= toBase58
   where
     fromCashAddr = stringToAddr bch
     toBase58 a = addrToString a { getAddrNet = btc }
 
-testCashAddr :: (Int, CashVersion, Cash32, ByteString) -> Assertion
+testCashAddr :: (Int, CashVersion, Cash32, Text) -> Assertion
 testCashAddr (len, typ, addr, hex) = do
     let mbs = decodeHex hex
     assertBool "Could not decode hex payload from test vector" (isJust mbs)
@@ -112,7 +114,7 @@ testCashAddr (len, typ, addr, hex) = do
 
 -- | All vectors starting with @pref@ had the wrong version in the spec
 -- document.
-vectors :: [(Int, CashVersion, ByteString, ByteString)]
+vectors :: [(Int, CashVersion, Text, Text)]
 vectors =
     [ ( 20
       , 0

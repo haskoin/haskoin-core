@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.TransactionSpec (spec) where
 
-import           Control.Monad               (unless, forM_)
+import           Control.Monad               (forM_, unless, zipWithM_)
 import           Control.Monad.IO.Class
 import           Data.Aeson                  as A
 import           Data.Aeson.Types            as A
@@ -18,6 +18,7 @@ import           Data.Serialize.Get          (getWord32le, runGet)
 import           Data.Serialize.Put          (putWord32le, runPut)
 import           Data.String                 (fromString)
 import           Data.String.Conversions
+import           Data.Text                   (Text)
 import qualified Data.Vector                 as V
 import           Data.Word                   (Word32, Word64)
 import           GHC.Exts                    (IsString (..))
@@ -40,9 +41,9 @@ spec = do
     let net = btc
     describe "transaction unit tests" $ do
         it "compute txid from tx" $
-            sequence_ $ zipWith (curry mapTxIDVec) txIDVec [0 ..]
+            zipWithM_ (curry mapTxIDVec) txIDVec [0 ..]
         it "build pkhash transaction (generated from bitcoind)" $
-            sequence_ $ zipWith (curry mapPKHashVec) pkHashVec [0 ..]
+            zipWithM_ (curry mapPKHashVec) pkHashVec [0 ..]
         it "encode satoshi core script pubkey" tEncodeSatoshiCoreScriptPubKey
     describe "btc transaction" $ do
         it "decode and encode txid" $
@@ -89,15 +90,15 @@ spec = do
 cerealID :: (Serialize a, Eq a) => a -> Bool
 cerealID x = S.decode (S.encode x) == Right x
 
-mapTxIDVec :: ((ByteString, ByteString), Int) -> Assertion
+mapTxIDVec :: ((Text, Text), Int) -> Assertion
 mapTxIDVec (v,i) = runTxIDVec v
 
-runTxIDVec :: (ByteString, ByteString) -> Assertion
+runTxIDVec :: (Text, Text) -> Assertion
 runTxIDVec (tid, tx) = assertBool "txid" $ txHashToHex (txHash txBS) == tid
   where
     txBS = fromJust $ either (const Nothing) return . S.decode =<< decodeHex tx
 
-txIDVec :: [(ByteString, ByteString)]
+txIDVec :: [(Text, Text)]
 txIDVec =
     [ ( "23b397edccd3740a74adb603c9756370fafcde9bcc4483eb271ecad09a94dd63"
       , "0100000001b14bdcbc3e01bdaad36cc08e81e69c82e1060bc14e518db2b49aa43ad90ba26000000000490047304402203f16c6f40162ab686621ef3000b04e75418a0c0cb2d8aebeac894ae360ac1e780220ddc15ecdfc3507ac48e1681a33eb60996631bf6bf5bc0a0682c4db743ce7ca2b01ffffffff0140420f00000000001976a914660d4ef3a743e3e696ad990364e555c271ad504b88ac00000000"
@@ -113,11 +114,11 @@ txIDVec =
       )
     ]
 
-mapPKHashVec :: (([(ByteString, Word32)], [(ByteString, Word64)], ByteString), Int)
+mapPKHashVec :: (([(Text, Word32)], [(Text, Word64)], Text), Int)
             -> Assertion
 mapPKHashVec (v, i) = runPKHashVec v
 
-runPKHashVec :: ([(ByteString, Word32)], [(ByteString, Word64)], ByteString) -> Assertion
+runPKHashVec :: ([(Text, Word32)], [(Text, Word64)], Text) -> Assertion
 runPKHashVec (xs, ys, res) =
     assertBool "Build PKHash Tx" $ encodeHex (S.encode tx) == res
   where
@@ -128,7 +129,7 @@ runPKHashVec (xs, ys, res) =
 
 -- These test vectors have been generated from bitcoind raw transaction api
 
-pkHashVec :: [([(ByteString, Word32)], [(ByteString, Word64)], ByteString)]
+pkHashVec :: [([(Text, Word32)], [(Text, Word64)], Text)]
 pkHashVec =
     [
       ( [("eb29eba154166f6541ebcc9cbdf5088756e026af051f123bcfb526df594549db",14)]
@@ -161,22 +162,22 @@ tEncodeSatoshiCoreScriptPubKey :: Assertion
 tEncodeSatoshiCoreScriptPubKey = assertBool "tEncodeSatoshiCoreScriptPubKey" $
   t1BsOutputScriptPubKey == encodeSatoshiCoreScriptPubKey t1SatoshiCoreJsonScriptPubKey
   where
-    t1BsOutputScriptPubKey :: ByteString
+    t1BsOutputScriptPubKey :: Text
     t1BsOutputScriptPubKey = "514104cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef58bbfbfaff7d8a473e7e2e6d317b87bafe8bde97e3cf8f065dec022b51d11fcdd0d348ac4410461cbdcc5409fb4b4d42b51d33381354d80e550078cb532a34bfa2fcfdeb7d76519aecc62770f5b0e4ef8551946d8a540911abe3e7854a26f39f58b25c15342af52ae"
     t1SatoshiCoreJsonScriptPubKey :: String
     t1SatoshiCoreJsonScriptPubKey = "1 0x41 0x04cc71eb30d653c0c3163990c47b976f3fb3f37cccdcbedb169a1dfef58bbfbfaff7d8a473e7e2e6d317b87bafe8bde97e3cf8f065dec022b51d11fcdd0d348ac4 0x41 0x0461cbdcc5409fb4b4d42b51d33381354d80e550078cb532a34bfa2fcfdeb7d76519aecc62770f5b0e4ef8551946d8a540911abe3e7854a26f39f58b25c15342af 2 OP_CHECKMULTISIG"
 
 
-encodeSatoshiCoreScriptPubKey :: String -> ByteString
+encodeSatoshiCoreScriptPubKey :: String -> Text
 encodeSatoshiCoreScriptPubKey =
   mconcat . map encodeSatoshiCoreScriptPiece . words
   where
-    encodeSatoshiCoreScriptPiece :: String -> ByteString
+    encodeSatoshiCoreScriptPiece :: String -> Text
     encodeSatoshiCoreScriptPiece s = case (readMay ("OP_" ++ s) :: Maybe ScriptOp) of
       Just op -> encodeHex . S.encode $ op
       Nothing -> case take 2 s of
           "OP" -> encodeHex . S.encode . (read :: String -> ScriptOp) $ s
-          "0x" -> (fromString . drop 2 :: String -> ByteString) s
+          "0x" -> (fromString . drop 2 :: String -> Text) s
           _ -> case (readMay s :: Maybe Int) of -- can we get rid of this case now?
             Just i  -> encodeHex . S.encode . intToScriptOp $ i
             Nothing -> error $ "encodeSatoshiCoreScriptPubKey: " ++ s

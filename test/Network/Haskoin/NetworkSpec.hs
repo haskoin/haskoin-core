@@ -5,6 +5,7 @@ import           Data.Aeson                as A
 import           Data.ByteString           (ByteString)
 import           Data.Maybe                (fromJust)
 import           Data.Serialize            as S
+import           Data.Text                 (Text)
 import           Data.Word                 (Word32)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
@@ -66,7 +67,7 @@ spec = do
         it "encodes and decodes filteradd" $
             property $ forAll arbitraryFilterAdd cerealID
 
-bloomFilter :: Word32 -> ByteString -> Assertion
+bloomFilter :: Word32 -> Text -> Assertion
 bloomFilter n x = do
     assertBool "Bloom filter doesn't contain vector 1" $ bloomContains f1 v1
     assertBool "Bloom filter contains something it should not" $

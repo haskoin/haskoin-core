@@ -14,11 +14,7 @@ import           Data.Maybe
 import           Data.Char                      ( toLower )
 import           Data.Bits                      ( xor )
 import           Data.Word                      ( Word8 )
-import           Data.String.Conversions
-import           Network.Haskoin.Address
 import           Network.Haskoin.Address.Bech32
-import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto
 import           Network.Haskoin.Util
 import           Test.Hspec
 import           Test.HUnit

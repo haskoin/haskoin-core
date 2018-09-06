@@ -82,7 +82,7 @@ spec = do
                 (listOf1 ((,) <$> arbitraryTxHash <*> arbitrary))
                 (buildExtractTree net)
         it "merkle root test vectors" $
-            sequence_ $ zipWith (curry mapMerkleVectors) merkleVectors [0 ..]
+            zipWithM_ (curry mapMerkleVectors) merkleVectors [0 ..]
     describe "compact number" $ do
         it "compact number local vectors" testCompact
         it "compact number imported vectors" testCompactBitcoinCore

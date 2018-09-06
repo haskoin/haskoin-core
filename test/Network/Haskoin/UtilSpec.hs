@@ -16,7 +16,7 @@ spec =
     describe "utility functions" $ do
         it "bsToInteger . integerToBS" $ property getPutInteger
         it "decodeHex . encodeHex" $ property $ forAll arbitraryBS fromToHex
-        it "compare updateIndex with Data.Sequence" $ property $ testUpdateIndex
+        it "compare updateIndex with Data.Sequence" $ property testUpdateIndex
         it "matchTemplate" $ property testMatchTemplate
         it "testing matchTemplate with two lists" $
             property testMatchTemplateLen

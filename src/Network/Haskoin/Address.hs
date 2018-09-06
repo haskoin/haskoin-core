@@ -109,7 +109,7 @@ instance ToJSON Address where
 addrFromJSON :: Network -> Value -> Parser Address
 addrFromJSON net =
     withText "address" $ \t ->
-        case stringToAddr net (cs t) of
+        case stringToAddr net t of
             Nothing -> fail "could not decode address"
             Just x  -> return x
 

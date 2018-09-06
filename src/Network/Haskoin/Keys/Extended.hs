@@ -159,7 +159,7 @@ instance NFData XPrvKey where
         rnf p `seq` rnf i `seq` rnf c `seq` k `seq` rnf n `seq` ()
 
 instance ToJSON XPrvKey where
-    toJSON = A.String . cs . xPrvExport
+    toJSON = A.String . xPrvExport
 
 -- | Data type representing an extended BIP32 public key.
 data XPubKey = XPubKey
@@ -190,13 +190,13 @@ instance NFData XPubKey where
         rnf p `seq` rnf i `seq` rnf c `seq` k `seq` rnf n `seq` ()
 
 instance ToJSON XPubKey where
-    toJSON = A.String . cs . xPubExport
+    toJSON = A.String . xPubExport
 
 -- | Decode an extended public key from a JSON string
 xPubFromJSON :: Network -> Value -> Parser XPubKey
 xPubFromJSON net =
     withText "xpub" $ \t ->
-        case xPubImport net (cs t) of
+        case xPubImport net t of
             Nothing -> fail "could not read xpub"
             Just x  -> return x
 
@@ -204,7 +204,7 @@ xPubFromJSON net =
 xPrvFromJSON :: Network -> Value -> Parser XPrvKey
 xPrvFromJSON net =
     withText "xprv" $ \t ->
-        case xPrvImport net (cs t) of
+        case xPrvImport net t of
             Nothing -> fail "could not read xprv"
             Just x  -> return x
 

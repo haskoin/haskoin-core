@@ -85,7 +85,7 @@ pub2C :: PubKeyI
 pub2C = derivePubKeyI sec2C
 
 spec :: Spec
-spec = do
+spec =
     describe "bitcoind /src/test/key_tests.cpp" $ do
         it "decode valid wif" checkPrivkey
         it "decode invalid wif" checkInvalidKey

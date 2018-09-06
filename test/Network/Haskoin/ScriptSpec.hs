@@ -224,13 +224,13 @@ strictSigSpec net =
     when (getNetworkName net == "btc") $ do
         it "can decode strict signatures" $ do
             xs <- readTestFile "sig_strict"
-            let vectors = mapMaybe (decodeHex . cs) (xs :: [String])
+            let vectors = mapMaybe decodeHex xs
             length vectors `shouldBe` 3
             forM_ vectors $ \sig ->
                 decodeTxSig net sig `shouldSatisfy` isRight
         it "can detect non-strict signatures" $ do
             xs <- readTestFile "sig_nonstrict"
-            let vectors = mapMaybe (decodeHex . cs) (xs :: [String])
+            let vectors = mapMaybe decodeHex xs
             length vectors `shouldBe` 17
             forM_ vectors $ \sig ->
                 decodeTxSig net sig `shouldSatisfy` isLeft
@@ -357,17 +357,6 @@ readTestFile fp = do
 {- Parse tests from bitcoin-qt repository -}
 
 type ParseError = String
-
-parseHex' :: String -> Maybe [Word8]
-parseHex' (a:b:xs) =
-    case readHex [a, b] :: [(Integer, String)] of
-        [(i, "")] ->
-            case parseHex' xs of
-                Just ops -> Just $ fromIntegral i : ops
-                Nothing  -> Nothing
-        _ -> Nothing
-parseHex' [_] = Nothing
-parseHex' [] = Just []
 
 -- | Splits the JSON test into the different parts.  No processing,
 -- just handling the fact that comments may not be there or might have

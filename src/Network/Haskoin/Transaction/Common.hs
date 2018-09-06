@@ -57,11 +57,11 @@ instance IsString TxHash where
         in fromMaybe e $ hexToTxHash $ cs s
 
 instance FromJSON TxHash where
-    parseJSON = withText "txid" $ \t ->
-        maybe mzero return $ hexToTxHash $ cs t
+    parseJSON = withText "txid" $
+        maybe mzero return . hexToTxHash
 
 instance ToJSON TxHash where
-    toJSON = A.String . cs . txHashToHex
+    toJSON = A.String . txHashToHex
 
 -- | Transaction hash excluding signatures.
 nosigTxHash :: Tx -> TxHash
@@ -206,10 +206,10 @@ putWitnessData = mapM_ putWitnessStack
 
 instance FromJSON Tx where
     parseJSON = withText "Tx" $
-        maybe mzero return . (eitherToMaybe . S.decode <=< decodeHex) . cs
+        maybe mzero return . (eitherToMaybe . S.decode <=< decodeHex)
 
 instance ToJSON Tx where
-    toJSON = A.String . cs . encodeHex . S.encode
+    toJSON = A.String . encodeHex . S.encode
 
 -- | Data type representing a transaction input.
 data TxIn =
@@ -273,10 +273,10 @@ instance NFData OutPoint where
 
 instance FromJSON OutPoint where
     parseJSON = withText "OutPoint" $
-        maybe mzero return . (eitherToMaybe . S.decode <=< decodeHex) . cs
+        maybe mzero return . (eitherToMaybe . S.decode <=< decodeHex)
 
 instance ToJSON OutPoint where
-    toJSON = A.String . cs . encodeHex . S.encode
+    toJSON = A.String . encodeHex . S.encode
 
 instance Serialize OutPoint where
     get = do

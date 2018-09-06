@@ -66,11 +66,11 @@ instance NFData PubKeyI where
     rnf (PubKeyI p c) = p `seq` rnf c `seq` rnf ()
 
 instance ToJSON PubKeyI where
-    toJSON = String . cs . encodeHex . encode
+    toJSON = String . encodeHex . encode
 
 instance FromJSON PubKeyI where
     parseJSON = withText "PubKeyI" $
-        maybe mzero return . (eitherToMaybe . decode =<<) . decodeHex . cs
+        maybe mzero return . (eitherToMaybe . decode =<<) . decodeHex
 
 instance Serialize PubKeyI where
     get = c <|> u

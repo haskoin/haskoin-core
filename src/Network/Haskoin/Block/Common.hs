@@ -88,11 +88,11 @@ instance IsString BlockHash where
         in fromMaybe e $ hexToBlockHash $ cs s
 
 instance FromJSON BlockHash where
-    parseJSON = withText "block hash" $ \t ->
-        maybe mzero return $ hexToBlockHash $ cs t
+    parseJSON = withText "block hash" $
+        maybe mzero return . hexToBlockHash
 
 instance ToJSON BlockHash where
-    toJSON = String . cs . blockHashToHex
+    toJSON = String . blockHashToHex
 
 -- | Block hashes are reversed with respect to the in-memory byte order in a
 -- block hash when displayed.

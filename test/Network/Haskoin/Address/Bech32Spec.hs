@@ -14,8 +14,6 @@ import           Data.String.Conversions
 import           Data.Word                      (Word8)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Address.Bech32
-import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto
 import           Network.Haskoin.Util
 import           Test.Hspec
 import           Test.HUnit

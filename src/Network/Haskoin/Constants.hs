@@ -202,7 +202,7 @@ btc =
 btcTest :: Network
 btcTest =
     Network
-    { getNetworkName = "btc-test"
+    { getNetworkName = "btctest"
     , getNetworkIdent = "btcTest"
     , getAddrPrefix = 111
     , getScriptPrefix = 196
@@ -257,7 +257,7 @@ btcTest =
 btcRegTest :: Network
 btcRegTest =
     Network
-    { getNetworkName = "btc-regtest"
+    { getNetworkName = "btcreg"
     , getNetworkIdent = "btcRegTest"
     , getAddrPrefix = 111
     , getScriptPrefix = 196
@@ -391,7 +391,7 @@ bch =
 bchTest :: Network
 bchTest =
     Network
-    { getNetworkName = "bch-test"
+    { getNetworkName = "bchtest"
     , getNetworkIdent = "bchTest"
     , getAddrPrefix = 111
     , getScriptPrefix = 196
@@ -453,7 +453,7 @@ bchTest =
 bchRegTest :: Network
 bchRegTest =
     Network
-    { getNetworkName = "bch-regtest"
+    { getNetworkName = "bchreg"
     , getNetworkIdent = "bchRegTest"
     , getAddrPrefix = 111
     , getScriptPrefix = 196

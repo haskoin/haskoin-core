@@ -67,9 +67,8 @@ import           Data.Maybe                         (fromMaybe, listToMaybe)
 import           Data.Serialize                     as S (Serialize (..),
                                                           decode, encode, get,
                                                           put)
-import           Data.Serialize.Get                 (Get, getWord32le, runGet)
-import           Data.Serialize.Put                 (Put, Putter, putWord32le,
-                                                     runPut)
+import           Data.Serialize.Get                 as S
+import           Data.Serialize.Put                 as S
 import           Data.Typeable                      (Typeable)
 import           Data.Word                          (Word32, Word64)
 import           Network.Haskoin.Block.Common
@@ -86,9 +85,6 @@ type ShortBlockHash = Word64
 -- 'ShortByteString' is used to avoid memory fragmentation and make the data
 -- structure compact.
 type BlockMap = HashMap ShortBlockHash ShortByteString
-
--- | Represents minimum required amount of work for block validity computation.
-type MinWork = Word32
 
 -- | Represents accumulated work in the blockchain so far.
 type BlockWork = Integer
@@ -280,7 +276,7 @@ connectBlocks net t bhs@(bh:_) =
   where
     chained (h1:h2:hs) = headerHash h1 == prevBlock h2 && chained (h2 : hs)
     chained _          = True
-    skip lbh ls par
+    skipit lbh ls par
         | sh == nodeHeight lbh = return lbh
         | sh < nodeHeight lbh = do
             skM <- lift $ getAncestor sh lbh
@@ -299,7 +295,7 @@ connectBlocks net t bhs@(bh:_) =
         sh = skipHeight (nodeHeight par + 1)
     go _ acc _ _ _ [] = return acc
     go lbh acc bb par pars (h:hs) = do
-        sk <- skip lbh acc par
+        sk <- skipit lbh acc par
         bn <- ExceptT . return $ validBlock net t bb par pars h sk
         go lbh (bn : acc) (chooseBest bn bb) bn (take 10 $ par : pars) hs
 
@@ -543,9 +539,9 @@ nextDaaWorkRequired net par bh
         let height = nodeHeight par
         unless (height >= diffInterval net) $
             error "Block height below difficulty interval"
-        l <- getSuitableBlock net par
+        l <- getSuitableBlock par
         par144 <- fromMaybe e1 <$> getAncestor (height - 144) par
-        f <- getSuitableBlock net par144
+        f <- getSuitableBlock par144
         let nextTarget = computeTarget net f l
         if nextTarget > getPowLimit net
             then return $ encodeCompact (getPowLimit net)
@@ -570,8 +566,8 @@ computeTarget net f l =
         work' = work `div` fromIntegral actualTimespan'
      in 2 ^ (256 :: Integer) `div` work'
 
-getSuitableBlock :: BlockHeaders m => Network -> BlockNode -> m BlockNode
-getSuitableBlock net par = do
+getSuitableBlock :: BlockHeaders m => BlockNode -> m BlockNode
+getSuitableBlock par = do
     unless (nodeHeight par >= 3) $ error "Block height is less than three"
     blocks <- (par :) <$> getParents 2 par
     return $ sortBy (compare `on` blockTimestamp . nodeHeader) blocks !! 1

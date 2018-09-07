@@ -40,8 +40,6 @@ import           Data.ByteString.Char8       as C (replicate)
 import           Data.Maybe
 import           Data.Monoid                 ((<>))
 import           Data.Serialize              as S
-import           Data.Serialize.Get          as S
-import           Data.Serialize.Put          as S
 import           Data.String
 import           Data.String.Conversions     (cs)
 import           Data.Word                   (Word32, Word64)

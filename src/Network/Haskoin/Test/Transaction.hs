@@ -3,16 +3,14 @@
 -}
 module Network.Haskoin.Test.Transaction where
 import           Control.Monad
-import qualified Data.ByteString              as BS
-import           Data.Either                  (fromRight)
-import           Data.List                    (nub, nubBy, permutations)
-import           Data.Word                    (Word64)
+import qualified Data.ByteString             as BS
+import           Data.Either                 (fromRight)
+import           Data.List                   (nub, nubBy, permutations)
+import           Data.Word                   (Word64)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Keys.Common
 import           Network.Haskoin.Script
-import           Network.Haskoin.Test.Address
 import           Network.Haskoin.Test.Crypto
 import           Network.Haskoin.Test.Keys
 import           Network.Haskoin.Test.Script
@@ -57,69 +55,63 @@ arbitraryTx net = oneof [arbitraryLegacyTx net, arbitraryWitnessTx net]
 
 -- | Arbitrary regular transaction.
 arbitraryLegacyTx :: Network -> Gen Tx
-arbitraryLegacyTx net = do
-    v    <- arbitrary
-    ni   <- choose (0,5)
-    no   <- choose (if ni == 0 then 2 else 0, 5) -- avoid witness case
-    inps <- vectorOf ni (arbitraryTxIn net)
-    outs <- vectorOf no (arbitraryTxOut net)
-    let uniqueInps = nubBy (\a b -> prevOutput a == prevOutput b) inps
-    t    <- arbitrary
-    return $ Tx v uniqueInps outs [] t
+arbitraryLegacyTx net = arbitraryWLTx net False
 
 -- | Arbitrary witness transaction (witness data is fake).
 arbitraryWitnessTx :: Network -> Gen Tx
-arbitraryWitnessTx net = do
-    v    <- arbitrary
-    ni   <- choose (0,5)
-    no   <- choose (0,5)
+arbitraryWitnessTx net = arbitraryWLTx net True
+
+arbitraryWLTx :: Network -> Bool -> Gen Tx
+arbitraryWLTx net wit = do
+    ni <- choose (0, 5)
+    no <-
+        if wit
+            then choose (0, 5)
+            else choose
+                     ( if ni == 0
+                           then 2
+                           else 0
+                     , 5 -- avoid witness case
+                      )
     inps <- vectorOf ni (arbitraryTxIn net)
     outs <- vectorOf no (arbitraryTxOut net)
     let uniqueInps = nubBy (\a b -> prevOutput a == prevOutput b) inps
-    t    <- arbitrary
-    w    <- vectorOf (length uniqueInps) (listOf arbitraryBS)
-    return $ Tx v uniqueInps outs w t
+    w <- if wit then vectorOf (length uniqueInps) (listOf arbitraryBS) else return []
+    Tx <$> arbitrary <*> pure uniqueInps <*> pure outs <*> pure w <*> arbitrary
 
 -- | Arbitrary transaction containing only inputs of type 'SpendPKHash',
 -- 'SpendScriptHash' (multisig) and outputs of type 'PayPKHash' and 'PaySH'.
 -- Only compressed public keys are used.
 arbitraryAddrOnlyTx :: Network -> Gen Tx
 arbitraryAddrOnlyTx net = do
-    v    <- arbitrary
-    ni   <- choose (0,5)
-    no   <- choose (0,5)
+    ni <- choose (0, 5)
+    no <- choose (0, 5)
     inps <- vectorOf ni (arbitraryAddrOnlyTxIn net)
     outs <- vectorOf no (arbitraryAddrOnlyTxOut net)
-    t    <- arbitrary
-    return $ Tx v inps outs [] t
+    Tx <$> arbitrary <*> pure inps <*> pure outs <*> pure [] <*> arbitrary
 
 -- | Like 'arbitraryAddrOnlyTx' without empty signatures in the inputs.
 arbitraryAddrOnlyTxFull :: Network -> Gen Tx
 arbitraryAddrOnlyTxFull net = do
-    v    <- arbitrary
-    ni   <- choose (0,5)
-    no   <- choose (0,5)
+    ni <- choose (0, 5)
+    no <- choose (0, 5)
     inps <- vectorOf ni (arbitraryAddrOnlyTxInFull net)
     outs <- vectorOf no (arbitraryAddrOnlyTxOut net)
-    t    <- arbitrary
-    return $ Tx v inps outs [] t
+    Tx <$> arbitrary <*> pure inps <*> pure outs <*> pure [] <*> arbitrary
 
 -- | Arbitrary TxIn that can only be of type 'SpendPKHash' or 'SpendScriptHash'
 -- (multisig). Only compressed public keys are used.
 arbitraryAddrOnlyTxIn :: Network -> Gen TxIn
 arbitraryAddrOnlyTxIn net = do
-    o   <- arbitraryOutPoint
-    inp <- oneof [ arbitraryPKHashInput net, arbitraryMulSigSHInput net ]
-    s   <- arbitrary
-    return $ TxIn o (encodeInputBS inp) s
+    inp <- oneof [arbitraryPKHashInput net, arbitraryMulSigSHInput net]
+    TxIn <$> arbitraryOutPoint <*> pure (encodeInputBS inp) <*> arbitrary
 
 -- | like 'arbitraryAddrOnlyTxIn' with no empty signatures.
 arbitraryAddrOnlyTxInFull :: Network -> Gen TxIn
 arbitraryAddrOnlyTxInFull net = do
-    o   <- arbitraryOutPoint
-    inp <- oneof [ arbitraryPKHashInputFullC net, arbitraryMulSigSHInputFullC net ]
-    s   <- arbitrary
-    return $ TxIn o (encodeInputBS inp) s
+    inp <-
+        oneof [arbitraryPKHashInputFullC net, arbitraryMulSigSHInputFullC net]
+    TxIn <$> arbitraryOutPoint <*> pure (encodeInputBS inp) <*> arbitrary
 
 -- | Arbitrary 'TxOut' that can only be of type 'PayPKHash' or 'PaySH'.
 arbitraryAddrOnlyTxOut :: Network -> Gen TxOut
@@ -141,23 +133,26 @@ arbitrarySigInput net =
 
 -- | Arbitrary 'SigInput' with a 'ScriptOutput' of type 'PayPK'.
 arbitraryPKSigInput :: Network -> Gen (SigInput, SecKeyI)
-arbitraryPKSigInput net = do
-    (k, p) <- arbitraryKeyPair
-    let out = PayPK p
-    val <- getTestCoin <$> arbitrarySatoshi net
-    op <- arbitraryOutPoint
-    sh <- arbitraryValidSigHash net
-    return (SigInput out val op sh Nothing, k)
+arbitraryPKSigInput net = arbitraryAnyInput net False
 
 -- | Arbitrary 'SigInput' with a 'ScriptOutput' of type 'PayPKHash'.
 arbitraryPKHashSigInput :: Network -> Gen (SigInput, SecKeyI)
-arbitraryPKHashSigInput net = do
+arbitraryPKHashSigInput net = arbitraryAnyInput net True
+
+arbitraryAnyInput :: Network -> Bool -> Gen (SigInput, SecKeyI)
+arbitraryAnyInput net pkh = do
     (k, p) <- arbitraryKeyPair
-    let out = PayPKHash $ getAddrHash160 $ pubKeyAddr net p
+    let out | pkh = PayPKHash $ getAddrHash160 $ pubKeyAddr net p
+            | otherwise = PayPK p
+    (val, op, sh) <- arbitraryInputStuff net
+    return (SigInput out val op sh Nothing, k)
+
+arbitraryInputStuff :: Network -> Gen (Word64, OutPoint, SigHash)
+arbitraryInputStuff net = do
     val <- getTestCoin <$> arbitrarySatoshi net
     op <- arbitraryOutPoint
     sh <- arbitraryValidSigHash net
-    return (SigInput out val op sh Nothing, k)
+    return (val, op, sh)
 
 -- | Arbitrary 'SigInput' with a 'ScriptOutput' of type 'PayMulSig'.
 arbitraryMSSigInput :: Network -> Gen (SigInput, [SecKeyI])
@@ -165,9 +160,7 @@ arbitraryMSSigInput net = do
     (m, n) <- arbitraryMSParam
     ks <- vectorOf n arbitraryKeyPair
     let out = PayMulSig (map snd ks) m
-    val <- getTestCoin <$> arbitrarySatoshi net
-    op <- arbitraryOutPoint
-    sh <- arbitraryValidSigHash net
+    (val, op, sh) <- arbitraryInputStuff net
     perm <- choose (0, n - 1)
     let ksPerm = map fst $ take m $ permutations ks !! perm
     return (SigInput out val op sh Nothing, ksPerm)
@@ -190,18 +183,16 @@ arbitrarySHSigInput net = do
 -- passed to 'signTx' or 'detSignTx' to fully sign the 'Tx'.
 arbitrarySigningData :: Network -> Gen (Tx, [SigInput], [SecKeyI])
 arbitrarySigningData net = do
-    v  <- arbitrary
-    ni <- choose (1,5)
-    no <- choose (1,5)
+    v <- arbitrary
+    ni <- choose (1, 5)
+    no <- choose (1, 5)
     sigis <- vectorOf ni (arbitrarySigInput net)
-    let uSigis = nubBy (\(a,_) (b,_) -> sigInputOP a == sigInputOP b) sigis
-    inps <- forM uSigis $ \(s,_) -> do
-        sq <- arbitrary
-        return $ TxIn (sigInputOP s) BS.empty sq
+    let uSigis = nubBy (\(a, _) (b, _) -> sigInputOP a == sigInputOP b) sigis
+    inps <- forM uSigis $ \(s, _) -> TxIn (sigInputOP s) BS.empty <$> arbitrary
     outs <- vectorOf no (arbitraryTxOut net)
-    l    <- arbitrary
+    l <- arbitrary
     perm <- choose (0, length inps - 1)
-    let tx   = Tx v (permutations inps !! perm) outs [] l
+    let tx = Tx v (permutations inps !! perm) outs [] l
         keys = concatMap snd uSigis
     return (tx, map fst uSigis, keys)
 

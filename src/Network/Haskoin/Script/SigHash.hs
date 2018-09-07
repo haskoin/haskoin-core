@@ -34,19 +34,14 @@ import           Data.Maybe
 import           Data.Scientific
 import           Data.Serialize
 import           Data.Serialize.Put                 (runPut)
-import           Data.String                        (IsString, fromString)
-import           Data.String.Conversions            (cs)
 import           Data.Word
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Crypto.Signature
-import           Network.Haskoin.Keys.Common
 import           Network.Haskoin.Network
 import           Network.Haskoin.Script.Common
 import           Network.Haskoin.Transaction.Common
 import           Network.Haskoin.Util
-import           Text.Read                          as R
-import           Text.Read.Lex                      (numberToInteger)
 
 data SigHashFlag
     = SIGHASH_ALL
@@ -57,16 +52,17 @@ data SigHashFlag
     deriving (Eq, Ord, Show)
 
 instance Enum SigHashFlag where
-    fromEnum SIGHASH_ALL = 0x01
-    fromEnum SIGHASH_NONE = 0x02
-    fromEnum SIGHASH_SINGLE = 0x03
-    fromEnum SIGHASH_FORKID = 0x40
+    fromEnum SIGHASH_ALL          = 0x01
+    fromEnum SIGHASH_NONE         = 0x02
+    fromEnum SIGHASH_SINGLE       = 0x03
+    fromEnum SIGHASH_FORKID       = 0x40
     fromEnum SIGHASH_ANYONECANPAY = 0x80
     toEnum 0x01 = SIGHASH_ALL
     toEnum 0x02 = SIGHASH_NONE
     toEnum 0x03 = SIGHASH_SINGLE
     toEnum 0x40 = SIGHASH_FORKID
     toEnum 0x80 = SIGHASH_ANYONECANPAY
+    toEnum _    = error "Not a valid sighash flag"
 
 -- | Data type representing the different ways a transaction can be signed.
 -- When producing a signature, a hash of the transaction is used as the message
@@ -85,7 +81,7 @@ newtype SigHash = SigHash Word32
 instance J.FromJSON SigHash where
     parseJSON =
         J.withScientific "sighash" $
-        either (const mzero) return . floatingOrInteger
+        maybe mzero (return . SigHash) . toBoundedInteger
 
 instance J.ToJSON SigHash where
     toJSON = J.Number . fromIntegral

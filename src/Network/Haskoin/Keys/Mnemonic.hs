@@ -14,7 +14,7 @@ module Network.Haskoin.Keys.Mnemonic
 import           Control.Monad           (when)
 import           Crypto.Hash             (SHA256 (..), hashWith)
 import           Crypto.KDF.PBKDF2       (Parameters (..), fastPBKDF2_SHA512)
-import           Data.Bits               (shiftL, shiftR, (.&.))
+import           Data.Bits               (shiftL, shiftR)
 import qualified Data.ByteArray          as BA
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as BS

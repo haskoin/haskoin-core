@@ -81,32 +81,31 @@ module Network.Haskoin.Keys.Extended
     ) where
 
 import           Control.Applicative
-import           Control.DeepSeq                 (NFData, rnf)
-import           Control.Exception               (Exception, throw)
-import           Control.Monad                   (guard, mzero, unless, (<=<))
-import           Data.Aeson                      as A (FromJSON, ToJSON,
-                                                       Value (String),
-                                                       parseJSON, toJSON,
-                                                       withText)
-import           Data.Aeson.Types                (Parser)
-import           Data.Bits                       (clearBit, setBit, testBit)
-import           Data.ByteString                 (ByteString)
-import qualified Data.ByteString                 as BS
-import           Data.Either                     (fromRight)
-import           Data.List                       (foldl')
-import           Data.List.Split                 (splitOn)
-import           Data.Maybe                      (fromMaybe)
-import           Data.Monoid                     ((<>))
-import           Data.Serialize                  as S (Serialize, decode,
-                                                       encode, get, put)
-import           Data.Serialize.Get              (Get, getWord32be, getWord8,
-                                                  runGet)
-import           Data.Serialize.Put              (Put, Putter, putWord32be,
-                                                  putWord8, runPut)
-import           Data.String                     (IsString, fromString)
-import           Data.String.Conversions         (cs)
-import           Data.Typeable                   (Typeable)
-import           Data.Word                       (Word32, Word8)
+import           Control.DeepSeq                (NFData, rnf)
+import           Control.Exception              (Exception, throw)
+import           Control.Monad                  (guard, mzero, unless, (<=<))
+import           Data.Aeson                     as A (FromJSON, ToJSON,
+                                                      Value (String), parseJSON,
+                                                      toJSON, withText)
+import           Data.Aeson.Types               (Parser)
+import           Data.Bits                      (clearBit, setBit, testBit)
+import           Data.ByteString                (ByteString)
+import qualified Data.ByteString                as BS
+import           Data.Either                    (fromRight)
+import           Data.List                      (foldl')
+import           Data.List.Split                (splitOn)
+import           Data.Maybe                     (fromMaybe)
+import           Data.Monoid                    ((<>))
+import           Data.Serialize                 as S (Serialize, decode, encode,
+                                                      get, put)
+import           Data.Serialize.Get             (Get, getWord32be, getWord8,
+                                                 runGet)
+import           Data.Serialize.Put             (Putter, putWord32be, putWord8,
+                                                 runPut)
+import           Data.String                    (IsString, fromString)
+import           Data.String.Conversions        (cs)
+import           Data.Typeable                  (Typeable)
+import           Data.Word                      (Word32, Word8)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Address.Base58
 import           Network.Haskoin.Constants
@@ -114,7 +113,7 @@ import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Keys.Common
 import           Network.Haskoin.Script
 import           Network.Haskoin.Util
-import           Text.Read                       as R
+import           Text.Read                      as R
 import           Text.Read.Lex
 
 
@@ -175,7 +174,7 @@ instance Ord XPubKey where
     compare k1 k2 = xPubExport k1 `compare` xPubExport k2
 
 instance Show XPubKey where
-    showsPrec d = shows . xPubExport
+    showsPrec _ = shows . xPubExport
 
 instance Read XPubKey where
     readPrec = do

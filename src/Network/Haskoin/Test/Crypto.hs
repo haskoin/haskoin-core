@@ -3,12 +3,6 @@
 -}
 module Network.Haskoin.Test.Crypto where
 
-import           Data.Bits                        (clearBit)
-import           Data.Either                      (fromRight)
-import           Data.List                        (foldl')
-import           Data.Serialize                   (decode)
-import           Data.Word                        (Word32)
-import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Test.Util
 import           Test.QuickCheck

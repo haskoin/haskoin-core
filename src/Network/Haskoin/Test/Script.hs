@@ -7,7 +7,6 @@ import           Data.Maybe
 import           Data.Word
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto
 import           Network.Haskoin.Keys.Common
 import           Network.Haskoin.Script
 import           Network.Haskoin.Test.Address
@@ -328,8 +327,7 @@ arbitraryMSInput net = do
 arbitrarySHInput :: Network -> Gen ScriptInput
 arbitrarySHInput net = do
     i <- arbitrarySimpleInput net
-    o <- arbitrarySimpleOutput
-    return $ ScriptHashInput (getRegularInput i) o
+    ScriptHashInput (getRegularInput i) <$> arbitrarySimpleOutput
 
 -- | Arbitrary 'ScriptInput' of type 'ScriptHashInput' containing a
 -- 'RedeemScript' of type 'PayMulSig' and an input of type 'SpendMulSig'.

@@ -34,7 +34,7 @@ import           Data.Maybe                  (fromMaybe)
 import           Data.Serialize              (Serialize, decode, encode, get,
                                               put)
 import           Data.Serialize.Get          (Get, getByteString)
-import           Data.Serialize.Put          (Put, Putter, putByteString)
+import           Data.Serialize.Put          (Putter, putByteString)
 import           Data.String                 (IsString, fromString)
 import           Data.String.Conversions     (cs)
 import           Network.Haskoin.Crypto.Hash

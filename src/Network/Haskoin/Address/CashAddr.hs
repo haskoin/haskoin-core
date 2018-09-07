@@ -13,16 +13,13 @@ module Network.Haskoin.Address.CashAddr
     ) where
 
 import           Control.Monad
-import           Control.Monad.State.Strict
 import           Data.Bits
 import           Data.ByteString            (ByteString)
 import qualified Data.ByteString            as B
 import qualified Data.ByteString.Char8      as C
 import           Data.Char
 import           Data.List
-import           Data.Maybe
 import           Data.Word
-import           Debug.Trace
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Util
 
@@ -41,11 +38,8 @@ type CashAddr = ByteString
 -- need not encode a valid address but any binary data.
 type Cash32 = ByteString
 
--- | Internal type for encoding Base32 data.
-type Word5 = Word8
-
 -- | Symbols for encoding 'Cash32' data in human-readable strings.
-charset :: [Char]
+charset :: String
 charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 
 -- | Get the 32-bit number associated with this 'Cash32' character.

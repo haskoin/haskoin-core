@@ -13,20 +13,16 @@ module Network.Haskoin.Constants
     , netByIdent
     ) where
 
-import           Control.Concurrent.MVar
 import           Control.DeepSeq
-import           Control.Monad
 import           Data.ByteString             (ByteString)
 import           Data.List
 import           Data.Maybe
-import           Data.String
 import           Data.String
 import           Data.Version
 import           Data.Word                   (Word32, Word64, Word8)
 import           GHC.Generics                (Generic)
 import           Network.Haskoin.Block.Common
 import           Paths_haskoin_core
-import           System.IO.Unsafe            (unsafePerformIO)
 import           Text.Read
 
 -- | Version of Haskoin Core package.

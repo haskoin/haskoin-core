@@ -7,26 +7,16 @@ module Network.Haskoin.Address.Base58
     , decodeBase58Check
     ) where
 
-import           Control.DeepSeq             (NFData, rnf)
-import           Control.Monad               (guard, mzero)
-import           Data.Aeson                  (FromJSON, ToJSON, Value (String),
-                                              parseJSON, toJSON, withText)
+import           Control.Monad
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as BS
 import qualified Data.ByteString.Char8       as C
 import           Data.Maybe                  (fromMaybe, isJust, listToMaybe)
-import           Data.Serialize              (Serialize, decode, encode, get,
-                                              put)
-import           Data.Serialize.Get          (getWord8)
-import           Data.Serialize.Put          (putWord8)
-import           Data.String                 (IsString, fromString)
+import           Data.Serialize              as S
 import           Data.String.Conversions     (cs)
-import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Util
 import           Numeric                     (readInt, showIntAtBase)
-import           Text.Read                   (lexP, parens, pfail, readPrec)
-import qualified Text.Read                   as Read (Lexeme (Ident, String))
 
 -- | 'Base58' classic Bitcoin address format.
 type Base58 = ByteString

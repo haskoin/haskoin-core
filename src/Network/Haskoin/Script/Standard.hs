@@ -4,6 +4,7 @@ module Network.Haskoin.Script.Standard
 , SimpleInput(..)
 , RedeemScript
 , p2shAddr
+, p2wshAddr
 , outputAddress
 , inputAddress
 , encodeInput
@@ -25,16 +26,11 @@ module Network.Haskoin.Script.Standard
 
 import           Control.Applicative            ((<|>))
 import           Control.DeepSeq                (NFData, rnf)
-import           Control.Monad                  (guard, liftM2, (<=<))
-import           Data.Aeson                     (FromJSON, ToJSON,
-                                                 Value (String), parseJSON,
-                                                 toJSON, withText)
+import           Control.Monad                  (guard, (<=<))
 import           Data.ByteString                (ByteString)
-import qualified Data.ByteString                as BS
 import           Data.Function                  (on)
 import           Data.List                      (sortBy)
 import           Data.Serialize                 (decode, encode)
-import           Data.String.Conversions        (cs)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash

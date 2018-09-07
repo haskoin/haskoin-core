@@ -3,15 +3,9 @@
 -}
 module Network.Haskoin.Test.Address where
 
-import           Data.Bits                   (clearBit)
-import           Data.Either                 (fromRight)
-import           Data.List                   (foldl')
-import           Data.Serialize              (decode)
-import           Data.Word                   (Word32)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Test.Crypto
-import           Network.Haskoin.Test.Util
 import           Test.QuickCheck
 
 -- | Arbitrary pay-to-public-key-hash or pay-to-script-hash address.

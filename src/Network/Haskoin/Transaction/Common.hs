@@ -27,8 +27,6 @@ import qualified Data.ByteString                as B
 import           Data.Hashable                  (Hashable)
 import           Data.Maybe                     (fromMaybe, maybe)
 import           Data.Serialize                 as S
-import           Data.Serialize.Get             as S
-import           Data.Serialize.Put             as S
 import           Data.String                    (IsString, fromString)
 import           Data.String.Conversions        (cs)
 import           Data.Word                      (Word32, Word64)
@@ -128,28 +126,29 @@ instance Serialize Tx where
         | null (txWitness tx) = putLegacyTx tx
         | otherwise = putWitnessTx tx
 
+putInOut :: Tx -> Put
+putInOut tx = do
+    put $ VarInt $ fromIntegral $ length (txIn tx)
+    forM_ (txIn tx) put
+    put $ VarInt $ fromIntegral $ length (txOut tx)
+    forM_ (txOut tx) put
+
 -- | Non-SegWit transaction serializer.
 putLegacyTx :: Tx -> Put
-putLegacyTx (Tx v is os _ l) = do
-    putWord32le v
-    put $ VarInt $ fromIntegral $ length is
-    forM_ is put
-    put $ VarInt $ fromIntegral $ length os
-    forM_ os put
-    putWord32le l
+putLegacyTx tx = do
+    putWord32le (txVersion tx)
+    putInOut tx
+    putWord32le (txLockTime tx)
 
 -- | Witness transaciton serializer.
 putWitnessTx :: Tx -> Put
-putWitnessTx (Tx v is os w l) = do
-    putWord32le v
+putWitnessTx tx = do
+    putWord32le (txVersion tx)
     putWord8 0x00
     putWord8 0x01
-    put $ VarInt $ fromIntegral $ length is
-    forM_ is put
-    put $ VarInt $ fromIntegral $ length os
-    forM_ os put
-    putWitnessData w
-    putWord32le l
+    putInOut tx
+    putWitnessData (txWitness tx)
+    putWord32le (txLockTime tx)
 
 -- | Non-SegWit transaction deseralizer.
 parseLegacyTx :: Get Tx
@@ -295,9 +294,8 @@ nullOutPoint =
 -- | Transaction from Genesis block.
 genesisTx :: Tx
 genesisTx =
-    Tx version [txin] [txout] [] locktime
+    Tx 1 [txin] [txout] [] locktime
   where
-    version = 1
     txin = TxIn outpoint inputBS maxBound
     txout = TxOut 5000000000 (encodeOutputBS output)
     locktime = 0

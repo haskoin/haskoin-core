@@ -12,24 +12,16 @@ module Network.Haskoin.Crypto.Signature
     , exportCompactSig
     ) where
 
-import           Control.DeepSeq             (NFData, rnf)
 import           Control.Monad               (guard, unless, when)
-import qualified Control.Monad.State         as S (StateT, evalStateT, get, put)
-import           Control.Monad.Trans         (lift)
 import           Crypto.Secp256k1
 import           Data.ByteString             (ByteString)
 import qualified Data.ByteString             as BS
 import           Data.ByteString.Short       (toShort)
 import           Data.Maybe                  (fromMaybe)
-import           Data.Serialize              (Serialize, encode, get, put)
-import           Data.Serialize.Get          (Get, getByteString, getWord8,
-                                              lookAhead)
+import           Data.Serialize              as S
 import           Data.Serialize.Put          (Putter, putByteString)
-import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto.Hash
-import           Network.Haskoin.Keys.Common
 import           Numeric                     (showHex)
-import           System.Entropy              (getEntropy)
 
 -- | Convert 256-bit hash into a 'Msg' for signing or verification.
 hashToMsg :: Hash256 -> Msg

@@ -167,10 +167,10 @@ dropSumLabels c f tag = (dropFieldLabel f)
 -- | Convert from one power-of-two base to another, as long as it fits in a
 -- 'Word'.
 convertBits :: Bool -> Int -> Int -> [Word] -> ([Word], Bool)
-convertBits pad frombits tobits i = (reverse yout, rem)
+convertBits pad frombits tobits i = (reverse yout, rem')
   where
     (xacc, xbits, xout) = foldl' outer (0, 0, []) i
-    (yout, rem)
+    (yout, rem')
         | pad && xbits /= 0 =
             let xout' = (xacc `shiftL` (tobits - xbits)) .&. maxv : xout
             in (xout', False)

@@ -8,6 +8,8 @@ module Network.Haskoin.Script.Common
 , isPayPKHash
 , isPayMulSig
 , isPayScriptHash
+, isPayWitnessPKHash
+, isPayWitnessScriptHash
 , isDataCarrier
 , encodeOutput
 , encodeOutputBS
@@ -23,7 +25,7 @@ import           Control.DeepSeq                    (NFData, rnf)
 import           Control.Monad
 import           Data.Aeson                         as A
 import           Data.ByteString                    (ByteString)
-import qualified Data.ByteString                    as BS
+import qualified Data.ByteString                    as B
 import           Data.Serialize                     as S
 import           Data.Serialize.Get                 (getByteString, getWord16le,
                                                      getWord32le, getWord8,
@@ -356,7 +358,7 @@ instance Serialize ScriptOp where
     put op = case op of
 
         (OP_PUSHDATA payload optype)-> do
-            let len = BS.length payload
+            let len = B.length payload
             case optype of
                 OPCODE -> do
                     unless (len <= 0x4b) $ fail
@@ -544,7 +546,7 @@ opPushData bs
     | len <= 0xffffffff = OP_PUSHDATA bs OPDATA4
     | otherwise         = error "opPushData: payload size too big"
   where
-    len = BS.length bs
+    len = B.length bs
 
 -- | Transforms integers @[1 .. 16]@ to 'ScriptOp' @[OP_1 .. OP_16]@.
 intToScriptOp :: Int -> ScriptOp
@@ -552,7 +554,7 @@ intToScriptOp i
     | i `elem` [1 .. 16] = op
     | otherwise = err
   where
-    op = either (const err) id . S.decode . BS.singleton . fromIntegral $ i + 0x50
+    op = either (const err) id . S.decode . B.singleton . fromIntegral $ i + 0x50
     err = error $ "intToScriptOp: Invalid integer " ++ show i
 
 -- | Decode 'ScriptOp' @[OP_1 .. OP_16]@ to integers @[1 .. 16]@. This functions
@@ -562,7 +564,7 @@ scriptOpToInt s
     | res `elem` [1..16] = return res
     | otherwise          = Left $ "scriptOpToInt: invalid opcode " ++ show s
   where
-    res = fromIntegral (BS.head $ S.encode s) - 0x50
+    res = fromIntegral (B.head $ S.encode s) - 0x50
 
 -- | Data type describing standard transaction output scripts. Output scripts
 -- provide the conditions that must be fulfilled for someone to spend the funds
@@ -650,8 +652,8 @@ decodeOutput s = case scriptOps s of
         PayScriptHash <$> S.decode  bs
     -- Pay to Witness
     [OP_0, OP_PUSHDATA bs OPCODE]
-      | BS.length bs == 20 -> PayWitnessPKHash     <$> S.decode bs
-      | BS.length bs == 32 -> PayWitnessScriptHash <$> S.decode bs
+      | B.length bs == 20 -> PayWitnessPKHash     <$> S.decode bs
+      | B.length bs == 32 -> PayWitnessScriptHash <$> S.decode bs
     -- Provably unspendable data carrier output
     [OP_RETURN, OP_PUSHDATA bs _] -> Right $ DataCarrier bs
     -- Pay to MultiSig Keys

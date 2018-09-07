@@ -17,19 +17,13 @@ import           Control.DeepSeq
 import           Control.Monad
 import           Data.Aeson                       as A
 import           Data.Aeson.Types
-import qualified Data.Array                       as Arr
-import           Data.Bits
 import           Data.ByteString                  (ByteString)
 import qualified Data.ByteString                  as B
-import qualified Data.ByteString.Char8            as C
-import           Data.Char
 import           Data.Function
 import           Data.List
 import           Data.Maybe
 import           Data.Serialize                   as S
-import           Data.String
 import           Data.String.Conversions
-import           Data.Word
 import           GHC.Generics                     as G (Generic)
 import           Network.Haskoin.Address.Base58
 import           Network.Haskoin.Address.Bech32
@@ -86,6 +80,7 @@ base58put (PubKeyAddress h net) = do
 base58put (ScriptAddress h net) = do
         putWord8 (getScriptPrefix net)
         put h
+base58put _ = error "Cannot serialize this address as Base58"
 
 instance Show Address where
     showsPrec _ a =
@@ -126,10 +121,10 @@ addrToString a@ScriptAddress {getAddrHash160 = h, getAddrNet = net}
         return $ encodeBase58Check $ runPut $ base58put a
     | otherwise = cashAddrEncode net 1 (S.encode h)
 addrToString WitnessPubKeyAddress {getAddrHash160 = h, getAddrNet = net} = do
-    hrp <- (getBech32Prefix net)
+    hrp <- getBech32Prefix net
     segwitEncode hrp 0 (B.unpack (S.encode h))
 addrToString WitnessScriptAddress {getAddrHash256 = h, getAddrNet = net} = do
-    hrp <- (getBech32Prefix net)
+    hrp <- getBech32Prefix net
     segwitEncode hrp 0 (B.unpack (S.encode h))
 
 -- | Parse 'Base58', 'Bech32' or 'CashAddr' address, depending on network.
@@ -144,6 +139,7 @@ stringToAddr net bs = cash <|> segwit <|> b58
         1 -> do
             h <- eitherToMaybe (S.decode bs')
             return $ ScriptAddress h net
+        _ -> Nothing
     segwit = do
         hrp <- getBech32Prefix net
         (ver, bs') <- segwitDecode hrp bs

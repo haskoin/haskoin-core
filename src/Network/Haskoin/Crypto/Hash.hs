@@ -35,7 +35,7 @@ import qualified Data.Serialize.Get      as Get
 import qualified Data.Serialize.Put      as Put
 import           Data.String             (IsString, fromString)
 import           Data.String.Conversions (cs)
-import           Data.Word               (Word16, Word32)
+import           Data.Word               (Word32)
 import           Network.Haskoin.Util
 import           Text.Read               as R
 

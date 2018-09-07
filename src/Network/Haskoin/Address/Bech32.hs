@@ -53,7 +53,7 @@ instance Ix Word5 where
 
 -- | Convert an integer number into a five-bit word.
 word5 :: Integral a => a -> Word5
-word5 x = UnsafeWord5 ((fromIntegral x) .&. 31)
+word5 x = UnsafeWord5 (fromIntegral x .&. 31)
 {-# INLINE word5 #-}
 {-# SPECIALIZE INLINE word5 :: Word8 -> Word5 #-}
 
@@ -75,7 +75,7 @@ charsetMap c
     | otherwise = Nothing
   where
     upperC = toUpper c
-    inv = listArray ('0', 'Z') (repeat Nothing) // (map swap (assocs charset))
+    inv = listArray ('0', 'Z') (repeat Nothing) // map swap (assocs charset)
     swap (a, b) = (toUpper b, Just a)
 
 -- | Calculate or validate 'Bech32' checksum.
@@ -86,7 +86,7 @@ bech32Polymod values = foldl' go 1 values .&. 0x3fffffff
         foldl' xor chk' [g | (g, i) <- zip generator [25 ..], testBit chk i]
       where
         generator = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3]
-        chk' = chk .<<. 5 `xor` (fromWord5 value)
+        chk' = chk .<<. 5 `xor` fromWord5 value
 
 -- | Convert human-readable part of 'Bech32' string into a list of five-bit
 -- words.
@@ -155,7 +155,7 @@ noPadding frombits bits padValue result = do
 -- \(2^{frombits}\) and \(2^{tobits}\) must be smaller than the size of Word.
 -- Every value in 'dat' must be strictly smaller than \(2^{frombits}\).
 convertBits :: Functor f => [Word] -> Int -> Int -> Pad f -> f [Word]
-convertBits dat frombits tobits pad = fmap (concat . reverse) $ go dat 0 0 []
+convertBits dat frombits tobits pad = concat . reverse <$> go dat 0 0 []
   where
     go [] acc bits result =
         let padValue = (acc .<<. (tobits - bits)) .&. maxv
@@ -179,7 +179,8 @@ toBase32 dat =
 
 -- | Convert from five-bit word string to eight-bit word string, ignoring padding.
 toBase256 :: [Word5] -> Maybe [Word8]
-toBase256 dat = fmap (map fromIntegral) $ convertBits (map fromWord5 dat) 5 8 noPadding
+toBase256 dat =
+    map fromIntegral <$> convertBits (map fromWord5 dat) 5 8 noPadding
 
 -- | Check if witness version and program are valid.
 segwitCheck :: Word8 -> Data -> Bool

@@ -1,4 +1,6 @@
-module Network.Haskoin.Core (module X) where
+module Haskoin
+    ( module X
+    ) where
 
 import           Network.Haskoin.Address     as X
 import           Network.Haskoin.Block       as X

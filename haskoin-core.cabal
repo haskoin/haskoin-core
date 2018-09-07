@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b8c74c45c39870e532ba27b56a0434dbb130d364ab97d54efe035169d589cccd
+-- hash: 7bc90a5414ba0a438d5da34a37240900767ec94d7c00ad5c787c3d82657798ee
 
 name:           haskoin-core
 version:        1.0.0
@@ -66,6 +66,7 @@ library
     , unordered-containers
     , vector
   exposed-modules:
+      Haskoin
       Network.Haskoin.Address
       Network.Haskoin.Address.Base58
       Network.Haskoin.Address.CashAddr
@@ -74,7 +75,6 @@ library
       Network.Haskoin.Block.Headers
       Network.Haskoin.Block.Merkle
       Network.Haskoin.Constants
-      Network.Haskoin.Core
       Network.Haskoin.Crypto
       Network.Haskoin.Keys
       Network.Haskoin.Network

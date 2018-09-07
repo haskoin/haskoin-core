@@ -589,11 +589,11 @@ data ScriptOutput
 
 instance FromJSON ScriptOutput where
     parseJSON = withText "scriptoutput" $ \t -> either fail return $
-        maybeToEither "scriptoutput not hex" (decodeHex $ cs t) >>=
+        maybeToEither "scriptoutput not hex" (decodeHex t) >>=
         decodeOutputBS
 
 instance ToJSON ScriptOutput where
-    toJSON = String . cs . encodeHex . encodeOutputBS
+    toJSON = String . encodeHex . encodeOutputBS
 
 instance NFData ScriptOutput where
     rnf (PayPK k)                = rnf k

@@ -5,6 +5,7 @@ import           Data.Aeson
 import           Data.Aeson.Types
 import           Data.ByteString                (ByteString)
 import qualified Data.ByteString                as BS (append, empty, pack)
+import           Data.Text                      (Text)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Address.Base58
 import           Network.Haskoin.Constants
@@ -43,7 +44,7 @@ props net = do
     it "shows and reads address" $
         property $ forAll (arbitraryAddress net) $ \a -> read (show a) == a
 
-runVector :: (ByteString, ByteString, ByteString) -> Assertion
+runVector :: (ByteString, Text, Text) -> Assertion
 runVector (bs, e, chk) = do
     assertBool "encodeBase58" $ e == b58
     assertBool "encodeBase58Check" $ chk == b58Chk
@@ -53,7 +54,7 @@ runVector (bs, e, chk) = do
     b58    = encodeBase58 bs
     b58Chk = encodeBase58Check bs
 
-vectors :: [(ByteString, ByteString, ByteString)]
+vectors :: [(ByteString, Text, Text)]
 vectors =
     [ ( BS.empty, "", "3QJmnh" )
     , ( BS.pack [0], "1", "1Wh4bh" )

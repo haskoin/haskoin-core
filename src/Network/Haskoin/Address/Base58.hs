@@ -14,12 +14,14 @@ import qualified Data.ByteString.Char8       as C
 import           Data.Maybe                  (fromMaybe, isJust, listToMaybe)
 import           Data.Serialize              as S
 import           Data.String.Conversions     (cs)
+import           Data.Text                   (Text)
+import qualified Data.Text                   as T
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Util
 import           Numeric                     (readInt, showIntAtBase)
 
 -- | 'Base58' classic Bitcoin address format.
-type Base58 = ByteString
+type Base58 = Text
 
 -- | Symbols for Base58 encoding.
 b58Data :: ByteString
@@ -58,19 +60,19 @@ encodeBase58 bs =
     l `mappend` r
   where
     (z, b) = BS.span (== 0) bs
-    l = BS.replicate (BS.length z) (BS.index b58Data 0) -- preserve leading 0's
-    r | BS.null b = BS.empty
+    l = cs $ BS.replicate (BS.length z) (BS.index b58Data 0) -- preserve leading 0's
+    r | BS.null b = T.empty
       | otherwise = encodeBase58I $ bsToInteger b
 
--- | Decode a 'Base58'-encoded 'ByteString'.
+-- | Decode a 'Base58'-encoded 'Text' to a 'ByteString'.
 decodeBase58 :: Base58 -> Maybe ByteString
 decodeBase58 t =
     BS.append prefix <$> r
   where
-    (z, b) = BS.span (== BS.index b58Data 0) t
+    (z, b) = BS.span (== BS.index b58Data 0) (cs t)
     prefix = BS.replicate (BS.length z) 0 -- preserve leading 1's
     r | BS.null b = Just BS.empty
-      | otherwise = integerToBS <$> decodeBase58I b
+      | otherwise = integerToBS <$> decodeBase58I (cs b)
 
 -- | Computes a checksum for the input 'ByteString' and encodes the input and
 -- the checksum as 'Base58'.

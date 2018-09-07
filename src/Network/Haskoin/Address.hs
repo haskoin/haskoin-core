@@ -17,13 +17,13 @@ import           Control.DeepSeq
 import           Control.Monad
 import           Data.Aeson                       as A
 import           Data.Aeson.Types
-import           Data.ByteString                  (ByteString)
 import qualified Data.ByteString                  as B
 import           Data.Function
 import           Data.List
 import           Data.Maybe
 import           Data.Serialize                   as S
 import           Data.String.Conversions
+import           Data.Text                        (Text)
 import           GHC.Generics                     as G (Generic)
 import           Network.Haskoin.Address.Base58
 import           Network.Haskoin.Address.Bech32
@@ -96,22 +96,20 @@ instance Read Address where
             foldl' (\a n -> a <|> stringToAddr n bs) Nothing allNets
 
 instance ToJSON Address where
-    toJSON =
-        A.String .
-        cs . fromMaybe (error "Could not encode address") . addrToString
+    toJSON = A.String . fromMaybe (error "Could not encode address") . addrToString
 
 -- | JSON parsing for Bitcoin addresses. Works with 'Base58', 'CashAddr' and
 -- 'Bech32'.
 addrFromJSON :: Network -> Value -> Parser Address
 addrFromJSON net =
     withText "address" $ \t ->
-        case stringToAddr net (cs t) of
+        case stringToAddr net t of
             Nothing -> fail "could not decode address"
             Just x  -> return x
 
 -- | Convert address to human-readable string. Uses 'Base58', 'Bech32', or
 -- 'CashAddr' depending on network.
-addrToString :: Address -> Maybe ByteString
+addrToString :: Address -> Maybe Text
 addrToString a@PubKeyAddress {getAddrHash160 = h, getAddrNet = net}
     | isNothing (getCashAddrPrefix net) =
         return $ encodeBase58Check $ runPut $ base58put a
@@ -128,7 +126,7 @@ addrToString WitnessScriptAddress {getAddrHash256 = h, getAddrNet = net} = do
     segwitEncode hrp 0 (B.unpack (S.encode h))
 
 -- | Parse 'Base58', 'Bech32' or 'CashAddr' address, depending on network.
-stringToAddr :: Network -> ByteString -> Maybe Address
+stringToAddr :: Network -> Text -> Maybe Address
 stringToAddr net bs = cash <|> segwit <|> b58
   where
     b58 = eitherToMaybe . runGet (base58get net) =<< decodeBase58Check bs

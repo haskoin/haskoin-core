@@ -41,6 +41,7 @@ dependencies:
   - secp256k1
   - split
   - string-conversions
+  - text
   - time
   - transformers
   - unordered-containers

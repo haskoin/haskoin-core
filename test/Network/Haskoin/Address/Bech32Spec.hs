@@ -5,12 +5,14 @@ module Network.Haskoin.Address.Bech32Spec
 
 import           Control.Monad
 import           Data.Bits                      (xor)
-import           Data.ByteString                (ByteString, append, pack, snoc,
-                                                 uncons)
-import qualified Data.ByteString.Char8          as C
-import           Data.Char                      (toLower)
+import           Data.ByteString                (ByteString)
+import qualified Data.ByteString                as B
+import           Data.Char                      (chr, ord, toLower)
 import           Data.Maybe
 import           Data.String.Conversions
+import           Data.Text                      (Text, append, pack, snoc,
+                                                 uncons)
+import qualified Data.Text                      as T
 import           Data.Word                      (Word8)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Address.Bech32
@@ -30,21 +32,21 @@ spec = do
         it "length > 90" $
             assert $
             isNothing $
-            bech32Encode (C.pack "bc") (replicate 82 (word5 (1 :: Word8)))
+            bech32Encode "bc" (replicate 82 (word5 (1 :: Word8)))
         it "segwit version bounds" $
-            assert $ isNothing $ segwitEncode (C.pack "bc") 17 []
+            assert $ isNothing $ segwitEncode "bc" 17 []
         it "segwit prog len version 0" $
-            assert $ isNothing $ segwitEncode (C.pack "bc") 0 (replicate 30 1)
+            assert $ isNothing $ segwitEncode "bc" 0 (replicate 30 1)
         it "segwit prog len version != 0" $
-            assert $ isJust $ segwitEncode (C.pack "bc") 1 (replicate 30 1)
+            assert $ isJust $ segwitEncode "bc" 1 (replicate 30 1)
         it "segwit prog len version != 0" $
-            assert $ isNothing $ segwitEncode (C.pack "bc") 1 (replicate 41 1)
-        it "empty HRP encode" $ assert $ isNothing $ bech32Encode (C.pack "") []
+            assert $ isNothing $ segwitEncode "bc" 1 (replicate 41 1)
+        it "empty HRP encode" $ assert $ isNothing $ bech32Encode "" []
         it "empty HRP encode" $
-            assert $ isNothing $ bech32Decode (C.pack "10a06t8")
+            assert $ isNothing $ bech32Decode "10a06t8"
         it "hrp lowercased" $
-            (Just $ C.pack "hrp1g9xj8m") `shouldBe`
-            (bech32Encode (C.pack "HRP") [])
+            Just "hrp1g9xj8m" `shouldBe`
+            bech32Encode "HRP" []
 
 
 testValidChecksum :: Bech32 -> Assertion
@@ -52,14 +54,14 @@ testValidChecksum checksum = case bech32Decode checksum of
     Nothing                      -> assertFailure (show checksum)
     Just (resultHRP, resultData) -> do
         -- test that a corrupted checksum fails decoding.
-        let (hrp, rest)         = C.breakEnd (== '1') checksum
+        let (hrp, rest)         = T.breakOnEnd "1" checksum
             Just (first, rest') = uncons rest
-            checksumCorrupted   = (hrp `snoc` (first `xor` 1)) `append` rest'
+            checksumCorrupted   = (hrp `snoc` chr (ord first `xor` 1)) `append` rest'
         assertBool (show checksum ++ " corrupted")
             $ isNothing (bech32Decode checksumCorrupted)
         -- test that re-encoding the decoded checksum results in the same checksum.
         let checksumEncoded  = bech32Encode resultHRP resultData
-            expectedChecksum = Just $ C.map toLower checksum
+            expectedChecksum = Just $ T.toLower checksum
         assertEqual (show checksum ++ " re-encode")
                     expectedChecksum
                     checksumEncoded
@@ -68,10 +70,10 @@ testInvalidChecksum :: Bech32 -> Assertion
 testInvalidChecksum checksum =
     assertBool (show checksum) (isNothing $ bech32Decode checksum)
 
-testValidAddress :: (ByteString, ByteString) -> Assertion
+testValidAddress :: (Text, Text) -> Assertion
 testValidAddress (address, hexscript) = do
-    let address' = C.map toLower address
-        hrp      = C.take 2 address'
+    let address' = T.toLower address
+        hrp      = T.take 2 address'
     case segwitDecode hrp address of
         Nothing                -> assertFailure "decode failed"
         Just (witver, witprog) -> do
@@ -82,18 +84,18 @@ testValidAddress (address, hexscript) = do
                         (Just address')
                         (segwitEncode hrp witver witprog)
 
-testInvalidAddress :: ByteString -> Assertion
+testInvalidAddress :: Text -> Assertion
 testInvalidAddress address = do
-    assertBool (show address) (isNothing $ segwitDecode (C.pack "bc") address)
-    assertBool (show address) (isNothing $ segwitDecode (C.pack "tb") address)
+    assertBool (show address) (isNothing $ segwitDecode "bc" address)
+    assertBool (show address) (isNothing $ segwitDecode "tb" address)
 
 segwitScriptPubkey :: Word8 -> [Word8] -> ByteString
 segwitScriptPubkey witver witprog =
-    pack $ witver' : (fromIntegral $ length witprog) : witprog
+    B.pack $ witver' : fromIntegral (length witprog) : witprog
     where witver' = if witver == 0 then 0 else witver + 0x50
 
-validChecksums :: [ByteString]
-validChecksums = map C.pack
+validChecksums :: [Text]
+validChecksums =
     [ "A12UEL5L"
     , "an83characterlonghumanreadablepartthatcontainsthenumber1andtheexcludedcharactersbio1tt5tgs"
     , "abcdef1qpzry9x8gf2tvdw0s3jn54khce6mua7lmqqqxw"
@@ -101,9 +103,8 @@ validChecksums = map C.pack
     , "split1checkupstagehandshakeupstreamerranterredcaperred2y9e3w"
     ]
 
-invalidChecksums :: [ByteString]
-invalidChecksums = map
-    C.pack
+invalidChecksums :: [Text]
+invalidChecksums =
     [ " 1nwldj5"
     , "\DEL1axkwrx"
     , "an84characterslonghumanreadablepartthatcontainsthenumber1andtheexcludedcharactersbio1569pvx"
@@ -114,8 +115,8 @@ invalidChecksums = map
     , "de1lg7wt\xFF"
     ]
 
-validAddresses :: [(ByteString, ByteString)]
-validAddresses = map mapTuple
+validAddresses :: [(Text, Text)]
+validAddresses =
     [ ("BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4", "0014751e76e8199196d454941c45d1b3a323f1433bd6")
     , ("tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7"
       ,"00201863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262")
@@ -126,11 +127,9 @@ validAddresses = map mapTuple
     , ("tb1qqqqqp399et2xygdj5xreqhjjvcmzhxw4aywxecjdzew6hylgvsesrxh6hy"
       ,"0020000000c4a5cad46221b2a187905e5266362b99d5e91c6ce24d165dab93e86433")
     ]
-  where
-    mapTuple (a, b) = (C.pack a, C.pack b)
 
-invalidAddresses :: [ByteString]
-invalidAddresses = map C.pack
+invalidAddresses :: [Text]
+invalidAddresses =
     [ "tc1qw508d6qejxtdg4y5r3zarvary0c5xw7kg3g4ty"
     , "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5"
     , "BC13W508D6QEJXTDG4Y5R3ZARVARY0C5XW7KN40WF2"

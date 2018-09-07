@@ -18,9 +18,10 @@ import           Data.ByteString             (ByteString)
 import           Data.List
 import           Data.Maybe
 import           Data.String
+import           Data.Text                    (Text)
 import           Data.Version
-import           Data.Word                   (Word32, Word64, Word8)
-import           GHC.Generics                (Generic)
+import           Data.Word                    (Word32, Word64, Word8)
+import           GHC.Generics                 (Generic)
 import           Network.Haskoin.Block.Common
 import           Paths_haskoin_core
 import           Text.Read
@@ -88,9 +89,9 @@ data Network = Network
       -- | segregated witness active
     , getSegWit                   :: !Bool
       -- | 'CashAddr' prefix (for Bitcoin Cash)
-    , getCashAddrPrefix           :: !(Maybe ByteString)
+    , getCashAddrPrefix           :: !(Maybe Text)
       -- | 'Bech32' prefix (for SegWit network)
-    , getBech32Prefix             :: !(Maybe ByteString)
+    , getBech32Prefix             :: !(Maybe Text)
     } deriving (Eq, Generic)
 
 instance NFData Network

@@ -17,30 +17,31 @@ module Network.Haskoin.Block.Common
     , encodeCompact
     ) where
 
-import           Control.DeepSeq                   (NFData, rnf)
-import           Control.Monad                     (forM_, liftM2, mzero,
-                                                    replicateM)
-import           Data.Aeson                        (FromJSON, ToJSON,
-                                                    Value (String), parseJSON,
-                                                    toJSON, withText)
-import           Data.Bits                         (shiftL, shiftR, (.&.),
-                                                    (.|.))
-import           Data.ByteString                   (ByteString)
-import qualified Data.ByteString                   as BS
-import           Data.Hashable                     (Hashable)
-import           Data.Maybe                        (fromMaybe)
-import           Data.Serialize                    (Serialize, decode, encode,
-                                                    get, put)
-import           Data.Serialize.Get                (getWord32le)
-import           Data.Serialize.Put                (Put, putWord32le)
-import           Data.String                       (IsString, fromString)
-import           Data.String.Conversions           (cs)
-import           Data.Word                         (Word32)
+import           Control.DeepSeq                    (NFData, rnf)
+import           Control.Monad                      (forM_, liftM2, mzero,
+                                                     replicateM)
+import           Data.Aeson                         (FromJSON, ToJSON,
+                                                     Value (String), parseJSON,
+                                                     toJSON, withText)
+import           Data.Bits                          (shiftL, shiftR, (.&.),
+                                                     (.|.))
+import           Data.ByteString                    (ByteString)
+import qualified Data.ByteString                    as BS
+import           Data.Hashable                      (Hashable)
+import           Data.Maybe                         (fromMaybe)
+import           Data.Serialize                     (Serialize, decode, encode,
+                                                     get, put)
+import           Data.Serialize.Get                 (getWord32le)
+import           Data.Serialize.Put                 (Put, putWord32le)
+import           Data.String                        (IsString, fromString)
+import           Data.String.Conversions            (cs)
+import           Data.Text                          (Text)
+import           Data.Word                          (Word32)
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Network.Common
 import           Network.Haskoin.Transaction.Common
 import           Network.Haskoin.Util
-import qualified Text.Read                         as R
+import qualified Text.Read                          as R
 
 -- | Height of a block in the blockchain, starting at 0 for Genesis.
 type BlockHeight = Word32
@@ -87,20 +88,20 @@ instance IsString BlockHash where
         in fromMaybe e $ hexToBlockHash $ cs s
 
 instance FromJSON BlockHash where
-    parseJSON = withText "block hash" $ \t ->
-        maybe mzero return $ hexToBlockHash $ cs t
+    parseJSON = withText "block hash" $
+        maybe mzero return . hexToBlockHash
 
 instance ToJSON BlockHash where
-    toJSON = String . cs . blockHashToHex
+    toJSON = String . blockHashToHex
 
 -- | Block hashes are reversed with respect to the in-memory byte order in a
 -- block hash when displayed.
-blockHashToHex :: BlockHash -> ByteString
+blockHashToHex :: BlockHash -> Text
 blockHashToHex (BlockHash h) = encodeHex (BS.reverse (encode h))
 
 -- | Convert a human-readable hex block hash into a 'BlockHash'. Bytes are
 -- reversed as normal.
-hexToBlockHash :: ByteString -> Maybe BlockHash
+hexToBlockHash :: Text -> Maybe BlockHash
 hexToBlockHash hex = do
     bs <- BS.reverse <$> decodeHex hex
     h <- eitherToMaybe (decode bs)

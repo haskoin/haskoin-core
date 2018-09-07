@@ -20,7 +20,7 @@ import           Test.QuickCheck
 -- About 1/3 of HMAC DRBG SHA-256 test vectors are tested here
 
 spec :: Spec
-spec = do
+spec =
     describe "hash" $ do
         it "join512( split512(h) ) == h" $
             property $

@@ -29,6 +29,7 @@ import           Data.Maybe                     (fromMaybe, maybe)
 import           Data.Serialize                 as S
 import           Data.String                    (IsString, fromString)
 import           Data.String.Conversions        (cs)
+import           Data.Text                      (Text)
 import           Data.Word                      (Word32, Word64)
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Network.Common
@@ -54,11 +55,11 @@ instance IsString TxHash where
         in fromMaybe e $ hexToTxHash $ cs s
 
 instance FromJSON TxHash where
-    parseJSON = withText "txid" $ \t ->
-        maybe mzero return $ hexToTxHash $ cs t
+    parseJSON = withText "txid" $
+        maybe mzero return . hexToTxHash
 
 instance ToJSON TxHash where
-    toJSON = A.String . cs . txHashToHex
+    toJSON = A.String . txHashToHex
 
 -- | Transaction hash excluding signatures.
 nosigTxHash :: Tx -> TxHash
@@ -68,11 +69,11 @@ nosigTxHash tx =
     clearInput ti = ti { scriptInput = B.empty }
 
 -- | Convert transaction hash to hex form, reversing bytes.
-txHashToHex :: TxHash -> ByteString
+txHashToHex :: TxHash -> Text
 txHashToHex (TxHash h) = encodeHex (B.reverse (S.encode h))
 
 -- | Convert transaction hash from hex, reversing bytes.
-hexToTxHash :: ByteString -> Maybe TxHash
+hexToTxHash :: Text -> Maybe TxHash
 hexToTxHash hex = do
     bs <- B.reverse <$> decodeHex hex
     h <- either (const Nothing) Just (S.decode bs)
@@ -204,10 +205,10 @@ putWitnessData = mapM_ putWitnessStack
 
 instance FromJSON Tx where
     parseJSON = withText "Tx" $
-        maybe mzero return . (eitherToMaybe . S.decode <=< decodeHex) . cs
+        maybe mzero return . (eitherToMaybe . S.decode <=< decodeHex)
 
 instance ToJSON Tx where
-    toJSON = A.String . cs . encodeHex . S.encode
+    toJSON = A.String . encodeHex . S.encode
 
 -- | Data type representing a transaction input.
 data TxIn =
@@ -271,10 +272,10 @@ instance NFData OutPoint where
 
 instance FromJSON OutPoint where
     parseJSON = withText "OutPoint" $
-        maybe mzero return . (eitherToMaybe . S.decode <=< decodeHex) . cs
+        maybe mzero return . (eitherToMaybe . S.decode <=< decodeHex)
 
 instance ToJSON OutPoint where
-    toJSON = A.String . cs . encodeHex . S.encode
+    toJSON = A.String . encodeHex . S.encode
 
 instance Serialize OutPoint where
     get = do

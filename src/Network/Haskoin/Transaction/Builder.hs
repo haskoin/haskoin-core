@@ -47,6 +47,7 @@ import           Data.Maybe                         (catMaybes, fromJust,
                                                      mapMaybe, maybeToList)
 import           Data.Serialize                     (encode)
 import           Data.String.Conversions            (cs)
+import           Data.Text                          (Text)
 import           Data.Word                          (Word64)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
@@ -230,8 +231,7 @@ guessMSSize (m, n)
 
 -- | Build a transaction by providing a list of outpoints as inputs
 -- and a list of recipient addresses and amounts as outputs.
-buildAddrTx ::
-       Network -> [OutPoint] -> [(ByteString, Word64)] -> Either String Tx
+buildAddrTx :: Network -> [OutPoint] -> [(Text, Word64)] -> Either String Tx
 buildAddrTx net xs ys = buildTx xs =<< mapM f ys
   where
     f (s, v) =

@@ -2,10 +2,10 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 7bc90a5414ba0a438d5da34a37240900767ec94d7c00ad5c787c3d82657798ee
+-- hash: f099018fce29c2b61c3cfaaf7eca0457f46978327c595aaff25b4ef6228be16f
 
 name:           haskoin-core
-version:        1.0.0
+version:        0.5.0
 synopsis:       Bitcoin & Bitcoin Cash library for Haskell
 description:    Haskoin Core is a complete Bitcoin and Bitcoin Cash library of functions and data types for Haskell developers.
 category:       Bitcoin, Finance, Network
@@ -17,7 +17,7 @@ maintainer:     xenog@protonmail.com
 license:        PublicDomain
 license-file:   UNLICENSE
 build-type:     Simple
-cabal-version:  >= 2.0
+cabal-version:  >= 1.10
 extra-source-files:
     CHANGELOG.md
     data/forkid_script_tests.json
@@ -106,8 +106,6 @@ library
       Network.Haskoin.Test.Util
       Network.Haskoin.Transaction.Builder
       Network.Haskoin.Transaction.Common
-      Paths_haskoin_core
-  autogen-modules:
       Paths_haskoin_core
   default-language: Haskell2010
 

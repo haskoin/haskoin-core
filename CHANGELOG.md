@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.5.0
 ### Added
 - Support for Bitcoin Cash network block sychronization.
 - Support for Bitcoin Cash signatures.
@@ -15,7 +15,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Support for Bitcoin Cash Testnet3 Network.
 - Support for new Haskoin Wallet.
 - Minikey decoding for Casascius coins.
-- Support for LTS Haskell 12.5.
 - New tests for various networks and new features.
 - Added `CHANGELOG.md` file.
 - Support for SegWit addresses.
@@ -29,6 +28,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Updated `.gitignore`.
 - Renamed network constants to use same style for BTC and BCH.
 - Network constants must be passed explicitly.
+- Target LTS Haskell 12.9.
 
 ### Removed
 - Removed `.stylish-haskell.yaml` files.

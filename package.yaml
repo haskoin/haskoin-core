@@ -1,5 +1,5 @@
 name: haskoin-core
-version: 0.5.0
+version: 0.5.1
 synopsis: Bitcoin & Bitcoin Cash library for Haskell
 description: 'Haskoin Core is a complete Bitcoin and Bitcoin Cash library of functions and data types for Haskell developers.'
 category: Bitcoin, Finance, Network
@@ -38,7 +38,7 @@ dependencies:
   - QuickCheck
   - safe
   - scientific
-  - secp256k1
+  - secp256k1-haskell
   - split
   - string-conversions
   - text

@@ -4,4 +4,4 @@ nix:
     - secp256k1
 extra-deps:
   - murmur3-1.0.3
-  - secp256k1-haskell-0.1.1
+  - secp256k1-haskell-0.1.2

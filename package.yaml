@@ -1,5 +1,5 @@
 name: haskoin-core
-version: 0.5.1
+version: 0.5.2
 synopsis: Bitcoin & Bitcoin Cash library for Haskell
 description: 'Haskoin Core is a complete Bitcoin and Bitcoin Cash library of functions and data types for Haskell developers.'
 category: Bitcoin, Finance, Network
@@ -17,34 +17,16 @@ extra-source-files:
   - README.md
   - CHANGELOG.md
 dependencies:
-  - aeson
-  - array
   - base >=4.7 && <5
-  - base16-bytestring
+  - aeson
   - bytestring
   - cereal
-  - conduit
   - containers
-  - cryptonite
-  - deepseq
-  - entropy
-  - hashable
-  - hspec
-  - HUnit
-  - memory
   - mtl
-  - murmur3
-  - network
   - QuickCheck
-  - safe
-  - scientific
-  - secp256k1-haskell
   - split
   - string-conversions
   - text
-  - time
-  - transformers
-  - unordered-containers
   - vector
 library:
   source-dirs: src
@@ -65,8 +47,32 @@ library:
     - Network.Haskoin.Test
     - Network.Haskoin.Transaction
     - Network.Haskoin.Util
+  dependencies:
+    - array
+    - base16-bytestring
+    - conduit
+    - cryptonite
+    - deepseq
+    - entropy
+    - hashable
+    - memory
+    - murmur3
+    - network
+    - scientific
+    - secp256k1-haskell
+    - time
+    - transformers
+    - unordered-containers
+tests:
 tests:
   spec:
-    defaults: hspec/hspec@master
+    main: Spec.hs
+    source-dirs: test
+    verbatim:
+      build-tool-depends:
+          hspec-discover:hspec-discover
     dependencies:
+      - hspec
       - haskoin-core
+      - HUnit
+      - safe

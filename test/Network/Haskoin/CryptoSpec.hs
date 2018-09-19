@@ -1,12 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.CryptoSpec (spec) where
 
-import           Control.Monad             (forM_, replicateM_)
-import           Control.Monad.Trans       (liftIO)
+import           Control.Monad
 import           Data.ByteString           (ByteString)
 import qualified Data.ByteString.Char8     as C (pack)
 import           Data.Maybe                (fromMaybe, isJust, isNothing)
-import           Data.Serialize            (encode)
 import           Data.Text                 (Text)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
@@ -138,10 +136,10 @@ checkKeyCompressed = do
 
 checkMatchingAddress :: Assertion
 checkMatchingAddress = do
-    assertBool "Key 1"  $ Just addr1  == addrToString (pubKeyAddr btc pub1)
-    assertBool "Key 2"  $ Just addr2  == addrToString (pubKeyAddr btc pub2)
-    assertBool "Key 1C" $ Just addr1C == addrToString (pubKeyAddr btc pub1C)
-    assertBool "Key 2C" $ Just addr2C == addrToString (pubKeyAddr btc pub2C)
+    assertBool "Key 1"  $ addr1  == addrToString (pubKeyAddr btc pub1)
+    assertBool "Key 2"  $ addr2  == addrToString (pubKeyAddr btc pub2)
+    assertBool "Key 1C" $ addr1C == addrToString (pubKeyAddr btc pub1C)
+    assertBool "Key 2C" $ addr2C == addrToString (pubKeyAddr btc pub2C)
 
 checkSignatures :: Hash256 -> Assertion
 checkSignatures h = do

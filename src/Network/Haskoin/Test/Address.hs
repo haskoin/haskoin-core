@@ -15,8 +15,8 @@ arbitraryAddress net =
 
 -- | Arbitrary pay-to-public-key-hash address.
 arbitraryPubKeyAddress :: Network -> Gen Address
-arbitraryPubKeyAddress net = PubKeyAddress <$> arbitraryHash160 <*> pure net
+arbitraryPubKeyAddress net = p2pkhAddr net <$> arbitraryHash160
 
 -- | Arbitrary pay-to-script-hash address.
 arbitraryScriptAddress :: Network -> Gen Address
-arbitraryScriptAddress net = ScriptAddress <$> arbitraryHash160 <*> pure net
+arbitraryScriptAddress net = p2shAddr net <$> arbitraryHash160

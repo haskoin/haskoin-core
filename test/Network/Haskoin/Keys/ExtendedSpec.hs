@@ -4,7 +4,6 @@ module Network.Haskoin.Keys.ExtendedSpec (spec) where
 import           Data.Aeson                 as A
 import           Data.Aeson.Types           as A
 import           Data.Bits                  ((.&.))
-import           Data.ByteString            (ByteString)
 import qualified Data.ByteString.Lazy.Char8 as B8
 import           Data.Either                (isLeft)
 import           Data.Map.Strict            (singleton)
@@ -16,7 +15,6 @@ import           Data.Text                  (Text)
 import           Data.Word                  (Word32)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto
 import           Network.Haskoin.Keys
 import           Network.Haskoin.Test
 import           Network.Haskoin.Util
@@ -295,7 +293,7 @@ runXKeyVec (v, m) = do
     assertBool "xPrvID" $ encodeHex (S.encode $ xPrvID m) == head v
     assertBool "xPrvFP" $ encodeHex (S.encode $ xPrvFP m) == v !! 1
     assertBool "xPrvAddr" $
-        addrToString (xPubAddr $ deriveXPubKey m) == Just (v !! 2)
+        addrToString (xPubAddr $ deriveXPubKey m) == v !! 2
     assertBool "prvKey" $ encodeHex (getSecKey $ xPrvKey m) == v !! 3
     assertBool "xPrvWIF" $ xPrvWif m == v !! 4
     assertBool "pubKey" $

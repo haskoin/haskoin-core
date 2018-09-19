@@ -1,30 +1,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.TransactionSpec (spec) where
 
-import           Control.Monad               (forM_, unless, zipWithM_)
-import           Control.Monad.IO.Class
 import           Data.Aeson                  as A
-import           Data.Aeson.Types            as A
-import           Data.ByteString             (ByteString)
-import qualified Data.ByteString             as BS
-import qualified Data.ByteString.Lazy        as BL
-import           Data.Either                 (fromLeft, fromRight, isLeft,
-                                              isRight)
-import           Data.List                   (groupBy)
+import qualified Data.ByteString             as B
+import           Data.Either
 import           Data.Map.Strict             (singleton)
 import           Data.Maybe
 import           Data.Serialize              as S
-import           Data.Serialize.Get          (getWord32le, runGet)
-import           Data.Serialize.Put          (putWord32le, runPut)
 import           Data.String                 (fromString)
 import           Data.String.Conversions
 import           Data.Text                   (Text)
-import qualified Data.Vector                 as V
 import           Data.Word                   (Word32, Word64)
-import           GHC.Exts                    (IsString (..))
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto
 import           Network.Haskoin.Keys
 import           Network.Haskoin.Script
 import           Network.Haskoin.Test
@@ -32,8 +20,7 @@ import           Network.Haskoin.Transaction
 import           Network.Haskoin.Util
 import           Safe                        (readMay)
 import           Test.Hspec
-import           Test.HUnit                  (Assertion, assertBool,
-                                              assertFailure)
+import           Test.HUnit                  (Assertion, assertBool)
 import           Test.QuickCheck
 
 spec :: Spec
@@ -41,9 +28,9 @@ spec = do
     let net = btc
     describe "transaction unit tests" $ do
         it "compute txid from tx" $
-            zipWithM_ (curry mapTxIDVec) txIDVec [0 ..]
+            mapM_ runTxIDVec txIDVec
         it "build pkhash transaction (generated from bitcoind)" $
-            zipWithM_ (curry mapPKHashVec) pkHashVec [0 ..]
+            mapM_ runPKHashVec pkHashVec
         it "encode satoshi core script pubkey" tEncodeSatoshiCoreScriptPubKey
     describe "btc transaction" $ do
         it "decode and encode txid" $
@@ -90,9 +77,6 @@ spec = do
 cerealID :: (Serialize a, Eq a) => a -> Bool
 cerealID x = S.decode (S.encode x) == Right x
 
-mapTxIDVec :: ((Text, Text), Int) -> Assertion
-mapTxIDVec (v,i) = runTxIDVec v
-
 runTxIDVec :: (Text, Text) -> Assertion
 runTxIDVec (tid, tx) = assertBool "txid" $ txHashToHex (txHash txBS) == tid
   where
@@ -113,10 +97,6 @@ txIDVec =
       , "010000000370ac0a1ae588aaf284c308d67ca92c69a39e2db81337e563bf40c59da0a5cf63000000006a4730440220360d20baff382059040ba9be98947fd678fb08aab2bb0c172efa996fd8ece9b702201b4fb0de67f015c90e7ac8a193aeab486a1f587e0f54d0fb9552ef7f5ce6caec032103579ca2e6d107522f012cd00b52b9a65fb46f0c57b9b8b6e377c48f526a44741affffffff7d815b6447e35fbea097e00e028fb7dfbad4f3f0987b4734676c84f3fcd0e804010000006b483045022100c714310be1e3a9ff1c5f7cacc65c2d8e781fc3a88ceb063c6153bf950650802102200b2d0979c76e12bb480da635f192cc8dc6f905380dd4ac1ff35a4f68f462fffd032103579ca2e6d107522f012cd00b52b9a65fb46f0c57b9b8b6e377c48f526a44741affffffff3f1f097333e4d46d51f5e77b53264db8f7f5d2e18217e1099957d0f5af7713ee010000006c493046022100b663499ef73273a3788dea342717c2640ac43c5a1cf862c9e09b206fcb3f6bb8022100b09972e75972d9148f2bdd462e5cb69b57c1214b88fc55ca638676c07cfc10d8032103579ca2e6d107522f012cd00b52b9a65fb46f0c57b9b8b6e377c48f526a44741affffffff0380841e00000000001976a914bfb282c70c4191f45b5a6665cad1682f2c9cfdfb88ac80841e00000000001976a9149857cc07bed33a5cf12b9c5e0500b675d500c81188ace0fd1c00000000001976a91443c52850606c872403c0601e69fa34b26f62db4a88ac00000000"
       )
     ]
-
-mapPKHashVec :: (([(Text, Word32)], [(Text, Word64)], Text), Int)
-            -> Assertion
-mapPKHashVec (v, i) = runPKHashVec v
 
 runPKHashVec :: ([(Text, Word32)], [(Text, Word64)], Text) -> Assertion
 runPKHashVec (xs, ys, res) =
@@ -182,25 +162,15 @@ encodeSatoshiCoreScriptPubKey =
             Just i  -> encodeHex . S.encode . intToScriptOp $ i
             Nothing -> error $ "encodeSatoshiCoreScriptPubKey: " ++ s
 
-type TestComment = String
-
 {- Building Transactions -}
 
 testBuildAddrTx :: Network -> Address -> TestCoin -> Bool
-testBuildAddrTx net a (TestCoin v) =
-    case a of
-        PubKeyAddress h net -> Right (PayPKHash h) == out
-        ScriptAddress h net -> Right (PayScriptHash h) == out
+testBuildAddrTx net a (TestCoin v)
+    | isPubKeyAddress a = Right (PayPKHash (getAddrHash160 a)) == out
+    | isScriptAddress a = Right (PayScriptHash (getAddrHash160 a)) == out
+    | otherwise = undefined
   where
-    tx =
-        buildAddrTx
-            net
-            []
-            [ ( fromMaybe
-                    (error "Could not convert address to string")
-                    (addrToString a)
-              , v)
-            ]
+    tx = buildAddrTx net [] [(addrToString a, v)]
     out =
         decodeOutputBS $
         scriptOutput $
@@ -214,7 +184,7 @@ testGuessSize net tx
   where
     delta = pki + sum (map fst msi)
     guess = guessTxSize pki msi pkout msout
-    len = BS.length $ S.encode tx
+    len = B.length $ S.encode tx
     ins = map f $ txIn tx
     f i =
         fromRight (error "Could not decode input") $

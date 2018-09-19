@@ -32,7 +32,6 @@ import           Data.Serialize.Get                 (getByteString, getWord16le,
                                                      isEmpty)
 import           Data.Serialize.Put                 (putByteString, putWord16le,
                                                      putWord32le, putWord8)
-import           Data.String.Conversions
 import           Data.Word                          (Word8)
 import           Network.Haskoin.Crypto.Hash
 import           Network.Haskoin.Keys.Common

@@ -36,8 +36,7 @@ import           Data.Aeson                         (FromJSON, ToJSON,
                                                      Value (Object), object,
                                                      parseJSON, toJSON, (.:),
                                                      (.:?), (.=))
-import           Data.ByteString                    (ByteString)
-import qualified Data.ByteString                    as BS
+import qualified Data.ByteString                    as B
 import           Data.Conduit                       (ConduitT, Void, await,
                                                      runConduit, (.|))
 import           Data.Conduit.List                  (sourceList)
@@ -203,8 +202,8 @@ guessTxSize :: Int         -- ^ number of regular transaction inputs
 guessTxSize pki msi pkout msout =
     8 + inpLen + inp + outLen + out
   where
-    inpLen = BS.length $ encode $ VarInt $ fromIntegral $ length msi + pki
-    outLen = BS.length $ encode $ VarInt $ fromIntegral $ pkout + msout
+    inpLen = B.length $ encode $ VarInt $ fromIntegral $ length msi + pki
+    outLen = B.length $ encode $ VarInt $ fromIntegral $ pkout + msout
     inp = pki * 148 + sum (map guessMSSize msi)
              -- (20: hash160) + (5: opcodes) +
              -- (1: script len) + (8: Word64)
@@ -218,12 +217,12 @@ guessTxSize pki msi pkout msout =
 guessMSSize :: (Int,Int) -> Int
 guessMSSize (m, n)
     -- OutPoint (36) + Sequence (4) + Script
- = 40 + fromIntegral (BS.length $ encode $ VarInt $ fromIntegral scp) + scp
+ = 40 + fromIntegral (B.length $ encode $ VarInt $ fromIntegral scp) + scp
     -- OP_M + n*PubKey + OP_N + OP_CHECKMULTISIG
   where
     rdm =
         fromIntegral $
-        BS.length $ encode $ opPushData $ BS.replicate (n * 34 + 3) 0
+        B.length $ encode $ opPushData $ B.replicate (n * 34 + 3) 0
     -- Redeem + m*sig + OP_0
     scp = rdm + m * 73 + 1
 
@@ -237,7 +236,7 @@ buildAddrTx net xs ys = buildTx xs =<< mapM f ys
     f (s, v) =
         maybe (Left ("buildAddrTx: Invalid address " ++ cs s)) Right $ do
             a <- stringToAddr net s
-            o <- addressToOutput a
+            let o = addressToOutput a
             return (o, v)
 
 -- | Build a transaction by providing a list of outpoints as inputs
@@ -246,7 +245,7 @@ buildTx :: [OutPoint] -> [(ScriptOutput, Word64)] -> Either String Tx
 buildTx xs ys =
     mapM fo ys >>= \os -> return $ Tx 1 (map fi xs) os [] 0
   where
-    fi outPoint = TxIn outPoint BS.empty maxBound
+    fi outPoint = TxIn outPoint B.empty maxBound
     fo (o, v)
         | v <= 2100000000000000 = return $ TxOut v $ encodeOutputBS o
         | otherwise =
@@ -399,7 +398,7 @@ mergeTxs net txs os
     outs = map (first $ (\(o,v,_) -> (o,v)) . fromJust) $ filter (isJust . fst) zipOp
     f (_, _, o) txin = o == prevOutput txin
     emptyTxs = map (\tx -> foldl clearInput tx outs) txs
-    ins is i = updateIndex i is (\ti -> ti{ scriptInput = BS.empty })
+    ins is i = updateIndex i is (\ti -> ti{ scriptInput = B.empty })
     clearInput tx (_, i) =
         Tx (txVersion tx) (ins (txIn tx) i) (txOut tx) [] (txLockTime tx)
 
@@ -414,7 +413,7 @@ mergeTxInput net txs tx ((so, val), i)
     -- Ignore transactions with empty inputs
  = do
     let ins = map (scriptInput . (!! i) . txIn) txs
-    sigRes <- mapM extractSigs $ filter (not . BS.null) ins
+    sigRes <- mapM extractSigs $ filter (not . B.null) ins
     let rdm = snd $ head sigRes
     unless (all (== rdm) $ map snd sigRes) $ Left "Redeem scripts do not match"
     si <- encodeInputBS <$> go (nub $ concatMap fst sigRes) so rdm
@@ -477,7 +476,7 @@ verifyStdInput net tx i = go (scriptInput $ txIn tx !! i)
             Right (RegularInput (SpendPKHash (TxSignature sig sh) pub)) ->
                 case so of
                     PayPKHash h ->
-                        pubKeyAddr net pub == PubKeyAddress h net &&
+                        pubKeyAddr net pub == p2pkhAddr net h &&
                         verifyHashSig
                             (txSigHash net tx out val i sh)
                             sig
@@ -492,7 +491,7 @@ verifyStdInput net tx i = go (scriptInput $ txIn tx !! i)
             Right (ScriptHashInput si rdm) ->
                 case so of
                     PayScriptHash h ->
-                        p2shAddr net rdm == ScriptAddress h net &&
+                        payToScriptAddress net rdm == p2shAddr net h &&
                         go (encodeInputBS $ RegularInput si) rdm val
                     _ -> False
             _ -> False

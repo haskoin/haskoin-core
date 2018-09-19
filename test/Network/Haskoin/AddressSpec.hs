@@ -9,7 +9,6 @@ import           Data.Text                      (Text)
 import           Network.Haskoin.Address
 import           Network.Haskoin.Address.Base58
 import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto
 import           Network.Haskoin.Test
 import           Test.Hspec
 import           Test.HUnit                     (Assertion, assertBool)
@@ -40,7 +39,7 @@ props net = do
     it "encodes and decodes address" $
         property $
         forAll (arbitraryAddress net) $ \a ->
-            (stringToAddr net =<< addrToString a) == Just a
+            stringToAddr net (addrToString a) == Just a
     it "shows and reads address" $
         property $ forAll (arbitraryAddress net) $ \a -> read (show a) == a
 

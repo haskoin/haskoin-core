@@ -2,11 +2,23 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Network.Haskoin.Address
-    ( Address(..)
+    ( Address
+    , getAddrHash160
+    , getAddrHash256
+    , getAddrNet
+    , isPubKeyAddress
+    , isScriptAddress
+    , isWitnessPubKeyAddress
+    , isWitnessScriptAddress
     , addrToString
     , stringToAddr
     , addrFromJSON
     , pubKeyAddr
+    , pubKeyWitnessAddr
+    , p2pkhAddr
+    , p2wpkhAddr
+    , p2shAddr
+    , p2wshAddr
       -- * Private Key Wallet Import Format (WIF)
     , fromWif
     , toWif
@@ -60,6 +72,27 @@ instance Ord Address where
 
 instance NFData Address
 
+-- | 'Address' pays to a public key hash.
+isPubKeyAddress :: Address -> Bool
+isPubKeyAddress PubKeyAddress {} = True
+isPubKeyAddress _                = False
+
+-- | 'Address' pays to a script hash.
+isScriptAddress :: Address -> Bool
+isScriptAddress ScriptAddress {} = True
+isScriptAddress _                = False
+
+-- | 'Address' pays to a witness public key hash. Only valid for SegWit
+-- networks.
+isWitnessPubKeyAddress :: Address -> Bool
+isWitnessPubKeyAddress WitnessPubKeyAddress {} = True
+isWitnessPubKeyAddress _                       = False
+
+-- | 'Address' pays to a witness script hash. Only valid for SegWit networks.
+isWitnessScriptAddress :: Address -> Bool
+isWitnessScriptAddress WitnessScriptAddress {} = True
+isWitnessScriptAddress _                       = False
+
 -- | Deserializer for binary 'Base58' addresses.
 base58get :: Network -> Get Address
 base58get net = do
@@ -83,10 +116,7 @@ base58put (ScriptAddress h net) = do
 base58put _ = error "Cannot serialize this address as Base58"
 
 instance Show Address where
-    showsPrec _ a =
-        case addrToString a of
-            Just s  -> shows s
-            Nothing -> fail "Cannot show this transaction"
+    showsPrec _ a = shows (addrToString a)
 
 instance Read Address where
     readPrec = do
@@ -96,7 +126,7 @@ instance Read Address where
             foldl' (\a n -> a <|> stringToAddr n bs) Nothing allNets
 
 instance ToJSON Address where
-    toJSON = A.String . fromMaybe (error "Could not encode address") . addrToString
+    toJSON = A.String . addrToString
 
 -- | JSON parsing for Bitcoin addresses. Works with 'Base58', 'CashAddr' and
 -- 'Bech32'.
@@ -109,21 +139,32 @@ addrFromJSON net =
 
 -- | Convert address to human-readable string. Uses 'Base58', 'Bech32', or
 -- 'CashAddr' depending on network.
-addrToString :: Address -> Maybe Text
+addrToString :: Address -> CashAddr
 addrToString a@PubKeyAddress {getAddrHash160 = h, getAddrNet = net}
     | isNothing (getCashAddrPrefix net) =
-        return $ encodeBase58Check $ runPut $ base58put a
-    | otherwise = cashAddrEncode net 0 (S.encode h)
+        encodeBase58Check $ runPut $ base58put a
+    | otherwise =
+        fromMaybe (error "Colud not encode a CashAddr") $
+        cashAddrEncode net 0 (S.encode h)
+
 addrToString a@ScriptAddress {getAddrHash160 = h, getAddrNet = net}
     | isNothing (getCashAddrPrefix net) =
-        return $ encodeBase58Check $ runPut $ base58put a
-    | otherwise = cashAddrEncode net 1 (S.encode h)
-addrToString WitnessPubKeyAddress {getAddrHash160 = h, getAddrNet = net} = do
-    hrp <- getBech32Prefix net
-    segwitEncode hrp 0 (B.unpack (S.encode h))
-addrToString WitnessScriptAddress {getAddrHash256 = h, getAddrNet = net} = do
-    hrp <- getBech32Prefix net
-    segwitEncode hrp 0 (B.unpack (S.encode h))
+        encodeBase58Check $ runPut $ base58put a
+    | otherwise =
+        fromMaybe (error "Could not encode a CashAddr") $
+        cashAddrEncode net 1 (S.encode h)
+
+addrToString WitnessPubKeyAddress {getAddrHash160 = h, getAddrNet = net} =
+    let mt = do
+            hrp <- getBech32Prefix net
+            segwitEncode hrp 0 (B.unpack (S.encode h))
+     in fromMaybe (error "Could not encode a Bech32 address") mt
+
+addrToString WitnessScriptAddress {getAddrHash256 = h, getAddrNet = net} =
+    let mt = do
+            hrp <- getBech32Prefix net
+            segwitEncode hrp 0 (B.unpack (S.encode h))
+     in fromMaybe (error "Could not encode a Bech32 address") mt
 
 -- | Parse 'Base58', 'Bech32' or 'CashAddr' address, depending on network.
 stringToAddr :: Network -> Text -> Maybe Address
@@ -155,6 +196,32 @@ stringToAddr net bs = cash <|> segwit <|> b58
 -- | Obtain a P2PKH address from a public key.
 pubKeyAddr :: Network -> PubKeyI -> Address
 pubKeyAddr net k = PubKeyAddress (addressHash (S.encode k)) net
+
+-- | Obtain a P2PKH address from a 'Hash160'.
+p2pkhAddr :: Network -> Hash160 -> Address
+p2pkhAddr net h = PubKeyAddress h net
+
+-- | Obtain a P2WPKH address from a public key. Only on SegWit networks.
+pubKeyWitnessAddr :: Network -> PubKeyI -> Maybe Address
+pubKeyWitnessAddr net k
+    | getSegWit net = Just $ WitnessPubKeyAddress (addressHash (S.encode k)) net
+    | otherwise = Nothing
+
+-- | Obtain a P2WPKH address from a 'Hash160'.
+p2wpkhAddr :: Network -> Hash160 -> Maybe Address
+p2wpkhAddr net h
+    | getSegWit net = Just $ WitnessPubKeyAddress h net
+    | otherwise = Nothing
+
+-- | Obtain a P2SH address from a 'Hash160'.
+p2shAddr :: Network -> Hash160 -> Address
+p2shAddr net h = ScriptAddress h net
+
+-- | Obtain a P2WSH address from a 'Hash256'
+p2wshAddr :: Network -> Hash256 -> Maybe Address
+p2wshAddr net h
+    | getSegWit net = Just $ WitnessScriptAddress h net
+    | otherwise = Nothing
 
 -- | Decode private key from WIF (wallet import format) string.
 fromWif :: Network -> Base58 -> Maybe SecKeyI

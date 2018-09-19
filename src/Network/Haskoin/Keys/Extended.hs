@@ -90,7 +90,7 @@ import           Data.Aeson                     as A (FromJSON, ToJSON,
 import           Data.Aeson.Types               (Parser)
 import           Data.Bits                      (clearBit, setBit, testBit)
 import           Data.ByteString                (ByteString)
-import qualified Data.ByteString                as BS
+import qualified Data.ByteString                as B
 import           Data.Either                    (fromRight)
 import           Data.List                      (foldl')
 import           Data.List.Split                (splitOn)
@@ -241,7 +241,7 @@ prvSubKey xkey child
     | otherwise = error "Invalid child derivation index"
   where
     pK = xPubKey $ deriveXPubKey xkey
-    msg = BS.append (exportPubKey True pK) (encode child)
+    msg = B.append (exportPubKey True pK) (encode child)
     (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) msg
     k = fromMaybe err $ tweakSecKey (xPrvKey xkey) a
     err = throw $ DerivationException "Invalid prvSubKey derivation"
@@ -256,7 +256,7 @@ pubSubKey xKey child
         XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK (xPubNet xKey)
     | otherwise = error "Invalid child derivation index"
   where
-    msg    = BS.append (exportPubKey True (xPubKey xKey)) (encode child)
+    msg    = B.append (exportPubKey True (xPubKey xKey)) (encode child)
     (a, c) = split512 $ hmac512 (encode $ xPubChain xKey) msg
     pK     = fromMaybe err $ tweakPubKey (xPubKey xKey) a
     err    = throw $ DerivationException "Invalid pubSubKey derivation"
@@ -276,7 +276,7 @@ hardSubKey xkey child
     | otherwise = error "Invalid child derivation index"
   where
     i      = setBit child 31
-    msg    = BS.append (bsPadPrvKey $ xPrvKey xkey) (encode i)
+    msg    = B.append (bsPadPrvKey $ xPrvKey xkey) (encode i)
     (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) msg
     k      = fromMaybe err $ tweakSecKey (xPrvKey xkey) a
     err    = throw $ DerivationException "Invalid hardSubKey derivation"
@@ -312,14 +312,14 @@ xPubID = ripemd160 . encode . sha256 . exportPubKey True . xPubKey
 -- | Computes the key fingerprint of an extended private key.
 xPrvFP :: XPrvKey -> Word32
 xPrvFP =
-    fromRight err . decode . BS.take 4 . encode . xPrvID
+    fromRight err . decode . B.take 4 . encode . xPrvID
   where
     err = error "Could not decode xPrvFP"
 
 -- | Computes the key fingerprint of an extended public key.
 xPubFP :: XPubKey -> Word32
 xPubFP =
-    fromRight err . decode . BS.take 4 . encode . xPubID
+    fromRight err . decode . B.take 4 . encode . xPubID
   where
     err = error "Could not decode xPubFP"
 
@@ -433,7 +433,7 @@ deriveAddrs k =
 -- public, soft derivation.
 deriveMSAddr :: Network -> [XPubKey] -> Int -> KeyIndex -> (Address, RedeemScript)
 deriveMSAddr net keys m i
-    | all ((== net) . xPubNet) keys = (p2shAddr net rdm, rdm)
+    | all ((== net) . xPubNet) keys = (payToScriptAddress net rdm, rdm)
     | otherwise = error "Some extended public keys on the wrong network"
   where
     rdm = sortMulSig $ PayMulSig k m

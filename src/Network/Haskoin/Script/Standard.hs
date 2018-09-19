@@ -3,17 +3,16 @@ module Network.Haskoin.Script.Standard
 ( ScriptInput(..)
 , SimpleInput(..)
 , RedeemScript
-, p2shAddr
-, p2wshAddr
-, outputAddress
 , inputAddress
 , encodeInput
 , encodeInputBS
 , decodeInput
 , decodeInputBS
-, addressToOutput
 , addressToScript
 , addressToScriptBS
+, addressToOutput
+, payToScriptAddress
+, payToWitnessScriptAddress
 , scriptToAddress
 , scriptToAddressBS
 , sortMulSig
@@ -97,37 +96,32 @@ instance NFData ScriptInput where
     rnf (RegularInput i)      = rnf i
     rnf (ScriptHashInput i o) = rnf i `seq` rnf o
 
-
 -- | Compute a pay-to-script-hash address for an output script.
-p2shAddr :: Network -> ScriptOutput -> Address
-p2shAddr net out = ScriptAddress (addressHash (encodeOutputBS out)) net
+payToScriptAddress :: Network -> ScriptOutput -> Address
+payToScriptAddress net out = p2shAddr net (addressHash (encodeOutputBS out))
 
 -- | Compute a pay-to-witness-script-hash address for an output script. Only on
 -- SegWit networks.
-p2wshAddr :: Network -> ScriptOutput -> Maybe Address
-p2wshAddr net out = do
-    guard (getSegWit net)
-    return $ WitnessScriptAddress (sha256 (encodeOutputBS out)) net
+payToWitnessScriptAddress :: Network -> ScriptOutput -> Maybe Address
+payToWitnessScriptAddress net out = p2wshAddr net (sha256 (encodeOutputBS out))
 
 -- | Encode an output script from an address. Will fail if using a
 -- pay-to-witness address on a non-SegWit network.
-addressToOutput :: Address -> Maybe ScriptOutput
-addressToOutput (PubKeyAddress h _)        = Just (PayPKHash h)
-addressToOutput (ScriptAddress h _)        = Just (PayScriptHash h)
-addressToOutput (WitnessPubKeyAddress h n)
-    | getSegWit n = Just (PayWitnessPKHash h)
-    | otherwise = Nothing
-addressToOutput (WitnessScriptAddress h n)
-    | getSegWit n = Just (PayWitnessScriptHash h)
-    | otherwise = Nothing
+addressToOutput :: Address -> ScriptOutput
+addressToOutput a
+    | isPubKeyAddress a = PayPKHash (getAddrHash160 a)
+    | isScriptAddress a = PayScriptHash (getAddrHash160 a)
+    | isWitnessPubKeyAddress a = PayWitnessPKHash (getAddrHash160 a)
+    | isWitnessScriptAddress a = PayWitnessScriptHash (getAddrHash256 a)
+    | otherwise = undefined
 
 -- | Get output script AST for an 'Address'.
-addressToScript :: Address -> Maybe Script
-addressToScript a = encodeOutput <$> addressToOutput a
+addressToScript :: Address -> Script
+addressToScript = encodeOutput . addressToOutput
 
 -- | Encode address as output script in 'ByteString' form.
-addressToScriptBS :: Address -> Maybe ByteString
-addressToScriptBS a = encode <$> addressToScript a
+addressToScriptBS :: Address -> ByteString
+addressToScriptBS = encode . addressToScript
 
 -- | Decode an output script into an 'Address' if it has such representation.
 scriptToAddress :: Network -> Script -> Maybe Address
@@ -141,20 +135,22 @@ scriptToAddressBS net = eitherToMaybe . (outputAddress net <=< decodeOutputBS)
 outputAddress :: Network -> ScriptOutput -> Either String Address
 outputAddress net s =
     case s of
-        PayPKHash h -> return $ PubKeyAddress h net
-        PayScriptHash h -> return $ ScriptAddress h net
-        PayPK k -> return $ pubKeyAddr net k
-        PayWitnessPKHash h
-            | getSegWit net -> return $ WitnessPubKeyAddress h net
-        PayWitnessScriptHash h
-            | getSegWit net -> return $ WitnessScriptAddress h net
+        PayPKHash h -> Right $ p2pkhAddr net h
+        PayScriptHash h -> Right $ p2shAddr net h
+        PayPK k -> Right $ pubKeyAddr net k
+        PayWitnessPKHash h ->
+            maybeToEither "outputAddress: segwit not supported in this network" $
+            p2wpkhAddr net h
+        PayWitnessScriptHash h ->
+            maybeToEither "outputAddress: segwit not supported in this network" $
+            p2wshAddr net h
         _ -> Left "outputAddress: bad output script type"
 
 -- | Infer the address of a 'ScriptInput'
 inputAddress :: Network -> ScriptInput -> Either String Address
 inputAddress net s = case s of
     RegularInput (SpendPKHash _ key) -> return $ pubKeyAddr net key
-    ScriptHashInput _ rdm -> return $ p2shAddr net rdm
+    ScriptHashInput _ rdm -> return $ payToScriptAddress net rdm
     _ -> Left "inputAddress: bad input script type"
 
 -- | Heuristic to decode an input script into one of the standard types.

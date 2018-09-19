@@ -2,18 +2,12 @@
 module Network.Haskoin.ScriptSpec (spec) where
 
 import           Control.Monad
-import           Control.Monad.IO.Class
 import           Data.Aeson                  as A
 import           Data.ByteString             (ByteString)
-import qualified Data.ByteString             as BS
-import qualified Data.ByteString.Char8       as C
-import qualified Data.ByteString.Lazy        as BL
-import qualified Data.ByteString.Lazy.Char8  as CL
-import           Data.Char                   (ord)
+import qualified Data.ByteString             as B
+import qualified Data.ByteString.Lazy        as L
 import           Data.Either
-import           Data.Int                    (Int64)
 import           Data.List
-import           Data.List.Split             (splitOn)
 import           Data.Map.Strict             (singleton)
 import           Data.Maybe
 import           Data.Monoid                 ((<>))
@@ -24,13 +18,11 @@ import           Data.Text                   (Text)
 import           Data.Word
 import           Network.Haskoin.Address
 import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto
 import           Network.Haskoin.Keys
 import           Network.Haskoin.Script
 import           Network.Haskoin.Test
 import           Network.Haskoin.Transaction
 import           Network.Haskoin.Util
-import           Numeric                     (readHex)
 import           Test.Hspec
 import           Test.HUnit                  as HUnit
 import           Test.QuickCheck
@@ -96,7 +88,7 @@ standardSpec net = do
             Right (RegularInput (SpendPK TxSignatureEmpty))
         let pk =
                 derivePubKeyI $
-                wrapSecKey True $ fromJust $ secKey $ BS.replicate 32 1
+                wrapSecKey True $ fromJust $ secKey $ B.replicate 32 1
         decodeInput net (Script [OP_0, opPushData $ S.encode pk]) `shouldBe`
             Right (RegularInput (SpendPKHash TxSignatureEmpty pk))
         decodeInput net (Script [OP_0, OP_0]) `shouldBe`
@@ -130,7 +122,7 @@ scriptSpec net =
           -- We can disable specific tests by adding a DISABLED flag in the data
          ->
             unless ("DISABLED" `isInfixOf` flags) $ do
-                let strict =
+                let _strict =
                         "DERSIG" `isInfixOf` flags ||
                         "STRICTENC" `isInfixOf` flags ||
                         "NULLDUMMY" `isInfixOf` flags
@@ -181,7 +173,7 @@ forkIdScriptSpec net =
                 "OK" -> ver `shouldBe` True
                 _    -> ver `shouldBe` False
 
-creditTx :: BS.ByteString -> Word64 -> Tx
+creditTx :: ByteString -> Word64 -> Tx
 creditTx scriptPubKey val =
     Tx 1 [txI] [txO] [] 0
   where
@@ -193,11 +185,11 @@ creditTx scriptPubKey val =
         , txInSequence = maxBound
         }
 
-spendTx :: BS.ByteString -> Word64 -> BS.ByteString -> Tx
+spendTx :: ByteString -> Word64 -> ByteString -> Tx
 spendTx scriptPubKey val scriptSig =
     Tx 1 [txI] [txO] [] 0
   where
-    txO = TxOut {outValue = val, scriptOutput = BS.empty}
+    txO = TxOut {outValue = val, scriptOutput = B.empty}
     txI =
         TxIn
         { prevOutput = OutPoint (txHash $ creditTx scriptPubKey val) 0
@@ -205,9 +197,9 @@ spendTx scriptPubKey val scriptSig =
         , txInSequence = maxBound
         }
 
-parseScript :: String -> BS.ByteString
+parseScript :: String -> ByteString
 parseScript str =
-    BS.concat $ fromMaybe err $ mapM f $ words str
+    B.concat $ fromMaybe err $ mapM f $ words str
   where
     f = decodeHex . cs . dropHex . replaceToken
     dropHex ('0':'x':xs) = xs
@@ -254,7 +246,7 @@ txSigHashSpec net =
                     eitherToMaybe . S.decode =<< decodeHex (cs scpStr)
                 sh = fromIntegral shI
                 res =
-                    eitherToMaybe . S.decode . BS.reverse =<<
+                    eitherToMaybe . S.decode . B.reverse =<<
                     decodeHex (cs resStr)
             Just (txSigHash net tx s 0 i sh) `shouldBe` res
 
@@ -285,10 +277,11 @@ sigHashSpec net = do
     it "can read . show" $
         property $ forAll arbitrarySigHash $ \sh -> read (show sh) `shouldBe` sh
     it "can correctly show" $ do
-        show (0x00 :: SigHash) `shouldBe` "SigHash " <> show 0x00
-        show (0x01 :: SigHash) `shouldBe` "SigHash " <> show 0x01
-        show (0xff :: SigHash) `shouldBe` "SigHash " <> show 0xff
-        show (0xabac3344 :: SigHash) `shouldBe` "SigHash " <> show 0xabac3344
+        show (0x00 :: SigHash) `shouldBe` "SigHash " <> show (0x00 :: Word32)
+        show (0x01 :: SigHash) `shouldBe` "SigHash " <> show (0x01 :: Word32)
+        show (0xff :: SigHash) `shouldBe` "SigHash " <> show (0xff :: Word32)
+        show (0xabac3344 :: SigHash) `shouldBe` "SigHash " <>
+            show (0xabac3344 :: Word32)
     it "can add a forkid" $ do
         0x00 `sigHashAddForkId` 0x00 `shouldBe` 0x00
         0xff `sigHashAddForkId` 0x00ffffff `shouldBe` 0xffffffff
@@ -327,7 +320,7 @@ sigHashSpec net = do
         isSigHashUnknown 0x04 `shouldBe` True
     it "can decodeTxSig . encode a TxSignature" $
         property $
-        forAll (arbitraryTxSignature net) $ \(_, _, ts@(TxSignature _ sh)) ->
+        forAll (arbitraryTxSignature net) $ \(_, _, ts) ->
             decodeTxSig net (encodeTxSig ts) `shouldBe` Right ts
     it "can produce the sighash one" $
         property $
@@ -351,68 +344,10 @@ testSigHashOne net tx s val acp =
 
 readTestFile :: A.FromJSON a => FilePath -> IO a
 readTestFile fp = do
-    bs <- BL.readFile $ "data/" <> fp <> ".json"
+    bs <- L.readFile $ "data/" <> fp <> ".json"
     maybe (error $ "Could not read test file " <> fp) return $ A.decode bs
 
 {- Parse tests from bitcoin-qt repository -}
-
-type ParseError = String
-
--- | Splits the JSON test into the different parts.  No processing,
--- just handling the fact that comments may not be there or might have
--- junk before it.  Output is the tuple ( sig, pubKey, flags, comment
--- ) as strings
-testParts :: [String] -> Maybe (String, String, String, String)
-testParts l =
-    let (x, r) = splitAt 3 l
-        comment =
-            if null r
-                then ""
-                else last r
-    in if length x < 3
-           then Nothing
-           else let [sig, pubKey, flags] = x
-                in Just (sig, pubKey, flags, comment)
-
--- | Maximum value of sequence number
-maxSeqNum :: Word32
-maxSeqNum = 0xffffffff -- Perhaps this should be moved to constants.
-
--- | Some of the scripts tests require transactions be built in a
--- standard way.  This function builds the crediting transaction.
--- Quoting the top comment of script_valid.json: "It is evaluated as
--- if there was a crediting coinbase transaction with two 0 pushes as
--- scriptSig, and one output of 0 satoshi and given scriptPubKey,
--- followed by a spending transaction which spends this output as only
--- input (and correct prevout hash), using the given scriptSig. All
--- nLockTimes are 0, all nSequences are max."
-buildCreditTx :: ByteString -> Tx
-buildCreditTx scriptPubKey =
-    Tx 1 [ txI ] [ txO ] [] 0
-  where
-    txO = TxOut { outValue = 0
-                , scriptOutput = scriptPubKey
-                }
-    txI = TxIn { prevOutput = nullOutPoint
-               , scriptInput = S.encode $ Script [ OP_0, OP_0 ]
-               , txInSequence = maxSeqNum
-               }
-
--- | Build a spending transaction for the tests.  Takes as input the
--- crediting transaction
-buildSpendTx :: ByteString  -- ScriptSig
-             -> Tx          -- Creditting Tx
-             -> Tx
-buildSpendTx scriptSig creditTx =
-    Tx 1 [ txI ] [ txO ] [] 0
-  where
-    txI = TxIn { prevOutput = OutPoint { outPointHash = txHash creditTx
-                                       , outPointIndex = 0
-                                       }
-               , scriptInput  = scriptSig
-               , txInSequence = maxSeqNum
-               }
-    txO = TxOut { outValue = 0, scriptOutput = BS.empty }
 
 mapMulSigVector :: ((Text, Text), Int) -> Spec
 mapMulSigVector (v, i) =
@@ -424,12 +359,12 @@ runMulSigVector :: (Text, Text) -> Assertion
 runMulSigVector (a, ops) = assertBool "multisig vector" $ Just a == b
   where
     s = do
-        s <- decodeHex ops
-        eitherToMaybe $ S.decode s
+        s' <- decodeHex ops
+        eitherToMaybe $ S.decode s'
     b = do
         o <- s
         d <- eitherToMaybe $ decodeOutput o
-        addrToString $ p2shAddr btc d
+        return . addrToString $ payToScriptAddress btc d
 
 sigDecodeMap :: Network -> (Text, Int) -> Spec
 sigDecodeMap net (_, i) =

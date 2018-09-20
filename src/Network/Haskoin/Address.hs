@@ -139,7 +139,7 @@ addrFromJSON net =
 
 -- | Convert address to human-readable string. Uses 'Base58', 'Bech32', or
 -- 'CashAddr' depending on network.
-addrToString :: Address -> CashAddr
+addrToString :: Address -> Text
 addrToString a@PubKeyAddress {getAddrHash160 = h, getAddrNet = net}
     | isNothing (getCashAddrPrefix net) =
         encodeBase58Check $ runPut $ base58put a

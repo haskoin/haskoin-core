@@ -4,6 +4,7 @@ module Network.Haskoin.Script.Standard
 , SimpleInput(..)
 , RedeemScript
 , inputAddress
+, outputAddress
 , encodeInput
 , encodeInputBS
 , decodeInput

@@ -31,6 +31,7 @@ import           Data.Aeson                       as A
 import           Data.Aeson.Types
 import qualified Data.ByteString                  as B
 import           Data.Function
+import           Data.Hashable
 import           Data.List
 import           Data.Maybe
 import           Data.Serialize                   as S
@@ -61,6 +62,16 @@ data Address
     | WitnessScriptAddress { getAddrHash256 :: !Hash256
                            , getAddrNet     :: !Network }
     deriving (Eq, G.Generic)
+
+instance Hashable Address where
+    hashWithSalt i (PubKeyAddress h _)        = i `hashWithSalt` h
+    hashWithSalt i (ScriptAddress h _)        = i `hashWithSalt` h
+    hashWithSalt i (WitnessPubKeyAddress h _) = i `hashWithSalt` h
+    hashWithSalt i (WitnessScriptAddress h _) = i `hashWithSalt` h
+    hash (PubKeyAddress h _)        = hash h
+    hash (ScriptAddress h _)        = hash h
+    hash (WitnessPubKeyAddress h _) = hash h
+    hash (WitnessScriptAddress h _) = hash h
 
 instance Ord Address where
     compare = compare `on` f

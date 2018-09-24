@@ -64,7 +64,6 @@ library:
     - transformers
     - unordered-containers
 tests:
-tests:
   spec:
     main: Spec.hs
     source-dirs: test

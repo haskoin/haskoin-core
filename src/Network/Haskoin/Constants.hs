@@ -14,7 +14,7 @@ module Network.Haskoin.Constants
     ) where
 
 import           Control.DeepSeq
-import           Data.ByteString             (ByteString)
+import           Data.ByteString              (ByteString)
 import           Data.List
 import           Data.Maybe
 import           Data.String
@@ -32,8 +32,8 @@ versionString = fromString (showVersion version)
 
 -- | Constants for network.
 data Network = Network
-    { -- | lowercase alphanumeric and dashes
-      getNetworkName              :: !String
+      -- | lowercase alphanumeric and dashes
+    { getNetworkName              :: !String
       -- | network Haskell identifier
     , getNetworkIdent             :: !String
       -- | prefix for 'Base58' P2PKH addresses
@@ -92,6 +92,8 @@ data Network = Network
     , getCashAddrPrefix           :: !(Maybe Text)
       -- | 'Bech32' prefix (for SegWit network)
     , getBech32Prefix             :: !(Maybe Text)
+      -- | Replace-By-Fee (BIP-125)
+    , getReplaceByFee             :: !Bool
     } deriving (Eq, Generic)
 
 instance NFData Network
@@ -196,6 +198,7 @@ btc =
     , getSegWit = True
     , getCashAddrPrefix = Nothing
     , getBech32Prefix = Just "bc"
+    , getReplaceByFee = True
     }
 
 -- | Testnet for Bitcoin SegWit network.
@@ -251,6 +254,7 @@ btcTest =
     , getSegWit = True
     , getCashAddrPrefix = Nothing
     , getBech32Prefix = Just "tb"
+    , getReplaceByFee = True
     }
 
 -- | RegTest for Bitcoin SegWit network.
@@ -298,6 +302,7 @@ btcRegTest =
     , getSegWit = True
     , getCashAddrPrefix = Nothing
     , getBech32Prefix = Just "bcrt"
+    , getReplaceByFee = True
     }
 
 -- | Bitcoin Cash network. Symbol: BCH.
@@ -385,6 +390,7 @@ bch =
     , getSegWit = False
     , getCashAddrPrefix = Just "bitcoincash"
     , getBech32Prefix = Nothing
+    , getReplaceByFee = False
     }
 
 -- | Testnet for Bitcoin Cash network.
@@ -447,6 +453,7 @@ bchTest =
     , getSegWit = False
     , getCashAddrPrefix = Just "bchtest"
     , getBech32Prefix = Nothing
+    , getReplaceByFee = False
     }
 
 -- | RegTest for Bitcoin Cash network.
@@ -497,6 +504,7 @@ bchRegTest =
     , getSegWit = False
     , getCashAddrPrefix = Just "bchreg"
     , getBech32Prefix = Nothing
+    , getReplaceByFee = False
     }
 
 allNets :: [Network]

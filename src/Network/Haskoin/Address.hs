@@ -1,6 +1,16 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Network.Haskoin.Address
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Base58, CashAddr, Bech32 address and WIF private key serialization support.
+-}
 module Network.Haskoin.Address
     ( Address
     , getAddrHash160
@@ -51,16 +61,28 @@ import           Text.Read                        as R
 data Address
     -- | pay to public key hash (regular)
     = PubKeyAddress { getAddrHash160 :: !Hash160
-                    , getAddrNet     :: !Network }
+                        -- ^ RIPEMD160 hash of public key's SHA256 hash
+                    , getAddrNet :: !Network
+                        -- ^ address network
+                     }
     -- | pay to script hash
     | ScriptAddress { getAddrHash160 :: !Hash160
-                    , getAddrNet     :: !Network }
+                        -- ^ RIPEMD160 hash of script's SHA256 hash
+                    , getAddrNet :: !Network
+                        -- ^ address network
+                     }
     -- | pay to witness public key hash
     | WitnessPubKeyAddress { getAddrHash160 :: !Hash160
-                           , getAddrNet     :: !Network }
+                               -- ^ RIPEMD160 hash of public key's SHA256 hash
+                           , getAddrNet :: !Network
+                               -- ^ address network
+                           }
     -- | pay to witness script hash
     | WitnessScriptAddress { getAddrHash256 :: !Hash256
-                           , getAddrNet     :: !Network }
+                               -- ^ HASH256 hash of script
+                           , getAddrNet :: !Network
+                               -- ^ address network
+                           }
     deriving (Eq, G.Generic)
 
 instance Hashable Address where

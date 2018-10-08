@@ -1,14 +1,18 @@
 {-|
-  Arbitrary types for Network.Haskoin.Crypto
+Module      : Network.Haskoin.Test.Keys
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
 -}
 module Network.Haskoin.Test.Keys where
 
-import           Data.Bits                        (clearBit)
-import           Data.List                        (foldl')
-import           Data.Word                        (Word32)
+import           Data.Bits                     (clearBit)
+import           Data.List                     (foldl')
+import           Data.Word                     (Word32)
 import           Network.Haskoin.Constants
-import           Network.Haskoin.Crypto.Hash
-import           Network.Haskoin.Crypto.Signature
+import           Network.Haskoin.Crypto
 import           Network.Haskoin.Keys.Common
 import           Network.Haskoin.Keys.Extended
 import           Network.Haskoin.Test.Crypto
@@ -77,7 +81,7 @@ arbitraryParsedPath =
 -- nonce.
 arbitrarySignature :: Gen (Hash256, SecKey, Sig)
 arbitrarySignature = do
-    msg <- arbitraryHash256
+    m <- arbitraryHash256
     key <- arbitrary
-    let sig = signHash key msg
-    return (msg, key, sig)
+    let sig = signHash key m
+    return (m, key, sig)

@@ -1,6 +1,16 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-|
+Module      : Network.Haskoin.Block.Headers
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Block chain header synchronization and proof-of-work consensus functions.
+-}
 module Network.Haskoin.Block.Headers
     ( BlockNode(..)
     , BlockHeaders(..)
@@ -86,11 +96,11 @@ type ShortBlockHash = Word64
 -- structure compact.
 type BlockMap = HashMap ShortBlockHash ShortByteString
 
--- | Represents accumulated work in the blockchain so far.
+-- | Represents accumulated work in the block chain so far.
 type BlockWork = Integer
 
 -- | Data structure representing a block header and its position in the
--- blockchain.
+-- block chain.
 data BlockNode
     -- | non-Genesis block header
     = BlockNode { nodeHeader :: !BlockHeader
@@ -251,7 +261,7 @@ genesisNode net =
         }
 
 -- | Validate a list of continuous block headers and import them to the
--- blockchain. Return 'Left' on failure with error information.
+-- block chain. Return 'Left' on failure with error information.
 connectBlocks :: BlockHeaders m
               => Network
               -> Timestamp       -- ^ current time
@@ -306,7 +316,7 @@ parentBlock :: BlockHeaders m
             -> m (Maybe BlockNode)
 parentBlock bh = getBlockHeader (prevBlock bh)
 
--- | Validate and connect single block header to the blockchain. Return 'Left' if fails
+-- | Validate and connect single block header to the block chain. Return 'Left' if fails
 -- to be validated.
 connectBlock ::
        BlockHeaders m
@@ -552,6 +562,7 @@ nextDaaWorkRequired net par bh
         blockTimestamp bh >
         blockTimestamp (nodeHeader par) + getTargetSpacing net * 2
 
+-- | Compute Bitcoin Cash DAA target for a new block.
 computeTarget :: Network -> BlockNode -> BlockNode -> Integer
 computeTarget net f l =
     let work = (nodeWork l - nodeWork f) * fromIntegral (getTargetSpacing net)
@@ -566,6 +577,7 @@ computeTarget net f l =
         work' = work `div` fromIntegral actualTimespan'
      in 2 ^ (256 :: Integer) `div` work'
 
+-- | Get suitable block for Bitcoin Cash DAA computation.
 getSuitableBlock :: BlockHeaders m => BlockNode -> m BlockNode
 getSuitableBlock par = do
     unless (nodeHeight par >= 3) $ error "Block height is less than three"

@@ -1,4 +1,14 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-|
+Module      : Network.Haskoin.Block.Common
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Common data types and functions to handle blocks from the block chain.
+-}
 module Network.Haskoin.Block.Common
     ( Block(..)
     , BlockHeight
@@ -25,8 +35,7 @@ import           Data.Aeson                         (FromJSON, ToJSON,
                                                      toJSON, withText)
 import           Data.Bits                          (shiftL, shiftR, (.&.),
                                                      (.|.))
-import           Data.ByteString                    (ByteString)
-import qualified Data.ByteString                    as BS
+import qualified Data.ByteString                    as B
 import           Data.Hashable                      (Hashable)
 import           Data.Maybe                         (fromMaybe)
 import           Data.Serialize                     (Serialize, decode, encode,
@@ -43,7 +52,7 @@ import           Network.Haskoin.Transaction.Common
 import           Network.Haskoin.Util
 import qualified Text.Read                          as R
 
--- | Height of a block in the blockchain, starting at 0 for Genesis.
+-- | Height of a block in the block chain, starting at 0 for Genesis.
 type BlockHeight = Word32
 
 -- | Block timestamp as Unix time (seconds since 1970-01-01 00:00 UTC).
@@ -97,13 +106,13 @@ instance ToJSON BlockHash where
 -- | Block hashes are reversed with respect to the in-memory byte order in a
 -- block hash when displayed.
 blockHashToHex :: BlockHash -> Text
-blockHashToHex (BlockHash h) = encodeHex (BS.reverse (encode h))
+blockHashToHex (BlockHash h) = encodeHex (B.reverse (encode h))
 
 -- | Convert a human-readable hex block hash into a 'BlockHash'. Bytes are
 -- reversed as normal.
 hexToBlockHash :: Text -> Maybe BlockHash
 hexToBlockHash hex = do
-    bs <- BS.reverse <$> decodeHex hex
+    bs <- B.reverse <$> decodeHex hex
     h <- eitherToMaybe (decode bs)
     return $ BlockHash h
 
@@ -208,7 +217,7 @@ putGetBlockMsg v xs h = do
 -- only. The response to a 'GetHeaders' request is a 'Headers' message
 -- containing a list of block headers. A maximum of 2000 block headers can be
 -- returned. 'GetHeaders' is used by simplified payment verification (SPV)
--- clients to exclude block contents when synchronizing the blockchain.
+-- clients to exclude block contents when synchronizing the block chain.
 data GetHeaders =
     GetHeaders {
                  -- | protocol version

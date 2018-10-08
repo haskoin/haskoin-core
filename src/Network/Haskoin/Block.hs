@@ -1,3 +1,13 @@
+{-|
+Module      : Network.Haskoin.Block
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Most functions relating to blocks are exported by this module.
+-}
 module Network.Haskoin.Block
     ( module Network.Haskoin.Block.Common
       -- * Block Header Chain

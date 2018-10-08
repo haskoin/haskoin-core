@@ -1,5 +1,10 @@
 {-|
-  Arbitrary types for Network.Haskoin.Node.Message
+Module      : Network.Haskoin.Test.Message
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
 -}
 module Network.Haskoin.Test.Message where
 

@@ -1,5 +1,16 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Network.Haskoin.Constants
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Network constants for various networks, including Bitcoin SegWit (BTC), Bitcoin
+Cash (BCH), and corresponding public test and private regression test networks.
+-}
 module Network.Haskoin.Constants
     ( Network(..)
     , btc
@@ -32,8 +43,8 @@ versionString = fromString (showVersion version)
 
 -- | Constants for network.
 data Network = Network
-      -- | lowercase alphanumeric and dashes
-    { getNetworkName              :: !String
+    { -- | lowercase alphanumeric and dashes
+      getNetworkName              :: !String
       -- | network Haskell identifier
     , getNetworkIdent             :: !String
       -- | prefix for 'Base58' P2PKH addresses
@@ -507,5 +518,6 @@ bchRegTest =
     , getReplaceByFee = False
     }
 
+-- | List of all networks supported by this library.
 allNets :: [Network]
 allNets = [btc, bch, btcTest, bchTest, btcRegTest, bchRegTest]

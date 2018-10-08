@@ -1,15 +1,23 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Network.Haskoin.Crypto.Signature
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+ECDSA signatures using secp256k1 curve. Uses functions from upstream secp256k1
+library.
+-}
 module Network.Haskoin.Crypto.Signature
-    ( -- * Signatures
-      Sig
-    , putSig
+    ( putSig
     , getSig
     , signHash
     , verifyHashSig
     , isCanonicalHalfOrder
     , decodeStrictSig
     , exportSig
-    , exportCompactSig
     ) where
 
 import           Control.Monad               (guard, unless, when)

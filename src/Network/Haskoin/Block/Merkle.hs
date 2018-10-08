@@ -1,3 +1,13 @@
+{-|
+Module      : Network.Haskoin.Block.Merkle
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Function to deal with Merkle trees inside blocks.
+-}
 module Network.Haskoin.Block.Merkle
     ( MerkleBlock(..)
     , MerkleRoot

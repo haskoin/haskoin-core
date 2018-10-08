@@ -1,5 +1,12 @@
 {-|
-  This package provides test types for Network.Haskoin
+Module      : Network.Haskoin.Test
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Arbitrary instances for testing.
 -}
 module Network.Haskoin.Test
     ( module X

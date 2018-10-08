@@ -1,4 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Network.Haskoin.Script.Common
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Common script-related functions and data types.
+-}
 module Network.Haskoin.Script.Common
 ( ScriptOp(..)
 , Script(..)
@@ -603,36 +613,37 @@ instance NFData ScriptOutput where
     rnf (PayWitnessScriptHash h) = rnf h
     rnf (DataCarrier a)          = rnf a
 
--- | Returns True if the script is a pay to public key output.
+-- | Is script a pay-to-public-key output?
 isPayPK :: ScriptOutput -> Bool
 isPayPK (PayPK _) = True
 isPayPK _         = False
 
--- | Returns True if the script is a pay to public key hash output.
+-- | Is script a pay-to-pub-key-hash output?
 isPayPKHash :: ScriptOutput -> Bool
 isPayPKHash (PayPKHash _) = True
 isPayPKHash _             = False
 
--- | Returns True if the script is a multisig output.
+-- | Is script a pay-to-multi-sig output?
 isPayMulSig :: ScriptOutput -> Bool
 isPayMulSig (PayMulSig _ _) = True
 isPayMulSig _               = False
 
--- | Returns true if the script is a pay to script hash output.
+-- | Is script a pay-to-script-hash output?
 isPayScriptHash :: ScriptOutput -> Bool
 isPayScriptHash (PayScriptHash _) = True
 isPayScriptHash _                 = False
 
--- | Returns true if the script is a pay to witness public key hash output.
+-- | Is script a pay-to-witness-pub-key-hash output?
 isPayWitnessPKHash :: ScriptOutput -> Bool
 isPayWitnessPKHash (PayWitnessPKHash _) = True
 isPayWitnessPKHash _                    = False
 
+-- | Is script a pay-to-witness-script-hash output?
 isPayWitnessScriptHash :: ScriptOutput -> Bool
 isPayWitnessScriptHash (PayWitnessScriptHash _) = True
 isPayWitnessScriptHash _                        = False
 
--- | Returns True if the script is an @OP_RETURN@ "datacarrier" output
+-- | Is script a data carrier output?
 isDataCarrier :: ScriptOutput -> Bool
 isDataCarrier (DataCarrier _) = True
 isDataCarrier _               = False

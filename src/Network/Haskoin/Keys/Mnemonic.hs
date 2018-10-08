@@ -1,5 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
--- | Mnemonic keys (BIP-39). Only English dictionary.
+{-|
+Module      : Network.Haskoin.Keys.Mnemonic
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Mnemonic keys (BIP-39). Only English dictionary.
+-}
 module Network.Haskoin.Keys.Mnemonic
     ( -- * Mnemonic Sentences
       Entropy
@@ -18,7 +27,6 @@ import           Data.Bits               (shiftL, shiftR)
 import qualified Data.ByteArray          as BA
 import           Data.ByteString         (ByteString)
 import qualified Data.ByteString         as BS
-import qualified Data.ByteString.Char8   as C (unwords, words)
 import           Data.List
 import qualified Data.Map.Strict         as M
 import           Data.Maybe

@@ -1,4 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Network.Haskoin.Address.CashAddr
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Support for Bitcoin Cash (BCH) CashAddr format.
+-}
 module Network.Haskoin.Address.CashAddr
     ( CashPrefix
     , CashVersion

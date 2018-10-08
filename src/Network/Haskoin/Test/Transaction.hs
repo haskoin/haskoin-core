@@ -1,5 +1,10 @@
 {-|
-  Arbitrary types for Network.Haskoin.Transaction.
+Module      : Network.Haskoin.Test.Transaction
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
 -}
 module Network.Haskoin.Test.Transaction where
 import           Control.Monad
@@ -18,6 +23,7 @@ import           Network.Haskoin.Test.Util
 import           Network.Haskoin.Transaction
 import           Test.QuickCheck
 
+-- | Wrapped coin value for testing.
 newtype TestCoin = TestCoin { getTestCoin :: Word64 }
     deriving (Eq, Show)
 
@@ -61,6 +67,7 @@ arbitraryLegacyTx net = arbitraryWLTx net False
 arbitraryWitnessTx :: Network -> Gen Tx
 arbitraryWitnessTx net = arbitraryWLTx net True
 
+-- | Arbitrary witness or legacy transaction.
 arbitraryWLTx :: Network -> Bool -> Gen Tx
 arbitraryWLTx net wit = do
     ni <- choose (0, 5)
@@ -139,6 +146,7 @@ arbitraryPKSigInput net = arbitraryAnyInput net False
 arbitraryPKHashSigInput :: Network -> Gen (SigInput, SecKeyI)
 arbitraryPKHashSigInput net = arbitraryAnyInput net True
 
+-- | Arbitrary 'SigInput'.
 arbitraryAnyInput :: Network -> Bool -> Gen (SigInput, SecKeyI)
 arbitraryAnyInput net pkh = do
     (k, p) <- arbitraryKeyPair
@@ -147,6 +155,7 @@ arbitraryAnyInput net pkh = do
     (val, op, sh) <- arbitraryInputStuff net
     return (SigInput out val op sh Nothing, k)
 
+-- | Arbitrary value, out point and sighash for an input.
 arbitraryInputStuff :: Network -> Gen (Word64, OutPoint, SigHash)
 arbitraryInputStuff net = do
     val <- getTestCoin <$> arbitrarySatoshi net

@@ -1,3 +1,11 @@
+{-|
+Module      : Network.Haskoin.Test.Util
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+-}
 module Network.Haskoin.Test.Util where
 
 import           Data.ByteString       (ByteString, pack)

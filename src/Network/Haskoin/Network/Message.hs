@@ -1,3 +1,13 @@
+{-|
+Module      : Network.Haskoin.Network.Message
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Peer-to-peer network message serialization.
+-}
 module Network.Haskoin.Network.Message
     ( -- * Network Message
       Message(..)

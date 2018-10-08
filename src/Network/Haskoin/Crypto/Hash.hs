@@ -1,4 +1,15 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-|
+Module      : Network.Haskoin.Crypto.Hash
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Hashing functions and corresponding data types. Uses functions from the
+cryptonite library.
+-}
 module Network.Haskoin.Crypto.Hash
     ( -- * Hashes
       Hash512(getHash512)

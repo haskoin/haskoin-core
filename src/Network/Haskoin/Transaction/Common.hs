@@ -1,5 +1,15 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-|
+Module      : Network.Haskoin.Transaction.Common
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Code related to transactions parsing and serialization.
+-}
 module Network.Haskoin.Transaction.Common
     ( Tx(..)
     , TxIn(..)

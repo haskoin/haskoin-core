@@ -1,6 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Network.Haskoin.Address.Base58
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
 
-{- Copied from reference implementation contributed by Marko Bencun -}
+Support for Bitcoin SegWit (BTC) Bech32 addresses. This module is a modified
+version of Marko Bencun's reference implementation.
+-}
 module Network.Haskoin.Address.Bech32
     ( HRP
     , Bech32

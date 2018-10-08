@@ -1,4 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Network.Haskoin.Script.Standard
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Standard scripts like pay-to-public-key, pay-to-public-key-hash,
+pay-to-script-hash, pay-to-multisig and corresponding SegWit variants.
+-}
 module Network.Haskoin.Script.Standard
 ( ScriptInput(..)
 , SimpleInput(..)
@@ -46,13 +57,19 @@ import           Network.Haskoin.Util
 -- pay-to-script-hash transactions.
 data SimpleInput
       -- | spend pay-to-public-key output
-    = SpendPK     { getInputSig :: !TxSignature }
+    = SpendPK { getInputSig :: !TxSignature
+                  -- ^ transaction signature
+               }
       -- | spend pay-to-public-key-hash output
     | SpendPKHash { getInputSig :: !TxSignature
+                      -- ^ embedded signature
                   , getInputKey :: !PubKeyI
-                  }
+                      -- ^ public key
+                   }
       -- | spend multisig output
-    | SpendMulSig { getInputMulSigKeys :: ![TxSignature] }
+    | SpendMulSig { getInputMulSigKeys :: ![TxSignature]
+                      -- ^ list of signatures
+                   }
     deriving (Eq, Show)
 
 instance NFData SimpleInput where
@@ -86,11 +103,18 @@ isScriptHashInput _                     = False
 -- script. It must be included in inputs that spend pay-to-script-hash outputs.
 type RedeemScript = ScriptOutput
 
+-- | Standard input script high-level representation.
 data ScriptInput
-    = RegularInput    { getRegularInput     :: SimpleInput }
-    | ScriptHashInput { getScriptHashInput  :: SimpleInput
-                      , getScriptHashRedeem :: RedeemScript
-                      }
+    = RegularInput    {
+        getRegularInput     :: SimpleInput
+            -- ^ get wrapped simple input
+        }
+    | ScriptHashInput {
+            getScriptHashInput  :: SimpleInput
+                -- ^ get simple input associated with redeem script
+            , getScriptHashRedeem :: RedeemScript
+                -- ^ redeem script
+            }
     deriving (Eq, Show)
 
 instance NFData ScriptInput where

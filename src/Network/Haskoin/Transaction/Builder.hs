@@ -1,5 +1,16 @@
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Network.Haskoin.Transaction.Builder
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Code to simplify transaction creation, signing, fee calculation and coin
+selection.
+-}
 module Network.Haskoin.Transaction.Builder
     ( -- * Transaction Creation & Signing
       buildAddrTx
@@ -32,6 +43,7 @@ import           Control.Arrow                      (first)
 import           Control.DeepSeq                    (NFData, rnf)
 import           Control.Monad                      (foldM, mzero, unless, when)
 import           Control.Monad.Identity             (runIdentity)
+import           Crypto.Secp256k1
 import           Data.Aeson                         (FromJSON, ToJSON,
                                                      Value (Object), object,
                                                      parseJSON, toJSON, (.:),
@@ -305,13 +317,13 @@ signTx net otx sigis allKeys
 -- | Sign a single input in a transaction deterministically (RFC-6979).
 signInput :: Network -> Tx -> Int -> SigInput -> SecKeyI -> Either String Tx
 signInput net tx i (SigInput so val _ sh rdmM) key = do
-    let sig = TxSignature (signHash (secKeyData key) msg) sh
+    let sig = TxSignature (signHash (secKeyData key) m) sh
     si <- buildInput net tx i so val rdmM sig $ derivePubKeyI key
     let ins = updateIndex i (txIn tx) (f si)
     return $ Tx (txVersion tx) ins (txOut tx) [] (txLockTime tx)
   where
     f si x = x {scriptInput = encodeInputBS si}
-    msg = txSigHash net tx (encodeOutput $ fromMaybe so rdmM) val i sh
+    m = txSigHash net tx (encodeOutput $ fromMaybe so rdmM) val i sh
 
 -- | Order the 'SigInput' with respect to the transaction inputs. This allows
 -- the user to provide the 'SigInput' in any order. Users can also provide only

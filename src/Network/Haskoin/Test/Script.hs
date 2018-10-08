@@ -1,8 +1,14 @@
 {-|
-  Arbitrary types for Network.Haskoin.Script
+Module      : Network.Haskoin.Test.Script
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
 -}
 module Network.Haskoin.Test.Script where
 
+import           Crypto.Secp256k1
 import           Data.Maybe
 import           Data.Word
 import           Network.Haskoin.Address

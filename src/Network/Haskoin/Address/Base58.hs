@@ -1,4 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Network.Haskoin.Address.Base58
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Support for legacy 'Base58' addresses. Superseded by Bech32 for Bitcoin SegWit
+(BTC) and CashAddr for Bitcoin Cash (BCH).
+-}
 module Network.Haskoin.Address.Base58
     ( Base58
     , encodeBase58

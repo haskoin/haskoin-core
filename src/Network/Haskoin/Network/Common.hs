@@ -1,5 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-|
+Module      : Network.Haskoin.Network.Common
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Common functions and data types related to peer-to-peer network.
+-}
 module Network.Haskoin.Network.Common
     ( -- * Network Data Types
       Addr(..)
@@ -305,7 +315,7 @@ data Reject =
            , rejectData    :: !ByteString
            } deriving (Eq, Show, Read)
 
-
+-- | Rejection code associated to the 'Reject' message.
 data RejectCode
     = RejectMalformed
     | RejectInvalid

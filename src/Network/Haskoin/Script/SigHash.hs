@@ -1,5 +1,15 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-|
+Module      : Network.Haskoin.Script.SigHash
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Transaction signatures and related functions.
+-}
 module Network.Haskoin.Script.SigHash
 ( SigHash
 , SigHashFlag(..)
@@ -26,6 +36,7 @@ module Network.Haskoin.Script.SigHash
 
 import           Control.DeepSeq                    (NFData, rnf)
 import           Control.Monad
+import           Crypto.Secp256k1
 import qualified Data.Aeson                         as J
 import           Data.Bits
 import           Data.ByteString                    (ByteString)
@@ -43,12 +54,18 @@ import           Network.Haskoin.Script.Common
 import           Network.Haskoin.Transaction.Common
 import           Network.Haskoin.Util
 
+-- | Constant representing a SIGHASH flag that controls what is being signed.
 data SigHashFlag
     = SIGHASH_ALL
+      -- ^ sign all outputs
     | SIGHASH_NONE
+      -- ^ sign no outputs
     | SIGHASH_SINGLE
+      -- ^ sign the output index corresponding to the input
     | SIGHASH_FORKID
+      -- ^ replay protection for Bitcoin Cash transactions
     | SIGHASH_ANYONECANPAY
+      -- ^ new inputs can be added
     deriving (Eq, Ord, Show)
 
 instance Enum SigHashFlag where
@@ -86,57 +103,69 @@ instance J.FromJSON SigHash where
 instance J.ToJSON SigHash where
     toJSON = J.Number . fromIntegral
 
+-- | SIGHASH_NONE as a byte.
 sigHashNone :: SigHash
 sigHashNone = fromIntegral $ fromEnum SIGHASH_NONE
 
+-- | SIGHASH_ALL as a byte.
 sigHashAll :: SigHash
 sigHashAll = fromIntegral $ fromEnum SIGHASH_ALL
 
+-- | SIGHASH_SINGLE as a byte.
 sigHashSingle :: SigHash
 sigHashSingle = fromIntegral $ fromEnum SIGHASH_SINGLE
 
+-- | SIGHASH_FORKID as a byte.
 sigHashForkId :: SigHash
 sigHashForkId = fromIntegral $ fromEnum SIGHASH_FORKID
 
+-- | SIGHASH_ANYONECANPAY as a byte.
 sigHashAnyoneCanPay :: SigHash
 sigHashAnyoneCanPay = fromIntegral $ fromEnum SIGHASH_ANYONECANPAY
 
+-- | Set SIGHASH_FORKID flag.
 setForkIdFlag :: SigHash -> SigHash
 setForkIdFlag = (.|. sigHashForkId)
 
+-- | Set SIGHASH_ANYONECANPAY flag.
 setAnyoneCanPayFlag :: SigHash -> SigHash
 setAnyoneCanPayFlag = (.|. sigHashAnyoneCanPay)
 
+-- | Is the SIGHASH_FORKID flag set?
 hasForkIdFlag :: SigHash -> Bool
 hasForkIdFlag = (/= 0) . (.&. sigHashForkId)
 
+-- | Is the SIGHASH_ANYONECANPAY flag set?
 hasAnyoneCanPayFlag :: SigHash -> Bool
 hasAnyoneCanPayFlag = (/= 0) . (.&. sigHashAnyoneCanPay)
 
--- | Returns True if the 'SigHash' has the value 'SIGHASH_ALL'.
+-- | Returns 'True' if the 'SigHash' has the value 'SIGHASH_ALL'.
 isSigHashAll :: SigHash -> Bool
 isSigHashAll = (== sigHashAll) . (.&. 0x1f)
 
--- | Returns True if the 'SigHash' has the value 'SIGHASH_NONE'.
+-- | Returns 'True' if the 'SigHash' has the value 'SIGHASH_NONE'.
 isSigHashNone :: SigHash -> Bool
 isSigHashNone = (== sigHashNone) . (.&. 0x1f)
 
--- | Returns True if the 'SigHash' has the value 'SIGHASH_SINGLE'.
+-- | Returns 'True' if the 'SigHash' has the value 'SIGHASH_SINGLE'.
 isSigHashSingle :: SigHash -> Bool
 isSigHashSingle = (== sigHashSingle) . (.&. 0x1f)
 
--- | Returns True if the 'SigHash' has the value 'SIGHASH_UNKNOWN'.
+-- | Returns 'True' if the 'SigHash' has the value 'SIGHASH_UNKNOWN'.
 isSigHashUnknown :: SigHash -> Bool
 isSigHashUnknown =
     (`notElem` [sigHashAll, sigHashNone, sigHashSingle]) . (.&. 0x1f)
 
+-- | Add a fork id to a 'SigHash'.
 sigHashAddForkId :: SigHash -> Word32 -> SigHash
 sigHashAddForkId sh w = (fromIntegral w `shiftL` 8) .|. (sh .&. 0x000000ff)
 
+-- | Add fork id of a particular network to a 'SigHash'.
 sigHashAddNetworkId :: Network -> SigHash -> SigHash
 sigHashAddNetworkId net =
     (`sigHashAddForkId` fromMaybe 0 (getSigHashForkId net))
 
+-- | Get fork id from 'SigHash'.
 sigHashGetForkId :: SigHash -> Word32
 sigHashGetForkId = fromIntegral . (`shiftR` 8)
 

@@ -1,7 +1,13 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-|
-  This module defines various utility functions used across the
-  Network.Haskoin modules.
+Module      : Network.Haskoin.Util
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+This module defines various utility functions used across the library.
 -}
 module Network.Haskoin.Util
     (

@@ -1,8 +1,15 @@
 {-|
-  Bloom filters are used to reduce data transfer when synchronizing thin cients.
-  When bloom filters are used a client will obtain filtered blocks that only
-  contain transactions that pass the bloom filter. Transactions announced via
-  inv messages also pass the filter.
+Module      : Network.Haskoin.Network.Bloom
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Bloom filters are used to reduce data transfer when synchronizing thin cients.
+When bloom filters are used a client will obtain filtered blocks that only
+contain transactions that pass the bloom filter. Transactions announced via inv
+messages also pass the filter.
 -}
 module Network.Haskoin.Network.Bloom
     ( -- * Bloom Filters

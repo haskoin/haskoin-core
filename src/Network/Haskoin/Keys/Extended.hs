@@ -1,11 +1,18 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Network.Haskoin.Keys.Extended
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+BIP-32 extended keys.
+-}
 module Network.Haskoin.Keys.Extended
     (
-      -- * Extended Keys
-      -- | See BIP32 for details:
-      -- <https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki>
       XPubKey(..)
     , XPrvKey(..)
     , ChainCode
@@ -84,6 +91,7 @@ import           Control.Applicative
 import           Control.DeepSeq                (NFData, rnf)
 import           Control.Exception              (Exception, throw)
 import           Control.Monad                  (guard, mzero, unless, (<=<))
+import           Crypto.Secp256k1
 import           Data.Aeson                     as A (FromJSON, ToJSON,
                                                       Value (String), parseJSON,
                                                       toJSON, withText)
@@ -124,7 +132,10 @@ newtype DerivationException = DerivationException String
 
 instance Exception DerivationException
 
+-- | Chain code as specified in BIP-32.
 type ChainCode = Hash256
+
+-- | Index of key as specified in BIP-32.
 type KeyIndex = Word32
 
 -- | Data type representing an extended BIP32 private key. An extended key
@@ -241,8 +252,8 @@ prvSubKey xkey child
     | otherwise = error "Invalid child derivation index"
   where
     pK = xPubKey $ deriveXPubKey xkey
-    msg = B.append (exportPubKey True pK) (encode child)
-    (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) msg
+    m = B.append (exportPubKey True pK) (encode child)
+    (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) m
     k = fromMaybe err $ tweakSecKey (xPrvKey xkey) a
     err = throw $ DerivationException "Invalid prvSubKey derivation"
 
@@ -256,8 +267,8 @@ pubSubKey xKey child
         XPubKey (xPubDepth xKey + 1) (xPubFP xKey) child c pK (xPubNet xKey)
     | otherwise = error "Invalid child derivation index"
   where
-    msg    = B.append (exportPubKey True (xPubKey xKey)) (encode child)
-    (a, c) = split512 $ hmac512 (encode $ xPubChain xKey) msg
+    m      = B.append (exportPubKey True (xPubKey xKey)) (encode child)
+    (a, c) = split512 $ hmac512 (encode $ xPubChain xKey) m
     pK     = fromMaybe err $ tweakPubKey (xPubKey xKey) a
     err    = throw $ DerivationException "Invalid pubSubKey derivation"
 
@@ -276,8 +287,8 @@ hardSubKey xkey child
     | otherwise = error "Invalid child derivation index"
   where
     i      = setBit child 31
-    msg    = B.append (bsPadPrvKey $ xPrvKey xkey) (encode i)
-    (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) msg
+    m      = B.append (bsPadPrvKey $ xPrvKey xkey) (encode i)
+    (a, c) = split512 $ hmac512 (encode $ xPrvChain xkey) m
     k      = fromMaybe err $ tweakSecKey (xPrvKey xkey) a
     err    = throw $ DerivationException "Invalid hardSubKey derivation"
 
@@ -459,18 +470,32 @@ cycleIndex i
 
 {- Derivation Paths -}
 
+-- | Phantom type signaling a hardened derivation path that can only be computed
+-- from private extended key.
 data HardDeriv
+
+-- | Phantom type signaling no knowledge about derivation path: can be hardened or not.
 data AnyDeriv
+
+-- | Phantom type signaling derivation path including only non-hardened paths
+-- that can be computed from an extended public key.
 data SoftDeriv
 
+-- | Hardened derivation path. Can be computed from extended private key only.
 type HardPath = DerivPathI HardDeriv
+
+-- | Any derivation path.
 type DerivPath = DerivPathI AnyDeriv
+
+-- | Non-hardened derivation path can be computed from extended public key.
 type SoftPath = DerivPathI SoftDeriv
 
+-- | Helper class to perform validations on a hardened derivation path.
 class HardOrAny a
 instance HardOrAny HardDeriv
 instance HardOrAny AnyDeriv
 
+-- | Helper class to perform validations on a non-hardened derivation path.
 class AnyOrSoft a
 instance AnyOrSoft AnyDeriv
 instance AnyOrSoft SoftDeriv

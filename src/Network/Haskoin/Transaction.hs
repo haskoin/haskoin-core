@@ -1,6 +1,12 @@
 {-|
-  This package provides functions for building and signing both simple
-  transactions and multisignature transactions.
+Module      : Network.Haskoin.Transaction
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+Transactions and related code.
 -}
 module Network.Haskoin.Transaction
     ( module Common

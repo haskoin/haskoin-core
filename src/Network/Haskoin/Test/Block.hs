@@ -1,5 +1,10 @@
 {-|
-  Arbitrary types for Network.Haskoin.Block
+Module      : Network.Haskoin.Test.Block
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
 -}
 module Network.Haskoin.Test.Block where
 

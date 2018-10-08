@@ -1,16 +1,23 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Network.Haskoin.Keys.Common
+Copyright   : No rights reserved
+License     : UNLICENSE
+Maintainer  : xenog@protonmail.com
+Stability   : experimental
+Portability : POSIX
+
+ECDSA private and public key functions.
+-}
 module Network.Haskoin.Keys.Common
     ( -- * Public & Private Keys
       PubKeyI(..)
     , SecKeyI(..)
-    , PubKey
-    , SecKey
     , exportPubKey
     , importPubKey
     , wrapPubKey
-    , derivePubKey
     , derivePubKeyI
     , wrapSecKey
     , fromMiniKey
@@ -115,14 +122,15 @@ instance NFData SecKeyI where
 wrapSecKey :: Bool -> SecKey -> SecKeyI
 wrapSecKey c d = SecKeyI d c
 
+-- | Deserialize 'SecKey'.
 secKeyGet :: Get SecKey
 secKeyGet = do
     bs <- getByteString 32
     maybe (fail "invalid private key") return (secKey bs)
 
+-- | Serialize 'SecKey'.
 secKeyPut :: Putter SecKey
 secKeyPut = putByteString . getSecKey
-
 
 -- | Decode Casascius mini private keys (22 or 30 characters).
 fromMiniKey :: ByteString -> Maybe SecKeyI

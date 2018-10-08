@@ -216,7 +216,7 @@ arbitraryPartialTxs net = do
     res <-
         forM (map prevOutput $ txIn tx) $ \op -> do
             (so, val, rdmM, prvs, m, n) <- arbitraryData
-            txs <- mapM (singleSig so val rdmM tx op) prvs
+            txs <- mapM (singleSig so val rdmM tx op . secKeyData) prvs
             return (txs, (so, val, op, m, n))
     return (concatMap fst res, map snd res)
   where

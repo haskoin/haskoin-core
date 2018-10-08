@@ -291,7 +291,7 @@ instance FromJSON SigInput where
 signTx :: Network
        -> Tx               -- ^ transaction to sign
        -> [SigInput]       -- ^ signing parameters
-       -> [SecKeyI]        -- ^ wrapped private keys to sign with
+       -> [SecKey]        -- ^ private keys to sign with
        -> Either String Tx -- ^ signed transaction
 signTx net otx sigis allKeys
     | null ti   = Left "signTx: Transaction has no inputs"
@@ -330,7 +330,7 @@ sigKeys ::
        Network
     -> ScriptOutput
     -> Maybe RedeemScript
-    -> [SecKeyI]
+    -> [SecKey]
     -> Either String [SecKeyI]
 sigKeys net so rdmM keys =
     case (so, rdmM) of
@@ -344,7 +344,13 @@ sigKeys net so rdmM keys =
         (PayScriptHash _, Just rdm) -> sigKeys net rdm Nothing keys
         _ -> Left "sigKeys: Could not decode output script"
   where
-    zipKeys = map (\k -> (k, derivePubKeyI k)) keys
+    zipKeys =
+        [ (prv, pub)
+        | k <- keys
+        , t <- [True, False]
+        , let prv = wrapSecKey t k
+        , let pub = derivePubKeyI prv
+        ]
 
 -- | Construct an input for a transaction given a signature, public key and data
 -- about the previous output.

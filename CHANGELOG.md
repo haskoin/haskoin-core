@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Changed
 - Force initialization of addresses through smart constructor.
 - Assume addresses are always valid when instantiated in code.
+- Allow to provide unwrapped private keys to transaction signing functions.
 
 ## 0.5.2
 ### Changed

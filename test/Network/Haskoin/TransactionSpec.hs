@@ -237,10 +237,10 @@ testDetSignTx net  (tx, sigis, prv) =
   where
     txSigP =
         fromRight (error "Could not decode transaction") $
-        signTx net tx sigis (tail prv)
+        signTx net tx sigis (map secKeyData (tail prv))
     txSigC =
         fromRight (error "Could not decode transaction") $
-        signTx net txSigP sigis [head prv]
+        signTx net txSigP sigis [secKeyData (head prv)]
     verData = map (\(SigInput s v o _ _) -> (s, v, o)) sigis
 
 testMergeTx :: Network -> ([Tx], [(ScriptOutput, Word64, OutPoint, Int, Int)]) -> Bool

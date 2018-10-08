@@ -1,4 +1,4 @@
-resolver: lts-12.9
+resolver: lts-12.12
 nix:
   packages:
     - secp256k1

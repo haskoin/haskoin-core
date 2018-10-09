@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-|
 Module      : Network.Haskoin.Block.Headers
@@ -278,11 +279,13 @@ connectBlocks net t bhs@(bh:_) =
                 (MaybeT (parentBlock bh))
         pars <- lift $ getParents 10 par
         bb <- lift getBestBlockHeader
-        bns@(bn:_) <- go par [] bb par pars bhs
-        lift $ addBlockHeaders bns
-        let bb' = chooseBest bn bb
-        when (bb' /= bb) $ lift $ setBestBlockHeader bb'
-        return bns
+        go par [] bb par pars bhs >>= \case
+            bns@(bn:_) -> do
+                lift $ addBlockHeaders bns
+                let bb' = chooseBest bn bb
+                when (bb' /= bb) $ lift $ setBestBlockHeader bb'
+                return bns
+            _ -> undefined
   where
     chained (h1:h2:hs) = headerHash h1 == prevBlock h2 && chained (h2 : hs)
     chained _          = True

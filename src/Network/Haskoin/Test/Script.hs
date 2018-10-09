@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-|
 Module      : Network.Haskoin.Test.Script
 Copyright   : No rights reserved
@@ -189,10 +190,10 @@ arbitraryValidSigHash net = do
 -- private key.
 arbitraryTxSignature :: Network -> Gen (TxHash, SecKey, TxSignature)
 arbitraryTxSignature net = do
-    (msg, key, sig) <- arbitrarySignature
+    (m, key, sig) <- arbitrarySignature
     sh <- (fromIntegral <$> (arbitrary :: Gen Word8)) `suchThat` filterBad
     let txsig = TxSignature sig sh
-    return (TxHash msg, key, txsig)
+    return (TxHash m, key, txsig)
   where
     filterBad sh = not $
         isSigHashUnknown sh ||
@@ -338,29 +339,37 @@ arbitrarySHInput net = do
 -- | Arbitrary 'ScriptInput' of type 'ScriptHashInput' containing a
 -- 'RedeemScript' of type 'PayMulSig' and an input of type 'SpendMulSig'.
 arbitraryMulSigSHInput :: Network -> Gen ScriptInput
-arbitraryMulSigSHInput net = do
-    rdm@(PayMulSig _ m) <- arbitraryMSOutput
-    sigs <- vectorOf m (arbitraryTxSignatureEmpty net)
-    return $ ScriptHashInput (SpendMulSig sigs) rdm
+arbitraryMulSigSHInput net =
+    arbitraryMSOutput >>= \case
+        rdm@(PayMulSig _ m) -> do
+            sigs <- vectorOf m (arbitraryTxSignatureEmpty net)
+            return $ ScriptHashInput (SpendMulSig sigs) rdm
+        _ -> undefined
 
 -- | Arbitrary 'ScriptInput' of type 'ScriptHashInput' containing a
 -- 'RedeemScript' of type 'PayMulSig' and an input of type 'SpendMulSig'.
 arbitraryMulSigSHInputC :: Network -> Gen ScriptInput
-arbitraryMulSigSHInputC net = do
-    rdm@(PayMulSig _ m) <- arbitraryMSOutputC
-    sigs <- vectorOf m (arbitraryTxSignatureEmpty net)
-    return $ ScriptHashInput (SpendMulSig sigs) rdm
+arbitraryMulSigSHInputC net =
+    arbitraryMSOutputC >>= \case
+        rdm@(PayMulSig _ m) -> do
+          sigs <- vectorOf m (arbitraryTxSignatureEmpty net)
+          return $ ScriptHashInput (SpendMulSig sigs) rdm
+        _ -> undefined
 
 -- | Like 'arbitraryMulSigSHCInput' with no empty signatures.
 arbitraryMulSigSHInputFull :: Network -> Gen ScriptInput
-arbitraryMulSigSHInputFull net = do
-    rdm@(PayMulSig _ m) <- arbitraryMSOutput
-    sigs <- map lst3 <$> vectorOf m (arbitraryTxSignature net)
-    return $ ScriptHashInput (SpendMulSig sigs) rdm
+arbitraryMulSigSHInputFull net =
+    arbitraryMSOutput >>= \case
+        rdm@(PayMulSig _ m) -> do
+            sigs <- map lst3 <$> vectorOf m (arbitraryTxSignature net)
+            return $ ScriptHashInput (SpendMulSig sigs) rdm
+        _ -> undefined
 
 -- | Like 'arbitraryMulSigSHCInput' with no empty signatures.
 arbitraryMulSigSHInputFullC :: Network -> Gen ScriptInput
-arbitraryMulSigSHInputFullC net = do
-    rdm@(PayMulSig _ m) <- arbitraryMSOutputC
-    sigs <- map lst3 <$> vectorOf m (arbitraryTxSignature net)
-    return $ ScriptHashInput (SpendMulSig sigs) rdm
+arbitraryMulSigSHInputFullC net =
+    arbitraryMSOutputC >>= \case
+        rdm@(PayMulSig _ m) -> do
+            sigs <- map lst3 <$> vectorOf m (arbitraryTxSignature net)
+            return $ ScriptHashInput (SpendMulSig sigs) rdm
+        _ -> undefined

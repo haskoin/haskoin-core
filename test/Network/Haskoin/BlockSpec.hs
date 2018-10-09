@@ -5,7 +5,6 @@ module Network.Haskoin.BlockSpec
 
 import           Control.Monad.State.Strict
 import           Data.Aeson                    as A
-import           Data.ByteString               (ByteString)
 import           Data.Either                   (fromRight)
 import           Data.Map.Strict               (singleton)
 import           Data.Maybe                    (fromJust)
@@ -47,8 +46,7 @@ spec = do
                         getBestBlockHeader
              in nodeHeight bb `shouldBe` 100
         it "builds a block locator" $
-            let net = bchRegTest
-                loc =
+            let loc =
                     withChain net $ do
                         chain net (getGenesisHeader net) 100
                         bb <- getBestBlockHeader
@@ -68,21 +66,19 @@ spec = do
             forAll arbitraryBlockHash $ \h ->
                 fromString (cs $ blockHashToHex h) == h
         it "show and read block hash" $
-            property $
-            forAll arbitraryBlockHash $ \h ->
-                read (show h) == h
+            property $ forAll arbitraryBlockHash $ \h -> read (show h) == h
         it "json block hash" $ property $ forAll arbitraryBlockHash testID
     describe "merkle trees" $ do
-        let net = btc
+        let net' = btc
         it "builds tree of right width at height 1" $ property testTreeWidth
         it "builds tree of right width at height 0" $ property testBaseWidth
         it "builds and extracts partial merkle tree" $
             property $
             forAll
                 (listOf1 ((,) <$> arbitraryTxHash <*> arbitrary))
-                (buildExtractTree net)
+                (buildExtractTree net')
         it "merkle root test vectors" $
-            zipWithM_ (curry mapMerkleVectors) merkleVectors [0 ..]
+            mapM_ runMerkleVector merkleVectors
     describe "compact number" $ do
         it "compact number local vectors" testCompact
         it "compact number imported vectors" testCompactBitcoinCore
@@ -244,9 +240,6 @@ testCompactBitcoinCore = do
     assertBool
         "vector 9 (decode) (positive)"
         ((> 0) . fst $ decodeCompact 0xff123456)
-
-mapMerkleVectors :: ((Text, [Text]), Int) -> Assertion
-mapMerkleVectors (v, i) = runMerkleVector v
 
 runMerkleVector :: (Text, [Text]) -> Assertion
 runMerkleVector (r, hs) =

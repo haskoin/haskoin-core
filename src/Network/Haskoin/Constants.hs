@@ -28,6 +28,7 @@ import           Control.DeepSeq
 import           Data.ByteString              (ByteString)
 import           Data.List
 import           Data.Maybe
+import           Data.Serialize
 import           Data.String
 import           Data.Text                    (Text)
 import           Data.Version
@@ -106,6 +107,15 @@ data Network = Network
       -- | Replace-By-Fee (BIP-125)
     , getReplaceByFee             :: !Bool
     } deriving (Eq, Generic)
+
+instance Serialize Network where
+    put net =
+        putWord32be $ getNetworkMagic net
+    get = do
+        magic <- getWord32be
+        case find ((== magic) . getNetworkMagic) allNets of
+            Nothing  -> fail $ "Network magic unknown: " <> show magic
+            Just net -> return net
 
 instance NFData Network
 

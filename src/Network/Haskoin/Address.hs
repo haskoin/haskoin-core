@@ -29,6 +29,15 @@ module Network.Haskoin.Address
     , p2wpkhAddr
     , p2shAddr
     , p2wshAddr
+    , inputAddress
+    , outputAddress
+    , addressToScript
+    , addressToScriptBS
+    , addressToOutput
+    , payToScriptAddress
+    , payToWitnessScriptAddress
+    , scriptToAddress
+    , scriptToAddressBS
       -- * Private Key Wallet Import Format (WIF)
     , fromWif
     , toWif
@@ -39,6 +48,7 @@ import           Control.DeepSeq
 import           Control.Monad
 import           Data.Aeson                       as A
 import           Data.Aeson.Types
+import           Data.ByteString                  (ByteString)
 import qualified Data.ByteString                  as B
 import           Data.Function
 import           Data.Hashable
@@ -54,6 +64,7 @@ import           Network.Haskoin.Address.CashAddr
 import           Network.Haskoin.Constants
 import           Network.Haskoin.Crypto
 import           Network.Haskoin.Keys.Common
+import           Network.Haskoin.Script
 import           Network.Haskoin.Util
 import           Text.Read                        as R
 
@@ -62,28 +73,41 @@ data Address
     -- | pay to public key hash (regular)
     = PubKeyAddress { getAddrHash160 :: !Hash160
                         -- ^ RIPEMD160 hash of public key's SHA256 hash
-                    , getAddrNet :: !Network
+                    , getAddrNet     :: !Network
                         -- ^ address network
                      }
     -- | pay to script hash
     | ScriptAddress { getAddrHash160 :: !Hash160
                         -- ^ RIPEMD160 hash of script's SHA256 hash
-                    , getAddrNet :: !Network
+                    , getAddrNet     :: !Network
                         -- ^ address network
                      }
     -- | pay to witness public key hash
     | WitnessPubKeyAddress { getAddrHash160 :: !Hash160
                                -- ^ RIPEMD160 hash of public key's SHA256 hash
-                           , getAddrNet :: !Network
+                           , getAddrNet     :: !Network
                                -- ^ address network
                            }
     -- | pay to witness script hash
     | WitnessScriptAddress { getAddrHash256 :: !Hash256
                                -- ^ HASH256 hash of script
-                           , getAddrNet :: !Network
+                           , getAddrNet     :: !Network
                                -- ^ address network
                            }
     deriving (Eq, G.Generic)
+
+instance Serialize Address where
+    put a = do
+        put $ getAddrNet a
+        let bs = addressToScriptBS a
+        put $ B.length bs
+        putByteString bs
+    get = do
+        net <- S.get
+        bs <- getByteString =<< S.get
+        case scriptToAddressBS net bs of
+            Nothing -> fail "Could not decode address"
+            Just a -> return a
 
 instance Hashable Address where
     hashWithSalt i (PubKeyAddress h _)        = i `hashWithSalt` h
@@ -255,6 +279,63 @@ p2wshAddr :: Network -> Hash256 -> Maybe Address
 p2wshAddr net h
     | getSegWit net = Just $ WitnessScriptAddress h net
     | otherwise = Nothing
+
+-- | Compute a pay-to-script-hash address for an output script.
+payToScriptAddress :: Network -> ScriptOutput -> Address
+payToScriptAddress net out = p2shAddr net (addressHash (encodeOutputBS out))
+
+-- | Compute a pay-to-witness-script-hash address for an output script. Only on
+-- SegWit networks.
+payToWitnessScriptAddress :: Network -> ScriptOutput -> Maybe Address
+payToWitnessScriptAddress net out = p2wshAddr net (sha256 (encodeOutputBS out))
+
+-- | Encode an output script from an address. Will fail if using a
+-- pay-to-witness address on a non-SegWit network.
+addressToOutput :: Address -> ScriptOutput
+addressToOutput a
+    | isPubKeyAddress a = PayPKHash (getAddrHash160 a)
+    | isScriptAddress a = PayScriptHash (getAddrHash160 a)
+    | isWitnessPubKeyAddress a = PayWitnessPKHash (getAddrHash160 a)
+    | isWitnessScriptAddress a = PayWitnessScriptHash (getAddrHash256 a)
+    | otherwise = undefined
+
+-- | Get output script AST for an 'Address'.
+addressToScript :: Address -> Script
+addressToScript = encodeOutput . addressToOutput
+
+-- | Encode address as output script in 'ByteString' form.
+addressToScriptBS :: Address -> ByteString
+addressToScriptBS = S.encode . addressToScript
+
+-- | Decode an output script into an 'Address' if it has such representation.
+scriptToAddress :: Network -> Script -> Maybe Address
+scriptToAddress net = eitherToMaybe . (outputAddress net <=< decodeOutput)
+
+-- | Decode a serialized script into an 'Address'.
+scriptToAddressBS :: Network -> ByteString -> Maybe Address
+scriptToAddressBS net = eitherToMaybe . (outputAddress net <=< decodeOutputBS)
+
+-- | Get the 'Address' of a 'ScriptOutput'.
+outputAddress :: Network -> ScriptOutput -> Either String Address
+outputAddress net s =
+    case s of
+        PayPKHash h -> Right $ p2pkhAddr net h
+        PayScriptHash h -> Right $ p2shAddr net h
+        PayPK k -> Right $ pubKeyAddr net k
+        PayWitnessPKHash h ->
+            maybeToEither "outputAddress: segwit not supported in this network" $
+            p2wpkhAddr net h
+        PayWitnessScriptHash h ->
+            maybeToEither "outputAddress: segwit not supported in this network" $
+            p2wshAddr net h
+        _ -> Left "outputAddress: bad output script type"
+
+-- | Infer the address of a 'ScriptInput'
+inputAddress :: Network -> ScriptInput -> Either String Address
+inputAddress net s = case s of
+    RegularInput (SpendPKHash _ key) -> return $ pubKeyAddr net key
+    ScriptHashInput _ rdm -> return $ payToScriptAddress net rdm
+    _ -> Left "inputAddress: bad input script type"
 
 -- | Decode private key from WIF (wallet import format) string.
 fromWif :: Network -> Base58 -> Maybe SecKeyI
